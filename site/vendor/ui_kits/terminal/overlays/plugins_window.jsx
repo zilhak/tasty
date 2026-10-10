@@ -89,7 +89,10 @@ const ATTENTION_LIST = [
 // the colour never varies by plugin: a manifest has no category field, so the
 // mark carries identity (the initial), not classification.
 // 2026-10-09 — keycap rule: split the manifest chord on "+", trim, Title-case each part
-// (single letters upper-case). macOS draws the modifiers as ⌘ ⌥ ⇧ ⌃ (Kbd does this per platform).
+// (single letters upper-case). 2026-10-10 (b11, plugins-macos-keycaps): on macOS the chord first goes
+// through the keybinding mapping (alt → Command, option → Option, ctrl → Control), modifiers sort
+// Ctrl ⌥ ⇧ ⌘ (Apple order ⌃ ⌥ ⇧ ⌘), and each follows the user's modifier display style exactly like
+// the Settings keybinding rows and the modifier hint. Ctrl stays the word "Ctrl" (no style, no glyph).
 function kbdKeys(chord) {
   return String(chord).split("+").map((k) => k.trim()).filter(Boolean)
     .map((k) => k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1).toLowerCase());

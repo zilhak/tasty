@@ -13,6 +13,8 @@ const NAV = [
   { id: "properties", label: "Properties · preview" },
   { id: "search", label: "Filter · search" },
   { id: "followups", label: "Follow-ups (b10)" },
+  { id: "followups11", label: "Follow-ups (b11)" },
+  { id: "remaining", label: "Remaining states (b11)" },
 ];
 
 // ── Progress ──────────────────────────────────────────────
@@ -220,8 +222,8 @@ function YPreview({ kind }) {
     const st = {
       none: [YK.ic.file, null, "No preview for this file type"],
       loading: [<YSpinner />, null, "Loading preview…"],
-      large: [YK.ic.file, null, "Too large to preview", "Over 1 MB."],
-      pixels: [YK.ic.file, null, "Too large to preview", "Over 16384 px on a side, or needs more than 256 MiB to decode.", "20000 × 14000 px"],
+      large: [YK.ic.file, null, "Too large to preview", "Over 1 MiB."],
+      pixels: [YK.ic.file, null, "Too large to preview", "Over 16384 px on a side, or needs more than 256 MiB to decode.", "20000 × 14000 px"],
       multi: [<YIcon name="layers" />, null, "3 items selected", "Select one file to preview it."],
       error: [<YIcon name="alertTriangle" size="var(--tasty-icon-size-md)" />, "var(--tasty-explorer-error-fg)", "Can't read this file", null, "Permission denied (os error 13)"],
     }[kind];
@@ -470,6 +472,8 @@ function Page() {
       <PropertiesSection />
       <SearchSection />
       <FollowupsSection />
+      <window.ExplorerOpsB11.FollowupsB11Section />
+      <window.ExplorerOpsB11.RemainingSection />
     </>
   );
 }

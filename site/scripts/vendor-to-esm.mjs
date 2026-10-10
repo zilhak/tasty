@@ -261,6 +261,7 @@ const GALLERY_MODULE = {
   PresetEditor: "./preset_editor.jsx",
   ExplorerKit: "./plugins.jsx",
   ExplorerOpsParts: "./explorer-ops-parts.jsx",
+  ExplorerOpsB11: "./explorer-ops-b11.jsx",
   TastyDesignSystem_41fd3f: "../ds/index.js",
   TastyDag: "../kit/dag.js",
 };

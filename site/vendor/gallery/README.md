@@ -21,7 +21,7 @@ exact dimensions, and the tokens it consumes — and why.
 | `dag.html` | **Surfaces · Task DAG** | The read-only **Task DAG** view: graph canvas (layered top-down, orthogonal edges, dot grid, LOD tiers, minimap + zoom chrome), node card in all **8 execution states** and 4 task kinds, the 3 edge relations, runner badge (incl. stopped-with-ready-work), DAG list row, node detail (side panel / bottom sheet with error tail), empty + cycle states, and both hosts — tab surface (wide + 320) and workspace popup, incl. the **detail view's back-bar chrome** (zoom cluster + runner badge, no second header). |
 | `loading.html` | **Chrome · Startup** | The boot / startup loading screen. |
 | `plugins.html` | **Plugins** | **Plugin surfaces** — surface kinds contributed by bundled plugins, kept off the general Layouts page because they grow without bound: Explorer (file manager), Markdown viewer, HTML (webview) viewer, Image viewer/paint. |
-| `explorer-ops.html` | **Plugins · Explorer file ops** | Explorer file-operation design (2026-10-09): toolbar create / view groups, inline new-item naming and name errors, drag & drop (chip, drop targets, OS files), progress on the status line, name-conflict prompt, results / retry / undo toasts, Properties popup, preview panel, Grid thumbnails, filter and recursive search. Loads `plugins.jsx` in kit-only mode (`window.__EXPLORER_KIT_ONLY`) and reuses `window.ExplorerKit`. |
+| `explorer-ops.html` | **Plugins · Explorer file ops** | Explorer file-operation design (2026-10-09): toolbar create / view groups, inline new-item naming and name errors, drag & drop (chip, drop targets, OS files), progress on the status line, name-conflict prompt, results / retry / undo toasts, Properties popup, preview panel, Grid thumbnails, filter and recursive search; batch 11 kind words, refused requests, Retry of originals, undo titles and remaining states (links, keyboard item, drag-select, hidden files, show in folder, redo, create in folder) in `explorer-ops-b11.jsx`. Loads `plugins.jsx` in kit-only mode (`window.__EXPLORER_KIT_ONLY`) and reuses `window.ExplorerKit`. |
 
 ## How to read a specimen
 Every `<Spec>` carries three things, in this order:
@@ -47,7 +47,7 @@ page commits only a few demos at a time.
 Each page loads `../styles.css` + `../_ds_bundle.js`, then `shell.jsx` (shared
 chrome + specimen primitives, exposed on `window.Gallery`) and one content
 script (`foundations.jsx` / `icons.jsx` / `components.jsx` / `layouts.jsx` /
-`dag.jsx` / `loading.jsx` / `plugins.jsx` — `explorer-ops` loads `plugins.jsx` + `explorer-ops-parts.jsx` + `explorer-ops.jsx` —, or an `overlays-*.jsx` page preceded by
+`dag.jsx` / `loading.jsx` / `plugins.jsx` — `explorer-ops` loads `plugins.jsx` + `explorer-ops-parts.jsx` + `explorer-ops-b11.jsx` + `explorer-ops.jsx` —, or an `overlays-*.jsx` page preceded by
 `overlays-shared.jsx`; `overlays-windows` additionally loads `preset_editor.jsx`).
 No tokens or component visuals are redefined here — specimens reference the
 design system only.

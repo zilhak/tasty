@@ -46,12 +46,29 @@ function AttachRefusalBannerG({ kind = "self", narrow }) {
 }
 // 2026-10-09 — attach mirror terminal-size sync failed (after the one automatic retry). Same family as the refusal banner.
 // Body = TWO lines (b10, attach-sync-banner-body-cut): names line (one line, names ellipsise) + fixed copy line (wraps, never cut).
+// b11 (attach-sync-name-floor): the 40 floor applies only while shrinking — box = min(natural, max(floor, shrunk)).
+// A name shorter than the floor keeps its own width, so ", " / " +n" follow right after it.
+function SyncNameG({ n }) {
+  const ref = React.useRef(null);
+  const [floor, setFloor] = React.useState("var(--tasty-attach-sync-name-min-width)");
+  React.useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    const fl = parseFloat(getComputedStyle(el).getPropertyValue("--tasty-attach-sync-name-min-width")) || 40;
+    const prev = el.style.minWidth; el.style.minWidth = "0px";
+    const nat = el.scrollWidth; el.style.minWidth = prev;
+    if (nat < fl) setFloor(nat + "px");
+  }, [n]);
+  return <span ref={ref} style={{ flex: "0 1 auto", minWidth: floor, maxWidth: "var(--tasty-attach-sync-name-max-width)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--tasty-text-secondary)" }}>{n}</span>;
+}
+// b11 (attach-sync-duplicate-names): equal display names collapse into one entry + a muted “×k” that never shrinks.
+// “N surfaces” still counts surfaces; +n counts the remaining entries.
 function AttachSizeSyncBannerG({ names = ["build"], retrying = false, narrow }) {
   const { Spinner: BSpinner } = window.TastyDesignSystem_41fd3f;
   const many = names.length > 1;
-  const shown = names.slice(0, 2);
-  const rest = names.length - shown.length;
-  const nameCss = { flex: "0 1 auto", minWidth: "var(--tasty-size-40)", maxWidth: "var(--tasty-attach-sync-name-max-width)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--tasty-text-secondary)" };
+  const groups = [];
+  names.forEach((n) => { const g = groups.find((x) => x.n === n); g ? g.k++ : groups.push({ n, k: 1 }); });
+  const shown = groups.slice(0, 2);
+  const rest = groups.length - shown.length;
   const body = { fontSize: "var(--tasty-banner-body-font-size)", color: "var(--tasty-text-muted)" };
   return (
     <BannerShellG>
@@ -62,7 +79,7 @@ function AttachSizeSyncBannerG({ names = ["build"], retrying = false, narrow }) 
           <span style={{ fontSize: "var(--tasty-banner-title-font-size)", fontWeight: "var(--tasty-font-weight-semibold)" }}>Couldn't sync the terminal size with the remote</span>
           <span style={{ ...body, display: "flex", alignItems: "baseline", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden" }}>
             {many ? <span style={{ flex: "none" }}>{names.length} surfaces —&nbsp;</span> : null}
-            {shown.map((n, i) => <React.Fragment key={n}>{i > 0 ? <span style={{ flex: "none" }}>,&nbsp;</span> : null}<span style={nameCss}>{n}</span></React.Fragment>)}
+            {shown.map(({ n, k }, i) => <React.Fragment key={n}>{i > 0 ? <span style={{ flex: "none" }}>,&nbsp;</span> : null}<SyncNameG n={n} />{k > 1 ? <span style={{ flex: "none", color: "var(--tasty-text-muted)" }}>&nbsp;×{k}</span> : null}</React.Fragment>)}
             {rest > 0 ? <span style={{ flex: "none" }}>&nbsp;+{rest}</span> : null}
           </span>
           <span style={body}>The remote may still be using the old size.</span>
@@ -431,12 +448,16 @@ function Page() {
                 <AttachSizeSyncBannerG names={["build"]} retrying />
                 <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>3 surfaces · long tab title truncated</span>
                 <AttachSizeSyncBannerG names={["release-pipeline-watch-logs-eu-west", "build", "tests"]} />
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>split tab · same name twice (b11)</span>
+                <AttachSizeSyncBannerG names={["Shell", "Shell"]} />
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>duplicates + others (b11)</span>
+                <AttachSizeSyncBannerG names={["Shell", "Shell", "build", "tests"]} />
               </div>
             ))}
           </Stage>
           <Meta
-            specs={[["boxes", "glyph 16 · text column (flex 1) · action group (Retry + ×, gap 4)"], ["glyph", "alertTriangle 16 · attach-sync-glyph → accent-warning (same as refusal)"], ["title", "banner-title 13 · semibold · never truncated"], ["body", "banner-body 11 · muted · TWO lines (b10): ① names — one line ② “The remote may still be using the old size.” — wraps, never cut"], ["name", "text-secondary · each name ≤ attach-sync-name-max-width 160, shrinks to fit the line down to 40 (size-40), then ellipsis; first two names, then +n; separators and +n never shrink"], ["retrying", "Retry disabled + leading Spinner 14, label unchanged"], ["many", "one card · “N surfaces — a, b +n” · Retry all"], ["×", "IconButton sm · hides this card; a new failure shows it again"], ["clears", "Retry success · later resize success · surface closed"], ["priority", "reconnect notice wins the slot"]]}
-            tokens={[{ tok: "--tasty-attach-sync-glyph", use: "→ accent-warning", color: "var(--tasty-attach-sync-glyph)" }, { tok: "--tasty-attach-sync-name-max-width", use: "→ size-160" }, { tok: "--tasty-banner-button-bg", use: "Retry", color: "var(--tasty-banner-button-bg)" }, { tok: "--tasty-spinner-indicator", use: "retrying", color: "var(--tasty-spinner-indicator)" }]} />
+            specs={[["boxes", "glyph 16 · text column (flex 1) · action group (Retry + ×, gap 4)"], ["glyph", "alertTriangle 16 · attach-sync-glyph → accent-warning (same as refusal)"], ["title", "banner-title 13 · semibold · never truncated"], ["body", "banner-body 11 · muted · TWO lines (b10): ① names — one line ② “The remote may still be using the old size.” — wraps, never cut"], ["name", "text-secondary · each name ≤ attach-sync-name-max-width 160, shrinks to fit the line down to attach-sync-name-min-width 40, then ellipsis · the floor applies only while shrinking: box = min(natural, max(40, shrunk)) — a short name keeps its own width (b11) · first two entries, then +n; separators, ×k and +n never shrink"], ["same name (b11)", "equal display names collapse into one entry + “ ×k” (text-muted, never shrinks) · “N surfaces” counts surfaces · +n counts remaining entries · Retry all retries every surface"], ["body lines (b11)", "Tasty-owned banner copy (refusal · size sync · mouse capture) never clamps — the card grows · plugin-supplied body clamps at 3 lines, then ellipsis + full text in the tooltip"], ["retrying", "Retry disabled + leading Spinner 14, label unchanged"], ["many", "one card · “N surfaces — a, b +n” · Retry all"], ["×", "IconButton sm · hides this card; a new failure shows it again"], ["clears", "Retry success · later resize success · surface closed"], ["priority", "reconnect notice wins the slot"]]}
+            tokens={[{ tok: "--tasty-attach-sync-glyph", use: "→ accent-warning", color: "var(--tasty-attach-sync-glyph)" }, { tok: "--tasty-attach-sync-name-max-width", use: "→ size-160" }, { tok: "--tasty-attach-sync-name-min-width", use: "→ size-40 (new, b11)" }, { tok: "--tasty-banner-button-bg", use: "Retry", color: "var(--tasty-banner-button-bg)" }, { tok: "--tasty-spinner-indicator", use: "retrying", color: "var(--tasty-spinner-indicator)" }]} />
           <Note>Strings (en): <code>remote.size_sync.title</code> “Couldn't sync the terminal size with the remote” · <code>remote.size_sync.names</code> “{"{names}"}” (line 1) · <code>remote.size_sync.hint</code> “The remote may still be using the old size.” (line 2; replaces <code>remote.size_sync.body</code>) · <code>remote.size_sync.many</code> “{"{n}"} surfaces — {"{names}"}” · <code>remote.size_sync.retry</code> “Retry” · <code>remote.size_sync.retry_all</code> “Retry all”.</Note>
         </Spec>
         <Spec title="Narrow — action under the text, × stays top-right (2026-10-09 b10)"

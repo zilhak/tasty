@@ -805,6 +805,20 @@ function Components() {
             tokens={[{ tok: "--tasty-text-muted", use: "hint color", color: "var(--tasty-text-muted)" }, { tok: "--tasty-font-size-caption", use: "11px" }, { tok: "--tasty-font-mono", use: "inline code" }]} />
           <Note>This is the same muted treatment used in the palette footer (<span className="ic">↑↓ navigate</span>), the Rename dialog hint, and every form sub-label — one consistent voice for “the quiet line.”</Note>
         </Spec>
+        <Spec title="CLI runs inside UI copy (2026-10-10 b11)"
+          when={<>The proportional UI face joins two hyphens into one dash, so <code>--webhook-port</code> reads as an en dash. Any <b>CLI command, option or argument</b> inside a UI sentence (error screen, banner, settings caption, result card) is drawn as a <b>code run</b>: mono at the <b>sentence's own size</b>, a surface-raised fill, 4px side padding, no vertical padding (the line height does not change), radius-sm, text-primary ink. The run never breaks inside; the sentence wraps around it. The copy keeps the literal option, so it can be typed back. Terminal content is not affected.</>}>
+          <Stage variant="column" style={{ gap: 16, alignItems: "stretch", maxWidth: 420 }}>
+            {[["13 body", 13, "var(--tasty-text-secondary)"], ["11 caption, muted", 11, "var(--tasty-text-muted)"]].map(([lab, fs, fg]) => (
+              <div key={lab} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: "var(--tasty-font-size-micro)", fontFamily: "var(--tasty-font-mono)", color: "var(--tasty-text-muted)" }}>{lab}</span>
+                <span style={{ fontSize: fs, color: fg, lineHeight: 1.5 }}>Port 7420 is in use. Start Tasty with <code style={{ fontFamily: "var(--tasty-ui-code-font)", fontSize: "1em", background: "var(--tasty-ui-code-bg)", color: "var(--tasty-ui-code-fg)", padding: "0 var(--tasty-ui-code-padding-x)", borderRadius: "var(--tasty-ui-code-radius)", whiteSpace: "nowrap" }}>--webhook-port 7421</code> or close the other app.</span>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["font", "ui-code-font → font-mono · size = the sentence (1em)"], ["fill", "ui-code-bg → surface-raised"], ["ink", "ui-code-fg → text-primary"], ["padding", "ui-code-padding-x 4 · no vertical"], ["radius", "ui-code-radius → radius-sm"], ["wrap", "never inside the run"], ["scope", "UI copy only · not terminal content · i18n strings keep the literal option"]]}
+            tokens={[{ tok: "--tasty-ui-code-font", use: "mono" }, { tok: "--tasty-ui-code-bg", use: "fill", color: "var(--tasty-ui-code-bg)" }, { tok: "--tasty-ui-code-fg", use: "ink", color: "var(--tasty-ui-code-fg)" }, { tok: "--tasty-ui-code-padding-x", use: "→ space-xs" }, { tok: "--tasty-ui-code-radius", use: "→ radius-sm" }]} />
+        </Spec>
       </Section>
 
       {/* DATA */}
