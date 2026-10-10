@@ -51,6 +51,7 @@ fn moved(n: usize) -> Vec<UndoStep> {
     vec![UndoStep::Moved {
         from: PathBuf::from(format!("/src/{n}")),
         to: PathBuf::from(format!("/dest/{n}")),
+        made: None,
     }]
 }
 
@@ -234,14 +235,17 @@ fn a_stale_reason_matches_what_undo_would_report() {
         UndoStep::Moved {
             from: d.join("free-a"),
             to: d.join("missing"),
+            made: None,
         },
-        UndoStep::Moved {
-            from: file("taken"),
-            to: file("moved-b"),
-        },
+        UndoStep::moved(file("taken"), file("moved-b")),
         UndoStep::Replaced(file("replaced")),
         UndoStep::Created(d.join("no-copy"), None),
         UndoStep::Created(changed.clone(), Some(std::time::SystemTime::UNIX_EPOCH)),
+        UndoStep::Moved {
+            from: d.join("free-d"),
+            to: file("moved-d"),
+            made: Some(std::time::SystemTime::UNIX_EPOCH),
+        },
     ];
     for step in cases {
         let entry = Entry {
@@ -255,10 +259,7 @@ fn a_stale_reason_matches_what_undo_would_report() {
     }
 
     // 되돌릴 수 있는 단계가 하나라도 있으면 행을 켠다.
-    let live = UndoStep::Moved {
-        from: d.join("free-c"),
-        to: file("moved-c"),
-    };
+    let live = UndoStep::moved(d.join("free-c"), file("moved-c"));
     let mixed = Entry {
         source: source(0),
         undo: vec![UndoStep::Replaced(file("r2")), live.clone()],
@@ -277,6 +278,7 @@ fn a_stale_top_step_stays_and_tells_the_cell_why() {
     let stale = UndoStep::Moved {
         from: dir.path().join("a"),
         to: dir.path().join("gone"),
+        made: None,
     };
     state
         .explorer_views
@@ -304,10 +306,7 @@ fn a_refused_step_goes_back_to_the_history() {
     let (mut state, engine, sid) = explorer_state(dir.path());
     let to = dir.path().join("b");
     std::fs::write(&to, b"x").unwrap();
-    let live = vec![UndoStep::Moved {
-        from: dir.path().join("a"),
-        to,
-    }];
+    let live = vec![UndoStep::moved(dir.path().join("a"), to)];
     let h = &mut state.explorer_views.get_mut(sid).unwrap().ops.history;
     h.record(
         Recorded::New(source(0)),
@@ -412,10 +411,7 @@ fn a_running_history_job_blocks_undo_and_redo() {
     let (mut state, engine, sid) = explorer_state(dir.path());
     let to = dir.path().join("b");
     std::fs::write(&to, b"x").unwrap();
-    let live = vec![UndoStep::Moved {
-        from: dir.path().join("a"),
-        to,
-    }];
+    let live = vec![UndoStep::moved(dir.path().join("a"), to)];
     let running = |in_history| crate::explorer_ui::view::ops::Running {
         shared: std::sync::Arc::new(quiet()),
         kind: OpKind::Copy,
@@ -437,4 +433,42 @@ fn a_running_history_job_blocks_undo_and_redo() {
     assert!(!state.explorer_history_busy(sid));
     state.explorer_history_step(&engine.read(), sid, false, user(), false);
     assert_eq!(state.explorer_file_requests.0.len(), 1);
+}
+
+/// 이동 뒤 목적지 항목이 바뀌었으면 되돌리기는 그것을 원래 자리로 옮기지 않는다. 메뉴 행은 꺼지고
+/// 단축키는 아무것도 요청하지 않는다.
+#[test]
+fn undo_does_not_move_back_a_destination_changed_after_the_move() {
+    let dir = tempfile::tempdir().unwrap();
+    let (src, dest) = (dir.path().join("src"), dir.path().join("dest"));
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&dest).unwrap();
+    std::fs::write(src.join("a.txt"), b"a").unwrap();
+    let (mut state, engine, sid) = explorer_state(dir.path());
+    let request = Operation::Paste {
+        paths: vec![src.join("a.txt")],
+        destination: dest.clone(),
+        cut: true,
+    };
+    state.request_explorer_file_direct(&engine.read(), sid, request, user());
+    finish_next(&mut state, sid);
+
+    let moved = dest.join("a.txt");
+    std::fs::write(&moved, b"different").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&moved)
+        .unwrap()
+        .set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1))
+        .unwrap();
+    let top = history(&state, sid).peek_undo().unwrap().clone();
+    assert_eq!(top.stale_reason(), Some(Reason::ChangedAfterMove));
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
+    assert!(state.explorer_file_requests.0.is_empty());
+
+    let ran = job::run_undo(&quiet(), &top.undo);
+    assert_eq!(ran.failed.len(), 1);
+    assert_eq!(ran.failed[0].reason, Reason::ChangedAfterMove);
+    assert!(!src.join("a.txt").exists(), "nothing moved back");
+    assert_eq!(std::fs::read(&moved).unwrap(), b"different");
 }

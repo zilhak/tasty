@@ -442,6 +442,7 @@ pub(crate) fn reason_text(reason: &Reason) -> String {
         Reason::Gone => t("explorer.result.gone").to_owned(),
         Reason::Replaced => t("explorer.result.replaced").to_owned(),
         Reason::ChangedSince => t("explorer.result.changed_kept").to_owned(),
+        Reason::ChangedAfterMove => t("explorer.result.changed_after_move").to_owned(),
         Reason::CopyMissing => t("explorer.result.copy_missing").to_owned(),
         Reason::KeptNotInCopy(n) => t_count(
             "explorer.result.kept_not_in_copy",

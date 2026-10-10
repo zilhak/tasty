@@ -94,15 +94,12 @@ fn blocked(step: &UndoStep) -> Option<Reason> {
             Ok(meta) if meta.modified().ok() != *made => Some(Reason::ChangedSince),
             Ok(_) => None,
         },
-        UndoStep::Moved { from, to } => {
-            if to.symlink_metadata().is_err() {
-                Some(Reason::Gone)
-            } else if from.symlink_metadata().is_ok() {
-                Some(Reason::NewerThere)
-            } else {
-                None
-            }
-        }
+        UndoStep::Moved { from, to, made } => match to.symlink_metadata() {
+            Err(_) => Some(Reason::Gone),
+            Ok(_) if from.symlink_metadata().is_ok() => Some(Reason::NewerThere),
+            Ok(meta) if meta.modified().ok() != *made => Some(Reason::ChangedAfterMove),
+            Ok(_) => None,
+        },
         UndoStep::Replaced(_) => Some(Reason::Replaced),
     }
 }

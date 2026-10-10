@@ -150,7 +150,7 @@ impl Operation {
                 .iter()
                 .map(|s| match s {
                     UndoStep::Created(p, _) | UndoStep::Replaced(p) => p.as_os_str().len(),
-                    UndoStep::Moved { from, to } => from.as_os_str().len() + to.as_os_str().len(),
+                    UndoStep::Moved { from, to, .. } => from.as_os_str().len() + to.as_os_str().len(),
                 } + std::mem::size_of::<UndoStep>())
                 .sum(),
         }
@@ -206,7 +206,7 @@ impl Operation {
                             changed.extend(parents(std::slice::from_ref(p)));
                             removed.push(p.clone());
                         }
-                        UndoStep::Moved { from, to } => {
+                        UndoStep::Moved { from, to, .. } => {
                             changed.extend(parents(&[from.clone(), to.clone()]));
                             removed.push(to.clone());
                         }

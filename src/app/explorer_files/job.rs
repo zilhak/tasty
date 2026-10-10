@@ -283,6 +283,8 @@ pub(crate) enum Reason {
     /// 작업 뒤 사본의 수정 시각이 바뀌었다. 사용자가 고친 사본으로 보고 남긴다.
     /// 남은 원본을 다시 지울 때는 원본 파일이 바뀌어 남긴 경우에도 쓴다.
     ChangedSince,
+    /// 옮긴 뒤 목적지 항목의 수정 시각이 바뀌었다. 옮긴 것과 다른 항목일 수 있어 그 자리에 둔다.
+    ChangedAfterMove,
     /// 남은 원본을 다시 지우려는데 사본이 없거나 다른 종류로 바뀌었다. 원본을 남긴다.
     CopyMissing,
     /// 폴더 원본을 다시 지우며 사본에 없는 항목(이동 뒤 넣거나 바꾼 것)을 이 수만큼 남겼다.
@@ -320,8 +322,13 @@ pub(crate) enum UndoStep {
     /// 새로 만든 사본과 공개 직후의 수정 시각. 되돌리면 휴지통으로 보내되,
     /// 수정 시각이 달라졌으면 남긴다. 폴더는 자기 수정 시각만 보므로 안쪽 파일을 고친 것은 모른다.
     Created(PathBuf, Option<SystemTime>),
-    /// 옮긴 항목. 되돌리면 원래 자리로 옮긴다(그 자리가 비어 있을 때만).
-    Moved { from: PathBuf, to: PathBuf },
+    /// 옮긴 항목과 옮긴 직후 목적지의 수정 시각. 되돌리면 원래 자리로 옮긴다(그 자리가 비어 있고,
+    /// 목적지의 수정 시각이 그대로일 때만). 폴더는 자기 수정 시각만 본다.
+    Moved {
+        from: PathBuf,
+        to: PathBuf,
+        made: Option<SystemTime>,
+    },
     /// Replace 로 기존 파일을 바꿨다. 되돌릴 수 없다.
     Replaced(PathBuf),
 }
@@ -352,6 +359,11 @@ impl UndoStep {
     fn created(path: PathBuf) -> Self {
         let modified = modified_at(&path);
         Self::Created(path, modified)
+    }
+    /// 방금 `to` 로 옮긴 항목. 지금 `to` 의 수정 시각을 함께 적는다.
+    pub(crate) fn moved(from: PathBuf, to: PathBuf) -> Self {
+        let made = modified_at(&to);
+        Self::Moved { from, to, made }
     }
 }
 
@@ -685,10 +697,7 @@ impl Item<'_> {
                     let step = if replace {
                         UndoStep::Replaced(target.clone())
                     } else {
-                        UndoStep::Moved {
-                            from: source.to_path_buf(),
-                            to: target.clone(),
-                        }
+                        UndoStep::moved(source.to_path_buf(), target.clone())
                     };
                     return Ok(Some(Outcome::Done(step)));
                 }
@@ -743,10 +752,7 @@ impl Item<'_> {
         let step = if replaced {
             UndoStep::Replaced(target.clone())
         } else if self.cut {
-            UndoStep::Moved {
-                from: source.to_path_buf(),
-                to: target.clone(),
-            }
+            UndoStep::moved(source.to_path_buf(), target.clone())
         } else {
             UndoStep::created(target)
         };
@@ -902,9 +908,9 @@ pub(crate) fn run_undo(shared: &Shared, steps: &[UndoStep]) -> Report {
                 };
                 (path, result)
             }
-            UndoStep::Moved { from, to } => {
+            UndoStep::Moved { from, to, made } => {
                 shared.set_current(to);
-                (from, move_back(to, from))
+                (from, move_back(to, from, *made))
             }
             UndoStep::Replaced(path) => (path, Err(Reason::Replaced)),
         };
@@ -920,13 +926,17 @@ pub(crate) fn run_undo(shared: &Shared, steps: &[UndoStep]) -> Report {
     report
 }
 
-/// `to` 를 정확히 `from` 자리로 옮긴다. 그 자리에 무엇이 있으면 옮기지 않는다.
-fn move_back(to: &Path, from: &Path) -> Result<(), Reason> {
+/// `to` 를 정확히 `from` 자리로 옮긴다. 그 자리에 무엇이 있거나, `to` 가 옮긴 뒤 바뀌었으면
+/// 옮기지 않는다.
+fn move_back(to: &Path, from: &Path, made: Option<SystemTime>) -> Result<(), Reason> {
     if to.symlink_metadata().is_err() {
         return Err(Reason::Gone);
     }
     if from.symlink_metadata().is_ok() {
         return Err(Reason::NewerThere);
+    }
+    if modified_at(to) != made {
+        return Err(Reason::ChangedAfterMove);
     }
     match rename_noreplace(to, from) {
         Ok(()) => return Ok(()),

@@ -570,6 +570,7 @@ fn undo_remembers_whether_it_puts_back_a_move() {
         UndoStep::Moved {
             from: "/b".into(),
             to: "/c/b".into(),
+            made: None,
         },
     ]);
     assert_eq!(moved.undo_of(), Some(OpKind::Move));

@@ -18,10 +18,7 @@ fn entry(cut: bool, undo: Vec<UndoStep>) -> Entry {
 fn live_move(dir: &std::path::Path, name: &str) -> UndoStep {
     let to = dir.join(name);
     std::fs::write(&to, b"x").unwrap();
-    UndoStep::Moved {
-        from: dir.join(format!("gone-{name}")),
-        to,
-    }
+    UndoStep::moved(dir.join(format!("gone-{name}")), to)
 }
 
 #[test]
@@ -63,6 +60,7 @@ fn a_stale_undo_row_is_disabled_with_the_reason_as_its_tooltip() {
         vec![UndoStep::Moved {
             from: dir.path().join("a"),
             to: dir.path().join("missing"),
+            made: None,
         }],
     );
     let rows = history_items(Some(&stale), None, false);
