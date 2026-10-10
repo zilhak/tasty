@@ -613,3 +613,47 @@ fn a_card_undo_behind_a_new_job_does_not_reach_the_redo_list() {
         Some(false)
     );
 }
+
+/// 결과 카드의 Retry(취소 카드 포함)가 다시 보낸 복사도 새 작업이다. 카드의 Undo 가 그 뒤에
+/// 들어가면 Retry 가 끝나며 다시 실행 목록을 비운 뒤이므로 되돌린 단계를 올리지 않는다.
+#[test]
+fn a_card_undo_behind_a_card_retry_does_not_reach_the_redo_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let (src, dest) = (dir.path().join("src"), dir.path().join("dest"));
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&dest).unwrap();
+    std::fs::write(src.join("a.txt"), b"a").unwrap();
+    std::fs::write(src.join("b.txt"), b"b").unwrap();
+    let (mut state, engine, sid) = explorer_state(dir.path());
+    let request = Operation::Paste {
+        paths: vec![src.join("a.txt")],
+        destination: dest.clone(),
+        cut: true,
+    };
+    state.request_explorer_file_direct(&engine.read(), sid, request, user());
+    finish_next(&mut state, sid);
+    let move_a = history(&state, sid).peek_undo().unwrap().undo.clone();
+
+    let retry = OpsAction::Retry {
+        kind: OpKind::Copy,
+        paths: vec![src.join("b.txt")],
+        dest: Some(dest.clone()),
+        leftovers: Vec::new(),
+    };
+    state.apply_explorer_ops(&engine.read(), sid, retry);
+    state.apply_explorer_ops(&engine.read(), sid, OpsAction::Undo(move_a));
+    assert_eq!(state.explorer_file_requests.0.len(), 2);
+    finish_next(&mut state, sid);
+    finish_next(&mut state, sid);
+    assert!(src.join("a.txt").exists() && dest.join("b.txt").exists());
+    let h = history(&state, sid);
+    assert_eq!(
+        h.peek_undo().map(|e| e.source.cut),
+        Some(false),
+        "the retried copy is on top"
+    );
+    assert!(
+        h.peek_redo().is_none(),
+        "the older move does not come back as a redo"
+    );
+}
