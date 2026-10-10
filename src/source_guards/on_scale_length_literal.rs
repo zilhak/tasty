@@ -641,8 +641,7 @@ fn the_gallery_share_splits_into_four_kinds() {
     );
 
     let hits = considered();
-    let (mut displayed, mut named_value, mut nameless, mut undecided) =
-        (0usize, 0usize, 0usize, 0usize);
+    let (mut displayed, mut named_value, mut nameless) = (0usize, 0usize, 0usize);
     for h in hits
         .iter()
         .filter(|h| h.rel.starts_with("crates/tasty-gallery/"))
@@ -657,27 +656,21 @@ fn the_gallery_share_splits_into_four_kinds() {
         } else if !named_values.contains(&h.value) {
             nameless += 1;
         } else if declares_a_named_dimension(&masked, h.line) {
-            undecided += 1;
+            // 이름 붙은 선언은 역할을 사람이 판단하는 자리라 수를 기록하지 않는다.
         } else {
             named_value += 1;
         }
     }
     // 전시 상한은 기존 명부에서 읽어 중복 기록하지 않는다.
     let roster: usize = DISPLAY_SPECIMENS.iter().map(|(.., n, _)| n).sum();
-    let gallery = hits
-        .iter()
-        .filter(|h| h.rel.starts_with("crates/tasty-gallery/"))
-        .count();
-    assert_eq!(
-        displayed + named_value + nameless + undecided,
-        gallery,
-        "갤러리 후보가 네 분류 중 하나에 들어가지 않았다"
-    );
+    // 규칙을 고정한다. 지금 스케일의 0 아닌 값은 모두 같은 숫자의 Theme 값이 있어 실패할 수 없고,
+    // Theme 값이 없는 size 가 스케일에 생기면 의미가 생긴다.
     assert_eq!(
         nameless, 0,
         "같은 숫자의 Theme 값이 없는 갤러리 후보가 있다. 토큰을 쓰거나 이름 붙은 치수로 선언한다"
     );
     // 같은 Theme 값과 숫자만 같은 자리의 상한이다. 늘면 그 자리가 토큰을 써야 하는지 확인한다.
+    // 갤러리의 새 인라인 리터럴은 대개 이 분류로 들어오므로 갤러리에서 남은 증가 검출이다.
     assert!(
         named_value <= 19 && displayed <= roster,
         "갤러리의 같은 Theme 값 자리 {named_value}(상한 19) 또는 전시 후보 {displayed}(전시 명부 {roster})가 상한을 넘었다. 줄어든 것은 실패가 아니다"
