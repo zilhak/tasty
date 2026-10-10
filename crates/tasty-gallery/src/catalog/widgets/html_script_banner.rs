@@ -493,7 +493,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("title", title_spec.as_str()),
-            ("body", "caption · text-muted · ≤ 2 lines"),
+            ("body", "caption · text-muted · wraps, never clamps"),
             ("remote branch", "network scripts stay blocked — says so"),
             ("action", "Secondary / Sm · no wrap"),
             ("reloading", "spinner + label · no × · fade out on commit"),

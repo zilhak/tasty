@@ -12,9 +12,6 @@ use crate::icon_button::{IconButton, IconButtonVariant};
 use crate::spinner::Spinner;
 use crate::tooltip::{Tooltip, TooltipPlacement, tooltip_hover_delay_elapsed};
 
-/// 제목과 본문은 각각 두 줄까지 보이고 나머지는 말줄임한다.
-const MAX_TEXT_ROWS: usize = 2;
-
 /// surface 폭이 `banner_narrow_below`보다 좁으면 액션을 본문 아래 줄로 내린다.
 /// surface 크기가 바뀔 때마다 다시 판정하며 내용 길이로 임계값을 바꾸지 않는다.
 pub fn html_script_banner_is_narrow(surface_width: f32, theme: &Theme) -> bool {
@@ -73,8 +70,8 @@ fn text_galley(
             ..Default::default()
         },
     );
+    // Tasty 고정 문구라 줄 수를 제한하지 않는다. 길면 카드가 늘어난다(docs/design/systems/banner.md#본문-줄-수).
     job.wrap.max_width = wrap_width;
-    job.wrap.max_rows = MAX_TEXT_ROWS;
     ui.fonts(|f| f.layout_job(job))
 }
 
@@ -446,6 +443,55 @@ mod tests {
         assert!(draws_in_the_close_slot(HtmlScriptBannerState::Blocked));
         assert!(draws_in_the_close_slot(HtmlScriptBannerState::Loading));
         assert!(!draws_in_the_close_slot(HtmlScriptBannerState::Reloading));
+    }
+
+    /// 좁은 화면에 긴 제목·본문을 그려 각 글 도형의 줄 수와 말줄임 여부를 돌려준다.
+    fn long_text_rows(width: f32) -> Vec<(usize, bool)> {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let long = "This sentence keeps going so that a narrow banner has to wrap it onto \
+                    more rows than the old two-row limit allowed, and then a few more.";
+        let view = HtmlScriptBannerView {
+            title: long,
+            body: long,
+            action: "Allow for this document",
+            reloading: "Reloading with scripts allowed",
+            loading_tooltip: "Available when the document finishes loading",
+            state: HtmlScriptBannerState::Blocked,
+            narrow: true,
+            force_hover: false,
+        };
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 800.0),
+            )),
+            ..Default::default()
+        };
+        let out = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                html_script_banner(ui, &theme, &view);
+            });
+        });
+        out.shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.text() == long => {
+                    Some((t.galley.rows.len(), t.galley.elided))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn long_title_and_body_wrap_past_two_rows_without_an_ellipsis() {
+        let texts = long_text_rows(240.0);
+        assert_eq!(texts.len(), 2, "title and body");
+        for (rows, elided) in texts {
+            assert!(rows > 2, "rows = {rows}");
+            assert!(!elided);
+        }
     }
 
     #[test]

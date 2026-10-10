@@ -1,4 +1,4 @@
-<!-- source-hash: 4c54c8aac85b -->
+<!-- source-hash: e246d3fd0bb1 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -222,7 +222,7 @@ Shows a local HTML file or a URL in the OS web view. Press **New HTML...** and t
 
 ### Documents with blocked scripts
 
-With **Sandbox scripts** on, viewing a document that contains scripts shows a **Scripts in this document are blocked** notice above the page. The notice does not cover the page; it pushes the page down by its height. When the HTML view is narrow, the button moves to the line below the description.
+With **Sandbox scripts** on, viewing a document that contains scripts shows a **Scripts in this document are blocked** notice above the page. The notice does not cover the page; it pushes the page down by its height. Its text is never cut off: when a narrow view wraps it onto more lines, the notice grows and the page moves down with it. When the HTML view is narrow, the button moves to the line below the description.
 
 - **Allow for this document** — turns scripts on for this document only and reloads it once. Navigating to another document or restarting Tasty blocks them again. The tab of an allowed document gets a script file icon.
 - While the view is loading a new document, **Allow for this document** can't be pressed. Hovering it shows **Available when the document finishes loading**. When a document you opened yourself (a link, going back, or reloading) has scripts, the button comes back; when it has none, the notice goes away. A document an agent opened shows the notice when you look at that tab again.
