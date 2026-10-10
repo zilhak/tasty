@@ -1,9 +1,11 @@
 //! Decode control payloads into typed mirror events.
 
+mod list_dir;
 #[cfg(test)]
 mod tests;
 
 use crate::ipc::stream::{StreamControl, StreamTag};
+use list_dir::parse_list_dir_result;
 use serde_json::Value;
 use tasty_remote::client_session::{MirrorEvent, OutFrame, SharedFrameSender};
 
@@ -72,61 +74,6 @@ fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
     Some(MirrorEvent::CaptureResult {
         ok: wire.ok,
         path: wire.path,
-        reason: wire.reason,
-    })
-}
-
-/// modified_unix는 epoch 초이며 DirEntryInfo의 SystemTime으로 변환한다.
-#[derive(serde::Deserialize)]
-struct ListDirEntryWire {
-    name: String,
-    is_dir: bool,
-    size: u64,
-    #[serde(default)]
-    modified_unix: Option<u64>,
-    #[serde(default)]
-    ext: String,
-}
-
-#[derive(serde::Deserialize)]
-struct ListDirResultWire {
-    request_id: u64,
-    ok: bool,
-    #[serde(default)]
-    dir: Option<String>,
-    #[serde(default)]
-    entries: Option<Vec<ListDirEntryWire>>,
-    #[serde(default)]
-    truncated: bool,
-    #[serde(default)]
-    reason: Option<String>,
-}
-
-fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
-    let value: Value = serde_json::from_slice(payload).ok()?;
-    if value.get("event").and_then(|v| v.as_str()) != Some("list_dir_result") {
-        return None;
-    }
-    let wire: ListDirResultWire = serde_json::from_value(value).ok()?;
-    let entries = wire.entries.map(|es| {
-        es.into_iter()
-            .map(|e| tasty_remote::client_session::RemoteDirEntry {
-                name: e.name,
-                is_dir: e.is_dir,
-                size: e.size,
-                modified: e
-                    .modified_unix
-                    .map(|secs| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs)),
-                ext: e.ext,
-            })
-            .collect()
-    });
-    Some(MirrorEvent::ListDirResult {
-        request_id: wire.request_id,
-        ok: wire.ok,
-        dir: wire.dir,
-        entries,
-        truncated: wire.truncated,
         reason: wire.reason,
     })
 }

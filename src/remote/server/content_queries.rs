@@ -76,6 +76,9 @@ fn list_dir_for_request(
     Ok((path.to_string_lossy().to_string(), entries))
 }
 
+mod list_dir_wire;
+use list_dir_wire::list_dir_entry_wire;
+
 /// entries의 직렬화 크기 제한. 프레임 상한을 넘기면 연결이 종료되므로 나머지 필드의 여유를 둔다.
 /// 전체 프레임을 다시 재는 것은 아니며 각 entry의 직렬화 크기만 합산한다.
 const LIST_DIR_ENTRIES_BYTE_BUDGET: usize = 700 * 1024;
@@ -102,21 +105,6 @@ fn list_dir_entries_wire_capped_with_budget(
         out.push(wire);
     }
     (out, false)
-}
-
-/// modified는 Unix epoch 초로 보낸다. 사람이 읽는 날짜 표기는 client가 만든다.
-fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> serde_json::Value {
-    let modified_unix = e
-        .modified
-        .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs());
-    serde_json::json!({
-        "name": e.name,
-        "is_dir": e.is_dir,
-        "size": e.size,
-        "modified_unix": modified_unix,
-        "ext": e.ext,
-    })
 }
 
 /// workspace를 하나라도 점유한 client의 Git 조회를 처리한다.

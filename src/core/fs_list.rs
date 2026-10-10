@@ -30,7 +30,8 @@ pub(crate) struct DirEntryInfo {
     #[cfg(feature = "gui")]
     pub(crate) link: EntryLink,
     /// OS 가 숨김으로 표시했는가(Windows 숨김 속성, macOS `UF_HIDDEN`). 이름 앞 점 규칙은 담지 않는다.
-    /// 원격 응답은 이 값을 싣지 않으므로 원격 항목은 거짓이다. `link` 처럼 GUI 에서만 둔다.
+    /// 원격 항목은 server 가 `list_dir_result` 에 실은 값이고, 싣지 않는 옛 server 면 거짓이다.
+    /// `link` 처럼 GUI 에서만 둔다.
     #[cfg(feature = "gui")]
     pub(crate) os_hidden: bool,
 }

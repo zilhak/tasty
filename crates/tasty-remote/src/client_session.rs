@@ -13,6 +13,8 @@ pub struct RemoteDirEntry {
     pub size: u64,
     pub modified: Option<std::time::SystemTime>,
     pub ext: String,
+    /// OS 가 숨김으로 표시했는가. 옛 server 는 싣지 않아 거짓이다.
+    pub os_hidden: bool,
 }
 /// 출력과 resize를 같은 버퍼에 도착 순서대로 담아 올바른 크기의 그리드에 적용한다.
 pub enum MirrorEvent {

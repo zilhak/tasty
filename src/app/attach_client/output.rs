@@ -4,6 +4,8 @@
 mod home_probe_tests;
 mod remote_entry;
 #[cfg(test)]
+mod remote_entry_tests;
+#[cfg(test)]
 mod tests;
 use super::agent_origin;
 use super::connection::find_parked_with_workspace;
