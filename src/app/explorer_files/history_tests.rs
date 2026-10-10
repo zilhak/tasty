@@ -526,3 +526,43 @@ fn redo_does_not_move_what_changed_at_the_source_after_the_undo() {
     std::fs::create_dir(&a).unwrap();
     assert_eq!(undone.redo_block(), Some(RedoBlock::Changed));
 }
+
+/// 수정 시각이 같아도 종류가 바뀌었으면 다시 실행할 수 없다. 새로 만든 폴더는 수정 시각도 달라지므로,
+/// 적어 둔 수정 시각을 지금 폴더의 것으로 맞춰 종류만 다른 경우를 만든다.
+#[test]
+fn redo_is_stale_when_only_the_kind_changed_at_the_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let (src, dest) = (dir.path().join("src"), dir.path().join("dest"));
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&dest).unwrap();
+    let a = src.join("a.txt");
+    std::fs::write(&a, b"a").unwrap();
+    let (mut state, engine, sid) = explorer_state(dir.path());
+    let request = Operation::Paste {
+        paths: vec![a.clone()],
+        destination: dest.clone(),
+        cut: true,
+    };
+    state.request_explorer_file_direct(&engine.read(), sid, request, user());
+    finish_next(&mut state, sid);
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
+    finish_next(&mut state, sid);
+    let mut undone = history(&state, sid).peek_redo().unwrap().clone();
+    assert_eq!(undone.seen.len(), 1);
+    assert_eq!(
+        undone.seen[0].1.as_ref().map(|l| l.kind),
+        Some(LookKind::File)
+    );
+
+    std::fs::remove_file(&a).unwrap();
+    std::fs::create_dir(&a).unwrap();
+    let now = look(&a).unwrap();
+    undone.seen[0].1.as_mut().unwrap().modified = now.modified;
+    assert_eq!(undone.redo_block(), Some(RedoBlock::Changed));
+    undone.seen[0].1 = Some(now);
+    assert_eq!(
+        undone.redo_block(),
+        None,
+        "the same kind and time is not a change"
+    );
+}
