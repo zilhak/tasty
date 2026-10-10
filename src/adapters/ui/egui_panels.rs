@@ -123,6 +123,8 @@ pub fn draw_egui_panels(
     let mut explorer_views = std::mem::take(&mut state.explorer_views);
     explorer_views.begin_poll_frame();
     let explorer_now = std::time::Instant::now();
+    // egui-winit 이 winit Focused 이벤트로 갱신하는 OS 창 포커스.
+    let explorer_window_focused = ctx.input(|i| i.focused);
     let mut dag_views = std::mem::take(&mut state.dag_graph_views);
     let explorer_favorites = engine.explorer_favorites;
     // cut 대기 경로를 어둡게 표시한다. 복사·붙여넣기 완료·취소 후에는 빈 목록으로 해제된다.
@@ -198,9 +200,12 @@ pub fn draw_egui_panels(
             });
         } else if let Some(ex_panel) = surface.explorer() {
             let view = explorer_views.get_or_init(ex_panel, mirror_ws_id);
-            // 다른 프로그램의 변경은 포커스를 가진 탭의 칸만 확인한다.
+            // 다른 프로그램의 변경은 입력을 받는 창의 포커스 탭에 있는 칸만 확인한다.
             view.poll_external(
-                focused_surface_id.is_some_and(|f| tab.contains_surface(f)),
+                crate::adapters::ui::surface::explorer::view::poll::checks_outside_changes(
+                    explorer_window_focused,
+                    focused_surface_id.is_some_and(|f| tab.contains_surface(f)),
+                ),
                 explorer_now,
             );
             view.ops.drag.flip = tasty_settings::keybindings::parse::Combo::parse_modifiers(

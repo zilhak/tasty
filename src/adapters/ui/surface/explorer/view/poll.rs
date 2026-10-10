@@ -1,5 +1,5 @@
-//! 다른 프로그램이 바꾼 폴더를 찾는 주기 확인. 포커스를 가진 탭의 로컬 탐색기만
-//! `EXTERNAL_POLL_INTERVAL` 마다 현재 폴더와 펼친 트리 폴더의 표지를 읽고, 표지가 바뀐 폴더만
+//! 다른 프로그램이 바꾼 폴더를 찾는 주기 확인. 입력을 받는 창(OS 포커스)의 포커스 탭에 있는
+//! 로컬 탐색기만 `EXTERNAL_POLL_INTERVAL` 마다 현재 폴더와 펼친 트리 폴더의 표지를 읽고, 표지가 바뀐 폴더만
 //! 다시 읽는다. 현재 폴더는 보이던 목록을 둔 채 다시 읽어 선택·스크롤·포커스를 바꾸지 않는다.
 //! 원격 mirror 는 원격 IO 비용 때문에 확인하지 않는다. 규칙: docs/surfaces/explorer/index.md#외부-변경-확인.
 
@@ -12,6 +12,12 @@ use crate::app::local_reads::{DirStamp, DirStamps, Query, ReadRequests};
 
 /// 확인 주기. 사용자가 정한 값이며 바꾸면 문서와 사이트 가이드도 함께 바꾼다.
 pub(crate) const EXTERNAL_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// 이 칸을 확인할지. 입력을 받는 창의 포커스 탭에 속한 칸만 확인하므로 Tasty 가 배경 앱이면
+/// 어느 칸도 확인하지 않는다. 창이나 탭이 포커스를 되찾은 프레임에는 바로 확인한다.
+pub(crate) fn checks_outside_changes(window_focused: bool, in_focused_tab: bool) -> bool {
+    window_focused && in_focused_tab
+}
 
 #[derive(Default)]
 pub(crate) struct ExternalPoll {
@@ -37,7 +43,7 @@ impl ExternalPoll {
 }
 
 impl ExplorerView {
-    /// 그릴 때마다 부른다. `focused_tab` 은 이 칸이 포커스를 가진 탭에 속하는지다.
+    /// 그릴 때마다 부른다. `focused_tab` 은 [`checks_outside_changes`] 의 판정이다.
     /// 포커스를 새로 얻은 프레임에는 바로 확인하고, 그 뒤로는 주기마다 확인한다.
     pub(crate) fn poll_external(&mut self, focused_tab: bool, now: Instant) {
         let focused = focused_tab && self.mirror_ws_id.is_none();

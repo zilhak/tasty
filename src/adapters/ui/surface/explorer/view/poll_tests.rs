@@ -91,6 +91,38 @@ fn gaining_focus_checks_at_once_and_then_every_interval() {
 }
 
 #[test]
+fn only_the_focused_tab_of_the_focused_window_is_checked_and_regaining_focus_checks_at_once() {
+    assert!(checks_outside_changes(true, true));
+    assert!(!checks_outside_changes(true, false), "창의 다른 탭");
+    assert!(
+        !checks_outside_changes(false, true),
+        "Tasty 가 배경 앱이거나 다른 창이 포커스"
+    );
+    assert!(!checks_outside_changes(false, false));
+
+    let panel = ExplorerPanel::new(1, PathBuf::from("/tmp/alpha"));
+    let mut store = ExplorerViewStore::default();
+    let t0 = Instant::now();
+    frame(&mut store, &panel, checks_outside_changes(true, true), t0);
+    store.get_mut(1).expect("view").local_query = None;
+    frame(&mut store, &panel, checks_outside_changes(true, true), t0);
+    store.get_mut(1).expect("view").poll.check = None;
+
+    // 창이 포커스를 잃은 동안에는 주기가 지나도 확인하지 않고 깨우지도 않는다.
+    for i in 1..4 {
+        let at = t0 + EXTERNAL_POLL_INTERVAL * i;
+        frame(&mut store, &panel, checks_outside_changes(false, true), at);
+        assert!(store.get(1).expect("view").poll.check.is_none());
+        assert_eq!(store.next_poll_at(), None);
+    }
+    // 창이 포커스를 되찾은 프레임에 주기를 기다리지 않고 확인하고, 그 뒤 주기를 다시 시작한다.
+    let back = t0 + EXTERNAL_POLL_INTERVAL * 3 + EXTERNAL_POLL_INTERVAL / 4;
+    frame(&mut store, &panel, checks_outside_changes(true, true), back);
+    assert!(store.get(1).expect("view").poll.check.is_some());
+    assert_eq!(store.next_poll_at(), Some(back + EXTERNAL_POLL_INTERVAL));
+}
+
+#[test]
 fn a_panel_not_drawn_this_frame_stops_waking() {
     let panel = ExplorerPanel::new(1, PathBuf::from("/tmp/alpha"));
     let mut store = ExplorerViewStore::default();
