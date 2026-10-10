@@ -535,7 +535,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::cluster(
         ui,
         theme,
-        "Installed detail — command keycaps per platform (macOS: ⌃ ⌥ ⇧ ⌘ order, user display style, Ctrl stays a word)",
+        "Installed detail — command keycaps per platform (macOS: Ctrl · Option · Shift · Command order, user display style, Ctrl stays a word)",
         |ui| {
             spec::stage(ui, theme, StageVariant::Solo, |ui| {
                 installed::keycap_platforms(ui, theme);
