@@ -1,5 +1,5 @@
 //! 툴바의 명령 묶음. 경로 필드와 보기 전환 사이에 둔다.
-//! 원격 explorer 는 create 묶음을 숨기고, 쓸 수 없는 폴더에서는 비활성으로 둔다.
+//! 원격 쓰기를 받지 않는 server 의 explorer 는 create 묶음을 숨기고, 쓸 수 없는 폴더에서는 비활성으로 둔다.
 
 use std::path::Path;
 
@@ -58,12 +58,11 @@ fn toggles<'a>(view: &ExplorerView, hidden_tip: &'a str) -> [ExplorerToggle<'a>;
 fn commands_view<'a>(
     theme: &Theme,
     view: &ExplorerView,
-    remote: bool,
     cell_w: f32,
     toggles: &'a [ExplorerToggle<'a>],
 ) -> ExplorerCommandsView<'a> {
     ExplorerCommandsView {
-        create: (!remote).then(|| view.can_write_here()),
+        create: view.writes_allowed.then(|| view.can_write_here()),
         toggles,
         compact: explorer_commands_compact(theme, cell_w),
         labels: labels(),
@@ -71,16 +70,10 @@ fn commands_view<'a>(
 }
 
 /// 주소창 폭을 정하기 전에 뺄 폭. 묶음 뒤 간격까지 포함한다.
-pub(super) fn reserve(
-    ui: &egui::Ui,
-    theme: &Theme,
-    view: &ExplorerView,
-    remote: bool,
-    cell_w: f32,
-) -> f32 {
+pub(super) fn reserve(ui: &egui::Ui, theme: &Theme, view: &ExplorerView, cell_w: f32) -> f32 {
     let tip = hidden_tip(view);
     let toggles = toggles(view, &tip);
-    let w = explorer_commands_width(theme, &commands_view(theme, view, remote, cell_w, &toggles));
+    let w = explorer_commands_width(theme, &commands_view(theme, view, cell_w, &toggles));
     if w > 0.0 {
         w + ui.spacing().item_spacing.x + theme.spacing_sm.value()
     } else {
@@ -94,13 +87,12 @@ pub(super) fn show(
     theme: &Theme,
     view: &mut ExplorerView,
     root: &Path,
-    remote: bool,
     cell_w: f32,
     action: &mut Option<ExplorerAction>,
 ) {
     let tip = hidden_tip(view);
     let toggles = toggles(view, &tip);
-    let commands = commands_view(theme, view, remote, cell_w, &toggles);
+    let commands = commands_view(theme, view, cell_w, &toggles);
     if explorer_commands_width(theme, &commands) <= 0.0 {
         return;
     }
@@ -147,7 +139,7 @@ mod tests {
             ]
         );
         let narrow = theme.explorer_toolbar_compact_below().value() - 1.0;
-        let folded = commands_view(&theme, &view, false, narrow, &toggles);
+        let folded = commands_view(&theme, &view, narrow, &toggles);
         assert_eq!(
             explorer_commands_width(&theme, &folded),
             ControlSize::Sm.height(&theme),
@@ -164,5 +156,20 @@ mod tests {
         assert_eq!(hidden_tip(&view), "Show hidden files (Ctrl+Shift+.)");
         view.toggle_hidden();
         assert_eq!(hidden_tip(&view), "Hide hidden files (Ctrl+Shift+.)");
+    }
+
+    /// 원격 쓰기를 받는 server 의 칸은 로컬처럼 create 묶음을 보이고, 받지 않으면 숨긴다.
+    #[test]
+    fn the_create_group_follows_whether_the_cell_accepts_writes() {
+        let theme = crate::theme::theme();
+        let mut view = ExplorerView::new();
+        let tip = hidden_tip(&view);
+        let toggles = toggles(&view, &tip);
+        assert_eq!(
+            commands_view(&theme, &view, 1000.0, &toggles).create,
+            Some(true)
+        );
+        view.writes_allowed = false;
+        assert_eq!(commands_view(&theme, &view, 1000.0, &toggles).create, None);
     }
 }

@@ -427,7 +427,7 @@ fn toolbar(
         let gap = theme.spacing_sm.value();
         // 주소창 영역 뒤에 가로 item_spacing이 한 번 더 붙으므로 그만큼도 빼야 토글의 오른쪽 여백이
         // 툴바 padding과 같아진다.
-        let cmd_w = commands::reserve(ui, theme, view, remote, rect.width());
+        let cmd_w = commands::reserve(ui, theme, view, rect.width());
         let addr_w =
             (ui.available_width() - seg_w - gap - ui.spacing().item_spacing.x - cmd_w).max(0.0);
         let tab_index = panel.active;
@@ -449,7 +449,7 @@ fn toolbar(
             },
         );
         ui.add_space(gap);
-        commands::show(ui, theme, view, &tab.root, remote, rect.width(), action);
+        commands::show(ui, theme, view, &tab.root, rect.width(), action);
         seg_toggle(ui, theme, tab.view_mode, action);
     });
 }
