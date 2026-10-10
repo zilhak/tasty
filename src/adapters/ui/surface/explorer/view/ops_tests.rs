@@ -18,6 +18,7 @@ fn report(kind: OpKind, total: usize, done: usize) -> Report {
         cancelled: false,
         trash_unavailable: false,
         leftovers: Vec::new(),
+        unprocessed: Vec::new(),
     }
 }
 
@@ -112,10 +113,13 @@ fn trash_that_is_not_available_says_nothing_was_deleted() {
 }
 
 #[test]
-fn a_cancelled_job_neither_retries_nor_undoes() {
+fn a_cancelled_job_retries_what_failed_or_was_not_done_but_never_undoes() {
     let mut r = report(OpKind::Copy, 10, 3);
     r.cancelled = true;
-    assert!(result_is_timed(&r));
+    r.failed = vec![failure("/a", Reason::Os("Permission denied".into()))];
+    r.unprocessed = vec![PathBuf::from("/e"), PathBuf::from("/f")];
+    // 고를 일이 남은 카드라 시간이 지나도 사라지지 않는다.
+    assert!(!result_is_timed(&r));
     let text = card_text(&card(r));
     assert_eq!(text.kind, ToastKind::Info);
     assert_eq!(
@@ -123,7 +127,65 @@ fn a_cancelled_job_neither_retries_nor_undoes() {
         t_fmt2("explorer.result.cancelled_copy", "3", "10")
     );
     assert!(!text.undo);
+    // 끝난 세 항목은 다시 하지 않는다.
+    assert_eq!(
+        text.retry,
+        [
+            PathBuf::from("/a"),
+            PathBuf::from("/e"),
+            PathBuf::from("/f")
+        ]
+    );
+    assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "3"));
+}
+
+#[test]
+fn a_cancelled_job_with_nothing_left_goes_away_on_time_without_retry() {
+    let mut r = report(OpKind::Copy, 2, 2);
+    r.cancelled = true;
+    assert!(result_is_timed(&r));
+    let text = card_text(&card(r));
     assert!(text.retry.is_empty());
+    assert!(!text.undo);
+}
+
+/// 취소한 이동의 남은 원본도 Retry 로 원본 삭제만 다시 하고, 그 삭제는 사본 검사를 거친다.
+#[test]
+fn a_cancelled_move_still_retries_its_leftovers_through_the_copy_check() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let source = dir.path().join("a.txt");
+    std::fs::write(&source, "original").expect("write");
+    let copy = dir.path().join("dst").join("a.txt");
+    let mut r = report(OpKind::Move, 3, 1);
+    r.undo.clear();
+    r.cancelled = true;
+    r.failed = vec![Failure {
+        path: source.clone(),
+        reason: Reason::SourceNotRemoved("Permission denied".into()),
+    }];
+    r.leftovers = vec![Leftover::before_remove(&source, &copy)];
+    r.unprocessed = vec![dir.path().join("b.txt")];
+    assert!(!result_is_timed(&r));
+    let text = card_text(&card(r));
+    assert_eq!(text.retry, [dir.path().join("b.txt")]);
+    assert_eq!(text.leftovers.len(), 1);
+    assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "2"));
+
+    // 사본이 없으므로 Retry 의 원본 삭제는 원본을 남긴다.
+    let shared = crate::app::explorer_files::job::Shared::fixed(
+        crate::app::explorer_files::job::Choice::KeepBoth,
+    );
+    let retried = crate::app::explorer_files::job::leftover::run_remove_leftovers(
+        &shared,
+        None,
+        &text.leftovers,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&source).expect("source"),
+        "original"
+    );
+    assert_eq!(retried.failed.len(), 1);
+    assert_eq!(retried.failed[0].reason, Reason::CopyMissing);
 }
 
 #[test]

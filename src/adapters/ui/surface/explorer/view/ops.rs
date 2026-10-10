@@ -99,10 +99,13 @@ pub enum OpsAction {
     },
 }
 
-/// 결과 카드의 수명 정책: 모두 끝났거나 취소한 카드만 표준 시간 뒤 사라진다.
-/// 원본을 다 지우지 못한 이동도 실패로 보고 닫을 때까지 남긴다.
+/// 결과 카드의 수명 정책: 다시 할 항목이 없는 카드만 표준 시간 뒤 사라진다.
+/// 원본을 다 지우지 못한 이동과 취소로 하지 않은 항목이 있는 카드는 닫을 때까지 남긴다.
 pub(crate) fn result_is_timed(report: &Report) -> bool {
-    report.failed.is_empty() && report.skipped.is_empty() && !report.trash_unavailable
+    report.failed.is_empty()
+        && report.skipped.is_empty()
+        && report.unprocessed.is_empty()
+        && !report.trash_unavailable
 }
 
 impl OpsState {
@@ -589,7 +592,7 @@ fn card_text(card: &ResultCard) -> CardText {
         None => card_title(report),
     };
     let (lines, more) = card_lines(report);
-    let (retry, leftovers) = if card.undo_of.is_some() || report.cancelled {
+    let (retry, leftovers) = if card.undo_of.is_some() {
         (Vec::new(), Vec::new())
     } else {
         (report.retryable(), report.leftovers.clone())

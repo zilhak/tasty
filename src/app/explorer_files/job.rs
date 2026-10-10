@@ -343,6 +343,8 @@ pub(crate) struct Report {
     pub trash_unavailable: bool,
     /// 사본은 공개했지만 원본을 다 지우지 못한 이동 항목. Retry 가 원본 삭제만 다시 한다.
     pub leftovers: Vec<Leftover>,
+    /// 취소로 하지 않은 원래 경로. 취소 때 멈춘 항목도 준비 중 사본을 지웠으므로 여기 든다.
+    pub unprocessed: Vec<PathBuf>,
 }
 
 impl UndoStep {
@@ -370,9 +372,10 @@ impl Report {
             cancelled: false,
             trash_unavailable: false,
             leftovers: Vec::new(),
+            unprocessed: Vec::new(),
         }
     }
-    /// 같은 작업으로 다시 보낼 원래 경로: 건너뛴 항목과, 원본 미삭제를 뺀 실패 항목.
+    /// 같은 작업으로 다시 보낼 원래 경로: 건너뛴 항목, 원본 미삭제를 뺀 실패 항목, 취소로 하지 않은 항목.
     /// 원본 미삭제 항목은 [`Report::leftovers`] 로 원본 삭제만 다시 한다.
     pub(crate) fn retryable(&self) -> Vec<PathBuf> {
         self.failed
@@ -380,6 +383,7 @@ impl Report {
             .filter(|f| !f.reason.leaves_original())
             .map(|f| f.path.clone())
             .chain(self.skipped.iter().cloned())
+            .chain(self.unprocessed.iter().cloned())
             .collect()
     }
 }
@@ -450,6 +454,7 @@ pub(crate) fn run_transfer(
             Some(size) => sizes.push(size),
             None => {
                 report.cancelled = true;
+                report.unprocessed = sources.to_vec();
                 return report;
             }
         }
@@ -464,9 +469,10 @@ pub(crate) fn run_transfer(
         .count();
     let mut sticky: Option<Choice> = None;
     let mut base = 0u64;
-    for (source, size) in sources.iter().zip(sizes) {
+    for (index, (source, size)) in sources.iter().zip(sizes).enumerate() {
         if shared.cancelled() {
             report.cancelled = true;
+            report.unprocessed = sources[index..].to_vec();
             break;
         }
         shared.set_current(source);
@@ -479,7 +485,9 @@ pub(crate) fn run_transfer(
             conflicts_left: &mut conflicts_left,
             base,
         };
+        // 멈추는 것은 취소뿐이다. 멈춘 항목은 사본을 지웠으므로 남은 항목과 함께 하지 않은 것으로 둔다.
         if record(&mut report, shared, source, item.run(source)).is_break() {
+            report.unprocessed = sources[index..].to_vec();
             break;
         }
         base = base.saturating_add(size);
@@ -836,9 +844,10 @@ pub(crate) fn run_trash(shared: &Shared, paths: &[PathBuf]) -> Report {
     let mut report = Report::new(OpKind::Trash, None, paths.len());
     shared.items_total.store(paths.len(), Ordering::Release);
     let mut refused = 0usize;
-    for path in paths {
+    for (index, path) in paths.iter().enumerate() {
         if shared.cancelled() {
             report.cancelled = true;
+            report.unprocessed = paths[index..].to_vec();
             break;
         }
         shared.set_current(path);

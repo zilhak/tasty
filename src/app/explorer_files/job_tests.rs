@@ -210,6 +210,34 @@ fn cancel_while_waiting_for_an_answer_changes_nothing() {
     assert_eq!(names(&dst), ["a.txt"]);
 }
 
+/// 취소하면 멈춘 항목과 그 뒤 항목을 하지 않은 것으로 기록하고, 끝난 항목은 넣지 않는다.
+#[test]
+fn cancel_records_the_item_it_stopped_and_the_rest_as_not_done() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    let dst = dir.path().join("dst");
+    std::fs::create_dir_all(&src).expect("mkdir");
+    std::fs::create_dir_all(&dst).expect("mkdir");
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        std::fs::write(src.join(name), name).expect("write");
+    }
+    std::fs::write(dst.join("b.txt"), "existing").expect("write");
+    let shared = Arc::new(Shared::interactive(|| {}));
+    let sources = vec![src.join("a.txt"), src.join("b.txt"), src.join("c.txt")];
+    let worker = spawn_transfer(&shared, sources, &dst, false);
+
+    wait_ask(&shared);
+    shared.cancel();
+    let report = worker.join().expect("worker");
+
+    assert!(report.cancelled);
+    assert_eq!(report.done, 1);
+    assert_eq!(report.unprocessed, [src.join("b.txt"), src.join("c.txt")]);
+    assert_eq!(report.retryable(), [src.join("b.txt"), src.join("c.txt")]);
+    assert_eq!(names(&dst), ["a.txt", "b.txt"]);
+    assert_eq!(read(&dst.join("b.txt")), "existing");
+}
+
 #[test]
 fn cancel_during_a_copy_leaves_no_partial_entry() {
     let dir = tempfile::tempdir().expect("tempdir");
