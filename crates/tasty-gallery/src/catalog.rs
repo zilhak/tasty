@@ -465,6 +465,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::prim_path_field::draw,
                         ),
+                        spec(
+                            "text-caret",
+                            "Text caret — steady",
+                            Some(
+                                "The caret in every UI text field is steady: drawn while the field and the window are focused, never blinking — matches the terminal cursor and keeps an idle focused field from waking the frame loop",
+                            ),
+                            components::prim_text_caret::draw,
+                        ),
                     ],
                 ),
                 section(

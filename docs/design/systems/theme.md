@@ -286,6 +286,8 @@ accent 채움과 테두리를 함께 쓰는 표현은 `tint_fill_alpha()` 0.12�
 
 터미널 셀·스크롤에 추가 transition을 두지 않는다. UI 위젯의 입력 직후 피드백은 짧은 모션을 사용한다. 시간 단위와 모션 감소 설정은 아래 [모션 설정](#모션-설정과-시간-단위)을 따른다.
 
+UI 입력란 캐럿은 깜박이지 않는다. 입력란과 창이 모두 포커스를 가진 동안 `border_width`(1px) 굵기의 `text_primary()` 막대로 계속 그리고, 창이 포커스를 잃으면 그리지 않는다. 터미널 커서와 같은 규칙이다. 호스트 egui 는 `apply_theme_to_egui` 가 `text_cursor` 의 깜박임과 획을 정한다. 플러그인 egui-mesh 컨텍스트는 호스트 테마의 visuals 를 받지 않으므로 SDK 가 깜박임만 끄고, 캐럿 색과 굵기는 egui 기본값(2px 하늘색)이다. 갤러리 예제는 Form controls › `text-caret` 이다.
+
 프로그램으로 이동하는 `scroll_to_*`·`scroll_to_me`는 host와 egui-mesh 모두 `ScrollAnimation::none()`으로 즉시 이동한다. 휠 델타를 도착 프레임에 전량 반영하는 것은 별도 프로세스 왕복을 줄이기 위한 plugin SDK 경로다. host egui·갤러리의 휠은 기본 스무딩을 유지한다. 스크롤바·페이드와 드래그 패닝은 [스크롤 표시 규칙](#스크롤-여지를-보여-주는-방법)을 따른다.
 
 ### 검사가 확인하는 범위

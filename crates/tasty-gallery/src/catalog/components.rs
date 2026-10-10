@@ -70,6 +70,7 @@ pub mod prim_status_dot;
 pub mod prim_status_resolution;
 pub mod prim_tab;
 pub mod prim_table;
+pub mod prim_text_caret;
 pub mod quit_modal;
 pub mod remote;
 pub mod remote_attach;

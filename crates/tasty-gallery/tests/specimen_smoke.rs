@@ -90,6 +90,13 @@ fn listctrl_specimen_은_헤드리스로_렌더된다() {
 }
 
 #[test]
+fn text_caret_specimen_은_헤드리스로_렌더된다() {
+    use tasty_gallery::catalog::components::prim_text_caret;
+    let theme = tasty_themes::mocha_fallback();
+    assert_no_id_clash("text-caret", |ui| prim_text_caret::draw(ui, &theme));
+}
+
+#[test]
 fn drilldown_specimen_은_헤드리스로_렌더된다() {
     let theme = tasty_themes::mocha_fallback();
     run_frames(|ui| prim_drilldown::draw(ui, &theme));

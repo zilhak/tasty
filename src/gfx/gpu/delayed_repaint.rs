@@ -96,6 +96,17 @@ mod tests {
         assert!(!ctx.style().visuals.text_cursor.blink);
     }
 
+    /// 입력란 커서는 테두리 굵기(1px)의 text-primary 막대다. egui 기본값은 2px 하늘색이다.
+    #[test]
+    fn the_host_text_cursor_is_a_text_primary_border_width_bar() {
+        let th = crate::theme::theme();
+        let ctx = egui::Context::default();
+        tasty_egui_theme::apply_theme_to_egui(&th, &ctx);
+        let stroke = ctx.style().visuals.text_cursor.stroke;
+        assert_eq!(stroke.width, th.border_width.value());
+        assert_eq!(stroke.color, egui::Color32::from(th.text_primary()));
+    }
+
     #[test]
     fn an_unrepresentable_delay_is_dropped() {
         let gate = DelayedRepaintGate::default();

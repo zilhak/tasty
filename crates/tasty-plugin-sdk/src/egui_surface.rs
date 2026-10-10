@@ -107,7 +107,12 @@ impl EguiMeshCore {
         });
         // 프로그램으로 요청한 스크롤의 애니메이션을 끈다.
         // 추가 프레임마다 호스트와 메시지를 주고받는 비용을 줄인다.
-        ctx.all_styles_mut(|s| s.scroll_animation = egui::style::ScrollAnimation::none());
+        // 입력란 커서는 호스트처럼 깜박이지 않는다. 깜박이면 포커스된 입력란이 있는 동안
+        // 0.5초마다 호스트와 프레임을 주고받는다.
+        ctx.all_styles_mut(|s| {
+            s.scroll_animation = egui::style::ScrollAnimation::none();
+            s.visuals.text_cursor.blink = false;
+        });
         Self {
             ctx,
             last_hash: None,
@@ -1631,6 +1636,28 @@ mod tests {
             let mapped = map_event(&RawInputEventWire::Ime { event: wire });
             assert_eq!(mapped, Some(Event::Ime(expected)));
         }
+    }
+
+    /// 창과 입력란이 모두 포커스를 가져도 커서가 깜박이지 않아 다시 그릴 요청이 남지 않는다.
+    #[test]
+    fn a_focused_text_field_does_not_ask_for_blink_frames() {
+        let mut surface = EguiMeshSurface::new(1);
+        let mut params = ctx_params(320, 100, 1.0);
+        params.raw_input.focused = true;
+        let id = egui::Id::new("caret_test");
+        let mut buf = "text".to_string();
+        let mut draw = |ctx: &Context| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.memory_mut(|m| m.request_focus(id));
+                ui.add(egui::TextEdit::singleline(&mut buf).id(id));
+            });
+        };
+        // 첫 몇 프레임은 egui 자체 안정화 요청이 섞일 수 있어 수렴 여부만 본다.
+        let settled = (0..6).any(|_| {
+            surface.run_frame(&params, &mut draw);
+            surface.core.pending_self_repaint().is_none()
+        });
+        assert!(settled, "a focused caret kept asking for frames");
     }
 
     /// egui의 다음 렌더 요청이 pending_self_repaint에 남는지 확인한다.

@@ -163,7 +163,7 @@ per-surface 위치 정보가 인스턴스에 들어가 있으므로 uniform 은 
 | egui 지연 repaint(`request_repaint_after`) | `EguiAnimation` | 주사율까지 coalesce | `AppEvent::EguiRepaintAfter` → `Tick::EguiRepaint(창)` 발화 |
 | attach mirror 갱신 | `AttachMirror` | 주사율까지 coalesce | `src/app/attach_poll.rs`, `src/app/attach_client.rs` |
 
-egui 지연 repaint 는 repaint 콜백(`src/gfx/gpu.rs`)이 창마다 하나의 예약 시각만 유지해 보낸다. 아직 오지 않은 더 이른 예약이 있으면 같은 프레임에서 반복되는 요청을 보내지 않고, 더 이른 요청만 예약을 앞당긴다(`src/gfx/gpu/delayed_repaint.rs`). App 은 그 시각까지 남은 시간을 창별 일회성 타이머로 등록하고(`src/app/egui_repaint.rs`), 발화하면 즉시 요청과 같은 경로로 창을 다시 그린다. 그래서 툴팁 표시 지연, modifier-hint 표시 지연처럼 입력 없이 시간이 지나야 바뀌는 egui 화면이 제때 그려진다. 지연 요청이 없는 유휴 상태에서는 깨움이 늘지 않는다. UI 입력란 커서는 깜박이지 않는다(`tasty_egui_theme::apply_theme_to_egui` 가 `text_cursor.blink` 를 끈다). 깜박이면 포커스된 입력란이 있는 동안 0.5초마다 프레임을 그린다.
+egui 지연 repaint 는 repaint 콜백(`src/gfx/gpu.rs`)이 창마다 하나의 예약 시각만 유지해 보낸다. 아직 오지 않은 더 이른 예약이 있으면 같은 프레임에서 반복되는 요청을 보내지 않고, 더 이른 요청만 예약을 앞당긴다(`src/gfx/gpu/delayed_repaint.rs`). App 은 그 시각까지 남은 시간을 창별 일회성 타이머로 등록하고(`src/app/egui_repaint.rs`), 발화하면 즉시 요청과 같은 경로로 창을 다시 그린다. 그래서 툴팁 표시 지연, modifier-hint 표시 지연처럼 입력 없이 시간이 지나야 바뀌는 egui 화면이 제때 그려진다. 지연 요청이 없는 유휴 상태에서는 깨움이 늘지 않는다. UI 입력란 커서는 깜박이지 않는다. 호스트는 `tasty_egui_theme::apply_theme_to_egui` 가, 플러그인 egui-mesh 컨텍스트는 SDK 의 `EguiMeshCore` 가 `text_cursor.blink` 를 끈다. 깜박이면 포커스된 입력란이 있는 동안 0.5초마다 프레임을 그리고, 플러그인은 그때마다 호스트와 프레임을 주고받는다. 캐럿 모양 규칙은 [테마](../design/systems/theme.md#애니메이션과-스크롤)에 있다.
 
 사용자 조작으로 발생한 요청을 즉시 처리하는 이유는 반응성이다 — 여기에 상한을 걸면 타이핑·클릭 지연이 그대로 늘어난다. 나머지는 주사율 안에서 합쳐 불필요한 프레임 요청을 줄인다.
 

@@ -119,9 +119,10 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
 
     visuals.override_text_color = Some(theme.text.into());
 
-    // UI 입력란 커서는 깜박이지 않는다. 깜박임 여부와 주기는 디자인이 아직 정하지 않았고,
+    // UI 입력란 커서는 깜박이지 않는 1px text-primary 막대다. 터미널 커서처럼 움직임이 없고,
     // 깜박이면 포커스된 입력란이 있는 동안 유휴 상태에서도 0.5초마다 프레임을 그린다.
     visuals.text_cursor.blink = false;
+    visuals.text_cursor.stroke = stroke1(theme, theme.text_primary());
 
     ctx.set_visuals(visuals);
 
