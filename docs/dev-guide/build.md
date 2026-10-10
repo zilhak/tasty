@@ -73,6 +73,10 @@ cargo build --workspace --no-default-features   # headless 빌드
 `CARGO_TARGET_DIR=target/headless` 로 같은 프로필의 루트 패키지를 `--no-default-features` 로 한 번 더 빌드해 헤드리스 압축 파일을 만든다.
 GUI 패키지가 읽는 `target/<프로필>/tasty` 를 덮지 않으려고 target 디렉터리를 나눈다. 산출물 이름과 검증은 [릴리스 절차](release.md#헤드리스-산출물).
 
+Windows 에서 GUI 서브시스템(`windows_subsystem = "windows"`)은 release 이면서 `gui` feature 인 조합에서만 링크한다(`src/main.rs`).
+그래서 헤드리스판과 debug 빌드는 콘솔 서브시스템이며, 콘솔에서 실행하면 셸이 종료를 기다리고 출력과 종료 코드를 받는다.
+부모 콘솔에 붙는 `src/boot/os.rs` 의 `attach_windows_console_if_needed` 도 같은 조합에서만 동작한다. 콘솔 서브시스템을 고른 이유는 [ADR-0066](../adr/0066-headless-build-ships-as-a-per-os-archive.md).
+
 #### Linux 시험 빌드의 시스템 라이브러리
 
 Linux 에서 `tasty-plugin-markdown` 의 시험을 빌드하려면 GTK3·WebKitGTK 개발 패키지가 필요하다. 그 크레이트의

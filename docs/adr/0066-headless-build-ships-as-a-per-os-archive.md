@@ -36,10 +36,8 @@ plugin마다 헤드리스 포함 여부를 따로 관리하지 않으려고 GUI 
 실행 파일 이름이 같아서 GUI 판과 같은 폴더에 풀면 덮어쓴다. 설치 가이드는 다른 폴더에 풀도록 안내한다.
 
 Windows 헤드리스판은 콘솔 서브시스템으로 링크한다. 창이 없는 빌드라 GUI 서브시스템일 이유가 없고,
-콘솔에서 실행하면 셸이 종료를 기다리고 출력과 종료 코드를 그대로 받는다.
-`src/main.rs`의 `windows_subsystem = "windows"`는 release이면서 `gui` feature일 때만 적용하고,
-부모 콘솔에 붙는 `src/boot/os.rs`의 `attach_windows_console_if_needed`도 같은 조합에서만 동작한다. GUI 빌드의 동작은 그대로다.
-macOS 헤드리스 바이너리는 앱 번들과 같은 identity로 단독 서명하고 공증하지 않는다.
+콘솔에서 실행하면 셸이 종료를 기다리고 출력과 종료 코드를 그대로 받기 때문이다.
+서브시스템을 고르는 빌드 조합과 macOS 헤드리스 바이너리의 서명은 [빌드 가이드](../dev-guide/build.md#headless--no-default-features-빌드)와 [릴리스 절차](../dev-guide/release.md#헤드리스-산출물)에 있다.
 
 ## Alternatives Considered
 
