@@ -21,6 +21,7 @@ use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage, wrap_item
 use crate::catalog::{Section, Spec};
 use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 
+mod hidden_create;
 mod kinds;
 mod search;
 pub use search::search_section;
@@ -73,6 +74,22 @@ pub fn create_section() -> Section {
                 title: "Name errors — empty · invalid character · already exists",
                 when: Some("message box under the field, over the next rows — never a toast"),
                 draw: draw_name_errors,
+            },
+            Spec {
+                id: "explorer-hidden-files",
+                title: "Hidden files — shown in muted ink · counted while hidden · More row",
+                when: Some(
+                    "dot names · default off · Ctrl+Shift+. / More row toggles · per explorer, remembered",
+                ),
+                draw: hidden_create::draw_hidden_files,
+            },
+            Spec {
+                id: "explorer-create-in-folder",
+                title: "Create inside a folder — input under the target row",
+                when: Some(
+                    "folder row menu → input right under the folder, indented, “in {folder}” · target ringed",
+                ),
+                draw: hidden_create::draw_create_in_folder,
             },
         ],
     }
@@ -277,6 +294,7 @@ pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
                     Mi::Sep,
                     Mi::Item(Some(icons::SEARCH), t("explorer.more.find_close"), false),
                     Mi::Item(Some(icons::COLUMNS), t("explorer.more.preview_show"), false),
+                    Mi::Item(Some(icons::EYE), t("explorer.more.hidden_show"), false),
                 ];
                 render_menu(ui, theme, theme.tools_menu_min_width().value(), &items);
             });

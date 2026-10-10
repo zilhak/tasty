@@ -294,6 +294,8 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/explorer-ops-parts.jsx` "Context menu — create rows (empty area · folder) and Properties" | `explorer-context` (Overlays) | 빈 영역 첫 묶음과 폴더 파일 조작 묶음의 New folder · New file |
 | `gallery/explorer-ops-parts.jsx` "Name input — inline, at the top of the list (Detail · List · Grid)" | `explorer-name-input` | 편집 줄은 공용 `explorer_name_row`. 상세 열은 공용 `explorer_detail_columns` |
 | `gallery/explorer-ops-parts.jsx` "Name errors — empty · invalid character · already exists" | `explorer-name-errors` | 오류 상자는 공용 `explorer_name_error` |
+| `gallery/explorer-ops-b11.jsx` "Hidden files · show in enclosing folder · undo / redo" 의 숨김 파일 부분 | `explorer-hidden-files` | 이름·글리프 색은 본체와 같은 `explorer_hidden_fg`. 시안 More 행의 단축키 칸은 본체 네이티브 메뉴에 없어 그리지 않는다. 들어 있는 폴더에서 보기·Redo 는 다른 예제의 몫이다 |
+| `gallery/explorer-ops-b11.jsx` "Create inside a folder — input under the target row" | `explorer-create-in-folder` | 편집 줄은 공용 `explorer_name_row_in`(들여쓰기·caption), 대상 표시는 `paint_drop_target` |
 | `gallery/explorer-ops-parts.jsx` "Find bar — filter the current folder" | `explorer-find-bar` | Find 바는 공용 `explorer_find_bar`, 이름 강조는 `explorer_match_job` |
 | `gallery/explorer-ops-parts.jsx` "Subfolders — recursive search · searching · no results · errors · stopped" | `explorer-subfolder-search` | Folder 열은 공용 `explorer_detail_columns` 의 검색 구성. Size·Date 열 폭은 상세 보기와 같다 |
 | `gallery/explorer-ops.jsx` "Running — on the explorer's own status line · queue" | `explorer-ops-progress` | 상태줄은 공용 `op_status_line`, 대기열은 `op_queue_popover` |

@@ -86,7 +86,7 @@ fn find_cell(
     });
 }
 
-fn status_bar(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+pub(super) fn status_bar(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), theme.item_height_interactive.value()),
         egui::Sense::hover(),
