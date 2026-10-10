@@ -247,6 +247,16 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   (가로 줄의 `item_spacing.x` 를 빼고 16)이다.
 - **근거**: `crates/tasty-ui-widgets/src/settings_row.rs`, 시험 `crates/tasty-ui-widgets/tests/settings_row_grid.rs`.
 
+## 설정 행 아래 글 — `set_max_width` 는 남은 폭보다 넓힐 수 있다
+
+- **증상**: 행 아래 caption·callout 을 `ui.set_max_width(measure-md)` 로 감싸면, 창이 `measure-md`
+  보다 좁을 때 자식 영역이 부모보다 넓어져 글이 그 폭에서 줄을 바꾸고 오른쪽 끝이 잘린다.
+  숫자 칸의 입력 칸 + 단위를 `ui.horizontal` 로 두면 같은 폭에서 단위가 오른쪽 밖으로 나간다.
+- **처방**: caption·callout 의 줄바꿈 폭은 `measure-md` 와 `available_width()` 중 작은 값이다.
+  `number_field` 는 입력 칸과 단위를 `horizontal_wrapped` 로 두어 단위가 다음 줄로 내려간다.
+- **근거**: `settings_row.rs::below_width`, `src/view/settings/ui/tabs/number.rs`. 시험
+  `a_caption_and_a_callout_wrap_inside_a_narrow_area`, `the_suffix_wraps_under_the_field_in_a_narrow_row`.
+
 ## 좁은 칸의 콤보 — egui ComboBox 는 선택된 글자 폭만큼 늘어난다
 
 - **증상**: egui `ComboBox::width` 는 최소 폭일 뿐이고 기본 줄바꿈 방식에서는 선택된 이름 폭만큼 늘어난다.

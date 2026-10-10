@@ -70,7 +70,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     separator_line(ui, theme);
 
                     size.show(ui, theme, col, |ui| {
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        // 본체 number_field 처럼 단위가 남은 폭에 들어가지 않으면 입력 칸 아래 줄로 내려간다.
+                        ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                             Input::new().mono(true).width(size_input_width(theme)).show(
                                 ui,

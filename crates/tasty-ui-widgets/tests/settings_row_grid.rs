@@ -16,6 +16,11 @@ fn theme(zoom: f32) -> Theme {
 }
 
 fn run(f: impl FnMut(&mut egui::Ui)) {
+    run_at(900.0, f);
+}
+
+/// 폭 `width` 인 영역에서 `f` 를 부른다.
+fn run_at(width: f32, f: impl FnMut(&mut egui::Ui)) {
     let ctx = egui::Context::default();
     let mut f = f;
     // `FullOutput` 불필요 — 이 테스트가 보는 것은 위젯이 보고한 rect 뿐이다.
@@ -29,7 +34,7 @@ fn run(f: impl FnMut(&mut egui::Ui)) {
             egui::Area::new(egui::Id::new("host"))
                 .fixed_pos(ORIGIN)
                 .show(c, |ui| {
-                    ui.set_width(900.0);
+                    ui.set_width(width);
                     f(ui);
                 });
         },
@@ -250,4 +255,35 @@ fn a_hand_built_row_keeps_the_same_gap_under_item_spacing() {
             "컨트롤 x {x} ≠ 열+gap {expected} — 가로 줄의 item_spacing 이 gap 에 더해졌거나 열이 줄었다"
         );
     }
+}
+
+/// 창이 `measure-md` 보다 좁으면 행 아래 caption·callout 은 남은 폭에서 줄을 바꾼다. 고정
+/// `measure-md` 로 두면 글이 영역 오른쪽 밖으로 나가 잘린다.
+#[test]
+fn a_caption_and_a_callout_wrap_inside_a_narrow_area() {
+    let th = theme(1.0);
+    let text = "Total the folder may hold. A transfer that would push it past this limit \
+                is refused before it starts.";
+    let width = th.measure_md.value() / 2.0;
+    let (mut caption, mut callout) = (Rect::NOTHING, Rect::NOTHING);
+    run_at(width, |ui| {
+        let row = SettingsRow::new("Maximum size");
+        let col = settings_label_column(ui, &th, [&row]);
+        caption = row.caption(text).show(ui, &th, col, |_| {}).rect;
+        callout = row
+            .warning(text, &|_, _, _| {})
+            .show(ui, &th, col, |_| {})
+            .rect;
+    });
+    let right = ORIGIN.x + width + 0.5;
+    assert!(
+        caption.right() <= right,
+        "caption 행 오른쪽 {} 이 영역 {right} 밖이다",
+        caption.right()
+    );
+    assert!(
+        callout.right() <= right,
+        "callout 행 오른쪽 {} 이 영역 {right} 밖이다",
+        callout.right()
+    );
 }

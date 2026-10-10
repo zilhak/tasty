@@ -164,7 +164,8 @@ pub(super) fn number_field(
     let mut committed = false;
 
     ui.vertical(|ui| {
-        ui.horizontal(|ui| {
+        // 남은 폭에 단위가 들어가지 않으면 단위를 입력 칸 아래 줄로 내린다(단축키 행의 버튼 줄과 같은 감싸기).
+        ui.horizontal_wrapped(|ui| {
             let resp = tasty_ui_widgets::Input::new()
                 .mono(true)
                 .align(egui::Align::RIGHT)
@@ -280,6 +281,37 @@ mod tests {
         };
         assert_eq!(commit("99999", &s), Commit::Value(99999.0));
         assert_eq!(out_of_range("99999", &s), None);
+    }
+
+    /// 입력 칸 뒤에 단위가 들어갈 자리가 없으면 단위는 아래 줄로 내려가고 영역 밖으로 나가지 않는다.
+    #[test]
+    fn the_suffix_wraps_under_the_field_in_a_narrow_row() {
+        let th = crate::theme::theme();
+        let width = th.field_width_xs.value() + th.spacing_sm.value();
+        let spec = NumberSpec::int(1.0, 10_000.0).suffix("MiB");
+        let ctx = egui::Context::default();
+        tasty_egui_theme::apply_theme_to_egui(&th, &ctx);
+        let mut used = egui::Rect::NOTHING;
+        // 출력은 쓰지 않는다. 측정은 프레임 안에서 끝난다.
+        drop(ctx.run(Default::default(), |ctx| {
+            egui::Area::new(egui::Id::new("host"))
+                .fixed_pos(egui::Pos2::ZERO)
+                .show(ctx, |ui| {
+                    ui.set_width(width);
+                    ui.set_max_width(width);
+                    let mut value = 500.0;
+                    number_field(ui, &th, "narrow", &spec, &mut value);
+                    used = ui.min_rect();
+                });
+        }));
+        assert!(
+            used.right() <= width + 0.5,
+            "숫자 칸이 영역 폭 {width} 을 넘었다: {used:?}"
+        );
+        assert!(
+            used.height() > th.settings_row_min_height().value(),
+            "단위가 아래 줄로 내려가지 않았다: {used:?}"
+        );
     }
 
     #[test]

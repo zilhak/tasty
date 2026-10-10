@@ -98,7 +98,7 @@ impl<'a> SettingsRow<'a> {
                 Below::Caption(text) => settings_row_caption(ui, theme, text),
                 Below::Warning(text, paint_icon) => {
                     ui.scope(|ui| {
-                        ui.set_max_width(theme.measure_md.value());
+                        ui.set_max_width(below_width(ui, theme));
                         warning_callout(ui, theme, text, paint_icon);
                     });
                 }
@@ -169,11 +169,17 @@ pub fn settings_label_gap(ui: &mut egui::Ui, theme: &Theme) {
     ui.add_space((theme.settings_label_gap().value() - auto).max(0.0));
 }
 
-/// 한 행에 딸린 설명. 행 왼쪽 끝에서 시작하고 `measure-md` 폭에서 줄을 바꾼다.
+/// 행 아래 caption·callout 의 줄바꿈 폭. `measure-md` 를 넘지 않고, 남은 폭이 더 좁으면 그 폭에서
+/// 줄을 바꾼다. 고정 `measure-md` 로 두면 좁은 창에서 글이 오른쪽 끝에서 잘린다.
+fn below_width(ui: &egui::Ui, theme: &Theme) -> f32 {
+    theme.measure_md.value().min(ui.available_width())
+}
+
+/// 한 행에 딸린 설명. 행 왼쪽 끝에서 시작하고 `measure-md` 폭(남은 폭이 더 좁으면 그 폭)에서 줄을 바꾼다.
 /// 행과의 간격은 호출하는 쪽의 세로 간격이 정한다([`SettingsRow::caption`] 은 `settings-row-caption-gap`).
 pub fn settings_row_caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.scope(|ui| {
-        ui.set_max_width(theme.measure_md.value());
+        ui.set_max_width(below_width(ui, theme));
         ui.add(
             egui::Label::new(
                 egui::RichText::new(text)
