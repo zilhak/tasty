@@ -322,6 +322,9 @@ pub(crate) enum UndoStep {
     /// 새로 만든 사본과 공개 직후의 수정 시각. 되돌리면 휴지통으로 보내되,
     /// 수정 시각이 달라졌으면 남긴다. 폴더는 자기 수정 시각만 보므로 안쪽 파일을 고친 것은 모른다.
     Created(PathBuf, Option<SystemTime>),
+    /// 새로 만든 빈 폴더·빈 파일과 만든 직후의 수정 시각. 되돌리면 휴지통으로 보내되, 비어 있고
+    /// 수정 시각이 그대로일 때만 보낸다([`super::named`]).
+    Made(PathBuf, Option<SystemTime>),
     /// 옮긴 항목과 옮긴 직후 목적지의 수정 시각. 되돌리면 원래 자리로 옮긴다(그 자리가 비어 있고,
     /// 목적지의 수정 시각이 그대로일 때만). 폴더는 자기 수정 시각만 본다.
     Moved {
@@ -367,7 +370,7 @@ impl UndoStep {
     }
 }
 
-fn modified_at(path: &Path) -> Option<SystemTime> {
+pub(super) fn modified_at(path: &Path) -> Option<SystemTime> {
     path.symlink_metadata().and_then(|m| m.modified()).ok()
 }
 
@@ -909,14 +912,11 @@ pub(crate) fn run_undo(shared: &Shared, steps: &[UndoStep]) -> Report {
             break;
         }
         let (path, result) = match step {
-            UndoStep::Created(path, made) => {
+            UndoStep::Created(path, _) | UndoStep::Made(path, _) => {
                 shared.set_current(path);
-                let result = if path.symlink_metadata().is_err() {
-                    Err(Reason::Gone)
-                } else if modified_at(path) != *made {
-                    Err(Reason::ChangedSince)
-                } else {
-                    trash::delete(path).map_err(|e| Reason::Os(e.to_string()))
+                let result = match super::history::blocked(step) {
+                    Some(reason) => Err(reason),
+                    None => trash::delete(path).map_err(|e| Reason::Os(e.to_string())),
                 };
                 (path, result)
             }
@@ -944,7 +944,7 @@ fn move_back(to: &Path, from: &Path, made: Option<SystemTime>) -> Result<(), Rea
     if to.symlink_metadata().is_err() {
         return Err(Reason::Gone);
     }
-    if from.symlink_metadata().is_ok() {
+    if super::named::taken(from, to) {
         return Err(Reason::NewerThere);
     }
     if modified_at(to) != made {

@@ -1,11 +1,11 @@
 use super::*;
-use crate::app::explorer_files::history::{Entry, Source};
+use crate::app::explorer_files::history::{Entry, Source, UndoOf};
 use crate::app::explorer_files::job::UndoStep;
 use std::path::PathBuf;
 
 fn entry(cut: bool, undo: Vec<UndoStep>) -> Entry {
     Entry::new(
-        Source {
+        Source::Paste {
             paths: vec!["/src/a".into()],
             destination: "/dest".into(),
             cut,
@@ -49,6 +49,48 @@ fn rows_name_the_operation_and_count_and_are_absent_without_history() {
         )
     );
     assert!(rows[1].enabled);
+}
+
+/// 이름 변경·새 항목 행은 수 없이 작업 이름만 적는다.
+#[test]
+fn rename_and_new_item_rows_name_the_operation_without_a_count() {
+    let step = || vec![UndoStep::Created(PathBuf::from("/x"), None)];
+    let cases = [
+        (
+            Source::Rename {
+                path: "/a".into(),
+                name: "b".into(),
+            },
+            "explorer.menu.op_rename",
+        ),
+        (
+            Source::Create {
+                dir: "/".into(),
+                name: "x".into(),
+                folder: true,
+            },
+            "explorer.menu.op_new_folder",
+        ),
+        (
+            Source::Create {
+                dir: "/".into(),
+                name: "x".into(),
+                folder: false,
+            },
+            "explorer.menu.op_new_file",
+        ),
+    ];
+    for (source, key) in cases {
+        let e = Entry::new(source, step());
+        assert_eq!(
+            undo_label(&e),
+            crate::i18n::t_fmt("explorer.menu.undo", crate::i18n::t(key))
+        );
+        assert_eq!(
+            redo_label(&e),
+            crate::i18n::t_fmt("explorer.menu.redo", crate::i18n::t(key))
+        );
+    }
 }
 
 /// 되돌릴 수 없게 된 단계는 행을 끄고 이유를 툴팁에 적는다.
@@ -202,7 +244,7 @@ fn a_pick_after_the_history_changed_runs_nothing() {
         vec![crate::i18n::t("explorer.menu.history_changed").to_owned()]
     );
     let history = &state.explorer_views.get(sid).unwrap().ops.history;
-    assert_eq!(history.peek_undo().map(|e| e.source.cut), Some(false));
+    assert_eq!(history.peek_undo().map(Entry::undo_of), Some(UndoOf::Copy));
 }
 
 /// 이력에 반영할 복사·이동이 기다리는 동안 두 행은 꺼지고 그 이유를 툴팁으로 보인다.
@@ -254,7 +296,11 @@ fn a_stale_redo_row_is_disabled_with_the_reason_as_its_tooltip() {
     let original = dir.path().join("orig");
     std::fs::write(&original, b"x").unwrap();
     let mut moved = entry(true, vec![live_move(dir.path(), "a")]);
-    moved.source.paths = vec![original.clone()];
+    moved.source = Source::Paste {
+        paths: vec![original.clone()],
+        destination: "/dest".into(),
+        cut: true,
+    };
     record(&mut state, sid, moved);
     let h = &mut state.explorer_views.get_mut(sid).unwrap().ops.history;
     let top = h.take_undo().unwrap();

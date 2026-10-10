@@ -27,6 +27,8 @@ const EXPECTED_MTIME_SITES: &[(&str, usize)] = &[
     ("src/app/explorer_files/copy_meta.rs", 1),
     // 사본 metadata 시험이 원본의 수정 시각을 옛 시각으로 쓰기 핸들에서 바꾼다.
     ("src/app/explorer_files/copy_meta_tests.rs", 1),
+    // 이름 변경 이력 시험이 바꾼 뒤 항목을 고친 것처럼 쓰기 핸들로 수정 시각을 옮긴다.
+    ("src/app/explorer_files/history_steps_tests.rs", 1),
     // 이력 시험이 옮겨 간 파일과 되돌린 뒤의 원본을 고친 것처럼 쓰기 핸들로 수정 시각을 옮긴다.
     ("src/app/explorer_files/history_tests.rs", 2),
     // 되돌리기 시험이 사본을 고친 것처럼 쓰기 핸들로 수정 시각을 옮긴다.

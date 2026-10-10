@@ -194,7 +194,7 @@ fn an_undo_result_lists_what_could_not_be_put_back() {
     r.undo.clear();
     r.failed = vec![failure("/a", Reason::NewerThere)];
     let mut c = card(r);
-    c.undo_of = Some(OpKind::Move);
+    c.undo_of = Some(UndoOf::Move);
     let text = card_text(&c);
     assert_eq!(text.kind, ToastKind::Warning);
     assert_eq!(
@@ -204,6 +204,67 @@ fn an_undo_result_lists_what_could_not_be_put_back() {
     assert_eq!(text.lines[0].1, t("explorer.result.newer_there"));
     assert!(!text.undo);
     assert!(text.retry.is_empty());
+}
+
+/// 이름 변경·새 항목을 되돌린 카드는 수 없이 결과만 말하고, 이유는 그 작업에 맞춘 문구다.
+#[test]
+fn undoing_a_rename_or_new_item_names_that_operation() {
+    let mut done = report(OpKind::Undo, 1, 1);
+    done.undo.clear();
+    for (of, key) in [
+        (UndoOf::Rename, "explorer.result.undo_done_rename"),
+        (UndoOf::NewFolder, "explorer.result.undo_done_new_folder"),
+        (UndoOf::NewFile, "explorer.result.undo_done_new_file"),
+    ] {
+        let mut c = card(done.clone());
+        c.undo_of = Some(of);
+        let text = card_text(&c);
+        assert_eq!(
+            (text.kind, text.title),
+            (ToastKind::Success, t(key).to_owned())
+        );
+    }
+
+    let mut failed = report(OpKind::Undo, 1, 0);
+    failed.undo.clear();
+    for (of, reason, title, line) in [
+        (
+            UndoOf::Rename,
+            Reason::ChangedAfterMove,
+            "explorer.result.undo_failed_rename",
+            "explorer.result.changed_after_rename",
+        ),
+        (
+            UndoOf::Rename,
+            Reason::NewerThere,
+            "explorer.result.undo_failed_rename",
+            "explorer.result.name_taken",
+        ),
+        (
+            UndoOf::NewFolder,
+            Reason::ChangedSince,
+            "explorer.result.undo_failed_new_folder",
+            "explorer.result.changed_after_create",
+        ),
+        (
+            UndoOf::NewFile,
+            Reason::ChangedSince,
+            "explorer.result.undo_failed_new_file",
+            "explorer.result.changed_after_create",
+        ),
+    ] {
+        let mut r = failed.clone();
+        r.failed = vec![failure("/a", reason)];
+        let mut c = card(r);
+        c.undo_of = Some(of);
+        let text = card_text(&c);
+        assert_eq!(
+            (text.kind, text.title),
+            (ToastKind::Warning, t(title).to_owned())
+        );
+        assert_eq!(text.lines[0].1, t(line));
+        assert!(!text.undo && text.retry.is_empty());
+    }
 }
 
 #[test]
@@ -259,7 +320,7 @@ fn an_undo_result_names_a_copy_kept_because_it_changed() {
     r.undo.clear();
     r.failed = vec![failure("/a", Reason::ChangedSince)];
     let mut c = card(r);
-    c.undo_of = Some(OpKind::Copy);
+    c.undo_of = Some(UndoOf::Copy);
     let text = card_text(&c);
     assert_eq!(text.kind, ToastKind::Warning);
     assert_eq!(
@@ -280,7 +341,7 @@ fn a_mixed_undo_result_titles_the_items_that_could_not_be_removed() {
         failure("/b", Reason::ChangedSince),
     ];
     let mut c = card(r);
-    c.undo_of = Some(OpKind::Copy);
+    c.undo_of = Some(UndoOf::Copy);
     let text = card_text(&c);
     assert_eq!(text.kind, ToastKind::Warning);
     assert_eq!(

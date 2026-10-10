@@ -1,8 +1,9 @@
-//! explorer 칸 하나의 되돌리기·다시 실행 이력. 끝까지 된 복사·이동만 쌓고, 칸마다 최근
-//! [`MAX_STEPS`] 단계를 둔다. 목록 UI 는 없고 맨 위 단계만 메뉴 행과 단축키로 쓴다.
+//! explorer 칸 하나의 되돌리기·다시 실행 이력. 복사·이동·이름 변경·새 항목을 쌓고, 칸마다 최근
+//! [`MAX_STEPS`] 단계를 둔다. 일부만 된 복사·이동은 된 항목만 쌓는다. 목록 UI 는 없고 맨 위 단계만
+//! 메뉴 행과 단축키로 쓴다.
 //!
-//! 다시 실행은 되돌린 작업의 원래 요청(원본 경로·목적지·이동 여부)을 새 작업으로 다시 보낸다.
-//! 이름이 겹치면 처음처럼 충돌 질문을 거친다.
+//! 다시 실행은 되돌린 작업의 원래 요청을 새 작업으로 다시 보낸다. 붙여넣기는 이름이 겹치면 처음처럼
+//! 충돌 질문을 거치고, 이름 변경·새 항목은 같은 이름이 있으면 덮어쓰지 않고 실패한다.
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -19,10 +20,21 @@ const STALE_SCAN_LIMIT: usize = 256;
 
 /// 다시 실행할 원래 요청.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Source {
-    pub(crate) paths: Vec<PathBuf>,
-    pub(crate) destination: PathBuf,
-    pub(crate) cut: bool,
+pub(crate) enum Source {
+    Paste {
+        paths: Vec<PathBuf>,
+        destination: PathBuf,
+        cut: bool,
+    },
+    Rename {
+        path: PathBuf,
+        name: String,
+    },
+    Create {
+        dir: PathBuf,
+        name: String,
+        folder: bool,
+    },
 }
 
 impl Source {
@@ -32,24 +44,98 @@ impl Source {
                 paths,
                 destination,
                 cut,
-            } => Some(Self {
+            } => Some(Self::Paste {
                 paths: paths.clone(),
                 destination: destination.clone(),
                 cut: *cut,
+            }),
+            Operation::Rename { path, name } => Some(Self::Rename {
+                path: path.clone(),
+                name: name.clone(),
+            }),
+            Operation::Create { dir, name, folder } => Some(Self::Create {
+                dir: dir.clone(),
+                name: name.clone(),
+                folder: *folder,
             }),
             _ => None,
         }
     }
     pub(crate) fn operation(&self) -> Operation {
-        Operation::Paste {
-            paths: self.paths.clone(),
-            destination: self.destination.clone(),
-            cut: self.cut,
+        match self {
+            Self::Paste {
+                paths,
+                destination,
+                cut,
+            } => Operation::Paste {
+                paths: paths.clone(),
+                destination: destination.clone(),
+                cut: *cut,
+            },
+            Self::Rename { path, name } => Operation::Rename {
+                path: path.clone(),
+                name: name.clone(),
+            },
+            Self::Create { dir, name, folder } => Operation::Create {
+                dir: dir.clone(),
+                name: name.clone(),
+                folder: *folder,
+            },
+        }
+    }
+    /// 되돌리기가 끝났을 때 모습을 적어 두고 다시 실행 전에 비교할 경로. 붙여넣기와 이름 변경은
+    /// 원래 항목, 새 항목은 비어 있어야 할 그 이름이다.
+    fn watched(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Paste { paths, .. } => paths.clone(),
+            Self::Rename { path, .. } => vec![path.clone()],
+            Self::Create { dir, name, .. } => vec![dir.join(name)],
+        }
+    }
+    /// 일부만 된 붙여넣기에서 된 항목만 남긴다. 실패·건너뜀·취소로 하지 않은 원본은 다시 실행에서 뺀다.
+    fn kept(self, report: &Report) -> Self {
+        let Self::Paste {
+            paths,
+            destination,
+            cut,
+        } = self
+        else {
+            return self;
+        };
+        let missed = |p: &PathBuf| {
+            report.failed.iter().any(|f| &f.path == p)
+                || report.skipped.contains(p)
+                || report.unprocessed.contains(p)
+        };
+        Self::Paste {
+            paths: paths.into_iter().filter(|p| !missed(p)).collect(),
+            destination,
+            cut,
+        }
+    }
+    /// 되돌리기 결과 카드와 메뉴 행에 쓰는 작업 종류.
+    pub(crate) fn undo_of(&self) -> UndoOf {
+        match self {
+            Self::Paste { cut: true, .. } => UndoOf::Move,
+            Self::Paste { cut: false, .. } => UndoOf::Copy,
+            Self::Rename { .. } => UndoOf::Rename,
+            Self::Create { folder: true, .. } => UndoOf::NewFolder,
+            Self::Create { folder: false, .. } => UndoOf::NewFile,
         }
     }
 }
 
-/// 이력의 한 단계: 끝난 복사·이동과 그것을 되돌리는 방법.
+/// 되돌리는 작업의 종류. 결과 카드의 제목과 메뉴 행의 이름을 정한다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UndoOf {
+    Copy,
+    Move,
+    Rename,
+    NewFolder,
+    NewFile,
+}
+
+/// 이력의 한 단계: 끝난 복사·이동·이름 변경·새 항목과 그것을 되돌리는 방법.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Entry {
     pub(crate) source: Source,
@@ -112,17 +198,18 @@ impl Entry {
     /// 있으면 그 이유. 다시 실행은 붙여넣기를 다시 보내 항목별로 거르지 않으므로 하나만 바뀌어도 막는다.
     pub(crate) fn redo_block(&self) -> Option<RedoBlock> {
         self.seen.iter().find_map(|(path, then)| match look(path) {
+            now if now == *then => None,
             None => Some(RedoBlock::Gone),
-            now if now != *then => Some(RedoBlock::Changed),
-            _ => None,
+            Some(_) => Some(RedoBlock::Changed),
         })
     }
-    pub(crate) fn kind(&self) -> OpKind {
-        if self.source.cut {
-            OpKind::Move
-        } else {
-            OpKind::Copy
-        }
+    pub(crate) fn undo_of(&self) -> UndoOf {
+        self.source.undo_of()
+    }
+    /// 끝난 복사·이동에서 되돌릴 단계. 일부만 됐으면 된 항목만 담는다. 된 항목이 없으면 None.
+    fn done(source: Source, report: &Report) -> Option<Self> {
+        (matches!(report.kind, OpKind::Copy | OpKind::Move) && !report.undo.is_empty())
+            .then(|| Self::new(source.kept(report), report.undo.clone()))
     }
     /// 메뉴 행에 적는 항목 수.
     pub(crate) fn count(&self) -> usize {
@@ -147,17 +234,18 @@ impl Entry {
     }
 }
 
-/// 이 단계를 지금 되돌릴 수 없는 이유. 되돌릴 수 있으면 None.
-fn blocked(step: &UndoStep) -> Option<Reason> {
+/// 이 단계를 지금 되돌릴 수 없는 이유. 되돌릴 수 있으면 None. 메뉴 행과 되돌리기 작업이 함께 쓴다.
+pub(super) fn blocked(step: &UndoStep) -> Option<Reason> {
     match step {
         UndoStep::Created(path, made) => match path.symlink_metadata() {
             Err(_) => Some(Reason::Gone),
             Ok(meta) if meta.modified().ok() != *made => Some(Reason::ChangedSince),
             Ok(_) => None,
         },
+        UndoStep::Made(path, made) => super::named::made_blocked(path, *made),
         UndoStep::Moved { from, to, made } => match to.symlink_metadata() {
             Err(_) => Some(Reason::Gone),
-            Ok(_) if from.symlink_metadata().is_ok() => Some(Reason::NewerThere),
+            Ok(_) if super::named::taken(from, to) => Some(Reason::NewerThere),
             Ok(meta) if meta.modified().ok() != *made => Some(Reason::ChangedAfterMove),
             Ok(_) => None,
         },
@@ -168,10 +256,10 @@ fn blocked(step: &UndoStep) -> Option<Reason> {
 /// 작업이 끝났을 때 이력에 반영할 일. 요청과 함께 작업을 따라간다.
 #[derive(Debug)]
 pub(crate) enum Recorded {
-    /// 사용자가 새로 한 복사·이동. 끝까지 되면 되돌리기 맨 위에 쌓는다. 무엇이든 바꿨으면
+    /// 사용자가 새로 한 작업. 된 항목이 있으면 그 항목만 되돌리기 맨 위에 쌓는다. 무엇이든 바꿨으면
     /// 다시 실행 목록은 낡았으므로 비운다.
     New(Source),
-    /// 다시 실행. 끝까지 되면 되돌리기 맨 위에 쌓고 남은 다시 실행 단계는 그대로 둔다.
+    /// 다시 실행. 된 항목이 있으면 되돌리기 맨 위에 쌓고 남은 다시 실행 단계는 그대로 둔다.
     Redo(Entry),
     /// 이력의 한 단계를 되돌린다. 끝까지 되면 다시 실행 목록에 올린다.
     Undo(Entry),
@@ -188,15 +276,6 @@ pub(crate) struct History {
     shown: Option<u64>,
     /// 새 작업이 다시 실행 목록을 비운 횟수.
     cleared: u64,
-}
-
-/// 결과 카드가 Undo 를 보이는 조건과 같다: 실패·건너뜀·취소 없이 끝난 복사·이동.
-fn completed(report: &Report) -> bool {
-    matches!(report.kind, OpKind::Copy | OpKind::Move)
-        && !report.cancelled
-        && report.failed.is_empty()
-        && report.skipped.is_empty()
-        && !report.undo.is_empty()
 }
 
 impl History {
@@ -254,16 +333,15 @@ impl History {
         match recorded {
             Recorded::New(source) => {
                 if report.done > 0 {
-                    self.redo.clear();
-                    self.cleared += 1;
+                    self.clear_redo();
                 }
-                if completed(report) {
-                    self.push_undo(Entry::new(source, report.undo.clone()));
+                if let Some(entry) = Entry::done(source, report) {
+                    self.push_undo(entry);
                 }
             }
             Recorded::Redo(entry) => {
-                if completed(report) {
-                    self.push_undo(Entry::new(entry.source, report.undo.clone()));
+                if let Some(entry) = Entry::done(entry.source, report) {
+                    self.push_undo(entry);
                 }
             }
             Recorded::Undo(entry) => {
@@ -281,14 +359,38 @@ impl History {
                     let mut entry = entry;
                     entry.seen = entry
                         .source
-                        .paths
-                        .iter()
-                        .map(|p| (p.clone(), look(p)))
+                        .watched()
+                        .into_iter()
+                        .map(|p| {
+                            let now = look(&p);
+                            (p, now)
+                        })
                         .collect();
                     self.redo.push(entry);
                 }
             }
         }
+    }
+    /// 끝난 이름 변경·새 항목을 이력에 반영한다. `step` 은 성공해 무엇이 바뀌었을 때 그것을 되돌리는
+    /// 단계이고, 실패했거나 바뀐 것이 없으면 None 이다. 다시 실행한 단계가 실패하면 그 단계는 버린다.
+    pub(crate) fn record_step(&mut self, recorded: Recorded, step: Option<UndoStep>) {
+        self.generation += 1;
+        match (recorded, step) {
+            (Recorded::New(source), Some(step)) => {
+                self.clear_redo();
+                self.push_undo(Entry::new(source, vec![step]));
+            }
+            (Recorded::Redo(entry), Some(step)) => {
+                self.push_undo(Entry::new(entry.source, vec![step]));
+            }
+            // 되돌리기는 늘 항목별 보고를 낸다. 여기 오지 않지만 오면 단계를 잃지 않게 제자리에 둔다.
+            (Recorded::Undo(entry), _) => self.push_undo(entry),
+            (Recorded::New(_) | Recorded::Redo(_), None) => {}
+        }
+    }
+    fn clear_redo(&mut self) {
+        self.redo.clear();
+        self.cleared += 1;
     }
 }
 

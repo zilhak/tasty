@@ -4,8 +4,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use super::Operation;
+use super::history::UndoOf;
 use super::job::{Report, Shared};
-use super::{OpKind, Operation};
 use crate::adapters::ui::popup::PopupScope;
 use crate::adapters::ui::popup::explorer_conflict::EXPLORER_CONFLICT_POPUP_ID;
 use crate::explorer_ui::view::ops::{Running, result_is_timed};
@@ -36,10 +37,14 @@ pub(super) fn show_running(
     shared: &Arc<Shared>,
     in_history: bool,
 ) {
-    let Some(kind) = operation.kind() else {
+    let Some(view) = state.explorer_views.get_mut(surface) else {
         return;
     };
-    let Some(view) = state.explorer_views.get_mut(surface) else {
+    let Some(kind) = operation.kind() else {
+        // 진행 표시는 없지만 끝나기 전 되돌리기가 그 앞 단계를 꺼내지 않게 이력을 바쁜 것으로 둔다.
+        if in_history {
+            view.ops.quiet_step = Some(Arc::clone(shared));
+        }
         return;
     };
     let (dest, total) = operation.summary();
@@ -58,7 +63,7 @@ pub(super) fn push_result(
     state: &mut MainViewState,
     surface: u32,
     (report, press): (Report, Option<(u64, u64)>),
-    undo_of: Option<OpKind>,
+    undo_of: Option<UndoOf>,
     lifetime: Duration,
 ) {
     let Some(view) = state.explorer_views.get_mut(surface) else {
@@ -126,6 +131,14 @@ impl crate::app::App {
                 {
                     ev.ops.running = None;
                     changed = true;
+                }
+                if ev
+                    .ops
+                    .quiet_step
+                    .as_ref()
+                    .is_some_and(|s| Arc::ptr_eq(s, shared))
+                {
+                    ev.ops.quiet_step = None;
                 }
             }
             if changed {

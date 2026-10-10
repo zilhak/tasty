@@ -106,6 +106,12 @@ impl FileId {
     }
 }
 
+/// 두 경로가 같은 항목(링크는 링크 자신)을 가리키는가. 식별자를 읽지 못하면 다르다고 본다.
+pub(crate) fn same_file_id(a: &Path, b: &Path) -> bool {
+    let id = |p: &Path| p.symlink_metadata().and_then(|m| FileId::read(p, &m)).ok();
+    matches!((id(a), id(b)), (Some(x), Some(y)) if x == y)
+}
+
 /// 지우기 직전에 다시 볼 원본 항목의 모습. 비교하는 동안 바뀌었으면 지우지 않는다.
 #[derive(Debug, PartialEq, Eq)]
 struct EntryStamp {

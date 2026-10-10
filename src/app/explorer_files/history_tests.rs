@@ -40,7 +40,7 @@ fn undone() -> Report {
 }
 
 fn source(n: usize) -> Source {
-    Source {
+    Source::Paste {
         paths: vec![PathBuf::from(format!("/src/{n}"))],
         destination: "/dest".into(),
         cut: true,
@@ -123,7 +123,7 @@ fn a_move_can_be_undone_and_redone_from_the_history() {
     finish_next(&mut state, sid);
     assert!(dest.join("a.txt").exists());
     let top = history(&state, sid).peek_undo().expect("recorded move");
-    assert_eq!(top.kind(), OpKind::Move);
+    assert_eq!(top.undo_of(), UndoOf::Move);
     assert_eq!(top.count(), 1);
     assert!(history(&state, sid).peek_redo().is_none());
 
@@ -136,8 +136,8 @@ fn a_move_can_be_undone_and_redone_from_the_history() {
     assert!(undone.failed.is_empty());
     assert!(src.join("a.txt").exists() && !dest.join("a.txt").exists());
     assert_eq!(
-        history(&state, sid).peek_redo().map(|e| e.source.cut),
-        Some(true)
+        history(&state, sid).peek_redo().map(Entry::undo_of),
+        Some(UndoOf::Move)
     );
 
     state.explorer_history_step(&engine.read(), sid, true, user(), false);
@@ -145,10 +145,12 @@ fn a_move_can_be_undone_and_redone_from_the_history() {
     assert!(dest.join("a.txt").exists() && !src.join("a.txt").exists());
     assert!(history(&state, sid).peek_redo().is_none());
     assert_eq!(
-        history(&state, sid)
-            .peek_undo()
-            .map(|e| e.source.paths.clone()),
-        Some(vec![src.join("a.txt")])
+        history(&state, sid).peek_undo().map(|e| e.source.clone()),
+        Some(Source::Paste {
+            paths: vec![src.join("a.txt")],
+            destination: dest.clone(),
+            cut: true,
+        })
     );
 }
 
@@ -179,9 +181,10 @@ fn the_history_keeps_the_latest_ten_steps() {
     assert_eq!(kept[MAX_STEPS - 1], moved(2));
 }
 
-/// 끝까지 되지 않은 작업은 이력에 쌓지 않는다. 그래도 무엇을 바꾼 새 작업은 다시 실행 목록을 비운다.
+/// 된 항목이 없는 작업은 이력에 쌓지 않고, 일부만 된 작업은 된 항목만 쌓는다. 무엇을 바꾼 새 작업은
+/// 다시 실행 목록을 비운다.
 #[test]
-fn only_finished_jobs_are_recorded_and_new_changes_clear_redo() {
+fn only_done_items_are_recorded_and_new_changes_clear_redo() {
     let mut h = History::default();
     h.record(Recorded::New(source(0)), &report(OpKind::Move, moved(0)));
     let e = h.take_undo().unwrap();
@@ -194,8 +197,12 @@ fn only_finished_jobs_are_recorded_and_new_changes_clear_redo() {
         reason: Reason::IntoItself,
     });
     h.record(Recorded::New(source(1)), &partial);
-    assert!(h.peek_undo().is_none(), "a partial copy has no undo step");
-    assert!(h.peek_redo().is_none(), "it still changed the disk");
+    assert_eq!(
+        h.take_undo().map(|e| e.undo),
+        Some(moved(1)),
+        "a partial copy keeps what it did"
+    );
+    assert!(h.peek_redo().is_none(), "it changed the disk");
 
     let mut cancelled = report(OpKind::Move, Vec::new());
     cancelled.cancelled = true;
@@ -385,15 +392,15 @@ fn undo_waits_for_a_copy_or_move_in_progress() {
         vec![crate::i18n::t("explorer.menu.history_busy").to_owned()]
     );
     assert_eq!(
-        history(&state, sid).peek_undo().map(|e| e.source.cut),
-        Some(true)
+        history(&state, sid).peek_undo().map(Entry::undo_of),
+        Some(UndoOf::Move)
     );
 
     finish_next(&mut state, sid);
     assert!(!state.explorer_history_busy(sid));
     assert_eq!(
-        history(&state, sid).peek_undo().map(|e| e.source.cut),
-        Some(false)
+        history(&state, sid).peek_undo().map(Entry::undo_of),
+        Some(UndoOf::Copy)
     );
     state.explorer_history_step(&engine.read(), sid, false, user(), false);
     finish_next(&mut state, sid);
@@ -595,8 +602,8 @@ fn a_card_undo_behind_a_new_job_does_not_reach_the_redo_list() {
     assert!(src.join("a.txt").exists() && dest.join("b.txt").exists());
     let h = history(&state, sid);
     assert_eq!(
-        h.peek_undo().map(|e| e.source.cut),
-        Some(false),
+        h.peek_undo().map(Entry::undo_of),
+        Some(UndoOf::Copy),
         "the copy is on top"
     );
     assert!(
@@ -609,8 +616,8 @@ fn a_card_undo_behind_a_new_job_does_not_reach_the_redo_list() {
     finish_next(&mut state, sid);
     assert!(!dest.join("b.txt").exists());
     assert_eq!(
-        history(&state, sid).peek_redo().map(|e| e.source.cut),
-        Some(false)
+        history(&state, sid).peek_redo().map(Entry::undo_of),
+        Some(UndoOf::Copy)
     );
 }
 
@@ -648,8 +655,8 @@ fn a_card_undo_behind_a_card_retry_does_not_reach_the_redo_list() {
     assert!(src.join("a.txt").exists() && dest.join("b.txt").exists());
     let h = history(&state, sid);
     assert_eq!(
-        h.peek_undo().map(|e| e.source.cut),
-        Some(false),
+        h.peek_undo().map(Entry::undo_of),
+        Some(UndoOf::Copy),
         "the retried copy is on top"
     );
     assert!(
@@ -657,3 +664,6 @@ fn a_card_undo_behind_a_card_retry_does_not_reach_the_redo_list() {
         "the older move does not come back as a redo"
     );
 }
+
+#[path = "history_steps_tests.rs"]
+mod steps;

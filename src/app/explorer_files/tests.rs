@@ -428,8 +428,8 @@ fn create_makes_a_folder_or_an_empty_file_and_never_replaces_an_entry() {
         folder,
     };
     let run = |operation: Operation| match operation.run(&quiet()) {
-        Done::Simple(result) => result,
-        other => panic!("create answers with a simple result: {other:?}"),
+        Done::Step(result) => result,
+        other => panic!("create answers with one undo step: {other:?}"),
     };
     assert_eq!(
         create("New folder", true).affected(),
@@ -573,10 +573,10 @@ fn undo_remembers_whether_it_puts_back_a_move() {
             made: None,
         },
     ]);
-    assert_eq!(moved.undo_of(), Some(OpKind::Move));
+    assert_eq!(moved.undo_of(), Some(UndoOf::Move));
     assert_eq!(moved.kind(), Some(OpKind::Undo));
     let copied = Operation::Undo(vec![UndoStep::Created("/a".into(), None)]);
-    assert_eq!(copied.undo_of(), Some(OpKind::Copy));
+    assert_eq!(copied.undo_of(), Some(UndoOf::Copy));
     assert_eq!(Operation::Open("x".into()).kind(), None);
 }
 

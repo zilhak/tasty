@@ -10,7 +10,7 @@ pub(crate) fn stale_text(entry: &Entry) -> Option<String> {
     let reason = entry.stale_reason()?;
     Some(crate::i18n::t_fmt(
         "explorer.menu.undo_stale",
-        &crate::explorer_ui::view::ops::reason_text(&reason),
+        &crate::explorer_ui::view::ops::reason_for(&reason, Some(entry.undo_of())),
     ))
 }
 
@@ -28,11 +28,9 @@ impl super::MainViewState {
     /// 맨 위 단계가 아직 정해지지 않았으므로 받지 않는다.
     pub(crate) fn explorer_history_busy(&self, sid: u32) -> bool {
         self.explorer_file_requests.has_history_for(sid)
-            || self
-                .explorer_views
-                .get(sid)
-                .and_then(|v| v.ops.running.as_ref())
-                .is_some_and(|r| r.in_history)
+            || self.explorer_views.get(sid).is_some_and(|v| {
+                v.ops.running.as_ref().is_some_and(|r| r.in_history) || v.ops.quiet_step.is_some()
+            })
     }
 
     /// 칸 이력의 맨 위 단계를 되돌리거나(`redo` 가 거짓) 다시 실행한다. 단계가 없으면 아무 일도

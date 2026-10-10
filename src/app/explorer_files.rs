@@ -1,12 +1,13 @@
 //! Bounded local Explorer actions. Views queue fixed inputs; App owns execution and joins.
 pub(crate) mod history;
 pub(crate) mod job;
+mod named;
 mod ops;
 mod ui_sync;
 pub(crate) use ui_sync::{forget_press_request, open_conflict};
 use ui_sync::{push_result, show_running};
 
-use history::Recorded;
+use history::{Recorded, UndoOf};
 use job::leftover::Leftover;
 use job::{OpKind, Report, Shared, UndoStep};
 
@@ -57,12 +58,15 @@ pub(crate) enum Operation {
 pub(crate) enum Done {
     Report(Report),
     Simple(Result<(), String>),
+    /// 이름 변경·새 항목. 성공해 무엇이 바뀌었으면 이력에 쌓을 되돌리기 단계를 담는다.
+    Step(Result<Option<UndoStep>, String>),
 }
 impl Done {
     fn success(&self) -> bool {
         match self {
             Self::Report(r) => r.failed.is_empty() && r.skipped.is_empty() && !r.cancelled,
             Self::Simple(r) => r.is_ok(),
+            Self::Step(r) => r.is_ok(),
         }
     }
     /// 실패를 한 줄로 요약한다. 실패가 없으면 None.
@@ -78,6 +82,7 @@ impl Done {
                 )
             }),
             Self::Simple(r) => r.as_ref().err().cloned(),
+            Self::Step(r) => r.as_ref().err().cloned(),
         }
     }
 }
@@ -105,16 +110,17 @@ impl Operation {
             Self::Rename { .. } | Self::Open(_) | Self::Create { .. } => (None, 1),
         }
     }
-    /// 되돌리기라면 되돌리는 작업의 종류. 옮긴 항목이 하나라도 있으면 이동이다.
-    fn undo_of(&self) -> Option<OpKind> {
+    /// 되돌리기라면 되돌리는 작업의 종류. 옮긴 항목이 하나라도 있으면 이동이다. 이력의 단계를
+    /// 되돌릴 때는 그 단계의 원래 작업([`history::Entry::undo_of`])이 이것보다 앞선다.
+    fn undo_of(&self) -> Option<UndoOf> {
         let Self::Undo(steps) = self else {
             return None;
         };
         Some(
             if steps.iter().any(|s| matches!(s, UndoStep::Moved { .. })) {
-                OpKind::Move
+                UndoOf::Move
             } else {
-                OpKind::Copy
+                UndoOf::Copy
             },
         )
     }
@@ -149,7 +155,9 @@ impl Operation {
             Self::Undo(steps) => steps
                 .iter()
                 .map(|s| match s {
-                    UndoStep::Created(p, _) | UndoStep::Replaced(p) => p.as_os_str().len(),
+                    UndoStep::Created(p, _) | UndoStep::Made(p, _) | UndoStep::Replaced(p) => {
+                        p.as_os_str().len()
+                    }
                     UndoStep::Moved { from, to, .. } => from.as_os_str().len() + to.as_os_str().len(),
                 } + std::mem::size_of::<UndoStep>())
                 .sum(),
@@ -202,7 +210,7 @@ impl Operation {
                 let mut removed = Vec::new();
                 for step in steps {
                     match step {
-                        UndoStep::Created(p, _) | UndoStep::Replaced(p) => {
+                        UndoStep::Created(p, _) | UndoStep::Made(p, _) | UndoStep::Replaced(p) => {
                             changed.extend(parents(std::slice::from_ref(p)));
                             removed.push(p.clone());
                         }
@@ -228,15 +236,11 @@ impl Operation {
             Self::RemoveLeftovers { dest, leftovers } => Done::Report(
                 job::leftover::run_remove_leftovers(shared, dest, &leftovers),
             ),
-            Self::Rename { path, name } => {
-                Done::Simple(ops::rename_entry(&path, &name).map_err(|e| e.to_string()))
-            }
+            Self::Rename { path, name } => Done::Step(named::rename(&path, &name)),
             Self::Open(path) => {
                 Done::Simple(crate::platform::reveal::open_path(&path).map_err(|e| e.to_string()))
             }
-            Self::Create { dir, name, folder } => {
-                Done::Simple(ops::create_entry(&dir, &name, folder).map_err(|e| e.to_string()))
-            }
+            Self::Create { dir, name, folder } => Done::Step(named::create(&dir, &name, folder)),
         }
     }
 }
@@ -446,7 +450,7 @@ impl crate::state::MainViewState {
             },
             press: None,
         };
-        // 새 복사·이동은 끝까지 되면 이력에 쌓는다.
+        // 새 복사·이동·이름 변경·새 항목은 된 항목이 있으면 이력에 쌓는다.
         let recorded = recorded
             .take()
             .or_else(|| history::Source::of(&operation).map(Recorded::New));
@@ -470,7 +474,7 @@ struct Job {
     affected: Affected,
     shared: Arc<Shared>,
     worker: JoinHandle<Done>,
-    undo_of: Option<OpKind>,
+    undo_of: Option<UndoOf>,
     recorded: Option<Recorded>,
     /// 마지막으로 다시 그린 진행 상태(끝난 항목, 바이트, 질문 여부). 바뀔 때만 다시 그린다.
     seen: (usize, u64, bool),
@@ -544,7 +548,7 @@ struct Finished {
     target: Target,
     affected: Affected,
     shared: Arc<Shared>,
-    undo_of: Option<OpKind>,
+    undo_of: Option<UndoOf>,
     recorded: Option<Recorded>,
     result: Done,
 }
@@ -665,23 +669,35 @@ impl super::App {
         if !target.view_is_current(view) {
             return;
         }
-        if let Done::Report(report) = result {
-            if let Some(recorded) = recorded
-                && let Some(v) = view.state.explorer_views.get_mut(target.surface)
-            {
-                v.ops.history.record(recorded, &report);
+        match result {
+            Done::Report(report) => {
+                if let Some(recorded) = recorded
+                    && let Some(v) = view.state.explorer_views.get_mut(target.surface)
+                {
+                    v.ops.history.record(recorded, &report);
+                }
+                let lifetime = std::time::Duration::from_millis(
+                    session.read().settings.overlay.toast_duration_ms,
+                );
+                push_result(
+                    &mut view.state,
+                    target.surface,
+                    (report, target.press),
+                    undo_of,
+                    lifetime,
+                );
             }
-            let lifetime =
-                std::time::Duration::from_millis(session.read().settings.overlay.toast_duration_ms);
-            push_result(
-                &mut view.state,
-                target.surface,
-                (report, target.press),
-                undo_of,
-                lifetime,
-            );
-        } else {
-            ui_sync::push_failure(&mut view.state, target.surface, target.press, failure);
+            Done::Step(step) => {
+                if let Some(recorded) = recorded
+                    && let Some(v) = view.state.explorer_views.get_mut(target.surface)
+                {
+                    v.ops.history.record_step(recorded, step.ok().flatten());
+                }
+                ui_sync::push_failure(&mut view.state, target.surface, target.press, failure);
+            }
+            Done::Simple(_) => {
+                ui_sync::push_failure(&mut view.state, target.surface, target.press, failure);
+            }
         }
         target.apply(&mut view.state, success);
         view.mark_dirty();
@@ -719,7 +735,10 @@ impl super::App {
                     continue;
                 }
                 let affected = operation.affected();
-                let undo_of = operation.undo_of();
+                let undo_of = match &recorded {
+                    Some(Recorded::Undo(entry)) => Some(entry.undo_of()),
+                    _ => operation.undo_of(),
+                };
                 let wake = self.view.proxy.clone();
                 let shared = Arc::new(ui_sync::interactive_shared(wake.clone()));
                 show_running(
@@ -756,6 +775,7 @@ impl super::App {
                         tracing::warn!(%error, "Explorer file worker spawn failed");
                         if let Some(v) = view.state.explorer_views.get_mut(target.surface) {
                             v.ops.running = None;
+                            v.ops.quiet_step = None;
                         }
                         if let Some((_, request)) = target.press {
                             ui_sync::forget_press_request(&mut view.state, target.surface, request);

@@ -2,8 +2,7 @@
 //! 되돌릴 수 없게 된 단계는 행을 끄고 이유를 툴팁으로 보인다. 목록 UI 는 없다.
 
 use super::MainView;
-use crate::app::explorer_files::history::Entry;
-use crate::app::explorer_files::job::OpKind;
+use crate::app::explorer_files::history::{Entry, UndoOf};
 use crate::platform::native_menu::MenuItem;
 use crate::runtime::engine_read::EngineRead;
 use crate::state::explorer_history::{redo_stale_text, stale_text};
@@ -11,11 +10,14 @@ use crate::state::explorer_history::{redo_stale_text, stale_text};
 const UNDO: u32 = 110;
 const REDO: u32 = 111;
 
-/// 메뉴 행의 작업 이름(예: "move 3 items").
+/// 메뉴 행의 작업 이름(예: "move 3 items", "rename"). 이름 변경·새 항목은 항목이 하나라 수를 적지 않는다.
 fn op_label(entry: &Entry) -> String {
-    let key = match entry.kind() {
-        OpKind::Move => "explorer.menu.op_move",
-        _ => "explorer.menu.op_copy",
+    let key = match entry.undo_of() {
+        UndoOf::Move => "explorer.menu.op_move",
+        UndoOf::Copy => "explorer.menu.op_copy",
+        UndoOf::Rename => return crate::i18n::t("explorer.menu.op_rename").to_owned(),
+        UndoOf::NewFolder => return crate::i18n::t("explorer.menu.op_new_folder").to_owned(),
+        UndoOf::NewFile => return crate::i18n::t("explorer.menu.op_new_file").to_owned(),
     };
     let n = entry.count();
     crate::i18n::t_count(key, n as u64, &[&n.to_string()])

@@ -14,6 +14,7 @@ use tasty_ui_widgets::{
 
 use super::ExplorerView;
 use crate::adapters::ui::icons;
+use crate::app::explorer_files::history::UndoOf;
 use crate::app::explorer_files::job::leftover::Leftover;
 use crate::app::explorer_files::job::{OpKind, Reason, Report, Shared, UNKNOWN_BYTES, UndoStep};
 use crate::core::fs_list::human_size;
@@ -23,7 +24,10 @@ use crate::i18n::{t, t_args, t_count, t_fmt, t_fmt2};
 mod notice;
 #[path = "ops_press.rs"]
 mod press;
+#[path = "ops_undo.rs"]
+mod undo_text;
 pub(crate) use notice::Refused;
+pub(crate) use undo_text::reason_for;
 
 /// 결과 카드에 경로를 펼쳐 보이는 최대 수. 나머지는 "and n more" 로 줄인다.
 const MAX_RESULT_LINES: usize = 3;
@@ -50,7 +54,7 @@ struct ResultCard {
     id: u64,
     report: Report,
     /// 되돌리기 결과면 되돌린 작업의 종류.
-    undo_of: Option<OpKind>,
+    undo_of: Option<UndoOf>,
     /// 표준 시간 뒤 사라지는 카드. 실패가 있는 카드는 None 이라 닫을 때까지 남는다.
     expires: Option<Instant>,
 }
@@ -58,6 +62,8 @@ struct ResultCard {
 #[derive(Default)]
 pub(crate) struct OpsState {
     pub(crate) running: Option<Running>,
+    /// 진행 표시 없이 실행 중이고 끝나면 이력에 반영할 작업(이름 변경·새 항목).
+    pub(crate) quiet_step: Option<Arc<Shared>>,
     pub(crate) queued: Vec<Queued>,
     results: Vec<ResultCard>,
     /// 받지 않은 요청을 알리는 카드. 표준 시간 뒤 사라진다.
@@ -117,7 +123,7 @@ impl OpsState {
     pub(crate) fn push_result(
         &mut self,
         report: Report,
-        undo_of: Option<OpKind>,
+        undo_of: Option<UndoOf>,
         expires: Option<Instant>,
     ) {
         self.next_card += 1;
@@ -454,11 +460,11 @@ pub(crate) fn reason_text(reason: &Reason) -> String {
     }
 }
 
-fn card_lines(report: &Report) -> (Vec<(String, String)>, Option<String>) {
+fn card_lines(report: &Report, undo_of: Option<UndoOf>) -> (Vec<(String, String)>, Option<String>) {
     let all: Vec<(String, String)> = report
         .failed
         .iter()
-        .map(|f| (home_tilde(&f.path), reason_text(&f.reason)))
+        .map(|f| (home_tilde(&f.path), reason_for(&f.reason, undo_of)))
         .chain(
             report
                 .skipped
@@ -561,7 +567,7 @@ fn card_title(report: &Report) -> (ToastKind, String) {
     (ToastKind::Success, title)
 }
 
-fn undo_title(report: &Report, undo_of: OpKind) -> (ToastKind, String) {
+fn undo_title(report: &Report, undo_of: UndoOf) -> (ToastKind, String) {
     // 바뀌어 남긴 사본은 사용자가 고친 것이라 실패로 세지 않는다. 섞이면 지우지 못한 항목이 제목을 갖고
     // 남긴 사본은 줄로만 보인다.
     let kept = report
@@ -570,13 +576,16 @@ fn undo_title(report: &Report, undo_of: OpKind) -> (ToastKind, String) {
         .filter(|f| f.reason == Reason::ChangedSince)
         .count();
     let failed = report.failed.len() - kept;
-    let moved = undo_of == OpKind::Move;
+    let moved = undo_of == UndoOf::Move;
     if report.cancelled {
         let (done, total) = (report.done.to_string(), report.total.to_string());
         return (
             ToastKind::Info,
             t_fmt2("explorer.result.cancelled_undo", &done, &total),
         );
+    }
+    if let Some(title) = undo_text::single_title(report, undo_of) {
+        return title;
     }
     if failed == 0 && kept > 0 {
         return (
@@ -613,7 +622,7 @@ fn card_text(card: &ResultCard) -> CardText {
         Some(of) => undo_title(report, of),
         None => card_title(report),
     };
-    let (lines, more) = card_lines(report);
+    let (lines, more) = card_lines(report, card.undo_of);
     let (retry, leftovers) = if card.undo_of.is_some() {
         (Vec::new(), Vec::new())
     } else {
