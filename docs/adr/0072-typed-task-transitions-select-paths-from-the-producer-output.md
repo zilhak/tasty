@@ -23,7 +23,7 @@ v2 그래프는 depends_on·binding 으로 순서와 값을 잇지만, 결과에
 - 선택되지 않을 수 있는 task 의 출력을 필수 입력으로 읽으면서 그 task 가 아닌 경로로도 실행될 수 있는 task 는 제출 때 거절한다. 대안 경로의 값은 `one_of`, 없어도 되는 값은 optional·default 로 적는다. 전이 대상은 continue_downstream 을 쓸 수 없고 fallback 대상일 수 없다.
 - v2 task 의 `retry` 는 `reset_downstream` 을 거절한다. 하류는 이미 이전 회차의 실패나 경로로 판정됐고, 되감으면 같은 그래프에서 두 회차의 판단이 섞인다. 새 회차를 열면 저장된 경로와 skip 이유를 지운다.
 - DAG 집계는 선택되지 않은 task 와 fallback 이 대신 성공한 실패를 실패로 보지 않는다. fallback 은 실패를 처리한 정상 경로이므로, 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 그래프를 성공으로 본다. 이 집계 규칙은 v1 fallback 에도 적용한다. fallback 이 끝내 성공하지 못하면 실패다.
-- DAG 집계는 저절로 진행할 수 있는 task 가 남아 있는 동안 실패가 섞여 있어도 진행 상태로 보인다. 저절로는 실행되지 않는 대기(선행 결과를 쓸 수 없는데 대기로 남은 task 와 그것을 전이적으로 기다리는 task)와 사람이 retry·cancel 해야 하는 `unknown` 은 진행할 수 있는 것으로 보지 않는다. 더 진행할 수 없을 때 복구되지 않은 실패가 있으면, 끝까지 성공한 갈래가 있는 그래프는 `partially_failed`, 없는 그래프는 `failed` 다. 갈래의 성공은 끝 task 로 센다. 끝 task 는 그룹 안에 하류가 없는 task 이며, 고르지 않아 건너뛴 task 와 fallback 간선은 하류로 보지 않는다. fallback 이 대신 성공한 끝도 성공으로 센다(복구한 실패를 실패로 세지 않는 것과 같은 이유).
+- DAG 집계는 저절로 진행할 수 있는 task 가 남아 있는 동안 진행 상태를 먼저 보인다. 더 진행할 수 없을 때 복구되지 않은 실패가 있으면 끝까지 성공한 갈래가 있는지로 `partially_failed` 와 `failed` 를 가른다. 갈래의 성공은 끝 task 로 센다. 진행할 수 있는 작업, 막힌 대기, 끝 task 의 정의와 판단 순서는 [agent-collaboration](../features/agent-collaboration/index.md)의 `dag_list` 설명에 있다.
 
 조건 형식·모드·집계 필드는 [agent runner 가이드](../dev-guide/agent-runner.md)의 "전이 조건과 경로 선택" 절에 있다.
 
