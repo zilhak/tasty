@@ -248,7 +248,7 @@ pub(super) fn draw_plugins_subtab(
                         keys,
                         recording: *rec,
                         can_record,
-                        error: state.error.as_deref(),
+                        problem: state.problem(),
                     },
                     RowMode::None => tasty_ui_widgets::KbPluginSlot::Unassigned,
                 },
@@ -277,6 +277,7 @@ pub(super) fn draw_plugins_subtab(
                 reset_hint: t("settings.keybindings.plugins.reset_hint"),
                 draft_hint: t("settings.keybindings.plugins.draft_hint"),
                 unrecognized: t("settings.keybindings.plugins.unrecognized_key"),
+                os_key_name: t("keys.os_key_name"),
                 press_key: t("settings.keybindings.hint_press_key"),
                 no_key: t("settings.keybindings.hint_none"),
                 add_hint: t("settings.keybindings.add_binding_button"),
@@ -333,8 +334,8 @@ struct RowState {
     caption: String,
     /// Custom 키. 초안·저장값의 `Key`, 없으면 매니페스트 기본값.
     keys: Vec<String>,
-    /// 해석하지 못한 첫 키.
-    error: Option<String>,
+    /// 해석하지 못하는 첫 키의 위치와 이유.
+    error: Option<(usize, tasty_key_match::TextKeyProblem)>,
 }
 
 impl RowState {
@@ -387,10 +388,7 @@ impl RowState {
         };
 
         let keys = custom_keys(row, draft);
-        let error = keys
-            .iter()
-            .find(|k| !tasty_key_match::binding_key_recognized(k))
-            .cloned();
+        let error = tasty_key_match::first_text_key_problem(&keys);
 
         Self {
             mode,
@@ -404,6 +402,20 @@ impl RowState {
             keys,
             error,
         }
+    }
+}
+
+impl RowState {
+    /// 위젯에 넘길 키 문제. 슬롯은 표시 문자열 대신 설정 원문을 보인다.
+    fn problem(&self) -> Option<tasty_ui_widgets::KbPluginKeyProblem<'_>> {
+        use tasty_key_match::TextKeyProblem;
+        use tasty_ui_widgets::KbPluginKeyProblem;
+        let (slot, why) = self.error?;
+        let raw = self.keys.get(slot)?.as_str();
+        Some(match why {
+            TextKeyProblem::OsKeyName => KbPluginKeyProblem::OsKeyName { slot, raw },
+            TextKeyProblem::Unrecognized => KbPluginKeyProblem::Unrecognized { slot, raw },
+        })
     }
 }
 
@@ -545,15 +557,28 @@ mod tests {
     }
 
     /// 해석하지 못한 첫 키를 caption 에 싣는다. 뒤의 키는 보지 않는다.
+    /// OS 키 이름을 적은 키는 일반 해석 실패와 다른 caption 을 고른다.
     #[test]
     fn the_first_unrecognized_key_becomes_the_error() {
+        use tasty_ui_widgets::KbPluginKeyProblem;
         let r = row(
             BindingMode::Independent,
             key(&["ctrl+f5", "ctrl+shft+h", "cmd+k"]),
         );
         assert_eq!(
-            state(&r, &Default::default()).error.as_deref(),
-            Some("ctrl+shft+h")
+            state(&r, &Default::default()).problem(),
+            Some(KbPluginKeyProblem::Unrecognized {
+                slot: 1,
+                raw: "ctrl+shft+h"
+            })
+        );
+        let r = row(BindingMode::Independent, key(&["ctrl+f5", "cmd+k"]));
+        assert_eq!(
+            state(&r, &Default::default()).problem(),
+            Some(KbPluginKeyProblem::OsKeyName {
+                slot: 1,
+                raw: "cmd+k"
+            })
         );
         let r = row(BindingMode::Independent, key(&["ctrl+f5", "alt+escape"]));
         assert!(state(&r, &Default::default()).error.is_none());

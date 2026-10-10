@@ -6515,3 +6515,10 @@ help = "Encode Shift+Enter as LF (true) or use the platform default (false)"
 [surface.restore]
 tab_title_fallback = "Shell"
 recovery_unresolved = "Resource recovery is unresolved."
+
+[keys]
+os_key_name = "Write Win, Super and Option as `option`, and Cmd as `alt`."
+
+[keys.os_reserved]
+windows = "Windows may use {} itself, so Tasty might not receive it."
+linux = "Your desktop may use {} itself, so Tasty might not receive it."

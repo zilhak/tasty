@@ -171,11 +171,11 @@ pub use info_modal::{
 };
 pub use input::Input;
 pub use kb_plugins::{
-    KB_PLUGIN_MODE_CUSTOM, KB_PLUGIN_MODE_INHERIT, KB_PLUGIN_MODE_NONE, KbPluginLabels,
-    KbPluginRowOutput, KbPluginRowRects, KbPluginRowView, KbPluginSlot, KbPluginsOutput,
-    KbPluginsView, kb_plugins_subtab,
+    KB_PLUGIN_MODE_CUSTOM, KB_PLUGIN_MODE_INHERIT, KB_PLUGIN_MODE_NONE, KbPluginKeyProblem,
+    KbPluginLabels, KbPluginRowOutput, KbPluginRowRects, KbPluginRowView, KbPluginSlot,
+    KbPluginsOutput, KbPluginsView, kb_plugins_subtab,
 };
-pub use kb_record::{KbRecordSlot, kb_record_slot};
+pub use kb_record::{KbRecordSlot, kb_record_slot, kb_record_slot_sized};
 pub use language_select::{LanguageOption, LanguageSelectLabels, language_select};
 pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};
 pub use mac_permissions::{

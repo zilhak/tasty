@@ -32,7 +32,7 @@ macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Li
 
 ### OS 키 이름 토큰
 
-저장 토큰은 `ctrl`·`alt`·`option`·`shift` 넷뿐이다. `cmd`·`command`·`super`·`win`·`meta` 같은 OS 키 이름은 받지 않고 `option`·`alt` 로 바꾸지도 않는다. winit 의 `super` 는 macOS 에서 Command(`alt` 위치), 다른 OS 에서 Win·Super(`option` 위치)라 같은 낱말이 OS 마다 다른 위치를 가리키고, `meta` 는 환경마다 Alt 나 Super 를 뜻한다. 이 낱말을 정규화하면 저장 문자열의 뜻이 저장한 OS 에 따라 달라져 설정 파일이 OS 독립이 아니게 된다. 이런 바인딩은 인식되지 않는 키로 남아 어떤 입력과도 맞지 않으며, plugin 단축키 입력처럼 텍스트로 받는 곳은 인식하지 못한 키로 표시한다.
+저장 토큰은 `ctrl`·`alt`·`option`·`shift` 넷뿐이다. `cmd`·`command`·`super`·`win`·`meta` 같은 OS 키 이름은 받지 않고 `option`·`alt` 로 바꾸지도 않는다. winit 의 `super` 는 macOS 에서 Command(`alt` 위치), 다른 OS 에서 Win·Super(`option` 위치)라 같은 낱말이 OS 마다 다른 위치를 가리키고, `meta` 는 환경마다 Alt 나 Super 를 뜻한다. 이 낱말을 정규화하면 저장 문자열의 뜻이 저장한 OS 에 따라 달라져 설정 파일이 OS 독립이 아니게 된다. 이런 바인딩은 인식되지 않는 키로 남아 어떤 입력과도 맞지 않는다. plugin 단축키처럼 텍스트 값을 보이는 곳은 일반 해석 실패 문구 대신 "Win·Super·Option 은 `option`, Cmd 는 `alt` 로 적는다" 는 안내(`keys.os_key_name`)를 보인다. 판정은 `tasty_settings::keybindings::os_keys::uses_os_key_name` 이 `+` 로 나눈 조각에서 `cmd`·`super`·`win`·`meta` 를 찾는 것이다.
 
 ### OS 가 가로채는 조합
 

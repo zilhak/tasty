@@ -6453,3 +6453,10 @@ help = "Shift+EnterをLFでエンコードするか（true）、プラットフ�
 [surface.restore]
 tab_title_fallback = "シェル"
 recovery_unresolved = "実行リソースの復旧状態を確認できませんでした。"
+
+[keys]
+os_key_name = "Win・Super・Option は `option`、Cmd は `alt` と書いてください。"
+
+[keys.os_reserved]
+windows = "{} は Windows が使うことがあり、Tasty に届かない場合があります。"
+linux = "{} はデスクトップが使うことがあり、Tasty に届かない場合があります。"

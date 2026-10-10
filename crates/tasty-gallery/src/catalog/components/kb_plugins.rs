@@ -3,17 +3,19 @@
 //! 시안 `kb_plugins_subtab.jsx` 의 견본 넷(기본 · 초안과 해석 실패 · 녹화 중 · 빈 상태)을 위에서부터
 //! 쌓는다. Custom 키는 사용자 결정대로 다른 단축키 서브탭과 같은 녹화 슬롯이다. 플러그인과 명령은
 //! 시안 `KBP_PLUGINS` 와 같은 고정 데이터이고, 초안 규칙(mode 전환 시 시작값, Reset 이 override 를
-//! 지움)도 시안 동작을 따른다. 키 해석 실패는 본체와 같은 `tasty_key_match::binding_key_recognized`
-//! 로 정한다. 갤러리는 키를 캡처하지 않으므로 슬롯을 누르면 녹화 중 모양만 보인다.
+//! 지움)도 시안 동작을 따른다. 키 해석 실패와 OS 키 이름은 본체와 같은
+//! `tasty_key_match::first_text_key_problem` 으로 정한다. 갤러리는 키를 캡처하지 않으므로 슬롯을 누르면 녹화 중 모양만 보인다.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    KB_PLUGIN_MODE_CUSTOM, KB_PLUGIN_MODE_INHERIT, KbPluginLabels, KbPluginRowView, KbPluginSlot,
-    KbPluginsView, kb_plugins_subtab,
+    KB_PLUGIN_MODE_CUSTOM, KB_PLUGIN_MODE_INHERIT, KbPluginKeyProblem, KbPluginLabels,
+    KbPluginRowView, KbPluginSlot, KbPluginsView, kb_plugins_subtab,
 };
+
+use tasty_key_match::TextKeyProblem;
 
 use crate::i18n::{t, t_fmt};
 
@@ -133,6 +135,7 @@ thread_local! {
             &[
                 ("clipboard-viewer/open", Value::Custom("ctrl+shft+h".into())),
                 ("clipboard-viewer/paste-plain", Value::None),
+                ("clipboard-viewer/clear", Value::Custom("cmd+k".into())),
             ],
             None,
         ),
@@ -150,7 +153,7 @@ thread_local! {
 /// 견본 위의 설명 줄 — 시안 각 견본의 caption.
 const CAPTIONS: [&str; 4] = [
     "default — row 1 Custom (record slot + add) · row 2 Inherit + caption · row 3 overridden (draft = saved, Reset enabled)",
-    "draft + invalid — row 1 holds an unparsable key from the file (dot + error) · row 2 switched to None (dot)",
+    "draft + invalid — row 1 holds an unparsable key from the file (dot + error) · row 2 switched to None (dot) · row 3 holds an OS key name (how to write it)",
     "recording — row 1 has two keys and is recording a third · row 3 Custom with no key (None slot)",
     "empty",
 ];
@@ -169,6 +172,7 @@ fn labels() -> KbPluginLabels<'static> {
         reset_hint: t("settings.keybindings.plugins.reset_hint"),
         draft_hint: t("settings.keybindings.plugins.draft_hint"),
         unrecognized: t("settings.keybindings.plugins.unrecognized_key"),
+        os_key_name: t("keys.os_key_name"),
         press_key: t("settings.keybindings.hint_press_key"),
         no_key: t("settings.keybindings.hint_none"),
         add_hint: t("settings.keybindings.add_binding_button"),
@@ -266,12 +270,15 @@ fn specimen(ui: &mut egui::Ui, theme: &Theme, index: usize, s: &mut Specimen) {
             _ => String::new(),
         })
         .collect();
-    let errors: Vec<Option<&str>> = bufs
+    let problems: Vec<Option<KbPluginKeyProblem<'_>>> = bufs
         .iter()
         .map(|b| {
-            b.iter()
-                .copied()
-                .find(|k| !tasty_key_match::binding_key_recognized(k))
+            let (slot, why) = tasty_key_match::first_text_key_problem(b)?;
+            let raw = b[slot];
+            Some(match why {
+                TextKeyProblem::OsKeyName => KbPluginKeyProblem::OsKeyName { slot, raw },
+                TextKeyProblem::Unrecognized => KbPluginKeyProblem::Unrecognized { slot, raw },
+            })
         })
         .collect();
     let displays: Vec<Vec<String>> = bufs
@@ -305,7 +312,7 @@ fn specimen(ui: &mut egui::Ui, theme: &Theme, index: usize, s: &mut Specimen) {
                         .as_ref()
                         .and_then(|(k, idx)| (*k == keys[i]).then_some(*idx)),
                     can_record: true,
-                    error: errors[i],
+                    problem: problems[i],
                 },
                 Value::None => KbPluginSlot::Unassigned,
             },

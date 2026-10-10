@@ -42,6 +42,8 @@ pub struct KbPluginLabels<'a> {
     pub draft_hint: &'a str,
     /// 해석하지 못한 키 caption 의 앞부분. 뒤에 그 키를 mono 로 붙인다.
     pub unrecognized: &'a str,
+    /// OS 키 이름(`cmd`·`super`·`win`·`meta`)을 적은 키의 caption. 백틱 구간은 code run 이다.
+    pub os_key_name: &'a str,
     /// 녹화 중인 슬롯의 안내 문구.
     pub press_key: &'a str,
     /// Custom 인데 키가 하나도 없을 때의 None 슬롯 문구.
@@ -67,11 +69,32 @@ pub enum KbPluginSlot<'a> {
         recording: Option<usize>,
         /// 확인 popup 이 떠 있으면 false — 슬롯을 disabled 로 그리고 클릭을 받지 않는다.
         can_record: bool,
-        /// 해석하지 못한 첫 키(직접 고친 설정 파일 등).
-        error: Option<&'a str>,
+        /// 직접 고친 설정 파일 등에서 온 키의 문제. 줄 아래 caption 하나로 보인다.
+        problem: Option<KbPluginKeyProblem<'a>>,
     },
     /// 단축키 없음.
     Unassigned,
+}
+
+/// Custom 키 하나의 문제. 행마다 첫 문제 하나만 보인다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KbPluginKeyProblem<'a> {
+    /// 해석하지 못한 키. `slot` 번째 슬롯이 원문 `raw` 를 오류 테두리로 보이고, caption 은
+    /// [`KbPluginLabels::unrecognized`] 뒤에 원문을 붙인다.
+    Unrecognized { slot: usize, raw: &'a str },
+    /// 저장 토큰 대신 OS 키 이름을 적은 키. 슬롯은 `Unrecognized` 와 같고 caption 은
+    /// [`KbPluginLabels::os_key_name`] 이다.
+    OsKeyName { slot: usize, raw: &'a str },
+}
+
+impl KbPluginKeyProblem<'_> {
+    /// 원문을 오류 테두리로 보일 슬롯과 그 원문.
+    fn invalid_slot(&self) -> (usize, &str) {
+        match *self {
+            KbPluginKeyProblem::Unrecognized { slot, raw }
+            | KbPluginKeyProblem::OsKeyName { slot, raw } => (slot, raw),
+        }
+    }
 }
 
 impl KbPluginSlot<'_> {
@@ -382,12 +405,7 @@ fn control_line(
                 out.source = Some(s);
             }
         }
-        KbPluginSlot::Custom {
-            keys,
-            recording,
-            can_record,
-            ..
-        } => record_slots(ui, theme, keys, *recording, *can_record, labels, out),
+        KbPluginSlot::Custom { .. } => record_slots(ui, theme, slot, labels, out),
         KbPluginSlot::Unassigned => {
             let galley = text_galley(
                 ui,
@@ -419,15 +437,24 @@ fn control_line(
 }
 
 /// Custom 의 녹화 슬롯 줄 — 다른 단축키 서브탭(`entries`)과 같은 슬롯 모양·폭·슬롯 사이 간격.
+/// 문제가 있는 키의 슬롯은 표시용 키 대신 설정 원문을 오류 테두리로 보인다.
 fn record_slots(
     ui: &mut egui::Ui,
     theme: &Theme,
-    keys: &[&str],
-    recording: Option<usize>,
-    can_record: bool,
+    slot: &KbPluginSlot<'_>,
     labels: &KbPluginLabels<'_>,
     out: &mut KbPluginRowOutput,
 ) {
+    let KbPluginSlot::Custom {
+        keys,
+        recording,
+        can_record,
+        problem,
+    } = *slot
+    else {
+        return;
+    };
+    let invalid = problem.as_ref().map(KbPluginKeyProblem::invalid_slot);
     let width = theme.kb_record_width();
     let add_width = theme.kb_record_add_width();
     let len = keys.len();
@@ -444,10 +471,10 @@ fn record_slots(
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
         for (idx, key) in keys.iter().enumerate() {
-            let slot = if recording == Some(idx) {
-                KbRecordSlot::Recording(labels.press_key)
-            } else {
-                KbRecordSlot::Binding(key)
+            let slot = match invalid {
+                _ if recording == Some(idx) => KbRecordSlot::Recording(labels.press_key),
+                Some((i, raw)) if i == idx => KbRecordSlot::Invalid(raw),
+                _ => KbRecordSlot::Binding(key),
             };
             let resp = kb_record_slot(ui, theme, slot, width, can_record);
             push(out, &resp, idx);
@@ -469,8 +496,23 @@ fn record_slots(
     });
 }
 
-/// 줄 아래 caption — Inherit 은 해석된 키(muted), 해석 실패는 danger 에 키를 mono 로.
+/// 줄 아래 caption — Inherit 은 해석된 키(muted), 해석 실패는 danger 에 키를 mono 로,
+/// OS 키 이름은 danger 에 저장 토큰을 code run 으로.
 fn caption(ui: &mut egui::Ui, theme: &Theme, slot: &KbPluginSlot<'_>, labels: &KbPluginLabels<'_>) {
+    if let KbPluginSlot::Custom {
+        problem: Some(KbPluginKeyProblem::OsKeyName { .. }),
+        ..
+    } = slot
+    {
+        crate::ui_code::ui_copy(
+            ui,
+            theme,
+            labels.os_key_name,
+            theme.font_size_caption,
+            theme.kb_plugin_error_fg().to_egui(),
+        );
+        return;
+    }
     let size = theme.font_size_caption.value();
     let line_height = Some(size * theme.line_height_ui);
     let mut job = egui::text::LayoutJob::default();
@@ -487,7 +529,8 @@ fn caption(ui: &mut egui::Ui, theme: &Theme, slot: &KbPluginSlot<'_>, labels: &K
             },
         ),
         KbPluginSlot::Custom {
-            error: Some(key), ..
+            problem: Some(KbPluginKeyProblem::Unrecognized { raw: key, .. }),
+            ..
         } => {
             let color = theme.kb_plugin_error_fg().to_egui();
             job.append(
@@ -566,6 +609,7 @@ mod tests {
         reset_hint: "Clear the override and use the manifest default.",
         draft_hint: "Changed — not saved yet",
         unrecognized: "Unrecognized key:",
+        os_key_name: "Write Win, Super and Option as `option`, and Cmd as `alt`.",
         press_key: "Press a key combination...",
         no_key: "None",
         add_hint: "Add a shortcut",
@@ -614,7 +658,7 @@ mod tests {
                                     keys,
                                     recording: *recording,
                                     can_record: true,
-                                    error: None,
+                                    problem: None,
                                 },
                                 Kind::None => KbPluginSlot::Unassigned,
                             },

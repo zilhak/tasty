@@ -332,6 +332,30 @@ pub fn binding_key_recognized(binding: &str) -> bool {
         || NAMED_KEY_TOKENS.iter().any(|(_, name)| *name == token)
 }
 
+/// 텍스트로 넣은 키(설정 파일·plugin override)의 해석 문제.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextKeyProblem {
+    /// 저장 토큰 대신 OS 키 이름(`cmd`·`super`·`win`·`meta`)을 적었다.
+    OsKeyName,
+    /// 그 밖의 이유로 [`binding_key_recognized`] 가 받지 않는다.
+    Unrecognized,
+}
+
+/// `keys` 중 해석하지 못하는 첫 키의 위치와 이유. OS 키 이름이 있으면 일반 해석 실패보다
+/// 먼저 그 이유를 고른다 — 어떻게 적어야 하는지 안내할 수 있기 때문이다.
+pub fn first_text_key_problem<S: AsRef<str>>(keys: &[S]) -> Option<(usize, TextKeyProblem)> {
+    keys.iter().enumerate().find_map(|(i, k)| {
+        let k = k.as_ref();
+        if binding_key_recognized(k) {
+            None
+        } else if tasty_settings::keybindings::os_keys::uses_os_key_name(k) {
+            Some((i, TextKeyProblem::OsKeyName))
+        } else {
+            Some((i, TextKeyProblem::Unrecognized))
+        }
+    })
+}
+
 /// 단축키를 찾을 때 쓸 키를 정한다. 단축키 경로(본 창·plugin·webview)가 같은 규칙을 쓴다.
 ///
 /// - 물리 키가 F13~F24 인데 논리 키가 이름 키가 아니면 그 F 키로 본다. macOS winit 은 F21~F24 의
@@ -657,6 +681,19 @@ mod egui_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_bad_key_says_whether_an_os_key_name_was_written() {
+        assert_eq!(first_text_key_problem(&["ctrl+k", "option+k"]), None);
+        assert_eq!(
+            first_text_key_problem(&["ctrl+k", "cmd+k", "ctrl+shft+h"]),
+            Some((1, TextKeyProblem::OsKeyName))
+        );
+        assert_eq!(
+            first_text_key_problem(&["ctrl+shft+h", "super+k"]),
+            Some((0, TextKeyProblem::Unrecognized))
+        );
+    }
 
     #[test]
     fn recognized_keys_are_the_ones_the_matcher_can_match() {

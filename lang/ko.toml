@@ -6453,3 +6453,10 @@ help = "Shift+Enter를 LF로 인코딩하거나(true) 플랫폼 기본값을 사
 [surface.restore]
 tab_title_fallback = "셸"
 recovery_unresolved = "실행 자원의 복구 상태를 확인하지 못했습니다."
+
+[keys]
+os_key_name = "Win·Super·Option 은 `option`, Cmd 는 `alt` 로 적으세요."
+
+[keys.os_reserved]
+windows = "Windows가 {}를 먼저 쓸 수 있어 Tasty에 전달되지 않을 수 있습니다."
+linux = "데스크톱이 {}를 먼저 쓸 수 있어 Tasty에 전달되지 않을 수 있습니다."

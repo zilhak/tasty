@@ -15,6 +15,9 @@ pub enum KbRecordSlot<'a> {
     Add,
     /// 바인딩이 없는 행의 슬롯. 테두리와 흐린 caption 글자만 그린다. 누르면 첫 바인딩을 녹화한다.
     Empty(&'a str),
+    /// 해석하지 못한 설정 파일 원문. [`Binding`](Self::Binding) 과 같은 채움·글자에 오류 테두리
+    /// (`kb-plugin-error-fg`)를 두르고, 호버해도 테두리를 바꾸지 않는다.
+    Invalid(&'a str),
 }
 
 /// 슬롯을 그린다. 폭은 `width` 이상이고 글자가 더 길면 넓어진다. 높이는 `kb-record-height` 다.
@@ -27,20 +30,35 @@ pub fn kb_record_slot(
     width: LogicalPx,
     enabled: bool,
 ) -> egui::Response {
+    kb_record_slot_sized(ui, theme, slot, width, theme.kb_record_height(), enabled)
+}
+
+/// [`kb_record_slot`] 과 같고 높이만 `height` 다. 한 줄의 컨트롤 높이를 맞추는 화면(Plugins 서브탭)이 쓴다.
+pub fn kb_record_slot_sized(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    slot: KbRecordSlot<'_>,
+    width: LogicalPx,
+    height: LogicalPx,
+    enabled: bool,
+) -> egui::Response {
     let caption = theme.font_size_caption.value();
     let font = match slot {
         KbRecordSlot::Empty(_) => egui::FontId::proportional(caption),
         _ => egui::FontId::monospace(caption),
     };
     let text = match slot {
-        KbRecordSlot::Binding(s) | KbRecordSlot::Recording(s) | KbRecordSlot::Empty(s) => s,
+        KbRecordSlot::Binding(s)
+        | KbRecordSlot::Recording(s)
+        | KbRecordSlot::Empty(s)
+        | KbRecordSlot::Invalid(s) => s,
         KbRecordSlot::Add => "",
     };
     let galley = ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font, egui::Color32::PLACEHOLDER));
     let pad_x = theme.spacing_sm.value();
     let size = egui::vec2(
         width.value().max(galley.size().x + 2.0 * pad_x),
-        theme.kb_record_height().value(),
+        height.value(),
     );
     let sense = if enabled {
         egui::Sense::click()
@@ -70,6 +88,11 @@ pub fn kb_record_slot(
             }
             KbRecordSlot::Add => (None, border, theme.text_muted()),
             KbRecordSlot::Empty(_) => (None, border, theme.kb_record_empty_fg()),
+            KbRecordSlot::Invalid(_) => (
+                Some(theme.surface_raised()),
+                theme.kb_plugin_error_fg(),
+                theme.text_primary(),
+            ),
         }
     };
     let painter = ui.painter();

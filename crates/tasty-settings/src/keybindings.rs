@@ -343,6 +343,8 @@ impl Default for KeybindingSettings {
 }
 
 pub mod crud;
+/// 텍스트로 넣은 바인딩에 붙이는 OS 안내 — OS 가 먼저 받는 조합과 OS 키 이름 표기.
+pub mod os_keys;
 /// 바인딩 문자열 파서와 modifier 조합 — 이 크레이트가 저장하는 값의 해석 규칙.
 pub mod parse;
 mod presets;
