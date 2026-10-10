@@ -12,7 +12,7 @@ const BINDING_ALT: ModifiersState = ModifiersState::SUPER;
 #[cfg(not(target_os = "macos"))]
 const BINDING_ALT: ModifiersState = ModifiersState::ALT;
 
-/// 바인딩 `option` 토큰에 대응하는 modifier — macOS 전용(Option = winit `ALT`).
+/// macOS 에서 바인딩 `option` 토큰에 대응하는 modifier(Option = winit `ALT`). 다른 OS 의 Win·Super 는 별도 시험이 본다.
 #[cfg(target_os = "macos")]
 const BINDING_OPTION: ModifiersState = ModifiersState::ALT;
 

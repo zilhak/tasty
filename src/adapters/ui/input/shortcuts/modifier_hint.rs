@@ -1,5 +1,5 @@
 //! 누른 수식키를 포함하는 조합별 단축키와 역할 안내를 만든다. UI 상태는 바꾸지 않는다.
-//! ctrl/alt/shift와 macOS 전용 option을 사용한다. alt는 macOS에서 Command에 대응한다.
+//! ctrl/alt/option/shift 네 축을 사용한다. alt는 macOS에서 Command, option은 macOS에서 Option, 다른 OS에서 Win·Super에 대응한다.
 //! 조합 크기순으로, 같은 크기는 Ctrl→Alt→Option→Shift 순으로 정렬한다.
 //!
 //! 설정 필드와 script_bindings, 전달받은 PluginBindingInput을 읽는다.

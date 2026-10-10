@@ -3523,7 +3523,7 @@ help = "Ctrl を押した状態に設定"
 help = "`alt` を押した状態に設定します。実際のキーは macOS では Command、それ以外では Alt です。"
 
 [cli.help._root.debug.modifier-hint.hold.arg.option]
-help = "`option` を押した状態に設定します。実入力でこの状態になるのは macOS の Option キーだけです。他のプラットフォームでは通常のキー入力で作れない状態の検証に使います。"
+help = "`option` を押した状態に設定します。実際のキーは macOS では Option、Windows では Win、それ以外では Super です。"
 
 [cli.help._root.debug.modifier-hint.hold.arg.shift]
 help = "Shift を押した状態に設定"

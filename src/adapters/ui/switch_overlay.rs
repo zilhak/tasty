@@ -34,7 +34,7 @@ pub struct SwitchOverlayState {
 /// 설정된 탭·워크스페이스·카테고리 modifier 조합과 정확히 일치하는 대상을 반환한다.
 /// 카테고리 기능의 사용 여부는 호출부에서 확인한다.
 /// 입력은 정규화된 값이다. alt 토큰은 macOS의 Command, 나머지 플랫폼의 Alt이며
-/// option은 macOS Option이고 다른 플랫폼에서는 false다.
+/// option은 macOS의 Option, 나머지 플랫폼의 Win·Super다(`tasty_key_match::token_axes`).
 pub fn switch_target_for(
     kb: &KeybindingSettings,
     ctrl: bool,

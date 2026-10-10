@@ -296,7 +296,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 **새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발생시키므로 CLI 의 `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 — 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 이 액션은 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션은 `keybinding.rs`·`double_tap.rs`·`dispatch.rs` 세 진입점 전부에서 처리한다.
 
-**드래그 반전 modifier(`explorer_drag_flip_modifier`)** 는 키 조합이 아니라 드래그 중 누르고 있는 modifier 다. 값은 `tab_switch_modifier` 와 같은 modifier 조합 문자열이고, 기본은 macOS `option`, 다른 OS `ctrl` 이다. 누르고 있으면 드래그 놓기의 기본 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는다([드래그 앤 드롭](file-operations.md#드래그-앤-드롭)). 설정 › 단축키 › General 서브탭 끝(엔트리 아래 구분선 뒤)의 한 행에서 고르거나 config.toml 의 `[keybindings]` 에서 바꾼다. 단축키 가져오기는 이 값도 옮기며, macOS 에서 내보낸 `option` 은 다른 OS 에서 option 마이그레이션으로 바꾼다([key-mapping](../../design/policies/key-mapping.md#이식-시-option-처리)).
+**드래그 반전 modifier(`explorer_drag_flip_modifier`)** 는 키 조합이 아니라 드래그 중 누르고 있는 modifier 다. 값은 `tab_switch_modifier` 와 같은 modifier 조합 문자열이고, 기본은 macOS `option`, 다른 OS `ctrl` 이다. 누르고 있으면 드래그 놓기의 기본 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는다([드래그 앤 드롭](file-operations.md#드래그-앤-드롭)). 설정 › 단축키 › General 서브탭 끝(엔트리 아래 구분선 뒤)의 한 행에서 고르거나 config.toml 의 `[keybindings]` 에서 바꾼다. 단축키 가져오기는 이 값도 그대로 옮기며, macOS 에서 내보낸 `option` 은 다른 OS 에서 Win·Super 를 누른 채 끄는 동작이 된다([key-mapping](../../design/policies/key-mapping.md#이식-시-option-처리)).
 
 ### 타입어헤드로 항목 선택
 

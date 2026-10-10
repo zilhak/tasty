@@ -3523,7 +3523,7 @@ help = "Ctrl을 누른 상태로 설정"
 help = "`alt`를 누른 상태로 설정합니다. 실제 키는 macOS의 Command, 그 외 플랫폼의 Alt입니다."
 
 [cli.help._root.debug.modifier-hint.hold.arg.option]
-help = "`option`을 누른 상태로 설정합니다. 실제로는 macOS의 Option 키만 이 상태를 만듭니다. 다른 플랫폼에서는 일반 키 입력으로 만들 수 없는 상태를 검증할 때 사용합니다."
+help = "`option`을 누른 상태로 설정합니다. 실제 키는 macOS에서는 Option, Windows에서는 Win, 그 밖에서는 Super입니다."
 
 [cli.help._root.debug.modifier-hint.hold.arg.shift]
 help = "Shift를 누른 상태로 설정"

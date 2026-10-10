@@ -421,9 +421,7 @@ pub enum ModifierHintDebugCommands {
         /// Hold the `alt` token — the physical key differs by platform: Command on macOS, Alt elsewhere.
         #[arg(long)]
         alt: bool,
-        /// Hold the `option` token — real input raises it only on macOS (physical
-        /// Option); on other platforms no key produces it, so setting it here
-        /// forces a state that platform cannot otherwise reach.
+        /// Hold the `option` token — the physical key differs by platform: Option on macOS, Win on Windows, Super elsewhere.
         #[arg(long)]
         option: bool,
         /// Hold the shift axis.

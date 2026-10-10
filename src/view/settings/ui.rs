@@ -243,7 +243,7 @@ pub struct SettingsUiState {
     /// 합성과 plugin page 렌더링에서 참조한다. 비어 있으면 plugin sub-tab
     /// 자체가 표시되지 않는다 (= dead-setting 미노출 정책).
     pub settings_pages: Vec<SettingsPageEntry>,
-    /// Keybindings › Import / Export 서브탭 상태(미리보기 · 마이그레이션 선택 · 요청).
+    /// Keybindings › Import / Export 서브탭 상태(미리보기 · 행 선택 · 요청).
     import_export: ImportExportState,
     /// 모달 오픈 시 host 가 주입하는 plugin override 원본 · 설치 plugin — export/import 가 쓴다.
     plugin_bundle: PluginBundleContext,
