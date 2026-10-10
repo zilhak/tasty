@@ -58,7 +58,7 @@ workspace)의 `Workspace.mirror` 플래그를 1 회 확인해 로컬/원격을 �
 
 `DirEntryInfo`(`src/core/fs_list.rs`)는 로컬/원격 어디서 만들어졌든 항상 `Option<SystemTime>` 을
 든다. wire 조립/파싱 경계(`list_dir_entry_wire`/`parse_list_dir_result`)에서만
-`modified_unix: u64`(unix epoch 초)로 변환한다. 사람이 읽는 포맷(`"YYYY-MM-DD"`,
+`modified_unix: u64`(unix epoch 초)로 변환한다. OS 숨김 표시는 표시가 있는 항목에만 `os_hidden: true` 로 싣는 선택 필드다. 없으면 받는 쪽이 거짓으로 읽으므로 옛 server·옛 client 와 섞여도 오류가 없다(탐색기의 숨김 판정은 [Explorer](../../surfaces/explorer/index.md#숨김-파일)). 사람이 읽는 포맷(`"YYYY-MM-DD"`,
 `fs_list::format_modified`)은 view 렌더 직전에만 계산 — 로컬/원격 어느 쪽도 이 함수 하나를
 공유한다.
 
@@ -444,10 +444,10 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `on_event` 의 `"file_picker.result"` 수신).
 - 원격 요청: `src/core/mod.rs`의 요청 값 `PendingListDirForward`/`next_list_dir_request_id`,
   `src/app/engine_action.rs`의 원 projection에 묶인 `ListDirectory` → `src/remote/state.rs`의 pending list 큐.
-- 원격 전송(client): `src/app/attach_client/forward.rs`(조회 전달), `src/app/attach_client/wire.rs`(`parse_list_dir_result`), `src/app/attach_client/output.rs`(`MirrorEvent::ListDirResult` 적용).
+- 원격 전송(client): `src/app/attach_client/forward.rs`(조회 전달), `src/app/attach_client/wire/list_dir.rs`(`parse_list_dir_result`), `src/app/attach_client/output.rs`(`MirrorEvent::ListDirResult` 적용, 항목 변환은 `output/remote_entry.rs`).
 - 원격 수신(server): `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg`, `pump_inbound`
   분류), `src/remote/server/content_queries.rs`(`handle_list_dir_request`, `list_dir_for_request`,
-  `list_dir_entry_wire`, `list_dir_entries_wire_capped`/`LIST_DIR_ENTRIES_BYTE_BUDGET`). GUI
+  `list_dir_entries_wire_capped`, 항목 하나는 `content_queries/list_dir_wire.rs` 의 `list_dir_entry_wire`/`LIST_DIR_ENTRIES_BYTE_BUDGET`). GUI
   (`src/app/event_handler.rs::apply_list_dir_request_msg`)와 headless(`src/boot/headless_stream.rs`) 양쪽
   진입점에서 동일 서버 로직을 호출.
 - Popup 상태: `src/state/dialogs.rs`(`FilePickerData`, `FpLoadState`, `FilePickerResult`).

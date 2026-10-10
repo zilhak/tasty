@@ -1,4 +1,4 @@
-<!-- source-hash: 6822aacc52a2 -->
+<!-- source-hash: d1526b2da597 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -93,7 +93,7 @@ Press the **Preview panel** button in the toolbar to open a panel to the right o
 
 ### Hidden files
 
-Files and folders whose names start with a dot (`.`), along with items marked hidden on Windows (the Hidden attribute) or on macOS (`chflags hidden`), are left out of the list at first, and the status line below says how many, such as **2 hidden**. Press `Ctrl+Shift+.` (`Cmd+Shift+.` on macOS) or choose **Show hidden files** in the **More** menu to show them; hidden items then show their name and icon in a dimmer text color. Do the same to hide them again. Each Explorer remembers the setting across restarts and in presets you save. The folder tree on the left follows the same setting. Subfolder search results always include hidden items.
+Files and folders whose names start with a dot (`.`), along with items marked hidden on Windows (the Hidden attribute) or on macOS (`chflags hidden`), are left out of the list at first, and the status line below says how many, such as **2 hidden**. Press `Ctrl+Shift+.` (`Cmd+Shift+.` on macOS) or choose **Show hidden files** in the **More** menu to show them; hidden items then show their name and icon in a dimmer text color. Do the same to hide them again. Each Explorer remembers the setting across restarts and in presets you save. The folder tree on the left follows the same setting. Subfolder search results always include hidden items. An Explorer in a remote workspace also follows the remote computer's hidden attribute or flag. If the remote computer runs an older Tasty, only the leading dot counts.
 
 ### Properties
 
