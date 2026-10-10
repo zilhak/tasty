@@ -1,9 +1,10 @@
 //! 수식키 글리프(cmdKey · optionKey · shiftKey)가 쓰이는 두 자리 — 키캡 칩과
 //! Settings 의 수식키 표시 스타일 드롭다운. 시안 `icons.jsx` 의 "Modifier symbols in use".
+//! 아래에 `option` 토큰의 OS 별 표기(시안 `overlays-windows-b12.jsx` 의 "Win · Super as option")를 둔다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{KbdKey, kbd_parts};
+use tasty_ui_widgets::{KbRecordSlot, KbdKey, kb_record_slot, kbd_parts};
 
 use crate::catalog::icons::{CHECK, CHEVRON_DOWN, CMD_KEY, MockGlyph, OPTION_KEY, SHIFT_KEY};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, dont, meta, note, stage};
@@ -19,6 +20,17 @@ const MENU_ROW_GAP: LogicalPx = LogicalPx(1.0);
 const CHIP_ROW_GAP: LogicalPx = LogicalPx(20.0);
 /// 두 묶음 사이 — 무대 `gap: 30`.
 const STAGE_GAP: LogicalPx = LogicalPx(30.0);
+/// OS 별 표기 표의 OS 이름 칸 — 시안 `gridTemplateColumns: "72px 140px 1fr"` 의 72.
+const OS_LABEL_W: LogicalPx = LogicalPx(72.0);
+
+/// `option` 토큰의 OS 별 표기 — (OS, 녹화 슬롯에 보이는 조합, 키캡 낱말). 시안 `wOS`.
+/// Windows·Linux 는 아이콘 없이 낱말이고 Linux 는 데스크톱과 관계없이 Super 다. macOS 줄은 시안의
+/// 기호 대신 글자 표시 스타일로 적는다 — 기호는 위 키캡처럼 벡터 글리프로만 그린다.
+const OPTION_BY_OS: [(&str, &str, &str); 3] = [
+    ("macOS", "Ctrl+Option+K", "Option"),
+    ("Windows", "Ctrl+Win+K", "Win"),
+    ("Linux", "Super+Shift+1", "Super"),
+];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -63,6 +75,42 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             },
         );
     });
+
+    stage(ui, theme, StageVariant::Wrap, |ui| {
+        cluster(ui, theme, "option per OS — Win · Super as words", |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                for (os, combo, word) in OPTION_BY_OS {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                        ui.allocate_ui(egui::vec2(OS_LABEL_W.value(), 0.0), |ui| {
+                            ui.set_width(OS_LABEL_W.value());
+                            ui.label(
+                                egui::RichText::new(os)
+                                    .size(theme.font_size_caption.value())
+                                    .color(theme.text_secondary().to_egui()),
+                            );
+                        });
+                        kb_record_slot(
+                            ui,
+                            theme,
+                            KbRecordSlot::Binding(combo),
+                            theme.kb_record_width(),
+                            true,
+                        );
+                        kbd_parts(ui, theme, &[KbdKey::Text(word)]);
+                    });
+                }
+            });
+        });
+    });
+    note(
+        ui,
+        theme,
+        "option is Option (display setting: text or glyph) on macOS, Win on Windows and Super on \
+         Linux on every desktop, KDE included. Words, no logo glyph. The display-style dropdown \
+         stays macOS-only. The OS-reserved and OS key name captions are in Keybindings › Plugins.",
+    );
 
     meta(
         ui,

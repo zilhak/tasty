@@ -827,6 +827,10 @@ props 를 채운다.
 키 해석 실패 판정은 시안 `kbpParse` 를 옮기지 않고 키 매칭 규칙(`tasty_key_match::binding_key_recognized`)을 쓴다.
 시안은 `cmd`·`super` modifier 도 받지만 매칭 규칙에 그 토큰이 없어 해석 실패로 보인다. `f13`~`f24` 는 매칭 규칙이 받는다.
 
+시안 `overlays-windows-b12.jsx` 의 "Win · Super as option" 중 OS 별 표기(조합 슬롯 · 키캡 낱말)는 갤러리
+Icons › `keys-in-use`(`catalog/icons_keys.rs`)의 "option per OS" 묶음에 있다. macOS 줄은 시안 기호 대신
+글자 표시 스타일로 적는다(기호는 벡터 글리프로만 그린다). 같은 시안의 예약 경고·OS 키 이름 caption 은 위 kbplugins 견본에 있다.
+
 ## Settings › Keybindings › Import / Export (kbimportexport)
 
 디자인 `ui_kits/terminal/overlays/kb_import_export.jsx` + `settings_window.jsx`(`KB_L2_SEPARATED` ·
