@@ -276,6 +276,8 @@ fn progress_text(kind: OpKind, snap: &crate::app::explorer_files::job::Snapshot)
         OpKind::Move => "explorer.op.moving",
         OpKind::Trash => "explorer.op.trashing",
         OpKind::Undo => "explorer.op.undoing",
+        OpKind::RemoveOriginals if snap.removing => "explorer.progress.removing_originals",
+        OpKind::RemoveOriginals => "explorer.progress.checking",
     };
     let current = (snap.items_done + 1).min(snap.items_total.max(1));
     t_args(
@@ -298,6 +300,7 @@ fn queue_title(kind: OpKind, count: usize, dest: Option<&Path>) -> String {
         OpKind::Move => ("explorer.op.queue_move", &[&n, &dest]),
         OpKind::Trash => ("explorer.op.queue_trash", &[&n]),
         OpKind::Undo => ("explorer.op.queue_undo", &[&n]),
+        OpKind::RemoveOriginals => ("explorer.queue.remove_originals", &[&n]),
     };
     t_count(key, count as u64, args)
 }
@@ -468,7 +471,7 @@ fn kind_key(
 ) -> &'static str {
     match kind {
         OpKind::Copy => copy,
-        OpKind::Move | OpKind::Undo => moved,
+        OpKind::Move | OpKind::Undo | OpKind::RemoveOriginals => moved,
         OpKind::Trash => trash,
     }
 }
@@ -483,7 +486,7 @@ fn card_title(report: &Report) -> (ToastKind, String) {
     if report.cancelled {
         let key = match k {
             OpKind::Copy => "explorer.result.cancelled_copy",
-            OpKind::Move => "explorer.result.cancelled_move",
+            OpKind::Move | OpKind::RemoveOriginals => "explorer.result.cancelled_move",
             OpKind::Trash => "explorer.result.cancelled_trash",
             OpKind::Undo => "explorer.result.cancelled_undo",
         };
@@ -541,6 +544,7 @@ fn card_title(report: &Report) -> (ToastKind, String) {
         OpKind::Copy => t_count("explorer.result.copied", n, &[&done, &dest]),
         OpKind::Trash => t_count("explorer.result.trashed", n, &[&done]),
         OpKind::Move | OpKind::Undo => t_count("explorer.result.moved", n, &[&done, &dest]),
+        OpKind::RemoveOriginals => t_count("explorer.result.removed_originals", n, &[&done]),
     };
     (ToastKind::Success, title)
 }

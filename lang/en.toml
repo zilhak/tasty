@@ -966,6 +966,14 @@ queue_full = "Too many file operations are waiting. Try again when one finishes.
 too_large = "Too many items for one file operation. Select fewer items and try again."
 show_queue = "Show queue"
 
+[explorer.progress]
+checking = "Checking {} of {} · {}"
+removing_originals = "Removing originals {} of {} · {}"
+
+[explorer.queue]
+remove_originals = "Remove {} originals"
+remove_originals_one = "Remove {} original"
+
 [explorer.command]
 new_folder = "New folder"
 new_file = "New file"
@@ -1087,11 +1095,13 @@ newer_there = "A newer file is there now"
 gone = "It's no longer there"
 replaced = "A replaced file can't be restored"
 changed_kept = "Changed after the copy, so it was kept"
-copy_missing = "The copy isn't there anymore, so the original was kept"
+copy_missing = "The copy is missing or changed type, so the original was kept"
 kept_not_in_copy = "Kept {} items that aren't in the copy"
 kept_not_in_copy_one = "Kept {} item that isn't in the copy"
-remove_cancelled = "Deleting was cancelled; the original is still there, in whole or in part"
-same_as_copy = "Kept: the copy points to the same file as the original"
+remove_cancelled = "Cancelled; the original is still there, in whole or in part"
+same_as_copy = "Kept: the copy is the same file as the original"
+removed_originals = "Removed {} originals"
+removed_originals_one = "Removed {} original"
 more = "and {} more"
 retry = "Retry {}"
 copy_paths = "Copy paths"

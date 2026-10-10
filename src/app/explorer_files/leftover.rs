@@ -182,6 +182,7 @@ impl Leftover {
     /// 확인을 통과한 원본을 지운다. 파일·링크 원본은 사본과 같을 때만, 폴더 원본은 사본과 같은
     /// 항목만 지우고 남긴 수를 알린다. 취소되면 Ok(None) 이고 그때까지 지운 것만 지워져 있다.
     fn remove(&self, shared: &Shared) -> Result<Option<()>, Reason> {
+        shared.set_removing(false);
         let not_removed = |e: io::Error| Reason::SourceNotRemoved(e.to_string());
         let Some(before) = stamp_apart(&self.source, &self.copy).map_err(not_removed)? else {
             return Err(Reason::SameAsCopy);
@@ -193,6 +194,7 @@ impl Leftover {
                     if !before.unchanged(&self.source) {
                         return Err(Reason::ChangedSince);
                     }
+                    shared.set_removing(true);
                     remove_path(&self.source).map(Some).map_err(not_removed)
                 }
                 Ok(false) => Err(Reason::ChangedSince),
@@ -366,17 +368,21 @@ fn prune_dir(shared: &Shared, source: &Path, copy: &Path, pruned: &mut Pruned) {
             // 비교하는 동안 바뀌어 사본과 같다고 할 수 없다.
             left = true;
             pruned.kept += 1;
-        } else if let Err(e) = std::fs::remove_file(&path) {
+            continue;
+        }
+        shared.set_removing(true);
+        if let Err(e) = std::fs::remove_file(&path) {
             left = true;
             pruned.error.get_or_insert(e);
         }
+        shared.set_removing(false);
     }
     if !left && let Err(e) = std::fs::remove_dir(source) {
         pruned.error.get_or_insert(e);
     }
 }
 
-/// 남은 원본들을 다시 지운다. 결과는 처음 이동과 같은 이동 보고로 낸다.
+/// 남은 원본들을 다시 지운다. 결과는 원본 지우기([`OpKind::RemoveOriginals`]) 보고로 낸다.
 /// 또 지우지 못한 원본은 다시 [`Report::leftovers`] 에 남아 한 번 더 시도할 수 있다.
 /// 취소해도 취소 보고로 끝내지 않는다. 그때까지 다 지운 원본은 빼고, 남은 원본은 원본이 남은
 /// 항목으로 돌려 카드가 남은 개수와 Retry 를 다시 보이게 한다.
@@ -385,7 +391,7 @@ pub(crate) fn run_remove_leftovers(
     dest: Option<PathBuf>,
     leftovers: &[Leftover],
 ) -> Report {
-    let mut report = Report::new(OpKind::Move, dest, leftovers.len());
+    let mut report = Report::new(OpKind::RemoveOriginals, dest, leftovers.len());
     shared.items_total.store(leftovers.len(), Ordering::Release);
     for (index, leftover) in leftovers.iter().enumerate() {
         shared.set_current(&leftover.source);

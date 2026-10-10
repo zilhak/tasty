@@ -28,6 +28,8 @@ pub(crate) enum OpKind {
     Trash,
     /// 끝난 복사·이동을 되돌린다.
     Undo,
+    /// 원본이 남은 이동 항목을 사본과 비교한 뒤 원본만 지운다.
+    RemoveOriginals,
 }
 
 /// 이름 충돌에 대한 사용자의 답.
@@ -103,6 +105,8 @@ pub(crate) struct Snapshot {
     /// [`UNKNOWN_BYTES`] 이면 바이트 표시와 진행 막대 채움이 없다.
     pub bytes_total: u64,
     pub current: String,
+    /// 원본 지우기 작업이 비교를 마치고 지우는 단계다.
+    pub removing: bool,
 }
 
 /// worker 와 App 이 함께 보는 작업 상태.
@@ -113,6 +117,7 @@ pub(crate) struct Shared {
     bytes_total: AtomicU64,
     bytes_done: AtomicU64,
     current: Mutex<String>,
+    removing: AtomicBool,
     asker: Asker,
     ask: Mutex<Option<Ask>>,
     answer: Mutex<Option<Answer>>,
@@ -138,6 +143,7 @@ impl Shared {
             bytes_total: AtomicU64::new(UNKNOWN_BYTES),
             bytes_done: AtomicU64::new(0),
             current: Mutex::new(String::new()),
+            removing: AtomicBool::new(false),
             asker,
             ask: Mutex::new(None),
             answer: Mutex::new(None),
@@ -162,6 +168,7 @@ impl Shared {
             bytes_done: self.bytes_done.load(Ordering::Acquire),
             bytes_total: self.bytes_total.load(Ordering::Acquire),
             current: lock(&self.current).clone(),
+            removing: self.removing.load(Ordering::Acquire),
         }
     }
     /// 답을 기다리는 충돌. 없으면 None.
@@ -196,6 +203,9 @@ impl Shared {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.display().to_string());
+    }
+    fn set_removing(&self, removing: bool) {
+        self.removing.store(removing, Ordering::Release);
     }
     fn add_bytes(&self, n: u64) {
         self.bytes_done.fetch_add(n, Ordering::AcqRel);

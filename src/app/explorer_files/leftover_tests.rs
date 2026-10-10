@@ -766,3 +766,33 @@ fn retry_keeps_a_folder_item_changed_while_it_was_compared() {
     assert_eq!(names(&twin.source), ["a.txt"]);
     twin.assert_copy_untouched();
 }
+
+/// 비교하는 동안은 Checking 단계이고, 지운 뒤 다음 항목의 비교 전에는 다시 Checking 으로 돌아간다.
+#[test]
+fn the_progress_says_checking_while_it_compares_and_removing_when_it_deletes() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::sync::Arc;
+    let twin = Twin::new();
+    let job = Arc::new(shared());
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let (s, v) = (Arc::clone(&job), Rc::clone(&seen));
+    AFTER_COMPARE.set(Some(Box::new(move |_| {
+        v.borrow_mut().push(s.snapshot().removing)
+    })));
+    let left = Leftover::before_remove(&twin.source, &twin.copy);
+    let report = run_remove_leftovers(&job, None, std::slice::from_ref(&left));
+    AFTER_COMPARE.set(None);
+    assert_eq!(report.kind, OpKind::RemoveOriginals);
+    assert_eq!(*seen.borrow(), [false, false], "a.txt and sub/b.txt");
+    assert!(twin.source.symlink_metadata().is_err());
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (file, copy) = (dir.path().join("f.txt"), dir.path().join("copy.txt"));
+    std::fs::write(&file, "same").expect("write");
+    std::fs::write(&copy, "same").expect("write");
+    let one = Shared::fixed(Choice::KeepBoth);
+    run_remove_leftovers(&one, None, &[Leftover::before_remove(&file, &copy)]);
+    assert!(one.snapshot().removing, "the last step was a delete");
+    assert!(!file.exists());
+}

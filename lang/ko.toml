@@ -948,6 +948,13 @@ queue_full = "기다리는 파일 작업이 너무 많습니다. 작업이 하�
 too_large = "한 번의 파일 작업에 담기에는 항목이 너무 많습니다. 항목을 줄여 다시 시도하세요."
 show_queue = "대기열 보기"
 
+[explorer.progress]
+checking = "확인 중 {1}개 중 {0}개 · {2}"
+removing_originals = "원본 지우는 중 {1}개 중 {0}개 · {2}"
+
+[explorer.queue]
+remove_originals = "원본 {}개 지우기"
+
 [explorer.command]
 new_folder = "새 폴더"
 new_file = "새 파일"
@@ -1051,10 +1058,11 @@ newer_there = "지금 그 자리에 다른 항목이 있습니다"
 gone = "항목이 더 이상 없습니다"
 replaced = "바꾼 파일은 되돌릴 수 없습니다"
 changed_kept = "복사 뒤 바뀌어서 남겨 둠"
-copy_missing = "사본이 없어져서 원본을 남겨 둠"
+copy_missing = "사본이 없거나 종류가 바뀌어 원본을 남겨 둠"
 kept_not_in_copy = "사본에 없는 항목 {}개를 남겨 둠"
-remove_cancelled = "삭제를 취소해 원본이 전부 또는 일부 남아 있음"
-same_as_copy = "사본이 원본과 같은 파일을 가리켜 남겨 둠"
+remove_cancelled = "취소함. 원본이 전부 또는 일부 남아 있음"
+same_as_copy = "사본이 원본과 같은 파일이라 남겨 둠"
+removed_originals = "원본 {}개를 지움"
 more = "외 {}개"
 retry = "다시 시도 {}"
 copy_paths = "경로 복사"

@@ -614,7 +614,7 @@ fn retry_sends_left_originals_to_a_delete_only_job() {
             && *paths == [PathBuf::from("/w/src/a")]
             && destination.as_path() == std::path::Path::new("/dest")
     ));
-    assert_eq!(ops[0].kind(), Some(OpKind::Move));
+    assert_eq!(ops[0].kind(), Some(OpKind::RemoveOriginals));
     // 원본 삭제는 원본 폴더만 바꾸고 원본만 없앨 수 있다. 사본 쪽은 건드리지 않는다.
     assert_eq!(
         ops[0].affected(),
@@ -640,5 +640,27 @@ fn retry_sends_left_originals_to_a_delete_only_job() {
     assert!(matches!(
         state.explorer_file_requests.0[0].operation,
         Operation::RemoveLeftovers { .. }
+    ));
+}
+
+/// 원본 지우기 카드의 Retry 에서 사본이 없거나 원본이 바뀐 항목은 이동을 다시 요청한다.
+#[test]
+fn retry_from_a_remove_originals_card_moves_the_rest_again() {
+    use crate::explorer_ui::view::ops::OpsAction;
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    state.apply_explorer_ops(
+        &engine.read(),
+        sid,
+        OpsAction::Retry {
+            kind: OpKind::RemoveOriginals,
+            paths: vec!["/w/src/a".into()],
+            dest: Some("/dest".into()),
+            leftovers: Vec::new(),
+        },
+    );
+    assert!(matches!(
+        &state.explorer_file_requests.0[0].operation,
+        Operation::Paste { paths, cut: true, .. } if *paths == [PathBuf::from("/w/src/a")]
     ));
 }

@@ -948,6 +948,13 @@ queue_full = "待機中のファイル操作が多すぎます。操作が一つ
 too_large = "一度のファイル操作には項目が多すぎます。項目を減らしてもう一度お試しください。"
 show_queue = "キューを表示"
 
+[explorer.progress]
+checking = "確認中 {}/{} 件 · {}"
+removing_originals = "元の項目を削除中 {}/{} 件 · {}"
+
+[explorer.queue]
+remove_originals = "元の {} 件を削除"
+
 [explorer.command]
 new_folder = "新しいフォルダー"
 new_file = "新しいファイル"
@@ -1051,10 +1058,11 @@ newer_there = "その場所に別の項目があります"
 gone = "項目がもうありません"
 replaced = "置き換えたファイルは元に戻せません"
 changed_kept = "コピー後に変更されたため残しました"
-copy_missing = "コピーが見つからないため元の項目を残しました"
+copy_missing = "コピーが見つからないか種類が変わったため、元の項目を残しました"
 kept_not_in_copy = "コピーにない {} 件を残しました"
-remove_cancelled = "削除を取り消したため、元の項目の全部または一部が残っています"
-same_as_copy = "コピーが元と同じファイルを指しているため残しました"
+remove_cancelled = "取り消したため、元の項目の全部または一部が残っています"
+same_as_copy = "コピーが元と同じファイルのため残しました"
+removed_originals = "元の {} 件を削除しました"
 more = "ほか {} 件"
 retry = "再試行 {}"
 copy_paths = "パスをコピー"

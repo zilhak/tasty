@@ -18,7 +18,8 @@ fn retry_operation(
             destination,
             cut: false,
         }),
-        (OpKind::Move, Some(destination)) => Some(Operation::Paste {
+        // 원본 지우기에서 사본이 없거나 원본이 바뀌어 남긴 항목은 이동 자체를 다시 요청한다.
+        (OpKind::Move | OpKind::RemoveOriginals, Some(destination)) => Some(Operation::Paste {
             paths,
             destination,
             cut: true,

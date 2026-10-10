@@ -303,3 +303,80 @@ fn a_refused_request_card_expires_and_offers_the_queue_only_while_running() {
     assert!(ops.expire(now + Duration::from_secs(3)));
     assert!(ops.refused().is_empty());
 }
+
+fn snapshot(
+    done: usize,
+    total: usize,
+    removing: bool,
+) -> crate::app::explorer_files::job::Snapshot {
+    crate::app::explorer_files::job::Snapshot {
+        items_done: done,
+        items_total: total,
+        bytes_done: 0,
+        bytes_total: UNKNOWN_BYTES,
+        current: "archive.zip".into(),
+        removing,
+    }
+}
+
+/// 원본 지우기는 이동 문구를 빌리지 않는다. 비교하는 동안은 Checking, 지우는 동안은 Removing originals.
+#[test]
+fn removing_originals_has_its_own_progress_queue_and_success_words() {
+    assert_eq!(
+        progress_text(OpKind::RemoveOriginals, &snapshot(2, 12, false)),
+        t_args("explorer.progress.checking", &["3", "12", "archive.zip"])
+    );
+    assert_eq!(
+        progress_text(OpKind::RemoveOriginals, &snapshot(4, 12, true)),
+        t_args(
+            "explorer.progress.removing_originals",
+            &["5", "12", "archive.zip"]
+        )
+    );
+    assert_eq!(
+        queue_title(OpKind::RemoveOriginals, 12, Some(Path::new("/dest"))),
+        t_fmt("explorer.queue.remove_originals", "12")
+    );
+    let mut r = report(OpKind::RemoveOriginals, 12, 12);
+    r.undo.clear();
+    assert!(result_is_timed(&r));
+    let text = card_text(&card(r));
+    assert_eq!(text.kind, ToastKind::Success);
+    assert_eq!(text.title, t_fmt("explorer.result.removed_originals", "12"));
+    assert!(labels(&text).is_empty(), "no Undo, nothing to retry");
+
+    // 하나만 지웠으면 en 은 단수 변형을 쓴다. ko·ja 는 한 문자열이다.
+    let mut one = report(OpKind::RemoveOriginals, 1, 1);
+    one.undo.clear();
+    let title = card_text(&card(one)).title;
+    assert_eq!(
+        title,
+        t_count("explorer.result.removed_originals", 1, &["1"])
+    );
+    assert_ne!(title, t_fmt("explorer.result.removed_originals", "1"));
+    assert_eq!(
+        queue_title(OpKind::RemoveOriginals, 1, None),
+        t_count("explorer.queue.remove_originals", 1, &["1"])
+    );
+    assert_ne!(
+        queue_title(OpKind::RemoveOriginals, 1, None),
+        t_fmt("explorer.queue.remove_originals", "1"),
+        "the English catalog has a singular for one"
+    );
+}
+
+/// 원본 지우기에서 다시 남은 원본은 원본이 남은 경고 카드로 돌아가고 Retry 는 같은 종류로 보낸다.
+#[test]
+fn originals_kept_again_return_to_the_source_left_card() {
+    let mut r = report(OpKind::RemoveOriginals, 2, 2);
+    r.undo.clear();
+    r.failed = vec![failure("/a", Reason::SameAsCopy)];
+    r.leftovers = vec![leftover("/a")];
+    let text = card_text(&card(r));
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(
+        text.title,
+        t_count("explorer.result.source_left_move", 1, &["2", "2", "1"])
+    );
+    assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "1"));
+}

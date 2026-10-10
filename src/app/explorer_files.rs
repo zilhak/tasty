@@ -84,7 +84,8 @@ impl Operation {
     pub(crate) fn kind(&self) -> Option<OpKind> {
         match self {
             Self::Paste { cut: false, .. } => Some(OpKind::Copy),
-            Self::Paste { cut: true, .. } | Self::RemoveLeftovers { .. } => Some(OpKind::Move),
+            Self::Paste { cut: true, .. } => Some(OpKind::Move),
+            Self::RemoveLeftovers { .. } => Some(OpKind::RemoveOriginals),
             Self::Trash(_) => Some(OpKind::Trash),
             Self::Undo(_) => Some(OpKind::Undo),
             Self::Rename { .. } | Self::Open(_) | Self::Create { .. } => None,
