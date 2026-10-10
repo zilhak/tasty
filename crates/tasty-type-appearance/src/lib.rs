@@ -17,6 +17,9 @@ pub mod motion;
 pub mod theme;
 pub mod toast_kind;
 
+/// 탐색기 영역 선택의 color-mix 수기 접근자 (`impl Theme`).
+mod explorer_marquee;
+
 /// `tasty-design-tokens` 생성기가 산출하는 semantic 색 접근자 (`impl Theme`).
 /// DO NOT EDIT — `cargo run -p tasty-design-tokens --bin generate` 로 재생성.
 mod semantic_color_generated;

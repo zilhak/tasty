@@ -168,9 +168,7 @@ pub(crate) fn frame(ui: &egui::Ui, theme: &Theme, view: &mut ExplorerView, drawn
     let Some(cell) = drawn.iter().find(|d| d.path == item) else {
         return;
     };
-    // TODO(design-tokens): `explorer_cursor_ring`·`explorer_cursor_ring_width` 접근자로 바꾼다. 지금은 같은 값의
-    // border-focus · border-width 를 쓴다.
-    let width = theme.border_width.value();
+    let width = theme.explorer_cursor_ring_width().value();
     let painter = ui
         .ctx()
         .layer_painter(ui.layer_id())
@@ -178,7 +176,7 @@ pub(crate) fn frame(ui: &egui::Ui, theme: &Theme, view: &mut ExplorerView, drawn
     painter.rect_stroke(
         cell.rect,
         theme.corner_radius_sm.value(),
-        egui::Stroke::new(width, theme.border_focus().to_egui()),
+        egui::Stroke::new(width, theme.explorer_cursor_ring().to_egui()),
         egui::StrokeKind::Inside,
     );
 }

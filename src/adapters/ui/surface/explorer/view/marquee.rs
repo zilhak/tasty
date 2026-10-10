@@ -126,8 +126,7 @@ pub(crate) fn frame(ui: &egui::Ui, theme: &Theme, view: &mut ExplorerView, drawn
         view.replace_selection(selected, anchor.map(|e| e.path));
     }
     view.marquee.press = Some(press);
-    // TODO(design-tokens): `explorer_autoscroll_zone` 접근자로 바꾼다. 지금은 같은 값(size-24)의 spacing_xl 이다.
-    let zone = theme.spacing_xl.value();
+    let zone = theme.explorer_autoscroll_zone().value();
     view.marquee.scroll = autoscroll(list.y_range(), pos.y, zone, dt);
     ctx.request_repaint();
     paint(ui, theme, area.translate(layout.origin.to_vec2()), list);
@@ -147,10 +146,8 @@ fn free_spot(ctx: &egui::Context, list: egui::Rect, drawn: &[Drawn], at: egui::P
 }
 
 fn paint(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, list: egui::Rect) {
-    // TODO(design-tokens): `explorer_marquee_bg`·`explorer_marquee_border` 접근자로 바꾼다. 지금은 같은
-    // 값(accent-primary × tint-fill·tint-border)의 drop target 채움과 파일 드롭 테두리를 쓴다.
-    let fill = theme.explorer_drop_target_bg().to_egui();
-    let border = theme.file_drop_overlay_border().to_egui();
+    let fill = theme.explorer_marquee_bg().to_egui();
+    let border = theme.explorer_marquee_border().to_egui();
     let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(list);
     painter.rect_filled(rect, 0.0, fill);
     painter.rect_stroke(

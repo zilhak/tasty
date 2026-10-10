@@ -130,6 +130,15 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 | `--tasty-file-drop-overlay-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::file_drop_overlay_bg()` = `accent_primary().with_alpha(31)` | 12%×255≈31. `FILE_DROP_OVERLAY_BG_ALPHA` |
 | `--tasty-file-drop-overlay-border` | `color-mix(accent-primary × tint-border-alpha, transparent)` | `Theme::file_drop_overlay_border()` = `accent_primary().with_alpha(92)` | 36%×255≈92. `FILE_DROP_OVERLAY_BORDER_ALPHA`. 시험이 두 알파가 `TINT_FILL_ALPHA`·`TINT_BORDER_ALPHA`의 반올림과 같은지 확인한다 |
 
+## explorer 영역 선택 사각형
+
+`--tasty-explorer-marquee-bg`·`--tasty-explorer-marquee-border`도 accent-primary와 `transparent`를 섞는 식이라 생성기가 건너뛴다. 같은 방식으로 알파만 낮추는 수기 접근자를 `crates/tasty-type-appearance/src/explorer_marquee.rs` 에 둔다. 현재 항목 테두리(`explorer-cursor-ring`·`-width`)와 자동 스크롤 띠(`explorer-autoscroll-zone`)는 생성 접근자다. 동작은 [Explorer](../../surfaces/explorer/index.md#현재-항목--영역-선택)에 있다.
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
+|---|---|---|---|
+| `--tasty-explorer-marquee-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::explorer_marquee_bg()` = `accent_primary().with_alpha(31)` | 12%×255≈31. `EXPLORER_MARQUEE_BG_ALPHA` |
+| `--tasty-explorer-marquee-border` | `color-mix(accent-primary × tint-border-alpha, transparent)` | `Theme::explorer_marquee_border()` = `accent_primary().with_alpha(92)` | 36%×255≈92. `EXPLORER_MARQUEE_BORDER_ALPHA`. 시험이 두 알파가 `TINT_FILL_ALPHA`·`TINT_BORDER_ALPHA`의 반올림과 같은지 확인한다 |
+
 ## preset leaf value summary (preset-editor 미선택 leaf 값 요약)
 
 디자인 `tokens/components.css:335-339`·`tokens/tasty.tokens.json:2007-2023` 의

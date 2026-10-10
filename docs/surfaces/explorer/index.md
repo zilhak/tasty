@@ -343,15 +343,15 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - Detail·List 의 위·아래는 한 항목, 왼쪽·오른쪽은 움직이지 않는다. Grid 의 위·아래는 한 줄(열 수)씩, 왼쪽·오른쪽은 한 칸씩이며 줄을 넘어 이어진다. 아래 줄에 같은 열 칸이 없으면 마지막 항목으로 간다.
 - 한 화면 위·아래는 목록 높이에 온전히 들어가는 줄 수 × 열 수만큼 간다. 처음·끝은 목록 양 끝이다.
 - 옮긴 항목이 지난 프레임에 온전히 보이지 않았으면 그 항목을 화면 가운데로 스크롤한다(타입어헤드와 같은 `scroll_to` 경로). 보이던 항목이면 스크롤하지 않는다.
-- 키로 움직인 뒤에만 그 칸 안쪽에 1px 테두리를 그린다(design `explorer-cursor-ring`, 선택 채움 위, 모서리 radius-sm). 목록을 누르면 다음 키까지 숨는다.
+- 키로 움직인 뒤에만 그 칸 안쪽에 `explorer_cursor_ring`(border-focus) 색, `explorer_cursor_ring_width`(1px) 테두리를 그린다(선택 채움 위, 모서리 radius-sm). 목록을 누르면 다음 키까지 숨는다.
 - 주소창·이름 입력·Find 입력이 키를 받는 동안과 영역 선택 중에는 움직이지 않는다.
 
 **영역 선택**(`view/marquee.rs`)은 목록의 빈 곳(항목 칸도, 누를 수 있는 다른 위젯도 아닌 곳)을 누르고 끌 때 시작한다. 클릭만 하면 선택을 바꾸지 않는다.
 
 - 사각형에 걸친 항목을 고른다. Ctrl·Cmd·Shift 를 누르고 시작하면 그때의 선택에 더하고, 아니면 새로 고른다. 기준 항목은 걸친 항목의 첫 항목이다.
 - 시작점은 목록 좌표로 둔다. 스크롤해도 처음 누른 자리에 남고, 화면 밖 항목도 칸 배치(`view/list_layout.rs` 의 `ListLayout`: 첫 칸 자리·칸 간격·칸 크기·열 수·첫 줄 앞 `..`·이름 입력 칸 수)로 계산해 고른다. 칸 사이 간격에만 걸치면 고르지 않는다. 배치는 세 보기가 그릴 때 기록한다(Grid `note_grid`, List `note_rows`, Detail 은 처음 그린 이름 칸으로 `note_detail`).
-- 사각형은 accent-primary 의 12% 채움과 36% 1px 테두리, 모서리 없음으로 목록 영역 안에만 그린다(design `explorer-marquee-bg`·`-border`).
-- 포인터가 목록 위·아래 끝 24px 띠(design `explorer-autoscroll-zone`, 표시 없음) 안에 있으면 그 쪽으로 스크롤하고, 끝에 가까울수록 빠르다(띠 바깥 경계 0, 가장 바깥 800 px/s). 목록 밖으로 나가면 멈춘다. egui ScrollArea 가 포인터가 안에 있을 때만 스크롤 입력을 받기 때문이다. 스크롤 양은 다음 프레임 목록 ScrollArea 앞에서 휠 입력처럼 넣는다(`preview::split`).
+- 사각형은 `explorer_marquee_bg`(accent-primary 12%) 채움과 `explorer_marquee_border`(36%) 1px 테두리, 모서리 없음으로 목록 영역 안에만 그린다([수기 접근자](../../design/systems/design-token-mapping.md#explorer-영역-선택-사각형)).
+- 포인터가 목록 위·아래 끝 `explorer_autoscroll_zone`(24px, 표시 없음) 띠 안에 있으면 그 쪽으로 스크롤하고, 끝에 가까울수록 빠르다(띠 안쪽 경계에서 0, 목록 끝에서 800 px/s. 디자인이 속도를 정하지 않아 임시 값이다). 목록 밖으로 나가면 멈춘다. egui ScrollArea 가 포인터가 안에 있을 때만 스크롤 입력을 받기 때문이다. 스크롤 양은 다음 프레임 목록 ScrollArea 앞에서 휠 입력처럼 넣는다(`preview::split`).
 - 영역 선택 중에는 항목 드래그(파일 끌어 놓기)를 시작하지 않는다. 다른 위젯이 먼저 끌기를 가져갔거나 popup·modal 이 떠 있으면 시작하지 않는다.
 
 ### 폰트
