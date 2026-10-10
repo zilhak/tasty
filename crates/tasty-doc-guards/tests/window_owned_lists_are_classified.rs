@@ -338,14 +338,14 @@ fn the_roster_covers_every_list_method_in_the_dispatch_table() {
 
 #[test]
 fn the_open_ones_are_not_silently_emptied() {
-    // 해결된 결함은 분류를 옮기고 개수도 함께 갱신해야 한다.
+    // 창별인데 합산하지 않는 항목은 결함이다. 남아 있으면 안 된다.
     let open = ROSTER
         .iter()
         .filter(|(_, c, _)| *c == PerEngineNotAggregated)
         .count();
     assert_eq!(
         open, 0,
-        "창별인데 합산 안 되는 항목의 수가 바뀌었다. 고쳤으면 분류를 바꾸고 이 수를 \
-         함께 내려라 — 남겨 두면 다음 사람이 이미 닫힌 것을 다시 센다."
+        "창별인데 합산하지 않는 항목이 {open}개 있다. 모든 창의 결과를 합산하도록 고친 뒤 \
+         분류를 바꾼다. 이 분류는 0이어야 한다."
     );
 }
