@@ -123,12 +123,15 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
     판정이 유효할 때만 확인이 활성이며 Enter 확인도 같은 조건을 따른다. disabled 모양은
     공용 규칙(중립 상자와 disabled ink)을 따른다.
 - **부팅 오류 화면** — `render_boot_error` 는 공용 view `tasty_ui_widgets::boot_error_screen` 을
-  부르고 갤러리도 같은 함수를 그린다. `bg-app` 채움 가운데에 진단 카드(bg-sidebar, 1px
-  border-default, radius-lg, 모달 그림자, `spacing_lg` 안쪽 여백, 내용 폭 460)를 두고 제목(heading,
-  accent-danger) · 본문(body) · 안내(caption, text-muted) · Quit 버튼(120 × 34, danger 채움)을 쌓는다.
-  본문과 안내의 백틱 구간은 code run 이다. 디자인 시안이 아직 없어 카드 폭과 버튼 크기는 시안 없이
-  쓰던 값이다. 엔진 생성 실패, 다른 프로세스가 쓰는 데이터 폴더, 열지 못한 웹훅 포트에서 뜨고
-  Quit·Esc·Enter·창 닫기가 종료 코드 1로 끝낸다. 키 판정은 호스트가 한다.
+  부르고 갤러리도 같은 함수를 그린다. 로딩·셸 설정 화면과 같은 구조로 `bg-app` 채움 위에 락업 →
+  `spacing_xl` → `boot-form-width`(360) 폼을 세로 가운데에 쌓는다. 카드와 그림자는 없다. 폼은
+  제목 줄(alertCircle 16, `boot-error-glyph` → accent-danger, 간격 `spacing_sm`, 제목 14 text-primary,
+  줄바꿈) · 본문(body, text-secondary) · 안내(caption, text-muted) · 오른쪽 정렬 Quit(공용 `Button`
+  Secondary md)이며 항목 사이는 `spacing_sm`, Quit 위는 `spacing_sm`을 한 번 더 둔다. 본문과 안내의
+  백틱 구간은 code run 이다. 문구는 자르지 않는다. 경로처럼 공백 없이 긴 낱말은 폼 폭에서 끊는다.
+  쌓은 높이가 창 높이 − 2 × `spacing_xl`보다 크면 락업을 먼저 빼고, 그래도 넘치면 제목·본문·안내를
+  스크롤하고 Quit은 그 아래에 고정한다. 엔진 생성 실패, 다른 프로세스가 쓰는 데이터 폴더, 열지
+  못한 웹훅 포트에서 뜨고 Quit·Esc·Enter·창 닫기가 종료 코드 1로 끝낸다. 키 판정은 호스트가 한다.
 - **View 밖 창의 다시 그리기** — 첫 실행 셸 설정 창과 부팅 오류 화면은 View 밖에 있어 dirty
   표시나 렌더 예약을 받지 않는다. 클릭·Enter 처리는 렌더 안에서 일어나므로 창이 스스로 redraw 를
   요청한다. egui 가 입력에 repaint 를 답하거나 즉시 repaint 를 요청하면(`AppEvent::EguiRepaint`)

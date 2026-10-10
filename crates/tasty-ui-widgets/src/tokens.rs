@@ -77,10 +77,7 @@ pub const CLIPBOARD_CENTER_ICON_SIZE: f32 = 28.0;
 pub const TUTORIAL_STEP_GAP_X: f32 = 10.0;
 
 // 대응하는 디자인 반경 토큰이 없는 값이다. 가까운 토큰으로 바꾸면 화면이 달라지므로 그대로 유지한다.
-// 이 상수들은 UI 배율을 적용하지 않아 Theme의 모서리 반경과 배율 동작이 다르다.
-
-/// 부팅 화면 버튼·안쪽 프레임의 반경. 대응 토큰 없이 쓰는 고정값이다.
-pub const BOOT_CHROME_CORNER_RADIUS: f32 = 6.0;
+// 이 상수는 UI 배율을 적용하지 않아 Theme의 모서리 반경과 배율 동작이 다르다.
 
 /// accent tag pill 의 코너 반경. **스케일 밖 3px.** 디자인의
 /// `component.badge-radius` 는 `semantic.radius-sm`(2)다.

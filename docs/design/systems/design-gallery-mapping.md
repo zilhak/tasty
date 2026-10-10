@@ -1173,7 +1173,7 @@ hairline이라 UI 배율을 적용하지 않는다.
 
 ## 부팅 오류 화면 (Chrome)
 
-디자인 시안 없음 ↔ 갤러리 `catalog/chrome_loading/boot_error.rs::draw`(Chrome › First-run shell setup 구역의 두 번째 Spec "Boot error screen". 구역 목록 `catalog.rs`는 동결 파일이라 Spec 행을 늘리지 않고 앞 Spec 뒤에 이어 그린다) ↔ 본체 `src/gfx/gpu/boot_error.rs` `render_boot_error`. 본체와 갤러리는 공용 view `tasty_ui_widgets::boot_error_screen`을 함께 호출한다. 카드 폭(`BOOT_ERROR_CONTENT_WIDTH` 460)과 Quit 크기(120 × 34)는 시안이 없어 이름 붙은 상수로 둔다. 동작은 [부팅 순서](../../architecture/boot-sequence.md)에 있다.
+디자인 `gallery/loading.jsx` Section `booterror`의 `BootErrorFrame`(b12) ↔ 갤러리 `catalog/chrome_loading/boot_error.rs::draw`(Chrome › First-run shell setup 구역의 두 번째 Spec "Boot error screen". 구역 목록 `catalog.rs`는 동결 파일이라 Spec 행을 늘리지 않고 앞 Spec 뒤에 이어 그린다) ↔ 본체 `src/gfx/gpu/boot_error.rs` `render_boot_error`. 본체와 갤러리는 공용 view `tasty_ui_widgets::boot_error_screen`을 함께 호출한다. 시안처럼 카드 없이 락업과 `boot-form-width` 폼을 쓰고 Quit은 공용 `Button` Secondary md다. 시안의 네 장(엔진·데이터 폴더·웹훅 포트 Mocha, 데이터 폴더 Latte)을 같은 순서로 그린다. 동작은 [부팅 순서](../../architecture/boot-sequence.md)에 있다.
 
 ## 첫 실행 셸 설정 (Chrome)
 

@@ -2,7 +2,7 @@
 //! 문구는 본체가 이 화면에 넘기는 i18n 키를 그대로 쓰고, 오류 상세와 경로만 예시 값이다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{BOOT_ERROR_CONTENT_WIDTH, BootErrorView, boot_error_screen};
+use tasty_ui_widgets::{BootErrorView, boot_error_screen};
 
 use super::CANVAS_MIN;
 use crate::catalog::spec::{TokenChip, meta, note, spec};
@@ -73,7 +73,7 @@ fn frame(ui: &mut egui::Ui, theme: &Theme, index: usize, case: Case) {
     let _quit = boot_error_screen(&mut child, theme, &view);
 }
 
-/// 부팅 실패 화면 Spec. 같은 구역의 앞 Spec 뒤에 이어 그린다. 디자인 시안은 아직 없다.
+/// 부팅 실패 화면 Spec. 같은 구역의 앞 Spec 뒤에 이어 그린다. 디자인 `BootErrorFrame`(b12)이다.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec(
         ui,
@@ -81,8 +81,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "Boot error screen",
         Some(
             "Shown instead of the app when Tasty cannot start: the terminal engine failed, \
-             another Tasty holds the data folder, or the saved webhook port is taken. \
-             Quit, Esc or Enter exits with code 1.",
+             another Tasty holds the data folder, or the saved webhook port is taken. Same boot \
+             stage as the loading and shell setup screens, so the same structure: lockup, then a \
+             360 form with no card. The glyph carries the danger tone; the title stays \
+             text-primary. Quit, Esc, Enter or closing the window exits with code 1.",
         ),
     );
     let latte = crate::host_shell::latte_theme();
@@ -99,42 +101,49 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame(ui, th, index, case);
         }
     });
-    let width = format!(
-        "{} content + space-lg padding on each side",
-        BOOT_ERROR_CONTENT_WIDTH.value()
-    );
     meta(
         ui,
         theme,
         &[
-            ("surface", "bg-app fill, card centred"),
             (
-                "card",
-                "bg-sidebar · 1px border-default · radius-lg · shadow-modal",
+                "structure",
+                "lockup → (space-xl) → form 360 · gaps space-sm · no card, no shadow",
             ),
-            ("width", &width),
             (
-                "stack",
-                "title (heading, danger) → 2 → body (body) → space-md → hint (caption, muted) → space-lg → Quit",
+                "title row",
+                "alertCircle 16 · boot-error-glyph → accent-danger · gap space-sm · title 14 / 600 text-primary, wraps",
             ),
-            ("quit button", "120 × 34 · danger fill · bg-panel label"),
-            ("CLI runs", "backtick runs in body and hint are code runs"),
+            (
+                "body",
+                "font-size-body · text-secondary · line-height-ui · wraps; paths and OS errors break anywhere",
+            ),
+            (
+                "guidance",
+                "caption · text-muted · CLI pieces = code runs (ui-code-*)",
+            ),
+            (
+                "quit button",
+                "Button secondary md · right · Enter / Esc / close = Quit (exit 1)",
+            ),
+            (
+                "long content",
+                "never truncated · taller than the window − 2 × space-xl: lockup dropped first, then the text scrolls with Quit pinned under it",
+            ),
         ],
         &[
-            TokenChip::new("bg-sidebar", "card", theme.bg_sidebar().to_egui()),
+            TokenChip::without_color("boot-form-width", "→ size-360"),
             TokenChip::new(
-                "accent-danger",
-                "title · Quit",
-                theme.accent_danger().to_egui(),
+                "boot-error-glyph",
+                "→ accent-danger",
+                theme.boot_error_glyph().to_egui(),
             ),
-            TokenChip::new("text-muted", "hint", theme.text_muted().to_egui()),
-            TokenChip::without_color("shadow-modal", "card lift"),
+            TokenChip::new("text-secondary", "body", theme.text_secondary().to_egui()),
+            TokenChip::new("text-muted", "guidance", theme.text_muted().to_egui()),
         ],
     );
     note(
         ui,
         theme,
-        "No design mockup yet. The card width, the Quit size and the radius-6 Quit corner are \
-         the values the host used before the screen moved to the shared widget.",
+        "Copy is the app's (boot.*); the OS error and path in the samples are illustrative.",
     );
 }
