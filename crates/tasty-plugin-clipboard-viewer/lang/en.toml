@@ -23,6 +23,7 @@ html_meta_lines = "{chars} chars · {lines} lines"
 other_more_lines = "+{n} more lines"
 other_more_lines_one = "+{n} more line"
 other_unrecognized_formats = "{n} unrecognized formats"
+other_unrecognized_formats_one = "{n} unrecognized format"
 
 [clipboard_viewer.type]
 text = "Text"

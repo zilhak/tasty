@@ -6136,7 +6136,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.263"
+version = "0.1.264"
 dependencies = [
  "anyhow",
  "arboard",

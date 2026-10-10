@@ -13,7 +13,7 @@ use tasty_ui_widgets::{
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
-use crate::i18n::{t, t_args, t_fmt, t_fmt2};
+use crate::i18n::{t, t_args, t_count, t_fmt, t_fmt2};
 
 /// 시안 탐색기 칸 폭(`XCell w={520}`). 전시 치수다.
 const CELL_W: LogicalPx = LogicalPx(520.0);
@@ -62,7 +62,7 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
     );
     let bytes = t_fmt2("explorer.op.bytes", "1.2 GB", "3.4 GB");
     let queued = t_fmt("explorer.op.queued", "1");
-    let waiting = t_fmt("explorer.op.waiting", "1");
+    let waiting = t_count("explorer.op.waiting", 1, &["1"]);
     let queue_copy = t_fmt2("explorer.op.queue_copy", "40", "Documents");
     let queue_move = t_fmt2("explorer.op.queue_move", "3", "Archive");
     let queue_sub = format!(
@@ -469,7 +469,7 @@ pub fn draw_source_left(ui: &mut egui::Ui, theme: &Theme) {
         "Device or resource busy (os error 16)",
     );
     let left_title = t_args("explorer.result.source_left_move", &["40", "40", "2"]);
-    let undo_title = t_fmt("explorer.result.undo_partial_copy", "1");
+    let undo_title = t_count("explorer.result.undo_partial_copy", 1, &["1"]);
     let left_lines = [
         ResultLine {
             path: "~/Volumes/usb/photos/2026-09",

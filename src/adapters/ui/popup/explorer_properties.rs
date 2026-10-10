@@ -17,7 +17,7 @@ use crate::adapters::ui::icons::{self, Icon};
 use crate::adapters::ui::popup::PopupAction;
 use crate::app::local_reads::{self, FolderCount, ItemFacts, ItemKind, PropertiesFacts, Query};
 use crate::core::fs_list::{DirEntryInfo, group_digits, human_size};
-use crate::i18n::{t, t_count, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_fmt};
 use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme::{self, Theme};
@@ -613,10 +613,10 @@ fn single_content(
             ));
             fields.push(field(
                 "explorer.properties.size",
-                t_fmt2(
+                t_count(
                     "explorer.properties.size_bytes",
-                    &human_size(false, item.size),
-                    &group_digits(item.size),
+                    item.size,
+                    &[&human_size(false, item.size), &group_digits(item.size)],
                 ),
             ));
             fields.push(mono(

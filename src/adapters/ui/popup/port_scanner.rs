@@ -14,7 +14,7 @@ use crate::adapters::ui::popup::PopupAction;
 #[cfg(test)]
 use crate::core::port_favorites::PortFavorites;
 use crate::core::state::SurfaceDisplayPath;
-use crate::i18n::t;
+use crate::i18n::{t, t_count_template};
 use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
@@ -326,7 +326,7 @@ pub struct PortScannerProps<'a> {
     pub label_header_tag_scanning: &'a str,
     /// Format string with `{n}` placeholder, e.g. `"{n} listening"`.
     pub label_header_tag_count: &'a str,
-    /// Format string with `{n}` placeholder, e.g. `"{n} listening"`.
+    /// `{shown}`·`{total}` 자리를 받는 카운터. 호출자가 total 에 맞는 템플릿(단수 규칙)을 넘긴다.
     pub label_footer_counter: &'a str,
     pub label_column_port: &'a str,
     pub label_column_proto: &'a str,
@@ -553,7 +553,7 @@ pub fn draw_port_scanner_popup(
         label_footer_loading: t("port_scanner.footer_loading"),
         label_header_tag_scanning: t("port_scanner.header_tag_scanning"),
         label_header_tag_count: t("port_scanner.header_tag_count"),
-        label_footer_counter: t("port_scanner.footer_counter"),
+        label_footer_counter: t_count_template("port_scanner.footer_counter", state_total as u64),
         label_column_port: t("port_scanner.column_port"),
         label_column_proto: t("port_scanner.column_proto"),
         label_column_address: t("port_scanner.column_address"),

@@ -382,7 +382,7 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
   - **버린 plugin override**(`DroppedUninstalledPlugin`) — 경고가 아니라 muted 정보 줄 하나(개수 · plugin id 목록).
   - **번들 경고** — 경고 톤 알림 블록 **하나**에 한 줄씩 쌓고 헤더에 개수를 단다.
     개수가 **하나면 단수형**이다 — 헤더(`ie_notices_count_one`)도, 모르는 액션 줄(`ie_notice_unknown_actions_one`)도.
-    굴절하는 것은 영어뿐이지만 키는 세 언어에 다 있다: 한 자리가 언어마다 다른 처리를 따르면 문구가 달라진다.
+    단수형은 en 의 단수 변형이고, ko·ja 는 기준 키 하나로 쓴다([i18n 가이드](../../dev-guide/i18n.md)의 단수 규칙).
     순서는 원문 순서가 아니라 고정이다: 새 스키마(`NewerVersion`) → 모르는 액션(`UnknownKeybindingField`, 몇 개든 한 줄에 이름 목록) → 빈 그룹.
     세 줄까지 보이고 나머지는 **Show {n} more** 뒤로 접힌다(`import_export/bundle_notices.rs`).
     줄이 하나면 접을 것이 없어 그 링크를 표시하지 않는다.

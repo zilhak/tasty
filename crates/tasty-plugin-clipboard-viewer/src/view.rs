@@ -534,8 +534,11 @@ fn other_more_lines_text(tr: &Translator, n: usize) -> String {
 
 /// 기타 포맷 개수 안내.
 fn other_unrecognized_text(tr: &Translator, n: usize) -> String {
-    tr.t("clipboard_viewer.popup.other_unrecognized_formats")
-        .replace("{n}", &n.to_string())
+    tr.t_count_template(
+        "clipboard_viewer.popup.other_unrecognized_formats",
+        n as u64,
+    )
+    .replace("{n}", &n.to_string())
 }
 
 /// 기타 포맷에는 MIME 대신 개수를 표시한다. 다른 타입은 None이다.
