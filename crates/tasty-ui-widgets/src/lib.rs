@@ -61,6 +61,7 @@ mod script_confirm;
 mod script_trigger;
 mod segmented;
 mod select;
+mod select_combo;
 mod sequence_editor;
 mod settings_row;
 mod shell_setup;
@@ -227,6 +228,7 @@ pub use script_trigger::{
 };
 pub use segmented::segmented;
 pub use select::{select, select_or_placeholder};
+pub use select_combo::with_select_combo_frame;
 pub use sequence_editor::{
     SequenceEditorAction, SequenceEditorError, SequenceEditorView, sequence_editor,
 };

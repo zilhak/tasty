@@ -1622,7 +1622,7 @@ fn font_family_picker(
         // 가려질 수 있다. 남은 폭 안에 묶고, 선택된 이름이 그보다 길면 콤보를 늘리지 않고
         // 이름을 자른다(egui 기본은 글자 폭만큼 늘어난다).
         let combo_w = th.field_width_lg.value().min(ui.available_width());
-        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+        tasty_ui_widgets::with_select_combo_frame(ui, &th, |ui| {
             egui::ComboBox::from_id_salt(combo_id)
                 .selected_text(&display_name)
                 .width(combo_w)

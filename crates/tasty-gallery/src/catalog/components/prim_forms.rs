@@ -1,9 +1,12 @@
 //! Select, Checkbox, Switch의 상태별 예제. MultiSelect 는 `prim_multiselect`.
+//! 검색칸이 있는 콤보(본체 글꼴 콤보·전환 수식키 콤보)는 egui ComboBox 를 Select 테두리로 감싼다.
 
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{checkbox, select, select_or_placeholder, switch};
+use tasty_ui_widgets::{
+    checkbox, menu_option, select, select_or_placeholder, switch, with_select_combo_frame,
+};
 
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
@@ -13,6 +16,8 @@ thread_local! {
             sel: 0,
             sel_long: 3,
             sel_placeholder: None,
+            combo: 0,
+            combo_filter: String::new(),
             check_a: true,
             check_b: false,
             switch_a: true,
@@ -26,6 +31,9 @@ struct FormState {
     sel_long: usize,
     /// "아직 안 고름" 상태를 가진 Select — 처음엔 비어 있어 placeholder 가 보인다.
     sel_placeholder: Option<usize>,
+    /// 검색칸 콤보의 선택과 검색어.
+    combo: usize,
+    combo_filter: String,
     check_a: bool,
     check_b: bool,
     switch_a: bool,
@@ -82,6 +90,31 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     true,
                 );
             });
+            cluster(ui, theme, "Combo with search", |ui| {
+                let opts = ["D2Coding", "JetBrains Mono", "Fira Code", "Cascadia Code"];
+                let FormState {
+                    combo,
+                    combo_filter,
+                    ..
+                } = &mut *st;
+                with_select_combo_frame(ui, theme, |ui| {
+                    egui::ComboBox::from_id_salt("gallery_combo_search")
+                        .selected_text(opts[*combo])
+                        .width(field_md)
+                        .show_ui(ui, |ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            ui.text_edit_singleline(combo_filter);
+                            let needle = combo_filter.to_lowercase();
+                            for (i, opt) in opts.iter().enumerate() {
+                                if opt.to_lowercase().contains(&needle)
+                                    && menu_option(ui, theme, opt, *combo == i).clicked()
+                                {
+                                    *combo = i;
+                                }
+                            }
+                        });
+                });
+            });
             cluster(ui, theme, "Checkbox", |ui| {
                 checkbox(ui, theme, &mut st.check_a, "Confirm on close", true);
                 checkbox(ui, theme, &mut st.check_b, "Restore layout", true);
@@ -101,6 +134,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("checkbox", "16px square"),
             ("switch", "28×16 track"),
             ("accent", "primary"),
+            (
+                "combo with search",
+                "egui ComboBox in Select borders: closed select-border, hover border-strong, open select-border-focus",
+            ),
         ],
         &[
             TokenChip::new(

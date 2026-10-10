@@ -253,7 +253,7 @@ pub(super) fn draw_quick_switch_section(
             KeybindingSettings::format_display(modifier, general)
         };
         // 플랫폼에서 허용하는 수식키 조합을 나열하고 개별 지정 항목을 별도로 추가한다.
-        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+        tasty_ui_widgets::with_select_combo_frame(ui, &th, |ui| {
             egui::ComboBox::from_id_salt(kind.modifier_field_id())
                 .selected_text(selected_text)
                 .show_ui(ui, |ui| {

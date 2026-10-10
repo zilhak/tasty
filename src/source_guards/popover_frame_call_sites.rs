@@ -1,5 +1,6 @@
 //! 버튼에 붙는 egui 팝오버는 `tasty_egui_theme::with_popover_frame`(또는 안쪽 둘레를 받는
-//! `with_popover_frame_ring`) 클로저 안에서 열어야 메뉴 틀
+//! `with_popover_frame_ring`, ComboBox 트리거를 Select 테두리로도 그리는
+//! `tasty_ui_widgets::with_select_combo_frame`) 클로저 안에서 열어야 메뉴 틀
 //! (menu-bg · menu-border · menu-radius)로 그려진다. 전역 스타일은 tooltip 토큰을 담으므로 감싸지 않은
 //! 팝오버는 tooltip 틀로 그려진다(docs/design/systems/theme.md).
 //!
@@ -18,8 +19,13 @@ const ENTRIES: &[&str] = &[
     "egui::popup::popup_above_or_below_widget(",
     "egui::ComboBox::from_id_salt(",
 ];
-/// 기본 둘레 래퍼와 둘레를 받는 래퍼. 어느 쪽이든 메뉴 틀을 정한다.
-const WRAPPERS: &[&str] = &["with_popover_frame(", "with_popover_frame_ring("];
+/// 기본 둘레 래퍼, 둘레를 받는 래퍼, 안에서 기본 둘레 래퍼를 부르는 Select 테두리 래퍼.
+/// 어느 쪽이든 메뉴 틀을 정한다.
+const WRAPPERS: &[&str] = &[
+    "with_popover_frame(",
+    "with_popover_frame_ring(",
+    "with_select_combo_frame(",
+];
 const GUARD_DIR: &str = "src/source_guards/";
 /// 현재 감싼 호출부는 25곳이다. 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
 const MIN_SITES: usize = 20;

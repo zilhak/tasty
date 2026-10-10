@@ -956,7 +956,9 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 위쪽 끝 휠 시험이 test 전용 둘을 더한다.
         // 드래그 반전 설정 행 렌더 시험의 화면 vec2(800, 300) 중 300 한 자리가 test 전용으로 들어왔다.
         // 창 파일 드롭 안내 위젯 시험의 영역·화면 리터럴 중 두 자리가 test 전용으로 들어왔다.
-        (234, 603),
+        // Select 테두리 콤보 시험(select_combo_border.rs)의 화면·클릭 좌표·콤보 폭·입력칸 여백 리터럴 중
+        // 여섯 자리가 test 전용으로 들어왔다.
+        (234, 609),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

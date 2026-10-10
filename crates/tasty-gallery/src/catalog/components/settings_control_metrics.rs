@@ -61,7 +61,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "font combo",
-                "list max font-combo-list-max-height 300 · search field = list − 2 × font-combo-search-inset 4",
+                "list max font-combo-list-max-height 300 · search field = list − 2 × font-combo-search-inset 4 · borders = Select: closed select-border, open select-border-focus (also the switch modifier combos)",
             ),
             ("open Select", "trigger border select-border-focus"),
         ],
