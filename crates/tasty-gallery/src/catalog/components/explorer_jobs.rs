@@ -306,6 +306,7 @@ pub fn draw_results(ui: &mut egui::Ui, theme: &Theme) {
     };
     let retry3 = t_fmt("explorer.result.retry", "3");
     let retry12 = t_fmt("explorer.result.retry", "12");
+    let retry28 = t_fmt("explorer.result.retry", "28");
     let copy_paths = t("explorer.result.copy_paths");
     let not_removed = t_fmt(
         "explorer.result.source_not_removed",
@@ -336,7 +337,11 @@ pub fn draw_results(ui: &mut egui::Ui, theme: &Theme) {
             &t_fmt2("explorer.result.cancelled_copy", "12", "40"),
             &[],
             None,
-            &[],
+            // 본체 `card_actions` 와 같다 — 줄이 없으니 Copy paths 는 없고, 하지 않은 28개를 Retry 가 센다.
+            &[ResultAction {
+                label: &retry28,
+                variant: ButtonVariant::Secondary,
+            }],
         );
         let acts = failure_actions(&retry3);
         card(
@@ -407,7 +412,10 @@ pub fn draw_results(ui: &mut egui::Ui, theme: &Theme) {
                 "inside the cell · bottom-right · above the status line · stack upward",
             ),
             ("done", "success · Undo (ghost) · standard time"),
-            ("cancelled", "info · standard time"),
+            (
+                "cancelled",
+                "info · Retry n (failed · skipped · not done, never the finished) · stays · standard time when nothing is left",
+            ),
             (
                 "partial / failed",
                 "warning / danger · stays · ≤ 3 paths + and n more · Retry n · Copy paths",
