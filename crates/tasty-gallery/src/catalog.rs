@@ -1759,7 +1759,7 @@ pub fn pages() -> Vec<Page> {
                     "Keybindings · Plugins",
                     "Plugin picker + per-command mode",
                     Some(
-                        "settings Row grid 150 + 16 · one line per command: mode 160 · slot 200 · ghost Reset · every control 28 · Reset disabled without an override · draft dot · parse error caption · record-button alternative · empty",
+                        "settings Row grid 150 + 16 · one line per command: mode 160 · slot · ghost Reset · Select and Reset 28 · Custom = keybinding record slots 24 (one per key + add, None slot when empty) · Reset disabled without an override · draft dot · parse error caption · recording · empty",
                     ),
                     components::kb_plugins::draw,
                 ),
