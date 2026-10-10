@@ -73,12 +73,12 @@ impl MainView {
         self.state.dispatch_intent(
             crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer {
                 target,
-                action: crate::explorer_ui::ExplorerAction::Navigate(folder),
+                action: crate::explorer_ui::ExplorerAction::Navigate(folder.clone()),
             })
             .from_user_context_menu(),
         );
         if let Some(view) = self.state.explorer_views.get_mut(surface_id) {
-            view.reveal_after_load(item);
+            view.reveal_after_load(folder, item);
         }
     }
 }

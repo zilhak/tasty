@@ -131,6 +131,21 @@ pub(super) fn normalize(path: &str) -> String {
     }
 }
 
+/// 정리한 원격 경로를 부모 폴더와 마지막 이름으로 나눈다. 루트이거나 루트 없는 한 구간이면 None이다.
+/// 빈 경로를 보내면 서버가 홈을 읽으므로 부모가 빈 문자열이 되는 경우는 만들지 않는다.
+pub(super) fn parent_and_name(path: &str) -> Option<(String, String)> {
+    let windows = is_windows_style(path);
+    let (root, rest) = split_root(path, windows);
+    let is_sep = |c: char| c == '/' || (windows && c == '\\');
+    let rest = rest.trim_matches(is_sep);
+    let (head, name) = match rest.rfind(is_sep) {
+        Some(i) => (&rest[..i], &rest[i + 1..]),
+        None => ("", rest),
+    };
+    let parent = format!("{root}{head}");
+    (!name.is_empty() && !parent.is_empty()).then(|| (parent, name.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,6 +174,32 @@ mod tests {
     fn a_path_without_a_root_keeps_leading_parents() {
         assert_eq!(normalize("a/../.."), "..");
         assert_eq!(normalize("."), ".");
+    }
+
+    #[test]
+    fn a_remote_path_splits_into_its_folder_and_name_by_the_remote_format() {
+        let split = parent_and_name;
+        assert_eq!(
+            split("/srv/a/notes.md"),
+            Some(("/srv/a".into(), "notes.md".into()))
+        );
+        assert_eq!(split("/notes.md"), Some(("/".into(), "notes.md".into())));
+        assert_eq!(
+            split(r"C:\Users\u\a.txt"),
+            Some((r"C:\Users\u".into(), "a.txt".into()))
+        );
+        assert_eq!(split(r"C:\a.txt"), Some((r"C:\".into(), "a.txt".into())));
+        assert_eq!(
+            split(r"\\host\share\a.txt"),
+            Some((r"\\host\share\".into(), "a.txt".into()))
+        );
+        assert_eq!(
+            split("/srv/a b/한글.md"),
+            Some(("/srv/a b".into(), "한글.md".into()))
+        );
+        assert_eq!(split("/"), None);
+        assert_eq!(split(r"C:\"), None);
+        assert_eq!(split("notes.md"), None);
     }
 
     #[test]

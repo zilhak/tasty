@@ -586,14 +586,12 @@ fn address_bar(
             &candidates,
             &current_str,
         );
-    if let PathFieldOutcome::Navigate(input) = outcome
-        && action.is_none()
-        && let Some(target) = address::resolve(&input, current, view.address_host(remote))
-    {
-        *action = Some(match target {
-            Ok(dir) => ExplorerAction::Navigate(dir),
-            Err(why) => ExplorerAction::AddressRejected(why),
-        });
+    let input = match outcome {
+        PathFieldOutcome::Navigate(input) => Some(input),
+        _ => None,
+    };
+    if action.is_none() {
+        *action = view.address_action(ui.ctx(), input.as_deref(), current, remote);
     }
 }
 

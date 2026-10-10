@@ -1,4 +1,4 @@
-<!-- source-hash: b3db52a67ee3 -->
+<!-- source-hash: 8bb2d3de7915 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -56,7 +56,7 @@ If a folder can't be read (the path is gone, it is not a folder, or a remote rea
 
 When you paste, rename or move items to the trash in an Explorer, every other Explorer showing a changed folder (even in another window) re-reads its list and left tree. If the folder you were viewing was deleted or renamed, the read error message appears in place and the Explorer does not move to another folder on its own. When another program creates, deletes or renames items in a folder, the Explorer in the focused tab of the Tasty window you are using notices within 2 seconds and re-reads its list and the folders you expanded in the tree, keeping your selection and scroll position. An Explorer in another tab, or one left open while you use another app, checks the moment you return to that tab or to the Tasty window. Changes to a file's content or size alone, and remote (attach) Explorers, are not picked up automatically, so press **Refresh** (`F5`). Refresh also re-reads the folders you expanded in the tree. When a re-read list no longer has an item you selected, that item leaves the selection too.
 
-Click the address bar to type a path directly; recently visited folders appear as autocompletion. Go with `Enter` or **Go**. The left tree stays fixed at the root, but the right list can go anywhere.
+Click the address bar to type a path directly; recently visited folders appear as autocompletion. Go with `Enter` or **Go**. The left tree stays fixed at the root, but the right list can go anywhere. If you type the path of a file, the file is not opened: Explorer goes to the folder that holds it and selects it. A remote Explorer does the same.
 
 - A relative path starts from the folder you are looking at. `..` goes one level up.
 - `~` and `~/folder` are under your home folder.

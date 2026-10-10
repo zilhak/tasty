@@ -3,7 +3,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use super::view::ExplorerView;
+use super::view::{ExplorerView, LoadState};
 
 impl ExplorerView {
     /// 메뉴 행의 대상: (열 폴더, 고를 항목). 링크는 대상이 든 폴더를, 하위 폴더 검색 결과는 결과가 든
@@ -20,11 +20,39 @@ impl ExplorerView {
         Some((item.parent()?.to_path_buf(), item))
     }
 
-    /// 폴더를 옮긴 뒤 부른다. Find 를 닫아 그 폴더의 전체 목록을 보이고, 목록에 `item` 이 나타나면 고른다.
-    pub(crate) fn reveal_after_load(&mut self, item: PathBuf) {
+    /// 폴더 `dir` 로 옮길 때 부른다. Find 를 닫아 그 폴더의 전체 목록을 보이고, 목록에 `item` 이 나타나면
+    /// 고른다. 고르기 전에 그 폴더에 도착했다가 떠나거나 그 폴더를 읽지 못하면 버린다(`settle_reveal`).
+    pub(crate) fn reveal_after_load(&mut self, dir: PathBuf, item: PathBuf) {
         self.find = None;
         self.reveal = Some(item);
         self.reveal_select = true;
+        self.reveal_in = Some((dir, false));
+    }
+
+    /// 매 동기화 첫머리에 부른다. 고를 항목이 기다리는 폴더에 도착했는지 기록하고, 도착한 뒤 다른 폴더로
+    /// 갔거나(뒤로·위로·탭 전환 포함) 그 폴더 목록이 오류로 끝났으면 기다리던 고르기를 버린다.
+    /// 상태는 지난 동기화의 것이므로 지금 보이는 폴더가 그 폴더일 때만 오류를 그 폴더의 것으로 본다.
+    pub(super) fn settle_reveal(&mut self, root: &Path) {
+        let shown_failed = self.shown_dir() == Some(root)
+            && matches!(self.state, LoadState::Error(_) | LoadState::NoPermission);
+        let Some((dir, arrived)) = self.reveal_in.as_mut() else {
+            return;
+        };
+        let here = dir.as_path() == root;
+        let left = *arrived && !here;
+        *arrived |= here;
+        let failed = here && shown_failed;
+        if left || failed {
+            self.forget_reveal();
+        }
+    }
+
+    /// 기다리던 고르기를 버린다. 이미 고른 항목은 그대로 둔다.
+    pub(super) fn forget_reveal(&mut self) {
+        if self.reveal_in.take().is_some() {
+            self.reveal = None;
+            self.reveal_select = false;
+        }
     }
 }
 
@@ -126,7 +154,7 @@ mod tests {
         let dir = Path::new("/srv/real");
         let item = dir.join("notes.md");
         let mut view = ExplorerView::default();
-        view.reveal_after_load(item.clone());
+        view.reveal_after_load(dir.to_path_buf(), item.clone());
         assert_eq!(view.take_reveal(), None, "not listed yet");
         assert!(view.selected.is_empty());
         listed(&mut view, dir, &["a.txt", "notes.md"]);
@@ -134,5 +162,70 @@ mod tests {
         assert_eq!(view.selected.len(), 1);
         assert!(view.selected.contains(&item));
         assert_eq!(view.take_reveal(), None, "revealed once");
+    }
+
+    /// mirror view 가 `dir` 을 보도록 동기화한다. 요청이 나가면 그 ID 를 돌려준다.
+    fn show_remote(view: &mut ExplorerView, dir: &str) -> Option<u64> {
+        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from(dir));
+        view.sync(&panel, Some(7));
+        view.drain_outbox().pop().map(|r| r.request_id)
+    }
+
+    #[test]
+    fn a_waiting_pick_survives_the_move_there_and_is_dropped_once_left() {
+        let mut view = ExplorerView::default();
+        show_remote(&mut view, "/srv");
+        view.reveal_after_load("/srv/a".into(), "/srv/a/n.md".into());
+        // 아직 옮기기 전(이동 요청을 낸 프레임)에는 버리지 않는다.
+        show_remote(&mut view, "/srv");
+        assert!(view.reveal.is_some());
+        let id = show_remote(&mut view, "/srv/a").expect("요청");
+        assert!(
+            view.reveal.is_some(),
+            "도착만으로 기다리던 고르기를 지우면 안 된다"
+        );
+        // 목록이 오기 전에 떠나면(뒤로·위로·탭 전환) 버린다.
+        show_remote(&mut view, "/srv");
+        assert_eq!(view.reveal, None);
+        assert!(!view.reveal_select);
+        // 다시 들어가 목록에 항목이 있어도 고르지 않는다.
+        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv/a"));
+        // 떠나기 전에 보낸 요청의 응답이 다시 들어간 뒤에 온다.
+        show_remote(&mut view, "/srv/a");
+        let listed = Ok(vec![DirEntryInfo {
+            path: "/srv/a/n.md".into(),
+            name: "n.md".into(),
+            is_dir: false,
+            size: 0,
+            modified: None,
+            ext: String::new(),
+            link: Default::default(),
+        }]);
+        assert!(view.apply_remote_list_dir_result(id, &panel, listed));
+        assert_eq!(view.take_reveal(), None);
+        assert!(view.selected.is_empty());
+    }
+
+    #[test]
+    fn a_waiting_pick_is_dropped_when_its_folder_fails_to_list() {
+        let mut view = ExplorerView::default();
+        let id = show_remote(&mut view, "/srv/locked").expect("요청");
+        view.reveal_after_load("/srv/locked".into(), "/srv/locked/f.md".into());
+        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv/locked"));
+        assert!(view.apply_remote_list_dir_result(id, &panel, Err("permission denied".into())));
+        show_remote(&mut view, "/srv/locked");
+        assert_eq!(view.reveal, None, "읽지 못한 폴더의 고르기는 버린다");
+    }
+
+    #[test]
+    fn a_failure_of_the_folder_left_behind_does_not_drop_the_pick() {
+        let mut view = ExplorerView::default();
+        let id = show_remote(&mut view, "/srv/locked").expect("요청");
+        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv/locked"));
+        assert!(view.apply_remote_list_dir_result(id, &panel, Err("permission denied".into())));
+        view.reveal_after_load("/srv/a".into(), "/srv/a/n.md".into());
+        show_remote(&mut view, "/srv/locked");
+        show_remote(&mut view, "/srv/a");
+        assert!(view.reveal.is_some());
     }
 }

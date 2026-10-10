@@ -2,7 +2,10 @@
 //! 원격 입력은 로컬 파일시스템을 보지 않고 원격 조회에 맡긴다. 규칙은 docs/surfaces/explorer/index.md의
 //! "주소 입력" 절에 있다.
 
+mod probe;
 mod remote;
+
+pub(super) use probe::AddressProbe;
 
 use std::path::{Component, Path, PathBuf};
 
@@ -13,13 +16,21 @@ pub enum Host<'a> {
     Remote { home: Option<&'a Path> },
 }
 
+/// 주소 입력이 가리키는 이동 대상.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AddressTarget {
+    /// 폴더로 이동한다.
+    Folder(PathBuf),
+    /// 파일이 든 폴더로 이동해 그 파일을 고른다.
+    File { dir: PathBuf, file: PathBuf },
+    /// 원격 경로. 폴더인지 파일인지는 부모 폴더의 원격 목록으로 확인한 뒤 이동한다.
+    Remote(PathBuf),
+}
+
 /// 주소 입력을 이동하지 않은 이유. 사용자에게 toast로 알린다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AddressRejection {
     NotFound(PathBuf),
-    NotADirectory(PathBuf),
-    /// 링크 자체는 있지만 대상이 없다.
-    BrokenLink(PathBuf),
     /// 권한 거부 등 존재 여부를 확인하지 못했다.
     Unreadable {
         path: PathBuf,
@@ -38,8 +49,6 @@ impl AddressRejection {
         let shown = |p: &Path| p.display().to_string();
         match self {
             Self::NotFound(p) => t_fmt("explorer.address.not_found", &shown(p)),
-            Self::NotADirectory(p) => t_fmt("explorer.address.not_a_directory", &shown(p)),
-            Self::BrokenLink(p) => t_fmt("explorer.state.broken_link", &shown(p)),
             Self::Unreadable { path, reason } => {
                 t_fmt2("explorer.address.unreadable", &shown(path), reason)
             }
@@ -49,21 +58,21 @@ impl AddressRejection {
     }
 }
 
-/// 입력을 이동할 폴더로 바꾼다. 빈 입력은 None이다. 원격이면 원격 규칙을 쓴다.
+/// 입력을 이동 대상으로 바꾼다. 빈 입력은 None이다. 원격이면 원격 규칙을 쓴다.
 pub fn resolve(
     input: &str,
     current: &Path,
     host: Host<'_>,
-) -> Option<Result<PathBuf, AddressRejection>> {
+) -> Option<Result<AddressTarget, AddressRejection>> {
     let input = input.trim();
     if input.is_empty() {
         return None;
     }
     if let Host::Remote { home } = host {
-        return Some(remote_target(input, current, home));
+        return Some(remote_target(input, current, home).map(AddressTarget::Remote));
     }
     let home = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf());
-    Some(local_path(input, current, home.as_deref()).and_then(|p| check_local_dir(&p).map(|()| p)))
+    Some(local_path(input, current, home.as_deref()).and_then(check_local))
 }
 
 /// 로컬 입력을 절대 경로로 확정한다. 파일시스템은 보지 않는다.
@@ -123,22 +132,36 @@ fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-/// 로컬 경로가 이동할 수 있는 폴더인지 확인한다. 폴더를 가리키는 링크는 링크 경로 그대로 연다.
-fn check_local_dir(path: &Path) -> Result<(), AddressRejection> {
-    match std::fs::metadata(path) {
-        Ok(meta) if meta.is_dir() => Ok(()),
-        Ok(_) => Err(AddressRejection::NotADirectory(path.to_path_buf())),
+/// 로컬 경로의 이동 대상을 정한다. 폴더는 그 폴더로, 파일은 그 파일이 든 폴더로 간다. 링크는 풀지 않고
+/// 링크 경로 그대로 쓴다. 폴더를 가리키는 링크는 그 링크를 열고, 파일을 가리키는 링크와 대상이 없는 링크는
+/// 링크가 든 폴더에서 링크를 고른다. 대상이 없는 링크도 목록에 항목으로 보이기 때문이다.
+fn check_local(path: PathBuf) -> Result<AddressTarget, AddressRejection> {
+    match std::fs::metadata(&path) {
+        Ok(meta) if meta.is_dir() => Ok(AddressTarget::Folder(path)),
+        Ok(_) => Ok(file_in_folder(path)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             if path.symlink_metadata().is_ok() {
-                Err(AddressRejection::BrokenLink(path.to_path_buf()))
+                Ok(file_in_folder(path))
             } else {
-                Err(AddressRejection::NotFound(path.to_path_buf()))
+                Err(AddressRejection::NotFound(path))
             }
         }
         Err(e) => Err(AddressRejection::Unreadable {
-            path: path.to_path_buf(),
+            path,
             reason: e.to_string(),
         }),
+    }
+}
+
+/// 폴더가 아닌 항목을 그 항목이 든 폴더로 가서 고르는 대상. 절대 경로라 부모가 없는 경우는 루트뿐이고
+/// 루트는 폴더이므로 여기 오지 않는다.
+fn file_in_folder(file: PathBuf) -> AddressTarget {
+    match file.parent() {
+        Some(dir) => AddressTarget::File {
+            dir: dir.to_path_buf(),
+            file,
+        },
+        None => AddressTarget::Folder(file),
     }
 }
 
@@ -174,7 +197,7 @@ mod tests {
     const NO_HOME: Host<'static> = Host::Remote { home: None };
 
     fn remote_with_home(input: &str, current: &str, home: &str) -> PathBuf {
-        resolve(
+        let target = resolve(
             input,
             Path::new(current),
             Host::Remote {
@@ -182,7 +205,11 @@ mod tests {
             },
         )
         .unwrap()
-        .unwrap()
+        .unwrap();
+        match target {
+            AddressTarget::Remote(path) => path,
+            other => panic!("원격 입력이 원격 대상이 아니다: {other:?}"),
+        }
     }
 
     fn local(input: &str, current: &str) -> Result<PathBuf, AddressRejection> {
@@ -232,38 +259,80 @@ mod tests {
     }
 
     #[test]
-    fn local_check_reports_why_a_path_is_not_opened() {
+    fn a_file_path_opens_its_folder_and_picks_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("file.txt");
         std::fs::write(&file, b"x").unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/한글 파일.md"), b"x").unwrap();
         let cur = dir.path();
         assert_eq!(
             resolve(" file.txt ", cur, Host::Local),
-            Some(Err(AddressRejection::NotADirectory(file)))
+            Some(Ok(AddressTarget::File {
+                dir: cur.to_path_buf(),
+                file
+            }))
         );
+        assert_eq!(
+            resolve("sub/./한글 파일.md", cur, Host::Local),
+            Some(Ok(AddressTarget::File {
+                dir: cur.join("sub"),
+                file: cur.join("sub/한글 파일.md")
+            }))
+        );
+    }
+
+    #[test]
+    fn local_check_reports_why_a_path_is_not_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let cur = dir.path();
         assert_eq!(
             resolve("missing", cur, Host::Local),
             Some(Err(AddressRejection::NotFound(cur.join("missing"))))
         );
         std::fs::create_dir(cur.join("sub")).unwrap();
-        assert_eq!(resolve("sub", cur, Host::Local), Some(Ok(cur.join("sub"))));
+        assert_eq!(
+            resolve("sub", cur, Host::Local),
+            Some(Ok(AddressTarget::Folder(cur.join("sub"))))
+        );
     }
 
     #[cfg(unix)]
     #[test]
-    fn a_folder_link_opens_at_its_own_path_and_a_broken_link_says_so() {
+    fn a_link_is_not_resolved_and_a_broken_link_is_picked_in_its_folder() {
         let dir = tempfile::tempdir().unwrap();
         let cur = dir.path();
         std::fs::create_dir(cur.join("real")).unwrap();
+        std::fs::write(cur.join("real/notes.md"), b"n").unwrap();
         std::os::unix::fs::symlink(cur.join("real"), cur.join("link")).unwrap();
+        std::os::unix::fs::symlink(cur.join("real/notes.md"), cur.join("note-link")).unwrap();
         std::os::unix::fs::symlink(cur.join("gone"), cur.join("broken")).unwrap();
         assert_eq!(
             resolve("link", cur, Host::Local),
-            Some(Ok(cur.join("link")))
+            Some(Ok(AddressTarget::Folder(cur.join("link"))))
+        );
+        // 파일 링크는 대상이 든 폴더가 아니라 링크가 든 폴더에서 링크를 고른다.
+        assert_eq!(
+            resolve("note-link", cur, Host::Local),
+            Some(Ok(AddressTarget::File {
+                dir: cur.to_path_buf(),
+                file: cur.join("note-link")
+            }))
         );
         assert_eq!(
+            resolve("link/notes.md", cur, Host::Local),
+            Some(Ok(AddressTarget::File {
+                dir: cur.join("link"),
+                file: cur.join("link/notes.md")
+            }))
+        );
+        // 대상이 없는 링크도 목록에 항목으로 보이므로 링크가 든 폴더에서 고른다.
+        assert_eq!(
             resolve("broken", cur, Host::Local),
-            Some(Err(AddressRejection::BrokenLink(cur.join("broken"))))
+            Some(Ok(AddressTarget::File {
+                dir: cur.to_path_buf(),
+                file: cur.join("broken")
+            }))
         );
     }
 
@@ -272,15 +341,15 @@ mod tests {
         let missing_here = "/definitely/not/on/this/machine";
         assert_eq!(
             resolve(missing_here, Path::new("/srv"), NO_HOME),
-            Some(Ok(missing_here.into()))
+            Some(Ok(AddressTarget::Remote(missing_here.into())))
         );
         assert_eq!(
             resolve(r"C:\Users\x", Path::new("/srv"), NO_HOME),
-            Some(Ok(r"C:\Users\x".into()))
+            Some(Ok(AddressTarget::Remote(r"C:\Users\x".into())))
         );
         assert_eq!(
             resolve("sub", Path::new("/remote/home"), NO_HOME),
-            Some(Ok("/remote/home/sub".into()))
+            Some(Ok(AddressTarget::Remote("/remote/home/sub".into())))
         );
         assert_eq!(
             resolve("~/x", Path::new("/srv"), NO_HOME),
@@ -292,15 +361,15 @@ mod tests {
     fn remote_relative_input_follows_the_separator_of_the_remote_folder() {
         assert_eq!(
             resolve("proj", Path::new(r"C:\Users\u"), NO_HOME),
-            Some(Ok(r"C:\Users\u\proj".into()))
+            Some(Ok(AddressTarget::Remote(r"C:\Users\u\proj".into())))
         );
         assert_eq!(
             resolve("proj", Path::new(r"C:\"), NO_HOME),
-            Some(Ok(r"C:\proj".into()))
+            Some(Ok(AddressTarget::Remote(r"C:\proj".into())))
         );
         assert_eq!(
             resolve("proj", Path::new("/"), NO_HOME),
-            Some(Ok("/proj".into()))
+            Some(Ok(AddressTarget::Remote("/proj".into())))
         );
     }
 

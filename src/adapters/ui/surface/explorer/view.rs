@@ -34,7 +34,7 @@ pub enum LoadState {
 }
 
 /// 원격 디렉터리 응답의 UI 대기 제한. 로컬 worker 수명과는 별개다.
-const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
+pub(super) const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// 경로 하나의 원격 list_dir 요청 생애주기(ADR-0022 — `ExplorerView` 가
 /// 자체 소유하는 경로별 pending 상태, host 범용 레지스트리 없음).
@@ -89,13 +89,15 @@ pub struct ExplorerView {
     pub addr_editing: bool,
     /// 주소창 후보 드롭다운의 keyboard-active 행(필터된 가시 목록 기준).
     pub addr_active: Option<usize>,
+    /// 파일인지 확인하려고 부모 폴더 목록을 기다리는 원격 주소 입력.
+    pub(super) addr_probe: Option<super::address::AddressProbe>,
     /// (ADR-0022) 이 surface 가 원격 mirror 인가 — `Some(local_ws_id)` 면 원격, `None`
     /// 이면 로컬. `sync()`가 매 호출마다 최신값으로 갱신한다.
-    mirror_ws_id: Option<u32>,
+    pub(super) mirror_ws_id: Option<u32>,
     /// (ADR-0022) 경로별 원격 요청 상태 — 로컬 surface 는 항상 비어 있다.
     remote_state: HashMap<PathBuf, RemoteLoadState>,
     /// (ADR-0022) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
-    outbox: Vec<ExplorerListRequest>,
+    pub(super) outbox: Vec<ExplorerListRequest>,
     /// 영숫자로 항목을 선택하는 타입어헤드의 입력 버퍼. 동작 규칙은 `type_ahead`
     /// 모듈에 있다.
     pub type_ahead: TypeAhead,
@@ -112,6 +114,8 @@ pub struct ExplorerView {
     pub(super) reveal: Option<PathBuf>,
     /// 나타났을 때 그 항목을 고르기도 하는가(들어 있는 폴더에서 보기).
     pub(super) reveal_select: bool,
+    /// 고를 항목(`reveal_after_load`)이 기다리는 폴더와 그 폴더에 한 번 도착했는지.
+    pub(super) reveal_in: Option<(PathBuf, bool)>,
     /// 지금 보는 로컬 폴더에 쓸 수 있는가. 확인한 폴더와 함께 둔다.
     writable: Option<(PathBuf, bool)>,
     writable_query: Option<(PathBuf, crate::app::local_reads::Query<bool>)>,
@@ -246,6 +250,7 @@ impl ExplorerView {
             addr_buffer: String::new(),
             addr_editing: false,
             addr_active: None,
+            addr_probe: None,
             mirror_ws_id: None,
             remote_state: HashMap::new(),
             outbox: Vec::new(),
@@ -256,6 +261,7 @@ impl ExplorerView {
             create: None,
             reveal: None,
             reveal_select: false,
+            reveal_in: None,
             writable: None,
             writable_query: None,
             find: None,
@@ -384,6 +390,8 @@ impl ExplorerView {
         }
         self.select_only(path);
         self.reveal = Some(path.to_path_buf());
+        self.reveal_in = None;
+        self.reveal_select = false;
     }
 
     /// 만든 항목이 목록에 나타났으면 이번 프레임의 스크롤 대상으로 꺼낸다. 없으면 키보드로 옮긴
@@ -397,6 +405,7 @@ impl ExplorerView {
             return self.cursor.take_scroll();
         }
         let path = self.reveal.take()?;
+        self.reveal_in = None;
         if std::mem::take(&mut self.reveal_select) {
             self.select_only(&path);
         }
@@ -439,6 +448,7 @@ impl ExplorerView {
         self.preview.adopt(&panel.preview);
         self.adopt_hidden(panel.show_hidden);
         let tab = panel.active_tab();
+        self.settle_reveal(&tab.root);
         // 편집 중에는 입력을 유지하고, 아니면 주소를 현재 cwd로 맞춘다. 목록 갱신과는 별개다.
         if !self.addr_editing {
             let cwd = tab.root.display().to_string();
@@ -585,6 +595,17 @@ impl ExplorerView {
             })
     }
 
+    /// 다른 경로로 받은 원격 폴더 목록(주소창의 파일 확인)을 그 폴더의 캐시로 둔다. 그 폴더로 옮겼을 때
+    /// 같은 목록을 다시 요청하지 않는다. 그 폴더를 기다리는 요청이 있으면 그 응답은 낡은 것으로 버려진다.
+    pub(super) fn cache_remote_listing(&mut self, dir: PathBuf, entries: Vec<DirEntryInfo>) {
+        self.tree_children.insert(
+            dir.clone(),
+            tree_dirs(entries.iter().filter(|e| e.is_dir).cloned()),
+        );
+        self.remote_state
+            .insert(dir, RemoteLoadState::Loaded(entries));
+    }
+
     /// 기다리는 요청의 응답을 경로 캐시에 반영한다. 현재 디렉터리이면 본문도 갱신하며
     /// 트리와 본문이 같은 경로를 보고 있으면 같은 응답을 함께 사용한다.
     pub(crate) fn apply_remote_list_dir_result(
@@ -593,6 +614,9 @@ impl ExplorerView {
         panel: &ExplorerPanel,
         result: Result<Vec<DirEntryInfo>, String>,
     ) -> bool {
+        if self.answer_address_probe(request_id, &result) {
+            return true;
+        }
         let Some(dir) = self.find_pending_dir(request_id) else {
             return false;
         };
