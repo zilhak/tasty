@@ -152,7 +152,8 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "src/",
-        7,
+        // 부팅 오류 화면의 Quit 버튼 폭 120은 공용 boot_error 로 옮겨 빠졌다.
+        6,
         "그 밖의 본체 gfx·state·app 치수. 역할에 맞는 토큰과 외부 API 경계 여부를 위치별로 검토한다.",
     ),
     (
@@ -250,7 +251,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 스크립트 변경 확인의 좌우 여백 14는 시안 `Padding 12/14` 이며 본체 popup 과 갤러리가 함께 쓴다. 역할 토큰이 없다.
         // 탐색기 상세 표 열의 이름 열 하한 140·크기 열 하한 64 는 본체와 갤러리가 함께 쓰는 explorer_columns 로 옮겨 왔다.
         // DAG 빈 상태 글리프 24는 본체와 갤러리가 함께 쓰는 dag_empty 로 옮겨 왔다. 24px 아이콘 토큰이 없다.
-        30,
+        // 부팅 오류 카드의 내용 폭 460과 Quit 폭 120은 공용 boot_error 로 옮겨 왔다. 디자인 시안이 없다.
+        // 본체에서 460은 f32 지역 값이라 집계되지 않았고 이름 붙은 LogicalPx 가 되며 집계된다.
+        32,
         "공용 위젯",
     ),
     (
@@ -964,7 +967,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // Select 테두리 콤보 시험(select_combo_border.rs)의 화면·클릭 좌표·콤보 폭·입력칸 여백 리터럴 중
         // 여섯 자리가 test 전용으로 들어왔다.
         // plugin 배너 본문 툴팁 시험의 화면 높이·위쪽 여백 리터럴 세 자리가 test 전용으로 들어왔다.
-        (234, 612),
+        // 부팅 오류 화면이 egui::Window 의 anchor vec2(0, 0)·fixed_size vec2(w, 0) 대신 공용 화면을 쓰며 0 셋이 빠졌다.
+        (231, 612),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

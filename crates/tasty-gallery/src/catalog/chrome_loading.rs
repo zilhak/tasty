@@ -1,6 +1,8 @@
 //! 부팅·종료 화면의 로고, 스피너, 진행 문구 예제.
 //! 본체와 공통 브랜드 위젯·Theme 값을 사용하며 두 화면은 문구만 다르게 그린다.
 
+mod boot_error;
+
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::brand::{self};
 use tasty_ui_widgets::{ShellSetupCheck, ShellSetupView, Spinner, shell_setup_screen};
@@ -444,4 +446,6 @@ pub fn draw_shell_setup(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
     );
+    // 같은 구역의 두 번째 Spec. 구역 목록(catalog.rs)은 Spec 하나로 둔다.
+    boot_error::draw(ui, theme);
 }

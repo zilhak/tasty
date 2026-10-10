@@ -3,12 +3,11 @@
 use winit::window::Window;
 
 use super::{BootErrorInfo, GpuState};
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{ui_copy, vspace};
 
 impl GpuState {
     /// 부팅 실패 진단을 그린다. 반환 `Ok(true)` = 사용자가 종료를 눌렀다(caller 가
     /// `exit` 한다). 터미널 없이 egui 만 그린다 — `render_shell_setup` 과 같은 구조다.
+    /// 화면은 갤러리와 같은 `tasty_ui_widgets::boot_error_screen`이다.
     pub fn render_boot_error(
         &mut self,
         window: &Window,
@@ -26,81 +25,22 @@ impl GpuState {
             let th = crate::theme::theme();
             tasty_egui_theme::apply_theme_to_egui(&th, ctx);
 
-            let bg_panel = th.bg_app();
-            let text_dim = th.text_muted();
-            let danger = th.accent_danger();
-
             egui::CentralPanel::default()
-                .frame(egui::Frame::new().fill(bg_panel.into()))
-                .show(ctx, |_| {});
-
-            let content_w = 460.0;
-            egui::Window::new("boot_error")
-                .title_bar(false)
-                .resizable(false)
-                .collapsible(false)
-                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-                .fixed_size(egui::vec2(content_w, 0.0))
-                .frame(
-                    egui::Frame::new()
-                        .fill(th.bg_sidebar().into())
-                        .stroke(egui::Stroke::new(
-                            th.border_width.value(),
-                            th.border_default(),
-                        ))
-                        .corner_radius(th.corner_radius_lg.value())
-                        .inner_margin(tasty_ui_widgets::margin_all(th.spacing_lg))
-                        // 화면 중앙의 진단 카드에는 모달 그림자를 사용한다.
-                        .shadow(th.shadow_modal().to_egui()),
-                )
+                .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
-                    ui.label(
-                        egui::RichText::new(&info.title)
-                            .size(th.font_size_heading.value())
-                            .strong()
-                            .color(danger),
-                    );
-                    vspace(ui, STRUCT_GAP_2);
-
-                    // 본문과 안내의 백틱 구간(CLI 명령·옵션)은 code run 으로 그린다.
-                    ui_copy(
-                        ui,
-                        &th,
-                        &info.body,
-                        th.font_size_body,
-                        th.text_primary().into(),
-                    );
-                    vspace(ui, th.spacing_md);
-
-                    ui_copy(ui, &th, &info.hint, th.font_size_caption, text_dim.into());
-
-                    vspace(ui, th.spacing_lg);
-
-                    ui.vertical_centered(|ui| {
-                        let btn_size = egui::vec2(120.0, 34.0);
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new(crate::i18n::t("button.quit"))
-                                        .size(th.font_size_body.value())
-                                        .strong()
-                                        .color(th.bg_panel()),
-                                )
-                                .min_size(btn_size)
-                                .fill(danger)
-                                // 채움과 같은 색의 stroke가 버튼 면적을 넓힌다.
-                                // border_width가 바뀌면 테두리뿐 아니라 이 버튼 크기도 함께 확인해야 한다.
-                                .stroke(egui::Stroke::new(th.border_width.value(), danger))
-                                .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS),
-                            )
-                            .clicked()
-                            || ui.input(|i| {
-                                i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter)
-                            })
-                        {
-                            quit = true;
-                        }
-                    });
+                    let screen = tasty_ui_widgets::BootErrorView {
+                        title: &info.title,
+                        body: &info.body,
+                        hint: &info.hint,
+                        quit: crate::i18n::t("button.quit"),
+                    };
+                    if tasty_ui_widgets::boot_error_screen(ui, &th, &screen)
+                        || ui.input(|i| {
+                            i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter)
+                        })
+                    {
+                        quit = true;
+                    }
                 });
         });
 

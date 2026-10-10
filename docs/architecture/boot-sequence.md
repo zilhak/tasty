@@ -107,7 +107,8 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   [shutdown-sequence "종료 화면"](shutdown-sequence.md) · [ADR-0016](../adr/0016-window-platform-and-shutdown.md).
 - 갤러리 specimen: `crates/tasty-gallery/src/catalog/chrome_loading.rs`
   (Chrome 카테고리) — 부팅 5종(기본/최소창/phase 문구 3종/문구 없음/Latte) +
-  종료 2종(기본/phase 문구 4종) + 첫 실행 셸 설정 화면 8장(Windows 판정 4종, macOS 2종, Latte 2장).
+  종료 2종(기본/phase 문구 4종) + 첫 실행 셸 설정 화면 8장(Windows 판정 4종, macOS 2종, Latte 2장)
+  + 부팅 오류 화면 4장(엔진 오류, 데이터 폴더 사용 중, 웹훅 포트, Latte 데이터 폴더 사용 중).
 - **첫 실행 셸 설정 화면** — `render_shell_setup` 은 공용 view
   `tasty_ui_widgets::shell_setup_screen` 을 부르고 갤러리도 같은 함수를 그린다. 부팅 화면과
   같은 `bg-app` 채움(GPU clear 색 포함)과 락업 아래에 `size-360` 폭 폼을 세로 가운데에 쌓는다.
@@ -121,6 +122,13 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   - 버튼은 공용 `Button` Secondary "Quit"(앱 종료)과 Primary "Use this shell"(md)이다.
     판정이 유효할 때만 확인이 활성이며 Enter 확인도 같은 조건을 따른다. disabled 모양은
     공용 규칙(중립 상자와 disabled ink)을 따른다.
+- **부팅 오류 화면** — `render_boot_error` 는 공용 view `tasty_ui_widgets::boot_error_screen` 을
+  부르고 갤러리도 같은 함수를 그린다. `bg-app` 채움 가운데에 진단 카드(bg-sidebar, 1px
+  border-default, radius-lg, 모달 그림자, `spacing_lg` 안쪽 여백, 내용 폭 460)를 두고 제목(heading,
+  accent-danger) · 본문(body) · 안내(caption, text-muted) · Quit 버튼(120 × 34, danger 채움)을 쌓는다.
+  본문과 안내의 백틱 구간은 code run 이다. 디자인 시안이 아직 없어 카드 폭과 버튼 크기는 시안 없이
+  쓰던 값이다. 엔진 생성 실패, 다른 프로세스가 쓰는 데이터 폴더, 열지 못한 웹훅 포트에서 뜨고
+  Quit·Esc·Enter·창 닫기가 종료 코드 1로 끝낸다. 키 판정은 호스트가 한다.
 - **View 밖 창의 다시 그리기** — 첫 실행 셸 설정 창과 부팅 오류 화면은 View 밖에 있어 dirty
   표시나 렌더 예약을 받지 않는다. 클릭·Enter 처리는 렌더 안에서 일어나므로 창이 스스로 redraw 를
   요청한다. egui 가 입력에 repaint 를 답하거나 즉시 repaint 를 요청하면(`AppEvent::EguiRepaint`)
