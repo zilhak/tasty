@@ -1,4 +1,4 @@
-<!-- source-hash: e246d3fd0bb1 -->
+<!-- source-hash: 2ca3eca4d6ad -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -112,6 +112,8 @@ Choose **Properties** at the bottom of the right-click menu to open a popup insi
 | Copy / cut / paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (the same bindings as the terminal) |
 | Move between items | Arrow keys · `Home` · `End` · `PageUp` · `PageDown` (left and right only in Grid view) |
 | Extend the selection | The same keys with `Shift` |
+| Open (opens every file when only files are selected, enters the folder when one folder is among them, does nothing with two or more folders) | `Enter` |
+| Clear the selection | `Esc` |
 | Rename (one item selected) | `F2` |
 | Move to Trash | `Delete` · `Alt+Backspace` (`Cmd+Backspace` on macOS) |
 | Undo / redo a copy or move | `Ctrl+Z` / `Ctrl+Shift+Z` · `Ctrl+Y` (macOS `Cmd+Z` / `Cmd+Shift+Z`) |

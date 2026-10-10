@@ -111,6 +111,8 @@ Tasty 안에 들어 있는 파일 관리자입니다. 터미널에서 `Alt+'` > 
 | 복사 / 잘라내기 / 붙여넣기 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (터미널과 같은 바인딩) |
 | 항목 옮기기 | 방향키 · `Home` · `End` · `PageUp` · `PageDown` (좌우는 격자 보기에서만) |
 | 선택 넓히기 | 위 키에 `Shift` |
+| 열기 (파일만 골랐으면 모두 열기, 폴더 하나가 섞이면 그 폴더로 들어가기, 폴더가 둘 이상이면 아무것도 안 함) | `Enter` |
+| 선택 해제 | `Esc` |
 | 이름 변경 (하나만 골랐을 때) | `F2` |
 | 휴지통으로 이동 | `Delete` · `Alt+Backspace` (macOS 는 `Cmd+Backspace`) |
 | 복사·이동 실행 취소 / 다시 실행 | `Ctrl+Z` / `Ctrl+Shift+Z` · `Ctrl+Y` (macOS `Cmd+Z` / `Cmd+Shift+Z`) |

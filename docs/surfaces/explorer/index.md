@@ -322,6 +322,8 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 | 선택 넓히기 (같은 이동) | `explorer_extend_*` | 위 키에 `Shift+` |
 | 이름 변경 | `explorer_rename` | `F2` |
 | 휴지통으로 이동 | `explorer_trash` | `Delete` / `Alt+Backspace`(macOS 에서 ⌘⌫). macOS 프리셋은 `Alt+Backspace` 만, Windows·Linux 프리셋은 `Delete` 만 |
+| 고른 항목 열기 | `explorer_open` | `Enter` |
+| 선택 해제 | `explorer_clear_selection` | `Esc` |
 | 실행 취소 | `explorer_undo` | `Ctrl+Z` / `Alt+Z` |
 | 다시 실행 | `explorer_redo` | `Ctrl+Shift+Z` / `Ctrl+Y` / `Alt+Shift+Z` |
 | 찾기 | `find` | `Ctrl+F` / `Alt+F` |
@@ -329,7 +331,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 실행 취소·다시 실행의 다른 프리셋 기본은 Mac `Alt+Z`(⌘Z)·`Alt+Shift+Z`(⌘⇧Z), Windows·Linux `Ctrl+Z`·`Ctrl+Shift+Z`/`Ctrl+Y` 다. 이 둘은 explorer 에 포커스가 있을 때만 키를 받으므로 터미널의 `Ctrl+Z`·`Ctrl+Y` 와 부딪치지 않는다.
 
-직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_undo`·`explorer_redo`·`explorer_toggle_preview`·`explorer_toggle_hidden`·`explorer_properties`·`find`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path`·`explorer_rename`·`explorer_trash` 가 `copy_paste.rs`, 이동·넓히기가 `explorer_keys.rs` 다. 이동·넓히기·이름 변경·휴지통은 전역 목록이 아닌 탐색기 목록(`EXPLORER_LIST_BINDING_FIELDS`, [단축키](../../features/keybindings/index.md#탐색기-목록-바인딩--explorer_list_binding_fields))에 있다. action-id/Command Palette `dispatch.rs` 는 열다섯 개 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. `find` 는 터미널 검색과 같은 바인딩이며, 포커스가 explorer 면 터미널 검색 대신 Find 바를 연다([터미널 검색](../../features/terminal-search/index.md)). 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_undo`·`explorer_redo`·`explorer_rename`·`explorer_trash`·`explorer_toggle_preview`·`explorer_toggle_hidden`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
+직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_undo`·`explorer_redo`·`explorer_toggle_preview`·`explorer_toggle_hidden`·`explorer_properties`·`find`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path`·`explorer_rename`·`explorer_trash` 가 `copy_paste.rs`, 이동·넓히기·열기·선택 해제가 `explorer_keys.rs` 다. 이동·넓히기·열기·선택 해제·이름 변경·휴지통은 전역 목록이 아닌 탐색기 목록(`EXPLORER_LIST_BINDING_FIELDS`, [단축키](../../features/keybindings/index.md#탐색기-목록-바인딩--explorer_list_binding_fields))에 있다. action-id/Command Palette `dispatch.rs` 는 열다섯 개 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. `find` 는 터미널 검색과 같은 바인딩이며, 포커스가 explorer 면 터미널 검색 대신 Find 바를 연다([터미널 검색](../../features/terminal-search/index.md)). 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_undo`·`explorer_redo`·`explorer_rename`·`explorer_trash`·`explorer_open`·`explorer_clear_selection`·`explorer_toggle_preview`·`explorer_toggle_hidden`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
 주소창·새 항목 이름 입력·Find 입력이 키를 받는 동안(`ExplorerView::text_input_active`)에는 explorer 목록 단축키(`keybinding.rs` 의 explorer 묶음, `copy_paste.rs` 의 전체 선택·경로 복사·복사·잘라내기·붙여넣기·이름 변경·휴지통)가 키를 소비하지 않고 글자 편집에 양보한다.
 
 **새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발생시키므로 CLI 의 `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 — 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 이 액션은 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션은 `keybinding.rs`·`double_tap.rs`·`dispatch.rs` 세 진입점 전부에서 처리한다.
@@ -361,6 +363,33 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - 키로 움직인 뒤에만 그 칸 안쪽에 `explorer_cursor_ring`(border-focus) 색, `explorer_cursor_ring_width`(1px) 테두리를 그린다(선택 채움 위, 모서리 radius-sm). 목록을 누르면 다음 키까지 숨는다.
 - 주소창·이름 입력·Find 입력이 키를 받는 동안과 영역 선택 중에는 움직이지 않는다.
 
+**열기·선택 해제**(`view/keys.rs`, `explorer_keys.rs`)도 같은 탐색기 키 경로에서 받는다.
+
+- 열기(`explorer_open`, 기본 `Enter`)는 지금 목록에 보이는 고른 항목만 센다. Find 로 걸러져 보이지 않는 항목은 빼고, 남은 항목이 없으면 아무것도 하지 않고 키도 소비하지 않는다. 항목마다 더블클릭과 같은 일을 하며, 몇 개를 여는지는 고른 폴더 수로 정한다.
+
+  | 고른 항목 | 동작 |
+  |---|---|
+  | 파일만 (하나 이상) | 목록 순서대로 파일을 하나씩 연다 |
+  | 폴더 하나 (파일이 섞여도) | 그 폴더로 들어간다. 함께 고른 파일은 열지 않는다 |
+  | 폴더 둘 이상 | 아무것도 하지 않고 키도 소비하지 않는다 |
+- 선택 해제(`explorer_clear_selection`, 기본 `Esc`)는 선택과 기준 항목을 모두 비운다. 현재 항목은 그대로 두므로, 키로 움직이던 중이면 다음 이동 키가 그 자리에서 시작하고 아니면 첫 항목(End 는 마지막)에서 시작한다. 고른 항목이 없거나 항목을 끄는 중(Esc 가 드래그를 취소한다)이면 키를 소비하지 않는다.
+- 영역 선택 중에는 두 키를 소비만 하고 아무것도 하지 않는다.
+
+**기준 항목 규칙**: 넓히기 키와 Shift+클릭이 범위를 재는 기준 항목(`anchor`)은 아래처럼 바뀐다.
+
+| 동작 | 기준 항목 |
+|---|---|
+| 클릭, Ctrl·Cmd+클릭, 이동 키 | 그 항목 |
+| Shift+클릭, 넓히기 키 | 그대로. 넓히기 키는 기준 항목이 없을 때만 시작 위치를 기준 항목으로 삼는다 |
+| 전체 선택(`select_all`) | 보이는 마지막 항목. 넓히기 키는 키로 움직이던 중이면 현재 항목에서, 아니면 마지막 항목에서 시작한다 |
+| 영역 선택 | 사각형에 걸친 첫 항목 |
+| 선택 해제(`explorer_clear_selection`) | 없음 |
+| 숨김 파일 끄기(`explorer_toggle_hidden`) | 숨겨지는 항목이면 없음, 아니면 그대로. 숨겨지는 항목은 선택에서도 빠진다 |
+| 숨김 파일 켜기 | 그대로. 선택도 그대로다 |
+| 다시 읽은 목록에 기준 항목이 없음 | 없음 |
+
+기준 항목이 없으면 Shift+클릭은 Shift 를 뺀 클릭과 같고, 넓히기 키는 시작 위치를 기준 항목으로 삼는다.
+
 **영역 선택**(`view/marquee.rs`)은 목록의 빈 곳(항목 칸도, 누를 수 있는 다른 위젯도 아닌 곳)을 누르고 끌 때 시작한다. 클릭만 하면 선택을 바꾸지 않는다.
 
 - 사각형에 걸친 항목을 고른다. Ctrl·Cmd·Shift 를 누르고 시작하면 그때의 선택에 더하고, 아니면 새로 고른다. 기준 항목은 걸친 항목의 첫 항목이다.
@@ -391,6 +420,7 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 붙여넣기가 진행 중이다 When 그 surface 를 닫는다 Then 이미 시작한 작업은 끝까지 실행되고 닫힌 surface 에 결과 카드나 목록 갱신을 내지 않는다. 아직 시작하지 않은 요청은 실행되지 않는다. 이름 충돌 답을 기다리던 작업은 취소되고 기존 항목은 그대로다.
 - Given 로컬 explorer 의 폴더에 "New folder" 가 있다 When 툴바의 New folder 를 누른다 Then 목록 맨 위에 "New folder 2" 가 전체 선택된 입력이 열리고, Enter 를 누르면 그 폴더가 생겨 정렬 자리에서 선택된다(`explorer_files/tests.rs` 의 `a_created_entry_is_selected_only_while_its_folder_is_still_shown`, `create/tests.rs`).
 - Given 이름 입력이 열려 있다 When 이미 있는 이름으로 Enter 를 누른다 Then 입력은 열린 채 "already exists" 오류가 보이고 디스크는 바뀌지 않는다. Esc 를 누르면 아무것도 만들지 않고 닫힌다.
+- Given 탐색기 목록에서 파일 둘과 폴더 하나를 골랐다 When `Enter` 를 누른다 Then 그 폴더로 들어가고 파일은 열리지 않는다. 폴더를 하나 더 고른 뒤 누르면 아무 일도 일어나지 않는다.
 - Given 쓸 수 없는 폴더 When 툴바를 본다 Then New folder·New file 이 비활성이다. Given mirror explorer When 툴바·메뉴를 본다 Then 두 명령이 없다.
 - Given 로컬 explorer 에 Report.pdf·report-draft.txt·notes.md 가 있다 When Find 를 열고 "re" 를 입력한다 Then 두 항목만 남고 맞는 부분이 강조되며 바에 "2 of 3" 이 보인다. 첫 `Esc` 는 글자를 지우고 둘째 `Esc` 는 바를 닫는다(`find/tests.rs`).
 - Given 거르기 전 notes.md 를 골랐다 When 그 항목이 걸러진다 Then 선택에서 빠져 이후 명령이 닿지 않는다(`find/tests.rs` 의 `the_filter_hides_rows_that_do_not_match_and_counts_what_is_shown`).

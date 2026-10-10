@@ -3,6 +3,7 @@
 pub(crate) mod cursor;
 pub(crate) mod drag;
 pub(crate) mod hidden;
+pub(crate) mod keys;
 pub(crate) mod list_layout;
 pub(crate) mod marquee;
 pub(crate) mod ops;

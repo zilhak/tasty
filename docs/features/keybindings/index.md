@@ -39,13 +39,14 @@ plugin 도구의 단축키는 `[[contributes.commands]]`로 선언하고 Plugins
 
 ### 탐색기 목록 바인딩 — `EXPLORER_LIST_BINDING_FIELDS`
 
-탐색기 칸에 포커스가 있을 때만 검사하는 18 개다. 현재 항목을 옮기는 `explorer_cursor_{up,down,left,right,home,end,page_up,page_down}`(기본 방향키·`home`·`end`·`pageup`·`pagedown`), 같은 이동으로 선택을 넓히는 `explorer_extend_*`(기본 같은 키에 `shift+`), 선택 항목의 `explorer_rename`(기본 `f2`)·`explorer_trash`(Tasty 프리셋 `delete`·`alt+backspace`, Mac `alt+backspace`, Windows·Linux `delete`)가 있다. 동작은 [Explorer](../../surfaces/explorer/index.md#현재-항목--영역-선택)에 있다.
+탐색기 칸에 포커스가 있을 때만 검사하는 20 개다. 현재 항목을 옮기는 `explorer_cursor_{up,down,left,right,home,end,page_up,page_down}`(기본 방향키·`home`·`end`·`pageup`·`pagedown`), 같은 이동으로 선택을 넓히는 `explorer_extend_*`(기본 같은 키에 `shift+`), 선택 항목의 `explorer_rename`(기본 `f2`)·`explorer_trash`(Tasty 프리셋 `delete`·`alt+backspace`, Mac `alt+backspace`, Windows·Linux `delete`), 하나만 고른 항목을 여는 `explorer_open`(기본 `enter`), 선택을 푸는 `explorer_clear_selection`(기본 `escape`)이 있다. 동작은 [Explorer](../../surfaces/explorer/index.md#현재-항목--영역-선택)에 있다.
 
-- 전역 키 경로는 이 목록을 읽지 않는다. 방향키·`delete` 를 터미널·webview 에서 가로채지 않는다.
+- 전역 키 경로는 이 목록을 읽지 않는다. 방향키·`delete`·`enter`·`escape` 를 터미널·webview 에서 가로채지 않는다.
+- 녹화 중 `Esc` 는 슬롯 비우기라 `explorer_clear_selection` 에 `escape` 를 다시 녹화할 수 없다. 프리셋을 재적용해 되돌린다.
 - 탐색기 키 경로(`handle_explorer_shortcut`)는 전역 바인딩보다 먼저 키를 본다. 그래서 탐색기에 포커스가 있으면 `f2` 는 `rename_tab` 대신 `explorer_rename` 이다.
 - 충돌 검사와 기본값 충돌 제거는 이 목록 안에서만 한다. 기존 설정에 `rename_tab = f2` 가 있어도 `explorer_rename` 의 기본값은 지워지지 않는다.
 - 명령 팔레트는 이 목록 가운데 `explorer_rename`·`explorer_trash` 만 싣는다(`PALETTE_EXPLORER_ITEM`).
-- 설정 화면에서는 Explorer 서브탭에 이름 변경·휴지통, 이동 8 행, 넓히기 8 행 순으로 나온다. 이동·넓히기 첫 행 아래에 탐색기 포커스에서만 동작한다는 설명이 붙는다.
+- 설정 화면에서는 Explorer 서브탭에 이름 변경·휴지통·열기·선택 해제, 이동 8 행, 넓히기 8 행 순으로 나온다. 이동·넓히기 첫 행 아래에 탐색기 포커스에서만 동작한다는 설명이 붙는다.
 
 `open_preset_window`(도구 메뉴의 **프리셋** 윈도우 열기)와 `apply_workspace_preset`/`apply_tab_preset`/`apply_pane_preset`(레이아웃 프리셋 **적용** picker)은 다른 것이다. 이름이 비슷해 섞기 쉬우므로 설정 화면에서도 서브탭이 갈린다 — 앞은 General, 뒤 셋은 대상 스코프를 따라 Workspace/Tab/Pane 이다.
 

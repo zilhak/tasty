@@ -220,7 +220,7 @@ impl KeybindingSettings {
         ),
     ];
 
-    /// 탐색기에 포커스가 있을 때만 검사하는 목록 바인딩(현재 항목 이동·선택 넓히기·이름 변경·휴지통).
+    /// 탐색기에 포커스가 있을 때만 검사하는 목록 바인딩(현재 항목 이동·선택 넓히기·열기·선택 해제·이름 변경·휴지통).
     /// 전역 단축키 경로는 [`Self::GENERAL_BINDING_FIELDS`] 만 읽으므로 여기 둔 방향키는 터미널에서
     /// 가로채지 않는다. 충돌 검사도 같은 목록 안에서만 한다. 탐색기 경로가 전역 바인딩보다 먼저 키를
     /// 보므로 `explorer_rename` 의 F2 는 탐색기에서만 `rename_tab` 을 앞선다.
@@ -288,6 +288,11 @@ impl KeybindingSettings {
         (
             "explorer_extend_page_down",
             "settings.keybindings.explorer_extend_page_down_label",
+        ),
+        ("explorer_open", "settings.keybindings.explorer_open_label"),
+        (
+            "explorer_clear_selection",
+            "settings.keybindings.explorer_clear_selection_label",
         ),
         (
             "explorer_rename",
@@ -410,6 +415,8 @@ impl KeybindingSettings {
             "explorer_extend_page_up" => self.explorer_extend_page_up.as_slice(),
             "explorer_cursor_page_down" => self.explorer_cursor_page_down.as_slice(),
             "explorer_extend_page_down" => self.explorer_extend_page_down.as_slice(),
+            "explorer_open" => self.explorer_open.as_slice(),
+            "explorer_clear_selection" => self.explorer_clear_selection.as_slice(),
             _ => return None,
         })
     }
@@ -505,6 +512,8 @@ impl KeybindingSettings {
             "explorer_extend_page_up" => &mut self.explorer_extend_page_up,
             "explorer_cursor_page_down" => &mut self.explorer_cursor_page_down,
             "explorer_extend_page_down" => &mut self.explorer_extend_page_down,
+            "explorer_open" => &mut self.explorer_open,
+            "explorer_clear_selection" => &mut self.explorer_clear_selection,
             _ => return None,
         })
     }

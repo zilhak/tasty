@@ -101,6 +101,10 @@ pub struct KeybindingSettings {
     pub explorer_extend_page_up: Vec<String>,
     /// 탐색기 현재 항목을 한 화면 아래로 옮기며 기준 항목부터 선택을 넓힌다.
     pub explorer_extend_page_down: Vec<String>,
+    /// 탐색기에서 하나만 고른 항목을 연다. 폴더는 그 폴더로 들어가고 파일은 연다.
+    pub explorer_open: Vec<String>,
+    /// 탐색기 선택을 모두 푼다.
+    pub explorer_clear_selection: Vec<String>,
     /// Toggle sidebar visibility (completely hidden/shown).
     pub toggle_sidebar: Vec<String>,
     /// Toggle sidebar collapse (full/compact mode).

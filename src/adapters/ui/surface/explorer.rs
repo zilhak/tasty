@@ -1050,12 +1050,7 @@ fn handle_entry_interaction(
 ) {
     if dbl {
         if action.is_none() {
-            let path = entry.path.clone();
-            *action = Some(if entry.is_dir {
-                ExplorerAction::Navigate(path)
-            } else {
-                ExplorerAction::OpenFile(path)
-            });
+            *action = Some(view::keys::open_action(entry));
         }
     } else if clicked && entry.name != ".." {
         let mods = ui.input(|i| i.modifiers);

@@ -1,4 +1,4 @@
-//! 탐색기에 포커스가 있을 때 선택한 항목에 하는 키 동작(이름 변경·휴지통)과 목록 이동 키.
+//! 탐색기에 포커스가 있을 때 선택한 항목에 하는 키 동작(이름 변경·휴지통·열기·선택 해제)과 목록 이동 키.
 //! 이름 변경·휴지통은 컨텍스트 메뉴와 같은 함수를 불러 원격 mirror 차단과 확인 절차를 공유한다.
 
 use std::path::PathBuf;
@@ -70,7 +70,14 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
-        let Some((step, extend)) = list_step(&engine.settings.keybindings, key, mods) else {
+        let kb = &engine.settings.keybindings;
+        if matches_any_binding(&kb.explorer_open, key, mods) {
+            return self.explorer_key_open(engine);
+        }
+        if matches_any_binding(&kb.explorer_clear_selection, key, mods) {
+            return self.explorer_key_clear_selection(engine);
+        }
+        let Some((step, extend)) = list_step(kb, key, mods) else {
             return false;
         };
         let Some(sid) = super::focused_explorer_surface_id(&self.state, engine) else {
@@ -82,6 +89,57 @@ impl MainView {
             view.move_cursor(step, extend);
             self.mark_dirty();
         }
+        true
+    }
+
+    /// 고른 항목을 연다(규칙은 `open_selected_actions`). 열 항목이 없으면 키를 소비하지 않는다.
+    fn explorer_key_open(&mut self, engine: &EngineRead<'_>) -> bool {
+        let Some(sid) = super::focused_explorer_surface_id(&self.state, engine) else {
+            return false;
+        };
+        let Some(view) = self.state.explorer_views.get(sid) else {
+            return false;
+        };
+        if view.marquee.active() {
+            return true;
+        }
+        let actions = view.open_selected_actions();
+        if actions.is_empty() {
+            return false;
+        }
+        for action in actions {
+            crate::adapters::ui::egui_panels::apply_explorer_action(
+                &mut self.state,
+                engine,
+                sid,
+                action,
+            );
+        }
+        self.mark_dirty();
+        true
+    }
+
+    /// 선택을 모두 푼다. 현재 항목은 그대로 두어 다음 이동 키가 그 자리에서 시작한다. 고른 항목이
+    /// 없거나 항목을 끄는 중(드래그 취소에 쓰는 Esc)이면 키를 소비하지 않는다.
+    fn explorer_key_clear_selection(&mut self, engine: &EngineRead<'_>) -> bool {
+        let Some(sid) = super::focused_explorer_surface_id(&self.state, engine) else {
+            return false;
+        };
+        let ctx = &self.base.gpu.egui_ctx;
+        if egui::DragAndDrop::has_any_payload(ctx) || ctx.dragged_id().is_some() {
+            return false;
+        }
+        let Some(view) = self.state.explorer_views.get_mut(sid) else {
+            return false;
+        };
+        if view.marquee.active() {
+            return true;
+        }
+        if view.selected.is_empty() {
+            return false;
+        }
+        view.clear_selection();
+        self.mark_dirty();
         true
     }
 

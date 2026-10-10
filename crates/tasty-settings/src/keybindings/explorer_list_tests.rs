@@ -42,7 +42,7 @@ fn every_preset_moves_with_the_plain_keys_and_extends_with_shift() {
 /// 방향키는 전역 목록 밖에 있어 터미널·팔레트·webview 선점 경로가 읽지 않는다.
 #[test]
 fn list_keys_are_outside_the_global_list_but_settable() {
-    assert_eq!(KeybindingSettings::EXPLORER_LIST_BINDING_FIELDS.len(), 18);
+    assert_eq!(KeybindingSettings::EXPLORER_LIST_BINDING_FIELDS.len(), 20);
     for (id, label) in KeybindingSettings::EXPLORER_LIST_BINDING_FIELDS {
         assert!(
             KeybindingSettings::GENERAL_BINDING_FIELDS
