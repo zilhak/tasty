@@ -84,17 +84,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "kb-record-border",
                 "→ border-default",
-                theme.border_default().to_egui(),
+                theme.kb_record_border().to_egui(),
             ),
             TokenChip::new(
                 "kb-record-border-hover",
                 "→ border-strong",
-                theme.border_strong().to_egui(),
+                theme.kb_record_border_hover().to_egui(),
             ),
             TokenChip::new(
                 "kb-record-empty-fg",
                 "→ text-muted",
-                theme.text_muted().to_egui(),
+                theme.kb_record_empty_fg().to_egui(),
             ),
             TokenChip::without_color("kb-row-gap", "→ space-sm 8"),
             TokenChip::without_color("font-combo-list-max-height", "→ size-300"),

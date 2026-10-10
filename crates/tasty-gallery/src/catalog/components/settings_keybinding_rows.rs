@@ -115,17 +115,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "kb-record-border",
                 "→ border-default · slot edge",
-                theme.border_default().to_egui(),
+                theme.kb_record_border().to_egui(),
             ),
             TokenChip::new(
                 "kb-record-border-hover",
                 "→ border-strong · hover",
-                theme.border_strong().to_egui(),
+                theme.kb_record_border_hover().to_egui(),
             ),
             TokenChip::new(
                 "kb-record-empty-fg",
                 "→ text-muted · None",
-                theme.text_muted().to_egui(),
+                theme.kb_record_empty_fg().to_egui(),
             ),
         ],
     );

@@ -1,7 +1,6 @@
 //! 단축키 녹화 슬롯 — 설정 Keybindings 의 바인딩 버튼, 추가(+) 버튼, 바인딩이 없는 행의 None 슬롯.
 //! 본체 설정과 갤러리가 같은 그리기를 쓴다.
 
-use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
@@ -16,21 +15,6 @@ pub enum KbRecordSlot<'a> {
     Add,
     /// 바인딩이 없는 행의 슬롯. 테두리와 흐린 caption 글자만 그린다. 누르면 첫 바인딩을 녹화한다.
     Empty(&'a str),
-}
-
-/// 쉬는 테두리. TODO(tokens): batch 11 의 `kb-record-border` 접근자가 생기면 그것으로 바꾼다(값 border-default).
-fn rest_border(theme: &Theme) -> HexColor {
-    theme.border_default()
-}
-
-/// 호버 테두리. TODO(tokens): `kb-record-border-hover` 접근자로 바꾼다(값 border-strong).
-fn hover_border(theme: &Theme) -> HexColor {
-    theme.border_strong()
-}
-
-/// None 슬롯 글자. TODO(tokens): `kb-record-empty-fg` 접근자로 바꾼다(값 text-muted).
-fn empty_fg(theme: &Theme) -> HexColor {
-    theme.text_muted()
 }
 
 /// 슬롯을 그린다. 폭은 `width` 이상이고 글자가 더 길면 넓어진다. 높이는 `kb-record-height` 다.
@@ -73,9 +57,9 @@ pub fn kb_record_slot(
         )
     } else {
         let border = if resp.hovered() {
-            hover_border(theme)
+            theme.kb_record_border_hover()
         } else {
-            rest_border(theme)
+            theme.kb_record_border()
         };
         match slot {
             KbRecordSlot::Binding(_) => {
@@ -85,7 +69,7 @@ pub fn kb_record_slot(
                 (Some(theme.surface_hover()), border, theme.text_disabled())
             }
             KbRecordSlot::Add => (None, border, theme.text_muted()),
-            KbRecordSlot::Empty(_) => (None, border, empty_fg(theme)),
+            KbRecordSlot::Empty(_) => (None, border, theme.kb_record_empty_fg()),
         }
     };
     let painter = ui.painter();

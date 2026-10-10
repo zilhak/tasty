@@ -64,7 +64,10 @@ fn frame_shapes() -> Vec<egui::epaint::ClippedShape> {
 /// 녹화 슬롯(바인딩·추가·None) 도형 — 1px 쉬는 테두리나 호버 테두리를 가진 사각형.
 fn slot_shapes(shapes: &[egui::epaint::ClippedShape]) -> Vec<egui::epaint::RectShape> {
     let th = crate::theme::theme();
-    let edges = [th.border_default().to_egui(), th.border_strong().to_egui()];
+    let edges = [
+        th.kb_record_border().to_egui(),
+        th.kb_record_border_hover().to_egui(),
+    ];
     shapes
         .iter()
         .filter_map(|s| match &s.shape {
@@ -185,7 +188,7 @@ fn record_buttons_have_a_border_default_edge_and_mono_caption_text() {
     for b in &buttons {
         assert_eq!(
             b.stroke,
-            egui::Stroke::new(th.border_width.value(), th.border_default().to_egui()),
+            egui::Stroke::new(th.border_width.value(), th.kb_record_border().to_egui()),
             "녹화 버튼 테두리: {:?}",
             b.rect
         );
@@ -313,7 +316,7 @@ fn a_row_without_bindings_is_one_none_slot_without_add() {
     );
     assert_eq!(
         text.fallback_color,
-        th.text_muted().to_egui(),
+        th.kb_record_empty_fg().to_egui(),
         "None 슬롯 글자색"
     );
 }
@@ -324,7 +327,7 @@ fn hovering_a_slot_turns_only_its_border_strong() {
     let first = record_buttons()[0];
     let shapes = frame_shapes_with(|_| {}, Some(first.center()));
     let slots = slot_shapes(&shapes);
-    let strong = th.border_strong().to_egui();
+    let strong = th.kb_record_border_hover().to_egui();
     let hovered: Vec<egui::Rect> = slots
         .iter()
         .filter(|r| r.stroke.color == strong)
