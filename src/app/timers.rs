@@ -34,6 +34,9 @@ pub(crate) enum Tick {
     /// surface에 속하지 않는 DAG 목록 popup은 별도 키로 예약한다.
     #[cfg(feature = "gui")]
     DagListPopup,
+    /// egui가 지연 repaint를 요청한 창. 발화하면 그 창을 다시 그리고 자동 제거된다.
+    #[cfg(feature = "gui")]
+    EguiRepaint(winit::window::WindowId),
     /// anchor 재연결 backoff 시각에 깨운다. workspace로 돌아온 순간의 재시도 판정은 별도다.
     #[cfg(feature = "gui")]
     Reconnect(u32),

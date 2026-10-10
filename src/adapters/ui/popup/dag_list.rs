@@ -265,7 +265,7 @@ pub fn draw_dag_list_popup(
             .poll_if_stale(&engine.as_ref(), ws, Some(id.as_str()));
     }
 
-    // 양수 request_repaint_after는 GPU 콜백에서 무시하므로 타이머 허브로 다음 조회를 예약한다.
+    // 주기 조회는 egui 지연 repaint 가 아니라 타이머 허브로 다음 조회를 예약한다. 지연 repaint 는 그려질 때만 갱신된다.
 
     let th = crate::theme::theme();
     let theme = &th;

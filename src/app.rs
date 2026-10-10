@@ -24,6 +24,8 @@ pub(crate) mod dispatch;
 #[cfg(feature = "gui")]
 pub(crate) mod dispatch_domain;
 #[cfg(feature = "gui")]
+mod egui_repaint;
+#[cfg(feature = "gui")]
 pub(crate) mod engine_registry;
 pub(crate) mod event;
 #[cfg(feature = "gui")]

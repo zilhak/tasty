@@ -126,8 +126,8 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   요청한다. egui 가 입력에 repaint 를 답하거나 즉시 repaint 를 요청하면(`AppEvent::EguiRepaint`)
   다시 그리고, `Resized`·`ScaleFactorChanged` 에서는 surface 를 다시 구성한 뒤 그린다. 렌더가
   `Lost`·`Outdated` 로 실패하면 surface 를 다시 구성하고 한 번 더 그린다. 판정은
-  `src/app/offview_window_events.rs`. 지연 repaint(텍스트 커서 깜빡임 등)는 다른 창과 같이
-  전달하지 않는다.
+  `src/app/offview_window_events.rs`. 지연 repaint(툴팁 표시 지연 등)는 다른 창과 같이
+  `Tick::EguiRepaint(창)` 타이머로 예약해 그 시각에 다시 그린다.
 
 ## 부팅 계측 (target: `tasty::boot`)
 

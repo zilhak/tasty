@@ -127,7 +127,7 @@ pub fn draw_canvas(
         response.clone().on_hover_text(node.hover_text(now_ms));
     }
 
-    // 양수 request_repaint_after는 GPU 콜백이 무시하므로 타이머 허브에서 보이는 뷰만 예약한다.
+    // 주기 조회는 egui 지연 repaint 가 아니라 타이머 허브에 보이는 뷰만 예약한다. 지연 repaint 는 그려질 때만 갱신된다.
 
     super::chrome::draw_canvas_chrome(ui, theme, rect, cluster, view, layout, direction, lod)
 }

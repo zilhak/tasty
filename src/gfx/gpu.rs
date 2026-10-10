@@ -1,4 +1,5 @@
 mod boot_error;
+mod delayed_repaint;
 mod egui_bridge;
 mod egui_mesh_prepare;
 mod fonts;
@@ -214,17 +215,26 @@ impl GpuState {
         let repaint_proxy = proxy.clone();
         // 각 Context가 같은 root viewport ID를 사용하므로 window_id로 다시 그리기를 보낸다.
         let repaint_window_id = window.id();
+        let delayed = delayed_repaint::DelayedRepaintGate::default();
         egui_ctx.set_request_repaint_callback(move |info: egui::RequestRepaintInfo| {
-            // 즉시 요청만 전달한다. 지연 요청을 모두 전달하면 유휴 상태에서도 계속 그릴 수 있다.
-            // 지연이 필요한 기능은 타이머 허브 등 별도 예약 경로를 사용한다.
-            if info.delay.is_zero() {
-                crate::shortcuts::send_app_event(
-                    &repaint_proxy,
-                    AppEvent::EguiRepaint {
-                        window_id: repaint_window_id,
-                    },
-                );
-            }
+            // 지연 요청은 루프가 그 시각에 깨어나도록 타이머로 예약한다. 이미 더 이른 예약이 있으면 보내지 않는다.
+            let event = if info.delay.is_zero() {
+                AppEvent::EguiRepaint {
+                    window_id: repaint_window_id,
+                }
+            } else if let Some(at) = delayed.admit(
+                info.delay
+                    .saturating_add(delayed_repaint::egui_frame_allowance()),
+                std::time::Instant::now(),
+            ) {
+                AppEvent::EguiRepaintAfter {
+                    window_id: repaint_window_id,
+                    at,
+                }
+            } else {
+                return;
+            };
+            crate::shortcuts::send_app_event(&repaint_proxy, event);
         });
 
         tasty_themes::install_global_with_runtime(appearance, theme_runtime);

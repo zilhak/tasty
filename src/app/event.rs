@@ -72,10 +72,15 @@ pub(crate) enum AppEvent {
     /// 들어온 스트림 프레임 큐를 비우도록 깨운다.
     StreamReady,
     /// egui viewport는 모두 ROOT여서 창 ID로 repaint 대상을 구별한다.
-    /// 지연 repaint 요청은 idle 반복 렌더를 피하려고 콜백에서 제외한다.
     #[cfg(feature = "gui")]
     EguiRepaint {
         window_id: winit::window::WindowId,
+    },
+    /// egui의 지연 repaint 요청. `at`에 타이머로 그 창을 다시 그린다.
+    #[cfg(feature = "gui")]
+    EguiRepaintAfter {
+        window_id: winit::window::WindowId,
+        at: std::time::Instant,
     },
     /// 요청 origin은 실패 안내 방법을 정한다. IPC는 완료 채널을, 사용자 요청은 None을 전달한다.
     #[cfg(feature = "gui")]

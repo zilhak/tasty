@@ -107,21 +107,9 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::SystemResumed => {
                 self.resume_health_pass();
             }
-            AppEvent::EguiRepaint { window_id } => {
-                // egui viewport는 창마다 ROOT이므로 winit 창 ID로 대상을 찾는다.
-                if let Some(w) = self.view.views.get_mut(&window_id) {
-                    // 애니메이션의 연속 repaint 요청에도 상한을 적용한다.
-                    w.mark_dirty_from(RepaintSource::EguiAnimation);
-                }
-                // 셸 설정·부팅 오류 창은 views 밖에 있으므로 hover·애니메이션 요청을 직접 그린다.
-                if let Some(w) = [&self.shell_setup_window, &self.boot_error_window]
-                    .into_iter()
-                    .flatten()
-                    .find(|w| w.id() == window_id)
-                {
-                    w.request_redraw();
-                }
-                // 아직 views에 등록되지 않은 부팅 창의 요청은 여기서 처리하지 않는다.
+            AppEvent::EguiRepaint { window_id } => self.deliver_egui_repaint(window_id),
+            AppEvent::EguiRepaintAfter { window_id, at } => {
+                self.schedule_egui_repaint(window_id, at)
             }
             AppEvent::Shutdown => {
                 self.begin_shutdown(event_loop);
@@ -440,6 +428,7 @@ impl ApplicationHandler<AppEvent> for App {
                 Tick::LayoutFlush => self.flush_layout_persistence(false),
                 Tick::DagGraph(sid) => self.mark_dag_graph_window_dirty(sid),
                 Tick::DagListPopup => self.mark_dag_list_popup_windows_dirty(),
+                Tick::EguiRepaint(window_id) => self.deliver_egui_repaint(window_id),
                 // 이 타이머는 루프만 깨우며 아래 poll_auto_attach가 재연결 여부를 판단한다.
                 Tick::Reconnect(_) => {}
                 // 아래 poll_attach_resize_sync가 마감을 처리한다.

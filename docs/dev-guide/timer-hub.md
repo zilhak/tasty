@@ -255,6 +255,10 @@ wakeup 이 늘지 않는다. 그 결과 **비응답 검출 상한은 `60s + 15s 
 닫히면 자동 소멸했지만, 허브 등록은 저절로 사라지지 않는다 — 닫힌 뷰 하나가 500ms
 마다 영원히 호스트를 깨우는 누수가 된다.
 
+`Tick::EguiRepaint(창)`은 이 동기화가 필요 없다. 일회성이라 발화하면 사라지고, 그 창이 다시
+그려져 egui가 새로 요청할 때만 다시 등록된다. 창이 닫히면 남은 예약이 한 번 발화해 없는 창을
+찾지 못하고 끝난다.
+
 그래서 매 프레임 **"지금 실제로 보이는 대상" 집합으로 전체를 맞춘다**(선언적 동기화):
 
 ```rust
@@ -303,7 +307,7 @@ DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로
 | `DagListPopup` | `last_list_poll + 폴링주기` | `POLL_INTERVAL` |
 | `Reconnect(anchor)` | `slot.next_attempt` | `RECONNECT_MIN_BACKOFF` |
 
-`NativeMenu` · `WebviewKeyPoll` 은 예외인데, 그건 파생이 아니라 `once_after(주기)` = **상대 지연**이라
+`NativeMenu` · `WebviewKeyPoll` · `EguiRepaint(창)` 은 예외인데, 그건 파생이 아니라 `once_after(주기)` = **상대 지연**이라
 정의상 과거가 될 수 없기 때문이다. 새 키가 절대시각을 쓴다면 예외가 아니다.
 
 이 규칙은 `crates/tasty-doc-guards/tests/timer_deadline_hygiene.rs` 가 소스 수준에서 강제한다 — `timers.rs`
@@ -328,9 +332,9 @@ DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로
 dirty 자체는 지우지 않는다. 사용자가 세션 중에 `restore_layout` 을 다시 켜면 그때까지
 쌓인 변경이 그대로 flush 되어야 하기 때문이다.
 
-호스트는 idle 렌더 루프를 막기 위해 `delay > 0`인 egui repaint 요청을 무시한다
-(`src/gfx/gpu.rs`). 따라서 레이아웃 저장과 DAG 갱신처럼 주기로 실행해야 하는 작업은
-egui의 `request_repaint_after`에만 의존하지 않고 TimerHub에 등록한다.
+egui의 `request_repaint_after`는 `Tick::EguiRepaint(창)`으로 예약돼 그 창을 다시 그린다.
+그러나 이 예약은 뷰가 그려질 때만 갱신되므로, 레이아웃 저장과 DAG 갱신처럼 그림과 관계없이
+주기로 실행해야 하는 작업은 TimerHub의 자체 키에 등록한다.
 
 ## 타이머 취소 ≠ 상태 삭제
 
