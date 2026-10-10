@@ -921,8 +921,34 @@ impl EguiMeshBanner {
             params.theme.as_ref(),
             &params.raw_input,
             params.need_full_textures,
-            |ctx| tasty_ui_widgets::banner_surface_ctx(ctx, || run_ui(ctx)),
+            |ctx| {
+                tasty_ui_widgets::plugin_banner_body_host_tooltip(ctx, || {
+                    tasty_ui_widgets::banner_surface_ctx(ctx, || run_ui(ctx));
+                });
+            },
         )
+    }
+
+    /// 캐시한 컨텍스트로 다시 그린다. 말줄임한 본문은 [`run_frame`](Self::run_frame)처럼 호스트 채널로 기록한다.
+    fn repaint_last_frame(&mut self, mut run_ui: impl FnMut(&Context)) -> Option<MeshFrame> {
+        self.core.repaint_last(|ctx| {
+            tasty_ui_widgets::plugin_banner_body_host_tooltip(ctx, || run_ui(ctx));
+        })
+    }
+
+    /// 직전 frame에서 말줄임한 plugin 본문을 wire 값으로 꺼낸다. 호스트가 배너 카드 아래 툴팁으로 보인다.
+    fn take_body_cut(&self) -> Option<tasty_plugin_protocol::BannerBodyCutWire> {
+        tasty_ui_widgets::take_plugin_banner_body_cut(&self.core.ctx).map(|cut| {
+            tasty_plugin_protocol::BannerBodyCutWire {
+                text: cut.text,
+                body_rect: tasty_plugin_protocol::RectWire {
+                    x: cut.body_rect.min.x,
+                    y: cut.body_rect.min.y,
+                    width: cut.body_rect.width(),
+                    height: cut.body_rect.height(),
+                },
+            }
+        })
     }
 
     /// 직전 `banner.set_context` 의 theme 스냅샷(재-paint closure 재구성용). 첫 컨텍스트 전 `None`.
@@ -940,6 +966,7 @@ impl EguiMeshBanner {
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
         let frame = self.run_frame_inner(params, run_ui);
+        let body_cut = self.take_body_cut();
         // 정적 화면이어서 보낼 mesh 가 없어도 self-repaint 요청은 남을 수 있다
         // (hover fade 처럼 출력이 아직 안 바뀐 첫 frame). 그래서 popup 과 같이
         // **early return 앞에서** 예약한다 — 뒤에 두면 그 요청을 버린다.
@@ -954,6 +981,7 @@ impl EguiMeshBanner {
             generation,
             frame_seq: self.core.next_frame_seq(),
             full_textures: frame.full_textures,
+            body_cut,
         })?;
         Ok(Some(generation))
     }
@@ -965,7 +993,8 @@ impl EguiMeshBanner {
         host: &HostHandle,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let frame = self.core.repaint_last(run_ui);
+        let frame = self.repaint_last_frame(run_ui);
+        let body_cut = self.take_body_cut();
         self.schedule_self_repaint(host);
         let Some(frame) = frame else {
             return Ok(None);
@@ -977,6 +1006,7 @@ impl EguiMeshBanner {
             generation,
             frame_seq: self.core.next_frame_seq(),
             full_textures: frame.full_textures,
+            body_cut,
         })?;
         Ok(Some(generation))
     }
@@ -2003,6 +2033,68 @@ mod tests {
         });
         assert!(inside, "banner content must see the banner context");
         assert!(!tasty_ui_widgets::in_banner_surface(banner.context()));
+    }
+
+    const CUT_BODY: &str = "A plugin body long enough to run past three rows at this banner width, \
+                            so the widget cuts it and the host has to show the full text in a \
+                            tooltip below the banner card instead of inside the plugin mesh.";
+
+    fn cut_body_params() -> BannerSetContextParams {
+        BannerSetContextParams {
+            instance_id: 3,
+            width_px: 160,
+            height_px: 64,
+            pixels_per_point: 1.0,
+            raw_input: RawInputWire::default(),
+            theme: None,
+            need_full_textures: false,
+        }
+    }
+
+    fn cut_body_ui(ctx: &Context) {
+        let theme = tasty_type_appearance::theme::Theme::with_colors_and_zoom(
+            tasty_themes::mocha_fallback_colors(),
+            false,
+            1.0,
+        );
+        egui::CentralPanel::default().show(ctx, |ui| {
+            tasty_ui_widgets::plugin_banner_body(ui, &theme, CUT_BODY);
+        });
+    }
+
+    /// banner frame에서 말줄임한 plugin 본문은 호스트에 보낼 잘림으로 남고, 콘텐츠 영역 좌표를 쓴다.
+    #[test]
+    fn a_cut_plugin_body_is_reported_for_the_host_tooltip() {
+        let mut banner = EguiMeshBanner::new(3);
+        banner.run_frame(&cut_body_params(), cut_body_ui);
+        let cut = banner.take_body_cut().expect("cut");
+        assert_eq!(cut.text, CUT_BODY);
+        assert!(cut.body_rect.x >= 0.0 && cut.body_rect.y >= 0.0);
+        assert!(cut.body_rect.x + cut.body_rect.width <= 160.0);
+        assert!(banner.take_body_cut().is_none(), "taken once");
+    }
+
+    /// 입력 없는 다시 그리기도 같은 채널로 잘림을 남긴다.
+    #[test]
+    fn a_repaint_also_reports_the_cut_plugin_body() {
+        let mut banner = EguiMeshBanner::new(3);
+        banner.run_frame(&cut_body_params(), cut_body_ui);
+        assert!(banner.take_body_cut().is_some());
+        banner.repaint_last_frame(cut_body_ui);
+        assert_eq!(
+            banner.take_body_cut().map(|c| c.text),
+            Some(CUT_BODY.to_owned())
+        );
+    }
+
+    /// 잘리지 않은 본문은 아무것도 보고하지 않는다.
+    #[test]
+    fn an_uncut_plugin_body_reports_nothing() {
+        let mut banner = EguiMeshBanner::new(3);
+        let mut params = cut_body_params();
+        params.width_px = 2000;
+        banner.run_frame(&params, cut_body_ui);
+        assert!(banner.take_body_cut().is_none());
     }
 
     /// paint에서 타이머를 거쳐 BannerInvalidated가 소켓으로 나가는지 확인한다.

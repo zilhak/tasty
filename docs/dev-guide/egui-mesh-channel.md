@@ -776,10 +776,29 @@ plugin banner 는 host `BannerManager` 의 **같은 큐/TTL/z-order 단일 지�
           │  그린 content_rect 슬롯을 받아 forward. geom/입력/theme 변경 + bootstrap 시만.
           ▼
 [plugin] EguiMeshBanner::paint(&ctx.host, &ctx.params, |ctx| { ... })
-          ▼  PluginEvent::BannerPaintFrame { instance_id, buffer_id, generation }
+          ▼  PluginEvent::BannerPaintFrame { instance_id, buffer_id, generation, body_cut }
 [host]  banner_mesh_frames[instance_id] 갱신 → render_egui_mesh_banners 가 host egui pass
         *후* content_rect 에 mesh 를 합성(셸/affordance 위에 clip).
+        body_cut 이 있으면 draw_plugin_banners 가 배너 카드 아래에 전문 툴팁을 그린다.
 ```
+
+### 잘린 본문의 툴팁 — 호스트가 그린다
+
+plugin 본문 위젯 `tasty_ui_widgets::plugin_banner_body`가 말줄임한 frame에서는 그 frame의
+`BannerPaintFrame.body_cut`(`BannerBodyCutWire { text, body_rect }`)에 전문과 본문 사각형을 싣는다.
+`body_rect`는 콘텐츠 영역 로컬 논리 포인트다. `EguiMeshBanner`가 `run_frame`·`repaint_last` 모두
+`plugin_banner_body_host_tooltip`으로 감싸므로, 그 안의 위젯은 툴팁을 mesh에 그리지 않고 잘림만
+기록한다. SDK가 frame 뒤 `take_plugin_banner_body_cut`으로 꺼내 알림에 싣는다.
+
+- host는 `EguiMeshFrame.banner_body_cut`에 최신 값을 두고, `draw_plugin_banners`가 본문 사각형을
+  창 좌표로 옮긴다. 포인터가 본문 위에 `tooltip-delay`만큼 머물면 `show_plugin_banner_body_tooltip`이
+  배너 카드 아래 `tooltip-offset`에 본문 왼쪽을 맞춰 툴팁을 그린다. 툴팁은 mesh 밖이라 콘텐츠 영역에
+  잘리지 않고 포인터를 덮지 않는다.
+- 값은 mesh와 같은 dedup을 따른다. 출력이 직전과 같아 알림을 보내지 않은 tick은 직전 값이 맞다.
+  잘림은 본문 글이나 폭이 바뀌어야 달라지고, 그때는 mesh도 달라지기 때문이다.
+- 칸이 없는 구버전 plugin 알림은 `None`이며 host는 툴팁을 그리지 않는다. 한 frame에 잘린 본문이 여럿이면
+  마지막에 그린 하나만 실린다.
+- 채널 밖(SDK를 거치지 않은 egui `Context`)에서는 위젯이 본문 아래에 직접 툴팁을 띄운다.
 
 TTL 만료·close X 는 `BannerManager` 가 감지해 `closed_plugin_banners` 로 실어내고,
 `draw_plugin_banners` 가 `state.plugin_banner_closes` 에 적재 → 메인 루프가
@@ -799,12 +818,12 @@ surface 에만 배너를 허용한다(`open_plugin_banner` 가 surface→plugin 
 
 | 조각 | 위치 |
 |------|------|
-| 프로토콜 (banner.set_context / BannerPaintFrame / open·closed) | `crates/tasty-plugin-protocol/src/protocol.rs` |
+| 프로토콜 (banner.set_context / BannerPaintFrame·BannerBodyCutWire / open·closed) | `crates/tasty-plugin-protocol/src/protocol.rs` |
 | manifest banner 기여 | `crates/tasty-plugin-manifest/src/types.rs` (`BannerContribute` / `BannerRendering`) |
 | plugin SDK 헬퍼 | `crates/tasty-plugin-sdk/src/egui_surface.rs` (`EguiMeshBanner`) |
 | host 라우팅 (banner_mesh_frames / set_context 송신) | `crates/tasty-host-plugin/src/manager/{pump,events,buffer,banner}.rs` |
 | host 셸·큐·content 분기 | `src/adapters/ui/banner.rs` (`BannerContentSource` / `BannerKey`) |
-| host 입력 forward + 영역 수집 + reconcile | `src/plugin_bridge/banner_render.rs` |
+| host 입력 forward + 영역 수집 + reconcile + 잘린 본문 툴팁 | `src/plugin_bridge/banner_render.rs` |
 | host open/close 처리와 소유 검증 | `src/app/dispatch/plugin_banner.rs` |
 | host 합성 (decode + 전용 Renderer) | `src/gfx/gpu/egui_mesh_prepare.rs` (`render_egui_mesh_banners`) |
 | PoC 소비자 | `crates/tasty-plugin-mesh-demo/` (`banner_id = "status"`) |

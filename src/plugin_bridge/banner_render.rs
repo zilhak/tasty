@@ -129,7 +129,52 @@ pub fn draw_plugin_banners(
         state
             .plugin_mesh_banner_regions
             .push((slot.instance_id, physical));
+
+        let cut = mgr
+            .banner_mesh_frame(slot.instance_id)
+            .and_then(|f| f.banner_body_cut.as_ref());
+        show_body_cut_tooltip(ctx, slot, cut, pointer_pos);
     }
+}
+
+/// plugin이 말줄임한 본문의 전문을 배너 카드 아래 툴팁으로 보인다. plugin mesh 안이 아니라 호스트가 그리므로
+/// 콘텐츠 영역에 잘리지 않고 포인터를 덮지 않는다. 규칙: docs/design/systems/banner.md#본문-줄-수.
+fn show_body_cut_tooltip(
+    ctx: &Context,
+    slot: &crate::adapters::ui::PluginBannerMeshSlot,
+    cut: Option<&tasty_plugin_protocol::BannerBodyCutWire>,
+    pointer_pos: Option<Pos2>,
+) {
+    let id = egui::Id::new(("plugin_banner_body_tooltip", slot.instance_id));
+    let theme = crate::theme::theme();
+    let Some(cut) = cut else {
+        // 잘림이 사라진 배너의 대기 타이머를 지운다.
+        tasty_ui_widgets::show_plugin_banner_body_tooltip(
+            ctx,
+            &theme,
+            id,
+            "",
+            Rect::NOTHING,
+            slot.card_rect,
+            None,
+        );
+        return;
+    };
+    let r = cut.body_rect;
+    let body = Rect::from_min_size(
+        slot.content_rect.min + egui::vec2(r.x, r.y),
+        egui::vec2(r.width, r.height),
+    )
+    .intersect(slot.content_rect);
+    tasty_ui_widgets::show_plugin_banner_body_tooltip(
+        ctx,
+        &theme,
+        id,
+        &cut.text,
+        body,
+        slot.card_rect,
+        pointer_pos,
+    );
 }
 
 /// 콘텐츠 기준 논리 좌표로 포인터·스크롤을 전달한다. 키·텍스트는 전달하지 않는다.
@@ -218,6 +263,56 @@ fn map_button(b: egui::PointerButton) -> Option<PointerButtonWire> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 잘린 본문의 콘텐츠 로컬 좌표를 창 좌표로 옮겨, 포인터가 본문 위에 머물면 카드 아래에 전문 툴팁을 그린다.
+    fn body_cut_tooltip_text_at(pointer: Pos2) -> Option<Pos2> {
+        let slot = crate::adapters::ui::PluginBannerMeshSlot {
+            plugin_id: "com.test.banner".to_owned(),
+            instance_id: 4,
+            content_rect: Rect::from_min_size(Pos2::new(40.0, 20.0), egui::vec2(300.0, 72.0)),
+            card_rect: Rect::from_min_max(Pos2::new(8.0, 8.0), Pos2::new(400.0, 100.0)),
+        };
+        let cut = tasty_plugin_protocol::BannerBodyCutWire {
+            text: "the whole plugin body".to_owned(),
+            body_rect: tasty_plugin_protocol::RectWire {
+                x: 10.0,
+                y: 4.0,
+                width: 200.0,
+                height: 45.0,
+            },
+        };
+        let ctx = Context::default();
+        let mut at = None;
+        for i in 0..20 {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                time: Some(f64::from(i) * 0.25),
+                ..Default::default()
+            };
+            let out = ctx.run(input, |ctx| {
+                show_body_cut_tooltip(ctx, &slot, Some(&cut), Some(pointer));
+            });
+            at = out.shapes.iter().find_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.text() == cut.text => Some(t.pos),
+                _ => None,
+            });
+        }
+        at
+    }
+
+    #[test]
+    fn a_cut_plugin_body_gets_its_tooltip_below_the_card_at_the_body_left() {
+        // 본문은 창 좌표 (50, 24)부터다.
+        let at = body_cut_tooltip_text_at(Pos2::new(60.0, 30.0)).expect("tooltip");
+        assert!(at.x > 50.0 && at.x < 50.0 + 12.0, "{at:?}");
+        assert!(at.y > 100.0, "{at:?}");
+    }
+
+    #[test]
+    fn a_pointer_outside_the_cut_body_shows_no_tooltip() {
+        // 콘텐츠 영역 안이지만 본문 밖이다.
+        assert!(body_cut_tooltip_text_at(Pos2::new(300.0, 80.0)).is_none());
+    }
 
     fn collected_scroll(unit: egui::MouseWheelUnit, delta: egui::Vec2) -> Option<(f32, f32)> {
         collected_scroll_with_notch(unit, delta, tasty_settings::DEFAULT_WHEEL_LINE_SCROLL)

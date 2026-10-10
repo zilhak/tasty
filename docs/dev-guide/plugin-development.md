@@ -256,8 +256,8 @@ TexturesDelta, ppp)` 를 SharedBuffer 로 host 에 보내고 host 가 합성한�
 가져온다. 상세·SDK 헬퍼(`EguiMeshSurface`/`EguiMeshPopup`/`EguiMeshBanner`)는
 [egui-mesh-channel](egui-mesh-channel.md). 배너 콘텐츠는 SDK가 프레임 전체에 배너 문맥을 열어 주므로
 공용 Secondary 버튼이 따로 감싸지 않아도 배너 박스로 그려진다. 같은 plugin의 surface·popup에는
-적용되지 않는다. 배너 본문 글은 `tasty_ui_widgets::plugin_banner_body`로 그린다. 세 줄 뒤 말줄임하고
-잘렸을 때만 hover 툴팁에 전체 문구를 보이는 디자인 규칙([배너 본문 줄 수](../design/systems/banner.md#본문-줄-수))을 따른다. (`rendering = "webview"` surface(html/markdown)
+적용되지 않는다. 배너 본문 글은 `tasty_ui_widgets::plugin_banner_body`로 그린다. 세 줄과 콘텐츠 높이에 맞는 줄 수 중
+작은 값 뒤에서 말줄임하고, 잘렸을 때만 호스트가 배너 카드 아래 툴팁에 전체 문구를 보이는 디자인 규칙([배너 본문 줄 수](../design/systems/banner.md#본문-줄-수))을 따른다. 툴팁은 plugin이 그리지 않는다. (`rendering = "webview"` surface(html/markdown)
 의 본문은 이 채널을 타지 않는다 — host native WebView 가 직접 렌더한다. 단 markdown
 의 대용량/파일열기 확인 팝업 2 개는 여전히 egui-mesh 채널을 쓴다.)
 

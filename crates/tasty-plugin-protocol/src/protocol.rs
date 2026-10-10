@@ -241,6 +241,14 @@ pub struct ImeCursorWire {
     pub cursor_rect: RectWire,
 }
 
+/// plugin 배너가 이번 frame에 말줄임한 본문. 호스트가 배너 카드 아래 툴팁으로 전문을 보인다.
+/// `body_rect`는 본문을 그린 사각형이며 좌표는 mesh 콘텐츠 영역 안의 논리 포인트다.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct BannerBodyCutWire {
+    pub text: String,
+    pub body_rect: RectWire,
+}
+
 /// 논리 포인트 사각형 — 좌상단 (x, y) + 크기. egui `Rect` 미러.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 pub struct RectWire {
@@ -495,6 +503,9 @@ pub enum PluginEvent {
         /// 전체 텍스처 상태 동봉 여부 — [`PluginEvent::PaintFrame::full_textures`] 와 동일 의미.
         #[serde(default)]
         full_textures: bool,
+        /// 이 frame에서 말줄임한 본문. 없거나 구버전 plugin이면 `None`이고 호스트는 툴팁을 그리지 않는다.
+        #[serde(default)]
+        body_cut: Option<BannerBodyCutWire>,
     },
     /// 호스트 동작을 요청한다.
     NotifyHost {

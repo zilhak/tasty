@@ -235,6 +235,8 @@ pub struct PluginBannerMeshSlot {
     pub plugin_id: String,
     pub instance_id: u64,
     pub content_rect: egui::Rect,
+    /// 배너 카드 전체 영역. 잘린 plugin 본문의 툴팁을 카드 아래에 둘 때 쓴다.
+    pub card_rect: egui::Rect,
 }
 
 #[derive(Default, Clone)]
@@ -784,6 +786,7 @@ impl BannerManager {
                             plugin_id: plugin_id.clone(),
                             instance_id: *instance_id,
                             content_rect,
+                            card_rect,
                         });
                     }
                     next_card_rects.insert(card_key, card_rect);

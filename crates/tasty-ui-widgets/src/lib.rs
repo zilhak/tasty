@@ -200,7 +200,11 @@ pub use plugin_add::{
     plugin_manifest_card, plugin_signature_invalid_detail, plugin_trust_box, short_fingerprint,
 };
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
-pub use plugin_banner_body::{PLUGIN_BANNER_BODY_MAX_ROWS, plugin_banner_body};
+pub use plugin_banner_body::{
+    PLUGIN_BANNER_BODY_MAX_ROWS, PluginBannerBodyCut, plugin_banner_body,
+    plugin_banner_body_host_tooltip, plugin_banner_body_line_height,
+    show_plugin_banner_body_tooltip, take_plugin_banner_body_cut,
+};
 pub use plugin_detail::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginDetailBarClicks, PluginDetailBarView,
     PluginIdentityView, PluginKeycap, PluginKeycapAltStyle, PluginKeycapStyle,

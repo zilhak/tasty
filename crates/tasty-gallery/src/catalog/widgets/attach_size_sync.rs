@@ -5,7 +5,8 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     AttachSizeSyncBannerView, attach_size_sync_banner, banner_is_narrow, banner_shell,
-    plugin_banner_body,
+    plugin_banner_body, plugin_banner_body_host_tooltip, plugin_banner_body_line_height,
+    show_plugin_banner_body_tooltip, take_plugin_banner_body_cut,
 };
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -222,7 +223,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "body lines",
-                "Tasty-owned banner copy (refusal · size sync · mouse capture) never clamps — the card grows · plugin-supplied body clamps at 3 lines, then ellipsis + full text in the tooltip",
+                "Tasty-owned banner copy (refusal · size sync · mouse capture · HTML script) never clamps — the card grows · plugin-supplied body clamps at 3 lines, then ellipsis + full text in the tooltip",
+            ),
+            (
+                "plugin body rows",
+                "rows = min(3, floor(content height ÷ body line height)) — a fixed size_hint that holds fewer lines clamps at what fits; the ellipsis sits on the last row that fits",
+            ),
+            (
+                "plugin tooltip",
+                "drawn by the HOST, not inside the plugin mesh: the widget reports “truncated + full text” for the frame and the host shows the standard Tooltip BELOW the banner card (left = body x, offset tooltip-offset 4, max tooltip-max-width 240, delay tooltip-delay) — never over the pointer, never clipped by the content rect · interim (no channel yet): the widget opens its tooltip below the body inside the content rect, never above",
             ),
             (
                 "retrying",
@@ -270,8 +279,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     draw_body_lines(ui, theme);
 }
 
-/// 시안 Meta "body lines" 의 plugin 쪽 표본. 디자인 Stage 가 없어 같은 패널 틀에 360 폭으로 둔다.
-/// 세 줄을 넘는 plugin 본문은 셋째 줄 끝에서 말줄임하고 hover 때 전체 문구를 툴팁으로 보인다.
+/// 시안 Meta "body lines"·"plugin body rows"·"plugin tooltip" 의 plugin 쪽 표본. 디자인 Stage 가 없어
+/// 같은 패널 틀에 360 폭으로 둔다. 본문은 본체 호스트와 같은 채널로 그린다: 위젯은 잘림만 기록하고
+/// 툴팁은 카드 아래에 `show_plugin_banner_body_tooltip` 이 그린다.
 fn draw_body_lines(ui: &mut egui::Ui, theme: &Theme) {
     const PLUGIN_BODY: &str = "This body comes from a plugin. It keeps going past the three \
                                rows a plugin body may use in a banner, so the third row ends \
@@ -283,9 +293,10 @@ fn draw_body_lines(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Banner body lines",
         Some(
-            "Tasty-owned banner copy (refusal \u{b7} size sync \u{b7} mouse capture) never \
-             clamps \u{2014} the card grows. Plugin-supplied body text clamps at 3 lines, then \
-             ellipsis, full text in the tooltip.",
+            "Tasty-owned banner copy (refusal \u{b7} size sync \u{b7} mouse capture \u{b7} HTML \
+             script) never clamps \u{2014} the card grows. Plugin-supplied body text clamps at \
+             min(3, rows that fit the content height), then ellipsis; the host shows the full \
+             text in a tooltip below the banner card.",
         ),
     );
     spec::stage(ui, theme, StageVariant::Tight, |ui| {
@@ -299,12 +310,57 @@ fn draw_body_lines(ui: &mut egui::Ui, theme: &Theme) {
                     caption(
                         ui,
                         theme,
-                        "plugin body \u{b7} 3 lines, then ellipsis + tooltip",
+                        "plugin body \u{b7} 3 lines, then ellipsis \u{b7} hover: tooltip below the card",
                     );
-                    banner_shell(ui, theme, 1.0, |ui| {
-                        plugin_banner_body(ui, theme, PLUGIN_BODY);
-                    });
+                    plugin_body_banner(ui, theme, "free", PLUGIN_BODY, None);
+                    caption(
+                        ui,
+                        theme,
+                        "fixed size_hint that holds 2 lines \u{b7} clamps at 2",
+                    );
+                    let two_rows = plugin_banner_body_line_height(theme) * 2.0;
+                    plugin_body_banner(ui, theme, "two-rows", PLUGIN_BODY, Some(two_rows));
                 });
             });
     });
+}
+
+/// plugin 본문 배너 하나. `content_height`가 있으면 본문 자리를 그 높이로 고정한다(매니페스트 size_hint 대응).
+fn plugin_body_banner(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    key: &str,
+    text: &str,
+    content_height: Option<f32>,
+) {
+    let ctx = ui.ctx().clone();
+    let card = plugin_banner_body_host_tooltip(&ctx, || {
+        banner_shell(ui, theme, 1.0, |ui| match content_height {
+            Some(h) => {
+                // plugin 콘텐츠 영역처럼 높이 `h`의 clip 영역 안에 그린다.
+                let w = ui.available_width();
+                ui.allocate_ui(egui::vec2(w, h), |ui| {
+                    ui.set_min_height(h);
+                    let mut clip = ui.clip_rect();
+                    clip.max.y = ui.cursor().top() + h;
+                    ui.set_clip_rect(clip);
+                    plugin_banner_body(ui, theme, text);
+                });
+            }
+            None => {
+                plugin_banner_body(ui, theme, text);
+            }
+        })
+    });
+    if let Some(cut) = take_plugin_banner_body_cut(&ctx) {
+        show_plugin_banner_body_tooltip(
+            &ctx,
+            theme,
+            egui::Id::new(("gallery_plugin_banner_body", key)),
+            &cut.text,
+            cut.body_rect,
+            card,
+            ctx.pointer_hover_pos(),
+        );
+    }
 }

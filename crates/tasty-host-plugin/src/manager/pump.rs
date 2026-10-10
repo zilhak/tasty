@@ -451,6 +451,7 @@ impl PluginManager {
                         full_textures,
                         byte_len,
                         ime_cursor,
+                        banner_body_cut: None,
                     },
                 ));
             }
@@ -475,6 +476,7 @@ impl PluginManager {
                         // fallback).
                         byte_len: 0,
                         ime_cursor,
+                        banner_body_cut: None,
                     },
                 ));
             }
@@ -484,6 +486,7 @@ impl PluginManager {
                 generation,
                 frame_seq,
                 full_textures,
+                body_cut,
             } => {
                 out.new_banner_paint_frames.push((
                     instance_id,
@@ -498,6 +501,7 @@ impl PluginManager {
                         // banner 는 키/IME 를 forward 받지 않아(셸이 포커스를 주지
                         // 않는 non-modal 공지) wire 에 이 칸이 없다.
                         ime_cursor: None,
+                        banner_body_cut: body_cut,
                     },
                 ));
             }
@@ -1134,6 +1138,52 @@ mod tests {
         assert_eq!(
             classify_hello_drift("com.example.ghost", "com.example.typo", "1.0.0", None),
             Vec::new()
+        );
+    }
+
+    /// banner frame에 실린 본문 잘림은 그 배너의 최신 frame에 남고, 칸이 없는 구버전 알림은 잘림 없음이다.
+    #[test]
+    fn a_banner_frame_keeps_the_plugin_body_cut_and_an_old_frame_has_none() {
+        let cut = tasty_plugin_protocol::BannerBodyCutWire {
+            text: "full plugin body".to_owned(),
+            body_rect: tasty_plugin_protocol::RectWire {
+                x: 4.0,
+                y: 2.0,
+                width: 120.0,
+                height: 45.0,
+            },
+        };
+        let new = PluginEvent::BannerPaintFrame {
+            instance_id: 9,
+            buffer_id: SharedBufferId(1),
+            generation: 1,
+            frame_seq: 1,
+            full_textures: true,
+            body_cut: Some(cut.clone()),
+        };
+        let mut old = serde_json::to_value(&new).expect("serialize");
+        old.as_object_mut()
+            .expect("object")
+            .remove("body_cut")
+            .expect("new wire carries body_cut");
+        let old: PluginEvent = serde_json::from_value(old).expect("old wire still parses");
+
+        let mut mgr = mgr();
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event("com.tasty.mesh-demo", new, &mut out);
+        mgr.apply_collected_events(out);
+        assert_eq!(
+            mgr.banner_mesh_frame(9)
+                .and_then(|f| f.banner_body_cut.clone()),
+            Some(cut)
+        );
+
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event("com.tasty.mesh-demo", old, &mut out);
+        mgr.apply_collected_events(out);
+        assert!(
+            mgr.banner_mesh_frame(9)
+                .is_some_and(|f| f.banner_body_cut.is_none())
         );
     }
 

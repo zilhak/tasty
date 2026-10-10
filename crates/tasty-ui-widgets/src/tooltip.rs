@@ -101,6 +101,14 @@ impl<'a> Tooltip<'a> {
         }
     }
 
+    /// 버블의 왼쪽 위 모서리를 `min`에 둔다. 창 밖으로 나가면 egui가 안으로 당긴다.
+    pub fn at(self, min: egui::Pos2) -> Self {
+        Self {
+            resolved: Some(egui::Rect::from_min_size(min, egui::Vec2::ZERO)),
+            ..self
+        }
+    }
+
     /// `anchor` rect 를 기준으로 버블을 그린다(강제 표시). hover/delay 판정은 호출부 몫.
     pub fn show(self, ui: &egui::Ui, theme: &Theme, anchor: egui::Rect) {
         self.show_in(ui.ctx(), theme, anchor);

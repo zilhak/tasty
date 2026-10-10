@@ -16,15 +16,15 @@ pub use events::{EventEnvelope, EventMeta, EventOrigin, EventScope, LifecycleRea
 pub use ipc_method::{IpcInvokeParams, METHOD_IPC_INVOKE};
 pub use line::write_line;
 pub use protocol::{
-    AuthAck, AuthAckEnvelope, AuthMessage, BannerCloseReason, BannerClosedParams, BannerOpenParams,
-    BannerOpenResult, BannerSetContextParams, CommandInvokeParams, EventDispatchParams,
-    ExtensionHookInvokeParams, ExtensionHookKind, ExtensionHookMode, ExtensionHookPhase,
-    ExtensionHookResult, HandleChannelMessage, ImeCursorWire, ImeWire, IpcCallResult,
-    ModifiersWire, PixelRect, PluginEvent, PluginRequest, PluginResponse, PointerButtonWire,
-    PopupCloseReason, PopupClosedParams, PopupOpenParams, PopupOpenResult, PopupSetContextParams,
-    RawInputEventWire, RawInputWire, RectWire, SharedBufferCreateParams, SharedBufferCreateResult,
-    SharedBufferDirtyParams, SharedBufferId, SurfaceResult, SurfaceSetContextParams, ThemeWire,
-    WebviewNavigationAttemptParams,
+    AuthAck, AuthAckEnvelope, AuthMessage, BannerBodyCutWire, BannerCloseReason,
+    BannerClosedParams, BannerOpenParams, BannerOpenResult, BannerSetContextParams,
+    CommandInvokeParams, EventDispatchParams, ExtensionHookInvokeParams, ExtensionHookKind,
+    ExtensionHookMode, ExtensionHookPhase, ExtensionHookResult, HandleChannelMessage,
+    ImeCursorWire, ImeWire, IpcCallResult, ModifiersWire, PixelRect, PluginEvent, PluginRequest,
+    PluginResponse, PointerButtonWire, PopupCloseReason, PopupClosedParams, PopupOpenParams,
+    PopupOpenResult, PopupSetContextParams, RawInputEventWire, RawInputWire, RectWire,
+    SharedBufferCreateParams, SharedBufferCreateResult, SharedBufferDirtyParams, SharedBufferId,
+    SurfaceResult, SurfaceSetContextParams, ThemeWire, WebviewNavigationAttemptParams,
 };
 pub use protocol::{
     METHOD_BANNER_CLOSED, METHOD_BANNER_OPEN, METHOD_BANNER_SET_CONTEXT, METHOD_COMMAND_INVOKE,

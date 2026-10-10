@@ -334,6 +334,9 @@ pub struct EguiMeshFrame {
     /// (`src/view/main.rs` `update_ime_cursor_area`). 편집 위젯이 없으면 `None`.
     /// banner 는 키 입력을 forward 받지 않으므로 늘 `None` 이다.
     pub ime_cursor: Option<tasty_plugin_protocol::ImeCursorWire>,
+    /// banner frame에서 plugin이 말줄임한 본문(콘텐츠 로컬 논리 포인트). 호스트가 배너 카드 아래
+    /// 툴팁으로 전문을 보인다. surface·popup frame과 구버전 plugin은 `None`이다.
+    pub banner_body_cut: Option<tasty_plugin_protocol::BannerBodyCutWire>,
 }
 
 pub struct PluginManager {
