@@ -248,10 +248,7 @@ fn a_stale_reason_matches_what_undo_would_report() {
         },
     ];
     for step in cases {
-        let entry = Entry {
-            source: source(0),
-            undo: vec![step.clone()],
-        };
+        let entry = Entry::new(source(0), vec![step.clone()]);
         let stale = entry.stale_reason().expect("blocked step");
         let ran = job::run_undo(&quiet(), std::slice::from_ref(&step));
         assert_eq!(ran.failed.len(), 1, "{step:?}");
@@ -260,10 +257,10 @@ fn a_stale_reason_matches_what_undo_would_report() {
 
     // 되돌릴 수 있는 단계가 하나라도 있으면 행을 켠다.
     let live = UndoStep::moved(d.join("free-c"), file("moved-c"));
-    let mixed = Entry {
-        source: source(0),
-        undo: vec![UndoStep::Replaced(file("r2")), live.clone()],
-    };
+    let mixed = Entry::new(
+        source(0),
+        vec![UndoStep::Replaced(file("r2")), live.clone()],
+    );
     assert_eq!(mixed.stale_reason(), None);
     let ran = job::run_undo(&quiet(), &[live]);
     assert!(ran.failed.is_empty());
@@ -471,4 +468,61 @@ fn undo_does_not_move_back_a_destination_changed_after_the_move() {
     assert_eq!(ran.failed[0].reason, Reason::ChangedAfterMove);
     assert!(!src.join("a.txt").exists(), "nothing moved back");
     assert_eq!(std::fs::read(&moved).unwrap(), b"different");
+}
+
+/// 쓰기 핸들로 파일의 수정 시각을 지정한다.
+fn stamp(path: &Path, secs: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|f| {
+            f.set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+        })
+        .unwrap();
+}
+
+/// 되돌린 뒤 원본 자리에 다른 항목이 생겼으면 다시 실행은 그것을 옮기지 않는다. 없어졌거나 종류가
+/// 바뀐 경우도 같다.
+#[test]
+fn redo_does_not_move_what_changed_at_the_source_after_the_undo() {
+    let dir = tempfile::tempdir().unwrap();
+    let (src, dest) = (dir.path().join("src"), dir.path().join("dest"));
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&dest).unwrap();
+    let a = src.join("a.txt");
+    std::fs::write(&a, b"a").unwrap();
+    let (mut state, engine, sid) = explorer_state(dir.path());
+    let request = Operation::Paste {
+        paths: vec![a.clone()],
+        destination: dest.clone(),
+        cut: true,
+    };
+    state.request_explorer_file_direct(&engine.read(), sid, request, user());
+    finish_next(&mut state, sid);
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
+    finish_next(&mut state, sid);
+    assert!(a.exists());
+    let undone = history(&state, sid).peek_redo().unwrap().clone();
+    assert_eq!(undone.redo_block(), None, "nothing changed yet");
+
+    std::fs::remove_file(&a).unwrap();
+    std::fs::write(&a, b"someone else's new file").unwrap();
+    stamp(&a, 1);
+    assert_eq!(undone.redo_block(), Some(RedoBlock::Changed));
+    state.explorer_history_step(&engine.read(), sid, true, user(), false);
+    assert!(state.explorer_file_requests.0.is_empty());
+    assert_eq!(
+        state.toasts.messages(),
+        vec![crate::i18n::t_fmt(
+            "explorer.menu.redo_stale",
+            crate::i18n::t("explorer.menu.changed_after_undo")
+        )]
+    );
+    assert!(history(&state, sid).peek_redo().is_some(), "the step stays");
+    assert!(a.exists() && !dest.join("a.txt").exists(), "nothing moved");
+
+    std::fs::remove_file(&a).unwrap();
+    assert_eq!(undone.redo_block(), Some(RedoBlock::Gone));
+    std::fs::create_dir(&a).unwrap();
+    assert_eq!(undone.redo_block(), Some(RedoBlock::Changed));
 }

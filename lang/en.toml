@@ -1069,6 +1069,8 @@ op_move = "move {} items"
 op_move_one = "move {} item"
 history_busy = "Wait until the copy or move in progress finishes"
 history_changed = "The history changed. Open the menu again"
+redo_stale = "Can't redo: {}"
+changed_after_undo = "It changed after the undo"
 
 [explorer.op]
 copying = "Copying {} of {} · {}"

@@ -6,7 +6,7 @@ use crate::app::explorer_files::history::Entry;
 use crate::app::explorer_files::job::OpKind;
 use crate::platform::native_menu::MenuItem;
 use crate::runtime::engine_read::EngineRead;
-use crate::state::explorer_history::stale_text;
+use crate::state::explorer_history::{redo_stale_text, stale_text};
 
 const UNDO: u32 = 110;
 const REDO: u32 = 111;
@@ -29,7 +29,8 @@ pub(crate) fn redo_label(entry: &Entry) -> String {
     crate::i18n::t_fmt("explorer.menu.redo", &op_label(entry))
 }
 
-/// 이력의 맨 위 단계로 만든 Undo · Redo 행. 둘 다 없으면 빈 목록이다. `busy` 면 이력에 반영할
+/// 이력의 맨 위 단계로 만든 Undo · Redo 행. 둘 다 없으면 빈 목록이다. 되돌리거나 다시 실행할 수
+/// 없게 된 단계는 행을 끄고 이유를 툴팁으로 보인다. `busy` 면 이력에 반영할
 /// 작업이 남아 있다는 뜻이라 두 행을 모두 끄고 그 이유를 툴팁으로 보인다.
 pub(crate) fn history_items(
     undo: Option<&Entry>,
@@ -50,10 +51,14 @@ pub(crate) fn history_items(
         });
     }
     if let Some(entry) = redo {
-        items.push(if busy {
-            MenuItem::disabled(REDO, redo_label(entry)).with_tooltip(busy_text())
+        let why = if busy {
+            Some(busy_text())
         } else {
-            MenuItem::new(REDO, redo_label(entry))
+            redo_stale_text(entry)
+        };
+        items.push(match why {
+            Some(why) => MenuItem::disabled(REDO, redo_label(entry)).with_tooltip(why),
+            None => MenuItem::new(REDO, redo_label(entry)),
         });
     }
     items

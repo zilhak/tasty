@@ -5,7 +5,8 @@
 //! 이름이 겹치면 처음처럼 충돌 질문을 거친다.
 
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use super::Operation;
 use super::job::{OpKind, Reason, Report, UndoStep};
@@ -53,9 +54,65 @@ impl Source {
 pub(crate) struct Entry {
     pub(crate) source: Source,
     pub(crate) undo: Vec<UndoStep>,
+    /// 되돌리기가 끝났을 때 원본 경로마다 본 모습. 다시 실행 전에 바깥에서 바뀌었는지 비교한다.
+    seen: Vec<(PathBuf, Option<Look>)>,
+}
+
+/// 경로에 있는 항목의 종류와 수정 시각.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Look {
+    kind: LookKind,
+    modified: Option<SystemTime>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LookKind {
+    File,
+    Dir,
+    Link,
+}
+
+fn look(path: &Path) -> Option<Look> {
+    let meta = path.symlink_metadata().ok()?;
+    let kind = if meta.file_type().is_symlink() {
+        LookKind::Link
+    } else if meta.is_dir() {
+        LookKind::Dir
+    } else {
+        LookKind::File
+    };
+    Some(Look {
+        kind,
+        modified: meta.modified().ok(),
+    })
+}
+
+/// 다시 실행할 수 없는 이유.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RedoBlock {
+    /// 원본 자리의 항목이 없어졌다.
+    Gone,
+    /// 되돌린 뒤 원본 자리의 항목이 바뀌었다(종류나 수정 시각).
+    Changed,
 }
 
 impl Entry {
+    pub(crate) fn new(source: Source, undo: Vec<UndoStep>) -> Self {
+        Self {
+            source,
+            undo,
+            seen: Vec::new(),
+        }
+    }
+    /// 다시 실행하면 되돌린 뒤 바깥에서 바뀐 항목을 옮기거나 복사하게 되는가. 바뀐 원본이 하나라도
+    /// 있으면 그 이유. 다시 실행은 붙여넣기를 다시 보내 항목별로 거르지 않으므로 하나만 바뀌어도 막는다.
+    pub(crate) fn redo_block(&self) -> Option<RedoBlock> {
+        self.seen.iter().find_map(|(path, then)| match look(path) {
+            None => Some(RedoBlock::Gone),
+            now if now != *then => Some(RedoBlock::Changed),
+            _ => None,
+        })
+    }
     pub(crate) fn kind(&self) -> OpKind {
         if self.source.cut {
             OpKind::Move
@@ -191,18 +248,12 @@ impl History {
                     self.redo.clear();
                 }
                 if completed(report) {
-                    self.push_undo(Entry {
-                        source,
-                        undo: report.undo.clone(),
-                    });
+                    self.push_undo(Entry::new(source, report.undo.clone()));
                 }
             }
             Recorded::Redo(entry) => {
                 if completed(report) {
-                    self.push_undo(Entry {
-                        source: entry.source,
-                        undo: report.undo.clone(),
-                    });
+                    self.push_undo(Entry::new(entry.source, report.undo.clone()));
                 }
             }
             Recorded::Undo(entry) => {
@@ -214,6 +265,13 @@ impl History {
                     if self.redo.len() == MAX_STEPS {
                         self.redo.remove(0);
                     }
+                    let mut entry = entry;
+                    entry.seen = entry
+                        .source
+                        .paths
+                        .iter()
+                        .map(|p| (p.clone(), look(p)))
+                        .collect();
                     self.redo.push(entry);
                 }
             }

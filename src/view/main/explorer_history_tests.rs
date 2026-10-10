@@ -4,14 +4,14 @@ use crate::app::explorer_files::job::UndoStep;
 use std::path::PathBuf;
 
 fn entry(cut: bool, undo: Vec<UndoStep>) -> Entry {
-    Entry {
-        source: Source {
+    Entry::new(
+        Source {
             paths: vec!["/src/a".into()],
             destination: "/dest".into(),
             cut,
         },
         undo,
-    }
+    )
 }
 
 /// 되돌릴 수 있는 이동 단계: 옮겨 간 자리에 항목이 있고 원래 자리는 비어 있다.
@@ -242,4 +242,38 @@ fn rows_are_disabled_while_a_copy_or_move_waits() {
         assert!(!row.enabled, "{}", row.label);
         assert_eq!(row.tooltip.as_deref(), Some(busy));
     }
+}
+
+/// 되돌린 뒤 원본이 없어진 다시 실행 행은 꺼지고 이유를 툴팁으로 보인다.
+#[test]
+fn a_stale_redo_row_is_disabled_with_the_reason_as_its_tooltip() {
+    use crate::app::explorer_files::history::Recorded;
+    use crate::app::explorer_files::job::OpKind;
+    let dir = tempfile::tempdir().unwrap();
+    let (mut state, _engine, sid) = explorer_state(dir.path());
+    let original = dir.path().join("orig");
+    std::fs::write(&original, b"x").unwrap();
+    let mut moved = entry(true, vec![live_move(dir.path(), "a")]);
+    moved.source.paths = vec![original.clone()];
+    record(&mut state, sid, moved);
+    let h = &mut state.explorer_views.get_mut(sid).unwrap().ops.history;
+    let top = h.take_undo().unwrap();
+    h.record(Recorded::Undo(top), &report(OpKind::Undo, Vec::new()));
+    assert!(history_rows(&mut state, sid)[0].enabled);
+
+    std::fs::remove_file(&original).unwrap();
+    let rows = history_rows(&mut state, sid);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, REDO);
+    assert!(!rows[0].enabled);
+    assert_eq!(
+        rows[0].tooltip.as_deref(),
+        Some(
+            crate::i18n::t_fmt(
+                "explorer.menu.redo_stale",
+                crate::i18n::t("explorer.result.gone")
+            )
+            .as_str()
+        )
+    );
 }
