@@ -224,8 +224,9 @@ pub(super) fn name_row(
             .create
             .as_ref()
             .map(|c| egui::Id::new(("explorer_create_field", &c.dir, c.folder))),
-        // explorer-create-indent. 디자인 토큰이 Theme 에 등록되기 전까지 같은 값인 space-lg 를 쓴다.
-        indent: caption.as_ref().map_or(0.0, |_| theme.spacing_lg.value()),
+        indent: caption
+            .as_ref()
+            .map_or(0.0, |_| theme.explorer_create_indent().value()),
         caption: caption.as_deref(),
     };
     let Some(create) = view.create.as_mut() else {

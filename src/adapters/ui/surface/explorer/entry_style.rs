@@ -8,9 +8,8 @@ use super::view::DirEntryInfo;
 use super::view::hidden::is_hidden;
 use crate::adapters::ui::icons::{self, Icon};
 
-/// explorer-hidden-fg. 디자인 토큰이 Theme 에 등록되기 전까지 같은 값인 text-muted 를 쓴다.
 fn hidden_fg(theme: &Theme) -> egui::Color32 {
-    theme.text_muted().to_egui()
+    theme.explorer_hidden_fg().to_egui()
 }
 
 /// 엔트리의 아이콘 + glyph 색 (design GridCell/DetailRow/ExpListMini):
