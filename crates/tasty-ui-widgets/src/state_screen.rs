@@ -1,7 +1,8 @@
 //! 내용 영역 대신 그리는 상태 화면(글리프 · 제목 · 보조 줄 · 이유 줄 · 버튼 줄).
 //! 탐색기 내용 영역과 이미지 캔버스가 함께 쓴다. 시안 `ExpState` 를 따른다: 가운데 정렬한
 //! 글리프 · 제목(body) · 선택 보조 줄(caption, text-muted) · 선택 이유 줄(mono caption, text-muted) ·
-//! 선택 버튼 줄을 space-sm 간격으로 쌓고, 버튼 줄은 space-xs 를 더 띄운다.
+//! 선택 버튼 줄을 space-sm 간격으로 쌓고, 버튼 줄은 space-xs 를 더 띄운다. 제목과 보조 줄은
+//! 줄 길이를 고르게 바꾼다([`balanced_galley`], 시안 `text-wrap: balance`).
 //! 영역 높이가 `explorer_state_compact_below()` 미만이면 [`compact_state_row`] 한 줄로 바꾸고
 //! 보조 줄과 이유 문구는 제목 툴팁으로 옮긴다. 블록이 잘리지 않게 하기 위해서다.
 //! 글리프는 호출자가 그린다. 플러그인은 egui 이미지 대신 구운 폴리라인으로 아이콘을 그리기 때문이다.
@@ -11,7 +12,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::{
     Button, ButtonVariant, CompactStateGlyph, CompactStateRow, ControlSize, Spinner,
-    compact_state_row,
+    balanced_galley, compact_state_row,
 };
 
 /// 시안 글리프 확대 비율(`transform: scale(1.6)`). 대응 토큰이 없다.
@@ -67,15 +68,22 @@ pub fn state_screen(
     };
     let caption = theme.font_size_caption.value();
     let narrow = SUB_MAX_W.value().min(inner_w);
-    let title = center(
+    let title = balanced_galley(
+        ui.ctx(),
         s.title,
         egui::FontId::proportional(theme.font_size_body.value()),
         s.title_color,
         inner_w,
     );
-    let sub = s
-        .sub
-        .map(|t| center(t, egui::FontId::proportional(caption), muted, narrow));
+    let sub = s.sub.map(|t| {
+        balanced_galley(
+            ui.ctx(),
+            t,
+            egui::FontId::proportional(caption),
+            muted,
+            narrow,
+        )
+    });
     let reason = s
         .reason
         .map(|t| center(t, egui::FontId::monospace(caption), muted, narrow));

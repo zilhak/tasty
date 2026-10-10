@@ -10,6 +10,7 @@ mod attach_refusal;
 mod attach_size_sync;
 mod attention;
 mod autocomplete;
+mod balanced_wrap;
 mod banner;
 mod banner_more_row;
 pub mod brand;
@@ -94,6 +95,7 @@ pub use attention::{
 pub use autocomplete::{
     AutoComplete, AutoCompleteAction, AutoCompleteResponse, MatchMode, autocomplete_dropdown,
 };
+pub use balanced_wrap::balanced_galley;
 pub use banner::{banner_is_narrow, banner_shell, inset_banner_zone, inset_content_rect};
 pub use banner_more_row::{
     BannerMoreLabel, banner_more_row, banner_more_row_height, banner_more_row_natural_width,
