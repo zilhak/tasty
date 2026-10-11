@@ -174,8 +174,7 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 - **거절**: 폴더를 자기 자신이나 그 하위로(`a folder can't go inside itself`), 이미 있는 폴더로 이동(`already in this folder`, 복사는 허용), 다른 컴퓨터의 칸으로(`it is on a different computer` — 로컬과 원격 사이, 서로 다른 연결 사이, OS 파일을 mirror explorer 로), 원격 쓰기를 받지 않는 server 의 mirror explorer 로(`remote folders are read-only`), 쓰기 권한이 없는 로컬 폴더로(`no write access`). 원격 폴더의 쓰기 권한은 이 컴퓨터에서 확인하지 않고 server 의 결과로 알린다. 거절된 대상에는 링을 그리지 않는다. explorer 가 아닌 곳에서는 시작한 칸이 "Can't drop" 칩만 보인다.
 - **취소**: Esc 를 누르면 드래그를 취소하고, 버튼을 놓을 때까지 다시 시작하지 않는다.
 - **OS 파일**: explorer 칸 위에서는 창 전체의 drop overlay 를 그리지 않고, 칸이 링과 "Copy to" 칩을 보인다. 이 표시는 드래그 중 포인터 위치를 아는 동안만 나온다. winit 0.30 의 X11 은 XDND 중 위치를 알려 주지 않아 표시 없이 창 overlay 가 남고, 놓은 뒤의 포인터 위치로 대상 칸을 정한다. 다른 곳에 놓은 파일은 지금처럼 연다.
-- **꺼내기**: explorer 에서 다른 앱이나 터미널로 끌어 내는 기능은 없다.
-
+- **꺼내기**: 로컬 항목의 외부 앱 Copy 드래그와 플랫폼별 제한은 [외부 앱으로 끌어 내기](#외부-앱으로-끌어-내기)를 따른다.
 
 ### 외부 앱으로 끌어 내기
 
