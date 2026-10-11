@@ -17,6 +17,10 @@ impl ApplicationHandler<AppEvent> for App {
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 이벤트별 핸들러에 위임하는 평면 match이며 플랫폼 cfg를 포함한다. 분기를 한곳에서 볼 수 있도록 유지한다.
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         let _stall_guard = stall_watchdog::Guard::enter(Site::UserEvent);
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        if let AppEvent::OutboundDragEnded { id, .. } = &event {
+            crate::file::drag::desktop::release_completed(*id);
+        }
         // 종료 중에는 정리된 상태를 다시 건드리지 않도록 새 이벤트를 버린다.
         if self.state.shutdown.is_some() {
             return;
@@ -59,6 +63,18 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
         match event {
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            AppEvent::OutboundDragEnded { window, id, result } => {
+                if let Some(main) = self
+                    .view
+                    .views
+                    .get_mut(&window)
+                    .and_then(|view| view.as_main_mut())
+                    && let Some(engine) = self.engines.window_read(window)
+                {
+                    main.finish_outbound_request(id, result, &engine);
+                }
+            }
             AppEvent::JournalReady => {
                 if let Some(boot) = &self.boot {
                     boot.window.request_redraw();
@@ -1199,6 +1215,20 @@ impl App {
                 ViewAction::None
             }
         };
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        {
+            let request = self
+                .view
+                .views
+                .get_mut(&id)
+                .and_then(|view| view.as_main_mut())
+                .and_then(|main| main.take_outbound_request());
+            // OLE pumps nested Win32 messages; AppKit can synchronously invoke source callbacks.
+            // The View and engine read guards above have both been released.
+            if let Some(request) = request {
+                request.start(self.view.proxy.clone());
+            }
+        }
         self.process_preset_edits(id);
         if self.view.views.contains_key(&id) {
             match action {

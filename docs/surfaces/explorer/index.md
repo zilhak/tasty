@@ -457,4 +457,4 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 
 - [work-area](../../features/work-area/index.md)(Surface/Tab/Pane 계층) · [file-handler](../../features/file-handler/index.md)(파일 열기 위임) · [convert-surface](../../features/convert-surface/index.md)(explorer 로/에서 변환) · [keybindings](../../features/keybindings/index.md) · [settings](../../features/settings/index.md)(폰트/단축키 탭)
 
-Linux 로컬 항목의 외부 앱 Copy 드래그와 플랫폼별 제한은 [파일 작업 계약](file-operations.md#외부-앱으로-끌어-내기)을 따른다.
+Windows·macOS·Linux 로컬 항목의 외부 앱 Copy 드래그와 플랫폼별 제한은 [파일 작업 계약](file-operations.md#외부-앱으로-끌어-내기)을 따른다.

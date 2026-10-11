@@ -5629,6 +5629,7 @@ dependencies = [
  "webview2-com",
  "wgpu",
  "windows 0.61.3",
+ "windows-core 0.61.2",
  "winit",
  "winresource",
  "x11-dl",

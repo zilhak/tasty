@@ -391,15 +391,8 @@ impl MainView {
         }
         // If a modal is active, block all input events before they reach egui.
         // Only allow non-input events (resize, redraw, scale factor, focus) through.
-        if ctx.modal_active {
-            match &event {
-                WindowEvent::Resized(_)
-                | WindowEvent::RedrawRequested
-                | WindowEvent::ScaleFactorChanged { .. }
-                | WindowEvent::ModifiersChanged(_)
-                | WindowEvent::Focused(_) => {}
-                _ => return ViewAction::None,
-            }
+        if modal_blocks_input(ctx.modal_active, &event) {
+            return ViewAction::None;
         }
 
         // 팝업·host 위젯의 키 입력만 egui에 전달하고 나머지는 중앙 디스패처로 보낸다.
@@ -628,4 +621,16 @@ impl MainView {
             );
         }
     }
+}
+
+fn modal_blocks_input(modal: bool, event: &WindowEvent) -> bool {
+    modal
+        && !matches!(
+            event,
+            WindowEvent::Resized(_)
+                | WindowEvent::RedrawRequested
+                | WindowEvent::ScaleFactorChanged { .. }
+                | WindowEvent::ModifiersChanged(_)
+                | WindowEvent::Focused(_)
+        )
 }

@@ -64,6 +64,12 @@ impl IpcCompletion {
 
 #[derive(Debug)]
 pub(crate) enum AppEvent {
+    #[cfg(all(feature = "gui", any(target_os = "windows", target_os = "macos")))]
+    OutboundDragEnded {
+        window: winit::window::WindowId,
+        id: u64,
+        result: Result<crate::file::drag::Outcome, String>,
+    },
     /// PTY reader thread produced output. If targeted_pty_polling is enabled,
     /// contains the surface_id that has new data. Otherwise None (poll all).
     TerminalOutput(Option<u32>),

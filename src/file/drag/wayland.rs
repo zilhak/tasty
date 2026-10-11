@@ -1,5 +1,8 @@
 //! Independent proxies on winit's *same* libwayland client, as in smithay-clipboard.
 //! The genuine pointer grab serial and originating surface are observed before handoff.
+#[cfg(test)]
+mod tests;
+
 use super::Outcome;
 use std::{
     cell::RefCell,
@@ -87,14 +90,14 @@ impl Context {
         {
             return Err("Wayland drag display owner mismatch".into());
         }
-        // OwnedDisplayHandle retains winit's connection even after its event loop has exited.
+        // SAFETY: OwnedDisplayHandle retains winit's connection even after its event loop has exited.
         let connection = Connection::from_backend(unsafe {
             Backend::from_foreign_display(display.display.as_ptr().cast())
         });
         let mut queue = connection.new_event_queue();
         let q = queue.handle();
         let mut state = State::default();
-        // Borrow the surface's identity without installing a listener or destroying winit's proxy.
+        // SAFETY: Borrow the surface's identity without installing a listener or destroying winit's proxy.
         let id = unsafe {
             wayland_client::backend::ObjectId::from_ptr(
                 wl_surface::WlSurface::interface(),
@@ -106,13 +109,6 @@ impl Context {
         connection.display().get_registry(&q, ());
         queue.roundtrip(&mut state).map_err(|e| e.to_string())?;
         queue.roundtrip(&mut state).map_err(|e| e.to_string())?;
-        if let Some(manager) = &state.manager {
-            for seat in &mut state.seats {
-                if seat.device.is_none() {
-                    seat.device = Some(manager.get_data_device(&seat.seat, &q, seat.id));
-                }
-            }
-        }
         connection.flush().map_err(|e| e.to_string())?;
         Ok(Some(Self(Rc::new(RefCell::new(Owner {
             queue,
@@ -155,14 +151,20 @@ impl Context {
             return Err("Wayland drag requires one live pointer grab on the source surface".into());
         }
         let (seat, (serial, origin)) = matches[0];
-        let device = seat
-            .device
-            .as_ref()
-            .ok_or("Wayland seat has no data device")?;
+        let seat_id = seat.id;
+        let serial = *serial;
+        let origin = origin.clone();
+        let device = manager.get_data_device(&seat.seat, &queue.handle(), seat_id);
         let source = manager.create_data_source(&queue.handle(), ());
         source.offer("text/uri-list".into());
         source.set_actions(wl_data_device_manager::DndAction::Copy);
-        device.start_drag(Some(&source), origin, None, *serial);
+        device.start_drag(Some(&source), &origin, None, serial);
+        state
+            .seats
+            .iter_mut()
+            .find(|seat| seat.id == seat_id)
+            .expect("source seat")
+            .device = Some(device);
         state.active = Some(Active {
             source,
             bytes,
@@ -172,7 +174,17 @@ impl Context {
             deadline: None,
             transfers: Vec::new(),
         });
-        connection.flush().map_err(|e| e.to_string())?;
+        if let Err(error) = connection.flush() {
+            if let Some(active) = state.active.take() {
+                active.source.destroy();
+            }
+            for seat in &mut state.seats {
+                if let Some(device) = seat.device.take() {
+                    device.release();
+                }
+            }
+            return Err(error.to_string());
+        }
         Ok(Session(self.0.clone()))
     }
 }
@@ -249,6 +261,12 @@ impl Drop for Session {
         for seat in &mut owner.state.seats {
             seat.grab = None;
             seat.buttons.clear();
+            if let Some(offer) = seat.offer.take() {
+                offer.destroy();
+            }
+            if let Some(device) = seat.device.take() {
+                device.release();
+            }
         }
         if let Err(e) = owner.connection.flush() {
             tracing::debug!(%e,"Wayland drag cleanup flush");
@@ -301,15 +319,12 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                 version,
             } if interface == "wl_seat" && version >= 5 => {
                 let seat = r.bind(name, version.min(7), q, name);
-                let device = s
-                    .manager
-                    .as_ref()
-                    .map(|m| m.get_data_device(&seat, q, name));
+
                 s.seats.push(Seat {
                     id: name,
                     seat,
                     pointer: None,
-                    device,
+                    device: None,
                     focus: None,
                     grab: None,
                     offer: None,
@@ -468,8 +483,10 @@ impl Dispatch<wl_data_source::WlDataSource, ()> for State {
     }
 }
 fn nonblocking(fd: OwnedFd) -> std::io::Result<std::fs::File> {
+    // SAFETY: fd owns a live descriptor; F_GETFL takes no additional argument.
     let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
     if flags < 0
+        // SAFETY: the owned descriptor is live and flags came from F_GETFL.
         || unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
     {
         return Err(std::io::Error::last_os_error());
@@ -488,7 +505,8 @@ impl Dispatch<wl_data_device::WlDataDevice, u32> for State {
         let Some(seat) = s.seats.iter_mut().find(|seat| seat.id == *seat_id) else {
             return;
         };
-        // Reject our own client surfaces. Retain the offer until its Enter/Selection arrives.
+        // Only an active outbound source rejects own-client targets. Inactive offers
+        // must not change another data device's incoming drag or clipboard negotiation.
         match e {
             wl_data_device::Event::DataOffer { id } => {
                 if let Some(old) = seat.offer.replace(id) {
@@ -499,7 +517,11 @@ impl Dispatch<wl_data_device::WlDataDevice, u32> for State {
                 serial,
                 id: Some(offer),
                 ..
-            } => {
+            } if s
+                .active
+                .as_ref()
+                .is_some_and(|active| !active.dropped && active.outcome.is_none()) =>
+            {
                 offer.accept(serial, None);
                 offer.set_actions(
                     wl_data_device_manager::DndAction::None,

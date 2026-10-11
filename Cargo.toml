@@ -311,11 +311,12 @@ tray-icon = { version = "0.22", optional = true }
 objc2 = { version = "0.6", optional = true }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"], optional = true }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore", "WKNavigation", "WKNavigationAction", "WKNavigationDelegate", "WKFrameInfo", "WKWebpagePreferences", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "block2"], optional = true }
-objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "libc"], optional = true }
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSWorkspace", "libc"], optional = true }
 # WKContentRuleList의 completion handler에 필요한 블록 타입이다.
 block2 = { version = "0.6", optional = true }
 
 [target.'cfg(windows)'.dependencies]
+windows-core = "0.61"
 webview2-com = { version = "0.38", optional = true }
 windows = { version = "0.61", features = [
     "Win32_Foundation",
@@ -324,6 +325,8 @@ windows = { version = "0.61", features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Console",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
     "Win32_System_DataExchange",
     "Win32_System_Diagnostics_Debug",
     "Win32_System_LibraryLoader",

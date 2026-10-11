@@ -1,4 +1,6 @@
 //! Copy-only outbound file sessions. Starting a session does not report a completed drop.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub(crate) mod desktop;
 #[cfg(target_os = "linux")]
 mod linux;
 mod payload;
@@ -7,8 +9,12 @@ mod wayland;
 #[cfg(target_os = "linux")]
 mod x11;
 
-use std::{path::PathBuf, sync::Arc};
-use winit::{dpi::PhysicalPosition, window::Window};
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
+use std::sync::Arc;
+#[cfg(target_os = "linux")]
+use winit::dpi::PhysicalPosition;
+use winit::window::Window;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Outcome {
@@ -56,31 +62,28 @@ impl Context {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Debug)]
 pub(crate) enum StartError {
-    #[cfg(not(target_os = "linux"))]
-    Unsupported,
     Failed(String),
 }
-
+#[cfg(target_os = "linux")]
 impl std::fmt::Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            #[cfg(not(target_os = "linux"))]
-            Self::Unsupported => {
-                f.write_str("native outbound drag is unavailable on this platform")
-            }
             Self::Failed(error) => f.write_str(error),
         }
     }
 }
 
+#[cfg(target_os = "linux")]
 pub(crate) struct Session {
     #[cfg(target_os = "linux")]
     backend: linux::Session,
     // Keep the native window/display owner alive until all native resources have been released.
     _window: Arc<Window>,
 }
+#[cfg(target_os = "linux")]
 impl Session {
     pub(crate) fn start(
         window: Arc<Window>,
@@ -97,36 +100,17 @@ impl Session {
                 _window: window,
             })
         }
-        #[cfg(not(target_os = "linux"))]
-        {
-            drop((window, context));
-            Err(StartError::Unsupported)
-        }
     }
-    pub(crate) fn motion(&mut self, _position: PhysicalPosition<f64>) -> Result<(), String> {
-        #[cfg(target_os = "linux")]
-        return self.backend.motion(_position);
-        #[cfg(not(target_os = "linux"))]
-        {
-            Ok(())
-        }
+    pub(crate) fn motion(&mut self, position: PhysicalPosition<f64>) -> Result<(), String> {
+        self.backend.motion(position)
     }
     pub(crate) fn release(&mut self) -> Result<(), String> {
-        #[cfg(target_os = "linux")]
-        return self.backend.release();
-        #[cfg(not(target_os = "linux"))]
-        Ok(())
+        self.backend.release()
     }
     pub(crate) fn poll(&mut self) -> Result<Option<Outcome>, String> {
-        #[cfg(target_os = "linux")]
-        return self.backend.poll();
-        #[cfg(not(target_os = "linux"))]
-        Ok(Some(Outcome::Cancelled))
+        self.backend.poll()
     }
     pub(crate) fn accepted(&self) -> bool {
-        #[cfg(target_os = "linux")]
-        return self.backend.accepted();
-        #[cfg(not(target_os = "linux"))]
-        false
+        self.backend.accepted()
     }
 }

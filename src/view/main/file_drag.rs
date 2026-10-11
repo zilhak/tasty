@@ -1,9 +1,6 @@
 //! Per-View gesture ownership. No native callback can mutate a different View or Surface.
 use super::MainView;
-use crate::{
-    file::drag::Session,
-    runtime::{engine_read::EngineRead, surface_binding::SurfaceBinding},
-};
+use crate::runtime::{engine_read::EngineRead, surface_binding::SurfaceBinding};
 use std::path::PathBuf;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
@@ -13,7 +10,14 @@ pub(crate) struct Gesture {
     held: bool,
     handed_off: bool,
     source: Option<(SurfaceBinding, Vec<PathBuf>)>,
-    native: Option<Session>,
+    #[cfg(target_os = "linux")]
+    native: Option<crate::file::drag::Session>,
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    desktop: Option<crate::file::drag::desktop::Handle>,
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    pending: Option<crate::file::drag::desktop::Request>,
+    #[cfg(target_os = "macos")]
+    event: Option<crate::file::drag::desktop::GestureEvent>,
 }
 impl Gesture {
     pub(crate) fn new(
@@ -28,11 +32,26 @@ impl Gesture {
 }
 impl MainView {
     pub(crate) fn has_outbound_drag(&self) -> bool {
-        self.file_drag.native.is_some()
+        #[cfg(target_os = "linux")]
+        {
+            self.file_drag.native.is_some()
+        }
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        {
+            self.file_drag.desktop.is_some()
+        }
     }
 
     pub(super) fn cancel_outbound_drag(&mut self) {
-        self.file_drag.native = None;
+        #[cfg(target_os = "linux")]
+        {
+            self.file_drag.native = None;
+        }
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        {
+            self.file_drag.desktop = None;
+            self.file_drag.pending = None;
+        }
         self.file_drag.source = None;
         self.base
             .winit
@@ -55,6 +74,7 @@ impl MainView {
             self.cancel_outbound_drag();
             return;
         }
+        #[cfg(target_os = "linux")]
         if let Some(native) = self.file_drag.native.as_mut() {
             match native.poll() {
                 Ok(Some(outcome)) => {
@@ -70,7 +90,8 @@ impl MainView {
                 }),
                 Err(error) => self.outbound_failed(error),
             }
-        } else if self.file_drag.held && !self.file_drag.handed_off {
+        }
+        if !self.has_outbound_drag() && self.file_drag.held && !self.file_drag.handed_off {
             // The payload is created by Explorer after its existing threshold and selection logic.
             self.file_drag.source = crate::explorer_ui::view::drag::outbound_payload(
                 &self.base.gpu.egui_ctx,
@@ -99,6 +120,10 @@ impl MainView {
         event: &WindowEvent,
         modal: bool,
     ) -> bool {
+        #[cfg(target_os = "macos")]
+        if let Some(event) = crate::file::drag::desktop::GestureEvent::capture(&self.base.winit) {
+            self.file_drag.event = Some(event);
+        }
         if modal {
             self.cancel_outbound_drag();
         }
@@ -110,14 +135,19 @@ impl MainView {
                 ..
             }
         ) {
-            if self.file_drag.native.is_some() {
+            if self.has_outbound_drag() {
                 return true;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                self.file_drag.event =
+                    crate::file::drag::desktop::GestureEvent::capture(&self.base.winit);
             }
             self.file_drag.held = true;
             self.file_drag.handed_off = false;
             self.file_drag.source = None;
         }
-        if self.file_drag.native.is_some()
+        if self.has_outbound_drag()
             && let WindowEvent::KeyboardInput { event, .. } = event
             && event.state == ElementState::Pressed
             && crate::shortcuts::matches_any_binding(
@@ -151,13 +181,29 @@ impl MainView {
             {
                 self.file_drag.handed_off = true;
                 // Linux sessions are asynchronous and dispatch only their own queues.
-                match Session::start(
+                #[cfg(target_os = "linux")]
+                match crate::file::drag::Session::start(
                     self.base.winit.clone(),
                     paths,
                     self.file_drag.context.as_mut().expect("View drag context"),
                 ) {
                     Ok(session) => self.file_drag.native = Some(session),
                     Err(error) => self.outbound_failed(error.to_string()),
+                }
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                {
+                    let (request, handle) = crate::file::drag::desktop::Request::new(
+                        self.base.winit.clone(),
+                        paths.clone(),
+                    );
+                    #[cfg(target_os = "macos")]
+                    let request = {
+                        let mut request = request;
+                        request.event = self.file_drag.event.take();
+                        request
+                    };
+                    self.file_drag.desktop = Some(handle);
+                    self.file_drag.pending = Some(request);
                 }
                 self.base.gpu.release_drag_pointer();
                 self.left_mouse_down = false;
@@ -178,6 +224,7 @@ impl MainView {
         if !self.file_drag.handed_off {
             return false;
         }
+        #[cfg(target_os = "linux")]
         if let Some(native) = self.file_drag.native.as_mut() {
             let result = match event {
                 WindowEvent::CursorMoved { position, .. } => native.motion(*position),
@@ -198,9 +245,49 @@ impl MainView {
                     ..
                 }
         );
-        if released && self.file_drag.native.is_none() {
+        if released && !self.has_outbound_drag() {
             self.file_drag.handed_off = false;
         }
         consumed
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+impl MainView {
+    pub(crate) fn take_outbound_request(&mut self) -> Option<crate::file::drag::desktop::Request> {
+        self.file_drag.pending.take()
+    }
+    pub(crate) fn finish_outbound_request(
+        &mut self,
+        id: u64,
+        result: Result<crate::file::drag::Outcome, String>,
+        engine: &EngineRead<'_>,
+    ) {
+        if self
+            .file_drag
+            .desktop
+            .as_ref()
+            .is_none_or(|handle| handle.id != id)
+        {
+            return;
+        }
+        if self
+            .file_drag
+            .source
+            .as_ref()
+            .is_none_or(|(binding, _)| !binding.current_in(engine))
+        {
+            self.cancel_outbound_drag();
+            return;
+        }
+        match result {
+            Ok(outcome) => {
+                tracing::debug!(?outcome, "outbound file drag ended");
+                self.cancel_outbound_drag();
+            }
+            Err(error) => self.outbound_failed(error),
+        }
+        self.file_drag.held = false;
+        self.file_drag.handed_off = false;
     }
 }

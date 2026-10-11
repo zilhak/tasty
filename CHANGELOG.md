@@ -18,7 +18,7 @@
 
 ### Added
 
-- **Linux 탐색기에서 로컬 항목을 외부 앱으로 끌어 복사할 수 있다.** X11과 네이티브 Wayland에서 OS 드래그를 시작하며 원본은 지우지 않는다. 같은 윈도우 안의 이동·복사는 유지하고, 외부로 넘긴 제스처를 원본으로 돌려놓아도 내부 작업을 중복 실행하지 않는다. 같은 프로세스의 다른 Tasty 윈도우와 원격 항목은 대상에서 제외한다. Windows·macOS의 외부 드래그는 아직 지원하지 않는다.
+- **Windows·macOS·Linux 탐색기에서 로컬 항목을 외부 앱으로 끌어 복사할 수 있다.** OLE·AppKit·X11·네이티브 Wayland에서 OS 드래그를 시작하며 원본은 지우지 않는다. 같은 윈도우 안의 이동·복사는 유지하고, 외부로 넘긴 제스처를 원본으로 돌려놓아도 내부 작업을 중복 실행하지 않는다. 같은 프로세스의 다른 Tasty 윈도우와 원격 항목은 대상에서 제외한다. Windows·macOS는 크로스 타깃 컴파일 확인, 실 기기 미측정이다. Wayland outbound data-device는 세션 중에만 유지하며 관련 없는 incoming offer와 텍스트 선택에는 개입하지 않는다.
 
 - **Codex 관리형 작업으로 기존 Tasty task 결과를 부모에게 전달할 수 있다.** `tasty codex managed prepare|attach|get|callback|forget`으로 전달 관계와 Codex 도구 인자를 준비한다. 일반 관리형 전달자가 task를 읽고 부모에게 도구 결과를 보내며, idle 부모는 새 턴으로 재개할 수 있다. 현재 Local 호출자를 지원하고 준비·callback 인자 생성만으로 전송이나 task 성공을 판정하지 않는다. 수동 App Server 연결 설정은 필요하지 않다.
 
