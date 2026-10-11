@@ -337,45 +337,50 @@ fn mode_string(_meta: &std::fs::Metadata) -> Option<String> {
 fn count_folder(root: &Path, count: &FolderCount, cancel: &AtomicBool) {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.load(Ordering::Relaxed) || !count_dir(&dir, count, cancel, &mut stack) {
             return;
         }
-        let entries = match std::fs::read_dir(&dir) {
-            Ok(entries) => entries,
+    }
+}
+
+/// `dir` 바로 아래 항목을 세고 하위 폴더를 `stack` 에 쌓는다. 취소되면 `false`.
+fn count_dir(
+    dir: &Path,
+    count: &FolderCount,
+    cancel: &AtomicBool,
+    stack: &mut Vec<PathBuf>,
+) -> bool {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            count.partial.store(true, Ordering::Release);
+            tracing::debug!(%error, dir = %dir.display(), "properties: skipped a folder");
+            return true;
+        }
+    };
+    for entry in entries {
+        if cancel.load(Ordering::Relaxed) {
+            return false;
+        }
+        let meta = match entry.and_then(|entry| {
+            std::fs::symlink_metadata(entry.path()).map(|meta| (entry.path(), meta))
+        }) {
+            Ok(found) => found,
             Err(error) => {
                 count.partial.store(true, Ordering::Release);
-                tracing::debug!(%error, dir = %dir.display(), "properties: skipped a folder");
+                tracing::debug!(%error, "properties: unreadable directory entry");
                 continue;
             }
         };
-        for entry in entries {
-            if cancel.load(Ordering::Relaxed) {
-                return;
-            }
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(error) => {
-                    count.partial.store(true, Ordering::Release);
-                    tracing::debug!(%error, "properties: unreadable directory entry");
-                    continue;
-                }
-            };
-            let meta = match std::fs::symlink_metadata(entry.path()) {
-                Ok(meta) => meta,
-                Err(error) => {
-                    count.partial.store(true, Ordering::Release);
-                    tracing::debug!(%error, "properties: unreadable entry metadata");
-                    continue;
-                }
-            };
-            count.items.fetch_add(1, Ordering::Relaxed);
-            if meta.is_dir() {
-                stack.push(entry.path());
-            } else if !meta.file_type().is_symlink() {
-                count.bytes.fetch_add(meta.len(), Ordering::Relaxed);
-            }
+        let (path, meta) = meta;
+        count.items.fetch_add(1, Ordering::Relaxed);
+        if meta.is_dir() {
+            stack.push(path);
+        } else if !meta.file_type().is_symlink() {
+            count.bytes.fetch_add(meta.len(), Ordering::Relaxed);
         }
     }
+    true
 }
 
 #[cfg(test)]
@@ -436,7 +441,7 @@ mod tests {
         std::fs::write(private.join("file"), "secret").unwrap();
         let denied = dir.path().join("denied");
         symlink("private/file", &denied).unwrap();
-        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0)).unwrap();
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o0)).unwrap();
         let error = item_facts(&denied);
         std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(error.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
@@ -452,7 +457,7 @@ mod tests {
         let private = dir.path().join("private");
         std::fs::create_dir(&private).unwrap();
         std::fs::write(private.join("hidden"), "not counted").unwrap();
-        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0)).unwrap();
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o0)).unwrap();
         let count = FolderCount::default();
         count_folder(dir.path(), &count, &AtomicBool::new(false));
         std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap();
