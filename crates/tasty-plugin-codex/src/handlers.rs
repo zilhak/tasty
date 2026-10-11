@@ -103,8 +103,9 @@ const PROMPT_FILE_PREFIX: &str = "tasty-codex-prompt-";
 /// 이 플래그가 모든 상황에서 훅 전달을 보장하지는 않는다.
 fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) -> String {
     let prefix = format!(
-        "TASTY_SURFACE_ID={surface_id} {} ",
-        crate::POSIX_CODEX_COMMAND
+        "TASTY_SURFACE_ID={surface_id} {} {} ",
+        crate::POSIX_CODEX_COMMAND,
+        crate::LOCAL_SESSION_ARGS
     );
     let policy_suffix = if policy_args.is_empty() {
         String::new()
@@ -649,7 +650,10 @@ fn record_session_meta<H: HostCall>(host: &H, surface_id: u32, session: &str) ->
     let mut failures = 0;
     for (key, value) in [
         ("codex-session-id", session.to_string()),
-        ("restore.command", format!("codex resume {session}")),
+        (
+            "restore.command",
+            crate::reboot::resume_command_line(session, ""),
+        ),
     ] {
         if let Err(e) = host.call(
             "surface.meta.set",
@@ -939,6 +943,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn session_start_saves_a_terminal_local_restore_command() {
+        let host = FlakyHost::failing(Vec::new());
+        handle_hook(
+            &host,
+            &json!({"surface":42,"event":"session-start","session":"session-42"}),
+            &test_translator(),
+        )
+        .unwrap();
+        let calls = host.seen.borrow();
+        let restore = calls
+            .iter()
+            .find(|(method, params)| {
+                method == "surface.meta.set" && params["key"] == "restore.command"
+            })
+            .unwrap();
+        assert_eq!(restore.1["surface_id"], 42);
+        let command = restore.1["value"].as_str().unwrap();
+        assert!(command.contains("resume --dangerously-bypass-hook-trust"));
+        assert!(command.contains("-c check_for_update_on_startup=false session-42"));
+        assert!(!command.contains('\r'));
+        assert_eq!(
+            crate::reboot::resume_command("session-42", ""),
+            format!("{command}\r")
+        );
+    }
+
     /// 상태 갱신 실패는 집계가 아니라 Err로 반환한다.
     #[test]
     fn the_propagated_call_is_an_error_not_a_counted_failure() {
@@ -1014,11 +1045,11 @@ mod tests {
     fn make_codex_command_no_prompt() {
         assert_eq!(
             make_codex_command(42, None, ""),
-            "TASTY_SURFACE_ID=42 command codex --dangerously-bypass-hook-trust\r"
+            "TASTY_SURFACE_ID=42 command codex -c check_for_update_on_startup=false --dangerously-bypass-hook-trust\r"
         );
         assert_eq!(
             make_codex_command(42, Some(""), ""),
-            "TASTY_SURFACE_ID=42 command codex --dangerously-bypass-hook-trust\r"
+            "TASTY_SURFACE_ID=42 command codex -c check_for_update_on_startup=false --dangerously-bypass-hook-trust\r"
         );
     }
 
@@ -1028,7 +1059,7 @@ mod tests {
         let cmd = make_codex_command(surface_id, Some("hello"), "");
         assert!(
             cmd.starts_with(&format!(
-                "TASTY_SURFACE_ID={surface_id} {} --dangerously-bypass-hook-trust \"$(cat '",
+                "TASTY_SURFACE_ID={surface_id} {} -c check_for_update_on_startup=false --dangerously-bypass-hook-trust \"$(cat '",
                 crate::POSIX_CODEX_COMMAND
             )),
             "got {cmd}"
@@ -1057,7 +1088,7 @@ mod tests {
         assert_eq!(
             make_codex_command(42, None, "-a never -s read-only"),
             format!(
-                "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust -a never -s read-only\r",
+                "TASTY_SURFACE_ID=42 {} -c check_for_update_on_startup=false --dangerously-bypass-hook-trust -a never -s read-only\r",
                 crate::POSIX_CODEX_COMMAND
             )
         );
@@ -1069,7 +1100,7 @@ mod tests {
         let cmd = make_codex_command(surface_id, Some("hello"), "-a never");
         assert!(
             cmd.starts_with(&format!(
-                "TASTY_SURFACE_ID={surface_id} {} --dangerously-bypass-hook-trust -a never \"$(cat '", crate::POSIX_CODEX_COMMAND
+                "TASTY_SURFACE_ID={surface_id} {} -c check_for_update_on_startup=false --dangerously-bypass-hook-trust -a never \"$(cat '", crate::POSIX_CODEX_COMMAND
             )),
             "got {cmd}"
         );
@@ -1082,7 +1113,7 @@ mod tests {
         assert_eq!(
             make_codex_command(42, None, "--dangerously-bypass-approvals-and-sandbox"),
             format!(
-                "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust --dangerously-bypass-approvals-and-sandbox\r",
+                "TASTY_SURFACE_ID=42 {} -c check_for_update_on_startup=false --dangerously-bypass-hook-trust --dangerously-bypass-approvals-and-sandbox\r",
                 crate::POSIX_CODEX_COMMAND
             )
         );

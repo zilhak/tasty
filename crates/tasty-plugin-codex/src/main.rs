@@ -10,6 +10,10 @@
 // Git Bash on Windows. Keep execution in that shell instead of nesting cmd.exe.
 const POSIX_CODEX_COMMAND: &str = "command codex";
 
+// Codex 0.154 uses an embedded server when launch config overrides are present.
+// Keep hooks in the terminal's environment instead of a shared daemon's snapshot.
+const LOCAL_SESSION_ARGS: &str = "-c check_for_update_on_startup=false";
+
 mod handlers;
 mod install;
 mod managed;

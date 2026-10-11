@@ -132,6 +132,8 @@ fn exercise_wrapper(
             let mut expected = vec![
                 surface_id.to_string(),
                 "inherited value $ ! 한글".into(),
+                "-c".into(),
+                "check_for_update_on_startup=false".into(),
                 "--dangerously-bypass-hook-trust".into(),
             ];
             expected.extend(policy.split_whitespace().map(String::from));

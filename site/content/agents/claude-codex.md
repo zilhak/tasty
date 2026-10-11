@@ -36,6 +36,19 @@ tasty codex install --config-file /absolute/codex-home/work.config.toml
 - 탭을 닫았다가 복원하거나 Tasty 를 재시작하면 같은 세션으로 다시 이어집니다 (`claude -r` / `codex resume`).
 - 자식의 상태·결과를 부모가 받으려면 [수신 설정](#4-완료-알림-받기)도 필요합니다. 완료는 완료 로그에 한 줄로 쌓이고, 부모 Claude Code는 그것을 Monitor로 구독합니다.
 
+Codex는 Tasty의 실행 명령으로 시작하면 터미널별로 훅과 복원 정보를 관리합니다.
+복원할 때도 같은 방식으로 실행합니다. Codex CLI 0.154.0 기준입니다.
+터미널에 Codex 명령을 직접 입력할 때는 다음처럼 실행하세요.
+
+```sh
+codex -c check_for_update_on_startup=false
+codex resume -c check_for_update_on_startup=false SESSION_ID
+```
+
+`SESSION_ID`는 이어갈 대화의 ID로 바꾸세요. 공유 App Server에 직접 연결하면 서버에
+남아 있는 옛 터미널 정보 때문에 복원 정보가 저장되지 않을 수 있습니다. 이미 그 상태인
+대화나 명시적인 `--remote` 연결은 Tasty 업데이트만으로 자동 연결되지 않습니다.
+
 ## 2. 실행하기
 
 ```sh

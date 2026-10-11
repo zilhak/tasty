@@ -45,6 +45,26 @@ POSIX는 `if [ -n "$TASTY_SURFACE_ID" ]; then … || true; fi`로 Tasty 안에�
 세션 복원이 사용한다. 설치 이벤트는 아래 일곱 개다. 승인이 어느 도구에서나 발생할 수 있어
 도구 이름 matcher를 두지 않으며 PostToolUse도 매 호출마다 프로세스를 실행한다.
 
+### 터미널 세션 복원
+
+Claude와 같이 SessionStart에서 현재 surface에 세션 ID와 `restore.command`를 저장한다.
+호스트는 종료 시 이 명령을 보존하고 복원한 터미널의 셸에서 실행한다. Codex의 복원 명령은
+`reboot`와 같은 빌더를 사용하되 제출 문자 없이 저장한다. 새 surface ID는 복원한 PTY의
+환경에서 받으며 이전 surface ID를 명령에 넣지 않는다.
+
+launch·spawn·respawn과 복원·reboot는 `-c check_for_update_on_startup=false`를 전달한다.
+Codex CLI 0.154.0에서는 이 실행별 설정이 있을 때 암묵적인 공유 App Server 재사용을
+피하고 터미널 안의 embedded server를 사용한다. 이 경로에서 훅은 현재 터미널의 환경을
+받는다. 외부 Codex의 연결 정책이므로 다른 버전에서는 실제 시작·resume 훅을 검증한다.
+
+직접 입력한 `codex` 또는 `codex resume`가 공유 daemon에 붙으면 서버에 남은 예전
+`TASTY_SURFACE_ID`로 훅이 실행될 수 있다. 수동 실행에도 위 `-c` 옵션을 지정한다.
+명시적인 `--remote` 연결에는 이 보장이 없으며 이미 실행 중인 daemon의 환경을
+Tasty가 변경하지 않는다. 세션 ID·복원 명령이 저장되지 않은 기존 surface를 추측으로
+다른 thread에 연결하지 않는다. CWD, 포커스, 가장 최근 세션은 세션 식별 근거가 아니다.
+
+### 설치 이벤트
+
   | Codex config table 키 | tasty hook token | trust state 키 | 산출 상태 | 추가 이벤트·동작 |
   |---|---|---|---|---|
   | `Stop` | `stop` | `stop` | `idle` | `codex-idle` |

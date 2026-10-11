@@ -185,6 +185,11 @@ fn fetch_session_id(
 /// 업데이트 확인을 끄고 호출자가 정한 정책과 훅 신뢰 우회 플래그를 전달한다.
 /// 이 플래그가 원격 resume의 훅 검토 화면까지 없애지는 않을 수 있다.
 pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
+    format!("{}\r", resume_command_line(session_id, policy_args))
+}
+
+/// Layout restore and reboot must start the same terminal-local Codex session.
+pub(crate) fn resume_command_line(session_id: &str, policy_args: &str) -> String {
     // Windows surfaces may use Git Bash, cmd, or PowerShell. Preserve the existing
     // token until the receiving shell family is known; cmd switches break in MSYS.
     let command = if cfg!(windows) {
@@ -198,8 +203,8 @@ pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
         format!(" {policy_args}")
     };
     format!(
-        "{} resume --dangerously-bypass-hook-trust{policy_suffix} -c check_for_update_on_startup=false {session_id}\r",
-        command
+        "{command} resume --dangerously-bypass-hook-trust{policy_suffix} {} {session_id}",
+        crate::LOCAL_SESSION_ARGS
     )
 }
 
