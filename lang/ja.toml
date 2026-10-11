@@ -6494,3 +6494,11 @@ os_key_name = "Win・Super・Option は `option`、Cmd は `alt` と書いてく
 [keys.os_reserved]
 windows = "{} は Windows が使うことがあり、Tasty に届かない場合があります。"
 linux = "{} はデスクトップが使うことがあり、Tasty に届かない場合があります。"
+
+[explorer.props]
+path = "パス"
+target_kind = "リンク先の種類"
+target_size = "リンク先のサイズ"
+target_modified = "リンク先の更新日時"
+target_missing = "リンク先が見つかりません"
+partial = "一部のフォルダーを読み取れませんでした"

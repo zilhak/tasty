@@ -6557,3 +6557,11 @@ os_key_name = "Write Win, Super and Option as `option`, and Cmd as `alt`."
 [keys.os_reserved]
 windows = "Windows may use {} itself, so Tasty might not receive it."
 linux = "Your desktop may use {} itself, so Tasty might not receive it."
+
+[explorer.props]
+path = "Path"
+target_kind = "Target kind"
+target_size = "Target size"
+target_modified = "Target modified"
+target_missing = "Target not found"
+partial = "Some folders couldn't be read"

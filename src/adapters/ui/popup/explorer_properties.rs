@@ -15,7 +15,9 @@ use tasty_ui_widgets::{
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::adapters::ui::popup::PopupAction;
-use crate::app::local_reads::{self, FolderCount, ItemFacts, ItemKind, PropertiesFacts, Query};
+use crate::app::local_reads::{
+    self, FolderCount, ItemFacts, ItemKind, LinkTarget, PropertiesFacts, Query,
+};
 use crate::core::fs_list::{DirEntryInfo, group_digits, human_size};
 use crate::i18n::{t, t_count, t_fmt};
 use crate::runtime::engine_read::EngineRead;
@@ -199,6 +201,7 @@ struct Field {
     mono: bool,
     copy: bool,
     counting: bool,
+    warning: Option<&'static str>,
 }
 
 fn field(label: &'static str, value: String) -> Field {
@@ -208,6 +211,7 @@ fn field(label: &'static str, value: String) -> Field {
         mono: false,
         copy: false,
         counting: false,
+        warning: None,
     }
 }
 
@@ -218,6 +222,7 @@ fn mono(label: &'static str, value: String, copy: bool) -> Field {
         mono: true,
         copy,
         counting: false,
+        warning: None,
     }
 }
 
@@ -253,7 +258,10 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
                 bottom: th.spacing_sm.value() as i8,
             })
             .show(ui, |ui| {
-                close = header(ui, &th, glyph, &name);
+                let broken = fields
+                    .iter()
+                    .any(|f| f.warning == Some("explorer.props.target_missing"));
+                close = header(ui, &th, glyph, &name, broken);
             });
         egui::Frame::new()
             .inner_margin(egui::Margin {
@@ -300,6 +308,9 @@ impl ExplorerProperties {
         if self.remote.is_some() {
             return;
         }
+        self.cancel.store(true, Ordering::Relaxed);
+        self.cancel = Arc::new(AtomicBool::new(false));
+        self.count = Arc::new(FolderCount::default());
         self.facts = None;
         self.query = Some(local_reads::properties(
             self.paths.clone(),
@@ -365,13 +376,18 @@ fn unreadable_body(ui: &mut egui::Ui, th: &Theme, reason: &str) -> bool {
 
 /// 머리: 글리프 · 이름(14, regular, 말줄임) · 닫기. 닫기를 누르면 true.
 /// 제목은 regular 다. 테마에 semibold UI 글꼴이 없어 크기로 제목을 구분한다.
-fn header(ui: &mut egui::Ui, th: &Theme, glyph: Icon, name: &str) -> bool {
+fn header(ui: &mut egui::Ui, th: &Theme, glyph: Icon, name: &str, broken: bool) -> bool {
     let mut close = false;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         let g = th.icon_glyph_size_md.value();
         let (r, _) = ui.allocate_exact_size(egui::vec2(g, g), egui::Sense::hover());
-        glyph.image(g, th.text_muted().to_egui()).paint_at(ui, r);
+        let color = if broken {
+            th.explorer_link_broken_fg()
+        } else {
+            th.text_muted()
+        };
+        glyph.image(g, color.to_egui()).paint_at(ui, r);
         let close_w = ControlSize::Sm.height(th);
         let name_w = (ui.available_width() - close_w - th.spacing_sm.value()).max(0.0);
         let (name_rect, _) = ui.allocate_exact_size(egui::vec2(name_w, g), egui::Sense::hover());
@@ -480,6 +496,26 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field) {
                         ui.ctx().copy_text(f.value.clone());
                     }
                 });
+                if let Some(key) = f.warning {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+                        let color = if key == "explorer.props.target_missing" {
+                            th.explorer_link_broken_fg()
+                        } else {
+                            th.explorer_props_partial_fg()
+                        }
+                        .to_egui();
+                        let size = th.icon_glyph_size_xs.value();
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+                        icons::ALERT_TRIANGLE.image(size, color).paint_at(ui, rect);
+                        ui.label(
+                            egui::RichText::new(t(key))
+                                .size(th.font_size_caption.value())
+                                .color(color),
+                        );
+                    });
+                }
             });
         },
     );
@@ -492,6 +528,7 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
         return remote_content(entries, location);
     }
     let counting = !props.count.done.load(Ordering::Acquire);
+    let partial = props.count.partial.load(Ordering::Acquire);
     let counted_items = props.count.items.load(Ordering::Relaxed);
     let counted_bytes = props.count.bytes.load(Ordering::Relaxed);
     let facts = match &props.facts {
@@ -514,7 +551,7 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
         return single_content(
             &props.paths[0],
             item,
-            location,
+            partial,
             counting,
             counted_items,
             counted_bytes,
@@ -532,6 +569,7 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
         field("explorer.properties.kinds", kinds_text(files, folders)),
         Field {
             counting: counting && folders > 0,
+            warning: partial.then_some("explorer.props.partial"),
             ..field("explorer.properties.total_size", total)
         },
         mono("explorer.properties.location", location, true),
@@ -544,106 +582,142 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
 fn single_content(
     path: &Path,
     item: &ItemFacts,
-    location: String,
+    partial: bool,
     counting: bool,
     counted_items: u64,
     counted_bytes: u64,
 ) -> (Icon, String, Vec<Field>, Option<&'static str>) {
     let name = file_name(path);
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_lowercase)
-        .unwrap_or_default();
-    let mut fields = Vec::new();
-    let glyph = match &item.kind {
-        ItemKind::Folder => {
-            fields.push(field(
+    let path_row = || mono("explorer.props.path", item.path.display().to_string(), true);
+    if let ItemKind::Link { target, state } = &item.kind {
+        let missing = matches!(state, LinkTarget::Missing);
+        let mut fields = vec![
+            field(
                 "explorer.properties.kind",
-                t("explorer.type.folder").to_owned(),
-            ));
-            let size = human_size(false, counted_bytes);
-            let items = group_digits(counted_items);
-            fields.push(if counting {
-                Field {
-                    counting: true,
-                    ..field(
-                        "explorer.properties.size",
-                        t_count(
-                            "explorer.properties.counting",
-                            counted_items,
-                            &[&items, &size],
-                        ),
-                    )
-                }
-            } else {
-                field(
-                    "explorer.properties.size",
-                    t_count(
-                        "explorer.properties.folder_size",
-                        counted_items,
-                        &[&size, &items],
-                    ),
+                t(if missing {
+                    "explorer.kind.broken_link"
+                } else {
+                    "explorer.properties.symlink"
+                })
+                .to_owned(),
+            ),
+            Field {
+                warning: missing.then_some("explorer.props.target_missing"),
+                ..mono(
+                    "explorer.properties.link_target",
+                    target.display().to_string(),
+                    true,
                 )
-            });
+            },
+        ];
+        if let LinkTarget::Readable {
+            path,
+            is_dir,
+            size,
+            modified,
+        } = state
+        {
+            fields.push(field(
+                "explorer.props.target_kind",
+                if *is_dir {
+                    t("explorer.type.folder").to_owned()
+                } else {
+                    crate::adapters::ui::surface::explorer::file_kind_word(&extension(path))
+                },
+            ));
+            fields.push(field(
+                "explorer.props.target_size",
+                if *is_dir {
+                    human_size(true, *size)
+                } else {
+                    size_bytes(*size)
+                },
+            ));
             fields.push(mono(
-                "explorer.properties.modified",
-                time_text(item.modified),
+                "explorer.props.target_modified",
+                time_text(*modified),
                 false,
             ));
-            fields.push(mono("explorer.properties.location", location, true));
-            icons::FOLDER
         }
-        ItemKind::Link(target) => {
-            fields.push(field(
-                "explorer.properties.kind",
-                t("explorer.properties.symlink").to_owned(),
-            ));
-            fields.push(mono(
-                "explorer.properties.link_target",
-                target.display().to_string(),
-                true,
-            ));
-            fields.push(mono("explorer.properties.location", location, true));
-            icons::LINK
-        }
-        ItemKind::File => {
-            fields.push(field(
-                "explorer.properties.kind",
-                crate::adapters::ui::surface::explorer::file_kind_word(&ext),
-            ));
-            fields.push(field(
-                "explorer.properties.size",
-                t_count(
-                    "explorer.properties.size_bytes",
-                    item.size,
-                    &[&human_size(false, item.size), &group_digits(item.size)],
-                ),
-            ));
-            fields.push(mono(
-                "explorer.properties.modified",
-                time_text(item.modified),
-                false,
-            ));
-            fields.push(mono(
-                "explorer.properties.created",
-                time_text(item.created),
-                false,
-            ));
-            fields.push(mono("explorer.properties.location", location, true));
-            fields.push(mono(
-                "explorer.properties.permissions",
-                permissions_text(item),
-                false,
-            ));
-            if crate::adapters::ui::surface::explorer::is_image_ext(&ext) {
-                icons::IMAGE
+        fields.push(path_row());
+        return (icons::LINK, name, fields, None);
+    }
+    let folder = matches!(item.kind, ItemKind::Folder);
+    let ext = extension(path);
+    let items = group_digits(counted_items);
+    let bytes = human_size(false, counted_bytes);
+    let size_args = if counting {
+        [items.as_str(), bytes.as_str()]
+    } else {
+        [bytes.as_str(), items.as_str()]
+    };
+    let size = if folder {
+        t_count(
+            if counting {
+                "explorer.properties.counting"
             } else {
-                icons::FILE
-            }
-        }
+                "explorer.properties.folder_size"
+            },
+            counted_items,
+            &size_args,
+        )
+    } else {
+        size_bytes(item.size)
+    };
+    let fields = vec![
+        field(
+            "explorer.properties.kind",
+            if folder {
+                t("explorer.type.folder").to_owned()
+            } else {
+                crate::adapters::ui::surface::explorer::file_kind_word(&ext)
+            },
+        ),
+        Field {
+            counting: folder && counting,
+            warning: (folder && partial).then_some("explorer.props.partial"),
+            ..field("explorer.properties.size", size)
+        },
+        mono(
+            "explorer.properties.modified",
+            time_text(item.modified),
+            false,
+        ),
+        mono(
+            "explorer.properties.created",
+            time_text(item.created),
+            false,
+        ),
+        path_row(),
+        mono(
+            "explorer.properties.permissions",
+            permissions_text(item),
+            false,
+        ),
+    ];
+    let glyph = if folder {
+        icons::FOLDER
+    } else if crate::adapters::ui::surface::explorer::is_image_ext(&ext) {
+        icons::IMAGE
+    } else {
+        icons::FILE
     };
     (glyph, name, fields, None)
+}
+
+fn extension(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_lowercase()
+}
+
+fn size_bytes(size: u64) -> String {
+    t_count(
+        "explorer.properties.size_bytes",
+        size,
+        &[&human_size(false, size), &group_digits(size)],
+    )
 }
 
 fn remote_content(
@@ -660,7 +734,7 @@ fn remote_content(
             ),
             field("explorer.properties.size", human_size(e.is_dir, e.size)),
             mono("explorer.properties.modified", time_text(e.modified), false),
-            mono("explorer.properties.location", location, true),
+            mono("explorer.props.path", e.path.display().to_string(), true),
         ];
         return (glyph, e.name.clone(), fields, note);
     }
@@ -739,6 +813,68 @@ fn time_text(t: Option<SystemTime>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn own_path_permissions_target_fields_and_partial_warning_keep_their_order() {
+        crate::i18n::init("en");
+        let mut item = ItemFacts {
+            path: PathBuf::from("/a/folder"),
+            kind: ItemKind::Folder,
+            size: 0,
+            modified: None,
+            created: None,
+            mode: Some("rwxr-x---".into()),
+            read_only: false,
+        };
+        let (_, _, fields, _) = single_content(&item.path, &item, true, false, 3, 2);
+        assert_eq!(
+            fields.iter().map(|f| f.label).collect::<Vec<_>>(),
+            vec![
+                "explorer.properties.kind",
+                "explorer.properties.size",
+                "explorer.properties.modified",
+                "explorer.properties.created",
+                "explorer.props.path",
+                "explorer.properties.permissions"
+            ]
+        );
+        assert_eq!(fields[1].warning, Some("explorer.props.partial"));
+        assert!(fields[4].copy);
+        assert_eq!(fields[4].value, "/a/folder");
+        item.kind = ItemKind::Link {
+            target: PathBuf::from("../target.md"),
+            state: LinkTarget::Readable {
+                path: PathBuf::from("/target.md"),
+                is_dir: false,
+                size: 7,
+                modified: None,
+            },
+        };
+        item.size = 999;
+        let (_, _, fields, _) = single_content(&item.path, &item, false, false, 0, 0);
+        assert_eq!(
+            fields.iter().map(|f| f.label).collect::<Vec<_>>(),
+            vec![
+                "explorer.properties.kind",
+                "explorer.properties.link_target",
+                "explorer.props.target_kind",
+                "explorer.props.target_size",
+                "explorer.props.target_modified",
+                "explorer.props.path"
+            ]
+        );
+        assert_eq!(fields[2].value, "Markdown");
+        assert!(fields[3].value.contains('7'));
+        assert!(!fields.iter().any(|f| f.value.contains("999")));
+        item.kind = ItemKind::Link {
+            target: PathBuf::from("missing"),
+            state: LinkTarget::Missing,
+        };
+        let (_, _, fields, _) = single_content(&item.path, &item, false, false, 0, 0);
+        assert_eq!(fields.len(), 3);
+        assert_eq!(fields[0].value, t("explorer.kind.broken_link"));
+        assert_eq!(fields[1].warning, Some("explorer.props.target_missing"));
+    }
 
     #[test]
     fn retry_reads_a_failed_local_item_again_and_leaves_remote_items_alone() {

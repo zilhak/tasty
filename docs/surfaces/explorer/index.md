@@ -208,15 +208,15 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - **종류 문구**(`explorer/kind.rs` 의 `kind_word`·`file_kind_word`): Detail 의 Type 열, Properties 의 Kind, 미리보기 머리가 같은 낱말을 쓴다. 확장자 분류(`core/file_kind.rs` 의 `FileKind`)는 낱말과 Type 정렬이 함께 쓴다.
   - 형식 이름 표: md·markdown "Markdown", txt "Text", html·htm "HTML", json "JSON", toml "TOML", yaml·yml "YAML", csv "CSV", pdf "PDF document", zip·tar·gz·tgz·bz2·xz·zst·7z·rar "Archive", sh·bash·zsh·fish·ps1 "Shell script". HTML·JSON·TOML·YAML·CSV 는 모든 언어에서 같은 낱말이라 번역 키가 없다.
   - 표에 없는 그림 확장자(`is_image_ext`)는 `explorer.kind.image`("PNG image"), 그 밖은 `explorer.kind.ext_file`("RS file"), 확장자가 없으면 "File", 폴더는 "Folder".
-  - 링크는 Type 열과 미리보기 머리에서 `explorer.kind.link_to`("Link to Markdown")이고 크기는 대상의 크기다. 링크의 종류는 링크 이름의 확장자와 대상이 폴더인지로 정한다. 대상이 없는 링크는 `explorer.kind.broken_link`("Broken link")다. Properties 의 Kind 는 lstat 결과대로 "Symbolic link" 다.
+  - 링크는 Type 열과 미리보기 머리에서 `explorer.kind.link_to`("Link to Markdown")이고 크기는 대상의 크기다. 링크의 종류는 링크 이름의 확장자와 대상이 폴더인지로 정한다. 대상이 없는 링크는 `explorer.kind.broken_link`("Broken link")다. Properties 의 Kind 는 "Symbolic link" 또는 "Broken link" 다. Target kind 는 실제 링크 체인을 푼 대상의 종류를 쓴다.
   - Type 열은 좁아 낱말이 넘치면 말줄임하고 호버에 전체 낱말을 보인다. Type 열 정렬(`core/fs_list.rs` 의 `type_key`)은 보이는 낱말과 같은 묶음이 붙어 있도록 링크 여부(링크 아님 · 링크 · 끊긴 링크), `FileKind` 선언 순서, 확장자, 이름 순으로 비교한다. 번역문을 비교하지 않으므로 언어와 무관하다(예: gz 와 zip 은 Archive 로 붙는다).
-- **파일**: Kind · Size(사람이 읽는 크기와 바이트 수) · Modified · Created · Location(Copy) · Permissions(Unix 는 `rwxr-xr-x` 와 read-only, 그 밖은 read-only 만).
-- **링크**: 제목 글리프 link · Kind "Symbolic link" · Link target(Copy) · Location. 링크를 따라가지 않는다.
-- **폴더**: Size 자리에 하위 항목 수와 크기를 read worker 가 배경에서 세며 Spinner 를 보인다. 링크는 따라가지 않고 읽지 못한 하위 폴더는 건너뛴다. popup 을 닫으면 세기를 멈춘다.
+- **파일·폴더 필드 순서**: Kind · Size(사람이 읽는 크기와 바이트 수 또는 폴더 집계) · Modified · Created · Path(항목 자신의 절대 경로, mono, Copy) · Permissions(Unix 는 `rwxr-xr-x` 와 read-only, 그 밖은 read-only 만). 없는 시각은 대시다.
+- **링크**: 제목 글리프 link · Kind "Symbolic link" · Link target(Copy) · Target kind · Target size · Target modified · Path(링크 자신의 절대 경로, Copy). 상대 경로와 링크 체인은 파일시스템에서 해석해 대상의 메타데이터를 읽으며 링크 자신의 lstat 크기·시각은 표시하지 않는다. 대상이 없으면 Kind "Broken link", 머리 link 글리프는 `explorer_link_broken_fg`, Link target 아래에는 `explorer.props.target_missing` 안내가 나온다. 권한 오류·링크 순환 등은 끊긴 링크로 분류하지 않고 기존 읽기 실패 화면과 Retry로 처리한다.
+- **폴더 집계**: Size 자리에 하위 항목 수와 크기를 read worker 가 배경에서 세며 Spinner 를 보인다. 링크는 항목 수에 포함하지만 따라가지 않고 크기도 더하지 않는다. 하위 폴더·항목 메타데이터를 읽지 못한 부분은 건너뛰고 부분 집계 상태를 남긴다. Size 바로 아래에 alertTriangle(`icon_glyph_size_xs`, 12)과 `explorer.props.partial`을 `explorer_props_partial_fg`로 표시한다. 여러 항목도 Total size 아래에 같은 경고를 보인다. popup 을 닫으면 세기를 멈추며 다시 열기·Retry는 새 집계 상태를 사용한다.
 - **여러 항목**: 머리 "N items", Kinds(파일·폴더 수) · Total size · 공통 Location.
 - **읽기 실패**: 팝업 틀을 그대로 두고, 제목은 그 항목의 글리프(탐색기 목록에서 본 종류)와 이름이다. 본문은 alertTriangle 과 `explorer.properties.unreadable`("Can't read properties", explorer-error-fg), mono muted OS 이유, Retry(secondary sm, 같은 항목을 다시 읽는다)다.
 - **제목 굵기**: 제목은 14 regular 다. 테마에 semibold UI 글꼴이 없어 크기로 제목을 구분한다.
-- **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Location 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다.
+- **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Path 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다.
 
 ### 새 폴더 · 새 파일
 

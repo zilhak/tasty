@@ -125,6 +125,7 @@ src/catalog/components/explorer_states/popups.rs	Add	button.add,explorer.popup.a
 src/catalog/components/explorer_states/popups.rs	Add to favorites	explorer.popup.add_favorite.title
 src/catalog/components/explorer_states/popups.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/explorer_states/popups.rs	Name	explorer.column.name,filepicker.column.name,remote_tool.field_name
+src/catalog/components/explorer_states/popups.rs	Path	explorer.props.path
 src/catalog/components/explorer_states/popups.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
 src/catalog/components/explorer_surface.rs	Archive	explorer.kind.archive
 src/catalog/components/explorer_surface.rs	Folder	explorer.type.folder

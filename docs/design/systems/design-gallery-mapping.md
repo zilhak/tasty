@@ -300,6 +300,7 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/explorer-ops-b11.jsx` "Create inside a folder — input under the target row" | `explorer-create-in-folder` | 편집 줄은 공용 `explorer_name_row_in`(들여쓰기·caption), 대상 표시는 `paint_drop_target` |
 | `gallery/explorer-ops-parts.jsx` "Find bar — filter the current folder" | `explorer-find-bar` | Find 바는 공용 `explorer_find_bar`, 이름 강조는 `explorer_match_job` |
 | `gallery/explorer-ops-parts.jsx` "Subfolders — recursive search · searching · no results · errors · stopped" | `explorer-subfolder-search` | Folder 열은 공용 `explorer_detail_columns` 의 검색 구성. Size·Date 열 폭은 상세 보기와 같다 |
+| `gallery/explorer-ops-b12.jsx` "Properties — own path · folder permissions · links · partial size" | `explorer-properties` | 단일 항목 Path·폴더 권한, 대상 메타데이터, 끊긴 링크와 Size 아래 부분 집계 경고 |
 | `gallery/explorer-ops-b12.jsx` "Preview panel in a low cell — header only" | `explorer-preview` | 본문 높이 임계값 바로 아래·동일·위 예제. 120 미만이면 머리만 표시하고 아래 구분선을 숨긴다 |
 | `gallery/explorer-ops.jsx` "Running — on the explorer's own status line · queue" | `explorer-ops-progress` | 상태줄은 공용 `op_status_line`, 대기열은 `op_queue_popover` |
 | `gallery/explorer-ops.jsx` "Name conflict — surface-scoped prompt · apply to all · waiting" | `explorer-ops-conflict` | 카드는 공용 `conflict_card`(바깥 틀 없음). 본체는 칸 범위 popup 이 틀과 scrim 을 그린다 |

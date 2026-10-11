@@ -198,12 +198,28 @@ pub(crate) enum ItemKind {
     File,
     Folder,
     /// 대상 경로. 대상이 없어도 링크 자신은 있다.
-    Link(PathBuf),
+    Link {
+        target: PathBuf,
+        state: LinkTarget,
+    },
+}
+
+/// The target is resolved by the filesystem, including relative links and link chains.
+#[derive(Clone, Debug)]
+pub(crate) enum LinkTarget {
+    Readable {
+        path: PathBuf,
+        is_dir: bool,
+        size: u64,
+        modified: Option<SystemTime>,
+    },
+    Missing,
 }
 
 /// 항목 하나의 정보.
 #[derive(Clone, Debug)]
 pub(crate) struct ItemFacts {
+    pub(crate) path: PathBuf,
     pub(crate) kind: ItemKind,
     /// 파일·링크의 바이트 길이. 폴더는 배경 계산 결과를 쓴다.
     pub(crate) size: u64,
@@ -226,6 +242,7 @@ pub(crate) struct FolderCount {
     pub(crate) items: AtomicU64,
     pub(crate) bytes: AtomicU64,
     pub(crate) done: AtomicBool,
+    pub(crate) partial: AtomicBool,
 }
 
 /// 정보를 먼저 보내고, 폴더가 있으면 같은 worker 에서 크기를 센다. 취소되면 세기를 멈춘다.
@@ -257,25 +274,35 @@ pub(super) fn read_properties(
 
 fn item_facts(path: &Path) -> io::Result<ItemFacts> {
     let own = std::fs::symlink_metadata(path)?;
-    let (kind, meta) = if own.file_type().is_symlink() {
+    let link = own.file_type().is_symlink();
+    let kind = if link {
         let target = std::fs::read_link(path)?;
-        (ItemKind::Link(target), own)
+        let state = match std::fs::canonicalize(path)
+            .and_then(|resolved| std::fs::metadata(&resolved).map(|meta| (resolved, meta)))
+        {
+            Ok((path, meta)) => LinkTarget::Readable {
+                path,
+                is_dir: meta.is_dir(),
+                size: meta.len(),
+                modified: meta.modified().ok(),
+            },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => LinkTarget::Missing,
+            Err(error) => return Err(error),
+        };
+        ItemKind::Link { target, state }
     } else if own.is_dir() {
-        (ItemKind::Folder, own)
+        ItemKind::Folder
     } else {
-        (ItemKind::File, own)
+        ItemKind::File
     };
     Ok(ItemFacts {
-        size: if matches!(kind, ItemKind::Folder) {
-            0
-        } else {
-            meta.len()
-        },
+        path: std::path::absolute(path)?,
+        size: if own.is_dir() || link { 0 } else { own.len() },
         kind,
-        modified: meta.modified().ok(),
-        created: meta.created().ok(),
-        mode: mode_string(&meta),
-        read_only: meta.permissions().readonly(),
+        modified: (!link).then(|| own.modified().ok()).flatten(),
+        created: (!link).then(|| own.created().ok()).flatten(),
+        mode: (!link).then(|| mode_string(&own)).flatten(),
+        read_only: own.permissions().readonly(),
     })
 }
 
@@ -310,24 +337,41 @@ fn mode_string(_meta: &std::fs::Metadata) -> Option<String> {
 fn count_folder(root: &Path, count: &FolderCount, cancel: &AtomicBool) {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
         let entries = match std::fs::read_dir(&dir) {
             Ok(entries) => entries,
             Err(error) => {
+                count.partial.store(true, Ordering::Release);
                 tracing::debug!(%error, dir = %dir.display(), "properties: skipped a folder");
                 continue;
             }
         };
-        for entry in entries.flatten() {
+        for entry in entries {
             if cancel.load(Ordering::Relaxed) {
                 return;
             }
-            let Ok(meta) = entry.metadata() else {
-                continue;
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    count.partial.store(true, Ordering::Release);
+                    tracing::debug!(%error, "properties: unreadable directory entry");
+                    continue;
+                }
+            };
+            let meta = match std::fs::symlink_metadata(entry.path()) {
+                Ok(meta) => meta,
+                Err(error) => {
+                    count.partial.store(true, Ordering::Release);
+                    tracing::debug!(%error, "properties: unreadable entry metadata");
+                    continue;
+                }
             };
             count.items.fetch_add(1, Ordering::Relaxed);
             if meta.is_dir() {
                 stack.push(entry.path());
-            } else {
+            } else if !meta.file_type().is_symlink() {
                 count.bytes.fetch_add(meta.len(), Ordering::Relaxed);
             }
         }
@@ -337,6 +381,98 @@ fn count_folder(root: &Path, count: &FolderCount, cancel: &AtomicBool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn link_properties_resolve_relative_chains_and_distinguish_missing_from_errors() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.md");
+        std::fs::write(&target, "target contents").unwrap();
+        symlink("target.md", dir.path().join("middle")).unwrap();
+        let link = dir.path().join("alias.txt");
+        symlink("middle", &link).unwrap();
+        let facts = item_facts(&link).unwrap();
+        assert_eq!(facts.path, link);
+        assert_eq!(facts.size, 0);
+        assert!(facts.modified.is_none() && facts.created.is_none());
+        match facts.kind {
+            ItemKind::Link {
+                target: raw,
+                state:
+                    LinkTarget::Readable {
+                        path,
+                        is_dir,
+                        size,
+                        modified,
+                    },
+            } => {
+                assert_eq!(raw, PathBuf::from("middle"));
+                assert_eq!(path, target.canonicalize().unwrap());
+                let meta = std::fs::metadata(&target).unwrap();
+                assert!(!is_dir);
+                assert_eq!(size, meta.len());
+                assert_eq!(modified, meta.modified().ok());
+            }
+            other => panic!("{other:?}"),
+        }
+        let broken = dir.path().join("broken");
+        symlink("absent", &broken).unwrap();
+        assert!(matches!(
+            item_facts(&broken).unwrap().kind,
+            ItemKind::Link {
+                state: LinkTarget::Missing,
+                ..
+            }
+        ));
+        let cycle = dir.path().join("cycle");
+        symlink("cycle", &cycle).unwrap();
+        assert!(
+            item_facts(&cycle).is_err(),
+            "a link loop is not a missing target"
+        );
+        let private = dir.path().join("private");
+        std::fs::create_dir(&private).unwrap();
+        std::fs::write(private.join("file"), "secret").unwrap();
+        let denied = dir.path().join("denied");
+        symlink("private/file", &denied).unwrap();
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0)).unwrap();
+        let error = item_facts(&denied);
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(error.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn partial_folder_counts_skip_unreadable_children_and_never_follow_links() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("plain"), "ab").unwrap();
+        symlink(".", dir.path().join("loop")).unwrap();
+        let private = dir.path().join("private");
+        std::fs::create_dir(&private).unwrap();
+        std::fs::write(private.join("hidden"), "not counted").unwrap();
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0)).unwrap();
+        let count = FolderCount::default();
+        count_folder(dir.path(), &count, &AtomicBool::new(false));
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(count.bytes.load(Ordering::Relaxed), 2);
+        assert_eq!(count.items.load(Ordering::Relaxed), 3);
+        assert!(count.partial.load(Ordering::Acquire));
+        let cancelled = FolderCount::default();
+        count_folder(dir.path(), &cancelled, &AtomicBool::new(true));
+        assert_eq!(cancelled.items.load(Ordering::Relaxed), 0);
+        assert!(!cancelled.partial.load(Ordering::Acquire));
+        let dropped = Arc::new(FolderCount::default());
+        assert!(!read_properties(
+            &[dir.path().to_path_buf()],
+            &dropped,
+            &AtomicBool::new(false),
+            |_| false
+        ));
+        assert_eq!(dropped.items.load(Ordering::Relaxed), 0);
+        assert!(dropped.done.load(Ordering::Acquire));
+    }
 
     #[test]
     fn text_is_utf8_without_nul_and_a_cut_last_char_is_dropped() {

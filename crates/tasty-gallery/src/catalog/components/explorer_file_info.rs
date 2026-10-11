@@ -24,6 +24,7 @@ struct Field {
     mono: bool,
     copy: bool,
     counting: bool,
+    warning: Option<&'static str>,
 }
 
 fn field(label: &'static str, value: &str) -> Field {
@@ -33,6 +34,7 @@ fn field(label: &'static str, value: &str) -> Field {
         mono: false,
         copy: false,
         counting: false,
+        warning: None,
     }
 }
 
@@ -43,6 +45,7 @@ fn mono(label: &'static str, value: &str, copy: bool) -> Field {
         mono: true,
         copy,
         counting: false,
+        warning: None,
     }
 }
 
@@ -126,9 +129,31 @@ fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
                         icon_button(ui, theme, icons::COPY);
                     }
                 });
+                if let Some(key) = f.warning {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                        let color = if key == "explorer.props.target_missing" {
+                            theme.explorer_link_broken_fg()
+                        } else {
+                            theme.explorer_props_partial_fg()
+                        }
+                        .to_egui();
+                        kit::icon(ui, icons::ALERT_TRIANGLE, theme.icon_glyph_size_xs, color);
+                        ui.label(
+                            egui::RichText::new(t(key))
+                                .size(theme.font_size_caption.value())
+                                .color(color),
+                        );
+                    });
+                }
             });
         },
     );
+}
+
+fn warn(mut field: Field, key: &'static str) -> Field {
+    field.warning = Some(key);
+    field
 }
 
 fn icon_button(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph) -> egui::Response {
@@ -181,7 +206,14 @@ fn props_card_with(
                         ui,
                         glyph,
                         theme.icon_glyph_size_md,
-                        theme.text_muted().to_egui(),
+                        if fields
+                            .iter()
+                            .any(|f| f.warning == Some("explorer.props.target_missing"))
+                        {
+                            theme.explorer_link_broken_fg().to_egui()
+                        } else {
+                            theme.text_muted().to_egui()
+                        },
                     );
                     let close_w = ControlSize::Sm.height(theme);
                     let name_w =
@@ -274,7 +306,11 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                     field("explorer.properties.size", "488 KB (499,712 bytes)"),
                     mono("explorer.properties.modified", "2026-06-26 18:05", false),
                     mono("explorer.properties.created", "2026-06-26 17:58", false),
-                    mono("explorer.properties.location", "~/Downloads", true),
+                    mono(
+                        "explorer.props.path",
+                        "/home/demo/Downloads/diagram.png",
+                        true,
+                    ),
                     mono(
                         "explorer.properties.permissions",
                         "rw-r--r-- · read-only: no",
@@ -297,7 +333,17 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                         ..field("explorer.properties.size", "Counting… 1,204 items · 1.1 GB")
                     },
                     mono("explorer.properties.modified", "2026-06-20 14:30", false),
-                    mono("explorer.properties.location", "~/Downloads", true),
+                    mono("explorer.properties.created", "2026-06-20 14:00", false),
+                    mono(
+                        "explorer.props.path",
+                        "/home/demo/Downloads/mockup-exports",
+                        true,
+                    ),
+                    mono(
+                        "explorer.properties.permissions",
+                        "rwxrwxr-x · read-only: no",
+                        false,
+                    ),
                 ],
                 None,
             )
@@ -315,7 +361,58 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                         "~/work/tasty/target/release/tasty",
                         true,
                     ),
-                    mono("explorer.properties.location", "~/bin", true),
+                    field("explorer.props.target_kind", t("explorer.type.file")),
+                    field("explorer.props.target_size", "12 KB (12,288 bytes)"),
+                    mono("explorer.props.target_modified", "2026-06-27 11:40", false),
+                    mono("explorer.props.path", "/home/demo/bin/current", true),
+                ],
+                None,
+            )
+        });
+        cluster(ui, theme, "folder — partial size", |ui| {
+            props_card(
+                ui,
+                theme,
+                icons::FOLDER,
+                "folder",
+                &[
+                    field("explorer.properties.kind", t("explorer.type.folder")),
+                    warn(
+                        field("explorer.properties.size", "2 B · 3 items"),
+                        "explorer.props.partial",
+                    ),
+                    mono("explorer.properties.modified", "2026-10-10 21:51", false),
+                    mono("explorer.props.path", "/home/demo/work/folder", true),
+                    mono(
+                        "explorer.properties.permissions",
+                        "rwxrwxr-x · read-only: no",
+                        false,
+                    ),
+                ],
+                None,
+            )
+        });
+        cluster(ui, theme, "broken link", |ui| {
+            props_card(
+                ui,
+                theme,
+                icons::LINK,
+                "old-config.toml",
+                &[
+                    field("explorer.properties.kind", t("explorer.kind.broken_link")),
+                    warn(
+                        mono(
+                            "explorer.properties.link_target",
+                            "../old-config.toml",
+                            true,
+                        ),
+                        "explorer.props.target_missing",
+                    ),
+                    mono(
+                        "explorer.props.path",
+                        "/home/demo/work/old-config.toml",
+                        true,
+                    ),
                 ],
                 None,
             )
@@ -355,7 +452,7 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                     field("explorer.properties.kind", t("explorer.type.file")),
                     field("explorer.properties.size", "2.1 MB"),
                     mono("explorer.properties.modified", "2026-10-09 08:12", false),
-                    mono("explorer.properties.location", "build-eu:~/logs", true),
+                    mono("explorer.props.path", "/srv/logs/build-0412.log", true),
                 ],
                 Some(t("explorer.properties.remote_note")),
             )
@@ -381,18 +478,21 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "local file",
-                "Kind · Size (with bytes) · Modified · Created · Location · Permissions",
+                "Kind · Size (with bytes) · Modified · Created · Path · Permissions",
             ),
             (
                 "folder",
-                "Size counts in the background (Spinner) · item count",
+                "Size counts in the background (Spinner) · item count · Permissions · partial warning below Size",
             ),
-            ("symlink", "Link target + Copy"),
+            (
+                "symlink",
+                "Link target · Target kind / size / modified · own Path + Copy; broken target warning",
+            ),
             (
                 "several",
                 "“{n} items” · Kinds · Total size · Location (common parent)",
             ),
-            ("remote", "Kind · Size · Modified · Location · muted note"),
+            ("remote", "Kind · Size · Modified · Path · muted note"),
             ("selection change", "popup keeps its item"),
             (
                 "can't read",
@@ -591,7 +691,6 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
             state_block(ui, theme, body.shrink(pad), &cell);
         }
     }
-    ui.painter().vline(rect.left(), rect.y_range(), line);
 }
 
 pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {

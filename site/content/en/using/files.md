@@ -1,4 +1,4 @@
-<!-- source-hash: d6135fcd037c -->
+<!-- source-hash: 14ec7955b950 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -97,7 +97,11 @@ Files and folders whose names start with a dot (`.`), along with items marked hi
 
 ### Properties
 
-Choose **Properties** at the bottom of the right-click menu to open a popup inside the Explorer cell. A file shows its kind, size (with bytes), modified and created dates, location and permissions; a link shows its target. Copy the location or link target with the copy button beside it. For a folder, a spinner turns while the items and size are counted in the background, and closing the popup stops the count. Several selected items show the count, kinds, total size and common location, and right-clicking an empty area shows the current folder. In a remote Explorer only the kind, size, modified date and location from the list are shown. If the details can't be read, the popup shows the reason and a **Retry** button.
+Choose **Properties** at the bottom of the right-click menu to open a popup inside the Explorer cell. Files and folders show kind, size, modified and created dates, path and permissions. **Path** is the item's own absolute path; use the button beside it to copy it. For a folder, a spinner turns while the items and size are counted in the background. If part of the count cannot be read, **Some folders couldn't be read** appears below the size. Closing the popup stops the count.
+
+A link shows its target, the target's kind, size and modified date, and the link's own path. The target also has a copy button. A missing target is shown as **Broken link**, with **Target not found** below the target. Other read errors, such as permission errors, show the reason and a **Retry** button.
+
+Several selected items show the count, kinds, total size and common location, and right-clicking an empty area shows the current folder. In a remote Explorer only the kind, size, modified date and path from the list are shown.
 
 Every bound command in the context menu shows its first shortcut on the right, including **Undo** and **Redo**. Changing or clearing the bindings in Settings updates the menu too.
 

@@ -6494,3 +6494,11 @@ os_key_name = "Win·Super·Option 은 `option`, Cmd 는 `alt` 로 적으세요."
 [keys.os_reserved]
 windows = "Windows가 {}를 먼저 쓸 수 있어 Tasty에 전달되지 않을 수 있습니다."
 linux = "데스크톱이 {}를 먼저 쓸 수 있어 Tasty에 전달되지 않을 수 있습니다."
+
+[explorer.props]
+path = "경로"
+target_kind = "대상 종류"
+target_size = "대상 크기"
+target_modified = "대상 수정 시각"
+target_missing = "대상을 찾을 수 없음"
+partial = "일부 폴더를 읽지 못함"
