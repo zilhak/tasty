@@ -118,7 +118,7 @@ mod tests {
         let paths = vec![crate::test_support::abs_path("w/a.txt")];
         a.explorer_set_clipboard(paths.clone(), true, ExplorerPathSource::Local);
         assert!(b.explorer_can_paste());
-        assert!(b.explorer_take_os_clipboard());
+        assert!(b.explorer_take_os_clipboard(ExplorerPathSource::Local));
         let clip = b.explorer_clipboard.get().expect("shared list");
         assert_eq!((clip.paths, clip.cut), (paths.clone(), true));
         // 잘라내기 대기 표시도 두 창이 같다.

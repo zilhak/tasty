@@ -343,57 +343,57 @@ impl MainView {
     /// [`Self::copy_selection_to_clipboard`]와 같고 토스트에 `hint` 키캡을 붙인다.
     /// 우클릭 메뉴처럼 키보드가 아닌 경로에서 부른다.
     pub fn copy_selection_with_hint(&mut self, engine: &EngineRead<'_>, hint: Vec<String>) -> bool {
-        let sel = match &self.text_selection {
-            Some(s) if !s.is_empty() => s.clone(),
-            _ => return false,
-        };
-        let text = if let Some(terminal) = engine.as_ref().visible_terminal(sel.surface_id) {
-            selection::extract_selected_text(terminal, &sel)
-        } else {
-            return false;
-        };
-        if text.is_empty() {
-            return false;
-        }
-        if let Some(cb) = &mut self.clipboard {
-            cb.set_text(&text);
-        }
-        self.state.toasts.push_with_hint(
-            crate::i18n::t("toast.copied"),
-            crate::adapters::ui::ToastKind::Info,
-            hint,
-            crate::adapters::ui::ToastScope::Surface(sel.surface_id),
-        );
-
-        true
+        let selection = self.text_selection.clone();
+        copy_selection(engine, selection.as_ref(), false, |text, sid| {
+            self.copy_text(
+                text,
+                false,
+                "toast.copied",
+                hint,
+                crate::adapters::ui::ToastScope::Surface(sid),
+            )
+        })
     }
 
-    /// 현재 선택의 줄바꿈을 공백 하나로 바꿔 복사한다. soft wrap은 추출할 때 이미 연결된다.
-    /// 우클릭 복사와 같이 포커스를 검사하지 않고 선택 범위도 유지한다.
+    /// Copy with hard newlines replaced by spaces, retaining the selection.
     pub fn copy_selection_no_newline(&mut self, engine: &EngineRead<'_>) -> bool {
-        let sel = match &self.text_selection {
-            Some(s) if !s.is_empty() => s.clone(),
-            _ => return false,
-        };
-        let text = if let Some(terminal) = engine.as_ref().visible_terminal(sel.surface_id) {
-            selection::extract_selected_text(terminal, &sel)
-        } else {
-            return false;
-        };
-        if text.is_empty() {
-            return false;
-        }
-        let text = text.replace('\n', " ");
-        if let Some(cb) = &mut self.clipboard {
-            cb.set_text(&text);
-        }
-        self.state.toasts.push_info(
-            crate::i18n::t("toast.copied"),
-            crate::adapters::ui::ToastScope::Surface(sel.surface_id),
-        );
-
-        true
+        let selection = self.text_selection.clone();
+        copy_selection(engine, selection.as_ref(), true, |text, sid| {
+            self.copy_text(
+                text,
+                false,
+                "toast.copied",
+                Vec::new(),
+                crate::adapters::ui::ToastScope::Surface(sid),
+            )
+        })
     }
+}
+
+/// A selected Copy consumes input even when the clipboard write fails: false would send SIGINT.
+fn copy_selection(
+    engine: &EngineRead<'_>,
+    selection: Option<&TextSelection>,
+    no_newline: bool,
+    write: impl FnOnce(&str, u32) -> bool,
+) -> bool {
+    let Some(sel) = selection.filter(|s| !s.is_empty()) else {
+        return false;
+    };
+    let Some(terminal) = engine.visible_terminal(sel.surface_id) else {
+        return false;
+    };
+    let text = selection::extract_selected_text(terminal, sel);
+    if !text.is_empty() {
+        let text = if no_newline {
+            text.replace('\n', " ")
+        } else {
+            text
+        };
+        // Write success affects feedback, never input routing.
+        write(&text, sel.surface_id);
+    }
+    true
 }
 
 /// 선택한 surface와 포커스가 같은지 확인한다. Ctrl+C에만 적용하며 우클릭 복사는 제외한다.
@@ -414,6 +414,67 @@ pub(crate) fn should_copy_via_focused_selection(
 #[cfg(test)]
 mod tests {
     use super::{selection_matches_focus, should_copy_via_focused_selection};
+
+    #[test]
+    fn clipboard_failure_consumes_copy_and_keeps_selection() {
+        use super::*;
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let sid = session.read().workspace_at(0).unwrap().all_surface_ids()[0];
+        session
+            .borrow_mut()
+            .find_terminal_by_id_mut(sid)
+            .unwrap()
+            .feed_bytes(b"fixture");
+        let engine = session.read();
+        let epoch = engine
+            .visible_terminal(sid)
+            .unwrap()
+            .with_content(|v| v.cut().epoch);
+        let selection = TextSelection {
+            surface_id: sid,
+            anchor: SelectionPoint {
+                epoch,
+                col: 0,
+                absolute_row: 0,
+            },
+            cursor: SelectionPoint {
+                epoch,
+                col: 6,
+                absolute_row: 0,
+            },
+            mode: SelectionMode::Normal,
+            dragging: false,
+        };
+        let mut clipboard = crate::clipboard::ClipboardContext::unavailable(
+            crate::clipboard::error::ClipboardError::BackendUnavailable("fixture".into()),
+        );
+        let mut writes = 0;
+        assert!(copy_selection(
+            &engine,
+            Some(&selection),
+            false,
+            |text, target| {
+                writes += 1;
+                assert_eq!(target, sid);
+                assert_eq!(text, "fixture");
+                state.clipboard_copy_feedback(
+                    clipboard.set_text(text),
+                    "toast.copied",
+                    Vec::new(),
+                    crate::adapters::ui::ToastScope::Surface(sid),
+                )
+            }
+        ));
+        assert_eq!(writes, 1);
+        assert_eq!(selection.cursor.col, 6);
+        assert_eq!(
+            state.toasts.messages(),
+            vec![crate::i18n::t("toast.clipboard_unavailable")]
+        );
+        assert!(!copy_selection(&engine, None, false, |_, _| panic!(
+            "no selection"
+        )));
+    }
 
     #[test]
     fn matches_when_focused_surface_owns_the_selection() {

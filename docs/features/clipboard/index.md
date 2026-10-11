@@ -23,6 +23,25 @@
 - **붙여넣기**: bracketed paste(DECSET 2004) 지원. 텍스트 없고 이미지가 있으면 PNG 로 저장 후 경로를 붙여넣기(AI 에이전트가 이미지 참조 가능). 로컬 이미지는 요청마다 별도 임시 디렉터리에 저장해 같은 파일명의 붙여넣기가 서로 덮어쓰지 않는다. 받는 셸이 나중에 읽을 수 있도록 성공한 파일은 임시 디렉터리 정리 시점까지 유지한다.
 - **Paste 후 Ctrl+C 보호(500ms)**: paste 직후 500ms 내 Ctrl+C 는 무시(SIGINT·복사 안 함) — Ctrl+V 옆 키 오타로 입력을 날리는 사고 방지, 무시 시 토스트.
 
+### 접근 실패와 피드백
+
+호스트 클립보드는 초기화 실패를 보관하고 읽기를 `Result<Option<T>, ClipboardError>`,
+쓰기를 `Result`로 전달한다. 해당 형식이 없는 경우만 `None`이며 접근 실패와 구분한다.
+선택·줄바꿈 없는 복사·vi register·링크·경로·서피스 ID 복사는 쓰기 성공 뒤에만 복사
+토스트를 표시한다. 실패는 기존 Info(접근 불가·미지원) 또는 Error(전송 실패) 토스트로
+알린다. 선택이 있는 Copy는 실패해도 처리된 입력이므로 Ctrl+C를 PTY의 SIGINT로
+넘기지 않는다. 선택과 포커스는 유지하며 vi 복사도 실패하면 모드를 유지한다.
+
+붙여넣기 읽기 오류는 한 번 알리고 입력을 보내지 않는다. 텍스트 형식이 없을 때만
+이미지를 읽으며 빈 텍스트나 빈 클립보드는 조용한 no-op이다. 오류 뒤 bracketed-paste
+시작·종료 바이트나 일부 텍스트를 보내지 않는다.
+
+Linux 호스트의 터미널 텍스트와 Explorer 파일 전송은 X11 경로다. GUI는 실제 winit
+디스플레이 종류를 기록하며 Wayland에서 X11 연결이 불가능하면 네이티브 Wayland
+미지원으로 알린다. XWayland가 있더라도 다른 앱과의 연동은 그 브리지에 달려 있다.
+네이티브 Wayland 지원을 제공하는 것은 아니며 egui 입력 위젯과 plugin 자체 클립보드는
+별도 경로다. 원격 출처·내부 파일 목록은 [Explorer 파일 작업](../../surfaces/explorer/file-operations.md#os-파일-클립보드)을 따른다.
+
 ### 선택 좌표와 내용 일관성
 
 `SelectionPoint`는 보존 이력의 안정된 행 좌표와 content epoch를 가진다. 선택·word
@@ -44,7 +63,10 @@ IME preedit와 OS 후보창 위치도 같은 epoch·행 좌표를 사용한다. 
 
 ### OSC 52
 
-**쓰기(set)**: 터미널 프로그램이 OSC 52 로 시스템 클립보드에 텍스트를 설정할 수 있다(termwiz `SetSelection` → arboard 반영). **토스트를 낸다**(`toast.copied_osc52`, 그 surface 스코프) — 보이지 않는 클립보드 쓰기를 사용자에게 보이게 하는 목적이다. 같은 surface 에서 500 ms 안에 반복된 쓰기는 토스트 coalesce 로 한 장에 합쳐진다.
+앱 서비스는 RPC·OSC52 요청 사이에 클립보드 소유자를 유지한다. `clipboard.set_text` 실패는
+기존 JSON-RPC `-32000`과 백엔드 사유로만 응답하며 사용자 토스트나 성공 이벤트를 만들지 않는다.
+
+**쓰기(set)**: 터미널 프로그램이 OSC 52 로 시스템 클립보드에 텍스트를 설정할 수 있다(termwiz `SetSelection` → arboard 반영). **쓰기 성공 후에만 성공 토스트를 낸다**(`toast.copied_osc52`, 그 surface 스코프). 실패는 접근 불가·실패 토스트로 알리며 결과 이벤트는 원 터미널 generation에 묶인다 — 보이지 않는 클립보드 쓰기를 사용자에게 보이게 하는 목적이다. 같은 surface 에서 500 ms 안에 반복된 쓰기는 토스트 coalesce 로 한 장에 합쳐진다.
 
 **읽기(query)**: `OSC 52 ; c ; ? ST` 클립보드 읽기 질의는 설정 토글 `general.allow_clipboard_read`(기본 **off**)로 게이트된다. off 면 **무응답**(1바이트도 내보내지 않음) — 터미널 안의 임의 프로그램(원격/SSH 프로세스 포함)이 로컬 클립보드(비밀번호·토큰)를 조용히 탈취하는 것을 차단한다(xterm/iTerm 계열 정책). on 이면 시스템 클립보드를 base64 로 인코딩해 `OSC 52 ; c ; <base64> ST` 로 회신. 경로: 터미널 크레이트가 `TerminalEventKind::ClipboardQuery` 이벤트만 발생(설정과 클립보드 접근은 호스트가 담당) → host(`Core::drain_terminal_events`)가 게이트·읽기·인코딩 후 해당 surface 의 PTY 로 `send_bytes`. 설정 UI 는 Terminal › TUI 섹션(토글 + 바로 아래 bordered warning callout). 토스트 없음.
 

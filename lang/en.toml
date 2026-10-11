@@ -1297,6 +1297,11 @@ undo = "Undo"
 redo = "Redo"
 
 [toast]
+clipboard_wayland_unsupported = "Native Wayland clipboard is not supported; X11 clipboard is unavailable."
+clipboard_unavailable = "System clipboard is unavailable."
+clipboard_failed = "Clipboard operation failed. Try again."
+clipboard_files_internal_copy = "Files are stored only in this Tasty instance. The system clipboard could not be updated."
+clipboard_files_internal_paste = "Pasting files stored in this Tasty instance. The system clipboard could not be checked."
 input_queue_full = "Too many inputs arrived while Tasty was busy. Some were not accepted. Please try again."
 bashrc_save_failed = "Tasty-mode bashrc was not saved — your edit is not in effect: {}"
 char_limit_notice = "({} character limit)"

@@ -17,6 +17,7 @@ mod windows;
 #[cfg(target_os = "linux")]
 mod x11;
 
+use super::error::{ClipboardError, DisplayBackend};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -50,11 +51,11 @@ pub(crate) enum OsClip {
 /// 플랫폼별 OS 파일 클립보드.
 pub(crate) trait FileClipboard: Send + Sync {
     /// 파일 목록을 클립보드에 올린다. 클립보드의 이전 내용은 사라진다.
-    fn write(&self, files: &OsFiles) -> Result<(), String>;
+    fn write(&self, files: &OsFiles) -> Result<(), ClipboardError>;
     /// 클립보드를 읽는다. 클립보드에 접근하지 못하면 Err 다.
-    fn read(&self) -> Result<OsClip, String>;
+    fn read(&self) -> Result<OsClip, ClipboardError>;
     /// 클립보드를 비운다.
-    fn clear(&self) -> Result<(), String>;
+    fn clear(&self) -> Result<(), ClipboardError>;
     /// `files` 를 올린 뒤 읽으면 돌아오는 목록. 잘라내기 표지를 싣지 못하는 OS 는 복사로 돌아온다.
     fn as_read(&self, files: &OsFiles) -> OsFiles {
         files.clone()
@@ -77,23 +78,27 @@ impl OsClip {
 
 /// 창 상태가 들고 있는 OS 파일 클립보드.
 #[derive(Clone)]
-pub(crate) struct Handle(Arc<dyn FileClipboard>);
+pub(crate) struct Handle(Arc<dyn FileClipboard>, DisplayBackend);
 
 impl Handle {
+    pub(crate) fn set_display(&mut self, display: DisplayBackend) {
+        self.1 = display;
+    }
+
     /// 이 OS 의 클립보드.
     pub(crate) fn system() -> Self {
-        Self(Arc::new(System))
+        Self(Arc::new(System), DisplayBackend::Unknown)
     }
 
     /// 프로세스 안에서만 보이는 대역. 시험이 쓴다.
     #[cfg(test)]
     pub(crate) fn memory() -> (Self, Arc<Memory>) {
         let memory = Arc::new(Memory::default());
-        (Self(memory.clone()), memory)
+        (Self(memory.clone(), DisplayBackend::Unknown), memory)
     }
 
-    pub(crate) fn write(&self, files: &OsFiles) -> Result<(), String> {
-        self.0.write(files)
+    pub(crate) fn write(&self, files: &OsFiles) -> Result<(), ClipboardError> {
+        self.0.write(files).map_err(|e| e.for_display(self.1))
     }
 
     /// 두 핸들이 같은 클립보드를 가리키는가.
@@ -102,8 +107,13 @@ impl Handle {
         Arc::ptr_eq(&self.0, &other.0)
     }
 
-    pub(crate) fn read(&self) -> Result<OsClip, String> {
-        self.0.read()
+    pub(crate) fn read(&self) -> Result<OsClip, ClipboardError> {
+        self.0.read().map_err(|e| e.for_display(self.1))
+    }
+
+    /// Expected readback after a successful publication, including platform cut semantics.
+    pub(crate) fn as_read(&self, files: &OsFiles) -> OsFiles {
+        self.0.as_read(files)
     }
 
     /// 클립보드가 아직 `files` 를 들고 있으면 비운다. 잘라낸 파일을 옮긴 뒤 같은 목록을 다시
@@ -144,27 +154,28 @@ impl std::fmt::Debug for Handle {
 struct System;
 
 impl FileClipboard for System {
-    fn write(&self, files: &OsFiles) -> Result<(), String> {
+    fn write(&self, files: &OsFiles) -> Result<(), ClipboardError> {
         #[cfg(target_os = "linux")]
         return x11::write(files);
         #[cfg(windows)]
-        return windows::write(files);
+        return windows::write(files).map_err(ClipboardError::TransferFailed);
         #[cfg(target_os = "macos")]
-        return macos::write(files);
+        return macos::write(files).map_err(ClipboardError::TransferFailed);
         #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
         Err(format!(
             "file clipboard is not supported on this OS ({} paths)",
             files.paths.len()
-        ))
+        )
+        .into())
     }
 
-    fn read(&self) -> Result<OsClip, String> {
+    fn read(&self) -> Result<OsClip, ClipboardError> {
         #[cfg(target_os = "linux")]
         return x11::read();
         #[cfg(windows)]
-        return windows::read();
+        return windows::read().map_err(ClipboardError::TransferFailed);
         #[cfg(target_os = "macos")]
-        return macos::read();
+        return macos::read().map_err(ClipboardError::TransferFailed);
         #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
         Err("file clipboard is not supported on this OS".into())
     }
@@ -177,13 +188,13 @@ impl FileClipboard for System {
         }
     }
 
-    fn clear(&self) -> Result<(), String> {
+    fn clear(&self) -> Result<(), ClipboardError> {
         #[cfg(target_os = "linux")]
         return x11::clear();
         #[cfg(windows)]
-        return windows::clear();
+        return windows::clear().map_err(ClipboardError::TransferFailed);
         #[cfg(target_os = "macos")]
-        return macos::clear();
+        return macos::clear().map_err(ClipboardError::TransferFailed);
         #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
         Err("file clipboard is not supported on this OS".into())
     }
@@ -206,6 +217,7 @@ pub(crate) struct Memory {
     clip: std::sync::Mutex<Option<OsClip>>,
     /// 참이면 모든 호출이 Err 다(클립보드에 접근하지 못하는 환경).
     pub(crate) unavailable: std::sync::atomic::AtomicBool,
+    pub(crate) read_unavailable: std::sync::atomic::AtomicBool,
     /// 참이면 잘라내기 표지를 싣지 못한다(macOS pasteboard 흉내).
     pub(crate) drops_cut_mark: std::sync::atomic::AtomicBool,
 }
@@ -220,9 +232,11 @@ impl Memory {
         self.clip.lock().unwrap().clone().unwrap_or(OsClip::Other)
     }
 
-    fn check(&self) -> Result<(), String> {
+    fn check(&self) -> Result<(), ClipboardError> {
         if self.unavailable.load(std::sync::atomic::Ordering::Relaxed) {
-            Err("unavailable".into())
+            Err(ClipboardError::BackendUnavailable(
+                "fixture unavailable".into(),
+            ))
         } else {
             Ok(())
         }
@@ -231,7 +245,7 @@ impl Memory {
 
 #[cfg(test)]
 impl FileClipboard for Memory {
-    fn write(&self, files: &OsFiles) -> Result<(), String> {
+    fn write(&self, files: &OsFiles) -> Result<(), ClipboardError> {
         self.check()?;
         self.set(OsClip::Files(self.as_read(files)));
         Ok(())
@@ -247,12 +261,20 @@ impl FileClipboard for Memory {
         }
     }
 
-    fn read(&self) -> Result<OsClip, String> {
+    fn read(&self) -> Result<OsClip, ClipboardError> {
         self.check()?;
+        if self
+            .read_unavailable
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(ClipboardError::BackendUnavailable(
+                "fixture read unavailable".into(),
+            ));
+        }
         Ok(self.get())
     }
 
-    fn clear(&self) -> Result<(), String> {
+    fn clear(&self) -> Result<(), ClipboardError> {
         self.check()?;
         self.set(OsClip::Other);
         Ok(())

@@ -240,6 +240,7 @@ impl App {
         &mut self,
         source: DispatchSource,
         surface_id: u32,
+        result: Result<(), crate::clipboard::error::ClipboardError>,
     ) {
         let Some(DispatchCtx {
             state,
@@ -250,8 +251,10 @@ impl App {
         else {
             return;
         };
-        state.toasts.push_info(
-            crate::i18n::t("toast.copied_osc52"),
+        state.clipboard_copy_feedback(
+            result,
+            "toast.copied_osc52",
+            Vec::new(),
             crate::adapters::ui::ToastScope::Surface(surface_id),
         );
     }

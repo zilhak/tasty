@@ -85,7 +85,10 @@ impl super::MainViewState {
             );
             return;
         }
-        if !self.explorer_take_os_clipboard() {
+        let Some(target) = super::ExplorerPathSource::of_surface(engine, surface_id) else {
+            return;
+        };
+        if !self.explorer_take_os_clipboard(target) {
             return;
         }
         let Some(clip) = self.explorer_clipboard.get() else {
@@ -129,7 +132,7 @@ mod tests {
             paths: vec![crate::test_support::abs_path("remote/proj/a.txt")],
             cut: false,
             source,
-            os_seen: None,
+            os_seen: Some(crate::clipboard::files::OsClip::Other),
         }
     }
 

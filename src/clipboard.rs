@@ -1,5 +1,6 @@
 #[cfg(feature = "gui")]
 pub(crate) mod context;
+pub(crate) mod error;
 #[cfg(feature = "gui")]
 pub(crate) mod files;
 

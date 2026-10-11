@@ -23,7 +23,8 @@ use crate::app::services::builder::AppServicesBuilder;
 pub(crate) fn build_production_core(
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
 ) -> anyhow::Result<AppServices> {
-    let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(ArboardClipboard);
+    let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> =
+        Arc::new(ArboardClipboard::default());
     let sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer> =
         Arc::new(PlatformPlayer);
     build_production_core_inner(clipboard, sound_player, memory_arc)
@@ -143,10 +144,16 @@ struct NullClipboard;
 #[cfg(not(feature = "gui"))]
 impl crate::ports::clipboard::ClipboardSystem for NullClipboard {
     fn read_text(&self) -> anyhow::Result<String> {
-        anyhow::bail!("clipboard unavailable in headless build")
+        Err(crate::clipboard::error::ClipboardError::BackendUnavailable(
+            "headless build has no system clipboard".into(),
+        )
+        .into())
     }
     fn write_text(&self, _text: &str) -> anyhow::Result<()> {
-        anyhow::bail!("clipboard unavailable in headless build")
+        Err(crate::clipboard::error::ClipboardError::BackendUnavailable(
+            "headless build has no system clipboard".into(),
+        )
+        .into())
     }
 }
 

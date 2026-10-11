@@ -43,10 +43,20 @@ impl AppServices {
                     self.handle_prompt_boundary(engine, sid, generation, phase, &payload, &mut out);
                 }
                 TerminalEventKind::ClipboardSet(text) => {
-                    if let Err(e) = self.clipboard.write_text(&text) {
-                        tracing::warn!("OSC 52 clipboard write failed: {e}");
-                    }
+                    let result = self.clipboard.write_text(&text).map_err(|error| {
+                        // Keep clipboard contents out of diagnostics, including custom adapter errors.
+                        tracing::warn!("OSC 52 clipboard write failed");
+                        error
+                            .downcast_ref::<crate::clipboard::error::ClipboardError>()
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                crate::clipboard::error::ClipboardError::TransferFailed(
+                                    error.to_string(),
+                                )
+                            })
+                    });
                     out.push(CoreEvent::TerminalClipboardSet {
+                        result,
                         generation,
                         surface_id: sid,
                     });

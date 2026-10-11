@@ -23,6 +23,7 @@ use x11rb::{
 
 use super::format;
 use super::{OsClip, OsFiles};
+use crate::clipboard::error::ClipboardError;
 
 x11rb::atom_manager! {
     Atoms: AtomCookies {
@@ -49,16 +50,18 @@ struct Session {
     atoms: Atoms,
 }
 
-fn open(event_mask: EventMask) -> Result<Session, String> {
-    let (conn, screen_num) =
-        RustConnection::connect(None).map_err(|e| format!("X11 connect failed: {e}"))?;
+fn open(event_mask: EventMask) -> Result<Session, ClipboardError> {
+    let (conn, screen_num) = RustConnection::connect(None)
+        .map_err(|e| ClipboardError::BackendUnavailable(format!("X11 connect failed: {e}")))?;
     let root = conn
         .setup()
         .roots
         .get(screen_num)
         .ok_or("X11: no screen")?
         .root;
-    let win = conn.generate_id().map_err(|e| e.to_string())?;
+    let win = conn
+        .generate_id()
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
     conn.create_window(
         COPY_DEPTH_FROM_PARENT,
         win,
@@ -72,15 +75,15 @@ fn open(event_mask: EventMask) -> Result<Session, String> {
         COPY_FROM_PARENT,
         &CreateWindowAux::new().event_mask(event_mask),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
     let atoms = Atoms::new(&conn)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?
         .reply()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
     Ok(Session { conn, win, atoms })
 }
 
-pub(super) fn write(files: &OsFiles) -> Result<(), String> {
+pub(super) fn write(files: &OsFiles) -> Result<(), ClipboardError> {
     let s = open(EventMask::NO_EVENT)?;
     let a = &s.atoms;
     let text = files
@@ -108,13 +111,13 @@ pub(super) fn write(files: &OsFiles) -> Result<(), String> {
     ];
     s.conn
         .set_selection_owner(s.win, a.CLIPBOARD, CURRENT_TIME)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
     let owner = s
         .conn
         .get_selection_owner(a.CLIPBOARD)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?
         .reply()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?
         .owner;
     if owner != s.win {
         return Err("X11: could not take the clipboard".into());
@@ -122,7 +125,7 @@ pub(super) fn write(files: &OsFiles) -> Result<(), String> {
     std::thread::Builder::new()
         .name("file-clipboard-owner".into())
         .spawn(move || serve(&s, &offers))
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
     Ok(())
 }
 
@@ -149,7 +152,7 @@ fn answer(
     s: &Session,
     offers: &[(u32, Vec<u8>)],
     req: &SelectionRequestEvent,
-) -> Result<(), String> {
+) -> Result<(), ClipboardError> {
     let a = &s.atoms;
     // 옛 클라이언트는 property 없이 묻는다. 그때는 target 이름으로 답한다(ICCCM 2.2).
     let property = if req.property == NONE {
@@ -172,7 +175,7 @@ fn answer(
                 AtomEnum::ATOM,
                 &targets,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
         true
     } else if let Some((target, bytes)) = offers.iter().find(|(t, _)| *t == req.target) {
         if bytes.len() > limit {
@@ -184,7 +187,7 @@ fn answer(
         } else {
             s.conn
                 .change_property8(PropMode::REPLACE, req.requestor, property, *target, bytes)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
             true
         }
     } else {
@@ -201,24 +204,26 @@ fn answer(
     };
     s.conn
         .send_event(false, req.requestor, EventMask::NO_EVENT, notify)
-        .map_err(|e| e.to_string())?;
-    s.conn.flush().map_err(|e| e.to_string())
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
+    s.conn
+        .flush()
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))
 }
 
-pub(super) fn read() -> Result<OsClip, String> {
+pub(super) fn read() -> Result<OsClip, ClipboardError> {
     read_within(READ_TIMEOUT)
 }
 
 /// X 서버에 접속하지 못하면 Err 다. 소유자가 있는데 `timeout` 안에 내용을 받지 못하면
 /// [`OsClip::Unreadable`] 이다.
-fn read_within(timeout: Duration) -> Result<OsClip, String> {
+fn read_within(timeout: Duration) -> Result<OsClip, ClipboardError> {
     let s = open(EventMask::PROPERTY_CHANGE)?;
     let owner = s
         .conn
         .get_selection_owner(s.atoms.CLIPBOARD)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?
         .reply()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?
         .owner;
     if owner == NONE {
         return Ok(OsClip::Other);
@@ -232,7 +237,7 @@ fn read_within(timeout: Duration) -> Result<OsClip, String> {
     }
 }
 
-fn read_owned(s: &Session, deadline: Instant) -> Result<OsClip, String> {
+fn read_owned(s: &Session, deadline: Instant) -> Result<OsClip, ClipboardError> {
     let a = &s.atoms;
     let Some(targets) = convert(s, a.TARGETS, deadline)? else {
         return Ok(OsClip::Other);
@@ -265,20 +270,22 @@ fn read_owned(s: &Session, deadline: Instant) -> Result<OsClip, String> {
     ))
 }
 
-pub(super) fn clear() -> Result<(), String> {
+pub(super) fn clear() -> Result<(), ClipboardError> {
     let s = open(EventMask::NO_EVENT)?;
     s.conn
         .set_selection_owner(NONE, s.atoms.CLIPBOARD, CURRENT_TIME)
-        .map_err(|e| e.to_string())?;
-    s.conn.sync().map_err(|e| e.to_string())
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
+    s.conn
+        .sync()
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))
 }
 
 /// CLIPBOARD 에 형식 하나를 묻고 응답(INCR 조각 포함)을 `deadline` 까지 모은다. 소유자가 거절하면 None.
-fn convert(s: &Session, target: u32, deadline: Instant) -> Result<Option<Vec<u8>>, String> {
+fn convert(s: &Session, target: u32, deadline: Instant) -> Result<Option<Vec<u8>>, ClipboardError> {
     let a = &s.atoms;
     s.conn
         .delete_property(s.win, a.TASTY_FILES_REPLY)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
     s.conn
         .convert_selection(
             s.win,
@@ -287,15 +294,21 @@ fn convert(s: &Session, target: u32, deadline: Instant) -> Result<Option<Vec<u8>
             a.TASTY_FILES_REPLY,
             CURRENT_TIME,
         )
-        .map_err(|e| e.to_string())?;
-    s.conn.sync().map_err(|e| e.to_string())?;
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
+    s.conn
+        .sync()
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
 
     let mut incr: Option<Vec<u8>> = None;
     loop {
         if Instant::now() > deadline {
             return Err("X11: clipboard owner did not answer in time".into());
         }
-        let Some(event) = s.conn.poll_for_event().map_err(|e| e.to_string())? else {
+        let Some(event) = s
+            .conn
+            .poll_for_event()
+            .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?
+        else {
             std::thread::sleep(Duration::from_millis(2));
             continue;
         };
@@ -328,7 +341,7 @@ fn convert(s: &Session, target: u32, deadline: Instant) -> Result<Option<Vec<u8>
     }
 }
 
-fn take_reply(s: &Session) -> Result<x11rb::protocol::xproto::GetPropertyReply, String> {
+fn take_reply(s: &Session) -> Result<x11rb::protocol::xproto::GetPropertyReply, ClipboardError> {
     s.conn
         .get_property(
             true,
@@ -338,9 +351,9 @@ fn take_reply(s: &Session) -> Result<x11rb::protocol::xproto::GetPropertyReply, 
             0,
             u32::MAX / 4,
         )
-        .map_err(|e| e.to_string())?
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?
         .reply()
-        .map_err(|e| e.to_string())
+        .map_err(|e| ClipboardError::TransferFailed(e.to_string()))
 }
 
 #[cfg(test)]

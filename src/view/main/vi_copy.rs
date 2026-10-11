@@ -941,17 +941,15 @@ impl MainView {
             self.vi_copy = None;
             return;
         }
-        if let Some(cb) = &mut self.clipboard {
-            match register {
-                Some('*') => cb.set_text_primary(&text),
-                Some('+') | Some('"') | None => cb.set_text(&text),
-                _ => cb.set_text(&text),
-            }
-        }
-        self.state.toasts.push_info(
-            crate::i18n::t("toast.copied"),
+        if !self.copy_text(
+            &text,
+            register == Some('*'),
+            "toast.copied",
+            Vec::new(),
             crate::adapters::ui::ToastScope::Surface(sid),
-        );
+        ) {
+            return;
+        }
         self.vi_copy = None;
     }
 

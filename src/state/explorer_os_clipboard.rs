@@ -7,15 +7,26 @@
 
 use std::path::PathBuf;
 
+use crate::clipboard::error::ClipboardError;
 use crate::clipboard::files::{OsClip, OsFiles};
 
 use super::{ExplorerClipboard, ExplorerPathSource, MainViewState};
+
+/// Publication and internal sharing are separate outcomes.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum FileCopyOutcome {
+    Published,
+    InternalOnly(ClipboardError),
+    RemoteSlot,
+}
 
 /// 붙여넣기가 쓸 목록.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum PasteFrom {
     /// 앱 공용 Explorer 목록(원격 출처일 수 있다).
     Tasty,
+    TastyUnavailable(ClipboardError),
+    Unavailable(ClipboardError),
     /// OS 클립보드의 로컬 파일.
     Os(OsFiles),
     /// OS 클립보드에 로컬 파일이 아닌 항목이 있다.
@@ -29,16 +40,16 @@ pub(crate) enum PasteFrom {
 /// Tasty 목록과 OS 클립보드를 읽은 결과로 붙여넣을 목록을 정한다.
 pub(crate) fn paste_from(
     tasty: Option<&ExplorerClipboard>,
-    os: Result<OsClip, String>,
+    os: Result<OsClip, ClipboardError>,
 ) -> PasteFrom {
     let os = match os {
         Ok(os) => os,
         // OS 클립보드에 접근하지 못하면 Tasty 목록만 쓴다.
-        Err(_) => {
+        Err(error) => {
             return if tasty.is_some() {
-                PasteFrom::Tasty
+                PasteFrom::TastyUnavailable(error)
             } else {
-                PasteFrom::Nothing
+                PasteFrom::Unavailable(error)
             };
         }
     };
@@ -46,9 +57,7 @@ pub(crate) fn paste_from(
         match &clip.os_seen {
             // 복사한 뒤 OS 클립보드가 그대로다.
             Some(seen) if *seen == os => return PasteFrom::Tasty,
-            // 복사할 때 OS 클립보드를 읽지 못했다. 바뀌었는지 알 수 없으므로 Tasty 목록을 쓴다.
-            // 다만 응답하지 않는 다른 소유자가 있다면 그쪽이 나중에 복사한 것이다.
-            None if !matches!(os, OsClip::Unreadable { .. }) => return PasteFrom::Tasty,
+            // Without a baseline, a readable external offer must not revive a stale cut.
             _ => {}
         }
     }
@@ -67,21 +76,31 @@ impl MainViewState {
         paths: Vec<PathBuf>,
         cut: bool,
         source: ExplorerPathSource,
-    ) {
-        if source == ExplorerPathSource::Local {
+    ) -> FileCopyOutcome {
+        let outcome = if source == ExplorerPathSource::Local {
             let files = OsFiles {
                 paths: paths.clone(),
                 cut,
             };
-            if let Err(e) = self.file_clipboard.write(&files) {
-                tracing::warn!("file clipboard write failed: {e}");
+            match self.file_clipboard.write(&files) {
+                Ok(()) => FileCopyOutcome::Published,
+                Err(error) => FileCopyOutcome::InternalOnly(error),
             }
-        }
+        } else {
+            FileCopyOutcome::RemoteSlot
+        };
         let os_seen = match self.file_clipboard.read() {
             Ok(clip) => Some(clip),
-            Err(e) => {
-                tracing::debug!("file clipboard read after copy failed: {e}");
-                None
+            Err(error) => {
+                tracing::debug!(kind = ?std::mem::discriminant(&error), "file clipboard snapshot unavailable after copy");
+                // A successful write establishes an expected offer even if its readback fails.
+                // Preserve the app cut identity on platforms that omit the cut mark on read.
+                matches!(outcome, FileCopyOutcome::Published).then(|| {
+                    OsClip::Files(self.file_clipboard.as_read(&OsFiles {
+                        paths: paths.clone(),
+                        cut,
+                    }))
+                })
             }
         };
         self.explorer_clipboard.set(Some(ExplorerClipboard {
@@ -91,14 +110,34 @@ impl MainViewState {
             source,
             os_seen,
         }));
+        outcome
     }
 
     /// 붙여넣기 전에 Tasty 목록을 OS 클립보드와 맞춘다. 붙여넣을 것이 없으면 false.
     /// OS 쪽이 더 새로우면 그 목록을 Tasty 목록으로 삼아, 잘라내기 소비가 같은 길을 탄다.
-    pub(crate) fn explorer_take_os_clipboard(&mut self) -> bool {
+    pub(crate) fn explorer_take_os_clipboard(&mut self, target: ExplorerPathSource) -> bool {
         let os = self.file_clipboard.read();
         match paste_from(self.explorer_clipboard.get().as_ref(), os) {
             PasteFrom::Tasty => true,
+            PasteFrom::TastyUnavailable(error) => {
+                if self
+                    .explorer_clipboard
+                    .get()
+                    .is_some_and(|c| c.source == target && c.is_local())
+                {
+                    self.toasts.push_info(
+                        crate::i18n::t("toast.clipboard_files_internal_paste"),
+                        crate::adapters::ui::ToastScope::Window,
+                    );
+                }
+                // Preserve the failure until the user action chooses the matching slot.
+                tracing::debug!(kind = ?std::mem::discriminant(&error), "using app clipboard without OS access");
+                true
+            }
+            PasteFrom::Unavailable(error) => {
+                self.clipboard_error_toast(&error, crate::adapters::ui::ToastScope::Window);
+                false
+            }
             PasteFrom::Os(files) => {
                 self.explorer_clipboard.set(Some(ExplorerClipboard {
                     identity: Default::default(),
@@ -138,7 +177,10 @@ impl MainViewState {
     pub(crate) fn explorer_can_paste_into(&self, target: ExplorerPathSource) -> bool {
         let tasty = self.explorer_clipboard.get();
         match paste_from(tasty.as_ref(), self.file_clipboard.read()) {
-            PasteFrom::Tasty => tasty.is_some_and(|c| !c.paths.is_empty() && c.source == target),
+            PasteFrom::Tasty | PasteFrom::TastyUnavailable(_) => {
+                tasty.is_some_and(|c| !c.paths.is_empty() && c.source == target)
+            }
+            PasteFrom::Unavailable(_) => target == ExplorerPathSource::Local,
             PasteFrom::Os(_) => target == ExplorerPathSource::Local,
             PasteFrom::NotLocal | PasteFrom::Unreadable | PasteFrom::Nothing => false,
         }
@@ -183,6 +225,94 @@ mod tests {
     }
 
     #[test]
+    fn successful_publication_keeps_cut_identity_when_readback_temporarily_fails() {
+        let (mut state, _engine) = crate::state::tests::test_state();
+        let (handle, memory) = crate::clipboard::files::Handle::memory();
+        state.file_clipboard = handle;
+        memory
+            .drops_cut_mark
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        memory
+            .read_unavailable
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(
+            state.explorer_set_clipboard(files(true).paths, true, ExplorerPathSource::Local),
+            FileCopyOutcome::Published
+        );
+        let identity = state.explorer_clipboard.get().unwrap().identity;
+        memory
+            .read_unavailable
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(state.explorer_take_os_clipboard(ExplorerPathSource::Local));
+        let clip = state.explorer_clipboard.get().unwrap();
+        assert!(clip.cut);
+        assert!(std::sync::Arc::ptr_eq(&identity, &clip.identity));
+        memory.set(OsClip::NotLocal);
+        assert!(!state.explorer_take_os_clipboard(ExplorerPathSource::Local));
+        assert!(state.explorer_clipboard.get().is_none());
+    }
+
+    #[test]
+    fn unavailable_paste_is_reachable_but_opening_the_menu_is_silent() {
+        let (mut state, _engine) = crate::state::tests::test_state();
+        let (handle, memory) = crate::clipboard::files::Handle::memory();
+        state.file_clipboard = handle;
+        memory
+            .unavailable
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(state.explorer_can_paste());
+        assert!(!state.explorer_can_paste_into(ExplorerPathSource::Remote { workspace: 9 }));
+        assert_eq!(state.toasts.len(), 0);
+        assert!(!state.explorer_take_os_clipboard(ExplorerPathSource::Local));
+        assert_eq!(
+            state.toasts.messages(),
+            vec![crate::i18n::t("toast.clipboard_unavailable")]
+        );
+        memory
+            .unavailable
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let before = state.toasts.len();
+        assert!(!state.explorer_can_paste());
+        assert!(!state.explorer_take_os_clipboard(ExplorerPathSource::Local));
+        assert_eq!(state.toasts.len(), before);
+    }
+
+    #[test]
+    fn failed_publication_preserves_the_slot_identity_and_reports_internal_paste() {
+        let (mut state, _engine) = crate::state::tests::test_state();
+        let (handle, memory) = crate::clipboard::files::Handle::memory();
+        state.file_clipboard = handle;
+        memory
+            .unavailable
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(matches!(
+            state.explorer_set_clipboard(files(true).paths, true, ExplorerPathSource::Local),
+            FileCopyOutcome::InternalOnly(ClipboardError::BackendUnavailable(_))
+        ));
+        let identity = state.explorer_clipboard.get().unwrap().identity;
+        assert!(state.explorer_take_os_clipboard(ExplorerPathSource::Local));
+        assert!(std::sync::Arc::ptr_eq(
+            &identity,
+            &state.explorer_clipboard.get().unwrap().identity
+        ));
+        assert_eq!(
+            state.toasts.messages(),
+            vec![crate::i18n::t("toast.clipboard_files_internal_paste")]
+        );
+        // Access recovery must never resurrect the old cut over a later external offer.
+        for external in [
+            OsClip::Other,
+            OsClip::NotLocal,
+            OsClip::Unreadable { owner: 9 },
+        ] {
+            assert!(!matches!(
+                paste_from(Some(&tasty(None)), Ok(external)),
+                PasteFrom::Tasty | PasteFrom::TastyUnavailable(_)
+            ));
+        }
+    }
+
+    #[test]
     fn the_later_copy_wins() {
         let ours = OsClip::Files(files(false));
         // OS 클립보드가 복사한 뒤 그대로면 Tasty 목록이다.
@@ -218,16 +348,16 @@ mod tests {
     fn without_os_access_the_tasty_list_stays() {
         assert_eq!(
             paste_from(Some(&tasty(Some(OsClip::Other))), Err("no display".into())),
-            PasteFrom::Tasty
+            PasteFrom::TastyUnavailable("no display".into())
         );
         assert_eq!(
             paste_from(None, Err("no display".into())),
-            PasteFrom::Nothing
+            PasteFrom::Unavailable("no display".into())
         );
-        // 복사할 때 읽지 못했으면 바뀌었는지 모르므로 Tasty 목록이다.
+        // 읽기 접근이 복구되면 외부 목록을 우선한다.
         assert_eq!(
             paste_from(Some(&tasty(None)), Ok(OsClip::Files(files(false)))),
-            PasteFrom::Tasty
+            PasteFrom::Os(files(false))
         );
     }
 
@@ -261,7 +391,7 @@ mod tests {
         state.file_clipboard = handle;
         memory.set(OsClip::Files(files(true)));
         assert!(state.explorer_can_paste());
-        assert!(state.explorer_take_os_clipboard());
+        assert!(state.explorer_take_os_clipboard(ExplorerPathSource::Local));
         let clip = state.explorer_clipboard.get().expect("clipboard");
         assert_eq!((clip.paths.clone(), clip.cut), (files(true).paths, true));
         cut_consumed(&state.file_clipboard, &clip);
@@ -276,7 +406,7 @@ mod tests {
         state.explorer_set_clipboard(files(false).paths, true, ExplorerPathSource::Local);
         memory.set(OsClip::Other);
         assert!(!state.explorer_can_paste());
-        assert!(!state.explorer_take_os_clipboard());
+        assert!(!state.explorer_take_os_clipboard(ExplorerPathSource::Local));
         assert!(state.explorer_clipboard.get().is_none());
     }
 
@@ -289,7 +419,7 @@ mod tests {
         memory.set(OsClip::NotLocal);
         assert!(!state.explorer_can_paste());
         let before = state.toasts.len();
-        assert!(!state.explorer_take_os_clipboard());
+        assert!(!state.explorer_take_os_clipboard(ExplorerPathSource::Local));
         assert_eq!(state.toasts.len(), before + 1);
         // 나중 복사가 이겼으므로 오래된 목록도 버린다.
         assert!(state.explorer_clipboard.get().is_none());
@@ -322,7 +452,7 @@ mod tests {
         memory.set(OsClip::Unreadable { owner: 9 });
         assert!(!state.explorer_can_paste());
         let before = state.toasts.len();
-        assert!(!state.explorer_take_os_clipboard());
+        assert!(!state.explorer_take_os_clipboard(ExplorerPathSource::Local));
         assert_eq!(state.toasts.len(), before + 1);
         assert!(state.explorer_clipboard.get().is_none());
     }
@@ -345,7 +475,7 @@ mod tests {
             })
         );
         // 표지가 없어진 채로 읽혀도 Tasty 목록은 잘라내기다.
-        assert!(state.explorer_take_os_clipboard());
+        assert!(state.explorer_take_os_clipboard(ExplorerPathSource::Local));
         let clip = state.explorer_clipboard.get().expect("clipboard");
         assert!(clip.cut);
         cut_consumed(&state.file_clipboard, &clip);

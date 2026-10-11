@@ -141,11 +141,12 @@ impl MainView {
                 .explorer_views
                 .get(sid)
                 .and_then(|v| v.selected_paths_text())
-                && let Some(cb) = self.clipboard.as_mut()
             {
-                cb.set_text(&text);
-                self.state.toasts.push_info(
-                    crate::i18n::t("toast.copied_path"),
+                self.copy_text(
+                    &text,
+                    false,
+                    "toast.copied_path",
+                    Vec::new(),
                     crate::adapters::ui::ToastScope::Surface(sid),
                 );
             }

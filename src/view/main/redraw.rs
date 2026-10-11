@@ -1318,11 +1318,11 @@ impl MainView {
             match result {
                 Some(1) => {
                     let text = surface_id.to_string();
-                    if let Some(cb) = &mut this.clipboard {
-                        cb.set_text(&text);
-                    }
-                    this.state.toasts.push_info(
-                        crate::i18n::t("toast.copied"),
+                    this.copy_text(
+                        &text,
+                        false,
+                        "toast.copied",
+                        Vec::new(),
                         crate::adapters::ui::ToastScope::Surface(surface_id),
                     );
                 }
@@ -1395,11 +1395,11 @@ impl MainView {
             match result {
                 Some(1) => {
                     let text = surface_id.to_string();
-                    if let Some(cb) = &mut this.clipboard {
-                        cb.set_text(&text);
-                    }
-                    this.state.toasts.push_info(
-                        crate::i18n::t("toast.copied"),
+                    this.copy_text(
+                        &text,
+                        false,
+                        "toast.copied",
+                        Vec::new(),
                         crate::adapters::ui::ToastScope::Surface(surface_id),
                     );
                 }
@@ -1646,12 +1646,10 @@ impl MainView {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        if let Some(cb) = &mut self.clipboard {
-            cb.set_text(&text);
-        }
-        self.state.toasts.push_with_hint(
-            crate::i18n::t("toast.copied_path"),
-            crate::adapters::ui::ToastKind::Info,
+        self.copy_text(
+            &text,
+            false,
+            "toast.copied_path",
             hint,
             crate::adapters::ui::ToastScope::Surface(surface_id),
         );
@@ -1676,8 +1674,16 @@ impl MainView {
         let Some(source) = crate::state::ExplorerPathSource::of_surface(engine, surface_id) else {
             return;
         };
-        self.state
-            .explorer_set_clipboard(paths.to_vec(), cut, source);
+        if let crate::state::explorer_os_clipboard::FileCopyOutcome::InternalOnly(error) = self
+            .state
+            .explorer_set_clipboard(paths.to_vec(), cut, source)
+        {
+            tracing::debug!(kind = ?std::mem::discriminant(&error), "file copy retained in app slot");
+            self.state.toasts.push_info(
+                crate::i18n::t("toast.clipboard_files_internal_copy"),
+                crate::adapters::ui::ToastScope::Surface(surface_id),
+            );
+        }
     }
 
     /// 붙여넣기 (아이템 12). 컨텍스트 메뉴와 키보드 단축키 양쪽에서 공유한다.

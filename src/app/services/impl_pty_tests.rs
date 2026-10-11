@@ -50,3 +50,81 @@ fn the_shell_startup_report_is_not_a_command_completion() {
     );
     assert_eq!(command, 1, "프롬프트 뒤 명령의 D는 명령 완료다");
 }
+
+#[test]
+#[cfg(feature = "gui")]
+fn osc52_clipboard_result_retains_generation_and_rpc_failure_has_no_event() {
+    use crate::clipboard::error::ClipboardError;
+    use std::sync::Arc;
+    struct Failing;
+    impl crate::ports::clipboard::ClipboardSystem for Failing {
+        fn read_text(&self) -> anyhow::Result<String> {
+            Err(ClipboardError::BackendUnavailable("fixture".into()).into())
+        }
+        fn write_text(&self, _: &str) -> anyhow::Result<()> {
+            Err(ClipboardError::BackendUnavailable("fixture".into()).into())
+        }
+    }
+    for succeeds in [false, true] {
+        let adapter: Arc<dyn crate::ports::clipboard::ClipboardSystem> = if succeeds {
+            Arc::new(crate::adapters::test::mock_clipboard::MockClipboard::default())
+        } else {
+            Arc::new(Failing)
+        };
+        let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core_builder()
+            .with_clipboard(adapter)
+            .build()
+            .unwrap();
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let mut engine = session.borrow_mut();
+        let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+        let reply = crate::app::services::surface::clipboard_set_text(
+            &core,
+            serde_json::json!(1),
+            &serde_json::json!({"text":"fixture"}),
+        );
+        assert_eq!(reply.error.is_none(), succeeds);
+        if let Some(error) = reply.error {
+            assert_eq!(error.code, -32000);
+            assert!(error.message.contains("fixture"));
+        }
+        assert_eq!(state.toasts.len(), 0);
+        assert!(
+            core.process_all_pty_output(&mut engine)
+                .events
+                .iter()
+                .all(|e| !matches!(e, CoreEvent::TerminalClipboardSet { .. }))
+        );
+        engine
+            .find_terminal_by_id_mut(sid)
+            .unwrap()
+            .feed_bytes(b"\x1b]52;c;Zml4dHVyZQ==\x07");
+        let events = core.process_all_pty_output(&mut engine).events;
+        let event = events
+            .iter()
+            .find(|e| matches!(e, CoreEvent::TerminalClipboardSet { .. }))
+            .expect("write result");
+        let (bound_sid, generation) = event.terminal_binding().unwrap();
+        assert_eq!(bound_sid, sid);
+        assert!(engine.runtime.terminals.matches_generation(sid, generation));
+        let CoreEvent::TerminalClipboardSet { result, .. } = event else {
+            unreachable!()
+        };
+        assert_eq!(result.is_ok(), succeeds);
+        if !succeeds {
+            assert!(matches!(result, Err(ClipboardError::BackendUnavailable(_))));
+        }
+        state.clipboard_copy_feedback(
+            result.clone(),
+            "toast.copied_osc52",
+            Vec::new(),
+            crate::adapters::ui::ToastScope::Surface(sid),
+        );
+        let key = if succeeds {
+            "toast.copied_osc52"
+        } else {
+            "toast.clipboard_unavailable"
+        };
+        assert_eq!(state.toasts.messages(), vec![crate::i18n::t(key)]);
+    }
+}

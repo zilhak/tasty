@@ -1,4 +1,4 @@
-<!-- source-hash: 729bb7c3aba6 -->
+<!-- source-hash: f3639f02cba7 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -63,15 +63,19 @@ Move around the screen and the scrollback and copy without the mouse. Enter with
 | `0` `^` `$` | Start of line / first character / end of line |
 | `gg` `G` / `H` `M` `L` | Top / bottom / top · middle · bottom of the screen |
 | `v` / `V` | Start character / line selection |
-| `y` | Copy and leave |
+| `y` | Copy and leave on success; keep the selection on failure |
 | `/` `?` `n` `N` | Search down · up, next · previous match |
 | `"+` `"*` | Choose the target clipboard for the next copy |
 | `q<char>` … `q` / `@<char>` | Record / replay a macro |
 | `Esc` | Clear the selection. Leaves if there is no selection |
 
+Copy notices appear only after the clipboard accepts the write. If access is unavailable or a transfer fails, Tasty shows a notice and keeps your selection. With a selection, a failed Ctrl+C copy does not interrupt the program. A failed paste sends no input; an empty clipboard does nothing.
+
+On Linux, terminal copy and paste use X11 (through XWayland in a Wayland session). Native Wayland clipboard access is not supported. If X11 access is unavailable, Tasty tells you so.
+
 ### Clipboard access by programs (OSC 52)
 
-A program inside the terminal (tmux, remote vim, and so on) can always **write** to the clipboard. **Reading** requires turning on **Settings** > **Terminal** > **Allow clipboard read (OSC 52)**. It is off by default; be aware that once on, a program on the far side of SSH can also take the clipboard contents.
+A program inside the terminal (tmux, remote vim, and so on) can request a **write** to the clipboard. Tasty reports success only when the write succeeds and reports unavailable access or failure otherwise. **Reading** requires turning on **Settings** > **Terminal** > **Allow clipboard read (OSC 52)**. It is off by default; be aware that once on, a program on the far side of SSH can also take the clipboard contents.
 
 ### Writing to the clipboard from a script
 

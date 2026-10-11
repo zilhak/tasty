@@ -68,31 +68,33 @@ pub(crate) fn dispatch_bound_paste(
 
 impl MainView {
     pub fn paste_to_terminal(&mut self, engine: &EngineRead<'_>) {
-        let text = match &mut self.clipboard {
-            Some(cb) => cb.get_text(),
-            None => None,
-        };
-        if let Some(text) = text
-            && !text.is_empty()
-        {
-            let surface_id = self.state.focused_surface_id(engine);
-            let bracketed = self
-                .state
-                .focused_terminal(&engine.as_ref())
-                .map(|t| t.bracketed_paste());
-            if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
-                dispatch_paste(self, sid, bracketed, text);
-                self.last_terminal_paste_at = Some(std::time::Instant::now());
+        let scope = self
+            .state
+            .focused_surface_id(engine)
+            .map(crate::adapters::ui::ToastScope::Surface)
+            .unwrap_or(crate::adapters::ui::ToastScope::Window);
+        let content = match self.clipboard.read_paste() {
+            Ok(Some(content)) => content,
+            Ok(None) => return,
+            Err(error) => {
+                self.state.clipboard_error_toast(&error, scope);
+                return;
             }
-            return;
-        }
-
-        let image = match &mut self.clipboard {
-            Some(cb) => cb.get_image(),
-            None => None,
         };
-        let Some(image) = image else {
-            return;
+        let image = match content {
+            crate::clipboard::context::PasteContent::Text(text) => {
+                let surface_id = self.state.focused_surface_id(engine);
+                let bracketed = self
+                    .state
+                    .focused_terminal(&engine.as_ref())
+                    .map(|t| t.bracketed_paste());
+                if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
+                    dispatch_paste(self, sid, bracketed, text);
+                    self.last_terminal_paste_at = Some(std::time::Instant::now());
+                }
+                return;
+            }
+            crate::clipboard::context::PasteContent::Image(image) => image,
         };
         let Some(sid) = self.state.focused_surface_id(engine) else {
             return;
@@ -125,7 +127,10 @@ impl MainView {
                 );
                 self.last_terminal_paste_at = Some(std::time::Instant::now());
             }
-            Err(error) => tracing::warn!(%error,"clipboard image encoding failed"),
+            Err(error) => self.state.clipboard_error_toast(
+                &crate::clipboard::error::ClipboardError::TransferFailed(error.to_string()),
+                scope,
+            ),
         }
     }
 }
@@ -152,6 +157,60 @@ fn encode_clipboard_image_as_png(image: &arboard::ImageData<'_>) -> anyhow::Resu
         writer.finish()?;
     }
     Ok(buf)
+}
+
+impl MainView {
+    /// Returns write success, independently of whether the input action was handled.
+    pub(crate) fn copy_text(
+        &mut self,
+        text: &str,
+        primary: bool,
+        key: &str,
+        hint: Vec<String>,
+        scope: crate::adapters::ui::ToastScope,
+    ) -> bool {
+        let result = if primary {
+            self.clipboard.set_text_primary(text)
+        } else {
+            self.clipboard.set_text(text)
+        };
+        self.state.clipboard_copy_feedback(result, key, hint, scope)
+    }
+}
+
+impl crate::state::MainViewState {
+    pub(crate) fn clipboard_error_toast(
+        &mut self,
+        error: &crate::clipboard::error::ClipboardError,
+        scope: crate::adapters::ui::ToastScope,
+    ) {
+        let (key, kind) = error.feedback();
+        self.toasts.push(crate::i18n::t(key), kind, scope);
+    }
+
+    pub(crate) fn clipboard_copy_feedback(
+        &mut self,
+        result: Result<(), crate::clipboard::error::ClipboardError>,
+        key: &str,
+        hint: Vec<String>,
+        scope: crate::adapters::ui::ToastScope,
+    ) -> bool {
+        match result {
+            Ok(()) => {
+                self.toasts.push_with_hint(
+                    crate::i18n::t(key),
+                    crate::adapters::ui::ToastKind::Info,
+                    hint,
+                    scope,
+                );
+                true
+            }
+            Err(error) => {
+                self.clipboard_error_toast(&error, scope);
+                false
+            }
+        }
+    }
 }
 
 #[cfg(test)]

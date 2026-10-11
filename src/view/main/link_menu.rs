@@ -70,11 +70,11 @@ impl MainView {
         if text.is_empty() {
             return false;
         }
-        if let Some(cb) = &mut self.clipboard {
-            cb.set_text(&text);
-        }
-        self.state.toasts.push_info(
-            crate::i18n::t("toast.copied"),
+        self.copy_text(
+            &text,
+            false,
+            "toast.copied",
+            Vec::new(),
             crate::adapters::ui::ToastScope::Surface(hovered.surface_id),
         );
         self.mark_dirty();
@@ -125,14 +125,10 @@ impl MainView {
                     if link.text.is_empty() {
                         return;
                     }
-                    if let Some(cb) = &mut this.clipboard {
-                        cb.set_text(&link.text);
-                    }
-                    // 메뉴에서 실행했으므로 copy_link에 묶인 키가 있으면 hint로 알린다.
-                    // copy 바인딩은 링크를 복사하지 않으므로 빌리지 않는다.
-                    this.state.toasts.push_with_hint(
-                        crate::i18n::t("toast.copied"),
-                        crate::adapters::ui::ToastKind::Info,
+                    this.copy_text(
+                        &link.text,
+                        false,
+                        "toast.copied",
                         crate::adapters::ui::toast::binding_hint(engine.settings, "copy_link"),
                         crate::adapters::ui::ToastScope::Surface(link.surface_id),
                     );

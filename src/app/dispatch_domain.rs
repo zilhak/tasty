@@ -306,8 +306,10 @@ impl App {
             CoreEvent::TerminalShellIntegrationHint { surface_id, .. } => {
                 self.cascade_terminal_shell_integration_hint(source, surface_id);
             }
-            CoreEvent::TerminalClipboardSet { surface_id, .. } => {
-                self.cascade_terminal_clipboard_set(source, surface_id);
+            CoreEvent::TerminalClipboardSet {
+                surface_id, result, ..
+            } => {
+                self.cascade_terminal_clipboard_set(source, surface_id, result);
             }
             CoreEvent::TerminalProcessExited {
                 surface_id,

@@ -48,7 +48,7 @@ pub struct MainView {
     pub(crate) state: MainViewState,
     pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) dragging_divider: Option<DividerDrag>,
-    pub(crate) clipboard: Option<ClipboardContext>,
+    pub(crate) clipboard: ClipboardContext,
     pub(crate) ime_preedit: Option<ImePreeditState>,
     pub(crate) proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     pub(crate) text_selection: Option<TextSelection>,
@@ -196,6 +196,8 @@ impl MainView {
         window: Arc<winit::window::Window>,
         proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     ) -> Self {
+        let display = crate::clipboard::error::DisplayBackend::of(&window);
+        state.file_clipboard.set_display(display);
         let base = ViewBase::new(gpu, window);
         state.webview_identity = base.state.identity();
         Self {
@@ -203,7 +205,7 @@ impl MainView {
             state,
             cursor_position: None,
             dragging_divider: None,
-            clipboard: ClipboardContext::new(),
+            clipboard: ClipboardContext::new(display),
             ime_preedit: None,
             proxy,
             text_selection: None,

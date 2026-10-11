@@ -453,9 +453,16 @@ pub(crate) enum CoreEvent {
         generation: tasty_terminal::ResourceGeneration,
     },
 
-    /// 클립보드 쓰기를 시도했다는 알림. Core는 쓰기 오류를 기록하고 이 이벤트도 반환한다.
-    /// GUI는 surface 범위의 복사 toast를 표시하므로 이벤트 자체가 쓰기 성공을 보장하지는 않는다.
+    /// Completed clipboard write, bound to the originating terminal generation.
     TerminalClipboardSet {
+        #[cfg_attr(
+            not(feature = "gui"),
+            expect(
+                dead_code,
+                reason = "headless produces the outcome; only GUI displays clipboard feedback"
+            )
+        )]
+        result: Result<(), crate::clipboard::error::ClipboardError>,
         surface_id: u32,
         generation: tasty_terminal::ResourceGeneration,
     },

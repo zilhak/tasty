@@ -476,16 +476,11 @@ impl MainView {
             }
             None => {}
         }
-        if let Some(text) = pending_copy_text
-            && let Some(cb) = self.clipboard.as_mut()
-        {
-            cb.set_text(&text);
-            if let Some(sid) = pending_copy_scope {
-                self.state.toasts.push_info(
-                    crate::i18n::t("toast.copied_path"),
-                    crate::adapters::ui::ToastScope::Surface(sid),
-                );
-            }
+        if let Some(text) = pending_copy_text {
+            let scope = pending_copy_scope
+                .map(crate::adapters::ui::ToastScope::Surface)
+                .unwrap_or(crate::adapters::ui::ToastScope::Window);
+            self.copy_text(&text, false, "toast.copied_path", Vec::new(), scope);
         }
         self.base.state.dirty = true;
         true
