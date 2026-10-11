@@ -417,6 +417,8 @@ fn expand_after_hover(
             if waited >= delay {
                 view.expanded.insert(dir.to_path_buf());
                 view.ops.drag.hover = None;
+                // The tree was drawn before this hover update. Paint its children next frame.
+                ctx.request_repaint();
             } else {
                 ctx.request_repaint_after(delay - waited);
             }
