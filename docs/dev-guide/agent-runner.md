@@ -5,6 +5,9 @@ workspace마다 스레드 하나가 준비된 task를 실행하고 완료 여부
 [`tasty-agent`](../../crates/tasty-agent/)가 맡고 실제 task 실행은 host가 맡는다.
 IPC/CLI 명세는 [API의 agent namespace](../reference/api.md)를 따른다.
 
+Codex 부모의 자동 결과 수신에는 [관리형 전달자](../plugins/codex/index.md#관리형-작업으로-부모에게-결과-전달)를
+사용할 수 있다. 기존 task ID에 연결하며 runner의 성공 판정과 부모 수신 증거는 구분한다.
+
 ## 구성
 
 | 파일 | 역할 |

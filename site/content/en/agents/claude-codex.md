@@ -1,4 +1,4 @@
-<!-- source-hash: 2775be418375 -->
+<!-- source-hash: 92967f17e816 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -125,6 +125,36 @@ If you read logs directly and resume later, also keep track of `retention_start`
 **Do not run two copies of tasty against the same data folder.** The one that starts later wipes
 the completion-log folder as it boots, which takes the live log the earlier one was writing to.
 Give each copy its own data folder with `TASTY_HOME` if you need both.
+
+### Automatic delivery to a Codex parent
+
+When Codex provides its task creation and messaging tools, a separate Codex task can wait for an
+existing Tasty task and deliver its result to the parent. The child terminal and original task stay in place.
+
+```sh
+tasty codex managed prepare --workspace-id 456 --task-id TASK_ID
+```
+
+Replace `TASK_ID` with the task to watch. The parent Codex reads its current thread ID automatically.
+This currently supports local callers; prepare rejects calls carrying an agent authentication token.
+Pass the returned `create_thread_args` to Codex's task creation tool, then attach the returned task ID.
+
+```sh
+tasty codex managed attach --id RELAY_ID --thread-id MANAGED_THREAD_ID
+tasty codex managed get --id RELAY_ID
+```
+
+The relay follows the prepared instructions to check the task. When it ends, the relay passes the messaging
+arguments returned by `managed callback --id RELAY_ID` to Codex's messaging tool. The parent receives tool
+output during its current work, or can start a new turn when idle. Check receipt and task success separately.
+`callback` only prepares messaging arguments. It does not establish task completion or parent receipt.
+
+The relay is an ordinary Codex task that uses a model. It adds usage and needs the Codex frontend connection
+to remain available. Do not substitute a native subagent. Missing management tools or pending approval can
+prevent automatic delivery. You do not need to find and configure a server address, socket, or authentication token.
+
+Remove a finished relay record with `tasty codex managed forget --id RELAY_ID`. This does not cancel the
+original task or close the Codex relay.
 
 ### Resuming Claude automatically after an API error
 

@@ -13,6 +13,8 @@
 
 상태 변경은 caller surface의 `<parent_home>/notify/<caller_surface>.log`에 한 줄로 기록한다. 자식 CLI 종류로 경로를 바꾸지 않는다. 훅 설치와 부모의 수신 준비는 별개이며 idle·needs_input·interrupt·exit는 작업 성공을 뜻하지 않는다. [완료 알림 로그](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)를 따른다.
 
+기존 task의 결과를 Codex 부모에게 자동 전달하려면 [관리형 전달자](#관리형-작업으로-부모에게-결과-전달)를 준비한다.
+
 ## 목적
 
 **Codex CLI를 tasty 안에서 실행하고 관리**하는 통합. [claude](../claude/index.md) 플러그인과 동형이며, 주로 작성한 코드/판단을 Codex 에게 교차 검증시키는 용도.
@@ -24,7 +26,7 @@
 [짝 핸들러 호환 경계](../../dev-guide/paired-agent-handlers.md)를 따른다. 완료 알림은
 [completion-log](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)에 기록하며 caller PTY에 메시지를 입력하지 않는다.
 
-- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 페인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `notify-caller`(내부용, 아래) · `broadcast` · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(stop/prompt-submit/session-start/permission-request/post-tool-use/interrupt/session-end). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치).
+- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 페인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `notify-caller`(내부용, 아래) · `broadcast` · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(stop/prompt-submit/session-start/permission-request/post-tool-use/interrupt/session-end). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치), `managed`(기존 task의 관리형 결과 전달 준비).
 - **ipc_namespace `codex`** — 위 동작에 대응하는 IPC API.
 
 ### 훅 설치와 실행
@@ -132,6 +134,77 @@ idle 보고도 진위나 작업 성공을 검증한 값은 아니므로 현재 �
 구별되지 않기 때문이다. 판정 기준은 [자식 터미널](../../features/child-terminal/index.md)의
 판정 응답 필드를 참고한다.
 
+## 관리형 작업으로 부모에게 결과 전달
+
+`managed`는 기존 Tasty task의 결과를 일반 Codex 관리형 작업이 읽어 부모에게 전달하도록
+준비한다. 기존 자식 터미널·workspace·task DAG는 그대로 사용한다. 전달자는 별도 Codex
+모델 작업이며, Tasty 플러그인이 Codex 서버에 직접 접속하는 전송 스레드가 아니다.
+
+부모에 `codex_tui.create_thread`와 `codex_tui.send_message_to_thread` 도구가 있어야 한다.
+관리형 전달자는 부모의 모델·작업 디렉터리·승인·샌드박스 설정을 상속한다. native subagent는
+이 관리 도구를 사용할 수 없는 경로이므로 전달자로 대신 배정하지 않는다. Codex CLI 0.154.0에서
+일반 관리형 자식이 idle 부모에게 도구 결과를 보내 새 턴을 시작하는 경로를 확인했다.
+TUI가 유지하는 연결을 사용하므로 프런트엔드 종료·재연결·도구 승인 대기는 별도 제약이다.
+현재는 Local conductor의 조회를 지원한다. prepare의 호출자 검사는 CLI 가드이며 새로운
+서버 인증 경계가 아니다. 플러그인 metadata 준비만으로 task 접근 권한이 부여되지는 않는다.
+
+### 준비와 도구 호출
+
+```sh
+tasty codex managed prepare --workspace-id 456 --task-id TASK_ID
+tasty codex managed attach --id RELAY_ID --thread-id MANAGED_THREAD_ID
+tasty codex managed get --id RELAY_ID
+tasty codex managed callback --id RELAY_ID
+tasty codex managed forget --id RELAY_ID
+```
+
+대문자 식별자는 실제 응답값으로 바꾼다. `prepare`는 CLI 호출자의 `CODEX_THREAD_ID`를
+부모로 사용하며, 필요한 경우 `--parent-thread UUID`로 명시한다. 플러그인 프로세스의
+환경이나 포커스된 surface에서 부모를 추측하지 않는다. 부모 surface는 기존 terminal spawn의
+대상이고, 수신 부모 thread는 별개다. CLI는 실제 실행 파일과 호출자가 선택한 port file도
+전달 지시에 넣어 다른 Tasty 인스턴스로 조회가 바뀌지 않게 한다. 플러그인은 전달 관계만
+저장하며 task 조회 권한을 대신 행사하지 않는다.
+
+1. 기존 task의 workspace ID와 task ID로 `prepare`를 호출한다. prepare는 ID 형식만 검사하며
+   task 존재·조회 권한은 전달자의 실제 조회에서 확인한다. 응답의 `relay_id`와
+   `create_thread_args`를 보관한다. 준비만으로 전달자가 실행되지는 않는다.
+2. 부모가 실제 `codex_tui.create_thread` 도구에 `create_thread_args`를 전달한다.
+   `prompt`는 1,000 UTF-8 바이트 이내이며, 긴 결과를 초기 지시에 넣지 않는다.
+3. 도구가 반환한 `threadId`를 `attach --id … --thread-id …`로 연결한다. 같은 연결은
+   반복할 수 있지만 다른 thread로 바꾸는 요청은 거절한다.
+4. 일반 관리형 전달자가 `get`의 지시를 읽는다. attach가 아직 끝나지 않았으면 제한 시간을
+   두고 기다린다. 이후 자신의 `CODEX_THREAD_ID`가 연결된 thread와 같은지 확인한다.
+5. 전달자는 기존 task를 제한 시간마다 `task-await`로 조회한다. 현재 prepare는 Local 호출만
+   지원하며 `TASTY_SESSION_TOKEN` 또는 Agent 호출자 문맥이 있으면 거절한다. 관리형 작업이
+   호출자의 token 환경을 상속한다는 보장이 없기 때문이다. 전달자는 예상하지 않은 token이
+   있으면 중단하며, token을 복사하거나 버려 Local 호출로 바꾸지 않는다.
+6. task가 terminal 상태이면 `callback`을 호출한다. 반환된 `callback.arguments`의 `threadId`와
+   `prompt`를 실제 `codex_tui.send_message_to_thread` 도구에 전달한다. 전체 결과는 Tasty
+   task에 남기고 callback은 제한 길이의 식별자와 결과 참조를 보낸다.
+
+`get`은 저장한 부모·task·전달자 관계와 `prepared`/`attached` 단계를 보여 준다.
+`callback`은 전달할 인자를 만드는 명령일 뿐 task 결과를 조회하지 않는다. **task 완료·도구 호출
+성공·부모 수신을 뜻하지 않는다.** 부모는 callback의 task와 전달자 식별자를 대조하고 실제 결과를
+다시 읽어 요구사항 충족 여부를 판단한다. 실패·취소·unknown도 성공으로 바꾸지 않는다.
+결과를 읽거나 callback을 호출하지 못했다면 그 오류를 남기며 수신 완료로 보고하지 않는다.
+
+`forget`은 지정한 전달 기록만 지운다. Tasty task를 취소하거나 Codex 관리형 작업을 archive하지
+않는다. 필요한 관리형 작업 정리는 소유권을 확인한 뒤 Codex 도구로 별도 수행한다.
+
+### 전달 계약과 한계
+
+- 도구의 인자 이름은 `prompt`지만 Codex 0.154.0의 전달은 빈 user input과 `toolOutput`이다.
+  부모 PTY에 문자열을 넣거나 사용자 발화를 만들어 전달하지 않는다.
+- Tasty는 Codex endpoint·Bearer token을 저장하거나 찾아내지 않고, 부모에게 수동 App Server
+  바인딩을 요구하지 않는다. Codex의 관리 도구는 내부적으로 기존 App Server 연결을 사용한다.
+- 모델이 task를 기다리고 callback 도구를 호출하는 방식이다. 추가 모델 사용량이 발생하며,
+  전달자 종료·승인 대기·도구 접근 불가가 있으면 자동 전달이 끝나지 않을 수 있다.
+- `functions.exec`의 `notify()`는 살아 있는 부모 턴에 도구 결과를 보낼 수 있지만, idle 턴을
+  시작하지 않는다. native `send_message`도 새 부모 턴을 시작하지 않는다. 이를 관리형 callback의
+  idle 재개와 혼동하지 않는다.
+- 관리형 수신 도구가 없는 환경에서는 현재 턴의 task 조회로 결과를 수집한다. 로그 파일이나
+  task의 `succeeded`만으로 부모가 자동 재개됐다고 보고하지 않는다.
+
 ## 훅 설치 대상 선택
 
 `tasty codex install --codex-home <절대 디렉터리>` 는 그 Codex home 의 hook 을 설치한다.
@@ -142,7 +215,7 @@ idle 보고도 진위나 작업 성공을 검증한 값은 아니므로 현재 �
 
 ## 인터페이스
 
-- **AI Agent / 사용자**: `tasty codex launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|install …`.
+- **AI Agent / 사용자**: `tasty codex launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|install|managed …`.
 - 일반 흐름: `spawn --prompt "…"` → (선택) `tell` → 완료 알림 대기(caller의 completion-log 조회) → 출력 확인.
 
 ## 비-목표
@@ -151,6 +224,10 @@ idle 보고도 진위나 작업 성공을 검증한 값은 아니므로 현재 �
 - 터미널/PTY 내부 — host.
 
 ## Acceptance Criteria
+
+- Given Local 호출자의 `CODEX_THREAD_ID`와 기존 task 식별자 When `managed prepare` Then 부모·task 관계와 create 도구 인자를 반환하며 task 조회나 관리형 작업 생성을 수행했다고 보고하지 않는다.
+- Given Agent 인증 문맥을 가진 CLI 호출 When `managed prepare` Then token을 복사하거나 버려 Local로 전환하지 않고 지원하지 않는 호출임을 알린다.
+- Given 연결된 일반 관리형 전달자와 terminal task When 전달자가 callback 도구 인자로 실제 메시지 도구를 호출 Then 부모는 task 참조를 도구 결과로 받는다. callback 인자 생성만 성공한 경우에는 전송으로 판정하지 않는다.
 
 - Given Linux/macOS 의 sh/bash/zsh 에 `codex` alias 또는 function 이 우회 옵션을 추가한다 When `launch`/`spawn`/`respawn`/`reboot` 명령을 생성해 실행한다 Then 외부 Codex 에는 tasty 가 결정한 정책 인자만 전달되고 환경변수와 프롬프트 전달 방식이 유지된다.
 

@@ -124,6 +124,37 @@ Monitor는 최대 30분 뒤 만료됩니다. 만료 알림을 받으면 같은 �
 폴더를 통째로 지우는데, 그때 먼저 떠 있던 쪽이 쓰고 있던 완료 로그까지 사라집니다. 두 벌을
 같이 쓰려면 `TASTY_HOME` 으로 데이터 폴더를 따로 주세요.
 
+### Codex 부모에게 자동으로 전달하기
+
+Codex의 작업 생성·메시지 전달 도구를 사용할 수 있으면, 별도 Codex 작업이 Tasty task를 기다렸다가
+부모에게 결과를 전달하게 할 수 있습니다. 자식 터미널과 기존 작업은 그대로 유지합니다.
+
+```sh
+tasty codex managed prepare --workspace-id 456 --task-id TASK_ID
+```
+
+`TASK_ID`는 기다릴 작업 ID로 바꾸세요. 부모 Codex는 현재 대화 ID를 자동으로 읽습니다.
+현재는 로컬 호출만 지원하며, 에이전트 인증 토큰이 있는 호출은 준비 단계에서 거절합니다.
+응답의 `create_thread_args`로 Codex 작업 생성 도구를 호출한 뒤, 반환된 작업 ID를 연결합니다.
+
+```sh
+tasty codex managed attach --id RELAY_ID --thread-id MANAGED_THREAD_ID
+tasty codex managed get --id RELAY_ID
+```
+
+전달자는 준비된 지시에 따라 작업을 조회하고, 끝나면 `managed callback --id RELAY_ID`가 반환하는
+메시지 전달 인자로 부모에게 도구 결과를 보냅니다. 부모가 다른 작업 중이면 이어서 받고,
+idle이면 새 턴이 시작될 수 있습니다. 부모가 받은 결과와 task의 실제 성공 여부는 따로 확인하세요.
+`callback`은 전송 인자를 만들 뿐, 작업 완료나 부모 수신을 확인하는 명령은 아닙니다.
+
+이 전달자는 모델을 사용하는 일반 Codex 작업입니다. 추가 사용량이 발생하고 Codex 프런트엔드의
+연결이 유지돼야 합니다. 내장 서브에이전트로 대신 만들지 마세요. 관리 도구가 없거나 승인을
+기다리고 있으면 자동 전달을 보장하지 않습니다. 서버 주소·소켓·인증 토큰을 직접 찾아 설정할
+필요는 없습니다.
+
+끝난 전달 기록은 `tasty codex managed forget --id RELAY_ID`로 지웁니다. 이 명령은 원래
+작업을 취소하거나 Codex 전달자를 닫지 않습니다.
+
 ### API 에러로 멈춘 Claude 자동 재개
 
 서버 과부하 같은 일시적인 API 에러로 Claude 의 턴이 끝나면, Tasty 가 잠시 뒤 "이어서 진행해" 문구를 대신 보내 작업을 잇게 할 수 있습니다. **기본은 꺼져 있습니다.** **설정** <!-- en: Settings --> › **플러그인** <!-- en: Plugins --> › **Claude Code** 에서 켭니다.
