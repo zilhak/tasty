@@ -1152,6 +1152,7 @@ dismiss = "閉じる"
 unavailable = "このドライブではゴミ箱を使えません。何も削除していません。"
 
 [explorer.drag]
+native_unavailable = "別のアプリへのファイルのドラッグを開始または完了できませんでした。"
 items = "{} 項目"
 move_to = "{} に移動"
 copy_to = "{} にコピー"

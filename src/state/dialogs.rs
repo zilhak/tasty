@@ -124,7 +124,6 @@ pub struct DialogState {
     pub(crate) convert_popup: Option<u32>,
     pub(crate) convert_popup_selected: Option<usize>,
     pub(crate) pending_native_menu: Option<PendingNativeMenu>,
-    pub(crate) pending_file_drag: Option<Vec<String>>,
     pub(crate) tab_drag: Option<TabDragState>,
     pub(crate) ws_drag: Option<WsDragState>,
     /// 부팅 안내 대기열. 확인 버튼으로 맨 앞 항목을 처리한다.
@@ -216,7 +215,6 @@ impl DialogState {
             convert_popup: None,
             convert_popup_selected: None,
             pending_native_menu: None,
-            pending_file_drag: None,
             tab_drag: None,
             ws_drag: None,
             info_modal_queue: VecDeque::new(),

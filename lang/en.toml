@@ -1196,6 +1196,7 @@ dismiss = "Dismiss"
 unavailable = "Trash isn't available on this drive. Nothing was deleted."
 
 [explorer.drag]
+native_unavailable = "Could not start or complete file drag to another app."
 items = "{} items"
 move_to = "Move to {}"
 copy_to = "Copy to {}"

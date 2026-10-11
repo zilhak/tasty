@@ -1,0 +1,206 @@
+//! Per-View gesture ownership. No native callback can mutate a different View or Surface.
+use super::MainView;
+use crate::{
+    file::drag::Session,
+    runtime::{engine_read::EngineRead, surface_binding::SurfaceBinding},
+};
+use std::path::PathBuf;
+use winit::event::{ElementState, MouseButton, WindowEvent};
+
+#[derive(Default)]
+pub(crate) struct Gesture {
+    context: Option<crate::file::drag::Context>,
+    held: bool,
+    handed_off: bool,
+    source: Option<(SurfaceBinding, Vec<PathBuf>)>,
+    native: Option<Session>,
+}
+impl Gesture {
+    pub(crate) fn new(
+        window: std::sync::Arc<winit::window::Window>,
+        display_owner: Option<winit::event_loop::OwnedDisplayHandle>,
+    ) -> Self {
+        Self {
+            context: Some(crate::file::drag::Context::new(window, display_owner)),
+            ..Self::default()
+        }
+    }
+}
+impl MainView {
+    pub(crate) fn has_outbound_drag(&self) -> bool {
+        self.file_drag.native.is_some()
+    }
+
+    pub(super) fn cancel_outbound_drag(&mut self) {
+        self.file_drag.native = None;
+        self.file_drag.source = None;
+        self.base
+            .winit
+            .set_cursor(winit::window::CursorIcon::Default);
+    }
+
+    pub(crate) fn poll_outbound_drag(&mut self, engine: &EngineRead<'_>) {
+        if let Some(context) = self.file_drag.context.as_mut() {
+            context.poll();
+        }
+        if self.state.fullscreen_stage_active()
+            || self.state.keyboard_overlay_open()
+            || self.base.state.close_requested
+            || self
+                .file_drag
+                .source
+                .as_ref()
+                .is_some_and(|(binding, _)| !binding.current_in(engine))
+        {
+            self.cancel_outbound_drag();
+            return;
+        }
+        if let Some(native) = self.file_drag.native.as_mut() {
+            match native.poll() {
+                Ok(Some(outcome)) => {
+                    tracing::debug!(?outcome, "outbound file drag ended");
+                    self.cancel_outbound_drag();
+                    self.file_drag.held = false;
+                    self.file_drag.handed_off = false;
+                }
+                Ok(None) => self.base.winit.set_cursor(if native.accepted() {
+                    winit::window::CursorIcon::Copy
+                } else {
+                    winit::window::CursorIcon::NoDrop
+                }),
+                Err(error) => self.outbound_failed(error),
+            }
+        } else if self.file_drag.held && !self.file_drag.handed_off {
+            // The payload is created by Explorer after its existing threshold and selection logic.
+            self.file_drag.source = crate::explorer_ui::view::drag::outbound_payload(
+                &self.base.gpu.egui_ctx,
+                &self.state.explorer_views,
+            )
+            .and_then(|(sid, paths)| {
+                SurfaceBinding::capture(engine, sid).map(|binding| (binding, paths))
+            });
+        }
+    }
+
+    fn outbound_failed(&mut self, error: String) {
+        tracing::warn!(%error, "outbound file drag failed");
+        self.cancel_outbound_drag();
+        self.state.toasts.push_info(
+            crate::i18n::t("explorer.drag.native_unavailable"),
+            crate::adapters::ui::ToastScope::Window,
+        );
+        self.base.state.dirty = true;
+        self.base.winit.request_redraw();
+    }
+
+    pub(super) fn outbound_drag_event(
+        &mut self,
+        engine: &EngineRead<'_>,
+        event: &WindowEvent,
+        modal: bool,
+    ) -> bool {
+        if modal {
+            self.cancel_outbound_drag();
+        }
+        if matches!(
+            event,
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+                ..
+            }
+        ) {
+            if self.file_drag.native.is_some() {
+                return true;
+            }
+            self.file_drag.held = true;
+            self.file_drag.handed_off = false;
+            self.file_drag.source = None;
+        }
+        if self.file_drag.native.is_some()
+            && let WindowEvent::KeyboardInput { event, .. } = event
+            && event.state == ElementState::Pressed
+            && crate::shortcuts::matches_any_binding(
+                &engine.settings.keybindings.explorer_clear_selection,
+                &crate::shortcuts::shortcut_lookup_key(
+                    &event.logical_key,
+                    &event.physical_key,
+                    self.base.state.modifiers,
+                ),
+                self.base.state.modifiers,
+            )
+        {
+            self.cancel_outbound_drag();
+            return true;
+        }
+        let outside = match event {
+            WindowEvent::CursorLeft { .. } => true,
+            WindowEvent::CursorMoved { position, .. } => {
+                let size = self.base.winit.inner_size();
+                position.x < 0.0
+                    || position.y < 0.0
+                    || position.x >= f64::from(size.width)
+                    || position.y >= f64::from(size.height)
+            }
+            _ => false,
+        };
+        if outside && self.file_drag.held && !self.file_drag.handed_off && !modal {
+            self.poll_outbound_drag(engine);
+            if let Some((binding, paths)) = self.file_drag.source.as_ref()
+                && binding.current_in(engine)
+            {
+                self.file_drag.handed_off = true;
+                // Linux sessions are asynchronous and dispatch only their own queues.
+                match Session::start(
+                    self.base.winit.clone(),
+                    paths,
+                    self.file_drag.context.as_mut().expect("View drag context"),
+                ) {
+                    Ok(session) => self.file_drag.native = Some(session),
+                    Err(error) => self.outbound_failed(error.to_string()),
+                }
+                self.base.gpu.release_drag_pointer();
+                self.left_mouse_down = false;
+                self.base.winit.request_redraw();
+            }
+        }
+        let released = matches!(
+            event,
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Left,
+                ..
+            }
+        );
+        if released {
+            self.file_drag.held = false;
+        }
+        if !self.file_drag.handed_off {
+            return false;
+        }
+        if let Some(native) = self.file_drag.native.as_mut() {
+            let result = match event {
+                WindowEvent::CursorMoved { position, .. } => native.motion(*position),
+                _ if released => native.release(),
+                _ => Ok(()),
+            };
+            if let Err(error) = result {
+                self.outbound_failed(error);
+            }
+        }
+        // A return to the source stays native until the next press, never an internal release.
+        let consumed = matches!(
+            event,
+            WindowEvent::CursorMoved { .. }
+                | WindowEvent::CursorLeft { .. }
+                | WindowEvent::MouseInput {
+                    button: MouseButton::Left,
+                    ..
+                }
+        );
+        if released && self.file_drag.native.is_none() {
+            self.file_drag.handed_off = false;
+        }
+        consumed
+    }
+}

@@ -1,4 +1,4 @@
-<!-- source-hash: 748b0dac1f44 -->
+<!-- source-hash: a9537934cc8f -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -166,6 +166,10 @@ Drag items onto a folder row or cell, a folder in the left tree, or a favorite t
 - Inside a remote Explorer, a drag **moves** only between folders the remote computer reports as the same disk, and **copies** otherwise.
 - Hover over a closed tree folder for a moment to expand it. Press `Esc` to cancel the drag.
 - Files dragged in from your OS file manager and dropped on an Explorer cell are **copied** into its folder (never moved). A remote Explorer refuses them, because they are on a different computer. On Linux (X11) the whole-window hint stays while you drag, but dropping on an Explorer cell still copies.
+
+On Linux, drag local Explorer items outside the window to **copy** them to another app. X11 and native Wayland are supported, with pointer feedback from the operating system. Originals remain in place, and external copies do not enter Tasty's undo history. Returning to the source window does not also trigger an internal move. Remote items cannot be exported. On X11, the Explorer **Clear selection** binding (by default `Esc`) cancels the drag. On Wayland, the operating system handles drag cancellation.
+
+Outbound dragging is not yet supported on Windows or macOS. Other windows in the same Tasty process cannot receive it. A separately running Tasty instance may appear as an external receiver, but dragging files between Tasty windows is not a supported feature. A start or communication error shows a notice; starting a drag is never reported as a completed copy.
 
 ### Progress and results
 

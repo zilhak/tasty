@@ -459,7 +459,13 @@ impl App {
     ) {
         let window_id = window.id();
         state.tutorial.persistence = self.tutorial_progress.client();
-        let main = window::main::MainView::new(gpu, state, window, self.view.proxy.clone());
+        let main = window::main::MainView::new(
+            gpu,
+            state,
+            window,
+            self.view.proxy.clone(),
+            self.view.display_owner.clone(),
+        );
         self.view.views.insert(window_id, Box::new(main));
         self.engines.attach_window(window_id, engine);
         self.view.focused_view_id =

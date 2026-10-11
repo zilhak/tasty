@@ -73,6 +73,7 @@ pub(crate) struct DragState {
     pub(crate) blocked: bool,
     /// 이번 누름에서 이미 드래그를 시작했다. Esc 로 취소된 뒤 같은 누름으로 다시 시작하지 않는다.
     started: bool,
+    source_widget: Option<egui::Id>,
     hover: Option<(PathBuf, Instant)>,
     probe: Option<Probe>,
     /// OS 에서 끌어 오는 파일. 호스트가 매 프레임 창의 hover 상태에서 채운다.
@@ -370,6 +371,7 @@ fn start(
     let single_dir = paths.len() == 1 && spot.is_dir;
     let volume = first_parent(&paths).and_then(|dir| view.remote_volume_of(dir));
     view.ops.drag.started = true;
+    view.ops.drag.source_widget = Some(me);
     egui::DragAndDrop::set_payload(
         ctx,
         Payload {
@@ -703,3 +705,19 @@ pub(crate) fn shown_drop(
 #[cfg(test)]
 #[path = "drag_tests.rs"]
 mod tests;
+
+/// Snapshot only the local source that owns the current internal gesture.
+pub(crate) fn outbound_payload(
+    ctx: &egui::Context,
+    views: &super::ExplorerViewStore,
+) -> Option<(u32, Vec<PathBuf>)> {
+    let payload = egui::DragAndDrop::payload::<Payload>(ctx)?;
+    if payload.origin.is_some() {
+        return None;
+    }
+    views.cached_surfaces().find_map(|sid| {
+        let view = views.get(sid)?;
+        (view.ops.drag.source_widget == Some(payload.source) && !view.ops.drag.blocked)
+            .then(|| (sid, payload.paths.clone()))
+    })
+}

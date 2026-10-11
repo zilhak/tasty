@@ -889,3 +889,24 @@ mod tests {
         assert_eq!(clamp_surface_dims(1280, 0, MAX), (1280, 1));
     }
 }
+
+#[cfg(feature = "gui")]
+impl GpuState {
+    /// Native drag owns the release after handoff; prevent a stuck egui button or internal drop.
+    pub(crate) fn release_drag_pointer(&mut self) {
+        let pos = self
+            .egui_ctx
+            .input(|i| i.pointer.latest_pos())
+            .unwrap_or_default();
+        self.egui_state
+            .egui_input_mut()
+            .events
+            .push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            });
+        egui::DragAndDrop::clear_payload(&self.egui_ctx);
+    }
+}

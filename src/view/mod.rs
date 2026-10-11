@@ -85,6 +85,8 @@ pub(crate) struct ActiveModal {
 }
 
 pub(crate) struct ViewRegistry {
+    /// Strong native display owner for foreign-queue integrations.
+    pub(crate) display_owner: Option<winit::event_loop::OwnedDisplayHandle>,
     /// winit event loop 의 proxy. AppEvent 를 enqueue 하기 위한 채널.
     /// View 영역은 GUI 어댑터로서 winit 과 직접 결합되어 있다.
     pub proxy: EventLoopProxy<AppEvent>,
@@ -102,6 +104,7 @@ pub(crate) struct ViewRegistry {
 impl ViewRegistry {
     pub(crate) fn new(proxy: EventLoopProxy<AppEvent>) -> Self {
         Self {
+            display_owner: None,
             proxy,
             active_modal: None,
             focused_view_id: None,

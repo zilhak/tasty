@@ -182,6 +182,7 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.view.display_owner = Some(event_loop.owned_display_handle());
         let _stall_guard = stall_watchdog::Guard::enter(Site::Resumed);
         // resumed가 다시 호출돼도 부팅 중 아직 views가 비어 있는 창을 중복 생성하지 않는다.
         if !self.view.views.is_empty()
@@ -2053,10 +2054,10 @@ impl App {
     }
 
     fn any_pending_native_menu(&self) -> bool {
-        self.view
-            .views
-            .values()
-            .any(|w| w.as_main().is_some_and(|m| m.has_pending_native_menu()))
+        self.view.views.values().any(|w| {
+            w.as_main()
+                .is_some_and(|m| m.has_pending_native_menu() || m.has_outbound_drag())
+        })
     }
 
     /// 본체·플러그인 타이머의 가장 이른 기한을 WaitUntil과 별도 waker에 함께 전달한다.
@@ -2167,6 +2168,7 @@ impl App {
     fn poll_pending_native_menus(&mut self) {
         for (_, main, engine) in self.engines_mut().window_pairs() {
             main.poll_pending_native_menu(&engine.read());
+            main.poll_outbound_drag(&engine.read());
         }
         self.close_self_requesting_windows();
     }

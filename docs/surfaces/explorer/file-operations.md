@@ -1,6 +1,6 @@
 # Explorer 파일 작업 — 대상과 결과의 계약
 
-- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소·다시 실행은 동작한다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. 복사·잘라내기·붙여넣기는 OS 파일 클립보드와 이어진다(Linux 는 X11 선택, Wayland 세션은 XWayland 경유. Windows·macOS 는 실 기기 미측정). 원격(mirror) explorer 에서도 그 서버가 원격 쓰기를 알리면 새 폴더·새 파일·이름 변경·휴지통 이동·같은 연결 안의 붙여넣기·드래그 놓기·충돌 선택·진행 취소·결과 카드의 Retry·Undo 가 동작한다. 원격 작업의 실행 취소 이력, 이 컴퓨터와 원격 사이의 전송, explorer 밖으로 끌어 내기는 없다.
+- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소·다시 실행은 동작한다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. 복사·잘라내기·붙여넣기는 OS 파일 클립보드와 이어진다(Linux 는 X11 선택, Wayland 세션은 XWayland 경유. Windows·macOS 는 실 기기 미측정). 원격(mirror) explorer 에서도 그 서버가 원격 쓰기를 알리면 새 폴더·새 파일·이름 변경·휴지통 이동·같은 연결 안의 붙여넣기·드래그 놓기·충돌 선택·진행 취소·결과 카드의 Retry·Undo 가 동작한다. 원격 작업의 실행 취소 이력과 이 컴퓨터와 원격 사이의 전송은 없다. Linux의 로컬 Explorer는 외부 앱으로 Copy 드래그를 시작한다. Windows·macOS outbound 드래그는 지원하지 않는다.
 - **주체**: 로컬 사용자 ([주체](../../concepts/actors.md)). 에이전트(IPC/CLI)는 이 문서의 파일 작업을 호출하지 않는다.
 - **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (mirror explorer 의 파일 작업은 원격 server 가 실행한다), [ADR-0077](../../adr/0077-explorer-shares-files-through-the-os-clipboard.md) (OS 파일 클립보드 공유와 나중 복사 우선)
 - **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/file_jobs/ops.rs`·작업 엔진 `src/app/file_jobs/job.rs`·화면 동기화 `src/app/explorer_files/ui_sync.rs`·원격 요청 `src/app/explorer_files/remote.rs`·원격 server 실행 `src/app/file_jobs/remote.rs`, 새 항목 입력 `src/adapters/ui/surface/explorer/create.rs`·툴바 More 메뉴 `src/view/main/explorer_create.rs`, 찾기 `src/adapters/ui/surface/explorer/find.rs`, 칸 표시 `src/adapters/ui/surface/explorer/view/ops.rs`·드래그 `src/adapters/ui/surface/explorer/view/drag.rs`·충돌 popup `src/adapters/ui/popup/explorer_conflict.rs`, OS 파일 드롭 `src/view/main/file_drop.rs`, OS 파일 클립보드 `src/clipboard/files.rs`·창 목록과의 조정 `src/state/explorer_os_clipboard.rs`
@@ -174,6 +174,23 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 - **취소**: Esc 를 누르면 드래그를 취소하고, 버튼을 놓을 때까지 다시 시작하지 않는다.
 - **OS 파일**: explorer 칸 위에서는 창 전체의 drop overlay 를 그리지 않고, 칸이 링과 "Copy to" 칩을 보인다. 이 표시는 드래그 중 포인터 위치를 아는 동안만 나온다. winit 0.30 의 X11 은 XDND 중 위치를 알려 주지 않아 표시 없이 창 overlay 가 남고, 놓은 뒤의 포인터 위치로 대상 칸을 정한다. 다른 곳에 놓은 파일은 지금처럼 연다.
 - **꺼내기**: explorer 에서 다른 앱이나 터미널로 끌어 내는 기능은 없다.
+
+
+### 외부 앱으로 끌어 내기
+
+Linux의 로컬 Explorer 항목은 기존 내부 드래그 문턱을 넘은 뒤, 버튼을 누른 채 원본 윈도우 경계를 벗어나면 OS 파일 드래그로 넘긴다. 같은 윈도우 안에서는 기존 폴더 대상 판정과 이동·복사 규칙을 유지한다. 원격 origin의 경로는 OS에 내보내지 않는다.
+
+- X11은 별도 연결의 `XdndSelection`에 `text/uri-list`를 제공한다. winit이 전달한 원래 제스처의 좌표와 버튼 해제만 사용하며 포인터를 조회하거나 grab하지 않는다. XDND v5의 Copy 수락·완료를 구분하고 큰 목록은 INCR로 전송한다. `CLIPBOARD`는 건드리지 않는다.
+- Wayland는 winit과 같은 libwayland 연결에 별도 event queue·seat·pointer·data-device를 바인딩한다. 실제 왼쪽 버튼 press serial과 원본 surface의 implicit grab이 일치할 때만 시작한다. `wl_data_device_manager` v3와 `wl_seat` v5 이상이 필요하다. FD 전송은 비차단이며 Copy action과 `dnd_finished`를 확인한다. 새 Wayland 연결이나 임의 serial을 만들지 않는다.
+- Wayland의 외부 프록시는 원본 `Arc<Window>`와 winit `OwnedDisplayHandle`을 함께 보관한다. 윈도우 객체만으로 event-loop 연결 수명을 가정하지 않는다. 닫힌·교체된 SurfaceBinding, popup/modal·무대 전환은 해당 View의 세션을 취소한다.
+- OS가 제공하는 커서 피드백만 쓰고 Tasty 비트맵·배지를 만들지 않는다. 새 시각 컴포넌트나 갤러리 변형은 없다.
+- 외부에는 Copy만 제안한다. Tasty는 원본을 지우지 않으며 외부 앱의 복사·파일 변경을 Tasty Undo 이력에 넣지 않는다. 시작·수신기 수락·완료는 서로 다른 상태이며 시작만으로 성공을 알리지 않는다. 실패는 기존 Info 토스트, 취소와 확인하지 못한 완료는 진단 로그로 구분한다.
+- X11에서 취소는 기존 `explorer_clear_selection` 바인딩(기본 Esc)을 따른다. 네이티브 세션 중에는 선택을 지우는 대신 드래그를 취소하고 그 키를 소비한다. Wayland compositor가 관리하는 Esc 취소는 OS 동작이며 Tasty가 변경하지 않는다.
+- 한 제스처는 한 번만 넘긴다. 넘긴 뒤 egui payload와 눌린 버튼을 정리하여 원본으로 돌아와도 내부 Drop이 중복 실행되지 않는다. 세션 결과는 그 View·SurfaceBinding에만 적용한다.
+- 같은 프로세스의 다른 Tasty 윈도우는 수신 대상으로 허용하지 않는다. X11은 대상 조상의 `_NET_WM_PID`를 검사하고 Wayland의 자체 data-device offer는 거절한다. 별도 프로세스의 Tasty는 X11에서 일반 외부 수신기로 보일 수 있다. 프로세스 간 Tasty 드래그를 지원하는 기능으로 보장하지 않는다.
+- 경로는 절대 경로·NUL 없음·비어 있지 않음을 검사하고 인코딩 상한을 1 MiB로 제한한다. 심볼릭 링크는 선택한 경로 그대로 제공한다. X11 응답·완료의 10초 대기 만료, Wayland 전송·drop 완료의 30초 대기 만료는 성공으로 처리하지 않는다.
+
+구현: `src/view/main/file_drag.rs`, `src/file/drag.rs`, `src/file/drag/x11.rs`, `src/file/drag/wayland.rs`. Windows·macOS의 OLE/AppKit source adapter는 아직 없으며 이 기능의 크로스 플랫폼 범위는 미완료다.
 
 ### 작업 뒤 목록 갱신
 

@@ -1152,6 +1152,7 @@ dismiss = "닫기"
 unavailable = "이 드라이브에서는 휴지통을 쓸 수 없습니다. 아무것도 지우지 않았습니다."
 
 [explorer.drag]
+native_unavailable = "다른 앱으로 파일을 끌어 놓지 못했습니다."
 items = "항목 {}개"
 move_to = "{}(으)로 이동"
 copy_to = "{}(으)로 복사"

@@ -138,16 +138,7 @@ impl MainView {
         // 외부 drag&drop 으로 받은 파일 큐 처리.
         self.process_pending_file_drops(engine);
 
-        // 무대 중에는 파일 드래그 요청을 버린다. 나중에 시작하면 버튼을 놓은 뒤일 수 있다.
-        if self.state.fullscreen_stage_active() {
-            self.state.dialogs.pending_file_drag = None;
-        }
-        if let Some(paths) = self.state.dialogs.pending_file_drag.take() {
-            let path_refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
-            if let Err(e) = crate::file::drag::start_file_drag(&*self.base.winit, &path_refs) {
-                tracing::warn!("File drag failed: {e}");
-            }
-        }
+        self.poll_outbound_drag(engine);
 
         if self.base.state.dirty {
             self.base.winit.request_redraw();
@@ -189,7 +180,7 @@ impl MainView {
         // OS 메뉴는 무대 위에도 표시되므로 닫고, 아직 열지 않은 요청도 버린다.
         self.dismiss_pending_native_menu();
         self.state.dialogs.pending_native_menu = None;
-        self.state.dialogs.pending_file_drag = None;
+        self.cancel_outbound_drag();
 
         self.mark_dirty();
     }

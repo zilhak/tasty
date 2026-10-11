@@ -9,6 +9,7 @@ mod egui_mesh;
 mod explorer_create;
 mod explorer_history;
 mod explorer_show_in_folder;
+mod file_drag;
 mod file_drop;
 mod fullscreen_window;
 mod html_script_banner;
@@ -56,6 +57,7 @@ pub struct MainView {
     /// vi_copy::handle_vi_key 가 가로채 cursor/visual/yank 등을 처리.
     pub(crate) vi_copy: Option<vi_copy::ViCopyMode>,
     pub(crate) left_mouse_down: bool,
+    pub(crate) file_drag: file_drag::Gesture,
     /// TUI에 실제 누름을 보낸 버튼·surface 목록. 마지막 항목으로 드래그 대상을 정한다.
     /// 로컬 선택과 분리해 Shift 우회·링크 클릭 등 보고하지 않은 누름의 이동도 보내지 않는다.
     /// 우클릭은 포커스를 옮기지 않으므로 포커스와 다른 surface가 대상일 수 있다.
@@ -195,11 +197,13 @@ impl MainView {
         mut state: MainViewState,
         window: Arc<winit::window::Window>,
         proxy: winit::event_loop::EventLoopProxy<AppEvent>,
+        display_owner: Option<winit::event_loop::OwnedDisplayHandle>,
     ) -> Self {
         let display = crate::clipboard::error::DisplayBackend::of(&window);
         state.file_clipboard.set_display(display);
         let base = ViewBase::new(gpu, window);
         state.webview_identity = base.state.identity();
+        let file_drag = file_drag::Gesture::new(base.winit.clone(), display_owner);
         Self {
             base,
             state,
@@ -211,6 +215,7 @@ impl MainView {
             text_selection: None,
             vi_copy: None,
             left_mouse_down: false,
+            file_drag,
             report_buttons_down: Vec::new(),
             left_select_bypass: false,
             link_click_consumed: false,
@@ -381,6 +386,9 @@ impl MainView {
         event: WindowEvent,
         ctx: &mut ViewCtx<'_>,
     ) -> ViewAction {
+        if self.outbound_drag_event(engine, &event, ctx.modal_active) {
+            return ViewAction::None;
+        }
         // If a modal is active, block all input events before they reach egui.
         // Only allow non-input events (resize, redraw, scale factor, focus) through.
         if ctx.modal_active {
