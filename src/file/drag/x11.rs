@@ -4,7 +4,8 @@ use super::Outcome;
 use std::time::{Duration, Instant};
 use x11rb::{
     connection::Connection,
-    protocol::{Event, xproto::*},
+    errors::ReplyError,
+    protocol::{ErrorKind, Event, xproto::*},
     rust_connection::RustConnection,
     wrapper::ConnectionExt as _,
 };
@@ -116,12 +117,50 @@ impl Session {
             transfers: Vec::new(),
         })
     }
-    fn property(&self, window: Window, atom: Atom, ty: Atom) -> Result<Option<u32>> {
+    fn property(
+        &self,
+        window: Window,
+        atom: Atom,
+        ty: Atom,
+    ) -> std::result::Result<Option<u32>, ReplyError> {
         let reply = self
             .conn
             .get_property(false, window, atom, ty, 0, 1)?
             .reply()?;
         Ok(reply.value32().and_then(|mut values| values.next()))
+    }
+    fn target(&self, window: Window) -> Result<Option<Target>> {
+        if let Some(proxy) = self.property(window, self.atoms.XdndProxy, AtomEnum::WINDOW.into())? {
+            let awareness = (|| {
+                if self.property(proxy, self.atoms.XdndProxy, AtomEnum::WINDOW.into())?
+                    != Some(proxy)
+                {
+                    return Ok(None);
+                }
+                self.property(proxy, self.atoms.XdndAware, AtomEnum::ATOM.into())
+                    .map(Some)
+            })();
+            match awareness {
+                Ok(Some(version)) => {
+                    return Ok(version.map(|version| Target {
+                        window,
+                        recipient: proxy,
+                        version: version.min(5),
+                    }));
+                }
+                // XDND requires ignoring a stale proxy, including one lost during validation.
+                Err(ReplyError::X11Error(error)) if error.error_kind == ErrorKind::Window => {}
+                Err(error) => return Err(error.into()),
+                Ok(None) => {}
+            }
+        }
+        Ok(self
+            .property(window, self.atoms.XdndAware, AtomEnum::ATOM.into())?
+            .map(|version| Target {
+                window,
+                recipient: window,
+                version: version.min(5),
+            }))
     }
     fn target_at(&self, x: i16, y: i16) -> Result<Option<Target>> {
         // Walk the windows at these forwarded coordinates, never XQueryPointer.
@@ -134,24 +173,8 @@ impl Session {
             {
                 return Ok(None);
             }
-            if let Some(version) =
-                self.property(window, self.atoms.XdndAware, AtomEnum::ATOM.into())?
-            {
-                let proxy = self.property(window, self.atoms.XdndProxy, AtomEnum::WINDOW.into())?;
-                let recipient = match proxy {
-                    Some(p)
-                        if self.property(p, self.atoms.XdndProxy, AtomEnum::WINDOW.into())?
-                            == Some(p) =>
-                    {
-                        p
-                    }
-                    _ => window,
-                };
-                candidate = Some(Target {
-                    window,
-                    recipient,
-                    version: version.min(5),
-                });
+            if let Some(target) = self.target(window)? {
+                candidate = Some(target);
             }
             let child = self
                 .conn
@@ -429,3 +452,7 @@ impl Drop for Session {
 #[cfg(test)]
 #[path = "x11/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "x11/proxy_tests.rs"]
+mod proxy_tests;
