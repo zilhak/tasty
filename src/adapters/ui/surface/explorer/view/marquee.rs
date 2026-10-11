@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use super::ExplorerView;
 use super::cursor::Drawn;
@@ -17,7 +18,7 @@ const AUTOSCROLL_SPEED_ROWS_PER_SEC: f32 = 20.0;
 pub(crate) struct MarqueeState {
     press: Option<Press>,
     /// 다음 프레임 목록 ScrollArea 에 줄 스크롤 양(논리 px, 양수면 아래로).
-    scroll: f32,
+    scroll: LogicalPx,
 }
 
 struct Press {
@@ -39,10 +40,10 @@ impl MarqueeState {
     /// 휠 입력과 달리 포인터가 목록 밖에 있어도 다음에 닫히는 ScrollArea(목록)가 받는다.
     pub(crate) fn feed_scroll(&mut self, ui: &egui::Ui) {
         let dy = std::mem::take(&mut self.scroll);
-        if dy != 0.0 && self.active() {
+        if dy != LogicalPx(0.0) && self.active() {
             // egui 는 내용이 아래로 움직이는 방향을 양수로 받는다.
             ui.scroll_with_delta_animation(
-                egui::vec2(0.0, -dy),
+                egui::vec2(0.0, -dy.value()),
                 egui::style::ScrollAnimation::none(),
             );
         }
@@ -52,18 +53,27 @@ impl MarqueeState {
 /// 이번 프레임 스크롤 양(논리 px). 위 띠면 음수, 아래 띠면 양수, 띠 사이면 0 이다.
 /// 속도는 `20 줄/초 × t²` 이고 t 는 띠 안쪽 경계에서 0, 목록 끝에서 1 이다. 목록 밖에서는 t 를 1 로
 /// 둔다. 줄은 보기의 한 줄(Detail·List 행, Grid 칸 줄)이라 `row` 는 줄 간격이다.
-pub(crate) fn autoscroll(list: egui::Rangef, y: f32, zone: f32, row: f32, dt: f32) -> f32 {
-    if zone <= 0.0 || list.span() <= zone * 2.0 {
-        return 0.0;
+pub(crate) fn autoscroll(
+    list: egui::Rangef,
+    y: LogicalPx,
+    zone: LogicalPx,
+    row: LogicalPx,
+    dt: f32,
+) -> LogicalPx {
+    if zone <= LogicalPx(0.0) || LogicalPx(list.span()) <= zone * 2.0 {
+        return LogicalPx(0.0);
     }
-    let depth = if y < list.min + zone {
-        -((list.min + zone - y) / zone).min(1.0)
-    } else if y > list.max - zone {
-        ((y - (list.max - zone)) / zone).min(1.0)
+    let top = LogicalPx(list.min) + zone;
+    let bottom = LogicalPx(list.max) - zone;
+    // The quotient is dimensionless penetration into the edge band.
+    let depth = if y < top {
+        -((top - y).value() / zone.value()).min(1.0)
+    } else if y > bottom {
+        ((y - bottom).value() / zone.value()).min(1.0)
     } else {
         0.0
     };
-    depth.signum() * depth * depth * AUTOSCROLL_SPEED_ROWS_PER_SEC * row * dt
+    row * (depth.signum() * depth * depth * AUTOSCROLL_SPEED_ROWS_PER_SEC * dt)
 }
 
 /// 본문을 그린 뒤 한 번 부른다. `drawn` 은 이번 프레임에 그린 항목이다.
@@ -129,8 +139,14 @@ pub(crate) fn frame(ui: &egui::Ui, theme: &Theme, view: &mut ExplorerView, drawn
         view.replace_selection(selected, anchor.map(|e| e.path));
     }
     view.marquee.press = Some(press);
-    let zone = theme.explorer_autoscroll_zone().value();
-    view.marquee.scroll = autoscroll(list.y_range(), pos.y, zone, layout.step.y, dt);
+    let zone = theme.explorer_autoscroll_zone();
+    view.marquee.scroll = autoscroll(
+        list.y_range(),
+        LogicalPx(pos.y),
+        zone,
+        LogicalPx(layout.step.y),
+        dt,
+    );
     ctx.request_repaint();
     paint(ui, theme, area.translate(layout.origin.to_vec2()), list);
 }
@@ -156,6 +172,10 @@ fn paint(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, list: egui::Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn autoscroll(list: egui::Rangef, y: f32, zone: f32, row: f32, dt: f32) -> f32 {
+        super::autoscroll(list, LogicalPx(y), LogicalPx(zone), LogicalPx(row), dt).value()
+    }
 
     #[test]
     fn autoscroll_speeds_up_by_the_square_and_keeps_full_speed_past_the_edge() {
