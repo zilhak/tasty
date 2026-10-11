@@ -6,12 +6,25 @@ use std::time::{Duration, Instant};
 
 use super::Operation;
 use super::history::UndoOf;
-use super::job::{Report, Shared};
+use super::job::{Report, Shared, Snapshot};
 use crate::adapters::ui::popup::PopupScope;
 use crate::adapters::ui::popup::explorer_conflict::EXPLORER_CONFLICT_POPUP_ID;
 use crate::explorer_ui::view::ops::{Running, result_is_timed};
 use crate::state::MainViewState;
 use crate::view::ui::View;
+
+/// Redraw whenever any displayed progress value or conflict state changes.
+#[derive(Default)]
+pub(super) struct ProgressSeen(Option<(Snapshot, bool)>);
+
+impl ProgressSeen {
+    fn update(&mut self, snapshot: Snapshot, asking: bool) -> bool {
+        let now = Some((snapshot, asking));
+        let changed = self.0 != now;
+        self.0 = now;
+        changed
+    }
+}
 
 /// 충돌을 물을 수 있는 작업 상태. 진행이 바뀌면 이벤트 루프를 깨운다.
 pub(super) fn interactive_shared(
@@ -212,13 +225,11 @@ fn sync_job(
         crate::runtime::engine_session::EngineId,
     ),
     shared: &Arc<Shared>,
-    seen: &mut (usize, u64, bool),
+    seen: &mut ProgressSeen,
 ) {
     let snap = shared.snapshot();
     let asking = shared.pending_ask().is_some();
-    let now = (snap.items_done, snap.bytes_done, asking);
-    let changed = now != *seen;
-    *seen = now;
+    let changed = seen.update(snap, asking);
     let view = registry
         .views
         .get_mut(&window)
@@ -277,4 +288,33 @@ pub(crate) fn open_conflict(state: &mut MainViewState, surface: u32, source: &'s
         }
         .from_user_menu(source),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::file_jobs::job::{Choice, FileProgress};
+
+    #[test]
+    fn counting_and_zero_byte_files_redraw_without_top_level_or_byte_changes() {
+        let mut seen = ProgressSeen::default();
+        let mut snap = Shared::fixed(Choice::KeepBoth).snapshot();
+        assert!(seen.update(snap.clone(), false));
+        assert!(!seen.update(snap.clone(), false));
+        snap.files = Some(FileProgress {
+            done: 0,
+            total: 0,
+            counting: true,
+        });
+        assert!(seen.update(snap.clone(), false));
+        snap.files.as_mut().unwrap().total = 42;
+        assert!(seen.update(snap.clone(), false));
+        snap.files.as_mut().unwrap().counting = false;
+        assert!(seen.update(snap.clone(), false));
+        snap.files.as_mut().unwrap().done = 1;
+        snap.current = "empty.txt".into();
+        assert!(seen.update(snap.clone(), false));
+        assert!(!seen.update(snap.clone(), false));
+        assert!(seen.update(snap, true));
+    }
 }

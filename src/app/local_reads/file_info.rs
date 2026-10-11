@@ -221,7 +221,7 @@ pub(crate) enum LinkTarget {
 pub(crate) struct ItemFacts {
     pub(crate) path: PathBuf,
     pub(crate) kind: ItemKind,
-    /// 파일·링크의 바이트 길이. 폴더는 배경 계산 결과를 쓴다.
+    /// 일반 파일의 바이트 길이. 폴더·링크는 별도 집계·대상 정보를 쓰므로 0이다.
     pub(crate) size: u64,
     pub(crate) modified: Option<SystemTime>,
     pub(crate) created: Option<SystemTime>,

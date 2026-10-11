@@ -479,8 +479,8 @@ struct Job {
     worker: JoinHandle<Done>,
     undo_of: Option<UndoOf>,
     recorded: Option<Recorded>,
-    /// 마지막으로 다시 그린 진행 상태(끝난 항목, 바이트, 질문 여부). 바뀔 때만 다시 그린다.
-    seen: (usize, u64, bool),
+    /// 마지막으로 다시 그린 진행 상태(집계 단계, 파일·항목 수, 바이트, 파일명, 질문 여부). 바뀔 때만 다시 그린다.
+    seen: ui_sync::ProgressSeen,
 }
 /// One running file operation serializes collision checks/moves. Pending requests remain bounded
 /// in their originating Views and are discarded if that View closes before admission.
@@ -912,7 +912,7 @@ fn spawn_local(
                 worker,
                 undo_of,
                 recorded,
-                seen: (0, 0, false),
+                seen: Default::default(),
             });
             Ok(())
         }

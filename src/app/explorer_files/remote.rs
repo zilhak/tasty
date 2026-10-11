@@ -35,7 +35,7 @@ pub(super) struct RemoteJob {
     undo_of: Option<super::history::UndoOf>,
     /// 보낸 경로와 남은 원본. 서버가 결과를 줄여 보내면 Retry 가 이 목록을 그대로 다시 보낸다.
     sent: Resend,
-    pub(super) seen: (usize, u64, bool),
+    pub(super) seen: super::ui_sync::ProgressSeen,
     cancel_sent: bool,
     result: Option<Done>,
 }
@@ -203,7 +203,7 @@ impl super::ExplorerFiles {
             shared,
             undo_of,
             sent,
-            seen: (0, 0, false),
+            seen: Default::default(),
             cancel_sent: false,
             result: None,
         });
