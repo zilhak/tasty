@@ -575,20 +575,20 @@ fn sidebar(
             ui.add_space(theme.spacing_xs.value());
             sidebar_caption(ui, theme, t("explorer.sidebar.tree"));
             let root = panel.cwd().to_path_buf();
-            self::view::drag_scroll::feed(
-                ui,
-                theme,
-                &view.ops.drag,
-                ui.available_rect_before_wrap(),
-                theme.tree_row_height(),
-            );
-            egui::ScrollArea::vertical()
+            let output = egui::ScrollArea::vertical()
                 .id_salt("explorer_sidebar_files")
                 .auto_shrink([false, false])
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
                     tree_node(ui, theme, view, &root, 0, &current, action, mirror_ws_id);
                 });
+            self::view::drag_scroll::feed(
+                ui,
+                theme,
+                &view.ops.drag,
+                &output,
+                theme.tree_row_height(),
+            );
         },
     );
     let Some(fav_h) = fav_h else {
@@ -864,8 +864,7 @@ fn content(
                     LogicalPx(grid_metrics(theme, font).cell_h) + theme.spacing_md
                 }
             };
-            self::view::drag_scroll::feed(ui, theme, &view.ops.drag, ui.max_rect(), row);
-            egui::ScrollArea::vertical()
+            let output = egui::ScrollArea::vertical()
                 .id_salt(format!("explorer_content_{id_suffix}"))
                 .auto_shrink([false, false])
                 // 기본 최소 높이(64)는 낮은 칸에서 본문을 늘려 상태줄을 칸 밖으로 민다.
@@ -889,6 +888,9 @@ fn content(
                         action,
                     ),
                 });
+            if mode != ExplorerViewMode::Detail {
+                self::view::drag_scroll::feed(ui, theme, &view.ops.drag, &output, row);
+            }
         },
     );
 
@@ -1488,6 +1490,13 @@ fn detail_view(
                 }
             },
         );
+    self::view::drag_scroll::feed(
+        ui,
+        theme,
+        &view.ops.drag,
+        &out.scroll,
+        theme.table_cell_height(),
+    );
 
     if let Some(key) = out.clicked_sort
         && action.is_none()

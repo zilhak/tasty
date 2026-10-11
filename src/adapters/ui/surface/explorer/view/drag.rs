@@ -726,3 +726,7 @@ pub(crate) fn outbound_payload(
             .then(|| (sid, payload.paths.clone()))
     })
 }
+
+#[cfg(test)]
+#[path = "drag_scroll_tests.rs"]
+mod scroll_tests;

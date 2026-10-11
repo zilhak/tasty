@@ -52,6 +52,8 @@ pub struct TableColumn<'a, K> {
 
 /// 표 상호작용 결과.
 pub struct TableOutput<K> {
+    /// Completed body scroll area, for coordinated scrolling after layout.
+    pub scroll: egui::scroll_area::ScrollAreaOutput<()>,
     /// 정렬 가능 헤더가 클릭되면 그 컬럼의 정렬 키.
     pub clicked_sort: Option<K>,
     /// 본문 행이 클릭되면 그 행의 인덱스(`rows` 기준).
@@ -205,6 +207,7 @@ impl<'a, K> Table<'a, K> {
         let header_h = self.header_height.unwrap_or(cell_h);
         let row_h = self.row_height.unwrap_or(cell_h);
 
+        let mut scroll = None;
         let mut clicked_sort: Option<K> = None;
         let mut clicked_row: Option<usize> = None;
         let mut secondary_clicked_row: Option<usize> = None;
@@ -319,7 +322,7 @@ impl<'a, K> Table<'a, K> {
                     secondary_clicked_row = Some(i);
                 }
             };
-            table.body(|mut body| {
+            scroll = Some(table.body(|mut body| {
                 // egui_extras `rows` 는 본문 맨 위를 기준으로 보이는 범위를 정한다. 앞에 다른 행을
                 // 두면 그 수만큼 범위가 밀리므로 모든 행을 한 번에 넘긴다.
                 if virtual_rows {
@@ -332,7 +335,7 @@ impl<'a, K> Table<'a, K> {
                         body.row(row_h.value(), |mut tr| draw_row(&mut tr, i, row));
                     }
                 }
-            });
+            }));
             ctx.data_mut(|d| match now_hovered {
                 Some(i) => d.insert_temp(hover_id, i),
                 None => {
@@ -399,6 +402,7 @@ impl<'a, K> Table<'a, K> {
         }
 
         TableOutput {
+            scroll: scroll.expect("table body is drawn once"),
             clicked_sort,
             clicked_row,
             secondary_clicked_row,

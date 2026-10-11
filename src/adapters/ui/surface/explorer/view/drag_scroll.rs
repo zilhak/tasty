@@ -10,17 +10,23 @@ use super::marquee;
 struct Area {
     id: egui::Id,
     viewport: egui::Rect,
-    pass: u64,
+}
+
+#[derive(Clone)]
+struct Pending {
+    area: Area,
+    delta: LogicalPx,
+    max_offset: LogicalPx,
 }
 
 #[derive(Clone, Default)]
-struct Areas(Vec<Area>);
+struct Areas(Vec<Pending>);
 
 fn in_column(rect: egui::Rect, x: LogicalPx) -> bool {
     x >= LogicalPx(rect.left()) && x < LogicalPx(rect.right())
 }
 
-fn owner(areas: &[Area], pos: egui::Pos2) -> Option<egui::Id> {
+fn owner<'a>(areas: impl IntoIterator<Item = &'a Area>, pos: egui::Pos2) -> Option<egui::Id> {
     let contains = |area: &Area| {
         in_column(area.viewport, LogicalPx(pos.x))
             && LogicalPx(pos.y) >= LogicalPx(area.viewport.top())
@@ -28,7 +34,7 @@ fn owner(areas: &[Area], pos: egui::Pos2) -> Option<egui::Id> {
     };
     let distance = |area: &Area| LogicalPx(area.viewport.distance_to_pos(pos));
     areas
-        .iter()
+        .into_iter()
         .min_by(|a, b| {
             contains(b)
                 .cmp(&contains(a))
@@ -42,49 +48,80 @@ fn owner(areas: &[Area], pos: egui::Pos2) -> Option<egui::Id> {
         .map(|area| area.id)
 }
 
-pub(crate) fn feed(
+/// Register completed ScrollAreas; ownership is resolved from this pass only.
+pub(crate) fn feed<R>(
     ui: &egui::Ui,
     theme: &Theme,
     drag: &DragState,
-    viewport: egui::Rect,
+    output: &egui::scroll_area::ScrollAreaOutput<R>,
     row: LogicalPx,
 ) {
-    let (down, pos, dt) = ui.input(|i| {
-        (
-            i.pointer.primary_down(),
-            i.pointer.latest_pos(),
-            i.stable_dt,
-        )
+    let ctx = ui.ctx();
+    let key = egui::Id::new("explorer_drag_scroll_areas");
+    let install = ctx.data_mut(|data| {
+        let install = data.get_temp::<Areas>(key).is_none();
+        data.get_temp_mut_or_default::<Areas>(key);
+        install
     });
-    let viewport = viewport.intersect(ui.clip_rect());
-    let id = ui.id();
-    let pass = ui.ctx().cumulative_pass_nr();
-    let owns_pointer = ui.ctx().data_mut(|data| {
-        let areas =
-            data.get_temp_mut_or_default::<Areas>(egui::Id::new("explorer_drag_scroll_areas"));
-        areas
-            .0
-            .retain(|area| area.pass >= pass.saturating_sub(1) && area.id != id);
-        if viewport.is_positive() {
-            areas.0.push(Area { id, viewport, pass });
-        }
-        pos.and_then(|pos| owner(&areas.0, pos)) == Some(id)
-    });
-    if drag.blocked || !owns_pointer || !egui::DragAndDrop::has_payload_of_type::<Payload>(ui.ctx())
-    {
+    if install {
+        ctx.on_end_pass("explorer_drag_scroll", std::sync::Arc::new(finish));
+    }
+    let viewport = output.inner_rect.intersect(ui.clip_rect());
+    if !viewport.is_positive() {
         return;
     }
-    let Some(pos) = pos.filter(|_| down) else {
+    let enabled = !drag.blocked && egui::DragAndDrop::has_payload_of_type::<Payload>(ctx);
+    let dy = ctx.input(|i| {
+        i.pointer
+            .latest_pos()
+            .filter(|_| i.pointer.primary_down() && enabled)
+            .map_or(LogicalPx(0.0), |pos| {
+                delta(
+                    viewport,
+                    pos,
+                    theme.explorer_autoscroll_zone(),
+                    row,
+                    i.stable_dt,
+                )
+            })
+    });
+    ctx.data_mut(|data| {
+        data.get_temp_mut_or_default::<Areas>(key).0.push(Pending {
+            area: Area {
+                id: output.id,
+                viewport,
+            },
+            delta: dy,
+            max_offset: LogicalPx((output.content_size.y - output.inner_rect.height()).max(0.0)),
+        });
+    });
+}
+
+fn finish(ctx: &egui::Context) {
+    let areas = ctx.data_mut(|data| {
+        std::mem::take(
+            &mut data
+                .get_temp_mut_or_default::<Areas>(egui::Id::new("explorer_drag_scroll_areas"))
+                .0,
+        )
+    });
+    let Some(pos) = ctx.pointer_latest_pos() else {
         return;
     };
-    let dy = delta(viewport, pos, theme.explorer_autoscroll_zone(), row, dt);
-    if dy != LogicalPx(0.0) {
-        // Feed the next ScrollArea without replacing wheel input or its stored offset.
-        ui.scroll_with_delta_animation(
-            egui::vec2(0.0, -dy.value()),
-            egui::style::ScrollAnimation::none(),
-        );
-        ui.ctx().request_repaint();
+    let Some(id) = owner(areas.iter().map(|pending| &pending.area), pos) else {
+        return;
+    };
+    let pending = areas.iter().find(|pending| pending.area.id == id).unwrap();
+    if pending.delta == LogicalPx(0.0) {
+        return;
+    }
+    if let Some(mut state) = egui::scroll_area::State::load(ctx, id) {
+        // Add to the completed wheel/marquee result, without carrying old geometry forward.
+        state.offset.y = (LogicalPx(state.offset.y) + pending.delta)
+            .value()
+            .clamp(0.0, pending.max_offset.value());
+        state.store(ctx, id);
+        ctx.request_repaint();
     }
 }
 
@@ -132,7 +169,6 @@ mod ownership_tests {
         let area = |name, top, bottom| Area {
             id: egui::Id::new(name),
             viewport: egui::Rect::from_min_max(egui::pos2(100.0, top), egui::pos2(400.0, bottom)),
-            pass: 1,
         };
         let a = area("top", 100.0, 300.0);
         let b = area("bottom", 350.0, 550.0);
@@ -152,12 +188,10 @@ mod ownership_tests {
         let top = Area {
             id: egui::Id::new("top"),
             viewport: egui::Rect::from_min_max(egui::pos2(100.0, 100.0), egui::pos2(800.0, 300.0)),
-            pass: 1,
         };
         let bottom = Area {
             id: egui::Id::new("bottom"),
             viewport: egui::Rect::from_min_max(egui::pos2(100.0, 350.0), egui::pos2(1100.0, 550.0)),
-            pass: 1,
         };
         let pos = egui::pos2(900.0, 200.0);
         assert_eq!(owner(&[top, bottom], pos), Some(top.id));
@@ -168,7 +202,6 @@ mod ownership_tests {
         let right = Area {
             id: egui::Id::new("right"),
             viewport: egui::Rect::from_min_max(egui::pos2(800.0, 100.0), egui::pos2(1100.0, 300.0)),
-            pass: 1,
         };
         assert_eq!(
             owner(&[top, right], egui::pos2(800.0, 200.0)),
