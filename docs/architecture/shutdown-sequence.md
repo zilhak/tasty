@@ -2,7 +2,7 @@
 
 GUI 종료는 일반 종료의 `App::begin_shutdown`과 오류 종료의 `begin_error_shutdown`이 공유하는 `start_shutdown`에서 `ShutdownPhase` 상태 머신을 설치해 진행한다. 표시할 윈도우가 있으면 대기 단계 사이에 종료 화면을 그리며, 없으면 같은 단계를 블로킹 루프로 실행한다. Observer join이나 프로세스 kill·wait처럼 동기 대기가 있는 단계에서는 렌더링도 기다릴 수 있다. 선택 이유는 [종료 설계](../adr/0016-window-platform-and-shutdown.md)를 따른다.
 
-계측은 `event_loop.exit()`까지의 종료 단계와 `run_app` 반환 뒤 `App`을 drop하는 정리 구간(Drop tail)을 나눈다. 후자는 종료 화면을 더 그리지 않는 구간이며, 전체 소요는 `shutdown_total_with_drop`으로 확인한다.
+계측은 `event_loop.exit()`까지의 종료 단계와 `run_app` 반환 뒤 `App`을 drop하는 정리 구간(Drop tail)을 나눈다. 후자는 종료 화면을 더 그리지 않는 구간이며, App 해제까지의 소요는 `shutdown_total_with_drop`으로 확인한다.
 
 ## 시퀀스
 
@@ -23,7 +23,7 @@ StoppingPlugins
   profile/port/screenshot worker의 실제 남은 수
   plugin shutdown/kill/wait 관측
 Done → event_loop.exit()
-run_app 반환 → drop_app_with_trace → shutdown_total_with_drop
+run_app 반환 → drop_app_with_trace → shutdown_total_with_drop → display owner 해제
 ```
 
 진행 중 worker의 대기 상한이 지나면 미회수 수 또는 해당 retirement의 TimedOut 관측을 기록한다. timeout은 실제 join 완료를 뜻하지 않는다. Task runner의 `RunnerStopObservation::WorkerFailed`는 이와 달리 실제 join 뒤 확인한 worker 실패다. `Joined`와 성공 여부는 다르지만 두 관측 모두 원 thread의 join은 끝났다는 뜻이다. 정상 EngineRegistry의 retiring owner를 해제하는 경로는 원 runner와 물리 자원 receipt를 기다리며 앱 종료의 상한과 구별한다.
@@ -37,6 +37,28 @@ Remote의 established tunnel과 늦은 연결 결과는 retirement worker가 chi
 - S4에서 프로세스 목록을 비웠다면 `PluginProcess::drop`에 남은 대상은 없다. 예외 경로에서 남은 대상의 drop은 kill과 wait를 수행할 수 있다.
 - 정상 GUI 종료와 DB 오류 안내 모달의 종료는 App 상태 머신을 거쳐 `event_loop.exit()`로 요청한다. 오류 모달은 종료 상태만 요청하고 프로세스를 직접 끝내지 않는다.
 - 오류 모달로 종료할 때는 fallback 표시 상태로 마지막 checkpoint를 덮어쓰지 않도록 새 layout 저장을 생략한다. 이미 접수한 journal 작업과 자원 회수는 계속 처리한다. `App` Drop 뒤 boot가 요청된 종료 코드를 반환한다.
+
+## GPU와 native display 수명
+
+Linux에서 `src/boot.rs`의 `run_gui`는 `App` 생성 전에 winit의 `OwnedDisplayHandle`을
+보관한다. `run_app`은 이벤트 루프를 소비하며, `App`의 View와 Window는 공유
+`gpu_instance`·`gpu_adapter`보다 먼저 해제된다. 따라서 Window의 연결 소유권만으로는
+마지막 GPU destructor가 끝날 때까지 native display를 유지할 수 없다.
+Wayland의 GLES/EGL 정리는 surface에서 빌린 display를 다시 사용하므로,
+실제 렌더링에 선택된 adapter가 Vulkan이어도 이 수명이 필요하다.
+
+정상 반환은 `drop_app_with_trace(app)` 뒤에 display owner를 명시적으로 해제한다.
+지역 변수는 선언 역순으로 해제되므로 `run_app` 오류의 `?` 반환이나 panic unwind에서도
+나중에 선언한 `app`이 먼저 해제된다. `App::new`가 실패하면 생성 도중의 자원이
+먼저 정리되고 display owner가 해제된다. App을 구성한 뒤의 부팅 실패·오류 모달도
+같은 소유 범위에 있다. abort나 OS 강제 종료는 Rust destructor 실행 범위가 아니다.
+
+`shutdown_total_with_drop`은 App 해제까지의 계측이며 마지막 display owner 해제는
+포함하지 않는다. 종료 검증에서는 IPC 성공이나 이 로그만으로 정상 종료를 판정하지 않는다.
+격리된 Wayland compositor를 살려 둔 채 실제 앱 프로세스의 wait 종료 코드가 0인지
+확인하고, 수명 진단이 필요하면 EGL 해제가 최종 `wl_display_disconnect`보다 먼저인지
+디버거로 대조한다. 소스 순서 검사나 종료 상태 머신 단위 시험만으로는 이 native 수명을
+검증할 수 없다.
 
 ## plugin 종료 대기의 겹침 (S4)
 

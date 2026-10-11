@@ -213,6 +213,10 @@ fn run_gui(
     };
 
     let (event_loop, proxy) = event_loop::build()?;
+    // run_app consumes the event loop; shared GPU teardown can outlive every Window.
+    // Declare this before App so errors and unwinding also drop GPU owners first.
+    #[cfg(target_os = "linux")]
+    let display_owner = event_loop.owned_display_handle();
     os::install_macos_delegate(&proxy);
 
     // 탭의 CWD 표시는 OSC 7을 사용한다. bash는 PROMPT_COMMAND 설정이 필요하다.
@@ -271,6 +275,8 @@ fn run_gui(
     // 저널 잠금은 App과 함께 놓이므로, 다음 소유자가 낡은 기록을 보지 않게 그 전에 지운다.
     single_instance::instance_file::remove_owned();
     drop_app_with_trace(app);
+    #[cfg(target_os = "linux")]
+    drop(display_owner);
 
     Ok(std::process::ExitCode::from(code))
 }
