@@ -1,4 +1,4 @@
-<!-- source-hash: 92967f17e816 -->
+<!-- source-hash: 0d4d05bcf9b5 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -144,14 +144,14 @@ tasty codex managed attach --id RELAY_ID --thread-id MANAGED_THREAD_ID
 tasty codex managed get --id RELAY_ID
 ```
 
-The relay follows the prepared instructions to check the task. When it ends, the relay passes the messaging
+The relay follows the prepared instructions to check the task. When it ends or a lookup error stops the relay, the relay passes the messaging
 arguments returned by `managed callback --id RELAY_ID` to Codex's messaging tool. The parent receives tool
 output during its current work, or can start a new turn when idle. Check receipt and task success separately.
 `callback` only prepares messaging arguments. It does not establish task completion or parent receipt.
 
 The relay is an ordinary Codex task that uses a model. It adds usage and needs the Codex frontend connection
 to remain available. Do not substitute a native subagent. Missing management tools or pending approval can
-prevent automatic delivery. You do not need to find and configure a server address, socket, or authentication token.
+prevent automatic delivery. You do not need to find and configure a server address, socket, or authentication token. Prepared commands use the specified Tasty executable and port file together with a command-scoped `TASTY_HOME`.
 
 Remove a finished relay record with `tasty codex managed forget --id RELAY_ID`. This does not cancel the
 original task or close the Codex relay.

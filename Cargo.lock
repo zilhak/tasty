@@ -6161,9 +6161,10 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.164"
+version = "0.2.0"
 dependencies = [
  "anyhow",
+ "serde",
  "serde_json",
  "tasty-plugin-agent-common",
  "tasty-plugin-sdk",

@@ -265,3 +265,27 @@ help = "The submitted prompt. Auto-populated from stdin JSON 'prompt' on the Use
 
 [codex.cli.arg.hook_args.last_assistant_message]
 help = "The assistant's final message of the turn. Auto-populated from stdin JSON 'last_assistant_message' on the Stop hook. When the surface runs a Tasty agent task, it is reported as that turn's final answer."
+
+[codex.cli.sub.managed]
+description = "Prepare and inspect a managed Codex task relay"
+
+[codex.cli.arg.managed_args.action]
+help = "prepare | attach | get | callback | forget"
+
+[codex.cli.arg.managed_args.workspace_id]
+help = "Existing task workspace ID"
+
+[codex.cli.arg.managed_args.task_id]
+help = "Existing task ID"
+
+[codex.cli.arg.managed_args.parent_thread]
+help = "Parent managed thread UUID (defaults to caller CODEX_THREAD_ID)"
+
+[codex.cli.arg.managed_args.id]
+help = "Relay descriptor ID"
+
+[codex.cli.arg.managed_args.thread_id]
+help = "Managed thread UUID returned by create_thread"
+
+[codex.cli.arg.managed_args.cli_path]
+help = "Tasty executable for relay commands (defaults to this CLI)"

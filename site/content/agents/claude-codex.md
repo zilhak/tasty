@@ -142,7 +142,7 @@ tasty codex managed attach --id RELAY_ID --thread-id MANAGED_THREAD_ID
 tasty codex managed get --id RELAY_ID
 ```
 
-전달자는 준비된 지시에 따라 작업을 조회하고, 끝나면 `managed callback --id RELAY_ID`가 반환하는
+전달자는 준비된 지시에 따라 작업을 조회하고, 끝나거나 조회 오류로 중단되면 `managed callback --id RELAY_ID`가 반환하는
 메시지 전달 인자로 부모에게 도구 결과를 보냅니다. 부모가 다른 작업 중이면 이어서 받고,
 idle이면 새 턴이 시작될 수 있습니다. 부모가 받은 결과와 task의 실제 성공 여부는 따로 확인하세요.
 `callback`은 전송 인자를 만들 뿐, 작업 완료나 부모 수신을 확인하는 명령은 아닙니다.
@@ -150,7 +150,7 @@ idle이면 새 턴이 시작될 수 있습니다. 부모가 받은 결과와 tas
 이 전달자는 모델을 사용하는 일반 Codex 작업입니다. 추가 사용량이 발생하고 Codex 프런트엔드의
 연결이 유지돼야 합니다. 내장 서브에이전트로 대신 만들지 마세요. 관리 도구가 없거나 승인을
 기다리고 있으면 자동 전달을 보장하지 않습니다. 서버 주소·소켓·인증 토큰을 직접 찾아 설정할
-필요는 없습니다.
+필요는 없습니다. 준비된 명령은 지정된 Tasty 실행 파일·포트 파일과 명령별 `TASTY_HOME` 환경을 함께 사용합니다.
 
 끝난 전달 기록은 `tasty codex managed forget --id RELAY_ID`로 지웁니다. 이 명령은 원래
 작업을 취소하거나 Codex 전달자를 닫지 않습니다.

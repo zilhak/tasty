@@ -265,3 +265,27 @@ help = "제출된 프롬프트. UserPromptSubmit 훅의 stdin JSON 'prompt'에�
 
 [codex.cli.arg.hook_args.last_assistant_message]
 help = "턴의 마지막 assistant 메시지. Stop 훅의 stdin JSON 'last_assistant_message'에서 자동 입력. 이 surface가 Tasty agent task를 실행 중이면 그 턴의 최종 답변으로 보고"
+
+[codex.cli.sub.managed]
+description = "관리형 Codex 작업 중계 준비 및 조회"
+
+[codex.cli.arg.managed_args.action]
+help = "prepare | attach | get | callback | forget"
+
+[codex.cli.arg.managed_args.workspace_id]
+help = "기존 작업의 워크스페이스 ID"
+
+[codex.cli.arg.managed_args.task_id]
+help = "기존 작업 ID"
+
+[codex.cli.arg.managed_args.parent_thread]
+help = "부모 관리형 스레드 UUID (기본: 호출자의 CODEX_THREAD_ID)"
+
+[codex.cli.arg.managed_args.id]
+help = "중계 설명자 ID"
+
+[codex.cli.arg.managed_args.thread_id]
+help = "create_thread가 반환한 관리형 스레드 UUID"
+
+[codex.cli.arg.managed_args.cli_path]
+help = "중계 명령에 사용할 Tasty 실행 파일 (기본: 현재 CLI)"

@@ -156,6 +156,35 @@ pub fn matches_to_request(
         }
     }
 
+    if sub_decl.ipc_method == "codex.managed"
+        && params.get("action").and_then(Value::as_str) == Some("prepare")
+    {
+        let explicit_port = matches.try_get_one::<String>("port_file").ok().flatten();
+        let port_file = explicit_port
+            .map(std::path::PathBuf::from)
+            .or_else(tasty_ipc::port_file::port_file_path)
+            .ok_or_else(|| anyhow!("managed_port_file_unavailable"))?;
+        super::managed::fill(
+            &mut params,
+            std::env::var("CODEX_THREAD_ID").ok().as_deref(),
+            std::env::var_os("TASTY_SESSION_TOKEN").is_some_and(|v| !v.is_empty())
+                || tasty_ipc::protocol::caller_agent_id_from_env().is_some(),
+            &std::env::current_exe()?,
+            &port_file,
+        )?;
+        let cli_home = tasty_utils::path::tasty_home()
+            .ok_or_else(|| anyhow!("managed_cli_home_unavailable"))?;
+        params.insert(
+            "cli_home".into(),
+            Value::String(
+                std::path::absolute(cli_home)?
+                    .to_str()
+                    .ok_or_else(|| anyhow!("managed_cli_home_not_utf8"))?
+                    .to_owned(),
+            ),
+        );
+    }
+
     // CLI의 이름 기반 전략 조회는 아직 연결되지 않았다. 빈 목록으로 넘겨
     // 이름 참조는 unknown strategy로 거절하고 인라인 polling만 처리한다.
     let available_strategies: HashMap<String, CompletionStrategyDecl> = HashMap::new();

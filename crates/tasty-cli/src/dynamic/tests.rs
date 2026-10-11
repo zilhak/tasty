@@ -120,6 +120,15 @@ fn parse(args: &[&str]) -> ArgMatches {
 }
 
 #[test]
+fn explicit_port_file_in_augmented_cli_is_a_string_and_survives_parsing() {
+    let matches = parse(&["--port-file", "/isolated path/tasty.port", "codex", "spawn"]);
+    assert_eq!(
+        matches.get_one::<String>("port_file").map(String::as_str),
+        Some("/isolated path/tasty.port")
+    );
+}
+
+#[test]
 fn merge_stdin_uses_stdin_field_alias() {
     let group = CliArgGroup {
         positional: vec![],

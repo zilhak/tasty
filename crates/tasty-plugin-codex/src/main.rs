@@ -12,6 +12,7 @@ const POSIX_CODEX_COMMAND: &str = "command codex";
 
 mod handlers;
 mod install;
+mod managed;
 mod reboot;
 mod task_turn;
 
@@ -57,6 +58,7 @@ impl Plugin for CodexPlugin {
             ..
         } = ctx;
         match method.as_str() {
+            "codex.managed" => managed::handle(&host, &params),
             "codex.launch" => handlers::handle_launch(&host, &params, &self.translator),
             "codex.spawn" => handlers::handle_spawn(&host, &params, &self.translator),
             "codex.children" => handlers::handle_children(&host, &params, &self.translator),

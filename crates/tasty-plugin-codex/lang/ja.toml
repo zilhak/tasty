@@ -265,3 +265,27 @@ help = "送信されたプロンプト。UserPromptSubmitフックのstdin JSON�
 
 [codex.cli.arg.hook_args.last_assistant_message]
 help = "ターンの最後のassistantメッセージ。Stopフックのstdin JSONの 'last_assistant_message' から自動設定。このsurfaceがTastyのagent taskを実行中なら、そのターンの最終回答として報告"
+
+[codex.cli.sub.managed]
+description = "管理対象 Codex タスクリレーの準備と確認"
+
+[codex.cli.arg.managed_args.action]
+help = "prepare | attach | get | callback | forget"
+
+[codex.cli.arg.managed_args.workspace_id]
+help = "既存タスクのワークスペース ID"
+
+[codex.cli.arg.managed_args.task_id]
+help = "既存タスク ID"
+
+[codex.cli.arg.managed_args.parent_thread]
+help = "親の管理対象スレッド UUID (既定: 呼び出し元の CODEX_THREAD_ID)"
+
+[codex.cli.arg.managed_args.id]
+help = "リレー記述子 ID"
+
+[codex.cli.arg.managed_args.thread_id]
+help = "create_thread が返した管理対象スレッド UUID"
+
+[codex.cli.arg.managed_args.cli_path]
+help = "リレーに使う Tasty 実行ファイル (既定: 現在の CLI)"

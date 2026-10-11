@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.164"
+version = "0.2.0"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -41,6 +41,7 @@ name = "codex"
 description = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 description_i18n_key = "codex.cli.desc"
 subcommands = [
+    { name = "managed", ipc_method = "codex.managed", args = "managed_args", description = "Prepare and inspect a managed Codex task relay", description_i18n_key = "codex.cli.sub.managed.description" },
     { name = "launch",        ipc_method = "codex.launch",        args = "launch_args",        description = "Launch a new workspace and start Codex in its terminal", description_i18n_key = "codex.cli.sub.launch.description" },
     { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Create a child Codex instance in a split surface. Waits for host responses, then returns without waiting for the child task to finish. Registers hooks for idle, input-wait and exit notifications to the parent.", description_i18n_key = "codex.cli.sub.spawn.description" },
     { name = "children",      ipc_method = "codex.children",      args = "children_args",      description = "List children of the specified Codex parent", description_i18n_key = "codex.cli.sub.children.description" },
@@ -239,3 +240,14 @@ options = [
 
 [contributes.cli.arg_groups.install_args]
 flags = [{ name = "config_file", type = "string", flag = "--config-file", required = false, path_kind = "file", help = "Exact profile/config file to update; mutually exclusive with --codex-home", help_i18n_key = "codex.cli.arg.install_args.config_file.help" }, { name = "codex_home", type = "string", flag = "--codex-home", required = false, path_kind = "directory", help = "Codex home whose hooks to install/remove; must match the intended daemon", help_i18n_key = "codex.cli.arg.install_args.codex_home.help" }]
+
+[contributes.cli.arg_groups.managed_args]
+positional = [{ name = "action", type = "string", required = true, help = "prepare | attach | get | callback | forget", help_i18n_key = "codex.cli.arg.managed_args.action.help" }]
+flags = [
+    { name = "workspace_id", type = "u32", flag = "--workspace-id", required = false, help = "Existing task workspace ID", help_i18n_key = "codex.cli.arg.managed_args.workspace_id.help" },
+    { name = "task_id", type = "string", flag = "--task-id", required = false, help = "Existing task ID", help_i18n_key = "codex.cli.arg.managed_args.task_id.help" },
+    { name = "parent_thread", type = "string", flag = "--parent-thread", required = false, help = "Parent managed thread UUID (defaults to caller CODEX_THREAD_ID)", help_i18n_key = "codex.cli.arg.managed_args.parent_thread.help" },
+    { name = "id", type = "string", flag = "--id", required = false, help = "Relay descriptor ID", help_i18n_key = "codex.cli.arg.managed_args.id.help" },
+    { name = "thread_id", type = "string", flag = "--thread-id", required = false, help = "Managed thread UUID returned by create_thread", help_i18n_key = "codex.cli.arg.managed_args.thread_id.help" },
+    { name = "cli_path", type = "string", flag = "--cli-path", required = false, help = "Tasty executable for relay commands (defaults to this CLI)", help_i18n_key = "codex.cli.arg.managed_args.cli_path.help", path_kind = "file" },
+]

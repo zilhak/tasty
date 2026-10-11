@@ -162,7 +162,9 @@ tasty codex managed forget --id RELAY_ID
 부모로 사용하며, 필요한 경우 `--parent-thread UUID`로 명시한다. 플러그인 프로세스의
 환경이나 포커스된 surface에서 부모를 추측하지 않는다. 부모 surface는 기존 terminal spawn의
 대상이고, 수신 부모 thread는 별개다. CLI는 실제 실행 파일과 호출자가 선택한 port file도
-전달 지시에 넣어 다른 Tasty 인스턴스로 조회가 바뀌지 않게 한다. 플러그인은 전달 관계만
+전달 지시에 넣어 다른 Tasty 인스턴스로 조회가 바뀌지 않게 한다. `cli_env`의 `TASTY_HOME`도
+명령별 환경으로 지정해 plugin 매니페스트를 준비 때와 같은 곳에서 찾는다. 이 값은 경로이며
+인증 token을 복사하지 않는다. 플러그인은 전달 관계만
 저장하며 task 조회 권한을 대신 행사하지 않는다.
 
 1. 기존 task의 workspace ID와 task ID로 `prepare`를 호출한다. prepare는 ID 형식만 검사하며
@@ -178,7 +180,7 @@ tasty codex managed forget --id RELAY_ID
    지원하며 `TASTY_SESSION_TOKEN` 또는 Agent 호출자 문맥이 있으면 거절한다. 관리형 작업이
    호출자의 token 환경을 상속한다는 보장이 없기 때문이다. 전달자는 예상하지 않은 token이
    있으면 중단하며, token을 복사하거나 버려 Local 호출로 바꾸지 않는다.
-6. task가 terminal 상태이면 `callback`을 호출한다. 반환된 `callback.arguments`의 `threadId`와
+6. task가 terminal 상태이거나 조회·연결 오류로 전달을 중단해야 하면 `callback`을 호출한다. 반환된 `callback.arguments`의 `threadId`와
    `prompt`를 실제 `codex_tui.send_message_to_thread` 도구에 전달한다. 전체 결과는 Tasty
    task에 남기고 callback은 제한 길이의 식별자와 결과 참조를 보낸다.
 
@@ -189,7 +191,9 @@ tasty codex managed forget --id RELAY_ID
 결과를 읽거나 callback을 호출하지 못했다면 그 오류를 남기며 수신 완료로 보고하지 않는다.
 
 `forget`은 지정한 전달 기록만 지운다. Tasty task를 취소하거나 Codex 관리형 작업을 archive하지
-않는다. 필요한 관리형 작업 정리는 소유권을 확인한 뒤 Codex 도구로 별도 수행한다.
+않는다. 필요한 관리형 작업 정리는 소유권을 확인한 뒤 Codex 도구로 별도 수행한다. 전달 기록은
+plugin data 디렉터리의 `managed-relays/`에 남는다. Tasty 인스턴스가 바뀌면 기존 기록의
+get·attach·callback은 거절하므로 새로 prepare한다.
 
 ### 전달 계약과 한계
 

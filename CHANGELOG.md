@@ -18,6 +18,8 @@
 
 ### Added
 
+- **Codex 관리형 작업으로 기존 Tasty task 결과를 부모에게 전달할 수 있다.** `tasty codex managed prepare|attach|get|callback|forget`으로 전달 관계와 Codex 도구 인자를 준비한다. 일반 관리형 전달자가 task를 읽고 부모에게 도구 결과를 보내며, idle 부모는 새 턴으로 재개할 수 있다. 현재 Local 호출자를 지원하고 준비·callback 인자 생성만으로 전송이나 task 성공을 판정하지 않는다. 수동 App Server 연결 설정은 필요하지 않다.
+
 - **플러그인 배너 본문이 잘리면 호스트가 배너 카드 아래에 전체 문구 툴팁을 보인다.** 플러그인 인터페이스: `BannerPaintFrame` 알림에 선택 칸 `body_cut`(전문과 콘텐츠 로컬 본문 사각형)이 생겼다. 공용 위젯 `plugin_banner_body` 로 그린 본문이면 SDK 의 `EguiMeshBanner` 가 채운다. 칸이 없는 이전 알림은 툴팁 없이 그대로 동작한다. 이전에는 위젯이 플러그인 화면 안에서 본문 위로 툴팁을 띄워 콘텐츠 영역에 잘리거나 포인터를 덮어 깜박였다.
 - **탐색기 새 폴더 `F7`, 새 파일 `Shift+F4` 기본 단축키.** 네 프리셋 모두에 들어간다(macOS 는 기본 설정에서 `Fn` 을 함께 누른다). 탐색기에 포커스가 있을 때만 동작하고 설정 › 단축키 › Explorer 에서 바꾼다. 설정 파일에 `explorer_new_folder`·`explorer_new_file` 를 이미 저장했으면 그 값이 남는다.
 - **탐색기 뒤로·앞으로와 주소창 이동 단축키.** 탐색기에 포커스가 있을 때 `Alt+←`·`Alt+→`(macOS ⌘←·⌘→)로 뒤로·앞으로 가고, `Alt+L`(macOS ⌘L)로 주소창에 포커스를 주고 경로 전체를 고른다. 설정 › 단축키 › Explorer 의 `explorer_back`·`explorer_forward`·`explorer_focus_address` 로 바꾼다. webview 위에서는 이 키를 가져가지 않는다.
