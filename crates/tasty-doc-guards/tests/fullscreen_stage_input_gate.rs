@@ -162,9 +162,15 @@ fn os_level_ui_is_suppressed_during_a_stage() {
         "무대 중 네이티브 컨텍스트 메뉴 억제가 사라졌다 — OS 팝업은 wgpu 표면 위에 떠서 \
          무대가 덮지 못한다."
     );
-    let drag_guard = "if self.state.fullscreen_stage_active() {\n            self.state.dialogs.pending_file_drag = None;\n        }";
+    let drag = read("src/view/main/file_drag.rs");
+    let poll = drag
+        .split("pub(crate) fn poll_outbound_drag(")
+        .nth(1)
+        .and_then(|rest| rest.split("\n    }\n").next())
+        .expect("poll_outbound_drag 본문을 찾지 못했다");
     assert!(
-        src.contains(drag_guard),
+        poll.contains("if self.state.fullscreen_stage_active()")
+            && poll.contains("self.cancel_outbound_drag();\n            return;"),
         "무대 중 네이티브 파일 드래그 억제가 사라졌다."
     );
     // 닫힌 네이티브 메뉴의 결과를 회수하려면 폴링은 계속해야 한다.
@@ -237,7 +243,7 @@ fn stage_entry_discards_every_in_flight_gesture() {
             "진입 직전 큐잉된 메뉴 요청이 무대를 나온 뒤 엉뚱한 자리에 뜬다",
         ),
         (
-            "self.state.dialogs.pending_file_drag = None;",
+            "self.cancel_outbound_drag();",
             "아무도 누르고 있지 않은 파일 드래그가 시작된다",
         ),
     ] {
@@ -320,6 +326,7 @@ fn every_overlay_open_composite_is_stage_aware() {
             "src/app/plugin_glue/shortcut.rs".to_string(),
             "src/app/webview_keys.rs".to_string(),
             "src/view/main.rs".to_string(),
+            "src/view/main/file_drag.rs".to_string(),
             "src/view/main/ime.rs".to_string(),
             "src/view/main/keyboard.rs".to_string(),
         ],
