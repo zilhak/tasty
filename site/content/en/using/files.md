@@ -1,4 +1,4 @@
-<!-- source-hash: fd74c8f8e223 -->
+<!-- source-hash: e8e414b8fff1 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -164,7 +164,7 @@ Drag items onto a folder row or cell, a folder in the left tree, or a favorite t
 - On the same disk the drop **moves**; across disks it **copies**. Hold `Ctrl` (macOS `Option`) while dropping to do the opposite. Change that key with **Explorer drag flip modifier** at the bottom of **Settings** > **Keybindings** > **General** (the same value as `explorer_drag_flip_modifier` under `[keybindings]` in `config.toml`).
 - While dragging, the label by the pointer says **Move to** or **Copy to** and the folder. Where you can't drop, it says **Can't drop** and why (into itself, already in this folder, on a different computer, remote folder is read-only, no write access).
 - Inside a remote Explorer, a drag **moves** only between folders the remote computer reports as the same disk, and **copies** otherwise.
-- Hover over a closed tree folder for a moment to expand it. Press `Esc` to cancel the drag.
+- Hover over a closed tree folder for 800 ms to expand it. The drop-target ring stays visible while you wait. Press `Esc` to cancel the drag.
 - Files dragged in from your OS file manager and dropped on an Explorer cell are **copied** into its folder (never moved). A remote Explorer refuses them, because they are on a different computer. On Linux, incoming file drags require X11/XWayland. On X11 the whole-window hint stays while you drag, but dropping on an Explorer cell still copies.
 
 On Windows, macOS, and Linux, drag local Explorer items outside the window to **copy** them to another app. Linux supports X11 and native Wayland. File icons and pointer feedback come from the operating system. Originals remain in place, and external copies do not enter Tasty's undo history. Returning to the source window does not also trigger an internal move. Remote items cannot be exported. On X11, the Explorer **Clear selection** binding (by default `Esc`) cancels the drag. On Windows, macOS, and Wayland, the operating system handles drag cancellation.

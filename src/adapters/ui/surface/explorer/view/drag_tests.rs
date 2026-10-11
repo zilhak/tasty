@@ -181,3 +181,30 @@ fn remote_volumes_come_from_the_listing_or_its_parent() {
     view.note_remote_volume(p("/srv/a"), None);
     assert_eq!(view.remote_volume_of(&p("/srv/a")), None);
 }
+
+#[test]
+fn hover_expansion_uses_the_theme_delay_and_resets_when_leaving() {
+    let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+    let delay = theme.explorer_drag_expand_delay().to_duration();
+    let ctx = egui::Context::default();
+    let mut view = ExplorerView::default();
+    let dir = p("/hover-folder");
+    expand_after_hover(
+        &ctx,
+        &theme,
+        &mut view,
+        Some((&dir, Kind::Tree { open: false })),
+    );
+    assert!(!view.expanded.contains(&dir));
+    view.ops.drag.hover = Some((dir.clone(), Instant::now() - delay));
+    expand_after_hover(
+        &ctx,
+        &theme,
+        &mut view,
+        Some((&dir, Kind::Tree { open: false })),
+    );
+    assert!(view.expanded.contains(&dir));
+    view.ops.drag.hover = Some((dir, Instant::now()));
+    expand_after_hover(&ctx, &theme, &mut view, None);
+    assert!(view.ops.drag.hover.is_none());
+}

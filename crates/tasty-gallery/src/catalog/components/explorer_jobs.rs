@@ -632,7 +632,10 @@ pub fn draw_drag(ui: &mut egui::Ui, theme: &Theme) {
                 "onto itself / own subfolder · already there · remote · no write access",
             ),
             ("target", "inset 1px ring + tint fill · no layout change"),
-            ("closed tree folder", "expands after 800 ms hover"),
+            (
+                "closed tree folder",
+                "explorer-drag-expand-delay (800 ms) · existing drop-target ring while waiting",
+            ),
             (
                 "OS files",
                 "copied into the folder · window drop overlay not drawn over explorer cells",

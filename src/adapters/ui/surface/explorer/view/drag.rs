@@ -5,7 +5,7 @@
 //! [`note`] 류로 남기고, 상태줄을 그린 뒤 [`frame`] 이 그 자리로 드래그 시작·대상·놓기를 처리한다.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tasty_settings::keybindings::parse::Combo;
 use tasty_type_appearance::theme::Theme;
@@ -17,9 +17,6 @@ use crate::adapters::ui::icons;
 use crate::app::explorer_files::job::OpKind;
 use crate::core::fs_list::DirEntryInfo;
 use crate::i18n::{t, t_fmt};
-
-/// 닫힌 트리 폴더 위에 이만큼 머물면 펼친다.
-const EXPAND_AFTER: Duration = Duration::from_millis(800);
 
 /// 끌고 있는 항목. 시작한 칸만 놓을 곳이 없을 때의 칩을 그린다.
 pub(crate) struct Payload {
@@ -402,7 +399,13 @@ fn probe<'a>(state: &'a mut DragState, dest: &Path, source: &Path) -> &'a Probe 
 }
 
 /// 닫힌 트리 폴더 위에 머문 시간을 재고, 다 되면 펼친다.
-fn expand_after_hover(ctx: &egui::Context, view: &mut ExplorerView, over: Option<(&Path, Kind)>) {
+fn expand_after_hover(
+    ctx: &egui::Context,
+    theme: &Theme,
+    view: &mut ExplorerView,
+    over: Option<(&Path, Kind)>,
+) {
+    let delay = theme.explorer_drag_expand_delay().to_duration();
     let Some((dir, Kind::Tree { open: false })) = over else {
         view.ops.drag.hover = None;
         return;
@@ -411,16 +414,16 @@ fn expand_after_hover(ctx: &egui::Context, view: &mut ExplorerView, over: Option
     match &view.ops.drag.hover {
         Some((p, since)) if p == dir => {
             let waited = now.saturating_duration_since(*since);
-            if waited >= EXPAND_AFTER {
+            if waited >= delay {
                 view.expanded.insert(dir.to_path_buf());
                 view.ops.drag.hover = None;
             } else {
-                ctx.request_repaint_after(EXPAND_AFTER - waited);
+                ctx.request_repaint_after(delay - waited);
             }
         }
         _ => {
             view.ops.drag.hover = Some((dir.to_path_buf(), now));
-            ctx.request_repaint_after(EXPAND_AFTER);
+            ctx.request_repaint_after(delay);
         }
     }
 }
@@ -561,7 +564,7 @@ pub(crate) fn frame(
     let pass = ctx.cumulative_pass_nr();
     let shown = view.loaded_dir().map(Path::to_path_buf);
     let Some((dest, ring, kind)) = target(&spots, pos, body, shown.as_deref()) else {
-        expand_after_hover(&ctx, view, None);
+        expand_after_hover(&ctx, theme, view, None);
         let last = ctx
             .data(|d| d.get_temp::<Claim>(claim_id()))
             .unwrap_or_default();
@@ -571,7 +574,7 @@ pub(crate) fn frame(
         return;
     };
     ctx.data_mut(|d| d.insert_temp(claim_id(), Claim(pass)));
-    expand_after_hover(&ctx, view, Some((&dest, kind)));
+    expand_after_hover(&ctx, theme, view, Some((&dest, kind)));
     let super_held = crate::adapters::ui::input::shortcuts::super_held(&ctx);
     let flip = held(ctx.input(|i| i.modifiers), super_held, view.ops.drag.flip);
     let blocked = blocked(view, payload.origin);
