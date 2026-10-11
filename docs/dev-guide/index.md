@@ -25,7 +25,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 | [complexity-gate](complexity-gate.md) | 복잡도 게이트(cognitive deny + 파일 SLOC), 오류 분기·역할별 모듈 분리와 예외 컨벤션 |
 | [duplicated-sets](duplicated-sets.md) | 같은 집합이 여러 곳에 적힐 때 — 자리로 셀 수 있는 것, 합칠 곳과 남길 곳을 가르는 기준 |
 | [theme › 색 생성 정책](../design/systems/theme.md#색-생성-정책) | 색 생성 newtype + clippy 강제 (design/systems/theme 의 절) |
-| [i18n](i18n.md) | 번역 키·CLI 도움말·사용자 오버라이드·폰트·하드코딩 예외 |
+| [i18n](i18n.md) | 번역 키·CLI 도움말과 고정 허용값·사용자 오버라이드·폰트·하드코딩 예외 |
 
 ## 빌드 / 릴리스
 
