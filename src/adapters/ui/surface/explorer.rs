@@ -575,6 +575,13 @@ fn sidebar(
             ui.add_space(theme.spacing_xs.value());
             sidebar_caption(ui, theme, t("explorer.sidebar.tree"));
             let root = panel.cwd().to_path_buf();
+            self::view::drag_scroll::feed(
+                ui,
+                theme,
+                &view.ops.drag,
+                ui.available_rect_before_wrap(),
+                theme.tree_row_height(),
+            );
             egui::ScrollArea::vertical()
                 .id_salt("explorer_sidebar_files")
                 .auto_shrink([false, false])
@@ -850,6 +857,14 @@ fn content(
             {
                 return;
             }
+            let row = match mode {
+                ExplorerViewMode::Detail => theme.table_cell_height(),
+                ExplorerViewMode::List => theme.tree_row_height(),
+                ExplorerViewMode::Grid => {
+                    LogicalPx(grid_metrics(theme, font).cell_h) + theme.spacing_md
+                }
+            };
+            self::view::drag_scroll::feed(ui, theme, &view.ops.drag, ui.max_rect(), row);
             egui::ScrollArea::vertical()
                 .id_salt(format!("explorer_content_{id_suffix}"))
                 .auto_shrink([false, false])

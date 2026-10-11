@@ -1,4 +1,4 @@
-<!-- source-hash: e8e414b8fff1 -->
+<!-- source-hash: 972111e9a531 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -159,7 +159,7 @@ You can't paste or drag files between your computer and a remote one, or between
 
 ### Drag and drop
 
-Drag items onto a folder row or cell, a folder in the left tree, or a favorite to put them in that folder. Dropped on a file or on empty space, they go to the folder the Explorer is showing. You can drag into another Explorer next to it too.
+Drag items onto a folder row or cell, a folder in the left tree, or a favorite to put them in that folder. Dropped on a file or on empty space, they go to the folder the Explorer is showing. You can drag into another Explorer next to it too. While dragging an item, move toward the top or bottom edge of the list or the left tree to scroll automatically. Scrolling accelerates toward the edge and stays at 20 rows per second outside the area.
 
 - On the same disk the drop **moves**; across disks it **copies**. Hold `Ctrl` (macOS `Option`) while dropping to do the opposite. Change that key with **Explorer drag flip modifier** at the bottom of **Settings** > **Keybindings** > **General** (the same value as `explorer_drag_flip_modifier` under `[keybindings]` in `config.toml`).
 - While dragging, the label by the pointer says **Move to** or **Copy to** and the folder. Where you can't drop, it says **Can't drop** and why (into itself, already in this folder, on a different computer, remote folder is read-only, no write access).

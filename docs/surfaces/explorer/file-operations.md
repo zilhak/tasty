@@ -170,6 +170,7 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 - **시작**: 목록·격자·자세히 보기의 항목을 누른 채 끈다. mirror explorer 에서도 시작한다. popup·modal 이나 충돌 popup 이 떠 있는 동안은 시작하지도 놓지도 않는다.
 - **칩**: 포인터 오른쪽 아래(`space-md`)에 칩이 따라온다. 1줄은 항목 이름 또는 "n items", 2줄은 "Move to 폴더"·"Copy to 폴더" 또는 "Can't drop — 이유" 를 동작 색으로 쓴다.
 - **동작**: 같은 디스크면 이동, 다른 디스크면 복사. 원격 경로는 server 가 폴더 목록과 함께 알린 디스크 식별값으로 비교하고, 아직 읽지 않은 하위 폴더는 상위 폴더의 값을 쓴다. 값을 알리지 않는 옛 server 이거나 모르면 복사한다. `KeybindingSettings::explorer_drag_flip_modifier`(기본 macOS `option`, 다른 OS `ctrl`)를 누르고 있으면 뒤집는다. OS 파일은 항상 복사한다.
+- **자동 스크롤**: 목록의 항목 끌기와 사이드바 트리는 영역 선택과 같은 `explorer_autoscroll_zone`(24px) 띠를 쓴다. 속도는 `20줄/초 × t²`이며 목록 밖에서는 최고 속도로 유지한다. Detail 행·List 행·Grid 칸 줄·트리 행의 실제 높이를 사용하고 휠 입력도 유지한다. 추가 표시는 없다.
 - **대상 표시**: 놓을 수 있는 대상에 1px 안쪽 링과 틴트(`explorer-drop-target-*`)를 그린다. 파일 행이나 빈 곳이면 목록 본문 전체가 대상이다. 닫힌 트리 폴더 위에 `explorer_drag_expand_delay()`(800ms) 머물면 펼친다.
 - **거절**: 폴더를 자기 자신이나 그 하위로(`a folder can't go inside itself`), 이미 있는 폴더로 이동(`already in this folder`, 복사는 허용), 다른 컴퓨터의 칸으로(`it is on a different computer` — 로컬과 원격 사이, 서로 다른 연결 사이, OS 파일을 mirror explorer 로), 원격 쓰기를 받지 않는 server 의 mirror explorer 로(`remote folders are read-only`), 쓰기 권한이 없는 로컬 폴더로(`no write access`). 원격 폴더의 쓰기 권한은 이 컴퓨터에서 확인하지 않고 server 의 결과로 알린다. 거절된 대상에는 링을 그리지 않는다. explorer 가 아닌 곳에서는 시작한 칸이 "Can't drop" 칩만 보인다.
 - **취소**: Esc 를 누르면 드래그를 취소하고, 버튼을 놓을 때까지 다시 시작하지 않는다.

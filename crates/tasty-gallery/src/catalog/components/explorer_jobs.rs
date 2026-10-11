@@ -633,6 +633,10 @@ pub fn draw_drag(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("target", "inset 1px ring + tint fill · no layout change"),
             (
+                "auto-scroll",
+                "listing and sidebar tree · 24px band · 20 rows/s × t² · saturated outside · no indicator",
+            ),
+            (
                 "closed tree folder",
                 "explorer-drag-expand-delay (800 ms) · existing drop-target ring while waiting",
             ),

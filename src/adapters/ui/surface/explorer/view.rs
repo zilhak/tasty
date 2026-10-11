@@ -2,6 +2,7 @@
 
 pub(crate) mod cursor;
 pub(crate) mod drag;
+pub(crate) mod drag_scroll;
 pub(crate) mod hidden;
 pub(crate) mod keys;
 pub(crate) mod list_layout;
