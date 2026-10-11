@@ -1,6 +1,9 @@
 //! 탐색기 파일 작업 하나를 항목 단위로 실행한다. 진행·취소·이름 충돌 질문·항목별 결과·되돌리기 기록을
 //! App 과 나누는 상태는 [`Shared`] 하나에 둔다. 기존 항목은 사용자가 Replace 를 고른 파일에서만 바뀐다.
 
+#[path = "count.rs"]
+mod count;
+
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -98,13 +101,23 @@ enum Asker {
     Fixed(Choice),
 }
 
+/// File-level transfer progress is separate from top-level result and history counts.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FileProgress {
+    pub done: usize,
+    pub total: usize,
+    pub counting: bool,
+}
+
 /// 진행 표시가 읽는 값.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Snapshot {
+    #[serde(default)]
+    pub files: Option<FileProgress>,
     pub items_done: usize,
     pub items_total: usize,
     pub bytes_done: u64,
-    /// [`UNKNOWN_BYTES`] 이면 바이트 표시와 진행 막대 채움이 없다.
+    /// [`UNKNOWN_BYTES`] 이면 바이트 표시가 없으며 전송 막대는 파일 수를 쓴다.
     pub bytes_total: u64,
     pub current: String,
     /// 원본 지우기 작업이 비교를 마치고 지우는 단계다.
@@ -113,6 +126,10 @@ pub(crate) struct Snapshot {
 
 /// worker 와 App 이 함께 보는 작업 상태.
 pub(crate) struct Shared {
+    transfer: AtomicBool,
+    counting: AtomicBool,
+    files_total: AtomicUsize,
+    files_done: AtomicUsize,
     cancel: AtomicBool,
     items_total: AtomicUsize,
     items_done: AtomicUsize,
@@ -139,6 +156,10 @@ impl Shared {
     }
     fn with(asker: Asker, wake: Box<dyn Fn() + Send + Sync>) -> Self {
         Self {
+            transfer: AtomicBool::new(false),
+            counting: AtomicBool::new(false),
+            files_total: AtomicUsize::new(0),
+            files_done: AtomicUsize::new(0),
             cancel: AtomicBool::new(false),
             items_total: AtomicUsize::new(0),
             items_done: AtomicUsize::new(0),
@@ -165,6 +186,11 @@ impl Shared {
     }
     pub(crate) fn snapshot(&self) -> Snapshot {
         Snapshot {
+            files: self.transfer.load(Ordering::Acquire).then(|| FileProgress {
+                counting: self.counting.load(Ordering::Acquire),
+                total: self.files_total.load(Ordering::Acquire),
+                done: self.files_done.load(Ordering::Acquire),
+            }),
             items_done: self.items_done.load(Ordering::Acquire),
             items_total: self.items_total.load(Ordering::Acquire),
             bytes_done: self.bytes_done.load(Ordering::Acquire),
@@ -189,6 +215,12 @@ impl Shared {
     /// 로컬 작업과 같은 값을 읽게 한다. 새 질문이 오면 이전 답은 버린다.
     #[cfg(feature = "gui")]
     pub(crate) fn mirror(&self, snap: &Snapshot, ask: Option<Ask>) {
+        self.transfer.store(snap.files.is_some(), Ordering::Release);
+        if let Some(files) = &snap.files {
+            self.counting.store(files.counting, Ordering::Release);
+            self.files_total.store(files.total, Ordering::Release);
+            self.files_done.store(files.done, Ordering::Release);
+        }
         self.items_total.store(snap.items_total, Ordering::Release);
         self.items_done.store(snap.items_done, Ordering::Release);
         self.bytes_total.store(snap.bytes_total, Ordering::Release);
@@ -467,30 +499,6 @@ fn cancelled_error() -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, "cancelled")
 }
 
-/// 경로들의 바이트 합. 링크는 따라가지 않는다. 취소되면 None.
-fn measure(shared: &Shared, path: &Path) -> Option<u64> {
-    if shared.cancelled() {
-        return None;
-    }
-    let Ok(meta) = path.symlink_metadata() else {
-        return Some(0);
-    };
-    if meta.file_type().is_symlink() {
-        // 링크는 링크로 복사하므로 대상 크기를 세지 않는다.
-        return Some(0);
-    }
-    if !meta.is_dir() {
-        return Some(meta.len());
-    }
-    let mut sum = 0u64;
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            sum = sum.saturating_add(measure(shared, &entry.path())?);
-        }
-    }
-    Some(sum)
-}
-
 /// 원본을 `dest_dir` 로 복사하거나 옮긴다. 원본마다 결과를 따로 남기고 다음 원본으로 간다.
 pub(crate) fn run_transfer(
     shared: &Shared,
@@ -514,11 +522,16 @@ pub(crate) fn run_transfer(
             return report;
         }
     };
+    shared.transfer.store(true, Ordering::Release);
+    shared.counting.store(true, Ordering::Release);
+    shared.wake_now();
+    let mut found = 0;
     let mut sizes = Vec::with_capacity(sources.len());
     for source in sources {
-        match measure(shared, source) {
+        match count::measure(shared, source, &mut found) {
             Some(size) => sizes.push(size),
             None => {
+                shared.counting.store(false, Ordering::Release);
                 report.cancelled = true;
                 report.unprocessed = sources.to_vec();
                 return report;
@@ -526,22 +539,29 @@ pub(crate) fn run_transfer(
         }
     }
     shared.bytes_total.store(
-        sizes.iter().fold(0u64, |a, b| a.saturating_add(*b)),
+        sizes
+            .iter()
+            .try_fold(0u64, |a, b| a.checked_add(b.bytes?))
+            .unwrap_or(UNKNOWN_BYTES),
         Ordering::Release,
     );
+    shared.files_total.store(found, Ordering::Release);
+    shared.counting.store(false, Ordering::Release);
+    shared.wake_now();
     let mut conflicts_left = sources
         .iter()
         .filter(|s| conflicts(s, &canonical_dest, cut))
         .count();
     let mut sticky: Option<Choice> = None;
     let mut base = 0u64;
+    let mut files_base = 0usize;
     for (index, (source, size)) in sources.iter().zip(sizes).enumerate() {
         if shared.cancelled() {
             report.cancelled = true;
             report.unprocessed = sources[index..].to_vec();
             break;
         }
-        shared.set_current(source);
+        shared.set_current(size.first_file.as_deref().unwrap_or(source));
         let mut item = Item {
             shared,
             dest: &canonical_dest,
@@ -556,7 +576,9 @@ pub(crate) fn run_transfer(
             report.unprocessed = sources[index..].to_vec();
             break;
         }
-        base = base.saturating_add(size);
+        base = base.saturating_add(size.bytes.unwrap_or(0));
+        files_base = files_base.saturating_add(size.files);
+        shared.files_done.store(files_base, Ordering::Release);
         shared.finish_item(base);
     }
     report
@@ -849,6 +871,9 @@ fn copy_tree(
     if shared.cancelled() {
         return Err(cancelled_error());
     }
+    if !meta.is_dir() {
+        shared.set_current(src);
+    }
     if meta.file_type().is_symlink() {
         let target = std::fs::read_link(src)?;
         #[cfg(unix)]
@@ -903,6 +928,10 @@ fn copy_tree(
             io::ErrorKind::Unsupported,
             "cannot copy a special file",
         ));
+    }
+    if !meta.is_dir() {
+        shared.files_done.fetch_add(1, Ordering::AcqRel);
+        shared.wake_throttled();
     }
     // 항목 경계에서 진행 바이트를 앞선 항목 합 + 이 항목 복사량으로 맞춘다.
     shared

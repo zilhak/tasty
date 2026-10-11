@@ -94,7 +94,9 @@ fn path_line(ui: &mut egui::Ui, text: &str, font: egui::FontId, color: egui::Col
 
 /// 시작한 탐색기의 상태줄에 그리는 진행 표시.
 pub struct OpStatusProps<'a> {
-    /// 바이트 기준 진행률. None 이면 진행 막대는 트랙만 그린다(크기를 모를 때).
+    /// Counting has neither a filled bar nor an empty track.
+    pub show_bar: bool,
+    /// 바이트 또는 파일 수 기준 진행률. None 이면 show_bar가 켜져 있을 때 트랙만 그린다.
     pub fraction: Option<f32>,
     /// 충돌 답을 기다린다. 막대와 왼쪽 글자를 경고색으로 그리고 Cancel 대신 Show 를 둔다.
     pub waiting: bool,
@@ -125,19 +127,21 @@ pub fn op_status_line(
     paint_close: IconPainter<'_>,
 ) -> OpStatusResponse {
     let mut out = OpStatusResponse::default();
-    let bar_h = theme.explorer_progress_height().value();
-    let track = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), bar_h));
-    ui.painter()
-        .rect_filled(track, 0.0, theme.explorer_progress_track().to_egui());
-    if let Some(fraction) = props.fraction {
-        let fill = if props.waiting {
-            theme.accent_warning()
-        } else {
-            theme.explorer_progress_fill()
-        };
-        let mut done = track;
-        done.set_width(track.width() * fraction.clamp(0.0, 1.0));
-        ui.painter().rect_filled(done, 0.0, fill.to_egui());
+    if props.show_bar {
+        let bar_h = theme.explorer_progress_height().value();
+        let track = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), bar_h));
+        ui.painter()
+            .rect_filled(track, 0.0, theme.explorer_progress_track().to_egui());
+        if let Some(fraction) = props.fraction {
+            let fill = if props.waiting {
+                theme.accent_warning()
+            } else {
+                theme.explorer_progress_fill()
+            };
+            let mut done = track;
+            done.set_width(track.width() * fraction.clamp(0.0, 1.0));
+            ui.painter().rect_filled(done, 0.0, fill.to_egui());
+        }
     }
 
     let inner = rect.shrink2(egui::vec2(status_pad(theme), 0.0));

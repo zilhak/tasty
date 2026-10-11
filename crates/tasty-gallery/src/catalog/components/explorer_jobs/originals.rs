@@ -38,6 +38,7 @@ pub fn draw_refused(ui: &mut egui::Ui, theme: &Theme) {
                     theme,
                     status,
                     &OpStatusProps {
+                        show_bar: true,
                         fraction: Some(0.2),
                         waiting: false,
                         text: &copying,
@@ -143,6 +144,7 @@ pub fn draw_remove_originals(ui: &mut egui::Ui, theme: &Theme) {
                 theme,
                 status,
                 &OpStatusProps {
+                    show_bar: true,
                     fraction: None,
                     waiting: false,
                     text,

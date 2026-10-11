@@ -1091,6 +1091,10 @@ redo_stale = "Can't redo: {}"
 changed_after_undo = "It changed after the undo"
 
 [explorer.op]
+counting_copy = "Counting items to copy · {} found"
+counting_move = "Counting items to move · {} found"
+counting_copy_one = "Counting item to copy · {} found"
+counting_move_one = "Counting item to move · {} found"
 copying = "Copying {} of {} · {}"
 moving = "Moving {} of {} · {}"
 trashing = "Moving to Trash {} of {} · {}"

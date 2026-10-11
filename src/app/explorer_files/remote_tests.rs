@@ -132,6 +132,7 @@ fn a_remote_job_relays_progress_answers_and_its_result() {
     let ask = serde_json::json!({
         "event": PROGRESS_EVENT, "op_id": op_id,
         "progress": Snapshot {
+            files: None,
             items_done: 0,
             items_total: 1,
             bytes_done: 0,

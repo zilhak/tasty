@@ -1066,6 +1066,8 @@ redo_stale = "다시 실행할 수 없음: {}"
 changed_after_undo = "되돌린 뒤 바뀜"
 
 [explorer.op]
+counting_copy = "복사할 항목 세는 중 · {}개 찾음"
+counting_move = "이동할 항목 세는 중 · {}개 찾음"
 copying = "복사 중 {} / {} · {}"
 moving = "이동 중 {} / {} · {}"
 trashing = "휴지통으로 이동 중 {} / {} · {}"

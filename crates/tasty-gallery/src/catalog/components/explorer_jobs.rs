@@ -75,12 +75,57 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
     let layers = glyph_painter(icons::LAYERS);
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+        for text in [
+            t_count("explorer.op.counting_copy", 48210, &["48,210"]),
+            t_count("explorer.op.counting_move", 1, &["1"]),
+        ] {
+            let (_, status) = cell(ui, theme, BODY_H);
+            op_status_line(
+                ui,
+                theme,
+                status,
+                &OpStatusProps {
+                    show_bar: false,
+                    fraction: None,
+                    waiting: false,
+                    text: &text,
+                    bytes: None,
+                    queued: None,
+                    show_label: t("explorer.op.show"),
+                    cancel_tip: t("explorer.op.cancel"),
+                },
+                &close,
+            );
+        }
+        let empty_files = t_args(
+            "explorer.op.copying",
+            &["1,204", "200,000", "file-01204.txt"],
+        );
         let (_, status) = cell(ui, theme, BODY_H);
         op_status_line(
             ui,
             theme,
             status,
             &OpStatusProps {
+                show_bar: true,
+                fraction: Some(1204.0 / 200000.0),
+                waiting: false,
+                text: &empty_files,
+                bytes: None,
+                queued: None,
+                show_label: t("explorer.op.show"),
+                cancel_tip: t("explorer.op.cancel"),
+            },
+            &close,
+        );
+
+        let (_, status) = cell(ui, theme, BODY_H);
+        op_status_line(
+            ui,
+            theme,
+            status,
+            &OpStatusProps {
+                show_bar: true,
                 fraction: Some(0.34),
                 waiting: false,
                 text: &copying,
@@ -97,6 +142,7 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             status,
             &OpStatusProps {
+                show_bar: true,
                 fraction: Some(0.34),
                 waiting: false,
                 text: &copying,
@@ -139,6 +185,7 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             status,
             &OpStatusProps {
+                show_bar: true,
                 fraction: Some(0.5),
                 waiting: true,
                 text: &waiting,
@@ -157,13 +204,17 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
             ("where", "status line of the explorer that started the job"),
             (
                 "bar",
-                "explorer-progress-height 2 · top edge · width = bytes done",
+                "explorer-progress-height 2 · top edge · bytes, else file count for zero/unknown totals",
             ),
             (
                 "label",
                 "Copying|Moving|Moving to Trash i of n · file · caption · ellipsis",
             ),
-            ("bytes", "mono · unknown size → track only"),
+            (
+                "counting",
+                "copy / move words · no bar · at most 4 updates/s · discovered file count",
+            ),
+            ("bytes", "mono · known nonzero totals only"),
             ("queued", "Tag +n queued · opens the queue popover"),
             (
                 "queue",

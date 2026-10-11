@@ -17,7 +17,7 @@ use crate::adapters::ui::icons;
 use crate::app::explorer_files::history::UndoOf;
 use crate::app::explorer_files::job::leftover::Leftover;
 use crate::app::explorer_files::job::{OpKind, Reason, Report, Shared, UNKNOWN_BYTES, UndoStep};
-use crate::core::fs_list::human_size;
+use crate::core::fs_list::{group_digits, human_size};
 use crate::i18n::{t, t_args, t_count, t_fmt, t_fmt2};
 
 #[path = "ops_notice.rs"]
@@ -242,8 +242,9 @@ fn progress_line(
     };
     let snap = running.shared.snapshot();
     let ask = running.shared.pending_ask();
-    let bytes_known = snap.bytes_total != UNKNOWN_BYTES && snap.bytes_total > 0;
-    let fraction = bytes_known.then(|| snap.bytes_done as f32 / snap.bytes_total as f32);
+    let counting = snap.files.as_ref().is_some_and(|files| files.counting);
+    let bytes_known = !counting && snap.bytes_total != UNKNOWN_BYTES && snap.bytes_total > 0;
+    let fraction = progress_fraction(&snap);
     let text = match &ask {
         Some(ask) => {
             let n = ask.remaining + 1;
@@ -266,6 +267,7 @@ fn progress_line(
         theme,
         rect,
         &OpStatusProps {
+            show_bar: !counting,
             fraction,
             waiting: ask.is_some(),
             text: &text,
@@ -287,7 +289,37 @@ fn progress_line(
     }
 }
 
+fn progress_fraction(snap: &crate::app::explorer_files::job::Snapshot) -> Option<f32> {
+    if snap.files.as_ref().is_some_and(|files| files.counting) {
+        return None;
+    }
+    let fraction = if snap.bytes_total != UNKNOWN_BYTES && snap.bytes_total > 0 {
+        Some(snap.bytes_done as f32 / snap.bytes_total as f32)
+    } else {
+        snap.files
+            .as_ref()
+            .filter(|files| files.total > 0)
+            .map(|files| files.done as f32 / files.total as f32)
+    };
+    fraction.map(|value| value.clamp(0.0, 1.0))
+}
+
 fn progress_text(kind: OpKind, snap: &crate::app::explorer_files::job::Snapshot) -> String {
+    if let Some(files) = &snap.files
+        && files.counting
+    {
+        let key = if kind == OpKind::Move {
+            "explorer.op.counting_move"
+        } else {
+            "explorer.op.counting_copy"
+        };
+        return t_count(
+            key,
+            files.total as u64,
+            &[&group_digits(files.total as u64)],
+        );
+    }
+
     let key = match kind {
         OpKind::Copy => "explorer.op.copying",
         OpKind::Move => "explorer.op.moving",
@@ -296,12 +328,18 @@ fn progress_text(kind: OpKind, snap: &crate::app::explorer_files::job::Snapshot)
         OpKind::RemoveOriginals if snap.removing => "explorer.progress.removing_originals",
         OpKind::RemoveOriginals => "explorer.progress.checking",
     };
-    let current = (snap.items_done + 1).min(snap.items_total.max(1));
+    let (done, total) = snap
+        .files
+        .as_ref()
+        .map_or((snap.items_done, snap.items_total), |files| {
+            (files.done, files.total)
+        });
+    let current = done.saturating_add(1).min(total);
     t_args(
         key,
         &[
-            &current.to_string(),
-            &snap.items_total.to_string(),
+            &group_digits(current as u64),
+            &group_digits(total as u64),
             &snap.current,
         ],
     )

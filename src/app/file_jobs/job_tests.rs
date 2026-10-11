@@ -581,3 +581,135 @@ fn undo_keeps_a_copy_changed_after_the_job() {
     );
     assert_eq!(read(&copy), "edited");
 }
+
+#[test]
+fn transfer_counts_nested_files_without_changing_top_level_results() {
+    let root = tempfile::tempdir().unwrap();
+    let src = root.path().join("source");
+    let nested = src.join("nested");
+    let dest = root.path().join("dest");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir(&dest).unwrap();
+    std::fs::write(src.join("one.txt"), "abc").unwrap();
+    std::fs::write(nested.join("two.txt"), "de").unwrap();
+    std::fs::write(nested.join("empty.txt"), "").unwrap();
+    let shared = Shared::fixed(Choice::KeepBoth);
+    let report = run_transfer(&shared, &[src.clone()], &dest, false);
+    assert_eq!(report.done, 1);
+    assert_eq!(report.undo.len(), 1);
+    let snap = shared.snapshot();
+    assert_eq!((snap.items_done, snap.items_total), (1, 1));
+    assert_eq!(
+        snap.files,
+        Some(FileProgress {
+            done: 3,
+            total: 3,
+            counting: false
+        })
+    );
+    assert_eq!((snap.bytes_done, snap.bytes_total), (5, 5));
+    assert!(matches!(
+        snap.current.as_str(),
+        "one.txt" | "two.txt" | "empty.txt"
+    ));
+    assert_eq!(
+        std::fs::read(dest.join("source/nested/two.txt")).unwrap(),
+        b"de"
+    );
+
+    let moved = root.path().join("moved");
+    std::fs::create_dir(&moved).unwrap();
+    let shared = Shared::fixed(Choice::KeepBoth);
+    let report = run_transfer(&shared, &[src.clone()], &moved, true);
+    assert_eq!(report.done, 1);
+    assert_eq!(shared.snapshot().files.unwrap().done, 3);
+    assert!(!src.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn zero_byte_files_and_links_have_file_progress_without_following_targets() {
+    use std::os::unix::fs::symlink;
+    let root = tempfile::tempdir().unwrap();
+    let src = root.path().join("source");
+    let dest = root.path().join("dest");
+    std::fs::create_dir(&src).unwrap();
+    std::fs::create_dir(&dest).unwrap();
+    std::fs::write(src.join("empty"), "").unwrap();
+    symlink(".", src.join("cycle")).unwrap();
+    symlink("absent", src.join("broken")).unwrap();
+    let shared = Shared::fixed(Choice::KeepBoth);
+    let report = run_transfer(&shared, &[src], &dest, false);
+    assert_eq!(report.done, 1);
+    let snap = shared.snapshot();
+    assert_eq!(snap.bytes_total, 0);
+    assert_eq!(
+        snap.files,
+        Some(FileProgress {
+            done: 3,
+            total: 3,
+            counting: false
+        })
+    );
+    assert_eq!(
+        std::fs::read_link(dest.join("source/cycle")).unwrap(),
+        PathBuf::from(".")
+    );
+}
+
+#[test]
+fn the_counting_phase_is_published_before_any_transfer_and_can_be_cancelled() {
+    use std::sync::Arc;
+    let root = tempfile::tempdir().unwrap();
+    let src = root.path().join("source");
+    let dest = root.path().join("dest");
+    std::fs::create_dir(&src).unwrap();
+    std::fs::create_dir(&dest).unwrap();
+    std::fs::write(src.join("file"), "unchanged").unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let shared: Arc<Shared> = Arc::new_cyclic(|weak: &std::sync::Weak<Shared>| {
+        let weak = weak.clone();
+        let seen = seen.clone();
+        let dest = dest.clone();
+        Shared::interactive(move || {
+            let shared = weak.upgrade().unwrap();
+            let snap = shared.snapshot();
+            if snap.files.as_ref().is_some_and(|f| f.counting) {
+                assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 0);
+                seen.lock().unwrap().push(snap);
+                shared.cancel();
+            }
+        })
+    });
+    let report = run_transfer(&shared, &[src.clone()], &dest, false);
+    assert!(report.cancelled);
+    assert_eq!(report.done, 0);
+    assert_eq!(report.unprocessed, [src.clone()]);
+    assert_eq!(seen.lock().unwrap().len(), 1);
+    assert_eq!(std::fs::read_dir(dest).unwrap().count(), 0);
+    assert_eq!(std::fs::read(src.join("file")).unwrap(), b"unchanged");
+}
+
+#[test]
+fn skipping_a_nested_source_finishes_its_file_progress_but_keeps_the_skip_result() {
+    let root = tempfile::tempdir().unwrap();
+    let src = root.path().join("source");
+    let dest = root.path().join("dest");
+    std::fs::create_dir(&src).unwrap();
+    std::fs::create_dir_all(dest.join("source")).unwrap();
+    std::fs::write(src.join("first"), "a").unwrap();
+    std::fs::write(src.join("second"), "b").unwrap();
+    let shared = Shared::fixed(Choice::Skip);
+    let report = run_transfer(&shared, &[src.clone()], &dest, false);
+    assert_eq!(report.done, 0);
+    assert_eq!(report.skipped, [src]);
+    assert!(report.undo.is_empty());
+    assert_eq!(
+        shared.snapshot().files,
+        Some(FileProgress {
+            done: 2,
+            total: 2,
+            counting: false
+        })
+    );
+}

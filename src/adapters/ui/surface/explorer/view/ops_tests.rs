@@ -458,6 +458,7 @@ fn snapshot(
     removing: bool,
 ) -> crate::app::explorer_files::job::Snapshot {
     crate::app::explorer_files::job::Snapshot {
+        files: None,
         items_done: done,
         items_total: total,
         bytes_done: 0,
@@ -665,5 +666,53 @@ fn a_merged_card_keeps_the_items_the_later_job_did_not_reach() {
     assert_eq!(
         text.retry,
         vec![PathBuf::from("/w/b"), PathBuf::from("/w/c")]
+    );
+}
+
+#[test]
+fn counting_has_no_bar_and_transfer_uses_files_and_zero_or_unknown_byte_fallback() {
+    use crate::app::explorer_files::job::FileProgress;
+    crate::i18n::init("en");
+    let mut snap = snapshot(0, 1, false);
+    snap.files = Some(FileProgress {
+        done: 0,
+        total: 48210,
+        counting: true,
+    });
+    assert_eq!(
+        progress_text(OpKind::Copy, &snap),
+        "Counting items to copy · 48,210 found"
+    );
+    assert_eq!(progress_fraction(&snap), None);
+    snap.files.as_mut().unwrap().total = 1;
+    assert_eq!(
+        progress_text(OpKind::Move, &snap),
+        "Counting item to move · 1 found"
+    );
+    snap.files = Some(FileProgress {
+        done: 1203,
+        total: 200000,
+        counting: false,
+    });
+    snap.current = "file-01204.txt".into();
+    assert_eq!(
+        progress_text(OpKind::Copy, &snap),
+        "Copying 1,204 of 200,000 · file-01204.txt"
+    );
+    for bytes in [0, UNKNOWN_BYTES] {
+        snap.bytes_total = bytes;
+        assert_eq!(progress_fraction(&snap), Some(1203.0 / 200000.0));
+    }
+    snap.bytes_total = 100;
+    snap.bytes_done = 25;
+    assert_eq!(progress_fraction(&snap), Some(0.25));
+    snap.files.as_mut().unwrap().counting = true;
+    assert_eq!(progress_fraction(&snap), None);
+    snap.files = None;
+    snap.bytes_total = UNKNOWN_BYTES;
+    assert_eq!(
+        progress_fraction(&snap),
+        None,
+        "legacy non-transfer progress stays indeterminate"
     );
 }

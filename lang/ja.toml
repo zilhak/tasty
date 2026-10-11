@@ -1066,6 +1066,8 @@ redo_stale = "やり直せません: {}"
 changed_after_undo = "元に戻した後に変更されました"
 
 [explorer.op]
+counting_copy = "コピーする項目を数えています · {} 件"
+counting_move = "移動する項目を数えています · {} 件"
 copying = "コピー中 {} / {} · {}"
 moving = "移動中 {} / {} · {}"
 trashing = "ゴミ箱に移動中 {} / {} · {}"
