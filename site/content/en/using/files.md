@@ -1,4 +1,4 @@
-<!-- source-hash: 99e1a927788c -->
+<!-- source-hash: fd74c8f8e223 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -89,7 +89,7 @@ The **Find** toggle on the toolbar (the **More** menu in a narrow cell), or `Ctr
 
 ### Preview panel
 
-Press the **Preview panel** button in the toolbar to open a panel to the right of the list that shows the one selected file. Text files show their first 64 KB in a monospace font; images are fitted to the panel without being enlarged past their own size. Other file types and folders show **No preview for this file type**, and files over 1 MiB, as well as images too big to decode (such as more than 16384 pixels on a side), show **Too large to preview**. An image over the pixel limit also shows its actual size. With several files selected, the panel says how many and asks you to pick one. Drag the panel's left edge to set its width between 200 and 460 px. Each Explorer remembers whether the panel is on and its width, across restarts and in presets you save. When the Explorer cell is too narrow to keep the list beside it, the panel hides while the button stays on. Explorers in remote workspaces have no preview.
+Press the **Preview panel** button in the toolbar to open a panel to the right of the list that shows the one selected file. Text files show their first 64 KB in a monospace font; images are fitted to the panel without being enlarged past their own size. Other file types and folders show **No preview for this file type**, and files over 1 MiB, as well as images too big to decode (such as more than 16384 pixels on a side), show **Too large to preview**. An image over the pixel limit also shows its actual size. With several files selected, the panel says how many and asks you to pick one. Drag the panel's left edge to set its width between 200 and 460 px. Each Explorer remembers whether the panel is on and its width, across restarts and in presets you save. When the Explorer cell is too narrow to keep the list beside it, the panel hides while the button stays on. When less than 120 px remains below the header, only the file name, kind and size stay visible; the body and the line below the header are hidden. Explorers in remote workspaces have no preview.
 
 ### Hidden files
 

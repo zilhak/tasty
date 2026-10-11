@@ -484,6 +484,12 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
         facts_g,
         theme.text_muted().to_egui(),
     );
+    ui.painter().vline(rect.left(), rect.y_range(), line);
+    if LogicalPx(rect.height()) - theme.explorer_preview_header_height()
+        < theme.explorer_preview_body_min_height()
+    {
+        return;
+    }
     p.hline(head.x_range(), head.bottom(), line);
     let body = egui::Rect::from_min_max(egui::pos2(rect.left(), head.bottom()), rect.max);
     p.rect_filled(body, 0.0, theme.bg_sidebar().to_egui());
@@ -605,10 +611,29 @@ pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
         }
     });
 
+    stage(ui, theme, StageVariant::Wrap, |ui| {
+        for (label, delta) in [
+            ("body below minimum", -1.0),
+            ("body at minimum", 0.0),
+            ("body above minimum", 1.0),
+        ] {
+            let height = theme.explorer_preview_header_height()
+                + theme.explorer_preview_body_min_height()
+                + theme.border_width * delta;
+            cluster(ui, theme, label, |ui| {
+                preview_panel(ui, theme, PreviewKind::Text, height.value())
+            });
+        }
+    });
+
     meta(
         ui,
         theme,
         &[
+            (
+                "low cell",
+                "body below explorer-preview-body-min-height: header only, no bottom rule",
+            ),
             (
                 "toggle",
                 "toolbar view group · columns glyph · keybinding action explorer.toggle_preview",

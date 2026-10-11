@@ -360,6 +360,11 @@ fn draw_panel(
     } else if let Some(several) = several {
         header(ui, theme, head, several_header(several));
     }
+    if LogicalPx(rect.height()) - theme.explorer_preview_header_height()
+        < theme.explorer_preview_body_min_height()
+    {
+        return;
+    }
     p.hline(head.x_range(), head.bottom(), sep);
     let body = egui::Rect::from_min_max(egui::pos2(rect.left(), head.bottom()), rect.max);
     p.rect_filled(body, 0.0, theme.bg_sidebar().to_egui());
@@ -491,6 +496,62 @@ fn pixel_size_text([w, h]: [u32; 2]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn low_panel_hides_every_body_and_separator_at_the_exact_threshold() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        for delta in [-1.0, 0.0, 1.0] {
+            for body in [
+                Body::Text("preview sentinel".into()),
+                Body::Loading,
+                Body::Unsupported,
+                Body::TooLarge(TooLarge::Bytes),
+                Body::Error("read sentinel".into()),
+                Body::NoTarget,
+                Body::Image {
+                    image: None,
+                    texture: None,
+                    size: [10, 10],
+                },
+            ] {
+                let ctx = egui::Context::default();
+                let mut pane = PreviewPane {
+                    body,
+                    ..Default::default()
+                };
+                let height = theme.explorer_preview_header_height()
+                    + theme.explorer_preview_body_min_height()
+                    + LogicalPx(delta);
+                let output = ctx.run(egui::RawInput::default(), |ctx| {
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE)
+                        .show(ctx, |ui| {
+                            let rect = egui::Rect::from_min_size(
+                                ui.min_rect().min,
+                                egui::vec2(theme.explorer_preview_width().value(), height.value()),
+                            );
+                            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                            draw_panel(&mut child, &theme, &mut pane, None, None);
+                        });
+                });
+                let separator = output.shapes.iter().any(|s| {
+                    matches!(s.shape,
+                    egui::Shape::LineSegment { points, .. }
+                    if points[0].y == theme.explorer_preview_header_height().value()
+                        && points[1].y == points[0].y)
+                });
+                assert_eq!(separator, delta >= 0.0, "body offset {delta}");
+                if delta < 0.0 {
+                    assert!(
+                        !output
+                            .shapes
+                            .iter()
+                            .any(|s| matches!(s.shape, egui::Shape::Text(_)))
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn the_header_gives_the_real_size_of_a_picture_over_the_pixel_limit() {
