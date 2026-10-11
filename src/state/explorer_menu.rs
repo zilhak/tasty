@@ -20,15 +20,20 @@ pub(crate) fn explorer_menu_admits(
     })
 }
 
-/// 단축키가 있는 explorer 메뉴 항목(이름 변경 40·휴지통 30·새 폴더 80·새 파일 81)에 첫 바인딩을
-/// 표시로 붙인다.
-/// 바인딩이 없으면 표시하지 않는다.
+/// 바인딩이 있는 모든 explorer 메뉴 행에 첫 바인딩을 표시한다. 비우면 표시도 지운다.
 pub(crate) fn attach_shortcut_hints(
     items: &mut [crate::platform::native_menu::MenuItem],
     settings: &crate::settings::Settings,
 ) {
     for item in items {
         let field = match item.id {
+            1 => "copy_path",
+            10 => "copy",
+            11 => "cut",
+            12 => "paste",
+            70 => "explorer_properties",
+            110 => "explorer_undo",
+            111 => "explorer_redo",
             40 => "explorer_rename",
             30 => "explorer_trash",
             80 => "explorer_new_folder",
@@ -239,7 +244,7 @@ mod tests {
         let mut items = vec![
             MenuItem::new(80, "New folder"),
             MenuItem::new(81, "New file"),
-            MenuItem::new(1, "Copy path"),
+            MenuItem::new(50, "Add to favorites"),
         ];
         attach_shortcut_hints(&mut items, &settings);
         let shown: Vec<_> = items
@@ -253,5 +258,35 @@ mod tests {
         let mut items = vec![MenuItem::new(80, "New folder")];
         attach_shortcut_hints(&mut items, &settings);
         assert!(items[0].shortcut.is_none());
+    }
+    #[test]
+    fn all_bound_rows_follow_custom_bindings_and_clearing() {
+        use crate::platform::native_menu::MenuItem;
+        let mut settings = crate::settings::Settings::default();
+        let fields = [
+            (1, "copy_path"),
+            (10, "copy"),
+            (11, "cut"),
+            (12, "paste"),
+            (30, "explorer_trash"),
+            (40, "explorer_rename"),
+            (70, "explorer_properties"),
+            (80, "explorer_new_folder"),
+            (81, "explorer_new_file"),
+            (110, "explorer_undo"),
+            (111, "explorer_redo"),
+        ];
+        for (id, field) in fields {
+            let mut items = [MenuItem::disabled(id, "Action")];
+            assert!(settings.keybindings.set_field(field, "ctrl+f9"));
+            assert!(settings.keybindings.add_binding(field, "alt+f10".into()));
+            attach_shortcut_hints(&mut items, &settings);
+            let hint = items[0].shortcut.as_ref().unwrap();
+            assert_eq!(hint.binding, "ctrl+f9", "{field}");
+            assert!(hint.display.ends_with("F9"), "{field}");
+            assert!(settings.keybindings.clear_field(field));
+            attach_shortcut_hints(&mut items, &settings);
+            assert!(items[0].shortcut.is_none(), "{field}");
+        }
     }
 }

@@ -22,8 +22,16 @@ fn live_move(dir: &std::path::Path, name: &str) -> UndoStep {
 }
 
 #[test]
-fn rows_name_the_operation_and_count_and_are_absent_without_history() {
-    assert!(history_items(None, None, false).is_empty());
+fn rows_name_the_operation_and_count_and_keep_empty_history_slots() {
+    let empty = history_items(None, None, false);
+    assert_eq!(empty.len(), 2);
+    assert_eq!(empty[0].label, crate::i18n::t("explorer.menu.undo_none"));
+    assert_eq!(empty[1].label, crate::i18n::t("explorer.menu.redo_none"));
+    assert!(
+        empty
+            .iter()
+            .all(|row| !row.enabled && row.tooltip.is_none())
+    );
     let dir = tempfile::tempdir().unwrap();
     let undo = entry(
         true,
@@ -105,8 +113,8 @@ fn a_stale_undo_row_is_disabled_with_the_reason_as_its_tooltip() {
             made: None,
         }],
     );
-    let rows = history_items(Some(&stale), None, false);
-    assert_eq!(rows.len(), 1);
+    let rows = history_items_for_platform(Some(&stale), None, false, false);
+    assert_eq!(rows.len(), 2);
     assert!(!rows[0].enabled);
     assert_eq!(
         rows[0].tooltip.as_deref(),
@@ -231,7 +239,7 @@ fn a_pick_after_the_history_changed_runs_nothing() {
         entry(true, vec![live_move(dir.path(), "a")]),
     );
     let rows = history_rows(&mut state, sid);
-    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.len(), 2);
     record(
         &mut state,
         sid,
@@ -283,7 +291,11 @@ fn rows_are_disabled_while_a_copy_or_move_waits() {
     assert_eq!(rows.len(), 2);
     for row in &rows {
         assert!(!row.enabled, "{}", row.label);
-        assert_eq!(row.tooltip.as_deref(), Some(busy));
+        if cfg!(windows) {
+            assert_eq!(row.label, busy);
+        } else {
+            assert_eq!(row.tooltip.as_deref(), Some(busy));
+        }
     }
 }
 
@@ -306,15 +318,24 @@ fn a_stale_redo_row_is_disabled_with_the_reason_as_its_tooltip() {
     let h = &mut state.explorer_views.get_mut(sid).unwrap().ops.history;
     let top = h.take_undo().unwrap();
     h.record(Recorded::Undo(top), &report(OpKind::Undo, Vec::new()));
-    assert!(history_rows(&mut state, sid)[0].enabled);
+    assert!(history_rows(&mut state, sid)[1].enabled);
 
     std::fs::remove_file(&original).unwrap();
     let rows = history_rows(&mut state, sid);
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].id, REDO);
-    assert!(!rows[0].enabled);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1].id, REDO);
+    assert!(!rows[1].enabled);
+    let reason = crate::i18n::t_fmt(
+        "explorer.menu.redo_stale",
+        crate::i18n::t("explorer.result.gone"),
+    );
+    if cfg!(windows) {
+        assert_eq!(rows[1].label, reason);
+        assert!(rows[1].tooltip.is_none());
+        return;
+    }
     assert_eq!(
-        rows[0].tooltip.as_deref(),
+        rows[1].tooltip.as_deref(),
         Some(
             crate::i18n::t_fmt(
                 "explorer.menu.redo_stale",
@@ -323,4 +344,36 @@ fn a_stale_redo_row_is_disabled_with_the_reason_as_its_tooltip() {
             .as_str()
         )
     );
+}
+
+#[test]
+fn windows_disabled_rows_show_reasons_and_keep_their_shortcuts() {
+    let dir = tempfile::tempdir().unwrap();
+    let stale = entry(
+        true,
+        vec![UndoStep::Moved {
+            from: dir.path().join("a"),
+            to: dir.path().join("missing"),
+            made: None,
+        }],
+    );
+    for busy in [false, true] {
+        let mut rows = history_items_for_platform(Some(&stale), None, busy, true);
+        crate::state::explorer_menu::attach_shortcut_hints(
+            &mut rows,
+            &crate::settings::Settings::default(),
+        );
+        assert!(!rows[0].enabled);
+        assert_eq!(
+            rows[0].label,
+            if busy {
+                crate::i18n::t("explorer.menu.history_busy").to_owned()
+            } else {
+                stale_text(&stale).unwrap()
+            }
+        );
+        assert!(rows[0].tooltip.is_none());
+        assert!(rows.iter().all(|row| row.shortcut.is_some()));
+        assert_eq!(rows[1].label, crate::i18n::t("explorer.menu.redo_none"));
+    }
 }

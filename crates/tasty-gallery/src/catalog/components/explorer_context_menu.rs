@@ -1,20 +1,22 @@
 //! 공용 메뉴 항목을 조합한 탐색기 우클릭 메뉴 예제.
 //! 빈 영역·파일·폴더·다중 선택에 따른 네 가지 구성을 보여준다.
 
+mod history;
+
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
 use crate::catalog::icons::{COPY, EDIT, FILE_PLUS, FOLDER_PLUS, MockGlyph, STAR, TRASH};
-use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
-use crate::i18n::{t, t_count, t_fmt};
+use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
+use crate::i18n::t;
 
 /// 메뉴 한 줄.
 pub(super) enum Mi {
     /// (leading glyph, label, danger 여부)
     Item(Option<MockGlyph>, &'static str, bool),
-    /// 문구를 조합한 행. `tooltip` 이 있으면 꺼진 행이고 이유를 툴팁으로 보인다.
-    Row(String, Option<String>),
+    /// 작업 문구, 설정 키, 활성 여부와 비활성 이유.
+    Row(String, &'static str, bool, Option<String>),
     Sep,
 }
 
@@ -27,30 +29,6 @@ fn empty_menu() -> Vec<Mi> {
         Mi::Item(Some(STAR), "Add to favorites", false),
         Mi::Sep,
         Mi::Item(None, "Paste", false),
-    ]
-}
-
-/// 빈 영역 메뉴의 Undo · Redo 묶음. 맨 위 단계만 보이고, 되돌릴 수 없게 된 단계는 꺼진 행이다.
-fn history_menu() -> Vec<Mi> {
-    let undo = |op: &str| t_fmt("explorer.menu.undo", op);
-    vec![
-        Mi::Item(Some(COPY), "Copy path", false),
-        Mi::Sep,
-        Mi::Row(undo(&t_count("explorer.menu.op_move", 3, &["3"])), None),
-        Mi::Row(
-            t_fmt(
-                "explorer.menu.redo",
-                &t_count("explorer.menu.op_copy", 2, &["2"]),
-            ),
-            None,
-        ),
-        Mi::Sep,
-        Mi::Row(
-            undo(&t_count("explorer.menu.op_copy", 2, &["2"])),
-            Some(t_fmt("explorer.menu.undo_stale", t("explorer.result.gone"))),
-        ),
-        Mi::Sep,
-        Mi::Item(None, t("explorer.context_menu.properties"), false),
     ]
 }
 
@@ -124,9 +102,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
         }
     });
-    cluster(ui, theme, "empty area — undo / redo", |ui| {
-        render_menu(ui, theme, menu_w, &history_menu());
-    });
+    history::draw(ui, theme);
 
     meta(
         ui,
@@ -139,11 +115,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("targets", "empty · file · folder · multi"),
             (
                 "stale step",
-                "disabled row · tooltip “Can't undo: {reason}” (none on Windows)",
+                "disabled row · reason tooltip on Linux/macOS · reason label on Windows",
             ),
             (
                 "undo / redo",
-                "empty area · before Properties · latest step of 10, no list",
+                "empty area · before Properties · empty history keeps disabled Undo / Redo",
             ),
             (
                 "create",
@@ -188,54 +164,96 @@ pub(super) fn render_menu(ui: &mut egui::Ui, theme: &Theme, width: f32, items: &
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(theme.spacing_xs.value() as i8))
         .show(ui, |ui| {
-            ui.set_width(width);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for it in items {
-                match it {
-                    Mi::Sep => menu_separator(ui, theme),
-                    Mi::Row(label, tooltip) => {
-                        let row = menu_item(
-                            ui,
-                            theme,
-                            None,
-                            label,
-                            None,
-                            MenuItemVariant::Normal,
-                            false,
-                            tooltip.is_none(),
-                        );
-                        if let Some(why) = tooltip {
-                            row.on_disabled_hover_text(why);
-                        }
-                    }
-                    Mi::Item(glyph, label, danger) => {
-                        let variant = if *danger {
-                            MenuItemVariant::Danger
-                        } else {
-                            MenuItemVariant::Normal
-                        };
-                        match glyph {
-                            Some(g) => {
-                                let g = *g;
-                                menu_item(
-                                    ui,
-                                    theme,
-                                    Some(&|ui, rect, c| {
-                                        g.image(rect.height(), c).paint_at(ui, rect)
-                                    }),
-                                    label,
-                                    None,
-                                    variant,
-                                    false,
-                                    true,
-                                );
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_width(width);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for it in items {
+                    match it {
+                        Mi::Sep => menu_separator(ui, theme),
+                        Mi::Row(label, field, enabled, tooltip) => {
+                            let shortcut = shortcut(field);
+                            let row = menu_item(
+                                ui,
+                                theme,
+                                None,
+                                label,
+                                shortcut.as_deref(),
+                                MenuItemVariant::Normal,
+                                false,
+                                *enabled,
+                            );
+                            if let Some(why) = tooltip {
+                                row.on_disabled_hover_text(why);
                             }
-                            None => {
-                                menu_item(ui, theme, None, label, None, variant, false, true);
+                        }
+                        Mi::Item(glyph, label, danger) => {
+                            let shortcut = item_shortcut(label);
+                            let variant = if *danger {
+                                MenuItemVariant::Danger
+                            } else {
+                                MenuItemVariant::Normal
+                            };
+                            match glyph {
+                                Some(g) => {
+                                    let g = *g;
+                                    menu_item(
+                                        ui,
+                                        theme,
+                                        Some(&|ui, rect, c| {
+                                            g.image(rect.height(), c).paint_at(ui, rect)
+                                        }),
+                                        label,
+                                        shortcut.as_deref(),
+                                        variant,
+                                        false,
+                                        true,
+                                    );
+                                }
+                                None => {
+                                    menu_item(
+                                        ui,
+                                        theme,
+                                        None,
+                                        label,
+                                        shortcut.as_deref(),
+                                        variant,
+                                        false,
+                                        true,
+                                    );
+                                }
                             }
                         }
                     }
                 }
-            }
+            });
         });
+}
+
+fn shortcut(field: &str) -> Option<String> {
+    let settings = tasty_settings::Settings::default();
+    let binding = settings.keybindings.get_bindings(field)?.first()?;
+    let mut parts =
+        tasty_settings::KeybindingSettings::format_display_parts(binding, &settings.general);
+    if let Some(key) = parts.last_mut()
+        && key.eq_ignore_ascii_case("delete")
+    {
+        *key = "Del".into();
+    }
+    Some(parts.join("+"))
+}
+
+fn item_shortcut(label: &str) -> Option<String> {
+    let field = match label {
+        "Copy path" | "Copy path (newline-sep)" => "copy_path",
+        "Copy" => "copy",
+        "Cut" => "cut",
+        "Paste" | "Paste (into)" => "paste",
+        "Rename" => "explorer_rename",
+        "Delete" => "explorer_trash",
+        label if label == t("explorer.command.new_folder") => "explorer_new_folder",
+        label if label == t("explorer.command.new_file") => "explorer_new_file",
+        label if label == t("explorer.context_menu.properties") => "explorer_properties",
+        _ => return None,
+    };
+    shortcut(field)
 }

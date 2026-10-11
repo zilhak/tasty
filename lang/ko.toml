@@ -1049,10 +1049,12 @@ failed = "찾기 실패"
 status = "{} / {}개 항목"
 
 [explorer.menu]
+undo_none = "실행 취소"
+redo_none = "다시 실행"
 show_in_folder = "들어 있는 폴더에서 보기"
 undo = "실행 취소: {}"
 redo = "다시 실행: {}"
-undo_stale = "되돌릴 수 없음: {}"
+undo_stale = "되돌릴 수 없습니다. {}"
 op_copy = "{}개 복사"
 op_move = "{}개 이동"
 history_busy = "진행 중인 파일 작업이 끝난 뒤에 쓸 수 있음"

@@ -1049,10 +1049,12 @@ failed = "検索に失敗しました"
 status = "{} / {} 項目"
 
 [explorer.menu]
+undo_none = "元に戻す"
+redo_none = "やり直す"
 show_in_folder = "含まれているフォルダで表示"
 undo = "元に戻す: {}"
 redo = "やり直す: {}"
-undo_stale = "元に戻せません: {}"
+undo_stale = "元に戻せません。{}"
 op_copy = "{} 件のコピー"
 op_move = "{} 件の移動"
 history_busy = "実行中のファイル操作が終わるまで使えません"

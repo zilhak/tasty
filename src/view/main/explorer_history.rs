@@ -1,5 +1,5 @@
 //! explorer 빈 영역 메뉴의 Undo · Redo 행. 칸의 이력에서 맨 위 단계만 보인다.
-//! 되돌릴 수 없게 된 단계는 행을 끄고 이유를 툴팁으로 보인다. 목록 UI 는 없다.
+//! 비활성 이유는 툴팁에, 항목 툴팁이 없는 Windows에서는 행 이름에 보인다.
 
 use super::MainView;
 use crate::app::explorer_files::history::{Entry, UndoOf};
@@ -31,39 +31,53 @@ pub(crate) fn redo_label(entry: &Entry) -> String {
     crate::i18n::t_fmt("explorer.menu.redo", &op_label(entry))
 }
 
-/// 이력의 맨 위 단계로 만든 Undo · Redo 행. 둘 다 없으면 빈 목록이다. 되돌리거나 다시 실행할 수
-/// 없게 된 단계는 행을 끄고 이유를 툴팁으로 보인다. `busy` 면 이력에 반영할
-/// 작업이 남아 있다는 뜻이라 두 행을 모두 끄고 그 이유를 툴팁으로 보인다.
+/// Undo · Redo는 이력이 없어도 두 자리를 유지한다.
 pub(crate) fn history_items(
     undo: Option<&Entry>,
     redo: Option<&Entry>,
     busy: bool,
 ) -> Vec<MenuItem> {
-    let busy_text = || crate::i18n::t("explorer.menu.history_busy").to_owned();
-    let mut items = Vec::new();
-    if let Some(entry) = undo {
-        let why = if busy {
-            Some(busy_text())
-        } else {
-            stale_text(entry)
-        };
-        items.push(match why {
-            Some(why) => MenuItem::disabled(UNDO, undo_label(entry)).with_tooltip(why),
-            None => MenuItem::new(UNDO, undo_label(entry)),
-        });
-    }
-    if let Some(entry) = redo {
-        let why = if busy {
-            Some(busy_text())
-        } else {
-            redo_stale_text(entry)
-        };
-        items.push(match why {
-            Some(why) => MenuItem::disabled(REDO, redo_label(entry)).with_tooltip(why),
-            None => MenuItem::new(REDO, redo_label(entry)),
-        });
-    }
-    items
+    history_items_for_platform(undo, redo, busy, cfg!(windows))
+}
+
+fn history_items_for_platform(
+    undo: Option<&Entry>,
+    redo: Option<&Entry>,
+    busy: bool,
+    reason_in_label: bool,
+) -> Vec<MenuItem> {
+    [(UNDO, undo), (REDO, redo)]
+        .into_iter()
+        .map(|(id, entry)| {
+            let Some(entry) = entry else {
+                return MenuItem::disabled(
+                    id,
+                    crate::i18n::t(if id == UNDO {
+                        "explorer.menu.undo_none"
+                    } else {
+                        "explorer.menu.redo_none"
+                    }),
+                );
+            };
+            let label = if id == UNDO {
+                undo_label(entry)
+            } else {
+                redo_label(entry)
+            };
+            let why = if busy {
+                Some(crate::i18n::t("explorer.menu.history_busy").to_owned())
+            } else if id == UNDO {
+                stale_text(entry)
+            } else {
+                redo_stale_text(entry)
+            };
+            match why {
+                Some(why) if reason_in_label => MenuItem::disabled(id, why),
+                Some(why) => MenuItem::disabled(id, label).with_tooltip(why),
+                None => MenuItem::new(id, label),
+            }
+        })
+        .collect()
 }
 
 /// 칸 이력으로 메뉴 행을 만들고, 고른 행이 이 이력을 실행하도록 지금 이력을 적어 둔다.
@@ -74,7 +88,7 @@ pub(super) fn history_rows(state: &mut crate::state::MainViewState, sid: u32) ->
         .get_mut(sid)
         .map(|v| &mut v.ops.history)
     else {
-        return Vec::new();
+        return history_items(None, None, busy);
     };
     history.show();
     history_items(history.peek_undo(), history.peek_redo(), busy)

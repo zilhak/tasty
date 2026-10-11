@@ -1445,8 +1445,8 @@ impl MainView {
                 (is_mirror, no_write),
             ),
         );
-        crate::state::explorer_menu::attach_shortcut_hints(&mut items, engine.settings);
         self.push_explorer_history_items(surface_id, is_empty_target && !is_mirror, &mut items);
+        crate::state::explorer_menu::attach_shortcut_hints(&mut items, engine.settings);
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 경로 복사·복사·루트 설정은 파일시스템을 바꾸지 않아 같은 explorer 인지만 본다.
             let read_only = matches!(result, Some(1 | 10 | 61 | 70));

@@ -8,6 +8,7 @@ src/catalog.rs	Plugins	button.plugins,plugins.title,settings.keybindings.subtab.
 src/catalog.rs	Remote connections	remote_tool.heading
 src/catalog.rs	Tab	port_scanner.column_tab,preset.tab.tab,settings.keybindings.subtab.tab,tutorial.step_tab_title
 src/catalog.rs	Type	explorer.column.type,remote_tool.field_type
+src/catalog.rs	rename	explorer.menu.op_rename
 src/catalog/chrome_loading.rs	Choose a shell	boot.shell_setup.title
 src/catalog/chrome_loading.rs	Closing surfaces…	shutdown.phase_closing_surfaces
 src/catalog/chrome_loading.rs	Loading plugins…	boot.phase_waiting_plugins
@@ -562,7 +563,7 @@ src/catalog/components/settings_handler.rs	Remove	settings.file_handler.detector
 src/catalog/components/settings_handler.rs	Reset	remote_tool.filter_reset,settings.appearance.colors.reset,settings.file_handler.extension_mapping.reset,settings.keybindings.plugins.reset_button
 src/catalog/components/settings_handler.rs	Shell cmd:	settings.file_handler.hook_handlers.shell_cmd_label
 src/catalog/components/settings_handler.rs	Shell command:	settings.file_handler.hook_handlers.field_shell_command
-src/catalog/components/settings_handler.rs	Undo	explorer.result.undo,image_viewer.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
+src/catalog/components/settings_handler.rs	Undo	explorer.menu.undo_none,explorer.result.undo,image_viewer.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
 src/catalog/components/settings_handler.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/settings_handler.rs	fallback	dag.rel.fallback
 src/catalog/components/settings_handler.rs	not installed	settings.file_handler.extension_mapping.unregistered
@@ -573,7 +574,7 @@ src/catalog/components/settings_handler.rs	reset on save	settings.file_handler.e
 src/catalog/components/settings_handler.rs	you	file_handler.picker.origin_user
 src/catalog/components/settings_hook_override.rs	Edit	image_viewer.edit,preset.toolbar.edit,remote_tool.edit,settings.file_handler.hook_handlers.seq_edit
 src/catalog/components/settings_hook_override.rs	Revert	settings.file_handler.hook_handlers.revert
-src/catalog/components/settings_hook_override.rs	Undo	explorer.result.undo,image_viewer.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
+src/catalog/components/settings_hook_override.rs	Undo	explorer.menu.undo_none,explorer.result.undo,image_viewer.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
 src/catalog/components/settings_hook_override.rs	edited	settings.file_handler.hook_handlers.edited
 src/catalog/components/settings_hook_override.rs	reverts on save	settings.file_handler.hook_handlers.reverts_on_save
 src/catalog/components/settings_hook_seq.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
