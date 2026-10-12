@@ -185,7 +185,28 @@ impl crate::state::MainViewState {
             );
             return;
         }
-        view.start_create(dir, folder);
+        view.request_create(dir, folder);
+    }
+
+    /// 대상 폴더에 쓸 수 없다고 확인되어 열지 않은 이름 입력을 토스트로 알린다. 알렸으면 true.
+    pub(crate) fn report_explorer_create_refusals(&mut self) -> bool {
+        let surfaces: Vec<_> = self.explorer_views.cached_surfaces().collect();
+        let mut reported = false;
+        for surface_id in surfaces {
+            let refused = self
+                .explorer_views
+                .get_mut(surface_id)
+                .is_some_and(|view| view.take_create_refused());
+            if refused {
+                self.toasts.push(
+                    crate::i18n::t("explorer.command.cannot_write").to_string(),
+                    crate::adapters::ui::ToastKind::Info,
+                    crate::adapters::ui::ToastScope::Surface(surface_id),
+                );
+                reported = true;
+            }
+        }
+        reported
     }
 }
 
@@ -208,5 +229,68 @@ mod tests {
             crate::i18n::t(crate::explorer_ui::view::hidden::action_key(true)),
             "Hide hidden files"
         );
+    }
+
+    /// 폴더 행 메뉴의 대상 폴더는 쓰기 가능 확인을 받은 뒤에 입력을 연다.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_row_that_cannot_be_written_is_refused_before_the_input_opens() {
+        use std::os::unix::fs::PermissionsExt;
+        crate::i18n::init("en");
+        let (mut state, engine) = crate::state::tests::test_state();
+        let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        let open = dir.path().join("open");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::create_dir(&open).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
+        state.explorer_views.get_or_init(&panel, None);
+        let mut owner = crate::app::local_reads::LocalReads::default();
+        let mut settle = |state: &mut crate::state::MainViewState| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                owner.reap();
+                owner.drive(|requests| {
+                    state.explorer_views.poll_local_reads(requests);
+                    true
+                });
+                let view = state.explorer_views.get(sid).unwrap();
+                if !view.create_pending() {
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline, "check never finished");
+                std::thread::yield_now();
+            }
+            state.report_explorer_create_refusals();
+        };
+
+        state.start_explorer_create(&engine.read(), sid, Some(locked.clone()), true);
+        assert!(state.explorer_views.get(sid).unwrap().create.is_none());
+        settle(&mut state);
+        assert!(state.explorer_views.get(sid).unwrap().create.is_none());
+        assert_eq!(
+            state.toasts.messages(),
+            vec![crate::i18n::t("explorer.command.cannot_write")]
+        );
+
+        state.start_explorer_create(&engine.read(), sid, Some(open.clone()), false);
+        settle(&mut state);
+        let view = state.explorer_views.get(sid).unwrap();
+        assert_eq!(
+            view.create.as_ref().map(|c| c.dir.clone()),
+            Some(open.clone())
+        );
+        assert_eq!(state.toasts.messages().len(), 1);
+
+        // 결과가 오기 전에 다른 폴더로 가면 입력을 열지 않는다.
+        state.start_explorer_create(&engine.read(), sid, Some(open.clone()), true);
+        let moved = crate::model::ExplorerPanel::new(sid, locked.clone());
+        state.explorer_views.get_or_init(&moved, None);
+        settle(&mut state);
+        assert!(state.explorer_views.get(sid).unwrap().create.is_none());
+        assert_eq!(state.toasts.messages().len(), 1);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 }

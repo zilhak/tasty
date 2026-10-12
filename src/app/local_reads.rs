@@ -394,6 +394,7 @@ impl crate::view::MainView {
     ) {
         let mut changed = self.state.tutorial.poll_progress();
         changed |= self.state.explorer_views.poll_local_reads(owner);
+        changed |= self.state.report_explorer_create_refusals();
         changed |= self.state.poll_branch_read(owner);
         changed |= poll_file_picker_reads(&mut self.state, owner);
         changed |= crate::adapters::ui::popup::explorer_properties::poll(&mut self.state, owner);

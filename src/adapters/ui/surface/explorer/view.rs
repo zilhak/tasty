@@ -119,6 +119,9 @@ pub struct ExplorerView {
     pub thumbs: super::thumbs::Thumbs,
     /// 목록 맨 위에서 이름을 받고 있는 새 항목.
     pub(crate) create: Option<super::create::CreateEdit>,
+    /// 이름 입력을 열기 전에 기다리는 대상 폴더의 쓰기 가능 확인과, 쓸 수 없다고 확인되어 알릴 거절.
+    pub(super) create_check: Option<super::create::WriteCheck>,
+    pub(super) create_refused: bool,
     /// 방금 만든 항목이나 들어 있는 폴더에서 보일 항목. 다시 읽은 목록에 나타나면 그 자리로 스크롤한다.
     pub(super) reveal: Option<PathBuf>,
     /// 나타났을 때 그 항목을 고르기도 하는가(들어 있는 폴더에서 보기).
@@ -210,6 +213,7 @@ impl ExplorerView {
             changed |= self.local_query.is_none();
         }
         changed |= self.poll_find(owner);
+        changed |= self.poll_create_check(owner);
         let ready: Vec<_> = self
             .tree_queries
             .iter_mut()
@@ -271,6 +275,8 @@ impl ExplorerView {
             preview: Default::default(),
             thumbs: Default::default(),
             create: None,
+            create_check: None,
+            create_refused: false,
             reveal: None,
             reveal_select: false,
             reveal_in: None,

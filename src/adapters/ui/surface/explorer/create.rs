@@ -32,6 +32,15 @@ pub(crate) struct CreateEdit {
     fold_case: bool,
 }
 
+/// 지금 목록에 없는 폴더(폴더 행 메뉴의 대상)에 만들기 전의 쓰기 가능 확인.
+pub(crate) struct WriteCheck {
+    dir: PathBuf,
+    folder: bool,
+    /// 요청할 때 보던 폴더. 결과가 오기 전에 다른 폴더로 가면 입력을 열지 않는다.
+    shown: Option<PathBuf>,
+    query: crate::app::local_reads::Query<bool>,
+}
+
 /// 이름 오류.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NameError {
@@ -187,6 +196,58 @@ impl CreateEdit {
 }
 
 impl ExplorerView {
+    /// 새 항목 이름 입력을 연다. 지금 보는 폴더가 아닌 로컬 폴더면 읽기 worker 에 쓰기 가능 여부를
+    /// 먼저 묻고, 쓸 수 있으면 입력을 연다. 지금 보는 폴더는 목록과 함께 확인한 값을 호출자가 본다.
+    /// 원격 폴더의 쓰기 권한은 server 가 만들 때 판정한다.
+    pub(crate) fn request_create(&mut self, dir: PathBuf, folder: bool) {
+        if self.is_remote() || self.shown_dir() == Some(dir.as_path()) {
+            self.create_check = None;
+            self.start_create(dir, folder);
+            return;
+        }
+        self.create = None;
+        self.create_check = Some(WriteCheck {
+            query: crate::app::local_reads::writable(dir.clone()),
+            shown: self.shown_dir().map(Path::to_path_buf),
+            dir,
+            folder,
+        });
+    }
+
+    /// 대상 폴더 확인 결과를 받아 입력을 열거나 거절을 남긴다. 받았으면 true.
+    pub(super) fn poll_create_check(
+        &mut self,
+        owner: &mut crate::app::local_reads::ReadRequests,
+    ) -> bool {
+        let Some(result) = self.create_check.as_mut().and_then(|c| c.query.poll(owner)) else {
+            return false;
+        };
+        let Some(check) = self.create_check.take() else {
+            return false;
+        };
+        if self.shown_dir() != check.shown.as_deref() {
+            return false;
+        }
+        // 확인하지 못했으면 쓸 수 있다고 보고 만들 때의 오류로 알린다.
+        if result.unwrap_or(true) {
+            self.start_create(check.dir, check.folder);
+        } else {
+            self.create_refused = true;
+        }
+        true
+    }
+
+    /// 대상 폴더에 쓸 수 없어 입력을 열지 않은 요청이 있었는가. 읽으면 지운다.
+    pub(crate) fn take_create_refused(&mut self) -> bool {
+        std::mem::take(&mut self.create_refused)
+    }
+
+    /// 쓰기 가능 확인을 기다리는 만들기 요청이 있는가. 읽기 전용 폴더를 만들 수 있는 Unix 시험만 쓴다.
+    #[cfg(all(test, unix))]
+    pub(crate) fn create_pending(&self) -> bool {
+        self.create_check.is_some()
+    }
+
     /// 새 항목 이름 입력을 연다. 이미 열려 있으면 새로 시작한다.
     /// 대상 폴더의 이름 목록은 지금 보는 목록(숨김 파일을 끈 동안 뺀 항목 포함)이나 사이드바 트리에서
     /// 읽은 것만 쓴다.

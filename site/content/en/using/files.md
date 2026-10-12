@@ -1,4 +1,4 @@
-<!-- source-hash: 761997f3d733 -->
+<!-- source-hash: 412982fe7528 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -72,7 +72,7 @@ Start from **New folder** · **New file** on the toolbar, the right-click menu o
 - Clicking outside the row creates it when the name is valid and cancels when it is empty or invalid.
 - An empty name (including one with only spaces), a character that can't be used (`/`, and on Windows also `\ : * ? " < > |`), a name that starts or ends with a space, a name Windows reserves (`CON`, `NUL`, …), or on Windows a name ending in a dot shows the reason under the field right away. A name that already exists is reported when you press `Enter` (on macOS and Windows, a name that differs only in letter case counts as existing); the row stays open with your text. Nothing is overwritten.
 - The new item moves to its sorted place and is selected. If you moved to another folder or selected something else in the meantime, the selection does not change.
-- In a folder you can't write to, both buttons are dimmed and hovering shows **Can't write to this folder**. They work in Explorers in remote workspaces too. If the remote computer runs an older Tasty, these buttons and menu items don't appear.
+- In a folder you can't write to, both buttons are dimmed and hovering shows **Can't write to this folder**. Creating inside such a folder from its right-click menu shows the same notice instead of opening the name row (on Windows, the error appears when the item is created). They work in Explorers in remote workspaces too. If the remote computer runs an older Tasty, these buttons and menu items don't appear.
 
 With the Explorer focused, `F7` makes a new folder and `Shift+F4` a new file. On macOS the F keys are media keys by default, so hold `Fn` with them. Change the keys in Settings > Keybindings > **Explorer**.
 
