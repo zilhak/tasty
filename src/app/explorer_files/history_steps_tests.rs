@@ -409,3 +409,160 @@ fn a_case_only_rename_does_not_see_itself_at_the_old_name() {
     assert!(named::taken(&lower, &upper));
     assert_eq!(blocked(&step), Some(Reason::NewerThere));
 }
+
+/// App 이 끝난 작업을 거둘 때처럼 대기열 맨 앞 요청을 실행하고, 결과 종류에 맞게 이력에 반영한다.
+#[cfg(target_os = "linux")]
+fn finish_any(state: &mut crate::state::MainViewState, sid: u32) -> Done {
+    let Request {
+        operation,
+        recorded,
+        ..
+    } = state
+        .explorer_file_requests
+        .0
+        .pop_front()
+        .expect("a queued request");
+    let done = operation.run(&quiet());
+    let history = &mut state
+        .explorer_views
+        .get_mut(sid)
+        .expect("explorer view")
+        .ops
+        .history;
+    match (&done, recorded) {
+        (Done::Report(report), Some(recorded)) => history.record(recorded, report),
+        (Done::Step(step), Some(recorded)) => {
+            history.record_step(recorded, step.clone().ok().flatten())
+        }
+        _ => {}
+    }
+    done
+}
+
+#[cfg(target_os = "linux")]
+fn assert_succeeded(done: &Done) {
+    match done {
+        Done::Report(r) => assert!(
+            r.failed.is_empty() && !r.cancelled && r.done == r.total,
+            "{r:?}"
+        ),
+        Done::Step(r) => assert!(r.is_ok(), "{r:?}"),
+        Done::Simple(r) => assert!(r.is_ok(), "{r:?}"),
+    }
+}
+
+/// 한 칸에서 새 폴더 → 이름 변경 → 이동 → 복사를 한 뒤 되돌리기를 네 번 하면 역순으로 하나씩 되돌아가
+/// 처음 상태가 된다. 복사본과 새 폴더는 휴지통으로 가므로 격리한 휴지통에서 실행한다.
+#[cfg(target_os = "linux")]
+#[test]
+fn create_rename_move_copy_are_undone_in_reverse_order() {
+    crate::app::file_jobs::job::tests::run_with_isolated_trash(
+        &crate::app::file_jobs::job::tests::probe_path(
+            module_path!(),
+            "create_rename_move_copy_are_undone_in_reverse_order_probe",
+        ),
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn create_rename_move_copy_are_undone_in_reverse_order_probe() {
+    crate::app::file_jobs::job::tests::in_isolated_trash(|trash| {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let (moved_to, copied_to) = (root.join("moved"), root.join("copies"));
+        std::fs::create_dir(&moved_to).unwrap();
+        std::fs::create_dir(&copied_to).unwrap();
+        let (mut state, engine, sid) = explorer_state(root);
+        let tree = || -> Vec<String> {
+            let mut out: Vec<String> = walkdir_names(root);
+            out.sort();
+            out
+        };
+        let start = tree();
+
+        let steps = [
+            Operation::Create {
+                dir: root.to_path_buf(),
+                name: "made".into(),
+                folder: true,
+            },
+            rename(&root.join("made"), "renamed"),
+            Operation::Paste {
+                paths: vec![root.join("renamed")],
+                destination: moved_to.clone(),
+                cut: true,
+            },
+            Operation::Paste {
+                paths: vec![moved_to.join("renamed")],
+                destination: copied_to.clone(),
+                cut: false,
+            },
+        ];
+        let mut after = Vec::new();
+        for op in steps {
+            state.request_explorer_file_direct(&engine.read(), sid, op, user());
+            assert_succeeded(&finish_any(&mut state, sid));
+            after.push(tree());
+        }
+        assert!(moved_to.join("renamed").is_dir() && copied_to.join("renamed").is_dir());
+        let order = [
+            UndoOf::Copy,
+            UndoOf::Move,
+            UndoOf::Rename,
+            UndoOf::NewFolder,
+        ];
+        // 되돌린 뒤의 기대 상태: 바로 앞 단계의 모습, 마지막은 처음 모습.
+        after.pop();
+        after.reverse();
+        after.push(start);
+        for (of, expected) in order.into_iter().zip(after) {
+            let top = history(&state, sid).peek_undo().expect("a step to undo");
+            assert_eq!(top.undo_of(), of);
+            assert_eq!(top.stale_reason(), None, "{of:?} is undoable");
+            state.explorer_history_step(&engine.read(), sid, false, user(), false);
+            assert_succeeded(&finish_any(&mut state, sid));
+            assert_eq!(tree(), expected, "after undoing {of:?}");
+        }
+        assert!(history(&state, sid).peek_undo().is_none());
+        let redo: Vec<UndoOf> = std::iter::from_fn({
+            let h = &mut state.explorer_views.get_mut(sid).unwrap().ops.history;
+            move || h.take_redo().map(|e| e.undo_of())
+        })
+        .collect();
+        assert_eq!(
+            redo,
+            [
+                UndoOf::NewFolder,
+                UndoOf::Rename,
+                UndoOf::Move,
+                UndoOf::Copy
+            ]
+        );
+        let mut trashed = std::fs::read_dir(trash)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        trashed.sort();
+        assert_eq!(trashed, ["made", "renamed"], "the copy and the new folder");
+    });
+}
+
+/// `root` 아래 모든 항목의 상대 경로.
+#[cfg(target_os = "linux")]
+fn walkdir_names(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            let rel =
+                tasty_doc_guards::source_text::repo_relative(path.strip_prefix(root).unwrap());
+            out.push(rel.display().to_string());
+            if path.symlink_metadata().unwrap().is_dir() {
+                stack.push(path);
+            }
+        }
+    }
+    out
+}

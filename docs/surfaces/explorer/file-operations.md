@@ -300,3 +300,6 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 - Given 컨텍스트 메뉴가 열려 있다, When 그 사이 surface 가 닫히거나 다른 surface 로 바뀐 뒤 항목을 고른다, Then 아무 작업도 실행하지 않는다. 경로 복사·복사·이 폴더로 루트 설정은 mirror projection 이 다시 만들어지기만 했으면 그대로 실행한다.
 - Given rename 팝업이 떠 있다, When 그 사이 surface 가 다른 surface 로 바뀐다, Then 팝업이 닫히고 확정해도 이름 변경 요청이 나가지 않는다.
 - Given 새 이름 입력을 확정했다, When worker 가 만들기 전에 같은 이름이 생겼다, Then 기존 항목은 그대로이고 오류 토스트가 뜬다(`explorer_files/tests.rs` 의 `create_makes_a_folder_or_an_empty_file_and_never_replaces_an_entry`).
+- Given 하위 폴더 찾기 결과에서 폴더와 그 안의 파일을 함께 골랐다, When 복사·이동·휴지통 이동을 한다, Then 폴더만 한 번 처리되고 안쪽 파일의 사본이 목적지 맨 위에 따로 생기거나 없는 항목으로 실패하지 않는다(`job_tests.rs` 의 `a_folder_and_its_own_entries_are_transferred_once`·`trashing_a_folder_with_its_own_entries_sends_the_folder_once`).
+- Given 복사 중 준비용 임시 폴더를 지울 수 없게 됐다, When 작업이 끝난다, Then 경고 로그가 남고 결과 카드가 그 임시 폴더 경로와 OS 오류를 보이며 닫을 때까지 남는다(`job_tests.rs` 의 `a_staging_folder_that_cannot_be_removed_is_reported`).
+- Given 한 칸에서 새 폴더 → 이름 변경 → 이동 → 복사를 했다, When 되돌리기를 네 번 한다, Then 복사·이동·이름 변경·새 폴더 순으로 하나씩 되돌아가 처음 모습이 되고, 복사본과 새 폴더는 휴지통에 있으며 다시 실행 목록에 네 단계가 역순으로 오른다(`history_steps_tests.rs` 의 `create_rename_move_copy_are_undone_in_reverse_order`, Linux 격리 휴지통).
