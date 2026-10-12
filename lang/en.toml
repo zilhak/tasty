@@ -1213,6 +1213,8 @@ other_computer = "different computer"
 no_write = "no write access"
 
 [explorer.remote]
+waiting = "Waiting for {}"
+renaming = "Renaming on {}…"
 write_needs_update = "Update Tasty on {} to change remote files."
 queue_title = "On {} · one at a time"
 lost_title = "Connection to {} lost · result unknown"

@@ -1,12 +1,14 @@
 //! Explorer 목록 맨 위에 새 항목 이름을 받는 인라인 입력과 그 아래 오류 상자.
 //! Detail·List 는 행 높이(28) 한 줄, Grid 는 칸 글리프 아래 `field-width-md` 폭 입력을 칸 가운데에 둔다.
-//! 입력 칸은 공용 Input 이다.
+//! 입력 칸은 공용 Input 이다. 원격 응답을 기다리는 동안에는 읽기 전용 입력과 Spinner 를 그린다.
 //! 본체와 갤러리가 같은 함수를 불러 같은 모양을 그린다.
 
 use tasty_icons::Icon;
 use tasty_type_appearance::theme::Theme;
 
 use crate::input::Input;
+use crate::spinner::Spinner;
+use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
 
 /// 입력 줄을 그릴 보기 모드.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -61,6 +63,10 @@ pub struct ExplorerNameOptions<'a> {
     /// 입력 칸 뒤의 muted caption("in {folder}"). caption 이 있으면 칸은 `explorer-create-field-max-width`
     /// 에서 멈추고 caption 이 `space-sm` 뒤에 붙는다. 칸 끝이 줄 끝에 닿으면 caption 폭만큼 칸을 줄인다.
     pub caption: Option<&'a str>,
+    /// 확정한 이름을 원격이 만들기를 기다린다. 입력은 읽기 전용으로 글자를 유지하고, 칸 바로 뒤
+    /// `space-sm` 자리에 `icon-size-sm` Spinner 를 둔다. 값은 Spinner 의 툴팁("Waiting for {host}")이다.
+    /// 기다리는 동안 Enter·Esc·포커스 잃음은 이벤트로 내지 않는다.
+    pub pending: Option<&'a str>,
 }
 
 /// 편집 줄을 그린다. 차지한 줄 rect 와 입력 칸 rect, 이벤트를 돌려준다.
@@ -129,6 +135,9 @@ pub fn explorer_name_row_in(
                 Some(g) => field_right.min(row.right() - g.size().x - gap),
                 None => field_right,
             };
+            // 기다리는 동안 칸 뒤에 Spinner 자리를 남긴다.
+            let spinner_slot = options.pending.map_or(0.0, |_| pending_slot(theme));
+            let field_right = field_right - spinner_slot;
             let glyph_rect = egui::Rect::from_center_size(
                 egui::pos2(row.left() + inset + glyph_size * 0.5, row.center().y),
                 egui::vec2(glyph_size, glyph_size),
@@ -145,10 +154,13 @@ pub fn explorer_name_row_in(
                 egui::pos2(field_end, row.bottom()),
             );
             if let Some(g) = caption {
-                let pos = egui::pos2(field.right() + gap, row.center().y - g.size().y * 0.5);
+                let pos = egui::pos2(
+                    field.right() + spinner_slot + gap,
+                    row.center().y - g.size().y * 0.5,
+                );
                 ui.painter().with_clip_rect(row).galley(pos, g, muted);
             }
-            let event = field_ui(ui, theme, field, edit, invalid, options.field_id);
+            let event = field_ui(ui, theme, field, edit, invalid, options);
             (row, field, event)
         }
         ExplorerNameLayout::Grid { cell, slot } => {
@@ -175,7 +187,7 @@ pub fn explorer_name_row_in(
             );
             let field = field
                 .translate(egui::Vec2::X * inside_shift(field.x_range(), ui.clip_rect().x_range()));
-            let event = field_ui(ui, theme, field, edit, invalid, options.field_id);
+            let event = field_ui(ui, theme, field, edit, invalid, options);
             (rect, field, event)
         }
     }
@@ -192,25 +204,62 @@ fn inside_shift(span: egui::Rangef, bounds: egui::Rangef) -> f32 {
     }
 }
 
+/// 기다리는 동안 칸 뒤에 남기는 폭: 간격과 Spinner.
+fn pending_slot(theme: &Theme) -> f32 {
+    theme.spacing_sm.value() + theme.icon_glyph_size_sm.value()
+}
+
+/// 칸 바로 뒤에 Spinner 를 그리고, 오래 올려 두면 `tooltip` 을 보인다.
+fn pending_spinner(ui: &mut egui::Ui, theme: &Theme, field: egui::Rect, tooltip: &str) {
+    let size = theme.icon_glyph_size_sm.value();
+    let rect = egui::Rect::from_center_size(
+        egui::pos2(
+            field.right() + theme.spacing_sm.value() + size * 0.5,
+            field.center().y,
+        ),
+        egui::vec2(size, size),
+    );
+    Spinner::new().size(size).paint_in(ui, theme, rect);
+    ui.ctx().request_repaint();
+    let resp = ui.interact(
+        rect,
+        ui.id().with("explorer_name_pending"),
+        egui::Sense::hover(),
+    );
+    if tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
+        Tooltip::new(tooltip)
+            .id_source(resp.id)
+            .show(ui, theme, rect);
+    }
+}
+
 fn field_ui(
     ui: &mut egui::Ui,
     theme: &Theme,
     field: egui::Rect,
     edit: &mut ExplorerNameEdit,
     invalid: bool,
-    id: Option<egui::Id>,
+    options: ExplorerNameOptions<'_>,
 ) -> ExplorerNameEvent {
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(field)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    let input = Input::new().invalid(invalid).width(field.width());
-    let input = match id {
+    let pending = options.pending.is_some();
+    let input = Input::new()
+        .invalid(invalid && !pending)
+        .read_only(pending)
+        .width(field.width());
+    let input = match options.field_id {
         Some(id) => input.id(id),
         None => input,
     };
     let resp = input.show(&mut child, theme, &mut edit.buf);
+    if let Some(tooltip) = options.pending {
+        pending_spinner(ui, theme, field, tooltip);
+        return ExplorerNameEvent::None;
+    }
     if let Some(range) = edit.initial_selection.take() {
         resp.request_focus();
         if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), resp.id) {

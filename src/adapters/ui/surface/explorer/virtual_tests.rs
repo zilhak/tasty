@@ -29,6 +29,8 @@ struct Harness {
     panel: ExplorerPanel,
     view: super::ExplorerView,
     focused: bool,
+    /// 마지막 프레임이 낸 동작.
+    action: Option<super::ExplorerAction>,
 }
 
 impl Harness {
@@ -57,6 +59,7 @@ impl Harness {
             panel,
             view,
             focused: false,
+            action: None,
         }
     }
 
@@ -83,12 +86,13 @@ impl Harness {
             events,
             ..Default::default()
         };
-        let (panel, view) = (&self.panel, &mut self.view);
+        let mirror = self.view.mirror_ws_id;
+        let (panel, view, action) = (&self.panel, &mut self.view, &mut self.action);
         let out = self.ctx.run(raw, |ctx| {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
-                    super::draw_explorer(
+                    *action = super::draw_explorer(
                         ui,
                         panel,
                         view,
@@ -97,7 +101,7 @@ impl Harness {
                         &[],
                         &HashSet::new(),
                         &[],
-                        None,
+                        mirror,
                         &input,
                     );
                 });
@@ -381,6 +385,73 @@ fn a_new_item_inside_a_folder_opens_right_after_that_folder() {
         );
         assert!(inside > before + 1.0, "{mode:?}: {inside} vs {before}");
     }
+}
+
+fn key(key: egui::Key) -> Vec<Event> {
+    vec![Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    }]
+}
+
+#[test]
+fn a_remote_name_stays_read_only_in_place_until_the_server_answers() {
+    for mode in MODES {
+        let mut h = Harness::new(mode);
+        h.view.mirror_ws_id = Some(7);
+        h.frame(Vec::new());
+        h.view.start_create(PathBuf::from(DIR), true);
+        h.settle();
+        h.frame(key(egui::Key::Enter));
+        assert!(
+            matches!(&h.action, Some(super::ExplorerAction::Create { name, .. }) if name == "New folder"),
+            "{mode:?}: {:?}",
+            h.action
+        );
+        let waiting = |h: &Harness| h.view.create.as_ref().and_then(|c| c.waiting_path());
+        assert_eq!(
+            waiting(&h),
+            Some(PathBuf::from(DIR).join("New folder")),
+            "{mode:?}: the row stays and waits"
+        );
+        // 기다리는 동안 Esc·포커스 잃음·글자 입력은 줄을 닫거나 바꾸지 않는다.
+        h.frame(key(egui::Key::Escape));
+        h.frame(click(Pos2::new(1000.0, 500.0)));
+        h.frame(vec![Event::Text("x".into())]);
+        h.settle();
+        assert!(waiting(&h).is_some(), "{mode:?}: still waiting");
+        assert_eq!(h.view.create.as_ref().unwrap().edit.buf, "New folder");
+
+        // 실패하면 글자를 둔 채 다시 편집한다.
+        h.view.create.as_mut().unwrap().resume_editing();
+        h.settle();
+        h.frame(vec![Event::Text("x".into())]);
+        assert_eq!(
+            h.view
+                .create
+                .as_ref()
+                .map(|c| (c.waiting, c.edit.buf.as_str())),
+            Some((false, "New folderx")),
+            "{mode:?}"
+        );
+    }
+}
+
+#[test]
+fn a_local_name_closes_the_row_on_enter() {
+    let mut h = Harness::new(ExplorerViewMode::Detail);
+    h.frame(Vec::new());
+    h.view.start_create(PathBuf::from(DIR), true);
+    h.settle();
+    h.frame(key(egui::Key::Enter));
+    assert!(matches!(
+        h.action,
+        Some(super::ExplorerAction::Create { .. })
+    ));
+    assert!(h.view.create.is_none());
 }
 
 #[path = "virtual_tests/keyboard_select.rs"]

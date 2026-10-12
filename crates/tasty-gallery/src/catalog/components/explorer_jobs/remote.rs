@@ -1,17 +1,18 @@
 //! 원격(attach) 탐색기의 쓰기 — 디자인 `gallery/explorer-ops-remote.jsx`(#remotewrite) 예제를 옮겼다.
-//! 쓸 수 없는 원격의 꺼진 쓰기 행과 이유, 연결이 끊긴 결과 카드, 진행 줄·대기열의 호스트, 드래그 칩의
-//! 거절 이유. 그리기는 본체와 같은 공용 위젯이 맡는다.
+//! 쓸 수 없는 원격의 꺼진 쓰기 행과 이유, 원격의 답을 기다리는 이름 입력, 연결이 끊긴 결과 카드,
+//! 진행 줄·대기열의 호스트, 드래그 칩의 거절 이유. 그리기는 본체와 같은 공용 위젯이 맡는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_appearance::toast_kind::ToastKind;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    DragChipProps, DragOp, HostMark, MenuItemVariant, OpStatusProps, QueueHeader, QueueRowProps,
-    ResultCardProps, drag_chip, menu_item, menu_separator, op_queue_popover, op_status_line,
-    result_card,
+    Button, ButtonVariant, DragChipProps, DragOp, ExplorerNameEdit, ExplorerNameLayout,
+    ExplorerNameOptions, HostMark, Input, MenuItemVariant, OpStatusProps, QueueHeader,
+    QueueRowProps, ResultCardProps, Spinner, drag_chip, explorer_name_row_in, menu_item,
+    menu_separator, op_queue_popover, op_status_line, result_card,
 };
 
-use super::{CELL_W, QUEUE_BODY_H, cell, glyph_painter};
+use super::{BODY_H, CELL_W, QUEUE_BODY_H, cell, glyph_painter};
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::i18n::{t, t_args, t_fmt, t_fmt2};
@@ -219,6 +220,127 @@ pub fn draw_write_refused(ui: &mut egui::Ui, theme: &Theme) {
                 "toast-accent-info",
                 "reason toast",
                 theme.toast_accent_info().to_egui(),
+            ),
+        ],
+    );
+}
+
+/// 시안 이름 변경 대기 팝업 폭(`--tasty-size-360`). 역할 토큰이 없어 전시 치수로 둔다.
+const RENAME_W: LogicalPx = LogicalPx(360.0);
+
+/// D2 — 원격의 답을 기다리는 동안 새 항목 줄은 제자리에 읽기 전용으로 남고 Spinner 를 단다.
+/// 이름 변경 팝업은 열린 채 입력과 두 버튼을 막고 대기 줄을 보인다.
+pub fn draw_remote_waiting(ui: &mut egui::Ui, theme: &Theme) {
+    let waiting = t_fmt("explorer.remote.waiting", HOST);
+    let renaming = t_fmt("explorer.remote.renaming", HOST);
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        let (rect, _) = cell(ui, theme, BODY_H);
+        let row = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(rect.width(), theme.table_cell_height().value()),
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(row));
+        let mut edit = ExplorerNameEdit {
+            buf: t("explorer.new.folder_default").to_owned(),
+            initial_selection: None,
+        };
+        explorer_name_row_in(
+            &mut child,
+            theme,
+            ExplorerNameLayout::List,
+            ExplorerNameOptions {
+                pending: Some(&waiting),
+                ..Default::default()
+            },
+            icons::FOLDER,
+            &mut edit,
+            false,
+        );
+        ui.add_space(theme.spacing_md.value());
+        crate::catalog::widgets::dialog::frame_card(
+            ui,
+            theme,
+            RENAME_W,
+            theme.bg_panel().to_egui(),
+            |ui| {
+                crate::catalog::widgets::dialog::region_sym(
+                    ui,
+                    theme.spacing_md,
+                    theme.spacing_md,
+                    |ui| {
+                        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                        crate::catalog::widgets::dialog::title(
+                            ui,
+                            theme,
+                            t("explorer.popup.rename.title"),
+                        );
+                        let mut name = String::from("report-final.pdf");
+                        Input::new()
+                            .read_only(true)
+                            .width(ui.available_width())
+                            .show(ui, theme, &mut name);
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                            Spinner::new()
+                                .size(theme.icon_glyph_size_sm.value())
+                                .show(ui, theme);
+                            ui.label(
+                                egui::RichText::new(&renaming)
+                                    .size(theme.font_size_caption.value())
+                                    .color(theme.text_muted().to_egui()),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                                    Button::new(t("button.save"))
+                                        .variant(ButtonVariant::Primary)
+                                        .enabled(false)
+                                        .show(ui, theme);
+                                    Button::new(t("button.cancel"))
+                                        .variant(ButtonVariant::Ghost)
+                                        .enabled(false)
+                                        .show(ui, theme);
+                                },
+                            );
+                        });
+                    },
+                );
+            },
+        );
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("input row", "stays in place · Input readOnly · text kept"),
+            (
+                "indicator",
+                "Spinner icon-size-sm · space-sm after the field · tooltip “Waiting for {host}”",
+            ),
+            ("Esc / blur", "ignored while waiting"),
+            ("success", "row → item at its sorted place, selected"),
+            (
+                "failure",
+                "field editable again, text kept · error toast (unchanged)",
+            ),
+            (
+                "Rename popup",
+                "open · field readOnly · Spinner line · Cancel + Rename disabled · closes on success",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "input-readonly-fg",
+                "sent text",
+                theme.input_readonly_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "spinner-indicator",
+                "waiting",
+                theme.spinner_indicator().to_egui(),
             ),
         ],
     );
@@ -436,7 +558,7 @@ pub fn draw_remote_drag(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-pub fn specs() -> [crate::catalog::Spec; 4] {
+pub fn specs() -> [crate::catalog::Spec; 5] {
     use crate::catalog::Spec;
     [
         Spec {
@@ -444,6 +566,12 @@ pub fn specs() -> [crate::catalog::Spec; 4] {
             title: "Remote that can't write — rows disabled, reason in the tooltip and toast",
             when: Some("an older Tasty on the remote · the toolbar create group follows"),
             draw: draw_write_refused,
+        },
+        Spec {
+            id: "explorer-remote-waiting",
+            title: "Waiting for the remote — the input row stays, read-only, with a spinner",
+            when: Some("remote new folder · new file · rename popup"),
+            draw: draw_remote_waiting,
         },
         Spec {
             id: "explorer-remote-connection-lost",

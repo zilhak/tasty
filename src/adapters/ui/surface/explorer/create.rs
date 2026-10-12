@@ -1,6 +1,7 @@
 //! 새 폴더·새 파일. 목록 맨 위의 인라인 이름 입력과 이름 검사.
 //! 입력 중에는 정렬 자리로 옮기지 않아 줄이 튀지 않는다. 확정하면 `ExplorerAction::Create`
-//! 를 내고, 만든 뒤 다시 읽은 목록에서 정렬 자리로 간다.
+//! 를 내고, 만든 뒤 다시 읽은 목록에서 정렬 자리로 간다. 원격 폴더면 server 의 답이 올 때까지 줄을
+//! 제자리에 읽기 전용으로 남긴다. 실패하면 글자를 그대로 두고 다시 편집하게 한다.
 
 use std::path::{Path, PathBuf};
 
@@ -30,6 +31,8 @@ pub(crate) struct CreateEdit {
     windows: bool,
     /// 대소문자만 다른 이름을 같은 이름으로 보는가.
     fold_case: bool,
+    /// 확정한 이름을 원격이 만들기를 기다린다. 끝나면 App 이 줄을 닫거나 다시 편집하게 한다.
+    pub(crate) waiting: bool,
 }
 
 /// 지금 목록에 없는 폴더(폴더 행 메뉴의 대상)에 만들기 전의 쓰기 가능 확인.
@@ -170,7 +173,20 @@ impl CreateEdit {
             edit: ExplorerNameEdit::new(name, 0..selected),
             taken,
             exists: None,
+            waiting: false,
         }
+    }
+
+    /// 기다리는 동안 만들기를 요청한 경로.
+    pub(crate) fn waiting_path(&self) -> Option<PathBuf> {
+        self.waiting.then(|| self.dir.join(&self.edit.buf))
+    }
+
+    /// 답 없이 끝난 기다림을 풀어 다시 편집하게 한다. 글자는 두고 커서를 끝으로 옮긴다.
+    pub(crate) fn resume_editing(&mut self) {
+        self.waiting = false;
+        let end = self.edit.buf.chars().count();
+        self.edit.initial_selection = Some(end..end);
     }
 
     /// 지금 보일 오류. 입력하는 동안의 검사와 Enter 에서 확인한 "이미 있음" 이다.
@@ -314,6 +330,10 @@ pub(super) fn name_row(
             name.as_deref().unwrap_or_default(),
         )
     });
+    let waiting = view.create.as_ref().is_some_and(|c| c.waiting).then(|| {
+        let host = view.remote_host.as_ref().map(|h| h.label.as_str());
+        t_fmt("explorer.remote.waiting", host.unwrap_or_default())
+    });
     let options = ExplorerNameOptions {
         // 대상 폴더가 멀리 있으면 줄을 화면 밖 자리에 따로 그린다. 그리는 순서가 바뀌어도 같은 입력이다.
         field_id: view
@@ -324,6 +344,7 @@ pub(super) fn name_row(
             .as_ref()
             .map_or(0.0, |_| theme.explorer_create_indent().value()),
         caption: caption.as_deref(),
+        pending: waiting.as_deref(),
     };
     let Some(create) = view.create.as_mut() else {
         return;
@@ -335,7 +356,7 @@ pub(super) fn name_row(
     };
     let before = create.edit.buf.clone();
     let first_frame = create.edit.initial_selection.is_some();
-    let error = create.error();
+    let error = create.error().filter(|_| !create.waiting);
     let (field, event) = match slot {
         Slot::Detail { row, name_cell } => {
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(row));
@@ -419,16 +440,25 @@ pub(super) fn name_row(
     }
 }
 
+/// 이름을 확정해 `Create` 를 낸다. 로컬은 줄을 닫고, 원격은 답을 기다리는 동안 줄을 남긴다.
 fn confirm(view: &mut ExplorerView, action: &mut Option<ExplorerAction>) {
-    let Some(create) = view.create.take() else {
+    if action.is_some() {
+        view.create = None;
+        return;
+    }
+    let remote = view.is_remote();
+    let Some(create) = view.create.as_mut() else {
         return;
     };
-    if action.is_none() {
-        *action = Some(ExplorerAction::Create {
-            dir: create.dir,
-            name: create.edit.buf,
-            folder: create.folder,
-        });
+    *action = Some(ExplorerAction::Create {
+        dir: create.dir.clone(),
+        name: create.edit.buf.clone(),
+        folder: create.folder,
+    });
+    if remote {
+        create.waiting = true;
+    } else {
+        view.create = None;
     }
 }
 

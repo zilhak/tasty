@@ -239,6 +239,7 @@ pub fn draw_create_in_folder(ui: &mut egui::Ui, theme: &Theme) {
                             field_id: None,
                             indent: th.explorer_create_indent().value(),
                             caption: Some(&caption),
+                            pending: None,
                         },
                         icons::FILE,
                         edit,

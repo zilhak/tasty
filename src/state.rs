@@ -59,6 +59,8 @@ pub use crate::core::host_event::PendingHostEvent;
 #[cfg(feature = "gui")]
 pub use crate::core::host_event::PendingSurfaceClosed;
 #[cfg(feature = "gui")]
+pub(crate) use dialogs::RenameWaiting;
+#[cfg(feature = "gui")]
 pub use dialogs::{
     DialogState, FileHandlerPickerData, FileHandlerPickerResult, PendingNativeMenu,
     PendingScriptConfirm, PickerHandlerSummary, RenameTarget, TabDragState, TerminalLinkMenu,

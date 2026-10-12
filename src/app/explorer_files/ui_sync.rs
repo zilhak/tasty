@@ -186,15 +186,28 @@ impl crate::app::App {
 
     /// 대기열 표시를 맞추고, 진행이 바뀐 칸을 다시 그리고, 포커스된 칸의 충돌 질문을 띄운다.
     pub(super) fn sync_explorer_ops(&mut self) {
+        let files = &mut self.explorer_files;
+        let targets: Vec<&super::Target> = files
+            .job
+            .iter()
+            .map(|j| &j.target)
+            .chain(files.remote.iter().map(|j| &j.target))
+            .collect();
+        let running: Vec<(u32, &std::path::Path)> = targets
+            .iter()
+            .filter_map(|t| Some((t.surface, t.created.as_deref()?)))
+            .collect();
+        let running_requests: Vec<u64> = targets.iter().map(|t| t.request).collect();
         for view in self.view.views.values_mut() {
             let Some(view) = view.as_main_mut() else {
                 continue;
             };
-            if sync_queues(&mut view.state) {
+            let resumed = resume_unanswered_creates(&mut view.state, &running)
+                | resume_unanswered_rename(&mut view.state, &running_requests);
+            if sync_queues(&mut view.state) || resumed {
                 view.mark_dirty();
             }
         }
-        let files = &mut self.explorer_files;
         let local = files.job.iter_mut().map(|j| {
             (
                 (j.window, j.target.surface, j.engine),
@@ -257,6 +270,93 @@ fn sync_job(
 }
 
 /// 칸마다 기다리는 작업 목록을 요청 대기열과 맞춘다. 바뀐 칸이 있으면 true.
+/// 원격 만들기를 기다리는 편집 줄 가운데 대기열에도 `running` 에도 없는 것은 성공으로 닫히지 않고
+/// 끝났다(실패·거절·연결 끊김·버려진 요청). 글자를 둔 채 다시 편집하게 한다. 실패 이유는 그 경로가
+/// 따로 알린다. `running` 은 실행 중인 작업의 (칸, 만들 경로)다.
+pub(super) fn resume_unanswered_creates(
+    state: &mut MainViewState,
+    running: &[(u32, &std::path::Path)],
+) -> bool {
+    let mut changed = false;
+    for sid in state.explorer_views.cached_surfaces().collect::<Vec<_>>() {
+        let Some(path) = state
+            .explorer_views
+            .get(sid)
+            .and_then(|v| v.create.as_ref()?.waiting_path())
+        else {
+            continue;
+        };
+        let alive = |surface: u32, created: Option<&std::path::Path>| {
+            surface == sid && created == Some(path.as_path())
+        };
+        let queued = state
+            .explorer_file_requests
+            .0
+            .iter()
+            .any(|r| alive(r.target.surface, r.target.created.as_deref()));
+        if queued || running.iter().any(|&(s, p)| alive(s, Some(p))) {
+            continue;
+        }
+        if let Some(create) = state
+            .explorer_views
+            .get_mut(sid)
+            .and_then(|v| v.create.as_mut())
+        {
+            create.resume_editing();
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// 이름 변경 팝업이 기다리는 요청이 대기열에도 `running` 에도 없고 성공으로 끝나지 않았으면
+/// 기다림을 풀어 다시 편집하게 한다. 실패 이유는 그 칸이 따로 알린다.
+pub(super) fn resume_unanswered_rename(state: &mut MainViewState, running: &[u64]) -> bool {
+    let Some(waiting) = state.dialogs.rename_waiting.as_ref().filter(|w| !w.done) else {
+        return false;
+    };
+    let id = waiting.request;
+    if running.contains(&id) || state.explorer_file_requests.0.iter().any(|r| r.id == id) {
+        return false;
+    }
+    state.dialogs.rename_waiting = None;
+    true
+}
+
+/// 원격이 이름 변경에 성공했으면 그 요청을 기다리던 팝업을 닫게 한다.
+pub(super) fn close_renamed(registry: &mut crate::view::ViewRegistry, request: u64) {
+    for view in registry.views.values_mut() {
+        let Some(view) = view.as_main_mut() else {
+            continue;
+        };
+        if let Some(waiting) = view.state.dialogs.rename_waiting.as_mut()
+            && waiting.request == request
+        {
+            waiting.done = true;
+            view.mark_dirty();
+        }
+    }
+}
+
+/// 원격이 만들기에 성공했으면 그 경로를 기다리던 편집 줄을 닫는다. 항목은 다시 읽은 목록에서 고른다.
+pub(super) fn close_created(
+    registry: &mut crate::view::ViewRegistry,
+    surface: u32,
+    path: &std::path::Path,
+) {
+    for view in registry.views.values_mut() {
+        let Some(view) = view.as_main_mut() else {
+            continue;
+        };
+        if let Some(v) = view.state.explorer_views.get_mut(surface)
+            && v.create.as_ref().and_then(|c| c.waiting_path()).as_deref() == Some(path)
+        {
+            v.create = None;
+            view.mark_dirty();
+        }
+    }
+}
+
 fn sync_queues(state: &mut MainViewState) -> bool {
     let mut changed = false;
     for sid in state.explorer_views.cached_surfaces().collect::<Vec<_>>() {

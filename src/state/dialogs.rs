@@ -105,11 +105,24 @@ pub enum PendingNativeMenu {
     },
 }
 
+/// 원격 이름 변경 요청 하나를 기다리는 이름 변경 팝업.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RenameWaiting {
+    /// 파일 작업 대기열이 준 요청 번호.
+    pub(crate) request: u64,
+    /// 대기 줄에 적을 원격 이름.
+    pub(crate) host: String,
+    /// 원격이 성공을 알렸다. 팝업이 다음 프레임에 닫힌다.
+    pub(crate) done: bool,
+}
+
 /// 대화상자·팝업의 임시 상태. 새 항목은 RequestContext 최상위 대신 여기에 둔다.
 pub struct DialogState {
     pub(crate) rename: Option<(RenameTarget, String)>,
-    /// 이름 변경 팝업이 직전 프레임에 그린 오류 줄 높이. sizer 가 팝업을 이만큼 높인다.
+    /// 이름 변경 팝업이 직전 프레임에 그린 오류 줄이나 대기 줄 높이. sizer 가 팝업을 이만큼 높인다.
     pub(crate) rename_error_height: f32,
+    /// 원격 이름 변경의 답을 기다린다. 기다리는 동안 팝업은 열린 채 입력과 버튼을 막는다.
+    pub(crate) rename_waiting: Option<RenameWaiting>,
     /// 마우스 캡처 배너 메뉴의 대상 surface ID.
     pub(crate) mouse_capture_banner_menu_target: Option<u32>,
     /// 마우스 캡처 배너 메뉴를 열 때 잰 (셸 안쪽 폭, 셸 높이). 폭은 프로그램 이름에 따라,
@@ -209,6 +222,7 @@ impl DialogState {
         Self {
             rename: None,
             rename_error_height: 0.0,
+            rename_waiting: None,
             mouse_capture_banner_menu_target: None,
             mouse_capture_banner_menu_size: None,
             tools_menu_width: None,

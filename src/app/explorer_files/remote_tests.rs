@@ -389,3 +389,92 @@ fn only_the_designed_verbs_get_a_lost_card() {
         Done::Simple(Err(e)) if e == crate::i18n::t("explorer.state.remote_result_unknown")
     ));
 }
+
+/// 원격 새 항목 줄과 이름 변경 팝업은 요청이 대기열이나 실행 중에 있는 동안만 기다린다.
+/// 성공이 닫지 않은 채 요청이 사라지면(실패·거절·버려짐) 글자를 둔 채 다시 편집하게 한다.
+#[test]
+fn a_waiting_create_or_rename_resumes_editing_once_its_request_is_gone() {
+    use super::super::ui_sync::{resume_unanswered_creates, resume_unanswered_rename};
+    let (mut state, mut engine) = crate::state::tests::test_mirror_state();
+    let read = engine.read();
+    let sid = read.workspace_at(0).unwrap().all_surface_ids()[0];
+    let ws = read.mirror_workspace_of(sid).expect("mirror 칸");
+    drop(read);
+    engine.remote.explorer_writable.insert(ws);
+    let dir = PathBuf::from("/srv/logs");
+    let panel = crate::model::ExplorerPanel::new(sid, dir.clone());
+    let view = state.explorer_views.get_or_init(&panel, Some(ws));
+    view.start_create(dir.clone(), true);
+    let create = view.create.as_mut().unwrap();
+    create.waiting = true;
+    let path = create.waiting_path().unwrap();
+    let name = create.edit.buf.clone();
+    state.request_explorer_file(
+        &engine.read(),
+        sid,
+        Operation::Create {
+            dir: dir.clone(),
+            name: name.clone(),
+            folder: true,
+        },
+        user(),
+    );
+    let rename = state
+        .request_explorer_file_numbered(
+            &engine.read(),
+            sid,
+            Operation::Rename {
+                path: dir.join("a"),
+                name: "b".into(),
+            },
+            user(),
+        )
+        .expect("받아야 한다");
+    state.dialogs.rename_waiting = Some(crate::state::RenameWaiting {
+        request: rename,
+        host: "build-eu".into(),
+        done: false,
+    });
+    let waiting = |state: &crate::state::MainViewState| {
+        state
+            .explorer_views
+            .get(sid)
+            .unwrap()
+            .create
+            .as_ref()
+            .unwrap()
+            .waiting
+    };
+
+    // 대기열에 있으면 기다린다.
+    assert!(!resume_unanswered_creates(&mut state, &[]));
+    assert!(!resume_unanswered_rename(&mut state, &[]));
+    assert!(waiting(&state));
+
+    // 대기열을 떠나 실행 중이어도 기다린다.
+    state.explorer_file_requests.0.clear();
+    assert!(!resume_unanswered_creates(
+        &mut state,
+        &[(sid, path.as_path())]
+    ));
+    assert!(!resume_unanswered_rename(&mut state, &[rename]));
+    assert!(waiting(&state));
+
+    // 어디에도 없으면 다시 편집한다. 글자는 그대로다.
+    assert!(resume_unanswered_creates(&mut state, &[]));
+    assert!(resume_unanswered_rename(&mut state, &[]));
+    assert!(!waiting(&state));
+    assert_eq!(
+        state
+            .explorer_views
+            .get(sid)
+            .unwrap()
+            .create
+            .as_ref()
+            .unwrap()
+            .edit
+            .buf,
+        name
+    );
+    assert!(state.dialogs.rename_waiting.is_none());
+}

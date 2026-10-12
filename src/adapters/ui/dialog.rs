@@ -51,9 +51,12 @@ pub struct RenamePopupProps<'a> {
     pub error: Option<&'a str>,
     /// false이면 Save와 Enter 확정을 모두 막는다.
     pub save_enabled: bool,
-    /// view 가 채우는 값. 이번 프레임에 그린 오류 줄(앞 간격 포함)의 높이이고 오류가 없으면 0 이다.
+    /// view 가 채우는 값. 이번 프레임에 그린 오류 줄이나 대기 줄(앞 간격 포함)의 높이이고 없으면 0 이다.
     /// 호출자가 팝업 높이를 이만큼 늘려 버튼 줄이 잘리지 않게 한다.
     pub error_height: f32,
+    /// 원격의 답을 기다리는 동안의 대기 줄 문구("Renaming on {host}…"). `Some` 이면 입력을 읽기 전용으로
+    /// 두고 Spinner 줄을 보이며, 두 버튼과 Enter·Esc 를 막는다.
+    pub waiting: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +74,7 @@ pub fn on_close_rename_popup(
 ) {
     state.dialogs.rename = None;
     state.dialogs.rename_error_height = 0.0;
+    state.dialogs.rename_waiting = None;
 }
 
 pub fn draw_rename_popup(
@@ -86,10 +90,21 @@ pub fn draw_rename_popup(
 
     let is_add_favorite = matches!(target, RenameTarget::ExplorerAddFavorite { .. });
 
-    if !rename_target_exists(target, engine) {
+    if !rename_target_exists(target, engine)
+        || state
+            .dialogs
+            .rename_waiting
+            .as_ref()
+            .is_some_and(|w| w.done)
+    {
         state.dialogs.rename = None;
         return PopupAction::Close;
     }
+    let waiting = state
+        .dialogs
+        .rename_waiting
+        .as_ref()
+        .map(|w| crate::i18n::t_fmt("explorer.remote.renaming", &w.host));
 
     // 직전 프레임의 입력으로 카테고리 이름과 탐색기 항목 이름을 검사한다. 다른 대상에는 이 제한이 없다.
     let (validation_error, save_enabled) = {
@@ -126,6 +141,7 @@ pub fn draw_rename_popup(
             error: validation_error.as_deref(),
             save_enabled,
             error_height: 0.0,
+            waiting: waiting.as_deref(),
         };
         let action = draw_rename_popup_view(inner, &mut props);
         let error_height = props.error_height;
@@ -141,6 +157,18 @@ pub fn draw_rename_popup(
             PopupAction::Close
         }
         RenamePopupAction::Confirm(buffer) => {
+            match request_remote_rename(state, engine, &buffer) {
+                Some(Some(waiting)) => {
+                    state.dialogs.rename_waiting = Some(waiting);
+                    return PopupAction::None;
+                }
+                // 받지 않은 이유는 그 칸이 알린다.
+                Some(None) => {
+                    state.dialogs.rename = None;
+                    return PopupAction::Close;
+                }
+                None => {}
+            }
             let (target, _) = state.dialogs.rename.take().unwrap();
             apply_rename(state, engine, target, buffer);
             PopupAction::Close
@@ -155,17 +183,46 @@ pub fn draw_rename_popup_view(
     props: &mut RenamePopupProps<'_>,
 ) -> RenamePopupAction {
     let ctx = ui.ctx().clone();
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    let waiting = props.waiting.is_some();
+    if !waiting && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         return RenamePopupAction::Cancel;
     }
 
+    // 기다리는 동안에는 보낸 이름을 Input readOnly 모양으로 보이고 고치지 못하게 한다.
+    // egui는 편집할 수 없는 TextEdit의 프레임을 그리지 않으므로 칸 크기는 그대로 두고 상자를 직접 그린다.
+    let mut sent = props.buffer.as_str();
+    let bed = ui.painter().add(egui::Shape::Noop);
+    let field = if waiting {
+        egui::TextEdit::singleline(&mut sent)
+            .frame(false)
+            .text_color(props.theme.input_readonly_fg().to_egui())
+    } else {
+        egui::TextEdit::singleline(props.buffer)
+    };
     let resp = ui.add_sized(
         [ui.available_width(), 22.0],
-        egui::TextEdit::singleline(props.buffer)
+        field
             .font(egui::FontId::proportional(props.body_font_size))
             // 입력 위젯 안의 위치 보정이며 레이아웃 간격 토큰과는 별개다.
             .margin(margin_sym(STRUCT_GAP_4, STRUCT_GAP_2)),
     );
+
+    if waiting {
+        let radius = props.theme.input_radius().value();
+        ui.painter().set(
+            bed,
+            egui::Shape::rect_filled(resp.rect, radius, props.theme.input_readonly_bg().to_egui()),
+        );
+        ui.painter().rect_stroke(
+            resp.rect,
+            radius,
+            egui::Stroke::new(
+                props.theme.border_width.value(),
+                props.theme.input_readonly_border().to_egui(),
+            ),
+            egui::StrokeKind::Inside,
+        );
+    }
 
     if !resp.has_focus() {
         resp.request_focus();
@@ -187,12 +244,21 @@ pub fn draw_rename_popup_view(
     let mut confirm = false;
     let mut cancel = false;
 
-    if props.save_enabled && resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+    if !waiting
+        && props.save_enabled
+        && resp.has_focus()
+        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+    {
         confirm = true;
     }
 
     props.error_height = 0.0;
-    if let Some(err) = props.error {
+    if let Some(text) = props.waiting {
+        let top = ui.cursor().top();
+        vspace(ui, props.theme.spacing_sm);
+        waiting_line(ui, props.theme, text);
+        props.error_height = ui.cursor().top() - top;
+    } else if let Some(err) = props.error {
         let top = ui.cursor().top();
         vspace(ui, props.theme.spacing_xs);
         ui.colored_label(props.theme.accent_danger(), err);
@@ -204,7 +270,7 @@ pub fn draw_rename_popup_view(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if Button::new(props.save_label)
                 .variant(ButtonVariant::Primary)
-                .enabled(props.save_enabled)
+                .enabled(props.save_enabled && !waiting)
                 .show(ui, props.theme)
                 .clicked()
             {
@@ -212,6 +278,7 @@ pub fn draw_rename_popup_view(
             }
             if Button::new(props.cancel_label)
                 .variant(ButtonVariant::Ghost)
+                .enabled(!waiting)
                 .show(ui, props.theme)
                 .clicked()
             {
@@ -227,6 +294,75 @@ pub fn draw_rename_popup_view(
         return RenamePopupAction::Cancel;
     }
     RenamePopupAction::None
+}
+
+/// 대기 줄: `icon-size-sm` Spinner 와 caption text-muted 문구를 `space-sm` 간격으로 둔다.
+fn waiting_line(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        tasty_ui_widgets::Spinner::new()
+            .size(theme.icon_glyph_size_sm.value())
+            .show(ui, theme);
+        ui.label(
+            egui::RichText::new(text)
+                .size(theme.font_size_caption.value())
+                .color(theme.text_muted().to_egui()),
+        );
+    });
+    ui.ctx().request_repaint();
+}
+
+/// 원격 탐색기 항목의 이름 변경이면 요청을 넣는다. 원격이 아니면 None 이고 호출자가 로컬과 같이
+/// 처리한다. 원격이면 받은 요청의 기다림을, 받지 않았거나 보낼 수 없는 이름이면 `Some(None)` 을 돌려준다.
+fn request_remote_rename(
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    buffer: &str,
+) -> Option<Option<crate::state::RenameWaiting>> {
+    let Some((
+        RenameTarget::ExplorerEntry {
+            surface_id,
+            path,
+            binding,
+        },
+        _,
+    )) = &state.dialogs.rename
+    else {
+        return None;
+    };
+    let surface_id = *surface_id;
+    engine.mirror_workspace_of(surface_id)?;
+    let windows = explorer_name_rules(engine, surface_id, path);
+    let name = buffer.trim();
+    if !binding.current_in(engine)
+        || name.is_empty()
+        || explorer_name_error(buffer, windows).is_some()
+    {
+        return Some(None);
+    }
+    let host = state
+        .explorer_views
+        .get(surface_id)
+        .and_then(|v| v.remote_host.as_ref())
+        .map(|h| h.label.clone())
+        .unwrap_or_default();
+    let operation = crate::app::explorer_files::Operation::Rename {
+        path: path.clone(),
+        name: name.to_owned(),
+    };
+    let request = state.request_explorer_file_numbered(
+        engine,
+        surface_id,
+        operation,
+        crate::intent::IntentOrigin::User {
+            source: crate::intent::UserSource::Menu("rename_popup"),
+        },
+    );
+    Some(request.map(|request| crate::state::RenameWaiting {
+        request,
+        host,
+        done: false,
+    }))
 }
 
 /// 탐색기 항목 이름은 새 항목 입력과 같은 규칙으로 검사하고 이유를 보인다.
@@ -498,11 +634,42 @@ mod tests {
                     error: None,
                     save_enabled: true,
                     error_height: 0.0,
+                    waiting: None,
                 };
                 out = draw_rename_popup_view(ui, &mut props);
             });
         }));
         (out, buffer)
+    }
+
+    /// 글자 `text`를 감싸는 사각형들의 채움색과 테두리색. 같은 색을 쓰는 다른 위젯(꺼진 버튼)은 뺀다.
+    fn box_colors(
+        output: &egui::FullOutput,
+        text: &str,
+    ) -> (Vec<egui::Color32>, Vec<egui::Color32>) {
+        let at = output
+            .shapes
+            .iter()
+            .find_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.text() == text => {
+                    Some(t.visual_bounding_rect().center())
+                }
+                _ => None,
+            })
+            .expect("the text is drawn");
+        let rects = || {
+            output.shapes.iter().filter_map(move |c| match &c.shape {
+                egui::Shape::Rect(r) if r.rect.contains(at) => Some(r),
+                _ => None,
+            })
+        };
+        (
+            rects().map(|r| r.fill).collect(),
+            rects()
+                .filter(|r| r.stroke.width > 0.0)
+                .map(|r| r.stroke.color)
+                .collect(),
+        )
     }
 
     fn key_event(key: egui::Key) -> egui::Event {
@@ -534,6 +701,7 @@ mod tests {
                     error,
                     save_enabled: error.is_none(),
                     error_height: 0.0,
+                    waiting: None,
                 };
                 let _ = draw_rename_popup_view(ui, &mut props); // 높이만 잰다 — action 무시.
                 out = (ui.cursor().top() - top, props.error_height);
@@ -592,6 +760,7 @@ mod tests {
                     error: None,
                     save_enabled: true,
                     error_height: 0.0,
+                    waiting: None,
                 };
                 let _ = draw_rename_popup_view(ui, &mut props); // focus priming frame — action 무시.
             });
@@ -610,12 +779,74 @@ mod tests {
                     error: None,
                     save_enabled: true,
                     error_height: 0.0,
+                    waiting: None,
                 };
                 last = draw_rename_popup_view(ui, &mut props);
             });
         }));
 
         assert_eq!(last, RenamePopupAction::Confirm("renamed".to_string()));
+    }
+
+    #[test]
+    fn a_waiting_rename_keeps_the_name_and_ignores_keys_until_the_remote_answers() {
+        let ctx = egui::Context::default();
+        let theme = test_theme();
+        let mut buffer = String::from("report-final.pdf");
+        let mut actions = Vec::new();
+        let mut heights = Vec::new();
+        let mut output = egui::FullOutput::default();
+        let frames = [
+            vec![],
+            vec![key_event(egui::Key::Escape)],
+            vec![egui::Event::Text("x".into())],
+            vec![key_event(egui::Key::Enter)],
+        ];
+        for events in frames {
+            let raw = egui::RawInput {
+                events,
+                ..Default::default()
+            };
+            output = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.set_width(200.0);
+                    let top = ui.cursor().top();
+                    let mut props = RenamePopupProps {
+                        theme: &theme,
+                        buffer: &mut buffer,
+                        save_label: "Save",
+                        cancel_label: "Cancel",
+                        body_font_size: 12.0,
+                        error: None,
+                        save_enabled: true,
+                        error_height: 0.0,
+                        waiting: Some("Renaming on build-eu…"),
+                    };
+                    actions.push(draw_rename_popup_view(ui, &mut props));
+                    heights.push((ui.cursor().top() - top, props.error_height));
+                });
+            });
+        }
+        assert!(
+            actions.iter().all(|a| *a == RenamePopupAction::None),
+            "{actions:?}"
+        );
+        assert_eq!(buffer, "report-final.pdf");
+        // 보낸 이름 칸은 시안 Input readOnly처럼 readonly 바탕과 테두리를 둔다.
+        let (fills, strokes) = box_colors(&output, "report-final.pdf");
+        assert!(
+            fills.contains(&theme.input_readonly_bg().to_egui()),
+            "{fills:?}"
+        );
+        assert!(
+            strokes.contains(&theme.input_readonly_border().to_egui()),
+            "{strokes:?}"
+        );
+        // 대기 줄이 팝업을 그만큼 늘려 버튼 줄이 안에 남는다.
+        let (plain, _) = measured(None);
+        let (content, wait_h) = heights[0];
+        assert!(wait_h > 0.0);
+        assert_eq!(content, plain + wait_h);
     }
 
     #[test]

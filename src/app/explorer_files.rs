@@ -270,6 +270,8 @@ struct Target {
     created: Option<PathBuf>,
     /// 결과를 카드 하나로 모을 누름 번호와 이 요청의 번호.
     press: Option<(u64, u64)>,
+    /// 대기열에서 받은 요청 번호. 시작한 뒤에도 남아 결과를 기다리는 화면이 이 요청을 찾는다.
+    request: u64,
 }
 struct Request {
     /// 대기열에서 이 요청을 가리키는 번호.
@@ -440,7 +442,11 @@ impl crate::state::MainViewState {
                 .map(|c| Arc::clone(&c.identity)),
             _ => None,
         };
+        let requests = &mut self.explorer_file_requests;
+        requests.1 += 1;
+        let id = requests.1;
         let target = Target {
+            request: id,
             surface,
             binding,
             origin,
@@ -463,10 +469,7 @@ impl crate::state::MainViewState {
             .take()
             .or_else(|| history::Source::of(&operation).map(Recorded::New))
             .filter(|_| !remote);
-        let requests = &mut self.explorer_file_requests;
-        requests.1 += 1;
-        let id = requests.1;
-        requests.0.push_back(Request {
+        self.explorer_file_requests.0.push_back(Request {
             id,
             target,
             operation,
@@ -700,6 +703,12 @@ impl super::App {
             success,
         );
         report_result(&result);
+        if success {
+            if let Some(path) = &target.created {
+                ui_sync::close_created(&mut self.view, target.surface, path);
+            }
+            ui_sync::close_renamed(&mut self.view, target.request);
+        }
         if self.engines.of_window(window) != Some(engine) {
             return;
         }

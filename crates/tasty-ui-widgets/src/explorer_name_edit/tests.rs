@@ -145,3 +145,72 @@ fn a_grid_field_at_the_list_edge_moves_inside_the_visible_area() {
     assert_eq!(inside_shift(r(-20.0, 140.0), r(0.0, 100.0)), 20.0);
     assert_eq!(inside_shift(r(30.0, 190.0), r(0.0, 100.0)), -30.0);
 }
+
+#[test]
+fn a_waiting_field_is_read_only_with_a_spinner_after_it_and_sends_no_events() {
+    let theme = theme();
+    let (row, idle) = rects(ExplorerNameLayout::List);
+    let options = ExplorerNameOptions {
+        pending: Some("Waiting for build-eu"),
+        ..Default::default()
+    };
+    let (_, field) = rects_in(ExplorerNameLayout::List, options);
+    // 칸 뒤에 간격과 Spinner 자리를 남긴다.
+    let slot = theme.spacing_sm.value() + theme.icon_glyph_size_sm.value();
+    assert_eq!(field.left(), idle.left());
+    assert!(
+        (idle.right() - field.right() - slot).abs() < 0.01,
+        "{idle:?} {field:?}"
+    );
+    assert!(field.right() + slot <= row.right());
+
+    // 글자를 바꾸지 않고, Enter·Esc 도 이벤트로 내지 않는다.
+    let ctx = egui::Context::default();
+    let mut edit = ExplorerNameEdit::new("New folder".into(), 0..10);
+    let mut events = Vec::new();
+    let mut fills = Vec::new();
+    for key in [
+        None,
+        Some(egui::Key::A),
+        Some(egui::Key::Enter),
+        Some(egui::Key::Escape),
+    ] {
+        let mut input = egui::RawInput::default();
+        if let Some(key) = key {
+            input.events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+            if key == egui::Key::A {
+                input.events.push(egui::Event::Text("a".into()));
+            }
+        }
+        let out = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let (_, _, event) = explorer_name_row_in(
+                    ui,
+                    &theme,
+                    ExplorerNameLayout::List,
+                    options,
+                    tasty_icons::FOLDER,
+                    &mut edit,
+                    true,
+                );
+                events.push(event);
+            });
+        });
+        fills.extend(out.shapes.iter().filter_map(|s| match &s.shape {
+            egui::Shape::Rect(r) => Some(r.fill),
+            _ => None,
+        }));
+    }
+    assert_eq!(edit.buf, "New folder");
+    assert!(
+        events.iter().all(|e| *e == ExplorerNameEvent::None),
+        "{events:?}"
+    );
+    assert!(fills.contains(&theme.input_readonly_bg().to_egui()));
+}
