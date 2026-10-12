@@ -572,7 +572,7 @@ fn a_panic_inside_a_unit_rolls_it_back_and_leaves_the_store_usable() {
 // ---- 실제 저장 실패 ----
 
 /// version 열에 정수가 아닌 값을 넣어 조회가 실제 행 변환 오류(`MemoryError::Db`)를 내게 한다.
-fn plant_unreadable_row(s: &MemoryStore) {
+pub(super) fn plant_unreadable_row(s: &MemoryStore) {
     s.conn
         .execute(
             "INSERT INTO memory

@@ -1,0 +1,557 @@
+use std::path::Path;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
+
+use tasty_utils::batch_writer::{
+    Completion, FlushFailure, FlushPoint, Limits, ManualClock, SubmitError, SystemClock,
+};
+
+use super::*;
+use crate::{HOST_OWNER, PutOpts, Scope};
+
+const WAIT: Duration = Duration::from_secs(10);
+
+fn text(s: &str) -> MemoryValue {
+    MemoryValue::Text(s.into())
+}
+
+fn put(owner: &str, key: &str, value: &str, cas: Option<u64>) -> WriteOp {
+    WriteOp::Put {
+        owner: owner.into(),
+        scope: Scope::Global,
+        key: key.into(),
+        value: text(value),
+        opts: PutOpts {
+            expires_at: None,
+            cas,
+        },
+    }
+}
+
+/// 묶음 실행 전에 멈출 수 있는 공유 저장소 접근. 운영 경로와 같은 공유 잠금을 쓴다.
+struct Gated {
+    shared: SharedStore,
+    open: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl StoreAccess for Gated {
+    fn with_store<R>(&mut self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
+        let (lock, cv) = &*self.open;
+        let mut open = lock.lock().unwrap();
+        while !*open {
+            open = cv.wait(open).unwrap();
+        }
+        drop(open);
+        self.shared.with_store(f)
+    }
+}
+
+struct Rig {
+    writer: MemoryWriter<Gated>,
+    handle: MemoryHandle<Gated>,
+    store: Arc<Mutex<MemoryStore>>,
+    open: Arc<(Mutex<bool>, Condvar)>,
+    clock: Arc<ManualClock>,
+}
+
+impl Rig {
+    fn release(&self) {
+        *self.open.0.lock().unwrap() = true;
+        self.open.1.notify_all();
+    }
+    fn commits(&self) -> u64 {
+        self.store.lock().unwrap().db_latency().snapshot().commits
+    }
+    fn tick(&self) {
+        self.clock.advance(Duration::from_millis(2));
+    }
+    fn shutdown(mut self) {
+        self.release();
+        self.writer.begin_shutdown();
+        let deadline = Instant::now() + WAIT;
+        while self.writer.poll_shutdown() != 0 {
+            assert!(Instant::now() < deadline, "writer did not join");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+}
+
+fn rig_with(store: MemoryStore, limits: Limits, open: bool) -> Rig {
+    let store = Arc::new(Mutex::new(store));
+    let dyn_store: Arc<Mutex<dyn MemoryStorage>> = store.clone();
+    let gate = Arc::new((Mutex::new(open), Condvar::new()));
+    let clock = Arc::new(ManualClock::default());
+    let writer = spawn(
+        Gated {
+            shared: SharedStore(dyn_store),
+            open: gate.clone(),
+        },
+        limits,
+        clock.clone(),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let handle = writer.handle();
+    Rig {
+        writer,
+        handle,
+        store,
+        open: gate,
+        clock,
+    }
+}
+
+fn file_store(dir: &Path) -> MemoryStore {
+    MemoryStore::open(&dir.join("memory.db")).unwrap()
+}
+
+fn done(c: MemoryCompletion) -> std::result::Result<MemoryOutput, WriterError> {
+    match c {
+        Completion::Done(r) => r,
+        other => panic!("expected Done, got {other:?}"),
+    }
+}
+
+fn version(c: MemoryCompletion) -> u64 {
+    match done(c) {
+        Ok(MemoryOutput::Written(WriteOutput::Version(v))) => v,
+        other => panic!("expected a version, got {other:?}"),
+    }
+}
+
+fn rejection(c: MemoryCompletion) -> &'static str {
+    match done(c) {
+        Err(WriterError::Rejected { error, .. }) => match *error {
+            MemoryError::CasConflict { .. } => "cas",
+            MemoryError::OwnedByOther { .. } => "owner",
+            MemoryError::NotFound { .. } => "not_found",
+            _ => "other",
+        },
+        other => panic!("expected a rejection, got {other:?}"),
+    }
+}
+
+#[test]
+fn accepted_requests_wait_for_one_commit_and_survive_a_reopen() {
+    let tmp = tempfile::tempdir().unwrap();
+    let rig = rig_with(file_store(tmp.path()), Limits::default(), false);
+    let before = rig.commits();
+    let started = Instant::now();
+    let receipts: Vec<_> = (0..100)
+        .map(|i| {
+            rig.handle
+                .submit(MemoryRequest::Write(put(
+                    HOST_OWNER,
+                    &format!("k{i}"),
+                    "v",
+                    None,
+                )))
+                .unwrap()
+        })
+        .collect();
+    let submit_time = started.elapsed();
+    assert!(submit_time < Duration::from_secs(1), "{submit_time:?}");
+    rig.tick();
+    std::thread::sleep(Duration::from_millis(20));
+    assert!(receipts.iter().all(|r| r.try_take().is_none()));
+    assert_eq!(
+        rig.commits(),
+        before,
+        "nothing commits while the worker is held"
+    );
+
+    rig.release();
+    for r in &receipts {
+        assert_eq!(version(r.wait_timeout(WAIT).unwrap()), 1);
+    }
+    assert_eq!(rig.commits(), before + 1, "a hundred requests, one commit");
+    assert_eq!(rig.handle.stats().batches, 1);
+    rig.shutdown();
+
+    let reopened = file_store(tmp.path());
+    assert_eq!(reopened.count(&Scope::Global, Some("k")).unwrap(), 100);
+}
+
+#[test]
+fn requests_in_one_batch_are_judged_in_order_and_rejections_stay_alone() {
+    let rig = rig_with(
+        MemoryStore::open_in_memory().unwrap(),
+        Limits::default(),
+        false,
+    );
+    let submit = |op| rig.handle.submit(MemoryRequest::Write(op)).unwrap();
+    let a = submit(put("com.a", "k", "1", None));
+    let b = submit(put("com.a", "k", "2", Some(1)));
+    let stale = submit(put("com.a", "k", "3", Some(1)));
+    let other = submit(put("com.b", "k", "4", None));
+    let atomic = rig
+        .handle
+        .submit(MemoryRequest::Batch {
+            mode: BatchMode::Atomic,
+            ops: vec![
+                put("com.a", "x", "1", None),
+                put("com.a", "k", "5", Some(9)),
+            ],
+        })
+        .unwrap();
+    let after = submit(put("com.a", "k", "6", Some(2)));
+    rig.tick();
+    rig.release();
+    assert_eq!(version(a.wait_timeout(WAIT).unwrap()), 1);
+    assert_eq!(version(b.wait_timeout(WAIT).unwrap()), 2);
+    assert_eq!(rejection(stale.wait_timeout(WAIT).unwrap()), "cas");
+    assert_eq!(rejection(other.wait_timeout(WAIT).unwrap()), "owner");
+    match done(atomic.wait_timeout(WAIT).unwrap()) {
+        Err(WriterError::Rejected { index, .. }) => assert_eq!(index, Some(1)),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(version(after.wait_timeout(WAIT).unwrap()), 3);
+    {
+        let mut s = rig.store.lock().unwrap();
+        assert!(
+            s.get(&Scope::Global, "x").unwrap().is_none(),
+            "the atomic batch rolls back alone"
+        );
+        let changes = s.take_pending_changes();
+        assert_eq!(
+            changes.len(),
+            3,
+            "rejected requests leave no change: {changes:?}"
+        );
+        assert_eq!(s.db_latency().snapshot().commits, 1);
+    }
+    rig.shutdown();
+}
+
+#[test]
+fn a_compound_operation_reads_judges_and_writes_without_a_second_submit() {
+    let rig = rig_with(
+        MemoryStore::open_in_memory().unwrap(),
+        Limits::default(),
+        false,
+    );
+    // permit 하나짜리 semaphore: 비어 있을 때만 점유한다.
+    let acquire = |who: &'static str| {
+        MemoryRequest::unit(64, move |s| {
+            if s.count(&Scope::Global, Some("permit."))? >= 1 {
+                return Ok(false);
+            }
+            s.put(
+                HOST_OWNER,
+                &Scope::Global,
+                &format!("permit.{who}"),
+                &text(who),
+                &PutOpts::default(),
+            )?;
+            Ok(true)
+        })
+    };
+    let first = rig.handle.submit(acquire("a")).unwrap();
+    let second = rig.handle.submit(acquire("b")).unwrap();
+    rig.tick();
+    rig.release();
+    let got = |r: &batch_writer::Receipt<MemoryCompletion>| {
+        done(r.wait_timeout(WAIT).unwrap())
+            .unwrap()
+            .into_value::<bool>()
+            .unwrap()
+    };
+    assert!(got(&first));
+    assert!(!got(&second), "the second sees the first in the same batch");
+    assert_eq!(rig.handle.stats().batches, 1);
+    rig.shutdown();
+}
+
+#[test]
+fn a_strong_read_sees_every_request_accepted_before_it_after_their_commit() {
+    let rig = rig_with(
+        MemoryStore::open_in_memory().unwrap(),
+        Limits::default(),
+        false,
+    );
+    let w = rig
+        .handle
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "k", "1", None)))
+        .unwrap();
+    let r = rig
+        .handle
+        .submit(MemoryRequest::read(64, |s| {
+            Ok(s.get(&Scope::Global, "k")?.map(|e| e.version))
+        }))
+        .unwrap();
+    rig.release();
+    assert_eq!(version(w.wait_timeout(WAIT).unwrap()), 1);
+    let seen = done(r.wait_timeout(WAIT).unwrap())
+        .unwrap()
+        .into_value::<Option<u64>>()
+        .unwrap();
+    assert_eq!(seen, Some(1));
+    assert_eq!(rig.handle.stats().batches, 2, "the read closed the window");
+    assert_eq!(rig.commits(), 1, "the read itself commits nothing");
+    rig.shutdown();
+}
+
+#[test]
+fn a_storage_failure_fails_every_request_of_the_batch_and_publishes_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = file_store(tmp.path());
+    let pages: i64 = store
+        .conn
+        .query_row("PRAGMA page_count", [], |r| r.get(0))
+        .unwrap();
+    store
+        .conn
+        .query_row(&format!("PRAGMA max_page_count={}", pages + 2), [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap();
+    let rig = rig_with(store, Limits::default(), false);
+    let big = "x".repeat(64 * 1024);
+    let small = rig
+        .handle
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "small", "1", None)))
+        .unwrap();
+    let huge = rig
+        .handle
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "big", &big, None)))
+        .unwrap();
+    rig.tick();
+    rig.release();
+    for r in [&small, &huge] {
+        match r.wait_timeout(WAIT).unwrap() {
+            Completion::Failed(WriterError::Storage(e)) => {
+                assert_eq!(e.storage_failure(), Some(StorageFailure::DiskFull))
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    {
+        let mut s = rig.store.lock().unwrap();
+        assert!(s.get(&Scope::Global, "small").unwrap().is_none());
+        assert!(s.take_pending_changes().is_empty());
+        assert_eq!(s.db_latency().snapshot().commits, 0);
+    }
+    let flush = rig.handle.flush(FlushPoint::START).unwrap();
+    assert!(matches!(
+        flush.wait_timeout(WAIT).unwrap(),
+        Err(FlushFailure::NotClean { failed: 2, .. })
+    ));
+    rig.shutdown();
+}
+
+#[test]
+fn a_failure_no_request_saw_is_reported_as_unknown_and_not_run_again() {
+    let store = MemoryStore::open_in_memory().unwrap();
+    crate::batch::plant_unreadable_row_for_tests(&store);
+    let rig = rig_with(store, Limits::default(), false);
+    let runs = Arc::new(Mutex::new(0));
+    let counted = runs.clone();
+    let swallowing = rig
+        .handle
+        .submit(MemoryRequest::unit(0, move |s| {
+            *counted.lock().unwrap() += 1;
+            s.put(
+                HOST_OWNER,
+                &Scope::Global,
+                "a",
+                &text("1"),
+                &PutOpts::default(),
+            )?;
+            // 조회 실패를 삼켜도 단위는 깨진다. writer는 원인 요청을 알 수 없다.
+            Ok(s.get(&Scope::Global, "unreadable").is_err())
+        }))
+        .unwrap();
+    rig.tick();
+    rig.release();
+    assert!(matches!(
+        swallowing.wait_timeout(WAIT).unwrap(),
+        Completion::Unknown(WriterError::Storage(_))
+    ));
+    assert_eq!(*runs.lock().unwrap(), 1);
+    assert!(
+        rig.store
+            .lock()
+            .unwrap()
+            .get(&Scope::Global, "a")
+            .unwrap()
+            .is_none()
+    );
+    rig.shutdown();
+}
+
+#[test]
+fn a_panicking_unit_fails_alone_and_the_rest_of_its_batch_commits_once() {
+    let rig = rig_with(
+        MemoryStore::open_in_memory().unwrap(),
+        Limits::default(),
+        false,
+    );
+    let a = rig
+        .handle
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "a", "1", None)))
+        .unwrap();
+    let bad = rig
+        .handle
+        .submit(MemoryRequest::unit(0, |s| -> Result<()> {
+            s.put(
+                HOST_OWNER,
+                &Scope::Global,
+                "bad",
+                &text("1"),
+                &PutOpts::default(),
+            )?;
+            panic!("unit panic for a test")
+        }))
+        .unwrap();
+    let c = rig
+        .handle
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "a", "2", Some(1))))
+        .unwrap();
+    rig.tick();
+    rig.release();
+    assert!(matches!(
+        bad.wait_timeout(WAIT).unwrap(),
+        Completion::Failed(WriterError::Panicked)
+    ));
+    assert_eq!(version(a.wait_timeout(WAIT).unwrap()), 1);
+    assert_eq!(
+        version(c.wait_timeout(WAIT).unwrap()),
+        2,
+        "run again from scratch, not on top of the rolled-back attempt"
+    );
+    let mut s = rig.store.lock().unwrap();
+    assert!(s.get(&Scope::Global, "bad").unwrap().is_none());
+    assert_eq!(s.db_latency().snapshot().commits, 1);
+    assert_eq!(s.take_pending_changes().len(), 2);
+    drop(s);
+    rig.shutdown();
+}
+
+fn lock_holder(path: &Path) -> rusqlite::Connection {
+    let holder = rusqlite::Connection::open(path).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+    holder
+}
+
+#[test]
+fn busy_is_retried_until_the_lock_frees_and_then_commits_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("memory.db");
+    let store = MemoryStore::open(&path).unwrap();
+    store.conn.busy_timeout(Duration::ZERO).unwrap();
+    let holder = lock_holder(&path);
+    let store = Arc::new(Mutex::new(store));
+    let dyn_store: Arc<Mutex<dyn MemoryStorage>> = store.clone();
+    let writer = spawn(
+        SharedStore(dyn_store),
+        Limits {
+            retry_for: Duration::from_secs(5),
+            ..Limits::default()
+        },
+        Arc::new(SystemClock),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let handle = writer.handle();
+    let r = handle
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "k", "1", None)))
+        .unwrap();
+    let deadline = Instant::now() + WAIT;
+    while handle.stats().retries < 2 {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(r.try_take().is_none());
+    holder.execute_batch("ROLLBACK").unwrap();
+    assert_eq!(version(r.wait_timeout(WAIT).unwrap()), 1);
+    assert_eq!(store.lock().unwrap().db_latency().snapshot().commits, 1);
+    drop(writer);
+}
+
+#[test]
+fn busy_past_the_retry_window_fails_and_the_next_request_still_runs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("memory.db");
+    let store = MemoryStore::open(&path).unwrap();
+    store.conn.busy_timeout(Duration::ZERO).unwrap();
+    let holder = lock_holder(&path);
+    let rig = rig_with(
+        store,
+        Limits {
+            retry_for: Duration::from_millis(30),
+            ..Limits::default()
+        },
+        true,
+    );
+    let r = rig
+        .handle
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "k", "1", None)))
+        .unwrap();
+    rig.tick();
+    match r.wait_timeout(WAIT).unwrap() {
+        Completion::Failed(WriterError::Storage(e)) => {
+            assert_eq!(e.storage_failure(), Some(StorageFailure::Busy))
+        }
+        other => panic!("{other:?}"),
+    }
+    holder.execute_batch("ROLLBACK").unwrap();
+    let next = rig
+        .handle
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "k", "1", None)))
+        .unwrap();
+    rig.tick();
+    assert_eq!(version(next.wait_timeout(WAIT).unwrap()), 1);
+    rig.shutdown();
+}
+
+#[test]
+fn a_dropped_receipt_still_commits_and_shutdown_drains_before_join() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut rig = rig_with(file_store(tmp.path()), Limits::default(), false);
+    drop(
+        rig.handle
+            .submit(MemoryRequest::Write(put(HOST_OWNER, "kept", "1", None)))
+            .unwrap(),
+    );
+    rig.writer.begin_shutdown();
+    assert!(matches!(
+        rig.handle
+            .submit(MemoryRequest::Write(put(HOST_OWNER, "late", "1", None))),
+        Err(SubmitError::Closed)
+    ));
+    assert_eq!(
+        rig.writer.poll_shutdown(),
+        1,
+        "held worker is not joined yet"
+    );
+    rig.shutdown();
+    let reopened = file_store(tmp.path());
+    assert!(reopened.get(&Scope::Global, "kept").unwrap().is_some());
+    assert!(reopened.get(&Scope::Global, "late").unwrap().is_none());
+}
+
+#[test]
+fn the_production_access_serializes_with_direct_lock_holders() {
+    let store: Arc<Mutex<dyn MemoryStorage>> =
+        Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+    let writer = spawn(
+        SharedStore(store.clone()),
+        Limits::default(),
+        Arc::new(SystemClock),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let handle = writer.handle();
+    let guard = store.lock().unwrap();
+    let r = handle
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "k", "1", None)))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(20));
+    assert!(
+        r.try_take().is_none(),
+        "the worker waits for the shared lock"
+    );
+    drop(guard);
+    assert_eq!(version(r.wait_timeout(WAIT).unwrap()), 1);
+    drop(writer);
+}

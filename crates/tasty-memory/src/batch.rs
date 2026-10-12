@@ -530,5 +530,12 @@ where
     }
 }
 
+/// 조회하면 행 변환 오류(`MemoryError::Db`)를 내는 행을 심는다. 다른 모듈의 시험이 단위 안 조회
+/// 실패를 만들 때 쓴다.
+#[cfg(test)]
+pub(crate) fn plant_unreadable_row_for_tests(s: &MemoryStore) {
+    batch_tests::plant_unreadable_row(s);
+}
+
 #[cfg(test)]
 mod batch_tests;

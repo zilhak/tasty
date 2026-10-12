@@ -31,6 +31,7 @@ pub mod cache;
 pub mod goal;
 pub mod plan;
 pub mod testing;
+pub mod writer;
 
 pub use batch::{BatchFailure, BatchMode, BatchResult, WriteOp, WriteOutput, with_unit};
 pub use failure::StorageFailure;
