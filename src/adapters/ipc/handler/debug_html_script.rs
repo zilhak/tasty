@@ -1,14 +1,15 @@
 //! html surface 스크립트 허용의 debug 재현 명령.
 //!
 //! 허용은 release에서 사용자가 GUI로만 한다(ADR-0053). 이 파일의 명령은 허용 클릭과
-//! 뒤로·앞으로·재로드·중지 조작을 재현하므로 debug 빌드에만 둔다.
+//! 주소 입력·뒤로·앞으로·새로고침·중지 조작을 재현하므로 debug 빌드에만 둔다.
+//! 주소 입력·뒤로·앞으로·새로고침은 release 사용자 경로(`webview_user_nav`)를 그대로 쓴다.
 
 use serde_json::{Value, json};
 
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
 use crate::state::RequestContext;
-use crate::webview::DebugHistoryAction;
+use crate::webview::WebViewUserNav;
 
 fn find_html_surface<'a>(
     engine: &'a crate::runtime::engine_access::EngineRef<'_>,
@@ -66,7 +67,8 @@ pub(super) fn handle_allow(
     }
 }
 
-/// `debug.webview.history` — 뒤로·앞으로·재로드·중지를 재현한다. 다음 redraw에서 적용한다.
+/// `debug.webview.history` — 사용자 탐색 조작을 재현한다. 다음 redraw에서 적용한다.
+/// `open`은 주소 표시줄 입력처럼 해석을 마친 주소(`file://`·`http(s)://`)만 받는다.
 pub(super) fn handle_history(
     state: &mut RequestContext,
     engine: &crate::runtime::engine_access::EngineRef<'_>,
@@ -77,21 +79,35 @@ pub(super) fn handle_history(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let action = match params.get("action").and_then(|v| v.as_str()) {
-        Some("back") => DebugHistoryAction::Back,
-        Some("forward") => DebugHistoryAction::Forward,
-        Some("reload") => DebugHistoryAction::Reload,
-        Some("stop") => DebugHistoryAction::Stop,
+    let url = params.get("url").and_then(|v| v.as_str());
+    let action = params.get("action").and_then(|v| v.as_str());
+    let nav = match (action, url) {
+        (Some("open"), Some(url)) if crate::webview::is_navigable_url(url) => {
+            Some(WebViewUserNav::Open(url.to_string()))
+        }
+        (Some("open"), _) => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "'open' needs a 'url' with a file://, http:// or https:// scheme",
+            );
+        }
+        (Some("back"), _) => Some(WebViewUserNav::Back),
+        (Some("forward"), _) => Some(WebViewUserNav::Forward),
+        (Some("reload"), _) => Some(WebViewUserNav::Reload),
+        (Some("stop"), _) => None,
         _ => {
             return JsonRpcResponse::invalid_params(
                 id,
-                "'action' must be one of back, forward, reload, stop",
+                "'action' must be one of open, back, forward, reload, stop",
             );
         }
     };
     if let Err(e) = find_html_surface(engine, sid, &id) {
         return e;
     }
-    state.debug_webview_history.push((sid, action));
+    match nav {
+        Some(nav) => state.webview_user_nav.push((sid, nav)),
+        None => state.debug_webview_stop.push(sid),
+    }
     JsonRpcResponse::success(id, json!({ "queued": true }))
 }

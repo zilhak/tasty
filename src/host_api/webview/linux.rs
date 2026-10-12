@@ -42,6 +42,8 @@ pub struct PlatformWebView {
     /// chrome 세대. 앞 로드의 늦은 종료가 새 로드의 Loading을 바꾸지 않게 한다.
     loads: Rc<RefCell<SignalOrderLoads>>,
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
+    /// 마지막 main frame commit의 주소. 로드 중·실패 중 주소 표시가 쓴다.
+    committed_url: Rc<RefCell<Option<String>>>,
     /// html surface의 문서 단위 스크립트 허용. 없으면 JS는 설정값을 그대로 따른다.
     script_gate: Rc<RefCell<Option<ScriptGate>>>,
     parent_x11_window: std::os::raw::c_ulong,
@@ -415,10 +417,12 @@ impl PlatformWebView {
         // 실패 후 Finished가 와도 Failed를 Done으로 덮지 않는다.
         let nav_state = Rc::new(Cell::new(NavState::Idle));
         let loads = Rc::new(RefCell::new(SignalOrderLoads::default()));
+        let committed_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
         {
             let nav = nav_state.clone();
             let loads = loads.clone();
             let gate = script_gate.clone();
+            let committed = committed_url.clone();
             // load-changed는 main frame 로드에서만 온다(측정은 docs/surfaces/html/index.md의 OS별 적용 절). 화면 문서는 commit에서 기록한다.
             webview.connect_load_changed(move |wv, event| match event {
                 LoadEvent::Started => {
@@ -430,8 +434,9 @@ impl PlatformWebView {
                     }
                 }
                 LoadEvent::Committed => {
+                    let uri = wv.uri();
+                    *committed.borrow_mut() = uri.as_deref().map(str::to_string);
                     if let Some(gate) = gate.borrow().as_ref() {
-                        let uri = wv.uri();
                         set_js(wv, gate.committed(uri.as_deref()));
                     }
                 }
@@ -538,6 +543,7 @@ impl PlatformWebView {
             nav_state,
             loads,
             pending_navigations,
+            committed_url,
             script_gate,
             parent_x11_window: parent_xid as _,
             gdk_window,
@@ -899,15 +905,31 @@ impl PlatformWebView {
         self.webview.reload();
     }
 
-    /// 사용자 탐색 조작을 debug IPC에서 재현한다.
-    #[cfg(debug_assertions)]
-    pub fn debug_history(&self, action: super::DebugHistoryAction) {
-        match action {
-            super::DebugHistoryAction::Back => self.webview.go_back(),
-            super::DebugHistoryAction::Forward => self.webview.go_forward(),
-            super::DebugHistoryAction::Reload => self.webview.reload(),
-            super::DebugHistoryAction::Stop => self.webview.stop_loading(),
+    pub fn go_back(&self) {
+        self.webview.go_back();
+    }
+
+    pub fn go_forward(&self) {
+        self.webview.go_forward();
+    }
+
+    /// 주소 표시용 탐색 정보. 주소 선택 규칙은 `committed_document_url`이 정한다.
+    pub fn nav_info(&self) -> crate::model::WebViewNavInfo {
+        crate::model::WebViewNavInfo {
+            url: crate::model::committed_document_url(
+                self.nav_state.get(),
+                self.webview.uri().map(|u| u.to_string()),
+                self.committed_url.borrow().clone(),
+            ),
+            can_go_back: self.webview.can_go_back(),
+            can_go_forward: self.webview.can_go_forward(),
         }
+    }
+
+    /// 사용자 탐색 조작에 없는 로드 중지를 debug IPC에서 재현한다.
+    #[cfg(debug_assertions)]
+    pub fn debug_stop(&self) {
+        self.webview.stop_loading();
     }
 
     /// 현재 Linux에서는 적용하지 않고 로그만 남긴다.

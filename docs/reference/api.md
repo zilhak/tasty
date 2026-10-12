@@ -148,6 +148,7 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 - 원격 연결 프로필: `remote.profile.{list,get,add,detect,remove,list_local,import}`(`list_local`=로컬 `~/.ssh/config` alias 열거·읽기 전용, `import`=그 alias 를 ssh 프로필로 등록·셸 감지 없음)(구 `tool.ssh.*`/`ssh.profile.*`는 alias로 한시 호환) — [remote-profiles](../features/remote-profiles/index.md)
 - webview: `webview.set_url {surface_id, url, label?}` — `url`이 `http(s)://`·`file://`이면 그 주소를, 아니면 raw HTML로 싣는다. `label`은 WebView가 숨겨졌을 때 host chrome이 보일 이름이며, 빼면 지운다. label이 없으면 chrome은 탐색 가능한 URL만 보이고 raw HTML은 보이지 않는다 — [html plugin](../surfaces/html/index.md#상태별-시각)
 - html 스크립트 상태: `surface.html_script {surface_id}` — html surface의 현재 문서 감지 결과·지문·허용 기록·배너 단계와 표지를 읽는다. 조회는 배너를 띄우거나 사용자 열람으로 기록하지 않는다. html이 아닌 surface는 거절하며 헤드리스 빌드에서는 `-32017`이다 — [html plugin](../surfaces/html/index.md)
+- html 문서 주소: `surface.html_nav {surface_id}` — html surface가 보여 주는 문서의 commit 주소(`url`, 리다이렉트 뒤 최종 주소와 `#fragment` 포함, 로드 중·실패 뒤에는 이전 주소), 호스트가 넣은 주소(`requested_url`), 탐색 상태(`nav_state`), 뒤로·앞으로 이동 가능 여부(`can_go_back`·`can_go_forward`)를 읽는다. html이 아닌 surface는 거절하며 헤드리스 빌드에서는 `-32017`이다 — [html plugin](../surfaces/html/index.md).
 - 스크린샷: `ui.screenshot {path, surface_id?, window_id?}` (local-only, focus 독립 — 대상을 ID 로 지정) — [screenshot-methods](../ai-verification/screenshot-methods.md)
 
 ### 시스템 상태와 요청 압력

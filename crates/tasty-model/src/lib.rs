@@ -102,7 +102,7 @@ pub use closed_item::{ClosedItem, ClosedItemStore};
 pub use dag_graph_surface::*;
 pub use empty_surface::*;
 pub use explorer_panel::*;
-pub use nav_state::NavState;
+pub use nav_state::{NavState, WebViewNavInfo, committed_document_url};
 pub use pane::*;
 pub use pane_tree::*;
 pub use surface_trait::Surface;

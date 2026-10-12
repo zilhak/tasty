@@ -164,11 +164,16 @@ pub(super) fn debug_command_to_method_params(
             "debug.html_script.allow",
             serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
         ),
-        DebugCommands::WebviewHistory { surface, action } => (
+        DebugCommands::WebviewHistory {
+            surface,
+            action,
+            url,
+        } => (
             "debug.webview.history",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
                 "action": action,
+                "url": url,
             }),
         ),
         DebugCommands::StreamEcho { .. } => {

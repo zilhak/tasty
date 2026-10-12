@@ -3100,6 +3100,13 @@ long = "Print the script state of an html surface: what was detected in the curr
 [cli.help._root.surface.html-script.arg.surface]
 help = "Surface ID (required)"
 
+[cli.help._root.surface.html-nav]
+about = "Print the address of the document an html surface shows and whether it can go back or forward in its history"
+long = "Print the address of the document an html surface shows and whether it can go back or forward in its history.\n\nThe address is the last committed one: the final address after redirects, with a #fragment move applied, and the previous document while a load is in flight or after it failed. Read-only. The target surface is always given explicitly with --surface. Not available in a headless build."
+
+[cli.help._root.surface.html-nav.arg.surface]
+help = "Surface ID (required)"
+
 [cli.help._root.surface.respawn-terminal]
 about = "Restart the shell of a terminal surface in place, keeping the surface, its tab and its position"
 long = "Restart the shell of a terminal surface in place, keeping the surface, its tab and its position.\n\nThe target surface is always given explicitly with --surface."
@@ -4014,13 +4021,16 @@ about = "Reproduce the \"allow scripts\" click on an html surface: record the cu
 help = "Target html surface id (defaults to the current surface)"
 
 [cli.help._root.debug.webview-history]
-about = "Reproduce a webview history step (back, forward, reload, stop) on an html surface. Debug builds only — it stands in for user navigation"
+about = "Reproduce a user navigation on an html surface: open an address as if typed into the address bar, or go back, forward, reload or stop. Debug builds only — it stands in for user navigation"
 
 [cli.help._root.debug.webview-history.arg.surface]
 help = "Target html surface id (defaults to the current surface)"
 
 [cli.help._root.debug.webview-history.arg.action]
-help = "One of back, forward, reload, stop"
+help = "One of open, back, forward, reload, stop"
+
+[cli.help._root.debug.webview-history.arg.url]
+help = "Address for open (file://, http:// or https://)"
 
 [cli.help._root.debug.stream-echo]
 about = "Open a streaming channel and verify the server→client push path: send N data frames and expect each one echoed back (debug builds only)"

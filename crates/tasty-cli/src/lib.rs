@@ -895,6 +895,13 @@ mod workspace_category_tests {
     }
 
     #[test]
+    fn surface_html_nav_maps_to_ipc() {
+        let r = req(&["tasty", "surface", "html-nav", "--surface", "42"]);
+        assert_eq!(r.method, "surface.html_nav");
+        assert_eq!(r.params["surface_id"], 42);
+    }
+
+    #[test]
     fn surface_attention_get_maps_to_ipc() {
         let r = req(&["tasty", "surface", "attention", "get", "--surface", "42"]);
         assert_eq!(r.method, "surface.attention.get");

@@ -70,6 +70,19 @@ pub enum SurfaceCommands {
         #[arg(long)]
         surface: u32,
     },
+    /// Print the address of the document an html surface shows and whether
+    /// it can go back or forward in its history.
+    ///
+    /// The address is the last committed one: the final address after
+    /// redirects, with a #fragment move applied, and the previous document
+    /// while a load is in flight or after it failed. Read-only. The target
+    /// surface is always given explicitly with --surface. Not available in a
+    /// headless build.
+    HtmlNav {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
     /// Restart the shell of a terminal surface in place, keeping the surface,
     /// its tab and its position.
     ///

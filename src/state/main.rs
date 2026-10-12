@@ -275,9 +275,13 @@ pub struct MainViewState {
     #[cfg(feature = "gui")]
     pub(crate) webview_identity: std::sync::Weak<()>,
 
-    /// debug IPC가 요청한 webview 탐색 조작. sync_webviews가 소비한다.
+    /// 사용자가 요청한 webview 탐색(주소 입력·뒤로·앞으로·새로고침). sync_webviews가 소비한다.
+    #[cfg(feature = "gui")]
+    pub(crate) webview_user_nav: Vec<(u32, crate::webview::WebViewUserNav)>,
+
+    /// debug IPC가 요청한 로드 중지. 사용자 진입점이 없는 조작이라 사용자 탐색 큐와 나눈다.
     #[cfg(all(feature = "gui", debug_assertions))]
-    pub(crate) debug_webview_history: Vec<(u32, crate::webview::DebugHistoryAction)>,
+    pub(crate) debug_webview_stop: Vec<u32>,
 
     /// 플러그인 배너의 (instance_id, 콘텐츠 물리 rect). 호스트 egui 뒤에 mesh를 합성한다.
     #[cfg(feature = "gui")]

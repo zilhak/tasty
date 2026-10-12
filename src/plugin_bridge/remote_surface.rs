@@ -38,6 +38,9 @@ pub struct RemoteSurface {
     /// 네이티브 WebView의 탐색 상태 사본. 호스트 UI가 로딩·오류를 표시할 때 쓴다.
     #[cfg(any(feature = "gui", test))]
     pub nav_state: Arc<Mutex<NavState>>,
+    /// 네이티브 WebView의 commit 주소와 히스토리 이동 가능 여부 사본. 주소 표시와 조회가 쓴다.
+    #[cfg(feature = "gui")]
+    pub webview_nav: Arc<Mutex<tasty_model::WebViewNavInfo>>,
     /// html 문서의 스크립트 감지와 문서 단위 허용(ADR-0053). native backend의 navigation 콜백과 공유한다.
     #[cfg(feature = "gui")]
     pub html_script: Arc<Mutex<tasty_model::html_script::HtmlScriptState>>,
@@ -68,6 +71,10 @@ const WEBVIEW_LABEL_WHAT: &str = "remote surface webview label";
 const NAV_STATE_WHAT: &str = "remote surface nav state";
 const CWD_WHAT: &str = "remote surface cwd";
 #[cfg(feature = "gui")]
+static WEBVIEW_NAV_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "gui")]
+const WEBVIEW_NAV_WHAT: &str = "remote surface webview nav info";
+#[cfg(feature = "gui")]
 static HTML_SCRIPT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "gui")]
 const HTML_SCRIPT_WHAT: &str = "remote surface html script state";
@@ -94,6 +101,8 @@ impl RemoteSurface {
             webview_owner_took_over: Arc::new(AtomicBool::new(false)),
             #[cfg(any(feature = "gui", test))]
             nav_state: Arc::new(Mutex::new(NavState::Idle)),
+            #[cfg(feature = "gui")]
+            webview_nav: Arc::default(),
             #[cfg(feature = "gui")]
             html_script: Arc::default(),
             cwd: Arc::new(Mutex::new(None)),
@@ -169,6 +178,31 @@ impl RemoteSurface {
             NAV_STATE_WHAT,
             &NAV_STATE_POISON_REPORTED,
         )
+    }
+
+    /// backend 관측값으로 사본을 바꾸고, 바뀌었으면 참을 돌려준다.
+    #[cfg(feature = "gui")]
+    pub fn set_webview_nav(&self, info: tasty_model::WebViewNavInfo) -> bool {
+        let mut slot = crate::poison::recover_mutex(
+            self.webview_nav.lock(),
+            WEBVIEW_NAV_WHAT,
+            &WEBVIEW_NAV_POISON_REPORTED,
+        );
+        if *slot == info {
+            return false;
+        }
+        *slot = info;
+        true
+    }
+
+    #[cfg(feature = "gui")]
+    pub fn webview_nav(&self) -> tasty_model::WebViewNavInfo {
+        crate::poison::recover_mutex(
+            self.webview_nav.lock(),
+            WEBVIEW_NAV_WHAT,
+            &WEBVIEW_NAV_POISON_REPORTED,
+        )
+        .clone()
     }
 
     /// 스크립트 허용 상태를 잠그고 `f`를 실행한다.

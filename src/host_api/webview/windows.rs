@@ -36,7 +36,23 @@ pub struct PlatformWebView {
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
     /// html surface의 문서 단위 스크립트 허용. 없으면 JS는 설정값을 그대로 따른다.
     script_gate: Rc<RefCell<Option<ScriptGate>>>,
+    /// 마지막 main frame commit(ContentLoading)의 주소. 로드 중·실패 중 주소 표시가 쓴다.
+    committed_url: Rc<RefCell<Option<String>>>,
+    /// `nav_info` 조회가 실패한 적이 있다. 프레임마다 부르므로 첫 실패만 warn으로 남긴다.
+    nav_info_failed: Cell<bool>,
     parent_hwnd: HWND,
+}
+
+/// `Source`를 문자열로 읽고 COM 할당을 해제한다.
+fn webview_source(wv: &ICoreWebView2) -> windows::core::Result<Option<String>> {
+    let mut uri = windows::core::PWSTR::null();
+    // SAFETY: wv는 호출 동안 valid, main thread 호출. 반환 PWSTR은 이 함수가 해제한다.
+    unsafe { wv.Source(&mut uri)? };
+    // SAFETY: Source가 성공하면 uri는 NUL로 끝나는 유효한 문자열이다.
+    let text = unsafe { uri.to_string() }.ok();
+    // SAFETY: 반환 URI의 할당은 호출자가 해제한다.
+    unsafe { CoTaskMemFree(Some(uri.0 as *const c_void)) };
+    Ok(text)
 }
 
 fn set_js(webview: &ICoreWebView2, enabled: bool) {
@@ -308,15 +324,17 @@ impl PlatformWebView {
 
             // ContentLoading을 main frame commit으로 본다(ADR-0053 후보 이벤트, 미측정).
             let gate_commit = script_gate.clone();
+            let committed_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+            let commit_url = committed_url.clone();
             let mut tok_content: i64 = 0;
             let h_content = ContentLoadingEventHandler::create(Box::new(
                 move |sender, _args| -> windows::core::Result<()> {
-                    if let (Some(gate), Some(wv)) = (gate_commit.borrow().as_ref(), &sender) {
-                        let mut uri = windows::core::PWSTR::null();
-                        wv.Source(&mut uri)?;
-                        let uri_str = uri.to_string().ok();
-                        // 반환 URI의 할당은 호출자가 해제한다.
-                        CoTaskMemFree(Some(uri.0 as *const c_void));
+                    let Some(wv) = &sender else {
+                        return Ok(());
+                    };
+                    let uri_str = webview_source(wv)?;
+                    *commit_url.borrow_mut() = uri_str.clone();
+                    if let Some(gate) = gate_commit.borrow().as_ref() {
                         set_js(wv, gate.committed(uri_str.as_deref()));
                     }
                     Ok(())
@@ -483,6 +501,8 @@ impl PlatformWebView {
                 chrome_generation,
                 pending_navigations,
                 script_gate,
+                committed_url,
+                nav_info_failed: Cell::new(false),
                 parent_hwnd: parent,
             })
         }
@@ -645,20 +665,62 @@ impl PlatformWebView {
         }
     }
 
-    /// 사용자 탐색 조작을 debug IPC에서 재현한다.
-    #[cfg(debug_assertions)]
-    pub fn debug_history(&self, action: super::DebugHistoryAction) {
+    pub fn go_back(&self) {
         // SAFETY: webview는 self가 살아있는 동안 valid, main thread 호출.
-        let result = unsafe {
-            match action {
-                super::DebugHistoryAction::Back => self.webview.GoBack(),
-                super::DebugHistoryAction::Forward => self.webview.GoForward(),
-                super::DebugHistoryAction::Reload => self.webview.Reload(),
-                super::DebugHistoryAction::Stop => self.webview.Stop(),
-            }
-        };
-        if let Err(e) = result {
-            tracing::warn!("WebView2 {action:?} failed: {e}");
+        if let Err(e) = unsafe { self.webview.GoBack() } {
+            tracing::warn!("WebView2 GoBack failed: {e}");
+        }
+    }
+
+    pub fn go_forward(&self) {
+        // SAFETY: webview는 self가 살아있는 동안 valid, main thread 호출.
+        if let Err(e) = unsafe { self.webview.GoForward() } {
+            tracing::warn!("WebView2 GoForward failed: {e}");
+        }
+    }
+
+    /// 주소 표시용 탐색 정보. 주소 선택 규칙은 `committed_document_url`이 정한다.
+    pub fn nav_info(&self) -> crate::model::WebViewNavInfo {
+        let live = webview_source(&self.webview).unwrap_or_else(|e| {
+            self.note_nav_info_failure("Source", &e);
+            None
+        });
+        let mut back = BOOL(0);
+        let mut forward = BOOL(0);
+        // SAFETY: webview는 self가 살아있는 동안 valid, main thread 호출. 출력 BOOL은 지역 변수다.
+        if let Err(e) = unsafe { self.webview.CanGoBack(&mut back) } {
+            self.note_nav_info_failure("CanGoBack", &e);
+        }
+        // SAFETY: 위와 같다.
+        if let Err(e) = unsafe { self.webview.CanGoForward(&mut forward) } {
+            self.note_nav_info_failure("CanGoForward", &e);
+        }
+        crate::model::WebViewNavInfo {
+            url: crate::model::committed_document_url(
+                self.nav_state.get(),
+                live,
+                self.committed_url.borrow().clone(),
+            ),
+            can_go_back: back.as_bool(),
+            can_go_forward: forward.as_bool(),
+        }
+    }
+
+    /// `nav_info` 실패를 웹뷰별 첫 번째만 warn, 이후는 debug로 남긴다.
+    fn note_nav_info_failure(&self, call: &str, e: &windows::core::Error) {
+        if self.nav_info_failed.replace(true) {
+            tracing::debug!("WebView2 {call} failed again: {e}");
+        } else {
+            tracing::warn!("WebView2 {call} failed: {e} (later failures are logged at debug)");
+        }
+    }
+
+    /// 사용자 탐색 조작에 없는 로드 중지를 debug IPC에서 재현한다.
+    #[cfg(debug_assertions)]
+    pub fn debug_stop(&self) {
+        // SAFETY: webview는 self가 살아있는 동안 valid, main thread 호출.
+        if let Err(e) = unsafe { self.webview.Stop() } {
+            tracing::warn!("WebView2 Stop failed: {e}");
         }
     }
 

@@ -17,7 +17,7 @@ pub(crate) use commands::{handle_command_at, handle_commands, handle_last_comman
 pub(crate) use completion::handle_completion;
 pub(crate) use cwd::handle_set_cwd;
 #[cfg(feature = "gui")]
-pub(crate) use html_script::handle_html_script;
+pub(crate) use html_script::{handle_html_nav, handle_html_script};
 pub(crate) use kinds::handle_surface_kinds;
 pub(crate) use list::handle_surface_list;
 pub(crate) use mark::{

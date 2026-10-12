@@ -312,3 +312,36 @@ fn a_failed_load_hides_the_marker_of_a_dismissed_or_allowed_document() {
     st.on_load_failed();
     assert_eq!(st.marker(), None);
 }
+
+#[test]
+fn a_user_load_into_an_unviewed_surface_fires_on_commit() {
+    // 주소 입력·뒤로·앞으로·새로고침은 사용자가 그 surface를 보고 있는 조작이다.
+    let mut st = HtmlScriptState::new(true);
+    host_load(&mut st, A, scan(1, ScriptDetection::None));
+    st.on_user_load_requested();
+    load(&mut st, B, scripts(2));
+    assert_eq!(st.update_banner(), BannerPhase::Blocked);
+    assert!(st.banner().shown);
+}
+
+#[test]
+fn a_user_load_overrides_a_host_load_mark_left_before_it() {
+    // 호스트 로드 요청 뒤 commit 전에 사용자가 다시 탐색하면 사용자 로드로 본다.
+    let mut st = HtmlScriptState::new(true);
+    st.on_user_view();
+    host_load(&mut st, A, scan(1, ScriptDetection::None));
+    st.on_host_load_requested();
+    st.on_user_load_requested();
+    load(&mut st, B, scripts(2));
+    assert_eq!(st.update_banner(), BannerPhase::Blocked);
+}
+
+#[test]
+fn a_host_load_after_a_committed_user_load_waits_again() {
+    let mut st = HtmlScriptState::new(true);
+    st.on_user_load_requested();
+    load(&mut st, A, scan(1, ScriptDetection::None));
+    host_load(&mut st, B, scripts(2));
+    assert_eq!(st.update_banner(), BannerPhase::Hidden);
+    assert!(st.banner().pending_view);
+}

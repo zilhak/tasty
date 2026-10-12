@@ -3035,6 +3035,13 @@ long = "htmlサーフェスのスクリプト状態を出力します。現在�
 [cli.help._root.surface.html-script.arg.surface]
 help = "サーフェスID（必須）"
 
+[cli.help._root.surface.html-nav]
+about = "html サーフェスが表示している文書のアドレスと、履歴で戻る・進むができるかを出力"
+long = "html サーフェスが表示している文書のアドレスと、履歴で戻る・進むができるかを出力します。アドレスは最後に commit されたものです。リダイレクト後は最終アドレス、#fragment 移動後はその fragment 付きのアドレスで、読み込み中や読み込み失敗後は前の文書のアドレスです。照会のみです。対象は必ず --surface で指定します。ヘッドレスビルドでは使用できません。"
+
+[cli.help._root.surface.html-nav.arg.surface]
+help = "サーフェスID（必須）"
+
 [cli.help._root.surface.respawn-terminal]
 about = "サーフェス・タブ・位置を維持してターミナルサーフェスのシェルを再起動"
 long = "サーフェス・タブ・位置を維持してターミナルサーフェスのシェルを再起動します。対象は必ず --surface で指定します。"
@@ -3949,13 +3956,16 @@ about = "html サーフェスで「スクリプトを許可」のクリックを
 help = "対象 html サーフェスID（既定値：現在のサーフェス）"
 
 [cli.help._root.debug.webview-history]
-about = "html サーフェスの Web ビューで戻る・進む・再読み込み・停止を 1 回再現します (debug ビルド専用)。ユーザーのページ移動の代わりに使います。"
+about = "html サーフェスでユーザーのページ移動を再現します。アドレスバーに入力したようにアドレスを開くか、戻る・進む・再読み込み・停止を行います (debug ビルド専用)。"
 
 [cli.help._root.debug.webview-history.arg.surface]
 help = "対象 html サーフェスID（既定値：現在のサーフェス）"
 
 [cli.help._root.debug.webview-history.arg.action]
-help = "back、forward、reload、stop のいずれか"
+help = "open、back、forward、reload、stop のいずれか"
+
+[cli.help._root.debug.webview-history.arg.url]
+help = "open で開くアドレス（file://、http://、https://）"
 
 [cli.help._root.debug.stream-echo]
 about = "ストリーミングチャネルを開きサーバー→クライアントのpush経路を検証：N個のデータフレームを送り、それぞれのエコー応答を確認（debugビルド専用）"

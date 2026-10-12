@@ -41,6 +41,8 @@ struct NavDelegateIvars {
     /// 마지막에 provisional 시작한 main frame navigation. 게이트 세대와 달리 모든 로드를 기록해,
     /// chrome 상태가 그 navigation의 종료만 따르게 한다. 붙잡아 두는 이유는 위와 같다.
     chrome_navigation: RefCell<Option<Retained<WKNavigation>>>,
+    /// 마지막 main frame commit의 주소. 로드 중·실패 중 주소 표시가 쓴다.
+    committed_url: RefCell<Option<String>>,
 }
 
 /// 세대 비교용 WKNavigation 식별 값. 알 수 없으면 None이다.
@@ -153,10 +155,12 @@ define_class!(
         /// main frame 문서가 commit됐다(ADR-0053 후보 이벤트, 미측정).
         #[unsafe(method(webView:didCommitNavigation:))]
         fn did_commit(&self, web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
+            // SAFETY: main thread WebKit delegate 호출. URL()은 Retained 값을 반환한다.
+            let url =
+                unsafe { web_view.URL().and_then(|u| u.absoluteString()) }.map(|u| u.to_string());
+            *self.ivars().committed_url.borrow_mut() = url.clone();
             if let Some(gate) = self.ivars().script_gate.borrow().as_ref() {
-                // SAFETY: main thread WebKit delegate 호출. URL()은 Retained 값을 반환한다.
-                let url = unsafe { web_view.URL().and_then(|u| u.absoluteString()) };
-                let js = gate.committed(url.map(|u| u.to_string()).as_deref());
+                let js = gate.committed(url.as_deref());
                 tracing::debug!(
                     "WebView surface {}: committed with js={js}",
                     self.ivars().surface_id
@@ -292,6 +296,7 @@ impl NavDelegate {
             gate_load_pending: Cell::new(false),
             gate_navigation: RefCell::new(None),
             chrome_navigation: RefCell::new(None),
+            committed_url: RefCell::new(None),
         });
         // SAFETY: NSObject 의 지정 초기화자 init 을 super 로 호출.
         unsafe { msg_send![super(this), init] }
@@ -670,26 +675,51 @@ impl PlatformWebView {
         }
     }
 
-    /// 사용자 탐색 조작을 debug IPC에서 재현한다.
-    #[cfg(debug_assertions)]
-    pub fn debug_history(&self, action: super::DebugHistoryAction) {
+    pub fn go_back(&self) {
         // SAFETY: main thread WKWebView API.
-        // 이유: match 가지는 서로 배타라 한 호출만 실행된다.
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        let navigation = unsafe {
-            match action {
-                super::DebugHistoryAction::Back => self.webview.goBack(),
-                super::DebugHistoryAction::Forward => self.webview.goForward(),
-                super::DebugHistoryAction::Reload => self.webview.reload(),
-                super::DebugHistoryAction::Stop => {
-                    self.webview.stopLoading();
-                    return;
-                }
-            }
-        };
-        if navigation.is_none() {
-            tracing::debug!("WKWebView {action:?} started no navigation");
+        if unsafe { self.webview.goBack() }.is_none() {
+            tracing::debug!("WKWebView goBack started no navigation");
         }
+    }
+
+    pub fn go_forward(&self) {
+        // SAFETY: main thread WKWebView API.
+        if unsafe { self.webview.goForward() }.is_none() {
+            tracing::debug!("WKWebView goForward started no navigation");
+        }
+    }
+
+    /// 주소 표시용 탐색 정보. 주소 선택 규칙은 `committed_document_url`이 정한다.
+    pub fn nav_info(&self) -> crate::model::WebViewNavInfo {
+        // SAFETY: main thread WKWebView 속성 읽기. URL()은 Retained 값을 반환한다.
+        // 이유: 같은 객체의 읽기 전용 속성 세 개를 한 번에 읽는다.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        let (live, can_go_back, can_go_forward) = unsafe {
+            (
+                self.webview
+                    .URL()
+                    .and_then(|u| u.absoluteString())
+                    .map(|u| u.to_string()),
+                self.webview.canGoBack(),
+                self.webview.canGoForward(),
+            )
+        };
+        crate::model::WebViewNavInfo {
+            url: crate::model::committed_document_url(
+                self.nav_state.get(),
+                live,
+                self._nav_delegate.ivars().committed_url.borrow().clone(),
+            ),
+            can_go_back,
+            can_go_forward,
+        }
+    }
+
+    /// 사용자 탐색 조작에 없는 로드 중지를 debug IPC에서 재현한다.
+    #[cfg(debug_assertions)]
+    pub fn debug_stop(&self) {
+        // SAFETY: main thread WKWebView API.
+        unsafe { self.webview.stopLoading() };
     }
 
     /// Follow는 상속, Light/Dark는 AppKit appearance를 지정한다.

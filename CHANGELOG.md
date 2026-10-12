@@ -16,6 +16,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **HTML 서피스가 보여 주는 문서 주소와 뒤로·앞으로 이동 가능 여부를 조회한다.** `tasty surface html-nav --surface <id>`(IPC `surface.html_nav`)가 마지막으로 commit된 주소(`url`, 리다이렉트 뒤 최종 주소와 `#fragment` 포함, 로드 중이거나 실패한 뒤에는 이전 문서 주소), 호스트가 넣은 주소(`requested_url`), 탐색 상태(`nav_state`), `can_go_back`·`can_go_forward`를 돌려준다. 읽기만 하며 헤드리스 빌드에서는 `-32017`이다. Linux만 실제 실행으로 확인했다. Windows는 크로스 타깃 컴파일만 확인했고 macOS는 컴파일도 확인하지 못했다. 둘 다 실 기기 미측정이다.
+
+### Changed
+
+- **debug 빌드의 `debug.webview.history`가 사용자 탐색 경로를 쓴다.** `open`(`url` 필수) 동작이 생겼고, open·back·forward·reload는 사용자가 시작한 로드로 처리되어 스크립트 배너가 보류되지 않는다. 히스토리 끝의 back·forward와 문서 없는 reload는 아무것도 하지 않는다. CLI `tasty debug webview-history --action open --url <주소>`.
+
 ## [0.12.2] - 2026-10-12
 
 ### Added

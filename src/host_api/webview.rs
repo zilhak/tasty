@@ -58,14 +58,17 @@ pub struct PendingNavigation {
     pub user_gesture: bool,
 }
 
-/// debug IPC가 재현하는 사용자 탐색 조작.
-#[cfg(debug_assertions)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DebugHistoryAction {
+/// 사용자가 이 surface에서 직접 시작하는 탐색. 호스트 로드와 달리 사용자가 보고 있는 문서로
+/// 처리한다(`HtmlScriptState::on_user_load_requested`). 에이전트 경로는 이 값을 만들지 않는다.
+// 이유: release에서 이 값을 만드는 주소 표시줄 UI가 아직 없다. debug IPC가 같은 경로를 재현한다.
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WebViewUserNav {
     Back,
     Forward,
     Reload,
-    Stop,
+    /// 해석을 마친 주소(`file://`·`http(s)://`)를 연다. 상대 경로 해석과 파일 존재 확인은 호출자가 한다.
+    Open(String),
 }
 
 /// 논리 좌표의 사각형. 물리 좌표 변환은 to_physical/from_physical로 모은다.

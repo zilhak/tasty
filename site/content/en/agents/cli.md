@@ -1,4 +1,4 @@
-<!-- source-hash: 7bc2d50a1ba2 -->
+<!-- source-hash: 9b1e86dc3048 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -325,6 +325,7 @@ tasty list recent --kind markdown      # files recently opened as that kind
 tasty set cwd --surface 42 --path /tmp # change the working directory a remote surface reports
 tasty set url --surface 42 --url URL   # change the address of a webview surface (--label NAME: the name shown while the page is hidden)
 tasty surface html-script --surface 42 # script detection, allowance and notice state of an HTML surface (read only)
+tasty surface html-nav --surface 42    # the address of the document an HTML surface shows and whether it can go back or forward (read only)
 tasty file-handler dispatch PATH       # open a file the same way a double-click in the explorer does
 tasty file-handler reload              # read the file handler settings file again
 tasty file-handler detectors           # see how the file format detectors are merged right now

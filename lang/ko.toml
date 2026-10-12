@@ -3035,6 +3035,13 @@ long = "html 서피스의 스크립트 상태를 출력합니다. 현재 문서�
 [cli.help._root.surface.html-script.arg.surface]
 help = "서피스 ID(필수)"
 
+[cli.help._root.surface.html-nav]
+about = "html 서피스가 보여 주는 문서 주소와 히스토리에서 뒤로·앞으로 갈 수 있는지 출력"
+long = "html 서피스가 보여 주는 문서 주소와 히스토리에서 뒤로·앞으로 갈 수 있는지 출력합니다. 주소는 마지막으로 commit된 주소입니다. 리다이렉트 뒤에는 최종 주소, #fragment 이동 뒤에는 그 fragment가 붙은 주소이고, 로드 중이거나 로드가 실패한 뒤에는 이전 문서의 주소입니다. 조회만 합니다. 대상은 항상 --surface로 명시합니다. 헤드리스 빌드에서는 사용할 수 없습니다."
+
+[cli.help._root.surface.html-nav.arg.surface]
+help = "서피스 ID(필수)"
+
 [cli.help._root.surface.respawn-terminal]
 about = "서피스·탭·위치를 유지하며 터미널 서피스의 셸 재시작"
 long = "서피스·탭·위치를 유지하며 터미널 서피스의 셸을 재시작합니다. 대상은 항상 --surface로 명시합니다."
@@ -3949,13 +3956,16 @@ about = "html 서피스에서 \"스크립트 허용\" 클릭을 재현합니다.
 help = "대상 html 서피스 ID(기본값: 현재 서피스)"
 
 [cli.help._root.debug.webview-history]
-about = "html 서피스의 웹뷰에서 뒤로·앞으로·새로 고침·중지 한 단계를 재현합니다(debug 빌드 전용). 사용자의 페이지 이동을 대신합니다."
+about = "html 서피스에서 사용자의 페이지 이동을 재현합니다. 주소 표시줄에 입력한 것처럼 주소를 열거나 뒤로·앞으로·새로 고침·중지합니다(debug 빌드 전용)."
 
 [cli.help._root.debug.webview-history.arg.surface]
 help = "대상 html 서피스 ID(기본값: 현재 서피스)"
 
 [cli.help._root.debug.webview-history.arg.action]
-help = "back, forward, reload, stop 중 하나"
+help = "open, back, forward, reload, stop 중 하나"
+
+[cli.help._root.debug.webview-history.arg.url]
+help = "open에서 열 주소(file://, http://, https://)"
 
 [cli.help._root.debug.stream-echo]
 about = "스트리밍 채널을 열어 서버→클라이언트 push 경로 검증: 데이터 프레임 N개를 보내 각각의 에코 응답 확인(debug 빌드 전용)"

@@ -6,6 +6,7 @@
 //! 호스트는 다음 신호를 알린다.
 //! - [`HtmlScriptState::on_host_load_requested`]: 호스트가 URL을 넣어 로드를 시작한다.
 //! - [`HtmlScriptState::on_user_view`]: 사용자가 이 surface를 선택했다.
+//! - [`HtmlScriptState::on_user_load_requested`]: 사용자가 이 surface의 주소 입력·뒤로·앞으로·새로고침으로 로드를 시작한다.
 //!
 //! 새 문서는 다음 중 하나일 때 본 것으로 한다.
 //! - 문서가 없거나 로드 중일 때 사용자가 선택했다.
@@ -65,6 +66,13 @@ impl HtmlScriptState {
         if self.current.is_some() {
             self.viewed_before_commit = false;
         }
+    }
+
+    /// 사용자가 이 surface에서 직접 로드를 시작했다(주소 입력·뒤로·앞으로·새로고침).
+    /// 사용자가 보고 있는 surface의 조작이므로 다음 문서를 본 것으로 하고, 앞선 호스트 로드 표지를 지운다.
+    pub fn on_user_load_requested(&mut self) {
+        self.host_requested_load = false;
+        self.viewed_before_commit = true;
     }
 
     /// 사용자가 이 surface를 선택했다. 문서가 없거나 로드 중이면 다음 commit 문서에도 적용한다.

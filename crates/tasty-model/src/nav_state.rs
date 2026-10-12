@@ -14,3 +14,80 @@ pub enum NavState {
     /// navigation 실패. overlay 숨긴 채 error chrome. (사유는 tracing 로그로만)
     Failed,
 }
+
+/// 주소 표시용 탐색 정보. backend가 관측한 값을 호스트가 surface에 사본으로 둔다.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WebViewNavInfo {
+    /// main frame에 commit된 문서의 주소. 리다이렉트 뒤 최종 주소와 `#fragment`를 포함한다.
+    /// 로드가 commit 전에 실패하면 이전 주소가 남는다.
+    pub url: Option<String>,
+    /// 세션 히스토리에서 뒤로 갈 수 있다.
+    pub can_go_back: bool,
+    /// 세션 히스토리에서 앞으로 갈 수 있다.
+    pub can_go_forward: bool,
+}
+
+/// 지금 보일 문서 주소를 고른다.
+///
+/// 로드가 끝난 상태(`Done`·`Idle`)에서는 엔진의 현재 주소를 쓴다. 같은 문서 안 이동
+/// (`#fragment`, history API)은 commit 신호 없이 이 값만 바꾸기 때문이다. 로드 중이거나
+/// 실패한 상태에서는 엔진 주소가 commit 전 목적지일 수 있어 마지막 commit 주소를 쓴다.
+pub fn committed_document_url(
+    nav: NavState,
+    live: Option<String>,
+    last_commit: Option<String>,
+) -> Option<String> {
+    match nav {
+        NavState::Done | NavState::Idle => live.or(last_commit),
+        NavState::Loading | NavState::Failed => last_commit,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s(v: &str) -> Option<String> {
+        Some(v.to_string())
+    }
+
+    #[test]
+    fn a_finished_load_shows_the_engine_address_with_its_fragment() {
+        let url =
+            committed_document_url(NavState::Done, s("file:///a.html#x"), s("file:///a.html"));
+        assert_eq!(url, s("file:///a.html#x"));
+    }
+
+    #[test]
+    fn a_load_in_flight_keeps_the_last_committed_address() {
+        let url = committed_document_url(
+            NavState::Loading,
+            s("https://next.example/"),
+            s("file:///a.html"),
+        );
+        assert_eq!(url, s("file:///a.html"));
+    }
+
+    #[test]
+    fn a_failed_load_keeps_the_previous_document() {
+        let url = committed_document_url(
+            NavState::Failed,
+            s("https://offline.example/"),
+            s("file:///a.html"),
+        );
+        assert_eq!(url, s("file:///a.html"));
+        assert_eq!(
+            committed_document_url(NavState::Failed, s("https://offline.example/"), None),
+            None
+        );
+    }
+
+    #[test]
+    fn a_finished_load_without_an_engine_address_falls_back_to_the_commit() {
+        assert_eq!(
+            committed_document_url(NavState::Done, None, s("file:///a.html")),
+            s("file:///a.html")
+        );
+        assert_eq!(committed_document_url(NavState::Idle, None, None), None);
+    }
+}

@@ -312,6 +312,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.foreground_process", plugin(Read, &[TerminalRead])),
         ("surface.locate", plugin(Read, &[SurfaceRead])),
         ("surface.html_script", plugin(Read, &[SurfaceRead])),
+        ("surface.html_nav", plugin(Read, &[SurfaceRead])),
         (
             "surface.respawn_terminal",
             plugin(Mutate, &[TerminalSpawn]).kept_in_structure_journal(),

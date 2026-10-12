@@ -33,6 +33,19 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
   - 탭 표지: `HtmlScriptState::marker`가 표지를 정한다. 차단된 배너를 닫았으면 lock(`Blocked`), 현재 문서를 허용했으면 scriptFile(`Allowed`)이고 sandbox가 꺼져 있으면 없다. 탭 바는 이동 글리프 왼쪽에 `html_script_marker_hit` 칸과 `tab_status_gap`을 잡아 표지를 그린다. 탭에 html surface가 여럿이면 `Blocked`를 먼저 보인다. lock 클릭은 배너만 다시 보이며 탭 전환·포커스 변경은 하지 않는다. scriptFile은 툴팁만 있다. 표지 툴팁은 [탭 스트립 툴팁 규칙](../../design/systems/banner.md#탭-스트립-툴팁)을 따라 탭 위쪽에 뜨므로 html 탭이 활성이어도 WebView에 가려지지 않는다.
   - 조회: `tasty surface html-script --surface <id>`(IPC `surface.html_script`)가 현재 문서의 URL·감지 결과(`none`/`scripts`/`scripts_remote_only`)·지문, 허용 기록, 현재 JS 적용 값, 로드 진행 여부(`loading`, 로드 시작 뒤 commit 전이면 `true`), 배너 단계(`hidden`/`blocked`/`loading`/`reloading`)와 표지(`viewed`·`pending_view`·`shown`·`dismissed`)를 돌려준다. 읽기만 하므로 배너를 띄우거나 사용자가 본 것으로 기록하지 않는다. html이 아닌 surface는 거절하고 헤드리스 빌드는 빌드 미지원 오류(`-32017`)로 답한다.
   - 허용: release에서는 사용자만 GUI로 허용한다. 에이전트용 허용 재현은 debug 전용 `debug.html_script.allow`다([debug IPC](../../dev-guide/debug-ipc.md)).
+- **문서 주소와 히스토리** — 주소 표시용 주소는 backend가 관측한 commit 주소다. `webview_url()`은 호스트가 넣은 주소라 페이지 안 이동을 반영하지 않으므로 표시에 쓰지 않는다.
+  - backend는 main frame commit마다 그 시점의 엔진 주소를 기록한다(WebKitGTK `load-changed` Committed, WKWebView `didCommitNavigation`, WebView2 `ContentLoading`). 주소 선택은 `tasty_model::committed_document_url`이 정한다. 로드가 끝난 상태(`Done`·`Idle`)에서는 엔진의 현재 주소를 쓰고, 로드 중(`Loading`)이나 실패(`Failed`)에서는 마지막 commit 주소를 쓴다.
+  - 그래서 리다이렉트 뒤에는 최종 주소가 보이고, 같은 문서 안 `#fragment` 이동과 history API 이동은 commit 신호 없이도 반영된다. commit 전에 실패한 로드는 이전 문서의 주소를 남긴다. commit 뒤 로드가 끝나기 전에는 새 문서 주소다.
+  - 뒤로·앞으로 이동 가능 여부는 엔진의 세션 히스토리 조회값이다(`can_go_back`·`can_go_forward`, WKWebView `canGoBack`·`canGoForward`, WebView2 `CanGoBack`·`CanGoForward`).
+  - 호스트는 WebView 동기화 때 프레임마다 이 값들을 `RemoteSurface::webview_nav`에 옮기고, 바뀌면 한 프레임 더 그린다. 주소 표시줄 UI가 이 사본을 읽는다. 프레임마다 조회하므로 Windows는 조회 실패를 웹뷰별 첫 번째만 warn으로 남기고 이후는 debug로 남긴다.
+  - 조회: `tasty surface html-nav --surface <id>`(IPC `surface.html_nav`)가 `url`(commit 주소), `requested_url`(호스트가 넣은 주소), `nav_state`(`idle`/`loading`/`done`/`failed`), `can_go_back`·`can_go_forward`를 돌려준다. 읽기만 한다. html이 아닌 surface는 거절하고 헤드리스 빌드는 `-32017`로 답한다.
+  - macOS·Windows 경로는 Linux와 같은 규칙으로 구현했지만 실 기기에서 측정하지 않았다.
+- **사용자 탐색** — 주소 입력·뒤로·앞으로·새로고침은 사용자 탐색 큐(`MainViewState::webview_user_nav`, `WebViewUserNav`)를 지난다. WebView 동기화가 다음 redraw에서 꺼내 backend의 `load_url`·`go_back`·`go_forward`·`reload`를 부르기 전에 `HtmlScriptState::on_user_load_requested`로 사용자 출처를 표시한다.
+  - 호스트 로드(`webview_url` 변경 → `on_host_load_requested`)와 달리 사용자 출처 로드의 문서는 사용자가 본 것으로 한다. 그래서 스크립트 배너가 보류되지 않고 commit 뒤 바로 뜬다. 앞선 호스트 로드 표지도 지운다.
+  - 로드가 일어나지 않을 조작은 표지를 남기지 않고 버린다. 히스토리 처음의 뒤로, 끝의 앞으로, 문서 없는 새로고침, `file://`·`http(s)://`가 아닌 주소 열기가 그렇다.
+  - 주소 열기는 해석을 마친 주소만 받는다. 상대 경로 해석과 없는 파일 거절은 입력 쪽이 한다. 이 경로는 `webview_url`을 바꾸지 않으므로 페이지 안 링크 이동과 같이 snapshot에 남지 않는다.
+  - 에이전트 경로는 이 큐를 쓰지 않는다. 에이전트가 주소를 바꾸는 방법은 지금처럼 `tasty html open`(호스트 로드)이다. 뒤로·앞으로·새로고침을 에이전트에게 주는 release IPC는 없다.
+  - 사용자 진입점(주소 표시줄과 버튼)은 아직 없다. debug 빌드의 `debug.webview.history`(CLI `tasty debug webview-history`)가 같은 큐로 사용자 조작을 재현한다([debug IPC](../../dev-guide/debug-ipc.md)).
 
 ## 스크립트 감지와 허용 규칙
 
@@ -171,6 +184,7 @@ OS별 구현은 다음과 같다.
 
 - 포커스된 surface가 바뀐 순간을 사용자 선택으로 본다. release의 에이전트 경로는 탭과 surface 선택을 바꾸지 않기 때문이다. 창을 처음 그리는 프레임의 포커스는 선택으로 세지 않는다. 그래서 세션 복원 문서는 기록만 한다.
 - 문서가 없거나 로드 중일 때 선택되면 다음에 commit되는 문서를 본 것으로 한다. 사용자가 연 파일은 새 탭이 선택된 뒤 첫 문서가 오기 때문이다.
+- 사용자가 그 surface에서 직접 시작한 로드(주소 입력·뒤로·앞으로·새로고침, [사용자 탐색](#내부-동작))의 문서는 본 것으로 한다. 그 surface를 보고 조작한 것이기 때문이다.
 - 사용자가 보던 문서에서 링크나 스크립트로 바뀐 문서는 본 상태를 이어받는다. 호스트가 URL을 넣은 로드(plugin·IPC·복원)는 이어받지 않는다. 그래서 에이전트가 사용자가 보던 surface에 넣은 문서도 다음 선택 때까지 기록만 한다.
 - 한계: 에이전트가 포커스된 탭을 닫아 포커스가 다른 surface로 옮겨 가는 경우도 선택으로 센다.
 
@@ -179,6 +193,7 @@ OS별 구현은 다음과 같다.
 - **사용자**: HTML·SVG 파일 열기 → html surface(WebView). 탭 스트립 빈 곳 메뉴의 **새 HTML...** 은 파일 피커(`html`·`htm`·`svg` 필터)를 열고, 고른 파일의 절대 경로를 `url` 파라미터로 넘겨 메뉴를 연 pane 에 html 탭을 만든다([파일 피커 확정](../../features/native-file-picker/index.md#확정confirm)). mirror workspace 의 pane 에서는 피커를 열지 않고 원격 열기 불가 토스트를 띄운다.
 - **AI Agent**: `tasty html …` CLI / `html.*` IPC. surface 생성은 [work-area](../../features/work-area/index.md) (`--type html --url …`).
 - **AI Agent**: 스크립트 감지·허용·배너 상태 조회는 `tasty surface html-script --surface <id>`(IPC `surface.html_script`).
+- **AI Agent**: 보여 주는 문서 주소와 뒤로·앞으로 이동 가능 여부 조회는 `tasty surface html-nav --surface <id>`(IPC `surface.html_nav`).
 
 ## 비-목표
 
@@ -203,6 +218,13 @@ OS별 구현은 다음과 같다.
 - Given 배너가 `blocked`이거나 탭에 lock·scriptFile 표지가 있다 When 다음 로드가 문서를 commit하지 못하고 실패한다 Then host chrome이 "Failed to load"를 보이는 동안 조회의 `banner.phase`는 `hidden`이고 탭 표지가 없다. 그 뒤 재로드가 commit되면 배너와 표지를 새 문서로 다시 정한다.
 - Given 배너 단계가 `loading`이고 그 로드는 에이전트가 넣은 이동(`tasty html open` 등)이다 When 스크립트가 있는 새 문서가 commit된다 Then [사용자가 봤다는 판정](#사용자가-봤다는-판정)대로 `banner.phase`는 `hidden`, `banner.pending_view`는 `true`이고 사용자가 그 surface를 선택할 때 배너가 `blocked`로 뜬다.
 - Given 터미널이나 markdown surface When `surface.html_script` Then invalid params로 거절한다.
+- Given html 탭이 `file:///tmp/x/a.html`을 보여 준다 When 페이지 안 `#sec` 링크를 누른다 Then `surface.html_nav`의 `url`은 `file:///tmp/x/a.html#sec`이고 `requested_url`은 그대로다.
+- Given html 탭이 리다이렉트되는 주소를 열었다 When 로드가 끝난다 Then `url`은 최종 주소다.
+- Given html 탭이 문서 A를 보여 준다 When 다음 로드가 commit 전에 실패한다 Then `nav_state`는 `failed`이고 `url`은 A다.
+- Given html 탭에서 A 다음 B를 열었다 When 조회한다 Then `can_go_back`은 `true`, `can_go_forward`는 `false`다. When 뒤로 간다 Then `url`은 A이고 `can_go_forward`는 `true`다.
+- Given 사용자가 보지 않은 html 탭(에이전트가 연 문서) When 사용자 탐색으로 스크립트가 있는 문서를 연다 Then commit 뒤 `banner.phase`는 `blocked`이고 `banner.pending_view`는 `false`다.
+- Given 히스토리 처음에 있는 html 탭 When 사용자 탐색으로 뒤로 간다 Then 로드가 일어나지 않고 배너 판정도 바뀌지 않는다.
+- Given 터미널이나 markdown surface When `surface.html_nav` Then invalid params로 거절한다.
 - Given 플러그인 disable When `.svg` 파일을 열기 Then `svg` detector 는 남고 핸들러가 없어 선택 창이 뜨며, 헤더 형식 표시는 `svg` 다.
 - Given 로컬 workspace 의 pane When 탭 스트립 빈 곳 메뉴에서 **새 HTML...** 을 고른다 Then 그 pane 의 선택 탭 cwd 에서 파일 피커가 열리고 디렉터리와 `.html`·`.htm`·`.svg` 파일만 보인다.
 - Given 그 피커 When 파일을 확정한다 Then 메뉴를 연 pane 에 html 탭이 하나 생겨 활성화되고, `url` 파라미터는 고른 절대 경로이며 WebView 는 `file://` URI 로 띄운다.

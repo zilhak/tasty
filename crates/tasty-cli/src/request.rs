@@ -266,6 +266,10 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 "surface.html_script",
                 serde_json::json!({ "surface_id": surface }),
             ),
+            SurfaceCommands::HtmlNav { surface } => (
+                "surface.html_nav",
+                serde_json::json!({ "surface_id": surface }),
+            ),
             SurfaceCommands::RespawnTerminal { surface } => (
                 "surface.respawn_terminal",
                 serde_json::json!({ "surface_id": surface }),

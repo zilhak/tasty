@@ -282,7 +282,7 @@ fn attach_script_gate(
     wv.attach_script_gate(gate);
 }
 
-/// 허용 직후의 재로드와 debug 탐색 조작을 native webview에 전달한다.
+/// 허용 직후의 재로드, 사용자 탐색, debug 로드 중지를 native webview에 전달한다.
 fn apply_webview_requests(
     view: &mut MainView,
     engine: &crate::runtime::engine_access::EngineRef<'_>,
@@ -295,12 +295,51 @@ fn apply_webview_requests(
             wv.reload();
         }
     }
+    for (sid, nav) in std::mem::take(&mut view.state.webview_user_nav) {
+        apply_user_nav(view, engine, sid, nav);
+    }
     #[cfg(debug_assertions)]
-    for (sid, action) in std::mem::take(&mut view.state.debug_webview_history) {
+    for sid in std::mem::take(&mut view.state.debug_webview_stop) {
         match view.webviews.get(&sid) {
-            Some(wv) => wv.debug_history(action),
-            None => tracing::warn!("debug webview {action:?}: surface {sid} has no webview"),
+            Some(wv) => wv.debug_stop(),
+            None => tracing::warn!("debug webview stop: surface {sid} has no webview"),
         }
+    }
+}
+
+/// 사용자 탐색을 실행한다. 로드가 일어나지 않을 조작(히스토리 끝, 문서 없는 새로고침)은
+/// 사용자 출처 표지를 남기지 않도록 버린다. 호스트 로드 경로(`webview_url`)는 바꾸지 않으므로
+/// 페이지 안 링크 이동처럼 snapshot에 남지 않는다.
+fn apply_user_nav(
+    view: &MainView,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+    sid: u32,
+    nav: crate::webview::WebViewUserNav,
+) {
+    use crate::webview::WebViewUserNav;
+    let Some(wv) = view.webviews.get(&sid) else {
+        tracing::warn!("webview user navigation {nav:?}: surface {sid} has no webview");
+        return;
+    };
+    let info = wv.nav_info();
+    let possible = match &nav {
+        WebViewUserNav::Back => info.can_go_back,
+        WebViewUserNav::Forward => info.can_go_forward,
+        WebViewUserNav::Reload => info.url.is_some(),
+        WebViewUserNav::Open(url) => crate::webview::is_navigable_url(url),
+    };
+    if !possible {
+        tracing::debug!("WebView surface {sid}: user navigation {nav:?} has nothing to load");
+        return;
+    }
+    if let Some(rs) = find_remote_surface(view, engine, sid) {
+        rs.with_html_script(|st| st.on_user_load_requested());
+    }
+    match nav {
+        WebViewUserNav::Back => wv.go_back(),
+        WebViewUserNav::Forward => wv.go_forward(),
+        WebViewUserNav::Reload => wv.reload(),
+        WebViewUserNav::Open(url) => wv.load_url(&url),
     }
 }
 
@@ -598,22 +637,24 @@ fn sync_webviews(
     apply_webview_requests(view, engine);
 
     // native nav_state 를 RemoteSurface 로 mirror — egui 렌더 경로(egui_panels →
-    // webview_chrome)가 다음 프레임에 읽어 loading/error chrome 을 그린다. borrow 충돌
-    // 회피를 위해 (sid, nav) 를 먼저 수집한 뒤 기록한다. 전이가 있으면 mark_dirty 로
-    // 한 프레임 더 그려 chrome 을 갱신한다(가시성 전환 자체는 위에서 native 즉시 적용).
-    let navs: Vec<(u32, crate::webview::NavState)> = view
+    // webview_chrome)가 다음 프레임에 읽어 loading/error chrome 을 그린다. 주소와 히스토리
+    // 이동 가능 여부도 함께 옮긴다. borrow 충돌 회피를 위해 먼저 수집한 뒤 기록한다. 전이가
+    // 있으면 mark_dirty 로 한 프레임 더 그려 chrome 을 갱신한다(가시성 전환 자체는 위에서 native 즉시 적용).
+    let navs: Vec<(u32, crate::webview::NavState, crate::model::WebViewNavInfo)> = view
         .webviews
         .iter()
-        .map(|(s, w)| (*s, w.nav_state()))
+        .map(|(s, w)| (*s, w.nav_state(), w.nav_info()))
         .collect();
     let mut nav_changed = false;
-    for (sid, nav) in navs {
-        if let Some(rs) = find_remote_surface(view, engine, sid)
-            && rs.nav_state() != nav
-        {
+    for (sid, nav, info) in navs {
+        let Some(rs) = find_remote_surface(view, engine, sid) else {
+            continue;
+        };
+        if rs.nav_state() != nav {
             rs.set_nav_state(nav);
             nav_changed = true;
         }
+        nav_changed |= rs.set_webview_nav(info);
     }
     if nav_changed {
         view.mark_dirty();

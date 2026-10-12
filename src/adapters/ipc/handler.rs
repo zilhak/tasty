@@ -690,6 +690,8 @@ fn route_engine_handler(
         "webview.set_url" => webview::handle_set_url(&engine.as_ref(), caller, id, &request.params),
         #[cfg(feature = "gui")]
         "surface.html_script" => surface::handle_html_script(&engine.as_ref(), id, &request.params),
+        #[cfg(feature = "gui")]
+        "surface.html_nav" => surface::handle_html_nav(&engine.as_ref(), id, &request.params),
         // WebView는 surface.set_context를 받지 않아 이 조회로 Theme를 읽는다.
         "theme.query" => theme::handle_query(&engine.read(), id),
         "tree" => handle_tree(window, &engine.read(), id),

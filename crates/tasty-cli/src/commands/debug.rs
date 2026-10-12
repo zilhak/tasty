@@ -291,15 +291,19 @@ pub enum DebugCommands {
         #[arg(long)]
         surface: Option<u32>,
     },
-    /// Reproduce a webview history step (back, forward, reload, stop) on an
-    /// html surface. Debug builds only — it stands in for user navigation.
+    /// Reproduce a user navigation on an html surface: open an address as if
+    /// typed into the address bar, or go back, forward, reload or stop.
+    /// Debug builds only — it stands in for user navigation.
     WebviewHistory {
         /// Target html surface id (defaults to the current surface).
         #[arg(long)]
         surface: Option<u32>,
-        /// One of back, forward, reload, stop.
-        #[arg(long, value_parser = ["back", "forward", "reload", "stop"])]
+        /// One of open, back, forward, reload, stop.
+        #[arg(long, value_parser = ["open", "back", "forward", "reload", "stop"])]
         action: String,
+        /// Address for open (file://, http:// or https://).
+        #[arg(long, required_if_eq("action", "open"))]
+        url: Option<String>,
     },
     /// Open a streaming channel and verify the server→client push path: send N
     /// data frames and expect each one echoed back (debug builds only).

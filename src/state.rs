@@ -309,8 +309,10 @@ impl RequestContext {
             plugin_popup_user_activated: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
             webview_identity: std::sync::Weak::new(),
+            #[cfg(feature = "gui")]
+            webview_user_nav: Vec::new(),
             #[cfg(all(feature = "gui", debug_assertions))]
-            debug_webview_history: Vec::new(),
+            debug_webview_stop: Vec::new(),
             #[cfg(feature = "gui")]
             plugin_mesh_banner_regions: Vec::new(),
             #[cfg(feature = "gui")]
