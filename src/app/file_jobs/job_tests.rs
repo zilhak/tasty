@@ -886,3 +886,133 @@ fn a_cancelled_copy_removes_its_staging_folder_and_reports_nothing_left() {
     assert!(report.staging_left.is_empty());
     assert!(names(&dest).is_empty());
 }
+
+/// 격리한 휴지통으로 probe 를 실행하는 자식 프로세스에 주는 표지. 값은 완료 표지 파일 경로다.
+#[cfg(target_os = "linux")]
+const TRASH_PROBE_ENV: &str = "TASTY_ISOLATED_TRASH_PROBE";
+#[cfg(target_os = "linux")]
+const TRASH_PROBE_DONE: &str = "isolated-trash-probe-done";
+
+/// `probe`(크레이트 이름을 뺀 시험 경로)를 이 시험 바이너리의 자식 프로세스로 실행한다. 자식의
+/// `XDG_DATA_HOME` 을 임시 폴더로 바꿔 freedesktop 휴지통이 사용자 홈이 아닌 그곳에 쌓이게 한다.
+/// 환경변수는 프로세스 전역이라 같은 프로세스의 다른 시험과 섞이지 않도록 자식에서만 바꾼다.
+#[cfg(target_os = "linux")]
+pub(crate) fn run_with_isolated_trash(probe: &str) {
+    let exe = std::env::current_exe().expect("current_exe");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = dir.path().join("probe-done");
+    let output = std::process::Command::new(exe)
+        .args([probe, "--exact", "--test-threads=1", "--nocapture"])
+        .env("XDG_DATA_HOME", dir.path().join("data"))
+        .env(TRASH_PROBE_ENV, &marker)
+        .output()
+        .expect("spawn probe");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "probe failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&marker).unwrap_or_default(),
+        TRASH_PROBE_DONE,
+        "probe did not run to the end\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+
+/// probe 본문을 격리한 휴지통 안에서만 실행한다. 부모 시험이 띄운 자식이 아니면 아무것도 하지 않는다.
+/// 본문은 그 휴지통의 `files` 폴더를 받는다.
+#[cfg(target_os = "linux")]
+pub(crate) fn in_isolated_trash(body: impl FnOnce(&Path)) {
+    let (Some(marker), Some(data)) = (
+        std::env::var_os(TRASH_PROBE_ENV),
+        std::env::var_os("XDG_DATA_HOME"),
+    ) else {
+        return;
+    };
+    body(&Path::new(&data).join("Trash/files"));
+    std::fs::write(marker, TRASH_PROBE_DONE).expect("write the probe marker");
+}
+
+/// 크레이트 이름을 뺀 이 모듈의 시험 경로.
+#[cfg(target_os = "linux")]
+pub(crate) fn probe_path(module: &str, name: &str) -> String {
+    let module = module.split_once("::").map_or(module, |(_, rest)| rest);
+    format!("{module}::{name}")
+}
+
+/// 링크를 휴지통으로 보내면 링크만 가고, 가리키던 폴더와 파일은 그대로 남는다. 대상이 없는 링크도 같다.
+#[cfg(target_os = "linux")]
+#[test]
+fn trashing_a_link_keeps_what_it_points_to() {
+    run_with_isolated_trash(&probe_path(
+        module_path!(),
+        "trashing_a_link_keeps_what_it_points_to_probe",
+    ));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn trashing_a_link_keeps_what_it_points_to_probe() {
+    in_isolated_trash(|trash| {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("keep.txt"), "k").unwrap();
+        let folder_link = root.path().join("folder-link");
+        let file_link = root.path().join("file-link");
+        let broken = root.path().join("broken");
+        std::os::unix::fs::symlink(&real, &folder_link).unwrap();
+        std::os::unix::fs::symlink(real.join("keep.txt"), &file_link).unwrap();
+        std::os::unix::fs::symlink(root.path().join("missing"), &broken).unwrap();
+        let shared = Shared::fixed(Choice::KeepBoth);
+        let report = run_trash(
+            &shared,
+            &[folder_link.clone(), file_link.clone(), broken.clone()],
+        );
+        assert_eq!((report.done, report.total), (3, 3), "{:?}", report.failed);
+        assert_eq!(names(root.path()), ["real"]);
+        assert_eq!(read(&real.join("keep.txt")), "k");
+        assert_eq!(names(trash), ["broken", "file-link", "folder-link"]);
+        for name in ["broken", "file-link", "folder-link"] {
+            let meta = trash.join(name).symlink_metadata().unwrap();
+            assert!(meta.file_type().is_symlink(), "{name} stays a link");
+        }
+        assert_eq!(std::fs::read_link(trash.join("folder-link")).unwrap(), real);
+    });
+}
+
+/// 폴더와 그 안의 항목을 함께 휴지통으로 보내면 폴더 하나만 보낸다. 안쪽 항목을 따로 보내면 폴더가
+/// 이미 간 뒤라 없는 항목으로 실패한다.
+#[cfg(target_os = "linux")]
+#[test]
+fn trashing_a_folder_with_its_own_entries_sends_the_folder_once() {
+    run_with_isolated_trash(&probe_path(
+        module_path!(),
+        "trashing_a_folder_with_its_own_entries_sends_the_folder_once_probe",
+    ));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn trashing_a_folder_with_its_own_entries_sends_the_folder_once_probe() {
+    in_isolated_trash(|trash| {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("folder");
+        std::fs::create_dir_all(folder.join("inner")).unwrap();
+        std::fs::write(folder.join("inner/a.txt"), "a").unwrap();
+        let report = run_trash(
+            &Shared::fixed(Choice::KeepBoth),
+            &[
+                folder.join("inner/a.txt"),
+                folder.clone(),
+                folder.join("inner"),
+            ],
+        );
+        assert_eq!((report.done, report.total), (1, 1), "{:?}", report.failed);
+        assert!(report.failed.is_empty());
+        assert!(!folder.exists());
+        assert_eq!(names(trash), ["folder"]);
+        assert_eq!(read(&trash.join("folder/inner/a.txt")), "a");
+    });
+}
