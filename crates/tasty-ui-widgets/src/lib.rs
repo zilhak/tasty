@@ -61,6 +61,7 @@ mod plugin_detail;
 mod plugin_paths;
 mod popup_title;
 mod ports_table;
+mod rail_marks;
 mod remote_tool;
 mod resize_grip;
 mod script_confirm;
@@ -228,6 +229,10 @@ pub use popup_title::{
 pub use ports_table::{
     PORTS_PANEL_PAD_X, PortsColumn, ports_favorite_detail_and_state,
     ports_favorite_state_min_width, ports_process_cell, ports_star_column_width, ports_table,
+};
+pub use rail_marks::{
+    paint_rail_category_line, paint_rail_flat_divider, paint_workspace_mirror_chip,
+    rail_category_line_length, rail_flat_divider_size,
 };
 pub use remote_tool::{
     FILTER_DROPDOWN_MAX_HEIGHT, LocalSshHost, LocalSshSectionData, ProtocolFilterItem,

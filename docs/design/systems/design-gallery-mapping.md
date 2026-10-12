@@ -219,7 +219,7 @@ kind 소스로 쓴다. 설정 화면(`draw_settings_detail`)도 같은 캐시 �
 |---|---|---|
 | `chrome.jsx` `CategoryHeader` | `sidebar/view.rs::draw_category_header` | `sidebar` "Categories · full" (`sidebar.rs::full_categories`) |
 | `chrome.jsx` `Sidebar`(grouped) | `sidebar/view.rs::draw_full_sidebar_view`(+`full.rs::build_category_sections`) | `sidebar` "Categories · full" |
-| `chrome.jsx` `RailCategoryBtn` | `sidebar/view.rs::draw_rail_category_button` | `sidebar` "Categories · rail" (`sidebar.rs::rail_categories`) |
+| `chrome.jsx` `RailCategoryBtn` | `sidebar/view.rs::draw_rail_category_button`(선은 `tasty_ui_widgets::paint_rail_category_line`) | `sidebar` "Categories · rail" (`sidebar.rs::rail_categories`, 같은 선 함수) |
 | `chrome.jsx` `CollapsedSidebar`(grouped) | `sidebar/view.rs::draw_collapsed_sidebar_view` | `sidebar` "Categories · rail" |
 | `overlays/sidebar_context_menu.jsx` `RailCategoryPopup` | `popup/rail_category.rs::draw_rail_category_popup` | `workspace-categories` "Rail popup" (`category_dialogs.rs::rail_category_menu`, 레일 예제와 같은 함수) · `rail-category` 레일 `---` 버튼 오른쪽에 붙은 상태(`category_dialogs.rs::draw_rail`, 시안 `RailCategoryFrame` 정적 사본) |
 | `overlays/sidebar_context_menu.jsx` `SidebarContextMenu` | `view/main/redraw.rs`(native menu: Workspace/WorkspaceCategoryHeader/SidebarBackground) | `sidebar-context-menu` 대상별 네 메뉴(`sidebar_context_menu.rs`, 시안 정적 사본) |
@@ -256,7 +256,7 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/foundations.jsx` "Depth reads through surface tint, never shadow" | `elevation` | 떠 있는 표면의 두 그림자는 `floating` |
 | `gallery/layouts.jsx` "Full sidebar ↔ collapsed rail" | `sidebar` |  |
 | `gallery/layouts.jsx` "Workspace categories (sidebar folders)" | `sidebar` "Categories · full" · "Categories · rail" | [workspace-category](#workspace-category-layouts--overlays) |
-| `gallery/layouts.jsx` "Rail marks — category line and mirror chip (2026-10-12)" | `rail-marks` (`components/rail_marks.rs`) | Mocha·Latte 보드마다 카테고리 경계 셋을 둔 레일 조각, 선 상태(idle·hover·pressed·modifier held 키캡·카테고리를 끈 레일의 맨 위 구분선 28 × 2), mirror 칩 상태(idle·active·hover·+notif·+attached ring)를 그린다. 칩은 `sidebar` 예제와 같은 `mirror_corner_chip`이다. 아바타·버튼은 본체 레일 슬롯 32 × 28 · 32 × 16이다(시안 보드는 36 × 36 · 36 × 16) |
+| `gallery/layouts.jsx` "Rail marks — category line and mirror chip (2026-10-12)" | `rail-marks` (`components/rail_marks.rs`) | Mocha·Latte 보드마다 카테고리 경계 셋을 둔 레일 조각, 선 상태(idle·hover·pressed·modifier held 키캡·카테고리를 끈 레일의 맨 위 구분선 28 × 2), mirror 칩 상태(idle·active·hover·+notif·+attached ring)를 그린다. 선·맨 위 구분선·칩은 본체 레일과 같은 `tasty_ui_widgets` 함수(`paint_rail_category_line`·`paint_rail_flat_divider`·`paint_workspace_mirror_chip`)로 그린다. 아바타·버튼은 본체 레일 슬롯 32 × 28 · 32 × 16이다(시안 보드는 36 × 36 · 36 × 16) |
 | `gallery/layouts.jsx` "Category quick-switch — Ctrl+Shift held" | `switch-cat` (Overlays) | [switch_overlay](#switch_overlay-overlays) `CatSwitchSidebarMock` 행. 디자인은 Layouts, 갤러리는 Overlays 페이지 |
 | `gallery/layouts.jsx` "One sidebar, one detail pane" | `onedepth` | [1 depth](#1-depth-general-list--detail) |
 | `gallery/layouts.jsx` "Top tabs over a filterable section list" | `twodepth` | [2 depth](#2-depth-settings-idiom) |

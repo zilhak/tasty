@@ -2,7 +2,10 @@
 //! 치수와 토큰은 본체 접힌 레일의 카테고리 버튼·워크스페이스 아바타와 같다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{RailDot, num_keycap, paint_rail_dot};
+use tasty_ui_widgets::{
+    RailDot, num_keycap, paint_rail_category_line, paint_rail_dot, paint_rail_flat_divider,
+    paint_workspace_mirror_chip, rail_flat_divider_size,
+};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
@@ -40,7 +43,7 @@ fn avatar_size(t: &Theme) -> egui::Vec2 {
     )
 }
 
-/// 카테고리 버튼 크기. 선 길이는 슬롯 폭에서 spacing-sm을 뺀 값이다.
+/// 카테고리 버튼 크기.
 fn button_size(t: &Theme) -> egui::Vec2 {
     egui::vec2(t.sidebar_collapsed_slot_width.value(), t.spacing_lg.value())
 }
@@ -71,32 +74,13 @@ fn paint_category_button(
         num_keycap(&mut child, t, digit, false);
         return;
     }
-    let line_w = (rect.width() - t.spacing_sm.value()).max(0.0);
-    let line_h = t.rail_category_line_width().value();
-    let color: egui::Color32 = if bed == Bed::Idle {
-        t.rail_category_line().into()
-    } else {
-        t.rail_category_line_hover().into()
-    };
-    ui.painter().rect_filled(
-        egui::Rect::from_center_size(rect.center(), egui::vec2(line_w, line_h)),
-        line_h * 0.5,
-        color,
-    );
+    paint_rail_category_line(ui.painter(), t, rect.center(), bed != Bed::Idle);
 }
 
-/// 카테고리를 끈 레일의 맨 위 구분선. 길이는 아바타 높이 토큰(28)이다.
+/// 카테고리를 끈 레일의 맨 위 구분선.
 fn paint_flat_divider(ui: &mut egui::Ui, t: &Theme, center: egui::Pos2) {
-    let line_h = t.rail_category_line_width().value();
-    let rect = egui::Rect::from_center_size(
-        center,
-        egui::vec2(t.sidebar_collapsed_workspace_height().value(), line_h),
-    );
-    ui.painter().rect_filled(
-        rect,
-        line_h * 0.5,
-        egui::Color32::from(t.rail_category_line()),
-    );
+    let rect = egui::Rect::from_center_size(center, rail_flat_divider_size(t));
+    paint_rail_flat_divider(ui.painter(), t, rect);
 }
 
 fn paint_avatar(ui: &mut egui::Ui, t: &Theme, rect: egui::Rect, a: Avatar) {
@@ -135,7 +119,7 @@ fn paint_avatar(ui: &mut egui::Ui, t: &Theme, rect: egui::Rect, a: Avatar) {
         );
     }
     if a.mirror {
-        super::sidebar::mirror_corner_chip(ui, t, rect);
+        paint_workspace_mirror_chip(ui, t, rect);
     }
 }
 

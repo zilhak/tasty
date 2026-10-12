@@ -1,7 +1,10 @@
 //! 펼친 사이드바와 접힌 레일의 정적 예제. 워크스페이스·카테고리·상태 배지를 비교한다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{ControlSize, IconButton, TagVariant, brand, tag_caps};
+use tasty_ui_widgets::{
+    ControlSize, IconButton, TagVariant, brand, paint_rail_category_line,
+    paint_workspace_mirror_chip, tag_caps,
+};
 
 use crate::catalog::icons::{
     CHEVRON_DOWN, CHEVRON_RIGHT, CHEVRONS_LEFT, FOLDER, MockGlyph, PLUG, REMOTE, SETTINGS, TERMINAL,
@@ -84,40 +87,6 @@ fn mirror_pill_line(ui: &mut egui::Ui, theme: &Theme, row: egui::Rect, name_x: f
         egui::vec2(ui.available_width(), mirror_pill_line_h(theme)),
     )));
     tag_caps(&mut tag_ui, theme, "remote", TagVariant::Remote, false);
-}
-
-/// 접힌 아바타의 원격 표시는 오른쪽 아래에 놓아 알림 점·연결 테두리와 구분한다.
-/// 12 원 안쪽의 1px 테두리가 아바타의 idle·active·hover 바탕 어디서나 칩을 드러낸다.
-/// 12 원은 다른 모서리 칩(move·refusal)과 같은 크기 토큰을 쓴다.
-pub(super) fn mirror_corner_chip(ui: &mut egui::Ui, theme: &Theme, avatar: egui::Rect) {
-    let halo_r = theme.spacing_sm.value();
-    let chip_r = theme.move_source_chip_size().value() * 0.5;
-    let border = theme.border_width.value();
-    let glyph = theme.spacing_sm.value();
-    let inset = theme.spacing_xs.value();
-    let c = egui::pos2(avatar.max.x - inset, avatar.max.y - inset);
-    let painter = ui.painter();
-    painter.circle_filled(c, halo_r, egui::Color32::from(theme.bg_sidebar()));
-    painter.circle_filled(
-        c,
-        chip_r,
-        egui::Color32::from(theme.workspace_mirror_chip_bg()),
-    );
-    painter.circle_stroke(
-        c,
-        chip_r - border * 0.5,
-        egui::Stroke::new(
-            border,
-            egui::Color32::from(theme.workspace_mirror_chip_border()),
-        ),
-    );
-    paint_icon(
-        ui,
-        REMOTE,
-        c,
-        glyph,
-        egui::Color32::from(theme.workspace_mirror_fg()),
-    );
 }
 
 /// 오른쪽 끝에서 offset만큼 떨어진 곳에 개수 배지를 그린다.
@@ -614,16 +583,11 @@ fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
     let mut y = rect.min.y + theme.spacing_md.value();
 
     for (_label, collapsed, rows) in CATEGORY_SECTIONS {
-        let line_w = theme.sidebar_collapsed_slot_width.value() - theme.spacing_sm.value();
-        let line_h = theme.rail_category_line_width().value();
-        let line = egui::Rect::from_center_size(
+        paint_rail_category_line(
+            &p,
+            theme,
             egui::pos2(cx, y + theme.spacing_lg.value() * 0.5),
-            egui::vec2(line_w, line_h),
-        );
-        p.rect_filled(
-            line,
-            line_h * 0.5,
-            egui::Color32::from(theme.rail_category_line()),
+            false,
         );
         y += theme.spacing_lg.value() + theme.spacing_xs.value();
 
@@ -658,7 +622,7 @@ fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
                     }),
                 );
                 if *mirror {
-                    mirror_corner_chip(ui, theme, area);
+                    paint_workspace_mirror_chip(ui, theme, area);
                 }
                 y += slot + theme.spacing_sm.value();
             }

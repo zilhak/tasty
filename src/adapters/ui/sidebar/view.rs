@@ -719,14 +719,11 @@ pub fn draw_collapsed_sidebar_view(
             }
         } else {
             // 카테고리가 없으면 첫 아바타 위에 카테고리 선과 같은 색·굵기의 구분선을 둔다.
-            // 길이는 시안의 28이며 아바타 높이 토큰 값을 쓴다(아바타 폭은 32).
-            let line_h = th.rail_category_line_width().value();
             let (divider, _) = ui.allocate_exact_size(
-                egui::vec2(th.sidebar_collapsed_workspace_height().value(), line_h),
+                tasty_ui_widgets::rail_flat_divider_size(th),
                 egui::Sense::hover(),
             );
-            ui.painter()
-                .rect_filled(divider, line_h * 0.5, th.rail_category_line());
+            tasty_ui_widgets::paint_rail_flat_divider(ui.painter(), th, divider);
             vspace(ui, th.spacing_xs);
             for (i, ws) in props.workspaces.iter().enumerate() {
                 let switch_digit = if props.workspace_switch_held {
@@ -1152,18 +1149,12 @@ fn draw_rail_category_button(
             );
         }
         None => {
-            // 선은 상자 테두리가 아니라 아바타 글자와 같은 무게의 표지라서 2px로 그린다.
-            // 모든 카테고리가 같은 색을 쓰고, hover·pressed에서만 밝아진다.
-            let line_w = (w - th.spacing_sm.value()).max(0.0);
-            let line_h = th.rail_category_line_width().value();
-            let line_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(line_w, line_h));
-            let line_color: egui::Color32 = if pressed || resp.hovered() {
-                th.rail_category_line_hover().into()
-            } else {
-                th.rail_category_line().into()
-            };
-            ui.painter()
-                .rect_filled(line_rect, line_h * 0.5, line_color);
+            tasty_ui_widgets::paint_rail_category_line(
+                ui.painter(),
+                th,
+                rect.center(),
+                pressed || resp.hovered(),
+            );
         }
     }
     resp.clicked().then_some(rect)
@@ -1268,28 +1259,8 @@ fn draw_collapsed_avatar(
         tasty_ui_widgets::paint_attach_refusal_chip(ui, th, rect, th.bg_sidebar().into());
         tasty_ui_widgets::attach_refusal_avatar_tooltip(ui, th, &resp, tooltip);
     }
-    // mirror 표시는 배경색으로 둘러 다른 알림·점유 표시와 구분한다.
-    // 12 원 안쪽의 1px 테두리가 아바타의 idle·active·hover 바탕 어디서나 칩을 드러낸다.
-    // 12 원은 다른 모서리 칩(move·refusal)과 같은 크기 토큰을 쓴다.
     if ws.is_mirror {
-        let halo_r = th.spacing_sm.value();
-        let chip_r = th.move_source_chip_size().value() * 0.5;
-        let border = th.border_width.value();
-        let glyph = th.spacing_sm.value();
-        let inset = th.spacing_xs.value();
-        let chip_center = egui::pos2(rect.max.x - inset, rect.max.y - inset);
-        let painter = ui.painter();
-        painter.circle_filled(chip_center, halo_r, th.bg_sidebar());
-        painter.circle_filled(chip_center, chip_r, th.workspace_mirror_chip_bg());
-        painter.circle_stroke(
-            chip_center,
-            chip_r - border * 0.5,
-            egui::Stroke::new(border, th.workspace_mirror_chip_border()),
-        );
-        let glyph_rect = egui::Rect::from_center_size(chip_center, egui::vec2(glyph, glyph));
-        icons::TERMINAL_PROMPT
-            .image(glyph, th.workspace_mirror_fg().into())
-            .paint_at(ui, glyph_rect);
+        tasty_ui_widgets::paint_workspace_mirror_chip(ui, th, rect);
     }
     if resp.clicked() {
         actions.push(SidebarCollapsedAction::WorkspaceClicked(global_idx));

@@ -2,7 +2,9 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, MenuItemVariant, menu_item, menu_separator};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, MenuItemVariant, menu_item, menu_separator, paint_rail_category_line,
+};
 
 use crate::catalog::icons::{CHEVRON_DOWN, EDIT, MockGlyph, PLUS, TRASH};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -78,8 +80,7 @@ const RAIL_GAP: LogicalPx = LogicalPx(4.0);
 /// 브랜드 사각 24(모서리 6, 아래 여백 4).
 const RAIL_BRAND: LogicalPx = LogicalPx(24.0);
 const RAIL_BRAND_RADIUS: LogicalPx = LogicalPx(6.0);
-/// `---` 선 폭 24. 구분선은 위아래 여백 3, `---` 버튼은 위아래 안쪽 여백 2.
-const RAIL_LINE_W: LogicalPx = LogicalPx(24.0);
+/// `---` 선은 공용 `paint_rail_category_line`이 그린다. 구분선은 위아래 여백 3, `---` 버튼은 위아래 안쪽 여백 2.
 const RAIL_SEP_MARGIN: LogicalPx = LogicalPx(3.0);
 const RAIL_BUTTON_PAD: LogicalPx = LogicalPx(2.0);
 /// 글자 아바타 28, 오른쪽 위 점 6(위치 -1, 둘레 2px bg-sidebar).
@@ -152,12 +153,12 @@ fn rail_frame(ui: &mut egui::Ui, theme: &Theme) {
             }
             RailItem::Sep => {
                 y += RAIL_SEP_MARGIN.value();
-                rail_line(p, cx, y, line_h, theme.rail_category_line().to_egui());
+                paint_rail_category_line(p, theme, egui::pos2(cx, y + line_h * 0.5), false);
                 y += line_h + RAIL_SEP_MARGIN.value();
             }
             RailItem::HoveredButton => {
                 y += RAIL_BUTTON_PAD.value();
-                rail_line(p, cx, y, line_h, theme.rail_category_line_hover().to_egui());
+                paint_rail_category_line(p, theme, egui::pos2(cx, y + line_h * 0.5), true);
                 y += line_h + RAIL_BUTTON_PAD.value();
             }
             RailItem::Avatar(ch, active, dot) => {
@@ -177,15 +178,6 @@ fn rail_frame(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 카테고리 `---` 선. 아바타 글자와 같은 무게의 표지라서 둥근 끝의 2px 선으로 그린다.
-fn rail_line(p: &egui::Painter, cx: f32, y: f32, line_h: f32, color: egui::Color32) {
-    let half = RAIL_LINE_W.value() * 0.5;
-    p.rect_filled(
-        egui::Rect::from_min_max(egui::pos2(cx - half, y), egui::pos2(cx + half, y + line_h)),
-        line_h * 0.5,
-        color,
-    );
-}
-
 fn rail_avatar(
     p: &egui::Painter,
     theme: &Theme,

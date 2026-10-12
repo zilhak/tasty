@@ -3,7 +3,7 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::num_keycap;
+use tasty_ui_widgets::{num_keycap, paint_rail_category_line};
 
 use crate::catalog::icons::{CHEVRON_DOWN, CHEVRON_RIGHT, FILE, MockGlyph, TERMINAL};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -647,7 +647,6 @@ fn rail_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
     let gap = theme.spacing_xs.value(); // 4
     let bw = theme.border_width.value();
     let w = slot + theme.spacing_lg.value(); // ≈44
-    let line_w = theme.spacing_lg.value() + theme.spacing_sm.value(); // 24 `---` 길이
 
     let mut total = pad * 2.0;
     for item in RAIL_CAT {
@@ -675,9 +674,7 @@ fn rail_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
                 if held {
                     keycap_at(ui, theme, c, d, *active);
                 } else {
-                    let line_h = theme.rail_category_line_width().value();
-                    let line = egui::Rect::from_center_size(c, egui::vec2(line_w, line_h));
-                    p.rect_filled(line, line_h * 0.5, theme.rail_category_line().to_egui());
+                    paint_rail_category_line(&p, theme, c, false);
                 }
                 y += bound_h + gap;
             }
