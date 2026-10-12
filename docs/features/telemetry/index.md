@@ -144,6 +144,7 @@ DB 설정과 느린 요청 기록은 아래 표처럼 별도 항목이다.
 | `queue_dispatch` | 큐에서 꺼내는 회차와 실행 직전 (`tasty_ipc::dispatch::DispatchStats`) | 큐에서 **꺼낸** 명령과 그 회차 — 실행을 시작한 뒤 명령 또는 응답 대기자가 lifecycle을 보유한 요청 |
 | `keyed_requests` | 멱등 보존소의 판정 (`idempotency::Store::decide`) | **멱등 키를 실은** 요청만 — 한 요청은 자기를 맡은 층의 판정으로 한 번 |
 | `slow_requests` | 명령을 꺼낸 직후·다 다룬 직후 (`app::ipc_round::CommandObservation`, gui · headless 같은 자리) + plugin 대기 표의 응답·만료·취소 (`PluginManager::record_origin_hop`) | 호스트 IPC 큐를 지난 요청 중 **합이 문턱(100 ms) 이상인 것만** — `system.pressure` 자신은 안 넣는다 |
+| `memory_writer` | memory.db 전담 writer의 접수와 묶음 실행 (`tasty_utils::batch_writer`) | writer에 **접수된** 요청과 거절, 실행한 묶음 크기 분포(`batch_sizes`), busy 재실행, flush, 지금·최대 잡힌 항목 수와 바이트. writer가 없는 시험 구성이면 `null` |
 | `gate_refusals` | 공통 진입 게이트 (`handler/checked.rs` 의 `check_request`) | 게이트에 **든** 요청 전부(`judged`) — Local 도, 큐를 안 지나는 plugin host-call 도 센다. 거절은 게이트마다 한 칸 |
 
 `queue_before_gate` 안에서 명령을 세는 수가 둘이다. `waits` 는 대기를 기록한 명령 수로, 명령을 **꺼내는 순간** 대기 합·최댓값·분포와 함께 오른다 — `wait_us_mean` 의 분모이고 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 **끝날 때** 그 회차가 꺼낸 수만큼 오르고 `depth_mean`(= `commands / drains`)의 분자다. 조회는 늘 자기 회차 안에서 답하므로 한 답 안에서 `commands` 는 아직 도는 회차(조회 자신 포함)만큼 `waits` 보다 작다 — 평균을 `commands` 로 나누면 최댓값을 넘는 값이 나왔다([ADR-0008](../../adr/0008-ipc-pressure-observability.md)).

@@ -421,6 +421,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         self.poll_port_scans();
         self.poll_explorer_files();
+        self.services.poll_memory_writer();
         self.poll_local_reads();
         self.poll_dag_reads();
         self.poll_profile_detections();

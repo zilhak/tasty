@@ -384,6 +384,7 @@ tasty file-handler detectors            # 파일 형식 판별 규칙이 지금 
 포함되므로 두 시간을 더하면 중복됩니다. `checkpoints_busy`는 다른 연결 때문에 checkpoint를
 마치지 못한 횟수입니다. `writes_per_commit`은 commit 하나에 저장된 쓰기 수의 분포이고,
 commit 수에 들어가지 않는 데이터베이스 압축(VACUUM)은 `vacuums`로 따로 셉니다.
+`memory_writer`는 저장 요청을 모아 처리하는 대기열의 접수·거절·묶음 수입니다.
 권한·한도·빈도 제한의 거절 수는 아래 `gate_refusals`에서 확인합니다.
 
 #### 연결 수와 한도 (`connections`)

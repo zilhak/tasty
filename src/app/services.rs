@@ -90,7 +90,17 @@ pub(crate) struct AppServices {
 
     /// 초기화 실패 뒤 대체 저장소를 쓴 사유. None만으로 실제 쓰기 내구성을 검증할 수는 없다.
     memory_init_fallback: Option<tasty_memory::InitFallback>,
+
+    /// memory.db 전담 writer. 부팅 구성에서만 만들며 시험 구성에는 없다. 이행 중에는 `memory`와
+    /// 같은 잠금을 묶음마다 잡는다(docs/design/systems/storage-contract.md의 "저장 실행기" 절).
+    memory_writer: Option<HostMemoryWriter>,
+    /// 예상하지 못한 writer 종료를 한 번만 알린다.
+    memory_writer_end_reported: bool,
 }
+
+/// 호스트의 memory.db writer. 이행 중에는 공유 저장소 잠금으로 저장소에 닿는다.
+pub(crate) type HostMemoryWriter =
+    tasty_memory::writer::MemoryWriter<tasty_memory::writer::SharedStore>;
 
 /// GUI·헤드리스의 plugin 매니저에 함께 주입할 계측 핸들.
 #[derive(Clone)]
@@ -137,6 +147,34 @@ impl AppServices {
 
     pub(crate) fn memory_init_fallback(&self) -> Option<&tasty_memory::InitFallback> {
         self.memory_init_fallback.as_ref()
+    }
+
+    /// writer 계측. writer가 없는 구성이면 None이다.
+    pub(crate) fn memory_writer_stats(
+        &self,
+    ) -> Option<tasty_utils::batch_writer::WriterStatsSnapshot> {
+        self.memory_writer.as_ref().map(|w| w.stats())
+    }
+
+    /// 메인 루프가 writer를 깨운 뒤 부른다. 종료를 요청하지 않았는데 worker가 끝났으면 한 번 알린다.
+    pub(crate) fn poll_memory_writer(&mut self) {
+        if !self.memory_writer_end_reported
+            && self
+                .memory_writer
+                .as_ref()
+                .is_some_and(|w| w.worker_ended_unexpectedly())
+        {
+            self.memory_writer_end_reported = true;
+            tracing::error!("memory writer ended without a shutdown request");
+        }
+    }
+
+    /// 접수를 멈추고 마지막 flush 뒤 worker를 끝내도록 하고 남은 worker 수를 돌려준다.
+    /// 다른 producer를 모두 멈춘 뒤 부른다. 기다리지 않는다.
+    pub(crate) fn poll_memory_writer_shutdown(&mut self) -> usize {
+        self.memory_writer
+            .as_mut()
+            .map_or(0, HostMemoryWriter::poll_shutdown)
     }
 
     pub(crate) fn connections(&self) -> &Arc<tasty_telemetry::ConnectionStats> {

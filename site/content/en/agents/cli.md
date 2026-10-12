@@ -1,4 +1,4 @@
-<!-- source-hash: 7eefb4806c30 -->
+<!-- source-hash: dfd868d9ef93 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -365,7 +365,8 @@ contention; a high value alone does not prove a disk problem. Commit time is alr
 handler time, so adding them double counts it. `checkpoints_busy` counts checkpoints that could not
 finish because another connection was using the database. `writes_per_commit` is the distribution of
 writes saved by each commit, and database compaction (VACUUM), which is not counted as a commit,
-is counted separately in `vacuums`. Permission, usage-cap, and rate-limit
+is counted separately in `vacuums`. `memory_writer` counts admissions, refusals, and batches of the
+queue that groups save requests. Permission, usage-cap, and rate-limit
 refusals are counted separately in `gate_refusals` below.
 
 #### Connection counts and limits (`connections`)

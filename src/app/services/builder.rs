@@ -31,6 +31,7 @@ pub(crate) struct AppServicesBuilder {
     db_latency: Option<Arc<tasty_memory::DbLatencyStats>>,
     memory_pragmas: Option<tasty_memory::pragma::AppliedPragmas>,
     memory_init_fallback: Option<tasty_memory::InitFallback>,
+    memory_writer: Option<super::HostMemoryWriter>,
 }
 
 impl AppServicesBuilder {
@@ -49,6 +50,7 @@ impl AppServicesBuilder {
             db_latency: None,
             memory_pragmas: None,
             memory_init_fallback: None,
+            memory_writer: None,
         }
     }
 
@@ -110,6 +112,11 @@ impl AppServicesBuilder {
         fallback: Option<tasty_memory::InitFallback>,
     ) -> Self {
         self.memory_init_fallback = fallback;
+        self
+    }
+    /// memory.db 전담 writer. 생략하면 writer 없는 구성이다.
+    pub(crate) fn with_memory_writer(mut self, writer: super::HostMemoryWriter) -> Self {
+        self.memory_writer = Some(writer);
         self
     }
     pub(crate) fn with_settings_storage(mut self, settings: Arc<dyn SettingsStorage>) -> Self {
@@ -189,6 +196,8 @@ impl AppServicesBuilder {
             db_latency: self.db_latency.unwrap_or_default(),
             memory_pragmas: self.memory_pragmas,
             memory_init_fallback: self.memory_init_fallback,
+            memory_writer: self.memory_writer,
+            memory_writer_end_reported: false,
             // IPC 서버는 AppServices 이후에 시작하므로 여기서 만든 계측기를 부팅 과정에서 서버에도 넘긴다.
             connections: std::sync::Arc::new(tasty_telemetry::ConnectionStats::default()),
             dispatch: std::sync::Arc::new(tasty_ipc::dispatch::DispatchStats::default()),

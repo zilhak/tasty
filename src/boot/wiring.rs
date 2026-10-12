@@ -22,29 +22,32 @@ use crate::app::services::builder::AppServicesBuilder;
 #[cfg(feature = "gui")]
 pub(crate) fn build_production_core(
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
+    memory_wake: Arc<dyn Fn() + Send + Sync>,
 ) -> anyhow::Result<AppServices> {
     let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> =
         Arc::new(ArboardClipboard::default());
     let sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer> =
         Arc::new(PlatformPlayer);
-    build_production_core_inner(clipboard, sound_player, memory_arc)
+    build_production_core_inner(clipboard, sound_player, memory_arc, memory_wake)
 }
 
 /// 헤드리스는 로컬 클립보드·소리 대신 미지원 구현을 연결한다.
 #[cfg(not(feature = "gui"))]
 pub(crate) fn build_production_core_headless(
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
+    memory_wake: Arc<dyn Fn() + Send + Sync>,
 ) -> anyhow::Result<AppServices> {
     let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(NullClipboard);
     let sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer> =
         Arc::new(crate::ports::notification_sound::NoopPlayer);
-    build_production_core_inner(clipboard, sound_player, memory_arc)
+    build_production_core_inner(clipboard, sound_player, memory_arc, memory_wake)
 }
 
 fn build_production_core_inner(
     clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem>,
     sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer>,
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
+    memory_wake: Arc<dyn Fn() + Send + Sync>,
 ) -> anyhow::Result<AppServices> {
     let fs: Arc<dyn crate::ports::fs::FileSystem> = Arc::new(StdFileSystem);
     let clock: Arc<dyn crate::ports::clock::Clock> = Arc::new(SystemClock);
@@ -67,6 +70,13 @@ fn build_production_core_inner(
     let memory_pragmas = memory_pragmas_of(&store);
     let memory_init_fallback = memory_init_fallback_of(&store);
     let memory: Arc<Mutex<dyn MemoryStorage>> = store;
+    // 다른 소비자가 같은 잠금을 직접 잡는 동안 writer도 그 잠금으로 저장소에 닿는다.
+    let memory_writer = tasty_memory::writer::spawn(
+        tasty_memory::writer::SharedStore(memory.clone()),
+        tasty_utils::batch_writer::Limits::default(),
+        Arc::new(tasty_utils::batch_writer::SystemClock),
+        memory_wake,
+    )?;
 
     let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
     let preset_store: Arc<Mutex<PresetStore>> = Arc::new(Mutex::new(PresetStore::load_default()));
@@ -83,6 +93,7 @@ fn build_production_core_inner(
         .with_db_latency(db_latency)
         .with_memory_pragmas(memory_pragmas)
         .with_memory_init_fallback(memory_init_fallback)
+        .with_memory_writer(memory_writer)
         .with_themes(themes)
         .with_preset_store(preset_store)
         .with_settings_storage(settings_storage)

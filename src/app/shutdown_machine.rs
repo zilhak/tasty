@@ -59,6 +59,9 @@ pub(crate) struct ShutdownState {
     screenshot_deadline: Option<Instant>,
     explorer_files_deadline: Option<Instant>,
     runner_stop_deadline: Instant,
+    /// memory writer drain의 기한. 첫 대기에서 정하고, 기한을 넘기면 None으로 두고 진행한다.
+    memory_writer_deadline: Option<Instant>,
+    memory_writer_gave_up: bool,
 }
 
 enum StepOutcome {
@@ -106,6 +109,8 @@ impl App {
             screenshot_deadline: Some(Instant::now() + Duration::from_secs(5)),
             explorer_files_deadline: Some(Instant::now() + Duration::from_secs(5)),
             runner_stop_deadline: Instant::now() + Duration::from_secs(5),
+            memory_writer_deadline: None,
+            memory_writer_gave_up: false,
         });
 
         for session in self.engines.all_sessions_mut() {
@@ -518,11 +523,34 @@ impl App {
             Some(mgr) => mgr.poll_shutdown_all(),
             None => true,
         };
-        if !done {
+        if !done || self.wait_for_memory_writer_shutdown() {
             return StepOutcome::Waiting;
         }
         self.set_shutdown_phase(ShutdownPhase::Done);
         StepOutcome::Advanced
+    }
+
+    /// memory.db에 쓰는 producer(observer·runner·plugin)가 모두 멈춘 뒤 writer의 접수를 막고
+    /// 마지막 flush와 join을 기다린다. 기한을 넘기면 미회수로 기록하고 진행한다.
+    fn wait_for_memory_writer_shutdown(&mut self) -> bool {
+        let remaining = self.services.poll_memory_writer_shutdown();
+        let Some(state) = self.state.shutdown.as_mut() else {
+            return false;
+        };
+        if remaining == 0 || state.memory_writer_gave_up {
+            return false;
+        }
+        let deadline = *state
+            .memory_writer_deadline
+            .get_or_insert_with(|| Instant::now() + Duration::from_secs(5));
+        if Instant::now() < deadline {
+            return true;
+        }
+        tracing::warn!(
+            "memory writer shutdown timed out; requests it has not committed may be lost"
+        );
+        state.memory_writer_gave_up = true;
+        false
     }
 
     fn render_shutdown_frame(&mut self) {

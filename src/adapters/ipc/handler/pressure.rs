@@ -120,7 +120,53 @@ pub(super) fn handle_system_pressure(
     body["keyed_requests"] = keyed_requests_json(&super::idempotency::retry_counts());
     body["slow_requests"] = slow_requests_json(&core.slow_requests().snapshot());
     body["gate_refusals"] = gate_refusals_json(&core.gate().snapshot());
+    body["memory_writer"] = memory_writer_json(core.memory_writer_stats());
     JsonRpcResponse::success(id, body)
+}
+
+/// memory.db 전담 writer의 접수·묶음·예산 누계. writer가 없는 구성이면 null이다.
+/// 원본 구조체를 .. 없이 분해해 필드가 추가되면 응답 변환도 검토하게 한다.
+pub(super) fn memory_writer_json(
+    stats: Option<tasty_utils::batch_writer::WriterStatsSnapshot>,
+) -> serde_json::Value {
+    let Some(tasty_utils::batch_writer::WriterStatsSnapshot {
+        admitted,
+        rejected_saturated,
+        rejected_closed,
+        batches,
+        batch_requests,
+        batch_size_max,
+        batch_sizes,
+        superseded,
+        retries,
+        flushes,
+        held_items,
+        held_bytes,
+        peak_items,
+        peak_bytes,
+    }) = stats
+    else {
+        return serde_json::Value::Null;
+    };
+    json!({
+        "admitted": admitted,
+        "rejected_saturated": rejected_saturated,
+        "rejected_closed": rejected_closed,
+        "batches": batches,
+        "batch_requests": batch_requests,
+        "batch_size_max": batch_size_max,
+        "batch_sizes": {
+            "le": tasty_utils::batch_writer::BATCH_SIZE_BUCKETS,
+            "counts": batch_sizes,
+        },
+        "superseded": superseded,
+        "retries": retries,
+        "flushes": flushes,
+        "held_items": held_items,
+        "held_bytes": held_bytes,
+        "peak_items": peak_items,
+        "peak_bytes": peak_bytes,
+    })
 }
 
 /// 큐 진입 상태와 실제 상한. 기록이 없으면 null이다.
@@ -498,6 +544,23 @@ mod tests {
             v["handler_after_gate"].get("commits").is_none(),
             "DB 계측을 handler 계측에 포함하면 안 된다"
         );
+    }
+
+    #[test]
+    fn the_memory_writer_block_is_null_without_a_writer_and_keeps_every_field() {
+        assert!(memory_writer_json(None).is_null());
+        let v = memory_writer_json(Some(tasty_utils::batch_writer::WriterStatsSnapshot {
+            admitted: 3,
+            batches: 2,
+            batch_sizes: [1, 1, 0, 0, 0, 0],
+            peak_bytes: 40,
+            ..Default::default()
+        }));
+        assert_eq!(v["admitted"], 3);
+        assert_eq!(v["batch_sizes"]["le"], json!([1, 4, 16, 64, 256]));
+        assert_eq!(v["batch_sizes"]["counts"], json!([1, 1, 0, 0, 0, 0]));
+        assert_eq!(v["peak_bytes"], 40);
+        assert_eq!(v.as_object().unwrap().len(), 14);
     }
 
     #[test]

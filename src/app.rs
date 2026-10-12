@@ -307,7 +307,14 @@ impl App {
                 })
             }),
             publication_inputs: Default::default(),
-            services: crate::boot::wiring::build_production_core(memory)?,
+            services: crate::boot::wiring::build_production_core(memory, {
+                let proxy = proxy.clone();
+                Arc::new(move || {
+                    if proxy.send_event(AppEvent::TimerTick).is_err() {
+                        tracing::debug!("memory writer wake after shutdown");
+                    }
+                })
+            })?,
             state: state::AppState {
                 #[cfg(debug_assertions)]
                 input_simulation_enabled,
@@ -370,10 +377,10 @@ impl App {
         let mut timers = tasty_timer::TimerHub::new();
         timers::register_steady_state(&mut timers, std::time::Instant::now());
         Ok(Self {
-            journal: journal::JournalApplication::new(journal_wake)?,
+            journal: journal::JournalApplication::new(journal_wake.clone())?,
             pending_server_attaches: Vec::new(),
             publication_inputs: Default::default(),
-            services: crate::boot::wiring::build_production_core_headless(memory)?,
+            services: crate::boot::wiring::build_production_core_headless(memory, journal_wake)?,
             state: state::AppState::default(),
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),

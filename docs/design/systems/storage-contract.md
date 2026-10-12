@@ -58,7 +58,7 @@
 
 ### 저장 실행기
 
-호출자가 저장 요청을 큐에 넘기고 바로 진행하며, 저장소를 소유한 전담 worker 한 개가 여러 요청을 묶어 실행하는 실행기다. 접수·수집·순서·결과·예산·재시도·종료 규칙은 저장소와 관계없는 공용 실행기(`tasty_utils::batch_writer`)가 정한다. 무엇을 어떻게 저장하는지는 저장소별 실행기가 정한다. memory.db 실행기는 `tasty_memory::writer`다. 호스트 소비자는 아직 이 실행기에 요청을 넣지 않는다.
+호출자가 저장 요청을 큐에 넘기고 바로 진행하며, 저장소를 소유한 전담 worker 한 개가 여러 요청을 묶어 실행하는 실행기다. 접수·수집·순서·결과·예산·재시도·종료 규칙은 저장소와 관계없는 공용 실행기(`tasty_utils::batch_writer`)가 정한다. 무엇을 어떻게 저장하는지는 저장소별 실행기가 정한다. memory.db 실행기는 `tasty_memory::writer`다. GUI·headless 부팅이 `AppServices`에 memory writer(`memory-writer` 스레드)를 만들고 메인 루프와 종료 단계에 연결한다. 호스트 소비자는 아직 이 실행기에 요청을 넣지 않는다.
 
 #### 접수와 결과
 
@@ -99,6 +99,7 @@
 - `flush(since)`는 지금까지 접수된 요청 뒤에 cut을 넣는다. cut 앞의 요청이 모두 끝나면 결과가 나온다. 결과는 `since` 뒤부터 cut까지의 요청이 모두 효과를 냈을 때만 `Ok(FlushPoint)`이고, 거절이나 실패가 있으면 그 수를 실은 `NotClean`이다. 다음 flush는 앞 결과의 `FlushPoint`를 `since`로 넘긴다. 다른 호출자의 요청도 구간에 들어간다.
 - `close`는 새 접수를 막는다. 이미 접수한 요청은 계속 실행하고 flush는 받는다.
 - `begin_shutdown`은 접수를 막고 마지막 flush cut을 넣은 뒤 worker가 남은 요청을 모두 실행하고 끝나게 한다. `poll_shutdown`은 기다리지 않고 남은 worker 수를 돌려주며, join이 끝나면 마지막 flush 결과를 로그에 남긴다. 효과가 없던 요청이 있으면 경고를 남긴다.
+- 호스트 연결: worker는 묶음·flush가 끝나면 GUI는 `TimerTick`, headless는 journal 깨우기 이벤트로 메인 루프를 깨운다. 메인 루프는 회차마다 종료 요청 없이 worker가 끝났는지 확인해 한 번 오류 로그를 남긴다. 종료는 memory.db에 쓰는 producer를 모두 멈춘 뒤 접수 중단 → 마지막 flush → join 순서다. GUI는 `StoppingPlugins` 단계에서 plugin 정리가 끝난 뒤, headless는 runner·자원 회수 뒤에 진행하며 둘 다 5초 기한을 넘기면 경고를 남기고 계속 종료한다.
 - writer를 drop하면 종료를 시작하지만 기다리지 않는다. 끝나지 않은 worker가 있으면 경고를 남긴다. 프로세스가 그대로 끝나면 확정되지 않은 요청은 사라진다.
 
 #### 한도 기본값
@@ -151,7 +152,7 @@
 
 | DB | 소유자 | 쓰는 스레드 | PRAGMA | transaction | GUI 초기화 | headless 초기화 | 종료 |
 |---|---|---|---|---|---|---|---|
-| `memory.db` | `AppServices`의 공유 `Arc<Mutex<dyn MemoryStorage>>` | 메인 루프, observer sink, runner, `approval.await`, 결과·보고 스레드 | WAL·NORMAL, 되읽어 degraded 표시 | put·delete·secret·purge·prune은 명시 transaction, VACUUM은 자동 commit. 실행 단위·쓰기 묶음은 transaction 하나(현재 소비자 없음) | `run_gui`가 열고 부팅 정비 후 `App::new`에 주입. 실패 시 in-memory 대체 | `boot_memory`가 같은 절차로 연다 | 명시 close·checkpoint 없음. 마지막 `Arc`가 drop될 때 연결이 닫힌다 |
+| `memory.db` | `AppServices`의 공유 `Arc<Mutex<dyn MemoryStorage>>`. memory writer도 묶음마다 같은 잠금을 잡는다 | 메인 루프, observer sink, runner, `approval.await`, 결과·보고 스레드, `memory-writer`(아직 요청 없음) | WAL·NORMAL, 되읽어 degraded 표시 | put·delete·secret·purge·prune은 명시 transaction, VACUUM은 자동 commit. 실행 단위·쓰기 묶음은 transaction 하나(memory writer가 사용, 아직 요청 없음) | `run_gui`가 열고 부팅 정비 후 `App::new`에 주입. 실패 시 in-memory 대체. writer는 `AppServices` 구성 때 시작 | `boot_memory`가 같은 절차로 연다 | writer는 producer 정리 뒤 drain·join한다. 연결은 명시 close·checkpoint 없이 마지막 `Arc`가 drop될 때 닫힌다 |
 | `state.db` | 전역 `OnceLock<Mutex<Db>>`, `with_state_db`로 접근 | 메인 루프(최근 파일), `tutorial-progress` worker | WAL·NORMAL | 튜토리얼 저장과 스키마 생성은 transaction. `RecentFiles::add`의 같은 키 정리·upsert·개수 정리는 각각 자동 commit | GUI 부팅의 `init_boot_db_and_theme`과 새 창 생성 | 열지 않는다. 최근 목록 쓰기를 건너뛴다 | static이라 프로세스 끝까지 닫지 않는다. 튜토리얼 worker는 종료 단계에서 stop·join한다 |
 | `structure/journal.db` | `JournalWorker`(App의 첫 필드) | 전용 `structure-journal` 스레드 | WAL·FULL이 아니면 열지 않는다([ADR-0063](../../adr/0063-event-store-storage-fencing-and-effect-states.md)) | 모든 쓰기가 즉시 잠금 transaction, writer 잠금과 세대 검사 | 부팅 첫머리에 writer 잠금을 선점하고 `App::new`에서 worker를 만든다 | 선점 없이 `App::new_headless`에서 만든다 | stop 후 Drop에서 join하며 worker가 마지막 checkpoint를 쓴다 |
 
@@ -186,8 +187,8 @@
 
 ### 종료 순서
 
-GUI는 종료 상태기계가 layout 저장(S1) → 부팅 worker 회수(S2) → surface 닫기와 observer sink join(S3) → 플러그인·보조 worker 정리와 튜토리얼 join(S4) 순으로 진행한 뒤 이벤트 루프를 끝낸다. 그다음 instance 파일을 지우고 App을 drop한다. App의 첫 필드인 journal worker가 먼저 join되고, `services`(memory 연결)와 IPC 서버(포트 파일 삭제)는 그 뒤에 drop된다.
+GUI는 종료 상태기계가 layout 저장(S1) → 부팅 worker 회수(S2) → surface 닫기와 observer sink join(S3) → 플러그인·보조 worker 정리와 튜토리얼 join, 그 뒤 memory writer drain·join(S4) 순으로 진행한 뒤 이벤트 루프를 끝낸다. 그다음 instance 파일을 지우고 App을 drop한다. App의 첫 필드인 journal worker가 먼저 join되고, `services`(memory 연결)와 IPC 서버(포트 파일 삭제)는 그 뒤에 drop된다.
 
-headless는 publication을 비운 뒤 journal worker를 stop하고(join은 App drop 때), runner·보조 worker를 회수한다. layout 저장·observer 일괄 join·튜토리얼 단계는 없다.
+headless는 publication을 비운 뒤 journal worker를 stop하고(join은 App drop 때), runner·보조 worker를 회수한 뒤 memory writer를 drain·join한다. layout 저장·observer 일괄 join·튜토리얼 단계는 없다.
 
-memory.db에는 종료 flush 단계가 없다. 각 쓰기가 호출 시점에 commit되므로 종료 때 남은 큐가 없다.
+memory.db의 직접 잠금 소비자는 호출 시점에 commit하므로 종료 때 남은 쓰기가 없다. memory writer는 종료 때 접수를 막고 마지막 flush cut까지 실행한 뒤 join한다.

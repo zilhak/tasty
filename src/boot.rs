@@ -859,6 +859,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");
 
     loop {
+        app.services.poll_memory_writer();
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
             // The service applies/logs results; headless has no popup to receive display updates.
             let _ = app.services.profile_detections.poll();
@@ -1000,6 +1001,22 @@ fn finish_headless_shutdown(
                 "headless shutdown timed out; unfinished owners have no completion receipt"
             );
             break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    drain_headless_memory_writer(app);
+}
+
+/// memory.db에 쓰는 producer를 멈춘 뒤 writer의 접수를 막고 마지막 flush와 join을 기다린다.
+#[cfg(not(feature = "gui"))]
+fn drain_headless_memory_writer(app: &mut crate::app::App) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while app.services.poll_memory_writer_shutdown() != 0 {
+        if std::time::Instant::now() >= deadline {
+            tracing::warn!(
+                "headless memory writer shutdown timed out; requests it has not committed may be lost"
+            );
+            return;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
