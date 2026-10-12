@@ -31,10 +31,7 @@ pub(crate) struct AppServicesBuilder {
     db_latency: Option<Arc<tasty_memory::DbLatencyStats>>,
     memory_pragmas: Option<tasty_memory::pragma::AppliedPragmas>,
     memory_init_fallback: Option<tasty_memory::InitFallback>,
-    memory_writer: Option<(
-        super::HostMemoryWriter,
-        Arc<tasty_memory::writer::ChangeFeed>,
-    )>,
+    memory_writer: Option<super::MemoryWriterParts>,
 }
 
 impl AppServicesBuilder {
@@ -118,13 +115,18 @@ impl AppServicesBuilder {
         self
     }
     /// memory.db 전담 writer. 생략하면 writer 없는 구성이다.
-    /// `changes`는 writer를 만들 때 넘긴 변경 버퍼와 같아야 한다.
+    /// `changes`·`wake`는 writer를 만들 때 넘긴 변경 버퍼·깨우기와 같아야 한다.
     pub(crate) fn with_memory_writer(
         mut self,
         writer: super::HostMemoryWriter,
         changes: Arc<tasty_memory::writer::ChangeFeed>,
+        wake: Arc<tasty_utils::batch_writer::WakeLatch>,
     ) -> Self {
-        self.memory_writer = Some((writer, changes));
+        self.memory_writer = Some(super::MemoryWriterParts {
+            writer,
+            changes,
+            wake,
+        });
         self
     }
     pub(crate) fn with_settings_storage(mut self, settings: Arc<dyn SettingsStorage>) -> Self {
@@ -141,9 +143,10 @@ impl AppServicesBuilder {
             .memory
             .ok_or_else(|| anyhow::anyhow!("MemoryStorage missing"))?;
         let memory_access = match &self.memory_writer {
-            Some((writer, changes)) => {
-                tasty_memory::writer::MemoryAccess::writer(writer.handle(), changes.clone())
-            }
+            Some(parts) => tasty_memory::writer::MemoryAccess::writer(
+                parts.writer.handle(),
+                parts.changes.clone(),
+            ),
             None => tasty_memory::writer::MemoryAccess::inline(memory.clone()),
         };
         let host_ipc_injector = Arc::new(OnceLock::new());
@@ -210,7 +213,7 @@ impl AppServicesBuilder {
             db_latency: self.db_latency.unwrap_or_default(),
             memory_pragmas: self.memory_pragmas,
             memory_init_fallback: self.memory_init_fallback,
-            memory_writer: self.memory_writer.map(|(writer, _)| writer),
+            memory_writer: self.memory_writer,
             memory_access,
             memory_writer_end_reported: false,
             // IPC 서버는 AppServices 이후에 시작하므로 여기서 만든 계측기를 부팅 과정에서 서버에도 넘긴다.

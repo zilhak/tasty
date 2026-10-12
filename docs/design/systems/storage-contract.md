@@ -100,7 +100,7 @@
 - `flush(since)`는 지금까지 접수된 요청 뒤에 cut을 넣는다. cut 앞의 요청이 모두 끝나면 결과가 나온다. 결과는 `since` 뒤부터 cut까지의 요청이 모두 효과를 냈을 때만 `Ok(FlushPoint)`이고, 거절이나 실패가 있으면 그 수를 실은 `NotClean`이다. 다음 flush는 앞 결과의 `FlushPoint`를 `since`로 넘긴다. 다른 호출자의 요청도 구간에 들어간다.
 - `close`는 새 접수를 막는다. 이미 접수한 요청은 계속 실행하고 flush는 받는다.
 - `begin_shutdown`은 접수를 막고 마지막 flush cut을 넣은 뒤 worker가 남은 요청을 모두 실행하고 끝나게 한다. `poll_shutdown`은 기다리지 않고 남은 worker 수를 돌려주며, join이 끝나면 마지막 flush 결과를 로그에 남긴다. 효과가 없던 요청이 있으면 경고를 남긴다.
-- 호스트 연결: worker는 묶음·flush가 끝나면 GUI는 `TimerTick`, headless는 journal 깨우기 이벤트로 메인 루프를 깨운다. 메인 루프는 회차마다 종료 요청 없이 worker가 끝났는지 확인해 한 번 오류 로그를 남긴다. 종료는 memory.db에 쓰는 producer를 모두 멈춘 뒤 접수 중단 → 마지막 flush → join 순서다. GUI는 `StoppingPlugins` 단계에서 plugin 정리가 끝난 뒤, headless는 runner·자원 회수 뒤에 진행하며 둘 다 5초 기한을 넘기면 경고를 남기고 계속 종료한다.
+- 호스트 연결: worker는 묶음·flush가 끝나면 GUI는 `TimerTick`, headless는 journal 깨우기 이벤트로 메인 루프를 깨운다. 알림은 `WakeLatch`로 묶는다. 메인 루프가 회차 첫머리에 확인(`acknowledge`)하기 전에 끝난 묶음의 알림은 이미 보낸 깨우기 하나에 합친다. 깨우기 수는 알림(묶음) 수를 넘지 않고, 메인 루프 회차 수보다 많아도 하나만 많다(확인과 결과 수거 사이에 끝난 묶음이 다음 회차를 위한 깨우기를 하나 남긴다). 확인 뒤 끝난 묶음은 다시 깨운다. 메인 루프는 회차마다 종료 요청 없이 worker가 끝났는지 확인해 한 번 오류 로그를 남긴다. 종료는 memory.db에 쓰는 producer를 모두 멈춘 뒤 접수 중단 → 마지막 flush → join 순서다. GUI는 `StoppingPlugins` 단계에서 plugin 정리가 끝난 뒤, headless는 runner·자원 회수 뒤에 진행하며 둘 다 5초 기한을 넘기면 경고를 남기고 계속 종료한다.
 - writer를 drop하면 종료를 시작하지만 기다리지 않는다. 끝나지 않은 worker가 있으면 경고를 남긴다. 프로세스가 그대로 끝나면 확정되지 않은 요청은 사라진다.
 
 #### 한도 기본값

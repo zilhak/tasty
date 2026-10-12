@@ -93,7 +93,7 @@ pub(crate) struct AppServices {
 
     /// memory.db 전담 writer. 부팅 구성에서만 만들며 시험 구성에는 없다. 이행 중에는 `memory`와
     /// 같은 잠금을 묶음마다 잡는다(docs/design/systems/storage-contract.md의 "저장 실행기" 절).
-    memory_writer: Option<HostMemoryWriter>,
+    memory_writer: Option<MemoryWriterParts>,
     /// memory.db 요청 핸들. writer가 있으면 그 큐로, 없으면(시험 구성) 호출 스레드에서 바로 실행한다.
     memory_access: tasty_memory::writer::MemoryAccess,
     /// 예상하지 못한 writer 종료를 한 번만 알린다.
@@ -103,6 +103,13 @@ pub(crate) struct AppServices {
 /// 호스트의 memory.db writer. 이행 중에는 공유 저장소 잠금으로 저장소에 닿는다.
 pub(crate) type HostMemoryWriter =
     tasty_memory::writer::MemoryWriter<tasty_memory::writer::SharedStore>;
+
+/// writer와 함께 만든 변경 버퍼와 깨우기.
+pub(crate) struct MemoryWriterParts {
+    pub(crate) writer: HostMemoryWriter,
+    pub(crate) changes: Arc<tasty_memory::writer::ChangeFeed>,
+    pub(crate) wake: Arc<tasty_utils::batch_writer::WakeLatch>,
+}
 
 /// GUI·헤드리스의 plugin 매니저에 함께 주입할 계측 핸들.
 #[derive(Clone)]
@@ -168,16 +175,20 @@ impl AppServices {
     pub(crate) fn memory_writer_stats(
         &self,
     ) -> Option<tasty_utils::batch_writer::WriterStatsSnapshot> {
-        self.memory_writer.as_ref().map(|w| w.stats())
+        self.memory_writer.as_ref().map(|w| w.writer.stats())
     }
 
-    /// 메인 루프가 writer를 깨운 뒤 부른다. 종료를 요청하지 않았는데 worker가 끝났으면 한 번 알린다.
+    /// 메인 루프가 회차마다 writer 결과를 거두기 전에 부른다. 깨우기를 확인해 그 뒤의 묶음이 다시
+    /// 깨우게 하고, 종료를 요청하지 않았는데 worker가 끝났으면 한 번 알린다.
     pub(crate) fn poll_memory_writer(&mut self) {
+        if let Some(parts) = &self.memory_writer {
+            parts.wake.acknowledge();
+        }
         if !self.memory_writer_end_reported
             && self
                 .memory_writer
                 .as_ref()
-                .is_some_and(|w| w.worker_ended_unexpectedly())
+                .is_some_and(|w| w.writer.worker_ended_unexpectedly())
         {
             self.memory_writer_end_reported = true;
             tracing::error!("memory writer ended without a shutdown request");
@@ -189,7 +200,7 @@ impl AppServices {
     pub(crate) fn poll_memory_writer_shutdown(&mut self) -> usize {
         self.memory_writer
             .as_mut()
-            .map_or(0, HostMemoryWriter::poll_shutdown)
+            .map_or(0, |parts| parts.writer.poll_shutdown())
     }
 
     pub(crate) fn connections(&self) -> &Arc<tasty_telemetry::ConnectionStats> {

@@ -14,13 +14,75 @@ use serde_json::{Value, json};
 use tasty_memory::writer::{MemoryRequest, SharedStore, StoreAccess, spawn};
 use tasty_memory::{MemoryStorage, PutOpts, Scope, WriteOp};
 use tasty_utils::batch_writer::{
-    BATCH_SIZE_BUCKETS, Completion, Handle, Limits, Receipt, SystemClock, WriterStatsSnapshot,
+    BATCH_SIZE_BUCKETS, Completion, Handle, Limits, Receipt, SystemClock, WakeLatch,
+    WriterStatsSnapshot,
 };
 
 use super::{BURST, Dist, INFLOW_FOR, INFLOW_GAP, TICK, lock, payload};
 
 /// 결과를 기다리는 한도. 넘으면 시나리오를 실패로 끝낸다.
 const COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
+/// 깨우기 묶음 측정에서 메인 루프 대리가 깨어날 때마다 쓰는 회차 시간. 기본 1ms이고
+/// `COMMIT_BASELINE_LOOP_ROUND_MS`로 바꾼다(느린 메인 루프 대조).
+fn loop_round() -> Duration {
+    std::env::var("COMMIT_BASELINE_LOOP_ROUND_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .map_or(Duration::from_millis(1), Duration::from_millis)
+}
+
+/// 호스트처럼 worker 알림을 `WakeLatch`로 묶고, 대리 소비자가 깨어날 때마다 확인한 뒤 한 회차를
+/// 쓴다. 알림 수와 실제로 보낸 깨우기 수를 비교한다.
+struct WakeProbe {
+    latch: Arc<WakeLatch>,
+    stop: Arc<AtomicBool>,
+    consumer: thread::JoinHandle<u64>,
+}
+
+impl WakeProbe {
+    fn start() -> Self {
+        let (tx, rx) = mpsc::channel::<()>();
+        let latch = WakeLatch::new(Arc::new(move || {
+            if tx.send(()).is_err() {
+                // 소비자가 먼저 끝난 시나리오 끝이다.
+            }
+        }));
+        let stop = Arc::new(AtomicBool::new(false));
+        let round = loop_round();
+        let consumer = {
+            let latch = latch.clone();
+            let stop = stop.clone();
+            thread::spawn(move || {
+                let mut rounds = 0u64;
+                while !stop.load(Ordering::Relaxed) {
+                    if rx.recv_timeout(Duration::from_millis(10)).is_ok() {
+                        latch.acknowledge();
+                        rounds += 1;
+                        thread::sleep(round);
+                    }
+                }
+                rounds
+            })
+        };
+        Self {
+            latch,
+            stop,
+            consumer,
+        }
+    }
+
+    fn finish(self) -> Value {
+        self.stop.store(true, Ordering::Relaxed);
+        let rounds = self.consumer.join().expect("wake consumer");
+        let counts = self.latch.counts();
+        json!({
+            "notified": counts.notified,
+            "woken": counts.woken,
+            "consumer_rounds": rounds,
+            "loop_round_us": us(loop_round()),
+        })
+    }
+}
 
 /// 묶음마다 잠금을 잡은 채 지연을 더하는 접근. 직접 잠금 대조군의 쓰기마다 지연과 같은
 /// commit마다 지연이다.
@@ -81,12 +143,13 @@ pub fn run(
         inner: SharedStore(store.clone()),
         delay: slow,
     };
+    let probe = WakeProbe::start();
     let mut writer = spawn(
         access,
         Arc::default(),
         limits,
         Arc::new(SystemClock),
-        Arc::new(|| {}),
+        probe.latch.notifier(),
     )
     .expect("spawn writer");
     let mut v = body(&writer.handle(), store);
@@ -97,6 +160,7 @@ pub fn run(
         thread::sleep(Duration::from_millis(1));
     }
     v["shutdown_us"] = json!(us(t.elapsed()));
+    v["wake"] = probe.finish();
     v["max_delay_us"] = json!(us(max_delay));
     v["writer"] = stats_json(&stats);
     v

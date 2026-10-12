@@ -22,6 +22,7 @@
 mod clock;
 mod slot;
 mod stats;
+mod wake;
 mod worker;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,6 +33,7 @@ use std::time::{Duration, Instant};
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use slot::Receipt;
 pub use stats::{BATCH_SIZE_BUCKETS, WriterStatsSnapshot};
+pub use wake::{WakeCounts, WakeLatch};
 
 use crate::poison::recover_mutex;
 use slot::{Budget, Slot, Ticket};
