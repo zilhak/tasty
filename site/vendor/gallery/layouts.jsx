@@ -102,6 +102,70 @@ function FullSidebar() {
   );
 }
 
+// 2026-10-12 — rail mirror chip: 12 circle, 1px workspace-mirror-chip-border (sky, full strength),
+// bed workspace-mirror-chip-bg (bg-sidebar), 2px bg-sidebar halo, 8px remote glyph.
+function MirrorChip() {
+  return (
+    <span title="Mirror of a remote workspace" style={{ position: "absolute", bottom: -1, right: -1, pointerEvents: "none", boxSizing: "border-box",
+      display: "inline-flex", alignItems: "center", justifyContent: "center", width: "var(--tasty-size-12)", height: "var(--tasty-size-12)", borderRadius: "var(--tasty-radius-pill)",
+      border: "var(--tasty-border-width) solid var(--tasty-workspace-mirror-chip-border)",
+      background: "var(--tasty-workspace-mirror-chip-bg)", color: "var(--tasty-workspace-mirror-fg)", boxShadow: "0 0 0 var(--tasty-size-2) var(--tasty-bg-sidebar)" }}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ width: "var(--tasty-size-8)", height: "var(--tasty-size-8)", display: "block" }}><path d="M4 17l6-6-6-6" /><path d="M12 19h8" /></svg>
+    </span>
+  );
+}
+// Static rail avatar with a forced state, for the 2026-10-12 rail-marks specimen.
+function RailAv({ ch, state = "idle", notif, ring, mirror = true }) {
+  const bg = state === "active" ? "var(--tasty-overlay-active)" : state === "hover" ? "var(--tasty-overlay-hover)" : "transparent";
+  return (
+    <div style={{ position: "relative", display: "inline-flex" }}>
+      <span style={{ width: "var(--tasty-size-36)", height: "var(--tasty-size-36)", display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--tasty-radius)", background: bg,
+        fontFamily: "var(--tasty-font-mono)", fontWeight: "var(--tasty-font-weight-bold)", fontSize: "var(--tasty-font-size-body)", color: state === "active" ? "var(--tasty-accent-primary)" : "var(--tasty-text-muted)" }}>{ch}</span>
+      {ring && <span style={{ position: "absolute", inset: 1, borderRadius: "var(--tasty-radius)", outline: "var(--tasty-status-dot-attached-ring-width) solid var(--tasty-accent-attached)", outlineOffset: "var(--tasty-status-dot-attached-ring-offset)", pointerEvents: "none" }} />}
+      {notif && <span style={{ position: "absolute", top: -1, right: -1, pointerEvents: "none" }}><Badge dot variant="primary" style={{ boxShadow: "0 0 0 var(--tasty-size-2) var(--tasty-bg-sidebar)" }} /></span>}
+      {mirror && <MirrorChip />}
+    </div>
+  );
+}
+function RailCatLine({ state = "idle", cap }) {
+  return (
+    <span style={{ width: "var(--tasty-size-36)", height: "var(--tasty-size-16)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--tasty-radius-sm)",
+      background: state === "pressed" ? "var(--tasty-overlay-active)" : state === "hover" ? "var(--tasty-overlay-hover)" : "transparent" }}>
+      {cap ? <SwitchCap n={cap} /> : <span style={{ width: "var(--tasty-size-24)", height: "var(--tasty-rail-category-line-width)", borderRadius: "var(--tasty-radius-pill)", background: state === "idle" ? "var(--tasty-rail-category-line)" : "var(--tasty-rail-category-line-hover)" }} />}
+    </span>
+  );
+}
+function RailMarksBoard({ theme }) {
+  const col = (cap, node) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--tasty-space-sm)", minWidth: "var(--tasty-size-64)" }}>
+      <div style={{ height: "var(--tasty-size-36)", display: "flex", alignItems: "center" }}>{node}</div>
+      <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)", textAlign: "center" }}>{cap}</span>
+    </div>
+  );
+  const rail = (
+    <div style={{ width: 52, flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--tasty-size-2)", padding: "var(--tasty-space-sm) 0", background: "var(--tasty-bg-sidebar)", borderRight: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
+      <RailCatLine /><RailAv ch="T" state="active" mirror={false} /><RailAv ch="S" mirror={false} />
+      <RailCatLine state="hover" /><RailAv ch="E" /><RailAv ch="D" mirror={false} notif />
+      <RailCatLine /><RailCatLine />
+    </div>
+  );
+  return (
+    <div {...(theme ? { "data-theme": theme } : {})} style={{ display: "flex", gap: "var(--tasty-space-lg)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-sidebar)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", flexWrap: "wrap", alignItems: "flex-start" }}>
+      {rail}
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-lg)", minWidth: 0 }}>
+        <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)" }}>{theme ? "Latte" : "Mocha"} — category line</span>
+        <div style={{ display: "flex", gap: "var(--tasty-space-md)", flexWrap: "wrap" }}>
+          {col("idle", <RailCatLine />)}{col("hover", <RailCatLine state="hover" />)}{col("pressed", <RailCatLine state="pressed" />)}{col("modifier held", <RailCatLine cap="2" />)}
+        </div>
+        <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)" }}>{theme ? "Latte" : "Mocha"} — mirror chip</span>
+        <div style={{ display: "flex", gap: "var(--tasty-space-md)", flexWrap: "wrap" }}>
+          {col("idle", <RailAv ch="E" />)}{col("active", <RailAv ch="T" state="active" />)}{col("hover", <RailAv ch="E" state="hover" />)}{col("+ notif", <RailAv ch="E" notif />)}{col("+ attached ring", <RailAv ch="E" ring />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Sidebar (collapsed rail) ──
 function CollapsedRail() {
   return (
@@ -110,7 +174,7 @@ function CollapsedRail() {
       <Dim style={{ top: -9, left: "50%", transform: "translateX(-50%)" }}>52px</Dim>
       <img src="../assets/icons/icon_256.png" width="24" height="24" alt="" style={{ marginBottom: 4 }} />
       <IconButton size="sm" aria-label="Expand">{ic.chevR}</IconButton>
-      <div style={{ width: 28, height: 1, background: "var(--tasty-separator)", margin: "4px 0" }} />
+      <div style={{ width: "var(--tasty-size-28)", height: "var(--tasty-rail-category-line-width)", borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-rail-category-line)", margin: "4px 0" }} />
       <IconButton active aria-label="tasty-core"><span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: 13 }}>T</span></IconButton>
       <div style={{ position: "relative", display: "inline-flex" }}>
         <IconButton aria-label="docs-site"><span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: 13 }}>D</span></IconButton>
@@ -119,11 +183,7 @@ function CollapsedRail() {
       <div style={{ position: "relative", display: "inline-flex" }}>
         <IconButton aria-label="data-etl"><span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: 13 }}>E</span></IconButton>
         {/* mirror = local mirror of a remote instance — sky corner chip, bottom-right */}
-        <span title="Mirror of a remote workspace" style={{ position: "absolute", bottom: -1, right: -1, pointerEvents: "none",
-          display: "inline-flex", alignItems: "center", justifyContent: "center", width: 12, height: 12, borderRadius: "var(--tasty-radius-pill)",
-          background: "var(--tasty-bg-sidebar)", color: "var(--tasty-workspace-mirror-fg)", boxShadow: "0 0 0 2px var(--tasty-bg-sidebar)" }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ width: 8, height: 8, display: "block" }}><path d="M4 17l6-6-6-6" /><path d="M12 19h8" /></svg>
-        </span>
+        <MirrorChip />
       </div>
       <IconButton aria-label="New">{ic.plus}</IconButton>
       <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -211,7 +271,7 @@ function CategoryFullSidebar({ held }) {
   );
 }
 function CategoryRail({ held }) {
-  const line = (hover) => <div style={{ width: 24, height: 1, background: hover ? "var(--tasty-text-muted)" : "var(--tasty-separator)", margin: "3px 0" }} />;
+  const line = (hover) => <div style={{ width: "var(--tasty-size-24)", height: "var(--tasty-rail-category-line-width)", borderRadius: "var(--tasty-radius-pill)", background: hover ? "var(--tasty-rail-category-line-hover)" : "var(--tasty-rail-category-line)", margin: "3px 0" }} />;
   const boundary = (title, hover, cap) => (
     <button type="button" title={title} style={{ appearance: "none", border: 0, background: hover && !held ? "var(--tasty-overlay-hover)" : "transparent", cursor: "pointer", padding: "2px 0",
       borderRadius: "var(--tasty-radius-sm)", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 22 }}>
@@ -568,6 +628,17 @@ function Layouts() {
             specs={[["header", <>band — <code>bg-app</code> face + hairline top/bottom, label <code>text-secondary</code> bold</>], ["count", "trailing workspace count; hidden on hover (+ takes the gutter)"], ["normal", "reserved · first · label “Workspaces”"], ["empty category", "header only, no rows"], ["rail boundary", <><code>---</code> full-width button</>], ["collapse", "per-category, shared full ↔ rail"], ["reorder", "drag row to another category"], ["gate", "Settings toggle (default off)"]]}
             tokens={[{ tok: "--tasty-sidebar-category-header-bg", use: "header band face (one tier below the sidebar)", color: "var(--tasty-sidebar-category-header-bg)" }, { tok: "--tasty-sidebar-category-header-fg", use: "label + chevron", color: "var(--tasty-sidebar-category-header-fg)" }, { tok: "--tasty-sidebar-category-header-count-fg", use: "trailing count", color: "var(--tasty-sidebar-category-header-count-fg)" }, { tok: "--tasty-separator", use: <>band hairlines + list rules + <code>---</code> line</>, color: "var(--tasty-separator)" }, { tok: "--tasty-surface-active", use: "active row", color: "var(--tasty-surface-active)" }, { tok: "--tasty-accent-primary", use: "active left bar", color: "var(--tasty-accent-primary)" }]} />
           <Note>Backend invariants honoured: <code>normal</code> reserved &amp; pinned top; category order = section order; <code>collapsed</code> persisted in <code>layout.json</code>; empty categories allowed (no auto-delete). Toggle off → the flat single "Workspaces" list above, unchanged.</Note>
+        </Spec>
+
+        <Spec title="Rail marks — category line and mirror chip (2026-10-12)"
+          when={<>Two rail marks were too faint on <code>bg-sidebar</code>. <b>Category <code>---</code> line</b>: drawn in the idle avatar glyph ink (<span className="tok">--tasty-rail-category-line</span> → text-muted) at <b>2px</b> (<span className="tok">--tasty-rail-category-line-width</span> → focus-ring-width), 24 long with round ends. One colour for every category, including the one holding the active workspace: the active avatar already carries the accent, and the line marks a boundary, not a selection. Hover and pressed lift the line to text-secondary on the usual overlay bed. The modifier keycap that replaces it is unchanged. The flat-mode top divider uses the same line (28 long) so both rail modes look the same. <b>Mirror chip</b>: same 12 circle and 8 glyph, plus a full-strength <b>1px sky edge</b> (<span className="tok">--tasty-workspace-mirror-chip-border</span> → workspace-mirror-fg). The bed stays <code>bg-sidebar</code> so the glyph keeps its contrast, and the 2px halo still cuts it out of an active fill.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <RailMarksBoard /><RailMarksBoard theme="latte" />
+          </Stage>
+          <Meta
+            specs={[["line", "24 × 2 · radius-pill · centred in the 36 × 16 button"], ["line idle", "rail-category-line → text-muted"], ["line hover / pressed", "rail-category-line-hover → text-secondary · bed overlay-hover / overlay-active"], ["active category", "same colour (no accent)"], ["flat divider", "28 × 2 · rail-category-line"], ["chip", "12 circle · 1px edge · 8 glyph · 2px bg-sidebar halo"], ["chip edge", "workspace-mirror-chip-border → workspace-mirror-fg (accent-remote)"], ["contrast", "line ≥ 3:1 non-text (Mocha ≈ 8:1, Latte ≈ 4.9:1 on bg-sidebar)"]]}
+            tokens={[{ tok: "--tasty-rail-category-line", use: "idle line", color: "var(--tasty-rail-category-line)" }, { tok: "--tasty-rail-category-line-hover", use: "hover / pressed line", color: "var(--tasty-rail-category-line-hover)" }, { tok: "--tasty-rail-category-line-width", use: "2 — exception to the 1px rule" }, { tok: "--tasty-workspace-mirror-chip-border", use: "chip edge", color: "var(--tasty-workspace-mirror-chip-border)" }, { tok: "--tasty-workspace-mirror-chip-bg", use: "chip bed", color: "var(--tasty-workspace-mirror-chip-bg)" }]} />
+          <Note>The 2px line is a mark at avatar-glyph weight, not a box edge, so the 1px border rule still holds for borders. Move and attach-refusal chips keep their current look: they are short-lived states with their own coloured glyph, so no edge is added for now.</Note>
         </Spec>
 
         <Spec title="Category quick-switch — Ctrl+Shift held"

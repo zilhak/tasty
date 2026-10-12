@@ -264,6 +264,10 @@ const GALLERY_MODULE = {
   ExplorerOpsB11: "./explorer-ops-b11.jsx",
   ExplorerOpsB12: "./explorer-ops-b12.jsx",
   OverlaysWindowsB12: "./overlays-windows-b12.jsx",
+  ExplorerOpsRemote: "./explorer-ops-remote.jsx",
+  ExplorerOpsDelete: "./explorer-ops-delete.jsx",
+  ExplorerDeleteFrame: "./explorer-delete-frame.jsx",
+  ExplorerOpsY: "./explorer-ops.jsx",
   TastyDesignSystem_41fd3f: "../ds/index.js",
   TastyDag: "../kit/dag.js",
 };
@@ -384,6 +388,17 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
     },
   );
 
+  // `const Y = () => window.ExplorerOpsY;` — a late lookup of a global published by a
+  // page that imports this file. The namespace import is read at render time, so the
+  // import cycle resolves.
+  src = src.replace(
+    new RegExp(String.raw`^([ \t]*)const\s+([A-Za-z_$][\w$]*)\s*=\s*\(\)\s*=>\s*window\.(${GLOBALS})\s*;[ \t]*$`, "gm"),
+    (_all, indent, local, global) => {
+      add(global, `* as ${global}_ns`);
+      return `${indent}const ${local} = () => ${global}_ns;`;
+    },
+  );
+
   // `const CIcon = window.TastyDesignSystem_41fd3f.Icon;` — one symbol under a local name.
   src = src.replace(
     new RegExp(String.raw`^[ \t]*const\s+([A-Za-z_$][\w$]*)\s*=\s*window\.(${GLOBALS})\.([A-Za-z_$][\w$]*)\s*;[ \t]*$`, "gm"),
@@ -465,6 +480,15 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
       `export const page = {\n  active: ${active},\n  nav: ${nav},\n  head: ${head},\n  content: ${content},\n};\n` +
       src.slice(src.indexOf(";", close) + 1);
   }
+
+  // `items={window.ExplorerDeleteFrame.XD_ITEMS.many}` — a member read outside a tag name.
+  src = src.replace(
+    new RegExp(String.raw`window\.(${GLOBALS})\.([A-Za-z_$][\w$]*)`, "g"),
+    (_all, global, sym) => {
+      add(global, `${sym} as ${global}_${sym}`);
+      return `${global}_${sym}`;
+    },
+  );
 
   src = src.replace(/(.)"(?:\.\.\/)+assets\/icons\/icon_256\.png"/g, (_all, before) => {
     needsBase = true;

@@ -43,6 +43,7 @@ const NAV = [
   { id: "transfer", label: "Remote transfer" },
   { id: "permnotice", label: "Info modal shell" },
   { id: "scriptconfirm", label: "Script changed confirm" },
+  { id: "permdelete", label: "Explorer delete permanently" },
 ];
 
 function Page() {
@@ -525,6 +526,16 @@ function Page() {
           <Meta
             specs={[["width", "360 × UI scale · all languages"], ["rows", "title (body 13 semibold) · path (mono caption, ellipsis) · Tag warning “changed” · paragraph (caption 11, text-secondary, line-height-ui, full width) · buttons"], ["row gap", "space-sm 8 · Tag → paragraph space-xs 4"], ["body → buttons", "space-md 12"], ["height", "fits content (title bar + padding + rows) · no minimum"], ["padding", "12 top/bottom · 14 sides"], ["buttons", "right-aligned · Cancel ghost sm · Run anyway primary sm · inside 360"]]}
             tokens={[{ tok: "--tasty-accent-warning", use: "changed Tag", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-text-secondary", use: "paragraph", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-space-md", use: "body → buttons" }, { tok: "--tasty-shadow-modal", use: "popup" }]} />
+        </Spec>
+      </Section>
+
+      <Section id="permdelete" title="Explorer — Delete permanently (2026-10-12)">
+        <Spec title="Destructive confirm with a target list"
+          when={<>Window-scope centred confirm on the shared scrim, opened by the Explorer's <b>Delete permanently…</b>. Reuses the info-modal frame size (440, max 360) because it carries a scrolling target list. Default focus <b>Cancel</b>; Esc, close and scrim click cancel. The full state set (file, folder, link, many, focus, ko/ja, progress, results) is on <a href="explorer-ops.html#permdelete">Explorer — file operations › Delete permanently</a>.</>}>
+          <Stage variant="solo center"><Backdrop height={380}><div align="center">{window.ExplorerDeleteFrame && <window.ExplorerDeleteFrame.ExplorerDeleteFrame items={window.ExplorerDeleteFrame.XD_ITEMS.many.slice(0, 4)} />}</div></Backdrop></Stage>
+          <Meta
+            specs={[["width", "info-modal-width 440"], ["max height", "info-modal-max-height 360 · list scrolls past explorer-delete-list-max-height 160"], ["buttons", "Cancel ghost (default focus) · Delete permanently danger"], ["dismiss", "Esc · close · scrim click = cancel"]]}
+            tokens={[{ tok: "--tasty-accent-danger", use: "glyph + button", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-explorer-delete-list-max-height", use: "list" }]} />
         </Spec>
       </Section>
     </>

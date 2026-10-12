@@ -48,7 +48,9 @@ const PALETTE_GROUPS = [
     ["rosewater", "#f5e0dc"]] },
   { name: "Terminal-specific", open: false, colors: [
     ["selection_bg", "#585b70"], ["vi_cursor_bg", "#f5e0dc"],
-    ["search_match_bg", "#fab387"], ["search_match_active_bg", "#a6e3a1"]] },
+    ["search_match_bg", "#fab387"], ["search_match_active_bg", "#a6e3a1"],
+    // 2026-10-12: 5th row, right after the fill it sits on. Same swatch as every row (it is one colour value); Reset all clears it too.
+    ["search_match_active_fg", "#1e1e2e"]] },
   { name: "ANSI 16", open: false, colors: [
     ["ansi_black", "#45475a"], ["ansi_red", "#f38ba8"], ["ansi_green", "#a6e3a1"], ["ansi_yellow", "#f9e2af"],
     ["ansi_blue", "#89b4fa"], ["ansi_magenta", "#f5c2e7"], ["ansi_cyan", "#94e2d5"], ["ansi_white", "#bac2de"],

@@ -187,17 +187,22 @@ function CategoryHeader({ label, collapsed, count, onToggle, onAdd, onContextMen
 
 // Rail category boundary — the thin separator becomes a full-width `---` button
 // that opens an anchored popup to its right (same anchored-popup pattern as Tools).
-function RailCategoryBtn({ label, onOpen }) {
+// 2026-10-12: line = avatar ink (rail-category-line → text-muted), 2px (rail-category-line-width);
+// hover/pressed lift it to text-secondary on the overlay bed. Same colour for every category.
+function RailCategoryBtn({ label, onOpen, forceState }) {
   const [hover, setHover] = React.useState(false);
+  const [press, setPress] = React.useState(false);
+  const st = forceState || (press ? "pressed" : hover ? "hover" : "idle");
   return (
     <button type="button" title={label} aria-label={label}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      onClick={(e) => onOpen(e.currentTarget.getBoundingClientRect())}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => { setHover(false); setPress(false); }}
+      onMouseDown={() => setPress(true)} onMouseUp={() => setPress(false)}
+      onClick={(e) => onOpen && onOpen(e.currentTarget.getBoundingClientRect())}
       style={{ appearance: "none", border: 0, cursor: "pointer", padding: 0,
         width: "var(--tasty-size-36)", height: "var(--tasty-size-16)", display: "flex", alignItems: "center", justifyContent: "center",
-        borderRadius: "var(--tasty-radius-sm)", background: hover ? "var(--tasty-overlay-hover)" : "transparent" }}>
-      <span style={{ width: "var(--tasty-size-24)", height: "var(--tasty-border-width)",
-        background: hover ? "var(--tasty-text-muted)" : "var(--tasty-separator)" }} />
+        borderRadius: "var(--tasty-radius-sm)", background: st === "pressed" ? "var(--tasty-overlay-active)" : st === "hover" ? "var(--tasty-overlay-hover)" : "transparent" }}>
+      <span style={{ width: "var(--tasty-size-24)", height: "var(--tasty-rail-category-line-width)", borderRadius: "var(--tasty-radius-pill)",
+        background: st === "idle" ? "var(--tasty-rail-category-line)" : "var(--tasty-rail-category-line-hover)" }} />
     </button>
   );
 }
@@ -239,7 +244,8 @@ function CollapsedSidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, o
           aria-label="Remote mirror" style={{ position: "absolute", bottom: -1, right: -1, pointerEvents: "none",
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           width: "var(--tasty-size-12)", height: "var(--tasty-size-12)", borderRadius: "var(--tasty-radius-pill)",
-          background: "var(--tasty-bg-sidebar)", color: "var(--tasty-workspace-mirror-fg)",
+          boxSizing: "border-box", border: "var(--tasty-border-width) solid var(--tasty-workspace-mirror-chip-border)",
+          background: "var(--tasty-workspace-mirror-chip-bg)", color: "var(--tasty-workspace-mirror-fg)",
           boxShadow: "0 0 0 var(--tasty-size-2) var(--tasty-bg-sidebar)" }}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"
             style={{ width: "var(--tasty-size-8)", height: "var(--tasty-size-8)", display: "block" }}>
@@ -269,7 +275,7 @@ function CollapsedSidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, o
         ))
       ) : (
         <>
-          <div style={{ width: "var(--tasty-size-28)", height: "var(--tasty-border-width)", background: "var(--tasty-separator)", marginBottom: "var(--tasty-space-xs)" }} />
+          <div style={{ width: "var(--tasty-size-28)", height: "var(--tasty-rail-category-line-width)", borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-rail-category-line)", marginBottom: "var(--tasty-space-xs)" }} />
           {workspaces.map((w) => Avatar(w))}
         </>
       )}

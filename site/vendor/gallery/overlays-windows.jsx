@@ -1313,6 +1313,29 @@ function Page() {
             specs={[["Default hex", "Input readOnly"], ["box", "state-disabled fill + border (same as disabled)"], ["value ink", "text-secondary"], ["select · copy", "allowed; focusable"], ["override", "normal Input"], ["disabled", "reserved for an unavailable control"]]}
             tokens={[{ tok: "--tasty-input-readonly-bg", use: "→ state-disabled-fill", color: "var(--tasty-input-readonly-bg)" }, { tok: "--tasty-input-readonly-border", use: "→ state-disabled-border", color: "var(--tasty-input-readonly-border)" }, { tok: "--tasty-input-readonly-fg", use: "→ text-secondary", color: "var(--tasty-input-readonly-fg)" }]} />
         </Spec>
+        <Spec title="Appearance › Colors › Terminal-specific — 5 rows, active match ink after its fill (2026-10-12)"
+          when={<>The theme key <code>search_match_active_fg</code> gets a row like every other palette field, so it can be changed without editing TOML. It goes <b>right after</b> <code>search_match_active_bg</code>: the ink sits on that fill, and reading the pair together is how a user judges it. The swatch stays the <b>same plain swatch</b> as every row. A text-on-fill sample would be the only row of its kind and would need the other row's value to draw; the live terminal is the real preview. <b>Reset all</b> clears it like any other override. The list is now 6 groups / <b>47 rows</b>; Terminal-specific has <b>5</b>.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null, [["selection_bg", "#585b70"], ["vi_cursor_bg", "#f5e0dc"], ["search_match_bg", "#fab387"], ["search_match_active_bg", "#a6e3a1"], ["search_match_active_fg", "#1e1e2e"]]], ["Latte", "latte", [["selection_bg", "#acb0be"], ["vi_cursor_bg", "#dc8a78"], ["search_match_bg", "#fe640b"], ["search_match_active_bg", "#40a02b"], ["search_match_active_fg", "#4c4f69"]]]].map(([label, theme, rows]) => (
+              <div key={label} {...(theme ? { "data-theme": theme } : {})} style={{ width: "var(--tasty-size-360)", display: "flex", flexDirection: "column", gap: "var(--tasty-label-detail-gap)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", marginBottom: "var(--tasty-space-xs)" }}>{label} · Terminal-specific (5)</span>
+                {rows.map(([field, base]) => (
+                  <div key={field} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-control-height)" }}>
+                    <span style={{ width: "var(--tasty-status-dot-size)", height: "var(--tasty-status-dot-size)", borderRadius: "var(--tasty-radius-pill)", flex: "none" }} />
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term-sm)", color: field === "search_match_active_fg" ? "var(--tasty-text-primary)" : "var(--tasty-text-muted)" }}>{field}</span>
+                    <span style={{ flex: "none", display: "flex", width: "var(--tasty-field-width-xs)" }}><Input block mono readOnly defaultValue={base} /></span>
+                    <span style={{ width: "var(--tasty-swatch-size)", height: "var(--tasty-swatch-size)", borderRadius: "var(--tasty-swatch-radius)", flex: "none", background: base, opacity: "var(--tasty-state-dim-opacity)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)" }} />
+                    <WCheckbox label="Default" checked />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["group", "Terminal-specific · 4 → 5 rows"], ["order", "selection_bg · vi_cursor_bg · search_match_bg · search_match_active_bg · search_match_active_fg"], ["label", "the key name, like every row (no translation)"], ["swatch", "unchanged plain swatch"], ["Default base", "Mocha #1e1e2e (neutral-200) · Latte #4c4f69 (neutral-1100)"], ["Reset all", "includes this row"], ["total", "6 groups / 47 rows"]]}
+            tokens={[{ tok: "--tasty-search-match-active-fg", use: "the value this row edits", color: "var(--tasty-search-match-active-fg)" }, { tok: "--tasty-swatch-size", use: "swatch" }]} />
+          <Note>The highlighted key name is only to point the new row out in this specimen; in the window every Default row uses the same muted ink.</Note>
+        </Spec>
         <Spec title="Appearance › Font override — rows + preview below (2026-10-06)"
           when={<>The override grid uses the <b>colour-override idiom</b> already in Settings: label in <span className="tok">--tasty-settings-label-width</span> (150), the control at its own field width, then a trailing <b>Checkbox "Use default"</b> with its label always shown. Trailing means a long ko / ja label grows into free space instead of pushing the control. The <b>Preview</b> leaves the side column and sits <b>below</b> the grid at every window width, Focused and Unfocused side by side (they wrap under each other when narrow), then the one-line font summary. Nothing overlaps at 1100 or at the minimum width; the two-column egui split goes. A defaulted row keeps its control visible at the shared disabled look, filled with the default.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>

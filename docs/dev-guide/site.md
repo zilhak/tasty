@@ -64,6 +64,8 @@ site/
 | `ReactDOM.createRoot(...).render(<App />)` (프리뷰 부트스트랩) | 제거하고 `App` 을 export |
 | `const CSS = \`…\`` + 런타임 `<style>` 주입 | 생성되는 `styles/kit.css` 로 뽑아낸다 (주입은 그대로 둔다) |
 | `const { Section } = window.Gallery;` | `import { Section } from "./shell.jsx"` |
+| 갤러리의 `const Y = () => window.ExplorerOpsY;` (나중에 읽는 전역) | 네임스페이스 import 후 `const Y = () => ExplorerOpsY_ns;`. 서로 import 하는 두 파일도 렌더 시점에 읽으므로 동작한다 |
+| 갤러리 JSX 속성 등에서 읽는 `window.<전역>.X` | `X` 를 `<전역>_X` 별칭으로 import |
 | `Gallery.mount(active, nav, head, <Page/>)` | `export const page = { … }` + 라우트용 엔트리 컴포넌트 생성 |
 | `preset_editor.jsx` 전체를 감싼 IIFE | 벗긴다 (import 는 최상위여야 한다) |
 | 갤러리 산문의 `href="components.html#forms"` | `/design/gallery/components/#forms` |

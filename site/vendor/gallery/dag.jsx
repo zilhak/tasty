@@ -318,6 +318,21 @@ function Page() {
             tokens={[{ tok: "--tasty-text-disabled", use: "glyph", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-text-secondary", use: "title", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-text-muted", use: "hint", color: "var(--tasty-text-muted)" }]} />
           <Note>i18n: the search title is new — <code>dag.popup.no_match</code> “No DAGs match “{"{q}"}”” / ““{"{q}"}”와 일치하는 DAG 없음” / ““{"{q}"}” に一致する DAG はありません” · hint <code>dag.popup.no_match_hint</code> “Clear the filter or widen the scope to all workspaces.” / “필터를 지우거나 범위를 모든 워크스페이스로 넓히세요.” / “フィルターを消すか、範囲をすべてのワークスペースに広げてください。”. The old “No matching DAGs” / “Try a different filter.” go.</Note>
         </Spec>
+        <Spec title="DAG list popup — no match without a query (2026-10-12)"
+          when={<>The list can empty with <b>no search text</b>: the status filter or <b>This workspace only</b> alone filters everything out. There is no query to echo, so this is its own <code>filtered</code> variant: <b>filter</b> glyph (the cause is a filter, not the search field), a title without quotes, and the <b>same hint</b> as the search variant. Variant choice: trimmed query non-empty → <code>search</code> (echo the query only, even when status/scope filters are also on — the hint already says “clear the filter”); trimmed query empty and filters active → <code>filtered</code>; no DAG at all → <code>popup</code>.</>}>
+          <Stage variant="solo" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16, padding: 20 }}>
+            {[["Mocha — status = Failed, no query", null, "filtered", ""], ["Latte — workspace only, no query", "latte", "filtered", ""], ["Mocha — query “deploy” + status filter", null, "search", "deploy"]].map(([cap, th, v, q]) => (
+              <div key={cap} {...(th ? { "data-theme": th } : {})} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                <div style={{ display: "flex", height: 220, border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", background: "var(--tasty-bg-panel)" }}><DagEmpty variant={v} query={q} /></div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["variant", "DagEmpty filtered"], ["when", "query.trim() empty · status filter ≠ all OR workspace-only on · 0 rows"], ["glyph", "filter · 24 · text-disabled"], ["title", "“No DAGs match the current filters”"], ["hint", "same key as search: dag.popup.no_match_hint"], ["query + filters", "search variant, echoes the query only"]]}
+            tokens={[{ tok: "--tasty-text-disabled", use: "glyph", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-text-secondary", use: "title", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-text-muted", use: "hint", color: "var(--tasty-text-muted)" }]} />
+          <Note>i18n (new): <code>dag.popup.no_match_filtered</code> “No DAGs match the current filters” / “현재 필터와 일치하는 DAG 없음” / “現在のフィルターに一致する DAG はありません”. Hint reuses <code>dag.popup.no_match_hint</code>. The temporary <code>dag_list.empty_filtered*</code> (“No matching DAGs” / “Try a different filter.”) can now be removed.</Note>
+        </Spec>
       </Section>
 
       <Section id="surfaces" title="Surface · popup">

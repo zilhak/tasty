@@ -447,8 +447,11 @@ function CycleBanner({ ids }) {
 // ── Empty states ────────────────────────────────────────────────────
 function DagEmpty({ variant = "surface", query = "" }) {
   // "popup" (2026-10-10 b12): the DAG list popup with no DAG in any workspace — no workspace-scoped command.
+  // "filtered" (2026-10-12): no match with an empty/blank query — status filter or "This workspace only" emptied the list.
   const copy = variant === "search"
     ? { icon: "search", title: `No DAGs match “${query}”`, body: "Clear the filter or widen the scope to all workspaces." }
+    : variant === "filtered"
+    ? { icon: "filter", title: "No DAGs match the current filters", body: "Clear the filter or widen the scope to all workspaces." }
     : variant === "popup"
     ? { icon: "gitTree", title: "No DAGs yet", body: "Tasks grouped by dependency appear here." }
     : { icon: "gitTree", title: "No task DAGs in this workspace", body: "An agent creates one with tasty dag add; it appears here as soon as the host registers it." };

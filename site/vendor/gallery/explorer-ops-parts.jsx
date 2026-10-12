@@ -466,4 +466,4 @@ function SearchSection() {
   );
 }
 
-window.ExplorerOpsParts = { XLbl, XCol, XThemes, XToolbar, XStatus, XCell, XDetail, XROWS, XListRow, XHi, XFindBar, XNameError, XListEdit, CreateSection, DragSection, SearchSection };
+window.ExplorerOpsParts = { XLbl, XCol, XThemes, XToolbar, XStatus, XCell, XDetail, XROWS, XListRow, XHi, XFindBar, XNameError, XListEdit, XDragChip, XRing, CreateSection, DragSection, SearchSection };

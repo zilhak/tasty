@@ -17,6 +17,8 @@ const NAV = [
   { id: "remaining", label: "Remaining states (b11)" },
   { id: "followups12", label: "Follow-ups (b12)" },
   { id: "remaining12", label: "Remaining UI (b12)" },
+  { id: "remotewrite", label: "Remote write" },
+  { id: "permdelete", label: "Delete permanently" },
 ];
 
 // ── Progress ──────────────────────────────────────────────
@@ -478,10 +480,13 @@ function Page() {
       <window.ExplorerOpsB11.RemainingSection />
       <window.ExplorerOpsB12.FollowupsB12Section />
       <window.ExplorerOpsB12.RemainingB12Section />
+      <window.ExplorerOpsRemote.RemoteWriteSection />
+      <window.ExplorerOpsDelete.PermanentDeleteSection />
     </>
   );
 }
 
+window.ExplorerOpsY = { YResult, YProgressStatus, YStatusRight, YToastAt, YConflict };
 window.Gallery.mount(
   "explorer-ops",
   NAV,
