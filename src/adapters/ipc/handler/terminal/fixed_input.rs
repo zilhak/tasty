@@ -68,10 +68,10 @@ impl FixedInput {
                     if valid(target, engine)
                         && send_broadcast_to_child(core, engine, &id, target.surface, &body, submit)
                     {
-                        changed |= clear_idle_for_new_prompt(
-                            &mut engine.runtime.child_terminals,
-                            target.surface,
-                        );
+                        changed |= engine
+                            .runtime
+                            .child_terminals
+                            .clear_idle_for_new_prompt(target.surface);
                     }
                 }
                 if changed {

@@ -323,6 +323,17 @@ impl ChildTerminalRegistry {
         self.stamp_state_report(child_surface);
     }
 
+    /// 입력을 보낸 등록 자식의 idle/needs_input을 해제한다. 이전 턴의 idle을 새 작업 완료로
+    /// 읽지 않도록 입력을 보낸 쪽에서 바로 갱신한다. 상태가 바뀌면 호출자가 저장한다.
+    /// 미등록 surface에는 잘못된 상태 보고 기록을 새로 만들지 않는다.
+    pub(crate) fn clear_idle_for_new_prompt(&mut self, child_surface: u32) -> bool {
+        if self.parent_of_child(child_surface).is_none() {
+            return false;
+        }
+        self.set_idle(child_surface, false);
+        true
+    }
+
     pub fn set_needs_input(&mut self, child_surface: u32, val: bool) {
         self.own(child_surface);
         self.needs_input.insert(child_surface, val);
@@ -491,6 +502,36 @@ mod tests {
             role: None,
             nickname: None,
         }
+    }
+
+    #[test]
+    fn a_new_prompt_clears_idle_on_a_registered_child() {
+        let mut reg = ChildTerminalRegistry::default();
+        reg.register_child(10, entry(50, 0));
+        reg.set_idle(50, true);
+        assert_eq!(reg.state_of(50), "idle");
+
+        assert!(reg.clear_idle_for_new_prompt(50));
+        assert_eq!(reg.state_of(50), "active");
+    }
+
+    #[test]
+    fn a_new_prompt_clears_needs_input_too() {
+        let mut reg = ChildTerminalRegistry::default();
+        reg.register_child(10, entry(50, 0));
+        reg.set_needs_input(50, true);
+        assert_eq!(reg.state_of(50), "needs_input");
+
+        assert!(reg.clear_idle_for_new_prompt(50));
+        assert_eq!(reg.state_of(50), "active");
+    }
+
+    #[test]
+    fn a_new_prompt_leaves_an_unregistered_surface_unrecorded() {
+        let mut reg = ChildTerminalRegistry::default();
+        assert!(!reg.clear_idle_for_new_prompt(777));
+        assert_eq!(reg.state_of(777), "active");
+        assert_eq!(reg.last_state_report_at(777), None);
     }
 
     #[test]

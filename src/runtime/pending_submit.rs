@@ -4,6 +4,13 @@ use super::engine_access::EngineMut;
 use std::time::{Duration, Instant};
 use tasty_terminal::{ResourceGeneration, WriteAck};
 pub(crate) const MAX_PENDING: usize = 64;
+/// 본문 제출을 거절한 이유. 외부 오류 코드와 문구는 요청 어댑터가 정한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SubmitRejected {
+    QueueFull,
+    NotFound,
+    HardOccupied,
+}
 pub(crate) struct PendingSubmit {
     surface: u32,
     generation: ResourceGeneration,
@@ -49,6 +56,41 @@ impl super::engine_runtime::EngineRuntime {
     }
 }
 impl EngineMut<'_> {
+    /// 본문을 바로 쓰고 같은 physical owner에 CR 제출을 예약한다. CR은 poll이 보낸다.
+    /// 순서: 큐 한도 → generation 조회 → hard occupancy → terminal 조회 → 본문 → 예약 → wake.
+    pub(crate) fn write_then_submit(
+        &mut self,
+        surface: u32,
+        body: &str,
+    ) -> Result<(), SubmitRejected> {
+        if self.runtime.pending_submits.len() >= MAX_PENDING {
+            return Err(SubmitRejected::QueueFull);
+        }
+        let generation = self
+            .runtime
+            .terminals
+            .generation(surface)
+            .ok_or(SubmitRejected::NotFound)?;
+        let ack = self.write_body_with_ack(surface, body)?;
+        self.runtime
+            .pending_submits
+            .push(PendingSubmit::new(surface, generation, ack));
+        (self.runtime.waker)();
+        Ok(())
+    }
+    /// 원격 점유로 막힌 입력과 없는 surface를 구분해 본문을 쓴다.
+    fn write_body_with_ack(
+        &mut self,
+        surface: u32,
+        body: &str,
+    ) -> Result<WriteAck, SubmitRejected> {
+        if self.live.occupancy.is_hard_occupied(surface) {
+            return Err(SubmitRejected::HardOccupied);
+        }
+        self.find_terminal_by_id_mut(surface)
+            .map(|terminal| terminal.send_key_with_ack(body))
+            .ok_or(SubmitRejected::NotFound)
+    }
     pub(crate) fn poll_input_submissions(&mut self) {
         self.poll_input_submissions_at(Instant::now());
     }
@@ -91,6 +133,8 @@ mod tests {
     use std::sync::mpsc;
 
     const SURFACE: u32 = 1;
+    /// 탭은 있지만 terminal은 없는 surface.
+    const NO_TERMINAL: u32 = 5801;
 
     fn engine() -> crate::runtime::engine_session::EngineSession {
         use tasty_core::{DomainEvent as E, SurfaceSpec};
@@ -118,8 +162,47 @@ mod tests {
                     data: None,
                 },
             },
+            E::TabCreated {
+                id: NO_TERMINAL,
+                pane: 1,
+                index: 1,
+                name: "terminal".into(),
+                surface: SurfaceSpec {
+                    id: NO_TERMINAL,
+                    kind: "terminal".into(),
+                    data: None,
+                },
+            },
         ];
-        crate::state::tests::test_state_from_model(crate::state::tests::test_model(events)).1
+        let mut owner =
+            crate::state::tests::test_state_from_model(crate::state::tests::test_model(events)).1;
+        drop(owner.runtime.terminals.remove(NO_TERMINAL));
+        owner
+    }
+
+    /// wake 횟수를 세고 기본 surface의 본문을 sink로 관측한다.
+    fn observe(
+        e: &mut EngineMut<'_>,
+    ) -> (
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        mpsc::Receiver<Vec<u8>>,
+    ) {
+        let wakes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = wakes.clone();
+        e.runtime.waker = std::sync::Arc::new(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        let (tx, rx) = mpsc::channel();
+        e.runtime
+            .terminals
+            .get_mut(SURFACE)
+            .expect("terminal")
+            .set_input_sink(tx);
+        (wakes, rx)
+    }
+
+    fn wake_count(wakes: &std::sync::atomic::AtomicUsize) -> usize {
+        wakes.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// 본문을 보내고 그 ack로 대기 항목 하나를 만든다. sink가 있으면 ack는 완료되지 않는다.
@@ -138,6 +221,111 @@ mod tests {
             .pending_submits
             .push(PendingSubmit::started_at(SURFACE, generation, ack, started));
         generation
+    }
+
+    #[test]
+    fn a_full_queue_is_refused_and_keeps_its_entries() {
+        let mut session = engine();
+        let mut e = session.borrow_mut();
+        let (wakes, rx) = observe(&mut e);
+        let t0 = Instant::now();
+        let generation = e.runtime.terminals.generation(SURFACE).expect("generation");
+        for _ in 0..MAX_PENDING {
+            let ack = tasty_terminal::Terminal::new_detached(4, 2).send_key_with_ack("x");
+            e.runtime
+                .pending_submits
+                .push(PendingSubmit::started_at(SURFACE, generation, ack, t0));
+        }
+
+        assert_eq!(
+            e.write_then_submit(SURFACE, "hi"),
+            Err(SubmitRejected::QueueFull)
+        );
+        assert_eq!(e.runtime.pending_submits.len(), MAX_PENDING);
+        assert!(
+            e.runtime
+                .pending_submits
+                .iter()
+                .all(|p| p.started == t0 && p.generation == generation)
+        );
+        assert_eq!(wake_count(&wakes), 0);
+        assert!(received(&rx).is_empty());
+    }
+
+    #[test]
+    fn a_surface_without_a_terminal_is_not_found() {
+        let mut session = engine();
+        let mut e = session.borrow_mut();
+        let (wakes, _rx) = observe(&mut e);
+
+        assert_eq!(
+            e.write_then_submit(424_242, "hi"),
+            Err(SubmitRejected::NotFound)
+        );
+        assert_eq!(
+            e.write_then_submit(NO_TERMINAL, "hi"),
+            Err(SubmitRejected::NotFound)
+        );
+        assert!(e.runtime.pending_submits.is_empty());
+        assert_eq!(wake_count(&wakes), 0);
+    }
+
+    #[test]
+    fn a_hard_occupied_surface_is_refused_without_writing_or_queueing() {
+        let mut session = engine();
+        let mut e = session.borrow_mut();
+        let (wakes, rx) = observe(&mut e);
+        e.live.occupancy.acquire(SURFACE, 1).expect("hard occupy");
+
+        assert_eq!(
+            e.write_then_submit(SURFACE, "hi"),
+            Err(SubmitRejected::HardOccupied)
+        );
+        assert!(e.runtime.pending_submits.is_empty());
+        assert_eq!(wake_count(&wakes), 0);
+        assert!(received(&rx).is_empty());
+    }
+
+    // generation 조회가 먼저라 terminal이 없는 surface는 점유 여부와 관계없이 NotFound다.
+    // 본문 쓰기 단계만 보면 점유가 terminal 부재보다 먼저 판정된다.
+    #[test]
+    fn the_body_write_checks_occupancy_before_the_terminal() {
+        let mut session = engine();
+        let mut e = session.borrow_mut();
+        e.live
+            .occupancy
+            .acquire(NO_TERMINAL, 1)
+            .expect("hard occupy");
+
+        assert_eq!(
+            e.write_then_submit(NO_TERMINAL, "hi"),
+            Err(SubmitRejected::NotFound)
+        );
+        assert_eq!(
+            e.write_body_with_ack(NO_TERMINAL, "hi").err(),
+            Some(SubmitRejected::HardOccupied)
+        );
+        assert_eq!(
+            e.write_body_with_ack(424_242, "hi").err(),
+            Some(SubmitRejected::NotFound)
+        );
+        assert!(e.write_body_with_ack(SURFACE, "hi").is_ok());
+    }
+
+    #[test]
+    fn a_submit_writes_the_body_queues_once_and_wakes_once() {
+        let mut session = engine();
+        let mut e = session.borrow_mut();
+        let (wakes, rx) = observe(&mut e);
+        let generation = e.runtime.terminals.generation(SURFACE).expect("generation");
+
+        assert_eq!(e.write_then_submit(SURFACE, "hi"), Ok(()));
+        assert_eq!(received(&rx), vec![b"hi".to_vec()]);
+        assert_eq!(e.runtime.pending_submits.len(), 1);
+        assert_eq!(e.runtime.pending_submits[0].surface, SURFACE);
+        assert_eq!(e.runtime.pending_submits[0].generation, generation);
+        assert!(e.runtime.pending_submits[0].settle.is_none());
+        assert_eq!(wake_count(&wakes), 1);
     }
 
     fn received(rx: &mpsc::Receiver<Vec<u8>>) -> Vec<Vec<u8>> {

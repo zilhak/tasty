@@ -69,8 +69,10 @@ tasty 가 단일라인 tell 을 본문과 제출 `\r` 을 **한 문자열(`"{msg
 
 - **호스트 `terminal.tell` 에 중앙화됐다** — `src/adapters/ipc/handler/terminal.rs` 의
   `build_tell_payload`(개행 유무와 무관하게 `\r` 미포함 본문만 만든다. 멀티라인은 bracketed
-  paste 로 감싼다) + `handle_tell`(본문 `surface.send` → 별도 `\r` `surface.send`, 두 번의
-  write 로 분리)이 유일한 구현이다.
+  paste 로 감싼다)와 `handle_tell`(요청 decode·오류 매핑)이 본문을 만들고,
+  `src/runtime/pending_submit.rs` 의 `write_then_submit` 이 본문을 한 write 로 보낸 뒤 제출 `\r` 을
+  예약한다. engine poll 이 본문 write 완료(최대 5초)와 20ms 뒤 같은 연결에만 별도 `\r` write 를
+  보낸다. 이 경로가 유일한 구현이다.
 - `claude`/`codex` 플러그인의 `tell` 은 자체 페이로드 조립 로직을 갖지 않고 `terminal.tell`
   IPC 를 그대로 호출해 위임한다(`crates/tasty-plugin-claude/src/handlers.rs`,
   `crates/tasty-plugin-codex/src/handlers.rs` 의 `handle_tell` — 둘 다 `host_call(host,

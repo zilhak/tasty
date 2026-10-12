@@ -140,68 +140,30 @@ fn build_broadcast_payload(text: &str) -> (String, bool) {
     (build_tell_payload(body), submit)
 }
 
-/// 원격 점유로 막힌 입력과 없는 surface를 구분한다.
-enum SendTextError {
-    HardOccupied,
-    NotFound,
-}
-
-/// 점유를 확인하고 필요한 초기화를 거쳐 ack를 받을 수 있는 방식으로 본문을 보낸다.
-fn send_text_to_surface_with_ack(
-    engine: &mut EngineMut<'_>,
+/// 본문 제출 거절을 기존 오류 코드와 문구로 바꾼다.
+fn submit_rejected_response(
+    id: Value,
     surface_id: u32,
-    text: &str,
-) -> Result<tasty_terminal::WriteAck, SendTextError> {
-    if engine.live.occupancy.is_hard_occupied(surface_id) {
-        return Err(SendTextError::HardOccupied);
-    }
-    engine
-        .find_terminal_by_id_mut(surface_id)
-        .map(|terminal| terminal.send_key_with_ack(text))
-        .ok_or(SendTextError::NotFound)
-}
-
-/// Send the body, then let the engine poll its original physical owner before submitting CR.
-/// The existing five-second ack bound and twenty-millisecond settling delay are preserved.
-fn send_body_then_submit(
-    engine: &mut EngineMut<'_>,
-    id: &Value,
-    surface_id: u32,
-    body: String,
-) -> Result<(), JsonRpcResponse> {
-    if engine.runtime.pending_submits.len() >= crate::runtime::pending_submit::MAX_PENDING {
-        return Err(JsonRpcResponse::error(
-            id.clone(),
+    rejected: crate::runtime::pending_submit::SubmitRejected,
+) -> JsonRpcResponse {
+    use crate::runtime::pending_submit::SubmitRejected;
+    match rejected {
+        SubmitRejected::QueueFull => JsonRpcResponse::error(
+            id,
             tasty_ipc::protocol::ERR_COMMAND_QUEUE_FULL,
             "terminal submission queue is full",
-        ));
-    }
-    let generation = engine
-        .runtime
-        .terminals
-        .generation(surface_id)
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), format!("Surface {surface_id} not found"))
-        })?;
-    let ack = send_text_to_surface_with_ack(engine, surface_id, &body).map_err(|e| {
-        let msg = match e {
-            SendTextError::HardOccupied => format!(
+        ),
+        SubmitRejected::NotFound => {
+            JsonRpcResponse::invalid_params(id, format!("Surface {surface_id} not found"))
+        }
+        SubmitRejected::HardOccupied => JsonRpcResponse::invalid_params(
+            id,
+            format!(
                 "Surface {surface_id} is attached elsewhere (hard-occupied) — release the \
                  attach or target a different surface"
             ),
-            SendTextError::NotFound => format!("Surface {surface_id} not found"),
-        };
-        JsonRpcResponse::invalid_params(id.clone(), msg)
-    })?;
-
-    engine
-        .runtime
-        .pending_submits
-        .push(crate::runtime::pending_submit::PendingSubmit::new(
-            surface_id, generation, ack,
-        ));
-    (engine.runtime.waker)();
-    Ok(())
+        ),
+    }
 }
 
 pub(crate) fn decode_tell<'a>(
@@ -226,27 +188,17 @@ pub(crate) fn handle_tell(
         Err(error) => return error,
     };
     let payload = build_tell_payload(text);
-    if let Err(e) = send_body_then_submit(engine, &id, surface_id, payload) {
-        return e;
+    if let Err(rejected) = engine.write_then_submit(surface_id, &payload) {
+        return submit_rejected_response(id, surface_id, rejected);
     }
-    if clear_idle_for_new_prompt(&mut engine.runtime.child_terminals, surface_id) {
+    if engine
+        .runtime
+        .child_terminals
+        .clear_idle_for_new_prompt(surface_id)
+    {
         engine.runtime.child_terminals.save();
     }
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
-}
-
-/// 입력을 보낸 등록 자식의 idle/needs_input을 해제한다. 이전 턴의 idle을 새 작업 완료로
-/// 읽지 않도록 입력을 보낸 쪽에서 바로 갱신한다. 상태가 바뀌면 호출자가 저장한다.
-/// 미등록 surface에는 잘못된 상태 보고 기록을 새로 만들지 않는다.
-fn clear_idle_for_new_prompt(
-    registry: &mut crate::runtime::child_terminal::ChildTerminalRegistry,
-    surface_id: u32,
-) -> bool {
-    if registry.parent_of_child(surface_id).is_none() {
-        return false;
-    }
-    registry.set_idle(surface_id, false);
-    true
 }
 
 pub(crate) fn handle_children(
@@ -607,7 +559,10 @@ pub(crate) fn handle_broadcast(
     let mut idle_cleared = false;
     for sid in targets {
         if send_broadcast_to_child(core, engine, &id, sid, &body, submit) {
-            idle_cleared |= clear_idle_for_new_prompt(&mut engine.runtime.child_terminals, sid);
+            idle_cleared |= engine
+                .runtime
+                .child_terminals
+                .clear_idle_for_new_prompt(sid);
         }
         sent_ids.push(sid);
     }
@@ -763,36 +718,6 @@ mod tests {
         let reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
         let msg = child_not_found_message(&reg, 3157, 0);
         assert!(msg.contains("no children registered"), "{msg}");
-    }
-
-    #[test]
-    fn tell_clears_idle_flag_on_target_child() {
-        let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
-        reg.register_child(10, child(50, 0));
-        reg.set_idle(50, true);
-        assert_eq!(reg.state_of(50), "idle");
-
-        assert!(clear_idle_for_new_prompt(&mut reg, 50));
-        assert_eq!(reg.state_of(50), "active");
-    }
-
-    #[test]
-    fn tell_clears_needs_input_too() {
-        let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
-        reg.register_child(10, child(50, 0));
-        reg.set_needs_input(50, true);
-        assert_eq!(reg.state_of(50), "needs_input");
-
-        assert!(clear_idle_for_new_prompt(&mut reg, 50));
-        assert_eq!(reg.state_of(50), "active");
-    }
-
-    #[test]
-    fn tell_does_not_touch_registry_for_non_child_surface() {
-        let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
-        assert!(!clear_idle_for_new_prompt(&mut reg, 777));
-        assert_eq!(reg.state_of(777), "active");
-        assert_eq!(reg.last_state_report_at(777), None);
     }
 
     #[test]
@@ -1047,42 +972,6 @@ mod tests {
 
         let resp = handle_release(&mut e, json!(1), &json!({ "child": idx1 }));
         assert!(resp.error.is_some());
-    }
-
-    #[test]
-    fn send_text_with_ack_distinguishes_hard_occupied_from_not_found() {
-        let mut e_session = engine_with_extra(&[5801]);
-        let mut e = e_session.borrow_mut();
-        let target = 5801u32;
-        e.live.occupancy.acquire(target, 1).unwrap();
-
-        let err = send_text_to_surface_with_ack(&mut e, target, "hi")
-            .err()
-            .expect("hard-occupied surface must fail");
-        assert!(matches!(err, SendTextError::HardOccupied));
-    }
-
-    #[test]
-    fn send_text_with_ack_reports_not_found_for_missing_surface() {
-        let mut e_session = engine();
-        let mut e = e_session.borrow_mut();
-        let err = send_text_to_surface_with_ack(&mut e, 424_242, "hi")
-            .err()
-            .expect("missing surface must fail");
-        assert!(matches!(err, SendTextError::NotFound));
-    }
-
-    // 추가 대상에는 PTY가 없으므로 여기서는 detached 터미널이 있는 기본 surface를 쓴다.
-    #[test]
-    fn send_text_with_ack_succeeds_for_free_terminal() {
-        let mut e_session = engine();
-        let mut e = e_session.borrow_mut();
-        let target = e
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .all_surface_ids()[0];
-
-        assert!(send_text_to_surface_with_ack(&mut e, target, "hi").is_ok());
     }
 
     #[test]
