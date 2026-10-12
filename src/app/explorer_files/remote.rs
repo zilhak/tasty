@@ -117,7 +117,7 @@ fn done_of(result: OpResult, sent: &Resend) -> Done {
             truncated,
         } => {
             if truncated {
-                report.resend = Some(sent.clone());
+                report.resend = Some(Box::new(sent.clone()));
             }
             Done::Report(report)
         }

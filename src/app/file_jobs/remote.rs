@@ -150,13 +150,17 @@ fn result_message(op_id: u64, result: OpResult) -> Vec<u8> {
             report: report.clone(),
             truncated: true,
         });
-        let lists = report.failed.len() + report.skipped.len() + report.unprocessed.len();
+        let lists = report.failed.len()
+            + report.skipped.len()
+            + report.unprocessed.len()
+            + report.staging_left.len();
         if bytes.len() <= RESULT_BUDGET || lists == 0 {
             return bytes;
         }
         report.failed.truncate(report.failed.len() / 2);
         report.skipped.truncate(report.skipped.len() / 2);
         report.unprocessed.truncate(report.unprocessed.len() / 2);
+        report.staging_left.truncate(report.staging_left.len() / 2);
     }
 }
 

@@ -78,7 +78,7 @@ pub(super) fn merge(mut a: Report, b: Report) -> Report {
         paths.extend(b.retryable());
         let mut leftovers = a.retry_leftovers();
         leftovers.extend(b.retry_leftovers());
-        a.resend = Some(Resend { paths, leftovers });
+        a.resend = Some(Box::new(Resend { paths, leftovers }));
     }
     if b.kind == OpKind::Move {
         a.kind = OpKind::Move;
@@ -91,6 +91,7 @@ pub(super) fn merge(mut a: Report, b: Report) -> Report {
     a.skipped.extend(b.skipped);
     a.leftovers.extend(b.leftovers);
     a.unprocessed.extend(b.unprocessed);
+    a.staging_left.extend(b.staging_left);
     a.trash_unavailable |= b.trash_unavailable;
     a.cancelled = (a.cancelled || b.cancelled) && a.failed.is_empty() && a.skipped.is_empty();
     a

@@ -414,10 +414,14 @@ pub(crate) struct Report {
     pub leftovers: Vec<Leftover>,
     /// 취소로 하지 않은 원래 경로. 취소 때 멈춘 항목도 준비 중 사본을 지웠으므로 여기 든다.
     pub unprocessed: Vec<PathBuf>,
+    /// 지우지 못하고 남은 준비용 임시 폴더와 그 OS 오류. 항목 결과와 따로 두며 다시 시도하지 않는다.
+    #[serde(default)]
+    pub staging_left: Vec<Failure>,
     /// Retry 가 위 목록 대신 그대로 다시 보낼 원래 요청. 원격 서버가 목록을 줄여 보낸 결과에는 빠진 항목이
-    /// 있으므로 client 가 보냈던 목록을 쓴다. 연결로 보내지 않는다.
+    /// 있으므로 client 가 보냈던 목록을 쓴다. 연결로 보내지 않는다. 원격 결과 enum 의 변형 크기를
+    /// 고르게 두려고 상자에 담는다.
     #[serde(skip)]
-    pub resend: Option<Resend>,
+    pub resend: Option<Box<Resend>>,
 }
 
 /// 줄어든 원격 결과의 Retry 가 다시 보낼, client 가 처음 보낸 경로와 남은 원본.
@@ -458,6 +462,7 @@ impl Report {
             trash_unavailable: false,
             leftovers: Vec::new(),
             unprocessed: Vec::new(),
+            staging_left: Vec::new(),
             resend: None,
         }
     }
@@ -555,6 +560,7 @@ pub(crate) fn run_transfer(
         .filter(|s| conflicts(s, &canonical_dest, cut))
         .count();
     let mut sticky: Option<Choice> = None;
+    let mut staging_left = Vec::new();
     let mut base = 0u64;
     let mut files_base = 0usize;
     for (index, (source, size)) in sources.iter().zip(sizes).enumerate() {
@@ -571,6 +577,7 @@ pub(crate) fn run_transfer(
             cut,
             sticky: &mut sticky,
             conflicts_left: &mut conflicts_left,
+            staging_left: &mut staging_left,
             base,
         };
         // 멈추는 것은 취소뿐이다. 멈춘 항목은 사본을 지웠으므로 남은 항목과 함께 하지 않은 것으로 둔다.
@@ -583,6 +590,7 @@ pub(crate) fn run_transfer(
         shared.files_done.store(files_base, Ordering::Release);
         shared.finish_item(base);
     }
+    report.staging_left = staging_left;
     report
 }
 
@@ -673,6 +681,7 @@ struct Item<'a> {
     cut: bool,
     sticky: &'a mut Option<Choice>,
     conflicts_left: &'a mut usize,
+    staging_left: &'a mut Vec<Failure>,
     /// 앞서 끝난 항목들의 바이트 합. 이 항목의 복사량을 더해 진행을 맞춘다.
     base: u64,
 }
@@ -790,16 +799,29 @@ impl Item<'_> {
 
     /// 목적지 폴더 안의 숨은 임시 폴더에서 사본을 만든 뒤 공개한다. 취소·실패하면 임시 폴더째 지운다.
     fn copy(
-        &self,
+        &mut self,
         source: &Path,
         meta: &std::fs::Metadata,
-        mut target: PathBuf,
+        target: PathBuf,
         publish: Publish,
     ) -> Result<Outcome, ItemError> {
         let staging = tempfile::Builder::new()
             .prefix(".tasty-copy-")
             .tempdir_in(self.dest)?;
-        let staged = staging.path().join("entry");
+        let result = self.copy_staged(staging.path(), source, meta, target, publish);
+        close_staging(staging, self.staging_left);
+        result
+    }
+
+    fn copy_staged(
+        &self,
+        staging: &Path,
+        source: &Path,
+        meta: &std::fs::Metadata,
+        mut target: PathBuf,
+        publish: Publish,
+    ) -> Result<Outcome, ItemError> {
+        let staged = staging.join("entry");
         let mut copied = 0u64;
         let mut modes = FolderModes::default();
         if let Err(e) = copy_tree(
@@ -854,6 +876,18 @@ impl Item<'_> {
             });
         }
         Ok(Outcome::Done(step))
+    }
+}
+
+/// 임시 폴더를 지운다. drop 은 정리 오류를 버리므로 직접 닫고, 실패하면 경고 로그와 결과에 남긴다.
+fn close_staging(staging: tempfile::TempDir, left: &mut Vec<Failure>) {
+    let path = staging.path().to_path_buf();
+    if let Err(e) = staging.close() {
+        tracing::warn!(path = %path.display(), error = %e, "Explorer could not remove a staging folder");
+        left.push(Failure {
+            path,
+            reason: Reason::Os(e.to_string()),
+        });
     }
 }
 
@@ -1006,7 +1040,7 @@ pub(crate) fn run_undo(shared: &Shared, steps: &[UndoStep]) -> Report {
             }
             UndoStep::Moved { from, to, made } => {
                 shared.set_current(to);
-                (from, move_back(to, from, *made))
+                (from, move_back(to, from, *made, &mut report.staging_left))
             }
             UndoStep::Replaced(path) => (path, Err(Reason::Replaced)),
         };
@@ -1024,7 +1058,12 @@ pub(crate) fn run_undo(shared: &Shared, steps: &[UndoStep]) -> Report {
 
 /// `to` 를 정확히 `from` 자리로 옮긴다. 그 자리에 무엇이 있거나, `to` 가 옮긴 뒤 바뀌었으면
 /// 옮기지 않는다.
-fn move_back(to: &Path, from: &Path, made: Option<SystemTime>) -> Result<(), Reason> {
+fn move_back(
+    to: &Path,
+    from: &Path,
+    made: Option<SystemTime>,
+    staging_left: &mut Vec<Failure>,
+) -> Result<(), Reason> {
     if to.symlink_metadata().is_err() {
         return Err(Reason::Gone);
     }
@@ -1047,7 +1086,13 @@ fn move_back(to: &Path, from: &Path, made: Option<SystemTime>) -> Result<(), Rea
         .prefix(".tasty-copy-")
         .tempdir_in(parent)
         .map_err(|e| Reason::Os(e.to_string()))?;
-    let staged = staging.path().join("entry");
+    let result = move_back_staged(staging.path(), to, from);
+    close_staging(staging, staging_left);
+    result
+}
+
+fn move_back_staged(staging: &Path, to: &Path, from: &Path) -> Result<(), Reason> {
+    let staged = staging.join("entry");
     let meta = to
         .symlink_metadata()
         .map_err(|e| Reason::Os(e.to_string()))?;
@@ -1071,4 +1116,4 @@ pub(crate) mod leftover;
 
 #[cfg(test)]
 #[path = "job_tests.rs"]
-mod tests;
+pub(crate) mod tests;

@@ -110,11 +110,12 @@ pub enum OpsAction {
 }
 
 /// 결과 카드의 수명 정책: 다시 할 항목이 없는 카드만 표준 시간 뒤 사라진다.
-/// 원본을 다 지우지 못한 이동과 취소로 하지 않은 항목이 있는 카드는 닫을 때까지 남긴다.
+/// 원본을 다 지우지 못한 이동과 취소로 하지 않은 항목, 남은 임시 폴더가 있는 카드는 닫을 때까지 남긴다.
 pub(crate) fn result_is_timed(report: &Report) -> bool {
     report.failed.is_empty()
         && report.skipped.is_empty()
         && report.unprocessed.is_empty()
+        && report.staging_left.is_empty()
         && !report.trash_unavailable
 }
 
@@ -509,6 +510,12 @@ fn card_lines(report: &Report, undo_of: Option<UndoOf>) -> (Vec<(String, String)
                 .iter()
                 .map(|p| (home_tilde(p), t("explorer.result.skipped").to_owned())),
         )
+        .chain(
+            report
+                .staging_left
+                .iter()
+                .map(|f| (home_tilde(&f.path), reason_text(&f.reason))),
+        )
         .collect();
     let more = (all.len() > MAX_RESULT_LINES).then(|| {
         t_fmt(
@@ -850,13 +857,14 @@ fn apply_pick(
     }
 }
 
-/// 실패·건너뛴 항목의 전체 경로를 한 줄에 하나씩.
+/// 실패·건너뛴 항목과 남은 임시 폴더의 전체 경로를 한 줄에 하나씩.
 fn all_paths(report: &Report) -> String {
     report
         .failed
         .iter()
         .map(|f| &f.path)
         .chain(&report.skipped)
+        .chain(report.staging_left.iter().map(|f| &f.path))
         .map(|p| p.display().to_string())
         .collect::<Vec<_>>()
         .join("\n")

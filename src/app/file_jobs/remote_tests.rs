@@ -267,6 +267,7 @@ fn an_oversized_report_is_truncated_without_undo_steps() {
         trash_unavailable: false,
         leftovers: Vec::new(),
         unprocessed: paths,
+        staging_left: Vec::new(),
         resend: None,
     };
     let bytes = result_message(

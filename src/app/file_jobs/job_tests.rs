@@ -432,6 +432,7 @@ pub(super) fn with_item<R>(
 ) -> R {
     let mut sticky = None;
     let mut left = 0;
+    let mut staging_left = Vec::new();
     let mut item = Item {
         shared,
         dest,
@@ -439,6 +440,7 @@ pub(super) fn with_item<R>(
         cut,
         sticky: &mut sticky,
         conflicts_left: &mut left,
+        staging_left: &mut staging_left,
         base: 0,
     };
     f(&mut item)
@@ -773,4 +775,114 @@ fn an_entry_reached_through_a_selected_link_is_still_transferred() {
     assert_eq!((report.done, report.total), (2, 2));
     assert_eq!(names(&dest), ["inside.txt", "link"]);
     assert!(dest.join("link").symlink_metadata().unwrap().is_symlink());
+}
+
+/// 복사 도중 worker 를 세워 두는 주입 지점. 첫 바이트를 쓴 뒤 처음 깨우는 자리에서 `reached` 를 보내고
+/// `release` 를 받을 때까지 기다린다. 그 사이 시험은 준비 중인 임시 폴더를 보거나 바꿀 수 있다.
+pub(crate) struct MidCopy {
+    pub shared: Arc<Shared>,
+    pub reached: std::sync::mpsc::Receiver<()>,
+    pub release: std::sync::mpsc::SyncSender<()>,
+}
+
+pub(crate) fn paused_mid_copy() -> MidCopy {
+    let (reached_tx, reached) = std::sync::mpsc::sync_channel(1);
+    let (release, release_rx) = std::sync::mpsc::sync_channel(1);
+    let reached_tx = Mutex::new(Some(reached_tx));
+    let release_rx = Mutex::new(release_rx);
+    let slept = AtomicBool::new(false);
+    let shared = Arc::new_cyclic(|weak: &Weak<Shared>| {
+        let weak = weak.clone();
+        Shared::interactive(move || {
+            let Some(shared) = weak.upgrade() else {
+                return;
+            };
+            let snap = shared.snapshot();
+            let counted = snap.files.as_ref().is_some_and(|f| !f.counting);
+            if counted && snap.bytes_done == 0 && !slept.swap(true, Ordering::AcqRel) {
+                // 다음 진행 깨움이 간격 제한을 넘도록 집계가 끝난 깨움에서 한 번 쉰다.
+                std::thread::sleep(WAKE_INTERVAL + Duration::from_millis(50));
+            } else if snap.bytes_done > 0
+                && let Some(tx) = reached_tx.lock().unwrap().take()
+            {
+                tx.send(()).unwrap();
+                release_rx.lock().unwrap().recv().unwrap();
+            }
+        })
+    });
+    MidCopy {
+        shared,
+        reached,
+        release,
+    }
+}
+
+/// 여러 버퍼에 걸쳐 복사되는 파일 하나를 담은 폴더.
+pub(crate) fn folder_with_a_large_file(root: &Path) -> PathBuf {
+    let src = root.join("source");
+    std::fs::create_dir(&src).unwrap();
+    std::fs::write(src.join("large.bin"), vec![7u8; COPY_CHUNK * 3]).unwrap();
+    src
+}
+
+/// 임시 폴더를 지우지 못하면 그 경로와 OS 오류를 결과에 남긴다. 버리던 정리 오류를 보이게 한다.
+#[cfg(unix)]
+#[test]
+fn a_staging_folder_that_cannot_be_removed_is_reported() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let src = folder_with_a_large_file(root.path());
+    let dest = root.path().join("dest");
+    std::fs::create_dir(&dest).unwrap();
+    let pause = paused_mid_copy();
+    let worker = spawn_transfer(&pause.shared, vec![src.clone()], &dest, false);
+    pause.reached.recv_timeout(Duration::from_secs(10)).unwrap();
+    let staging = std::fs::read_dir(&dest)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".tasty-copy-")
+        })
+        .expect("a staging folder while copying");
+    let entry = staging.join("entry");
+    // 안의 파일을 지울 수 없게 해 정리를 실패시킨다.
+    std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o555)).unwrap();
+    pause.shared.cancel();
+    pause.release.send(()).unwrap();
+    let report = worker.join().unwrap();
+    std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(report.cancelled);
+    assert_eq!(report.unprocessed, [src]);
+    assert_eq!(
+        report
+            .staging_left
+            .iter()
+            .map(|f| &f.path)
+            .collect::<Vec<_>>(),
+        [&staging]
+    );
+    assert!(matches!(report.staging_left[0].reason, Reason::Os(_)));
+    assert!(report.failed.is_empty());
+}
+
+/// 정리에 성공하면 아무것도 남기지 않는다.
+#[test]
+fn a_cancelled_copy_removes_its_staging_folder_and_reports_nothing_left() {
+    let root = tempfile::tempdir().unwrap();
+    let src = folder_with_a_large_file(root.path());
+    let dest = root.path().join("dest");
+    std::fs::create_dir(&dest).unwrap();
+    let pause = paused_mid_copy();
+    let worker = spawn_transfer(&pause.shared, vec![src], &dest, false);
+    pause.reached.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(names(&dest).len(), 1, "the staging folder exists");
+    pause.shared.cancel();
+    pause.release.send(()).unwrap();
+    let report = worker.join().unwrap();
+    assert!(report.cancelled);
+    assert!(report.staging_left.is_empty());
+    assert!(names(&dest).is_empty());
 }

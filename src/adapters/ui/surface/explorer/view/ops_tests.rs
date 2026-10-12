@@ -19,6 +19,7 @@ fn report(kind: OpKind, total: usize, done: usize) -> Report {
         trash_unavailable: false,
         leftovers: Vec::new(),
         unprocessed: Vec::new(),
+        staging_left: Vec::new(),
         resend: None,
     }
 }
@@ -620,10 +621,10 @@ fn a_truncated_remote_result_retries_what_was_sent() {
     cut.undo.clear();
     cut.failed = vec![failure("/srv/a", Reason::SameAsCopy)];
     cut.skipped = vec!["/srv/b".into()];
-    cut.resend = Some(Resend {
+    cut.resend = Some(Box::new(Resend {
         paths: vec!["/srv/a".into(), "/srv/b".into(), "/srv/c".into()],
         leftovers: vec![leftover("/srv/d")],
-    });
+    }));
     let text = card_text(&card(cut.clone()));
     assert_eq!(text.retry, cut.resend.as_ref().unwrap().paths);
     assert_eq!(text.leftovers, vec![leftover("/srv/d")]);
@@ -715,4 +716,31 @@ fn counting_has_no_bar_and_transfer_uses_files_and_zero_or_unknown_byte_fallback
         None,
         "legacy non-transfer progress stays indeterminate"
     );
+}
+
+/// 남은 임시 폴더는 기존 줄 모양(경로 · OS 오류)으로 보이고, 카드는 닫을 때까지 남는다.
+/// 항목 결과는 바꾸지 않으므로 제목·Undo 는 그대로이고 Retry 는 없다.
+#[test]
+fn a_staging_folder_left_behind_keeps_the_card_and_lists_its_path() {
+    let mut r = report(OpKind::Copy, 2, 2);
+    r.staging_left = vec![failure(
+        "/tmp/Documents/.tasty-copy-x",
+        Reason::Os("Permission denied".into()),
+    )];
+    assert!(!result_is_timed(&r));
+    let text = card_text(&card(r.clone()));
+    assert_eq!(text.kind, ToastKind::Success);
+    assert_eq!(
+        text.title,
+        t_fmt2("explorer.result.copied", "2", "Documents")
+    );
+    assert_eq!(
+        text.lines,
+        [(
+            home_tilde(Path::new("/tmp/Documents/.tasty-copy-x")),
+            "Permission denied".to_owned()
+        )]
+    );
+    assert!(text.undo && text.retry.is_empty());
+    assert_eq!(all_paths(&r), "/tmp/Documents/.tasty-copy-x");
 }

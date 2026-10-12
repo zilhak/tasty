@@ -188,6 +188,7 @@ fn a_remote_job_relays_progress_answers_and_its_result() {
         trash_unavailable: false,
         leftovers: Vec::new(),
         unprocessed: vec!["/srv/a.txt".into()],
+        staging_left: Vec::new(),
         resend: None,
     };
     sessions[0].transport.explorer_inbox.push(serde_json::json!({
@@ -282,6 +283,7 @@ fn a_truncated_result_keeps_the_paths_that_were_sent() {
             trash_unavailable: false,
             leftovers: Vec::new(),
             unprocessed: Vec::new(),
+            staging_left: Vec::new(),
             resend: None,
         };
         sessions[0].transport.explorer_inbox.push(serde_json::json!({
