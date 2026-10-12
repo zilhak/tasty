@@ -1245,4 +1245,102 @@ mod tests {
         assert!(!payload.contains('\r'));
         assert!(submit);
     }
+
+    /// tell의 거절 순서와 wake 횟수를 관측한다. 본문은 기본 surface의 detached 터미널 sink로 본다.
+    fn tell_fixture() -> (
+        crate::runtime::engine_session::EngineSession,
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        std::sync::mpsc::Receiver<Vec<u8>>,
+    ) {
+        let mut session = engine();
+        let wakes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (tx, rx) = std::sync::mpsc::channel();
+        {
+            let e = session.borrow_mut();
+            let counter = wakes.clone();
+            e.runtime.waker = std::sync::Arc::new(move || {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            });
+            e.runtime
+                .terminals
+                .get_mut(1)
+                .expect("default terminal")
+                .set_input_sink(tx);
+        }
+        (session, wakes, rx)
+    }
+
+    fn tell(e: &mut EngineMut<'_>, surface: u32) -> JsonRpcResponse {
+        handle_tell(e, json!(1), &json!({ "surface": surface, "text": "hi" }))
+    }
+
+    #[test]
+    fn tell_refuses_a_full_queue_before_writing_the_body() {
+        let (mut session, wakes, rx) = tell_fixture();
+        let mut e = session.borrow_mut();
+        let generation = e.runtime.terminals.generation(1).expect("generation");
+        for _ in 0..crate::runtime::pending_submit::MAX_PENDING {
+            let ack = tasty_terminal::Terminal::new_detached(4, 2).send_key_with_ack("x");
+            e.runtime
+                .pending_submits
+                .push(crate::runtime::pending_submit::PendingSubmit::new(
+                    1, generation, ack,
+                ));
+        }
+
+        let err = tell(&mut e, 1).error.expect("full queue must refuse");
+        assert_eq!(err.code, tasty_ipc::protocol::ERR_COMMAND_QUEUE_FULL);
+        assert_eq!(err.message, "terminal submission queue is full");
+        assert_eq!(
+            e.runtime.pending_submits.len(),
+            crate::runtime::pending_submit::MAX_PENDING
+        );
+        assert_eq!(wakes.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(rx.try_iter().next().is_none());
+    }
+
+    #[test]
+    fn tell_reports_a_missing_surface_without_queueing() {
+        let (mut session, wakes, _rx) = tell_fixture();
+        let mut e = session.borrow_mut();
+
+        let err = tell(&mut e, 424_242).error.expect("missing surface");
+        assert_eq!(err.code, -32602);
+        assert_eq!(err.message, "Surface 424242 not found");
+        assert!(e.runtime.pending_submits.is_empty());
+        assert_eq!(wakes.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn tell_refuses_a_hard_occupied_surface_without_writing_or_queueing() {
+        let (mut session, wakes, rx) = tell_fixture();
+        let mut e = session.borrow_mut();
+        e.live.occupancy.acquire(1, 1).expect("hard occupy");
+
+        let err = tell(&mut e, 1).error.expect("hard-occupied surface");
+        assert_eq!(err.code, -32602);
+        assert_eq!(
+            err.message,
+            "Surface 1 is attached elsewhere (hard-occupied) — release the attach or target a \
+             different surface"
+        );
+        assert!(e.runtime.pending_submits.is_empty());
+        assert_eq!(wakes.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(rx.try_iter().next().is_none());
+    }
+
+    #[test]
+    fn tell_writes_the_body_queues_one_submit_and_wakes_once() {
+        let (mut session, wakes, rx) = tell_fixture();
+        let mut e = session.borrow_mut();
+        let generation = e.runtime.terminals.generation(1).expect("generation");
+
+        let ok = tell(&mut e, 1).result.expect("tell succeeds");
+        assert_eq!(ok, json!({ "sent": true, "surface_id": 1 }));
+        assert_eq!(rx.try_iter().collect::<Vec<_>>(), vec![b"hi".to_vec()]);
+        assert_eq!(e.runtime.pending_submits.len(), 1);
+        assert_eq!(e.runtime.pending_submits[0].surface(), 1);
+        assert!(e.runtime.terminals.matches_generation(1, generation));
+        assert_eq!(wakes.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 }
