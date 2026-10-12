@@ -15,18 +15,23 @@ const HIDDEN: u32 = 84;
 
 impl MainView {
     /// 생성 행 두 개. 빈 영역 메뉴는 맨 앞 묶음이라 뒤에, 폴더 메뉴는 파일 조작 묶음이라 앞에 구분선을 둔다.
-    pub(super) fn push_explorer_create_items(items: &mut Vec<MenuItem>, leading: bool) {
+    pub(super) fn push_explorer_create_items(
+        items: &mut Vec<MenuItem>,
+        leading: bool,
+        refusal: Option<&str>,
+    ) {
         if !leading {
             items.push(MenuItem::separator());
         }
-        items.push(MenuItem::new(
-            NEW_FOLDER,
-            crate::i18n::t("explorer.command.new_folder"),
-        ));
-        items.push(MenuItem::new(
-            NEW_FILE,
-            crate::i18n::t("explorer.command.new_file"),
-        ));
+        for (id, key) in [
+            (NEW_FOLDER, "explorer.command.new_folder"),
+            (NEW_FILE, "explorer.command.new_file"),
+        ] {
+            items.push(match refusal {
+                None => MenuItem::new(id, crate::i18n::t(key)),
+                Some(reason) => MenuItem::disabled(id, crate::i18n::t(key)).with_tooltip(reason),
+            });
+        }
         if leading {
             items.push(MenuItem::separator());
         }
@@ -60,23 +65,23 @@ impl MainView {
         y: f32,
     ) {
         let mut items = Vec::new();
-        if !engine.blocks_explorer_write(surface_id) {
-            let writable = self
-                .state
-                .explorer_views
-                .get(surface_id)
-                .is_none_or(|v| v.can_write_here());
-            for (id, key) in [
-                (NEW_FOLDER, "explorer.command.new_folder"),
-                (NEW_FILE, "explorer.command.new_file"),
-            ] {
-                let label = crate::i18n::t(key);
-                items.push(if writable {
-                    MenuItem::new(id, label)
-                } else {
-                    MenuItem::disabled(id, label)
-                });
-            }
+        // 쓸 수 없는 원격 칸은 행을 꺼 두고 이유를 툴팁으로 단다.
+        let refusal = engine.explorer_write_refusal(surface_id);
+        let writable = self
+            .state
+            .explorer_views
+            .get(surface_id)
+            .is_none_or(|v| v.can_write_here());
+        for (id, key) in [
+            (NEW_FOLDER, "explorer.command.new_folder"),
+            (NEW_FILE, "explorer.command.new_file"),
+        ] {
+            let label = crate::i18n::t(key);
+            items.push(match &refusal {
+                Some(reason) => MenuItem::disabled(id, label).with_tooltip(reason.as_str()),
+                None if writable => MenuItem::new(id, label),
+                None => MenuItem::disabled(id, label),
+            });
         }
         if !items.is_empty() {
             items.push(MenuItem::separator());
@@ -163,12 +168,7 @@ impl crate::state::MainViewState {
         if !engine.has_surface(surface_id) {
             return;
         }
-        if engine.blocks_explorer_write(surface_id) {
-            self.toasts.push(
-                crate::i18n::t("explorer.state.remote_write_unsupported").to_string(),
-                crate::adapters::ui::ToastKind::Info,
-                crate::adapters::ui::ToastScope::Window,
-            );
+        if self.refuse_remote_write(engine, surface_id) {
             return;
         }
         let Some(view) = self.explorer_views.get_mut(surface_id) else {

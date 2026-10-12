@@ -91,10 +91,12 @@ src/catalog/components/explorer_context_menu.rs	Delete	preset.toolbar.delete,rem
 src/catalog/components/explorer_context_menu.rs	Paste	explorer.context_menu.paste
 src/catalog/components/explorer_context_menu.rs	Paste (into)	explorer.context_menu.paste_into
 src/catalog/components/explorer_context_menu.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
+src/catalog/components/explorer_context_menu.rs	copy	explorer.remote.op_copy
 src/catalog/components/explorer_favorite_popup.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
 src/catalog/components/explorer_favorite_popup.rs	Add to favorites	explorer.popup.add_favorite.title
 src/catalog/components/explorer_favorite_popup.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/explorer_jobs.rs	Archive	explorer.kind.archive
+src/catalog/components/explorer_jobs/remote.rs	{}	remote.size_sync.names
 src/catalog/components/explorer_ops.rs	Markdown	explorer.kind.markdown
 src/catalog/components/explorer_ops.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_ops.rs	no write access	explorer.drag.no_write
@@ -381,6 +383,7 @@ src/catalog/components/prim_forms.rs	Custom	dag.kind.custom,settings.keybindings
 src/catalog/components/prim_forms.rs	Default (full rc)	settings.terminal.shell_mode_default
 src/catalog/components/prim_forms.rs	Reduced motion	settings.accessibility.reduced_motion
 src/catalog/components/prim_forms.rs	Select	terminal_context_menu.link_select
+src/catalog/components/prim_help_hint.rs	copy	explorer.remote.op_copy
 src/catalog/components/prim_input.rs	Disabled	plugins.disabled
 src/catalog/components/prim_input.rs	Filter…	port_scanner.search_placeholder
 src/catalog/components/prim_layout_shell.rs	Appearance	settings.appearance.heading,settings.tab.appearance
@@ -646,6 +649,7 @@ src/catalog/foundations_shape.rs	99+	badge.overflow
 src/catalog/icons.rs	Filter…	port_scanner.search_placeholder
 src/catalog/icons.rs	Plugins	button.plugins,plugins.title,settings.keybindings.subtab.plugins,settings.tab.plugin
 src/catalog/icons.rs	close	command_palette.hint_close
+src/catalog/icons.rs	copy	explorer.remote.op_copy
 src/catalog/icons_keys.rs	Cmd	settings.general.alt_display_style_cmd
 src/catalog/icons_keys.rs	Cmd key display:	settings.general.alt_display_style_label
 src/catalog/icons_keys.rs	Option	settings.general.option_display_style_option

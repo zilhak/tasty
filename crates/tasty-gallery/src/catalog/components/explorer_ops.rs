@@ -148,12 +148,17 @@ fn themes(ui: &mut egui::Ui, theme: &Theme, draw: impl Fn(&mut egui::Ui, &Theme)
     });
 }
 
-fn labels() -> ExplorerCommandLabels<'static> {
+/// 쓰기를 받지 않는 원격 예제의 주소. 이 칸의 create 툴팁은 원격 이유를 쓴다.
+const REMOTE_PATH: &str = "build-eu:~/logs";
+/// 원격 예제의 호스트 이름.
+const REMOTE_HOST: &str = "build-eu";
+
+fn labels(cannot_write: &str) -> ExplorerCommandLabels<'_> {
     ExplorerCommandLabels {
         new_folder: t("explorer.command.new_folder"),
         new_file: t("explorer.command.new_file"),
         more: t("explorer.command.more"),
-        cannot_write: t("explorer.command.cannot_write"),
+        cannot_write,
     }
 }
 
@@ -224,11 +229,17 @@ fn toolbar(
             active: hidden,
         },
     ];
+    // 원격 칸은 로컬 쓰기 권한 대신 원격 이유를 툴팁으로 단다(본체 `cannot_write_tip`).
+    let cannot_write = if path == REMOTE_PATH {
+        t_fmt("explorer.remote.write_needs_update", REMOTE_HOST)
+    } else {
+        t("explorer.command.cannot_write").to_owned()
+    };
     let view = ExplorerCommandsView {
         create,
         toggles: &toggles,
         compact: tasty_ui_widgets::explorer_commands_compact(theme, width),
-        labels: labels(),
+        labels: labels(&cannot_write),
     };
     let commands_w = explorer_commands_width(theme, &view);
     let addr_w =
@@ -263,9 +274,9 @@ pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
                 true,
             ),
             (
-                "remote (mirror) — create group hidden",
-                "build-eu:~/logs",
-                None,
+                "remote that can't write — create disabled, reason in the tooltip",
+                REMOTE_PATH,
+                Some(false),
                 false,
                 false,
             ),
@@ -351,7 +362,10 @@ pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
                 "More rows",
                 "no check marks · say the action: Find ↔ Close find · Show preview ↔ Hide preview",
             ),
-            ("remote", "create hidden · view kept"),
+            (
+                "remote",
+                "writable: as local · can't write: create disabled · tooltip = reason · view kept",
+            ),
             (
                 "no write access",
                 "create disabled · tooltip “Can't write to this folder”",

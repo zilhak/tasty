@@ -1162,9 +1162,16 @@ refused = "ドロップできません"
 refused_reason = " — {}"
 into_itself = "フォルダーを自身の中に入れることはできません"
 same_folder = "既にこのフォルダーにあります"
-remote = "リモートフォルダーは読み取り専用です"
-other_computer = "別のコンピューターの項目です"
+remote = "このリモートはファイルを変更できません"
+other_computer = "別のコンピューター"
 no_write = "書き込み権限がありません"
+
+[explorer.remote]
+write_needs_update = "{} の Tasty を更新すると、リモートのファイルを変更できます。"
+queue_title = "{} · 一度に 1 件"
+lost_title = "{} との接続が切れたため結果が不明です"
+lost_body = "{}は処理中の項目で止まりました。一部の項目はすでに変更されている可能性があります。再接続するとフォルダーを再読み込みします。"
+op_copy = "コピー"
 
 [script.confirm]
 title = "登録後にスクリプトが変更されました"

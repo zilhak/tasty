@@ -1162,9 +1162,16 @@ refused = "놓을 수 없음"
 refused_reason = " — {}"
 into_itself = "폴더를 자기 안으로 넣을 수 없음"
 same_folder = "이미 이 폴더에 있음"
-remote = "원격 폴더는 읽기 전용"
-other_computer = "다른 컴퓨터의 항목"
+remote = "이 원격은 파일을 바꿀 수 없음"
+other_computer = "다른 컴퓨터"
 no_write = "쓰기 권한 없음"
+
+[explorer.remote]
+write_needs_update = "{}의 Tasty를 업데이트하면 원격 파일을 바꿀 수 있습니다."
+queue_title = "{} · 한 번에 하나씩"
+lost_title = "{} 연결이 끊겨 결과를 알 수 없음"
+lost_body = "{}은(는) 하던 항목에서 멈췄습니다. 일부 항목은 이미 바뀌었을 수 있습니다. 다시 연결되면 폴더를 다시 읽습니다."
+op_copy = "복사"
 
 [script.confirm]
 title = "등록 이후 스크립트가 변경됨"

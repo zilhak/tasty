@@ -1,4 +1,4 @@
-<!-- source-hash: e00f952ad4bc -->
+<!-- source-hash: 67cce5f50863 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -116,7 +116,7 @@ Common options:
 - In the explorer you can change files on the remote computer (since 0.12.2). New folder, new file, rename, move to trash, and copy, cut, paste and drag-and-drop within the same connection are carried out by the remote Tasty, and the progress display, name-conflict popup and result card are the same as in a local explorer. The remote Tasty must also be 0.12.2 or later. The following limits apply.
   - Remote operations are not added to the undo history. To revert one, use **Undo** on its result card.
   - Pasting and drag-and-drop between local and remote, or between two different remotes, are refused.
-  - If the remote Tasty is an older version, the menu items that change files don't appear.
+  - If the remote Tasty is an older version, the menu items and toolbar buttons that change files are greyed out, and their tooltip (or a notice, for a shortcut) asks you to update Tasty on that computer.
   - **Open in System**, **Add to Favorites** and **Open in New Tab** aren't available in a remote explorer.
   - If the connection drops during an operation, the remote stops it and this side tells you the result is unknown.
 - In the explorer, double-clicking a markdown file opens a markdown tab for it on the remote computer, and the tab appears in this window too; a file at the same path on this computer is not read. If the type's default handler can't be used remotely, only the handlers that can are offered; a type with no such handler only shows a notice.

@@ -32,6 +32,8 @@ pub(crate) struct EngineRead<'a> {
     pub(crate) attach_mesh_frames: &'a crate::remote::mesh_frames::AttachMeshFrameStore,
     #[cfg(feature = "gui")]
     explorer_writable: &'a HashSet<u32>,
+    #[cfg(feature = "gui")]
+    explorer_hosts: &'a HashMap<u32, crate::remote::state::ExplorerRemoteHost>,
     surfaces: &'a HashMap<u32, Box<dyn Surface>>,
     mirror_cwd: &'a HashMap<u32, crate::core::state::RemoteCwd>,
     mirror_busy: &'a HashSet<u32>,
@@ -95,6 +97,8 @@ impl<'a> EngineRef<'a> {
             attach_mesh_frames: &self.remote.attach_mesh_frames,
             #[cfg(feature = "gui")]
             explorer_writable: &self.remote.explorer_writable,
+            #[cfg(feature = "gui")]
+            explorer_hosts: &self.remote.explorer_hosts,
             surfaces: &self.runtime.surfaces,
             mirror_cwd: &self.remote.mirror_surface_cwd,
             mirror_busy: &self.remote.mirror_busy_surfaces,
@@ -120,6 +124,17 @@ impl EngineRead<'_> {
     pub(crate) fn blocks_explorer_write(&self, surface_id: u32) -> bool {
         self.mirror_workspace_of(surface_id)
             .is_some_and(|ws| !self.explorer_writable.contains(&ws))
+    }
+
+    /// 이 explorer 칸의 쓰기를 거절하는 이유. 쓸 수 있는 칸이면 None 이다.
+    pub(crate) fn explorer_write_refusal(&self, surface_id: u32) -> Option<String> {
+        if !self.blocks_explorer_write(surface_id) {
+            return None;
+        }
+        let host = self
+            .mirror_workspace_of(surface_id)
+            .and_then(|ws| self.explorer_hosts.get(&ws));
+        Some(crate::remote::state::explorer_write_refusal(host))
     }
 }
 

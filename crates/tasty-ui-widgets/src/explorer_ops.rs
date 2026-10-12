@@ -90,6 +90,32 @@ fn path_line(ui: &mut egui::Ui, text: &str, font: egui::FontId, color: egui::Col
     one_line(ui, &shown, font, color, max_w);
 }
 
+// ── 원격 호스트 표시 ─────────────────────────────────────
+
+/// 원격 작업이 도는 호스트. 원격 글리프와 호스트 이름을 mono caption 으로 잇는다.
+#[derive(Clone, Copy)]
+pub struct HostMark<'a> {
+    pub name: &'a str,
+    pub paint_glyph: IconPainter<'a>,
+}
+
+/// 호스트 표시를 그린다. 글리프와 이름 사이는 workspace-mirror-gap, 색은 workspace-mirror-fg 다.
+pub fn host_mark(ui: &mut egui::Ui, theme: &Theme, mark: &HostMark<'_>) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(theme.workspace_mirror_gap().value(), 0.0);
+        let color = theme.workspace_mirror_fg().to_egui();
+        let size = theme.workspace_mirror_icon_size().value();
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+        (mark.paint_glyph)(ui, rect, color);
+        ui.label(
+            egui::RichText::new(mark.name)
+                .font(caption_mono(theme))
+                .color(color),
+        );
+    })
+    .response
+}
+
 // ── 진행 상태줄 ──────────────────────────────────────────
 
 /// 시작한 탐색기의 상태줄에 그리는 진행 표시.
@@ -108,6 +134,8 @@ pub struct OpStatusProps<'a> {
     pub queued: Option<&'a str>,
     pub show_label: &'a str,
     pub cancel_tip: &'a str,
+    /// 원격 작업이면 그 호스트. 줄 맨 앞에 둔다.
+    pub host: Option<HostMark<'a>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -176,13 +204,16 @@ pub fn op_status_line(
                 .color(theme.text_muted().to_egui()),
         );
     }
-    let left_w = child.available_width();
     let color = if props.waiting {
         theme.accent_warning()
     } else {
         theme.text_secondary()
     };
     child.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        if let Some(mark) = &props.host {
+            host_mark(ui, theme, mark);
+        }
+        let left_w = ui.available_width();
         let resp = one_line(ui, props.text, caption(theme), color.to_egui(), left_w)
             .interact(egui::Sense::click());
         out.open_queue |= resp.clicked();
@@ -258,14 +289,49 @@ pub fn op_queue_rows(
     removed
 }
 
+/// 원격 대기열 팝오버의 머리 줄 "On {host} · one at a time". 호스트 자리 앞뒤 문구를 나눠 받는다.
+#[derive(Clone, Copy)]
+pub struct QueueHeader<'a> {
+    pub before: &'a str,
+    pub host: HostMark<'a>,
+    pub after: &'a str,
+}
+
+fn queue_header(ui: &mut egui::Ui, theme: &Theme, header: &QueueHeader<'_>) {
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(
+            theme.spacing_sm.value() as i8,
+            theme.spacing_xs.value() as i8,
+        ))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                // 문구 조각과 호스트 표시 사이는 space-sm 이다. 조각 끝의 공백은 이 간격이 대신한다.
+                ui.spacing_mut().item_spacing = egui::vec2(theme.spacing_sm.value(), 0.0);
+                let muted = theme.text_muted().to_egui();
+                for (i, part) in [header.before, header.after].into_iter().enumerate() {
+                    if i == 1 {
+                        host_mark(ui, theme, &header.host);
+                    }
+                    let part = part.trim();
+                    if !part.is_empty() {
+                        ui.label(egui::RichText::new(part).font(caption(theme)).color(muted));
+                    }
+                }
+            });
+        });
+}
+
 /// 대기열 팝오버를 `bottom_right` 모서리에 붙여 그린다. 높이는 직전 프레임에 잰 값으로 위치를 정한다.
 /// 같은 프레임의 다른 위젯보다 뒤에 불러야 위에 그려지고 클릭을 받는다. 누른 × 의 행 번호를 돌려준다.
+/// 원격 대기열이면 `header` 로 호스트 줄을 행 위에 둔다.
+#[allow(clippy::too_many_arguments)] // reason: 팝오버 위치·행·글리프 둘·머리 줄은 호출자마다 다른 독립 입력이다
 pub fn op_queue_popover(
     ui: &mut egui::Ui,
     theme: &Theme,
     id: egui::Id,
     bottom_right: egui::Pos2,
     rows: &[QueueRowProps<'_>],
+    header: Option<&QueueHeader<'_>>,
     paint_close: IconPainter<'_>,
     paint_queued: IconPainter<'_>,
 ) -> (egui::Rect, Option<usize>) {
@@ -282,6 +348,9 @@ pub fn op_queue_popover(
     let rect = op_queue_frame(theme)
         .show(&mut child, |ui| {
             ui.set_width(w - theme.spacing_xs.value() * 2.0 - theme.border_width.value() * 2.0);
+            if let Some(header) = header {
+                queue_header(ui, theme, header);
+            }
             removed = op_queue_rows(ui, theme, rows, paint_close, paint_queued);
         })
         .response
@@ -488,6 +557,8 @@ pub struct ResultAction<'a> {
 pub struct ResultCardProps<'a> {
     pub kind: ToastKind,
     pub title: &'a str,
+    /// 제목 아래 설명 문단. caption · text-secondary 로 줄바꿈한다. 없으면 그리지 않는다.
+    pub body: Option<&'a str>,
     pub lines: &'a [ResultLine<'a>],
     /// "and n more". 없으면 그리지 않는다.
     pub more: Option<&'a str>,
@@ -552,6 +623,16 @@ pub fn result_card(
                     .on_hover_text(props.dismiss_tip)
                     .clicked();
             });
+            if let Some(text) = props.body {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(text)
+                            .font(caption(theme))
+                            .color(theme.text_secondary().to_egui()),
+                    )
+                    .wrap(),
+                );
+            }
             if !props.lines.is_empty() || props.more.is_some() {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(0.0, STRUCT_GAP_2.value());

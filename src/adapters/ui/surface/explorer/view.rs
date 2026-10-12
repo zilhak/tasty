@@ -103,6 +103,8 @@ pub struct ExplorerView {
     remote_state: HashMap<PathBuf, RemoteLoadState>,
     /// 이 칸의 파일을 바꿀 수 있는가. 로컬은 늘 참이고, 원격은 그 서버가 원격 쓰기를 알린 동안 참이다.
     pub(crate) writes_allowed: bool,
+    /// 원격 칸이 붙은 Tasty. 진행 표시의 호스트와 쓰기를 거절하는 이유에 쓴다. 로컬은 None 이다.
+    pub(crate) remote_host: Option<crate::remote::state::ExplorerRemoteHost>,
     /// 원격 폴더가 있는 디스크의 서버 쪽 식별값. 끌어 놓기의 기본 동작(이동·복사)을 정한다.
     remote_volumes: HashMap<PathBuf, u64>,
     /// (ADR-0022) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
@@ -268,6 +270,7 @@ impl ExplorerView {
             mirror_ws_id: None,
             remote_state: HashMap::new(),
             writes_allowed: true,
+            remote_host: None,
             remote_volumes: HashMap::new(),
             outbox: Vec::new(),
             type_ahead: TypeAhead::default(),
@@ -808,6 +811,8 @@ pub struct ExplorerViewStore {
     pub(super) home_probes: HashMap<u64, u32>,
     /// 서버가 원격 쓰기를 받는 mirror workspace. App 이 연결 상태에서 맞춘다.
     remote_writable: std::collections::HashSet<u32>,
+    /// mirror workspace 마다 붙은 원격 Tasty. App 이 연결 상태에서 맞춘다.
+    remote_hosts: HashMap<u32, crate::remote::state::ExplorerRemoteHost>,
 }
 
 impl ExplorerViewStore {
@@ -835,10 +840,12 @@ impl ExplorerViewStore {
     ) -> &mut ExplorerView {
         let home = mirror_ws_id.and_then(|ws| self.remote_home(ws).map(Path::to_path_buf));
         let writable = mirror_ws_id.is_none_or(|ws| self.remote_writable.contains(&ws));
+        let host = mirror_ws_id.and_then(|ws| self.remote_hosts.get(&ws).cloned());
         let view = self.views.entry(panel.id).or_default();
         view.sync(panel, mirror_ws_id);
         view.remote_home = home;
         view.writes_allowed = writable;
+        view.remote_host = host;
         view
     }
 

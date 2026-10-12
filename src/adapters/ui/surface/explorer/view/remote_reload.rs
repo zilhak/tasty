@@ -42,10 +42,18 @@ impl super::ExplorerViewStore {
         any
     }
 
-    /// 원격 쓰기를 받는 mirror workspace 를 바꾼다. 다음 동기화부터 칸의 `writes_allowed` 에 반영한다.
-    pub(crate) fn set_remote_writable(&mut self, workspaces: &std::collections::HashSet<u32>) {
+    /// 원격 쓰기를 받는 mirror workspace 와 붙은 원격 Tasty 를 바꾼다. 다음 동기화부터 칸의
+    /// `writes_allowed`·`remote_host` 에 반영한다.
+    pub(crate) fn set_remote_writable(
+        &mut self,
+        workspaces: &std::collections::HashSet<u32>,
+        hosts: &std::collections::HashMap<u32, crate::remote::state::ExplorerRemoteHost>,
+    ) {
         if self.remote_writable != *workspaces {
             self.remote_writable.clone_from(workspaces);
+        }
+        if self.remote_hosts != *hosts {
+            self.remote_hosts.clone_from(hosts);
         }
     }
 }

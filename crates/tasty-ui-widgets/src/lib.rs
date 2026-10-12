@@ -146,10 +146,10 @@ pub use explorer_name_edit::{
     explorer_name_error, explorer_name_row, explorer_name_row_in,
 };
 pub use explorer_ops::{
-    ConflictPick, ConflictProps, DragChipProps, DragOp, OpStatusProps, OpStatusResponse,
-    QueueRowProps, ResultAction, ResultCardProps, ResultCardResponse, ResultLine, conflict_card,
-    drag_chip, op_queue_frame, op_queue_popover, op_queue_rows, op_queue_width, op_status_line,
-    paint_drop_target, result_card,
+    ConflictPick, ConflictProps, DragChipProps, DragOp, HostMark, OpStatusProps, OpStatusResponse,
+    QueueHeader, QueueRowProps, ResultAction, ResultCardProps, ResultCardResponse, ResultLine,
+    conflict_card, drag_chip, host_mark, op_queue_frame, op_queue_popover, op_queue_rows,
+    op_queue_width, op_status_line, paint_drop_target, result_card,
 };
 pub use explorer_select::{paint_cursor_ring, paint_marquee};
 pub use file_drop_overlay::file_drop_overlay;

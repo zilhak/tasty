@@ -135,7 +135,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "create",
-                "empty area: New folder · New file first · folder: in the file-ops group · file / multi: none · remote: hidden",
+                "empty area: New folder · New file first · folder: in the file-ops group · file / multi: none · remote that can't write: disabled · reason tooltip",
             ),
         ],
         &[

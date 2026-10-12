@@ -46,6 +46,7 @@ pub fn draw_refused(ui: &mut egui::Ui, theme: &Theme) {
                         queued: Some(&queued),
                         show_label: t("explorer.op.show"),
                         cancel_tip: t("explorer.op.cancel"),
+                        host: None,
                     },
                     &close,
                 );
@@ -62,6 +63,7 @@ pub fn draw_refused(ui: &mut egui::Ui, theme: &Theme) {
                 &ResultCardProps {
                     kind: ToastKind::Warning,
                     title: text,
+                    body: None,
                     lines: &[],
                     more: None,
                     actions,
@@ -152,6 +154,7 @@ pub fn draw_remove_originals(ui: &mut egui::Ui, theme: &Theme) {
                     queued: None,
                     show_label: t("explorer.op.show"),
                     cancel_tip: t("explorer.op.cancel"),
+                    host: None,
                 },
                 &close,
             );
@@ -172,6 +175,7 @@ pub fn draw_remove_originals(ui: &mut egui::Ui, theme: &Theme) {
                 &ResultCardProps {
                     kind,
                     title,
+                    body: None,
                     lines,
                     more: None,
                     actions,

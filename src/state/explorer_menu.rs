@@ -67,6 +67,20 @@ fn menu_display(binding: &str, general: &crate::settings::GeneralSettings) -> St
 }
 
 impl super::MainViewState {
+    /// 쓸 수 없는 원격 explorer 칸이면 이유를 그 칸에 알리고 true 를 돌려준다. 메뉴의 꺼진 행 툴팁과
+    /// 같은 문구다(Windows 메뉴에는 툴팁이 없어 단축키 경로가 이 토스트로 알린다).
+    pub(crate) fn refuse_remote_write(&mut self, engine: &EngineRead<'_>, surface_id: u32) -> bool {
+        let Some(reason) = engine.explorer_write_refusal(surface_id) else {
+            return false;
+        };
+        self.toasts.push(
+            reason,
+            crate::adapters::ui::ToastKind::Info,
+            crate::adapters::ui::ToastScope::Surface(surface_id),
+        );
+        true
+    }
+
     /// 클립보드의 경로를 `destination` 에 붙여넣도록 요청한다.
     /// 원격 쓰기를 받지 않는 mirror 와 다른 컴퓨터의 클립보드는 거절한다.
     pub(crate) fn explorer_paste(
@@ -77,12 +91,7 @@ impl super::MainViewState {
         origin: crate::intent::IntentOrigin,
     ) {
         // 표시된 경로는 원격 호스트의 경로다(ADR-0022). 원격 쓰기는 그 서버가 알린 연결에서만 한다.
-        if engine.blocks_explorer_write(surface_id) {
-            self.toasts.push(
-                crate::i18n::t("explorer.state.remote_write_unsupported").to_string(),
-                crate::adapters::ui::ToastKind::Info,
-                crate::adapters::ui::ToastScope::Window,
-            );
+        if self.refuse_remote_write(engine, surface_id) {
             return;
         }
         let Some(target) = super::ExplorerPathSource::of_surface(engine, surface_id) else {

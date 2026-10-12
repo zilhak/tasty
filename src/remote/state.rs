@@ -5,6 +5,28 @@ use crate::core::state::RemoteCwd;
 #[cfg(feature = "gui")]
 use crate::core::state::{AttachMeshContextForward, PendingImageUpload};
 use tasty_ipc::stream::{StreamFrame, StreamTag};
+
+/// mirror workspace 가 붙은 원격 Tasty. 탐색기 진행 표시와 쓰기를 거절하는 이유에 이름을 쓴다.
+#[cfg(feature = "gui")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ExplorerRemoteHost {
+    pub(crate) label: String,
+    /// 연결돼 있지만 그 서버가 원격 쓰기를 알리지 않았다(옛 Tasty).
+    pub(crate) needs_update: bool,
+}
+
+/// 원격 explorer 칸의 쓰기를 거절하는 이유. 옛 Tasty 면 업데이트를 안내하고, 연결 정보가 없으면
+/// (연결이 끊기는 중) 원격 탐색기에서 지원하지 않는다는 문구를 쓴다.
+#[cfg(feature = "gui")]
+pub(crate) fn explorer_write_refusal(host: Option<&ExplorerRemoteHost>) -> String {
+    match host {
+        Some(host) if host.needs_update => {
+            crate::i18n::t_fmt("explorer.remote.write_needs_update", &host.label)
+        }
+        _ => crate::i18n::t("explorer.state.remote_write_unsupported").to_string(),
+    }
+}
+
 pub(crate) struct RemoteState {
     pub(crate) attach_subscriptions:
         std::collections::HashMap<(u32, u32), super::subscription::Subscription>,
@@ -45,6 +67,9 @@ pub(crate) struct RemoteState {
     /// 서버가 원격 explorer 파일 작업을 받는 mirror workspace(로컬 ID). App 이 연결 상태에서 맞춘다.
     #[cfg(feature = "gui")]
     pub(crate) explorer_writable: std::collections::HashSet<u32>,
+    /// mirror workspace(로컬 ID)마다 붙은 원격 Tasty. App 이 연결 상태에서 맞춘다.
+    #[cfg(feature = "gui")]
+    pub(crate) explorer_hosts: std::collections::HashMap<u32, ExplorerRemoteHost>,
     /// 원격 Git 조회 요청. 응답은 MirrorEvent로 따로 들어온다.
     #[cfg(feature = "gui")]
     pub(crate) pending_git_query_forward: Vec<crate::core::PendingGitQueryForward>,
@@ -109,6 +134,8 @@ impl RemoteState {
             pending_list_dir_forward: Vec::new(),
             #[cfg(feature = "gui")]
             explorer_writable: std::collections::HashSet::new(),
+            #[cfg(feature = "gui")]
+            explorer_hosts: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
             pending_git_query_forward: Vec::new(),
             #[cfg(feature = "gui")]

@@ -105,6 +105,7 @@ pub(super) fn draw(
                 &ResultCardProps {
                     kind: ToastKind::Warning,
                     title: refused.text(),
+                    body: None,
                     lines: &[],
                     more: None,
                     actions,

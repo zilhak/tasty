@@ -8,8 +8,8 @@ use std::time::Instant;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_appearance::toast_kind::ToastKind;
 use tasty_ui_widgets::{
-    ButtonVariant, OpStatusProps, QueueRowProps, ResultAction, ResultCardProps, ResultLine,
-    op_queue_popover, op_status_line, result_card,
+    ButtonVariant, HostMark, OpStatusProps, QueueHeader, QueueRowProps, ResultAction,
+    ResultCardProps, ResultLine, op_queue_popover, op_status_line, result_card,
 };
 
 use super::ExplorerView;
@@ -204,11 +204,20 @@ pub(crate) fn footer(
     let status_h = theme.item_height_interactive.value();
     let cell = egui::Rect::from_min_max(body.min, egui::pos2(body.max.x, body.max.y + status_h))
         .intersect(ui.clip_rect());
+    // 원격 작업은 그 연결의 대기열에서 하나씩 돈다. 진행 줄과 대기열 머리에 호스트를 보인다.
+    let host = view.remote_host.as_ref().map(|h| h.label.clone());
     if view.ops.running.is_none() {
         view.ops.queue_open = false;
         normal(ui, theme, view);
     } else {
-        progress_line(ui, theme, &mut view.ops, cell.width(), action);
+        progress_line(
+            ui,
+            theme,
+            &mut view.ops,
+            host.as_deref(),
+            cell.width(),
+            action,
+        );
     }
     let now = Instant::now();
     view.ops.expire(now);
@@ -220,7 +229,15 @@ pub(crate) fn footer(
     let cards_top = notice::draw(ui, theme, &mut view.ops, cell, status_top);
     results(ui, theme, &mut view.ops, cell, cards_top, action);
     if view.ops.queue_open {
-        queue(ui, theme, &mut view.ops, cell, status_top, action);
+        queue(
+            ui,
+            theme,
+            &mut view.ops,
+            host.as_deref(),
+            cell,
+            status_top,
+            action,
+        );
     }
     super::drag::frame(ui, theme, view, body, action);
 }
@@ -229,6 +246,7 @@ fn progress_line(
     ui: &mut egui::Ui,
     theme: &Theme,
     ops: &mut OpsState,
+    host: Option<&str>,
     width: f32,
     action: &mut Option<super::super::ExplorerAction>,
 ) {
@@ -263,6 +281,7 @@ fn progress_line(
     let queued = (!ops.queued.is_empty())
         .then(|| t_fmt("explorer.op.queued", &ops.queued.len().to_string()));
     let close = glyph(icons::CLOSE);
+    let remote = glyph(icons::TERMINAL_PROMPT);
     let resp = op_status_line(
         ui,
         theme,
@@ -276,6 +295,10 @@ fn progress_line(
             queued: queued.as_deref(),
             show_label: t("explorer.op.show"),
             cancel_tip: t("explorer.op.cancel"),
+            host: host.map(|name| HostMark {
+                name,
+                paint_glyph: &remote,
+            }),
         },
         &close,
     );
@@ -365,6 +388,7 @@ fn queue(
     ui: &mut egui::Ui,
     theme: &Theme,
     ops: &mut OpsState,
+    host: Option<&str>,
     cell: egui::Rect,
     status_top: f32,
     action: &mut Option<super::super::ExplorerAction>,
@@ -415,6 +439,18 @@ fn queue(
         .collect();
     let close = glyph(icons::CLOSE);
     let layers = glyph(icons::LAYERS);
+    let remote = glyph(icons::TERMINAL_PROMPT);
+    // "On {host} · one at a time" 의 호스트 자리를 글리프와 이름으로 그린다.
+    let title = t("explorer.remote.queue_title");
+    let (before, after) = title.split_once("{}").unwrap_or((title, ""));
+    let header = host.map(|name| QueueHeader {
+        before,
+        host: HostMark {
+            name,
+            paint_glyph: &remote,
+        },
+        after,
+    });
     let removed = in_cell_area(ui, cell, "explorer_ops_queue", |ui| {
         op_queue_popover(
             ui,
@@ -425,6 +461,7 @@ fn queue(
                 status_top - theme.spacing_xs.value(),
             ),
             &rows,
+            header.as_ref(),
             &close,
             &layers,
         )
@@ -814,6 +851,7 @@ fn draw_card(
         &ResultCardProps {
             kind: text.kind,
             title: &text.title,
+            body: None,
             lines: &lines,
             more: text.more.as_deref(),
             actions: &actions,

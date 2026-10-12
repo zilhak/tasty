@@ -300,6 +300,34 @@ impl crate::app::App {
             })
             .map(|s| s.state.local_workspace)
             .collect();
+        // 붙은 원격의 이름과, 연결돼 있지만 원격 쓰기를 알리지 않은 옛 서버인지.
+        let hosts: Vec<(u32, crate::remote::state::ExplorerRemoteHost)> = self
+            .remote
+            .sessions
+            .iter()
+            .map(|s| {
+                let connected = s.state.phase
+                    == tasty_remote::client_session::SessionState::Connected
+                    && !s
+                        .transport
+                        .disconnected
+                        .load(std::sync::atomic::Ordering::Acquire);
+                (
+                    s.state.local_workspace,
+                    crate::remote::state::ExplorerRemoteHost {
+                        label: s.state.remote_label.clone(),
+                        needs_update: connected && !s.transport.explorer_write,
+                    },
+                )
+            })
+            .collect();
+        let hosts_of = |core: &crate::core::CoreState| {
+            hosts
+                .iter()
+                .filter(|(ws, _)| core.find_workspace_index_for_id(*ws).is_some())
+                .cloned()
+                .collect::<std::collections::HashMap<_, _>>()
+        };
         let mine = |core: &crate::core::CoreState| -> std::collections::HashSet<u32> {
             writable
                 .iter()
@@ -309,13 +337,17 @@ impl crate::app::App {
         };
         for (_, main, engine) in self.engines_mut().window_pairs() {
             let set = mine(engine.core);
-            main.state.explorer_views.set_remote_writable(&set);
+            let hosts = hosts_of(engine.core);
+            main.state.explorer_views.set_remote_writable(&set, &hosts);
             engine.remote.explorer_writable = set;
+            engine.remote.explorer_hosts = hosts;
         }
         for (state, engine) in self.engines_mut().parked_sessions() {
             let set = mine(engine.core);
-            state.explorer_views.set_remote_writable(&set);
+            let hosts = hosts_of(engine.core);
+            state.explorer_views.set_remote_writable(&set, &hosts);
             engine.remote.explorer_writable = set;
+            engine.remote.explorer_hosts = hosts;
         }
     }
 }

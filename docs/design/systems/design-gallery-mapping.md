@@ -304,6 +304,11 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/explorer-ops-b12.jsx` "Properties — own path · folder permissions · links · partial size" | `explorer-properties` | 단일 항목 Path·폴더 권한, 대상 메타데이터, 끊긴 링크와 Size 아래 부분 집계 경고 |
 | `gallery/explorer-ops-b12.jsx` "Preview panel in a low cell — header only" | `explorer-preview` | 본문 높이 임계값 바로 아래·동일·위 예제. 120 미만이면 머리만 표시하고 아래 구분선을 숨긴다 |
 | `gallery/explorer-ops-b12.jsx` "Progress — counting stage · zero-byte work" | `explorer-ops-progress` | 복사·이동 집계는 막대 없이, 0바이트 파일 전송은 파일 수 기반 막대를 공용 `op_status_line`으로 전시 |
+| `gallery/explorer-ops-remote.jsx` "D1 · A remote that can't write — rows shown disabled, reason in the tooltip and toast" | `explorer-remote-write-refused` (Plugins) | 쓸 수 있는 원격 메뉴와 꺼진 쓰기 행 메뉴, 툴팁 표본, 단축키 info 카드. 이유 문구는 옛 Tasty 의 `explorer.remote.write_needs_update` 하나다. server 가 원격 쓰기 capability 를 늘 알려 화면 없는 server 를 구분할 수 없으므로 `write_headless` 문구는 옮기지 않았다. 툴바의 꺼진 create 묶음은 `explorer-commands` 의 원격 행이 맡는다 |
+| `gallery/explorer-ops-remote.jsx` "D2 · Waiting for the remote — the input row stays, read-only, with a spinner" | — | 갤러리 예제와 본체 구현이 없다. 이름 입력 줄(`explorer_name_row_in`)에 읽기 전용·Spinner 자리가 없고 본체 생성·이름 변경 흐름이 응답 전에 입력을 닫는다 |
+| `gallery/explorer-ops-remote.jsx` "D3 · Connection lost — result unknown" | `explorer-remote-connection-lost` (Plugins) | 경고 카드의 설명 문단은 공용 `result_card` 의 `body`. 본체는 아직 이 카드 대신 `explorer.state.remote_result_unknown` 오류 토스트를 띄운다 |
+| `gallery/explorer-ops-remote.jsx` "D4 · Remote progress line and queue — host shown" | `explorer-remote-progress` (Plugins) | 공용 `op_status_line` 의 `host`(`HostMark`)와 `op_queue_popover` 의 `QueueHeader`. 본체와 같은 위젯이다 |
+| `gallery/explorer-ops-remote.jsx` "D5 · Drag chip — new refusal reasons · conflict popup unchanged" | `explorer-remote-drag` (Plugins) | 거절 이유는 `explorer.drag.other_computer`·`explorer.drag.remote` 의 새 문구 |
 | `gallery/explorer-ops.jsx` "Running — on the explorer's own status line · queue" | `explorer-ops-progress` | 상태줄은 공용 `op_status_line`, 대기열은 `op_queue_popover` |
 | `gallery/explorer-ops.jsx` "Name conflict — surface-scoped prompt · apply to all · waiting" | `explorer-ops-conflict` | 카드는 공용 `conflict_card`(바깥 틀 없음). 본체는 칸 범위 popup 이 틀과 scrim 을 그린다 |
 | `gallery/explorer-ops.jsx` "Results — done · cancelled · partial + retry · failed · trash unavailable · undo" | `explorer-ops-results` | 카드는 공용 `result_card` |

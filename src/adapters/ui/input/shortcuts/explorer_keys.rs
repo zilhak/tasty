@@ -200,8 +200,7 @@ impl MainView {
     /// 휴지통으로 옮긴다. 가역적이라 확인을 묻지 않는 것은 메뉴와 같다.
     fn explorer_key_trash(&mut self, engine: &EngineRead<'_>, sid: u32, paths: &[PathBuf]) {
         // (ADR-0022) 원격 쓰기를 알리지 않은 서버의 mirror explorer 는 파일을 바꾸지 않는다.
-        if engine.blocks_explorer_write(sid) {
-            self.toast_remote_write_unsupported();
+        if self.state.refuse_remote_write(engine, sid) {
             return;
         }
         self.state.request_explorer_file(

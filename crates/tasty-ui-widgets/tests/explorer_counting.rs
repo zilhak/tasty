@@ -22,6 +22,7 @@ fn counting_removes_the_track_and_fill_but_keeps_status_text() {
                         queued: None,
                         show_label: "Show",
                         cancel_tip: "Cancel",
+                        host: None,
                     },
                     &|_, _, _| {},
                 );

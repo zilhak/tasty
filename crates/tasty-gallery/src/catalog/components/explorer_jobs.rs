@@ -16,6 +16,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::i18n::{t, t_args, t_count, t_fmt, t_fmt2};
 
 mod originals;
+mod remote;
 
 /// 시안 탐색기 칸 폭(`XCell w={520}`). 전시 치수다.
 const CELL_W: LogicalPx = LogicalPx(520.0);
@@ -93,6 +94,7 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
                     queued: None,
                     show_label: t("explorer.op.show"),
                     cancel_tip: t("explorer.op.cancel"),
+                    host: None,
                 },
                 &close,
             );
@@ -115,6 +117,7 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
                 queued: None,
                 show_label: t("explorer.op.show"),
                 cancel_tip: t("explorer.op.cancel"),
+                host: None,
             },
             &close,
         );
@@ -133,6 +136,7 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
                 queued: Some(&queued),
                 show_label: t("explorer.op.show"),
                 cancel_tip: t("explorer.op.cancel"),
+                host: None,
             },
             &close,
         );
@@ -150,6 +154,7 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
                 queued: Some(&queued),
                 show_label: t("explorer.op.show"),
                 cancel_tip: t("explorer.op.cancel"),
+                host: None,
             },
             &close,
         );
@@ -176,6 +181,7 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
                     remove_tip: t("explorer.op.remove_from_queue"),
                 },
             ],
+            None,
             &close,
             &layers,
         );
@@ -193,6 +199,7 @@ pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
                 queued: None,
                 show_label: t("explorer.op.show"),
                 cancel_tip: t("explorer.op.cancel"),
+                host: None,
             },
             &close,
         );
@@ -347,6 +354,7 @@ pub fn draw_results(ui: &mut egui::Ui, theme: &Theme) {
             &ResultCardProps {
                 kind,
                 title,
+                body: None,
                 lines,
                 more,
                 actions,
@@ -558,6 +566,7 @@ pub fn draw_source_left(ui: &mut egui::Ui, theme: &Theme) {
                 &ResultCardProps {
                     kind: ToastKind::Warning,
                     title,
+                    body: None,
                     lines,
                     more: None,
                     actions,
@@ -723,9 +732,9 @@ pub fn draw_drag(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// explorer 절에 더하는 파일 작업 예제들. 동결된 catalog.rs 를 늘리지 않도록 여기에 둔다.
-pub fn specs() -> [crate::catalog::Spec; 8] {
+pub fn specs() -> Vec<crate::catalog::Spec> {
     use crate::catalog::Spec;
-    [
+    let local = [
         Spec {
             id: "explorer-ops-progress",
             title: "File operation progress — status line · queue · waiting",
@@ -774,5 +783,6 @@ pub fn specs() -> [crate::catalog::Spec; 8] {
             when: Some("the ring after a key · the rectangle while dragging from empty space"),
             draw: super::explorer_select::draw,
         },
-    ]
+    ];
+    local.into_iter().chain(remote::specs()).collect()
 }
