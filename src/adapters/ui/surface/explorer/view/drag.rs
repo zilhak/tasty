@@ -88,9 +88,11 @@ pub(crate) struct OsHover {
 
 struct Probe {
     dest: PathBuf,
-    source: PathBuf,
+    paths: Vec<PathBuf>,
     same_volume: bool,
     writable: bool,
+    /// 판정에 쓰는 원본·대상 경로([`resolve`]).
+    resolved: (Vec<PathBuf>, PathBuf),
 }
 
 /// 놓기 판정.
@@ -273,6 +275,44 @@ pub(crate) fn verdict(
     Verdict::Go(op)
 }
 
+/// 판정에 쓸 경로. 작업 엔진처럼 놓을 폴더는 링크를 풀고, 원본은 항목 자체(링크면 링크)를 가리키도록
+/// 부모 폴더만 푼다. 읽지 못한 경로는 그대로 비교한다. 작업 엔진도 같은 경우를 다시 막는다.
+fn resolve(paths: &[PathBuf], dest: &Path) -> (Vec<PathBuf>, PathBuf) {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let source = |p: &PathBuf| match (p.parent(), p.file_name()) {
+        (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => real(parent).join(name),
+        _ => p.clone(),
+    };
+    (
+        paths.iter().map(|p| fold(source(p))).collect(),
+        fold(real(dest)),
+    )
+}
+
+#[cfg(windows)]
+fn fold(path: PathBuf) -> PathBuf {
+    PathBuf::from(fold_windows(&path.to_string_lossy()))
+}
+
+#[cfg(not(windows))]
+fn fold(path: PathBuf) -> PathBuf {
+    path
+}
+
+/// Windows 경로를 비교용으로 맞춘다. 파일시스템이 대소문자를 구분하지 않고, `canonicalize` 는 `\\?\`
+/// 접두사를 붙이지만 읽지 못한 경로에는 붙지 않는다.
+#[cfg(any(windows, test))]
+fn fold_windows(text: &str) -> String {
+    let plain = if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        rest.to_owned()
+    } else {
+        text.to_owned()
+    };
+    plain.to_lowercase()
+}
+
 #[cfg(unix)]
 fn same_volume(a: &Path, b: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
@@ -381,21 +421,37 @@ fn start(
     );
 }
 
-/// 대상 폴더의 디스크·쓰기 가능 여부. 대상이나 원본이 바뀔 때만 다시 읽는다.
-fn probe<'a>(state: &'a mut DragState, dest: &Path, source: &Path) -> &'a Probe {
+/// 대상 폴더의 디스크·쓰기 가능 여부와 비교할 경로. 대상이나 원본이 바뀔 때만 다시 읽는다.
+fn probe<'a>(state: &'a mut DragState, dest: &Path, paths: &[PathBuf]) -> &'a Probe {
     let stale = state
         .probe
         .as_ref()
-        .is_none_or(|p| p.dest != dest || p.source != source);
+        .is_none_or(|p| p.dest != dest || p.paths != paths);
     if stale {
+        let first = paths.first().map_or(Path::new(""), PathBuf::as_path);
         state.probe = Some(Probe {
             dest: dest.to_path_buf(),
-            source: source.to_path_buf(),
-            same_volume: same_volume(source, dest),
+            paths: paths.to_vec(),
+            same_volume: same_volume(first, dest),
             writable: writable(dest),
+            resolved: resolve(paths, dest),
         });
     }
     state.probe.as_ref().expect("probe was just filled")
+}
+
+/// 이 컴퓨터의 경로를 놓는 판정. 링크를 푼 경로로 비교한다.
+fn local_verdict(
+    state: &mut DragState,
+    paths: &[PathBuf],
+    dest: &Path,
+    always_copy: bool,
+    flip: bool,
+) -> Verdict {
+    let probed = probe(state, dest, paths);
+    let (paths, dest) = &probed.resolved;
+    let same_volume = !always_copy && probed.same_volume;
+    verdict(paths, dest, same_volume, probed.writable, flip, None)
 }
 
 /// 닫힌 트리 폴더 위에 머문 시간을 재고, 다 되면 펼친다.
@@ -580,17 +636,15 @@ pub(crate) fn frame(
     let super_held = crate::adapters::ui::input::shortcuts::super_held(&ctx);
     let flip = held(ctx.input(|i| i.modifiers), super_held, view.ops.drag.flip);
     let blocked = blocked(view, payload.origin);
-    let first = payload.paths.first().cloned().unwrap_or_default();
     // 원격 경로는 이 컴퓨터에서 읽지 않는다. 서버가 알린 디스크 식별값이 같을 때만 이동이 기본이고,
     // 쓰기 거부는 서버가 알린다.
-    let (same_volume, writable) = if view.is_remote() {
+    let decided = if blocked.is_some() || view.is_remote() {
         let here = view.remote_volume_of(&dest);
-        (payload.volume.is_some() && payload.volume == here, true)
+        let same_volume = payload.volume.is_some() && payload.volume == here;
+        verdict(&payload.paths, &dest, same_volume, true, flip, blocked)
     } else {
-        let probed = probe(&mut view.ops.drag, &dest, &first);
-        (probed.same_volume, probed.writable)
+        local_verdict(&mut view.ops.drag, &payload.paths, &dest, false, flip)
     };
-    let decided = verdict(&payload.paths, &dest, same_volume, writable, flip, blocked);
     if let Verdict::Go(_) = decided {
         let radius = if kind == Kind::Body {
             0.0
@@ -637,10 +691,10 @@ fn os_frame(
         return;
     };
     // OS 에서 온 파일은 이 컴퓨터의 경로다.
-    let blocked = blocked(view, None);
-    let first = os.paths.first().cloned().unwrap_or_default();
-    let writable = blocked.is_some() || probe(&mut view.ops.drag, &dest, &first).writable;
-    let decided = verdict(&os.paths, &dest, false, writable, false, blocked);
+    let decided = match blocked(view, None) {
+        Some(reason) => Verdict::No(reason),
+        None => local_verdict(&mut view.ops.drag, &os.paths, &dest, true, false),
+    };
     let ctx = ui.ctx();
     if let Verdict::Go(_) = decided {
         let radius = if kind == Kind::Body {
@@ -695,15 +749,13 @@ pub(crate) fn shown_drop(
 ) -> Option<(PathBuf, Verdict)> {
     let view = views.get(sid)?;
     let dest = view.loaded_dir()?.to_path_buf();
-    let blocked = blocked(view, None);
-    let decided = verdict(
-        paths,
-        &dest,
-        false,
-        blocked.is_some() || writable(&dest),
-        false,
-        blocked,
-    );
+    let decided = match blocked(view, None) {
+        Some(reason) => Verdict::No(reason),
+        None => {
+            let (resolved, into) = resolve(paths, &dest);
+            verdict(&resolved, &into, false, writable(&dest), false, None)
+        }
+    };
     Some((dest, decided))
 }
 
@@ -730,3 +782,7 @@ pub(crate) fn outbound_payload(
 #[cfg(test)]
 #[path = "drag_scroll_tests.rs"]
 mod scroll_tests;
+
+#[cfg(test)]
+#[path = "drag_flow_tests.rs"]
+mod flow_tests;

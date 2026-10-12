@@ -208,3 +208,15 @@ fn hover_expansion_uses_the_theme_delay_and_resets_when_leaving() {
     expand_after_hover(&ctx, &theme, &mut view, None);
     assert!(view.ops.drag.hover.is_none());
 }
+
+/// Windows 경로는 대소문자와 `canonicalize` 의 `\\?\` 접두사를 무시하고 비교한다.
+#[test]
+fn windows_paths_compare_without_case_or_verbatim_prefix() {
+    assert_eq!(fold_windows(r"\\?\C:\Work\Src"), r"c:\work\src");
+    assert_eq!(fold_windows(r"C:\WORK\src"), r"c:\work\src");
+    assert_eq!(
+        fold_windows(r"\\?\UNC\Server\Share\Dir"),
+        r"\\server\share\dir"
+    );
+    assert_eq!(fold_windows(r"\\server\share\dir"), r"\\server\share\dir");
+}
