@@ -713,3 +713,64 @@ fn skipping_a_nested_source_finishes_its_file_progress_but_keeps_the_skip_result
         })
     );
 }
+
+/// 찾기 결과처럼 폴더와 그 안의 항목을 함께 고르면 안쪽 항목은 폴더가 이미 나른다.
+/// 안쪽 항목을 따로 복사하면 목적지 맨 위에 사본이 하나 더 생기고, 이동하면 폴더를 옮긴 뒤 사라진 항목으로 실패한다.
+#[test]
+fn a_folder_and_its_own_entries_are_transferred_once() {
+    let root = tempfile::tempdir().unwrap();
+    let src = root.path().join("source");
+    std::fs::create_dir_all(src.join("inner")).unwrap();
+    std::fs::write(src.join("top.txt"), "t").unwrap();
+    std::fs::write(src.join("inner/deep.txt"), "d").unwrap();
+    let selected = vec![
+        src.join("inner/deep.txt"),
+        src.clone(),
+        src.join("top.txt"),
+        src.clone(),
+    ];
+
+    let copied = root.path().join("copied");
+    std::fs::create_dir(&copied).unwrap();
+    let shared = Shared::fixed(Choice::KeepBoth);
+    let report = run_transfer(&shared, &selected, &copied, false);
+    assert_eq!((report.done, report.total), (1, 1));
+    assert!(report.failed.is_empty() && report.skipped.is_empty());
+    assert_eq!(names(&copied), ["source"]);
+    assert_eq!(read(&copied.join("source/inner/deep.txt")), "d");
+    let snap = shared.snapshot();
+    assert_eq!((snap.items_done, snap.items_total), (1, 1));
+    assert_eq!(snap.files.map(|f| (f.done, f.total)), Some((2, 2)));
+
+    let moved = root.path().join("moved");
+    std::fs::create_dir(&moved).unwrap();
+    let report = run_transfer(&Shared::fixed(Choice::KeepBoth), &selected, &moved, true);
+    assert_eq!((report.done, report.total), (1, 1));
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+    assert_eq!(names(&moved), ["source"]);
+    assert!(!src.exists());
+    assert_eq!(report.undo.len(), 1);
+}
+
+/// 링크는 따라가지 않으므로 링크 너머의 항목은 링크와 함께 골라도 따로 처리한다.
+#[cfg(unix)]
+#[test]
+fn an_entry_reached_through_a_selected_link_is_still_transferred() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("target");
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("inside.txt"), "i").unwrap();
+    let link = root.path().join("link");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let dest = root.path().join("dest");
+    std::fs::create_dir(&dest).unwrap();
+    let report = run_transfer(
+        &Shared::fixed(Choice::KeepBoth),
+        &[link.clone(), link.join("inside.txt")],
+        &dest,
+        false,
+    );
+    assert_eq!((report.done, report.total), (2, 2));
+    assert_eq!(names(&dest), ["inside.txt", "link"]);
+    assert!(dest.join("link").symlink_metadata().unwrap().is_symlink());
+}

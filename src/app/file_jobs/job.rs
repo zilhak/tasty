@@ -12,7 +12,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tasty_utils::poison::{recover_mutex, recover_poisoned};
 
-use super::ops::{remove_path, rename_noreplace, unique_dest};
+use super::ops::{drop_nested, remove_path, rename_noreplace, unique_dest};
 use leftover::Leftover;
 
 /// 바이트 총량을 아직 모르거나 셀 수 없는 작업(휴지통)의 표시.
@@ -500,12 +500,14 @@ fn cancelled_error() -> io::Error {
 }
 
 /// 원본을 `dest_dir` 로 복사하거나 옮긴다. 원본마다 결과를 따로 남기고 다음 원본으로 간다.
+/// 고른 폴더가 이미 나르는 안쪽 항목과 겹친 경로는 빼고 센다([`drop_nested`]).
 pub(crate) fn run_transfer(
     shared: &Shared,
     sources: &[PathBuf],
     dest_dir: &Path,
     cut: bool,
 ) -> Report {
+    let sources = &drop_nested(sources)[..];
     let kind = if cut { OpKind::Move } else { OpKind::Copy };
     let mut report = Report::new(kind, Some(dest_dir.to_path_buf()), sources.len());
     shared.items_total.store(sources.len(), Ordering::Release);
@@ -941,7 +943,9 @@ fn copy_tree(
 }
 
 /// 항목을 하나씩 OS 휴지통으로 보낸다. 휴지통이 받지 않아도 영구 삭제로 대신하지 않는다.
+/// 고른 폴더와 함께 가는 안쪽 항목은 따로 보내지 않는다.
 pub(crate) fn run_trash(shared: &Shared, paths: &[PathBuf]) -> Report {
+    let paths = &drop_nested(paths)[..];
     let mut report = Report::new(OpKind::Trash, None, paths.len());
     shared.items_total.store(paths.len(), Ordering::Release);
     let mut refused = 0usize;

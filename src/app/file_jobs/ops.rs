@@ -80,6 +80,39 @@ pub fn create_entry(dir: &Path, name: &str, folder: bool) -> io::Result<()> {
     }
 }
 
+/// Drops repeated paths and entries that an earlier-or-later selected folder already carries.
+/// A descendant is dropped only when every folder between it and the ancestor is a real folder,
+/// because jobs never follow links: copying or trashing a link does not carry what lies behind it.
+/// Paths with `..` are compared as given and never dropped. The first occurrence keeps its position.
+pub(super) fn drop_nested(paths: &[PathBuf]) -> Vec<PathBuf> {
+    use std::collections::HashSet;
+    let plain = |p: &Path| !p.components().any(|c| c == std::path::Component::ParentDir);
+    let folders: HashSet<&Path> = paths
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|p| plain(p))
+        .collect();
+    let real_dir = |p: &Path| p.symlink_metadata().is_ok_and(|m| m.is_dir());
+    // 가장 가까운 선택 조상까지가 모두 실제 폴더일 때만 뺀다. 그 사이에 링크가 있으면 더 먼 조상도
+    // 같은 링크를 지나므로 볼 필요가 없다. 선택 조상이 없으면 파일시스템을 읽지 않는다.
+    let carried = |path: &Path| {
+        if !plain(path) {
+            return false;
+        }
+        let chain = path.ancestors().skip(1);
+        let Some(depth) = chain.clone().position(|a| folders.contains(a)) else {
+            return false;
+        };
+        chain.take(depth + 1).all(real_dir)
+    };
+    let mut seen: HashSet<&Path> = HashSet::with_capacity(paths.len());
+    paths
+        .iter()
+        .filter(|p| seen.insert(p.as_path()) && !carried(p))
+        .cloned()
+        .collect()
+}
+
 pub fn remove_path(path: &Path) -> io::Result<()> {
     if path.symlink_metadata()?.is_dir() {
         std::fs::remove_dir_all(path)
@@ -318,5 +351,61 @@ mod tests {
         remove_path(&renamed).unwrap();
         assert!(renamed.symlink_metadata().is_err());
         assert_eq!(std::fs::read(real.join("keep.txt")).unwrap(), b"k");
+    }
+
+    /// 겹친 선택은 첫 자리를 지키며 한 번만 남고, 링크를 거친 자손과 `..` 경로는 남는다.
+    #[test]
+    fn nested_and_repeated_paths_are_dropped_but_links_are_not_crossed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("a/b")).unwrap();
+        std::fs::write(root.join("a/b/f"), "").unwrap();
+        std::fs::write(root.join("ab"), "").unwrap();
+        let input = vec![
+            root.join("a/b/f"),
+            root.join("ab"),
+            root.join("a"),
+            root.join("a/b"),
+            root.join("ab"),
+            root.join("a/b/../b"),
+        ];
+        assert_eq!(
+            drop_nested(&input),
+            [root.join("ab"), root.join("a"), root.join("a/b/../b")]
+        );
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("a"), root.join("link")).unwrap();
+            let through = [
+                root.join("link"),
+                root.join("link/b"),
+                root.join("link/b/f"),
+            ];
+            assert_eq!(
+                drop_nested(&through),
+                [root.join("link"), root.join("link/b")]
+            );
+        }
+    }
+
+    /// 찾기 결과처럼 수만 개를 고르면 이 정리가 집계 표시·취소 확인보다 먼저 돈다. 쌍마다 비교하면
+    /// 2만 개에 수십 초가 걸려 작업이 멈춘 것처럼 보이므로 경로마다 조상 수만큼만 본다. 상한은 느슨하게 둔다.
+    #[test]
+    fn many_selected_entries_are_sorted_out_in_linear_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("folder");
+        std::fs::create_dir(&folder).unwrap();
+        const N: usize = 20_000;
+        let siblings: Vec<PathBuf> = (0..N).map(|i| folder.join(format!("f{i}"))).collect();
+        let started = std::time::Instant::now();
+        assert_eq!(drop_nested(&siblings), siblings);
+        let mut with_parent = siblings.clone();
+        with_parent.push(folder.clone());
+        assert_eq!(drop_nested(&with_parent), [folder]);
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "{N} entries took {elapsed:?}"
+        );
     }
 }

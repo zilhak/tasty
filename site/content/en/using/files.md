@@ -1,4 +1,4 @@
-<!-- source-hash: 5c1937bc8690 -->
+<!-- source-hash: 71c9f3c5a77d -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -177,7 +177,7 @@ The Windows and macOS implementations have been checked by compilation; their be
 
 ### Progress and results
 
-Paste, drag and drop, and Move to Trash run one at a time, in order. Copy and move first count the files, showing **Counting items to copy** or **Counting items to move** and updating how many have been found, without a progress bar. Once counted, progress includes files inside folders and names the file being processed. The bar follows bytes, or the file count when all files are empty or the total size is unknown. Result counts still refer to the items originally requested.  The status line of the Explorer that started the job shows a progress bar, the current file and the size; **×** stops it. Stopping keeps finished items and skips the rest. Jobs waiting their turn show a **+1 queued** tag; click it to see the queue and remove waiting jobs. If too many jobs are waiting, or you picked too many items for one job, the job isn't taken and a warning card in that Explorer says so; when the queue is full, **Show queue** on the card opens the list.
+Paste, drag and drop, and Move to Trash run one at a time, in order. Copy and move first count the files, showing **Counting items to copy** or **Counting items to move** and updating how many have been found, without a progress bar. Once counted, progress includes files inside folders and names the file being processed. The bar follows bytes, or the file count when all files are empty or the total size is unknown. Result counts still refer to the items originally requested. If you picked a folder together with items inside it (for example from a subfolder search), the inner items go along with the folder and aren't counted separately. Items reached through a link are still handled on their own, even when the link is picked too.  The status line of the Explorer that started the job shows a progress bar, the current file and the size; **×** stops it. Stopping keeps finished items and skips the rest. Jobs waiting their turn show a **+1 queued** tag; click it to see the queue and remove waiting jobs. If too many jobs are waiting, or you picked too many items for one job, the job isn't taken and a warning card in that Explorer says so; when the queue is full, **Show queue** on the card opens the list.
 
 When a name already exists, a question opens in that Explorer if it has focus. If you were looking elsewhere, click **Show** in its status line.
 
