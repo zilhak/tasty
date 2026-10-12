@@ -15,6 +15,7 @@ const MACROS: &[&str] = &["define_class!", "declare_class!"];
 /// 같은 파일의 블록 하나를 놓치거나 다른 블록으로 바꾸면 개수 하한을 통과할 수 있어 이름도 고정한다.
 /// 이 명부는 수동 기준이다. 파서 오류에 맞춰 갱신하지 말고 실제 선언의 변경을 먼저 확인한다.
 const EXPECTED_BLOCKS: &[(&str, &str)] = &[
+    ("src/file/drag/desktop/macos.rs", "Source"),
     ("src/host_api/webview/macos.rs", "NavDelegate"),
     ("src/host_api/webview/macos.rs", "KeyWebView"),
 ];
