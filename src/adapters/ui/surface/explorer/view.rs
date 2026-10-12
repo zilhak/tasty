@@ -395,6 +395,18 @@ impl ExplorerView {
         }
     }
 
+    /// 만든 항목을 고른다. 사용자가 그 폴더를 떠났거나 요청한 뒤 선택을 바꿨으면(`selection` 은 요청
+    /// 때의 선택 식별자) 아무것도 바꾸지 않는다.
+    pub(crate) fn reveal_created_if_unchanged(
+        &mut self,
+        path: &Path,
+        selection: Option<&std::sync::Weak<()>>,
+    ) {
+        if selection.is_some_and(|old| self.matches_selection(old)) {
+            self.reveal_created(path);
+        }
+    }
+
     /// 만든 항목을 고른다. 사용자가 그 폴더를 떠났으면 아무것도 바꾸지 않는다.
     pub(crate) fn reveal_created(&mut self, path: &Path) {
         if self.shown_dir() != path.parent() {
@@ -404,6 +416,12 @@ impl ExplorerView {
         self.reveal = Some(path.to_path_buf());
         self.reveal_in = None;
         self.reveal_select = false;
+    }
+
+    /// 다시 읽은 목록에 나타나기를 기다리는 보일 항목.
+    #[cfg(test)]
+    pub(crate) fn pending_reveal(&self) -> Option<&Path> {
+        self.reveal.as_deref()
     }
 
     /// 만든 항목이 목록에 나타났으면 이번 프레임의 스크롤 대상으로 꺼낸다. 없으면 키보드로 옮긴

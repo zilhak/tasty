@@ -607,6 +607,36 @@ fn a_created_entry_is_selected_only_while_its_folder_is_still_shown() {
 }
 
 #[test]
+fn a_created_entry_leaves_a_selection_made_after_the_request() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let dir = tempfile::tempdir().unwrap();
+    let panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
+    state.explorer_views.get_or_init(&panel, None);
+    state.request_explorer_file(
+        &engine.read(),
+        sid,
+        Operation::Create {
+            dir: dir.path().into(),
+            name: "made".into(),
+            folder: true,
+        },
+        user(),
+    );
+    let target = state.explorer_file_requests.0.pop_front().unwrap().target;
+    let chosen = dir.path().join("chosen");
+    state
+        .explorer_views
+        .get_mut(sid)
+        .unwrap()
+        .select_only(&chosen);
+    target.finish(&mut state, true);
+    let view = state.explorer_views.get(sid).unwrap();
+    assert_eq!(view.selected.iter().collect::<Vec<_>>(), vec![&chosen]);
+    assert!(view.pending_reveal().is_none(), "no scroll either");
+}
+
+#[test]
 fn direct_moves_never_consume_the_clipboard() {
     let (mut state, engine) = crate::state::tests::test_state();
     let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];

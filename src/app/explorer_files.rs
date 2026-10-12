@@ -641,7 +641,7 @@ impl Target {
                 view.clear_selection();
             }
             if success && let Some(path) = &self.created {
-                view.reveal_created(path);
+                view.reveal_created_if_unchanged(path, self.selection.as_ref());
             }
             view.request_reload();
         }
