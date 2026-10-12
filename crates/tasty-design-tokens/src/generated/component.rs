@@ -404,6 +404,9 @@ pub mod explorer {
     /// `component.explorer-cursor-ring-width` → `{semantic.border-width}` = 1px
     pub const CURSOR_RING_WIDTH: LogicalPx = crate::generated::semantic::BORDER_WIDTH;
 
+    /// `component.explorer-delete-list-max-height` → `{primitive.size-160}` = 160px
+    pub const DELETE_LIST_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_160;
+
     /// `component.explorer-drag-chip-max-width` → `{primitive.size-240}` = 240px
     pub const DRAG_CHIP_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
 
@@ -1130,6 +1133,13 @@ pub mod progress {
 
     /// `component.progress-radius` → `{semantic.radius-sm}` = 2px
     pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS_SM;
+}
+
+pub mod rail {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.rail-category-line-width` → `{semantic.focus-ring-width}` = 2px
+    pub const CATEGORY_LINE_WIDTH: LogicalPx = crate::generated::semantic::FOCUS_RING_WIDTH;
 }
 
 pub mod remote {

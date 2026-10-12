@@ -1402,6 +1402,12 @@ impl crate::theme::Theme {
         self.border_width
     }
 
+    /// `component.explorer-delete-list-max-height` → `{primitive.size-160}` = 160px
+    #[inline]
+    pub fn explorer_delete_list_max_height(&self) -> LogicalPx {
+        LogicalPx((160.0 * self.ui_zoom).round())
+    }
+
     /// `component.explorer-drag-chip-max-width` → `{primitive.size-240}` = 240px
     #[inline]
     pub fn explorer_drag_chip_max_width(&self) -> LogicalPx {
@@ -3244,6 +3250,24 @@ impl crate::theme::Theme {
         self.bg_app()
     }
 
+    /// `component.rail-category-line` → `{semantic.text-muted}`
+    #[inline]
+    pub fn rail_category_line(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.rail-category-line-hover` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn rail_category_line_hover(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.rail-category-line-width` → `{semantic.focus-ring-width}` = 2px
+    #[inline]
+    pub fn rail_category_line_width(&self) -> LogicalPx {
+        self.focus_ring_width
+    }
+
     /// `component.remote-filter-dropdown-width` → `{primitive.size-240}` = 240px
     #[inline]
     pub fn remote_filter_dropdown_width(&self) -> LogicalPx {
@@ -4520,6 +4544,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn workspace_dot_gap(&self) -> LogicalPx {
         self.spacing_xs
+    }
+
+    /// `component.workspace-mirror-chip-bg` → `{semantic.bg-sidebar}`
+    #[inline]
+    pub fn workspace_mirror_chip_bg(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+
+    /// `component.workspace-mirror-chip-border` → `{component.workspace-mirror-fg}`
+    #[inline]
+    pub fn workspace_mirror_chip_border(&self) -> HexColor {
+        self.workspace_mirror_fg()
     }
 
     /// `component.workspace-mirror-fg` → `{semantic.accent-remote}`

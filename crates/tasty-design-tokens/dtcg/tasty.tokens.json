@@ -2641,6 +2641,26 @@
       "$type": "dimension",
       "$value": "{semantic.space-xs}"
     },
+    "workspace-mirror-chip-border": {
+      "$type": "color",
+      "$value": "{component.workspace-mirror-fg}"
+    },
+    "workspace-mirror-chip-bg": {
+      "$type": "color",
+      "$value": "{semantic.bg-sidebar}"
+    },
+    "rail-category-line-width": {
+      "$type": "dimension",
+      "$value": "{semantic.focus-ring-width}"
+    },
+    "rail-category-line": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "rail-category-line-hover": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}"
+    },
     "workspace-row-padding-x": {
       "$type": "dimension",
       "$value": "{semantic.space-sm}"
@@ -4524,6 +4544,11 @@
       "$type": "dimension",
       "$value": "{primitive.size-40}",
       "$description": "Grid cell icon slot (all cells) — image thumbnails fit here"
+    },
+    "explorer-delete-list-max-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-160}",
+      "$description": "Delete permanently confirm — target list max height (scrolls past ~4 rows)"
     },
     "explorer-props-width": {
       "$type": "dimension",

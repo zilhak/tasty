@@ -465,6 +465,17 @@
   --tasty-workspace-mirror-fg:     var(--tasty-accent-remote);
   --tasty-workspace-mirror-icon-size: var(--tasty-icon-size-xs);
   --tasty-workspace-mirror-gap:    var(--tasty-space-xs);
+  /* 2026-10-12 — collapsed-rail mirror chip: a full-strength 1px sky edge so the chip
+     reads on every avatar state (idle / active overlay fill / hover). Bed stays the rail
+     colour so the 8px glyph keeps its contrast; the 2px bg-sidebar halo still separates it. */
+  --tasty-workspace-mirror-chip-border: var(--tasty-workspace-mirror-fg);
+  --tasty-workspace-mirror-chip-bg:     var(--tasty-bg-sidebar);
+  /* 2026-10-12 — collapsed-rail category `---` line (and the flat-mode top divider):
+     avatar-ink colour, 2px. A deliberate exception to the 1px border rule — it is a mark
+     at avatar-glyph weight, not a box edge. */
+  --tasty-rail-category-line-width:    var(--tasty-focus-ring-width);  /* 2 */
+  --tasty-rail-category-line:          var(--tasty-text-muted);        /* = idle avatar glyph */
+  --tasty-rail-category-line-hover:    var(--tasty-text-secondary);
   /* Workspace row (expanded sidebar) — the status dot sits in a RESERVED slot the
      size of the attached mark's full bbox: 8 + 2×(2+2) = 16. Reserved on every
      row (attached or not) so title x never shifts. Ring clearances at scale 1:
@@ -1209,6 +1220,7 @@
   --tasty-explorer-preview-max-width: var(--tasty-size-460); /* preview splitter upper bound */
   --tasty-explorer-grid-thumb-size: var(--tasty-size-40); /* Grid cell icon slot (all cells) — image thumbnails fit here */
   --tasty-explorer-props-width: var(--tasty-size-360); /* Properties popup */
+  --tasty-explorer-delete-list-max-height: var(--tasty-size-160); /* 2026-10-12 Delete permanently confirm: target list scrolls past ~4 two-line rows; frame = info-modal-width / max-height */
   --tasty-explorer-props-label-width: var(--tasty-size-96); /* Properties field label column */
   --tasty-explorer-search-bar-height: var(--tasty-size-36); /* filter / search bar under the toolbar */
   --tasty-explorer-search-folder-col-width: var(--tasty-size-160); /* Detail “Folder” column in recursive results */
