@@ -71,6 +71,26 @@ pub enum WebViewUserNav {
     Open(String),
 }
 
+/// 에이전트가 IPC로 요청한 히스토리 이동. 호스트 출처 로드로 처리한다(`HtmlScriptState::on_host_load_requested`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebViewHistoryStep {
+    Back,
+    Forward,
+    Reload,
+}
+
+impl WebViewHistoryStep {
+    /// 이 이동이 로드를 일으키는지. 히스토리 처음의 뒤로, 끝의 앞으로, 문서 없는 새로고침은 아니다.
+    /// 사용자 탐색(`WebViewUserNav`)의 같은 조작도 이 기준을 쓴다.
+    pub fn loads(self, info: &crate::model::WebViewNavInfo) -> bool {
+        match self {
+            Self::Back => info.can_go_back,
+            Self::Forward => info.can_go_forward,
+            Self::Reload => info.url.is_some(),
+        }
+    }
+}
+
 /// 논리 좌표의 사각형. 물리 좌표 변환은 to_physical/from_physical로 모은다.
 /// 플랫폼 호출 전 정수 절단의 경계가 바뀌지 않도록 f64를 유지한다.
 #[derive(Debug, Clone, Copy, PartialEq)]

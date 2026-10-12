@@ -2,7 +2,7 @@ use super::*;
 use tasty_model::html_script::{Fingerprint, ScriptDetection, ScriptScan};
 
 /// 플러그인 프로세스 없이 html kind를 등록하고 html 탭을 연다.
-fn state_with_html_tab() -> (
+pub(in crate::adapters::ipc::handler::surface) fn state_with_html_tab() -> (
     crate::state::RequestContext,
     crate::runtime::engine_session::EngineSession,
     u32,
@@ -66,7 +66,7 @@ fn html_script_of(
     handle_html_script(&engine.as_ref(), json!(1), &json!({ "surface_id": sid }))
 }
 
-fn html_surface<'a>(
+pub(in crate::adapters::ipc::handler::surface) fn html_surface<'a>(
     engine: &'a crate::runtime::engine_access::EngineMut<'_>,
     sid: u32,
 ) -> &'a RemoteSurface {

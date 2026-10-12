@@ -3048,6 +3048,27 @@ long = "html サーフェスが表示している文書のアドレスと、履�
 [cli.help._root.surface.html-nav.arg.surface]
 help = "サーフェスID（必須）"
 
+[cli.help._root.surface.html-back]
+about = "html サーフェスの履歴で一つ戻る"
+long = "html サーフェスの履歴で一つ戻ります。移動は次の再描画でホストが開始した読み込みとして適用されるため、スクリプトバナーはユーザーがそのサーフェスを選択するまで保留されます。戻る先がなければ何も起きません。結果は html-nav で確認します。フォーカスと選択はそのままです。対象は必ず --surface で指定します。ヘッドレスビルドでは使用できません。"
+
+[cli.help._root.surface.html-back.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.html-forward]
+about = "html サーフェスの履歴で一つ進む"
+long = "html サーフェスの履歴で一つ進みます。移動は次の再描画でホストが開始した読み込みとして適用されるため、スクリプトバナーはユーザーがそのサーフェスを選択するまで保留されます。進む先がなければ何も起きません。結果は html-nav で確認します。フォーカスと選択はそのままです。対象は必ず --surface で指定します。ヘッドレスビルドでは使用できません。"
+
+[cli.help._root.surface.html-forward.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.html-reload]
+about = "html サーフェスが表示している文書を再読み込み"
+long = "html サーフェスが表示している文書を再読み込みします。再読み込みは次の再描画でホストが開始した読み込みとして適用されるため、スクリプトバナーはユーザーがそのサーフェスを選択するまで保留されます。サーフェスに文書がなければ何も起きません。結果は html-nav で確認します。フォーカスと選択はそのままです。対象は必ず --surface で指定します。ヘッドレスビルドでは使用できません。"
+
+[cli.help._root.surface.html-reload.arg.surface]
+help = "サーフェスID（必須）"
+
 [cli.help._root.surface.respawn-terminal]
 about = "サーフェス・タブ・位置を維持してターミナルサーフェスのシェルを再起動"
 long = "サーフェス・タブ・位置を維持してターミナルサーフェスのシェルを再起動します。対象は必ず --surface で指定します。"

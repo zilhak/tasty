@@ -33,7 +33,7 @@ PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출
 | `set_javascript_enabled` | `bool` | — | 스크립트 게이트가 붙은 webview 에서는 값을 전역 sandbox 설정으로 `gate.set_sandbox` 에 넘기고, 적용하는 값은 문서별 판정이다([ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)). macOS 는 전역 preference 를 켜 두고 문서별 값을 navigation 정책의 webpage preferences 로 준다 |
 | `attach_script_gate` | `ScriptGate` | — | 첫 로드 전에 부른다. Linux 만 page cache 를 꺼서 뒤로·앞으로 가기도 응답 단계를 거치게 한다([ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)) |
 | `reload` | — | — | |
-| `go_back` · `go_forward` | — | — | 세션 히스토리로 이동한다. 사용자 탐색 큐가 부른다([html surface §사용자 탐색](../../surfaces/html/index.md#내부-동작)) |
+| `go_back` · `go_forward` | — | — | 세션 히스토리로 이동한다. 사용자 탐색 큐와 에이전트 히스토리 큐가 부른다([html surface §사용자 탐색·에이전트 히스토리 이동](../../surfaces/html/index.md#내부-동작)) |
 | `nav_info` | — | `WebViewNavInfo` | commit 주소의 출처는 Linux 가 WebKitGTK `load-changed` Committed, macOS 가 WKWebView `didCommitNavigation`, Windows 가 WebView2 `ContentLoading` 이다. 주소 선택은 공통 `committed_document_url`(로드가 끝났으면 엔진 현재 주소, 로드 중·실패면 마지막 commit 주소)이다. 이동 가능 여부는 WebKitGTK `can_go_back`·`can_go_forward`, WKWebView `canGoBack`·`canGoForward`, WebView2 `CanGoBack`·`CanGoForward` 다. Windows 는 조회 실패를 웹뷰별 첫 번째만 warn 으로 남긴다. macOS·Windows 는 실 기기 미측정이다([html surface §문서 주소와 히스토리](../../surfaces/html/index.md#내부-동작)) |
 | `debug_stop` | — | — | debug 빌드 전용이다. 로드 중지를 재현한다. 사용자 진입점이 없는 조작이라 사용자 탐색 큐와 나눈다 |
 | `set_color_scheme` | `ColorScheme` | — | |

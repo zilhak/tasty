@@ -345,6 +345,7 @@ tasty set cwd --surface 42 --path /tmp # 원격 서피스가 보고하는 작업
 tasty set url --surface 42 --url URL   # 웹뷰 서피스의 주소 변경(--label 이름: 페이지가 가려졌을 때 보일 이름)
 tasty surface html-script --surface 42 # HTML 서피스의 스크립트 감지·허용·안내 상태(조회만)
 tasty surface html-nav --surface 42    # HTML 서피스가 보여 주는 문서 주소와 뒤로·앞으로 이동 가능 여부(조회만)
+tasty surface html-back --surface 42   # HTML 서피스를 뒤로 이동(html-forward: 앞으로, html-reload: 새로고침). 포커스는 그대로이고, 결과는 html-nav로 확인
 tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 것과 같은 경로로 파일 열기
 tasty file-handler reload               # 파일 핸들러 설정 파일을 다시 읽기
 tasty file-handler detectors            # 파일 형식 판별 규칙이 지금 어떻게 합쳐져 있는지 보기

@@ -282,7 +282,7 @@ fn attach_script_gate(
     wv.attach_script_gate(gate);
 }
 
-/// 허용 직후의 재로드, 사용자 탐색, debug 로드 중지를 native webview에 전달한다.
+/// 허용 직후의 재로드, 사용자 탐색, 에이전트 히스토리 이동, debug 로드 중지를 native webview에 전달한다.
 fn apply_webview_requests(
     view: &mut MainView,
     engine: &crate::runtime::engine_access::EngineRef<'_>,
@@ -295,15 +295,26 @@ fn apply_webview_requests(
             wv.reload();
         }
     }
-    for (sid, nav) in std::mem::take(&mut view.state.webview_user_nav) {
-        apply_user_nav(view, engine, sid, nav);
-    }
+    apply_navigation_queues(view, engine);
     #[cfg(debug_assertions)]
     for sid in std::mem::take(&mut view.state.debug_webview_stop) {
         match view.webviews.get(&sid) {
             Some(wv) => wv.debug_stop(),
             None => tracing::warn!("debug webview stop: surface {sid} has no webview"),
         }
+    }
+}
+
+/// 사용자 탐색 큐를 먼저, 에이전트 히스토리 큐를 다음에 비운다. 각 큐 안에서는 들어온 순서다.
+fn apply_navigation_queues(
+    view: &mut MainView,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+) {
+    for (sid, nav) in std::mem::take(&mut view.state.webview_user_nav) {
+        apply_user_nav(view, engine, sid, nav);
+    }
+    for (sid, step) in std::mem::take(&mut view.state.webview_agent_nav) {
+        apply_agent_history_step(view, engine, sid, step);
     }
 }
 
@@ -321,11 +332,11 @@ fn plan_user_nav(
     nav: &crate::webview::WebViewUserNav,
     info: &crate::model::WebViewNavInfo,
 ) -> UserNavPlan {
-    use crate::webview::WebViewUserNav;
+    use crate::webview::{WebViewHistoryStep, WebViewUserNav};
     let possible = match nav {
-        WebViewUserNav::Back => info.can_go_back,
-        WebViewUserNav::Forward => info.can_go_forward,
-        WebViewUserNav::Reload => info.url.is_some(),
+        WebViewUserNav::Back => WebViewHistoryStep::Back.loads(info),
+        WebViewUserNav::Forward => WebViewHistoryStep::Forward.loads(info),
+        WebViewUserNav::Reload => WebViewHistoryStep::Reload.loads(info),
         WebViewUserNav::Open(url) => crate::webview::is_navigable_url(url),
     };
     if !possible {
@@ -375,6 +386,68 @@ fn apply_user_nav(
         WebViewUserNav::Forward => wv.go_forward(),
         WebViewUserNav::Reload => wv.reload(),
         WebViewUserNav::Open(url) => wv.load_url(&url),
+    }
+}
+
+/// 에이전트 히스토리 이동 한 건에 할 일.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AgentStepPlan {
+    /// 로드가 일어나지 않을 이동이다(히스토리 처음의 뒤로, 끝의 앞으로, 문서 없는 새로고침).
+    Skip,
+    /// 탐색하고 호스트 출처 표지를 세운다.
+    Navigate,
+}
+
+/// 사용자 탐색의 뒤로·앞으로·새로고침과 같은 기준으로 정한다. 같은 문서 fragment 히스토리 항목으로
+/// 가는지는 미리 알 수 없어 그 경우도 탐색으로 보고 표지를 세운다(남은 한계).
+fn plan_agent_history_step(
+    step: crate::webview::WebViewHistoryStep,
+    info: &crate::model::WebViewNavInfo,
+) -> AgentStepPlan {
+    if step.loads(info) {
+        AgentStepPlan::Navigate
+    } else {
+        AgentStepPlan::Skip
+    }
+}
+
+/// 계획대로 출처 표지를 세운다. 에이전트 이동은 호스트 출처라 다음 문서는 이전 문서의 열람을
+/// 이어받지 않는다. 버리는 이동은 표지를 남기지 않는다.
+fn mark_agent_step(plan: AgentStepPlan, st: &mut tasty_model::html_script::HtmlScriptState) {
+    if plan == AgentStepPlan::Navigate {
+        st.on_host_load_requested();
+    }
+}
+
+/// 에이전트 히스토리 이동을 실행한다. 판정은 적용 시점의 backend 값으로 한다.
+fn apply_agent_history_step(
+    view: &MainView,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+    sid: u32,
+    step: crate::webview::WebViewHistoryStep,
+) {
+    use crate::webview::WebViewHistoryStep;
+    let Some(wv) = view.webviews.get(&sid) else {
+        tracing::warn!("webview agent history {step:?}: surface {sid} has no webview");
+        return;
+    };
+    let info = wv.nav_info();
+    let plan = plan_agent_history_step(step, &info);
+    tracing::debug!(
+        "WebView surface {sid}: agent history {step:?} -> {plan:?} (back={}, forward={})",
+        info.can_go_back,
+        info.can_go_forward
+    );
+    if plan == AgentStepPlan::Skip {
+        return;
+    }
+    if let Some(rs) = find_remote_surface(view, engine, sid) {
+        rs.with_html_script(|st| mark_agent_step(plan, st));
+    }
+    match step {
+        WebViewHistoryStep::Back => wv.go_back(),
+        WebViewHistoryStep::Forward => wv.go_forward(),
+        WebViewHistoryStep::Reload => wv.reload(),
     }
 }
 
@@ -1110,6 +1183,115 @@ mod nav_origin_tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn an_agent_step_is_skipped_only_when_there_is_nowhere_to_go() {
+        use crate::webview::WebViewHistoryStep::{Back, Forward, Reload};
+        use AgentStepPlan::{Navigate, Skip};
+        let cases = [
+            // 문서 없는 빈 탭
+            (shown(None, false, false), [Skip, Skip, Skip]),
+            // 히스토리 처음
+            (shown(Some(A), false, true), [Skip, Navigate, Navigate]),
+            // 히스토리 끝
+            (shown(Some(A), true, false), [Navigate, Skip, Navigate]),
+            // 가운데의 같은 문서 fragment 항목: 미리 알 수 없어 탐색한다
+            (
+                shown(Some(&format!("{A}#sec")), true, true),
+                [Navigate, Navigate, Navigate],
+            ),
+        ];
+        for (info, expected) in cases {
+            for (step, want) in [Back, Forward, Reload].into_iter().zip(expected) {
+                assert_eq!(
+                    plan_agent_history_step(step, &info),
+                    want,
+                    "{info:?} {step:?}"
+                );
+            }
+        }
+    }
+
+    /// 사용자가 스크립트 없는 문서 A를 보고 있는 surface.
+    fn viewed_state() -> tasty_model::html_script::HtmlScriptState {
+        let mut st = tasty_model::html_script::HtmlScriptState::new(true);
+        st.on_load_started();
+        st.on_main_response(A, None);
+        st.on_committed(Some(A));
+        st.on_load_finished();
+        st.on_user_view();
+        st.update_banner();
+        assert!(st.banner().viewed);
+        st
+    }
+
+    /// 표지를 세운 뒤 이동이 스크립트가 있는 문서 B를 commit한다.
+    fn commit_scripted(st: &mut tasty_model::html_script::HtmlScriptState) {
+        use tasty_model::html_script::{Fingerprint, ScriptDetection, ScriptScan};
+        const B: &str = "file:///docs/b.html";
+        st.on_load_started();
+        st.on_main_response(
+            B,
+            Some(ScriptScan {
+                fingerprint: Fingerprint([7; 32]),
+                detection: ScriptDetection::Scripts,
+            }),
+        );
+        st.on_committed(Some(B));
+        st.on_load_finished();
+        st.update_banner();
+    }
+
+    #[test]
+    fn an_agent_step_marks_a_host_load_so_the_banner_waits_for_the_user() {
+        use crate::webview::WebViewHistoryStep;
+        let info = shown(Some(A), true, true);
+        for step in [
+            WebViewHistoryStep::Back,
+            WebViewHistoryStep::Forward,
+            WebViewHistoryStep::Reload,
+        ] {
+            let mut st = viewed_state();
+            mark_agent_step(plan_agent_history_step(step, &info), &mut st);
+            // host_requested_load == true · viewed_before_commit == false 이면 다음 문서는
+            // 열람을 이어받지 않는다. 필드는 모델 밖에서 읽을 수 없어 그 결과로 단언한다.
+            commit_scripted(&mut st);
+            let flags = st.banner();
+            assert!(
+                !flags.viewed,
+                "{step:?}: 다음 문서를 사용자가 본 것으로 기록했다"
+            );
+            assert!(flags.pending_view, "{step:?}");
+            assert_eq!(st.banner_phase(), BannerPhase::Hidden, "{step:?}");
+        }
+        // 대조: 사용자 출처이거나 표지가 없으면 같은 commit이 배너를 띄운다.
+        let mut user = viewed_state();
+        user.on_user_load_requested();
+        commit_scripted(&mut user);
+        assert_eq!(user.banner_phase(), BannerPhase::Blocked);
+        let mut unmarked = viewed_state();
+        commit_scripted(&mut unmarked);
+        assert_eq!(unmarked.banner_phase(), BannerPhase::Blocked);
+    }
+
+    #[test]
+    fn a_skipped_agent_step_leaves_no_mark() {
+        use crate::webview::WebViewHistoryStep;
+        let start = shown(Some(A), false, false);
+        for step in [WebViewHistoryStep::Back, WebViewHistoryStep::Forward] {
+            let mut st = viewed_state();
+            let before = st.clone();
+            mark_agent_step(plan_agent_history_step(step, &start), &mut st);
+            assert_eq!(st, before, "{step:?}");
+        }
+        let mut st = tasty_model::html_script::HtmlScriptState::new(true);
+        let before = st.clone();
+        mark_agent_step(
+            plan_agent_history_step(WebViewHistoryStep::Reload, &shown(None, false, false)),
+            &mut st,
+        );
+        assert_eq!(st, before);
     }
 
     #[test]

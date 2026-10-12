@@ -279,6 +279,10 @@ pub struct MainViewState {
     #[cfg(feature = "gui")]
     pub(crate) webview_user_nav: Vec<(u32, crate::webview::WebViewUserNav)>,
 
+    /// 에이전트가 IPC로 요청한 히스토리 이동. sync_webviews가 호스트 출처로 소비한다.
+    #[cfg(feature = "gui")]
+    pub(crate) webview_agent_nav: Vec<(u32, crate::webview::WebViewHistoryStep)>,
+
     /// debug IPC가 요청한 로드 중지. 사용자 진입점이 없는 조작이라 사용자 탐색 큐와 나눈다.
     #[cfg(all(feature = "gui", debug_assertions))]
     pub(crate) debug_webview_stop: Vec<u32>,

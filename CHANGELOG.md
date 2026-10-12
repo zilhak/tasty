@@ -19,6 +19,7 @@
 ### Added
 
 - **HTML 서피스가 보여 주는 문서 주소와 뒤로·앞으로 이동 가능 여부를 조회한다.** `tasty surface html-nav --surface <id>`(IPC `surface.html_nav`)가 마지막으로 commit된 주소(`url`, 리다이렉트 뒤 최종 주소와 `#fragment` 포함, 로드 중이거나 실패한 뒤에는 이전 문서 주소), 호스트가 넣은 주소(`requested_url`), 탐색 상태(`nav_state`), `can_go_back`·`can_go_forward`를 돌려준다. 읽기만 하며 헤드리스 빌드에서는 `-32017`이다. Linux만 실제 실행으로 확인했다. Windows는 크로스 타깃 컴파일만 확인했고 macOS는 컴파일도 확인하지 못했다. 둘 다 실 기기 미측정이다.
+- **에이전트가 HTML 서피스를 뒤로·앞으로·새로고침한다.** `tasty surface html-back`·`html-forward`·`html-reload --surface <id>`(IPC `surface.html_back`·`surface.html_forward`·`surface.html_reload`, 권한 `surface.write`). 포커스와 선택은 바꾸지 않고, 이동은 호스트가 시작한 로드로 처리되어 스크립트 배너는 사용자가 그 서피스를 선택할 때까지 보류된다. 갈 곳이 없으면 오류 없이 아무 일도 일어나지 않으므로 결과는 `tasty surface html-nav`로 확인한다. html이 아닌 서피스와 mirror workspace의 html 서피스는 거절하고, 헤드리스 빌드에서는 `-32017`이다. Linux만 실제 실행으로 확인했다. macOS·Windows는 실 기기 미측정이다.
 
 ### Changed
 

@@ -83,6 +83,43 @@ pub enum SurfaceCommands {
         #[arg(long)]
         surface: u32,
     },
+    /// Go back one entry in the history of an html surface.
+    ///
+    /// The step is applied on the next redraw as a load the host started, so
+    /// a script banner waits until the user selects the surface. Nothing
+    /// happens when there is nowhere to go; check the result with html-nav.
+    /// Focus and selection stay as they are. The target surface is always
+    /// given explicitly with --surface. Not available in a headless build.
+    HtmlBack {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
+    /// Go forward one entry in the history of an html surface.
+    ///
+    /// The step is applied on the next redraw as a load the host started, so
+    /// a script banner waits until the user selects the surface. Nothing
+    /// happens when there is nowhere to go; check the result with html-nav.
+    /// Focus and selection stay as they are. The target surface is always
+    /// given explicitly with --surface. Not available in a headless build.
+    HtmlForward {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
+    /// Reload the document an html surface shows.
+    ///
+    /// The reload is applied on the next redraw as a load the host started, so
+    /// a script banner waits until the user selects the surface. Nothing
+    /// happens when the surface has no document; check the result with
+    /// html-nav. Focus and selection stay as they are. The target surface is
+    /// always given explicitly with --surface. Not available in a headless
+    /// build.
+    HtmlReload {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
     /// Restart the shell of a terminal surface in place, keeping the surface,
     /// its tab and its position.
     ///

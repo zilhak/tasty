@@ -10,6 +10,8 @@ pub(crate) struct RequestScope<'a> {
     #[cfg(feature = "gui")]
     approvals: Vec<tasty_approval::ApprovalRecord>,
     #[cfg(feature = "gui")]
+    webview_history: Vec<(u32, crate::webview::WebViewHistoryStep)>,
+    #[cfg(feature = "gui")]
     popup_proofs: &'a std::collections::HashMap<u64, String>,
     #[cfg(feature = "gui")]
     navigation_proofs: Option<std::sync::Arc<crate::app::html_runtime::NavigationProofs>>,
@@ -35,6 +37,8 @@ impl<'a> RequestScope<'a> {
             #[cfg(feature = "gui")]
             approvals: Vec::new(),
             #[cfg(feature = "gui")]
+            webview_history: Vec::new(),
+            #[cfg(feature = "gui")]
             popup_proofs: &state.plugin_popup_user_activated,
             #[cfg(feature = "gui")]
             navigation_proofs,
@@ -47,6 +51,8 @@ impl<'a> RequestScope<'a> {
             intents: self.intents,
             #[cfg(feature = "gui")]
             approvals: self.approvals,
+            #[cfg(feature = "gui")]
+            webview_history: self.webview_history,
         }
     }
 }
@@ -54,6 +60,8 @@ pub(crate) struct RequestOutputs {
     intents: Vec<crate::intent::DispatchedIntent>,
     #[cfg(feature = "gui")]
     approvals: Vec<tasty_approval::ApprovalRecord>,
+    #[cfg(feature = "gui")]
+    webview_history: Vec<(u32, crate::webview::WebViewHistoryStep)>,
 }
 impl RequestOutputs {
     pub(crate) fn apply(self, state: &mut crate::state::RequestContext, engine: &CoreState) {
@@ -65,6 +73,8 @@ impl RequestOutputs {
         for record in self.approvals {
             crate::adapters::ui::popup::approval::enqueue_approval(state, engine, &record);
         }
+        #[cfg(feature = "gui")]
+        state.webview_agent_nav.extend(self.webview_history);
     }
 }
 impl IpcWindow for RequestScope<'_> {
@@ -110,6 +120,10 @@ impl IpcWindow for RequestScope<'_> {
         record: &tasty_approval::ApprovalRecord,
     ) {
         self.approvals.push(record.clone());
+    }
+    #[cfg(feature = "gui")]
+    fn enqueue_webview_history(&mut self, surface: u32, step: crate::webview::WebViewHistoryStep) {
+        self.webview_history.push((surface, step));
     }
     #[cfg(feature = "gui")]
     fn plugin_popup_user_activated(&self, plugin: &str, instance: u64) -> bool {

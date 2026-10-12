@@ -3048,6 +3048,27 @@ long = "html 서피스가 보여 주는 문서 주소와 히스토리에서 뒤�
 [cli.help._root.surface.html-nav.arg.surface]
 help = "서피스 ID(필수)"
 
+[cli.help._root.surface.html-back]
+about = "html 서피스의 히스토리에서 한 단계 뒤로 이동"
+long = "html 서피스의 히스토리에서 한 단계 뒤로 이동합니다. 이동은 다음 화면 갱신 때 호스트가 시작한 로드로 적용되므로, 스크립트 배너는 사용자가 그 서피스를 선택할 때까지 보류됩니다. 갈 곳이 없으면 아무 일도 일어나지 않으며, 결과는 html-nav로 확인합니다. 포커스와 선택은 그대로입니다. 대상은 항상 --surface로 명시합니다. 헤드리스 빌드에서는 사용할 수 없습니다."
+
+[cli.help._root.surface.html-back.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.html-forward]
+about = "html 서피스의 히스토리에서 한 단계 앞으로 이동"
+long = "html 서피스의 히스토리에서 한 단계 앞으로 이동합니다. 이동은 다음 화면 갱신 때 호스트가 시작한 로드로 적용되므로, 스크립트 배너는 사용자가 그 서피스를 선택할 때까지 보류됩니다. 갈 곳이 없으면 아무 일도 일어나지 않으며, 결과는 html-nav로 확인합니다. 포커스와 선택은 그대로입니다. 대상은 항상 --surface로 명시합니다. 헤드리스 빌드에서는 사용할 수 없습니다."
+
+[cli.help._root.surface.html-forward.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.html-reload]
+about = "html 서피스가 보여 주는 문서를 새로고침"
+long = "html 서피스가 보여 주는 문서를 새로고침합니다. 새로고침은 다음 화면 갱신 때 호스트가 시작한 로드로 적용되므로, 스크립트 배너는 사용자가 그 서피스를 선택할 때까지 보류됩니다. 서피스에 문서가 없으면 아무 일도 일어나지 않으며, 결과는 html-nav로 확인합니다. 포커스와 선택은 그대로입니다. 대상은 항상 --surface로 명시합니다. 헤드리스 빌드에서는 사용할 수 없습니다."
+
+[cli.help._root.surface.html-reload.arg.surface]
+help = "서피스 ID(필수)"
+
 [cli.help._root.surface.respawn-terminal]
 about = "서피스·탭·위치를 유지하며 터미널 서피스의 셸 재시작"
 long = "서피스·탭·위치를 유지하며 터미널 서피스의 셸을 재시작합니다. 대상은 항상 --surface로 명시합니다."

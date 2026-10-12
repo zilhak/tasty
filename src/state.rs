@@ -311,6 +311,8 @@ impl RequestContext {
             webview_identity: std::sync::Weak::new(),
             #[cfg(feature = "gui")]
             webview_user_nav: Vec::new(),
+            #[cfg(feature = "gui")]
+            webview_agent_nav: Vec::new(),
             #[cfg(all(feature = "gui", debug_assertions))]
             debug_webview_stop: Vec::new(),
             #[cfg(feature = "gui")]

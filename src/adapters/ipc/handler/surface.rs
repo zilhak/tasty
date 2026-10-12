@@ -5,6 +5,8 @@ mod commands;
 mod completion;
 pub(crate) mod cwd;
 #[cfg(feature = "gui")]
+mod html_history;
+#[cfg(feature = "gui")]
 mod html_script;
 mod kinds;
 mod list;
@@ -16,6 +18,8 @@ pub(crate) use attention::{handle_attention_clear, handle_attention_get};
 pub(crate) use commands::{handle_command_at, handle_commands, handle_last_command};
 pub(crate) use completion::handle_completion;
 pub(crate) use cwd::handle_set_cwd;
+#[cfg(feature = "gui")]
+pub(crate) use html_history::handle_html_history;
 #[cfg(feature = "gui")]
 pub(crate) use html_script::{handle_html_nav, handle_html_script};
 pub(crate) use kinds::handle_surface_kinds;

@@ -902,6 +902,30 @@ mod workspace_category_tests {
     }
 
     #[test]
+    fn surface_html_history_steps_map_to_ipc() {
+        for (cmd, method) in [
+            ("html-back", "surface.html_back"),
+            ("html-forward", "surface.html_forward"),
+            ("html-reload", "surface.html_reload"),
+        ] {
+            let r = req(&["tasty", "surface", cmd, "--surface", "42"]);
+            assert_eq!(r.method, method);
+            assert_eq!(r.params["surface_id"], 42);
+            assert_eq!(r.params.as_object().map(|o| o.len()), Some(1), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn surface_html_history_steps_require_a_surface() {
+        for cmd in ["html-back", "html-forward", "html-reload"] {
+            assert!(
+                Cli::try_parse_from(["tasty", "surface", cmd]).is_err(),
+                "{cmd} parsed without --surface"
+            );
+        }
+    }
+
+    #[test]
     fn surface_attention_get_maps_to_ipc() {
         let r = req(&["tasty", "surface", "attention", "get", "--surface", "42"]);
         assert_eq!(r.method, "surface.attention.get");

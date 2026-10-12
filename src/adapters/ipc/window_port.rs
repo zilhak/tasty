@@ -49,6 +49,10 @@ pub(crate) trait IpcWindow {
         url: &str,
     ) -> bool;
 
+    /// 에이전트가 요청한 html surface 히스토리 이동을 이 창의 큐에 넣는다. 다음 redraw에서 적용한다.
+    #[cfg(feature = "gui")]
+    fn enqueue_webview_history(&mut self, surface: u32, step: crate::webview::WebViewHistoryStep);
+
     /// 요청 하나가 모은 intent 를 이 창의 큐 끝에 순서대로 옮긴다. 진입점만 부른다.
     fn enqueue_intents(&mut self, intents: IntentOutbox);
 }

@@ -50,8 +50,24 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
   - 지금 문서의 `#fragment` 주소 열기(`is_same_document_fragment_move`)는 탐색하되 사용자 출처 표지를 세우지 않는다. 같은 문서 이동은 commit·로드 종료 신호가 없어 표지를 내릴 수 없고, 남은 표지가 다음 문서(페이지 스크립트·meta refresh로 바뀐 문서)에 잘못 적용되기 때문이다. 호스트 로드도 같다. `webview_url`이 지금 문서의 fragment 주소로 바뀌면 호스트 로드 표지(`on_host_load_requested`)를 세우지 않는다.
   - 남은 한계: 뒤로·앞으로가 같은 문서의 fragment 히스토리 항목으로 가는지는 미리 알 수 없어 표지를 세운다. 그 이동도 load 신호 없이 끝나므로 표지가 남고, 다음에 commit되는 문서를 사용자가 본 것으로 기록한다. 사용자가 그 surface를 조작한 뒤라 영향은 작다.
   - 주소 열기는 해석을 마친 주소만 받는다. 상대 경로 해석과 없는 파일 거절은 입력 쪽이 한다. 이 경로는 `webview_url`을 바꾸지 않으므로 페이지 안 링크 이동과 같이 snapshot에 남지 않는다.
-  - 에이전트 경로는 이 큐를 쓰지 않는다. 에이전트가 주소를 바꾸는 방법은 지금처럼 `tasty html open`(호스트 로드)이다. 뒤로·앞으로·새로고침을 에이전트에게 주는 release IPC는 없다.
+  - 에이전트 경로는 이 큐를 쓰지 않는다. 에이전트가 주소를 바꾸는 방법은 `tasty html open`(호스트 로드)이고, 뒤로·앞으로·새로고침은 아래 [에이전트 히스토리 이동](#내부-동작)이다.
   - 사용자 진입점(주소 표시줄과 버튼)은 아직 없다. debug 빌드의 `debug.webview.history`(CLI `tasty debug webview-history`)가 같은 큐로 사용자 조작을 재현한다([debug IPC](../../dev-guide/debug-ipc.md)).
+- **에이전트 히스토리 이동** — `tasty surface html-back`·`html-forward`·`html-reload --surface <id>`(IPC `surface.html_back`·`surface.html_forward`·`surface.html_reload`, release). 대상은 surface ID로만 받고 포커스·선택·활성 탭을 바꾸지 않는다.
+  - 핸들러는 요청을 대상 surface가 속한 창의 에이전트 히스토리 큐(`MainViewState::webview_agent_nav`, `WebViewHistoryStep`)에 넣고, WebView 동기화가 다음 redraw에서 꺼내 backend의 `go_back`·`go_forward`·`reload`를 부른다. 사용자 탐색 큐와 나뉜다.
+  - 이 이동은 호스트 출처 로드다. 실행 전에 `HtmlScriptState::on_host_load_requested`를 세우므로, 사용자가 보던 surface라도 다음 문서는 그 열람을 이어받지 않고 스크립트 배너는 사용자가 그 surface를 선택할 때까지 `pending_view`로 보류된다.
+  - 로드가 일어나는지는 사용자 탐색의 뒤로·앞으로·새로고침과 같은 기준(`WebViewHistoryStep::loads`)으로 정한다. 히스토리 처음의 뒤로, 끝의 앞으로, 문서 없는 새로고침은 로드가 없으므로 표지를 세우지 않는다. 같은 문서 fragment 히스토리 항목으로 가는지는 미리 알 수 없어 표지를 세운다(사용자 탐색과 같은 남은 한계). 그 이동은 load 신호 없이 끝나므로 호스트 표지가 남고, 다음에 commit되는 문서도 호스트 로드로 처리한다.
+  - 응답은 대상 확인을 통과하면 항상 `{surface_id, queued: true}`다. 갈 곳이 없는 이동(히스토리 처음의 뒤로, 끝의 앞으로, 문서 없는 새로고침)도 오류가 아니라 성공이며, 적용할 때 backend 값으로 판정해 표지 없이 버리므로 아무 일도 일어나지 않는다. 결과는 `surface.html_nav`로 확인한다. 적용할 때 그 창에 WebView가 아직 없으면(만들기 전이거나 만들기에 실패한 surface) 경고 로그만 남기고 버린다.
+  - 같은 redraw에서는 사용자 탐색 큐를 먼저, 에이전트 히스토리 큐를 다음에 처리한다.
+  - 창이 없는 parked 세션의 surface도 대상 확인을 통과해 `queued: true`로 답하고, 요청은 그 세션의 큐에 쌓인다. 창이 복원되면 첫 redraw가 WebView를 새로 만들고 초기 로드를 시작한 뒤 큐를 적용한다. 새 WebView는 히스토리가 없고 아직 commit한 문서도 없어 뒤로·앞으로·새로고침 모두 갈 곳 없는 이동으로 버려진다(코드 순서와 공통 주소 선택 규칙에 따른 서술이며 실제 실행으로 재지 않았다).
+  - 핸들러가 관측 사본(`surface.html_nav`가 읽는 값)으로 미리 판정하지 않는 이유: 사본은 redraw 때만 갱신된다. Linux 실제 실행에서 뒤로 간 뒤 3초 동안 다른 요청 없이 기다렸다가 앞으로를 요청하면, 사본의 `can_go_forward`가 아직 `false`라 4회 중 2회 갈 수 있는 이동을 거절했다. 그래서 판정은 적용 시점의 backend 값으로만 한다.
+  - html이 아닌 surface와 없는 surface는 `surface.html_nav`와 같이 invalid params로 거절한다. mirror workspace의 html leaf는 콘텐츠 mirror가 없어 client에서 빈 surface이므로 같은 이유로 거절하고 원격 호스트로 전달하지 않는다([원격 attach의 kind별 지원](../../features/remote-attach/index.md#surface-단위-vs-workspace-단위)). 헤드리스 빌드는 `-32017`로 답한다.
+  - 멱등 계약은 Mutate다. 앞 이동이 적용된 뒤(다른 redraw)에 같은 요청을 다시 보내면 두 단계 이동하거나 두 번 새로고침한다(Linux 측정: 약 0.1초 간격으로 보낸 뒤로 두 번은 다른 redraw에 적용되어 c에서 a까지 갔다, 3회).
+  - 같은 redraw에 들어간 요청들은 모두 이동 전 항목을 기준으로 판정하고 실행한다. 앞 이동의 commit 전이기 때문이다. Linux(WebKitGTK)에서 측정한 결과는 다음과 같다. 요청을 한 redraw에 모으려고 debug `gpu-stall`로 이벤트 루프를 멈춘 사이에 보냈고, 적용 로그의 두 줄 간격은 0.02~0.27ms였다.
+    - 뒤로 두 번: 두 번째도 갈 곳이 있다고 판정해 실행했지만 한 단계만 이동했다(c → b, 3회).
+    - 히스토리 끝에서 뒤로 다음 앞으로: 앞으로는 이동 전 값(`can_go_forward=false`)으로 판정되어 버려지고 뒤로만 남았다(c → b, 4회).
+    - 히스토리 처음에서 뒤로 다음 앞으로: 뒤로는 버려지고 앞으로만 실행됐다(a → b, 2회).
+    - 가운데에서 뒤로 다음 앞으로: 둘 다 실행했지만 결과는 이동 전 항목(b)에서 앞으로 한 단계였다(b → c, 3회).
+    - 즉 측정한 경우에는 마지막으로 실행된 이동 하나만 결과에 남았다. 응답은 모두 `queued: true`이므로 결과는 `surface.html_nav`로 확인한다. macOS·Windows는 측정하지 않았다.
 
 ## 스크립트 감지와 허용 규칙
 
@@ -191,7 +207,7 @@ OS별 구현은 다음과 같다.
 - 포커스된 surface가 바뀐 순간을 사용자 선택으로 본다. release의 에이전트 경로는 탭과 surface 선택을 바꾸지 않기 때문이다. 창을 처음 그리는 프레임의 포커스는 선택으로 세지 않는다. 그래서 세션 복원 문서는 기록만 한다.
 - 문서가 없거나 로드 중일 때 선택되면 다음에 commit되는 문서를 본 것으로 한다. 사용자가 연 파일은 새 탭이 선택된 뒤 첫 문서가 오기 때문이다.
 - 사용자가 그 surface에서 직접 시작한 로드(주소 입력·뒤로·앞으로·새로고침, [사용자 탐색](#내부-동작))의 문서는 본 것으로 한다. 그 surface를 보고 조작한 것이기 때문이다.
-- 사용자가 보던 문서에서 링크나 스크립트로 바뀐 문서는 본 상태를 이어받는다. 호스트가 URL을 넣은 로드(plugin·IPC·복원)는 이어받지 않는다. 그래서 에이전트가 사용자가 보던 surface에 넣은 문서도 다음 선택 때까지 기록만 한다.
+- 사용자가 보던 문서에서 링크나 스크립트로 바뀐 문서는 본 상태를 이어받는다. 호스트가 URL을 넣은 로드(plugin·IPC·복원)와 에이전트 히스토리 이동은 이어받지 않는다. 그래서 에이전트가 사용자가 보던 surface에 넣은 문서도 다음 선택 때까지 기록만 한다.
 - 한계: 에이전트가 포커스된 탭을 닫아 포커스가 다른 surface로 옮겨 가는 경우도 선택으로 센다.
 
 ## 인터페이스
@@ -200,6 +216,7 @@ OS별 구현은 다음과 같다.
 - **AI Agent**: `tasty html …` CLI / `html.*` IPC. surface 생성은 [work-area](../../features/work-area/index.md) (`--type html --url …`).
 - **AI Agent**: 스크립트 감지·허용·배너 상태 조회는 `tasty surface html-script --surface <id>`(IPC `surface.html_script`).
 - **AI Agent**: 보여 주는 문서 주소와 뒤로·앞으로 이동 가능 여부 조회는 `tasty surface html-nav --surface <id>`(IPC `surface.html_nav`).
+- **AI Agent**: 뒤로·앞으로·새로고침은 `tasty surface html-back`·`html-forward`·`html-reload --surface <id>`(IPC `surface.html_back`·`surface.html_forward`·`surface.html_reload`).
 
 ## 비-목표
 
@@ -231,6 +248,10 @@ OS별 구현은 다음과 같다.
 - Given 사용자가 보지 않은 html 탭(에이전트가 연 문서) When 사용자 탐색으로 스크립트가 있는 문서를 연다 Then commit 뒤 `banner.phase`는 `blocked`이고 `banner.pending_view`는 `false`다.
 - Given 히스토리 처음에 있는 html 탭 When 사용자 탐색으로 뒤로 간다 Then 로드가 일어나지 않고 배너 판정도 바뀌지 않는다.
 - Given 터미널이나 markdown surface When `surface.html_nav` Then invalid params로 거절한다.
+- Given 에이전트가 연 html surface에서 A 다음 B로 이동했다 When `tasty surface html-back --surface <id>` Then 응답의 `queued`는 `true`이고 다음 redraw 뒤 `surface.html_nav`의 `url`은 A, `can_go_forward`는 `true`이며 포커스된 surface와 활성 탭은 그대로다.
+- Given 사용자가 보던 html surface When 에이전트가 `html-back`·`html-forward`·`html-reload`로 스크립트가 있는 문서를 연다 Then commit 뒤 `banner.phase`는 `hidden`, `banner.pending_view`는 `true`이고 사용자가 그 surface를 선택할 때 `blocked`가 된다.
+- Given 히스토리 처음에 있는 html surface When `html-back` Then 응답은 성공(`queued: true`)이고 다음 redraw에서 로드가 일어나지 않으며 배너 판정도 바뀌지 않는다. `html-forward`(끝)·문서 없는 `html-reload`도 같다.
+- Given 터미널·markdown surface, 없는 surface 또는 mirror workspace의 html leaf When `surface.html_back`·`surface.html_forward`·`surface.html_reload` Then invalid params로 거절하고 큐에 넣지 않는다.
 - Given 플러그인 disable When `.svg` 파일을 열기 Then `svg` detector 는 남고 핸들러가 없어 선택 창이 뜨며, 헤더 형식 표시는 `svg` 다.
 - Given 로컬 workspace 의 pane When 탭 스트립 빈 곳 메뉴에서 **새 HTML...** 을 고른다 Then 그 pane 의 선택 탭 cwd 에서 파일 피커가 열리고 디렉터리와 `.html`·`.htm`·`.svg` 파일만 보인다.
 - Given 그 피커 When 파일을 확정한다 Then 메뉴를 연 pane 에 html 탭이 하나 생겨 활성화되고, `url` 파라미터는 고른 절대 경로이며 WebView 는 `file://` URI 로 띄운다.

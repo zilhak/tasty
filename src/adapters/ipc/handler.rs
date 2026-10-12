@@ -692,6 +692,30 @@ fn route_engine_handler(
         "surface.html_script" => surface::handle_html_script(&engine.as_ref(), id, &request.params),
         #[cfg(feature = "gui")]
         "surface.html_nav" => surface::handle_html_nav(&engine.as_ref(), id, &request.params),
+        #[cfg(feature = "gui")]
+        "surface.html_back" => surface::handle_html_history(
+            window,
+            &engine.as_ref(),
+            id,
+            &request.params,
+            crate::webview::WebViewHistoryStep::Back,
+        ),
+        #[cfg(feature = "gui")]
+        "surface.html_forward" => surface::handle_html_history(
+            window,
+            &engine.as_ref(),
+            id,
+            &request.params,
+            crate::webview::WebViewHistoryStep::Forward,
+        ),
+        #[cfg(feature = "gui")]
+        "surface.html_reload" => surface::handle_html_history(
+            window,
+            &engine.as_ref(),
+            id,
+            &request.params,
+            crate::webview::WebViewHistoryStep::Reload,
+        ),
         // WebView는 surface.set_context를 받지 않아 이 조회로 Theme를 읽는다.
         "theme.query" => theme::handle_query(&engine.read(), id),
         "tree" => handle_tree(window, &engine.read(), id),

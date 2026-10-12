@@ -17,7 +17,7 @@ use crate::model::{NavState, Surface};
 use crate::plugin_bridge::remote_surface::RemoteSurface;
 
 /// params의 surface_id로 html surface를 찾는다. 없거나 html이 아니면 invalid params로 답한다.
-fn find_html<'a>(
+pub(super) fn find_html<'a>(
     engine: &'a crate::runtime::engine_access::EngineRef<'_>,
     id: &Value,
     params: &Value,
@@ -118,4 +118,4 @@ fn state_json(st: &HtmlScriptState) -> Value {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
