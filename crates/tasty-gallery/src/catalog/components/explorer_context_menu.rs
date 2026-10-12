@@ -7,7 +7,9 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
-use crate::catalog::icons::{COPY, EDIT, FILE_PLUS, FOLDER_PLUS, MockGlyph, STAR, TRASH};
+use crate::catalog::icons::{
+    COPY, EDIT, FILE_PLUS, FOLDER_OPEN, FOLDER_PLUS, MockGlyph, STAR, TRASH,
+};
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
 use crate::i18n::t;
 
@@ -69,6 +71,16 @@ fn multi_menu() -> Vec<Mi> {
     ]
 }
 
+/// 하위 폴더 검색 결과 하나를 눌렀을 때. 들어 있는 폴더에서 보기가 Open 바로 뒤에 온다.
+fn search_result_menu() -> Vec<Mi> {
+    vec![
+        Mi::Item(None, t("button.open"), false),
+        Mi::Item(Some(FOLDER_OPEN), t("explorer.menu.show_in_folder"), false),
+        Mi::Sep,
+        Mi::Item(None, "Copy path", false),
+    ]
+}
+
 /// (caption, 항목 빌더) — 한 컨텍스트 메뉴 variant.
 type Variant = (&'static str, fn() -> Vec<Mi>);
 
@@ -91,16 +103,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Wrap, |ui| {
         ui.spacing_mut().item_spacing = egui::vec2(MENU_GAP.value(), theme.spacing_lg.value());
         for (caption, build) in variants {
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                ui.label(
-                    egui::RichText::new(caption.to_uppercase())
-                        .size(theme.font_size_micro.value())
-                        .color(egui::Color32::from(theme.text_muted())),
-                );
-                render_menu(ui, theme, menu_w, &build());
-            });
+            menu_column(ui, theme, menu_w, caption, &build());
         }
+    });
+    // 검색 결과 메뉴는 대상 넷과 따로 한 줄에 둔다. 같은 줄에 두면 좁은 창에서 줄이 넘친다.
+    stage(ui, theme, StageVariant::Wrap, |ui| {
+        menu_column(ui, theme, menu_w, "search result", &search_result_menu());
     });
     history::draw(ui, theme);
 
@@ -112,7 +120,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("item", "menu_item (28 control-height)"),
             ("separator", "menu_separator (1px)"),
             ("danger", "Delete = accent-danger label"),
-            ("targets", "empty · file · folder · multi"),
+            ("targets", "empty · file · folder · multi · search result"),
+            (
+                "show in folder",
+                "search results and links · opens the real parent · selects + current item · scrolls into view · no flash",
+            ),
             (
                 "stale step",
                 "disabled row · reason tooltip on Linux/macOS · reason label on Windows",
@@ -152,6 +164,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          from a folder row; the target is fixed when the command starts. Add-to-favorites shows only on a single folder or the background; Open in \
          system only on a folder.",
     );
+}
+
+/// caption 과 메뉴 한 장을 세로로 묶는다.
+fn menu_column(ui: &mut egui::Ui, theme: &Theme, menu_w: f32, caption: &str, items: &[Mi]) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        ui.label(
+            egui::RichText::new(caption.to_uppercase())
+                .size(theme.font_size_micro.value())
+                .color(egui::Color32::from(theme.text_muted())),
+        );
+        render_menu(ui, theme, menu_w, items);
+    });
 }
 
 pub(super) fn render_menu(ui: &mut egui::Ui, theme: &Theme, width: f32, items: &[Mi]) {
