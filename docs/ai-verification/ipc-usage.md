@@ -45,7 +45,7 @@ line = s.makefile('rb').readline()   # ✅ 줄 단위
 
 ## 함정 3 — 언어 전환은 재시작 뒤 화면에 반영된다
 
-`tasty debug settings apply --json '{"general":{"language":"ko"}}'`는 설정 창에서 언어를 고른 뒤 저장하는 것과 같은 설정 변경 경로를 쓴다. 응답의 `applied: true`는 설정을 적용하고 `config.toml`에 저장했다는 뜻이다. 실행 중인 GUI의 라벨은 바뀌지 않는다. 언어 표는 부팅 때 한 번 정하며, 설정 창도 같은 이유로 "재시작 후 적용" 안내를 보인다. 반면 그 뒤에 새로 실행한 CLI는 저장된 언어로 출력한다.
+`tasty debug settings apply --json '{"general":{"language":"ko"}}'`는 설정 창에서 언어를 고른 뒤 저장하는 것과 같은 설정 변경 경로를 쓴다. 응답의 `applied: true`는 변경을 큐에 넣었다는 뜻이며 적용·저장 완료를 보장하지 않는다([설정 변경 요청의 완료 의미](../architecture/data-flows.md#에이전트plugin-설정-변경-요청의-완료-의미)). 적용되면 `config.toml`에 저장되지만 실행 중인 GUI의 라벨은 바뀌지 않는다. 언어 표는 부팅 때 한 번 정하며, 설정 창도 같은 이유로 "재시작 후 적용" 안내를 보인다. 반면 그 뒤에 새로 실행한 CLI는 저장된 언어로 출력한다.
 
 다른 언어의 화면을 검증하려면 다음 순서를 따른다.
 

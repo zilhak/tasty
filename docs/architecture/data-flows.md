@@ -137,6 +137,27 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
 새 터미널부터 반영: shell·shell_mode·scrollback (effective_shell_args — tasty 모드 --rcfile 주입은 플랫폼별).
 ```
 
+### 에이전트·plugin 설정 변경 요청의 완료 의미
+
+`settings.set_remote_transfer`, `settings.set_input_rule`·`remove_input_rule`·`initialize_input_rule`, `webhook.config`의 `allow_external`, debug 전용 `debug.settings.apply`는 핸들러 시점 설정의 전체 사본을 고쳐 `DomainIntent::UpdateSettings` 하나를 요청 큐에 넣고 그 자리에서 성공 응답을 만든다. 입력 규칙 3종은 응답이 `changed: true`일 때만 큐에 넣는다. `initialize_input_rule`이 이미 채운 호출자/앱에 대해 `changed: false`를 응답할 때는 성공 응답이지만 큐에 넣는 변경이 없다. 메모리 적용과 `config.toml` 저장은 이 큐를 처리할 때 일어난다. 응답을 보내는 시점은 진입 경로마다 다르다.
+
+| 진입 경로 | 순서 | 근거 |
+|---|---|---|
+| GUI 외부 IPC | 응답 → 큐 처리 | `App::ipc_step_routing`이 응답을 보낸 뒤 `dispatch_pending_intents`를 부른다 |
+| GUI plugin 호출 | 큐 처리 → 응답 | `App::dispatch_checked`가 `dispatch_pending_intents` 뒤에 응답을 돌려주고 plugin 결과로 회신한다 |
+| headless 외부 IPC | 큐 처리 → 응답 | `boot/headless_dispatch.rs`가 `drain_pending_intents_in_app` 뒤에 응답한다 |
+| headless plugin 호출 | 큐 처리 → 응답 | `boot/headless_plugins.rs`가 같은 drain 뒤에 plugin 결과를 회신한다 |
+
+큐 처리 안의 순서는 다음과 같다.
+
+- 검사: `AppServices::apply_live`가 `task_pipeline.validate()`를 실행한다. 실패하면 설정을 바꾸지 않는다. GUI는 `report_apply_error`가, headless는 `apply_one`이 `warn` 로그만 남긴다. `report_apply_error`는 surface 종류 철회 오류만 출처별로 토스트를 검토하므로 설정 검사·reset 오류는 토스트로 표시하지 않는다. 이 절의 요청은 모두 에이전트 출처(`from_agent_ipc`)다. 핸들러가 만든 성공 응답은 바뀌지 않는다. `debug.settings.apply`만 같은 검사를 핸들러에서 먼저 실행해 실패를 `-32602`로 응답한다.
+- GUI 적용: `cascade_settings_updated`가 설정 세대를 하나 올린 뒤 `apply_settings_after_structure`를 실행한다. task report 반영 → 창·parked engine 전체의 메모리 설정 교체 → `Settings::save` → 전역 Theme 설치와 창·터미널 색 갱신, plugin `theme.changed`·`language.changed` 발행 순서다. 저장 실패는 `error` 로그만 남기고 메모리 적용과 뒤 단계는 그대로 진행한다.
+- GUI category reset: 현재 설정에서 켜져 있던 `workspace_categories_enabled`를 끄는 변경은 모든 engine의 `ResetCategories`를 한 journal batch로 admission하고 그 자리에서 끝난다. 위 적용 단계는 batch commit 뒤 `finish_settings_results`에서 실행된다. reset이 실패하면 오류를 보고하고 설정은 적용하지 않는다.
+  완료가 도착했을 때 그 사이에 다른 `UpdateSettings`가 세대를 올렸다면 오래된 완료의 설정 사본은 버린다. 이미 commit된 reset 결과는 유지한다. 대기 중 들어온 최신 설정 의도가 이긴다는 이 동작은 `app::journal::commands::tests::stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent`가 고정한다.
+- headless 적용: `intent::headless::apply_settings`가 task report 반영 → engine 메모리 설정 교체 → `Settings::save` 순서로 실행한다. category reset journal 경로는 없다. 저장 실패는 `warn` 로그만 남긴다.
+
+따라서 `applied: true`(`settings.set_remote_transfer`·`debug.settings.apply`), `changed: true`, `allow_external` 응답은 핸들러가 요청을 검사해 설정 변경을 큐에 넣었다는 뜻이다. 어느 경로에서도 메모리 적용이나 `config.toml` 저장 완료를 보장하지 않는다. 응답 내용은 큐 처리 전에 핸들러가 정하므로, 큐 처리를 마친 뒤 응답하는 경로에서도 큐 처리의 검사 실패, category reset 실패, 저장 실패는 성공 응답의 필드에 반영되지 않는다. 검사 실패와 GUI의 reset 실패는 `warn` 로그로, 저장 실패는 `error`(GUI)·`warn`(headless) 로그로만 남는다. category reset이 걸린 GUI 변경은 응답 뒤 journal commit에서 적용된다. 적용 결과는 `settings.get_remote_transfer`·`settings.get_input_rules` 같은 조회로 확인한다.
+
 저장소 전반(state.db / config.toml / presets / themes)은 [storage](../design/systems/storage.md), 설정 창 IA 는 [features/settings](../features/settings/index.md).
 
 ## 관련
