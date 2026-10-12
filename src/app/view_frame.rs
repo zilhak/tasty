@@ -28,15 +28,7 @@ impl App {
             crate::view::ui::View::mark_dirty(view);
         }
         view.prepare_redraw(&session.read());
-        let pending = view.state.take_pending_intents();
-        for intent in pending {
-            match intent.body {
-                crate::intent::Intent::Engine(action) => {
-                    action.apply(&mut session.borrow_mut(), self.plugin_manager.as_ref())
-                }
-                _ => view.state.dispatch_intent(intent),
-            }
-        }
+        apply_frame_engine_actions(&mut view.state, session, self.plugin_manager.as_ref());
         // TerminalStore owns grid → tap → throttled OS resize. Input contexts see that cut.
         view.prepare_render_inputs(
             &session.read(),
@@ -44,14 +36,7 @@ impl App {
                 .as_ref()
                 .map(super::plugin_display::PluginDisplay::new),
         );
-        for intent in view.state.take_pending_intents() {
-            match intent.body {
-                crate::intent::Intent::Engine(action) => {
-                    action.apply(&mut session.borrow_mut(), self.plugin_manager.as_ref())
-                }
-                _ => view.state.dispatch_intent(intent),
-            }
-        }
+        apply_frame_engine_actions(&mut view.state, session, self.plugin_manager.as_ref());
         if let Some(manager) = self.plugin_manager.as_ref() {
             for update in super::view_mesh::relay_subscribed_mesh(
                 &mut session.borrow_mut(),
@@ -75,14 +60,7 @@ impl App {
                 .map(super::plugin_display::PluginDisplay::new),
         );
         // A banner decision from this frame must update its gate before native reload/sync.
-        for intent in view.state.take_pending_intents() {
-            match intent.body {
-                crate::intent::Intent::Engine(action) => {
-                    action.apply(&mut session.borrow_mut(), self.plugin_manager.as_ref())
-                }
-                _ => view.state.dispatch_intent(intent),
-            }
-        }
+        apply_frame_engine_actions(&mut view.state, session, self.plugin_manager.as_ref());
         view.finish_redraw(
             &session.read(),
             self.plugin_manager
@@ -120,6 +98,23 @@ impl App {
     }
 }
 
+/// 프레임 단계 사이에 View가 낸 요청 중 Engine 효과만 지금 적용한다. 다른 요청은 출처 봉투를 그대로 둔 채
+/// 같은 순서로 큐에 되돌려 다음 일반 dispatch가 처리한다. 호출 위치가 단계 순서를 정한다.
+fn apply_frame_engine_actions(
+    state: &mut crate::state::MainViewState,
+    session: &mut crate::runtime::engine_session::EngineSession,
+    plugins: Option<&crate::plugin::PluginManager>,
+) {
+    for intent in state.take_pending_intents() {
+        match intent.body {
+            crate::intent::Intent::Engine(action) => {
+                action.apply(&mut session.borrow_mut(), plugins)
+            }
+            _ => state.dispatch_intent(intent),
+        }
+    }
+}
+
 /// `announced` 뒤에 원본 리비전이 바뀌었으면 기준을 올리고 모든 윈도우에 `redraw` 를 부른다.
 fn redraw_other_windows<K: PartialEq + Copy, W>(
     current: K,
@@ -138,6 +133,64 @@ fn redraw_other_windows<K: PartialEq + Copy, W>(
 
 #[cfg(test)]
 mod tests {
+    /// Engine 효과만 그 자리에서 적용되고, 나머지 요청은 출처와 함께 원래 순서로 큐에 남는다.
+    #[test]
+    fn a_frame_drain_applies_engine_effects_and_requeues_the_rest_in_order() {
+        use crate::app::engine_action::{EngineAction, SettingsPatch};
+        use crate::core::state::attention::AttentionKind;
+        use crate::intent::Intent;
+
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let sid = session
+            .borrow_mut()
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
+        let target = crate::runtime::surface_binding::SurfaceBinding::capture(&session.read(), sid)
+            .expect("binding");
+        session
+            .borrow_mut()
+            .raise_attention(sid, AttentionKind::NeedsInput);
+        let patch = |mode: &str| Intent::PatchSettings(SettingsPatch::ExplorerMode(mode.into()));
+        state.dispatch_intent(patch("first").from_user_menu("first"));
+        state.dispatch_intent(
+            Intent::Engine(EngineAction::FocusObserved {
+                target,
+                window_focused: true,
+            })
+            .from_user_context_menu(),
+        );
+        state.dispatch_intent(patch("second").from_agent_ipc());
+
+        super::apply_frame_engine_actions(&mut state, &mut session, None);
+
+        assert_eq!(
+            session.borrow_mut().attention_kind(sid),
+            None,
+            "engine effect ran"
+        );
+        let rest: Vec<String> = state
+            .take_pending_intents()
+            .into_iter()
+            .map(|intent| format!("{:?} {:?}", intent.body, intent.origin))
+            .collect();
+        assert_eq!(
+            rest,
+            [
+                format!(
+                    "{:?} {:?}",
+                    patch("first"),
+                    patch("first").from_user_menu("first").origin
+                ),
+                format!(
+                    "{:?} {:?}",
+                    patch("second"),
+                    patch("second").from_agent_ipc().origin
+                ),
+            ]
+        );
+    }
+
     use crate::core::explorer_favorites::ExplorerFavorites;
     use crate::core::port_favorites::PortFavorites;
     use crate::core::shared_list::SharedList;

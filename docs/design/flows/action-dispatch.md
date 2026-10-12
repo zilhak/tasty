@@ -80,6 +80,8 @@ GUI의 `App::dispatch_pending_intents`는 창과 parked state의 큐를 처리�
 
 Domain 처리는 App 전체를 대여하므로 state별 처리 뒤로 분리한다. 큐를 `mem::take`로 꺼낸 뒤 순회하며, 처리 중 새로 등록한 Intent는 재진입을 피하기 위해 다음 프레임에 처리한다. journal admission·완료 오류는 원 요청의 engine 및 View binding을 확인해 표시한다. 그래서 사용자 메뉴에서 고른 mirror 차단 이동도 차단 toast를 띄운다.
 
+그리는 중인 창은 `App::redraw_main_window`(`src/app/view_frame.rs`)의 세 지점에서 그 창의 큐를 한 번 더 비운다. prepare_redraw 뒤, prepare_render_inputs 뒤, render_if_dirty 뒤(finish_redraw와 native webview 동기화 전)다. 세 지점 모두 같은 private 함수 `apply_frame_engine_actions`를 부른다. `Intent::Engine`만 그 자리에서 `EngineAction::apply`로 적용하고, 나머지 요청은 출처 봉투를 그대로 둔 채 원래 순서로 큐에 되돌려 위 일반 처리에 맡긴다. 이 지점은 `classify_intent`와 debug intent 관측을 거치지 않는다. 단계 순서는 호출 위치가 정한다.
+
 헤드리스는 `crate::intent::headless::drain_pending_intents`로 engine 하나의 큐를 다음 시점에 처리한다.
 
 - IPC 요청 처리 직후, 응답을 보내기 전
