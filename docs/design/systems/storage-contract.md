@@ -58,7 +58,7 @@
 
 ### 저장 실행기
 
-호출자가 저장 요청을 큐에 넘기고 바로 진행하며, 저장소를 소유한 전담 worker 한 개가 여러 요청을 묶어 실행하는 실행기다. 접수·수집·순서·결과·예산·재시도·종료 규칙은 저장소와 관계없는 공용 실행기(`tasty_utils::batch_writer`)가 정한다. 무엇을 어떻게 저장하는지는 저장소별 실행기가 정한다. memory.db 실행기는 `tasty_memory::writer`다. GUI·headless 부팅이 `AppServices`에 memory writer(`memory-writer` 스레드)를 만들고 메인 루프와 종료 단계에 연결한다. 호스트 소비자는 아직 이 실행기에 요청을 넣지 않는다.
+호출자가 저장 요청을 큐에 넘기고 바로 진행하며, 저장소를 소유한 전담 worker 한 개가 여러 요청을 묶어 실행하는 실행기다. 접수·수집·순서·결과·예산·재시도·종료 규칙은 저장소와 관계없는 공용 실행기(`tasty_utils::batch_writer`)가 정한다. 무엇을 어떻게 저장하는지는 저장소별 실행기가 정한다. memory.db 실행기는 `tasty_memory::writer`다. GUI·headless 부팅이 `AppServices`에 memory writer(`memory-writer` 스레드)를 만들고 메인 루프와 종료 단계에 연결한다. 호스트 소비자는 아직 이 실행기에 요청을 넣지 않는다. 이 구조를 택한 근거와 대안은 [ADR-0078](../../adr/0078-storage-requests-queue-to-a-dedicated-batching-writer.md)에 있다.
 
 #### 접수와 결과
 
