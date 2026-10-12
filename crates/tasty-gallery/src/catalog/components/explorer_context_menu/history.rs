@@ -186,10 +186,10 @@ mod tests {
             let items = rows(empty, false, false);
             assert_eq!(items.len(), 6);
             assert!(
-                matches!(&items[2], Mi::Row(_, "explorer_undo", enabled, _) if *enabled == !empty)
+                matches!(&items[2], Mi::Row(_, "explorer_undo", enabled, _) if *enabled != empty)
             );
             assert!(
-                matches!(&items[3], Mi::Row(_, "explorer_redo", enabled, _) if *enabled == !empty)
+                matches!(&items[3], Mi::Row(_, "explorer_redo", enabled, _) if *enabled != empty)
             );
         }
         for windows in [false, true] {
