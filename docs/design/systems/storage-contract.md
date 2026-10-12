@@ -39,8 +39,22 @@
 | `purge_expired` | 영역별 삭제 수 | Db | `purge_scope`와 같은 구조다 | `expires_at <= now`인 행 |
 | `prune_prefix_keep_recent`·`prune_prefix_older_than` | 삭제 수 | Db | 한 문장 자동 commit | owner·scope를 보지 않고 변경 이벤트를 만들지 않는다 |
 | `take_pending_changes` | 쌓인 변경 | 없음 | 해당 없음 | 버퍼는 commit 성공 뒤에만 쌓인다 |
+| `write_batch` | 요청 순서의 요청별 결과(새 version 또는 삭제) | 원자 묶음의 거절, 저장 실패, commit 실패는 묶음 전체의 `BatchFailure` | 한 transaction이다. 아래 "실행 단위와 쓰기 묶음" 절 | 요청마다 단독 연산과 같은 판정을 앞 요청의 반영 위에서 한다 |
+| `run_unit` | 본문의 결과 | 본문의 오류, 저장 실패, commit 실패 | 한 transaction이다. 거절된 쓰기만 되돌리고 앞선 쓰기는 commit한다 | 본문 안의 각 연산이 단독 연산과 같은 판정을 받는다 |
 
 `vacuum_if_fragmented`와 `checkpoint_truncate`는 trait 밖의 `MemoryStore` 메서드이며 부팅 정비에서만 호출한다.
+
+### 실행 단위와 쓰기 묶음
+
+여러 쓰기를 SQLite transaction 하나로 확정하는 엔진 API다(`crates/tasty-memory/src/batch.rs`). 현재 호스트 소비자는 없고 모든 소비자는 위의 단독 연산을 쓴다.
+
+- 실행 단위(`run_unit`, 값을 돌려받는 `with_unit`): 본문을 transaction 하나에서 실행하고 끝난 뒤 한 번 commit한다. 직렬화·commit의 단위이며 rollback의 단위가 아니다. 본문 안의 각 쓰기는 savepoint로 감싸 거절된 쓰기만 되돌린다. 본문이 오류를 돌려줘도 그전까지 반영된 쓰기는 commit되므로, 여러 번 쓰는 복합 연산(blackboard 삭제, `import_regular` 등)의 부분 반영 의미가 단독 실행과 같다. 본문 안의 읽기는 앞선 쓰기를 본다. 이미 열린 단위 안에서 다시 부르면 그 단위에 합류한다.
+- 쓰기 묶음(`write_batch`): put·delete·secret put·secret delete 요청 목록을 transaction 하나로 실행한다. 원자 묶음(`Atomic`)은 요청 하나라도 거절되면 전체를 되돌리고 거절된 요청의 위치를 알린다. 독립 요청 묶음(`Independent`)은 요청마다 판정해 거절된 요청만 오류 결과를 받는다. 열린 단위 안의 원자 묶음은 묶음만 되돌린다.
+- 판정 순서: 요청은 목록 순서대로 앞 요청의 반영을 본 상태에서 판정한다. version 증가, CAS, delete 뒤 재생성(version 1, 새 owner), owner, regular 전체 quota, secret owner별 quota, 정리되지 않은 만료 행을 포함하는 put의 기존 행 조회가 단독 연산과 같다. 같은 단위 안의 `purge_expired`·`purge_scope`·`prune_*`도 단위의 transaction에 들어가 뒤 요청이 정리 결과를 본다. 단위 밖의 이 정리 연산은 위 표처럼 자동 commit이다.
+- 저장 실패: 단위 안의 쓰기·읽기(`get`·`list`·`count`·`scopes`·`stats`·`query`·`export_regular`·secret 조회)에서 `MemoryError::Db`가 나면 단위 전체를 되돌린다. SQLite가 아닌 행 변환 오류도 같다. SQLite는 일부 오류에서 transaction을 스스로 되돌리므로 같은 단위의 이후 쓰기는 실행하지 않고 같은 분류의 저장 실패를 돌려준다. 단위가 열려 있는데 연결이 autocommit 상태가 된 것(SQLite가 transaction을 끝냄)도 저장 실패로 보고 이후 쓰기와 commit을 실행하지 않는다. 본문이 이 오류를 무시해도 단위의 결과는 저장 실패다. 단위 밖 단독 호출의 실패는 그 호출만의 결과다. 묶음에서는 독립 요청 묶음이라도 묶음 전체의 `BatchFailure`이며 index가 원인 요청을 가리킨다. transaction 시작·commit 실패의 index는 없다. commit이 실패하면 열린 transaction을 되돌리고 확정하지 않는다.
+- bookkeeping 공개: regular quota 카운터와 변경 버퍼(`memory.changed` 원본)는 단위가 쌓아 두었다가 commit이 성공한 뒤에만 저장소에 반영한다. 되돌린 요청·묶음·단위는 아무것도 남기지 않는다. 본문이 panic하면 단위를 되돌리고 panic을 다시 전파한다.
+- commit 계측: `DbLatencyStats.commits`는 물리 commit 수다. 단위·묶음 하나는 쓰기가 하나 이상 확정됐을 때 commit 1회로 센다. 요청 수는 세지 않는다. 쓰기가 없는 단위와 되돌린 단위는 세지 않는다. 단위 안의 정리 연산은 그 단위의 commit에 포함되어 세어진다.
+- 시험용 저장소(`InMemoryStorage`): regular put·delete가 CAS·owner·NotFound를 운영 저장소와 같이 판정하고, 쓰기 묶음은 원자 묶음의 되돌림과 독립 묶음의 요청별 판정을, 실행 단위는 부분 반영을 따른다. quota·TTL·secret·저장 실패·commit은 흉내 내지 않는다. 대조 시험이 같은 요청 순서의 결과를 운영 저장소와 비교한다.
 
 ### 소비자 분류
 
@@ -70,7 +84,7 @@
 
 | DB | 소유자 | 쓰는 스레드 | PRAGMA | transaction | GUI 초기화 | headless 초기화 | 종료 |
 |---|---|---|---|---|---|---|---|
-| `memory.db` | `AppServices`의 공유 `Arc<Mutex<dyn MemoryStorage>>` | 메인 루프, observer sink, runner, `approval.await`, 결과·보고 스레드 | WAL·NORMAL, 되읽어 degraded 표시 | put·delete·secret은 명시 transaction, purge·prune·VACUUM은 자동 commit | `run_gui`가 열고 부팅 정비 후 `App::new`에 주입. 실패 시 in-memory 대체 | `boot_memory`가 같은 절차로 연다 | 명시 close·checkpoint 없음. 마지막 `Arc`가 drop될 때 연결이 닫힌다 |
+| `memory.db` | `AppServices`의 공유 `Arc<Mutex<dyn MemoryStorage>>` | 메인 루프, observer sink, runner, `approval.await`, 결과·보고 스레드 | WAL·NORMAL, 되읽어 degraded 표시 | put·delete·secret은 명시 transaction, purge·prune·VACUUM은 자동 commit. 실행 단위·쓰기 묶음은 transaction 하나(현재 소비자 없음) | `run_gui`가 열고 부팅 정비 후 `App::new`에 주입. 실패 시 in-memory 대체 | `boot_memory`가 같은 절차로 연다 | 명시 close·checkpoint 없음. 마지막 `Arc`가 drop될 때 연결이 닫힌다 |
 | `state.db` | 전역 `OnceLock<Mutex<Db>>`, `with_state_db`로 접근 | 메인 루프(최근 파일), `tutorial-progress` worker | WAL·NORMAL | 튜토리얼 저장과 스키마 생성은 transaction. `RecentFiles::add`의 같은 키 정리·upsert·개수 정리는 각각 자동 commit | GUI 부팅의 `init_boot_db_and_theme`과 새 창 생성 | 열지 않는다. 최근 목록 쓰기를 건너뛴다 | static이라 프로세스 끝까지 닫지 않는다. 튜토리얼 worker는 종료 단계에서 stop·join한다 |
 | `structure/journal.db` | `JournalWorker`(App의 첫 필드) | 전용 `structure-journal` 스레드 | WAL·FULL이 아니면 열지 않는다([ADR-0063](../../adr/0063-event-store-storage-fencing-and-effect-states.md)) | 모든 쓰기가 즉시 잠금 transaction, writer 잠금과 세대 검사 | 부팅 첫머리에 writer 잠금을 선점하고 `App::new`에서 worker를 만든다 | 선점 없이 `App::new_headless`에서 만든다 | stop 후 Drop에서 join하며 worker가 마지막 checkpoint를 쓴다 |
 

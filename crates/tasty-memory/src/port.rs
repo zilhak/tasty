@@ -1,8 +1,8 @@
 //! 호스트가 MemoryStore 또는 시험용 InMemoryStorage를 사용하는 공통 인터페이스.
 
 use crate::{
-    ImportStats, ListOpts, MemoryChange, MemoryConfig, MemoryEntry, MemoryStats, MemoryValue,
-    PurgeStats, PutOpts, Result, Scope,
+    BatchMode, BatchResult, ImportStats, ListOpts, MemoryChange, MemoryConfig, MemoryEntry,
+    MemoryStats, MemoryValue, PurgeStats, PutOpts, Result, Scope, WriteOp,
 };
 
 /// 공유 저장소 락의 poison 보고 이름. 모든 소비자가 같은 이름과 보고 플래그를 써
@@ -73,6 +73,16 @@ pub trait MemoryStorage: Send {
     fn count_secret(&self, owner: &str, scope: &Scope, prefix: Option<&str>) -> Result<u64>;
     fn scopes_secret(&self, owner: &str) -> Result<Vec<String>>;
     fn stats_secret(&self, owner: &str, scope: Option<&Scope>) -> Result<MemoryStats>;
+
+    // ─── 실행 단위·쓰기 묶음 ───
+    /// 쓰기 묶음을 transaction 하나로 확정한다. 판정 규칙은 `MemoryStore::write_batch`.
+    fn write_batch(&mut self, mode: BatchMode, ops: &[WriteOp]) -> BatchResult;
+    /// 본문을 실행 단위 하나(직렬화·commit 단위)로 실행한다. 규칙은 `MemoryStore::run_unit`.
+    /// 값을 돌려받으려면 `with_unit`을 쓴다.
+    fn run_unit(
+        &mut self,
+        body: &mut dyn FnMut(&mut dyn MemoryStorage) -> Result<()>,
+    ) -> Result<()>;
 
     // ─── Maintenance ───
     /// 로그 키의 최근 keep_recent개만 남긴다. 부팅과 실행 중 정리가 같은 구현을 사용한다.

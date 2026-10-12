@@ -1,11 +1,14 @@
 //! SQLite 대신 사용하는 맵 기반 시험 저장소. 구현하지 않은 메서드는 패닉한다.
+//! regular put·delete와 쓰기 묶음은 운영 저장소의 CAS·owner·원자 묶음 규칙을 따르고
+//! quota·TTL·secret·저장 실패는 흉내 내지 않는다. 대조 시험은 `batch` 모듈의 시험에 있다.
 
 use std::collections::{BTreeMap, HashMap};
 
 use crate::port::MemoryStorage;
 use crate::{
-    ImportStats, ListOpts, MemoryChange, MemoryConfig, MemoryEntry, MemoryStats, MemoryValue,
-    PurgeStats, PutOpts, Result, Scope,
+    BatchFailure, BatchMode, BatchResult, ImportStats, ListOpts, MemoryChange, MemoryConfig,
+    MemoryEntry, MemoryError, MemoryStats, MemoryValue, PurgeStats, PutOpts, Result, Scope,
+    WriteOp, WriteOutput, owner_can_modify,
 };
 
 #[derive(Debug)]
@@ -62,32 +65,56 @@ impl MemoryStorage for InMemoryStorage {
         &self.config
     }
 
+    /// 운영 저장소와 같은 CAS·owner 판정을 한다. quota·TTL·값 크기는 판정하지 않는다.
     fn put(
         &mut self,
         owner: &str,
         scope: &Scope,
         key: &str,
         value: &MemoryValue,
-        _opts: &PutOpts,
+        opts: &PutOpts,
     ) -> Result<u64> {
         let token = scope.as_token();
-        let entry = self
-            .regular
-            .entry((token.clone(), key.to_string()))
-            .or_insert_with(|| MemoryEntry {
-                scope: token,
-                key: key.to_string(),
-                value: value.clone(),
-                created_at: 0,
-                updated_at: 0,
-                expires_at: None,
-                version: 0,
-                owner: Some(owner.to_string()),
-            });
-        entry.value = value.clone();
-        entry.owner = Some(owner.to_string());
-        entry.version += 1;
-        Ok(entry.version)
+        let slot = (token.clone(), key.to_string());
+        match (self.regular.get_mut(&slot), opts.cas) {
+            (None, Some(expected)) => Err(MemoryError::CasConflict {
+                expected,
+                actual: 0,
+            }),
+            (Some(entry), Some(expected)) if entry.version != expected => {
+                Err(MemoryError::CasConflict {
+                    expected,
+                    actual: entry.version,
+                })
+            }
+            (Some(entry), _) => {
+                let existing_owner = entry.owner.clone().unwrap_or_default();
+                if !owner_can_modify(owner, &existing_owner) {
+                    return Err(MemoryError::OwnedByOther {
+                        owner: existing_owner,
+                    });
+                }
+                entry.value = value.clone();
+                entry.version += 1;
+                Ok(entry.version)
+            }
+            (None, None) => {
+                self.regular.insert(
+                    slot,
+                    MemoryEntry {
+                        scope: token,
+                        key: key.to_string(),
+                        value: value.clone(),
+                        created_at: 0,
+                        updated_at: 0,
+                        expires_at: None,
+                        version: 1,
+                        owner: Some(owner.to_string()),
+                    },
+                );
+                Ok(1)
+            }
+        }
     }
 
     fn get(&self, scope: &Scope, key: &str) -> Result<Option<MemoryEntry>> {
@@ -103,8 +130,30 @@ impl MemoryStorage for InMemoryStorage {
             .contains_key(&(scope.as_token(), key.to_string())))
     }
 
-    fn delete(&mut self, _owner: &str, scope: &Scope, key: &str, _cas: Option<u64>) -> Result<()> {
-        self.regular.remove(&(scope.as_token(), key.to_string()));
+    /// 운영 저장소와 같은 NotFound·CAS·owner 판정을 한다.
+    fn delete(&mut self, owner: &str, scope: &Scope, key: &str, cas: Option<u64>) -> Result<()> {
+        let slot = (scope.as_token(), key.to_string());
+        let Some(entry) = self.regular.get(&slot) else {
+            return Err(MemoryError::NotFound {
+                scope: slot.0,
+                key: slot.1,
+            });
+        };
+        if let Some(expected) = cas
+            && entry.version != expected
+        {
+            return Err(MemoryError::CasConflict {
+                expected,
+                actual: entry.version,
+            });
+        }
+        let existing_owner = entry.owner.clone().unwrap_or_default();
+        if !owner_can_modify(owner, &existing_owner) {
+            return Err(MemoryError::OwnedByOther {
+                owner: existing_owner,
+            });
+        }
+        self.regular.remove(&slot);
         Ok(())
     }
 
@@ -214,6 +263,72 @@ impl MemoryStorage for InMemoryStorage {
 
     fn stats_secret(&self, _owner: &str, _scope: Option<&Scope>) -> Result<MemoryStats> {
         unimplemented!("InMemoryStorage::stats_secret — fill in when first test needs it")
+    }
+
+    /// 원자 묶음은 상태를 복사해 두었다가 거절되면 되돌린다. 저장 실패는 흉내 내지 않는다.
+    fn write_batch(&mut self, mode: BatchMode, ops: &[WriteOp]) -> BatchResult {
+        let saved =
+            (mode == BatchMode::Atomic).then(|| (self.regular.clone(), self.secret.clone()));
+        let mut outs = Vec::with_capacity(ops.len());
+        for (i, op) in ops.iter().enumerate() {
+            let out = match op {
+                WriteOp::Put {
+                    owner,
+                    scope,
+                    key,
+                    value,
+                    opts,
+                } => self
+                    .put(owner, scope, key, value, opts)
+                    .map(WriteOutput::Version),
+                WriteOp::Delete {
+                    owner,
+                    scope,
+                    key,
+                    cas,
+                } => self
+                    .delete(owner, scope, key, *cas)
+                    .map(|()| WriteOutput::Deleted),
+                WriteOp::PutSecret {
+                    owner,
+                    scope,
+                    key,
+                    value,
+                    opts,
+                } => self
+                    .put_secret(owner, scope, key, value, opts)
+                    .map(WriteOutput::Version),
+                WriteOp::DeleteSecret {
+                    owner,
+                    scope,
+                    key,
+                    cas,
+                } => self
+                    .delete_secret(owner, scope, key, *cas)
+                    .map(|()| WriteOutput::Deleted),
+            };
+            match (out, &saved) {
+                (Err(error), Some((regular, secret))) => {
+                    self.regular = regular.clone();
+                    self.secret = secret.clone();
+                    return Err(BatchFailure {
+                        index: Some(i),
+                        error,
+                    });
+                }
+                (out, _) => outs.push(out),
+            }
+        }
+        Ok(outs)
+    }
+
+    /// transaction이 없으므로 본문을 그대로 실행한다. 쓰기마다 바로 반영되어 운영 저장소의
+    /// 부분 반영 규칙과 같다. commit 실패는 흉내 내지 않는다.
+    fn run_unit(
+        &mut self,
+        body: &mut dyn FnMut(&mut dyn MemoryStorage) -> Result<()>,
+    ) -> Result<()> {
+        body(self)
     }
 
     fn prune_prefix_keep_recent(&mut self, prefix: &str, keep_recent: u64) -> Result<u64> {

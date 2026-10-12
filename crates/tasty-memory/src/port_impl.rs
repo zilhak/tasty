@@ -2,8 +2,8 @@
 
 use crate::port::MemoryStorage;
 use crate::{
-    ImportStats, ListOpts, MemoryChange, MemoryConfig, MemoryEntry, MemoryStats, MemoryStore,
-    MemoryValue, PurgeStats, PutOpts, Result, Scope,
+    BatchMode, BatchResult, ImportStats, ListOpts, MemoryChange, MemoryConfig, MemoryEntry,
+    MemoryStats, MemoryStore, MemoryValue, PurgeStats, PutOpts, Result, Scope, WriteOp,
 };
 
 impl MemoryStorage for MemoryStore {
@@ -118,6 +118,18 @@ impl MemoryStorage for MemoryStore {
 
     fn stats_secret(&self, owner: &str, scope: Option<&Scope>) -> Result<MemoryStats> {
         MemoryStore::stats_secret(self, owner, scope)
+    }
+
+    // ─── 실행 단위·쓰기 묶음 ───
+    fn write_batch(&mut self, mode: BatchMode, ops: &[WriteOp]) -> BatchResult {
+        MemoryStore::write_batch(self, mode, ops)
+    }
+
+    fn run_unit(
+        &mut self,
+        body: &mut dyn FnMut(&mut dyn MemoryStorage) -> Result<()>,
+    ) -> Result<()> {
+        MemoryStore::run_unit(self, |s| body(s))
     }
 
     // ─── Maintenance ───

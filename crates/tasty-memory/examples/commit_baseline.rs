@@ -1,7 +1,7 @@
 //! 파일 memory.db의 commit 수와 호출 대기를 재는 기준선 harness.
 //!
 //! 호스트처럼 `Arc<Mutex<MemoryStore>>`를 공유하고 같은 payload로 단일 요청, 100개 burst,
-//! 연속 유입, 느린 저장 대조군을 실행한다. 결과는 시나리오마다 JSON 한 줄로 출력 파일에 쓴다.
+//! 연속 유입, 느린 저장 대조군, 100건을 transaction 하나로 묶는 batch·실행 단위를 실행한다. 결과는 시나리오마다 JSON 한 줄로 출력 파일에 쓴다.
 //! 실행법과 결과 해석은 docs/design/systems/storage.md의 "저장 기준선" 절에 있다.
 //!
 //! 사용: `cargo run --release -p tasty-memory --example commit_baseline -- <빈 디렉터리> <결과.jsonl>`
@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tasty_memory::{
-    MemoryConfig, MemoryStorage, MemoryStore, MemoryValue, PutOpts, STORE_LOCK_POISONED,
-    STORE_LOCK_WHAT, Scope,
+    BatchMode, MemoryConfig, MemoryStorage, MemoryStore, MemoryValue, PutOpts, STORE_LOCK_POISONED,
+    STORE_LOCK_WHAT, Scope, WriteOp,
 };
 
 /// 미리 채우는 키 수. 빈 DB보다 실제 사용 상태에 가깝게 B-tree 깊이를 만든다.
@@ -34,6 +34,8 @@ const INFLOW_FOR: Duration = Duration::from_secs(3);
 const TICK: Duration = Duration::from_millis(1);
 /// 느린 저장 대조군에서 쓰기마다 더하는 지연. 디스크 지연을 흉내 내는 주입값이다.
 const SLOW_WRITE: Duration = Duration::from_millis(5);
+/// batch·실행 단위 시나리오의 반복 횟수. 회차마다 BURST건을 transaction 하나로 쓴다.
+const BATCH_ROUNDS: usize = 20;
 
 fn payload() -> MemoryValue {
     // 직렬화하면 236바이트인 JSON. 모든 시나리오가 같은 값을 쓴다.
@@ -58,6 +60,40 @@ fn lock<T: ?Sized>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 trait Put: Send {
     fn put_one(&mut self, key: &str) -> u64;
     fn get_one(&self, key: &str);
+}
+
+/// 여러 쓰기를 transaction 하나로 보내는 방식.
+#[derive(Clone, Copy)]
+enum Grouping {
+    Batch(BatchMode),
+    Unit,
+}
+
+fn put_many(store: &mut MemoryStore, keys: &[String], grouping: Grouping) {
+    match grouping {
+        Grouping::Batch(mode) => {
+            let ops: Vec<WriteOp> = keys
+                .iter()
+                .map(|key| WriteOp::Put {
+                    owner: "_host".into(),
+                    scope: Scope::Global,
+                    key: key.clone(),
+                    value: payload(),
+                    opts: PutOpts::default(),
+                })
+                .collect();
+            let results = store.write_batch(mode, &ops).expect("write_batch");
+            assert!(results.iter().all(|r| r.is_ok()), "batch request rejected");
+        }
+        Grouping::Unit => store
+            .run_unit(|s| {
+                for key in keys {
+                    s.put_one(key);
+                }
+                Ok(())
+            })
+            .expect("run_unit"),
+    }
 }
 
 impl Put for MemoryStore {
@@ -246,6 +282,26 @@ fn inflow(store: &Arc<Mutex<dyn Put>>) -> Value {
     })
 }
 
+/// BURST건을 transaction 하나로 쓰는 회차를 BATCH_ROUNDS번 반복한다. 회차마다 잠금 한 번이다.
+fn grouped(store: &mut MemoryStore, tag: &str, grouping: Grouping) -> Value {
+    let mut lat = Dist::default();
+    let wall = Instant::now();
+    for round in 0..BATCH_ROUNDS {
+        let keys: Vec<String> = (0..BURST)
+            .map(|i| format!("{tag}.{round:03}.{i:06}"))
+            .collect();
+        let t = Instant::now();
+        put_many(store, &keys, grouping);
+        lat.push(t.elapsed());
+    }
+    json!({
+        "rounds": BATCH_ROUNDS,
+        "writes_per_round": BURST,
+        "wall_us": u64::try_from(wall.elapsed().as_micros()).unwrap_or(u64::MAX),
+        "round_latency": lat.json(),
+    })
+}
+
 /// 기존 commit 계측이 세지 않는 정리 경로를 실행하고 계측값 변화를 본다.
 fn uncounted_paths(store: &mut MemoryStore) -> Value {
     let lat = store.db_latency();
@@ -376,6 +432,23 @@ fn main() {
 
     // dyn Put에서 MemoryStore를 되찾을 수 없으므로 같은 파일을 다시 연다.
     let mut store = open(&dir, "fast.db");
+    let store_lat = store.db_latency();
+    for (name, grouping) in [
+        (
+            "batch100_independent",
+            Grouping::Batch(BatchMode::Independent),
+        ),
+        ("batch100_atomic", Grouping::Batch(BatchMode::Atomic)),
+        ("unit100", Grouping::Unit),
+    ] {
+        let c0 = store_lat.snapshot();
+        let mut v = grouped(&mut store, name, grouping);
+        let c1 = store_lat.snapshot();
+        v["scenario"] = json!(name);
+        v["commits"] = json!(c1.commits - c0.commits);
+        v["commit_us_sum"] = json!(c1.commit_us_sum - c0.commit_us_sum);
+        out.line(&v);
+    }
     let mut v = uncounted_paths(&mut store);
     v["scenario"] = json!("uncounted_paths");
     out.line(&v);
@@ -385,7 +458,7 @@ fn main() {
     drop(store);
     out.line(&json!({
         "scenario": "close_reopened",
-        "connection": "fast.db reopened for uncounted_paths only",
+        "connection": "fast.db reopened for batch, unit and uncounted_paths",
         "wal_bytes_before": wal_bytes,
         "drop_us": u64::try_from(t.elapsed().as_micros()).unwrap_or(u64::MAX),
     }));

@@ -213,7 +213,8 @@ target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
 | `slow_burst100_concurrent`·`slow_inflow` | put마다 잠금을 쥔 채 5ms를 더한 느린 저장 대조군 |
 | `uncounted_paths` | TTL 정리·prune·scope 정리를 실행하고 commit 계측이 늘었는지 본다 |
 | `close` | 앞 시나리오의 쓰기를 모두 받은 `fast.db` 연결을 drop하는 시간. 파일의 마지막 연결이라 WAL checkpoint가 포함된다 |
-| `close_reopened` | 같은 파일을 다시 열어 `uncounted_paths`만 실행한 연결을 drop하는 시간 |
+| `batch100_independent`·`batch100_atomic`·`unit100` | 같은 파일을 다시 열어 100건을 `write_batch`(독립·원자) 또는 `run_unit` 하나로 쓰는 회차를 20번 반복한다 |
+| `close_reopened` | 같은 파일을 다시 열어 batch·실행 단위와 `uncounted_paths`를 실행한 연결을 drop하는 시간 |
 
 2026-10-12 Linux(ext4, NVMe, 다른 빌드가 함께 도는 공유 컴퓨터)에서 3회 실행한 값이다. close 행은 같은 날 별도로 3회 실행한 값이다. 되읽은 설정은 WAL·NORMAL·foreign_keys ON·journal_size_limit 4096000이고 degraded가 아니었다. payload는 236바이트 JSON, owner는 `_host`, scope는 global이다.
 
@@ -230,6 +231,18 @@ target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
 - 모든 시나리오에서 요청 하나가 commit 하나다. 느린 저장 대조군은 저장 지연이 같은 잠금을 쓰는 다른 호출자에게 그대로 전해짐을 보인다.
 - strace로 1회 센 결과 전체 실행의 commit 약 3,800회에 `fsync`는 68회였다(`fdatasync` 0회). WAL·NORMAL은 commit마다 fsync하지 않으므로 commit 수와 fsync 수를 따로 센다.
 - 지연의 절댓값은 컴퓨터 부하에 따라 크게 달라진다. 다른 측정과 비교할 때는 같은 컴퓨터에서 같은 시점에 번갈아 실행한 값을 쓴다.
+
+실행 단위·쓰기 묶음을 도입한 뒤 같은 날 같은 컴퓨터에서 도입 전 harness와 도입 후 harness를 3회씩 번갈아 실행했다. 단건 시나리오는 같은 코드 경로의 전후 비교이고, batch 시나리오는 도입 후에만 있다.
+
+| 시나리오 | 도입 전 | 도입 후 |
+|---|---|---|
+| single 200: commit 수, p50, p95 | 200, 141~159µs, 180~257µs | 200, 137~147µs, 170~173µs |
+| burst100 연속: commit 수, 전체 | 100, 6.4~23.1ms | 100, 4.3~378.8ms(최댓값 회차는 commit 시간 합이 377ms) |
+| 100건 묶음 20회: commit 수, 회차 p50 | - | 독립 20, 0.74~1.38ms · 원자 20, 1.35~1.40ms · 실행 단위 20, 0.67~1.42ms |
+
+- 100건을 묶으면 commit이 100회에서 1회가 된다. 도입 후 3회에서 묶음 회차의 p50(0.67~1.42ms)은 단건 100회 연속 전체의 최솟값(4.3ms)보다 짧았다. 회차의 최댓값(4.6~17.9ms)은 그렇지 않았다. 단건 연속 전체가 4.3ms였던 회에서 독립·원자·실행 단위 회차의 최댓값은 각각 5.1·16.4·6.4ms였다.
+- burst100 연속의 큰 편차는 commit 자체의 시간이다(commit 시간 합이 전체와 거의 같다). WAL이 자동 checkpoint 크기에 닿는 회차와 공유 컴퓨터의 부하가 겹친 것으로 보이나 원인은 확인하지 않았다.
+- 실행 순서를 바꾼 추가 2회에서 같은 방식의 회차 p50이 0.69~1.37ms로 겹쳐, 독립·원자 묶음과 실행 단위 사이의 차이는 이 측정으로 구분되지 않는다.
 
 ### 앱 수준 측정
 
@@ -252,6 +265,7 @@ target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
 
 - `system.pressure.db`와 `DbLatencyStats`는 memory.db만 센다. state.db와 journal.db의 commit은 이 값에 없다.
 - commit 계측은 `put`·`delete`·`put_secret`·`delete_secret`의 명시 transaction만 센다. `import_regular`는 항목마다 `put`을 거치므로 세어진다.
+- 실행 단위와 쓰기 묶음은 확정된 쓰기가 있으면 요청 수와 관계없이 commit 1회로 센다. 단위 안에서 실행한 정리 연산도 그 commit에 포함된다([저장 계약](storage-contract.md#실행-단위와-쓰기-묶음)).
 - `purge_expired`·`purge_scope`(각 DELETE 두 문장), `prune_prefix_keep_recent`·`prune_prefix_older_than`(한 문장), `vacuum_if_fragmented`의 자동 commit은 세지 않는다. harness의 `uncounted_paths`에서 1행·190행을 지워도 계측값이 늘지 않았다.
 - 메인 루프 지연은 `queue_before_gate`의 대기 시간과 `handler_after_gate`의 실행 시간으로 간접 확인한다. 이벤트 루프 한 회차의 길이를 직접 재는 계측은 없다.
 
@@ -282,6 +296,12 @@ target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
   `state.db` 쪽 옮기기는 `classify_sql` 단위 테스트(busy / corrupt / notadb), `user_message_i18n` key 안정성 테스트.
 - 저장 실패: `crates/tasty-memory/src/tests.rs` 가 잠금(`busy`)과 페이지 상한(`disk_full`)을 실제로
   일으켜 원인과 메모리 쪽 상태를 본다. `io` 는 합성 오류 코드로 표만 본다.
+- 실행 단위·쓰기 묶음: `crates/tasty-memory/src/batch/batch_tests.rs` 가 묶음 중간 요청의 페이지 상한
+  (`disk_full`), 다른 연결의 쓰기 잠금(`busy`)을 실제로 일으킨다. Unix에서는 파일 크기 상한(`ulimit -f`)을
+  건 자식 프로세스에서 commit의 WAL 쓰기를 실패시켜 commit 단계 오류 뒤 카운터·변경 버퍼·commit 계측이
+  그대로인지 본다. 정수가 아닌 version 행으로 단위 안 조회의 실제 저장 실패를, 단위 안의 직접 ROLLBACK으로
+  SQLite가 transaction을 끝낸 상태를 만들어 앞선 쓰기까지 되돌리는지 본다. 시험용 저장소와 운영 저장소의
+  묶음 판정 대조도 같은 파일에 있다.
 - 적용값: `an_open_store_carries_the_pragmas_that_took_in_each_mode` ·
   `a_read_only_database_reports_itself_degraded` 가 모드별 허용 결과와 degraded 판정을 본다.
 
