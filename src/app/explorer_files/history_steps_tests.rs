@@ -448,6 +448,7 @@ fn assert_succeeded(done: &Done) {
         ),
         Done::Step(r) => assert!(r.is_ok(), "{r:?}"),
         Done::Simple(r) => assert!(r.is_ok(), "{r:?}"),
+        Done::Lost(lost) => panic!("로컬 작업은 연결을 잃지 않는다: {lost:?}"),
     }
 }
 

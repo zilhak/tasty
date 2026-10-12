@@ -1218,6 +1218,8 @@ queue_title = "On {} · one at a time"
 lost_title = "Connection to {} lost · result unknown"
 lost_body = "The {} stopped at the item it was on. Some items may already have changed. The folder reloads when the connection is back."
 op_copy = "copy"
+op_move = "move"
+op_trash = "move to Trash"
 
 [script.confirm]
 title = "Script changed since registration"

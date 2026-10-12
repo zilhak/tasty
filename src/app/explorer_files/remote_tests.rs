@@ -214,10 +214,20 @@ fn a_lost_connection_or_refusal_ends_the_job() {
     start(&mut files, &sessions, ws, request);
     sessions[0].transport.frame_tx.epoch().retire();
     let done = files.poll_remote(&mut sessions);
-    assert!(matches!(
-        &done[0].result,
-        Done::Simple(Err(e)) if *e == crate::i18n::t("explorer.state.remote_result_unknown")
-    ));
+    let Done::Lost(lost) = &done[0].result else {
+        panic!("결과를 모르는 카드여야 한다: {:?}", done[0].result);
+    };
+    assert_eq!(
+        lost.title(),
+        crate::i18n::t_fmt("explorer.remote.lost_title", "127.0.0.1:0")
+    );
+    assert_eq!(
+        lost.body(),
+        crate::i18n::t_fmt(
+            "explorer.remote.lost_body",
+            crate::i18n::t("explorer.remote.op_trash")
+        )
+    );
 
     let (ws, request) = queued(Operation::Rename {
         path: "/srv/a".into(),
@@ -320,4 +330,62 @@ fn requests_dropped_by_a_lost_connection_are_counted_per_cell() {
     };
     assert_eq!(state.toasts.messages(), vec![toast(2), toast(1)]);
     assert_ne!(toast(2), toast(1));
+}
+
+/// 연결 끊김 카드의 동사는 시안이 정한 여섯 작업만 있다. 되돌리기는 예전처럼 오류로 끝낸다.
+#[test]
+fn only_the_designed_verbs_get_a_lost_card() {
+    let cases = [
+        (
+            Operation::Paste {
+                paths: vec!["/srv/a".into()],
+                destination: "/srv/b".into(),
+                cut: false,
+            },
+            Some("explorer.remote.op_copy"),
+        ),
+        (
+            Operation::Paste {
+                paths: vec!["/srv/a".into()],
+                destination: "/srv/b".into(),
+                cut: true,
+            },
+            Some("explorer.remote.op_move"),
+        ),
+        (
+            Operation::Trash(vec!["/srv/a".into()]),
+            Some("explorer.remote.op_trash"),
+        ),
+        (
+            Operation::Rename {
+                path: "/srv/a".into(),
+                name: "b".into(),
+            },
+            Some("explorer.menu.op_rename"),
+        ),
+        (
+            Operation::Create {
+                dir: "/srv".into(),
+                name: "c".into(),
+                folder: true,
+            },
+            Some("explorer.menu.op_new_folder"),
+        ),
+        (
+            Operation::Create {
+                dir: "/srv".into(),
+                name: "c".into(),
+                folder: false,
+            },
+            Some("explorer.menu.op_new_file"),
+        ),
+        (Operation::Undo(Vec::new()), None),
+    ];
+    for (operation, verb) in cases {
+        assert_eq!(lost_verb(&operation), verb);
+    }
+    assert!(matches!(
+        lost_result("h", None),
+        Done::Simple(Err(e)) if e == crate::i18n::t("explorer.state.remote_result_unknown")
+    ));
 }

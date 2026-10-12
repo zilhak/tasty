@@ -425,6 +425,23 @@ fn a_source_kept_as_the_same_file_shows_why_and_retry() {
     assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "1"));
 }
 
+/// 원격 연결이 끊겨 결과를 모르는 카드는 시간이 지나도 남고 대기열 보기를 붙이지 않는다.
+#[test]
+fn a_lost_connection_card_stays_until_dismissed() {
+    let mut ops = OpsState::default();
+    let now = Instant::now();
+    ops.push_lost("title".into(), "body".into());
+    assert_eq!(ops.lost(), [("title".to_string(), "body".to_string())]);
+    assert_eq!(ops.next_expiry(), None);
+    assert!(!ops.expire(now + Duration::from_secs(3600)));
+    assert_eq!(ops.lost().len(), 1);
+    let kind = notice::NoticeKind::Lost {
+        title: String::new(),
+        body: String::new(),
+    };
+    assert!(!notice::offers_show_queue(&kind, &ops));
+}
+
 /// 받지 않은 요청 카드는 표준 시간 뒤 사라지고, 대기열 보기는 이 칸에 실행 중 작업이 있을 때만 붙는다.
 #[test]
 fn a_refused_request_card_expires_and_offers_the_queue_only_while_running() {
@@ -435,7 +452,10 @@ fn a_refused_request_card_expires_and_offers_the_queue_only_while_running() {
     ops.push_refused(Refused::TooLarge, now + Duration::from_secs(1));
     assert_eq!(ops.refused(), [Refused::QueueFull, Refused::TooLarge]);
     assert_eq!(ops.next_expiry(), Some(now + Duration::from_secs(1)));
-    assert!(!notice::offers_show_queue(Refused::QueueFull, &ops));
+    assert!(!notice::offers_show_queue(
+        &notice::NoticeKind::Refused(Refused::QueueFull),
+        &ops
+    ));
     ops.running = Some(Running {
         shared: Arc::new(Shared::fixed(
             crate::app::explorer_files::job::Choice::KeepBoth,
@@ -445,8 +465,14 @@ fn a_refused_request_card_expires_and_offers_the_queue_only_while_running() {
         total: 1,
         in_history: false,
     });
-    assert!(notice::offers_show_queue(Refused::QueueFull, &ops));
-    assert!(!notice::offers_show_queue(Refused::TooLarge, &ops));
+    assert!(notice::offers_show_queue(
+        &notice::NoticeKind::Refused(Refused::QueueFull),
+        &ops
+    ));
+    assert!(!notice::offers_show_queue(
+        &notice::NoticeKind::Refused(Refused::TooLarge),
+        &ops
+    ));
     assert!(ops.expire(now + Duration::from_millis(1500)));
     assert_eq!(ops.refused(), [Refused::QueueFull]);
     assert!(ops.expire(now + Duration::from_secs(3)));

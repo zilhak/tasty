@@ -60,6 +60,8 @@ pub(crate) enum Done {
     Simple(Result<(), String>),
     /// 이름 변경·새 항목. 성공해 무엇이 바뀌었으면 이력에 쌓을 되돌리기 단계를 담는다.
     Step(Result<Option<UndoStep>, String>),
+    /// 원격 작업의 결과를 받기 전에 연결이 끊겼다. 어디까지 했는지 모른다.
+    Lost(remote::Lost),
 }
 impl Done {
     fn success(&self) -> bool {
@@ -67,6 +69,7 @@ impl Done {
             Self::Report(r) => r.failed.is_empty() && r.skipped.is_empty() && !r.cancelled,
             Self::Simple(r) => r.is_ok(),
             Self::Step(r) => r.is_ok(),
+            Self::Lost(_) => false,
         }
     }
     /// 실패를 한 줄로 요약한다. 실패가 없으면 None.
@@ -83,6 +86,9 @@ impl Done {
             }),
             Self::Simple(r) => r.as_ref().err().cloned(),
             Self::Step(r) => r.as_ref().err().cloned(),
+            Self::Lost(_) => {
+                Some(crate::i18n::t("explorer.state.remote_result_unknown").to_string())
+            }
         }
     }
 }
@@ -742,6 +748,12 @@ impl super::App {
             }
             Done::Simple(_) => {
                 ui_sync::push_failure(&mut view.state, target.surface, target.press, failure);
+            }
+            Done::Lost(lost) => {
+                ui_sync::push_failure(&mut view.state, target.surface, target.press, None);
+                if let Some(v) = view.state.explorer_views.get_mut(target.surface) {
+                    v.ops.push_lost(lost.title(), lost.body());
+                }
             }
         }
         target.apply(&mut view.state, success);

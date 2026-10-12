@@ -650,6 +650,7 @@ src/catalog/icons.rs	Filter…	port_scanner.search_placeholder
 src/catalog/icons.rs	Plugins	button.plugins,plugins.title,settings.keybindings.subtab.plugins,settings.tab.plugin
 src/catalog/icons.rs	close	command_palette.hint_close
 src/catalog/icons.rs	copy	explorer.remote.op_copy
+src/catalog/icons.rs	move	explorer.remote.op_move
 src/catalog/icons_keys.rs	Cmd	settings.general.alt_display_style_cmd
 src/catalog/icons_keys.rs	Cmd key display:	settings.general.alt_display_style_label
 src/catalog/icons_keys.rs	Option	settings.general.option_display_style_option

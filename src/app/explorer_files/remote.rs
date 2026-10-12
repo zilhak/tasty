@@ -38,6 +38,52 @@ pub(super) struct RemoteJob {
     pub(super) seen: super::ui_sync::ProgressSeen,
     cancel_sent: bool,
     result: Option<Done>,
+    /// 연결이 끊겼을 때 카드에 쓸 원격 이름과 작업 동사 키. 동사가 없으면 카드 대신 오류 토스트다.
+    host: String,
+    verb: Option<&'static str>,
+}
+
+/// 결과를 모른 채 끝난 원격 작업. 칸에 경고 카드로 보인다.
+#[derive(Debug)]
+pub(crate) struct Lost {
+    host: String,
+    verb: &'static str,
+}
+
+impl Lost {
+    pub(super) fn title(&self) -> String {
+        crate::i18n::t_fmt("explorer.remote.lost_title", &self.host)
+    }
+    pub(super) fn body(&self) -> String {
+        crate::i18n::t_fmt("explorer.remote.lost_body", crate::i18n::t(self.verb))
+    }
+}
+
+/// 연결 끊김 카드 본문의 작업 동사 키. 시안이 정한 동사(복사·이동·휴지통 이동·이름 변경·새 폴더·새
+/// 파일)만 카드로 보이고, 되돌리기와 남은 원본 지우기는 오류 토스트로 알린다.
+fn lost_verb(operation: &Operation) -> Option<&'static str> {
+    Some(match operation {
+        Operation::Paste { cut: false, .. } => "explorer.remote.op_copy",
+        Operation::Paste { cut: true, .. } => "explorer.remote.op_move",
+        Operation::Trash(_) => "explorer.remote.op_trash",
+        Operation::Rename { .. } => "explorer.menu.op_rename",
+        Operation::Create { folder: true, .. } => "explorer.menu.op_new_folder",
+        Operation::Create { folder: false, .. } => "explorer.menu.op_new_file",
+        Operation::Undo(_) | Operation::RemoveLeftovers { .. } | Operation::Open(_) => return None,
+    })
+}
+
+/// 연결을 잃은 작업의 결과.
+fn lost_result(host: &str, verb: Option<&'static str>) -> Done {
+    match verb {
+        Some(verb) => Done::Lost(Lost {
+            host: host.to_string(),
+            verb,
+        }),
+        None => Done::Simple(Err(
+            crate::i18n::t("explorer.state.remote_result_unknown").to_string()
+        )),
+    }
 }
 
 /// 작업이 보내는 경로와 남은 원본.
@@ -174,6 +220,7 @@ impl super::ExplorerFiles {
         let affected = operation.affected();
         let undo_of = operation.undo_of();
         let sent = sent_of(&operation);
+        let verb = lost_verb(&operation);
         let Some(op) = remote_op(operation) else {
             return Err(target);
         };
@@ -206,6 +253,8 @@ impl super::ExplorerFiles {
             seen: Default::default(),
             cancel_sent: false,
             result: None,
+            host: sess.state.remote_label.clone(),
+            verb,
         });
         Ok(())
     }
@@ -243,10 +292,7 @@ impl super::ExplorerFiles {
                     && job.epoch.same(&s.transport.frame_tx.epoch())
             });
             let Some(sess) = sess else {
-                job.result = Some(Done::Simple(Err(crate::i18n::t(
-                    "explorer.state.remote_result_unknown",
-                )
-                .to_string())));
+                job.result = Some(lost_result(&job.host, job.verb));
                 continue;
             };
             if let Some(answer) = job.shared.take_answer() {

@@ -1172,6 +1172,8 @@ queue_title = "{} · 한 번에 하나씩"
 lost_title = "{} 연결이 끊겨 결과를 알 수 없음"
 lost_body = "{}은(는) 하던 항목에서 멈췄습니다. 일부 항목은 이미 바뀌었을 수 있습니다. 다시 연결되면 폴더를 다시 읽습니다."
 op_copy = "복사"
+op_move = "이동"
+op_trash = "휴지통으로 이동"
 
 [script.confirm]
 title = "등록 이후 스크립트가 변경됨"

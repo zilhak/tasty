@@ -139,12 +139,12 @@ impl OpsState {
     pub(crate) fn expire(&mut self, now: Instant) -> bool {
         let before = self.results.len() + self.notices.len();
         self.results.retain(|c| c.expires.is_none_or(|at| at > now));
-        self.notices.retain(|n| n.expires > now);
+        self.notices.retain(|n| n.expires.is_none_or(|at| at > now));
         before != self.results.len() + self.notices.len()
     }
     /// 다음으로 사라질 카드의 시각.
     pub(crate) fn next_expiry(&self) -> Option<Instant> {
-        let notices = self.notices.iter().map(|n| n.expires);
+        let notices = self.notices.iter().filter_map(|n| n.expires);
         self.results
             .iter()
             .filter_map(|c| c.expires)
