@@ -1036,6 +1036,166 @@ fn right_click_opens_terminal_menu() {
     );
 }
 
+/// 터미널 메뉴의 "이동" 항목 id. 선택 결과를 `debug.pending_move`로 관찰한다.
+const TERMINAL_MENU_MOVE_ITEM: u64 = 10;
+/// 링크 메뉴의 "선택" 항목 id. 선택 결과를 `debug.selection`으로 관찰한다.
+const LINK_MENU_SELECT_ITEM: u64 = 1;
+
+/// 사용자 우클릭처럼 winit 경로로 press와 release를 보낸다. Linux는 release에서 메뉴를 연다.
+fn terminal_right_click(inst: &gui_common::GuiTestInstance, sid: u64, fx: f32, fy: f32) {
+    inst.inject_mouse(sid, fx, fy, "move", 0);
+    inst.inject_mouse(sid, fx, fy, "press", 2);
+    inst.inject_mouse(sid, fx, fy, "release", 2);
+    settle();
+}
+
+#[test]
+#[ignore]
+fn menu_answer_applies_to_terminal_right_click() {
+    let inst = shared();
+    let sid = mouse_test_terminal(&inst);
+
+    // 하네스는 포획 env를 켠다. 같은 종류의 응답은 포획보다 먼저 쓰인다.
+    let armed = inst.call(
+        "debug.native_menu.answer",
+        json!({ "menu": "TerminalSurface", "item": TERMINAL_MENU_MOVE_ITEM }),
+    );
+    assert_eq!(armed["armed"], json!(true), "answer must be armed: {armed}");
+    terminal_right_click(&inst, sid, 0.5, 0.5);
+
+    let moving = inst.call("debug.pending_move", json!({}));
+    assert_eq!(
+        (moving["kind"].clone(), moving["id"].as_u64()),
+        (json!("surface"), Some(sid)),
+        "the answered Move item must run its selection handler: {moving}"
+    );
+    let menu = inst.debug_pending_menu();
+    assert_eq!(
+        menu["present"],
+        json!(false),
+        "an answered menu must not stay captured: {menu}"
+    );
+
+    // 응답은 한 번만 쓰인다. 두 번째 우클릭은 포획 경로로 간다.
+    terminal_right_click(&inst, sid, 0.5, 0.5);
+    let menu = inst.debug_pending_menu();
+    assert_eq!(
+        menu["kind"],
+        json!("TerminalSurface"),
+        "a second right-click without an answer must be captured: {menu}"
+    );
+
+    // 대상 surface를 닫으면 이동 대기 슬롯도 비워져 다음 시험에 남지 않는다.
+    inst.call("surface.close", json!({ "surface_id": sid }));
+    settle();
+}
+
+#[test]
+#[ignore]
+fn menu_answer_of_another_kind_survives_terminal_right_click() {
+    let inst = shared();
+    let sid = mouse_test_terminal(&inst);
+
+    inst.call(
+        "debug.native_menu.answer",
+        json!({ "menu": "Tab", "dismiss": true }),
+    );
+    terminal_right_click(&inst, sid, 0.5, 0.5);
+
+    let menu = inst.debug_pending_menu();
+    assert_eq!(
+        (menu["kind"].clone(), menu["surface_id"].as_u64()),
+        (json!("TerminalSurface"), Some(sid)),
+        "a terminal menu must be captured while only a Tab answer waits: {menu}"
+    );
+    // 새 응답이 덮어쓴 응답의 종류로 Tab 응답이 남아 있었는지 확인한다.
+    let armed = inst.call(
+        "debug.native_menu.answer",
+        json!({ "menu": "TerminalSurface", "dismiss": true }),
+    );
+    assert_eq!(
+        armed["replaced"],
+        json!("Tab"),
+        "the Tab answer must survive a terminal right-click: {armed}"
+    );
+
+    // 덮어쓴 닫기 응답은 다음 터미널 우클릭이 소비한다. 공유 인스턴스의 다음 시험에 응답이 남지 않는다.
+    terminal_right_click(&inst, sid, 0.5, 0.5);
+    let menu = inst.debug_pending_menu();
+    assert_eq!(
+        menu["present"],
+        json!(false),
+        "the dismiss answer must close the terminal menu instead of capturing it: {menu}"
+    );
+    inst.call("surface.close", json!({ "surface_id": sid }));
+    settle();
+}
+
+#[test]
+#[ignore]
+fn menu_answer_applies_to_terminal_link_right_click() {
+    let inst = shared();
+    let sid = mouse_test_terminal(&inst);
+
+    // 모든 행을 같은 URL로 채워 창 크기와 관계없이 가운데 행 앞쪽이 링크가 되게 한다.
+    // 입력 줄에 URL을 그대로 쓰면 zsh의 URL 인용 기능이 뒤의 `;`를 이스케이프한다.
+    inst.call(
+        "surface.send",
+        json!({
+            "surface_id": sid,
+            "text": "clear; for i in $(seq 200); do printf 'https%s//example.com/t323-link-menu\\n' :; done\r",
+        }),
+    );
+    let screen = || {
+        inst.call("surface.screen_text", json!({ "surface_id": sid }))["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while screen().matches("t323-link-menu").count() < 10 {
+        assert!(
+            Instant::now() < deadline,
+            "link lines never appeared: {:?}",
+            screen()
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    // 링크 hover는 기본 Ctrl 수식 키를 요구한다. 수식 키 주입 대신 조건을 끈다.
+    inst.call(
+        "debug.settings.apply",
+        json!({ "settings": { "general": { "link_click_modifier": "none" } } }),
+    );
+    settle();
+
+    inst.call(
+        "debug.native_menu.answer",
+        json!({ "menu": "TerminalLink", "item": LINK_MENU_SELECT_ITEM }),
+    );
+    terminal_right_click(&inst, sid, 0.05, 0.5);
+
+    let sel = inst.debug_selection();
+    assert_eq!(
+        (sel["present"].clone(), sel["surface_id"].as_u64()),
+        (json!(true), Some(sid)),
+        "the answered Select item must select the link: {sel}"
+    );
+    let menu = inst.debug_pending_menu();
+    assert_eq!(
+        menu["present"],
+        json!(false),
+        "an answered link menu must not stay captured: {menu}"
+    );
+
+    // 격리 홈의 기본값으로 되돌린다.
+    inst.call(
+        "debug.settings.apply",
+        json!({ "settings": { "general": { "link_click_modifier": "ctrl" } } }),
+    );
+    inst.call("surface.close", json!({ "surface_id": sid }));
+    settle();
+}
+
 #[test]
 #[ignore]
 fn right_click_explorer_never_falls_back_to_surface_menu() {

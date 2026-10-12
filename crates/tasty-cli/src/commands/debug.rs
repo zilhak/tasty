@@ -221,7 +221,7 @@ pub enum DebugCommands {
     /// Answer the next native context menu of the given kind in the focused window without the
     /// OS popup (debug builds only). Picks an item by id or label, or closes the menu. Menus of
     /// other kinds open as usual. A right click such as `debug inject egui-mouse --button 2`
-    /// still opens the menu.
+    /// still opens the menu, and `debug inject window-mouse --button 2` opens terminal menus.
     MenuAnswer {
         /// Menu kind the answer applies to, as `debug pending-menu` names it (Tab, Pane,
         /// TerminalSurface, ...).

@@ -1,7 +1,8 @@
 //! debug 전용 native 메뉴 응답과 이동 대기 조회. release에는 없다.
 //! 호출자가 지정한 종류의 native 메뉴가 다음에 열릴 때 OS 팝업 없이 지정한 항목을 고른 것으로 끝낸다.
 //! 다른 종류의 메뉴는 응답을 쓰지 않고 실제로 연다. 메뉴 항목을 만드는 일과 선택 뒤 처리는 사용자 우클릭과
-//! 같은 경로를 쓴다. 메뉴를 열려면 `debug.inject_egui_mouse` 우클릭을 함께 쓴다.
+//! 같은 경로를 쓴다. egui가 만드는 메뉴는 `debug.inject_egui_mouse`, 터미널 메뉴는 `debug.inject_window_mouse`
+//! 우클릭으로 연다. 같은 종류의 응답이 있으면 `TASTY_DEBUG_SUPPRESS_NATIVE_MENU`의 포획보다 응답을 먼저 쓴다.
 
 #![cfg(debug_assertions)]
 
@@ -89,22 +90,41 @@ pub(crate) enum MenuChoice {
 }
 
 impl MainView {
-    /// 지정한 종류의 다음 native 메뉴 하나에 쓸 응답을 둔다. 앞서 둔 응답이 남아 있으면 덮어쓴다.
-    pub(crate) fn debug_set_menu_answer(&mut self, answer: MenuAnswer) {
-        self.debug_menu_answer = Some(answer);
+    /// 지정한 종류의 다음 native 메뉴 하나에 쓸 응답을 둔다. 앞서 둔 응답이 남아 있으면 덮어쓰고 그 종류를 돌려준다.
+    pub(crate) fn debug_set_menu_answer(&mut self, answer: MenuAnswer) -> Option<&'static str> {
+        self.debug_menu_answer
+            .replace(answer)
+            .map(|previous| previous.menu)
     }
 
     /// 포획 모드면 요청을 보관하고 None을 돌려준다. 아니면 열 메뉴의 종류를 기록하고 요청을 돌려준다.
+    /// 같은 종류의 응답이 있으면 포획 모드여도 메뉴를 연다. 응답이 OS 팝업 없이 선택을 끝낸다.
     pub(super) fn debug_note_menu(
         &mut self,
         pending: PendingNativeMenu,
     ) -> Option<PendingNativeMenu> {
-        if std::env::var_os("TASTY_DEBUG_SUPPRESS_NATIVE_MENU").is_some() {
+        let kind = menu_kind(&pending).0;
+        let answered = answer_applies(self.debug_menu_answer.as_ref(), Some(kind));
+        if !answered && std::env::var_os("TASTY_DEBUG_SUPPRESS_NATIVE_MENU").is_some() {
             self.debug_captured_menu = Some(pending);
             return None;
         }
-        self.debug_opening_menu = Some(menu_kind(&pending).0);
+        self.debug_opening_menu = Some(kind);
         Some(pending)
+    }
+
+    /// `debug.inject_window_mouse`가 세운 메뉴 요청을 OS가 표시하기 전에 나눈다. 같은 종류의 응답이 있으면
+    /// 요청을 슬롯에 남겨 다음 프레임의 `process_pending_native_menu`가 사용자 우클릭과 같은 경로로 응답을
+    /// 쓰게 한다. 응답이 없거나 다른 종류면 요청을 포획해 OS 팝업을 띄우지 않고 응답도 그대로 둔다.
+    pub(super) fn debug_route_injected_menu(&mut self) {
+        let Some(menu) = self.state.dialogs.pending_native_menu.take() else {
+            return;
+        };
+        if answer_applies(self.debug_menu_answer.as_ref(), Some(menu_kind(&menu).0)) {
+            self.state.dialogs.pending_native_menu = Some(menu);
+        } else {
+            self.debug_captured_menu = Some(menu);
+        }
     }
 
     /// 둔 응답이 있으면 OS 메뉴 대신 그 선택으로 `cont`를 실행한다(macOS·Windows의 즉시 완료와 같은 순서).
@@ -198,6 +218,18 @@ mod tests {
             None
         );
         assert_eq!(resolve_answer(&MenuChoice::Dismiss, &items()), None);
+    }
+
+    #[test]
+    fn an_answer_applies_only_to_its_own_menu_kind() {
+        let answer = MenuAnswer {
+            menu: "Tab",
+            choice: MenuChoice::Dismiss,
+        };
+        assert!(answer_applies(Some(&answer), Some("Tab")));
+        assert!(!answer_applies(Some(&answer), Some("TerminalSurface")));
+        assert!(!answer_applies(Some(&answer), None));
+        assert!(!answer_applies(None, Some("TerminalSurface")));
     }
 
     fn answer(menu: &'static str) -> MenuAnswer {

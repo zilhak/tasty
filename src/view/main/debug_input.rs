@@ -95,7 +95,7 @@ impl MainView {
         match action {
             InjectPointer::Move => self.handle_cursor_moved(engine, pos, false),
             InjectPointer::Button { button, pressed } => {
-                // 이전 메뉴 결과를 지우고 이번 요청을 OS가 표시하기 전에 debug 슬롯으로 옮긴다.
+                // 이전 메뉴 결과를 지운다. 이번 요청은 OS가 표시하기 전에 응답 경로와 포획으로 나눈다.
                 self.debug_captured_menu = None;
                 let state = if pressed {
                     ElementState::Pressed
@@ -105,9 +105,7 @@ impl MainView {
                 // handle_event를 거치지 않아 메뉴 닫기 입력 판정을 직접 호출한다.
                 let swallow = self.take_menu_dismiss_swallow(state, button);
                 self.handle_mouse_input(engine, state, button, false, swallow);
-                if let Some(menu) = self.state.dialogs.pending_native_menu.take() {
-                    self.debug_captured_menu = Some(menu);
-                }
+                self.debug_route_injected_menu();
             }
             InjectPointer::Scroll { dx, dy, unit } => {
                 let Some(delta) = unit.to_winit_delta(dx, dy) else {

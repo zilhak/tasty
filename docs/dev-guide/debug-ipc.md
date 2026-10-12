@@ -49,8 +49,8 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.inject_egui_key` | `key?`(기본 `Escape`), `pressed?`(기본 `true`, CLI `--pressed false` 로 뗌), `window_id?` | egui 레벨 키 이벤트 주입. 매핑할 수 없는 키 이름이면 `injected:false`. `window_id` 는 `debug.inject_egui_text` 와 같은 규칙이다(그 창의 egui 입력, 응답에 `window_id`, 없는 창 `-32602`, 생략하면 포커스된 메인 창) |
 | `debug.inject_egui_text` | `text`(필수, 문자열), `window_id?` | egui 레벨 **문자** 이벤트 주입 — 포커스된 `TextEdit`(command palette 쿼리 등)에 글자를 넣는다. `window_id` 를 주면 그 창(메인 또는 설정·Preset·Plugins 같은 보조 창)의 egui 입력에 넣고 응답에 `window_id` 를 싣는다. 없는 창이면 `-32602`. 생략하면 포커스된 메인 창이다. 아래 [문자 주입은 키 주입과 다른 채널이다](#문자-주입은-키-주입과-다른-채널이다) |
 | `debug.selection` | `{}` | focused window 의 로컬 텍스트 선택 상태 read-only 덤프(`present`·`surface_id`·`mode`·`dragging`·`empty`·`anchor/cursor/start/end{col,row}`). 마우스 라우팅 회귀 net 의 관찰면 — 순수 관찰(사용자 상태 불변) |
-| `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 우클릭 라우팅 회귀 관찰용 |
-| `debug.native_menu.answer` | `menu`(필수) + `item` · `label` · `dismiss: true` 중 하나 | 포커스된 창이 **다음에 여는 `menu` 종류의** native 메뉴 하나를 OS 팝업 없이 지정 항목을 고른 것으로 끝낸다(`menu`는 `debug.pending_menu`의 `kind`와 같은 이름, `item`은 항목 id, `label`은 표시 문구, `dismiss`는 고르지 않고 닫기). 다른 종류의 메뉴에는 쓰지 않는다. 응답은 그 종류의 메뉴가 열릴 때까지 남아 있고 새 응답이 덮어쓴다. 아래 [native 메뉴 항목 선택 재현](#native-메뉴-항목-선택-재현-debugnative_menuanswer) |
+| `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 응답(`debug.native_menu.answer`)으로 끝난 메뉴는 남지 않아 `present:false`다. 우클릭 라우팅 회귀 관찰용 |
+| `debug.native_menu.answer` | `menu`(필수) + `item` · `label` · `dismiss: true` 중 하나 | 포커스된 창이 **다음에 여는 `menu` 종류의** native 메뉴 하나를 OS 팝업 없이 지정 항목을 고른 것으로 끝낸다(`menu`는 `debug.pending_menu`의 `kind`와 같은 이름, `item`은 항목 id, `label`은 표시 문구, `dismiss`는 고르지 않고 닫기). 다른 종류의 메뉴에는 쓰지 않는다. 응답은 그 종류의 메뉴가 열릴 때까지 남아 있고 새 응답이 덮어쓴다. 결과는 `armed: true`와, 덮어쓴 응답이 있었으면 그 종류(`replaced`, 없으면 `null`)다. 아래 [native 메뉴 항목 선택 재현](#native-메뉴-항목-선택-재현-debugnative_menuanswer) |
 | `debug.pending_move` | `{}` | 포커스된 창의 이동 대기 슬롯 read-only 덤프(`present`·`kind` = `surface`/`tab`/`pane`·`id`) |
 | `debug.window.list` | `{}` | 메인 창과 보조 창(설정·Preset·Plugins·종료 확인)을 모두 나열한다. release `window.list` 는 메인 창만 다룬다([ADR-0018](../adr/0018-explicit-capture-and-fullscreen-stage.md)). 응답 `windows[]` 는 `window_id`·`kind`(`main`·`settings`·`preset`·`plugins`·`quit`)·`title`(winit 이 제목을 돌려주는 플랫폼에서만, X11·Wayland 는 `null`)·`inner_size`(물리 px `width`·`height`)·`scale_factor`·`focused`·`modal` 이며 `window_id` 오름차순이다. 보조 창의 id 는 `window_id` 를 받는 debug 메서드(`debug.inject_egui_*`·`debug.toast`)와 `ui.screenshot` 에 넘기는 값이다. 조회만 한다. CLI 는 `tasty debug windows`. gui 빌드 전용 |
 | `debug.focused_surface` | `{}` | 현재 포커스된 surface id read-only 덤프(`surface_id`, 없으면 null). `surface.list` 가 노출 않는 view-layer 포커스를 관찰 — click-to-activate 라우팅 회귀 net 용 |
@@ -133,7 +133,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 ### egui 프레임이 세우는 컨텍스트 메뉴 관찰 (`TASTY_DEBUG_SUPPRESS_NATIVE_MENU`)
 
-`debug.inject_egui_mouse`(winit 우회, egui 입력 큐에 직접 주입 — `event_type` ∈ move/press/release, `button` 0/1/2; `surface_id` 지정 시 `(fx,fy)` 를 그 surface rect 안 정규화 좌표로 해석해 창 크기 무관하게 조준)는 explorer 그리드/컨텍스트 메뉴처럼 egui 위젯 `secondary_clicked` 로 생산되는 메뉴를 탄다. 이 메뉴는 `MainView::process_pending_native_menu` 가 실제 OS native 팝업으로 소비한다(macOS/Windows 는 **블로킹** 모달, Linux 는 비블로킹이지만 팝업이 실제로 뜨는 건 같다) — 어느 쪽이든 headless 관찰이 막힌다. `TASTY_DEBUG_SUPPRESS_NATIVE_MENU=1` 로 띄우면 그 지점에서 메뉴를 표시하지 않고 `debug_captured_menu` 로 포획만 해, `debug.pending_menu` 로 종류를 단언할 수 있다(winit 경로 `debug.inject_window_mouse` 는 핸들러가 즉시 세워 이미 포획됨 — 이 env 는 egui 경로용). GUI 테스트 하네스(`tests/gui_common`)가 이 env 를 켠다. debug 격리, release 미노출.
+`debug.inject_egui_mouse`(winit 우회, egui 입력 큐에 직접 주입 — `event_type` ∈ move/press/release, `button` 0/1/2; `surface_id` 지정 시 `(fx,fy)` 를 그 surface rect 안 정규화 좌표로 해석해 창 크기 무관하게 조준)는 explorer 그리드/컨텍스트 메뉴처럼 egui 위젯 `secondary_clicked` 로 생산되는 메뉴를 탄다. 이 메뉴는 `MainView::process_pending_native_menu` 가 실제 OS native 팝업으로 소비한다(macOS/Windows 는 **블로킹** 모달, Linux 는 비블로킹이지만 팝업이 실제로 뜨는 건 같다) — 어느 쪽이든 headless 관찰이 막힌다. `TASTY_DEBUG_SUPPRESS_NATIVE_MENU=1` 로 띄우면 그 지점에서 메뉴를 표시하지 않고 `debug_captured_menu` 로 포획만 해, `debug.pending_menu` 로 종류를 단언할 수 있다(winit 경로 `debug.inject_window_mouse` 는 env 와 관계없이 주입 직후 요청을 포획한다. 같은 종류의 응답이 대기 중일 때만 요청을 남겨 응답 경로로 보낸다 — 아래 절). GUI 테스트 하네스(`tests/gui_common`)가 이 env 를 켠다. debug 격리, release 미노출.
 
 ### native 메뉴 항목 선택 재현 (`debug.native_menu.answer`)
 
@@ -141,14 +141,20 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 - 고를 수 없는 항목(구분선·비활성·없는 id나 문구)을 지목하면 메뉴를 닫은 것으로 끝내고 warn 로그를 남긴다.
 - 응답은 지정한 종류의 다음 메뉴 하나에만 쓰인다. 다른 종류의 메뉴는 응답을 그대로 둔 채 실제로 연다. 그 종류의 메뉴가 열리지 않으면 응답이 남아 있다가 나중에 열리는 같은 종류의 메뉴에 쓰인다.
-- 메뉴를 여는 입력: 탭·사이드바처럼 egui가 만드는 메뉴는 `debug.inject_egui_mouse`(`button` 2, press·release)로 연다. 터미널 surface 메뉴는 winit 우클릭 경로라 `debug.inject_window_mouse`로는 열리지 않았다(2026-10-07 측정) — Xvfb에서는 xdotool 우클릭으로 연다.
-- `TASTY_DEBUG_SUPPRESS_NATIVE_MENU`가 켜져 있으면 메뉴 요청을 그 앞에서 포획하므로 응답이 쓰이지 않는다.
+- 메뉴를 여는 입력: 탭·사이드바처럼 egui가 만드는 메뉴는 `debug.inject_egui_mouse`(`button` 2, press·release)로 연다. 터미널 메뉴(`TerminalSurface`, 링크 위의 `TerminalLink`)는 winit 우클릭 경로라 `debug.inject_window_mouse`(`button` 2, press·release)로 연다. 링크 메뉴는 먼저 `event_type` `move`로 포인터를 링크 위에 둔다.
+- `debug.inject_window_mouse`는 주입 직후 메뉴 요청을 나눈다. 같은 종류의 응답이 대기 중이면 요청을 슬롯에 남겨 다음 프레임의 `process_pending_native_menu`가 위 경로로 응답을 쓴다. 응답이 없거나 다른 종류면 요청을 `debug_captured_menu`로 포획한다. 이때 OS 팝업은 뜨지 않고 다른 종류의 응답은 그대로 남는다.
+- `TASTY_DEBUG_SUPPRESS_NATIVE_MENU`가 켜져 있어도 같은 종류의 응답이 대기 중인 메뉴는 포획하지 않고 응답으로 끝낸다. 응답이 OS 팝업 없이 선택을 끝내므로 포획 env의 목적(OS 팝업을 띄우지 않기)과 충돌하지 않는다. 응답이 없거나 종류가 다른 메뉴는 포획한다.
 
 ```bash
 tasty debug menu-answer --menu Tab --label "Move Tab"   # 또는 --item 7, --dismiss
 tasty debug inject egui-mouse --fx 0.34 --fy 0.067 --event-type press --button 2
 tasty debug inject egui-mouse --fx 0.34 --fy 0.067 --event-type release --button 2
 tasty debug pending-move                           # {"present":true,"kind":"tab","id":...}
+
+# 터미널 메뉴: 선택 영역을 만든 뒤 "Copy"를 고른다(--item 2와 같다)
+tasty debug menu-answer --menu TerminalSurface --label "Copy"
+tasty debug inject window-mouse --surface <SID> --fx 0.5 --fy 0.5 --event-type press --button 2
+tasty debug inject window-mouse --surface <SID> --fx 0.5 --fy 0.5 --event-type release --button 2
 ```
 
 ### OS 열기를 띄우지 않고 기록하기 (`TASTY_DEBUG_OS_OPEN_LOG`)

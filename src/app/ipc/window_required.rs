@@ -339,17 +339,17 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // 다음 native 메뉴의 선택을 재현한다. 메뉴는 이후 egui 우클릭 주입이 연다.
+        // 다음 native 메뉴의 선택을 재현한다. 메뉴는 이후 egui·window 우클릭 주입이 연다.
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.native_menu.answer" {
             let answer = match read_menu_answer(&cmd.request.params) {
                 Ok(a) => a,
                 Err(msg) => return reject_bad_params(cmd, &msg),
             };
-            w.debug_set_menu_answer(answer);
+            let replaced = w.debug_set_menu_answer(answer);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                serde_json::json!({ "armed": true }),
+                serde_json::json!({ "armed": true, "replaced": replaced }),
             );
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
