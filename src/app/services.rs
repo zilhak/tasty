@@ -207,11 +207,24 @@ impl AppServices {
         }
     }
 
-    /// commit된 regular 변경을 접수 순서대로 꺼낸다. writer가 옮긴 변경 뒤에 아직 직접 잠금
-    /// 소비자가 남긴 변경을 붙인다.
+    /// commit된 regular 변경을 commit 순서대로 꺼낸다. 저장소 잠금을 기다리지 않는다.
+    ///
+    /// 잠금을 바로 얻으면 writer가 묶음 중이 아니므로 writer가 옮긴 변경 뒤에 아직 직접 잠금
+    /// 소비자가 남긴 변경을 붙인다. 잠금이 바쁘면 writer가 옮긴 변경만 꺼낸다. 남은 변경은 writer가
+    /// 다음 묶음 끝에 같은 순서로 옮기거나 다음 회차가 꺼낸다.
     pub(crate) fn take_memory_changes(&self) -> Vec<tasty_memory::MemoryChange> {
+        let guard =
+            match self.memory.try_lock() {
+                Ok(guard) => Some(guard),
+                Err(std::sync::TryLockError::WouldBlock) => None,
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => Some(
+                    crate::poison::recover_mutex(Err(poisoned), MEMORY_WHAT, &MEMORY_POISONED),
+                ),
+            };
         let mut changes = self.memory_access.changes().take();
-        changes.extend(self.with_memory(|s| s.take_pending_changes()));
+        if let Some(mut guard) = guard {
+            changes.extend(guard.take_pending_changes());
+        }
         changes
     }
 
