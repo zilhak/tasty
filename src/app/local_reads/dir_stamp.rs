@@ -69,4 +69,21 @@ mod tests {
         assert_ne!(DirStamp::read(tmp.path()), Some(before));
         assert_eq!(DirStamp::read(&tmp.path().join("gone")), None);
     }
+
+    /// 권한만 바꾸면 ctime 만 바뀌므로 표지는 그대로다. 문서의 한계 절이 이 동작을 적는다.
+    #[cfg(unix)]
+    #[test]
+    fn a_permission_change_alone_leaves_the_folder_stamp() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let file = tmp.path().join("file");
+        std::fs::write(&file, b"x").expect("write");
+        let before = DirStamp::read(tmp.path()).expect("stamp");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))
+            .expect("chmod file");
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o750))
+            .expect("chmod folder");
+        assert_eq!(DirStamp::read(tmp.path()), Some(before));
+    }
 }
