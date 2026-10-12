@@ -332,6 +332,7 @@ impl App {
         );
         let proxy = self.view.proxy.clone();
         let memory = self.services.memory_arc();
+        let memory_access = self.services.memory_access().clone();
         let runner_registry = Arc::clone(self.services.tasks.runner_registry());
         let gauges = self.services.plugin_gauges();
         let registries = self.services.registries.clone();
@@ -352,6 +353,7 @@ impl App {
                         factory,
                         proxy,
                         memory,
+                        memory_access,
                         runner_registry,
                         layout_slot,
                         registries,

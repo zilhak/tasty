@@ -14,26 +14,6 @@ impl EngineMut<'_> {
         #[cfg(feature = "gui")]
         self.remote.attach_mesh_frames.remove(surface_id);
     }
-
-    /// Journal retirement propagates scope-deletion failure to its durable result.
-    pub(crate) fn purge_closed_memory_scope(
-        &self,
-        scope: &tasty_memory::Scope,
-    ) -> Result<(), String> {
-        self.with_memory(|memory| memory.purge_scope(scope))
-            .map(|_| ())
-            .map_err(|error| error.to_string())
-    }
-
-    /// 메모리 저장소를 잠그고 함수를 실행한다. poison은 RequestContext와 같은 정책으로 복구한다.
-    fn with_memory<R>(&self, f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R) -> R {
-        let mut guard = crate::poison::recover_mutex(
-            self.runtime.memory.lock(),
-            crate::core::MEMORY_WHAT,
-            &crate::core::MEMORY_POISONED,
-        );
-        f(&mut *guard)
-    }
 }
 
 impl EngineMut<'_> {

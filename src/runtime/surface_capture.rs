@@ -8,7 +8,80 @@ pub(crate) struct CapturedSurface {
     pub kind: String,
     pub activation: Option<u64>,
     pub bytes: Vec<u8>,
+    /// terminal 자료의 `restore_command`를 비워 두었다. journal worker가 [`RestoreLookup::fill`]로 채운다.
+    pub restore_pending: bool,
 }
+
+/// capture가 비워 둔 terminal의 `restore.command`를 journal worker가 memory writer 순서로 읽어 채운다.
+/// 메인 루프는 저장소를 기다리지 않고, capture 전에 넣은 metadata 쓰기는 이 읽기보다 먼저 반영된다.
+pub(crate) struct RestoreLookup(tasty_memory::writer::MemoryAccess);
+
+impl std::fmt::Debug for RestoreLookup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RestoreLookup").finish()
+    }
+}
+
+impl RestoreLookup {
+    pub(crate) fn of(session: &EngineSession) -> Self {
+        Self(session.runtime.memory_access.clone())
+    }
+
+    /// 비워 둔 `restore_command`를 채운다. worker 스레드에서 writer 결과를 기다린다. 읽지 못하면 오류이고
+    /// 자료는 비운 채 남는다.
+    pub(crate) fn fill(&self, surfaces: &mut [CapturedSurface]) -> Result<(), String> {
+        let ids: Vec<u32> = surfaces
+            .iter()
+            .filter(|surface| surface.restore_pending)
+            .map(|surface| surface.surface)
+            .collect();
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let bytes = ids.len() * 64;
+        let request = tasty_memory::writer::MemoryRequest::unit(bytes, move |memory| {
+            Ok(ids
+                .iter()
+                .map(|id| {
+                    (
+                        *id,
+                        crate::surface_meta::SurfaceMetaStore::get(
+                            memory,
+                            *id,
+                            RESTORE_COMMAND_KEY,
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>())
+        });
+        let found = self
+            .0
+            .run_and_wait(request, std::time::Duration::from_secs(30))
+            .map_err(|why| format!("restore command lookup failed: {why:?}"))?
+            .into_value::<Vec<(u32, Option<String>)>>()
+            .ok_or("restore command lookup returned another value")?;
+        for (id, command) in found {
+            let Some(command) = command else { continue };
+            let Some(surface) = surfaces.iter_mut().find(|s| s.surface == id) else {
+                continue;
+            };
+            let mut data = SurfaceData::decode(&surface.bytes).map_err(|e| e.to_string())?;
+            if let SurfaceData::Terminal {
+                restore_command, ..
+            } = &mut data
+            {
+                *restore_command = Some(command);
+                surface.bytes = data.encode().map_err(|e| e.to_string())?;
+            }
+        }
+        for surface in surfaces.iter_mut() {
+            surface.restore_pending = false;
+        }
+        Ok(())
+    }
+}
+
+const RESTORE_COMMAND_KEY: &str = "restore.command";
 impl CapturedSurface {
     pub(crate) fn weight(&self) -> usize {
         self.kind
@@ -77,18 +150,8 @@ pub(crate) fn capture_selected(
             }
             let data = if descriptor.kind == "terminal" {
                 if let Some(terminal) = engine.runtime.terminals.get(id) {
-                    let restore_command = {
-                        let mut memory = crate::poison::recover_mutex(
-                            engine.runtime.memory.lock(),
-                            crate::core::MEMORY_WHAT,
-                            &crate::core::MEMORY_POISONED,
-                        );
-                        crate::surface_meta::SurfaceMetaStore::get(
-                            &mut *memory,
-                            id,
-                            "restore.command",
-                        )
-                    };
+                    // 복원 명령은 journal worker가 writer 순서로 읽어 채운다(RestoreLookup).
+                    let restore_command = None;
                     let lines = include_content.then(|| terminal.capture_history_and_screen());
                     SurfaceData::Terminal {
                         cwd: engine
@@ -127,13 +190,81 @@ pub(crate) fn capture_selected(
                         .unwrap_or_else(|| serde_json::json!({})),
                 }
             };
+            let restore_pending = matches!(data, SurfaceData::Terminal { .. });
             result.push(CapturedSurface {
                 surface: id,
                 kind: descriptor.kind.clone(),
                 activation: descriptor.activation_generation,
                 bytes: data.encode().map_err(|error| error.to_string())?,
+                restore_pending,
             });
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::{CapturedSurface, RestoreLookup, SurfaceData};
+    use tasty_memory::MemoryStorage;
+
+    fn terminal(surface: u32) -> CapturedSurface {
+        let data = SurfaceData::Terminal {
+            cwd: Some("/tmp".into()),
+            restore_command: None,
+            scrollback_ref: None,
+            scrollback: None,
+        };
+        CapturedSurface {
+            surface,
+            kind: "terminal".into(),
+            activation: None,
+            bytes: data.encode().expect("encode"),
+            restore_pending: true,
+        }
+    }
+
+    // writer 경로에서 먼저 접수한 metadata 쓰기를 capture의 복원 명령 읽기가 본다.
+    #[test]
+    fn the_worker_fills_restore_commands_after_earlier_metadata_writes() {
+        let memory: Arc<Mutex<dyn MemoryStorage>> = Arc::new(Mutex::new(
+            tasty_memory::MemoryStore::open_in_memory().expect("store"),
+        ));
+        let changes = Arc::new(tasty_memory::writer::ChangeFeed::default());
+        let writer = tasty_memory::writer::spawn(
+            tasty_memory::writer::SharedStore(memory),
+            changes.clone(),
+            tasty_utils::batch_writer::Limits::default(),
+            Arc::new(tasty_utils::batch_writer::SystemClock),
+            Arc::new(|| {}),
+        )
+        .expect("writer");
+        let access = tasty_memory::writer::MemoryAccess::writer(writer.handle(), changes);
+        access.submit_detached(
+            tasty_memory::writer::MemoryRequest::Write(tasty_memory::WriteOp::Put {
+                owner: tasty_memory::HOST_OWNER.into(),
+                scope: tasty_memory::Scope::Surface(3),
+                key: "restore.command".into(),
+                value: tasty_memory::MemoryValue::Text("claude -r x".into()),
+                opts: tasty_memory::PutOpts::default(),
+            }),
+            "test metadata",
+            None,
+        );
+        let mut surfaces = vec![terminal(3), terminal(4)];
+        RestoreLookup(access).fill(&mut surfaces).expect("fill");
+        let restored: Vec<Option<String>> = surfaces
+            .iter()
+            .map(|s| match SurfaceData::decode(&s.bytes).expect("decode") {
+                SurfaceData::Terminal {
+                    restore_command, ..
+                } => restore_command,
+                SurfaceData::Generic { .. } => panic!("terminal data changed kind"),
+            })
+            .collect();
+        assert_eq!(restored, vec![Some("claude -r x".into()), None]);
+        assert!(surfaces.iter().all(|s| !s.restore_pending));
+    }
 }

@@ -78,7 +78,11 @@ impl JournalApplication {
                     continue;
                 }
             };
-            let work = Work::Capture { binding, surfaces };
+            let work = Work::Capture {
+                binding,
+                surfaces,
+                restore: crate::runtime::surface_capture::RestoreLookup::of(session),
+            };
             let size = crate::runtime::journal_product::request_size(&work);
             if size > tasty_ipc::admission::QUEUED_BYTES_LIMIT {
                 self.reject_oversized(id, candidate, "capture", size as u64);

@@ -95,10 +95,12 @@ pub(crate) enum Work {
         target: tasty_core::CloseTarget,
         display_name: Option<String>,
         surfaces: Vec<crate::runtime::surface_capture::CapturedSurface>,
+        restore: crate::runtime::surface_capture::RestoreLookup,
     },
     Capture {
         binding: EngineBinding,
         surfaces: Vec<crate::runtime::surface_capture::CapturedSurface>,
+        restore: crate::runtime::surface_capture::RestoreLookup,
     },
     CapturePreset {
         draft: crate::intent::preset_capture::PresetCaptureDraft,
@@ -579,7 +581,9 @@ pub(crate) fn request_size(work: &Work) -> usize {
                 + 96,
             |sum, surface| sum.saturating_add(surface.weight()),
         ),
-        Work::Capture { binding, surfaces } => surfaces.iter().fold(
+        Work::Capture {
+            binding, surfaces, ..
+        } => surfaces.iter().fold(
             binding.stream.len() + binding.journal_id.len() + 96,
             |sum, surface| sum.saturating_add(surface.weight()),
         ),

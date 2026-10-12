@@ -554,19 +554,22 @@ impl JournalApplication {
         };
         #[cfg(feature = "gui")]
         if bound.restore_legacy_metadata {
-            let mut memory = crate::poison::recover_mutex(
-                session.runtime.memory.lock(),
-                crate::core::MEMORY_WHAT,
-                &crate::core::MEMORY_POISONED,
+            // writer 순서를 따르므로 이 engine의 뒤 요청은 정리된 상태를 본다. 메인 루프는 기다리지 않는다.
+            session.runtime.memory_access.submit_detached(
+                tasty_memory::writer::MemoryRequest::unit(0, |memory| {
+                    Ok(crate::surface_meta::SurfaceMetaStore::purge_out_of_range_surfaces(memory))
+                }),
+                "legacy surface scope purge",
+                Some(Box::new(|output| {
+                    let purged = output.into_value::<usize>().unwrap_or(0);
+                    if purged > 0 {
+                        tracing::error!(
+                            purged,
+                            "removed legacy surface scopes outside the surface ID range"
+                        );
+                    }
+                })),
             );
-            let purged =
-                crate::surface_meta::SurfaceMetaStore::purge_out_of_range_surfaces(&mut *memory);
-            if purged > 0 {
-                tracing::error!(
-                    purged,
-                    "removed legacy surface scopes outside the surface ID range"
-                );
-            }
         }
         if !opening.projected {
             projection::bootstrap::initialize(&mut session.core_state, &bound.model)?;

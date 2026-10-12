@@ -20,6 +20,8 @@ pub(crate) struct ResourceRetirement {
     start_complete: bool,
     failure: Option<String>,
     metadata_complete: bool,
+    /// 넣었지만 결과를 아직 거두지 않은 scope 정리.
+    metadata_purge: Option<tasty_memory::writer::MemoryTicket>,
 }
 impl ResourceRetirement {
     /// Called only while publishing an already committed close, before the batch ACK.
@@ -85,6 +87,7 @@ impl ResourceRetirement {
             start_complete: false,
             failure: None,
             metadata_complete: false,
+            metadata_purge: None,
         })
     }
     pub(crate) fn start(
@@ -244,12 +247,28 @@ impl ResourceRetirement {
         }
         None
     }
+    /// 은퇴한 surface·workspace scope를 지운다. 정리는 writer 요청 하나로 넣고 다음 호출에서 결과를
+    /// 거둔다. 아직 결과가 없으면 `Ok(false)`다. 대상 ID가 다시 살아 있으면 넣지 않는다. 같은 ID의
+    /// 새 소유자가 쓰는 metadata는 이 요청 뒤에 접수되므로 정리가 지우지 않는다.
     pub(crate) fn finish_metadata(
         &mut self,
         engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         if self.metadata_complete {
-            return Ok(());
+            return Ok(true);
+        }
+        if let Some(ticket) = self.metadata_purge.as_mut() {
+            let Some(completion) = ticket.try_take() else {
+                return Ok(false);
+            };
+            self.metadata_purge = None;
+            return match tasty_memory::writer::settle(completion) {
+                Ok(_) => {
+                    self.metadata_complete = true;
+                    Ok(true)
+                }
+                Err(failure) => Err(format!("retired scope purge failed: {failure:?}")),
+            };
         }
         if !matches!(
             self.outcome(),
@@ -257,6 +276,7 @@ impl ResourceRetirement {
         ) {
             return Err("cleanup receipt is not complete".into());
         }
+        let mut scopes = Vec::new();
         for target in &self.plan.removed {
             let scope = match target.kind {
                 tasty_core::IdKind::Surface => {
@@ -279,10 +299,32 @@ impl ResourceRetirement {
                 }
                 _ => continue,
             };
-            engine.purge_closed_memory_scope(&scope)?;
+            scopes.push(scope);
         }
-        self.metadata_complete = true;
-        Ok(())
+        let request = tasty_memory::writer::MemoryRequest::unit(0, move |memory| {
+            for scope in &scopes {
+                memory.purge_scope(scope)?;
+            }
+            Ok(())
+        });
+        let mut ticket = engine
+            .runtime
+            .memory_access
+            .submit(request)
+            .map_err(|error| format!("retired scope purge was not accepted: {error}"))?;
+        match ticket.try_take() {
+            Some(completion) => match tasty_memory::writer::settle(completion) {
+                Ok(_) => {
+                    self.metadata_complete = true;
+                    Ok(true)
+                }
+                Err(failure) => Err(format!("retired scope purge failed: {failure:?}")),
+            },
+            None => {
+                self.metadata_purge = Some(ticket);
+                Ok(false)
+            }
+        }
     }
     /// Notification delivery follows durable completion. It performs no destruction and is not
     /// replayed from historical operations during recovery.
@@ -342,6 +384,36 @@ impl ResourceRetirement {
     }
     pub(crate) fn lease(&self) -> Option<&EffectLease> {
         self.lease.as_ref()
+    }
+    /// 정리 수신이 모두 끝나 metadata 정리만 남은 은퇴. 시험에서 정리 단계만 따로 본다.
+    #[cfg(test)]
+    pub(crate) fn awaiting_metadata_for_test(
+        removed: Vec<tasty_core::EntityId>,
+        lease: EffectLease,
+    ) -> Self {
+        Self {
+            plan: RetirementPlan {
+                replacement: None,
+                target: tasty_core::CloseTarget::Surface(0),
+                removed,
+                surfaces: Vec::new(),
+                tab_parents: Vec::new(),
+                is_user_close: false,
+                remote_user_close: false,
+                undo: None,
+            },
+            engine_incarnation: 0,
+            runtime_epoch: lease.runtime_epoch,
+            owners: Vec::new(),
+            receipts: Vec::new(),
+            remote_receipts: Vec::new(),
+            started: Some(std::time::Instant::now()),
+            lease: Some(lease),
+            start_complete: true,
+            failure: None,
+            metadata_complete: false,
+            metadata_purge: None,
+        }
     }
 }
 

@@ -379,26 +379,30 @@ impl Installation {
         }
         Ok(())
     }
+    /// metadata를 결과를 기다리지 않는 독립 쓰기 묶음 하나로 넣는다. writer 순서를 따르므로 뒤에 오는
+    /// capture 읽기와 은퇴 정리는 이 쓰기의 반영을 본다. 실패는 메인 루프가 거둘 때 로그로 남긴다.
     fn install_metadata(&self, engine: &EngineMut<'_>) {
-        if !self.metadata.is_empty() {
-            let mut memory = crate::poison::recover_mutex(
-                engine.runtime.memory.lock(),
-                crate::core::MEMORY_WHAT,
-                &crate::core::MEMORY_POISONED,
-            );
-            for (key, value) in &self.metadata {
-                if let Err(error) = crate::surface_meta::SurfaceMetaStore::set(
-                    &mut *memory,
-                    self.surface_id,
-                    key,
-                    value,
-                ) {
-                    tracing::warn!(
-                        surface = self.surface_id,
-                        "surface_meta set failed for key '{key}': {error}"
-                    );
-                }
-            }
+        if self.metadata.is_empty() {
+            return;
         }
+        let ops = self
+            .metadata
+            .iter()
+            .map(|(key, value)| tasty_memory::WriteOp::Put {
+                owner: tasty_memory::HOST_OWNER.to_string(),
+                scope: tasty_memory::Scope::Surface(self.surface_id),
+                key: key.clone(),
+                value: tasty_memory::MemoryValue::Text(value.clone()),
+                opts: tasty_memory::PutOpts::default(),
+            })
+            .collect();
+        engine.runtime.memory_access.submit_detached(
+            tasty_memory::writer::MemoryRequest::Batch {
+                mode: tasty_memory::BatchMode::Independent,
+                ops,
+            },
+            "surface metadata installation",
+            None,
+        );
     }
 }

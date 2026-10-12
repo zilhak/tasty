@@ -559,6 +559,9 @@ fn bootstrap_engine(
         },
         app.services.registries.clone(),
     )?;
+    engine
+        .runtime
+        .use_memory_writer(app.services.memory_access().clone());
     engine.runtime.waker_factory = Some(factory);
     app.journal
         .begin_engine(

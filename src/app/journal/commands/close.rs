@@ -393,6 +393,7 @@ impl Request {
             target: self.target,
             display_name,
             surfaces: crate::runtime::surface_capture::capture_selected(session, Some(&selected))?,
+            restore: crate::runtime::surface_capture::RestoreLookup::of(session),
         })
     }
     pub fn stored(&self, input: tasty_core::DataRef) -> Work {

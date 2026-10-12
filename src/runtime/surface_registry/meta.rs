@@ -3,10 +3,12 @@
 //! 호출자가 확보한 저장소를 받아 락을 다시 얻지 않는다.
 
 use std::collections::HashMap;
+#[cfg(test)]
 use std::io;
 
 use tasty_memory::{HOST_OWNER, MemoryError, MemoryStorage, MemoryValue, PutOpts, Scope};
 
+#[cfg(test)]
 fn memory_err_to_io(e: MemoryError) -> io::Error {
     io::Error::other(format!("memory: {e}"))
 }
@@ -16,6 +18,8 @@ pub struct SurfaceMetaStore;
 impl SurfaceMetaStore {
     // 닫힘 시 scope 전체 삭제는 ResourceRetirement의 metadata 정리가 맡는다. plugin/Lua가 직접 쓴 키도 함께 처리해야 한다.
 
+    /// 시험이 저장소를 직접 채울 때 쓴다. 제품 경로는 writer 요청을 쓴다.
+    #[cfg(test)]
     pub fn set(
         mem: &mut dyn MemoryStorage,
         surface_id: u32,

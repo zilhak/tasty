@@ -87,6 +87,43 @@ enum Route {
 pub struct MemoryAccess {
     route: Route,
     changes: Arc<ChangeFeed>,
+    detached: Arc<DetachedWrites>,
+}
+
+/// 결과로 할 일. 실패는 [`MemoryAccess::reap_detached`]가 로그로 남긴다.
+type Done = Box<dyn FnOnce(MemoryOutput) + Send>;
+
+struct DetachedWrite {
+    ticket: MemoryTicket,
+    what: &'static str,
+    done: Option<Done>,
+}
+
+static DETACHED_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 결과를 기다리지 않는 요청. 모든 복제 핸들이 공유하고 메인 루프가 회차마다 거둔다.
+#[derive(Default)]
+struct DetachedWrites(Mutex<Vec<DetachedWrite>>);
+
+impl DetachedWrites {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<DetachedWrite>> {
+        tasty_utils::poison::recover_mutex(
+            self.0.lock(),
+            "detached memory writes",
+            &DETACHED_POISONED,
+        )
+    }
+}
+
+fn finish_detached(what: &'static str, done: Option<Done>, completion: MemoryCompletion) {
+    match settle(completion) {
+        Ok(output) => {
+            if let Some(done) = done {
+                done(output);
+            }
+        }
+        Err(failure) => tracing::warn!(what, ?failure, "memory write did not land"),
+    }
 }
 
 impl MemoryAccess {
@@ -98,6 +135,7 @@ impl MemoryAccess {
         Self {
             route: Route::Writer(handle),
             changes,
+            detached: Arc::default(),
         }
     }
 
@@ -106,6 +144,7 @@ impl MemoryAccess {
         Self {
             route: Route::Inline(store),
             changes: Arc::default(),
+            detached: Arc::default(),
         }
     }
 
@@ -126,6 +165,49 @@ impl MemoryAccess {
                 request,
             ))))),
         }
+    }
+
+    /// 결과를 기다리지 않는 요청을 넣는다. writer 순서를 따르므로 뒤에 넣은 요청은 이 요청의 반영을
+    /// 본다. 성공하면 `done`을 부르고 실패는 로그로 남긴다. 둘 다 [`Self::reap_detached`]를 부르는
+    /// 스레드(메인 루프)에서 일어난다.
+    pub fn submit_detached(&self, request: MemoryRequest, what: &'static str, done: Option<Done>) {
+        match self.submit(request) {
+            Ok(mut ticket) => match ticket.try_take() {
+                Some(completion) => finish_detached(what, done, completion),
+                None => self
+                    .detached
+                    .lock()
+                    .push(DetachedWrite { ticket, what, done }),
+            },
+            Err(error) => tracing::warn!(what, %error, "memory writer did not accept a write"),
+        }
+    }
+
+    /// 끝난 기다리지 않는 요청을 거둔다.
+    pub fn reap_detached(&self) {
+        let finished: Vec<_> = {
+            let mut pending = self.detached.lock();
+            let mut finished = Vec::new();
+            let mut index = 0;
+            while index < pending.len() {
+                match pending[index].ticket.try_take() {
+                    Some(completion) => {
+                        let entry = pending.swap_remove(index);
+                        finished.push((entry.what, entry.done, completion));
+                    }
+                    None => index += 1,
+                }
+            }
+            finished
+        };
+        for (what, done, completion) in finished {
+            finish_detached(what, done, completion);
+        }
+    }
+
+    /// 아직 결과를 거두지 않은 기다리지 않는 요청 수.
+    pub fn detached_len(&self) -> usize {
+        self.detached.lock().len()
     }
 
     /// 요청을 넣고 결과를 기다린다. 메인 루프처럼 writer 결과를 거두는 스레드에서는 쓰지 않는다.

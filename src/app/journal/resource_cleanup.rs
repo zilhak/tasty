@@ -102,14 +102,17 @@ impl JournalApplication {
                 else {
                     return Err("retirement owner disappeared before completion".into());
                 };
-                let outcome = owner.outcome().map(|outcome| {
-                    if matches!(outcome, OperationOutcome::Succeeded)
-                        && let Err(reason) = owner.finish_metadata(&mut session.borrow_mut())
-                    {
-                        return OperationOutcome::Uncertain { reason };
+                // scope 정리 결과가 아직 없으면 다음 회차에 다시 본다.
+                let outcome = match owner.outcome() {
+                    Some(OperationOutcome::Succeeded) => {
+                        match owner.finish_metadata(&mut session.borrow_mut()) {
+                            Ok(true) => Some(OperationOutcome::Succeeded),
+                            Ok(false) => None,
+                            Err(reason) => Some(OperationOutcome::Uncertain { reason }),
+                        }
                     }
-                    outcome
-                });
+                    other => other,
+                };
                 let lease = owner.lease().cloned();
                 session
                     .pending_resource_retirements
@@ -140,6 +143,7 @@ impl JournalApplication {
                     if let Err(reason) = owner.finish_metadata(&mut session.borrow_mut()) {
                         tracing::warn!("retirement metadata still requires recovery: {reason}");
                     }
+                    // 정리 결과가 아직 없으면 증거가 없어 다음 회차에 다시 본다.
                     if let Some(evidence) = owner.reconciliation_evidence() {
                         let lease = owner
                             .lease()

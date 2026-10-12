@@ -509,7 +509,13 @@ fn handle_work(
         }
         #[cfg(feature = "gui")]
         Work::ForwardFinished { lease, outcome } => effects::forwarded(executor, lease, outcome),
-        Work::Capture { binding, surfaces } => {
+        Work::Capture {
+            binding,
+            mut surfaces,
+            restore,
+        } => {
+            // 복원 명령을 읽지 못하면 앞 capture를 남기고 dirty 상태로 다시 시도한다.
+            restore.fill(&mut surfaces)?;
             capture::persist(executor, ticket, binding, surfaces)
         }
         Work::CaptureClosed {
@@ -517,8 +523,13 @@ fn handle_work(
             binding,
             target,
             display_name,
-            surfaces,
+            mut surfaces,
+            restore,
         } => {
+            // 닫기는 막지 않는다. 복원 명령을 읽지 못하면 그 값 없이 되돌리기 자료를 남긴다.
+            if let Err(error) = restore.fill(&mut surfaces) {
+                tracing::warn!("close capture kept no restore command: {error}");
+            }
             let admitted = pending
                 .get_mut(&ticket)
                 .ok_or("close capture has no admitted request")?;

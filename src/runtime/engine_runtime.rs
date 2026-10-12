@@ -50,6 +50,9 @@ pub(crate) struct EngineRuntime {
         crate::core::shared_list::Replica<crate::core::port_favorites::PortFavorites>,
     /// Core와 공유하는 저장소. engine 내부에서 직접 메타데이터를 기록할 때 쓴다.
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    /// memory.db 요청 핸들. 제품 부팅은 생성 직후 memory writer 핸들로 바꾼다
+    /// ([`EngineRuntime::use_memory_writer`]). 그 전(시험 구성)에는 `memory`에서 바로 실행한다.
+    pub(crate) memory_access: tasty_memory::writer::MemoryAccess,
 
     /// Sole owner of materialized/deferred kind instances. CoreState leaves contain descriptors only.
     pub(crate) surfaces: std::collections::HashMap<u32, Box<dyn crate::model::Surface>>,
@@ -72,6 +75,11 @@ impl EngineRuntime {
         !self.pending_host_events.is_empty()
             || !self.pending_lifecycle_events.is_empty()
             || !self.pending_plugin_retirements.is_empty()
+    }
+
+    /// memory.db 요청을 호스트의 memory writer로 보낸다. `access`는 `memory`와 같은 저장소의 핸들이어야 한다.
+    pub(crate) fn use_memory_writer(&mut self, access: tasty_memory::writer::MemoryAccess) {
+        self.memory_access = access;
     }
 
     /// PTY ID 발급기는 같은 프로세스의 engine들이 공유해야 ID가 겹치지 않는다.
@@ -113,6 +121,7 @@ impl EngineRuntime {
             ),
             #[cfg(feature = "gui")]
             port_favorites: crate::core::shared_list::Replica::new(registries.port_favorites),
+            memory_access: tasty_memory::writer::MemoryAccess::inline(memory.clone()),
             memory,
 
             surfaces: Default::default(),
