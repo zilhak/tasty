@@ -218,18 +218,16 @@ impl crate::TerminalState {
             0
         };
 
-        for i in 0..scrollback_len {
-            if let Some(cells) = self.scrollback_line_owned(i) {
-                let text = line_text(&cells);
-                for (col_start, col_end) in matcher.find_in(&text) {
-                    matches.push(SearchMatch {
-                        row: i,
-                        col_start,
-                        col_end,
-                    });
-                }
+        self.scrollback.for_each_line(0..scrollback_len, |i, line| {
+            let text: String = line.cells().map(|(s, _)| s).collect();
+            for (col_start, col_end) in matcher.find_in(&text) {
+                matches.push(SearchMatch {
+                    row: i,
+                    col_start,
+                    col_end,
+                });
             }
-        }
+        });
 
         let screen_lines = self.surface().screen_lines();
         for (row_idx, line) in screen_lines.iter().enumerate() {

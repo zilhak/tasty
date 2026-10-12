@@ -799,6 +799,26 @@ impl TerminalReadView<'_> {
         self.state.scrollback_len()
     }
 
+    /// Read absolute history rows `range` as [`Self::scrollback_line`] would, one entry per
+    /// row. Disk rows in the range share one file open instead of one open per row.
+    pub fn scrollback_lines(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Vec<Option<std::borrow::Cow<'_, ScrollbackLine>>> {
+        let mut out: Vec<_> = range.clone().map(|_| None).collect();
+        if self.is_alternate_screen() {
+            return out;
+        }
+        let first = self.viewport.cut.first_row;
+        let relative = range.start.saturating_sub(first)..range.end.saturating_sub(first);
+        self.state
+            .scrollback
+            .for_each_line(relative, |index, line| {
+                out[index + first - range.start] = Some(line);
+            });
+        out
+    }
+
     /// Read one absolute history row. Memory rows borrow; disk rows load only
     /// the requested line, under the same content cut as the viewport.
     pub fn scrollback_line(&self, index: usize) -> Option<std::borrow::Cow<'_, ScrollbackLine>> {

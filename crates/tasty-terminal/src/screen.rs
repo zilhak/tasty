@@ -74,17 +74,17 @@ impl TerminalState {
         let mut result = String::new();
 
         // Oldest first: the scrollback fill comes before the screen slice.
-        for i in scrollback_start..scrollback_total {
-            let text = self
-                .scrollback_line_owned(i)
-                .map(|cells| {
-                    cells
-                        .iter()
-                        .filter(|(_, attrs)| include_dim || !is_dim(attrs))
-                        .map(|(s, _)| s.as_str())
-                        .collect::<String>()
-                })
-                .unwrap_or_default();
+        // An unreadable row stays an empty line, keeping the fill aligned.
+        let mut history = vec![String::new(); scrollback_needed];
+        self.scrollback
+            .for_each_line(scrollback_start..scrollback_total, |i, line| {
+                history[i - scrollback_start] = line
+                    .cells()
+                    .filter(|(_, attrs)| include_dim || !is_dim(attrs))
+                    .map(|(s, _)| s)
+                    .collect();
+            });
+        for text in &history {
             result.push_str(text.trim_end());
             result.push('\n');
         }

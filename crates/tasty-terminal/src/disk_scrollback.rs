@@ -10,7 +10,7 @@ use crate::scrollback::ScrollbackLine;
 /// Disk scrollback magic. Change FORMAT_VERSION when changing the serialized layout.
 pub const FILE_MAGIC: &[u8; 4] = b"TSSB";
 pub const FORMAT_VERSION: u32 = 3;
-const HEADER_LEN: u64 = 8; // 4-byte magic + 4-byte version
+pub(crate) const HEADER_LEN: u64 = 8; // 4-byte magic + 4-byte version
 
 /// Serialize lines as FILE_MAGIC | FORMAT_VERSION:u32 | { len:u32 | line_bytes }*.
 /// The host stores this blob under its data directory.
@@ -64,6 +64,9 @@ pub struct DiskScrollback {
     line_offsets: Vec<u64>,
     /// File size.
     file_size: u64,
+    /// Read-side opens of the backing file, for tests that pin the per-call open count.
+    #[cfg(test)]
+    read_opens: std::sync::atomic::AtomicUsize,
 }
 
 impl DiskScrollback {
@@ -84,6 +87,8 @@ impl DiskScrollback {
             disk_line_count: 0,
             line_offsets: Vec::new(),
             file_size: HEADER_LEN,
+            #[cfg(test)]
+            read_opens: std::sync::atomic::AtomicUsize::new(0),
         };
         let initialized = (|| {
             f.write_all(FILE_MAGIC)?;
@@ -121,7 +126,7 @@ impl DiskScrollback {
             return Ok(None);
         }
 
-        let file = File::open(&self.file_path)?;
+        let file = self.open_for_read()?;
         let mut reader = BufReader::new(file);
         let offset = self.line_offsets[index];
         reader.seek(SeekFrom::Start(offset))?;
@@ -134,6 +139,43 @@ impl DiskScrollback {
         reader.read_exact(&mut data)?;
 
         Ok(Some(deserialize_line(&data)))
+    }
+
+    /// Visit lines `range` (clamped to the stored count) in order with one open and
+    /// one seek. Records are contiguous, so the rest of the range is read sequentially.
+    pub fn for_each_in_range(
+        &self,
+        range: std::ops::Range<usize>,
+        mut visit: impl FnMut(usize, ScrollbackLine),
+    ) -> std::io::Result<()> {
+        let end = range.end.min(self.disk_line_count);
+        if range.start >= end {
+            return Ok(());
+        }
+        let mut reader = BufReader::new(self.open_for_read()?);
+        reader.seek(SeekFrom::Start(self.line_offsets[range.start]))?;
+        let mut data = Vec::new();
+        for index in range.start..end {
+            let mut len_buf = [0u8; 4];
+            reader.read_exact(&mut len_buf)?;
+            data.resize(u32::from_le_bytes(len_buf) as usize, 0);
+            reader.read_exact(&mut data)?;
+            visit(index, deserialize_line(&data));
+        }
+        Ok(())
+    }
+
+    /// Serialized bytes of every stored line, excluding the file header. This equals the
+    /// record bytes `serialize_lines` produces for the same lines when no append failed.
+    pub fn records_len(&self) -> u64 {
+        self.file_size - HEADER_LEN
+    }
+
+    fn open_for_read(&self) -> std::io::Result<File> {
+        #[cfg(test)]
+        self.read_opens
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        File::open(&self.file_path)
     }
 
     pub fn line_count(&self) -> usize {
@@ -241,6 +283,25 @@ fn serialize_line(line: &ScrollbackLine) -> Vec<u8> {
         buf.push(attr_flags(attrs));
     }
     buf
+}
+
+/// Bytes `serialize_lines` spends on `line`, including its length prefix, without serializing.
+pub fn serialized_record_len(line: &ScrollbackLine) -> usize {
+    let runs: usize = line
+        .attr_runs
+        .iter()
+        .map(|(_, attrs)| 4 + color_len(&attrs.foreground()) + color_len(&attrs.background()) + 1)
+        .sum();
+    4 + 1 + 4 + line.text.len() + 4 + 2 * line.cell_lens.len() + 4 + runs
+}
+
+fn color_len(color: &ColorAttribute) -> usize {
+    match color {
+        ColorAttribute::Default => 1,
+        ColorAttribute::PaletteIndex(_) => 2,
+        ColorAttribute::TrueColorWithDefaultFallback(_)
+        | ColorAttribute::TrueColorWithPaletteFallback(_, _) => 4,
+    }
 }
 
 fn serialize_color(color: &ColorAttribute, buf: &mut Vec<u8>) {
@@ -379,6 +440,10 @@ fn deserialize_color(data: &[u8]) -> (ColorAttribute, usize) {
 impl DiskScrollback {
     pub(crate) fn backing_file(&self) -> &std::path::Path {
         &self.file_path
+    }
+
+    pub(crate) fn read_opens(&self) -> usize {
+        self.read_opens.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

@@ -152,6 +152,11 @@ impl Terminal {
         lines
     }
 
+    /// Serialized history bytes without reading disk rows; a lower bound of the captured content.
+    pub fn scrollback_serialized_len(&self) -> u64 {
+        self.lock_state().scrollback_serialized_len()
+    }
+
     pub fn screen_snapshot_lines(&self) -> Vec<ScrollbackLine> {
         self.lock_state().screen_snapshot_lines()
     }

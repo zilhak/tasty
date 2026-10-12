@@ -279,6 +279,43 @@ impl Scrollback {
         }
     }
 
+    /// Visit lines `range` (clamped to the total) oldest first. Disk rows are read with one
+    /// open and sequential reads; a disk read error drops the rest of the disk part of the
+    /// range, as per-row reads drop each unreadable row.
+    pub fn for_each_line<'s>(
+        &'s self,
+        range: std::ops::Range<usize>,
+        mut visit: impl FnMut(usize, std::borrow::Cow<'s, ScrollbackLine>),
+    ) {
+        let end = range.end.min(self.total_len());
+        let disk_count = self.disk.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
+        if let Some(ds) = &self.disk
+            && range.start < disk_count.min(end)
+            && let Err(e) = ds.for_each_in_range(range.start..disk_count.min(end), |i, line| {
+                visit(i, std::borrow::Cow::Owned(line))
+            })
+        {
+            tracing::warn!("disk scrollback range read failed: {e}");
+        }
+        for index in range.start.max(disk_count)..end {
+            if let Some(line) = self.lines.get(index - disk_count) {
+                visit(index, std::borrow::Cow::Borrowed(line));
+            }
+        }
+    }
+
+    /// Exact length of `serialize_lines` over all scrollback rows, computed without reading
+    /// the disk file. Disk rows count from the file size, memory rows from their parts.
+    pub fn serialized_len(&self) -> u64 {
+        let disk = self.disk.as_ref().map_or(0, |ds| ds.records_len());
+        let memory: u64 = self
+            .lines
+            .iter()
+            .map(|line| disk_scrollback::serialized_record_len(line) as u64)
+            .sum();
+        disk_scrollback::HEADER_LEN + disk + memory
+    }
+
     /// Returns `true` if the line at `index` was soft-wrapped (auto-wrap at
     /// the right edge of the terminal), meaning the next line is a logical
     /// continuation rather than a hard newline.
@@ -384,12 +421,15 @@ impl TerminalState {
     pub fn scrollback_lines_all(&self) -> Vec<crate::ScrollbackLine> {
         let total = self.scrollback_len();
         let mut out = Vec::with_capacity(total);
-        for i in 0..total {
-            if let Some(line) = self.scrollback.line_full(i) {
-                out.push(line);
-            }
-        }
+        self.scrollback
+            .for_each_line(0..total, |_, line| out.push(line.into_owned()));
         out
+    }
+
+    /// Length `serialize_lines(&self.scrollback_lines_all())` would have, without reading
+    /// disk rows. Persistence uses it to reject oversized history before copying it.
+    pub fn scrollback_serialized_len(&self) -> u64 {
+        self.scrollback.serialized_len()
     }
 
     /// Snapshot the current visible screen as `ScrollbackLine` records.
@@ -736,6 +776,17 @@ enum BreakKind {
     /// the screen may scroll, so the move is dropped and the cursor stays.
     Clamp,
 }
+
+#[cfg(test)]
+impl Scrollback {
+    pub(crate) fn disk_read_opens(&self) -> usize {
+        self.disk.as_ref().map_or(0, |disk| disk.read_opens())
+    }
+}
+
+#[cfg(test)]
+#[path = "scrollback_disk_read_tests.rs"]
+mod disk_read_tests;
 
 #[cfg(test)]
 mod viewport_tests {

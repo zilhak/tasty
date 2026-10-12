@@ -252,6 +252,10 @@ impl CellRenderer {
                 let scroll_offset = view.scroll_offset();
                 let scrollback_len = view.screen_start();
                 let surface_lines = view.surface().screen_lines();
+                // Fetch the visible history rows together: per-row reads reopen the disk file.
+                let history_start = scrollback_len.saturating_sub(scroll_offset);
+                let history_end = (history_start + rows).min(scrollback_len);
+                let mut history = view.scrollback_lines(history_start..history_end);
 
                 for row_idx in 0..rows {
                     let source_line =
@@ -271,7 +275,10 @@ impl CellRenderer {
                     let source_line = source_line as usize;
 
                     if source_line < scrollback_len {
-                        if let Some(line) = view.scrollback_line(source_line) {
+                        if let Some(line) = history
+                            .get_mut(source_line - history_start)
+                            .and_then(Option::take)
+                        {
                             self.render_scrollback_line(
                                 &line,
                                 row_idx,
