@@ -490,13 +490,12 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
 
 ## Explorer — 검색 결과 메뉴
 
-갤러리 `explorer-context`의 search result 메뉴는 시안대로 Open · 들어 있는 폴더에서 보기(`folderOpen` 글리프) · 구분선 · Copy path를 그린다. 본체의 검색 결과 메뉴는 이와 다르다.
+갤러리 `explorer-context`의 search result 메뉴는 시안대로 Open · 들어 있는 폴더에서 보기(`folderOpen` 글리프) · 구분선 · Copy path를 그린다. 본체의 검색 결과 메뉴는 같은 순서로 열기 · 들어 있는 폴더에서 보기 · 구분선을 맨 앞에 둔다(`src/view/main/explorer_show_in_folder.rs`). 차이는 둘이다.
 
-- **Open 행**: 본체 메뉴에는 없다.
 - **글리프**: 본체 메뉴는 네이티브 메뉴라서 행에 글리프가 없다.
-- **순서와 나머지 행**: 본체는 일반 파일 메뉴의 맨 앞에 들어 있는 폴더에서 보기와 구분선을 붙인다(`src/view/main/explorer_show_in_folder.rs`). 그 뒤는 Copy path부터 이어지는 일반 파일 메뉴의 행이다. 원격 탐색기에는 이 행을 붙이지 않는다.
+- **나머지 행**: 본체는 구분선 뒤에 Copy path부터 이어지는 일반 파일 메뉴의 행을 그대로 둔다. 시안 표본은 Copy path 한 행만 그린다. 네이티브 메뉴에서 나머지 행을 남길지는 디자인 요청 중이며, 답을 받기 전까지 본체는 행을 줄이지 않는다.
 
-본체에 Open 행을 넣을지와 네이티브 메뉴에서 어떻게 보일지는 정하지 않았다. 갤러리 예제는 시안 표본이며 본체 메뉴와 같다는 뜻이 아니다.
+원격 탐색기에는 열기와 들어 있는 폴더에서 보기를 붙이지 않는다.
 
 <a id="pathfield--autocomplete--go-합성-공용-위젯-편집이동원복-결정-포팅-2026-07-09"></a>
 

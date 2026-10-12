@@ -40,6 +40,7 @@ pub use banner::{
 };
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use draw::draw_ui;
+pub(crate) use egui_panels::apply_explorer_action;
 pub use egui_panels::draw_egui_panels;
 pub use layout_context::LayoutContext;
 pub use popup::{PopupAction, PopupManager};

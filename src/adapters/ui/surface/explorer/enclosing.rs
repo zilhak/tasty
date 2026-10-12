@@ -6,6 +6,11 @@ use std::path::{Component, Path, PathBuf};
 use super::view::{ExplorerView, LoadState};
 
 impl ExplorerView {
+    /// 지금 목록이 하위 폴더 검색 결과인가. 컨텍스트 메뉴가 결과에 열기 행을 붙일 때 쓴다.
+    pub(crate) fn is_search_result(&self) -> bool {
+        self.search_root().is_some()
+    }
+
     /// 메뉴 행의 대상: (열 폴더, 고를 항목). 링크는 대상이 든 폴더를, 하위 폴더 검색 결과는 결과가 든
     /// 폴더를 연다. 그 밖의 항목과 대상이 없는 링크는 `None` 이다.
     pub(crate) fn enclosing_target(&self, path: &Path) -> Option<(PathBuf, PathBuf)> {
