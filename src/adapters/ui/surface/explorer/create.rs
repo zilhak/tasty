@@ -28,6 +28,8 @@ pub(crate) struct CreateEdit {
     exists: Option<String>,
     /// Windows 이름 규칙을 쓰는가. 원격 폴더면 그 경로의 형식, 로컬이면 이 OS 를 따른다.
     windows: bool,
+    /// 대소문자만 다른 이름을 같은 이름으로 보는가.
+    fold_case: bool,
 }
 
 /// 이름 오류.
@@ -101,9 +103,23 @@ impl NameError {
     }
 }
 
+/// `dir` 의 파일시스템이 대소문자만 다른 이름을 같은 항목으로 보는가. macOS·Windows 의 기본
+/// 파일시스템은 그렇다. 원격 폴더는 Windows 형식 경로만 그렇게 보고, 나머지는 서버가 판정한다.
+pub(crate) fn case_insensitive(dir: &Path, remote: bool) -> bool {
+    if remote {
+        super::address::remote::is_windows_style(&dir.to_string_lossy())
+    } else {
+        cfg!(any(target_os = "macos", windows))
+    }
+}
+
+fn same_name(a: &str, b: &str, fold_case: bool) -> bool {
+    a == b || (fold_case && a.to_lowercase() == b.to_lowercase())
+}
+
 /// `base` 가 이미 있으면 "{stem} 2{.ext}", "{stem} 3{.ext}" 순으로 비는 이름을 찾는다.
-pub(crate) fn default_name(base: &str, taken: &[String]) -> String {
-    let is_taken = |n: &str| taken.iter().any(|t| t == n);
+pub(crate) fn default_name(base: &str, taken: &[String], fold_case: bool) -> String {
+    let is_taken = |n: &str| taken.iter().any(|t| same_name(t, n, fold_case));
     if !is_taken(base) {
         return base.to_string();
     }
@@ -129,7 +145,8 @@ impl CreateEdit {
         } else {
             t("explorer.new.file_default")
         };
-        let name = default_name(base, &taken);
+        let fold_case = case_insensitive(&dir, remote);
+        let name = default_name(base, &taken, fold_case);
         // 폴더는 이름 전체를, 파일은 확장자 앞까지 고른다.
         let selected = if folder {
             name.chars().count()
@@ -138,6 +155,7 @@ impl CreateEdit {
         };
         Self {
             windows: windows_rules(&dir, remote),
+            fold_case,
             dir,
             folder,
             edit: ExplorerNameEdit::new(name, 0..selected),
@@ -157,7 +175,11 @@ impl CreateEdit {
     /// 확정할 수 있는 이름이면 그대로, 아니면 오류.
     fn confirmable(&self) -> Result<(), NameError> {
         check_name(&self.edit.buf, self.windows)?;
-        if self.taken.iter().any(|n| n == &self.edit.buf) {
+        if self
+            .taken
+            .iter()
+            .any(|n| same_name(n, &self.edit.buf, self.fold_case))
+        {
             return Err(NameError::Exists);
         }
         Ok(())

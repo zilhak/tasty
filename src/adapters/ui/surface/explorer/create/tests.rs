@@ -25,16 +25,20 @@ fn names_are_checked_for_empty_invalid_characters_and_reserved_names() {
 #[test]
 fn a_taken_default_name_gets_the_next_free_number_before_the_extension() {
     let taken = |names: &[&str]| names.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    assert_eq!(default_name("New folder", &taken(&[])), "New folder");
+    assert_eq!(default_name("New folder", &taken(&[]), false), "New folder");
     assert_eq!(
-        default_name("New folder", &taken(&["New folder"])),
+        default_name("New folder", &taken(&["New folder"]), false),
         "New folder 2"
     );
     assert_eq!(
-        default_name("untitled.txt", &taken(&["untitled.txt", "untitled 2.txt"])),
+        default_name(
+            "untitled.txt",
+            &taken(&["untitled.txt", "untitled 2.txt"]),
+            false
+        ),
         "untitled 3.txt"
     );
-    assert_eq!(default_name(".env", &taken(&[".env"])), ".env 2");
+    assert_eq!(default_name(".env", &taken(&[".env"]), false), ".env 2");
 }
 
 #[test]
@@ -121,4 +125,33 @@ fn blank_names_are_empty_edge_spaces_are_refused_and_windows_refuses_a_trailing_
         "Names can't start or end with a space."
     );
     assert_eq!(check_name(".hidden", true), Ok(()));
+}
+
+#[test]
+fn a_name_differing_only_in_case_is_taken_where_the_file_system_ignores_case() {
+    // 원격 Windows 형식 폴더는 이 OS 와 관계없이 대소문자를 가리지 않는다.
+    let mut create = CreateEdit::new(r"C:\w".into(), true, vec!["Documents".into()], true);
+    create.edit.buf = "documents".into();
+    assert_eq!(create.confirmable(), Err(NameError::Exists));
+    create.edit.buf = "DOCUMENTS 2".into();
+    assert_eq!(create.confirmable(), Ok(()));
+    let default = t("explorer.new.folder_default");
+    let create = CreateEdit::new(r"C:\w".into(), true, vec![default.to_uppercase()], true);
+    assert_eq!(create.edit.buf, format!("{default} 2"));
+}
+
+#[test]
+fn a_local_name_folds_case_only_on_macos_and_windows() {
+    let mut create = CreateEdit::new("/w".into(), true, vec!["Documents".into()], false);
+    create.edit.buf = "documents".into();
+    let expected = if cfg!(any(target_os = "macos", windows)) {
+        Err(NameError::Exists)
+    } else {
+        Ok(())
+    };
+    assert_eq!(create.confirmable(), expected);
+    // 원격 Unix 형식 폴더는 서버가 가리는지 모르므로 정확히 같은 이름만 막는다.
+    let mut create = CreateEdit::new("/w".into(), true, vec!["Documents".into()], true);
+    create.edit.buf = "documents".into();
+    assert_eq!(create.confirmable(), Ok(()));
 }
