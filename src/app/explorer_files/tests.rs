@@ -388,6 +388,73 @@ fn shutdown_reports_a_running_worker_until_its_actual_join() {
     assert!(!owner.has_pending());
 }
 
+/// 종료가 시한을 넘겨 worker 를 떼어 두어도, 그 worker 는 종료가 건 취소를 보고 멈추며 준비 중 사본을
+/// 임시 폴더째 지운다. 목적지에 반쪽 사본이나 숨은 임시 폴더가 남지 않고 원본은 그대로다.
+#[test]
+fn a_worker_left_behind_after_the_shutdown_deadline_still_cleans_its_staging() {
+    use crate::app::file_jobs::job::tests::{folder_with_a_large_file, paused_mid_copy};
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    state.request_explorer_file(
+        &engine.read(),
+        sid,
+        Operation::Open("unused".into()),
+        user(),
+    );
+    let target = state.explorer_file_requests.0.pop_front().unwrap().target;
+    let dir = tempfile::tempdir().unwrap();
+    let src = folder_with_a_large_file(dir.path());
+    let original = std::fs::read(src.join("large.bin")).unwrap();
+    let dest = dir.path().join("dest");
+    std::fs::create_dir(&dest).unwrap();
+    let pause = paused_mid_copy();
+    let operation = Operation::Paste {
+        paths: vec![src.clone()],
+        destination: dest.clone(),
+        cut: false,
+    };
+    let shared = Arc::clone(&pause.shared);
+    let worker = std::thread::spawn(move || operation.run(&shared));
+    pause
+        .reached
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+    let staged: Vec<_> = std::fs::read_dir(&dest).unwrap().collect();
+    assert_eq!(staged.len(), 1, "copying into a staging folder");
+    let mut owner = ExplorerFiles {
+        job: Some(Job {
+            window: winit::window::WindowId::from(1),
+            engine: engine.id,
+            target,
+            affected: Affected::default(),
+            shared: Arc::clone(&pause.shared),
+            undo_of: None,
+            recorded: None,
+            seen: Default::default(),
+            worker,
+        }),
+        stopping: false,
+        remote: Vec::new(),
+        next_op: 0,
+    };
+    assert_eq!(owner.poll_shutdown(), 1);
+    assert!(pause.shared.cancelled(), "shutdown cancels the running job");
+    assert_eq!(owner.poll_shutdown(), 1, "the worker is still stuck");
+    // 시한이 지나면 App 은 기다리기를 멈추고 소유자를 버린다. worker 는 join 없이 떼어진다.
+    drop(owner);
+    pause.release.send(()).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while Arc::strong_count(&pause.shared) > 1 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the detached worker ends"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 0);
+    assert_eq!(std::fs::read(src.join("large.bin")).unwrap(), original);
+}
+
 #[test]
 fn failed_rename_preserves_original_selection() {
     let (mut state, engine) = crate::state::tests::test_state();
