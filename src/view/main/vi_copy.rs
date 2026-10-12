@@ -221,17 +221,8 @@ fn row_chars(
     let scrollback_len = terminal.screen_start();
     let mut out: Vec<(usize, char)> = Vec::new();
     if abs_row < scrollback_len {
-        if let Some(line) = terminal.scrollback_line_owned(abs_row) {
-            let mut col = 0usize;
-            for (text, _) in &line {
-                let ch = text.chars().next().unwrap_or(' ');
-                out.push((col, ch));
-                #[cfg(feature = "gui")]
-                let w = tasty_cell_width::unicode_width(ch);
-                #[cfg(not(feature = "gui"))]
-                let w = if ch.is_ascii() { 1 } else { 2 };
-                col += w.max(1);
-            }
+        if let Some(line) = terminal.scrollback_line_full(abs_row) {
+            out = history_chars(&line);
         }
     } else {
         let screen_row = abs_row - scrollback_len;
@@ -244,6 +235,39 @@ fn row_chars(
         }
     }
     out
+}
+
+fn history_chars(line: &tasty_terminal::ScrollbackLine) -> Vec<(usize, char)> {
+    let mut out = Vec::with_capacity(line.cell_count());
+    let mut col = 0usize;
+    for (text, _) in line.cells() {
+        let ch = text.chars().next().unwrap_or(' ');
+        out.push((col, ch));
+        #[cfg(feature = "gui")]
+        let w = tasty_cell_width::unicode_width(ch);
+        #[cfg(not(feature = "gui"))]
+        let w = if ch.is_ascii() { 1 } else { 2 };
+        col += w.max(1);
+    }
+    out
+}
+
+/// `from..=to` 행의 (abs_row, col, char)를 행 순서대로 펼친다. history 행은 한 구간으로
+/// 읽어 디스크 행마다 파일을 열지 않는다.
+fn rows_chars(
+    terminal: &tasty_terminal::TerminalReadView<'_>,
+    from: usize,
+    to: usize,
+) -> Vec<(usize, usize, char)> {
+    let history_end = to.saturating_add(1).min(terminal.screen_start()).max(from);
+    let mut flat = Vec::new();
+    terminal.for_each_scrollback_line(from..history_end, |r, line| {
+        flat.extend(history_chars(line).into_iter().map(|(c, ch)| (r, c, ch)));
+    });
+    for r in history_end..=to {
+        flat.extend(row_chars(terminal, r).into_iter().map(|(c, ch)| (r, c, ch)));
+    }
+    flat
 }
 
 /// word jump 종류.
@@ -303,12 +327,7 @@ fn word_jump_once(
     let span: isize = 30;
     let from = (start.absolute_row as isize - span).max(terminal.first_row() as isize) as usize;
     let to = ((start.absolute_row as isize + span) as usize).min(total_rows.saturating_sub(1));
-    let mut flat: Vec<(usize, usize, char)> = Vec::new(); // (abs_row, col, ch)
-    for r in from..=to {
-        for (c, ch) in row_chars(terminal, r) {
-            flat.push((r, c, ch));
-        }
-    }
+    let flat = rows_chars(terminal, from, to);
     if flat.is_empty() {
         return start;
     }
@@ -1024,6 +1043,32 @@ mod tests {
 
     fn key_char(c: char) -> Key {
         Key::Character(c.to_string().into())
+    }
+
+    #[test]
+    fn word_jump_rows_read_as_one_range_match_the_per_row_reads() {
+        let mut t = term(20, 4);
+        t.enable_disk_scrollback(u32::MAX - 931);
+        t.set_scrollback_limit(10);
+        for i in 0..200 {
+            t.feed_bytes(format!("w{i:03} 가나 foo_bar-baz qux{i}\r\n").as_bytes());
+        }
+        t.with_content(|view| {
+            let end = view.end_row();
+            for from in [0, 5, end - 50, end - 20, end - 6] {
+                let to = (from + 60).min(end - 1);
+                let per_row: Vec<_> = (from..=to)
+                    .flat_map(|r| {
+                        row_chars(&view, r)
+                            .into_iter()
+                            .map(move |(c, ch)| (r, c, ch))
+                    })
+                    .collect();
+                assert!(!per_row.is_empty());
+                assert_eq!(rows_chars(&view, from, to), per_row, "rows {from}..={to}");
+            }
+            assert!(rows_chars(&view, 9, 8).is_empty());
+        });
     }
 
     #[test]

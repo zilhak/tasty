@@ -208,8 +208,10 @@ scrollback과 화면 줄을 복사해 직렬화한다. 이 요청은 worker queu
 - surface 닫기 경로의 선택 캡처는 이 사전 검사를 하지 않는다.
 
 디스크 scrollback의 연속 구간은 파일을 한 번 열고 순차로 읽는다. 전체 scrollback 복사,
-scrollback 검색, 화면 텍스트의 history 채움, 스크롤한 화면의 history 행 렌더링이 이
-읽기를 쓴다. 줄 수와 관계없이 한 번의 읽기에 파일을 여는 횟수가 일정하다.
+scrollback 검색, 화면 텍스트의 history 채움, 스크롤한 화면의 history 행 렌더링, 선택
+텍스트 추출(일반·줄·블록 모드), vi 복사 모드의 단어 이동이 이 읽기를 쓴다. 줄 수와
+관계없이 한 번의 읽기에 파일을 여는 횟수가 일정하다. 링크 조회의 행 읽기는
+[터미널 링크](../terminal-link/index.md#소프트-wrap멀티라인-링크)에 있다.
 
 ### Journal snapshot 보존
 

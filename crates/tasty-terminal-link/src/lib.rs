@@ -3,6 +3,7 @@
 //! 좌표는 표시 컬럼 단위이며 scrollback과 현재 화면을 모두 처리한다.
 //! 링크를 여는 OS 동작은 호스트가 맡으므로 이 크레이트는 GUI 없이 사용할 수 있다.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -271,56 +272,90 @@ fn append_regex_matches(
     }
 }
 
+/// 링크 조회 한 번 동안의 행 읽기. history 행을 처음 찾으면 주변 몇 행을 한 구간으로 읽어
+/// 두어, wrap 체인을 위아래로 따라가는 동안 같은 행이나 이웃 행을 다시 읽지 않는다.
+/// 조회 한 번(같은 content cut) 안에서만 쓰므로 무효화가 필요 없다.
+struct RowReader<'a, 'v> {
+    terminal: &'a tasty_terminal::TerminalReadView<'v>,
+    scrollback_len: usize,
+    history: HashMap<usize, Option<tasty_terminal::ScrollbackLine>>,
+    screen: Option<Vec<termwiz::surface::line::Line>>,
+}
+
+/// history 행을 처음 읽을 때 함께 읽는 위아래 행 수.
+const HISTORY_WINDOW: usize = 2;
+
+impl<'a, 'v> RowReader<'a, 'v> {
+    fn new(terminal: &'a tasty_terminal::TerminalReadView<'v>) -> Self {
+        Self {
+            terminal,
+            scrollback_len: terminal.screen_start(),
+            history: HashMap::new(),
+            screen: None,
+        }
+    }
+
+    fn history(&mut self, row: usize) -> Option<&tasty_terminal::ScrollbackLine> {
+        if !self.history.contains_key(&row) {
+            let start = row.saturating_sub(HISTORY_WINDOW);
+            let end = (row + HISTORY_WINDOW + 1).min(self.scrollback_len);
+            for r in start..end {
+                self.history.entry(r).or_insert(None);
+            }
+            let history = &mut self.history;
+            self.terminal
+                .for_each_scrollback_line(start..end, |r, line| {
+                    history.insert(r, Some(line.clone()));
+                });
+        }
+        self.history.get(&row)?.as_ref()
+    }
+
+    fn screen_line(&mut self, screen_row: usize) -> Option<&termwiz::surface::line::Line> {
+        let terminal = self.terminal;
+        self.screen
+            .get_or_insert_with(|| terminal.screen_lines())
+            .get(screen_row)
+    }
+}
+
 /// 주어진 절대 row 하나에서 링크를 검출한다 — scrollback/screen 판별 포함.
 fn detect_row_links(
-    terminal: &tasty_terminal::TerminalReadView<'_>,
+    rows: &mut RowReader<'_, '_>,
     absolute_row: usize,
-    scrollback_len: usize,
     cwd: Option<&Path>,
     mirror: bool,
 ) -> Option<Vec<LinkSpan>> {
-    if absolute_row < scrollback_len {
-        let line = terminal.scrollback_line_owned(absolute_row)?;
+    if absolute_row < rows.scrollback_len {
+        let line = rows.history(absolute_row)?.to_cells();
         Some(detect_scrollback_line(&line, absolute_row, cwd, mirror))
     } else {
-        let screen_row = absolute_row - scrollback_len;
-        let lines = terminal.screen_lines();
-        let line = lines.get(screen_row)?;
+        let screen_row = absolute_row - rows.scrollback_len;
+        let line = rows.screen_line(screen_row)?;
         Some(detect_screen_line(line, absolute_row, cwd, mirror))
     }
 }
 
 /// 행의 줄바꿈 여부. scrollback은 저장된 wrapped를 쓰고 현재 화면은
 /// 오른쪽 끝의 공백 아닌 글리프로 추정한다. tasty-terminal의 캡처와 같은 기준이다.
-fn row_wrapped(
-    terminal: &tasty_terminal::TerminalReadView<'_>,
-    absolute_row: usize,
-    scrollback_len: usize,
-) -> Option<bool> {
-    if absolute_row < scrollback_len {
-        terminal.scrollback_line_wrapped(absolute_row)
+fn row_wrapped(rows: &mut RowReader<'_, '_>, absolute_row: usize) -> Option<bool> {
+    if absolute_row < rows.scrollback_len {
+        rows.history(absolute_row).map(|line| line.wrapped)
     } else {
-        let screen_row = absolute_row - scrollback_len;
-        let lines = terminal.screen_lines();
-        let line = lines.get(screen_row)?;
+        let screen_row = absolute_row - rows.scrollback_len;
+        let line = rows.screen_line(screen_row)?;
         Some(screen_line_soft_wrapped(line, line.len()))
     }
 }
 
 /// `absolute_row` 행의 컬럼 수(그 행 자체의 셀 개수 — 과거 리사이즈로 현재
 /// 터미널 폭과 다를 수 있는 scrollback 행도 정확히 반영).
-fn row_cols(
-    terminal: &tasty_terminal::TerminalReadView<'_>,
-    absolute_row: usize,
-    scrollback_len: usize,
-) -> Option<usize> {
-    if absolute_row < scrollback_len {
-        terminal
-            .scrollback_line_owned(absolute_row)
-            .map(|l| l.len())
+fn row_cols(rows: &mut RowReader<'_, '_>, absolute_row: usize) -> Option<usize> {
+    if absolute_row < rows.scrollback_len {
+        rows.history(absolute_row).map(|line| line.cell_count())
     } else {
-        let screen_row = absolute_row - scrollback_len;
-        terminal.screen_lines().get(screen_row).map(|l| l.len())
+        let screen_row = absolute_row - rows.scrollback_len;
+        rows.screen_line(screen_row).map(|l| l.len())
     }
 }
 
@@ -345,20 +380,18 @@ fn screen_line_soft_wrapped(line: &termwiz::surface::line::Line, cols: usize) ->
 /// 다음 행이 col 0 부터 동일 `uri`의 OSC8 링크로 시작하면 그 행의 세그먼트를
 /// 이어붙이고, 그 행도 wrapped 면 계속 내려간다(3행 이상 체인 대응).
 fn merge_wrap_chain_down(
-    terminal: &tasty_terminal::TerminalReadView<'_>,
-    scrollback_len: usize,
+    rows: &mut RowReader<'_, '_>,
     cwd: Option<&Path>,
     mirror: bool,
     span: &mut LinkSpan,
 ) {
     while let Some(last) = span.segments.last() {
         let last_row = last.absolute_row;
-        if row_wrapped(terminal, last_row, scrollback_len) != Some(true) {
+        if row_wrapped(rows, last_row) != Some(true) {
             break;
         }
         let next_row = last_row + 1;
-        let Some(next_spans) = detect_row_links(terminal, next_row, scrollback_len, cwd, mirror)
-        else {
+        let Some(next_spans) = detect_row_links(rows, next_row, cwd, mirror) else {
             break;
         };
         let next = next_spans.into_iter().find(|s| {
@@ -376,8 +409,7 @@ fn merge_wrap_chain_down(
 /// `span`의 첫 행 바로 위 행이 wrapped(그 행이 현재 행으로 이어짐)이고 동일
 /// `uri`의 OSC8 링크로 끝나면 그 행의 세그먼트를 앞에 붙이고 계속 올라간다.
 fn merge_wrap_chain_up(
-    terminal: &tasty_terminal::TerminalReadView<'_>,
-    scrollback_len: usize,
+    rows: &mut RowReader<'_, '_>,
     cwd: Option<&Path>,
     mirror: bool,
     span: &mut LinkSpan,
@@ -387,14 +419,13 @@ fn merge_wrap_chain_up(
         let Some(prev_row) = first_row.checked_sub(1) else {
             break;
         };
-        if row_wrapped(terminal, prev_row, scrollback_len) != Some(true) {
+        if row_wrapped(rows, prev_row) != Some(true) {
             break;
         }
-        let Some(prev_spans) = detect_row_links(terminal, prev_row, scrollback_len, cwd, mirror)
-        else {
+        let Some(prev_spans) = detect_row_links(rows, prev_row, cwd, mirror) else {
             break;
         };
-        let Some(prev_cols) = row_cols(terminal, prev_row, scrollback_len) else {
+        let Some(prev_cols) = row_cols(rows, prev_row) else {
             break;
         };
         let prev = prev_spans.into_iter().find(|s| {
@@ -431,14 +462,14 @@ pub fn link_at_view(
     mirror: bool,
 ) -> Option<LinkSpan> {
     let cwd_ref = terminal.cached_cwd().or(cwd_ref);
-    let scrollback_len = terminal.screen_start();
     if absolute_row < terminal.first_row() {
         return None;
     }
-    let spans = detect_row_links(terminal, absolute_row, scrollback_len, cwd_ref, mirror)?;
+    let mut rows = RowReader::new(terminal);
+    let spans = detect_row_links(&mut rows, absolute_row, cwd_ref, mirror)?;
     let mut found = spans.into_iter().find(|s| s.contains(col, absolute_row))?;
-    merge_wrap_chain_down(terminal, scrollback_len, cwd_ref, mirror, &mut found);
-    merge_wrap_chain_up(terminal, scrollback_len, cwd_ref, mirror, &mut found);
+    merge_wrap_chain_down(&mut rows, cwd_ref, mirror, &mut found);
+    merge_wrap_chain_up(&mut rows, cwd_ref, mirror, &mut found);
     Some(found)
 }
 
@@ -578,6 +609,9 @@ fn resolve_selection_path_candidate(
     }
     Some(abs)
 }
+
+#[cfg(test)]
+mod disk_tests;
 
 #[cfg(test)]
 mod tests {

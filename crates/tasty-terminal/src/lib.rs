@@ -819,6 +819,24 @@ impl TerminalReadView<'_> {
         out
     }
 
+    /// Visit absolute history rows `range` oldest first without collecting them. Disk rows
+    /// in the range share one file open. Rows that cannot be read are skipped, as
+    /// [`Self::scrollback_lines`] leaves them `None`.
+    pub fn for_each_scrollback_line(
+        &self,
+        range: std::ops::Range<usize>,
+        mut visit: impl FnMut(usize, &ScrollbackLine),
+    ) {
+        if self.is_alternate_screen() {
+            return;
+        }
+        let first = self.viewport.cut.first_row;
+        let relative = range.start.saturating_sub(first)..range.end.saturating_sub(first);
+        self.state
+            .scrollback
+            .for_each_line(relative, |index, line| visit(index + first, &line));
+    }
+
     /// Read one absolute history row. Memory rows borrow; disk rows load only
     /// the requested line, under the same content cut as the viewport.
     pub fn scrollback_line(&self, index: usize) -> Option<std::borrow::Cow<'_, ScrollbackLine>> {

@@ -154,40 +154,42 @@ pub fn extract_selected_text_from_view(
     let scrollback_len = terminal.screen_start();
     let (cols, _) = terminal.dimensions();
     let screen_lines = terminal.screen_lines();
+    let first = norm.start.absolute_row.max(terminal.first_row());
+    let last = norm
+        .end
+        .absolute_row
+        .min(terminal.end_row().saturating_sub(1));
+    // Selected history rows are read as one range: one file open for disk rows instead of
+    // one per row. A row that cannot be read stays empty, as a per-row read would leave it.
+    let history = first..(last.saturating_add(1)).min(scrollback_len).max(first);
+    let screen_rows = history.end..last.saturating_add(1).max(history.end);
 
     // Block (visual block) — soft-wrap join 무관, 각 row 의 [c0..=c1] 사각형을
     // join("\n") 으로 추출. 본질적으로 visual selection.
     if norm.mode == SelectionMode::Block {
         let c0 = norm.start.col.min(norm.end.col);
         let c1 = norm.start.col.max(norm.end.col);
-        let mut lines: Vec<String> = Vec::new();
-        for abs_row in norm.start.absolute_row.max(terminal.first_row())
-            ..=norm
-                .end
-                .absolute_row
-                .min(terminal.end_row().saturating_sub(1))
-        {
-            let mut row_text = String::new();
-            if abs_row < scrollback_len {
-                if let Some(cells) = terminal.scrollback_line_owned(abs_row) {
-                    let mut col_idx: usize = 0;
-                    for (cell_text, _) in &cells {
-                        let ch = cell_text.chars().next().unwrap_or(' ');
-                        let width = tasty_cell_width::unicode_width(ch);
-                        if col_idx >= c0 && col_idx <= c1 {
-                            row_text.push_str(cell_text);
-                        }
-                        col_idx += width.max(1);
-                    }
+        let mut lines: Vec<String> = vec![String::new(); history.len()];
+        terminal.for_each_scrollback_line(history.clone(), |abs_row, line| {
+            let row_text = &mut lines[abs_row - history.start];
+            let mut col_idx: usize = 0;
+            for (cell_text, _) in line.cells() {
+                let ch = cell_text.chars().next().unwrap_or(' ');
+                let width = tasty_cell_width::unicode_width(ch);
+                if col_idx >= c0 && col_idx <= c1 {
+                    row_text.push_str(cell_text);
                 }
-            } else {
-                let screen_row = abs_row - scrollback_len;
-                if let Some(line) = screen_lines.get(screen_row) {
-                    for cell_ref in line.visible_cells() {
-                        let col_idx = cell_ref.cell_index();
-                        if col_idx >= c0 && col_idx <= c1 {
-                            row_text.push_str(cell_ref.str());
-                        }
+                col_idx += width.max(1);
+            }
+        });
+        for abs_row in screen_rows {
+            let mut row_text = String::new();
+            let screen_row = abs_row - scrollback_len;
+            if let Some(line) = screen_lines.get(screen_row) {
+                for cell_ref in line.visible_cells() {
+                    let col_idx = cell_ref.cell_index();
+                    if col_idx >= c0 && col_idx <= c1 {
+                        row_text.push_str(cell_ref.str());
                     }
                 }
             }
@@ -196,27 +198,20 @@ pub fn extract_selected_text_from_view(
         return lines.join("\n");
     }
 
-    let mut rows: Vec<(String, bool)> = Vec::new();
-    for abs_row in norm.start.absolute_row.max(terminal.first_row())
-        ..=norm
-            .end
-            .absolute_row
-            .min(terminal.end_row().saturating_sub(1))
-    {
-        let (text, wrapped) = if abs_row < scrollback_len {
-            let raw = extract_scrollback_line(terminal, abs_row, &norm, abs_row);
-            let wrapped = terminal.scrollback_line_wrapped(abs_row).unwrap_or(false);
-            (raw, wrapped)
+    let mut rows: Vec<(String, bool)> = vec![(String::new(), false); history.len()];
+    terminal.for_each_scrollback_line(history.clone(), |abs_row, line| {
+        rows[abs_row - history.start] =
+            (extract_scrollback_line(line, &norm, abs_row), line.wrapped);
+    });
+    for abs_row in screen_rows {
+        let screen_row = abs_row - scrollback_len;
+        let row = if let Some(line) = screen_lines.get(screen_row) {
+            let raw = extract_surface_line(line, &norm, abs_row);
+            (raw, screen_line_soft_wrapped(line, cols))
         } else {
-            let screen_row = abs_row - scrollback_len;
-            if let Some(line) = screen_lines.get(screen_row) {
-                let raw = extract_surface_line(line, &norm, abs_row);
-                (raw, screen_line_soft_wrapped(line, cols))
-            } else {
-                (String::new(), false)
-            }
+            (String::new(), false)
         };
-        rows.push((text, wrapped));
+        rows.push(row);
     }
 
     // Join: a wrapped row glues directly to the next; a non-wrapped row gets
@@ -262,19 +257,13 @@ fn screen_line_soft_wrapped(line: &termwiz::surface::line::Line, cols: usize) ->
 }
 
 fn extract_scrollback_line(
-    terminal: &tasty_terminal::TerminalReadView<'_>,
-    index: usize,
+    line: &tasty_terminal::ScrollbackLine,
     sel: &NormalizedSelection,
     abs_row: usize,
 ) -> String {
-    let line = match terminal.scrollback_line_owned(index) {
-        Some(l) => l,
-        None => return String::new(),
-    };
-
     let mut text = String::new();
     let mut col_idx: usize = 0;
-    for (cell_text, _attrs) in &line {
+    for (cell_text, _attrs) in line.cells() {
         let ch = cell_text.chars().next().unwrap_or(' ');
         let width = tasty_cell_width::unicode_width(ch);
         let selected = match sel.mode {
@@ -319,6 +308,9 @@ fn is_col_in_range(col: usize, abs_row: usize, sel: &NormalizedSelection) -> boo
         true
     }
 }
+
+#[cfg(test)]
+mod disk_tests;
 
 #[cfg(test)]
 mod tests {

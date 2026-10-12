@@ -123,3 +123,22 @@ fn serialized_len_matches_the_serialized_history_without_reading_disk() {
     let actual = crate::disk_scrollback::serialize_lines(&state.scrollback_lines_all()).len();
     assert_eq!(estimated, actual as u64);
 }
+
+#[test]
+fn visiting_a_history_range_opens_the_disk_file_once_and_matches_row_reads() {
+    let terminal = spilled_terminal(u32::MAX - 816);
+    terminal.with_content(|view| {
+        let state = &view.state;
+        let before = state.scrollback.disk_read_opens();
+        let mut visited = Vec::new();
+        view.for_each_scrollback_line(100..SPILLED, |row, line| visited.push((row, line.clone())));
+        let opens = state.scrollback.disk_read_opens() - before;
+        assert_eq!(opens, 1, "one open for {} disk rows", SPILLED - 108);
+        assert_eq!(visited.len(), SPILLED - 100);
+        for (row, line) in &visited {
+            let single = view.scrollback_line_full(*row).expect("per-row read");
+            assert_eq!(line.to_cells(), single.to_cells(), "row {row}");
+            assert_eq!(line.wrapped, single.wrapped, "row {row}");
+        }
+    });
+}
