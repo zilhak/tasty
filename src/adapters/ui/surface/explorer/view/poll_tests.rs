@@ -294,6 +294,92 @@ fn the_current_folder_in_the_tree_is_read_once_and_its_node_is_replaced_in_place
     shutdown(owner);
 }
 
+#[test]
+fn a_refresh_rereads_the_same_folder_while_the_old_list_and_tree_stay() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root = dir.path().to_path_buf();
+    std::fs::write(root.join("keep"), b"x").expect("write");
+    std::fs::write(root.join("gone"), b"x").expect("write");
+    std::fs::create_dir_all(root.join("sub").join("old")).expect("mkdir");
+    let panel = ExplorerPanel::new(1, root.clone());
+    let mut view = ExplorerView::new();
+    let mut owner = LocalReads::default();
+    settle(&mut view, &panel, &mut owner);
+    let sub = root.join("sub");
+    view.expanded.insert(sub.clone());
+    view.tree_children_of(&sub, None);
+    settle(&mut view, &panel, &mut owner);
+    view.select_only(&root.join("keep"));
+    view.toggle_select(&root.join("gone"));
+    let generation = view.entries_gen;
+
+    std::fs::remove_file(root.join("gone")).expect("remove");
+    std::fs::create_dir(sub.join("inner")).expect("mkdir");
+    view.request_refresh();
+    view.sync(&panel, None);
+    assert!(view.local_query.is_some(), "같은 폴더를 다시 읽는다");
+    assert!(
+        view.tree_queries.contains_key(&sub),
+        "읽어 둔 트리 폴더도 다시 읽는다"
+    );
+    assert_eq!(
+        view.state,
+        super::super::LoadState::Ok,
+        "Loading 화면을 보이지 않는다"
+    );
+    assert_eq!(
+        view.entries_gen, generation,
+        "읽는 동안 보이던 목록을 그대로 둔다"
+    );
+    assert_eq!(
+        tree_names(&view, &sub),
+        ["old"],
+        "읽는 동안 보이던 하위 목록을 그대로 둔다"
+    );
+
+    settle(&mut view, &panel, &mut owner);
+    let mut names: Vec<&str> = view.entries.iter().map(|e| e.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["keep", "sub"]);
+    assert_eq!(tree_names(&view, &sub), ["inner", "old"]);
+    assert_eq!(
+        view.selected,
+        std::collections::HashSet::from([root.join("keep")]),
+        "사라진 항목만 선택에서 빠진다"
+    );
+    shutdown(owner);
+}
+
+#[test]
+fn a_refresh_of_a_failed_folder_shows_loading_and_a_file_operation_reload_empties_the_list() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root = dir.path().to_path_buf();
+    std::fs::write(root.join("a"), b"x").expect("write");
+    let panel = ExplorerPanel::new(1, root.clone());
+    let mut view = ExplorerView::new();
+    let mut owner = LocalReads::default();
+    settle(&mut view, &panel, &mut owner);
+
+    // 파일 작업 뒤 다시 읽기는 사용자 새로고침이 아니므로 지금처럼 목록을 비우고 읽는다.
+    view.request_reload();
+    view.sync(&panel, None);
+    assert_eq!(view.state, super::super::LoadState::Loading);
+    assert!(view.entries.is_empty());
+    settle(&mut view, &panel, &mut owner);
+
+    view.state = super::super::LoadState::Error("gone".into());
+    view.request_refresh();
+    view.sync(&panel, None);
+    assert_eq!(
+        view.state,
+        super::super::LoadState::Loading,
+        "오류 화면의 다시 시도는 Loading 으로 바꾼다"
+    );
+    settle(&mut view, &panel, &mut owner);
+    assert_eq!(view.state, super::super::LoadState::Ok);
+    shutdown(owner);
+}
+
 fn tree_names(view: &ExplorerView, dir: &Path) -> Vec<String> {
     view.tree_children[dir]
         .iter()

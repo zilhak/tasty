@@ -82,6 +82,8 @@ pub struct ExplorerView {
     pub tree_children: HashMap<PathBuf, Vec<DirEntryInfo>>,
     /// 강제 새로고침 요청 플래그 (F5 / refresh 버튼).
     reload_requested: bool,
+    /// 사용자 새로고침(F5·툴바)이다. 같은 폴더를 보이고 있으면 목록과 트리를 둔 채 다시 읽는다.
+    refresh_in_place: bool,
     /// 현재 폴더가 없어 읽지 못했을 때 남아 있는 가장 가까운 상위 폴더. 읽기 오류 화면의 "상위 폴더로" 가 쓴다.
     existing_ancestor: Option<PathBuf>,
     /// 원격 mirror의 홈 폴더. 연결마다 한 번 조회하며 아직 모르면 None이다. 주소창의 `~` 가 쓴다.
@@ -260,6 +262,7 @@ impl ExplorerView {
             expanded: HashSet::new(),
             tree_children: HashMap::new(),
             reload_requested: false,
+            refresh_in_place: false,
             existing_ancestor: None,
             remote_home: None,
             addr_buffer: String::new(),
@@ -456,6 +459,13 @@ impl ExplorerView {
         self.reload_requested = true;
     }
 
+    /// 사용자 새로고침(F5·툴바·다시 시도). 같은 폴더의 목록을 보이고 있으면 외부 변경 확인처럼
+    /// 보이던 목록과 펼친 트리를 둔 채 다시 읽어 스크롤을 지킨다. 그 밖에는 [`Self::request_reload`] 와 같다.
+    pub fn request_refresh(&mut self) {
+        self.reload_requested = true;
+        self.refresh_in_place = true;
+    }
+
     /// 보이는 엔트리를 모두 선택. 앵커는 마지막 엔트리로 둔다. Find 로 숨긴 항목은 고르지 않는다.
     pub fn select_all(&mut self) {
         let shown = self.shown_entries();
@@ -503,6 +513,7 @@ impl ExplorerView {
         if let Some(local_ws_id) = mirror_ws_id {
             self.local_query = None;
             self.tree_queries.clear();
+            self.refresh_in_place = false;
             self.sync_remote(&tab.root, tab.sort_column, tab.sort_dir, local_ws_id);
             return;
         }
@@ -514,12 +525,21 @@ impl ExplorerView {
             .map(|(d, _, _)| d != &tab.root)
             .unwrap_or(true);
         let explicit = self.reload_requested;
-        let need = explicit || self.loaded.as_ref() != Some(&key);
+        let same_list = self.loaded.as_ref() == Some(&key);
+        let need = explicit || !same_list;
+        let in_place = std::mem::take(&mut self.refresh_in_place)
+            && explicit
+            && same_list
+            && self.state == LoadState::Ok;
         if !need {
             return;
         }
         self.reload_requested = false;
         self.sync_find(&tab.root, true);
+        if in_place {
+            self.refresh_keeping_list(&tab.root);
+            return;
+        }
         // 목록이 바뀌는 것이 확실한 지점이다. 정렬만 바뀌어도 인덱스가 가리키는 항목이
         // 달라지므로, 폴더 변경(`dir_changed`)보다 넓은 이 조건에서 버퍼를 비운다.
         self.reset_type_ahead();
@@ -540,6 +560,31 @@ impl ExplorerView {
             self.tree_queries.clear();
         }
         self.loaded = Some(key);
+    }
+
+    /// 보이던 목록·선택·트리 캐시를 둔 채 현재 폴더와 하위 목록을 읽어 둔 트리 폴더를 다시 읽는다.
+    /// 결과가 오면 외부 변경 확인의 다시 읽기와 같은 경로로 바꾼다. 트리 캐시를 먼저 비우면 사이드바
+    /// 높이가 줄어 트리 스크롤이 맨 위로 돌아가고, 목록을 비우면 목록 스크롤이 맨 위로 간다.
+    fn refresh_keeping_list(&mut self, root: &Path) {
+        self.reset_type_ahead();
+        self.local_query = Some(crate::app::local_reads::stamped_directory(
+            root.to_path_buf(),
+        ));
+        self.writable_query = Some((
+            root.to_path_buf(),
+            crate::app::local_reads::writable(root.to_path_buf()),
+        ));
+        // 트리의 현재 폴더는 목록 결과가 함께 바꾼다.
+        let stale: Vec<PathBuf> = self
+            .tree_children
+            .keys()
+            .filter(|dir| dir.as_path() != root && !self.tree_queries.contains_key(*dir))
+            .cloned()
+            .collect();
+        for dir in stale {
+            let query = crate::app::local_reads::stamped_directory(dir.clone());
+            self.tree_queries.insert(dir, query);
+        }
     }
 
     /// 경로별 원격 요청을 만들거나 저장된 결과를 표시한다. 실제 응답 반영은 apply_remote_list_dir_result에서 한다.

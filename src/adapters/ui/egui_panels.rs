@@ -518,7 +518,7 @@ pub(crate) fn apply_explorer_action(
         A::Ops(op) => state.apply_explorer_ops(engine, sid, op.clone()),
         A::Refresh => {
             if let Some(v) = state.explorer_views.get_mut(sid) {
-                v.request_reload();
+                v.request_refresh();
             }
         }
         A::AddressRejected(why) => {
