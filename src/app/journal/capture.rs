@@ -5,6 +5,12 @@ pub(super) struct PendingCapture {
     dirty_generation: std::sync::Weak<()>,
     work: Option<Work>,
 }
+/// A capture that could never fit the queue. Retrying it before the layout changes again, or
+/// before its history shrinks, would repeat the same expensive copy and fail the same way.
+pub(super) struct CaptureRejection {
+    dirty_generation: std::sync::Weak<()>,
+    lower_bound: u64,
+}
 impl JournalApplication {
     #[cfg(feature = "gui")]
     pub(crate) fn queue_surface_capture(&mut self, session: &EngineSession, force: bool) {
@@ -59,6 +65,11 @@ impl JournalApplication {
                 .journal_binding
                 .clone()
                 .ok_or("capture engine is unbound")?;
+            let Some(candidate) = self.capture_size_gate(id, session) else {
+                self.capture_requests.remove(&id);
+                continue;
+            };
+            let generation = candidate.dirty_generation.clone();
             let surfaces = match crate::runtime::surface_capture::capture(session) {
                 Ok(surfaces) => surfaces,
                 Err(error) => {
@@ -68,15 +79,22 @@ impl JournalApplication {
                 }
             };
             let work = Work::Capture { binding, surfaces };
+            let size = crate::runtime::journal_product::request_size(&work);
+            if size > tasty_ipc::admission::QUEUED_BYTES_LIMIT {
+                self.reject_oversized(id, candidate, "capture", size as u64);
+                self.capture_requests.remove(&id);
+                continue;
+            }
             let held = self
                 .captures
                 .values()
                 .filter_map(|capture| capture.work.as_ref())
                 .map(crate::runtime::journal_product::request_size)
                 .fold(0usize, usize::saturating_add);
+            // Bytes held by in-flight captures are released when they finish, so this rejection
+            // is temporary and the next dirty tick retries.
             if self.captures.len() >= 64
-                || held.saturating_add(crate::runtime::journal_product::request_size(&work))
-                    > tasty_ipc::admission::QUEUED_BYTES_LIMIT
+                || held.saturating_add(size) > tasty_ipc::admission::QUEUED_BYTES_LIMIT
             {
                 tracing::warn!(
                     "capture exceeds available queue bytes; previous immutable data retained"
@@ -84,6 +102,7 @@ impl JournalApplication {
                 self.capture_requests.remove(&id);
                 continue;
             }
+            self.capture_rejections.remove(&id);
             let ticket = self.next_ticket;
             self.next_ticket = ticket
                 .checked_add(1)
@@ -92,7 +111,7 @@ impl JournalApplication {
                 ticket,
                 PendingCapture {
                     engine: id,
-                    dirty_generation: session.persistence.dirty.generation(),
+                    dirty_generation: generation,
                     work: Some(work),
                 },
             );
@@ -118,6 +137,45 @@ impl JournalApplication {
             }
         }
         Ok(())
+    }
+    /// Cheap checks before copying terminal history. `None` skips the engine this time; otherwise
+    /// the returned record is what a later rejection of the full capture remembers.
+    fn capture_size_gate(
+        &mut self,
+        id: EngineId,
+        session: &EngineSession,
+    ) -> Option<CaptureRejection> {
+        let candidate = CaptureRejection {
+            dirty_generation: session.persistence.dirty.generation(),
+            lower_bound: crate::runtime::surface_capture::content_lower_bound(session),
+        };
+        if self.capture_rejections.get(&id).is_some_and(|rejected| {
+            rejected
+                .dirty_generation
+                .ptr_eq(&candidate.dirty_generation)
+                && candidate.lower_bound >= rejected.lower_bound
+        }) {
+            return None;
+        }
+        if candidate.lower_bound > tasty_ipc::admission::QUEUED_BYTES_LIMIT as u64 {
+            let bytes = candidate.lower_bound;
+            self.reject_oversized(id, candidate, "terminal history", bytes);
+            return None;
+        }
+        Some(candidate)
+    }
+    fn reject_oversized(
+        &mut self,
+        id: EngineId,
+        rejection: CaptureRejection,
+        what: &str,
+        bytes: u64,
+    ) {
+        let limit = tasty_ipc::admission::QUEUED_BYTES_LIMIT;
+        tracing::warn!(
+            "{what} of {bytes} bytes exceeds the {limit} byte capture limit; previous immutable data retained until the layout or history changes"
+        );
+        self.capture_rejections.insert(id, rejection);
     }
     pub(super) fn answer_capture(
         &mut self,
@@ -556,3 +614,7 @@ pub(crate) struct PresetPluginReply {
     pub(crate) call_id: u64,
     pub(crate) response: crate::ipc::protocol::JsonRpcResponse,
 }
+
+#[cfg(all(test, unix, feature = "gui"))]
+#[path = "capture_tests.rs"]
+mod tests;

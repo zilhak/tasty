@@ -24,6 +24,30 @@ impl CapturedSurface {
 pub(crate) fn capture(session: &EngineSession) -> Result<Vec<CapturedSurface>, String> {
     capture_selected(session, None)
 }
+/// Serialized terminal history the next [`capture`] would copy, summed without reading disk rows.
+/// Each surface's encoded bytes contain its whole history, so the request is at least this large.
+pub(crate) fn content_lower_bound(session: &EngineSession) -> u64 {
+    let engine = session.as_ref();
+    if !engine.runtime.settings.general.restore_surface_content {
+        return 0;
+    }
+    let mut total = 0u64;
+    for workspace in engine.core.local_workspaces() {
+        for id in workspace.all_surface_ids() {
+            if engine.runtime.surfaces.get(&id).is_some_and(|owner| {
+                owner
+                    .as_any()
+                    .is::<crate::runtime::surface_restorer::JournalPlaceholder>()
+            }) {
+                continue;
+            }
+            if let Some(terminal) = engine.runtime.terminals.get(id) {
+                total = total.saturating_add(terminal.scrollback_serialized_len());
+            }
+        }
+    }
+    total
+}
 pub(crate) fn capture_selected(
     session: &EngineSession,
     selected: Option<&std::collections::HashSet<u32>>,
