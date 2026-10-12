@@ -20,11 +20,9 @@ pub(crate) fn handle_commands(
     };
     let limit = p_try!(params::opt_int::<usize>(params, "limit", &id));
     let since = p_try!(params::opt_i64(params, "since", &id));
-    let entries = match read_command_entries(core, surface_id, limit, since) {
-        Ok(v) => v,
-        Err(e) => return e.into_response(id),
-    };
-    JsonRpcResponse::success(id, json!({ "surface_id": surface_id, "commands": entries }))
+    reply_commands(core, id, params, limit, since, move |id, entries| {
+        JsonRpcResponse::success(id, json!({ "surface_id": surface_id, "commands": entries }))
+    })
 }
 
 /// `surface.last_command` — 가장 최근 record. 없으면 `null`.
@@ -38,12 +36,10 @@ pub(crate) fn handle_last_command(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let entries = match read_command_entries(core, surface_id, None, None) {
-        Ok(v) => v,
-        Err(e) => return e.into_response(id),
-    };
-    let last = entries.into_iter().next_back();
-    JsonRpcResponse::success(id, json!({ "surface_id": surface_id, "command": last }))
+    reply_commands(core, id, params, None, None, move |id, entries| {
+        let last = entries.into_iter().next_back();
+        JsonRpcResponse::success(id, json!({ "surface_id": surface_id, "command": last }))
+    })
 }
 
 /// `surface.command_at` — 0-based 인덱스 (음수면 끝에서부터). 범위 밖이면 `null`.
@@ -61,21 +57,19 @@ pub(crate) fn handle_command_at(
         Some(i) => i,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };
-    let entries = match read_command_entries(core, surface_id, None, None) {
-        Ok(v) => v,
-        Err(e) => return e.into_response(id),
-    };
-    let len = entries.len() as i64;
-    let resolved = if index < 0 { len + index } else { index };
-    let cmd = if resolved >= 0 && resolved < len {
-        Some(entries[resolved as usize].clone())
-    } else {
-        None
-    };
-    JsonRpcResponse::success(
-        id,
-        json!({ "surface_id": surface_id, "index": index, "command": cmd }),
-    )
+    reply_commands(core, id, params, None, None, move |id, entries| {
+        let len = entries.len() as i64;
+        let resolved = if index < 0 { len + index } else { index };
+        let cmd = if resolved >= 0 && resolved < len {
+            Some(entries[resolved as usize].clone())
+        } else {
+            None
+        };
+        JsonRpcResponse::success(
+            id,
+            json!({ "surface_id": surface_id, "index": index, "command": cmd }),
+        )
+    })
 }
 
 struct CommandsReadError {
@@ -87,8 +81,32 @@ impl CommandsReadError {
     }
 }
 
-fn read_command_entries(
+/// 명령 기록 읽기를 memory writer 요청으로 넣고 결과 뒤에 응답한다.
+fn reply_commands(
     core: &AppServices,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+    limit: Option<usize>,
+    since: Option<i64>,
+    respond: impl FnOnce(serde_json::Value, Vec<serde_json::Value>) -> JsonRpcResponse + Send + 'static,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    core.reply_store(
+        id,
+        crate::adapters::ipc::handler::deferred::params_bytes(params),
+        move |s| read_command_entries(s, surface_id, limit, since),
+        move |_, id, entries| match entries {
+            Ok(entries) => respond(id, entries),
+            Err(e) => e.into_response(id),
+        },
+    )
+}
+
+fn read_command_entries(
+    store: &mut dyn tasty_memory::MemoryStorage,
     surface_id: u32,
     limit: Option<usize>,
     since: Option<i64>,
@@ -100,15 +118,14 @@ fn read_command_entries(
         until: None,
         offset: None,
     };
-    let entries =
-        match core.with_memory(|s| s.list(&tasty_memory::Scope::Surface(surface_id), &opts)) {
-            Ok(v) => v,
-            Err(e) => {
-                return Err(CommandsReadError {
-                    message: format!("memory.list failed: {e}"),
-                });
-            }
-        };
+    let entries = match store.list(&tasty_memory::Scope::Surface(surface_id), &opts) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(CommandsReadError {
+                message: format!("memory.list failed: {e}"),
+            });
+        }
+    };
     let out = entries
         .into_iter()
         .filter_map(|e| match e.value {

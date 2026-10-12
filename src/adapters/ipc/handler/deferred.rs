@@ -639,6 +639,30 @@ mod tests {
         assert_eq!(missing.error.expect("missing").code, -32004);
     }
 
+    // 세션 IPC와 명령 기록 조회도 writer 요청의 결과 뒤에 응답한다.
+    #[test]
+    fn session_and_command_reads_answer_after_the_writer() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = writer_core();
+        let (issued, later) = run_request(
+            &mut core,
+            &make_request(1, "session.issue", json!({"agent_id": "w-agent"}), None),
+        );
+        assert!(later);
+        assert!(issued.result.expect("issued")["token"].is_string());
+        let (listed, later) =
+            run_request(&mut core, &make_request(2, "session.list", json!({}), None));
+        assert!(later);
+        let sessions = listed.result.expect("listed")["sessions"].clone();
+        assert_eq!(sessions[0]["agent_id"], json!("w-agent"));
+        let (commands, later) = run_request(
+            &mut core,
+            &make_request(3, "surface.commands", json!({"surface_id": 7}), None),
+        );
+        assert!(later);
+        assert_eq!(commands.result.expect("commands")["commands"], json!([]));
+    }
+
     /// 진입 경로 밖(app 계층)에서 부른 핸들러의 응답을 [`AppServices::send_handled`]로 보내고 결과를
     /// 기다린다.
     fn answer_outside_the_router(core: &AppServices, response: JsonRpcResponse) -> JsonRpcResponse {
@@ -683,6 +707,51 @@ mod tests {
             let answer = answer_outside_the_router(&core, clear);
             assert_eq!(answer.result.expect("cleared")["removed"], json!(0));
         }
+        core.expect_no_parked_reply();
+    }
+
+    // GUI app 계층이 부르는 agent 권한 부여·회수·조회도 writer 결과로 답한다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn app_layer_agent_permission_handlers_answer_after_the_writer() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = writer_core();
+        let (issued, later) = run_request(
+            &mut core,
+            &make_request(1, "session.issue", json!({"agent_id": "app-agent"}), None),
+        );
+        assert!(later);
+        assert!(issued.error.is_none(), "{issued:?}");
+        let grant = crate::ipc::handler::session::handle_grant_agent_permission(
+            &core,
+            json!(2),
+            &json!({"agent_id": "app-agent", "permission": "surface.read"}),
+        );
+        let answer = answer_outside_the_router(&core, grant);
+        assert_eq!(answer.result.expect("granted")["added"], json!(true));
+        let registry = crate::runtime::surface_registry::SurfaceKindRegistry::new();
+        let listed = crate::ipc::handler::plugin::dispatch_readonly(
+            &core,
+            None,
+            &registry,
+            "plugin.list_agent_permissions",
+            json!(3),
+            &json!({"agent_id": "app-agent"}),
+        )
+        .expect("read only method");
+        let answer = answer_outside_the_router(&core, listed);
+        let agents = answer.result.expect("listed")["agents"].clone();
+        assert_eq!(
+            agents[0]["temp_grants"][0]["permission"],
+            json!("surface.read")
+        );
+        let revoke = crate::ipc::handler::session::handle_revoke_agent_permission(
+            &core,
+            json!(4),
+            &json!({"agent_id": "app-agent", "permission": "surface.read"}),
+        );
+        let answer = answer_outside_the_router(&core, revoke);
+        assert_eq!(answer.result.expect("revoked")["removed"], json!(true));
         core.expect_no_parked_reply();
     }
 

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::plugin::manifest::Permission;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
-use tasty_ipc::session::SessionError;
+use tasty_ipc::session::{SessionError, SessionStore};
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -133,20 +133,25 @@ pub fn handle_issue(
     };
 
     let now = now_ms();
-    let result = core.session_issue(agent_id.clone(), parent.clone(), perms.clone(), ttl_ms, now);
-    match result {
-        Ok((token, session)) => crate::adapters::ipc::handler::memory::written(
-            core,
-            id,
-            json!({
-                "token": token.as_str(),
-                "agent_id": session.agent_id,
-                "parent": session.parent,
-                "expires_at_ms": session.expires_at_ms,
-            }),
-        ),
-        Err(e) => session_err_to_response(id, e),
-    }
+    reply_session(
+        core,
+        id,
+        params,
+        move |store| store.issue(agent_id.clone(), parent.clone(), perms.clone(), ttl_ms, now),
+        |core, id, result| match result {
+            Ok((token, session)) => crate::adapters::ipc::handler::memory::written(
+                core,
+                id,
+                json!({
+                    "token": token.as_str(),
+                    "agent_id": session.agent_id,
+                    "parent": session.parent,
+                    "expires_at_ms": session.expires_at_ms,
+                }),
+            ),
+            Err(e) => session_err_to_response(id, e),
+        },
+    )
 }
 
 /// `session.revoke` — 주어진 토큰 무효화.
@@ -169,41 +174,53 @@ pub fn handle_revoke(
             return JsonRpcResponse::invalid_params(id, "Invalid 'token' (must be 64 hex chars)");
         }
     };
-    let result = core.session_revoke(&token);
-    match result {
-        Ok(revoked) => {
-            crate::adapters::ipc::handler::memory::written(core, id, json!({ "revoked": revoked }))
-        }
-        Err(e) => session_err_to_response(id, e),
-    }
+    reply_session(
+        core,
+        id,
+        params,
+        move |store| store.revoke(&token),
+        |core, id, result| match result {
+            Ok(revoked) => crate::adapters::ipc::handler::memory::written(
+                core,
+                id,
+                json!({ "revoked": revoked }),
+            ),
+            Err(e) => session_err_to_response(id, e),
+        },
+    )
 }
 
 /// `session.list` — 활성 세션 목록 (host 전용, 디버깅/감사용).
 pub fn handle_list(core: &crate::app::services::AppServices, id: Value) -> JsonRpcResponse {
     let now = now_ms();
-    let result = core.session_list(now);
-    match result {
-        Ok(sessions) => {
-            let arr: Vec<Value> = sessions
-                .into_iter()
-                .map(|s| {
-                    json!({
-                        "agent_id": s.agent_id,
-                        "parent": s.parent,
-                        "permissions": s.permissions,
-                        "temp_grants": s.temp_grants.iter().map(|g| json!({
-                            "permission": g.permission,
-                            "expires_at_ms": g.expires_at_ms,
-                        })).collect::<Vec<_>>(),
-                        "created_at_ms": s.created_at_ms,
-                        "expires_at_ms": s.expires_at_ms,
+    reply_session(
+        core,
+        id,
+        &Value::Null,
+        move |store| store.list(now),
+        |_, id, result| match result {
+            Ok(sessions) => {
+                let arr: Vec<Value> = sessions
+                    .into_iter()
+                    .map(|s| {
+                        json!({
+                            "agent_id": s.agent_id,
+                            "parent": s.parent,
+                            "permissions": s.permissions,
+                            "temp_grants": s.temp_grants.iter().map(|g| json!({
+                                "permission": g.permission,
+                                "expires_at_ms": g.expires_at_ms,
+                            })).collect::<Vec<_>>(),
+                            "created_at_ms": s.created_at_ms,
+                            "expires_at_ms": s.expires_at_ms,
+                        })
                     })
-                })
-                .collect();
-            JsonRpcResponse::success(id, json!({ "sessions": arr }))
-        }
-        Err(e) => session_err_to_response(id, e),
-    }
+                    .collect();
+                JsonRpcResponse::success(id, json!({ "sessions": arr }))
+            }
+            Err(e) => session_err_to_response(id, e),
+        },
+    )
 }
 
 /// `plugin.grant_agent_permission` — 활성 agent 에게 임시 권한 grant.
@@ -242,23 +259,37 @@ pub fn handle_grant_agent_permission(
     let ttl_ms =
         p_try!(params::opt_int::<u64>(params, "ttl_secs", &id)).map(|s| s.saturating_mul(1000));
     let now = now_ms();
-    let result = core.session_grant_permission_for_agent(&agent_id, &permission, ttl_ms, now);
-    match result {
-        Ok(Some((added, expires_at))) => JsonRpcResponse::success(
-            id,
-            json!({
-                "agent_id": agent_id,
-                "permission": permission,
-                "added": added,
-                "expires_at_ms": expires_at,
-            }),
-        ),
-        Ok(None) => session_err_to_response(
-            id,
-            SessionError::InvalidArgument(format!("no active session for agent_id '{agent_id}'")),
-        ),
-        Err(e) => session_err_to_response(id, e),
-    }
+    let (agent, perm) = (agent_id.clone(), permission.clone());
+    reply_session(
+        core,
+        id,
+        params,
+        move |store| {
+            let Some((token, _)) = store.find_by_agent_id(&agent, now)? else {
+                return Ok(None);
+            };
+            let added = store.grant_permission(&token, &perm, ttl_ms, now)?;
+            Ok(Some((added, ttl_ms.map(|t| now.saturating_add(t)))))
+        },
+        move |_, id, result| match result {
+            Ok(Some((added, expires_at))) => JsonRpcResponse::success(
+                id,
+                json!({
+                    "agent_id": agent_id,
+                    "permission": permission,
+                    "added": added,
+                    "expires_at_ms": expires_at,
+                }),
+            ),
+            Ok(None) => session_err_to_response(
+                id,
+                SessionError::InvalidArgument(format!(
+                    "no active session for agent_id '{agent_id}'"
+                )),
+            ),
+            Err(e) => session_err_to_response(id, e),
+        },
+    )
 }
 
 /// `plugin.revoke_agent_permission` — 활성 agent 에서 임시 권한 회수.
@@ -280,18 +311,29 @@ pub fn handle_revoke_agent_permission(
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'permission'"),
     };
     let now = now_ms();
-    let result = core.session_revoke_permission_for_agent(&agent_id, &permission, now);
-    match result {
-        Ok(removed) => JsonRpcResponse::success(
-            id,
-            json!({
-                "agent_id": agent_id,
-                "permission": permission,
-                "removed": removed,
-            }),
-        ),
-        Err(e) => session_err_to_response(id, e),
-    }
+    let (agent, perm) = (agent_id.clone(), permission.clone());
+    reply_session(
+        core,
+        id,
+        params,
+        move |store| {
+            let Some((token, _)) = store.find_by_agent_id(&agent, now)? else {
+                return Ok(false);
+            };
+            store.revoke_permission(&token, &perm, now)
+        },
+        move |_, id, result| match result {
+            Ok(removed) => JsonRpcResponse::success(
+                id,
+                json!({
+                    "agent_id": agent_id,
+                    "permission": permission,
+                    "removed": removed,
+                }),
+            ),
+            Err(e) => session_err_to_response(id, e),
+        },
+    )
 }
 
 /// `plugin.list_agent_permissions` — 활성 agent 의 base + temp permission 조회.
@@ -311,31 +353,58 @@ pub fn handle_list_agent_permissions(
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
     let now = now_ms();
-    let result = core.session_list(now);
-    match result {
-        Ok(sessions) => {
-            let arr: Vec<Value> = sessions
-                .into_iter()
-                .filter(|s| match &target_id {
-                    Some(want) => &s.agent_id == want,
-                    None => true,
-                })
-                .map(|s| {
-                    json!({
-                        "agent_id": s.agent_id,
-                        "parent": s.parent,
-                        "base_permissions": s.permissions,
-                        "temp_grants": s.temp_grants.iter().map(|g| json!({
-                            "permission": g.permission,
-                            "expires_at_ms": g.expires_at_ms,
-                        })).collect::<Vec<_>>(),
+    reply_session(
+        core,
+        id,
+        params,
+        move |store| store.list(now),
+        move |_, id, result| match result {
+            Ok(sessions) => {
+                let arr: Vec<Value> = sessions
+                    .into_iter()
+                    .filter(|s| match &target_id {
+                        Some(want) => &s.agent_id == want,
+                        None => true,
                     })
-                })
-                .collect();
-            JsonRpcResponse::success(id, json!({ "agents": arr }))
-        }
-        Err(e) => session_err_to_response(id, e),
-    }
+                    .map(|s| {
+                        json!({
+                            "agent_id": s.agent_id,
+                            "parent": s.parent,
+                            "base_permissions": s.permissions,
+                            "temp_grants": s.temp_grants.iter().map(|g| json!({
+                                "permission": g.permission,
+                                "expires_at_ms": g.expires_at_ms,
+                            })).collect::<Vec<_>>(),
+                        })
+                    })
+                    .collect();
+                JsonRpcResponse::success(id, json!({ "agents": arr }))
+            }
+            Err(e) => session_err_to_response(id, e),
+        },
+    )
+}
+
+/// 세션 저장소 연산 하나를 memory writer 요청으로 넣고 그 결과 뒤에 응답한다.
+fn reply_session<T: Send + 'static>(
+    core: &crate::app::services::AppServices,
+    id: Value,
+    params: &Value,
+    mut body: impl FnMut(&mut SessionStore<'_>) -> Result<T, SessionError> + Send + 'static,
+    respond: impl FnOnce(
+        &crate::app::services::AppServices,
+        Value,
+        Result<T, SessionError>,
+    ) -> JsonRpcResponse
+    + Send
+    + 'static,
+) -> JsonRpcResponse {
+    core.reply_store(
+        id,
+        crate::adapters::ipc::handler::deferred::params_bytes(params),
+        move |mem| body(&mut SessionStore::new(mem, tasty_memory::HOST_OWNER)),
+        respond,
+    )
 }
 
 /// `plugin.request_permission` 핸들러. agent 가 자기 권한 부족을
