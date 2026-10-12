@@ -112,7 +112,7 @@
 | `queue_items` · `queue_bytes` | 4096 · 16MiB |
 | `retry_for` · `retry_backoff` · `retry_backoff_max` | 1초 · 1ms · 50ms |
 
-수집 한도와 예산의 기본값은 [저장 기준선](storage.md#저장-기준선)의 commit·지연 측정을 바탕으로 정한 잠정값이다. 재시도 한도는 측정하지 않은 기본값이다.
+`max_delay` 2ms는 [저장 실행기 측정](storage.md#저장-실행기-측정)에서 1·2·5ms를 비교해 정했다. 동시 burst는 세 값 모두 commit 1회로 묶이고, 2ms 간격 유입의 commit은 1ms에서 0.4~4.9%, 2ms에서 25~30% 줄며, 완료 지연은 수집 창 길이만큼 늘어난다. `max_items`·`max_bytes`·예산은 측정에서 닿지 않은 상한이고(최대 100건·25,500바이트), 재시도 한도는 측정하지 않은 기본값이다.
 
 #### memory.db 실행기
 

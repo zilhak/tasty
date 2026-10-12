@@ -1,10 +1,15 @@
 //! 파일 memory.db의 commit 수와 호출 대기를 재는 기준선 harness.
 //!
 //! 호스트처럼 `Arc<Mutex<MemoryStore>>`를 공유하고 같은 payload로 단일 요청, 100개 burst,
-//! 연속 유입, 느린 저장 대조군, 100건을 transaction 하나로 묶는 batch·실행 단위를 실행한다. 결과는 시나리오마다 JSON 한 줄로 출력 파일에 쓴다.
+//! 연속 유입, 느린 저장 대조군, 100건을 transaction 하나로 묶는 batch·실행 단위를 실행한다.
+//! 같은 burst·유입·느린 저장 대조군을 memory writer에 넣는 시나리오도 수집 창(`max_delay`)별로
+//! 실행한다. 결과는 시나리오마다 JSON 한 줄로 출력 파일에 쓴다.
 //! 실행법과 결과 해석은 docs/design/systems/storage.md의 "저장 기준선" 절에 있다.
 //!
 //! 사용: `cargo run --release -p tasty-memory --example commit_baseline -- <빈 디렉터리> <결과.jsonl>`
+
+#[path = "commit_baseline/writer.rs"]
+mod writer;
 
 use std::fs::File;
 use std::io::Write;
@@ -34,6 +39,12 @@ const INFLOW_FOR: Duration = Duration::from_secs(3);
 const TICK: Duration = Duration::from_millis(1);
 /// 느린 저장 대조군에서 쓰기마다 더하는 지연. 디스크 지연을 흉내 내는 주입값이다.
 const SLOW_WRITE: Duration = Duration::from_millis(5);
+/// writer 시나리오의 수집 창 변형. 가운데 값이 `Limits::default()`의 값이다.
+const WRITER_DELAYS: [Duration; 3] = [
+    Duration::from_millis(1),
+    Duration::from_millis(2),
+    Duration::from_millis(5),
+];
 /// batch·실행 단위 시나리오의 반복 횟수. 회차마다 BURST건을 transaction 하나로 쓴다.
 const BATCH_ROUNDS: usize = 20;
 
@@ -471,6 +482,42 @@ fn main() {
         "wal_bytes_before": wal_bytes,
         "drop_us": u64::try_from(t.elapsed().as_micros()).unwrap_or(u64::MAX),
     }));
+
+    writer_scenarios(&dir, &mut out);
+}
+
+/// 직접 잠금 시나리오와 같은 부하를 writer에 넣는다. 저장소는 따로 연 파일이다.
+fn writer_scenarios(dir: &Path, out: &mut Out) {
+    for (file, slow) in [("writer.db", None), ("writer_slow.db", Some(SLOW_WRITE))] {
+        let mut db = open(dir, file);
+        prefill(&mut db);
+        let lat = db.db_latency();
+        let store: Arc<Mutex<dyn MemoryStorage>> = Arc::new(Mutex::new(db));
+        let prefix = if slow.is_some() {
+            "writer_slow"
+        } else {
+            "writer"
+        };
+        for delay in WRITER_DELAYS {
+            let ms = delay.as_millis();
+            for name in ["burst100_concurrent", "inflow"] {
+                let body = |h: &_, s: &_| match name {
+                    "inflow" => writer::inflow(h, s, &format!("winflow{ms}")),
+                    _ => writer::burst_concurrent(h, &format!("wburst{ms}")),
+                };
+                let c0 = lat.snapshot();
+                let mut v = writer::run(&store, delay, slow, body);
+                let c1 = lat.snapshot();
+                v["scenario"] = json!(format!("{prefix}_{name}"));
+                v["commits"] = json!(c1.commits - c0.commits);
+                v["commit_us_sum"] = json!(c1.commit_us_sum - c0.commit_us_sum);
+                if let Some(d) = slow {
+                    v["injected_commit_delay_us"] = json!(d.as_micros() as u64);
+                }
+                out.line(&v);
+            }
+        }
+    }
 }
 
 /// WAL 파일 크기. 없으면 0이다.
