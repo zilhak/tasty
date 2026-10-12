@@ -6,7 +6,7 @@ use winit::{
     window::Window,
 };
 pub(super) enum Session {
-    X11(x11::Session),
+    X11(Box<x11::Session>),
     Wayland(wayland::Session),
 }
 impl Session {
@@ -28,7 +28,7 @@ impl Session {
             _ => return Err("unsupported native window backend".into()),
         };
         x11::Session::start(id, bytes)
-            .map(Self::X11)
+            .map(|s| Self::X11(Box::new(s)))
             .map_err(|e| e.to_string())
     }
     pub(super) fn motion(&mut self, pos: PhysicalPosition<f64>) -> Result<(), String> {
