@@ -1,4 +1,4 @@
-<!-- source-hash: f0f2d529b4f4 -->
+<!-- source-hash: 23487c1a19f4 -->
 # Workspaces
 
 Give each project or task its own workspace. Keep its terminals and layout together, then use names and categories to find it easily. If the window structure is new to you, start with [A first look](../getting-started/first-look.md).

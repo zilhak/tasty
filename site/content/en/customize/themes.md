@@ -1,4 +1,4 @@
-<!-- source-hash: 183de2a36934 -->
+<!-- source-hash: 81b11eed334d -->
 # Themes
 
 Choose the light Latte theme or the dark Mocha theme. Adjust a few colours, or make your own theme in a TOML file. Theme files live in `~/.tasty/themes/`.
@@ -22,7 +22,7 @@ To pick from the list:
 2. Click one of the cards under **Theme Preset**. Each card shows the name and five representative colours.
 3. Press **Save**.
 
-Switching themes resets every colour overridden in the **Colors** tab and the **Tasty** tab. The new theme starts with its own colours.
+Switching themes resets every colour overridden in the **Colors** tab and the **Tasty** tab, as well as the focused and unfocused backgrounds set in the **Terminal** tab. The new theme starts with its own colours.
 
 If the theme file named in the settings is missing or unreadable, Tasty starts with Mocha instead and shows a **Theme not found** notice.
 

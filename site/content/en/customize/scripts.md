@@ -1,4 +1,4 @@
-<!-- source-hash: 261b0de80dcb -->
+<!-- source-hash: b562a9d1a420 -->
 # Lua scripts
 
 Turn repeated tasks into Lua scripts. Run them with a shortcut, or set them to run when a window, workspace, or tab opens or closes.
@@ -43,7 +43,7 @@ Use the following Tasty functions in your scripts.
 
 | Function | What it does |
 |---|---|
-| `tasty.tree()` | Reads the window · Workspace · Tab · Surface structure as a table. It is a read-only copy |
+| `tasty.tree()` | Reads the Workspace · Pane · Tab · Surface structure as a table. The top level is one list of the Workspaces from every window, with no separate window level. It is a read-only copy |
 | `tasty.run_cli(args)` | Runs a `tasty` command. Pass a single string or a table of strings |
 | `tasty.log(msg)` · `tasty.warn(msg)` | Writes to the log |
 | `tasty.on(event, cb)` | Registers a function to be called when an event fires. It can run follow-up work, but cannot cancel or alter an event that has already happened |

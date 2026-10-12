@@ -1,4 +1,4 @@
-<!-- source-hash: 47c9cc62b4a9 -->
+<!-- source-hash: 7f79267e305e -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -80,6 +80,9 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 | Move between items · extend the selection (explorer) | Arrow keys · `Home` · `End` · `PageUp` · `PageDown` · the same with `Shift` | Same |
 | New folder · new file (explorer) | `F7` · `Shift+F4` | `F7` · `Shift+F4` (hold `Fn` with them by default) |
 | Rename · move to trash (explorer) | `F2` · `Delete` · `Alt+Backspace` | `F2` · `Delete` · `Cmd+Backspace` |
+| Undo (explorer) | `Ctrl+Z` · `Alt+Z` | `Ctrl+Z` · `Cmd+Z` |
+| Redo (explorer) | `Ctrl+Shift+Z` · `Ctrl+Y` · `Alt+Shift+Z` | `Ctrl+Shift+Z` · `Ctrl+Y` · `Cmd+Shift+Z` |
+| Show or hide hidden files (explorer) | `Ctrl+Shift+.` · `Alt+Shift+.` | `Ctrl+Shift+.` · `Cmd+Shift+.` |
 | Zoom in · zoom out · reset zoom | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Alt` also works) | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Cmd` also works) |
 
 `Ctrl+C` copies when there is selected text; otherwise it interrupts the running program as usual.
@@ -127,8 +130,8 @@ The following have no default combination, either to prevent accidents or becaus
 | Preset | Based on | Differences from the Tasty preset |
 |--------|------|------------------------|
 | **Tasty** (default) | Its own | The tables above. Copy · paste · zoom bundle the conventions of all three OSes |
-| **Mac** | iTerm2 · Terminal.app | `Cmd`-centred. Settings `Cmd+,` · notifications `Cmd+Shift+I` · sidebar `Cmd+Shift+B` / `Cmd+B` · command palette `Cmd+Shift+P` · copy/paste `Cmd+C` / `Cmd+V` only · quit `Cmd+Q` · background `Cmd+M`. **Close active item** and **Close Workspace** are empty, and close Pane is `Cmd+Shift+W` |
-| **Windows** | Windows Terminal | Pane split `Alt+Shift+E` / `Alt+Shift+D`, Surface split `Alt+D` / `Alt+E` · new window `Ctrl+Shift+N` · copy/paste `Ctrl+C` / `Ctrl+V` only |
+| **Mac** | iTerm2 · Terminal.app | `Cmd`-centred. Settings `Cmd+,` · notifications `Cmd+Shift+I` · DAG list `Cmd+Shift+G` · sidebar `Cmd+Shift+B` / `Cmd+B` · quit `Cmd+Q` · background `Cmd+M` · close Pane `Cmd+Shift+W`. Actions that bundle several combinations keep only the `Cmd` one — copy `Cmd+C` · paste `Cmd+V` · cut `Cmd+X` · select all `Cmd+A` · search `Cmd+F` · zoom `Cmd+=` · `Cmd+-` · `Cmd+0` · command palette `Cmd+Shift+P` · apply in a code field `Cmd+Enter`, and in the Explorer move to trash `Cmd+Backspace` · undo `Cmd+Z` · redo `Cmd+Shift+Z` · hidden files `Cmd+Shift+.`. **Close active item** and **Close Workspace** are empty |
+| **Windows** | Windows Terminal | Pane split `Alt+Shift+E` / `Alt+Shift+D`, Surface split `Alt+D` / `Alt+E` · new window `Ctrl+Shift+N`. Actions that bundle several combinations keep only the `Ctrl` side and drop the `Alt` ones — copy `Ctrl+C` · paste `Ctrl+V` · cut `Ctrl+X` · select all `Ctrl+A` · search `Ctrl+F` · zoom `Ctrl+=` · `Ctrl+-` · `Ctrl+0` · command palette `Ctrl+Shift+P` · apply in a code field `Ctrl+Enter`, and in the Explorer move to trash `Delete` · undo `Ctrl+Z` · redo `Ctrl+Shift+Z` · `Ctrl+Y` · hidden files `Ctrl+Shift+.` |
 | **Linux** | GNOME Terminal | Same as the Windows preset, but copy/paste/cut `Ctrl+Shift+C` / `Ctrl+Shift+V` / `Ctrl+Shift+X` · quit `Ctrl+Q` |
 
 To apply one:
@@ -155,7 +158,7 @@ If the file can't be written (for example, the folder is read-only), **The expor
 To import:
 
 1. Press **Import…** and open the file you brought over. Nothing is applied yet — a comparison view opens.
-2. Current and imported values sit side by side in four groups: **General bindings** · **Quick switch** · **Script bindings** · **Plugin overrides**. At first only rows that change are shown; **Show all N** at the top right shows everything.
+2. Current and imported values sit side by side in four groups: **General bindings** · **Quick switch (by group)** · **Script bindings** · **Plugin overrides**. At first only rows that change are shown; **Show all N** at the top right shows everything.
 3. Untick the rows you don't want. The tick on a group title turns the whole group on or off.
 4. Press **Apply** at the top right. Nothing is saved to the file yet.
 5. Press **Save** at the bottom of the window. **Cancel** discards the imported changes too.
@@ -170,7 +173,7 @@ Good to know:
 
 ### Importing a file made on another OS
 
-A keybinding file imports as is on any OS. A keybinding made with `Option` on a Mac works with `Win` on Windows and `Super` on Linux, and the other way round. The Explorer drag flip modifier defaults to `Option` on a Mac and `Ctrl` on Windows and Linux, so after importing a file exported on a Mac you hold `Win` or `Super` while dragging to flip it on Windows or Linux.
+A keybinding file imports as is on any OS. A keybinding made with `Option` on a Mac works with `Win` on Windows and `Super` on Linux, and the other way round. The **Explorer drag flip modifier** (at the bottom of **Settings** > **Keybindings** > **General**) defaults to `Option` on a Mac and `Ctrl` on Windows and Linux, so after importing a file exported on a Mac you hold `Win` or `Super` while dragging on Windows or Linux to swap move and copy.
 
 ## Changing one keybinding
 
@@ -230,7 +233,7 @@ While the settings window or the notification panel is open, `Esc` closes that o
 ## Two things that save you from memorising keybindings
 
 - **Modifier key hints** — Hold `Ctrl` · `Alt` · `Shift` and the like for 0.5 seconds or longer (Shift alone: 1.2 seconds) and a list of keybindings starting with that combination appears below the sidebar. It disappears when you let go. On Windows and Linux, `Win` and `Super` show the list only when at least one keybinding uses that key. Turn it off with **Settings** > **General** > **Accessibility** > **Show modifier key hints**; the panel can be dragged around or resized.
-- **Command palette** — `Ctrl+Shift+P` or the palette shortcut keycap on the right of the status bar. Type an action's name and run it with `Enter`. Every action in the Keybindings tab and the global commands of active plugins are searchable.
+- **Command palette** — `Ctrl+Shift+P` or the palette shortcut keycap on the right of the status bar. Type an action's name and run it with `Enter`. The actions in the Keybindings tab and the global commands of active plugins are searchable. Left out are the command palette itself, **Exit fullscreen stage**, **Copy link** (its target is the link under the mouse), the code field keys, and the Explorer keys for moving between items, extending the selection, opening and clearing the selection (the Explorer's rename and move to trash are included). Script keybindings don't appear in the palette either.
 
 ## Editing the settings file directly
 

@@ -95,7 +95,7 @@ tasty list workspaces
 | `Ctrl+Shift+1` ~ `Ctrl+Shift+0` | n 번째 카테고리로. 접혀 있으면 펼치고, 그 카테고리에서 마지막으로 쓰던 워크스페이스로 갑니다. `Ctrl+Shift` 를 누르고 있으면 헤더에 번호가 뜹니다 |
 | `Ctrl+Shift+J` / `Ctrl+Shift+K` | 다음 / 이전 카테고리 |
 | `Alt+1` ~ `Alt+9` | 현재 카테고리 **안에서** n 번째 워크스페이스 |
-| `Alt+J` / `Alt+K` | 현재 카테고리 안에서 다음 / 이전. 경계를 넘어 다음 카테고리로 가려면 **설정** > **일반** > **다음/이전 워크스페이스가 카테고리 경계를 넘음** <!-- en: Next/prev workspace crosses categories --> 을 켭니다 |
+| `Alt+J` / `Alt+K` | 현재 카테고리 안에서 다음 / 이전. 경계를 넘어 다음 카테고리로 가려면 **설정** > **일반** > **다음/이전 워크스페이스로 이동할 때 다른 카테고리도 포함** <!-- en: Next/prev workspace crosses categories --> 을 켭니다 |
 
 카테고리를 다시 끄면 모든 워크스페이스가 **워크스페이스** 섹션 하나로 합쳐집니다.
 
@@ -113,7 +113,7 @@ tasty set workspace --id 3 --category work
 Tasty 를 다시 실행하면 직전 윈도우의 워크스페이스 · 페인 · 탭 · 서피스 배치가 그대로 돌아옵니다. 관련 설정은 **설정** > **일반** 에 있습니다.
 
 - **시작 시 레이아웃 복원** <!-- en: Restore layout on startup --> (기본 켜짐) — 끄면 윈도우를 닫을 때 저장본을 지웁니다.
-- **재시작 시 Surface 내용 복원** <!-- en: Restore surface content on restart --> (기본 켜짐) — 각 터미널의 스크롤백까지 보존합니다. 위로 스크롤하면 이전 세션의 출력이 있습니다. 끄면 보관하던 스크롤백 파일을 전부 지웁니다.
+- **재시작 시 서피스 내용 복원** <!-- en: Restore surface content on restart --> (기본 켜짐) — 각 터미널의 스크롤백까지 보존합니다. 위로 스크롤하면 이전 세션의 출력이 있습니다. 끄면 보관하던 스크롤백 파일을 전부 지웁니다.
 
 복원되지 않는 것 — 실행 중이던 프로그램, 환경 변수, 열려 있던 팝업. 셸은 같은 디렉터리에서 새로 시작합니다. Claude Code 처럼 세션 재개 명령을 남기는 프로그램은 자동으로 다시 실행됩니다([Claude · Codex 와 함께 쓰기](../agents/claude-codex.md)).
 

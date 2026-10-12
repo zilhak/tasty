@@ -1,4 +1,4 @@
-<!-- source-hash: 96192f6bd2d8 -->
+<!-- source-hash: d09cfbf95e12 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -39,7 +39,7 @@ When an opening request specifies its source surface, switching windows while it
 
 ## Explorer
 
-The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer** and it opens that terminal's current directory as the root. `tasty new tab --pane 1 --type explorer --path ~/proj` also opens one.
+The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer** and it opens that terminal's current directory as the root. `tasty new tab --pane 1 --type explorer --path ~/proj` also opens one. Passing `--cwd ~/proj` instead of `--path` opens that folder as the root too.
 
 ### Screen
 
@@ -110,13 +110,13 @@ Every bound command in the context menu shows its first shortcut on the right, i
 | Action | Shortcut |
 |---------|--------|
 | Refresh | `F5` |
-| Go to parent folder | `Alt+↑` |
+| Go to parent folder | `Alt+↑` (macOS `Cmd+↑`) |
 | Back / forward | `Alt+←` / `Alt+→` (macOS `Cmd+←` / `Cmd+→`) |
 | Go to the address bar (selects the whole path) | `Alt+L` (macOS `Cmd+L`) |
-| Select all | `Ctrl+A` · `Alt+A` |
-| Copy path | `Alt+Shift+C` |
+| Select all | `Ctrl+A` · `Alt+A` (macOS `Cmd+A`) |
+| Copy path | `Alt+Shift+C` (macOS `Cmd+Shift+C`) |
 | Find | `Ctrl+F` · `Alt+F` |
-| Show or hide hidden files | `Ctrl+Shift+.` |
+| Show or hide hidden files | `Ctrl+Shift+.` · `Alt+Shift+.` (macOS `Cmd+Shift+.`) |
 | Copy / cut / paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (the same bindings as the terminal) |
 | Move between items | Arrow keys · `Home` · `End` · `PageUp` · `PageDown` (left and right only in Grid view) |
 | Extend the selection | The same keys with `Shift` |
@@ -125,7 +125,7 @@ Every bound command in the context menu shows its first shortcut on the right, i
 | New folder / new file | `F7` / `Shift+F4` (on macOS hold `Fn` with them by default) |
 | Rename (one item selected) | `F2` |
 | Move to Trash | `Delete` · `Alt+Backspace` (`Cmd+Backspace` on macOS) |
-| Undo / redo | `Ctrl+Z` / `Ctrl+Shift+Z` · `Ctrl+Y` (macOS `Cmd+Z` / `Cmd+Shift+Z`) |
+| Undo / redo | `Ctrl+Z` · `Alt+Z` / `Ctrl+Shift+Z` · `Ctrl+Y` · `Alt+Shift+Z` (macOS `Cmd+Z` / `Cmd+Shift+Z`) |
 | Toggle the preview panel · Properties | No default — set them in **Settings** > **Keybindings** > **Explorer** |
 
 Click to select, `Ctrl+click` to add, `Shift+click` to select a range. When you move with the keys, the current item gets an outline; clicking the list hides it until the next key. Drag from an empty part of the list to select every item the rectangle touches, and hold `Ctrl` or `Shift` as you start to add to the current selection. While dragging, move near the top or bottom edge of the list to scroll that way and keep selecting. It speeds up as you near the edge, and past the list it keeps scrolling at full speed (20 rows a second). `Shift+click` selects from the last item you clicked to the one you click, and `Ctrl+Shift+click` adds that range to the current selection. On macOS use `Cmd` instead of `Ctrl`.
@@ -140,13 +140,13 @@ If you have bound a shortcut to a single letter with no modifier, that letter ac
 
 ### Right-click menu
 
-Renaming refuses to overwrite an existing entry and reports the failure. Copying preserves symbolic links as links, keeps each file's modified time, and keeps each folder's permissions, including read-only folders. Owners and extended attributes are not copied. You cannot paste a folder into itself or one of its descendants through another path. Failed file operations display an error notification.
+Renaming refuses to overwrite an existing entry and reports the failure. Copying preserves symbolic links as links, keeps each file's permissions and modified time, and keeps each folder's permissions, including read-only folders. Owners, extended attributes and ACLs are not copied. You cannot paste a folder into itself or one of its descendants through another path. Failed file operations display an error notification.
 
 A link to a folder opens like a folder, and the address bar keeps the link's path. Renaming a link or moving it to the trash affects only the link, not the folder it points to. Opening a link whose target is gone shows a notice that the target is missing. In the list, a link has a small link icon after its name, and a link whose target is gone shows a link icon in the warning colour in place of its icon; hover over it to see the missing target path.
 
 - **Show in enclosing folder** — first when you right-click one subfolder search result or one link. Opens the folder that really holds the item (for a link, the folder that holds its target) under the same path you were browsing, selects it and scrolls it into view. It doesn't appear for a link whose target is gone or in a remote Explorer.
 - **New folder** · **New file** — first in the empty-space menu, and in the file group of a folder's menu. See "New folder · New file" above.
-- **Copy Path** — with several selected, they are joined with line breaks.
+- **Copy Path** — with several selected, the item reads **Copy Paths** and joins the paths with line breaks.
 - **Undo** · **Redo** — in the empty-space menu, named after the job they act on, such as "Undo moving 3 items" or "Undo rename". When there is no job to undo or redo, both rows stay greyed out before **Properties**. Each Explorer remembers its last 10 jobs (copies, moves, renames, new folders and new files). A copy or move that only partly went through is remembered for the items that made it. Undoing a job lets you redo it, and a new job clears what could be redone. Redo runs the same job again: a copy or move asks again if a name is taken, and a rename or new item fails instead of overwriting when the name is taken. Undoing a rename restores the old name (unless something else now has that name or the item was edited since), and undoing a new folder or file sends it to the trash (unless you put something in it or edited it since). When the latest step can no longer be undone (for example its copies were deleted, or a moved file was edited after the move), the row is greyed out and hovering it says why (on Windows, the same reason appears as the row label). Redo is greyed out the same way when something at the original place was removed or changed after the undo, so a redo never moves a file you did not undo. While a file job from that Explorer is still waiting or running, both rows are greyed out and the shortcuts only show a notice, so an undo never skips past the job you just started. Moving to the trash is not in this history; restore from the trash instead.
 - **Copy** · **Cut** · **Paste** · **Paste (into)** — if the name already exists, you are asked what to do ([Progress and results](#progress-and-results)). Every Tasty window shares the copied or cut list, so you can paste it in another window. The list also goes on the OS clipboard, so you can paste it into another file manager, and files you copy or cut in a file manager paste into the explorer. When the two differ, whichever you copied last is pasted, and if you copied text in another app after that, the explorer has nothing to paste. A cut is removed from the clipboard once it has been moved. Files copied in a remote explorer are not put on the OS clipboard, and a clipboard holding items that are not files on this computer (such as paths on another machine or web addresses) is not pasted. If another app holds the clipboard but does not respond, the explorer treats that as the later copy, pastes nothing, and tells you so. Files copied in the macOS Finder always paste as a copy. Linux uses the X11 clipboard, through XWayland on Wayland. If the system clipboard cannot be updated, Tasty tells you that the files are stored only inside this Tasty instance. Pasting that internal list also tells you when the system clipboard could not be checked. If there is no usable internal list, Paste explains that clipboard access is unavailable. Opening the menu alone shows no notice. Native Wayland clipboard access is not supported.
 - **Move to Trash** — sends to the OS trash without confirmation. To undo, use the trash. If that drive has no trash, nothing is deleted and you are told so.
@@ -154,10 +154,10 @@ A link to a folder opens like a folder, and the address bar keeps the link's pat
 - **Open in System** — opens the folder in the OS file manager.
 - **Open in New Tab** — opens one more Explorer Tab in the Pane with that folder as the root.
 - **Set as Root** — moves the root of the left tree.
-- **Add to Favorites** — gives it a name and puts it in the list at the bottom left. Favorites are shared by all Explorers and saved in `~/.tasty/explorer-favorites.toml`. Favorites added or removed in another window show up right away.
+- **Add to Favorites** — appears when you right-click a single folder or an empty area. It gives the folder a name and puts it in the list at the bottom left. Favorites are shared by all Explorers and saved in `~/.tasty/explorer-favorites.toml`. Favorites added or removed in another window show up right away. Right-clicking a favorite at the bottom left offers **Open in New Tab** · **Set as Root** · **Remove from Favorites** (a remote Explorer leaves out Open in New Tab). Removing a favorite leaves the folder itself alone.
 - **Properties** — opens the [Properties](#properties) popup above. It also appears in remote Explorers.
 
-The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. An Explorer in a remote Workspace can also create folders and files, rename, move to the trash, copy, cut, paste and drag. The remote computer's Tasty does the work, and the progress line, name conflict question and result card look the same as for local files. The trash is the remote computer's trash. Remote operations don't go into the **Undo** list, so use the result card's **Undo**. If the remote computer runs an older Tasty, items that change files do not appear. If the connection drops during an operation, the remote computer stops it, but a notice says Tasty can't tell how far it got, so check the folder after you reconnect. Operations still waiting for that connection don't run, and a notice says how many. Open in System, Open in New Tab and Add to Favorites don't appear in a remote Explorer.
+The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. An Explorer in a remote Workspace can also create folders and files, rename, move to the trash, copy, cut, paste and drag. The remote computer's Tasty does the work, and the progress line, name conflict question and result card look the same as for local files. The trash is the remote computer's trash. Remote operations don't go into the **Undo** list, so use the result card's **Undo**. If the remote computer runs an older Tasty, items that change files do not appear. If the connection drops during an operation, the remote computer stops it, but a notice says Tasty can't tell how far it got, so check the folder after you reconnect. Operations still waiting for that connection don't run, and a notice says how many. Open in System and Open in New Tab don't appear in a remote Explorer. **Add to Favorites** is shown in the menu, but choosing it only shows a notice that it isn't supported yet, and nothing is added.
 
 You can't paste or drag files between your computer and a remote one, or between two remote computers: Paste does not appear in the menu, and the paste shortcut only shows a notice. Tasty never copies a file with the same path on the other computer instead. Double-clicking a markdown file opens a tab for it on the remote computer; if the type's default handler can't be used remotely, only the handlers that can are offered, and a type with no such handler only shows a notice.
 
