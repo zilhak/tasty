@@ -18,6 +18,7 @@ struct Harness {
     time: f64,
     panes: Vec<Pane>,
     drops: Vec<(usize, OpKind, Vec<PathBuf>, PathBuf)>,
+    mods: egui::Modifiers,
 }
 
 fn cell(x: f32, y: f32) -> egui::Rect {
@@ -61,6 +62,7 @@ impl Harness {
                 })
                 .collect(),
             drops: Vec::new(),
+            mods: egui::Modifiers::default(),
         }
     }
 
@@ -72,6 +74,7 @@ impl Harness {
                 egui::vec2(800.0, 600.0),
             )),
             time: Some(self.time),
+            modifiers: self.mods,
             events,
             ..Default::default()
         };
@@ -233,5 +236,75 @@ fn a_symlink_alias_is_judged_as_the_folder_it_points_to() {
             Vec::new()
         };
         assert_eq!(h.drops, expected, "{from:?} -> {to:?}");
+    }
+}
+
+fn tree(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("list") {
+            let path = entry.expect("entry").path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let bytes = std::fs::read(&path).expect("read");
+                out.push((
+                    path.strip_prefix(root).expect("inside").to_path_buf(),
+                    bytes,
+                ));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// 여러 항목을 끌어 놓은 요청을 작업 엔진까지 실행한다. 복사는 원본을 남기고 이동은 지우며, 놓인 내용은
+/// 원본과 같다.
+#[test]
+fn a_multi_item_drag_runs_to_the_end_with_the_same_content() {
+    use crate::app::explorer_files::job::{Choice, Shared, run_transfer};
+    for flip in [false, true] {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(src.join("sub")).expect("mkdir src");
+        std::fs::create_dir_all(&dest).expect("mkdir dest");
+        std::fs::write(src.join("a.txt"), b"alpha").expect("write");
+        std::fs::write(src.join("b.bin"), [0u8, 1, 2, 255]).expect("write");
+        std::fs::write(src.join("sub").join("c.txt"), b"gamma").expect("write");
+        let before = tree(&src);
+        let picked = [src.join("a.txt"), src.join("b.bin"), src.join("sub")];
+        let body = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 600.0));
+        let mut items: Items = picked
+            .iter()
+            .enumerate()
+            .map(|(i, path)| {
+                (
+                    path.clone(),
+                    path.is_dir(),
+                    cell(10.0, 10.0 + i as f32 * 40.0),
+                )
+            })
+            .collect();
+        items.push((dest.clone(), true, cell(10.0, 300.0)));
+        let mut h = Harness::new(vec![(body, items)]);
+        let view = &mut h.panes[0].view;
+        view.ops.drag.flip = Combo::parse_modifiers("ctrl");
+        for path in &picked {
+            view.selected.insert(path.clone());
+        }
+        h.mods.ctrl = flip;
+        let (from, to) = (egui::pos2(20.0, 60.0), egui::pos2(20.0, 310.0));
+        h.drag(from, to);
+        h.release(to, false);
+        let kind = if flip { OpKind::Copy } else { OpKind::Move };
+        assert_eq!(h.drops, vec![(0, kind, picked.to_vec(), dest.clone())]);
+        let report = run_transfer(&Shared::fixed(Choice::KeepBoth), &picked, &dest, !flip);
+        assert_eq!((report.done, report.failed.len()), (3, 0), "{report:?}");
+        assert_eq!(tree(&dest), before, "the dropped content matches");
+        let left: Vec<bool> = picked.iter().map(|p| p.exists()).collect();
+        assert_eq!(left, vec![flip; 3], "copy keeps and move removes originals");
     }
 }

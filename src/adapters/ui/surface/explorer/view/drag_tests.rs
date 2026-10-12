@@ -220,3 +220,59 @@ fn windows_paths_compare_without_case_or_verbatim_prefix() {
     );
     assert_eq!(fold_windows(r"\\server\share\dir"), r"\\server\share\dir");
 }
+
+fn store_showing(sid: tasty_model::SurfaceId, dir: &Path) -> super::super::ExplorerViewStore {
+    let mut views = super::super::ExplorerViewStore::default();
+    let mut view = ExplorerView::new();
+    view.loaded = Some((
+        dir.to_path_buf(),
+        tasty_model::SortColumn::Name,
+        tasty_model::SortDir::Asc,
+    ));
+    views.views.insert(sid, view);
+    views
+}
+
+/// 놓은 좌표로 정하는 OS 드롭은 칸이 보고 있는 폴더로 복사하고, 같은 판정 규칙으로 거절한다.
+#[test]
+fn an_os_drop_at_the_cursor_goes_to_the_shown_folder() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let shown = tmp.path().join("shown");
+    std::fs::create_dir_all(&shown).expect("mkdir");
+    let views = store_showing(4, &shown);
+    let file = [tmp.path().join("x.txt")];
+    assert_eq!(
+        shown_drop(&views, 4, &file),
+        Some((shown.clone(), Verdict::Go(OpKind::Copy)))
+    );
+    assert_eq!(
+        shown_drop(&views, 4, std::slice::from_ref(&shown)),
+        Some((shown.clone(), Verdict::No("explorer.drag.into_itself")))
+    );
+    assert_eq!(shown_drop(&views, 5, &file), None);
+    let mut remote = store_showing(4, &shown);
+    remote.views.get_mut(&4).expect("view").mirror_ws_id = Some(2);
+    assert_eq!(
+        shown_drop(&remote, 4, &file),
+        Some((shown, Verdict::No("explorer.drag.other_computer")))
+    );
+    let mut empty = super::super::ExplorerViewStore::default();
+    empty.views.insert(4, ExplorerView::new());
+    assert_eq!(shown_drop(&empty, 4, &file), None);
+}
+
+/// 놓기 처리는 hover 로 정한 칸 하나를 꺼내고 모든 칸의 기록을 비운다. 두 번째 놓기는 다시 쓰지 않는다.
+#[test]
+fn the_hovered_os_target_is_taken_once() {
+    let mut views = store_showing(1, Path::new("/one"));
+    views.views.insert(2, ExplorerView::new());
+    views.views.get_mut(&1).expect("view").ops.drag.os_target =
+        Some((p("/one"), Verdict::Go(OpKind::Copy)));
+    assert!(os_hover_claimed(&views));
+    assert_eq!(
+        take_os_drop(&mut views),
+        Some((1, p("/one"), Verdict::Go(OpKind::Copy)))
+    );
+    assert!(!os_hover_claimed(&views));
+    assert_eq!(take_os_drop(&mut views), None);
+}
