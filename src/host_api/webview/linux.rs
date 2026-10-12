@@ -867,6 +867,13 @@ impl PlatformWebView {
     }
 
     pub fn load_url(&self, url: &str) {
+        // 같은 문서의 fragment 이동은 load-changed 없이 끝난다(측정). Loading을 세우면 풀리지 않는다.
+        if self.nav_state.get() == NavState::Done
+            && crate::model::is_same_document_fragment_move(self.webview.uri().as_deref(), url)
+        {
+            self.webview.load_uri(url);
+            return;
+        }
         self.loads.borrow_mut().requested();
         self.nav_state.set(NavState::Loading);
         self.webview.load_uri(url);

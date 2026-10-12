@@ -43,9 +43,41 @@ pub fn committed_document_url(
     }
 }
 
+/// `target`이 지금 문서 안의 `#fragment` 이동인지. 엔진은 이 이동을 새 로드 없이 처리한다.
+pub fn is_same_document_fragment_move(current: Option<&str>, target: &str) -> bool {
+    use crate::html_script::strip_fragment;
+    target.contains('#') && current.is_some_and(|cur| strip_fragment(cur) == strip_fragment(target))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fragment_of_the_current_document_is_a_same_document_move() {
+        let cur = Some("file:///a.html#top");
+        assert!(is_same_document_fragment_move(cur, "file:///a.html#sec"));
+        assert!(is_same_document_fragment_move(
+            Some("file:///a.html"),
+            "file:///a.html#sec"
+        ));
+        assert!(!is_same_document_fragment_move(cur, "file:///a.html"));
+        assert!(!is_same_document_fragment_move(cur, "file:///b.html#sec"));
+        assert!(!is_same_document_fragment_move(None, "file:///a.html#sec"));
+        // 쿼리나 origin이 다르면 다른 문서다.
+        assert!(!is_same_document_fragment_move(
+            Some("file:///a.html#s"),
+            "file:///a.html?x#s"
+        ));
+        assert!(!is_same_document_fragment_move(
+            Some("https://a.test/p.html"),
+            "https://b.test/p.html#s"
+        ));
+        assert!(!is_same_document_fragment_move(
+            Some("http://a.test/p.html"),
+            "https://a.test/p.html#s"
+        ));
+    }
 
     fn s(v: &str) -> Option<String> {
         Some(v.to_string())

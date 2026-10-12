@@ -25,7 +25,7 @@ PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출
 | `set_bounds` | `WebViewBounds` · `scale_factor` | — | macOS 는 Cocoa 가 논리 좌표를 그대로 받아 물리 변환을 쓰지 않는다 |
 | `set_visible` | `bool` | — | |
 | `release_keyboard_focus` | — | — | 회수는 조건부다 — 아래 "포커스" |
-| `load_url` | `&str` | — | |
+| `load_url` | `&str` | — | Linux 는 로드가 끝난(`Done`) 상태에서 지금 문서의 `#fragment` 주소를 받으면 `Loading` 을 세우지 않는다. `Failed`·`Loading` 상태의 같은 경우와 표기 정규화 차이는 남은 한계다. WebKitGTK 가 이 이동을 load 신호 없이 처리해서다(측정, [html surface §문서 주소와 히스토리](../../surfaces/html/index.md#내부-동작)). macOS·Windows 는 이 경우를 따로 다루지 않으며 미측정이다 |
 | `load_html` | `&str` | — | |
 | `nav_state` | — | `NavState` | |
 | `take_pending_navigations` | — | `Vec<PendingNavigation>` | `user_gesture` 는 Linux 가 `is_user_gesture`, Windows 가 `IsUserInitiated` 에서 옮긴다. macOS 는 늘 `false` 다 — 아래 "탐색" |

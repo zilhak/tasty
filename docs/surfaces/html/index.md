@@ -39,10 +39,16 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
   - 뒤로·앞으로 이동 가능 여부는 엔진의 세션 히스토리 조회값이다(`can_go_back`·`can_go_forward`, WKWebView `canGoBack`·`canGoForward`, WebView2 `CanGoBack`·`CanGoForward`).
   - 호스트는 WebView 동기화 때 프레임마다 이 값들을 `RemoteSurface::webview_nav`에 옮기고, 바뀌면 한 프레임 더 그린다. 주소 표시줄 UI가 이 사본을 읽는다. 프레임마다 조회하므로 Windows는 조회 실패를 웹뷰별 첫 번째만 warn으로 남기고 이후는 debug로 남긴다.
   - 조회: `tasty surface html-nav --surface <id>`(IPC `surface.html_nav`)가 `url`(commit 주소), `requested_url`(호스트가 넣은 주소), `nav_state`(`idle`/`loading`/`done`/`failed`), `can_go_back`·`can_go_forward`를 돌려준다. 읽기만 한다. html이 아닌 surface는 거절하고 헤드리스 빌드는 `-32017`로 답한다.
-  - macOS·Windows 경로는 Linux와 같은 규칙으로 구현했지만 실 기기에서 측정하지 않았다.
+  - 지금 문서 안의 `#fragment` 주소를 열면 WebKitGTK는 load 신호 없이 같은 문서 이동으로 처리한다(측정). 그래서 Linux `load_url`은 로드가 끝난(`Done`) 상태에서 이 경우를 만나면 `Loading`을 세우지 않는다. 세우면 끝나지 않는 로드로 남는다. 판정은 `tasty_model::is_same_document_fragment_move`다.
+  - 남은 한계: `Failed`·`Loading` 상태에서 같은 문서의 fragment 주소를 열면 이 처리를 하지 않고 `Loading`을 세운다. 그 이동이 load 신호 없이 끝나면 `Loading`이 풀리지 않을 수 있다(미측정).
+  - 남은 한계: 같은 문서 판정은 `#` 앞 문자열 비교다. 엔진이 정규화한 표기(끝 슬래시, `%20` 같은 퍼센트 인코딩, 대소문자)와 넣은 주소의 표기가 다르면 같은 문서로 보지 않고 새 로드로 처리한다.
+  - Linux 측정: 사용자 탐색의 뒤로·앞으로와 이동 가능 여부, 같은 문서 fragment 열기와 페이지의 fragment 이동(meta refresh), 없는 파일 열기 실패 뒤 이전 주소 유지, meta refresh와 HTTP 302 뒤 최종 주소를 격리 debug 인스턴스에서 확인했다.
+  - macOS·Windows 경로는 Linux와 같은 규칙으로 구현했지만 실 기기에서 측정하지 않았다. 같은 문서 fragment 열기의 로드 신호도 확인하지 않았다.
 - **사용자 탐색** — 주소 입력·뒤로·앞으로·새로고침은 사용자 탐색 큐(`MainViewState::webview_user_nav`, `WebViewUserNav`)를 지난다. WebView 동기화가 다음 redraw에서 꺼내 backend의 `load_url`·`go_back`·`go_forward`·`reload`를 부르기 전에 `HtmlScriptState::on_user_load_requested`로 사용자 출처를 표시한다.
   - 호스트 로드(`webview_url` 변경 → `on_host_load_requested`)와 달리 사용자 출처 로드의 문서는 사용자가 본 것으로 한다. 그래서 스크립트 배너가 보류되지 않고 commit 뒤 바로 뜬다. 앞선 호스트 로드 표지도 지운다.
   - 로드가 일어나지 않을 조작은 표지를 남기지 않고 버린다. 히스토리 처음의 뒤로, 끝의 앞으로, 문서 없는 새로고침, `file://`·`http(s)://`가 아닌 주소 열기가 그렇다.
+  - 지금 문서의 `#fragment` 주소 열기(`is_same_document_fragment_move`)는 탐색하되 사용자 출처 표지를 세우지 않는다. 같은 문서 이동은 commit·로드 종료 신호가 없어 표지를 내릴 수 없고, 남은 표지가 다음 문서(페이지 스크립트·meta refresh로 바뀐 문서)에 잘못 적용되기 때문이다. 호스트 로드도 같다. `webview_url`이 지금 문서의 fragment 주소로 바뀌면 호스트 로드 표지(`on_host_load_requested`)를 세우지 않는다.
+  - 남은 한계: 뒤로·앞으로가 같은 문서의 fragment 히스토리 항목으로 가는지는 미리 알 수 없어 표지를 세운다. 그 이동도 load 신호 없이 끝나므로 표지가 남고, 다음에 commit되는 문서를 사용자가 본 것으로 기록한다. 사용자가 그 surface를 조작한 뒤라 영향은 작다.
   - 주소 열기는 해석을 마친 주소만 받는다. 상대 경로 해석과 없는 파일 거절은 입력 쪽이 한다. 이 경로는 `webview_url`을 바꾸지 않으므로 페이지 안 링크 이동과 같이 snapshot에 남지 않는다.
   - 에이전트 경로는 이 큐를 쓰지 않는다. 에이전트가 주소를 바꾸는 방법은 지금처럼 `tasty html open`(호스트 로드)이다. 뒤로·앞으로·새로고침을 에이전트에게 주는 release IPC는 없다.
   - 사용자 진입점(주소 표시줄과 버튼)은 아직 없다. debug 빌드의 `debug.webview.history`(CLI `tasty debug webview-history`)가 같은 큐로 사용자 조작을 재현한다([debug IPC](../../dev-guide/debug-ipc.md)).

@@ -307,6 +307,45 @@ fn apply_webview_requests(
     }
 }
 
+/// 사용자 탐색 한 건에 할 일.
+#[derive(Debug, PartialEq, Eq)]
+enum UserNavPlan {
+    /// 로드가 일어나지 않을 조작이다.
+    Skip,
+    /// 탐색한다. 같은 문서 fragment 이동은 commit·로드 종료 신호가 없어 표지를 내릴 수 없으므로
+    /// 사용자 출처 표지를 세우지 않는다.
+    Navigate { mark_user_origin: bool },
+}
+
+fn plan_user_nav(
+    nav: &crate::webview::WebViewUserNav,
+    info: &crate::model::WebViewNavInfo,
+) -> UserNavPlan {
+    use crate::webview::WebViewUserNav;
+    let possible = match nav {
+        WebViewUserNav::Back => info.can_go_back,
+        WebViewUserNav::Forward => info.can_go_forward,
+        WebViewUserNav::Reload => info.url.is_some(),
+        WebViewUserNav::Open(url) => crate::webview::is_navigable_url(url),
+    };
+    if !possible {
+        return UserNavPlan::Skip;
+    }
+    // 뒤로·앞으로가 같은 문서의 fragment 항목으로 가는 경우는 미리 알 수 없어 표지를 세운다(남은 한계).
+    let mark_user_origin = match nav {
+        WebViewUserNav::Open(url) => {
+            !crate::model::is_same_document_fragment_move(info.url.as_deref(), url)
+        }
+        _ => true,
+    };
+    UserNavPlan::Navigate { mark_user_origin }
+}
+
+/// 호스트가 넣은 주소가 새 로드인지. 같은 문서 fragment 이동이면 호스트 로드 표지를 세우지 않는다.
+fn host_load_marks_origin(current: Option<&str>, url: &str) -> bool {
+    !crate::model::is_same_document_fragment_move(current, url)
+}
+
 /// 사용자 탐색을 실행한다. 로드가 일어나지 않을 조작(히스토리 끝, 문서 없는 새로고침)은
 /// 사용자 출처 표지를 남기지 않도록 버린다. 호스트 로드 경로(`webview_url`)는 바꾸지 않으므로
 /// 페이지 안 링크 이동처럼 snapshot에 남지 않는다.
@@ -321,18 +360,14 @@ fn apply_user_nav(
         tracing::warn!("webview user navigation {nav:?}: surface {sid} has no webview");
         return;
     };
-    let info = wv.nav_info();
-    let possible = match &nav {
-        WebViewUserNav::Back => info.can_go_back,
-        WebViewUserNav::Forward => info.can_go_forward,
-        WebViewUserNav::Reload => info.url.is_some(),
-        WebViewUserNav::Open(url) => crate::webview::is_navigable_url(url),
+    let mark_user_origin = match plan_user_nav(&nav, &wv.nav_info()) {
+        UserNavPlan::Skip => {
+            tracing::debug!("WebView surface {sid}: user navigation {nav:?} has nothing to load");
+            return;
+        }
+        UserNavPlan::Navigate { mark_user_origin } => mark_user_origin,
     };
-    if !possible {
-        tracing::debug!("WebView surface {sid}: user navigation {nav:?} has nothing to load");
-        return;
-    }
-    if let Some(rs) = find_remote_surface(view, engine, sid) {
+    if mark_user_origin && let Some(rs) = find_remote_surface(view, engine, sid) {
         rs.with_html_script(|st| st.on_user_load_requested());
     }
     match nav {
@@ -431,7 +466,9 @@ fn resync_webview_urls(
             continue;
         }
         if let Some(wv) = view.webviews.get(&sid) {
-            note_host_webview_load(view, engine, sid);
+            if host_load_marks_origin(wv.nav_info().url.as_deref(), &url) {
+                note_host_webview_load(view, engine, sid);
+            }
             if crate::webview::is_navigable_url(&url) {
                 wv.load_url(&url);
             } else {
@@ -989,5 +1026,97 @@ mod toast_cover_tests {
     #[test]
     fn no_cards_cover_nothing() {
         assert!(!covered_by_any(&rect(0.0, 0.0, 10.0, 10.0), &[]));
+    }
+}
+
+#[cfg(test)]
+mod nav_origin_tests {
+    use super::*;
+    use crate::model::WebViewNavInfo;
+    use crate::webview::WebViewUserNav;
+
+    const A: &str = "file:///docs/a.html";
+
+    fn shown(url: Option<&str>, back: bool, forward: bool) -> WebViewNavInfo {
+        WebViewNavInfo {
+            url: url.map(str::to_string),
+            can_go_back: back,
+            can_go_forward: forward,
+        }
+    }
+
+    #[test]
+    fn a_same_document_fragment_open_navigates_without_the_user_mark() {
+        let plan = plan_user_nav(
+            &WebViewUserNav::Open(format!("{A}#sec")),
+            &shown(Some(A), false, false),
+        );
+        assert_eq!(
+            plan,
+            UserNavPlan::Navigate {
+                mark_user_origin: false
+            }
+        );
+    }
+
+    #[test]
+    fn opening_another_document_carries_the_user_mark() {
+        let plan = plan_user_nav(
+            &WebViewUserNav::Open("file:///docs/b.html#sec".into()),
+            &shown(Some(A), false, false),
+        );
+        assert_eq!(
+            plan,
+            UserNavPlan::Navigate {
+                mark_user_origin: true
+            }
+        );
+    }
+
+    #[test]
+    fn steps_that_load_nothing_are_skipped() {
+        let empty = shown(None, false, false);
+        assert_eq!(
+            plan_user_nav(&WebViewUserNav::Back, &empty),
+            UserNavPlan::Skip
+        );
+        assert_eq!(
+            plan_user_nav(&WebViewUserNav::Forward, &empty),
+            UserNavPlan::Skip
+        );
+        assert_eq!(
+            plan_user_nav(&WebViewUserNav::Reload, &empty),
+            UserNavPlan::Skip
+        );
+        assert_eq!(
+            plan_user_nav(&WebViewUserNav::Open("about:blank".into()), &empty),
+            UserNavPlan::Skip
+        );
+    }
+
+    #[test]
+    fn history_steps_keep_the_user_mark_even_for_a_fragment_entry() {
+        // 같은 문서 fragment 항목인지 미리 알 수 없다. 문서에 적은 남은 한계다.
+        let info = shown(Some(&format!("{A}#sec")), true, true);
+        for nav in [
+            WebViewUserNav::Back,
+            WebViewUserNav::Forward,
+            WebViewUserNav::Reload,
+        ] {
+            assert_eq!(
+                plan_user_nav(&nav, &info),
+                UserNavPlan::Navigate {
+                    mark_user_origin: true
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_fragment_move_does_not_mark_a_host_load() {
+        assert!(!host_load_marks_origin(Some(A), &format!("{A}#sec")));
+        assert!(host_load_marks_origin(Some(A), "file:///docs/b.html"));
+        assert!(host_load_marks_origin(None, &format!("{A}#sec")));
+        assert!(host_load_marks_origin(Some(A), A));
     }
 }

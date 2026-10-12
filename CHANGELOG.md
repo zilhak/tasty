@@ -24,6 +24,10 @@
 
 - **debug 빌드의 `debug.webview.history`가 사용자 탐색 경로를 쓴다.** `open`(`url` 필수) 동작이 생겼고, open·back·forward·reload는 사용자가 시작한 로드로 처리되어 스크립트 배너가 보류되지 않는다. 히스토리 끝의 back·forward와 문서 없는 reload는 아무것도 하지 않는다. CLI `tasty debug webview-history --action open --url <주소>`.
 
+### Fixed
+
+- **Linux에서 HTML 서피스가 지금 문서의 `#fragment` 주소를 열면 로딩 상태에 멈추던 문제.** `tasty html open`으로 같은 문서의 fragment 주소를 열면 WebKitGTK가 load 신호 없이 문서 안에서 이동하는데, 서피스는 계속 "불러오는 중"으로 남았다. 이제 그 이동은 로드로 표시하지 않는다. macOS·Windows는 이 경우를 측정하지 않았다.
+
 ## [0.12.2] - 2026-10-12
 
 ### Added
