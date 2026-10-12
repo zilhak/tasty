@@ -954,6 +954,7 @@ fn mk_file_picker_data() -> FilePickerData {
         result: None,
         requester: None,
         filters: vec![],
+        on_confirm: Default::default(),
     }
 }
 

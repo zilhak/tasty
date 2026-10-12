@@ -360,6 +360,23 @@ pub(crate) struct FilePickerData {
     pub(crate) requester: Option<FilePickerRequester>,
     /// 점 없는 확장자 필터. 비어 있으면 제한하지 않으며 디렉터리는 항상 표시한다.
     pub(crate) filters: Vec<String>,
+    /// 확정한 경로로 할 일. 도구 메뉴·단축키·플러그인 요청은 `OpenFile`이다.
+    pub(crate) on_confirm: FilePickerOnConfirm,
+}
+
+/// 파일 피커에서 확정한 경로로 할 일.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) enum FilePickerOnConfirm {
+    /// 로컬 파일은 파일 핸들러로 열고 원격 경로는 클립보드에 복사한다.
+    #[default]
+    OpenFile,
+    /// 메뉴를 연 pane에 `kind` 탭을 만들고 경로를 `param_key` 파라미터로 넘긴다.
+    /// pane은 ID로 고정하므로 피커가 열린 동안 활성 pane이 바뀌어도 대상은 그대로다.
+    NewTab {
+        pane_id: u32,
+        kind: String,
+        param_key: String,
+    },
 }
 
 /// 네이티브 파일 피커의 닫기 사유.

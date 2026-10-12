@@ -838,6 +838,14 @@ impl MainView {
                     .from_user_context_menu(),
                 );
             }
+            Some(4) => crate::adapters::ui::popup::file_picker::open_for_new_tab(
+                &mut self.state,
+                engine,
+                pane_id,
+                "html",
+                "url",
+                &["html", "htm", "svg"],
+            ),
             Some(5) => {
                 self.state.dispatch_intent(
                     crate::app::command::DomainIntent::CreateTab {

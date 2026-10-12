@@ -10,6 +10,8 @@
 mod footer;
 #[cfg(test)]
 mod layout_tests;
+#[cfg(test)]
+mod new_tab_tests;
 mod path_bar;
 
 mod paths;
@@ -947,6 +949,65 @@ pub fn open(
     filters: Vec<String>,
     start: FilePickerStart,
 ) {
+    open_with(
+        state,
+        engine,
+        requester,
+        filters,
+        start,
+        crate::state::FilePickerOnConfirm::OpenFile,
+    );
+}
+
+/// 고른 파일로 `pane_id` pane에 `kind` 탭을 만드는 피커를 연다. 메뉴를 연 pane의
+/// 선택 탭 cwd에서 출발한다. mirror pane이면 피커를 열지 않고 토스트를 띄운다.
+/// html 같은 kind는 mirror에서 내용을 볼 수 없어 원격 파일 열기 거절과 같게 다룬다.
+pub fn open_for_new_tab(
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    pane_id: u32,
+    kind: &str,
+    param_key: &str,
+    extensions: &[&str],
+) {
+    let is_mirror = engine
+        .find_workspace_index_for_pane(pane_id)
+        .and_then(|idx| engine.workspace_at(idx))
+        .is_some_and(|ws| ws.mirror);
+    if is_mirror {
+        state.toasts.push(
+            crate::i18n::t("explorer.state.remote_open_unsupported").to_string(),
+            crate::adapters::ui::ToastKind::Info,
+            crate::adapters::ui::ToastScope::Window,
+        );
+        return;
+    }
+    let origin = engine
+        .find_pane_by_id(pane_id)
+        .and_then(|pane| pane.tabs.get(state.navigation.tab_index(pane)))
+        .and_then(|tab| state.navigation.surface_id(tab));
+    open_with(
+        state,
+        engine,
+        None,
+        extensions.iter().map(|e| e.to_string()).collect(),
+        FilePickerStart::from_surface(engine, origin),
+        crate::state::FilePickerOnConfirm::NewTab {
+            pane_id,
+            kind: kind.to_string(),
+            param_key: param_key.to_string(),
+        },
+    );
+}
+
+fn open_with(
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    requester: Option<crate::state::FilePickerRequester>,
+    filters: Vec<String>,
+    start: FilePickerStart,
+    on_confirm: crate::state::FilePickerOnConfirm,
+) {
     let origin_ws = start
         .origin_surface_id
         .and_then(|sid| engine.find_workspace_index_for_surface(sid))
@@ -969,6 +1030,7 @@ pub fn open(
         result: None,
         requester,
         filters,
+        on_confirm,
     });
 
     navigate(state, engine, |dir, _is_remote| dir.to_string());
@@ -977,14 +1039,16 @@ pub fn open(
         id: FILE_PICKER_POPUP_ID,
         mode: crate::intent::OpenPopupMode::CenteredFocused,
     };
-    let dispatched = match state
-        .dialogs
-        .file_picker
-        .as_ref()
-        .and_then(|d| d.requester.as_ref())
-    {
-        Some(req) => open_popup.from_agent_plugin(req.plugin_id.clone()),
-        None => open_popup.from_user_menu("tools_menu"),
+    let dispatched = match state.dialogs.file_picker.as_ref() {
+        Some(crate::state::FilePickerData {
+            requester: Some(req),
+            ..
+        }) => open_popup.from_agent_plugin(req.plugin_id.clone()),
+        Some(crate::state::FilePickerData {
+            on_confirm: crate::state::FilePickerOnConfirm::NewTab { .. },
+            ..
+        }) => open_popup.from_user_context_menu(),
+        _ => open_popup.from_user_menu("tools_menu"),
     };
     state.dispatch_intent(dispatched);
 }

@@ -33,6 +33,7 @@ fn state_with_picker(owner: Option<u64>) -> RequestContext {
             owner_popup_instance: Some(iid),
         }),
         filters: Vec::new(),
+        on_confirm: Default::default(),
     });
     state
 }

@@ -100,8 +100,20 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
         path: "site/content/using/files.md",
         phrase: "파일 선택 창",
-        count: 4,
-        evidence: "파일 선택 팝업이다. 별도 OS View가 아니다. 열기 표, 헤더를 끌어 옮기고 닫는 설명, 긴 파일명 설명, 부모 팝업과 함께 숨고 복원되는 설명의 네 문구다.",
+        count: 6,
+        evidence: "파일 선택 팝업이다. 별도 OS View가 아니다. 열기 표, 헤더를 끌어 옮기고 닫는 설명, 긴 파일명 설명, 부모 팝업과 함께 숨고 복원되는 설명, HTML 절의 새 HTML... 이 여는 피커와 원격에서 열리지 않는다는 설명의 여섯 문구다.",
+    },
+    NotAWindow {
+        path: "site/content/getting-started/first-look.md",
+        phrase: "파일 선택 창",
+        count: 1,
+        evidence: "탭 스트립 메뉴 새 HTML... 이 여는 파일 선택 팝업이다. host PopupDef id file_picker 다.",
+    },
+    NotAWindow {
+        path: "site/content/using/panes-tabs-splits.md",
+        phrase: "파일 선택 창",
+        count: 1,
+        evidence: "탭 스트립 메뉴 새 HTML... 이 여는 파일 선택 팝업이다. host PopupDef id file_picker 다.",
     },
     NotAWindow {
         path: "site/content/using/files.md",
@@ -144,12 +156,6 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
         phrase: "Open Markdown File --> 창을",
         count: 1,
         evidence: "마크다운 열기 대화상자 — 메인 윈도우 안에서 뜬다",
-    },
-    NotAWindow {
-        path: "site/content/using/files.md",
-        phrase: "Open HTML --> 창에",
-        count: 1,
-        evidence: "HTML 열기 대화상자 — 메인 윈도우 안에서 뜬다",
     },
     NotAWindow {
         path: "site/content/using/files.md",

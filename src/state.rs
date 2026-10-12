@@ -65,7 +65,9 @@ pub use dialogs::{
     WsDragState,
 };
 #[cfg(feature = "gui")]
-pub(crate) use dialogs::{FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState};
+pub(crate) use dialogs::{
+    FilePickerData, FilePickerOnConfirm, FilePickerRequester, FilePickerResult, FpLoadState,
+};
 #[cfg(feature = "gui")]
 pub use events::FocusedSurfaceType;
 #[cfg(any(feature = "gui", debug_assertions))]

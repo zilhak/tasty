@@ -1,4 +1,4 @@
-<!-- source-hash: d09cfbf95e12 -->
+<!-- source-hash: 1fea94f5b4b7 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -232,7 +232,7 @@ tasty image export --surface 5 out.png
 
 ## HTML
 
-Shows a local HTML file or a URL in the OS web view. Press **New HTML...** and type a URL or file path in the **Open HTML** window.
+Shows a local HTML file or a URL in the OS web view. Right-click an empty area of the tab strip > **New HTML...** opens the file chooser in that Pane's current folder, showing only folders and `.html` · `.htm` · `.svg` files. Pick a file to open an HTML Tab in that Pane; cancel and no Tab is created. In a remote Workspace the file chooser does not open, and a notice says the file can't be opened yet.
 
 - While loading, **Loading…** is shown; on failure, **Failed to load** and the URL.
 - While a menu or popup is open, HTML and Markdown pages are hidden for a moment and only an empty panel shows. When a notice card appears, only the pages it overlaps are hidden until the card goes away; other pages stay visible. A page you are typing into is not hidden, so a notice card over it stays covered.

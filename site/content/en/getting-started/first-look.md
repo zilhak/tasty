@@ -1,4 +1,4 @@
-<!-- source-hash: 57df7e7eebab -->
+<!-- source-hash: d84e6f24f60f -->
 # A first look
 
 Start by looking at the sidebar and work area. Learn how workspaces organize your projects and how panes, tabs, and surfaces fit together, then arrange them to suit your work.
@@ -67,7 +67,7 @@ At the top of each Pane.
 - A **green dot** appears while a program is producing output, and the name changes colour when it waits for input or finishes ([Names and marks](../using/panes-tabs-splits.md#names-and-marks)).
 - `+` is a new Tab. Right-click to create from a preset. The split · search icons next to it split this Pane or search inside the current Surface.
 - When Tabs overflow, left/right arrows appear. Drag to reorder.
-- Right-click an empty spot to create a new Tab with **New Terminal** · **New Markdown...** · **New HTML...** · **New Image**. The same menu also has **Save as pane preset**, **Create tab from preset...** and **Create pane from preset...**. <!-- TODO verify: whether choosing New HTML... in the tab strip menu creates a Tab (no HTML branch found in the menu handler) --> Each type is described in [Opening files](../using/files.md).
+- Right-click an empty spot to create a new Tab with **New Terminal** · **New Markdown...** · **New HTML...** · **New Image**. **New HTML...** opens a Tab in that Pane once you pick an HTML or SVG file in the file chooser. The same menu also has **Save as pane preset**, **Create tab from preset...** and **Create pane from preset...**. Each type is described in [Opening files](../using/files.md).
 
 The last remaining Tab of a Pane cannot be closed with Close Tab. Closing a Surface is different: closing the last Surface in a Tab closes that Tab, and if it was the last Tab of its Pane the Pane closes too, and if that was the last Pane of the Workspace the Workspace closes as well.
 

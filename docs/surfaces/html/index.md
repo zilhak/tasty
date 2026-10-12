@@ -176,7 +176,7 @@ OS별 구현은 다음과 같다.
 
 ## 인터페이스
 
-- **사용자**: HTML·SVG 파일 열기 → html surface(WebView).
+- **사용자**: HTML·SVG 파일 열기 → html surface(WebView). 탭 스트립 빈 곳 메뉴의 **새 HTML...** 은 파일 피커(`html`·`htm`·`svg` 필터)를 열고, 고른 파일의 절대 경로를 `url` 파라미터로 넘겨 메뉴를 연 pane 에 html 탭을 만든다([파일 피커 확정](../../features/native-file-picker/index.md#확정confirm)). mirror workspace 의 pane 에서는 피커를 열지 않고 원격 열기 불가 토스트를 띄운다.
 - **AI Agent**: `tasty html …` CLI / `html.*` IPC. surface 생성은 [work-area](../../features/work-area/index.md) (`--type html --url …`).
 - **AI Agent**: 스크립트 감지·허용·배너 상태 조회는 `tasty surface html-script --surface <id>`(IPC `surface.html_script`).
 
@@ -204,6 +204,12 @@ OS별 구현은 다음과 같다.
 - Given 배너 단계가 `loading`이고 그 로드는 에이전트가 넣은 이동(`tasty html open` 등)이다 When 스크립트가 있는 새 문서가 commit된다 Then [사용자가 봤다는 판정](#사용자가-봤다는-판정)대로 `banner.phase`는 `hidden`, `banner.pending_view`는 `true`이고 사용자가 그 surface를 선택할 때 배너가 `blocked`로 뜬다.
 - Given 터미널이나 markdown surface When `surface.html_script` Then invalid params로 거절한다.
 - Given 플러그인 disable When `.svg` 파일을 열기 Then `svg` detector 는 남고 핸들러가 없어 선택 창이 뜨며, 헤더 형식 표시는 `svg` 다.
+- Given 로컬 workspace 의 pane When 탭 스트립 빈 곳 메뉴에서 **새 HTML...** 을 고른다 Then 그 pane 의 선택 탭 cwd 에서 파일 피커가 열리고 디렉터리와 `.html`·`.htm`·`.svg` 파일만 보인다.
+- Given 그 피커 When 파일을 확정한다 Then 메뉴를 연 pane 에 html 탭이 하나 생겨 활성화되고, `url` 파라미터는 고른 절대 경로이며 WebView 는 `file://` URI 로 띄운다.
+- Given 그 피커 When 취소한다 Then 탭 수가 그대로다.
+- Given 그 피커가 열린 동안 메뉴를 연 pane 이 닫혔다 When 확정한다 Then 탭이 생기지 않는다.
+- Given 활성 pane 이 아닌 pane 에서 메뉴를 열었다 When 피커가 열린 동안 활성 pane 이 바뀐 뒤 확정한다 Then 탭은 메뉴를 연 pane 에 생긴다.
+- Given mirror workspace 의 pane When **새 HTML...** 을 고른다 Then 피커가 열리지 않고 탭도 생기지 않으며 원격 열기 불가 토스트가 뜬다.
 
 ## 화면
 
@@ -215,7 +221,7 @@ OS별 구현은 다음과 같다.
 
 ### 트리거
 
-HTML·SVG 파일 열기 또는 `html` surface 생성(`--url`).
+HTML·SVG 파일 열기, 탭 스트립 메뉴 **새 HTML...**(파일 피커), 또는 `html` surface 생성(`--url`).
 
 ### UI 요소 인벤토리
 

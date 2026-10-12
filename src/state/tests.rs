@@ -741,7 +741,7 @@ fn surface_display_path_unknown_surface_is_none() {
 // 포커스가 없는 pane에서 발생한 탭 바 입력으로 해당 pane이 선택되는지 검사한다.
 
 #[cfg(feature = "gui")]
-fn two_pane_fixture() -> (
+pub(crate) fn two_pane_fixture() -> (
     RequestContext,
     crate::runtime::engine_session::EngineSession,
 ) {

@@ -1,4 +1,4 @@
-<!-- source-hash: 8835aa1f7a07 -->
+<!-- source-hash: 02edac11cbae -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -35,7 +35,7 @@ tasty split --level surface --target-surface 5 --type explorer --path ~/proj
 
 - The `+` button or `Alt+T` — a new terminal Tab.
 - Right-click `+` — **Create tab from preset...** / **Create pane from preset...**.
-- Right-click an empty area of the tab strip — **New Terminal** · **New Markdown...** · **New HTML...** · **New Image** create a new Tab. The same menu also has **Save as pane preset**, **Create tab from preset...** and **Create pane from preset...**. Each kind is described in [Opening files](files.md). <!-- TODO verify: whether choosing New HTML... in the tab strip menu creates a Tab (no HTML branch found in the menu handler) -->
+- Right-click an empty area of the tab strip — **New Terminal** · **New Markdown...** · **New HTML...** · **New Image** create a new Tab. **New HTML...** opens a Tab in that Pane once you pick an HTML or SVG file in the file chooser. The same menu also has **Save as pane preset**, **Create tab from preset...** and **Create pane from preset...**. Each kind is described in [Opening files](files.md).
 - The Tab's `×`, right-click the Tab > **Close Tab**, or `Ctrl+W`. The last remaining Tab of a Pane does not close. To close the whole Pane, use Close Pane (`Ctrl+Shift+W`).
 
 ```sh
