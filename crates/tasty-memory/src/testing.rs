@@ -364,6 +364,8 @@ impl MemoryStorage for InMemoryStorage {
         })
     }
 
+    /// 맵에서 한 번에 지우므로 운영 저장소처럼 전부 지우거나 아무것도 지우지 않는다.
+    /// 변경 이벤트와 secret 영역은 흉내 내지 않는다.
     fn purge_scope(&mut self, scope: &Scope) -> Result<PurgeStats> {
         let token = scope.as_token();
         self.purge_scope_calls.push(token.clone());

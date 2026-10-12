@@ -112,14 +112,14 @@ impl MemoryStore {
     /// read 경로는 항상 `expires_at` 필터를 적용하므로 만료 entry 가 노출되진
     /// 않지만, 디스크에 row 가 남아 quota 와 파일 크기를 부풀린다. 호스트는
     /// 주기적으로 또는 `memory.gc` 명령으로 이 함수를 호출해 청소한다.
-    /// 실행 단위 밖에서는 transaction 없이 두 DELETE가 각각 자동 commit된다.
+    /// 조회와 두 DELETE를 transaction 하나로 확정한다.
     pub fn purge_expired(&mut self) -> Result<PurgeStats> {
         self.maintenance_step(purge_expired_rows)
     }
 
     /// 특정 scope 의 모든 entry (regular + secret 양쪽) 삭제. surface/window/
     /// workspace 가 닫힐 때 호스트가 호출해 해당 수명에 묶인 키를 정리한다.
-    /// 실행 단위 밖에서는 transaction 없이 두 DELETE가 각각 자동 commit된다.
+    /// 조회와 두 DELETE를 transaction 하나로 확정한다.
     pub fn purge_scope(&mut self, scope: &Scope) -> Result<PurgeStats> {
         let token = scope.as_token();
         self.maintenance_step(|conn| purge_scope_rows(conn, token))

@@ -211,10 +211,10 @@ target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
 | `burst100_sequential` | 한 스레드가 put 100건을 연달아 실행 |
 | `inflow` | 3초 동안 2ms 간격 put. 대리 메인 루프가 1ms마다 잠금을 잡고 get을 한다 |
 | `slow_burst100_concurrent`·`slow_inflow` | put마다 잠금을 쥔 채 5ms를 더한 느린 저장 대조군 |
-| `uncounted_paths` | TTL 정리·prune·scope 정리를 실행하고 commit 계측이 늘었는지 본다 |
+| `maintenance_paths` | TTL 정리·prune·scope 정리를 실행하고 호출마다 늘어난 commit 계측을 본다 |
 | `close` | 앞 시나리오의 쓰기를 모두 받은 `fast.db` 연결을 drop하는 시간. 파일의 마지막 연결이라 WAL checkpoint가 포함된다 |
 | `batch100_independent`·`batch100_atomic`·`unit100` | 같은 파일을 다시 열어 100건을 `write_batch`(독립·원자) 또는 `run_unit` 하나로 쓰는 회차를 20번 반복한다 |
-| `close_reopened` | 같은 파일을 다시 열어 batch·실행 단위와 `uncounted_paths`를 실행한 연결을 drop하는 시간 |
+| `close_reopened` | 같은 파일을 다시 열어 batch·실행 단위와 `maintenance_paths`를 실행한 연결을 drop하는 시간 |
 
 2026-10-12 Linux(ext4, NVMe, 다른 빌드가 함께 도는 공유 컴퓨터)에서 3회 실행한 값이다. close 행은 같은 날 별도로 3회 실행한 값이다. 되읽은 설정은 WAL·NORMAL·foreign_keys ON·journal_size_limit 4096000이고 degraded가 아니었다. payload는 236바이트 JSON, owner는 `_host`, scope는 global이다.
 
@@ -264,9 +264,9 @@ target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
 ### 계측 범위
 
 - `system.pressure.db`와 `DbLatencyStats`는 memory.db만 센다. state.db와 journal.db의 commit은 이 값에 없다.
-- commit 계측은 `put`·`delete`·`put_secret`·`delete_secret`의 명시 transaction만 센다. `import_regular`는 항목마다 `put`을 거치므로 세어진다.
+- commit 계측은 `put`·`delete`·`put_secret`·`delete_secret`·`purge_expired`·`purge_scope`·`prune_prefix_keep_recent`·`prune_prefix_older_than`의 명시 transaction을 센다. `import_regular`는 항목마다 `put`을 거치므로 세어진다. 정리 연산은 행을 하나 이상 지웠을 때만 센다.
 - 실행 단위와 쓰기 묶음은 확정된 쓰기가 있으면 요청 수와 관계없이 commit 1회로 센다. 단위 안에서 실행한 정리 연산도 그 commit에 포함된다([저장 계약](storage-contract.md#실행-단위와-쓰기-묶음)).
-- `purge_expired`·`purge_scope`(각 DELETE 두 문장), `prune_prefix_keep_recent`·`prune_prefix_older_than`(한 문장), `vacuum_if_fragmented`의 자동 commit은 세지 않는다. harness의 `uncounted_paths`에서 1행·190행을 지워도 계측값이 늘지 않았다.
+- `vacuum_if_fragmented`의 자동 commit은 세지 않는다. harness의 `maintenance_paths`는 정리 호출마다 늘어난 commit 수를 기록한다. 2026-10-12 debug 빌드 1회 실행에서 `purge_expired` 1행, prune 190행, `purge_scope` 1행 삭제가 각각 commit 1회로 세어졌다.
 - 메인 루프 지연은 `queue_before_gate`의 대기 시간과 `handler_after_gate`의 실행 시간으로 간접 확인한다. 이벤트 루프 한 회차의 길이를 직접 재는 계측은 없다.
 
 ## 텍스트 파일을 SQLite 로 옮기지 않는 이유
@@ -296,6 +296,8 @@ target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
   `state.db` 쪽 옮기기는 `classify_sql` 단위 테스트(busy / corrupt / notadb), `user_message_i18n` key 안정성 테스트.
 - 저장 실패: `crates/tasty-memory/src/tests.rs` 가 잠금(`busy`)과 페이지 상한(`disk_full`)을 실제로
   일으켜 원인과 메모리 쪽 상태를 본다. `io` 는 합성 오류 코드로 표만 본다.
+- 정리 연산: 같은 파일이 `BEFORE DELETE` trigger로 secret DELETE를 실패시켜 `purge_scope`·`purge_expired`가
+  regular 삭제까지 되돌리고 카운터·변경 버퍼·commit 계측을 바꾸지 않는지 본다.
 - 실행 단위·쓰기 묶음: `crates/tasty-memory/src/batch/batch_tests.rs` 가 묶음 중간 요청의 페이지 상한
   (`disk_full`), 다른 연결의 쓰기 잠금(`busy`)을 실제로 일으킨다. Unix에서는 파일 크기 상한(`ulimit -f`)을
   건 자식 프로세스에서 commit의 WAL 쓰기를 실패시켜 commit 단계 오류 뒤 카운터·변경 버퍼·commit 계측이

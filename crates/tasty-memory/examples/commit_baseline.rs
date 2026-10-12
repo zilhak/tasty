@@ -302,8 +302,9 @@ fn grouped(store: &mut MemoryStore, tag: &str, grouping: Grouping) -> Value {
     })
 }
 
-/// 기존 commit 계측이 세지 않는 정리 경로를 실행하고 계측값 변화를 본다.
-fn uncounted_paths(store: &mut MemoryStore) -> Value {
+/// 정리 경로(TTL 정리·prune·scope 정리)를 실행하고 각 호출이 센 commit 수를 본다.
+/// 행을 지운 정리 호출은 commit 1회로 세어진다.
+fn maintenance_paths(store: &mut MemoryStore) -> Value {
     let lat = store.db_latency();
     let before = lat.snapshot().commits;
     let expired = MemoryStorage::put(
@@ -318,23 +319,31 @@ fn uncounted_paths(store: &mut MemoryStore) -> Value {
         },
     )
     .expect("put ttl");
+    MemoryStorage::put(
+        store,
+        "_host",
+        &Scope::Surface(1),
+        "scoped.000000",
+        &payload(),
+        &PutOpts::default(),
+    )
+    .expect("put scoped");
     let after_put = lat.snapshot().commits;
     let purged = MemoryStorage::purge_expired(store).expect("purge_expired");
     let after_purge = lat.snapshot().commits;
     let pruned = MemoryStorage::prune_prefix_keep_recent(store, "single.", 10).expect("prune");
     let after_prune = lat.snapshot().commits;
-    let scope_purged =
-        MemoryStorage::purge_scope(store, &Scope::Surface(1)).expect("purge_scope empty");
+    let scope_purged = MemoryStorage::purge_scope(store, &Scope::Surface(1)).expect("purge_scope");
     let after_scope = lat.snapshot().commits;
     json!({
         "put_version": expired,
-        "commits_by_put": after_put - before,
+        "commits_by_puts": after_put - before,
         "purge_expired_rows": purged.regular + purged.secret,
-        "commits_counted_by_purge_expired": after_purge - after_put,
+        "commits_by_purge_expired": after_purge - after_put,
         "prune_rows": pruned,
-        "commits_counted_by_prune": after_prune - after_purge,
+        "commits_by_prune": after_prune - after_purge,
         "purge_scope_rows": scope_purged.regular + scope_purged.secret,
-        "commits_counted_by_purge_scope": after_scope - after_prune,
+        "commits_by_purge_scope": after_scope - after_prune,
     })
 }
 
@@ -449,8 +458,8 @@ fn main() {
         v["commit_us_sum"] = json!(c1.commit_us_sum - c0.commit_us_sum);
         out.line(&v);
     }
-    let mut v = uncounted_paths(&mut store);
-    v["scenario"] = json!("uncounted_paths");
+    let mut v = maintenance_paths(&mut store);
+    v["scenario"] = json!("maintenance_paths");
     out.line(&v);
 
     let wal_bytes = wal_len(&dir, "fast.db");
@@ -458,7 +467,7 @@ fn main() {
     drop(store);
     out.line(&json!({
         "scenario": "close_reopened",
-        "connection": "fast.db reopened for batch, unit and uncounted_paths",
+        "connection": "fast.db reopened for batch, unit and maintenance_paths",
         "wal_bytes_before": wal_bytes,
         "drop_us": u64::try_from(t.elapsed().as_micros()).unwrap_or(u64::MAX),
     }));

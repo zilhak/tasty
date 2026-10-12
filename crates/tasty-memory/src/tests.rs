@@ -1145,6 +1145,131 @@ fn purge_scope_records_deleted_for_each_regular_key() {
     assert_eq!(changes[1].key, "b");
 }
 
+/// secret DELETE를 막는 trigger. regular DELETE 뒤 둘째 문장을 실패시킨다.
+fn block_secret_delete(s: &MemoryStore) {
+    s.conn
+        .execute_batch(
+            "CREATE TRIGGER block BEFORE DELETE ON memory_secret
+             BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_failed_secret_delete_rolls_back_the_whole_scope_purge() {
+    let mut s = store();
+    let scope = Scope::Surface(7);
+    s.put(
+        HOST_OWNER,
+        &scope,
+        "r",
+        &text(&"x".repeat(100)),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    s.put_secret(PLUGIN_A, &scope, "s", &text("y"), &PutOpts::default())
+        .unwrap();
+    s.take_pending_changes();
+    block_secret_delete(&s);
+    let commits = s.db_latency().snapshot().commits;
+
+    assert!(s.purge_scope(&scope).is_err());
+    assert!(
+        s.get(&scope, "r").unwrap().is_some(),
+        "regular 삭제가 롤백되지 않았다"
+    );
+    assert!(s.take_pending_changes().is_empty());
+    assert_eq!(
+        s.regular_used_bytes,
+        MemoryStore::scan_regular_used(&s.conn)
+    );
+    assert!(s.regular_used_bytes > 0);
+    assert_eq!(s.db_latency().snapshot().commits, commits);
+}
+
+#[test]
+fn a_failed_secret_delete_rolls_back_the_whole_expired_purge() {
+    let mut s = store();
+    let scope = Scope::Workspace(4);
+    let expired = PutOpts {
+        expires_at: Some(1),
+        cas: None,
+    };
+    s.put(HOST_OWNER, &scope, "r", &text(&"x".repeat(100)), &expired)
+        .unwrap();
+    s.put_secret(PLUGIN_A, &scope, "s", &text("y"), &expired)
+        .unwrap();
+    s.take_pending_changes();
+    block_secret_delete(&s);
+    let commits = s.db_latency().snapshot().commits;
+
+    assert!(s.purge_expired().is_err());
+    let left: i64 = s
+        .conn
+        .query_row("SELECT COUNT(*) FROM memory WHERE key='r'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(left, 1, "만료된 regular 행 삭제가 롤백되지 않았다");
+    assert!(s.take_pending_changes().is_empty());
+    assert_eq!(
+        s.regular_used_bytes,
+        MemoryStore::scan_regular_used(&s.conn)
+    );
+    assert!(s.regular_used_bytes > 0);
+    assert_eq!(s.db_latency().snapshot().commits, commits);
+}
+
+#[test]
+fn each_purge_and_prune_that_deletes_counts_one_commit() {
+    let mut s = store();
+    let commits = |s: &MemoryStore| s.db_latency().snapshot().commits;
+    let scope = Scope::Surface(3);
+    s.put(PLUGIN_A, &scope, "a", &text("x"), &PutOpts::default())
+        .unwrap();
+    s.put_secret(PLUGIN_A, &scope, "s", &text("y"), &PutOpts::default())
+        .unwrap();
+    let before = commits(&s);
+    s.purge_scope(&scope).unwrap();
+    assert_eq!(commits(&s) - before, 1, "purge_scope");
+
+    let expired = PutOpts {
+        expires_at: Some(1),
+        cas: None,
+    };
+    s.put(PLUGIN_A, &scope, "e", &text("x"), &expired).unwrap();
+    s.put_secret(PLUGIN_A, &scope, "es", &text("y"), &expired)
+        .unwrap();
+    let before = commits(&s);
+    s.purge_expired().unwrap();
+    assert_eq!(commits(&s) - before, 1, "purge_expired");
+
+    for i in 0..3u64 {
+        let key = format!("log.{i:013}");
+        s.put(
+            HOST_OWNER,
+            &Scope::Global,
+            &key,
+            &text("l"),
+            &PutOpts::default(),
+        )
+        .unwrap();
+    }
+    let before = commits(&s);
+    assert_eq!(s.prune_prefix_keep_recent("log.", 2).unwrap(), 1);
+    assert_eq!(commits(&s) - before, 1, "prune_prefix_keep_recent");
+    let before = commits(&s);
+    assert_eq!(s.prune_prefix_older_than("log.", 2).unwrap(), 1);
+    assert_eq!(commits(&s) - before, 1, "prune_prefix_older_than");
+
+    // 지운 행이 없는 정리는 확정된 쓰기가 없으므로 세지 않는다.
+    let before = commits(&s);
+    s.purge_scope(&Scope::Surface(99)).unwrap();
+    s.purge_expired().unwrap();
+    assert_eq!(s.prune_prefix_keep_recent("log.", 5).unwrap(), 0);
+    assert_eq!(commits(&s), before, "nothing deleted");
+}
+
 // WAL 파일 회수 시험은 in-memory가 아닌 임시 파일 DB를 사용한다.
 
 fn disk_store(dir: &std::path::Path) -> (MemoryStore, std::path::PathBuf) {

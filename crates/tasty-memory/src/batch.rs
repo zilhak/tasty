@@ -281,21 +281,13 @@ impl MemoryStore {
         self.in_unit(BodyErr::Rollback, |s| s.step(op, false))
     }
 
-    /// 정리 본문 하나. 단위 밖에서는 transaction 없이 각 문장이 자동 commit되고(현재 계약),
-    /// 단위 안에서는 다른 쓰기처럼 단위의 transaction에 들어간다.
+    /// 정리 본문 하나. 쓰기 본문과 같이 이벤트 대상 조회와 여러 DELETE를 transaction 하나로
+    /// 확정하므로, 실패하면 아무것도 지우지 않고 카운터·변경 버퍼도 그대로다.
     pub(crate) fn maintenance_step<T>(
         &mut self,
         op: impl FnOnce(&Connection) -> Result<(T, Effect)>,
     ) -> Result<T> {
-        if self.unit.is_some() {
-            return self.step(|conn, _| op(conn), true);
-        }
-        let (value, effect) = op(&self.conn)?;
-        if let Some(used) = effect.regular_used {
-            self.regular_used_bytes = used;
-        }
-        self.pending_changes.extend(effect.changes);
-        Ok(value)
+        self.write_step(|conn, _| op(conn))
     }
 
     /// 열린 단위 안에서 본문 하나를 실행하고 bookkeeping을 단위에 쌓는다.
