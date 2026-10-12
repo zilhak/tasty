@@ -227,13 +227,13 @@ impl App {
 
     /// GUI와 헤드리스가 같은 enable 구현을 사용한다.
     pub(crate) fn plugin_enable(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
-        crate::ipc::handler::plugin::enable(self.plugin_manager.as_mut(), plugin_id)
+        crate::app::plugin_lifecycle::enable(self.plugin_manager.as_mut(), plugin_id)
     }
 
     /// GUI와 헤드리스가 같은 disable 구현을 사용한다.
     pub(crate) fn plugin_disable(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
         let surface_registry = self.services.registries.surface_registry.clone();
-        crate::ipc::handler::plugin::disable(
+        crate::app::plugin_lifecycle::disable(
             self.plugin_manager.as_mut(),
             &surface_registry,
             plugin_id,

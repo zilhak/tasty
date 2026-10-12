@@ -62,13 +62,13 @@ pub(super) fn emit_plugin_loaded(mgr: &mut PluginManager, plugin_id: String, ver
     mgr.emit_host_event("plugin.loaded", &payload, EventScope::System);
 }
 
-/// 헤드리스와 같은 이벤트 정의를 사용하도록 IPC 핸들러의 공통 함수를 부른다.
+/// 헤드리스와 같은 이벤트 정의를 사용하도록 App의 공통 발행 함수를 부른다.
 pub(super) fn emit_plugin_enable_toggled(
     mgr: &mut PluginManager,
     plugin_id: String,
     enabled: bool,
 ) {
-    crate::ipc::handler::plugin::emit_enable_toggled(mgr, plugin_id, enabled);
+    crate::app::plugin_events::emit_enable_toggled(mgr, plugin_id, enabled);
 }
 
 pub(super) fn emit_plugin_unloaded(mgr: &mut PluginManager, plugin_id: String, reason: String) {
@@ -77,7 +77,7 @@ pub(super) fn emit_plugin_unloaded(mgr: &mut PluginManager, plugin_id: String, r
         "crash" => LifecycleReason::Crash,
         _ => LifecycleReason::User,
     };
-    crate::ipc::handler::plugin::emit_unloaded(mgr, plugin_id, lr);
+    crate::app::plugin_events::emit_unloaded(mgr, plugin_id, lr);
 }
 
 pub(super) fn emit_plugin_error(

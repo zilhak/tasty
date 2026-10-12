@@ -413,55 +413,14 @@ pub fn dispatch_readonly(
     Some(response)
 }
 
-// enable/disable은 GUI와 헤드리스가 공유한다. 이벤트 소비는 호출자가 맡는다.
-// GUI는 창 큐로 전달하고 헤드리스는 cascade_toggle_events_headless에서 즉시 처리한다.
+// 실행은 app::plugin_lifecycle, 이벤트 발행은 app::plugin_events가 맡는다.
+// 여기에는 메서드 분류, 파라미터 decode, 응답·오류 코드 매핑만 둔다.
 
 /// 생명주기 중 enable/disable만 처리한다. 설치·삭제·권한 변경은 별도 경로다.
 pub const LIFECYCLE_TOGGLE_METHODS: &[&str] = &["plugin.enable", "plugin.disable"];
 
 pub fn is_lifecycle_toggle_method(method: &str) -> bool {
     LIFECYCLE_TOGGLE_METHODS.contains(&method)
-}
-
-/// 지정한 플러그인만 시작한다. 이벤트 후속 처리는 호출자에게 맡긴다.
-pub fn enable(
-    mgr: Option<&mut PluginManager>,
-    plugin_id: String,
-) -> anyhow::Result<Vec<crate::app::command::CoreEvent>> {
-    let Some(mgr) = mgr else {
-        anyhow::bail!("plugin manager not initialized");
-    };
-    mgr.enable(&plugin_id)?;
-    Ok(vec![crate::app::command::CoreEvent::PluginEnableToggled {
-        plugin_id,
-        enabled: true,
-    }])
-}
-
-/// 실행 중이었다면 PluginUnloaded를 내고 선언한 surface kind도 등록 해제한다.
-/// 종료 이유는 User다. remove는 매니저를 직접 호출하므로 App::plugin_remove에서 종류를 해제한다.
-pub fn disable(
-    mgr: Option<&mut PluginManager>,
-    registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
-    plugin_id: String,
-) -> anyhow::Result<Vec<crate::app::command::CoreEvent>> {
-    let Some(mgr) = mgr else {
-        anyhow::bail!("plugin manager not initialized");
-    };
-    let was_running = mgr.is_running(&plugin_id);
-    mgr.disable(&plugin_id)?;
-    registry.withdraw_plugin(&plugin_id);
-    let mut events = vec![crate::app::command::CoreEvent::PluginEnableToggled {
-        plugin_id: plugin_id.clone(),
-        enabled: false,
-    }];
-    if was_running {
-        events.push(crate::app::command::CoreEvent::PluginUnloaded {
-            plugin_id,
-            reason: tasty_plugin_protocol::events::LifecycleReason::User,
-        });
-    }
-    Ok(events)
 }
 
 /// 생명주기 토글을 처리하고 CoreEvent의 후속 처리는 호출자에게 맡긴다.
@@ -472,6 +431,8 @@ pub fn dispatch_lifecycle_toggle(
     id: Value,
     params: &Value,
 ) -> Option<(JsonRpcResponse, Vec<crate::app::command::CoreEvent>)> {
+    use crate::app::plugin_lifecycle::PluginToggle;
+
     if !is_lifecycle_toggle_method(method) {
         return None;
     }
@@ -485,9 +446,9 @@ pub fn dispatch_lifecycle_toggle(
         }
     };
     let pid_for_response = plugin_id.clone();
-    let (verb, key, result) = match method {
-        "plugin.enable" => ("enable", "enabled", enable(mgr, plugin_id)),
-        "plugin.disable" => ("disable", "disabled", disable(mgr, registry, plugin_id)),
+    let (verb, key, toggle) = match method {
+        "plugin.enable" => ("enable", "enabled", PluginToggle::Enable),
+        "plugin.disable" => ("disable", "disabled", PluginToggle::Disable),
         other => {
             return Some((
                 JsonRpcResponse::internal_error(
@@ -498,6 +459,7 @@ pub fn dispatch_lifecycle_toggle(
             ));
         }
     };
+    let result = crate::app::plugin_lifecycle::toggle(mgr, registry, toggle, plugin_id);
     let response = match result {
         Ok(events) => {
             return Some((
@@ -508,56 +470,6 @@ pub fn dispatch_lifecycle_toggle(
         Err(e) => JsonRpcResponse::error(id, -32000, format!("{verb} failed: {e}")),
     };
     Some((response, Vec::new()))
-}
-
-/// GUI와 헤드리스가 같은 이벤트 키와 payload로 enable/disable을 알린다.
-pub fn emit_enable_toggled(mgr: &mut PluginManager, plugin_id: String, enabled: bool) {
-    let payload = tasty_plugin_protocol::events::payloads::PluginEnableToggled { plugin_id };
-    let key = if enabled {
-        "plugin.enabled"
-    } else {
-        "plugin.disabled"
-    };
-    mgr.emit_host_event(key, &payload, tasty_plugin_protocol::EventScope::System);
-}
-
-pub fn emit_unloaded(
-    mgr: &mut PluginManager,
-    plugin_id: String,
-    reason: tasty_plugin_protocol::events::LifecycleReason,
-) {
-    let payload = tasty_plugin_protocol::events::payloads::PluginUnloaded { plugin_id, reason };
-    mgr.emit_host_event(
-        "plugin.unloaded",
-        &payload,
-        tasty_plugin_protocol::EventScope::System,
-    );
-}
-
-/// 창 큐가 없는 헤드리스에서는 이벤트를 즉시 발행한다.
-/// 종료된 플러그인의 훅 선언도 해제해 더 이상 등록할 수 없게 한다.
-#[cfg(not(feature = "gui"))]
-pub fn cascade_toggle_events_headless(
-    mgr: &mut PluginManager,
-    hook_events: &crate::core::hook_event_registry::PluginHookEventRegistry,
-    events: Vec<crate::app::command::CoreEvent>,
-) {
-    use crate::app::command::CoreEvent;
-    for ev in events {
-        match ev {
-            CoreEvent::PluginEnableToggled { plugin_id, enabled } => {
-                emit_enable_toggled(mgr, plugin_id, enabled);
-            }
-            CoreEvent::PluginUnloaded { plugin_id, reason } => {
-                hook_events.unregister(&plugin_id);
-                emit_unloaded(mgr, plugin_id, reason);
-            }
-            other => tracing::warn!(
-                "cascade_toggle_events_headless: 토글이 낼 수 없는 CoreEvent: {:?}",
-                std::mem::discriminant(&other)
-            ),
-        }
-    }
 }
 
 #[cfg(test)]

@@ -96,15 +96,16 @@ extension을 함께 준비한다([ADR-0026](../adr/0026-plugin-registration-and-
 
 두 라우터가 **같은 함수**를 부른다 — `handler::plugin::dispatch_lifecycle_toggle`
 (`src/adapters/ipc/handler/plugin.rs`). 파라미터 이름·응답 칸 이름·오류 문구는
-에이전트가 보는 계약이라 한 자리에만 둔다. gui 의 `App::plugin_enable` /
-`App::plugin_disable` 도 같은 함수의 얇은 위임이다.
+에이전트가 보는 계약이라 한 자리에만 둔다. 이 함수는 메서드 분류·파라미터 decode·오류 코드
+매핑만 하고, 매니저 변경과 surface kind 철회는 `src/app/plugin_lifecycle.rs`의 실행 함수가
+맡는다. gui 의 `App::plugin_enable` / `App::plugin_disable` 도 같은 실행 함수의 얇은 위임이다.
 
 **갈리는 것은 낸 이벤트의 소비처 하나다.** gui 는 첫 main window 의 `PendingHostEvent`
 큐에 넣어 `app/dispatch/host_events.rs` 가 다음 drain 에 event bus 로 보내고, 창이 하나도
 없으면 **아무것도 발행하지 않는다**. 헤드리스는 창이 없어 그 큐를 못 쓰므로
 `cascade_toggle_events_headless` 가 매니저를 직접 들고 그 자리에서 낸다. 발행하는 이벤트
 키와 payload 자체(`plugin.enabled` / `plugin.disabled` / `plugin.unloaded`)는 두 경로가
-같은 함수를 부른다. hook 이벤트 등록 해제도 gui 의 `cascade_plugin_unloaded` 와 같다.
+`src/app/plugin_events.rs`의 같은 함수를 부른다. hook 이벤트 등록 해제도 gui 의 `cascade_plugin_unloaded` 와 같다.
 
 근거·대안·재검토 조건은 [ADR-0058](../adr/0058-headless-without-local-views.md).
 

@@ -50,8 +50,10 @@ pub(crate) mod modal;
 mod offview_window_events;
 #[cfg(feature = "gui")]
 pub(crate) mod persistence;
+pub(crate) mod plugin_events;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
+pub(crate) mod plugin_lifecycle;
 pub(crate) mod process_exit;
 pub(crate) mod publication_input;
 #[cfg(feature = "gui")]

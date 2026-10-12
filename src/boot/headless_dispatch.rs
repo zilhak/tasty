@@ -201,7 +201,7 @@ fn intercept_app_layer(
             &cmd.request.params,
         ) {
             if let Some(mgr) = app.plugin_manager.as_mut() {
-                crate::ipc::handler::plugin::cascade_toggle_events_headless(
+                crate::app::plugin_events::cascade_toggle_events_headless(
                     mgr,
                     &hook_events,
                     events,
