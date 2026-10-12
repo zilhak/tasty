@@ -81,8 +81,14 @@ pub fn run(
         inner: SharedStore(store.clone()),
         delay: slow,
     };
-    let mut writer =
-        spawn(access, limits, Arc::new(SystemClock), Arc::new(|| {})).expect("spawn writer");
+    let mut writer = spawn(
+        access,
+        Arc::default(),
+        limits,
+        Arc::new(SystemClock),
+        Arc::new(|| {}),
+    )
+    .expect("spawn writer");
     let mut v = body(&writer.handle(), store);
     let stats = writer.stats();
     let t = Instant::now();

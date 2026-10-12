@@ -21,6 +21,8 @@
 - **HTML 서피스가 보여 주는 문서 주소와 뒤로·앞으로 이동 가능 여부를 조회한다.** `tasty surface html-nav --surface <id>`(IPC `surface.html_nav`)가 마지막으로 commit된 주소(`url`, 리다이렉트 뒤 최종 주소와 `#fragment` 포함, 로드 중이거나 실패한 뒤에는 이전 문서 주소), 호스트가 넣은 주소(`requested_url`), 탐색 상태(`nav_state`), `can_go_back`·`can_go_forward`를 돌려준다. 읽기만 하며 헤드리스 빌드에서는 `-32017`이다. Linux만 실제 실행으로 확인했다. Windows는 크로스 타깃 컴파일만 확인했고 macOS는 컴파일도 확인하지 못했다. 둘 다 실 기기 미측정이다.
 - **에이전트가 HTML 서피스를 뒤로·앞으로·새로고침한다.** `tasty surface html-back`·`html-forward`·`html-reload --surface <id>`(IPC `surface.html_back`·`surface.html_forward`·`surface.html_reload`, 권한 `surface.write`). 포커스와 선택은 바꾸지 않고, 이동은 호스트가 시작한 로드로 처리되어 스크립트 배너는 사용자가 그 서피스를 선택할 때까지 보류된다. 갈 곳이 없으면 오류 없이 아무 일도 일어나지 않으므로 결과는 `tasty surface html-nav`로 확인한다. html이 아닌 서피스와 mirror workspace의 html 서피스는 거절하고, 헤드리스 빌드에서는 `-32017`이다. Linux만 실제 실행으로 확인했다. macOS·Windows는 실 기기 미측정이다.
 
+- **출력 observer 정보에 저장 실패 수가 생겼다.** `output.observe_list`·`output.observe_info`의 memory sink 항목에 `submit_rejected`(저장 실행기가 접수하지 않아 버린 수)와 `store_failed`(저장되지 않았거나 저장 여부를 모르는 수)가 더해졌다. `dropped`는 지금처럼 채널이 가득 차 버린 수만 센다. 파일 sink는 두 값이 0이다.
+
 ### Changed
 
 - **로컬 탐색기의 새로고침(`F5`·툴바)이 목록을 비우지 않는다.** 폴더 목록을 보이고 있는 로컬 탐색기에서 같은 폴더를 새로고침하면 Loading 화면을 거치지 않고 보이던 목록·펼친 트리·선택·스크롤을 둔 채 다시 읽고, 결과가 오면 사라진 항목만 선택에서 빠진다. 원격(attach) 탐색기, 오류 화면의 Retry, 읽는 중의 새로고침은 지금처럼 목록을 비우고 다시 읽는다.

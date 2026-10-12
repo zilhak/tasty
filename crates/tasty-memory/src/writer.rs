@@ -245,14 +245,15 @@ impl StoreAccess for SharedStore {
     }
 }
 
-/// memory.db 묶음 실행기.
+/// memory.db 묶음 실행기. 묶음이 끝날 때마다 같은 잠금 안에서 저장소의 변경 버퍼를 `changes`로 옮긴다.
 pub struct MemoryExecutor<A: StoreAccess> {
     access: A,
+    changes: Arc<ChangeFeed>,
 }
 
 impl<A: StoreAccess> MemoryExecutor<A> {
-    pub fn new(access: A) -> Self {
-        Self { access }
+    pub fn new(access: A, changes: Arc<ChangeFeed>) -> Self {
+        Self { access, changes }
     }
 }
 
@@ -262,7 +263,12 @@ impl<A: StoreAccess> Executor for MemoryExecutor<A> {
     type Error = WriterError;
 
     fn execute(&mut self, batch: &mut [MemoryRequest]) -> Execution<MemoryOutput, WriterError> {
-        self.access.with_store(|store| execute_on(store, batch))
+        let changes = &self.changes;
+        self.access.with_store(|store| {
+            let execution = execute_on(store, batch);
+            changes.extend(store.take_pending_changes());
+            execution
+        })
     }
 
     fn output_bytes(output: &MemoryOutput) -> usize {
@@ -401,19 +407,23 @@ fn apply(s: &mut dyn MemoryStorage, op: &WriteOp) -> Result<WriteOutput> {
     }
 }
 
+mod access;
+pub use access::{ChangeFeed, Failure, MemoryAccess, MemoryTicket, settle};
+
 pub type MemoryWriter<A> = batch_writer::Writer<MemoryExecutor<A>>;
 pub type MemoryHandle<A> = batch_writer::Handle<MemoryExecutor<A>>;
 
-/// `memory-writer` 스레드를 시작한다.
+/// `memory-writer` 스레드를 시작한다. commit된 변경은 `changes`에 쌓인다.
 pub fn spawn<A: StoreAccess>(
     access: A,
+    changes: Arc<ChangeFeed>,
     limits: Limits,
     clock: Arc<dyn Clock>,
     notify: Arc<dyn Fn() + Send + Sync>,
 ) -> std::io::Result<MemoryWriter<A>> {
     batch_writer::Writer::spawn(
         "memory-writer",
-        MemoryExecutor::new(access),
+        MemoryExecutor::new(access, changes),
         limits,
         clock,
         notify,

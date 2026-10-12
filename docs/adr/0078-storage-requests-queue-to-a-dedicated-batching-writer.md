@@ -1,6 +1,6 @@
 # ADR-0078: 저장 요청은 제한된 큐에 접수하고 저장소를 소유한 전담 writer가 묶어 실행한다
 
-- **Status**: Accepted — memory.db writer는 부팅·종료에 연결됐고 아직 요청을 넣는 소비자는 없다. 소비자 이전과 state DB·파일 writer는 이후 단계다.
+- **Status**: Accepted — memory.db writer는 부팅·종료에 연결됐고 소비자를 차례로 옮기는 중이다(현재 소비자는 [저장 계약](../design/systems/storage-contract.md#소비자-분류)에 있다). state DB·파일 writer는 이후 단계다.
 - **Date**: 2026-10-12
 - **Tags**: storage, sqlite, concurrency, backpressure, batching
 - **Group**: foundation

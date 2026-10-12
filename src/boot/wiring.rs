@@ -71,8 +71,10 @@ fn build_production_core_inner(
     let memory_init_fallback = memory_init_fallback_of(&store);
     let memory: Arc<Mutex<dyn MemoryStorage>> = store;
     // 다른 소비자가 같은 잠금을 직접 잡는 동안 writer도 그 잠금으로 저장소에 닿는다.
+    let memory_changes = Arc::new(tasty_memory::writer::ChangeFeed::default());
     let memory_writer = tasty_memory::writer::spawn(
         tasty_memory::writer::SharedStore(memory.clone()),
+        memory_changes.clone(),
         tasty_utils::batch_writer::Limits::default(),
         Arc::new(tasty_utils::batch_writer::SystemClock),
         memory_wake,
@@ -93,7 +95,7 @@ fn build_production_core_inner(
         .with_db_latency(db_latency)
         .with_memory_pragmas(memory_pragmas)
         .with_memory_init_fallback(memory_init_fallback)
-        .with_memory_writer(memory_writer)
+        .with_memory_writer(memory_writer, memory_changes)
         .with_themes(themes)
         .with_preset_store(preset_store)
         .with_settings_storage(settings_storage)

@@ -94,6 +94,8 @@ pub(crate) struct AppServices {
     /// memory.db 전담 writer. 부팅 구성에서만 만들며 시험 구성에는 없다. 이행 중에는 `memory`와
     /// 같은 잠금을 묶음마다 잡는다(docs/design/systems/storage-contract.md의 "저장 실행기" 절).
     memory_writer: Option<HostMemoryWriter>,
+    /// memory.db 요청 핸들. writer가 있으면 그 큐로, 없으면(시험 구성) 호출 스레드에서 바로 실행한다.
+    memory_access: tasty_memory::writer::MemoryAccess,
     /// 예상하지 못한 writer 종료를 한 번만 알린다.
     memory_writer_end_reported: bool,
 }
@@ -147,6 +149,15 @@ impl AppServices {
 
     pub(crate) fn memory_init_fallback(&self) -> Option<&tasty_memory::InitFallback> {
         self.memory_init_fallback.as_ref()
+    }
+
+    /// commit된 regular 변경을 접수 순서대로 꺼낸다. writer가 옮긴 변경 뒤에 아직 직접 잠금
+    /// 소비자가 남긴 변경을 붙인다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn take_memory_changes(&self) -> Vec<tasty_memory::MemoryChange> {
+        let mut changes = self.memory_access.changes().take();
+        changes.extend(self.with_memory(|s| s.take_pending_changes()));
+        changes
     }
 
     /// writer 계측. writer가 없는 구성이면 None이다.
@@ -219,8 +230,9 @@ impl AppServices {
         engine: &mut EngineMut<'_>,
         spec: crate::output_observer::ObserverSpec,
     ) -> Result<u64, crate::output_observer::ObserverError> {
-        let memory = engine.runtime.memory.clone();
-        let id = engine.observer_router.register(spec, memory)?;
+        let id = engine
+            .observer_router
+            .register(spec, self.memory_access.clone())?;
         engine.sync_output_event_gates();
         Ok(id)
     }

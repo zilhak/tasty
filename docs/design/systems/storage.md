@@ -125,13 +125,13 @@ fallback에서 memory.db를 쓰는 memory·agent·approval·surface.meta·teleme
 ### 터미널 출력 observer 의 memory sink — 저장 계약
 
 `output.observe_start`의 memory sink는 파싱한 항목을 `memory.db`에 쓴다.
-`src/runtime/output_observer.rs`의 `run_memory_sink`가 `MemoryStorage` 인터페이스를 사용한다.
+`src/runtime/output_observer/memory_sink.rs`가 채널에 쌓인 항목을 최대 256건씩 꺼내 [memory writer](storage-contract.md#저장-실행기)에 독립 요청 묶음(`Batch`, `Independent`) 하나로 넣는다. 함께 꺼낸 항목은 commit 한 번으로 저장된다. sink는 결과를 기다리지 않고 다음 항목을 받으며, 끝난 결과는 접수 순서대로 거둔다.
 
-- **키**: `global` 범위에 `tasty.observer.<id>.<ms>.<seq>`로 저장하고 owner는 `_host`다. `<ms>`는 저장 시각의 밀리초, `<seq>`는 sink별로 0부터 세는 순번이며 최소 6자리로 표시한다. 같은 밀리초의 여러 항목은 순번으로 구분한다. 시계가 역행하지 않고 순번이 6자리 범위에 있으면 키의 정렬 순서가 도착 순서와 같아 `memory.list --prefix tasty.observer.<id>.`로 시간순 조회할 수 있다([저장·보존 설계](../../adr/0009-state-storage-and-retention.md)).
-- **`max_records`**: 이번 실행에서 쓴 키를 순서대로 기억하고 최근 N건을 넘으면 오래된 키부터 같은 잠금 안에서 삭제한다. 이미 없는 키는 조용히 넘어가고 그 밖의 삭제 실패는 경고만 남긴다. 삭제한 키는 다시 시도하지 않으므로 N건보다 많이 남을 수 있다. 재시작하면 이 목록은 비워지며 이전 실행이 남긴 키에는 이 상한을 적용하지 않는다.
-- **put 실패**: 경고를 남기고 해당 항목은 버린 뒤 다음 항목을 처리한다. 소비자에게 gap을 보내지 않으며 observer의 `dropped`에도 더하지 않는다. `dropped`는 채널이 가득 차 넣지 못한 항목만 센다.
-- **잠금 poison**: `tasty_utils::poison::recover_mutex`로 복구해 계속 사용한다. 로그의 대상 이름과 최초 보고 여부는 `tasty_memory::STORE_LOCK_WHAT`·`STORE_LOCK_POISONED`를 쓴다. `core`의 `MEMORY_WHAT`·`MEMORY_POISONED`는 같은 static을 재수출하므로 최초 보고 플래그도 공유한다.
-- **종료**: surface가 닫히면 sender를 해제하고 워커 join은 미룬다. 워커는 채널에 남은 항목을 읽고 저장을 시도한 뒤 종료한다. 앱 종료의 `join_retired`와 라우터 Drop이 남은 워커를 기다린다. 저장 실패까지 방지하는 것은 아니며 워커가 끝나기 전에 프로세스가 종료되면 남은 항목을 잃을 수 있다.
+- **키**: `global` 범위에 `tasty.observer.<id>.<ms>.<seq>`로 저장하고 owner는 `_host`다. `<ms>`는 묶음을 만든 시각의 밀리초, `<seq>`는 sink별로 0부터 세는 순번이며 최소 6자리로 표시한다. 같은 밀리초의 여러 항목은 순번으로 구분한다. 시계가 역행하지 않고 순번이 6자리 범위에 있으면 키의 정렬 순서가 도착 순서와 같아 `memory.list --prefix tasty.observer.<id>.`로 시간순 조회할 수 있다([저장·보존 설계](../../adr/0009-state-storage-and-retention.md)). 모든 항목이 자기 키를 받으므로 같은 키로 합쳐지는 기록은 없다.
+- **`max_records`**: 저장이 확정된 키만 순서대로 기억하고 최근 N건을 넘으면 넘친 옛 키의 삭제를 다음 묶음에 싣는다. 채널이 끊기면 남은 삭제를 마지막 묶음으로 보낸다. 이미 없는 키는 조용히 넘어가고 그 밖의 삭제 실패는 경고만 남긴다. 삭제한 키는 다시 시도하지 않으므로 N건보다 많이 남을 수 있다. 확정 여부를 모르는 기록도 세지 않으므로 그만큼 더 남을 수 있다. 재시작하면 이 목록은 비워지며 이전 실행이 남긴 키에는 이 상한을 적용하지 않는다.
+- **실패 집계**: 세 종류를 따로 센다. 채널이 가득 차 넣지 못한 항목은 `dropped`, writer가 접수하지 않은 항목(큐 포화·종료 중)은 `submit_rejected`, writer가 거절했거나(크기·quota) 확정하지 못했거나 확정 여부를 모르는 항목은 `store_failed`다. 세 값 모두 `output.observe_list`·`output.observe_info` 응답에 있다. 접수하지 않은 항목을 sink가 대신 저장하지 않으며, 실패한 항목은 경고를 남기고 버린다. 소비자에게 gap을 보내지 않는다.
+- **잠금**: sink는 저장소 잠금을 잡지 않는다. 저장소에 닿는 것은 writer worker다. writer 없는 시험 구성에서는 같은 실행 규칙으로 sink 스레드에서 바로 실행하며, 이때 잠금 poison은 `tasty_utils::poison::recover_mutex`로 복구하고 `tasty_memory::STORE_LOCK_WHAT`·`STORE_LOCK_POISONED`를 쓴다. `core`의 `MEMORY_WHAT`·`MEMORY_POISONED`는 같은 static을 재수출한다.
+- **종료**: surface가 닫히면 sender를 해제하고 워커 join은 미룬다. 워커는 채널에 남은 항목을 넣고 결과를 기다린 뒤(최대 30초) 종료한다. 앱 종료는 observer 워커를 회수한 뒤 writer를 drain하므로 워커가 기다리는 결과는 writer가 끝내기 전에 나온다. 앱 종료의 `join_retired`와 라우터 Drop이 남은 워커를 기다린다. 워커가 끝나기 전에 프로세스가 종료되면 남은 항목을 잃을 수 있다.
 
 저장 실패 처리의 근거는 [ADR-0010](../../adr/0010-storage-failure-reporting.md)에 있다.
 

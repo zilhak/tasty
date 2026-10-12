@@ -1,6 +1,8 @@
 //! PTY 출력을 줄 단위로 파싱해 observer별 memory·파일 worker에 보낸다.
 //! 유한 채널이 가득 차면 해당 항목을 버린다. 등록 정보는 저장하지 않는다.
 
+mod memory_sink;
+
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -47,6 +49,10 @@ pub struct ObserverInfo {
     pub total_out: u64,
     /// 채널 Full로 버린 수. 끊긴 채널이나 저장 오류로 잃은 항목은 세지 않는다.
     pub dropped: u64,
+    /// memory sink에서 저장 실행기가 접수하지 않아(큐 포화·종료 중) 버린 수. 파일 sink는 0이다.
+    pub submit_rejected: u64,
+    /// memory sink에서 저장 실행기가 거절했거나 확정하지 못했거나 확정 여부를 모르는 수.
+    pub store_failed: u64,
     /// 마지막 try_send 성공 시각(Unix ms).
     pub last_event_ms: Option<i64>,
 }
@@ -97,6 +103,8 @@ struct ObserverEntry {
     kinds_filter: Option<Vec<String>>,
     tx: SyncSender<ParsedItem>,
     join: Option<JoinHandle<()>>,
+    /// memory sink의 제출·저장 실패 집계. 파일 sink는 계속 0이다.
+    sink_tally: std::sync::Arc<memory_sink::SinkTally>,
     total_in: u64,
     total_out: u64,
     dropped: u64,
@@ -153,7 +161,7 @@ impl ObserverRouter {
     pub fn register(
         &mut self,
         spec: ObserverSpec,
-        memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+        memory: tasty_memory::writer::MemoryAccess,
     ) -> Result<ObserverId, ObserverError> {
         let parser_ids: Vec<String> = if spec.parsers.is_empty() {
             DEFAULT_PARSER_IDS.iter().map(|s| s.to_string()).collect()
@@ -186,15 +194,16 @@ impl ObserverRouter {
         };
 
         let (tx, rx) = sync_channel::<ParsedItem>(SINK_CHANNEL_CAP);
+        let sink_tally = std::sync::Arc::new(memory_sink::SinkTally::default());
         let join = match &resolved_sink {
             SinkView::Memory { max_records } => {
                 let cap = *max_records;
                 let worker_id = id;
-                let mem = memory.clone();
+                let tally = sink_tally.clone();
                 Some(
                     thread::Builder::new()
                         .name(format!("tasty-observer-mem-{worker_id}"))
-                        .spawn(move || run_memory_sink(worker_id, cap, rx, mem))
+                        .spawn(move || memory_sink::run(worker_id, cap, rx, memory, tally))
                         .map_err(|e| ObserverError::ThreadSpawn(e.to_string()))?,
                 )
             }
@@ -228,6 +237,7 @@ impl ObserverRouter {
                 kinds_filter,
                 tx,
                 join,
+                sink_tally,
                 total_in: 0,
                 total_out: 0,
                 dropped: 0,
@@ -461,6 +471,14 @@ fn entry_to_info(id: ObserverId, entry: &ObserverEntry) -> ObserverInfo {
         total_in: entry.total_in,
         total_out: entry.total_out,
         dropped: entry.dropped,
+        submit_rejected: entry
+            .sink_tally
+            .submit_rejected
+            .load(std::sync::atomic::Ordering::Relaxed),
+        store_failed: entry
+            .sink_tally
+            .store_failed
+            .load(std::sync::atomic::Ordering::Relaxed),
         last_event_ms: entry.last_event_ms,
     }
 }
@@ -472,69 +490,6 @@ fn default_file_path(id: ObserverId) -> Result<PathBuf, ObserverError> {
     std::fs::create_dir_all(&dir)
         .map_err(|e| ObserverError::InvalidPath(format!("create_dir {dir:?}: {e}")))?;
     Ok(dir.join(format!("{id}.jsonl")))
-}
-
-fn run_memory_sink(
-    observer_id: ObserverId,
-    max_records: usize,
-    rx: std::sync::mpsc::Receiver<ParsedItem>,
-    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-) {
-    use tasty_memory::{HOST_OWNER, MemoryError, MemoryValue, PutOpts, Scope};
-    let mut written_keys: std::collections::VecDeque<String> =
-        std::collections::VecDeque::with_capacity(max_records.min(1024));
-    // 같은 밀리초의 여러 항목이 같은 키를 덮어쓰지 않도록 worker 순번을 덧붙인다.
-    let mut seq: u64 = 0;
-    while let Ok(item) = rx.recv() {
-        let now = unix_ms_now();
-        let key = format!("tasty.observer.{observer_id}.{now}.{seq:06}");
-        seq += 1;
-        let record = json!({
-            "kind": item.kind,
-            "line": item.line,
-            "byte_start": item.byte_start,
-            "byte_end": item.byte_end,
-            "data": item.data,
-            "at_ms": now,
-        });
-        // 같은 memory 락을 쓰는 다른 모듈과 최초 poison 보고 플래그를 공유한다.
-        let mut guard = crate::poison::recover_mutex(
-            memory.lock(),
-            tasty_memory::STORE_LOCK_WHAT,
-            &tasty_memory::STORE_LOCK_POISONED,
-        );
-        let put_result = guard.put(
-            HOST_OWNER,
-            &Scope::Global,
-            &key,
-            &MemoryValue::Json(record),
-            &PutOpts::default(),
-        );
-        match put_result {
-            Ok(_) => {
-                if max_records > 0 {
-                    written_keys.push_back(key);
-                    while written_keys.len() > max_records {
-                        let Some(old) = written_keys.pop_front() else {
-                            break;
-                        };
-                        // 키는 이미 written_keys에서 빠졌으므로 재시도가 없다.
-                        // 실패하면 max_records 상한이 그만큼 무너진다.
-                        // 이미 없는 키는 상한이 지켜진 것이라 경고하지 않는다.
-                        match guard.delete(HOST_OWNER, &Scope::Global, &old, None) {
-                            Ok(()) | Err(MemoryError::NotFound { .. }) => {}
-                            Err(e) => tracing::warn!(
-                                "observer {observer_id} retention delete failed for {old}: {e}"
-                            ),
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!("observer {observer_id} memory put failed: {e}");
-            }
-        }
-    }
 }
 
 fn run_file_sink(
@@ -633,7 +588,7 @@ mod tests {
                     kinds: None,
                     sink: SinkSpec::Memory { max_records: 10 },
                 },
-                memory.clone(),
+                tasty_memory::writer::MemoryAccess::inline(memory.clone()),
             )
             .unwrap();
         assert!(r.wants(1), "surface-tied observer enables its surface");
@@ -647,7 +602,7 @@ mod tests {
                     kinds: None,
                     sink: SinkSpec::Memory { max_records: 10 },
                 },
-                memory,
+                tasty_memory::writer::MemoryAccess::inline(memory),
             )
             .unwrap();
         assert!(r.wants(2), "wildcard observer enables every surface");
@@ -678,7 +633,7 @@ mod tests {
                     path: Some(path.to_path_buf()),
                 },
             },
-            mem_store(),
+            tasty_memory::writer::MemoryAccess::inline(mem_store()),
         )
         .unwrap()
     }
@@ -820,7 +775,7 @@ mod tests {
                         path: Some(dir.path().join("wild.jsonl")),
                     },
                 },
-                mem_store(),
+                tasty_memory::writer::MemoryAccess::inline(mem_store()),
             )
             .unwrap();
         r.drop_surface(5);
@@ -844,7 +799,7 @@ mod tests {
                     kinds: None,
                     sink: SinkSpec::Memory { max_records: 10 },
                 },
-                memory,
+                tasty_memory::writer::MemoryAccess::inline(memory),
             )
             .unwrap_err();
         assert!(matches!(err, ObserverError::UnknownParser(_)));
@@ -910,7 +865,13 @@ mod tests {
         tx.send(item(json!({ "small": 1 }))).unwrap();
         drop(tx);
 
-        run_memory_sink(41, 10, rx, memory.clone());
+        memory_sink::run(
+            41,
+            10,
+            rx,
+            tasty_memory::writer::MemoryAccess::inline(memory.clone()),
+            Default::default(),
+        );
 
         let records = observer_records(&memory, 41);
         assert_eq!(
@@ -929,7 +890,13 @@ mod tests {
             tx.send(item(json!({ "n": n }))).unwrap();
         }
         drop(tx);
-        run_memory_sink(43, 2, rx, memory.clone());
+        memory_sink::run(
+            43,
+            2,
+            rx,
+            tasty_memory::writer::MemoryAccess::inline(memory.clone()),
+            Default::default(),
+        );
         assert_eq!(
             observer_records(&memory, 43),
             vec![json!({ "n": 4 }), json!({ "n": 5 })],
@@ -940,7 +907,13 @@ mod tests {
             tx.send(item(json!({ "n": n }))).unwrap();
         }
         drop(tx);
-        run_memory_sink(44, 0, rx, memory.clone());
+        memory_sink::run(
+            44,
+            0,
+            rx,
+            tasty_memory::writer::MemoryAccess::inline(memory.clone()),
+            Default::default(),
+        );
         assert_eq!(
             observer_records(&memory, 44),
             (0..6).map(|n| json!({ "n": n })).collect::<Vec<_>>(),
@@ -962,7 +935,13 @@ mod tests {
         let (tx, rx) = sync_channel::<ParsedItem>(1);
         tx.send(item(json!({ "n": 1 }))).unwrap();
         drop(tx);
-        run_memory_sink(42, 10, rx, memory.clone());
+        memory_sink::run(
+            42,
+            10,
+            rx,
+            tasty_memory::writer::MemoryAccess::inline(memory.clone()),
+            Default::default(),
+        );
 
         assert_eq!(observer_records(&memory, 42), vec![json!({ "n": 1 })]);
         assert!(

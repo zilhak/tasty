@@ -52,6 +52,7 @@ struct Rig {
     store: Arc<Mutex<MemoryStore>>,
     open: Arc<(Mutex<bool>, Condvar)>,
     clock: Arc<ManualClock>,
+    changes: Arc<ChangeFeed>,
 }
 
 impl Rig {
@@ -81,11 +82,13 @@ fn rig_with(store: MemoryStore, limits: Limits, open: bool) -> Rig {
     let dyn_store: Arc<Mutex<dyn MemoryStorage>> = store.clone();
     let gate = Arc::new((Mutex::new(open), Condvar::new()));
     let clock = Arc::new(ManualClock::default());
+    let changes = Arc::new(ChangeFeed::default());
     let writer = spawn(
         Gated {
             shared: SharedStore(dyn_store),
             open: gate.clone(),
         },
+        changes.clone(),
         limits,
         clock.clone(),
         Arc::new(|| {}),
@@ -98,6 +101,7 @@ fn rig_with(store: MemoryStore, limits: Limits, open: bool) -> Rig {
         store,
         open: gate,
         clock,
+        changes,
     }
 }
 
@@ -212,7 +216,8 @@ fn requests_in_one_batch_are_judged_in_order_and_rejections_stay_alone() {
             s.get(&Scope::Global, "x").unwrap().is_none(),
             "the atomic batch rolls back alone"
         );
-        let changes = s.take_pending_changes();
+        assert!(s.take_pending_changes().is_empty(), "the writer moved them");
+        let changes = rig.changes.take();
         assert_eq!(
             changes.len(),
             3,
@@ -422,7 +427,8 @@ fn a_panicking_unit_fails_alone_and_the_rest_of_its_batch_commits_once() {
     let mut s = rig.store.lock().unwrap();
     assert!(s.get(&Scope::Global, "bad").unwrap().is_none());
     assert_eq!(s.db_latency().snapshot().commits, 1);
-    assert_eq!(s.take_pending_changes().len(), 2);
+    assert!(s.take_pending_changes().is_empty(), "the writer moved them");
+    assert_eq!(rig.changes.take().len(), 2);
     drop(s);
     rig.shutdown();
 }
@@ -444,6 +450,7 @@ fn busy_is_retried_until_the_lock_frees_and_then_commits_once() {
     let dyn_store: Arc<Mutex<dyn MemoryStorage>> = store.clone();
     let writer = spawn(
         SharedStore(dyn_store),
+        Arc::default(),
         Limits {
             retry_for: Duration::from_secs(5),
             ..Limits::default()
@@ -536,6 +543,7 @@ fn the_production_access_serializes_with_direct_lock_holders() {
         Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
     let writer = spawn(
         SharedStore(store.clone()),
+        Arc::default(),
         Limits::default(),
         Arc::new(SystemClock),
         Arc::new(|| {}),
@@ -554,4 +562,60 @@ fn the_production_access_serializes_with_direct_lock_holders() {
     drop(guard);
     assert_eq!(version(r.wait_timeout(WAIT).unwrap()), 1);
     drop(writer);
+}
+
+/// writer 없는 구성은 같은 실행 규칙으로 바로 실행하고, 두 경로 모두 commit된 변경을 버퍼로 옮긴다.
+#[test]
+fn both_routes_settle_the_same_way_and_feed_committed_changes() {
+    let inline_store: Arc<Mutex<dyn MemoryStorage>> =
+        Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+    let inline = MemoryAccess::inline(inline_store.clone());
+    assert!(!inline.is_queued());
+    let queued_store: Arc<Mutex<dyn MemoryStorage>> =
+        Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+    let changes = Arc::new(ChangeFeed::default());
+    let mut writer = spawn(
+        SharedStore(queued_store),
+        changes.clone(),
+        Limits::default(),
+        Arc::new(SystemClock),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let queued = MemoryAccess::writer(writer.handle(), changes);
+    assert!(queued.is_queued());
+    for access in [&inline, &queued] {
+        let mut ok = access
+            .submit(MemoryRequest::Write(put(HOST_OWNER, "k", "1", None)))
+            .unwrap();
+        let mut stale = access
+            .submit(MemoryRequest::Write(put(HOST_OWNER, "k", "2", Some(9))))
+            .unwrap();
+        match settle(ok.wait_timeout(WAIT).unwrap()) {
+            Ok(MemoryOutput::Written(WriteOutput::Version(1))) => {}
+            other => panic!("{other:?}"),
+        }
+        match settle(stale.wait_timeout(WAIT).unwrap()) {
+            Err(Failure::Rejected { error, .. }) => {
+                assert!(matches!(*error, crate::MemoryError::CasConflict { .. }))
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(ok.try_take().is_none(), "a result is taken once");
+        let changes = access.changes().take();
+        assert_eq!(changes.len(), 1, "only the committed put: {changes:?}");
+    }
+    assert!(
+        inline_store
+            .lock()
+            .unwrap()
+            .take_pending_changes()
+            .is_empty()
+    );
+    writer.begin_shutdown();
+    let deadline = Instant::now() + WAIT;
+    while writer.poll_shutdown() != 0 {
+        assert!(Instant::now() < deadline, "writer did not join");
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }

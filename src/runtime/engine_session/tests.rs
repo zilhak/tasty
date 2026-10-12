@@ -77,7 +77,7 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
                 kinds: None,
                 sink: SinkSpec::Memory { max_records: 0 },
             },
-            Arc::clone(&memory),
+            tasty_memory::writer::MemoryAccess::inline(Arc::clone(&memory)),
         )
         .expect("observer worker");
     owner
