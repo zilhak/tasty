@@ -511,6 +511,8 @@ mod explorer_action;
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_hidden;
 #[cfg(feature = "gui")]
+pub(crate) mod requests;
+#[cfg(feature = "gui")]
 mod surface_poll;
 
 pub(crate) mod telemetry;

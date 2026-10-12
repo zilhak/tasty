@@ -480,20 +480,22 @@ fn emit_surface_menu_fallback(
     }
 }
 
-/// 모아 둔 탐색기 액션을 원래 surface ID에 적용한다.
+/// 모아 둔 탐색기 액션을 원래 surface ID에 적용한다. 패널 변경만 `ExplorerCommand` 로 App에 보내고,
+/// 메뉴·오류 표시·새로고침·파일 열기·파일 작업은 여기서 처리한다.
 pub(crate) fn apply_explorer_action(
     state: &mut MainViewState,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
     sid: u32,
     act: crate::explorer_ui::ExplorerAction,
 ) {
+    use crate::app::requests::explorer::ExplorerCommand as C;
     use crate::explorer_ui::ExplorerAction as A;
-    match &act {
+    match act {
         A::OpenFile(path)
             if state
                 .explorer_views
                 .get(sid)
-                .is_some_and(|v| v.is_broken_link(path)) =>
+                .is_some_and(|v| v.is_broken_link(&path)) =>
         {
             // 사라진 파일처럼 보이지 않도록 링크 대상이 없다는 원인을 알린다.
             state.toasts.push(
@@ -506,7 +508,7 @@ pub(crate) fn apply_explorer_action(
             // mirror 탐색기의 경로는 원격 파일이다. 식별과 핸들러 선택은 file::dispatch::remote가 맡는다.
             state.dispatch_intent(
                 crate::app::command::DomainIntent::DispatchFile {
-                    target: crate::file::format::FileTarget::new(path.clone()),
+                    target: crate::file::format::FileTarget::new(path),
                     depth: crate::file::format::DetectDepth::Deep,
                     origin_surface_id: Some(sid),
                     dispatch_origin: crate::file::dispatch::FileDispatchOrigin::User,
@@ -515,7 +517,7 @@ pub(crate) fn apply_explorer_action(
                 .from_user_menu("explorer_open_file"),
             );
         }
-        A::Ops(op) => state.apply_explorer_ops(engine, sid, op.clone()),
+        A::Ops(op) => state.apply_explorer_ops(engine, sid, op),
         A::Refresh => {
             if let Some(v) = state.explorer_views.get_mut(sid) {
                 v.request_refresh();
@@ -529,7 +531,7 @@ pub(crate) fn apply_explorer_action(
             );
         }
         A::SetViewMode(m) => {
-            apply_explorer_panel_action(state, engine, sid, &act);
+            dispatch_explorer_command(state, engine, sid, C::ViewMode(m));
             let mode = m.as_str().to_string();
             if engine.settings.general.explorer_view_mode != mode {
                 state.dispatch_intent(
@@ -540,14 +542,23 @@ pub(crate) fn apply_explorer_action(
                 );
             }
         }
+        A::SetSort(column) => dispatch_explorer_command(state, engine, sid, C::Sort(column)),
+        A::Navigate(path) => {
+            let recent = path.display().to_string();
+            move_explorer(state, engine, sid, C::Navigate(path));
+            // 사용자 탐색만 최근 폴더에 기록한다. 에이전트 cwd 변경은 별도 경로다.
+            state.recent_files.add(EXPLORER_RECENT_KIND, recent);
+        }
+        A::GoBack => move_explorer(state, engine, sid, C::Back),
+        A::GoForward => move_explorer(state, engine, sid, C::Forward),
+        A::GoUp => move_explorer(state, engine, sid, C::Up),
+        A::NewTab => move_explorer(state, engine, sid, C::NewTab),
+        A::CloseTab(index) => move_explorer(state, engine, sid, C::CloseTab(index)),
+        A::SelectTab(index) => move_explorer(state, engine, sid, C::SelectTab(index)),
         A::Create { dir, name, folder } => state.request_explorer_file(
             engine,
             sid,
-            crate::app::explorer_files::Operation::Create {
-                dir: dir.clone(),
-                name: name.clone(),
-                folder: *folder,
-            },
+            crate::app::explorer_files::Operation::Create { dir, name, folder },
             crate::intent::IntentOrigin::User {
                 source: crate::intent::UserSource::Menu("explorer_create"),
             },
@@ -556,79 +567,67 @@ pub(crate) fn apply_explorer_action(
             state.dialogs.pending_native_menu =
                 Some(crate::state::PendingNativeMenu::ExplorerMore {
                     surface_id: sid,
-                    x: *x,
-                    y: *y,
+                    x,
+                    y,
                 });
         }
         A::ContextMenu { target, cwd, x, y } => {
             use crate::explorer_ui::ExplorerMenuTarget as T;
-            let menu = match target {
-                T::Favorite { path } => crate::state::PendingNativeMenu::ExplorerFavorite {
-                    surface_id: sid,
-                    path: path.clone(),
-                    x: *x,
-                    y: *y,
-                },
-                _ => {
-                    let (paths, single_is_dir) = match target {
-                        T::Empty => (Vec::new(), false),
-                        T::Single { path, is_dir } => (vec![path.clone()], *is_dir),
-                        T::Multi { paths } => (paths.clone(), false),
-                        T::Favorite { .. } => unreachable!(),
-                    };
-                    crate::state::PendingNativeMenu::Explorer {
-                        surface_id: sid,
-                        paths,
-                        cwd: cwd.clone(),
-                        single_is_dir,
-                        x: *x,
-                        y: *y,
-                    }
+            let (paths, single_is_dir) = match target {
+                T::Favorite { path } => {
+                    state.dialogs.pending_native_menu =
+                        Some(crate::state::PendingNativeMenu::ExplorerFavorite {
+                            surface_id: sid,
+                            path,
+                            x,
+                            y,
+                        });
+                    return;
                 }
+                T::Empty => (Vec::new(), false),
+                T::Single { path, is_dir } => (vec![path], is_dir),
+                T::Multi { paths } => (paths, false),
             };
-            state.dialogs.pending_native_menu = Some(menu);
-        }
-        _ => {
-            apply_explorer_panel_action(state, engine, sid, &act);
-            // 사용자 탐색만 최근 폴더에 기록한다. 에이전트 cwd 변경은 별도 경로다.
-            if let A::Navigate(p) = &act {
-                state
-                    .recent_files
-                    .add(EXPLORER_RECENT_KIND, p.display().to_string());
-            }
-            // 폴더·탭이 바뀌면 주소창 편집을 취소해 이전 버퍼가 다른 대상에 적용되지 않게 한다.
-            if matches!(
-                act,
-                A::Navigate(_)
-                    | A::GoBack
-                    | A::GoForward
-                    | A::GoUp
-                    | A::NewTab
-                    | A::CloseTab(_)
-                    | A::SelectTab(_)
-            ) && let Some(v) = state.explorer_views.get_mut(sid)
-            {
-                v.cancel_addr_edit();
-                // 타입어헤드 버퍼도 같은 이유로 버린다. `sync` 의 재적재 경로만으로는
-                // cwd 가 같은 내부 탭 사이 전환이 안 잡힌다.
-                v.reset_type_ahead();
-            }
+            state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::Explorer {
+                surface_id: sid,
+                paths,
+                cwd,
+                single_is_dir,
+                x,
+                y,
+            });
         }
     }
 }
 
-fn apply_explorer_panel_action(
+/// 폴더나 내부 탭을 바꾸는 명령. 주소창 편집을 취소해 이전 버퍼가 다른 대상에 적용되지 않게 한다.
+fn move_explorer(
     state: &mut MainViewState,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
     sid: u32,
-    action: &crate::explorer_ui::ExplorerAction,
+    command: crate::app::requests::explorer::ExplorerCommand,
+) {
+    dispatch_explorer_command(state, engine, sid, command);
+    if let Some(v) = state.explorer_views.get_mut(sid) {
+        v.cancel_addr_edit();
+        // 타입어헤드 버퍼도 같은 이유로 버린다. `sync` 의 재적재 경로만으로는
+        // cwd 가 같은 내부 탭 사이 전환이 안 잡힌다.
+        v.reset_type_ahead();
+    }
+}
+
+/// 지금 surface 세대에 묶어 App에 보낸다. surface가 이미 없으면 보내지 않는다.
+fn dispatch_explorer_command(
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    sid: u32,
+    command: crate::app::requests::explorer::ExplorerCommand,
 ) {
     if let Some(target) = crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid) {
         state.dispatch_intent(
-            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer {
-                target,
-                action: action.clone(),
-            })
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer(
+                crate::app::requests::explorer::BoundExplorerCommand::new(target, command),
+            ))
             .from_user_context_menu(),
         );
     }
@@ -850,6 +849,61 @@ mod explorer_open_tests {
                 *dispatch_origin,
                 crate::file::dispatch::FileDispatchOrigin::User
             );
+            assert!(intents[0].origin.is_user());
+        }
+    }
+}
+
+#[cfg(test)]
+mod explorer_command_tests {
+    use crate::app::engine_action::EngineAction;
+    use crate::app::requests::explorer::ExplorerCommand as C;
+    use crate::explorer_ui::{ExplorerAction as A, ExplorerMenuTarget};
+
+    /// 메뉴·새로고침은 화면에서 끝나고, 패널 변경만 원 surface에 묶인 사용자 실행 요청이 된다.
+    #[test]
+    fn only_panel_changes_leave_the_view_as_bound_explorer_commands() {
+        let (mut state, mut session, sid, root) = crate::state::tests::explorer_fixture(false);
+        let engine = session.borrow_mut();
+        for act in [
+            A::Refresh,
+            A::MoreMenu { x: 1.0, y: 2.0 },
+            A::ContextMenu {
+                target: ExplorerMenuTarget::Empty,
+                cwd: root.clone(),
+                x: 1.0,
+                y: 2.0,
+            },
+        ] {
+            super::apply_explorer_action(&mut state, &engine.read(), sid, act);
+        }
+        assert!(state.take_pending_intents().is_empty());
+        assert!(state.dialogs.pending_native_menu.is_some());
+
+        let sub = root.join("sub");
+        for (act, expected) in [
+            (A::Navigate(sub.clone()), C::Navigate(sub)),
+            (A::GoBack, C::Back),
+            (A::GoForward, C::Forward),
+            (A::GoUp, C::Up),
+            (
+                A::SetSort(crate::model::SortColumn::Size),
+                C::Sort(crate::model::SortColumn::Size),
+            ),
+            (A::NewTab, C::NewTab),
+            (A::CloseTab(1), C::CloseTab(1)),
+            (A::SelectTab(0), C::SelectTab(0)),
+        ] {
+            super::apply_explorer_action(&mut state, &engine.read(), sid, act);
+            let intents = state.take_pending_intents();
+            assert_eq!(intents.len(), 1, "{expected:?}");
+            let crate::intent::Intent::Engine(EngineAction::Explorer(request)) = &intents[0].body
+            else {
+                panic!("expected an explorer command, got {:?}", intents[0].body);
+            };
+            assert_eq!(request.command(), &expected);
+            assert_eq!(request.target().surface_id(), sid);
+            assert!(request.target().current_in(&engine.read()));
             assert!(intents[0].origin.is_user());
         }
     }

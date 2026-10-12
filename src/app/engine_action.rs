@@ -128,10 +128,7 @@ pub(crate) enum EngineAction {
         view: std::sync::Weak<()>,
     },
     #[cfg(feature = "gui")]
-    Explorer {
-        target: SurfaceBinding,
-        action: crate::explorer_ui::ExplorerAction,
-    },
+    Explorer(super::requests::explorer::BoundExplorerCommand),
     /// 탐색기 미리보기 패널의 토글·폭을 model 에 남겨 레이아웃 스냅샷에 싣는다.
     #[cfg(feature = "gui")]
     ExplorerPreview {
@@ -238,7 +235,9 @@ impl EngineAction {
                 }
             }
             #[cfg(feature = "gui")]
-            Self::Explorer { .. } => self.apply_explorer(engine),
+            Self::Explorer(request) => {
+                super::explorer_action::apply_bound_explorer_command(engine, request);
+            }
             #[cfg(feature = "gui")]
             Self::ExplorerPreview { .. } => self.apply_explorer_preview(engine),
             #[cfg(feature = "gui")]
@@ -531,26 +530,6 @@ impl EngineAction {
                     pending.time = input.time;
                 })
                 .or_insert_with(|| input.clone());
-        }
-    }
-    #[cfg(feature = "gui")]
-    fn apply_explorer(&self, engine: &mut EngineMut<'_>) {
-        let Self::Explorer { target, action } = self else {
-            unreachable!("variant-specific action dispatch")
-        };
-        if target.current(&engine.as_ref())
-            && let Some(panel) = engine
-                .runtime
-                .surfaces
-                .get_mut(&target.surface_id())
-                .and_then(|surface| {
-                    surface
-                        .as_any_mut()
-                        .downcast_mut::<crate::model::ExplorerPanel>()
-                })
-        {
-            super::explorer_action::apply_to_explorer_panel(panel, action);
-            engine.mark_layout_dirty();
         }
     }
     #[cfg(feature = "gui")]

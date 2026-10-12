@@ -84,10 +84,12 @@ impl MainView {
         };
         // 툴바·주소창 이동과 같은 경로라 히스토리(뒤로)에 남는다.
         self.state.dispatch_intent(
-            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer {
-                target,
-                action: crate::explorer_ui::ExplorerAction::Navigate(folder.clone()),
-            })
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer(
+                crate::app::requests::explorer::BoundExplorerCommand::new(
+                    target,
+                    crate::app::requests::explorer::ExplorerCommand::Navigate(folder.clone()),
+                ),
+            ))
             .from_user_context_menu(),
         );
         if let Some(view) = self.state.explorer_views.get_mut(surface_id) {
@@ -182,14 +184,16 @@ mod tests {
         open_result(&mut state, &engine.read(), sid, &dir);
         let intents = state.take_pending_intents();
         assert_eq!(intents.len(), 1);
-        let crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer {
-            action: crate::explorer_ui::ExplorerAction::Navigate(to),
-            ..
-        }) = &intents[0].body
+        let crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer(
+            request,
+        )) = &intents[0].body
         else {
             panic!("expected Navigate, got {:?}", intents[0].body);
         };
-        assert_eq!(to, &dir);
+        assert_eq!(
+            request.command(),
+            &crate::app::requests::explorer::ExplorerCommand::Navigate(dir)
+        );
     }
 
     #[test]
