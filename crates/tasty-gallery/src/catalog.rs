@@ -1989,8 +1989,8 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "rail-marks",
-                            "Rail marks — mirror chip",
-                            Some("12 circle with a 1px sky edge on the rail avatar, Mocha and Latte"),
+                            "Rail marks — category line and mirror chip",
+                            Some("2px category line in avatar ink and the sky-edged mirror chip, Mocha and Latte"),
                             components::rail_marks::draw,
                         ),
                     ],

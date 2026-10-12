@@ -675,8 +675,9 @@ fn rail_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
                 if held {
                     keycap_at(ui, theme, c, d, *active);
                 } else {
-                    let line = egui::Rect::from_center_size(c, egui::vec2(line_w, bw));
-                    p.rect_filled(line, 0.0, theme.separator.to_egui_premultiplied());
+                    let line_h = theme.rail_category_line_width().value();
+                    let line = egui::Rect::from_center_size(c, egui::vec2(line_w, line_h));
+                    p.rect_filled(line, line_h * 0.5, theme.rail_category_line().to_egui());
                 }
                 y += bound_h + gap;
             }

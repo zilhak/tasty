@@ -718,6 +718,16 @@ pub fn draw_collapsed_sidebar_view(
                 }
             }
         } else {
+            // 카테고리가 없으면 첫 아바타 위에 카테고리 선과 같은 색·굵기의 구분선을 둔다.
+            // 길이는 시안의 28이며 아바타 높이 토큰 값을 쓴다(아바타 폭은 32).
+            let line_h = th.rail_category_line_width().value();
+            let (divider, _) = ui.allocate_exact_size(
+                egui::vec2(th.sidebar_collapsed_workspace_height().value(), line_h),
+                egui::Sense::hover(),
+            );
+            ui.painter()
+                .rect_filled(divider, line_h * 0.5, th.rail_category_line());
+            vspace(ui, th.spacing_xs);
             for (i, ws) in props.workspaces.iter().enumerate() {
                 let switch_digit = if props.workspace_switch_held {
                     crate::adapters::ui::switch_overlay::workspace_digit(props.kb, i)
@@ -1122,7 +1132,11 @@ fn draw_rail_category_button(
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
     *resize_priority_hovered |= resp.hovered();
     let radius = th.corner_radius.value();
-    if resp.hovered() {
+    let pressed = resp.is_pointer_button_down_on();
+    if pressed {
+        ui.painter()
+            .rect_filled(rect, radius, th.active_overlay.to_egui_premultiplied());
+    } else if resp.hovered() {
         ui.painter()
             .rect_filled(rect, radius, th.hover_overlay.to_egui_premultiplied());
     }
@@ -1138,15 +1152,18 @@ fn draw_rail_category_button(
             );
         }
         None => {
+            // 선은 상자 테두리가 아니라 아바타 글자와 같은 무게의 표지라서 2px로 그린다.
+            // 모든 카테고리가 같은 색을 쓰고, hover·pressed에서만 밝아진다.
             let line_w = (w - th.spacing_sm.value()).max(0.0);
-            let line_h = th.border_width.value();
+            let line_h = th.rail_category_line_width().value();
             let line_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(line_w, line_h));
-            let line_color: egui::Color32 = if resp.hovered() {
-                th.text_muted().into()
+            let line_color: egui::Color32 = if pressed || resp.hovered() {
+                th.rail_category_line_hover().into()
             } else {
-                th.separator.to_egui_premultiplied()
+                th.rail_category_line().into()
             };
-            ui.painter().rect_filled(line_rect, 0.0, line_color);
+            ui.painter()
+                .rect_filled(line_rect, line_h * 0.5, line_color);
         }
     }
     resp.clicked().then_some(rect)

@@ -615,11 +615,16 @@ fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
 
     for (_label, collapsed, rows) in CATEGORY_SECTIONS {
         let line_w = theme.sidebar_collapsed_slot_width.value() - theme.spacing_sm.value();
+        let line_h = theme.rail_category_line_width().value();
         let line = egui::Rect::from_center_size(
             egui::pos2(cx, y + theme.spacing_lg.value() * 0.5),
-            egui::vec2(line_w, theme.border_width.value()),
+            egui::vec2(line_w, line_h),
         );
-        p.rect_filled(line, 0.0, egui::Color32::from(theme.border_default()));
+        p.rect_filled(
+            line,
+            line_h * 0.5,
+            egui::Color32::from(theme.rail_category_line()),
+        );
         y += theme.spacing_lg.value() + theme.spacing_xs.value();
 
         if !*collapsed {
@@ -705,6 +710,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "workspace-mirror-fg",
                 "mirror glyph/chip",
                 theme.workspace_mirror_fg().into(),
+            ),
+            TokenChip::new(
+                "rail-category-line",
+                "rail category --- line (2px) → text-muted",
+                theme.rail_category_line().into(),
             ),
             TokenChip::new(
                 "workspace-mirror-chip-border",

@@ -1,10 +1,18 @@
-//! 접힌 레일의 표지 예제. mirror 칩을 Mocha·Latte 두 테마에서 상태별로 비교한다.
-//! 치수와 토큰은 본체 접힌 레일의 워크스페이스 아바타와 같다.
+//! 접힌 레일의 표지 예제. 카테고리 선과 mirror 칩을 Mocha·Latte 두 테마에서 상태별로 비교한다.
+//! 치수와 토큰은 본체 접힌 레일의 카테고리 버튼·워크스페이스 아바타와 같다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{RailDot, paint_rail_dot};
+use tasty_ui_widgets::{RailDot, num_keycap, paint_rail_dot};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+/// 카테고리 버튼 바탕 상태. 본체는 pressed를 hover보다 우선한다.
+#[derive(Clone, Copy, PartialEq)]
+enum Bed {
+    Idle,
+    Hover,
+    Pressed,
+}
 
 /// 예제 아바타의 고정 상태.
 #[derive(Clone, Copy, Default)]
@@ -17,12 +25,78 @@ struct Avatar {
     mirror: bool,
 }
 
+/// 레일 한 줄에 놓이는 표지.
+#[derive(Clone, Copy)]
+enum RailItem {
+    Line(Bed),
+    Avatar(Avatar),
+}
+
 /// 아바타 크기. 본체 `collapsed_ws_size`와 같다.
 fn avatar_size(t: &Theme) -> egui::Vec2 {
     egui::vec2(
         t.sidebar_collapsed_slot_width.value(),
         t.sidebar_collapsed_workspace_height.value(),
     )
+}
+
+/// 카테고리 버튼 크기. 선 길이는 슬롯 폭에서 spacing-sm을 뺀 값이다.
+fn button_size(t: &Theme) -> egui::Vec2 {
+    egui::vec2(t.sidebar_collapsed_slot_width.value(), t.spacing_lg.value())
+}
+
+fn paint_category_button(
+    ui: &mut egui::Ui,
+    t: &Theme,
+    rect: egui::Rect,
+    bed: Bed,
+    cap: Option<&str>,
+) {
+    let radius = t.corner_radius.value();
+    match bed {
+        Bed::Pressed => {
+            ui.painter()
+                .rect_filled(rect, radius, t.active_overlay.to_egui_premultiplied());
+        }
+        Bed::Hover => {
+            ui.painter()
+                .rect_filled(rect, radius, t.hover_overlay.to_egui_premultiplied());
+        }
+        Bed::Idle => {}
+    }
+    if let Some(digit) = cap {
+        let size = t.switch_overlay_size().value();
+        let cap_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(size, size));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cap_rect));
+        num_keycap(&mut child, t, digit, false);
+        return;
+    }
+    let line_w = (rect.width() - t.spacing_sm.value()).max(0.0);
+    let line_h = t.rail_category_line_width().value();
+    let color: egui::Color32 = if bed == Bed::Idle {
+        t.rail_category_line().into()
+    } else {
+        t.rail_category_line_hover().into()
+    };
+    ui.painter().rect_filled(
+        egui::Rect::from_center_size(rect.center(), egui::vec2(line_w, line_h)),
+        line_h * 0.5,
+        color,
+    );
+}
+
+/// 카테고리를 끈 레일의 맨 위 구분선. 길이는 아바타 높이 토큰(28)이다.
+fn paint_flat_divider(ui: &mut egui::Ui, t: &Theme, center: egui::Pos2) {
+    let line_h = t.rail_category_line_width().value();
+    let rect = egui::Rect::from_center_size(
+        center,
+        egui::vec2(t.sidebar_collapsed_workspace_height().value(), line_h),
+    );
+    ui.painter().rect_filled(
+        rect,
+        line_h * 0.5,
+        egui::Color32::from(t.rail_category_line()),
+    );
 }
 
 fn paint_avatar(ui: &mut egui::Ui, t: &Theme, rect: egui::Rect, a: Avatar) {
@@ -62,6 +136,86 @@ fn paint_avatar(ui: &mut egui::Ui, t: &Theme, rect: egui::Rect, a: Avatar) {
     }
     if a.mirror {
         super::sidebar::mirror_corner_chip(ui, t, rect);
+    }
+}
+
+const RAIL: &[RailItem] = &[
+    RailItem::Line(Bed::Idle),
+    RailItem::Avatar(Avatar {
+        letter: "T",
+        active: true,
+        hover: false,
+        notif: false,
+        ring: false,
+        mirror: false,
+    }),
+    RailItem::Avatar(Avatar {
+        letter: "S",
+        active: false,
+        hover: false,
+        notif: false,
+        ring: false,
+        mirror: false,
+    }),
+    RailItem::Line(Bed::Hover),
+    RailItem::Avatar(Avatar {
+        letter: "E",
+        active: false,
+        hover: false,
+        notif: false,
+        ring: false,
+        mirror: true,
+    }),
+    RailItem::Avatar(Avatar {
+        letter: "D",
+        active: false,
+        hover: false,
+        notif: true,
+        ring: false,
+        mirror: false,
+    }),
+    RailItem::Line(Bed::Idle),
+    RailItem::Line(Bed::Idle),
+];
+
+/// 카테고리 경계 셋과 아바타 넷을 쌓은 접힌 레일 조각.
+fn mini_rail(ui: &mut egui::Ui, t: &Theme) {
+    let gap = t.spacing_xs.value();
+    let pad = t.spacing_sm.value();
+    let w = t.sidebar_collapsed_slot_width.value() + t.spacing_lg.value() + t.spacing_xs.value();
+    let h = RAIL
+        .iter()
+        .map(|item| match item {
+            RailItem::Line(_) => button_size(t).y,
+            RailItem::Avatar(_) => avatar_size(t).y,
+        })
+        .sum::<f32>()
+        + gap * (RAIL.len() as f32 - 1.0)
+        + pad * 2.0;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let bw = t.border_width.value();
+    ui.painter().vline(
+        rect.max.x - bw * 0.5,
+        rect.y_range(),
+        egui::Stroke::new(bw, t.separator.to_egui_premultiplied()),
+    );
+    let cx = rect.center().x;
+    let mut y = rect.min.y + pad;
+    for item in RAIL {
+        match *item {
+            RailItem::Line(bed) => {
+                let s = button_size(t);
+                let r = egui::Rect::from_min_size(egui::pos2(cx - s.x * 0.5, y), s);
+                paint_category_button(ui, t, r, bed, None);
+                y += s.y + gap;
+            }
+            RailItem::Avatar(a) => {
+                let s = avatar_size(t);
+                let r = egui::Rect::from_min_size(egui::pos2(cx - s.x * 0.5, y), s);
+                paint_avatar(ui, t, r, a);
+                y += s.y + gap;
+            }
+        }
     }
 }
 
@@ -123,8 +277,30 @@ fn board(ui: &mut egui::Ui, t: &Theme, name: &str) {
         .inner_margin(egui::Margin::same(t.spacing_md.value() as i8))
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = t.spacing_lg.value();
+                mini_rail(ui, t);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = t.spacing_lg.value();
+                    heading(ui, t, &format!("{name} — category line"));
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = t.spacing_md.value();
+                        let bs = button_size(t);
+                        for (caption, bed) in [
+                            ("idle", Bed::Idle),
+                            ("hover", Bed::Hover),
+                            ("pressed", Bed::Pressed),
+                        ] {
+                            cell(ui, t, caption, |ui, slot| {
+                                paint_category_button(ui, t, centered(slot, bs), bed, None)
+                            });
+                        }
+                        cell(ui, t, "modifier held", |ui, slot| {
+                            paint_category_button(ui, t, centered(slot, bs), Bed::Idle, Some("2"))
+                        });
+                        cell(ui, t, "flat divider", |ui, slot| {
+                            paint_flat_divider(ui, t, slot.center())
+                        });
+                    });
                     heading(ui, t, &format!("{name} — mirror chip"));
                     ui.horizontal_top(|ui| {
                         ui.spacing_mut().item_spacing.x = t.spacing_md.value();
@@ -169,7 +345,7 @@ fn board(ui: &mut egui::Ui, t: &Theme, name: &str) {
         });
 }
 
-/// 시안 "Rail marks — category line and mirror chip"의 mirror 칩 보드를 Mocha·Latte로 그린다.
+/// 시안 "Rail marks — category line and mirror chip": 같은 보드를 Mocha·Latte로 그린다.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let latte = crate::host_shell::latte_theme();
     let mocha = tasty_themes::mocha_fallback();
@@ -191,6 +367,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             (
+                "line",
+                "24 × 2 · round ends · centred in the 32 × 16 button",
+            ),
+            ("line idle", "rail-category-line → text-muted"),
+            (
+                "line hover / pressed",
+                "rail-category-line-hover → text-secondary · bed overlay-hover / overlay-active",
+            ),
+            ("active category", "same colour (no accent)"),
+            ("modifier held", "switch keycap replaces the line"),
+            (
+                "flat divider",
+                "28 × 2 · rail-category-line · above the first avatar",
+            ),
+            (
                 "chip",
                 "12 circle · 1px edge · 8 glyph · 2px bg-sidebar halo · bottom-right",
             ),
@@ -204,6 +395,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
         &[
+            TokenChip::new(
+                "rail-category-line",
+                "idle line · flat divider",
+                theme.rail_category_line().into(),
+            ),
+            TokenChip::new(
+                "rail-category-line-hover",
+                "hover / pressed line",
+                theme.rail_category_line_hover().into(),
+            ),
             TokenChip::new(
                 "workspace-mirror-chip-border",
                 "chip edge",

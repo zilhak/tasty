@@ -256,7 +256,7 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/foundations.jsx` "Depth reads through surface tint, never shadow" | `elevation` | 떠 있는 표면의 두 그림자는 `floating` |
 | `gallery/layouts.jsx` "Full sidebar ↔ collapsed rail" | `sidebar` |  |
 | `gallery/layouts.jsx` "Workspace categories (sidebar folders)" | `sidebar` "Categories · full" · "Categories · rail" | [workspace-category](#workspace-category-layouts--overlays) |
-| `gallery/layouts.jsx` "Rail marks — category line and mirror chip (2026-10-12)" | `rail-marks` (`components/rail_marks.rs`) | mirror 칩 보드를 Mocha·Latte로 그린다(idle·active·hover·+notif·+attached ring). 칩은 `sidebar` 예제와 같은 `mirror_corner_chip`, 아바타는 본체 레일 슬롯 32 × 28이다(시안 보드는 36 × 36) |
+| `gallery/layouts.jsx` "Rail marks — category line and mirror chip (2026-10-12)" | `rail-marks` (`components/rail_marks.rs`) | Mocha·Latte 보드마다 카테고리 경계 셋을 둔 레일 조각, 선 상태(idle·hover·pressed·modifier held 키캡·카테고리를 끈 레일의 맨 위 구분선 28 × 2), mirror 칩 상태(idle·active·hover·+notif·+attached ring)를 그린다. 칩은 `sidebar` 예제와 같은 `mirror_corner_chip`이다. 아바타·버튼은 본체 레일 슬롯 32 × 28 · 32 × 16이다(시안 보드는 36 × 36 · 36 × 16) |
 | `gallery/layouts.jsx` "Category quick-switch — Ctrl+Shift held" | `switch-cat` (Overlays) | [switch_overlay](#switch_overlay-overlays) `CatSwitchSidebarMock` 행. 디자인은 Layouts, 갤러리는 Overlays 페이지 |
 | `gallery/layouts.jsx` "One sidebar, one detail pane" | `onedepth` | [1 depth](#1-depth-general-list--detail) |
 | `gallery/layouts.jsx` "Top tabs over a filterable section list" | `twodepth` | [2 depth](#2-depth-settings-idiom) |

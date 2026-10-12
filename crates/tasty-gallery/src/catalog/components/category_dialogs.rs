@@ -134,6 +134,7 @@ fn rail_frame(ui: &mut egui::Ui, theme: &Theme) {
         egui::StrokeKind::Inside,
     );
     let cx = rail.center().x;
+    let line_h = theme.rail_category_line_width().value();
     let mut y = rail.top() + bw + RAIL_PAD_Y.value();
     for item in RAIL {
         match *item {
@@ -151,13 +152,13 @@ fn rail_frame(ui: &mut egui::Ui, theme: &Theme) {
             }
             RailItem::Sep => {
                 y += RAIL_SEP_MARGIN.value();
-                rail_line(p, cx, y, bw, theme.separator.to_egui_premultiplied());
-                y += bw + RAIL_SEP_MARGIN.value();
+                rail_line(p, cx, y, line_h, theme.rail_category_line().to_egui());
+                y += line_h + RAIL_SEP_MARGIN.value();
             }
             RailItem::HoveredButton => {
                 y += RAIL_BUTTON_PAD.value();
-                rail_line(p, cx, y, bw, theme.text_muted().to_egui());
-                y += bw + RAIL_BUTTON_PAD.value();
+                rail_line(p, cx, y, line_h, theme.rail_category_line_hover().to_egui());
+                y += line_h + RAIL_BUTTON_PAD.value();
             }
             RailItem::Avatar(ch, active, dot) => {
                 rail_avatar(p, theme, egui::pos2(cx, y), ch, active, dot);
@@ -175,11 +176,12 @@ fn rail_frame(ui: &mut egui::Ui, theme: &Theme) {
     rail_category_menu(&mut child, theme);
 }
 
-fn rail_line(p: &egui::Painter, cx: f32, y: f32, bw: f32, color: egui::Color32) {
+/// 카테고리 `---` 선. 아바타 글자와 같은 무게의 표지라서 둥근 끝의 2px 선으로 그린다.
+fn rail_line(p: &egui::Painter, cx: f32, y: f32, line_h: f32, color: egui::Color32) {
     let half = RAIL_LINE_W.value() * 0.5;
     p.rect_filled(
-        egui::Rect::from_min_max(egui::pos2(cx - half, y), egui::pos2(cx + half, y + bw)),
-        0.0,
+        egui::Rect::from_min_max(egui::pos2(cx - half, y), egui::pos2(cx + half, y + line_h)),
+        line_h * 0.5,
         color,
     );
 }
@@ -300,14 +302,18 @@ pub fn draw_rail(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "separator",
-                "--- line (idle)",
-                theme.separator.to_egui_premultiplied(),
+                "rail-category-line",
+                "--- line (idle) → text-muted",
+                theme.rail_category_line().to_egui(),
             ),
             TokenChip::new(
-                "text-muted",
-                "--- line (hover)",
-                theme.text_muted().to_egui(),
+                "rail-category-line-hover",
+                "--- line (hover · pressed) → text-secondary",
+                theme.rail_category_line_hover().to_egui(),
+            ),
+            TokenChip::without_color(
+                "rail-category-line-width",
+                "→ focus-ring-width 2 · round ends",
             ),
             TokenChip::new(
                 "surface-raised",
