@@ -924,4 +924,6 @@ fn spawn_local(
 }
 
 #[cfg(test)]
+mod search_result_tests;
+#[cfg(test)]
 mod tests;

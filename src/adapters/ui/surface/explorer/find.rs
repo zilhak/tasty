@@ -361,6 +361,47 @@ impl ExplorerView {
     }
 }
 
+impl ExplorerView {
+    /// 하위 폴더 검색 결과를 보이는 중이고 파일 작업이 바꾼 경로가 시작 폴더 안에 있으면 처음부터 다시 찾는다.
+    /// 결과는 하위 폴더의 항목이라 지금 폴더 목록을 다시 읽는 조건으로는 잡히지 않는다. 다시 찾았으면 true.
+    pub(super) fn refind_if_changed_under(
+        &mut self,
+        changed: &[PathBuf],
+        removed: &[PathBuf],
+    ) -> bool {
+        let Some(find) = self.find.as_mut().filter(|f| f.search.is_some()) else {
+            return false;
+        };
+        let under = changed
+            .iter()
+            .chain(removed)
+            .any(|p| p.starts_with(&find.root));
+        if under {
+            find.restart();
+        }
+        under
+    }
+
+    /// 시험: Find 바를 열고 하위 폴더 검색을 시작한다.
+    #[cfg(test)]
+    pub(crate) fn search_subfolders(&mut self, query: &str) {
+        self.open_find();
+        let find = self.find.as_mut().expect("a loaded folder opens the bar");
+        find.query = query.into();
+        find.deep = true;
+        find.restart();
+    }
+
+    /// 시험: 하위 폴더 검색이 아직 진행 중인가.
+    #[cfg(test)]
+    pub(crate) fn search_running(&self) -> bool {
+        self.find
+            .as_ref()
+            .and_then(|f| f.search.as_ref())
+            .is_some_and(|s| s.outcome == Outcome::Running)
+    }
+}
+
 impl FindState {
     /// 하위 폴더 검색이 켜져 있고 검색어가 있으면 처음부터 다시 찾는다. 아니면 검색을 버린다.
     fn restart(&mut self) {

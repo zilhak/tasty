@@ -891,6 +891,7 @@ impl ExplorerViewStore {
     /// 로컬 파일 작업이 바꾼 폴더를 보고 있는 View 를 다시 읽게 한다. 다시 읽은 View 가 있으면 true.
     /// `changed` 는 항목이 생기거나 사라진 폴더, `removed` 는 원래 자리에서 사라진 경로다.
     /// 사라진 경로 안을 보던 View 는 다시 읽어 읽기 오류 화면을 보인다. 다른 경로로 옮기지 않는다.
+    /// 하위 폴더 검색 결과를 보이는 View 는 바뀐 경로가 시작 폴더 안이면 다시 찾는다.
     pub(crate) fn invalidate_local(&mut self, changed: &[PathBuf], removed: &[PathBuf]) -> bool {
         let hit = |dir: &Path| {
             changed.iter().any(|c| c == dir) || removed.iter().any(|r| dir.starts_with(r))
@@ -905,6 +906,7 @@ impl ExplorerViewStore {
                 any = true;
                 continue;
             }
+            any |= view.refind_if_changed_under(changed, removed);
             let stale: Vec<PathBuf> = view
                 .tree_children
                 .keys()
