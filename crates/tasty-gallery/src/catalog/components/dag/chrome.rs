@@ -308,6 +308,8 @@ pub enum Empty<'a> {
     Popup,
     /// 본체 DAG 목록 popup — 검색어에 맞는 DAG가 없다. 디자인 `DagEmpty variant="search"`.
     Search(&'a str),
+    /// 본체 DAG 목록 popup — 검색어 없이 상태 필터·범위가 목록을 비웠다. 디자인 `DagEmpty variant="filtered"`.
+    Filtered,
 }
 
 /// 빈 상태를 본체와 같은 `paint_dag_empty`로 그린다.
@@ -331,6 +333,11 @@ pub fn paint_empty(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, case: Emp
         Empty::Search(q) => (
             icons::SEARCH,
             crate::i18n::t_fmt("dag.popup.no_match", q),
+            crate::i18n::t("dag.popup.no_match_hint").to_owned(),
+        ),
+        Empty::Filtered => (
+            icons::FUNNEL,
+            crate::i18n::t("dag.popup.no_match_filtered").to_owned(),
             crate::i18n::t("dag.popup.no_match_hint").to_owned(),
         ),
     };

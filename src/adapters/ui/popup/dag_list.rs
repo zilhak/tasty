@@ -568,7 +568,7 @@ fn draw_row_trailing(ui: &mut egui::Ui, theme: &Theme, row: &DagRow) {
 }
 
 /// DAG가 없는 경우와 필터 결과가 없는 경우를 구분해 목록 영역 가운데에 안내한다.
-/// 검색어가 있으면 그 검색어를 되비추고, 검색어 없이 상태·범위 필터만 걸렀으면 일반 무매치 문구를 쓴다.
+/// 검색어가 있으면 그 검색어를 되비추고, 검색어 없이 상태·범위 필터만 걸렀으면 필터 무매치 문구를 쓴다.
 fn draw_empty(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, total: usize, query: &str) {
     let (icon, title, hint) = empty_copy(total, query);
     let view = tasty_ui_widgets::DagEmptyView {
@@ -589,10 +589,11 @@ fn empty_copy(total: usize, query: &str) -> (icons::Icon, String, String) {
             t("dag_list.empty_none_hint").to_owned(),
         )
     } else if needle.is_empty() {
+        // 검색어가 없으니 원인은 상태 필터나 범위다. 글리프도 검색이 아니라 필터다.
         (
-            icons::SEARCH,
-            t("dag_list.empty_filtered").to_owned(),
-            t("dag_list.empty_filtered_hint").to_owned(),
+            icons::FUNNEL,
+            t("dag.popup.no_match_filtered").to_owned(),
+            t("dag.popup.no_match_hint").to_owned(),
         )
     } else {
         (
@@ -642,8 +643,10 @@ mod tests {
         assert_eq!(title, t("dag_list.empty_none"));
         assert_eq!(hint, t("dag_list.empty_none_hint"));
 
-        let (_, title, _) = empty_copy(3, "   ");
-        assert_eq!(title, t("dag_list.empty_filtered"));
+        let (icon, title, hint) = empty_copy(3, "   ");
+        assert_eq!(icon.svg, icons::FUNNEL.svg);
+        assert_eq!(title, t("dag.popup.no_match_filtered"));
+        assert_eq!(hint, t("dag.popup.no_match_hint"));
 
         let (_, title, hint) = empty_copy(3, " deploy ");
         assert_eq!(title, t_fmt("dag.popup.no_match", "deploy"));

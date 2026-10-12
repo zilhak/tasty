@@ -2245,6 +2245,8 @@ missing_hint = "It may have been deleted. Pick another from the header."
 # DAG 목록 popup 의 검색 무매치. 자리표시자는 검색어다.
 no_match = "No DAGs match “{}”"
 no_match_hint = "Clear the filter or widen the scope to all workspaces."
+# 검색어 없이 상태 필터·이 워크스페이스만 범위가 목록을 비웠을 때.
+no_match_filtered = "No DAGs match the current filters"
 
 [dag.status]
 waiting = "WAITING"
@@ -2352,8 +2354,6 @@ count_one = "{} of {} DAG"
 close = "Close"
 empty_none = "No DAGs yet"
 empty_none_hint = "Tasks grouped by dependency appear here."
-empty_filtered = "No matching DAGs"
-empty_filtered_hint = "Try a different filter."
 # 자리표시자는 입력을 기다리는 task 수다.
 awaiting = "{} need input"
 awaiting_one = "{} needs input"

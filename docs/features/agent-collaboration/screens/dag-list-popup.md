@@ -142,7 +142,7 @@ popup 상태에서 받는다. popup 폭 560은 상세 도킹 기준 640보다 �
 |------|------|
 | DAG 가 하나도 없음 | gitTree 글리프 + "No DAGs yet" + 의존 관계로 묶인 task 가 여기 나타난다는 안내. 워크스페이스 id 가 든 명령은 넣지 않는다 |
 | 검색어에 맞는 DAG 가 없음 | search 글리프 + "No DAGs match “{검색어}”" + 필터를 지우거나 범위를 모든 워크스페이스로 넓히라는 안내 |
-| 검색어 없이 상태 필터·범위만으로 전부 걸러냄 | search 글리프 + "No matching DAGs" + 조건을 바꾸라는 안내 |
+| 검색어 없이 상태 필터·"이 워크스페이스만" 범위로 전부 걸러냄 | filter(funnel) 글리프 + "No DAGs match the current filters"(`dag.popup.no_match_filtered`) + 검색 무매치와 같은 안내(`dag.popup.no_match_hint`). 공백뿐인 검색어도 검색어 없음으로 본다 |
 | 목록 폴링 실패 | 마지막으로 성공한 목록을 그대로 둔다(그래프 폴링과 같은 계약) |
 | 다른 workspace 활성 | popup 자체가 그려지지 않는다. 복귀 시 상태 그대로 다시 뜬다 |
 | 디테일 안의 상태들 | [그래프 surface 문서](../../../surfaces/dag-graph/screens/graph.md#상태별-시각) 와 동일 |

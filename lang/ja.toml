@@ -2183,6 +2183,7 @@ missing_hint = "削除された可能性があります。ヘッダーから別�
 # DAG 목록 popup 의 검색 무매치. 자리표시자는 검색어다.
 no_match = "“{}” に一致する DAG はありません"
 no_match_hint = "フィルターを消すか、範囲をすべてのワークスペースに広げてください。"
+no_match_filtered = "現在のフィルターに一致する DAG はありません"
 
 [dag.status]
 waiting = "待機"
@@ -2288,8 +2289,6 @@ count = "{} / {} DAG"
 close = "閉じる"
 empty_none = "DAG がありません"
 empty_none_hint = "依存関係でまとまったタスクがここに表示されます。"
-empty_filtered = "一致する DAG がありません"
-empty_filtered_hint = "条件を変えて探してみてください。"
 # 자리표시자는 입력을 기다리는 task 수다.
 awaiting = "{} 件が入力待ち"
 
