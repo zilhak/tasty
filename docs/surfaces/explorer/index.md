@@ -63,7 +63,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 
 ### 사용자 조작의 적용
 
-렌더 중 발생한 사용자 상호작용은 `ExplorerAction`(OpenFile / Navigate / GoBack / GoForward / GoUp / Refresh / SetViewMode / SetSort / NewTab / CloseTab / SelectTab / ContextMenu / AddressRejected) 으로 모았다가 `apply_explorer_action(state, engine, sid, act)` 에서 적용한다. 파일 열기/새로고침은 뷰 스토어만 다룬다. 내비게이션·뷰모드·탭 조작은 origin surface 의 `SurfaceBinding` 을 담은 `EngineAction::Explorer` 로 요청하고, App 이 binding 이 아직 그 surface 를 가리킬 때만 `ExplorerPanel` 에 적용한다(포커스 독립). 경로가 바뀌면 `ExplorerView` 가 다음 draw 에서 자동 감지해 재로드한다.
+렌더 중 발생한 사용자 상호작용은 `ExplorerAction`(OpenFile / Navigate / GoBack / GoForward / GoUp / Refresh / SetViewMode / SetSort / NewTab / CloseTab / SelectTab / ContextMenu / AddressRejected / Create / MoreMenu / Ops) 으로 모았다가 `apply_explorer_action(state, engine, sid, act)` 에서 적용한다. 파일 열기/새로고침은 뷰 스토어만 다룬다. Create 는 새 항목 만들기(아래 "새 폴더·새 파일"), MoreMenu 는 좁은 칸의 More 메뉴, Ops 는 파일 작업 표시(진행·대기열·결과 카드)에서 고른 일이다. 내비게이션·뷰모드·탭 조작은 origin surface 의 `SurfaceBinding` 을 담은 `EngineAction::Explorer` 로 요청하고, App 이 binding 이 아직 그 surface 를 가리킬 때만 `ExplorerPanel` 에 적용한다(포커스 독립). 경로가 바뀌면 `ExplorerView` 가 다음 draw 에서 자동 감지해 재로드한다.
 
 - `AddressRejected` 는 주소 입력을 이동하지 않은 이유를 그 surface 범위의 오류 toast 로 알린다. 패널은 바꾸지 않는다.
 - 파일 열기는 `DomainIntent::DispatchFile { origin_surface_id: Some(sid) }` 로 [file-handler](../../features/file-handler/index.md) 에 위임한다 — explorer 자신은 파일 식별/디스패치 정책을 모른다.
