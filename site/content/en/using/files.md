@@ -1,4 +1,4 @@
-<!-- source-hash: 412982fe7528 -->
+<!-- source-hash: cecdfd380b9f -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -166,7 +166,7 @@ You can't paste or drag files between your computer and a remote one, or between
 Drag items onto a folder row or cell, a folder in the left tree, or a favorite to put them in that folder. Dropped on a file or on empty space, they go to the folder the Explorer is showing. You can drag into another Explorer next to it too. While dragging an item, move toward the top or bottom edge of the list or the left tree to scroll automatically. Scrolling accelerates toward the edge and stays at 20 rows per second outside the area. With Explorers stacked vertically, only the area under the pointer scrolls; outside all areas, the nearest one scrolls.
 
 - On the same disk the drop **moves**; across disks it **copies**. Hold `Ctrl` (macOS `Option`) while dropping to do the opposite. Change that key with **Explorer drag flip modifier** at the bottom of **Settings** > **Keybindings** > **General** (the same value as `explorer_drag_flip_modifier` under `[keybindings]` in `config.toml`).
-- While dragging, the label by the pointer says **Move to** or **Copy to** and the folder. Where you can't drop, it says **Can't drop** and why (into itself, already in this folder, on a different computer, remote folder is read-only, no write access).
+- While dragging, the label by the pointer says **Move to** or **Copy to** and the folder. Where you can't drop, it says **Can't drop** and why (into itself, already in this folder, on a different computer, remote folder is read-only, no write access). A folder reached through a symbolic link counts as the folder the link points to.
 - Inside a remote Explorer, a drag **moves** only between folders the remote computer reports as the same disk, and **copies** otherwise.
 - Hover over a closed tree folder for 800 ms to expand it without moving the pointer again. The drop-target ring stays visible while you wait. Press `Esc` to cancel the drag.
 - Files dragged in from your OS file manager and dropped on an Explorer cell are **copied** into its folder (never moved). A remote Explorer refuses them, because they are on a different computer. On Linux, incoming file drags require X11/XWayland. On X11 the whole-window hint stays while you drag, but dropping on an Explorer cell still copies.

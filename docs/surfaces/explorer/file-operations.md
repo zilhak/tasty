@@ -85,7 +85,7 @@
 |---|---|---|
 | 지우기는 휴지통으로 | 휴지통 이동만 있고 영구 삭제 작업은 없다. 휴지통이 항목을 받지 않아도 영구 삭제로 대신하지 않는다. 그 드라이브에 휴지통이 없으면 아무것도 지우지 않고 그 사실을 카드로 알린다 | `job::run_trash`, `OpKind`(`Copy`·`Move`·`Trash`·`Undo`) |
 | 이름 충돌의 선택지 | Keep both(기본)·Skip·Replace(파일끼리만)·Cancel the rest 중에서 고르고, "Do this for the other n conflicts" 로 남은 충돌에 같은 답을 쓴다. 폴더는 Replace 하지 않고 다시 묻는다 ([작업 실행](#작업-실행--진행충돌결과)) | `job::Choice`, 충돌 popup `src/adapters/ui/popup/explorer_conflict.rs` |
-| 끌어 놓기의 기본 동작 | 같은 파일시스템이면 이동, 다른 파일시스템이면 복사다. 드래그 반전 modifier 로 뒤집는다. OS 에서 끌어 온 파일은 항상 복사한다. 파일시스템이 같은지는 unix 는 장치 번호, Windows 는 경로의 첫 구성 요소(드라이브)로 보고, 읽지 못하면 다른 파일시스템(복사)으로 본다 ([드래그 앤 드롭](#드래그-앤-드롭)) | `view/drag.rs` 의 `same_volume` |
+| 끌어 놓기의 기본 동작 | 같은 파일시스템이면 이동, 다른 파일시스템이면 복사다. 드래그 반전 modifier 로 뒤집는다. OS 에서 끌어 온 파일은 항상 복사한다. 파일시스템이 같은지는 unix 는 장치 번호, Windows 는 링크·마운트 폴더·UNC 를 따라간 실제 볼륨의 일련번호로 보고, 읽지 못하면 다른 파일시스템(복사)으로 본다. Windows 판정은 실 기기에서 측정하지 않았다 ([드래그 앤 드롭](#드래그-앤-드롭)) | `view/drag.rs` 의 `same_volume` |
 | 취소는 남은 항목만 | 지금 항목을 멈추고 남은 항목을 하지 않는다. 끝난 항목은 되돌리지 않고, 멈춘 항목의 준비 중 사본은 지운다 ([상태별 결과](#상태별-결과)) | `job.rs` 의 `record`·`Outcome::Cancelled` |
 | 다시 시도는 실패·미처리만 | 결과 카드의 Retry 는 실패하거나 건너뛴 항목과, 취소로 하지 않은 항목(멈춘 항목과 그 뒤 항목)만 같은 작업으로 다시 요청한다. 끝난 항목은 다시 하지 않는다. 취소한 작업의 카드도 같다 | `Report::retryable`·`Report::unprocessed`, `view/ops.rs` 의 `card_text` |
 | 볼륨 간 이동의 원본 삭제 실패는 별도 단계 | 사본을 공개한 뒤 원본을 다 지우지 못한 항목은 실패로 따로 보이고, Retry 는 다시 옮기지 않고 남은 원본 삭제만 별도 작업으로 요청한다 ([남은 원본 다시 지우기](#작업-실행--진행충돌결과)). 이동을 취소한 카드도 같다 | `Operation::RemoveLeftovers`, `job::leftover` |
@@ -173,8 +173,10 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 - **동작**: 같은 디스크면 이동, 다른 디스크면 복사. 원격 경로는 server 가 폴더 목록과 함께 알린 디스크 식별값으로 비교하고, 아직 읽지 않은 하위 폴더는 상위 폴더의 값을 쓴다. 값을 알리지 않는 옛 server 이거나 모르면 복사한다. `KeybindingSettings::explorer_drag_flip_modifier`(기본 macOS `option`, 다른 OS `ctrl`)를 누르고 있으면 뒤집는다. OS 파일은 항상 복사한다.
 - **자동 스크롤**: 목록의 항목 끌기와 사이드바 트리는 영역 선택과 같은 `explorer_autoscroll_zone`(24px) 띠를 쓴다. 속도는 `20줄/초 × t²`이며 목록 밖에서는 최고 속도로 유지한다. Detail 행·List 행·Grid 칸 줄·트리 행의 실제 높이를 사용하고 휠 입력도 유지한다. 추가 표시는 없다. 스크롤 거리는 `LogicalPx`로 계산하고 오른쪽 경계는 다음 영역에 속하게 하여 공유 경계에서 두 영역을 동시에 스크롤하지 않는다. 세로로 겹치는 열의 여러 탐색기에서는 포인터가 있는 영역, 밖에서는 가장 가까운 영역 하나만 스크롤한다. Detail은 표 본문의 실제 ScrollArea를, List·Grid·트리는 각 목록의 ScrollArea를 등록한다. 각 egui 패스에서 목록을 모두 그린 뒤 현재 뷰포트만 모아 소유자를 결정하고, 그 ScrollArea의 휠·영역 선택 처리 뒤 offset에 거리를 더한다. 리사이즈·분할 변경·목록 제거 때 이전 패스의 사각형은 후보에 넣지 않는다.
 - **대상 표시**: 놓을 수 있는 대상에 1px 안쪽 링과 틴트(`explorer-drop-target-*`)를 그린다. 파일 행이나 빈 곳이면 목록 본문 전체가 대상이다. 닫힌 트리 폴더 위에 `explorer_drag_expand_delay()`(800ms) 머물면 펼친다. 펼침 상태를 바꾼 뒤 다음 프레임을 요청해 포인터를 더 움직이지 않아도 하위 폴더가 나타난다.
-- **거절**: 폴더를 자기 자신이나 그 하위로(`a folder can't go inside itself`), 이미 있는 폴더로 이동(`already in this folder`, 복사는 허용), 다른 컴퓨터의 칸으로(`it is on a different computer` — 로컬과 원격 사이, 서로 다른 연결 사이, OS 파일을 mirror explorer 로), 원격 쓰기를 받지 않는 server 의 mirror explorer 로(`remote folders are read-only`), 쓰기 권한이 없는 로컬 폴더로(`no write access`). 원격 폴더의 쓰기 권한은 이 컴퓨터에서 확인하지 않고 server 의 결과로 알린다. 거절된 대상에는 링을 그리지 않는다. explorer 가 아닌 곳에서는 시작한 칸이 "Can't drop" 칩만 보인다.
+- **거절**: 폴더를 자기 자신이나 그 하위로(`a folder can't go inside itself`), 이미 있는 폴더로 이동(`already in this folder`, 복사는 허용), 다른 컴퓨터의 칸으로(`it is on a different computer` — 로컬과 원격 사이, 서로 다른 연결 사이, OS 파일을 mirror explorer 로), 원격 쓰기를 받지 않는 server 의 mirror explorer 로(`remote folders are read-only`), 쓰기 권한이 없는 로컬 폴더로(`no write access`). 로컬 폴더의 쓰기 권한은 unix 는 `access(W_OK)`, Windows 는 폴더 ACL 의 항목 만들기 권한과 읽기 전용 볼륨 여부로 본다(폴더의 읽기 전용 속성은 쓰기를 막지 않으므로 보지 않는다). 원격 폴더의 쓰기 권한은 이 컴퓨터에서 확인하지 않고 server 의 결과로 알린다. 거절된 대상에는 링을 그리지 않는다. explorer 가 아닌 곳에서는 시작한 칸이 "Can't drop" 칩만 보인다.
+- **경로 비교**: 로컬 판정은 작업 엔진처럼 링크를 푼 경로로 한다. 놓을 폴더는 링크를 풀고, 원본은 부모 폴더만 풀어 링크 항목이면 링크 자체를 가리킨다. 그래서 폴더를 자기 자신의 링크 이름 아래로 놓으면 거절하고, 링크 이름으로 본 파일을 원래 폴더로 옮기면 이미 있는 폴더로 본다. 읽지 못한 경로는 그대로 비교하며 작업 엔진이 다시 막는다. Windows 는 대소문자와 `canonicalize` 의 `\\?\` 접두사를 무시하고 비교한다(`view/drag.rs` 의 `resolve`).
 - **취소**: Esc 를 누르면 드래그를 취소하고, 버튼을 놓을 때까지 다시 시작하지 않는다.
+- **한 번 놓기**: 버튼을 놓은 pass 에서 작업을 한 번 요청하고 payload 를 지운다. egui 가 같은 프레임을 다시 돌려도 다시 요청하지 않는다.
 - **OS 파일**: explorer 칸 위에서는 창 전체의 drop overlay 를 그리지 않고, 칸이 링과 "Copy to" 칩을 보인다. 이 표시는 드래그 중 포인터 위치를 아는 동안만 나온다. winit 0.30 의 X11 은 XDND 중 위치를 알려 주지 않아 표시 없이 창 overlay 가 남고, 놓은 뒤의 포인터 위치로 대상 칸을 정한다. 다른 곳에 놓은 파일은 지금처럼 연다.
 - **꺼내기**: 로컬 항목의 외부 앱 Copy 드래그와 플랫폼별 제한은 [외부 앱으로 끌어 내기](#외부-앱으로-끌어-내기)를 따른다.
 
@@ -280,6 +282,9 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 - Given 되돌리기에서 지우지 못한 사본과 바뀌어 남긴 사본이 함께 있다, When 결과가 나온다, Then 제목은 지우지 못한 수만 센 `explorer.result.undo_partial_copy` 이고 남긴 사본도 줄에 남는다.
 - Given 같은 디스크의 항목을 폴더 행으로 끈다, When 놓는다, Then 이동하고, 드래그 반전 modifier 를 누른 채 놓으면 복사한다.
 - Given 항목을 끌고 있다, When Esc 를 누른 뒤 놓는다, Then 아무것도 바뀌지 않는다.
+- Given 항목을 끌고 있다, When 폴더 위에서 놓는다, Then 그 놓기 작업은 한 번만 요청된다(`view/drag_flow_tests.rs` 의 `a_drop_is_requested_once_even_when_the_frame_runs_again`).
+- Given 폴더 `src` 와 그 링크 `alias` 가 있다, When `src` 를 `alias` 나 그 하위 폴더로 끈다, Then "Can't drop" 과 자기 안으로라는 이유를 보이고 놓아도 작업을 요청하지 않는다.
+- Given 같은 디스크의 여러 항목을 골랐다, When 다른 폴더로 끌어 놓는다, Then 놓인 내용이 원본과 바이트 단위로 같고, 이동이면 원본이 없어지며 반전 modifier 로 복사하면 원본이 남는다(`a_multi_item_drag_runs_to_the_end_with_the_same_content`).
 - Given OS 에서 파일을 끌어 왔다, When 로컬 explorer 칸에 놓는다, Then 그 칸이 보고 있는 폴더로 복사하고 파일 핸들러를 열지 않는다.
 - Given 원격 쓰기를 알리지 않는 옛 server 의 mirror explorer 다, When `cut` 또는 `paste` 를 누른다, Then 어느 파일시스템도 바뀌지 않고 원격 쓰기 미지원 토스트가 뜬다.
 - Given 원격 쓰기를 알린 server 의 mirror explorer 다, When 새 폴더를 만들거나 이름을 바꾸거나 휴지통으로 보낸다, Then 원격 호스트의 파일이 바뀌고 같은 연결의 explorer 가 그 폴더를 다시 읽으며 로컬 파일시스템은 바뀌지 않는다.
