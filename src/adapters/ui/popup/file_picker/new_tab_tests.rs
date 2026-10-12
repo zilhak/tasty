@@ -58,7 +58,37 @@ fn new_html_picker_filters_html_htm_svg_and_targets_the_pane() {
     ));
 }
 
-/// 메뉴를 연 pane이 활성 pane이 아니어도, 피커가 열린 동안 활성 pane이 바뀌어도 대상은 그 pane이다.
+/// 피커를 연 뒤 확정해 나온 CreateTab 의 pane_id 를 돌려준다.
+fn confirm_html(
+    state: &mut crate::state::RequestContext,
+    engine: &crate::runtime::engine_access::EngineMut<'_>,
+) -> u32 {
+    state.take_pending_intents();
+    let on_confirm = state
+        .dialogs
+        .file_picker
+        .as_ref()
+        .expect("picker opened")
+        .on_confirm
+        .clone();
+    crate::app::dispatch::file_picker::dispatch_picker_result(
+        state,
+        &on_confirm,
+        &crate::state::FilePickerResult::Confirmed {
+            paths: vec!["/tmp/x/a.svg".to_string()],
+            is_remote: false,
+        },
+        |pane| engine.has_pane(pane),
+    );
+    let intents = state.take_pending_intents();
+    assert_eq!(intents.len(), 1, "{intents:?}");
+    match intents[0].body {
+        Intent::Domain(crate::app::command::DomainIntent::CreateTab { pane_id, .. }) => pane_id,
+        ref other => panic!("expected CreateTab, got {other:?}"),
+    }
+}
+
+/// 메뉴를 연 pane이 활성 pane이 아니어도 탭은 메뉴를 연 pane에 생긴다.
 #[test]
 fn new_html_targets_menu_pane_not_active_pane() {
     let (mut state, mut engine_session) = crate::state::tests::two_pane_fixture();
@@ -72,37 +102,31 @@ fn new_html_targets_menu_pane_not_active_pane() {
         "url",
         HTML_EXTENSIONS,
     );
-    state
-        .navigation
-        .select_pane(engine.workspace_at(0).unwrap(), 20);
-    state.take_pending_intents();
+    assert_eq!(state.focused_pane_id(&engine), 20);
+    assert_eq!(confirm_html(&mut state, &engine), 10);
+}
 
-    let on_confirm = state
-        .dialogs
-        .file_picker
-        .as_ref()
-        .unwrap()
-        .on_confirm
-        .clone();
-    crate::app::dispatch::file_picker::dispatch_picker_result(
+/// 메뉴를 연 pane이 활성이었어도 피커가 열린 동안 활성 pane이 바뀌면 탭은 메뉴를 연 pane에 생긴다.
+#[test]
+fn new_html_keeps_menu_pane_when_active_pane_changes_during_picker() {
+    let (mut state, mut engine_session) = crate::state::tests::two_pane_fixture();
+    let engine = engine_session.borrow_mut();
+    assert_eq!(state.focused_pane_id(&engine), 20);
+    open_for_new_tab(
         &mut state,
-        &on_confirm,
-        &crate::state::FilePickerResult::Confirmed {
-            paths: vec!["/tmp/x/a.svg".to_string()],
-            is_remote: false,
-        },
-        |pane| engine.has_pane(pane),
+        &engine.read(),
+        20,
+        "html",
+        "url",
+        HTML_EXTENSIONS,
     );
-    let intents = state.take_pending_intents();
-    assert_eq!(intents.len(), 1);
-    assert!(
-        matches!(
-            intents[0].body,
-            Intent::Domain(crate::app::command::DomainIntent::CreateTab { pane_id: 10, .. })
-        ),
-        "{:?}",
-        intents[0].body
+    state.select_pane(&engine, 10);
+    assert_eq!(
+        state.focused_pane_id(&engine),
+        10,
+        "활성 pane이 실제로 바뀌어야 한다"
     );
+    assert_eq!(confirm_html(&mut state, &engine), 20);
 }
 
 /// mirror pane에서는 피커를 열지 않고 원격 열기 불가 토스트만 띄운다.
