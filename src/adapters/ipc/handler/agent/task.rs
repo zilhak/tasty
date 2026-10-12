@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::adapters::ipc::handler::params::{self, p_try};
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineMut;
 use serde_json::{Value, json};
 
 use crate::app::services::AppServices;
@@ -9,18 +9,16 @@ use tasty_agent::task::{
     Completion, CompletionOutcome, TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter,
 };
 use tasty_agent::{
-    AgentError, DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand,
-    TaskGraph, TaskId, TaskResult, TaskState, extract_paths, reduce_with_custom, run_custom_shell,
+    DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand, TaskId, TaskResult,
+    TaskState, extract_paths, reduce_with_custom, run_custom_shell,
 };
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
-use tasty_task_runtime::graph_view::{
-    collect_graph_edges, drawn_edges, on_failure_kind, task_command_kind,
-};
 use tasty_task_runtime::task::{task_phase, task_phase_with_handle};
 
 use super::super::memory::mark_durability;
-use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_id_param};
+use super::task_graph_view::{dag_response, dag_summary_json, graph_response};
+use super::{agent_err_to_response, now_ms, reply_task, task_id_param, workspace_id_param};
 
 pub fn handle_task_create(
     core: &AppServices,
@@ -82,24 +80,27 @@ pub fn handle_task_create(
         metadata,
         now_ms: now_ms(),
     };
-    mark_durability(
+    let scope = engine.task_scope.clone();
+    reply_task(
         core,
-        match core
-            .tasks
-            .task_create(engine.task_scope, opts, reserved_for_fallback)
-        {
-            Ok(task) => match serde_json::to_value(&task) {
-                Ok(mut v) => {
-                    if let Some(warnings) = fallback_with_deps_warning(&task)
-                        && let Some(obj) = v.as_object_mut()
-                    {
-                        obj.insert("warnings".into(), json!(warnings));
+        id,
+        params,
+        move |tasks| tasks.task_create(&scope, opts, reserved_for_fallback),
+        |core, id, task| {
+            mark_durability(
+                core,
+                match serde_json::to_value(&task) {
+                    Ok(mut v) => {
+                        if let Some(warnings) = fallback_with_deps_warning(&task)
+                            && let Some(obj) = v.as_object_mut()
+                        {
+                            obj.insert("warnings".into(), json!(warnings));
+                        }
+                        JsonRpcResponse::success(id, v)
                     }
-                    JsonRpcResponse::success(id, v)
-                }
-                Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
-            },
-            Err(e) => agent_err_to_response(id, e),
+                    Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
+                },
+            )
         },
     )
 }
@@ -239,22 +240,30 @@ pub fn handle_task_list(
     };
     let state_filter = state_names_param(params, "state");
 
-    match core.tasks.task_list(engine.task_scope, workspace_id) {
-        Err(e) => agent_err_to_response(id, e),
-        Ok(mut tasks) => {
+    let scope = engine.task_scope.clone();
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| {
+            let list = tasks.task_list(&scope, workspace_id)?;
+            let handles = tasks.stored_handle_ids(workspace_id);
+            let runner = tasks.runner_status(&scope, workspace_id);
+            Ok((list, handles, runner))
+        },
+        move |_, id, (mut tasks, handles, runner)| {
             retain_by_state(&mut tasks, state_filter.as_deref());
-            let handles = core.tasks.stored_handle_ids(workspace_id);
             let rows: Vec<Value> = tasks.iter().map(|t| task_with_phase(t, &handles)).collect();
             JsonRpcResponse::success(
                 id,
                 json!({
                     "total": rows.len(),
                     "tasks": rows,
-                    "runner": runner_status_json(core, &engine.as_ref(), workspace_id),
+                    "runner": runner_status_value(&runner),
                 }),
             )
-        }
-    }
+        },
+    )
 }
 
 /// 목록의 task 하나. `task_get` 과 같은 `phase` 를 싣는다([`task_phase`]).
@@ -269,10 +278,6 @@ fn task_with_phase(task: &Task, handles: &std::collections::HashSet<TaskId>) -> 
 /// 러너가 꺼져 있어도 저장소를 조회해 실제 작업 수를 반환한다.
 /// 조회 실패 시 카운트는 0이 아니라 null이며 store_error에 원인이 담긴다.
 /// list_failures는 러너의 연속 조회 실패 횟수다. 스레드가 살아 있어도 작업이 진행되지 않을 수 있다.
-fn runner_status_json(core: &AppServices, engine: &EngineRef<'_>, workspace_id: u32) -> Value {
-    runner_status_value(&core.tasks.runner_status(engine.task_scope, workspace_id))
-}
-
 fn runner_status_value(status: &tasty_task_runtime::RunnerStatus) -> Value {
     json!({
         "running": status.running,
@@ -285,16 +290,8 @@ fn runner_status_value(status: &tasty_task_runtime::RunnerStatus) -> Value {
 }
 
 /// AwaitExternal은 상태만 보면 Running이므로 대기 중인 신호와 기한을 함께 반환한다.
-fn awaiting_external_json(
-    core: &AppServices,
-    engine: &EngineRef<'_>,
-    workspace_id: u32,
-    task_id: &str,
-) -> Option<Value> {
-    match core
-        .tasks
-        .dispatch_handle(engine.task_scope, workspace_id, task_id)?
-    {
+fn awaiting_external_json(handle: Option<DispatchHandle>) -> Option<Value> {
+    match handle? {
         DispatchHandle::AwaitExternal {
             wait_key,
             deadline_ms,
@@ -321,19 +318,59 @@ pub fn handle_task_get(
         Ok(t) => t,
         Err(e) => return e,
     };
-    match core
-        .tasks
-        .task_get_with_revision(engine.task_scope, workspace_id, &task_id)
+    let scope = engine.task_scope.clone();
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| {
+            let Some((t, revision)) =
+                tasks.task_get_with_revision(&scope, workspace_id, &task_id)?
+            else {
+                return Ok(Err(task_id));
+            };
+            let has_handle = tasks.has_stored_handle(workspace_id, &task_id);
+            let holding_warnings = tasks.task_holding_warnings(&scope, workspace_id, &task_id);
+            let handle = matches!(t.state, TaskState::Running)
+                .then(|| tasks.dispatch_handle(&scope, workspace_id, &task_id))
+                .flatten();
+            Ok(Ok(StoredTask {
+                task: t,
+                revision,
+                has_handle,
+                holding_warnings,
+                handle,
+            }))
+        },
+        |_, id, found| match found {
+            Err(task_id) => {
+                JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}"))
+            }
+            Ok(stored) => stored_task_response(id, stored),
+        },
+    )
+}
+
+/// `task_get` 이 writer 순서에서 한 번에 읽은 값.
+struct StoredTask {
+    task: Task,
+    revision: Option<u64>,
+    has_handle: bool,
+    holding_warnings: Vec<Value>,
+    handle: Option<DispatchHandle>,
+}
+
+fn stored_task_response(id: Value, stored: StoredTask) -> JsonRpcResponse {
+    let StoredTask {
+        task: t,
+        revision,
+        has_handle,
+        holding_warnings,
+        handle,
+    } = stored;
     {
-        Err(e) => agent_err_to_response(id, e),
-        Ok(None) => JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}")),
-        Ok(Some((t, revision))) => {
-            let is_running = matches!(t.state, TaskState::Running);
-            let phase =
-                task_phase_with_handle(&t, core.tasks.has_stored_handle(workspace_id, &task_id));
-            let holding_warnings =
-                core.tasks
-                    .task_holding_warnings(engine.task_scope, workspace_id, &task_id);
+        {
+            let phase = task_phase_with_handle(&t, has_handle);
             let mut v = serde_json::to_value(t).unwrap_or(Value::Null);
             // 러너가 TTL 을 갱신하지 못해 lease·permit 을 잃은 기록. 없으면 키를 싣지 않는다.
             if !holding_warnings.is_empty()
@@ -350,10 +387,8 @@ pub fn handle_task_get(
             if let (Some(revision), Some(obj)) = (revision, v.as_object_mut()) {
                 obj.insert("revision".to_string(), Value::from(revision));
             }
-            if is_running
-                && let Some(obj) = v.as_object_mut()
-                && let Some(info) =
-                    awaiting_external_json(core, &engine.as_ref(), workspace_id, &task_id)
+            if let Some(obj) = v.as_object_mut()
+                && let Some(info) = awaiting_external_json(handle)
             {
                 obj.insert("awaiting_external".to_string(), info);
             }
@@ -377,20 +412,23 @@ pub fn handle_task_cancel(
         Ok(t) => t,
         Err(e) => return e,
     };
-    mark_durability(
+    let scope = engine.task_scope.clone();
+    reply_task(
         core,
-        match core
-            .tasks
-            .task_cancel(engine.task_scope, workspace_id, &task_id, now_ms())
-        {
-            Err(e) => agent_err_to_response(id, e),
-            Ok((task, cascaded)) => JsonRpcResponse::success(
-                id,
-                json!({
-                    "task": task,
-                    "cascaded": cascaded,
-                }),
-            ),
+        id,
+        params,
+        move |tasks| tasks.task_cancel(&scope, workspace_id, &task_id, now_ms()),
+        |core, id, (task, cascaded)| {
+            mark_durability(
+                core,
+                JsonRpcResponse::success(
+                    id,
+                    json!({
+                        "task": task,
+                        "cascaded": cascaded,
+                    }),
+                ),
+            )
         },
     )
 }
@@ -414,20 +452,20 @@ pub fn handle_task_retry(
         .get("reset_downstream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    mark_durability(
+    let scope = engine.task_scope.clone();
+    reply_task(
         core,
-        match core.tasks.task_retry(
-            engine.task_scope,
-            workspace_id,
-            &task_id,
-            reset_downstream,
-            now_ms(),
-        ) {
-            Err(e) => agent_err_to_response(id, e),
-            Ok(task) => match serde_json::to_value(task) {
-                Ok(v) => JsonRpcResponse::success(id, v),
-                Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
-            },
+        id,
+        params,
+        move |tasks| tasks.task_retry(&scope, workspace_id, &task_id, reset_downstream, now_ms()),
+        |core, id, task| {
+            mark_durability(
+                core,
+                match serde_json::to_value(task) {
+                    Ok(v) => JsonRpcResponse::success(id, v),
+                    Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
+                },
+            )
         },
     )
 }
@@ -515,98 +553,6 @@ pub(crate) fn spawn_task_await(
     });
 }
 
-/// task_graph와 dag_get의 공통 dot 렌더. 엣지 수집은 json과 collect_graph_edges를 공유한다.
-/// depends_on/Reduce.inputs는 의존성 엣지다. fallback도 표시하지만 사이클 검사 대상은 아니다.
-fn render_graph_dot(tasks: &[Task]) -> String {
-    let mut out = String::from("digraph G {\n  rankdir=LR;\n");
-    for t in tasks {
-        let color = match &t.state {
-            TaskState::Ready => "lightblue",
-            TaskState::Running => "yellow",
-            TaskState::Succeeded => "lightgreen",
-            TaskState::Failed { .. } => "salmon",
-            TaskState::Cancelled => "gray",
-            TaskState::Skipped => "lightgray",
-            TaskState::Waiting => "white",
-            TaskState::Unknown { .. } => "orange",
-        };
-        // 갈래에서 고르지 않아 건너뛴 task 는 실패 전파로 건너뛴 task 와 구분해 라벨과 테두리를 바꾼다.
-        let not_selected = matches!(t.skip, Some(tasty_agent::SkipReason::BranchNotSelected));
-        let (status, style) = if not_selected {
-            ("not selected", "\"filled,dashed\"")
-        } else {
-            (t.state.name(), "filled")
-        };
-        out.push_str(&format!(
-            "  \"{}\" [label=\"{}\\n{}\", style={}, fillcolor={}];\n",
-            t.id,
-            escape_dot(&t.name),
-            status,
-            style,
-            color
-        ));
-    }
-    for edge in drawn_edges(collect_graph_edges(tasks)) {
-        out.push_str(&format!(
-            "  \"{}\" -> \"{}\"{};\n",
-            edge.from,
-            edge.to,
-            dot_edge_attrs(edge.kind, edge.selection)
-        ));
-    }
-    out.push_str("}\n");
-    out
-}
-
-/// DOT 간선 속성. 관계는 선 모양·색과 라벨로 구분한다. Graphviz 에는 임의 파선 배열이 없어
-/// 파선 관계(fallback·binding·transition)는 색과 라벨로 가른다. 전이는 선택 상태를 라벨로 싣고,
-/// 선택된 간선은 굵게, 선택되지 않았거나 쓸 수 없는 간선은 반투명으로 그린다.
-fn dot_edge_attrs(kind: &str, selection: Option<&str>) -> String {
-    match (kind, selection) {
-        ("fallback", _) => " [style=dashed, color=orangered, label=\"fallback\"]".to_string(),
-        ("reduce", _) => " [style=dotted, color=blue, label=\"reduce\"]".to_string(),
-        ("binding", _) => " [style=dashed, color=darkcyan, label=\"binding\"]".to_string(),
-        ("transition", Some(sel)) => {
-            let attrs = match sel {
-                "selected" => "color=slateblue, penwidth=2",
-                "not_selected" | "unavailable" => "color=\"#6a5acd66\", fontcolor=gray",
-                _ => "color=slateblue",
-            };
-            format!(" [style=dashed, {attrs}, label=\"{sel}\"]")
-        }
-        _ => String::new(),
-    }
-}
-
-fn render_graph_nodes(tasks: &[Task]) -> Vec<Value> {
-    tasks
-        .iter()
-        .map(|t| {
-            json!({
-                "id": t.id,
-                "name": t.name,
-                "state": t.state.name(),
-                "command_kind": task_command_kind(&t.command),
-                "on_failure_kind": on_failure_kind(&t.on_failure),
-                "skip": t.skip,
-            })
-        })
-        .collect()
-}
-
-/// depends_on, Reduce.inputs, Fallback.task와 인라인 fallback의 역참조를 구분해 표시한다.
-/// fallback 순환은 사이클 검사 대상이 아니므로 표시만 하며 생성 시 거절하지 않는다.
-fn render_graph_edges(tasks: &[Task]) -> Vec<Value> {
-    collect_graph_edges(tasks)
-        .into_iter()
-        .map(|edge| match edge.selection {
-            Some(selection) => json!({"from": edge.from, "to": edge.to, "kind": edge.kind,
-                                      "selection": selection}),
-            None => json!({"from": edge.from, "to": edge.to, "kind": edge.kind}),
-        })
-        .collect()
-}
-
 pub fn handle_task_graph(
     core: &AppServices,
     engine: &mut EngineMut<'_>,
@@ -624,54 +570,24 @@ pub fn handle_task_graph(
         .unwrap_or("json")
         .to_string();
 
-    let tasks = match core.tasks.task_list(engine.task_scope, workspace_id) {
-        Err(e) => return agent_err_to_response(id, e),
-        Ok(t) => t,
-    };
-
-    // 사이클이 있어도 그래프는 반환한다.
-    let cycle = TaskGraph::build(&tasks).detect_cycles().err();
-    let runner = runner_status_json(core, &engine.as_ref(), workspace_id);
-
-    match format.as_str() {
-        "dot" => JsonRpcResponse::success(
-            id,
-            json!({
-                "format": "dot",
-                "dot": render_graph_dot(&tasks),
-                "cycle": cycle.as_ref().map(|e| e.to_string()),
-                "runner": runner,
-            }),
-        ),
-        _ => {
-            let nodes: Vec<Value> = render_graph_nodes(&tasks);
-            let edges: Vec<Value> = render_graph_edges(&tasks);
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "format": "json",
-                    "nodes": nodes,
-                    "edges": edges,
-                    "cycle": cycle.as_ref().map(|e| e.to_string()),
-                    "runner": runner,
-                }),
-            )
-        }
-    }
+    let scope = engine.task_scope.clone();
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| {
+            let list = tasks.task_list(&scope, workspace_id)?;
+            Ok((list, tasks.runner_status(&scope, workspace_id)))
+        },
+        move |_, id, (tasks, runner)| {
+            graph_response(id, &format, &tasks, runner_status_value(&runner))
+        },
+    )
 }
 
 /// workspace_id를 생략하면 현재 모든 workspace를 조회한다. 잘못된 타입은 거절한다.
 fn optional_workspace_id_param(params: &Value, id: &Value) -> Result<Option<u32>, JsonRpcResponse> {
     crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", id)
-}
-
-/// 목록 조회의 전송량을 줄이기 위해 요청한 경우에만 task_ids를 포함한다.
-fn dag_summary_json(dag: &tasty_agent::DagSummary, include_tasks: bool) -> Value {
-    let mut v = serde_json::to_value(dag).unwrap_or(Value::Null);
-    if !include_tasks && let Some(obj) = v.as_object_mut() {
-        obj.remove("task_ids");
-    }
-    v
 }
 
 pub fn handle_dag_list(
@@ -690,18 +606,20 @@ pub fn handle_dag_list(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    match core.tasks.dag_list(
-        engine.task_scope,
-        &crate::app::task_completion::dag_workspaces(
-            engine
-                .workspaces()
-                .into_iter()
-                .map(|workspace| workspace.id),
-            workspace_id,
-        ),
-    ) {
-        Err(e) => agent_err_to_response(id, e),
-        Ok(dags) => {
+    let scope = engine.task_scope.clone();
+    let workspaces = crate::app::task_completion::dag_workspaces(
+        engine
+            .workspaces()
+            .into_iter()
+            .map(|workspace| workspace.id),
+        workspace_id,
+    );
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| tasks.dag_list(&scope, &workspaces),
+        move |_, id, dags: Vec<tasty_agent::DagSummary>| {
             let rendered: Vec<Value> = dags
                 .iter()
                 .map(|d| dag_summary_json(d, include_tasks))
@@ -715,18 +633,8 @@ pub fn handle_dag_list(
                     "scope": "live_workspaces",
                 }),
             )
-        }
-    }
-}
-
-/// 명시적으로 묶은 DAG는 다른 그룹의 작업에 의존할 수 있다.
-/// 이 경우 UnknownDependency를 사이클로 보고하지 않는다. DagSummary::has_cycle과 같은 기준이다.
-/// workspace 전체 조회에서는 실제 끊어진 참조이므로 이 예외를 적용하지 않는다.
-fn subset_cycle(tasks: &[Task]) -> Option<AgentError> {
-    match TaskGraph::build(tasks).detect_cycles() {
-        Err(e @ AgentError::DependencyCycle(_)) => Some(e),
-        _ => None,
-    }
+        },
+    )
 }
 
 pub fn handle_dag_get(
@@ -750,51 +658,34 @@ pub fn handle_dag_get(
         .unwrap_or("json")
         .to_string();
 
-    let (dag, tasks) = match core.tasks.dag_get(
-        engine.task_scope,
-        &crate::app::task_completion::dag_workspaces(
-            engine
-                .workspaces()
-                .into_iter()
-                .map(|workspace| workspace.id),
-            workspace_id,
-        ),
-        &dag_id,
-    ) {
-        Err(e) => return agent_err_to_response(id, e),
-        Ok(None) => {
-            return JsonRpcResponse::invalid_params(id, format!("unknown dag id: {dag_id}"));
-        }
-        Ok(Some(found)) => found,
-    };
-
-    let cycle = subset_cycle(&tasks);
-    let runner = runner_status_json(core, &engine.as_ref(), dag.workspace_id);
-    let summary = dag_summary_json(&dag, true);
-
-    match format.as_str() {
-        "dot" => JsonRpcResponse::success(
-            id,
-            json!({
-                "format": "dot",
-                "dag": summary,
-                "dot": render_graph_dot(&tasks),
-                "cycle": cycle.as_ref().map(|e| e.to_string()),
-                "runner": runner,
-            }),
-        ),
-        _ => JsonRpcResponse::success(
-            id,
-            json!({
-                "format": "json",
-                "dag": summary,
-                "nodes": render_graph_nodes(&tasks),
-                "edges": render_graph_edges(&tasks),
-                "cycle": cycle.as_ref().map(|e| e.to_string()),
-                "runner": runner,
-            }),
-        ),
-    }
+    let scope = engine.task_scope.clone();
+    let workspaces = crate::app::task_completion::dag_workspaces(
+        engine
+            .workspaces()
+            .into_iter()
+            .map(|workspace| workspace.id),
+        workspace_id,
+    );
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| {
+            Ok(match tasks.dag_get(&scope, &workspaces, &dag_id)? {
+                Some((dag, list)) => {
+                    let runner = tasks.runner_status(&scope, dag.workspace_id);
+                    Ok((dag, list, runner))
+                }
+                None => Err(dag_id),
+            })
+        },
+        move |_, id, found| match found {
+            Err(dag_id) => JsonRpcResponse::invalid_params(id, format!("unknown dag id: {dag_id}")),
+            Ok((dag, tasks, runner)) => {
+                dag_response(id, &format, &dag, &tasks, runner_status_value(&runner))
+            }
+        },
+    )
 }
 
 pub fn handle_task_reduce(
@@ -830,25 +721,31 @@ pub fn handle_task_reduce(
             return JsonRpcResponse::invalid_params(id, format!("invalid 'strategy': {e}"));
         }
     };
-    let extract_path = params.get("extract_path").and_then(|v| v.as_str());
+    let extract_path = params
+        .get("extract_path")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
 
-    let collected = match core
-        .tasks
-        .task_reduce_collect(engine.task_scope, workspace_id, &inputs)
-    {
-        Err(e) => return agent_err_to_response(id, e),
-        Ok(v) => v,
-    };
+    let scope = engine.task_scope.clone();
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| tasks.task_reduce_collect(&scope, workspace_id, &inputs),
+        move |_, id, collected| {
+            // 경로가 없는 입력도 버리지 않고 null과 경고로 남긴 뒤 나머지를 합친다.
+            let (collected, warnings) = extract_paths(&collected, extract_path.as_deref());
 
-    // 경로가 없는 입력도 버리지 않고 null과 경고로 남긴 뒤 나머지를 합친다.
-    let (collected, warnings) = extract_paths(&collected, extract_path);
-
-    // custom shell의 입출력 동안 저장소 잠금을 잡지 않는다.
-    let result = reduce_with_custom(&strategy, &collected, run_custom_shell);
-    match result {
-        Ok(value) => JsonRpcResponse::success(id, json!({ "value": value, "warnings": warnings })),
-        Err(e) => agent_err_to_response(id, e),
-    }
+            // custom shell의 입출력 동안 저장소 잠금을 잡지 않는다.
+            let result = reduce_with_custom(&strategy, &collected, run_custom_shell);
+            match result {
+                Ok(value) => {
+                    JsonRpcResponse::success(id, json!({ "value": value, "warnings": warnings }))
+                }
+                Err(e) => agent_err_to_response(id, e),
+            }
+        },
+    )
 }
 
 /// workspace 러너를 시작·중지하거나 상태를 조회한다. 이미 시작/중지된 경우는 그대로 둔다.
@@ -884,8 +781,14 @@ pub fn handle_task_run(
             );
         }
     }
-    let status = core.tasks.runner_status(engine.task_scope, workspace_id);
-    JsonRpcResponse::success(id, runner_status_value(&status))
+    let scope = engine.task_scope.clone();
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| Ok(tasks.runner_status(&scope, workspace_id)),
+        |_, id, status| JsonRpcResponse::success(id, runner_status_value(&status)),
+    )
 }
 
 /// 외부에서 작업 결과를 보고하는 진입점. 러너도 같은 완료 경로([`TaskStore::complete`])를 쓴다.
@@ -953,24 +856,24 @@ pub fn handle_task_set_result(
         main_copy_dropped: false,
     };
 
-    mark_durability(
+    let scope = engine.task_scope.clone();
+    reply_task(
         core,
-        match core.tasks.task_complete(
-            engine.task_scope,
-            workspace_id,
-            &task_id,
-            completion,
-            now_ms(),
-        ) {
-            Err(e) => agent_err_to_response(id, e),
-            Ok(receipt) => JsonRpcResponse::success(
-                id,
-                json!({
-                    "task": receipt.task,
-                    "cascaded": receipt.transitioned,
-                    "duplicate": receipt.duplicate,
-                }),
-            ),
+        id,
+        params,
+        move |tasks| tasks.task_complete(&scope, workspace_id, &task_id, completion, now_ms()),
+        |core, id, receipt| {
+            mark_durability(
+                core,
+                JsonRpcResponse::success(
+                    id,
+                    json!({
+                        "task": receipt.task,
+                        "cascaded": receipt.transitioned,
+                        "duplicate": receipt.duplicate,
+                    }),
+                ),
+            )
         },
     )
 }
@@ -1000,16 +903,24 @@ pub fn handle_task_delete(
         .get("force")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    mark_durability(
+    let scope = engine.task_scope.clone();
+    reply_task(
         core,
-        match core.tasks.task_delete(
-            engine.task_scope,
-            workspace_id,
-            &task_id,
-            TaskDeleteOpts { cascade, force },
-        ) {
-            Err(e) => agent_err_to_response(id, e),
-            Ok(report) => JsonRpcResponse::success(id, json!({ "deleted": report.deleted })),
+        id,
+        params,
+        move |tasks| {
+            tasks.task_delete(
+                &scope,
+                workspace_id,
+                &task_id,
+                TaskDeleteOpts { cascade, force },
+            )
+        },
+        |core, id, report| {
+            mark_durability(
+                core,
+                JsonRpcResponse::success(id, json!({ "deleted": report.deleted })),
+            )
         },
     )
 }
@@ -1045,23 +956,26 @@ pub fn handle_task_purge(
         Ok(f) => f,
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     };
-    mark_durability(
+    let scope = engine.task_scope.clone();
+    reply_task(
         core,
-        match core
-            .tasks
-            .task_purge(engine.task_scope, workspace_id, filter, dry_run)
-        {
-            Err(e) => agent_err_to_response(id, e),
-            Ok(plan) => JsonRpcResponse::success(
-                id,
-                json!({
-                    "deleted": plan.deleted,
-                    "retained": plan.retained,
-                    "skipped_count": plan.skipped.len(),
-                    "skipped": plan.skipped,
-                    "dry_run": dry_run,
-                }),
-            ),
+        id,
+        params,
+        move |tasks| tasks.task_purge(&scope, workspace_id, filter, dry_run),
+        move |core, id, plan| {
+            mark_durability(
+                core,
+                JsonRpcResponse::success(
+                    id,
+                    json!({
+                        "deleted": plan.deleted,
+                        "retained": plan.retained,
+                        "skipped_count": plan.skipped.len(),
+                        "skipped": plan.skipped,
+                        "dry_run": dry_run,
+                    }),
+                ),
+            )
         },
     )
 }
@@ -1270,8 +1184,11 @@ mod poll_strategy_ref_tests {
 
 #[cfg(test)]
 mod graph_edge_tests {
+    use super::super::task_graph_view::*;
     use super::*;
+    use tasty_agent::{AgentError, TaskGraph};
     use tasty_task_runtime::graph_view::GraphEdge;
+    use tasty_task_runtime::graph_view::{collect_graph_edges, drawn_edges};
 
     fn task(id: &str, name: &str, state: TaskState) -> Task {
         Task {

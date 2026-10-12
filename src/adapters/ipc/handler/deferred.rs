@@ -535,6 +535,63 @@ mod tests {
         assert!(missing.error.is_some(), "{missing:?}");
     }
 
+    // task 연산은 writer의 호환 구간에서 실행하고 그 결과 뒤에 응답한다. 앞서 접수한 생성을 뒤의
+    // 조회·취소가 본다.
+    #[test]
+    fn task_requests_run_in_writer_order() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = writer_core();
+        let (created, later) = run_request(
+            &mut core,
+            &make_request(
+                1,
+                "agent.task_create",
+                json!({"workspace_id": 1, "name": "t",
+                       "command": {"kind": "run", "workspace_id": 1, "command": ["true"]}}),
+                None,
+            ),
+        );
+        assert!(later);
+        let task_id = created.result.expect("created")["id"]
+            .as_str()
+            .expect("task id")
+            .to_string();
+        let (got, later) = run_request(
+            &mut core,
+            &make_request(
+                2,
+                "agent.task_get",
+                json!({"workspace_id": 1, "id": task_id}),
+                None,
+            ),
+        );
+        assert!(later);
+        assert_eq!(got.result.expect("task_get")["id"], json!(task_id));
+        let (cancelled, _) = run_request(
+            &mut core,
+            &make_request(
+                3,
+                "agent.task_cancel",
+                json!({"workspace_id": 1, "id": task_id}),
+                None,
+            ),
+        );
+        assert_eq!(
+            cancelled.result.expect("task_cancel")["task"]["state"]["kind"],
+            json!("cancelled")
+        );
+        let (missing, _) = run_request(
+            &mut core,
+            &make_request(
+                4,
+                "agent.task_get",
+                json!({"workspace_id": 1, "id": "absent"}),
+                None,
+            ),
+        );
+        assert_eq!(missing.error.expect("missing").code, -32004);
+    }
+
     // 멱등 키 기록은 continuation의 응답으로 끝난다. 같은 키의 재시도는 실행하지 않고 같은 답을
     // 받고, 결과를 기다리는 동안의 재시도는 결과 불명 오류를 받는다.
     #[test]

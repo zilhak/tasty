@@ -15,6 +15,8 @@ use crate::task_waker::{AwaitOutcome, TaskWakerHub, TerminalSnapshot};
 
 /// engine 하나의 작업 실행 범위. 완료 대기 허브와 사건 큐는 engine마다 따로 두며,
 /// 완료 통지는 task가 속한 workspace를 가진 engine의 범위로만 간다.
+/// 복제본은 같은 순번·허브·큐를 가리킨다.
+#[derive(Clone)]
 pub struct TaskScope {
     stopping: Arc<std::sync::atomic::AtomicBool>,
     /// 같은 밀리초에 만든 task ID를 구별하는 순번. 창을 새로 열면 기존 engine과 공유한다.
@@ -77,6 +79,8 @@ impl TaskScope {
 }
 
 /// 러너 등록부와 훅-작업 연결은 프로세스에 하나다. engine별 자원은 engine이 가진 범위로 받는다.
+/// 복제본은 같은 저장소와 등록부를 가리킨다. memory writer의 호환 구간에 넘길 때 쓴다.
+#[derive(Clone)]
 pub struct TaskService {
     memory: Arc<Mutex<dyn MemoryStorage>>,
     /// App과 같은 Arc다. IPC 서버 시작 뒤 주입된 값을 러너 스레드가 읽는다.

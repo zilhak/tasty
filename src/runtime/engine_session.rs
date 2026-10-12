@@ -110,6 +110,7 @@ impl EngineSession {
             remote: &self.remote,
             live: &self.live,
             hooks: &self.hooks,
+            #[cfg(feature = "gui")]
             task_scope: &self.task_scope,
             observer_router: &self.observer_router,
         }

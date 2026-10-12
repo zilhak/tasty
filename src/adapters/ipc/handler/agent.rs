@@ -156,6 +156,41 @@ pub(super) fn reply_agent<T: Send + 'static>(
     )
 }
 
+/// task 연산을 memory writer의 호환 구간([`tasty_memory::writer::MemoryRequest::section`])으로 넣고
+/// 그 결과 뒤에 응답한다. `TaskService` 코드는 공유 잠금을 직접 잡고, 구간이 writer 순서를 정한다.
+/// 대기자 깨우기·runner 정리 시작처럼 연산이 내는 효과는 구간 안에서 각 commit 뒤에 일어난다.
+pub(super) fn reply_task<T: Send + 'static>(
+    core: &crate::app::services::AppServices,
+    id: Value,
+    params: &Value,
+    body: impl FnOnce(&tasty_task_runtime::TaskService) -> Result<T, AgentError> + Send + 'static,
+    respond: impl FnOnce(&crate::app::services::AppServices, Value, T) -> JsonRpcResponse
+    + Send
+    + 'static,
+) -> JsonRpcResponse {
+    let tasks = core.tasks.clone();
+    let reply_id = id.clone();
+    core.reply_with_memory(
+        id,
+        tasty_memory::writer::MemoryRequest::section(
+            super::deferred::params_bytes(params),
+            move || body(&tasks),
+        ),
+        move |core, completion| match tasty_memory::writer::settle(completion) {
+            Ok(output) => match output.into_value::<Result<T, AgentError>>() {
+                Some(Ok(value)) => respond(core, reply_id, value),
+                Some(Err(error)) => agent_err_to_response(reply_id, error),
+                None => JsonRpcResponse::internal_error(reply_id, "unexpected memory output"),
+            },
+            Err(failure) => super::deferred::unsettled_response(
+                reply_id,
+                &failure,
+                super::memory::map_error_ref,
+            ),
+        },
+    )
+}
+
 pub(super) fn escape_dot(s: &str) -> String {
     s.replace('"', "\\\"").replace('\n', " ")
 }
@@ -176,6 +211,7 @@ mod report;
 mod semaphore;
 pub(crate) mod task;
 mod task_graph_submit;
+mod task_graph_view;
 
 pub use agent_turn::*;
 pub use barrier::*;

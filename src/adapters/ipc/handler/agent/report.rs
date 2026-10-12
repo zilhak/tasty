@@ -10,7 +10,7 @@ use crate::app::services::AppServices;
 use crate::runtime::engine_access::EngineMut;
 
 use super::super::memory::mark_durability;
-use super::agent_err_to_response;
+use super::reply_task;
 use crate::adapters::ipc::handler::params::optional_u32;
 
 /// `address`(자식이 받은 `TASTY_TASK_REPORT` 값)가 가리키는 블록에 `text` 를 더한다. 상한에 걸려
@@ -42,15 +42,14 @@ pub fn handle_report_append(
             );
         }
     };
-    mark_durability(
+    let scope = engine.task_scope.clone();
+    let text = text.to_string();
+    reply_task(
         core,
-        match core
-            .tasks
-            .report_append(engine.task_scope, &addr, text, writer)
-        {
-            Ok(outcome) => JsonRpcResponse::success(id, json!(outcome)),
-            Err(e) => agent_err_to_response(id, e),
-        },
+        id,
+        params,
+        move |tasks| tasks.report_append(&scope, &addr, &text, writer),
+        |core, id, outcome| mark_durability(core, JsonRpcResponse::success(id, json!(outcome))),
     )
 }
 
@@ -85,16 +84,31 @@ pub fn handle_dag_report(
         engine.workspaces().into_iter().map(|w| w.id),
         workspace_id,
     );
-    match core.tasks.dag_report(
-        engine.task_scope,
-        &workspaces,
-        dag_id,
-        task,
-        attempt,
-        include_raw,
-    ) {
-        Ok(Some(report)) => JsonRpcResponse::success(id, report),
-        Ok(None) => JsonRpcResponse::invalid_params(id, format!("unknown dag id: {dag_id}")),
-        Err(e) => agent_err_to_response(id, e),
-    }
+    let scope = engine.task_scope.clone();
+    let dag_id = dag_id.to_string();
+    let task = task.map(str::to_string);
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| {
+            Ok(
+                match tasks.dag_report(
+                    &scope,
+                    &workspaces,
+                    &dag_id,
+                    task.as_deref(),
+                    attempt,
+                    include_raw,
+                )? {
+                    Some(report) => Ok(report),
+                    None => Err(dag_id),
+                },
+            )
+        },
+        |_, id, found| match found {
+            Ok(report) => JsonRpcResponse::success(id, report),
+            Err(dag_id) => JsonRpcResponse::invalid_params(id, format!("unknown dag id: {dag_id}")),
+        },
+    )
 }

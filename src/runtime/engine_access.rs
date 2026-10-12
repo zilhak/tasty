@@ -29,6 +29,8 @@ pub(crate) struct EngineRef<'a> {
     pub(crate) live: &'a crate::core::live::LiveDomainState,
     pub(crate) runtime: &'a EngineRuntime,
     pub(crate) hooks: &'a HookRuntimeState,
+    /// 읽기 전용 경로 중 task 범위를 쓰는 것은 GUI 화면뿐이다.
+    #[cfg(feature = "gui")]
     pub(crate) task_scope: &'a TaskScope,
     pub(crate) observer_router: &'a ObserverRouter,
 }
@@ -48,6 +50,7 @@ impl EngineMut<'_> {
             live: self.live,
             runtime: self.runtime,
             hooks: self.hooks,
+            #[cfg(feature = "gui")]
             task_scope: self.task_scope,
             observer_router: self.observer_router,
         }

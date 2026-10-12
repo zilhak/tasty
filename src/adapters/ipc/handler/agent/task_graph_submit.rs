@@ -7,7 +7,7 @@ use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::super::memory::mark_durability;
-use super::{agent_err_to_response, now_ms, workspace_id_param};
+use super::{agent_err_to_response, now_ms, reply_task, workspace_id_param};
 use crate::app::services::AppServices;
 use crate::runtime::engine_access::EngineMut;
 
@@ -19,16 +19,16 @@ pub fn handle_task_graph_validate(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    match submit(core, engine, &id, params, true) {
-        Ok(s) => JsonRpcResponse::success(
+    submit(core, engine, id, params, true, |_, id, s| {
+        JsonRpcResponse::success(
             id,
             json!({"valid": true, "activated": false, "durability": s.durability, "tasks": s.tasks}),
-        ),
-        Err(e) => e,
-    }
+        )
+    })
 }
 
 /// 그래프를 검증하고 저장한 뒤 활성화한다. 검증에 실패하면 아무것도 저장하지 않는다.
+/// 활성화한 task 는 commit 뒤에만 runner 의 실행 대상이 된다.
 pub fn handle_task_graph_submit(
     core: &AppServices,
     engine: &mut EngineMut<'_>,
@@ -36,17 +36,16 @@ pub fn handle_task_graph_submit(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    match submit(core, engine, &id, params, false) {
-        Ok(s) => mark_durability(
+    submit(core, engine, id, params, false, |core, id, s| {
+        mark_durability(
             core,
             JsonRpcResponse::success(
                 id,
                 json!({"valid": true, "activated": true, "graph_id": s.graph_id,
                        "durability": s.durability, "tasks": s.tasks}),
             ),
-        ),
-        Err(e) => e,
-    }
+        )
+    })
 }
 
 struct Submitted {
@@ -55,35 +54,47 @@ struct Submitted {
     tasks: Value,
 }
 
-/// 검증(과 dry_run 이 아니면 저장·활성화)을 하고 그래프 id 와 task 목록을 돌려준다.
+/// 검증(과 dry_run 이 아니면 저장·활성화)을 writer 순서에서 하고 그래프 id 와 task 목록으로 응답한다.
 /// 저장소가 영속이 아닐 때의 판정은 TaskService 가 한다.
 fn submit(
     core: &AppServices,
     engine: &mut EngineMut<'_>,
-    id: &Value,
+    id: Value,
     params: &Value,
     dry_run: bool,
-) -> Result<Submitted, JsonRpcResponse> {
-    let workspace_id = workspace_id_param(params, id)?;
-    let Some(raw) = params.get("graph") else {
-        return Err(JsonRpcResponse::invalid_params(
-            id.clone(),
-            "Missing required 'graph'",
-        ));
+    respond: impl FnOnce(&AppServices, Value, Submitted) -> JsonRpcResponse + Send + 'static,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
     };
-    let spec = TaskGraphSpec::from_json(raw).map_err(|e| agent_err_to_response(id.clone(), e))?;
+    let Some(raw) = params.get("graph") else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'graph'");
+    };
+    let spec = match TaskGraphSpec::from_json(raw) {
+        Ok(spec) => spec,
+        Err(e) => return agent_err_to_response(id, e),
+    };
     let durability = spec.durability;
-    let outcome = core
-        .tasks
-        .task_graph_submit(engine.task_scope, workspace_id, spec, dry_run, now_ms())
-        .map_err(|e| agent_err_to_response(id.clone(), e))?;
-    let tasks = serde_json::to_value(&outcome.tasks)
-        .map_err(|e| JsonRpcResponse::error(id.clone(), -32603, format!("serialize: {e}")))?;
-    Ok(Submitted {
-        graph_id: outcome.graph_id,
-        durability,
-        tasks,
-    })
+    let scope = engine.task_scope.clone();
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| tasks.task_graph_submit(&scope, workspace_id, spec, dry_run, now_ms()),
+        move |core, id, outcome| match serde_json::to_value(&outcome.tasks) {
+            Ok(tasks) => respond(
+                core,
+                id,
+                Submitted {
+                    graph_id: outcome.graph_id,
+                    durability,
+                    tasks,
+                },
+            ),
+            Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
+        },
+    )
 }
 
 #[cfg(test)]

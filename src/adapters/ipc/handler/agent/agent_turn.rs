@@ -12,7 +12,7 @@ use tasty_task_runtime::agent_turns::{
 use crate::app::services::AppServices;
 use crate::runtime::engine_access::EngineMut;
 
-use super::{agent_err_to_response, task_id_param, workspace_id_param};
+use super::{reply_task, task_id_param, workspace_id_param};
 
 fn required_str<'a>(params: &'a Value, key: &str, id: &Value) -> Result<&'a str, JsonRpcResponse> {
     params.get(key).and_then(|v| v.as_str()).ok_or_else(|| {
@@ -89,27 +89,36 @@ pub fn task_submit(
             );
         }
     };
-    match core.tasks.agent_submit_result(
-        engine.task_scope,
-        workspace_id,
-        &task_id,
-        AttemptRef {
-            id: &attempt_id,
-            token: &token,
+    let scope = engine.task_scope.clone();
+    let output = output.clone();
+    reply_task(
+        core,
+        id,
+        params,
+        move |tasks| {
+            tasks.agent_submit_result(
+                &scope,
+                workspace_id,
+                &task_id,
+                AttemptRef {
+                    id: &attempt_id,
+                    token: &token,
+                },
+                &output,
+                submitter,
+            )
         },
-        output,
-        submitter,
-    ) {
-        Ok(outcome) => JsonRpcResponse::success(
-            id,
-            json!({
-                "accepted": true,
-                "duplicate": outcome == SubmitOutcome::Duplicate,
-                "final": false,
-            }),
-        ),
-        Err(e) => agent_err_to_response(id, e),
-    }
+        |_, id, outcome| {
+            JsonRpcResponse::success(
+                id,
+                json!({
+                    "accepted": true,
+                    "duplicate": outcome == SubmitOutcome::Duplicate,
+                    "final": false,
+                }),
+            )
+        },
+    )
 }
 
 /// provider 플러그인의 턴 시작·종료 보고. 호출한 플러그인이 `provider` namespace 를 소유해야

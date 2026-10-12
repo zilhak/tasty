@@ -12,7 +12,7 @@
 
 ## memory writer 응답
 
-헤드리스의 `memory.*` · `memory.secret.*` · `surface.meta.*` · `approval.*` · `agent.barrier_*` · `agent.semaphore_*` · `agent.lease_*` · `agent.rate_limit_*` 응답도 GUI와 같다. 핸들러가 memory writer에 요청을 넣고, headless 루프가 회차마다 결과를 거두어 IPC 연결이나 plugin 호출에 응답한다. writer가 끝나면 journal 깨우기 이벤트로 루프를 깨운다. 종료 때는 writer를 join하며 남은 응답을 보낸다. writer를 거치며 생기는 경우의 응답은 다음과 같다([저장 계약](../design/systems/storage-contract.md#ipc-응답)).
+헤드리스의 `memory.*` · `memory.secret.*` · `surface.meta.*` · `approval.*` · `agent.barrier_*` · `agent.semaphore_*` · `agent.lease_*` · `agent.rate_limit_*` · `agent.task_*` · `agent.task_graph_*` · `agent.dag_*` · `agent.report_append` · `agent.task_submit` 응답도 GUI와 같다. 핸들러가 memory writer에 요청을 넣고, headless 루프가 회차마다 결과를 거두어 IPC 연결이나 plugin 호출에 응답한다. writer가 끝나면 journal 깨우기 이벤트로 루프를 깨운다. 종료 때는 writer를 join하며 남은 응답을 보낸다. writer를 거치며 생기는 경우의 응답은 다음과 같다([저장 계약](../design/systems/storage-contract.md#ipc-응답)).
 
 | 경우 | 코드 | 메시지 | `error.data` |
 |---|---|---|---|
