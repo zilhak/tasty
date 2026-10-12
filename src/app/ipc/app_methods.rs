@@ -450,7 +450,8 @@ impl App {
             id.clone(),
             &cmd.request.params,
         ) {
-            send_response(&cmd.response_tx, response);
+            // 조회 핸들러는 writer 결과를 기다릴 수 있다.
+            self.services.send_handled(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
         let response = match cmd.request.method.as_str() {
@@ -738,7 +739,8 @@ impl App {
                 | "plugin.revoke"
                 | "plugin.upgrade_builtins"
         );
-        send_response(&cmd.response_tx, response);
+        // 감사 화면·agent 권한 핸들러는 writer 결과를 기다릴 수 있다.
+        self.services.send_handled(&cmd.response_tx, response);
         if dirty {
             IpcStep::HandledDirty
         } else {
@@ -878,5 +880,55 @@ mod screenshot_target_tests {
         assert_eq!(code, -32000);
         let (code, _) = resolve_screenshot_window(&[], Some(10)).unwrap_err();
         assert_eq!(code, -32602);
+    }
+}
+
+#[cfg(test)]
+mod plugin_reply_tests {
+    /// plugin 메서드의 조회·감사 화면·agent 권한 핸들러는 writer 결과를 기다릴 수 있다. 이 경로는
+    /// `handle_checked_request` 밖이라 응답을 [`AppServices::send_handled`]로 보내야 원 호출자가
+    /// 자리표시 대신 결과를 받는다. GUI App을 시험에서 만들 수 없어 송신 호출을 소스에서 확인한다.
+    ///
+    /// [`AppServices::send_handled`]: crate::app::services::AppServices::send_handled
+    #[test]
+    fn plugin_method_replies_go_through_send_handled() {
+        let src = include_str!("app_methods.rs");
+        let body = src
+            .split_once("fn ipc_dispatch_plugin_method(")
+            .and_then(|(_, rest)| rest.split_once("fn ipc_dispatch_events_fetch("))
+            .map(|(body, _)| body)
+            .expect("ipc_dispatch_plugin_method body");
+        let (_, after_readonly) = body
+            .split_once("dispatch_readonly(")
+            .expect("read only dispatch");
+        let readonly_send = after_readonly
+            .split_once("return IpcStep::Handled;")
+            .map(|(send, _)| send)
+            .expect("read only return");
+        assert!(readonly_send.contains("self.services.send_handled(&cmd.response_tx, response)"));
+        assert!(!readonly_send.contains("send_response("));
+        let (_, tail) = body
+            .rsplit_once("\"plugin.upgrade_builtins\"\n")
+            .expect("dirty methods");
+        assert!(tail.contains("self.services.send_handled(&cmd.response_tx, response)"));
+        assert!(!tail.contains("send_response("));
+        for method in [
+            "\"plugin.audit_follow\"",
+            "\"plugin.audit_clear\"",
+            "\"plugin.grant_agent_permission\"",
+            "\"plugin.revoke_agent_permission\"",
+        ] {
+            let arm = body
+                .split_once(method)
+                .map(|(_, arm)| {
+                    arm.split_once("\n            \"")
+                        .map_or(arm, |(arm, _)| arm)
+                })
+                .expect("arm");
+            assert!(
+                !arm.contains("send_response("),
+                "{method} must answer through the final send"
+            );
+        }
     }
 }

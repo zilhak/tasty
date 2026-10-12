@@ -22,6 +22,7 @@ pub(crate) fn pump_ipc(
         let observed =
             crate::app::ipc_round::CommandObservation::begin(app.services.pressure(), &cmd);
         let flow = dispatch_command(app, state, session, cmd);
+        app.services.expect_no_parked_reply();
         observed.finish(app.services.slow_requests());
         if flow.is_break() {
             round.finish(app.services.pressure(), app.services.dispatch());
@@ -190,7 +191,8 @@ fn intercept_app_layer(
             cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
             &cmd.request.params,
         ) {
-            send_response(&cmd.response_tx, resp);
+            // 조회 핸들러는 writer 결과를 기다릴 수 있다.
+            app.services.send_handled(&cmd.response_tx, resp);
             return Some(Intercepted::Answered);
         }
     }
@@ -516,5 +518,80 @@ mod namespace_forward_tests {
             "image.open",
             Some("headless-namespace-forward-once"),
         );
+    }
+}
+
+/// app 계층이 처리하는 조회 메서드도 writer 결과로 원 호출자에게 답한다. 자리표시(-32603)를 보내면
+/// 실패한다.
+#[cfg(test)]
+mod app_layer_reply_tests {
+    use std::sync::{Arc, mpsc};
+
+    use serde_json::json;
+
+    use super::dispatch_command;
+    use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
+    use crate::ipc::server::IpcCommand;
+
+    fn answer(app: &crate::app::App, rx: &mpsc::Receiver<JsonRpcResponse>) -> JsonRpcResponse {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            if let Ok(answer) = rx.try_recv() {
+                return answer;
+            }
+            assert!(std::time::Instant::now() < deadline, "no reply");
+            app.services.poll_memory_replies(None);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn read_only_plugin_methods_answer_after_the_writer() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let (events_tx, _events) = mpsc::channel();
+        let waker = crate::adapters::production::headless_waker::HeadlessWaker::new(events_tx);
+        let mut app =
+            crate::app::App::new_headless(waker.journal_waker(), None, None).expect("headless app");
+        assert!(
+            app.services.memory_access().is_queued(),
+            "writer 있는 구성이어야 한다"
+        );
+        let mut session =
+            crate::runtime::engine_session::EngineSession::new(80, 24, Arc::new(|| {}))
+                .expect("engine");
+        let mut state = crate::state::RequestContext::new(
+            &session.as_ref().read(),
+            app.services.preset_store.clone(),
+        );
+        for (id, method) in [
+            "plugin.audit_query",
+            "plugin.audit_summary",
+            "plugin.list_agent_permissions",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (tx, rx) = mpsc::sync_channel(4);
+            let request = JsonRpcRequest {
+                caller_agent_id: None,
+                jsonrpc: "2.0".into(),
+                method: method.into(),
+                params: json!({}),
+                id: Some(json!(id)),
+                session_token: None,
+                response_timeout_ms: None,
+                idempotency_key: None,
+            };
+            let flow = dispatch_command(
+                &mut app,
+                &mut state,
+                &mut session,
+                IpcCommand::new(request, tx),
+            );
+            assert!(flow.is_continue());
+            app.services.expect_no_parked_reply();
+            let answered = answer(&app, &rx);
+            assert!(answered.error.is_none(), "{method}: {answered:?}");
+        }
     }
 }

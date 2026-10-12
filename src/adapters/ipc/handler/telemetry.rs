@@ -31,7 +31,8 @@ pub(crate) fn check_cap_block(
     }
     let agent_id = caller.agent_id();
     let agent = agent_id.as_str();
-    let caps = match load_all_caps(core) {
+    // 요청 게이트는 아직 직접 잠금으로 판정한다.
+    let caps = match core.with_memory(load_all_caps) {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("cap block check: load failed: {e}");

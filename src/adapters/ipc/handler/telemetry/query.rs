@@ -8,10 +8,12 @@ use tasty_telemetry::{
     validate_agent_id, validate_metric,
 };
 
+use crate::adapters::ipc::handler::deferred::params_bytes;
 use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
+#[derive(Clone)]
 pub(super) struct QueryFilter {
     pub(super) metric: Option<String>,
     pub(super) agent: Option<String>,
@@ -79,14 +81,14 @@ impl QueryFilter {
 }
 
 pub(super) fn collect_events(
-    core: &AppServices,
+    store: &mut dyn tasty_memory::MemoryStorage,
     filter: &QueryFilter,
 ) -> std::result::Result<Vec<TelemetryEvent>, String> {
     let scopes: Vec<Scope> = if let Some(w) = filter.workspace_id {
         vec![Scope::Workspace(w)]
     } else {
-        let scope_strs = core
-            .with_memory(|s| s.scopes())
+        let scope_strs = store
+            .scopes()
             .map_err(|e| format!("memory scopes failed: {e}"))?;
         scope_strs
             .into_iter()
@@ -104,7 +106,7 @@ pub(super) fn collect_events(
     };
     let mut out = Vec::new();
     for scope in scopes {
-        let entries = match core.with_memory(|s| s.list(&scope, &list_opts)) {
+        let entries = match store.list(&scope, &list_opts) {
             Ok(es) => es,
             Err(e) => {
                 tracing::warn!("telemetry: list failed in scope {}: {e}", scope.as_token());
@@ -138,10 +140,18 @@ pub fn handle_summary(
         Ok(f) => f,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    let events = match collect_events(core, &filter) {
-        Ok(e) => e,
-        Err(e) => return JsonRpcResponse::error(id, -32603, e),
-    };
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |s| collect_events(s, &filter),
+        |_, id, events| match events {
+            Ok(events) => summary_response(id, events),
+            Err(e) => JsonRpcResponse::error(id, -32603, e),
+        },
+    )
+}
+
+fn summary_response(id: Value, events: Vec<TelemetryEvent>) -> JsonRpcResponse {
     let total_events = events.len();
     let summaries = summarize_events(events);
     let arr: Vec<Value> = summaries
@@ -190,10 +200,18 @@ pub fn handle_timeseries(
         return JsonRpcResponse::invalid_params(id, "'metric' is required for timeseries");
     }
     let _ = &mut filter; // 재할당 안 함 — reborrow 로 mut 바인딩 의도 표시(값 drop, Result 아님).
-    let events = match collect_events(core, &filter) {
-        Ok(e) => e,
-        Err(e) => return JsonRpcResponse::error(id, -32603, e),
-    };
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |s| collect_events(s, &filter),
+        move |_, id, events| match events {
+            Ok(events) => timeseries_response(id, events, window),
+            Err(e) => JsonRpcResponse::error(id, -32603, e),
+        },
+    )
+}
+
+fn timeseries_response(id: Value, events: Vec<TelemetryEvent>, window: Window) -> JsonRpcResponse {
     let buckets = aggregate_into_buckets(events, window);
     let arr: Vec<Value> = buckets
         .iter()
@@ -226,10 +244,19 @@ pub fn handle_top(
         Ok(f) => f,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    let events = match collect_events(core, &filter) {
-        Ok(e) => e,
-        Err(e) => return JsonRpcResponse::error(id, -32603, e),
-    };
+    let by = by.to_string();
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |s| collect_events(s, &filter),
+        move |_, id, events| match events {
+            Ok(events) => top_response(id, events, &by, limit),
+            Err(e) => JsonRpcResponse::error(id, -32603, e),
+        },
+    )
+}
+
+fn top_response(id: Value, events: Vec<TelemetryEvent>, by: &str, limit: usize) -> JsonRpcResponse {
     let entries = top_n(events, by, limit);
     let arr: Vec<Value> = entries
         .iter()

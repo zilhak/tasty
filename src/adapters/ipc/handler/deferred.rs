@@ -255,6 +255,27 @@ pub(crate) fn unsettled_response(
 }
 
 impl AppServices {
+    /// 저장소 연산을 writer 요청 하나로 넣고 그 결과 뒤에 응답한다. 본문의 오류는 응답의 값이다
+    /// (본문이 오류를 돌려줘도 그전의 쓰기는 직접 잠금 때와 같이 남는다). writer의 저장 실패와 결과
+    /// 불명은 memory 오류 표대로 답한다.
+    pub(crate) fn reply_store<T: Send + 'static>(
+        &self,
+        id: Value,
+        bytes: usize,
+        mut body: impl FnMut(&mut dyn tasty_memory::MemoryStorage) -> T + Send + 'static,
+        respond: impl FnOnce(&AppServices, Value, T) -> JsonRpcResponse + Send + 'static,
+    ) -> JsonRpcResponse {
+        self.reply_unit(
+            id,
+            bytes,
+            move |s| Ok(body(s)),
+            move |core, id, result| match result {
+                Ok(value) => respond(core, id, value),
+                Err(error) => super::memory::map_error_ref(id, error),
+            },
+        )
+    }
+
     /// 주기가 돌아왔으면 로그 보존 정리를 기다리지 않는 writer 요청으로 넣는다.
     pub(crate) fn submit_log_prune(&self, now_ms: u64) {
         if crate::store::log_retention::claim_prune(now_ms) {
@@ -277,6 +298,32 @@ impl AppServices {
         what: &'static str,
     ) {
         self.memory_access().submit_detached(request, what, None);
+    }
+
+    /// `handle_checked_request` 밖(app 계층)에서 부른 핸들러의 응답을 보낸다. 핸들러가 writer 결과를
+    /// 기다리게 했으면 그 continuation에 원 호출자를 붙이고, 아니면 바로 보낸다.
+    pub(crate) fn send_handled(&self, tx: &SyncSender<JsonRpcResponse>, response: JsonRpcResponse) {
+        match self.memory_replies().take_parked() {
+            Some(deferred) => self.defer_reply(deferred, ReplyTo::Ipc(tx.clone())),
+            None => tasty_ipc::server::send_response(tx, response),
+        }
+    }
+
+    /// IPC 명령 하나를 마친 뒤 부른다. 남은 continuation은 자리표시 응답이 이미 원 호출자에게 갔고
+    /// 결과에 답할 곳이 없다는 뜻이다. 진입 경로 밖에서 지연 핸들러를 부르고 [`Self::send_handled`]를
+    /// 쓰지 않은 결함이다.
+    pub(crate) fn expect_no_parked_reply(&self) {
+        if let Some(stale) = self.memory_replies().take_parked() {
+            tracing::error!(
+                id = %stale.id(),
+                "a handler deferred a memory reply outside a reply path; its caller got a placeholder"
+            );
+            #[cfg(test)]
+            panic!(
+                "a handler deferred a memory reply outside a reply path: {}",
+                stale.id()
+            );
+        }
     }
 
     /// 요청을 writer에 넣고 결과가 나오면 `finish`로 응답한다. 결과가 바로 있으면(시험 구성)
@@ -590,6 +637,104 @@ mod tests {
             ),
         );
         assert_eq!(missing.error.expect("missing").code, -32004);
+    }
+
+    /// 진입 경로 밖(app 계층)에서 부른 핸들러의 응답을 [`AppServices::send_handled`]로 보내고 결과를
+    /// 기다린다.
+    fn answer_outside_the_router(core: &AppServices, response: JsonRpcResponse) -> JsonRpcResponse {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        core.send_handled(&tx, response);
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Ok(answer) = rx.try_recv() {
+                return answer;
+            }
+            assert!(std::time::Instant::now() < deadline, "no reply");
+            core.poll_memory_replies(None);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    // GUI·headless app 계층이 부르는 감사 조회도 writer 결과로 답한다. 자리표시를 보내면 실패한다.
+    #[test]
+    fn app_layer_audit_handlers_answer_after_the_writer() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let core = writer_core();
+        let registry = crate::runtime::surface_registry::SurfaceKindRegistry::new();
+        for method in ["plugin.audit_query", "plugin.audit_summary"] {
+            let response = crate::ipc::handler::plugin::dispatch_readonly(
+                &core,
+                None,
+                &registry,
+                method,
+                json!(1),
+                &json!({}),
+            )
+            .expect("read only method");
+            let answer = answer_outside_the_router(&core, response);
+            assert!(answer.error.is_none(), "{method}: {answer:?}");
+        }
+        #[cfg(feature = "gui")]
+        {
+            let follow = crate::ipc::handler::audit::handle_follow(&core, json!(2), &json!({}));
+            let answer = answer_outside_the_router(&core, follow);
+            assert!(answer.error.is_none(), "audit_follow: {answer:?}");
+            let clear = crate::ipc::handler::audit::handle_clear(&core, json!(3), &json!({}));
+            let answer = answer_outside_the_router(&core, clear);
+            assert_eq!(answer.result.expect("cleared")["removed"], json!(0));
+        }
+        core.expect_no_parked_reply();
+    }
+
+    // 진입 경로 밖에서 지연 핸들러를 부르고 그 응답을 그대로 보내면 명령 뒤 가드가 잡는다.
+    #[test]
+    #[should_panic(expected = "deferred a memory reply outside a reply path")]
+    fn a_reply_parked_outside_a_reply_path_fails_the_guard() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let core = writer_core();
+        let registry = crate::runtime::surface_registry::SurfaceKindRegistry::new();
+        let placeholder = crate::ipc::handler::plugin::dispatch_readonly(
+            &core,
+            None,
+            &registry,
+            "plugin.audit_query",
+            json!(1),
+            &json!({}),
+        );
+        assert!(placeholder.is_some());
+        core.expect_no_parked_reply();
+    }
+
+    // telemetry cap 관리·조회도 writer 요청의 결과 뒤에 응답한다.
+    #[test]
+    fn telemetry_reads_answer_after_the_writer() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = writer_core();
+        let (set, later) = run_request(
+            &mut core,
+            &make_request(
+                1,
+                "telemetry.cap.set",
+                json!({"agent": "a", "metric": "tokens", "threshold": 5}),
+                None,
+            ),
+        );
+        assert!(later);
+        let cap_id = set.result.expect("cap set")["id"].clone();
+        let (list, later) = run_request(
+            &mut core,
+            &make_request(2, "telemetry.cap.list", json!({}), None),
+        );
+        assert!(later);
+        let list = list.result.expect("cap list");
+        assert_eq!(list["count"], json!(1));
+        assert_eq!(list["entries"][0]["id"], cap_id);
+        let (summary, later) = run_request(
+            &mut core,
+            &make_request(3, "telemetry.summary", json!({}), None),
+        );
+        assert!(later);
+        assert!(summary.error.is_none(), "{summary:?}");
     }
 
     // 멱등 키 기록은 continuation의 응답으로 끝난다. 같은 키의 재시도는 실행하지 않고 같은 답을

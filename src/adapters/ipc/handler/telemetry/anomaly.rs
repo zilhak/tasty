@@ -105,10 +105,25 @@ pub fn handle_anomaly_list(
         until: until.map(|v| v as i64),
         offset: None,
     };
-    let entries = match core.with_memory(|s| s.list(&Scope::Global, &list_opts)) {
-        Ok(e) => e,
-        Err(e) => return JsonRpcResponse::error(id, -32603, format!("memory list failed: {e}")),
-    };
+    core.reply_store(
+        id,
+        crate::adapters::ipc::handler::deferred::params_bytes(params),
+        move |s| s.list(&Scope::Global, &list_opts),
+        move |_, id, entries| match entries {
+            Ok(entries) => anomaly_response(id, entries, agent_filter, kind_filter, since, until),
+            Err(e) => JsonRpcResponse::error(id, -32603, format!("memory list failed: {e}")),
+        },
+    )
+}
+
+fn anomaly_response(
+    id: Value,
+    entries: Vec<tasty_memory::MemoryEntry>,
+    agent_filter: Option<String>,
+    kind_filter: Option<String>,
+    since: Option<u64>,
+    until: Option<u64>,
+) -> JsonRpcResponse {
     let mut out: Vec<Anomaly> = Vec::with_capacity(entries.len());
     for entry in entries {
         let MemoryValue::Json(v) = entry.value else {

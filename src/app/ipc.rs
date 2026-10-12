@@ -90,6 +90,7 @@ impl App {
             let observed =
                 crate::app::ipc_round::CommandObservation::begin(self.services.pressure(), &cmd);
             let step = self.ipc_dispatch_command(cmd);
+            self.services.expect_no_parked_reply();
             observed.finish(self.services.slow_requests());
             match step {
                 #[cfg(debug_assertions)]

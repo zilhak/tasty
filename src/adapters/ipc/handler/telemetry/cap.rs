@@ -13,6 +13,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::now_ms;
 use super::query::{QueryFilter, collect_events};
+use crate::adapters::ipc::handler::deferred::params_bytes;
 
 pub(super) fn generate_cap_id(core: &AppServices) -> String {
     let ts = now_ms();
@@ -21,7 +22,9 @@ pub(super) fn generate_cap_id(core: &AppServices) -> String {
 }
 
 /// 모든 cap 을 memory 에서 읽어온다. cap 은 global scope 에만 저장.
-pub(super) fn load_all_caps(core: &AppServices) -> std::result::Result<Vec<CostCap>, String> {
+pub(super) fn load_all_caps(
+    store: &mut dyn tasty_memory::MemoryStorage,
+) -> std::result::Result<Vec<CostCap>, String> {
     let list_opts = ListOpts {
         prefix: Some(CAP_KEY_PREFIX.to_string()),
         limit: None,
@@ -29,8 +32,8 @@ pub(super) fn load_all_caps(core: &AppServices) -> std::result::Result<Vec<CostC
         until: None,
         offset: None,
     };
-    let entries = core
-        .with_memory(|s| s.list(&Scope::Global, &list_opts))
+    let entries = store
+        .list(&Scope::Global, &list_opts)
         .map_err(|e| format!("memory list failed: {e}"))?;
     let mut out = Vec::new();
     for entry in entries {
@@ -44,24 +47,26 @@ pub(super) fn load_all_caps(core: &AppServices) -> std::result::Result<Vec<CostC
     Ok(out)
 }
 
-pub(super) fn save_cap(core: &AppServices, cap: &CostCap) -> std::result::Result<(), String> {
+pub(super) fn save_cap(
+    store: &mut dyn tasty_memory::MemoryStorage,
+    cap: &CostCap,
+) -> std::result::Result<(), String> {
     let key = cap_key(&cap.id);
     let value = MemoryValue::Json(serde_json::to_value(cap).map_err(|e| e.to_string())?);
     let opts = PutOpts {
         expires_at: None,
         cas: None,
     };
-    core.with_memory(|s| {
-        s.put(
+    store
+        .put(
             tasty_memory::HOST_OWNER,
             &Scope::Global,
             &key,
             &value,
             &opts,
         )
-    })
-    .map(|_| ())
-    .map_err(|e| format!("memory put failed: {e}"))
+        .map(|_| ())
+        .map_err(|e| format!("memory put failed: {e}"))
 }
 
 pub(super) fn cap_to_json(cap: &CostCap) -> Value {
@@ -133,10 +138,16 @@ pub fn handle_cap_set(
         created_at: now_ms(),
         triggered: None,
     };
-    if let Err(e) = save_cap(core, &cap) {
-        return JsonRpcResponse::error(id, -32603, e);
-    }
-    crate::adapters::ipc::handler::memory::written(core, id, cap_to_json(&cap))
+    let saved = cap.clone();
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |s| save_cap(s, &saved),
+        move |core, id, result| match result {
+            Ok(()) => crate::adapters::ipc::handler::memory::written(core, id, cap_to_json(&cap)),
+            Err(e) => JsonRpcResponse::error(id, -32603, e),
+        },
+    )
 }
 
 /// `telemetry.cap.list` — 전체 cap. 필터: `agent`.
@@ -151,16 +162,23 @@ pub fn handle_cap_list(
         .get("agent")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let mut caps = match load_all_caps(core) {
-        Ok(c) => c,
-        Err(e) => return JsonRpcResponse::error(id, -32603, e),
-    };
-    if let Some(ref a) = agent_filter {
-        caps.retain(|c| &c.agent == a);
-    }
-    caps.sort_by_key(|a| a.created_at);
-    let arr: Vec<Value> = caps.iter().map(cap_to_json).collect();
-    JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
+    core.reply_store(
+        id,
+        params_bytes(params),
+        load_all_caps,
+        move |_, id, caps| {
+            let mut caps = match caps {
+                Ok(c) => c,
+                Err(e) => return JsonRpcResponse::error(id, -32603, e),
+            };
+            if let Some(ref a) = agent_filter {
+                caps.retain(|c| &c.agent == a);
+            }
+            caps.sort_by_key(|a| a.created_at);
+            let arr: Vec<Value> = caps.iter().map(cap_to_json).collect();
+            JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
+        },
+    )
 }
 
 pub fn handle_cap_remove(
@@ -175,24 +193,27 @@ pub fn handle_cap_remove(
         _ => return JsonRpcResponse::invalid_params(id, "Missing 'id'"),
     };
     let key = cap_key(&cap_id_str);
-    let result =
-        core.with_memory(|s| s.delete(tasty_memory::HOST_OWNER, &Scope::Global, &key, None));
-    match result {
-        Ok(()) => crate::adapters::ipc::handler::memory::written(
-            core,
-            id,
-            json!({ "removed": true, "id": cap_id_str }),
-        ),
-        Err(tasty_memory::MemoryError::NotFound { .. }) => {
-            JsonRpcResponse::error(id, -32004, format!("not_found: {cap_id_str}"))
-        }
-        Err(e) => JsonRpcResponse::error(id, -32603, format!("memory delete failed: {e}")),
-    }
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |s| s.delete(tasty_memory::HOST_OWNER, &Scope::Global, &key, None),
+        move |core, id, result| match result {
+            Ok(()) => crate::adapters::ipc::handler::memory::written(
+                core,
+                id,
+                json!({ "removed": true, "id": cap_id_str }),
+            ),
+            Err(tasty_memory::MemoryError::NotFound { .. }) => {
+                JsonRpcResponse::error(id, -32004, format!("not_found: {cap_id_str}"))
+            }
+            Err(e) => JsonRpcResponse::error(id, -32603, format!("memory delete failed: {e}")),
+        },
+    )
 }
 
 /// agent/metric/window의 이벤트를 집계한다. Set은 값을 교체하고 Inc/Dec는 더하거나 뺀다.
 pub(super) fn compute_current_value(
-    core: &AppServices,
+    store: &mut dyn tasty_memory::MemoryStorage,
     cap: &CostCap,
 ) -> std::result::Result<f64, String> {
     let now = now_ms();
@@ -207,7 +228,7 @@ pub(super) fn compute_current_value(
         since,
         until,
     };
-    let events = collect_events(core, &filter)?;
+    let events = collect_events(store, &filter)?;
     if events.is_empty() {
         return Ok(0.0);
     }
@@ -229,24 +250,37 @@ pub fn handle_cap_status(
         .get("agent")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let caps = match load_all_caps(core) {
-        Ok(c) => c,
-        Err(e) => return JsonRpcResponse::error(id, -32603, e),
-    };
-    let mut out: Vec<Value> = Vec::new();
-    for cap in &caps {
-        if let Some(ref a) = agent_filter
-            && &cap.agent != a
-        {
-            continue;
-        }
-        let current = match compute_current_value(core, cap) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("cap status: compute failed for {}: {e}", cap.id);
-                continue;
+    // cap 목록과 각 cap 의 현재 값을 같은 writer 순서에서 읽는다.
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |s| {
+            let caps = load_all_caps(s)?;
+            let mut out = Vec::new();
+            for cap in caps {
+                if let Some(ref a) = agent_filter
+                    && &cap.agent != a
+                {
+                    continue;
+                }
+                match compute_current_value(s, &cap) {
+                    Ok(current) => out.push((cap, current)),
+                    Err(e) => tracing::warn!("cap status: compute failed for {}: {e}", cap.id),
+                }
             }
-        };
+            Ok(out)
+        },
+        |_, id, found: std::result::Result<Vec<(CostCap, f64)>, String>| match found {
+            Ok(found) => cap_status_response(id, found),
+            Err(e) => JsonRpcResponse::error(id, -32603, e),
+        },
+    )
+}
+
+fn cap_status_response(id: Value, found: Vec<(CostCap, f64)>) -> JsonRpcResponse {
+    let mut out: Vec<Value> = Vec::new();
+    for (cap, current) in &found {
+        let (cap, current) = (cap, *current);
         let ratio = if cap.threshold > 0.0 {
             current / cap.threshold
         } else {
@@ -284,31 +318,38 @@ pub fn handle_cap_reset(
     if by_id.is_none() && by_agent.is_none() {
         return JsonRpcResponse::invalid_params(id, "Provide 'id' or 'agent'");
     }
-    let mut caps = match load_all_caps(core) {
-        Ok(c) => c,
-        Err(e) => return JsonRpcResponse::error(id, -32603, e),
-    };
-    let mut reset_ids: Vec<String> = Vec::new();
-    for cap in caps.iter_mut() {
-        let matches = match (&by_id, &by_agent) {
-            (Some(i), _) => &cap.id == i,
-            (None, Some(a)) => &cap.agent == a,
-            _ => false,
-        };
-        if !matches || cap.triggered.is_none() {
-            continue;
-        }
-        cap.triggered = None;
-        if let Err(e) = save_cap(core, cap) {
-            tracing::warn!("cap reset: save failed for {}: {e}", cap.id);
-            continue;
-        }
-        reset_ids.push(cap.id.clone());
-    }
-    crate::adapters::ipc::handler::memory::written(
-        core,
+    core.reply_store(
         id,
-        json!({ "reset_ids": reset_ids, "count": reset_ids.len() }),
+        params_bytes(params),
+        move |s| {
+            let mut caps = load_all_caps(s)?;
+            let mut reset_ids: Vec<String> = Vec::new();
+            for cap in caps.iter_mut() {
+                let matches = match (&by_id, &by_agent) {
+                    (Some(i), _) => &cap.id == i,
+                    (None, Some(a)) => &cap.agent == a,
+                    _ => false,
+                };
+                if !matches || cap.triggered.is_none() {
+                    continue;
+                }
+                cap.triggered = None;
+                if let Err(e) = save_cap(s, cap) {
+                    tracing::warn!("cap reset: save failed for {}: {e}", cap.id);
+                    continue;
+                }
+                reset_ids.push(cap.id.clone());
+            }
+            Ok(reset_ids)
+        },
+        |core, id, reset: std::result::Result<Vec<String>, String>| match reset {
+            Ok(reset_ids) => crate::adapters::ipc::handler::memory::written(
+                core,
+                id,
+                json!({ "reset_ids": reset_ids, "count": reset_ids.len() }),
+            ),
+            Err(e) => JsonRpcResponse::error(id, -32603, e),
+        },
     )
 }
 
@@ -321,7 +362,8 @@ pub(super) fn evaluate_caps_after_record(
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     ev: &TelemetryEvent,
 ) {
-    let caps = match load_all_caps(core) {
+    // 기록 경로는 요청 게이트와 함께 아직 직접 잠금을 쓴다.
+    let caps = match core.with_memory(load_all_caps) {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("cap eval: load failed: {e}");
@@ -347,7 +389,7 @@ fn try_trigger_cap(
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     cap: &mut CostCap,
 ) {
-    let current = match compute_current_value(core, cap) {
+    let current = match core.with_memory(|s| compute_current_value(s, cap)) {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!("cap eval: compute failed for {}: {e}", cap.id);
@@ -361,7 +403,7 @@ fn try_trigger_cap(
         at: now_ms(),
         value: current,
     });
-    if let Err(e) = save_cap(core, cap) {
+    if let Err(e) = core.with_memory(|s| save_cap(s, cap)) {
         tracing::warn!("cap eval: save failed for {}: {e}", cap.id);
         return;
     }

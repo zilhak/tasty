@@ -1,6 +1,7 @@
 //! 감사 기록 조회·집계·삭제. dispatcher의 `local_only` 검사로 로컬 호출만 허용한다.
 
 use super::params::{self, p_try};
+use crate::adapters::ipc::handler::deferred::params_bytes;
 use serde_json::{Value, json};
 
 use crate::store::audit::{
@@ -89,23 +90,27 @@ pub fn handle_query(
         Err(resp) => return resp,
     };
     let now = now_ms();
-    let result = core.with_memory(|mem| {
-        let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
-        store.query(&q, DEFAULT_RETENTION_MS, now)
-    });
-    match result {
-        Ok(records) => {
-            let arr: Vec<Value> = records.iter().map(record_to_json).collect();
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "records": arr,
-                    "count": records.len(),
-                }),
-            )
-        }
-        Err(e) => audit_err_to_response(id, e),
-    }
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |mem| {
+            let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
+            store.query(&q, DEFAULT_RETENTION_MS, now)
+        },
+        |_, id, result| match result {
+            Ok(records) => {
+                let arr: Vec<Value> = records.iter().map(record_to_json).collect();
+                JsonRpcResponse::success(
+                    id,
+                    json!({
+                        "records": arr,
+                        "count": records.len(),
+                    }),
+                )
+            }
+            Err(e) => audit_err_to_response(id, e),
+        },
+    )
 }
 
 /// `top_n`은 호출자별·메서드별 상위 항목 수를 제한한다. 기본값은 10이다.
@@ -122,11 +127,14 @@ pub fn handle_summary(
         .map(|n| n as usize)
         .unwrap_or(10);
     let now = now_ms();
-    let result = core.with_memory(|mem| {
-        let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
-        store.summary(&q, DEFAULT_RETENTION_MS, now, top_n)
-    });
-    match result {
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |mem| {
+            let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
+            store.summary(&q, DEFAULT_RETENTION_MS, now, top_n)
+        },
+        |_, id, result| match result {
         Ok(s) => JsonRpcResponse::success(
             id,
             json!({
@@ -138,7 +146,8 @@ pub fn handle_summary(
             }),
         ),
         Err(e) => audit_err_to_response(id, e),
-    }
+        },
+    )
 }
 
 /// 커서 이후의 기록을 반환한다. 커서가 없으면 빈 목록과 최신 커서를 반환해
@@ -157,25 +166,29 @@ pub fn handle_follow(
     let after_seq = p_try!(params::opt_int::<u64>(params, "after_seq", &id));
     let limit = p_try!(params::opt_int::<u64>(params, "limit", &id)).map(|n| n as usize);
     let now = now_ms();
-    let result = core.with_memory(|mem| {
-        let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
-        store.follow(&q, after_ts_ms, after_seq, DEFAULT_RETENTION_MS, now, limit)
-    });
-    match result {
-        Ok((records, next_ts, next_seq)) => {
-            let arr: Vec<Value> = records.iter().map(record_to_json).collect();
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "records": arr,
-                    "count": arr.len(),
-                    "next_after_ts_ms": next_ts,
-                    "next_after_seq": next_seq,
-                }),
-            )
-        }
-        Err(e) => audit_err_to_response(id, e),
-    }
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |mem| {
+            let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
+            store.follow(&q, after_ts_ms, after_seq, DEFAULT_RETENTION_MS, now, limit)
+        },
+        |_, id, result| match result {
+            Ok((records, next_ts, next_seq)) => {
+                let arr: Vec<Value> = records.iter().map(record_to_json).collect();
+                JsonRpcResponse::success(
+                    id,
+                    json!({
+                        "records": arr,
+                        "count": arr.len(),
+                        "next_after_ts_ms": next_ts,
+                        "next_after_seq": next_seq,
+                    }),
+                )
+            }
+            Err(e) => audit_err_to_response(id, e),
+        },
+    )
 }
 
 /// `before_ms` 이전 기록을 삭제한다. 생략하면 모두 삭제한다.
@@ -186,14 +199,18 @@ pub fn handle_clear(
     params: &Value,
 ) -> JsonRpcResponse {
     let before_ms = p_try!(params::opt_int::<u64>(params, "before_ms", &id));
-    let result = core.with_memory(|mem| {
-        let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
-        store.clear(before_ms)
-    });
-    match result {
-        Ok(n) => JsonRpcResponse::success(id, json!({ "removed": n })),
-        Err(e) => audit_err_to_response(id, e),
-    }
+    core.reply_store(
+        id,
+        params_bytes(params),
+        move |mem| {
+            let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
+            store.clear(before_ms)
+        },
+        |_, id, result| match result {
+            Ok(n) => JsonRpcResponse::success(id, json!({ "removed": n })),
+            Err(e) => audit_err_to_response(id, e),
+        },
+    )
 }
 
 #[cfg(test)]

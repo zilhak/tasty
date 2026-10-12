@@ -18,7 +18,8 @@
 | `approval.*`·`surface.meta.*` IPC | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다. `approval.request`·`respond`·`cancel`은 기록 결과를 기다려 응답하되 기록 실패는 경고만 남기고 성공으로 답한다. `approval.respond`의 승인 권한 부여(`apply_elevation_grant_if_any`)는 직접 잠금으로 바로 쓰므로 기록 commit보다 먼저 보인다. GUI 승인 팝업 응답과 cap 승인 요청의 기록은 결과를 기다리지 않고 실패만 로그로 남긴다 |
 | `agent.barrier_*`·`agent.semaphore_*`·`agent.lease_*`·`agent.rate_limit_*` IPC | `memory.*`와 같다. 연산 하나가 writer 요청 하나다 | `memory.*`와 같다. 연산이 거절돼도 그 전에 쓴 내용은 남는다 | `memory.*`와 같다 | `memory.*`와 같다. barrier가 닫히면 `BarrierClosed` 이벤트는 commit 뒤 응답을 만들 때 넣는다 |
 | `agent.task_*`·`agent.task_graph_*`·`agent.dag_*`·`agent.report_append`·`agent.task_submit` IPC | 핸들러가 연산 전체를 memory writer의 호환 구간 하나로 넣고 응답 continuation을 등록한다 | 구간 안의 각 연산이 commit한다. 그래프 활성화·취소·완료 보고의 대기자 깨우기와 runner 정리 시작은 구간 안에서 해당 commit 뒤에 일어난다 | `memory.*`와 같다 | 구간이 끝난 뒤 응답한다. writer 오류 표는 `memory.*`와 같다. `agent.task_reduce`의 reducer 실행은 구간 밖(응답을 만들 때)이다 |
-| 그 밖의 memory.db IPC 쓰기(`telemetry.*`·`session.*`, `approval.respond`의 승인 권한 부여) | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | `memory.*`와 같다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
+| telemetry 조회·cap 관리(`telemetry.summary`·`timeseries`·`top`·`session_summary`·`anomaly.list`·`cap.*`)와 감사 조회(`plugin.audit_query`·`audit_summary`, GUI 감사 화면의 follow·clear) IPC | `memory.*`와 같다. 조회와 cap 판정 읽기는 writer 요청 하나 안에서 한다 | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다 |
+| 그 밖의 memory.db IPC 쓰기(요청 게이트의 telemetry·audit·anomaly 기록과 cap 판정, `telemetry.record`, `session.*`, `approval.respond`의 승인 권한 부여) | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | `memory.*`와 같다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
 | observer memory sink | sink 스레드가 채널에 쌓인 항목을 memory writer에 묶음 하나로 넣고 바로 다음 항목을 받는다 | writer가 묶음 하나를 commit 한 번으로 끝낸다 | commit과 같다 | 해당 없음 |
 | `approval.await` 결과 기록 | 대기 워커가 memory writer에 넣고 그 결과를 기다린다 | writer가 commit한다 | commit과 같다 | 기록 결과를 받은 뒤 응답한다. 실패는 경고만 남긴다 |
 | memory.db background writer(runner 결과·보고) | 각 스레드가 직접 잠금을 잡는다 | 그 스레드 안에서 끝난다 | commit과 같다 | 해당 없음 |
@@ -149,7 +150,7 @@
 
 ### IPC 응답
 
-writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러는 요청과 함께 그 결과를 응답으로 바꾸는 continuation을 등록하고, 호출 경로가 원 호출자를 붙인다. 응답에 쓰는 요청 ID·caller·권한·대상은 핸들러가 접수할 때 잡은 값이다.
+writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러는 요청과 함께 그 결과를 응답으로 바꾸는 continuation을 등록하고, 호출 경로가 원 호출자를 붙인다. `handle_checked_request` 밖의 app 계층 경로(GUI·headless의 plugin 조회 메서드, GUI의 감사 화면 follow·clear와 agent 권한 부여·회수)도 응답을 보낼 때 등록된 continuation이 있으면 원 호출자를 붙인다(`send_handled`). 명령 하나를 마친 뒤 붙지 않은 continuation이 남으면 호출자가 이미 자리표시 응답을 받은 결함이라 오류 로그를 남기고, 시험에서는 실패한다. 응답에 쓰는 요청 ID·caller·권한·대상은 핸들러가 접수할 때 잡은 값이다.
 
 - 메인 루프는 회차마다 writer 결과를 거둔 뒤 continuation으로 응답을 만들어 보낸다. GUI·headless 종료 단계도 writer를 join하며 남은 응답을 보낸다.
 - 멱등 키(`idempotency_key`)가 있는 Mutate 요청은 결과를 기다리는 동안 키를 진행 중으로 둔다. 그동안 같은 키로 다시 보낸 요청은 실행하지 않고 `-32061`(결과 불명, 다시 보내지 말고 조회)로 답한다. 결과가 나오면 그 응답을 키에 기록한다.

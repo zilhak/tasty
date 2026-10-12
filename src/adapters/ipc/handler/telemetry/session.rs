@@ -40,16 +40,25 @@ pub fn handle_session_summary(
     }
     let top_n_size = p_try!(params::opt_int::<usize>(params, "top_n", &id)).unwrap_or(10);
 
-    let summary = match build_session_summary(core, workspace_id, since, until, top_n_size) {
-        Ok(s) => s,
-        Err(e) => return JsonRpcResponse::error(id, -32603, e),
-    };
-
-    if format == "json" {
-        return JsonRpcResponse::success(id, json!({ "format": "json", "summary": summary }));
-    }
-    let md = render_summary_markdown(&summary);
-    JsonRpcResponse::success(id, json!({ "format": "markdown", "summary": md }))
+    core.reply_store(
+        id,
+        crate::adapters::ipc::handler::deferred::params_bytes(params),
+        move |s| build_session_summary(s, workspace_id, since, until, top_n_size),
+        move |_, id, summary| {
+            let summary = match summary {
+                Ok(s) => s,
+                Err(e) => return JsonRpcResponse::error(id, -32603, e),
+            };
+            if format == "json" {
+                return JsonRpcResponse::success(
+                    id,
+                    json!({ "format": "json", "summary": summary }),
+                );
+            }
+            let md = render_summary_markdown(&summary);
+            JsonRpcResponse::success(id, json!({ "format": "markdown", "summary": md }))
+        },
+    )
 }
 
 #[derive(serde::Serialize)]
@@ -77,7 +86,7 @@ pub(super) struct ApprovalCounts {
 }
 
 pub(super) fn build_session_summary(
-    core: &AppServices,
+    store: &mut dyn tasty_memory::MemoryStorage,
     workspace_id: Option<u32>,
     since: Option<u64>,
     until: Option<u64>,
@@ -90,7 +99,7 @@ pub(super) fn build_session_summary(
         since,
         until,
     };
-    let events = collect_events(core, &filter)?;
+    let events = collect_events(store, &filter)?;
 
     let mut metric_sum: BTreeMap<String, f64> = BTreeMap::new();
     let mut ipc_method_count: BTreeMap<String, u64> = BTreeMap::new();
@@ -117,9 +126,9 @@ pub(super) fn build_session_summary(
     top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     top.truncate(top_n_size);
 
-    let approvals = collect_approvals(core, workspace_id, since, until)?;
+    let approvals = collect_approvals(store, workspace_id, since, until)?;
 
-    let anomalies = collect_anomalies(core, since, until)?;
+    let anomalies = collect_anomalies(store, since, until)?;
 
     Ok(SessionSummary {
         workspace_id,
@@ -134,14 +143,14 @@ pub(super) fn build_session_summary(
 }
 
 pub(super) fn collect_approvals(
-    core: &AppServices,
+    store: &mut dyn tasty_memory::MemoryStorage,
     workspace_filter: Option<u32>,
     since: Option<u64>,
     until: Option<u64>,
 ) -> std::result::Result<ApprovalCounts, String> {
     use tasty_approval::{ApprovalRecord, ApprovalState};
-    let scopes = core
-        .with_memory(|s| s.scopes())
+    let scopes = store
+        .scopes()
         .map_err(|e| format!("memory scopes failed: {e}"))?;
     let mut counts = ApprovalCounts::default();
     let mut by_choice: BTreeMap<String, u64> = BTreeMap::new();
@@ -161,7 +170,7 @@ pub(super) fn collect_approvals(
             until: until.map(|v| v as i64),
             offset: None,
         };
-        let Ok(entries) = core.with_memory(|s| s.list(&scope, &list_opts)) else {
+        let Ok(entries) = store.list(&scope, &list_opts) else {
             continue;
         };
         for entry in entries {
@@ -193,7 +202,7 @@ pub(super) fn collect_approvals(
 }
 
 pub(super) fn collect_anomalies(
-    core: &AppServices,
+    store: &mut dyn tasty_memory::MemoryStorage,
     since: Option<u64>,
     until: Option<u64>,
 ) -> std::result::Result<Vec<Anomaly>, String> {
@@ -204,8 +213,8 @@ pub(super) fn collect_anomalies(
         until: until.map(|v| v as i64),
         offset: None,
     };
-    let entries = core
-        .with_memory(|s| s.list(&Scope::Global, &list_opts))
+    let entries = store
+        .list(&Scope::Global, &list_opts)
         .map_err(|e| format!("memory list failed: {e}"))?;
     let mut out: Vec<Anomaly> = Vec::new();
     for entry in entries {
