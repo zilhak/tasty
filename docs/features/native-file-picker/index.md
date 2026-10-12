@@ -1,7 +1,7 @@
 # 네이티브 파일 피커 (로컬+원격 겸용)
 
 - **Status**: Implemented
-- **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 설정 창 안의 파일 선택) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
+- **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 탭 스트립 메뉴 "새 HTML..." 트리거 · 설정 창 안의 파일 선택) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
 - **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0031](../../adr/0031-file-handler-routing.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
 - **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/view/main/redraw.rs`의 `apply_pane_menu_selection`(탭 스트립 메뉴 "새 HTML..." 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
@@ -253,8 +253,9 @@ owner 없는 단독 피커는 창 범위다. surface가 작으면 기존 clamp�
 이 핸들러는 `PluginManager`에 접근할 수 없다. 기존 요청의 결과를 유실시키지 않도록
 대신 새 요청을 거절한다. 호출자는 그 오류를 받고 재시도 여부를 정할 수 있다.
 
-**요청 주체 기록**: plugin 요청은 `Intent::from_agent_plugin(plugin_id)`로 기록하고,
-Tools 메뉴는 `from_user_menu`를 사용한다. IPC 요청을 사용자 메뉴 조작으로 기록하지 않는다.
+**요청 주체 기록**: 피커를 여는 `OpenPopup`은 plugin 요청이면 `Intent::from_agent_plugin(plugin_id)`로,
+탭 스트립 메뉴 "새 HTML..."(확정 동작 `NewTab`)이면 `from_user_context_menu`로, 그 밖(Tools 메뉴·단축키)은
+`from_user_menu("tools_menu")`로 기록한다(`popup::file_picker::open_with`). IPC 요청을 사용자 메뉴 조작으로 기록하지 않는다.
 
 ### 설정 창에서의 로컬 전용 재사용
 
@@ -309,7 +310,8 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 
 ## 인터페이스
 
-- **사용자 트리거**: Tools 메뉴 "파일 열기…"(`filepicker.tools_menu_item`), 설정 › 기타 › 스크립트
+- **사용자 트리거**: Tools 메뉴 "파일 열기…"(`filepicker.tools_menu_item`), 탭 스트립 빈 곳 메뉴
+  "새 HTML..."(`pane_context_menu.new_html` — 확정하면 그 pane 에 html 탭을 만든다), 설정 › 기타 › 스크립트
   Add card 의 Browse…(설정 창 안의 로컬 전용 재사용). 목록 행 더블클릭
   (디렉토리는 진입, 파일은 즉시 확정 — 저장 모드에서는 이름 칸 채우기) / 브레드크럼 클릭 / `…`
   메뉴의 숨긴 조상 / 상위 폴더 버튼 / 새로고침 버튼 / ESC(취소) / X 버튼(취소). 저장 모드는 이름 칸
