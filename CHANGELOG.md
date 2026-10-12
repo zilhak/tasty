@@ -31,6 +31,8 @@
 
 ### Fixed
 
+- **headless 실행에서 `memory.changed` 이벤트가 발행되지 않던 문제.** 변경 버퍼를 꺼내는 곳이 GUI 이벤트 루프뿐이라 headless에서는 이벤트가 나가지 않고 버퍼가 계속 늘었다. 이제 headless 루프도 회차마다 꺼내 plugin에 발행한다.
+
 - **Linux에서 HTML 서피스가 지금 문서의 `#fragment` 주소를 열면 로딩 상태에 멈추던 문제.** `tasty html open`으로 같은 문서의 fragment 주소를 열면 WebKitGTK가 load 신호 없이 문서 안에서 이동하는데, 서피스는 계속 "불러오는 중"으로 남았다. 이제 그 이동은 로드로 표시하지 않는다. macOS·Windows는 이 경우를 측정하지 않았다.
 
 ## [0.12.2] - 2026-10-12

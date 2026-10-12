@@ -14,7 +14,7 @@
 
 | 경로 | 접수 | commit 완료 | 메모리 표시 | 외부 실행 |
 |---|---|---|---|---|
-| memory.db IPC 쓰기 | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | DB가 원본이므로 commit과 같다. `memory.changed`는 commit 뒤 버퍼에 쌓였다가 GUI 이벤트 루프가 같은 회차의 IPC 처리 뒤에 발행한다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
+| memory.db IPC 쓰기 | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | DB가 원본이므로 commit과 같다. `memory.changed`는 commit 뒤 버퍼에 쌓였다가 GUI 이벤트 루프·headless 루프가 같은 회차의 IPC 처리 뒤에 발행한다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
 | observer memory sink | sink 스레드가 채널에 쌓인 항목을 memory writer에 묶음 하나로 넣고 바로 다음 항목을 받는다 | writer가 묶음 하나를 commit 한 번으로 끝낸다 | commit과 같다 | 해당 없음 |
 | memory.db background writer(`approval.await` 결과 기록, runner 결과·보고) | 각 스레드가 직접 잠금을 잡는다 | 그 스레드 안에서 끝난다 | commit과 같다 | 해당 없음 |
 | task runner 실행 | Ready task를 tick snapshot으로 고른다(별도 잠금) | lease·semaphore 획득, 실행 handle 기록, `Running` 전이가 각각 별도 잠금·commit이다 | commit과 같다 | 점유 획득 뒤, `Running` 기록 **전에** 프로세스를 시작한다. `Running` 기록이 실패하면 경고만 남고 handle을 보관하지 않는다 |
@@ -134,7 +134,7 @@
 | task | `TaskService`(생성·graph submit·삭제·purge), runner tick | 메인 루프, `agent-runner-ws{N}` | graph submit은 plan·stage·activate를 한 잠금에서 한다. purge는 계획과 적용을 별도 잠금으로 한다. runner는 snapshot·점유 획득·상태 전이·완료를 각각 별도 잠금으로 한다 |
 | background 쓰기 | observer memory sink(writer 요청), `approval.await` 결과, Run 결과·후처리·보고 | 각 전용 스레드 | observer는 채널에 쌓인 기록과 넘친 옛 키의 보존 삭제를 독립 요청 묶음 하나로 writer에 넣는다. 보존 삭제는 저장이 확정된 키만 센다 |
 | 읽기 | `memory.get`·`list`·`count`, approval·telemetry 조회, DAG 화면, task 대기 | 메인 루프, `dag-read`, task 대기 worker | 여러 scope를 순회하는 조회는 scope마다 잠금을 다시 잡아 하나의 시점을 보장하지 않는다. DAG 화면은 `try_lock`으로 폴링한다 |
-| 변경 구독 | `memory.changed` 발행 | GUI 메인 루프 | `take_pending_changes`의 호출부는 GUI 이벤트 루프 하나다. headless 빌드에는 꺼내는 곳이 없다 |
+| 변경 구독 | `memory.changed` 발행 | GUI 이벤트 루프, headless 루프 | 두 루프가 회차마다 writer가 commit 뒤 옮겨 둔 변경 버퍼(`ChangeFeed`)를 꺼내고, 그 뒤에 직접 잠금 소비자가 저장소 버퍼에 남긴 변경을 붙여 plugin에 발행한다. plugin 매니저가 없으면 꺼낸 변경을 버려 버퍼가 쌓이지 않는다 |
 | 삭제 cleanup | surface·workspace 은퇴의 `purge_scope`, 범위 밖 surface meta 정리 | 메인 루프 | 대상이 다시 살아 있으면 정리하지 않는다 |
 | TTL 정리 | `memory.gc`(Local 전용)의 `purge_expired` | 메인 루프(IPC) | 주기 타이머는 없다 |
 | 로그 prune | 관측 로그 보존(부팅·기록 시점·`Tick::LogPrune`) | 메인 루프 | 시간 기준 후 개수 기준. 한 시간 간격 제한 |

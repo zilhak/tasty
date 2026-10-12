@@ -151,9 +151,13 @@ impl AppServices {
         self.memory_init_fallback.as_ref()
     }
 
+    #[cfg(test)]
+    pub(crate) fn memory_access(&self) -> &tasty_memory::writer::MemoryAccess {
+        &self.memory_access
+    }
+
     /// commit된 regular 변경을 접수 순서대로 꺼낸다. writer가 옮긴 변경 뒤에 아직 직접 잠금
     /// 소비자가 남긴 변경을 붙인다.
-    #[cfg(feature = "gui")]
     pub(crate) fn take_memory_changes(&self) -> Vec<tasty_memory::MemoryChange> {
         let mut changes = self.memory_access.changes().take();
         changes.extend(self.with_memory(|s| s.take_pending_changes()));

@@ -883,6 +883,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
             );
             crate::app::agent_events::emit(app.plugin_manager.as_mut(), agent_events, dropped);
         }
+        app.dispatch_pending_memory_changes();
         let deadline = if app.journal.is_halted() || app.journal.pauses_observation() {
             None
         } else {

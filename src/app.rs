@@ -44,6 +44,7 @@ pub(crate) mod ipc_round;
 pub(crate) mod journal;
 #[cfg(feature = "gui")]
 pub(crate) mod local_reads;
+mod memory_changes;
 #[cfg(feature = "gui")]
 pub(crate) mod modal;
 #[cfg(feature = "gui")]
