@@ -185,6 +185,32 @@ App의 preset capture continuation이 worker 결과와 원 reply를 연결한다
 terminal 캡처의 scrollback은 새 legacy ID의 소유 bytes로 반환하며 기존 파일을 덮어쓰지 않는다.
 이 값 변환은 파일 게시나 새 export IPC/CLI를 수행하지 않는다.
 
+### 실행 중 surface 캡처의 크기 상한
+
+구조가 dirty가 되면 디바운스 뒤 engine 하나의 모든 surface를 한 요청으로 캡처한다.
+`restore_surface_content`가 켜져 있으면 터미널마다 디스크로 내보낸 줄을 포함한 전체
+scrollback과 화면 줄을 복사해 직렬화한다. 이 요청은 worker queue의 64 MiB 상한
+(`tasty_ipc::admission::QUEUED_BYTES_LIMIT`)을 따른다.
+
+- 복사하기 전에 engine의 터미널 scrollback 직렬화 크기 합을 구한다. 디스크 줄은
+  scrollback 파일 크기로, 메모리 줄은 각 줄의 구성 요소 길이로 계산하며 디스크를 읽지
+  않는다. 각 surface의 저장 bytes가 이 scrollback 직렬화를 그대로 포함하므로 이 합은
+  요청 크기의 하한이다. 하한이 상한을 넘으면 scrollback을 복사하지 않는다.
+- 하한이 상한 이하여도 실제로 만든 요청이 혼자 상한을 넘으면 결과를 버린다.
+- 위 두 경우 그 engine의 capture 전체를 저장하지 않는다. 상한을 넘지 않는 다른
+  surface의 구조·내용도 이번 저장에서 빠진다. 이전 불변 자료를 유지하고 dirty는 남긴다.
+  warn 로그는 거절할 때 한 번 남긴다.
+- 거절한 뒤에는 dirty 세대가 같고 scrollback 크기 합이 거절 시점 이상이면 다시 캡처하지
+  않는다. 구조가 다시 바뀌어 dirty 세대가 새로 생기거나, `CSI 3J`(ED3) 등으로 scrollback이
+  줄어들면 다음 저장 주기에 다시 시도한다.
+- 진행 중인 다른 capture가 잡고 있는 bytes 때문에 상한을 넘은 경우는 그 capture가 끝나면
+  풀리므로 거절을 기록하지 않고 다음 저장 주기에 다시 시도한다.
+- surface 닫기 경로의 선택 캡처는 이 사전 검사를 하지 않는다.
+
+디스크 scrollback의 연속 구간은 파일을 한 번 열고 순차로 읽는다. 전체 scrollback 복사,
+scrollback 검색, 화면 텍스트의 history 채움, 스크롤한 화면의 history 행 렌더링이 이
+읽기를 쓴다. 줄 수와 관계없이 한 번의 읽기에 파일을 여는 횟수가 일정하다.
+
 ### Journal snapshot 보존
 
 Journal의 domain snapshot은 구조 이벤트의 파생 cache이며 terminal·plugin 콘텐츠와

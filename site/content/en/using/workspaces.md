@@ -1,4 +1,4 @@
-<!-- source-hash: 23487c1a19f4 -->
+<!-- source-hash: 68d164d7266a -->
 # Workspaces
 
 Give each project or task its own workspace. Keep its terminals and layout together, then use names and categories to find it easily. If the window structure is new to you, start with [A first look](../getting-started/first-look.md).
@@ -116,6 +116,8 @@ When you run Tasty again, the Workspace · Pane · Tab · Surface layout of the 
 
 - **Restore layout on startup** (on by default) — when off, the saved copy is deleted when the window closes.
 - **Restore surface content on restart** (on by default) — also preserves each terminal's scrollback. Scroll up and the previous session's output is there. Turning it off deletes all stored scrollback files.
+
+If the saved size of one window's terminal scrollback adds up to more than 64 MiB, that window's layout and content are not saved and the previous save is kept. The saved size holds color and cell information besides the characters, so it is larger than the text that was printed. Clear the scrollback with `printf '\e[3J'` in the terminal that holds the large scrollback and saving resumes shortly.
 
 What is not restored — programs that were running, environment variables, popups that were open. The shell starts fresh in the same directory. Programs that leave a session-resume command, such as Claude Code, are run again automatically ([Working with Claude · Codex](../agents/claude-codex.md)).
 
