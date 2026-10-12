@@ -15,9 +15,11 @@
 | 경로 | 접수 | commit 완료 | 메모리 표시 | 외부 실행 |
 |---|---|---|---|---|
 | `memory.*`·`memory.secret.*` IPC | 핸들러가 memory writer에 요청을 넣고 응답 continuation을 등록한 뒤 메인 루프가 다음 요청으로 넘어간다 | writer가 묶음으로 commit한다 | DB가 원본이므로 commit과 같다. `memory.changed`는 commit 뒤 변경 버퍼에 쌓였다가 GUI 이벤트 루프·headless 루프가 다음 회차에 발행한다 | 메인 루프가 회차마다 writer 결과를 거두어 원 호출자(IPC 연결·plugin 호출)에게 응답한다. 응답 시점에는 commit이 끝나 있다 |
-| 그 밖의 memory.db IPC 쓰기(`agent.*`·`approval.*`·`surface.meta.*`·`telemetry.*`·`session.*`) | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | `memory.*`와 같다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
+| `approval.*`·`surface.meta.*` IPC | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다. `approval.request`·`respond`·`cancel`은 기록 결과를 기다려 응답하되 기록 실패는 경고만 남기고 성공으로 답한다. `approval.respond`의 승인 권한 부여(`apply_elevation_grant_if_any`)는 직접 잠금으로 바로 쓰므로 기록 commit보다 먼저 보인다. GUI 승인 팝업 응답과 cap 승인 요청의 기록은 결과를 기다리지 않고 실패만 로그로 남긴다 |
+| 그 밖의 memory.db IPC 쓰기(`agent.*`·`telemetry.*`·`session.*`, `approval.respond`의 승인 권한 부여) | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | `memory.*`와 같다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
 | observer memory sink | sink 스레드가 채널에 쌓인 항목을 memory writer에 묶음 하나로 넣고 바로 다음 항목을 받는다 | writer가 묶음 하나를 commit 한 번으로 끝낸다 | commit과 같다 | 해당 없음 |
-| memory.db background writer(`approval.await` 결과 기록, runner 결과·보고) | 각 스레드가 직접 잠금을 잡는다 | 그 스레드 안에서 끝난다 | commit과 같다 | 해당 없음 |
+| `approval.await` 결과 기록 | 대기 워커가 memory writer에 넣고 그 결과를 기다린다 | writer가 commit한다 | commit과 같다 | 기록 결과를 받은 뒤 응답한다. 실패는 경고만 남긴다 |
+| memory.db background writer(runner 결과·보고) | 각 스레드가 직접 잠금을 잡는다 | 그 스레드 안에서 끝난다 | commit과 같다 | 해당 없음 |
 | task runner 실행 | Ready task를 tick snapshot으로 고른다(별도 잠금) | lease·semaphore 획득, 실행 handle 기록, `Running` 전이가 각각 별도 잠금·commit이다 | commit과 같다 | 점유 획득 뒤, `Running` 기록 **전에** 프로세스를 시작한다. `Running` 기록이 실패하면 경고만 남고 handle을 보관하지 않는다 |
 | 구조 journal | 전용 worker 채널에 넣는다 | worker가 commit한다 | commit된 batch만 CoreState에 적용한다([ADR-0064](../../adr/0064-journal-source-and-core-state-projection.md)) | 대상 엔진 공개와 ACK 뒤에 응답·checkpoint를 진행한다 |
 | 최근 파일(state.db) | 별도 접수 없음 | 호출 스레드에서 끝난다 | 공유 캐시를 DB 쓰기 전에 같은 잠금 안에서 바꾼다. 저장이 실패해도 캐시는 바뀐 채 남는다 | 해당 없음 |
@@ -130,11 +132,11 @@
 
 | 분류 | 소비자 | 스레드 | 한 잠금 안에서 하는 일 |
 |---|---|---|---|
-| 단순 쓰기 | `memory.put`·`memory.delete`·secret(writer 요청), approval 기록, surface meta, telemetry·audit 기록 | 메인 루프(IPC) | 한 연산. 기록 시점 로그 정리가 붙는 경로는 prune 후 put |
+| 단순 쓰기 | `memory.put`·`memory.delete`·secret·approval 기록·surface meta(writer 요청), telemetry·audit 기록 | 메인 루프(IPC) | 한 연산. 기록 시점 로그 정리가 붙는 경로는 prune 후 put |
 | 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal·`memory.import`(각각 writer 요청 하나), session·barrier·semaphore·lease·ratelimit, command index | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. writer 요청은 그 판단 전체가 한 요청이라 같은 묶음의 앞 요청 반영을 본다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
 | task | `TaskService`(생성·graph submit·삭제·purge), runner tick | 메인 루프, `agent-runner-ws{N}` | graph submit은 plan·stage·activate를 한 잠금에서 한다. purge는 계획과 적용을 별도 잠금으로 한다. runner는 snapshot·점유 획득·상태 전이·완료를 각각 별도 잠금으로 한다 |
-| background 쓰기 | observer memory sink(writer 요청), `approval.await` 결과, Run 결과·후처리·보고 | 각 전용 스레드 | observer는 채널에 쌓인 기록과 넘친 옛 키의 보존 삭제를 독립 요청 묶음 하나로 writer에 넣는다. 보존 삭제는 저장이 확정된 키만 센다 |
-| 읽기 | `memory.get`·`list`·`count`(writer 요청), approval·telemetry 조회, DAG 화면, task 대기 | 메인 루프, `dag-read`, task 대기 worker | 여러 scope를 순회하는 조회는 scope마다 잠금을 다시 잡아 하나의 시점을 보장하지 않는다. DAG 화면은 `try_lock`으로 폴링한다 |
+| background 쓰기 | observer memory sink·`approval.await` 결과(writer 요청), Run 결과·후처리·보고 | 각 전용 스레드 | observer는 채널에 쌓인 기록과 넘친 옛 키의 보존 삭제를 독립 요청 묶음 하나로 writer에 넣는다. 보존 삭제는 저장이 확정된 키만 센다 |
+| 읽기 | `memory.get`·`list`·`count`·`approval.history`·`approval.summary.get`·`surface.meta.get`·`list`(writer 요청), telemetry 조회, DAG 화면, task 대기 | 메인 루프, `dag-read`, task 대기 worker | 여러 scope를 순회하는 조회는 scope마다 잠금을 다시 잡아 하나의 시점을 보장하지 않는다. DAG 화면은 `try_lock`으로 폴링한다 |
 | 변경 구독 | `memory.changed` 발행 | GUI 이벤트 루프, headless 루프 | 두 루프가 회차마다 writer가 commit 뒤 옮겨 둔 변경 버퍼(`ChangeFeed`)를 꺼내고, 그 뒤에 직접 잠금 소비자가 저장소 버퍼에 남긴 변경을 붙여 plugin에 발행한다. plugin 매니저가 없으면 꺼낸 변경을 버려 버퍼가 쌓이지 않는다 |
 | 삭제 cleanup | surface·workspace 은퇴의 `purge_scope`, 범위 밖 surface meta 정리 | 메인 루프 | 대상이 다시 살아 있으면 정리하지 않는다 |
 | TTL 정리 | `memory.gc`(Local 전용)의 `purge_expired`(writer 요청) | 메인 루프(IPC) | 주기 타이머는 없다 |
@@ -172,7 +174,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 
 | DB | 소유자 | 쓰는 스레드 | PRAGMA | transaction | GUI 초기화 | headless 초기화 | 종료 |
 |---|---|---|---|---|---|---|---|
-| `memory.db` | `AppServices`의 공유 `Arc<Mutex<dyn MemoryStorage>>`. memory writer도 묶음마다 같은 잠금을 잡는다 | 메인 루프, runner, `approval.await`, 결과·보고 스레드, `memory-writer`(위 네 시점 표에서 접수가 memory writer인 경로) | WAL·NORMAL, 되읽어 degraded 표시 | put·delete·secret·purge·prune은 명시 transaction, VACUUM은 자동 commit. 실행 단위·쓰기 묶음은 transaction 하나(memory writer가 사용) | `run_gui`가 열고 부팅 정비 후 `App::new`에 주입. 실패 시 in-memory 대체. writer는 `AppServices` 구성 때 시작 | `boot_memory`가 같은 절차로 연다 | writer는 producer 정리 뒤 drain·join한다. 연결은 명시 close·checkpoint 없이 마지막 `Arc`가 drop될 때 닫힌다 |
+| `memory.db` | `AppServices`의 공유 `Arc<Mutex<dyn MemoryStorage>>`. memory writer도 묶음마다 같은 잠금을 잡는다 | 메인 루프, runner, 결과·보고 스레드, `memory-writer`(위 네 시점 표에서 접수가 memory writer인 경로) | WAL·NORMAL, 되읽어 degraded 표시 | put·delete·secret·purge·prune은 명시 transaction, VACUUM은 자동 commit. 실행 단위·쓰기 묶음은 transaction 하나(memory writer가 사용) | `run_gui`가 열고 부팅 정비 후 `App::new`에 주입. 실패 시 in-memory 대체. writer는 `AppServices` 구성 때 시작 | `boot_memory`가 같은 절차로 연다 | writer는 producer 정리 뒤 drain·join한다. 연결은 명시 close·checkpoint 없이 마지막 `Arc`가 drop될 때 닫힌다 |
 | `state.db` | 전역 `OnceLock<Mutex<Db>>`, `with_state_db`로 접근 | 메인 루프(최근 파일), `tutorial-progress` worker | WAL·NORMAL | 튜토리얼 저장과 스키마 생성은 transaction. `RecentFiles::add`의 같은 키 정리·upsert·개수 정리는 각각 자동 commit | GUI 부팅의 `init_boot_db_and_theme`과 새 창 생성 | 열지 않는다. 최근 목록 쓰기를 건너뛴다 | static이라 프로세스 끝까지 닫지 않는다. 튜토리얼 worker는 종료 단계에서 stop·join한다 |
 | `structure/journal.db` | `JournalWorker`(App의 첫 필드) | 전용 `structure-journal` 스레드 | WAL·FULL이 아니면 열지 않는다([ADR-0063](../../adr/0063-event-store-storage-fencing-and-effect-states.md)) | 모든 쓰기가 즉시 잠금 transaction, writer 잠금과 세대 검사 | 부팅 첫머리에 writer 잠금을 선점하고 `App::new`에서 worker를 만든다 | 선점 없이 `App::new_headless`에서 만든다 | stop 후 Drop에서 join하며 worker가 마지막 checkpoint를 쓴다 |
 

@@ -17,8 +17,8 @@ pub fn handle_cancel(
     };
     match core.cancel_approval(&req_id) {
         Ok(change) => {
-            persist_record(core, &change.record);
-            crate::adapters::ipc::handler::memory::written(core, id, record_to_json(&change.record))
+            let body = record_to_json(&change.record);
+            persist_record_and_reply(core, id, &change.record, body)
         }
         Err(e) => map_error(id, e),
     }
@@ -28,7 +28,7 @@ pub fn handle_cancel(
 /// timeout_ms가 0 또는 null이면 요청의 제한시간을 쓰고, 둘 다 없으면 계속 기다린다.
 pub fn await_blocking(
     store: &ApprovalStore,
-    memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    memory: &tasty_memory::writer::MemoryAccess,
     rpc_id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -44,7 +44,7 @@ pub fn await_blocking(
     let outcome = store.await_response(&req_id, timeout_ms);
     // timeout을 포함해 상태가 바뀌었으면 워커의 memory port로 저장한다.
     if let Some(record) = store.get(&req_id) {
-        persist_record_via_arc(memory, &record);
+        persist_record_via(memory, &record);
     }
     match outcome {
         Ok(WaitOutcome::Responded {
@@ -78,7 +78,7 @@ pub fn await_blocking(
 /// (`agent::task::spawn_task_await` 와 같은 이유).
 pub(crate) fn spawn_approval_await(
     store: std::sync::Arc<tasty_approval::ApprovalStore>,
-    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    memory: tasty_memory::writer::MemoryAccess,
     rpc_id: Value,
     params: Value,
     response_tx: &std::sync::mpsc::SyncSender<JsonRpcResponse>,
@@ -178,15 +178,77 @@ pub fn handle_history(
         .map(str::to_string);
     let limit = p_try!(params::opt_int::<usize>(params, "limit", &id));
 
-    let scopes: Vec<String> = match core.with_memory(|s| s.scopes()) {
-        Ok(s) => s,
-        Err(e) => {
-            return JsonRpcResponse::error(id, -32603, format!("memory scopes failed: {e}"));
-        }
-    };
+    // 여러 scope를 writer 안에서 한 번에 읽어 같은 시점의 기록을 본다.
+    core.reply_unit(
+        id,
+        crate::adapters::ipc::handler::deferred::params_bytes(params),
+        move |s| stored_records(s, workspace_filter, since, until),
+        move |_, id, result| {
+            let mut collected = match result {
+                Ok(records) => records,
+                Err(e) => {
+                    return JsonRpcResponse::error(
+                        id,
+                        -32603,
+                        format!("memory scopes failed: {e}"),
+                    );
+                }
+            };
+            if let Some(ref rid) = requester_filter {
+                collected.retain(|r| match &r.request.requester {
+                    tasty_approval::Requester::User => rid == "user",
+                    tasty_approval::Requester::Plugin { id } => id == rid,
+                    tasty_approval::Requester::Agent { id } => id == rid,
+                });
+            }
+            if let Some(ref decision) = decision_filter {
+                collected.retain(|r| match &r.state {
+                    tasty_approval::ApprovalState::Responded { choice, .. } => choice == decision,
+                    _ => false,
+                });
+            }
+            if let Some(ref sf) = state_filter {
+                use tasty_approval::ApprovalState as S;
+                collected.retain(|r| {
+                    matches!(
+                        (sf.as_str(), &r.state),
+                        ("pending", S::Pending)
+                            | ("responded", S::Responded { .. })
+                            | ("timed_out", S::TimedOut { .. })
+                            | ("cancelled", S::Cancelled { .. })
+                    ) || (sf == "terminal" && r.state.is_terminal())
+                });
+            }
 
+            collected.sort_by(|a, b| {
+                let ta = transition_at(&a.state).unwrap_or(a.request.created_at);
+                let tb = transition_at(&b.state).unwrap_or(b.request.created_at);
+                tb.cmp(&ta)
+            });
+
+            let total = collected.len();
+            if let Some(n) = limit {
+                collected.truncate(n);
+            }
+            let returned = collected.len();
+            let arr: Vec<Value> = collected.iter().map(record_to_json).collect();
+            JsonRpcResponse::success(
+                id,
+                json!({ "entries": arr, "count": total, "returned": returned }),
+            )
+        },
+    )
+}
+
+/// 저장된 승인 기록. scope 목록을 읽지 못하면 오류이고, scope 하나를 읽지 못하면 건너뛴다.
+fn stored_records(
+    s: &mut dyn tasty_memory::MemoryStorage,
+    workspace_filter: Option<u32>,
+    since: Option<i64>,
+    until: Option<i64>,
+) -> tasty_memory::Result<Vec<ApprovalRecord>> {
     let mut collected: Vec<ApprovalRecord> = Vec::new();
-    for scope_str in scopes {
+    for scope_str in s.scopes()? {
         let Ok(scope) = Scope::parse(&scope_str) else {
             continue;
         };
@@ -202,7 +264,7 @@ pub fn handle_history(
             until,
             offset: None,
         };
-        let Ok(entries) = core.with_memory(|s| s.list(&scope, &list_opts)) else {
+        let Ok(entries) = s.list(&scope, &list_opts) else {
             continue;
         };
         for entry in entries {
@@ -219,47 +281,5 @@ pub fn handle_history(
             collected.push(record);
         }
     }
-
-    if let Some(ref rid) = requester_filter {
-        collected.retain(|r| match &r.request.requester {
-            tasty_approval::Requester::User => rid == "user",
-            tasty_approval::Requester::Plugin { id } => id == rid,
-            tasty_approval::Requester::Agent { id } => id == rid,
-        });
-    }
-    if let Some(ref decision) = decision_filter {
-        collected.retain(|r| match &r.state {
-            tasty_approval::ApprovalState::Responded { choice, .. } => choice == decision,
-            _ => false,
-        });
-    }
-    if let Some(ref sf) = state_filter {
-        use tasty_approval::ApprovalState as S;
-        collected.retain(|r| {
-            matches!(
-                (sf.as_str(), &r.state),
-                ("pending", S::Pending)
-                    | ("responded", S::Responded { .. })
-                    | ("timed_out", S::TimedOut { .. })
-                    | ("cancelled", S::Cancelled { .. })
-            ) || (sf == "terminal" && r.state.is_terminal())
-        });
-    }
-
-    collected.sort_by(|a, b| {
-        let ta = transition_at(&a.state).unwrap_or(a.request.created_at);
-        let tb = transition_at(&b.state).unwrap_or(b.request.created_at);
-        tb.cmp(&ta)
-    });
-
-    let total = collected.len();
-    if let Some(n) = limit {
-        collected.truncate(n);
-    }
-    let returned = collected.len();
-    let arr: Vec<Value> = collected.iter().map(record_to_json).collect();
-    JsonRpcResponse::success(
-        id,
-        json!({ "entries": arr, "count": total, "returned": returned }),
-    )
+    Ok(collected)
 }

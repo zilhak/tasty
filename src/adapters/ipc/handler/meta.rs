@@ -21,23 +21,35 @@ pub fn handle_surface_meta_set(
         return JsonRpcResponse::invalid_params(id, format!("Surface {surface_id} not found"));
     }
     let key = match params.get("key").and_then(|v| v.as_str()) {
-        Some(k) => k,
+        Some(k) => k.to_owned(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
     };
     let value = match params.get("value").and_then(|v| v.as_str()) {
-        Some(v) => v,
+        Some(v) => v.to_owned(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'value' parameter"),
     };
-    let result =
-        core.with_memory(|m| crate::surface_meta::SurfaceMetaStore::set(m, surface_id, key, value));
-    if let Err(e) = result {
-        return JsonRpcResponse::internal_error(id, format!("surface meta set failed: {e}"));
-    }
-    crate::adapters::ipc::handler::memory::written(
-        core,
+    core.reply_unit(
         id,
-        json!({ "ok": true, "surface_id": surface_id }),
+        super::deferred::params_bytes(params),
+        move |m| crate::surface_meta::SurfaceMetaStore::put(m, surface_id, &key, &value),
+        move |core, id, result| match result {
+            Ok(()) => crate::adapters::ipc::handler::memory::written(
+                core,
+                id,
+                json!({ "ok": true, "surface_id": surface_id }),
+            ),
+            Err(e) => meta_write_failed(id, "set", e),
+        },
     )
+}
+
+/// 쓰기 실패의 기존 응답(-32603, 원인 문구)을 유지한다.
+fn meta_write_failed(
+    id: serde_json::Value,
+    what: &str,
+    e: &tasty_memory::MemoryError,
+) -> JsonRpcResponse {
+    JsonRpcResponse::internal_error(id, format!("surface meta {what} failed: memory: {e}"))
 }
 
 pub fn handle_surface_meta_get(
@@ -51,12 +63,25 @@ pub fn handle_surface_meta_get(
         Err(e) => return e,
     };
     let key = match params.get("key").and_then(|v| v.as_str()) {
-        Some(k) => k,
+        Some(k) => k.to_owned(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
     };
-    let value =
-        core.with_memory(|m| crate::surface_meta::SurfaceMetaStore::get(m, surface_id, key));
-    JsonRpcResponse::success(id, json!({ "value": value, "surface_id": surface_id }))
+    // 조회 실패는 값 없음으로 답하는 기존 의미를 유지한다.
+    core.reply_unit(
+        id,
+        super::deferred::params_bytes(params),
+        move |m| {
+            Ok(crate::surface_meta::SurfaceMetaStore::get(
+                m, surface_id, &key,
+            ))
+        },
+        move |_, id, result| match result {
+            Ok(value) => {
+                JsonRpcResponse::success(id, json!({ "value": value, "surface_id": surface_id }))
+            }
+            Err(e) => super::memory::map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_surface_meta_unset(
@@ -70,18 +95,21 @@ pub fn handle_surface_meta_unset(
         Err(e) => return e,
     };
     let key = match params.get("key").and_then(|v| v.as_str()) {
-        Some(k) => k,
+        Some(k) => k.to_owned(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
     };
-    let result =
-        core.with_memory(|m| crate::surface_meta::SurfaceMetaStore::unset(m, surface_id, key));
-    if let Err(e) = result {
-        return JsonRpcResponse::internal_error(id, format!("surface meta unset failed: {e}"));
-    }
-    crate::adapters::ipc::handler::memory::written(
-        core,
+    core.reply_unit(
         id,
-        json!({ "ok": true, "surface_id": surface_id }),
+        super::deferred::params_bytes(params),
+        move |m| crate::surface_meta::SurfaceMetaStore::remove(m, surface_id, &key),
+        move |core, id, result| match result {
+            Ok(()) => crate::adapters::ipc::handler::memory::written(
+                core,
+                id,
+                json!({ "ok": true, "surface_id": surface_id }),
+            ),
+            Err(e) => meta_write_failed(id, "unset", e),
+        },
     )
 }
 
@@ -95,8 +123,18 @@ pub fn handle_surface_meta_list(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let data = core.with_memory(|m| crate::surface_meta::SurfaceMetaStore::list(m, surface_id));
-    JsonRpcResponse::success(id, json!({ "surface_id": surface_id, "data": data }))
+    // 목록 조회 실패는 빈 맵으로 답하는 기존 의미를 유지한다.
+    core.reply_unit(
+        id,
+        super::deferred::params_bytes(params),
+        move |m| Ok(crate::surface_meta::SurfaceMetaStore::list(m, surface_id)),
+        move |_, id, result| match result {
+            Ok(data) => {
+                JsonRpcResponse::success(id, json!({ "surface_id": surface_id, "data": data }))
+            }
+            Err(e) => super::memory::map_error_ref(id, e),
+        },
+    )
 }
 
 #[cfg(test)]

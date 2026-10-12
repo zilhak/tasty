@@ -122,17 +122,13 @@ pub fn handle_request(
 
     match core.request_approval(req) {
         Ok(change) => {
-            persist_record(core, &change.record);
             #[cfg(feature = "gui")]
             window.enqueue_approval_popup(engine, &change.record);
-            crate::adapters::ipc::handler::memory::written(
-                core,
-                id,
-                json!({
-                    "id": change.record.request.id,
-                    "record": record_to_json(&change.record),
-                }),
-            )
+            let body = json!({
+                "id": change.record.request.id,
+                "record": record_to_json(&change.record),
+            });
+            persist_record_and_reply(core, id, &change.record, body)
         }
         Err(e) => map_error(id, e),
     }

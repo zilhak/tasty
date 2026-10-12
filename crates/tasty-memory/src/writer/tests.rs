@@ -604,6 +604,19 @@ fn both_routes_settle_the_same_way_and_feed_committed_changes() {
         assert!(ok.try_take().is_none(), "a result is taken once");
         let changes = access.changes().take();
         assert_eq!(changes.len(), 1, "only the committed put: {changes:?}");
+        // 기다리는 실행도 같은 결과와 같은 거절을 돌려준다.
+        match access.run_and_wait(MemoryRequest::Write(put(HOST_OWNER, "w", "1", None)), WAIT) {
+            Ok(MemoryOutput::Written(WriteOutput::Version(1))) => {}
+            other => panic!("{other:?}"),
+        }
+        match access.run_and_wait(
+            MemoryRequest::Write(put(HOST_OWNER, "w", "2", Some(9))),
+            WAIT,
+        ) {
+            Err(crate::writer::Waited::Failed(Failure::Rejected { .. })) => {}
+            other => panic!("{other:?}"),
+        }
+        access.changes().take();
     }
     assert!(
         inline_store

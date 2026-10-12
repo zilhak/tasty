@@ -320,7 +320,7 @@ fn intercept_app_layer(
             "approval.await" => {
                 crate::ipc::handler::approval::spawn_approval_await(
                     app.services.approval_store.clone(),
-                    app.services.memory_arc(),
+                    app.services.memory_access().clone(),
                     rpc_id,
                     cmd.request.params.clone(),
                     &cmd.response_tx,

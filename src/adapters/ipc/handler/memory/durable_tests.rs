@@ -171,9 +171,29 @@ fn body_of(sources: &[&'static str], func: &str) -> Option<&'static str> {
     Some(body)
 }
 
-/// 본문이 대체 저장소 표시(`written` · `mark_durability`)를 직접 부르는가.
+/// 본문이 대체 저장소 표시(`written` · `mark_durability`)를 직접 부르거나 표시를 맡은 도우미를 부르는가.
 fn marks_durability(body: &str) -> bool {
-    body.contains("written(") || body.contains("mark_durability(")
+    body.contains("written(")
+        || body.contains("mark_durability(")
+        || MARKING_HELPERS
+            .iter()
+            .any(|(name, _)| body.contains(&format!("{name}(")))
+}
+
+/// 응답을 만들며 표시를 붙이는 도우미와 그 정의 파일. 도우미 본문이 표시하는지는
+/// `every_marking_helper_marks_its_reply`가 확인한다.
+const MARKING_HELPERS: &[(&str, &str)] =
+    &[("persist_record_and_reply", include_str!("../approval.rs"))];
+
+#[test]
+fn every_marking_helper_marks_its_reply() {
+    for (name, src) in MARKING_HELPERS {
+        let body = body_of(&[src], name).unwrap_or_else(|| panic!("`{name}` 본문을 못 찾았다"));
+        assert!(
+            body.contains("written(") || body.contains("mark_durability("),
+            "`{name}` 이 표시를 붙이지 않는다 — 이 도우미로 응답하는 핸들러가 durable 로 보인다"
+        );
+    }
 }
 
 /// 공개 핸들러 뒤의 private 도우미가 표시를 불러도 핸들러 본문으로 세지 않는다. 다음 `pub fn` 까지를

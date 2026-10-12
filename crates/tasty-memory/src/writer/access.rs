@@ -128,6 +128,18 @@ impl MemoryAccess {
         }
     }
 
+    /// 요청을 넣고 결과를 기다린다. 메인 루프처럼 writer 결과를 거두는 스레드에서는 쓰지 않는다.
+    /// 시한 안에 결과가 없으면 `Waited::TimedOut`이며 요청은 취소되지 않는다.
+    pub fn run_and_wait(
+        &self,
+        request: MemoryRequest,
+        timeout: std::time::Duration,
+    ) -> std::result::Result<MemoryOutput, Waited> {
+        let mut ticket = self.submit(request).map_err(Waited::Refused)?;
+        let completion = ticket.wait_timeout(timeout).ok_or(Waited::TimedOut)?;
+        settle(completion).map_err(Waited::Failed)
+    }
+
     /// commit된 변경 버퍼.
     pub fn changes(&self) -> &Arc<ChangeFeed> {
         &self.changes
@@ -183,6 +195,17 @@ impl Failure {
             WriterError::Panicked => Self::Panicked,
         }
     }
+}
+
+/// [`MemoryAccess::run_and_wait`]가 값을 얻지 못한 이유.
+#[derive(Debug, Clone)]
+pub enum Waited {
+    /// writer가 접수하지 않았다.
+    Refused(SubmitError),
+    /// 시한 안에 결과가 없었다. 요청은 계속 실행될 수 있다.
+    TimedOut,
+    /// 결과가 실패였다.
+    Failed(Failure),
 }
 
 /// 결과 하나를 성공 값과 실패 이유로 나눈다. memory 요청은 snapshot 키가 없어 대체되지 않는다.

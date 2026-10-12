@@ -778,7 +778,7 @@ impl App {
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
         crate::ipc::handler::approval::spawn_approval_await(
             self.services.approval_store.clone(),
-            self.services.memory_arc(),
+            self.services.memory_access().clone(),
             cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
             cmd.request.params.clone(),
             &cmd.response_tx,

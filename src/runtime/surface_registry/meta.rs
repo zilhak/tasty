@@ -22,6 +22,16 @@ impl SurfaceMetaStore {
         key: &str,
         value: &str,
     ) -> io::Result<()> {
+        Self::put(mem, surface_id, key, value).map_err(memory_err_to_io)
+    }
+
+    /// `set`과 같고 원래 오류를 돌려준다. writer 결과가 저장 실패와 거절을 구별하는 데 쓴다.
+    pub fn put(
+        mem: &mut dyn MemoryStorage,
+        surface_id: u32,
+        key: &str,
+        value: &str,
+    ) -> tasty_memory::Result<()> {
         mem.put(
             HOST_OWNER,
             &Scope::Surface(surface_id),
@@ -30,7 +40,6 @@ impl SurfaceMetaStore {
             &PutOpts::default(),
         )
         .map(|_| ())
-        .map_err(memory_err_to_io)
     }
 
     /// Text와 문자열로 변환한 JSON을 반환한다. 없음·만료·조회 실패·Binary는 None이다.
@@ -55,12 +64,16 @@ impl SurfaceMetaStore {
         }
     }
 
-    /// 없는 키 삭제는 성공으로 처리한다. 다른 저장소 오류는 반환한다.
-    pub fn unset(mem: &mut dyn MemoryStorage, surface_id: u32, key: &str) -> io::Result<()> {
+    /// 없는 키 삭제는 성공으로 처리한다. 다른 저장소 오류는 그대로 돌려준다.
+    pub fn remove(
+        mem: &mut dyn MemoryStorage,
+        surface_id: u32,
+        key: &str,
+    ) -> tasty_memory::Result<()> {
         match mem.delete(HOST_OWNER, &Scope::Surface(surface_id), key, None) {
             Ok(()) => Ok(()),
             Err(MemoryError::NotFound { .. }) => Ok(()),
-            Err(e) => Err(memory_err_to_io(e)),
+            Err(e) => Err(e),
         }
     }
 

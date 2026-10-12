@@ -408,7 +408,7 @@ fn apply(s: &mut dyn MemoryStorage, op: &WriteOp) -> Result<WriteOutput> {
 }
 
 mod access;
-pub use access::{ChangeFeed, Failure, MemoryAccess, MemoryTicket, settle};
+pub use access::{ChangeFeed, Failure, MemoryAccess, MemoryTicket, Waited, settle};
 
 pub type MemoryWriter<A> = batch_writer::Writer<MemoryExecutor<A>>;
 pub type MemoryHandle<A> = batch_writer::Handle<MemoryExecutor<A>>;

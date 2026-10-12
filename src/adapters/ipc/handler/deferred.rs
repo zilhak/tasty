@@ -106,6 +106,12 @@ struct PendingReply {
     to: ReplyTo,
 }
 
+/// 결과를 기다리지 않는 쓰기. 실패만 회차마다 로그로 남긴다.
+struct Detached {
+    ticket: MemoryTicket,
+    what: &'static str,
+}
+
 static SLOT_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// 응답을 기다리는 요청 목록. 개수는 writer 예산이 묶는다. 메인 루프만 쓰지만 `AppServices`가
@@ -115,6 +121,7 @@ pub(crate) struct MemoryReplies {
     /// 핸들러가 이번 요청에 등록한 continuation. `handle_checked_request`가 바로 꺼낸다.
     slot: Mutex<Option<Deferred>>,
     pending: Mutex<VecDeque<PendingReply>>,
+    detached: Mutex<Vec<Detached>>,
 }
 
 impl MemoryReplies {
@@ -143,8 +150,26 @@ impl MemoryReplies {
         self.pending().push_back(PendingReply { deferred, to });
     }
 
+    fn detached(&self) -> std::sync::MutexGuard<'_, Vec<Detached>> {
+        crate::poison::recover_mutex(self.detached.lock(), "memory writes", &SLOT_POISONED)
+    }
+
+    /// 끝난 기다리지 않는 쓰기를 거두고 실패를 로그로 남긴다.
+    fn reap_detached(&self) {
+        self.detached().retain_mut(|entry| {
+            let Some(completion) = entry.ticket.try_take() else {
+                return true;
+            };
+            if let Err(failure) = tasty_memory::writer::settle(completion) {
+                tracing::warn!(what = entry.what, ?failure, "memory write did not land");
+            }
+            false
+        });
+    }
+
     /// 끝난 요청의 응답을 만든다. IPC 응답은 바로 보내고 plugin 응답은 돌려준다.
     pub(crate) fn poll(core: &AppServices) -> Vec<PluginReply> {
+        core.memory_replies().reap_detached();
         let mut ready = Vec::new();
         {
             let mut pending = core.memory_replies().pending();
@@ -254,6 +279,29 @@ pub(crate) fn unsettled_response(
 }
 
 impl AppServices {
+    /// 응답과 무관한 쓰기를 writer에 넣는다. 결과를 기다리지 않고 실패만 로그로 남긴다.
+    /// writer 순서를 따르므로 뒤에 넣은 요청은 이 쓰기의 반영을 본다.
+    pub(crate) fn memory_write_detached(
+        &self,
+        request: tasty_memory::writer::MemoryRequest,
+        what: &'static str,
+    ) {
+        match tasty_memory::writer::MemoryAccess::submit(self.memory_access(), request) {
+            Ok(mut ticket) => match ticket.try_take() {
+                Some(completion) => {
+                    if let Err(failure) = tasty_memory::writer::settle(completion) {
+                        tracing::warn!(what, ?failure, "memory write did not land");
+                    }
+                }
+                None => self
+                    .memory_replies()
+                    .detached()
+                    .push(Detached { ticket, what }),
+            },
+            Err(error) => tracing::warn!(what, %error, "memory writer did not accept a write"),
+        }
+    }
+
     /// 요청을 writer에 넣고 결과가 나오면 `finish`로 응답한다. 결과가 바로 있으면(시험 구성)
     /// 지금 응답하고, 아니면 continuation을 등록하고 자리표시를 돌려준다.
     pub(crate) fn reply_with_memory(

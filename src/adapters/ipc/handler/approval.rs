@@ -71,53 +71,70 @@ pub(super) fn scope_for(record: &ApprovalRecord) -> Scope {
     }
 }
 
-/// Core에 접근할 수 없는 대기 워커가 memory port를 통해 상태를 저장한다.
-pub(super) fn persist_record_via_arc(
-    memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    record: &ApprovalRecord,
-) {
-    let scope = scope_for(record);
-    let key = format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id);
+/// 승인 기록 하나를 쓰는 writer 요청. 직렬화하지 못하면 경고하고 None이다.
+fn record_write(record: &ApprovalRecord) -> Option<tasty_memory::writer::MemoryRequest> {
     let value = match serde_json::to_value(record) {
         Ok(v) => MemoryValue::Json(v),
         Err(e) => {
             tracing::warn!("approval: serialize failed for {}: {e}", record.request.id);
-            return;
+            return None;
         }
     };
-    let opts = PutOpts {
-        expires_at: None,
-        cas: None,
+    Some(tasty_memory::writer::MemoryRequest::Write(
+        tasty_memory::WriteOp::Put {
+            owner: tasty_memory::HOST_OWNER.to_string(),
+            scope: scope_for(record),
+            key: format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id),
+            value,
+            opts: PutOpts {
+                expires_at: None,
+                cas: None,
+            },
+        },
+    ))
+}
+
+/// Core에 접근할 수 없는 대기 워커가 writer로 상태를 저장한다. 워커 스레드라 결과를 기다린다.
+pub(super) fn persist_record_via(
+    memory: &tasty_memory::writer::MemoryAccess,
+    record: &ApprovalRecord,
+) {
+    let Some(request) = record_write(record) else {
+        return;
     };
-    let mut guard = crate::poison::recover_mutex(
-        memory.lock(),
-        crate::core::MEMORY_WHAT,
-        &crate::core::MEMORY_POISONED,
-    );
-    if let Err(e) = guard.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts) {
-        tracing::warn!("approval: memory put failed for {}: {e}", record.request.id);
+    if let Err(why) = memory.run_and_wait(request, std::time::Duration::from_secs(30)) {
+        tracing::warn!(
+            "approval: memory put failed for {}: {why:?}",
+            record.request.id
+        );
     }
 }
 
+/// 응답과 무관한 경로의 기록. 실패는 경고만 남긴다.
 pub(crate) fn persist_record(core: &AppServices, record: &ApprovalRecord) {
-    let scope = scope_for(record);
-    let key = format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id);
-    let value = match serde_json::to_value(record) {
-        Ok(v) => MemoryValue::Json(v),
-        Err(e) => {
-            tracing::warn!("approval: serialize failed for {}: {e}", record.request.id);
-            return;
-        }
-    };
-    let opts = PutOpts {
-        expires_at: None,
-        cas: None,
-    };
-    if let Err(e) =
-        core.with_memory(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts))
-    {
-        tracing::warn!("approval: memory put failed for {}: {e}", record.request.id);
+    if let Some(request) = record_write(record) {
+        core.memory_write_detached(request, "approval record");
     }
+}
+
+/// 기록이 끝난 뒤 `body`로 응답한다. 기록 실패는 경고만 남기고 응답은 그대로 보낸다.
+pub(super) fn persist_record_and_reply(
+    core: &AppServices,
+    id: Value,
+    record: &ApprovalRecord,
+    body: Value,
+) -> JsonRpcResponse {
+    let Some(request) = record_write(record) else {
+        return crate::adapters::ipc::handler::memory::written(core, id, body);
+    };
+    let record_id = record.request.id.clone();
+    let reply_id = id.clone();
+    core.reply_with_memory(id, request, move |core, completion| {
+        if let Err(failure) = tasty_memory::writer::settle(completion) {
+            tracing::warn!("approval: memory put failed for {record_id}: {failure:?}");
+        }
+        crate::adapters::ipc::handler::memory::written(core, reply_id, body)
+    })
 }
 
 pub(super) fn record_to_json(record: &ApprovalRecord) -> Value {
