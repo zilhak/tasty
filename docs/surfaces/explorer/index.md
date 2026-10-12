@@ -370,6 +370,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - 옮긴 항목이 지난 프레임에 온전히 보이지 않았으면 그 항목을 화면 가운데로 스크롤한다(타입어헤드와 같은 `scroll_to` 경로). 보이던 항목이면 스크롤하지 않는다.
 - 키로 움직인 뒤에만 그 칸 안쪽에 `explorer_cursor_ring`(border-focus) 색, `explorer_cursor_ring_width`(1px) 테두리를 그린다(선택 채움 위, 모서리 radius-sm). 목록을 누르면 다음 키까지 숨는다.
 - 주소창·이름 입력·Find 입력이 키를 받는 동안과 영역 선택 중에는 움직이지 않는다.
+- 포커스를 가진 popup·modal·입력 대화상자·plugin popup 이 있으면(`keyboard_overlay_open`) winit 키가 단축키 경로(`handle_shortcut`)에 가지 않으므로 이동·열기·선택 해제·이름 변경·휴지통 키도 받지 않는다. 떠 있어도 포커스가 없는 host popup 은 막지 않는다. IME 조합 중인지는 탐색기 키 경로가 따로 보지 않는다. 조합 중에 키가 도착하는지는 OS 입력기가 정한다(실제 입력기로는 확인하지 않았다).
 
 **열기·선택 해제**(`view/keys.rs`, `explorer_keys.rs`)도 같은 탐색기 키 경로에서 받는다.
 
