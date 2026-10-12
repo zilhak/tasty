@@ -497,6 +497,14 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
 
 원격 탐색기에는 열기와 들어 있는 폴더에서 보기를 붙이지 않는다.
 
+## Explorer — 원격 쓰기와 응답 대기
+
+시안 `gallery/explorer-ops-remote.jsx` 의 D1 은 쓸 수 없는 원격의 이유를 둘로 나눈다. 옛 Tasty(`explorer.remote.write_needs_update`)와 화면 없는 server(`explorer.remote.write_headless`, "{host} can't change files (server without a window)")다. 본체와 갤러리는 앞의 것만 쓴다.
+
+- **화면 없는 server**: headless 부팅도 attach holder 가 보낸 explorer 파일 작업을 GUI 와 같은 `remote_file_jobs` 로 실행한다(`src/boot/headless_stream.rs` 의 `apply_explorer_ops`). 그래서 attach descriptor 는 원격 쓰기 capability 를 늘 싣고, 화면 없는 server 라서 쓰기를 거절하는 상태가 없다. `write_headless` 키와 그 상태를 알릴 신호는 두지 않는다. 쓰지 않는 키는 `i18n_key_parity` 가 미사용으로 잡는다.
+- **D2 이름 변경 팝업**: 시안은 입력을 공용 Input 의 읽기 전용 모양(input-readonly-bg·border·fg)으로 그린다. 본체 rename 팝업의 입력은 egui TextEdit 이다. 기다리는 동안에는 egui 프레임을 끄고 같은 칸에 input-readonly-bg 바탕·input-readonly-border 1px 테두리(input-radius)를 그리며 글자는 input-readonly-fg 다. 칸 높이는 평소 팝업 입력과 같은 22px 로 두어, 공용 Input 의 input-height(28px)와는 다르다. 또 rename 팝업 바탕은 surface-raised 이고 input-readonly-bg(state-disabled-fill = surface-raised)·input-readonly-border(state-disabled-border = border-default)가 같은 값이라, 대기 중 readonly 상자는 화면에서 보이지 않고 글자색만 바뀐 것처럼 보인다. 시안의 rename 팝업(`RenameFrame`, D2 표본)은 bg-panel 위라 상자가 보인다. 바탕과 토큰 중 무엇을 바꿀지는 디자인이 정한다. 갤러리 예제(`explorer-remote-waiting`)는 시안대로 공용 Input 을 쓴다.
+- **D2 입력 줄**: List·Detail 은 입력 칸을 Spinner 자리(space-sm + icon-size-sm)만큼 줄이고 그 뒤에 Spinner 를 둔다. 폴더 안 만들기의 caption 은 Spinner 뒤로 밀린다. Grid 칸에는 Spinner 자리가 없어 입력 칸 오른쪽 밖에 그린다.
+
 <a id="pathfield--autocomplete--go-합성-공용-위젯-편집이동원복-결정-포팅-2026-07-09"></a>
 
 ## PathField — 편집·이동·원복
