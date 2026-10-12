@@ -934,4 +934,129 @@ mod tests {
         let paths = [PathBuf::from("/a/x"), PathBuf::from("/b/y")];
         assert_eq!(common_parent(&paths), "/");
     }
+
+    use crate::app::local_reads::LocalReads;
+
+    /// 열린 팝업의 읽기를 worker 로 돌려 결과를 받을 때까지 기다린다.
+    fn settle(state: &mut MainViewState, owner: &mut LocalReads) {
+        loop {
+            owner.reap();
+            let mut got = false;
+            owner.drive(|requests| {
+                got = poll(state, requests);
+                true
+            });
+            if got {
+                return;
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    fn props(state: &MainViewState) -> &ExplorerProperties {
+        state.dialogs.explorer_properties.as_ref().unwrap()
+    }
+
+    fn read_paths(state: &MainViewState) -> Vec<PathBuf> {
+        match &props(state).facts {
+            Some(Ok(facts)) => facts.items.iter().map(|f| f.path.clone()).collect(),
+            other => panic!("not read: {:?}", other.as_ref().map(|r| r.is_ok())),
+        }
+    }
+
+    fn shutdown(mut owner: LocalReads) {
+        while owner.poll_shutdown() != 0 {
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn reopening_on_another_item_drops_the_late_result_of_the_first() {
+        let (mut state, _engine) = crate::state::tests::test_state();
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.txt");
+        let second = dir.path().join("second.txt");
+        std::fs::write(&first, b"1").unwrap();
+        std::fs::write(&second, b"22").unwrap();
+        let mut owner = LocalReads::default();
+        open(&mut state, 1, vec![first], None, false);
+        // 첫 읽기를 넘기고 끝나기를 기다린다. 결과는 받지 않은 채 남는다.
+        owner.drive(|requests| {
+            poll(&mut state, requests);
+            true
+        });
+        owner.wait_idle();
+        let old_cancel = props(&state).cancel.clone();
+
+        open(&mut state, 1, vec![second.clone()], None, false);
+        assert!(
+            old_cancel.load(Ordering::Relaxed),
+            "the first read is told to stop"
+        );
+        settle(&mut state, &mut owner);
+        assert_eq!(read_paths(&state), [second]);
+        shutdown(owner);
+    }
+
+    #[test]
+    fn a_vanished_item_reads_as_an_error_and_retry_reads_it_once_it_is_back() {
+        crate::i18n::init("en");
+        let (mut state, _engine) = crate::state::tests::test_state();
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("gone.txt");
+        let mut owner = LocalReads::default();
+        open(&mut state, 1, vec![gone.clone()], None, false);
+        settle(&mut state, &mut owner);
+        let p = props(&state);
+        let Some(Err(reason)) = &p.facts else {
+            panic!("a missing item is a read error");
+        };
+        assert_eq!(
+            reason,
+            &std::fs::symlink_metadata(&gone).unwrap_err().to_string(),
+            "the OS reason is shown as is"
+        );
+        assert!(
+            p.count.done.load(Ordering::Acquire),
+            "nothing is left counting"
+        );
+        let (_, title, fields, _) = content(p);
+        assert_eq!(title, "gone.txt");
+        assert!(fields.is_empty(), "no made-up values beside the error");
+
+        std::fs::write(&gone, b"back").unwrap();
+        state.dialogs.explorer_properties.as_mut().unwrap().retry();
+        settle(&mut state, &mut owner);
+        assert_eq!(read_paths(&state), [gone]);
+        shutdown(owner);
+    }
+
+    #[test]
+    fn the_current_remote_folder_shows_unknown_values_instead_of_zero() {
+        crate::i18n::init("en");
+        let (mut state, _engine) = crate::state::tests::test_state();
+        let cwd = PathBuf::from("/srv/remote/project");
+        open_from_menu(&mut state, true, 1, &[], &cwd);
+        let p = props(&state);
+        assert!(p.query.is_none(), "a remote item is never read locally");
+        let (glyph, title, fields, note) = content(p);
+        assert_eq!(glyph.uri, icons::FOLDER.uri);
+        assert_eq!(title, "project");
+        assert_eq!(note, Some(t("explorer.properties.remote_note")));
+        let value = |label: &str| {
+            fields
+                .iter()
+                .find(|f| f.label == label)
+                .map(|f| f.value.clone())
+                .unwrap()
+        };
+        assert_eq!(value("explorer.properties.size"), "—");
+        assert_eq!(value("explorer.properties.modified"), "—");
+        assert_eq!(value("explorer.props.path"), "/srv/remote/project");
+        assert!(
+            !fields.iter().any(|f| f.value.starts_with('0')),
+            "{:?}",
+            fields.iter().map(|f| &f.value).collect::<Vec<_>>()
+        );
+    }
 }
