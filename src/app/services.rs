@@ -96,6 +96,8 @@ pub(crate) struct AppServices {
     memory_writer: Option<MemoryWriterParts>,
     /// memory.db 요청 핸들. writer가 있으면 그 큐로, 없으면(시험 구성) 호출 스레드에서 바로 실행한다.
     memory_access: tasty_memory::writer::MemoryAccess,
+    /// writer 결과를 기다려 응답할 요청.
+    memory_replies: crate::ipc::handler::deferred::MemoryReplies,
     /// 예상하지 못한 writer 종료를 한 번만 알린다.
     memory_writer_end_reported: bool,
 }
@@ -158,9 +160,51 @@ impl AppServices {
         self.memory_init_fallback.as_ref()
     }
 
-    #[cfg(test)]
     pub(crate) fn memory_access(&self) -> &tasty_memory::writer::MemoryAccess {
         &self.memory_access
+    }
+
+    pub(crate) fn memory_replies(&self) -> &crate::ipc::handler::deferred::MemoryReplies {
+        &self.memory_replies
+    }
+
+    /// 원 호출자를 붙여 writer 결과를 기다리게 한다.
+    pub(crate) fn defer_reply(
+        &self,
+        deferred: crate::ipc::handler::deferred::Deferred,
+        to: crate::ipc::handler::ReplyTo,
+    ) {
+        self.memory_replies.push(deferred, to);
+    }
+
+    /// 끝난 writer 결과로 응답한다. IPC 응답은 보내고 plugin 응답은 `plugins`로 보낸다. 메인 루프가
+    /// `poll_memory_writer` 뒤에 부른다. plugin 매니저가 없으면 plugin 응답은 버린다.
+    pub(crate) fn poll_memory_replies(&self, plugins: Option<&mut crate::plugin::PluginManager>) {
+        let replies = crate::ipc::handler::deferred::MemoryReplies::poll(self);
+        if replies.is_empty() {
+            return;
+        }
+        let Some(manager) = plugins else {
+            tracing::warn!(
+                replies = replies.len(),
+                "plugin replies finished without a plugin manager"
+            );
+            return;
+        };
+        for reply in replies {
+            if !manager.send_bound_ipc_result(
+                &reply.plugin_id,
+                &reply.binding,
+                reply.call_id,
+                reply.response,
+            ) {
+                tracing::debug!(
+                    plugin = %reply.plugin_id,
+                    call = reply.call_id,
+                    "plugin process was replaced before its memory reply"
+                );
+            }
+        }
     }
 
     /// commit된 regular 변경을 접수 순서대로 꺼낸다. writer가 옮긴 변경 뒤에 아직 직접 잠금

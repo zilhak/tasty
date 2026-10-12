@@ -520,7 +520,7 @@ fn dispatch_plugin_ipc_calls_headless(
         {
             continue;
         }
-        let response =
+        let handled =
             crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
         // 결과를 보내기 전에 요청의 Intent와 후속 이벤트를 적용한다.
         crate::intent::headless::drain_pending_intents_in_app(
@@ -530,6 +530,14 @@ fn dispatch_plugin_ipc_calls_headless(
             &mut app.journal,
         );
         crate::intent::headless::drain_pending_host_events(&app.services, engine);
+        let response = match handled {
+            crate::ipc::handler::Handled::Now(response) => response,
+            crate::ipc::handler::Handled::Later(deferred) => {
+                app.services
+                    .defer_reply(deferred, crate::ipc::handler::ReplyTo::plugin(&call));
+                continue;
+            }
+        };
         // 오류 코드도 함께 전달해 플러그인이 원래 실패 종류를 알 수 있게 한다.
         let (result, error, code) = match response.error {
             Some(err) => (None, Some(err.message), Some(err.code)),

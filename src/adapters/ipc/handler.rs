@@ -16,6 +16,7 @@ pub(crate) mod debug_plugin;
 mod debug_state;
 #[cfg(debug_assertions)]
 mod debug_terminal;
+pub(crate) mod deferred;
 mod file_handler;
 #[cfg(feature = "gui")]
 mod file_picker;
@@ -84,6 +85,7 @@ pub mod session;
 #[cfg(feature = "gui")]
 pub(crate) use checked::check_without_engine;
 pub(crate) use checked::{CheckedRequest, OwnedCheckedRequest, check_request};
+pub(crate) use deferred::{Handled, ReplyTo};
 
 use crate::runtime::engine_access::EngineMut;
 use std::borrow::Cow;
@@ -116,19 +118,20 @@ pub fn handle_with_caller(
     caller: &CallerContext,
 ) -> JsonRpcResponse {
     match check_request(core, state, engine, request, caller) {
-        Ok(checked) => handle_checked_request(core, state, engine, &checked),
+        Ok(checked) => handle_checked_request(core, state, engine, &checked).wait(core),
         Err(response) => response,
     }
 }
 
 /// 검사한 요청을 실행하고 소요 시간을 기록한다. 예산과 사용량은 다시 집계하지 않는다.
 /// Engine handlers borrow RequestScope values. Returned outputs are applied before a separate GUI/debug route.
+/// memory writer 결과를 기다리는 요청은 `Handled::Later`이며 호출자가 원 호출자를 붙여 넘긴다.
 pub(crate) fn handle_checked_request(
     core: &mut crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     checked: &CheckedRequest<'_>,
-) -> JsonRpcResponse {
+) -> Handled {
     engine.refresh_attach_presentation(&state.navigation);
     let started = core.now_instant();
     let response = route_checked_request(core, state, engine, checked);
@@ -146,7 +149,7 @@ fn route_checked_request(
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     checked: &CheckedRequest<'_>,
-) -> JsonRpcResponse {
+) -> Handled {
     let request = checked.request();
     let caller = checked.caller();
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
@@ -156,11 +159,19 @@ fn route_checked_request(
     // alias 정규화 뒤 같은 멱등 키를 확인해 재시도는 handler를 다시 실행하지 않는다.
     let pending = match idempotency::begin(core.now_instant(), caller, request, &id) {
         Ok(pending) => pending,
-        Err(answer) => return answer,
+        Err(answer) => return Handled::Now(answer),
     };
+    if let Some(stale) = core.memory_replies().take_parked() {
+        tracing::error!(id = %stale.id(), "a deferred memory reply was parked outside a request");
+    }
     let response = dispatch_routed(core, state, engine, checked, request, id);
+    // 핸들러가 writer 결과를 기다리면 멱등 키 기록도 그 결과와 함께 끝낸다.
+    if let Some(deferred) = core.memory_replies().take_parked() {
+        let pending = idempotency::hold(core.now_instant(), pending);
+        return Handled::Later(deferred.with_idempotency(pending));
+    }
     idempotency::finish(core.now_instant(), pending, &response);
-    response
+    Handled::Now(response)
 }
 
 /// 모든 반환값을 기록할 수 있도록 멱등 저장소 처리는 이 함수 밖에 둔다.

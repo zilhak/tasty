@@ -8,8 +8,9 @@ use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
+use super::super::deferred::params_bytes;
 use super::{
-    map_error, optional_scope, parse_value, require_key, require_scope, secret_entry_to_json,
+    map_error_ref, optional_scope, parse_value, require_key, require_scope, secret_entry_to_json,
     stats_to_json,
 };
 
@@ -41,10 +42,15 @@ pub fn handle_secret_put(
     };
     let owner = caller.owner().to_string();
 
-    match core.with_memory(|s| s.put_secret(&owner, &scope, &key, &value, &opts)) {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.put_secret(&owner, &scope, &key, &value, &opts),
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_secret_get(
@@ -63,11 +69,16 @@ pub fn handle_secret_get(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| s.get_secret(&owner, &scope, &key)) {
-        Ok(Some(entry)) => JsonRpcResponse::success(id, secret_entry_to_json(&entry)),
-        Ok(None) => JsonRpcResponse::success(id, Value::Null),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.get_secret(&owner, &scope, &key),
+        |_, id, result| match result {
+            Ok(Some(entry)) => JsonRpcResponse::success(id, secret_entry_to_json(&entry)),
+            Ok(None) => JsonRpcResponse::success(id, Value::Null),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_secret_delete(
@@ -87,10 +98,15 @@ pub fn handle_secret_delete(
     };
     let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| s.delete_secret(&owner, &scope, &key, cas)) {
-        Ok(()) => super::written(core, id, json!({ "ok": true })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.delete_secret(&owner, &scope, &key, cas),
+        |core, id, result| match result {
+            Ok(()) => super::written(core, id, json!({ "ok": true })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_secret_list(
@@ -115,13 +131,18 @@ pub fn handle_secret_list(
         offset: p_try!(params::opt_int::<usize>(params, "offset", &id)),
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| s.list_secret(&owner, &scope, &opts)) {
-        Ok(entries) => {
-            let arr: Vec<Value> = entries.iter().map(secret_entry_to_json).collect();
-            JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
-        }
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.list_secret(&owner, &scope, &opts),
+        |_, id, result| match result {
+            Ok(entries) => {
+                let arr: Vec<Value> = entries.iter().map(secret_entry_to_json).collect();
+                JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
+            }
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_secret_exists(
@@ -140,10 +161,15 @@ pub fn handle_secret_exists(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| s.exists_secret(&owner, &scope, &key)) {
-        Ok(b) => JsonRpcResponse::success(id, json!({ "exists": b })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.exists_secret(&owner, &scope, &key),
+        |_, id, result| match result {
+            Ok(b) => JsonRpcResponse::success(id, json!({ "exists": b })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_secret_count(
@@ -157,12 +183,20 @@ pub fn handle_secret_count(
         Ok(s) => s,
         Err(e) => return e,
     };
-    let prefix = params.get("prefix").and_then(|v| v.as_str());
+    let prefix = params
+        .get("prefix")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| s.count_secret(&owner, &scope, prefix)) {
-        Ok(n) => JsonRpcResponse::success(id, json!({ "count": n })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.count_secret(&owner, &scope, prefix.as_deref()),
+        |_, id, result| match result {
+            Ok(n) => JsonRpcResponse::success(id, json!({ "count": n })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_secret_scopes(
@@ -170,13 +204,18 @@ pub fn handle_secret_scopes(
     _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
-    _params: &Value,
+    params: &Value,
 ) -> JsonRpcResponse {
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| s.scopes_secret(&owner)) {
-        Ok(list) => JsonRpcResponse::success(id, json!({ "scopes": list })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.scopes_secret(&owner),
+        |_, id, result| match result {
+            Ok(list) => JsonRpcResponse::success(id, json!({ "scopes": list })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_secret_stats(
@@ -191,8 +230,13 @@ pub fn handle_secret_stats(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| s.stats_secret(&owner, scope.as_ref())) {
-        Ok(stats) => JsonRpcResponse::success(id, stats_to_json(&stats)),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.stats_secret(&owner, scope.as_ref()),
+        |_, id, result| match result {
+            Ok(stats) => JsonRpcResponse::success(id, stats_to_json(&stats)),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }

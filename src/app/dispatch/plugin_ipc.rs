@@ -290,7 +290,14 @@ impl App {
         call: &PendingPluginCall,
         checked: &ipc::handler::CheckedRequest<'_>,
     ) {
-        let response = self.dispatch_checked(checked);
+        let response = match self.dispatch_checked(checked) {
+            ipc::handler::Handled::Now(response) => response,
+            ipc::handler::Handled::Later(deferred) => {
+                self.services
+                    .defer_reply(deferred, ipc::handler::ReplyTo::plugin(call));
+                return;
+            }
+        };
         // 원래 오류 코드를 보존해야 인자 오류가 일반 서버 오류로 바뀌지 않는다.
         let (result, error, code) = match response.error {
             Some(err) => (None, Some(err.message), Some(err.code)),

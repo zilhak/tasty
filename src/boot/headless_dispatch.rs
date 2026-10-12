@@ -125,7 +125,7 @@ fn dispatch_command(
     }
     // kind 소유자만 준비한다. namespace 전달과 달리 IPC hook extension은 여기서 시작하지 않는다.
     super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
-    let resp =
+    let handled =
         crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
     // 응답 전에 요청의 Intent와 후속 이벤트를 적용한다.
     crate::intent::headless::drain_pending_intents_in_app(
@@ -135,7 +135,13 @@ fn dispatch_command(
         &mut app.journal,
     );
     crate::intent::headless::drain_pending_host_events(&app.services, engine);
-    send_response(&cmd.response_tx, resp);
+    match handled {
+        crate::ipc::handler::Handled::Now(response) => send_response(&cmd.response_tx, response),
+        crate::ipc::handler::Handled::Later(deferred) => app.services.defer_reply(
+            deferred,
+            crate::ipc::handler::ReplyTo::Ipc(cmd.response_tx.clone()),
+        ),
+    }
     std::ops::ControlFlow::Continue(())
 }
 

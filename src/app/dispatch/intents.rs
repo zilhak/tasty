@@ -306,10 +306,11 @@ impl App {
     pub(crate) fn dispatch_checked(
         &mut self,
         checked: &ipc::handler::CheckedRequest<'_>,
-    ) -> ipc::protocol::JsonRpcResponse {
+    ) -> ipc::handler::Handled {
+        use ipc::handler::Handled;
         let request = checked.request();
         if let Some(resp) = self.dispatch_list_global(request) {
-            return resp;
+            return Handled::Now(resp);
         }
         let with_open_surfaces = self.with_open_surfaces_if_needed(checked);
         let checked = with_open_surfaces.as_ref().unwrap_or(checked);
@@ -320,7 +321,7 @@ impl App {
             Ok(id) => id.or(self.view.focused_view_id),
             Err(msg) => {
                 let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-                return ipc::protocol::JsonRpcResponse::invalid_params(id, msg);
+                return Handled::Now(ipc::protocol::JsonRpcResponse::invalid_params(id, msg));
             }
         };
         if let Some(id) = target_id {
@@ -350,10 +351,10 @@ impl App {
         }
         if let Some(rid) = named {
             let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-            return ipc::protocol::JsonRpcResponse::invalid_params(
+            return Handled::Now(ipc::protocol::JsonRpcResponse::invalid_params(
                 id,
                 crate::core::request_target::unowned_target_message(rid, &request.method),
-            );
+            ));
         }
         if let Some((state, mut engine)) = engines_mut!(self).first_parked_session() {
             let response = ipc::handler::handle_checked_request(
@@ -366,7 +367,11 @@ impl App {
             return response;
         }
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-        ipc::protocol::JsonRpcResponse::error(id, -32000, "no application state available")
+        Handled::Now(ipc::protocol::JsonRpcResponse::error(
+            id,
+            -32000,
+            "no application state available",
+        ))
     }
 }
 

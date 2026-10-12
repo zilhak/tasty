@@ -532,8 +532,11 @@ impl App {
 
     /// memory.db에 쓰는 producer(observer·runner·plugin)가 모두 멈춘 뒤 writer의 접수를 막고
     /// 마지막 flush와 join을 기다린다. 기한을 넘기면 미회수로 기록하고 진행한다.
+    /// 마지막 묶음의 결과를 기다리던 IPC 요청에도 응답한다.
     fn wait_for_memory_writer_shutdown(&mut self) -> bool {
         let remaining = self.services.poll_memory_writer_shutdown();
+        self.services
+            .poll_memory_replies(self.plugin_manager.as_mut());
         let Some(state) = self.state.shutdown.as_mut() else {
             return false;
         };

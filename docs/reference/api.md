@@ -72,6 +72,16 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 저장소 자체가 실패하면 `-32603 memory db error: …` 이고 `error.data.storage_failure` 가 원인을 싣는다(`busy` · `disk_full` · `io` · `corrupt` · `permission_denied` · `other`) — 실패한 쓰기는 quota 도 변경 알림도 남기지 않는다([storage](../design/systems/storage.md) "저장 실패의 의미").
 부팅이 `memory.db` 를 못 열어 in-memory 대체로 떴으면 쓰기 계열의 성공 응답에 `durable: false` 가 더해진다(`ok` 는 그대로, 정상 저장소에서는 칸 없음 — [ADR-0010](../adr/0010-storage-failure-reporting.md)).
 같은 저장소에 쓰는 `agent.*` · `approval.*` · `surface.meta.*` · `telemetry.*` · `session.*` 의 쓰기 응답도 같다([ADR-0010](../adr/0010-storage-failure-reporting.md)).
+`memory.*` · `memory.secret.*` 는 memory writer 가 commit 한 뒤 응답한다. 응답 시한이 지나거나 연결이 끊겨도 이미 접수한 요청은 취소되지 않는다. 같은 `idempotency_key` 의 Mutate 요청을 결과 전에 다시 보내면 `-32061` 로 답한다. writer 를 거치며 생기는 경우의 응답은 다음과 같다([storage-contract](../design/systems/storage-contract.md#ipc-응답)).
+
+| 경우 | 코드 | 메시지 | `error.data` |
+|---|---|---|---|
+| 큐 포화(접수 거절, 다시 시도할 수 있다) | `-32603` | `memory writer queue is full (<요청 수> requests, <바이트> bytes held)` | `{"storage_failure":"busy","writer":"saturated"}` |
+| 종료 중 접수 거절 | `-32603` | `memory writer is not accepting requests` | `{"storage_failure":"other","writer":"closed"}` |
+| commit 결과 불명(원인 오류 있음) | 원인 오류의 코드 | 원인 오류의 기존 문구(`memory db error: …`) | 원인 오류의 `data`에 `"outcome":"unknown"`을 더한다 |
+| worker 소실로 결과 불명 | `-32603` | `memory writer ended before the request finished; it may have been stored` | `{"storage_failure":"other","outcome":"unknown"}` |
+| 요청 본문 panic | `-32603` | `memory request panicked` | `{"storage_failure":"other"}` |
+| 저장 실패·busy 재시도 시한 초과·요청 거절 | 기존 매핑 그대로 | 기존 매핑 그대로 | 저장 실패만 `storage_failure` |
 
 ### 에이전트 협업 (`agent.*`)
 

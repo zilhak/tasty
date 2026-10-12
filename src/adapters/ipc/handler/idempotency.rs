@@ -271,8 +271,8 @@ impl Store {
         self.counts.executed = self.counts.executed.saturating_sub(1);
     }
 
-    /// 라우팅 결과를 보관한다. 메서드 없음 오류도 포함한다.
-    /// 라우팅 전 권한·cap·rate 거절은 보관하지 않아, 권한을 얻은 뒤 다시 시도할 수 있다.
+    /// 실행 번호 없이 결과를 보관한다. 제품 경로는 [`finish`] 가 `settle`로 기록한다.
+    #[cfg(test)]
     pub(crate) fn record(
         &mut self,
         now: Instant,
@@ -418,6 +418,8 @@ pub(crate) struct Pending {
     scope: String,
     key: String,
     digest: u64,
+    /// [`hold`] 가 연 실행 번호. 결과를 기다리는 동안 같은 키의 재시도는 InFlight로 답한다.
+    ticket: Option<u64>,
 }
 
 /// 빈 키와 크기 초과를 라우팅 전에 거절한다. 메서드나 저장소 상태와 무관한 형식 검사다.
@@ -471,11 +473,12 @@ fn begin_in(
             scope,
             key: key.to_string(),
             digest,
+            ticket: None,
         })),
         Decision::Replay(stored) => Err(stored.replayed_for(id.clone())),
         Decision::Conflict => Err(conflict_error(key, id)),
         Decision::Discarded => Err(discarded_error(key, id)),
-        // engine 라우터는 동기 실행이므로 보통 닿지 않는다. 기다릴 수 없어 결과 불명으로 답한다.
+        // memory writer 결과를 기다리는 요청의 재시도가 여기 닿는다. 기다릴 수 없어 결과 불명으로 답한다.
         Decision::InFlight => Err(still_running_error(key, id)),
     }
 }
@@ -513,7 +516,8 @@ fn still_running_error(key: &str, id: &serde_json::Value) -> JsonRpcResponse {
     )
 }
 
-/// 실행이 끝났다. [`begin`] 이 키를 줬을 때만 기록한다.
+/// 실행이 끝났다. [`begin`] 이 키를 줬을 때만 기록한다. 메서드 없음 오류도 포함한다.
+/// 라우팅 전 권한·cap·rate 거절은 보관하지 않아, 권한을 얻은 뒤 다시 시도할 수 있다.
 pub(crate) fn finish(now: Instant, pending: Option<Pending>, response: &JsonRpcResponse) {
     finish_in(&STORE, now, pending, response);
 }
@@ -524,9 +528,34 @@ fn finish_in(
     pending: Option<Pending>,
     response: &JsonRpcResponse,
 ) {
-    if let Some(p) = pending {
-        lock(store).record(now, &p.scope, &p.key, p.digest, response);
+    let Some(p) = pending else {
+        return;
+    };
+    let handoff = lock(store).settle(now, &p.scope, &p.key, p.digest, p.ticket, response);
+    for w in handoff.waiters {
+        let answer = if handoff.kept {
+            response.replayed_for(w.id)
+        } else {
+            discarded_error(&p.key, &w.id)
+        };
+        send_response(&w.reply, answer);
     }
+}
+
+/// 응답이 memory writer 결과를 기다리는 동안 키를 진행 중으로 둔다. 그동안의 재시도는
+/// 다시 실행하지 않는다. 결과는 [`finish`] 가 같은 실행 번호로 기록한다.
+pub(crate) fn hold(now: Instant, pending: Option<Pending>) -> Option<Pending> {
+    hold_in(&STORE, now, pending)
+}
+
+fn hold_in(
+    store: &'static Mutex<Store>,
+    now: Instant,
+    pending: Option<Pending>,
+) -> Option<Pending> {
+    let mut p = pending?;
+    p.ticket = Some(lock(store).open(now, &p.scope, &p.key, p.digest));
+    Some(p)
 }
 
 /// 응답을 채널로 보내는 라우터에 멱등성 검사를 적용한다.

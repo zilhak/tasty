@@ -342,6 +342,11 @@ fn stats_to_json(s: &MemoryStats) -> Value {
 }
 
 fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
+    map_error_ref(id, &err)
+}
+
+/// 기존 오류 코드와 메시지를 유지한다. writer 결과는 오류를 빌려 주므로 참조로 받는다.
+pub(crate) fn map_error_ref(id: Value, err: &MemoryError) -> JsonRpcResponse {
     use MemoryError::*;
     match err {
         NotFound { scope, key } => {
@@ -382,7 +387,7 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
         ),
         // 기존 오류 코드와 메시지는 유지하고, 원인별 처리를 위한 storage_failure를 추가한다.
         Db(e) => {
-            let failure = tasty_memory::StorageFailure::classify(&e);
+            let failure = tasty_memory::StorageFailure::classify(e);
             JsonRpcResponse::error_with_data(
                 id,
                 -32603,
@@ -439,11 +444,16 @@ pub fn handle_put(
         cas: p_try!(params::opt_int::<u64>(params, "cas", &id)),
     };
     let owner = caller.owner().to_string();
-
-    match core.with_memory(|s| s.put(&owner, &scope, &key, &value, &opts)) {
-        Ok(version) => written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    let bytes = super::deferred::params_bytes(params);
+    core.reply_unit(
+        id,
+        bytes,
+        move |s| s.put(&owner, &scope, &key, &value, &opts),
+        |core, id, result| match result {
+            Ok(version) => written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_get(
@@ -464,11 +474,17 @@ pub fn handle_get(
     if let Err(e) = reject_host_key(caller, &key, &id) {
         return e;
     }
-    match core.with_memory(|s| s.get(&scope, &key)) {
-        Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
-        Ok(None) => JsonRpcResponse::success(id, Value::Null),
-        Err(e) => map_error(id, e),
-    }
+    let bytes = super::deferred::params_bytes(params);
+    core.reply_unit(
+        id,
+        bytes,
+        move |s| s.get(&scope, &key),
+        |_, id, result| match result {
+            Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
+            Ok(None) => JsonRpcResponse::success(id, Value::Null),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_delete(
@@ -491,10 +507,16 @@ pub fn handle_delete(
     }
     let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| s.delete(&owner, &scope, &key, cas)) {
-        Ok(()) => written(core, id, json!({ "ok": true })),
-        Err(e) => map_error(id, e),
-    }
+    let bytes = super::deferred::params_bytes(params);
+    core.reply_unit(
+        id,
+        bytes,
+        move |s| s.delete(&owner, &scope, &key, cas),
+        |core, id, result| match result {
+            Ok(()) => written(core, id, json!({ "ok": true })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_list(
@@ -518,14 +540,21 @@ pub fn handle_list(
         until: p_try!(params::opt_i64(params, "until", &id)),
         offset: p_try!(params::opt_int::<usize>(params, "offset", &id)),
     };
-    match core.with_memory(|s| s.list(&scope, &opts)) {
-        Ok(entries) => {
-            let entries = hide_host_keys(caller, entries);
-            let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
-            JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
-        }
-        Err(e) => map_error(id, e),
-    }
+    let caller = caller.clone();
+    let bytes = super::deferred::params_bytes(params);
+    core.reply_unit(
+        id,
+        bytes,
+        move |s| s.list(&scope, &opts),
+        move |_, id, result| match result {
+            Ok(entries) => {
+                let entries = hide_host_keys(&caller, entries);
+                let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
+                JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
+            }
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_exists(
@@ -546,10 +575,16 @@ pub fn handle_exists(
     if let Err(e) = reject_host_key(caller, &key, &id) {
         return e;
     }
-    match core.with_memory(|s| s.exists(&scope, &key)) {
-        Ok(b) => JsonRpcResponse::success(id, json!({ "exists": b })),
-        Err(e) => map_error(id, e),
-    }
+    let bytes = super::deferred::params_bytes(params);
+    core.reply_unit(
+        id,
+        bytes,
+        move |s| s.exists(&scope, &key),
+        |_, id, result| match result {
+            Ok(b) => JsonRpcResponse::success(id, json!({ "exists": b })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_count(
@@ -563,32 +598,34 @@ pub fn handle_count(
         Ok(s) => s,
         Err(e) => return e,
     };
-    let prefix = params.get("prefix").and_then(|v| v.as_str());
-    if !is_permissioned(caller) {
-        return match core.with_memory(|s| s.count(&scope, prefix)) {
-            Ok(n) => JsonRpcResponse::success(id, json!({ "count": n })),
-            Err(e) => map_error(id, e),
-        };
-    }
+    let prefix = params
+        .get("prefix")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
     // 개수에서도 호스트 키를 제외한다. prefix가 일부만 겹치면 전체에서 호스트 키 수를 뺀다.
-    match prefix {
-        Some(p) if is_host_key(p) => JsonRpcResponse::success(id, json!({ "count": 0 })),
-        _ => {
-            let visible = core.with_memory(|s| {
-                let total = s.count(&scope, prefix)?;
-                let hidden = if prefix_may_include_host(prefix) {
-                    s.count(&scope, Some(HOST_KEY_NAMESPACE))?
-                } else {
-                    0
-                };
-                Ok(total.saturating_sub(hidden))
-            });
-            match visible {
-                Ok(n) => JsonRpcResponse::success(id, json!({ "count": n })),
-                Err(e) => map_error(id, e),
-            }
-        }
+    let hide_host = is_permissioned(caller);
+    if hide_host && prefix.as_deref().is_some_and(is_host_key) {
+        return JsonRpcResponse::success(id, json!({ "count": 0 }));
     }
+    let bytes = super::deferred::params_bytes(params);
+    core.reply_unit(
+        id,
+        bytes,
+        move |s| {
+            let prefix = prefix.as_deref();
+            let total = s.count(&scope, prefix)?;
+            let hidden = if hide_host && prefix_may_include_host(prefix) {
+                s.count(&scope, Some(HOST_KEY_NAMESPACE))?
+            } else {
+                0
+            };
+            Ok(total.saturating_sub(hidden))
+        },
+        |_, id, result| match result {
+            Ok(n) => JsonRpcResponse::success(id, json!({ "count": n })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_scopes(
@@ -596,12 +633,17 @@ pub fn handle_scopes(
     _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
-    _params: &Value,
+    params: &Value,
 ) -> JsonRpcResponse {
-    match core.with_memory(|s| s.scopes()) {
-        Ok(list) => JsonRpcResponse::success(id, json!({ "scopes": list })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::deferred::params_bytes(params),
+        |s| s.scopes(),
+        |_, id, result| match result {
+            Ok(list) => JsonRpcResponse::success(id, json!({ "scopes": list })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_stats(
@@ -615,10 +657,15 @@ pub fn handle_stats(
         Ok(s) => s,
         Err(e) => return e,
     };
-    match core.with_memory(|s| s.stats(scope.as_ref())) {
-        Ok(stats) => JsonRpcResponse::success(id, stats_to_json(&stats)),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::deferred::params_bytes(params),
+        move |s| s.stats(scope.as_ref()),
+        |_, id, result| match result {
+            Ok(stats) => JsonRpcResponse::success(id, stats_to_json(&stats)),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 #[cfg(test)]

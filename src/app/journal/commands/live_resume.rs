@@ -45,6 +45,20 @@ impl Return {
             }
         }
     }
+    fn into_reply_to(self) -> crate::ipc::handler::ReplyTo {
+        match self {
+            Self::Ipc(sender) => crate::ipc::handler::ReplyTo::Ipc(sender),
+            Self::Plugin {
+                plugin,
+                call,
+                binding,
+            } => crate::ipc::handler::ReplyTo::Plugin {
+                plugin_id: plugin,
+                call_id: call,
+                binding,
+            },
+        }
+    }
     fn into_reply(self) -> Reply {
         match self {
             Self::Ipc(sender) => Reply::Ipc(sender),
@@ -110,12 +124,18 @@ impl Resume {
                 "surface resource changed before pending input could be applied",
             )
         } else {
-            crate::ipc::handler::handle_checked_request(
+            match crate::ipc::handler::handle_checked_request(
                 services,
                 state,
                 engine,
                 &self.checked.borrow(),
-            )
+            ) {
+                crate::ipc::handler::Handled::Now(response) => response,
+                crate::ipc::handler::Handled::Later(deferred) => {
+                    services.defer_reply(deferred, self.reply.into_reply_to());
+                    return;
+                }
+            }
         };
         self.reply.answer(response, manager);
     }

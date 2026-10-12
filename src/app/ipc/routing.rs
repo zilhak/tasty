@@ -138,11 +138,18 @@ impl App {
 
 impl App {
     /// 창·parked 상태가 만든 응답을 보낸다. debug ui.state는 App이 소유한 활성 모달을 덧붙인다.
-    fn send_routed_response(
-        &self,
-        cmd: &IpcCommand,
-        response: host_ipc::protocol::JsonRpcResponse,
-    ) {
+    /// memory writer 결과를 기다리는 요청은 이 연결로 나중에 응답한다.
+    fn send_routed_response(&self, cmd: &IpcCommand, handled: host_ipc::handler::Handled) {
+        let response = match handled {
+            host_ipc::handler::Handled::Now(response) => response,
+            host_ipc::handler::Handled::Later(deferred) => {
+                self.services.defer_reply(
+                    deferred,
+                    host_ipc::handler::ReplyTo::Ipc(cmd.response_tx.clone()),
+                );
+                return;
+            }
+        };
         #[cfg(debug_assertions)]
         let response = self.project_active_modal(&cmd.request.method, response);
         send_response(&cmd.response_tx, response);

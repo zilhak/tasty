@@ -286,6 +286,7 @@ fn an_import_into_an_open_surface_of_another_engine_succeeds_with_the_routers_su
                 .expect("admitted");
         let routed = checked.with_open_surfaces(open_surfaces);
         super::super::handle_checked_request(&mut fx.core, &mut fx.state, &mut engine, &routed)
+            .wait(&fx.core)
     };
     assert!(
         written.error.is_none(),

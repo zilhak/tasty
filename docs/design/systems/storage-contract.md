@@ -14,7 +14,8 @@
 
 | 경로 | 접수 | commit 완료 | 메모리 표시 | 외부 실행 |
 |---|---|---|---|---|
-| memory.db IPC 쓰기 | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | DB가 원본이므로 commit과 같다. `memory.changed`는 commit 뒤 버퍼에 쌓였다가 GUI 이벤트 루프·headless 루프가 같은 회차의 IPC 처리 뒤에 발행한다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
+| `memory.*`·`memory.secret.*` IPC | 핸들러가 memory writer에 요청을 넣고 응답 continuation을 등록한 뒤 메인 루프가 다음 요청으로 넘어간다 | writer가 묶음으로 commit한다 | DB가 원본이므로 commit과 같다. `memory.changed`는 commit 뒤 변경 버퍼에 쌓였다가 GUI 이벤트 루프·headless 루프가 다음 회차에 발행한다 | 메인 루프가 회차마다 writer 결과를 거두어 원 호출자(IPC 연결·plugin 호출)에게 응답한다. 응답 시점에는 commit이 끝나 있다 |
+| 그 밖의 memory.db IPC 쓰기(`agent.*`·`approval.*`·`surface.meta.*`·`telemetry.*`·`session.*`) | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | `memory.*`와 같다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
 | observer memory sink | sink 스레드가 채널에 쌓인 항목을 memory writer에 묶음 하나로 넣고 바로 다음 항목을 받는다 | writer가 묶음 하나를 commit 한 번으로 끝낸다 | commit과 같다 | 해당 없음 |
 | memory.db background writer(`approval.await` 결과 기록, runner 결과·보고) | 각 스레드가 직접 잠금을 잡는다 | 그 스레드 안에서 끝난다 | commit과 같다 | 해당 없음 |
 | task runner 실행 | Ready task를 tick snapshot으로 고른다(별도 잠금) | lease·semaphore 획득, 실행 handle 기록, `Running` 전이가 각각 별도 잠금·commit이다 | commit과 같다 | 점유 획득 뒤, `Running` 기록 **전에** 프로세스를 시작한다. `Running` 기록이 실패하면 경고만 남고 handle을 보관하지 않는다 |
@@ -25,7 +26,7 @@
 
 ## memory.db 소비자와 계약
 
-직접 잠금 소비자는 같은 `Arc<Mutex<dyn MemoryStorage>>`를 공유한다. `AppServices::with_memory`, `TaskService`, runner 문맥이 같은 잠금을 잡고 콜백이 끝날 때까지 유지한다. observer sink는 잠금을 잡지 않고 아래 "저장 실행기"의 memory writer에 요청을 넣는다. writer도 묶음마다 같은 잠금을 잡으므로 직접 잠금 소비자와 직렬화된다.
+직접 잠금 소비자는 같은 `Arc<Mutex<dyn MemoryStorage>>`를 공유한다. `AppServices::with_memory`, `TaskService`, runner 문맥이 같은 잠금을 잡고 콜백이 끝날 때까지 유지한다. 위 네 시점 표에서 접수가 memory writer인 경로(접수 칸이 memory writer이거나 `memory.*`와 같다고 적힌 행)는 잠금을 잡지 않고 아래 "저장 실행기"의 memory writer에 요청을 넣는다. writer도 묶음마다 같은 잠금을 잡으므로 직접 잠금 소비자와 직렬화된다.
 
 ### 연산별 계약
 
@@ -129,16 +130,34 @@
 
 | 분류 | 소비자 | 스레드 | 한 잠금 안에서 하는 일 |
 |---|---|---|---|
-| 단순 쓰기 | `memory.put`·`memory.delete`·secret, approval 기록, surface meta, telemetry·audit 기록 | 메인 루프(IPC) | 한 연산. 기록 시점 로그 정리가 붙는 경로는 prune 후 put |
-| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal, session·barrier·semaphore·lease·ratelimit, command index, `memory.import` | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
+| 단순 쓰기 | `memory.put`·`memory.delete`·secret(writer 요청), approval 기록, surface meta, telemetry·audit 기록 | 메인 루프(IPC) | 한 연산. 기록 시점 로그 정리가 붙는 경로는 prune 후 put |
+| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal, session·barrier·semaphore·lease·ratelimit, command index, `memory.import`(writer 요청 하나) | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
 | task | `TaskService`(생성·graph submit·삭제·purge), runner tick | 메인 루프, `agent-runner-ws{N}` | graph submit은 plan·stage·activate를 한 잠금에서 한다. purge는 계획과 적용을 별도 잠금으로 한다. runner는 snapshot·점유 획득·상태 전이·완료를 각각 별도 잠금으로 한다 |
 | background 쓰기 | observer memory sink(writer 요청), `approval.await` 결과, Run 결과·후처리·보고 | 각 전용 스레드 | observer는 채널에 쌓인 기록과 넘친 옛 키의 보존 삭제를 독립 요청 묶음 하나로 writer에 넣는다. 보존 삭제는 저장이 확정된 키만 센다 |
-| 읽기 | `memory.get`·`list`·`count`, approval·telemetry 조회, DAG 화면, task 대기 | 메인 루프, `dag-read`, task 대기 worker | 여러 scope를 순회하는 조회는 scope마다 잠금을 다시 잡아 하나의 시점을 보장하지 않는다. DAG 화면은 `try_lock`으로 폴링한다 |
+| 읽기 | `memory.get`·`list`·`count`(writer 요청), approval·telemetry 조회, DAG 화면, task 대기 | 메인 루프, `dag-read`, task 대기 worker | 여러 scope를 순회하는 조회는 scope마다 잠금을 다시 잡아 하나의 시점을 보장하지 않는다. DAG 화면은 `try_lock`으로 폴링한다 |
 | 변경 구독 | `memory.changed` 발행 | GUI 이벤트 루프, headless 루프 | 두 루프가 회차마다 writer가 commit 뒤 옮겨 둔 변경 버퍼(`ChangeFeed`)를 꺼내고, 그 뒤에 직접 잠금 소비자가 저장소 버퍼에 남긴 변경을 붙여 plugin에 발행한다. plugin 매니저가 없으면 꺼낸 변경을 버려 버퍼가 쌓이지 않는다 |
 | 삭제 cleanup | surface·workspace 은퇴의 `purge_scope`, 범위 밖 surface meta 정리 | 메인 루프 | 대상이 다시 살아 있으면 정리하지 않는다 |
-| TTL 정리 | `memory.gc`(Local 전용)의 `purge_expired` | 메인 루프(IPC) | 주기 타이머는 없다 |
+| TTL 정리 | `memory.gc`(Local 전용)의 `purge_expired`(writer 요청) | 메인 루프(IPC) | 주기 타이머는 없다 |
 | 로그 prune | 관측 로그 보존(부팅·기록 시점·`Tick::LogPrune`) | 메인 루프 | 시간 기준 후 개수 기준. 한 시간 간격 제한 |
 | 정비 | 부팅의 prune·VACUUM·WAL truncate | 부팅 메인 | port로 감싸기 전 구체 `MemoryStore`에서 실행 |
+
+### IPC 응답
+
+writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러는 요청과 함께 그 결과를 응답으로 바꾸는 continuation을 등록하고, 호출 경로가 원 호출자를 붙인다. 응답에 쓰는 요청 ID·caller·권한·대상은 핸들러가 접수할 때 잡은 값이다.
+
+- 메인 루프는 회차마다 writer 결과를 거둔 뒤 continuation으로 응답을 만들어 보낸다. GUI·headless 종료 단계도 writer를 join하며 남은 응답을 보낸다.
+- 멱등 키(`idempotency_key`)가 있는 Mutate 요청은 결과를 기다리는 동안 키를 진행 중으로 둔다. 그동안 같은 키로 다시 보낸 요청은 실행하지 않고 `-32061`(결과 불명, 다시 보내지 말고 조회)로 답한다. 결과가 나오면 그 응답을 키에 기록한다.
+- 호출자의 응답 시한·연결 종료·plugin 재시작은 이미 접수한 요청을 취소하지 않는다. 응답만 버려진다.
+- 성공 응답·version·CAS 판정·`durable:false`·오류 코드는 핸들러가 잠금 안에서 바로 실행할 때와 같다. writer를 거치며 생기는 경우의 응답은 다음과 같다. 같은 표가 [API 레퍼런스](../../reference/api.md)와 [헤드리스 IPC 지원 범위](../../dev-guide/headless-ipc-surface.md)에 있다.
+
+| 경우 | 코드 | 메시지 | `error.data` |
+|---|---|---|---|
+| 큐 포화(접수 거절, 다시 시도할 수 있다) | `-32603` | `memory writer queue is full (<요청 수> requests, <바이트> bytes held)` | `{"storage_failure":"busy","writer":"saturated"}` |
+| 종료 중 접수 거절 | `-32603` | `memory writer is not accepting requests` | `{"storage_failure":"other","writer":"closed"}` |
+| commit 결과 불명(원인 오류 있음) | 원인 오류의 코드 | 원인 오류의 기존 문구(`memory db error: …`) | 원인 오류의 `data`에 `"outcome":"unknown"`을 더한다 |
+| worker 소실로 결과 불명 | `-32603` | `memory writer ended before the request finished; it may have been stored` | `{"storage_failure":"other","outcome":"unknown"}` |
+| 요청 본문 panic | `-32603` | `memory request panicked` | `{"storage_failure":"other"}` |
+| 저장 실패·busy 재시도 시한 초과·요청 거절 | 기존 매핑 그대로 | 기존 매핑 그대로 | 저장 실패만 `storage_failure` |
 
 ### 보존할 실행 계약
 

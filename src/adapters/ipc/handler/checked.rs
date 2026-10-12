@@ -220,6 +220,7 @@ mod tests {
                 let checked = check_request(&mut core, &mut state, &mut engine, &req, &caller)
                     .unwrap_or_else(|_| panic!("first request must pass"));
                 super::super::handle_checked_request(&mut core, &mut state, &mut engine, &checked)
+                    .wait(&core)
             } else {
                 super::super::handle_with_caller(&mut core, &mut state, &mut engine, &req, &caller)
             };

@@ -9,8 +9,9 @@ use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
+use super::super::deferred::params_bytes;
 use super::{
-    decode_b64, entry_to_json, hide_host_keys, map_error, optional_scope,
+    decode_b64, entry_to_json, hide_host_keys, map_error_ref, optional_scope,
     reject_closed_surface_scope, reject_host_key, reject_pty_space_surface_scope, require_scope,
 };
 
@@ -20,16 +21,21 @@ pub fn handle_gc(
     _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
-    _params: &Value,
+    params: &Value,
 ) -> JsonRpcResponse {
-    match core.with_memory(|s| s.purge_expired()) {
-        Ok(stats) => super::written(
-            core,
-            id,
-            json!({ "regular": stats.regular, "secret": stats.secret }),
-        ),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        |s| s.purge_expired(),
+        |core, id, result| match result {
+            Ok(stats) => super::written(
+                core,
+                id,
+                json!({ "regular": stats.regular, "secret": stats.secret }),
+            ),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 /// `memory.query` — `application/json` value 들을 dot-path 매칭으로 필터링.
@@ -66,14 +72,20 @@ pub fn handle_query(
         until: p_try!(params::opt_i64(params, "until", &id)),
         offset: p_try!(params::opt_int::<usize>(params, "offset", &id)),
     };
-    match core.with_memory(|s| s.query(&scope, &path, &equals, &opts)) {
-        Ok(entries) => {
-            let entries = hide_host_keys(caller, entries);
-            let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
-            JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
-        }
-        Err(e) => map_error(id, e),
-    }
+    let caller = caller.clone();
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.query(&scope, &path, &equals, &opts),
+        move |_, id, result| match result {
+            Ok(entries) => {
+                let entries = hide_host_keys(&caller, entries);
+                let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
+                JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
+            }
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 /// `memory.export` — regular 영역 entry 를 dump. `scope` 가 옵션 (없으면 전체).
@@ -89,14 +101,20 @@ pub fn handle_export(
         Ok(s) => s,
         Err(e) => return e,
     };
-    match core.with_memory(|s| s.export_regular(scope.as_ref())) {
-        Ok(entries) => {
-            let entries = hide_host_keys(caller, entries);
-            let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
-            JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
-        }
-        Err(e) => map_error(id, e),
-    }
+    let caller = caller.clone();
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.export_regular(scope.as_ref()),
+        move |_, id, result| match result {
+            Ok(entries) => {
+                let entries = hide_host_keys(&caller, entries);
+                let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
+                JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
+            }
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 /// `memory.import` — regular 영역으로 entry 입력. `entries` 는 export 응답과 같은
@@ -139,14 +157,20 @@ pub fn handle_import(
         return resp;
     }
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| s.import_regular(&owner, &entries, replace)) {
-        Ok(stats) => super::written(
-            core,
-            id,
-            json!({ "applied": stats.applied, "skipped": stats.skipped }),
-        ),
-        Err(e) => map_error(id, e),
-    }
+    // 중간 항목이 거절되면 앞 항목은 반영된 채 오류를 돌려주는 기존 의미를 실행 단위가 유지한다.
+    core.reply_unit(
+        id,
+        params_bytes(params),
+        move |s| s.import_regular(&owner, &entries, replace),
+        |core, id, result| match result {
+            Ok(stats) => super::written(
+                core,
+                id,
+                json!({ "applied": stats.applied, "skipped": stats.skipped }),
+            ),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 /// put과 같은 scope 검사를 쓰기 전에 모든 엔트리에 적용한다. `import_regular`는 항목마다
