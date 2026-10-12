@@ -43,9 +43,9 @@ pub struct PreviewPane {
     pub open: bool,
     /// 사용자가 끌어 정한 폭을 UI 배율로 나눈 값. `None` 이면 토큰 기본값을 쓴다.
     width: Option<f32>,
-    /// 지금 보이는 항목, 그 수정 시각, 그림을 맞춘 최대 표시 폭(물리 px). 파일이 바뀌거나 배율이 바뀌어
-    /// 최대 표시 폭이 달라지면 다시 읽는다.
-    shown: Option<(PathBuf, Option<SystemTime>, u32)>,
+    /// 지금 보이는 항목, 그 수정 시각, 그림을 맞춘 최대 표시 폭(물리 px), 원격 여부. 파일이 바뀌거나 배율이
+    /// 바뀌어 최대 표시 폭이 달라지면 다시 읽는다. 원격 여부가 바뀌면 같은 경로라도 다른 파일이다.
+    shown: Option<(PathBuf, Option<SystemTime>, u32, bool)>,
     query: Option<Query<PreviewData>>,
     body: Body,
     /// view 와 model 이 마지막으로 같았던 값. 받아 오거나 model 에 남기면 갱신한다.
@@ -133,7 +133,7 @@ impl PreviewPane {
 
     /// 보일 항목이 바뀌었으면 이전 내용을 지우고 새로 읽는다.
     fn retarget(&mut self, target: Option<&DirEntryInfo>, remote: bool, fit_width: u32) {
-        let key = target.map(|e| (e.path.clone(), e.modified, fit_width));
+        let key = target.map(|e| (e.path.clone(), e.modified, fit_width, remote));
         if key == self.shown {
             return;
         }
@@ -759,6 +759,33 @@ mod tests {
         );
         settle(&mut pane, &mut owner);
         assert_eq!(text_of(&pane), Some("second"));
+        shutdown(owner);
+    }
+
+    #[test]
+    fn a_mirror_explorer_shows_unsupported_and_never_reads_the_local_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let entry = write_text(&dir.path().join("a.txt"), "local", 1_000_000);
+        let mut owner = LocalReads::default();
+        let mut view = ExplorerView::new();
+        view.entries = vec![entry.clone()];
+        view.select_only(&entry.path);
+        view.preview.open = true;
+        view.mirror_ws_id = Some(3);
+        frame(&mut view);
+        assert!(matches!(view.preview.body, Body::Unsupported));
+        assert!(view.preview.query.is_none(), "nothing is read for a mirror");
+
+        // 같은 경로라도 로컬이면 읽고, 다시 mirror 가 되면 읽은 로컬 내용을 보이지 않는다.
+        view.mirror_ws_id = None;
+        frame(&mut view);
+        assert!(view.preview.query.is_some(), "a local explorer reads it");
+        settle(&mut view.preview, &mut owner);
+        assert_eq!(text_of(&view.preview), Some("local"));
+        view.mirror_ws_id = Some(3);
+        let texts = frame(&mut view);
+        assert!(matches!(view.preview.body, Body::Unsupported));
+        assert!(!texts.iter().any(|t| t == "local"), "{texts:?}");
         shutdown(owner);
     }
 

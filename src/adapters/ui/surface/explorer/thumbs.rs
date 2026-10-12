@@ -61,11 +61,16 @@ impl Thumbs {
     }
 
     /// 만들어진 썸네일. 디코딩만 끝났으면 여기서 텍스처로 올린다.
+    /// 캐시는 로컬 파일로 만든 것이라, 같은 경로의 원격 항목에는 쓰지 않는다.
     pub(super) fn texture(
         &mut self,
         ctx: &egui::Context,
         e: &DirEntryInfo,
+        remote: bool,
     ) -> Option<egui::TextureHandle> {
+        if remote {
+            return None;
+        }
         let slot = self.slots.get_mut(&e.path)?;
         if slot.modified != e.modified {
             return None;
@@ -289,14 +294,14 @@ mod tests {
         assert_ne!(old.modified, new.modified);
         let ctx = egui::Context::default();
         assert!(
-            thumbs.texture(&ctx, &new).is_none(),
+            thumbs.texture(&ctx, &new, false).is_none(),
             "the old picture is not drawn for the new file"
         );
         thumbs.want(&new, false);
         assert!(matches!(thumbs.slots[&path].state, State::Pending(_)));
         settle(&mut thumbs, &mut owner, &path);
         assert_eq!(decoded_size(&thumbs, &path), [3, 3]);
-        assert!(thumbs.texture(&ctx, &new).is_some());
+        assert!(thumbs.texture(&ctx, &new, false).is_some());
         shutdown(owner);
     }
 
@@ -333,5 +338,22 @@ mod tests {
         assert!(thumbs.slots.is_empty(), "a remote cell asks for nothing");
         thumbs.want(&entry, false);
         assert!(thumbs.slots.contains_key(&path), "the same local cell does");
+    }
+
+    #[test]
+    fn a_thumbnail_made_while_local_is_not_drawn_once_the_view_is_a_mirror() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.png");
+        let entry = write_image(&path, 2, 2, 1_000_000);
+        let mut owner = LocalReads::default();
+        let mut thumbs = Thumbs::default();
+        thumbs.want(&entry, false);
+        settle(&mut thumbs, &mut owner, &path);
+        let ctx = egui::Context::default();
+        assert!(thumbs.texture(&ctx, &entry, false).is_some());
+        // 같은 경로·같은 수정 시각의 원격 항목은 로컬에서 만든 그림을 쓰지 않는다.
+        assert!(thumbs.texture(&ctx, &entry, true).is_none());
+        assert!(thumbs.texture(&ctx, &entry, false).is_some());
+        shutdown(owner);
     }
 }

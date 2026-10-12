@@ -1171,7 +1171,7 @@ fn grid_entry(
 ) {
     let cut = ctx.cut_pending.contains(&e.path);
     let state = (view.selected.contains(&e.path), cut);
-    let thumb = view.thumbs.texture(ui.ctx(), e);
+    let thumb = view.thumbs.texture(ui.ctx(), e, view.is_remote());
     // 보이는 칸만 그리므로 칸의 위젯 id 를 화면 위치가 아니라 항목 경로에 묶는다.
     // 그래야 스크롤해도 누름·hover 상태가 같은 항목에 남는다.
     let resp = ui
