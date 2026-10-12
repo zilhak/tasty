@@ -163,7 +163,7 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 
 - **plugin 응답(`plugin_round_trip`)**: host→plugin 요청 중 **응답이 실제로 매칭된 것만** 센다(취소·만료된 것은 끝점이 없어 못 잰다).
 
-- **저장소(`db`)**: `MemoryStore` 의 트랜잭션 commit 과 WAL checkpoint 지연이고, commit 은 **성공한 것만** 센다(거부는 롤백이라 남긴 것이 없다) — checkpoint 는 다른 커넥션과 경합해 못 끝낸 횟수를 `checkpoints_busy` 로 따로 센다.
+- **저장소(`db`)**: `MemoryStore` 의 트랜잭션 commit 과 WAL checkpoint 지연이고, commit 은 **성공한 것만** 센다(거부는 롤백이라 남긴 것이 없다) — checkpoint 는 다른 커넥션과 경합해 못 끝낸 횟수를 `checkpoints_busy` 로 따로 센다. `writes_per_commit`(`le` 구간 상한 · `counts`)은 commit 하나에 확정된 쓰기 수의 분포이고, VACUUM 은 `vacuums` · `vacuum_us_sum` 으로 commit 과 따로 센다([텔레메트리](../features/telemetry/index.md#db-지연)).
 
 - **TCP 연결(`connections`)**: 이 포트에 붙은 TCP 연결 전부를 세고(요청을 안 보내는 attach·mesh 스트림 포함), 누계·순간값 중 `live` 만 내려가는 순간값이며(평균 `accept_wait_bound_us_mean` 은 파생값이라 내려갈 수 있다) `limit` 은 서버가 집행하는 동시 연결 상한, `refused_saturated` 는 그 상한에 걸려 **요청이 되기도 전에** 거절된 연결의 누계다(그래서 `ipc_calls` 에 안 남는다).
   이 항목의 유일한 시간 `accept_wait_bound_us_sum` · `_max` · `_mean`(기록 수 `accept_waits` = `accepted + refused_saturated`)은 연결이 OS 의 accept 큐에서 기다렸을 수 있는 시간의 **상한**이다 — accept 루프가 큐를 마지막으로 비어 있다고 본 뒤 지난 시간이고, 루프가 빈 큐에서 100 ms 자므로 호출마다 연결을 여는 client 에게는 그만큼까지가 되며 다른 어느 항목에도 안 잡힌다([ADR-0008](../adr/0008-ipc-pressure-observability.md)).

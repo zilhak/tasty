@@ -376,13 +376,15 @@ tasty file-handler detectors            # 파일 형식 판별 규칙이 지금 
 | `queue_before_gate` | 큐에서 기다린 시간. 나중에 권한 검사에서 거절된 요청도 포함 |
 | `handler_after_gate` | 검사를 통과해 실제 처리한 요청의 시간 |
 | `plugin_round_trip` | 플러그인에 보낸 요청 중 응답이 도착한 요청의 대기 시간 |
-| `db` | 데이터베이스 commit과 WAL checkpoint에 걸린 시간 |
+| `db` | 데이터베이스 commit과 WAL checkpoint에 걸린 시간, commit 하나에 저장된 쓰기 수, 따로 센 VACUUM |
 
 큐 대기가 길면 요청이 밀리는지, 처리 시간이 길면 어떤 명령이 오래 걸리는지 확인하세요.
 플러그인 대기가 길면 해당 플러그인의 로그를 살펴보세요. DB 시간은 저장 작업과 경합을
 조사할 근거이며 이 값만으로 디스크 문제를 단정할 수는 없습니다. commit 시간은 처리 시간에도
 포함되므로 두 시간을 더하면 중복됩니다. `checkpoints_busy`는 다른 연결 때문에 checkpoint를
-마치지 못한 횟수입니다. 권한·한도·빈도 제한의 거절 수는 아래 `gate_refusals`에서 확인합니다.
+마치지 못한 횟수입니다. `writes_per_commit`은 commit 하나에 저장된 쓰기 수의 분포이고,
+commit 수에 들어가지 않는 데이터베이스 압축(VACUUM)은 `vacuums`로 따로 셉니다.
+권한·한도·빈도 제한의 거절 수는 아래 `gate_refusals`에서 확인합니다.
 
 #### 연결 수와 한도 (`connections`)
 

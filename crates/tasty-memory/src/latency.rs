@@ -1,4 +1,5 @@
-//! 성공한 DB commit과 시도한 WAL checkpoint의 시간을 각각 집계한다.
+//! 성공한 DB commit과 시도한 WAL checkpoint의 시간을 각각 집계한다. commit마다 확정된 쓰기 수의
+//! 분포와 VACUUM도 따로 센다.
 //! tasty-telemetry가 이 크레이트에 의존하므로 통계를 여기서 정의해 순환 의존을 피한다.
 //! 고정 크기 원자값을 Relaxed로 읽으므로 스냅샷 전체가 원자적이지는 않다.
 //! 1마이크로초 미만도 횟수에는 포함하며, 관측이 없으면 평균은 None이다.
@@ -28,7 +29,15 @@ pub struct DbLatencyStats {
     checkpoint_us_max: AtomicU64,
     /// busy 때문에 완료하지 못한 checkpoint 수.
     checkpoints_busy: AtomicU64,
+    /// commit 하나에 확정된 쓰기 수의 분포. 구간은 [`WRITES_PER_COMMIT_BUCKETS`].
+    writes_per_commit: [AtomicU64; WRITES_PER_COMMIT_BUCKETS.len() + 1],
+    /// 실행한 VACUUM 수와 시간 합(마이크로초).
+    vacuums: AtomicU64,
+    vacuum_us_sum: AtomicU64,
 }
+
+/// commit당 쓰기 수 분포의 구간 상한(포함). 마지막 구간은 그 위 전부다.
+pub const WRITES_PER_COMMIT_BUCKETS: [u64; 5] = [1, 4, 16, 64, 256];
 
 impl DbLatencyStats {
     /// 트랜잭션 하나가 commit 되는 데 걸린 시간. 호출부는 `tx.commit()` 이 `Ok` 로
@@ -38,6 +47,22 @@ impl DbLatencyStats {
         self.commits.fetch_add(1, Ordering::Relaxed);
         self.commit_us_sum.fetch_add(us, Ordering::Relaxed);
         self.commit_us_max.fetch_max(us, Ordering::Relaxed);
+    }
+
+    /// commit 하나에 확정된 쓰기 수. `record_commit`과 같은 commit에서 부른다.
+    pub fn record_commit_writes(&self, writes: u64) {
+        let bucket = WRITES_PER_COMMIT_BUCKETS
+            .iter()
+            .position(|&upper| writes <= upper)
+            .unwrap_or(WRITES_PER_COMMIT_BUCKETS.len());
+        self.writes_per_commit[bucket].fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// 성공한 VACUUM 한 번.
+    pub fn record_vacuum(&self, elapsed: Duration) {
+        self.vacuums.fetch_add(1, Ordering::Relaxed);
+        self.vacuum_us_sum
+            .fetch_add(as_micros(elapsed), Ordering::Relaxed);
     }
 
     /// checkpoint 한 번. `completed` 가 `false` 면 busy 로 끝난 것이고, 그때도 시간은
@@ -62,6 +87,11 @@ impl DbLatencyStats {
             checkpoint_us_sum: self.checkpoint_us_sum.load(Ordering::Relaxed),
             checkpoint_us_max: self.checkpoint_us_max.load(Ordering::Relaxed),
             checkpoints_busy: self.checkpoints_busy.load(Ordering::Relaxed),
+            writes_per_commit: std::array::from_fn(|i| {
+                self.writes_per_commit[i].load(Ordering::Relaxed)
+            }),
+            vacuums: self.vacuums.load(Ordering::Relaxed),
+            vacuum_us_sum: self.vacuum_us_sum.load(Ordering::Relaxed),
         }
     }
 }
@@ -76,6 +106,9 @@ pub struct DbLatencySnapshot {
     pub checkpoint_us_sum: u64,
     pub checkpoint_us_max: u64,
     pub checkpoints_busy: u64,
+    pub writes_per_commit: [u64; WRITES_PER_COMMIT_BUCKETS.len() + 1],
+    pub vacuums: u64,
+    pub vacuum_us_sum: u64,
 }
 
 impl DbLatencySnapshot {
@@ -118,6 +151,24 @@ mod tests {
         s.record_commit(Duration::from_millis(9));
         s.record_commit(Duration::from_millis(1));
         assert_eq!(s.snapshot().commit_us_max, 9_000);
+    }
+
+    #[test]
+    fn writes_per_commit_land_in_their_buckets() {
+        let s = DbLatencyStats::default();
+        for writes in [1, 2, 4, 5, 64, 65, 256, 257, 10_000] {
+            s.record_commit_writes(writes);
+        }
+        assert_eq!(s.snapshot().writes_per_commit, [1, 2, 1, 1, 2, 2]);
+    }
+
+    #[test]
+    fn vacuums_do_not_count_as_commits() {
+        let s = DbLatencyStats::default();
+        s.record_vacuum(Duration::from_millis(2));
+        let snap = s.snapshot();
+        assert_eq!((snap.vacuums, snap.vacuum_us_sum), (1, 2_000));
+        assert_eq!(snap.commits, 0);
     }
 
     #[test]

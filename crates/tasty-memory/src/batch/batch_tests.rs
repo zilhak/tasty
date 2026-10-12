@@ -1033,3 +1033,86 @@ fn the_test_storage_judges_batches_the_way_the_real_store_does() {
     assert_eq!(kind(&unit(&mut mock).unwrap_err()), "owned");
     assert_eq!(snapshot(&real), snapshot(&mock));
 }
+
+/// commit마다 확정된 쓰기 수가 분포에 들어간다. 단독 쓰기·정리는 1, 묶음·단위는 확정된 쓰기
+/// 수의 구간이다. VACUUM은 commit이 아니라 따로 센다.
+#[test]
+fn each_commit_lands_in_the_bucket_of_its_confirmed_writes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut s, _path) = disk_store(tmp.path());
+    let gauge = s.db_latency();
+    let expiring = PutOpts {
+        expires_at: Some(1),
+        cas: None,
+    };
+    s.put(HOST_OWNER, &Scope::Global, "old.1", &text("1"), &expiring)
+        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "log.1",
+        &text("1"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "log.2",
+        &text("2"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    let before = gauge.snapshot();
+    assert_eq!(before.writes_per_commit, [3, 0, 0, 0, 0, 0]);
+
+    assert_eq!(s.purge_expired().unwrap().regular, 1);
+    assert_eq!(s.prune_prefix_keep_recent("log.", 1).unwrap(), 1);
+    assert_eq!(s.purge_scope(&Scope::Surface(7)).unwrap().regular, 0);
+    let after = gauge.snapshot();
+    assert_eq!(
+        after.commits,
+        before.commits + 2,
+        "a cleanup that removed nothing does not commit"
+    );
+    assert_eq!(after.writes_per_commit, [5, 0, 0, 0, 0, 0]);
+
+    let ops: Vec<_> = (0..100)
+        .map(|i| put(HOST_OWNER, &format!("b.{i}"), "v", None))
+        .collect();
+    s.write_batch(BatchMode::Independent, &ops).unwrap();
+    s.run_unit(|s| {
+        s.put(
+            HOST_OWNER,
+            &Scope::Global,
+            "u.1",
+            &text("1"),
+            &PutOpts::default(),
+        )?;
+        s.prune_prefix_keep_recent("b.", 10).map(|_| ())
+    })
+    .unwrap();
+    let last = gauge.snapshot();
+    assert_eq!(
+        last.commits,
+        after.commits + 2,
+        "a cleanup inside a unit joins its commit"
+    );
+    assert_eq!(last.writes_per_commit, [5, 1, 0, 0, 1, 0]);
+
+    for i in 0..200 {
+        s.put(
+            HOST_OWNER,
+            &Scope::Global,
+            &format!("v.{i}"),
+            &text(&"x".repeat(2048)),
+            &PutOpts::default(),
+        )
+        .unwrap();
+    }
+    s.prune_prefix_keep_recent("v.", 0).unwrap();
+    let commits = gauge.snapshot().commits;
+    assert!(s.vacuum_if_fragmented(1).unwrap());
+    assert_eq!(gauge.snapshot().vacuums, 1);
+    assert_eq!(gauge.snapshot().commits, commits);
+}

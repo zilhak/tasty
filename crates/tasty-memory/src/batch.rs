@@ -402,6 +402,7 @@ impl MemoryStore {
         }
         if stage.writes > 0 {
             self.db_latency.record_commit(commit_started.elapsed());
+            self.db_latency.record_commit_writes(stage.writes);
         }
         self.regular_used_bytes = stage.regular_used;
         self.pending_changes.extend(stage.changes);

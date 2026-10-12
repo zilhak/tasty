@@ -1,4 +1,4 @@
-<!-- source-hash: 9b1e86dc3048 -->
+<!-- source-hash: 7eefb4806c30 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -357,13 +357,15 @@ Current usage and configured limits are identified separately below.
 | `queue_before_gate` | Queue wait, including requests later rejected by permission checks |
 | `handler_after_gate` | Processing time for requests that passed those checks |
 | `plugin_round_trip` | Wait time for plugin requests that received a response |
-| `db` | Time spent on database commits and WAL checkpoints |
+| `db` | Time spent on database commits and WAL checkpoints, the number of writes saved by each commit, and VACUUM runs counted separately |
 
 For long queue waits, check for a backlog. For long processing times, identify the commands involved.
 For long plugin waits, inspect the plugin’s log. Database timings help investigate storage work and
 contention; a high value alone does not prove a disk problem. Commit time is already included in
 handler time, so adding them double counts it. `checkpoints_busy` counts checkpoints that could not
-finish because another connection was using the database. Permission, usage-cap, and rate-limit
+finish because another connection was using the database. `writes_per_commit` is the distribution of
+writes saved by each commit, and database compaction (VACUUM), which is not counted as a commit,
+is counted separately in `vacuums`. Permission, usage-cap, and rate-limit
 refusals are counted separately in `gate_refusals` below.
 
 #### Connection counts and limits (`connections`)

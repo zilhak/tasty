@@ -136,7 +136,7 @@ DB 설정과 느린 요청 기록은 아래 표처럼 별도 항목이다.
 | `queue_before_gate` | 명령이 큐에서 나온 직후 (`App::process_ipc` · `pump_ipc`) | 큐에 앉았던 **전부** — 뒤에 거부될 요청도 센다 |
 | `handler_after_gate` | 게이트 통과 뒤 (`handle_checked_request`) | 실제로 **실행된 것만** |
 | `plugin_round_trip` | plugin 응답 매칭부 (`PluginManager::handle_plugin_response`) | 응답이 **매칭된 요청만** — 취소·만료된 것은 끝점이 없다 |
-| `db` | `MemoryStore` 의 `tx.commit()` 뒤 · `checkpoint_truncate` | **성공한** commit 과 시도된 checkpoint — 거부된 쓰기는 롤백이라 안 센다 |
+| `db` | `MemoryStore` 의 commit 뒤 · `vacuum_if_fragmented` · `checkpoint_truncate` | **성공한** commit 과 commit 당 쓰기 수, VACUUM, 시도된 checkpoint — 거부된 쓰기는 롤백이라 안 센다 |
 | `connections` | accept 루프의 자리 획득·반납 (`TcpIpcServer`) | 이 포트에 붙은 **TCP 연결 전부** — 요청을 하나도 안 보내는 attach·mesh 스트림도 센다 |
 | `db_pragmas` | DB 를 열 때 한 번 (`tasty_memory::pragma::apply_connection_pragmas`) | 누계가 아니다 — DB(`memory_db` · `state_db`)마다 요청값과 되읽은 실제값 |
 | `stream_push` | 스트림 허브의 push 와 write 스레드의 수신 (`tasty_ipc::stream_hub::StreamHub`) | 서버가 attach·mesh 스트림 연결로 **민 프레임** — 요청 하나 없이도 자란다 |
@@ -161,6 +161,12 @@ DB 설정과 느린 요청 기록은 아래 표처럼 별도 항목이다.
 `Core`가 공유하므로 진단 조회가 저장소 뮤텍스를 기다리지 않는다.
 checkpoint가 다른 연결의 읽기 때문에 끝나지 못하면 `checkpoints_busy`로 별도 집계한다.
 저장소를 열지 않은 시험 구성에서는 `commits`가 0이다.
+
+`writes_per_commit`은 commit 하나에 확정된 쓰기 수의 분포다. `le`가 구간 상한(1·4·16·64·256)이고
+`counts`는 그 구간과 마지막의 256 초과 구간의 commit 수다. 단독 쓰기는 1 구간에, 실행 단위·쓰기
+묶음은 확정된 쓰기 수의 구간에 들어간다. 행을 지운 정리 연산(`purge_expired`·`purge_scope`·`prune_*`)도
+자기 transaction이나 속한 실행 단위의 commit으로 센다. `vacuums`·`vacuum_us_sum`은 부팅 정비의
+VACUUM이며 commit 수에 들어가지 않는다.
 
 #### TCP 연결 수와 대기
 

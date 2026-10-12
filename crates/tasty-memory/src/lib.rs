@@ -36,7 +36,7 @@ pub mod writer;
 pub use batch::{BatchFailure, BatchMode, BatchResult, WriteOp, WriteOutput, with_unit};
 pub use failure::StorageFailure;
 pub use fallback::InitFallback;
-pub use latency::{DbLatencySnapshot, DbLatencyStats};
+pub use latency::{DbLatencySnapshot, DbLatencyStats, WRITES_PER_COMMIT_BUCKETS};
 pub use port::{MemoryStorage, STORE_LOCK_POISONED, STORE_LOCK_WHAT};
 
 use std::path::{Path, PathBuf};
@@ -869,7 +869,9 @@ impl MemoryStore {
         if free < min_free_pages {
             return Ok(false);
         }
+        let started = std::time::Instant::now();
         self.conn.execute_batch("VACUUM")?;
+        self.db_latency.record_vacuum(started.elapsed());
         Ok(true)
     }
 }

@@ -8,6 +8,8 @@
 //!   취소·기한 만료·플러그인 종료로 응답이 없으면 포함하지 않는다.
 //! - db: MemoryStore의 성공한 commit과 부팅 시 WAL checkpoint 시간.
 //!   commit은 handler 시간에도 포함된다. 완료하지 못한 checkpoint는 busy로 따로 센다.
+//!   writes_per_commit은 commit 하나에 확정된 쓰기 수의 분포다. VACUUM은 vacuums로 commit과
+//!   따로 센다.
 //!
 //! commands와 calls의 차이를 거절 수로 해석하지 않는다. App에서 바로 처리되어
 //! handle_checked_request를 거치지 않는 요청도 있다. 거절 수는 gate_refusals로 확인한다.
@@ -384,6 +386,12 @@ pub(super) fn snapshot_json(
             "checkpoint_us_sum": d.checkpoint_us_sum,
             "checkpoint_us_max": d.checkpoint_us_max,
             "checkpoint_us_mean": d.checkpoint_us_mean(),
+            "writes_per_commit": {
+                "le": tasty_memory::WRITES_PER_COMMIT_BUCKETS,
+                "counts": d.writes_per_commit,
+            },
+            "vacuums": d.vacuums,
+            "vacuum_us_sum": d.vacuum_us_sum,
         },
         "connections": {
             "live": c.live,
@@ -490,6 +498,27 @@ mod tests {
             v["handler_after_gate"].get("commits").is_none(),
             "DB 계측을 handler 계측에 포함하면 안 된다"
         );
+    }
+
+    #[test]
+    fn commit_sizes_and_vacuums_are_reported_apart_from_commits() {
+        let d = DbLatencyStats::default();
+        d.record_commit(Duration::from_micros(40));
+        d.record_commit_writes(100);
+        d.record_vacuum(Duration::from_micros(300));
+
+        let v = snapshot_json(
+            &PressureStats::default().snapshot(),
+            &PluginWaitStats::default().snapshot(),
+            &d.snapshot(),
+            &ConnectionStats::default().snapshot(),
+        );
+        let db = &v["db"];
+        assert_eq!(db["commits"], 1);
+        assert_eq!(db["writes_per_commit"]["le"], json!([1, 4, 16, 64, 256]));
+        assert_eq!(db["writes_per_commit"]["counts"], json!([0, 0, 0, 0, 1, 0]));
+        assert_eq!(db["vacuums"], 1);
+        assert_eq!(db["vacuum_us_sum"], 300);
     }
 
     // 응답 조립뿐 아니라 실제 라우터 연결도 검사한다.

@@ -266,7 +266,8 @@ target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
 - `system.pressure.db`와 `DbLatencyStats`는 memory.db만 센다. state.db와 journal.db의 commit은 이 값에 없다.
 - commit 계측은 `put`·`delete`·`put_secret`·`delete_secret`·`purge_expired`·`purge_scope`·`prune_prefix_keep_recent`·`prune_prefix_older_than`의 명시 transaction을 센다. `import_regular`는 항목마다 `put`을 거치므로 세어진다. 정리 연산은 행을 하나 이상 지웠을 때만 센다.
 - 실행 단위와 쓰기 묶음은 확정된 쓰기가 있으면 요청 수와 관계없이 commit 1회로 센다. 단위 안에서 실행한 정리 연산도 그 commit에 포함된다([저장 계약](storage-contract.md#실행-단위와-쓰기-묶음)).
-- `vacuum_if_fragmented`의 자동 commit은 세지 않는다. harness의 `maintenance_paths`는 정리 호출마다 늘어난 commit 수를 기록한다. 2026-10-12 debug 빌드 1회 실행에서 `purge_expired` 1행, prune 190행, `purge_scope` 1행 삭제가 각각 commit 1회로 세어졌다.
+- `vacuum_if_fragmented`의 VACUUM은 commit 수에 넣지 않고 `vacuums`·`vacuum_us_sum`으로 따로 센다. harness의 `maintenance_paths`는 정리 호출마다 늘어난 commit 수를 기록한다. 2026-10-12 debug 빌드 1회 실행에서 `purge_expired` 1행, prune 190행, `purge_scope` 1행 삭제가 각각 commit 1회로 세어졌다.
+- commit 하나에 확정된 쓰기 수는 `writes_per_commit` 분포(구간 상한 1·4·16·64·256)로 센다. 단독 쓰기와 묶음을 구분할 수 있다.
 - 메인 루프 지연은 `queue_before_gate`의 대기 시간과 `handler_after_gate`의 실행 시간으로 간접 확인한다. 이벤트 루프 한 회차의 길이를 직접 재는 계측은 없다.
 
 ## 텍스트 파일을 SQLite 로 옮기지 않는 이유
