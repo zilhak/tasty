@@ -4,10 +4,55 @@
 use std::path::PathBuf;
 
 use crate::adapters::ui::ToastScope;
+use crate::app::explorer_files::Operation;
+use crate::explorer_ui::view::drag::Verdict;
 use crate::state::DropHoverState;
 use tasty_type_geometry::length::PhysicalPx;
 
 use super::MainView;
+
+/// 놓은 OS 파일을 보낼 곳.
+#[derive(Debug, PartialEq)]
+enum Route {
+    /// hover 중에 explorer 칸이 정해 둔 폴더.
+    Hovered(u32, PathBuf, Verdict),
+    /// 놓은 좌표를 모른다. 무시한다.
+    NoCursor,
+    /// 터미널 영역 밖. 안내하고 무시한다.
+    Outside,
+    /// 놓은 좌표(물리 px) 아래 칸이 받는다. explorer 칸이면 그 폴더로, 아니면 파일을 연다.
+    AtCursor(f32, f32),
+}
+
+/// hover 가 정한 explorer 칸이 먼저다. 없으면 놓은 좌표와 그 좌표가 터미널 영역 안인지로 정한다.
+fn route(hovered: Option<(u32, PathBuf, Verdict)>, cursor: Option<((f32, f32), bool)>) -> Route {
+    match (hovered, cursor) {
+        (Some((sid, dest, decided)), _) => Route::Hovered(sid, dest, decided),
+        (None, None) => Route::NoCursor,
+        (None, Some((_, false))) => Route::Outside,
+        (None, Some(((x, y), true))) => Route::AtCursor(x, y),
+    }
+}
+
+/// explorer 칸에 놓은 OS 파일의 작업. 판정이 이동이어도 OS 에서 온 파일은 복사한다. 거절이면 안내 문구다.
+fn explorer_drop(
+    decided: Verdict,
+    dest: PathBuf,
+    paths: Vec<PathBuf>,
+) -> Result<Operation, String> {
+    match decided {
+        Verdict::Go(_) => Ok(Operation::Paste {
+            paths,
+            destination: dest,
+            cut: false,
+        }),
+        Verdict::No(reason) => Err(format!(
+            "{}{}",
+            crate::i18n::t("explorer.drag.refused"),
+            crate::i18n::t_fmt("explorer.drag.refused_reason", crate::i18n::t(reason)),
+        )),
+    }
+}
 
 impl MainView {
     pub(crate) fn handle_hovered_file(&mut self, path: PathBuf) {
@@ -44,31 +89,19 @@ impl MainView {
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface: u32,
         dest: PathBuf,
-        decided: crate::explorer_ui::view::drag::Verdict,
+        decided: Verdict,
         paths: Vec<PathBuf>,
     ) {
-        use crate::explorer_ui::view::drag::Verdict;
-        match decided {
-            Verdict::Go(_) => self.state.request_explorer_file_direct(
+        match explorer_drop(decided, dest, paths) {
+            Ok(operation) => self.state.request_explorer_file_direct(
                 engine,
                 surface,
-                crate::app::explorer_files::Operation::Paste {
-                    paths,
-                    destination: dest,
-                    cut: false,
-                },
+                operation,
                 crate::intent::IntentOrigin::User {
                     source: crate::intent::UserSource::Menu("explorer_os_drop"),
                 },
             ),
-            Verdict::No(reason) => {
-                let text = format!(
-                    "{}{}",
-                    crate::i18n::t("explorer.drag.refused"),
-                    crate::i18n::t_fmt("explorer.drag.refused_reason", crate::i18n::t(reason)),
-                );
-                self.state.toasts.push_info(text, ToastScope::Window);
-            }
+            Err(text) => self.state.toasts.push_info(text, ToastScope::Window),
         }
         self.base.state.dirty = true;
     }
@@ -82,27 +115,32 @@ impl MainView {
         if drops.is_empty() {
             return;
         }
-        if let Some((sid, dest, decided)) =
-            crate::explorer_ui::view::drag::take_os_drop(&mut self.state.explorer_views)
-        {
-            self.drop_into_explorer(engine, sid, dest, decided, drops);
-            return;
-        }
-        let Some(pos) = self.cursor_position else {
-            tracing::warn!(
-                count = drops.len(),
-                "file drop with no cursor position — ignored",
-            );
-            return;
-        };
+        let hovered = crate::explorer_ui::view::drag::take_os_drop(&mut self.state.explorer_views);
         let terminal_rect = self.compute_terminal_rect();
-        let (x, y) = (pos.x as f32, pos.y as f32);
-        if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-            self.state
-                .toasts
-                .push_info(crate::i18n::t("file_drop.outside"), ToastScope::Window);
-            return;
-        }
+        let cursor = self.cursor_position.map(|pos| {
+            let (x, y) = (pos.x as f32, pos.y as f32);
+            ((x, y), terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)))
+        });
+        let (x, y) = match route(hovered, cursor) {
+            Route::Hovered(sid, dest, decided) => {
+                self.drop_into_explorer(engine, sid, dest, decided, drops);
+                return;
+            }
+            Route::NoCursor => {
+                tracing::warn!(
+                    count = drops.len(),
+                    "file drop with no cursor position — ignored",
+                );
+                return;
+            }
+            Route::Outside => {
+                self.state
+                    .toasts
+                    .push_info(crate::i18n::t("file_drop.outside"), ToastScope::Window);
+                return;
+            }
+            Route::AtCursor(x, y) => (x, y),
+        };
         {
             let scale_factor = self.base.gpu.scale_factor();
             // best-effort focus 이동. drop 좌표에 pane/surface 가 없으면 현재 focus 유지.
@@ -143,3 +181,7 @@ impl MainView {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "file_drop_tests.rs"]
+mod tests;
