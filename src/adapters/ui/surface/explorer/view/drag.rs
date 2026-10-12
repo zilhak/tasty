@@ -323,14 +323,17 @@ fn same_volume(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// 링크·마운트 폴더·UNC 를 따라간 실제 볼륨의 일련번호로 비교한다. 읽지 못하면 복사가 기본이다.
 #[cfg(windows)]
 fn same_volume(a: &Path, b: &Path) -> bool {
-    let root = |p: &Path| {
-        p.components()
-            .next()
-            .map(|c| c.as_os_str().to_ascii_lowercase())
+    let serial = |p: &Path| {
+        let file = win::open(p, 0).ok()?;
+        win::volume(&file).map(|(serial, _)| serial)
     };
-    root(a) == root(b)
+    match (serial(a), serial(b)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -348,10 +351,66 @@ fn writable(dir: &Path) -> bool {
     unsafe { libc::access(c.as_ptr(), libc::W_OK) == 0 }
 }
 
-#[cfg(not(unix))]
+/// 폴더에 항목을 만들 권한을 ACL 로 확인하고, 읽기 전용 볼륨이면 거절한다. 폴더의 읽기 전용 속성은
+/// 쓰기를 막지 않으므로 보지 않는다.
+#[cfg(windows)]
 fn writable(dir: &Path) -> bool {
-    // Windows 폴더의 읽기 전용 속성은 쓰기를 막지 않는다. 실제 거부는 작업이 이유와 함께 보고한다.
+    use windows::Win32::Storage::FileSystem::{FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY};
+    use windows::Win32::System::SystemServices::FILE_READ_ONLY_VOLUME;
+    match win::open(dir, (FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY).0) {
+        Ok(file) => win::volume(&file).is_none_or(|(_, flags)| flags & FILE_READ_ONLY_VOLUME == 0),
+        Err(_) => false,
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn writable(dir: &Path) -> bool {
     std::fs::metadata(dir).is_ok()
+}
+
+#[cfg(windows)]
+mod win {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use std::path::Path;
+
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        GetVolumeInformationByHandleW,
+    };
+
+    /// 파일과 폴더를 모두 연다. `access` 가 0 이면 속성만 읽고, 권한이 없으면 `PermissionDenied` 다.
+    pub(super) fn open(path: &Path, access: u32) -> std::io::Result<std::fs::File> {
+        std::fs::OpenOptions::new()
+            .access_mode(access)
+            .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0)
+            .open(path)
+    }
+
+    /// 핸들이 가리키는 볼륨의 일련번호와 파일시스템 플래그.
+    pub(super) fn volume(file: &std::fs::File) -> Option<(u32, u32)> {
+        let (mut serial, mut flags) = (0u32, 0u32);
+        // SAFETY: 핸들은 `file` 이 살아 있는 동안 유효하고, 출력 포인터는 이 함수의 지역 변수를 가리킨다.
+        let read = unsafe {
+            GetVolumeInformationByHandleW(
+                HANDLE(file.as_raw_handle()),
+                None,
+                Some(&mut serial),
+                None,
+                Some(&mut flags),
+                None,
+            )
+        };
+        match read {
+            Ok(()) => Some((serial, flags)),
+            Err(e) => {
+                tracing::debug!(error = %e, "explorer drag: volume information unavailable");
+                None
+            }
+        }
+    }
 }
 
 fn held(mods: egui::Modifiers, super_held: bool, flip: Option<Combo>) -> bool {
