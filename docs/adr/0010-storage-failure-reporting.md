@@ -30,6 +30,12 @@ fallback에서 memory.db를 쓰는 IPC 성공 객체에는 durable:false를 추�
 초기화와 쓰기는 공용 StorageFailure 분류를 사용한다.
 쓰기는 기존 오류 코드·문구를 유지하고 구조화된 원인을 추가한다.
 commit 실패 시 quota와 변경 알림 버퍼는 갱신하지 않는다.
+
+여러 쓰기를 transaction 하나로 묶는 실행 단위·쓰기 묶음과 memory writer의 묶음에도 같은 분류를 적용한다.
+저장 실패는 묶음 단위다. 묶음 안의 쓰기나 읽기에서 저장 실패가 나거나 commit이 실패하면 묶음 전체를 되돌린다.
+거절(owner·CAS·quota 등)은 그 요청만 되돌리며 묶음의 다른 요청은 확정한다.
+writer는 묶음의 각 요청에 저장 실패를 따로 전달하고, 확정 여부를 알 수 없는 실패는 확정 실패와 구분해 알린다.
+quota 카운터와 변경 알림 버퍼는 묶음 commit이 성공한 뒤에만 한 번에 반영한다.
 공유 memory mutex의 poison 보고 여부는 port가 관리하여 같은 잠금의 오류를 중복 보고하지 않는다.
 
 ## Consequences
@@ -41,6 +47,7 @@ commit 실패 시 quota와 변경 알림 버퍼는 갱신하지 않는다.
 NORMAL은 전원 장애 때 최신 commit을 보장하지 않는다.
 READONLY 같은 오류의 기존 분류와 Read 메서드의 부수 쓰기에는 문서화된 한계가 남는다.
 poison 복구 규칙은 memory store에 대한 것이며 프레임 stream에 일반화하지 않는다.
+묶음의 저장 실패 하나는 같은 묶음에 함께 들어간 다른 요청까지 실패시킨다.
 
 ## Alternatives Considered
 
@@ -49,6 +56,7 @@ poison 복구 규칙은 memory store에 대한 것이며 프레임 stream에 일
 - memory fallback을 없애거나 모든 쓰기를 거절하면 세션 동안 가능한 작업까지 중단된다.
 - 오류마다 새 IPC 코드를 만들면 기존 코드 소비자의 호환이 깨진다.
 - 정상 응답에도 durable:true를 일괄 추가하면 모든 성공 응답이 바뀐다.
+- 묶음에서 저장 실패를 낸 요청만 빼고 나머지를 확정하면, SQLite가 transaction을 스스로 되돌린 경우 확정됐다고 알린 쓰기가 실제로는 남지 않을 수 있다.
 
 ## Reconsideration Triggers
 
@@ -62,6 +70,7 @@ poison 복구 규칙은 memory store에 대한 것이며 프레임 stream에 일
 ## References
 
 - [설정 적용과 저장 실패](../design/systems/storage.md)
+- [실행 단위와 쓰기 묶음, 저장 실행기](../design/systems/storage-contract.md)
 - [memory 가시성](../design/systems/memory.md)
 - [오류와 poison 처리](../dev-guide/error-handling.md)
-- 구현: `crates/tasty-memory/src/pragma.rs`, `crates/tasty-memory/src/failure.rs`, `src/adapters/ipc/handler/memory.rs`.
+- 구현: `crates/tasty-memory/src/pragma.rs`, `crates/tasty-memory/src/failure.rs`, `crates/tasty-memory/src/batch.rs`, `crates/tasty-memory/src/writer.rs`, `src/adapters/ipc/handler/memory.rs`.
