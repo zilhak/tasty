@@ -92,9 +92,7 @@ impl TerminalState {
         if lines_to_scroll > 0 {
             let captured = self.capture_top_lines(lines_to_scroll);
             let count = captured.len();
-            for line in captured {
-                self.scrollback.push_line(line);
-            }
+            self.scrollback.push_lines(captured);
             // These lines are owed back to a symmetric grow.
             self.restorable_scrollback_count += count;
             for _ in 0..count.min(self.saved_line_tails.len()) {

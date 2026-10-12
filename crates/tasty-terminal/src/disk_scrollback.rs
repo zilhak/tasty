@@ -1,5 +1,5 @@
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use termwiz::cell::CellAttributes;
@@ -64,10 +64,25 @@ pub struct DiskScrollback {
     line_offsets: Vec<u64>,
     /// File size.
     file_size: u64,
+    /// Write handle held for the owner's lifetime so appends never reopen the path.
+    /// Drop takes it first: Windows cannot remove a file while a handle is open.
+    writer: Option<File>,
+    /// False after a failed append, when the handle position may be past `file_size`.
+    position_known: bool,
     /// Read-side opens of the backing file, for tests that pin the per-call open count.
     #[cfg(test)]
     read_opens: std::sync::atomic::AtomicUsize,
+    /// `push_lines` calls that wrote at least one line, for tests that pin batching.
+    #[cfg(test)]
+    push_batches: usize,
+    /// Fail the append that would write past this many more bytes, for rollback tests.
+    #[cfg(test)]
+    fail_append_after: Option<usize>,
 }
+
+/// Records are serialized into a buffer of about this size before each write, so a large
+/// batch does not hold its whole serialized form in memory.
+pub(crate) const WRITE_CHUNK: usize = 1 << 20;
 
 impl DiskScrollback {
     pub fn new(surface_id: u32) -> std::io::Result<Self> {
@@ -82,42 +97,111 @@ impl DiskScrollback {
         let dir = std::env::temp_dir().join(subdir);
         std::fs::create_dir_all(&dir)?;
         let (file_path, mut f) = create_instance_file(&dir, surface_id)?;
-        let owner = Self {
+        let mut owner = Self {
             file_path,
             disk_line_count: 0,
             line_offsets: Vec::new(),
             file_size: HEADER_LEN,
+            writer: None,
+            position_known: true,
             #[cfg(test)]
             read_opens: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            push_batches: 0,
+            #[cfg(test)]
+            fail_append_after: None,
         };
         let initialized = (|| {
             f.write_all(FILE_MAGIC)?;
             f.write_all(&FORMAT_VERSION.to_le_bytes())?;
             f.flush()
         })();
-        // Close the file before failure drops the path owner, including on Windows.
-        drop(f);
-        initialized?;
+        if let Err(e) = initialized {
+            // Close the file before failure drops the path owner, including on Windows.
+            drop(f);
+            return Err(e);
+        }
+        owner.writer = Some(f);
         Ok(owner)
     }
 
-    /// Write lines to disk. Returns number of lines written.
+    /// Append lines to disk through the held handle. Returns number of lines written.
+    ///
+    /// All or nothing: on error no line of the batch is recorded, the counters keep their
+    /// previous values and the file is cut back to the last complete record, so the next
+    /// batch starts where the failed one did.
     pub fn push_lines(&mut self, lines: &[ScrollbackLine]) -> std::io::Result<usize> {
-        let file = OpenOptions::new().append(true).open(&self.file_path)?;
-        let mut writer = BufWriter::new(file);
-
-        for line in lines {
-            self.line_offsets.push(self.file_size);
-            let bytes = serialize_line(line);
-            let len = bytes.len() as u32;
-            writer.write_all(&len.to_le_bytes())?;
-            writer.write_all(&bytes)?;
-            self.file_size += 4 + bytes.len() as u64;
-            self.disk_line_count += 1;
+        if lines.is_empty() {
+            return Ok(0);
         }
-
-        writer.flush()?;
+        #[cfg(test)]
+        {
+            self.push_batches += 1;
+        }
+        let start = self.file_size;
+        let mut offsets = Vec::with_capacity(lines.len());
+        let mut written = 0u64;
+        let mut buf = Vec::new();
+        let result = (|| {
+            for line in lines {
+                offsets.push(start + written + buf.len() as u64);
+                let bytes = serialize_line(line);
+                buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                buf.extend_from_slice(&bytes);
+                if buf.len() >= WRITE_CHUNK {
+                    self.append(&buf)?;
+                    written += buf.len() as u64;
+                    buf.clear();
+                }
+            }
+            self.append(&buf)?;
+            written += buf.len() as u64;
+            Ok(())
+        })();
+        if let Err(e) = result {
+            self.discard_from(start);
+            return Err(e);
+        }
+        self.line_offsets.extend(offsets);
+        self.file_size = start + written;
+        self.disk_line_count += lines.len();
         Ok(lines.len())
+    }
+
+    fn append(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        let file = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("disk scrollback writer is closed"))?;
+        if !self.position_known {
+            file.seek(SeekFrom::Start(self.file_size))?;
+            self.position_known = true;
+        }
+        #[cfg(test)]
+        if let Some(budget) = self.fail_append_after {
+            if bytes.len() <= budget {
+                self.fail_append_after = Some(budget - bytes.len());
+            } else {
+                self.fail_append_after = None;
+                file.write_all(&bytes[..budget])?;
+                return Err(std::io::Error::other("injected append failure"));
+            }
+        }
+        file.write_all(bytes)
+    }
+
+    /// Drop bytes past `size` after a failed append. If truncation fails the stale tail
+    /// stays, but no offset points into it and the next append seeks back over it.
+    fn discard_from(&mut self, size: u64) {
+        self.position_known = false;
+        if let Some(file) = &self.writer
+            && let Err(e) = file.set_len(size)
+        {
+            tracing::warn!("disk scrollback tail truncation failed: {e}");
+        }
     }
 
     /// Read a line from disk by index.
@@ -185,10 +269,13 @@ impl DiskScrollback {
     /// Discard all on-disk scrollback, truncating the file back to just the
     /// header. Used by ED3 (`CSI 3J`) erase-scrollback.
     pub fn clear(&mut self) -> std::io::Result<()> {
-        let mut f = File::create(&self.file_path)?;
-        f.write_all(FILE_MAGIC)?;
-        f.write_all(&FORMAT_VERSION.to_le_bytes())?;
-        f.flush()?;
+        let file = self
+            .writer
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("disk scrollback writer is closed"))?;
+        // The header stays; the next append seeks to its end.
+        file.set_len(HEADER_LEN)?;
+        self.position_known = false;
         self.disk_line_count = 0;
         self.line_offsets.clear();
         self.file_size = HEADER_LEN;
@@ -222,6 +309,8 @@ fn create_instance_file(
 
 impl Drop for DiskScrollback {
     fn drop(&mut self) {
+        // Close the write handle first; Windows refuses to remove an open file.
+        drop(self.writer.take());
         if let Err(e) = std::fs::remove_file(&self.file_path)
             && e.kind() != std::io::ErrorKind::NotFound
         {
@@ -444,6 +533,18 @@ impl DiskScrollback {
 
     pub(crate) fn read_opens(&self) -> usize {
         self.read_opens.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn push_batches(&self) -> usize {
+        self.push_batches
+    }
+
+    pub(crate) fn fail_append_after(&mut self, bytes: usize) {
+        self.fail_append_after = Some(bytes);
+    }
+
+    pub(crate) fn file_size(&self) -> u64 {
+        self.file_size
     }
 }
 

@@ -218,9 +218,11 @@ impl Scrollback {
         }
     }
 
-    /// Push a line to the back of the scrollback buffer.
-    pub fn push_line(&mut self, line: ScrollbackLine) {
-        self.lines.push_back(line);
+    /// Push lines oldest first, then spill the overflow to disk as one batch.
+    /// The stored rows are the same as pushing the lines one call each, unless the disk
+    /// write fails.
+    pub fn push_lines(&mut self, lines: impl IntoIterator<Item = ScrollbackLine>) {
+        self.lines.extend(lines);
         self.flush_to_disk();
     }
 
@@ -344,22 +346,24 @@ impl Scrollback {
         }
     }
 
-    /// Flush excess scrollback lines to disk (if disk swap is enabled).
+    /// Move lines over the limit to disk in one write, or drop them without disk swap.
     pub(crate) fn flush_to_disk(&mut self) {
-        while self.lines.len() > self.limit {
-            if let Some(ds) = &mut self.disk {
-                if let Some(line) = self.lines.pop_front()
-                    && let Err(e) = ds.push_lines(&[line])
-                {
-                    // The popped row is lost between retained disk and memory
-                    // ranges. A new content epoch prevents anchors aliasing rows.
-                    self.epoch = crate::ContentEpoch::fresh();
-                    self.first_row = 0;
-                    tracing::warn!("disk scrollback push failed: {e}");
-                }
-            } else if self.lines.pop_front().is_some() {
-                self.first_row = self.first_row.saturating_add(1);
-            }
+        let excess = self.lines.len().saturating_sub(self.limit);
+        if excess == 0 {
+            return;
+        }
+        let Some(ds) = &mut self.disk else {
+            self.lines.drain(..excess);
+            self.first_row = self.first_row.saturating_add(excess);
+            return;
+        };
+        let spilled: Vec<ScrollbackLine> = self.lines.drain(..excess).collect();
+        if let Err(e) = ds.push_lines(&spilled) {
+            // The whole batch is lost between the retained disk and memory ranges; the disk
+            // keeps its earlier rows. A new content epoch prevents anchors aliasing rows.
+            self.epoch = crate::ContentEpoch::fresh();
+            self.first_row = 0;
+            tracing::warn!("disk scrollback push of {excess} rows failed: {e}");
         }
     }
 }
@@ -467,9 +471,7 @@ impl TerminalState {
     /// Used to restore scrollback after recreating a terminal (closed-item / layout restore).
     pub fn inject_scrollback(&mut self, lines: Vec<crate::ScrollbackLine>) {
         self.content_revision = self.content_revision.wrapping_add(1);
-        for line in lines {
-            self.scrollback.push_line(line);
-        }
+        self.scrollback.push_lines(lines);
     }
 
     /// Pop up to `count` lines from the back of scrollback and draw them at the
@@ -553,9 +555,7 @@ impl TerminalState {
     /// viewport-relative bookkeeping consistent (line tails + scroll offset).
     pub(crate) fn push_scrolled_off(&mut self, captured: Vec<crate::scrollback::ScrollbackLine>) {
         let count = captured.len();
-        for line in captured {
-            self.scrollback.push_line(line);
-        }
+        self.scrollback.push_lines(captured);
         // Shift saved_line_tails: remove top entries that scrolled off
         for _ in 0..count.min(self.saved_line_tails.len()) {
             self.saved_line_tails.remove(0);
@@ -782,7 +782,15 @@ impl Scrollback {
     pub(crate) fn disk_read_opens(&self) -> usize {
         self.disk.as_ref().map_or(0, |disk| disk.read_opens())
     }
+
+    pub(crate) fn disk_push_batches(&self) -> usize {
+        self.disk.as_ref().map_or(0, |disk| disk.push_batches())
+    }
 }
+
+#[cfg(test)]
+#[path = "scrollback_disk_write_tests.rs"]
+mod disk_write_tests;
 
 #[cfg(test)]
 #[path = "scrollback_disk_read_tests.rs"]
@@ -794,18 +802,17 @@ mod viewport_tests {
 
     #[test]
     fn lost_disk_spill_invalidates_the_content_timeline() {
-        // Remove only this test's own backing file, making append deterministically fail.
         let id = u32::MAX - 703;
         let mut history = Scrollback::new();
         history.enable_disk(id);
         assert!(history.disk.is_some());
-        std::fs::remove_file(history.disk.as_ref().unwrap().backing_file()).unwrap();
+        history.disk.as_mut().unwrap().fail_append_after(0);
         history.set_limit(0);
         let epoch = history.epoch;
-        history.push_line(ScrollbackLine::new(
+        history.push_lines([ScrollbackLine::new(
             vec![("lost".into(), CellAttributes::default())],
             false,
-        ));
+        )]);
         assert_eq!(history.total_len(), 0);
         assert_ne!(history.epoch, epoch);
     }
