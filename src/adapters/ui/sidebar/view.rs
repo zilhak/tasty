@@ -1196,13 +1196,14 @@ fn draw_collapsed_avatar(
 
     let (rect, resp) = ui.allocate_exact_size(collapsed_ws_size(th), egui::Sense::click());
     *resize_priority_hovered |= resp.hovered();
+    let radius = th.corner_radius.value();
     if ws.is_active {
         ui.painter()
-            .rect_filled(rect, 4.0, th.overlay_active().to_egui_premultiplied());
+            .rect_filled(rect, radius, th.overlay_active().to_egui_premultiplied());
     }
     if resp.hovered() {
         ui.painter()
-            .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+            .rect_filled(rect, radius, th.hover_overlay.to_egui_premultiplied());
     }
     // 키캡으로 바꿔도 모서리 상태 점은 유지한다.
     let fade = crate::adapters::ui::switch_overlay::appear_fade(
@@ -1242,7 +1243,7 @@ fn draw_collapsed_avatar(
     if ws.attached {
         ui.painter().rect_stroke(
             rect,
-            4.0,
+            radius,
             egui::Stroke::new(
                 th.status_dot_attached_ring_width().value(),
                 th.border_attached(),
