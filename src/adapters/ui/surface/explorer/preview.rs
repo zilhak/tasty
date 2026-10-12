@@ -629,4 +629,214 @@ mod tests {
         assert_eq!(pane.width, Some(320.0));
         assert_eq!(pane.take_change(), None);
     }
+
+    use super::super::view::{ExplorerViewStore, LoadState};
+    use crate::app::local_reads::LocalReads;
+    use std::path::Path;
+
+    const FIT: u32 = 100;
+
+    fn listed(path: &Path) -> DirEntryInfo {
+        crate::core::fs_list::read_dir_entries(path.parent().unwrap())
+            .unwrap()
+            .into_iter()
+            .find(|e| e.path == path)
+            .expect("listed")
+    }
+
+    fn write_text(path: &Path, text: &str, at: u64) -> DirEntryInfo {
+        std::fs::write(path, text).unwrap();
+        let file = std::fs::File::options().write(true).open(path).unwrap();
+        file.set_modified(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(at))
+            .unwrap();
+        drop(file);
+        listed(path)
+    }
+
+    /// 요청을 worker 에 넘기기만 하고 끝나기를 기다린다. 결과는 받지 않은 채 영수증 채널에 남는다.
+    fn submit_and_wait(pane: &mut PreviewPane, owner: &mut LocalReads) {
+        owner.drive(|requests| {
+            pane.poll(requests);
+            true
+        });
+        owner.wait_idle();
+    }
+
+    /// 읽기가 끝날 때까지 받는다.
+    fn settle(pane: &mut PreviewPane, owner: &mut LocalReads) {
+        while pane.query.is_some() {
+            owner.reap();
+            owner.drive(|requests| {
+                pane.poll(requests);
+                true
+            });
+            std::thread::yield_now();
+        }
+    }
+
+    fn text_of(pane: &PreviewPane) -> Option<&str> {
+        match &pane.body {
+            Body::Text(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    fn shutdown(mut owner: LocalReads) {
+        while owner.poll_shutdown() != 0 {
+            std::thread::yield_now();
+        }
+    }
+
+    /// 넓은 칸에 패널을 한 번 그린다. 그린 글자를 돌려준다.
+    fn frame(view: &mut ExplorerView) -> Vec<String> {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let ctx = egui::Context::default();
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ctx, |ui| {
+                    split(ui, &theme, view, "test");
+                });
+        });
+        output
+            .shapes
+            .into_iter()
+            .filter_map(|s| match s.shape {
+                egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_late_result_for_the_previous_target_never_replaces_the_new_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = write_text(&dir.path().join("a.txt"), "alpha", 1_000_000);
+        let b = write_text(&dir.path().join("b.txt"), "beta", 1_000_000);
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let sub = listed(&dir.path().join("sub"));
+        let mut owner = LocalReads::default();
+        let mut pane = PreviewPane::default();
+
+        pane.retarget(Some(&a), false, FIT);
+        submit_and_wait(&mut pane, &mut owner);
+        pane.retarget(Some(&b), false, FIT);
+        settle(&mut pane, &mut owner);
+        assert_eq!(text_of(&pane), Some("beta"));
+
+        // 새 대상이 읽지 않는 항목(폴더)이나 선택 없음이어도 앞 결과가 들어오지 않는다.
+        for (label, next) in [("folder", Some(&sub)), ("none", None)] {
+            pane.retarget(Some(&a), false, FIT);
+            submit_and_wait(&mut pane, &mut owner);
+            pane.retarget(next, false, FIT);
+            let mut changed = false;
+            owner.drive(|requests| {
+                changed |= pane.poll(requests);
+                true
+            });
+            assert!(!changed, "the old read is dropped for {label}");
+            assert!(text_of(&pane).is_none());
+        }
+        shutdown(owner);
+    }
+
+    #[test]
+    fn a_new_modified_time_reads_the_same_file_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        let mut owner = LocalReads::default();
+        let mut pane = PreviewPane::default();
+        let old = write_text(&path, "first", 1_000_000);
+        pane.retarget(Some(&old), false, FIT);
+        settle(&mut pane, &mut owner);
+        assert_eq!(text_of(&pane), Some("first"));
+
+        let new = write_text(&path, "second", 2_000_000);
+        pane.retarget(Some(&new), false, FIT);
+        assert!(
+            matches!(pane.body, Body::Loading),
+            "the old text is cleared"
+        );
+        settle(&mut pane, &mut owner);
+        assert_eq!(text_of(&pane), Some("second"));
+        shutdown(owner);
+    }
+
+    #[test]
+    fn closing_the_tab_leaves_no_late_preview_of_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first");
+        let second = dir.path().join("second");
+        std::fs::create_dir(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
+        let file = write_text(&first.join("a.txt"), "first tab", 1_000_000);
+        let mut panel = tasty_model::ExplorerPanel::new(7, first.clone());
+        panel.add_tab();
+        panel.active_tab_mut().navigate_to(second.clone());
+        panel.active = 0;
+        let mut owner = LocalReads::default();
+        let mut store = ExplorerViewStore::default();
+        let loaded = |store: &mut ExplorerViewStore, owner: &mut LocalReads| loop {
+            owner.reap();
+            owner.drive(|requests| {
+                store.poll_local_reads(requests);
+                true
+            });
+            if !matches!(store.get(7).unwrap().state, LoadState::Loading) {
+                return;
+            }
+            std::thread::yield_now();
+        };
+        store.get_or_init(&panel, None);
+        loaded(&mut store, &mut owner);
+        let view = store.get_mut(7).unwrap();
+        view.select_only(&file.path);
+        view.preview.open = true;
+        frame(view);
+        assert!(view.preview.query.is_some());
+        submit_and_wait(&mut store.get_mut(7).unwrap().preview, &mut owner);
+
+        panel.close_tab(0);
+        store.get_or_init(&panel, None);
+        loaded(&mut store, &mut owner);
+        let view = store.get_mut(7).unwrap();
+        let texts = frame(view);
+        assert!(matches!(view.preview.body, Body::NoTarget));
+        assert!(!texts.iter().any(|t| t.contains("first tab")), "{texts:?}");
+        shutdown(owner);
+    }
+
+    #[test]
+    fn closing_the_explorer_drops_its_reads_and_a_new_view_starts_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("photo.png");
+        image::RgbImage::new(2, 2).save(&image).unwrap();
+        let image = listed(&image);
+        let text = write_text(&dir.path().join("a.txt"), "closed", 1_000_000);
+        let panel = tasty_model::ExplorerPanel::new(7, dir.path().into());
+        let mut owner = LocalReads::default();
+        let mut store = ExplorerViewStore::default();
+        let view = store.get_or_init(&panel, None);
+        view.thumbs.want(&image, false);
+        view.preview.open = true;
+        view.preview.retarget(Some(&text), false, FIT);
+        owner.drive(|requests| {
+            store.poll_local_reads(requests);
+            true
+        });
+        owner.wait_idle();
+
+        store.drop_view(panel.id);
+        let mut changed = false;
+        owner.drive(|requests| {
+            changed |= store.poll_local_reads(requests);
+            true
+        });
+        assert!(!changed, "results of a closed explorer reach no view");
+        let again = store.get_or_init(&panel, None);
+        assert_eq!(again.thumbs.cached(), 0);
+        assert!(again.preview.query.is_none());
+        assert!(matches!(again.preview.body, Body::NoTarget));
+        shutdown(owner);
+    }
 }

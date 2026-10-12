@@ -112,6 +112,12 @@ impl Thumbs {
         );
     }
 
+    /// 캐시에 든 칸 수.
+    #[cfg(test)]
+    pub(super) fn cached(&self) -> usize {
+        self.slots.len()
+    }
+
     /// 이번 프레임에 보이지 않은 항목 중 가장 오래 쓰지 않은 것을 버린다. 모두 보이면 버리지 않는다.
     fn evict_one(&mut self) -> bool {
         let frame = self.frame;
@@ -221,5 +227,111 @@ mod tests {
         }
         assert_eq!(thumbs.slots.len(), MAX_SLOTS);
         assert!(!thumbs.slots.contains_key(&image_entry(MAX_SLOTS).path));
+    }
+
+    use crate::app::local_reads::LocalReads;
+    use std::time::Duration;
+
+    /// `w × h` PNG 를 쓰고 수정 시각을 `at` 초(UNIX)로 둔다. 목록이 읽는 것과 같은 항목을 돌려준다.
+    fn write_image(path: &std::path::Path, w: u32, h: u32, at: u64) -> DirEntryInfo {
+        image::RgbImage::new(w, h).save(path).expect("write png");
+        let file = std::fs::File::options().write(true).open(path).unwrap();
+        file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(at))
+            .unwrap();
+        drop(file);
+        crate::core::fs_list::read_dir_entries(path.parent().unwrap())
+            .unwrap()
+            .into_iter()
+            .find(|e| e.path == path)
+            .expect("listed")
+    }
+
+    /// 넘긴 요청을 worker 로 돌려 칸이 Pending 을 벗어날 때까지 받는다.
+    fn settle(thumbs: &mut Thumbs, owner: &mut LocalReads, path: &std::path::Path) {
+        loop {
+            owner.reap();
+            owner.drive(|requests| {
+                thumbs.poll(requests);
+                true
+            });
+            if !matches!(thumbs.slots[path].state, State::Pending(_)) {
+                return;
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    fn decoded_size(thumbs: &Thumbs, path: &std::path::Path) -> [usize; 2] {
+        match &thumbs.slots[path].state {
+            State::Decoded(image) => image.size,
+            _ => panic!("not decoded"),
+        }
+    }
+
+    fn shutdown(mut owner: LocalReads) {
+        while owner.poll_shutdown() != 0 {
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn a_new_modified_time_drops_the_cached_thumbnail_and_reads_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.png");
+        let mut owner = LocalReads::default();
+        let mut thumbs = Thumbs::default();
+        let old = write_image(&path, 2, 2, 1_000_000);
+        thumbs.want(&old, false);
+        settle(&mut thumbs, &mut owner, &path);
+        assert_eq!(decoded_size(&thumbs, &path), [2, 2]);
+
+        let new = write_image(&path, 3, 3, 2_000_000);
+        assert_ne!(old.modified, new.modified);
+        let ctx = egui::Context::default();
+        assert!(
+            thumbs.texture(&ctx, &new).is_none(),
+            "the old picture is not drawn for the new file"
+        );
+        thumbs.want(&new, false);
+        assert!(matches!(thumbs.slots[&path].state, State::Pending(_)));
+        settle(&mut thumbs, &mut owner, &path);
+        assert_eq!(decoded_size(&thumbs, &path), [3, 3]);
+        assert!(thumbs.texture(&ctx, &new).is_some());
+        shutdown(owner);
+    }
+
+    #[test]
+    fn a_late_result_for_the_old_file_does_not_land_on_the_new_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.png");
+        let mut owner = LocalReads::default();
+        let mut thumbs = Thumbs::default();
+        let old = write_image(&path, 2, 2, 1_000_000);
+        thumbs.want(&old, false);
+        // 요청을 넘기고 worker 가 끝나기를 기다린다. 결과는 받지 않은 채 영수증에 남는다.
+        owner.drive(|requests| {
+            thumbs.poll(requests);
+            true
+        });
+        owner.wait_idle();
+
+        let new = write_image(&path, 3, 3, 2_000_000);
+        thumbs.want(&new, false);
+        settle(&mut thumbs, &mut owner, &path);
+        assert_eq!(decoded_size(&thumbs, &path), [3, 3]);
+        assert_eq!(thumbs.slots[&path].modified, new.modified);
+        shutdown(owner);
+    }
+
+    #[test]
+    fn a_mirror_explorer_never_reads_a_local_file_with_the_same_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.png");
+        let entry = write_image(&path, 2, 2, 1_000_000);
+        let mut thumbs = Thumbs::default();
+        thumbs.want(&entry, true);
+        assert!(thumbs.slots.is_empty(), "a remote cell asks for nothing");
+        thumbs.want(&entry, false);
+        assert!(thumbs.slots.contains_key(&path), "the same local cell does");
     }
 }

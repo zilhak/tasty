@@ -330,6 +330,22 @@ impl LocalReads {
         self.reap();
         self.jobs.len()
     }
+    /// 시험에서 넘긴 읽기가 모두 끝날 때까지 기다린다. 결과는 영수증 채널에 남아 아직 받지 않은 상태다.
+    #[cfg(test)]
+    pub(crate) fn wait_idle(&mut self) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            self.reap();
+            if self.jobs.is_empty() {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "local reads did not finish"
+            );
+            std::thread::yield_now();
+        }
+    }
     #[cfg(test)]
     pub(crate) fn finish<T>(&mut self, query: &mut Query<T>) -> io::Result<T> {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
