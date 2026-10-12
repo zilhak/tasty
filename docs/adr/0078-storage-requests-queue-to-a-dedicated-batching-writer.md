@@ -25,6 +25,7 @@ memory.db의 소비자(메인 루프, observer sink, runner, 승인 대기, 결�
 - busy는 같은 순서 자리에서 시한 안에 재시도하고, 확정 여부를 알 수 없는 실패는 따로 알린다.
 - 종료는 그 저장소에 쓰는 producer를 모두 멈춘 뒤 접수 중단 → 마지막 flush → join 순서로 하며 시한을 넘기면 경고 후 진행한다.
 - 이행 중에는 writer도 기존 공유 잠금으로 저장소에 닿아 직접 잠금 소비자와 직렬화된다(`SharedStore`).
+- 공유 잠금을 직접 잡는 기존 코드(`TaskService`)는 호환 구간 요청(`MemoryRequest::Section`)으로 writer 순서에 넣는다. 구간은 앞뒤 요청과 묶이지 않고(barrier), worker는 구간 동안 저장소 잠금을 잡지 않으며 본문을 한 번만 실행한다. 구간 안의 쓰기는 각자 commit하고, 본문이 panic하면 확정 여부를 모른다고 알린다.
 
 ## Consequences
 
@@ -48,6 +49,7 @@ memory.db의 소비자(메인 루프, observer sink, runner, 승인 대기, 결�
 - 소비자를 writer로 옮긴 뒤에도 메인 루프나 다른 호출자의 저장 대기가 줄지 않으면 수집 창·잠금 구조를 다시 본다. `system.pressure.memory_writer`와 harness의 대리 루프 지연으로 확인한다.
 - 예산 거절(`rejected_saturated`)이 정상 사용에서 관측되면 한도나 거절 처리를 다시 정한다.
 - 직접 잠금 소비자가 모두 writer로 옮겨지면 `SharedStore` 대신 worker가 연결을 소유하는 구성으로 바꾼다.
+- 호환 구간을 쓰는 코드가 writer 요청으로 옮겨지면 구간 요청을 없앤다. 구간은 다시 실행하지 않으므로 그 전에 busy 재시도가 필요한 소비자가 생기면 구간 대신 요청으로 옮긴다.
 - 완료 지연이 사용자 조작 응답에 보이면 수집 창 기본값(2ms)을 다시 잰다.
 
 ## References

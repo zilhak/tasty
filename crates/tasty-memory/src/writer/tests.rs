@@ -632,3 +632,64 @@ fn both_routes_settle_the_same_way_and_feed_committed_changes() {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
+
+/// 호환 구간은 앞서 접수한 요청이 commit된 뒤 잠금 없이 실행되어 공유 잠금을 직접 잡을 수 있고,
+/// 그 안에서 commit한 변경도 버퍼로 옮긴다. panic하면 다시 실행하지 않고 결과 불명이다.
+#[test]
+fn a_section_runs_in_writer_order_and_takes_the_shared_lock_itself() {
+    let store: Arc<Mutex<dyn MemoryStorage>> =
+        Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+    let changes = Arc::new(ChangeFeed::default());
+    let mut writer = spawn(
+        SharedStore(store.clone()),
+        changes.clone(),
+        Limits::default(),
+        Arc::new(SystemClock),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let queued = MemoryAccess::writer(writer.handle(), changes);
+    let inline = MemoryAccess::inline(store.clone());
+    for (access, key) in [(&queued, "q"), (&inline, "i")] {
+        let mut first = access
+            .submit(MemoryRequest::Write(put(HOST_OWNER, key, "1", None)))
+            .unwrap();
+        let shared = store.clone();
+        let key_owned = key.to_string();
+        let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = runs.clone();
+        let section = MemoryRequest::section(0, move || {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut guard = shared.lock().unwrap();
+            let seen = guard
+                .get(&crate::Scope::Global, &key_owned)
+                .unwrap()
+                .map(|e| e.version);
+            guard
+                .put(
+                    HOST_OWNER,
+                    &crate::Scope::Global,
+                    &key_owned,
+                    &text("2"),
+                    &crate::PutOpts::default(),
+                )
+                .unwrap();
+            seen
+        });
+        let output = access.run_and_wait(section, WAIT).expect("section");
+        assert_eq!(output.into_value::<Option<u64>>(), Some(Some(1)));
+        assert_eq!(version(first.wait_timeout(WAIT).unwrap()), 1);
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(access.changes().take().len(), 2, "both commits are fed");
+        match access.run_and_wait(MemoryRequest::section(0, || -> u8 { panic!("boom") }), WAIT) {
+            Err(crate::writer::Waited::Failed(Failure::Unknown(_))) => {}
+            other => panic!("{other:?}"),
+        }
+    }
+    writer.begin_shutdown();
+    let deadline = Instant::now() + WAIT;
+    while writer.poll_shutdown() != 0 {
+        assert!(Instant::now() < deadline, "writer did not join");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}

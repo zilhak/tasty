@@ -234,12 +234,30 @@ fn run_inline(
     request: MemoryRequest,
 ) -> MemoryCompletion {
     use batch_writer::{Completion, Execution};
+    let mut batch = [request];
+    if let [MemoryRequest::Section { body, bytes }] = &mut batch {
+        let execution = super::run_section(body, *bytes);
+        let mut guard = tasty_utils::poison::recover_mutex(
+            store.lock(),
+            crate::STORE_LOCK_WHAT,
+            &crate::STORE_LOCK_POISONED,
+        );
+        changes.extend(guard.take_pending_changes());
+        return match execution {
+            Execution::Committed(mut results) => {
+                results.pop().map_or(Completion::Lost, Completion::Done)
+            }
+            Execution::Unknown(error) => Completion::Unknown(error),
+            Execution::Busy(error)
+            | Execution::Failed(error)
+            | Execution::Poisoned { error, .. } => Completion::Failed(error),
+        };
+    }
     let mut guard = tasty_utils::poison::recover_mutex(
         store.lock(),
         crate::STORE_LOCK_WHAT,
         &crate::STORE_LOCK_POISONED,
     );
-    let mut batch = [request];
     let execution = execute_on(&mut *guard, &mut batch);
     changes.extend(guard.take_pending_changes());
     match execution {
