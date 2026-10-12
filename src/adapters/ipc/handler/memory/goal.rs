@@ -7,7 +7,7 @@ use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::{entry_to_json, map_error, require_str, require_surface_id};
+use super::{entry_to_json, map_error_ref, require_str, require_surface_id};
 
 pub fn handle_goal_set(
     core: &AppServices,
@@ -25,10 +25,15 @@ pub fn handle_goal_set(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| goal_mod::goal_set(s, &owner, surface_id, &goal)) {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| goal_mod::goal_set(s, &owner, surface_id, &goal),
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_goal_get(
@@ -42,11 +47,16 @@ pub fn handle_goal_get(
         Ok(v) => v,
         Err(e) => return e,
     };
-    match core.with_memory(|s| goal_mod::goal_get(s, surface_id)) {
-        Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
-        Ok(None) => JsonRpcResponse::success(id, Value::Null),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| goal_mod::goal_get(s, surface_id),
+        |_, id, result| match result {
+            Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
+            Ok(None) => JsonRpcResponse::success(id, Value::Null),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_goal_clear(
@@ -61,10 +71,15 @@ pub fn handle_goal_clear(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| goal_mod::goal_clear(s, &owner, surface_id)) {
-        Ok(()) => super::written(core, id, json!({ "ok": true })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| goal_mod::goal_clear(s, &owner, surface_id),
+        |core, id, result| match result {
+            Ok(()) => super::written(core, id, json!({ "ok": true })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 #[cfg(test)]

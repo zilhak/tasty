@@ -131,7 +131,7 @@
 | 분류 | 소비자 | 스레드 | 한 잠금 안에서 하는 일 |
 |---|---|---|---|
 | 단순 쓰기 | `memory.put`·`memory.delete`·secret(writer 요청), approval 기록, surface meta, telemetry·audit 기록 | 메인 루프(IPC) | 한 연산. 기록 시점 로그 정리가 붙는 경로는 prune 후 put |
-| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal, session·barrier·semaphore·lease·ratelimit, command index, `memory.import`(writer 요청 하나) | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
+| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal·`memory.import`(각각 writer 요청 하나), session·barrier·semaphore·lease·ratelimit, command index | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. writer 요청은 그 판단 전체가 한 요청이라 같은 묶음의 앞 요청 반영을 본다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
 | task | `TaskService`(생성·graph submit·삭제·purge), runner tick | 메인 루프, `agent-runner-ws{N}` | graph submit은 plan·stage·activate를 한 잠금에서 한다. purge는 계획과 적용을 별도 잠금으로 한다. runner는 snapshot·점유 획득·상태 전이·완료를 각각 별도 잠금으로 한다 |
 | background 쓰기 | observer memory sink(writer 요청), `approval.await` 결과, Run 결과·후처리·보고 | 각 전용 스레드 | observer는 채널에 쌓인 기록과 넘친 옛 키의 보존 삭제를 독립 요청 묶음 하나로 writer에 넣는다. 보존 삭제는 저장이 확정된 키만 센다 |
 | 읽기 | `memory.get`·`list`·`count`(writer 요청), approval·telemetry 조회, DAG 화면, task 대기 | 메인 루프, `dag-read`, task 대기 worker | 여러 scope를 순회하는 조회는 scope마다 잠금을 다시 잡아 하나의 시점을 보장하지 않는다. DAG 화면은 `try_lock`으로 폴링한다 |

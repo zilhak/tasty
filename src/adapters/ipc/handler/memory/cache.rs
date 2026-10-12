@@ -8,7 +8,7 @@ use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::{entry_to_json, map_error, parse_value, require_str, require_workspace_id};
+use super::{entry_to_json, map_error_ref, parse_value, require_str, require_workspace_id};
 
 pub fn handle_cache_put(
     core: &AppServices,
@@ -36,12 +36,15 @@ pub fn handle_cache_put(
         }
     };
     let owner = caller.owner().to_string();
-    match core
-        .with_memory(|s| cache_mod::cache_put(s, &owner, workspace_id, &key, &value, ttl_secs))
-    {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| cache_mod::cache_put(s, &owner, workspace_id, &key, &value, ttl_secs),
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_cache_get(
@@ -59,11 +62,16 @@ pub fn handle_cache_get(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    match core.with_memory(|s| cache_mod::cache_get(s, workspace_id, &key)) {
-        Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
-        Ok(None) => JsonRpcResponse::success(id, Value::Null),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| cache_mod::cache_get(s, workspace_id, &key),
+        |_, id, result| match result {
+            Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
+            Ok(None) => JsonRpcResponse::success(id, Value::Null),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_cache_invalidate(
@@ -82,10 +90,15 @@ pub fn handle_cache_invalidate(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| cache_mod::cache_invalidate(s, &owner, workspace_id, &key)) {
-        Ok(()) => super::written(core, id, json!({ "ok": true })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| cache_mod::cache_invalidate(s, &owner, workspace_id, &key),
+        |core, id, result| match result {
+            Ok(()) => super::written(core, id, json!({ "ok": true })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_cache_clear(
@@ -100,10 +113,15 @@ pub fn handle_cache_clear(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| cache_mod::cache_clear(s, &owner, workspace_id)) {
-        Ok(removed) => super::written(core, id, json!({ "ok": true, "removed": removed })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| cache_mod::cache_clear(s, &owner, workspace_id),
+        |core, id, result| match result {
+            Ok(removed) => super::written(core, id, json!({ "ok": true, "removed": removed })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_cache_list(
@@ -117,8 +135,13 @@ pub fn handle_cache_list(
         Ok(v) => v,
         Err(e) => return e,
     };
-    match core.with_memory(|s| cache_mod::cache_list(s, workspace_id)) {
-        Ok(keys) => JsonRpcResponse::success(id, json!({ "keys": keys, "count": keys.len() })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| cache_mod::cache_list(s, workspace_id),
+        |_, id, result| match result {
+            Ok(keys) => JsonRpcResponse::success(id, json!({ "keys": keys, "count": keys.len() })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }

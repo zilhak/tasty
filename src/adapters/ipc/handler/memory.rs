@@ -341,10 +341,6 @@ fn stats_to_json(s: &MemoryStats) -> Value {
     })
 }
 
-fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
-    map_error_ref(id, &err)
-}
-
 /// 기존 오류 코드와 메시지를 유지한다. writer 결과는 오류를 빌려 주므로 참조로 받는다.
 pub(crate) fn map_error_ref(id: Value, err: &MemoryError) -> JsonRpcResponse {
     use MemoryError::*;
@@ -937,15 +933,15 @@ mod tests {
             None,
         );
         let expected_message = format!("memory db error: {busy}");
-        let resp = super::map_error(json!(7), tasty_memory::MemoryError::Db(busy));
+        let resp = super::map_error_ref(json!(7), &tasty_memory::MemoryError::Db(busy));
         let err = resp.error.expect("error");
         assert_eq!(err.code, -32603);
         assert_eq!(err.message, expected_message);
         assert_eq!(err.data, Some(json!({ "storage_failure": "busy" })));
 
-        let refused = super::map_error(
+        let refused = super::map_error_ref(
             json!(8),
-            tasty_memory::MemoryError::NotFound {
+            &tasty_memory::MemoryError::NotFound {
                 scope: "global".into(),
                 key: "k".into(),
             },

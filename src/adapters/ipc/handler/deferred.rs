@@ -433,6 +433,41 @@ mod tests {
         assert_eq!(deferred, 3, "every request goes through the writer");
     }
 
+    // 읽기-판단-쓰기 연산(blackboard)도 writer 안에서 한 번에 판정한다. CAS 거절은 기존 코드다.
+    #[test]
+    fn compound_memory_requests_judge_inside_the_writer() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = writer_core();
+        let bb = |id, method: &str, extra: Value| {
+            let mut params = json!({"workspace_id": 1, "name": "board"});
+            if let (Some(p), Some(e)) = (params.as_object_mut(), extra.as_object()) {
+                p.extend(e.clone());
+            }
+            make_request(id, method, params, None)
+        };
+        let (created, later) = run_request(&mut core, &bb(1, "memory.bb_create", json!({})));
+        assert!(later);
+        assert!(created.error.is_none(), "{created:?}");
+        let (first, _) = run_request(
+            &mut core,
+            &bb(2, "memory.bb_put", json!({"field": "f", "value": "1"})),
+        );
+        let version = first.result.expect("bb_put")["version"].clone();
+        let (stale, _) = run_request(
+            &mut core,
+            &bb(
+                3,
+                "memory.bb_put",
+                json!({"field": "f", "value": "2", "cas": 99}),
+            ),
+        );
+        assert_eq!(stale.error.expect("cas").code, -32005);
+        let (got, _) = run_request(&mut core, &bb(4, "memory.bb_get", json!({"field": "f"})));
+        let got = got.result.expect("bb_get");
+        assert_eq!(got["version"], version);
+        assert_eq!(got["value"], json!("1"));
+    }
+
     // 멱등 키 기록은 continuation의 응답으로 끝난다. 같은 키의 재시도는 실행하지 않고 같은 답을
     // 받고, 결과를 기다리는 동안의 재시도는 결과 불명 오류를 받는다.
     #[test]

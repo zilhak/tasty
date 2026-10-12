@@ -8,7 +8,7 @@ use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::{map_error, require_str, require_workspace_id};
+use super::{map_error_ref, require_str, require_workspace_id};
 
 fn parse_plan_step(v: &Value, id: &Value) -> Result<plan_mod::PlanStep, JsonRpcResponse> {
     serde_json::from_value(v.clone())
@@ -61,12 +61,15 @@ pub fn handle_plan_create(
         }
     };
     let owner = caller.owner().to_string();
-    match core
-        .with_memory(|s| plan_mod::plan_create(s, &owner, workspace_id, &plan_id, &title, steps))
-    {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| plan_mod::plan_create(s, &owner, workspace_id, &plan_id, &title, steps.clone()),
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_plan_get(
@@ -84,14 +87,19 @@ pub fn handle_plan_get(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    match core.with_memory(|s| plan_mod::plan_get(s, workspace_id, &plan_id)) {
-        Ok(Some(plan)) => match serde_json::to_value(&plan) {
-            Ok(v) => JsonRpcResponse::success(id, v),
-            Err(e) => JsonRpcResponse::internal_error(id, format!("serialize: {e}")),
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| plan_mod::plan_get(s, workspace_id, &plan_id),
+        |_, id, result| match result {
+            Ok(Some(plan)) => match serde_json::to_value(&plan) {
+                Ok(v) => JsonRpcResponse::success(id, v),
+                Err(e) => JsonRpcResponse::internal_error(id, format!("serialize: {e}")),
+            },
+            Ok(None) => JsonRpcResponse::success(id, Value::Null),
+            Err(e) => map_error_ref(id, e),
         },
-        Ok(None) => JsonRpcResponse::success(id, Value::Null),
-        Err(e) => map_error(id, e),
-    }
+    )
 }
 
 pub fn handle_plan_list(
@@ -105,10 +113,17 @@ pub fn handle_plan_list(
         Ok(v) => v,
         Err(e) => return e,
     };
-    match core.with_memory(|s| plan_mod::plan_list(s, workspace_id)) {
-        Ok(plans) => JsonRpcResponse::success(id, json!({ "plans": plans, "count": plans.len() })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| plan_mod::plan_list(s, workspace_id),
+        |_, id, result| match result {
+            Ok(plans) => {
+                JsonRpcResponse::success(id, json!({ "plans": plans, "count": plans.len() }))
+            }
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_plan_delete(
@@ -127,10 +142,15 @@ pub fn handle_plan_delete(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| plan_mod::plan_delete(s, &owner, workspace_id, &plan_id)) {
-        Ok(()) => super::written(core, id, json!({ "ok": true })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| plan_mod::plan_delete(s, &owner, workspace_id, &plan_id),
+        |core, id, result| match result {
+            Ok(()) => super::written(core, id, json!({ "ok": true })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_plan_add_step(
@@ -159,12 +179,25 @@ pub fn handle_plan_add_step(
     let position = p_try!(params::opt_int::<u64>(params, "position", &id)).map(|n| n as usize);
     let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| {
-        plan_mod::plan_add_step(s, &owner, workspace_id, &plan_id, step, position, cas)
-    }) {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| {
+            plan_mod::plan_add_step(
+                s,
+                &owner,
+                workspace_id,
+                &plan_id,
+                step.clone(),
+                position,
+                cas,
+            )
+        },
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_plan_remove_step(
@@ -188,12 +221,15 @@ pub fn handle_plan_remove_step(
     };
     let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| {
-        plan_mod::plan_remove_step(s, &owner, workspace_id, &plan_id, &step_id, cas)
-    }) {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| plan_mod::plan_remove_step(s, &owner, workspace_id, &plan_id, &step_id, cas),
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_plan_update_step(
@@ -242,21 +278,26 @@ pub fn handle_plan_update_step(
     };
     let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| {
-        plan_mod::plan_update_step(
-            s,
-            plan_mod::PlanUpdateStepOpts {
-                owner: &owner,
-                workspace_id,
-                plan_id: &plan_id,
-                step_id: &step_id,
-                new_state,
-                notes: notes_arg,
-                cas,
-            },
-        )
-    }) {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| {
+            plan_mod::plan_update_step(
+                s,
+                plan_mod::PlanUpdateStepOpts {
+                    owner: &owner,
+                    workspace_id,
+                    plan_id: &plan_id,
+                    step_id: &step_id,
+                    new_state,
+                    notes: notes_arg.clone(),
+                    cas,
+                },
+            )
+        },
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }

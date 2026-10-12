@@ -8,7 +8,7 @@ use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::{entry_to_json, map_error, parse_value, require_str, require_workspace_id};
+use super::{entry_to_json, map_error_ref, parse_value, require_str, require_workspace_id};
 
 pub fn handle_bb_create(
     core: &AppServices,
@@ -27,10 +27,15 @@ pub fn handle_bb_create(
     };
     let schema = params.get("schema").cloned();
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| blackboard::bb_create(s, &owner, workspace_id, &name, schema)) {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_create(s, &owner, workspace_id, &name, schema.clone()),
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_put(
@@ -58,12 +63,15 @@ pub fn handle_bb_put(
     };
     let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
-    match core
-        .with_memory(|s| blackboard::bb_put(s, &owner, workspace_id, &name, &field, &value, cas))
-    {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_put(s, &owner, workspace_id, &name, &field, &value, cas),
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_get(
@@ -85,11 +93,16 @@ pub fn handle_bb_get(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    match core.with_memory(|s| blackboard::bb_get(s, workspace_id, &name, &field)) {
-        Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
-        Ok(None) => JsonRpcResponse::success(id, Value::Null),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_get(s, workspace_id, &name, &field),
+        |_, id, result| match result {
+            Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
+            Ok(None) => JsonRpcResponse::success(id, Value::Null),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_get_all(
@@ -107,13 +120,18 @@ pub fn handle_bb_get_all(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    match core.with_memory(|s| blackboard::bb_get_all(s, workspace_id, &name)) {
-        Ok(entries) => {
-            let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
-            JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
-        }
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_get_all(s, workspace_id, &name),
+        |_, id, result| match result {
+            Ok(entries) => {
+                let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
+                JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
+            }
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_get_meta(
@@ -131,11 +149,16 @@ pub fn handle_bb_get_meta(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    match core.with_memory(|s| blackboard::bb_get_meta(s, workspace_id, &name)) {
-        Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
-        Ok(None) => JsonRpcResponse::success(id, Value::Null),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_get_meta(s, workspace_id, &name),
+        |_, id, result| match result {
+            Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
+            Ok(None) => JsonRpcResponse::success(id, Value::Null),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_delete_field(
@@ -159,12 +182,15 @@ pub fn handle_bb_delete_field(
     };
     let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
-    match core
-        .with_memory(|s| blackboard::bb_delete_field(s, &owner, workspace_id, &name, &field, cas))
-    {
-        Ok(()) => super::written(core, id, json!({ "ok": true })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_delete_field(s, &owner, workspace_id, &name, &field, cas),
+        |core, id, result| match result {
+            Ok(()) => super::written(core, id, json!({ "ok": true })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_delete(
@@ -183,10 +209,15 @@ pub fn handle_bb_delete(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| blackboard::bb_delete(s, &owner, workspace_id, &name)) {
-        Ok(removed) => super::written(core, id, json!({ "ok": true, "removed": removed })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_delete(s, &owner, workspace_id, &name),
+        |core, id, result| match result {
+            Ok(removed) => super::written(core, id, json!({ "ok": true, "removed": removed })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_list(
@@ -200,10 +231,17 @@ pub fn handle_bb_list(
         Ok(v) => v,
         Err(e) => return e,
     };
-    match core.with_memory(|s| blackboard::bb_list(s, workspace_id)) {
-        Ok(names) => JsonRpcResponse::success(id, json!({ "names": names, "count": names.len() })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_list(s, workspace_id),
+        |_, id, result| match result {
+            Ok(names) => {
+                JsonRpcResponse::success(id, json!({ "names": names, "count": names.len() }))
+            }
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_exists(
@@ -221,10 +259,15 @@ pub fn handle_bb_exists(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    match core.with_memory(|s| blackboard::bb_exists(s, workspace_id, &name)) {
-        Ok(exists) => JsonRpcResponse::success(id, json!({ "exists": exists })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_exists(s, workspace_id, &name),
+        |_, id, result| match result {
+            Ok(exists) => JsonRpcResponse::success(id, json!({ "exists": exists })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_snapshot(
@@ -247,12 +290,15 @@ pub fn handle_bb_snapshot(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core
-        .with_memory(|s| blackboard::bb_snapshot(s, &owner, workspace_id, &name, &snapshot_id))
-    {
-        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_snapshot(s, &owner, workspace_id, &name, &snapshot_id),
+        |core, id, result| match result {
+            Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_snapshot_get(
@@ -274,14 +320,19 @@ pub fn handle_bb_snapshot_get(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    match core.with_memory(|s| blackboard::bb_snapshot_get(s, workspace_id, &name, &snapshot_id)) {
-        Ok(Some(snap)) => match serde_json::to_value(&snap) {
-            Ok(v) => JsonRpcResponse::success(id, v),
-            Err(e) => JsonRpcResponse::internal_error(id, format!("serialize: {e}")),
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_snapshot_get(s, workspace_id, &name, &snapshot_id),
+        |_, id, result| match result {
+            Ok(Some(snap)) => match serde_json::to_value(&snap) {
+                Ok(v) => JsonRpcResponse::success(id, v),
+                Err(e) => JsonRpcResponse::internal_error(id, format!("serialize: {e}")),
+            },
+            Ok(None) => JsonRpcResponse::success(id, Value::Null),
+            Err(e) => map_error_ref(id, e),
         },
-        Ok(None) => JsonRpcResponse::success(id, Value::Null),
-        Err(e) => map_error(id, e),
-    }
+    )
 }
 
 pub fn handle_bb_snapshot_list(
@@ -299,10 +350,17 @@ pub fn handle_bb_snapshot_list(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    match core.with_memory(|s| blackboard::bb_snapshot_list(s, workspace_id, &name)) {
-        Ok(ids) => JsonRpcResponse::success(id, json!({ "snapshot_ids": ids, "count": ids.len() })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_snapshot_list(s, workspace_id, &name),
+        |_, id, result| match result {
+            Ok(ids) => {
+                JsonRpcResponse::success(id, json!({ "snapshot_ids": ids, "count": ids.len() }))
+            }
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_snapshot_delete(
@@ -325,12 +383,15 @@ pub fn handle_bb_snapshot_delete(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| {
-        blackboard::bb_snapshot_delete(s, &owner, workspace_id, &name, &snapshot_id)
-    }) {
-        Ok(()) => super::written(core, id, json!({ "ok": true })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_snapshot_delete(s, &owner, workspace_id, &name, &snapshot_id),
+        |core, id, result| match result {
+            Ok(()) => super::written(core, id, json!({ "ok": true })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_bb_snapshot_restore(
@@ -353,10 +414,13 @@ pub fn handle_bb_snapshot_restore(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    match core.with_memory(|s| {
-        blackboard::bb_snapshot_restore(s, &owner, workspace_id, &name, &snapshot_id)
-    }) {
-        Ok(restored) => super::written(core, id, json!({ "ok": true, "restored": restored })),
-        Err(e) => map_error(id, e),
-    }
+    core.reply_unit(
+        id,
+        super::super::deferred::params_bytes(params),
+        move |s| blackboard::bb_snapshot_restore(s, &owner, workspace_id, &name, &snapshot_id),
+        |core, id, result| match result {
+            Ok(restored) => super::written(core, id, json!({ "ok": true, "restored": restored })),
+            Err(e) => map_error_ref(id, e),
+        },
+    )
 }
