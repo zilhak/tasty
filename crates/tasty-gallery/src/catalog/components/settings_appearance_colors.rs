@@ -20,9 +20,20 @@ const ROWS: [(&str, &str, Option<&str>); 3] = [
     ("selection", "#45475a", None),
 ];
 
+/// Terminal-specific 그룹의 행 순서. 본체 `color_groups`와 같다.
+const TERMINAL_FIELDS: [&str; 5] = [
+    "selection_bg",
+    "vi_cursor_bg",
+    "search_match_bg",
+    "search_match_active_bg",
+    "search_match_active_fg",
+];
+
 thread_local! {
     // 패널 둘 × 행 셋의 hex 버퍼. 선택·복사를 시험할 수 있게 프레임마다 다시 만들지 않는다.
     static BUFS: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
+    // Terminal-specific 예제의 패널 둘 × 행 다섯 hex 버퍼.
+    static TERMINAL_BUFS: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
 }
 
 fn hex_color(hex: &str) -> egui::Color32 {
@@ -88,7 +99,13 @@ fn color_row(ui: &mut egui::Ui, th: &Theme, row: (&str, &str, Option<&str>), buf
     );
 }
 
-fn panel(ui: &mut egui::Ui, th: &Theme, name: &str, bufs: &mut [String]) {
+fn panel(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    name: &str,
+    rows: &[(&str, &str, Option<&str>)],
+    bufs: &mut [String],
+) {
     let frame = egui::Frame::new()
         .fill(egui::Color32::from(th.bg_panel()))
         .stroke(egui::Stroke::new(
@@ -109,7 +126,7 @@ fn panel(ui: &mut egui::Ui, th: &Theme, name: &str, bufs: &mut [String]) {
                     .color(egui::Color32::from(th.text_muted())),
             );
             ui.add_space(th.spacing_xs.value());
-            for (row, buf) in ROWS.into_iter().zip(bufs.iter_mut()) {
+            for (row, buf) in rows.iter().copied().zip(bufs.iter_mut()) {
                 ui.push_id((name, row.0), |ui| color_row(ui, th, row, buf));
             }
         });
@@ -136,8 +153,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         stage(ui, theme, StageVariant::Column, |ui| {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                panel(ui, &mocha, "Mocha", left);
-                panel(ui, &latte, "Latte", right);
+                panel(ui, &mocha, "Mocha", &ROWS, left);
+                panel(ui, &latte, "Latte", &ROWS, right);
             });
         });
     });
@@ -170,6 +187,97 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.input_readonly_fg()),
             ),
         ],
+    );
+}
+
+/// Terminal-specific 다섯 행의 테마 기본값. 행 이름은 본체와 같은 키 이름이다.
+fn terminal_bases(th: &Theme) -> Vec<String> {
+    let c = th.to_colors();
+    [
+        c.selection_bg,
+        c.vi_cursor_bg,
+        c.search_match_bg,
+        c.search_match_active_bg,
+        c.search_match_active_fg,
+    ]
+    .map(|v| v.to_hex())
+    .to_vec()
+}
+
+/// (이름, 기본값) 목록을 모두 Default 상태인 행으로 본다.
+fn default_rows<'a>(
+    rows: &'a [(&'static str, String)],
+) -> Vec<(&'static str, &'a str, Option<&'a str>)> {
+    rows.iter().map(|(f, b)| (*f, b.as_str(), None)).collect()
+}
+
+/// Appearance › Colors › Terminal-specific — 활성 매치 글자색 행이 그 바탕색 행 바로 뒤에 온다.
+/// 기본값은 각 테마 파일의 값이고, 모든 행이 Default 상태다.
+pub fn draw_terminal_rows(ui: &mut egui::Ui, theme: &Theme) {
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let mocha = with_zoom(tasty_themes::mocha_fallback());
+    let latte = with_zoom(crate::host_shell::latte_theme());
+    let mocha_bases = terminal_bases(&mocha);
+    let latte_bases = terminal_bases(&latte);
+    let rows_of = |bases: &[String]| -> Vec<(&'static str, String)> {
+        TERMINAL_FIELDS
+            .iter()
+            .copied()
+            .zip(bases.iter().cloned())
+            .collect()
+    };
+    let (mocha_rows, latte_rows) = (rows_of(&mocha_bases), rows_of(&latte_bases));
+    TERMINAL_BUFS.with(|b| {
+        let mut slot = b.borrow_mut();
+        let bufs = slot.get_or_insert_with(|| {
+            mocha_bases
+                .iter()
+                .chain(latte_bases.iter())
+                .cloned()
+                .collect()
+        });
+        let (left, right) = bufs.split_at_mut(TERMINAL_FIELDS.len());
+        stage(ui, theme, StageVariant::Column, |ui| {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                panel(
+                    ui,
+                    &mocha,
+                    "Mocha · Terminal-specific (5)",
+                    &default_rows(&mocha_rows),
+                    left,
+                );
+                panel(
+                    ui,
+                    &latte,
+                    "Latte · Terminal-specific (5)",
+                    &default_rows(&latte_rows),
+                    right,
+                );
+            });
+        });
+    });
+
+    meta(
+        ui,
+        theme,
+        &[
+            ("group", "Terminal-specific · 5 rows"),
+            (
+                "order",
+                "selection_bg · vi_cursor_bg · search_match_bg · search_match_active_bg · search_match_active_fg",
+            ),
+            ("label", "the key name, like every row (no translation)"),
+            ("swatch", "unchanged plain swatch"),
+            ("Reset all", "includes this row"),
+            ("total", "6 groups / 47 rows"),
+        ],
+        &[TokenChip::new(
+            "search-match-active-fg",
+            "the value this row edits",
+            egui::Color32::from(theme.search_match_active_fg),
+        )],
     );
 }
 

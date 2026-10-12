@@ -1046,7 +1046,7 @@ macro_rules! color_row {
     };
 }
 
-/// 디자인 `PALETTE_GROUPS` 와 동일한 6그룹/46필드 구성.
+/// 디자인 `PALETTE_GROUPS` 와 동일한 6그룹/47필드 구성.
 /// 기본 열림: Surfaces · Text · Accents / 기본 접힘: Overlays · Terminal-specific · ANSI 16.
 fn color_groups() -> Vec<ColorGroupDef> {
     vec![
@@ -1113,6 +1113,8 @@ fn color_groups() -> Vec<ColorGroupDef> {
                 color_row!(vi_cursor_bg),
                 color_row!(search_match_bg),
                 color_row!(search_match_active_bg),
+                // 활성 매치 글자색은 그 바탕색 바로 뒤에 두어 둘을 함께 보며 고르게 한다.
+                color_row!(search_match_active_fg),
             ],
         },
         ColorGroupDef {
@@ -1157,7 +1159,7 @@ fn draw_appearance_colors(ui: &mut egui::Ui, settings: &mut Settings) {
 
     let groups = color_groups();
 
-    // 전체 override 개수 (picker 가 다루는 46 flat 필드 한정 — surface_themes 등
+    // 전체 override 개수 (picker 가 다루는 47 flat 필드 한정 — surface_themes 등
     // 비-picker override 는 세지도 지우지도 않는다).
     let total: usize = {
         let ov = &settings.appearance.theme_overrides;
@@ -2297,7 +2299,7 @@ mod tests {
             .unwrap_or_else(|| panic!("row {name} should exist"))
     }
 
-    /// 디자인 `PALETTE_GROUPS` 와 동일한 6그룹/46필드 + 기본 열림/접힘 분류.
+    /// 디자인 `PALETTE_GROUPS` 와 동일한 6그룹/47필드 + 기본 열림/접힘 분류.
     #[test]
     fn color_groups_match_design_layout() {
         let groups = color_groups();
@@ -2306,7 +2308,7 @@ mod tests {
             .map(|g| (g.rows.len(), g.default_open))
             .collect();
         // Surfaces(6,열림) Overlays(3,접힘) Text(4,열림) Accents(13,열림)
-        // Terminal-specific(4,접힘) ANSI 16(16,접힘).
+        // Terminal-specific(5,접힘) ANSI 16(16,접힘).
         assert_eq!(
             counts,
             vec![
@@ -2314,12 +2316,12 @@ mod tests {
                 (3, false),
                 (4, true),
                 (13, true),
-                (4, false),
+                (5, false),
                 (16, false),
             ]
         );
         let total: usize = groups.iter().map(|g| g.rows.len()).sum();
-        assert_eq!(total, 46, "flat PartialColors 46 fields");
+        assert_eq!(total, 47, "flat PartialColors 47 fields");
     }
 
     /// "Default" 체크박스 토글 = 필드 Some(base)⇄None — set/get 라운드트립.
@@ -2419,7 +2421,7 @@ mod tests {
         );
     }
 
-    /// Reset all 은 46 flat 필드만 클리어하고 surface_themes(비-picker) 는 보존.
+    /// Reset all 은 47 flat 필드만 클리어하고 surface_themes(비-picker) 는 보존.
     #[test]
     fn reset_all_preserves_surface_themes() {
         let groups = color_groups();
@@ -2440,7 +2442,7 @@ mod tests {
             (r.set)(&mut ov, None);
         }
         let flat_changed: usize = groups.iter().map(|g| group_changed_count(g, &ov)).sum();
-        assert_eq!(flat_changed, 0, "all 46 flat overrides cleared");
+        assert_eq!(flat_changed, 0, "all 47 flat overrides cleared");
         assert!(
             ov.surface_themes.contains_key("terminal"),
             "surface_themes override preserved"

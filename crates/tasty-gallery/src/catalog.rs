@@ -1645,6 +1645,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_appearance_colors::draw_header,
                         ),
                         spec(
+                            "settings-appearance-terminal-rows",
+                            "Appearance › Colors › Terminal-specific — 5 rows",
+                            Some(
+                                "search_match_active_fg right after search_match_active_bg · same plain swatch · Reset all includes it · 6 groups / 47 rows",
+                            ),
+                            components::settings_appearance_colors::draw_terminal_rows,
+                        ),
+                        spec(
                             "settings-appearance-font-override",
                             "Appearance › Font override — rows + preview below",
                             Some(
