@@ -90,7 +90,7 @@ export const KO: Copy = {
   cards: [
     { icon: "layoutGrid", title: "GPU로 그리는 터미널", body: "GPU 가속으로 터미널 화면을 그립니다. 여러 터미널을 나란히 열고 작업할 수 있습니다.", href: "using/workflow-layouts/" },
     { icon: "layers", title: "프로젝트별 작업 공간", body: "프로젝트마다 워크스페이스를 나누세요. 자주 쓰는 화면 배치는 프리셋으로 저장해 다시 불러올 수 있습니다.", href: "using/workspaces/" },
-    { icon: "folderOpen", title: "코드 옆에 문서와 이미지", body: "파일 탐색기, 마크다운 문서, 이미지, 웹 페이지를 터미널 옆에 열어두고 함께 확인하세요.", href: "using/files/" },
+    { icon: "folderOpen", title: "코드 옆에 문서와 이미지", body: "파일 탐색기, 마크다운 문서, 이미지, 웹 페이지를 터미널 옆에 열어두세요. 탐색기에서 파일을 복사·이동하고 이름을 바꾸거나 휴지통으로 보낼 수 있으며, 실행 취소와 다른 앱과의 복사·붙여넣기·끌어 놓기도 됩니다.", href: "using/files/" },
     { icon: "rocket", title: "Claude와 Codex 연동", body: "여러 에이전트에게 작업을 나눠 맡기세요. 연동을 설정하면 작업 완료와 입력 요청을 알림으로 확인할 수 있습니다.", href: "agents/claude-codex/" },
     { icon: "gitTree", title: "작업 순서 관리", body: "먼저 끝나야 하는 작업을 연결해 두면 그 순서에 맞춰 실행합니다. 진행 상황은 그래프로 확인하세요.", href: "agents/tasks/" },
     { icon: "terminal", title: "에이전트가 직접 다루는 터미널", body: "에이전트가 CLI로 터미널을 나누고, 명령을 실행하고, 출력을 읽습니다. 작업할 때마다 직접 탭을 준비해 줄 필요가 없습니다.", href: "agents/cli/" },
@@ -152,7 +152,7 @@ export const EN: Copy = {
   cards: [
     { icon: "layoutGrid", title: "GPU rendering", body: "Tasty uses the GPU to draw your terminal. Open several terminals side by side to follow different parts of your work.", href: "using/workflow-layouts/" },
     { icon: "layers", title: "A workspace for each project", body: "Keep projects in separate workspaces. Save a layout as a preset and bring it back when you need it.", href: "using/workspaces/" },
-    { icon: "folderOpen", title: "Docs and images beside your code", body: "Open a file explorer, Markdown documents, images, and web pages alongside your terminals.", href: "using/files/" },
+    { icon: "folderOpen", title: "Docs and images beside your code", body: "Open a file explorer, Markdown documents, images, and web pages alongside your terminals. In the explorer, copy, move, rename, or trash files, undo changes, and copy, paste, or drag files to and from other apps.", href: "using/files/" },
     { icon: "rocket", title: "Connect Claude and Codex", body: "Give different tasks to several agents. Once configured, the integration notifies you when work finishes or an agent needs input.", href: "agents/claude-codex/" },
     { icon: "gitTree", title: "Put tasks in order", body: "Connect tasks to the work they depend on, and Tasty runs them in that order. Follow progress in a graph.", href: "agents/tasks/" },
     { icon: "terminal", title: "Terminals agents can operate", body: "Agents can create splits, run commands, and read output through the CLI, without you setting up each tab for them.", href: "agents/cli/" },

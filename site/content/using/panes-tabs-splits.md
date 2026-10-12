@@ -34,8 +34,8 @@ tasty split --level surface --target-surface 5 --type explorer --path ~/proj
 
 - `+` 버튼 또는 `Alt+T` — 새 터미널 탭.
 - `+` 우클릭 — **프리셋으로 탭 생성...** <!-- en: Create tab from preset... --> / **프리셋으로 페인 생성...** <!-- en: Create pane from preset... -->.
-- 탭 스트립 빈 곳 우클릭 — **새 터미널** <!-- en: New Terminal --> · **새 마크다운...** <!-- en: New Markdown... --> · **새 탐색기** <!-- en: New Explorer --> · **새 HTML...** <!-- en: New HTML... --> · **새 이미지** <!-- en: New Image -->. 종류별 설명은 [파일 열기](files.md).
-- 탭의 `×`, 탭 우클릭 > **탭 닫기** <!-- en: Close Tab -->, 또는 `Ctrl+W`. 마지막 남은 탭은 닫히지 않습니다 — 대신 `Ctrl+W` 가 페인을 닫습니다.
+- 탭 스트립 빈 곳 우클릭 — **새 터미널** <!-- en: New Terminal --> · **새 마크다운...** <!-- en: New Markdown... --> · **새 HTML...** <!-- en: New HTML... --> · **새 이미지** <!-- en: New Image --> 로 새 탭을 만듭니다. 같은 메뉴에 **페인 프리셋으로 저장** <!-- en: Save as pane preset -->, **프리셋으로 탭 생성...** <!-- en: Create tab from preset... -->, **프리셋으로 페인 생성...** <!-- en: Create pane from preset... --> 도 있습니다. 종류별 설명은 [파일 열기](files.md). <!-- TODO verify: 탭 스트립 메뉴의 새 HTML... 을 고르면 탭이 만들어지는지(메뉴 선택 처리에 HTML 분기가 보이지 않음) -->
+- 탭의 `×`, 탭 우클릭 > **탭 닫기** <!-- en: Close Tab -->, 또는 `Ctrl+W`. 페인의 마지막 남은 탭은 닫히지 않습니다. 페인째 닫으려면 페인 닫기(`Ctrl+Shift+W`)를 사용하세요.
 
 ```sh
 tasty list panes

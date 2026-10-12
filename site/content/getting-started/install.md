@@ -77,7 +77,7 @@ Expand-Archive tasty-{ver}-windows-x64.zip -DestinationPath tasty
 
 첫 실행 시 "Windows 의 PC 보호" 경고가 뜹니다(코드 서명이 없어서입니다). **추가 정보 → 실행** 을 누르면 됩니다.
 
-Windows 에서 Tasty 는 **Git Bash** 를 셸로 씁니다. Git for Windows 가 없는 채로 처음 실행하면 터미널 대신 **셸 선택** <!-- en: Choose a shell --> 화면이 뜹니다. bash.exe 경로를 입력하고 **이 셸 사용** <!-- en: Use this shell --> 을 누르면 그 셸로 시작하고, **종료** <!-- en: Quit --> 를 누르면 Tasty 가 닫힙니다. 경로가 올바른 bash 나 zsh 실행 파일일 때만 **이 셸 사용** 을 누를 수 있습니다. 실행한 뒤에는 Git for Windows 가 없으면 설정 윈도우에서 "Git Bash를 찾을 수 없습니다" 안내가 뜨므로, 먼저 설치하거나 **설정** <!-- en: Settings --> > **터미널** <!-- en: Terminal --> > **셸** <!-- en: Shell --> 에서 bash 경로를 직접 지정합니다.
+Windows 에서 Tasty 는 **Git Bash** 를 셸로 씁니다. Git for Windows 가 없는 채로 처음 실행하면 터미널 대신 **셸 선택** <!-- en: Choose a shell --> 화면이 뜹니다. bash.exe 경로를 입력하고 **이 셸 사용** <!-- en: Use this shell --> 을 누르면 그 셸로 시작하고, **종료** <!-- en: Quit --> 를 누르면 Tasty 가 닫힙니다. 경로가 올바른 bash 나 zsh 실행 파일일 때만 **이 셸 사용** 을 누를 수 있습니다. 실행한 뒤에도 설정된 셸 경로가 올바르지 않으면 설정 윈도우의 **터미널** <!-- en: Terminal --> 탭에 "Git Bash를 찾을 수 없습니다" 안내가 뜹니다. 이때는 Git for Windows 를 설치하거나 **설정** <!-- en: Settings --> > **터미널** <!-- en: Terminal --> > **셸** <!-- en: Shell --> 에서 bash 경로를 직접 지정하세요.
 
 ## 첫 실행
 
@@ -100,7 +100,7 @@ Tasty 안에서 연 셸에는 `tasty` 명령이 자동으로 PATH 에 들어갑�
 
 ## GPU 요구사항
 
-Tasty 는 GPU(Vulkan / DirectX 12 / Metal)로 화면을 그립니다. GPU 가 없으면 소프트웨어 렌더러로 한 번 더 시도하고, 그것도 안 되면 "GPU 어댑터를 찾을 수 없음" 메시지를 내고 종료합니다. GPU 드라이버를 설치·업데이트하면 대부분 해결됩니다. 이름에 `headless` 가 없는 설치 파일은 모두 GUI 빌드입니다. 그래픽 화면 없이 서버에서 실행하려면 아래 headless 빌드를 사용하세요.
+Tasty 는 GPU(Vulkan / DirectX 12 / Metal)로 화면을 그립니다. GPU 가 없으면 소프트웨어 렌더러로 한 번 더 시도하고, 그것도 안 되면 윈도우를 띄우지 않고 종료합니다. 이때 화면에는 오류가 표시되지 않고, 로그(`~/.tasty/debug.log`, 터미널에서 실행했다면 터미널 출력)에 "GPU 어댑터를 찾을 수 없음" 이 남습니다. GPU 드라이버를 설치·업데이트하면 대부분 해결됩니다. 이름에 `headless` 가 없는 설치 파일은 모두 GUI 빌드입니다. 그래픽 화면 없이 서버에서 실행하려면 아래 headless 빌드를 사용하세요.
 
 ## headless 빌드
 

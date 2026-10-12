@@ -1,4 +1,4 @@
-<!-- source-hash: 132f29e7a1c1 -->
+<!-- source-hash: 57df7e7eebab -->
 # A first look
 
 Start by looking at the sidebar and work area. Learn how workspaces organize your projects and how panes, tabs, and surfaces fit together, then arrange them to suit your work.
@@ -54,8 +54,8 @@ For detailed operation see [Panes · Tabs · splits](../using/panes-tabs-splits.
 Three areas, top to bottom.
 
 - **Header** — The `tasty.` wordmark and the **Collapse** button. Collapsed, it becomes a narrow rail showing only icons.
-- **WORKSPACES** list — Click a card to switch, drag to reorder. Add with the **New workspace** button at the bottom (right-click to create from a preset). The number badge on the right of a card is how many Surfaces in that Workspace need your attention.
-- **Bottom buttons** — **Tools** (command palette, listening ports, remote connections, presets, tutorial, open file, items added by plugins), **Plugins** (the install · enable management window), **Settings** (the settings window).
+- **WORKSPACES** list — Click a card to switch, drag to reorder. Add with the **New workspace** button at the bottom. Right-click the button for **Create workspace from preset...** and **Add remote workspace**. There are two kinds of number badge on the right of a card: a yellow badge counts the Surfaces waiting for input, and a blue badge counts the Surfaces whose work finished or that received a notification. When both are shown, the yellow badge is on the left.
+- **Bottom buttons** — **Tools** (**Command palette…** · **Listening ports…** · **Remote connections…** · **Presets** · **Tutorial…** · **Task DAGs** · **Open File…** in that order, followed by items added by plugins below a separator), **Plugins** (the install · enable management window), **Settings** (the settings window).
 
 When you have many Workspaces, turn on **Settings** > **General** > **Workspace categories (folders)** to group them like folders. Details in [Workspaces](../using/workspaces.md).
 
@@ -63,13 +63,13 @@ When you have many Workspaces, turn on **Settings** > **General** > **Workspace 
 
 At the top of each Pane.
 
-- Each Tab shows a type icon (terminal · Markdown, etc.) and a name. The name follows the shell's current directory and can be pinned with right-click > **Rename Tab**.
+- Each Tab shows a type icon (terminal · Markdown, etc.) and a name. The name is chosen in this order: a name you set → the terminal title set by the program → the name of the shell's current directory → the default name. Once you set a name with right-click > **Rename Tab**, it no longer changes.
 - A **green dot** appears while a program is producing output, and the name changes colour when it waits for input or finishes ([Names and marks](../using/panes-tabs-splits.md#names-and-marks)).
 - `+` is a new Tab. Right-click to create from a preset. The split · search icons next to it split this Pane or search inside the current Surface.
 - When Tabs overflow, left/right arrows appear. Drag to reorder.
-- Right-click an empty spot to create a non-terminal Surface with **New Terminal** · **New Markdown...** · **New Explorer** · **New HTML...** · **New Image**. Each type is described in [Opening files](../using/files.md).
+- Right-click an empty spot to create a new Tab with **New Terminal** · **New Markdown...** · **New HTML...** · **New Image**. The same menu also has **Save as pane preset**, **Create tab from preset...** and **Create pane from preset...**. <!-- TODO verify: whether choosing New HTML... in the tab strip menu creates a Tab (no HTML branch found in the menu handler) --> Each type is described in [Opening files](../using/files.md).
 
-The last remaining Tab cannot be closed.
+The last remaining Tab of a Pane cannot be closed with Close Tab. Closing a Surface is different: closing the last Surface in a Tab closes that Tab, and if it was the last Tab of its Pane the Pane closes too, and if that was the last Pane of the Workspace the Workspace closes as well.
 
 ## Status bar
 
@@ -92,7 +92,8 @@ These are the values of the default preset (**Tasty**). In the notation, `Alt` i
 |---------|-----------------|-------|
 | New Workspace | `Alt+N` | `Cmd+N` |
 | New Tab | `Alt+T` | `Cmd+T` |
-| Close current Tab · Surface | `Ctrl+W` | `Ctrl+W` |
+| Close current Tab | `Ctrl+W` | `Ctrl+W` |
+| Close current Surface | `Alt+W` | `Cmd+W` |
 | Restore closed item | `Ctrl+Shift+T` | `Ctrl+Shift+T` |
 | Pane split (left/right / top/bottom) | `Alt+E` / `Alt+Shift+E` | `Cmd+E` / `Cmd+Shift+E` |
 | Surface split (left/right / top/bottom) | `Alt+D` / `Alt+Shift+D` | `Cmd+D` / `Cmd+Shift+D` |
@@ -110,7 +111,7 @@ If you want iTerm2-style `⌘`-centric combinations on macOS, pick the **Mac** p
 
 ## When you close the window
 
-Pressing the window's close button asks whether to **Quit** or **Minimize to background**. If you choose background, Tasty goes into the system tray (menu bar) and comes back via **Show Window** in the tray icon's menu. To stop being asked every time, change **Settings** > **General** > **Close behavior**.
+With several windows open, the close button closes only that window. On the last remaining window, the close button asks whether to **Quit** or **Minimize**. If you choose Minimize, Tasty goes into the system tray (menu bar) and comes back via **Show Window** in the tray icon's menu. To stop being asked every time, change **Settings** > **General** > **Close behavior**.
 
 Once you confirm quitting, web pages and Markdown documents in all windows are hidden so the progress screen can be shown while shutdown is pending. If you cancel the confirmation or return after minimizing to the background, you can continue using the documents.
 

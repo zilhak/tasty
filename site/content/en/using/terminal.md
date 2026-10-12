@@ -1,4 +1,4 @@
-<!-- source-hash: f3639f02cba7 -->
+<!-- source-hash: 5e49c676cab9 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -145,7 +145,7 @@ The same items are under **Settings** > **Terminal** > **Mouse Capture** — the
 Terminal bells (`\a`) and notification sequences sent by programs (OSC 9 · 99 · 777) are collected and shown together.
 
 - `Ctrl+Shift+I` — the **Notifications** panel. A newest-first list with a **Jump** button and **Mark all read**. Opening it marks everything as read. The fullscreen button on the title bar shows it at a large size ([Fullscreen](panes-tabs-splits.md#fullscreen)).
-- If the window is in the background, an OS notification is shown as well.
+- Notifications are not sent to the OS notification center. Even when the window is in the background, check them in this panel, on the Surface border, and with the sidebar badge.
 - **Settings** > **General** > **Notifications** — **Notifications enabled** · **Sound** · **Coalesce interval (ms)** (the interval within which consecutive notifications from the same place are merged into one, default 500).
 - To turn off only the bell, **Settings** > **Terminal** > **Show bell notification**.
 

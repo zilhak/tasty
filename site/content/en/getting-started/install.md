@@ -1,4 +1,4 @@
-<!-- source-hash: fe1cdc4a6f67 -->
+<!-- source-hash: b2a5e4451923 -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -78,7 +78,7 @@ Expand-Archive tasty-{ver}-windows-x64.zip -DestinationPath tasty
 
 On first launch a "Windows protected your PC" warning appears (the binary is not code-signed). Click **More info → Run anyway**.
 
-On Windows, Tasty uses **Git Bash** as its shell. If you start Tasty for the first time without Git for Windows, a **Choose a shell** screen appears instead of a terminal. Enter the path to bash.exe and press **Use this shell** to start with that shell, or press **Quit** to close Tasty. **Use this shell** is available only when the path is a bash or zsh executable. Once Tasty is running without Git for Windows, the settings window shows a "Git Bash not found" notice, so either install it first or set the bash path yourself under **Settings** > **Terminal** > **Shell**.
+On Windows, Tasty uses **Git Bash** as its shell. If you start Tasty for the first time without Git for Windows, a **Choose a shell** screen appears instead of a terminal. Enter the path to bash.exe and press **Use this shell** to start with that shell, or press **Quit** to close Tasty. **Use this shell** is available only when the path is a bash or zsh executable. Once Tasty is running, if the configured shell path is not valid, the **Terminal** tab of the settings window shows a "Git Bash not found" notice. In that case install Git for Windows, or set the bash path yourself under **Settings** > **Terminal** > **Shell**.
 
 ## First launch
 
@@ -101,7 +101,7 @@ Shells opened inside Tasty get the `tasty` command on PATH automatically. On mac
 
 ## GPU requirements
 
-Tasty draws its screen with the GPU (Vulkan / DirectX 12 / Metal). If there is no GPU it tries once more with a software renderer, and if that fails too it prints a "GPU adapter not found" message and exits. Installing or updating the GPU driver resolves this in most cases. Every install file without `headless` in its name is a GUI build. To run on a server without a graphical desktop, use the headless build below.
+Tasty draws its screen with the GPU (Vulkan / DirectX 12 / Metal). If there is no GPU it tries once more with a software renderer, and if that fails too it exits without opening a window. No error is shown on screen; "No GPU adapter found" is written to the log (`~/.tasty/debug.log`, and the terminal output when launched from a terminal). Installing or updating the GPU driver resolves this in most cases. Every install file without `headless` in its name is a GUI build. To run on a server without a graphical desktop, use the headless build below.
 
 ## Headless build
 

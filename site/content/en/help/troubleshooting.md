@@ -1,4 +1,4 @@
-<!-- source-hash: 45899f1c1861 -->
+<!-- source-hash: 849d7cea2cff -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -31,8 +31,8 @@ TASTY_LOG=debug tasty 2> tasty.log
 - **macOS: it will not open, saying "unidentified developer"** — that is Gatekeeper. Allow it in **System Settings > Privacy & Security**, or run `xattr -dr com.apple.quarantine /Applications/Tasty.app` in a terminal.
 - **Linux: the AppImage does not run** — it lacks the execute bit or FUSE is missing. Run `chmod +x Tasty-*.AppImage` first; if it still fails, start it with `./Tasty-*.AppImage --appimage-extract-and-run`.
 - **Linux: it does not start, with `GLIBC_2.39 not found`** — your distribution is older than the build baseline (Ubuntu 24.04), for example Ubuntu 20.04 · Debian 11. There is no build for older distributions.
-- **Linux `.tar.gz`: it exits saying a library is missing** — `tasty` lists the missing library and exits. Install the packages it names (`libfreetype6` · `libfontconfig1` · `libgtk-3` · `libwebkit2gtk-4.1` and so on). To have them pulled in automatically, use the `.deb` / `.rpm` instead.
-- **"No GPU adapter found" appears and it exits** — Tasty could not find a usable GPU adapter (Vulkan / DirectX 12 / Metal). Install or update the driver. On Linux, Tasty uses Vulkan when `libvulkan1` / `vulkan-loader` is present, OpenGL when it is not, and software rendering if that fails too. To run on a server or VM without a graphical desktop, use a [headless build](../getting-started/install.md#headless-build).
+- **Linux `.tar.gz`: it exits saying a library is missing** — `tasty` lists the file names of the missing shared libraries and exits. Use the search command it prints for your distribution (`apt-file search` · `dnf provides` · `zypper what-provides` · `pacman -F`) to find the package that provides each library, then install it. To have the required libraries installed automatically, use the `.deb` / `.rpm` instead.
+- **It exits right away and the log says "No GPU adapter found"** — Tasty could not find a usable GPU adapter (Vulkan / DirectX 12 / Metal). This error is not shown on screen; it is written only to `~/.tasty/debug.log` and to the terminal output (when launched from a terminal). Install or update the driver. On Linux, Tasty uses Vulkan when `libvulkan1` / `vulkan-loader` is present, OpenGL when it is not, and software rendering if that fails too. To run on a server or VM without a graphical desktop, use a [headless build](../getting-started/install.md#headless-build).
 - **Windows: "Git Bash not found"** — Tasty uses Git Bash as the shell on Windows. Install Git for Windows, or set the bash path yourself in **Settings** > **Terminal** > **Shell**. On the first run a **Choose a shell** screen appears instead of a terminal. Enter the path to bash.exe there and press **Use this shell**, or press **Quit**, install Git for Windows, and start Tasty again.
 - **It exits right after starting with "Database initialization error"** — read the message body. "The database is locked" means another Tasty is already running. "corrupted" / "schema version mismatch" means you can back up `~/.tasty/state.db`, delete it, and start fresh. Only the recent-files list and tutorial progress are lost.
 - **You typed `tasty` inside a Tasty terminal but no new window appeared** — run with no arguments inside Tasty, it shows the help instead of opening a new window. For a new window use `tasty new window` (it leaves the focus on the window you were looking at).
@@ -73,19 +73,19 @@ You can see the current state in the same tab (only shown on macOS). Full Disk A
 ## My settings or window layout look like they were reset
 
 - **The settings went back to their defaults** — if `~/.tasty/config.toml` cannot be parsed as TOML, Tasty starts from the defaults. Your original file is not deleted. It is left where it is, and moved next to it as `config.toml.bak` the moment settings are saved over it. Fix that file and rename it back to `config.toml` and your settings come back as they were. Which line failed is written to `~/.tasty/debug.log`.
-- **A saved window layout was not restored** — the same applies to a damaged slot file under `~/.tasty/layouts/`. The original is kept beside it as `01.json.bak`.
-- **A notification said saving is blocked until you move or delete the `.bak` files** — Tasty tried to move your original aside but all nine slots (`.bak` through `.bak.9`) are already taken, so there is nowhere to put it. It stops saving rather than delete your file, and it stays that way for the whole session. Move or delete the backups you no longer need, then start Tasty again.
+- **A saved window layout was not restored** — first check that **Restore layout on startup** under **Settings** > **General** is turned on. The Workspace · Pane · Tab arrangement is stored in `~/.tasty/structure/journal.db`. Files such as `01.json` under `~/.tasty/layouts/`, written by earlier versions, are read only once, when they are first carried over into the new store; after that, editing or deleting them does not change the restored layout. If Tasty cannot open the store, it shows the cause on a **Could not start the terminal** screen and writes the same text to `~/.tasty/debug.log`. Include it when you report the problem. <!-- TODO verify: whether there is a user procedure to recover the layout from a damaged journal.db -->
+- **A notification said saving is blocked until you move or delete the `.bak` files** — Tasty tried to move your original settings file (`config.toml`) aside but all nine slots (`.bak` through `.bak.9`) are already taken, so there is nowhere to put it. It stops saving rather than delete your file, and it stays that way for the whole session. Move or delete the backups you no longer need, then start Tasty again.
 - **A notification said the settings file could not be read** — the file is there but Tasty could **not read** it (a permission problem or a disk error). In that case Tasty leaves the file alone and does not save over it, so the defaults on screen never replace your real settings. Fix the permissions or move the file aside, then start Tasty again.
 
   ```sh
-  ls -l ~/.tasty/config.toml ~/.tasty/layouts/
+  ls -l ~/.tasty/config.toml
   ```
 
 ## Running Tasty again
 
 - **Launching from the app menu or a launcher brings the open window forward instead of a new window** — only one Tasty runs per data folder (`~/.tasty/`, or the folder set with `TASTY_HOME`). A new launch does not start a second process; it is handed to the running Tasty. Windows hidden to the tray or minimized come back, and the window you used last comes forward. Whether it actually comes to the front is up to the OS, so in some environments the taskbar entry only flashes. On Wayland, if the desktop does not support window activation requests, a new window opens instead of the open one.
-- **Running `tasty` in a terminal opens just one new window** — launching from anywhere other than the app menu (a terminal, a script, an agent) is the same as `tasty new window`. The focused window and hidden windows stay as they are. On Windows, launching from the terminal you are using (the one in front) passes on the permission to come forward, so the open window may come forward as it does from the app menu.
-- **A "Tasty is already running." box appears** — the launch could not be handed to the running Tasty and the running Tasty does not respond. When the request did arrive but is handled late, no box appears and a window opens a moment later. Usually the box means the running Tasty was still starting up, or on Linux the session bus could not be reached. The cause of every launch is written as a line in `launch.log` in the data folder (`~/.tasty/launch.log`). On Linux without `zenity`, a desktop notification appears instead of the box.
+- **Running `tasty` in a terminal opens just one new window** — running it with no arguments from a terminal, script, or agent outside Tasty is the same as `tasty new window`. Inside a terminal that Tasty opened, it shows the help instead of a new window. The focused window and hidden windows stay as they are. On Windows, launching from the terminal you are using (the one in front) passes on the permission to come forward, so the open window may come forward as it does from the app menu.
+- **A "Tasty is already running." box appears** — the launch could not be handed to the running Tasty and the running Tasty does not respond. When the request did arrive but is handled late, no box appears and a window opens a moment later. Usually the box means the running Tasty was still starting up, or on Linux the session bus could not be reached. The cause is written to `launch.log` in the data folder (`~/.tasty/launch.log`). Each launch adds several lines, one per step. On Linux without `zenity`, a desktop notification appears instead of the box.
 - **Starting Tasty right after force-quitting it takes a moment** — it waits up to two seconds for the leftover lock to be released before starting.
 - **You need two separate Tastys** — start one with a different `TASTY_HOME`.
 
@@ -103,7 +103,7 @@ You can see the current state in the same tab (only shown on macOS). Full Disk A
 
 ## Notifications do not arrive · there are too many
 
-- **OS notifications do not appear** — while the Tasty window is active, no OS notification is sent; you are notified only inside the app, through the panel · border · badge. OS notifications go out only while the window is inactive, and are limited to one per second. Check that **Notifications enabled** under **Settings** > **General** > **Notifications** is not turned off. The panel opens with `Ctrl+Shift+I`.
+- **Notifications do not appear in the OS notification center** — Tasty currently does not send notifications to the OS notification center. Even when the window is in the background, notifications are shown inside the app: the **Notifications** panel, the Surface border, and the sidebar badge. The panel opens with `Ctrl+Shift+I`. If notifications do not appear inside the app either, check that **Notifications enabled** under **Settings** > **General** > **Notifications** is turned on.
 - **A notification for every bell (`\a`) is noisy** — turn off **Settings** > **Terminal** > **Show bell notification**. In `config.toml`, that is `bell_notification = false` under `[general]`. Bell hooks still fire.
 - **There is no sound** — **Settings** > **General** > **Notifications** > **Sound** is off by default. Even when it is on, consecutive notifications from the same source within the merge interval are combined into one, so the sound plays only once.
 
@@ -111,7 +111,7 @@ The full list of settings is in [Hooks · notifications · webhooks](../agents/h
 
 ## Claude · Codex hooks do not work
 
-**Symptom** — completion notifications from child agents do not arrive. The Surface border · sidebar badge does not light up even after the agent finishes its response. Restoring a Tab or restarting Tasty does not resume the same session. `tasty claude reboot` fails with `claude-session-id meta not set`. The state shown by `tasty claude children` differs from reality.
+**Symptom** — completion notifications from child agents do not arrive. The Surface border · sidebar badge does not light up even after the agent finishes its response. Restoring a Tab or restarting Tasty does not resume the same session. `tasty claude reboot` fails with `claude-session-id meta not set` (with the Korean UI, "claude-session-id 메타데이터 미설정"). The state shown by `tasty claude children` differs from reality.
 
 **Cause** — the hooks are not installed, or an old hook command is still sitting in the settings file after you updated Tasty.
 

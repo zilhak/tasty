@@ -1,4 +1,4 @@
-<!-- source-hash: 6c997f5d7cc2 -->
+<!-- source-hash: b71dcd799995 -->
 # Tasty guide
 
 Tasty is a GPU-accelerated terminal where you and your AI agents work together. On Windows, macOS, and Linux, you can organize projects into workspaces and open several terminals side by side. Agents use the `tasty` CLI to create terminals, run commands, and read the results.
@@ -16,7 +16,7 @@ Start with installation and a first look if you are new to Tasty. If you already
 - [Build and reuse a working layout](using/workflow-layouts.md) — arrange implementation and tests, then save a preset.
 - [Panes · Tabs · splits](using/panes-tabs-splits.md) — Dividing the screen, moving, changing type, fullscreen, saving layouts.
 - [Working in the terminal](using/terminal.md) — Copy/paste, search, opening links, scrolling, mouse capture, shell integration.
-- [Opening files](using/files.md) — Explorer · Markdown · image · HTML · git views and other non-terminal screens.
+- [Opening files](using/files.md) — Explorer · Markdown · image · HTML · git views and other non-terminal screens. File management in the explorer (copy · move · rename · trash, undo, the OS file clipboard, dragging out to other apps, changing files in a remote explorer, preview · properties).
 
 ## Make it yours
 

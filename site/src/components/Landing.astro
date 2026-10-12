@@ -83,14 +83,16 @@ const dataAttrs = Object.fromEntries(
         <div class="term">
           <div class="term__bar"><span class="term__dots"><i></i><i></i><i></i></span> {c.agentsTab}</div>
           <pre><code><span class="g">$</span> tasty claude spawn --workspace build \
-    --role <span class="y">implementer</span> --prompt <span class="g">"fix the flaky test"</span>
-<span class="c">→ child surface 52 · completion hook armed</span>
+    --role <span class="y">implementer</span> --prompt <span class="g">"fix the flaky test"</span> \
+    | jq .child_surface_id
+<span class="c">52</span>
 
-<span class="g">$</span> tasty agent barrier-await --workspace-id 2 --name <span class="y">review-ready</span>
-<span class="c">→ 2/3 arrived …</span>
+<span class="g">$</span> tasty agent barrier-await --workspace-id 2 --name <span class="y">review-ready</span> \
+    | jq -c <span class="g">'&#123;state, count_signaled, count_required&#125;'</span>
+<span class="c">&#123;"state":"open","count_signaled":2,"count_required":3&#125;</span>
 
-<span class="g">$</span> tasty read queue --surface 52
-<span class="p">[from 52]</span> done · 1 file changed, 12 insertions</code></pre>
+<span class="g">$</span> tasty read queue --from 52 | jq -r <span class="g">'.messages[].content'</span>
+<span class="p">done · 1 file changed, 12 insertions</span></code></pre>
         </div>
       </div>
       <div class="section__head" style="margin-bottom:0">
