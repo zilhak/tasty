@@ -1,4 +1,4 @@
-<!-- source-hash: e83d1bf1f06d -->
+<!-- source-hash: 43d4c1b88f6d -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -206,7 +206,7 @@ A Claude started with `tasty claude spawn` already holds the permissions for `ta
 
 ## Sending notifications
 
-Tell a person when a long task has finished. The notification goes to the notification panel and to the OS notification system.
+Tell a person when a long task has finished. The notification collects in the notification panel and shows as a Surface border and a sidebar badge. It is not sent to the OS notification center.
 
 ```sh
 tasty notify "Build finished" --title "cargo"

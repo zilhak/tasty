@@ -1,4 +1,4 @@
-<!-- source-hash: 1e5b372e26b0 -->
+<!-- source-hash: e00f952ad4bc -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -37,6 +37,7 @@ Trying to attach directly with an `ssh` profile is refused. Always create one `t
 ```sh
 # ssh profile
 tasty tool remote-profile add-ssh --name gx10 --host 10.0.0.5 --user me --port 22 --identity ~/.ssh/id_ed25519
+tasty tool remote-profile add-ssh --name win --host 10.0.0.9 --shell powershell --label "Windows build PC"   # set the shell and display name
 tasty tool remote-profile list-local                      # list ~/.ssh/config aliases
 tasty tool remote-profile import --from devbox --name devbox   # alias → ssh profile
 
@@ -99,9 +100,26 @@ tasty remote attach --ssh me@10.0.0.5 --workspace 3        # one-off, without a 
 tasty remote new-workspace --profile gx10-attach --name build --cwd /home/me/proj   # create a Workspace on the remote
 ```
 
+Common options:
+
+| Option | Used with | Effect |
+|---|---|---|
+| `--send <input>` | `tool attach`, `remote attach` | Sends input once right after attaching (escapes `\n` `\r` `\t` `\xNN` are decoded) |
+| `--send-to <surface>` | `tool attach`, `remote attach` | In a Workspace attach, the remote Surface ID that receives `--send` |
+| `--dump-after <ms>` | `tool attach`, `remote attach` | Collects output for the given time, prints the mirrored screen and exits (for checks without a GUI) |
+| `--remote-tasty <path>` | `remote attach·check·workspaces·new-workspace` | Path to the remote tasty binary when you don't use a profile (default `tasty`). With `--profile`, the profile's value is used |
+| `--remote-port-mode <mode>` | Same as above | Port discovery mode (`auto`, `subcommand`, `file-unix`, `file-windows`) |
+| `--json` | `remote workspaces`, `remote new-workspace` | Prints the result as JSON |
+
 - A Workspace attach mirrors the terminals inside it, including the split structure.
 - Image Surfaces show their content as well, and clicks and key presses reach the remote.
-- In the explorer, changing files such as renaming and deleting is blocked. Double-clicking a markdown file opens a markdown tab for it on the remote computer, and the tab appears in this window too; a file at the same path on this computer is not read. If the type's default handler can't be used remotely, only the handlers that can are offered; a type with no such handler only shows a notice.
+- In the explorer you can change files on the remote computer (since 0.12.2). New folder, new file, rename, move to trash, and copy, cut, paste and drag-and-drop within the same connection are carried out by the remote Tasty, and the progress display, name-conflict popup and result card are the same as in a local explorer. The remote Tasty must also be 0.12.2 or later. The following limits apply.
+  - Remote operations are not added to the undo history. To revert one, use **Undo** on its result card.
+  - Pasting and drag-and-drop between local and remote, or between two different remotes, are refused.
+  - If the remote Tasty is an older version, the menu items that change files don't appear.
+  - **Open in System**, **Add to Favorites** and **Open in New Tab** aren't available in a remote explorer.
+  - If the connection drops during an operation, the remote stops it and this side tells you the result is unknown.
+- In the explorer, double-clicking a markdown file opens a markdown tab for it on the remote computer, and the tab appears in this window too; a file at the same path on this computer is not read. If the type's default handler can't be used remotely, only the handlers that can are offered; a type with no such handler only shows a notice.
 - Markdown Surfaces show the remote document in this computer's theme, and the refresh button at the document's top right fetches the latest content again. When the document changes on the remote, the content isn't replaced on its own — only the refresh button changes color (if the remote Tasty is a headless build, the color doesn't change, so press it yourself to check). While the connection is lost and waiting to reconnect, the document shows a notice that the connection was lost instead of the old content, and once it reconnects it fetches the latest content on its own. Relative image paths and file links inside a remote document don't open, and the address bar can't open another file.
 - While you're viewing a mirror, when the **Open Markdown File** popup converts a Surface to markdown or opens a new tab, the path you type in the popup or pick with **Browse…** opens as a file on the remote computer. A relative path is taken from the remote terminal's current folder. A file opened this way is not added to this computer's recent files list.
 - HTML Surfaces appear as empty areas; their content is not shown yet.

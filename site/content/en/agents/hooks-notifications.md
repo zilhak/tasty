@@ -1,4 +1,4 @@
-<!-- source-hash: 266afaa331d7 -->
+<!-- source-hash: 56ee28b4c678 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -27,6 +27,9 @@ tasty unset hook --hook <HOOK_ID>
 | `command-completed` | When one command finishes inside the shell (requires bash/zsh shell integration) |
 | `command-completed:<code>` | Only commands that finished with that exit code (e.g. `command-completed:1` = failed commands) |
 | `claude-idle` / `needs-input` / `codex-idle` | Events emitted by the Claude Code / Codex plugins ([Claude and Codex](claude-codex.md)) |
+| `claude-stop-failure` | When a Claude Code turn ends on an API error (server overload, rate limit, authentication failure, and so on). It usually comes with `claude-idle`; when background work is still running, only this one comes |
+| `claude-error` | When a known error message appears in Claude Code's screen output |
+| `claude-error-stalled` | When the turn hasn't ended but Claude Code's output hasn't changed for a while, so it looks stuck (comes even without an earlier error) |
 
 - Add `--once` and the hook is removed automatically after firing once. By default it stays.
 - Hook commands run in the background and do not block terminal input.
@@ -41,6 +44,10 @@ Event information reaches the command through environment variables.
 | `TASTY_HOOK_MATCHED_TEXT` | The whole line that actually matched in `output-match` |
 | `TASTY_HOOK_EXIT_CODE` | Exit code for `command-completed` |
 | `TASTY_HOOK_IDLE_ELAPSED_SECS` | Seconds since the last output for `idle-timeout` |
+| `TASTY_HOOK_CUSTOM_EVENT` | The name of a plugin event (`claude-idle` and so on) |
+| `TASTY_HOOK_SOURCE` | `hook` when a hook ran it, `dispatch` when you ran it directly with `tasty hook-handler dispatch` |
+
+Apart from `TASTY_HOOK_EVENT`, `TASTY_HOOK_SOURCE` and `TASTY_HOOK_SURFACE_ID`, the variables are built from the key names of the event information. Letters and digits in a key become uppercase, every other character becomes `_`, and the result follows `TASTY_HOOK_` (`matched_text` → `TASTY_HOOK_MATCHED_TEXT`). When you run a hook handler that runs a shell command with `tasty hook-handler dispatch --body '{"build-id":7}'`, the top-level keys of the `--body` object come in by the same rule (`TASTY_HOOK_BUILD_ID=7`). Strings come in as they are, other values as JSON text, and each value is cut at 4096 bytes. When two keys produce the same name, the first value is used.
 
 ## Global hooks
 
@@ -124,8 +131,9 @@ Notification sequences sent by terminal programs (OSC 9 / 99 / 777) and bells ar
 - **Notification panel** — open it with `Ctrl+Shift+I`. The newest-first list shows Workspace, title, body, and elapsed time, and **Jump** takes you to that Workspace. Opening it marks everything read; there is also a **Mark all read** button.
 - **Surface border** — a blue border on the Surface where the notification occurred. It disappears when you focus that Surface while the Tasty window is active. While you are in another app it stays, and it disappears when you return to the window.
 - **Sidebar badge** — a count badge on the row of any Workspace that has a Surface needing attention.
-- **OS notification** — a system notification when the Tasty window is inactive (limited to once per second).
 - **Sound** — when enabled in settings, one system beep per notification.
+
+Notifications are not sent to the OS notification center (system notifications). To notice them while you use another app, turn on the sound.
 
 ### Settings
 
@@ -169,6 +177,7 @@ tasty webhook port                  # address and port of the running listener, 
 tasty webhook port 28500            # use this port from the next start
 tasty webhook port --unset          # remove the saved port so the next start picks a free one
 tasty webhook allow-external on     # also accept calls from other computers from the next start (off to undo)
+tasty webhook allow-external        # show the saved value and the address the running listener actually opened
 tasty --webhook-port 28500          # start with this port for this run only
 ```
 
@@ -178,7 +187,7 @@ tasty --webhook-port 28500          # start with this port for this run only
 - If the port moved off `28429` and you have webhooks saved with `--persistent`, Tasty shows a warning. The saved webhooks' URLs change port too, so check the new URLs with `tasty webhook list`. Choose a port if the URLs must not change.
 - If Tasty is already running and you launch it again with a different `--webhook-port`, the launch is not handed to the running Tasty; it explains why and ends. With the same port it opens a new window in the running Tasty as usual.
 - A `port = 28429` that an earlier version wrote automatically is removed on the first start, so the port is chosen automatically. Any other port you set stays.
-- **By default the webhook server accepts calls from this computer (`127.0.0.1`) only.** If other computers or CI must call it directly, turn on **Settings → General → Accept webhook calls from other computers** or run `tasty webhook allow-external on`, then restart Tasty. When on, it accepts connections on all network interfaces, so if the host firewall allows it, devices on the same network, such as an office LAN or public Wi-Fi, can reach it without router forwarding. Check firewall and authentication settings. Use a reverse proxy for HTTPS.
+- **By default the webhook server accepts calls from this computer (`127.0.0.1`) only.** If other computers or CI must call it directly, turn on **Settings → General → Accept webhook calls from other computers** or run `tasty webhook allow-external on`, then restart Tasty. Writing `allow_external = true` under `[webhook]` in `~/.tasty/config.toml` does the same. When on, it accepts connections on all IPv4 network interfaces (`0.0.0.0`), so if the host firewall allows it, devices on the same network, such as an office LAN or public Wi-Fi, can reach it without router forwarding. Check firewall and authentication settings. Use a reverse proxy for HTTPS.
 
 ### Registering
 

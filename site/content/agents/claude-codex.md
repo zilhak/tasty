@@ -107,7 +107,7 @@ tasty claude parent --surface 57                            # 이 자식의 부�
 
 `tasty codex …` 도 같은 서브커맨드(`tell` / `children` / `state` / `broadcast` / `kill` / `respawn` / `parent`)를 가집니다.
 
-자식이 너무 많아지면 spawn 응답에 경고가 붙습니다. 임계치는 **설정** <!-- en: Settings --> › **플러그인** <!-- en: Plugins --> › **Claude Code** / **Codex** 의 **Spawn child 경고 임계치** <!-- en: Spawn child warning threshold --> 에서 바꿉니다 (Codex 기본 6).
+자식이 너무 많아지면 spawn 응답에 경고가 붙습니다. 임계치는 **설정** <!-- en: Settings --> › **플러그인** <!-- en: Plugins --> › **Claude Code** / **Codex** 의 **Spawn child 경고 임계치** <!-- en: Spawn child warning threshold --> 에서 바꿉니다 (Claude Code·Codex 모두 기본 6).
 
 ## 4. 완료 알림 받기
 
@@ -129,7 +129,7 @@ Monitor는 최대 30분 뒤 만료됩니다. 만료 알림을 받으면 같은 �
 
 로그 문구는 앱 언어를 따릅니다. Claude와 Codex 자식이 같은 파일에 알림을 한 줄씩 기록합니다. **Tasty를 다시 시작하면 이전 실행의 완료 로그는 지워집니다.** Monitor 없이 파일을 직접 읽는 것만으로 자동 재개나 영구 보관이 되지는 않습니다.
 
-쓰기 전에 파일 크기가 **256 KiB** 이상이면 마지막 256 KiB를 남기는 대신 파일 전체를 비웁니다. 한 줄을 추가하거나 여러 자식이 동시에 쓰는 동안에는 이 크기를 넘을 수 있고, 아직 읽지 않은 알림도 사라질 수 있습니다. 정상 처리에서는 줄 단위로 정리하고 버린 바이트 수를 로그에 남깁니다. 기간이나 파일 개수 제한은 없고, 닫은 탭의 로그도 다음 재시작까지 남습니다.
+새 줄을 쓰기 전에 파일 크기가 **256 KiB** 이상이면 파일 전체를 비운 뒤 씁니다. 마지막 부분만 남기지 않으므로 아직 읽지 않은 알림도 함께 사라집니다. 한 줄을 추가하거나 여러 자식이 동시에 쓰는 동안에는 이 크기를 넘을 수 있습니다. 비울 때는 보통 아래 `retention_start` 누계를 비운 바이트 수만큼 올립니다. 다른 자식이 동시에 쓰고 있어 정리 차례를 제때 얻지 못하면 누계를 올리지 않은 채 비우므로, 그때 사라진 알림은 누계로도 알 수 없습니다. 기간이나 파일 개수 제한은 없고, 닫은 탭의 로그도 다음 재시작까지 남습니다.
 
 완료 로그를 직접 이어 읽는다면 옆의 `<번호>.log.meta` 파일에 있는 `retention_start`도 확인하세요. 지금까지 비워진 바이트의 합계입니다. 저장한 읽기 위치와 함께 비교해 중간에 기록이 사라졌는지 확인할 수 있습니다. 다만 로그 정리나 메타데이터 기록에 실패하면 누계에 반영되지 않은 손실이 생길 수 있어 모든 누락을 확인하는 방법은 아닙니다. Monitor 구독에서는 이 파일을 직접 읽을 필요가 없습니다.
 
@@ -147,6 +147,12 @@ tasty codex managed prepare --workspace-id 456 --task-id TASK_ID
 ```
 
 `TASK_ID`는 기다릴 작업 ID로 바꾸세요. 부모 Codex는 현재 대화 ID를 자동으로 읽습니다.
+
+| 옵션 | 뜻 |
+|---|---|
+| `--parent-thread <ID>` | 결과를 받을 부모 Codex 대화 ID. 생략하면 호출한 Codex 의 `CODEX_THREAD_ID` 를 씁니다 |
+| `--cli-path <경로>` | 전달자가 실행할 Tasty 실행 파일. 생략하면 지금 실행한 `tasty` 를 씁니다 |
+
 현재는 로컬 호출만 지원하며, 에이전트 인증 토큰이 있는 호출은 준비 단계에서 거절합니다.
 응답의 `create_thread_args`로 Codex 작업 생성 도구를 호출한 뒤, 반환된 작업 ID를 연결합니다.
 
@@ -167,6 +173,9 @@ idle이면 새 턴이 시작될 수 있습니다. 부모가 받은 결과와 tas
 
 끝난 전달 기록은 `tasty codex managed forget --id RELAY_ID`로 지웁니다. 이 명령은 원래
 작업을 취소하거나 Codex 전달자를 닫지 않습니다.
+
+준비한 뒤 Tasty 를 다시 시작하면 그 전달 기록은 더 쓸 수 없습니다. `attach`·`get`·`callback` 이
+`relay_instance_changed` 오류로 끝나면 `managed prepare` 부터 다시 하세요.
 
 ### API 에러로 멈춘 Claude 자동 재개
 
@@ -235,8 +244,11 @@ tasty claude child-profile --child 0 --profile strict       # 자식에게 지�
 
 ```sh
 tasty claude checklist-enable                               # 게이트 켜기 (checklist-disable 로 끔)
+tasty claude checklist-status                               # 지금 켜져 있는지 확인
 tasty claude spawn --workspace w --profile continue-checklist
 ```
+
+`checklist-enable`·`checklist-disable`·`checklist-status` 는 `--gate <이름>` 으로 다른 등록 게이트를 지정할 수 있습니다(기본 `continue-checklist`). 모든 게이트의 켜짐 여부는 `tasty claude gate-list` 로 한 번에 봅니다.
 
 - 에이전트가 응답 끝에 `[[TASTY-CHECKLIST-DONE]]` 을 넣으면 통과, 아니면 체크리스트를 다시 받습니다. 라운드 상한(기본 3)에 닿으면 자동 통과합니다.
 - 상한은 **설정** › **플러그인** › **Claude Code** 의 **게이트 기본 라운드 상한** <!-- en: Default gate round limit -->.

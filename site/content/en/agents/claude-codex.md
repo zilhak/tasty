@@ -1,4 +1,4 @@
-<!-- source-hash: 0d4d05bcf9b5 -->
+<!-- source-hash: 1b61aa068bab -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -36,6 +36,19 @@ When the installed hooks run successfully in the current session, Tasty receives
 - When an agent finishes a response or asks a question, an **attention border** lights up on that Surface and a badge appears on the Workspace in the sidebar (waiting for a question takes priority, in yellow).
 - When you close and restore a Tab, or restart Tasty, the same session resumes (`claude -r` / `codex resume`).
 - Receiving a child’s state and results also requires [parent setup](#4-receiving-completion-notifications). Completion lands in the completion log as one line, and a Claude Code parent uses Monitor to subscribe to it.
+
+When you start Codex through Tasty's launch commands, Tasty manages hooks and restore information per terminal.
+Restoring uses the same method. This is based on Codex CLI 0.154.0.
+When you type a Codex command into a terminal yourself, run it like this.
+
+```sh
+codex -c check_for_update_on_startup=false
+codex resume -c check_for_update_on_startup=false SESSION_ID
+```
+
+Replace `SESSION_ID` with the ID of the conversation to continue. If you connect directly to a shared App Server, old terminal
+information left on the server can keep restore information from being saved. A conversation already in that state,
+or an explicit `--remote` connection, is not connected automatically just by updating Tasty.
 
 ## 2. Launching
 
@@ -95,7 +108,7 @@ A Claude child started without a prompt is `idle` once its input screen appears.
 
 `tasty codex …` has the same subcommands (`tell` / `children` / `state` / `broadcast` / `kill` / `respawn` / `parent`).
 
-When there are too many children, a warning is attached to the spawn response. Change the threshold at **Settings** › **Plugins** › **Claude Code** / **Codex** › **Spawn child warning threshold** (Codex default 6).
+When there are too many children, a warning is attached to the spawn response. Change the threshold at **Settings** › **Plugins** › **Claude Code** / **Codex** › **Spawn child warning threshold** (default 6 for both Claude Code and Codex).
 
 ## 4. Receiving completion notifications
 
@@ -118,7 +131,7 @@ Monitor expires after at most 30 minutes. When you get the expiry notice, subscr
 
 Log messages follow the app language. Claude and Codex children record notifications one line at a time in the same file. **Restarting Tasty deletes completion logs from the previous run.** Reading a log without Monitor does not provide automatic resumption or permanent storage.
 
-Before writing, if the file is already **256 KiB** or larger, Tasty empties it rather than keeping the last 256 KiB. Adding a line or concurrent writes can take it beyond that size, and unread notifications may be lost. Normal cleanup removes whole lines and logs the discarded byte count. There is no time limit or file-count limit; a closed tab’s log stays until the next restart.
+Before writing a new line, if the file is already **256 KiB** or larger, Tasty empties the whole file and then writes. It does not keep the last part, so unread notifications are lost too. Adding a line or concurrent writes can take it beyond that size. When it empties the file, it normally raises the `retention_start` total below by the number of bytes discarded. If other children are writing at the same time and Tasty can't get its turn to clean up in time, it empties the file without raising the total, so notifications lost then can't be detected from the total either. There is no time limit or file-count limit; a closed tab’s log stays until the next restart.
 
 If you read logs directly and resume later, also keep track of `retention_start` in the adjacent `<number>.log.meta` file. It counts the total bytes removed by cleanup. Compare it with your saved read position to detect a gap. Cleanup or metadata-write failures can leave losses out of that total, so this does not detect every missing notification. Monitor subscriptions do not need to read this metadata file.
 
@@ -136,6 +149,12 @@ tasty codex managed prepare --workspace-id 456 --task-id TASK_ID
 ```
 
 Replace `TASK_ID` with the task to watch. The parent Codex reads its current thread ID automatically.
+
+| Option | Meaning |
+|---|---|
+| `--parent-thread <ID>` | The parent Codex thread that receives the result. If omitted, the calling Codex's `CODEX_THREAD_ID` is used |
+| `--cli-path <path>` | The Tasty executable the relay runs. If omitted, the `tasty` you just ran is used |
+
 This currently supports local callers; prepare rejects calls carrying an agent authentication token.
 Pass the returned `create_thread_args` to Codex's task creation tool, then attach the returned task ID.
 
@@ -155,6 +174,9 @@ prevent automatic delivery. You do not need to find and configure a server addre
 
 Remove a finished relay record with `tasty codex managed forget --id RELAY_ID`. This does not cancel the
 original task or close the Codex relay.
+
+If Tasty restarts after you prepare a relay, that relay record can no longer be used. When `attach`, `get` or
+`callback` fails with a `relay_instance_changed` error, start again from `managed prepare`.
 
 ### Resuming Claude automatically after an API error
 
@@ -223,8 +245,11 @@ Use a **Stop gate** to have an agent review a checklist before finishing its res
 
 ```sh
 tasty claude checklist-enable                               # turn the gate on (checklist-disable turns it off)
+tasty claude checklist-status                               # check whether it is on now
 tasty claude spawn --workspace w --profile continue-checklist
 ```
+
+`checklist-enable`, `checklist-disable` and `checklist-status` take `--gate <name>` to target another registered gate (default `continue-checklist`). To see whether every gate is on at once, use `tasty claude gate-list`.
 
 - If the agent puts `[[TASTY-CHECKLIST-DONE]]` at the end of its response it passes; otherwise it receives the checklist again. When the round limit (default 3) is reached it passes automatically.
 - The limit is **Default gate round limit** at **Settings** › **Plugins** › **Claude Code**.

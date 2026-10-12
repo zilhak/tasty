@@ -1,4 +1,4 @@
-<!-- source-hash: d5581995c921 -->
+<!-- source-hash: 86e130788d88 -->
 # Bring a background task into a tab
 
 Not every task needs a visible tab from the start. Run work in a hidden PTY, inspect its output, then bring the same process and history into a tab when needed.
@@ -25,12 +25,22 @@ tasty pty list
 
 Note the PTY ID in the creation response. It appears in the list without creating a visible tab. With no command supplied, the shell waits for input.
 
+You can also give the starting folder and a first command.
+
+```sh
+tasty pty spawn --cwd ~/proj -- cargo test
+```
+
+`--cwd` sets the PTY's working folder. Everything after `--` runs right away in the PTY's shell.
+
 ## 2. Send a command and read output
 
 ```sh
 tasty pty write --id 2147483648 $'pwd\n'
 tasty pty read --id 2147483648 --lines 20
 ```
+
+By default `read` leaves out dimmed text (for example Claude Code's autocomplete suggestions), so unsubmitted suggestions aren't mistaken for real output. Add `--show-dim` to include it.
 
 `write` sends characters as received. Bash-family `$'...\n'` includes an actual newline to submit the command; ordinary double quotes in `"...\n"` do not.
 

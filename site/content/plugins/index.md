@@ -28,7 +28,7 @@
 
 **설정** <!-- en: Settings --> 윈도우에서 플러그인 페이지는 두 곳에 나타납니다.
 
-- **외관** <!-- en: Appearance --> > **Markdown** — 마크다운 서피스에만 적용할 폰트 설정.
+- **외관** <!-- en: Appearance --> > **Markdown** — 마크다운 서피스에만 적용할 폰트 설정 · **원격 콘텐츠 허용** <!-- en: Allow remote content --> (기본 꺼짐 — 문서가 불러오는 외부 http/https 리소스 차단).
 - **외관** > **HTML** — **기본 확대** <!-- en: Default zoom --> (%) · **색 구성표** <!-- en: Color scheme --> (테마 따름 / 라이트 / 다크) · **원격 콘텐츠 허용** <!-- en: Allow remote content --> (기본 꺼짐 — 외부 http/https 리소스 차단) · **스크립트 샌드박스** <!-- en: Sandbox scripts --> (기본 켜짐).
 - **플러그인** <!-- en: Plugins --> > **Claude Code** — **Spawn child 경고 임계치** <!-- en: Spawn child warning threshold --> 등.
 - **플러그인** > **Codex** — **Spawn child 경고 임계치** · **기본 승인 정책** <!-- en: Default approval policy --> · **기본 샌드박스 모드** <!-- en: Default sandbox mode -->.
@@ -93,6 +93,8 @@
 | `memory.read` · `memory.write` · `memory.secret` | 에이전트 메모리 저장소 접근 |
 | `agent` · `approval` · `telemetry` | 에이전트 협업 · 승인 게이트 · 텔레메트리 |
 | `agent.turn_report` | 에이전트 작업의 턴 시작·끝 보고만(다른 에이전트 협업 기능은 열지 않음) |
+| `completion_strategy.define` | 작업 러너가 자식 에이전트의 완료를 판정하는 방식 정의 |
+| `ipc.invoke:<prefix>` | 다른 플러그인이 `<prefix>` 이름으로 제공하는 명령 호출(예: `ipc.invoke:codex` 는 Codex 플러그인 명령) |
 
 기본 제공 플러그인이 받는 권한:
 
@@ -123,7 +125,12 @@ Tasty 가 실행 중일 때 터미널에서 씁니다. 출력은 JSON 입니다.
 | `tasty plugin permissions <id>` | 매니페스트가 요구하는 권한과 실제로 허용된 권한 |
 | `tasty plugin grant <id> <권한>` · `revoke <id> <권한>` | 권한 하나 허용 · 회수. 매니페스트에 선언된 권한만 허용할 수 있습니다 |
 | `tasty plugin doctor <id>` | 매니페스트 진단 — 이 버전의 Tasty 가 이해하지 못하는 규칙이 있는지 |
-| `tasty plugin upgrade-builtins [--force] [--restore-removed <id>]` | 기본 제공 플러그인을 번들 버전으로 다시 맞춥니다. `--restore-removed` 는 제거했던 기본 플러그인을 되살립니다 |
+| `tasty plugin upgrade-builtins [--force] [--restore-removed <id>] [--restore-removed-all] [--restart-running]` | 기본 제공 플러그인을 번들 버전으로 다시 맞춥니다. `--restore-removed` 는 제거했던 기본 플러그인을 되살리고(여러 번 지정 가능), `--restore-removed-all` 은 제거했던 기본 플러그인을 모두 되살립니다. `--restart-running` 은 실행 파일이 바뀐 플러그인을 다시 시작합니다(그 플러그인의 서피스가 잠깐 닫힙니다) |
+| `tasty plugin extension list` | 플러그인이 다른 플러그인에 덧붙인 확장(extension)과 상태 |
+| `tasty plugin grant-agent-permission --agent <id> --permission <권한> [--ttl <초>]` · `revoke-agent-permission` | 실행 중인 에이전트 세션에 임시 권한을 주거나 회수합니다. `--ttl` 을 빼면 회수할 때까지 유지됩니다 |
+| `tasty plugin list-agent-permissions [--agent <id>]` | 에이전트 세션의 기본 권한과 임시 권한 |
+| `tasty plugin request-permission --agent <id> --permission <권한> [--reason <이유>]` | 에이전트에게 권한을 줄지 묻는 승인 팝업을 미리 띄웁니다 |
+| `tasty plugin audit-query` · `audit-summary` · `audit-follow` · `audit-clear` | Tasty 가 받은 요청(CLI·플러그인·에이전트)의 허용·거부 기록을 조회 · 집계 · 실시간 확인 · 삭제합니다 |
 
 `enable`과 `disable`은 설치된 플러그인의 ID만 받습니다. 설치되지 않은 ID를 지정하면 오류로 끝나고 설정은 바뀌지 않습니다. ID는 `tasty plugin list`에서 확인할 수 있습니다.
 

@@ -1,4 +1,4 @@
-<!-- source-hash: f2248c02d229 -->
+<!-- source-hash: a6cfcf4dc48a -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -36,6 +36,7 @@ Creating one returns a task ID. Use that ID to define dependencies and to query 
 | `custom` | Turns one of Tasty's own actions into a task. Things that create a terminal, such as spawning a child agent, belong here. When the action is waited on separately until it finishes, a task sent in a graph keeps the first acceptance reply in the result's `raw.accepted`, apart from the final reply |
 | `reduce` | Merges the results of several tasks into one |
 | `wait_barrier` | Waits until all the signals have gathered at a barrier |
+| `agent` | Sends one instruction to a Claude or Codex session and takes its answer as the result. See [Asking an agent and taking its answer as the result](#asking-an-agent-and-taking-its-answer-as-the-result) below |
 
 You can also pull the command JSON out into a file and pass it as `--command @build.json`.
 
@@ -132,9 +133,11 @@ To run a task's result through another command (a judge or summary tool, say) an
 - The command runs as is, without a shell. If you need one, write it out, as in `["sh", "-c", "..."]`. Sign-in uses the environment Tasty was started from. If you started Tasty inside Claude Code, the variables that point at that session are not passed on (the same as in the terminal). If you started Tasty from another Tasty's terminal, variables such as `TASTY_SURFACE_ID` that point at that Tasty's terminal are not passed on either.
 - `stdin` sets the fields of the JSON written to standard input. `from` is `input` (the task's input) or `raw` (the main work's result), and `pointer` picks a value inside it.
 - By default standard output must be exactly one JSON value. With `"stdout": {"format": "text"}` the text is taken as is. Progress logs sent to standard error stay out of the result.
+- `cwd` sets the postprocess command's working folder. If omitted, it is the main work's `cwd`, or failing that, the folder Tasty was started from.
 - `timeout_ms` is required. When it runs out or the task is cancelled, the command and the processes it started are stopped.
-- With `retry`, a failure reruns only the postprocess that many times; the main work does not run again. Once the retries are used up, the task fails and the tasks after it follow their failure policies as for any failure. There is no way to rerun only the postprocess. To try again, rerun the task from the main work with `task-retry`.
+- With `retry`, a failure reruns only the postprocess that many times; the main work does not run again. `max_retries` is 1 to 10, and `delay_ms` sets how long to wait before running it again (default 0, at most 3600000). Once the retries are used up, the task fails and the tasks after it follow their failure policies as for any failure. There is no way to rerun only the postprocess. To try again, rerun the task from the main work with `task-retry`.
 - While a task with declared types runs, its step appears at the end of its `task-list` line and on the `phase:` line of `task-get`. During the main work it is `executing`.
+- A postprocess goes on `run` and `custom` tasks. It can't be added to `reduce` or `wait_barrier` tasks.
 - A step change sends no event. If you need a signal at some point, add a `run` task after that task, such as `["tasty", "notify", "build finished"]` or a `curl` call to a webhook.
 - Until the postprocess finishes, the task shows as running and the next tasks wait. `task-get` shows `phase: postprocessing (run 1)` on the line after `state: running` (`phase: retry_wait (run 2)` while it waits to retry).
 - If the postprocess fails, the `state` line in `task-get` gives the reason. The lines under it give the last run's cause and exit code, such as `postprocess: run 2 failed (nonzero_exit), exit_code 3`, and the causes of the runs that were retried (`postprocess retried after: ...`). If the postprocess result is too large to store, a successful postprocess is kept as a success without the main work's response in the raw result of `task-get`. If it is still too large, or the run failed, the cause is `result_too_large` and the postprocess is not run again, even if retries are left.
@@ -160,6 +163,7 @@ Give a task `transitions` and it picks which tasks run next from its result. In 
 ```
 
 - A condition compares one spot in the result (`path`) with a value (`compare`: `eq`, `ne`, `lt`, `le`, `gt`, `ge`) or checks that it is one of a list (`in`). Combine them with `all`, `any` and `not`. Conditions that do not fit the result's type are rejected when you send the graph. Decimals are compared only as ranges.
+- In a `reduce` task that gathers results (strategy `all`), add `"input": "<input task id>"` to a condition to read that input task's result, in that task's result type, instead of the gathered result.
 - By default exactly one condition may hold. If two hold, the task ends as failed. To run every match, add `"mode": "all_matches"`.
 - Always say what happens when nothing holds: tasks to run (`otherwise`) or run nothing (`"no_match": "finish"`).
 - Tasks that were not chosen, and tasks reached only through them, end as "not selected", not as failures. A task where branches meet waits only for the branches that ran. If a branch that ran fails, that failure still passes on.
@@ -181,7 +185,7 @@ An `agent` task sends one instruction to a Claude or Codex session and takes the
 ```
 
 - The `workspace_id` in `command` is the workspace a new session opens in. `task-submit` hands the value to the workspace the task lives in, and the guidance appended to the instruction carries that number.
-- With `session` set to `{"kind": "new", "parent_surface": <surface>}`, a new session starts under that surface and gets the instruction. With `{"kind": "existing", "surface_id": <surface>}`, the instruction goes to a session that is already open.
+- With `session` set to `{"kind": "new", "parent_surface": <surface>}`, a new session starts under that surface and gets the instruction. Add `"cwd": "<path>"` to set the new session's working folder. With `{"kind": "existing", "surface_id": <surface>}`, the instruction goes to a session that is already open.
 - An open session gets the instruction only when it is idle. If you are talking to it, the task waits until you finish, so the conversations do not mix. A one-line marker for that run is added to the end of the instruction, and only a turn started with that marker counts as the task's turn. Tasks that use the same session run one after another.
 - Without a result type, the last answer of the turn becomes a string result.
 - If the Claude session has a Stop gate, the turn does not end while the gate keeps the response going. The task finishes with the last answer after the gate lets the response end. If you need the first answer to the instruction, set a result type and have the agent hand it in with `task-submit`.
@@ -192,6 +196,7 @@ An `agent` task sends one instruction to a Claude or Codex session and takes the
 - Finishing or cancelling the task does not close the session. If Tasty restarts, running agent tasks fail.
 - If a new session does not come up within 30 seconds, the task fails. A session that comes up later is closed by the task. A session that was already open is never closed.
 - When Codex runs in a sandbox that blocks the network, `task-submit` cannot reach Tasty, so a task with a result type fails. Tasks without a result type (the last answer is the result) are not affected.
+- To deliver the result of an existing task to a Codex parent automatically, see [Automatic delivery to a Codex parent](claude-codex.md#automatic-delivery-to-a-codex-parent).
 
 ### Example: implement, review, branch on the verdict, and meet again
 
@@ -272,7 +277,7 @@ Find the DAG id with `tasty agent dag-list`. Earlier runs that were retried keep
 
 There are two screens for seeing how the work flows. Both look at the same data.
 
-- **Task DAGs** window — `Ctrl+Shift+G`, or the sidebar **Tools** menu. It is for picking one from a list, taking a quick look, and closing it. It has search and a state filter. Pick one and the same area becomes the graph, with zoom in and out, fit to view, direction switching, and the runner pill sitting on the top line next to the back arrow.
+- **Task DAGs** window — `Ctrl+Shift+G` (`Cmd+Shift+G` with the Mac preset), or the sidebar **Tools** menu. It is for picking one from a list, taking a quick look, and closing it. It has search and a state filter. Pick one and the same area becomes the graph, with zoom in and out, fit to view, direction switching, and the runner pill sitting on the top line next to the back arrow.
 - **DAG tab** — a graph that takes up a whole Tab and stays open. Open it with `tasty new tab --pane <ID> --type dag_graph`, or press `Alt+'` on an existing Surface and switch it to **DAG**. It has zoom in and out, fit to view, and direction switching, and clicking a node shows the command, dependencies, elapsed time, exit code, and output.
 
 The lines in the graph differ by relation. A dependency that only sets the order is solid, an input connection (`bindings`) is a teal dash-dot line, and a branch chosen from a result (`transitions`) is a lavender dashed line. A branch that was chosen is drawn thicker, and branches that were not chosen or did not run are faded. When two tasks have both an order dependency and an input connection, only the input connection is drawn. A task skipped because its branch was not chosen is marked **Not selected**. Hovering over a node shows the task name and state, plus one more line with the reason when the task was skipped, has an unknown result, or is waiting for input. `task-graph --format dot` draws the same distinctions.
@@ -313,7 +318,7 @@ tasty agent task-graph --workspace-id 2 --format dot   # draw it with Graphviz
 
 ```sh
 tasty agent task-await --workspace-id 2 --id "$TEST"             # wait until it finishes
-tasty agent task-retry --workspace-id 2 --id "$TEST"             # retry a failed, cancelled or skipped task
+tasty agent task-retry --workspace-id 2 --id "$TEST"             # retry a failed, cancelled, skipped or unknown task
 tasty agent task-cancel --workspace-id 2 --id "$TEST"
 tasty agent task-set-result --workspace-id 2 --id "$MANUAL" --state succeeded
 tasty agent task-purge --workspace-id 2 --states succeeded
@@ -361,7 +366,7 @@ Coordination devices for running several tasks at once come along with it.
 | Semaphore | Decides how many tasks carrying the same name may run at once. `--concurrency-limit <name>` at task creation is the short form. As with a lease, the runner keeps pushing back the expiry of a semaphore attached to a task while it watches the task |
 | Barrier | Blocks until the set number of signals have gathered. Slot it into the graph as a `wait_barrier` task |
 | Lease | Makes something like a file be held by only one holder at a time. It has an expiry, and on a conflict it either fails or returns at once saying it was not acquired — it does not wait. For a lease attached to a task (`metadata.lease`), the runner keeps pushing the expiry back while it watches the task, so a long task does not lose its lease midway. It is not pushed back while the runner is off. The expiry attached to a task must be at least one second. If it still runs out before being pushed back and someone else takes the lease, `task-get` shows a `warning:` line. It covers only the current attempt, so after you run the task again the earlier attempt's warnings no longer show |
-| Reducer | Merges the results of several tasks into one. Choose between first success only, all of them, JSON merge, or text concatenation |
+| Reducer | Merges the results of several tasks into one. Choose between first success only, all of them, JSON merge, or text concatenation, or merge them yourself with `custom:<shell command>`. That command reads the input results as a JSON array on standard input; if its standard output is JSON that value is the result, otherwise the text as it is |
 | Rate limit | Decides how many times per period is allowed, per agent and per metric |
 
 ```sh

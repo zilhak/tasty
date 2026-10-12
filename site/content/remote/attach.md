@@ -36,6 +36,7 @@
 ```sh
 # ssh 프로필
 tasty tool remote-profile add-ssh --name gx10 --host 10.0.0.5 --user me --port 22 --identity ~/.ssh/id_ed25519
+tasty tool remote-profile add-ssh --name win --host 10.0.0.9 --shell powershell --label "Windows 빌드 PC"   # 셸·표시 이름 지정
 tasty tool remote-profile list-local                      # ~/.ssh/config 별칭 목록
 tasty tool remote-profile import --from devbox --name devbox   # 별칭을 ssh 프로필로
 
@@ -98,9 +99,26 @@ tasty remote attach --ssh me@10.0.0.5 --workspace 3        # 프로필 없이 1�
 tasty remote new-workspace --profile gx10-attach --name build --cwd /home/me/proj   # 원격에 워크스페이스 생성
 ```
 
+자주 쓰는 옵션:
+
+| 옵션 | 쓰는 곳 | 동작 |
+|---|---|---|
+| `--send <입력>` | `tool attach`, `remote attach` | 붙은 직후 입력을 한 번 보냅니다(`\n` `\r` `\t` `\xNN` 이스케이프 해석) |
+| `--send-to <서피스>` | `tool attach`, `remote attach` | 워크스페이스 attach 에서 `--send` 를 받을 원격 서피스 ID |
+| `--dump-after <ms>` | `tool attach`, `remote attach` | 지정한 시간 동안 출력을 모아 mirror 화면을 출력하고 끝냅니다(GUI 없이 확인할 때) |
+| `--remote-tasty <경로>` | `remote attach·check·workspaces·new-workspace` | 프로필 없이 쓸 때 원격 tasty 실행 파일 경로(기본 `tasty`). `--profile` 을 주면 프로필 값을 씁니다 |
+| `--remote-port-mode <모드>` | 위와 같음 | 포트 찾기 방식(`auto`·`subcommand`·`file-unix`·`file-windows`) |
+| `--json` | `remote workspaces`, `remote new-workspace` | 결과를 JSON 으로 출력합니다 |
+
 - 워크스페이스 attach 는 그 안의 터미널을 분할 구조까지 그대로 mirror 합니다.
 - 이미지 서피스도 내용이 그대로 보이고 클릭·키 입력이 원격에 전달됩니다.
-- 탐색기에서는 이름 변경·삭제 같은 파일 변경이 막혀 있습니다. 마크다운 파일을 더블클릭하면 원격 컴퓨터에 그 파일의 마크다운 탭이 열려 이 윈도우에도 나타나며, 이 컴퓨터의 같은 경로 파일은 읽지 않습니다. 그 형식의 기본 핸들러를 원격에서 쓸 수 없으면 원격에서 쓸 수 있는 핸들러만 골라 보여 주고, 그런 핸들러가 없는 형식은 안내만 나옵니다.
+- 탐색기에서는 원격 컴퓨터의 파일을 바꿀 수 있습니다(0.12.2부터). 새 폴더·새 파일·이름 변경·휴지통으로 이동, 같은 연결 안의 복사·잘라내기·붙여넣기와 끌어 놓기를 원격 Tasty 가 실행하고, 진행 표시·이름 충돌 팝업·결과 카드는 로컬 탐색기와 같습니다. 원격 Tasty 도 0.12.2 이상이어야 합니다. 다음 제약이 있습니다.
+  - 원격 작업은 실행 취소 이력에 남지 않습니다. 되돌리려면 결과 카드의 **되돌리기** <!-- en: Undo --> 를 쓰세요.
+  - 로컬과 원격 사이, 서로 다른 원격 사이의 붙여넣기와 끌어 놓기는 거절됩니다.
+  - 원격 Tasty 가 이전 버전이면 파일을 바꾸는 메뉴 항목이 나오지 않습니다.
+  - **시스템에서 열기** <!-- en: Open in System -->·**즐겨찾기에 추가** <!-- en: Add to Favorites -->·**새 탭으로 열기** <!-- en: Open in New Tab --> 는 원격 탐색기에서 쓸 수 없습니다.
+  - 작업 중 연결이 끊기면 원격은 작업을 멈추고, 이쪽에서는 결과를 알 수 없다고 알려 줍니다.
+- 탐색기에서 마크다운 파일을 더블클릭하면 원격 컴퓨터에 그 파일의 마크다운 탭이 열려 이 윈도우에도 나타나며, 이 컴퓨터의 같은 경로 파일은 읽지 않습니다. 그 형식의 기본 핸들러를 원격에서 쓸 수 없으면 원격에서 쓸 수 있는 핸들러만 골라 보여 주고, 그런 핸들러가 없는 형식은 안내만 나옵니다.
 - 마크다운 서피스는 원격 문서의 내용이 이 컴퓨터의 테마로 보이고, 문서 오른쪽 위의 새로고침 버튼을 누르면 최신 내용을 다시 받습니다. 원격에서 문서가 바뀌면 내용을 저절로 바꾸지 않고 새로고침 버튼 색만 바뀝니다(원격 Tasty 가 headless 빌드라면 색은 바뀌지 않으니 직접 눌러 확인하세요). 연결이 끊겨 다시 연결을 기다리는 동안에는 이전 내용 대신 연결이 끊어졌다는 안내가 보이고, 다시 연결되면 최신 내용을 저절로 받아 옵니다. 원격 문서 안의 상대 경로 이미지와 파일 링크는 열리지 않고, 주소 입력란으로 다른 파일을 열 수도 없습니다.
 - mirror 를 보는 중에 **마크다운 파일 열기** <!-- en: Open Markdown File --> 팝업으로 표면을 마크다운으로 바꾸거나 새 탭을 열 때, 팝업에 입력하거나 **찾아보기…** <!-- en: Browse… --> 로 고른 경로는 원격 컴퓨터의 파일로 열립니다. 상대 경로는 원격 터미널의 현재 폴더 기준입니다. 이렇게 연 파일은 이 컴퓨터의 최근 파일 목록에 남지 않습니다.
 - HTML 서피스는 빈 영역으로 표시되며 내용은 아직 보이지 않습니다.

@@ -1,4 +1,4 @@
-<!-- source-hash: e505f41dad1c -->
+<!-- source-hash: c968209ccd2e -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -29,7 +29,7 @@ How to use each Surface kind is in [Opening files](../using/files.md). There are
 
 In the **Settings** window, plugin pages appear in two places.
 
-- **Appearance** > **Markdown** — Font settings applied only to Markdown Surfaces.
+- **Appearance** > **Markdown** — Font settings applied only to Markdown Surfaces · **Allow remote content** (off by default — blocks external http/https resources the document loads).
 - **Appearance** > **HTML** — **Default zoom** (%) · **Color scheme** (follow theme / light / dark) · **Allow remote content** (off by default — blocks external http/https resources) · **Sandbox scripts** (on by default).
 - **Plugins** > **Claude Code** — **Spawn child warning threshold** and so on.
 - **Plugins** > **Codex** — **Spawn child warning threshold** · **Default approval policy** · **Default sandbox mode**.
@@ -94,6 +94,8 @@ A plugin declares the permissions it needs in advance. Tasty rejects requests to
 | `memory.read` · `memory.write` · `memory.secret` | Access to the agent memory store |
 | `agent` · `approval` · `telemetry` | Agent collaboration · approval gates · telemetry |
 | `agent.turn_report` | Reporting the start and end of an agent task turn only (opens no other agent collaboration feature) |
+| `completion_strategy.define` | Defining how the task runner decides that a child agent has finished |
+| `ipc.invoke:<prefix>` | Calling commands another plugin provides under `<prefix>` (for example `ipc.invoke:codex` for the Codex plugin's commands) |
 
 Permissions granted to the bundled plugins:
 
@@ -124,7 +126,12 @@ Use it from a terminal while Tasty is running. The output is JSON.
 | `tasty plugin permissions <id>` | The permissions the manifest requires and those actually granted |
 | `tasty plugin grant <id> <permission>` · `revoke <id> <permission>` | Grants · revokes one permission. Only permissions declared in the manifest can be granted |
 | `tasty plugin doctor <id>` | Diagnoses the manifest — whether it has rules this version of Tasty does not understand |
-| `tasty plugin upgrade-builtins [--force] [--restore-removed <id>]` | Realigns the bundled plugins with the bundled version. `--restore-removed` brings back a bundled plugin you removed |
+| `tasty plugin upgrade-builtins [--force] [--restore-removed <id>] [--restore-removed-all] [--restart-running]` | Realigns the bundled plugins with the bundled version. `--restore-removed` brings back a bundled plugin you removed (can be repeated), and `--restore-removed-all` brings back every bundled plugin you removed. `--restart-running` restarts plugins whose binary was replaced (that plugin's Surfaces close briefly) |
+| `tasty plugin extension list` | Extensions that plugins add to other plugins, and their state |
+| `tasty plugin grant-agent-permission --agent <id> --permission <permission> [--ttl <secs>]` · `revoke-agent-permission` | Grants a temporary permission to a running agent session, or revokes it. Without `--ttl` it lasts until revoked |
+| `tasty plugin list-agent-permissions [--agent <id>]` | Base and temporary permissions of agent sessions |
+| `tasty plugin request-permission --agent <id> --permission <permission> [--reason <reason>]` | Shows the approval popup that asks whether to give an agent a permission, ahead of time |
+| `tasty plugin audit-query` · `audit-summary` · `audit-follow` · `audit-clear` | Queries · summarizes · follows live · deletes the allow/deny records of requests Tasty received (CLI, plugins, agents) |
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 

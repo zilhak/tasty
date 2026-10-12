@@ -26,6 +26,9 @@ tasty unset hook --hook <HOOK_ID>
 | `command-completed` | 셸 안에서 명령 하나가 끝났을 때 (bash/zsh 셸 통합 필요) |
 | `command-completed:<코드>` | 그 종료 코드로 끝난 명령만 (예: `command-completed:1` = 실패한 명령) |
 | `claude-idle` / `needs-input` / `codex-idle` | Claude Code / Codex 플러그인이 보내는 이벤트 ([Claude · Codex](claude-codex.md)) |
+| `claude-stop-failure` | Claude Code 의 턴이 API 에러(서버 과부하·요청 한도·인증 실패 등)로 끝났을 때. 보통 `claude-idle` 과 함께 오고, 백그라운드 작업이 남아 있으면 이것만 옵니다 |
+| `claude-error` | Claude Code 화면 출력에 알려진 에러 문구가 나타났을 때 |
+| `claude-error-stalled` | 턴이 끝나지 않았는데 Claude Code 출력이 한동안 바뀌지 않아 멈춘 것으로 보일 때(앞선 에러가 없어도 옵니다) |
 
 - `--once` 를 붙이면 한 번 실행 후 자동으로 지워집니다. 기본은 계속 유지.
 - 훅 명령은 백그라운드에서 실행되며 터미널 입력을 막지 않습니다.
@@ -40,6 +43,10 @@ tasty unset hook --hook <HOOK_ID>
 | `TASTY_HOOK_MATCHED_TEXT` | `output-match` 에서 실제로 맞은 줄 전체 |
 | `TASTY_HOOK_EXIT_CODE` | `command-completed` 의 종료 코드 |
 | `TASTY_HOOK_IDLE_ELAPSED_SECS` | `idle-timeout` 에서 마지막 출력 후 지난 초 |
+| `TASTY_HOOK_CUSTOM_EVENT` | 플러그인 이벤트(`claude-idle` 등)의 이름 |
+| `TASTY_HOOK_SOURCE` | 훅이 실행했으면 `hook`, `tasty hook-handler dispatch` 로 직접 실행했으면 `dispatch` |
+
+`TASTY_HOOK_EVENT`·`TASTY_HOOK_SOURCE`·`TASTY_HOOK_SURFACE_ID` 를 뺀 변수는 이벤트 정보의 키 이름에서 만들어집니다. 키의 영문자·숫자는 대문자로, 나머지 문자는 `_` 로 바꿔 `TASTY_HOOK_` 뒤에 붙입니다(`matched_text` → `TASTY_HOOK_MATCHED_TEXT`). 셸 명령으로 동작하는 훅 핸들러를 `tasty hook-handler dispatch --body '{"build-id":7}'` 로 실행하면 `--body` 객체의 최상위 키도 같은 규칙으로 들어옵니다(`TASTY_HOOK_BUILD_ID=7`). 문자열은 그대로, 다른 값은 JSON 글자로 들어가고 값마다 4096 바이트에서 잘립니다. 같은 이름이 생기면 먼저 만든 값을 씁니다.
 
 ## 글로벌 훅
 
@@ -122,8 +129,9 @@ tasty list notifications
 - **알림 패널** — `Ctrl+Shift+I` 로 엽니다. 최신순 목록에 워크스페이스·제목·본문·경과 시간이 보이고, **이동** <!-- en: Jump --> 으로 그 워크스페이스로 갑니다. 열면 전부 읽음 처리되며 **모두 읽음** <!-- en: Mark all read --> 버튼도 있습니다.
 - **서피스 테두리** — 알림이 난 서피스에 파란 테두리. Tasty 윈도우가 활성인 상태에서 그 서피스로 포커스하면 사라집니다. 다른 앱을 보는 동안에는 남아 있다가 윈도우로 돌아오면 사라집니다.
 - **사이드바 배지** — 주의가 필요한 서피스가 있는 워크스페이스 행에 개수 배지.
-- **OS 알림** — Tasty 윈도우가 비활성일 때 시스템 알림 (초당 1회 제한).
 - **소리** — 설정에서 켜면 알림마다 시스템 비프 1회.
+
+OS 알림 센터(시스템 알림)로는 보내지 않습니다. 다른 앱을 쓰는 동안에도 알아차리려면 소리를 켜세요.
 
 ### 설정
 
@@ -167,6 +175,7 @@ tasty webhook port                  # 실행 중인 리스너의 주소·포트�
 tasty webhook port 28500            # 다음 시작부터 이 포트를 사용
 tasty webhook port --unset          # 저장한 포트를 지워 다음 시작부터 빈 포트를 자동 선택
 tasty webhook allow-external on     # 다음 시작부터 다른 컴퓨터의 호출도 받음 (off 로 되돌림)
+tasty webhook allow-external        # 저장한 값과 실행 중인 리스너가 실제로 연 주소 보기
 tasty --webhook-port 28500          # 이번 실행만 이 포트로 시작
 ```
 
@@ -176,7 +185,7 @@ tasty --webhook-port 28500          # 이번 실행만 이 포트로 시작
 - 포트가 `28429` 에서 밀렸는데 `--persistent` 로 저장한 웹훅이 있으면 경고를 표시합니다. 저장한 웹훅의 주소 포트도 바뀌므로 `tasty webhook list` 로 새 URL을 확인하세요. 주소가 바뀌면 안 되는 경우에는 포트를 정해 두세요.
 - Tasty가 이미 실행 중인데 다른 `--webhook-port` 로 다시 실행하면, 실행 중인 Tasty로 넘기지 않고 안내 후 끝납니다. 같은 포트면 평소처럼 실행 중인 Tasty에 새 윈도우를 엽니다.
 - 이전 버전이 자동으로 써 넣은 `port = 28429` 는 처음 실행할 때 지워져 자동 선택으로 바뀝니다. 직접 정한 다른 포트는 그대로 유지됩니다.
-- **기본으로 웹훅 서버는 이 컴퓨터(`127.0.0.1`)에서 오는 호출만 받습니다.** 다른 컴퓨터나 CI가 직접 불러야 하면 **설정 → 일반 → 다른 컴퓨터의 웹훅 호출 받기**를 켜거나 `tasty webhook allow-external on` 을 실행한 뒤 Tasty를 다시 시작합니다. 켜면 모든 네트워크 인터페이스에서 받으므로, 호스트 방화벽이 허용하면 공유기 포워딩 없이도 같은 네트워크(사내망·공용 Wi-Fi 등)에서 접근할 수 있습니다. 방화벽과 인증 설정을 확인하세요. HTTPS는 앞단 리버스 프록시에서 처리합니다.
+- **기본으로 웹훅 서버는 이 컴퓨터(`127.0.0.1`)에서 오는 호출만 받습니다.** 다른 컴퓨터나 CI가 직접 불러야 하면 **설정 → 일반 → 다른 컴퓨터의 웹훅 호출 받기**를 켜거나 `tasty webhook allow-external on` 을 실행한 뒤 Tasty를 다시 시작합니다. `~/.tasty/config.toml` 의 `[webhook]` 아래 `allow_external = true` 로 적어도 같습니다. 켜면 모든 IPv4 네트워크 인터페이스(`0.0.0.0`)에서 받으므로, 호스트 방화벽이 허용하면 공유기 포워딩 없이도 같은 네트워크(사내망·공용 Wi-Fi 등)에서 접근할 수 있습니다. 방화벽과 인증 설정을 확인하세요. HTTPS는 앞단 리버스 프록시에서 처리합니다.
 
 ### 등록
 
