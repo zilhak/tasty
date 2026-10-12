@@ -105,6 +105,51 @@ pub fn materialize_inline_in(dir: &Path, name: &str, secret: &str) -> Result<Pat
     fs::create_dir_all(dir).with_context(|| format!("create passkeys dir {}", dir.display()))?;
     set_private_dir(dir).ok(); // best-effort(이미 존재하던 dir 권한 강제는 실패 무시)
     let path = dir.join(name);
+    // Unix: 비밀이 0600이 아닌 권한으로 디스크에 놓이는 순간을 없앤다. 같은 디렉터리에
+    // 0600으로 새로 만든 임시 파일에 쓰고 rename으로 바꿔 넣어, 덮어쓸 때도 기존 파일의
+    // 넓은 권한을 물려받지 않는다. Windows의 rename은 기존 파일을 덮지 못할 수 있어
+    // 비 Unix는 직접 쓴다.
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let (tmp, mut file) = loop {
+            let n = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let tmp = dir.join(format!(".{name}.tmp-{}-{n}", std::process::id()));
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&tmp)
+            {
+                Ok(file) => break (tmp, file),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => {
+                    return Err(e)
+                        .with_context(|| format!("create passkey temp file {}", tmp.display()));
+                }
+            }
+        };
+        let written = file
+            .write_all(secret.as_bytes())
+            .and_then(|()| file.sync_all())
+            .with_context(|| format!("write passkey file {}", tmp.display()));
+        drop(file);
+        let replaced = written.and_then(|()| {
+            fs::rename(&tmp, &path)
+                .with_context(|| format!("rename {} to {}", tmp.display(), path.display()))
+        });
+        if let Err(e) = replaced {
+            if let Err(rm) = fs::remove_file(&tmp) {
+                tracing::warn!("failed to remove passkey temp file {}: {rm}", tmp.display());
+            }
+            return Err(e);
+        }
+    }
+    #[cfg(not(unix))]
     fs::write(&path, secret).with_context(|| format!("write passkey file {}", path.display()))?;
     set_private_file(&path).with_context(|| format!("chmod 0600 {}", path.display()))?;
     Ok(path)
@@ -304,6 +349,71 @@ mod tests {
         }
         assert!(materialize_inline_in(&dir, "../escape", "x").is_err());
         let _ = fs::remove_dir_all(&dir); // 테스트 정리 — 디렉토리 부재 에러는 정상, 무시.
+    }
+
+    #[cfg(unix)]
+    fn file_mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    fn leftover_temp_files(dir: &Path) -> Vec<String> {
+        fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".tmp-"))
+            .collect()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn materialize_inline_creates_private_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("passkeys");
+        let path = materialize_inline_in(&dir, "fresh", "s3cr3t").unwrap();
+        assert_eq!(file_mode(&path), 0o600);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "s3cr3t");
+        assert!(leftover_temp_files(&dir).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn materialize_inline_overwrite_does_not_keep_wide_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("passkeys");
+        fs::create_dir_all(&dir).unwrap();
+        let existing = dir.join("tok");
+        fs::write(&existing, "old").unwrap();
+        fs::set_permissions(&existing, fs::Permissions::from_mode(0o644)).unwrap();
+        // 덮어쓰기는 기존 inode를 고치지 않고 새 파일로 바꿔 넣어야 한다.
+        let old_ino = {
+            use std::os::unix::fs::MetadataExt;
+            fs::metadata(&existing).unwrap().ino()
+        };
+        let path = materialize_inline_in(&dir, "tok", "new-secret").unwrap();
+        assert_eq!(path, existing);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new-secret");
+        assert_eq!(file_mode(&path), 0o600);
+        let new_ino = {
+            use std::os::unix::fs::MetadataExt;
+            fs::metadata(&path).unwrap().ino()
+        };
+        assert_ne!(old_ino, new_ino);
+        assert!(leftover_temp_files(&dir).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn materialize_inline_failure_leaves_no_temp_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("passkeys");
+        // 대상 이름이 비어 있지 않은 디렉터리면 rename이 실패한다.
+        fs::create_dir_all(dir.join("tok").join("child")).unwrap();
+        assert!(materialize_inline_in(&dir, "tok", "s3cr3t").is_err());
+        assert!(leftover_temp_files(&dir).is_empty());
+        assert!(dir.join("tok").is_dir());
     }
 
     #[test]
