@@ -128,7 +128,7 @@ fallback에서 memory.db를 쓰는 memory·agent·approval·surface.meta·teleme
 `src/runtime/output_observer.rs`의 `run_memory_sink`가 `MemoryStorage` 인터페이스를 사용한다.
 
 - **키**: `global` 범위에 `tasty.observer.<id>.<ms>.<seq>`로 저장하고 owner는 `_host`다. `<ms>`는 저장 시각의 밀리초, `<seq>`는 sink별로 0부터 세는 순번이며 최소 6자리로 표시한다. 같은 밀리초의 여러 항목은 순번으로 구분한다. 시계가 역행하지 않고 순번이 6자리 범위에 있으면 키의 정렬 순서가 도착 순서와 같아 `memory.list --prefix tasty.observer.<id>.`로 시간순 조회할 수 있다([저장·보존 설계](../../adr/0009-state-storage-and-retention.md)).
-- **`max_records`**: 이번 실행에서 쓴 키를 순서대로 기억하고 최근 N건을 넘으면 오래된 키부터 삭제한다. 삭제 실패는 경고 없이 넘어가므로 N건보다 많이 남을 수 있다. 재시작하면 이 목록은 비워지며 이전 실행이 남긴 키에는 이 상한을 적용하지 않는다.
+- **`max_records`**: 이번 실행에서 쓴 키를 순서대로 기억하고 최근 N건을 넘으면 오래된 키부터 같은 잠금 안에서 삭제한다. 이미 없는 키는 조용히 넘어가고 그 밖의 삭제 실패는 경고만 남긴다. 삭제한 키는 다시 시도하지 않으므로 N건보다 많이 남을 수 있다. 재시작하면 이 목록은 비워지며 이전 실행이 남긴 키에는 이 상한을 적용하지 않는다.
 - **put 실패**: 경고를 남기고 해당 항목은 버린 뒤 다음 항목을 처리한다. 소비자에게 gap을 보내지 않으며 observer의 `dropped`에도 더하지 않는다. `dropped`는 채널이 가득 차 넣지 못한 항목만 센다.
 - **잠금 poison**: `tasty_utils::poison::recover_mutex`로 복구해 계속 사용한다. 로그의 대상 이름과 최초 보고 여부는 `tasty_memory::STORE_LOCK_WHAT`·`STORE_LOCK_POISONED`를 쓴다. `core`의 `MEMORY_WHAT`·`MEMORY_POISONED`는 같은 static을 재수출하므로 최초 보고 플래그도 공유한다.
 - **종료**: surface가 닫히면 sender를 해제하고 워커 join은 미룬다. 워커는 채널에 남은 항목을 읽고 저장을 시도한 뒤 종료한다. 앱 종료의 `join_retired`와 라우터 Drop이 남은 워커를 기다린다. 저장 실패까지 방지하는 것은 아니며 워커가 끝나기 전에 프로세스가 종료되면 남은 항목을 잃을 수 있다.
@@ -190,6 +190,71 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
 근거·대안(fatal · 쓰기 거절)·재검토 조건은
 [ADR-0010](../../adr/0010-storage-failure-reporting.md).
 
+## 저장 기준선
+
+현재 저장 경로의 commit 수와 지연, 종료 시간을 잰 값이다. 소비자별 계약과 writer 명부는 [저장 계약과 writer 명부](storage-contract.md)에 있다.
+
+### 엔진 harness
+
+`crates/tasty-memory/examples/commit_baseline.rs`는 실제 파일 `memory.db`를 열고 호스트처럼 `Arc<Mutex<MemoryStore>>`를 공유한 채 시나리오를 실행한다. 결과는 시나리오마다 JSON 한 줄로 인자로 받은 결과 파일에 쓴다. 표준 출력에는 쓰지 않는다.
+
+```bash
+cargo build --release -p tasty-memory --example commit_baseline
+target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
+```
+
+| 시나리오 | 내용 |
+|---|---|
+| `setup` | 키 1000개를 미리 넣고 되읽은 PRAGMA와 payload 크기를 기록한다 |
+| `single` | 5ms 간격의 고립된 put 200건 |
+| `burst100_concurrent` | 100개 스레드가 장벽에서 동시에 출발해 put 한 번씩. 잠금 대기를 따로 잰다 |
+| `burst100_sequential` | 한 스레드가 put 100건을 연달아 실행 |
+| `inflow` | 3초 동안 2ms 간격 put. 대리 메인 루프가 1ms마다 잠금을 잡고 get을 한다 |
+| `slow_burst100_concurrent`·`slow_inflow` | put마다 잠금을 쥔 채 5ms를 더한 느린 저장 대조군 |
+| `uncounted_paths` | TTL 정리·prune·scope 정리를 실행하고 commit 계측이 늘었는지 본다 |
+| `close` | 앞 시나리오의 쓰기를 모두 받은 `fast.db` 연결을 drop하는 시간. 파일의 마지막 연결이라 WAL checkpoint가 포함된다 |
+| `close_reopened` | 같은 파일을 다시 열어 `uncounted_paths`만 실행한 연결을 drop하는 시간 |
+
+2026-10-12 Linux(ext4, NVMe, 다른 빌드가 함께 도는 공유 컴퓨터)에서 3회 실행한 값이다. close 행은 같은 날 별도로 3회 실행한 값이다. 되읽은 설정은 WAL·NORMAL·foreign_keys ON·journal_size_limit 4096000이고 degraded가 아니었다. payload는 236바이트 JSON, owner는 `_host`, scope는 global이다.
+
+| 시나리오 | commit 수 | 지연(3회 범위) |
+|---|---|---|
+| single 200 | 200 | p50 129~170µs, p95 201~216µs |
+| burst100 동시 | 100 | 전체 2.1~14.2ms, 요청 p50 0.18~6.4ms. commit 시간 합은 1.8~2.4ms이고 나머지는 잠금 대기다 |
+| burst100 연속 | 100 | 전체 5.5~12.4ms |
+| inflow | 쓰기 수와 같음(1234~1349) | 대리 루프의 get(잠금 대기 포함) p95 19~85µs |
+| 느린 저장 burst100 동시 | 100 | 전체 531~555ms, 요청 p50 269~288ms |
+| 느린 저장 inflow | 쓰기 수와 같음(380~394) | 대리 루프의 get p95 5.8~6.2ms |
+| close(쓰기를 모두 받은 연결, drop 직전 WAL 4.10~4.14MB) | - | 1.1~13.8ms |
+
+- 모든 시나리오에서 요청 하나가 commit 하나다. 느린 저장 대조군은 저장 지연이 같은 잠금을 쓰는 다른 호출자에게 그대로 전해짐을 보인다.
+- strace로 1회 센 결과 전체 실행의 commit 약 3,800회에 `fsync`는 68회였다(`fdatasync` 0회). WAL·NORMAL은 commit마다 fsync하지 않으므로 commit 수와 fsync 수를 따로 센다.
+- 지연의 절댓값은 컴퓨터 부하에 따라 크게 달라진다. 다른 측정과 비교할 때는 같은 컴퓨터에서 같은 시점에 번갈아 실행한 값을 쓴다.
+
+### 앱 수준 측정
+
+격리 `TASTY_HOME`으로 debug 바이너리를 띄우고 TCP IPC로 같은 payload의 `memory.put`을 보냈다. 시나리오마다 `system.pressure`의 차분을 기록하고 마지막에 `system.shutdown`(debug 전용) 요청부터 프로세스 종료까지를 쟀다. GUI는 전용 Xvfb에서, headless는 `--no-default-features` 바이너리로 각 3회 실행했다. 둘 다 최적화하지 않은 debug 빌드라 엔진 harness의 release 값과 직접 비교하지 않는다.
+
+| 항목 | GUI | headless |
+|---|---|---|
+| put 1000건의 `db.commits` 증가 | 1001 | 1001 |
+| single 200: commit 수, 요청 p50 | 200, 0.9~2.4ms | 200, 0.9~1.0ms |
+| burst100 동시: commit 수, 전체 | 100, 26~31ms | 100, 65~89ms |
+| burst100 동시: commit 시간 합, 핸들러 시간 합 | 1.5~5.8ms, 3.4~13.3ms | 2.5~2.7ms, 7.7~8.0ms |
+| inflow 3초: commit 수 | 쓰기 수와 같음(351~577) | 쓰기 수와 같음(936~1004) |
+| 쓰기 중 `memory.get` 왕복 p95 / 쓰기 없을 때 | 5.6~10.7ms / 1.5~12.6ms | 0.9~1.0ms / 1.0~1.2ms |
+| `system.shutdown` 요청부터 프로세스 종료까지 | 118~281ms | 32~65ms |
+
+- 앱에서도 요청 하나가 commit 하나다. 1000건에 1회가 더 늘어난 것은 같은 구간의 다른 memory.db 쓰기다.
+- 요청 지연에서 commit이 차지하는 몫은 작다. GUI는 IPC 명령이 메인 루프에서 꺼내지기까지의 대기(`queue_before_gate`)가, headless의 동시 요청은 큐 대기 누계 최댓값(21~43ms)보다 큰 연결·읽기 단계 대기가 지연의 대부분이다.
+
+### 계측 범위
+
+- `system.pressure.db`와 `DbLatencyStats`는 memory.db만 센다. state.db와 journal.db의 commit은 이 값에 없다.
+- commit 계측은 `put`·`delete`·`put_secret`·`delete_secret`의 명시 transaction만 센다. `import_regular`는 항목마다 `put`을 거치므로 세어진다.
+- `purge_expired`·`purge_scope`(각 DELETE 두 문장), `prune_prefix_keep_recent`·`prune_prefix_older_than`(한 문장), `vacuum_if_fragmented`의 자동 commit은 세지 않는다. harness의 `uncounted_paths`에서 1행·190행을 지워도 계측값이 늘지 않았다.
+- 메인 루프 지연은 `queue_before_gate`의 대기 시간과 `handler_after_gate`의 실행 시간으로 간접 확인한다. 이벤트 루프 한 회차의 길이를 직접 재는 계측은 없다.
+
 ## 텍스트 파일을 SQLite 로 옮기지 않는 이유
 
 `config.toml` / `remote-profiles.toml` / `file-handlers.toml` / `themes/*.toml` / `bashrc.user` 는 **사용자 편집·버전관리 대상**이다. 주석·diff 추적에 텍스트가 적합하고 앱이 자동으로 덮어쓰지 않으므로 SQLite 로 옮길 이점이 없다. 반대로 최근 파일처럼 앱이 자동 누적하는 데이터는 SQLite 가 맞다.
@@ -222,6 +287,7 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
 
 ## 관련
 
+- [storage-contract.md](storage-contract.md) — 저장 경로별 계약·writer 명부·종료 순서
 - [memory.md](memory.md) — 에이전트 메모리(`memory.db`) 두 계층·소유 모델
 - [`features/layout-presets`](../../features/layout-presets/index.md) — `presets/` 프리셋 적용
 - [theme.md](theme.md) — `themes/*.toml` 토큰 모델
