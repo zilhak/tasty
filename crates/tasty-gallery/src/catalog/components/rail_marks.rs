@@ -55,7 +55,7 @@ fn paint_category_button(
     bed: Bed,
     cap: Option<&str>,
 ) {
-    let radius = t.corner_radius.value();
+    let radius = t.corner_radius_sm.value();
     match bed {
         Bed::Pressed => {
             ui.painter()
@@ -352,7 +352,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             (
                 "line",
-                "24 × 2 · round ends · centred in the 32 × 16 button",
+                "24 × 2 · round ends · centred in the 32 × 16 button · bed radius-sm",
             ),
             ("line idle", "rail-category-line → text-muted"),
             (

@@ -1128,7 +1128,8 @@ fn draw_rail_category_button(
     let h = th.spacing_lg.value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
     *resize_priority_hovered |= resp.hovered();
-    let radius = th.corner_radius.value();
+    // 시안 RailCategoryBtn은 버튼 바탕에 radius-sm을 쓴다(아바타는 radius).
+    let radius = th.corner_radius_sm.value();
     let pressed = resp.is_pointer_button_down_on();
     if pressed {
         ui.painter()
