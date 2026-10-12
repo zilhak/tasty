@@ -1252,13 +1252,23 @@ fn draw_collapsed_avatar(
         tasty_ui_widgets::attach_refusal_avatar_tooltip(ui, th, &resp, tooltip);
     }
     // mirror 표시는 배경색으로 둘러 다른 알림·점유 표시와 구분한다.
+    // 12 원 안쪽의 1px 테두리가 아바타의 idle·active·hover 바탕 어디서나 칩을 드러낸다.
+    // 12 원은 다른 모서리 칩(move·refusal)과 같은 크기 토큰을 쓴다.
     if ws.is_mirror {
         let halo_r = th.spacing_sm.value();
+        let chip_r = th.move_source_chip_size().value() * 0.5;
+        let border = th.border_width.value();
         let glyph = th.spacing_sm.value();
         let inset = th.spacing_xs.value();
         let chip_center = egui::pos2(rect.max.x - inset, rect.max.y - inset);
-        ui.painter()
-            .circle_filled(chip_center, halo_r, th.bg_sidebar());
+        let painter = ui.painter();
+        painter.circle_filled(chip_center, halo_r, th.bg_sidebar());
+        painter.circle_filled(chip_center, chip_r, th.workspace_mirror_chip_bg());
+        painter.circle_stroke(
+            chip_center,
+            chip_r - border * 0.5,
+            egui::Stroke::new(border, th.workspace_mirror_chip_border()),
+        );
         let glyph_rect = egui::Rect::from_center_size(chip_center, egui::vec2(glyph, glyph));
         icons::TERMINAL_PROMPT
             .image(glyph, th.workspace_mirror_fg().into())

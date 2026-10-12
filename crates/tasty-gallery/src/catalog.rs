@@ -1987,6 +1987,12 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::sidebar::draw_attached_ring,
                         ),
+                        spec(
+                            "rail-marks",
+                            "Rail marks — mirror chip",
+                            Some("12 circle with a 1px sky edge on the rail avatar, Mocha and Latte"),
+                            components::rail_marks::draw,
+                        ),
                     ],
                 ),
                 section(

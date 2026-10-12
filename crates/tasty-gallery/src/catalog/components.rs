@@ -72,6 +72,7 @@ pub mod prim_tab;
 pub mod prim_table;
 pub mod prim_text_caret;
 pub mod quit_modal;
+pub mod rail_marks;
 pub mod remote;
 pub mod remote_attach;
 pub mod rename_popup;

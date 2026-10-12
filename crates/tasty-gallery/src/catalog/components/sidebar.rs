@@ -87,13 +87,30 @@ fn mirror_pill_line(ui: &mut egui::Ui, theme: &Theme, row: egui::Rect, name_x: f
 }
 
 /// 접힌 아바타의 원격 표시는 오른쪽 아래에 놓아 알림 점·연결 테두리와 구분한다.
-fn mirror_corner_chip(ui: &mut egui::Ui, theme: &Theme, avatar: egui::Rect) {
+/// 12 원 안쪽의 1px 테두리가 아바타의 idle·active·hover 바탕 어디서나 칩을 드러낸다.
+/// 12 원은 다른 모서리 칩(move·refusal)과 같은 크기 토큰을 쓴다.
+pub(super) fn mirror_corner_chip(ui: &mut egui::Ui, theme: &Theme, avatar: egui::Rect) {
     let halo_r = theme.spacing_sm.value();
+    let chip_r = theme.move_source_chip_size().value() * 0.5;
+    let border = theme.border_width.value();
     let glyph = theme.spacing_sm.value();
     let inset = theme.spacing_xs.value();
     let c = egui::pos2(avatar.max.x - inset, avatar.max.y - inset);
-    ui.painter()
-        .circle_filled(c, halo_r, egui::Color32::from(theme.bg_sidebar()));
+    let painter = ui.painter();
+    painter.circle_filled(c, halo_r, egui::Color32::from(theme.bg_sidebar()));
+    painter.circle_filled(
+        c,
+        chip_r,
+        egui::Color32::from(theme.workspace_mirror_chip_bg()),
+    );
+    painter.circle_stroke(
+        c,
+        chip_r - border * 0.5,
+        egui::Stroke::new(
+            border,
+            egui::Color32::from(theme.workspace_mirror_chip_border()),
+        ),
+    );
     paint_icon(
         ui,
         REMOTE,
@@ -666,6 +683,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("row", "dot + name + badge"),
             ("active row", "surface-active + 2px inset accent"),
             ("mirror", "REMOTE pill line / rail corner chip"),
+            (
+                "rail mirror chip",
+                "12 circle · 1px workspace-mirror-chip-border inside · bed workspace-mirror-chip-bg · glyph 8 · 2px bg-sidebar halo",
+            ),
             ("footer", "Tools·Plugins·Settings, border-top"),
         ],
         &[
@@ -684,6 +705,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "workspace-mirror-fg",
                 "mirror glyph/chip",
                 theme.workspace_mirror_fg().into(),
+            ),
+            TokenChip::new(
+                "workspace-mirror-chip-border",
+                "rail chip edge → workspace-mirror-fg",
+                theme.workspace_mirror_chip_border().into(),
+            ),
+            TokenChip::new(
+                "workspace-mirror-chip-bg",
+                "rail chip bed → bg-sidebar",
+                theme.workspace_mirror_chip_bg().into(),
             ),
             TokenChip::new(
                 "border-default",

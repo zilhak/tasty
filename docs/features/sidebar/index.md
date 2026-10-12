@@ -35,7 +35,7 @@
 - **재정렬**: 카드 drag-and-drop (full). 카테고리 토글 on 이면 다른 카테고리 섹션에 드롭해 소속을 옮기는 경로가 추가된다 → [`features/workspace-category/`](../workspace-category/index.md).
 - **생성**: New workspace 버튼(좌클릭) / 우클릭 → 프리셋으로 생성 — 카테고리 토글 off 일 때. on 이면 버튼이 숨고 카테고리 헤더 메뉴·레일 `---` 팝업의 Add workspace 로 생성한다 (경로 전체는 → [`features/workspace-category/`](../workspace-category/index.md)).
 - **attach 인디케이터**: 다른 client(원격 사용자)가 그 Workspace 를 점유 중이면 status dot 둘레의 attached ring(`border_attached` — red 는 error 전용) ([점유 모델](../../concepts/actors.md)).
-- **mirror 인디케이터**: 그 Workspace 가 원격 인스턴스의 로컬 mirror([remote-attach](../remote-attach/index.md))이면 — full 은 이름과 subtitle 사이 별도 줄에 하늘색 fill+border "REMOTE" pill(`>_→` glyph 포함), collapsed 레일은 아바타 우하단 하늘색 corner chip(변경 없음). 좌측 status dot 은 실행상태(running/idle) 전용이라 mirror 색을 싣지 않으며, notif(우상단)·attached(둘레 ring)와 시각 채널이 분리된다.
+- **mirror 인디케이터**: 그 Workspace 가 원격 인스턴스의 로컬 mirror([remote-attach](../remote-attach/index.md))이면 — full 은 이름과 subtitle 사이 별도 줄에 하늘색 fill+border "REMOTE" pill(`>_→` glyph 포함), collapsed 레일은 아바타 우하단 corner chip — 12 원 바탕은 `workspace-mirror-chip-bg`(= bg-sidebar), 원 안쪽에 1px `workspace-mirror-chip-border`(= workspace-mirror-fg, 하늘색) 테두리, 8 glyph, 바깥 2px bg-sidebar halo. 테두리 덕분에 아바타가 idle·active·hover 어느 바탕이어도 칩이 보인다. 12 원은 move·refusal 칩과 같은 크기 토큰을 쓴다. 좌측 status dot 은 실행상태(running/idle) 전용이라 mirror 색을 싣지 않으며, notif(우상단)·attached(둘레 ring)와 시각 채널이 분리된다.
 
 ## 인터페이스
 
