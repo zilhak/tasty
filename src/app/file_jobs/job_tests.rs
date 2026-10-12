@@ -596,7 +596,7 @@ fn transfer_counts_nested_files_without_changing_top_level_results() {
     std::fs::write(nested.join("two.txt"), "de").unwrap();
     std::fs::write(nested.join("empty.txt"), "").unwrap();
     let shared = Shared::fixed(Choice::KeepBoth);
-    let report = run_transfer(&shared, &[src.clone()], &dest, false);
+    let report = run_transfer(&shared, std::slice::from_ref(&src), &dest, false);
     assert_eq!(report.done, 1);
     assert_eq!(report.undo.len(), 1);
     let snap = shared.snapshot();
@@ -622,7 +622,7 @@ fn transfer_counts_nested_files_without_changing_top_level_results() {
     let moved = root.path().join("moved");
     std::fs::create_dir(&moved).unwrap();
     let shared = Shared::fixed(Choice::KeepBoth);
-    let report = run_transfer(&shared, &[src.clone()], &moved, true);
+    let report = run_transfer(&shared, std::slice::from_ref(&src), &moved, true);
     assert_eq!(report.done, 1);
     assert_eq!(shared.snapshot().files.unwrap().done, 3);
     assert!(!src.exists());
@@ -683,10 +683,10 @@ fn the_counting_phase_is_published_before_any_transfer_and_can_be_cancelled() {
             }
         })
     });
-    let report = run_transfer(&shared, &[src.clone()], &dest, false);
+    let report = run_transfer(&shared, std::slice::from_ref(&src), &dest, false);
     assert!(report.cancelled);
     assert_eq!(report.done, 0);
-    assert_eq!(report.unprocessed, [src.clone()]);
+    assert_eq!(report.unprocessed, std::slice::from_ref(&src));
     assert_eq!(seen.lock().unwrap().len(), 1);
     assert_eq!(std::fs::read_dir(dest).unwrap().count(), 0);
     assert_eq!(std::fs::read(src.join("file")).unwrap(), b"unchanged");
@@ -702,7 +702,7 @@ fn skipping_a_nested_source_finishes_its_file_progress_but_keeps_the_skip_result
     std::fs::write(src.join("first"), "a").unwrap();
     std::fs::write(src.join("second"), "b").unwrap();
     let shared = Shared::fixed(Choice::Skip);
-    let report = run_transfer(&shared, &[src.clone()], &dest, false);
+    let report = run_transfer(&shared, std::slice::from_ref(&src), &dest, false);
     assert_eq!(report.done, 0);
     assert_eq!(report.skipped, [src]);
     assert!(report.undo.is_empty());
