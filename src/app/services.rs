@@ -449,10 +449,10 @@ impl AppServices {
     }
 }
 
-mod barrier;
-mod lease;
-mod ratelimit;
-mod semaphore;
+pub(crate) mod barrier;
+pub(crate) mod lease;
+pub(crate) mod ratelimit;
+pub(crate) mod semaphore;
 
 mod surface;
 #[cfg(feature = "gui")]

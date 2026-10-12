@@ -132,6 +132,30 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
     }
 }
 
+/// agent 저장소 연산 하나를 memory writer 요청으로 넣고 그 결과 뒤에 응답한다. 연산의 판단과 쓰기가
+/// 한 요청 안에서 끝나므로 같은 묶음의 앞 요청 반영을 본다. 연산이 거절돼도 그 전에 쓴 내용은
+/// 직접 잠금 때와 같이 남는다.
+pub(super) fn reply_agent<T: Send + 'static>(
+    core: &crate::app::services::AppServices,
+    id: Value,
+    params: &Value,
+    mut body: impl FnMut(&mut dyn tasty_memory::MemoryStorage) -> Result<T, AgentError> + Send + 'static,
+    respond: impl FnOnce(&crate::app::services::AppServices, Value, T) -> JsonRpcResponse
+    + Send
+    + 'static,
+) -> JsonRpcResponse {
+    core.reply_unit(
+        id,
+        super::deferred::params_bytes(params),
+        move |mem| Ok(body(mem)),
+        move |core, id, result| match result {
+            Ok(Ok(value)) => respond(core, id, value),
+            Ok(Err(error)) => agent_err_to_response(id, error),
+            Err(error) => JsonRpcResponse::error(id, -32603, format!("memory: {error}")),
+        },
+    )
+}
+
 pub(super) fn escape_dot(s: &str) -> String {
     s.replace('"', "\\\"").replace('\n', " ")
 }

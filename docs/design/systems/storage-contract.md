@@ -16,7 +16,8 @@
 |---|---|---|---|---|
 | `memory.*`·`memory.secret.*` IPC | 핸들러가 memory writer에 요청을 넣고 응답 continuation을 등록한 뒤 메인 루프가 다음 요청으로 넘어간다 | writer가 묶음으로 commit한다 | DB가 원본이므로 commit과 같다. `memory.changed`는 commit 뒤 변경 버퍼에 쌓였다가 GUI 이벤트 루프·headless 루프가 다음 회차에 발행한다 | 메인 루프가 회차마다 writer 결과를 거두어 원 호출자(IPC 연결·plugin 호출)에게 응답한다. 응답 시점에는 commit이 끝나 있다 |
 | `approval.*`·`surface.meta.*` IPC | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다. `approval.request`·`respond`·`cancel`은 기록 결과를 기다려 응답하되 기록 실패는 경고만 남기고 성공으로 답한다. `approval.respond`의 승인 권한 부여(`apply_elevation_grant_if_any`)는 직접 잠금으로 바로 쓰므로 기록 commit보다 먼저 보인다. GUI 승인 팝업 응답과 cap 승인 요청의 기록은 결과를 기다리지 않고 실패만 로그로 남긴다 |
-| 그 밖의 memory.db IPC 쓰기(`agent.*`·`telemetry.*`·`session.*`, `approval.respond`의 승인 권한 부여) | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | `memory.*`와 같다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
+| `agent.barrier_*`·`agent.semaphore_*`·`agent.lease_*`·`agent.rate_limit_*` IPC | `memory.*`와 같다. 연산 하나가 writer 요청 하나다 | `memory.*`와 같다. 연산이 거절돼도 그 전에 쓴 내용은 남는다 | `memory.*`와 같다 | `memory.*`와 같다. barrier가 닫히면 `BarrierClosed` 이벤트는 commit 뒤 응답을 만들 때 넣는다 |
+| 그 밖의 memory.db IPC 쓰기(`agent.task_*`·`telemetry.*`·`session.*`, `approval.respond`의 승인 권한 부여) | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | `memory.*`와 같다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
 | observer memory sink | sink 스레드가 채널에 쌓인 항목을 memory writer에 묶음 하나로 넣고 바로 다음 항목을 받는다 | writer가 묶음 하나를 commit 한 번으로 끝낸다 | commit과 같다 | 해당 없음 |
 | `approval.await` 결과 기록 | 대기 워커가 memory writer에 넣고 그 결과를 기다린다 | writer가 commit한다 | commit과 같다 | 기록 결과를 받은 뒤 응답한다. 실패는 경고만 남긴다 |
 | memory.db background writer(runner 결과·보고) | 각 스레드가 직접 잠금을 잡는다 | 그 스레드 안에서 끝난다 | commit과 같다 | 해당 없음 |
@@ -134,7 +135,7 @@
 | 분류 | 소비자 | 스레드 | 한 잠금 안에서 하는 일 |
 |---|---|---|---|
 | 단순 쓰기 | `memory.put`·`memory.delete`·secret·approval 기록·surface meta·effect 설치 metadata(writer 요청. 설치 metadata는 기다리지 않는 독립 묶음), telemetry·audit 기록 | 메인 루프(IPC) | 한 연산. 기록 시점 로그 정리가 붙는 경로는 prune 후 put |
-| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal·`memory.import`·command index(각각 writer 요청 하나), session·barrier·semaphore·lease·ratelimit | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. writer 요청은 그 판단 전체가 한 요청이라 같은 묶음의 앞 요청 반영을 본다. command index는 한도 판정을 writer 요청 안에서 하고 행 수 캐시는 결과를 거둘 때 고치며, 한도 알림은 다음 PTY 출력 처리 회차에 결과를 거둘 때 낸다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
+| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal·`memory.import`·command index·barrier·semaphore·lease·ratelimit IPC(각각 writer 요청 하나), session, 요청 게이트의 ratelimit 소비 | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. writer 요청은 그 판단 전체가 한 요청이라 같은 묶음의 앞 요청 반영을 본다. command index는 한도 판정을 writer 요청 안에서 하고 행 수 캐시는 결과를 거둘 때 고치며, 한도 알림은 다음 PTY 출력 처리 회차에 결과를 거둘 때 낸다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
 | task | `TaskService`(생성·graph submit·삭제·purge), runner tick | 메인 루프, `agent-runner-ws{N}` | graph submit은 plan·stage·activate를 한 잠금에서 한다. purge는 계획과 적용을 별도 잠금으로 한다. runner는 snapshot·점유 획득·상태 전이·완료를 각각 별도 잠금으로 한다 |
 | background 쓰기 | observer memory sink·`approval.await` 결과(writer 요청), Run 결과·후처리·보고 | 각 전용 스레드 | observer는 채널에 쌓인 기록과 넘친 옛 키의 보존 삭제를 독립 요청 묶음 하나로 writer에 넣는다. 보존 삭제는 저장이 확정된 키만 센다 |
 | 읽기 | `memory.get`·`list`·`count`·`approval.history`·`approval.summary.get`·`surface.meta.get`·`list`(writer 요청), surface capture의 `restore.command`(journal worker가 writer 요청을 넣고 기다린다), telemetry 조회, DAG 화면, task 대기 | 메인 루프, `dag-read`, task 대기 worker | 여러 scope를 순회하는 조회는 scope마다 잠금을 다시 잡아 하나의 시점을 보장하지 않는다. DAG 화면은 `try_lock`으로 폴링한다 |

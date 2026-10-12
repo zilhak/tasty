@@ -7,7 +7,7 @@ use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::super::memory::mark_durability;
-use super::{agent_err_to_response, now_ms, workspace_id_param};
+use super::{now_ms, reply_agent, workspace_id_param};
 
 fn resource_param(params: &Value, id: &Value) -> Result<String, JsonRpcResponse> {
     params
@@ -68,12 +68,22 @@ pub fn handle_lease_acquire(
             );
         }
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.lease_acquire(workspace_id, &resource, &holder, ttl_ms, mode, now_ms()) {
-            Ok(outcome) => serialize(id, outcome),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| {
+            crate::app::services::lease::acquire(
+                mem,
+                workspace_id,
+                &resource,
+                &holder,
+                ttl_ms,
+                mode,
+                now_ms(),
+            )
         },
+        move |core, id, outcome| mark_durability(core, serialize(id, outcome)),
     )
 }
 
@@ -96,12 +106,12 @@ pub fn handle_lease_release(
         Ok(h) => h,
         Err(e) => return e,
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.lease_release(workspace_id, &resource, &holder) {
-            Ok(outcome) => serialize(id, outcome),
-            Err(e) => agent_err_to_response(id, e),
-        },
+        id,
+        params,
+        move |mem| crate::app::services::lease::release(mem, workspace_id, &resource, &holder),
+        move |core, id, outcome| mark_durability(core, serialize(id, outcome)),
     )
 }
 
@@ -116,10 +126,13 @@ pub fn handle_lease_list(
         Ok(w) => w,
         Err(e) => return e,
     };
-    match core.lease_list(workspace_id, now_ms()) {
-        Ok(leases) => {
+    reply_agent(
+        core,
+        id,
+        params,
+        move |mem| crate::app::services::lease::list(mem, workspace_id, now_ms()),
+        move |_, id, leases| {
             JsonRpcResponse::success(id, json!({ "total": leases.len(), "leases": leases }))
-        }
-        Err(e) => agent_err_to_response(id, e),
-    }
+        },
+    )
 }

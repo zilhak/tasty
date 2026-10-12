@@ -7,7 +7,7 @@ use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::super::memory::mark_durability;
-use super::{agent_err_to_response, name_param, now_ms, workspace_id_param};
+use super::{name_param, now_ms, reply_agent, workspace_id_param};
 
 fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
     match serde_json::to_value(value) {
@@ -41,12 +41,21 @@ pub fn handle_barrier_create(
         }
     };
     let timeout_ms = p_try!(params::opt_int::<u64>(params, "timeout_ms", &id));
-    mark_durability(
+    reply_agent(
         core,
-        match core.barrier_create(workspace_id, name, count_required, timeout_ms, now_ms()) {
-            Ok(b) => serialize(id, b),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| {
+            crate::app::services::barrier::create(
+                mem,
+                workspace_id,
+                name.clone(),
+                count_required,
+                timeout_ms,
+                now_ms(),
+            )
         },
+        move |core, id, b| mark_durability(core, serialize(id, b)),
     )
 }
 
@@ -65,11 +74,22 @@ pub fn handle_barrier_signal(
         Ok(n) => n,
         Err(e) => return e,
     };
-    mark_durability(
+    let events = std::sync::Arc::clone(engine.task_scope.event_queue());
+    reply_agent(
         core,
-        match core.barrier_signal(&engine.as_ref(), workspace_id, &name, now_ms()) {
-            Ok(b) => serialize(id, b),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| crate::app::services::barrier::signal(mem, workspace_id, &name, now_ms()),
+        move |core, id, b| {
+            // 신호가 요구 수를 채우면 commit 뒤에 Closed 이벤트를 넣는다.
+            if b.state == tasty_agent::BarrierState::Closed {
+                events.push(tasty_task_runtime::event_feed::AgentEvent::BarrierClosed {
+                    workspace_id,
+                    name: b.name.clone(),
+                    count_required: b.count_required,
+                });
+            }
+            mark_durability(core, serialize(id, b))
         },
     )
 }
@@ -89,10 +109,13 @@ pub fn handle_barrier_state(
         Ok(n) => n,
         Err(e) => return e,
     };
-    match core.barrier_state(workspace_id, &name, now_ms()) {
-        Ok(b) => serialize(id, b),
-        Err(e) => agent_err_to_response(id, e),
-    }
+    reply_agent(
+        core,
+        id,
+        params,
+        move |mem| crate::app::services::barrier::state(mem, workspace_id, &name, now_ms()),
+        move |_, id, b| serialize(id, b),
+    )
 }
 
 /// 완료까지 기다리지 않고 현재 barrier 상태를 반환한다.
@@ -117,12 +140,15 @@ pub fn handle_barrier_list(
         Ok(w) => w,
         Err(e) => return e,
     };
-    match core.barrier_list(workspace_id, Some(now_ms())) {
-        Ok(barriers) => {
+    reply_agent(
+        core,
+        id,
+        params,
+        move |mem| crate::app::services::barrier::list(mem, workspace_id, Some(now_ms())),
+        move |_, id, barriers| {
             JsonRpcResponse::success(id, json!({ "total": barriers.len(), "barriers": barriers }))
-        }
-        Err(e) => agent_err_to_response(id, e),
-    }
+        },
+    )
 }
 
 pub fn handle_barrier_delete(
@@ -140,11 +166,16 @@ pub fn handle_barrier_delete(
         Ok(n) => n,
         Err(e) => return e,
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.barrier_delete(workspace_id, &name) {
-            Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| crate::app::services::barrier::delete(mem, workspace_id, &name),
+        move |core, id, ()| {
+            mark_durability(
+                core,
+                JsonRpcResponse::success(id, json!({ "deleted": true })),
+            )
         },
     )
 }

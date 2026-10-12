@@ -6,7 +6,7 @@ use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::super::memory::mark_durability;
-use super::{agent_err_to_response, name_param, now_ms, workspace_id_param};
+use super::{name_param, now_ms, reply_agent, workspace_id_param};
 
 fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
     match serde_json::to_value(value) {
@@ -39,12 +39,20 @@ pub fn handle_semaphore_create(
             );
         }
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.semaphore_create(workspace_id, name, permits, now_ms()) {
-            Ok(s) => serialize(id, s),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| {
+            crate::app::services::semaphore::create(
+                mem,
+                workspace_id,
+                name.clone(),
+                permits,
+                now_ms(),
+            )
         },
+        move |core, id, s| mark_durability(core, serialize(id, s)),
     )
 }
 
@@ -72,12 +80,20 @@ pub fn handle_semaphore_set_permits(
             );
         }
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.semaphore_set_permits(workspace_id, &name, permits, now_ms()) {
-            Ok(s) => serialize(id, s),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| {
+            crate::app::services::semaphore::set_permits(
+                mem,
+                workspace_id,
+                &name,
+                permits,
+                now_ms(),
+            )
         },
+        move |core, id, s| mark_durability(core, serialize(id, s)),
     )
 }
 
@@ -104,12 +120,21 @@ pub fn handle_semaphore_acquire(
         Ok(v) => v,
         Err(e) => return e,
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.semaphore_acquire(workspace_id, &name, &holder, ttl_ms, now_ms()) {
-            Ok(outcome) => serialize(id, outcome),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| {
+            crate::app::services::semaphore::acquire(
+                mem,
+                workspace_id,
+                &name,
+                &holder,
+                ttl_ms,
+                now_ms(),
+            )
         },
+        move |core, id, outcome| mark_durability(core, serialize(id, outcome)),
     )
 }
 
@@ -132,12 +157,12 @@ pub fn handle_semaphore_release(
         Some(h) if !h.is_empty() => h.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'holder'"),
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.semaphore_release(workspace_id, &name, &holder) {
-            Ok(outcome) => serialize(id, outcome),
-            Err(e) => agent_err_to_response(id, e),
-        },
+        id,
+        params,
+        move |mem| crate::app::services::semaphore::release(mem, workspace_id, &name, &holder),
+        move |core, id, outcome| mark_durability(core, serialize(id, outcome)),
     )
 }
 
@@ -152,13 +177,18 @@ pub fn handle_semaphore_list(
         Ok(w) => w,
         Err(e) => return e,
     };
-    match core.semaphore_list(workspace_id, now_ms()) {
-        Ok(semaphores) => JsonRpcResponse::success(
-            id,
-            json!({ "total": semaphores.len(), "semaphores": semaphores }),
-        ),
-        Err(e) => agent_err_to_response(id, e),
-    }
+    reply_agent(
+        core,
+        id,
+        params,
+        move |mem| crate::app::services::semaphore::list(mem, workspace_id, now_ms()),
+        move |_, id, semaphores| {
+            JsonRpcResponse::success(
+                id,
+                json!({ "total": semaphores.len(), "semaphores": semaphores }),
+            )
+        },
+    )
 }
 
 pub fn handle_semaphore_delete(
@@ -176,11 +206,16 @@ pub fn handle_semaphore_delete(
         Ok(n) => n,
         Err(e) => return e,
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.semaphore_delete(workspace_id, &name) {
-            Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| crate::app::services::semaphore::delete(mem, workspace_id, &name),
+        move |core, id, ()| {
+            mark_durability(
+                core,
+                JsonRpcResponse::success(id, json!({ "deleted": true })),
+            )
         },
     )
 }

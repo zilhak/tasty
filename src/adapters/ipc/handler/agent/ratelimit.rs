@@ -6,7 +6,7 @@ use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::super::memory::mark_durability;
-use super::{agent_err_to_response, now_ms};
+use super::{now_ms, reply_agent};
 
 fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
     match serde_json::to_value(value) {
@@ -55,12 +55,22 @@ pub fn handle_rate_limit_set(
         }
         None => None,
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.rate_limit_set(agent, metric, limit, per_ms, burst, now_ms()) {
-            Ok(rl) => serialize(id, rl),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| {
+            crate::app::services::ratelimit::set(
+                mem,
+                agent.clone(),
+                metric.clone(),
+                limit,
+                per_ms,
+                burst,
+                now_ms(),
+            )
         },
+        move |core, id, rl| mark_durability(core, serialize(id, rl)),
     )
 }
 
@@ -69,12 +79,17 @@ pub fn handle_rate_limit_list(
     _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
-    _params: &Value,
+    params: &Value,
 ) -> JsonRpcResponse {
-    match core.rate_limit_status(now_ms()) {
-        Ok(all) => JsonRpcResponse::success(id, json!({ "total": all.len(), "rate_limits": all })),
-        Err(e) => agent_err_to_response(id, e),
-    }
+    reply_agent(
+        core,
+        id,
+        params,
+        move |mem| crate::app::services::ratelimit::status(mem, now_ms()),
+        move |_, id, all| {
+            JsonRpcResponse::success(id, json!({ "total": all.len(), "rate_limits": all }))
+        },
+    )
 }
 
 pub fn handle_rate_limit_remove(
@@ -88,11 +103,13 @@ pub fn handle_rate_limit_remove(
         Some(s) if !s.is_empty() => s.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'id'"),
     };
-    mark_durability(
+    reply_agent(
         core,
-        match core.rate_limit_remove(&rl_id) {
-            Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
-            Err(e) => agent_err_to_response(id, e),
+        id,
+        params,
+        move |mem| crate::app::services::ratelimit::remove(mem, &rl_id),
+        move |core, id, ()| {
+            mark_durability(core, JsonRpcResponse::success(id, json!({ "ok": true })))
         },
     )
 }
@@ -112,8 +129,12 @@ pub fn handle_rate_limit_status(
         .get("metric")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    match core.rate_limit_status(now_ms()) {
-        Ok(all) => {
+    reply_agent(
+        core,
+        id,
+        params,
+        move |mem| crate::app::services::ratelimit::status(mem, now_ms()),
+        move |_, id, all| {
             let filtered: Vec<_> = all
                 .into_iter()
                 .filter(|r| agent.as_ref().is_none_or(|a| &r.agent == a))
@@ -123,7 +144,6 @@ pub fn handle_rate_limit_status(
                 id,
                 json!({ "total": filtered.len(), "rate_limits": filtered }),
             )
-        }
-        Err(e) => agent_err_to_response(id, e),
-    }
+        },
+    )
 }

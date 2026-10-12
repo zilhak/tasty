@@ -493,6 +493,48 @@ mod tests {
         assert_eq!(got["value"], json!("1"));
     }
 
+    // agent 협업 연산도 판단과 쓰기를 writer 요청 하나로 하고 그 결과 뒤에 응답한다.
+    #[test]
+    fn agent_coordination_requests_judge_inside_the_writer() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = writer_core();
+        let call = |id, method: &str, extra: Value| {
+            let mut params = json!({"workspace_id": 1, "name": "gate"});
+            if let (Some(p), Some(e)) = (params.as_object_mut(), extra.as_object()) {
+                p.extend(e.clone());
+            }
+            make_request(id, method, params, None)
+        };
+        let (created, later) = run_request(
+            &mut core,
+            &call(1, "agent.semaphore_create", json!({"permits": 1})),
+        );
+        assert!(later);
+        assert!(created.error.is_none(), "{created:?}");
+        let (first, _) = run_request(
+            &mut core,
+            &call(2, "agent.semaphore_acquire", json!({"holder": "a"})),
+        );
+        assert_eq!(
+            first.result.expect("first acquire")["acquired"],
+            json!(true)
+        );
+        let (second, _) = run_request(
+            &mut core,
+            &call(3, "agent.semaphore_acquire", json!({"holder": "b"})),
+        );
+        assert_eq!(
+            second.result.expect("second acquire")["acquired"],
+            json!(false)
+        );
+        let (missing, later) = run_request(
+            &mut core,
+            &call(4, "agent.barrier_signal", json!({"name": "absent"})),
+        );
+        assert!(later);
+        assert!(missing.error.is_some(), "{missing:?}");
+    }
+
     // 멱등 키 기록은 continuation의 응답으로 끝난다. 같은 키의 재시도는 실행하지 않고 같은 답을
     // 받고, 결과를 기다리는 동안의 재시도는 결과 불명 오류를 받는다.
     #[test]
