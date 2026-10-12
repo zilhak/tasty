@@ -311,6 +311,8 @@ impl App {
         if let Some(resp) = self.dispatch_list_global(request) {
             return resp;
         }
+        let with_open_surfaces = self.with_open_surfaces_if_needed(checked);
+        let checked = with_open_surfaces.as_ref().unwrap_or(checked);
         let named =
             crate::core::request_target::request_resource_id(&request.method, &request.params);
         let target_id = match self.find_request_owner(&request.method, &request.params) {
@@ -453,6 +455,50 @@ mod tests {
             "라우팅의 사전 검사 호출 또는 반환 형태가 예상과 다르다 ({}건):\n{}\n사전 검사를 거쳐 응답하는지 실제 분기와 파서 인식을 함께 확인한다.",
             naked.len(),
             naked.join("\n")
+        );
+    }
+
+    /// 검사한 요청을 engine 핸들러에 넘기는 GUI 라우터는 첫 전달 전에 모든 engine의 열린 surface를
+    /// 붙인 요청으로 바꿔야 한다. 빠지면 memory.import가 다른 창의 열린 surface 항목을 거절한다.
+    /// 원문 위치만 보는 텍스트 검사이며 실제 실행 경로는 증명하지 않는다.
+    #[test]
+    fn every_gui_router_attaches_the_open_surfaces_before_it_hands_over() {
+        const ATTACH: &str = "self.with_open_surfaces_if_needed(checked)";
+        const SHADOW: &str = "let checked = with_open_surfaces.as_ref().unwrap_or(checked);";
+        const HANDOVER: &str = "handle_checked_request(";
+        let sources = [
+            ("src/app/dispatch/intents.rs", include_str!("intents.rs")),
+            ("src/app/ipc/routing.rs", include_str!("../ipc/routing.rs")),
+        ];
+        let mut routers = Vec::new();
+        let mut missing = Vec::new();
+        for (file, full) in sources {
+            let src = full.split("\n#[cfg(test)]").next().unwrap_or(full);
+            for body in src.split("\n    pub(crate) fn ").skip(1) {
+                let body = body.split("\n    fn ").next().unwrap_or(body);
+                let Some(handover) = body.find(HANDOVER) else {
+                    continue;
+                };
+                let name: String = body
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                routers.push(format!("{file}::{name}"));
+                let before = &body[..handover];
+                if !(before.contains(ATTACH) && before.contains(SHADOW)) {
+                    missing.push(format!("  {file}::{name}"));
+                }
+            }
+        }
+        assert!(
+            routers.len() >= 2,
+            "검사한 요청을 넘기는 라우터를 {}개만 찾았다: {routers:?}. 함수 탐색 범위를 확인한다.",
+            routers.len()
+        );
+        assert!(
+            missing.is_empty(),
+            "첫 `{HANDOVER}` 전에 `{ATTACH}` 와 `{SHADOW}` 가 없다:\n{}",
+            missing.join("\n")
         );
     }
 }

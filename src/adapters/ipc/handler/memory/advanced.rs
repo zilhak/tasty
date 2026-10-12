@@ -2,15 +2,16 @@
 
 use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
-use tasty_memory::{ListOpts, MemoryEntry, MemoryValue};
+use std::collections::HashSet;
+use tasty_memory::{ListOpts, MemoryEntry, MemoryValue, Scope};
 
 use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{
-    decode_b64, entry_to_json, hide_host_keys, map_error, optional_scope, reject_host_key,
-    require_scope,
+    decode_b64, entry_to_json, hide_host_keys, map_error, optional_scope,
+    reject_closed_surface_scope, reject_host_key, reject_pty_space_surface_scope, require_scope,
 };
 
 /// 만료 항목은 읽기에서 이미 제외된다. gc는 디스크를 정리하고 quota를 회복하며 Local만 허용한다.
@@ -101,9 +102,12 @@ pub fn handle_export(
 /// `memory.import` — regular 영역으로 entry 입력. `entries` 는 export 응답과 같은
 /// 형태의 배열. `replace` (기본 false) 면 기존 key 덮어쓰기. CAS 는 적용하지 않는다.
 /// 응답: `{ applied: N, skipped: M }`.
+/// `open_surfaces`는 여러 engine을 가진 라우터가 붙인 모든 engine의 열린 surface다.
+/// 한 요청의 엔트리가 여러 창의 surface를 가리킬 수 있어 전달받은 engine만으로는 판정할 수 없다.
 pub fn handle_import(
     core: &AppServices,
-    _engine: &crate::core::CoreState,
+    engine: &crate::core::CoreState,
+    open_surfaces: Option<&HashSet<u32>>,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -131,6 +135,9 @@ pub fn handle_import(
             return resp;
         }
     }
+    if let Err(resp) = reject_import_scopes(engine, open_surfaces, &entries, &id) {
+        return resp;
+    }
     let owner = caller.owner().to_string();
     match core.with_memory(|s| s.import_regular(&owner, &entries, replace)) {
         Ok(stats) => super::written(
@@ -140,6 +147,29 @@ pub fn handle_import(
         ),
         Err(e) => map_error(id, e),
     }
+}
+
+/// put과 같은 scope 검사를 쓰기 전에 모든 엔트리에 적용한다. `import_regular`는 항목마다
+/// commit하므로 중간 엔트리에서 거절하면 앞 엔트리만 반영된다.
+fn reject_import_scopes(
+    engine: &crate::core::CoreState,
+    open_surfaces: Option<&HashSet<u32>>,
+    entries: &[MemoryEntry],
+    id: &Value,
+) -> Result<(), JsonRpcResponse> {
+    for e in entries {
+        let scope = Scope::parse(&e.scope).map_err(|s| {
+            JsonRpcResponse::invalid_params(id.clone(), format!("invalid scope: {s}"))
+        })?;
+        reject_pty_space_surface_scope(&scope, id)?;
+        if let Scope::Surface(sid) = scope
+            && open_surfaces.is_some_and(|open| open.contains(&sid))
+        {
+            continue;
+        }
+        reject_closed_surface_scope(engine, &scope, id)?;
+    }
+    Ok(())
 }
 
 /// export 응답 객체 (`entry_to_json` 출력) 을 `MemoryEntry` 로 복원. timestamp/version

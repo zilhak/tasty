@@ -288,6 +288,7 @@ tasty memory delete --workspace 7 --key build.status
 JSON 으로, 아니면 문자열로 저장합니다.
 
 `--surface` 범위에 저장하는 것은 열려 있는 서피스에만 됩니다. 닫은 서피스 ID를 주면 오류로 거절합니다.
+`tasty memory import` 도 같습니다. 파일에 닫은 서피스 범위의 항목이 하나라도 있으면 아무것도 넣지 않고 오류로 거절합니다.
 서피스를 닫으면 그 범위의 값도 함께 지워집니다. 예전에 닫은 서피스 범위에 남아 있는 값은
 `tasty memory list --surface <ID>` 로 확인하고 `tasty memory delete` 로 지울 수 있습니다.
 

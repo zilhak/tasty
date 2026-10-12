@@ -29,7 +29,8 @@
 - 라우터가 그 scope 의 surface 를 요청 대상으로 읽어 소유 창·parked engine 으로 보낸다. 어느 engine 에도 없으면 다른 surface 대상 요청과 같은 `-32602`(`no live surface <id> (named by 'memory.put')`)로 거절한다. 핸들러도 받은 engine 에 그 surface 가 없으면 `-32602 Surface <id> not found` 로 한 번 더 거절한다.
 - 읽기·삭제(`get` · `list` · `exists` · `count` · `delete` 와 secret 의 같은 메서드)는 surface 가 없어도 받는다. 닫힌 surface 의 scope 에 남은 항목을 확인하고 지울 수 있게 하기 위해서다.
 - surface 를 닫으면 그 surface 의 scope 를 regular·secret 모두 지운다(`purge_scope`, 닫기의 metadata 정리). 그래서 닫힌 surface 의 scope 에 항목이 남는 것은 이 검사가 생기기 전에 쓴 항목뿐이다. 이런 항목은 자동으로 지우지 않으며 `memory list --surface <id>` 로 찾아 `memory delete` 로 지운다. surface id 는 재사용하지 않으므로 남은 항목이 새 surface 에 붙지는 않는다.
-- `memory.import` 는 항목별 scope 의 surface 를 검사하지 않는다.
+- `memory.import` 도 regular 영역에 항목을 새로 만드는 쓰기라 같은 조건을 따른다. 쓰기 전에 모든 항목의 scope 를 파싱하고 PTY id 공간과 열린 surface 를 검사하며, 한 항목이라도 걸리면 요청 전체를 `-32602`(`invalid scope: …` 또는 `Surface <id> not found`)로 거절하고 아무 항목도 넣지 않는다. 그 항목만 건너뛰고 `skipped` 로 세는 방식은 쓰지 않는다 — put 과 같은 오류로 맞추고, 백업 파일에 그 인스턴스에 없는 surface 의 항목이 섞여 있으면 조용히 빠지는 대신 호출자가 알고 그 항목을 걸러 다시 넣게 하기 위해서다.
+- import 는 항목마다 scope 가 달라 요청 대상 하나로 라우팅할 수 없다. GUI 라우터는 대상 없는 요청처럼 포커스 창의 engine 으로 보내면서 모든 창·parked·임시 engine 의 열린 surface 를 요청에 붙이고, 핸들러는 그 집합과 받은 engine 으로 판정한다. 그래서 다른 창의 열린 surface 항목은 거절하지 않는다. 집합을 붙이지 않는 경로(engine 이 하나인 headless)는 받은 engine 만 본다. import 는 저널이 미뤘다가 다시 실행하는 요청(저널 재개) 대상이 아니므로 그 경로에서 집합이 빠지는 일은 없다.
 
 ## owner — 숨겨진 host 전용 차원
 
@@ -87,7 +88,7 @@ regular와 secret의 대응 메서드는 같은 인자를 받는다. secret의 �
 
 **goal** 은 surface(=에이전트 세션) 단위 단일 목표 문장이다 — 에이전트가 받은 goal 을 소비자(Stop-훅 게이트 등)가 읽을 수 있도록 키를 코드에 고정한 자리. prefix 가 아니라 완전한 단일 키인 것은 surface 당 하나뿐이라는 요구에서 따라온다. 상속은 없다(부모 surface 의 goal 이 자식에 보이지 않는다 — 자식이 자기 subtask 를 끝내고도 부모 goal 을 이유로 계속 도는 것을 막는다). 빈/공백-only goal 은 등록 시점에 거부한다.
 
-goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫힐 때(`purge_surface_memory_scope`) 와 앱 시작 시 복원되지 않은 surface 정리(`purge_dead_surfaces`) 로 scope 통째로 삭제된다. 두 경로 모두 키 필터가 없어 goal 도 자동 포함되므로 **goal 수명 = surface 수명** 이다.
+goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫힐 때(`purge_surface_memory_scope`) scope 통째로 삭제된다. 이 경로는 키 필터가 없어 goal 도 자동 포함되므로 **goal 수명 = surface 수명** 이다. 앱 시작 시 복원되지 않은 surface 의 scope 를 지우는 경로는 없다(`SurfaceMetaStore::purge_dead_surfaces` 는 시험 전용이다). 닫힌 surface 의 scope 에 새 항목이 생기지 않도록 쓰기(put · secret.put · import)가 열린 surface 만 받는다.
 
 스코프 인자는 IPC params 필수값이다 — 활성 workspace/surface 를 참조하지 않는다([focus](../policies/focus.md)). CLI 의 `tasty memory goal` 만 `--surface` 생략 시 caller 의 `TASTY_SURFACE_ID` env 로 채운다(에이전트가 자기 자신에 대해 호출하는 것이 주 용례).
 

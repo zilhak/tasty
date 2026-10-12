@@ -72,7 +72,7 @@ const ROSTER: &[(&str, Why, &str)] = &[
     (
         "memory.import",
         NotWindowOwned,
-        "모든 창이 같은 memory store를 공유한다.",
+        "모든 창이 같은 memory store를 공유한다. 항목별 surface scope는 GUI 라우터가 붙인 모든 engine의 열린 surface로 판정한다.",
     ),
     (
         "memory.list",

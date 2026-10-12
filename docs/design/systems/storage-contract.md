@@ -33,7 +33,7 @@
 | `put` | 새 version(신규 1, 갱신 +1) | NotFound는 없음. CasConflict(행이 없는데 cas가 있으면 actual 0), OwnedByOther, QuotaExceeded, Invalid*, ValueTooLarge, Db | 한 transaction이다. 거절과 commit 실패는 롤백되고 quota 카운터·변경 버퍼를 바꾸지 않는다 | `_host`는 모든 owner의 항목을 바꾼다. 기존 행 조회는 `expires_at`을 거르지 않아 아직 정리되지 않은 만료 행도 owner·CAS·quota 판단에 들어간다 |
 | `delete` | `()` | NotFound, CasConflict, OwnedByOther, Db | 한 transaction이다 | put과 같은 owner 규칙. 만료 행도 지울 수 있다 |
 | 조회(`get`·`list`·`count`·`query`·`export_regular`) | 값 | Db | 해당 없음 | 만료 행을 제외한다. `scopes`는 만료 행을 포함한다 |
-| `import_regular` | applied·skipped 수 | put의 오류 | 항목마다 `put`을 따로 commit한다. 중간 오류가 나면 앞 항목은 반영된 채 오류를 돌려준다 | 항목의 `expires_at`을 그대로 쓰고 cas는 쓰지 않는다. `memory.import` 핸들러는 put과 달리 닫힌 surface scope를 검사하지 않는다 |
+| `import_regular` | applied·skipped 수 | put의 오류 | 항목마다 `put`을 따로 commit한다. 중간 오류가 나면 앞 항목은 반영된 채 오류를 돌려준다 | 항목의 `expires_at`을 그대로 쓰고 cas는 쓰지 않는다. `memory.import` 핸들러는 이 함수를 부르기 전에 모든 항목의 scope를 put과 같은 조건(PTY id 공간, 열린 surface)으로 검사하고, 하나라도 걸리면 아무 항목도 넣지 않고 거절한다 |
 | secret 계열 | put·delete와 같다 | 같다 | 같다 | owner가 키의 일부이고 owner별 quota다. 변경 이벤트를 만들지 않는다 |
 | `purge_scope` | 영역별 삭제 수 | Db | 이벤트 대상 SELECT와 regular·secret DELETE 두 문장이 한 transaction이다. 어느 문장이든 실패하면 전부 롤백되고 quota 카운터·변경 버퍼를 바꾸지 않는다. commit이 성공한 뒤에만 지운 regular 키마다 변경 이벤트를 쌓고 카운터를 다시 센다 | owner를 보지 않는다. 삭제 전 SELECT로 이벤트 대상 키를 모은다 |
 | `purge_expired` | 영역별 삭제 수 | Db | `purge_scope`와 같은 구조다 | `expires_at <= now`인 행 |

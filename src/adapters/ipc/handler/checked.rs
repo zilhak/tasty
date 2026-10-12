@@ -8,6 +8,7 @@ use crate::runtime::engine_access::EngineMut;
 pub(crate) struct CheckedRequest<'a> {
     request: &'a JsonRpcRequest,
     caller: &'a CallerContext,
+    open_surfaces: Option<std::collections::HashSet<u32>>,
 }
 
 impl<'a> CheckedRequest<'a> {
@@ -17,6 +18,25 @@ impl<'a> CheckedRequest<'a> {
 
     pub(crate) fn caller(&self) -> &'a CallerContext {
         self.caller
+    }
+
+    /// 여러 engine을 가진 라우터가 모든 engine의 열린 surface를 붙인 같은 요청.
+    /// 한 요청이 여러 engine의 surface를 가리킬 수 있는 메서드가 전달받은 engine 밖을 판정할 때 쓴다.
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn with_open_surfaces(
+        &self,
+        open: std::collections::HashSet<u32>,
+    ) -> CheckedRequest<'a> {
+        CheckedRequest {
+            request: self.request,
+            caller: self.caller,
+            open_surfaces: Some(open),
+        }
+    }
+
+    /// 라우터가 붙인 모든 engine의 열린 surface. 붙이지 않았으면 None이다.
+    pub(crate) fn open_surfaces(&self) -> Option<&std::collections::HashSet<u32>> {
+        self.open_surfaces.as_ref()
     }
 }
 
@@ -31,6 +51,7 @@ impl OwnedCheckedRequest {
         CheckedRequest {
             request: &self.request,
             caller: &self.caller,
+            open_surfaces: None,
         }
     }
     pub(crate) fn weight(&self) -> usize {
@@ -81,7 +102,11 @@ fn check_scope_request<'a>(
     // 멱등성 키는 모든 라우터에 앞서 검사한다. 권한 검사를 먼저 거쳐
     // 권한 없는 호출에는 `-32001`을 반환하고, 허용된 호출은 한 번 집계한다(ADR-0057).
     super::idempotency::check_envelope(request, &id)?;
-    Ok(CheckedRequest { request, caller })
+    Ok(CheckedRequest {
+        request,
+        caller,
+        open_surfaces: None,
+    })
 }
 
 /// App constructs a detached scope before admission; a refused gate still returns its display outputs.
@@ -114,7 +139,11 @@ pub(crate) fn check_without_engine<'a>(
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
     if matches!(caller, CallerContext::Local { .. }) {
         super::idempotency::check_envelope(request, &id)?;
-        return Ok(CheckedRequest { request, caller });
+        return Ok(CheckedRequest {
+            request,
+            caller,
+            open_surfaces: None,
+        });
     }
     Err(JsonRpcResponse::error(
         id,

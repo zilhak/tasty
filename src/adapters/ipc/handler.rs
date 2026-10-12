@@ -158,7 +158,7 @@ fn route_checked_request(
         Ok(pending) => pending,
         Err(answer) => return answer,
     };
-    let response = dispatch_routed(core, state, engine, caller, request, id);
+    let response = dispatch_routed(core, state, engine, checked, request, id);
     idempotency::finish(core.now_instant(), pending, &response);
     response
 }
@@ -168,7 +168,7 @@ fn dispatch_routed(
     core: &mut crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
-    caller: &CallerContext,
+    checked: &CheckedRequest<'_>,
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -185,7 +185,7 @@ fn dispatch_routed(
         &mut scope,
         &mut out,
         engine,
-        caller,
+        checked,
         request,
         id.clone(),
     );
@@ -197,7 +197,7 @@ fn dispatch_routed(
     }
 
     #[cfg(feature = "gui")]
-    if let Some(resp) = route_window_handler(state, engine, caller, request, id.clone()) {
+    if let Some(resp) = route_window_handler(state, engine, checked.caller(), request, id.clone()) {
         return resp;
     }
 
@@ -559,10 +559,11 @@ fn route_engine_handler(
     window: &mut dyn IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut EngineMut<'_>,
-    caller: &CallerContext,
+    checked: &CheckedRequest<'_>,
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
+    let caller = checked.caller();
     if tasty_ipc::method_meta::has_structure_journal_contract(&request.method) {
         return Some(JsonRpcResponse::internal_error(
             id,
@@ -756,7 +757,14 @@ fn route_engine_handler(
         "memory.stats" => memory::handle_stats(core, engine, caller, id, &request.params),
         "memory.query" => memory::handle_query(core, engine, caller, id, &request.params),
         "memory.export" => memory::handle_export(core, engine, caller, id, &request.params),
-        "memory.import" => memory::handle_import(core, engine, caller, id, &request.params),
+        "memory.import" => memory::handle_import(
+            core,
+            engine,
+            checked.open_surfaces(),
+            caller,
+            id,
+            &request.params,
+        ),
         "memory.secret.put" => memory::handle_secret_put(core, engine, caller, id, &request.params),
         "memory.secret.get" => memory::handle_secret_get(core, engine, caller, id, &request.params),
         "memory.secret.delete" => {

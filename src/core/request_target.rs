@@ -184,6 +184,24 @@ fn numeric_or_numeric_string(params: &serde_json::Value, key: &str) -> Option<u6
     v.as_str()?.parse::<u32>().ok().map(u64::from)
 }
 
+/// 엔트리마다 scope를 지정해 한 요청이 여러 engine의 surface를 가리킬 수 있는 메서드.
+/// 한 engine으로 라우팅할 수 없으므로 라우터가 모든 engine의 열린 surface를 요청에 붙인다.
+#[cfg(feature = "gui")]
+pub(crate) fn needs_open_surfaces_of_every_engine(method: &str) -> bool {
+    method == "memory.import"
+}
+
+/// 주어진 engine 전체의 열린 surface. 창·parked·임시 engine을 모두 넘겨야 한다.
+#[cfg(any(feature = "gui", test))]
+pub(crate) fn open_surfaces_of<'e>(
+    engines: impl IntoIterator<Item = EngineRef<'e>>,
+) -> std::collections::HashSet<u32> {
+    engines
+        .into_iter()
+        .flat_map(|engine| engine.live_surface_ids())
+        .collect()
+}
+
 /// engine별 자원 보유 판정. u32 종류의 범위를 넘는 ID는 다른 ID로 잘라 조회하지 않는다.
 pub(crate) fn engine_has_resource(engine: &EngineRef<'_>, rid: ResourceId) -> bool {
     let narrow = u32::try_from(rid.id).ok();

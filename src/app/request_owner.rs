@@ -30,6 +30,22 @@ fn surface_nickname_target<'p>(method: &str, params: &'p serde_json::Value) -> O
 }
 
 impl App {
+    /// 한 요청이 여러 engine의 surface를 가리킬 수 있는 메서드면 모든 engine의 열린 surface를 붙인다.
+    /// 핸들러는 전달받은 engine 하나만 보므로 다른 창의 열린 surface를 닫힌 것으로 오판하지 않게 한다.
+    pub(crate) fn with_open_surfaces_if_needed<'a>(
+        &self,
+        checked: &crate::ipc::handler::CheckedRequest<'a>,
+    ) -> Option<crate::ipc::handler::CheckedRequest<'a>> {
+        let request = checked.request();
+        crate::core::request_target::needs_open_surfaces_of_every_engine(&request.method).then(
+            || {
+                checked.with_open_surfaces(crate::core::request_target::open_surfaces_of(
+                    self.engines().all(),
+                ))
+            },
+        )
+    }
+
     /// nickname은 창별 상태가 아닌 공용 메모리에서 찾아 실제 소유 창으로 보낸다.
     fn find_main_by_surface_nickname(
         &self,

@@ -206,6 +206,10 @@ const DELEGATED_ROUTERS: &[(&str, &str)] = &[
     ("src/app/journal/commands.rs", "host_converts"),
     ("src/app/ipc/debug_methods.rs", "project_active_modal"),
     ("src/core/request_target.rs", "method_scoped_resource_id"),
+    (
+        "src/core/request_target.rs",
+        "needs_open_surfaces_of_every_engine",
+    ),
 ];
 
 /// 위임 라우터는 src만 검사한다. crates의 플러그인 dispatch는 이 호스트 라우터 명부에 포함하지 않는다.

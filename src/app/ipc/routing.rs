@@ -65,6 +65,8 @@ impl App {
             &cmd.request.method,
             &cmd.request.params,
         );
+        let with_open_surfaces = self.with_open_surfaces_if_needed(checked);
+        let checked = with_open_surfaces.as_ref().unwrap_or(checked);
         let target_id = match self.find_request_owner(&cmd.request.method, &cmd.request.params) {
             Ok(id) if named.is_some() => id,
             Ok(id) => id.or(self.view.focused_view_id),
