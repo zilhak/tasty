@@ -78,16 +78,24 @@ static LAST_PRUNE_MS: AtomicU64 = AtomicU64::new(0);
 /// 기록 추가와 타이머가 공유하는 정리 진입점.
 /// 마지막 시도 후 간격이 지났으면 ALL을 실행한다. 삭제 실패도 이번 시도로 센다.
 pub fn maybe_prune(mem: &mut dyn MemoryStorage, now_ms: u64) {
+    if claim_prune(now_ms) {
+        prune_all(mem, now_ms);
+    }
+}
+
+/// 이번 주기의 정리를 가져온다. 간격이 지나지 않았거나 다른 호출자가 가져갔으면 false다.
+pub fn claim_prune(now_ms: u64) -> bool {
     let last = LAST_PRUNE_MS.load(Ordering::Relaxed);
     if now_ms.saturating_sub(last) < PRUNE_INTERVAL_MS {
-        return;
+        return false;
     }
-    if LAST_PRUNE_MS
+    LAST_PRUNE_MS
         .compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed)
-        .is_err()
-    {
-        return; // 다른 스레드가 이번 주기를 가져갔다
-    }
+        .is_ok()
+}
+
+/// 모든 보존 정책을 집행한다. 같은 시각으로 다시 실행해도 결과가 같다.
+pub fn prune_all(mem: &mut dyn MemoryStorage, now_ms: u64) {
     let mut removed = 0u64;
     for policy in &ALL {
         removed += policy.enforce(mem, now_ms);

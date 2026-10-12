@@ -25,8 +25,6 @@ impl App {
     pub(crate) fn poll_log_prune(&mut self) {
         let now_ms = self.services.now_unix_millis();
         let now_ms = u64::try_from(now_ms).unwrap_or(0);
-        self.services.with_memory(|mem| {
-            crate::store::log_retention::maybe_prune(mem, now_ms);
-        });
+        self.services.submit_log_prune(now_ms);
     }
 }

@@ -29,6 +29,8 @@ impl AppServices {
         use tasty_terminal::TerminalEventKind;
         let raw = engine.collect_events();
         let mut out = Vec::with_capacity(raw.len());
+        // 앞 회차에 넣은 명령 기록의 한도 판정을 거둔다.
+        Self::push_command_cap_notices(engine, &mut out);
         for ev in raw {
             let sid = ev.surface_id;
             let generation = ev.generation;
@@ -131,24 +133,18 @@ impl AppServices {
         }
     }
 
-    fn handle_prompt_boundary(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        sid: u32,
-        generation: tasty_terminal::ResourceGeneration,
-        phase: char,
-        payload: &str,
-        out: &mut Vec<CoreEvent>,
-    ) {
-        engine.note_prompt_boundary_seen(sid);
-        let mem = engine.runtime.memory.clone();
-        if let Some(cap) = engine
-            .live
-            .command_index
-            .on_boundary(&mem, sid, phase, payload)
-        {
-            use crate::core::command_index::CommandCapEvent;
-            let (title, body) = match cap {
+    /// 끝난 명령 기록의 한도 알림을 연결이 그대로인 터미널에만 낸다.
+    fn push_command_cap_notices(engine: &mut EngineMut<'_>, out: &mut Vec<CoreEvent>) {
+        use crate::core::command_index::CommandCapEvent;
+        for (sid, notice) in engine.live.command_index.take_cap_notices() {
+            if !engine
+                .runtime
+                .terminals
+                .matches_generation(sid, notice.generation)
+            {
+                continue;
+            }
+            let (title, body) = match notice.event {
                 CommandCapEvent::SoftWarn { count, .. } => (
                     crate::i18n::t("command_index.cap.soft.title").to_string(),
                     crate::i18n::t_fmt("command_index.cap.soft.body", &count.to_string()),
@@ -159,12 +155,31 @@ impl AppServices {
                 ),
             };
             out.push(CoreEvent::TerminalNotification {
-                generation,
+                generation: notice.generation,
                 surface_id: sid,
                 title,
                 body,
             });
         }
+    }
+
+    fn handle_prompt_boundary(
+        &mut self,
+        engine: &mut EngineMut<'_>,
+        sid: u32,
+        generation: tasty_terminal::ResourceGeneration,
+        phase: char,
+        payload: &str,
+        out: &mut Vec<CoreEvent>,
+    ) {
+        engine.note_prompt_boundary_seen(sid);
+        engine.live.command_index.on_boundary(
+            &engine.runtime.memory_access,
+            sid,
+            generation,
+            phase,
+            payload,
+        );
         if phase == 'A' {
             engine.note_prompt_shown(sid, generation.value());
         }

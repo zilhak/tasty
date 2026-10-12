@@ -255,6 +255,20 @@ pub(crate) fn unsettled_response(
 }
 
 impl AppServices {
+    /// 주기가 돌아왔으면 로그 보존 정리를 기다리지 않는 writer 요청으로 넣는다.
+    pub(crate) fn submit_log_prune(&self, now_ms: u64) {
+        if crate::store::log_retention::claim_prune(now_ms) {
+            self.memory_access().submit_detached(
+                tasty_memory::writer::MemoryRequest::unit(0, move |memory| {
+                    crate::store::log_retention::prune_all(memory, now_ms);
+                    Ok(())
+                }),
+                "log retention prune",
+                None,
+            );
+        }
+    }
+
     /// 응답과 무관한 쓰기를 writer에 넣는다. 결과를 기다리지 않고 실패만 로그로 남긴다.
     /// writer 순서를 따르므로 뒤에 넣은 요청은 이 쓰기의 반영을 본다.
     pub(crate) fn memory_write_detached(

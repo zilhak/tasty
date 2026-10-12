@@ -96,6 +96,7 @@
 
 - 실행기가 "아무것도 확정하지 않았고 다시 하면 될 수 있다(busy)"고 알린 묶음만 같은 자리에서 다시 실행한다. 첫 실행부터 `retry_for` 안에서 `retry_backoff`부터 두 배씩 `retry_backoff_max`까지 기다린다. 그동안 뒤 요청은 큐에서 기다리므로 오래된 재시도가 새 요청을 덮지 않는다. 시한을 넘기면 묶음 전체가 `Failed`다.
 - 확정하지 않은 저장 실패는 묶음 전체가 `Failed`이고, 확정 여부를 모르는 실패는 `Unknown`이며 다시 실행하지 않는다. 요청 본문이 panic하면 그 요청만 `Failed`로 끝내고 나머지를 다시 실행한다.
+- 다시 실행될 수 있으므로 요청 본문은 저장소 밖의 상태를 바꾸지 않는다. 결과에 따라 바뀌는 메모리 상태는 결과를 거두는 쪽이 고친다. command index의 행 수 캐시는 메인 루프가 기록 결과를 거둘 때 고치고, 거두기 전에 이어진 기록은 캐시에 진행 중인 기록 수를 더해 한도를 판정한다.
 - 실행기 자체가 panic하면 그 묶음은 `Lost`이고 worker는 다음 요청을 계속 처리한다.
 
 #### flush와 종료
@@ -133,14 +134,14 @@
 | 분류 | 소비자 | 스레드 | 한 잠금 안에서 하는 일 |
 |---|---|---|---|
 | 단순 쓰기 | `memory.put`·`memory.delete`·secret·approval 기록·surface meta·effect 설치 metadata(writer 요청. 설치 metadata는 기다리지 않는 독립 묶음), telemetry·audit 기록 | 메인 루프(IPC) | 한 연산. 기록 시점 로그 정리가 붙는 경로는 prune 후 put |
-| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal·`memory.import`(각각 writer 요청 하나), session·barrier·semaphore·lease·ratelimit, command index | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. writer 요청은 그 판단 전체가 한 요청이라 같은 묶음의 앞 요청 반영을 본다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
+| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal·`memory.import`·command index(각각 writer 요청 하나), session·barrier·semaphore·lease·ratelimit | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. writer 요청은 그 판단 전체가 한 요청이라 같은 묶음의 앞 요청 반영을 본다. command index는 한도 판정을 writer 요청 안에서 하고 행 수 캐시는 결과를 거둘 때 고치며, 한도 알림은 다음 PTY 출력 처리 회차에 결과를 거둘 때 낸다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
 | task | `TaskService`(생성·graph submit·삭제·purge), runner tick | 메인 루프, `agent-runner-ws{N}` | graph submit은 plan·stage·activate를 한 잠금에서 한다. purge는 계획과 적용을 별도 잠금으로 한다. runner는 snapshot·점유 획득·상태 전이·완료를 각각 별도 잠금으로 한다 |
 | background 쓰기 | observer memory sink·`approval.await` 결과(writer 요청), Run 결과·후처리·보고 | 각 전용 스레드 | observer는 채널에 쌓인 기록과 넘친 옛 키의 보존 삭제를 독립 요청 묶음 하나로 writer에 넣는다. 보존 삭제는 저장이 확정된 키만 센다 |
 | 읽기 | `memory.get`·`list`·`count`·`approval.history`·`approval.summary.get`·`surface.meta.get`·`list`(writer 요청), surface capture의 `restore.command`(journal worker가 writer 요청을 넣고 기다린다), telemetry 조회, DAG 화면, task 대기 | 메인 루프, `dag-read`, task 대기 worker | 여러 scope를 순회하는 조회는 scope마다 잠금을 다시 잡아 하나의 시점을 보장하지 않는다. DAG 화면은 `try_lock`으로 폴링한다 |
 | 변경 구독 | `memory.changed` 발행 | GUI 이벤트 루프, headless 루프 | 두 루프가 회차마다 writer가 commit 뒤 옮겨 둔 변경 버퍼(`ChangeFeed`)를 꺼내고, 그 뒤에 직접 잠금 소비자가 저장소 버퍼에 남긴 변경을 붙여 plugin에 발행한다. plugin 매니저가 없으면 꺼낸 변경을 버려 버퍼가 쌓이지 않는다 |
 | 삭제 cleanup | surface·workspace 은퇴의 `purge_scope`(writer 요청 하나), 부팅 legacy 범위 밖 surface meta 정리(기다리지 않는 writer 요청), 범위 밖 surface meta 정리 | 메인 루프 | 대상이 다시 살아 있으면 정리를 넣지 않는다. 은퇴 정리는 결과를 다음 폴링 회차에 거두며, 같은 ID의 새 소유자가 쓰는 metadata는 정리 뒤에 접수되므로 지워지지 않는다 |
 | TTL 정리 | `memory.gc`(Local 전용)의 `purge_expired`(writer 요청) | 메인 루프(IPC) | 주기 타이머는 없다 |
-| 로그 prune | 관측 로그 보존(부팅·기록 시점·`Tick::LogPrune`) | 메인 루프 | 시간 기준 후 개수 기준. 한 시간 간격 제한 |
+| 로그 prune | 관측 로그 보존(부팅·기록 시점·`Tick::LogPrune`). `Tick::LogPrune`은 기다리지 않는 writer 요청이다 | 메인 루프 | 시간 기준 후 개수 기준. 한 시간 간격 제한은 요청을 넣기 전에 판정한다 |
 | 정비 | 부팅의 prune·VACUUM·WAL truncate | 부팅 메인 | port로 감싸기 전 구체 `MemoryStore`에서 실행 |
 
 ### IPC 응답
