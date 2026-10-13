@@ -229,6 +229,7 @@ Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설�
   - `terminal.spawn`은 `parent`(별칭 `surface`) 대신 `parent_external`을 받는다. `workspace`는 그대로 필요하다.
   - `terminal.children`·`release`·`kill`·`respawn`·`broadcast`는 `surface` 대신 `parent_external`을 받는다. `tell`은 자식 surface를 직접 지정하므로 바뀌지 않는다.
   - 숫자 부모와 `parent_external`을 함께 주면 `-32602`(`pass either '<key>' or 'parent_external', not both`)로 거절한다.
+  - `parent_external`이 문자열이 아니거나 비었거나 256 byte를 넘거나 공백·제어문자를 담으면 `-32602`로 거절한다. 생략으로 읽어 부모 생략 폴백으로 넘기지 않는다. mirror workspace 자식을 닫는 `terminal.kill`도 원격으로 넘기기 전에 같은 규칙으로 판정하므로, 잘못된 키는 다른 부모의 자식을 닫지 않고 같은 오류로 끝난다.
   - `terminal.parent`는 `parent_surface_id`와 함께 `parent_external`(없으면 `null`)을 돌려준다.
   - `terminal.adopt`는 `parent_external`을 받지 않는다.
   - 창이 둘 이상인 GUI에서는 `parent_external`만으로 창을 고를 수 없으므로 `workspace`(이름 또는 ID)를 함께 준다. 없으면 라우팅 단계에서 거절한다.
@@ -325,6 +326,7 @@ surface 뿐이다. 저장 병합으로 받아 온 다른 윈도우의 항목은 
 - Given 다른 윈도우가 같은 External 부모에 번호를 예약만 했다 When 이 윈도우가 마지막 자식을 빼고 저장한다 Then 파일의 다음 번호가 남아 예약 번호를 다시 주지 않는다(`a_pending_reservation_in_another_engine_survives_the_last_release`).
 - Given External 부모가 소유한 soft 점유 When 부모 surface가 없는 상태에서 포커스 정리를 한다 Then 점유가 남는다(`focus_cleanup_keeps_an_external_parent_that_has_no_surface`).
 - Given 숫자 부모로 기록된 이전 journal 레코드 When 읽는다 Then Surface 부모로 해석한다(`a_child_recipe_with_a_numeric_parent_still_reads`).
+- Given mirror workspace 자식과 Surface 부모 하나 When `terminal.kill`에 숫자·배열·빈 문자열·공백 포함 같은 잘못된 `parent_external`을 준다 Then 원격으로 넘기지 않고 일반 해석이 `-32602`로 거절하며 어떤 자식도 닫지 않는다(`an_invalid_external_parent_does_not_fall_back_to_another_parent`).
 - Given 실행 중인 child C When `terminal.state{surface=C}` Then 응답이 `state`·`evidence`·`confidence`·`surface_id:C` 를 싣고 `state` 는 `exited` 가 아니다(값은 위 판정 우선순위 표).
 - Given `terminal.kill`로 종료된 child C When `terminal.state{surface=C}` Then `state` 가 `"exited"` 다 (`"active"`가 아님).
 

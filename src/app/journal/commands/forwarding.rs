@@ -29,22 +29,12 @@ fn local_op(
     };
     match request.method.as_str() {
         "terminal.kill" => {
-            use crate::core::child_parent::ParentKey;
-            let external = request.params["parent_external"]
-                .as_str()
-                .map(|key| ParentKey::External(key.to_owned()));
-            // 두 부모를 함께 준 요청은 전달하지 않고 일반 해석의 거절에 맡긴다.
-            let parent = match (id("surface"), external) {
-                (Some(_), Some(_)) => return None,
-                (Some(surface), None) => ParentKey::Surface(surface),
-                (None, Some(external)) => external,
-                (None, None) => ParentKey::Surface(
-                    session
-                        .runtime
-                        .child_terminals
-                        .single_parent(&session.core.live_surface_ids())?,
-                ),
-            };
+            let parent = kill_parent(&request.params, || {
+                session
+                    .runtime
+                    .child_terminals
+                    .single_parent(&session.core.live_surface_ids())
+            })?;
             let entry = session
                 .runtime
                 .child_terminals
@@ -128,6 +118,29 @@ fn local_op(
             }
         }
         _ => None,
+    }
+}
+/// mirror kill 의 부모. 일반 해석이 거절할 요청(두 부모 지정, 규칙에 어긋난 `parent_external`)은
+/// None 이라 전달하지 않고 일반 해석의 -32602 거절에 맡긴다. 잘못된 External 키를 생략으로 읽어
+/// 단일 부모 폴백으로 다른 부모의 자식을 닫지 않게 한다.
+fn kill_parent(
+    params: &serde_json::Value,
+    single_parent: impl FnOnce() -> Option<u32>,
+) -> Option<crate::core::child_parent::ParentKey> {
+    use crate::core::child_parent::ParentKey;
+    let surface = params
+        .get("surface")
+        .and_then(|value| value.as_u64())
+        .and_then(|id| u32::try_from(id).ok());
+    let external =
+        crate::ipc::handler::params::optional_external_parent(params, &serde_json::Value::Null)
+            .ok()?
+            .map(ParentKey::External);
+    match (surface, external) {
+        (Some(_), Some(_)) => None,
+        (Some(surface), None) => Some(ParentKey::Surface(surface)),
+        (None, Some(external)) => Some(external),
+        (None, None) => single_parent().map(ParentKey::Surface),
     }
 }
 impl JournalApplication {
@@ -217,5 +230,73 @@ impl crate::app::App {
             ),
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::kill_parent;
+    use crate::core::child_parent::ParentKey;
+    use serde_json::json;
+
+    fn parent(params: serde_json::Value) -> Option<ParentKey> {
+        kill_parent(&params, || Some(7))
+    }
+
+    /// 잘못된 parent_external 은 단일 부모로 폴백해 다른 부모의 자식을 닫지 않는다. 일반 해석이
+    /// -32602 로 거절하도록 전달하지 않는다.
+    #[test]
+    fn an_invalid_external_parent_does_not_fall_back_to_another_parent() {
+        for invalid in [
+            json!(5),
+            json!(["codex:t"]),
+            json!({ "key": "codex:t" }),
+            json!(true),
+            json!(""),
+            json!("a b"),
+            json!("a\nb"),
+            json!("x".repeat(257)),
+        ] {
+            // 전달하지 않은 요청은 kill 의 일반 해석(close.rs)이 같은 공통 검증으로 거절한다.
+            let refused = crate::ipc::handler::params::optional_parent(
+                &json!({ "parent_external": invalid, "child": 0 }),
+                "surface",
+                &json!(null),
+            )
+            .expect_err("refused");
+            assert_eq!(refused.error.expect("error").code, -32602, "{invalid}");
+            assert_eq!(
+                parent(json!({ "parent_external": invalid, "child": 0 })),
+                None,
+                "{invalid}"
+            );
+            assert_eq!(
+                parent(json!({ "surface": 9, "parent_external": invalid, "child": 0 })),
+                None,
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn valid_parents_and_the_omitted_fallback_are_unchanged() {
+        assert_eq!(
+            parent(json!({ "parent_external": "codex:t", "child": 0 })),
+            Some(ParentKey::External("codex:t".into()))
+        );
+        assert_eq!(
+            parent(json!({ "surface": 9, "child": 0 })),
+            Some(ParentKey::Surface(9))
+        );
+        assert_eq!(parent(json!({ "child": 0 })), Some(ParentKey::Surface(7)));
+        assert_eq!(
+            parent(json!({ "parent_external": null, "child": 0 })),
+            Some(ParentKey::Surface(7))
+        );
+        assert_eq!(
+            parent(json!({ "surface": 9, "parent_external": "codex:t", "child": 0 })),
+            None
+        );
+        assert_eq!(kill_parent(&json!({ "child": 0 }), || None), None);
     }
 }
