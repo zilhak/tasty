@@ -608,3 +608,308 @@ impl crate::app::App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! 활성화가 끝난 뒤 보류 입력을 실행하는 단계의 현재 동작을 고정한다. 활성화 자체는 다루지 않는다.
+    use super::*;
+    use crate::runtime::child_terminal::{ChildEntry, ParentKey};
+    use serde_json::json;
+    use std::sync::mpsc;
+
+    const PARENT: u32 = 1;
+    const FIRST: u32 = 2;
+    const SECOND: u32 = 3;
+
+    fn session() -> (
+        crate::state::RequestContext,
+        crate::runtime::engine_session::EngineSession,
+    ) {
+        use tasty_core::{DomainEvent as E, SurfaceSpec};
+        let mut events = vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: 1,
+                name: "workspace".into(),
+                category: 0,
+                index: 0,
+                pane: 1,
+            },
+        ];
+        for (index, id) in [PARENT, FIRST, SECOND].into_iter().enumerate() {
+            events.push(E::TabCreated {
+                id,
+                pane: 1,
+                index,
+                name: "terminal".into(),
+                surface: SurfaceSpec {
+                    id,
+                    kind: "terminal".into(),
+                    data: None,
+                },
+            });
+        }
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(events))
+    }
+
+    fn child(surface: u32, index: u32) -> ChildEntry {
+        ChildEntry {
+            child_surface_id: surface,
+            index,
+            cwd: None,
+            role: None,
+            nickname: None,
+        }
+    }
+
+    /// 두 child를 등록하고 각 터미널의 입력을 sink로 관측한다.
+    fn children(
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    ) -> [mpsc::Receiver<Vec<u8>>; 2] {
+        [FIRST, SECOND].map(|surface| {
+            let index = engine
+                .runtime
+                .child_terminals
+                .reserve_index(&ParentKey::Surface(PARENT))
+                .expect("index");
+            engine
+                .runtime
+                .child_terminals
+                .register_child(PARENT, child(surface, index));
+            let (tx, rx) = mpsc::channel();
+            engine
+                .runtime
+                .terminals
+                .get_mut(surface)
+                .expect("terminal")
+                .set_input_sink(tx);
+            rx
+        })
+    }
+
+    fn received(rx: &mpsc::Receiver<Vec<u8>>) -> Vec<u8> {
+        rx.try_iter().flatten().collect()
+    }
+
+    fn request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
+        JsonRpcRequest {
+            caller_agent_id: None,
+            response_timeout_ms: None,
+            idempotency_key: None,
+            jsonrpc: "2.0".into(),
+            id: Some(json!(7)),
+            method: method.into(),
+            params,
+            session_token: None,
+        }
+    }
+
+    /// 대기 중이던 요청을 실제 지연 경로와 같은 값으로 감싼다. 대상 고정은 요청 시점에 한 번 한다.
+    fn waiting(
+        core: &mut crate::app::services::AppServices,
+        state: &mut crate::state::RequestContext,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        request: &JsonRpcRequest,
+        surface: u32,
+    ) -> (Resume, mpsc::Receiver<JsonRpcResponse>) {
+        let caller = crate::ipc::caller::CallerContext::local();
+        let checked = crate::ipc::handler::check_request(core, state, engine, request, &caller)
+            .unwrap_or_else(|_| panic!("request passes the entry check"));
+        let fixed = crate::ipc::handler::terminal::decode_fixed_input(&engine.as_ref(), request)
+            .unwrap_or_else(|_| panic!("targets resolve"));
+        let targets = fixed
+            .as_ref()
+            .map_or_else(|| vec![surface], |fixed| fixed.targets());
+        let bindings = targets
+            .into_iter()
+            .map(|surface| (surface, engine.runtime.terminals.generation(surface)))
+            .collect();
+        let (tx, rx) = mpsc::sync_channel(1);
+        let resume = Resume {
+            engine: EngineId::for_test(),
+            surface,
+            checked: checked.to_owned_without_key(),
+            reply: Return::Ipc(tx),
+            generation: engine.runtime.terminals.generation(surface),
+            fixed,
+            bindings,
+            remaining: Default::default(),
+        };
+        (resume, rx)
+    }
+
+    fn activated() -> JsonRpcResponse {
+        JsonRpcResponse::success(serde_json::Value::Null, json!({}))
+    }
+
+    fn run(
+        core: &mut crate::app::services::AppServices,
+        state: &mut crate::state::RequestContext,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        resume: Resume,
+        reply: &mpsc::Receiver<JsonRpcResponse>,
+    ) -> JsonRpcResponse {
+        resume.execute(core, state, engine, activated(), None);
+        reply.try_recv().expect("the waiting caller is answered")
+    }
+
+    #[test]
+    fn a_resumed_broadcast_skips_a_released_child_and_counts_the_fixed_targets() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut session) = session();
+        let mut engine = session.borrow_mut();
+        let [first, second] = children(&mut engine);
+        let request = request(
+            "terminal.broadcast",
+            json!({ "surface": PARENT, "text": "go\r" }),
+        );
+        let (resume, reply) = waiting(&mut core, &mut state, &mut engine, &request, FIRST);
+        assert!(
+            engine
+                .runtime
+                .child_terminals
+                .remove_child(&ParentKey::Surface(PARENT), 1)
+                .is_some()
+        );
+        let response = run(&mut core, &mut state, &mut engine, resume, &reply);
+        assert_eq!(response.id, json!(7));
+        assert_eq!(
+            response.result,
+            Some(json!({ "sent_count": 2, "children": [FIRST, SECOND] }))
+        );
+        assert_eq!(received(&first), b"go\r");
+        assert!(received(&second).is_empty());
+    }
+
+    #[test]
+    fn a_resumed_respawn_refuses_a_replaced_child() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut session) = session();
+        let mut engine = session.borrow_mut();
+        let [first, second] = children(&mut engine);
+        let request = request(
+            "terminal.respawn",
+            json!({ "surface": PARENT, "child": 0, "command": "make" }),
+        );
+        let (resume, reply) = waiting(&mut core, &mut state, &mut engine, &request, FIRST);
+        let parent = ParentKey::Surface(PARENT);
+        assert!(
+            engine
+                .runtime
+                .child_terminals
+                .remove_child(&parent, 0)
+                .is_some()
+        );
+        assert!(
+            engine
+                .runtime
+                .child_terminals
+                .remove_child(&parent, 1)
+                .is_some()
+        );
+        engine
+            .runtime
+            .child_terminals
+            .register_child(PARENT, child(SECOND, 0));
+        let error = run(&mut core, &mut state, &mut engine, resume, &reply)
+            .error
+            .expect("refused");
+        assert_eq!(error.code, -32602);
+        assert_eq!(
+            error.message,
+            "child terminal target changed while awaiting activation"
+        );
+        assert!(received(&first).is_empty());
+        assert!(received(&second).is_empty());
+    }
+
+    #[test]
+    fn a_resumed_respawn_interrupts_then_runs_the_command_on_the_fixed_child() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut session) = session();
+        let mut engine = session.borrow_mut();
+        let [first, second] = children(&mut engine);
+        let request = request(
+            "terminal.respawn",
+            json!({ "surface": PARENT, "child": 1, "command": "make", "role": "builder" }),
+        );
+        let (resume, reply) = waiting(&mut core, &mut state, &mut engine, &request, SECOND);
+        let response = run(&mut core, &mut state, &mut engine, resume, &reply);
+        assert_eq!(
+            response.result,
+            Some(json!({ "child_surface_id": SECOND, "child_index": 1 }))
+        );
+        assert_eq!(received(&second), b"\x03make");
+        assert!(received(&first).is_empty());
+        let entry = engine
+            .runtime
+            .child_terminals
+            .find_child(&ParentKey::Surface(PARENT), 1)
+            .expect("child");
+        assert_eq!(entry.role.as_deref(), Some("builder"));
+    }
+
+    #[test]
+    fn a_resumed_tell_writes_the_body_and_queues_the_submit_once() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut session) = session();
+        let mut engine = session.borrow_mut();
+        let [first, _second] = children(&mut engine);
+        engine.runtime.child_terminals.set_idle(FIRST, true);
+        let request = request("terminal.tell", json!({ "surface": FIRST, "text": "hi" }));
+        let (resume, reply) = waiting(&mut core, &mut state, &mut engine, &request, FIRST);
+        let response = run(&mut core, &mut state, &mut engine, resume, &reply);
+        assert_eq!(
+            response.result,
+            Some(json!({ "sent": true, "surface_id": FIRST }))
+        );
+        assert_eq!(received(&first), b"hi");
+        assert_eq!(engine.runtime.pending_submits.len(), 1);
+        assert_eq!(engine.runtime.child_terminals.state_of(FIRST), "active");
+    }
+
+    #[test]
+    fn a_resumed_tell_refuses_a_hard_occupied_or_replaced_terminal() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut session) = session();
+        let mut engine = session.borrow_mut();
+        let [first, _second] = children(&mut engine);
+        let request = request("terminal.tell", json!({ "surface": FIRST, "text": "hi" }));
+
+        let (resume, reply) = waiting(&mut core, &mut state, &mut engine, &request, FIRST);
+        engine
+            .live
+            .occupancy
+            .acquire(FIRST, 1)
+            .expect("hard occupy");
+        let error = run(&mut core, &mut state, &mut engine, resume, &reply)
+            .error
+            .expect("refused");
+        assert_eq!(
+            error.message,
+            "surface became hard-occupied before pending input could be applied"
+        );
+        engine.live.occupancy.release(FIRST, 1).expect("release");
+
+        let (mut resume, reply) = waiting(&mut core, &mut state, &mut engine, &request, FIRST);
+        resume.generation = None;
+        let error = run(&mut core, &mut state, &mut engine, resume, &reply)
+            .error
+            .expect("refused");
+        assert_eq!(
+            error.message,
+            "surface resource changed before pending input could be applied"
+        );
+        assert!(received(&first).is_empty());
+        assert!(engine.runtime.pending_submits.is_empty());
+    }
+}

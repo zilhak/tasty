@@ -1466,4 +1466,96 @@ mod tests {
         assert!(e.runtime.child_terminals.clear_idle_for_new_prompt(6101));
         assert_eq!(e.runtime.child_terminals.state_of(6101), "active");
     }
+
+    /// 직접 respawn의 전송 실패는 단계마다 기존 코드와 문구를 그대로 낸다.
+    #[test]
+    fn a_direct_respawn_maps_each_send_failure_to_its_own_code() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = super::super::cli_entry_tests::test_core();
+        let mut e_session = engine_with_extra(&[6101]);
+        let mut e = e_session.borrow_mut();
+        let parent = external("codex:r");
+        for (sid, index) in [(1, 0), (6101, 1)] {
+            e.runtime
+                .child_terminals
+                .register_child(parent.clone(), child(sid, index));
+        }
+
+        let missing = handle_respawn(
+            &mut core,
+            &mut e,
+            json!(1),
+            &json!({ "parent_external": "codex:r", "child": 1 }),
+        )
+        .error
+        .expect("no terminal");
+        assert_eq!(
+            (missing.code, missing.message.as_str()),
+            (-32603, "No terminal found")
+        );
+
+        e.live.occupancy.acquire(1, 1).expect("hard occupy");
+        let held = handle_respawn(
+            &mut core,
+            &mut e,
+            json!(1),
+            &json!({ "parent_external": "codex:r", "child": 0, "command": "make" }),
+        )
+        .error
+        .expect("hard occupied");
+        assert_eq!(held.code, -32602);
+        assert_eq!(
+            held.message,
+            "Surface 1 is hard-occupied (remote attach holds it) — server-local input is \
+             blocked while attached"
+        );
+
+        let cwd = handle_respawn(
+            &mut core,
+            &mut e,
+            json!(1),
+            &json!({ "parent_external": "codex:r", "child": 0, "cwd": "/tmp" }),
+        )
+        .error
+        .expect("cwd needs admission");
+        assert_eq!(cwd.code, -32603);
+        assert_eq!(
+            cwd.message,
+            "child resource respawn requires committed structure admission"
+        );
+    }
+
+    /// 직접 broadcast는 본문과 끝 CR을 따로 쓰고, 보낼 수 없는 child도 대상 수에 센다.
+    #[test]
+    fn a_direct_broadcast_writes_body_then_cr_and_counts_every_target() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = super::super::cli_entry_tests::test_core();
+        let mut e_session = engine_with_extra(&[6101]);
+        let mut e = e_session.borrow_mut();
+        let parent = external("codex:b");
+        for (sid, index) in [(1, 0), (6101, 1)] {
+            e.runtime
+                .child_terminals
+                .register_child(parent.clone(), child(sid, index));
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        e.runtime
+            .terminals
+            .get_mut(1)
+            .expect("terminal")
+            .set_input_sink(tx);
+        e.runtime.child_terminals.set_idle(1, true);
+        e.runtime.child_terminals.set_idle(6101, true);
+        let response = ok(handle_broadcast(
+            &mut core,
+            &mut e,
+            json!(1),
+            &json!({ "parent_external": "codex:b", "text": "go\r" }),
+        ));
+        assert_eq!(response, json!({ "sent_count": 2, "children": [1, 6101] }));
+        let writes: Vec<Vec<u8>> = rx.try_iter().collect();
+        assert_eq!(writes, [b"go".to_vec(), b"\r".to_vec()]);
+        assert_eq!(e.runtime.child_terminals.state_of(1), "active");
+        assert_eq!(e.runtime.child_terminals.state_of(6101), "idle");
+    }
 }
