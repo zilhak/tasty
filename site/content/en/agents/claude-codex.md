@@ -1,4 +1,4 @@
-<!-- source-hash: 1b61aa068bab -->
+<!-- source-hash: 87168a3fc7ad -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -63,7 +63,7 @@ For Codex you can attach approval and sandbox policies with `--approval untruste
 
 For Claude Code you can set the permission mode with `--permission-mode` (see "Claude permission mode" below).
 
-Even when you start Tasty from inside a Claude Code session, the shells in Tasty terminals and hook commands do not receive the variables that identify that session (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_MESSAGING_TOKEN`, and so on). Claude Code started in such a terminal runs as an independent session and saves its transcript. Claude Code variables you set yourself, such as `CLAUDE_CODE_GIT_BASH_PATH`, are passed through unchanged.
+Even when you start Tasty from inside a Claude Code session, the shells in Tasty terminals and hook commands do not receive the variables that identify that session (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_MESSAGING_TOKEN`, and so on). Claude Code started in such a terminal runs as an independent session and saves its transcript. Claude Code variables you set yourself, such as `CLAUDE_CODE_GIT_BASH_PATH`, are passed through unchanged. Likewise, when you start Tasty from a Codex conversation, `CODEX_THREAD_ID`, which points at that conversation, is not passed on, so `tasty` commands run by the shell or by Claude in such a terminal are not treated as calls from the outer Codex. `CODEX_HOME` is passed through unchanged.
 
 <a id="3-driving-child-agents-spawn--tell"></a>
 

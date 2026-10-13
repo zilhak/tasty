@@ -33,6 +33,8 @@
 
 ### Fixed
 
+- **Codex 대화에서 실행한 Tasty 의 터미널이 그 대화의 `CODEX_THREAD_ID` 를 물려받지 않는다.** Codex 는 도구 명령마다 그 대화의 thread ID 를 `CODEX_THREAD_ID` 로 넣는다. 이전에는 Codex 도구가 띄운 Tasty 의 터미널 셸, surface 훅, 전역 훅, 훅 핸들러 명령, 작업 자식에 이 값이 남아, 그 안의 셸이나 Claude 가 부른 `tasty` 가 바깥 Codex 대화의 호출로 해석될 수 있었다. 이제 이 값을 지운다. 그 터미널에서 실행한 Codex 는 도구마다 자기 thread ID 를 다시 넣으므로 영향이 없다. `CODEX_HOME` 과 다른 `CODEX_*` 값은 그대로다.
+
 - **headless 실행에서 `memory.changed` 이벤트가 발행되지 않던 문제.** 변경 버퍼를 꺼내는 곳이 GUI 이벤트 루프뿐이라 headless에서는 이벤트가 나가지 않고 버퍼가 계속 늘었다. 이제 headless 루프도 회차마다 꺼내 plugin에 발행한다.
 
 - **Linux에서 HTML 서피스가 지금 문서의 `#fragment` 주소를 열면 로딩 상태에 멈추던 문제.** `tasty html open`으로 같은 문서의 fragment 주소를 열면 WebKitGTK가 load 신호 없이 문서 안에서 이동하는데, 서피스는 계속 "불러오는 중"으로 남았다. 이제 그 이동은 로드로 표시하지 않는다. macOS·Windows는 이 경우를 측정하지 않았다.

@@ -47,6 +47,12 @@ pub const STRIPPED_ENV_PREFIXES: &[&str] = &["CMUX_", "CLAUDE_PLUGIN_OPTION_"];
 ///
 /// `AI_AGENT` 는 값으로 판정한다([`STRIPPED_ENV_VALUE_PREFIXES`]). `TRACEPARENT` 는 W3C
 /// trace-context 표준 이름이라 넣지 않는다.
+///
+/// `CODEX_THREAD_ID` 는 Codex 가 도구 명령마다 그 대화의 thread ID 로 넣는 값이다(0.154.0 에서
+/// app-server 프로세스에는 없고 그 도구 자식에만 있음을 확인). Codex 도구가 Tasty 를 띄우면 이
+/// 값이 남아, 그 터미널의 셸이나 그 안의 Claude 가 부른 `tasty` 를 바깥 Codex 대화의 호출로
+/// 해석한다. 그 터미널에서 실행한 Codex 는 도구마다 자기 thread ID 를 다시 넣으므로 지워도
+/// Codex 호출자 판정은 그대로다. `CODEX_HOME` 등 사용자 설정은 지우지 않는다.
 pub const STRIPPED_ENV_NAMES: &[&str] = &[
     "CLAUDECODE",
     "CLAUDE_PID",
@@ -64,6 +70,7 @@ pub const STRIPPED_ENV_NAMES: &[&str] = &[
     "CLAUDE_CODE_MESSAGING_TOKEN",
     "CLAUDE_CODE_INVOKED_SKILLS",
     "CLAUDE_CODE_BRIDGE_SESSION_ID",
+    "CODEX_THREAD_ID",
 ];
 
 /// 이름은 여러 도구가 함께 쓰지만 Claude Code 가 넣은 값만 지우는 환경변수와 그 값 접두사.

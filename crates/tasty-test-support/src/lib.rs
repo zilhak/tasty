@@ -174,6 +174,7 @@ pub mod strip_env_keys {
         "CLAUDE_CODE_MESSAGING_TOKEN",
         "CLAUDE_CODE_INVOKED_SKILLS",
         "CLAUDE_CODE_BRIDGE_SESSION_ID",
+        "CODEX_THREAD_ID",
         "CLAUDE_PLUGIN_OPTION_API_KEY",
         "CMUX_SOCKET_PATH",
         "AI_AGENT",
@@ -192,6 +193,7 @@ pub mod strip_env_keys {
         "TRACEPARENT",
         "ANTHROPIC_API_KEY",
         "MY_CLAUDECODE",
+        "CODEX_HOME",
     ];
 
     /// `AI_AGENT` 에 Claude Code 2.1.291 이 Bash 자식에 넣는 형태의 값을 준다.
