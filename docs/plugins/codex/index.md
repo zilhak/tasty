@@ -98,6 +98,15 @@ TUI는 재개 때 정책 없이 `thread/resume`을 보낸다. 서버는 이미 �
 
 탭 복원과 reboot는 이 helper로 기존 thread를 재개하므로 같은 방식으로 정책을 적용한다. launch·spawn·respawn은 새 세션을 띄운다.
 
+이 경로의 실서버 검증은 opt-in 시험(`TASTY_CODEX_NORMAL_HOME_E2E=1`, Linux)으로 한다.
+
+- 사용자의 기존 Codex 로그인을 쓰고 모델은 호출하지 않는다.
+- thread는 read-only로 시작하고 재개 때 다른 승인·sandbox를 요청한다. app-server는 cwd를 명시한
+  `thread/start`가 그 cwd에 쓸 수 있으면 임시 cwd를 `trusted`로 config에 영속하므로, read-only로
+  시작해 이 기록을 피한다.
+- 본문이나 정리가 실패해도 끝에서 `config.toml`이 시험 전과 같은지(sha256, 임시 cwd 키 부재) 판정한다.
+- 시험이 만든 thread만 지우고 소유한 서버만 끝낸다.
+
 npm으로 설치한 `codex`는 실제 서버를 다시 띄우는 래퍼이고 종료 신호를 한 번만 전달한다. 실제
 서버는 첫 SIGTERM을 받은 뒤 진행 중인 작업을 기다리느라 몇 초 넘게 남을 수 있다. 그래서 helper는
 서버를 정리할 때 래퍼만 끝내지 않는다. Linux·macOS는 서버를 별도 프로세스 그룹으로 띄우고 그룹에
