@@ -10,17 +10,13 @@ use tasty_themes::ThemeStorage;
 use super::AppServices;
 use crate::ports::clipboard::ClipboardSystem;
 use crate::ports::clock::Clock;
-use crate::ports::fs::FileSystem;
 use crate::ports::home::HomeDirectory;
 use crate::ports::notification_sound::NotificationSoundPlayer;
-use crate::ports::process::ProcessSpawner;
 
 /// 필수 port가 모두 있어야 build가 성공한다. presets와 preset_store는 같은 Arc를 공유한다.
 pub(crate) struct AppServicesBuilder {
-    fs: Option<Arc<dyn FileSystem>>,
     clock: Option<Arc<dyn Clock>>,
     clipboard: Option<Arc<dyn ClipboardSystem>>,
-    process: Option<Arc<dyn ProcessSpawner>>,
     home: Option<Arc<dyn HomeDirectory>>,
     sound_player: Option<Arc<dyn NotificationSoundPlayer>>,
     memory: Option<Arc<Mutex<dyn MemoryStorage>>>,
@@ -37,10 +33,8 @@ pub(crate) struct AppServicesBuilder {
 impl AppServicesBuilder {
     pub(crate) fn new() -> Self {
         Self {
-            fs: None,
             clock: None,
             clipboard: None,
-            process: None,
             home: None,
             sound_player: None,
             memory: None,
@@ -54,20 +48,12 @@ impl AppServicesBuilder {
         }
     }
 
-    pub(crate) fn with_fs(mut self, fs: Arc<dyn FileSystem>) -> Self {
-        self.fs = Some(fs);
-        self
-    }
     pub(crate) fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
         self.clock = Some(clock);
         self
     }
     pub(crate) fn with_clipboard(mut self, clipboard: Arc<dyn ClipboardSystem>) -> Self {
         self.clipboard = Some(clipboard);
-        self
-    }
-    pub(crate) fn with_process(mut self, process: Arc<dyn ProcessSpawner>) -> Self {
-        self.process = Some(process);
         self
     }
     pub(crate) fn with_home(mut self, home: Arc<dyn HomeDirectory>) -> Self {
@@ -180,16 +166,10 @@ impl AppServicesBuilder {
             approval_store: Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: Arc::new(tasty_telemetry::AnomalyDetector::new()),
-            fs: self
-                .fs
-                .ok_or_else(|| anyhow::anyhow!("FileSystem missing"))?,
             clock: self.clock.ok_or_else(|| anyhow::anyhow!("Clock missing"))?,
             clipboard: self
                 .clipboard
                 .ok_or_else(|| anyhow::anyhow!("ClipboardSystem missing"))?,
-            process: self
-                .process
-                .ok_or_else(|| anyhow::anyhow!("ProcessSpawner missing"))?,
             home,
             sound_player: self
                 .sound_player

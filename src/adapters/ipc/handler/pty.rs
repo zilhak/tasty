@@ -294,8 +294,7 @@ pub(crate) mod tests {
         use tasty_themes::{ThemeStorage, ThemeStore};
 
         use crate::adapters::test::{
-            fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
-            mock_process::MockProcessSpawner, tmp_home::TmpHome,
+            fake_clock::FakeClock, mock_clipboard::MockClipboard, tmp_home::TmpHome,
         };
         use crate::app::services::builder::AppServicesBuilder;
         use crate::ports::notification_sound::NoopPlayer;
@@ -309,10 +308,8 @@ pub(crate) mod tests {
         let home = TmpHome::new(home_tmp.path().to_path_buf());
 
         let core = AppServicesBuilder::new()
-            .with_fs(Arc::new(MemFileSystem::new()))
             .with_clock(Arc::new(FakeClock::default()))
             .with_clipboard(Arc::new(MockClipboard::default()))
-            .with_process(Arc::new(MockProcessSpawner))
             .with_home(Arc::new(home))
             .with_sound_player(Arc::new(NoopPlayer))
             .with_memory(memory)

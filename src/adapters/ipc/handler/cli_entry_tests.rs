@@ -32,15 +32,11 @@ pub(crate) fn test_core() -> crate::app::services::AppServices {
 pub(crate) fn test_core_builder() -> crate::app::services::builder::AppServicesBuilder {
     use std::sync::{Arc, Mutex};
     crate::app::services::builder::AppServicesBuilder::new()
-        .with_fs(Arc::new(crate::adapters::test::mem_fs::MemFileSystem::new()))
         .with_clock(Arc::new(
             crate::adapters::test::fake_clock::FakeClock::default(),
         ))
         .with_clipboard(Arc::new(
             crate::adapters::test::mock_clipboard::MockClipboard::default(),
-        ))
-        .with_process(Arc::new(
-            crate::adapters::test::mock_process::MockProcessSpawner,
         ))
         .with_home(Arc::new(crate::adapters::test::tmp_home::TmpHome::new(
             tempfile::tempdir().expect("tmp").keep(),

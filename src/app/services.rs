@@ -2,8 +2,8 @@
 use crate::app::command::{CoreEvent, DomainIntent, ProcessPtyOutcome};
 use crate::core::*;
 use crate::ports::{
-    clipboard::ClipboardSystem, clock::Clock, fs::FileSystem, home::HomeDirectory,
-    notification_sound::NotificationSoundPlayer, process::ProcessSpawner,
+    clipboard::ClipboardSystem, clock::Clock, home::HomeDirectory,
+    notification_sound::NotificationSoundPlayer,
 };
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -39,10 +39,8 @@ pub(crate) struct AppServices {
     pub(crate) approval_store: Arc<tasty_approval::ApprovalStore>,
     pub(crate) telemetry_seq: Arc<tasty_telemetry::TelemetrySeq>,
     pub(crate) anomaly_detector: Arc<tasty_telemetry::AnomalyDetector>,
-    fs: Arc<dyn FileSystem>,
     clock: Arc<dyn Clock>,
     clipboard: Arc<dyn ClipboardSystem>,
-    process: Arc<dyn ProcessSpawner>,
     home: Arc<dyn HomeDirectory>,
     sound_player: Arc<dyn NotificationSoundPlayer>,
 

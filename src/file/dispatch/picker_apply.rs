@@ -162,8 +162,7 @@ pub(super) mod tests {
     pub(in crate::file::dispatch) fn build_test_core()
     -> (AppServices, crate::runtime::engine_session::EngineSession) {
         use crate::adapters::test::{
-            fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
-            mock_process::MockProcessSpawner, tmp_home::TmpHome,
+            fake_clock::FakeClock, mock_clipboard::MockClipboard, tmp_home::TmpHome,
         };
         use crate::ports::notification_sound::NoopPlayer;
 
@@ -178,10 +177,8 @@ pub(super) mod tests {
         let themes: Arc<dyn tasty_themes::ThemeStorage> = Arc::new(tasty_themes::ThemeStore::new());
 
         let core = AppServicesBuilder::new()
-            .with_fs(Arc::new(MemFileSystem::new()))
             .with_clock(Arc::new(FakeClock::default()))
             .with_clipboard(Arc::new(MockClipboard::default()))
-            .with_process(Arc::new(MockProcessSpawner))
             .with_home(Arc::new(TmpHome::new(
                 tempfile::tempdir().expect("tmp").keep(),
             )))

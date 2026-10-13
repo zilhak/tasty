@@ -11,10 +11,7 @@ use tasty_themes::{ThemeStorage, ThemeStore};
 use crate::adapters::production::arboard_clip::ArboardClipboard;
 #[cfg(feature = "gui")]
 use crate::adapters::production::notification_sound::PlatformPlayer;
-use crate::adapters::production::{
-    directories_home::DirectoriesHome, std_clock::SystemClock, std_fs::StdFileSystem,
-    std_process::StdProcessSpawner,
-};
+use crate::adapters::production::{directories_home::DirectoriesHome, std_clock::SystemClock};
 use crate::app::services::AppServices;
 use crate::app::services::builder::AppServicesBuilder;
 
@@ -49,9 +46,7 @@ fn build_production_core_inner(
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
     memory_wake: Arc<dyn Fn() + Send + Sync>,
 ) -> anyhow::Result<AppServices> {
-    let fs: Arc<dyn crate::ports::fs::FileSystem> = Arc::new(StdFileSystem);
     let clock: Arc<dyn crate::ports::clock::Clock> = Arc::new(SystemClock);
-    let process: Arc<dyn crate::ports::process::ProcessSpawner> = Arc::new(StdProcessSpawner);
     let home: Arc<dyn crate::ports::home::HomeDirectory> = Arc::new(DirectoriesHome);
 
     let store: Arc<Mutex<tasty_memory::MemoryStore>> = match memory_arc {
@@ -87,10 +82,8 @@ fn build_production_core_inner(
     let settings_storage: Arc<dyn SettingsStorage> = Arc::new(FileSettingsStorage);
 
     AppServicesBuilder::new()
-        .with_fs(fs)
         .with_clock(clock)
         .with_clipboard(clipboard)
-        .with_process(process)
         .with_home(home)
         .with_sound_player(sound_player)
         .with_memory(memory)
