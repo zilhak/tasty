@@ -33,7 +33,7 @@ pub(crate) use query::{
 };
 pub(crate) use send::{
     decode_input_header, handle_surface_send, handle_surface_send_combo, handle_surface_send_key,
-    handle_surface_send_to,
+    handle_surface_send_to, send_fail_message,
 };
 
 pub(super) use super::require_surface_id;

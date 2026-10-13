@@ -82,14 +82,10 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
     None
 }
 
-/// 원격 점유와 대상 부재를 구분해 반환한다.
-enum SendOutcome {
-    Sent,
-    HardOccupied,
-    NotFound,
-}
+use crate::app::services::impl_attach::SurfaceSendOutcome as SendOutcome;
 
-fn send_fail_message(surface_id: u32, outcome: &SendOutcome) -> String {
+/// 입력 실패를 기존 문구로 바꾼다. terminal 입력 응답도 같은 문구를 쓴다.
+pub(crate) fn send_fail_message(surface_id: u32, outcome: SendOutcome) -> String {
     match outcome {
         SendOutcome::HardOccupied => format!(
             "Surface {surface_id} is hard-occupied (remote attach holds it) — \
@@ -105,22 +101,7 @@ fn dispatch_send(
     surface_id: u32,
     payload: crate::app::command::SendPayload,
 ) -> SendOutcome {
-    let intent = crate::app::command::DomainIntent::SendToSurface {
-        surface_id,
-        payload,
-    };
-    let events = match core.apply_live(engine, intent) {
-        Ok(e) => e,
-        Err(_) => return SendOutcome::NotFound,
-    };
-    match events.into_iter().next() {
-        Some(crate::app::command::CoreEvent::SurfaceSent { sent: true, .. }) => SendOutcome::Sent,
-        Some(crate::app::command::CoreEvent::SurfaceSent {
-            hard_occupied: true,
-            ..
-        }) => SendOutcome::HardOccupied,
-        _ => SendOutcome::NotFound,
-    }
+    core.send_to_surface(engine, surface_id, payload)
 }
 
 /// Shared wire decoding before either lazy activation or live input execution.
@@ -172,7 +153,7 @@ pub(crate) fn handle_surface_send(
         SendOutcome::Sent => {
             JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
         }
-        outcome => JsonRpcResponse::invalid_params(id, send_fail_message(surface_id, &outcome)),
+        outcome => JsonRpcResponse::invalid_params(id, send_fail_message(surface_id, outcome)),
     }
 }
 
@@ -234,7 +215,7 @@ pub(crate) fn handle_surface_send_key(
                     outcome => {
                         return JsonRpcResponse::invalid_params(
                             id,
-                            send_fail_message(surface_id, &outcome),
+                            send_fail_message(surface_id, outcome),
                         );
                     }
                 }
@@ -304,7 +285,7 @@ pub(crate) fn handle_surface_send_combo(
         SendOutcome::Sent => JsonRpcResponse::success(id, json!({ "sent": true })),
         SendOutcome::HardOccupied => JsonRpcResponse::invalid_params(
             id,
-            send_fail_message(surface_id, &SendOutcome::HardOccupied),
+            send_fail_message(surface_id, SendOutcome::HardOccupied),
         ),
         SendOutcome::NotFound => {
             JsonRpcResponse::internal_error(id, "No terminal found".to_string())
@@ -329,6 +310,6 @@ pub(crate) fn handle_surface_send_to(
         crate::app::command::SendPayload::Text(text.to_owned()),
     ) {
         SendOutcome::Sent => JsonRpcResponse::success(id, json!({ "sent": true })),
-        outcome => JsonRpcResponse::invalid_params(id, send_fail_message(surface_id, &outcome)),
+        outcome => JsonRpcResponse::invalid_params(id, send_fail_message(surface_id, outcome)),
     }
 }

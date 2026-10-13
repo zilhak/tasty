@@ -4,14 +4,13 @@
 
 mod fixed_input;
 use crate::runtime::engine_access::{EngineMut, EngineRef};
-pub(crate) use fixed_input::{FixedInput, decode_fixed_input};
+use fixed_input::respawn_options;
+pub(crate) use fixed_input::{input_response, prepare_input};
 use serde_json::{Value, json};
 
 use crate::core::state::child_liveness::ChildLiveness;
 use crate::runtime::child_terminal::{ChildEntry, ParentKey};
 use tasty_ipc::protocol::JsonRpcResponse;
-
-use super::surface;
 
 type AppServices = crate::app::services::AppServices;
 
@@ -128,35 +127,6 @@ fn resolve_parent(
         })
 }
 
-/// in-process sibling 핸들러 응답을 `Result<Value, JsonRpcResponse>` 로 변환.
-/// error 응답은 caller 의 id 를 유지한 채 그대로 전파한다.
-fn unwrap_ok(resp: JsonRpcResponse, id: &Value) -> Result<Value, JsonRpcResponse> {
-    match (resp.result, resp.error) {
-        (Some(r), _) => Ok(r),
-        (_, Some(e)) => Err(JsonRpcResponse::error(id.clone(), e.code, e.message)),
-        _ => Err(JsonRpcResponse::internal_error(
-            id.clone(),
-            "sibling handler returned empty response".to_string(),
-        )),
-    }
-}
-
-/// 멀티라인 본문을 bracketed paste로 감싼다. 제출용 CR은 호출자가 따로 보낸다.
-fn build_tell_payload(message: &str) -> String {
-    if message.contains('\n') {
-        format!("\u{1b}[200~{message}\u{1b}[201~")
-    } else {
-        message.to_string()
-    }
-}
-
-/// 끝의 CR을 본문에서 분리해 별도 전송하게 한다. CR이 없으면 제출하지 않는다.
-fn build_broadcast_payload(text: &str) -> (String, bool) {
-    let submit = text.ends_with('\r');
-    let body = text.trim_end_matches('\r');
-    (build_tell_payload(body), submit)
-}
-
 /// 본문 제출 거절을 기존 오류 코드와 문구로 바꾼다.
 fn submit_rejected_response(
     id: Value,
@@ -183,10 +153,7 @@ fn submit_rejected_response(
     }
 }
 
-pub(crate) fn decode_tell<'a>(
-    params: &'a Value,
-    id: &Value,
-) -> Result<(u32, &'a str), JsonRpcResponse> {
+fn decode_tell<'a>(params: &'a Value, id: &Value) -> Result<(u32, &'a str), JsonRpcResponse> {
     let surface = require_u32(params, "surface", id)?;
     let text = params
         .get("text")
@@ -204,18 +171,8 @@ pub(crate) fn handle_tell(
         Ok(value) => value,
         Err(error) => return error,
     };
-    let payload = build_tell_payload(text);
-    if let Err(rejected) = engine.write_then_submit(surface_id, &payload) {
-        return submit_rejected_response(id, surface_id, rejected);
-    }
-    if engine
-        .runtime
-        .child_terminals
-        .clear_idle_for_new_prompt(surface_id)
-    {
-        engine.runtime.child_terminals.save();
-    }
-    JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
+    let result = crate::app::terminal_input::tell(engine, surface_id, text);
+    input_response(&engine.as_ref(), id, result)
 }
 
 pub(crate) fn handle_children(
@@ -453,108 +410,27 @@ pub(crate) fn handle_respawn(
         Ok(c) => c,
         Err(e) => return e,
     };
-    let Some(entry) = engine
+    if engine
         .runtime
         .child_terminals
         .find_child(&parent, child_index)
-        .cloned()
-    else {
+        .is_none()
+    {
         return JsonRpcResponse::invalid_params(
             id,
             child_not_found_message(&engine.runtime.child_terminals, &parent, child_index),
         );
-    };
-    let new_cwd = optional_str(params, "cwd");
-    let command = optional_str(params, "command");
-
-    // cwd가 바뀌면 PTY를 교체하고, 아니면 Ctrl-C를 보낸다. Ctrl-C가 종료 완료를 보장하지는 않는다.
-    if new_cwd.is_some() {
+    }
+    // cwd가 바뀌면 PTY를 교체해야 하므로 구조 admission이 맡는다.
+    if optional_str(params, "cwd").is_some() {
         return JsonRpcResponse::internal_error(
             id,
             "child resource respawn requires committed structure admission",
         );
-    } else {
-        let combo = json!({
-            "surface_id": entry.child_surface_id,
-            "key": "c",
-            "modifiers": ["ctrl"],
-        });
-        if let Err(e) = unwrap_ok(
-            surface::handle_surface_send_combo(core, engine, id.clone(), &combo),
-            &id,
-        ) {
-            return e;
-        }
     }
-    if let Some(cmd) = &command {
-        let send_params = json!({ "surface_id": entry.child_surface_id, "text": cmd });
-        if let Err(e) = unwrap_ok(
-            surface::handle_surface_send(core, engine, id.clone(), &send_params),
-            &id,
-        ) {
-            return e;
-        }
-    }
-
-    let new_role = optional_str(params, "role");
-    let new_nick = optional_str(params, "nickname");
-    engine
-        .runtime
-        .child_terminals
-        .update_child(&parent, child_index, |e| {
-            if let Some(r) = new_role {
-                e.role = Some(r);
-            }
-            if let Some(n) = new_nick {
-                e.nickname = Some(n);
-            }
-            if let Some(c) = new_cwd {
-                e.cwd = Some(c);
-            }
-        });
-    engine
-        .runtime
-        .child_terminals
-        .set_idle(entry.child_surface_id, false);
-    engine.runtime.child_terminals.save();
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "child_surface_id": entry.child_surface_id,
-            "child_index": entry.index,
-        }),
-    )
-}
-
-/// 본문을 보내고 끝의 CR이 있으면 별도 write로 제출한다.
-/// 본문 전송 실패는 해당 자식만 건너뛰며, 성공한 자식의 상태만 갱신한다.
-#[allow(clippy::too_many_arguments)]
-fn send_broadcast_to_child(
-    core: &mut AppServices,
-    engine: &mut EngineMut<'_>,
-    id: &Value,
-    sid: u32,
-    body: &str,
-    submit: bool,
-) -> bool {
-    let body_params = json!({ "surface_id": sid, "text": body });
-    if let Err(e) = unwrap_ok(
-        surface::handle_surface_send(core, engine, id.clone(), &body_params),
-        id,
-    ) {
-        tracing::warn!("terminal.broadcast surface.send (sid={sid}) failed: {e:?}");
-        return false;
-    }
-    if submit {
-        let cr_params = json!({ "surface_id": sid, "text": "\r" });
-        if let Err(e) = unwrap_ok(
-            surface::handle_surface_send(core, engine, id.clone(), &cr_params),
-            id,
-        ) {
-            tracing::warn!("terminal.broadcast submit (sid={sid}) failed: {e:?}");
-        }
-    }
-    true
+    let options = respawn_options(params);
+    let result = crate::app::terminal_input::respawn(core, engine, &parent, child_index, &options);
+    input_response(&engine.as_ref(), id, result)
 }
 
 pub(crate) fn handle_broadcast(
@@ -584,26 +460,8 @@ pub(crate) fn handle_broadcast(
         })
         .map(|c| c.child_surface_id)
         .collect();
-
-    let (body, submit) = build_broadcast_payload(&text);
-    let mut sent_ids: Vec<u32> = Vec::new();
-    let mut idle_cleared = false;
-    for sid in targets {
-        if send_broadcast_to_child(core, engine, &id, sid, &body, submit) {
-            idle_cleared |= engine
-                .runtime
-                .child_terminals
-                .clear_idle_for_new_prompt(sid);
-        }
-        sent_ids.push(sid);
-    }
-    if idle_cleared {
-        engine.runtime.child_terminals.save();
-    }
-    JsonRpcResponse::success(
-        id,
-        json!({ "sent_count": sent_ids.len(), "children": sent_ids }),
-    )
+    let result = crate::app::terminal_input::broadcast(core, engine, targets, &text);
+    input_response(&engine.as_ref(), id, result)
 }
 
 /// 훅은 idle/needs_input/active만 보고할 수 있다.
@@ -1147,30 +1005,6 @@ mod tests {
         assert_eq!(e.runtime.child_terminals.state_of(5001), "idle");
     }
 
-    #[test]
-    fn broadcast_payload_splits_trailing_cr_for_submit() {
-        let body63 = "a".repeat(63);
-        let (payload, submit) = build_broadcast_payload(&format!("{body63}\r"));
-        assert_eq!(payload, body63, "본문에 제출 \\r 이 섞이면 안 됨");
-        assert!(!payload.contains('\r'));
-        assert!(submit);
-    }
-
-    #[test]
-    fn broadcast_payload_no_trailing_cr_is_injection_only() {
-        let (payload, submit) = build_broadcast_payload(&"b".repeat(80));
-        assert_eq!(payload, "b".repeat(80));
-        assert!(!submit);
-    }
-
-    #[test]
-    fn broadcast_payload_multiline_wraps_bracketed_and_submits() {
-        let (payload, submit) = build_broadcast_payload("line1\nline2\r");
-        assert_eq!(payload, "\u{1b}[200~line1\nline2\u{1b}[201~");
-        assert!(!payload.contains('\r'));
-        assert!(submit);
-    }
-
     /// tell의 거절 순서와 wake 횟수를 관측한다. 본문은 기본 surface의 detached 터미널 sink로 본다.
     fn tell_fixture() -> (
         crate::runtime::engine_session::EngineSession,
@@ -1450,7 +1284,7 @@ mod tests {
             "id": 1,
         }))
         .unwrap();
-        let fixed = decode_fixed_input(&e.as_ref(), &request)
+        let fixed = prepare_input(&e.as_ref(), &request)
             .ok()
             .flatten()
             .expect("broadcast is fixed");

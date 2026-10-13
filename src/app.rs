@@ -494,6 +494,7 @@ pub(crate) async fn select_gpu_adapter(
 
 pub(crate) mod task_completion;
 pub(crate) mod task_report;
+pub(crate) mod terminal_input;
 
 #[cfg(feature = "gui")]
 pub(crate) mod engine_action;

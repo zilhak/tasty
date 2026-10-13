@@ -8,8 +8,8 @@ pub(super) struct Resume {
     checked: crate::ipc::handler::OwnedCheckedRequest,
     reply: Return,
     pub generation: Option<tasty_terminal::ResourceGeneration>,
-    fixed: Option<crate::ipc::handler::terminal::FixedInput>,
-    bindings: std::collections::BTreeMap<u32, Option<tasty_terminal::ResourceGeneration>>,
+    fixed: Option<crate::app::terminal_input::PreparedTerminalInput>,
+    bindings: crate::app::terminal_input::Bindings,
     remaining: std::collections::VecDeque<(u32, Option<u64>)>,
 }
 enum Return {
@@ -101,13 +101,9 @@ impl Resume {
             JsonRpcResponse::invalid_params(id, "input caller process was replaced while waiting")
         } else if let Some(error) = activation.error {
             JsonRpcResponse::error(id, error.code, error.message)
-        } else if let Some(fixed) = &self.fixed {
-            fixed.execute(
-                services,
-                engine,
-                self.checked.borrow().request(),
-                &self.bindings,
-            )
+        } else if let Some(fixed) = self.fixed.as_ref().filter(|fixed| fixed.binds_children()) {
+            let result = fixed.execute(services, engine, &self.bindings);
+            crate::ipc::handler::terminal::input_response(&engine.as_ref(), id, result)
         } else if engine.live.occupancy.is_hard_occupied(self.surface) {
             JsonRpcResponse::invalid_params(
                 id,
@@ -123,6 +119,9 @@ impl Resume {
                 id,
                 "surface resource changed before pending input could be applied",
             )
+        } else if let Some(fixed) = &self.fixed {
+            let result = fixed.execute(services, engine, &self.bindings);
+            crate::ipc::handler::terminal::input_response(&engine.as_ref(), id, result)
         } else {
             match crate::ipc::handler::handle_checked_request(
                 services,
@@ -226,8 +225,8 @@ fn deferred(surface: u32, engine: &crate::runtime::engine_access::EngineRef<'_>)
 /// 재개를 보류한 요청이 나중에 다시 실행될 때 필요한 값 — 해석해 둔 입력,
 /// 대상별 리소스 세대, 남은 대상 큐.
 type ResumeCarryOver = (
-    Option<crate::ipc::handler::terminal::FixedInput>,
-    std::collections::BTreeMap<u32, Option<tasty_terminal::ResourceGeneration>>,
+    Option<crate::app::terminal_input::PreparedTerminalInput>,
+    crate::app::terminal_input::Bindings,
     std::collections::VecDeque<(u32, Option<u64>)>,
 );
 
@@ -238,21 +237,16 @@ fn plan(
     if !supported(&request.method) {
         return None;
     }
-    let fixed = crate::ipc::handler::terminal::decode_fixed_input(engine, request).ok()?;
+    let fixed = crate::ipc::handler::terminal::prepare_input(engine, request).ok()?;
     let targets = if let Some(fixed) = &fixed {
         fixed.targets()
     } else {
-        let (surface, _) = if request.method == "terminal.tell" {
-            crate::ipc::handler::terminal::decode_tell(&request.params, &serde_json::Value::Null)
-                .ok()?
-        } else {
-            crate::ipc::handler::surface::decode_input_header(
-                &request.method,
-                &request.params,
-                &serde_json::Value::Null,
-            )
-            .ok()?
-        };
+        let (surface, _) = crate::ipc::handler::surface::decode_input_header(
+            &request.method,
+            &request.params,
+            &serde_json::Value::Null,
+        )
+        .ok()?;
         if request.method == "surface.send_wait_idle" && engine.is_typing(surface) {
             return None;
         }
@@ -716,10 +710,22 @@ mod tests {
         request: &JsonRpcRequest,
         surface: u32,
     ) -> (Resume, mpsc::Receiver<JsonRpcResponse>) {
+        waiting_in(core, state, engine, request, request, surface)
+    }
+
+    /// `envelope`는 인증·응답 봉투로만 보관한다. 실행 값은 `request`에서 확정한다.
+    fn waiting_in(
+        core: &mut crate::app::services::AppServices,
+        state: &mut crate::state::RequestContext,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        request: &JsonRpcRequest,
+        envelope: &JsonRpcRequest,
+        surface: u32,
+    ) -> (Resume, mpsc::Receiver<JsonRpcResponse>) {
         let caller = crate::ipc::caller::CallerContext::local();
-        let checked = crate::ipc::handler::check_request(core, state, engine, request, &caller)
+        let checked = crate::ipc::handler::check_request(core, state, engine, envelope, &caller)
             .unwrap_or_else(|_| panic!("request passes the entry check"));
-        let fixed = crate::ipc::handler::terminal::decode_fixed_input(&engine.as_ref(), request)
+        let fixed = crate::ipc::handler::terminal::prepare_input(&engine.as_ref(), request)
             .unwrap_or_else(|_| panic!("targets resolve"));
         let targets = fixed
             .as_ref()
@@ -911,5 +917,105 @@ mod tests {
         );
         assert!(received(&first).is_empty());
         assert!(engine.runtime.pending_submits.is_empty());
+    }
+
+    /// 실행은 확정해 둔 본문·옵션만 쓴다. 보관한 원 요청의 params를 다시 읽지 않는다.
+    #[test]
+    fn a_resumed_input_runs_the_values_fixed_at_request_time() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut session) = session();
+        let mut engine = session.borrow_mut();
+        let [first, second] = children(&mut engine);
+        let cases = [
+            (
+                request(
+                    "terminal.tell",
+                    json!({ "surface": FIRST, "text": "fixed" }),
+                ),
+                request(
+                    "terminal.tell",
+                    json!({ "surface": FIRST, "text": "other" }),
+                ),
+                FIRST,
+            ),
+            (
+                request(
+                    "terminal.broadcast",
+                    json!({ "surface": PARENT, "text": "fixed\r" }),
+                ),
+                request(
+                    "terminal.broadcast",
+                    json!({ "surface": PARENT, "text": "other\r" }),
+                ),
+                FIRST,
+            ),
+            (
+                request(
+                    "terminal.respawn",
+                    json!({ "surface": PARENT, "child": 1, "command": "fixed", "role": "kept" }),
+                ),
+                request(
+                    "terminal.respawn",
+                    json!({ "surface": PARENT, "child": 1, "command": "other", "role": "lost" }),
+                ),
+                SECOND,
+            ),
+        ];
+        for (fixed, envelope, surface) in &cases {
+            let (resume, reply) = waiting_in(
+                &mut core,
+                &mut state,
+                &mut engine,
+                fixed,
+                envelope,
+                *surface,
+            );
+            let response = run(&mut core, &mut state, &mut engine, resume, &reply);
+            assert!(response.error.is_none(), "{response:?}");
+        }
+        assert_eq!(received(&first), b"fixedfixed\r");
+        assert_eq!(received(&second), b"fixed\r\x03fixed");
+        let entry = engine
+            .runtime
+            .child_terminals
+            .find_child(&ParentKey::Surface(PARENT), 1)
+            .expect("child");
+        assert_eq!(entry.role.as_deref(), Some("kept"));
+    }
+
+    /// 확정한 본문 사본은 원 요청과 따로 대기 예산에 들어간다.
+    #[test]
+    fn the_wait_weight_counts_the_fixed_body_copy() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut session) = session();
+        let mut engine = session.borrow_mut();
+        let _children = children(&mut engine);
+        let body = "x".repeat(4096);
+        for request in [
+            request("terminal.tell", json!({ "surface": FIRST, "text": body })),
+            request(
+                "terminal.broadcast",
+                json!({ "surface": PARENT, "text": body }),
+            ),
+            request(
+                "terminal.respawn",
+                json!({ "surface": PARENT, "child": 0, "command": body }),
+            ),
+        ] {
+            let (resume, _reply) = waiting(&mut core, &mut state, &mut engine, &request, FIRST);
+            let fixed = resume.fixed.as_ref().expect("fixed input").weight();
+            assert!(fixed >= body.len(), "{}: {fixed}", request.method);
+            assert_eq!(
+                resume.weight(),
+                resume.checked.weight()
+                    + std::mem::size_of::<Resume>()
+                    + fixed
+                    + resume.bindings.len() * 48
+                    + resume.remaining.capacity() * 24
+            );
+            assert!(resume.weight() >= 2 * body.len());
+        }
     }
 }

@@ -105,13 +105,7 @@ pub(super) fn resolve_spawn(
     result.plan.explicit_name = Some(result.plan.tab_name.clone());
     result.shape = create::Shape::Child { index, workspace };
     result.activate = false;
-    result.one_shot_input = command.map(|body| {
-        if body.contains('\n') {
-            format!("\x1b[200~{body}\x1b[201~")
-        } else {
-            body
-        }
-    });
+    result.one_shot_input = command.map(|body| crate::app::terminal_input::tell_payload(&body));
     Ok(result)
 }
 

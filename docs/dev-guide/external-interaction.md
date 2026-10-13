@@ -67,21 +67,22 @@ tasty 가 단일라인 tell 을 본문과 제출 `\r` 을 **한 문자열(`"{msg
 
 단일라인 tell 도 멀티라인과 동일하게 **본문과 제출 `\r` 을 별도 PTY write 로 분리 전송**한다.
 
-- **호스트 `terminal.tell` 에 중앙화됐다** — `src/adapters/ipc/handler/terminal.rs` 의
-  `build_tell_payload`(개행 유무와 무관하게 `\r` 미포함 본문만 만든다. 멀티라인은 bracketed
-  paste 로 감싼다)와 `handle_tell`(요청 decode·오류 매핑)이 본문을 만들고,
-  `src/runtime/pending_submit.rs` 의 `write_then_submit` 이 본문을 한 write 로 보낸 뒤 제출 `\r` 을
-  예약한다. engine poll 이 본문 write 완료(최대 5초)와 20ms 뒤 같은 연결에만 별도 `\r` write 를
-  보낸다. 이 경로가 유일한 구현이다.
+- **호스트 `terminal.tell` 에 중앙화됐다** — `src/app/terminal_input.rs` 의 `tell_payload`(개행
+  유무와 무관하게 `\r` 미포함 본문만 만든다. 멀티라인은 bracketed paste 로 감싼다)가 본문을 만들고,
+  같은 파일의 `tell` 이 `src/runtime/pending_submit.rs` 의 `write_then_submit` 으로 본문을 한
+  write 로 보낸 뒤 제출 `\r` 을 예약한다. engine poll 이 본문 write 완료(최대 5초)와 20ms 뒤 같은
+  연결에만 별도 `\r` write 를 보낸다. 요청 decode 와 오류 매핑은
+  `src/adapters/ipc/handler/terminal.rs` 의 `handle_tell` 이 맡는다. 이 경로가 유일한 구현이다.
 - `claude`/`codex` 플러그인의 `tell` 은 자체 페이로드 조립 로직을 갖지 않고 `terminal.tell`
   IPC 를 그대로 호출해 위임한다(`crates/tasty-plugin-claude/src/handlers.rs`,
   `crates/tasty-plugin-codex/src/handlers.rs` 의 `handle_tell` — 둘 다 `host_call(host,
-  "terminal.tell", …)` 한 줄). `terminal.spawn` 의 초기 command 주입도 같은
-  `build_tell_payload` 를 거친다.
-- 호스트 `terminal.broadcast`(`handle_broadcast`)도 동일 함정을 피한다 — `build_broadcast_payload`
-  가 호출자가 넣은 trailing `\r`(제출 의도)을 본문에서 분리해, 본문은 `build_tell_payload` 로
-  감싸 한 write, 제출 `\r` 은 별도 write 로 보낸다. tell 과 달리 broadcast 는 `\r` 이 없으면
-  제출 write 를 생략해 "sent as-is" 주입 계약을 보존한다.
+  "terminal.tell", …)` 한 줄). `terminal.spawn` 의 초기 command 주입도 같은 `tell_payload` 를
+  거친다.
+- 호스트 `terminal.broadcast` 도 동일 함정을 피한다 — `src/app/terminal_input.rs` 의
+  `broadcast_payload` 가 호출자가 넣은 trailing `\r`(제출 의도)을 본문에서 분리해, 본문은
+  `tell_payload` 로 감싸 한 write, 제출 `\r` 은 별도 write 로 보낸다. tell 과 달리 broadcast 는
+  ack 를 기다리지 않고 두 write 를 바로 보내며, `\r` 이 없으면 제출 write 를 생략해 "sent as-is"
+  주입 계약을 보존한다.
 - **적용 범위 밖(주의)**: `claude`/`codex` 플러그인이 자기 프로세스를 처음 띄우는
   `start_claude_in_surface`류 launch 경로는 별도 `surface.send`(쉘 커맨드라인 + `\r` 한 덩어리)
   라 같은 사각지대다 — 다만 이쪽은 대상이 TUI 가 아니라 아직 아무것도 안 뜬 shell 프롬프트라

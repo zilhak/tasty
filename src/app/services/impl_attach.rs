@@ -3,7 +3,40 @@
 use super::*;
 use crate::runtime::engine_access::EngineMut;
 
+/// 한 surface에 입력을 쓴 결과. 원격 점유와 대상 부재를 구분한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SurfaceSendOutcome {
+    Sent,
+    HardOccupied,
+    NotFound,
+}
+
 impl AppServices {
+    /// `SendToSurface`를 실시간 적용 경로로 바로 실행한다. 요청 큐를 거치지 않는다.
+    pub(crate) fn send_to_surface(
+        &mut self,
+        engine: &mut EngineMut<'_>,
+        surface_id: u32,
+        payload: crate::app::command::SendPayload,
+    ) -> SurfaceSendOutcome {
+        let intent = crate::app::command::DomainIntent::SendToSurface {
+            surface_id,
+            payload,
+        };
+        let events = match self.apply_live(engine, intent) {
+            Ok(events) => events,
+            Err(_) => return SurfaceSendOutcome::NotFound,
+        };
+        match events.into_iter().next() {
+            Some(CoreEvent::SurfaceSent { sent: true, .. }) => SurfaceSendOutcome::Sent,
+            Some(CoreEvent::SurfaceSent {
+                hard_occupied: true,
+                ..
+            }) => SurfaceSendOutcome::HardOccupied,
+            _ => SurfaceSendOutcome::NotFound,
+        }
+    }
+
     pub(super) fn apply_send_to_surface(
         engine: &mut EngineMut<'_>,
         surface_id: u32,
