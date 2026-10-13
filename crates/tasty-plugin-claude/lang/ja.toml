@@ -72,6 +72,18 @@ stop_failure_background_message = "surface {}: API エラー（{}）でターン
 [claude.launch]
 workspace_create_missing_id = "ホストの workspace.create 応答に 'id' がありません"
 
+[claude.codex]
+bad_context = "Codex 呼び出し情報に有効な thread_id がありません。子は作成しておらず、別の親で代用もしていません。"
+parent_failed = "codex.parent で Codex の親を解決できませんでした（Codex プラグインはインストール済みで有効ですか？）: {}"
+parent_malformed = "codex.parent の応答形式が想定と異なります: {}"
+parent_mismatch = "--surface {} はこの Codex 会話の親ではありません。Codex 呼び出しの親は自動で決まるため --surface を省いてください。"
+not_a_child = "サーフェス {} はこの Codex 会話の子ではありません。"
+route_not_saved = "結果の返送先を保存できませんでした: {}"
+child_route_not_saved = "子サーフェス {} は作成しましたが、結果の返送先を保存できませんでした: {}"
+no_data_dir = "Claude プラグインのデータフォルダがないため、Codex の親に結果を返せません。"
+ambiguous_workspace = "この Codex 会話の子は複数のワークスペースにあります（{}）。--workspace で一つ選んでください。"
+route_not_released = "サーフェス {} の結果はまだ Codex 会話に返す設定になっており、その経路を解除できなかったため指示を送りませんでした: {}"
+
 [claude.child]
 unknown_index = "index {} の子はありません — 親 surface {} 基準(利用可能な index: {})"
 
@@ -161,6 +173,9 @@ description = "親Claudeインスタンスの全ての子へテキストを一�
 
 [claude.cli.sub.kill]
 description = "子インデックスでClaudeインスタンスを終了"
+
+[claude.cli.sub.codex-returns]
+description = "Codex を親に持つ子のターン結果のうち、まだ Codex プラグインに渡せていないものを返送先・本文・再試行状態とともに表示します。--retry は自動再試行が止まったものも含めて一覧の結果をすべて今すぐ送る順番に戻し、送信を待たずに戻ります。"
 
 [claude.cli.sub.respawn]
 description = "子Claudeインスタンスを再生成"
@@ -365,6 +380,21 @@ help = "再開時に --settings で適用するClaudeセッションプロファ
 
 [claude.cli.arg.reboot_args.profile]
 help = "適用する登録済みセッションプロファイル/Stopフックゲート名（複数はカンマ区切りで一ファイルに統合。'claude profile-register'、'claude gate-register' 参照）。サーフェスに保存し、再起動ごとに登録情報を読み直して編集を反映します。--clear-profileまで継承。--profile-fileと併用不可"
+
+[claude.cli.arg.codex_returns_args.retry]
+help = "自動再試行が止まったものも含め、残っている結果をすべて今すぐ送る順番に戻します。送信を待たないため、表示される一覧は要求時点で残っていた結果です"
+
+[claude.cli.arg.children_args.workspace]
+help = "子があるワークスペース（ID または名前）。子が複数のワークスペースにある Codex 会話から呼び出すときだけ使います"
+
+[claude.cli.arg.kill_args.workspace]
+help = "子があるワークスペース（ID または名前）。子が複数のワークスペースにある Codex 会話から呼び出すときだけ使います"
+
+[claude.cli.arg.broadcast_args.workspace]
+help = "子があるワークスペース（ID または名前）。子が複数のワークスペースにある Codex 会話から呼び出すときだけ使います"
+
+[claude.cli.arg.respawn_args.workspace]
+help = "子があるワークスペース（ID または名前）。子が複数のワークスペースにある Codex 会話から呼び出すときだけ使います"
 
 [claude.cli.arg.reboot_args.clear_profile]
 help = "再開前に既存のセッションプロファイルを解除（パスまたは名前指定）"

@@ -28,6 +28,7 @@ sandbox_hint = "⚠ 샌드박스 초기화에 실패한 것으로 보입니다(R
 
 [codex.reboot]
 notice = "tasty codex reboot : 이 세션은 tasty 의 reboot 기능으로 재시작되었습니다 (codex resume 으로 동일 세션 resume). 직전 턴이 잘렸을 수 있으니 마지막 작업 상태를 확인하고 이어서 진행하세요."
+foreground_unreadable = "surface {surface}의 전경 프로세스를 읽을 수 없습니다. 재개 전에 셸 복귀를 확인하려면 필요합니다"
 malformed_session_id = "surface {surface}의 codex-session-id 메타데이터 형식이 잘못됐습니다: {value}"
 screen_unreadable = "surface {surface}의 화면을 읽을 수 없습니다"
 lock_poisoned = "재시작 진행 상태를 보호하는 잠금에서 이전 패닉이 감지됐습니다: {detail}"
@@ -72,7 +73,7 @@ write_failed = "Codex 설정 파일을 쓰지 못했습니다: {detail}"
 description = "새 워크스페이스를 만들고 터미널에서 Codex 시작"
 
 [codex.cli.sub.spawn]
-description = "분할 surface에 자식 Codex를 만듭니다. 호스트 응답을 받은 뒤 반환하며 자식 작업의 완료까지 기다리지는 않습니다. idle·입력 대기·종료를 부모에게 알릴 훅을 등록합니다."
+description = "자식 Codex 인스턴스를 분할 surface에 만듭니다. 호스트 응답을 받은 뒤 반환하며 자식 작업 완료까지 기다리지는 않습니다. Codex 대화에서 호출하면 자식의 턴이 끝날 때마다 결과를 그 대화로 돌려보냅니다. 그 밖에는 부모 surface에 idle·입력 대기·종료 알림 훅을 등록합니다."
 
 [codex.cli.sub.children]
 description = "지정한 Codex 부모의 자식 나열"
@@ -84,7 +85,7 @@ description = "지정한 자식 서피스의 부모 Codex 서피스 ID 반환"
 description = "자식 하나의 상태 조회: idle, needs_input, active, exited(실제 서피스와 대조)"
 
 [codex.cli.sub.tell]
-description = "줄바꿈을 유지해 메시지를 보내고 제출합니다. 호스트 응답을 받은 뒤 반환하며 작업 완료까지 기다리지는 않습니다. 호출자 surface가 있으면 idle·입력 대기·종료 알림 훅을 등록합니다."
+description = "줄바꿈을 유지해 메시지를 보내고 제출합니다. 호스트 응답을 받은 뒤 반환하며 작업 완료까지 기다리지는 않습니다. Codex 대화에서 호출하면 대상의 턴 결과를 그 대화로 돌려보냅니다. 그 밖에는 호출자 surface가 있을 때 idle·입력 대기·종료 알림 훅을 등록합니다."
 
 [codex.cli.sub.notify-caller]
 description = "내부용: 자식의 상태 변화를 알리고 같은 대상·명령의 일회성 훅을 제거합니다. 대상 surface가 여전히 조회되면 완료 훅을 다시 등록합니다. spawn/tell 훅에서 호출하며 직접 사용하지 않습니다."
@@ -108,7 +109,7 @@ description = "Codex CLI 설정에 Tasty 훅 설치"
 description = "Codex CLI 설정에서 Tasty 훅 제거"
 
 [codex.cli.sub.hook]
-description = "Codex 훅 연동(Codex CLI 훅 시스템에서 호출). 호출 시 stdin에서 JSON payload(session_id, prompt, last_assistant_message)를 읽습니다."
+description = "Codex 훅 연동(Codex CLI 훅 시스템에서 호출). 호출 시 stdin에서 JSON payload(session_id, prompt, last_assistant_message, model, turn_id)를 읽습니다."
 
 [codex.cli.arg.launch_args.workspace]
 help = "생성할 워크스페이스 이름(기본값: \"codex\")"
@@ -176,6 +177,9 @@ help = "승인과 샌드박스를 모두 우회(--dangerously-bypass-approvals-a
 [codex.cli.arg.children_args.surface]
 help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID, 없으면 부모가 하나뿐일 때 그 부모)"
 
+[codex.cli.arg.children_args.workspace]
+help = "자식이 있는 workspace(ID 또는 이름). Codex 대화에서 호출했고 자식이 여러 workspace에 있을 때만 씁니다"
+
 [codex.cli.arg.notify_caller_args.caller]
 help = "알림을 받을 서피스 ID"
 
@@ -191,17 +195,26 @@ help = "일괄 전송할 텍스트. 제출하려면 \\r 사용(예: \"hello\\r\"
 [codex.cli.arg.broadcast_args.surface]
 help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID, 없으면 부모가 하나뿐일 때 그 부모)"
 
+[codex.cli.arg.broadcast_args.workspace]
+help = "자식이 있는 workspace(ID 또는 이름). Codex 대화에서 호출했고 자식이 여러 workspace에 있을 때만 씁니다"
+
 [codex.cli.arg.broadcast_args.role]
 help = "이 역할 라벨의 자식에게만 전송"
 
 [codex.cli.arg.kill_args.surface]
 help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID, 없으면 부모가 하나뿐일 때 그 부모)"
 
+[codex.cli.arg.kill_args.workspace]
+help = "자식이 있는 workspace(ID 또는 이름). Codex 대화에서 호출했고 자식이 여러 workspace에 있을 때만 씁니다"
+
 [codex.cli.arg.kill_args.child]
 help = "종료할 자식 인덱스"
 
 [codex.cli.arg.respawn_args.surface]
 help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID, 없으면 부모가 하나뿐일 때 그 부모)"
+
+[codex.cli.arg.respawn_args.workspace]
+help = "자식이 있는 workspace(ID 또는 이름). Codex 대화에서 호출했고 자식이 여러 workspace에 있을 때만 씁니다"
 
 [codex.cli.arg.respawn_args.child]
 help = "재생성할 자식 인덱스"
@@ -266,26 +279,58 @@ help = "제출된 프롬프트. UserPromptSubmit 훅의 stdin JSON 'prompt'에�
 [codex.cli.arg.hook_args.last_assistant_message]
 help = "턴의 마지막 assistant 메시지. Stop 훅의 stdin JSON 'last_assistant_message'에서 자동 입력. 이 surface가 Tasty agent task를 실행 중이면 그 턴의 최종 답변으로 보고"
 
-[codex.cli.sub.managed]
-description = "관리형 Codex 작업 중계 준비 및 조회"
+[codex.cli.sub.result]
+description = "이 Codex 대화로 돌아온 자식 결과를 읽습니다. 참조 메시지를 받은 Codex 세션에서 실행합니다. 읽어도 결과는 지워지지 않습니다."
 
-[codex.cli.arg.managed_args.action]
-help = "prepare | attach | get | callback | forget"
+[codex.cli.sub.session-open]
+description = "내부용: 터미널에서 실행 중인 Codex 세션 helper의 새 세대를 등록합니다. 직접 사용하지 않습니다."
 
-[codex.cli.arg.managed_args.workspace_id]
-help = "기존 작업의 워크스페이스 ID"
+[codex.cli.arg.result_args.event]
+help = "참조 메시지의 이벤트 ID"
 
-[codex.cli.arg.managed_args.task_id]
-help = "기존 작업 ID"
+[codex.cli.arg.session_open_args.surface]
+help = "helper가 실행되는 터미널 surface"
 
-[codex.cli.arg.managed_args.parent_thread]
-help = "부모 관리형 스레드 UUID (기본: 호출자의 CODEX_THREAD_ID)"
+[codex.cli.arg.session_open_args.resume]
+help = "helper가 재개할 thread UUID"
 
-[codex.cli.arg.managed_args.id]
-help = "중계 설명자 ID"
+[codex.cli.arg.session_open_args.tui_args]
+help = "TUI에 넘길 정책·모델 인자의 JSON 배열"
 
-[codex.cli.arg.managed_args.thread_id]
-help = "create_thread가 반환한 관리형 스레드 UUID"
+[codex.cli.arg.hook_args.gen]
+help = "Tasty 세션 helper가 설정한 세션 세대. 현재 세대가 아닌 훅은 무시합니다."
 
-[codex.cli.arg.managed_args.cli_path]
-help = "중계 명령에 사용할 Tasty 실행 파일 (기본: 현재 CLI)"
+[codex.cli.arg.hook_args.model]
+help = "세션의 모델. stdin JSON의 'model'에서 자동으로 채웁니다. 세션을 복원할 때 같은 모델을 쓰도록 기록합니다."
+
+[codex.cli.arg.hook_args.turn_id]
+help = "턴 ID. stdin JSON의 'turn_id'에서 자동으로 채웁니다. 한 턴을 Codex 부모에게 한 번만 돌려보내는 데 씁니다."
+
+[codex.state]
+no_data_dir = "플러그인 데이터 폴더를 쓸 수 없어 Codex 세션과 돌아온 결과를 저장할 수 없습니다"
+
+[codex.session]
+bad_args = "tasty codex session: 인자가 올바르지 않습니다: {detail}"
+not_in_tasty = "tasty codex session은 Tasty 터미널에서 실행해야 합니다({detail}이 설정돼 있지 않습니다)"
+open_failed = "tasty codex session: Tasty에 세션을 등록하지 못했습니다: {detail}"
+server_failed = "tasty codex session: 전용 Codex app-server를 시작하지 못해 Codex를 실행하지 않았습니다: {detail}"
+tui_failed = "tasty codex session: Codex TUI를 실행하지 못했습니다: {detail}"
+resume_failed = "tasty codex session: 요청한 설정으로 Codex 대화를 다시 열지 못했습니다: {detail}"
+
+[codex.parent]
+requires_codex_caller = "codex.parent는 Codex 대화에서 호출해야 합니다(Codex 호출 문맥이 없습니다)"
+not_receivable = "Codex thread {thread}는 결과를 받을 수 없습니다. Tasty Codex 세션에서 실행 중이 아니고 공유 Codex app-server에도 로드돼 있지 않습니다"
+check_failed = "Codex thread {thread}가 공유 Codex app-server에 로드돼 있는지 확인하지 못했습니다: {detail}"
+
+[codex.deliver]
+invalid = "codex.deliver 요청이 올바르지 않습니다: {detail}"
+
+[codex.result]
+not_found = "이벤트 ID {event}의 결과가 없습니다"
+other_thread = "이벤트 {event}는 다른 Codex 대화로 돌아온 결과입니다"
+
+[codex.owner]
+other_parent = "Codex 대화는 자기 자식만 관리할 수 있습니다. 지정한 부모 surface {surface}는 이 대화가 아닙니다"
+not_own_child = "surface {surface}는 이 Codex 대화의 자식이 아니라 보내지 않았습니다"
+not_codex_child = "surface {surface}는 Tasty가 실행한 Codex 세션이 아니라 결과가 이 대화로 돌아오지 않습니다"
+ambiguous_workspace = "이 Codex 대화의 자식이 여러 workspace에 있습니다({workspaces}). --workspace로 하나를 고르세요"

@@ -16,6 +16,7 @@ use tasty_plugin_agent_common::params::{
 use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
+use crate::codex_return::{Binding, ParentTarget, Returns, TerminalParent, parent_target};
 use crate::error_scan::{ErrorScanner, ScanTarget};
 use crate::reboot::reboot_surface;
 
@@ -182,6 +183,7 @@ pub(crate) fn require_target_surface(
 }
 
 /// 호스트로 넘길 params 에 대상 surface 를 싣는다 — 실패 문구만 claude 것으로 옮긴다.
+#[cfg(test)]
 fn put_target_surface(
     dst: &mut serde_json::Map<String, Value>,
     params: &Value,
@@ -255,12 +257,14 @@ fn host_call<H: HostCall>(host: &H, method: &str, params: Value) -> Result<Value
 /// 공개 응답은 배열이며 호스트의 surface_id를 child_surface_id로 바꾼다.
 /// 호스트 객체를 그대로 반환하는 Codex와 형식이 다르다.
 pub(crate) fn handle_children<H: HostCall>(
+    returns: &Returns,
     host: &H,
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
+    let target = parent_target(host, params, tr)?;
     let mut cp = serde_json::Map::new();
-    put_target_surface(&mut cp, params, tr)?;
+    returns.insert_parent(host, &target, params, &mut cp, "surface", None, tr)?;
     let resp = host_call(host, "terminal.children", Value::Object(cp))?;
     let list = resp
         .get("children")
@@ -308,13 +312,15 @@ pub(crate) fn handle_children<H: HostCall>(
 /// 원격으로 넘긴 kill은 forwarded 응답에 `killed: false`를 붙인다.
 pub(crate) fn handle_kill<H: HostCall>(
     scanner: &Arc<Mutex<ErrorScanner>>,
+    returns: &Returns,
     host: &H,
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let child_index = require_child_index(params, tr)?;
+    let target = parent_target(host, params, tr)?;
     let mut kp = serde_json::Map::new();
-    put_target_surface(&mut kp, params, tr)?;
+    returns.insert_parent(host, &target, params, &mut kp, "surface", None, tr)?;
     kp.insert("child".into(), json!(child_index));
     let resp = host_call(host, "terminal.kill", Value::Object(kp))?;
     let killed_id = resp
@@ -324,6 +330,8 @@ pub(crate) fn handle_kill<H: HostCall>(
     // 다음 폴링을 기다리지 않고 오류 감시에서 제거한다.
     if let Some(killed) = killed_id {
         crate::error_scan::lock_scanner(scanner).disable(killed);
+        // 닫힌 자식의 결과 경로를 지운다. 보내지 못한 결과는 남는다.
+        returns.forget_child(killed);
     }
     // 기존 호출자가 읽던 `killed`를 유지하되, 실제로 닫힌 경우에만 true로 둔다.
     let mut out = resp;
@@ -334,8 +342,9 @@ pub(crate) fn handle_kill<H: HostCall>(
 }
 
 /// 부모의 자식에게 텍스트를 보내는 terminal.broadcast에 위임한다. role 필터도 전달한다.
-pub(crate) fn handle_broadcast(
-    host: &HostHandle,
+pub(crate) fn handle_broadcast<H: HostCall>(
+    returns: &Returns,
+    host: &H,
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
@@ -343,15 +352,19 @@ pub(crate) fn handle_broadcast(
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_text")))?;
+    let target = parent_target(host, params, tr)?;
     let mut bp = forward(params, &["role"]);
-    put_target_surface(&mut bp, params, tr)?;
+    returns.insert_parent(host, &target, params, &mut bp, "surface", None, tr)?;
     bp.insert("text".into(), json!(text));
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
 /// terminal.tell에 메시지를 전달한다. 줄바꿈과 제출 처리는 호스트가 담당한다.
-pub(crate) fn handle_tell(
-    host: &HostHandle,
+/// Codex 호출이면 명시한 대상이 그 대화의 자식인지 확인하고, 이 턴의 결과를 그 대화로 돌려보내도록
+/// 경로를 먼저 저장한 뒤 보낸다.
+pub(crate) fn handle_tell<H: HostCall>(
+    returns: &Returns,
+    host: &H,
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
@@ -360,6 +373,32 @@ pub(crate) fn handle_tell(
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_message")))?;
+    if let Some(caller) = crate::codex_return::codex_caller(params, tr)? {
+        let resolved = crate::codex_return::resolve_parent(host, &caller, tr)?;
+        require_returns(returns, tr)?;
+        let target = ParentTarget::Codex(resolved.clone());
+        let mut parent = serde_json::Map::new();
+        returns.insert_parent(
+            host,
+            &target,
+            params,
+            &mut parent,
+            "surface",
+            Some(surface_id),
+            tr,
+        )?;
+        if !crate::codex_return::is_child_of(host, parent, surface_id)? {
+            return Err(IpcMethodError::invalid_params(
+                &tr.t_fmt("claude.codex.not_a_child", &surface_id.to_string()),
+            ));
+        }
+        returns
+            .bind_tell(surface_id, &Binding::new(&resolved))
+            .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?;
+    } else {
+        // 일반 호출이 새 지시를 보내면 이 자식의 다음 결과는 그 호출자의 것이다. 보내기 전에 Codex 경로를 끊는다.
+        release_codex_route(returns, surface_id, tr)?;
+    }
     let resp = host_call(
         host,
         "terminal.tell",
@@ -372,6 +411,118 @@ pub(crate) fn handle_tell(
     }
 
     Ok(resp)
+}
+
+/// 일반 호출(tell·respawn)이 자식에게 새 지시를 보내기 전에 이전 Codex 부모의 결과 경로를 끊는다.
+/// 이미 claim 한 결과는 그대로 보낸다. 끊지 못하면 결과가 엉뚱한 대화로 갈 수 있으므로 지시를 보내지 않는다.
+fn release_codex_route(
+    returns: &Returns,
+    child_surface: u32,
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
+    match returns.release_child(child_surface) {
+        Ok(true) => {
+            tracing::info!(
+                "claude codex return: s{child_surface} got a non-Codex instruction; its Codex return route was released"
+            );
+            Ok(())
+        }
+        Ok(false) => Ok(()),
+        Err(e) => Err(IpcMethodError::new(tr.t_args(
+            "claude.codex.route_not_released",
+            &[&child_surface.to_string(), &e],
+        ))),
+    }
+}
+
+/// Codex 부모의 결과 경로를 저장할 수 있어야 한다. 저장할 수 없으면 자식을 만들거나 메시지를 보내기 전에 거절한다.
+fn require_returns(returns: &Returns, tr: &Translator) -> Result<(), IpcMethodError> {
+    if returns.is_available() {
+        Ok(())
+    } else {
+        Err(IpcMethodError::new(tr.t("claude.codex.no_data_dir")))
+    }
+}
+
+/// 부모를 정하고, 일반 호출이면 기존처럼 부모 surface 를 요구한다.
+fn require_parent<H: HostCall>(
+    host: &H,
+    returns: &Returns,
+    params: &Value,
+    tr: &Translator,
+) -> Result<ParentTarget, IpcMethodError> {
+    let target = parent_target(host, params, tr)?;
+    match &target {
+        ParentTarget::Legacy(None) => Err(IpcMethodError::invalid_params(
+            tr.t("claude.params.missing_surface_id"),
+        )),
+        ParentTarget::Codex(_) => require_returns(returns, tr).map(|()| target),
+        ParentTarget::Legacy(Some(_)) => Ok(target),
+    }
+}
+
+/// 응답에 싣는 부모. 물리 부모는 기존 `parent_surface_id`, 외부 부모는 `parent_external` 이다.
+fn describe_parent(target: &ParentTarget, out: &mut serde_json::Map<String, Value>) {
+    match target {
+        ParentTarget::Legacy(Some(id)) => {
+            out.insert("parent_surface_id".into(), json!(id));
+        }
+        ParentTarget::Legacy(None) => {}
+        ParentTarget::Codex(resolved) => resolved.parent.describe(out),
+    }
+}
+
+/// 물리 부모 surface. 외부 부모에는 없다.
+fn parent_surface(target: &ParentTarget) -> Option<u32> {
+    match target {
+        ParentTarget::Legacy(id) => *id,
+        ParentTarget::Codex(resolved) => match resolved.parent {
+            TerminalParent::Surface(id) => Some(id),
+            TerminalParent::External(_) => None,
+        },
+    }
+}
+
+/// 호스트에 자식 생성(또는 재실행)을 맡기고, Codex 부모면 Claude 를 띄우기 전에 결과 경로를 저장한다.
+/// 같은 워커가 처리할 자식의 첫 hook 보다 경로가 먼저 있어야 한다. 저장하지 못하면 만든 자식 id 와 함께 실패한다.
+fn create_child<H: HostCall>(
+    returns: &Returns,
+    host: &H,
+    method: &str,
+    request: serde_json::Map<String, Value>,
+    target: &ParentTarget,
+    with_prompt: bool,
+    tr: &Translator,
+) -> Result<(Value, u32), IpcMethodError> {
+    let missing_key = if method == "terminal.respawn" {
+        "claude.respawn.missing_child_surface_id"
+    } else {
+        "claude.spawn.missing_child_surface_id"
+    };
+    let resp = host_call(host, method, Value::Object(request))?;
+    let child_surface_id = resp
+        .get("child_surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::new(tr.t_fmt(missing_key, &resp.to_string())))?;
+    match target {
+        ParentTarget::Codex(resolved) => {
+            returns
+                .bind_new_child(child_surface_id, &Binding::new(resolved), with_prompt)
+                .map_err(|e| {
+                    IpcMethodError::new(tr.t_args(
+                        "claude.codex.child_route_not_saved",
+                        &[&child_surface_id.to_string(), &e],
+                    ))
+                })?;
+        }
+        // 일반 호출의 respawn 은 Claude 를 띄우기 전에 이전 Codex 경로를 끊는다. 새 자식(spawn)에는 끊을 경로가 없다.
+        ParentTarget::Legacy(_) if method == "terminal.respawn" => {
+            release_codex_route(returns, child_surface_id, tr)?;
+        }
+        ParentTarget::Legacy(_) => {}
+    }
+    Ok((resp, child_surface_id))
 }
 
 #[cfg(test)]
@@ -472,12 +623,13 @@ pub(crate) fn build_launch_command(
 /// 같은 surface id를 다시 쓰므로 오류 감시의 중복 알림 상태도 초기화한다.
 pub(crate) fn handle_respawn(
     scanner: &Arc<Mutex<ErrorScanner>>,
+    returns: &Returns,
     host: &HostHandle,
     params: &Value,
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface_id = require_target_surface(params, tr)?;
+    let target = require_parent(host, returns, params, tr)?;
     let child_index = require_child_index(params, tr)?;
     let prompt = params
         .get("prompt")
@@ -488,18 +640,17 @@ pub(crate) fn handle_respawn(
 
     // 호스트가 cwd에 따른 PTY 교체와 자식 메타데이터·idle 상태를 처리한다.
     let mut rp = forward(params, &["cwd", "role", "nickname"]);
-    put_target_surface(&mut rp, params, tr)?;
+    returns.insert_parent(host, &target, params, &mut rp, "surface", None, tr)?;
     rp.insert("child".into(), json!(child_index));
-    let resp = host_call(host, "terminal.respawn", Value::Object(rp))?;
-    let child_surface_id = resp
-        .get("child_surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| {
-            IpcMethodError::new(
-                tr.t_fmt("claude.respawn.missing_child_surface_id", &resp.to_string()),
-            )
-        })?;
+    let (_, child_surface_id) = create_child(
+        returns,
+        host,
+        "terminal.respawn",
+        rp,
+        &target,
+        prompt.is_some(),
+        tr,
+    )?;
 
     start_claude_in_surface(
         host,
@@ -513,11 +664,11 @@ pub(crate) fn handle_respawn(
     crate::retrack::enable_and_record(host, scanner, child_surface_id, ScanTarget::Child);
     crate::error_scan::lock_scanner(scanner).reset_dedupe(child_surface_id);
 
-    Ok(json!({
-        "child_surface_id": child_surface_id,
-        "child_index": child_index,
-        "parent_surface_id": parent_surface_id,
-    }))
+    let mut out = serde_json::Map::new();
+    out.insert("child_surface_id".into(), json!(child_surface_id));
+    out.insert("child_index".into(), json!(child_index));
+    describe_parent(&target, &mut out);
+    Ok(Value::Object(out))
 }
 
 /// 자식 인덱스를 surface id로 바꿔 같은 reboot 경로로 프로필을 적용한다.
@@ -685,12 +836,13 @@ pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<S
 /// 인덱스·탭·페인·점유 상태는 호스트가 관리한다.
 pub(crate) fn handle_spawn(
     scanner: &Arc<Mutex<ErrorScanner>>,
+    returns: &Returns,
     host: &HostHandle,
     params: &Value,
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface_id = require_target_surface(params, tr)?;
+    let target = require_parent(host, returns, params, tr)?;
     let prompt = params
         .get("prompt")
         .and_then(|v| v.as_str())
@@ -699,17 +851,16 @@ pub(crate) fn handle_spawn(
     let permission_mode = resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
 
     let mut sp = forward(params, &["workspace", "pane", "cwd", "role", "nickname"]);
-    sp.insert("parent".into(), json!(parent_surface_id));
-    let resp = host_call(host, "terminal.spawn", Value::Object(sp))?;
-    let child_surface_id = resp
-        .get("child_surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| {
-            IpcMethodError::new(
-                tr.t_fmt("claude.spawn.missing_child_surface_id", &resp.to_string()),
-            )
-        })?;
+    target.insert(&mut sp, "parent");
+    let (resp, child_surface_id) = create_child(
+        returns,
+        host,
+        "terminal.spawn",
+        sp,
+        &target,
+        prompt.is_some(),
+        tr,
+    )?;
 
     start_claude_in_surface(
         host,
@@ -722,21 +873,24 @@ pub(crate) fn handle_spawn(
     // 자식 관계로 추적해 surface가 남는 release도 정리할 수 있게 한다.
     crate::retrack::enable_and_record(host, scanner, child_surface_id, ScanTarget::Child);
 
-    // 호스트 응답에 부모 id를 추가하고 나머지 필드는 그대로 전달한다.
+    // 호스트 응답에 부모를 추가하고 나머지 필드는 그대로 전달한다.
     let mut out = resp;
     if let Some(obj) = out.as_object_mut() {
-        obj.insert("parent_surface_id".into(), json!(parent_surface_id));
+        describe_parent(&target, obj);
     }
 
-    // 자식 수 경고는 생성 성공을 바꾸지 않는다.
-    if let Some(warning) = compute_spawn_warning(host, parent_surface_id, tr)
+    // 자식 수 경고는 생성 성공을 바꾸지 않는다. 자식 수 집계는 물리 부모 surface 로만 조회한다.
+    if let Some(parent_surface_id) = parent_surface(&target)
+        && let Some(warning) = compute_spawn_warning(host, parent_surface_id, tr)
         && let Some(obj) = out.as_object_mut()
     {
         obj.insert("warning".into(), json!(warning));
     }
 
-    // 부모가 자식 상태 전환을 알 수 있도록 완료 훅을 등록한다.
-    register_notify_hooks(host, parent_surface_id, child_surface_id, "spawn");
+    // 부모가 자식 상태 전환을 알 수 있도록 완료 훅을 등록한다. Codex 부모는 확정된 턴 결과를 받으므로 등록하지 않는다.
+    if let ParentTarget::Legacy(Some(parent_surface_id)) = target {
+        register_notify_hooks(host, parent_surface_id, child_surface_id, "spawn");
+    }
 
     Ok(out)
 }
@@ -1879,8 +2033,13 @@ mod tests {
     /// 배열 응답과 child_surface_id 변환, 전경 프로세스 정보 추가를 유지해야 한다.
     #[test]
     fn children_response_is_a_bare_remapped_array() {
-        let out = handle_children(&ShapeHost, &json!({ "surface_id": 1 }), &test_translator())
-            .expect("handle_children");
+        let out = handle_children(
+            &Returns::new(None),
+            &ShapeHost,
+            &json!({ "surface_id": 1 }),
+            &test_translator(),
+        )
+        .expect("handle_children");
         let arr = out
             .as_array()
             .unwrap_or_else(|| panic!("응답이 배열이 아니다: {out}"));
@@ -1910,6 +2069,7 @@ mod tests {
         crate::error_scan::lock_scanner(&scanner).enable(42, ScanTarget::Child);
         let out = handle_kill(
             &scanner,
+            &Returns::new(None),
             &ShapeHost,
             &json!({ "surface_id": 1, "child_index": 0 }),
             &test_translator(),
@@ -1940,6 +2100,7 @@ mod tests {
         crate::error_scan::lock_scanner(&scanner).enable(42, ScanTarget::Child);
         let out = handle_kill(
             &scanner,
+            &Returns::new(None),
             &ForwardHost,
             &json!({ "surface_id": 1, "child_index": 0 }),
             &test_translator(),
@@ -1950,5 +2111,377 @@ mod tests {
             json!({ "forwarded": true, "surface_id": 42, "child_index": 0, "killed": false })
         );
         assert!(crate::error_scan::lock_scanner(&scanner).is_enabled(42));
+    }
+
+    /// Codex 부모의 자식 관리 시험. `codex.parent`·`terminal.*` 을 흉내 내고 호출을 기록한다.
+    struct CodexParentHost {
+        terminal_parent: Value,
+        children: Vec<u32>,
+        seen: std::cell::RefCell<Vec<(String, Value)>>,
+    }
+
+    const RECEIVER: &str = "0123456789abcdef0123456789abcdef";
+    const EXTERNAL: &str = "codex:0193a6f2-7c1e-7b3d-9a40-1f2e3d4c5b6a";
+
+    impl CodexParentHost {
+        fn external(children: Vec<u32>) -> Self {
+            Self {
+                terminal_parent: json!({ "parent_external": EXTERNAL }),
+                children,
+                seen: Default::default(),
+            }
+        }
+
+        fn calls(&self, method: &str) -> Vec<Value> {
+            self.seen
+                .borrow()
+                .iter()
+                .filter(|(m, _)| m == method)
+                .map(|(_, p)| p.clone())
+                .collect()
+        }
+    }
+
+    impl HostCall for CodexParentHost {
+        fn call(
+            &self,
+            method: &str,
+            params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            self.seen.borrow_mut().push((method.to_string(), params));
+            Ok(match method {
+                "codex.parent" => {
+                    json!({ "receiver_id": RECEIVER, "terminal_parent": self.terminal_parent })
+                }
+                "terminal.children" => json!({ "children": self.children.iter().enumerate()
+                    .map(|(i, id)| json!({ "index": i, "surface_id": id })).collect::<Vec<_>>() }),
+                "terminal.spawn" | "terminal.respawn" => json!({ "child_surface_id": 55 }),
+                "codex.deliver" => json!({ "event_id": "e", "delivery_state": "captured" }),
+                // 자식은 모두 workspace 9 에 있다.
+                "surface.list" => json!(
+                    self.children
+                        .iter()
+                        .map(|id| json!({ "id": id, "workspace_id": 9 }))
+                        .collect::<Vec<_>>()
+                ),
+                _ => json!({}),
+            })
+        }
+    }
+
+    fn codex_call(extra: Value) -> Value {
+        let mut v = json!({ "_tasty_context": {
+            "provider": "codex",
+            "thread_id": "0193a6f2-7c1e-7b3d-9a40-1f2e3d4c5b6a",
+        } });
+        if let (Some(dst), Some(src)) = (v.as_object_mut(), extra.as_object()) {
+            dst.extend(src.clone());
+        }
+        v
+    }
+
+    /// 외부 부모의 index 명령은 호스트가 지금 그 자식들을 둔 workspace 로 보낸다. spawn 때 준 이름을
+    /// 다시 쓰지 않는다. 자기 surface id 를 요구하지 않는다.
+    #[test]
+    fn index_commands_of_an_external_parent_use_the_workspace_that_holds_the_children() {
+        let dir = tempfile::tempdir().unwrap();
+        let returns = Returns::new(Some(dir.path()));
+        let host = CodexParentHost::external(vec![55]);
+        let target = parent_target(&host, &codex_call(json!({})), &test_translator()).unwrap();
+        let mut sp = serde_json::Map::new();
+        target.insert(&mut sp, "parent");
+        sp.insert("workspace".into(), json!("lane"));
+        create_child(
+            &returns,
+            &host,
+            "terminal.spawn",
+            sp,
+            &target,
+            true,
+            &test_translator(),
+        )
+        .unwrap();
+        assert_eq!(
+            host.calls("terminal.spawn"),
+            vec![json!({ "parent_external": EXTERNAL, "workspace": "lane" })]
+        );
+
+        let tr = test_translator();
+        handle_children(&returns, &host, &codex_call(json!({})), &tr).unwrap();
+        handle_kill(
+            &Arc::new(Mutex::new(ErrorScanner::new())),
+            &returns,
+            &host,
+            &codex_call(json!({ "child_index": 0 })),
+            &tr,
+        )
+        .unwrap();
+        handle_broadcast(&returns, &host, &codex_call(json!({ "text": "hi" })), &tr).unwrap();
+        let routed = json!({ "parent_external": EXTERNAL, "workspace": "9" });
+        assert_eq!(host.calls("terminal.children"), vec![routed.clone()]);
+        assert_eq!(
+            host.calls("terminal.kill"),
+            vec![json!({ "parent_external": EXTERNAL, "workspace": "9", "child": 0 })]
+        );
+        assert_eq!(
+            host.calls("terminal.broadcast"),
+            vec![json!({ "parent_external": EXTERNAL, "workspace": "9", "text": "hi" })]
+        );
+    }
+
+    /// 결과 경로는 Claude 를 띄우기 전에, 자식 생성 직후 저장된다. 첫 hook 이 바로 와도 경로가 있다.
+    #[test]
+    fn a_spawned_child_has_its_route_before_its_first_hook() {
+        let dir = tempfile::tempdir().unwrap();
+        let returns = Returns::new(Some(dir.path()));
+        let host = CodexParentHost::external(vec![]);
+        let target = parent_target(&host, &codex_call(json!({})), &test_translator()).unwrap();
+        let (_, child) = create_child(
+            &returns,
+            &host,
+            "terminal.spawn",
+            serde_json::Map::new(),
+            &target,
+            true,
+            &test_translator(),
+        )
+        .unwrap();
+        returns.observe("session-start", child, Some("s"), None);
+        returns.turn_end(crate::codex_return::TurnEnd {
+            surface: child,
+            session: Some("s"),
+            status: crate::codex_return::ReturnStatus::TurnEnded,
+            body: Some("done"),
+            attempt_id: None,
+            turn: None,
+        });
+        returns.pump_once(&host, crate::codex_return::now_ms());
+        let sent = host.calls("codex.deliver");
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["receiver_id"], RECEIVER);
+        assert_eq!(sent[0]["child_surface"], 55);
+    }
+
+    /// 경로를 저장하지 못하면 만든 자식 id 를 알리며 실패한다. 결과를 잃은 채 성공으로 끝나지 않는다.
+    #[test]
+    fn a_route_that_cannot_be_saved_fails_the_spawn_with_the_child_id() {
+        let dir = tempfile::tempdir().unwrap();
+        // 저장 파일 자리에 폴더를 두어 쓰기를 실패시킨다.
+        std::fs::create_dir_all(dir.path().join("codex-return/routes.json")).unwrap();
+        let returns = Returns::new(Some(dir.path()));
+        let host = CodexParentHost::external(vec![]);
+        let target = parent_target(&host, &codex_call(json!({})), &test_translator()).unwrap();
+        let err = create_child(
+            &returns,
+            &host,
+            "terminal.spawn",
+            serde_json::Map::new(),
+            &target,
+            false,
+            &test_translator(),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("55"), "{}", err.message);
+    }
+
+    /// Codex 대화는 자기 자식에게만 tell 할 수 있다. 다른 부모의 자식은 경로를 만들지 않고 거절한다.
+    #[test]
+    fn a_codex_tell_reaches_only_its_own_children() {
+        let dir = tempfile::tempdir().unwrap();
+        let returns = Returns::new(Some(dir.path()));
+        let host = CodexParentHost::external(vec![55]);
+        let tr = test_translator();
+        let err = handle_tell(
+            &returns,
+            &host,
+            &codex_call(json!({ "surface": 77, "message": "hi" })),
+            &tr,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, -32602);
+        assert!(host.calls("terminal.tell").is_empty());
+
+        handle_tell(
+            &returns,
+            &host,
+            &codex_call(json!({ "surface": 55, "message": "go" })),
+            &tr,
+        )
+        .unwrap();
+        assert_eq!(
+            host.calls("terminal.tell"),
+            vec![json!({ "surface": 55, "text": "go" })],
+            "the explicit child stays the target"
+        );
+        returns.observe("prompt-submit", 55, Some("s"), None);
+        returns.turn_end(crate::codex_return::TurnEnd {
+            surface: 55,
+            session: Some("s"),
+            status: crate::codex_return::ReturnStatus::TurnEnded,
+            body: Some("answer"),
+            attempt_id: None,
+            turn: None,
+        });
+        returns.pump_once(&host, crate::codex_return::now_ms());
+        assert_eq!(host.calls("codex.deliver")[0]["body"], "answer");
+    }
+
+    /// Codex 경로가 있는 자식에게 일반 호출자가 tell·respawn 으로 새 지시를 보내면, 지시를 보내기 전에 경로를
+    /// 끊는다. 그 뒤 결과는 Codex 대화로 가지 않고, 이미 claim 한 결과는 그대로 보낸다.
+    #[test]
+    fn a_legacy_instruction_releases_the_codex_route_before_it_is_sent() {
+        for via in ["tell", "respawn"] {
+            let dir = tempfile::tempdir().unwrap();
+            let returns = Returns::new(Some(dir.path()));
+            let host = CodexParentHost::external(vec![55]);
+            let tr = test_translator();
+            let target = parent_target(&host, &codex_call(json!({})), &tr).unwrap();
+            create_child(
+                &returns,
+                &host,
+                "terminal.spawn",
+                serde_json::Map::new(),
+                &target,
+                true,
+                &tr,
+            )
+            .unwrap();
+            returns.observe("session-start", 55, Some("s"), None);
+            returns.turn_end(crate::codex_return::TurnEnd {
+                surface: 55,
+                session: Some("s"),
+                status: crate::codex_return::ReturnStatus::TurnEnded,
+                body: Some("claimed before"),
+                attempt_id: None,
+                turn: None,
+            });
+            match via {
+                "tell" => {
+                    handle_tell(
+                        &returns,
+                        &host,
+                        &json!({ "surface": 55, "message": "plain" }),
+                        &tr,
+                    )
+                    .unwrap();
+                }
+                _ => {
+                    create_child(
+                        &returns,
+                        &host,
+                        "terminal.respawn",
+                        serde_json::Map::new(),
+                        &ParentTarget::Legacy(Some(3)),
+                        true,
+                        &tr,
+                    )
+                    .unwrap();
+                }
+            }
+            returns.observe("prompt-submit", 55, Some("s"), None);
+            returns.turn_end(crate::codex_return::TurnEnd {
+                surface: 55,
+                session: Some("s"),
+                status: crate::codex_return::ReturnStatus::TurnEnded,
+                body: Some("for the plain caller"),
+                attempt_id: None,
+                turn: None,
+            });
+            returns.pump_once(&host, crate::codex_return::now_ms());
+            let sent = host.calls("codex.deliver");
+            assert_eq!(sent.len(), 1, "{via}: {sent:?}");
+            assert_eq!(sent[0]["body"], "claimed before", "{via}");
+        }
+    }
+
+    /// 경로를 끊지 못하면 일반 tell 도 보내지 않는다. 결과가 이전 Codex 대화로 갈 수 있기 때문이다.
+    #[test]
+    fn a_legacy_tell_is_not_sent_when_the_route_cannot_be_released() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("codex-return")).unwrap();
+        std::fs::write(dir.path().join("codex-return/routes.json"), "not json").unwrap();
+        let returns = Returns::new(Some(dir.path()));
+        let host = CodexParentHost::external(vec![55]);
+        let err = handle_tell(
+            &returns,
+            &host,
+            &json!({ "surface": 55, "message": "plain" }),
+            &test_translator(),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("55"), "{}", err.message);
+        assert!(host.calls("terminal.tell").is_empty());
+    }
+
+    /// 닫힌 자식의 결과 경로는 지운다. 그 surface 의 늦은 hook 은 결과를 만들지 않는다.
+    #[test]
+    fn killing_a_codex_child_forgets_its_route() {
+        struct KillHost(CodexParentHost);
+        impl HostCall for KillHost {
+            fn call(
+                &self,
+                method: &str,
+                params: Value,
+            ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+                if method == "terminal.kill" {
+                    return Ok(json!({ "killed_surface_id": 55, "child_index": 0 }));
+                }
+                self.0.call(method, params)
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let returns = Returns::new(Some(dir.path()));
+        let host = KillHost(CodexParentHost::external(vec![55]));
+        let tr = test_translator();
+        let target = parent_target(&host, &codex_call(json!({})), &tr).unwrap();
+        create_child(
+            &returns,
+            &host,
+            "terminal.spawn",
+            serde_json::Map::new(),
+            &target,
+            true,
+            &tr,
+        )
+        .unwrap();
+        returns.observe("session-start", 55, Some("s"), None);
+        handle_kill(
+            &Arc::new(Mutex::new(ErrorScanner::new())),
+            &returns,
+            &host,
+            &codex_call(json!({ "child_index": 0 })),
+            &tr,
+        )
+        .unwrap();
+        returns.turn_end(crate::codex_return::TurnEnd {
+            surface: 55,
+            session: Some("s"),
+            status: crate::codex_return::ReturnStatus::Exited,
+            body: None,
+            attempt_id: None,
+            turn: None,
+        });
+        assert!(returns.pending().unwrap().is_empty());
+    }
+
+    /// 일반 호출은 Codex 를 부르지 않고 기존 surface 인자와 응답을 그대로 쓴다.
+    #[test]
+    fn a_legacy_call_never_asks_codex() {
+        let returns = Returns::new(None);
+        let host = CodexParentHost::external(vec![55]);
+        let tr = test_translator();
+        handle_children(&returns, &host, &json!({ "surface": 3 }), &tr).unwrap();
+        handle_tell(
+            &returns,
+            &host,
+            &json!({ "surface": 55, "message": "x" }),
+            &tr,
+        )
+        .unwrap();
+        assert!(host.calls("codex.parent").is_empty());
+        assert_eq!(
+            host.calls("terminal.children"),
+            vec![json!({ "surface": 3 })]
+        );
     }
 }

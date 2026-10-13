@@ -13,6 +13,53 @@
 
 자식의 상태 변경은 caller surface의 `<parent_home>/notify/<caller_surface>.log`에 한 줄로 기록한다. 자식 CLI 종류에 따라 수신 경로를 바꾸지 않는다. 훅 설치와 부모의 로그 수신 준비는 별개이며 idle·needs_input·interrupt·exit는 작업 성공을 뜻하지 않는다. [완료 알림 로그](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)를 따른다.
 
+### Codex 부모로 결과 반환
+
+Codex 대화에서 실행한 `spawn`·`tell`·`children`·`broadcast`·`kill`·`respawn`은 부모를 자동으로 정하고, 자식의 확정된 턴 결과를 그 대화로 돌려보낸다. 코드는 `codex_return.rs`에 있다.
+
+- **호출자 판별**: 요청의 `_tasty_context`가 `provider: "codex"`이고 `thread_id`가 UUID이면 Codex 호출이다. `provider`가 codex인데 thread id가 잘못됐으면 다른 부모로 대신하지 않고 `-32602`로 거절한다. 이 키가 없는 일반 호출은 기존 `surface`(기본값 `TASTY_SURFACE_ID`)·오류·응답을 그대로 쓴다.
+- **부모 해석**: Codex 호출은 자기 surface id 인자 없이 `codex.parent({_tasty_context})`를 부른다. 응답의 `receiver_id`는 32자리 16진수, `terminal_parent`는 `{parent: u32}`와 `{parent_external: string}` 중 정확히 하나여야 한다. 호출이 실패하면(Codex 플러그인 없음·비활성 등) 그 오류 코드를 그대로 돌려주고 다른 부모로 대신하지 않는다. 명시한 `--surface`가 해석한 물리 부모와 다르면 거절한다.
+- **호스트 요청**: 물리 부모는 기존 키(`terminal.spawn`은 `parent`, `children`·`kill`·`broadcast`·`respawn`은 `surface`)로, 외부 부모는 `parent_external`로 싣는다. 자식 목록·index·상태는 호스트 child registry가 소유한다.
+- **외부 부모의 workspace**: 외부 부모의 요청에 싣는 workspace는 이 순서로 정한다. 자식의 workspace는 저장하지 않는다. 호스트가 모든 창의 surface를 모아 돌려주는 `surface.list`에서 그 자식 surface id를 찾아, 지금 속한 `workspace_id`를 고른다. 복원으로 다른 workspace의 새 surface로 옮겨 간 자식도 지금 위치로 찾는다. 사용자 포커스나 마지막으로 쓴 workspace로는 정하지 않는다.
+  1. 명시한 `--workspace`
+  2. 대상 자식이 정해진 요청(tell의 소속 확인)은 그 자식이 지금 있는 workspace id
+  3. 이 부모의 경로에 있는 자식들이 지금 한 workspace에만 있으면 그 workspace id. 호스트에 없는 surface는 세지 않는다
+  4. 여러 workspace에 있으면 `-32602`로 거절하고 후보를 알린다. `children`·`kill`·`broadcast`·`respawn`의 `--workspace`로 고른다. 일반 호출에서는 이 인자를 쓰지 않는다.
+- **tell**: 명시한 대상 surface를 그대로 쓴다. Codex 호출이면 대상이 해석한 부모의 `terminal.children`에 있는지 먼저 확인하고, 아니면 다른 부모의 자식을 건드리지 않도록 거절한다. 결과 경로를 저장한 뒤 `terminal.tell`을 보낸다. 경로의 세션이 끝났거나(`ended_at_ms`) `/clear`·`/resume` 넘기기가 멈춰 있으면 그 세션을 놓고 다음 hook의 세션으로 다시 묶는다. 실행 중인 세션에 묶인 경로는 세션을 바꾸지 않는다.
+- **일반 호출의 새 지시**: Codex 호출이 아닌 `tell`과 `respawn`은 지시를 보내기 전(respawn은 호스트가 surface를 준비한 뒤 Claude를 띄우기 전)에 그 자식의 Codex 경로를 지운다. 이미 claim한 결과는 그대로 보낸다. 경로 파일을 읽거나 쓰지 못하면 결과가 이전 Codex 대화로 갈 수 있으므로 지시를 보내지 않고 오류를 돌려준다. 일반 `spawn`은 새 자식이라 지울 경로가 없다.
+- **경로 저장**: spawn·respawn은 호스트가 자식을 만든 직후, Claude를 띄우기 전에 자식 → 수신처 경로를 플러그인 데이터 폴더의 `codex-return/routes.json`에 저장한다(tmp 파일 기록·fsync·rename). 같은 워커가 처리할 자식의 첫 hook보다 경로가 먼저 있다. 저장하지 못하면 만든 자식 id를 알리며 실패한다. 데이터 폴더가 없으면 자식을 만들기 전에 거절한다. Codex 부모의 자식에는 기존 completion-log 훅과 외부 부모의 자식 수 경고를 등록하지 않는다.
+- **세션 결합**: spawn·respawn 경로는 새 실행의 `session-start`로 세션을 묶고, 실행 중인 자식에게 tell로 만든 경로는 다음 hook의 세션으로 묶는다. 경로가 새 세션으로 넘어가면 앞 세션을 넘어간 세션 목록(최근 16개)에 남긴다.
+- **복원**: 묶인 세션의 `session-start`가 다른 surface에서 오면(복원된 실행) 경로의 surface를 옮긴다. 다른 hook은 경로를 옮기지 않는다. 결과도 경로의 surface에서 온 확정만 받는다. 그래서 옛 surface의 늦은 hook은 경로를 되돌리거나 `exited`를 만들지 못한다.
+- **`/clear`·`/resume`**: Claude Code 2.1.296은 같은 프로세스에서 SessionEnd(`reason` `clear`·`resume`) 훅을 기다린 뒤 새 세션의 SessionStart(`source` 같은 값)를 실행한다. 기다리는 시간에는 상한이 있다. `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`가 없으면 1.5초와 설정된 SessionEnd 훅 timeout(최대 60초) 중 큰 값이다. Tasty가 설치하는 SessionEnd 훅에는 timeout이 없으므로 1.5초다. 그 안에 끝나지 않으면 SessionStart가 먼저 실행되고, Tasty에 도착하는 SessionEnd는 늦거나 오지 않을 수 있다. 두 순서를 다음처럼 처리하며, 턴 순번은 이어진다.
+  - SessionEnd가 먼저 오면 경로를 넘길 준비만 하고 `exited`를 보내지 않는다. 같은 surface의 다음 SessionStart(`clear`·`resume`)가 새 세션으로 경로를 잇는다.
+  - SessionStart가 먼저 오면, 즉 같은 surface에서 끝나지 않은 다른 세션에 묶인 경로가 있으면 그 새 세션을 기다리는 후보로 적어 둔다(경로마다 최근 4개). 후보는 서로 밀어내지 않으며, 먼저 `prompt-submit`(새 턴의 시작)을 보낸 후보가 경로를 잇고 나머지 후보는 버린다. Stop·SessionEnd 같은 다른 hook으로는 잇지 않으므로, 늦게 온 예전 세션의 시작 뒤에 그 세션의 늦은 Stop이나 SessionEnd가 와도 경로를 가져가거나 결과·`exited`를 만들지 못한다. 묶인 세션이 그 뒤 프롬프트를 받아도 후보는 지우지 않는다. 묶인 세션의 hook이 늦게 왔을 수 있기 때문이다. 그래서 SessionEnd가 끝내 오지 않은 채 `/clear`한 세션이 프롬프트 없이 넘어간 세션으로 `/resume`해도, 프롬프트를 보낸 resume 세션이 잇는다.
+  - 넘어간 세션 목록에 있는 세션의 `clear` 시작은 늦게 온 중복이므로 받지 않는다. `resume`은 예전 세션으로 돌아가는 정상 흐름이라 후보로 받는다.
+  - `startup` 등 다른 source의 시작은 잇지 않는다. 넘긴 뒤 옛 세션의 hook은 어느 경로에도 닿지 않는다.
+- **경로 정리**: 그 밖의 SessionEnd는 끝난 시각을 남기고 경로를 24시간 둔다. 복원된 같은 세션이 오면 다시 이어진다. 기간이 지난 경로는 다음 `session-start`나 spawn 때 지운다. `claude kill`이 닫은 자식의 경로는 바로 지운다. 보낼 요청은 경로와 따로 저장하므로 경로를 지워도 남는다.
+- **턴 순번**: `prompt-submit`마다 경로의 턴 순번을 올린다. 진행 중 턴에 합쳐진 입력은 한 턴이다. 순번은 경로 파일에 저장해 재시작 뒤에도 이어진다. 순번은 그 세션에 보류된 게이트 Stop을 앞 턴으로 확정한 뒤에 올린다.
+- **턴 식별자**: Stop이 온 때 경로 id·턴 순번·세션·surface·수신처(`receiver_id`)를 정하고(`turn_of`), 게이트 보류(`HeldStop`)와 확정(`Settled`)을 거쳐 그대로 들고 간다. 게이트 없는 Stop과 `stop-failure`도 호스트 보고 전에 정한다. 판정이 늦거나, 시간 초과 확정 스레드가 보고하기 전에 새 프롬프트가 몇 번 오거나, 새 턴 결과가 먼저 나가도 그 Stop의 결과는 원래 턴 키로 한 번 claim한다. 시간 초과 확정을 보고하기 전에 새 턴이 열리면 상태 보고(idle)는 버리지만 Codex 결과는 보낸다.
+- **결과 생산**: 턴 종료가 확정된 곳에서만 만든다. 게이트 없는 Stop과 게이트 판정이 턴 종료로 확정된 Stop은 `report_ended`, `stop-failure`는 실패 보고 자리다. 게이트가 이어 가게 한 Stop과 백그라운드 작업을 기다리는 Stop은 결과가 아니다. 확정 전에 `session-end`가 오면 그 턴을 `exited`로 한 번 보낸다.
+- **중복 방지**: `completion_key`는 `claude:<경로 id>:t<턴 순번>`이다. prompt_id가 없어도 된다. 경로마다 claim한 턴을 최근 64개까지 기억하고, 이미 claim한 턴이나 그보다 오래된 턴은 claim하지 않는다. `receiver_id`·`child_session`·`child_surface`는 경로가 그 뒤 다른 세션이나 수신처로 넘어갔어도 그 턴의 값이다. 판정을 기다리는 동안 다른 부모가 같은 자식에게 tell해도 그 턴의 결과는 그 턴의 부모에게 간다.
+- **저장 파일 잠금**: 같은 데이터 폴더를 두 플러그인 프로세스가 쓸 수 있으므로(업그레이드 겹침 등) 경로 파일 갱신은 프로세스 안 잠금과 `codex-return/routes.lock` 파일 잠금으로 직렬화한다. tmp 파일 이름에는 프로세스 id를 붙인다.
+- **송신**: 훅 처리는 claim과 보낼 요청을 같은 파일 쓰기로 남기고 송신 스레드(`claude-codex-return`)를 깨우기만 한다. `codex.deliver`는 그 스레드가 부르므로 Codex 응답이 늦어도 훅 처리가 막히지 않는다.
+  - 호출 하나의 응답 상한은 15초다.
+  - 한 차례에 4개까지 보내고, 남은 것은 곧바로 이어 보낸다.
+  - 스레드는 플러그인이 시작할 때 이전 실행이 남긴 요청부터 보낸다. 보낼 것이 없으면 60초마다 다시 확인한다.
+  - 플러그인이 끝나면 멈추고 회수된다.
+- **재시도**: 실패한 요청은 본문·수신처·오류·시도 수와 함께 남는다. 같은 `completion_key`로 2초에서 두 배씩 늘어나는(최대 5분) 간격을 두고 자동으로 다시 보낸다. 받는 쪽이 (`receiver_id`, `completion_key`)로 중복을 거르므로 다시 보내도 결과는 하나다. 첫 실패에서 24시간이 지나면 자동 재시도를 멈추고(`gave_up`) 요청은 남긴다. `claude.codex_returns {retry: true}`(CLI `codex-returns --retry`)는 `gave_up`을 포함한 모든 요청을 지금 보낼 차례로 돌리고(재시도 기간도 새로 시작한다) 송신 스레드를 깨운다. 이 요청은 송신을 기다리지 않으므로 함께 돌려주는 `pending`은 요청 시점의 목록이며 `requeued`는 돌린 수다. 성공한 요청만 지운다.
+
+`codex.deliver` 요청:
+
+| 필드 | 값 |
+|---|---|
+| `receiver_id` | `codex.parent`가 준 수신처 |
+| `completion_key` | `claude:<경로 id>:t<턴 순번>` (`[A-Za-z0-9._:-]`, 160바이트 이하) |
+| `provider` | `"claude"` |
+| `child_surface` · `child_session` | 자식 surface와 세션(세션은 null 가능) |
+| `status` | `turn_ended`(Stop 확정, 작업 품질 판정이 아님) · `turn_failed`(StopFailure) · `exited`(확정 전 세션 종료). Claude 플러그인은 `interrupted`를 만들지 않는다 |
+| `body` | `turn_ended`는 `last_assistant_message`, `turn_failed`는 오류 종류, `exited`는 null |
+| `attempt_id` | 게이트 없는 Stop에 prompt_id가 있으면 그 값. 없으면 생략 |
+
 ## 목적
 
 **Claude Code CLI를 tasty 안에서 실행하고 관리**하는 통합. 새 워크스페이스/페인에 Claude 인스턴스를 띄우고, 부모-자식 관계로 여러 인스턴스를 spawn·제어한다 (멀티에이전트).
@@ -549,7 +596,7 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 
 ## 인터페이스
 
-- **AI Agent / 사용자**: `tasty claude launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|checklist-hook|checklist-enable|checklist-disable|checklist-status|profile-register|profile-unregister|profile-list|profile-show|profile-current|gate-register|gate-unregister|gate-list|gate-show …`.
+- **AI Agent / 사용자**: `tasty claude launch|spawn|tell|broadcast|kill|respawn|children|parent|codex-returns|hook|checklist-hook|checklist-enable|checklist-disable|checklist-status|profile-register|profile-unregister|profile-list|profile-show|profile-current|gate-register|gate-unregister|gate-list|gate-show …`.
 - surface/페인 생성 자체는 [work-area](../../features/work-area/index.md) 도메인을 사용.
 
 ## 비-목표
@@ -564,6 +611,14 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 - Given 상태 훅과 로그 기록이 정상 동작하는 자식 When `tasty claude spawn` 또는 `tell` 뒤 idle/needs_input/process-exit 훅이 발생 Then caller의 completion-log에 상태 변경을 기록하고 같은 명령의 형제 훅을 정리한다. `surface.locate`가 성공하면 세 훅을 다시 등록한다.
 - Given 같은 부모가 같은 자식에 `tasty claude tell`을 세 번 보낸 상태 When 자식의 상태가 한 번 바뀜 Then 부모의 completion-log에 완료 줄이 한 줄 남는다. 다른 부모가 등록한 그룹은 지우지 않는다.
 - Given `~/.claude/settings.json`에 사용자가 직접 추가한 hook entry가 있음 When `tasty claude install` 실행 Then 10개 tasty hook entry가 추가/갱신되고 사용자 entry는 그대로 보존된다.
+- Given Codex 대화의 `_tasty_context`가 실린 `claude spawn` When 자식이 게이트에 두 번 block된 뒤 통과한 Stop으로 턴을 끝냄 Then `codex.deliver`는 마지막 Stop의 답으로 한 번만 불린다. 백그라운드 작업을 기다리는 Stop은 보내지 않는다.
+- Given Codex 플러그인이 없거나 꺼진 상태 When Codex 대화에서 `claude spawn` Then 자식을 만들지 않고 `codex.parent` 오류를 돌려준다. 다른 부모로 대신하지 않는다.
+- Given `codex.deliver`가 실패한 결과 When `tasty claude codex-returns` Then 그 결과가 본문·수신처와 함께 보이고, `--retry` 뒤 송신 스레드가 넘기는 데 성공하면 다음 조회의 목록에서 사라진다.
+- Given 게이트 판정을 기다리는 Stop When 판정 전에 새 프롬프트가 오거나 시간 초과 확정의 보고가 새 턴 뒤로 밀림 Then 그 Stop의 답은 그 턴의 키로 한 번, 새 턴의 답은 새 턴의 키로 한 번 `codex.deliver`된다.
+- Given `/clear`로 새 세션에 넘어간 Codex 경로 When 넘어간 세션의 늦은 SessionStart(`resume`)와 그 세션의 늦은 Stop·SessionEnd가 옴 Then 경로는 새 세션에 남고, 새 세션의 답만 새 세션의 턴 키로 간다.
+- Given SessionEnd가 오지 않은 채 `/clear`로 시작한 세션 When 프롬프트 없이 넘어간 세션으로 `/resume`한 뒤 그 세션이 프롬프트를 받음 Then 그 resume 세션의 답이 Codex 대화로 간다.
+- Given 판정을 기다리는 Stop When 다른 Codex 부모가 같은 자식에게 tell Then 그 Stop의 답은 원래 부모의 수신처로 간다.
+- Given Codex 경로가 있는 자식 When 일반 셸에서 `tasty claude tell` Then 지시를 보내기 전에 경로가 지워지고 이후 결과는 Codex 대화로 가지 않는다.
 - Given 유효한 프로필 JSON When `tasty claude reboot --profile-file <경로>` Then 재시작된 Claude 에서 프로필 훅과 tasty 내장 훅이 함께 실행되고, 무인자로 다시 reboot 해도 프로필이 승계된다. `--clear-profile` 후 reboot 하면 프로필 훅이 더 이상 발생하지 않는다. 존재하지 않는 경로/깨진 JSON 은 kill 시퀀스를 시작하지 않고 즉시 에러를 반환한다.
 - Given 등록된 프로필 둘(각각 다른 마커를 남기는 `SessionStart` 훅) When 이름 둘을 쉼표로 `--profile` 에 함께 부착해 spawn Then **둘 다** 발생한다(머지가 last-wins 로 떨어지지 않는다). `permissions.deny`를 담은 프로필을 부착하면 그 자식에게서 해당 도구가 사라지고(거부 프롬프트가 아니라 툴셋에서 빠짐), `deny` 프로필과 그 도구를 `allow` 하는 프로필을 함께 부착해도 도구는 여전히 없다(deny를 allow보다 우선한다). `--profile-file` 과 `--profile` 을 함께 주면 즉시 에러.
 - Given `--profile continue-checklist` 로 부착한 세션 + 마커 파일 존재 When Claude 가 센티넬 없이 응답을 끝내려 함 Then block 되고 체크리스트 본문이 주입되며, 센티넬을 포함해 응답하거나 라운드 상한에 도달하면 정상 종료된다. 프로필을 부착하지 않은 세션은 이 동작에 전혀 영향받지 않는다. 같은 프로필을 부착한 세션 둘을 동시에 진행해도 라운드 카운터가 서로 섞이지 않는다.

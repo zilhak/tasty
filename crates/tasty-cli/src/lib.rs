@@ -3,6 +3,7 @@
 // 이유: 테스트는 let _ = 사유 주석 정책의 대상이 아니며 제품 lint는 유지한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
+pub mod caller_context;
 pub mod commands;
 mod contract;
 pub mod cwd_resolve;

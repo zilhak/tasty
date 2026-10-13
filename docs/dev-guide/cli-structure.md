@@ -162,6 +162,39 @@ terminal 워크스페이스의 cwd는 명시 `--cwd`가 우선이다. 생략하�
 IPC의 숫자가 아닌 surface_id는 invalid_params다. 윈도우 선택은 라우터가, cwd 선택은
 workspace 핸들러의 `resolve_create_cwd`·`inherit_cwd_for_create`가 맡는다.
 
+## 호출자 환경 (`caller_context.rs`)
+
+dynamic plugin 명령(`contributes.cli`)의 요청에 호출자 환경을 고정된 형식으로 싣는다.
+Codex 도구 호출 안의 `TASTY_SURFACE_ID`는 Codex 서버를 시작한 터미널의 값일 수 있으므로,
+`CODEX_THREAD_ID`가 있으면 plugin 인자를 그 값으로 채우지 않는다.
+
+- `CODEX_THREAD_ID`가 없거나 빈 문자열이면 Codex 호출자가 없다. 기존 셸·Claude 동작과 같다.
+- 값이 하이픈 위치가 고정된 36자 16진수 UUID이면 유효한 Codex 호출자다(`is_thread_uuid`).
+- 그 밖의 값이면 plugin 명령을 실행하지 않고 오류로 끝낸다. `TASTY_SURFACE_ID`로 대신하지 않는다.
+- `CODEX_HOME`은 유효한 Codex 호출자일 때만 읽는다. 비어 있지 않으면 절대 경로로 바꿔 싣고,
+  없으면 싣지 않는다. 기본 경로 규칙은 받는 쪽 Codex plugin의 기존 함수가 정한다. 다른
+  환경 변수는 읽지 않는다.
+
+plugin 인자 그룹이 `surface`·`caller_surface` u32 인자를 선언했고 명시값이 없으면
+`TASTY_SURFACE_ID`로 채운다. `surface`를 채우거나 명시하면 `surface_id`도 같은 값으로 맞춘다.
+유효한 Codex 호출자이면 채우지 않는다. 명시한 `--surface`(작업 대상 child 등)는 그대로 보낸다.
+CLI는 요청 params에 예약 키 `_tasty_context`(객체)를 붙인다.
+
+| 필드 | 형식 | 언제 |
+|---|---|---|
+| `provider` | `"codex"` | 유효한 Codex 호출자 |
+| `thread_id` | 문자열(환경 값 그대로) | 유효한 Codex 호출자 |
+| `codex_home` | 절대 경로 문자열 | 유효한 Codex 호출자이고 `CODEX_HOME`이 비어 있지 않을 때 |
+| `implicit` | 문자열 배열(`surface`·`surface_id`·`caller_surface` 중) | CLI가 `TASTY_SURFACE_ID`로 채운 키가 있을 때 |
+
+채울 것도 Codex 호출자도 없으면 키를 붙이지 않는다. 인자·stdin으로 같은 이름이 들어오면
+예약 이름 오류로 거절한다. 이 값은 호출자가 가진 환경 변수일 뿐 인증된 신원이 아니다.
+받는 쪽은 서로 다른 호출자의 결과가 섞이지 않게 하는 데에만 쓴다.
+
+호스트 명령(`request.rs`)은 이 규칙을 쓰지 않는다. 대상 선택(`resolve_surface_id`·`"this"`)과
+close 계열의 호출자 자기 보호(`caller_surface_id`)는 `CODEX_THREAD_ID`와 관계없이
+`TASTY_SURFACE_ID`를 읽는다. 대상 선택과 자기 보호는 목적이 달라 한 규칙으로 묶지 않는다.
+
 ## `debug` 갈래
 
 `commands/debug.rs`(선언)와 `local/debug.rs`(실행) 둘 다 모듈째

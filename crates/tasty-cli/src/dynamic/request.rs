@@ -117,73 +117,25 @@ pub fn matches_to_request(
         {
             merge_stdin_params(&mut params, g, &stdin_json)?;
         }
-        // claude CLI의 resolve_surface_id와 동일한 폴백 규칙. plugin이 정의한
-        // `surface` (u32) 인자가 사용자 입력에 없으면 TASTY_SURFACE_ID env로 채운다.
-        // IPC handler 들은 통상 `surface_id` 키를 기대하므로, 두 키 모두 주입한다.
-        let defines_surface = g
-            .flags
-            .iter()
-            .chain(g.positional.iter())
-            .any(|a| a.name == "surface" && matches!(a.ty, CliArgType::U32));
-        if defines_surface
-            && !params.contains_key("surface")
-            && !params.contains_key("surface_id")
-            && let Some(sid) = std::env::var("TASTY_SURFACE_ID")
-                .ok()
-                .and_then(|s| s.parse::<u32>().ok())
-        {
-            params.insert("surface".into(), Value::from(sid));
-            params.insert("surface_id".into(), Value::from(sid));
-        }
-        // 사용자가 명시적으로 --surface 를 줬을 때도 surface_id 동기. (IPC handler
-        // 가 surface_id 키만 보는 경우 대응.)
-        if let Some(v) = params.get("surface").cloned() {
-            params.entry(String::from("surface_id")).or_insert(v);
-        }
-        // 호출자 surface는 대상 surface와 구분하며 호스트 키로 복제하지 않는다.
-        let defines_caller_surface = g
-            .flags
-            .iter()
-            .chain(g.positional.iter())
-            .any(|a| a.name == "caller_surface" && matches!(a.ty, CliArgType::U32));
-        if defines_caller_surface
-            && !params.contains_key("caller_surface")
-            && let Some(sid) = std::env::var("TASTY_SURFACE_ID")
-                .ok()
-                .and_then(|s| s.parse::<u32>().ok())
-        {
-            params.insert("caller_surface".into(), Value::from(sid));
-        }
     }
 
-    if sub_decl.ipc_method == "codex.managed"
-        && params.get("action").and_then(Value::as_str) == Some("prepare")
-    {
-        let explicit_port = matches.try_get_one::<String>("port_file").ok().flatten();
-        let port_file = explicit_port
-            .map(std::path::PathBuf::from)
-            .or_else(tasty_ipc::port_file::port_file_path)
-            .ok_or_else(|| anyhow!("managed_port_file_unavailable"))?;
-        super::managed::fill(
-            &mut params,
-            std::env::var("CODEX_THREAD_ID").ok().as_deref(),
-            std::env::var_os("TASTY_SESSION_TOKEN").is_some_and(|v| !v.is_empty())
-                || tasty_ipc::protocol::caller_agent_id_from_env().is_some(),
-            &std::env::current_exe()?,
-            &port_file,
-        )?;
-        let cli_home = tasty_utils::path::tasty_home()
-            .ok_or_else(|| anyhow!("managed_cli_home_unavailable"))?;
-        params.insert(
-            "cli_home".into(),
-            Value::String(
-                std::path::absolute(cli_home)?
-                    .to_str()
-                    .ok_or_else(|| anyhow!("managed_cli_home_not_utf8"))?
-                    .to_owned(),
-            ),
-        );
-    }
+    // 명시하지 않은 plugin의 surface(u32)·caller_surface 인자는 TASTY_SURFACE_ID로 채운다.
+    // Codex thread 안에서는 그 값이 다른 터미널의 것일 수 있어 채우지 않고 호출 thread를 싣는다.
+    let declares = |name: &str| {
+        group.is_some_and(|g| {
+            g.flags
+                .iter()
+                .chain(g.positional.iter())
+                .any(|a| a.name == name && matches!(a.ty, CliArgType::U32))
+        })
+    };
+    crate::caller_context::apply_to_plugin_params(
+        &mut params,
+        declares,
+        &crate::caller_context::codex_caller(),
+        std::env::var("TASTY_SURFACE_ID").ok().as_deref(),
+    )
+    .map_err(|message| anyhow!("{message}"))?;
 
     // CLI의 이름 기반 전략 조회는 아직 연결되지 않았다. 빈 목록으로 넘겨
     // 이름 참조는 unknown strategy로 거절하고 인라인 polling만 처리한다.

@@ -1,10 +1,9 @@
-//! Execute the production builders through real shells with hostile codex wrappers.
-use super::*;
+//! 제품 명령 생성기의 결과를 실제 셸로 실행한다. helper 자리에 인자를 그대로 출력하는 가짜
+//! 실행 파일을 두고, codex를 바꾸는 alias·function이 있어도 helper가 받은 인자가 그대로인지
+//! 확인한다. 받은 인자는 helper의 인자 해석기에도 넣어 본다.
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-// Only child startup configuration is isolated. Ordinary inherited environment
-// remains available so the sentinel and surface-ID assertions still test it.
+// 셸 시작 설정만 격리한다. 일반 환경은 그대로 둬 전달 여부를 함께 확인한다.
 fn isolated_shell(shell: &str) -> Command {
     let mut process = Command::new(shell);
     for key in ["BASH_ENV", "ENV", "ZDOTDIR", "SHELLOPTS", "BASHOPTS"] {
@@ -16,53 +15,6 @@ fn isolated_shell(shell: &str) -> Command {
         process.arg("-f");
     }
     process
-}
-
-#[test]
-fn external_codex_preserves_argv_environment_and_prompt() {
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .without_time()
-        .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let prompt_dir = std::env::temp_dir();
-    let root = prompt_dir.join(format!(
-        "tasty-codex-shell-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir(&root).unwrap();
-    let fake = root.join("codex");
-    tasty_test_support::write_executable(
-        &fake,
-        "#!/bin/sh\nprintf '%s\\0' \"$TASTY_SURFACE_ID\" \"$CODEX_TEST_SENTINEL\" \"$@\"\n",
-    )
-    .unwrap();
-    let path = format!("{}:/usr/bin:/bin", root.display());
-    let bypass = "--dangerously-bypass-approvals-and-sandbox";
-    let prompt = "한글 [!NOTE] 'quoted' \"double\" $HOME $(false) `false` \\path\nsecond line";
-    let surface_id = 900_000_000 + std::process::id();
-    let mut executions = 0;
-    for shell in ["sh", "bash", "zsh"] {
-        if !shell_is_installed(shell) {
-            continue;
-        }
-        for wrapper in ["alias", "function"] {
-            executions += exercise_wrapper(shell, wrapper, &path, bypass, prompt, surface_id);
-            tracing::info!("PASS {shell}/{wrapper}: positive control + 12 builder executions");
-        }
-    }
-    std::fs::remove_file(prompt_file::path_for(
-        &prompt_dir,
-        PROMPT_FILE_PREFIX,
-        surface_id,
-    ))
-    .unwrap();
-    std::fs::remove_dir_all(root).unwrap();
-    assert!(executions >= 24);
-    tracing::info!("PASS {executions} production builder executions");
 }
 
 /// sh는 필수이며 다른 셸은 설치돼 있을 때만 실행한다. 실행 실패는 시험 실패로 처리한다.
@@ -80,81 +32,70 @@ fn shell_is_installed(shell: &str) -> bool {
     }
 }
 
-/// 각 셸·래퍼 조합에서 제품 명령을 실행한 횟수를 반환한다. 생략된 실행은 하한 검사로 잡는다.
-fn exercise_wrapper(
-    shell: &str,
-    wrapper: &str,
-    path: &str,
-    bypass: &str,
-    prompt: &str,
-    surface_id: u32,
-) -> usize {
-    let setup = if wrapper == "alias" {
-        format!("alias codex='codex {bypass}'\n")
-    } else {
-        format!("codex() {{ command codex {bypass} \"$@\"; }}\n")
-    };
-    let run = |command: &str| {
-        let mut process = isolated_shell(shell);
-        let output = process
-            .args([
-                "-c",
-                &format!("{setup}eval \"$1\""),
-                "codex-shell-test",
-                command.trim_end_matches('\r'),
-            ])
-            .env("PATH", path)
-            .env("TASTY_SURFACE_ID", "parent-surface")
-            .env("CODEX_TEST_SENTINEL", "inherited value $ ! 한글")
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{shell}: {output:?}");
-        let mut fields: Vec<String> = output
-            .stdout
-            .split(|b| *b == 0)
-            .map(|s| String::from_utf8(s.to_vec()).unwrap())
-            .collect();
-        assert_eq!(fields.pop().as_deref(), Some(""));
-        fields
-    };
-    // Positive control: the same wrapper really injects the conflicting flag.
-    assert!(run("codex -a never").iter().any(|a| a == bypass));
+#[test]
+fn the_session_helper_receives_its_arguments_verbatim_in_every_shell() {
+    let dir = tempfile::tempdir().unwrap();
+    // 공백·작은따옴표·$가 든 설치 경로도 하나의 인자로 실행돼야 한다.
+    let install = dir.path().join("Tasty plugins 'x' $HOME");
+    std::fs::create_dir(&install).unwrap();
+    let fake = install.join("tasty-plugin-codex");
+    tasty_test_support::write_executable(
+        &fake,
+        "#!/bin/sh\nprintf '%s\\0' \"$TASTY_SURFACE_ID\" \"$@\"\n",
+    )
+    .unwrap();
+    let program = fake.to_string_lossy().into_owned();
+    let thread = "019f55e7-3dfa-7a00-8000-0123456789ab";
+    let prompt_file = dir.path().join("p r'o\"mpt $(false)");
+    let bypass = "--dangerously-bypass-approvals-and-sandbox";
     let mut executions = 0;
-    for policy in [
-        "-a never",
-        "-a on-request -s read-only",
-        "-a untrusted -s workspace-write",
-        bypass,
-    ] {
-        for initial_prompt in [None, Some(prompt)] {
-            let command = make_codex_command(surface_id, initial_prompt, policy);
-            let actual = run(&command);
-            let mut expected = vec![
-                surface_id.to_string(),
-                "inherited value $ ! 한글".into(),
-                "-c".into(),
-                "check_for_update_on_startup=false".into(),
-                "--dangerously-bypass-hook-trust".into(),
-            ];
-            expected.extend(policy.split_whitespace().map(String::from));
-            if let Some(p) = initial_prompt {
-                expected.push(p.into());
-            }
-            assert_eq!(actual, expected, "{shell}/{wrapper}: {command}");
-            executions += 1;
+    for shell in ["sh", "bash", "zsh"] {
+        if !shell_is_installed(shell) {
+            continue;
         }
-        let actual = run(&crate::reboot::resume_command("019f55e7-3dfa", policy));
-        let mut expected = vec![
-            "parent-surface".into(),
-            "inherited value $ ! 한글".into(),
-            "resume".into(),
-            "--dangerously-bypass-hook-trust".into(),
-        ];
-        expected.extend(policy.split_whitespace().map(String::from));
-        expected
-            .extend(["-c", "check_for_update_on_startup=false", "019f55e7-3dfa"].map(String::from));
-        assert_eq!(actual, expected, "{shell}/{wrapper} resume");
-        executions += 1;
+        for setup in [
+            format!("alias codex='codex {bypass}'\n"),
+            format!("codex() {{ command codex {bypass} \"$@\"; }}\n"),
+        ] {
+            for policy in ["", "-a never", "-a on-request -s read-only", bypass] {
+                for (resume, prompt) in [
+                    (None, None),
+                    (Some(thread), None),
+                    (None, Some(prompt_file.as_path())),
+                ] {
+                    let tui = crate::session::command::policy_tokens(policy);
+                    let line =
+                        crate::session::command::command_line(&program, resume, prompt, &tui);
+                    let out = isolated_shell(shell)
+                        .args([
+                            "-c",
+                            &format!("{setup}eval \"$1\""),
+                            "codex-shell-test",
+                            &line,
+                        ])
+                        .env("TASTY_SURFACE_ID", "77")
+                        .output()
+                        .unwrap();
+                    assert!(out.status.success(), "{shell}: {line}: {out:?}");
+                    let mut argv: Vec<String> = out
+                        .stdout
+                        .split(|b| *b == 0)
+                        .map(|s| String::from_utf8(s.to_vec()).unwrap())
+                        .collect();
+                    assert_eq!(argv.pop().as_deref(), Some(""));
+                    assert_eq!(argv.remove(0), "77", "surface는 터미널 환경에서 읽는다");
+                    assert_eq!(argv.remove(0), "session");
+                    let parsed = crate::session::helper::parse_args(&argv)
+                        .unwrap_or_else(|e| panic!("{shell}: {argv:?}: {e}"));
+                    assert_eq!(parsed.resume.as_deref(), resume, "{shell}: {line}");
+                    assert_eq!(parsed.prompt_file.as_deref(), prompt, "{shell}: {line}");
+                    assert_eq!(parsed.tui_args, tui, "{shell}: {line}");
+                    executions += 1;
+                }
+            }
+        }
     }
-    executions
+    // sh 하나만 있어도 2개 래퍼 × 4개 정책 × 3개 형태를 실행한다.
+    assert!(executions >= 24, "{executions}");
+    tracing::info!("PASS {executions} helper command executions");
 }

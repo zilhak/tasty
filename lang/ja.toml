@@ -1948,6 +1948,11 @@ auto_wait_no_mode = "auto_wait '{}' に 'polling' も 'strategy' もありませ
 auto_wait_unknown_strategy = "auto_wait '{}' が不明な方式 '{}' を参照しています"
 arg_invalid = "--{}: {}"
 
+[cli.caller_context]
+invalid_codex_thread = "CODEX_THREAD_ID '{}' は Codex の thread ID ではありません。コマンドは実行しておらず、TASTY_SURFACE_ID で代用しません。"
+invalid_codex_home = "CODEX_HOME '{}' をパスとして読み取れません。コマンドは実行していません。"
+reserved_param = "'{}' は tasty CLI の予約名のため、引数として渡せません。"
+
 # 매니페스트 필드명과 action kind, detector는 실제 키·값이므로 번역하지 않는다.
 [cli.plugin]
 doctor_header = "プラグイン: {}"

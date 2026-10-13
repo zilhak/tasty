@@ -13,7 +13,7 @@
 
 상태 변경은 caller surface의 `<parent_home>/notify/<caller_surface>.log`에 한 줄로 기록한다. 자식 CLI 종류로 경로를 바꾸지 않는다. 훅 설치와 부모의 수신 준비는 별개이며 idle·needs_input·interrupt·exit는 작업 성공을 뜻하지 않는다. [완료 알림 로그](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)를 따른다.
 
-기존 task의 결과를 Codex 부모에게 자동 전달하려면 [관리형 전달자](#관리형-작업으로-부모에게-결과-전달)를 준비한다.
+Codex 대화에서 spawn한 자식의 턴 결과는 완료 로그와 별도로 [부모 대화에 돌아간다](#codex-부모에게-결과-반환).
 
 ## 목적
 
@@ -26,56 +26,166 @@
 [짝 핸들러 호환 경계](../../dev-guide/paired-agent-handlers.md)를 따른다. 완료 알림은
 [completion-log](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)에 기록하며 caller PTY에 메시지를 입력하지 않는다.
 
-- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 페인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `notify-caller`(내부용, 아래) · `broadcast` · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(stop/prompt-submit/session-start/permission-request/post-tool-use/interrupt/session-end). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치), `managed`(기존 task의 관리형 결과 전달 준비).
+- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 페인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `notify-caller`(내부용, 아래) · `broadcast` · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(stop/prompt-submit/session-start/permission-request/post-tool-use/interrupt/session-end) · `result`(부모에게 돌아온 자식 결과 읽기) · `session-open`(내부용, 세션 helper의 세대 발급). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치).
+- **IPC 전용** — `codex.parent`(Codex 호출자 thread의 수신 준비), `codex.deliver`(자식 결과 기록), `codex.delivery_outcome`·`codex.delivery_wake`·`codex.turn_outcome`·`codex.turn_wake`(내부용). CLI `parent`는 자식 surface의 부모를 조회하는 `codex.parent_of`다.
 - **ipc_namespace `codex`** — 위 동작에 대응하는 IPC API.
 
 ### 훅 설치와 실행
 
 install은 Windows에 PowerShell, 다른 OS에 POSIX sh 명령을 설치한다.
-PowerShell은 `$env:TASTY_SURFACE_ID`를 확인하고 `$input`을 hook 명령에 전달한다.
-POSIX는 `if [ -n "$TASTY_SURFACE_ID" ]; then … || true; fi`로 Tasty 안에서만 호출한다.
+두 명령 모두 세션 helper가 서버 환경에 넣은 `TASTY_CODEX_GEN`과 터미널의 `TASTY_SURFACE_ID`가
+있을 때만 실행하며 `--surface`와 `--gen`을 함께 보낸다. 대상 인스턴스는 터미널의
+`TASTY_PARENT_HOME`을 그 호출의 `TASTY_HOME`으로 넘겨 정한다.
+PowerShell은 `if ($env:TASTY_CODEX_GEN -and $env:TASTY_SURFACE_ID) { … }`에서 `$input`을 전달하고,
+POSIX는 `if [ -n "$TASTY_CODEX_GEN" ] && [ -n "$TASTY_SURFACE_ID" ]; then … || true; fi`를 쓴다.
+플러그인은 `--gen`이 그 surface의 현재 세대일 때만 훅을 적용한다. 세대가 없거나(직접 실행한
+`codex`, 공유 daemon) 지난 세대이거나, 세대의 thread와 다른 thread의 훅은 `ignored`로 답하고
+상태·메타데이터·턴 보고를 바꾸지 않는다.
 실패 진단은 [CLI 훅 실패 기록](../../dev-guide/cli-structure.md#에이전트-훅-전달-실패-기록)을 따른다.
 
 업데이트로 설치 명령이 바뀌면 `tasty codex install`을 다시 실행한다.
 `tasty codex hook` marker로 Tasty 항목만 교체하며 같은 matcher의 사용자 핸들러와 설정은 보존한다.
-훅 명령의 변경은 Codex의 trust 상태에도 영향을 줄 수 있다. 설치된 trust 메타데이터만으로
-실제 훅 실행을 보장하지 않으며, 0.154.0 remote resume에서는 검토 화면이 나타날 수 있다.
+훅 명령이 바뀌면 Codex는 그 훅을 다시 검토 대상으로 본다. Tasty는 훅 검토를 우회하지 않으며
+검토하지 않은 훅은 실행되지 않는다. 이 경우 상태 보고와 부모 결과 반환이 동작하지 않는다.
+설치된 trust 메타데이터만으로 실제 훅 실행을 보장하지 않는다.
 
 훅 stdin의 session_id는 `codex-session-id`와 `restore.command` meta에 기록하며 reboot와
-세션 복원이 사용한다. 설치 이벤트는 아래 일곱 개다. 승인이 어느 도구에서나 발생할 수 있어
+세션 복원이 사용한다. stdin의 `model`(SessionStart)은 복원 명령에, `turn_id`(UserPromptSubmit·Stop·Interrupt)는
+부모 결과 반환의 완료 키에 쓴다. 설치 이벤트는 아래 일곱 개다. 승인이 어느 도구에서나 발생할 수 있어
 도구 이름 matcher를 두지 않으며 PostToolUse도 매 호출마다 프로세스를 실행한다.
+
+### 세션 실행 (전용 app-server)
+
+launch·spawn·respawn·reboot·복원은 모두 플러그인 실행 파일의 `session` 모드(세션 helper)를
+터미널에 실행한다. 명령은 `'<플러그인 폴더>/tasty-plugin-codex' session [--resume <thread>]
+[--prompt-file <파일>] [-- <정책·모델 인자>]` 형태이며 각 인자를 작은따옴표로 감싼다. 셸의
+`codex` alias·function은 이 명령에 영향을 주지 않는다. 프롬프트는 임시 파일로 넘기고 helper가
+읽은 뒤 지운다.
+
+helper는 그 터미널의 cwd와 환경에서 다음 순서로 실행한다.
+
+1. `tasty codex session-open`으로 surface의 새 세대를 발급받는다. 같은 surface의 이전 세대는
+   helper가 시작 중이거나 준비된 상태가 아니면 정리한다.
+2. `codex app-server --listen <주소>`를 자식 프로세스로 띄운다. 서버 환경에는 `TASTY_CODEX_GEN`이
+   들어가며 훅은 이 서버의 자식으로 실행된다. 출력은 세대 폴더의 `server.log`에 쓴다.
+3. 서버 준비를 최대 30초 기다린다. 준비되지 않거나 서버가 먼저 끝나면 서버를 정리하고 실패로
+   끝낸다. embedded 서버나 사용자의 공유 daemon으로 내려가지 않는다.
+4. 재개(`--resume`)이면 그 서버에 연결해 `thread/resume {threadId, approvalPolicy?, sandbox?, model?,
+   excludeTurns}`로 thread를 다시 열고, 응답의 승인 정책·sandbox·모델이 요청과 같은지 확인한다.
+   실패하거나 다르면 서버를 정리하고 `failed`(사유 포함)를 기록한 뒤 TUI를 띄우지 않고 끝낸다.
+   이 연결은 TUI가 끝날 때까지 열어 두고 서버가 보내는 메시지를 계속 읽어 버린다(아래 "재개 정책").
+5. 상태를 `ready`로 기록한다. 재개였다면 서버가 확인한 thread를 `resumed`로 함께 기록한다.
+   `ready`는 서버 준비와 재개 확인까지의 뜻이며 TUI가 계속 실행된다는 보장은 아니다.
+6. `codex [resume] --remote <주소> -c check_for_update_on_startup=false <정책 인자> [thread] [프롬프트]`로
+   TUI를 붙인다. 재개 TUI에는 정책·모델 인자를 넘기지 않는다. `--dangerously-bypass-hook-trust`는
+   전달하지 않는다.
+7. TUI가 끝나면 `exited`를 기록하고 서버를 종료한 뒤 TUI의 종료 코드로 끝난다. 서버가 끝나면
+   4의 연결도 닫힌다.
+
+**재개 정책.** Codex 0.154 TUI는 `--remote`로 기존 thread를 재개할 때 승인·sandbox 재정의
+(`-a`·`-s`·`--dangerously-bypass-approvals-and-sandbox`)가 있으면 "Permission overrides are not
+supported when resuming a remote task."로 시작을 멈춘다. 재정의 없이 재개하면 서버는 그 thread의
+마지막 턴에 저장된 정책을 복원한다. 그래서 helper가 소유 서버의 `thread/resume`에 요청한 정책을 넣는다.
+TUI는 재개 때 정책 없이 `thread/resume`을 보낸다. 서버는 이미 로드된 thread에 다른 인자로 들어온
+재개를 구독자가 없고 idle이면 cold 재시작으로 처리해 helper가 적용한 정책을 버린다. 구독자가 있으면
+로드된 thread에 붙는다. helper 연결이 TUI가 끝날 때까지 구독을 유지하는 이유다.
+구독을 유지하는 동안의 동작은 다음과 같다.
+
+- 서버의 승인 요청 등은 구독한 모든 연결로 가고 한 응답으로 해결되므로 helper는 응답하지 않는다.
+- 이 연결이 구독하는 동안 그 thread는 idle unload되지 않는다. 같은 TUI에서 `/new`로 옮긴 뒤에도 원래
+  thread는 TUI가 끝날 때까지 로드된 채 남는다.
+- 메시지가 helper의 메시지 상한을 넘으면 읽기를 멈추고 연결을 닫는다. 그 뒤로는 구독하지 않는다.
+
+탭 복원과 reboot는 이 helper로 기존 thread를 재개하므로 같은 방식으로 정책을 적용한다. launch·spawn·respawn은 새 세션을 띄운다.
+
+npm으로 설치한 `codex`는 실제 서버를 다시 띄우는 래퍼이고 종료 신호를 한 번만 전달한다. 실제
+서버는 첫 SIGTERM을 받은 뒤 진행 중인 작업을 기다리느라 몇 초 넘게 남을 수 있다. 그래서 helper는
+서버를 정리할 때 래퍼만 끝내지 않는다. Linux·macOS는 서버를 별도 프로세스 그룹으로 띄우고 그룹에
+SIGTERM을 보낸다. 5초 안에 끝나지 않거나 그룹에 프로세스가 남으면 SIGKILL로 그룹 전체를 끝낸다.
+Windows는 서버를 Job Object에 넣고 job을 종료한다. 별도 그룹이므로 터미널의 Ctrl+C는 서버에 직접
+가지 않는다. Linux에서는 helper가 강제 종료(SIGKILL)돼도 서버 래퍼가 종료 신호를 받는다.
+
+Linux·macOS의 helper는 SIGINT·SIGHUP·SIGTERM에 바로 끝나지 않고 받은 신호를 단계별로 처리한다.
+TUI가 끝나 터미널이 일반 모드로 돌아온 뒤 남은 Ctrl+C(reboot는 4회 보낸다)나 터미널 닫기가 서버 정리를
+끊지 않게 하기 위해서다.
+
+| 받은 시점 | 처리 |
+|---|---|
+| 서버 준비 전 | 서버를 정리하고 TUI 없이 종료 코드 130으로 끝낸다 |
+| TUI 실행 중 | Ctrl+C는 같은 전경 그룹의 TUI가 직접 받으므로 helper는 무시한다. hangup·SIGTERM은 TUI에 같은 신호를 한 번 전달하고, 5초 안에 TUI가 끝나지 않으면 강제로 끝낸다 |
+| TUI 종료 뒤 | 무시하고 서버 그룹 정리를 마친다 |
+
+처리기를 둔 신호는 exec 때 기본 처리로 돌아가므로 서버와 TUI의 신호 처리는 바뀌지 않는다. helper가
+실행될 때 이미 무시하도록 받은 신호는 그대로 무시한다. Windows는 helper가 끝나면 서버 job이 닫혀 서버가
+함께 끝난다.
+
+| OS | 주소 | 접근 제한 |
+|---|---|---|
+| Linux·macOS | `unix://<세대 폴더>/s.sock`. 경로가 길면 `$XDG_RUNTIME_DIR` 또는 임시 폴더 아래 0700 폴더 | 소켓을 담은 0700 폴더 |
+| Windows | `ws://127.0.0.1:0`. 서버가 출력한 실제 포트를 읽는다 | `--ws-auth capability-token`과 세대별 token 파일. TUI는 `--remote-auth-token-env`로 받는다 |
+
+플러그인은 helper가 직접 만든 주소만 사용하며 다른 주소나 token을 추측하지 않는다.
+Windows 경로는 Codex 0.154.0의 도움말과 Linux에서 측정한 loopback token 인증(token 없음·틀림은 401,
+`Authorization: Bearer`는 101)에 근거한다. Windows 실 기기와 TUI의 token 환경변수 전달은 측정하지 않았다.
+
+세대 상태는 플러그인 데이터 폴더의 `return/sessions/<세대>/`에 둔다. SessionStart 훅이 세대의
+thread를 정하고 `return/threads/<thread>.json`으로 그 surface의 현재 세대를 가리킨다. SessionEnd는
+그 경로와 `codex-session-id` meta를 지우고 세대의 thread를 비운다.
+
+Codex 0.154에서 두 훅의 시점은 다음과 같다(측정: app-server 로그와 훅 실행 기록).
+
+- `/new`는 새 thread를 만들지만 SessionStart는 그 대화의 첫 턴 직전(`turn/start` 직후)에 실행된다.
+  첫 턴 전에는 rollout이 없어 재개할 대상도 없다.
+- SessionEnd는 thread가 내려갈 때 실행된다. TUI가 끝날 때와, 대화를 바꾼 뒤 구독자가 없는 이전
+  thread를 서버가 unload할 때(측정에서 구독 해제 60초 뒤) 모두 온다. 입력의 `reason`은 늘
+  `other`라 둘을 구분하지 못한다. 그래서 SessionEnd는 세대 종료로 보지 않는다([턴 결과
+  확정](#턴-결과-확정)의 종료 기록 조건).
+- 세대의 thread가 비어 있으면 SessionStart는 그 thread를 바로 묶는다. SessionStart가 아닌 훅은
+  아래 표처럼 서버가 그 thread를 `active`로 보일 때만 묶는다. 비운 세대에 늦게 온 이전 thread의
+  Stop은 thread가 없으므로 결과를 만들지 않는다.
+- SessionStart가 오기 전(첫 턴 전) 또는 unload 뒤 첫 턴 전에는 `codex-session-id`가 없으므로
+  `reboot`은 재개할 세션이 없다고 거절한다.
+
+같은 TUI에서 대화를 바꾸면(`/new`, `/resume`, 이미 연 대화로 돌아가기) 다른 thread의 훅이 온다.
+같은 서버에 이미 로드된 대화로 돌아가면 SessionStart 없이 UserPromptSubmit부터 온다. 훅은 따로
+실행되는 프로세스라 이전 대화의 훅이 늦게 도착할 수도 있다. 그래서 세대의 thread와 다른 thread의
+훅이 오면 세대의 전용 서버에 `thread/read`로 묻는다. Codex는 훅을 동기로 실행하므로 훅이 실행되는
+동안 그 thread는 `active`다.
+
+| 서버 응답 | 처리 |
+|---|---|
+| 들어온 thread가 `active`이고 지금 thread는 아니다(세대의 thread가 비었으면 들어온 thread가 `active`다) | 세대의 thread를 옮기고 이전 thread의 경로를 지운다. 복원 명령도 바꾼다 |
+| 들어온 thread가 `active`가 아니거나 둘 다 `active`다 | `stale_session`으로 무시한다 |
+| helper가 준비되지 않았거나 서버에 닿지 못했다 | `unverified_session`으로 무시한다 |
+
+SessionStart의 `source`나 thread ID 순서로는 판정하지 않는다. 이전 thread의 SessionEnd는 세대를
+끝내지 않는다. 훅 명령은 helper가 서버 환경에 넣은 세대 값을
+실어 오므로, 다른 세대나 helper 밖에서 실행한 Codex의 훅은 이 경로를 바꿀 수 없다.
 
 ### 터미널 세션 복원
 
-Claude와 같이 SessionStart에서 현재 surface에 세션 ID와 `restore.command`를 저장한다.
-호스트는 종료 시 이 명령을 보존하고 복원한 터미널의 셸에서 실행한다. Codex의 복원 명령은
-`reboot`와 같은 빌더를 사용하되 제출 문자 없이 저장한다. 새 surface ID는 복원한 PTY의
-환경에서 받으며 이전 surface ID를 명령에 넣지 않는다.
+SessionStart에서 현재 surface에 세션 ID와 `restore.command`를 저장한다. 복원 명령은 helper의
+`--resume <thread>` 명령이며 세대에 기록한 정책 인자와 훅이 알려 준 모델(`-m`)을 그대로 쓰고
+제출 문자는 넣지 않는다. 호스트는 이 명령을 복원한 터미널의 셸에서 실행하므로 cwd는 복원된
+터미널의 것을 쓰고, 새 surface ID는 그 PTY의 환경에서 받는다.
 
-launch·spawn·respawn과 복원·reboot는 `-c check_for_update_on_startup=false`를 전달한다.
-Codex CLI 0.154.0에서는 이 실행별 설정이 있을 때 암묵적인 공유 App Server 재사용을
-피하고 터미널 안의 embedded server를 사용한다. 이 경로에서 훅은 현재 터미널의 환경을
-받는다. 외부 Codex의 연결 정책이므로 다른 버전에서는 실제 시작·resume 훅을 검증한다.
-
-직접 입력한 `codex` 또는 `codex resume`가 공유 daemon에 붙으면 서버에 남은 예전
-`TASTY_SURFACE_ID`로 훅이 실행될 수 있다. 수동 실행에도 위 `-c` 옵션을 지정한다.
-명시적인 `--remote` 연결에는 이 보장이 없으며 이미 실행 중인 daemon의 환경을
-Tasty가 변경하지 않는다. 세션 ID·복원 명령이 저장되지 않은 기존 surface를 추측으로
-다른 thread에 연결하지 않는다. CWD, 포커스, 가장 최근 세션은 세션 식별 근거가 아니다.
+Tasty helper 없이 직접 입력한 `codex`나 `codex resume`은 `TASTY_CODEX_GEN`이 없어 훅을 보고하지
+않는다. 세션 ID·복원 명령이 저장되지 않은 기존 surface를 추측으로 다른 thread에 연결하지 않는다.
+CWD, 포커스, 가장 최근 세션은 세션 식별 근거가 아니다.
 
 ### 설치 이벤트
 
   | Codex config table 키 | tasty hook token | trust state 키 | 산출 상태 | 추가 이벤트·동작 |
   |---|---|---|---|---|
-  | `Stop` | `stop` | `stop` | `idle` | `codex-idle` |
+  | `Stop` | `stop` | `stop` | `idle` | `codex-idle`, Codex 부모 반환 후보(턴 상태 확인 뒤 기록) |
   | `UserPromptSubmit` | `prompt-submit` | `user_prompt_submit` | `active` | — |
   | `SessionStart` | `session-start` | `session_start` | `active` | — |
-  | `SessionEnd` | `session-end` | `session_end` | 변경 없음 | `codex-session-id` meta 삭제 |
+  | `SessionEnd` | `session-end` | `session_end` | 변경 없음 | `codex-session-id` meta·thread 경로 삭제, 세대의 thread 비움, 세대가 끝났을 때만 Codex 부모에 `exited` 반환 |
   | `PermissionRequest` | `permission-request` | `permission_request` | `needs_input` | `needs-input` · `surface.completion`(kind=needs_input) |
   | `PostToolUse` | `post-tool-use` | `post_tool_use` | `active` | — |
-  | `Interrupt` | `interrupt` | `interrupt` | `idle` | `codex-idle` |
+  | `Interrupt` | `interrupt` | `interrupt` | `idle` | `codex-idle`, Codex 부모 반환 후보(턴 상태 확인 뒤 기록) |
 
-  `~/.codex/config.toml`의 `[hooks]` 섹션에 심는다(`settings.json`이 아니다 — Codex 의 hook dispatch 경로가 아니다). Codex 는 새 hook entry를 *trust*하기 전엔 fire하지 않는다 — `--dangerously-bypass-hook-trust`(아래)를 전달하지만 remote resume의 검토 화면이 사라진다고 보장하지 않는다.
+  `~/.codex/config.toml`의 `[hooks]` 섹션에 심는다(`settings.json`이 아니다 — Codex 의 hook dispatch 경로가 아니다). Codex 는 새 hook entry를 *trust*하기 전엔 fire하지 않는다. 사용자가 Codex의 `/hooks`에서 검토한다.
 - **도구 실행 승인 대기**: `PermissionRequest`는 상태를 `needs_input`으로 바꾸고 부모 알림과
   공용 attention 표시를 요청한다. 승인이 필요 없는 실행에는 이 훅이 발생하지 않는다.
   `PostToolUse`는 active로, 거절·Esc·Ctrl-C의 `Interrupt`는 idle로 바꾼다.
@@ -100,7 +210,7 @@ Tasty가 변경하지 않는다. 세션 ID·복원 명령이 저장되지 않은
 
 ### 자식 상태 알림
 
-spawn과 tell은 필요한 호스트 호출의 응답을 받은 뒤 반환하며 자식 작업 완료까지 기다리지 않는다. `codex-idle`, `needs-input`, `process-exit` once 훅을 등록한다. 같은 부모·대상의 완료 훅 그룹(명령 앞부분 `tasty codex notify-caller --caller <부모> --target <대상> --kind `)이 이미 있으면 먼저 지우고 등록하므로, tell을 반복하거나 spawn 뒤 tell해도 부모마다 그룹은 하나이고 한 번의 상태 변경에 완료 줄은 한 줄이다. 다른 부모의 그룹은 그대로 둔다. 하나가 실행되면 notify-caller가 상태 변경 로그를 쓰고 같은 command의 나머지 훅을 정리한다.
+spawn과 tell은 필요한 호스트 호출의 응답을 받은 뒤 반환하며 자식 작업 완료까지 기다리지 않는다. Codex 대화에서 호출한 경우에는 아래 훅 대신 [결과 반환](#codex-부모에게-결과-반환)을 쓴다. 그 밖의 호출은 `codex-idle`, `needs-input`, `process-exit` once 훅을 등록한다. 같은 부모·대상의 완료 훅 그룹(명령 앞부분 `tasty codex notify-caller --caller <부모> --target <대상> --kind `)이 이미 있으면 먼저 지우고 등록하므로, tell을 반복하거나 spawn 뒤 tell해도 부모마다 그룹은 하나이고 한 번의 상태 변경에 완료 줄은 한 줄이다. 다른 부모의 그룹은 그대로 둔다. 하나가 실행되면 notify-caller가 상태 변경 로그를 쓰고 같은 command의 나머지 훅을 정리한다.
 
 명령 문자열은 caller·target·kind로 구분한다. 이 조합이 같으면 반복 요청도 같은 훅 그룹이므로 요청마다 독립된 구독은 아니다. 이후 `surface.locate`가 성공하면 세 훅을 다시 등록한다. Surface 존재는 프로세스 생존과 다르며, 훅 등록과 로그 쓰기 실패나 재등록 사이의 이벤트 전달까지 보장하지 않는다.
 
@@ -110,12 +220,13 @@ notify-caller는 최근 화면 800줄에서 RTM_NEWADDR를 찾으면 샌드박�
 
 - **훅 호출 실패 집계**: `terminal.set_state` 실패는 오류 응답으로 반환한다. 나머지 정리·알림 호출은 실패해도 계속하고 `host_call_failures`로 실패 수를 알린다. 0이 아니면 `<tasty_home>/hook-failures.log`에도 기록을 시도한다. `ok`만으로 모든 호출이 성공했다고 판단하지 않는다([오류 처리](../../dev-guide/error-handling.md)).
 - **훅 출력 계약** — `hook`의 IPC/직접 CLI 응답은 진단용 `host_call_failures`를 포함한다. 설치된 일곱 셸 래퍼는 CLI stdout을 버리고 Codex에는 빈 JSON 객체 `{}`만 반환한다 — `PermissionRequest` 에서 그 값은 "결정 없음"이라 승인 흐름을 바꾸지 않는다. 실패 기록(`hook-failures.log`)과 stderr는 유지한다. [Codex 훅 출력 규약](https://learn.chatgpt.com/docs/hooks)에 없는 내부 필드를 전달하지 않으며, 기존 설치에는 `tasty codex install`을 다시 실행해 래퍼를 갱신한다.
-- **모든 codex 기동 명령에 `--dangerously-bypass-hook-trust`** — `spawn`/`launch`/`reboot`이 이 옵션을 전달한다. 그러나 0.154.0 remote resume의 훅 검토 화면은 별도로 나타날 수 있다. `install`의 trust 표시는 선택한 파일의 metadata이며 실제 훅 실행이나 원격 daemon 신뢰의 증명이 아니다. 검토가 필요한 훅은 사용자가 Codex에서 확인하며 Tasty가 대신 승인하지 않는다.
-- **POSIX 셸의 외부 Codex 실행** — `launch`/`spawn`/`respawn` 의 공통 빌더는 모든 OS 에서 기존 POSIX 환경변수·프롬프트 구문과 함께 `command codex` 를 사용해 셸의 `codex` alias/function 을 우회하고 현재 `PATH` 의 실행 파일을 찾는다. Windows 에서 탐지하는 Git Bash 도 이 경로를 사용한다. `reboot` 는 Linux/macOS 에서 `command codex`, Windows 에서는 기존 `codex` 실행어를 유지한다. Windows 의 수신 셸 종류를 모르는 상태에서 cmd 를 중첩하지 않으므로 Git Bash 의 MSYS 인자 변환을 새로 유발하지 않는다. **Windows reboot 의 alias/function 우회와 native cmd/PowerShell 전용 새 세션 전달 개선은 후속 범위**다. 기존 정책 우선순위·기본값·명시 옵션과 Windows 지원 범위는 바꾸지 않는다. alias 에 넣어 둔 옵션을 적용하려면 tasty 의 정책 플래그나 전역 설정에 명시한다.
+- **훅 검토를 우회하지 않는다** — 기동 명령에 `--dangerously-bypass-hook-trust`를 넣지 않는다. `install`의 trust 표시는 선택한 파일의 metadata이며 실제 훅 실행이나 원격 daemon 신뢰의 증명이 아니다. 검토가 필요한 훅은 사용자가 Codex에서 확인하며 Tasty가 대신 승인하지 않는다.
+- **명령 셸** — helper 명령은 POSIX 작은따옴표 인용을 쓴다. Linux·macOS의 sh/bash/zsh와 Windows의 Git Bash가 대상이다. Windows의 cmd·PowerShell 터미널에서 helper 명령을 실행하는 경로는 아직 제공하지 않는다.
 
 ### 승인과 샌드박스 설정
 
-launch·spawn·respawn·reboot는 다음 값을 Codex에 전달한다.
+launch·spawn·respawn·reboot는 다음 값을 helper에 전달한다. 새 세션은 helper가 Codex TUI 인자로
+적용하고, 기존 thread 재개는 helper가 소유 서버의 `thread/resume`으로 적용한다(위 "재개 정책").
 
 | Tasty 옵션 | 전달 내용 |
 |---|---|
@@ -135,9 +246,23 @@ PermissionRequest 훅은 그 대기를 알려주며 대신 승인하지 않는�
 RTM_NEWADDR 오류로 시작에 실패할 수 있다. 실행 환경과 선택한 정책을 함께 확인한다.
 
 - **`reboot`** (`tasty codex reboot [--surface <id>] [--delay <초>] [--prompt <추가문구>] [--approval <값>] [--sandbox <값>] [--full-auto]`) — surface 안의 Codex 를 종료하고 **같은 세션으로 재시작**한다([claude reboot](../claude/index.md) 와 동형).
-  요청 시 `codex-session-id`와 화면의 종료 안내 횟수를 읽고 재시작 작업을 예약한다. delay(기본 5s) 후 Ctrl+C를 4회 보낸 뒤 화면에서 `run codex resume`의 횟수가 늘었는지 확인한다. 확인되면 `<플랫폼별 Codex 실행어> resume --dangerously-bypass-hook-trust [정책 플래그] -c check_for_update_on_startup=false <session_id>`를 전송한다. 이후 복귀 화면을 확인하고 안내 문구와 별도 Enter를 보낸다.
-  정책 플래그는 위 승인/샌드박스 규칙과 동일하게 해석된다.
-  같은 surface의 중복 reboot는 거절한다. 종료·복귀 확인은 화면 문자열을 사용하므로 Claude 플러그인의 전경 이름 확인과 다르며, 임의 출력이나 화면 이동으로 판정이 틀릴 수 있다.
+  요청 시 `codex-session-id`를 읽고 재시작 작업을 예약한 뒤 `reboot_in_secs`로 응답한다. 응답은 접수 결과이며 재시작의 성공은 아니다. helper의 `--resume <session_id> [-- 정책 플래그]` 명령으로 새 세대의 전용 서버에서 같은 thread를 연다. session_id는 thread UUID여야 한다. 정책 플래그는 위 승인/샌드박스 규칙과 동일하게 해석된다. 같은 surface의 중복 reboot는 거절한다.
+  - **helper 세션**(surface의 현재 세대가 helper `ready`): 요청 때 전경 프로세스 pid를 읽는다. 읽을 수 없으면 Codex를 끝내기 전에 요청을 거절한다. delay(기본 5s) 후 Ctrl+C를 0.5s 간격으로 최대 4회 보내되, 보낼 때마다 그 세대의 helper 상태를 확인해 `exited`·`failed`가 되면 더 보내지 않는다. Codex는 `/new`에도 `run codex resume` 안내를 찍고 보이는 화면의 문구 수는 스크롤로 줄어들 수 있으므로 화면 문구는 종료 근거로 쓰지 않는다.
+    전경 pid는 Linux·macOS에서 터미널의 전경 프로세스 그룹이다. helper는 TUI를 자기 그룹에서 실행하고 서버만 별도 그룹에 두므로, helper가 끝날 때까지 helper의 그룹이다. Windows는 셸의 가장 얕은 셸 아닌 자손(helper)이고, 자손이 없으면 셸 자신이다.
+    helper는 `exited`를 기록한 뒤 서버를 정리하고 끝난다. 그래서 resume 명령은 호스트의 `surface.foreground_process`가 전경을 셸로 분류(`is_shell: true`)한 뒤에만 보낸다. pid·이름이 바뀌어도 셸 위에서 띄운 일반 프로그램(예: vim)일 수 있으므로, 셸 판단의 근거는 호스트 분류다. `is_shell`이 `false`·`null`이거나 응답에 없으면 보내지 않는다. 추가 방어로 전경의 pid와 이름이 요청 때의 helper와 모두 달라야 하며, 그래서 아직 세대를 등록하지 않은 새 helper는 걸러진다.
+    기다리는 동안 같은 surface에 다른 helper 세대가 열릴 수 있다(사용자의 실행, respawn, 탭 복원). 그래서 Ctrl+C를 보낼 때마다, 그리고 resume·안내를 보내기 직전에 surface의 현재 세대가 대상 세대인지 확인한다. 바뀌었으면 그 뒤로는 아무것도 보내지 않는다.
+    재시작 완료는 resume 전송 뒤 만들어지고 같은 thread를 기록한 새 세대의 helper가 `ready`이면서 서버 응답으로 확인한 `resumed`가 그 thread인 것으로만 확인한다. `ready`만으로는 완료가 아니다. 새 세대가 확인 전에 `failed`·`exited`가 되면(예: 재개 거부, 정책 미적용) 재개 실패로 끝낸다.
+    안내 문구와 별도 Enter는 이때 확인한 그 세대에만 보낸다. 현재 세대를 다시 읽어 대상으로 삼지 않는다. TUI 준비 대기(3s) 뒤 안내를 넣기 직전마다(재시도 포함)와 별도 Enter 직전에 surface가 아직 그 세대이고 그 helper가 `ready`(TUI 실행 중)인지 확인한다. 세대가 바뀌었거나 helper가 `exited`·`failed`를 기록했으면 TUI가 끝나 셸이 입력을 받으므로 그 뒤로는 보내지 않는다.
+    | 상황 | 결과(플러그인 로그) |
+    |---|---|
+    | 마지막 Ctrl+C 뒤 8s 안에 세대가 끝나지 않음 | `did not end` 경고, resume 미전송 |
+    | 세대는 끝났지만 5s 안에 셸로 분류된 전경(요청 때 helper와 다른 pid·이름)을 조회하지 못함 | `shell did not return` 경고, resume 미전송 |
+    | surface가 다른 세대로 바뀜(입력 전), 또는 resume 뒤 다른 thread나 전송 전에 만든 세대가 나타남 | `surface no longer runs session` 경고, 이후 입력·안내 미전송 |
+    | resume 뒤 30s 안에 새 세대가 재개를 확인하지 않음 | `no new session became ready` 경고, 안내 미전송 |
+    | 새 세대가 재개 확인 전에 `failed`·`exited` | `the resumed session ended before it was confirmed` 경고, 안내 미전송. 사유는 그 세대 helper의 `detail`과 터미널 출력 |
+    | 자기 새 세대 준비 | `session … is ready` 정보, 안내 전송 |
+    | 안내 중 surface가 확인한 세대를 떠났거나 그 helper가 `exited`·`failed` | `surface left session … ; notice stopped` 경고, 이후 안내·Enter 미전송 |
+  - **helper 세션이 아님**: 요청 때 화면의 종료 안내 횟수를 읽고, Ctrl+C 4회 뒤 화면에서 `run codex resume`의 횟수가 늘었는지 확인해 resume 명령을 보내고 시작 배너로 복귀를 확인한다. 화면 문자열 판정이므로 임의 출력이나 화면 이동으로 판정이 틀릴 수 있다.
   **턴의 마지막 행동으로 호출할 것.** SessionEnd는 현재 세션 meta를 정리한다.
   `Disconnected from this task.`나 원격 연결 문맥은 이 재시작 판정에서 사용하지 않는다.
 
@@ -154,80 +279,198 @@ idle 보고도 진위나 작업 성공을 검증한 값은 아니므로 현재 �
 구별되지 않기 때문이다. 판정 기준은 [자식 터미널](../../features/child-terminal/index.md)의
 판정 응답 필드를 참고한다.
 
-## 관리형 작업으로 부모에게 결과 전달
+## Codex 부모에게 결과 반환
 
-`managed`는 기존 Tasty task의 결과를 일반 Codex 관리형 작업이 읽어 부모에게 전달하도록
-준비한다. 기존 자식 터미널·workspace·task DAG는 그대로 사용한다. 전달자는 별도 Codex
-모델 작업이며, Tasty 플러그인이 Codex 서버에 직접 접속하는 전송 스레드가 아니다.
+Codex 대화(`CODEX_THREAD_ID`가 있는 호출자)에서 `tasty codex spawn`·`tell`·`respawn`을 호출하면
+자식의 턴 경계가 그 대화로 자동으로 돌아간다. CLI가 호출자 문맥(`_tasty_context`)을 붙이며,
+이 값은 같은 사용자의 프로세스가 알려 준 것이지 인증된 신원이 아니다. Claude 부모나 일반
+surface 부모의 spawn은 기존 상태 알림 흐름을 그대로 쓴다.
 
-부모에 `codex_tui.create_thread`와 `codex_tui.send_message_to_thread` 도구가 있어야 한다.
-관리형 전달자는 부모의 모델·작업 디렉터리·승인·샌드박스 설정을 상속한다. native subagent는
-이 관리 도구를 사용할 수 없는 경로이므로 전달자로 대신 배정하지 않는다. Codex CLI 0.154.0에서
-일반 관리형 자식이 idle 부모에게 도구 결과를 보내 새 턴을 시작하는 경로를 확인했다.
-TUI가 유지하는 연결을 사용하므로 프런트엔드 종료·재연결·도구 승인 대기는 별도 제약이다.
-현재는 Local conductor의 조회를 지원한다. prepare의 호출자 검사는 CLI 가드이며 새로운
-서버 인증 경계가 아니다. 플러그인 metadata 준비만으로 task 접근 권한이 부여되지는 않는다.
+### 수신 대상
 
-### 준비와 도구 호출
+`codex.parent`는 호출자 thread를 받을 수 있는지 확인하고 불투명한 `receiver_id`(32자리 16진수
+난수)와 호스트에 넘길 부모 키를 돌려준다. spawn은 이 준비를 자식을 만들기 전에 먼저 한다.
+thread·송신 경로(소유 세션 또는 공유 daemon과 그 `CODEX_HOME`)가 같으면 같은 `receiver_id`를
+다시 쓴다. 그래서 spawn·tell을 반복해도 수신자가 늘지 않고 중복 판정 범위도 바뀌지 않는다.
 
-```sh
-tasty codex managed prepare --workspace-id 456 --task-id TASK_ID
-tasty codex managed attach --id RELAY_ID --thread-id MANAGED_THREAD_ID
-tasty codex managed get --id RELAY_ID
-tasty codex managed callback --id RELAY_ID
-tasty codex managed forget --id RELAY_ID
+| 호출자 thread | 부모 키 | 송신 경로 |
+|---|---|---|
+| Tasty helper 세션의 현재 세대 thread | `{"parent_external": "codex:<thread>"}` | 그 세대의 전용 서버 |
+| 사용자 공유 daemon에 로드된 thread | `{"parent_external": "codex:<thread>"}` | `codex app-server proxy` |
+| 둘 다 아님 | 실패 | 없음 |
+
+Codex 부모는 실행 위치와 관계없이 자기 thread로 자식을 소유한다. helper surface는 대화가 실행되는
+곳이자 전용 서버로 보내는 주소일 뿐 부모 키가 아니다. 같은 surface에서 `/new`로 대화가 바뀌면 새
+대화는 다른 부모이므로 이전 대화의 자식을 관리하지 못한다. Claude 부모와 일반 surface 부모는 숫자
+surface 부모 키를 그대로 쓴다.
+
+공유 daemon의 로드 여부는 공식 proxy의 `thread/loaded/list`로 확인하며 호출자의 `CODEX_HOME`만
+그 proxy 프로세스에 넘긴다. 다른 대상으로 대신 보내지 않는다.
+
+proxy 연결 하나에는 연결부터 마지막 응답까지 하나의 기한이 있다. npm의 `codex`는 실제 proxy를 다시
+띄우는 래퍼이고 실제 proxy가 stdout을 물려받으므로, 래퍼만 끝내면 응답 없는 proxy가 파이프를 쥔 채
+남아 읽기가 풀리지 않는다. 그래서 Linux·macOS는 proxy를 별도 프로세스 그룹으로 띄우고 기한이 지나거나
+연결을 닫을 때 그룹 전체를 끝낸다. Windows는 proxy를 Job Object에 넣고 job을 종료한다. proxy는 이미
+실행 중인 daemon의 소켓에 바이트만 전달하므로 사용자의 daemon은 끝나지 않는다.
+
+### 자식 소유와 반환 경로
+
+Codex 호출자는 호스트가 그 대화(`codex:<thread>`)의 자식으로 기록한 surface만 관리한다.
+
+- spawn·children·broadcast·kill·respawn에 다른 부모 surface를 명시하면 호스트에 요청하지 않고
+  거절한다. 대화가 실행 중인 helper surface를 명시한 것은 받되, 호스트에는 thread 부모 키를 넘긴다.
+- tell은 `terminal.parent`로 대상의 부모가 호출자인지 확인한다. 응답의 `parent_external`이
+  `codex:<thread>`와 같아야 하며, 숫자 부모의 자식은 같은 surface에서 실행 중이어도 호출자의
+  자식이 아니다. 이 필드를 알리지 않는 호스트에서는 소유를 증명할 수 없어 거절한다.
+- 반환 경로(`children/<surface>.json`)는 자식에게 지시를 보내기 전에 기록한다. tell 전송이
+  실패하면 이전 경로로 되돌린다.
+- Codex 세션이 아닌 자식(helper 세션 기록도 반환 경로도 없는 surface)에 tell하면 경로를 두지
+  않고 응답의 `warning`으로 결과가 돌아오지 않는다고 알린다.
+- Codex 대화가 아닌 호출자(Claude 부모, 일반 surface)가 tell·spawn·respawn으로 새 지시를 보내면
+  지시 전에 이전 Codex 반환 경로를 지우고, 그 자식의 아직 기록하지 않은 턴·종료 후보를 모두
+  무효화한다([턴 결과 확정](#턴-결과-확정)). 이미 기록한 결과는 원장에 남아 읽을 수 있다.
+- kill이 자식을 닫으면 그 경로를 지운다.
+
+외부 부모 키만으로는 호스트가 창을 고르지 못하므로 Codex 부모의 children·broadcast·kill·respawn에는
+`workspace`를 넣는다. 호스트는 그 workspace가 속한 창을 골라 그 창 안의 자식만 처리한다. 다른 창의
+자식은 그 창의 workspace로 따로 요청해야 한다. 이때 호스트 응답의 `sent_count`와 children 상태는
+창 밖 자식을 정확히 보고하지 않는다(창 밖 자식을 보낸 것으로 세거나 `exited`로 보고한다). 같은
+창 안의 workspace들 사이에서는 어느 workspace로 요청해도 각 자식이 한 번씩 받는다. 플러그인은
+요청을 한 번만 보내고 workspace는 다음 순서로 정한다.
+
+1. 사용자가 `--workspace`로 명시한 값.
+2. kill·respawn은 그 index로 반환 경로를 기록한 자식이 지금 있는 workspace.
+3. 이 thread로 반환 경로를 기록한 자식 중 호스트가 지금도 그 부모의 자식으로 기록한 surface가
+   모두 한 workspace에 있으면 그 workspace. 위치는 `surface.list`로 지금 상태를 읽는다.
+
+후보가 둘 이상이면 어느 창의 자식인지 정할 수 없어 거절하고 `--workspace`를 요구한다. 포커스나
+마지막으로 쓴 workspace로 정하지 않는다. 자식이 여러 창에 있으면 창마다 그 창의 workspace로
+요청한다. spawn 경고의 자식 수도 spawn한 workspace의 창에서 센다.
+
+### 기록과 송신
+
+`codex.deliver`는 `receiver_id`, `completion_key`(1~160바이트 `[A-Za-z0-9._:-]`), `provider`
+(`codex`·`claude`), `child_surface`, `child_session`(문자열 또는 null), `status`, `body`(문자열 또는
+null), 선택 `attempt_id`를 받는다. `status`는 턴 경계의 종류이며 작업 품질의 판정이 아니다.
+
+| status | 뜻 | Codex 자식의 발생 근거 |
+|---|---|---|
+| `turn_ended` | 모델 턴이 끝났다 | 소유 서버의 턴 상태 `completed` |
+| `turn_failed` | 턴이 오류로 끝났다 | 소유 서버의 턴 상태 `failed` |
+| `exited` | 세션(세대)이 끝났다 | SessionEnd 훅 뒤 세대 종료 확인 |
+| `interrupted` | 사용자가 턴을 중단했다 | 소유 서버의 턴 상태 `interrupted` |
+
+본문이 1MiB를 넘으면 문자 경계에서 자르고 `body_truncated`를 표시한다. 같은 `receiver_id`와
+`completion_key`는 한 번만 기록하고 같은 `event_id`(32자리 16진수 난수)와 `duplicate: true`를
+돌려준다. Codex 자식의 완료 키는 `codex:<thread>:<turn_id>`이고 종료는
+`codex:<thread>:end.<세대>`다. 턴은 Codex가 준 `turn_id`로만 식별한다. Codex 0.154의
+UserPromptSubmit·Stop·Interrupt 훅 입력은 `turn_id`를 반드시 담으며, 실제 실행에서 한 턴의
+UserPromptSubmit과 Stop은 같은 값을 줬다. agent task 회차 표지도 같은 `turn_id`의 프롬프트에서
+찾는다. `turn_id`가 없거나 형식이 틀린 Stop·Interrupt는 지원하지 않는 입력이다. 다른 턴에 붙이거나
+새 키를 만들지 않고, 훅 응답의 `child_return_rejected: "missing_turn_id"`와 경고로 알린다.
+
+### 턴 결과 확정
+
+Stop 훅은 턴이 끝났다는 확정이 아니다. 실제 실행에서 Stop 훅이 실행되는 동안 그 턴의 서버
+상태는 `inProgress`였고, 다른 Stop 훅이 턴을 이어 가게 하면 같은 `turn_id`의 Stop이 다시 온다.
+훅의 `turn_id`는 app-server의 Turn ID와 같다. 그래서 결과는 세대의 소유 서버가 보고한 턴 상태로
+정한다.
+
+1. Stop·Interrupt 훅은 바뀌지 않는 후보(수신자, 자식 thread, 세대, `turn_id`, 회차 표지)를 남기고
+   바로 돌아간다. 같은 턴의 후보가 이미 있으면 그대로 둔다. 수신자는 이때 정해지므로 뒤에
+   반환 경로가 바뀌어도 이 턴의 수신자는 바뀌지 않는다.
+2. 별도 스레드가 소유 서버에 `thread/turns/list`(최근부터 16개씩 4페이지까지, 항목 전체)로 그
+   턴을 찾는다. 동시에 실행하는 확인 작업은 2개까지다. 슬롯은 작업 단위이며 그 작업의 결과가 돌아올 때만 빈다. 훅은 확인을 기다리지 않는다.
+3. 턴 상태가 `completed`·`interrupted`·`failed`면 그 턴의 마지막 agentMessage를 본문으로 한 번
+   기록하고 후보를 지운다. 실패한 턴에 메시지가 없으면 오류 문구가 본문이다. Stop 입력의
+   `last_assistant_message`는 쓰지 않는다.
+4. 아직 `inProgress`이거나, 턴을 찾지 못했거나, 서버에 닿지 못하면 1초부터 두 배씩(상한 60초)
+   기다렸다가 다시 확인한다. 한 프로세스에서 24번 확인하지 못하면 보류하고, 같은 세대의 다음
+   턴 경계 훅이나 플러그인 재시작 때 다시 확인한다. 다른 세대의 보류 후보는 다시 열지 않는다.
+   상태를 추정해 기록하지 않는다.
+5. 재확인 깨우기는 후보마다 만들지 않는다. 한 번 처리할 때 남은 후보 중 가장 이른 시각 하나를
+   플러그인 프로세스의 스케줄러 스레드 하나에 보낸다. 스케줄러는 가장 이른 예약 하나만
+   기억하고(늦은 예약은 합쳐진다) 그 시각에 깨우기를 한 번 보낸 뒤 기억을 비운다. 깨우기를 받은
+   처리가 남은 후보의 다음 시각을 다시 예약한다. 스레드는 예약 수와 관계없이 하나다. 깨우기는
+   공유 예약 상태를 지우지 않으므로 옛 깨우기가 새 예약을 취소하지 못한다. 원장 송신 재시도
+   타이머는 이 스케줄러를 쓰지 않는다.
+6. 세대의 helper가 서버를 끝냈다고 기록했거나(`exited`·`failed`) 세션 기록이 없으면 그 세대의
+   턴은 더 확인할 수 없다. 그 후보는 바로 보류한다.
+7. Codex 대화가 아닌 호출자가 그 자식에게 새 지시를 보내면, 지시 전에 그 자식(surface)의 아직
+   기록하지 않은 턴·종료 후보를 모두 `turns/void/`로 옮겨 무효화한다. 확인 중이던 턴이 그 뒤
+   끝나도, 같은 턴의 Stop이 다시 와도 옛 수신자에게 기록하지 않는다. 이미 원장에 기록한 결과는
+   그대로 둔다. 확인 결과는 후보마다 만든 정체(`id`)가 같은 후보에만 반영하므로, 늦게 온 결과가
+   무효화한 후보를 되살리지 못하고, 그 뒤 다시 묶인 경로에서 같은 턴 키로 만든 새 후보를 끝내거나
+   지우지도 못한다. 후보의 수신자는 Stop 때 고정한 값 그대로이며 무효화가 다른 수신자로 바꾸지
+   않는다. 끝났지만 아직 확인하지 못한 턴(재확인 대기 중)도 결과가 아니므로 함께 무효화된다.
+   무효화는 예약 정보만 지우며, 이미 실행 중인 그 후보의 확인 작업은 결과가 돌아올 때까지 슬롯을
+   차지한다. 늦은 결과는 자기 작업의 슬롯만 비우고 새 후보의 확인 표시를 건드리지 않으므로, 같은
+   후보의 확인이 겹치거나 무효화를 거듭해 실제 확인이 상한을 넘지 않는다. 비운 슬롯으로 기다리던
+   후보를 이어서 확인한다.
+8. 해석할 수 없는 후보 파일(손상된 JSON, 필드가 빠진 형식)은 `turns/corrupt/`로 옮겨 격리하고
+   경고를 남긴다. 다른 읽기 오류는 경고만 남기고 건너뛴다. 어느 경우든 다른 후보의 확인과 다른
+   자식에 대한 일반 지시는 막지 않는다.
+
+SessionEnd는 종료 후보를 남기고, 세대가 끝났다고 확인될 때만 종료(`exited`)를 기록한다. 후보는
+1초(`EXIT_POLL`) 간격으로 다시 확인한다.
+
+| 조건 | 처리 | 남은 턴 후보 |
+|---|---|---|
+| helper가 `exited`·`failed`를 기록했거나 세대 기록이 없다 | 바로 종료를 기록한다 | 결과로 기록하지 않고 후보 파일로 남긴다 |
+| SessionEnd 뒤 10초(`EXIT_GRACE`)가 지났고 세대의 서버에 닿지 못한다 | 종료를 기록한다 | 같다 |
+| SessionEnd 뒤 10초가 지났고 세대의 서버가 응답한다 | 대화만 바뀐 것이므로 기록하지 않고 후보를 `turns/void/`로 옮긴다 | 그대로 확인을 이어 간다 |
+| 같은 세대에 다른 thread가 새로 묶였다(빈 세대의 SessionStart, 확인된 prompt, 대화 전환) | 새 바인딩이 세대가 살아 있다는 증거이므로 이전 thread의 종료 후보를 바로 `turns/void/`로 옮긴다 | 그대로 확인을 이어 간다 |
+| 그 밖 | 기다린다 | 확인을 이어 간다 |
+
+TUI가 끝나면 helper가 곧바로 `exited`를 기록하므로 종료는 보통 SessionEnd 뒤 1초 안에 기록된다.
+한 세대의 종료는 그때 묶여 있던 thread의 것으로 한 번만 기록된다.
+정상 실행에서 턴은 Stop 훅 직후 `completed`가 되고 확인 응답은 수십 ms라, 부모는 마지막 턴
+결과를 종료보다 먼저 받는다. 서버에 닿지 못하거나 서버가 끝난 경우에는 종료가 먼저 갈 수 있고,
+확인하지 못한 턴은 결과가 아니라 남은 후보로만 있다.
+
+deliver는 이벤트 기록과 claim까지만 동기로 처리하고 송신은 백그라운드 스레드에 맡긴다.
+송신은 부모 thread마다 한 건씩 기록 순서대로 하고, 전체 동시 송신은 4건까지다. 결과 하나를
+기록할 때 지난 이벤트의 본문을 다시 읽지 않는다.
+부모 thread의 대기열(`thread/queue/add`)에는 다음 고정 문장만 넣는다. 자식 본문은 넣지 않는다.
+
+```text
+[tasty] A child agent reported a turn boundary. provider=<provider> status=<status> event=<event_id>. This is a reference, not the result. Read the result with: tasty codex result <event_id>
 ```
 
-대문자 식별자는 실제 응답값으로 바꾼다. `prepare`는 CLI 호출자의 `CODEX_THREAD_ID`를
-부모로 사용하며, 필요한 경우 `--parent-thread UUID`로 명시한다. 플러그인 프로세스의
-환경이나 포커스된 surface에서 부모를 추측하지 않는다. 부모 surface는 기존 terminal spawn의
-대상이고, 수신 부모 thread는 별개다. CLI는 실제 실행 파일과 호출자가 선택한 port file도
-전달 지시에 넣어 다른 Tasty 인스턴스로 조회가 바뀌지 않게 한다. `cli_env`의 `TASTY_HOME`도
-명령별 환경으로 지정해 plugin 매니페스트를 준비 때와 같은 곳에서 찾는다. 이 값은 경로이며
-인증 token을 복사하지 않는다. 플러그인은 전달 관계만
-저장하며 task 조회 권한을 대신 행사하지 않는다.
+| delivery_state | 뜻 | 다음 동작 |
+|---|---|---|
+| `captured` | 기록했고 아직 보내지 못했다 | 보낸다. 보내지 못한 뒤에는 1초부터 두 배씩(상한 60초) 기다렸다가 다시 보낸다 |
+| `held` | 보낼 대상이 없다(소유 부모 TUI가 붙지 않음) 또는 자동 재시도 12회를 넘었다 | 그 thread의 다음 결과, 부모 TUI의 SessionStart, 플러그인 재시작 때 다시 보낸다 |
+| `sending` | 송신 중 | 결과 반영 |
+| `accepted` | 서버가 대기열에 넣었다 | 없음. 부모가 읽었다는 뜻은 아니다 |
+| `rejected` | 서버가 거절했다 | 없음. 오류 코드·문구를 남긴다 |
+| `not_loaded` | 외부 부모 thread가 로드돼 있지 않다 | 없음 |
+| `unknown` | 보낸 뒤 응답을 잃었다 | 대기열을 한 번 조회해 있으면 accepted. 다시 보내지 않는다 |
 
-1. 기존 task의 workspace ID와 task ID로 `prepare`를 호출한다. prepare는 ID 형식만 검사하며
-   task 존재·조회 권한은 전달자의 실제 조회에서 확인한다. 응답의 `relay_id`와
-   `create_thread_args`를 보관한다. 준비만으로 전달자가 실행되지는 않는다.
-2. 부모가 실제 `codex_tui.create_thread` 도구에 `create_thread_args`를 전달한다.
-   `prompt`는 1,000 UTF-8 바이트 이내이며, 긴 결과를 초기 지시에 넣지 않는다.
-3. 도구가 반환한 `threadId`를 `attach --id … --thread-id …`로 연결한다. 같은 연결은
-   반복할 수 있지만 다른 thread로 바꾸는 요청은 거절한다.
-4. 일반 관리형 전달자가 `get`의 지시를 읽는다. attach가 아직 끝나지 않았으면 제한 시간을
-   두고 기다린다. 이후 자신의 `CODEX_THREAD_ID`가 연결된 thread와 같은지 확인한다.
-5. 전달자는 기존 task를 제한 시간마다 `task-await`로 조회한다. 현재 prepare는 Local 호출만
-   지원하며 `TASTY_SESSION_TOKEN` 또는 Agent 호출자 문맥이 있으면 거절한다. 관리형 작업이
-   호출자의 token 환경을 상속한다는 보장이 없기 때문이다. 전달자는 예상하지 않은 token이
-   있으면 중단하며, token을 복사하거나 버려 Local 호출로 바꾸지 않는다.
-6. task가 terminal 상태이거나 조회·연결 오류로 전달을 중단해야 하면 `callback`을 호출한다. 반환된 `callback.arguments`의 `threadId`와
-   `prompt`를 실제 `codex_tui.send_message_to_thread` 도구에 전달한다. 전체 결과는 Tasty
-   task에 남기고 callback은 제한 길이의 식별자와 결과 참조를 보낸다.
+플러그인이 송신 중에 재시작되면 sending은 unknown이 되고 대기열을 한 번 조회한다. captured와
+held는 다시 보낸다. 원장은 플러그인 데이터 폴더의 `return/`(`receivers/`·`events/`·`claims/`·
+`pending/`·`children/`)에 있으며 폴더는 0700으로 만든다. `pending/`은 아직 할 일이 남은
+이벤트의 색인이다. 송신과 재시작 복구는 이 색인만 읽는다.
 
-`get`은 저장한 부모·task·전달자 관계와 `prepared`/`attached` 단계를 보여 준다.
-`callback`은 전달할 인자를 만드는 명령일 뿐 task 결과를 조회하지 않는다. **task 완료·도구 호출
-성공·부모 수신을 뜻하지 않는다.** 부모는 callback의 task와 전달자 식별자를 대조하고 실제 결과를
-다시 읽어 요구사항 충족 여부를 판단한다. 실패·취소·unknown도 성공으로 바꾸지 않는다.
-결과를 읽거나 callback을 호출하지 못했다면 그 오류를 남기며 수신 완료로 보고하지 않는다.
+기록은 색인 표지, 이벤트, claim 순서로 하고 claim은 내용을 다 쓴 임시 파일을 hard link로
+붙여 만든다. 어느 단계에서 중단돼도 이벤트를 잃지 않는다. 비었거나 없는 이벤트를 가리키는
+claim은 손상으로 보고 남은 이벤트 쪽으로 고친다. claim 파일 이름은 완료 키의 SHA-256이라
+대소문자를 구분하지 않는 파일 시스템이나 Windows 예약 이름에서도 키가 겹치지 않는다.
 
-`forget`은 지정한 전달 기록만 지운다. Tasty task를 취소하거나 Codex 관리형 작업을 archive하지
-않는다. 필요한 관리형 작업 정리는 소유권을 확인한 뒤 Codex 도구로 별도 수행한다. 전달 기록은
-plugin data 디렉터리의 `managed-relays/`에 남는다. Tasty 인스턴스가 바뀌면 기존 기록의
-get·attach·callback은 거절하므로 새로 prepare한다.
+할 일이 끝난 이벤트는 30일 동안 보관하고, 그 뒤 플러그인이 시작할 때 지운다. 지운 이벤트는
+`tasty codex result`로 읽을 수 없다. 보내지 못한 이벤트는 나이와 관계없이 지우지 않는다. claim은
+가리키는 이벤트가 남아 있는 동안 지우지 않으므로 오래 보류된 결과의 같은 키가 다시 와도 중복으로
+처리한다. 지운 이벤트를 가리키는 30일 넘은 claim만 함께 지운다.
 
-### 전달 계약과 한계
+### 결과 읽기
 
-- 도구의 인자 이름은 `prompt`지만 Codex 0.154.0의 전달은 빈 user input과 `toolOutput`이다.
-  부모 PTY에 문자열을 넣거나 사용자 발화를 만들어 전달하지 않는다.
-- Tasty는 Codex endpoint·Bearer token을 저장하거나 찾아내지 않고, 부모에게 수동 App Server
-  바인딩을 요구하지 않는다. Codex의 관리 도구는 내부적으로 기존 App Server 연결을 사용한다.
-- 모델이 task를 기다리고 callback 도구를 호출하는 방식이다. 추가 모델 사용량이 발생하며,
-  전달자 종료·승인 대기·도구 접근 불가가 있으면 자동 전달이 끝나지 않을 수 있다.
-- `functions.exec`의 `notify()`는 살아 있는 부모 턴에 도구 결과를 보낼 수 있지만, idle 턴을
-  시작하지 않는다. native `send_message`도 새 부모 턴을 시작하지 않는다. 이를 관리형 callback의
-  idle 재개와 혼동하지 않는다.
-- 관리형 수신 도구가 없는 환경에서는 현재 턴의 task 조회로 결과를 수집한다. 로그 파일이나
-  task의 `succeeded`만으로 부모가 자동 재개됐다고 보고하지 않는다.
+```sh
+tasty codex result <event_id>
+```
+
+참조를 받은 Codex 대화에서 실행한다. 이벤트의 부모 thread와 호출자 thread가 다르면 거절한다.
+응답은 provider·status·body·body_truncated·child_surface·child_session·completion_key·attempt_id와
+전달 상태를 담는다. 읽어도 본문은 지워지지 않으며 읽은 횟수와 처음 읽은 시각만 기록한다.
 
 ## 훅 설치 대상 선택
 
@@ -239,7 +482,7 @@ get·attach·callback은 거절하므로 새로 prepare한다.
 
 ## 인터페이스
 
-- **AI Agent / 사용자**: `tasty codex launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|install|managed …`.
+- **AI Agent / 사용자**: `tasty codex launch|spawn|tell|broadcast|kill|respawn|children|parent|result|hook|install …`.
 - 일반 흐름: `spawn --prompt "…"` → (선택) `tell` → 완료 알림 대기(caller의 completion-log 조회) → 출력 확인.
 
 ## 비-목표
@@ -249,11 +492,40 @@ get·attach·callback은 거절하므로 새로 prepare한다.
 
 ## Acceptance Criteria
 
-- Given Local 호출자의 `CODEX_THREAD_ID`와 기존 task 식별자 When `managed prepare` Then 부모·task 관계와 create 도구 인자를 반환하며 task 조회나 관리형 작업 생성을 수행했다고 보고하지 않는다.
-- Given Agent 인증 문맥을 가진 CLI 호출 When `managed prepare` Then token을 복사하거나 버려 Local로 전환하지 않고 지원하지 않는 호출임을 알린다.
-- Given 연결된 일반 관리형 전달자와 terminal task When 전달자가 callback 도구 인자로 실제 메시지 도구를 호출 Then 부모는 task 참조를 도구 결과로 받는다. callback 인자 생성만 성공한 경우에는 전송으로 판정하지 않는다.
+- Given Tasty helper 세션의 Codex 부모 When 그 대화에서 `tasty codex spawn --prompt "…"`를 실행하고 자식의 턴이 끝난다 Then 부모 thread의 대기열에 고정 형식의 참조가 한 번 들어가고 부모는 `tasty codex result <event_id>`로 본문을 읽는다.
+- Given Tasty 세션도 아니고 공유 daemon에 로드되지도 않은 Codex 호출자 When spawn Then 자식을 만들지 않고 받을 수 없는 부모라고 알린다.
+- Given 같은 턴의 Stop 훅이 두 번 실행 When 결과를 기록 Then 같은 event_id를 돌려주고 대기열에는 한 번만 넣는다.
+- Given 송신 중 플러그인이 재시작 When 다시 시작 Then 그 이벤트를 다시 보내지 않고 대기열을 한 번 확인해 accepted 또는 unknown으로 둔다.
+- Given 공유 daemon에 일시적으로 연결하지 못해 보내지 못한 결과 When 다른 spawn·tell이 없다 Then backoff 뒤 다시 보낸다.
+- Given 같은 TUI에서 A 대화 뒤 `/new`로 B 대화를 시작 When A의 훅이 B보다 늦게 도착 Then 서버가 A를 실행 중으로 보고하지 않으므로 경로는 B에 남는다.
+- Given B로 옮긴 뒤 이미 로드된 A로 돌아감 When A의 UserPromptSubmit이 SessionStart 없이 옴 Then 서버가 A를 실행 중으로 보고하므로 경로가 A로 옮겨 A의 결과가 돌아간다.
+- Given 서로 다른 두 턴이 같은 응답으로 끝남 When 두 Stop이 옴 Then turn_id가 달라 두 결과를 모두 기록한다.
+- Given 다른 Stop 훅이 턴을 이어 가게 해 같은 turn_id의 Stop이 두 번 옴 When 첫 Stop 뒤 서버가 그 턴을 `inProgress`로 보고 Then 기록하지 않고 다시 확인하며, 서버가 `completed`로 보고한 뒤 마지막 메시지로 한 번 기록한다.
+- Given turn_id가 없는 Stop When 훅이 옴 Then 결과를 기록하지 않고 `child_return_rejected: "missing_turn_id"`로 알린다.
+- Given 확인하지 못한 턴 후보 50개 When 같은 세대의 훅이 반복됨 Then 한 번의 처리는 깨우기를 하나만 요청하고, 더 이른 예약을 거듭해도 스케줄러 스레드는 하나다.
+- Given 확인 중인 턴이 있는 Codex 자식 When 일반 셸에서 그 자식에게 tell Then 그 턴은 나중에 끝나도 부모에게 기록되지 않고, 이미 기록한 결과는 남는다.
+- Given 확인이 도는 중 무효화와 재bind가 거듭됨 When 같은 턴 Stop이 반복됨 Then 실제 확인 작업은 2개를 넘지 않고 한 후보의 확인이 겹치지 않는다.
+- Given 해석할 수 없는 후보 파일 When 다른 자식에게 일반 셸에서 tell Then tell은 성공하고 그 파일은 격리된다.
+- Given 확인하지 못한 턴 후보가 있는 세션 When SessionEnd 뒤 helper가 서버 종료를 기록했거나 10초가 지나도 서버에 닿지 못함 Then 종료를 기록하고, 그 턴은 결과로 기록하지 않는다.
+- Given `/new` 뒤 이전 thread가 unload되어 SessionEnd가 옴 When 10초 뒤에도 세대의 서버가 응답 Then 종료를 기록하지 않고 세대의 thread를 비우며, 다음 대화의 SessionStart가 바로 묶여 그 턴이 부모에게 돌아간다.
+- Given 새 대화가 이미 묶인 세대 When 이전 thread의 SessionEnd가 늦게 옴 Then 무시하고 새 thread와 meta는 그대로다.
+- Given A의 unload SessionEnd 뒤 10초 안에 B가 SessionStart나 확인된 prompt로 묶임 When TUI가 끝남 Then 종료는 B의 것 한 번만 기록되고, A의 미확정 턴 후보는 남아 확인된다.
+- Given thread가 빈 세대 When SessionStart 없이 prompt가 옴 Then 서버가 그 thread를 실행 중으로 보일 때만 묶는다.
+- Given Tasty가 띄운 Codex 부모가 같은 TUI에서 `/new`로 새 대화를 시작 When 새 대화에서 spawn Then 새 thread가 그 surface의 소유 부모로 결과를 받고, 늦게 온 이전 thread의 훅은 무시한다.
+- Given Codex 부모 A의 자식 X When 다른 Codex 부모 B가 X에 tell Then 보내지 않고 X의 반환 경로도 바꾸지 않는다.
+- Given helper surface 5의 Codex 부모 A가 자식 X를 만든 뒤 같은 TUI에서 `/new`로 B가 됨 When B가 X에 tell·kill하거나 children·broadcast Then B의 부모 키(`codex:<B>`)로 요청하므로 X는 대상이 아니고 X의 반환 경로는 A에 남는다.
+- Given Codex 부모 A의 자식 X When Claude 부모가 X에 tell Then 전송 전에 A로 가는 경로를 지우고 이미 기록한 결과는 남긴다.
+- Given 두 workspace에 자식이 나뉜 Codex 부모 When `--workspace` 없이 children·broadcast Then 호스트에 보내지 않고 workspace를 고르라고 알린다. `--workspace`를 주면 요청을 한 번 보낸다. 두 workspace가 같은 창이면 각 자식이 한 번씩 받고, 다른 창이면 지정한 workspace의 창에 있는 자식만 받는다.
+- Given claim을 만드는 도중 플러그인이 끝나 빈 claim이 남음 When 다시 시작하거나 같은 키를 다시 기록 Then 이벤트를 지우지 않고 claim을 고친다.
+- Given 전용 app-server가 시작하지 못함 When helper 실행 Then TUI를 시작하지 않고 실패를 알리며 embedded·공유 서버로 내려가지 않는다.
+- Given 승인·sandbox 정책이 있는 reboot·탭 복원 When helper가 기존 thread를 재개 Then TUI에는 정책 인자를 넘기지 않고, 소유 서버의 `thread/resume`이 적용한 정책을 TUI가 붙은 뒤에도 서버가 유지한다.
+- Given 소유 서버가 재개를 거부하거나 요청한 정책과 다른 값으로 응답 When helper 실행 Then 서버를 정리하고 `failed`와 사유를 남기며 TUI를 시작하지 않는다.
+- Given reboot로 재개한 TUI가 시작 직후 끝나 셸로 돌아옴 When 안내를 보낼 차례 Then helper `exited`를 보고 안내와 Enter를 셸에 넣지 않는다.
+- Given TUI가 끝나 서버를 정리 중인 Linux·macOS helper When 터미널에서 Ctrl+C·hangup이 반복해 도착 Then helper는 끝나지 않고 서버 그룹 정리를 마치며 npm 래퍼·실제 서버·TUI가 남지 않는다.
+- Given 응답하지 않는 공유 daemon proxy When 연결 기한이 지남 Then 연결은 송신 전 실패로 끝나고 npm 래퍼와 실제 proxy가 모두 끝난다.
+- Given helper 없이 Tasty 터미널에서 직접 실행한 codex When 훅이 실행 Then 상태·메타데이터를 바꾸지 않는다.
 
-- Given Linux/macOS 의 sh/bash/zsh 에 `codex` alias 또는 function 이 우회 옵션을 추가한다 When `launch`/`spawn`/`respawn`/`reboot` 명령을 생성해 실행한다 Then 외부 Codex 에는 tasty 가 결정한 정책 인자만 전달되고 환경변수와 프롬프트 전달 방식이 유지된다.
+- Given Linux/macOS 의 sh/bash/zsh 에 `codex` alias 또는 function 이 우회 옵션을 추가한다 When `launch`/`spawn`/`respawn`/`reboot` 의 helper 명령을 실행한다 Then helper 는 tasty 가 결정한 thread·프롬프트 파일·정책 인자만 받는다.
 
 - Given 플러그인 활성 When `tasty codex spawn --prompt "…"` Then 자식 Codex 가 페인 분할로 생성되고 CLI는 호스트 응답 후 반환하며 자식 작업 완료는 기다리지 않는다.
 - Given 자식 When `tasty codex tell <msg>` Then 줄바꿈 보존하며 메시지가 전송·제출되고 CLI는 호스트 응답 후 반환하며 자식 작업 완료는 기다리지 않는다.

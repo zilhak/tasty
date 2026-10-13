@@ -7,6 +7,7 @@
 mod auto_resume;
 mod background_tasks;
 mod checklist;
+mod codex_return;
 mod error_scan;
 mod gate;
 mod handlers;
@@ -52,6 +53,10 @@ struct ClaudePlugin {
     state: Arc<Mutex<ClaudeState>>,
     /// 게이트가 붙은 Stop 과 그 판정의 짝. `claude-stop-pairing` 스레드가 시간 초과를 확정한다.
     pairing: Arc<Mutex<stop_pairing::StopPairing>>,
+    /// Codex 부모에게 돌려보낼 결과의 경로. 훅 워커·Stop 확정 스레드·송신 스레드가 함께 쓴다.
+    returns: Arc<codex_return::Returns>,
+    /// 결과 송신 스레드. `on_start` 에서 시작하고, 플러그인 값이 사라질 때 멈추고 회수한다.
+    return_pump: Option<codex_return::ReturnPump>,
     scanner: Arc<Mutex<ErrorScanner>>,
     /// API 오류 후 재개 예약. `claude-auto-resume` 스레드가 만기를 처리한다.
     resume: Arc<Mutex<auto_resume::ResumeTable>>,
@@ -86,6 +91,8 @@ impl ClaudePlugin {
         Self {
             state: Arc::new(Mutex::new(ClaudeState::new())),
             pairing: Arc::new(Mutex::new(stop_pairing::StopPairing::default())),
+            returns: Arc::new(codex_return::Returns::new(plugin_data_dir.as_deref())),
+            return_pump: None,
             scanner: Arc::new(Mutex::new(ErrorScanner::new())),
             resume: Arc::new(Mutex::new(auto_resume::ResumeTable::default())),
             resume_texts,
@@ -124,6 +131,7 @@ impl ClaudePlugin {
             scanner: &self.scanner,
             resume: &self.resume,
             pairing: &self.pairing,
+            returns: &self.returns,
             host,
         }
     }
@@ -150,6 +158,7 @@ impl Plugin for ClaudePlugin {
                 &self.scanner,
                 &self.resume,
                 &self.pairing,
+                &self.returns,
                 &ctx.host,
                 &ctx.params,
                 self.plugin_data_dir.as_deref(),
@@ -199,10 +208,23 @@ impl Plugin for ClaudePlugin {
             },
             "claude.parent" => handle_parent(&ctx.host, &ctx.params, &self.translator),
             "claude.state" => handle_state(&ctx.host, &ctx.params, &self.translator),
-            "claude.children" => handle_children(&ctx.host, &ctx.params, &self.translator),
-            "claude.kill" => handle_kill(&self.scanner, &ctx.host, &ctx.params, &self.translator),
-            "claude.broadcast" => handle_broadcast(&ctx.host, &ctx.params, &self.translator),
-            "claude.tell" => handle_tell(&ctx.host, &ctx.params, &self.translator),
+            "claude.children" => {
+                handle_children(&self.returns, &ctx.host, &ctx.params, &self.translator)
+            }
+            "claude.kill" => handle_kill(
+                &self.scanner,
+                &self.returns,
+                &ctx.host,
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.broadcast" => {
+                handle_broadcast(&self.returns, &ctx.host, &ctx.params, &self.translator)
+            }
+            "claude.tell" => handle_tell(&self.returns, &ctx.host, &ctx.params, &self.translator),
+            "claude.codex_returns" => {
+                codex_return::handle_returns(&self.returns, &ctx.params, &self.translator)
+            }
             "claude.notify_done" => handle_notify_done(&ctx.host, &ctx.params, &self.translator),
             "claude.notify_error" => handle_notify_error(&ctx.host, &ctx.params, &self.translator),
             "claude.notify_stop_failure" => {
@@ -217,6 +239,7 @@ impl Plugin for ClaudePlugin {
             ),
             "claude.respawn" => handle_respawn(
                 &self.scanner,
+                &self.returns,
                 &ctx.host,
                 &ctx.params,
                 self.plugin_data_dir.as_deref(),
@@ -224,6 +247,7 @@ impl Plugin for ClaudePlugin {
             ),
             "claude.spawn" => handle_spawn(
                 &self.scanner,
+                &self.returns,
                 &ctx.host,
                 &ctx.params,
                 self.plugin_data_dir.as_deref(),
@@ -307,16 +331,23 @@ impl Plugin for ClaudePlugin {
                 }
             })
             .expect("spawn claude-input-default thread");
-        let (state, scanner, resume, pairing) = (
+        let (state, scanner, resume, pairing, returns) = (
             self.state.clone(),
             self.scanner.clone(),
             self.resume.clone(),
             self.pairing.clone(),
+            self.returns.clone(),
         );
         let pairing_host = host.clone();
+        // 송신 스레드는 응답 상한을 짧게 둔 핸들을 쓴다. 느린 Codex 가 한 요청에 오래 묶어 두지 않는다.
+        let mut deliver_host = host.clone();
+        deliver_host.timeout = codex_return::DELIVER_CALL_TIMEOUT;
+        self.return_pump = codex_return::ReturnPump::start(self.returns.clone(), deliver_host);
         std::thread::Builder::new()
             .name("claude-stop-pairing".into())
-            .spawn(move || stop_pairing_loop(&state, &scanner, &resume, &pairing, &pairing_host))
+            .spawn(move || {
+                stop_pairing_loop(&state, &scanner, &resume, &pairing, &returns, &pairing_host)
+            })
             .expect("spawn claude-stop-pairing thread");
         // 등록된 최상위·자식 터미널을 별도 스레드에서 주기적으로 확인한다.
         let scanner = self.scanner.clone();
@@ -342,6 +373,7 @@ fn stop_pairing_loop(
     scanner: &Arc<Mutex<ErrorScanner>>,
     resume: &Mutex<auto_resume::ResumeTable>,
     pairing: &Mutex<stop_pairing::StopPairing>,
+    returns: &codex_return::Returns,
     host: &HostHandle,
 ) {
     let tail = hook::StopTail {
@@ -349,6 +381,7 @@ fn stop_pairing_loop(
         scanner,
         resume,
         pairing,
+        returns,
         host,
     };
     loop {

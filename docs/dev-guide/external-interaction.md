@@ -119,11 +119,10 @@ tasty 가 단일라인 tell 을 본문과 제출 `\r` 을 **한 문자열(`"{msg
 일반 메시지 전달인 `tasty claude tell`과 `tasty codex tell`은 계속 사용한다.
 `surface.completion`의 attention 표시와 작업 DAG의 completion strategy도 별개 기능이다.
 
-부모 Claude는 사용 가능한 Monitor로 파일을 구독할 수 있다. 부모 Codex는 기존 task에
-[관리형 전달자](../plugins/codex/index.md#관리형-작업으로-부모에게-결과-전달)를 붙여 task 결과를
-도구 결과로 받을 수 있다. 이 전달자는 일반 Codex 관리형 작업이며 completion-log writer나
-Tasty 자체 App Server sender와는 별개다. 관리 도구가 없으면 현재 턴에서 task를 조회한다. 파일에 기록됐다는 사실만으로 부모가 읽었거나 새 턴을
-시작했다고 보고하지 않는다. idle·입력 대기·중단·exit 알림은 작업 성공의 증명이 아니다.
+부모 Claude는 사용 가능한 Monitor로 파일을 구독할 수 있다. Codex 대화에서 spawn한 자식의
+턴 결과는 [Codex 부모에게 결과 반환](../plugins/codex/index.md#codex-부모에게-결과-반환)으로
+부모 thread의 대기열에 참조로 들어간다. 이 송신은 completion-log writer와 별개다. 파일에
+기록됐다는 사실만으로 부모가 읽었거나 새 턴을 시작했다고 보고하지 않는다. idle·입력 대기·중단·exit 알림은 작업 성공의 증명이 아니다.
 
 parent_home은 호스트가 주입한 `TASTY_PARENT_HOME`이며 없으면 `tasty_home()`을 사용한다.
 plugin writer와 부모의 PTY는 같은 값을 받는다. release·debug 경로를 추측하지 않는다.

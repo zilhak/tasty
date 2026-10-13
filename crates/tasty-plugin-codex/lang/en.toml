@@ -28,6 +28,7 @@ sandbox_hint = "⚠ sandbox init appears to have failed (RTM_NEWADDR detected) �
 
 [codex.reboot]
 notice = "tasty codex reboot: this session was restarted by tasty's reboot feature (codex resume resumes the same session). The previous turn may have been cut off — check the last work state before continuing."
+foreground_unreadable = "cannot read the foreground process of surface {surface}; the reboot needs it to confirm the shell is back before resuming"
 malformed_session_id = "surface {surface} has malformed codex-session-id meta: {value}"
 screen_unreadable = "cannot read the screen of surface {surface}"
 lock_poisoned = "reboot in-flight lock poisoned: {detail}"
@@ -72,7 +73,7 @@ write_failed = "could not write the codex config file: {detail}"
 description = "Launch a new workspace and start Codex in its terminal"
 
 [codex.cli.sub.spawn]
-description = "Create a child Codex instance in a split surface. Waits for host responses, then returns without waiting for the child task to finish. Registers hooks for idle, input-wait and exit notifications to the parent."
+description = "Create a child Codex instance in a split surface. Waits for host responses, then returns without waiting for the child task to finish. When called from a Codex conversation, each finished child turn is returned to that conversation; otherwise registers hooks for idle, input-wait and exit notifications to the parent surface."
 
 [codex.cli.sub.children]
 description = "List children of the specified Codex parent"
@@ -84,7 +85,7 @@ description = "Return the parent Codex surface id for a given child surface"
 description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)"
 
 [codex.cli.sub.tell]
-description = "Send a message with line breaks preserved and submit it. Waits for host responses, then returns without waiting for the task to finish. When a caller surface is provided, registers hooks for idle, input-wait and exit notifications."
+description = "Send a message with line breaks preserved and submit it. Waits for host responses, then returns without waiting for the task to finish. When called from a Codex conversation, the target's finished turns are returned to that conversation; otherwise, when a caller surface is provided, registers hooks for idle, input-wait and exit notifications."
 
 [codex.cli.sub.notify-caller]
 description = "Internal: report a child state change and remove matching once-hooks. If the target surface can still be found, register the completion hooks again. Called by spawn/tell hooks; not intended for direct use."
@@ -108,7 +109,7 @@ description = "Install Tasty hook into Codex CLI configuration"
 description = "Uninstall Tasty hook from Codex CLI configuration"
 
 [codex.cli.sub.hook]
-description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id, prompt, last_assistant_message) when invoked by Codex's hook system."
+description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id, prompt, last_assistant_message, model, turn_id) when invoked by Codex's hook system."
 
 [codex.cli.arg.launch_args.workspace]
 help = "Workspace name to create (defaults to \"codex\")"
@@ -176,6 +177,9 @@ help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-an
 [codex.cli.arg.children_args.surface]
 help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)"
 
+[codex.cli.arg.children_args.workspace]
+help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace"
+
 [codex.cli.arg.notify_caller_args.caller]
 help = "Surface ID to notify"
 
@@ -191,17 +195,26 @@ help = "Text to broadcast. Use \\r to submit (e.g. \"hello\\r\")"
 [codex.cli.arg.broadcast_args.surface]
 help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)"
 
+[codex.cli.arg.broadcast_args.workspace]
+help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace"
+
 [codex.cli.arg.broadcast_args.role]
 help = "Only send to children with this role label"
 
 [codex.cli.arg.kill_args.surface]
 help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)"
 
+[codex.cli.arg.kill_args.workspace]
+help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace"
+
 [codex.cli.arg.kill_args.child]
 help = "Child index to kill"
 
 [codex.cli.arg.respawn_args.surface]
 help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)"
+
+[codex.cli.arg.respawn_args.workspace]
+help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace"
 
 [codex.cli.arg.respawn_args.child]
 help = "Child index to respawn"
@@ -266,26 +279,58 @@ help = "The submitted prompt. Auto-populated from stdin JSON 'prompt' on the Use
 [codex.cli.arg.hook_args.last_assistant_message]
 help = "The assistant's final message of the turn. Auto-populated from stdin JSON 'last_assistant_message' on the Stop hook. When the surface runs a Tasty agent task, it is reported as that turn's final answer."
 
-[codex.cli.sub.managed]
-description = "Prepare and inspect a managed Codex task relay"
+[codex.cli.sub.result]
+description = "Read a child result that was returned to this Codex conversation. Run it from the Codex session that received the reference; reading does not delete the result."
 
-[codex.cli.arg.managed_args.action]
-help = "prepare | attach | get | callback | forget"
+[codex.cli.sub.session-open]
+description = "Internal: register a new session generation for the Codex session helper running in a terminal. Not intended for direct use."
 
-[codex.cli.arg.managed_args.workspace_id]
-help = "Existing task workspace ID"
+[codex.cli.arg.result_args.event]
+help = "Event ID from the reference message"
 
-[codex.cli.arg.managed_args.task_id]
-help = "Existing task ID"
+[codex.cli.arg.session_open_args.surface]
+help = "Terminal surface the helper runs in"
 
-[codex.cli.arg.managed_args.parent_thread]
-help = "Parent managed thread UUID (defaults to caller CODEX_THREAD_ID)"
+[codex.cli.arg.session_open_args.resume]
+help = "Thread UUID the helper resumes"
 
-[codex.cli.arg.managed_args.id]
-help = "Relay descriptor ID"
+[codex.cli.arg.session_open_args.tui_args]
+help = "JSON array of policy and model arguments passed to the TUI"
 
-[codex.cli.arg.managed_args.thread_id]
-help = "Managed thread UUID returned by create_thread"
+[codex.cli.arg.hook_args.gen]
+help = "Session generation set by the Tasty session helper. Hooks without the current generation are ignored."
 
-[codex.cli.arg.managed_args.cli_path]
-help = "Tasty executable for relay commands (defaults to this CLI)"
+[codex.cli.arg.hook_args.model]
+help = "Model of the session. Auto-populated from stdin JSON 'model'. Kept so that restoring the session uses the same model."
+
+[codex.cli.arg.hook_args.turn_id]
+help = "Turn ID. Auto-populated from stdin JSON 'turn_id'. Used so that one turn is returned to a Codex parent only once."
+
+[codex.state]
+no_data_dir = "The plugin data directory is not available, so Codex sessions and returned results cannot be stored"
+
+[codex.session]
+bad_args = "tasty codex session: invalid arguments: {detail}"
+not_in_tasty = "tasty codex session must run in a Tasty terminal ({detail} is not set)"
+open_failed = "tasty codex session: could not register the session with Tasty: {detail}"
+server_failed = "tasty codex session: the dedicated Codex app-server could not start, so Codex was not started: {detail}"
+tui_failed = "tasty codex session: could not run the Codex TUI: {detail}"
+resume_failed = "tasty codex session: could not reopen the Codex conversation with the requested settings: {detail}"
+
+[codex.parent]
+requires_codex_caller = "codex.parent must be called from a Codex conversation (no Codex caller context)"
+not_receivable = "Codex thread {thread} cannot receive results: it is not running in a Tasty Codex session and is not loaded in the shared Codex app-server"
+check_failed = "Could not check whether Codex thread {thread} is loaded in the shared Codex app-server: {detail}"
+
+[codex.deliver]
+invalid = "invalid codex.deliver request: {detail}"
+
+[codex.result]
+not_found = "No returned result with event ID {event}"
+other_thread = "Event {event} was returned to a different Codex conversation"
+
+[codex.owner]
+other_parent = "A Codex conversation manages only its own children. The parent surface {surface} you named is not this conversation"
+not_own_child = "Surface {surface} is not a child of this Codex conversation, so nothing was sent"
+not_codex_child = "Surface {surface} is not a Codex session started by Tasty, so its results will not return to this conversation"
+ambiguous_workspace = "The children of this Codex conversation are in more than one workspace ({workspaces}). Choose one with --workspace"

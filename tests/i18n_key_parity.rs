@@ -139,11 +139,6 @@ const SAME_AS_ENGLISH_ALLOWLIST: &[(&str, &[&str], &str)] = &[
         &["ko", "ja"],
         "에러 접두 식별자 (gate:)",
     ),
-    (
-        "codex.cli.arg.managed_args.action.help",
-        &["ko", "ja"],
-        "managed CLI가 받는 고정 액션 토큰 목록 — 입력값을 그대로 안내한다",
-    ),
 ];
 
 const MODIFIER_TOKENS: &[&str] = &[

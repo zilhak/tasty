@@ -85,7 +85,17 @@ fn surface_query_cli_entry_points_reach_their_handlers() {
                 super::surface::handle_cursor_position(&engine.as_ref(), json!(1), &req.params)
             }
             "surface.foreground_process" => {
-                super::surface::handle_foreground_process(&engine.as_ref(), json!(1), &req.params)
+                let resp = super::surface::handle_foreground_process(
+                    &engine.as_ref(),
+                    json!(1),
+                    &req.params,
+                );
+                // 이 fixture는 셸을 실행하지 않으므로 전경을 조회할 수 없다.
+                let result = resp.result.as_ref().expect("foreground_process 응답");
+                for key in ["name", "pid", "is_shell"] {
+                    assert!(result[key].is_null(), "{key}: {result}");
+                }
+                resp
             }
             _ => super::surface::handle_surface_locate(&engine, json!(1), &req.params),
         };

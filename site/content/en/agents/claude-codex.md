@@ -1,4 +1,4 @@
-<!-- source-hash: 87168a3fc7ad -->
+<!-- source-hash: 574aa3d73b8e -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -20,6 +20,7 @@ tasty codex install     # add the Tasty entry to [hooks] in ~/.codex/config.toml
 - When a child ends its turn on an API error while background work (a background shell or a background subagent) is still running, Tasty keeps it "working" until the turn that follows that work finishes. This also arrives only with a reinstall.
 - If Codex shows a `hook returned invalid ... JSON output` error, update and run `tasty codex install` again. It sets things up so Tasty's status reporting does not mix into Codex's hook response.
 - These hooks do not run when you use Claude Code outside Tasty.
+- Codex does not run new or changed hooks until you review them. After installing, review and approve the Tasty hooks with `/hooks` in Codex. Tasty does not skip this review.
 - To remove: `tasty claude uninstall` / `tasty codex uninstall`.
 
 Select the actual Codex home or profile when it differs from the default. Use one location
@@ -37,18 +38,13 @@ When the installed hooks run successfully in the current session, Tasty receives
 - When you close and restore a Tab, or restart Tasty, the same session resumes (`claude -r` / `codex resume`).
 - Receiving a child’s state and results also requires [parent setup](#4-receiving-completion-notifications). Completion lands in the completion log as one line, and a Claude Code parent uses Monitor to subscribe to it.
 
-When you start Codex through Tasty's launch commands, Tasty manages hooks and restore information per terminal.
-Restoring uses the same method. This is based on Codex CLI 0.154.0.
-When you type a Codex command into a terminal yourself, run it like this.
+Start Codex through Tasty's launch commands (`launch`, `spawn`, `respawn`, `reboot`, and Tab restore) so its hooks and
+restore information are tied to that terminal. Tasty then starts a dedicated Codex server for each terminal and connects
+Codex to it. The server ends when Codex ends or the terminal is closed. If the dedicated server cannot start, Tasty shows an error instead of
+starting Codex some other way. This is based on Codex CLI 0.154.0.
 
-```sh
-codex -c check_for_update_on_startup=false
-codex resume -c check_for_update_on_startup=false SESSION_ID
-```
-
-Replace `SESSION_ID` with the ID of the conversation to continue. If you connect directly to a shared App Server, old terminal
-information left on the server can keep restore information from being saved. A conversation already in that state,
-or an explicit `--remote` connection, is not connected automatically just by updating Tasty.
+If you type `codex` into a terminal yourself, Tasty does not receive its state or restore information. Tasty does not
+change a shared Codex server that is already running or a session you connected with `--remote`.
 
 ## 2. Launching
 
@@ -106,7 +102,7 @@ tasty claude parent --surface 57                            # the parent of this
 
 A Claude child started without a prompt is `idle` once its input screen appears. No completion notice is sent then; a completion notice comes only when a response ends. A child started with `--prompt` is `active` while it works on that prompt.
 
-`tasty codex …` has the same subcommands (`tell` / `children` / `state` / `broadcast` / `kill` / `respawn` / `parent`).
+`tasty codex …` has the same subcommands (`tell` / `children` / `state` / `broadcast` / `kill` / `respawn` / `parent`). Run from a Codex conversation, results come back differently ([Automatic delivery to a Codex parent](#automatic-delivery-to-a-codex-parent)).
 
 When there are too many children, a warning is attached to the spawn response. Change the threshold at **Settings** › **Plugins** › **Claude Code** / **Codex** › **Spawn child warning threshold** (default 6 for both Claude Code and Codex).
 
@@ -141,42 +137,70 @@ Give each copy its own data folder with `TASTY_HOME` if you need both.
 
 ### Automatic delivery to a Codex parent
 
-When Codex provides its task creation and messaging tools, a separate Codex task can wait for an
-existing Tasty task and deliver its result to the parent. The child terminal and original task stay in place.
+When you run `tasty codex spawn` (or `tell` or `respawn`) inside a Codex conversation, the child's result returns to that
+conversation each time the child finishes a response. There is no separate setup command.
 
 ```sh
-tasty codex managed prepare --workspace-id 456 --task-id TASK_ID
+tasty codex spawn --workspace workers --cwd ~/proj --sandbox read-only \
+  --prompt "Review the diff that was just committed"
 ```
 
-Replace `TASK_ID` with the task to watch. The parent Codex reads its current thread ID automatically.
+The parent conversation receives a short reference message like the one below. The child's answer itself is not included.
 
-| Option | Meaning |
-|---|---|
-| `--parent-thread <ID>` | The parent Codex thread that receives the result. If omitted, the calling Codex's `CODEX_THREAD_ID` is used |
-| `--cli-path <path>` | The Tasty executable the relay runs. If omitted, the `tasty` you just ran is used |
+```text
+[tasty] A child agent reported a turn boundary. provider=codex status=turn_ended event=<event ID>. ...
+```
 
-This currently supports local callers; prepare rejects calls carrying an agent authentication token.
-Pass the returned `create_thread_args` to Codex's task creation tool, then attach the returned task ID.
+The parent reads the result with the command in the message.
 
 ```sh
-tasty codex managed attach --id RELAY_ID --thread-id MANAGED_THREAD_ID
-tasty codex managed get --id RELAY_ID
+tasty codex result <event ID>
 ```
 
-The relay follows the prepared instructions to check the task. When it ends or a lookup error stops the relay, the relay passes the messaging
-arguments returned by `managed callback --id RELAY_ID` to Codex's messaging tool. The parent receives tool
-output during its current work, or can start a new turn when idle. Check receipt and task success separately.
-`callback` only prepares messaging arguments. It does not establish task completion or parent receipt.
+- Only the conversation that received the result can read it. Reading it any number of times does not delete it.
+- The result is recorded after the child Codex has actually finished the turn, with the last answer of that turn. If another Stop hook makes the response continue, you get the last answer, not an intermediate one.
+- `status` tells how the response ended, not whether the work went well: `turn_ended` (the response ended), `interrupted` (the user stopped it), `exited` (the session ended; a child that only starts a new conversation with `/new` in the same terminal has not exited), or `turn_failed` (it ended with an error).
+- An answer over 1 MiB is cut and marked with `body_truncated`.
+- If the same response is reported twice, it is delivered once.
+- A result that could not be sent because the shared Codex server was briefly unreachable is sent again at growing intervals (up to one minute). After twelve failures, it is sent again when that conversation's next result arrives or when Tasty restarts.
+- Results are kept for 30 days after delivery finishes and then deleted.
 
-The relay is an ordinary Codex task that uses a model. It adds usage and needs the Codex frontend connection
-to remain available. Do not substitute a native subagent. Missing management tools or pending approval can
-prevent automatic delivery. You do not need to find and configure a server address, socket, or authentication token. Prepared commands use the specified Tasty executable and port file together with a command-scoped `TASTY_HOME`.
+A parent can receive results in two cases.
 
-Remove a finished relay record with `tasty codex managed forget --id RELAY_ID`. This does not cancel the
-original task or close the Codex relay.
+- The parent is a Codex started through Tasty's launch commands. If the parent Codex is closed for a while, the result is kept and sent when that conversation opens in Tasty again. If you start a new conversation with `/new` or switch back to another conversation in the same terminal, the conversation that is running receives results from then on.
+- The parent is a Codex outside Tasty, and that conversation is open in your shared Codex server.
 
-If Tasty restarts after you prepare a relay, that relay record can no longer be used. When `attach`, `get` or
-`callback` fails with a `relay_instance_changed` error, start again from `managed prepare`.
+Otherwise, Tasty does not create the child and shows an error saying the parent cannot receive results. A Claude Code parent receives through the [completion log](#4-receiving-completion-notifications).
+
+A Codex conversation manages only the children it created; a new conversation started with `/new` in the same terminal cannot list or close the children of the previous one either. A `tell` to another parent's child, or naming another parent with `--surface`, is refused. If Claude Code or a plain terminal sends a new instruction to the same child, later results no longer return to the original Codex conversation, including the result of a response that had not finished or been confirmed at that moment. Results that already returned can still be read.
+
+If the children of a Codex conversation are spread over several workspaces, name one of them with `--workspace` for `children`, `broadcast`, `kill` and `respawn`. A request reaches only the children in the window that holds that workspace, so send one request per window when the children are in several windows. You do not need it when all children are in one workspace or when the command targets one child.
+
+### Running Claude children from a Codex conversation
+
+When you run `tasty claude spawn`, `tell`, `children`, `broadcast`, `kill`, or `respawn` inside a Codex conversation, the parent is found automatically. You don't need `--surface`, and a surface that belongs to another conversation is refused. The Codex plugin must be installed and enabled; without it the command ends with an error instead of falling back to another parent.
+
+```sh
+tasty claude spawn --workspace workers --cwd ~/proj --prompt "Run the tests"
+tasty claude tell "Run clippy too this time" --surface 57   # you still name the target child
+```
+
+When the child Claude finishes its response, the answer goes back to the original Codex conversation. If a Stop gate made the response continue, or the child is waiting for background work, nothing is sent; the result is sent once, when the response really ends. Tells merged into one response come back as one result. A returned result means the response ended, not that the work is correct. A response that ended on an API error and a child that exited mid-response are reported with that status.
+
+Responses after a `/clear` or `/resume` in the child still go back to the same Codex conversation. If Claude Code starts the new session without waiting for the end notice of the old one, the route continues when the new session starts its next response.
+
+If the child ended and Claude was started again in the same surface, telling that child again from the Codex conversation brings the new run's responses back. If you `tell` or `respawn` the same child from somewhere other than Codex (a plain shell or a Claude parent), its results stop going to the Codex conversation. Results of responses that already ended are still sent.
+
+If a result could not be handed to the Codex plugin, it is kept rather than dropped. It is sent again automatically at growing intervals (up to 5 minutes), and automatic retries stop after a day without success. Sending the same result again still lands in the Codex conversation only once.
+
+```sh
+tasty claude codex-returns           # show pending results and their text
+tasty claude codex-returns --retry   # put every pending result back in line to be sent now
+```
+
+`--retry` also puts back results whose automatic retry stopped, and returns without waiting for the sending. The list it prints can therefore still show the results it just put back; run `codex-returns` again a moment later to check.
+
+When the children of one Codex conversation are in more than one workspace, pass `--workspace` to `children`, `kill`, `broadcast`, or `respawn` to say which workspace's children you mean. Without it the command is refused and lists the candidates. The workspace a child is in now counts, so a child that was restored into another workspace is found where it is now.
 
 ### Resuming Claude automatically after an API error
 
@@ -194,12 +218,13 @@ When a temporary API error such as a server overload ends Claude's turn, Tasty c
 
 `tasty codex spawn/launch/respawn/reboot` accept Codex's approval and sandbox policies as flags.
 
-`launch`/`spawn`/`respawn` bypass shell `codex` aliases and functions in sh/bash/zsh and Windows Git Bash, running Codex installed on `PATH`. Specify approval and sandbox options through the flags below or global settings. Alias/function bypass for `reboot` applies on Linux/macOS. Windows `reboot` keeps its existing launch behavior and does not yet bypass aliases or functions.
+`launch`/`spawn`/`respawn`/`reboot` do not go through shell `codex` aliases or functions and run Codex installed on `PATH`. Specify approval and sandbox options through the flags below or global settings. The launch command uses sh/bash/zsh and Windows Git Bash syntax.
 
 - **Approval**: `--approval untrusted|on-request|never`. Without a per-call option, Tasty uses the plugin’s global default. If that is unset or **Inherit**, it uses **`never`** so automation does not wait for an approval response. Specify `untrusted` / `on-request` only when a person is beside it to approve.
 - **Sandbox**: `--sandbox read-only|workspace-write|danger-full-access`. Without a per-call option, Tasty uses the plugin’s global default. If that is unset or Inherit, it leaves the choice to Codex. `read-only` suits children used for review and cross-checking.
 - `--full-auto`: bypasses both approval and sandbox. Cannot be combined with `--approval`/`--sandbox`.
 - The global defaults are **Default approval policy** / **Default sandbox mode** at **Settings** › **Plugins** › **Codex**. Per-call flags take precedence.
+- `reboot` and Tab restore, which reopen an existing conversation, apply the same policy. If the policy cannot be applied, Codex does not start and the terminal shows the reason.
 
 In environments where nested sandboxes are not possible, such as containers, if specifying `--sandbox` fails with something like `RTM_NEWADDR: Operation not permitted`, use `--full-auto`. This hint is also attached to the completion notification.
 
@@ -226,6 +251,8 @@ tasty codex reboot --surface 58
 ```
 
 After the specified delay, Tasty stops the process and resumes the same session. When an agent calls this on **itself**, it should make this its last action of the turn, since stopping the process interrupts any remaining response. Restarting a child does not interrupt the parent's response.
+
+A successful `tasty codex reboot` reply means the restart was scheduled. Check the plugin log (`tasty plugin logs com.tasty.codex`) to see whether it finished. If you start Codex again in the same terminal while it waits, the restart stops without typing into that Codex.
 
 <a id="7-claude-session-profiles-and-the-stop-gate"></a>
 
@@ -261,6 +288,8 @@ tasty claude spawn --workspace w --profile continue-checklist
 - **`reboot` fails with "claude-session-id meta not set"** — the session-start hook failed to record the session ID. Set it directly with `tasty surface-meta set --key claude-session-id --value <session ID>`.
 - **The child is not spawned and you get an "occupied" error** — the target Workspace is being attached from a remote, or is a mirror. Use another Workspace.
 - **`kill` is refused with a "hard-occupied" error** — a remote user is attached to the Workspace that holds that child. The child relationship and its Tab stay as they are. Run `kill` again after the remote side disconnects or you release the hold with Force detach.
+- **Codex does not start and says "app-server could not start"** — Tasty could not start the dedicated Codex server for that terminal. Check that `codex app-server --help` runs in the same terminal. This feature was checked against Codex CLI 0.154.0.
+- **Results do not reach a Codex parent** — check that the Tasty hooks are approved in Codex's `/hooks` and that you spawned the child inside the Codex conversation. If you started the parent by typing `codex` yourself, that conversation must be open in your shared Codex server.
 - **No notifications when launched from the app icon on macOS** — Tasty calls `tasty` again when it writes notifications, but Tasty adds its own executable path to PATH automatically, so this is normally not a problem. If it still fails, look at `hook-failures.log`.
 
 <a id="what-to-read-next"></a>

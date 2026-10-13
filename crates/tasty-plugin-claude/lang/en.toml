@@ -73,6 +73,18 @@ stop_failure_background_message = "surface {}: the turn ended on an API error ({
 [claude.launch]
 workspace_create_missing_id = "host workspace.create response is missing 'id'"
 
+[claude.codex]
+bad_context = "The Codex caller context has no valid thread_id. The child was not created and no other parent was used."
+parent_failed = "Could not resolve the Codex parent through codex.parent (is the Codex plugin installed and enabled?): {}"
+parent_malformed = "codex.parent returned an unexpected response: {}"
+parent_mismatch = "--surface {} is not the parent of this Codex conversation. Omit --surface; a Codex caller's parent is resolved automatically."
+not_a_child = "Surface {} is not a child of this Codex conversation."
+route_not_saved = "Could not save where to return the result: {}"
+child_route_not_saved = "Child surface {} was created, but where to return its result could not be saved: {}"
+no_data_dir = "The Claude plugin has no data directory, so results cannot be returned to a Codex parent."
+ambiguous_workspace = "The children of this Codex conversation are in several workspaces ({}). Pass --workspace to choose one."
+route_not_released = "Surface {} still returns its results to a Codex conversation, and that route could not be released, so the instruction was not sent: {}"
+
 [claude.child]
 unknown_index = "no child at index {} under parent surface {} (available indices: {})"
 
@@ -162,6 +174,9 @@ description = "Broadcast text to all children of a parent Claude instance"
 
 [claude.cli.sub.kill]
 description = "Kill a child Claude instance by child index"
+
+[claude.cli.sub.codex-returns]
+description = "List turn results of Codex-parented children that could not be handed to the Codex plugin yet, with their receiver, body and retry state. --retry puts every listed result back in line to be sent now, including ones whose automatic retry stopped, and returns without waiting for the sending."
 
 [claude.cli.sub.respawn]
 description = "Respawn a child Claude instance"
@@ -366,6 +381,21 @@ help = "Claude session profile (settings JSON) to attach via --settings on resum
 
 [claude.cli.arg.reboot_args.profile]
 help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the surface (re-resolved from the registry on each future reboot, so edits to the profile or gate are picked up) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file"
+
+[claude.cli.arg.codex_returns_args.retry]
+help = "Put every pending result back in line to be sent now, including ones whose automatic retry stopped. The command does not wait for the sending, so the list it prints is the pending list at the time of the request"
+
+[claude.cli.arg.children_args.workspace]
+help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace"
+
+[claude.cli.arg.kill_args.workspace]
+help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace"
+
+[claude.cli.arg.broadcast_args.workspace]
+help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace"
+
+[claude.cli.arg.respawn_args.workspace]
+help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace"
 
 [claude.cli.arg.reboot_args.clear_profile]
 help = "Detach a previously attached session profile (path- or name-based) before resuming"

@@ -72,6 +72,18 @@ stop_failure_background_message = "surface {}: API 에러({})로 턴이 끝났�
 [claude.launch]
 workspace_create_missing_id = "호스트 workspace.create 응답에 'id'가 없습니다"
 
+[claude.codex]
+bad_context = "Codex 호출 정보에 올바른 thread_id가 없습니다. 자식을 만들지 않았고 다른 부모로 대신하지 않았습니다."
+parent_failed = "codex.parent로 Codex 부모를 찾지 못했습니다(Codex 플러그인이 설치되어 켜져 있는지 확인하세요): {}"
+parent_malformed = "codex.parent 응답 형식이 예상과 다릅니다: {}"
+parent_mismatch = "--surface {}는 이 Codex 대화의 부모가 아닙니다. Codex 호출의 부모는 자동으로 정해지므로 --surface를 빼세요."
+not_a_child = "서피스 {}는 이 Codex 대화의 자식이 아닙니다."
+route_not_saved = "결과를 돌려보낼 곳을 저장하지 못했습니다: {}"
+child_route_not_saved = "자식 서피스 {}는 만들었지만 결과를 돌려보낼 곳을 저장하지 못했습니다: {}"
+no_data_dir = "Claude 플러그인 데이터 폴더가 없어 Codex 부모에게 결과를 돌려보낼 수 없습니다."
+ambiguous_workspace = "이 Codex 대화의 자식이 여러 워크스페이스에 있습니다({}). --workspace로 하나를 고르세요."
+route_not_released = "서피스 {}의 결과는 아직 Codex 대화로 돌아가도록 되어 있고 그 경로를 끊지 못해 지시를 보내지 않았습니다: {}"
+
 [claude.child]
 unknown_index = "인덱스 {}인 자식이 부모 surface {} 아래에 없습니다(사용 가능한 인덱스: {})."
 
@@ -161,6 +173,9 @@ description = "부모 Claude 인스턴스의 모든 자식에게 텍스트 일�
 
 [claude.cli.sub.kill]
 description = "자식 인덱스로 Claude 인스턴스 종료"
+
+[claude.cli.sub.codex-returns]
+description = "Codex 부모를 둔 자식의 턴 결과 중 아직 Codex 플러그인에 넘기지 못한 것을 수신처·본문·재시도 상태와 함께 보여 줍니다. --retry는 자동 재시도를 멈춘 것을 포함해 목록의 결과를 모두 지금 보낼 차례로 돌리고, 송신을 기다리지 않고 바로 돌아옵니다."
 
 [claude.cli.sub.respawn]
 description = "자식 Claude 인스턴스 재생성"
@@ -365,6 +380,21 @@ help = "재개 시 --settings로 부착할 Claude 세션 프로필(settings JSON
 
 [claude.cli.arg.reboot_args.profile]
 help = "부착할 등록 세션 프로필/Stop 훅 게이트 이름(복수는 쉼표 구분, 한 파일로 병합. 'claude profile-register', 'claude gate-register' 참조). 서피스에 저장되며 재부팅마다 레지스트리에서 다시 읽어 편집을 반영합니다. --clear-profile까지 상속. --profile-file과 함께 사용 불가"
+
+[claude.cli.arg.codex_returns_args.retry]
+help = "자동 재시도를 멈춘 것을 포함해 남은 결과를 모두 지금 보낼 차례로 돌립니다. 송신을 기다리지 않으므로 출력되는 목록은 요청 시점에 남아 있던 결과입니다"
+
+[claude.cli.arg.children_args.workspace]
+help = "자식이 있는 워크스페이스(ID 또는 이름). 자식이 여러 워크스페이스에 있는 Codex 대화에서 호출할 때만 씁니다"
+
+[claude.cli.arg.kill_args.workspace]
+help = "자식이 있는 워크스페이스(ID 또는 이름). 자식이 여러 워크스페이스에 있는 Codex 대화에서 호출할 때만 씁니다"
+
+[claude.cli.arg.broadcast_args.workspace]
+help = "자식이 있는 워크스페이스(ID 또는 이름). 자식이 여러 워크스페이스에 있는 Codex 대화에서 호출할 때만 씁니다"
+
+[claude.cli.arg.respawn_args.workspace]
+help = "자식이 있는 워크스페이스(ID 또는 이름). 자식이 여러 워크스페이스에 있는 Codex 대화에서 호출할 때만 씁니다"
 
 [claude.cli.arg.reboot_args.clear_profile]
 help = "재개 전에 기존 세션 프로필 부착 해제(경로 또는 이름 기반)"

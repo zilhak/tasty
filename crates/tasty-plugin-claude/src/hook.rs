@@ -83,6 +83,8 @@ pub(crate) struct StopTail<'a, H> {
     pub scanner: &'a Arc<Mutex<ErrorScanner>>,
     pub resume: &'a Mutex<crate::auto_resume::ResumeTable>,
     pub pairing: &'a Mutex<StopPairing>,
+    /// Codex 부모에게 돌려보낼 결과의 경로. 턴 종료를 확정할 때 쓴다.
+    pub returns: &'a crate::codex_return::Returns,
     pub host: &'a H,
 }
 
@@ -100,11 +102,14 @@ impl<H: HostCallSink> StopTail<'_, H> {
         let Some(session_id) = session.filter(|_| gates > 0) else {
             return 0;
         };
+        // 결과 경로의 턴은 Stop 이 온 지금 정한다. 판정이 늦게 와도 그 사이 열린 새 턴으로 바뀌지 않는다.
+        let turn = self.returns.turn_of(surface_id, Some(session_id));
         let held = crate::stop_pairing::HeldStop {
             surface_id,
             prompt_id,
             kind,
             final_answer,
+            turn,
         };
         let settled =
             lock_pairing(self.pairing).stop(session_id, held, gates, std::time::Instant::now());
@@ -136,7 +141,17 @@ impl<H: HostCallSink> StopTail<'_, H> {
                     "claude stop s{}: every gate let the turn end — reporting idle",
                     s.surface_id
                 );
-                crate::task_turn::report_ended(self.host, s.surface_id, s.final_answer.as_deref());
+                crate::task_turn::report_ended(
+                    self.host,
+                    self.returns,
+                    crate::task_turn::Ended {
+                        surface_id: s.surface_id,
+                        session: Some(&s.session),
+                        final_answer: s.final_answer.as_deref(),
+                        attempt_id: None,
+                        turn: s.turn.clone(),
+                    },
+                );
                 failures += self.run_idle_stop(s.surface_id);
             } else if s.kind == StopKind::Idle {
                 tracing::info!(
@@ -160,6 +175,19 @@ impl<H: HostCallSink> StopTail<'_, H> {
                     "claude stop s{}: a new turn started before the timed-out stop was reported — dropped",
                     e.settled.surface_id
                 );
+                // 상태 보고는 새 턴을 덮지 않도록 버리지만, Codex 부모에게는 Stop 이 온 턴의 결과로 보낸다.
+                if e.settled.runs_idle()
+                    && let Some(turn) = e.settled.turn.clone()
+                {
+                    self.returns.turn_end(crate::codex_return::TurnEnd {
+                        surface: e.settled.surface_id,
+                        session: Some(&e.settled.session),
+                        status: crate::codex_return::ReturnStatus::TurnEnded,
+                        body: e.settled.final_answer.as_deref(),
+                        attempt_id: None,
+                        turn: Some(turn),
+                    });
+                }
                 continue;
             }
             failures += self.finish([e.settled]);
@@ -215,6 +243,7 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
     scanner: &Arc<Mutex<ErrorScanner>>,
     resume: &Mutex<crate::auto_resume::ResumeTable>,
     pairing: &Mutex<StopPairing>,
+    returns: &crate::codex_return::Returns,
     host: &H,
     params: &Value,
     data_dir: Option<&Path>,
@@ -241,8 +270,21 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         scanner,
         resume,
         pairing,
+        returns,
         host,
     };
+    // 결과 경로의 세션을 묶는다. 턴 종료를 판정하기 전에 해야 한다. 새 프롬프트의 턴 순번은 보류 중인
+    // Stop 을 앞 턴으로 확정한 뒤에 올린다(아래). 먼저 올리면 앞 턴 결과가 새 턴 키로 claim 된다.
+    let detail = params
+        .get(if event == "session-end" {
+            "reason"
+        } else {
+            "source"
+        })
+        .and_then(Value::as_str);
+    if event != "prompt-submit" {
+        returns.observe(event, surface_id, session.as_deref(), detail);
+    }
 
     if is_subagent_stop_failure(event, agent_id) {
         // 메인 턴은 끝나지 않았다 — 상태·알림·meta 어느 것도 건드리지 않는다.
@@ -295,7 +337,10 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
     // 새 프롬프트가 왔다면 보류 중인 Stop 에서 턴이 끝났다. 새 턴의 active 보다 먼저 idle 을 보고하고,
     // agent task 에도 앞 턴의 끝을 새 턴의 시작보다 먼저 보고한다.
     let settled_failures = tail.settle_at_turn_boundary(event, session.as_deref());
-    crate::task_turn::report(host, event, surface_id, params);
+    if event == "prompt-submit" {
+        returns.observe(event, surface_id, session.as_deref(), detail);
+    }
+    crate::task_turn::report(host, returns, event, surface_id, session.as_deref(), params);
 
     let mut calls = apply_hook(
         event,
@@ -356,6 +401,15 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
 
     // 게이트 판정은 별도 경로지만 세션 종료 시 모든 게이트의 회차 상태를 정리한다.
     if event == "session-end" {
+        // 확정되지 않은 채 끝난 턴은 Codex 부모에게 exited 로 알린다. 확정된 턴이면 보내지 않는다.
+        returns.turn_end(crate::codex_return::TurnEnd {
+            surface: surface_id,
+            session: session.as_deref(),
+            status: crate::codex_return::ReturnStatus::Exited,
+            body: None,
+            attempt_id: None,
+            turn: None,
+        });
         checklist::remove_state_for_session(data_dir, session.as_deref().unwrap_or(""));
         // 닫은 탭을 곧바로 복원할 수 있도록 즉시 지우지 않고 종료 표시만 남긴다.
         // reboot 뒤 session-start가 오면 새 기록으로 갱신한다.
@@ -1262,6 +1316,30 @@ mod tests {
                 .collect()
         }
 
+        /// Codex 부모에게 보낸 결과를 (status, body) 로 차례대로 꺼낸다.
+        fn codex_returns(&self) -> Vec<(String, Option<String>)> {
+            self.seen
+                .borrow()
+                .iter()
+                .filter(|(m, _)| m == "codex.deliver")
+                .map(|(_, p)| {
+                    (
+                        p["status"].as_str().unwrap_or("").to_string(),
+                        p["body"].as_str().map(String::from),
+                    )
+                })
+                .collect()
+        }
+
+        fn delivered_keys(&self) -> Vec<String> {
+            self.seen
+                .borrow()
+                .iter()
+                .filter(|(m, _)| m == "codex.deliver")
+                .map(|(_, p)| p["completion_key"].as_str().unwrap_or("").to_string())
+                .collect()
+        }
+
         fn unset_keys(&self) -> Vec<String> {
             self.seen
                 .borrow()
@@ -1278,6 +1356,9 @@ mod tests {
         scanner: Arc<Mutex<ErrorScanner>>,
         resume: Mutex<crate::auto_resume::ResumeTable>,
         pairing: Mutex<StopPairing>,
+        returns: crate::codex_return::Returns,
+        /// 결과 경로 파일을 두는 임시 폴더. 시험이 끝날 때까지 유지한다.
+        _returns_dir: tempfile::TempDir,
         host: RecordingHost,
     }
 
@@ -1289,11 +1370,14 @@ mod tests {
             state.mark_session_start(Self::SURFACE, 1_000);
             let resume = Mutex::new(crate::auto_resume::ResumeTable::default());
             crate::auto_resume::lock_table(&resume).record_attempt(Self::SURFACE);
+            let returns_dir = tempfile::tempdir().expect("returns dir");
             Self {
                 state: Mutex::new(state),
                 scanner: Arc::new(Mutex::new(ErrorScanner::new())),
                 resume,
                 pairing: Mutex::new(StopPairing::default()),
+                returns: crate::codex_return::Returns::new(Some(returns_dir.path())),
+                _returns_dir: returns_dir,
                 host: RecordingHost::default(),
             }
         }
@@ -1326,6 +1410,7 @@ mod tests {
                 scanner: &self.scanner,
                 resume: &self.resume,
                 pairing: &self.pairing,
+                returns: &self.returns,
                 host: &self.host,
             }
         }
@@ -1355,6 +1440,7 @@ mod tests {
                 scanner: &self.scanner,
                 resume: &self.resume,
                 pairing: &self.pairing,
+                returns: &self.returns,
                 host: &self.host,
             }
             .finish(settled);
@@ -1366,6 +1452,7 @@ mod tests {
                 &self.scanner,
                 &self.resume,
                 &self.pairing,
+                &self.returns,
                 &self.host,
                 &params,
                 None,
@@ -1533,6 +1620,301 @@ mod tests {
         rig.run(gated_waiting_stop("p1"));
         rig.gate(json!({}), "p1");
         assert!(rig.host.turn_reports().is_empty());
+    }
+
+    impl HookRig {
+        /// 송신 스레드가 할 한 차례 송신을 하고 Codex 부모에게 보낸 결과를 (status, body) 로 꺼낸다.
+        fn codex_returns(&self) -> Vec<(String, Option<String>)> {
+            self.returns
+                .pump_once(&self.host, crate::codex_return::now_ms());
+            self.host.codex_returns()
+        }
+
+        /// 이 surface 의 Claude 를 Codex 부모가 spawn 했고 세션이 시작됐다.
+        fn codex_child(&mut self) {
+            self.returns
+                .bind_new_child(
+                    Self::SURFACE,
+                    &crate::codex_return::Binding {
+                        receiver_id: "receiver-1".into(),
+                        parent_external: None,
+                    },
+                    true,
+                )
+                .expect("route stored");
+            self.run(
+                json!({ "event": "session-start", "surface": Self::SURFACE, "session": "sess-1" }),
+            );
+        }
+    }
+
+    fn returned(status: &str, body: Option<&str>) -> (String, Option<String>) {
+        (status.to_string(), body.map(String::from))
+    }
+
+    /// 게이트가 이어 간 Stop 은 Codex 부모에게 보내지 않는다. 통과한 마지막 Stop 만 한 번 보낸다.
+    #[test]
+    fn a_gated_turn_returns_only_its_final_stop_to_the_codex_parent() {
+        for gate_first in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut rig = HookRig::with_gates(dir.path(), 1);
+            rig.codex_child();
+            for (answer, decision) in [
+                ("draft 1", json!({ "decision": "block" })),
+                ("draft 2", json!({ "decision": "block" })),
+                ("final", json!({})),
+            ] {
+                if gate_first {
+                    rig.gate(decision.clone(), "p1");
+                }
+                rig.run(gated_stop_answering("p1", answer));
+                if !gate_first {
+                    rig.gate(decision, "p1");
+                }
+            }
+            assert_eq!(
+                rig.codex_returns(),
+                vec![returned("turn_ended", Some("final"))],
+                "gate_first={gate_first}"
+            );
+        }
+    }
+
+    /// 게이트 판정을 기다리는 Stop 이 있는 동안 새 프롬프트가 오면, 보류된 Stop 은 앞 턴의 결과로 확정되고
+    /// 새 턴의 결과는 따로 한 번 나간다. 새 턴 순번을 먼저 올리면 앞 턴 본문이 새 턴 키로 나가고 새 턴
+    /// 결과가 중복으로 버려진다.
+    #[test]
+    fn a_pending_gated_stop_is_settled_as_the_previous_turn_before_a_new_prompt_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.codex_child();
+        let prompt = || json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-1" });
+        rig.run(prompt());
+        rig.run(gated_stop_answering("p1", "first"));
+        rig.run(prompt());
+        rig.gate(json!({}), "p2");
+        rig.run(gated_stop_answering("p2", "second"));
+        assert_eq!(
+            rig.codex_returns(),
+            vec![ended("first"), ended("second")],
+            "each turn returns its own answer once"
+        );
+        let keys = rig.host.delivered_keys();
+        assert_eq!(keys.len(), 2);
+        assert!(keys[0].ends_with(":t1"), "{keys:?}");
+        assert!(keys[1].ends_with(":t2"), "{keys:?}");
+    }
+
+    /// 확정 스레드가 시간 초과 Stop 을 꺼낸 뒤 보고가 늦어지는 사이 새 프롬프트가 두 번 오거나 새 턴의 최종
+    /// Stop 까지 끝나도, 늦은 Stop 의 결과는 그 Stop 이 온 턴의 키로 한 번만 나간다. 새 턴 결과도 제 키로 한 번이다.
+    #[test]
+    fn a_delayed_timeout_report_keeps_the_key_of_the_turn_its_stop_came_in() {
+        for newer_turn_finished in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut rig = HookRig::with_gates(dir.path(), 1);
+            rig.codex_child();
+            let prompt = || json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-1" });
+            rig.run(prompt());
+            rig.run(gated_stop_answering("p1", "first"));
+            let expired = rig.take_expired();
+            rig.run(prompt());
+            rig.run(prompt());
+            if newer_turn_finished {
+                rig.gate(json!({}), "p3");
+                rig.run(gated_stop_answering("p3", "third"));
+            }
+            rig.tail().finish_expired(expired);
+            let mut got: Vec<(String, Option<String>)> = rig
+                .codex_returns()
+                .into_iter()
+                .zip(rig.host.delivered_keys())
+                .map(|((_, body), key)| (key[key.rfind(':').unwrap() + 1..].to_string(), body))
+                .collect();
+            got.sort();
+            let mut want = vec![("t1".to_string(), Some("first".to_string()))];
+            if newer_turn_finished {
+                want.push(("t3".to_string(), Some("third".to_string())));
+            }
+            assert_eq!(got, want, "newer_turn_finished={newer_turn_finished}");
+        }
+    }
+
+    /// 게이트 없는 Stop 도 턴을 Stop 이 온 때 정한다. 호스트 보고가 끝나기 전에 새 턴이 열려도 키가 바뀌지 않는다.
+    #[test]
+    fn an_ungated_stop_claims_the_turn_it_came_in_even_if_a_new_turn_opens_during_its_report() {
+        struct OpensATurn<'a> {
+            inner: &'a RecordingHost,
+            returns: &'a crate::codex_return::Returns,
+        }
+        impl tasty_plugin_agent_common::host_call::HostCall for OpensATurn<'_> {
+            fn call(
+                &self,
+                method: &str,
+                params: Value,
+            ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+                if method == "agent.task_turn" || method.starts_with("agent.") {
+                    // 보고가 오가는 사이 다른 워커가 새 프롬프트를 처리했다.
+                    self.returns
+                        .observe("prompt-submit", HookRig::SURFACE, Some("sess-1"), None);
+                }
+                self.inner.call(method, params)
+            }
+        }
+        let mut rig = HookRig::new();
+        rig.codex_child();
+        rig.run(
+            json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-1" }),
+        );
+        let host = OpensATurn {
+            inner: &rig.host,
+            returns: &rig.returns,
+        };
+        crate::task_turn::report(
+            &host,
+            &rig.returns,
+            "stop",
+            HookRig::SURFACE,
+            Some("sess-1"),
+            &json!({ "last_assistant_message": "one" }),
+        );
+        let keys = {
+            rig.returns
+                .pump_once(&rig.host, crate::codex_return::now_ms());
+            rig.host.delivered_keys()
+        };
+        assert_eq!(keys.len(), 1, "{keys:?}");
+        assert!(keys[0].ends_with(":t1"), "{keys:?}");
+    }
+
+    /// 시간 초과로 확정한 게이트 Stop 도 결과를 한 번 보낸다.
+    #[test]
+    fn a_gated_stop_settled_by_the_timeout_returns_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.codex_child();
+        rig.run(gated_stop_answering("p1", "late gate"));
+        assert!(rig.codex_returns().is_empty());
+        rig.tail().finish_expired(rig.take_expired());
+        assert_eq!(
+            rig.codex_returns(),
+            vec![returned("turn_ended", Some("late gate"))]
+        );
+    }
+
+    /// 백그라운드 작업을 기다리는 Stop 은 결과가 아니다. 작업이 끝난 뒤 새 턴의 Stop 이 결과다.
+    #[test]
+    fn a_background_wait_stop_is_not_returned() {
+        let mut rig = HookRig::new();
+        rig.codex_child();
+        rig.run(json!({
+            "event": "stop",
+            "surface": HookRig::SURFACE,
+            "session": "sess-1",
+            "last_assistant_message": "waiting",
+            "background_tasks": running_subagent(),
+        }));
+        assert!(rig.codex_returns().is_empty());
+        rig.run(
+            json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-1" }),
+        );
+        rig.run(json!({
+            "event": "stop",
+            "surface": HookRig::SURFACE,
+            "session": "sess-1",
+            "last_assistant_message": "all done",
+        }));
+        assert_eq!(
+            rig.codex_returns(),
+            vec![returned("turn_ended", Some("all done"))]
+        );
+    }
+
+    /// prompt_id 가 없어도 턴마다 한 번 보낸다. 같은 턴의 Stop 이 다시 와도 한 번이다.
+    #[test]
+    fn stops_without_a_prompt_id_return_once_per_turn() {
+        let mut rig = HookRig::new();
+        rig.codex_child();
+        let stop = |answer: &str| json!({ "event": "stop", "surface": HookRig::SURFACE, "session": "sess-1", "last_assistant_message": answer });
+        rig.run(stop("first"));
+        rig.run(stop("first"));
+        rig.run(
+            json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-1" }),
+        );
+        rig.run(stop("second"));
+        assert_eq!(
+            rig.codex_returns(),
+            vec![
+                returned("turn_ended", Some("first")),
+                returned("turn_ended", Some("second"))
+            ]
+        );
+        let keys: Vec<Value> = rig
+            .host
+            .seen
+            .borrow()
+            .iter()
+            .filter(|(m, _)| m == "codex.deliver")
+            .map(|(_, p)| p["completion_key"].clone())
+            .collect();
+        assert_ne!(keys[0], keys[1]);
+    }
+
+    /// API 오류로 끝난 턴과 확정 전에 끝난 세션은 품질 판정이 아닌 각자의 상태로 보낸다.
+    #[test]
+    fn a_failed_turn_and_an_exit_keep_their_own_status() {
+        let mut rig = HookRig::new();
+        rig.codex_child();
+        rig.run(json!({ "event": "stop-failure", "surface": HookRig::SURFACE, "session": "sess-1", "error": "rate_limit" }));
+        rig.run(
+            json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-1" }),
+        );
+        rig.run(
+            json!({ "event": "session-end", "surface": HookRig::SURFACE, "session": "sess-1" }),
+        );
+        assert_eq!(
+            rig.codex_returns(),
+            vec![
+                returned("turn_failed", Some("rate_limit")),
+                returned("exited", None)
+            ]
+        );
+    }
+
+    /// `/clear` 는 SessionEnd(reason `clear`) 뒤 SessionStart(source `clear`)로 새 세션을 연다.
+    /// 그 SessionEnd 는 exited 가 아니고, 새 세션의 턴 결과는 같은 Codex 부모에게 간다.
+    #[test]
+    fn a_clear_keeps_returning_to_the_codex_parent() {
+        let mut rig = HookRig::new();
+        rig.codex_child();
+        rig.run(json!({ "event": "session-end", "surface": HookRig::SURFACE,
+            "session": "sess-1", "reason": "clear" }));
+        rig.run(
+            json!({ "event": "session-start", "surface": HookRig::SURFACE,
+            "session": "sess-2", "source": "clear" }),
+        );
+        rig.run(
+            json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-2" }),
+        );
+        rig.run(
+            json!({ "event": "stop", "surface": HookRig::SURFACE, "session": "sess-2",
+            "last_assistant_message": "after clear" }),
+        );
+        assert_eq!(
+            rig.codex_returns(),
+            vec![returned("turn_ended", Some("after clear"))]
+        );
+    }
+
+    /// Codex 부모가 없는 자식(일반 Claude 부모)은 Codex 로 아무것도 보내지 않는다.
+    #[test]
+    fn a_child_of_a_claude_parent_returns_nothing_to_codex() {
+        let mut rig = HookRig::new();
+        rig.run(
+            json!({ "event": "session-start", "surface": HookRig::SURFACE, "session": "sess-1" }),
+        );
+        rig.run(json!({ "event": "stop", "surface": HookRig::SURFACE, "session": "sess-1", "last_assistant_message": "x" }));
+        assert!(rig.codex_returns().is_empty());
+        assert_eq!(rig.host.turn_reports(), vec![ended("x")]);
     }
 
     fn gated_waiting_stop(prompt_id: &str) -> Value {
@@ -1778,6 +2160,7 @@ mod tests {
                 &rig.scanner,
                 &rig.resume,
                 &rig.pairing,
+                &rig.returns,
                 &probe,
                 &json!({ "event": event, "surface": HookRig::SURFACE }),
                 None,

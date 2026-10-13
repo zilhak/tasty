@@ -1,15 +1,20 @@
 //! codex.* 요청을 처리한다. 자식 관리는 호스트의 terminal.* IPC에 맡긴다.
-//! 여기서는 기동 명령을 만들고 Codex 훅을 상태·알림 호출로 변환한다.
+//! 여기서는 기동 명령을 만들고 Codex 훅을 상태·알림 호출로 변환한다. Codex 호출자의 spawn·tell은
+//! 결과를 그 대화로 돌려보내도록 수신자를 준비한다.
 //! 모든 host.call은 응답을 동기로 기다린다.
 
 use serde_json::{Map, Value, json};
-use tasty_plugin_agent_common::children::{join_indices, spawn_census};
+use tasty_plugin_agent_common::children::{join_indices, spawn_census_for};
 use tasty_plugin_agent_common::host_call::{HostCall, cleanup_sibling_hooks, surface_is_alive};
 use tasty_plugin_agent_common::params::{
     TargetSurfaceError, U32FieldError, forward, target_surface,
 };
 use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
+
+use crate::caller::CallerContext as CodexCaller;
+use crate::delivery::Ctx as DeliveryCtx;
+use crate::ownership;
 
 /// 번역 문구의 여러 자리표시자를 채운다.
 pub(crate) fn t_args(tr: &Translator, key: &str, pairs: &[(&str, &str)]) -> String {
@@ -96,37 +101,32 @@ fn optional_str(params: &Value, key: &str) -> Option<String> {
 }
 
 /// Claude 프롬프트 파일과 구분해 정리할 수 있도록 별도 접두어를 사용한다.
-const PROMPT_FILE_PREFIX: &str = "tasty-codex-prompt-";
-/// POSIX 셸에 보낼 Codex 명령을 만든다. 프롬프트는 파일로 전달해 셸 이력 확장을 피한다.
-/// 파일 쓰기에 실패해도 경고 후 명령을 만든다. 이전 파일 정리는 공용 TTL 규칙을 따른다.
-/// TASTY_SURFACE_ID를 지정하고 훅 신뢰 우회 플래그로 훅 실행을 요청한다.
-/// 이 플래그가 모든 상황에서 훅 전달을 보장하지는 않는다.
-fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) -> String {
-    let prefix = format!(
-        "TASTY_SURFACE_ID={surface_id} {} {} ",
-        crate::POSIX_CODEX_COMMAND,
-        crate::LOCAL_SESSION_ARGS
-    );
-    let policy_suffix = if policy_args.is_empty() {
-        String::new()
-    } else {
-        format!(" {policy_args}")
-    };
-    match prompt {
+pub(crate) const PROMPT_FILE_PREFIX: &str = "tasty-codex-prompt-";
+
+/// 터미널에 보낼 세션 helper 명령을 만든다. 프롬프트는 파일로 넘기고 helper가 읽은 뒤
+/// 지운다. 서버·TUI의 실행과 훅 대상 세대는 helper가 정한다.
+fn make_codex_command(
+    surface_id: u32,
+    prompt: Option<&str>,
+    policy_args: &str,
+) -> Result<String, IpcMethodError> {
+    let prompt_path = match prompt {
         Some(p) if !p.is_empty() => {
             let temp_dir = std::env::temp_dir();
             prompt_file::sweep_stale(&temp_dir, PROMPT_FILE_PREFIX);
-            let prompt_path = prompt_file::path_for(&temp_dir, PROMPT_FILE_PREFIX, surface_id);
-            if let Err(e) = prompt_file::write(&prompt_path, p) {
-                tracing::warn!("Failed to write codex prompt file: {e}");
-            }
-            format!(
-                "{prefix}--dangerously-bypass-hook-trust{policy_suffix} \"$(cat '{}')\"\r",
-                prompt_path.display()
-            )
+            let path = prompt_file::path_for(&temp_dir, PROMPT_FILE_PREFIX, surface_id);
+            prompt_file::write(&path, p)
+                .map_err(|e| IpcMethodError::new(format!("codex prompt file: {e}")))?;
+            Some(path)
         }
-        _ => format!("{prefix}--dangerously-bypass-hook-trust{policy_suffix}\r"),
-    }
+        _ => None,
+    };
+    crate::session::submit_line(
+        None,
+        prompt_path.as_deref(),
+        &crate::session::command::policy_tokens(policy_args),
+    )
+    .map_err(|e| IpcMethodError::new(format!("codex session command: {e}")))
 }
 
 const VALID_APPROVAL_POLICIES: &[&str] = &["untrusted", "on-request", "never"];
@@ -255,7 +255,7 @@ pub(crate) fn handle_launch(
 
     if let Some(sid) = surface_id {
         let policy_args = resolve_policy_args(host, params, tr)?;
-        let cmd = make_codex_command(sid, task.as_deref(), &policy_args);
+        let cmd = make_codex_command(sid, task.as_deref(), &policy_args)?;
         host_call(
             host,
             "surface.send",
@@ -270,7 +270,8 @@ pub(crate) fn handle_launch(
     }))
 }
 
-pub(crate) fn handle_parent(
+/// 자식 surface의 부모를 조회한다(`tasty codex parent`). 수신 준비인 `codex.parent`와 다르다.
+pub(crate) fn handle_parent_of(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -289,42 +290,168 @@ pub(crate) fn handle_state(
     host_call(host, "terminal.state", json!({ "surface": surface }))
 }
 
-pub(crate) fn handle_tell(
-    host: &HostHandle,
+/// Codex 호출 문맥을 읽는다. 형식이 틀리면 invalid_params다.
+fn codex_caller_of(params: &Value) -> Result<Option<CodexCaller>, IpcMethodError> {
+    crate::caller::codex_caller(params).map_err(|e| IpcMethodError::invalid_params(&e))
+}
+
+pub(crate) fn handle_tell<H: HostCall>(
+    host: &H,
     params: &Value,
     tr: &Translator,
+    delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
+    let caller = codex_caller_of(params)?;
     let surface_id = require_target_surface(params, tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_message")))?;
+    // 반환 경로는 지시를 보내기 전에 정한다. 자식의 첫 훅이 그 기록을 읽는다.
+    let mut warning = None;
+    let previous = match &caller {
+        Some(c) => {
+            let (receiver, _) = crate::delivery::prepare_receiver(delivery, c)?;
+            let key = ownership::caller_key(c);
+            if !ownership::owns_child(host, &key, surface_id).map_err(IpcMethodError::from)? {
+                return Err(IpcMethodError::invalid_params(&tr.t_replace(
+                    "codex.owner.not_own_child",
+                    "{surface}",
+                    &surface_id.to_string(),
+                )));
+            }
+            if ownership::is_codex_child(delivery, surface_id) {
+                Some(ownership::bind_route(
+                    delivery,
+                    surface_id,
+                    &receiver.receiver_id,
+                )?)
+            } else {
+                // Codex 훅이 없는 surface에는 완료를 만들지 못하는 경로를 두지 않는다.
+                ownership::invalidate_route(delivery, surface_id)?;
+                warning = Some(tr.t_replace(
+                    "codex.owner.not_codex_child",
+                    "{surface}",
+                    &surface_id.to_string(),
+                ));
+                None
+            }
+        }
+        None => {
+            ownership::invalidate_route(delivery, surface_id)?;
+            None
+        }
+    };
     // 개행과 제출 처리는 호스트의 terminal.tell에 맡긴다.
-    let resp = host_call(
+    let resp = match host_call(
         host,
         "terminal.tell",
         json!({ "surface": surface_id, "text": message }),
-    )?;
+    ) {
+        Ok(resp) => resp,
+        Err(e) => {
+            if let Some(previous) = previous {
+                ownership::restore_route(delivery, surface_id, previous);
+            }
+            return Err(e);
+        }
+    };
 
-    // CLI는 호출자 ID를 자동으로 채운다. 유효한 값이 없으면 알림을 등록하지 않는다.
-    if let Ok(caller) = require_u32(params, "caller_surface", tr) {
+    if caller.is_none()
+        && let Ok(caller) = require_u32(params, "caller_surface", tr)
+    {
+        // CLI는 호출자 ID를 자동으로 채운다. 유효한 값이 없으면 알림을 등록하지 않는다.
         register_notify_hooks(host, caller, surface_id, "tell");
     }
 
-    Ok(resp)
+    let mut out = resp;
+    if let Some(warning) = warning
+        && let Some(obj) = out.as_object_mut()
+    {
+        obj.insert("warning".into(), json!(warning));
+    }
+    Ok(out)
 }
 
-pub(crate) fn handle_spawn(
-    host: &HostHandle,
+/// Codex 자식의 턴 결과를 받을 수신자를 기록한다. 자식 명령을 보내기 전에 기록해야 첫 훅이
+/// 기록을 찾는다.
+fn set_child_return(
+    delivery: &DeliveryCtx<'_>,
+    child: u32,
+    child_index: Option<u32>,
+    receiver: &crate::delivery::ledger::Receiver,
+) -> Result<(), IpcMethodError> {
+    crate::delivery::ledger::set_child_receiver(
+        delivery.root,
+        child,
+        &receiver.receiver_id,
+        child_index,
+    )
+    .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))
+}
+
+fn child_index_of(resp: &Value) -> Option<u32> {
+    resp.get("child_index")
+        .and_then(Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok())
+}
+
+/// 부모를 지정하는 요청 인자. Codex 호출자는 자기 부모 키만 쓰며 다른 부모를 명시하면 거절한다.
+/// 그 밖의 호출자는 CLI가 채운 surface를 쓴다. `child`는 index로 자식 하나를 고르는 요청의 번호다.
+fn parent_args<H: HostCall>(
+    host: &H,
+    base: Map<String, Value>,
+    child: Option<u32>,
+    params: &Value,
+    caller: Option<&CodexCaller>,
+    delivery: &DeliveryCtx<'_>,
+    tr: &Translator,
+) -> Result<Map<String, Value>, IpcMethodError> {
+    let mut p = match caller {
+        Some(c) => ownership::parent_request(host, delivery, c, params, child, &base, tr)?,
+        None => {
+            let mut p = base;
+            put_target_surface(&mut p, params, tr)?;
+            p
+        }
+    };
+    if let Some(child) = child {
+        p.insert("child".into(), json!(child));
+    }
+    Ok(p)
+}
+
+pub(crate) fn handle_spawn<H: HostCall>(
+    host: &H,
     params: &Value,
     tr: &Translator,
+    delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface = require_target_surface(params, tr)?;
+    let caller = codex_caller_of(params)?;
     let prompt = optional_str(params, "prompt");
 
     // 먼저 자식 터미널을 만들고 아래에서 Codex 기동 명령을 보낸다.
     let mut sp = forward(params, &["workspace", "pane", "cwd", "role", "nickname"]);
-    sp.insert("parent".into(), json!(parent_surface));
+    // Codex 부모는 spawn 전에 수신처를 준비한다. 받을 수 없는 부모면 자식을 만들지 않는다.
+    // parent는 경고 집계에 쓰는 terminal.children 부모 인자다.
+    let (receiver, mut parent) = match &caller {
+        Some(c) => {
+            let (receiver, terminal_parent) = crate::delivery::prepare_receiver(delivery, c)?;
+            // 호스트 관계와 반환 대상이 갈리지 않도록 다른 부모의 명시는 받지 않는다.
+            ownership::reject_other_parent(delivery, params, c, tr)?;
+            let parent = terminal_parent.as_object().cloned().unwrap_or_default();
+            sp.extend(parent.clone());
+            (Some(receiver), parent)
+        }
+        None => {
+            let parent = require_target_surface(params, tr)?;
+            sp.insert("parent".into(), json!(parent));
+            (
+                None,
+                Map::from_iter([("surface".to_string(), json!(parent))]),
+            )
+        }
+    };
     let resp = host_call(host, "terminal.spawn", Value::Object(sp))?;
     let child_sid = resp
         .get("child_surface_id")
@@ -337,20 +464,35 @@ pub(crate) fn handle_spawn(
                 &resp.to_string(),
             ))
         })?;
+    match &receiver {
+        Some(receiver) => set_child_return(delivery, child_sid, child_index_of(&resp), receiver)?,
+        None => ownership::invalidate_route(delivery, child_sid)?,
+    }
 
     let policy_args = resolve_policy_args(host, params, tr)?;
-    let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
+    let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args)?;
     host_call(
         host,
         "surface.send",
         json!({"surface_id": child_sid, "text": cmd}),
     )?;
 
-    register_notify_hooks(host, parent_surface, child_sid, "spawn");
+    // 수신자가 있으면 결과는 부모 대화로 간다. 상태 로그 훅은 surface 부모의 기존 경로다.
+    if receiver.is_none()
+        && let Some(parent) = parent.get("surface").and_then(Value::as_u64)
+    {
+        register_notify_hooks(host, parent as u32, child_sid, "spawn");
+    }
 
-    // 경고 기준을 넘어도 spawn은 성공으로 반환한다.
+    // 경고 기준을 넘어도 spawn은 성공으로 반환한다. 외부 부모의 자식 목록은 창을 고르도록
+    // spawn한 workspace를 함께 넘긴다.
+    if receiver.is_some()
+        && let Some(ws) = params.get("workspace").filter(|w| !w.is_null())
+    {
+        parent.insert("workspace".into(), ws.clone());
+    }
     let mut out = resp;
-    if let Some(warning) = compute_spawn_warning(host, parent_surface, tr)
+    if let Some(warning) = compute_spawn_warning(host, Value::Object(parent), tr)
         && let Some(obj) = out.as_object_mut()
     {
         obj.insert("warning".into(), json!(warning));
@@ -474,12 +616,8 @@ fn rearm_if_still_alive<H: HostCall>(host: &H, caller: u32, target: u32, kind: &
 }
 
 /// 자식 목록과 상태를 읽어 경고를 만든다. 조회 실패 시 경고를 생략한다.
-fn compute_spawn_warning(
-    host: &HostHandle,
-    parent_surface_id: u32,
-    tr: &Translator,
-) -> Option<String> {
-    let c = spawn_census(host, parent_surface_id)?;
+fn compute_spawn_warning<H: HostCall>(host: &H, parent: Value, tr: &Translator) -> Option<String> {
+    let c = spawn_census_for(host, parent)?;
     build_spawn_warning(tr, c.total, &c.idle, &c.stale, c.threshold)
 }
 
@@ -519,25 +657,36 @@ pub(crate) fn handle_children<H: HostCall>(
     host: &H,
     params: &Value,
     tr: &Translator,
+    delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
-    let mut cp = serde_json::Map::new();
-    put_target_surface(&mut cp, params, tr)?;
+    let caller = codex_caller_of(params)?;
+    let cp = parent_args(
+        host,
+        Map::new(),
+        None,
+        params,
+        caller.as_ref(),
+        delivery,
+        tr,
+    )?;
     host_call(host, "terminal.children", Value::Object(cp))
 }
 
 /// 부모와 선택한 역할의 자식에게 보낼 텍스트를 호스트에 전달한다.
-pub(crate) fn handle_broadcast(
-    host: &HostHandle,
+pub(crate) fn handle_broadcast<H: HostCall>(
+    host: &H,
     params: &Value,
     tr: &Translator,
+    delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
+    let caller = codex_caller_of(params)?;
     let text = params
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_text")))?;
     let mut bp = forward(params, &["role"]);
-    put_target_surface(&mut bp, params, tr)?;
     bp.insert("text".into(), json!(text));
+    let bp = parent_args(host, bp, None, params, caller.as_ref(), delivery, tr)?;
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
@@ -546,26 +695,56 @@ pub(crate) fn handle_kill<H: HostCall>(
     host: &H,
     params: &Value,
     tr: &Translator,
+    delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
+    let caller = codex_caller_of(params)?;
     let child = require_u32(params, "child", tr)?;
-    let mut kp = serde_json::Map::new();
-    put_target_surface(&mut kp, params, tr)?;
-    kp.insert("child".into(), json!(child));
-    host_call(host, "terminal.kill", Value::Object(kp))
+    let kp = parent_args(
+        host,
+        Map::new(),
+        Some(child),
+        params,
+        caller.as_ref(),
+        delivery,
+        tr,
+    )?;
+    let resp = host_call(host, "terminal.kill", Value::Object(kp))?;
+    // 닫힌 자식의 경로는 더 쓰지 않는다. 이미 기록한 결과는 남는다.
+    if let Some(killed) = resp
+        .get("killed_surface_id")
+        .and_then(Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok())
+        && let Err(e) = crate::delivery::ledger::clear_child_receiver(delivery.root, killed)
+    {
+        tracing::warn!("codex child return record for killed surface {killed}: {e}");
+    }
+    Ok(resp)
 }
 
-pub(crate) fn handle_respawn(
-    host: &HostHandle,
+pub(crate) fn handle_respawn<H: HostCall>(
+    host: &H,
     params: &Value,
     tr: &Translator,
+    delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
+    let caller = codex_caller_of(params)?;
     let child = require_u32(params, "child", tr)?;
     let prompt = optional_str(params, "prompt");
+    let receiver = match &caller {
+        Some(c) => Some(crate::delivery::prepare_receiver(delivery, c)?.0),
+        None => None,
+    };
 
     // 자식 재시작과 상태 갱신은 호스트에 맡긴 뒤 Codex 명령을 보낸다.
-    let mut rp = forward(params, &["cwd", "role", "nickname"]);
-    put_target_surface(&mut rp, params, tr)?;
-    rp.insert("child".into(), json!(child));
+    let rp = parent_args(
+        host,
+        forward(params, &["cwd", "role", "nickname"]),
+        Some(child),
+        params,
+        caller.as_ref(),
+        delivery,
+        tr,
+    )?;
     let resp = host_call(host, "terminal.respawn", Value::Object(rp))?;
     let child_sid = resp
         .get("child_surface_id")
@@ -578,9 +757,14 @@ pub(crate) fn handle_respawn(
                 &resp.to_string(),
             ))
         })?;
+    // 새 Codex 명령을 보내기 전에 경로를 정한다. Codex 대화가 아닌 호출자는 이전 경로를 지운다.
+    match &receiver {
+        Some(receiver) => set_child_return(delivery, child_sid, child_index_of(&resp), receiver)?,
+        None => ownership::invalidate_route(delivery, child_sid)?,
+    }
 
     let policy_args = resolve_policy_args(host, params, tr)?;
-    let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
+    let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args)?;
     host_call(
         host,
         "surface.send",
@@ -590,13 +774,71 @@ pub(crate) fn handle_respawn(
     Ok(resp)
 }
 
+/// 훅이 무시된 이유. 상태·메타데이터·턴 보고를 바꾸지 않는다.
+fn ignored(reason: &str) -> Value {
+    json!({ "ignored": reason, "host_call_failures": 0 })
+}
+
+/// 세대의 thread를 incoming으로 옮겨도 되는지 세대의 소유 서버에 확인한다. 훅은 동기로 실행되므로
+/// 같은 TUI가 대화를 바꾼 훅이면 그 thread가 지금 `active`이고 이전 thread는 아니다. 늦게 도착한
+/// 이전 대화의 훅이면 그 thread는 이미 `active`가 아니다. 확인하지 못하면 옮기지 않는다.
+fn verify_switch(
+    delivery: &DeliveryCtx<'_>,
+    session: &crate::session::registry::Session,
+    bound: &str,
+    incoming: &str,
+) -> Result<(), &'static str> {
+    let endpoint =
+        crate::session::registry::ready_endpoint(delivery.root, session).map_err(|e| {
+            tracing::warn!("codex hook: cannot verify a thread switch: {e}");
+            "unverified_session"
+        })?;
+    let live = |thread: &str| {
+        (delivery.live)(&endpoint, thread).map_err(|e| {
+            tracing::warn!("codex hook: cannot verify a thread switch: {e}");
+            "unverified_session"
+        })
+    };
+    if live(incoming)? && !live(bound)? {
+        Ok(())
+    } else {
+        Err("stale_session")
+    }
+}
+
+/// thread가 빈 세대에 `incoming`을 묶어도 되는지. 소유 서버가 그 thread를 실행 중으로 보일 때만
+/// 참이다.
+fn verify_adopt(
+    delivery: &DeliveryCtx<'_>,
+    session: &crate::session::registry::Session,
+    incoming: &str,
+) -> bool {
+    let endpoint = match crate::session::registry::ready_endpoint(delivery.root, session) {
+        Ok(endpoint) => endpoint,
+        Err(e) => {
+            tracing::warn!("codex hook: cannot verify a thread for an empty session: {e}");
+            return false;
+        }
+    };
+    match (delivery.live)(&endpoint, incoming) {
+        Ok(active) => active,
+        Err(e) => {
+            tracing::warn!("codex hook: cannot verify a thread for an empty session: {e}");
+            false
+        }
+    }
+}
+
 /// 설치한 Codex 훅을 호스트 상태와 알림으로 변환한다.
+/// helper가 넘긴 세대가 그 surface의 현재 세대일 때만 적용한다. 사용자가 직접 실행한
+/// codex, 공유 daemon의 오래된 환경, 이전 세대의 훅은 무시한다.
 /// 전파하지 않은 호출 실패는 host_call_failures에 센다.
 /// Codex용 셸 명령은 이 내부 응답을 버리고 빈 객체를 반환한다.
 pub(crate) fn handle_hook<H: HostCall>(
     host: &H,
     params: &Value,
     tr: &Translator,
+    delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
@@ -605,19 +847,123 @@ pub(crate) fn handle_hook<H: HostCall>(
     // 대상 누락에만 훅 전용 안내를 쓰고 형식 오류·값 충돌은 그대로 반환한다.
     let surface_id = optional_target_surface(params, tr)?
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
-    if event == "session-end" {
-        return handle_session_end(host, surface_id);
+    let new_state = if event == "session-end" {
+        None
+    } else {
+        Some(hook_event_to_state(event, tr)?)
+    };
+    let Some(generation) = params
+        .get("gen")
+        .and_then(Value::as_str)
+        .filter(|g| crate::ids::is_generation(g))
+    else {
+        return Ok(ignored("no_generation"));
+    };
+    let registry_err =
+        |e: std::io::Error| IpcMethodError::new(format!("codex session registry: {e}"));
+    let Some(mut session) =
+        crate::session::registry::current_session(delivery.root, surface_id, generation)
+            .map_err(registry_err)?
+    else {
+        return Ok(ignored("stale_generation"));
+    };
+    let hook_session = params
+        .get("session")
+        .and_then(Value::as_str)
+        .filter(|s| crate::ids::is_uuid(s))
+        .map(str::to_ascii_lowercase);
+    // 이 세대의 thread와 다른 thread의 훅은 같은 TUI가 대화를 바꾼 것일 수도, 이전 대화의 늦은
+    // 훅일 수도 있다. 세대의 소유 서버가 그 thread를 지금 실행 중이라고 확인할 때만 옮긴다.
+    let mut moved = false;
+    // 이전 대화가 내려가 세대의 thread가 비었으면, SessionStart가 아닌 훅의 thread도 소유 서버가
+    // 지금 실행 중이라고 확인할 때 묶는다(대화를 옮길 때와 같은 기준). 확인하지 못하면 묶지 않고
+    // 훅만 처리한다.
+    if session.thread.is_none()
+        && event != "session-start"
+        && event != "session-end"
+        && let Some(other) = &hook_session
+        && verify_adopt(delivery, &session, other)
+    {
+        crate::session::registry::bind_thread(delivery.root, other, &session.generation)
+            .map_err(registry_err)?;
+        session.thread = Some(other.clone());
+        crate::session::registry::write_session(delivery.root, &session).map_err(registry_err)?;
+        moved = true;
     }
-    let new_state = hook_event_to_state(event, tr)?;
+    let mut bound_now = None;
+    if let (Some(bound), Some(other)) = (session.thread.clone(), &hook_session)
+        && &bound != other
+    {
+        if event == "session-end" {
+            return Ok(ignored("other_thread"));
+        }
+        if let Err(reason) = verify_switch(delivery, &session, &bound, other) {
+            return Ok(ignored(reason));
+        }
+        crate::session::registry::bind_thread(delivery.root, other, &session.generation)
+            .map_err(registry_err)?;
+        crate::session::registry::unbind_thread(delivery.root, &bound, &session.generation)
+            .map_err(registry_err)?;
+        session.thread = Some(other.clone());
+        crate::session::registry::write_session(delivery.root, &session).map_err(registry_err)?;
+        moved = true;
+    }
+    if moved {
+        bound_now = session.thread.clone();
+    }
+    if event == "session-end" {
+        return handle_session_end(host, delivery, &session, hook_session.as_deref());
+    }
+    let Some(new_state) = new_state else {
+        return Ok(ignored("unknown_event"));
+    };
 
     // terminal.set_state 실패는 반환 오류로 전파하므로 이 수에는 포함하지 않는다.
     let mut host_call_failures: usize = 0;
-    // 재시작·복원에 쓸 세션 메타데이터를 기록한다.
-    if event == "session-start"
-        && let Some(session) = params.get("session").and_then(|v| v.as_str())
-        && !session.is_empty()
+    // 대화를 옮겼으면 복원 명령도 새 thread로 바꾼다. session-start는 아래에서 기록한다.
+    if moved
+        && event != "session-start"
+        && let Some(thread) = session.thread.clone()
     {
-        host_call_failures += record_session_meta(host, surface_id, session);
+        host_call_failures += record_session_meta(host, surface_id, &session, &thread);
+    }
+    match event {
+        "session-start" => {
+            if let Some(thread) = &hook_session {
+                if session.thread.is_none() {
+                    crate::session::registry::bind_thread(
+                        delivery.root,
+                        thread,
+                        &session.generation,
+                    )
+                    .map_err(registry_err)?;
+                    session.thread = Some(thread.clone());
+                    bound_now = Some(thread.clone());
+                }
+                if let Some(model) = params.get("model").and_then(Value::as_str) {
+                    session.model = Some(model.to_string());
+                }
+                crate::session::registry::write_session(delivery.root, &session)
+                    .map_err(registry_err)?;
+                // 재시작·복원에 쓸 세션 메타데이터를 기록한다.
+                host_call_failures += record_session_meta(host, surface_id, &session, thread);
+            }
+        }
+        "prompt-submit" => {
+            crate::child_return::note_prompt(&mut session, params);
+            crate::session::registry::write_session(delivery.root, &session)
+                .map_err(registry_err)?;
+        }
+        _ => {}
+    }
+    // 새로 묶인 thread가 있으면 같은 세대의 이전 thread가 unload로 남긴 종료 후보는 종료가 아니다.
+    // 이후 세대가 끝나도 종료는 지금 thread의 SessionEnd로 한 번만 기록된다.
+    if let Some(thread) = &bound_now
+        && let Err(e) =
+            crate::delivery::turns::retire_unloaded_exits(delivery, &session.generation, thread)
+    {
+        tracing::warn!("codex hook: retire exits of unloaded threads: {e}");
+        host_call_failures += 1;
     }
     // agent task 의 턴 결과를 idle 상태보다 먼저 보고한다.
     crate::task_turn::report(host, event, surface_id, params);
@@ -629,31 +975,84 @@ pub(crate) fn handle_hook<H: HostCall>(
     )?;
     // 턴 종료 훅과 승인 대기 화면 알림은 상태 갱신과 별도로 보낸다.
     host_call_failures += apply_hook_side_effects(host, event, surface_id);
-    Ok(json!({ "host_call_failures": host_call_failures }))
+    // 이 터미널이 Codex 부모의 자식이면 턴 경계를 부모 대화로 보낸다.
+    let report = crate::child_return::report(delivery, &session, event, params);
+    host_call_failures += report.failures;
+    // 붙어 있는 부모 TUI가 생겼으면 보류한 결과를 보낸다.
+    if (event == "session-start" || moved)
+        && let Some(thread) = &session.thread
+    {
+        crate::delivery::flush_thread(delivery, thread);
+    }
+    let mut out = json!({ "host_call_failures": host_call_failures });
+    if let Some(reason) = report.rejected {
+        out["child_return_rejected"] = json!(reason);
+    }
+    Ok(out)
 }
 
-/// session-end에서는 세션 메타데이터만 지운다. 삭제 실패는 집계해 반환한다.
-fn handle_session_end<H: HostCall>(host: &H, surface_id: u32) -> Result<Value, IpcMethodError> {
-    let mut failures = 0;
+/// session-end는 그 thread가 내려갔다는 뜻이다. TUI가 끝났을 수도, 대화를 바꾼 뒤 이전 thread가
+/// unload됐을 수도 있다(Codex 0.154의 `reason`은 늘 `other`). 종료 후보를 남기고(세대가 끝났을
+/// 때만 종료로 기록된다), 그 thread의 경로·세션 메타데이터를 지우고 세대의 thread를 비운다.
+/// 다음 대화의 SessionStart는 첫 턴 직전에 오며 비운 세대에 바로 묶인다. 이미 내려간 thread의
+/// 늦은 훅은 thread가 없으므로 결과를 만들지 않는다. 실패는 집계한다.
+fn handle_session_end<H: HostCall>(
+    host: &H,
+    delivery: &DeliveryCtx<'_>,
+    session: &crate::session::registry::Session,
+    hook_session: Option<&str>,
+) -> Result<Value, IpcMethodError> {
+    let Some(thread) = session
+        .thread
+        .as_deref()
+        .filter(|t| Some(*t) == hook_session)
+    else {
+        return Ok(ignored("other_thread"));
+    };
+    let mut failures =
+        crate::child_return::report(delivery, session, "session-end", &json!({})).failures;
+    if let Err(e) =
+        crate::session::registry::unbind_thread(delivery.root, thread, &session.generation)
+    {
+        tracing::warn!("codex session-end route cleanup: {e}");
+        failures += 1;
+    }
     if let Err(error) = host.call(
         "surface.meta.unset",
-        json!({"surface_id":surface_id,"key":"codex-session-id"}),
+        json!({"surface_id":session.surface,"key":"codex-session-id"}),
     ) {
         tracing::warn!("codex session-end metadata cleanup: {error}");
+        failures += 1;
+    }
+    let ended = crate::session::registry::Session {
+        thread: None,
+        ..session.clone()
+    };
+    if let Err(e) = crate::session::registry::write_session(delivery.root, &ended) {
+        tracing::warn!("codex session-end thread cleanup: {e}");
         failures += 1;
     }
     Ok(json!({"host_call_failures":failures}))
 }
 
 /// 세션 ID와 복원 명령을 기록하고 실패한 호출 수를 반환한다.
-fn record_session_meta<H: HostCall>(host: &H, surface_id: u32, session: &str) -> usize {
+fn record_session_meta<H: HostCall>(
+    host: &H,
+    surface_id: u32,
+    session: &crate::session::registry::Session,
+    thread: &str,
+) -> usize {
+    let restore = match crate::session::restore_line(session, thread) {
+        Ok(line) => line,
+        Err(e) => {
+            tracing::warn!("codex restore command: {e}");
+            return 1;
+        }
+    };
     let mut failures = 0;
     for (key, value) in [
-        ("codex-session-id", session.to_string()),
-        (
-            "restore.command",
-            crate::reboot::resume_command_line(session, ""),
-        ),
+        ("codex-session-id", thread.to_string()),
+        ("restore.command", restore),
     ] {
         if let Err(e) = host.call(
             "surface.meta.set",
@@ -887,13 +1286,31 @@ mod tests {
         }
     }
 
+    use crate::delivery::testing::Fixture;
+
+    const THREAD: &str = "019f55e7-3dfa-7a00-8000-0123456789ab";
+
+    /// 현재 세대의 훅을 보낸다.
+    fn hook<H: HostCall>(fx: &Fixture, host: &H, params: Value) -> Result<Value, IpcMethodError> {
+        fx.with(|d| handle_hook(host, &params, &fx.tr, d))
+    }
+
     #[test]
     fn session_end_closes_execution_without_synthesizing_an_idle_turn() {
+        let fx = Fixture::new();
+        let generation = fx.open(99, &[]);
         let host = FlakyHost::failing(vec![]);
-        handle_hook(
+        hook(
+            &fx,
             &host,
-            &json!({"surface":99,"event":"session-end","session":"ending"}),
-            &test_translator(),
+            json!({"surface":99,"event":"session-start","session":THREAD,"gen":generation}),
+        )
+        .unwrap();
+        host.seen.borrow_mut().clear();
+        hook(
+            &fx,
+            &host,
+            json!({"surface":99,"event":"session-end","session":THREAD,"gen":generation}),
         )
         .unwrap();
         let calls = host.seen.borrow();
@@ -904,16 +1321,24 @@ mod tests {
                 .iter()
                 .any(|(method, _)| method == "terminal.set_state" || method == "surface.fire_hook")
         );
+        assert!(
+            crate::session::registry::thread_session(fx.root(), THREAD)
+                .unwrap()
+                .is_none(),
+            "끝난 thread는 더 이상 이 surface로 라우팅하지 않는다"
+        );
     }
 
     /// session-start의 메타데이터 기록 두 건이 실패하면 응답에 2를 담아야 한다.
     #[test]
     fn a_hook_response_reports_the_best_effort_calls_that_failed() {
+        let fx = Fixture::new();
+        let generation = fx.open(999, &[]);
         let host = FlakyHost::failing(vec!["surface.meta.set"]);
-        let out = handle_hook(
+        let out = hook(
+            &fx,
             &host,
-            &json!({ "surface_id": 999, "event": "session-start", "session": "s-1" }),
-            &test_translator(),
+            json!({ "surface_id": 999, "event": "session-start", "session": THREAD, "gen": generation }),
         )
         .unwrap();
 
@@ -928,11 +1353,13 @@ mod tests {
     /// 모든 호출이 성공해도 실패 수 필드는 0으로 반환해야 한다.
     #[test]
     fn the_failure_count_is_present_even_when_nothing_failed() {
+        let fx = Fixture::new();
+        let generation = fx.open(1, &[]);
         let host = FlakyHost::failing(Vec::new());
-        let out = handle_hook(
+        let out = hook(
+            &fx,
             &host,
-            &json!({ "surface_id": 1, "event": "session-start", "session": "s-1" }),
-            &test_translator(),
+            json!({ "surface_id": 1, "event": "session-start", "session": THREAD, "gen": generation }),
         )
         .unwrap();
 
@@ -944,12 +1371,14 @@ mod tests {
     }
 
     #[test]
-    fn session_start_saves_a_terminal_local_restore_command() {
+    fn session_start_saves_a_restore_command_that_reopens_the_thread_through_the_helper() {
+        let fx = Fixture::new();
+        let generation = fx.open(42, &["-a", "never", "-s", "read-only"]);
         let host = FlakyHost::failing(Vec::new());
-        handle_hook(
+        hook(
+            &fx,
             &host,
-            &json!({"surface":42,"event":"session-start","session":"session-42"}),
-            &test_translator(),
+            json!({"surface":42,"event":"session-start","session":THREAD,"gen":generation,"model":"gpt-test"}),
         )
         .unwrap();
         let calls = host.seen.borrow();
@@ -961,23 +1390,82 @@ mod tests {
             .unwrap();
         assert_eq!(restore.1["surface_id"], 42);
         let command = restore.1["value"].as_str().unwrap();
-        assert!(command.contains("resume --dangerously-bypass-hook-trust"));
-        assert!(command.contains("-c check_for_update_on_startup=false session-42"));
-        assert!(!command.contains('\r'));
+        let program = crate::session::command::helper_program().unwrap();
         assert_eq!(
-            crate::reboot::resume_command("session-42", ""),
-            format!("{command}\r")
+            command,
+            format!(
+                "{} session --resume '{THREAD}' -- '-a' 'never' '-s' 'read-only' '-m' 'gpt-test'",
+                crate::session::command::sh_quote(&program)
+            ),
+            "정책과 모델을 보존하고 같은 helper를 거친다"
         );
+        assert!(!command.contains('\r'));
+        assert!(!command.contains("bypass-hook-trust"));
+        let routed = crate::session::registry::thread_session(fx.root(), THREAD)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (routed.surface, routed.generation.as_str()),
+            (42, generation.as_str())
+        );
+    }
+
+    /// 세대가 없거나 지난 세대이거나 다른 thread의 훅은 상태를 바꾸지 않는다.
+    #[test]
+    fn hooks_outside_the_current_generation_and_thread_change_nothing() {
+        let fx = Fixture::new();
+        let old = fx.open(7, &[]);
+        let current = fx.open(7, &[]);
+        let host = FlakyHost::failing(Vec::new());
+        let ignored = |params: Value| hook(&fx, &host, params).unwrap()["ignored"].clone();
+        assert_eq!(
+            ignored(json!({"surface":7,"event":"stop"})),
+            "no_generation"
+        );
+        assert_eq!(
+            ignored(json!({"surface":7,"event":"stop","gen":"../x"})),
+            "no_generation"
+        );
+        assert_eq!(
+            ignored(json!({"surface":7,"event":"stop","gen":old})),
+            "stale_generation"
+        );
+        assert_eq!(
+            ignored(json!({"surface":8,"event":"stop","gen":current})),
+            "stale_generation"
+        );
+        assert!(host.seen.borrow().is_empty(), "{:?}", host.seen.borrow());
+
+        hook(
+            &fx,
+            &host,
+            json!({"surface":7,"event":"session-start","session":THREAD,"gen":current}),
+        )
+        .unwrap();
+        host.seen.borrow_mut().clear();
+        let other = "019f55e7-3dfa-7a00-8000-0000000000ff";
+        // 소유 서버로 확인하지 못한 다른 thread의 훅은 경로·상태를 바꾸지 않는다.
+        assert_eq!(
+            ignored(json!({"surface":7,"event":"stop","session":other,"gen":current})),
+            "unverified_session"
+        );
+        assert_eq!(
+            ignored(json!({"surface":7,"event":"session-end","session":other,"gen":current})),
+            "other_thread"
+        );
+        assert!(host.seen.borrow().is_empty());
     }
 
     /// 상태 갱신 실패는 집계가 아니라 Err로 반환한다.
     #[test]
     fn the_propagated_call_is_an_error_not_a_counted_failure() {
+        let fx = Fixture::new();
+        let generation = fx.open(999, &[]);
         let host = FlakyHost::failing(vec!["terminal.set_state"]);
-        let err = handle_hook(
+        let err = hook(
+            &fx,
             &host,
-            &json!({ "surface_id": 999, "event": "stop" }),
-            &test_translator(),
+            json!({ "surface_id": 999, "event": "stop", "gen": generation }),
         );
 
         assert!(err.is_err(), "전파하는 호출의 실패는 Err 로 나간다");
@@ -991,8 +1479,9 @@ mod tests {
             let host = FlakyHost::failing(Vec::new());
             let requires = tr.t("codex.hook.requires_surface");
 
+            let fx = Fixture::new();
             let call = |params| {
-                handle_hook(&host, &params, &tr)
+                fx.with(|d| handle_hook(&host, &params, &tr, d))
                     .expect_err("대상 surface 를 못 정하면 Err 다")
                     .message
             };
@@ -1041,41 +1530,42 @@ mod tests {
         prompt_file::path_for(&std::env::temp_dir(), PROMPT_FILE_PREFIX, surface_id)
     }
 
+    fn helper() -> String {
+        crate::session::command::sh_quote(&crate::session::command::helper_program().unwrap())
+    }
+
     #[test]
     fn make_codex_command_no_prompt() {
         assert_eq!(
-            make_codex_command(42, None, ""),
-            "TASTY_SURFACE_ID=42 command codex -c check_for_update_on_startup=false --dangerously-bypass-hook-trust\r"
+            make_codex_command(42, None, "").unwrap(),
+            format!("{} session\r", helper())
         );
         assert_eq!(
-            make_codex_command(42, Some(""), ""),
-            "TASTY_SURFACE_ID=42 command codex -c check_for_update_on_startup=false --dangerously-bypass-hook-trust\r"
+            make_codex_command(42, Some(""), "").unwrap(),
+            format!("{} session\r", helper())
         );
     }
 
     #[test]
-    fn make_codex_command_with_plain_prompt_uses_tempfile_cat() {
+    fn make_codex_command_passes_the_prompt_as_a_file() {
         let surface_id = unique_surface_id(1);
-        let cmd = make_codex_command(surface_id, Some("hello"), "");
-        assert!(
-            cmd.starts_with(&format!(
-                "TASTY_SURFACE_ID={surface_id} {} -c check_for_update_on_startup=false --dangerously-bypass-hook-trust \"$(cat '",
-                crate::POSIX_CODEX_COMMAND
-            )),
-            "got {cmd}"
+        let cmd = make_codex_command(surface_id, Some("hello"), "").unwrap();
+        let path = prompt_path(surface_id);
+        assert_eq!(
+            cmd,
+            format!("{} session --prompt-file '{}'\r", helper(), path.display())
         );
-        assert!(cmd.ends_with("')\"\r"), "got {cmd}");
         // 임시 파일 삭제 실패는 시험 결과에 영향을 주지 않는다.
-        let _ = std::fs::remove_file(prompt_path(surface_id));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn make_codex_command_prompt_file_preserves_content_verbatim() {
         // 셸에서 특별한 의미가 있는 문자도 파일 안에서는 그대로 보존해야 한다.
-        let prompt = "fix [!NOTE] \"bug\" in path\\to\\file";
+        let prompt = "fix [!NOTE] \"bug\" in path\\to\\file $(x) 'q'";
         let surface_id = unique_surface_id(2);
         // 명령 문자열 대신 생성된 파일 내용을 검사한다.
-        let _ = make_codex_command(surface_id, Some(prompt), "");
+        make_codex_command(surface_id, Some(prompt), "").unwrap();
         let path = prompt_path(surface_id);
         let written = std::fs::read_to_string(&path).expect("prompt file should exist");
         assert_eq!(written, prompt);
@@ -1084,38 +1574,26 @@ mod tests {
     }
 
     #[test]
-    fn make_codex_command_with_policy_args_no_prompt() {
+    fn make_codex_command_passes_policy_arguments_to_the_helper() {
         assert_eq!(
-            make_codex_command(42, None, "-a never -s read-only"),
+            make_codex_command(42, None, "-a never -s read-only").unwrap(),
+            format!("{} session -- '-a' 'never' '-s' 'read-only'\r", helper())
+        );
+        assert_eq!(
+            make_codex_command(42, None, "--dangerously-bypass-approvals-and-sandbox").unwrap(),
             format!(
-                "TASTY_SURFACE_ID=42 {} -c check_for_update_on_startup=false --dangerously-bypass-hook-trust -a never -s read-only\r",
-                crate::POSIX_CODEX_COMMAND
+                "{} session -- '--dangerously-bypass-approvals-and-sandbox'\r",
+                helper()
             )
         );
-    }
-
-    #[test]
-    fn make_codex_command_with_policy_args_and_prompt() {
-        let surface_id = unique_surface_id(3);
-        let cmd = make_codex_command(surface_id, Some("hello"), "-a never");
+        let cmd = make_codex_command(42, None, "-a never").unwrap();
         assert!(
-            cmd.starts_with(&format!(
-                "TASTY_SURFACE_ID={surface_id} {} -c check_for_update_on_startup=false --dangerously-bypass-hook-trust -a never \"$(cat '", crate::POSIX_CODEX_COMMAND
-            )),
-            "got {cmd}"
+            !cmd.contains("bypass-hook-trust"),
+            "훅 검토를 우회하지 않는다: {cmd}"
         );
-        // 임시 파일 삭제 실패는 시험 결과에 영향을 주지 않는다.
-        let _ = std::fs::remove_file(prompt_path(surface_id));
-    }
-
-    #[test]
-    fn make_codex_command_with_full_auto_bypass() {
-        assert_eq!(
-            make_codex_command(42, None, "--dangerously-bypass-approvals-and-sandbox"),
-            format!(
-                "TASTY_SURFACE_ID=42 {} -c check_for_update_on_startup=false --dangerously-bypass-hook-trust --dangerously-bypass-approvals-and-sandbox\r",
-                crate::POSIX_CODEX_COMMAND
-            )
+        assert!(
+            !cmd.contains("TASTY_SURFACE_ID="),
+            "surface는 터미널 환경에서 읽는다: {cmd}"
         );
     }
 
@@ -1209,11 +1687,13 @@ mod tests {
     /// 승인 대기는 상태 변경 외에 입력 대기 훅과 화면 알림도 보내야 한다.
     #[test]
     fn a_permission_request_raises_state_notification_and_attention_together() {
+        let fx = Fixture::new();
+        let generation = fx.open(42, &[]);
         let host = FlakyHost::failing(Vec::new());
-        let out = handle_hook(
+        let out = hook(
+            &fx,
             &host,
-            &json!({ "surface_id": 42, "event": "permission-request" }),
-            &test_translator(),
+            json!({ "surface_id": 42, "event": "permission-request", "gen": generation }),
         )
         .unwrap();
         assert_eq!(out["host_call_failures"], 0);
@@ -1245,11 +1725,13 @@ mod tests {
     /// interrupt는 idle 상태와 완료 훅을 전달해야 한다.
     #[test]
     fn an_interrupt_goes_idle_and_fires_the_completion_hook() {
+        let fx = Fixture::new();
+        let generation = fx.open(42, &[]);
         let host = FlakyHost::failing(Vec::new());
-        handle_hook(
+        hook(
+            &fx,
             &host,
-            &json!({ "surface_id": 42, "event": "interrupt" }),
-            &test_translator(),
+            json!({ "surface_id": 42, "event": "interrupt", "gen": generation }),
         )
         .unwrap();
 
@@ -1273,11 +1755,13 @@ mod tests {
     /// 도구 실행 후에는 active로만 바꾸고 알림을 추가하지 않는다.
     #[test]
     fn a_post_tool_use_only_returns_to_active() {
+        let fx = Fixture::new();
+        let generation = fx.open(42, &[]);
         let host = FlakyHost::failing(Vec::new());
-        handle_hook(
+        hook(
+            &fx,
             &host,
-            &json!({ "surface_id": 42, "event": "post-tool-use" }),
-            &test_translator(),
+            json!({ "surface_id": 42, "event": "post-tool-use", "gen": generation }),
         )
         .unwrap();
 
@@ -1462,7 +1946,7 @@ mod tests {
         }
     }
 
-    /// 환경 값이 없으면 실행하지 않고, 명령 실패는 Codex 턴을 막지 않아야 한다.
+    /// 세대·surface 값이 없으면 실행하지 않고, 명령 실패는 Codex 턴을 막지 않아야 한다.
     /// 실패 기록은 Tasty CLI가 담당하므로 안쪽 || true를 유지한다.
     #[cfg(not(windows))]
     #[test]
@@ -1470,13 +1954,19 @@ mod tests {
         for (_, kebab, _) in HOOK_EVENTS {
             let cmd = hook_command(kebab);
             assert!(
-                cmd.starts_with("if [ -n \"$TASTY_SURFACE_ID\" ]; then "),
+                cmd.starts_with(
+                    "if [ -n \"$TASTY_CODEX_GEN\" ] && [ -n \"$TASTY_SURFACE_ID\" ]; then "
+                ),
                 "가드가 if 블록이 아니다: {cmd}"
             );
             assert!(cmd.ends_with("; fi"), "블록이 닫히지 않았다: {cmd}");
             assert!(
-                !cmd.contains("] && "),
-                "옛 `A && B || true` 형태로 회귀했다: {cmd}"
+                cmd.contains(" > /dev/null || true; printf"),
+                "CLI 실패가 Codex 응답을 막으면 안 된다: {cmd}"
+            );
+            assert!(
+                cmd.contains("--gen \"$TASTY_CODEX_GEN\""),
+                "세대를 넘기지 않는다: {cmd}"
             );
             // 기존 훅을 찾아 교체할 표식이 필요하다.
             assert!(cmd.contains(HOOK_MARKER), "marker 를 잃었다: {cmd}");
@@ -1511,24 +2001,37 @@ command = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook stop --surface $TAST
         assert_eq!(cmd, hook_command("stop"));
     }
 
-    /// 실제 셸에서 환경 값이 없을 때 출력 없이 성공하는지 확인한다.
+    /// 실제 셸에서 세대나 surface 값이 없을 때 출력 없이 성공하는지 확인한다.
+    /// 세대 값이 없는 경우는 사용자가 Tasty 터미널에서 직접 실행한 codex다.
     #[cfg(unix)]
     #[test]
-    fn posix_guard_exits_silently_without_surface_id() {
-        let out = std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(hook_command("stop"))
-            .env_remove("TASTY_SURFACE_ID")
-            .env("PATH", "/nonexistent")
-            .output()
-            .expect("/bin/sh");
-        assert!(out.status.success());
-        assert!(out.stdout.is_empty());
-        assert!(
-            out.stderr.is_empty(),
-            "stderr가 비어 있어야 한다: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+    fn posix_guard_exits_silently_without_generation_or_surface() {
+        for (surface, generation) in [
+            (None, None),
+            (Some("42"), None),
+            (None, Some("0123456789abcdef")),
+        ] {
+            let mut cmd = std::process::Command::new("/bin/sh");
+            cmd.arg("-c")
+                .arg(hook_command("stop"))
+                .env_remove("TASTY_SURFACE_ID")
+                .env_remove("TASTY_CODEX_GEN")
+                .env("PATH", "/nonexistent");
+            if let Some(v) = surface {
+                cmd.env("TASTY_SURFACE_ID", v);
+            }
+            if let Some(v) = generation {
+                cmd.env("TASTY_CODEX_GEN", v);
+            }
+            let out = cmd.output().expect("/bin/sh");
+            assert!(out.status.success());
+            assert!(out.stdout.is_empty(), "{surface:?}/{generation:?}");
+            assert!(
+                out.stderr.is_empty(),
+                "stderr가 비어 있어야 한다: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
     }
 
     /// Codex receives a no-decision response, while the CLI still receives the
@@ -1543,7 +2046,8 @@ command = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook stop --surface $TAST
             for exit_code in [0, 1] {
                 let script = format!(
                     r#"tasty() {{
-    [ "$*" = "codex hook {event} --surface 42" ] || exit 91
+    [ "$*" = "codex hook {event} --surface 42 --gen 0123456789abcdef" ] || exit 91
+    [ "$TASTY_HOME" = "/parent home" ] || exit 93
     IFS= read -r payload
     [ "$payload" = '{{"session_id":"test-session"}}' ] || exit 92
     printf '{{"host_call_failures":2}}\n'
@@ -1556,6 +2060,9 @@ command = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook stop --surface $TAST
                 let mut child = Command::new("/bin/sh")
                     .args(["-c", &script])
                     .env("TASTY_SURFACE_ID", "42")
+                    .env("TASTY_CODEX_GEN", "0123456789abcdef")
+                    .env("TASTY_PARENT_HOME", "/parent home")
+                    .env("TASTY_HOME", "/other instance")
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
@@ -2197,7 +2704,9 @@ trusted_hash = "sha256:xyz"
     /// 기존 호출자 호환성을 위해 호스트의 children 객체를 그대로 반환한다.
     #[test]
     fn children_response_is_the_host_response_verbatim() {
-        let out = handle_children(&ShapeHost, &json!({ "surface": 1 }), &test_translator())
+        let fx = Fixture::new();
+        let out = fx
+            .with(|d| handle_children(&ShapeHost, &json!({ "surface": 1 }), &fx.tr, d))
             .expect("handle_children");
         assert_eq!(
             out,
@@ -2209,12 +2718,10 @@ trusted_hash = "sha256:xyz"
     /// 성공 응답의 killed_surface_id·child_index를 그대로 반환해야 한다.
     #[test]
     fn kill_response_is_the_host_response_verbatim() {
-        let out = handle_kill(
-            &ShapeHost,
-            &json!({ "surface": 1, "child": 0 }),
-            &test_translator(),
-        )
-        .expect("handle_kill");
+        let fx = Fixture::new();
+        let out = fx
+            .with(|d| handle_kill(&ShapeHost, &json!({ "surface": 1, "child": 0 }), &fx.tr, d))
+            .expect("handle_kill");
         assert_eq!(
             out,
             json!({ "killed_surface_id": 42, "child_index": 0 }),

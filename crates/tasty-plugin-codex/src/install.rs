@@ -24,10 +24,10 @@ pub(crate) fn handle_install(params: &Value, tr: &Translator) -> Result<Value, I
     });
     if !trusted {
         resp["note"] = Value::String(
-            "Review newly added or changed hooks in Codex using /hooks. Tasty includes \
---dangerously-bypass-hook-trust in launch commands, but Codex may still show hook review \
-on resume. This metadata is not runtime trust verification; installation does not approve \
-hooks or prove that a remote daemon loaded this configuration."
+            "Review newly added or changed hooks in Codex using /hooks. Tasty does not bypass \
+hook review; untrusted hooks do not run, so Tasty sessions cannot report their state or \
+return results. This metadata is not runtime trust verification; installation does not \
+approve hooks or prove that a remote daemon loaded this configuration."
                 .into(),
         );
     }
@@ -139,19 +139,21 @@ pub(crate) fn write_toml(
 }
 
 pub(crate) fn hook_command(event_kebab: &str) -> String {
-    // surface ID가 없으면 실행하지 않는다. CLI 내부 응답은 버리고 Codex에는 {}를 보낸다.
+    // Tasty 세션 helper가 띄운 서버의 훅만 보고한다. 세대 값이 없으면 사용자가 직접 실행한
+    // codex나 공유 daemon이므로 실행하지 않는다. 대상 인스턴스는 터미널이 알려 준
+    // TASTY_PARENT_HOME으로 정한다. CLI 내부 응답은 버리고 Codex에는 {}를 보낸다.
     // stderr는 전달 오류를 확인할 수 있도록 유지한다. Windows 훅에는 PowerShell 문법을 쓴다.
     #[cfg(windows)]
     {
         format!(
-            "if ($env:TASTY_SURFACE_ID) {{ $input | tasty codex hook {event_kebab} --surface $env:TASTY_SURFACE_ID > $null; '{{}}' }}"
+            "if ($env:TASTY_CODEX_GEN -and $env:TASTY_SURFACE_ID) {{ $env:TASTY_HOME = $env:TASTY_PARENT_HOME; $input | tasty codex hook {event_kebab} --surface $env:TASTY_SURFACE_ID --gen $env:TASTY_CODEX_GEN > $null; '{{}}' }}"
         )
     }
     // Tasty CLI가 실패를 기록한 뒤에도 Codex 턴을 막지 않도록 성공으로 반환한다.
     #[cfg(not(windows))]
     {
         format!(
-            "if [ -n \"$TASTY_SURFACE_ID\" ]; then tasty codex hook {event_kebab} --surface $TASTY_SURFACE_ID > /dev/null || true; printf '{{}}\\n'; fi"
+            "if [ -n \"$TASTY_CODEX_GEN\" ] && [ -n \"$TASTY_SURFACE_ID\" ]; then TASTY_HOME=\"$TASTY_PARENT_HOME\" tasty codex hook {event_kebab} --surface \"$TASTY_SURFACE_ID\" --gen \"$TASTY_CODEX_GEN\" > /dev/null || true; printf '{{}}\\n'; fi"
         )
     }
 }

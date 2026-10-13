@@ -5,6 +5,10 @@
 //! 요청 시점보다 늘어나야 한다. 임의 출력도 일치할 수 있고 화면에서 지워질 수도 있어
 //! 프로세스 종료·복귀를 확정하거나 입력의 안전을 보장하는 검사는 아니다.
 //!
+//! Tasty helper로 띄운 세션은 화면 문구 대신 helper가 기록한 세대 상태와 전경 프로세스로 종료·
+//! 복귀를 판정한다([`crate::reboot_watch`]). 아래 화면 판정은 helper 세션이 아닐 때만 쓴다.
+//! 응답은 접수 결과이며, 재시작의 성공·실패는 로그와 surface의 새 세대로 확인한다.
+//!
 //! 세션 ID와 화면의 기준 횟수는 종료 전에 읽는다.
 //! 재시작 안내의 Enter가 업데이트 메뉴를 선택하지 않도록 업데이트 확인을 끈다.
 //! 각 단계에서 조회나 시간 제한 검사가 실패하면 이후 명령 전송을 중단한다.
@@ -43,6 +47,8 @@ const TUI_READY_GRACE: Duration = Duration::from_secs(3);
 const NOTICE_ATTEMPTS: u32 = 4;
 const NOTICE_RETRY_INTERVAL: Duration = Duration::from_secs(3);
 const NOTICE_VERIFY_DELAY: Duration = Duration::from_millis(1500);
+/// 안내를 확인한 뒤 별도 Enter 전 대기. agent-common의 `ensure_submitted`와 같은 값이다.
+const NOTICE_SUBMIT_DELAY: Duration = Duration::from_millis(500);
 /// 종료 안내에서 찾는 부분 문자열.
 const EXIT_MARKER: &str = "run codex resume";
 /// 시작 배너에서 찾는 부분 문자열.
@@ -59,6 +65,7 @@ pub(crate) fn handle_reboot(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
+    root: Option<&std::path::Path>,
 ) -> Result<Value, IpcMethodError> {
     let surface_id = crate::handlers::require_target_surface(params, tr)?;
     let (delay_secs, extra_prompt) = parse_options(params);
@@ -66,7 +73,8 @@ pub(crate) fn handle_reboot(
     let policy_args = resolve_policy_args(host, params, tr)?;
 
     let session_id = fetch_session_id(host, surface_id, tr)?;
-    if !is_safe_session_id(&session_id) {
+    // helper는 thread UUID만 재개한다.
+    if !is_safe_session_id(&session_id) || !crate::ids::is_uuid(&session_id) {
         return Err(IpcMethodError::new(crate::handlers::t_args(
             tr,
             "codex.reboot.malformed_session_id",
@@ -77,6 +85,22 @@ pub(crate) fn handle_reboot(
         )));
     }
 
+    let watch = root.and_then(|r| crate::reboot_watch::HelperWatch::find(r, surface_id));
+    // helper 세션은 셸 복귀를 전경 pid 변화로 확인하므로, 기준값을 읽을 수 없으면 Codex를 끝내기
+    // 전에 거절한다.
+    let watch = match watch {
+        Some(watch) => match foreground(host, surface_id) {
+            Some(fg0) => Some((watch, fg0)),
+            None => {
+                return Err(IpcMethodError::new(tr.t_replace(
+                    "codex.reboot.foreground_unreadable",
+                    "{surface}",
+                    &surface_id.to_string(),
+                )));
+            }
+        },
+        None => None,
+    };
     // 이미 화면에 남은 문구와 구분하도록 현재 횟수를 기록한다.
     let Some(screen) = screen_text(host, surface_id) else {
         return Err(IpcMethodError::new(tr.t_replace(
@@ -114,16 +138,27 @@ pub(crate) fn handle_reboot(
     let spawned = thread::Builder::new()
         .name(format!("codex-reboot-s{surface_id}"))
         .spawn(move || {
-            run_reboot_sequence(
-                &thread_host,
-                surface_id,
-                delay_secs,
-                &thread_session,
-                exit_c0,
-                banner_c0,
-                &thread_notice,
-                &thread_policy_args,
-            );
+            match watch {
+                Some((watch, fg0)) => run_helper_reboot(
+                    &thread_host,
+                    &watch,
+                    delay_secs,
+                    fg0,
+                    &thread_session,
+                    &thread_notice,
+                    &thread_policy_args,
+                ),
+                None => run_reboot_sequence(
+                    &thread_host,
+                    surface_id,
+                    delay_secs,
+                    &thread_session,
+                    exit_c0,
+                    banner_c0,
+                    &thread_notice,
+                    &thread_policy_args,
+                ),
+            }
             tasty_utils::poison::recover_mutex(
                 thread_inflight.lock(),
                 INFLIGHT_WHAT,
@@ -180,31 +215,13 @@ fn fetch_session_id(
     Ok(session_id)
 }
 
-/// 제출 문자(\r)를 포함한 resume 명령을 만든다.
-/// POSIX에서는 alias/function을 우회하고 Windows에서는 기존 codex 명령을 유지한다.
-/// 업데이트 확인을 끄고 호출자가 정한 정책과 훅 신뢰 우회 플래그를 전달한다.
-/// 이 플래그가 원격 resume의 훅 검토 화면까지 없애지는 않을 수 있다.
-pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
-    format!("{}\r", resume_command_line(session_id, policy_args))
-}
-
-/// Layout restore and reboot must start the same terminal-local Codex session.
-pub(crate) fn resume_command_line(session_id: &str, policy_args: &str) -> String {
-    // Windows surfaces may use Git Bash, cmd, or PowerShell. Preserve the existing
-    // token until the receiving shell family is known; cmd switches break in MSYS.
-    let command = if cfg!(windows) {
-        "codex"
-    } else {
-        crate::POSIX_CODEX_COMMAND
-    };
-    let policy_suffix = if policy_args.is_empty() {
-        String::new()
-    } else {
-        format!(" {policy_args}")
-    };
-    format!(
-        "{command} resume --dangerously-bypass-hook-trust{policy_suffix} {} {session_id}",
-        crate::LOCAL_SESSION_ARGS
+/// 제출 문자(\r)를 포함한 resume 명령을 만든다. 새 세션과 같은 helper가 전용 서버를 다시
+/// 띄우고 같은 thread를 연다. 호출자가 정한 정책을 TUI에 넘긴다.
+pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> std::io::Result<String> {
+    crate::session::submit_line(
+        Some(session_id),
+        None,
+        &crate::session::command::policy_tokens(policy_args),
     )
 }
 
@@ -218,6 +235,140 @@ pub(crate) fn count_occurrences(hay: &str, needle: &str) -> usize {
         return 0;
     }
     hay.matches(needle).count()
+}
+
+/// 호스트로 터미널을 조작한다.
+struct HostIo<'a> {
+    host: &'a HostHandle,
+    surface_id: u32,
+}
+
+impl crate::reboot_watch::RebootIo for HostIo<'_> {
+    fn ctrl_c(&self) -> Result<(), String> {
+        self.host
+            .call(
+                "surface.send_combo",
+                json!({ "surface_id": self.surface_id, "key": "c", "modifiers": ["ctrl"] }),
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    fn foreground(&self) -> Option<crate::reboot_watch::Foreground> {
+        foreground(self.host, self.surface_id)
+    }
+    fn send(&self, text: &str) -> Result<(), String> {
+        self.host
+            .call(
+                "surface.send",
+                json!({ "surface_id": self.surface_id, "text": text }),
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    fn sleep(&self, d: Duration) {
+        thread::sleep(d);
+    }
+    fn tell(&self, text: &str) -> Result<(), String> {
+        self.host
+            .call(
+                "terminal.tell",
+                json!({ "surface": self.surface_id, "text": text }),
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    fn visible(&self, snippet: &str) -> bool {
+        screen_contains(self.host, self.surface_id, snippet)
+    }
+    fn enter(&self) -> Result<(), String> {
+        self.host
+            .call(
+                "surface.send_key",
+                json!({ "surface_id": self.surface_id, "key": "enter" }),
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// 호스트가 보고하는 전경 프로세스. 조회 실패나 pid·이름 부재는 None이다.
+/// `is_shell`은 같은 조회 시점의 호스트 셸 분류다(판정 불가면 null).
+fn foreground(host: &HostHandle, surface_id: u32) -> Option<crate::reboot_watch::Foreground> {
+    let v = host
+        .call(
+            "surface.foreground_process",
+            json!({ "surface_id": surface_id }),
+        )
+        .ok()?;
+    parse_foreground(&v)
+}
+
+fn parse_foreground(v: &Value) -> Option<crate::reboot_watch::Foreground> {
+    Some(crate::reboot_watch::Foreground {
+        pid: v.get("pid")?.as_u64().and_then(|p| u32::try_from(p).ok())?,
+        name: v.get("name")?.as_str()?.to_string(),
+        // 셸 분류를 주지 않는 호스트는 판정 불가와 같다.
+        is_shell: v.get("is_shell").and_then(Value::as_bool),
+    })
+}
+
+/// helper 세션을 재시작한다. 결과는 로그로 남긴다.
+fn run_helper_reboot(
+    host: &HostHandle,
+    watch: &crate::reboot_watch::HelperWatch,
+    delay_secs: u64,
+    fg0: crate::reboot_watch::Foreground,
+    session_id: &str,
+    notice: &str,
+    policy_args: &str,
+) {
+    use crate::reboot_watch::{Outcome, restart};
+    let surface_id = watch.surface;
+    thread::sleep(Duration::from_secs(delay_secs));
+    let command = match resume_command(session_id, policy_args) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("codex reboot s{surface_id}: resume command: {e}");
+            return;
+        }
+    };
+    let io = HostIo { host, surface_id };
+    let outcome = restart(
+        &io,
+        watch,
+        &fg0,
+        session_id,
+        &command,
+        crate::reboot_watch::Limits::DEFAULT,
+    );
+    let Outcome::Restarted { ctrl_c, generation } = outcome else {
+        // 각 실패는 restart가 경고로 남겼다.
+        return;
+    };
+    tracing::info!(
+        "codex reboot s{surface_id}: session {} ended after {ctrl_c}x Ctrl+C and session {generation} is ready",
+        watch.generation
+    );
+    // 안내 대상은 restart가 확인한 세대뿐이다. 현재 세대를 다시 읽어 대상으로 삼지 않는다.
+    let delivered = crate::reboot_watch::deliver_notice(
+        &io,
+        watch,
+        &generation,
+        &crate::reboot_watch::Notice {
+            text: notice,
+            snippet: NOTICE_SNIPPET,
+            attempts: NOTICE_ATTEMPTS,
+            grace: TUI_READY_GRACE,
+            verify: NOTICE_VERIFY_DELAY,
+            retry: NOTICE_RETRY_INTERVAL,
+            submit: NOTICE_SUBMIT_DELAY,
+        },
+    );
+    if delivered == crate::reboot_watch::NoticeResult::NotVisible {
+        tracing::warn!(
+            "codex reboot s{surface_id}: notice not confirmed on screen after {NOTICE_ATTEMPTS} attempts"
+        );
+    }
 }
 
 /// 별도 스레드에서 각 단계를 실행한다. 실패하면 경고 후 중단한다.
@@ -287,9 +438,16 @@ fn resume_and_wait(
     policy_args: &str,
     banner_c0: usize,
 ) -> bool {
+    let command = match resume_command(session_id, policy_args) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("codex reboot s{surface_id}: resume command: {e}");
+            return false;
+        }
+    };
     if let Err(e) = host.call(
         "surface.send",
-        json!({ "surface_id": surface_id, "text": resume_command(session_id, policy_args) }),
+        json!({ "surface_id": surface_id, "text": command }),
     ) {
         tracing::warn!("codex reboot s{surface_id}: resume send failed: {e}");
         return false;
@@ -360,33 +518,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resume_command_disables_update_prompt_and_submits() {
+    fn resume_command_reopens_the_thread_through_the_session_helper() {
+        let thread = "019f55e7-3dfa-7a00-8000-0123456789ab";
+        let line = resume_command(thread, "-a never -s read-only").unwrap();
+        let program = crate::session::command::helper_program().unwrap();
         assert_eq!(
-            resume_command("019f55e7-3dfa", ""),
+            line,
             format!(
-                "{} resume --dangerously-bypass-hook-trust -c check_for_update_on_startup=false 019f55e7-3dfa\r",
-                if cfg!(windows) {
-                    "codex"
-                } else {
-                    "command codex"
-                }
+                "{} session --resume '{thread}' -- '-a' 'never' '-s' 'read-only'\r",
+                crate::session::command::sh_quote(&program)
             )
         );
-    }
-
-    #[test]
-    fn resume_command_includes_policy_args_when_present() {
-        assert_eq!(
-            resume_command("019f55e7-3dfa", "-a never -s read-only"),
-            format!(
-                "{} resume --dangerously-bypass-hook-trust -a never -s read-only -c check_for_update_on_startup=false 019f55e7-3dfa\r",
-                if cfg!(windows) {
-                    "codex"
-                } else {
-                    "command codex"
-                }
-            )
-        );
+        assert!(!line.contains("bypass-hook-trust"));
     }
 
     fn test_translator_for(code: &str) -> Translator {
@@ -430,6 +573,26 @@ mod tests {
         let en = build_notice(test_translator_for("en").t(REBOOT_NOTICE_KEY), None);
         let ko = build_notice(test_translator_for("ko").t(REBOOT_NOTICE_KEY), None);
         assert_ne!(en, ko, "언어가 달라도 같은 문구를 반환했다");
+    }
+
+    /// 셸 분류가 없거나 null인 응답은 판정 불가로 읽는다.
+    #[test]
+    fn the_shell_classification_is_read_only_when_present() {
+        let read = |v: Value| parse_foreground(&v).map(|f| f.is_shell);
+        assert_eq!(
+            read(json!({ "pid": 7, "name": "zsh", "is_shell": true })),
+            Some(Some(true))
+        );
+        assert_eq!(
+            read(json!({ "pid": 7, "name": "vim", "is_shell": false })),
+            Some(Some(false))
+        );
+        assert_eq!(
+            read(json!({ "pid": 7, "name": "zsh", "is_shell": null })),
+            Some(None)
+        );
+        assert_eq!(read(json!({ "pid": 7, "name": "zsh" })), Some(None));
+        assert_eq!(read(json!({ "pid": null, "name": null })), None);
     }
 
     #[test]

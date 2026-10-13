@@ -8,7 +8,6 @@
 //! 중복 등록은 clap의 debug 검증에서 전체 명령 트리를 실패시킬 수 있다.
 
 mod build;
-mod managed;
 mod request;
 mod stdin;
 

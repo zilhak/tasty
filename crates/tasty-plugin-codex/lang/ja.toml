@@ -28,6 +28,7 @@ sandbox_hint = "⚠ sandbox の初期化に失敗した可能性があります(
 
 [codex.reboot]
 notice = "tasty codex reboot : このセッションは tasty の reboot 機能で再起動されました(codex resume で同一セッションを再開)。直前のターンが途中で切れている可能性があるため、最後の作業状態を確認してから続行してください。"
+foreground_unreadable = "surface {surface} の前面プロセスを読み取れません。再開前にシェルへの復帰を確認するために必要です"
 malformed_session_id = "surface {surface} の codex-session-id meta の形式が不正です: {value}"
 screen_unreadable = "surface {surface} の画面を読み取れません"
 lock_poisoned = "reboot in-flight ロックが poison しました: {detail}"
@@ -72,7 +73,7 @@ write_failed = "codex 設定ファイルを書き込めませんでした: {deta
 description = "新しいワークスペースを作成しターミナルでCodexを起動"
 
 [codex.cli.sub.spawn]
-description = "分割 surface に子 Codex を作成します。ホストの応答を待って返り、子の作業完了は待ちません。idle・入力待ち・終了を親に通知するフックを登録します。"
+description = "子 Codex インスタンスを分割 surface に作成します。ホストの応答を待って返り、子の作業完了は待ちません。Codex の会話から呼び出すと、子のターンが終わるたびに結果をその会話へ返します。それ以外では親 surface に idle・入力待ち・終了の通知フックを登録します。"
 
 [codex.cli.sub.children]
 description = "指定したCodex親の子を一覧表示"
@@ -84,7 +85,7 @@ description = "指定した子サーフェスの親CodexサーフェスIDを返�
 description = "子一つの状態を照会：idle、needs_input、active、exited（実際のサーフェスと照合）"
 
 [codex.cli.sub.tell]
-description = "改行を維持してメッセージを送り、確定します。ホストの応答を待って返り、作業完了は待ちません。呼び出し元 surface が指定されていれば idle・入力待ち・終了の通知フックを登録します。"
+description = "改行を維持してメッセージを送り、確定します。ホストの応答を待って返り、作業完了は待ちません。Codex の会話から呼び出すと、対象のターン結果をその会話へ返します。それ以外では呼び出し元 surface が指定されていれば idle・入力待ち・終了の通知フックを登録します。"
 
 [codex.cli.sub.notify-caller]
 description = "内部用：子の状態変化を通知し、同じ対象・コマンドの一度限りフックを削除します。対象 surface を引き続き確認できれば完了フックを再登録します。spawn/tell のフックから呼び出し、直接は使用しません。"
@@ -108,7 +109,7 @@ description = "Codex CLI設定にTastyフックをインストール"
 description = "Codex CLI設定からTastyフックを削除"
 
 [codex.cli.sub.hook]
-description = "Codexフック連携（Codex CLIのフックシステムから呼び出し）。呼び出し時にstdinからJSONペイロード（session_id、prompt、last_assistant_message）を読み取ります。"
+description = "Codexフック連携（Codex CLIのフックシステムから呼び出し）。呼び出し時にstdinからJSONペイロード（session_id、prompt、last_assistant_message、model、turn_id）を読み取ります。"
 
 [codex.cli.arg.launch_args.workspace]
 help = "作成するワークスペース名（既定値：\"codex\"）"
@@ -176,6 +177,9 @@ help = "承認とサンドボックスを両方省略（--dangerously-bypass-app
 [codex.cli.arg.children_args.surface]
 help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID、なければ親が一つだけのときその親）"
 
+[codex.cli.arg.children_args.workspace]
+help = "子がある workspace（ID または名前）。Codex の会話から呼び出し、子が複数の workspace にあるときだけ使います"
+
 [codex.cli.arg.notify_caller_args.caller]
 help = "通知を受け取るサーフェスID"
 
@@ -191,17 +195,26 @@ help = "一斉送信するテキスト。確定には \\r を使用（例：\"he
 [codex.cli.arg.broadcast_args.surface]
 help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID、なければ親が一つだけのときその親）"
 
+[codex.cli.arg.broadcast_args.workspace]
+help = "子がある workspace（ID または名前）。Codex の会話から呼び出し、子が複数の workspace にあるときだけ使います"
+
 [codex.cli.arg.broadcast_args.role]
 help = "この役割ラベルの子だけに送信"
 
 [codex.cli.arg.kill_args.surface]
 help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID、なければ親が一つだけのときその親）"
 
+[codex.cli.arg.kill_args.workspace]
+help = "子がある workspace（ID または名前）。Codex の会話から呼び出し、子が複数の workspace にあるときだけ使います"
+
 [codex.cli.arg.kill_args.child]
 help = "終了する子インデックス"
 
 [codex.cli.arg.respawn_args.surface]
 help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID、なければ親が一つだけのときその親）"
+
+[codex.cli.arg.respawn_args.workspace]
+help = "子がある workspace（ID または名前）。Codex の会話から呼び出し、子が複数の workspace にあるときだけ使います"
 
 [codex.cli.arg.respawn_args.child]
 help = "再生成する子インデックス"
@@ -266,26 +279,58 @@ help = "送信されたプロンプト。UserPromptSubmitフックのstdin JSON�
 [codex.cli.arg.hook_args.last_assistant_message]
 help = "ターンの最後のassistantメッセージ。Stopフックのstdin JSONの 'last_assistant_message' から自動設定。このsurfaceがTastyのagent taskを実行中なら、そのターンの最終回答として報告"
 
-[codex.cli.sub.managed]
-description = "管理対象 Codex タスクリレーの準備と確認"
+[codex.cli.sub.result]
+description = "この Codex の会話へ返された子の結果を読みます。参照メッセージを受け取った Codex セッションで実行します。読んでも結果は削除されません。"
 
-[codex.cli.arg.managed_args.action]
-help = "prepare | attach | get | callback | forget"
+[codex.cli.sub.session-open]
+description = "内部用：ターミナルで実行中の Codex セッション helper の新しい世代を登録します。直接は使用しません。"
 
-[codex.cli.arg.managed_args.workspace_id]
-help = "既存タスクのワークスペース ID"
+[codex.cli.arg.result_args.event]
+help = "参照メッセージのイベント ID"
 
-[codex.cli.arg.managed_args.task_id]
-help = "既存タスク ID"
+[codex.cli.arg.session_open_args.surface]
+help = "helper が実行されるターミナル surface"
 
-[codex.cli.arg.managed_args.parent_thread]
-help = "親の管理対象スレッド UUID (既定: 呼び出し元の CODEX_THREAD_ID)"
+[codex.cli.arg.session_open_args.resume]
+help = "helper が再開する thread UUID"
 
-[codex.cli.arg.managed_args.id]
-help = "リレー記述子 ID"
+[codex.cli.arg.session_open_args.tui_args]
+help = "TUI に渡すポリシー・モデル引数の JSON 配列"
 
-[codex.cli.arg.managed_args.thread_id]
-help = "create_thread が返した管理対象スレッド UUID"
+[codex.cli.arg.hook_args.gen]
+help = "Tasty セッション helper が設定したセッション世代。現在の世代でないフックは無視します。"
 
-[codex.cli.arg.managed_args.cli_path]
-help = "リレーに使う Tasty 実行ファイル (既定: 現在の CLI)"
+[codex.cli.arg.hook_args.model]
+help = "セッションのモデル。stdin JSON の 'model' から自動で設定します。セッションの復元で同じモデルを使うために記録します。"
+
+[codex.cli.arg.hook_args.turn_id]
+help = "ターン ID。stdin JSON の 'turn_id' から自動で設定します。1 つのターンを Codex の親へ一度だけ返すために使います。"
+
+[codex.state]
+no_data_dir = "プラグインのデータフォルダを使えないため、Codex セッションと返された結果を保存できません"
+
+[codex.session]
+bad_args = "tasty codex session: 引数が正しくありません: {detail}"
+not_in_tasty = "tasty codex session は Tasty のターミナルで実行する必要があります（{detail} が設定されていません）"
+open_failed = "tasty codex session: Tasty にセッションを登録できませんでした: {detail}"
+server_failed = "tasty codex session: 専用の Codex app-server を起動できなかったため、Codex を起動しませんでした: {detail}"
+tui_failed = "tasty codex session: Codex TUI を実行できませんでした: {detail}"
+resume_failed = "tasty codex session: 要求した設定で Codex の会話を再開できませんでした: {detail}"
+
+[codex.parent]
+requires_codex_caller = "codex.parent は Codex の会話から呼び出す必要があります（Codex の呼び出しコンテキストがありません）"
+not_receivable = "Codex thread {thread} は結果を受け取れません。Tasty の Codex セッションで実行されておらず、共有 Codex app-server にも読み込まれていません"
+check_failed = "Codex thread {thread} が共有 Codex app-server に読み込まれているか確認できませんでした: {detail}"
+
+[codex.deliver]
+invalid = "codex.deliver の要求が正しくありません: {detail}"
+
+[codex.result]
+not_found = "イベント ID {event} の結果はありません"
+other_thread = "イベント {event} は別の Codex の会話へ返された結果です"
+
+[codex.owner]
+other_parent = "Codex の会話は自分の子だけを管理できます。指定した親 surface {surface} はこの会話ではありません"
+not_own_child = "surface {surface} はこの Codex の会話の子ではないため、送信しませんでした"
+not_codex_child = "surface {surface} は Tasty が起動した Codex セッションではないため、結果はこの会話に戻りません"
+ambiguous_workspace = "この Codex の会話の子が複数の workspace にあります（{workspaces}）。--workspace で一つを選んでください"

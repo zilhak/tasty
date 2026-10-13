@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.213"
+version = "0.1.214"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -71,6 +71,7 @@ subcommands = [
     { name = "broadcast", ipc_method = "claude.broadcast", args = "broadcast_args", description = "Broadcast text to all children of a parent Claude instance", description_i18n_key = "claude.cli.sub.broadcast.description" },
     { name = "kill",      ipc_method = "claude.kill",      args = "kill_args",      description = "Kill a child Claude instance by child index", description_i18n_key = "claude.cli.sub.kill.description" },
     { name = "respawn",   ipc_method = "claude.respawn",   args = "respawn_args",   description = "Respawn a child Claude instance", description_i18n_key = "claude.cli.sub.respawn.description" },
+    { name = "codex-returns", ipc_method = "claude.codex_returns", args = "codex_returns_args", description = "List turn results of Codex-parented children that could not be handed to the Codex plugin yet, with their receiver, body and retry state. --retry puts every listed result back in line to be sent now, including ones whose automatic retry stopped, and returns without waiting for the sending.", description_i18n_key = "claude.cli.sub.codex-returns.description" },
     { name = "reboot",    ipc_method = "claude.reboot",    args = "reboot_args",    description = "Restart the Claude instance in a surface and resume the same session (delayed kill + claude -r). Call this as the LAST action of a turn — anything after the delay is cut off.", description_i18n_key = "claude.cli.sub.reboot.description" },
     # 자식에게 프로필을 적용한다. --child가 필요하며 해당 자식의 reboot 경로를 사용한다.
     { name = "child-profile", ipc_method = "claude.child_profile", args = "child_profile_args", description = "Attach a persistent Claude session profile to a CHILD instance (resolves --child to its surface, then runs the same sequence as 'claude reboot --profile' on it). Unlike reboot, this does NOT cut off the caller's turn — only the child restarts. A notification is delivered to the caller surface when the child transitions to idle/needs_input, and once more when it exits.", description_i18n_key = "claude.cli.sub.child-profile.description" },
@@ -127,6 +128,7 @@ flags = [
 [contributes.cli.arg_groups.children_args]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "claude.cli.arg.children_args.surface.help" },
+    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace", help_i18n_key = "claude.cli.arg.children_args.workspace.help" },
 ]
 
 [contributes.cli.arg_groups.parent_args]
@@ -168,18 +170,21 @@ positional = [
 flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "claude.cli.arg.broadcast_args.surface.help" },
     { name = "role",    type = "string", flag = "--role",    required = false, help = "Only send to children with this role label", help_i18n_key = "claude.cli.arg.broadcast_args.role.help" },
+    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace", help_i18n_key = "claude.cli.arg.broadcast_args.workspace.help" },
 ]
 
 [contributes.cli.arg_groups.kill_args]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "claude.cli.arg.kill_args.surface.help" },
     { name = "child_index", type = "u32", flag = "--child",   required = true,  help = "Child index to kill", help_i18n_key = "claude.cli.arg.kill_args.child_index.help" },
+    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace", help_i18n_key = "claude.cli.arg.kill_args.workspace.help" },
 ]
 
 [contributes.cli.arg_groups.respawn_args]
 flags = [
     { name = "surface",  type = "u32",    flag = "--surface",  required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "claude.cli.arg.respawn_args.surface.help" },
     { name = "child_index", type = "u32",    flag = "--child",    required = true,  help = "Child index to respawn", help_i18n_key = "claude.cli.arg.respawn_args.child_index.help" },
+    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace", help_i18n_key = "claude.cli.arg.respawn_args.workspace.help" },
     { name = "cwd",      type = "string", flag = "--cwd",      required = false, path_kind = "directory", help = "Override working directory for the respawned process", help_i18n_key = "claude.cli.arg.respawn_args.cwd.help" },
     { name = "role",     type = "string", flag = "--role",     required = false, help = "Replace the role label of the child", help_i18n_key = "claude.cli.arg.respawn_args.role.help" },
     { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Replace the display nickname of the child", help_i18n_key = "claude.cli.arg.respawn_args.nickname.help" },
@@ -187,6 +192,11 @@ flags = [
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when relaunching the child. Mutually exclusive with --profile", help_i18n_key = "claude.cli.arg.respawn_args.profile_file.help" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file", help_i18n_key = "claude.cli.arg.respawn_args.profile.help" },
     { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode.", help_i18n_key = "claude.cli.arg.respawn_args.permission_mode.help" },
+]
+
+[contributes.cli.arg_groups.codex_returns_args]
+flags = [
+    { name = "retry", type = "bool", flag = "--retry", required = false, help = "Put every pending result back in line to be sent now, including ones whose automatic retry stopped. The command does not wait for the sending, so the list it prints is the pending list at the time of the request", help_i18n_key = "claude.cli.arg.codex_returns_args.retry.help" },
 ]
 
 [contributes.cli.arg_groups.reboot_args]

@@ -3,6 +3,8 @@
 //! 생성·등록 실패는 경고하고 호스트 실행을 계속하므로 모든 자식의 정리를 보장하지는 않는다.
 //! 비 Windows에서는 아무 작업도 하지 않는다. 해당 플랫폼의 PTY·자식 종료 처리는 호출자 책임이다.
 //! 예외로 [`spawn_bound_to_host`]는 Linux에서 PDEATHSIG로 자식을 호스트 수명에 묶는다.
+//! [`terminate_process_group`]는 그룹 리더로 띄운 자식과 그 그룹을 정상 종료 요청부터 끝낸다.
+//! [`defer_termination_signals`]는 소유한 자식을 정리하는 동안 터미널 신호가 정리를 끊지 않게 한다.
 
 use std::sync::OnceLock;
 
@@ -55,6 +57,222 @@ pub fn adopt_pid(pid: Option<u32>) {
 /// CLI 등에서는 등록하지 않는다). 다른 OS는 결속하지 않고 그대로 실행한다.
 pub fn spawn_bound_to_host(cmd: std::process::Command) -> std::io::Result<std::process::Child> {
     bound::spawn(cmd)
+}
+
+/// 자기 프로세스 그룹의 리더로 띄운 자식과 그 그룹 전체를 끝내고 자식을 회수한다.
+///
+/// Unix는 그룹에 SIGTERM을 보내고 `grace` 안에 자식이 끝나지 않으면 SIGKILL을 보낸다. 자식이
+/// 먼저 끝나도 그룹에 남은 프로세스는 SIGKILL로 정리한다. npm 실행 스크립트처럼 실제 프로그램을
+/// 다시 띄우는 래퍼는 신호를 한 번만 전달하므로 래퍼에만 신호를 보내면 실제 프로그램이 고아로
+/// 남을 수 있기 때문이다. 호출자는 `CommandExt::process_group(0)`으로 자식을 띄워야 한다. 그룹이
+/// 하나라도 남아 있는 동안 그 그룹 ID는 다른 프로세스에 재사용되지 않는다. 그래서 자식이 이미
+/// 끝났어도 회수하지 않은 채(좀비가 PID와 그룹 ID를 붙잡는다) 그룹 신호를 보낸 뒤에 회수한다.
+/// 호출자가 이 함수 전에 자식을 회수했다면 남은 그룹 프로세스가 그 ID를 붙잡고 있어야 한다.
+/// Windows는 신호가 없어 자식만 바로 끝낸다. 하위 프로세스까지 끝내려면 [`JobObject`]에 등록한다.
+pub fn terminate_process_group(
+    child: &mut std::process::Child,
+    grace: std::time::Duration,
+) -> std::io::Result<std::process::ExitStatus> {
+    #[cfg(unix)]
+    {
+        let group = libc::pid_t::try_from(child.id()).map_err(std::io::Error::other)?;
+        if !exited_unreaped(child)? {
+            signal_group(group, libc::SIGTERM);
+            let deadline = std::time::Instant::now() + grace;
+            while std::time::Instant::now() < deadline && !exited_unreaped(child)? {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+        signal_group(group, libc::SIGKILL);
+        child.wait()
+    }
+    #[cfg(not(unix))]
+    {
+        // 이유: 신호가 없는 OS는 기다리지 않고 바로 끝내므로 기한을 쓰지 않는다.
+        let _ = grace;
+        match child.kill() {
+            Ok(()) => {}
+            // 그 사이에 끝났으면 회수만 한다.
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {}
+            Err(e) => return Err(e),
+        }
+        child.wait()
+    }
+}
+
+/// [`defer_termination_signals`] 뒤에 받은 신호. Unix가 아니면 항상 비어 있다.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DeferredSignals {
+    /// SIGINT(터미널의 Ctrl+C).
+    pub interrupt: bool,
+    /// SIGHUP(터미널 닫힘).
+    pub hangup: bool,
+    /// SIGTERM.
+    pub terminate: bool,
+}
+
+impl DeferredSignals {
+    pub fn any(self) -> bool {
+        self.interrupt || self.hangup || self.terminate
+    }
+
+    /// 종료 요청(hangup·terminate)이 있으면 같은 신호를 아직 회수하지 않은 `child`에 한 번
+    /// 전달하고 true를 돌려준다. 회수하지 않은 자식의 PID는 다른 프로세스에 재사용되지 않는다.
+    /// 신호가 없는 OS는 자식을 바로 끝낸다.
+    pub fn forward_termination(self, child: &mut std::process::Child) -> std::io::Result<bool> {
+        if !(self.hangup || self.terminate) || child.try_wait()?.is_some() {
+            return Ok(false);
+        }
+        #[cfg(unix)]
+        {
+            let pid = libc::pid_t::try_from(child.id()).map_err(std::io::Error::other)?;
+            let signal = if self.hangup {
+                libc::SIGHUP
+            } else {
+                libc::SIGTERM
+            };
+            // SAFETY: pid는 회수하지 않은 직접 자식이며 정수 인자만 넘긴다.
+            if unsafe { libc::kill(pid, signal) } != 0 {
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error() != Some(libc::ESRCH) {
+                    return Err(error);
+                }
+            }
+        }
+        #[cfg(not(unix))]
+        child.kill()?;
+        Ok(true)
+    }
+}
+
+/// SIGINT·SIGHUP·SIGTERM이 이 프로세스를 끝내지 않고 기록만 하게 한다. 기록은
+/// [`take_deferred_signals`]로 읽는다.
+///
+/// 터미널 안에서 소유한 자식(서버 그룹 등)을 띄우는 프로세스용이다. 자식 TUI가 끝나 터미널이 일반
+/// 모드로 돌아온 뒤 도착한 Ctrl+C나 hangup이 정리 도중 이 프로세스를 끝내면 그룹 정리를 건너뛴다.
+/// 처리기를 둔 신호는 exec 때 기본 처리로 돌아가므로 뒤에 띄우는 자식의 신호 처리는 바뀌지 않는다.
+/// 이미 무시(SIG_IGN)하도록 받은 신호는 그대로 둔다(백그라운드 작업 등). Unix가 아니면 아무 일도
+/// 하지 않는다.
+pub fn defer_termination_signals() -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        deferred::install()
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(())
+    }
+}
+
+/// 마지막 호출 뒤 받은 신호를 돌려주고 기록을 비운다.
+pub fn take_deferred_signals() -> DeferredSignals {
+    #[cfg(unix)]
+    {
+        deferred::take()
+    }
+    #[cfg(not(unix))]
+    {
+        DeferredSignals::default()
+    }
+}
+
+#[cfg(unix)]
+mod deferred {
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    const INTERRUPT: u32 = 1;
+    const HANGUP: u32 = 2;
+    const TERMINATE: u32 = 4;
+
+    static PENDING: AtomicU32 = AtomicU32::new(0);
+
+    fn bit(signal: libc::c_int) -> u32 {
+        match signal {
+            libc::SIGINT => INTERRUPT,
+            libc::SIGHUP => HANGUP,
+            libc::SIGTERM => TERMINATE,
+            _ => 0,
+        }
+    }
+
+    // 신호 처리기 안에서는 lock-free 원자 연산만 한다.
+    extern "C" fn record(signal: libc::c_int) {
+        PENDING.fetch_or(bit(signal), Ordering::SeqCst);
+    }
+
+    pub(super) fn install() -> std::io::Result<()> {
+        for signal in [libc::SIGINT, libc::SIGHUP, libc::SIGTERM] {
+            // SAFETY: sigaction은 POD이며 all-zero가 유효한 초기 상태다.
+            let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+            action.sa_sigaction = record as extern "C" fn(libc::c_int) as libc::sighandler_t;
+            // 느린 시스템 호출이 EINTR로 끝나지 않게 한다.
+            action.sa_flags = libc::SA_RESTART;
+            // SAFETY: 유효한 sigaction 구조체의 마스크를 비운다.
+            unsafe { libc::sigemptyset(&mut action.sa_mask) };
+            // SAFETY: 이전 값을 받을 구조체도 all-zero가 유효하다.
+            let mut previous: libc::sigaction = unsafe { std::mem::zeroed() };
+            // SAFETY: 두 포인터 모두 이 함수의 유효한 지역 변수를 가리킨다.
+            if unsafe { libc::sigaction(signal, &action, &mut previous) } != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if previous.sa_sigaction == libc::SIG_IGN {
+                // SAFETY: 위에서 읽은 이전 처리를 그대로 되돌린다.
+                if unsafe { libc::sigaction(signal, &previous, std::ptr::null_mut()) } != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn take() -> super::DeferredSignals {
+        let pending = PENDING.swap(0, Ordering::SeqCst);
+        super::DeferredSignals {
+            interrupt: pending & INTERRUPT != 0,
+            hangup: pending & HANGUP != 0,
+            terminate: pending & TERMINATE != 0,
+        }
+    }
+}
+
+/// 자식이 끝났는지 회수하지 않고 확인한다(WNOWAIT). 이미 회수된 자식(ECHILD)은 끝난 것으로 본다.
+#[cfg(unix)]
+fn exited_unreaped(child: &std::process::Child) -> std::io::Result<bool> {
+    let pid = libc::id_t::try_from(child.id()).map_err(std::io::Error::other)?;
+    loop {
+        // SAFETY: siginfo_t는 POD이며 all-zero가 유효하다. 상태 변화가 없으면 si_signo가 0으로 남는다.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: info는 유효한 지역 변수이고 나머지는 정수 인자다.
+        let rc = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if rc == 0 {
+            return Ok(info.si_signo != 0);
+        }
+        let error = std::io::Error::last_os_error();
+        match error.raw_os_error() {
+            Some(libc::EINTR) => continue,
+            Some(libc::ECHILD) => return Ok(true),
+            _ => return Err(error),
+        }
+    }
+}
+
+/// 남은 프로세스가 없는 그룹(ESRCH)은 정상으로 본다.
+#[cfg(unix)]
+fn signal_group(group: libc::pid_t, signal: libc::c_int) {
+    // SAFETY: group은 호출자가 그룹 리더로 띄운 직접 자식의 ID이며, 정수 인자만 넘긴다.
+    if unsafe { libc::kill(-group, signal) } != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            tracing::warn!(group, signal, %error, "could not signal the process group");
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -307,6 +525,142 @@ mod tests {
     #[test]
     fn adopt_pid_none_is_noop() {
         adopt_pid(None);
+    }
+
+    #[cfg(unix)]
+    fn spawn_group_leader(script: &str) -> std::process::Child {
+        use std::os::unix::process::CommandExt;
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", script])
+            .process_group(0)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        std::io::BufRead::read_line(
+            &mut std::io::BufReader::new(child.stdout.take().unwrap()),
+            &mut line,
+        )
+        .unwrap();
+        assert_eq!(line, "ready\n");
+        child
+    }
+
+    /// 정상 종료 요청을 받은 리더가 스스로 정리하고 끝날 시간을 준다.
+    #[cfg(unix)]
+    #[test]
+    fn a_group_leader_exits_on_sigterm_within_the_grace() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("cleaned");
+        let mut child = spawn_group_leader(&format!(
+            "trap 'echo done > \"{}\"; exit 0' TERM; echo ready; while :; do sleep 0.05; done",
+            marker.display()
+        ));
+        let status =
+            terminate_process_group(&mut child, std::time::Duration::from_secs(5)).unwrap();
+        assert!(status.success(), "{status:?}");
+        assert!(marker.exists(), "SIGTERM 처리기가 실행돼야 한다");
+    }
+
+    /// 신호를 한 번만 전달하는 래퍼와 정상 종료가 느린 실제 프로그램을 흉내 낸다. 기한 뒤
+    /// 그룹 전체를 끝내므로 실제 프로그램 역할의 손자도 남지 않는다.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_slow_grandchild_does_not_outlive_its_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("inner.pid");
+        let inner_script = dir.path().join("inner.sh");
+        // 손자는 신호 처리를 바꾼 뒤에 PID를 쓴다. 리더는 그 파일을 본 뒤 준비됐다고 알린다.
+        std::fs::write(
+            &inner_script,
+            "trap '' TERM\necho $$ > \"$1\"\nwhile :; do sleep 0.05; done\n",
+        )
+        .unwrap();
+        let mut child = spawn_group_leader(&format!(
+            "trap '' TERM; sh \"{script}\" \"{pid}\" & \
+             while [ ! -s \"{pid}\" ]; do sleep 0.01; done; echo ready; wait",
+            script = inner_script.display(),
+            pid = pid_file.display()
+        ));
+        let inner = std::fs::read_to_string(&pid_file).unwrap();
+        let proc_dir = std::path::PathBuf::from(format!("/proc/{}", inner.trim()));
+        assert!(proc_dir.exists());
+        let started = std::time::Instant::now();
+        let status =
+            terminate_process_group(&mut child, std::time::Duration::from_millis(300)).unwrap();
+        assert!(!status.success(), "{status:?}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while proc_dir.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!proc_dir.exists(), "그룹의 손자 {} 가 남았다", inner.trim());
+        // 이미 끝난 자식은 회수 결과만 돌려준다.
+        assert_eq!(
+            terminate_process_group(&mut child, std::time::Duration::ZERO).unwrap(),
+            status
+        );
+    }
+
+    /// 기록하도록 바꾼 신호는 프로세스를 끝내지 않고 한 번만 읽힌다. 이 시험 프로세스의 처리기를
+    /// 바꾸므로 이 신호들을 쓰는 다른 시험을 이 크레이트에 두지 않는다.
+    #[cfg(unix)]
+    #[test]
+    fn deferred_signals_are_recorded_once_instead_of_ending_the_process() {
+        defer_termination_signals().unwrap();
+        take_deferred_signals();
+        for signal in [libc::SIGHUP, libc::SIGTERM, libc::SIGINT] {
+            // SAFETY: 처리기를 설치한 신호를 자기 프로세스에 보낸다.
+            assert_eq!(unsafe { libc::raise(signal) }, 0);
+        }
+        let got = take_deferred_signals();
+        assert_eq!(
+            got,
+            DeferredSignals {
+                interrupt: true,
+                hangup: true,
+                terminate: true
+            }
+        );
+        assert!(!take_deferred_signals().any());
+    }
+
+    /// 리더가 먼저 끝나도 회수하기 전에 그룹 신호를 보내 남은 하위 프로세스를 끝낸다. 종료 확인은
+    /// 리더를 회수하지 않는다.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_exited_leaders_group_is_signalled_before_the_leader_is_reaped() {
+        use std::os::unix::process::CommandExt;
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("inner.pid");
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "sleep 20 & echo $! > \"$1\"", "leader"])
+            .arg(&pid_file)
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !exited_unreaped(&child).unwrap() {
+            assert!(std::time::Instant::now() < deadline, "리더가 끝나지 않았다");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let leader = std::path::PathBuf::from(format!("/proc/{}", child.id()));
+        assert!(leader.exists(), "확인만으로 리더를 회수하면 안 된다");
+        let inner = std::fs::read_to_string(&pid_file).unwrap();
+        let proc_dir = std::path::PathBuf::from(format!("/proc/{}", inner.trim()));
+        assert!(proc_dir.exists());
+        let status =
+            terminate_process_group(&mut child, std::time::Duration::from_secs(5)).unwrap();
+        assert!(status.success(), "{status:?}");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while proc_dir.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(
+            !proc_dir.exists(),
+            "하위 프로세스 {} 가 남았다",
+            inner.trim()
+        );
     }
 
     #[test]

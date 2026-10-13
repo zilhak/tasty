@@ -170,7 +170,8 @@ fn mouse_tracking_label(mode: tasty_terminal::MouseTrackingMode) -> &'static str
 
 /// 터미널 PTY의 전경(foreground) 프로세스 이름/PID 조회.
 /// 플러그인이 `claude` 같은 자식 프로세스가 살아있는지 판단하기 위해 사용한다.
-/// 터미널이 없으면 `name`/`pid`가 모두 `null`로 반환된다.
+/// `is_shell`은 그 전경이 터미널의 셸인지 알린다. 터미널이 없거나 조회할 수 없으면
+/// `name`/`pid`/`is_shell`이 모두 `null`로 반환된다.
 pub(crate) fn handle_foreground_process(
     engine: &EngineRef<'_>,
     id: serde_json::Value,
@@ -180,21 +181,49 @@ pub(crate) fn handle_foreground_process(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let (name, pid) = engine
+    let shell_pid = engine
         .runtime
         .terminals
         .pty(surface_id)
-        .and_then(|pty| pty.foreground_process_info())
-        .map(|fg| (Some(fg.name.clone()), Some(fg.pid)))
-        .unwrap_or((None, None));
+        .and_then(|pty| pty.process_id());
     JsonRpcResponse::success(
         id,
-        json!({
-            "surface_id": surface_id,
-            "name": name,
-            "pid": pid,
-        }),
+        foreground_report(
+            surface_id,
+            shell_pid,
+            tasty_terminal::foreground_process::get_foreground_process,
+        ),
     )
+}
+
+/// 셸 PID 하나로 전경을 한 번 조회하고, 같은 결과로 이름·PID·셸 여부를 만든다.
+fn foreground_report(
+    surface_id: u32,
+    shell_pid: Option<u32>,
+    lookup: impl FnOnce(u32) -> Option<tasty_terminal::foreground_process::ForegroundProcessInfo>,
+) -> serde_json::Value {
+    let snapshot = shell_pid.and_then(|shell_pid| Some((shell_pid, lookup(shell_pid)?)));
+    let (name, pid, is_shell) = match snapshot {
+        Some((shell_pid, fg)) => {
+            let is_shell = foreground_is_shell(shell_pid, &fg);
+            (Some(fg.name), Some(fg.pid), Some(is_shell))
+        }
+        None => (None, None, None),
+    };
+    json!({
+        "surface_id": surface_id,
+        "name": name,
+        "pid": pid,
+        "is_shell": is_shell,
+    })
+}
+
+/// `Terminal::busy_with_foreground`가 유휴로 보는 셸 조건과 같다.
+fn foreground_is_shell(
+    shell_pid: u32,
+    info: &tasty_terminal::foreground_process::ForegroundProcessInfo,
+) -> bool {
+    info.pid == shell_pid || tasty_terminal::foreground_process::is_known_shell_name(&info.name)
 }
 
 /// surface ID를 유지하면서 터미널을 교체한다. 기존 Terminal은 drop으로 정리한다.
@@ -315,6 +344,80 @@ mod tests {
         assert_eq!(off["effective_click_mode"], json!("none"));
         assert_eq!(off["terminal_tracking"], json!(false));
         assert_eq!(off["effective_click_tracking"], json!(false));
+    }
+
+    fn fg(name: &str, pid: u32) -> tasty_terminal::foreground_process::ForegroundProcessInfo {
+        tasty_terminal::foreground_process::ForegroundProcessInfo {
+            name: name.into(),
+            pid,
+        }
+    }
+
+    const SHELL_PID: u32 = 4100;
+
+    #[test]
+    fn a_known_shell_in_front_is_a_shell_even_under_another_pid() {
+        let out = foreground_report(7, Some(SHELL_PID), |_| Some(fg("bash", 4200)));
+        assert_eq!(out["name"], json!("bash"));
+        assert_eq!(out["pid"], json!(4200));
+        assert_eq!(out["is_shell"], json!(true), "중첩된 알려진 셸도 셸이다");
+    }
+
+    #[test]
+    fn the_terminal_root_process_is_a_shell_even_with_an_unknown_name() {
+        let out = foreground_report(7, Some(SHELL_PID), |_| Some(fg("mysh", SHELL_PID)));
+        assert_eq!(out["name"], json!("mysh"));
+        assert_eq!(out["pid"], json!(SHELL_PID));
+        assert_eq!(
+            out["is_shell"],
+            json!(true),
+            "터미널의 루트 프로세스는 셸이다"
+        );
+    }
+
+    #[test]
+    fn another_program_in_front_is_not_a_shell() {
+        for name in ["codex", "vim", "node", "sleep"] {
+            let out = foreground_report(7, Some(SHELL_PID), |_| Some(fg(name, 4300)));
+            assert_eq!(out["name"], json!(name));
+            assert_eq!(out["pid"], json!(4300));
+            assert_eq!(out["is_shell"], json!(false), "{name} 는 셸이 아니다");
+        }
+    }
+
+    #[test]
+    fn a_missing_terminal_or_failed_lookup_reports_every_field_as_null() {
+        let no_terminal = foreground_report(7, None, |_| -> Option<_> {
+            panic!("셸 PID가 없으면 조회하지 않는다")
+        });
+        let failed = foreground_report(7, Some(SHELL_PID), |_| None);
+        for out in [no_terminal, failed] {
+            assert_eq!(out["surface_id"], json!(7));
+            for key in ["name", "pid", "is_shell"] {
+                assert!(
+                    out[key].is_null(),
+                    "{key} 는 false·0이 아니라 null이다: {out}"
+                );
+            }
+        }
+    }
+
+    // 조회를 두 번 하면 이름·PID와 셸 여부가 서로 다른 순간을 볼 수 있다.
+    #[test]
+    fn name_pid_and_is_shell_come_from_one_lookup_of_the_same_shell_pid() {
+        let mut calls = Vec::new();
+        let out = foreground_report(7, Some(SHELL_PID), |pid| {
+            calls.push(pid);
+            Some(fg("codex", SHELL_PID))
+        });
+        assert_eq!(calls, vec![SHELL_PID], "판정한 셸 PID로 한 번만 조회한다");
+        assert_eq!(out["name"], json!("codex"));
+        assert_eq!(out["pid"], json!(SHELL_PID));
+        assert_eq!(
+            out["is_shell"],
+            json!(true),
+            "조회 결과의 PID가 셸 PID와 같으면 이름과 무관하게 셸이다"
+        );
     }
 
     // 모든 모드 이름이 다르고 None만 tracking=false여야 한다.

@@ -43,9 +43,13 @@ pub struct SpawnCensus {
 /// 자식 상태와 경고 기준을 읽는다. 목록 조회에 실패하면 None을 반환한다.
 /// heuristic stale은 긴 작업·출력 중단과 구분하기 어려워 재시작 후보에서 제외한다.
 pub fn spawn_census<H: HostCall>(host: &H, parent_surface_id: u32) -> Option<SpawnCensus> {
-    let resp = host
-        .call("terminal.children", json!({ "surface": parent_surface_id }))
-        .ok()?;
+    spawn_census_for(host, json!({ "surface": parent_surface_id }))
+}
+
+/// [`spawn_census`]와 같지만 부모를 `terminal.children` 인자(`surface` 또는
+/// `parent_external`·`workspace`)로 받는다.
+pub fn spawn_census_for<H: HostCall>(host: &H, parent: Value) -> Option<SpawnCensus> {
+    let resp = host.call("terminal.children", parent).ok()?;
     let children = resp.get("children")?.as_array()?;
     let threshold = host
         .call(

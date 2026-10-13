@@ -68,11 +68,15 @@ pub(crate) enum StopKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Settled {
     pub surface_id: u32,
+    /// 이 Stop 의 세션. 턴 종료를 보고할 때 같은 세션의 결과 경로만 고르는 데 쓴다.
+    pub session: String,
     pub kind: StopKind,
     /// 턴이 끝났는가. 게이트가 block 했고 Claude Code 가 그 block 을 받아들이면 false 다.
     pub turn_ended: bool,
     /// 이 Stop 의 최종 답변(`last_assistant_message`). 턴이 끝나면 agent task 턴 끝 보고에 싣는다.
     pub final_answer: Option<String>,
+    /// Stop 이 왔을 때의 Codex 결과 경로 턴. 확정이 늦어도 이 턴의 결과로 claim 한다.
+    pub turn: Option<crate::codex_return::TurnId>,
 }
 
 impl Settled {
@@ -98,6 +102,8 @@ pub(crate) struct HeldStop {
     pub kind: StopKind,
     /// 이 Stop 의 최종 답변. 턴 종료로 확정되면 agent task 턴 끝 보고에 싣는다.
     pub final_answer: Option<String>,
+    /// Stop 이 왔을 때의 Codex 결과 경로 턴.
+    pub turn: Option<crate::codex_return::TurnId>,
 }
 
 struct PendingStop {
@@ -105,6 +111,7 @@ struct PendingStop {
     prompt_id: Option<String>,
     kind: StopKind,
     final_answer: Option<String>,
+    turn: Option<crate::codex_return::TurnId>,
     expected: usize,
     verdicts: Vec<Verdict>,
     block_cap: Option<u32>,
@@ -164,12 +171,14 @@ impl StopPairing {
             prompt_id,
             kind,
             final_answer,
+            turn,
         } = held;
         let mut entry = PendingStop {
             surface_id,
             prompt_id,
             kind,
             final_answer,
+            turn,
             expected,
             verdicts: Vec::new(),
             block_cap: None,
@@ -283,9 +292,11 @@ impl StopPairing {
         self.forget(session);
         entry.map(|e| Settled {
             surface_id: e.surface_id,
+            session: session.to_string(),
             kind: e.kind,
             turn_ended: true,
             final_answer: e.final_answer,
+            turn: e.turn,
         })
     }
 
@@ -339,9 +350,11 @@ impl StopPairing {
         };
         Settled {
             surface_id: entry.surface_id,
+            session: session.to_string(),
             kind: entry.kind,
             turn_ended,
             final_answer: entry.final_answer,
+            turn: entry.turn,
         }
     }
 }
@@ -519,15 +532,18 @@ mod tests {
             prompt_id,
             kind,
             final_answer: None,
+            turn: None,
         }
     }
 
     fn idle(surface_id: u32) -> Settled {
         Settled {
             surface_id,
+            session: S.to_string(),
             kind: StopKind::Idle,
             turn_ended: true,
             final_answer: None,
+            turn: None,
         }
     }
 
@@ -538,9 +554,11 @@ mod tests {
     fn blocked(surface_id: u32) -> Settled {
         Settled {
             surface_id,
+            session: S.to_string(),
             kind: StopKind::Idle,
             turn_ended: false,
             final_answer: None,
+            turn: None,
         }
     }
 

@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.2.5"
+version = "0.2.6"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -41,13 +41,14 @@ name = "codex"
 description = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 description_i18n_key = "codex.cli.desc"
 subcommands = [
-    { name = "managed", ipc_method = "codex.managed", args = "managed_args", description = "Prepare and inspect a managed Codex task relay", description_i18n_key = "codex.cli.sub.managed.description" },
     { name = "launch",        ipc_method = "codex.launch",        args = "launch_args",        description = "Launch a new workspace and start Codex in its terminal", description_i18n_key = "codex.cli.sub.launch.description" },
-    { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Create a child Codex instance in a split surface. Waits for host responses, then returns without waiting for the child task to finish. Registers hooks for idle, input-wait and exit notifications to the parent.", description_i18n_key = "codex.cli.sub.spawn.description" },
+    { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Create a child Codex instance in a split surface. Waits for host responses, then returns without waiting for the child task to finish. When called from a Codex conversation, each finished child turn is returned to that conversation; otherwise registers hooks for idle, input-wait and exit notifications to the parent surface.", description_i18n_key = "codex.cli.sub.spawn.description" },
     { name = "children",      ipc_method = "codex.children",      args = "children_args",      description = "List children of the specified Codex parent", description_i18n_key = "codex.cli.sub.children.description" },
-    { name = "parent",        ipc_method = "codex.parent",        args = "parent_args",        description = "Return the parent Codex surface id for a given child surface", description_i18n_key = "codex.cli.sub.parent.description" },
+    { name = "parent",        ipc_method = "codex.parent_of",     args = "parent_args",        description = "Return the parent Codex surface id for a given child surface", description_i18n_key = "codex.cli.sub.parent.description" },
+    { name = "result",        ipc_method = "codex.result",        args = "result_args",        description = "Read a child result that was returned to this Codex conversation. Run it from the Codex session that received the reference; reading does not delete the result.", description_i18n_key = "codex.cli.sub.result.description" },
+    { name = "session-open",  ipc_method = "codex.session_open",  args = "session_open_args",  description = "Internal: register a new session generation for the Codex session helper running in a terminal. Not intended for direct use.", description_i18n_key = "codex.cli.sub.session-open.description" },
     { name = "state",         ipc_method = "codex.state",         args = "state_args",         description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)", description_i18n_key = "codex.cli.sub.state.description" },
-    { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message with line breaks preserved and submit it. Waits for host responses, then returns without waiting for the task to finish. When a caller surface is provided, registers hooks for idle, input-wait and exit notifications.", description_i18n_key = "codex.cli.sub.tell.description" },
+    { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message with line breaks preserved and submit it. Waits for host responses, then returns without waiting for the task to finish. When called from a Codex conversation, the target's finished turns are returned to that conversation; otherwise, when a caller surface is provided, registers hooks for idle, input-wait and exit notifications.", description_i18n_key = "codex.cli.sub.tell.description" },
     { name = "notify-caller", ipc_method = "codex.notify_caller", args = "notify_caller_args", description = "Internal: report a child state change and remove matching once-hooks. If the target surface can still be found, register the completion hooks again. Called by spawn/tell hooks; not intended for direct use.", description_i18n_key = "codex.cli.sub.notify-caller.description" },
     { name = "broadcast",     ipc_method = "codex.broadcast",     args = "broadcast_args",     description = "Broadcast text to all children of a parent Codex instance", description_i18n_key = "codex.cli.sub.broadcast.description" },
     { name = "kill",          ipc_method = "codex.kill",          args = "kill_args",          description = "Kill a child Codex instance by child index", description_i18n_key = "codex.cli.sub.kill.description" },
@@ -55,7 +56,7 @@ subcommands = [
     { name = "reboot",        ipc_method = "codex.reboot",        args = "reboot_args",        description = "Restart the Codex instance in a surface and resume the same session (delayed kill + codex resume). Call this as the LAST action of a turn — anything after the delay is cut off.", description_i18n_key = "codex.cli.sub.reboot.description" },
     { name = "install",       ipc_method = "codex.install",       args = "install_args",            description = "Install Tasty hook into Codex CLI configuration", description_i18n_key = "codex.cli.sub.install.description" },
     { name = "uninstall",     ipc_method = "codex.uninstall",     args = "install_args",            description = "Uninstall Tasty hook from Codex CLI configuration", description_i18n_key = "codex.cli.sub.uninstall.description" },
-    { name = "hook",          ipc_method = "codex.hook",          args = "hook_args",          stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id, prompt, last_assistant_message) when invoked by Codex's hook system.", description_i18n_key = "codex.cli.sub.hook.description" },
+    { name = "hook",          ipc_method = "codex.hook",          args = "hook_args",          stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id, prompt, last_assistant_message, model, turn_id) when invoked by Codex's hook system.", description_i18n_key = "codex.cli.sub.hook.description" },
 ]
 
 [contributes.cli.arg_groups.launch_args]
@@ -71,6 +72,18 @@ flags = [
 [contributes.cli.arg_groups.parent_args]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Child Codex surface ID to look up the parent of (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "codex.cli.arg.parent_args.surface.help" },
+]
+
+[contributes.cli.arg_groups.result_args]
+positional = [
+    { name = "event", type = "string", required = true, help = "Event ID from the reference message", help_i18n_key = "codex.cli.arg.result_args.event.help" },
+]
+
+[contributes.cli.arg_groups.session_open_args]
+flags = [
+    { name = "surface",  type = "u32",    flag = "--surface",  required = true,  help = "Terminal surface the helper runs in", help_i18n_key = "codex.cli.arg.session_open_args.surface.help" },
+    { name = "resume",   type = "string", flag = "--resume",   required = false, help = "Thread UUID the helper resumes", help_i18n_key = "codex.cli.arg.session_open_args.resume.help" },
+    { name = "tui_args", type = "string", flag = "--tui-args", required = false, help = "JSON array of policy and model arguments passed to the TUI", help_i18n_key = "codex.cli.arg.session_open_args.tui_args.help" },
 ]
 
 [contributes.cli.arg_groups.state_args]
@@ -104,6 +117,7 @@ flags = [
 [contributes.cli.arg_groups.children_args]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)", help_i18n_key = "codex.cli.arg.children_args.surface.help" },
+    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace", help_i18n_key = "codex.cli.arg.children_args.workspace.help" },
 ]
 
 [contributes.cli.arg_groups.notify_caller_args]
@@ -119,18 +133,21 @@ positional = [
 ]
 flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)", help_i18n_key = "codex.cli.arg.broadcast_args.surface.help" },
+    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace", help_i18n_key = "codex.cli.arg.broadcast_args.workspace.help" },
     { name = "role",    type = "string", flag = "--role",    required = false, help = "Only send to children with this role label", help_i18n_key = "codex.cli.arg.broadcast_args.role.help" },
 ]
 
 [contributes.cli.arg_groups.kill_args]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)", help_i18n_key = "codex.cli.arg.kill_args.surface.help" },
+    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace", help_i18n_key = "codex.cli.arg.kill_args.workspace.help" },
     { name = "child",   type = "u32", flag = "--child",   required = true,  help = "Child index to kill", help_i18n_key = "codex.cli.arg.kill_args.child.help" },
 ]
 
 [contributes.cli.arg_groups.respawn_args]
 flags = [
     { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)", help_i18n_key = "codex.cli.arg.respawn_args.surface.help" },
+    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace (ID or name) of the children. Used only when called from a Codex conversation whose children are in more than one workspace", help_i18n_key = "codex.cli.arg.respawn_args.workspace.help" },
     { name = "child",     type = "u32",    flag = "--child",     required = true,  help = "Child index to respawn", help_i18n_key = "codex.cli.arg.respawn_args.child.help" },
     { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Override working directory for the respawned process", help_i18n_key = "codex.cli.arg.respawn_args.cwd.help" },
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the respawned child", help_i18n_key = "codex.cli.arg.respawn_args.prompt.help" },
@@ -159,6 +176,9 @@ flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for", help_i18n_key = "codex.cli.arg.hook_args.surface.help" },
     { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Codex session ID. Auto-populated from stdin JSON 'session_id' when Codex invokes the hook.", help_i18n_key = "codex.cli.arg.hook_args.session.help" },
     { name = "prompt", type = "string", flag = "--prompt", required = false, stdin_field = "prompt", help = "The submitted prompt. Auto-populated from stdin JSON 'prompt' on the UserPromptSubmit hook. Only used to tell whether a turn is a Tasty agent task's instruction; its text is not sent to Tasty.", help_i18n_key = "codex.cli.arg.hook_args.prompt.help" },
+    { name = "gen", type = "string", flag = "--gen", required = false, help = "Session generation set by the Tasty session helper. Hooks without the current generation are ignored.", help_i18n_key = "codex.cli.arg.hook_args.gen.help" },
+    { name = "model", type = "string", flag = "--model", required = false, stdin_field = "model", help = "Model of the session. Auto-populated from stdin JSON 'model'. Kept so that restoring the session uses the same model.", help_i18n_key = "codex.cli.arg.hook_args.model.help" },
+    { name = "turn_id", type = "string", flag = "--turn-id", required = false, stdin_field = "turn_id", help = "Turn ID. Auto-populated from stdin JSON 'turn_id'. Used so that one turn is returned to a Codex parent only once.", help_i18n_key = "codex.cli.arg.hook_args.turn_id.help" },
     { name = "last_assistant_message", type = "string", flag = "--last-assistant-message", required = false, stdin_field = "last_assistant_message", help = "The assistant's final message of the turn. Auto-populated from stdin JSON 'last_assistant_message' on the Stop hook. When the surface runs a Tasty agent task, it is reported as that turn's final answer.", help_i18n_key = "codex.cli.arg.hook_args.last_assistant_message.help" },
 ]
 
@@ -240,14 +260,3 @@ options = [
 
 [contributes.cli.arg_groups.install_args]
 flags = [{ name = "config_file", type = "string", flag = "--config-file", required = false, path_kind = "file", help = "Exact profile/config file to update; mutually exclusive with --codex-home", help_i18n_key = "codex.cli.arg.install_args.config_file.help" }, { name = "codex_home", type = "string", flag = "--codex-home", required = false, path_kind = "directory", help = "Codex home whose hooks to install/remove; must match the intended daemon", help_i18n_key = "codex.cli.arg.install_args.codex_home.help" }]
-
-[contributes.cli.arg_groups.managed_args]
-positional = [{ name = "action", type = "string", required = true, help = "prepare | attach | get | callback | forget", help_i18n_key = "codex.cli.arg.managed_args.action.help" }]
-flags = [
-    { name = "workspace_id", type = "u32", flag = "--workspace-id", required = false, help = "Existing task workspace ID", help_i18n_key = "codex.cli.arg.managed_args.workspace_id.help" },
-    { name = "task_id", type = "string", flag = "--task-id", required = false, help = "Existing task ID", help_i18n_key = "codex.cli.arg.managed_args.task_id.help" },
-    { name = "parent_thread", type = "string", flag = "--parent-thread", required = false, help = "Parent managed thread UUID (defaults to caller CODEX_THREAD_ID)", help_i18n_key = "codex.cli.arg.managed_args.parent_thread.help" },
-    { name = "id", type = "string", flag = "--id", required = false, help = "Relay descriptor ID", help_i18n_key = "codex.cli.arg.managed_args.id.help" },
-    { name = "thread_id", type = "string", flag = "--thread-id", required = false, help = "Managed thread UUID returned by create_thread", help_i18n_key = "codex.cli.arg.managed_args.thread_id.help" },
-    { name = "cli_path", type = "string", flag = "--cli-path", required = false, help = "Tasty executable for relay commands (defaults to this CLI)", help_i18n_key = "codex.cli.arg.managed_args.cli_path.help", path_kind = "file" },
-]
