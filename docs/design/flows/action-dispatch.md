@@ -158,4 +158,4 @@ entry는 별도의 core-writer guard가 명시 호출 위치로 검사하며, �
 
 App은 명시 대상과 원 요청 identity를 고정하고 데이터 홈 journal worker에 제출한다. CommandExecutor는 멱등 키 조회 뒤 순수 decide를 호출하며 EventStore가 사건·명령 결과·effect 의무를 함께 commit한다. App의 publication은 모든 대상 CoreState projection을 같은 cut으로 공개하고 ACK한다. EffectRunner와 SurfaceRestorer는 확정된 의무에 따라 실행 owner를 준비·회수하며 원 요청은 필요한 완료까지 보존된다. replay는 이 외부 실행을 반복하지 않는다.
 
-비저널 입력·관측은 기존 intent/host event 경계로 처리한다. 이 큐의 drain이나 메시지 전달 성공은 구조 commit·자원 회수의 완료 조건을 대신하지 않는다. 상세 공개·Recovery 계약은 [자원 회수](../../architecture/resource-recovery.md), 저장 원본은 [저장소](../systems/storage.md)를 따른다.
+비저널 입력·관측은 기존 intent/host event 경계로 처리한다. terminal tell·broadcast·respawn 입력은 App의 typed 실행 함수가 요청 처리 안에서 바로 쓴다. broadcast·respawn의 write는 `apply_live`의 `SendToSurface`를 큐 없이 적용하고, tell은 본문을 쓴 뒤 CR 제출을 Engine의 ack 대기에 예약한다. wire 해석과 응답·오류 변환은 IPC 봉투에 남는다. 이 큐의 drain이나 메시지 전달 성공은 구조 commit·자원 회수의 완료 조건을 대신하지 않는다. 상세 공개·Recovery 계약은 [자원 회수](../../architecture/resource-recovery.md), 저장 원본은 [저장소](../systems/storage.md)를 따른다.
