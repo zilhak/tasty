@@ -10,8 +10,7 @@ pub(super) fn resolve_spawn(
     let id = serde_json::Value::Null;
     let bad = |reason: String| JsonRpcResponse::invalid_params(id.clone(), reason);
     let input = &request.params;
-    let parent = params::require_u32(input, "parent", &id)
-        .or_else(|_| params::require_u32(input, "surface", &id))?;
+    let parent = spawn_parent(input, &id)?;
     let workspace = input
         .get("workspace")
         .and_then(|value| value.as_str())
@@ -78,7 +77,7 @@ pub(super) fn resolve_spawn(
     let index = session
         .runtime
         .child_terminals
-        .reserve_index(parent)
+        .reserve_index(&parent)
         .map_err(|reason| JsonRpcResponse::internal_error(id.clone(), reason))?;
     let command = optional_str(input, "command");
     let recipe = crate::runtime::journal_product::ChildRecipe {
@@ -116,6 +115,29 @@ pub(super) fn resolve_spawn(
     Ok(result)
 }
 
+/// 숫자 `parent`(별칭 `surface`) 또는 `parent_external` 중 하나. 숫자 부모의 해석은 이전과 같다.
+fn spawn_parent(
+    input: &serde_json::Value,
+    id: &serde_json::Value,
+) -> Result<crate::core::child_parent::ParentKey, JsonRpcResponse> {
+    use crate::core::child_parent::ParentKey;
+    use crate::ipc::handler::params;
+    match params::optional_external_parent(input, id)? {
+        Some(external) => {
+            for key in ["parent", "surface"] {
+                if input.get(key).is_some_and(|value| !value.is_null()) {
+                    return Err(params::both_parents(key, id));
+                }
+            }
+            Ok(ParentKey::External(external))
+        }
+        None => Ok(ParentKey::Surface(
+            params::require_u32(input, "parent", id)
+                .or_else(|_| params::require_u32(input, "surface", id))?,
+        )),
+    }
+}
+
 fn optional_str(input: &serde_json::Value, key: &str) -> Option<String> {
     input
         .get(key)
@@ -129,12 +151,13 @@ pub(super) fn resolve_respawn(
 ) -> Result<create::Request, JsonRpcResponse> {
     let id = serde_json::Value::Null;
     let input = &request.params;
-    let parent = crate::ipc::handler::params::optional_u32(input, "surface", &id)?
+    let parent = crate::ipc::handler::params::optional_parent(input, "surface", &id)?
         .or_else(|| {
             session
                 .runtime
                 .child_terminals
                 .single_parent(&session.core_state.live_surface_ids())
+                .map(crate::core::child_parent::ParentKey::Surface)
         })
         .ok_or_else(|| {
             JsonRpcResponse::invalid_params(
@@ -146,11 +169,19 @@ pub(super) fn resolve_respawn(
     let entry = session
         .runtime
         .child_terminals
-        .find_child(parent, index)
+        .find_child(&parent, index)
         .ok_or_else(|| {
+            let under = match &parent {
+                crate::core::child_parent::ParentKey::Surface(parent) => {
+                    format!("surface {parent}")
+                }
+                crate::core::child_parent::ParentKey::External(parent) => {
+                    format!("parent_external {parent}")
+                }
+            };
             JsonRpcResponse::invalid_params(
                 id.clone(),
-                format!("child {index} not found under surface {parent}"),
+                format!("child {index} not found under {under}"),
             )
         })?;
     let cwd = optional_str(input, "cwd").ok_or_else(|| {
@@ -194,4 +225,68 @@ pub(super) fn resolve_respawn(
     result.shape = create::Shape::ChildRespawn { index };
     result.one_shot_input = command;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::spawn_parent;
+    use crate::core::child_parent::ParentKey;
+    use serde_json::json;
+
+    fn message(input: serde_json::Value) -> String {
+        spawn_parent(&input, &json!(null))
+            .expect_err("refused")
+            .error
+            .expect("error")
+            .message
+    }
+
+    #[test]
+    fn a_spawn_takes_one_numeric_or_one_external_parent() {
+        let id = json!(null);
+        assert_eq!(
+            spawn_parent(&json!({ "parent": 7, "workspace": "w" }), &id).ok(),
+            Some(ParentKey::Surface(7))
+        );
+        assert_eq!(
+            spawn_parent(&json!({ "surface": 8 }), &id).ok(),
+            Some(ParentKey::Surface(8))
+        );
+        assert_eq!(
+            spawn_parent(&json!({ "parent_external": "codex:t" }), &id).ok(),
+            Some(ParentKey::External("codex:t".into()))
+        );
+        assert_eq!(
+            message(json!({ "parent": 7, "parent_external": "codex:t" })),
+            "pass either 'parent' or 'parent_external', not both"
+        );
+        assert_eq!(
+            message(json!({ "surface": 7, "parent_external": "codex:t" })),
+            "pass either 'surface' or 'parent_external', not both"
+        );
+        assert_eq!(message(json!({})), "missing 'surface'");
+        assert!(message(json!({ "parent_external": "a b" })).contains("whitespace"));
+        assert!(message(json!({ "parent_external": 3 })).contains("must be a string"));
+    }
+
+    /// 숫자 부모로 기록된 이전 journal 레코드도 그대로 읽힌다.
+    #[test]
+    fn a_child_recipe_with_a_numeric_parent_still_reads() {
+        let recipe: crate::runtime::journal_product::ChildRecipe = serde_json::from_value(json!({
+            "parent": 513, "index": 2, "workspace": 1, "runtime_epoch": 4,
+            "cwd": null, "role": "worker", "nickname": null, "has_command": true
+        }))
+        .expect("legacy recipe");
+        assert_eq!(recipe.parent, ParentKey::Surface(513));
+        assert!(!recipe.replacing);
+        let external = crate::runtime::journal_product::ChildRecipe {
+            parent: ParentKey::External("codex:t".into()),
+            ..recipe
+        };
+        let value = serde_json::to_value(&external).unwrap();
+        assert_eq!(value["parent"], json!("codex:t"));
+        let back: crate::runtime::journal_product::ChildRecipe =
+            serde_json::from_value(value).unwrap();
+        assert_eq!(back.parent, external.parent);
+    }
 }

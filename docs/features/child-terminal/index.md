@@ -44,6 +44,27 @@ idle/needs_input 상태를 보관한다. 마지막 상태 보고 시각 `last_st
 - **윈도우를 닫을 때**: `restore_layout = false` 라 슬롯을 다시 열지 않으면 그 윈도우가 소유한 항목(빈
   부모 목록·다음 번호 포함)을 지운다. 켜져 있으면 윈도우를 다시 열 수 있으므로 그대로 둔다.
 
+### External 부모
+
+부모가 이 Tasty의 surface가 아닐 때(예: 다른 프로세스의 에이전트 대화) 플러그인은 `parent_external`
+문자열로 부모를 지정한다. 호스트는 이 키를 해석하지 않고 같은 문자열끼리 같은 부모로 본다. 키는
+1~256 byte이며 공백·제어문자를 넣을 수 없다. 어떤 provider의 식별자로 키를 만들지는 플러그인이 정한다.
+
+- **저장**: Surface 부모와 같은 registry의 별도 필드(`external_children`·`external_parent_of`·
+  `external_next_index`)에 둔다. 비어 있으면 파일에 쓰지 않으므로 Surface 부모만 쓰는 파일은 이전 형식과
+  같고, 이전 버전은 이 필드를 무시한다. 가짜 부모 surface를 만들지 않는다.
+- **소유**: 항목은 자식 surface 의 소유·슬롯을 따른다. 저장·정리·창 닫기·시작 시 정리는 Surface 부모와
+  같은 규칙으로 자식을 지운다.
+- **번호**: 부모별로 0부터 준다. 여러 윈도우가 같은 키에 자식을 달 수 있으므로 번호를 예약할 때 파일을
+  먼저 합치고, 저장할 때 다음 번호는 큰 값을 남긴다. 마지막 자식이 release·kill·닫기·정리로 빠지면 그
+  부모의 목록과 다음 번호를 지우므로 다음 spawn은 0부터 받는다. 다른 윈도우에 자식이 남아 있거나, 파일의
+  다음 번호가 알려진 자식 번호보다 커서 다른 윈도우가 예약만 하고 아직 등록하지 않은 번호가 있을 수 있으면
+  번호를 유지한다. 중복 번호를 막기 위해 재시작을 미루는 쪽을 택한다.
+- **점유**: soft 점유의 소유자로 External 키를 기록한다. 포커스 시점 정리는 사라진 부모 surface만 보므로
+  External 소유 점유는 release·kill·surface 닫기로만 풀린다.
+- **부모 생략 폴백**: `single_parent`는 surface 부모만 센다. External 부모의 자식에는 항상
+  `parent_external`을 명시한다.
+
 ### 상태 보고와 화면 알림
 
 `terminal.set_state --state needs_input`는 자식 상태만 갱신한다. 화면 표시를 담당하는
@@ -56,7 +77,7 @@ Claude 플러그인은 같은 훅에서 `terminal.set_state`와
 ### spawn과 점유
 
 spawn은 지정한 workspace의 pane에 `terminal` 탭을 만들고 registry에 등록한다.
-새 자식에는 부모 surface를 소유자로 하는 soft 점유를 설정한다. soft 점유는 표시만 하고
+새 자식에는 부모(surface 또는 External 키)를 소유자로 하는 soft 점유를 설정한다. soft 점유는 표시만 하고
 입력을 막지 않는다(`attached=false`). 부모가 사라지면 포커스 시점의 지연 정리로 해제한다.
 
 `command`는 선택 사항이다. 생략하면 탭 생성·등록·soft 점유·`child_surface_id` 반환까지만
@@ -203,6 +224,14 @@ Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설�
   - `tasty terminal set-state --surface <child> --state <idle|needs_input|active>` ↔ `terminal.set_state` (에이전트 hook 진입점). **파생 상태(`stale`/`exited`)는 입력으로 받지 않는다** — 출력 전용이다(아래 "상태 판정")
   - `tasty terminal adopt --target <surface> [--surface <parent>] [--cwd] [--role] [--nickname]` ↔ `terminal.adopt` — 새 탭을 만들지 않고, 이미 존재하는 임의의 surface 를 지금 시점에 명시적으로 child 로 등록(soft 점유)한다
   - `tasty terminal release [--surface <parent>] --child <n>` ↔ `terminal.release` — child 관계와 soft 점유만 해제한다. surface(탭) 자체는 닫지 않는다(`terminal.kill`과 달리)
+- **External 부모** — 플러그인은 IPC로 직접 쓰고, CLI는 `--parent-external <key>`로 노출한다(`--surface`와 함께 쓸 수 없다). Claude·Codex 플러그인 명령의 일반 spawn·tell은 부모를 스스로 정하므로 사용자가 키를 입력하지 않는다. 이 옵션은 키를 직접 관리하는 스크립트·에이전트용이다:
+  - CLI: `tasty terminal spawn --workspace <ws> --parent-external <key> --command "<cmd>"`, `tasty terminal children|kill|respawn|broadcast|release --parent-external <key> [--workspace <ws>]`. `--workspace`는 `--parent-external`과 함께만 받으며 다중 창 라우팅에 쓴다. `--parent-external`을 주면 caller의 `TASTY_SURFACE_ID`를 숫자 부모로 채우지 않는다.
+  - `terminal.spawn`은 `parent`(별칭 `surface`) 대신 `parent_external`을 받는다. `workspace`는 그대로 필요하다.
+  - `terminal.children`·`release`·`kill`·`respawn`·`broadcast`는 `surface` 대신 `parent_external`을 받는다. `tell`은 자식 surface를 직접 지정하므로 바뀌지 않는다.
+  - 숫자 부모와 `parent_external`을 함께 주면 `-32602`(`pass either '<key>' or 'parent_external', not both`)로 거절한다.
+  - `terminal.parent`는 `parent_surface_id`와 함께 `parent_external`(없으면 `null`)을 돌려준다.
+  - `terminal.adopt`는 `parent_external`을 받지 않는다.
+  - 창이 둘 이상인 GUI에서는 `parent_external`만으로 창을 고를 수 없으므로 `workspace`(이름 또는 ID)를 함께 준다. 없으면 라우팅 단계에서 거절한다.
 
 ### 판정 응답 필드
 
@@ -246,7 +275,7 @@ surface_id 로 자동 해석하지 않고, **인자 의미는 index 로 고정�
 | 넘긴 값 | 응답 |
 |---|---|
 | 같은 부모의 `child_surface_id` | `… 4 is a child_surface_id, not a child index — use \`--child 2\`` |
-| 다른 부모의 `child_surface_id` | `… under a different parent — use \`--surface 9000 --child 4\`` |
+| 다른 부모의 `child_surface_id` | `… under a different parent — use \`--surface 9000 --child 4\`` (External 부모면 `--parent-external <key> --child 4`) |
 | 그 외(오타·범위 밖·이미 정리됨) | `… (valid child indices: 0, 2; 2 children)` |
 | 그 외 + 등록된 child 가 0 | `… (no children registered under surface 9000)` |
 
@@ -291,6 +320,11 @@ surface 뿐이다. 저장 병합으로 받아 온 다른 윈도우의 항목은 
 - Given 점유된 child C When `terminal.release` Then `occupancy_of(C)==None` + `terminal.children` 목록에서 사라짐 + surface(탭)는 여전히 열려있음(닫히지 않음).
 - Given 등록되지 않은 child index When `terminal.release` Then 에러 반환.
 - Given C 와 무관한 다른 surface 가 hard 점유 중 When `terminal.release{child=C}` Then 그 hard 점유는 영향받지 않음.
+- Given External 부모 A·B에 자식이 하나씩 있다 When `terminal.children{parent_external=A}`·`terminal.release{parent_external=A, child=0}` Then A의 자식만 나오고 해제되며 A의 다음 번호는 0으로 돌아가고 B는 그대로다(`external_parents_list_report_and_release_only_their_own_children`).
+- Given 두 윈도우가 같은 External 부모에 자식을 단다 When 각자 번호를 예약하고 저장한다 Then 번호가 겹치지 않고, 마지막 자식이 빠진 저장이 파일의 다음 번호를 지운다(`two_engines_share_an_external_parent_without_duplicate_indices`).
+- Given 다른 윈도우가 같은 External 부모에 번호를 예약만 했다 When 이 윈도우가 마지막 자식을 빼고 저장한다 Then 파일의 다음 번호가 남아 예약 번호를 다시 주지 않는다(`a_pending_reservation_in_another_engine_survives_the_last_release`).
+- Given External 부모가 소유한 soft 점유 When 부모 surface가 없는 상태에서 포커스 정리를 한다 Then 점유가 남는다(`focus_cleanup_keeps_an_external_parent_that_has_no_surface`).
+- Given 숫자 부모로 기록된 이전 journal 레코드 When 읽는다 Then Surface 부모로 해석한다(`a_child_recipe_with_a_numeric_parent_still_reads`).
 - Given 실행 중인 child C When `terminal.state{surface=C}` Then 응답이 `state`·`evidence`·`confidence`·`surface_id:C` 를 싣고 `state` 는 `exited` 가 아니다(값은 위 판정 우선순위 표).
 - Given `terminal.kill`로 종료된 child C When `terminal.state{surface=C}` Then `state` 가 `"exited"` 다 (`"active"`가 아님).
 

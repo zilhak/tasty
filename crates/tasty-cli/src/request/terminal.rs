@@ -21,10 +21,27 @@ pub(super) fn terminal_command_to_method_params(
             map.insert(key.into(), Value::from(x.clone()));
         }
     }
+    // External 부모를 주면 caller TASTY_SURFACE_ID 를 숫자 부모로 채우지 않는다. workspace 는
+    // 창이 여럿일 때 host 가 대상 창을 고르는 데 쓴다.
+    fn put_parent(
+        map: &mut Map<String, Value>,
+        surface: Option<u32>,
+        external: &Option<String>,
+        workspace: &Option<String>,
+    ) {
+        match external {
+            Some(key) => {
+                map.insert("parent_external".into(), Value::from(key.clone()));
+                put_str(map, "workspace", workspace);
+            }
+            None => put_u32(map, "surface", resolve_surface_id(surface)),
+        }
+    }
 
     match command {
         T::Spawn {
             surface,
+            parent_external,
             workspace,
             pane,
             cwd,
@@ -33,12 +50,16 @@ pub(super) fn terminal_command_to_method_params(
             nickname,
         } => {
             let mut m = Map::new();
-            // parent = --surface 또는 caller TASTY_SURFACE_ID. 둘 다 없으면 대상 불명.
-            let Some(parent) = resolve_surface_id(*surface) else {
-                crate::out::errln!("{}", tasty_i18n::t("cli.terminal.spawn_no_parent"));
-                std::process::exit(1);
-            };
-            m.insert("parent".into(), Value::from(parent));
+            // parent = --parent-external, --surface 또는 caller TASTY_SURFACE_ID. 모두 없으면 대상 불명.
+            if let Some(key) = parent_external {
+                m.insert("parent_external".into(), Value::from(key.clone()));
+            } else {
+                let Some(parent) = resolve_surface_id(*surface) else {
+                    crate::out::errln!("{}", tasty_i18n::t("cli.terminal.spawn_no_parent"));
+                    std::process::exit(1);
+                };
+                m.insert("parent".into(), Value::from(parent));
+            }
             m.insert("workspace".into(), Value::from(workspace.clone()));
             put_u32(&mut m, "pane", *pane);
             if let Some(c) = normalize_cwd_or_exit(cwd.as_deref()) {
@@ -59,21 +80,32 @@ pub(super) fn terminal_command_to_method_params(
             m.insert("text".into(), Value::from(text.clone()));
             ("terminal.tell", Value::Object(m))
         }
-        T::Children { surface } => {
+        T::Children {
+            surface,
+            parent_external,
+            workspace,
+        } => {
             let mut m = Map::new();
-            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            put_parent(&mut m, *surface, parent_external, workspace);
             ("terminal.children", Value::Object(m))
         }
         T::Parent { surface } => ("terminal.parent", serde_json::json!({ "surface": surface })),
         T::State { surface } => ("terminal.state", serde_json::json!({ "surface": surface })),
-        T::Kill { surface, child } => {
+        T::Kill {
+            surface,
+            parent_external,
+            workspace,
+            child,
+        } => {
             let mut m = Map::new();
-            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            put_parent(&mut m, *surface, parent_external, workspace);
             m.insert("child".into(), Value::from(*child));
             ("terminal.kill", Value::Object(m))
         }
         T::Respawn {
             surface,
+            parent_external,
+            workspace,
             child,
             cwd,
             command,
@@ -81,7 +113,7 @@ pub(super) fn terminal_command_to_method_params(
             nickname,
         } => {
             let mut m = Map::new();
-            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            put_parent(&mut m, *surface, parent_external, workspace);
             m.insert("child".into(), Value::from(*child));
             if let Some(c) = normalize_cwd_or_exit(cwd.as_deref()) {
                 m.insert("cwd".into(), Value::from(c));
@@ -94,10 +126,12 @@ pub(super) fn terminal_command_to_method_params(
         T::Broadcast {
             text,
             surface,
+            parent_external,
+            workspace,
             role,
         } => {
             let mut m = Map::new();
-            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            put_parent(&mut m, *surface, parent_external, workspace);
             m.insert("text".into(), Value::from(text.clone()));
             put_str(&mut m, "role", role);
             ("terminal.broadcast", Value::Object(m))
@@ -123,9 +157,14 @@ pub(super) fn terminal_command_to_method_params(
             put_str(&mut m, "nickname", nickname);
             ("terminal.adopt", Value::Object(m))
         }
-        T::Release { surface, child } => {
+        T::Release {
+            surface,
+            parent_external,
+            workspace,
+            child,
+        } => {
             let mut m = Map::new();
-            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            put_parent(&mut m, *surface, parent_external, workspace);
             m.insert("child".into(), Value::from(*child));
             ("terminal.release", Value::Object(m))
         }
@@ -163,5 +202,78 @@ pub(super) fn pty_command_to_method_params(
             "pty.attach_surface",
             serde_json::json!({ "id": pty_id, "pane_id": pane_id }),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Commands;
+
+    fn request(args: &[&str]) -> tasty_ipc::protocol::JsonRpcRequest {
+        use clap::Parser;
+        let command: Commands = crate::Cli::try_parse_from(args)
+            .expect("parse")
+            .command
+            .expect("subcommand");
+        super::super::command_to_request(&command)
+    }
+
+    #[test]
+    fn an_external_parent_replaces_the_numeric_parent_on_the_wire() {
+        let spawn = request(&[
+            "tasty",
+            "terminal",
+            "spawn",
+            "--parent-external",
+            "codex:t1",
+            "--workspace",
+            "w",
+            "--command",
+            "ls",
+        ]);
+        assert_eq!(spawn.method, "terminal.spawn");
+        assert_eq!(spawn.params["parent_external"], "codex:t1");
+        assert!(spawn.params.get("parent").is_none());
+
+        for (sub, extra) in [
+            ("children", &[][..]),
+            ("kill", &["--child", "1"][..]),
+            ("release", &["--child", "1"][..]),
+            ("respawn", &["--child", "1"][..]),
+            ("broadcast", &["hi"][..]),
+        ] {
+            let mut args = vec![
+                "tasty",
+                "terminal",
+                sub,
+                "--parent-external",
+                "codex:t1",
+                "--workspace",
+                "w",
+            ];
+            args.extend_from_slice(extra);
+            let req = request(&args);
+            assert_eq!(req.params["parent_external"], "codex:t1", "{sub}");
+            assert_eq!(req.params["workspace"], "w", "{sub}");
+            assert!(req.params.get("surface").is_none(), "{sub}");
+        }
+    }
+
+    #[test]
+    fn an_external_parent_conflicts_with_surface_and_workspace_needs_it() {
+        use clap::Parser;
+        let both = crate::Cli::try_parse_from([
+            "tasty",
+            "terminal",
+            "children",
+            "--surface",
+            "7",
+            "--parent-external",
+            "codex:t1",
+        ]);
+        assert!(both.is_err());
+        let workspace_only =
+            crate::Cli::try_parse_from(["tasty", "terminal", "children", "--workspace", "w"]);
+        assert!(workspace_only.is_err());
     }
 }

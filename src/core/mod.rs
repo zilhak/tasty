@@ -2,6 +2,7 @@
 //! Pure decisions and canonical models live in tasty-core; execution owners live in runtime.
 
 pub(crate) mod attach;
+pub(crate) mod child_parent;
 pub(crate) mod command_index;
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_favorites;

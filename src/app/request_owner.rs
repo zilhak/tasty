@@ -20,6 +20,25 @@ fn ambiguous_parent_fallback_requires_surface(
         )
 }
 
+/// External 부모는 어느 창에도 속하지 않으므로 창이 여럿이면 `workspace`로 창을 고르게 한다.
+/// 부모 생략 폴백이 없는 `terminal.children`도 포커스 창으로 새지 않도록 포함한다.
+fn external_parent_requires_workspace(
+    method: &str,
+    main_window_count: usize,
+    params: &serde_json::Value,
+) -> bool {
+    main_window_count > 1
+        && params.get("parent_external").is_some_and(|v| !v.is_null())
+        && matches!(
+            method,
+            "terminal.children"
+                | "terminal.kill"
+                | "terminal.release"
+                | "terminal.respawn"
+                | "terminal.broadcast"
+        )
+}
+
 /// 숫자·숫자 문자열은 request_resource_id가 먼저 해석하므로 여기서는 nickname만 다룬다.
 fn surface_nickname_target<'p>(method: &str, params: &'p serde_json::Value) -> Option<&'p str> {
     if method != "split" {
@@ -81,6 +100,12 @@ impl App {
         }
         if let Some(target) = params.get("workspace").and_then(|v| v.as_str()) {
             return self.find_main_with_workspace_target(target);
+        }
+        if external_parent_requires_workspace(method, self.main_window_count(), params) {
+            return Err(format!(
+                "multiple windows open; 'workspace' is required for '{method}' with \
+                 'parent_external' (cannot infer the target window from focus)"
+            ));
         }
         if ambiguous_parent_fallback_requires_surface(
             method,
@@ -186,6 +211,42 @@ mod tests {
             "terminal.children",
             2,
             false
+        ));
+    }
+
+    #[test]
+    fn an_external_parent_needs_a_workspace_only_with_several_windows() {
+        let external = serde_json::json!({ "parent_external": "codex:t", "child": 0 });
+        for method in [
+            "terminal.children",
+            "terminal.kill",
+            "terminal.release",
+            "terminal.respawn",
+            "terminal.broadcast",
+        ] {
+            assert!(
+                external_parent_requires_workspace(method, 2, &external),
+                "{method}"
+            );
+            assert!(
+                !external_parent_requires_workspace(method, 1, &external),
+                "{method}"
+            );
+        }
+        assert!(!external_parent_requires_workspace(
+            "terminal.children",
+            2,
+            &serde_json::json!({ "surface": 7 })
+        ));
+        assert!(!external_parent_requires_workspace(
+            "terminal.children",
+            2,
+            &serde_json::json!({ "parent_external": null })
+        ));
+        assert!(!external_parent_requires_workspace(
+            "terminal.tell",
+            2,
+            &external
         ));
     }
 }

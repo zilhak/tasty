@@ -259,6 +259,14 @@ tasty terminal kill --child 1                   # 자식을 인덱스로 종료
 
 `terminal spawn`이 준비 단계에서 실패하면 command를 보내지 않고 이번 호출이 만든 터미널을 정리합니다. 기존 터미널은 유지됩니다.
 
+자식의 부모는 보통 명령을 실행한 터미널입니다. Claude·Codex 전용 명령은 부모를 알아서 정하므로 따로 지정할 필요가 없습니다. Tasty 밖의 대상(예: 다른 프로세스에서 진행 중인 에이전트 대화)을 부모로 삼는 스크립트라면 `--surface` 대신 `--parent-external <키>`를 주세요. 키는 직접 정하는 문자열(공백 없이 256바이트 이하)이며 같은 키를 주면 같은 부모로 묶입니다. `spawn`·`children`·`kill`·`respawn`·`broadcast`·`release`가 이 옵션을 받습니다. 윈도우가 여러 개 열려 있으면 `--workspace`도 함께 주세요.
+
+```sh
+tasty terminal spawn --workspace build --parent-external review-bot --command "make lint"
+tasty terminal children --parent-external review-bot --workspace build
+tasty terminal release --parent-external review-bot --workspace build --child 0
+```
+
 ## 화면 없는 PTY
 
 탭도 화면도 없이 프로그램을 진짜 PTY(가상 터미널) 위에서 돌립니다. 화면에 탭을 만들지 않고

@@ -3146,6 +3146,9 @@ long = "ワークスペースに子ターミナルを作成してコマンドを
 [cli.help._root.terminal.spawn.arg.surface]
 help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
 
+[cli.help._root.terminal.spawn.arg.parent_external]
+help = "このTastyのサーフェスではない親を指す、特定のエージェントに依存しないキーです（1〜256バイト、空白不可）。`codex spawn` などのプラグインコマンドはこのキーを自動で作るため、キーを直接管理する場合にのみ使ってください"
+
 [cli.help._root.terminal.spawn.arg.workspace]
 help = "対象ワークスペース（IDまたは名前）"
 
@@ -3180,6 +3183,12 @@ about = "指定した親サーフェスの子を一覧表示"
 [cli.help._root.terminal.children.arg.surface]
 help = "親サーフェスID（既定値：既知の親が一つならその親）"
 
+[cli.help._root.terminal.children.arg.parent_external]
+help = "親サーフェスの代わりに使う外部親キー（`spawn --parent-external` を参照）"
+
+[cli.help._root.terminal.children.arg.workspace]
+help = "子があるワークスペース（IDまたは名前）。複数のウィンドウが開いている場合は --parent-external と一緒に指定する必要があります"
+
 [cli.help._root.terminal.parent]
 about = "指定した子サーフェスの親サーフェスIDを返す"
 
@@ -3199,6 +3208,12 @@ about = "子インデックスでターミナルを終了（タブを閉じ占�
 [cli.help._root.terminal.kill.arg.surface]
 help = "親サーフェスID（既定値：既知の親が一つならその親）"
 
+[cli.help._root.terminal.kill.arg.parent_external]
+help = "親サーフェスの代わりに使う外部親キー（`spawn --parent-external` を参照）"
+
+[cli.help._root.terminal.kill.arg.workspace]
+help = "子があるワークスペース（IDまたは名前）。複数のウィンドウが開いている場合は --parent-external と一緒に指定する必要があります"
+
 [cli.help._root.terminal.kill.arg.child]
 help = "終了する子インデックス"
 
@@ -3207,6 +3222,12 @@ about = "子ターミナルを再生成（PTYの置換またはコマンド再�
 
 [cli.help._root.terminal.respawn.arg.surface]
 help = "親サーフェスID（既定値：既知の親が一つならその親）"
+
+[cli.help._root.terminal.respawn.arg.parent_external]
+help = "親サーフェスの代わりに使う外部親キー（`spawn --parent-external` を参照）"
+
+[cli.help._root.terminal.respawn.arg.workspace]
+help = "子があるワークスペース（IDまたは名前）。複数のウィンドウが開いている場合は --parent-external と一緒に指定する必要があります"
 
 [cli.help._root.terminal.respawn.arg.child]
 help = "再生成する子インデックス"
@@ -3231,6 +3252,12 @@ help = "一斉送信するテキスト（そのまま送信）"
 
 [cli.help._root.terminal.broadcast.arg.surface]
 help = "親サーフェスID（既定値：既知の親が一つならその親）"
+
+[cli.help._root.terminal.broadcast.arg.parent_external]
+help = "親サーフェスの代わりに使う外部親キー（`spawn --parent-external` を参照）"
+
+[cli.help._root.terminal.broadcast.arg.workspace]
+help = "子があるワークスペース（IDまたは名前）。複数のウィンドウが開いている場合は --parent-external と一緒に指定する必要があります"
 
 [cli.help._root.terminal.broadcast.arg.role]
 help = "この役割ラベルの子だけに送信"
@@ -3267,6 +3294,12 @@ about = "サーフェスを閉じずに子ターミナルの登録を解除（�
 
 [cli.help._root.terminal.release.arg.surface]
 help = "親サーフェスID（既定値：既知の親が一つならその親）"
+
+[cli.help._root.terminal.release.arg.parent_external]
+help = "親サーフェスの代わりに使う外部親キー（`spawn --parent-external` を参照）"
+
+[cli.help._root.terminal.release.arg.workspace]
+help = "子があるワークスペース（IDまたは名前）。複数のウィンドウが開いている場合は --parent-external と一緒に指定する必要があります"
 
 [cli.help._root.terminal.release.arg.child]
 help = "解除する子インデックス"

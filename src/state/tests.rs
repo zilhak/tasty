@@ -458,7 +458,7 @@ fn occupancy_suppresses_completion_highlight() {
     engine
         .live
         .occupancy
-        .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
+        .acquire_soft(sid, /* parent */ 9999.into(), Some("agent".into()))
         .expect("soft 점유 획득");
     let regions = regions_from_state(&state, &engine.read(), term_rect, 1.0);
     assert!(
@@ -492,7 +492,7 @@ fn needs_input_not_suppressed_by_occupancy() {
     engine
         .live
         .occupancy
-        .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
+        .acquire_soft(sid, /* parent */ 9999.into(), Some("agent".into()))
         .expect("soft 점유 획득");
     engine.raise_attention(sid, AttentionKind::NeedsInput);
     let regions = regions_from_state(&state, &engine.read(), term_rect, 1.0);

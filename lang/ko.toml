@@ -3146,6 +3146,9 @@ long = "워크스페이스에 자식 터미널을 생성하고 명령을 실행�
 [cli.help._root.terminal.spawn.arg.surface]
 help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
 
+[cli.help._root.terminal.spawn.arg.parent_external]
+help = "이 Tasty의 서피스가 아닌 부모를 가리키는, 특정 에이전트에 묶이지 않는 키입니다(1~256바이트, 공백 불가). `codex spawn` 같은 플러그인 명령은 이 키를 스스로 만들므로 키를 직접 관리할 때만 사용하세요"
+
 [cli.help._root.terminal.spawn.arg.workspace]
 help = "대상 워크스페이스(ID 또는 이름)"
 
@@ -3180,6 +3183,12 @@ about = "지정한 부모 서피스의 자식 나열"
 [cli.help._root.terminal.children.arg.surface]
 help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
 
+[cli.help._root.terminal.children.arg.parent_external]
+help = "부모 서피스 대신 사용할 외부 부모 키(`spawn --parent-external` 참고)"
+
+[cli.help._root.terminal.children.arg.workspace]
+help = "자식이 있는 워크스페이스(ID 또는 이름). 윈도우가 여러 개 열려 있으면 --parent-external과 함께 지정해야 합니다"
+
 [cli.help._root.terminal.parent]
 about = "지정한 자식 서피스의 부모 서피스 ID 반환"
 
@@ -3199,6 +3208,12 @@ about = "자식 인덱스로 터미널 종료(탭을 닫고 점유 해제)"
 [cli.help._root.terminal.kill.arg.surface]
 help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
 
+[cli.help._root.terminal.kill.arg.parent_external]
+help = "부모 서피스 대신 사용할 외부 부모 키(`spawn --parent-external` 참고)"
+
+[cli.help._root.terminal.kill.arg.workspace]
+help = "자식이 있는 워크스페이스(ID 또는 이름). 윈도우가 여러 개 열려 있으면 --parent-external과 함께 지정해야 합니다"
+
 [cli.help._root.terminal.kill.arg.child]
 help = "종료할 자식 인덱스"
 
@@ -3207,6 +3222,12 @@ about = "자식 터미널 재생성(PTY 교체 또는 명령 재실행)"
 
 [cli.help._root.terminal.respawn.arg.surface]
 help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
+
+[cli.help._root.terminal.respawn.arg.parent_external]
+help = "부모 서피스 대신 사용할 외부 부모 키(`spawn --parent-external` 참고)"
+
+[cli.help._root.terminal.respawn.arg.workspace]
+help = "자식이 있는 워크스페이스(ID 또는 이름). 윈도우가 여러 개 열려 있으면 --parent-external과 함께 지정해야 합니다"
 
 [cli.help._root.terminal.respawn.arg.child]
 help = "재생성할 자식 인덱스"
@@ -3231,6 +3252,12 @@ help = "일괄 전송할 텍스트(그대로 전송)"
 
 [cli.help._root.terminal.broadcast.arg.surface]
 help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
+
+[cli.help._root.terminal.broadcast.arg.parent_external]
+help = "부모 서피스 대신 사용할 외부 부모 키(`spawn --parent-external` 참고)"
+
+[cli.help._root.terminal.broadcast.arg.workspace]
+help = "자식이 있는 워크스페이스(ID 또는 이름). 윈도우가 여러 개 열려 있으면 --parent-external과 함께 지정해야 합니다"
 
 [cli.help._root.terminal.broadcast.arg.role]
 help = "이 역할 라벨의 자식에게만 전송"
@@ -3267,6 +3294,12 @@ about = "서피스를 닫지 않고 자식 터미널 등록 해제(부모·자�
 
 [cli.help._root.terminal.release.arg.surface]
 help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
+
+[cli.help._root.terminal.release.arg.parent_external]
+help = "부모 서피스 대신 사용할 외부 부모 키(`spawn --parent-external` 참고)"
+
+[cli.help._root.terminal.release.arg.workspace]
+help = "자식이 있는 워크스페이스(ID 또는 이름). 윈도우가 여러 개 열려 있으면 --parent-external과 함께 지정해야 합니다"
 
 [cli.help._root.terminal.release.arg.child]
 help = "해제할 자식 인덱스"

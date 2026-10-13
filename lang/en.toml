@@ -3212,6 +3212,9 @@ long = "Spawn a child terminal in a workspace and run a command in it.\n\nThe ch
 [cli.help._root.terminal.spawn.arg.surface]
 help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
 
+[cli.help._root.terminal.spawn.arg.parent_external]
+help = "Parent that is not a surface in this Tasty, as a provider-neutral key (1-256 bytes, no whitespace). Plugin commands such as `codex spawn` build this key themselves; use it only when you manage the key directly"
+
 [cli.help._root.terminal.spawn.arg.workspace]
 help = "Target workspace (ID or name)"
 
@@ -3246,6 +3249,12 @@ about = "List children of the specified parent surface"
 [cli.help._root.terminal.children.arg.surface]
 help = "Parent surface ID (defaults to the single known parent)"
 
+[cli.help._root.terminal.children.arg.parent_external]
+help = "External parent key instead of a parent surface (see `spawn --parent-external`)"
+
+[cli.help._root.terminal.children.arg.workspace]
+help = "Workspace (ID or name) holding the children; needed with --parent-external when several windows are open"
+
 [cli.help._root.terminal.parent]
 about = "Return the parent surface id for a given child surface"
 
@@ -3265,6 +3274,12 @@ about = "Kill a child terminal by child index (closes the tab, releases occupanc
 [cli.help._root.terminal.kill.arg.surface]
 help = "Parent surface ID (defaults to the single known parent)"
 
+[cli.help._root.terminal.kill.arg.parent_external]
+help = "External parent key instead of a parent surface (see `spawn --parent-external`)"
+
+[cli.help._root.terminal.kill.arg.workspace]
+help = "Workspace (ID or name) holding the children; needed with --parent-external when several windows are open"
+
 [cli.help._root.terminal.kill.arg.child]
 help = "Child index to kill"
 
@@ -3273,6 +3288,12 @@ about = "Respawn a child terminal (replace PTY and/or re-run a command)"
 
 [cli.help._root.terminal.respawn.arg.surface]
 help = "Parent surface ID (defaults to the single known parent)"
+
+[cli.help._root.terminal.respawn.arg.parent_external]
+help = "External parent key instead of a parent surface (see `spawn --parent-external`)"
+
+[cli.help._root.terminal.respawn.arg.workspace]
+help = "Workspace (ID or name) holding the children; needed with --parent-external when several windows are open"
 
 [cli.help._root.terminal.respawn.arg.child]
 help = "Child index to respawn"
@@ -3297,6 +3318,12 @@ help = "Text to broadcast (sent as-is)"
 
 [cli.help._root.terminal.broadcast.arg.surface]
 help = "Parent surface ID (defaults to the single known parent)"
+
+[cli.help._root.terminal.broadcast.arg.parent_external]
+help = "External parent key instead of a parent surface (see `spawn --parent-external`)"
+
+[cli.help._root.terminal.broadcast.arg.workspace]
+help = "Workspace (ID or name) holding the children; needed with --parent-external when several windows are open"
 
 [cli.help._root.terminal.broadcast.arg.role]
 help = "Only send to children with this role label"
@@ -3333,6 +3360,12 @@ about = "Release a child terminal from the registry (drops the parent/child rela
 
 [cli.help._root.terminal.release.arg.surface]
 help = "Parent surface ID (defaults to the single known parent)"
+
+[cli.help._root.terminal.release.arg.parent_external]
+help = "External parent key instead of a parent surface (see `spawn --parent-external`)"
+
+[cli.help._root.terminal.release.arg.workspace]
+help = "Workspace (ID or name) holding the children; needed with --parent-external when several windows are open"
 
 [cli.help._root.terminal.release.arg.child]
 help = "Child index to release"

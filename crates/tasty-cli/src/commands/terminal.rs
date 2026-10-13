@@ -18,6 +18,11 @@ pub enum TerminalCommands {
         /// Parent surface ID (defaults to caller's TASTY_SURFACE_ID)
         #[arg(long)]
         surface: Option<u32>,
+        /// Parent that is not a surface in this Tasty, as a provider-neutral key
+        /// (1-256 bytes, no whitespace). Plugin commands such as `codex spawn` build
+        /// this key themselves; use it only when you manage the key directly.
+        #[arg(long, conflicts_with = "surface")]
+        parent_external: Option<String>,
         /// Target workspace (ID or name)
         #[arg(long)]
         workspace: String,
@@ -52,6 +57,13 @@ pub enum TerminalCommands {
         /// Parent surface ID (defaults to the single known parent)
         #[arg(long)]
         surface: Option<u32>,
+        /// External parent key instead of a parent surface (see `spawn --parent-external`)
+        #[arg(long, conflicts_with = "surface")]
+        parent_external: Option<String>,
+        /// Workspace (ID or name) holding the children; needed with --parent-external
+        /// when several windows are open
+        #[arg(long, requires = "parent_external")]
+        workspace: Option<String>,
     },
     /// Return the parent surface id for a given child surface.
     Parent {
@@ -74,6 +86,13 @@ pub enum TerminalCommands {
         /// Parent surface ID (defaults to the single known parent)
         #[arg(long)]
         surface: Option<u32>,
+        /// External parent key instead of a parent surface (see `spawn --parent-external`)
+        #[arg(long, conflicts_with = "surface")]
+        parent_external: Option<String>,
+        /// Workspace (ID or name) holding the children; needed with --parent-external
+        /// when several windows are open
+        #[arg(long, requires = "parent_external")]
+        workspace: Option<String>,
         /// Child index to kill
         #[arg(long)]
         child: u32,
@@ -83,6 +102,13 @@ pub enum TerminalCommands {
         /// Parent surface ID (defaults to the single known parent)
         #[arg(long)]
         surface: Option<u32>,
+        /// External parent key instead of a parent surface (see `spawn --parent-external`)
+        #[arg(long, conflicts_with = "surface")]
+        parent_external: Option<String>,
+        /// Workspace (ID or name) holding the children; needed with --parent-external
+        /// when several windows are open
+        #[arg(long, requires = "parent_external")]
+        workspace: Option<String>,
         /// Child index to respawn
         #[arg(long)]
         child: u32,
@@ -106,6 +132,13 @@ pub enum TerminalCommands {
         /// Parent surface ID (defaults to the single known parent)
         #[arg(long)]
         surface: Option<u32>,
+        /// External parent key instead of a parent surface (see `spawn --parent-external`)
+        #[arg(long, conflicts_with = "surface")]
+        parent_external: Option<String>,
+        /// Workspace (ID or name) holding the children; needed with --parent-external
+        /// when several windows are open
+        #[arg(long, requires = "parent_external")]
+        workspace: Option<String>,
         /// Only send to children with this role label
         #[arg(long)]
         role: Option<String>,
@@ -145,6 +178,13 @@ pub enum TerminalCommands {
         /// Parent surface ID (defaults to the single known parent)
         #[arg(long)]
         surface: Option<u32>,
+        /// External parent key instead of a parent surface (see `spawn --parent-external`)
+        #[arg(long, conflicts_with = "surface")]
+        parent_external: Option<String>,
+        /// Workspace (ID or name) holding the children; needed with --parent-external
+        /// when several windows are open
+        #[arg(long, requires = "parent_external")]
+        workspace: Option<String>,
         /// Child index to release
         #[arg(long)]
         child: u32,

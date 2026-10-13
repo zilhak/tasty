@@ -845,7 +845,7 @@ mod tests {
         let mut s = s_session.borrow_mut();
         s.live
             .occupancy
-            .acquire_soft(42, 7, Some("child".into()))
+            .acquire_soft(42, 7.into(), Some("child".into()))
             .expect("soft lock");
         assert!(
             s.local_attention_clear_allowed(42),

@@ -1,4 +1,4 @@
-<!-- source-hash: 0e6f045499a3 -->
+<!-- source-hash: efd28ba9649f -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -258,6 +258,14 @@ tasty terminal kill --child 1                   # kill a child by index
 There is no separate command to wait on. Tag children with `--role` to address them together with `broadcast`.
 
 If `terminal spawn` fails during setup, it sends no command and removes the terminal created by that call. Existing terminals remain open.
+
+A child's parent is usually the terminal that ran the command. The dedicated Claude and Codex commands choose the parent for you, so you do not need to set it. If your script uses something outside Tasty as the parent (for example, an agent conversation running in another process), pass `--parent-external <key>` instead of `--surface`. The key is a string you choose (no whitespace, at most 256 bytes), and the same key groups children under the same parent. `spawn`, `children`, `kill`, `respawn`, `broadcast` and `release` accept this option. When several windows are open, also pass `--workspace`.
+
+```sh
+tasty terminal spawn --workspace build --parent-external review-bot --command "make lint"
+tasty terminal children --parent-external review-bot --workspace build
+tasty terminal release --parent-external review-bot --workspace build --child 0
+```
 
 ## Headless PTY
 

@@ -2,25 +2,28 @@
 //! 임의 점유용 IPC 메서드 없이 child-terminal 처리에서 내부 호출한다.
 
 use crate::core::attach::OccupancyError;
+use crate::core::child_parent::ParentKey;
 
 impl crate::runtime::engine_access::EngineMut<'_> {
     /// 같은 parent는 라벨을 갱신하고 다른 점유자가 있으면 오류다. 대상 ID는 호출자가 지정한다.
     pub fn occupy_soft(
         &mut self,
         surface_id: u32,
-        parent: u32,
+        parent: impl Into<ParentKey>,
         label: Option<String>,
     ) -> Result<(), OccupancyError> {
-        self.live.occupancy.acquire_soft(surface_id, parent, label)
+        self.live
+            .occupancy
+            .acquire_soft(surface_id, parent.into(), label)
     }
 
     /// 기록된 parent만 해제할 수 있다. 점유 부재와 parent 불일치는 오류로 구분한다.
     pub fn release_soft_occupancy(
         &mut self,
         surface_id: u32,
-        parent: u32,
+        parent: impl Into<ParentKey>,
     ) -> Result<(), OccupancyError> {
-        self.live.occupancy.release_soft(surface_id, parent)
+        self.live.occupancy.release_soft(surface_id, &parent.into())
     }
 
     /// 로컬 사용자 강제 해제. workspace의 hard 점유이면 멤버를 함께 해제한다.
@@ -37,8 +40,9 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         self.live.occupancy.clear_soft(surface_id)
     }
 
-    /// 사용자 포커스 때 parent가 트리에 없는 soft 점유를 정리한다.
+    /// 사용자 포커스 때 parent surface가 트리에 없는 soft 점유를 정리한다.
     /// 연결 EOF로 수명을 알 수 없는 점유이므로 이 시점에 확인한다.
+    /// External 부모는 surface가 아니므로 트리 부재로 정리하지 않는다. 자식 관계 해제가 정리한다.
     #[cfg(any(feature = "gui", test))]
     pub fn reconcile_soft_occupancy_on_focus(&mut self, surface_id: u32) {
         let Some(occ) = self.live.occupancy.occupancy_of(surface_id) else {
@@ -47,7 +51,7 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         if occ.tier != crate::core::attach::OccupancyTier::Soft {
             return; // hard 는 연결 EOF/force-detach 수명 — 이 경로 무관.
         }
-        if let Some(parent) = occ.parent
+        if let Some(ParentKey::Surface(parent)) = occ.parent
             && self.find_surface_by_id(parent).is_none()
         {
             self.live.occupancy.clear_soft(surface_id);
@@ -57,6 +61,7 @@ impl crate::runtime::engine_access::EngineMut<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::core::child_parent::ParentKey;
 
     fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
@@ -70,7 +75,7 @@ mod tests {
         e.occupy_soft(5000, 99, Some("agent".into())).unwrap();
         assert!(!e.live.occupancy.is_hard_occupied(5000));
         let occ = e.live.occupancy.occupancy_of(5000).unwrap();
-        assert_eq!(occ.parent, Some(99));
+        assert_eq!(occ.parent, Some(ParentKey::Surface(99)));
     }
 
     #[test]
@@ -131,5 +136,28 @@ mod tests {
         e.live.occupancy.acquire(5000, 1).unwrap();
         e.reconcile_soft_occupancy_on_focus(5000);
         assert!(e.live.occupancy.is_hard_occupied(5000)); // hard 는 이 경로 무관 — 유지.
+    }
+
+    #[test]
+    fn focus_cleanup_keeps_an_external_parent_that_has_no_surface() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        let parent = ParentKey::External("codex:thread-a".into());
+        e.occupy_soft(5000, parent.clone(), Some("worker".into()))
+            .unwrap();
+        e.reconcile_soft_occupancy_on_focus(5000);
+        let occ = e
+            .live
+            .occupancy
+            .occupancy_of(5000)
+            .expect("external 부모 점유 유지");
+        assert_eq!(occ.parent, Some(parent.clone()));
+        assert!(e.release_soft_occupancy(5000, 7).is_err());
+        assert!(
+            e.release_soft_occupancy(5000, ParentKey::External("codex:other".into()))
+                .is_err()
+        );
+        e.release_soft_occupancy(5000, parent).unwrap();
+        assert!(e.live.occupancy.occupancy_of(5000).is_none());
     }
 }

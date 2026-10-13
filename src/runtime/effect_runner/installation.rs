@@ -237,7 +237,7 @@ impl Installation {
                 engine
                     .runtime
                     .child_terminals
-                    .update_child(child.parent, child.index, |entry| {
+                    .update_child(&child.parent, child.index, |entry| {
                         entry.cwd = child.cwd;
                         entry.role = child.role;
                         entry.nickname = child.nickname;
@@ -249,7 +249,7 @@ impl Installation {
             } else {
                 let label = child.nickname.clone().or_else(|| child.role.clone());
                 engine
-                    .occupy_soft(self.surface_id, child.parent, label)
+                    .occupy_soft(self.surface_id, child.parent.clone(), label)
                     .map_err(|error| {
                         anyhow::anyhow!("child occupancy install failed: {error:?}")
                     })?;
@@ -363,7 +363,7 @@ impl Installation {
             let existing = engine
                 .runtime
                 .child_terminals
-                .find_child(child.parent, child.index);
+                .find_child(&child.parent, child.index);
             if if child.replacing {
                 existing.is_none_or(|entry| entry.child_surface_id != self.surface_id)
             } else {

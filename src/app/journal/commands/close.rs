@@ -34,12 +34,13 @@ impl Request {
         if request.method == "terminal.kill" {
             let id = serde_json::Value::Null;
             let parent =
-                crate::ipc::handler::params::optional_u32(&request.params, "surface", &id)?
+                crate::ipc::handler::params::optional_parent(&request.params, "surface", &id)?
                     .or_else(|| {
                         session
                             .runtime
                             .child_terminals
                             .single_parent(&session.core_state.live_surface_ids())
+                            .map(crate::core::child_parent::ParentKey::Surface)
                     })
                     .ok_or_else(|| {
                         JsonRpcResponse::invalid_params(
@@ -51,11 +52,19 @@ impl Request {
             let child = session
                 .runtime
                 .child_terminals
-                .find_child(parent, index)
+                .find_child(&parent, index)
                 .ok_or_else(|| {
+                    let owner = match &parent {
+                        crate::core::child_parent::ParentKey::Surface(parent) => {
+                            format!("parent {parent}")
+                        }
+                        crate::core::child_parent::ParentKey::External(parent) => {
+                            format!("parent_external {parent}")
+                        }
+                    };
                     JsonRpcResponse::invalid_params(
                         id.clone(),
-                        format!("child {index} not found for parent {parent}"),
+                        format!("child {index} not found for {owner}"),
                     )
                 })?;
             let mut normalized = request.clone();

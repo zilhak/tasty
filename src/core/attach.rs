@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use crate::core::child_parent::ParentKey;
 use crate::model::{SurfaceId, WorkspaceId};
 
 /// StreamClientId와 같은 연결 식별자.
@@ -40,22 +41,22 @@ pub enum Holder {
 pub struct Occupancy {
     pub tier: OccupancyTier,
     pub holder: Holder,
-    /// soft 주체의 parent surface. hard는 연결 수명으로 정리하므로 None이다.
-    pub parent: Option<SurfaceId>,
+    /// soft 주체의 부모. hard는 연결 수명으로 정리하므로 None이다.
+    pub parent: Option<ParentKey>,
     pub granted_seq: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum OccupancyError {
-    AlreadyOccupied { parent: SurfaceId },
-    NotHolder { parent: SurfaceId },
+    AlreadyOccupied { parent: ParentKey },
+    NotHolder { parent: ParentKey },
     NotOccupied,
 }
 
 /// hard와 별도로 저장해 soft 표시가 입력 제한·연결 종료 처리에 섞이지 않게 한다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SoftEntry {
-    parent: SurfaceId,
+    parent: ParentKey,
     label: Option<String>,
     granted_seq: u64,
 }
@@ -99,7 +100,7 @@ impl OccupancyRegistry {
             holder: Holder::Subject {
                 label: e.label.clone(),
             },
-            parent: Some(e.parent),
+            parent: Some(e.parent.clone()),
             granted_seq: e.granted_seq,
         })
     }
@@ -108,14 +109,14 @@ impl OccupancyRegistry {
     pub fn acquire_soft(
         &mut self,
         surface_id: SurfaceId,
-        parent: SurfaceId,
+        parent: ParentKey,
         label: Option<String>,
     ) -> Result<(), OccupancyError> {
         if let Some(existing) = self.soft.get(&surface_id)
             && existing.parent != parent
         {
             return Err(OccupancyError::AlreadyOccupied {
-                parent: existing.parent,
+                parent: existing.parent.clone(),
             });
         }
         self.next_seq += 1;
@@ -134,11 +135,13 @@ impl OccupancyRegistry {
     pub fn release_soft(
         &mut self,
         surface_id: SurfaceId,
-        parent: SurfaceId,
+        parent: &ParentKey,
     ) -> Result<(), OccupancyError> {
         match self.soft.get(&surface_id) {
             None => Err(OccupancyError::NotOccupied),
-            Some(e) if e.parent != parent => Err(OccupancyError::NotHolder { parent: e.parent }),
+            Some(e) if &e.parent != parent => Err(OccupancyError::NotHolder {
+                parent: e.parent.clone(),
+            }),
             Some(_) => {
                 self.soft.remove(&surface_id);
                 Ok(())
@@ -614,7 +617,7 @@ mod tests {
     #[test]
     fn soft_occupancy_does_not_set_hard_predicate() {
         let mut reg = OccupancyRegistry::new();
-        reg.acquire_soft(10, /*parent*/ 99, None).unwrap();
+        reg.acquire_soft(10, /*parent*/ 99.into(), None).unwrap();
         assert!(!reg.is_hard_occupied(10));
         assert_eq!(
             reg.occupancy_of(10).map(|o| o.tier),
@@ -627,10 +630,11 @@ mod tests {
     #[test]
     fn soft_occupancy_records_parent_and_label() {
         let mut reg = OccupancyRegistry::new();
-        reg.acquire_soft(10, 99, Some("agent".into())).unwrap();
+        reg.acquire_soft(10, 99.into(), Some("agent".into()))
+            .unwrap();
         let occ = reg.occupancy_of(10).unwrap();
         assert_eq!(occ.tier, OccupancyTier::Soft);
-        assert_eq!(occ.parent, Some(99));
+        assert_eq!(occ.parent, Some(99.into()));
         assert_eq!(
             occ.holder,
             Holder::Subject {
@@ -642,8 +646,8 @@ mod tests {
     #[test]
     fn soft_acquire_same_parent_idempotent_updates_label() {
         let mut reg = OccupancyRegistry::new();
-        reg.acquire_soft(10, 99, None).unwrap();
-        reg.acquire_soft(10, 99, Some("x".into())).unwrap();
+        reg.acquire_soft(10, 99.into(), None).unwrap();
+        reg.acquire_soft(10, 99.into(), Some("x".into())).unwrap();
         assert_eq!(
             reg.occupancy_of(10).unwrap().holder,
             Holder::Subject {
@@ -655,26 +659,26 @@ mod tests {
     #[test]
     fn soft_acquire_other_subject_rejected() {
         let mut reg = OccupancyRegistry::new();
-        reg.acquire_soft(10, 99, None).unwrap();
-        let err = reg.acquire_soft(10, 77, None).unwrap_err();
-        assert_eq!(err, OccupancyError::AlreadyOccupied { parent: 99 });
+        reg.acquire_soft(10, 99.into(), None).unwrap();
+        let err = reg.acquire_soft(10, 77.into(), None).unwrap_err();
+        assert_eq!(err, OccupancyError::AlreadyOccupied { parent: 99.into() });
     }
 
     #[test]
     fn soft_release_by_subject() {
         let mut reg = OccupancyRegistry::new();
-        reg.acquire_soft(10, 99, None).unwrap();
-        reg.release_soft(10, 99).unwrap();
+        reg.acquire_soft(10, 99.into(), None).unwrap();
+        reg.release_soft(10, &99.into()).unwrap();
         assert!(reg.occupancy_of(10).is_none());
     }
 
     #[test]
     fn soft_release_non_holder_rejected() {
         let mut reg = OccupancyRegistry::new();
-        reg.acquire_soft(10, 99, None).unwrap();
+        reg.acquire_soft(10, 99.into(), None).unwrap();
         assert_eq!(
-            reg.release_soft(10, 77).unwrap_err(),
-            OccupancyError::NotHolder { parent: 99 }
+            reg.release_soft(10, &77.into()).unwrap_err(),
+            OccupancyError::NotHolder { parent: 99.into() }
         );
         assert!(reg.occupancy_of(10).is_some());
     }
@@ -683,7 +687,7 @@ mod tests {
     fn soft_release_not_occupied() {
         let mut reg = OccupancyRegistry::new();
         assert_eq!(
-            reg.release_soft(10, 99).unwrap_err(),
+            reg.release_soft(10, &99.into()).unwrap_err(),
             OccupancyError::NotOccupied
         );
     }
@@ -691,7 +695,7 @@ mod tests {
     #[test]
     fn clear_soft_removes_unconditionally() {
         let mut reg = OccupancyRegistry::new();
-        reg.acquire_soft(10, 99, None).unwrap();
+        reg.acquire_soft(10, 99.into(), None).unwrap();
         assert!(reg.clear_soft(10));
         assert!(reg.occupancy_of(10).is_none());
         assert!(!reg.clear_soft(10));
@@ -700,7 +704,7 @@ mod tests {
     #[test]
     fn hard_dominates_soft_in_occupancy_of() {
         let mut reg = OccupancyRegistry::new();
-        reg.acquire_soft(10, 99, None).unwrap();
+        reg.acquire_soft(10, 99.into(), None).unwrap();
         reg.acquire(10, 1).unwrap();
         assert!(reg.is_hard_occupied(10));
         assert_eq!(

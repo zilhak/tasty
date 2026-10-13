@@ -73,7 +73,8 @@ pub(crate) struct AdoptRecipe {
 /// Registry relation metadata is a service obligation, not a duplicate domain tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ChildRecipe {
-    pub parent: u32,
+    /// 숫자로 기록된 이전 레코드는 Surface 부모로 읽힌다.
+    pub parent: crate::core::child_parent::ParentKey,
     pub index: u32,
     pub workspace: u32,
     pub runtime_epoch: u64,

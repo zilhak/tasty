@@ -204,7 +204,7 @@ fn resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen() {
     }
     assert_eq!(session.persistence.slot, Some(1));
     let on_disk = crate::runtime::child_terminal::ChildTerminalRegistry::load();
-    let children = |parent| on_disk.list_children(parent).len();
+    let children = |parent: u32| on_disk.list_children(&parent.into()).len();
     assert_eq!(
         [children(7), children(513), children(1026), children(1540)],
         [1, 1, 0, 0]

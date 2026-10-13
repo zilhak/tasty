@@ -75,6 +75,50 @@ pub(crate) fn optional_u32(
     read_u32(params, key).map_err(|msg| JsonRpcResponse::invalid_params(id.clone(), msg))
 }
 
+/// `parent_external` 문자열. 생략·null은 None이고 문자열이 아니거나 규칙에 어긋나면 오류다.
+pub(crate) fn optional_external_parent(
+    params: &Value,
+    id: &Value,
+) -> Result<Option<String>, JsonRpcResponse> {
+    match params.get("parent_external") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(key)) => {
+            crate::core::child_parent::validate_external_parent(key)
+                .map_err(|msg| JsonRpcResponse::invalid_params(id.clone(), msg))?;
+            Ok(Some(key.clone()))
+        }
+        Some(_) => Err(JsonRpcResponse::invalid_params(
+            id.clone(),
+            "'parent_external' must be a string",
+        )),
+    }
+}
+
+/// 부모를 숫자 surface 키 `numeric` 또는 `parent_external` 중 하나로 받는다.
+/// 둘 다 있으면 오류이고, 둘 다 없으면 None이라 호출자가 기존 폴백을 적용한다.
+pub(crate) fn optional_parent(
+    params: &Value,
+    numeric: &str,
+    id: &Value,
+) -> Result<Option<crate::core::child_parent::ParentKey>, JsonRpcResponse> {
+    use crate::core::child_parent::ParentKey;
+    let surface = optional_u32(params, numeric, id)?;
+    let external = optional_external_parent(params, id)?;
+    match (surface, external) {
+        (Some(_), Some(_)) => Err(both_parents(numeric, id)),
+        (Some(surface), None) => Ok(Some(ParentKey::Surface(surface))),
+        (None, Some(external)) => Ok(Some(ParentKey::External(external))),
+        (None, None) => Ok(None),
+    }
+}
+
+pub(crate) fn both_parents(numeric: &str, id: &Value) -> JsonRpcResponse {
+    JsonRpcResponse::invalid_params(
+        id.clone(),
+        format!("pass either '{numeric}' or 'parent_external', not both"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

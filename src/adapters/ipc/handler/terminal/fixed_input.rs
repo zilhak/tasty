@@ -3,7 +3,7 @@ use super::*;
 #[derive(Clone)]
 pub(crate) struct ChildTarget {
     pub surface: u32,
-    parent: u32,
+    parent: ParentKey,
     index: u32,
     mirror: Option<(u32, std::sync::Weak<()>)>,
 }
@@ -39,7 +39,7 @@ impl FixedInput {
             engine
                 .runtime
                 .child_terminals
-                .find_child(target.parent, target.index)
+                .find_child(&target.parent, target.index)
                 .is_some_and(|entry| entry.child_surface_id == target.surface)
                 && target.mirror.as_ref().is_none_or(|(workspace, token)| {
                     engine.matches_mirror_projection(*workspace, token)
@@ -90,7 +90,15 @@ impl FixedInput {
                     );
                 }
                 let mut params = request.params.clone();
-                params["surface"] = json!(target.parent);
+                // 고정한 부모만 다시 넘긴다. 원 요청의 다른 부모 키가 남으면 두 부모 지정으로 거절된다.
+                if let Some(params) = params.as_object_mut() {
+                    params.remove("surface");
+                    params.remove("parent_external");
+                }
+                match &target.parent {
+                    ParentKey::Surface(parent) => params["surface"] = json!(parent),
+                    ParentKey::External(parent) => params["parent_external"] = json!(parent),
+                }
                 params["child"] = json!(target.index);
                 handle_respawn(core, engine, id, &params)
             }
@@ -126,7 +134,7 @@ pub(crate) fn decode_fixed_input(
         let targets = engine
             .runtime
             .child_terminals
-            .list_children(parent)
+            .list_children(&parent)
             .iter()
             .filter(|entry| {
                 role.as_ref()
@@ -134,7 +142,7 @@ pub(crate) fn decode_fixed_input(
             })
             .map(|entry| ChildTarget {
                 surface: entry.child_surface_id,
-                parent,
+                parent: parent.clone(),
                 index: entry.index,
                 mirror: mirror(entry.child_surface_id),
             })
@@ -152,11 +160,11 @@ pub(crate) fn decode_fixed_input(
     let entry = engine
         .runtime
         .child_terminals
-        .find_child(parent, index)
+        .find_child(&parent, index)
         .ok_or_else(|| {
             JsonRpcResponse::invalid_params(
                 id,
-                child_not_found_message(&engine.runtime.child_terminals, parent, index),
+                child_not_found_message(&engine.runtime.child_terminals, &parent, index),
             )
         })?;
     Ok(Some(FixedInput::Respawn(ChildTarget {

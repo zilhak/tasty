@@ -29,16 +29,26 @@ fn local_op(
     };
     match request.method.as_str() {
         "terminal.kill" => {
-            let parent = id("surface").or_else(|| {
-                session
-                    .runtime
-                    .child_terminals
-                    .single_parent(&session.core.live_surface_ids())
-            })?;
+            use crate::core::child_parent::ParentKey;
+            let external = request.params["parent_external"]
+                .as_str()
+                .map(|key| ParentKey::External(key.to_owned()));
+            // 두 부모를 함께 준 요청은 전달하지 않고 일반 해석의 거절에 맡긴다.
+            let parent = match (id("surface"), external) {
+                (Some(_), Some(_)) => return None,
+                (Some(surface), None) => ParentKey::Surface(surface),
+                (None, Some(external)) => external,
+                (None, None) => ParentKey::Surface(
+                    session
+                        .runtime
+                        .child_terminals
+                        .single_parent(&session.core.live_surface_ids())?,
+                ),
+            };
             let entry = session
                 .runtime
                 .child_terminals
-                .find_child(parent, id("child")?)?;
+                .find_child(&parent, id("child")?)?;
             Some(StructuralOp::CloseSurface {
                 surface_id: entry.child_surface_id,
             })

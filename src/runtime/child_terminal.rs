@@ -9,11 +9,18 @@
 //! 지우지 않는다. 어느 창에도 돌아오지 않을 항목은 시작할 때([`clear_on_boot`],
 //! [`ChildTerminalRegistry::forget_slots_except`])와 engine 이 사라질 때
 //! ([`ChildTerminalRegistry::release_owned`]) 지운다.
+//!
+//! surface가 없는 부모([`ParentKey::External`])의 관계도 같은 파일·같은 소유 규칙으로 보관한다.
+//! 별도 필드(`external_*`)에 두어 Surface 부모의 저장 형식과 판정은 그대로 유지한다. External
+//! 부모는 어느 engine 의 surface 도 아니므로 자식 surface 의 소유로 항목을 귀속하고, 다음 번호는
+//! engine 사이에서 큰 값을 따른다. 마지막 자식이 빠지면 Surface 부모처럼 목록과 다음 번호를 지운다.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+
+pub(crate) use crate::core::child_parent::ParentKey;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChildEntry {
@@ -59,6 +66,20 @@ pub struct ChildTerminalRegistry {
     /// 이 engine 의 레이아웃 슬롯. [`Self::bind_slot`] 로 정한다.
     #[serde(skip)]
     slot: Option<u32>,
+    /// External 부모의 자식 목록. 항목은 자식 surface 의 소유를 따른다.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    external_children: HashMap<String, Vec<ChildEntry>>,
+    /// 자식 surface → External 부모. 한 자식은 `parent_of` 와 이 표 중 한 곳에만 있다.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    external_parent_of: HashMap<u32, String>,
+    /// External 부모의 다음 번호. 여러 engine 이 같은 부모에 번호를 줄 수 있어 병합은 큰 값을 따른다.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    external_next_index: HashMap<String, u32>,
+    /// 이 engine 이 뺀 External 자식의 index + 1 최댓값. 저장 병합은 파일에 남은 자식이 없고 파일의
+    /// 다음 번호가 이 값을 넘지 않을 때만 파일의 다음 번호도 지운다. 메모리의 다음 번호는 병합으로
+    /// 다른 engine 의 예약까지 받으므로 상한으로 쓰지 않는다.
+    #[serde(skip)]
+    removed_external_top: HashMap<String, u32>,
 }
 
 impl ChildTerminalRegistry {
@@ -102,6 +123,7 @@ impl ChildTerminalRegistry {
         all.extend(self.idle.keys().copied());
         all.extend(self.needs_input.keys().copied());
         all.extend(self.last_state_report_at.keys().copied());
+        all.extend(self.external_parent_of.keys().copied());
         all
     }
 
@@ -148,10 +170,93 @@ impl ChildTerminalRegistry {
             owned,
         );
         merge_owned(&mut disk.slot_of, &mut self.slot_of, owned);
+        self.merge_external_into(&mut disk);
+        // 파일에 저장하지 않는 상한이라 disk 에는 없다. 아래 교체에서 잃지 않도록 옮긴다.
+        disk.removed_external_top = std::mem::take(&mut self.removed_external_top);
         disk.path = self.path.take();
         disk.owned = std::mem::take(&mut self.owned);
         disk.slot = self.slot;
         *self = disk;
+    }
+
+    /// External 관계를 합친다. 자식 항목은 자식 surface 의 소유로, 다음 번호는 큰 값으로 정한다.
+    /// 자식이 있었는데 합친 결과 하나도 남지 않은 부모는 목록과 다음 번호를 지운다. 단 파일의 다음
+    /// 번호가 알려진 자식의 index + 1 최댓값보다 크면 다른 engine 이 아직 등록하지 않은 예약이
+    /// 있으므로 번호를 남긴다. 자식 없이 번호만 예약된 부모도 그대로 둔다. 이 engine 의 자식이 남은
+    /// 부모의 상한은 다음 병합까지 유지해, 그 자식이 마지막으로 빠질 때 앞서 뺀 번호도 반영한다.
+    fn merge_external_into(&mut self, disk: &mut Self) {
+        let mut known: HashMap<String, u32> = std::mem::take(&mut self.removed_external_top);
+        let lists = disk.external_children.iter().chain(&self.external_children);
+        for (parent, list) in lists {
+            if let Some(top) = list.iter().map(|c| c.index.saturating_add(1)).max() {
+                let bound = known.entry(parent.clone()).or_insert(top);
+                *bound = (*bound).max(top);
+            }
+        }
+        let owned = &self.owned;
+        disk.external_parent_of
+            .retain(|child, _| !owned.contains(child));
+        for (child, parent) in std::mem::take(&mut self.external_parent_of) {
+            if owned.contains(&child) {
+                disk.external_parent_of.insert(child, parent);
+            }
+        }
+        for list in disk.external_children.values_mut() {
+            list.retain(|c| !owned.contains(&c.child_surface_id));
+        }
+        for (parent, list) in std::mem::take(&mut self.external_children) {
+            let mine = list
+                .into_iter()
+                .filter(|c| owned.contains(&c.child_surface_id));
+            disk.external_children
+                .entry(parent)
+                .or_default()
+                .extend(mine);
+        }
+        disk.external_children.retain(|_, list| !list.is_empty());
+        for list in disk.external_children.values_mut() {
+            list.sort_by_key(|c| c.index);
+        }
+        for (parent, next) in std::mem::take(&mut self.external_next_index) {
+            let slot = disk.external_next_index.entry(parent).or_insert(next);
+            *slot = (*slot).max(next);
+        }
+        for (parent, bound) in known {
+            match disk.external_children.get(&parent) {
+                Some(list) => {
+                    if list
+                        .iter()
+                        .any(|c| self.owned.contains(&c.child_surface_id))
+                    {
+                        self.removed_external_top.insert(parent, bound);
+                    }
+                }
+                None => {
+                    let reserved_elsewhere = disk
+                        .external_next_index
+                        .get(&parent)
+                        .is_some_and(|next| *next > bound);
+                    if !reserved_elsewhere {
+                        disk.external_next_index.remove(&parent);
+                    }
+                }
+            }
+        }
+    }
+
+    /// 자식이 남지 않은 External 부모의 목록과 다음 번호를 지운다. 지운 수를 반환한다.
+    fn drop_empty_external(&mut self) -> u32 {
+        let empty: Vec<String> = self
+            .external_children
+            .iter()
+            .filter(|(_, list)| list.is_empty())
+            .map(|(parent, _)| parent.clone())
+            .collect();
+        for parent in &empty {
+            self.external_children.remove(parent);
+            self.external_next_index.remove(parent);
+        }
+        empty.len() as u32
     }
 
     /// 시작 복원이 끝난 뒤 한 번 부른다. 파일을 다시 읽고, 슬롯 표시가 없는 이전 형식의 항목을 이
@@ -209,6 +314,14 @@ impl ChildTerminalRegistry {
         self.last_state_report_at
             .retain(|surface, _| !gone.contains(surface));
         self.slot_of.retain(|surface, _| !gone.contains(surface));
+        for (parent, list) in self.external_children.iter_mut() {
+            note_removed(&mut self.removed_external_top, parent, list, |c| {
+                gone.contains(&c.child_surface_id)
+            });
+        }
+        self.external_parent_of
+            .retain(|child, _| !gone.contains(child));
+        self.drop_empty_external();
     }
 
     fn own(&mut self, surface: u32) {
@@ -226,9 +339,21 @@ impl ChildTerminalRegistry {
         }
     }
 
-    pub(crate) fn reserve_index(&mut self, parent: u32) -> Result<u32, String> {
-        self.own(parent);
-        let entry = self.next_index.entry(parent).or_insert(0);
+    pub(crate) fn reserve_index(&mut self, parent: &ParentKey) -> Result<u32, String> {
+        let entry = match parent {
+            ParentKey::Surface(parent) => {
+                self.own(*parent);
+                self.next_index.entry(*parent).or_insert(0)
+            }
+            ParentKey::External(parent) => {
+                // 다른 engine 이 같은 부모에 준 번호를 먼저 받아 중복 번호를 막는다.
+                if let Some(path) = self.path.clone() {
+                    self.merge_from(read_file(&path));
+                }
+                self.removed_external_top.remove(parent);
+                self.external_next_index.entry(parent.clone()).or_insert(0)
+            }
+        };
         let index = *entry;
         *entry = entry.checked_add(1).ok_or("child index space exhausted")?;
         self.save();
@@ -243,32 +368,52 @@ impl ChildTerminalRegistry {
         idx
     }
 
-    pub fn register_child(&mut self, parent: u32, child: ChildEntry) {
-        self.own(parent);
+    pub fn register_child(&mut self, parent: impl Into<ParentKey>, child: ChildEntry) {
         self.own(child.child_surface_id);
-        self.parent_of.insert(child.child_surface_id, parent);
         self.last_state_report_at
             .insert(child.child_surface_id, now_epoch_ms());
-        self.children.entry(parent).or_default().push(child);
+        match parent.into() {
+            ParentKey::Surface(parent) => {
+                self.own(parent);
+                self.parent_of.insert(child.child_surface_id, parent);
+                self.children.entry(parent).or_default().push(child);
+            }
+            ParentKey::External(parent) => {
+                self.external_parent_of
+                    .insert(child.child_surface_id, parent.clone());
+                self.external_children
+                    .entry(parent)
+                    .or_default()
+                    .push(child);
+            }
+        }
     }
 
-    pub fn list_children(&self, parent: u32) -> &[ChildEntry] {
-        self.children.get(&parent).map(Vec::as_slice).unwrap_or(&[])
+    fn list_of(&self, parent: &ParentKey) -> Option<&Vec<ChildEntry>> {
+        match parent {
+            ParentKey::Surface(parent) => self.children.get(parent),
+            ParentKey::External(parent) => self.external_children.get(parent),
+        }
     }
 
-    pub fn find_child(&self, parent: u32, index: u32) -> Option<&ChildEntry> {
-        self.children
-            .get(&parent)?
-            .iter()
-            .find(|c| c.index == index)
+    fn list_of_mut(&mut self, parent: &ParentKey) -> Option<&mut Vec<ChildEntry>> {
+        list_in(&mut self.children, &mut self.external_children, parent)
+    }
+
+    pub fn list_children(&self, parent: &ParentKey) -> &[ChildEntry] {
+        self.list_of(parent).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    pub fn find_child(&self, parent: &ParentKey, index: u32) -> Option<&ChildEntry> {
+        self.list_of(parent)?.iter().find(|c| c.index == index)
     }
 
     /// 해당 자식이 없으면 false다. 콜백이 바꾼 필드의 별도 인덱스는 여기서 다시 만들지 않는다.
-    pub fn update_child<F>(&mut self, parent: u32, index: u32, f: F) -> bool
+    pub fn update_child<F>(&mut self, parent: &ParentKey, index: u32, f: F) -> bool
     where
         F: FnOnce(&mut ChildEntry),
     {
-        let Some(list) = self.children.get_mut(&parent) else {
+        let Some(list) = list_in(&mut self.children, &mut self.external_children, parent) else {
             return false;
         };
         let Some(entry) = list.iter_mut().find(|c| c.index == index) else {
@@ -279,40 +424,55 @@ impl ChildTerminalRegistry {
         true
     }
 
-    pub fn parent_of_child(&self, child_surface: u32) -> Option<u32> {
-        self.parent_of.get(&child_surface).copied()
+    pub fn parent_of_child(&self, child_surface: u32) -> Option<ParentKey> {
+        if let Some(parent) = self.parent_of.get(&child_surface) {
+            return Some(ParentKey::Surface(*parent));
+        }
+        self.external_parent_of
+            .get(&child_surface)
+            .map(|parent| ParentKey::External(parent.clone()))
     }
 
-    pub fn remove_child(&mut self, parent: u32, index: u32) -> Option<ChildEntry> {
-        let list = self.children.get_mut(&parent)?;
+    /// External 부모의 마지막 자식이면 목록과 다음 번호도 지운다.
+    pub fn remove_child(&mut self, parent: &ParentKey, index: u32) -> Option<ChildEntry> {
+        let list = self.list_of_mut(parent)?;
         let pos = list.iter().position(|c| c.index == index)?;
         let removed = list.remove(pos);
-        self.owned.insert(removed.child_surface_id);
-        self.parent_of.remove(&removed.child_surface_id);
-        self.idle.remove(&removed.child_surface_id);
-        self.needs_input.remove(&removed.child_surface_id);
-        self.last_state_report_at.remove(&removed.child_surface_id);
+        if let ParentKey::External(parent) = parent {
+            raise_bound(&mut self.removed_external_top, parent, removed.index);
+        }
+        self.forget_child(removed.child_surface_id);
         Some(removed)
     }
 
     /// surface ID로 자식을 제거한다. 항목이 없으면 false다.
     pub fn unregister_child_by_surface(&mut self, surface_id: u32) -> bool {
-        let Some(parent) = self.parent_of.get(&surface_id).copied() else {
+        let Some(parent) = self.parent_of_child(surface_id) else {
             return false;
         };
-        let Some(list) = self.children.get_mut(&parent) else {
+        let Some(list) = self.list_of_mut(&parent) else {
             return false;
         };
         let Some(pos) = list.iter().position(|c| c.child_surface_id == surface_id) else {
             return false;
         };
-        list.remove(pos);
+        let removed = list.remove(pos);
+        if let ParentKey::External(parent) = &parent {
+            raise_bound(&mut self.removed_external_top, parent, removed.index);
+        }
+        self.forget_child(surface_id);
+        true
+    }
+
+    /// 목록에서 뺀 자식의 역색인과 상태를 지운다.
+    fn forget_child(&mut self, surface_id: u32) {
         self.owned.insert(surface_id);
         self.parent_of.remove(&surface_id);
+        self.external_parent_of.remove(&surface_id);
         self.idle.remove(&surface_id);
         self.needs_input.remove(&surface_id);
         self.last_state_report_at.remove(&surface_id);
-        true
+        self.drop_empty_external();
     }
 
     /// idle 값과 무관하게 needs_input도 해제한다. 대기 플래그가 남아 이후 idle·active를 가리지 않게 한다.
@@ -420,11 +580,20 @@ impl ChildTerminalRegistry {
             }
         }
 
+        for (parent, list) in self.external_children.iter_mut() {
+            summary.removed_children +=
+                note_removed(&mut self.removed_external_top, parent, list, |c| {
+                    dead(&c.child_surface_id)
+                });
+        }
+
         self.parent_of.retain(|sid, _| !dead(sid));
+        self.external_parent_of.retain(|sid, _| !dead(sid));
         self.idle.retain(|sid, _| !dead(sid));
         self.needs_input.retain(|sid, _| !dead(sid));
         self.last_state_report_at.retain(|sid, _| !dead(sid));
         self.slot_of.retain(|sid, _| !dead(sid));
+        summary.removed_parents += self.drop_empty_external();
 
         summary
     }
@@ -466,6 +635,44 @@ fn read_file(path: &std::path::Path) -> ChildTerminalRegistry {
             tracing::warn!("child-terminal registry read failed: {e}");
             ChildTerminalRegistry::default()
         }
+    }
+}
+
+/// 뺀 External 자식의 index 로 그 부모의 상한(index + 1 최댓값)을 올린다.
+fn raise_bound(bounds: &mut HashMap<String, u32>, parent: &str, index: u32) {
+    let top = index.saturating_add(1);
+    let bound = bounds.entry(parent.to_owned()).or_insert(top);
+    *bound = (*bound).max(top);
+}
+
+/// `remove` 가 참인 External 자식을 빼고 상한을 올린다. 뺀 수를 반환한다.
+fn note_removed(
+    bounds: &mut HashMap<String, u32>,
+    parent: &str,
+    list: &mut Vec<ChildEntry>,
+    remove: impl Fn(&ChildEntry) -> bool,
+) -> u32 {
+    let before = list.len();
+    list.retain(|c| {
+        if remove(c) {
+            raise_bound(bounds, parent, c.index);
+            false
+        } else {
+            true
+        }
+    });
+    (before - list.len()) as u32
+}
+
+/// 부모 키의 목록을 고른다. 다른 필드와 동시에 빌릴 수 있게 두 표만 받는다.
+fn list_in<'a>(
+    children: &'a mut HashMap<u32, Vec<ChildEntry>>,
+    external: &'a mut HashMap<String, Vec<ChildEntry>>,
+    parent: &ParentKey,
+) -> Option<&'a mut Vec<ChildEntry>> {
+    match parent {
+        ParentKey::Surface(parent) => children.get_mut(parent),
+        ParentKey::External(parent) => external.get_mut(parent),
     }
 }
 
@@ -548,8 +755,8 @@ mod tests {
                 nickname: None,
             },
         );
-        assert_eq!(s.list_children(10).len(), 1);
-        assert_eq!(s.find_child(10, 0).unwrap().child_surface_id, 100);
+        assert_eq!(s.list_children(&10.into()).len(), 1);
+        assert_eq!(s.find_child(&10.into(), 0).unwrap().child_surface_id, 100);
     }
 
     #[test]
@@ -585,9 +792,9 @@ mod tests {
         let idx = s.next_index_for(10);
         s.register_child(10, entry(100, idx));
         s.set_idle(100, true);
-        let removed = s.remove_child(10, idx).unwrap();
+        let removed = s.remove_child(&10.into(), idx).unwrap();
         assert_eq!(removed.child_surface_id, 100);
-        assert!(s.find_child(10, idx).is_none());
+        assert!(s.find_child(&10.into(), idx).is_none());
         assert_eq!(s.state_of(100), "active");
     }
 
@@ -598,7 +805,7 @@ mod tests {
         s.register_child(10, entry(100, idx));
         s.set_idle(100, true);
         assert!(s.unregister_child_by_surface(100));
-        assert!(s.find_child(10, idx).is_none());
+        assert!(s.find_child(&10.into(), idx).is_none());
         assert_eq!(s.parent_of_child(100), None);
         assert_eq!(s.state_of(100), "active");
         assert!(!s.unregister_child_by_surface(100));
@@ -662,7 +869,7 @@ mod tests {
         let mut s = ChildTerminalRegistry::default();
         let idx = s.next_index_for(10);
         s.register_child(10, entry(100, idx));
-        s.remove_child(10, idx);
+        s.remove_child(&10.into(), idx);
         assert_eq!(s.last_state_report_at(100), None);
 
         let idx = s.next_index_for(20);
@@ -683,7 +890,7 @@ mod tests {
             "needs_input": {}
         }"#;
         let s: ChildTerminalRegistry = serde_json::from_str(legacy).expect("하위호환 로드");
-        assert_eq!(s.list_children(10).len(), 1);
+        assert_eq!(s.list_children(&10.into()).len(), 1);
         assert_eq!(s.state_of(100), "active");
         assert_eq!(
             s.last_state_report_at(100),
@@ -717,8 +924,8 @@ mod tests {
 
         assert_eq!(summary.removed_children, 1);
         assert_eq!(summary.removed_parents, 0);
-        assert!(s.find_child(10, idx0).is_some());
-        assert!(s.find_child(10, idx1).is_none());
+        assert!(s.find_child(&10.into(), idx0).is_some());
+        assert!(s.find_child(&10.into(), idx1).is_none());
         assert_eq!(s.parent_of_child(101), None);
         assert_eq!(s.state_of(101), "active");
         assert_eq!(s.next_index_for(10), 2);
@@ -735,7 +942,7 @@ mod tests {
 
         assert_eq!(summary.removed_children, 1);
         assert_eq!(summary.removed_parents, 1);
-        assert_eq!(s.list_children(10).len(), 0);
+        assert_eq!(s.list_children(&10.into()).len(), 0);
         assert_eq!(s.parent_of_child(100), None);
         assert_eq!(s.next_index_for(10), 0);
     }
@@ -754,9 +961,9 @@ mod tests {
 
         assert_eq!(summary.removed_children, 0);
         assert_eq!(summary.removed_parents, 0);
-        assert!(s.find_child(10, idx0).is_some());
-        assert!(s.find_child(20, idx1).is_some());
-        assert_eq!(s.parent_of_child(100), Some(10));
+        assert!(s.find_child(&10.into(), idx0).is_some());
+        assert!(s.find_child(&20.into(), idx1).is_some());
+        assert_eq!(s.parent_of_child(100), Some(10.into()));
         assert_eq!(s.state_of(100), "idle");
     }
 
@@ -779,9 +986,9 @@ mod tests {
 
         assert_eq!(summary.removed_children, 4);
         assert_eq!(summary.removed_parents, 1);
-        assert_eq!(s.list_children(20).len(), 1);
-        assert_eq!(s.list_children(10).len(), 0);
-        assert_eq!(s.list_children(30).len(), 0);
+        assert_eq!(s.list_children(&20.into()).len(), 1);
+        assert_eq!(s.list_children(&10.into()).len(), 0);
+        assert_eq!(s.list_children(&30.into()).len(), 0);
     }
 
     fn live(ids: &[u32]) -> HashSet<u32> {
@@ -809,7 +1016,7 @@ mod tests {
         second.save();
         assert_eq!(children_on_disk(), [(513, 1027), (1026, 1028)]);
         assert_eq!(
-            second.list_children(513).len(),
+            second.list_children(&513.into()).len(),
             1,
             "save also refreshes the copy"
         );
@@ -896,7 +1103,7 @@ mod tests {
         first.set_idle(1027, true);
         first.save();
         assert_eq!(
-            first.list_children(1026).len(),
+            first.list_children(&1026.into()).len(),
             1,
             "merged the other window"
         );
@@ -980,5 +1187,233 @@ mod tests {
         assert!(!on_disk.children.contains_key(&1026));
         assert!(!on_disk.next_index.contains_key(&1026));
         assert!(on_disk.next_index.contains_key(&513));
+    }
+
+    fn ext(key: &str) -> ParentKey {
+        ParentKey::External(key.into())
+    }
+
+    fn external_on_disk() -> Vec<(String, u32, u32)> {
+        let disk = ChildTerminalRegistry::load();
+        let mut rows: Vec<(String, u32, u32)> = disk
+            .external_children
+            .iter()
+            .flat_map(|(parent, list)| {
+                list.iter()
+                    .map(move |c| (parent.clone(), c.index, c.child_surface_id))
+            })
+            .collect();
+        rows.sort();
+        rows
+    }
+
+    /// Surface 부모만 쓰는 저장 파일은 External 필드가 없어 이전 형식과 같고, 이전 파일도 그대로 읽힌다.
+    #[test]
+    fn a_surface_only_registry_keeps_the_previous_file_shape() {
+        let mut s = ChildTerminalRegistry::default();
+        s.register_child(10, entry(100, 0));
+        let json = serde_json::to_value(&s).unwrap();
+        for key in [
+            "external_children",
+            "external_parent_of",
+            "external_next_index",
+        ] {
+            assert!(json.get(key).is_none(), "{key} must be omitted");
+        }
+        let legacy = r#"{"children":{"10":[{"child_surface_id":100,"index":0,"cwd":null,"role":null,"nickname":null}]},
+            "parent_of":{"100":10},"next_index":{"10":1},"idle":{},"needs_input":{}}"#;
+        let loaded: ChildTerminalRegistry = serde_json::from_str(legacy).unwrap();
+        assert_eq!(loaded.parent_of_child(100), Some(ParentKey::Surface(10)));
+        assert_eq!(loaded.list_children(&10.into()).len(), 1);
+    }
+
+    /// External 부모 둘은 번호·목록·해제가 서로 섞이지 않는다. 마지막 자식이 빠지면 그 부모만 지우고
+    /// 번호를 다시 0부터 준다. Surface 부모는 기존처럼 빈 목록을 정리 단계까지 둔다.
+    #[test]
+    fn two_external_parents_are_isolated_and_restart_after_the_last_child() {
+        let mut s = ChildTerminalRegistry::default();
+        let (a, b) = (ext("codex:thread-a"), ext("codex:thread-b"));
+        assert_eq!(s.reserve_index(&a), Ok(0));
+        assert_eq!(s.reserve_index(&a), Ok(1));
+        assert_eq!(s.reserve_index(&b), Ok(0));
+        s.register_child(a.clone(), entry(100, 0));
+        s.register_child(a.clone(), entry(101, 1));
+        s.register_child(b.clone(), entry(200, 0));
+        assert_eq!(s.parent_of_child(101), Some(a.clone()));
+        assert_eq!(s.parent_of_child(200), Some(b.clone()));
+        assert_eq!(s.find_child(&a, 1).unwrap().child_surface_id, 101);
+        assert!(s.find_child(&b, 1).is_none());
+        assert!(s.list_children(&ParentKey::Surface(100)).is_empty());
+
+        assert_eq!(s.remove_child(&a, 0).unwrap().child_surface_id, 100);
+        assert_eq!(s.reserve_index(&a), Ok(2), "a still has a child");
+        assert!(s.unregister_child_by_surface(101));
+        assert!(s.list_children(&a).is_empty());
+        assert_eq!(s.reserve_index(&a), Ok(0), "emptied parent restarts");
+        assert_eq!(s.list_children(&b).len(), 1, "b untouched");
+        assert_eq!(s.reserve_index(&b), Ok(1));
+
+        s.register_child(10, entry(300, 0));
+        assert!(s.remove_child(&10.into(), 0).is_some());
+        assert!(
+            s.children.contains_key(&10),
+            "surface list waits for reconcile"
+        );
+    }
+
+    /// External 부모는 surface 가 아니므로 부모 생략 폴백 후보가 아니다.
+    #[test]
+    fn single_parent_ignores_external_parents() {
+        let mut s = ChildTerminalRegistry::default();
+        s.register_child(ext("codex:t"), entry(100, 0));
+        assert_eq!(s.single_parent(&live(&[100])), None);
+        s.register_child(10, entry(101, 0));
+        assert_eq!(s.single_parent(&live(&[10, 100, 101])), Some(10));
+    }
+
+    /// 정리는 이 engine 이 소유한 죽은 External 자식만 지우고, 비면 부모와 번호를 함께 지운다.
+    #[test]
+    fn reconcile_drops_dead_external_children_and_the_emptied_parent() {
+        let mut s = ChildTerminalRegistry::default();
+        let a = ext("codex:a");
+        let index = s.reserve_index(&a).unwrap();
+        s.register_child(a.clone(), entry(100, index));
+        let summary = s.reconcile_with_live_surfaces(&live(&[100]));
+        assert!(!summary.changed());
+        let summary = s.reconcile_with_live_surfaces(&live(&[]));
+        assert_eq!(summary.removed_children, 1);
+        assert_eq!(summary.removed_parents, 1);
+        assert!(s.parent_of_child(100).is_none());
+        assert!(!s.external_next_index.contains_key("codex:a"));
+    }
+
+    /// 두 engine 이 같은 External 부모에 번호를 줘도 겹치지 않고, 저장이 서로의 자식을 지우지 않는다.
+    /// 마지막 자식을 뺀 engine 의 저장이 파일의 번호까지 지워 다음 번호가 0부터 시작한다.
+    #[test]
+    fn two_engines_share_an_external_parent_without_duplicate_indices() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let mut first = ChildTerminalRegistry::load();
+        let mut second = ChildTerminalRegistry::load();
+        let parent = ext("codex:shared");
+        let a = first.reserve_index(&parent).unwrap();
+        let b = second.reserve_index(&parent).unwrap();
+        assert_eq!((a, b), (0, 1));
+        first.register_child(parent.clone(), entry(1027, a));
+        first.save();
+        second.register_child(parent.clone(), entry(1540, b));
+        second.save();
+        let shared = || "codex:shared".to_string();
+        assert_eq!(
+            external_on_disk(),
+            [(shared(), 0, 1027), (shared(), 1, 1540)]
+        );
+
+        assert!(first.unregister_child_by_surface(1027));
+        first.save();
+        assert_eq!(external_on_disk(), [(shared(), 1, 1540)]);
+        assert_eq!(
+            ChildTerminalRegistry::load()
+                .external_next_index
+                .get("codex:shared"),
+            Some(&2),
+            "the other engine still holds a child"
+        );
+
+        assert!(second.remove_child(&parent, 1).is_some());
+        second.save();
+        assert_eq!(external_on_disk(), []);
+        let disk = ChildTerminalRegistry::load();
+        assert!(!disk.external_next_index.contains_key("codex:shared"));
+        assert!(disk.external_parent_of.is_empty());
+        assert_eq!(first.reserve_index(&parent), Ok(0));
+    }
+
+    /// 다른 engine 이 번호를 예약만 하고 아직 등록하지 않았을 때 마지막 자식을 빼도 그 예약 번호를
+    /// 다시 주지 않는다.
+    #[test]
+    fn a_pending_reservation_in_another_engine_survives_the_last_release() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let parent = ext("codex:race");
+        let mut first = ChildTerminalRegistry::load();
+        let mut second = ChildTerminalRegistry::load();
+        let index = first.reserve_index(&parent).unwrap();
+        first.register_child(parent.clone(), entry(1027, index));
+        first.save();
+        let pending = second.reserve_index(&parent).unwrap();
+        assert_eq!(pending, 1);
+
+        assert!(first.unregister_child_by_surface(1027));
+        first.save();
+        assert_eq!(
+            ChildTerminalRegistry::load()
+                .external_next_index
+                .get("codex:race"),
+            Some(&2)
+        );
+        assert_eq!(first.reserve_index(&parent), Ok(2));
+    }
+
+    /// 자식이 남은 동안 저장을 거쳐도 앞서 뺀 번호의 상한이 남아, 마지막 자식이 빠지면 번호를 지운다.
+    #[test]
+    fn the_removed_index_bound_survives_saves_while_children_remain() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let parent = ext("codex:keep");
+        let mut engine = ChildTerminalRegistry::load();
+        for surface in [1027, 1028] {
+            let index = engine.reserve_index(&parent).unwrap();
+            engine.register_child(parent.clone(), entry(surface, index));
+        }
+        engine.save();
+        assert!(engine.remove_child(&parent, 1).is_some());
+        engine.save();
+        engine.set_idle(1027, true);
+        engine.save();
+        assert!(engine.remove_child(&parent, 0).is_some());
+        engine.save();
+        assert!(
+            !ChildTerminalRegistry::load()
+                .external_next_index
+                .contains_key("codex:keep")
+        );
+        assert_eq!(engine.reserve_index(&parent), Ok(0));
+    }
+
+    /// 다시 열지 않는 창의 External 자식은 창 정리와 함께 지워지고 다른 창의 자식은 남는다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn released_and_pruned_windows_drop_only_their_external_children() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let parent = ext("codex:p");
+        let mut first = window(1);
+        let index = first.reserve_index(&parent).unwrap();
+        first.register_child(parent.clone(), entry(1027, index));
+        first.save();
+        let mut second = window(2);
+        let index = second.reserve_index(&parent).unwrap();
+        second.register_child(parent.clone(), entry(1540, index));
+        second.save();
+        let mut third = window(3);
+        let index = third.reserve_index(&parent).unwrap();
+        third.register_child(parent.clone(), entry(2055, index));
+        third.save();
+        let p = || "codex:p".to_string();
+        assert_eq!(
+            external_on_disk(),
+            [(p(), 0, 1027), (p(), 1, 1540), (p(), 2, 2055)]
+        );
+
+        second.release_owned();
+        assert_eq!(external_on_disk(), [(p(), 0, 1027), (p(), 2, 2055)]);
+
+        first.forget_slots_except(&[1].into_iter().collect());
+        assert_eq!(external_on_disk(), [(p(), 0, 1027)]);
+        let disk = ChildTerminalRegistry::load();
+        assert_eq!(disk.external_next_index.get("codex:p"), Some(&3));
+        assert_eq!(disk.parent_of_child(1027), Some(parent.clone()));
+
+        // 정리한 창이 마지막 자식을 빼면 앞서 정리로 뺀 번호까지 알고 있어 번호를 지운다.
+        first.release_owned();
+        assert_eq!(external_on_disk(), []);
+        assert!(ChildTerminalRegistry::load().external_next_index.is_empty());
     }
 }
