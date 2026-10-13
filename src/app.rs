@@ -2,6 +2,7 @@
 
 /// GUI와 헤드리스에서 공통으로 이벤트 큐를 비운다.
 pub(crate) mod agent_events;
+pub(crate) mod approval_records;
 pub(crate) mod attach_activation;
 #[cfg(feature = "gui")]
 pub(crate) mod attach_client;

@@ -44,7 +44,7 @@ pub fn await_blocking(
     let outcome = store.await_response(&req_id, timeout_ms);
     // timeout을 포함해 상태가 바뀌었으면 워커의 memory port로 저장한다.
     if let Some(record) = store.get(&req_id) {
-        persist_record_via(memory, &record);
+        crate::app::approval_records::persist_and_wait(memory, &record);
     }
     match outcome {
         Ok(WaitOutcome::Responded {
@@ -258,7 +258,7 @@ fn stored_records(
             continue;
         }
         let list_opts = tasty_memory::ListOpts {
-            prefix: Some(APPROVAL_KEY_PREFIX.to_string()),
+            prefix: Some(crate::app::approval_records::APPROVAL_KEY_PREFIX.to_string()),
             limit: None,
             since,
             until,

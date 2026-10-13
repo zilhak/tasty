@@ -1,5 +1,5 @@
-//! 승인 요청의 호출자 변환과 상태 영속 저장.
-//! workspace가 있으면 해당 scope에, 없으면 global에 저장한다.
+//! 승인 요청의 호출자 변환과 IPC 응답. 기록의 key·scope·직렬화와 저장은
+//! [`crate::app::approval_records`]가 맡는다.
 
 use serde_json::{Value, json};
 use tasty_approval::{
@@ -62,61 +62,6 @@ pub(super) fn map_error(id: Value, err: ApprovalError) -> JsonRpcResponse {
     }
 }
 
-const APPROVAL_KEY_PREFIX: &str = "tasty.approval.";
-
-pub(super) fn scope_for(record: &ApprovalRecord) -> Scope {
-    match record.request.workspace_id {
-        Some(wid) => Scope::Workspace(wid),
-        None => Scope::Global,
-    }
-}
-
-/// 승인 기록 하나를 쓰는 writer 요청. 직렬화하지 못하면 경고하고 None이다.
-fn record_write(record: &ApprovalRecord) -> Option<tasty_memory::writer::MemoryRequest> {
-    let value = match serde_json::to_value(record) {
-        Ok(v) => MemoryValue::Json(v),
-        Err(e) => {
-            tracing::warn!("approval: serialize failed for {}: {e}", record.request.id);
-            return None;
-        }
-    };
-    Some(tasty_memory::writer::MemoryRequest::Write(
-        tasty_memory::WriteOp::Put {
-            owner: tasty_memory::HOST_OWNER.to_string(),
-            scope: scope_for(record),
-            key: format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id),
-            value,
-            opts: PutOpts {
-                expires_at: None,
-                cas: None,
-            },
-        },
-    ))
-}
-
-/// Core에 접근할 수 없는 대기 워커가 writer로 상태를 저장한다. 워커 스레드라 결과를 기다린다.
-pub(super) fn persist_record_via(
-    memory: &tasty_memory::writer::MemoryAccess,
-    record: &ApprovalRecord,
-) {
-    let Some(request) = record_write(record) else {
-        return;
-    };
-    if let Err(why) = memory.run_and_wait(request, std::time::Duration::from_secs(30)) {
-        tracing::warn!(
-            "approval: memory put failed for {}: {why:?}",
-            record.request.id
-        );
-    }
-}
-
-/// 응답과 무관한 경로의 기록. 실패는 경고만 남긴다.
-pub(crate) fn persist_record(core: &AppServices, record: &ApprovalRecord) {
-    if let Some(request) = record_write(record) {
-        core.memory_write_detached(request, "approval record");
-    }
-}
-
 /// 기록이 끝난 뒤 `body`로 응답한다. 기록 실패는 경고만 남기고 응답은 그대로 보낸다.
 pub(super) fn persist_record_and_reply(
     core: &AppServices,
@@ -124,7 +69,7 @@ pub(super) fn persist_record_and_reply(
     record: &ApprovalRecord,
     body: Value,
 ) -> JsonRpcResponse {
-    let Some(request) = record_write(record) else {
+    let Some(request) = crate::app::approval_records::record_write(record) else {
         return crate::adapters::ipc::handler::memory::written(core, id, body);
     };
     let record_id = record.request.id.clone();
@@ -226,7 +171,7 @@ pub(crate) fn publish_capability_elevation_at(
 
     match core.request_approval(req) {
         Ok(change) => {
-            persist_record(core, &change.record);
+            crate::app::approval_records::persist(core.memory_access(), &change.record);
             Some(change.record)
         }
         Err(e) => {

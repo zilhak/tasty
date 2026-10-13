@@ -290,16 +290,6 @@ impl AppServices {
         }
     }
 
-    /// 응답과 무관한 쓰기를 writer에 넣는다. 결과를 기다리지 않고 실패만 로그로 남긴다.
-    /// writer 순서를 따르므로 뒤에 넣은 요청은 이 쓰기의 반영을 본다.
-    pub(crate) fn memory_write_detached(
-        &self,
-        request: tasty_memory::writer::MemoryRequest,
-        what: &'static str,
-    ) {
-        self.memory_access().submit_detached(request, what, None);
-    }
-
     /// `handle_checked_request` 밖(app 계층)에서 부른 핸들러의 응답을 보낸다. 핸들러가 writer 결과를
     /// 기다리게 했으면 그 continuation에 원 호출자를 붙이고, 아니면 바로 보낸다.
     pub(crate) fn send_handled(&self, tx: &SyncSender<JsonRpcResponse>, response: JsonRpcResponse) {

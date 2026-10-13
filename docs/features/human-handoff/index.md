@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: AI Agent (요청) · 로컬 사용자 (응답)
 - **ADR**: 없음
-- **코드**: `approval.*` 핸들러(`src/adapters/ipc/handler/approval/`), 영속 `tasty-memory`
+- **코드**: `approval.*` 핸들러(`src/adapters/ipc/handler/approval/`), 기록 저장 `src/app/approval_records.rs`, 영속 `tasty-memory`
 - **화면**: approval popup (pending 큐 head)
 - **메서드 목록**: [reference/api](../../reference/api.md#휴먼-핸드오프-approval)
 
@@ -41,7 +41,17 @@ store 락이 poison 된 뒤(다른 스레드가 락을 든 채 패닉)의 `reque
 
 ### 영속
 
-매 상태 전이마다 `tasty.approval.<id>` 키로 직렬화(workspace_id 있으면 `workspace:<id>`, 없으면 `global`). 응답/타임아웃/취소 후에도 보존 → `approval.history` 로 재시작 후 조회. 세션 요약은 별도 키(`approval.summary.set/get`, markdown).
+매 상태 전이마다 `tasty.approval.<id>` 키로 직렬화(workspace_id 있으면 `workspace:<id>`, 없으면 `global`, owner는 host). 응답/타임아웃/취소 후에도 보존 → `approval.history` 로 재시작 후 조회. 세션 요약은 별도 키(`approval.summary.set/get`, markdown).
+
+key·scope·직렬화는 app 기능 모듈 `approval_records` 한 곳에서 만들고, 경로마다 memory writer에 넣는 방식만 다르다.
+
+| 경로 | 쓰기 방식 |
+|---|---|
+| IPC `approval.request`·`approval.respond`·`approval.cancel` | 기록이 commit 된 뒤 응답한다 |
+| GUI popup 응답, capability elevation 발행, cap `require_approval` | 결과를 기다리지 않는 쓰기 |
+| `approval.await` 대기 워커(만료 포함) | 워커 스레드에서 최대 30초 기다리는 쓰기 |
+
+저장 실패는 경고 로그로만 남긴다. 이미 끝난 메모리 상태 전이와 IPC 응답 내용은 바뀌지 않는다.
 
 ## 인터페이스
 

@@ -225,7 +225,7 @@ impl App {
             comment.clone(),
         ) {
             Ok(change) => {
-                crate::ipc::handler::approval::persist_record(core, &change.record);
+                crate::app::approval_records::persist(core.memory_access(), &change.record);
                 state
                     .dialogs
                     .approval_records

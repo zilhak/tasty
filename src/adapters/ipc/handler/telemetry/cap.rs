@@ -485,7 +485,7 @@ pub(super) fn fire_require_approval(
     };
     match core.request_approval(req) {
         Ok(change) => {
-            crate::ipc::handler::approval::persist_record(core, &change.record);
+            crate::app::approval_records::persist(core.memory_access(), &change.record);
             // 먼저 발생한 알림보다 승인 팝업이 앞서지 않도록 outbox를 먼저 창 큐로 옮긴다.
             window.enqueue_intents(std::mem::take(out));
             #[cfg(feature = "gui")]
