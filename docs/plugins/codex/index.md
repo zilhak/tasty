@@ -192,6 +192,12 @@ SessionStart의 `source`나 thread ID 순서로는 판정하지 않는다. 이�
 
 ### 터미널 세션 복원
 
+부팅 때 선택된 터미널의 PTY는 IPC 서버가 열리기 전에 복원될 수 있다. 세션 helper는 터미널의
+`TASTY_PARENT_HOME`을 적용한 동일 CLI로 `list info`를 읽어 준비를 확인한 뒤 `session-open`을
+한 번만 실행한다. 준비 조회는 최대 30초 동안 재시도하며, 응답하지 않는 조회 프로세스도 기한이나
+취소 시 종료·회수한다. 세션 등록 자체는 중복 세대 발급을 피하기 위해 재시도하지 않는다.
+준비 전의 일시적인 접속 실패는 화면에 반복 출력하지 않는다.
+
 SessionStart에서 현재 surface에 세션 ID와 `restore.command`를 저장한다. 복원 명령은 helper의
 `--resume <thread>` 명령이며 세대에 기록한 정책 인자와 훅이 알려 준 모델(`-m`)을 그대로 쓰고
 제출 문자는 넣지 않는다. 호스트는 이 명령을 복원한 터미널의 셸에서 실행하므로 cwd는 복원된
@@ -588,3 +594,5 @@ tasty codex result <event_id>
 
 - Given Bash·zsh에서 셸 통합으로 실행한 `codex resume` When 선택기에서 대화를 고름 Then 첫 모델 턴 전에도 선택된 UUID와 실행 정책으로 복원 명령이 저장된다.
 - Given 복원 정보를 저장한 Codex 터미널 When Tasty를 정상 종료하고 다시 열어 해당 surface를 깨움 Then 새로운 세대에서 같은 대화·승인·sandbox 설정으로 재개한다.
+
+- Given 시작 화면에 선택된 Codex 터미널 When PTY 복원이 IPC 시작보다 먼저 진행됨 Then helper는 읽기 전용 준비 조회 뒤 한 번만 세대를 등록하고 수동 wake 없이 같은 대화를 재개한다.

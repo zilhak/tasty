@@ -8,6 +8,7 @@
 pub(crate) mod command;
 pub(crate) mod helper;
 pub(crate) mod native_args;
+mod readiness;
 pub(crate) mod registry;
 pub(crate) mod relay;
 

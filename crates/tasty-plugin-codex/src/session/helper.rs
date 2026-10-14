@@ -93,9 +93,19 @@ pub(crate) fn parse_opened(value: &Value) -> Result<Opened, String> {
     }
 }
 
+/// Probes and mutations share the terminal-owned instance. An explicit parent home takes
+/// precedence over the CLI profile default, even when PATH finds a differently built CLI.
+fn host_cli() -> Command {
+    let mut cmd = Command::new(if cfg!(windows) { "tasty.exe" } else { "tasty" });
+    if let Some(home) = std::env::var_os("TASTY_PARENT_HOME").filter(|h| !h.is_empty()) {
+        cmd.env("TASTY_HOME", home);
+    }
+    cmd
+}
+
 /// 같은 인스턴스의 Tasty CLI로 세대를 발급받는다. 터미널이 알려 준 인스턴스 홈만 쓴다.
 fn open_via_cli(surface: u32, args: &Args) -> Result<Opened, String> {
-    let mut cmd = Command::new(if cfg!(windows) { "tasty.exe" } else { "tasty" });
+    let mut cmd = host_cli();
     cmd.args(["codex", "session-open", "--surface", &surface.to_string()]);
     if let Some(thread) = &args.resume {
         cmd.args(["--resume", thread]);
@@ -107,9 +117,6 @@ fn open_via_cli(surface: u32, args: &Args) -> Result<Opened, String> {
             "--native-args",
             &serde_json::to_string(&native.restore).map_err(|e| e.to_string())?,
         ]);
-    }
-    if let Some(home) = std::env::var_os("TASTY_PARENT_HOME").filter(|h| !h.is_empty()) {
-        cmd.env("TASTY_HOME", home);
     }
     let out = cmd
         .stdin(Stdio::null())
@@ -555,6 +562,18 @@ fn entry(raw: &[String], native: bool) -> i32 {
         }
         None => None,
     };
+    // Selected terminals are restored before boot starts the IPC listener. Only the read-only
+    // readiness query is retried; session-open still runs once after a successful response.
+    match super::readiness::wait(host_cli, READY_TIMEOUT, || {
+        tasty_reaper::take_deferred_signals().any()
+    }) {
+        Ok(()) => {}
+        Err(super::readiness::Error::Cancelled) => return 130,
+        Err(super::readiness::Error::Failed(detail)) => {
+            report("codex.session.open_failed", &detail);
+            return 1;
+        }
+    }
     let opened = match open_via_cli(surface, &args) {
         Ok(o) => o,
         Err(e) => {
@@ -716,7 +735,7 @@ fn register_native_thread(surface: u32, generation: &str, reply: &Value) -> Resu
         .filter(|id| crate::ids::is_uuid(id))
         .ok_or("server returned no thread UUID")?;
     let payload = serde_json::json!({"session_id":thread,"model":reply["model"]});
-    let mut cmd = Command::new(if cfg!(windows) { "tasty.exe" } else { "tasty" });
+    let mut cmd = host_cli();
     cmd.args([
         "codex",
         "session-bind",
@@ -725,9 +744,6 @@ fn register_native_thread(surface: u32, generation: &str, reply: &Value) -> Resu
         "--gen",
         generation,
     ]);
-    if let Some(home) = std::env::var_os("TASTY_PARENT_HOME") {
-        cmd.env("TASTY_HOME", home);
-    }
     let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
