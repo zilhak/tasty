@@ -261,7 +261,7 @@ fn run_probe(dir: &Path, evidence: Option<&Path>, created: &mut Option<(String, 
         ..Args::default()
     };
     // 원인: 정책 인자를 준 원격 재개 TUI는 시작을 거부한다.
-    let mut old = crate::rpc::codex_command();
+    let mut old = crate::rpc::codex_command().unwrap();
     old.args([
         "resume",
         "--remote",

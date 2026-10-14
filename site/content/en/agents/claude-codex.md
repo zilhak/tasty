@@ -1,4 +1,4 @@
-<!-- source-hash: 574aa3d73b8e -->
+<!-- source-hash: 03854f714959 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -136,6 +136,8 @@ the completion-log folder as it boots, which takes the live log the earlier one 
 Give each copy its own data folder with `TASTY_HOME` if you need both.
 
 ### Automatic delivery to a Codex parent
+
+Even when Tasty starts from the desktop, it automatically uses the Codex executable and search path available to the calling conversation. You do not need to specify an executable path or a result destination for each `spawn` or `tell`.
 
 When you run `tasty codex spawn` (or `tell` or `respawn`) inside a Codex conversation, the child's result returns to that
 conversation each time the child finishes a response. There is no separate setup command.

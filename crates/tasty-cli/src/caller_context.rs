@@ -4,9 +4,10 @@
 //! `TASTY_SURFACE_ID`는 Codex 서버가 시작될 때 물려받은 값일 수 있어 호출자의 surface라고
 //! 볼 수 없다. 그래서 Codex 호출자가 있으면 dynamic plugin 요청의 surface 자동 채움을 하지 않는다.
 //! 호스트 명령의 대상 해석과 호출자 자기 보호(`caller_surface_id`)는 이 모듈과 무관하게 기존대로 동작한다.
-//! 이 값들은 환경 변수일 뿐 인증된 신원이 아니다. 받는 쪽은 혼선을 막는 데만 쓴다.
+//! 이 값들은 환경 변수일 뿐 인증된 신원이 아니다. 받는 쪽은 수신 대화와 해당 Codex 실행 환경을 고를 때 쓴다.
 
 use std::ffi::OsString;
+use tasty_utils::execution::ExecutionContext;
 
 use serde_json::{Map, Value};
 
@@ -22,6 +23,7 @@ pub enum CodexCaller {
         thread_id: String,
         /// 호출자 환경의 `CODEX_HOME`(절대 경로). 없으면 받는 쪽의 기본 경로 규칙을 쓴다.
         codex_home: Option<String>,
+        execution: Option<ExecutionContext>,
     },
     /// 값이 있으나 쓸 수 없다. 낡은 surface로 대신하지 않고 명령을 거절한다. 사용자에게 보일 문구를 담는다.
     Invalid(String),
@@ -68,15 +70,24 @@ pub fn codex_caller_from(thread: Option<OsString>, codex_home: Option<OsString>)
     CodexCaller::Thread {
         thread_id: thread.to_owned(),
         codex_home,
+        execution: None,
     }
 }
 
 /// 현재 프로세스 환경의 Codex 호출자.
 pub fn codex_caller() -> CodexCaller {
-    codex_caller_from(
+    let mut caller = codex_caller_from(
         std::env::var_os("CODEX_THREAD_ID"),
         std::env::var_os("CODEX_HOME"),
-    )
+    );
+    if let CodexCaller::Thread { execution, .. } = &mut caller {
+        // 조회 전용 result/children과 owned endpoint는 실행 정보 없이도 쓸 수 있다.
+        match ExecutionContext::capture("codex") {
+            Ok(found) => *execution = Some(found),
+            Err(error) => tracing::debug!("Codex execution context unavailable: {error}"),
+        }
+    }
+    caller
 }
 
 /// plugin 인자를 채울 때 `TASTY_SURFACE_ID`를 써도 되는지 판정한다.
@@ -132,8 +143,26 @@ pub fn apply_to_plugin_params(
     if let CodexCaller::Thread {
         thread_id,
         codex_home,
+        execution,
     } = codex
     {
+        if let Some(execution) = execution {
+            let executable = execution
+                .executable
+                .to_str()
+                .ok_or("_tasty_context.execution.executable must be valid UTF-8")?;
+            let search_path = execution
+                .search_path
+                .to_str()
+                .ok_or("_tasty_context.execution.search_path must be valid UTF-8")?;
+            context.insert(
+                "execution".into(),
+                serde_json::json!({
+                    "executable": executable,
+                    "search_path": search_path,
+                }),
+            );
+        }
         context.insert("provider".into(), Value::from("codex"));
         context.insert("thread_id".into(), Value::from(thread_id.as_str()));
         if let Some(home) = codex_home {

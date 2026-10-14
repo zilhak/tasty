@@ -229,7 +229,7 @@ pub(crate) struct Prepared {
 }
 
 /// 준비 뒤 단계가 없는 [`run_lifecycle_with`].
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn run_lifecycle(
     state_dir: &Path,
     server: Command,
@@ -410,8 +410,12 @@ fn ws_ready() -> ReadyProbe<'static> {
     })
 }
 
+#[cfg(test)]
 fn server_command(opened: &Opened) -> Command {
-    let mut cmd = crate::rpc::codex_command();
+    server_command_with(opened, Command::new("codex"))
+}
+
+fn server_command_with(opened: &Opened, mut cmd: Command) -> Command {
     cmd.args(["app-server", "--listen", &opened.listen]);
     if let Some(token_file) = &opened.token_file {
         cmd.args(["--ws-auth", "capability-token", "--ws-token-file"]);
@@ -421,13 +425,23 @@ fn server_command(opened: &Opened) -> Command {
     cmd
 }
 
+#[cfg(test)]
 pub(crate) fn tui_command(
     url: &str,
     token: Option<&str>,
     args: &Args,
     prompt: Option<&str>,
 ) -> Command {
-    let mut cmd = crate::rpc::codex_command();
+    tui_command_with(url, token, args, prompt, Command::new("codex"))
+}
+
+fn tui_command_with(
+    url: &str,
+    token: Option<&str>,
+    args: &Args,
+    prompt: Option<&str>,
+    mut cmd: Command,
+) -> Command {
     if args.resume.is_some() {
         cmd.arg("resume");
     }
@@ -512,6 +526,19 @@ pub(crate) fn main(args: &[String]) -> i32 {
             return 1;
         }
     };
+    let execution = match tasty_utils::execution::ExecutionContext::capture("codex") {
+        Ok(execution) => execution,
+        Err(e) => {
+            write_state(
+                &opened.state_dir,
+                HelperPhase::Failed,
+                None,
+                Some(e.to_string()),
+            );
+            report("codex.session.server_failed", &e.to_string());
+            return 1;
+        }
+    };
     let token = match &opened.token_file {
         Some(f) => match std::fs::read_to_string(f) {
             Ok(t) => Some(t.trim().to_string()),
@@ -532,11 +559,19 @@ pub(crate) fn main(args: &[String]) -> i32 {
     let probe = ws_ready();
     let result = run_lifecycle_with(
         &opened.state_dir,
-        server_command(&opened),
+        server_command_with(&opened, execution.command()),
         probe,
         READY_TIMEOUT,
         |url| prepare_resume(url, opened.token_file.as_deref(), &args),
-        |url| tui_command(url, token.as_deref(), &args, prompt.as_deref()),
+        |url| {
+            tui_command_with(
+                url,
+                token.as_deref(),
+                &args,
+                prompt.as_deref(),
+                execution.command(),
+            )
+        },
     );
     match result {
         Ok(status) => status.code().unwrap_or(1),

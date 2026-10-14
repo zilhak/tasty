@@ -6,6 +6,7 @@
 //! 테마·설정·DB 등 기능별 경로는 각 크레이트가 path::tasty_home 위에 정의한다.
 
 pub mod batch_writer;
+pub mod execution;
 pub mod id;
 pub mod notify;
 pub mod path;

@@ -54,6 +54,25 @@ POSIX는 `if [ -n "$TASTY_CODEX_GEN" ] && [ -n "$TASTY_SURFACE_ID" ]; then … |
 부모 결과 반환의 완료 키에 쓴다. 설치 이벤트는 아래 일곱 개다. 승인이 어느 도구에서나 발생할 수 있어
 도구 이름 matcher를 두지 않으며 PostToolUse도 매 호출마다 프로세스를 실행한다.
 
+### Codex 실행 파일과 PATH
+
+Codex 대화에서 CLI를 호출하면 호출자의 PATH에서 찾은 Codex 절대경로와 PATH를 내부 문맥의
+`execution`으로 전달한다. 상대 PATH 항목은 호출 cwd 기준으로 절대화한다. 플러그인의 PATH에
+Codex가 없어도 공식 proxy를 실행할 수 있고, npm의 `/usr/bin/env node` 런처도 전달된 PATH를 쓴다.
+PATH는 해당 자식 프로세스에만 설정한다. 호스트 전역 환경, 인증 파일, 부모 ID 설정은 바꾸지 않는다.
+Claude의 Codex 부모 해석도 이 문맥을 `codex.parent`에 그대로 전달한다.
+
+외부 부모의 수신 기록에는 실행 정보가 함께 저장되어 백그라운드 전송·재시도와 plugin 재시작 때도
+쓰인다. 같은 부모에서 실행 정보가 갱신되면 기존 수신자 ID와 완료 claim을 유지한 채 기록만 바꾼다.
+실행 정보가 없는 이전 CLI는 저장된 값을 지우지 않는다. 이전 수신 기록에 실행 정보가 없으면 기존처럼
+plugin 환경에서 Codex를 찾으며, 다음 정상 CLI 호출로 실행 정보를 저장한다. 지정된 실행 파일이 사라졌으면
+다른 설치본으로 바꾸지 않고 전송 전 실패로 남긴다. 로드 여부 확인과 수신 준비가 실패하면 child는 생성하지 않는다.
+
+세션 helper는 자기 터미널의 환경에서 실행 정보를 한 번 확보하고 서버와 TUI에 같은 정보를 쓴다.
+실제 Linux proxy 회귀 검사는 `TASTY_CODEX_EXECUTION_PROBE=1`로 실행하는 opt-in 시험이다.
+Codex가 없는 PATH의 별도 검사 프로세스에서 전달된 실행 정보로 기존 대화의 로드 여부만 조회한다.
+모델·child·새 대화를 실행하지 않는다.
+
 ### 세션 실행 (전용 app-server)
 
 launch·spawn·respawn·reboot·복원은 모두 플러그인 실행 파일의 `session` 모드(세션 helper)를

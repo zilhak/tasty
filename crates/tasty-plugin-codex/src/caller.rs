@@ -1,7 +1,7 @@
 //! CLI가 Codex 호출자에게 붙이는 예약 문맥(`params._tasty_context`).
 //!
 //! CLI는 호출 환경의 `CODEX_THREAD_ID`를 검증해 넣는다. 이 값은 같은 사용자의 프로세스가
-//! 알려 준 것이며 인증된 신원이 아니다. 수신 대상을 고르고 결과 조회의 혼선을 막는 데만 쓴다.
+//! 알려 준 것이며 인증된 신원이 아니다. 수신 대상과 Codex 실행 환경을 고르는 데 쓴다.
 
 use std::path::PathBuf;
 
@@ -11,6 +11,7 @@ use serde_json::Value;
 pub(crate) struct CallerContext {
     pub thread: String,
     pub codex_home: Option<PathBuf>,
+    pub execution: Option<crate::execution::CodexExecution>,
     /// CLI가 TASTY_SURFACE_ID로 채운 인자 이름. 사용자가 지정한 값과 구분한다.
     pub implicit: Vec<String>,
 }
@@ -45,6 +46,19 @@ pub(crate) fn codex_caller(params: &Value) -> Result<Option<CallerContext>, Stri
                 .ok_or("_tasty_context.codex_home must be an absolute path")?,
         ),
     };
+    let execution = ctx
+        .get("execution")
+        .filter(|v| !v.is_null())
+        .map(|v| {
+            serde_json::from_value::<crate::execution::CodexExecution>(v.clone())
+                .map_err(|e| format!("_tasty_context.execution: {e}"))
+        })
+        .transpose()?;
+    if let Some(execution) = &execution {
+        execution
+            .validate()
+            .map_err(|e| format!("_tasty_context.execution: {e}"))?;
+    }
     let implicit = ctx
         .get("implicit")
         .and_then(Value::as_array)
@@ -55,6 +69,7 @@ pub(crate) fn codex_caller(params: &Value) -> Result<Option<CallerContext>, Stri
     Ok(Some(CallerContext {
         thread,
         codex_home,
+        execution,
         implicit,
     }))
 }
@@ -63,6 +78,24 @@ pub(crate) fn codex_caller(params: &Value) -> Result<Option<CallerContext>, Stri
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn malformed_execution_cannot_be_used_as_a_relative_plugin_command() {
+        let root = tempfile::tempdir().unwrap();
+        for execution in [
+            json!({"executable":"codex", "search_path":root.path()}),
+            json!({"executable":root.path().join("codex"), "search_path":"relative"}),
+            json!({"executable":root.path().join("codex")}),
+        ] {
+            assert!(
+                codex_caller(&json!({"_tasty_context":{
+                    "provider":"codex", "thread_id":"01a12f74-dab9-7a00-8000-0123456789ab",
+                    "execution":execution
+                }}))
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn only_a_codex_context_with_a_uuid_is_a_codex_caller() {

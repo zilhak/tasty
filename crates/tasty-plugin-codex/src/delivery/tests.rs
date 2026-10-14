@@ -10,6 +10,51 @@ const PARENT: &str = "019f55e7-3dfa-7a00-8000-0000000000aa";
 const OTHER: &str = "019f55e7-3dfa-7a00-8000-0000000000bb";
 const CHILD: &str = "019f55e7-3dfa-7a00-8000-0000000000cc";
 
+#[test]
+fn execution_survives_reload_and_refresh_without_changing_receivers_or_claims() {
+    let mut fx = Fixture::new();
+    fx.loaded = Ok(true);
+    let context = |thread: &str, name: &str| {
+        let dir = fx.root().join(name);
+        json!({"_tasty_context": {
+            "provider": "codex", "thread_id": thread,
+            "execution": {"executable": dir.join("codex"), "search_path": dir}
+        }})
+    };
+    let prepare = |params| fx.with(|d| handle_parent(d, &params)).unwrap();
+    let a = prepare(context(PARENT, "first"));
+    let rid = a["receiver_id"].as_str().unwrap();
+    let id = deliver_id(&fx, rid, "claude:one");
+    fx.take_jobs();
+    let other = prepare(context(OTHER, "other"));
+    assert_ne!(a["receiver_id"], other["receiver_id"]);
+    let updated = prepare(context(PARENT, "second"));
+    assert_eq!(updated["receiver_id"], a["receiver_id"]);
+    assert_eq!(deliver_id(&fx, rid, "claude:one"), id);
+
+    // 디스크에서 다시 읽어 새 plugin 프로세스와 같은 입력으로 전송 경로를 고른다.
+    let stored = ledger::read_receiver(fx.root(), rid).unwrap().unwrap();
+    let expected = fx.root().join("second");
+    let execution = stored.execution.as_ref().unwrap();
+    assert_eq!(execution.executable, expected.join("codex"));
+    assert_eq!(execution.search_path, expected.to_str().unwrap());
+    let endpoint = fx.with(|d| target(d, &stored)).unwrap().0;
+    assert!(matches!(endpoint, Endpoint::Proxy { execution: Some(e), .. } if e == *execution));
+    let other = ledger::read_receiver(fx.root(), other["receiver_id"].as_str().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        other.execution.unwrap().executable,
+        fx.root().join("other/codex")
+    );
+    // 이전 CLI는 저장된 실행 정보를 지우지 않는다.
+    parent(&fx, PARENT).unwrap();
+    assert_eq!(
+        ledger::read_receiver(fx.root(), rid).unwrap().unwrap(),
+        stored
+    );
+}
+
 fn ctx_of(thread: &str) -> Value {
     json!({ "provider": "codex", "thread_id": thread })
 }

@@ -201,6 +201,7 @@ fn io_err(e: std::io::Error) -> IpcMethodError {
 pub(crate) fn proxy_loaded(caller: &CallerContext) -> Result<bool, String> {
     let endpoint = Endpoint::Proxy {
         codex_home: caller.codex_home.clone(),
+        execution: caller.execution.clone(),
     };
     let mut client =
         crate::rpc::Client::connect(&endpoint, send::RPC_TIMEOUT).map_err(|e| e.to_string())?;
@@ -253,13 +254,22 @@ pub(crate) fn prepare_receiver(
     }
     match (ctx.loaded)(caller) {
         Ok(true) => {
-            let receiver = ledger::receiver_for(
+            let mut receiver = ledger::receiver_for(
                 ctx.root,
                 &caller.thread,
                 ReceiverKind::External,
                 caller.codex_home.clone(),
             )
             .map_err(io_err)?;
+            // 실행 환경이 바뀌어도 같은 수신자이며 완료 claim은 유지한다.
+            if caller.execution.is_some() && receiver.execution != caller.execution {
+                receiver.execution = caller.execution.clone();
+                store::write_json(
+                    &ledger::receiver_file(ctx.root, &receiver.receiver_id),
+                    &receiver,
+                )
+                .map_err(io_err)?;
+            }
             Ok((receiver, caller_parent_key(caller)))
         }
         Ok(false) => Err(IpcMethodError::new(ctx.tr.t_replace(
@@ -455,6 +465,7 @@ fn target(ctx: &Ctx<'_>, receiver: &Receiver) -> Result<(Endpoint, bool), String
         ReceiverKind::External => Ok((
             Endpoint::Proxy {
                 codex_home: receiver.codex_home.clone(),
+                execution: receiver.execution.clone(),
             },
             true,
         )),

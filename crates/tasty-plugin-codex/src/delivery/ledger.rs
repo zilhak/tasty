@@ -33,6 +33,8 @@ pub(crate) struct Receiver {
     pub kind: ReceiverKind,
     #[serde(default)]
     pub codex_home: Option<PathBuf>,
+    #[serde(default)]
+    pub execution: Option<crate::execution::CodexExecution>,
     pub created_at_ms: u64,
 }
 
@@ -140,7 +142,7 @@ pub(crate) fn truncate_body(body: String) -> (String, bool) {
     (body[..end].to_string(), true)
 }
 
-fn receiver_file(root: &Path, id: &str) -> PathBuf {
+pub(super) fn receiver_file(root: &Path, id: &str) -> PathBuf {
     root.join("receivers").join(format!("{id}.json"))
 }
 
@@ -196,6 +198,7 @@ pub(crate) fn receiver_for(
         thread: thread.to_ascii_lowercase(),
         kind,
         codex_home,
+        execution: None,
         created_at_ms: store::now_ms(),
     };
     store::write_json(&receiver_file(root, &receiver.receiver_id), &receiver)?;

@@ -173,7 +173,7 @@ Codex 도구 호출 안의 `TASTY_SURFACE_ID`는 Codex 서버를 시작한 터�
 - 그 밖의 값이면 plugin 명령을 실행하지 않고 오류로 끝낸다. `TASTY_SURFACE_ID`로 대신하지 않는다.
 - `CODEX_HOME`은 유효한 Codex 호출자일 때만 읽는다. 비어 있지 않으면 절대 경로로 바꿔 싣고,
   없으면 싣지 않는다. 기본 경로 규칙은 받는 쪽 Codex plugin의 기존 함수가 정한다. 다른
-  환경 변수는 읽지 않는다.
+  환경 변수 중 실행 파일 탐색을 위한 `PATH`만 추가로 읽는다.
 
 plugin 인자 그룹이 `surface`·`caller_surface` u32 인자를 선언했고 명시값이 없으면
 `TASTY_SURFACE_ID`로 채운다. `surface`를 채우거나 명시하면 `surface_id`도 같은 값으로 맞춘다.
@@ -185,11 +185,15 @@ CLI는 요청 params에 예약 키 `_tasty_context`(객체)를 붙인다.
 | `provider` | `"codex"` | 유효한 Codex 호출자 |
 | `thread_id` | 문자열(환경 값 그대로) | 유효한 Codex 호출자 |
 | `codex_home` | 절대 경로 문자열 | 유효한 Codex 호출자이고 `CODEX_HOME`이 비어 있지 않을 때 |
+| `execution` | `{executable: 절대 경로, search_path: PATH 문자열}` | 유효한 Codex 호출자이고 호출 환경에서 Codex를 찾았을 때 |
 | `implicit` | 문자열 배열(`surface`·`surface_id`·`caller_surface` 중) | CLI가 `TASTY_SURFACE_ID`로 채운 키가 있을 때 |
 
 채울 것도 Codex 호출자도 없으면 키를 붙이지 않는다. 인자·stdin으로 같은 이름이 들어오면
 예약 이름 오류로 거절한다. 이 값은 호출자가 가진 환경 변수일 뿐 인증된 신원이 아니다.
-받는 쪽은 서로 다른 호출자의 결과가 섞이지 않게 하는 데에만 쓴다.
+받는 쪽은 호출자의 결과를 구분하고 해당 Codex 설치본에 연결할 때 쓴다.
+실행 정보는 `tasty-utils::execution`으로 찾는다. 상대 PATH 항목은 호출 cwd 기준으로 절대화하며,
+셸 alias·function은 실행하지 않는다. POSIX에서는 실행 권한을 확인하고 Windows에서는 각 PATH
+디렉터리의 `.exe`·`.cmd`·`.bat`·`.com` 순으로 찾는다. 실행 파일과 PATH 외의 환경·인증 값은 복사하지 않는다.
 
 호스트 명령(`request.rs`)은 이 규칙을 쓰지 않는다. 대상 선택(`resolve_surface_id`·`"this"`)과
 close 계열의 호출자 자기 보호(`caller_surface_id`)는 `CODEX_THREAD_ID`와 관계없이

@@ -10,6 +10,9 @@
 mod caller;
 mod child_return;
 mod delivery;
+mod execution;
+#[cfg(all(test, target_os = "linux"))]
+mod execution_probe_tests;
 mod handlers;
 mod ids;
 mod install;

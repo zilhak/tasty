@@ -3,6 +3,28 @@ use serde_json::json;
 
 const THREAD: &str = "019f55e7-3dfa-7c21-9a0b-2f6c4d1e8a90";
 
+#[test]
+fn execution_is_forwarded_without_parent_flags_or_other_environment_variables() {
+    let root = tempfile::tempdir().unwrap();
+    let mut caller = thread(None);
+    let CodexCaller::Thread { execution, .. } = &mut caller else {
+        panic!("thread")
+    };
+    *execution =
+        Some(ExecutionContext::from_parts(root.path().join("codex"), root.path().into()).unwrap());
+    let mut p = params(json!({}));
+    apply_to_plugin_params(&mut p, both, &caller, Some("1297")).unwrap();
+    assert_eq!(p.len(), 1);
+    assert_eq!(
+        p[CONTEXT_KEY]["execution"],
+        json!({
+            "executable": root.path().join("codex"),
+            "search_path": root.path(),
+        })
+    );
+    assert_eq!(p[CONTEXT_KEY].as_object().unwrap().len(), 3);
+}
+
 fn thread(home: Option<&str>) -> CodexCaller {
     codex_caller_from(Some(THREAD.into()), home.map(OsString::from))
 }
@@ -28,7 +50,8 @@ fn a_thread_id_is_read_only_in_the_codex_uuid_shape() {
         thread(None),
         CodexCaller::Thread {
             thread_id: THREAD.into(),
-            codex_home: None
+            codex_home: None,
+            execution: None
         }
     );
     for bad in [

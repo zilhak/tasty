@@ -328,7 +328,7 @@ fn the_real_proxy_tree_ends_at_the_deadline() {
     // 연결을 받기만 하고 응답하지 않는다. 시험이 끝날 때까지 연결을 쥔다.
     let holder = std::thread::spawn(move || listener.accept().map(|(s, _)| s));
     let mark = crate::ids::random_hex(16).unwrap();
-    let mut cmd = crate::rpc::codex_command();
+    let mut cmd = crate::rpc::codex_command().unwrap();
     cmd.args(proxy_args()).arg("--sock").arg(&sock);
     cmd.env("CODEX_HOME", &home).env(MARK_ENV, &mark);
     let started = Instant::now();

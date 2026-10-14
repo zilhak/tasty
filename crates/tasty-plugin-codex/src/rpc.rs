@@ -22,7 +22,10 @@ pub(crate) enum Endpoint {
     /// Tasty 세션 서버의 loopback WebSocket 포트와 capability token.
     Ws { port: u16, token: String },
     /// 사용자의 공유 daemon. codex_home이 있으면 proxy 프로세스에만 CODEX_HOME으로 준다.
-    Proxy { codex_home: Option<PathBuf> },
+    Proxy {
+        codex_home: Option<PathBuf>,
+        execution: Option<crate::execution::CodexExecution>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,8 +188,14 @@ fn start_proxy(cmd: Command, timeout: Duration) -> Result<(ProxyStream, ProxyGua
 
 const PROXY_ARGS: [&str; 2] = ["app-server", "proxy"];
 
-fn proxy_command(codex_home: Option<&std::path::Path>) -> Command {
-    let mut cmd = codex_command();
+fn proxy_command(
+    codex_home: Option<&std::path::Path>,
+    execution: Option<&crate::execution::CodexExecution>,
+) -> std::io::Result<Command> {
+    let mut cmd = match execution {
+        Some(execution) => execution.command()?,
+        None => codex_command()?,
+    };
     cmd.args(PROXY_ARGS)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -194,32 +203,57 @@ fn proxy_command(codex_home: Option<&std::path::Path>) -> Command {
     if let Some(home) = codex_home {
         cmd.env("CODEX_HOME", home);
     }
-    cmd
+    Ok(cmd)
+}
+
+#[cfg(all(test, unix))]
+#[test]
+fn a_proxy_uses_the_saved_launcher_and_interpreter_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("caller bin;literal");
+    std::fs::create_dir(&bin).unwrap();
+    let launcher = bin.join("codex");
+    let interpreter = bin.join("tasty-probe-node");
+    std::fs::write(&launcher, "#!/usr/bin/env tasty-probe-node\n").unwrap();
+    std::fs::write(
+        &interpreter,
+        "#!/bin/sh\nprintf '%s\\n' \"$2\" \"$3\" \"$CODEX_HOME\"\n",
+    )
+    .unwrap();
+    for p in [&launcher, &interpreter] {
+        std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let execution = crate::execution::CodexExecution {
+        executable: launcher.clone(),
+        search_path: bin.to_str().unwrap().into(),
+    };
+    let home = dir.path().join("home with spaces");
+    let out = proxy_command(Some(&home), Some(&execution))
+        .unwrap()
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        format!("app-server\nproxy\n{}\n", home.display())
+    );
+    std::fs::remove_file(launcher).unwrap();
+    assert!(
+        proxy_command(Some(&home), Some(&execution))
+            .unwrap()
+            .output()
+            .is_err()
+    );
 }
 
 static PROXY_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// PATH의 codex 실행 파일을 고른다. Windows의 npm 설치는 `codex.cmd`만 둘 수 있다.
-pub(crate) fn codex_command() -> Command {
-    #[cfg(windows)]
-    {
-        if which_in_path("codex.exe") {
-            return Command::new("codex");
-        }
-        Command::new("codex.cmd")
-    }
-    #[cfg(not(windows))]
-    {
-        Command::new("codex")
-    }
-}
-
-#[cfg(windows)]
-fn which_in_path(name: &str) -> bool {
-    std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).any(|dir| dir.join(name).is_file()))
-        .unwrap_or(false)
+/// 오래된 호출자·기록은 현재 프로세스 환경에서 실행 파일을 찾는다.
+pub(crate) fn codex_command() -> std::io::Result<Command> {
+    Ok(tasty_utils::execution::ExecutionContext::capture("codex")?.command())
 }
 
 pub(crate) struct Client {
@@ -273,8 +307,16 @@ impl Client {
                     clear,
                 )
             }
-            Endpoint::Proxy { codex_home } => {
-                let (stream, guard) = start_proxy(proxy_command(codex_home.as_deref()), timeout)?;
+            Endpoint::Proxy {
+                codex_home,
+                execution,
+            } => {
+                let command =
+                    proxy_command(codex_home.as_deref(), execution.as_ref()).map_err(not_sent)?;
+                let program = command.get_program().to_string_lossy().into_owned();
+                let (stream, guard) = start_proxy(command, timeout).map_err(|e| {
+                    RpcError::NotSent(format!("Codex proxy executable {program}: {e}"))
+                })?;
                 (
                     Box::new(stream),
                     "localhost".into(),
