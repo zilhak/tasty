@@ -872,6 +872,11 @@ pub(crate) fn handle_hook<H: HostCall>(
         .and_then(Value::as_str)
         .filter(|s| crate::ids::is_uuid(s))
         .map(str::to_ascii_lowercase);
+    // Native TUI selections are registered by the relay before its response is delivered.
+    // Background threads can stay active in the same server; their hooks cannot select a tab.
+    if session.native_args.is_some() && session.thread.as_ref() != hook_session.as_ref() {
+        return Ok(ignored("other_thread"));
+    }
     // 이 세대의 thread와 다른 thread의 훅은 같은 TUI가 대화를 바꾼 것일 수도, 이전 대화의 늦은
     // 훅일 수도 있다. 세대의 소유 서버가 그 thread를 지금 실행 중이라고 확인할 때만 옮긴다.
     let mut moved = false;

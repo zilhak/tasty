@@ -334,3 +334,9 @@ other_parent = "A Codex conversation manages only its own children. The parent s
 not_own_child = "Surface {surface} is not a child of this Codex conversation, so nothing was sent"
 not_codex_child = "Surface {surface} is not a Codex session started by Tasty, so its results will not return to this conversation"
 ambiguous_workspace = "The children of this Codex conversation are in more than one workspace ({workspaces}). Choose one with --workspace"
+
+[codex.cli.arg.session_open_args.native_args]
+help = "Internal: native interactive options to preserve on restoration"
+
+[codex.cli.sub.session-bind]
+description = "Internal: register the conversation selected by a native TUI"

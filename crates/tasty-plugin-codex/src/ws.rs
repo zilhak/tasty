@@ -10,6 +10,7 @@ const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 
 pub(crate) struct WsConn<S: Read + Write> {
     stream: S,
+    server: bool,
 }
 
 const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -82,25 +83,37 @@ impl<S: Read + Write> WsConn<S> {
                 format!("websocket upgrade refused: {first}"),
             ));
         }
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            server: false,
+        })
+    }
+
+    pub(crate) fn established(stream: S, server: bool) -> Self {
+        Self { stream, server }
     }
 
     fn send_frame(&mut self, opcode: u8, payload: &[u8]) -> std::io::Result<()> {
         let mask = random_bytes::<4>()?;
+        let mask_bit = if self.server { 0 } else { 0x80 };
         let mut frame = Vec::with_capacity(payload.len() + 14);
         frame.push(0x80 | opcode);
         let n = payload.len();
         if n < 126 {
-            frame.push(0x80 | n as u8);
+            frame.push(mask_bit | n as u8);
         } else if n <= usize::from(u16::MAX) {
-            frame.push(0x80 | 126);
+            frame.push(mask_bit | 126);
             frame.extend_from_slice(&(n as u16).to_be_bytes());
         } else {
-            frame.push(0x80 | 127);
+            frame.push(mask_bit | 127);
             frame.extend_from_slice(&(n as u64).to_be_bytes());
         }
-        frame.extend_from_slice(&mask);
-        frame.extend(payload.iter().enumerate().map(|(i, b)| b ^ mask[i % 4]));
+        if self.server {
+            frame.extend_from_slice(payload);
+        } else {
+            frame.extend_from_slice(&mask);
+            frame.extend(payload.iter().enumerate().map(|(i, b)| b ^ mask[i % 4]));
+        }
         self.stream.write_all(&frame)?;
         self.stream.flush()
     }

@@ -1,4 +1,4 @@
-<!-- source-hash: 03854f714959 -->
+<!-- source-hash: 951facfded20 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -38,13 +38,18 @@ When the installed hooks run successfully in the current session, Tasty receives
 - When you close and restore a Tab, or restart Tasty, the same session resumes (`claude -r` / `codex resume`).
 - Receiving a child’s state and results also requires [parent setup](#4-receiving-completion-notifications). Completion lands in the completion log as one line, and a Claude Code parent uses Monitor to subscribe to it.
 
-Start Codex through Tasty's launch commands (`launch`, `spawn`, `respawn`, `reboot`, and Tab restore) so its hooks and
-restore information are tied to that terminal. Tasty then starts a dedicated Codex server for each terminal and connects
-Codex to it. The server ends when Codex ends or the terminal is closed. If the dedicated server cannot start, Tasty shows an error instead of
-starting Codex some other way. This is based on Codex CLI 0.154.0.
+After `tasty codex install`, typing `codex` or `codex resume` in a Tasty Bash or zsh terminal
+also records the conversation for restoration. The native resume picker stays available, and the selected
+conversation is recorded before you send another message. Approval, sandbox, and model options are preserved.
+After upgrading, run the install command again and start in a new terminal. Your global shell startup files are unchanged.
 
-If you type `codex` into a terminal yourself, Tasty does not receive its state or restore information. Tasty does not
-change a shared Codex server that is already running or a session you connected with `--remote`.
+Tasty starts a dedicated Codex server for each integrated terminal and ends it when Codex exits or the terminal closes.
+It does not reconnect conversations or shared servers that are already running. This is based on Codex CLI 0.154.0.
+
+Automatic integration supports approval, sandbox, model, working directory (`-C`), and session selection options.
+Unsupported options such as `-c`, profiles, and `fork` show a notice and run the original Codex command without automatic restoration.
+`command codex`, explicit `--remote` connections, and noninteractive commands also run unchanged.
+For shells other than Bash and zsh, use `tasty codex launch` below.
 
 ## 2. Launching
 

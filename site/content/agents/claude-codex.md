@@ -37,13 +37,18 @@ tasty codex install --config-file /absolute/codex-home/work.config.toml
 - 탭을 닫았다가 복원하거나 Tasty 를 재시작하면 같은 세션으로 다시 이어집니다 (`claude -r` / `codex resume`).
 - 자식의 상태·결과를 부모가 받으려면 [수신 설정](#4-완료-알림-받기)도 필요합니다. 완료는 완료 로그에 한 줄로 쌓이고, 부모 Claude Code는 그것을 Monitor로 구독합니다.
 
-Codex는 Tasty의 실행 명령(`launch`·`spawn`·`respawn`·`reboot`, 탭 복원)으로 시작해야 훅과 복원 정보가
-그 터미널에 연결됩니다. 이때 Tasty는 터미널마다 전용 Codex 서버를 함께 띄우고 Codex를 그 서버에
-연결합니다. Codex를 끝내거나 터미널을 닫으면 그 서버도 함께 끝납니다. 전용 서버를 시작하지 못하면 Codex를 다른
-방식으로 띄우지 않고 오류를 보여 줍니다. Codex CLI 0.154.0 기준입니다.
+`tasty codex install` 후 Tasty의 Bash·zsh 터미널에서는 평소처럼 `codex`나 `codex resume`을
+입력해도 복원 정보가 저장됩니다. 세션 선택기를 그대로 사용할 수 있고, 선택한 대화는 새 메시지를
+보내기 전에도 복원 대상으로 기록됩니다. 승인·샌드박스·모델 옵션도 유지됩니다.
+업데이트 후에는 설치 명령을 다시 실행하고 새 터미널에서 시작하세요. 사용자 전역 셸 설정은 바꾸지 않습니다.
 
-터미널에 `codex`를 직접 입력해 실행하면 Tasty가 상태나 복원 정보를 받지 않습니다. 이미
-실행 중인 공유 Codex 서버나 직접 연결한 `--remote` 세션은 Tasty가 바꾸지 않습니다.
+Tasty는 터미널마다 전용 Codex 서버를 띄우며, Codex를 끝내거나 터미널을 닫으면 함께 정리합니다.
+이미 실행 중인 대화와 공유 서버는 재연결하지 않습니다. Codex CLI 0.154.0 기준입니다.
+
+자동 연결은 승인·샌드박스·모델, 작업 디렉터리(`-C`), 세션 선택 옵션을 지원합니다.
+`-c`, 프로필, `fork` 등 지원하지 않는 옵션은 안내 후 원래 Codex로 실행되어 자동 복원에 등록되지 않습니다.
+`command codex`, 명시적인 `--remote`, 비대화형 명령도 원래대로 실행됩니다.
+Bash·zsh 외의 셸에서는 아래의 `tasty codex launch`를 사용하세요.
 
 ## 2. 실행하기
 

@@ -1876,3 +1876,35 @@ fn the_owned_server_reports_a_running_turn_as_active() {
         }
     );
 }
+
+#[test]
+fn a_background_native_thread_cannot_replace_the_selected_conversation() {
+    let fx = Fixture::new();
+    let generation = start_thread(&fx, 7, PARENT);
+    let mut session = crate::session::registry::read_session(fx.root(), &generation)
+        .unwrap()
+        .unwrap();
+    session.native_args = Some(Vec::new());
+    crate::session::registry::write_session(fx.root(), &session).unwrap();
+    for event in ["session-start", "session-end", "stop", "prompt-submit"] {
+        let result = fx
+            .with(|d| {
+                crate::handlers::handle_hook(
+                    &OkHost,
+                    &json!({"surface":7,"gen":generation,"session":OTHER,"event":event}),
+                    &fx.tr,
+                    d,
+                )
+            })
+            .unwrap();
+        assert_eq!(result["ignored"], "other_thread");
+    }
+    assert_eq!(
+        crate::session::registry::read_session(fx.root(), &generation)
+            .unwrap()
+            .unwrap()
+            .thread
+            .as_deref(),
+        Some(PARENT)
+    );
+}

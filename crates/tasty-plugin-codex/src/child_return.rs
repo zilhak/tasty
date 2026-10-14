@@ -175,6 +175,7 @@ mod tests {
             surface: 7,
             thread: thread.map(str::to_string),
             tui_args: vec![],
+            native_args: None,
             model: None,
             turn_attempts: vec![],
             listen: String::new(),

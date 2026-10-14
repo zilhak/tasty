@@ -34,6 +34,7 @@ pub(crate) struct Args {
     pub resume: Option<String>,
     pub prompt_file: Option<PathBuf>,
     pub tui_args: Vec<String>,
+    pub native: Option<super::native_args::NativeArgs>,
 }
 
 pub(crate) fn parse_args(args: &[String]) -> Result<Args, String> {
@@ -101,6 +102,12 @@ fn open_via_cli(surface: u32, args: &Args) -> Result<Opened, String> {
     }
     let tui = serde_json::to_string(&args.tui_args).map_err(|e| e.to_string())?;
     cmd.args(["--tui-args", &tui]);
+    if let Some(native) = &args.native {
+        cmd.args([
+            "--native-args",
+            &serde_json::to_string(&native.restore).map_err(|e| e.to_string())?,
+        ]);
+    }
     if let Some(home) = std::env::var_os("TASTY_PARENT_HOME").filter(|h| !h.is_empty()) {
         cmd.env("TASTY_HOME", home);
     }
@@ -226,6 +233,7 @@ pub(crate) struct Prepared {
     pub resumed: Option<String>,
     /// TUI가 끝날 때까지 그 thread를 구독하는 연결의 읽기 스레드. 서버가 끝나면 함께 끝난다.
     pub hold: Option<std::thread::JoinHandle<()>>,
+    pub relay: Option<super::relay::Relay>,
 }
 
 /// 준비 뒤 단계가 없는 [`run_lifecycle_with`].
@@ -342,7 +350,11 @@ pub(crate) fn run_lifecycle_with(
         None,
         prepared.resumed,
     );
-    let status = make_tui(&url).spawn().and_then(wait_tui);
+    let tui_url = prepared
+        .relay
+        .as_ref()
+        .map_or(url.as_str(), |relay| relay.url.as_str());
+    let status = make_tui(tui_url).spawn().and_then(wait_tui);
     write_state(state_dir, HelperPhase::Exited, Some(url), None);
     child.stop();
     // 서버가 끝나 연결이 닫히면 읽기 스레드도 끝난다. 기다리지 않는다.
@@ -481,21 +493,45 @@ fn translator() -> Translator {
 
 /// `session` 모드의 진입점. 프로세스 종료 코드를 돌려준다.
 pub(crate) fn main(args: &[String]) -> i32 {
-    // 시작부터 설치해야 서버를 띄운 뒤 도착한 신호가 helper만 끝내고 서버를 남기지 않는다.
-    if let Err(e) = tasty_reaper::defer_termination_signals() {
-        tracing::warn!("codex session helper: terminal signals: {e}");
-    }
+    entry(args, false)
+}
+
+pub(crate) fn terminal_main(args: &[String]) -> i32 {
+    entry(args, true)
+}
+
+fn entry(raw: &[String], native: bool) -> i32 {
     let tr = translator();
     let report = |key: &str, detail: &str| {
         tracing::error!("{}", tr.t_replace(key, "{detail}", detail));
     };
-    let args = match parse_args(args) {
+    let parsed = if native {
+        match super::native_args::parse(raw) {
+            Ok(Some(native)) => Ok(Args {
+                tui_args: native.policy.clone(),
+                native: Some(native),
+                ..Args::default()
+            }),
+            Ok(None) => return native_passthrough(raw),
+            Err(error) => {
+                tracing::warn!("{error}; running native Codex without Tasty session restoration");
+                return native_passthrough(raw);
+            }
+        }
+    } else {
+        parse_args(raw)
+    };
+    let args = match parsed {
         Ok(a) => a,
         Err(e) => {
             report("codex.session.bad_args", &e);
             return 2;
         }
     };
+    // 시작부터 설치해야 서버를 띄운 뒤 도착한 신호가 helper만 끝내고 서버를 남기지 않는다.
+    if let Err(e) = tasty_reaper::defer_termination_signals() {
+        tracing::warn!("codex session helper: terminal signals: {e}");
+    }
     let Some(surface) = std::env::var("TASTY_SURFACE_ID")
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
@@ -557,13 +593,45 @@ pub(crate) fn main(args: &[String]) -> i32 {
     };
     #[cfg(not(unix))]
     let probe = ws_ready();
+    let relay_token = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     let result = run_lifecycle_with(
         &opened.state_dir,
         server_command_with(&opened, execution.command()),
         probe,
         READY_TIMEOUT,
-        |url| prepare_resume(url, opened.token_file.as_deref(), &args),
         |url| {
+            if args.native.is_none() {
+                return prepare_resume(url, opened.token_file.as_deref(), &args);
+            }
+            let endpoint = super::registry::parse_endpoint(url, opened.token_file.as_deref())?;
+            let generation = opened.generation.clone();
+            let bind = std::sync::Arc::new(move |reply: &Value| {
+                register_native_thread(surface, &generation, reply)
+            });
+            let relay = super::relay::Relay::start(
+                endpoint,
+                super::command::ResumeSettings::from_tui_args(&args.tui_args),
+                bind,
+            )
+            .map_err(|e| e.to_string())?;
+            *relay_token.lock().map_err(|_| "relay token poisoned")? = Some(relay.token.clone());
+            Ok(Prepared {
+                relay: Some(relay),
+                ..Prepared::default()
+            })
+        },
+        |url| {
+            if let Some(native) = &args.native {
+                let mut cmd = execution.command();
+                cmd.args(["--remote", url, "--remote-auth-token-env", REMOTE_TOKEN_ENV]);
+                if let Ok(token) = relay_token.lock()
+                    && let Some(token) = token.as_ref()
+                {
+                    cmd.env(REMOTE_TOKEN_ENV, token);
+                }
+                cmd.args(&native.tui);
+                return cmd;
+            }
             tui_command_with(
                 url,
                 token.as_deref(),
@@ -614,7 +682,76 @@ fn prepare_resume(url: &str, token_file: Option<&Path>, args: &Args) -> Result<P
     Ok(Prepared {
         resumed: Some(thread.clone()),
         hold: Some(hold),
+        relay: None,
     })
+}
+
+fn native_passthrough(args: &[String]) -> i32 {
+    let result: std::io::Result<ExitStatus> =
+        tasty_utils::execution::ExecutionContext::capture("codex").and_then(|execution| {
+            let mut command = execution.command();
+            command.args(args);
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                Err(command.exec())
+            }
+            #[cfg(not(unix))]
+            {
+                command.status()
+            }
+        });
+    match result {
+        Ok(status) => status.code().unwrap_or(1),
+        Err(error) => {
+            tracing::error!("Codex launch failed: {error}");
+            1
+        }
+    }
+}
+
+fn register_native_thread(surface: u32, generation: &str, reply: &Value) -> Result<(), String> {
+    let thread = reply["thread"]["id"]
+        .as_str()
+        .filter(|id| crate::ids::is_uuid(id))
+        .ok_or("server returned no thread UUID")?;
+    let payload = serde_json::json!({"session_id":thread,"model":reply["model"]});
+    let mut cmd = Command::new(if cfg!(windows) { "tasty.exe" } else { "tasty" });
+    cmd.args([
+        "codex",
+        "session-bind",
+        "--surface",
+        &surface.to_string(),
+        "--gen",
+        generation,
+    ]);
+    if let Some(home) = std::env::var_os("TASTY_PARENT_HOME") {
+        cmd.env("TASTY_HOME", home);
+    }
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let written = if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        stdin.write_all(payload.to_string().as_bytes())
+    } else {
+        Err(std::io::Error::other("registration stdin unavailable"))
+    };
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    written.map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(format!("Tasty session registration failed: {}", out.status));
+    }
+    let result: Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
+    if result.get("ignored").is_some() || result["host_call_failures"].as_u64() != Some(0) {
+        return Err(format!(
+            "Tasty did not register the selected conversation: {result}"
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -900,6 +1037,7 @@ mod tests {
                 Ok(Prepared {
                     resumed: Some("019f55e7-3dfa-7a00-8000-0123456789ab".into()),
                     hold: None,
+                    relay: None,
                 })
             },
             |_| {

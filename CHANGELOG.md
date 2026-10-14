@@ -42,6 +42,8 @@
 
 ### Fixed
 
+- **Bash·zsh에서 직접 실행한 Codex 대화를 앱 재시작 후 복원한다.** `tasty codex install`은 Tasty 안에서만 읽는 셸 통합도 설치하며, 일반 `codex`·`codex resume`을 터미널별 세션 관리에 연결한다. 세션 선택기는 유지하고 선택된 대화 ID·승인·샌드박스·모델을 첫 모델 턴 전에 저장한다. 내부 CLI `session-bind`(IPC `codex.session_bind`)가 선택을 등록한다. 기존 대화와 공유 서버는 재연결하지 않는다. `-c`·프로필·`fork` 등 지원하지 않는 옵션은 경고 후 원래 Codex로 실행하며 자동 복원에 등록하지 않는다. Codex CLI 0.154.0 기준이다.
+
 - **데스크톱에서 실행한 Tasty가 Codex 실행 파일을 찾지 못해 자식 실행을 거절하던 문제를 고쳤다.** Codex 대화의 CLI가 실행 파일과 PATH를 자동으로 전달하며, 같은 정보를 부모 수신 기록에 보관해 백그라운드 결과 반환에도 쓴다. 실행 정보가 바뀌어도 수신자 ID와 완료 중복 방지 기록은 유지한다. `spawn`·`tell`에 실행 경로나 수신처 인자를 추가할 필요는 없다.
 
 - **Codex 대화에서 실행한 Tasty 의 터미널이 그 대화의 `CODEX_THREAD_ID` 를 물려받지 않는다.** Codex 는 도구 명령마다 그 대화의 thread ID 를 `CODEX_THREAD_ID` 로 넣는다. 이전에는 Codex 도구가 띄운 Tasty 의 터미널 셸, surface 훅, 전역 훅, 훅 핸들러 명령, 작업 자식에 이 값이 남아, 그 안의 셸이나 Claude 가 부른 `tasty` 가 바깥 Codex 대화의 호출로 해석될 수 있었다. 이제 이 값을 지운다. 그 터미널에서 실행한 Codex 는 도구마다 자기 thread ID 를 다시 넣으므로 영향이 없다. `CODEX_HOME` 과 다른 `CODEX_*` 값은 그대로다.

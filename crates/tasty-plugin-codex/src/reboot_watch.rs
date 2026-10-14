@@ -460,6 +460,7 @@ mod tests {
             surface: 522,
             thread: thread.map(str::to_string),
             tui_args: Vec::new(),
+            native_args: None,
             model: None,
             turn_attempts: Vec::new(),
             listen: "unix:///x/s.sock".into(),

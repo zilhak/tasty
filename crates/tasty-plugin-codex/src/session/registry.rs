@@ -27,6 +27,8 @@ pub(crate) struct Session {
     pub thread: Option<String>,
     /// TUI에 넘긴 정책·모델 인자. 복원 명령이 같은 값을 다시 쓴다.
     pub tui_args: Vec<String>,
+    #[serde(default)]
+    pub native_args: Option<Vec<String>>,
     /// SessionStart 훅이 알려 준 모델.
     #[serde(default)]
     pub model: Option<String>,
@@ -180,6 +182,7 @@ pub(crate) fn open_session(
         surface,
         thread: resume.map(str::to_ascii_lowercase),
         tui_args,
+        native_args: None,
         model: None,
         turn_attempts: Vec::new(),
         listen,

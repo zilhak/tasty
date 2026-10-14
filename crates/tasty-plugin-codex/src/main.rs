@@ -143,6 +143,21 @@ impl Plugin for CodexPlugin {
                 self.with_delivery(&host, |d| delivery::turns::handle_turn_wake(d, &params))
             }
             "codex.session_open" => session::handle_open(self.root()?, &params, tr),
+            "codex.session_bind" => self.with_delivery(&host, |d| {
+                let result = session::handle_bind(&host, d.root, &params, tr)?;
+                if let (Some(generation), Some(thread)) =
+                    (params["gen"].as_str(), params["session"].as_str())
+                {
+                    let thread = thread.to_ascii_lowercase();
+                    if let Err(error) =
+                        delivery::turns::retire_unloaded_exits(d, generation, &thread)
+                    {
+                        tracing::warn!("codex selection: retire unloaded exits: {error}");
+                    }
+                    delivery::flush_thread(d, &thread);
+                }
+                Ok(result)
+            }),
             "codex.state" => handlers::handle_state(&host, &params, tr),
             "codex.tell" => {
                 self.with_delivery(&host, |d| handlers::handle_tell(&host, &params, tr, d))
@@ -176,7 +191,10 @@ impl Plugin for CodexPlugin {
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(String::as_str) == Some("session") {
+    if matches!(
+        args.first().map(String::as_str),
+        Some("session" | "terminal")
+    ) {
         // 세션 helper는 사용자의 터미널에서 실행된다. 경고 이상만 시각·모듈 없이 stderr로 내
         // 사용자가 안내 문장을 그대로 읽게 한다.
         tracing_subscriber::fmt()
@@ -186,7 +204,11 @@ fn main() -> anyhow::Result<()> {
             .with_target(false)
             .with_ansi(false)
             .init();
-        std::process::exit(session::helper::main(&args[1..]));
+        std::process::exit(if args[0] == "terminal" {
+            session::helper::terminal_main(&args[1..])
+        } else {
+            session::helper::main(&args[1..])
+        });
     }
     tracing_subscriber::fmt()
         .with_env_filter(

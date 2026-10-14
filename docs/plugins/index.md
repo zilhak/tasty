@@ -14,7 +14,7 @@ surface kind 를 제공하는 플러그인(markdown·image·html)은 그 kind �
 | [clipboard-viewer](clipboard-viewer/index.md) — `com.tasty.clipboard-viewer` | 클립보드 뷰어(현재 내용) | 도구 메뉴 · popup |
 | [git-viewer](git-viewer/index.md) — `com.tasty.git-viewer` | git status/log/diff 뷰어 | 도구 메뉴 · popup |
 | [claude](claude/index.md) — `com.tasty.claude` | Claude Code CLI 통합 · Shift+Enter 입력 기본값 | cli · ipc · 멀티에이전트 |
-| [codex](codex/index.md) — `com.tasty.codex` | Codex CLI 통합 | cli · ipc · 멀티에이전트 · 부모 대화 자동 반환 · 호출자 실행 경로 보존 · 터미널별 세션 복원 |
+| [codex](codex/index.md) — `com.tasty.codex` | Codex CLI 통합 | cli · ipc · 멀티에이전트 · 부모 대화 자동 반환 · 호출자 실행 경로 보존 · 일반 명령·선택기 실행의 터미널별 세션 복원 |
 | mesh-demo — `com.tasty.mesh-demo` (전용 문서 없음 — [egui-mesh 채널](../dev-guide/egui-mesh-channel.md)) | egui-mesh 채널 검증 예제, `bundle=false`로 배포 제외 | surface_kind(egui-mesh) · popup |
 | [agent-stream](agent-stream/index.md) — `com.tasty.agent-stream` | Claude transcript 수집·SSE 전송·요청과 턴 매칭, `bundle=false`로 배포 제외 | cli · ipc · sse |
 

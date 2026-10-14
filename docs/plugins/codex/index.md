@@ -26,7 +26,7 @@ Codex 대화에서 spawn한 자식의 턴 결과는 완료 로그와 별도로 [
 [짝 핸들러 호환 경계](../../dev-guide/paired-agent-handlers.md)를 따른다. 완료 알림은
 [completion-log](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)에 기록하며 caller PTY에 메시지를 입력하지 않는다.
 
-- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 페인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `notify-caller`(내부용, 아래) · `broadcast` · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(stop/prompt-submit/session-start/permission-request/post-tool-use/interrupt/session-end) · `result`(부모에게 돌아온 자식 결과 읽기) · `session-open`(내부용, 세션 helper의 세대 발급). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치).
+- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 페인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `notify-caller`(내부용, 아래) · `broadcast` · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(stop/prompt-submit/session-start/permission-request/post-tool-use/interrupt/session-end) · `result`(부모에게 돌아온 자식 결과 읽기) · `session-open`(내부용, 세션 helper의 세대 발급) · `session-bind`(내부용, TUI의 대화 선택 등록). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치).
 - **IPC 전용** — `codex.parent`(Codex 호출자 thread의 수신 준비), `codex.deliver`(자식 결과 기록), `codex.delivery_outcome`·`codex.delivery_wake`·`codex.turn_outcome`·`codex.turn_wake`(내부용). CLI `parent`는 자식 surface의 부모를 조회하는 `codex.parent_of`다.
 - **ipc_namespace `codex`** — 위 동작에 대응하는 IPC API.
 
@@ -38,7 +38,7 @@ install은 Windows에 PowerShell, 다른 OS에 POSIX sh 명령을 설치한다.
 `TASTY_PARENT_HOME`을 그 호출의 `TASTY_HOME`으로 넘겨 정한다.
 PowerShell은 `if ($env:TASTY_CODEX_GEN -and $env:TASTY_SURFACE_ID) { … }`에서 `$input`을 전달하고,
 POSIX는 `if [ -n "$TASTY_CODEX_GEN" ] && [ -n "$TASTY_SURFACE_ID" ]; then … || true; fi`를 쓴다.
-플러그인은 `--gen`이 그 surface의 현재 세대일 때만 훅을 적용한다. 세대가 없거나(직접 실행한
+플러그인은 `--gen`이 그 surface의 현재 세대일 때만 훅을 적용한다. 세대가 없거나(셸 통합을 거치지 않고 직접 실행한
 `codex`, 공유 daemon) 지난 세대이거나, 세대의 thread와 다른 thread의 훅은 `ignored`로 답하고
 상태·메타데이터·턴 보고를 바꾸지 않는다.
 실패 진단은 [CLI 훅 실패 기록](../../dev-guide/cli-structure.md#에이전트-훅-전달-실패-기록)을 따른다.
@@ -197,9 +197,32 @@ SessionStart에서 현재 surface에 세션 ID와 `restore.command`를 저장한
 제출 문자는 넣지 않는다. 호스트는 이 명령을 복원한 터미널의 셸에서 실행하므로 cwd는 복원된
 터미널의 것을 쓰고, 새 surface ID는 그 PTY의 환경에서 받는다.
 
-Tasty helper 없이 직접 입력한 `codex`나 `codex resume`은 `TASTY_CODEX_GEN`이 없어 훅을 보고하지
-않는다. 세션 ID·복원 명령이 저장되지 않은 기존 surface를 추측으로 다른 thread에 연결하지 않는다.
-CWD, 포커스, 가장 최근 세션은 세션 식별 근거가 아니다.
+`tasty codex install`은 Tasty 데이터 홈의 `shell-integrations/codex.sh`도 설치한다.
+Tasty의 Bash·zsh 통합은 프롬프트 준비 때 이 파일을 읽는다. 사용자 전역 rc나 기존 `codex` 셸 함수는 덮어쓰지 않는다.
+대화형 터미널에서 입력한 `codex`·`codex resume`은 플러그인의 `terminal` 모드로 연결된다.
+Codex 도구 안의 실행, 비대화형 stdin, `command codex`, 유틸리티 명령과 명시적 `--remote`는
+원래 CLI로 실행한다. uninstall은 통합 파일도 제거한다.
+
+자동 연결은 프롬프트, `resume`의 ID·이름·선택기 및 `--last`·`--all`·`--include-non-interactive`,
+승인(`-a`/`--ask-for-approval`), sandbox(`-s`/`--sandbox`), 모델(`-m`/`--model`),
+`--dangerously-bypass-approvals-and-sandbox`, `-C`/`--cd`, `--no-alt-screen`·`--search`를 지원한다.
+그 밖의 옵션(`-c`, profile, fork 등)은 경고 후 원래 인자를 바꾸지 않은 native CLI로 실행하며,
+자동 복원은 등록하지 않는다. Bash·zsh 외의 셸에서는 `tasty codex launch`를 사용한다.
+
+native TUI는 세대별 전용 서버 앞의 loopback relay에 임의 capability token으로 연결한다.
+relay는 thread/start·resume·fork 요청에 명시된 정책·모델을 넣고 응답의 적용 결과를 확인한다.
+재개 TUI에는 승인·sandbox 옵션을 중복 전달하지 않으므로 Codex 0.154의 원격 재개 제한을 피하면서 선택기를 유지한다.
+TUI에서 나중에 명시한 정책·모델이 있으면 실행 기본값보다 우선한다.
+성공 응답을 TUI에 보내기 전에 `session-bind`가 현재 세대와 소유 서버의 로드 목록을 확인하고
+선택된 UUID·복원 명령을 저장한다. 첫 모델 턴을 시작하지 않은 재개도 저장된다.
+복원 명령에는 검색 조건이나 최초 프롬프트를 넣지 않고 UUID, 실행 옵션과 모델을 넣는다.
+
+native 세대의 현재 thread는 relay의 선택 응답으로만 바뀐다. 같은 서버에 남아 있는 다른 대화의
+훅은 상태·복원 대상·결과 반환 경로를 바꾸지 않는다. 이 등록은 native 훅 승인과 별개이며,
+턴 종료·입력 대기·자식 응답 전달에는 승인된 훅이 필요하다.
+
+설치 전부터 실행 중이던 세션은 재연결하거나 종료하지 않는다. 세션 ID·복원 명령이 없는 기존
+surface를 추측으로 다른 thread에 연결하지 않는다. CWD, 포커스, 가장 최근 세션은 식별 근거가 아니다.
 
 ### 설치 이벤트
 
@@ -551,7 +574,7 @@ tasty codex result <event_id>
 - Given reboot로 재개한 TUI가 시작 직후 끝나 셸로 돌아옴 When 안내를 보낼 차례 Then helper `exited`를 보고 안내와 Enter를 셸에 넣지 않는다.
 - Given TUI가 끝나 서버를 정리 중인 Linux·macOS helper When 터미널에서 Ctrl+C·hangup이 반복해 도착 Then helper는 끝나지 않고 서버 그룹 정리를 마치며 npm 래퍼·실제 서버·TUI가 남지 않는다.
 - Given 응답하지 않는 공유 daemon proxy When 연결 기한이 지남 Then 연결은 송신 전 실패로 끝나고 npm 래퍼와 실제 proxy가 모두 끝난다.
-- Given helper 없이 Tasty 터미널에서 직접 실행한 codex When 훅이 실행 Then 상태·메타데이터를 바꾸지 않는다.
+- Given 셸 통합을 우회해 helper 없이 실행한 `command codex` When 훅이 실행 Then 상태·메타데이터를 바꾸지 않는다.
 
 - Given Linux/macOS 의 sh/bash/zsh 에 `codex` alias 또는 function 이 우회 옵션을 추가한다 When `launch`/`spawn`/`respawn`/`reboot` 의 helper 명령을 실행한다 Then helper 는 tasty 가 결정한 thread·프롬프트 파일·정책 인자만 받는다.
 
@@ -562,3 +585,6 @@ tasty codex result <event_id>
 - Given 훅이 설치된 Codex When 도구 실행 승인 프롬프트가 뜬다 Then 그 surface 의 상태가 `needs_input` 으로 조회되고 비포커스 대상의 탭·워크스페이스에 기존 노란 표시가 난다.
 - Given 승인 대기 When 사용자가 승인하고 그 도구가 끝난다(`PostToolUse`) 또는 거절·Esc·Ctrl-C 로 중단한다(`Interrupt`) Then 상태가 각각 `active` · `idle` 로 돌아오고 `needs_input` 이 잔류하지 않는다.
 - Given 승인이 필요 없는 실행 When 도구가 오래 걸리거나 출력이 없다 Then `needs_input` 으로 오판하지 않는다.
+
+- Given Bash·zsh에서 셸 통합으로 실행한 `codex resume` When 선택기에서 대화를 고름 Then 첫 모델 턴 전에도 선택된 UUID와 실행 정책으로 복원 명령이 저장된다.
+- Given 복원 정보를 저장한 Codex 터미널 When Tasty를 정상 종료하고 다시 열어 해당 surface를 깨움 Then 새로운 세대에서 같은 대화·승인·sandbox 설정으로 재개한다.

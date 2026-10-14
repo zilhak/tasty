@@ -334,3 +334,9 @@ other_parent = "Codex の会話は自分の子だけを管理できます。指�
 not_own_child = "surface {surface} はこの Codex の会話の子ではないため、送信しませんでした"
 not_codex_child = "surface {surface} は Tasty が起動した Codex セッションではないため、結果はこの会話に戻りません"
 ambiguous_workspace = "この Codex の会話の子が複数の workspace にあります（{workspaces}）。--workspace で一つを選んでください"
+
+[codex.cli.arg.session_open_args.native_args]
+help = "内部用: 復元時に保持する対話実行オプション"
+
+[codex.cli.sub.session-bind]
+description = "内部用: TUI で選択した会話を登録"

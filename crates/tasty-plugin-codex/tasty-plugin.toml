@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.2.7"
+version = "0.2.8"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -46,6 +46,7 @@ subcommands = [
     { name = "children",      ipc_method = "codex.children",      args = "children_args",      description = "List children of the specified Codex parent", description_i18n_key = "codex.cli.sub.children.description" },
     { name = "parent",        ipc_method = "codex.parent_of",     args = "parent_args",        description = "Return the parent Codex surface id for a given child surface", description_i18n_key = "codex.cli.sub.parent.description" },
     { name = "result",        ipc_method = "codex.result",        args = "result_args",        description = "Read a child result that was returned to this Codex conversation. Run it from the Codex session that received the reference; reading does not delete the result.", description_i18n_key = "codex.cli.sub.result.description" },
+    { name = "session-bind", ipc_method = "codex.session_bind", args = "session_bind_args", stdin_json = true, description = "Internal: register the conversation selected by a native TUI", description_i18n_key = "codex.cli.sub.session-bind.description" },
     { name = "session-open",  ipc_method = "codex.session_open",  args = "session_open_args",  description = "Internal: register a new session generation for the Codex session helper running in a terminal. Not intended for direct use.", description_i18n_key = "codex.cli.sub.session-open.description" },
     { name = "state",         ipc_method = "codex.state",         args = "state_args",         description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)", description_i18n_key = "codex.cli.sub.state.description" },
     { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message with line breaks preserved and submit it. Waits for host responses, then returns without waiting for the task to finish. When called from a Codex conversation, the target's finished turns are returned to that conversation; otherwise, when a caller surface is provided, registers hooks for idle, input-wait and exit notifications.", description_i18n_key = "codex.cli.sub.tell.description" },
@@ -81,6 +82,7 @@ positional = [
 
 [contributes.cli.arg_groups.session_open_args]
 flags = [
+    { name = "native_args", type = "string", flag = "--native-args", required = false, help = "Internal: native interactive options to preserve on restoration", help_i18n_key = "codex.cli.arg.session_open_args.native_args.help" },
     { name = "surface",  type = "u32",    flag = "--surface",  required = true,  help = "Terminal surface the helper runs in", help_i18n_key = "codex.cli.arg.session_open_args.surface.help" },
     { name = "resume",   type = "string", flag = "--resume",   required = false, help = "Thread UUID the helper resumes", help_i18n_key = "codex.cli.arg.session_open_args.resume.help" },
     { name = "tui_args", type = "string", flag = "--tui-args", required = false, help = "JSON array of policy and model arguments passed to the TUI", help_i18n_key = "codex.cli.arg.session_open_args.tui_args.help" },
@@ -260,3 +262,11 @@ options = [
 
 [contributes.cli.arg_groups.install_args]
 flags = [{ name = "config_file", type = "string", flag = "--config-file", required = false, path_kind = "file", help = "Exact profile/config file to update; mutually exclusive with --codex-home", help_i18n_key = "codex.cli.arg.install_args.config_file.help" }, { name = "codex_home", type = "string", flag = "--codex-home", required = false, path_kind = "directory", help = "Codex home whose hooks to install/remove; must match the intended daemon", help_i18n_key = "codex.cli.arg.install_args.codex_home.help" }]
+
+[contributes.cli.arg_groups.session_bind_args]
+flags = [
+    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for", help_i18n_key = "codex.cli.arg.hook_args.surface.help" },
+    { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Codex session ID. Auto-populated from stdin JSON 'session_id' when Codex invokes the hook.", help_i18n_key = "codex.cli.arg.hook_args.session.help" },
+    { name = "gen", type = "string", flag = "--gen", required = false, help = "Session generation set by the Tasty session helper. Hooks without the current generation are ignored.", help_i18n_key = "codex.cli.arg.hook_args.gen.help" },
+    { name = "model", type = "string", flag = "--model", required = false, stdin_field = "model", help = "Model of the session. Auto-populated from stdin JSON 'model'. Kept so that restoring the session uses the same model.", help_i18n_key = "codex.cli.arg.hook_args.model.help" },
+]

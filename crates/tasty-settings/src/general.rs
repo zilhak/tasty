@@ -55,6 +55,9 @@ __tasty_osc133_precmd() {
     local ec=$?
     printf '\033]133;D;%s\033\\' "$ec"
     printf '\033]133;A\033\\'
+    if [ -n "${TASTY_PARENT_HOME:-}" ] && [ -f "$TASTY_PARENT_HOME/shell-integrations/codex.sh" ]; then
+        source "$TASTY_PARENT_HOME/shell-integrations/codex.sh"
+    fi
 }
 
 # Bash 4.4+ PS0 emits C before command execution; older bash has no fallback here.
@@ -74,7 +77,7 @@ PS0='$(__tasty_osc133_preexec)'
 
 /// 생성 bashrc의 동작 버전. 파일의 스탬프가 다르거나 없으면 다시 만든다.
 /// 내장 스크립트의 실행 동작을 바꿀 때 증가시킨다. 설명 주석만 바꿀 때는 기존 파일을 재생성하지 않는다.
-pub const BUILTIN_BASHRC_STAMP: &str = "# tasty-bashrc-v3";
+pub const BUILTIN_BASHRC_STAMP: &str = "# tasty-bashrc-v4";
 
 /// `~/.tasty/bashrc.user`의 초기 시드. 사용자가 자유롭게 수정/리셋할 수 있는 기본값.
 pub const INITIAL_USER_BASHRC: &str = r#"# Tasty user bashrc — edit freely.
@@ -726,6 +729,9 @@ __tasty_osc133_precmd() {
     local ec=$?
     printf '\033]133;D;%s\033\\' "$ec"
     printf '\033]133;A\033\\'
+    if [ -n "${TASTY_PARENT_HOME:-}" ] && [ -f "$TASTY_PARENT_HOME/shell-integrations/codex.sh" ]; then
+        source "$TASTY_PARENT_HOME/shell-integrations/codex.sh"
+    fi
 }
 __tasty_osc133_preexec() {
     printf '\033]133;C;cmd=%s\033\\' "$1"
@@ -749,7 +755,7 @@ unset __tasty_real_zdotdir
 "#;
 
 /// 생성 zshenv의 동작 버전. 실행 동작을 바꿀 때 증가시킨다. 설명 주석 변경은 기존 파일 재생성을 요구하지 않는다.
-pub const BUILTIN_ZSHENV_STAMP: &str = "# tasty-zshenv-v1";
+pub const BUILTIN_ZSHENV_STAMP: &str = "# tasty-zshenv-v2";
 
 /// Path to Tasty's compiled zsh wrapper `.zshenv` (`~/.tasty/zsh-integration/.zshenv`).
 pub fn tasty_zshenv_path() -> Option<std::path::PathBuf> {
