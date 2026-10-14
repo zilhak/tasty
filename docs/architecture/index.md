@@ -290,6 +290,13 @@ App의 window event provider는 EngineRegistry에서 불변 EngineRead를 만든
 `AwaitPublication`에서 기다리고, publication이 먼저 도착하면 `Finish` 안에 적용 사실을
 보관한다. 두 조건을 충족한 assembly만 `Published`에서 전체 batch ACK 뒤 해제된다.
 
+Creation은 ticket 하나로 모든 단계를 진행하므로 한 번에 요청 하나만 worker에 제출한다.
+제출한 요청의 종류를 기록하고, 응답이 오기 전에 생긴 다음 요청은 대기열에 두었다가 응답을
+받은 뒤 제출한다. Publish 처리 중 설치나 후보 폐기가 실패하면 준비 응답이 아직 오지 않았을 수
+있다. 이때 불확실 기록은 준비 응답을 받은 뒤 제출한다. 준비 응답은 불확실 기록의 확정으로
+처리하지 않으며, 재확인 요청은 불확실 기록의 응답을 받은 뒤에만 제출한다. 응답은 기록한
+요청 종류와 짝지어 판정한다. 종류가 맞지 않는 응답은 단계 밖 응답으로 거부한다.
+
 ### Engine 실행 어댑터의 위치
 
 터미널 접근·출력 읽기·전경 프로세스와 busy 관측은 `runtime`의

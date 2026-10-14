@@ -115,3 +115,105 @@ fn publication_keeps_the_original_owner_with_either_completion_order() {
         assert!(release.poll(&mut session, None));
     }
 }
+
+fn executed() -> ResultValue {
+    ResultValue::Executed(crate::runtime::command_executor::Executed {
+        command_id: "reply".into(),
+        status: tasty_event_store::CommandStatus::Completed,
+        response: None,
+        source: crate::runtime::command_executor::Source::Committed { batch: None },
+    })
+}
+
+/// Synthesizes the uncertain stage with a Discard owner instead of calling `install_candidate` or
+/// `discard_candidate`, whose owners (FailedInstallation, EngineOwned) never reconcile. The Discard
+/// owner reconciles, so the full overlap chain that ends in an ownerless reply is reachable here.
+/// Guards the in-flight gate in `flush` and the reply-kind matching in `answered`.
+#[test]
+fn synthesized_uncertain_discard_keeps_one_outstanding_request_per_creation() {
+    let home = tempfile::tempdir().unwrap();
+    let worker = JournalWorker::spawn(home.path().to_owned(), Arc::new(|| {})).unwrap();
+    let mut session = EngineSession::new(80, 24, Arc::new(|| {})).unwrap();
+    let binding = crate::runtime::journal_product::EngineBinding {
+        journal_id: "journal".into(),
+        stream: "structure:slot-1".into(),
+        incarnation: 1,
+        runtime_epoch: 3,
+        published_cut: None,
+        revision: None,
+    };
+    let mut creation = Creation::committed(7, binding, &worker, lease().operation.clone()).unwrap();
+    // A: the preparation reply is in flight when its Publish batch arrives.
+    creation.queued = Some(Work::Prepared {
+        lease: lease(),
+        result: PreparationResult::Ready { data: None },
+    });
+    assert!(creation.flush(&worker).unwrap());
+    creation.stage = Stage::Prepared {
+        operation: lease().operation,
+        acknowledged: false,
+    };
+    // B: the uncertain record queued while A is in flight, with a synthesized Discard owner.
+    let reason = "installation failed during publish".to_owned();
+    creation
+        .submit(
+            &worker,
+            Work::PreparationUncertain {
+                lease: lease(),
+                reason: reason.clone(),
+            },
+        )
+        .unwrap();
+    creation.stage = Stage::Uncertain(Uncertain::pending(
+        reason.clone(),
+        UncertainOwner::Discard {
+            lease: lease(),
+            retirement: None,
+            discard_committed: true,
+            reason,
+        },
+    ));
+    let view = crate::runtime::journal_product::CompletionView::default();
+    creation
+        .poll_cleanup(&worker, view.clone(), &mut session)
+        .unwrap();
+    assert!(
+        creation.queued.is_some(),
+        "the uncertain record must wait for the in-flight preparation reply"
+    );
+    assert!(
+        !creation
+            .answered(&worker, &mut session, executed())
+            .unwrap()
+    );
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    creation
+        .poll_cleanup(&worker, view.clone(), &mut session)
+        .unwrap();
+    assert!(creation.queued.is_none(), "B is submitted after A's reply");
+    creation
+        .poll_cleanup(&worker, view.clone(), &mut session)
+        .unwrap();
+    assert!(
+        matches!(creation.stage, Stage::Uncertain(_)),
+        "A's reply must not acknowledge B, so C waits for B's reply"
+    );
+    assert!(
+        !creation
+            .answered(&worker, &mut session, executed())
+            .unwrap()
+    );
+    creation
+        .poll_cleanup(&worker, view.clone(), &mut session)
+        .unwrap();
+    assert!(
+        matches!(creation.stage, Stage::Failed(_)),
+        "C is submitted once B's reply arrives"
+    );
+    assert!(
+        creation
+            .answered(&worker, &mut session, executed())
+            .unwrap(),
+        "C's reply finishes the creation with no reply left without an owner"
+    );
+}

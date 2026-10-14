@@ -37,6 +37,26 @@ pub(super) struct Creation {
     transfers_existing: bool,
     one_shot_input: Option<String>,
     queued: Option<Work>,
+    /// One ticket carries every step, so a reply is matched to the only submitted request.
+    in_flight: Option<InFlight>,
+}
+
+/// The submitted request whose reply this ticket awaits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InFlight {
+    Preparation,
+    Uncertainty,
+    Step,
+}
+
+impl InFlight {
+    fn of(work: &Work) -> Self {
+        match work {
+            Work::Prepared { .. } => Self::Preparation,
+            Work::PreparationUncertain { .. } => Self::Uncertainty,
+            _ => Self::Step,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -125,6 +145,7 @@ impl Creation {
             restore_retry: None,
             restore_failure: None,
             queued: None,
+            in_flight: None,
             input: PreparationInput {
                 adopt: None,
                 child: None,
@@ -176,6 +197,7 @@ impl Creation {
             transfers_existing: false,
             one_shot_input: None,
             queued: None,
+            in_flight: Some(InFlight::Step),
             fixed_plan: None,
             requested_restore: None,
             receipt: Default::default(),
@@ -247,10 +269,16 @@ impl Creation {
             transfers_existing: false,
             one_shot_input: None,
             queued: Some(admission),
+            in_flight: None,
         })
     }
 
     fn submit(&mut self, _worker: &JournalWorker, work: Work) -> Result<(), String> {
+        self.enqueue(work)
+    }
+
+    /// Queued work is sent by `flush` only after the in-flight reply of this ticket arrives.
+    fn enqueue(&mut self, work: Work) -> Result<(), String> {
         if self.queued.is_some() {
             return Err("materialization already has a pending worker step".into());
         }
@@ -258,15 +286,23 @@ impl Creation {
         Ok(())
     }
 
+    /// Returns false while a request is in flight or the worker queue is full.
     fn flush(&mut self, worker: &JournalWorker) -> Result<bool, String> {
+        if self.in_flight.is_some() {
+            return Ok(false);
+        }
         let Some(work) = self.queued.take() else {
             return Ok(true);
         };
+        let in_flight = InFlight::of(&work);
         match worker.submit_owned(Request {
             ticket: self.ticket,
             work,
         }) {
-            Ok(()) => Ok(true),
+            Ok(()) => {
+                self.in_flight = Some(in_flight);
+                Ok(true)
+            }
             Err((crate::runtime::journal_product::SubmitError::Busy, request)) => {
                 self.queued = Some(request.work);
                 Ok(false)
@@ -292,6 +328,8 @@ impl Creation {
             }
             other => other,
         };
+        let in_flight = self.in_flight.take();
+        let preparation = in_flight == Some(InFlight::Preparation);
         let stage = std::mem::replace(&mut self.stage, Stage::Transition);
         self.stage = match (stage, value) {
             (Stage::Admit, ResultValue::NeedsResolution) if self.fixed_plan.is_some() => {
@@ -454,24 +492,33 @@ impl Creation {
                     }
                 }
             }
-            (Stage::Prepared { operation, .. }, ResultValue::Executed(_)) => Stage::Prepared {
-                operation,
-                acknowledged: true,
-            },
+            (Stage::Prepared { operation, .. }, ResultValue::Executed(_)) if preparation => {
+                Stage::Prepared {
+                    operation,
+                    acknowledged: true,
+                }
+            }
             (
                 Stage::Installing {
                     installed, started, ..
                 },
                 ResultValue::Executed(_),
-            ) => Stage::Installing {
+            ) if preparation => Stage::Installing {
                 installed,
                 answered: true,
                 started,
             },
+            // Publication can fail while the preparation reply is in flight; that reply only
+            // releases the queued uncertainty record and must not acknowledge it.
+            (Stage::Uncertain(uncertain), ResultValue::Executed(_) | ResultValue::Stored(_))
+                if preparation =>
+            {
+                Stage::Uncertain(uncertain)
+            }
             (
                 Stage::Uncertain(mut uncertain),
                 ResultValue::Executed(_) | ResultValue::Stored(_),
-            ) => {
+            ) if in_flight == Some(InFlight::Uncertainty) => {
                 uncertain.acknowledge();
                 Stage::Uncertain(uncertain)
             }
@@ -481,8 +528,14 @@ impl Creation {
                     publication: Publication::Pending,
                 },
                 ResultValue::Executed(_),
-            ) if self.assembly_member => Stage::AwaitPublication(installed),
-            (Stage::Finish { .. }, ResultValue::Executed(_)) => return Ok(true),
+            ) if self.assembly_member && in_flight == Some(InFlight::Step) => {
+                Stage::AwaitPublication(installed)
+            }
+            (Stage::Finish { .. }, ResultValue::Executed(_))
+                if in_flight == Some(InFlight::Step) =>
+            {
+                return Ok(true);
+            }
             (
                 Stage::Rejected {
                     lease,
@@ -493,7 +546,7 @@ impl Creation {
                     ..
                 },
                 ResultValue::Executed(_),
-            ) => Stage::Rejected {
+            ) if preparation => Stage::Rejected {
                 discard_committed,
                 lease,
                 reason,
@@ -536,7 +589,7 @@ impl Creation {
         let preparation_acked = *acknowledged;
         if events.iter().any(|recorded|matches!(&recorded.event,tasty_core::DomainEvent::OperationAwaitingCleanup {id,cleanup:tasty_core::CleanupPlan::DiscardPrepared {..},..} if id==operation)) {
             let candidate=session.pending_materializations.remove(operation).ok_or("discarded assembly member lost its private owner")?;
-            let lease=candidate.lease.clone();let retirement=match self.discard_candidate(session,candidate) {Some(receipt)=>receipt,None=>return Ok(None)};
+            let lease=candidate.lease.clone();let retirement=match self.discard_candidate(session,candidate)? {Some(receipt)=>receipt,None=>return Ok(None)};
             self.stage=Stage::Rejected {discard_committed:true,lease,reason:"assembly cancelled before installation".into(),retirement,answered:preparation_acked,started:std::time::Instant::now()};
             return Ok(None);
         }
@@ -556,7 +609,7 @@ impl Creation {
                     .remove(&operation)
                     .expect("checked candidate");
                 let lease = candidate.lease.clone();
-                let retirement = match self.discard_candidate(session, candidate) {
+                let retirement = match self.discard_candidate(session, candidate)? {
                     Some(receipt) => receipt,
                     None => return Ok(None),
                 };
@@ -577,20 +630,18 @@ impl Creation {
         &mut self,
         session: &mut EngineSession,
         candidate: effect_runner::PreparedMaterialization,
-    ) -> Option<Option<tasty_terminal::PtyRetirement>> {
+    ) -> Result<Option<Option<tasty_terminal::PtyRetirement>>, String> {
         match candidate.discard(&mut session.borrow_mut()) {
-            Ok(receipt) => Some(receipt),
+            Ok(receipt) => Ok(Some(receipt)),
             Err((candidate, reason)) => {
                 let lease = candidate.lease.clone();
                 session
                     .pending_materializations
                     .insert(lease.operation.clone(), candidate);
-                self.queued = Some(Work::PreparationUncertain {
-                    lease,
-                    reason: reason.clone(),
-                });
-                self.retain_uncertain(reason);
-                None
+                // The stage keeps the owner even if the record cannot be queued.
+                self.retain_uncertain(reason.clone());
+                self.enqueue(Work::PreparationUncertain { lease, reason })?;
+                Ok(None)
             }
         }
     }
@@ -682,14 +733,12 @@ impl Creation {
             Err(error) => {
                 let reason = error.to_string();
                 let lease = installation.lease.clone();
-                self.queued = Some(Work::PreparationUncertain {
-                    lease,
-                    reason: reason.clone(),
-                });
+                // The stage keeps the owner even if the record cannot be queued.
                 self.stage = Stage::Uncertain(Uncertain::pending(
-                    reason,
+                    reason.clone(),
                     UncertainOwner::FailedInstallation(Box::new(installation)),
                 ));
+                self.enqueue(Work::PreparationUncertain { lease, reason })?;
             }
         }
         Ok(())
