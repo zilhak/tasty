@@ -182,6 +182,10 @@ pub(super) struct Commands {
 }
 
 impl Commands {
+    pub(super) fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
     #[cfg(feature = "gui")]
     pub(super) fn has_remote_request(&self, engine: EngineId) -> bool {
         self.pending
@@ -438,12 +442,16 @@ impl JournalApplication {
                 pending.queued = Some(work);
                 continue;
             }
+            let kind = work.kind();
             // The worker returns the original work on pressure; no resource or input is cloned.
             match self.worker.submit_owned(Request {
                 ticket: *ticket,
                 work,
             }) {
-                Ok(()) => pending.in_flight = true,
+                Ok(()) => {
+                    pending.in_flight = true;
+                    self.command_submissions.record(*ticket, kind);
+                }
                 Err((crate::runtime::journal_product::SubmitError::Busy, request)) => {
                     pending.queued = Some(request.work);
                     break;

@@ -11,6 +11,7 @@ mod resource_cleanup;
 mod restorations;
 #[cfg(feature = "gui")]
 mod retirement;
+mod unowned;
 #[cfg(feature = "gui")]
 mod view_writes;
 
@@ -25,6 +26,9 @@ pub(crate) use creation::{ActivationOutcome, ActivationReceipt};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tasty_core::projection;
+
+/// halt 거절 응답에 붙이는 사유의 최대 문자 수.
+const HALT_CAUSE_EXCERPT: usize = 512;
 
 struct Opening {
     selection: EngineSelection,
@@ -67,6 +71,7 @@ pub(crate) struct JournalApplication {
     startup_failure: Option<crate::runtime::journal_product::StartupFailure>,
     runtime_epoch: Option<u64>,
     next_ticket: u64,
+    command_submissions: unowned::CommandSubmissions,
     halted: Option<String>,
 }
 
@@ -170,6 +175,7 @@ impl JournalApplication {
             startup_failure: None,
             runtime_epoch: None,
             next_ticket: 1,
+            command_submissions: Default::default(),
             halted: None,
         })
     }
@@ -306,10 +312,15 @@ impl JournalApplication {
         if !self.is_halted() || request.method == "system.shutdown" {
             return None;
         }
+        // 재시작 말고는 회복할 수 없으므로 호출자가 원인과 함께 알 수 있게 사유를 붙인다.
+        let reason = self.halted.as_deref().unwrap_or_default();
         Some(crate::ipc::protocol::JsonRpcResponse::error(
             request.id.clone().unwrap_or(serde_json::Value::Null),
             -32000,
-            "structure publication is halted; no live projection is available",
+            format!(
+                "structure publication is halted; no live projection is available; restart Tasty to recover (cause: {})",
+                unowned::excerpt(reason, HALT_CAUSE_EXCERPT)
+            ),
         ))
     }
 
@@ -560,6 +571,8 @@ mod stall_budget;
 mod test_shell;
 #[cfg(all(test, unix))]
 mod tests;
+#[cfg(all(test, unix))]
+mod unowned_tests;
 
 #[cfg(all(test, unix, feature = "gui"))]
 mod view_tests;

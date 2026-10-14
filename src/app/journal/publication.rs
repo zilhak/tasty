@@ -543,7 +543,7 @@ impl JournalApplication {
             .opening
             .iter()
             .find_map(|(id, opening)| (opening.ticket == Some(ticket)).then_some(*id))
-            .ok_or("bootstrap completion belongs to another request")?;
+            .ok_or_else(|| self.unowned_completion(ticket, &result))?;
         let opening = self.opening.remove(&id).expect("matched opening");
         let session = sessions
             .iter_mut()

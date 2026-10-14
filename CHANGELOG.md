@@ -29,6 +29,8 @@
 
 ### Changed
 
+- **저널이 멈춘 뒤의 IPC 거절 메시지에 원인과 재시작 안내가 붙는다.** 구조 저널 공개가 멈추면 `system.shutdown`을 뺀 모든 IPC가 지금처럼 `-32000`으로 거절되며, 메시지 끝에 `restart Tasty to recover (cause: ...)`와 멈춘 원인(앞 512자)이 더해진다. 어느 요청에도 속하지 않은 완료로 멈춘 경우 원인 문구가 `bootstrap completion belongs to another request` 대신 ticket 번호, 응답 종류, 마지막으로 제출한 작업 종류를 담는다.
+
 - (BREAK) **Tasty가 실행하는 Codex는 터미널마다 전용 Codex app-server와 함께 실행된다.** launch·spawn·respawn·reboot·탭 복원이 플러그인 실행 파일의 세션 helper를 실행하며, helper가 서버를 띄운 뒤 TUI를 `--remote`로 붙이고 TUI가 끝나면 서버를 정리한다. 서버를 시작하지 못하면 Codex를 시작하지 않는다. `--dangerously-bypass-hook-trust`를 더 이상 전달하지 않으므로 Codex의 `/hooks`에서 Tasty 훅을 승인해야 한다. 설치 훅은 helper가 넣은 세대 값이 있을 때만 실행되므로 `tasty codex install`을 다시 실행하고, 직접 입력한 `codex`는 상태를 보고하지 않는다. CLI `tasty codex parent`의 IPC는 `codex.parent_of`로 바뀌었다.
 - **로컬 탐색기의 새로고침(`F5`·툴바)이 목록을 비우지 않는다.** 폴더 목록을 보이고 있는 로컬 탐색기에서 같은 폴더를 새로고침하면 Loading 화면을 거치지 않고 보이던 목록·펼친 트리·선택·스크롤을 둔 채 다시 읽고, 결과가 오면 사라진 항목만 선택에서 빠진다. 원격(attach) 탐색기, 오류 화면의 Retry, 읽는 중의 새로고침은 지금처럼 목록을 비우고 다시 읽는다.
 - **debug 빌드에서 `tasty debug inject window-mouse` 우클릭으로 터미널 메뉴의 항목을 고를 수 있다.** `tasty debug menu-answer --menu TerminalSurface`(또는 링크 위 우클릭의 `TerminalLink`)로 응답을 둔 뒤 `--button 2` press·release를 넣으면 사용자 우클릭과 같은 경로로 그 항목의 처리(복사·이동 등)가 실행된다. 응답이 없거나 다른 종류의 응답만 있으면 지금처럼 메뉴 요청을 포획해 `tasty debug pending-menu`로 확인하며, OS 팝업은 뜨지 않고 다른 종류의 응답은 남는다. 같은 종류의 응답은 `TASTY_DEBUG_SUPPRESS_NATIVE_MENU`의 포획보다 먼저 쓰인다. `debug.native_menu.answer`의 결과에 덮어쓴 응답의 종류(`replaced`)가 추가됐다.

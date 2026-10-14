@@ -7,6 +7,7 @@ mod binding;
 mod decider;
 mod error;
 mod identity;
+mod kind;
 mod preparation;
 mod response;
 #[cfg(test)]
