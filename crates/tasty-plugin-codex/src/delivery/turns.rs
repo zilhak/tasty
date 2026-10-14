@@ -119,21 +119,25 @@ fn read_or_isolate(root: &Path, name: &str) -> Option<Candidate> {
     match read(root, name) {
         Ok(found) => found,
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-            let corrupt = dir(root).join("corrupt");
-            let to = corrupt.join(format!("{name}.{}.json", store::now_ms()));
-            match store::private_dir(&corrupt).and_then(|()| std::fs::rename(file(root, name), &to))
-            {
-                Ok(()) => tracing::warn!("codex turn {name}: isolated unreadable candidate: {e}"),
-                Err(move_err) => tracing::warn!(
-                    "codex turn {name}: unreadable candidate ({e}) could not be isolated: {move_err}"
-                ),
-            }
+            isolate(root, name, &e);
             None
         }
         Err(e) => {
             tracing::warn!("codex turn {name}: unreadable candidate: {e}");
             None
         }
+    }
+}
+
+/// 해석할 수 없는 후보 파일을 `turns/corrupt/`로 옮긴다. `e`는 해석 오류다.
+fn isolate(root: &Path, name: &str, e: &std::io::Error) {
+    let corrupt = dir(root).join("corrupt");
+    let to = corrupt.join(format!("{name}.{}.json", store::now_ms()));
+    match store::private_dir(&corrupt).and_then(|()| std::fs::rename(file(root, name), &to)) {
+        Ok(()) => tracing::warn!("codex turn {name}: isolated unreadable candidate: {e}"),
+        Err(move_err) => tracing::warn!(
+            "codex turn {name}: unreadable candidate ({e}) could not be isolated: {move_err}"
+        ),
     }
 }
 
@@ -277,26 +281,8 @@ pub(crate) fn pump_turns(ctx: &Ctx<'_>, fresh: Fresh<'_>) {
         }
     }
     for (name, candidate) in all.iter().filter(|(_, c)| c.turn_id.is_none()) {
-        // SessionEnd는 thread가 내려갔다는 뜻이다. 세대(TUI)가 끝났을 때와 대화만 바뀌어 이전
-        // thread가 unload될 때 모두 온다. 세대가 끝났다고 확인될 때만 종료로 기록하고, 유예가
-        // 지나도 소유 서버가 살아 있으면 대화가 바뀐 것이므로 기록하지 않는다. 세대가 끝나면 남은
-        // 턴은 확인할 수 없으므로 기다리지 않는다.
-        let deadline = candidate.created_at_ms + EXIT_GRACE.as_millis() as u64;
-        if server_gone(ctx.root, &candidate.generation) {
-            capture(ctx, name, candidate, "exited", None);
-        } else if now < deadline {
-            let at = deadline.min(now + EXIT_POLL.as_millis() as u64);
+        if let Some(at) = settle_exit(ctx, name, candidate, now) {
             next = Some(next.map_or(at, |t| t.min(at)));
-        } else if server_reachable(ctx, candidate) {
-            tracing::info!(
-                "codex turn {name}: thread {} ended while its session kept running; not an exit",
-                candidate.thread
-            );
-            if let Err(e) = retire(ctx, name, candidate) {
-                tracing::warn!("codex turn {name}: retire a conversation end: {e}");
-            }
-        } else {
-            capture(ctx, name, candidate, "exited", None);
         }
     }
     for (name, candidate) in all.iter().filter(|(_, c)| c.turn_id.is_some()) {
@@ -307,6 +293,31 @@ pub(crate) fn pump_turns(ctx: &Ctx<'_>, fresh: Fresh<'_>) {
     if let Some(at) = next {
         arm_wake(ctx, at);
     }
+}
+
+/// 종료 후보 하나를 처리한다. 아직 유예 중이면 다시 확인할 시각을 돌려준다.
+fn settle_exit(ctx: &Ctx<'_>, name: &str, candidate: &Candidate, now: u64) -> Option<u64> {
+    // SessionEnd는 thread가 내려갔다는 뜻이다. 세대(TUI)가 끝났을 때와 대화만 바뀌어 이전
+    // thread가 unload될 때 모두 온다. 세대가 끝났다고 확인될 때만 종료로 기록하고, 유예가
+    // 지나도 소유 서버가 살아 있으면 대화가 바뀐 것이므로 기록하지 않는다. 세대가 끝나면 남은
+    // 턴은 확인할 수 없으므로 기다리지 않는다.
+    let deadline = candidate.created_at_ms + EXIT_GRACE.as_millis() as u64;
+    if server_gone(ctx.root, &candidate.generation) {
+        capture(ctx, name, candidate, "exited", None);
+    } else if now < deadline {
+        return Some(deadline.min(now + EXIT_POLL.as_millis() as u64));
+    } else if server_reachable(ctx, candidate) {
+        tracing::info!(
+            "codex turn {name}: thread {} ended while its session kept running; not an exit",
+            candidate.thread
+        );
+        if let Err(e) = retire(ctx, name, candidate) {
+            tracing::warn!("codex turn {name}: retire a conversation end: {e}");
+        }
+    } else {
+        capture(ctx, name, candidate, "exited", None);
+    }
+    None
 }
 
 /// `at`에 깨우기를 예약한다. 스케줄러가 가장 이른 예약 하나로 합친다.
@@ -367,20 +378,8 @@ fn retry(ctx: &Ctx<'_>, name: &str, candidate: &Candidate, detail: &str) {
 }
 
 fn capture(ctx: &Ctx<'_>, name: &str, candidate: &Candidate, status: &str, body: Option<String>) {
-    let receiver = match ledger::read_receiver(ctx.root, &candidate.receiver_id) {
-        Ok(Some(r)) => r,
-        Ok(None) => {
-            tracing::warn!(
-                "codex turn {name}: receiver {} missing",
-                candidate.receiver_id
-            );
-            remove(ctx.root, name);
-            return;
-        }
-        Err(e) => {
-            tracing::warn!("codex turn {name}: receiver unreadable: {e}");
-            return;
-        }
+    let Some(receiver) = receiver_of(ctx, name, candidate) else {
+        return;
     };
     let completion = Completion {
         completion_key: candidate.completion_key.clone(),
@@ -397,6 +396,25 @@ fn capture(ctx: &Ctx<'_>, name: &str, candidate: &Candidate, status: &str, body:
             ctx.pump.turn_forget(name);
         }
         Err(e) => tracing::warn!("codex turn {name}: capture failed: {e}"),
+    }
+}
+
+/// 후보의 수신자. 수신자가 없어졌으면 후보를 지운다. 읽지 못했으면 후보를 남긴다.
+fn receiver_of(ctx: &Ctx<'_>, name: &str, candidate: &Candidate) -> Option<ledger::Receiver> {
+    match ledger::read_receiver(ctx.root, &candidate.receiver_id) {
+        Ok(Some(r)) => Some(r),
+        Ok(None) => {
+            tracing::warn!(
+                "codex turn {name}: receiver {} missing",
+                candidate.receiver_id
+            );
+            remove(ctx.root, name);
+            None
+        }
+        Err(e) => {
+            tracing::warn!("codex turn {name}: receiver unreadable: {e}");
+            None
+        }
     }
 }
 

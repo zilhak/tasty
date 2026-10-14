@@ -525,29 +525,40 @@ fn pump(ctx: &Ctx<'_>, thread: &str, resume: bool) {
                 return;
             }
         };
-        match event.delivery.state {
-            DeliveryState::Held if event.delivery.attempts >= MAX_AUTO_ATTEMPTS => {
-                if !resume {
-                    return;
-                }
-                let mut event = event;
-                event.delivery.attempts = 0;
-                if write_or_warn(ctx, &event, "retry reset") {
-                    start_send(ctx, event);
-                }
-                return;
+        if !advance(ctx, event, resume) {
+            return;
+        }
+    }
+}
+
+/// 맨 앞 이벤트 하나를 진행한다. 이미 끝난 이벤트라 색인에서 지웠고 다음 이벤트로 넘어가도 되면
+/// `true`.
+fn advance(ctx: &Ctx<'_>, event: Event, resume: bool) -> bool {
+    match event.delivery.state {
+        DeliveryState::Held if event.delivery.attempts >= MAX_AUTO_ATTEMPTS => {
+            if !resume {
+                return false;
             }
-            DeliveryState::Captured | DeliveryState::Held => {
+            let mut event = event;
+            event.delivery.attempts = 0;
+            if write_or_warn(ctx, &event, "retry reset") {
                 start_send(ctx, event);
-                return;
             }
-            DeliveryState::Unknown if !event.delivery.unknown_checked => {
-                verify_unknown(ctx, &event);
-                return;
-            }
-            // 다른 프로세스에서 시작한 송신은 복구가 unknown으로 바꾼다.
-            DeliveryState::Sending => return,
-            _ => drop_pending(ctx, &event),
+            false
+        }
+        DeliveryState::Captured | DeliveryState::Held => {
+            start_send(ctx, event);
+            false
+        }
+        DeliveryState::Unknown if !event.delivery.unknown_checked => {
+            verify_unknown(ctx, &event);
+            false
+        }
+        // 다른 프로세스에서 시작한 송신은 복구가 unknown으로 바꾼다.
+        DeliveryState::Sending => false,
+        _ => {
+            drop_pending(ctx, &event);
+            true
         }
     }
 }
@@ -765,32 +776,7 @@ pub(crate) fn handle_outcome(ctx: &Ctx<'_>, params: &Value) -> Result<Value, Ipc
 pub(crate) fn recover(ctx: &Ctx<'_>) {
     for thread in ledger::pending_threads(ctx.root) {
         for id in ledger::pending_ids(ctx.root, &thread) {
-            let mut event = match ledger::read_event(ctx.root, &id) {
-                Ok(Some(e)) => e,
-                Ok(None) => {
-                    if let Err(e) = remove_marker_by_id(ctx.root, &thread, &id) {
-                        tracing::warn!("codex delivery {id}: pending index: {e}");
-                    }
-                    continue;
-                }
-                Err(e) => {
-                    tracing::warn!("codex delivery {id}: unreadable: {e}");
-                    continue;
-                }
-            };
-            match ledger::repair_claim(ctx.root, &event) {
-                Ok(true) => {}
-                Ok(false) => continue,
-                Err(e) => tracing::warn!("codex delivery {id}: claim repair: {e}"),
-            }
-            if event.delivery.state == DeliveryState::Sending {
-                set_state(
-                    &mut event,
-                    DeliveryState::Unknown,
-                    Some("the plugin restarted while sending".into()),
-                );
-                write_or_warn(ctx, &event, "recovery write");
-            }
+            recover_event(ctx, &thread, &id);
         }
     }
     ledger::prune(ctx.root, std::time::SystemTime::now());
@@ -798,6 +784,43 @@ pub(crate) fn recover(ctx: &Ctx<'_>) {
     turns::pump_turns(ctx, turns::Fresh::All);
     for thread in ledger::pending_threads(ctx.root) {
         pump_thread(ctx, &thread);
+    }
+}
+
+/// 색인된 이벤트 하나를 복구한다.
+fn recover_event(ctx: &Ctx<'_>, thread: &str, id: &str) {
+    let Some(mut event) = read_indexed(ctx, thread, id) else {
+        return;
+    };
+    match ledger::repair_claim(ctx.root, &event) {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(e) => tracing::warn!("codex delivery {id}: claim repair: {e}"),
+    }
+    if event.delivery.state == DeliveryState::Sending {
+        set_state(
+            &mut event,
+            DeliveryState::Unknown,
+            Some("the plugin restarted while sending".into()),
+        );
+        write_or_warn(ctx, &event, "recovery write");
+    }
+}
+
+/// 색인된 이벤트를 읽는다. 이벤트가 없는 표지는 지운다. 없거나 읽지 못하면 `None`.
+fn read_indexed(ctx: &Ctx<'_>, thread: &str, id: &str) -> Option<Event> {
+    match ledger::read_event(ctx.root, id) {
+        Ok(Some(e)) => Some(e),
+        Ok(None) => {
+            if let Err(e) = remove_marker_by_id(ctx.root, thread, id) {
+                tracing::warn!("codex delivery {id}: pending index: {e}");
+            }
+            None
+        }
+        Err(e) => {
+            tracing::warn!("codex delivery {id}: unreadable: {e}");
+            None
+        }
     }
 }
 

@@ -350,10 +350,21 @@ fn run_helper_reboot(
         watch.generation
     );
     // 안내 대상은 restart가 확인한 세대뿐이다. 현재 세대를 다시 읽어 대상으로 삼지 않는다.
+    notify_restarted(&io, watch, &generation, notice);
+}
+
+/// restart가 확인한 새 세대 `generation`에 재시작 안내를 보낸다.
+fn notify_restarted(
+    io: &HostIo<'_>,
+    watch: &crate::reboot_watch::HelperWatch,
+    generation: &str,
+    notice: &str,
+) {
+    let surface_id = watch.surface;
     let delivered = crate::reboot_watch::deliver_notice(
-        &io,
+        io,
         watch,
-        &generation,
+        generation,
         &crate::reboot_watch::Notice {
             text: notice,
             snippet: NOTICE_SNIPPET,
@@ -438,6 +449,24 @@ fn resume_and_wait(
     policy_args: &str,
     banner_c0: usize,
 ) -> bool {
+    if !send_resume(host, surface_id, session_id, policy_args) {
+        return false;
+    }
+
+    if !poll_screen(host, surface_id, RETURN_WAIT, |s| {
+        count_occurrences(s, BANNER_MARKER) > banner_c0
+    }) {
+        tracing::warn!(
+            "codex reboot s{surface_id}: codex banner did not reappear within {}s — resume sent but notice skipped",
+            RETURN_WAIT.as_secs()
+        );
+        return false;
+    }
+    true
+}
+
+/// resume 명령을 surface에 보낸다.
+fn send_resume(host: &HostHandle, surface_id: u32, session_id: &str, policy_args: &str) -> bool {
     let command = match resume_command(session_id, policy_args) {
         Ok(c) => c,
         Err(e) => {
@@ -450,16 +479,6 @@ fn resume_and_wait(
         json!({ "surface_id": surface_id, "text": command }),
     ) {
         tracing::warn!("codex reboot s{surface_id}: resume send failed: {e}");
-        return false;
-    }
-
-    if !poll_screen(host, surface_id, RETURN_WAIT, |s| {
-        count_occurrences(s, BANNER_MARKER) > banner_c0
-    }) {
-        tracing::warn!(
-            "codex reboot s{surface_id}: codex banner did not reappear within {}s — resume sent but notice skipped",
-            RETURN_WAIT.as_secs()
-        );
         return false;
     }
     true

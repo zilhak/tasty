@@ -232,15 +232,27 @@ pub(crate) fn restart(
     resume: &str,
     limits: Limits,
 ) -> Outcome {
+    let sent = match interrupt(io, watch, limits) {
+        Ok(sent) => sent,
+        Err(outcome) => return outcome,
+    };
+    if let Err(outcome) = return_to_shell(io, watch, fg0, limits) {
+        return outcome;
+    }
+    resume_session(io, watch, thread, resume, limits, sent)
+}
+
+/// Ctrl+C 로 세션을 끝내고 끝날 때까지 기다린다. 보낸 Ctrl+C 수를 돌려준다.
+fn interrupt(io: &dyn RebootIo, watch: &HelperWatch, limits: Limits) -> Result<u32, Outcome> {
     let surface = watch.surface;
     let mut sent = 0;
     while !watch.ended() && sent < CTRL_C_COUNT {
         if !watch.is_current() {
-            return target_changed(watch, "before Ctrl+C");
+            return Err(target_changed(watch, "before Ctrl+C"));
         }
         if let Err(e) = io.ctrl_c() {
             tracing::warn!("codex reboot s{surface}: Ctrl+C failed: {e} — aborting");
-            return Outcome::Failed;
+            return Err(Outcome::Failed);
         }
         sent += 1;
         if wait_until(io, CTRL_C_INTERVAL, &|| {
@@ -254,11 +266,22 @@ pub(crate) fn restart(
             "codex reboot s{surface}: session {} did not end after {sent}x Ctrl+C; resume command not sent",
             watch.generation
         );
-        return Outcome::NotExited;
+        return Err(Outcome::NotExited);
     }
     if !watch.is_current() {
-        return target_changed(watch, "while waiting for exit");
+        return Err(target_changed(watch, "while waiting for exit"));
     }
+    Ok(sent)
+}
+
+/// 세션이 끝난 뒤 전경이 셸로 돌아올 때까지 기다린다.
+fn return_to_shell(
+    io: &dyn RebootIo,
+    watch: &HelperWatch,
+    fg0: &Foreground,
+    limits: Limits,
+) -> Result<(), Outcome> {
+    let surface = watch.surface;
     // helper가 서버를 정리하고 끝나면 전경이 셸로 돌아온다.
     let returned = wait_until(io, limits.shell, &|| {
         io.foreground().is_some_and(|fg| fg.is_shell_after(fg0))
@@ -270,11 +293,24 @@ pub(crate) fn restart(
             fg0.name,
             fg0.pid
         );
-        return Outcome::ShellNotReady;
+        return Err(Outcome::ShellNotReady);
     }
     if !watch.is_current() {
-        return target_changed(watch, "before resume");
+        return Err(target_changed(watch, "before resume"));
     }
+    Ok(())
+}
+
+/// 재개 명령을 보내고 새 세션이 준비될 때까지 기다린다. `sent`는 보낸 Ctrl+C 수다.
+fn resume_session(
+    io: &dyn RebootIo,
+    watch: &HelperWatch,
+    thread: &str,
+    resume: &str,
+    limits: Limits,
+    sent: u32,
+) -> Outcome {
+    let surface = watch.surface;
     let sent_at_ms = io.now_ms();
     if let Err(e) = io.send(resume) {
         tracing::warn!("codex reboot s{surface}: resume send failed: {e}");
@@ -287,7 +323,13 @@ pub(crate) fn restart(
         *state.borrow_mut() = now;
         settled
     });
-    match state.into_inner() {
+    resumed_outcome(state.into_inner(), watch, limits, sent)
+}
+
+/// 재개를 기다린 결과를 재시작 결과로 바꾼다. `sent`는 보낸 Ctrl+C 수다.
+fn resumed_outcome(resumed: Resumed, watch: &HelperWatch, limits: Limits, sent: u32) -> Outcome {
+    let surface = watch.surface;
+    match resumed {
         Resumed::Ready(generation) => Outcome::Restarted {
             ctrl_c: sent,
             generation,

@@ -175,41 +175,16 @@ impl Relay {
             .spawn(move || {
                 let mut connections: Vec<JoinHandle<()>> = Vec::new();
                 while !done.load(Ordering::Acquire) {
-                    let mut index = 0;
-                    while index < connections.len() {
-                        if connections[index].is_finished() {
-                            if connections.swap_remove(index).join().is_err() {
-                                tracing::warn!("codex relay connection panicked");
-                            }
-                        } else {
-                            index += 1;
-                        }
-                    }
+                    reap_finished(&mut connections);
                     match listener.accept() {
                         Ok((socket, _)) => {
                             if connections.len() >= 16 {
                                 drop(socket);
                                 continue;
                             }
-                            let (endpoint, settings, bind, secret, sockets) = (
-                                endpoint.clone(),
-                                settings.clone(),
-                                bind.clone(),
-                                secret.clone(),
-                                sockets.clone(),
-                            );
-                            connections.push(std::thread::spawn(move || {
-                                if let Err(error) = connection(
-                                    Stream::Tcp(socket),
-                                    &endpoint,
-                                    &secret,
-                                    &settings,
-                                    bind,
-                                    &sockets,
-                                ) {
-                                    tracing::debug!("codex relay connection: {error}");
-                                }
-                            }));
+                            connections.push(spawn_connection(
+                                socket, &endpoint, &settings, &bind, &secret, &sockets,
+                            ));
                         }
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                             std::thread::sleep(Duration::from_millis(20))
@@ -220,18 +195,8 @@ impl Relay {
                         }
                     }
                 }
-                if let Ok(sockets) = sockets.lock() {
-                    for socket in sockets.iter() {
-                        if let Some(socket) = socket.upgrade() {
-                            socket.close();
-                        }
-                    }
-                }
-                for task in connections {
-                    if task.join().is_err() {
-                        tracing::warn!("codex relay connection panicked");
-                    }
-                }
+                close_streams(&sockets);
+                join_all(connections);
             })?;
         Ok(Self {
             url,
@@ -242,6 +207,71 @@ impl Relay {
         })
     }
 }
+
+/// 끝난 연결 스레드를 거둔다.
+fn reap_finished(connections: &mut Vec<JoinHandle<()>>) {
+    let mut index = 0;
+    while index < connections.len() {
+        if connections[index].is_finished() {
+            if connections.swap_remove(index).join().is_err() {
+                tracing::warn!("codex relay connection panicked");
+            }
+        } else {
+            index += 1;
+        }
+    }
+}
+
+/// 받아들인 연결 하나를 새 스레드에서 중계한다.
+fn spawn_connection(
+    socket: TcpStream,
+    endpoint: &Endpoint,
+    settings: &ResumeSettings,
+    bind: &Bind,
+    secret: &str,
+    sockets: &Arc<Mutex<Vec<Weak<Stream>>>>,
+) -> JoinHandle<()> {
+    let (endpoint, settings, bind, secret, sockets) = (
+        endpoint.clone(),
+        settings.clone(),
+        bind.clone(),
+        secret.to_string(),
+        sockets.clone(),
+    );
+    std::thread::spawn(move || {
+        if let Err(error) = connection(
+            Stream::Tcp(socket),
+            &endpoint,
+            &secret,
+            &settings,
+            bind,
+            &sockets,
+        ) {
+            tracing::debug!("codex relay connection: {error}");
+        }
+    })
+}
+
+/// 남은 연결 스레드가 끝날 때까지 기다린다.
+fn join_all(connections: Vec<JoinHandle<()>>) {
+    for task in connections {
+        if task.join().is_err() {
+            tracing::warn!("codex relay connection panicked");
+        }
+    }
+}
+
+/// 열린 연결을 모두 닫는다.
+fn close_streams(sockets: &Mutex<Vec<Weak<Stream>>>) {
+    if let Ok(sockets) = sockets.lock() {
+        for socket in sockets.iter() {
+            if let Some(socket) = socket.upgrade() {
+                socket.close();
+            }
+        }
+    }
+}
+
 impl Drop for Relay {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);

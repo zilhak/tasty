@@ -406,13 +406,21 @@ pub(crate) fn prune(root: &Path, now: std::time::SystemTime) {
     for thread in pending_threads(root) {
         keep.extend(pending_ids(root, &thread));
     }
-    let old = |path: &Path| {
-        std::fs::metadata(path)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| now.duration_since(t).ok())
-            .is_some_and(|age| age > RETENTION)
-    };
+    prune_events(root, &keep, now);
+    prune_claims(root, now);
+}
+
+/// 보존 기간이 지난 파일인가.
+fn is_old(path: &Path, now: std::time::SystemTime) -> bool {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| now.duration_since(t).ok())
+        .is_some_and(|age| age > RETENTION)
+}
+
+/// `keep`에 없는 오래된 이벤트를 지운다.
+fn prune_events(root: &Path, keep: &std::collections::HashSet<String>, now: std::time::SystemTime) {
     if let Ok(entries) = std::fs::read_dir(root.join("events")) {
         for entry in entries.filter_map(Result::ok) {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -420,13 +428,17 @@ pub(crate) fn prune(root: &Path, now: std::time::SystemTime) {
                 continue;
             };
             if !keep.contains(id)
-                && old(&entry.path())
+                && is_old(&entry.path(), now)
                 && let Err(e) = store::remove_file(&entry.path())
             {
                 tracing::warn!("codex ledger: prune event {id}: {e}");
             }
         }
     }
+}
+
+/// 지운 이벤트를 가리키는 오래된 claim을 지운다.
+fn prune_claims(root: &Path, now: std::time::SystemTime) {
     let Ok(receivers) = std::fs::read_dir(root.join("claims")) else {
         return;
     };
@@ -437,7 +449,7 @@ pub(crate) fn prune(root: &Path, now: std::time::SystemTime) {
         for claim in claims.filter_map(Result::ok) {
             // 이벤트가 남아 있는 claim은 그 키의 중복 판정 근거라 나이와 관계없이 둔다. 지운
             // 이벤트를 가리키는 오래된 claim만 지운다.
-            if old(&claim.path())
+            if is_old(&claim.path(), now)
                 && !claim_points_at_an_event(root, &claim.path())
                 && let Err(e) = store::remove_file(&claim.path())
             {

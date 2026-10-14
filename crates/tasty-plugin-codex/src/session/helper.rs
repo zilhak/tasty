@@ -512,28 +512,9 @@ fn entry(raw: &[String], native: bool) -> i32 {
     let report = |key: &str, detail: &str| {
         tracing::error!("{}", tr.t_replace(key, "{detail}", detail));
     };
-    let parsed = if native {
-        match super::native_args::parse(raw) {
-            Ok(Some(native)) => Ok(Args {
-                tui_args: native.policy.clone(),
-                native: Some(native),
-                ..Args::default()
-            }),
-            Ok(None) => return native_passthrough(raw),
-            Err(error) => {
-                tracing::warn!("{error}; running native Codex without Tasty session restoration");
-                return native_passthrough(raw);
-            }
-        }
-    } else {
-        parse_args(raw)
-    };
-    let args = match parsed {
+    let args = match entry_args(raw, native, &report) {
         Ok(a) => a,
-        Err(e) => {
-            report("codex.session.bad_args", &e);
-            return 2;
-        }
+        Err(code) => return code,
     };
     // 시작부터 설치해야 서버를 띄운 뒤 도착한 신호가 helper만 끝내고 서버를 남기지 않는다.
     if let Err(e) = tasty_reaper::defer_termination_signals() {
@@ -546,33 +527,12 @@ fn entry(raw: &[String], native: bool) -> i32 {
         report("codex.session.not_in_tasty", "TASTY_SURFACE_ID");
         return 2;
     };
-    let prompt = match &args.prompt_file {
-        Some(file) => {
-            let text = std::fs::read_to_string(file);
-            if let Err(e) = std::fs::remove_file(file) {
-                tracing::warn!("codex session helper: prompt file cleanup: {e}");
-            }
-            match text {
-                Ok(t) => Some(t),
-                Err(e) => {
-                    report("codex.session.bad_args", &format!("prompt file: {e}"));
-                    return 2;
-                }
-            }
-        }
-        None => None,
+    let prompt = match read_prompt(&args, &report) {
+        Ok(prompt) => prompt,
+        Err(code) => return code,
     };
-    // Selected terminals are restored before boot starts the IPC listener. Only the read-only
-    // readiness query is retried; session-open still runs once after a successful response.
-    match super::readiness::wait(host_cli, READY_TIMEOUT, || {
-        tasty_reaper::take_deferred_signals().any()
-    }) {
-        Ok(()) => {}
-        Err(super::readiness::Error::Cancelled) => return 130,
-        Err(super::readiness::Error::Failed(detail)) => {
-            report("codex.session.open_failed", &detail);
-            return 1;
-        }
+    if let Err(code) = wait_for_host(&report) {
+        return code;
     }
     let opened = match open_via_cli(surface, &args) {
         Ok(o) => o,
@@ -660,6 +620,70 @@ fn entry(raw: &[String], native: bool) -> i32 {
             )
         },
     );
+    exit_code(result, &report)
+}
+
+/// 진입점의 인자. 실행을 끝내야 하면 종료 코드를 돌려준다. 해석할 수 없는 native 인자는 Tasty
+/// 세션 복원 없이 native Codex 로 넘긴다.
+fn entry_args(raw: &[String], native: bool, report: &dyn Fn(&str, &str)) -> Result<Args, i32> {
+    let parsed = if native {
+        match super::native_args::parse(raw) {
+            Ok(Some(native)) => Ok(Args {
+                tui_args: native.policy.clone(),
+                native: Some(native),
+                ..Args::default()
+            }),
+            Ok(None) => return Err(native_passthrough(raw)),
+            Err(error) => {
+                tracing::warn!("{error}; running native Codex without Tasty session restoration");
+                return Err(native_passthrough(raw));
+            }
+        }
+    } else {
+        parse_args(raw)
+    };
+    parsed.map_err(|e| {
+        report("codex.session.bad_args", &e);
+        2
+    })
+}
+
+/// 프롬프트 파일을 읽고 지운다. 읽지 못하면 종료 코드를 돌려준다.
+fn read_prompt(args: &Args, report: &dyn Fn(&str, &str)) -> Result<Option<String>, i32> {
+    let Some(file) = &args.prompt_file else {
+        return Ok(None);
+    };
+    let text = std::fs::read_to_string(file);
+    if let Err(e) = std::fs::remove_file(file) {
+        tracing::warn!("codex session helper: prompt file cleanup: {e}");
+    }
+    match text {
+        Ok(t) => Ok(Some(t)),
+        Err(e) => {
+            report("codex.session.bad_args", &format!("prompt file: {e}"));
+            Err(2)
+        }
+    }
+}
+
+/// Tasty IPC 가 준비될 때까지 기다린다. 취소됐거나 실패하면 종료 코드를 돌려준다.
+fn wait_for_host(report: &dyn Fn(&str, &str)) -> Result<(), i32> {
+    // Selected terminals are restored before boot starts the IPC listener. Only the read-only
+    // readiness query is retried; session-open still runs once after a successful response.
+    match super::readiness::wait(host_cli, READY_TIMEOUT, || {
+        tasty_reaper::take_deferred_signals().any()
+    }) {
+        Ok(()) => Ok(()),
+        Err(super::readiness::Error::Cancelled) => Err(130),
+        Err(super::readiness::Error::Failed(detail)) => {
+            report("codex.session.open_failed", &detail);
+            Err(1)
+        }
+    }
+}
+
+/// 수명 주기 결과를 프로세스 종료 코드로 바꾼다.
+fn exit_code(result: Result<ExitStatus, LifecycleError>, report: &dyn Fn(&str, &str)) -> i32 {
     match result {
         Ok(status) => status.code().unwrap_or(1),
         Err(LifecycleError::Server(detail)) => {

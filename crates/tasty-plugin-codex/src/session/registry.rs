@@ -209,25 +209,37 @@ pub(crate) fn open_session(
 /// 대체된 세대의 파일을 지운다. helper가 아직 준비·실행 상태라고 기록했다면 그 서버가
 /// 남아 있을 수 있어 지우지 않는다.
 fn retire(root: &Path, generation: &str) {
+    if !helper_stopped(root, generation) {
+        return;
+    }
+    remove_socket_dir(root, generation);
+    if let Err(e) = std::fs::remove_dir_all(session_dir(root, generation))
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!("codex session {generation}: cleanup: {e}");
+    }
+}
+
+/// helper가 준비·실행 상태라고 기록하지 않았는가. 기록을 읽지 못하면 남아 있다고 본다.
+fn helper_stopped(root: &Path, generation: &str) -> bool {
     match read_helper(root, generation) {
-        Ok(Some(h)) if matches!(h.phase, HelperPhase::Starting | HelperPhase::Ready) => return,
-        Ok(_) => {}
+        Ok(Some(h)) if matches!(h.phase, HelperPhase::Starting | HelperPhase::Ready) => false,
+        Ok(_) => true,
         Err(e) => {
             tracing::warn!("codex session {generation}: helper state unreadable, kept: {e}");
-            return;
+            false
         }
     }
+}
+
+/// 세대가 사용자 전용 런타임 폴더에 따로 만든 socket 디렉터리를 지운다.
+fn remove_socket_dir(root: &Path, generation: &str) {
     if let Ok(Some(session)) = read_session(root, generation)
         && let Some(dir) = session.socket_dir
         && let Err(e) = std::fs::remove_dir_all(&dir)
         && e.kind() != std::io::ErrorKind::NotFound
     {
         tracing::warn!("codex session {generation}: socket dir cleanup: {e}");
-    }
-    if let Err(e) = std::fs::remove_dir_all(session_dir(root, generation))
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
-        tracing::warn!("codex session {generation}: cleanup: {e}");
     }
 }
 

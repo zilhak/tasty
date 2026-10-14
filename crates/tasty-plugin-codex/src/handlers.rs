@@ -1014,8 +1014,20 @@ fn handle_session_end<H: HostCall>(
     else {
         return Ok(ignored("other_thread"));
     };
-    let mut failures =
-        crate::child_return::report(delivery, session, "session-end", &json!({})).failures;
+    let failures = crate::child_return::report(delivery, session, "session-end", &json!({}))
+        .failures
+        + clear_ended_thread(host, delivery, session, thread);
+    Ok(json!({"host_call_failures":failures}))
+}
+
+/// 내려간 `thread`의 경로·세션 메타데이터를 지우고 세대의 thread를 비운다. 실패한 수를 돌려준다.
+fn clear_ended_thread<H: HostCall>(
+    host: &H,
+    delivery: &DeliveryCtx<'_>,
+    session: &crate::session::registry::Session,
+    thread: &str,
+) -> usize {
+    let mut failures = 0;
     if let Err(e) =
         crate::session::registry::unbind_thread(delivery.root, thread, &session.generation)
     {
@@ -1029,15 +1041,23 @@ fn handle_session_end<H: HostCall>(
         tracing::warn!("codex session-end metadata cleanup: {error}");
         failures += 1;
     }
+    failures + clear_generation_thread(delivery, session)
+}
+
+/// 세대의 thread를 비운다. 실패한 수를 돌려준다.
+fn clear_generation_thread(
+    delivery: &DeliveryCtx<'_>,
+    session: &crate::session::registry::Session,
+) -> usize {
     let ended = crate::session::registry::Session {
         thread: None,
         ..session.clone()
     };
     if let Err(e) = crate::session::registry::write_session(delivery.root, &ended) {
         tracing::warn!("codex session-end thread cleanup: {e}");
-        failures += 1;
+        return 1;
     }
-    Ok(json!({"host_call_failures":failures}))
+    0
 }
 
 /// 세션 ID와 복원 명령을 기록하고 실패한 호출 수를 반환한다.

@@ -21,6 +21,13 @@ impl Drop for Probe {
             Ok(None) => {}
             Err(error) => tracing::warn!("codex readiness probe status: {error}"),
         }
+        self.stop();
+    }
+}
+
+impl Probe {
+    /// Stop and reap a probe that has not exited.
+    fn stop(&mut self) {
         if let Err(error) = self.0.kill() {
             tracing::warn!("codex readiness probe stop: {error}");
         }

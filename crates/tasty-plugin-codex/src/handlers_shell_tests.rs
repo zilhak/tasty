@@ -32,6 +32,43 @@ fn shell_is_installed(shell: &str) -> bool {
     }
 }
 
+/// 명령 줄 하나를 `setup` 뒤에 실행하고 helper가 받은 인자를 확인한다.
+fn run_helper_command(
+    shell: &str,
+    setup: &str,
+    program: &str,
+    policy: &str,
+    resume: Option<&str>,
+    prompt: Option<&std::path::Path>,
+) {
+    let tui = crate::session::command::policy_tokens(policy);
+    let line = crate::session::command::command_line(program, resume, prompt, &tui);
+    let out = isolated_shell(shell)
+        .args([
+            "-c",
+            &format!("{setup}eval \"$1\""),
+            "codex-shell-test",
+            &line,
+        ])
+        .env("TASTY_SURFACE_ID", "77")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{shell}: {line}: {out:?}");
+    let mut argv: Vec<String> = out
+        .stdout
+        .split(|b| *b == 0)
+        .map(|s| String::from_utf8(s.to_vec()).unwrap())
+        .collect();
+    assert_eq!(argv.pop().as_deref(), Some(""));
+    assert_eq!(argv.remove(0), "77", "surface는 터미널 환경에서 읽는다");
+    assert_eq!(argv.remove(0), "session");
+    let parsed = crate::session::helper::parse_args(&argv)
+        .unwrap_or_else(|e| panic!("{shell}: {argv:?}: {e}"));
+    assert_eq!(parsed.resume.as_deref(), resume, "{shell}: {line}");
+    assert_eq!(parsed.prompt_file.as_deref(), prompt, "{shell}: {line}");
+    assert_eq!(parsed.tui_args, tui, "{shell}: {line}");
+}
+
 #[test]
 fn the_session_helper_receives_its_arguments_verbatim_in_every_shell() {
     let dir = tempfile::tempdir().unwrap();
@@ -63,33 +100,7 @@ fn the_session_helper_receives_its_arguments_verbatim_in_every_shell() {
                     (Some(thread), None),
                     (None, Some(prompt_file.as_path())),
                 ] {
-                    let tui = crate::session::command::policy_tokens(policy);
-                    let line =
-                        crate::session::command::command_line(&program, resume, prompt, &tui);
-                    let out = isolated_shell(shell)
-                        .args([
-                            "-c",
-                            &format!("{setup}eval \"$1\""),
-                            "codex-shell-test",
-                            &line,
-                        ])
-                        .env("TASTY_SURFACE_ID", "77")
-                        .output()
-                        .unwrap();
-                    assert!(out.status.success(), "{shell}: {line}: {out:?}");
-                    let mut argv: Vec<String> = out
-                        .stdout
-                        .split(|b| *b == 0)
-                        .map(|s| String::from_utf8(s.to_vec()).unwrap())
-                        .collect();
-                    assert_eq!(argv.pop().as_deref(), Some(""));
-                    assert_eq!(argv.remove(0), "77", "surface는 터미널 환경에서 읽는다");
-                    assert_eq!(argv.remove(0), "session");
-                    let parsed = crate::session::helper::parse_args(&argv)
-                        .unwrap_or_else(|e| panic!("{shell}: {argv:?}: {e}"));
-                    assert_eq!(parsed.resume.as_deref(), resume, "{shell}: {line}");
-                    assert_eq!(parsed.prompt_file.as_deref(), prompt, "{shell}: {line}");
-                    assert_eq!(parsed.tui_args, tui, "{shell}: {line}");
+                    run_helper_command(shell, &setup, &program, policy, resume, prompt);
                     executions += 1;
                 }
             }

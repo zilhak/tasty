@@ -104,15 +104,38 @@ pub(crate) fn report(ctx: &Ctx<'_>, session: &Session, event: &str, params: &Val
             return failed();
         }
     };
+    let candidate = match candidate(session, event, params, receiver_id) {
+        Ok(candidate) => candidate,
+        Err(report) => return report,
+    };
+    match turns::note(ctx, &candidate) {
+        Ok(_) => Report::default(),
+        Err(e) => {
+            tracing::warn!(
+                "codex child return {}: turn candidate: {e}",
+                session.surface
+            );
+            failed()
+        }
+    }
+}
+
+/// 이 턴 경계의 반환 후보. 반환할 수 없으면 그 보고를 돌려준다.
+fn candidate(
+    session: &Session,
+    event: &str,
+    params: &Value,
+    receiver_id: String,
+) -> Result<Candidate, Report> {
     let Some(thread) = session.thread.clone() else {
         tracing::warn!(
             "codex child return {}: {event} before the session thread is known",
             session.surface
         );
-        return Report {
+        return Err(Report {
             failures: 1,
             rejected: Some("unknown_thread"),
-        };
+        });
     };
     // 지원 버전(Codex 0.154)은 Stop·Interrupt에 turn_id를 반드시 준다. 없으면 다른 턴과 구분할
     // 수 없으므로 반환하지 않는다.
@@ -121,19 +144,16 @@ pub(crate) fn report(ctx: &Ctx<'_>, session: &Session, event: &str, params: &Val
             "codex child return {}: {event} without a valid turn_id is not supported; not returned",
             session.surface
         );
-        return Report {
+        return Err(Report {
             failures: 1,
             rejected: Some("missing_turn_id"),
-        };
+        });
     };
-    let id = match crate::ids::new_id() {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::warn!("codex child return {}: candidate id: {e}", session.surface);
-            return failed();
-        }
-    };
-    let candidate = Candidate {
+    let id = crate::ids::new_id().map_err(|e| {
+        tracing::warn!("codex child return {}: candidate id: {e}", session.surface);
+        failed()
+    })?;
+    Ok(Candidate {
         id,
         completion_key,
         receiver_id,
@@ -149,17 +169,7 @@ pub(crate) fn report(ctx: &Ctx<'_>, session: &Session, event: &str, params: &Val
             attempt_of(session, params)
         },
         created_at_ms: store::now_ms(),
-    };
-    match turns::note(ctx, &candidate) {
-        Ok(_) => Report::default(),
-        Err(e) => {
-            tracing::warn!(
-                "codex child return {}: turn candidate: {e}",
-                session.surface
-            );
-            failed()
-        }
-    }
+    })
 }
 
 #[cfg(test)]
