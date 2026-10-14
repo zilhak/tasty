@@ -286,36 +286,9 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         returns.observe(event, surface_id, session.as_deref(), detail);
     }
 
-    if is_subagent_stop_failure(event, agent_id) {
-        // 메인 턴은 끝나지 않았다 — 상태·알림·meta 어느 것도 건드리지 않는다.
-        tracing::info!(
-            "claude hook stop-failure s{surface_id}: subagent {agent_id:?} failed ({error:?}) — main turn continues, ignored"
-        );
-        return Ok(json!({
-            "ok": true,
-            "surface_id": surface_id,
-            "event": event,
-            "ignored": "subagent",
-            "host_call_failures": 0,
-        }));
-    }
-
-    if event == BACKGROUND_START_EVENT {
-        let started = lock_state(state).background.started(
-            surface_id,
-            params.get("tool_name").and_then(Value::as_str),
-            params.get("tool_response"),
-        );
-        if let Some(id) = &started {
-            tracing::info!("claude hook s{surface_id}: background task {id} started");
-        }
-        return Ok(json!({
-            "ok": true,
-            "surface_id": surface_id,
-            "event": event,
-            "background_task": started,
-            "host_call_failures": 0,
-        }));
+    if let Some(response) = hook_outside_the_turn(state, event, surface_id, agent_id, error, params)
+    {
+        return Ok(response);
     }
     lock_state(state)
         .background
@@ -401,19 +374,7 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
 
     // 게이트 판정은 별도 경로지만 세션 종료 시 모든 게이트의 회차 상태를 정리한다.
     if event == "session-end" {
-        // 확정되지 않은 채 끝난 턴은 Codex 부모에게 exited 로 알린다. 확정된 턴이면 보내지 않는다.
-        returns.turn_end(crate::codex_return::TurnEnd {
-            surface: surface_id,
-            session: session.as_deref(),
-            status: crate::codex_return::ReturnStatus::Exited,
-            body: None,
-            attempt_id: None,
-            turn: None,
-        });
-        checklist::remove_state_for_session(data_dir, session.as_deref().unwrap_or(""));
-        // 닫은 탭을 곧바로 복원할 수 있도록 즉시 지우지 않고 종료 표시만 남긴다.
-        // reboot 뒤 session-start가 오면 새 기록으로 갱신한다.
-        profile_attach::mark_ended(data_dir, session.as_deref().unwrap_or(""));
+        end_session(returns, data_dir, surface_id, session.as_deref());
     }
 
     // ok는 핸들러 완료를 뜻한다. 호스트 호출의 성공 여부는 실패 횟수로 구분한다.
@@ -423,6 +384,72 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         "event": event,
         "host_call_failures": host_call_failures,
     }))
+}
+
+/// 메인 턴에 속하지 않는 hook 의 응답. 실패한 subagent 의 StopFailure 와 백그라운드 작업 시작이다.
+/// 둘 다 아니면 `None` 이며 호출자가 턴의 hook 으로 처리한다.
+fn hook_outside_the_turn(
+    state: &Mutex<ClaudeState>,
+    event: &str,
+    surface_id: u32,
+    agent_id: Option<&str>,
+    error: Option<&str>,
+    params: &Value,
+) -> Option<Value> {
+    if is_subagent_stop_failure(event, agent_id) {
+        // 메인 턴은 끝나지 않았다 — 상태·알림·meta 어느 것도 건드리지 않는다.
+        tracing::info!(
+            "claude hook stop-failure s{surface_id}: subagent {agent_id:?} failed ({error:?}) — main turn continues, ignored"
+        );
+        return Some(json!({
+            "ok": true,
+            "surface_id": surface_id,
+            "event": event,
+            "ignored": "subagent",
+            "host_call_failures": 0,
+        }));
+    }
+
+    if event == BACKGROUND_START_EVENT {
+        let started = lock_state(state).background.started(
+            surface_id,
+            params.get("tool_name").and_then(Value::as_str),
+            params.get("tool_response"),
+        );
+        if let Some(id) = &started {
+            tracing::info!("claude hook s{surface_id}: background task {id} started");
+        }
+        return Some(json!({
+            "ok": true,
+            "surface_id": surface_id,
+            "event": event,
+            "background_task": started,
+            "host_call_failures": 0,
+        }));
+    }
+    None
+}
+
+/// 세션 종료 시 모든 게이트의 회차 상태와 결과 경로를 정리한다.
+fn end_session(
+    returns: &crate::codex_return::Returns,
+    data_dir: Option<&Path>,
+    surface_id: u32,
+    session: Option<&str>,
+) {
+    // 확정되지 않은 채 끝난 턴은 Codex 부모에게 exited 로 알린다. 확정된 턴이면 보내지 않는다.
+    returns.turn_end(crate::codex_return::TurnEnd {
+        surface: surface_id,
+        session,
+        status: crate::codex_return::ReturnStatus::Exited,
+        body: None,
+        attempt_id: None,
+        turn: None,
+    });
+    checklist::remove_state_for_session(data_dir, session.unwrap_or(""));
+    // 닫은 탭을 곧바로 복원할 수 있도록 즉시 지우지 않고 종료 표시만 남긴다.
+    // reboot 뒤 session-start가 오면 새 기록으로 갱신한다.
+    profile_attach::mark_ended(data_dir, session.unwrap_or(""));
 }
 
 /// 턴을 끝내지 않는 Stop 을 처리한다. 백그라운드 작업을 기다리는 Stop 과, 게이트 판정을 기다리며

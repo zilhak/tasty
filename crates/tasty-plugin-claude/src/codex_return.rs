@@ -11,6 +11,7 @@
 //!   `codex.deliver` 를 기다리지 않는다. 송신 스레드는 실패한 요청을 같은 키로 늘어나는 간격을 두고
 //!   다시 보내고, 플러그인이 다시 시작하면 남은 요청부터 보낸다. 요청은 `claude.codex_returns` 로 볼 수 있다.
 
+mod observe;
 mod parent;
 
 use std::collections::BTreeSet;
@@ -728,94 +729,15 @@ impl Returns {
         let now = now_ms();
         let result = self.update(|book| {
             let mut changed = event == "session-start" && book.sweep(now);
-            let continuation = event == "session-start" && matches!(detail, Some("clear" | "resume"));
-            let mut found = book
-                .by_session(session)
-                .or_else(|| book.adoptable(surface, event));
-            if found.is_none() && continuation {
-                if let Some(i) = book
-                    .handing_off(surface)
-                    .filter(|&i| !book.routes[i].is_stale_clear_start(session, detail))
-                {
-                    found = Some(i);
-                } else if let Some(i) = book
-                    .live_on(surface, session)
-                    .filter(|&i| !book.routes[i].is_stale_clear_start(session, detail))
-                {
-                    // SessionEnd 보다 먼저 온 새 세션일 수도, 늦게 온 예전 시작일 수도 있다. 후보로 두고 먼저
-                    // 새 프롬프트를 받은 후보가 잇는다. 후보끼리 서로 밀어내지 않는다.
-                    let route = &mut book.routes[i];
-                    if !route.waiting.iter().any(|w| w == session) {
-                        tracing::info!(
-                            "claude codex return: s{surface} session {session} started before session {:?} ended; waiting for its new prompt",
-                            route.child_session
-                        );
-                        route.waiting.push(session.to_string());
-                        if route.waiting.len() > WAITING_KEPT {
-                            route.waiting.remove(0);
-                        }
-                        changed = true;
-                    }
-                    return ((), changed);
-                }
-            }
-            // 기다리는 세션은 새 프롬프트로만 잇는다. 늦게 온 예전 세션의 Stop·SessionEnd 같은 hook 은
-            // 새 턴의 근거가 아니므로 경로를 가져가지 못한다.
-            if found.is_none() && event == "prompt-submit" {
-                found = book.routes.iter().position(|r| {
-                    r.child_surface == surface && r.waiting.iter().any(|w| w == session)
-                });
-            }
-            let Some(i) = found else {
+            let Some(i) = book.route_for_hook(event, surface, session, detail, &mut changed) else {
                 return ((), changed);
             };
             let route = &mut book.routes[i];
-            if route.child_session.as_deref() != Some(session) {
-                if route.child_session.is_some() {
-                    tracing::info!(
-                        "claude codex return: s{surface} continues its route in session {session} after {:?}",
-                        detail
-                    );
-                }
-                route.bind_session(session);
-                changed = true;
+            if !route.follow_hook(event, surface, session, detail, &mut changed) {
+                return ((), changed);
             }
-            if route.child_surface != surface {
-                if event != "session-start" {
-                    tracing::debug!(
-                        "claude codex return: ignored a late {event} of session {session} from s{surface}; the route is on s{}",
-                        route.child_surface
-                    );
-                    return ((), changed);
-                }
-                tracing::info!(
-                    "claude codex return: session moved from s{} to s{surface}",
-                    route.child_surface
-                );
-                route.child_surface = surface;
+            if route.record_hook(event, detail, now) {
                 changed = true;
-            }
-            match event {
-                "session-start" => {
-                    if route.ended_at_ms.take().is_some() || route.handoff {
-                        route.handoff = false;
-                        changed = true;
-                    }
-                }
-                "prompt-submit" => {
-                    route.turn += 1;
-                    route.open = true;
-                    changed = true;
-                }
-                "session-end" if matches!(detail, Some("clear" | "resume")) => {
-                    route.handoff = true;
-                    changed = true;
-                }
-                "session-end" => {
-                    route.ended_at_ms = Some(now);
-                    changed = true;
-                }
-                _ => {}
             }
             if changed {
                 let id = book.routes[i].route_id.clone();
@@ -974,35 +896,46 @@ impl Returns {
                 round.more = false;
                 break;
             }
-            let Some(key) = key_of(&request).map(String::from) else {
-                continue;
-            };
-            round.attempted += 1;
-            let outcome = host
-                .call("codex.deliver", request)
-                .map_err(|e| e.to_string());
-            match &outcome {
-                Ok(response) => {
-                    tracing::info!("claude codex return: {key} handed to codex ({response})")
-                }
-                Err(message) => tracing::warn!(
-                    "claude codex return: {key} was not handed to codex, kept for retry: {message}"
-                ),
+            if self.deliver_one(host, request, now) {
+                round.attempted += 1;
             }
-            self.settle(&key, outcome.map(|_| ()), now_ms().max(now));
         }
-        round.next_due_ms = self
-            .update(|book| {
-                let next = book
-                    .outbox
-                    .iter()
-                    .filter(|o| !o.gave_up)
-                    .map(|o| o.next_at_ms)
-                    .min();
-                (next, false)
-            })
-            .unwrap_or(None);
+        round.next_due_ms = self.next_due_ms();
         round
+    }
+
+    /// 요청 하나를 `codex.deliver` 로 넘기고 결과를 남긴다. completion_key 가 없어 부르지 않았으면 `false`.
+    fn deliver_one<H: HostCall>(&self, host: &H, request: Value, now: u64) -> bool {
+        let Some(key) = key_of(&request).map(String::from) else {
+            return false;
+        };
+        let outcome = host
+            .call("codex.deliver", request)
+            .map_err(|e| e.to_string());
+        match &outcome {
+            Ok(response) => {
+                tracing::info!("claude codex return: {key} handed to codex ({response})")
+            }
+            Err(message) => tracing::warn!(
+                "claude codex return: {key} was not handed to codex, kept for retry: {message}"
+            ),
+        }
+        self.settle(&key, outcome.map(|_| ()), now_ms().max(now));
+        true
+    }
+
+    /// 자동 재시도를 멈추지 않은 요청 중 가장 이른 송신 시각.
+    fn next_due_ms(&self) -> Option<u64> {
+        self.update(|book| {
+            let next = book
+                .outbox
+                .iter()
+                .filter(|o| !o.gave_up)
+                .map(|o| o.next_at_ms)
+                .min();
+            (next, false)
+        })
+        .unwrap_or(None)
     }
 
     fn settle(&self, key: &str, outcome: Result<(), String>, now: u64) {
