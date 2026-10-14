@@ -104,6 +104,7 @@ CI에 해당 캐시가 없었다면 그 실행으로 캐시가 있는 환경까�
 |---|---|
 | CLI 명령 | `every_cli_command_is_classified_in_the_guide.rs` |
 | 릴리스 산출물 파일명 | `every_released_artifact_is_named_in_the_guide.rs` |
+| 릴리스 자산 목록(개발 가이드 표와 업로드 대상) | `release_assets_match_the_guide.rs` |
 | 설치 위치와 패키지 의존성 | `install_facts_match_the_packaging_sources.rs` |
 | 훅 이벤트 이름 | `every_hook_event_name_is_in_the_guide.rs` |
 | 설정 절 이름과 컨텍스트 메뉴 항목 | `settings_and_menu_names_reach_the_guide.rs` |

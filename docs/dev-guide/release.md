@@ -69,17 +69,45 @@ git push origin main --tags
 
 1. **create-release** — 버전 검증 → draft release 생성(body = 릴리스 노트).
 2. **build-macos / build-windows / build-linux-x64 / build-linux-arm64** — 각 빌드 스크립트가 로컬 키를 준비해(Linux·macOS 는 `ensure-sign-key.sh`, Windows 는 `build-windows.ps1` 이 직접) plugin 재서명 → 빌드(`--profile dist`) → GUI 패키징 → 헤드리스 압축 파일(아래 "헤드리스 산출물") → 아티팩트 업로드. GitHub Secret 관여 없음(배경은 [plugin-packaging](plugin-packaging.md) "영구 release 키를 두지 않는 이유").
-3. **publish-release** — draft 해제(공개).
+3. **publish-release** — draft 해제(공개). 파일을 올리지 않는다.
 
 ### 6. 검증
 
-GitHub Releases 에서 노트 + 플랫폼별 아티팩트 확인:
-
-- macOS `*.dmg` / Windows `*.zip`·`*.msi` / Linux x64·arm64 각 `.tar.gz`·`.deb`·`.rpm`·`.AppImage`
-- 헤드리스 압축 파일 4종: `tasty-headless-X.Y.Z-linux-x64.tar.gz`·`-linux-arm64.tar.gz`·`-macos-arm64.tar.gz`·`-windows-x64.zip`
-- `SHA256SUMS-{macos,windows,linux-x64,linux-arm64}.txt` 4종 (다운로드 무결성 수동 검증용)
+GitHub Releases 에서 노트를 확인하고, 자산이 아래 [릴리스 자산](#릴리스-자산) 표의 19개와 정확히 같은지 확인한다. 빠진 파일과 표에 없는 파일 모두 결함이다.
 
 > **사용자 업그레이드**: publish 되면 사용자는 GitHub Releases 에서 새 아티팩트를 직접 내려받아 SHA256SUMS 로 검증한 뒤 수동 설치한다.
+
+## 릴리스 자산
+
+GitHub Release 에 올리는 파일은 아래 표가 전부다. 사용자가 받아서 설치·실행하는 배포물과 그 체크섬만 올린다. `{ver}` 는 `Cargo.toml` 버전이다.
+
+| 자산 | 업로드 잡 | 종류 |
+|---|---|---|
+| `Tasty-{ver}-macos-arm64.dmg` | `build-macos` | GUI 설치 |
+| `tasty-headless-{ver}-macos-arm64.tar.gz` | `build-macos` | 헤드리스 |
+| `SHA256SUMS-macos.txt` | `build-macos` | 체크섬 |
+| `tasty-{ver}-windows-x64.zip` | `build-windows` | GUI 압축 |
+| `tasty-{ver}-windows-x64.msi` | `build-windows` | GUI 설치 |
+| `tasty-headless-{ver}-windows-x64.zip` | `build-windows` | 헤드리스 |
+| `SHA256SUMS-windows.txt` | `build-windows` | 체크섬 |
+| `tasty-{ver}-linux-x64.tar.gz` | `build-linux-x64` | GUI 압축 |
+| `tasty-headless-{ver}-linux-x64.tar.gz` | `build-linux-x64` | 헤드리스 |
+| `tasty_{ver}-1_amd64.deb` | `build-linux-x64` | GUI 설치 |
+| `tasty-{ver}-1.x86_64.rpm` | `build-linux-x64` | GUI 설치 |
+| `Tasty-{ver}-x86_64.AppImage` | `build-linux-x64` | GUI 실행 |
+| `SHA256SUMS-linux-x64.txt` | `build-linux-x64` | 체크섬 |
+| `tasty-{ver}-linux-arm64.tar.gz` | `build-linux-arm64` | GUI 압축 |
+| `tasty-headless-{ver}-linux-arm64.tar.gz` | `build-linux-arm64` | 헤드리스 |
+| `tasty_{ver}-1_arm64.deb` | `build-linux-arm64` | GUI 설치 |
+| `tasty-{ver}-1.aarch64.rpm` | `build-linux-arm64` | GUI 설치 |
+| `Tasty-{ver}-aarch64.AppImage` | `build-linux-arm64` | GUI 실행 |
+| `SHA256SUMS-linux-arm64.txt` | `build-linux-arm64` | 체크섬 |
+
+- 체크섬 파일은 같은 잡이 올리는 배포물의 SHA-256 을 담는다.
+- 고지 파일(`LICENSE`, `THIRD_PARTY_LICENSES.md`, `LICENSES/`)은 자산으로 따로 올리지 않는다. 라이선스가 요구하는 고지 전달은 모든 배포물 안에 넣는 것으로 충족하고([배포물의 고지 파일](#배포물의-고지-파일)), 저장소에서도 공개돼 있다.
+- 문서·설정 예시 같은 부속 파일도 올리지 않는다. 사용자에게 필요한 내용은 사용자 가이드나 배포물 안에 둔다.
+- 자산을 추가·삭제하려면 이 표, `.github/workflows/release.yml` 의 업로드 줄, 해당 빌드 스크립트, 사용자 가이드의 설치 파일 표를 같은 커밋에서 고친다.
+- `crates/tasty-doc-guards/tests/release_assets_match_the_guide.rs` 가 이 표와 `release.yml` 의 모든 `gh release upload` 대상을 이름과 잡 단위로 양방향 대조한다. glob·셸 변수처럼 이름을 펼칠 수 없는 업로드 대상도 표에 없는 자산으로 실패시킨다. 빌드 스크립트가 실제로 그 이름의 파일을 만드는지는 이 검사가 보지 않는다. 그 부분은 릴리스 실행 때 `gh release upload` 가 없는 파일에서 실패하는 것으로 드러나며, 릴리스 전에는 확인하지 않는다.
 
 ## 러너
 

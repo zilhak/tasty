@@ -1,4 +1,4 @@
-<!-- source-hash: b2a5e4451923 -->
+<!-- source-hash: e79a70aee609 -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -49,7 +49,7 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 - `zenity` is a recommended package. Tasty uses it to show a notice when a new launch cannot be handed to the Tasty that is already running. Without it, a desktop notification is shown instead.
 - `.AppImage` bundles libraries used to run Tasty. You register it in the app menu yourself (use `appimaged`, or put a `.desktop` file in `~/.local/share/applications/`).
 - `.tar.gz` requires you to set up PATH and the menu entry yourself. If a required system library is missing, `tasty` tells you what is missing and exits.
-- The licence notices (Tasty's MIT text, the licence texts of the bundled font and markdown rendering engines, and the third-party notice document) travel inside the artifacts. `.deb` keeps them in `/usr/share/doc/tasty/`, `.rpm` and `.AppImage` in `usr/share/licenses/tasty/`, and `.tar.gz` at the top of the extracted directory. The release process also uploads these notice files separately to the release page.
+- The licence notices (Tasty's MIT text, the licence texts of the bundled font and markdown rendering engines, and the third-party notice document) travel inside the artifacts. `.deb` keeps them in `/usr/share/doc/tasty/`, `.rpm` and `.AppImage` in `usr/share/licenses/tasty/`, and `.tar.gz` at the top of the extracted directory.
 - The build baseline is Ubuntu 24.04 (glibc 2.39), so on older distributions (Ubuntu 20.04, Debian 11, etc.) it may fail to start with a `GLIBC_2.39 not found` error. No separate build is provided for older distributions.
 - The HTML and Markdown viewers need WebKitGTK 2.40 or later. The `libwebkit2gtk-4.1` of the Ubuntu 24.04 build baseline meets this.
 
