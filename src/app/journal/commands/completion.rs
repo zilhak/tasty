@@ -11,6 +11,9 @@ impl JournalApplication {
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return Ok(false);
         };
+        // Every reply ends the outstanding request; a follower's later Finished is pushed by its
+        // leader without a request of its own.
+        pending.in_flight = false;
         if let Some(outcome) = pending.take_retry_outcome(result) {
             crate::ipc::handler::idempotency::note_journal_retry(outcome);
         }

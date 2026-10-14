@@ -42,6 +42,8 @@
 
 ### Fixed
 
+- **터미널 생성이 진행 중일 때 다른 생성·닫기가 끝나면 Tasty 전체가 멈추던 문제.** 생성 명령을 기다리는 동안 다른 생성이나 surface 정리가 연달아 끝나면 같은 명령의 완료 조회가 두 번 제출됐다. 두 번째 응답이 받을 곳 없이 도착해 `journal publication halted: bootstrap completion belongs to another request`를 기록했고, 이후 재시작 전까지 모든 IPC·CLI·Claude 훅이 `structure publication is halted`로 거절됐다. 이제 명령마다 처리 중인 조회는 하나뿐이다.
+
 - **시작 화면의 Codex 자동 복원이 포트 파일 없음 오류로 끝나던 문제.** 터미널 복원이 IPC 서버보다 먼저 실행되는 경우, helper가 같은 인스턴스의 준비를 최대 30초 기다린 뒤 세션을 한 번만 등록한다. 사용자가 부팅 후 따로 터미널을 깨울 필요가 없다.
 
 - **Bash·zsh에서 직접 실행한 Codex 대화를 앱 재시작 후 복원한다.** `tasty codex install`은 Tasty 안에서만 읽는 셸 통합도 설치하며, 일반 `codex`·`codex resume`을 터미널별 세션 관리에 연결한다. 세션 선택기는 유지하고 선택된 대화 ID·승인·샌드박스·모델을 첫 모델 턴 전에 저장한다. 내부 CLI `session-bind`(IPC `codex.session_bind`)가 선택을 등록한다. 기존 대화와 공유 서버는 재연결하지 않는다. `-c`·프로필·`fork` 등 지원하지 않는 옵션은 경고 후 원래 Codex로 실행하며 자동 복원에 등록하지 않는다. Codex CLI 0.154.0 기준이다.

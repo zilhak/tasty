@@ -706,9 +706,15 @@ impl JournalApplication {
         }
     }
 
+    /// A command whose read is still with the worker is skipped. Every caller runs on a worker
+    /// reply. Apart from an admission waiting for a credit, the worker handles and answers
+    /// requests in submission order, and neither a read nor the completions that call this wait
+    /// for a credit, so that read already observes the change. If it still returns InProgress, a
+    /// later completion queues the next read.
     pub(in crate::app::journal) fn refresh_in_progress_commands(&mut self) {
         for pending in self.commands.pending.values_mut() {
             if pending.queued.is_none()
+                && !pending.in_flight
                 && let Some(command) = &pending.waiting_command
             {
                 pending.queued = Some(Work::ReadCommand(command.clone()));

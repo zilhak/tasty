@@ -102,6 +102,9 @@ struct Pending {
     engine_scope: Option<EngineId>,
     reply: Reply,
     queued: Option<Work>,
+    /// A worker request for this ticket awaits its Finished. At most one is outstanding, because
+    /// a second reply would reach the pump after `answer_command` removed its owner.
+    in_flight: bool,
     needs_resolution: bool,
     category: Option<CategoryReservation>,
     resource: Option<create::Request>,
@@ -388,6 +391,7 @@ impl JournalApplication {
                 engine_scope: reply.engine_scope(),
                 reply,
                 queued: Some(work),
+                in_flight: false,
                 needs_resolution: false,
                 category: None,
                 resource: None,
@@ -424,6 +428,9 @@ impl JournalApplication {
             .collect();
         let mut oversized = Vec::new();
         for (ticket, pending) in self.commands.pending.iter_mut().take(MAX_PENDING) {
+            if pending.in_flight {
+                continue;
+            }
             let Some(work) = pending.queued.take() else {
                 continue;
             };
@@ -436,7 +443,7 @@ impl JournalApplication {
                 ticket: *ticket,
                 work,
             }) {
-                Ok(()) => {}
+                Ok(()) => pending.in_flight = true,
                 Err((crate::runtime::journal_product::SubmitError::Busy, request)) => {
                     pending.queued = Some(request.work);
                     break;
