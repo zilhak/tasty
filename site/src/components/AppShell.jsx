@@ -31,7 +31,7 @@ const agentSession = (task) => ({
 });
 
 // Demonstration input only; the embedded terminal does not execute commands.
-const mixedCommand = "tasty split --level surface --target-surface 4 --type markdown --file notes/split-layout.md";
+const mixedCommand = "tasty split --level surface --surface 4 --type markdown --file notes/split-layout.md";
 const mixedSession = {
   id: "4",
   plainLines: ["~/work/tasty", mixedCommand],

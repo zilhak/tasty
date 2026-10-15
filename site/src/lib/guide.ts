@@ -40,6 +40,7 @@ export const ORDER: string[] = [
   "customize/themes",
   "customize/scripts",
   "agents/cli",
+  "agents/cli-reference",
   "agents/background-tasks",
   "agents/claude-codex",
   "agents/tasks",
@@ -47,6 +48,7 @@ export const ORDER: string[] = [
   "remote/attach",
   "plugins/index",
   "help/troubleshooting",
+  "help/cli-diagnostics",
 ];
 
 export const TRANSLATION_DIR = "en";

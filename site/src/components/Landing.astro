@@ -87,7 +87,7 @@ const dataAttrs = Object.fromEntries(
     | jq .child_surface_id
 <span class="c">52</span>
 
-<span class="g">$</span> tasty agent barrier-await --workspace-id 2 --name <span class="y">review-ready</span> \
+<span class="g">$</span> tasty agent barrier-state --workspace 2 --name <span class="y">review-ready</span> \
     | jq -c <span class="g">'&#123;state, count_signaled, count_required&#125;'</span>
 <span class="c">&#123;"state":"open","count_signaled":2,"count_required":3&#125;</span>
 

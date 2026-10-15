@@ -92,8 +92,10 @@ cargo build --release
 ## Documentation
 
 - Index: [`docs/index.md`](docs/index.md)
-- User guides: [`docs/installation.md`](docs/installation.md), [`docs/features/`](docs/features/index.md)
-- Agent guides: [`docs/reference/`](docs/reference/index.md) (api / event-catalog / output-parsers / environments / plan.schema.json)
+- User guide (for people who install Tasty): [Tasty guide](https://zilhak.github.io/tasty/guide/) — from installing to layout and settings
+- Getting started for agents: [Driving the terminal with the tasty CLI](https://zilhak.github.io/tasty/guide/agents/cli/) — a first walkthrough that creates a working terminal, sends a command and reads its output. Other commands are in the [CLI command reference](https://zilhak.github.io/tasty/guide/agents/cli-reference/)
+- Feature specifications: [`docs/installation.md`](docs/installation.md), [`docs/features/`](docs/features/index.md)
+- API and schema reference: [`docs/reference/`](docs/reference/index.md) (api / event-catalog / output-parsers / environments / plan.schema.json)
 - Developer guides: [`docs/dev-guide/`](docs/dev-guide/)
 - Stability policy: the "Stability Policy" section of [`docs/dev-guide/api-conventions.md`](docs/dev-guide/api-conventions.md)
 

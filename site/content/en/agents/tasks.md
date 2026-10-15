@@ -1,11 +1,11 @@
-<!-- source-hash: 6b98dda2cc50 -->
+<!-- source-hash: e03c825dc599 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
 
 Run tests after a build finishes, then pass the results to the next task. Register each step as a **task** and connect it to the work it depends on. Tasty handles the order and failure policy. These connected tasks form a **DAG**, a graph of task dependencies.
 
-Create and manage tasks with the `tasty` CLI. To follow them in the app, see [Watching progress](#watching-progress).
+Create and manage tasks with the `tasty` CLI. If you are new to it, follow [Starting the runner](#starting-the-runner), [Creating a task](#creating-a-task) and [Checking the result](#checking-the-result) to run one task end to end with `task-run`, `task-create` and `task-await`. Read the later sections on ordering, passing results, branching and synchronisation when you need them. To follow them in the app, see [Watching progress](#watching-progress).
 
 Pass the task's workspace as `--workspace` in each command (the older `--workspace-id` is still accepted). The command uses that workspace even while you are viewing another one.
 
@@ -43,6 +43,17 @@ You can also pull the command JSON out into a file and pass it as `--command @bu
 A single task definition (command, metadata, result types and so on) can be up to 768 KiB as JSON (less if the memory entry size limit is set below 1 MiB). A larger one is refused with an error and no task is created. Keep large data in a file and pass its path. If the outputs of earlier tasks filled in just before a run would push a task past this size, that task fails without running.
 
 A `run` command, the postprocess command below and a reducer that merges results with a shell command get the environment Tasty was started from. If you started Tasty inside Claude Code, the variables that point at that session are not passed on (the same as in the terminal). If you started Tasty from another Tasty's terminal, `TASTY_SESSION_TOKEN`, `TASTY_SURFACE_ID`, `TASTY_PARENT_HOME` and `TASTY_AGENT_ID`, which point at that Tasty, are not passed on either, so a `tasty` call inside the command reaches this Tasty.
+
+## Checking the result
+
+```sh
+tasty agent task-await --workspace 2 --id "$BUILD"   # wait until it finishes (up to 10 minutes by default)
+tasty agent task-get --workspace 2 --id "$BUILD"     # look at the state and result again
+```
+
+When `outcome` in the `task-await` reply is `terminal`, the task has finished; whether it succeeded is in `state`, `succeeded` or `failed`. `timed_out` (the wait ran out) and `not_found` (no such task) also exit with status 0, so do not judge by the exit status alone. The exit code and output of a `run` task are in the reply's `result`. Wait-time options are in [Waiting and fixing up](#waiting-and-fixing-up).
+
+That is the basic flow for running one task and checking its result. The sections below are the advanced steps: chaining several tasks in order, passing results, and branching.
 
 ## Order and failure handling
 
@@ -147,7 +158,7 @@ To run a task's result through another command (a judge or summary tool, say) an
 - If Tasty is killed (with `kill`, for example), it depends on the OS. On Linux only the postprocess command itself gets a termination signal. That usually ends the command, so after the restart the task fails because its result cannot be collected, and other processes the command started can be left running. With `["sh", "-c", "sleep 300; echo x"]`, for example, `sh` ends and `sleep` is left running. On Windows they end with Tasty, and on macOS they are all left running.
 - If the postprocess command is still running after Tasty restarts (Tasty was killed on macOS, or the command ignored the termination signal on Linux), the task stays running and keeps its semaphore or lease until the command ends. When it ends, its result cannot be collected, so the task fails and gives the resource back then. Tasty does not wait when only processes the command started are left. A task that was waiting to run its postprocess (including a wait before a retry) keeps its resources and runs the postprocess as scheduled.
 
-While Tasty runs on [temporary memory](cli.md#memory-shared-between-agents) because it could not open its memory file, a graph would not survive a restart, so sending it as is gets refused. For a graph that may be lost on restart, add `"durability": "best_effort"`.
+While Tasty runs on [temporary memory](cli-reference.md#memory-shared-between-agents) because it could not open its memory file, a graph would not survive a restart, so sending it as is gets refused. For a graph that may be lost on restart, add `"durability": "best_effort"`.
 
 ### Choosing the next task from a result
 

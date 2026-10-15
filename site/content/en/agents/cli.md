@@ -1,9 +1,29 @@
-<!-- source-hash: b6eab9ab9466 -->
+<!-- source-hash: ff53b70d1147 -->
 # Driving terminals with the tasty CLI
 
-Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
+Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs. Agents such as Claude Code and Codex use the same commands.
 
-Start by listing terminals, then try sending a command and reading its output. Agents such as Claude Code and Codex use the same commands.
+Follow this page in order the first time. Check the connection, find target IDs, create a working terminal, send a command, read its output, and clean up. The remaining commands, such as reading from a saved position, metadata, queues and memory, are in the [CLI command reference](cli-reference.md). Response delays, connections, and what to do for each error code are in [CLI response delays and connection diagnostics](../help/cli-diagnostics.md).
+
+## Frequently used commands
+
+| What you want | Command |
+|---|---|
+| Show the hierarchy | `tasty list tree` |
+| Surface list | `tasty list surfaces` |
+| Create a working tab | `tasty new tab --pane ID` |
+| Send text (including Enter) | `tasty send text "ls\r" --surface ID` |
+| Send a key | `tasty send key enter --surface ID` |
+| Set a mark | `tasty set mark --surface ID` |
+| Read since the mark | `tasty read since-mark --surface ID --strip-ansi` |
+| Exit record of the last command | `tasty read last-command --surface ID` |
+| Read the screen | `tasty read screen --surface ID --lines N` |
+| Close a Surface | `tasty close surface --surface ID` |
+| Notification | `tasty notify "body" --title "title"` |
+| Screenshot | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
+| Help | `tasty help`, `tasty help <command>` (= `tasty <command> --help`), `tasty -a` (every command path with a short description; arguments are in each command’s `--help`) |
+
+`tasty help` groups commands by purpose, such as basic operations, agent collaboration, and background and remote, and starts with a short first-task walkthrough. `-h` shows short descriptions; `--help` and `tasty help <command>` show the long ones. The last "Internal integration" group in the Claude and Codex help lists commands that hooks call, so you do not type them yourself.
 
 ## Prerequisites
 
@@ -45,18 +65,37 @@ tasty list surface-kinds   # Surface kinds this instance actually registered
 
 Each row of `list workspaces` has the form `name (id:N) (pane count)`. The active Workspace is marked `*`, and a remote mirror is marked `[mirror]` ([Working remotely](../remote/attach.md)).
 
+## First walkthrough: run a command in a working terminal
+
+Do not send commands to a terminal the person is using. Create a separate working tab and use its ID. The `3` and `57` below are placeholders; use the values from the replies of the previous commands.
+
+```sh
+tasty list panes                               # find a Pane ID for the new tab (e.g. 3)
+tasty new tab --pane 3 --cwd ~/proj            # the reply's surface_id is the new terminal (e.g. 57)
+tasty set mark --surface 57                    # mark the current output position
+tasty read last-command --surface 57           # note ended_at before sending
+tasty send text "ls\r" --surface 57            # send a command (\r is Enter)
+tasty read last-command --surface 57           # a changed ended_at means the command finished
+tasty read since-mark --surface 57 --strip-ansi # read the output after the mark
+tasty close surface --surface 57               # clean up the terminal you made
+```
+
+- A tab made with `new tab` does not change the tab the person was looking at. Use the reply's `surface_id`, not `active_tab`.
+- Do not decide that a command finished by waiting a fixed time or by seeing empty output. In bash and zsh, shell integration records each command's end, so compare `ended_at` in the `read last-command` reply before and after sending, and check `exit_code`. In a shell without integration, check with `read screen` that the prompt is back.
+- To see every argument of one command, run `tasty help <command>`, for example `tasty help read since-mark`.
+
 ## Basic pattern: mark → send → read since mark
 
 Set a marker before sending a command, then read the output after it. Other output from the same terminal may be included too.
 
 1. `tasty set mark` — leave a marker at the current output position.
 2. `tasty send text "command\r"` — send the text. `\r` is Enter.
-3. Wait a moment, then `tasty read since-mark --strip-ansi` — read only the output that appeared after the marker.
+3. Once the command has finished, `tasty read since-mark --strip-ansi` — read only the output that appeared after the marker.
 
 ```sh
 tasty set mark --surface 42
 tasty send text "cargo test 2>&1 | tail -20\r" --surface 42
-sleep 5
+# check that it finished with read last-command or read screen, as in the first walkthrough below
 tasty read since-mark --surface 42 --strip-ansi
 ```
 
@@ -70,35 +109,6 @@ When you are not sure whether the command has finished, read the screen and chec
 tasty read screen --surface 42 --lines 5     # bottom 5 lines of the screen (reaches into scrollback if needed)
 tasty is-typing --surface 42                  # whether a person pressed a key or pasted in the last 5 seconds
 ```
-
-### When several agents read the same terminal: read from a position you hold
-
-There is only one mark per Surface, so when several agents watch the same terminal, one agent's `set mark` moves the others' reading window. To stay out of each other's way, **each reader saves its own position**.
-
-```sh
-tasty read since-mark --surface 42 --strip-ansi --max-bytes 65536
-# keep next_cursor and stream from the reply and pass them to the next call
-tasty read since-mark --surface 42 --strip-ansi --cursor 81920 --stream 1a2b-7
-```
-
-- The reply (JSON) carries `next_cursor` (where to read next), `stream` (a token for the terminal that position belongs to) and `skipped` (how many bytes left the buffer before you could read them). **Always continue from `next_cursor`** — counting from the length of `text` drifts by however much colour code was stripped.
-- Tasty does not store a read position per reader. Each request uses the position you send, without changing another reader’s position or the shared mark.
-- Use `--cursor` only together with `--stream`. If the Surface was closed and another opened under the same number, or its terminal was restarted, the old position is refused with an error instead of being applied — read once without a position to start over.
-- A non-zero `skipped` is what disappeared before you read it. The output buffer keeps only the most recent 1 MiB.
-- `--max-bytes` lowers how much one read returns. Continue from `next_cursor` for the rest. `0` does not mean "no limit" — it is treated as 1 byte. To read without a limit, leave `--max-bytes` out.
-- An older Tasty that does not know these arguments is **not sent the request**. The command then writes one line, `{"error":{"kind":"unsupported_capability",…,"sent":false}}`, to stderr and exits with code 1. Nothing was sent, so after updating Tasty you can simply call it again.
-
-### Bounding how long to wait for a reply
-
-```sh
-tasty --response-timeout-ms 5000 read screen --surface 42
-```
-
-Put `--response-timeout-ms` **before** the command. If no reply comes within that time, the command ends with `Error (-32061): …`. That error means **the outcome is unknown** — the request may keep running inside Tasty, so if the command changes something, check the state before sending it again. If the time runs out while the request is still waiting its turn inside Tasty, the command ends with `Error (-32067): …` instead. Then **nothing ran**, so you can send it again as is. Without the flag, or with `0`, there is no bound.
-
-It only works for commands that send a single request; commands that ask repeatedly, like `events follow`, or open a connection, like remote attach, refuse the flag with exit code 2 and send nothing.
-
-An older Tasty that does not understand the bound is not sent the request, with the same `sent:false` refusal as above. That check counts against the same time: if Tasty is stuck and even the check does not finish in time, the request is not sent and the command ends with `Error (-32067): …`, so you can send it again as is.
 
 By default, `read screen` excludes dimmed autocomplete suggestions (for example Claude Code's grey suggestion text). Use `--show-dim` to include them.
 
@@ -170,18 +180,6 @@ Closing a workspace you are not looking at leaves the one on screen where it was
 back from "recently closed", and its scrollback is gone. Only what a person closed by hand can be
 restored. Check with `tasty list workspaces` before you close.
 
-## Looking into a surface
-
-```sh
-tasty surface cursor-position --surface 42     # which row and column the cursor sits at
-tasty surface foreground-process --surface 42  # what is running in front (is_shell true means the shell, so idle)
-tasty surface mouse-tracking --surface 42      # whether the program grabbed the mouse, and whether tasty honours it
-tasty surface locate --surface 42              # the pane it belongs to, and whether it still exists
-tasty surface respawn-terminal --surface 42    # restart the shell, keeping the surface in place
-tasty surface fire-hook --surface 42 --event process-exit    # fire a hook yourself
-tasty surface fire-hook --surface 42 --event idle-timeout:300 # some events carry a number
-```
-
 ## Not sending while a person is typing
 
 ```sh
@@ -192,374 +190,33 @@ tasty send text "make test\r" --surface 42 --wait-idle
 which the person may start typing; this flag closes it. When they are typing nothing is sent and you
 get `"sent": false` with the reason.
 
-## Granting permissions to a child agent
-
-```sh
-tasty session issue --agent-id build-bot --permission surface.read --permission terminal.write
-tasty session list
-tasty session revoke --token <token>
-```
-
-When a child uses the issued token as `TASTY_SESSION_TOKEN`, Tasty checks its requests against the permissions on that token.
-
-Commands that a plugin adds (`tasty markdown recent`, `tasty codex spawn` and so on) need a permission too.
-For `tasty <command> …`, add `--permission ipc.invoke:<command>` — `tasty markdown …` needs
-`ipc.invoke:markdown`, and a `-` in the command name becomes `_`. Without it the call is refused and a permission approval request goes to a person.
-A Claude started with `tasty claude spawn` already holds the permissions for `tasty claude …` and `tasty codex …`.
-
-## Sending notifications
-
-Tell a person when a long task has finished. The notification collects in the notification panel and shows as a Surface border and a sidebar badge. It is not sent to the OS notification center.
-
-```sh
-tasty notify "Build finished" --title "cargo"
-tasty list notifications
-```
-
-For notification behaviour in detail and automatic execution (hooks), see [Hooks, notifications and webhooks](hooks-notifications.md).
-
-## Leaving notes on a Surface (metadata)
-
-You can attach key-value pairs to each Surface. Use them when several agents label their roles or exchange state.
-
-```sh
-tasty surface-meta set --key role --value builder --surface 42
-tasty surface-meta get --key role --surface 42
-tasty surface-meta list --surface 42
-tasty surface-meta unset --key role --surface 42
-```
-
-Notes can only be attached to an open Surface. A closed Surface ID is rejected with an error, and closing a Surface removes its notes as well.
-
-## Passing messages between Surfaces (queue)
-
-A queue that passes messages between Surfaces without touching terminal input.
-
-```sh
-tasty send queue --to 42 "Tests done, please check the results"
-tasty list queue --surface 42            # pending count and preview
-tasty read queue --surface 42            # pop all queued messages
-tasty read queue --surface 42 --peek     # look without popping
-tasty read queue --surface 42 --clear    # empty everything
-```
-
-<a id="running-child-terminals-like-agents"></a>
-
-## Running tasks in several terminals
-
-Open additional terminals in a workspace to run commands, send input, and track the work. You can use this with **any program**, including Claude and Codex. Their [dedicated commands](claude-codex.md) also provide session management.
-
-```sh
-tasty terminal spawn --workspace build --command "cargo watch -x test" --cwd ~/proj --role worker
-tasty terminal children                        # children under me
-tasty terminal tell "y" --surface 57           # send input to a child (line breaks kept, submitted automatically)
-tasty terminal broadcast $'git pull\r' --role worker # to every child with the same role (submits only with a real trailing CR)
-tasty terminal kill --child 1                   # kill a child by index
-```
-
-`spawn` creates a terminal and returns immediately. Agent state delivery and parent setup follow [Claude & Codex integration](claude-codex.md). Starting an ordinary program does not guarantee delivery of agent results.
-There is no separate command to wait on. Tag children with `--role` to address them together with `broadcast`.
-
-If `terminal spawn` fails during setup, it sends no command and removes the terminal created by that call. Existing terminals remain open.
-
-A child's parent is usually the terminal that ran the command. The dedicated Claude and Codex commands choose the parent for you, so you do not need to set it. If your script uses something outside Tasty as the parent (for example, an agent conversation running in another process), pass `--parent-external <key>` instead of `--surface`. The key is a string you choose (no whitespace, at most 256 bytes), and the same key groups children under the same parent. `spawn`, `children`, `kill`, `respawn`, `broadcast` and `release` accept this option. When several windows are open, also pass `--workspace`.
-
-```sh
-tasty terminal spawn --workspace build --parent-external review-bot --command "make lint"
-tasty terminal children --parent-external review-bot --workspace build
-tasty terminal release --parent-external review-bot --workspace build --child 0
-```
-
-## Headless PTY
-
-Run a program on a real PTY (pseudo-terminal) with no tab and no screen. Use it when a command needs a TTY but you drive it from a script without taking up screen space. Feed input and read the screen by the id that `spawn` returns.
-
-```sh
-tasty pty spawn --cwd ~/proj -- python3         # start a command on a PTY and get its id
-tasty pty write --id 2147483648 $'print(1+1)\n' # send to stdin (a newline submits)
-tasty pty read --id 2147483648 --lines 20      # the last 20 lines on the screen right now
-tasty pty list                                  # PTYs that are up
-tasty pty kill --id 2147483648                   # stop it
-```
-
-## Memory shared between agents
-
-A key-value store where several agents in the same Tasty exchange values. Pick a scope (global · surface · workspace · window · account) to store under, and optionally let entries expire (TTL) or guard against overwrites (CAS).
-
-```sh
-tasty memory put --workspace 7 --key build.status --value running --ttl 600
-tasty memory get --workspace 7 --key build.status
-tasty memory list --workspace 7 --prefix build.
-tasty memory delete --workspace 7 --key build.status
-```
-
-Switch scope with `--global` · `--surface 3` · `--window 42` · `--account me`. A value that parses as JSON is stored as JSON, otherwise as a string.
-
-Storing in a `--surface` scope works only for an open Surface. A closed Surface ID is rejected with an error. `tasty memory import` follows the same rule: if the file has even one entry in the scope of a closed Surface, nothing is imported and the command fails with an error. Closing a Surface removes the values in its scope as well. Values left in the scope of a Surface closed earlier can be found with `tasty memory list --surface <ID>` and removed with `tasty memory delete`.
-
-If Tasty cannot open its memory file (`~/.tasty/memory.db`) when it starts — the file is damaged or not accessible — Tasty does not stop; it keeps running on **temporary memory**. Values stored in that state are gone after Tasty restarts. This also applies to everything else kept in the same file: agent tasks and coordination tools such as semaphores, approvals, surface metadata, telemetry, and sessions. While it lasts, every such store result also carries `"durable": false`, and `db_pragmas.memory_db` in `tasty list pressure` shows `degraded: true` with the cause (`init_failure`). No notice appears on screen.
-
-## Pulling signals out of the output (observers)
-
-Observers find and record paths, URLs, exit codes, and prompt boundaries in terminal output. Scripts can use these records without a person watching the screen.
-
-```sh
-tasty output observe start --surface 42 --parsers exit_code,url --sink file
-tasty output observe list                        # observers running now
-tasty output observe info --observer 1           # one observer's state and collected count
-tasty output observe stop --observer 1
-```
-
-`--sink memory` collects into an in-memory ring buffer, `--sink file` into a file. Leave `--parsers` empty and the default parsers (paths · URLs · prompt boundaries · exit codes) are all on.
-
-## Measuring agent activity
-
-Several agents record their own activity as numbers (token counts · call counts and so on), and you look at it as sums · time series · top rankings. Use it to review activity and usage across your agents.
-
-```sh
-tasty telemetry record --metric tokens --value 1200 --tags '{"model":"opus"}'
-tasty telemetry summary --metric tokens           # sum and count
-tasty telemetry top --by agent --metric tokens    # top by agent
-tasty telemetry timeseries --metric tokens --window 1h
-```
-
-Without `--agent`, `record` uses the caller ID identified by Tasty. An agent using a session token uses that session’s ID. A local call without a token is recorded under the shell’s `TASTY_AGENT_ID`, or as `_host` when it is unset or not up to 64 letters, digits, `_` and `-`. The value is only a name the caller gives itself and does not change any permission. To insert several values at once with their order preserved, use `tasty telemetry record-batch`.
-
-## Other queries and settings
-
-Things an agent reaches for occasionally. `tasty <command> --help` lists them all.
-
-```sh
-tasty list pressure                    # where the time went while answering requests
-tasty list theme                       # the theme snapshot in effect (colors, font sizes, UI scale)
-tasty list recent --kind markdown      # files recently opened as that kind
-tasty set cwd --surface 42 --path /tmp # change the working directory a remote surface reports
-tasty set url --surface 42 --url URL   # change the address of a webview surface (--label NAME: the name shown while the page is hidden)
-tasty surface html-script --surface 42 # script detection, allowance and notice state of an HTML surface (read only)
-tasty surface html-nav --surface 42    # the address of the document an HTML surface shows and whether it can go back or forward (read only)
-tasty surface html-back --surface 42   # go back in an HTML surface (html-forward: forward, html-reload: reload); focus stays; check the result with html-nav
-tasty file-handler dispatch PATH       # open a file the same way a double-click in the explorer does
-tasty file-handler reload              # read the file handler settings file again
-tasty file-handler detectors           # see how the file format detectors are merged right now
-```
-
-`set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Using them on a regular terminal surface returns an unsupported-target error.
-
-`file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error. A file opened with this command is added as a new tab in the background; the tab the user was looking at stays selected. If no handler can open the file's format, the **Open file with…** chooser does not appear on the user's screen and the file is not opened. The request has already been reported as accepted, so no separate error comes back. A headless build, which runs Tasty on a server without a GUI, cannot open files, so instead of reporting the request as accepted it returns an error saying this build does not support it.
-
-The `file-handler reload` response has a `rejected` list. It holds the `id` and the reason (`reason`) of each entry from the settings file that is not applied right now, and it is empty when everything applied. There are three reasons.
-
-- `missing_owner_prefix` — the `id` has no owner part such as `user/` in front of it (write it as `user/name`). The entry is dropped.
-- `missing_detector_or_action` — an entry you made yourself (`user/…`) is missing either which files it handles (`detector`) or what to do (`action`). The entry is dropped.
-- `target_not_contributed` — the entry changes a built-in or plugin handler, but that handler is not there right now. Either the plugin is off or the `id` is wrong. The entry is kept, and it applies as soon as the plugin is on. If it is still listed after you turn the plugin on, check the `id`.
-
-`file-handler detectors` shows, for each file format detector, the values in effect now (display name, icon, whether it is on, rules) together with what each source contributed (`contributions`). A source is `host` (built in), `plugin:<id>` or `user` (the settings file). Use it to check whether a value from your settings file took effect — `contributions` are listed in the order they were installed, so look at the values in effect above them to see which one applied.
-
-The workspace count and active index in `list info` describe the queried window. The returned workspace IDs identify its scope. Use `list workspaces` for the global inventory and `list windows` for each window’s state.
-
-### Response delays and connection status
-
-`tasty list pressure` shows request wait and processing times, connection counts, and refusal reasons.
-Each section measures different operations; do not subtract their request counts to calculate refusals.
-Totals accumulate from startup. An average is `null` when nothing has been measured.
-Current usage and configured limits are identified separately below.
-
-| Timing section | What it measures |
-|---|---|
-| `queue_before_gate` | Queue wait, including requests later rejected by permission checks |
-| `handler_after_gate` | Processing time for requests that passed those checks |
-| `plugin_round_trip` | Wait time for plugin requests that received a response |
-| `db` | Time spent on database commits and WAL checkpoints, the number of writes saved by each commit, and VACUUM runs counted separately |
-
-For long queue waits, check for a backlog. For long processing times, identify the commands involved.
-For long plugin waits, inspect the plugin’s log. Database timings help investigate storage work and
-contention; a high value alone does not prove a disk problem. Commit time is already included in
-handler time, so adding them double counts it. `checkpoints_busy` counts checkpoints that could not
-finish because another connection was using the database. `writes_per_commit` is the distribution of
-writes saved by each commit, and database compaction (VACUUM), which is not counted as a commit,
-is counted separately in `vacuums`. `memory_writer` counts admissions, refusals, and batches of the
-queue that groups save requests. Permission, usage-cap, and rate-limit
-refusals are counted separately in `gate_refusals` below.
-
-#### Connection counts and limits (`connections`)
-
-| Field | Meaning |
-|---|---|
-| `live` | Current connections; decreases as connections close |
-| `live_max` | Highest concurrent connection count since startup |
-| `limit` | Maximum allowed concurrent connections |
-| `accepted` | Total connections accepted |
-| `refused_saturated` | Total connections refused at the limit |
-
-Connections count toward live even before sending a request. If live approaches limit or
-refused_saturated increases, close persistent connections you no longer use, such as unused attaches.
-These refusals happen before request processing and do not appear in request timings.
-Connection limits and processing delays can be problems at the same time.
-
-`accept_wait_bound_us_max` and `accept_wait_bound_us_mean` report the maximum and average upper
-bounds on connection acceptance waits. `accept_waits` is the observation count, and
-`accept_wait_bound_us_sum` is the sum of those bounds. These are not exact wait measurements.
-They start from when Tasty last found the connection queue empty, so the actual wait can be shorter.
-Tasty normally waits 100ms after finding an empty queue, but 100ms is not a strict cap on the total wait.
-This time is separate from request queue time. The average can decrease as observations accumulate.
-
-#### Timing distributions
-
-Only the first three timing sections include `wait_us_hist` or `us_hist`.
-`bounds_us` contains 11 bucket boundaries from 10µs to 1 second; `counts` contains each bucket’s count.
-The last bucket holds times above 1 second, so counts has one extra entry. Buckets do not overlap:
-their sum is the observation count. The section’s max field shows the largest time. Percentiles
-such as p99 are not provided.
-
-`queue_before_gate.waits` counts measured waits and is the average’s denominator.
-`commands` increases after a batch finishes, so it can trail waits by the batch currently running.
-Use the average and distribution together to distinguish widespread delays from a few slow requests.
-
-#### Database settings (`db_pragmas`)
-
-For memory_db and state_db, requested is the setting Tasty asked for and effective is what took effect.
-These values are checked when the database opens; they are not running totals.
-
-| Value | Meaning |
-|---|---|
-| `degraded: true` | Settings did not reach the expected state, or temporary memory replaced the file database |
-| `state_db: null` | The state database is not open in this instance; headless instances also use this value |
-| `memory_db.init_failure` | Cause and error text when a file database could not open and temporary memory was used; otherwise null |
-
-The database can remain usable with a settings mismatch. Compare requested and effective to investigate
-performance or recovery after a crash. Temporary memory makes degraded true even if all settings took
-effect, and values stored there are lost after restart.
-
-#### Screen delivery (`stream_push`)
-
-| Field | Meaning |
-|---|---|
-| `frames_dropped` | Total frames discarded because receivers could not keep up |
-| `clients_lagged_out` | Total receivers disconnected for falling too far behind |
-| `backlog` | Frames currently waiting to be sent; decreases as they are sent |
-| `sink_capacity` | Maximum queued frames for one connection |
-
-Increasing frames_dropped can mean an attach missed part of the screen.
-Tasty attach clients reconnect and fetch a fresh screen when instructed to reconnect.
-
-#### Request queues (`queue_admission`, `queue_dispatch`)
-
-queue_admission shows what is queued and what was refused before entering the queue.
-
-| Field | Meaning |
-|---|---|
-| `queued_bytes`, `queued_commands`, `queued_injected` | Current queued bytes, commands, and internal commands |
-| `peak_bytes` | Highest queued byte count since startup |
-| `limit_bytes`, `limit_injected_depth` | Limits on bytes and internal commands |
-| `refused_bytes`, `refused_depth` | Total requests refused at each limit |
-
-Check these fields for a queue-full error. Requests refused before admission do not contribute to
-queue wait or execution times.
-
-queue_dispatch describes taking commands out of the queue and running them.
-
-| Field | Meaning |
-|---|---|
-| `rounds` | Times commands were taken out for processing |
-| `rounds_stopped_by_count`, `rounds_stopped_by_time` | Rounds stopped after using their command or time allowance |
-| `expired_before_run` | Commands not started because the caller’s deadline passed while queued |
-| `started` | Commands whose execution started |
-| `in_flight`, `in_flight_max` | Current and peak requests that have started and whose command or response wait has not ended |
-
-in_flight can decrease. A command that is still running remains counted after its caller stops waiting. Increasing time-limited rounds or expired_before_run can indicate that queue
-processing is not keeping up with incoming requests.
-
-Category creation, renaming, deletion and reordering, plus workspace information and order changes, return the original result when retried with the same key, even after the app restarts. Later moves or renames do not cause the retry to select a different target. Retrieving a saved result does not reapply a remote screen's local display name or position. Other commands do not all provide this protection across restarts.
-
-#### Duplicate requests (`keyed_requests`)
-
-Only requests with an idempotency_key are counted, once per request.
-
-| Field | Result |
-|---|---|
-| `executed` | A request with a new key ran |
-| `replayed` | The same request received its earlier result without running again |
-| `conflicted` | Different content used the same key, so nothing ran |
-| `discarded` | The request ran but its response was discarded |
-| `in_flight` | The same request was already running, so this request waited for that result |
-
-If replayed grows faster than executed, check for repeated retries.
-This in_flight count differs from the current running count in queue_dispatch.
-
-#### Individual slow requests (`slow_requests`)
-
-Requests whose queue, host, and plugin times total at least threshold_us (100ms) appear oldest first,
-up to capacity (32) records. New records replace the oldest when full. admitted counts all records
-added since startup; subtract the current record count to find how many were removed.
-
-| Field | Contents |
-|---|---|
-| `request_seq` | A Tasty-assigned number, separate from the request’s id |
-| `host` | method, caller, queue_wait_us, host_us, outcome(ok/error), and error_code |
-| `plugin_hops` | Each plugin’s host_request_id, wait time, and ok/error/expired/cancelled result |
-| `total_us` | Sum of the measured times |
-
-Before a response is sent, host outcome and error_code are null. For a long plugin_hops wait, find
-host_request_id in the plugin’s log. Plugin error and missing-response logs include id and request_seq.
-Request bodies and tokens are not stored, and the pressure query itself is excluded.
-Restarting clears these records and starts numbering from 1 again.
-
-#### Refusal reasons (`gate_refusals`)
-
-judged counts requests checked for permission and other limits, including CLI and plugin calls.
-Each request appears in at most one refusal category.
-
-| Field | Reason and error code |
-|---|---|
-| `permission_denied` | Rejected by the permission check, -32001 |
-| `cap_blocked` | A telemetry usage cap was reached, -32007 |
-| `throttled` | A call rate limit was reached, -32010 |
-
-Check permissions and usage caps, or wait for the rate limit to clear.
-Permission refusals also include plugin or agent calls to unavailable or unknown commands.
-Asking for a permission does not fix those cases; check the command instead.
-Local CLI calls without a session token retain their permission exemption.
-
-Not every -32001 appears in permission_denied. Malformed, unknown, expired, or revoked session tokens
-are rejected before these checks and are excluded from judged too. A -32001 returned after the checks,
-such as a refused permission grant, is also excluded from this refusal counter.
-These totals reset on restart. The throttled_count from `tasty agent rate-limit-status` is a persistent
-per-limit total, so it is a different value.
-
-`list info` also answers what this Tasty can do, under `capabilities`. Each entry pairs a name with a version, and it tells you what the version string alone cannot — the same version can do different things depending on how it was built. Ignore any name you do not recognise.
-
-## Frequently used commands
-
-| What you want | Command |
-|---|---|
-| Show the hierarchy | `tasty list tree` |
-| Surface list | `tasty list surfaces` |
-| Surface kinds you can create | `tasty list surface-kinds` |
-| Send text (including Enter) | `tasty send text "ls\r" --surface ID` |
-| Send a key | `tasty send key enter --surface ID` |
-| Set a mark | `tasty set mark --surface ID` |
-| Read since the mark | `tasty read since-mark --surface ID --strip-ansi` |
-| Continue from a saved read position | `tasty read since-mark --surface ID --cursor N --stream S` |
-| Bound the reply wait | `tasty --response-timeout-ms MS <command>` |
-| Read the screen | `tasty read screen --surface ID --lines N` |
-| Notification | `tasty notify "body" --title "title"` |
-| Screenshot | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
-| Help | `tasty help`, `tasty help <command>` (= `tasty <command> --help`), `tasty -a` (every command path with a short description; arguments are in each command’s `--help`) |
-
-`tasty help` groups commands by purpose, such as basic operations, agent collaboration, and background and remote, and starts with a short first-task walkthrough. `-h` shows short descriptions; `--help` and `tasty help <command>` show the long ones. The last "Internal integration" group in the Claude and Codex help lists commands that hooks call, so you do not type them yourself.
-
 ## Troubleshooting
 
 - **Cannot connect** — check that Tasty is running and that the `~/.tasty/tasty.port` file exists. The file may be left over from an earlier run, or the CLI may be checking another instance’s path ([Troubleshooting](../help/troubleshooting.md)).
 - **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
-- **An error line containing `"sent":false`** — the Tasty you are connected to is an older version that does not know that feature (reading from a position, bounding the reply wait, and so on). The request was not sent. The name under `capability` says what is missing.
-- **A `data: {…}` line follows the `Error (…)` line** — Tasty sent a classification of the failure along with it (for example `storage_failure` when a memory write fails, or `reason` for a refusal). Everything after `data: ` is one line of JSON, so a script can branch on that value instead of the first line. The first line, `Error (code): message`, is the same whether or not this line is present. `tasty events follow` and `tasty plugin audit-follow` add this line too; their first line keeps its shape, `Error: Error (code): message`, with one extra `Error: ` in front.
-- **The command ends with `Error (-32603): memory writer queue is full …`** — Too many memory storage requests arrived at once, so Tasty did not take this one (`storage_failure` in `data` is `busy`). Nothing was stored, so call it again after a short pause. `memory writer is not accepting requests` means Tasty is shutting down.
-- **A memory or agent coordination command ends with an error containing `"outcome":"unknown"`** — Tasty could not confirm whether the write finished. Check the value with `tasty memory get` or similar before sending the same request again. Stopping the command while it waits does not cancel a storage request Tasty already took.
-- **The command ends with `Error (-32065): …`** — Tasty has a backlog of requests to handle and did not take this one. The request did not run, so call it again as is after a short pause.
-- **The command ends with `Error (-32066): …`** — nothing was sent within 20 seconds of connecting, so Tasty closed the connection. Nothing ran. If your tool opens the socket itself, send the request right after connecting. A connection that has sent one request is not closed however long it pauses between requests.
 - **Not sure which window `screenshot` captures** — automatic selection counts **main (terminal) windows only**. With one main window open, omitting `--window` captures it; with several, `--window` is required (it never picks whichever window happens to be focused). Windows that `list windows` does not show, such as the settings window, are not counted: `--window` stays optional while the settings window is up, and capturing the settings window itself means naming its ID with `--window`.
+
+If replies are slow or a command ends with an `Error (…)` line, see [CLI response delays and connection diagnostics](../help/cli-diagnostics.md) for what to do for each error code.
+
+## Finding other commands
+
+Commands this introduction does not cover are on pages organised by purpose.
+
+- <a id="when-several-agents-read-the-same-terminal-read-from-a-position-you-hold"></a>[When several agents read the same terminal: read from a position you hold](cli-reference.md#when-several-agents-read-the-same-terminal-read-from-a-position-you-hold)
+- <a id="looking-into-a-surface"></a>[Looking into a surface](cli-reference.md#looking-into-a-surface)
+- <a id="granting-permissions-to-a-child-agent"></a>[Granting permissions to a child agent](cli-reference.md#granting-permissions-to-a-child-agent)
+- <a id="sending-notifications"></a>[Sending notifications](cli-reference.md#sending-notifications)
+- <a id="leaving-notes-on-a-surface-metadata"></a>[Leaving notes on a Surface (metadata)](cli-reference.md#leaving-notes-on-a-surface-metadata)
+- <a id="passing-messages-between-surfaces-queue"></a>[Passing messages between Surfaces (queue)](cli-reference.md#passing-messages-between-surfaces-queue)
+- <a id="running-child-terminals-like-agents"></a><a id="running-tasks-in-several-terminals"></a>[Running tasks in several terminals](cli-reference.md#running-tasks-in-several-terminals)
+- <a id="headless-pty"></a>[Headless PTY](cli-reference.md#headless-pty)
+- <a id="memory-shared-between-agents"></a>[Memory shared between agents](cli-reference.md#memory-shared-between-agents)
+- <a id="pulling-signals-out-of-the-output-observers"></a>[Pulling signals out of the output (observers)](cli-reference.md#pulling-signals-out-of-the-output-observers)
+- <a id="measuring-agent-activity"></a>[Measuring agent activity](cli-reference.md#measuring-agent-activity)
+- <a id="other-queries-and-settings"></a>[Other queries and settings](cli-reference.md#other-queries-and-settings)
+- <a id="bounding-how-long-to-wait-for-a-reply"></a>[Bounding how long to wait for a reply](../help/cli-diagnostics.md#bounding-how-long-to-wait-for-a-reply)
+- <a id="response-delays-and-connection-status"></a><a id="connection-counts-and-limits-connections"></a><a id="timing-distributions"></a><a id="database-settings-db_pragmas"></a><a id="screen-delivery-stream_push"></a><a id="request-queues-queue_admission-queue_dispatch"></a><a id="duplicate-requests-keyed_requests"></a><a id="individual-slow-requests-slow_requests"></a><a id="refusal-reasons-gate_refusals"></a>[Response delays and connection status](../help/cli-diagnostics.md#response-delays-and-connection-status)
 
 <a id="what-to-read-next"></a>
 
@@ -568,11 +225,5 @@ per-limit total, so it is a different value.
 - [Claude · Codex](claude-codex.md) — Spawning child agents and receiving completion notifications.
 - [Task workflows](tasks.md) — Tying several pieces of work together by dependency.
 - [Hooks · notifications · webhooks](hooks-notifications.md) — Running commands automatically on an event.
-
-For agents using session tokens, call limits apply to plugin commands and combined list queries as well as ordinary commands. Each admitted request is counted once; requests over the limit return an error without running. The existing exemption for local CLI calls without a token remains.
-
-A plugin namespace call starts only its enabled owner and any active extension needed for matching IPC hooks. It does not enable a disabled plugin or start unrelated plugins. An unknown namespace starts none; a misspelled method inside a known namespace may start its owner before returning an error.
-
-Structural requests rejected by a queue or storage budget limit return `-32065`. Requests can wait within the queue limit when other requests temporarily hold the required storage credit. Reusing an idempotency key for a different request returns `-32063`.
-
-While a structural change in one window waits for an external operation, an independent structural request targeting another window can proceed. Requests affecting the same target scope keep their order.
+- [CLI command reference](cli-reference.md) — Finding commands beyond the introduction by purpose.
+- [CLI response delays and connection diagnostics](../help/cli-diagnostics.md) — Response delays, connection counts, and what to do for each error code.

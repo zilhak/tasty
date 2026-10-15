@@ -9,16 +9,20 @@ import { SECTIONS, entryIdFor, titleIn } from "./guide";
 import type { Page, Lang } from "./guide";
 import { pathOf } from "./urls";
 
-/** Markdown stripped down to searchable words. */
+/** Markdown stripped down to searchable words. Inline code keeps its text and
+ *  a hyphen inside a word survives, so command names such as `task-await` and
+ *  `read since-mark` match as typed. Code blocks are still dropped. */
 function plain(markdown: string): string {
   return markdown
     .replace(/^<!--[\s\S]*?-->/, "")
     .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`[^`]*`/g, " ")
+    .replace(/`([^`]*)`/g, " $1 ")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/[#>*_|-]+/g, " ")
+    .replace(/<\/?[a-zA-Z][^>]*>/g, " ")
+    .replace(/[#>*_|]+/g, " ")
+    .replace(/(^|\s)-+|-+(?=\s|$)/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

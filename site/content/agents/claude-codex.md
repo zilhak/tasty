@@ -4,6 +4,15 @@ Claude Code와 Codex CLI를 연결해 여러 에이전트에게 일을 나눠 �
 
 Claude Code와 Codex CLI는 별도로 설치하세요. Tasty는 에이전트 실행과 배치, 작업을 맡긴 에이전트와의 연결을 관리합니다. 훅 설치와 함께 부모의 수신 설정도 마치세요. 완료는 부모 종류와 관계없이 같은 완료 로그에 쌓이고, 부모가 Claude Code이면 그 로그를 Monitor로 구독합니다. 자세한 절차는 [완료 알림 받기](#4-완료-알림-받기)를 따르세요.
 
+## 빠른 시작
+
+1. 훅을 설치합니다: `tasty claude install`, `tasty codex install` ([훅 설치](#1-훅-설치-처음-한-번)).
+2. 에이전트를 실행합니다: `tasty claude launch --workspace myproj --directory ~/proj` ([실행하기](#2-실행하기)).
+3. 그 Claude Code 세션 안에서 다른 에이전트에게 작업을 맡깁니다: `tasty claude spawn --workspace workers --cwd ~/proj --prompt "cargo test 를 돌리고 실패 원인을 보고해"` ([작업 맡기기](#3-다른-에이전트에게-작업-맡기기-spawn--tell)).
+4. 상태와 결과를 확인합니다: `tasty claude children` 으로 자식 목록과 상태를 보고, 완료는 [완료 알림 받기](#4-완료-알림-받기)의 방법으로 받습니다.
+
+`tasty claude help` · `tasty codex help` 의 마지막 "내부 연동" 그룹은 훅이 부르는 명령이라 직접 입력하지 않습니다. 승인 정책, 권한 모드, 세션 재시작, 세션 프로필은 뒤쪽 절에서 필요할 때 보세요.
+
 ## 1. 훅 설치 (처음 한 번)
 
 에이전트의 상태(작업 중 / 대기 / 입력 필요 / 종료)를 Tasty 가 알려면 각 CLI 의 훅 설정에 Tasty 항목이 들어가야 합니다.

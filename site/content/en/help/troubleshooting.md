@@ -1,4 +1,4 @@
-<!-- source-hash: 849d7cea2cff -->
+<!-- source-hash: 6c4799e05f40 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -97,6 +97,7 @@ You can see the current state in the same tab (only shown on macOS). Full Disk A
 
 - **`No running tasty instance found (port file not found at …)`** — there is no port file at the path checked by the CLI. If the path in the message is not `~/.tasty/tasty.port`, the command is looking at a different home directory (`TASTY_HOME`). The message follows your configured language (`general.language`, English by default), so it is worded differently if you set another one. A wrong argument (broken JSON, a `--cwd` folder that does not exist, and so on) is reported before this message, so if you see this message the argument checks performed before connecting passed.
 - **The port file exists but it cannot connect** — it may be left over from an earlier run, or the CLI may be looking at another instance’s path. Check the path in the error and `TASTY_HOME`, then confirm that the Tasty instance using that file has stopped. Only delete the file if it belongs to that stopped instance. Do not delete it solely because a process-name search found nothing.
+- **It connects, but replies are slow or end with a line such as `Error (-32061)` or `Error (-32065)`** — see [CLI response delays and connection diagnostics](cli-diagnostics.md) for what to do for each error code and how to read `tasty list pressure`.
 
 
 - **`tasty: command not found`** — inside a terminal that Tasty opened it is on the PATH automatically, and a `.deb` · `.rpm` · `.msi` install puts it on the PATH for other terminal apps too. With any other install method you have to add it yourself. The path for each install method is in [Install location](../getting-started/install.md#install-locations).

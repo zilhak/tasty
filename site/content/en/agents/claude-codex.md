@@ -1,9 +1,18 @@
-<!-- source-hash: bd6db3e49932 -->
+<!-- source-hash: eecf48e6f8d4 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
 
 Install Claude Code and Codex CLI separately. Tasty manages launching, placement, and the connection to the agent that delegated the work. Set up both the hooks and the parent’s receiving channel. Completion lands in the same completion log whatever the parent is, and a Claude Code parent uses Monitor to subscribe to that log. Follow [Receiving completion notifications](#4-receiving-completion-notifications).
+
+## Quick start
+
+1. Install the hooks: `tasty claude install`, `tasty codex install` ([Install the hooks](#1-install-the-hooks-once)).
+2. Launch an agent: `tasty claude launch --workspace myproj --directory ~/proj` ([Launching](#2-launching)).
+3. From that Claude Code session, hand work to another agent: `tasty claude spawn --workspace workers --cwd ~/proj --prompt "Run cargo test and report why it fails"` ([Delegating work](#3-delegating-work-to-another-agent-spawn--tell)).
+4. Check state and results: `tasty claude children` lists the children with their state, and completion arrives as described in [Receiving completion notifications](#4-receiving-completion-notifications).
+
+The last "Internal integration" group in `tasty claude help` and `tasty codex help` lists commands that hooks call, so you do not type them yourself. Read the later sections on approval policy, permission modes, session restarts and session profiles when you need them.
 
 ## 1. Install the hooks (once)
 
