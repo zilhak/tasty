@@ -29,6 +29,7 @@
 
 ### Changed
 
+- **복사 모드 진입 단축키가 결과를 항상 알려 준다.** 들어가면 이동·선택·복사·종료 키를 알리는 토스트가 뜬다. 이미 복사 모드이거나 터미널이 아닌 서피스에서 누르면 그 이유를 알리며, 대체 화면 때문에 막힐 때의 문구는 OS 전체 화면이 아니라 터미널 프로그램의 대체 화면 때문임을 밝힌다. 모달·팝업이 키를 가져간 상태에서는 지금처럼 아무 일도 일어나지 않는다.
 - **저널이 멈춘 뒤의 IPC 거절 메시지에 원인과 재시작 안내가 붙는다.** 구조 저널 공개가 멈추면 `system.shutdown`을 뺀 모든 IPC가 지금처럼 `-32000`으로 거절되며, 메시지 끝에 `restart Tasty to recover (cause: ...)`와 멈춘 원인(앞 512자)이 더해진다. 어느 요청에도 속하지 않은 완료로 멈춘 경우 원인 문구가 `bootstrap completion belongs to another request` 대신 ticket 번호, 응답 종류, 마지막으로 제출한 작업 종류를 담는다.
 
 - (BREAK) **Tasty가 실행하는 Codex는 터미널마다 전용 Codex app-server와 함께 실행된다.** launch·spawn·respawn·reboot·탭 복원이 플러그인 실행 파일의 세션 helper를 실행하며, helper가 서버를 띄운 뒤 TUI를 `--remote`로 붙이고 TUI가 끝나면 서버를 정리한다. 서버를 시작하지 못하면 Codex를 시작하지 않는다. `--dangerously-bypass-hook-trust`를 더 이상 전달하지 않으므로 Codex의 `/hooks`에서 Tasty 훅을 승인해야 한다. 설치 훅은 helper가 넣은 세대 값이 있을 때만 실행되므로 `tasty codex install`을 다시 실행하고, 직접 입력한 `codex`는 상태를 보고하지 않는다. CLI `tasty codex parent`의 IPC는 `codex.parent_of`로 바뀌었다.

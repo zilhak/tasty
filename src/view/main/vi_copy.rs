@@ -793,6 +793,60 @@ fn handle_vi_key_inner(
     }
 }
 
+/// 복사 모드 진입 요청 하나의 결과. 결과마다 다른 토스트로 알린다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ViCopyEntry {
+    Entered,
+    AlreadyActive,
+    NoTerminal,
+    AlternateScreen,
+}
+
+impl ViCopyEntry {
+    fn toast_key(self) -> &'static str {
+        match self {
+            Self::Entered => "toast.vi_copy_entered",
+            Self::AlreadyActive => "toast.vi_copy_already_active",
+            Self::NoTerminal => "toast.vi_copy_needs_terminal",
+            Self::AlternateScreen => "toast.vi_copy_blocked_alt_screen",
+        }
+    }
+}
+
+/// 진입 요청 플래그를 소비하고 결과를 토스트로 알린다. 진입했을 때만 새 mode를 돌려준다.
+/// 요청이 접수된 뒤의 결과만 다루며, 모달·팝업이 먼저 가져간 키는 여기까지 오지 않는다.
+fn take_vi_copy_entry(
+    state: &mut crate::state::MainViewState,
+    engine: &EngineRead<'_>,
+    active_surface: Option<u32>,
+) -> Option<ViCopyMode> {
+    if !std::mem::take(&mut state.dialogs.pending_enter_copy_mode) {
+        return None;
+    }
+    let focused = state.focused_surface_id(engine);
+    let (outcome, scope_surface, mode) = if let Some(sid) = active_surface {
+        (ViCopyEntry::AlreadyActive, Some(sid), None)
+    } else if let (Some(sid), Some(terminal)) = (focused, state.focused_terminal(&engine.as_ref()))
+    {
+        let mode = terminal.with_view(&state.terminal_views.get(engine, sid), |view| {
+            (!view.is_alternate_screen()).then(|| ViCopyMode::enter(sid, &view))
+        });
+        match mode {
+            Some(mode) => (ViCopyEntry::Entered, Some(sid), Some(mode)),
+            None => (ViCopyEntry::AlternateScreen, Some(sid), None),
+        }
+    } else {
+        (ViCopyEntry::NoTerminal, focused, None)
+    };
+    let scope = scope_surface
+        .map(crate::adapters::ui::ToastScope::Surface)
+        .unwrap_or(crate::adapters::ui::ToastScope::Window);
+    state
+        .toasts
+        .push_info(crate::i18n::t(outcome.toast_key()), scope);
+    mode
+}
+
 use crate::core::CoreState;
 use crate::selection::extract_selected_text;
 
@@ -801,28 +855,8 @@ use super::MainView;
 impl MainView {
     /// `pending_enter_copy_mode` 플래그를 소비하고 mode 진입을 시도한다.
     pub(crate) fn try_enter_vi_copy_mode(&mut self, engine: &EngineRead<'_>) {
-        if !self.state.dialogs.pending_enter_copy_mode {
-            return;
-        }
-        self.state.dialogs.pending_enter_copy_mode = false;
-        if self.vi_copy.is_some() {
-            // 이미 활성 → noop.
-            return;
-        }
-        let Some(sid) = self.state.focused_surface_id(engine) else {
-            return;
-        };
-        let Some(terminal) = self.state.focused_terminal(&engine.as_ref()) else {
-            return;
-        };
-        let mode = terminal.with_view(&self.state.terminal_views.get(engine, sid), |view| {
-            (!view.is_alternate_screen()).then(|| ViCopyMode::enter(sid, &view))
-        });
-        let Some(mode) = mode else {
-            self.state.toasts.push_info(
-                crate::i18n::t("toast.vi_copy_blocked_alt_screen"),
-                crate::adapters::ui::ToastScope::Surface(sid),
-            );
+        let active = self.vi_copy.as_ref().map(|vi| vi.surface_id);
+        let Some(mode) = take_vi_copy_entry(&mut self.state, engine, active) else {
             return;
         };
         self.vi_copy = Some(mode);
@@ -1458,5 +1492,138 @@ mod tests {
         }
         let count = vi.take_count();
         assert!(count <= 999_999, "count {count} exceeds cap");
+    }
+
+    /// 워크스페이스 하나에 `kind` surface 하나를 둔 상태. terminal이면 격자를 붙인다.
+    fn entry_fixture(
+        kind: &str,
+    ) -> (
+        crate::state::MainViewState,
+        crate::runtime::engine_session::EngineSession,
+    ) {
+        use tasty_core::{DomainEvent as E, SurfaceSpec};
+        let events = vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: 1,
+                name: "workspace".into(),
+                category: 0,
+                index: 0,
+                pane: 1,
+            },
+            E::TabCreated {
+                id: 10,
+                pane: 1,
+                index: 0,
+                name: kind.into(),
+                surface: SurfaceSpec {
+                    id: 10,
+                    kind: kind.into(),
+                    data: None,
+                },
+            },
+        ];
+        let (state, mut engine) =
+            crate::state::tests::test_state_from_model(crate::state::tests::test_model(events));
+        if kind == "terminal" {
+            let mut terminal = term(20, 4);
+            terminal.feed_bytes(b"ABCDE\r\n");
+            engine.runtime.terminals.insert(10, terminal, None);
+        }
+        (state, engine)
+    }
+
+    fn entry_toasts(state: &crate::state::MainViewState) -> Vec<String> {
+        state
+            .toasts
+            .messages()
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn entering_in_a_shell_announces_the_mode_and_puts_the_cursor_on_the_first_cell() {
+        let (mut state, mut owner) = entry_fixture("terminal");
+        let engine = owner.borrow_mut();
+        state.dialogs.pending_enter_copy_mode = true;
+        let mode = take_vi_copy_entry(&mut state, &engine.read(), None).expect("진입해야 한다");
+        assert_eq!((mode.surface_id, mode.cursor.col), (10, 0));
+        assert!(!mode.has_visual());
+        assert!(
+            !state.dialogs.pending_enter_copy_mode,
+            "요청을 소비해야 한다"
+        );
+        assert_eq!(
+            entry_toasts(&state),
+            [crate::i18n::t("toast.vi_copy_entered")]
+        );
+    }
+
+    #[test]
+    fn no_request_means_no_entry_and_no_toast() {
+        let (mut state, mut owner) = entry_fixture("terminal");
+        let engine = owner.borrow_mut();
+        assert!(take_vi_copy_entry(&mut state, &engine.read(), None).is_none());
+        assert!(entry_toasts(&state).is_empty());
+    }
+
+    #[test]
+    fn a_repeated_request_while_active_says_so_instead_of_reentering() {
+        let (mut state, mut owner) = entry_fixture("terminal");
+        let engine = owner.borrow_mut();
+        state.dialogs.pending_enter_copy_mode = true;
+        assert!(take_vi_copy_entry(&mut state, &engine.read(), Some(10)).is_none());
+        assert_eq!(
+            entry_toasts(&state),
+            [crate::i18n::t("toast.vi_copy_already_active")]
+        );
+    }
+
+    #[test]
+    fn a_request_on_a_surface_without_a_terminal_explains_why() {
+        let (mut state, mut owner) = entry_fixture("markdown");
+        let engine = owner.borrow_mut();
+        state.dialogs.pending_enter_copy_mode = true;
+        assert!(take_vi_copy_entry(&mut state, &engine.read(), None).is_none());
+        assert_eq!(
+            entry_toasts(&state),
+            [crate::i18n::t("toast.vi_copy_needs_terminal")]
+        );
+    }
+
+    #[test]
+    fn the_alternate_screen_blocks_entry_with_one_toast() {
+        let (mut state, mut owner) = entry_fixture("terminal");
+        let engine = owner.borrow_mut();
+        engine
+            .runtime
+            .terminals
+            .get_mut(10)
+            .expect("terminal")
+            .feed_bytes(b"\x1b[?1049h\x1b[2J\x1b[HALTERNATE\r\n");
+        state.dialogs.pending_enter_copy_mode = true;
+        assert!(take_vi_copy_entry(&mut state, &engine.read(), None).is_none());
+        assert_eq!(
+            entry_toasts(&state),
+            [crate::i18n::t("toast.vi_copy_blocked_alt_screen")]
+        );
+    }
+
+    #[test]
+    fn every_entry_outcome_has_its_own_message() {
+        let keys: std::collections::BTreeSet<_> = [
+            ViCopyEntry::Entered,
+            ViCopyEntry::AlreadyActive,
+            ViCopyEntry::NoTerminal,
+            ViCopyEntry::AlternateScreen,
+        ]
+        .map(ViCopyEntry::toast_key)
+        .into();
+        assert_eq!(keys.len(), 4);
     }
 }

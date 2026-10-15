@@ -57,6 +57,23 @@ IME preedit와 OS 후보창 위치도 같은 epoch·행 좌표를 사용한다. 
 
 마우스 드래그(Normal) / 더블클릭(Word) / 트리플클릭(Line) / vi 복사 모드의 `Ctrl+v`(Block). 선택은 화면↔스크롤백을 넘나들고 전각(CJK) 2셀 폭을 정확히 처리. vi 스타일 키보드 복사 모드(`enter_copy_mode` 액션)는 hjkl 이동·visual 선택·`/`·`?` 검색·`y` 복사를 제공.
 
+#### 복사 모드 진입 결과
+
+`enter_copy_mode`는 단축키와 명령 팔레트에서 실행한다. 요청을 접수하면 결과마다 해당 surface 범위(surface가 없으면 창 범위)의 Info 토스트를 하나 낸다. 진입 이외의 결과는 화면·선택·PTY를 바꾸지 않는다.
+
+| 결과 | 조건 | 토스트 |
+|---|---|---|
+| 진입 | 포커스된 surface가 terminal이고 대체 화면이 아니다 | `toast.vi_copy_entered` — 이동·선택·복사·종료 키. 복사용 커서는 viewport 맨 위 행의 0열 |
+| 이미 활성 | 복사 모드가 이미 켜져 있다 | `toast.vi_copy_already_active` |
+| 터미널 없음 | 포커스된 surface가 없거나 terminal이 아니다 | `toast.vi_copy_needs_terminal`. 키를 받는 WebView surface에서는 가려진다(아래) |
+| 대체 화면 | terminal이 alternate screen(DECSET 1049 등)을 쓰고 있다 | `toast.vi_copy_blocked_alt_screen` |
+
+진입 토스트의 키는 복사 모드 키 처리(`src/view/main/vi_copy.rs`의 `handle_vi_key`)에 고정된 vi 키이며 `KeybindingSettings`로 바꾸지 않는다. 토스트는 입력을 받지 않으므로 이후 키는 그대로 복사 모드가 처리한다. 대체 화면 판정은 OS 윈도우의 최대화·전체 화면과 무관하다.
+
+모달, 포커스된 팝업, fullscreen stage처럼 단축키 처리보다 먼저 키를 가져가는 입력 격리 상태에서는 요청 자체가 접수되지 않아 토스트도 없다. OS나 IME가 키 이벤트를 앱에 전달하지 않은 경우도 같다.
+
+**한계 — 키를 받는 WebView 위에서는 사유가 보이지 않는다.** markdown·html surface가 키를 받는 중에 진입 키를 누르면 요청은 접수되고(host 포워딩 경로) `toast.vi_copy_needs_terminal`이 그 surface 범위에 쌓인다. 그러나 [토스트](../../design/systems/toast.md#native-webview-위의-토스트) 정책상 지금 키를 받는 WebView는 숨기지 않으므로 카드가 WebView 아래에 가려 사용자에게 보이지 않는다. 진입하지 않고 화면·데이터도 바뀌지 않는다는 점은 같다. 이 판단은 코드와 토스트 정책 문서를 읽은 결과이며 실제 실행으로 확인하지 않았다. 표시 방식은 토스트 설계의 과제로 남긴다.
+
 마우스 선택은 기본적으로 **마우스 트래킹이 꺼진 화면에서만** 동작한다. 앱이 마우스 트래킹(DECSET 1000/1002/1003)을 켜면(vim `:set mouse=a`, htop, Claude Code 등) 마우스 이벤트를 앱에 전달하므로 plain 좌클릭 드래그는 앱으로 보고된다 — 근거: [ADR-0015](../../adr/0015-terminal-user-input-routing.md).
 
 **트래킹 ON 에서도 `Shift`+좌클릭 드래그로 로컬 텍스트 선택이 가능하다** (xterm/iTerm2 표준 modifier 우회). Shift 여부는 press 시점에 1회만 판정해 release 까지 유지하므로, 드래그 도중 Shift 를 떼도 선택이 깨지지 않는다. `Shift`+더블/트리플클릭은 word/line 선택. 선택 후 복사 단축키로 클립보드에 복사된다. 일반 좌클릭은 계속 앱으로 전달된다 (우클릭 `Shift` 우회는 [ADR-0015](../../adr/0015-terminal-user-input-routing.md) 의 동일 패턴).

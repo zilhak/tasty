@@ -1288,12 +1288,14 @@ surface_cut = "サーフェスを切り取りました。移動先で「サー�
 tab_cut = "タブを切り取りました。移動先で「タブをここへ移動」を選んでください。"
 # 메뉴·단축키로 한 split 이 탐색기 칸 하한 때문에 거절됐을 때만 표시한다. 에이전트 split 에는 띄우지 않는다.
 split_refused = "このペインを分割する余白がありません"
-vi_copy_blocked_alt_screen = "フルスクリーンアプリ実行中はコピーモードを使用できません"
-vi_copy_entered = "コピーモード(vi): hjkl/wbe移動、v選択、yコピー、/?検索、q終了"
+vi_copy_already_active = "すでにコピーモードです。Escで選択を解除し、選択がなければ終了します"
+vi_copy_blocked_alt_screen = "このターミナルのプログラム(vim・lessなど)が代替画面を使っている間はコピーモードを使用できません"
+vi_copy_entered = "コピーモード: h/j/k/l 移動 · v 選択 · y コピー · Esc 終了"
 vi_copy_invalid_register = "不明なレジスタです (対応: \"+ \"* \"\")"
 vi_copy_macro_recording_started = "マクロの記録を開始しました"
 vi_copy_macro_recording_stopped = "マクロの記録を停止しました"
 vi_copy_macro_replay_failed = "マクロ再生に失敗しました (空のレジスタ または再帰回数超過)"
+vi_copy_needs_terminal = "コピーモードはターミナルでのみ使用できます"
 
 [webhook.warn]
 moved = "Webhook ポート {} が使用中のため、リスナーは {} を使用します。保存済みの Webhook はこのポートで受け付けます。URL は `tasty webhook list` で確認してください。"

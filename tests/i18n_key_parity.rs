@@ -1142,10 +1142,6 @@ const ORPHAN_KEYS: &[(&str, &str)] = &[
         "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
     ),
     (
-        "toast.vi_copy_entered",
-        "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
-    ),
-    (
         "workspace_category.collapse_all",
         "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
     ),

@@ -1334,12 +1334,14 @@ surface_cut = "Surface cut. Right-click the destination and choose 'Move Surface
 tab_cut = "Tab cut. Right-click the destination tab and choose 'Move Tab Here'."
 # 메뉴·단축키로 한 split 이 탐색기 칸 하한 때문에 거절됐을 때만 표시한다. 에이전트 split 에는 띄우지 않는다.
 split_refused = "Not enough room to split this pane"
-vi_copy_blocked_alt_screen = "Copy mode unavailable while a full-screen app is active"
-vi_copy_entered = "Copy mode (vi): hjkl/wbe, v select, y yank, /? search, q exit"
+vi_copy_already_active = "Already in copy mode. Esc clears the selection, then exits"
+vi_copy_blocked_alt_screen = "Copy mode is unavailable while the program in this terminal uses the alternate screen (vim, less, etc.)"
+vi_copy_entered = "Copy mode: h/j/k/l move · v select · y copy · Esc exit"
 vi_copy_invalid_register = "Unknown register (supported: \"+ \"* \"\")"
 vi_copy_macro_recording_started = "Macro recording started"
 vi_copy_macro_recording_stopped = "Macro recording stopped"
 vi_copy_macro_replay_failed = "Macro replay failed (empty register or recursion limit)"
+vi_copy_needs_terminal = "Copy mode works only in a terminal"
 
 [webhook.warn]
 moved = "Webhook port {} was in use, so the listener took {}. Saved webhooks now answer on that port; `tasty webhook list` shows their URLs."

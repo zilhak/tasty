@@ -1,4 +1,4 @@
-<!-- source-hash: 5e49c676cab9 -->
+<!-- source-hash: 51a5edb6b65a -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -54,7 +54,19 @@ Drag (characters) · double-click (word) · triple-click (line). Selection exten
 
 ### Copy mode (vi)
 
-Move around the screen and the scrollback and copy without the mouse. Enter with `Ctrl+Shift+Space`. You cannot enter it while a program that uses the whole screen, such as vim, is running.
+Move around the screen and the scrollback and copy without the mouse. Click the terminal, then press `Ctrl+Shift+Space`. On macOS this is the `Control` key, not `Cmd`. If you changed the shortcut, press your own key.
+
+On entry, a notice in the lower-right corner of the terminal lists the keys to move, select, copy, and leave, and a copy cursor appears on the first cell of the top line on screen. Keys you press in copy mode are not sent to the shell or program.
+
+If Tasty cannot enter copy mode, a notice tells you why.
+
+- You cannot enter it while a program that uses the terminal's **alternate screen**, such as vim or less, is running. Maximizing the window or switching to OS full screen does not matter. Leave the program and try again.
+- You cannot enter it on a surface that is not a terminal, such as the explorer. You also cannot enter it while a markdown or HTML surface takes keyboard input, but then the notice may be hidden behind that surface's page.
+- If you are already in copy mode, Tasty tells you so instead of entering again.
+
+While a modal or popup takes keyboard input, the shortcut goes there, so neither copy mode nor a notice appears. Click the terminal and press it again.
+
+For example, run `printf '\033[2J\033[HABCDE\n'` in a shell to leave `ABCDE` at the top of the screen. Enter copy mode and check that the cursor sits on `A`. Release `Ctrl` and `Shift`, then press `v` `l` `l` `y` in turn: `ABC` is copied to the clipboard and copy mode ends.
 
 | Key | Action |
 |----|------|
@@ -63,11 +75,11 @@ Move around the screen and the scrollback and copy without the mouse. Enter with
 | `0` `^` `$` | Start of line / first character / end of line |
 | `gg` `G` / `H` `M` `L` | Top / bottom / top · middle · bottom of the screen |
 | `v` / `V` | Start character / line selection |
-| `y` | Copy and leave on success; keep the selection on failure |
+| `y` | Copy and leave on success; keep the selection on failure. Without a selection, leave without copying |
 | `/` `?` `n` `N` | Search down · up, next · previous match |
 | `"+` `"*` | Choose the target clipboard for the next copy |
 | `q<char>` … `q` / `@<char>` | Record / replay a macro |
-| `Esc` | Clear the selection. Leaves if there is no selection |
+| `Esc` | Clear the selection. Leaves if there is no selection. With a selection, the first `Esc` clears it and the second leaves |
 
 Copy notices appear only after the clipboard accepts the write. If access is unavailable or a transfer fails, Tasty shows a notice and keeps your selection. With a selection, a failed Ctrl+C copy does not interrupt the program. A failed paste sends no input; an empty clipboard does nothing.
 

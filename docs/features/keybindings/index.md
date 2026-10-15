@@ -260,6 +260,8 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 
 게이트보다 **앞**에서 도는 것은 셋뿐이다: 전체화면 무대의 종료 키 · double-tap · **Escape**.
 
+게이트에 막힌 단축키는 접수되지 않은 것이므로 그 액션의 거절 안내도 내지 않는다. 예를 들어 `enter_copy_mode`는 접수된 뒤에만 진입·거절 결과를 토스트로 알린다([복사 모드 진입 결과](../clipboard/index.md#복사-모드-진입-결과)).
+
 Escape 는 순서대로 세 가지를 본다.
 
 1. 설정 창이 열려 있으면 닫는다.
@@ -300,6 +302,8 @@ tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열
 | **Linux** | GNOME Terminal | `ctrl+shift+` 중심 |
 
 프리셋은 **권장**이지 플랫폼 강제가 아니다 — Mac 프리셋의 `alt+c` 는 macOS 에서 ⌘C, Windows 에서 Alt+C 로 동작한다([key-mapping](../../design/policies/key-mapping.md) 의 위치 기반 매핑).
+
+`enter_copy_mode`의 기본값은 네 프리셋 모두 `ctrl+shift+space`다. `ctrl` 토큰이므로 macOS 에서도 Command 가 아니라 Control+Shift+Space 다.
 
 #### 전체 바인딩 비교 (빈 칸 = 바인딩 없음)
 
