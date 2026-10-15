@@ -149,6 +149,11 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
   위 "Surface kind" 절의 경로 알림처럼 별도 스레드에서 부르거나, 그런 메서드를 trampoline하지 않고 호스트가 직접 받게 한다.
 - CLI top-level 이름과 alias 충돌은 실제 clap 명령 집합으로 등록 때 검사한다.
   충돌한 CLI 이름만 건너뛰고 warning을 남긴다. 플러그인 전체를 거절하지 않는다.
+- `[[contributes.cli]]`의 선택 필드 `help_group`은 루트 도움말에서 이 명령을 표시할 그룹이다.
+  `basic`·`agents`·`background`·`automation`·`files`·`settings` 중 하나이며, 생략하거나 모르는 값이면
+  "플러그인 명령" 그룹에 표시한다. 하위 명령의 선택 필드 `internal = true`는 훅·도우미가 호출하는
+  내부 연동 명령을 그 plugin 도움말의 마지막 그룹으로 분리한다. 두 필드 모두 도움말 표시에만 쓰이며
+  실행·권한·IPC에는 영향이 없다. 옛 매니페스트는 그대로 읽힌다([CLI 구조](cli-structure.md#도움말-표시-계약)).
 - CLI의 `ipc_method`는 자기 prefix에 속해야 한다. `commands`는 팔레트·단축키 기여 목록이며 전체 IPC 허용 목록은 아니다.
 
 선언된 인자 타입은 문서용 힌트가 아니다. flag와 stdin에서 받은 잘못된 타입은 요청 전체를 거절한다.

@@ -2458,16 +2458,19 @@ about = "GPU-accelerated terminal emulator for AI coding agents"
 help = "Custom port file path (for test isolation)"
 
 [cli.help._root.arg.webhook_port]
-help = "Webhook listener port for this run. Overrides the port saved with `tasty webhook port`. If the port cannot be opened, Tasty does not start (headless exits with code 1). Without this option and without a saved port, Tasty tries 28429 and the next 63 ports and takes the first free one"
+help = "Webhook listener port for this run, overriding `tasty webhook port`. If it cannot be opened, Tasty does not start"
+long = "Webhook listener port for this run, overriding `tasty webhook port`. If it cannot be opened, Tasty does not start.\n\nHeadless exits with code 1 in that case. Without this option and without a saved port, Tasty tries 28429 and the next 63 ports and takes the first free one."
 
 [cli.help._root.arg.response_timeout_ms]
-help = "Set the server's response wait limit for a single request, in milliseconds. If it expires after processing starts, the server returns -32061: the outcome is unknown and the request may still run. If it expires while queued, the server returns -32067 and the request did not run. 0 or no flag means no response wait limit. The instance must declare ipc.response-timeout; otherwise the original request is not sent. Time spent checking support is subtracted from the request's remaining budget. If the check times out or uses up that budget, the result is -32067 and the original request is not sent. The check also sets a timeout for each socket read. This option is not an absolute deadline covering connection setup, sending, and repeated reads. Commands that loop or stream refuse the flag"
+help = "Server response wait limit for one request, in milliseconds. On -32061 the outcome is unknown and the request may still run; 0 or no flag means no limit"
+long = "Server response wait limit for one request, in milliseconds. On -32061 the outcome is unknown and the request may still run; 0 or no flag means no limit.\n\nIf the limit expires after processing starts, the server returns -32061. If it expires while queued, the server returns -32067 and the request did not run. The instance must declare ipc.response-timeout; otherwise the original request is not sent. Time spent checking support is subtracted from the request's remaining budget. If the check times out or uses up that budget, the result is -32067 and the original request is not sent. The check also sets a timeout for each socket read. This option is not an absolute deadline covering connection setup, sending, and repeated reads. Commands that loop or stream refuse the flag"
 
 [cli.help._root.arg.launch]
 help = "Force GUI launch even inside a tasty terminal"
 
 [cli.help._root.arg.headless]
-help = "Run as headless terminal emulator (no GUI, IPC + PTY + plugin only). Only a no-default-features build is headless. A default-features (GUI) build does NOT embed headless mode: this flag logs a warning and boots the GUI anyway, so a window opens on whatever DISPLAY it inherits"
+help = "Run headless (no GUI). Only a no-default-features build is headless; a GUI build warns and still opens a window"
+long = "Run headless (no GUI). Only a no-default-features build is headless; a GUI build warns and still opens a window.\n\nHeadless mode runs IPC, PTYs and plugins only. A default-features (GUI) build does NOT embed headless mode: this flag logs a warning and boots the GUI anyway, so a window opens on whatever DISPLAY it inherits."
 
 [cli.help._root.arg.all]
 help = "Show all commands in a tree. Only valid before any command; see each command's --help for its arguments"
@@ -2476,7 +2479,7 @@ help = "Show all commands in a tree. Only valid before any command; see each com
 help = "Enable input simulation IPC (debug builds only). Required for debug.inject_mouse, debug.inject_key, etc"
 
 [cli.help._root.new]
-about = "Create a new resource (window, workspace, tab, split)"
+about = "Create a new resource (window, workspace, tab)"
 
 [cli.help._root.new.window]
 about = "Create a new window"
@@ -6601,6 +6604,30 @@ details = "Run '{} --help' for full details."
 error = "error:"
 aliases = "aliases: {}"
 tree_details = "Run 'tasty <command> --help' for arguments and full details."
+
+[cli.help_group]
+basic = "Basic operations:"
+agents = "Agent collaboration:"
+background = "Background and remote:"
+automation = "Automation and observation:"
+files = "Files and clipboard:"
+settings = "Settings and management:"
+plugins = "Plugin commands:"
+other = "Other commands:"
+internal = "Internal integration (called by hooks and helpers; not for direct use):"
+plugin_commands = "Commands:"
+agent_tasks = "Tasks and DAGs:"
+agent_sync = "Barriers and semaphores:"
+agent_lease = "Leases:"
+agent_rate_limit = "Rate limits:"
+
+[cli.help_start]
+title = "Getting started:"
+list = "Find surface IDs"
+send = "Type into a surface you own"
+read = "Read what that surface shows"
+help = "Full help for one command"
+tree = "Every command as a tree"
 
 [cli.parse]
 cause = "Parser detail: {}"

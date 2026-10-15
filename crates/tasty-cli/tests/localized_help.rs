@@ -155,11 +155,30 @@ fn assert_child_side(locale: &str) {
     let locale = report.effective;
     if locale == "en" {
         use clap::CommandFactory;
+        let mut localized = tasty_cli::localized_command();
+        let mut raw = tasty_cli::Cli::command();
+        // 목적별 그룹은 루트·agent의 명령 목록만 바꾼다. 다른 명령은 clap 기본 출력과 같다.
+        for path in [
+            &["new"][..],
+            &["surface", "completion"],
+            &["read", "since-mark"],
+        ] {
+            let mut l = &mut localized;
+            let mut r = &mut raw;
+            for p in path {
+                l = l.find_subcommand_mut(p).unwrap();
+                r = r.find_subcommand_mut(p).unwrap();
+            }
+            assert_eq!(
+                l.render_long_help().to_string(),
+                r.render_long_help().to_string(),
+                "{path:?}"
+            );
+        }
+        let options = |text: String| text.split("Options:").nth(1).map(str::to_string);
         assert_eq!(
-            tasty_cli::localized_command()
-                .render_long_help()
-                .to_string(),
-            tasty_cli::Cli::command().render_long_help().to_string()
+            options(localized.render_long_help().to_string()),
+            options(raw.render_long_help().to_string())
         );
     }
     let home = tasty_utils::path::tasty_home().unwrap();
@@ -167,11 +186,16 @@ fn assert_child_side(locale: &str) {
     assert_eq!(entries.len(), 1);
     let mut cmd = tasty_cli::dynamic::build_augmented_cli(&entries);
     let root = cmd.render_long_help().to_string();
+    // 그룹 정보가 없는 외부 plugin 명령은 plugin 그룹에 표시된다.
+    let plugins = tasty_i18n::t("cli.help_group.plugins");
+    let listed = root.split(plugins).nth(1).unwrap_or_default();
+    assert!(listed.contains("fixture"), "{root}");
+    assert!(listed.contains("USER TOP"), "{root}");
     let label = tasty_i18n::t("cli.help_frame.commands");
-    assert!(root.contains(label), "{root}");
     let sub = cmd.find_subcommand_mut("fixture").unwrap();
     let top = sub.render_long_help().to_string();
     assert!(top.contains("USER TOP"), "{top}");
+    assert!(top.contains(label), "{top}");
     let leaf = sub.find_subcommand_mut("show").unwrap();
     let help = leaf.render_long_help().to_string();
     assert!(help.contains("USER SUB"), "{help}");

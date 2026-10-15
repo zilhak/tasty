@@ -876,6 +876,11 @@ pub struct CliCommandDecl {
     pub description: Option<String>,
     #[serde(default)]
     pub description_i18n_key: Option<String>,
+    /// 루트 도움말에서 이 명령을 표시할 그룹. `basic` · `agents` · `background` ·
+    /// `automation` · `files` · `settings` 중 하나다. 생략하거나 모르는 값이면 plugin 그룹에
+    /// 표시한다. 도움말 표시에만 쓰이며 실행·권한에는 영향이 없다.
+    #[serde(default)]
+    pub help_group: Option<String>,
     #[serde(default)]
     pub subcommands: Vec<CliSubcommandDecl>,
     /// arg group 이름 → 정의. subcommand가 `args = "<key>"`로 참조한다.
@@ -899,6 +904,10 @@ pub struct CliSubcommandDecl {
     /// stdin_field를 키로 사용하고 없으면 인자 이름을 쓴다.
     #[serde(default)]
     pub stdin_json: bool,
+    /// 훅·도우미가 호출하는 내부 연동 명령. 도움말에서 마지막 "내부 연동" 그룹에 표시한다.
+    /// 숨기거나 실행을 막지 않는다. 생략하면 일반 명령이다.
+    #[serde(default)]
+    pub internal: bool,
     /// 상태가 terminal_states에 들거나 시간 제한에 도달할 때까지 IPC를 반복 호출한다.
     /// 시간 제한에 도달하면 마지막 응답을 출력한다.
     #[serde(default)]

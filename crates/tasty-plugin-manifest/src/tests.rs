@@ -3274,3 +3274,39 @@ fn completion_strategy_decl_parses_with_defaults_and_converts_to_polling_decl() 
         "named-strategy path does not support a CLI --timeout override in this round"
     );
 }
+
+/// 도움말 분류 필드는 선택 사항이다. 생략한 옛 매니페스트도 그대로 읽힌다.
+#[test]
+fn cli_help_group_and_internal_are_optional() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.groups"
+        name = "Groups"
+        version = "0.1.0"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.ipc_namespace]]
+        prefix = "groups"
+        [[contributes.cli]]
+        name = "groups"
+        help_group = "agents"
+        subcommands = [
+          { name = "run", ipc_method = "groups.run", args = "none" },
+          { name = "hook", internal = true, ipc_method = "groups.hook", args = "none" },
+        ]
+        [contributes.cli.arg_groups.none]
+        [[contributes.cli]]
+        name = "legacy"
+        subcommands = [{ name = "run", ipc_method = "groups.legacy", args = "none" }]
+        [contributes.cli.arg_groups.none]
+    "#;
+    let m = parse(s).expect("should parse");
+    let cli = &m.contributes.cli;
+    assert_eq!(cli[0].help_group.as_deref(), Some("agents"));
+    assert!(!cli[0].subcommands[0].internal);
+    assert!(cli[0].subcommands[1].internal);
+    assert_eq!(cli[1].help_group, None);
+    assert!(!cli[1].subcommands[0].internal);
+}

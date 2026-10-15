@@ -97,19 +97,21 @@ fn run(home: &Path, args: &[&str]) -> Output {
     child.wait_with_output().unwrap()
 }
 
-/// 도움말의 Commands 절에 나온 명령 이름 집합.
+/// 도움말의 명령 목록 절(Commands 또는 목적별 그룹)에 나온 명령 이름 집합.
+/// 옵션·인자 절과 시작 안내의 `tasty …` 예시는 제외한다.
 fn command_names(stdout: &str) -> Vec<String> {
     let mut names = Vec::new();
     let mut in_commands = false;
     for line in stdout.lines() {
         if line.ends_with(':') && !line.starts_with(' ') {
-            in_commands = line == "Commands:";
+            in_commands = !matches!(line, "Options:" | "Arguments:");
             continue;
         }
         if in_commands
             && line.starts_with("  ")
             && !line.starts_with("   ")
             && let Some(name) = line.split_whitespace().next()
+            && name != "tasty"
         {
             names.push(name.to_string());
         }

@@ -57,6 +57,7 @@ pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
 pub fn build_augmented_cli(entries: &[PluginCliEntry]) -> Command {
     let mut cmd = crate::help_i18n::command();
     let host = host_command_names(&cmd);
+    let mut groups = Vec::new();
     for entry in entries {
         if host.contains(&entry.cli.name) {
             crate::out::errln!(
@@ -66,8 +67,12 @@ pub fn build_augmented_cli(entries: &[PluginCliEntry]) -> Command {
             continue;
         }
         cmd = cmd.subcommand(build_cli_subcommand(&entry.cli));
+        groups.push((
+            entry.cli.name.clone(),
+            crate::help_groups::plugin_root_group(entry.cli.help_group.as_deref()),
+        ));
     }
-    cmd
+    crate::help_groups::apply_root(cmd, &groups)
 }
 
 /// 정적 명령과 alias를 clap 트리에서 읽는다.
@@ -109,7 +114,13 @@ fn build_cli_subcommand(decl: &CliCommandDecl) -> Command {
         }
         top = top.subcommand(sc);
     }
-    crate::help_i18n::localize_frame(top)
+    let internal: Vec<String> = decl
+        .subcommands
+        .iter()
+        .filter(|s| s.internal)
+        .map(|s| s.name.clone())
+        .collect();
+    crate::help_groups::apply_plugin_internal(crate::help_i18n::localize_frame(top), &internal)
 }
 
 fn apply_arg_group(mut cmd: Command, group: &CliArgGroup) -> Command {

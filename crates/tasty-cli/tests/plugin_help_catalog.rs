@@ -62,6 +62,14 @@ fn every_bundled_cli_description_and_argument_has_a_catalog_key() {
             1
         };
         for cli in &manifest.contributes.cli {
+            // 번들 plugin의 도움말 그룹은 선택 가능한 값이어야 한다. 오타는 plugin 그룹으로 떨어진다.
+            if let Some(group) = cli.help_group.as_deref() {
+                assert!(
+                    tasty_cli::help_groups::PLUGIN_SELECTABLE.contains(&group),
+                    "{}: help_group {group}",
+                    manifest.id
+                );
+            }
             slots += check(&cli.description, &cli.description_i18n_key);
             for sub in &cli.subcommands {
                 slots += check(&sub.description, &sub.description_i18n_key);

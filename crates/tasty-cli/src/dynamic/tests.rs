@@ -17,6 +17,7 @@ fn new_subcommand(name: &str, ipc_method: &str, args: &str) -> CliSubcommandDecl
         description: None,
         description_i18n_key: None,
         stdin_json: false,
+        internal: false,
         polling: None,
         auto_wait: None,
     }
@@ -102,6 +103,7 @@ fn sample_entry() -> PluginCliEntry {
             name: "codex".into(),
             description: None,
             description_i18n_key: None,
+            help_group: None,
             subcommands: vec![
                 new_subcommand("spawn", "codex.spawn", "spawn_args"),
                 new_subcommand("broadcast", "codex.broadcast", "broadcast_args"),
@@ -725,4 +727,36 @@ fn claude_hook_args_carry_background_work_fields_from_stdin_unchanged() {
     .expect("no background fields");
     assert!(!params.contains_key("background_tasks"));
     assert!(!params.contains_key("waiting_on_background_work"));
+}
+
+/// 내부 연동 하위 명령은 마지막 그룹에 따로 표시되며 실행 트리에는 그대로 남는다.
+#[test]
+fn internal_subcommands_are_listed_last_and_stay_runnable() {
+    let mut entry = sample_entry();
+    entry.cli.subcommands[1].internal = true;
+    entry.cli.help_group = Some("agents".into());
+    let mut cmd = build_augmented_cli(std::slice::from_ref(&entry));
+    let root = cmd.render_help().to_string();
+    let agents = tasty_i18n::t("cli.help_group.agents");
+    let section = root
+        .split(agents)
+        .nth(1)
+        .unwrap()
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(section.contains("codex"), "{root}");
+    let top = cmd.find_subcommand_mut("codex").unwrap();
+    let help = top.render_help().to_string();
+    let internal = tasty_i18n::t("cli.help_group.internal");
+    let (normal, tail) = help.split_once(internal).expect(&help);
+    assert!(
+        normal.contains("spawn") && !normal.contains("broadcast"),
+        "{help}"
+    );
+    assert!(tail.contains("broadcast"), "{help}");
+    let matches = cmd
+        .try_get_matches_from(["tasty", "codex", "broadcast", "hi"])
+        .map(|m| m.subcommand_name().map(str::to_string));
+    assert_eq!(matches.unwrap().as_deref(), Some("codex"));
 }

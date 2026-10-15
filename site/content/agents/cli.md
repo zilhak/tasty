@@ -562,6 +562,8 @@ judged는 권한 등을 검사한 요청 수이며 CLI 요청과 플러그인 �
 | 스크린샷 | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
 | 도움말 | `tasty help`, `tasty help <명령>`(= `tasty <명령> --help`), `tasty -a` (모든 명령 경로와 짧은 설명. 인자는 각 명령의 `--help`) |
 
+`tasty help`는 명령을 기본 조작·에이전트 협업·백그라운드·원격처럼 목적별로 묶어 보여 주고, 맨 앞에 첫 작업 순서를 안내합니다. `-h`는 짧은 설명, `--help`와 `tasty help <명령>`은 긴 설명을 보여 줍니다. Claude·Codex 도움말의 마지막 "내부 연동" 그룹은 훅이 부르는 명령이라 직접 입력하지 않습니다.
+
 ## 문제 해결
 
 - **연결이 안 됩니다** — Tasty 가 실행 중인지, `~/.tasty/tasty.port` 파일이 있는지 확인합니다. 파일이 남아 있어도 이전 실행의 파일이거나 다른 인스턴스의 경로일 수 있습니다 ([문제 해결](../help/troubleshooting.md)).

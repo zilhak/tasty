@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.2.11"
+version = "0.2.12"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -38,6 +38,7 @@ description = "Codex instance is waiting for a user approval (PermissionRequest 
 
 [[contributes.cli]]
 name = "codex"
+help_group = "agents"
 description = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 description_i18n_key = "codex.cli.desc"
 subcommands = [
@@ -46,18 +47,18 @@ subcommands = [
     { name = "children",      ipc_method = "codex.children",      args = "children_args",      description = "List children of the specified Codex parent", description_i18n_key = "codex.cli.sub.children.description" },
     { name = "parent",        ipc_method = "codex.parent_of",     args = "parent_args",        description = "Return the parent Codex surface id for a given child surface", description_i18n_key = "codex.cli.sub.parent.description" },
     { name = "result",        ipc_method = "codex.result",        args = "result_args",        description = "Read a child result that was returned to this Codex conversation. Run it from the Codex session that received the reference; reading does not delete the result.", description_i18n_key = "codex.cli.sub.result.description" },
-    { name = "session-bind", ipc_method = "codex.session_bind", args = "session_bind_args", stdin_json = true, description = "Internal: register the conversation selected by a native TUI", description_i18n_key = "codex.cli.sub.session-bind.description" },
-    { name = "session-open",  ipc_method = "codex.session_open",  args = "session_open_args",  description = "Internal: register a new session generation for the Codex session helper running in a terminal. Not intended for direct use.", description_i18n_key = "codex.cli.sub.session-open.description" },
+    { name = "session-bind", internal = true, ipc_method = "codex.session_bind", args = "session_bind_args", stdin_json = true, description = "Internal: register the conversation selected by a native TUI", description_i18n_key = "codex.cli.sub.session-bind.description" },
+    { name = "session-open", internal = true, ipc_method = "codex.session_open",  args = "session_open_args",  description = "Internal: register a new session generation for the Codex session helper running in a terminal. Not intended for direct use.", description_i18n_key = "codex.cli.sub.session-open.description" },
     { name = "state",         ipc_method = "codex.state",         args = "state_args",         description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)", description_i18n_key = "codex.cli.sub.state.description" },
     { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message with line breaks preserved and submit it. Waits for host responses, then returns without waiting for the task to finish. When called from a Codex conversation, the target's finished turns are returned to that conversation; otherwise, when a caller surface is provided, registers hooks for idle, input-wait and exit notifications.", description_i18n_key = "codex.cli.sub.tell.description" },
-    { name = "notify-caller", ipc_method = "codex.notify_caller", args = "notify_caller_args", description = "Internal: report a child state change and remove matching once-hooks. If the target surface can still be found, register the completion hooks again. Called by spawn/tell hooks; not intended for direct use.", description_i18n_key = "codex.cli.sub.notify-caller.description" },
+    { name = "notify-caller", internal = true, ipc_method = "codex.notify_caller", args = "notify_caller_args", description = "Internal: report a child state change and remove matching once-hooks. If the target surface can still be found, register the completion hooks again. Called by spawn/tell hooks; not intended for direct use.", description_i18n_key = "codex.cli.sub.notify-caller.description" },
     { name = "broadcast",     ipc_method = "codex.broadcast",     args = "broadcast_args",     description = "Broadcast text to all children of a parent Codex instance", description_i18n_key = "codex.cli.sub.broadcast.description" },
     { name = "kill",          ipc_method = "codex.kill",          args = "kill_args",          description = "Kill a child Codex instance by child index", description_i18n_key = "codex.cli.sub.kill.description" },
     { name = "respawn",       ipc_method = "codex.respawn",       args = "respawn_args",       description = "Respawn a child Codex instance", description_i18n_key = "codex.cli.sub.respawn.description" },
     { name = "reboot",        ipc_method = "codex.reboot",        args = "reboot_args",        description = "Restart the Codex instance in a surface and resume the same session (delayed kill + codex resume). Call this as the LAST action of a turn — anything after the delay is cut off.", description_i18n_key = "codex.cli.sub.reboot.description" },
     { name = "install",       ipc_method = "codex.install",       args = "install_args",            description = "Install Tasty hook into Codex CLI configuration", description_i18n_key = "codex.cli.sub.install.description" },
     { name = "uninstall",     ipc_method = "codex.uninstall",     args = "install_args",            description = "Uninstall Tasty hook from Codex CLI configuration", description_i18n_key = "codex.cli.sub.uninstall.description" },
-    { name = "hook",          ipc_method = "codex.hook",          args = "hook_args",          stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id, prompt, last_assistant_message, model, turn_id) when invoked by Codex's hook system.", description_i18n_key = "codex.cli.sub.hook.description" },
+    { name = "hook", internal = true, ipc_method = "codex.hook",          args = "hook_args",          stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id, prompt, last_assistant_message, model, turn_id) when invoked by Codex's hook system.", description_i18n_key = "codex.cli.sub.hook.description" },
 ]
 
 [contributes.cli.arg_groups.launch_args]

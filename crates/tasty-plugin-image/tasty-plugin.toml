@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.image"
 name = "Image"
-version = "0.1.253"
+version = "0.1.254"
 description = "Image surface viewer / paint canvas"
 api_version = "1"
 permissions = [
@@ -70,6 +70,7 @@ param_key = "file"
 
 [[contributes.cli]]
 name = "image"
+help_group = "files"
 description = "Image surface viewer and paint canvas"
 description_i18n_key = "image.cli.desc"
 subcommands = [

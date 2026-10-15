@@ -97,6 +97,42 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 읽지 못한 매니페스트는 기존 경고를 출력하고 건너뛰며 host 도움말은 계속 표시한다.
 시험은 `tests/cli_help_entrypoints.rs`다.
 
+### 도움말 표시 계약
+
+명령 존재 집합은 진입점마다 같고 설명의 깊이만 다르다.
+
+| 진입점 | 표시하는 명령 | 설명 깊이 |
+|---|---|---|
+| `tasty help`, `tasty -h` | 모든 최상위 명령을 목적별 그룹으로 | 시작 안내와 짧은 설명 |
+| `tasty --help` | 위와 같은 집합·그룹 | 루트 옵션의 긴 설명 포함 |
+| `tasty <경로> -h` | 해당 경로의 모든 하위 명령, 내부 연동은 마지막 그룹 | 짧은 설명 |
+| `tasty help <경로>`, `tasty <경로> --help` | 위와 같은 집합·그룹 | 긴 설명(`long_about`·`long_help`) |
+| `tasty -a` | 해당 빌드의 모든 깊이 canonical 명령 | 경로와 짧은 설명 |
+
+그룹 표시는 `help_groups`가 맡는다. clap은 하위 명령 그룹 제목을 지원하지 않으므로 그룹 목록을
+템플릿 해석을 거치지 않는 before-help 자리에 넣고, 사용법·인자·옵션 절은 clap이 그린다.
+파싱·실행 경로와 IPC 메서드·권한은 바꾸지 않는다.
+
+- 루트: 기본 조작 / 에이전트 협업 / 백그라운드·원격 / 자동화·관찰 / 파일·클립보드 / 설정·관리 /
+  플러그인 명령 / 기타 명령. host 명령의 그룹은 `HOST_ROOT` 표로 정한다. 표에 없는 host 명령은 "기타 명령"으로
+  표시되고 `every_host_command_has_a_root_group` 시험이 실패한다. debug 빌드에만 있는 `debug`는
+  사용자 조작을 재현하는 명령이라 표에서 명시적으로 "기타 명령"에 둔다. 루트 첫 부분에는 시작 안내
+  (`list surfaces` → `send text` → `read screen`, 개별 도움말과 전체 트리)를 둔다.
+  시작 안내의 예시는 `start_examples_parse`가 실제 파서로 확인한다.
+- `tasty agent`: 작업·DAG / 배리어·세마포어 / 임대(lease) / 속도 제한. 명령 경로는 그대로다.
+- plugin 최상위 명령은 매니페스트의 `help_group`으로 그룹을 정한다. 생략하거나 모르는 값이면
+  "플러그인 명령" 그룹이다. `internal = true`인 하위 명령은 그 plugin 도움말의 마지막
+  "내부 연동" 그룹에 표시한다. 숨기거나 실행을 막지 않으며 `-a`와 직접 `--help`에도 나온다.
+  설명 문구로 내부 여부를 추측하지 않는다.
+
+그룹 제목(`cli.help_group.*`)과 시작 안내(`cli.help_start.*`)는 clap 슬롯이 아니므로
+`help_groups::text_keys`가 키 목록을 제공하고 `group_headings_and_start_lines_exist_in_every_language`가
+en/ko/ja 카탈로그를 대조한다. 그룹이 있는 명령은 en·ko·ja 모두 같은 템플릿을 쓴다.
+
+짧은 도움말(`-h`)의 인자 설명은 doc comment 첫 문단이다. 긴 계약은 빈 줄 뒤 문단에 두어
+`--help`에서만 펼친다. 결과 불명(-32061)이나 GUI 빌드의 헤드리스 제약처럼 오동작 판단에 필요한
+사실은 첫 문단에 남긴다.
+
 ### 전체 트리와 인자 사용법
 
 `tasty -a`는 해당 빌드에 있는 host·plugin 명령을 모든 깊이까지 `경로 — 짧은 설명` 형태로 출력한다.

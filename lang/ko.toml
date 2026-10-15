@@ -2392,16 +2392,19 @@ about = "AI 코딩 에이전트를 위한 GPU 가속 터미널 에뮬레이터"
 help = "포트 파일 경로 지정 (테스트 격리용)"
 
 [cli.help._root.arg.webhook_port]
-help = "이번 실행의 웹훅 리스너 포트. `tasty webhook port`로 저장한 포트보다 우선한다. 포트를 열 수 없으면 Tasty가 시작하지 않는다(헤드리스는 종료 코드 1). 이 옵션도 저장한 포트도 없으면 28429와 그다음 63개 포트를 차례로 시도해 처음 비어 있는 포트를 쓴다"
+help = "이번 실행의 웹훅 리스너 포트. `tasty webhook port`로 저장한 포트보다 우선한다. 포트를 열 수 없으면 Tasty가 시작하지 않는다"
+long = "이번 실행의 웹훅 리스너 포트. `tasty webhook port`로 저장한 포트보다 우선한다. 포트를 열 수 없으면 Tasty가 시작하지 않는다.\n\n이때 헤드리스는 종료 코드 1로 끝난다. 이 옵션도 저장된 포트도 없으면 28429부터 63개 다음 포트까지 시도해 처음 비어 있는 포트를 사용한다."
 
 [cli.help._root.arg.response_timeout_ms]
-help = "단일 요청에 대한 서버의 응답 대기 제한을 밀리초로 지정합니다. 처리 시작 후 제한에 도달하면 서버가 -32061을 반환합니다. 결과는 알 수 없으며 요청은 계속 실행될 수 있습니다. 큐에서 기다리던 요청은 -32067을 반환하며 실행되지 않습니다. 0이거나 옵션을 지정하지 않으면 응답 대기 제한이 없습니다. 인스턴스가 ipc.response-timeout 지원을 알리지 않으면 원래 요청은 보내지 않습니다. 지원 여부를 확인한 시간은 요청에 남은 시간에서 차감합니다. 확인 중 timeout이 나거나 남은 시간을 다 쓰면 -32067을 반환하고 원래 요청은 보내지 않습니다. 확인 과정에서는 개별 소켓 읽기에도 timeout을 설정합니다. 이 옵션은 연결, 송신, 반복 읽기를 포함한 전체 호출의 절대 기한이 아닙니다. 반복하거나 스트리밍하는 명령은 이 옵션을 사용할 수 없습니다"
+help = "요청 하나의 서버 응답 대기 제한(밀리초). -32061이면 결과를 알 수 없으며 요청은 계속 실행될 수 있다. 0이거나 옵션을 지정하지 않으면 제한이 없다"
+long = "요청 하나의 서버 응답 대기 제한(밀리초). -32061이면 결과를 알 수 없으며 요청은 계속 실행될 수 있다. 0이거나 옵션을 지정하지 않으면 제한이 없다.\n\n처리 시작 후 제한에 도달하면 서버가 -32061을 반환한다. 큐에서 기다리던 요청은 -32067을 반환하며 실행되지 않는다. 인스턴스가 ipc.response-timeout 지원을 알리지 않으면 원래 요청은 보내지 않는다. 지원 여부를 확인한 시간은 요청에 남은 시간에서 차감한다. 확인 중 timeout이 나거나 남은 시간을 다 쓰면 -32067을 반환하고 원래 요청은 보내지 않는다. 확인 과정에서는 개별 소켓 읽기에도 timeout을 설정한다. 이 옵션은 연결, 송신, 반복 읽기를 포함한 전체 호출의 절대 기한이 아니다. 반복하거나 스트리밍하는 명령은 이 옵션을 사용할 수 없다"
 
 [cli.help._root.arg.launch]
 help = "tasty 터미널 안에서도 GUI 를 강제로 실행"
 
 [cli.help._root.arg.headless]
-help = "헤드리스 터미널 에뮬레이터로 실행 (GUI 없이 IPC + PTY + plugin 만). 헤드리스는 no-default-features 빌드뿐이다 — GUI 빌드는 경고만 남기고 그대로 GUI 를 띄워, 물려받은 DISPLAY 에 윈도우가 뜬다"
+help = "헤드리스로 실행(GUI 없음). 헤드리스는 no-default-features 빌드뿐이며, GUI 빌드는 경고만 남기고 윈도우를 띄운다"
+long = "헤드리스로 실행(GUI 없음). 헤드리스는 no-default-features 빌드뿐이며, GUI 빌드는 경고만 남기고 윈도우를 띄운다.\n\n헤드리스는 IPC, PTY, plugin만 실행한다. GUI 빌드(default features)에는 헤드리스 모드가 들어 있지 않다. 이 옵션은 경고만 남기고 그대로 GUI를 띄워, 물려받은 DISPLAY에 윈도우가 뜬다."
 
 [cli.help._root.arg.all]
 help = "모든 명령을 트리로 표시한다. 명령 앞(루트 위치)에서만 유효하며, 각 명령의 인자는 그 명령의 --help로 본다"
@@ -2410,7 +2413,7 @@ help = "모든 명령을 트리로 표시한다. 명령 앞(루트 위치)에서
 help = "입력 시뮬레이션 IPC 활성화 (debug 빌드 전용). debug.inject_mouse, debug.inject_key 등에 필요"
 
 [cli.help._root.new]
-about = "새 리소스 생성 (윈도우, 워크스페이스, 탭, 분할)"
+about = "새 리소스 생성 (윈도우, 워크스페이스, 탭)"
 
 [cli.help._root.new.window]
 about = "새 윈도우 만들기"
@@ -6535,6 +6538,30 @@ details = "자세한 내용은 '{} --help'를 실행하세요."
 error = "오류:"
 aliases = "별칭: {}"
 tree_details = "인자와 자세한 내용은 'tasty <명령> --help'를 실행하세요."
+
+[cli.help_group]
+basic = "기본 조작:"
+agents = "에이전트 협업:"
+background = "백그라운드·원격:"
+automation = "자동화·관찰:"
+files = "파일·클립보드:"
+settings = "설정·관리:"
+plugins = "플러그인 명령:"
+other = "기타 명령:"
+internal = "내부 연동 (훅·도우미가 호출하며 직접 사용하지 않음):"
+plugin_commands = "명령:"
+agent_tasks = "작업·DAG:"
+agent_sync = "배리어·세마포어:"
+agent_lease = "임대(lease):"
+agent_rate_limit = "속도 제한:"
+
+[cli.help_start]
+title = "시작하기:"
+list = "surface ID 찾기"
+send = "내가 만든 surface에 입력 보내기"
+read = "그 surface의 화면 읽기"
+help = "명령 하나의 전체 도움말"
+tree = "모든 명령을 트리로 보기"
 
 [cli.parse]
 cause = "파서 상세: {}"

@@ -150,7 +150,7 @@ fn localize_at(mut cmd: Command, path: String) -> Command {
 /// 제품 코드가 사용하는 번역된 명령 트리. Cli::command를 직접 호출하면 번역을 건너뛴다.
 pub fn command() -> Command {
     use clap::CommandFactory;
-    localize(crate::Cli::command())
+    crate::help_groups::apply_host(localize(crate::Cli::command()))
 }
 
 /// Apply localized presentation to an already translated plugin command tree.

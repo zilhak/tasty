@@ -14,6 +14,7 @@ pub mod format;
 pub mod help;
 mod help_error;
 mod help_frame;
+pub mod help_groups;
 pub mod help_i18n;
 pub mod help_route;
 pub mod hook_failure;
@@ -53,17 +54,19 @@ pub struct Cli {
     #[arg(long)]
     pub port_file: Option<String>,
 
-    /// Webhook listener port for this run. Overrides the port saved with
-    /// `tasty webhook port`. If the port cannot be opened, Tasty does not start
-    /// (headless exits with code 1). Without this option and without a saved
-    /// port, Tasty tries 28429 and the next 63 ports and takes the first free one.
+    /// Webhook listener port for this run, overriding `tasty webhook port`.
+    /// If it cannot be opened, Tasty does not start.
+    ///
+    /// Headless exits with code 1 in that case. Without this option and without a
+    /// saved port, Tasty tries 28429 and the next 63 ports and takes the first free one.
     #[arg(long, value_name = "PORT", value_parser = clap::value_parser!(u16).range(1..))]
     pub webhook_port: Option<u16>,
 
-    /// Set the server's response wait limit for a single request, in milliseconds.
-    /// If it expires after processing starts, the server returns -32061: the outcome is
-    /// unknown and the request may still run. If it expires while queued, the server
-    /// returns -32067 and the request did not run. 0 or no flag means no response wait limit.
+    /// Server response wait limit for one request, in milliseconds. On -32061 the
+    /// outcome is unknown and the request may still run; 0 or no flag means no limit.
+    ///
+    /// If the limit expires after processing starts, the server returns -32061. If it
+    /// expires while queued, the server returns -32067 and the request did not run.
     /// The instance must declare ipc.response-timeout; otherwise the original request is not sent.
     /// Time spent checking support is subtracted from the request's remaining budget.
     /// If the check times out or uses up that budget, the result is -32067 and the original
@@ -79,10 +82,12 @@ pub struct Cli {
     #[arg(long)]
     pub launch: bool,
 
-    /// Run as headless terminal emulator (no GUI, IPC + PTY + plugin only).
-    /// Only a no-default-features build is headless. A default-features (GUI)
-    /// build does NOT embed headless mode: this flag logs a warning and boots
-    /// the GUI anyway, so a window opens on whatever DISPLAY it inherits.
+    /// Run headless (no GUI). Only a no-default-features build is headless; a GUI
+    /// build warns and still opens a window.
+    ///
+    /// Headless mode runs IPC, PTYs and plugins only. A default-features (GUI) build
+    /// does NOT embed headless mode: this flag logs a warning and boots the GUI anyway,
+    /// so a window opens on whatever DISPLAY it inherits.
     #[arg(long, default_value_t = false)]
     pub headless: bool,
 
@@ -99,7 +104,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Create a new resource (window, workspace, tab, split)
+    /// Create a new resource (window, workspace, tab)
     New {
         #[command(subcommand)]
         command: NewCommands,

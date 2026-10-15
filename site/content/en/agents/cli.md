@@ -1,4 +1,4 @@
-<!-- source-hash: 9002271cad95 -->
+<!-- source-hash: ca28b48f1d92 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -543,6 +543,8 @@ per-limit total, so it is a different value.
 | Notification | `tasty notify "body" --title "title"` |
 | Screenshot | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
 | Help | `tasty help`, `tasty help <command>` (= `tasty <command> --help`), `tasty -a` (every command path with a short description; arguments are in each command’s `--help`) |
+
+`tasty help` groups commands by purpose, such as basic operations, agent collaboration, and background and remote, and starts with a short first-task walkthrough. `-h` shows short descriptions; `--help` and `tasty help <command>` show the long ones. The last "Internal integration" group in the Claude and Codex help lists commands that hooks call, so you do not type them yourself.
 
 ## Troubleshooting
 
