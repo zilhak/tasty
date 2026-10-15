@@ -400,7 +400,8 @@ pub(crate) mod tests {
     use crate::app::services::AppServices;
 
     /// 실제 writer 스레드를 거치는 구성. 시험 구성의 기본은 writer 없이 바로 실행한다.
-    /// 수집 창을 넓혀 제출 직후에는 결과가 없도록 한다.
+    /// 수집 창을 넓혀 제출 직후에는 결과가 없도록 한다. 수집 창이 없는 barrier 요청은
+    /// `run_request` 가 [`WriterGate`]로 writer 를 멈춰 같은 조건을 만든다.
     fn writer_core() -> AppServices {
         writer_core_with(
             Arc::new(Mutex::new(
@@ -434,6 +435,54 @@ pub(crate) mod tests {
             .with_memory_writer(writer, changes, wake)
             .build()
             .expect("test AppServices")
+    }
+
+    /// 요청을 처리하는 동안 writer 를 멈춘다. barrier 요청(`Read`·`Section`)은 수집 창 없이 바로
+    /// 실행되므로, 멈추지 않으면 writer 스레드가 제출 직후의 `try_take` 보다 먼저 끝내 핸들러가
+    /// 결과로 바로 응답할 수 있다(`Handled::Now`). 그 응답도 writer 결과에서 만든 것이지만 시험의
+    /// `later` 가 스레드 일정에 따라 달라진다. 멈춘 동안 접수한 요청은 결과가 없으므로 `later` 는
+    /// 핸들러가 writer 결과를 기다리게 했는지만 나타낸다.
+    struct WriterGate {
+        release: mpsc::SyncSender<()>,
+        ticket: tasty_memory::writer::MemoryTicket,
+    }
+
+    impl WriterGate {
+        /// writer 가 없는 구성(요청을 호출 스레드에서 바로 실행)에서는 멈출 것이 없다.
+        fn hold(core: &AppServices) -> Option<Self> {
+            if !core.memory_access().is_queued() {
+                return None;
+            }
+            let (release, held) = mpsc::sync_channel::<()>(1);
+            let gate = tasty_memory::writer::MemoryRequest::section(0, move || {
+                // 송신 쪽을 버리면(`release`, panic 으로 풀린 시험 포함) Disconnected 로 끝난다.
+                if let Err(mpsc::RecvTimeoutError::Timeout) =
+                    held.recv_timeout(Duration::from_secs(30))
+                {
+                    panic!("the test writer gate was never released");
+                }
+            });
+            // 닫히거나 가득 찬 writer 는 뒤 요청도 접수하지 않아 경합이 없다. 그 거절 응답은 시험이 본다.
+            match core.memory_access().submit(gate) {
+                Ok(ticket) => Some(Self { release, ticket }),
+                Err(_) => None,
+            }
+        }
+
+        /// writer 를 다시 움직이고 멈춤 구간이 끝날 때까지 기다린다.
+        fn release(self) {
+            let Self {
+                release,
+                mut ticket,
+            } = self;
+            drop(release);
+            let completion = ticket
+                .wait_timeout(Duration::from_secs(30))
+                .expect("the writer gate finished");
+            if let Err(failure) = tasty_memory::writer::settle(completion) {
+                panic!("the writer gate failed: {failure:?}");
+            }
+        }
     }
 
     pub(crate) fn make_request(
@@ -485,7 +534,13 @@ pub(crate) mod tests {
                 Err(r) if panic_on_reject => panic!("request rejected: {r:?}"),
                 Err(response) => return (response, false),
             };
-        match crate::ipc::handler::handle_checked_request(core, &mut state, &mut engine, &checked) {
+        let gate = WriterGate::hold(core);
+        let handled =
+            crate::ipc::handler::handle_checked_request(core, &mut state, &mut engine, &checked);
+        if let Some(gate) = gate {
+            gate.release();
+        }
+        match handled {
             Handled::Now(response) => (response, false),
             Handled::Later(deferred) => {
                 let (tx, rx) = mpsc::sync_channel(1);
