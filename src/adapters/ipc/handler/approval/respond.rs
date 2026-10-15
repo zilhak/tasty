@@ -1,4 +1,4 @@
-//! 승인 요청에 응답하고 허용된 권한을 적용한다.
+//! 승인 요청에 응답한다. 허용된 권한은 App 승인 계약이 적용한다.
 
 use super::*;
 
@@ -23,12 +23,7 @@ pub fn handle_respond(
         .map(str::to_string);
     let by = responder_from_caller(caller);
 
-    // 권한 부여에 실패해도 승인 응답은 보존한다. agent 재시도 때 다시 권한을 요청한다.
-    // 권한 부여는 기록 제출보다 먼저 일어난다.
-    let grant = |core: &AppServices, record: &ApprovalRecord| {
-        apply_elevation_grant_if_any(core, record, &choice)
-    };
-    match core.respond_approval(&req_id, choice.clone(), by, comment, grant) {
+    match core.respond_approval(&req_id, choice, by, comment) {
         Ok(transition) => {
             let body = record_to_json(&transition.change.record);
             reply_after_record(core, id, transition, body)

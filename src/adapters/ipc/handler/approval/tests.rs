@@ -1,6 +1,7 @@
 //! `approval.*` IPC 단위 테스트.
 
 use super::*;
+use crate::app::approval_grant::elevation_grant_decision;
 use tasty_approval::ApprovalState;
 
 fn elevation_record(extra_metadata: Value) -> ApprovalRecord {

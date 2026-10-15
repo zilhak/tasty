@@ -392,18 +392,19 @@ impl AppServices {
         Ok(approval_records::submit(self.memory_access(), change))
     }
 
-    /// 응답을 적용하고 그 기록을 제출한다. `before_record`는 전이 직후 기록 제출 전에 실행되어
-    /// 권한 부여처럼 기록보다 먼저 일어나야 하는 후처리를 맡는다.
+    /// 응답을 적용하고 그 기록을 제출한다. 권한 상승 요청을 승인하면 전이 직후, 기록 제출 전에
+    /// 그 agent 세션에 권한을 부여한다. IPC와 GUI 팝업 응답이 모두 이 경로를 쓴다.
     pub(crate) fn respond_approval(
         &mut self,
         req_id: &tasty_approval::ApprovalId,
         choice: String,
         by: tasty_approval::Responder,
         comment: Option<String>,
-        before_record: impl FnOnce(&Self, &tasty_approval::ApprovalRecord),
     ) -> Result<ApprovalTransition, tasty_approval::ApprovalError> {
-        let change = self.approval_store.respond(req_id, choice, by, comment)?;
-        before_record(self, &change.record);
+        let change = self
+            .approval_store
+            .respond(req_id, choice.clone(), by, comment)?;
+        crate::app::approval_grant::apply_elevation_grant_if_any(self, &change.record, &choice);
         Ok(approval_records::submit(self.memory_access(), change))
     }
 

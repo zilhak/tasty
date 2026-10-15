@@ -223,7 +223,6 @@ impl App {
             choice.clone(),
             tasty_approval::Responder::User,
             comment.clone(),
-            |_, _| {},
         ) {
             Ok(transition) => {
                 // 기록은 App이 이미 제출했다. 결과는 메인 루프가 거두므로 popup 수명과 무관하다.
@@ -509,3 +508,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "intents_approval_tests.rs"]
+mod approval_tests;

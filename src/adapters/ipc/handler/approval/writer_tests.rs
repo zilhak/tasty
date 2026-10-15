@@ -159,7 +159,7 @@ fn a_gui_response_hands_its_record_to_the_main_loop() {
     requested.record.detach(core.memory_access());
 
     let responded = core
-        .respond_approval(&id, "approve".into(), Responder::User, None, |_, _| {})
+        .respond_approval(&id, "approve".into(), Responder::User, None)
         .expect("respond");
     assert!(matches!(responded.record, RecordReceipt::Accepted(_)));
     responded.record.detach(core.memory_access());

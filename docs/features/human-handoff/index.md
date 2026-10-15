@@ -53,7 +53,7 @@ key·scope·직렬화와 기록 제출은 app 기능 모듈 `approval_records` �
 | GUI popup 응답, capability elevation 발행, cap `require_approval` | 기다리지 않는다. 메인 루프가 App 의 memory 핸들에서 결과를 거두므로 popup·View 수명과 무관하다 |
 | `approval.await` 대기 워커(만료) | 그 대기가 만료 전이를 적용했을 때만 기록을 제출하고 워커 스레드에서 최대 30초 기다린다 |
 
-응답·취소로 끝난 대기는 그 전이를 만든 쪽이 이미 기록을 제출했으므로 워커가 다시 쓰지 않는다. 같은 요청을 여러 워커가 기다려도 만료 전이와 그 기록은 하나다. `approval.respond` 의 capability elevation 권한 부여는 전이 직후, 기록 제출 전에 실행한다.
+응답·취소로 끝난 대기는 그 전이를 만든 쪽이 이미 기록을 제출했으므로 워커가 다시 쓰지 않는다. 같은 요청을 여러 워커가 기다려도 만료 전이와 그 기록은 하나다. capability elevation 권한 부여는 `respond_approval` 이 전이 직후, 기록 제출 전에 실행하므로 `approval.respond` 와 GUI popup 응답에 똑같이 적용된다.
 
 저장 실패는 경고 로그로만 남긴다. 이미 끝난 메모리 상태 전이와 IPC 응답 내용은 바뀌지 않는다.
 
