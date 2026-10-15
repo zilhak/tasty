@@ -1129,6 +1129,7 @@ fn push_approval(
             severity: Severity::Info,
             created_at: 1,
             metadata: serde_json::Value::Null,
+            host_elevation: None,
         },
         state: tasty_approval::ApprovalState::Pending,
         history: vec![],

@@ -4,18 +4,8 @@ use super::*;
 use crate::app::approval_grant::elevation_grant_decision;
 use tasty_approval::ApprovalState;
 
-fn elevation_record(extra_metadata: Value) -> ApprovalRecord {
-    let mut md = json!({
-        "kind": "capability_elevation",
-        "agent_id": "child:1",
-        "permission": "fs.write",
-        "grant_ttl_secs": 3600u64,
-    });
-    if let (Value::Object(base), Value::Object(extra)) = (&mut md, extra_metadata) {
-        for (k, v) in extra {
-            base.insert(k, v);
-        }
-    }
+/// host 가 발행한 권한 상승 요청과 같은 모양의 기록. metadata 는 공개 조회용 사본이다.
+fn elevation_record() -> ApprovalRecord {
     ApprovalRecord {
         request: ApprovalRequest {
             id: ApprovalId::generate(),
@@ -31,7 +21,17 @@ fn elevation_record(extra_metadata: Value) -> ApprovalRecord {
             timeout_ms: None,
             severity: Severity::Warn,
             created_at: 0,
-            metadata: md,
+            metadata: json!({
+                "kind": "capability_elevation",
+                "agent_id": "child:1",
+                "permission": "fs.write",
+                "grant_ttl_secs": 3600u64,
+            }),
+            host_elevation: Some(tasty_approval::HostElevation {
+                agent_id: "child:1".into(),
+                permission: "fs.write".into(),
+                grant_ttl_secs: Some(3600),
+            }),
         },
         state: ApprovalState::Pending,
         history: vec![],
@@ -39,8 +39,8 @@ fn elevation_record(extra_metadata: Value) -> ApprovalRecord {
 }
 
 #[test]
-fn approve_yields_finite_ttl_from_metadata() {
-    let rec = elevation_record(json!({}));
+fn approve_yields_the_host_ttl() {
+    let rec = elevation_record();
     let (aid, perm, ttl) = elevation_grant_decision(&rec, "approve").expect("decision");
     assert_eq!(aid, "child:1");
     assert_eq!(perm, "fs.write");
@@ -49,37 +49,44 @@ fn approve_yields_finite_ttl_from_metadata() {
 
 #[test]
 fn approve_permanently_yields_no_ttl() {
-    let rec = elevation_record(json!({}));
+    let rec = elevation_record();
     let (_, _, ttl) = elevation_grant_decision(&rec, "approve_permanently").expect("decision");
     assert_eq!(ttl, None);
 }
 
 #[test]
 fn deny_yields_no_grant() {
-    let rec = elevation_record(json!({}));
+    let rec = elevation_record();
     assert!(elevation_grant_decision(&rec, "deny").is_none());
 }
 
+/// metadata 가 권한 상승과 같아도 host 표지가 없으면 grant 하지 않는다.
 #[test]
-fn non_elevation_record_skipped() {
-    let mut rec = elevation_record(json!({}));
-    rec.request.metadata = json!({"kind": "other"});
+fn elevation_metadata_without_the_host_marker_is_skipped() {
+    let mut rec = elevation_record();
+    rec.request.host_elevation = None;
     assert!(elevation_grant_decision(&rec, "approve").is_none());
+    assert!(elevation_grant_decision(&rec, "approve_permanently").is_none());
+}
+
+/// grant 대상은 host 표지에서만 읽는다. metadata 를 바꿔도 대상이 바뀌지 않는다.
+#[test]
+fn the_grant_target_ignores_metadata() {
+    let mut rec = elevation_record();
+    rec.request.metadata = json!({
+        "kind": "capability_elevation",
+        "agent_id": "someone:else",
+        "permission": "memory.secret",
+    });
+    let (aid, perm, _) = elevation_grant_decision(&rec, "approve").expect("decision");
+    assert_eq!((aid.as_str(), perm.as_str()), ("child:1", "fs.write"));
 }
 
 #[test]
-fn missing_required_metadata_skipped() {
-    let mut rec = elevation_record(json!({}));
-    rec.request.metadata = json!({"kind": "capability_elevation"});
-    assert!(elevation_grant_decision(&rec, "approve").is_none());
-}
-
-#[test]
-fn approve_without_grant_ttl_secs_is_indefinite_in_metadata() {
-    // grant_ttl_secs 누락 시 approve 는 None (무기한) 으로 fallback.
-    let mut rec = elevation_record(json!({}));
-    if let Value::Object(m) = &mut rec.request.metadata {
-        m.remove("grant_ttl_secs");
+fn approve_without_a_host_ttl_is_indefinite() {
+    let mut rec = elevation_record();
+    if let Some(e) = rec.request.host_elevation.as_mut() {
+        e.grant_ttl_secs = None;
     }
     let (_, _, ttl) = elevation_grant_decision(&rec, "approve").expect("decision");
     assert_eq!(ttl, None);
@@ -88,7 +95,7 @@ fn approve_without_grant_ttl_secs_is_indefinite_in_metadata() {
 /// 공통 권한 요청 오류에 조회 가능한 approval_id와 대상 권한·메서드가 포함된다.
 #[test]
 fn the_elevation_envelope_carries_what_the_agent_needs_to_recover() {
-    let rec = elevation_record(json!({}));
+    let rec = elevation_record();
     let data = elevation_error_data(&rec, "fs.write", "file.write");
 
     assert_eq!(data["kind"], "capability_elevation");

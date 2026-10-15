@@ -216,6 +216,7 @@ mod tests {
             severity: Severity::Info,
             created_at: 0,
             metadata: serde_json::Value::Null,
+            host_elevation: None,
         }
     }
 

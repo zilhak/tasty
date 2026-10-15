@@ -482,6 +482,7 @@ pub(super) fn fire_require_approval(
             "value": current,
             "threshold": cap.threshold,
         }),
+        host_elevation: None,
     };
     match core.request_approval(req) {
         Ok(transition) => {

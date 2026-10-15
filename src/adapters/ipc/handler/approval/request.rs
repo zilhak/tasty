@@ -104,6 +104,15 @@ pub fn handle_request(
         });
 
     let metadata = params.get("metadata").cloned().unwrap_or(Value::Null);
+    // 권한 상승 요청은 host 만 만든다. 같은 kind 를 흉내 낸 요청은 사용자를 속일 수 있으므로 받지 않는다.
+    if metadata.get("kind").and_then(|v| v.as_str()) == Some(ELEVATION_KIND) {
+        return map_error(
+            id,
+            ApprovalError::InvalidRequest(format!(
+                "metadata.kind '{ELEVATION_KIND}' is reserved for host-issued requests"
+            )),
+        );
+    }
 
     let req = ApprovalRequest {
         id: ApprovalId::generate(),
@@ -118,6 +127,7 @@ pub fn handle_request(
         severity,
         created_at: 0,
         metadata,
+        host_elevation: None,
     };
 
     match core.request_approval(req) {

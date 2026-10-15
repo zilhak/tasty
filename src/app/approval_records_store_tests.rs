@@ -29,6 +29,7 @@ fn request(workspace_id: Option<u32>, timeout_ms: Option<u64>) -> ApprovalReques
         severity: Severity::Info,
         created_at: 0,
         metadata: serde_json::Value::Null,
+        host_elevation: None,
     }
 }
 

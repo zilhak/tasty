@@ -398,6 +398,7 @@ mod props_tests {
             severity,
             created_at: 0,
             metadata: serde_json::Value::Null,
+            host_elevation: None,
         };
         ApprovalRecord {
             request,

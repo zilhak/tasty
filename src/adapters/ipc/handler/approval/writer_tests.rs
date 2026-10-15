@@ -153,6 +153,7 @@ fn a_gui_response_hands_its_record_to_the_main_loop() {
         severity: tasty_approval::Severity::Info,
         created_at: 0,
         metadata: serde_json::Value::Null,
+        host_elevation: None,
     };
     let requested = core.request_approval(request).expect("request");
     let id = requested.change.record.request.id.clone();

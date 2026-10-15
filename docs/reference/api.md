@@ -138,7 +138,7 @@ DAG는 별도로 저장하지 않고 `metadata.dag`의 명시적 지정 또는 �
 CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연결할 때 `--epoch`으로 인스턴스를 구별한다. 연결이 끊기면 재연결에 쓸 인자를 출력하며, `--reconnect`를 지정하면 자동으로 다시 연결한다. 키 목록과 등급은 [event-catalog](event-catalog.md)를 참고한다.
 
 ### 휴먼 핸드오프 (`approval.*`)
-`request,respond,await,cancel,get,list,history,summary.{set,get}`. [human-handoff](../features/human-handoff/index.md).
+`request,respond,await,cancel,get,list,history,summary.{set,get}`. `request` 의 metadata `kind` 에 host 전용 값 `capability_elevation` 을 주면 `-32602`(`invalid_request: …`)로 거절한다. [human-handoff](../features/human-handoff/index.md).
 
 ### 텔레메트리 (`telemetry.*`)
 `record,record_batch,summary,timeseries,top` · `cap.{set,list,remove,status,reset}` · `anomaly.list` · `session_summary`. [telemetry](../features/telemetry/index.md).

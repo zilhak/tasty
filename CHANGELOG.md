@@ -11,6 +11,7 @@
 - `Deprecated` — 폐기 예정, 아직 동작은 함
 - `Removed` — 제거된 기능
 - `Fixed` — 버그 수정
+- `Security` — 보안 결함 수정
 
 안정성 정책, 호환성을 깨는 변경의 분류와 폐기 절차는 [API 규칙](docs/dev-guide/api-conventions.md)의 ‘안정성 정책’ 절을 따른다.
 
@@ -73,6 +74,10 @@
 - **headless 실행에서 `memory.changed` 이벤트가 발행되지 않던 문제.** 변경 버퍼를 꺼내는 곳이 GUI 이벤트 루프뿐이라 headless에서는 이벤트가 나가지 않고 버퍼가 계속 늘었다. 이제 headless 루프도 회차마다 꺼내 plugin에 발행한다.
 
 - **Linux에서 HTML 서피스가 지금 문서의 `#fragment` 주소를 열면 로딩 상태에 멈추던 문제.** `tasty html open`으로 같은 문서의 fragment 주소를 열면 WebKitGTK가 load 신호 없이 문서 안에서 이동하는데, 서피스는 계속 "불러오는 중"으로 남았다. 이제 그 이동은 로드로 표시하지 않는다. macOS·Windows는 이 경우를 측정하지 않았다.
+
+### Security
+
+- **승인 요청으로 에이전트 권한 상승 요청을 흉내 낼 수 없다.** 승인 기능 권한만 가진 에이전트·플러그인이 `approval.request`(`tasty approval request --metadata`)의 metadata 를 권한 상승 요청과 같은 모양(`kind: capability_elevation`, 대상 agent·권한)으로 보내면, 사용자가 그 요청을 승인할 때 임의의 agent 에게 임의의 권한이 붙을 수 있었다. 이제 권한 부여는 Tasty 가 직접 만든 권한 상승 요청에만 적용하고, metadata 의 `kind` 에 `capability_elevation` 을 준 `approval.request` 는 `-32602`(`invalid_request: …`)로 거절한다. 권한 거부 뒤 승인 팝업이나 `approval respond` 로 승인해 다시 호출하는 기존 흐름과 `tasty plugin request-permission` 은 그대로 동작한다.
 
 ## [0.12.2] - 2026-10-12
 

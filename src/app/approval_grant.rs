@@ -5,38 +5,24 @@ use tasty_approval::ApprovalRecord;
 
 use crate::app::services::AppServices;
 
-/// 승인 응답에서 agent·권한·유효 시간을 추출한다. 거절 응답에는 권한을 부여하지 않는다.
+/// 승인 응답에서 agent·권한·유효 시간을 추출한다. host 가 발행한 권한 상승 요청만 대상이며,
+/// 호출자가 채울 수 있는 metadata 는 보지 않는다. 거절 응답에는 권한을 부여하지 않는다.
 pub(crate) fn elevation_grant_decision(
     record: &ApprovalRecord,
     choice: &str,
 ) -> Option<(String, String, Option<u64>)> {
-    if record.request.metadata.get("kind").and_then(|v| v.as_str()) != Some("capability_elevation")
-    {
-        return None;
-    }
-    let agent_id = record
-        .request
-        .metadata
-        .get("agent_id")
-        .and_then(|v| v.as_str())?
-        .to_string();
-    let permission = record
-        .request
-        .metadata
-        .get("permission")
-        .and_then(|v| v.as_str())?
-        .to_string();
+    let elevation = record.request.host_elevation.as_ref()?;
     let ttl_secs = match choice {
-        "approve" => record
-            .request
-            .metadata
-            .get("grant_ttl_secs")
-            .and_then(|v| v.as_u64()),
+        "approve" => elevation.grant_ttl_secs,
         "approve_permanently" => None,
         _ => return None, // deny / 그 외는 grant 없음.
     };
     let ttl_ms = ttl_secs.map(|s| s.saturating_mul(1000));
-    Some((agent_id, permission, ttl_ms))
+    Some((
+        elevation.agent_id.clone(),
+        elevation.permission.clone(),
+        ttl_ms,
+    ))
 }
 
 /// I/O wrapper — `elevation_grant_decision` 결과를 SessionStore 에 적용.

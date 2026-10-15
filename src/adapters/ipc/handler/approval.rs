@@ -100,12 +100,18 @@ pub(crate) fn elevation_error_data(
     method: &str,
 ) -> Value {
     json!({
-        "kind": "capability_elevation",
+        "kind": ELEVATION_KIND,
         "approval_id": record.request.id,
         "permission": permission,
         "method": method,
     })
 }
+
+/// host 가 발행한 권한 상승 요청의 metadata kind. 공개 `approval.request` 는 이 값을 받지 않는다.
+pub(super) const ELEVATION_KIND: &str = "capability_elevation";
+
+/// `approve` 응답이 부여하는 권한의 유효 시간(1시간).
+const GRANT_TTL_SECS: u64 = 3600;
 
 /// 창 없이 권한 요청을 만든다. GUI 호출자는 publish_capability_elevation으로 팝업도 연다.
 pub(crate) fn publish_capability_elevation_at(
@@ -116,17 +122,13 @@ pub(crate) fn publish_capability_elevation_at(
     permission: &str,
     reason: Option<&str>,
 ) -> Option<ApprovalRecord> {
-    // 이미 같은 agent+permission 으로 Pending elevation 이 있으면 재사용.
+    // 이미 같은 agent+permission 으로 host 가 발행한 Pending elevation 이 있으면 재사용.
     if let Some(existing) = core.approval_store.list().into_iter().find(|r| {
         matches!(r.state, tasty_approval::ApprovalState::Pending)
-            && r.request.metadata.get("kind").and_then(|v| v.as_str())
-                == Some("capability_elevation")
-            && r.request.metadata.get("agent_id").and_then(|v| v.as_str()) == Some(agent_id)
             && r.request
-                .metadata
-                .get("permission")
-                .and_then(|v| v.as_str())
-                == Some(permission)
+                .host_elevation
+                .as_ref()
+                .is_some_and(|e| e.agent_id == agent_id && e.permission == permission)
     }) {
         return Some(existing);
     }
@@ -134,12 +136,12 @@ pub(crate) fn publish_capability_elevation_at(
     // approve → 기본 TTL (1시간), approve_permanently → 무기한.
     // grant_ttl_secs metadata 는 respond 핸들러가 grant_permission ttl 로 사용.
     let metadata = json!({
-        "kind": "capability_elevation",
+        "kind": ELEVATION_KIND,
         "agent_id": agent_id,
         "method": method,
         "permission": permission,
         "reason": reason,
-        "grant_ttl_secs": 3600u64,
+        "grant_ttl_secs": GRANT_TTL_SECS,
     });
 
     let title = format!("Capability request: {permission}");
@@ -174,6 +176,11 @@ pub(crate) fn publish_capability_elevation_at(
         severity: Severity::Warn,
         created_at: 0,
         metadata,
+        host_elevation: Some(tasty_approval::HostElevation {
+            agent_id: agent_id.to_string(),
+            permission: permission.to_string(),
+            grant_ttl_secs: Some(GRANT_TTL_SECS),
+        }),
     };
 
     match core.request_approval(req) {
@@ -237,3 +244,7 @@ mod tests;
 #[cfg(test)]
 #[path = "approval/writer_tests.rs"]
 mod writer_tests;
+
+#[cfg(test)]
+#[path = "approval/elevation_guard_tests.rs"]
+mod elevation_guard_tests;

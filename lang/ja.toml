@@ -5436,7 +5436,7 @@ help = "紐づけるワークスペース id（デフォルト: --surface-id の
 help = "紐づける surface id（任意）"
 
 [cli.help._root.approval.request.arg.metadata]
-help = "自由形式の JSON メタデータ（文字列をそのまま渡す。パースはできること）"
+help = "自由形式の JSON メタデータ（文字列をそのまま渡す。パースはできること）。kind \"capability_elevation\" はホストが作る要求専用のため拒否する"
 
 [cli.help._root.approval.respond]
 about = "応答を提出する"

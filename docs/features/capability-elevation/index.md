@@ -27,7 +27,9 @@ claude.spawn 등으로 띄운 자식은 `session.issue` 로 토큰 발급(base p
 
 ### Elevation flow
 
-Agent 가 권한 부족으로 거부되면 호스트가 (같은 (agent, permission) Pending 없을 때) `approval.request{kind=capability_elevation, choices=[approve, approve_permanently, deny]}` 자동 발행. 거부 응답의 `error.data` 에 `{approval_id, permission, method}` 첨부 → agent 가 `approval.await` 폴링 → 사용자 선택에 따라 임시(TTL)/무기한 grant 적용 → agent 재호출 시 통과. 사용자는 GUI 승인 popup 이나 `approval.respond` 로 답하고, 두 진입점 모두 App 의 `respond_approval` 이 응답 전이 직후·기록 제출 전에 같은 grant 를 적용한다. `approve` 는 요청의 `grant_ttl_secs`(기본 1시간) 동안, `approve_permanently` 는 무기한 부여하고 `deny`·취소·만료는 부여하지 않는다. 그 agent 의 활성 세션이 없으면 grant 는 경고 로그만 남기고 승인 응답은 그대로 유지된다. agent 가 `plugin.request_permission` 으로 **미리** 발행할 수도 있다(거부 대기 없이). 메커니즘은 [human-handoff](../human-handoff/index.md) 위에 얹힘.
+Agent 가 권한 부족으로 거부되면 호스트가 (같은 (agent, permission) Pending 없을 때) `approval.request{kind=capability_elevation, choices=[approve, approve_permanently, deny]}` 자동 발행. 거부 응답의 `error.data` 에 `{approval_id, permission, method}` 첨부 → agent 가 `approval.await` 폴링 → 사용자 선택에 따라 임시(TTL)/무기한 grant 적용 → agent 재호출 시 통과. 사용자는 GUI 승인 popup 이나 `approval.respond` 로 답하고, 두 진입점 모두 App 의 `respond_approval` 이 응답 전이 직후·기록 제출 전에 같은 grant 를 적용한다. `approve` 는 요청의 `grant_ttl_secs`(기본 1시간) 동안, `approve_permanently` 는 무기한 부여하고 `deny`·취소·만료는 부여하지 않는다. 그 agent 의 활성 세션이 없으면 grant 는 경고 로그만 남기고 승인 응답은 그대로 유지된다.
+
+grant 대상(agent·권한·유효 시간)은 host 가 권한 거부·`plugin.request_permission` 으로 요청을 만들 때 기록 구조의 host 전용 필드(`ApprovalRequest.host_elevation`)에 담는다. 이 필드는 직렬화하지 않으므로 IPC 요청이나 저장된 기록으로 채울 수 없다. grant 와 같은 (agent, permission) Pending 재사용은 이 필드로만 판정하고, metadata 의 `kind`·`agent_id`·`permission`·`grant_ttl_secs` 는 조회용 사본일 뿐 grant 근거가 아니다. 공개 `approval.request` 가 metadata `kind` 에 `capability_elevation` 을 주면 `-32602`(`invalid_request: …`)로 거절한다 — 승인 권한만 가진 caller 가 권한 상승 요청을 흉내 내 다른 agent 에게 권한을 붙이지 못하게 한다. agent 가 `plugin.request_permission` 으로 **미리** 발행할 수도 있다(거부 대기 없이). 메커니즘은 [human-handoff](../human-handoff/index.md) 위에 얹힘.
 
 ### Audit log
 

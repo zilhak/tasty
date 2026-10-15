@@ -37,6 +37,7 @@ pub enum ApprovalCommands {
         #[arg(long)]
         surface_id: Option<u32>,
         /// Free-form JSON metadata (string passed verbatim; must parse).
+        /// The kind "capability_elevation" is reserved for host-issued requests and is rejected.
         #[arg(long)]
         metadata: Option<String>,
     },

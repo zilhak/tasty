@@ -5436,7 +5436,7 @@ help = "묶을 워크스페이스 id (기본값: --surface-id 가 있는 워크�
 help = "묶을 surface id (선택)"
 
 [cli.help._root.approval.request.arg.metadata]
-help = "자유 형식 JSON 메타데이터 (문자열을 그대로 넘긴다. 파싱은 돼야 한다)"
+help = "자유 형식 JSON 메타데이터 (문자열을 그대로 넘긴다. 파싱은 돼야 한다). kind \"capability_elevation\" 은 호스트가 만드는 요청 전용이라 거절한다"
 
 [cli.help._root.approval.respond]
 about = "응답을 제출한다"

@@ -208,6 +208,19 @@ pub struct ApprovalRequest {
     /// 관용 필드. `command`, `cwd` 등을 호스트/CLI 가 인식.
     #[serde(default)]
     pub metadata: serde_json::Value,
+    /// 호스트가 직접 발행한 권한 상승 요청의 부여 대상. 직렬화하지 않으므로 IPC 요청·저장된
+    /// 기록으로 채울 수 없고, 승인 시 권한 부여는 metadata 가 아니라 이 값으로만 판정한다.
+    #[serde(skip)]
+    pub host_elevation: Option<HostElevation>,
+}
+
+/// 호스트가 권한 부족 거부 등에서 만든 권한 상승 요청이 승인되면 부여할 권한.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostElevation {
+    pub agent_id: String,
+    pub permission: String,
+    /// `approve` 응답의 유효 시간. None 이면 무기한이다. `approve_permanently` 는 항상 무기한이다.
+    pub grant_ttl_secs: Option<u64>,
 }
 
 /// 상태 머신.

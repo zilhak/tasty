@@ -5502,7 +5502,7 @@ help = "Workspace id binding (defaults to the workspace of --surface-id, then th
 help = "Surface id binding (optional)"
 
 [cli.help._root.approval.request.arg.metadata]
-help = "Free-form JSON metadata (string passed verbatim; must parse)"
+help = "Free-form JSON metadata (string passed verbatim; must parse). The kind \"capability_elevation\" is reserved for host-issued requests and is rejected"
 
 [cli.help._root.approval.respond]
 about = "Submit a response"

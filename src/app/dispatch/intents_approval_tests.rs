@@ -97,3 +97,36 @@ fn popup_denial_and_cancellation_grant_nothing() {
     cancelled.record.detach(core.memory_access());
     assert!(!caller_permissions(&core, &token).contains(&PERMISSION.to_string()));
 }
+
+/// 공개 `approval.request`로 들어온 위조 metadata만 가진 요청은 팝업으로 승인해도 권한을 붙이지 않는다.
+#[test]
+fn popup_approval_of_a_forged_elevation_grants_nothing() {
+    let mut core = test_core();
+    let (token, _) = elevation_pending(&mut core);
+    let request = tasty_approval::ApprovalRequest {
+        id: ApprovalId::generate(),
+        requester: tasty_approval::Requester::Plugin { id: "other".into() },
+        workspace_id: None,
+        surface_id: None,
+        title: "looks harmless".into(),
+        body: None,
+        choices: Vec::new(),
+        default_choice: None,
+        timeout_ms: None,
+        severity: tasty_approval::Severity::Warn,
+        created_at: 0,
+        metadata: serde_json::json!({
+            "kind": "capability_elevation",
+            "agent_id": AGENT,
+            "permission": PERMISSION,
+            "grant_ttl_secs": 3600u64,
+        }),
+        host_elevation: None,
+    };
+    let requested = core.request_approval(request).expect("request");
+    requested.record.detach(core.memory_access());
+
+    respond_from_popup(&mut core, &requested.change.record.request.id, "approve");
+
+    assert!(!caller_permissions(&core, &token).contains(&PERMISSION.to_string()));
+}
