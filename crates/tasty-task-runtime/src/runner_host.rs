@@ -10,6 +10,7 @@ mod command_inputs;
 mod dispatch;
 pub(crate) mod holding_warning;
 mod holdings;
+mod late_answer;
 mod poll;
 mod postprocess;
 mod record_room;
@@ -34,8 +35,10 @@ pub(crate) use attempt_record::{HANDLE_ATTEMPT_FIELD, dispatch_attempt, handle_v
 pub(crate) use clock::HoldingClock;
 use clock::now_ms;
 use command_inputs::{substitute_lease_resource, substitute_task_outputs};
+use dispatch::DispatchFailure;
 pub(crate) use holding_warning::current_holding_warnings;
 pub(crate) use holdings::{own_lease, own_semaphore, release_own_holdings, resumes_after_restart};
+pub(crate) use late_answer::DISPATCH_OUTCOME_UNKNOWN;
 #[cfg(all(test, unix))]
 pub(crate) use postprocess::postprocess_result_key;
 pub(crate) use postprocess::restored_handle as restored_postprocess_handle;
@@ -60,21 +63,16 @@ pub(crate) use store_keys::{
     HANDLE_KEY_PREFIX, handle_key, has_stored_handle, load_dispatch_handle, run_result_key,
 };
 
-use tasty_ipc::host_call::HostIpcInjector;
+use tasty_ipc::host_call::{HostIpcInjector, InjectError, LateAnswer, LateDispatch};
 
 /// 최초 IPC 요청과 후속 poll 요청에 공통으로 사용하는 응답 대기 시간.
 const HOST_DISPATCH_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// poll 오류 분류가 이 문자열을 사용하므로 반환부와 분류부에서 같은 상수를 쓴다.
+/// injector 미준비 오류의 문구. agent 회차의 오류도 같은 문구를 쓴다.
 pub(crate) const INJECTOR_UNINIT_MSG: &str = "host IPC injector not initialized";
 
 /// injector가 아직 준비되지 않은 poll 실패를 잠시 Active로 두는 유예 시간.
 pub(crate) const INJECTOR_GRACE_MS: u64 = 30_000;
-
-/// 메서드명 등이 붙은 오류도 포함하므로 정확한 일치가 아닌 부분 문자열로 분류한다.
-pub(crate) fn is_injector_not_initialized(msg: &str) -> bool {
-    msg.contains(INJECTOR_UNINIT_MSG)
-}
 
 #[derive(Clone)]
 pub(crate) struct RunnerContext {
@@ -146,14 +144,63 @@ impl RunnerContext {
         &self,
         method: &str,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, PluginCallError> {
+        let inj = self.host_ipc.get().ok_or(PluginCallError::Uninitialized)?;
+        inj.dispatch(method, params, HOST_DISPATCH_TIMEOUT)
+            .map_err(PluginCallError::Inject)
+    }
+
+    /// 시작한 뒤 상한을 넘긴 요청의 응답 통로를 남긴다. 다시 보낼 수 없는 실행 요청에 쓴다.
+    pub(crate) fn dispatch_plugin_keeping_late_answer(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, LateCall> {
         let inj = self
             .host_ipc
             .get()
-            .ok_or_else(|| INJECTOR_UNINIT_MSG.to_string())?;
-        inj.dispatch(method, params, HOST_DISPATCH_TIMEOUT)
-            .map_err(|e| e.to_string())
+            .ok_or(LateCall::Failed(PluginCallError::Uninitialized))?;
+        inj.dispatch_keeping_late_answer(method, params, HOST_DISPATCH_TIMEOUT)
+            .map_err(|e| match e {
+                LateDispatch::Failed(e) => LateCall::Failed(PluginCallError::Inject(e)),
+                LateDispatch::Pending(late) => LateCall::Pending(late),
+            })
     }
+}
+
+/// 러너의 plugin IPC 호출 실패.
+#[derive(Debug)]
+pub(crate) enum PluginCallError {
+    /// 호스트 IPC injector 가 아직 준비되지 않았다.
+    Uninitialized,
+    Inject(InjectError),
+}
+
+impl PluginCallError {
+    /// 호스트가 응답 대기 상한 안에 답하지 못했다(큐 대기 중 만료 또는 실행 중 상한 경과).
+    /// 조회처럼 다시 물어도 되는 요청은 다음 poll 에서 다시 묻는다.
+    pub(crate) fn is_host_slow(&self) -> bool {
+        matches!(
+            self,
+            PluginCallError::Inject(InjectError::Timeout(_) | InjectError::Expired(_))
+        )
+    }
+}
+
+impl std::fmt::Display for PluginCallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PluginCallError::Uninitialized => f.write_str(INJECTOR_UNINIT_MSG),
+            PluginCallError::Inject(e) => e.fmt(f),
+        }
+    }
+}
+
+/// [`RunnerContext::dispatch_plugin_keeping_late_answer`] 의 실패.
+pub(crate) enum LateCall {
+    Failed(PluginCallError),
+    /// 요청은 시작됐고 응답은 아직 올 수 있다.
+    Pending(LateAnswer),
 }
 
 /// watcher가 자식 종료와 두 출력 파이프의 EOF를 기다린 뒤 결과를 채운다.
@@ -186,6 +233,8 @@ pub(crate) struct HostExecutor {
     ttl_renewals: HashMap<(TaskId, ttl_renewal::Holding), ttl_renewal::TtlRenewal>,
     /// TTL 점유의 획득·갱신 시각.
     holding_clock: HoldingClock,
+    /// 상한을 넘긴 Custom 요청의 늦은 응답 대기와, 응답 뒤 이어 간 handle.
+    late: late_answer::LateAnswers,
 }
 
 impl HostExecutor {
@@ -203,6 +252,7 @@ impl HostExecutor {
             stopping_runs: Vec::new(),
             ttl_renewals: HashMap::new(),
             holding_clock: HoldingClock::system(),
+            late: Default::default(),
         }
     }
 
@@ -283,6 +333,36 @@ impl HostExecutor {
     }
 }
 
+impl HostExecutor {
+    /// 회차 시작 결과를 러너의 3갈래로 옮긴다. 시작하지 못했으면 얻은 점유를 돌려준다.
+    fn settle_dispatch(
+        &mut self,
+        task: &Task,
+        dispatch_result: Result<DispatchHandle, DispatchFailure>,
+    ) -> DispatchOutcome {
+        let result = match dispatch_result {
+            Ok(h) => {
+                let attempt = dispatch_attempt(task);
+                self.persist_handle(task.workspace_id, &task.id, &h, attempt.as_deref());
+                DispatchOutcome::Started(h)
+            }
+            Err(DispatchFailure::Permanent(e)) => DispatchOutcome::PermanentFail(e),
+            // 회차를 시작하지 않았으므로 얻은 점유를 돌려주고 다음 tick 에 처음부터 다시 얻는다.
+            Err(DispatchFailure::NothingRan(e)) => {
+                tracing::warn!("agent task {}: {e}; retrying on a later tick", task.id);
+                DispatchOutcome::Deferred
+            }
+        };
+        if matches!(
+            result,
+            DispatchOutcome::PermanentFail(_) | DispatchOutcome::Deferred
+        ) {
+            self.release_permit(&task.id);
+        }
+        result
+    }
+}
+
 impl TaskExecutor for HostExecutor {
     fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
         // 이전 회차의 handle 이 남았으면 그 프로세스가 끝난 것을 아직 확인하지 못했다. 같은 holder id 로
@@ -345,22 +425,12 @@ impl TaskExecutor for HostExecutor {
                 }
                 // v2 입력은 치환을 마친 뒤 해석해 값이 다시 해석되지 않게 한다.
                 self.resolve_typed_inputs(&mut substituted)
+                    .map_err(DispatchFailure::from)
                     .and_then(|()| self.dispatch_command(&substituted))
             }
-            Err(e) => Err(format!("task output substitution: {e}")),
+            Err(e) => Err(format!("task output substitution: {e}").into()),
         };
-        let result = match dispatch_result {
-            Ok(h) => {
-                let attempt = dispatch_attempt(task);
-                self.persist_handle(task.workspace_id, &task.id, &h, attempt.as_deref());
-                DispatchOutcome::Started(h)
-            }
-            Err(e) => DispatchOutcome::PermanentFail(e),
-        };
-        if matches!(result, DispatchOutcome::PermanentFail(_)) {
-            self.release_permit(&task.id);
-        }
-        result
+        self.settle_dispatch(task, dispatch_result)
     }
 
     fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {

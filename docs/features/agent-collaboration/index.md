@@ -148,6 +148,8 @@ tasty agent task-create --workspace-id 1 --name spawn-worker \
 
 Claude 자식은 입력 대기 화면으로 시작하면 `idle` 이므로, 프롬프트 없이 띄운 `claude.spawn` 노드는 세션이 준비되면 끝난다. `prompt` 를 주면 그 턴이 끝날 때 끝난다([Claude 플러그인](../../plugins/claude/index.md)의 `SessionStart` 행).
 
+호스트가 바빠 5초 안에 답하지 못해도 노드를 바로 실패로 끝내지 않는다. `claude.state` 같은 상태 조회가 늦으면 다음 poll 에서 다시 묻는다(전략에 `timeout_ms` 가 있으면 그 기한까지). spawn 요청이 큐에서 기다리다 만료됐으면 실행되지 않았으므로 다음 tick 에 다시 보낸다. 시작된 spawn 이 늦으면 자식이 둘 생기지 않도록 다시 보내지 않고 늦은 응답을 받아 같은 전략으로 이어 간다. 답 없이 끝나거나 재시작으로 응답 통로가 사라지면 노드는 `failed` 가 아니라 `unknown`(사유 `dispatch outcome unknown: …`)이 되고, 자식이 떴는지 확인한 뒤 `retry`·`cancel` 로 정한다. 규칙은 [작업 러너 §호스트 응답 지연](../../dev-guide/agent-runner.md#호스트-응답-지연).
+
 `params.surface_id` 는 자식을 매달 **부모** surface 다. spawn 응답의 `child_surface_id` 가 `map_from_response` 를 타고 poll 호출의 파라미터로 옮겨간다.
 
 두 plugin 의 전략 값이 다르므로 그대로 옮겨 쓰면 안 된다:

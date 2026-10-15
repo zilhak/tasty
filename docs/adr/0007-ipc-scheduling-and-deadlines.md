@@ -26,6 +26,9 @@ GUI는 IPC wake가 연속 회차를 열지 않도록 about_to_wait에 차례를 
 큐에서 만료된 요청은 lifecycle 상태의 비교·교환으로 실행을 막고 미실행으로 답한다.
 시작 뒤의 만료는 결과 불명이며 실행 중 작업을 취소하지 않는다.
 내부 주입도 기본적으로 같은 기한을 쓰되, 재발생하지 않는 훅 사건의 단계는 포기 뒤에도 실행한다.
+시작 뒤 만료된 내부 주입은 응답 통로를 호출자에게 넘길 수 있다.
+task runner 는 다시 보내면 두 번 실행될 수 있는 Custom 실행 요청을 재전송하지 않고 그 통로로 늦은 답을 받는다.
+미실행 만료만 다시 보내고, 상태 조회의 만료·결과 불명은 다음 조회에서 다시 묻는다.
 
 CLI의 단발 요청은 루트 응답 대기 옵션을 사용할 수 있고 capability 확인도 같은 예산을 쓴다.
 loop·stream·로컬 처리에는 정의되지 않은 옵션을 조용히 무시하지 않고 거절한다.
@@ -47,6 +50,8 @@ CLI 예산은 응답 대기용이며 연결·쓰기·프로세스 기동까지 �
 - 모든 요청에 기본 timeout을 걸면 사람 승인을 기다리는 의도적 무한 대기를 자른다.
 - winit 작업 완료를 같은 메인 스레드에서 막고 기다리면 교착한다.
 - 모든 훅 단계에 기한을 걸면 이미 ACK한 사건이나 완료 통지가 사라질 수 있다.
+- 시작 뒤 만료된 실행 요청을 실패로 확정하면 실제로 실행된 작업의 추적이 끊긴다. 다시 보내면 자식 세션 같은 효과가 두 번 남는다.
+- 실행 요청의 대기 상한만 늘리면 러너 스레드가 그동안 다른 task 를 진행하지 못하고, 상한을 넘는 지연에는 여전히 같은 문제가 남는다.
 
 ## Reconsideration Triggers
 
@@ -61,4 +66,5 @@ macOS·Windows의 메뉴·resize 중 IPC 지연과 winit 이벤트 처리 변경
 
 - [IPC 서버의 회차·기한·wake](../architecture/ipc-server.md)
 - [CLI 응답 대기 옵션](../dev-guide/api-conventions.md#cli-응답-대기-옵션)
-- 구현: `src/app/ipc_round.rs`, `src/app/ipc.rs`, `src/adapters/production/headless_waker.rs`, `crates/tasty-ipc/src/server.rs`.
+- [task runner 의 호스트 응답 지연 처리](../dev-guide/agent-runner.md#호스트-응답-지연)
+- 구현: `src/app/ipc_round.rs`, `src/app/ipc.rs`, `src/adapters/production/headless_waker.rs`, `crates/tasty-ipc/src/server.rs`, `crates/tasty-ipc/src/host_call.rs`, `crates/tasty-task-runtime/src/runner_host/late_answer.rs`.

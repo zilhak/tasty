@@ -173,6 +173,7 @@ impl HostExecutor {
     pub(super) fn release_resources(&mut self, task_id: &TaskId) {
         // permit뿐 아니라 lease·저장된 handle도 정리한다. 프로세스는 이미 끝났다(release_permit).
         self.run_procs.remove(task_id);
+        self.late.forget(task_id);
         self.forget_renewals(task_id);
         if let Some((ws, name, holder)) = self.held_permits.remove(task_id) {
             let res: Result<(), String> = self.ctx.with_memory(|mem| {

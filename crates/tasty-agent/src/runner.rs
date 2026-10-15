@@ -59,6 +59,14 @@ pub enum DispatchHandle {
     ReduceImmediate(TaskResult),
     CustomImmediate(TaskResult),
     ImmediateFail(String),
+    /// Custom 실행 요청이 시작된 뒤 응답 대기 상한을 넘겼다. 요청을 다시 보내지 않고 executor 가
+    /// 보관한 응답 통로에서 늦은 응답을 기다린다. 응답이 오면 executor 가 완료 전략의 handle 로
+    /// 이어 간다. 통로는 영속되지 않으므로 재시작 뒤에는 실행 결과 불명(Unknown)으로 끝난다.
+    AwaitDispatchAnswer {
+        workspace_id: u32,
+        task_id: TaskId,
+        ipc_method: String,
+    },
     /// `WaitBarrier` task 의 polling handle — poll 마다 barrier_state 재조회.
     BarrierPoll {
         workspace_id: u32,

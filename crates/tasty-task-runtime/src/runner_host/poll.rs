@@ -6,8 +6,8 @@ use tasty_agent::{BarrierState, BarrierStore, TaskResult};
 use tasty_memory::HOST_OWNER;
 
 use super::{
-    HostExecutor, INJECTOR_GRACE_MS, RUN_RESULT_LOST, RUN_RESULT_POISON_REPORTED,
-    is_injector_not_initialized, now_ms, summarize_poll_response,
+    HostExecutor, INJECTOR_GRACE_MS, PluginCallError, RUN_RESULT_LOST, RUN_RESULT_POISON_REPORTED,
+    now_ms, summarize_poll_response,
 };
 
 impl HostExecutor {
@@ -27,7 +27,7 @@ impl HostExecutor {
                         self.injector_grace_deadline_ms = None;
                         v
                     }
-                    Err(e) if is_injector_not_initialized(&e) => {
+                    Err(PluginCallError::Uninitialized) => {
                         let now = now_ms();
                         let deadline = *self
                             .injector_grace_deadline_ms
@@ -38,6 +38,19 @@ impl HostExecutor {
                         return PollOutcome::Failed(format!(
                             "{poll_method}: injector grace expired ({INJECTOR_GRACE_MS}ms)"
                         ));
+                    }
+                    // 상태 조회는 다시 물어도 된다. 호스트가 늦어 한 번 답하지 못한 것으로 task 를
+                    // 끝내지 않고, 기한(있으면) 안에서 다음 poll 에 다시 묻는다.
+                    Err(e) if e.is_host_slow() => {
+                        if let Some(deadline) = deadline_ms
+                            && now_ms() >= *deadline
+                        {
+                            return PollOutcome::Failed(format!(
+                                "{poll_method}: poll timeout (last poll: {e})"
+                            ));
+                        }
+                        tracing::warn!("{poll_method}: {e}; asking again on the next poll");
+                        return PollOutcome::Active;
                     }
                     Err(e) => return PollOutcome::Failed(format!("{poll_method}: {e}")),
                 };
@@ -93,6 +106,11 @@ impl HostExecutor {
                 ))
             }
             DispatchHandle::ImmediateFail(err) => PollOutcome::Failed(err.clone()),
+            DispatchHandle::AwaitDispatchAnswer {
+                workspace_id,
+                task_id,
+                ipc_method,
+            } => self.poll_late_answer(*workspace_id, task_id, ipc_method),
             DispatchHandle::BarrierPoll { workspace_id, name } => {
                 let now = now_ms();
                 let res = self.ctx.with_memory(|mem| {

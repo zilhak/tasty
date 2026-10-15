@@ -50,6 +50,7 @@
 
 - **GUI 승인 팝업에서 에이전트의 권한 요청을 승인해도 권한이 부여되지 않던 문제.** 권한이 없어 거부된 에이전트가 승인을 받고 다시 호출해도 다시 거부되고 같은 승인 팝업이 또 떴다. `tasty approval respond`로 답할 때만 권한이 부여됐다. 이제 팝업에서 승인(`approve`)하면 유효 시간이 있는 권한을, 영구 승인(`approve_permanently`)하면 시간 제한 없는 권한을 `approval respond`와 똑같이 부여하므로 재호출이 통과한다. 거절·취소·만료는 권한을 부여하지 않는다.
 
+- **호스트가 잠시 늦게 답하면 task runner 가 Custom task 를 실패로 확정하던 문제.** 부하로 메인 루프가 5초 안에 답하지 못하면 `claude.spawn` 노드가 `claude.state: host_dispatch timeout after 5s`나 `Custom 'claude.spawn': host_dispatch timeout after 5s`로 `failed` 가 돼, 자식은 계속 일하는데 하류 task 가 건너뛰어졌다. 이제 상태 조회의 지연은 다음 poll 에서 다시 묻고(poll 기한이 있으면 그 안에서), 큐에서 만료돼 실행되지 않은 실행 요청은 다음 tick 에 다시 보낸다. 이미 시작된 실행 요청은 다시 보내지 않고 늦은 응답을 받아 완료 전략으로 이어 간다. 그 응답을 받지 못하면(통로가 닫히거나 재시작) task 는 `failed` 가 아니라 `unknown`(`dispatch outcome unknown: …`)이 된다.
 - **Tasty 터미널에서 입력한 `codex`의 승인·sandbox 옵션이 Codex 기본값으로 덮이던 문제.** `--dangerously-bypass-approvals-and-sandbox`나 `-a`·`-s`로 실행해도 새 대화에는 Codex 설정의 기본값(예: `on-request`·`workspace-write`)이 적용됐고, 재개한 뒤 `/new`로 시작한 대화도 같았다. 이제 실행 때 지정한 값이 새 대화·재개·fork에 적용되고 서버 응답으로 확인한다. Codex 안에서 `/permissions`로 권한을 바꾸면 그 뒤의 새 대화는 바꾼 값을 따른다. 옵션을 주지 않으면 권한을 넓히지 않는다. 복원은 실행 옵션으로 다시 연다. 첫 턴 뒤 Codex가 대화 이름을 짓는 보조 thread가 복원 대상으로 기록돼 복원이 "No saved session found"로 실패하던 문제도 고쳤다.
 
 - **명령 팔레트의 복사 모드 진입이 바로 동작한다.** 이전에는 팔레트에서 실행해도 들어가지 않고, 요청이 남아 있다가 다음에 누른 다른 단축키(예: `Ctrl+F`)에서 복사 모드에 들어갔다.

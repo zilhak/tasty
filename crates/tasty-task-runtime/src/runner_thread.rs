@@ -24,9 +24,10 @@ use tasty_agent::{TaskId, TaskState, TaskStore};
 use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
-    HANDLE_ATTEMPT_FIELD, HANDLE_KEY_PREFIX, HostExecutor, RUN_RESULT_LOST, RunnerContext,
-    evict_run_result, evict_task_side_keys, handle_key, load_run_result, process_of_record,
-    release_own_holdings, restored_postprocess_handle, resumes_after_restart,
+    DISPATCH_OUTCOME_UNKNOWN, HANDLE_ATTEMPT_FIELD, HANDLE_KEY_PREFIX, HostExecutor,
+    RUN_RESULT_LOST, RunnerContext, evict_run_result, evict_task_side_keys, handle_key,
+    load_run_result, process_of_record, release_own_holdings, restored_postprocess_handle,
+    resumes_after_restart,
 };
 use tasty_agent::runner::PollOutcome;
 use tasty_agent::task::postprocess::PostprocessCause;
@@ -616,6 +617,15 @@ fn classify_persisted_handle(
         DispatchHandle::PostprocessPending { .. }
         | DispatchHandle::PostprocessProcess { .. }
         | DispatchHandle::PostprocessResolved(_) => HandleClassification::Alive(task_id, handle),
+        // 응답 통로는 영속하지 않는다. 요청은 이미 시작됐으므로 다시 보내지 않고 결과 불명으로 둔다.
+        DispatchHandle::AwaitDispatchAnswer { ipc_method, .. } => HandleClassification::Precise(
+            task_id,
+            attempt,
+            PollOutcome::Lost(format!(
+                "{DISPATCH_OUTCOME_UNKNOWN}: Custom '{ipc_method}' had started but had not answered \
+                 before the host restarted; check whether it took effect before retrying"
+            )),
+        ),
         // 턴 표는 영속하지 않는다. 재시작 사이에 끝난 턴의 답변을 이 회차에 귀속할 수 없다.
         // 세션은 그대로 두고 회차만 실패로 정리한다.
         DispatchHandle::AgentTurn { surface_id, .. } => HandleClassification::Dead(
@@ -1719,6 +1729,64 @@ mod tests {
             store.get(1, &task_id).unwrap().unwrap().state
         });
         assert!(matches!(state, TaskState::Running), "got {state:?}");
+    }
+
+    /// 응답 통로는 재시작을 넘지 못한다. 이미 시작한 실행 요청을 다시 보내지 않고 결과 불명으로 둔다.
+    #[test]
+    fn reload_persistent_handles_marks_an_awaited_dispatch_answer_unknown() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let t = store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Custom {
+                        ipc_method: "acme.spawn".into(),
+                        params: serde_json::json!({}),
+                        poll: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+            store.set_state(1, &t.id, TaskState::Running, 1100).unwrap();
+            t.id
+        });
+        put_handle(
+            &ctx,
+            1,
+            &task_id,
+            &DispatchHandle::AwaitDispatchAnswer {
+                workspace_id: 1,
+                task_id: task_id.clone(),
+                ipc_method: "acme.spawn".into(),
+            },
+        );
+
+        let alive = reload_persistent_handles(&ctx, 1);
+        assert!(
+            alive.is_empty(),
+            "the answer channel does not survive a restart"
+        );
+
+        let state: TaskState = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap().state
+        });
+        match state {
+            TaskState::Unknown {
+                reason: Some(reason),
+            } => assert!(
+                reason.starts_with(DISPATCH_OUTCOME_UNKNOWN) && reason.contains("acme.spawn"),
+                "unexpected reason: {reason}"
+            ),
+            other => panic!("expected Unknown, got {other:?}"),
+        }
     }
 
     #[test]

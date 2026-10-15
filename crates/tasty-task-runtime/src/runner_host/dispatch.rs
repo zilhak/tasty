@@ -11,14 +11,36 @@ use tasty_agent::{
     ReducerInput, Task, TaskCommand, TaskId, TaskResult, TypedReducerInput, reduce_typed,
     reduce_with_custom, run_custom_shell, run_custom_shell_with_env,
 };
+use tasty_ipc::host_call::InjectError;
 use tasty_memory::HOST_OWNER;
 
 use super::{
-    HostExecutor, RUN_RESULT_POISON_REPORTED, RunProc, ShellChildEntry, child_env,
-    dispatch_attempt, drain_capped, drain_capped_observed, now_ms, persist_run_result, report,
-    run_group, shell_outcome_from_status, typed_inputs,
+    HostExecutor, LateCall, PluginCallError, RUN_RESULT_POISON_REPORTED, RunProc, ShellChildEntry,
+    child_env, dispatch_attempt, drain_capped, drain_capped_observed, now_ms, persist_run_result,
+    report, run_group, shell_outcome_from_status, typed_inputs,
 };
 use crate::task_output_ref;
+
+/// 회차 시작의 실패. 실행되지 않았음이 확실한 실패만 다음 tick 에 다시 시작한다.
+#[derive(Debug)]
+pub(crate) enum DispatchFailure {
+    /// 회차를 실패로 끝낸다.
+    Permanent(String),
+    /// 요청이 실행되지 않았음이 확실하다. 회차를 시작하지 않은 채 Ready 로 두고 다시 시도한다.
+    NothingRan(String),
+}
+
+impl From<String> for DispatchFailure {
+    fn from(e: String) -> Self {
+        DispatchFailure::Permanent(e)
+    }
+}
+
+impl From<&str> for DispatchFailure {
+    fn from(e: &str) -> Self {
+        DispatchFailure::Permanent(e.to_string())
+    }
+}
 
 impl HostExecutor {
     /// 저장소 락 안에서는 선행 작업 결과만 읽고 문자열 치환은 락 밖에서 수행한다.
@@ -74,7 +96,10 @@ impl HostExecutor {
         }
     }
 
-    pub(super) fn dispatch_command(&mut self, task: &Task) -> Result<DispatchHandle, String> {
+    pub(super) fn dispatch_command(
+        &mut self,
+        task: &Task,
+    ) -> Result<DispatchHandle, DispatchFailure> {
         match &task.command {
             TaskCommand::Reduce { inputs, strategy } if task.is_typed() => {
                 let collected: Result<Vec<TypedReducerInput>, String> =
@@ -151,7 +176,7 @@ impl HostExecutor {
             }
             TaskCommand::Run { command, cwd, .. } => {
                 if command.is_empty() {
-                    return Err("Run: empty command".to_string());
+                    return Err("Run: empty command".to_string().into());
                 }
                 let argv = typed_inputs::run_argv(task, command);
                 let stdin_payload = typed_inputs::run_stdin(task);
@@ -285,93 +310,40 @@ impl HostExecutor {
                 params,
                 poll,
             } => {
-                let params = &typed_inputs::custom_params(task, params);
+                let params = typed_inputs::custom_params(task, params);
+                let started_ms = now_ms();
                 // IPC를 먼저 실행한 뒤 완료 전략을 해석한다. 전략 해석 실패가 이미 실행한 요청을 되돌리지는 않는다.
-                // poll 미지정 시 기본 전략을 사용하고 그것도 없으면 응답으로 즉시 끝낸다.
-                let value = self
+                // 시작한 뒤 응답 대기 상한을 넘긴 요청은 다시 보내지 않고 늦은 응답을 기다린다.
+                let value = match self
                     .ctx
-                    .dispatch_plugin(ipc_method, params.clone())
-                    .map_err(|e| format!("Custom '{ipc_method}': {e}"))?;
-                // 완료를 따로 기다리는 custom 이면 이 응답은 접수 응답이라 결과와 따로 남긴다.
-                if poll.is_some() || self.ctx.completion.default_for_method(ipc_method).is_some() {
-                    self.record_accepted(task, &value);
-                }
-                use tasty_agent::PollSpecRef;
-                let spec: tasty_agent::PollSpec = match poll.as_deref() {
-                    Some(PollSpecRef::Inline(spec)) => spec.clone(),
-                    Some(PollSpecRef::Named { strategy }) => {
-                        let strat = self.ctx.completion.named(strategy).map_err(|e| {
-                            format!("Custom '{ipc_method}' poll strategy '{strategy}': {e}")
-                        })?;
-                        match strat.kind {
-                            crate::completion::CompletionKind::Poll(spec) => spec,
-                            crate::completion::CompletionKind::Push {
-                                notify_via,
-                                timeout_ms,
-                            } => {
-                                return self.dispatch_push_strategy(
-                                    task,
-                                    ipc_method,
-                                    params,
-                                    strat.id.as_str(),
-                                    &notify_via,
-                                    timeout_ms,
-                                );
-                            }
-                        }
+                    .dispatch_plugin_keeping_late_answer(ipc_method, params.clone())
+                {
+                    Ok(v) => v,
+                    Err(LateCall::Pending(late)) => {
+                        return Ok(
+                            self.park_late_answer(task, ipc_method, params, late, started_ms)
+                        );
                     }
-                    None => match self.ctx.completion.default_for_method(ipc_method) {
-                        Some(strat) => match strat.kind {
-                            crate::completion::CompletionKind::Poll(spec) => spec,
-                            crate::completion::CompletionKind::Push {
-                                notify_via,
-                                timeout_ms,
-                            } => {
-                                return self.dispatch_push_strategy(
-                                    task,
-                                    ipc_method,
-                                    params,
-                                    strat.id.as_str(),
-                                    &notify_via,
-                                    timeout_ms,
-                                );
-                            }
-                        },
-                        None => {
-                            return Ok(DispatchHandle::CustomImmediate(TaskResult {
-                                exit_code: Some(0),
-                                output: Some(value),
-                                error: None,
-                            }));
-                        }
-                    },
+                    // 큐에서 기다리다 만료된 요청은 실행되지 않았다. 다음 tick 에 같은 요청을 다시 건다.
+                    Err(LateCall::Failed(PluginCallError::Inject(e @ InjectError::Expired(_)))) => {
+                        return Err(DispatchFailure::NothingRan(format!(
+                            "Custom '{ipc_method}': {e}"
+                        )));
+                    }
+                    Err(LateCall::Failed(e)) => {
+                        return Err(format!("Custom '{ipc_method}': {e}").into());
+                    }
                 };
-                let spec = &spec;
-                // 같은 poll 인자를 매핑하면 응답값이 요청값을 덮는다.
-                let mut poll_params = serde_json::Map::new();
-                for (req_key, poll_key) in &spec.map_from_request {
-                    if let Some(v) = params.get(req_key) {
-                        poll_params.insert(poll_key.clone(), v.clone());
-                    }
-                }
-                for (resp_key, poll_key) in &spec.map_from_response {
-                    if let Some(v) = value.get(resp_key) {
-                        poll_params.insert(poll_key.clone(), v.clone());
-                    }
-                }
-                let deadline_ms = spec.timeout_ms.map(|t| now_ms() + t);
-                Ok(DispatchHandle::PolledDispatch {
-                    workspace_id: task.workspace_id,
-                    poll_method: spec.poll_method.clone(),
-                    poll_params: serde_json::Value::Object(poll_params),
-                    state_field: spec.state_field.clone(),
-                    terminal_states: spec.terminal_states.clone(),
-                    failure_states: spec.failure_states.clone(),
-                    interval_ms: spec.interval_ms,
-                    deadline_ms,
-                })
+                Ok(self.custom_after_answer(
+                    task,
+                    ipc_method,
+                    &params,
+                    poll.as_deref(),
+                    value,
+                    now_ms(),
+                )?)
             }
-            TaskCommand::Agent { .. } => self.dispatch_agent(task),
+            TaskCommand::Agent { .. } => Ok(self.dispatch_agent(task)?),
             TaskCommand::WaitBarrier { .. } => Ok(DispatchHandle::BarrierPoll {
                 workspace_id: task.workspace_id,
                 name: task
@@ -380,6 +352,97 @@ impl HostExecutor {
                     .to_string(),
             }),
         }
+    }
+
+    /// Custom 요청의 응답을 받은 뒤 완료 전략에 따라 handle 을 만든다. 늦은 응답도 이 경로로 잇는다.
+    /// poll 기한은 `deadline_base_ms` 부터 잰다. 늦은 응답이면 요청을 처음 보낸 시각이라 기다린 시간도 기한에 든다.
+    pub(super) fn custom_after_answer(
+        &mut self,
+        task: &Task,
+        ipc_method: &str,
+        params: &serde_json::Value,
+        poll: Option<&tasty_agent::PollSpecRef>,
+        value: serde_json::Value,
+        deadline_base_ms: u64,
+    ) -> Result<DispatchHandle, String> {
+        // 완료를 따로 기다리는 custom 이면 이 응답은 접수 응답이라 결과와 따로 남긴다.
+        if poll.is_some() || self.ctx.completion.default_for_method(ipc_method).is_some() {
+            self.record_accepted(task, &value);
+        }
+        use tasty_agent::PollSpecRef;
+        let spec: tasty_agent::PollSpec = match poll {
+            Some(PollSpecRef::Inline(spec)) => spec.clone(),
+            Some(PollSpecRef::Named { strategy }) => {
+                let strat = self.ctx.completion.named(strategy).map_err(|e| {
+                    format!("Custom '{ipc_method}' poll strategy '{strategy}': {e}")
+                })?;
+                match strat.kind {
+                    crate::completion::CompletionKind::Poll(spec) => spec,
+                    crate::completion::CompletionKind::Push {
+                        notify_via,
+                        timeout_ms,
+                    } => {
+                        return self.dispatch_push_strategy(
+                            task,
+                            ipc_method,
+                            params,
+                            strat.id.as_str(),
+                            &notify_via,
+                            timeout_ms,
+                        );
+                    }
+                }
+            }
+            None => match self.ctx.completion.default_for_method(ipc_method) {
+                Some(strat) => match strat.kind {
+                    crate::completion::CompletionKind::Poll(spec) => spec,
+                    crate::completion::CompletionKind::Push {
+                        notify_via,
+                        timeout_ms,
+                    } => {
+                        return self.dispatch_push_strategy(
+                            task,
+                            ipc_method,
+                            params,
+                            strat.id.as_str(),
+                            &notify_via,
+                            timeout_ms,
+                        );
+                    }
+                },
+                None => {
+                    return Ok(DispatchHandle::CustomImmediate(TaskResult {
+                        exit_code: Some(0),
+                        output: Some(value),
+                        error: None,
+                    }));
+                }
+            },
+        };
+        let spec = &spec;
+        // 같은 poll 인자를 매핑하면 응답값이 요청값을 덮는다.
+        let mut poll_params = serde_json::Map::new();
+        for (req_key, poll_key) in &spec.map_from_request {
+            if let Some(v) = params.get(req_key) {
+                poll_params.insert(poll_key.clone(), v.clone());
+            }
+        }
+        for (resp_key, poll_key) in &spec.map_from_response {
+            if let Some(v) = value.get(resp_key) {
+                poll_params.insert(poll_key.clone(), v.clone());
+            }
+        }
+        let deadline_ms = spec.timeout_ms.map(|t| deadline_base_ms + t);
+        Ok(DispatchHandle::PolledDispatch {
+            workspace_id: task.workspace_id,
+            poll_method: spec.poll_method.clone(),
+            poll_params: serde_json::Value::Object(poll_params),
+            state_field: spec.state_field.clone(),
+            terminal_states: spec.terminal_states.clone(),
+            failure_states: spec.failure_states.clone(),
+            interval_ms: spec.interval_ms,
+            deadline_ms,
+        })
     }
 
     /// params.surface_id에 command-completed 일회성 훅을 걸고 외부 완료를 기다린다.

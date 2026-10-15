@@ -1,4 +1,4 @@
-<!-- source-hash: a6cfcf4dc48a -->
+<!-- source-hash: b9db6af4240e -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -61,6 +61,8 @@ Every task listed in `--depends-on` has to finish before this task becomes ready
 | `fallback:<task ID>` | If this task fails, that task is woken up instead | The side that can fail |
 
 It is easy to get the placement wrong. `abort` and `continue_downstream` have to be attached to the **following** task for them to count toward that task's readiness decision, while `fallback` has to go the other way, on the task that **can fail** itself. Using a policy on the wrong task will not give you the intended failure handling.
+
+If Tasty is too busy to answer a `custom` task's request in time, the task does not fail right away. A late status check is asked again on the next check, and a request that expired before it ran is sent again. A request that had already started running (such as starting a child agent) is not sent again, so it does not run twice; Tasty waits for its late answer instead. If that answer never arrives (for example, the app restarted in the meantime), the task becomes `unknown` rather than failed. Check whether the request took effect (did the child start?) and then retry or cancel it.
 
 A task used as a fallback has to be created before the main task. To stop the runner from running it first in the meantime, create the fallback with `--reserved-for-fallback`. The reservation prevents it from running before the main task is created. Once linked, it continues waiting until the main task fails and activates the fallback.
 
