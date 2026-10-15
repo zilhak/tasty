@@ -1778,16 +1778,20 @@ impl App {
                 upload_id,
                 file_name,
             } => {
-                let core = &self.services;
-                match find_workspace_holder_engine_mut(engines_mut!(self), client_id) {
-                    Some(mut engine) => {
-                        crate::remote::server::finalize_capture_upload(
+                let admitted = find_workspace_holder_engine_mut(engines_mut!(self), client_id).map(
+                    |mut engine| {
+                        crate::remote::server::admit_capture_upload(
                             &mut engine,
-                            core,
                             hub,
                             client_id,
                             upload_id,
-                            &file_name,
+                        )
+                    },
+                );
+                match admitted {
+                    Some(admitted) => {
+                        self.store_capture_off_thread(
+                            hub, client_id, upload_id, file_name, admitted,
                         );
                     }
                     None => reply_without_workspace_attach(

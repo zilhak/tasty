@@ -2,6 +2,7 @@
 //! 작업 하나는 결과 하나를 돌려준다. 결과 값이 아직 전달하지 않은 파일을 소유하므로, 대상이
 //! 사라져 결과를 버리면 그 파일도 함께 회수된다.
 
+pub(crate) mod capture;
 pub(crate) mod paste;
 #[cfg(test)]
 mod tests;
@@ -45,6 +46,7 @@ type Work<T> = Box<dyn FnOnce() -> T + Send>;
 /// App 이 받는 작업 결과.
 pub(crate) enum ImageJobDone {
     Paste(paste::SavedPaste),
+    Capture(capture::StoredCapture),
 }
 
 impl crate::app::App {
@@ -116,6 +118,7 @@ impl crate::app::App {
         for done in self.image_jobs.take_results() {
             match done {
                 ImageJobDone::Paste(saved) => self.apply_saved_paste(saved),
+                ImageJobDone::Capture(stored) => self.apply_stored_capture(stored),
             }
         }
     }

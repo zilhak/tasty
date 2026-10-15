@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (단축키 트리거)
 - **ADR**: 없음 (기존 [ADR-0020](../../adr/0020-remote-connection-profiles.md) attach 채널을 그대로 재사용, 신규 프로토콜/enum 없음)
-- **코드**: `crates/tasty-platform/src/screen_capture.rs`(OS 캡처 + `CaptureError`), `crates/tasty-platform/src/macos_permissions.rs`(화면 기록 권한 preflight), `src/app/screenshot_capture.rs`(폴링/스레드·결과 안내), `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard`), `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`), `src/app/attach_client/bulk.rs`(원격 전송), `src/app/attach_client/output.rs`(`capture_result` 안내), `src/remote/capture_upload.rs` + `src/remote/server.rs`(`finalize_capture_upload`, 서버측 수신), `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`), `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`)
+- **코드**: `crates/tasty-platform/src/screen_capture.rs`(OS 캡처 + `CaptureError`), `crates/tasty-platform/src/macos_permissions.rs`(화면 기록 권한 preflight), `src/app/screenshot_capture.rs`(폴링/스레드·결과 안내), `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard`), `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`), `src/app/attach_client/bulk.rs`(원격 전송), `src/app/attach_client/output.rs`(`capture_result` 안내), `src/remote/capture_upload.rs` + `src/remote/server.rs`(`admit_capture_upload`·`prepare_capture`·`publish_capture`·`push_capture_result`, 서버측 수신) + `src/app/image_jobs/capture.rs`(GUI 서버의 worker 실행), `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`), `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`)
 - **화면**: 없음 — 트리거는 단축키, 피드백은 요청한 윈도우의 결과 토스트(아래 "결과 안내"; 기존 [토스트](../../design/systems/toast.md) 재사용)
 
 ## 목적
@@ -84,7 +84,9 @@ preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해�
 - 헤드리스 빌드의 클립보드 어댑터는 이미지를 지원하지 않고 텍스트 쓰기도 실패하므로 `Failed` 다. 성공을 가장하지 않는다.
 - 터미널 붙여넣기는 텍스트 형식을 먼저 읽으므로(`ClipboardContext::read_paste`) 저장 경로가 들어가고, 이미지 붙여넣기를 받는 앱은 이미지 형식을 읽는다. Clipboard Viewer 는 열 때 읽는 snapshot 에 Text 와 Image 를 함께 보인다.
 - 클립보드 소유는 다른 앱이 복사하거나 Tasty 가 다른 내용을 쓸 때까지 이어진다. Linux 는 그동안 소유 스레드가 PNG 바이트를 들고 있다.
-- 디코딩 비용: 3840×2160 PNG(무작위 픽셀, 33MB)에 약 26~30ms(이 저장소의 dev 프로필은 의존 크레이트를 최적화한다). 로컬은 캡처 워커에서 디코딩한다. 원격 서버는 저장 파일 재읽기·PNG 디코딩·클립보드 게시를 서버 GUI 의 이벤트 루프 스레드에서 동기로 처리한다(`event_handler.rs` 의 `CaptureCommit` 처리 → `finalize_capture_upload` → `save_capture_and_set_clipboard`). 그래서 mirror 캡처 하나마다 서버 화면이 디코딩 시간(위 실측 26.0·28.7·30.1ms)과 재읽기·게시 시간(미측정)만큼 멈춘다. 헤드리스 서버는 이미지를 디코딩하지 않는다.
+- 디코딩 비용: 3840×2160 PNG(무작위 픽셀, 33MB)에 약 26~30ms(이 저장소의 dev 프로필은 의존 크레이트를 최적화한다). 로컬은 캡처 워커에서 디코딩한다. GUI 원격 서버는 저장·재읽기·PNG 디코딩을 App 의 이미지 worker(`src/app/image_jobs.rs`, 아래 "서버측 처리")에서 하므로 서버 화면이 그동안 멈추지 않는다. 클립보드 게시는 macOS·Linux 는 worker 에서, Windows 는 이벤트 루프에서 한다(아래 "스레드 제약"). 헤드리스 서버는 이미지를 디코딩하지 않고 저장까지 그 자리에서 끝낸다.
+- 스레드 제약: Windows 의 클립보드 소유 창은 호출 스레드마다 만드는 메시지 전용 창(`thread_local`)이다. 다른 프로그램이 `EmptyClipboard` 하면 소유 창에 `WM_DESTROYCLIPBOARD` 가 가는데, worker 스레드는 작업을 기다리며 막혀 창 메시지를 처리하지 않으므로 소유자가 되면 그 프로그램의 복사가 늦어지거나 멈출 수 있다. 그래서 Windows 는 worker 가 저장·디코딩만 하고, 게시는 완료를 받은 이벤트 루프(메시지를 처리하는 스레드)가 한다(`image_jobs::capture::PUBLISH_ON_EVENT_LOOP`). macOS 는 `objc2-app-kit` 이 `NSPasteboard` 를 main thread 전용으로 표시하지 않고, Linux X11 은 선택 소유를 별도 스레드가 맡으므로 worker 에서 게시한다. Windows 의 이벤트 루프 게시와 macOS 의 worker 게시는 실 기기에서 재지 않았다.
+- X11 은 한 요청에 담기는 크기(약 16 MiB)를 넘는 PNG 를 올리지 못해 경로만 올린다(`TextOnly`).
 
 ### 원격(mirror) 케이스 — 기존 attach 채널 확장 (신규 프로토콜 없음)
 
@@ -95,13 +97,14 @@ preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해�
 - `capture_commit` { `upload_id`, `file_name` } — 마지막 청크 뒤 1회, 업로드 종료를 알림.
 - `capture_result` { `upload_id`, `ok`, `path?`, `reason?`, `image?`, `image_reason?` } — 서버(원격)→client 회신. `ok` 는 경로 텍스트를 원격 클립보드에 쓴 것이고, `image` 는 이미지도 함께 올렸는지다. 저장은 했지만 클립보드에 쓰지 못하면 `ok:false` 와 함께 저장 `path` 를 싣는다. `image` 를 싣지 않는 옛 서버의 `ok:true` 는 경로만 쓴 성공으로 읽는다.
 
-client 측(`src/app/attach_client/bulk.rs::forward_capture_to_remote_clipboard`)은 로컬 워크스페이스 id 로 해당 attach 세션을 찾아 청크+커밋을 순서대로 보낸다. 서버(원격 인스턴스) 측은 `stream_hub.rs::pump_inbound` 가 `StreamControl` 파싱 실패 시 `CaptureUploadMsg` 로 재시도해 분류하고, `CaptureUploadRegistry`(`(client_id, upload_id)` 키)에 청크를 누적하다 커밋에서 `attach_runtime::finalize_capture_upload` 를 호출한다.
+client 측(`src/app/attach_client/bulk.rs::forward_capture_to_remote_clipboard`)은 로컬 워크스페이스 id 로 해당 attach 세션을 찾아 청크+커밋을 순서대로 보낸다. 서버(원격 인스턴스) 측은 `stream_hub.rs::pump_inbound` 가 `StreamControl` 파싱 실패 시 `CaptureUploadMsg` 로 재시도해 분류하고, `CaptureUploadRegistry`(`(client_id, upload_id)` 키)에 청크를 누적한다. 커밋을 받으면 GUI 서버는 `src/app/event_handler.rs::apply_capture_upload_msg` 에서 `src/remote/server.rs::admit_capture_upload` 로 접수한 뒤 `src/app/image_jobs/capture.rs` 의 `store_capture_off_thread` 로 worker 에 넘기고, 헤드리스 서버는 `src/remote/server.rs::finalize_capture_upload`(헤드리스 전용)로 그 자리에서 끝낸다.
 
-**서버측 처리(`finalize_capture_upload`)**:
+**서버측 처리**: 접수(`admit_capture_upload`)는 이벤트 루프에서, 저장·디코딩(`prepare_capture`)은 GUI 서버에서 App 이미지 worker 로, 게시(`publish_capture`)는 macOS·Linux 는 worker, Windows 는 이벤트 루프에서, 회신은 `push_capture_result` 가 한다. 헤드리스 서버는 `finalize_capture_upload` 가 모든 단계를 이어서 부른다.
 1. 그 client 가 해당 engine의 workspace를 hard 점유 중인지(`OccupancyRegistry::client_holds_workspace`) 확인 — attach 연결 자체가 이미 권한 경계이므로 별도 인증 계층을 새로 만들지 않는다(구조 변경 forward 와 동일한 신뢰 모델).
 2. `file_name` 을 **basename 만** 취해(path traversal 방지) `~/.tasty/screenshots/<name>` 에 저장.
 3. 저장 파일을 디코딩해 `publish_text_with_image` 로 **원격 인스턴스의** 클립보드에 경로 텍스트와 이미지를 올린다(위 "클립보드 게시"). 텍스트 쓰기는 `clipboard.set_text` IPC 와 같은 `ClipboardSystem` 을 쓰지만, attach 미니 프로토콜은 이 IPC 를 거치지 않고 같은 프로세스 안에서 직접 호출한다(JSON-RPC 왕복이 불필요).
-4. 결과를 `capture_result` 프레임으로 client 에 회신.
+4. 결과를 `capture_result` 프레임으로 client 에 회신. GUI 서버는 worker 가 끝난 뒤 업로드를 시작한 연결(같은 client 번호의 같은 등록)이 그대로일 때만 회신한다. 끊긴 뒤 같은 번호로 새로 붙은 연결에는 보내지 않는다. 그 사이 grant 가 바뀌어도 이미 한 저장·게시의 결과를 그대로 알린다.
+5. worker 가 받지 못하면(결과를 회수하지 않은 작업 8건 상한, 종료 중) 저장하지 않고 `ok:false` 와 사유(`server is busy storing other captures` 등)로 바로 회신한다. 업로드 바이트는 디스크 spool 에 있어 메모리 바이트 상한에는 세지 않는다. 같은 worker 가 로컬 이미지 붙여넣기 저장도 접수 순서대로 실행한다.
 
 client 는 `capture_commit` 까지 보낸 업로드를 세션의 `capture_uploads`(`upload_id` → 요청한 View)에 넣고, `capture_result` 를 받으면 그 항목을 꺼내 요청한 View 에 토스트를 띄운다. `ok:false` 는 `attach.toast.mirror_capture_failed`, 이미지까지 올렸으면 `attach.toast.mirror_capture_saved`, 경로만 올렸으면 `attach.toast.mirror_capture_path_only`(이미지 실패 사유), `image` 가 없는 옛 서버의 성공은 `attach.toast.mirror_capture_path_only_old_server` 다.
 
@@ -189,6 +192,6 @@ Wayland 도구(grim·slurp)와 macOS·Windows 는 실제 실행하지 않았고 
 - 키바인딩: `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard` 필드 + `default_screenshot_to_clipboard`), `presets.rs`(4 프리셋 공통값), `crud.rs`(`GENERAL_BINDING_FIELDS`/`get_bindings(_mut)`), 매치는 `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`). Settings UI: `src/view/settings/ui/keybindings_tab.rs`(Clipboard 서브탭).
 - 클립보드 게시: `src/ports/clipboard.rs`(`ClipboardImage`, `CaptureCopy`, `publish_text_with_image`), `src/clipboard/capture_image.rs`(`decode_png`), `src/clipboard/files.rs`(`write_text_and_image`)와 `files/x11.rs`·`files/windows.rs`·`files/format.rs`(`dib`, `unicode_text`), `crates/tasty-platform/src/pasteboard.rs`(macOS), `src/adapters/production/arboard_clip.rs`.
 - 원격 전송(client): `src/app/attach_client/bulk.rs`(`forward_capture_to_remote_clipboard`), `src/app/attach_client/wire.rs`(`send_control_frame`, `parse_capture_result`), `src/app/attach_client/output.rs`(`MirrorEvent::CaptureResult`).
-- 원격 수신(server): `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`, `pump_inbound` 분류), `src/remote/capture_upload.rs`(`CaptureUploadRegistry`), `src/remote/server.rs`(`finalize_capture_upload`, `save_capture_and_set_clipboard`). GUI(`src/app/event_handler.rs::apply_capture_upload_msg`)와 headless(`src/boot/headless_stream.rs::apply_capture_uploads`) 양쪽 진입점에서 동일 서버 로직을 호출.
+- 원격 수신(server): `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`, `pump_inbound` 분류), `src/remote/capture_upload.rs`(`CaptureUploadRegistry`), `src/remote/server.rs`(`admit_capture_upload`, `prepare_capture`, `publish_capture`, `push_capture_result`, headless 전용 `finalize_capture_upload`), `src/app/image_jobs/capture.rs`(GUI worker 제출, Windows 게시, 회신 대조). GUI(`src/app/event_handler.rs::apply_capture_upload_msg`)와 headless(`src/boot/headless_stream.rs::apply_capture_uploads`) 양쪽 진입점이 같은 접수·저장·회신 함수를 쓴다.
 - IPC/CLI: `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text` → `Permission::ClipboardWrite`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`), `crates/tasty-cli/src/commands/clipboard.rs`(`ClipboardCommands::SetText`), `crates/tasty-cli/src/request/clipboard.rs`.
 - 테스트: `crates/tasty-ipc/src/method_meta_tests.rs`(`clipboard_set_text_is_release`), `crates/tasty-ipc/src/stream_hub.rs`(`pump_inbound_classifies_capture_chunk_and_commit`), `src/remote/capture_upload.rs`(누적/격리 단위 테스트), `crates/tasty-platform/src/screen_capture.rs`(경로·PNG 검사 단위 테스트), `crates/tasty-platform/src/screen_capture/linux_tests.rs`(후보 폴백·취소·출력 없음 분류 shim 시험).

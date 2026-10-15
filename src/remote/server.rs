@@ -9,7 +9,6 @@ use crate::runtime::engine_access::EngineMut;
 use crate::runtime::engine_access::EngineRef;
 use std::collections::HashMap;
 
-use crate::app::services::AppServices;
 use crate::core::attach::{AttachClientId, AttachError};
 use crate::model::{AttachSurfaceClass, SurfaceId, WorkspaceId};
 use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag};
@@ -214,24 +213,50 @@ impl EngineMut<'_> {
 
 /// 업로드 버퍼를 회수하고 이 engine의 workspace를 하나라도 점유한 client인지 확인한다.
 /// 허용되면 캡처를 저장하고 서버 클립보드에 경로를 쓴 뒤 capture_result로 회신한다.
+/// 헤드리스 서버는 이미지 클립보드가 없어 이 자리에서 저장까지 끝낸다. GUI 서버는 같은
+/// 단계를 나눠 저장·디코딩·클립보드 게시를 App 의 이미지 worker 에서 실행한다.
+#[cfg(not(feature = "gui"))]
 pub(crate) fn finalize_capture_upload(
     engine: &mut EngineMut<'_>,
-    core: &AppServices,
+    core: &crate::app::services::AppServices,
     hub: &StreamHub,
     client_id: u32,
     upload_id: u64,
     file_name: &str,
 ) {
+    let result = admit_capture_upload(engine, hub, client_id, upload_id)
+        .and_then(|(_, bytes)| prepare_capture(capture_dir(), file_name, bytes))
+        .map(|prepared| publish_capture(core.clipboard_arc().as_ref(), prepared));
+    push_capture_result(hub, client_id, upload_id, result);
+}
+
+/// 업로드 버퍼를 회수하고, 요청한 client 가 workspace 를 점유하며 업로드를 시작한 연결·grant 가
+/// 아직 유효한지 확인한다. 회수한 버퍼는 저장하지 않으면 drop 때 지워진다.
+pub(crate) fn admit_capture_upload(
+    engine: &mut EngineMut<'_>,
+    hub: &StreamHub,
+    client_id: u32,
+    upload_id: u64,
+) -> Result<(TransferOwner, Spool), String> {
     let bytes = engine.remote.capture_uploads.take(client_id, upload_id);
     let is_holder = engine.live.occupancy.client_holds_workspace(client_id);
-    let result = match (is_holder, bytes) {
+    match (is_holder, bytes) {
         (false, _) => Err("client does not hold a workspace attach".to_string()),
         (true, None) => Err("no uploaded bytes for this upload_id".to_string()),
         (true, Some((owner, bytes))) if owner.current(&engine.as_ref(), hub, client_id) => {
-            save_capture_and_set_clipboard(core, file_name, bytes)
+            Ok((owner, bytes))
         }
         (true, Some(_)) => Err("capture origin grant or registration retired".into()),
-    };
+    }
+}
+
+/// capture_result 를 보낸다.
+pub(crate) fn push_capture_result(
+    hub: &StreamHub,
+    client_id: u32,
+    upload_id: u64,
+    result: Result<SavedCapture, String>,
+) {
     let payload = capture_result_payload(upload_id, result);
     let frame = StreamFrame::new(
         StreamTag::Control,
@@ -241,8 +266,8 @@ pub(crate) fn finalize_capture_upload(
 }
 
 /// 저장한 캡처와 클립보드 게시 결과.
-struct SavedCapture {
-    path: String,
+pub(crate) struct SavedCapture {
+    pub(crate) path: String,
     copy: crate::ports::clipboard::CaptureCopy,
 }
 
@@ -296,25 +321,44 @@ fn capture_result_payload(
     }
 }
 
-/// 캡처를 저장한 뒤 경로 텍스트와 이미지를 클립보드에 올린다. 클립보드 기록에 실패해도 파일은 남는다.
-/// GUI 서버는 이 함수를 이벤트 루프 스레드에서 동기로 부른다. 저장 파일 재읽기·PNG 디코딩
-/// (3840×2160 무작위 PNG 에 26~30ms 실측)·클립보드 게시 동안 화면이 멈춘다.
-fn save_capture_and_set_clipboard(
-    core: &AppServices,
+/// 저장하고 다시 읽어 디코딩까지 마친 캡처. 클립보드에는 아직 올리지 않았다.
+pub(crate) struct PreparedCapture {
+    path: String,
+    image: Result<crate::ports::clipboard::ClipboardImage, String>,
+}
+
+/// 저장·재읽기·디코딩. 클립보드 소유와 무관하므로 어느 스레드에서 불러도 된다. 오래 걸리므로
+/// GUI 서버는 이벤트 루프 밖(App 이미지 worker)에서 부른다. 저장 폴더는 호출자가 [`capture_dir`]로
+/// 미리 정해 넘긴다. worker 스레드는 home 경로를 다시 읽지 않는다.
+pub(crate) fn prepare_capture(
+    dir: Option<std::path::PathBuf>,
     file_name: &str,
     bytes: Spool,
-) -> Result<SavedCapture, String> {
-    let dir = crate::paths::tasty_home()
-        .map(|h| h.join("screenshots"))
-        .ok_or_else(|| "no tasty home directory".to_string())?;
+) -> Result<PreparedCapture, String> {
+    let dir = dir.ok_or_else(|| "no tasty home directory".to_string())?;
     let path = save_bulk_file(&dir, file_name, "screenshot.png", bytes)?;
     let image = read_capture_image(std::path::Path::new(&path));
+    Ok(PreparedCapture { path, image })
+}
+
+/// 경로 텍스트와 이미지를 클립보드에 올린다. 클립보드 기록에 실패해도 파일은 남는다. 호출한
+/// 스레드가 클립보드 소유자가 될 수 있어 Windows GUI 서버는 이벤트 루프에서 부른다.
+pub(crate) fn publish_capture(
+    clipboard: &dyn crate::ports::clipboard::ClipboardSystem,
+    prepared: PreparedCapture,
+) -> SavedCapture {
+    let PreparedCapture { path, image } = prepared;
     let copy = crate::ports::clipboard::publish_text_with_image(
-        core.clipboard_arc().as_ref(),
+        clipboard,
         &path,
         image.as_ref().map_err(String::as_str),
     );
-    Ok(SavedCapture { path, copy })
+    SavedCapture { path, copy }
+}
+
+/// 원격 캡처를 저장하는 서버 폴더.
+pub(crate) fn capture_dir() -> Option<std::path::PathBuf> {
+    crate::paths::tasty_home().map(|h| h.join("screenshots"))
 }
 
 #[cfg(feature = "gui")]

@@ -47,7 +47,7 @@ Linux 호스트의 터미널 텍스트와 Explorer 파일 전송은 X11 경로�
 로컬(비-mirror) 터미널의 이미지 붙여넣기는 PNG 인코딩까지 View 에서 하고, 임시 디렉터리 생성과 파일 쓰기는 App 의 이미지 worker(`src/app/image_jobs.rs`)가 한다. GUI 이벤트 루프는 파일 I/O 를 기다리지 않는다. PNG 인코딩은 아직 View 의 호출 스택에서 한다.
 
 - **계약**: 붙여넣기 시점의 대상 binding(surface 와 activation·자원 세대), bracketed 여부, 파일 이름, PNG 바이트를 고정한다(`image_jobs::paste::PendingImageSave`). 붙여넣기 뒤 포커스가 바뀌어도 대상은 바뀌지 않는다.
-- **상한**: worker 스레드 하나가 접수 순서대로 한 건씩 실행한다. 결과를 회수하지 않은 작업은 최대 8건(`MAX_JOBS`), 메모리에 든 입력 바이트 합은 최대 256 MiB(`MAX_HELD_BYTES`)다. 넘으면 저장하지 않고 요청한 창의 그 터미널 범위에 경고 토스트(`toast.image_paste_busy`)를 띄운다.
+- **상한**: worker 스레드 하나가 접수 순서대로 한 건씩 실행한다. GUI 서버가 받은 원격 캡처의 저장·디코딩([remote-screenshot-clipboard](../remote-screenshot-clipboard/index.md))도 같은 worker 와 건수 상한을 쓴다. 결과를 회수하지 않은 작업은 최대 8건(`MAX_JOBS`), 메모리에 든 입력 바이트 합은 최대 256 MiB(`MAX_HELD_BYTES`)다. 넘으면 저장하지 않고 요청한 창의 그 터미널 범위에 경고 토스트(`toast.image_paste_busy`)를 띄운다.
 - **완료**: App 이 원 대상의 세대와 hard 점유를 다시 확인한 뒤에만 경로를 입력한다. 터미널이 닫혔거나 같은 번호의 새 터미널로 바뀌었거나, 다른 client 가 점유 중이면 입력하지 않는다.
 - **큰 이미지**: 대기·실행 중인 작업이 없으면 256 MiB 를 넘는 이미지 한 건도 저장한다. 그 건이 끝날 때까지 다른 요청은 상한에 걸려 거절된다.
 - **입력 순서**: 경로는 저장이 끝난 시점에 입력한다. 저장이 끝나기 전에 친 글자는 경로보다 먼저 들어갈 수 있다(mirror 이미지 업로드와 같다). 이미지 붙여넣기 두 건은 접수 순서대로 입력한다.

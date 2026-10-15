@@ -45,7 +45,10 @@ thread_local! {
     static OWNER: Cell<Option<HWND>> = const { Cell::new(None) };
 }
 
-/// 호출 스레드의 메시지 전용 창. 지연 렌더링을 쓰지 않으므로 메시지를 처리할 필요가 없다.
+/// 호출 스레드의 메시지 전용 창. 지연 렌더링을 쓰지 않아 렌더링 요청은 오지 않는다. 다만 다른
+/// 프로그램이 `EmptyClipboard` 하면 소유 창에 `WM_DESTROYCLIPBOARD` 가 가므로, 메시지를 처리하는
+/// 스레드(이벤트 루프)에서만 게시한다. 메시지를 처리하지 않는 worker 스레드가 소유하면 그 프로그램의
+/// 복사가 늦어지거나 멈출 수 있다.
 fn owner_window() -> Result<HWND, String> {
     if let Some(hwnd) = OWNER.get() {
         return Ok(hwnd);

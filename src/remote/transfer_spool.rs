@@ -120,6 +120,20 @@ impl TransferOwner {
                     grant.ready && self.grants.contains(&(id, grant.holder, grant.granted_seq))
                 })
     }
+    /// 시험에서 grant 없이 연결 binding 만 가진 소유자를 만든다.
+    #[cfg(all(test, feature = "gui"))]
+    pub(crate) fn for_connection(registration: Weak<()>) -> Self {
+        Self {
+            registration,
+            grants: Vec::new(),
+        }
+    }
+    /// 업로드를 시작한 연결이 아직 같은 client 번호로 붙어 있는가. 끊긴 뒤 같은 번호로 새로
+    /// 붙은 연결은 다른 연결이다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn same_connection(&self, hub: &StreamHub, client: u32) -> bool {
+        hub.matches_client_binding(client, &self.registration)
+    }
     pub(crate) fn same(&self, other: &Self) -> bool {
         self.registration.ptr_eq(&other.registration)
             && self.grants.iter().any(|grant| other.grants.contains(grant))

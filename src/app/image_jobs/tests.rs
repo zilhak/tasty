@@ -275,3 +275,130 @@ fn applying_a_local_image_paste_leaves_file_work_to_the_app() {
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].png_bytes, b"png");
 }
+
+fn spool_with(bytes: &[u8]) -> crate::remote::transfer_spool::Spool {
+    let mut spool = crate::remote::transfer_spool::Spool::new().expect("spool");
+    spool.append(bytes).expect("spool write");
+    spool
+}
+
+/// 회신은 업로드를 시작한 연결에만 간다. 끊긴 뒤 같은 번호로 새로 붙은 연결은 받지 않는다.
+#[test]
+fn a_capture_reply_reaches_only_the_uploading_connection() {
+    use super::capture::{StoredCapture, reply_stored_capture};
+    let clipboard = crate::adapters::test::mock_clipboard::MockClipboard::default();
+    let hub = tasty_ipc::stream_hub::StreamHub::new();
+    let first = hub.register(7);
+    let owner = crate::remote::transfer_spool::TransferOwner::for_connection(
+        hub.client_binding(7).expect("registered"),
+    );
+    let stored = |owner| StoredCapture {
+        client_id: 7,
+        upload_id: 3,
+        owner,
+        result: Err("x".into()),
+    };
+    assert!(reply_stored_capture(
+        &hub,
+        &clipboard,
+        stored(owner.clone())
+    ));
+    let frame = first.try_recv().expect("reply sent");
+    let reply: serde_json::Value = serde_json::from_slice(&frame.payload).expect("json");
+    assert_eq!(reply["event"], "capture_result");
+    assert_eq!(reply["upload_id"], 3);
+
+    hub.unregister(7);
+    let second = hub.register(7);
+    assert!(!reply_stored_capture(&hub, &clipboard, stored(owner)));
+    assert!(
+        second.try_recv().is_err(),
+        "a new connection gets no stale reply"
+    );
+}
+
+fn tiny_png() -> Vec<u8> {
+    let image = image::RgbaImage::from_pixel(3, 2, image::Rgba([1, 2, 3, 255]));
+    let mut png = Vec::new();
+    image
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .expect("encode");
+    png
+}
+
+/// 저장·디코딩·게시는 받은 폴더에 하고, 그 결과를 회신 값으로 돌려준다.
+#[test]
+fn a_stored_capture_is_saved_in_the_given_folder_and_published() {
+    use super::capture::{CaptureStage, run_capture_job};
+    use crate::ports::clipboard::ClipboardSystem as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let clipboard = crate::adapters::test::mock_clipboard::MockClipboard::default();
+    let png = tiny_png();
+    let stage = run_capture_job(
+        &clipboard,
+        Some(dir.path().join("screenshots")),
+        "../cap.png",
+        spool_with(&png),
+        true,
+    )
+    .expect("stored");
+    let CaptureStage::Published(saved) = stage else {
+        panic!("published in the worker");
+    };
+    let path = dir.path().join("screenshots").join("cap.png");
+    assert_eq!(saved.path, path.to_string_lossy());
+    assert_eq!(std::fs::read(&path).expect("saved"), png);
+    assert_eq!(clipboard.read_text().expect("text"), saved.path);
+    assert_eq!(clipboard.image().map(|image| image.width), Some(3));
+
+    let missing_home = run_capture_job(&clipboard, None, "c.png", spool_with(&png), true);
+    assert!(missing_home.is_err());
+}
+
+/// Windows 경로: worker 는 저장·디코딩만 하고 클립보드를 건드리지 않는다. 게시는 회신 직전
+/// 이벤트 루프에서 하며, 연결이 바뀌어 회신을 버려도 게시는 한다.
+#[test]
+fn a_prepared_capture_is_published_on_the_event_loop() {
+    use super::capture::{CaptureStage, StoredCapture, reply_stored_capture, run_capture_job};
+    use crate::ports::clipboard::ClipboardSystem as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let clipboard = crate::adapters::test::mock_clipboard::MockClipboard::default();
+    let stage = run_capture_job(
+        &clipboard,
+        Some(dir.path().to_path_buf()),
+        "cap.png",
+        spool_with(&tiny_png()),
+        false,
+    )
+    .expect("prepared");
+    assert!(matches!(stage, CaptureStage::Prepared(_)));
+    assert!(
+        clipboard.read_text().is_err(),
+        "the worker does not publish"
+    );
+
+    let hub = tasty_ipc::stream_hub::StreamHub::new();
+    let connection = hub.register(9);
+    let owner = crate::remote::transfer_spool::TransferOwner::for_connection(
+        hub.client_binding(9).expect("registered"),
+    );
+    assert!(reply_stored_capture(
+        &hub,
+        &clipboard,
+        StoredCapture {
+            client_id: 9,
+            upload_id: 4,
+            owner,
+            result: Ok(stage),
+        },
+    ));
+    let path = dir.path().join("cap.png");
+    assert_eq!(
+        clipboard.read_text().expect("published"),
+        path.to_string_lossy()
+    );
+    assert_eq!(clipboard.image().map(|image| image.height), Some(2));
+    let frame = connection.try_recv().expect("reply sent");
+    let reply: serde_json::Value = serde_json::from_slice(&frame.payload).expect("json");
+    assert_eq!(reply["image"], true);
+}
