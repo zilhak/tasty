@@ -427,7 +427,7 @@ fn lanes_that_leave_versions_alone_rebase_without_conflict() {
             "scripts/check-plugin-version-bump.sh",
             &["--range", &format!("{c}^"), c],
         );
-        assert_eq!(r.code, 0, "착지한 커밋 {c}: {r:?}");
+        assert_eq!(r.code, 0, "main에 반영된 커밋 {c}: {r:?}");
         assert!(r.output.contains("통과 — 판정 대상"), "{c}: {r:?}");
     }
     cargo_offline(d, &["metadata", "--locked", "--format-version", "1"]);

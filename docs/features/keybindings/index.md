@@ -106,7 +106,7 @@ modifier 드롭다운에서 **"개별 지정"**(sentinel `KeybindingSettings::IN
 
 - 탭: next/prev → `next_tab_in_pane`/`prev_tab_in_pane`, 슬롯 index → `goto_tab_in_pane(index)`.
 - 워크스페이스: next/prev → `next_workspace_in_active_category`/`prev_workspace_in_active_category`, 슬롯 local → 카테고리 토글 on 이면 `switch_workspace_in_active_category(local)`, off 면 `switch_workspace(local)`.
-- 카테고리: next/prev → `next_category`/`prev_category`(`state/workspace.rs` — 카테고리 리스트 안에서 wrap-around ±1 이동한 뒤 `switch_to_category` 재사용, auto-expand + last-active 착지 포함), 슬롯 section → `switch_to_category(section)`. 세 매칭 모두 folders 토글 off 면 no-op·비소비. → [워크스페이스 카테고리](../workspace-category/index.md).
+- 카테고리: next/prev → `next_category`/`prev_category`(`state/workspace.rs` — 카테고리 리스트 안에서 wrap-around ±1 이동한 뒤 `switch_to_category` 재사용, auto-expand + last-active 이동 포함), 슬롯 section → `switch_to_category(section)`. 세 매칭 모두 folders 토글 off 면 no-op·비소비. → [워크스페이스 카테고리](../workspace-category/index.md).
 
 어느 것도 매칭 안 되면 조용히 `false` 를 돌려 다른 단축키 매칭으로 넘긴다. 이 메서드들은 focused pane 의 active_tab · active_workspace(= **사용자 포커스 상태**)를 바꾸므로 **사용자 키 입력 경로에서만** 호출되며 release IPC/CLI 로 노출되지 않는다(원칙 1/3). Command Palette·더블탭 파리티는 범위 밖.
 

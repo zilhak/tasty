@@ -11,7 +11,7 @@ fn every_bundled_cli_description_and_argument_has_a_catalog_key() {
         measured: 9,
         measured_on: "2026-09-15",
         counted_on: CountedOn::Tree(
-            "4d307aeb3 — 이 lane 의 tip 은 체리픽 착지로 사라졌다. 착지한 트리에서 다시 셌고 \
+            "4d307aeb3 — 이 lane 의 tip 은 체리픽으로 main에 반영되며 사라졌다. 반영된 트리에서 다시 셌고 \
              값은 9 로 같다.",
         ),
         why_this_gap: "Each bundled plugin has one manifest directly under its crate. Removing a member is an explicit product change, so no unexplained decrease is accepted.",
