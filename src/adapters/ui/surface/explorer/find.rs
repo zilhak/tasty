@@ -139,6 +139,12 @@ impl ExplorerView {
         )
     }
 
+    /// 고른 항목을 목록에 보이는 순서로. 하위 폴더 검색 중이면 그 결과에서 고른다.
+    /// 선택은 보이는 항목에만 남으므로 고른 항목은 모두 여기 있다.
+    pub(crate) fn selected_shown(&self) -> impl Iterator<Item = &DirEntryInfo> + '_ {
+        self.shown().filter(|e| self.selected.contains(&e.path))
+    }
+
     /// 거르는 중이고 지금 검색어·목록으로 만든 거르기 결과가 있으면 그 목록 번호.
     fn filtered(&self) -> Option<&[usize]> {
         let find = self.find.as_ref()?;

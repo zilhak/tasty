@@ -319,11 +319,18 @@ impl ExplorerView {
         self.addr_active = None;
     }
 
-    /// 현재 목록에서 대상이 없는 링크인가. 열기 대신 원인을 알리는 데 쓴다.
-    pub(crate) fn is_broken_link(&self, path: &Path) -> bool {
+    /// 지금 폴더 목록이나 하위 폴더 검색 결과에 있는 그 경로의 항목.
+    pub(crate) fn listed_entry(&self, path: &Path) -> Option<&DirEntryInfo> {
         self.entries
             .iter()
-            .any(|e| e.path == path && e.link == crate::core::fs_list::EntryLink::Broken)
+            .chain(self.search_hits())
+            .find(|e| e.path == path)
+    }
+
+    /// 목록(하위 폴더 검색 결과 포함)에서 대상이 없는 링크인가. 열기 대신 원인을 알리는 데 쓴다.
+    pub(crate) fn is_broken_link(&self, path: &Path) -> bool {
+        self.listed_entry(path)
+            .is_some_and(|e| e.link == crate::core::fs_list::EntryLink::Broken)
     }
 
     pub(crate) fn selection_identity(&self) -> std::sync::Weak<()> {

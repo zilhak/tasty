@@ -31,7 +31,7 @@
 | 우클릭 — 목록 빈 영역과 툴바·주소창·내부 탭바·상태줄 | 현재 폴더 |
 | 우클릭 — 사이드바 Files 트리의 폴더 | 그 폴더 하나. 선택은 바꾸지 않는다 |
 | 우클릭 — Favorites 행 | 그 즐겨찾기 경로 |
-| `explorer_properties` 단축키·Command Palette | 선택 항목(목록 순서). 선택이 없으면 현재 폴더 |
+| `explorer_properties` 단축키·Command Palette | 선택 항목(보이는 목록 순서, 하위 폴더 검색 결과 포함). 선택이 없으면 현재 폴더 |
 | 단축키·Command Palette 의 복사·잘라내기·경로 복사 | 선택 항목. 선택이 없으면 아무것도 하지 않는다 |
 | 단축키·Command Palette 의 붙여넣기 | 현재 폴더 |
 | 메뉴 "Paste into" (단일 폴더) | 그 폴더 |

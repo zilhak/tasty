@@ -487,3 +487,64 @@ fn subfolder_results_keep_only_the_selected_hits() {
     view.retain_shown_selection();
     assert_eq!(view.selected, [hit.path].into());
 }
+
+/// 하위 폴더 검색 결과 `hit` 를 보이는 view. 결과는 지금 폴더 목록(`entries`)에 없다.
+fn showing_hit(root: &Path, hit: &DirEntryInfo) -> (ExplorerPanel, ExplorerView, LocalReads) {
+    let (panel, mut view, owner) = loaded(root);
+    view.set_entries(vec![named(root, "alpha1.txt")]);
+    view.open_find();
+    let find = view.find.as_mut().unwrap();
+    find.query = "alpha".into();
+    find.deep = true;
+    find.search = Some(Search {
+        receipt: None,
+        hits: vec![hit.clone()],
+        skipped: Vec::new(),
+        outcome: Outcome::Done,
+    });
+    (panel, view, owner)
+}
+
+#[test]
+fn a_selected_subfolder_hit_is_what_preview_and_properties_act_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let hit = named(root, "sub/alpha9.txt");
+    let (_panel, mut view, _owner) = showing_hit(root, &hit);
+    view.select_only(&hit.path);
+    assert_eq!(
+        super::super::preview::preview_target(&view).map(|e| e.path),
+        Some(hit.path.clone()),
+        "the preview shows the picked result"
+    );
+    assert_eq!(
+        crate::adapters::ui::popup::explorer_properties::shortcut_paths(Some(&view), root),
+        vec![hit.path.clone()],
+        "the properties shortcut opens the picked result, not the folder"
+    );
+    assert_eq!(
+        view.listed_entry(&hit.path).map(|e| e.path.clone()),
+        Some(hit.path.clone()),
+        "a mirror's properties find the result's listed facts"
+    );
+
+    view.selected.clear();
+    assert_eq!(
+        crate::adapters::ui::popup::explorer_properties::shortcut_paths(Some(&view), root),
+        vec![root.to_path_buf()],
+        "with nothing picked the shortcut opens the current folder"
+    );
+}
+
+#[test]
+fn a_broken_link_among_subfolder_hits_is_reported_as_broken() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let hit = DirEntryInfo {
+        link: crate::core::fs_list::EntryLink::Broken,
+        ..named(root, "sub/alpha-gone")
+    };
+    let (_panel, view, _owner) = showing_hit(root, &hit);
+    assert!(view.is_broken_link(&hit.path));
+    assert!(!view.is_broken_link(&root.join("alpha1.txt")));
+}

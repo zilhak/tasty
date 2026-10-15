@@ -230,14 +230,7 @@ fn split_panel(
         egui::Stroke::new(line, theme.separator.to_egui_premultiplied()),
     );
 
-    let target = (view.selected.len() == 1)
-        .then(|| {
-            view.entries
-                .iter()
-                .find(|e| view.selected.contains(&e.path))
-        })
-        .flatten()
-        .cloned();
+    let target = preview_target(view);
     let several = (view.selected.len() > 1).then(|| {
         let folders = view
             .shown()
@@ -278,6 +271,14 @@ fn split_panel(
     );
     list_ui.set_clip_rect(list.intersect(ui.clip_rect()));
     list_ui
+}
+
+/// 미리보기 대상: 선택이 정확히 하나일 때 그 항목. 하위 폴더 검색 결과도 대상이다.
+pub(super) fn preview_target(view: &ExplorerView) -> Option<DirEntryInfo> {
+    (view.selected.len() == 1)
+        .then(|| view.selected_shown().next())
+        .flatten()
+        .cloned()
 }
 
 /// 여러 개를 골랐을 때의 수. 선택은 보이는 항목에만 남으므로 폴더는 보이는 항목에서 센다.

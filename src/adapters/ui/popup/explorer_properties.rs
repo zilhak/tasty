@@ -15,6 +15,7 @@ use tasty_ui_widgets::{
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::adapters::ui::popup::PopupAction;
+use crate::adapters::ui::surface::explorer::view::ExplorerView;
 use crate::app::local_reads::{
     self, FolderCount, ItemFacts, ItemKind, LinkTarget, PropertiesFacts, Query,
 };
@@ -106,37 +107,30 @@ pub(crate) fn open_for_shortcut(
     surface_id: u32,
     cwd: &Path,
 ) {
-    let mut paths: Vec<PathBuf> = state
-        .explorer_views
-        .get(surface_id)
-        .map(|v| {
-            v.entries
-                .iter()
-                .filter(|e| v.selected.contains(&e.path))
-                .map(|e| e.path.clone())
-                .collect()
-        })
-        .unwrap_or_default();
-    if paths.is_empty() {
-        paths.push(cwd.to_path_buf());
-    }
+    let paths = shortcut_paths(state.explorer_views.get(surface_id), cwd);
     let listed = remote.then(|| remote_entries(state, surface_id, &paths));
     open(state, surface_id, paths, listed, true);
 }
 
+/// 단축키가 여는 경로. 선택이 있으면 보이는 목록 순서대로 그 항목들(하위 폴더 검색 결과 포함),
+/// 없으면 현재 폴더.
+pub(crate) fn shortcut_paths(view: Option<&ExplorerView>, cwd: &Path) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = view
+        .map(|v| v.selected_shown().map(|e| e.path.clone()).collect())
+        .unwrap_or_default();
+    if paths.is_empty() {
+        paths.push(cwd.to_path_buf());
+    }
+    paths
+}
+
 /// 원격 목록에서 경로들의 항목을 찾는다. 목록에 없는 경로(현재 폴더 자신)는 이름만 있는 폴더로 둔다.
 fn remote_entries(state: &MainViewState, surface_id: u32, paths: &[PathBuf]) -> Vec<DirEntryInfo> {
-    let listed = state
-        .explorer_views
-        .get(surface_id)
-        .map(|v| v.entries.as_slice())
-        .unwrap_or_default();
+    let view = state.explorer_views.get(surface_id);
     paths
         .iter()
         .map(|p| {
-            listed
-                .iter()
-                .find(|e| &e.path == p)
+            view.and_then(|v| v.listed_entry(p))
                 .cloned()
                 .unwrap_or_else(|| DirEntryInfo {
                     path: p.clone(),
