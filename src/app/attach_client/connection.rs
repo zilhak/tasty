@@ -174,6 +174,7 @@ impl App {
                 resize_sync: ResizeSync::for_connection(resize_acks),
                 remote_label: format!("127.0.0.1:{port}"),
                 pending_list_dir_consumers: HashMap::new(),
+                capture_uploads: HashMap::new(),
                 markdown_locals,
                 resync_pending: None,
                 resync_awaiting_window: false,
@@ -349,6 +350,8 @@ impl App {
         sess.state.next_delta_focus = None;
         // 옛 연결의 목록 요청은 다시 응답하지 않는다. 소비자는 자체 timeout으로 실패 처리한다.
         sess.state.pending_list_dir_consumers.clear();
+        // 옛 연결로 올린 캡처의 회신도 오지 않는다.
+        let abandoned_captures = std::mem::take(&mut sess.state.capture_uploads);
         sess.state.resync_pending = None;
         sess.state.resync_awaiting_window = false;
         sess.state.phase = SessionState::Connected;
@@ -361,6 +364,7 @@ impl App {
         tracing::info!(
             "gui attach: mirror workspace {local_workspace} 재연결 성공 (remote ws {workspace})"
         );
+        self.abandon_capture_uploads(abandoned_captures);
         self.probe_remote_home(local_workspace);
         Ok(())
     }
@@ -410,7 +414,7 @@ impl App {
 
     /// anchor가 있는 세션은 연결이 끊겨도 mirror를 남겨 자동 재연결을 기다린다.
     pub(super) fn enter_reconnecting(&mut self, idx: usize) {
-        let (anchor, local_workspace, markdown_locals) = {
+        let (anchor, local_workspace, markdown_locals, abandoned_captures) = {
             let sess = &mut self.remote.sessions[idx];
             sess.state.phase = SessionState::Reconnecting;
             sess.transport.frame_tx.retire();
@@ -421,8 +425,10 @@ impl App {
                 sess.state.anchor_ws_id,
                 sess.state.local_workspace,
                 sess.state.markdown_locals.clone(),
+                std::mem::take(&mut sess.state.capture_uploads),
             )
         };
+        self.abandon_capture_uploads(abandoned_captures);
         // 기다리던 원문 요청을 request_id=0으로 취소하고 표시 중인 원문도 끊김 상태로 바꾼다.
         for local in markdown_locals {
             push_markdown_content_result(
@@ -497,6 +503,7 @@ impl App {
         // 응답을 받을 수 없어진 git-viewer 요청을 취소한다.
         if from_disconnect {
             self.notify_git_viewer_mirror_lost();
+            self.abandon_capture_uploads(sess.state.capture_uploads.clone());
         }
         destroy_mirror_markdown_surfaces(
             &mut self.plugin_manager,

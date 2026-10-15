@@ -1,6 +1,8 @@
 //! Apply ordered incoming events to windowed or parked mirror engines.
 
 #[cfg(test)]
+mod capture_tests;
+#[cfg(test)]
 mod home_probe_tests;
 mod list_dir;
 mod remote_entry;
@@ -62,9 +64,10 @@ impl App {
                 Some(MirrorOutputHost::Window(wid)) => {
                     let sess = &mut self.remote.sessions[idx];
                     let mut pair = engines_mut!(self).window_pair(wid);
-                    let mut mirror_host = pair
-                        .as_mut()
-                        .map(|(m, engine)| MirrorHost::windowed(&mut m.state, engine));
+                    let mut mirror_host = pair.as_mut().map(|(m, engine)| {
+                        let view = m.base.state.identity();
+                        MirrorHost::windowed(&mut m.state, engine).for_view(view)
+                    });
                     if let Some(host) = mirror_host.as_mut() {
                         resume_resync_in_window(sess, host);
                     }
@@ -180,6 +183,8 @@ struct MirrorHost<'a, 'engine> {
     state: &'a mut crate::state::MainViewState,
     engine: &'a mut EngineMut<'engine>,
     windowed: bool,
+    /// 창의 View. 요청한 View에만 보내는 안내(캡처 회신)가 대조한다.
+    view: Option<std::sync::Weak<()>>,
 }
 
 impl<'a, 'engine> MirrorHost<'a, 'engine> {
@@ -191,6 +196,26 @@ impl<'a, 'engine> MirrorHost<'a, 'engine> {
             state,
             engine,
             windowed: true,
+            view: None,
+        }
+    }
+
+    fn for_view(mut self, view: std::sync::Weak<()>) -> Self {
+        self.view = Some(view);
+        self
+    }
+
+    /// 요청을 만든 View가 지금 이 창의 View 일 때만 안내한다.
+    fn toast_for(
+        &mut self,
+        origin: &std::sync::Weak<()>,
+        message: String,
+        kind: crate::adapters::ui::ToastKind,
+    ) {
+        if self.view.as_ref().is_some_and(|view| view.ptr_eq(origin)) {
+            self.toast(message, kind);
+        } else {
+            tracing::debug!("attach mirror: 요청한 View 가 아니라 안내 생략 — {message}");
         }
     }
 
@@ -202,6 +227,7 @@ impl<'a, 'engine> MirrorHost<'a, 'engine> {
             state,
             engine,
             windowed: false,
+            view: None,
         }
     }
 
@@ -336,7 +362,11 @@ fn release_for_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_, 
 }
 
 /// 회신이 말한 범위만 알린다. 이미지 게시 여부를 싣지 않은 옛 서버의 성공은 경로만 쓴 성공이다.
-fn show_mirror_capture_result(host: &mut MirrorHost<'_, '_>, result: MirrorCaptureResult) {
+fn show_mirror_capture_result(
+    host: &mut MirrorHost<'_, '_>,
+    origin: &std::sync::Weak<()>,
+    result: MirrorCaptureResult,
+) {
     use crate::adapters::ui::ToastKind;
     let MirrorCaptureResult {
         ok,
@@ -345,10 +375,13 @@ fn show_mirror_capture_result(host: &mut MirrorHost<'_, '_>, result: MirrorCaptu
         image,
         image_reason,
     } = result;
+    // 경로·사유는 길이를 모른다. 꼬리가 잘려 파일 이름이 사라지지 않도록 가운데를 줄인다.
     let with_detail = |key: &str, detail: Option<String>| {
         let base = crate::i18n::t(key);
         match detail {
-            Some(d) if !d.is_empty() => format!("{base} ({d})"),
+            Some(d) if !d.is_empty() => {
+                crate::i18n::fit_fragment(&d, |fragment| format!("{base} ({fragment})"))
+            }
             _ => base.to_string(),
         }
     };
@@ -371,7 +404,26 @@ fn show_mirror_capture_result(host: &mut MirrorHost<'_, '_>, result: MirrorCaptu
             ToastKind::Info,
         ),
     };
-    host.toast(msg, kind);
+    host.toast_for(origin, msg, kind);
+}
+
+/// 기다리는 업로드의 회신만 안내한다. 이미 답한 업로드의 중복 회신이나 끊긴 뒤 정리한
+/// 업로드의 늦은 회신을 다른 요청의 결과로 보이지 않게 한다.
+fn apply_capture_result(
+    sess: &mut AttachClientSession,
+    host: &mut MirrorHost<'_, '_>,
+    upload_id: Option<u64>,
+    result: MirrorCaptureResult,
+) {
+    let Some(origin) = upload_id.and_then(|id| sess.state.capture_uploads.remove(&id)) else {
+        tracing::debug!(
+            ?upload_id,
+            ok = result.ok,
+            "attach mirror: 기다리지 않는 캡처 회신이라 안내하지 않는다"
+        );
+        return;
+    };
+    show_mirror_capture_result(host, &origin, result);
 }
 
 /// `MirrorEvent::CaptureResult` 중 안내에 쓰는 필드.
@@ -474,24 +526,24 @@ fn apply_one_mirror_event(
         }
         MirrorEvent::ExplorerOp(value) => sess.transport.explorer_inbox.push(value),
         MirrorEvent::CaptureResult {
-            upload_id: _,
+            upload_id,
             ok,
             path,
             reason,
             image,
             image_reason,
-        } => {
-            show_mirror_capture_result(
-                host,
-                MirrorCaptureResult {
-                    ok,
-                    path,
-                    reason,
-                    image,
-                    image_reason,
-                },
-            );
-        }
+        } => apply_capture_result(
+            sess,
+            host,
+            upload_id,
+            MirrorCaptureResult {
+                ok,
+                path,
+                reason,
+                image,
+                image_reason,
+            },
+        ),
         ev @ MirrorEvent::ListDirResult { .. } => list_dir::apply(sess, host, ev),
         MirrorEvent::GitQueryResult {
             request_id,

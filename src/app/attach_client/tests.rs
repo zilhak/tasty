@@ -116,6 +116,7 @@ pub(crate) fn test_session_with_frames(
             resize_sync: Default::default(),
             remote_label: "127.0.0.1:0".to_string(),
             pending_list_dir_consumers: HashMap::new(),
+            capture_uploads: HashMap::new(),
             markdown_locals: HashSet::new(),
             resync_pending: None,
             resync_awaiting_window: false,

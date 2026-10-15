@@ -3,8 +3,8 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (단축키 트리거)
 - **ADR**: 없음 (기존 [ADR-0020](../../adr/0020-remote-connection-profiles.md) attach 채널을 그대로 재사용, 신규 프로토콜/enum 없음)
-- **코드**: `crates/tasty-platform/src/screen_capture.rs`(OS 캡처 + `CaptureError`), `crates/tasty-platform/src/macos_permissions.rs`(화면 기록 권한 preflight), `src/app/screenshot_capture.rs`(폴링/스레드), `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard`), `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`), `src/app/attach_client/bulk.rs`(원격 전송), `src/remote/capture_upload.rs` + `src/remote/server.rs`(`finalize_capture_upload`, 서버측 수신), `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`), `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`)
-- **화면**: 없음 — 트리거는 단축키, 피드백은 성공/실패 토스트(mirror 케이스만; [remote-attach 토스트](../remote-attach/index.md) 채널 재사용)
+- **코드**: `crates/tasty-platform/src/screen_capture.rs`(OS 캡처 + `CaptureError`), `crates/tasty-platform/src/macos_permissions.rs`(화면 기록 권한 preflight), `src/app/screenshot_capture.rs`(폴링/스레드·결과 안내), `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard`), `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`), `src/app/attach_client/bulk.rs`(원격 전송), `src/app/attach_client/output.rs`(`capture_result` 안내), `src/remote/capture_upload.rs` + `src/remote/server.rs`(`finalize_capture_upload`, 서버측 수신), `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`), `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`)
+- **화면**: 없음 — 트리거는 단축키, 피드백은 요청한 윈도우의 결과 토스트(아래 "결과 안내"; 기존 [토스트](../../design/systems/toast.md) 재사용)
 
 ## 목적
 
@@ -60,7 +60,7 @@ macOS 에서 `screencapture` 는 **화면 기록(Screen Recording) 권한**을 �
 
 그래서 권한 미승인은 캡처 **직전** `CGPreflightScreenCaptureAccess()` 가 false 일 때 `PermissionDenied` 로 따로 분류하고 도구를 실행하지 않는다. 처리는 `toast.screen_recording_permission_required` 안내 토스트와 `warn!` 이다. 권한이 있는데 파일이 없으면 위 "결과 분류" 의 출력 없음이다.
 
-preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해두면 그 사이 사용자가 시스템 설정에서 권한을 바꾼 경우를 잘못 판정한다. 안내 토스트는 요청이 올라온 윈도우에 띄운다(다중 윈도우 세션에서 엉뚱한 창에 뜨지 않게).
+preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해두면 그 사이 사용자가 시스템 설정에서 권한을 바꾼 경우를 잘못 판정한다. 안내 토스트는 아래 "결과 안내" 규칙대로 요청한 View 에 띄운다(다중 윈도우 세션에서 엉뚱한 윈도우에 뜨지 않게).
 
 권한 프롬프트는 자동으로 뜨지 않는다. 사용자가 설정 > 일반 > 권한에서 [모든 권한 요청하기]를 눌렀을 때만 나타난다([macOS 권한](../macos-permissions/index.md)). 그 화면을 한 번도 열지 않았다면 캡처 시점에 권한이 없을 수 있고, 그때는 캡처가 "화면 기록 권한이 필요합니다" 안내로 끝난다. macOS가 아닌 환경에서는 이 검사를 하지 않으며 preflight가 항상 승인됨을 반환한다.
 
@@ -103,7 +103,34 @@ client 측(`src/app/attach_client/bulk.rs::forward_capture_to_remote_clipboard`)
 3. 저장 파일을 디코딩해 `publish_text_with_image` 로 **원격 인스턴스의** 클립보드에 경로 텍스트와 이미지를 올린다(위 "클립보드 게시"). 텍스트 쓰기는 `clipboard.set_text` IPC 와 같은 `ClipboardSystem` 을 쓰지만, attach 미니 프로토콜은 이 IPC 를 거치지 않고 같은 프로세스 안에서 직접 호출한다(JSON-RPC 왕복이 불필요).
 4. 결과를 `capture_result` 프레임으로 client 에 회신.
 
-client 는 `capture_result` 를 받아 토스트를 띄운다. `ok:false` 는 `attach.toast.mirror_capture_failed`, 이미지까지 올렸으면 `attach.toast.mirror_capture_saved`, 경로만 올렸으면 `attach.toast.mirror_capture_path_only`(이미지 실패 사유), `image` 가 없는 옛 서버의 성공은 `attach.toast.mirror_capture_path_only_old_server` 다.
+client 는 `capture_commit` 까지 보낸 업로드를 세션의 `capture_uploads`(`upload_id` → 요청한 View)에 넣고, `capture_result` 를 받으면 그 항목을 꺼내 요청한 View 에 토스트를 띄운다. `ok:false` 는 `attach.toast.mirror_capture_failed`, 이미지까지 올렸으면 `attach.toast.mirror_capture_saved`, 경로만 올렸으면 `attach.toast.mirror_capture_path_only`(이미지 실패 사유), `image` 가 없는 옛 서버의 성공은 `attach.toast.mirror_capture_path_only_old_server` 다.
+
+- 목록에 없는 `upload_id` 의 회신(이미 답한 업로드의 중복 회신, 연결 정리 뒤의 늦은 회신)은 안내하지 않는다. 동시에 올린 여러 캡처는 회신 순서와 관계없이 각자의 요청에 대응한다.
+- 회신 전에 연결이 끊기면(`enter_reconnecting`, 끊김으로 인한 mirror 정리, 재연결·재동기화로 transport 교체) 남은 업로드마다 `attach.toast.mirror_capture_unconfirmed` 를 요청한 View 에 띄운다. 사용자가 mirror 를 직접 닫은 경우는 끊김 안내와 마찬가지로 띄우지 않는다.
+
+### 결과 안내 (토스트)
+
+단축키 요청의 결과는 **요청한 View** 에만 Window 스코프 토스트로 알린다(`App::toast_screenshot_origin`). 캡처가 사용자 선택을 기다리는 동안 포커스·탭·윈도우가 바뀌어도 대상은 그대로다. 요청한 View 가 닫혔거나 같은 OS 윈도우가 새 View 로 바뀌었으면 다른 윈도우를 대신 고르지 않고 로그만 남긴다. 토스트는 입력 포커스를 가져가지 않는 기존 오버레이다. 경로·실패 사유는 `t_fmt_fit` / `fit_fragment` 로 가운데를 줄여 200자 상한 안에 넣는다.
+
+| 결과 | 종류 | 키 |
+|---|---|---|
+| 로컬: 경로와 이미지 게시 | Success | `toast.screenshot_copied` |
+| 로컬: 경로만 게시(`TextOnly`) | Warning | `toast.screenshot_path_only`(이미지 실패 사유) |
+| 로컬: 저장했지만 클립보드 게시 실패(`Failed`) | Error | `toast.screenshot_copy_failed`(저장 경로) |
+| 사용자 취소(`Cancelled`) | 없음 | — |
+| 파일 없이 끝남(`NoOutput`, 취소일 수 있음) | Info | `toast.screenshot_not_taken` |
+| 권한 거절(`PermissionDenied`, macOS) | Warning | `toast.screen_recording_permission_required` |
+| 도구 없음(`Unavailable`) · 도구 실패(`Tool`) · 저장 실패(`Storage`) | Error | `toast.screenshot_tool_unavailable` · `toast.screenshot_tool_failed` · `toast.screenshot_save_failed`(사유) |
+| 진행 중 캡처가 상한(4개)이라 시작 거절 | Warning | `toast.screenshot_busy` |
+| 캡처 스레드를 만들지 못함 | Error | `toast.screenshot_start_failed`(사유) |
+| 앱 종료 중이라 시작 거절 | 없음 | — |
+| mirror: 단축키 처리 시점에 연결이 이미 없음(캡처하지 않음) | Warning | `attach.toast.mirror_capture_unavailable` |
+| mirror: 캡처 뒤 연결이 바뀌었거나 전송 실패(로컬에만 저장) | Warning | `attach.toast.mirror_capture_not_sent`(로컬 저장 경로) |
+| mirror: 원격 회신 | 위 `capture_result` 규칙 | `attach.toast.mirror_capture_*` |
+
+mirror 캡처는 전송을 접수한 것만으로 성공을 알리지 않는다. 결과는 원격 회신이나 위 연결 종료 안내가 알린다. 에이전트가 쓰는 CLI `tasty screenshot`·IPC `ui.screenshot`·`clipboard.set_text` 는 이 경로를 지나지 않으므로 사용자 토스트를 만들지 않는다.
+
+`NoOutput` 을 Info 로 알리는 이유: gnome-screenshot 처럼 Esc 취소도 정상 종료·파일 없음으로 끝나는 도구가 있어 실패로 단정할 수 없지만, 아무 안내가 없으면 도구가 조용히 실패한 경우를 사용자가 알 수 없다.
 
 ## 인터페이스
 
@@ -129,6 +156,11 @@ client 는 `capture_result` 를 받아 토스트를 띄운다. `ok:false` 는 `a
 - Given 캡처 도구가 정상 종료했지만 파일을 남기지 않음 When 캡처 트리거 Then 다음 후보를 실행하지 않고 어느 클립보드도 바꾸지 않으며, 결과는 사용자 취소가 아니라 출력 없음으로 분류된다.
 - Given 캡처 도구가 잘린 PNG 를 남김 When 캡처 트리거 Then 그 파일을 지우고 다음 후보를 시도한다.
 - Given macOS 에서 화면 기록 권한이 미승인 When 캡처 트리거 Then 취소와 구분되는 권한 안내 토스트가 뜬다(클립보드는 바뀌지 않는다).
+- Given 로컬 캡처가 경로와 이미지를 함께 게시 When 결과를 처리 Then 요청한 윈도우에 성공 토스트가 한 번 뜬다. 경로만 게시했으면 성공이 아니라 경고 토스트다.
+- Given 캡처 도구가 없거나 실패하거나 저장에 실패 When 캡처 트리거 Then 요청한 윈도우에 사유가 담긴 오류 토스트가 뜨고, 사용자 취소에는 토스트가 없다.
+- Given 캡처를 기다리는 동안 다른 윈도우로 포커스를 옮김 When 결과가 도착 Then 토스트는 요청한 윈도우에 뜬다. 요청한 윈도우가 닫혔으면 어느 윈도우에도 뜨지 않는다.
+- Given 동시에 올린 두 mirror 캡처 When 회신이 역순으로 오거나 같은 upload_id 의 회신이 두 번 옴 Then 각 요청은 자기 회신으로 한 번만 안내되고 기다리지 않는 회신은 안내되지 않는다.
+- Given mirror 업로드를 보낸 뒤 회신 전에 연결이 끊김 Then 요청한 윈도우에 복사가 확인되지 않았다는 안내가 뜬다.
 - Given `clipboard.set_text` IPC 호출(text 파라미터 포함) Then 로컬 클립보드가 그 텍스트로 바뀐다.
 - Given plugin 이 `ClipboardWrite` 권한 없이 `clipboard.set_text` 호출 Then permission_denied.
 

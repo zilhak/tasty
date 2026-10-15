@@ -8,11 +8,22 @@ use std::path::Path;
 const LANGS: &[&str] = &tasty_i18n::BUILTIN_CODES;
 
 /// 토스트로 쓰는 키 접두사만 등록한다. 모달처럼 다른 상한을 쓰는 문구는 포함하지 않는다.
-const TOAST_KEY_PREFIXES: &[(&str, &str)] = &[(
-    "persistence.warn.",
-    "부팅 시 설정·레이아웃을 읽지 못한 사실을 알리는 Warning 토스트 \
-     (`src/app/boot_machine.rs::report_persistence_incidents`)",
-)];
+const TOAST_KEY_PREFIXES: &[(&str, &str)] = &[
+    (
+        "persistence.warn.",
+        "부팅 시 설정·레이아웃을 읽지 못한 사실을 알리는 Warning 토스트 \
+         (`src/app/boot_machine.rs::report_persistence_incidents`)",
+    ),
+    (
+        "toast.screenshot_",
+        "스크린샷 단축키의 로컬 결과 토스트 (`src/app/screenshot_capture.rs`)",
+    ),
+    (
+        "attach.toast.mirror_capture_",
+        "mirror 스크린샷의 원격 결과 토스트 \
+         (`src/app/screenshot_capture.rs`, `src/app/attach_client/output.rs`)",
+    ),
+];
 
 #[test]
 fn toast_strings_fit_the_toast_cap_in_every_locale() {

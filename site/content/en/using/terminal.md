@@ -1,4 +1,4 @@
-<!-- source-hash: f22a26af5a91 -->
+<!-- source-hash: bd810a482a01 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -57,6 +57,7 @@ Press `Ctrl+Alt+S` and pick an area of the screen: the PNG file is saved under `
 - **Windows**: captures the whole screen across all monitors, without area selection.
 - If the image cannot be put on the clipboard (the picture cannot be read, or on Linux it is larger than one X11 transfer allows, and so on), only the path goes in.
 - If you cancel the area selection with Esc, no other tool opens and the clipboard is left as is. The same applies when the tool ends without leaving a file.
+- The result appears as a notification in the window where you pressed the shortcut. Copying both the image and the path shows a success; copying only the path shows a warning; a missing or failing tool, or a failed save or copy, shows the reason. Cancelling with Esc shows nothing, and a tool that ends without a file (some tools end this way when cancelled) only says "No screenshot was taken." If you move to another window while picking the area, the notification still appears in the first window, and not at all if that window was closed.
 
 ### Selecting
 

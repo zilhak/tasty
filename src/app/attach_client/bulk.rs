@@ -39,11 +39,13 @@ const CAPTURE_CHUNK_RAW_LEN: usize = 700 * 1024;
 impl App {
     /// 캡처를 원격에 올리고 원격 클립보드에 경로를 넣도록 요청한다.
     /// StreamControl enum 밖의 capture_chunk/capture_commit 이벤트를 사용한다.
+    /// commit 을 보낸 업로드만 `origin` View 와 함께 회신 대기 목록에 넣는다.
     pub(crate) fn forward_capture_to_remote_clipboard(
         &mut self,
         target: &RemoteTarget,
         file_name: &str,
         bytes: &[u8],
+        origin: std::sync::Weak<()>,
     ) -> anyhow::Result<()> {
         if !self.remote_target_is_current(target) {
             anyhow::bail!("capture connection retired before delivery");
@@ -73,7 +75,16 @@ impl App {
             "upload_id": upload_id,
             "file_name": file_name,
         });
-        send_control_frame(&frame_tx, &commit)
+        send_control_frame(&frame_tx, &commit)?;
+        if let Some(session) = self
+            .remote
+            .sessions
+            .iter_mut()
+            .find(|session| session.state.local_workspace == target.workspace)
+        {
+            session.state.capture_uploads.insert(upload_id, origin);
+        }
+        Ok(())
     }
 }
 

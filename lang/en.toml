@@ -1329,6 +1329,17 @@ cut_files = "Files cut"
 ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
 # 권한이 없는 경우에만 표시한다. 사용자가 캡처를 취소하면 토스트를 띄우지 않는다.
 screen_recording_permission_required = "Screen recording permission is required. Turn Tasty on in System Settings > Privacy & Security > Screen & System Audio Recording."
+# 스크린샷 단축키 결과. 요청한 윈도우에만 표시한다. {} 에는 경로나 영어 오류 사유가 들어간다.
+screenshot_copied = "Screenshot image and path copied to the clipboard."
+screenshot_path_only = "Screenshot path copied to the clipboard. The image couldn't be copied: {}"
+screenshot_copy_failed = "Screenshot saved, but it couldn't be copied to the clipboard: {}"
+# 캡처 도구가 파일 없이 끝났다. 사용자가 취소했을 수도 있어 오류로 표현하지 않는다.
+screenshot_not_taken = "No screenshot was taken."
+screenshot_tool_unavailable = "No screenshot tool is available: {}"
+screenshot_tool_failed = "The screenshot tool failed: {}"
+screenshot_save_failed = "Couldn't save the screenshot: {}"
+screenshot_busy = "Too many screenshots are waiting for a selection. Finish or cancel one and try again."
+screenshot_start_failed = "Couldn't start the screenshot: {}"
 pane_cut = "Pane cut. Right-click a tab in the destination pane and choose 'Move Pane Here'."
 surface_cut = "Surface cut. Right-click the destination and choose 'Move Surface Here'."
 tab_cut = "Tab cut. Right-click the destination tab and choose 'Move Tab Here'."
@@ -1778,6 +1789,12 @@ mirror_capture_failed = "Couldn't copy the screenshot to the remote clipboard."
 mirror_capture_path_only = "Only the screenshot path was copied to the remote clipboard. The image couldn't be copied."
 # 원격 Tasty가 이미지 게시 여부를 알리지 않는 옛 버전이다. 경로만 복사됐다.
 mirror_capture_path_only_old_server = "Screenshot path copied to the remote clipboard. The remote Tasty can't copy the image."
+# 단축키를 누를 때 mirror 연결이 이미 없어 캡처를 시작하지 않았다.
+mirror_capture_unavailable = "The remote connection isn't available. No screenshot was taken."
+# 로컬에 저장했지만 원격에 보내지 못했다. {} 는 로컬 저장 경로다.
+mirror_capture_not_sent = "The screenshot couldn't be sent to the remote Tasty. It was saved here only: {}"
+# 업로드를 보냈지만 원격 회신 전에 연결이 끝났다. 원격 클립보드 상태를 알 수 없다.
+mirror_capture_unconfirmed = "The remote connection ended before the screenshot copy was confirmed."
 # 임시 mirror는 연결 종료 시 제거한다. 매핑된 mirror는 재연결 안내를 사용한다.
 mirror_disconnected = "The remote connection was lost. The mirror workspace has been closed."
 # 매핑된 워크스페이스와 scrollback을 유지한 채 자동 재연결을 시도한다.

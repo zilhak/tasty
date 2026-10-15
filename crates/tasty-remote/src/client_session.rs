@@ -330,6 +330,9 @@ pub struct ClientSessionState {
     pub remote_label: String,
     /// 응답에 소비자 정보가 없어 요청별로 기록한다. None은 File Picker, Some은 explorer surface ID다.
     pub pending_list_dir_consumers: HashMap<u64, Option<u32>>,
+    /// 회신을 기다리는 캡처 업로드와 그 요청을 만든 View. 회신은 이 View에만 알리고,
+    /// 목록에 없는 upload_id 의 회신(중복·지연)은 안내하지 않는다.
+    pub capture_uploads: HashMap<u64, std::sync::Weak<()>>,
     /// 로컬 markdown surface ID. mirror 교체·삭제는 일반 lifecycle 큐를 거치지 않아 직접 destroy를 보낸다.
     pub markdown_locals: HashSet<u32>,
     /// 손실 뒤 재attach를 기다리는 동안 통지된 프레임 수.
