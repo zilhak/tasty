@@ -56,6 +56,21 @@ impl EngineMut<'_> {
         }
     }
 }
+impl EngineMut<'_> {
+    /// terminal 입력 실행에 필요한 범위만 빌린다. 나머지 runtime·hook·task·observer 상태는 넘기지 않는다.
+    pub(crate) fn terminal_input(
+        &mut self,
+    ) -> super::terminal_input_access::TerminalInputAccess<'_> {
+        super::terminal_input_access::TerminalInputAccess {
+            core: self.core,
+            occupancy: &self.live.occupancy,
+            terminals: &mut self.runtime.terminals,
+            pending_submits: &mut self.runtime.pending_submits,
+            waker: &self.runtime.waker,
+            children: &mut self.runtime.child_terminals,
+        }
+    }
+}
 impl Deref for EngineMut<'_> {
     type Target = CoreState;
     fn deref(&self) -> &CoreState {

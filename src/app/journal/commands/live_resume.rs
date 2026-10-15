@@ -102,7 +102,7 @@ impl Resume {
         } else if let Some(error) = activation.error {
             JsonRpcResponse::error(id, error.code, error.message)
         } else if let Some(fixed) = self.fixed.as_ref().filter(|fixed| fixed.binds_children()) {
-            let result = fixed.execute(services, engine, &self.bindings);
+            let result = fixed.execute(&mut engine.terminal_input(), &self.bindings);
             crate::ipc::handler::terminal::input_response(&engine.as_ref(), id, result)
         } else if engine.live.occupancy.is_hard_occupied(self.surface) {
             JsonRpcResponse::invalid_params(
@@ -120,7 +120,7 @@ impl Resume {
                 "surface resource changed before pending input could be applied",
             )
         } else if let Some(fixed) = &self.fixed {
-            let result = fixed.execute(services, engine, &self.bindings);
+            let result = fixed.execute(&mut engine.terminal_input(), &self.bindings);
             crate::ipc::handler::terminal::input_response(&engine.as_ref(), id, result)
         } else {
             match crate::ipc::handler::handle_checked_request(

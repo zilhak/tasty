@@ -50,6 +50,7 @@ pub(crate) mod restored_presentation;
 mod structure_observation;
 
 pub(crate) mod pending_submit;
+pub(crate) mod terminal_input_access;
 
 pub(crate) mod engine_read;
 

@@ -6,11 +6,11 @@
 use std::collections::BTreeMap;
 
 use crate::app::command::SendPayload;
-use crate::app::services::AppServices;
 use crate::app::services::impl_attach::SurfaceSendOutcome;
 use crate::runtime::child_terminal::{ChildEntry, ParentKey};
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineRef;
 use crate::runtime::pending_submit::SubmitRejected;
+use crate::runtime::terminal_input_access::TerminalInputAccess;
 use tasty_terminal::ResourceGeneration;
 
 /// 대상 surface별로 고정 시점의 터미널 세대. 세대가 없으면 그 대상은 실행하지 않는다.
@@ -46,25 +46,17 @@ impl ChildTarget {
         }
     }
 
-    fn still_bound(&self, engine: &EngineMut<'_>, bindings: &Bindings) -> bool {
-        engine
-            .runtime
-            .child_terminals
-            .find_child(&self.parent, self.index)
-            .is_some_and(|entry| entry.child_surface_id == self.surface)
-            && self.mirror.as_ref().is_none_or(|(workspace, token)| {
-                engine.matches_mirror_projection(*workspace, token)
-            })
+    fn still_bound(&self, input: &TerminalInputAccess<'_>, bindings: &Bindings) -> bool {
+        input.child_surface(&self.parent, self.index) == Some(self.surface)
+            && self
+                .mirror
+                .as_ref()
+                .is_none_or(|(workspace, token)| input.matches_mirror_projection(*workspace, token))
             && bindings
                 .get(&self.surface)
                 .copied()
                 .flatten()
-                .is_some_and(|generation| {
-                    engine
-                        .runtime
-                        .terminals
-                        .matches_generation(self.surface, generation)
-                })
+                .is_some_and(|generation| input.matches_generation(self.surface, generation))
     }
 }
 
@@ -171,24 +163,22 @@ impl PreparedTerminalInput {
 
     pub(crate) fn execute(
         &self,
-        core: &mut AppServices,
-        engine: &mut EngineMut<'_>,
+        input: &mut TerminalInputAccess<'_>,
         bindings: &Bindings,
     ) -> TerminalInputResult {
         match self {
-            Self::Tell { surface, text } => tell(engine, *surface, text),
+            Self::Tell { surface, text } => tell(input, *surface, text),
             Self::Broadcast { targets, text } => broadcast_where(
-                core,
-                engine,
+                input,
                 targets.iter().map(|target| target.surface).collect(),
                 text,
-                |position, engine| targets[position].still_bound(engine, bindings),
+                |position, input| targets[position].still_bound(input, bindings),
             ),
             Self::Respawn { target, options } => {
-                if !target.still_bound(engine, bindings) {
+                if !target.still_bound(input, bindings) {
                     return TerminalInputResult::TargetChanged;
                 }
-                respawn(core, engine, &target.parent, target.index, options)
+                respawn(input, &target.parent, target.index, options)
             }
         }
     }
@@ -211,73 +201,59 @@ pub(crate) fn broadcast_payload(text: &str) -> (String, bool) {
 }
 
 /// 본문을 ack와 함께 쓰고, ack 또는 5초 뒤 settle을 거쳐 CR을 제출하도록 예약한다.
-pub(crate) fn tell(engine: &mut EngineMut<'_>, surface: u32, text: &str) -> TerminalInputResult {
-    if let Err(reason) = engine.write_then_submit(surface, &tell_payload(text)) {
+pub(crate) fn tell(
+    input: &mut TerminalInputAccess<'_>,
+    surface: u32,
+    text: &str,
+) -> TerminalInputResult {
+    if let Err(reason) = input.write_then_submit(surface, &tell_payload(text)) {
         return TerminalInputResult::Rejected { surface, reason };
     }
-    if engine
-        .runtime
-        .child_terminals
-        .clear_idle_for_new_prompt(surface)
-    {
-        engine.runtime.child_terminals.save();
-    }
+    input.mark_prompted([surface]);
     TerminalInputResult::Told { surface }
 }
 
 /// 각 child에 본문을 바로 쓰고, 끝에 CR이 있었으면 즉시 한 번 더 쓴다.
 pub(crate) fn broadcast(
-    core: &mut AppServices,
-    engine: &mut EngineMut<'_>,
+    input: &mut TerminalInputAccess<'_>,
     children: Vec<u32>,
     text: &str,
 ) -> TerminalInputResult {
-    broadcast_where(core, engine, children, text, |_, _| true)
+    broadcast_where(input, children, text, |_, _| true)
 }
 
 /// 본문 실패는 그 child만 건너뛴다. CR 실패는 경고만 남기고 성공으로 본다.
 fn broadcast_where(
-    core: &mut AppServices,
-    engine: &mut EngineMut<'_>,
+    input: &mut TerminalInputAccess<'_>,
     children: Vec<u32>,
     text: &str,
-    reachable: impl Fn(usize, &EngineMut<'_>) -> bool,
+    reachable: impl Fn(usize, &TerminalInputAccess<'_>) -> bool,
 ) -> TerminalInputResult {
     let (body, submit) = broadcast_payload(text);
-    let mut idle_cleared = false;
+    let mut written = Vec::new();
     for (position, &surface) in children.iter().enumerate() {
-        if !reachable(position, engine) {
-            continue;
+        if reachable(position, input) && broadcast_to_child(input, surface, &body, submit) {
+            written.push(surface);
         }
-        if !broadcast_to_child(core, engine, surface, &body, submit) {
-            continue;
-        }
-        idle_cleared |= engine
-            .runtime
-            .child_terminals
-            .clear_idle_for_new_prompt(surface);
     }
-    if idle_cleared {
-        engine.runtime.child_terminals.save();
-    }
+    input.mark_prompted(written);
     TerminalInputResult::Broadcast { children }
 }
 
 /// 본문을 쓰지 못하면 false다. 끝 CR은 즉시 따로 쓰며 실패해도 경고만 남긴다.
 fn broadcast_to_child(
-    core: &mut AppServices,
-    engine: &mut EngineMut<'_>,
+    input: &mut TerminalInputAccess<'_>,
     surface: u32,
     body: &str,
     submit: bool,
 ) -> bool {
-    let sent = core.send_to_surface(engine, surface, SendPayload::Text(body.to_owned()));
+    let sent = input.send(surface, SendPayload::Text(body.to_owned()));
     if sent != SurfaceSendOutcome::Sent {
         tracing::warn!("terminal.broadcast body (sid={surface}) failed: {sent:?}");
         return false;
     }
     if submit {
-        let sent = core.send_to_surface(engine, surface, SendPayload::Text("\r".into()));
+        let sent = input.send(surface, SendPayload::Text("\r".into()));
         if sent != SurfaceSendOutcome::Sent {
             tracing::warn!("terminal.broadcast submit (sid={surface}) failed: {sent:?}");
         }
@@ -288,47 +264,35 @@ fn broadcast_to_child(
 /// 터미널 자원은 그대로 두고 Ctrl-C 다음 command를 쓴다. Ctrl-C가 종료 완료를 보장하지는 않는다.
 /// cwd를 바꾸는 respawn은 구조 admission이 맡으므로 여기로 오지 않는다.
 pub(crate) fn respawn(
-    core: &mut AppServices,
-    engine: &mut EngineMut<'_>,
+    input: &mut TerminalInputAccess<'_>,
     parent: &ParentKey,
     index: u32,
     options: &RespawnOptions,
 ) -> TerminalInputResult {
-    engine.reconcile_child_terminals();
-    let Some(surface) = engine
-        .runtime
-        .child_terminals
-        .find_child(parent, index)
-        .map(|entry| entry.child_surface_id)
-    else {
+    input.reconcile_children();
+    let Some(surface) = input.child_surface(parent, index) else {
         return TerminalInputResult::ChildMissing {
             parent: parent.clone(),
             index,
         };
     };
-    let outcome = core.send_to_surface(engine, surface, SendPayload::Bytes(vec![0x03]));
+    let outcome = input.send(surface, SendPayload::Bytes(vec![0x03]));
     if outcome != SurfaceSendOutcome::Sent {
         return TerminalInputResult::InterruptFailed { surface, outcome };
     }
     if let Some(command) = &options.command {
-        let outcome = core.send_to_surface(engine, surface, SendPayload::Text(command.clone()));
+        let outcome = input.send(surface, SendPayload::Text(command.clone()));
         if outcome != SurfaceSendOutcome::Sent {
             return TerminalInputResult::CommandFailed { surface, outcome };
         }
     }
-    engine
-        .runtime
-        .child_terminals
-        .update_child(parent, index, |entry| {
-            if let Some(role) = &options.role {
-                entry.role = Some(role.clone());
-            }
-            if let Some(nickname) = &options.nickname {
-                entry.nickname = Some(nickname.clone());
-            }
-        });
-    engine.runtime.child_terminals.set_idle(surface, false);
-    engine.runtime.child_terminals.save();
+    input.record_respawn(
+        parent,
+        index,
+        surface,
+        options.role.as_deref(),
+        options.nickname.as_deref(),
+    );
     TerminalInputResult::Respawned { surface, index }
 }
 

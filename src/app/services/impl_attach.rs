@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::runtime::engine_access::EngineMut;
+use crate::runtime::terminal_input_access::TerminalInputAccess;
 
 /// 한 surface에 입력을 쓴 결과. 원격 점유와 대상 부재를 구분한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,45 +43,43 @@ impl AppServices {
         surface_id: u32,
         payload: crate::app::command::SendPayload,
     ) -> CoreEvent {
+        let outcome = engine.terminal_input().send(surface_id, payload);
+        CoreEvent::SurfaceSent {
+            sent: outcome == SurfaceSendOutcome::Sent,
+            hard_occupied: outcome == SurfaceSendOutcome::HardOccupied,
+        }
+    }
+}
+
+impl TerminalInputAccess<'_> {
+    /// 본문을 ack 없이 바로 쓴다. 제출 CR은 호출자가 필요할 때 따로 보낸다.
+    pub(crate) fn send(
+        &mut self,
+        surface_id: u32,
+        payload: crate::app::command::SendPayload,
+    ) -> SurfaceSendOutcome {
         // 점유 client의 입력은 holder 검사를 거친 attach 채널에서 따로 받는다.
-        if engine.live.occupancy.is_hard_occupied(surface_id) {
-            return CoreEvent::SurfaceSent {
-                sent: false,
-                hard_occupied: true,
-            };
+        if self.is_hard_occupied(surface_id) {
+            return SurfaceSendOutcome::HardOccupied;
         }
         #[cfg(feature = "gui")]
         if let crate::app::command::SendPayload::Bound { generation, .. } = &payload
-            && !engine
-                .runtime
-                .terminals
-                .matches_generation(surface_id, *generation)
+            && !self.matches_generation(surface_id, *generation)
         {
-            return CoreEvent::SurfaceSent {
-                sent: false,
-                hard_occupied: false,
-            };
+            return SurfaceSendOutcome::NotFound;
         }
-        let sent = if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-            match payload {
-                crate::app::command::SendPayload::Bytes(bytes) => {
-                    terminal.send_bytes(&bytes);
-                }
-                #[cfg(feature = "gui")]
-                crate::app::command::SendPayload::Bound { bytes, .. } => {
-                    terminal.send_bytes(&bytes);
-                }
-                crate::app::command::SendPayload::Text(text) => {
-                    terminal.send_key(&text);
-                }
+        let written = match payload {
+            crate::app::command::SendPayload::Bytes(bytes) => self.write_bytes(surface_id, &bytes),
+            #[cfg(feature = "gui")]
+            crate::app::command::SendPayload::Bound { bytes, .. } => {
+                self.write_bytes(surface_id, &bytes)
             }
-            true
-        } else {
-            false
+            crate::app::command::SendPayload::Text(text) => self.write_text(surface_id, &text),
         };
-        CoreEvent::SurfaceSent {
-            sent,
-            hard_occupied: false,
+        if written {
+            SurfaceSendOutcome::Sent
+        } else {
+            SurfaceSendOutcome::NotFound
         }
     }
 }

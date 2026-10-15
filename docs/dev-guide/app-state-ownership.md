@@ -13,6 +13,7 @@ IPC·저장·attach의 active/focused 값은 명시 read-only presentation으로
 창의 engine 소유자(`EngineSession`)는 MainViewState와 MainView 어디에도 없다. CoreState와 Terminal·hook·task·observer 자원은 Session이 각각 소유한다. GUI에서는 `App.engines`가 engine을 소유하고,
 App이 창 ID로 찾아 View에 넘긴다([engine registry](../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
 CoreState만 필요한 함수에는 구조 참조를, 실행 adapter에는 `EngineMut`/`EngineRef`, View에는 `EngineRead`를 전달한다. View의 terminal·kind·surface 조회는 실행 owner를 반환하지 않는 읽기 API를 사용한다.
+terminal tell·broadcast·respawn 실행 함수는 `EngineMut` 대신 `TerminalInputAccess`(`src/runtime/terminal_input_access.rs`)를 받는다. `EngineMut::terminal_input`이 조립하며 구조 읽기, 점유 읽기, 터미널 입력 쓰기(바이트·텍스트 즉시 쓰기와 ack 본문 쓰기뿐이며 resize·스크롤·연결 해제 같은 `Terminal`의 다른 조작은 열지 않는다)와 세대 확인, 제출 예약, child 등록의 idle·role·nickname 변경과 저장만 연다. hooks·task 범위·observer·remote·persistence에는 닿지 않는다. child 등록 저장은 기존 `ChildTerminalRegistry::save`의 병합 저장을 그대로 쓰며 tell·broadcast는 idle을 해제한 child가 있을 때 한 번 저장한다. respawn은 두 저장이 따로 있다. 실행 전 트리에 없는 child 등록을 정리해 바뀐 것이 있으면 한 번 저장하고, 입력을 쓴 뒤 role·nickname과 active 상태를 반영해 한 번 더 저장한다.
 구조와 effect·kind 실행 객체의 나머지 분리는 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)를 따른다.
 
 ## 열 읽는 법

@@ -12,8 +12,6 @@ use crate::core::state::child_liveness::ChildLiveness;
 use crate::runtime::child_terminal::{ChildEntry, ParentKey};
 use tasty_ipc::protocol::JsonRpcResponse;
 
-type AppServices = crate::app::services::AppServices;
-
 use super::params::{optional_parent, require_u32};
 
 fn optional_str(params: &Value, key: &str) -> Option<String> {
@@ -171,7 +169,7 @@ pub(crate) fn handle_tell(
         Ok(value) => value,
         Err(error) => return error,
     };
-    let result = crate::app::terminal_input::tell(engine, surface_id, text);
+    let result = crate::app::terminal_input::tell(&mut engine.terminal_input(), surface_id, text);
     input_response(&engine.as_ref(), id, result)
 }
 
@@ -396,7 +394,6 @@ pub(crate) fn handle_adopt(
 }
 
 pub(crate) fn handle_respawn(
-    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -429,12 +426,16 @@ pub(crate) fn handle_respawn(
         );
     }
     let options = respawn_options(params);
-    let result = crate::app::terminal_input::respawn(core, engine, &parent, child_index, &options);
+    let result = crate::app::terminal_input::respawn(
+        &mut engine.terminal_input(),
+        &parent,
+        child_index,
+        &options,
+    );
     input_response(&engine.as_ref(), id, result)
 }
 
 pub(crate) fn handle_broadcast(
-    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -460,7 +461,8 @@ pub(crate) fn handle_broadcast(
         })
         .map(|c| c.child_surface_id)
         .collect();
-    let result = crate::app::terminal_input::broadcast(core, engine, targets, &text);
+    let result =
+        crate::app::terminal_input::broadcast(&mut engine.terminal_input(), targets, &text);
     input_response(&engine.as_ref(), id, result)
 }
 
@@ -1305,7 +1307,6 @@ mod tests {
     #[test]
     fn a_direct_respawn_maps_each_send_failure_to_its_own_code() {
         let _home = crate::test_support::TastyHomeGuard::new();
-        let mut core = super::super::cli_entry_tests::test_core();
         let mut e_session = engine_with_extra(&[6101]);
         let mut e = e_session.borrow_mut();
         let parent = external("codex:r");
@@ -1316,7 +1317,6 @@ mod tests {
         }
 
         let missing = handle_respawn(
-            &mut core,
             &mut e,
             json!(1),
             &json!({ "parent_external": "codex:r", "child": 1 }),
@@ -1330,7 +1330,6 @@ mod tests {
 
         e.live.occupancy.acquire(1, 1).expect("hard occupy");
         let held = handle_respawn(
-            &mut core,
             &mut e,
             json!(1),
             &json!({ "parent_external": "codex:r", "child": 0, "command": "make" }),
@@ -1345,7 +1344,6 @@ mod tests {
         );
 
         let cwd = handle_respawn(
-            &mut core,
             &mut e,
             json!(1),
             &json!({ "parent_external": "codex:r", "child": 0, "cwd": "/tmp" }),
@@ -1363,7 +1361,6 @@ mod tests {
     #[test]
     fn a_direct_broadcast_writes_body_then_cr_and_counts_every_target() {
         let _home = crate::test_support::TastyHomeGuard::new();
-        let mut core = super::super::cli_entry_tests::test_core();
         let mut e_session = engine_with_extra(&[6101]);
         let mut e = e_session.borrow_mut();
         let parent = external("codex:b");
@@ -1381,7 +1378,6 @@ mod tests {
         e.runtime.child_terminals.set_idle(1, true);
         e.runtime.child_terminals.set_idle(6101, true);
         let response = ok(handle_broadcast(
-            &mut core,
             &mut e,
             json!(1),
             &json!({ "parent_external": "codex:b", "text": "go\r" }),

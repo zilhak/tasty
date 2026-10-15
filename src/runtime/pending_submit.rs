@@ -55,7 +55,7 @@ impl super::engine_runtime::EngineRuntime {
         self.pending_submits.iter().map(PendingSubmit::next).min()
     }
 }
-impl EngineMut<'_> {
+impl super::terminal_input_access::TerminalInputAccess<'_> {
     /// 본문을 바로 쓰고 같은 physical owner에 CR 제출을 예약한다. CR은 poll이 보낸다.
     /// 순서: 큐 한도 → generation 조회 → hard occupancy → terminal 조회 → 본문 → 예약 → wake.
     pub(crate) fn write_then_submit(
@@ -63,19 +63,17 @@ impl EngineMut<'_> {
         surface: u32,
         body: &str,
     ) -> Result<(), SubmitRejected> {
-        if self.runtime.pending_submits.len() >= MAX_PENDING {
+        if self.pending_submits.len() >= MAX_PENDING {
             return Err(SubmitRejected::QueueFull);
         }
         let generation = self
-            .runtime
             .terminals
             .generation(surface)
             .ok_or(SubmitRejected::NotFound)?;
         let ack = self.write_body_with_ack(surface, body)?;
-        self.runtime
-            .pending_submits
+        self.pending_submits
             .push(PendingSubmit::new(surface, generation, ack));
-        (self.runtime.waker)();
+        (self.waker)();
         Ok(())
     }
     /// 원격 점유로 막힌 입력과 없는 surface를 구분해 본문을 쓴다.
@@ -84,13 +82,16 @@ impl EngineMut<'_> {
         surface: u32,
         body: &str,
     ) -> Result<WriteAck, SubmitRejected> {
-        if self.live.occupancy.is_hard_occupied(surface) {
+        if self.occupancy.is_hard_occupied(surface) {
             return Err(SubmitRejected::HardOccupied);
         }
-        self.find_terminal_by_id_mut(surface)
+        self.terminals
+            .get_mut(surface)
             .map(|terminal| terminal.send_key_with_ack(body))
             .ok_or(SubmitRejected::NotFound)
     }
+}
+impl EngineMut<'_> {
     pub(crate) fn poll_input_submissions(&mut self) {
         self.poll_input_submissions_at(Instant::now());
     }
@@ -238,7 +239,7 @@ mod tests {
         }
 
         assert_eq!(
-            e.write_then_submit(SURFACE, "hi"),
+            e.terminal_input().write_then_submit(SURFACE, "hi"),
             Err(SubmitRejected::QueueFull)
         );
         assert_eq!(e.runtime.pending_submits.len(), MAX_PENDING);
@@ -259,11 +260,11 @@ mod tests {
         let (wakes, _rx) = observe(&mut e);
 
         assert_eq!(
-            e.write_then_submit(424_242, "hi"),
+            e.terminal_input().write_then_submit(424_242, "hi"),
             Err(SubmitRejected::NotFound)
         );
         assert_eq!(
-            e.write_then_submit(NO_TERMINAL, "hi"),
+            e.terminal_input().write_then_submit(NO_TERMINAL, "hi"),
             Err(SubmitRejected::NotFound)
         );
         assert!(e.runtime.pending_submits.is_empty());
@@ -278,7 +279,7 @@ mod tests {
         e.live.occupancy.acquire(SURFACE, 1).expect("hard occupy");
 
         assert_eq!(
-            e.write_then_submit(SURFACE, "hi"),
+            e.terminal_input().write_then_submit(SURFACE, "hi"),
             Err(SubmitRejected::HardOccupied)
         );
         assert!(e.runtime.pending_submits.is_empty());
@@ -298,18 +299,24 @@ mod tests {
             .expect("hard occupy");
 
         assert_eq!(
-            e.write_then_submit(NO_TERMINAL, "hi"),
+            e.terminal_input().write_then_submit(NO_TERMINAL, "hi"),
             Err(SubmitRejected::NotFound)
         );
         assert_eq!(
-            e.write_body_with_ack(NO_TERMINAL, "hi").err(),
+            e.terminal_input()
+                .write_body_with_ack(NO_TERMINAL, "hi")
+                .err(),
             Some(SubmitRejected::HardOccupied)
         );
         assert_eq!(
-            e.write_body_with_ack(424_242, "hi").err(),
+            e.terminal_input().write_body_with_ack(424_242, "hi").err(),
             Some(SubmitRejected::NotFound)
         );
-        assert!(e.write_body_with_ack(SURFACE, "hi").is_ok());
+        assert!(
+            e.terminal_input()
+                .write_body_with_ack(SURFACE, "hi")
+                .is_ok()
+        );
     }
 
     #[test]
@@ -319,7 +326,7 @@ mod tests {
         let (wakes, rx) = observe(&mut e);
         let generation = e.runtime.terminals.generation(SURFACE).expect("generation");
 
-        assert_eq!(e.write_then_submit(SURFACE, "hi"), Ok(()));
+        assert_eq!(e.terminal_input().write_then_submit(SURFACE, "hi"), Ok(()));
         assert_eq!(received(&rx), vec![b"hi".to_vec()]);
         assert_eq!(e.runtime.pending_submits.len(), 1);
         assert_eq!(e.runtime.pending_submits[0].surface, SURFACE);
