@@ -1116,6 +1116,51 @@ fn wait_x11_window_viewable(xid: u64) {
     }
 }
 
+/// 새 창의 첫 workspace가 셸을 시작하지 못하면 workspace 없는 창을 등록하지 않고 창 생성이
+/// 실패한다. 앱은 계속 응답하고 기존 창만 남는다. 셸 설정을 바꾸는 동안 다른 시험이 터미널을
+/// 만들지 않도록 단독 lane에서 실행하고, 끝나면 격리 설정의 셸로 되돌린다.
+#[cfg(feature = "gui")]
+#[test]
+fn a_new_window_whose_first_workspace_fails_is_refused_and_the_app_keeps_running() {
+    struct RestoreShell(&'static common::TastyInstance);
+    impl Drop for RestoreShell {
+        fn drop(&mut self) {
+            // 실패한 시험에서는 인스턴스가 응답하지 않을 수 있어 복원 호출로 다시 panic하지 않는다.
+            if !std::thread::panicking() {
+                self.0.call(
+                    "debug.settings.apply",
+                    json!({ "settings": { "general": { "shell": common::ISOLATED_SHELL } } }),
+                );
+            }
+        }
+    }
+    let _lane = exclusive_lane();
+    let tasty = common::shared();
+    let before = tasty.call("window.list", json!({}));
+    let _restore = RestoreShell(tasty);
+    tasty.call(
+        "debug.settings.apply",
+        json!({ "settings": { "general": { "shell": "/nonexistent/tasty-e2e-shell" } } }),
+    );
+    let resp = tasty.call_raw("window.create", json!({}));
+    assert!(
+        resp.get("result").is_none(),
+        "첫 workspace가 없는 창을 성공으로 답하면 안 된다: {resp}"
+    );
+    assert!(
+        resp["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("first workspace")),
+        "실패 사유가 첫 workspace를 가리켜야 한다: {resp}"
+    );
+    let windows = tasty.call("window.list", json!({}));
+    assert_eq!(
+        windows.as_array().map(Vec::len),
+        before.as_array().map(Vec::len),
+        "앱이 계속 응답하고 기존 창만 남아야 한다: {windows}"
+    );
+}
+
 /// 창 생성이 필요해 GUI 조합에서만 컴파일한다. headless에는 창 생성 핸들러와 window.list가 없다.
 /// 헤드리스 CI의 제외 이름 일치는 headless_skip_names_are_exact 검사에서 확인한다.
 #[cfg(feature = "gui")]

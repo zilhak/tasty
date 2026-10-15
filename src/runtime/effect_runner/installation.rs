@@ -24,6 +24,8 @@ pub(crate) struct Installation {
     pub(super) installed_child: Option<crate::core::child_parent::ParentKey>,
     /// The candidate's physical generation once it replaced the live owner.
     pub(super) installed_candidate: Option<ResourceGeneration>,
+    /// The standalone metadata the adopted candidate carried before it replaced the live owner.
+    pub(super) adopted_standalone: Option<tasty_terminal::StandalonePty>,
 }
 
 /// `applied` is false only when no old owner was retired and no new owner was registered or
@@ -257,7 +259,7 @@ impl Installation {
                     if pty.generation().value() != adoption.resource_generation {
                         anyhow::bail!("standalone installation has another physical owner");
                     }
-                    pty.adopt();
+                    self.adopted_standalone = pty.adopt();
                     terminal.rewire_waker(engine.make_waker(self.surface_id));
                     if let Some(factory) = &engine.runtime.waker_factory {
                         factory.forget_surface(adoption.pty_id);
@@ -385,7 +387,8 @@ impl Installation {
         }
     }
 
-    /// A standalone pair is retained in this owner, never killed by the withdrawal.
+    /// An adopted standalone pair returns to its original registration; one that cannot is
+    /// retained in this owner. The withdrawal never kills it.
     fn withdraw_candidate_terminal(&mut self, engine: &mut EngineMut<'_>) {
         let installed_new = self.installed_candidate.is_some_and(|generation| {
             engine
@@ -393,6 +396,10 @@ impl Installation {
                 .terminals
                 .matches_generation(self.surface_id, generation)
         });
+        if self.adoption.is_some() {
+            self.return_adopted_standalone(engine, installed_new);
+            return;
+        }
         let pair = if installed_new {
             engine
                 .runtime
@@ -405,12 +412,54 @@ impl Installation {
         let Some((terminal, pty)) = pair else {
             return;
         };
-        if self.adoption.is_some() {
-            self.connection = Some((terminal, pty));
+        drop(terminal);
+        self.candidate_retirement = Some(pty.retire());
+    }
+
+    /// The live connection is taken without revoking it, so the returned owner keeps its output.
+    fn return_adopted_standalone(&mut self, engine: &mut EngineMut<'_>, installed_new: bool) {
+        let Some(adoption) = &self.adoption else {
+            return;
+        };
+        let pty_id = adoption.pty_id;
+        let (mut terminal, mut pty) = if installed_new {
+            let Some((terminal, pty, persist_id)) = engine
+                .runtime
+                .terminals
+                .take_adopted(self.surface_id, adoption.resource_generation)
+            else {
+                return;
+            };
+            self.scrollback_persist_id = self.scrollback_persist_id.take().or(persist_id);
+            (terminal, pty)
         } else {
-            drop(terminal);
-            self.candidate_retirement = Some(pty.retire());
+            let Some(pair) = self.connection.take() else {
+                return;
+            };
+            pair
+        };
+        if let Some(metadata) = self.adopted_standalone.take() {
+            pty.set_standalone(metadata);
         }
+        terminal.rewire_waker(engine.make_waker(pty_id));
+        if let Err((terminal, pty, persist_id)) = engine
+            .runtime
+            .terminals
+            .restore_standalone_adoption(pty_id, terminal, pty, self.scrollback_persist_id.take())
+        {
+            tracing::warn!(
+                surface = self.surface_id,
+                pty = pty_id,
+                "adopted standalone PTY could not return to its registration and stays retained"
+            );
+            self.connection = Some((terminal, pty));
+            self.scrollback_persist_id = persist_id;
+        }
+    }
+
+    /// An adopted standalone process that could not return. Only an engine release may end it.
+    pub(crate) fn retains_adopted_standalone(&self) -> bool {
+        self.adoption.is_some() && self.connection.is_some()
     }
 
     fn withdraw_remote_registration(&mut self, plugins: Option<&mut crate::plugin::PluginManager>) {

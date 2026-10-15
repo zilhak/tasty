@@ -73,6 +73,25 @@ fn shutdown_waits_for_a_retirement_that_only_awaits_receipts() {
     assert!(!journal.shutdown_waits_for_publication());
 }
 
+/// A publication wait that never progresses ends at the deadline fixed by its first poll, and
+/// ends by halting: nothing reports the unfinished retirement as done.
+#[test]
+fn shutdown_stops_waiting_for_publication_at_its_first_deadline() {
+    let (mut journal, _, _) = journal_with_cleanup();
+    set_phase(&mut journal, Phase::Claim);
+    let start = std::time::Instant::now();
+    let mut deadline = None;
+    assert!(journal.shutdown_publication_pending(&mut deadline, start));
+    let fixed = deadline.expect("the first wait fixes the deadline");
+    let late = fixed - std::time::Duration::from_millis(1);
+    assert!(journal.shutdown_publication_pending(&mut deadline, late));
+    assert_eq!(deadline, Some(fixed), "a later poll does not extend it");
+    assert!(!journal.is_halted());
+    assert!(!journal.shutdown_publication_pending(&mut deadline, fixed));
+    assert!(journal.is_halted());
+    assert!(!journal.shutdown_publication_pending(&mut deadline, fixed));
+}
+
 /// 은퇴한 surface를 쓰던 앞 소유자의 metadata와, 같은 ID의 새 소유자가 정리를 넣은 뒤에 쓰는 metadata.
 const RETIRED_SURFACE: u32 = 900;
 

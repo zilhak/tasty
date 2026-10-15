@@ -405,8 +405,9 @@ impl Pty {
     pub fn set_standalone(&mut self, metadata: StandalonePty) {
         self.state.standalone = Some(metadata);
     }
-    pub fn adopt(&mut self) {
-        self.state.standalone = None;
+    /// Returns the standalone metadata so a failed adoption can return the owner unchanged.
+    pub fn adopt(&mut self) -> Option<StandalonePty> {
+        self.state.standalone.take()
     }
     pub fn touch(&mut self, now: Instant) {
         if let Some(metadata) = &mut self.state.standalone {

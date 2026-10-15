@@ -117,6 +117,18 @@ impl TerminalStore {
         let (terminal, pty) = self.terminals.remove(&id)?;
         Some((terminal, pty?, self.scrollback_persist_ids.remove(&id)))
     }
+    /// Take back an adopted owner of a withdrawn installation without revoking its connection.
+    pub(crate) fn take_adopted(
+        &mut self,
+        id: SurfaceId,
+        generation: u64,
+    ) -> Option<(Terminal, Pty, Option<String>)> {
+        if self.generation(id)?.value() != generation || self.pty(id).is_none() {
+            return None;
+        }
+        let (terminal, pty) = self.terminals.remove(&id)?;
+        Some((terminal, pty?, self.scrollback_persist_ids.remove(&id)))
+    }
     pub(crate) fn restore_standalone_adoption(
         &mut self,
         id: u32,

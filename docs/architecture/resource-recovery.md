@@ -63,12 +63,14 @@ GUI intent·IPC·plugin·headless 진입점은 모두 같은 command 경계를 �
 | 설치(`FinishCreation` 공개 중) | publication 처리 안에서 후보 설치·이전 owner 분리 | 전역 보류 |
 | 설치 뒤 | 기다리지 않고 `CleanupFinished` 제출. child 본문은 설치 때 이미 썼다 | 전역 보류 |
 | 최종 공개 | `FinishCleanup` commit과 전체 publication ACK | commit 전까지 전역 보류 |
-| 공개 뒤 정리(`Settling`) | child 본문 ACK(기한 5초)와 settle 20ms 뒤 CR, 교체한 이전 PTY·plugin binding의 receipt(기한 5초) | 보류하지 않는다 |
-| 불명(`Uncertain`) | 설치 owner·폐기 receipt·회수한 실패 설치가 있을 때만 1초 간격 재확인. 준비 중 불명은 재확인 요청이 없다 | 미공개 설치 owner를 가진 경우만 보류 |
-| 원 명령 응답 | 최종 commit의 확정 결과를 공개 뒤 정리가 끝난 다음 읽는다. 불명이면 InProgress로 남는다 | - |
+| 공개 뒤 정리(`Settling`) | child 본문 ACK(기한 5초)와 settle 20ms 뒤 CR, 교체한 이전 PTY·plugin binding의 receipt(기한 5초) | 보류하지 않는다. 종료는 이 단계가 끝나기를 기다린다 |
+| 불명(`Uncertain`) | 불명 기록 확정 뒤 receipt로 정합할 수 있는 owner(설치 owner·폐기 receipt·회수한 실패 설치)만 1초 간격으로 5초 동안 재확인한다. 그 뒤 owner를 `EngineRelease`로 넘기고 continuation을 끝낸다. 증거 수단이 없는 불명(준비 중 불명 등)은 기록 확정 즉시 끝낸다 | 미공개 설치 owner를 가진 경우만 보류 |
+| 원 명령 응답 | 최종 commit의 확정 결과를 공개 뒤 정리가 끝난 다음 읽는다. 불명 continuation이 끝나면 복구 필요(`ERR_OPERATION_RECOVERY_REQUIRED`)로 응답한다. durable 명령은 InProgress로 남는다 | - |
 
 공개 뒤 회수가 기한을 넘기거나 실패하면 receipt를 EngineSession의 해제 owner(`EngineRelease`)로
-넘기고 원 요청에 복구 필요(`ERR_OPERATION_RECOVERY_REQUIRED`)를 응답한다. child의 CR을 보내기 전에
+넘기고 원 요청에 복구 필요(`ERR_OPERATION_RECOVERY_REQUIRED`)를 응답한다. 구조와 명령 결과는 이미
+성공으로 확정됐으므로, 이 응답 뒤 같은 키로 다시 요청하면 확정된 성공 결과를 받는다. 기다리는 동안 도착한
+같은 키 요청만 대기에 합류해 같은 복구 필요 응답을 받는다. 결과를 알 수 없는 생성의 재요청과 다르다. child의 CR을 보내기 전에
 대상의 물리 generation이 바뀌었거나 hard 점유됐거나 CR 큐가 닫혔으면 CR을 보내지 않고 같은 오류로
 응답한다. 본문은 설치 때 한 번만 쓰며 다시 보내지 않는다. 구조는 이미 공개됐으므로 이 응답은 구조
 실패를 뜻하지 않는다. 같은 키의 이후 재요청은 확정된 구조 결과를 돌려주고 본문을 다시 쓰지 않는다.
@@ -78,8 +80,27 @@ CR을 기다리는 동안 그 터미널의 출력과 다른 창의 입력·렌�
 설치 실패는 두 가지로 나눈다. 이전 owner를 은퇴시키거나 새 owner를 등록·설치하기 전의 실패는
 알려진 거절이다. 후보를 기존 폐기 경로로 회수하고 원 명령은 실패로 끝난다. 그 뒤의 실패는 미공개 새
 owner(PTY·plugin 등록·child 관계)를 회수하고, 이전 owner가 이미 은퇴한 대상만 Recovery 차단
-placeholder로 바꿔 사용할 수 없음을 표시한다. operation은 `Uncertain`으로 기록하며, 회수 receipt가
-모두 완료되면 폐기 evidence로 정합해 실패로 끝낸다. 이 동안 관측은 보류하지 않는다.
+placeholder로 바꿔 사용할 수 없음을 표시한다. operation은 `Uncertain`으로 기록하며, 재확인 기간 안에 회수
+receipt가 모두 완료되면 폐기 evidence로 정합해 실패로 끝낸다. 기간이 지나면 남은 receipt는
+`EngineRelease`가 보관하고 원 명령은 복구 필요로 응답한다. 이 동안 관측은 보류하지 않는다.
+standalone 채택 후보는 회수할 때 종료하지 않는다. 연결을 끊지 않은 채 원래 standalone 등록(pty ID·
+metadata·scrollback 보존 ID)으로 돌려놓는다. 원 ID를 다른 owner가 차지해 돌려놓지 못하면 그 프로세스는
+불명 생성이 계속 보관한다. 재확인 기간이 지나도 `EngineRelease`로 넘기지 않으며, 원 명령은 응답을 받지
+못하고 그 엔진의 닫기도 이 생성이 끝나기를 기다린다. 이 생성은 종료의 15초 기한 대상이 아니므로
+`restore_layout`이 꺼진 GUI 종료도 그 엔진 해제를 기한 없이 기다린다. 이 경우의 처리는 후속 작업에서 정한다.
+중단(halt) 경로가 owner를 `EngineRelease`에 모을
+때만 다른 PTY처럼 retire한다. 이 owner는 receipt가 완료될 수 없으므로 불명 기록이 확정된 뒤에는 1초
+재확인을 하지 않고 App 깨움 기한도 내지 않는다.
+
+생성이 불명이 되는 순간(준비 오류·폐기 실패·폐기 reap 기한 경과·설치 실패) operation·stream·attempt·
+generation·단계·원인을 경고 로그로 한 번 남긴다. 입력 본문은 기록하지 않는다. 같은 키의 재요청은 기록된
+불명 결과를 읽어 복구 필요로 응답하며 다시 실행하지 않는다. 새 셸 실행 파일을 찾지 못한 경우처럼 child
+fork 전 실패일 수 있는 spawn 오류도 현재는 불명으로 분류한다. terminal 계층이 fork 전·후 실패를 구분해
+돌려주지 않기 때문이다.
+
+새 창이나 첫 부팅의 첫 workspace 생성이 실패하거나 불명이 되면 engine은 준비됐지만 workspace가 없다.
+View는 workspace 없이 그릴 수 없으므로 새 창은 창 생성 실패(`window.create` 오류와 실패 알림)로
+끝나고 그 engine을 실패한 opening으로 해제한다. 첫 부팅은 엔진 생성 실패 화면으로 넘어간다.
 
 터미널 준비는 App이 검증과 고정 입력(셸 실행 정보·waker·색·복원 capture)을 마친 뒤 전용 스레드
 하나에 맡긴다. 동시 실행은 하나이며 앞선 작업 뒤 대기열은 16개로 제한한다. 대기열이 차면 아무것도
@@ -94,8 +115,22 @@ retire하며, reap이 확인되면 알려진 준비 실패로, 기한 5초 안�
 kind factory는 반환하는 surface와 native 자원의 스레드 제약을 일반적으로 보장할 수 없어 App
 스레드에 남긴다. standalone 채택은 이미 있는 PTY의 소유권 이전이라 다시 실행할 작업이 아니다.
 
-standalone 채택은 준비 완료부터 설치 또는 원위치 반납까지도 전역 보류한다. GUI 종료의
-`SavingLayout`은 이 보류가 풀리기를 기다리며 별도 기한이 없다.
+standalone 채택은 준비 완료부터 설치 또는 원위치 반납까지도 전역 보류한다.
+
+GUI 종료의 `SavingLayout`과 headless 종료는 세 가지 대기가 풀리기를 첫 대기 때 정한 기한 15초까지만
+기다린다. 대상은 관측 보류(미공개 설치·standalone 채택 보류), 공개됐지만 끝나지 않은 생성(공개 ACK·child
+CR·교체한 이전 owner의 receipt), 닫기 정리의 receipt 대기다. 이후 회차는 기한을 늘리지 않는다. 15초는 이
+대기들의 단계별 기한(child 입력 5초, 교체 receipt 5초, 닫기 receipt 5초)보다 길어 진행 중인 대기를 끊지 않도록
+정한 값이며 측정값이 아니다. 기한이 지나면 journal
+실행을 중단(halt)한다. 대기 중인 요청은 중단 사유로 응답하고, 미완 operation은 다음 시작의 Recovery
+대상으로 남는다. 남은 owner의 처리는 종료 방식마다 다르다. headless 종료는 중단 경로로 남은 생성·미공개
+후보·회수 receipt를 `EngineRelease`에 모아 종료 상한 안에서 reap·plugin 응답을 관측한다. GUI 종료는 중단 뒤
+이 경로를 부르지 않는다. 남은 owner는 App과 함께 버려지며, PTY는 drop 때 child 종료를 시도하지만 reap을
+관측하거나 회수 완료를 기록하지 않는다. 중단 뒤에는 종료 시점 View를 저장하지 않으므로
+마지막으로 저장된 View가 남는다. 이 중단은 회수 완료나 명령 결과를 뜻하지 않는다.
+예외로 원 standalone 등록에 반납하지 못한 채택 후보를 보관한 불명 생성은 이 15초 대기의 대상이 아니다.
+`restore_layout`이 꺼진 GUI 종료는 그 엔진의 retire가 이 생성이 끝나기를 기다리므로 기한 없이 대기하며
+중단도 일어나지 않는다. 이 경우의 처리는 후속 작업에서 정한다.
 
 ## EngineSession 해제
 

@@ -54,7 +54,7 @@ fn turn(
         .unwrap();
     for (ticket, request) in journal.requests_needing_resolution() {
         match request.method.as_str() {
-            "surface.respawn_terminal" => {
+            "surface.respawn_terminal" | "pty.attach_surface" => {
                 journal.resolve_public_creation(ticket, session, services)
             }
             "workspace.create" => journal.resolve_workspace_creation(ticket, session, None),
@@ -199,17 +199,18 @@ fn the_reply_of_a_published_respawn_follows_the_reap_of_the_replaced_process() {
     assert!(session.engine_release.is_none());
 }
 
-#[test]
-fn an_unacknowledged_plugin_destroy_neither_pauses_observation_nor_reports_success() {
-    let (mut session, mut journal) = boot();
-    let surface = terminal_workspace(&mut journal, &mut session);
-    // Bind the published surface to a remote owner whose stub never acknowledges a destroy.
+/// Binds the published surface to a remote owner whose stub never acknowledges a destroy.
+fn unacknowledging_remote(
+    session: &mut EngineSession,
+    surface: u32,
+    namespace: &str,
+) -> crate::plugin::PluginManager {
     let mut plugins = crate::plugin::PluginManager::with_registries(
         std::sync::Arc::new(tasty_terminal::waker_factory::NoopWakerFactory),
         std::sync::Arc::new(crate::file::format::FileFormatRegistry::new()),
         std::sync::Arc::new(crate::file::handler::FileHandlerRegistry::new()),
     );
-    let stub = plugins.attach_namespace_stub_for_test(PLUGIN, "replacement_settle");
+    let stub = plugins.attach_namespace_stub_for_test(PLUGIN, namespace);
     let remote = RemoteSurface::new(surface, "terminal", PLUGIN.into(), "remote".into());
     plugins
         .host_cmd_tx
@@ -225,6 +226,56 @@ fn an_unacknowledged_plugin_destroy_neither_pauses_observation_nor_reports_succe
     session.runtime.surfaces.insert(surface, Box::new(remote));
     plugins.pump(Instant::now());
     assert_eq!(stub.drain_invokes().len(), 1, "the create was published");
+    plugins
+}
+
+/// The failed installation's only evidence is a destroy receipt that never arrives. The
+/// observation window ends, the owner moves to the engine release, and the caller is told.
+#[test]
+fn a_failed_installation_without_a_receipt_answers_recovery_required_and_stops_polling() {
+    let (mut session, mut journal) = boot();
+    let surface = terminal_workspace(&mut journal, &mut session);
+    let mut plugins = unacknowledging_remote(&mut session, surface, "failed_install");
+    inject(InstallFault::AfterSwap);
+    let rx = respawn(&mut journal, surface, 706);
+    let services = crate::ipc::handler::cli_entry_tests::test_core();
+    let mut stall = StallBudget::new(&journal);
+    let response = loop {
+        turn(&mut journal, &mut session, Some(&mut plugins), &services);
+        assert!(!journal.pauses_observation());
+        if let Ok(response) = rx.try_recv() {
+            break response;
+        }
+        stall.nap("failed installation without a receipt");
+    };
+    assert_eq!(
+        injected(),
+        None,
+        "the production installation reached the fault"
+    );
+    let error = response
+        .error
+        .expect("an unreconciled installation is not a success");
+    assert_eq!(
+        error.code,
+        crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED,
+        "{error:?}"
+    );
+    assert!(error.message.contains("injected"), "{error:?}");
+    assert!(
+        session.engine_release.is_some(),
+        "the withdrawn owner has one later owner"
+    );
+    assert!(!journal.has_creation(session.id));
+    assert!(journal.cleanup_poll_deadline().is_none());
+    assert!(!journal.is_halted());
+}
+
+#[test]
+fn an_unacknowledged_plugin_destroy_neither_pauses_observation_nor_reports_success() {
+    let (mut session, mut journal) = boot();
+    let surface = terminal_workspace(&mut journal, &mut session);
+    let mut plugins = unacknowledging_remote(&mut session, surface, "replacement_settle");
     let before = activation(&session, surface);
 
     let rx = respawn(&mut journal, surface, 705);
@@ -236,6 +287,12 @@ fn an_unacknowledged_plugin_destroy_neither_pauses_observation_nor_reports_succe
         if activation(&session, surface) != before {
             // The new activation is published while the old destroy is still unanswered.
             assert!(!journal.pauses_observation());
+            if journal.has_creation(session.id) {
+                assert!(
+                    journal.shutdown_waits_for_publication(),
+                    "shutdown waits for the settling receipt within its deadline"
+                );
+            }
             published_while_retiring = true;
         }
         if let Ok(response) = rx.try_recv() {
@@ -258,4 +315,147 @@ fn an_unacknowledged_plugin_destroy_neither_pauses_observation_nor_reports_succe
     );
     assert!(!journal.has_creation(session.id));
     assert!(!journal.pauses_observation());
+    assert!(!journal.shutdown_waits_for_publication());
+}
+
+/// A standalone PTY owned by an agent, as `pty.spawn` registers it.
+#[cfg(unix)]
+fn standalone_pty(session: &mut EngineSession) -> (u32, u32) {
+    let pty_id = session.runtime.terminals.reserve_pty_id().unwrap();
+    let (terminal, mut pty) = tasty_terminal::spawn_terminal(
+        tasty_terminal::TerminalConfig {
+            cols: 80,
+            rows: 24,
+            shell: Some("/bin/sh"),
+            args: &["-c", "sleep 60"],
+            surface_id: pty_id,
+            working_dir: None,
+            initial_input: None,
+            extra_env: &[],
+        },
+        std::sync::Arc::new(|| {}),
+    )
+    .unwrap();
+    let pid = pty.process_id().expect("standalone process");
+    let now = Instant::now();
+    pty.set_standalone(tasty_terminal::StandalonePty {
+        owner_agent_id: "agent".into(),
+        cwd: None,
+        command: vec!["sleep".into()],
+        created_at: now,
+        last_activity: now,
+    });
+    session
+        .runtime
+        .terminals
+        .insert(pty_id, terminal, Some(pty));
+    (pty_id, pid)
+}
+
+#[cfg(unix)]
+fn adopt(journal: &mut JournalApplication, session: &EngineSession, pty: u32, id: u64) -> Receiver {
+    let pane = session
+        .core_state
+        .workspaces()
+        .iter()
+        .last()
+        .unwrap()
+        .pane_layout()
+        .all_pane_ids()[0];
+    send(
+        journal,
+        request(
+            "pty.attach_surface",
+            serde_json::json!({"pane_id":pane,"id":pty}),
+            None,
+            id,
+        ),
+    )
+}
+
+/// The adopted process belongs to the agent that spawned it. A failure after the swap returns it
+/// to its standalone registration instead of retiring it after the observation window.
+#[cfg(unix)]
+#[test]
+fn a_failed_adoption_returns_the_standalone_process_alive() {
+    let (mut session, mut journal) = boot();
+    terminal_workspace(&mut journal, &mut session);
+    let (pty_id, pid) = standalone_pty(&mut session);
+    inject(InstallFault::AfterSwap);
+    let rx = adopt(&mut journal, &session, pty_id, 707);
+    let response = reply(&mut journal, &mut session, &rx, |_, _| {});
+    assert_eq!(
+        injected(),
+        None,
+        "the production installation reached the fault"
+    );
+    let error = response.error.expect("a failed adoption is not a success");
+    assert!(error.message.contains("injected"), "{error:?}");
+    assert!(
+        session.runtime.terminals.is_standalone(pty_id),
+        "the process returned to its standalone registration"
+    );
+    assert_eq!(
+        session
+            .runtime
+            .terminals
+            .pty(pty_id)
+            .and_then(|pty| pty.process_id()),
+        Some(pid)
+    );
+    assert!(process_exists(pid));
+    assert!(!journal.has_creation(session.id));
+    assert!(!journal.is_halted());
+}
+
+/// When the registration is taken, the process stays with its uncertain creation past the
+/// observation window instead of being retired.
+#[cfg(unix)]
+#[test]
+fn a_failed_adoption_that_cannot_return_is_not_retired_by_the_observation_window() {
+    let (mut session, mut journal) = boot();
+    terminal_workspace(&mut journal, &mut session);
+    let (pty_id, pid) = standalone_pty(&mut session);
+    inject(InstallFault::AfterSwap);
+    let rx = adopt(&mut journal, &session, pty_id, 708);
+    let services = crate::ipc::handler::cli_entry_tests::test_core();
+    let mut stall = StallBudget::new(&journal);
+    let mut occupied = false;
+    while !occupied {
+        turn(&mut journal, &mut session, None, &services);
+        if !session.runtime.terminals.contains(pty_id) {
+            assert!(
+                injected().is_some(),
+                "the occupant must be in place before the installation runs"
+            );
+            // Another owner takes the ID, so the withdrawal cannot return the process.
+            session.runtime.terminals.insert(
+                pty_id,
+                tasty_terminal::Terminal::new_detached(80, 24),
+                None,
+            );
+            occupied = true;
+        }
+        stall.nap("adoption claims the standalone owner");
+    }
+    let until = Instant::now() + std::time::Duration::from_secs(7);
+    while Instant::now() < until {
+        turn(&mut journal, &mut session, None, &services);
+        assert!(
+            rx.try_recv().is_err(),
+            "the retained process is still uncertain"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(injected(), None, "the installation reached the fault");
+    assert!(journal.has_creation(session.id));
+    assert!(process_exists(pid), "the observation window never kills it");
+    assert!(!journal.is_halted());
+    // Nothing reconciles the retained process, so the App must not keep waking for it.
+    let wake = journal.cleanup_poll_deadline();
+    assert!(
+        wake.is_none_or(|wake| wake > Instant::now()),
+        "a retained process asks for no past wake-up: {:?}",
+        wake.map(|wake| Instant::now().saturating_duration_since(wake))
+    );
 }

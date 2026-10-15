@@ -484,6 +484,7 @@ impl PreparedMaterialization {
             candidate_retirement: None,
             installed_child: None,
             installed_candidate: None,
+            adopted_standalone: None,
         })
     }
 

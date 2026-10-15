@@ -12,6 +12,11 @@ impl Creation {
     pub(in crate::app::journal) fn holds_command(&self, command: &str) -> bool {
         self.origin_command.as_deref() == Some(command)
     }
+    /// Published and not finished: it still awaits its publication ACK, its child CR or the
+    /// receipts of the replaced owner.
+    pub(in crate::app::journal) fn awaits_settlement(&self) -> bool {
+        self.stage.is_published() || matches!(self.stage, Stage::Settling { .. })
+    }
     pub(in crate::app::journal) fn is_settled(&self) -> bool {
         matches!(self.stage, Stage::Settled { .. })
     }

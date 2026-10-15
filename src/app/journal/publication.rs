@@ -121,6 +121,9 @@ impl JournalApplication {
             }
         }
         self.refresh_in_progress_commands();
+        // The queued reads are submitted on the next turn. No reply or deadline is left to
+        // request it, so ask for it here.
+        (self.wake)();
     }
 
     fn accept_bootstrap(

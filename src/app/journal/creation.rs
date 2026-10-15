@@ -481,7 +481,13 @@ impl Creation {
                 ResultValue::Executed(_) | ResultValue::Stored(_),
             ) if in_flight == Some(InFlight::Uncertainty) => {
                 uncertain.acknowledge();
-                Stage::Uncertain(uncertain)
+                let leaves = uncertain.has_no_evidence();
+                self.stage = Stage::Uncertain(uncertain);
+                if leaves {
+                    // Nothing can reconcile it; polling again would only repeat the same check.
+                    self.leave_uncertain(session);
+                }
+                return Ok(false);
             }
             (
                 Stage::Finish {
@@ -602,6 +608,7 @@ impl Creation {
                 session
                     .pending_materializations
                     .insert(lease.operation.clone(), candidate);
+                uncertain::log_uncertain(&lease, "discard", &reason);
                 // The stage keeps the owner even if the record cannot be queued.
                 self.retain_uncertain(reason.clone());
                 self.enqueue(Work::PreparationUncertain { lease, reason })?;
@@ -792,6 +799,7 @@ impl Creation {
             {
                 let reason = "private preparation owner could not confirm reap before its deadline"
                     .to_owned();
+                uncertain::log_uncertain(lease, "rejected", &reason);
                 self.submit(
                     worker,
                     Work::PreparationUncertain {

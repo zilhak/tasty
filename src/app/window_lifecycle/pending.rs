@@ -337,6 +337,28 @@ impl App {
         if !self.journal.is_ready(id) {
             return;
         }
+        // A failed or uncertain first creation leaves the engine ready but without a workspace;
+        // a View needs one, so the window creation fails instead of showing an empty window.
+        if self
+            .engines
+            .session_mut(id)
+            .is_some_and(|session| session.core_state.workspaces().is_empty())
+        {
+            self.release_failed_pending_window(id);
+            if let Some(pending) = self.pending_window.take() {
+                let error = "the new window's first workspace was not created";
+                if let Some(completion) = pending.completion {
+                    completion.reply_window_create(Err(error.into()));
+                }
+                self.notify_window_creation_failed(
+                    WindowCreationTarget::NewWindow,
+                    pending.origin,
+                    "journal engine initialization failed",
+                    error,
+                );
+            }
+            return;
+        }
         let Some(pending) = self.pending_window.take() else {
             return;
         };

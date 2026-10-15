@@ -1,4 +1,4 @@
-<!-- source-hash: 8b916d9c539f -->
+<!-- source-hash: 41c4d26627f3 -->
 # CLI command reference
 
 How to use the `tasty` commands the [introduction](cli.md) does not cover: reading `read since-mark` from a saved position, looking into a surface, permission tokens, notifications, metadata, queues between Surfaces, running several terminals, headless PTYs, shared memory, observers, usage records, and other queries and settings, organised by purpose. Check every argument a command takes with `tasty help <command>`.
@@ -44,6 +44,8 @@ tasty surface fire-hook --surface 42 --event idle-timeout:300 # some events carr
 
 `respawn-terminal` replies only after the previous shell is confirmed to have exited, even though the new shell already appears.
 If that exit is not confirmed within 5 seconds, the new shell stays usable but the reply is a recovery-required error (`-32068`).
+After that error, sending the request again with the same idempotency key (`idempotency_key` on the IPC request) returns the success result, because the shell replacement already finished.
+When a command that creates a terminal, workspace, or tab fails while starting the shell and it is unknown what actually ran, it replies with a recovery-required error (`-32068`) instead of waiting. Sending it again with the same idempotency key (`idempotency_key` on the IPC request) does not run it again and returns the same error.
 
 ## Granting permissions to a child agent
 
@@ -115,7 +117,7 @@ There is no separate command to wait on. Tag children with `--role` to address t
 
 If `terminal spawn` fails during setup, it sends no command and removes the terminal created by that call. Existing terminals remain open.
 
-With `--command`, `spawn` types the command after the new terminal appears, sends Enter, and then replies. If the terminal is replaced by another shell or held by a remote attach in between, Enter is not sent and the reply is a recovery-required error (`-32068`); the created terminal stays.
+With `--command`, `spawn` types the command after the new terminal appears, sends Enter, and then replies. If the terminal is replaced by another shell or held by a remote attach in between, Enter is not sent and the reply is a recovery-required error (`-32068`); the created terminal stays. Keys typed into that terminal between the command and Enter can join the end of the command and run with it, as with `terminal tell`.
 
 A child's parent is usually the terminal that ran the command. The dedicated Claude and Codex commands choose the parent for you, so you do not need to set it. If your script uses something outside Tasty as the parent (for example, an agent conversation running in another process), pass `--parent-external <key>` instead of `--surface`. The key is a string you choose (no whitespace, at most 256 bytes), and the same key groups children under the same parent. `spawn`, `children`, `kill`, `respawn`, `broadcast` and `release` accept this option. When several windows are open, also pass `--workspace`.
 

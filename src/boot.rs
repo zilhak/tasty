@@ -944,13 +944,17 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
 }
 
 /// A retirement awaiting receipts does not defer Shutdown. Finish it first so its close replies
-/// once and records its outcome; the receipt deadline bounds this wait.
+/// once and records its outcome; one shutdown deadline bounds this wait.
 #[cfg(not(feature = "gui"))]
 fn drain_headless_publication(
     app: &mut crate::app::App,
     session: &mut crate::runtime::engine_session::EngineSession,
 ) {
-    while app.journal.shutdown_waits_for_publication() && !app.journal.is_halted() {
+    let mut deadline = None;
+    while app
+        .journal
+        .shutdown_publication_pending(&mut deadline, std::time::Instant::now())
+    {
         if let Some(plugins) = app.plugin_manager.as_mut()
             && let Err(error) = plugins.poll_publication_retirements()
         {

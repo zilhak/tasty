@@ -81,10 +81,19 @@ pub(super) struct Uncertain {
     phase: Reconciliation,
 }
 
+/// How long a committed uncertainty keeps observing its owner's receipts. Afterwards the owner
+/// moves to the engine release and the durable outcome stays unknown for restart recovery.
+const RECONCILE_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+
 // The journal ACK is a prerequisite for observing and retrying the external effect.
 enum Reconciliation {
-    AwaitingCommit { not_before: std::time::Instant },
-    Committed { next: std::time::Instant },
+    AwaitingCommit {
+        not_before: std::time::Instant,
+    },
+    Committed {
+        next: std::time::Instant,
+        until: std::time::Instant,
+    },
 }
 impl Uncertain {
     pub(super) fn pending(reason: String, owner: UncertainOwner) -> Self {
@@ -102,17 +111,35 @@ impl Uncertain {
     }
     pub(super) fn acknowledge(&mut self) {
         if let Reconciliation::AwaitingCommit { not_before } = self.phase {
-            self.phase = Reconciliation::Committed { next: not_before };
+            self.phase = Reconciliation::Committed {
+                next: not_before,
+                until: std::time::Instant::now() + RECONCILE_WINDOW,
+            };
         }
     }
-    pub(super) fn deadline(&self) -> std::time::Instant {
+    /// An adopted standalone process that could not return to its registration. The observation
+    /// window never ends it; it waits for the engine release.
+    fn retains_user_process(&self) -> bool {
+        matches!(&self.owner, UncertainOwner::FailedInstallation(withdrawn) if withdrawn.installation.retains_adopted_standalone())
+    }
+    /// No receipt or state notice can ever reconcile this owner.
+    pub(super) fn has_no_evidence(&self) -> bool {
+        matches!(self.owner, UncertainOwner::EngineOwned)
+    }
+    /// A committed retained process has neither a receipt to observe nor a window to close, so
+    /// it asks for no wake-up; only the halt path or engine release ends it.
+    pub(super) fn deadline(&self) -> Option<std::time::Instant> {
         match self.phase {
-            Reconciliation::AwaitingCommit { not_before } => not_before,
-            Reconciliation::Committed { next } => next,
+            Reconciliation::AwaitingCommit { not_before } => Some(not_before),
+            Reconciliation::Committed { .. } if self.retains_user_process() => None,
+            Reconciliation::Committed { next, until } => Some(next.min(until)),
         }
     }
     fn begin_poll(&mut self, now: std::time::Instant) -> bool {
-        let Reconciliation::Committed { next } = &mut self.phase else {
+        if self.retains_user_process() {
+            return false;
+        }
+        let Reconciliation::Committed { next, .. } = &mut self.phase else {
             return false;
         };
         if now < *next {
@@ -120,6 +147,10 @@ impl Uncertain {
         }
         *next = now + std::time::Duration::from_secs(1);
         true
+    }
+    fn window_closed(&self, now: std::time::Instant) -> bool {
+        !self.retains_user_process()
+            && matches!(self.phase, Reconciliation::Committed { until, .. } if now >= until)
     }
     pub(super) fn retain_for_release(
         self,
@@ -129,7 +160,45 @@ impl Uncertain {
     }
 }
 
+/// One record per entry into uncertainty. The reason never carries input bodies.
+pub(super) fn log_uncertain(
+    lease: &crate::runtime::journal_product::EffectLease,
+    phase: &str,
+    reason: &str,
+) {
+    tracing::warn!(
+        operation = %lease.operation.0,
+        stream = %lease.stream,
+        attempt = lease.attempt,
+        generation = lease.resource_generation,
+        phase,
+        "creation outcome became uncertain: {reason}"
+    );
+}
+
 impl Creation {
+    #[cfg(test)]
+    pub(in crate::app::journal) fn uncertain_reason(&self) -> Option<&str> {
+        match &self.stage {
+            Stage::Uncertain(uncertain) => Some(&uncertain.reason),
+            _ => None,
+        }
+    }
+    /// The committed uncertainty ends this continuation: its owner, if any, moves to the engine
+    /// release. The durable outcome stays unknown, so the held reply reads it as recovery-required.
+    pub(super) fn leave_uncertain(&mut self, session: &mut EngineSession) {
+        let Stage::Uncertain(uncertain) = std::mem::replace(&mut self.stage, Stage::Transition)
+        else {
+            unreachable!("only an uncertain creation leaves as uncertain")
+        };
+        self.receipt
+            .get_or_init(|| ActivationOutcome::Failed(uncertain.reason.clone()));
+        if !uncertain.has_no_evidence() {
+            uncertain
+                .retain_for_release(session.engine_release.get_or_insert_with(Default::default));
+        }
+        self.stage = Stage::Settled { unconfirmed: None };
+    }
     pub(super) fn retain_uncertain(&mut self, reason: String) {
         let owner =
             UncertainOwner::from_stage(std::mem::replace(&mut self.stage, Stage::Transition))
@@ -138,7 +207,7 @@ impl Creation {
     }
     pub(in crate::app::journal) fn cleanup_deadline(&self) -> Option<std::time::Instant> {
         if let Stage::Uncertain(uncertain) = &self.stage {
-            Some(uncertain.deadline())
+            uncertain.deadline()
         } else if let Some(deadline) = self.settling_deadline() {
             Some(deadline)
         } else {
@@ -155,9 +224,57 @@ impl Creation {
         let Stage::Uncertain(uncertain) = &mut self.stage else {
             return Ok(());
         };
-        if !uncertain.begin_poll(std::time::Instant::now()) {
-            return Ok(());
+        let now = std::time::Instant::now();
+        let work = if uncertain.begin_poll(now) {
+            self.reconciliation_work(view, session)?
+        } else {
+            None
+        };
+        let Some(work) = work else {
+            if matches!(&self.stage, Stage::Uncertain(uncertain) if uncertain.window_closed(now)) {
+                self.expire_uncertain(session);
+            }
+            return self.flush(worker).map(|_| ());
+        };
+        self.submit(worker, work)?;
+        let Stage::Uncertain(uncertain) = std::mem::replace(&mut self.stage, Stage::Transition)
+        else {
+            unreachable!("checked uncertain owner");
+        };
+        self.stage = match uncertain.owner {
+            UncertainOwner::Installed(installed) => Stage::Finish {
+                installed,
+                publication: Publication::Pending,
+            },
+            UncertainOwner::Discard { reason, .. } => Stage::Failed(reason),
+            UncertainOwner::FailedInstallation(_) => Stage::Failed(uncertain.reason),
+            _ => unreachable!("only evidenced owners can reconcile"),
+        };
+        self.flush(worker)?;
+        Ok(())
+    }
+
+    fn expire_uncertain(&mut self, session: &mut EngineSession) {
+        if let Stage::Uncertain(uncertain) = &self.stage {
+            tracing::warn!(
+                stream = %self.binding.stream,
+                ticket = self.ticket,
+                "uncertain creation left its owner to the engine release: {}",
+                uncertain.reason
+            );
         }
+        self.leave_uncertain(session);
+    }
+
+    /// Builds the reconciliation from the retained owner's receipts, if they are complete.
+    fn reconciliation_work(
+        &self,
+        view: crate::runtime::journal_product::CompletionView,
+        session: &EngineSession,
+    ) -> Result<Option<Work>, String> {
+        let Stage::Uncertain(uncertain) = &self.stage else {
+            return Ok(None);
+        };
         // Build the work while borrowing the owner. Submission failure must leave ownership intact.
         let work = match &uncertain.owner {
             UncertainOwner::Installed(installed) => installed
@@ -199,24 +316,7 @@ impl Creation {
             }
             _ => None,
         };
-        if let Some(work) = work {
-            self.submit(worker, work)?;
-            let Stage::Uncertain(uncertain) = std::mem::replace(&mut self.stage, Stage::Transition)
-            else {
-                unreachable!("checked uncertain owner");
-            };
-            self.stage = match uncertain.owner {
-                UncertainOwner::Installed(installed) => Stage::Finish {
-                    installed,
-                    publication: Publication::Pending,
-                },
-                UncertainOwner::Discard { reason, .. } => Stage::Failed(reason),
-                UncertainOwner::FailedInstallation(_) => Stage::Failed(uncertain.reason),
-                _ => unreachable!("only evidenced owners can reconcile"),
-            };
-        }
-        self.flush(worker)?;
-        Ok(())
+        Ok(work)
     }
 }
 
@@ -226,17 +326,18 @@ mod tests {
     #[test]
     fn reconciliation_requires_commit_and_preserves_the_original_deadline() {
         let mut state = Uncertain::pending("waiting".into(), UncertainOwner::EngineOwned);
-        let due = state.deadline();
+        let due = state.deadline().unwrap();
         assert!(!state.begin_poll(due + std::time::Duration::from_secs(10)));
+        assert!(!state.window_closed(due + std::time::Duration::from_secs(10)));
         state.acknowledge();
-        assert_eq!(state.deadline(), due);
+        assert_eq!(state.deadline(), Some(due));
         assert!(!state.begin_poll(due - std::time::Duration::from_millis(1)));
         assert!(state.begin_poll(due));
-        let next = state.deadline();
+        let next = state.deadline().unwrap();
         state.acknowledge();
         assert_eq!(
             state.deadline(),
-            next,
+            Some(next),
             "duplicate ACK must not reset retry timing"
         );
         assert!(!state.begin_poll(due));

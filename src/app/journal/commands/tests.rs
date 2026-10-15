@@ -146,6 +146,14 @@ fn boot() -> (EngineSession, JournalApplication) {
 }
 
 fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, JournalApplication) {
+    boot_with(layout, Arc::new(|| {}))
+}
+
+/// `wake` is the App's wake for the worker, the spawner and the journal itself.
+fn boot_with(
+    layout: Option<serde_json::Value>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+) -> (EngineSession, JournalApplication) {
     let resume = layout.is_some();
     let mut settings = crate::settings::Settings::default();
     crate::app::journal::test_shell::use_quiet_shell(&mut settings);
@@ -169,7 +177,7 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(directory.join("01.json"), layout.to_string()).unwrap();
     }
-    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    let mut journal = JournalApplication::new(wake).unwrap();
     journal
         .begin_engine(&session, EngineSelection::Slot { slot: 1, resume })
         .unwrap();
@@ -617,6 +625,9 @@ mod replacement_settle;
 
 #[path = "preparation_tests.rs"]
 mod preparation;
+
+#[path = "recovery_tests.rs"]
+mod recovery;
 
 /// The child command uses `sh` arithmetic and waits on the PTY child process.
 #[cfg(unix)]

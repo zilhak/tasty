@@ -439,6 +439,14 @@ impl App {
         if session.journal_binding.is_none() || !self.journal.is_ready(id) {
             return false;
         }
+        // A failed or uncertain first creation leaves the engine ready without a workspace,
+        // which no View can show. Report it like other engine startup failures.
+        if session.core_state.workspaces().is_empty() {
+            self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(
+                "the first workspace was not created"
+            )));
+            return false;
+        }
         self.boot_transition_after_journal(boot, progress)
     }
 

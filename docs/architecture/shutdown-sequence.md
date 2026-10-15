@@ -114,7 +114,7 @@ present 한다. **부팅과 같은 렌더 함수와 화면 구성**이고 다른
 
 | phase | 문구 키 | 프레임을 넘기는가 |
 |-------|---------|-------------------|
-| `SavingLayout` | `shutdown.phase_saving_layout` | publication·닫기 정리·View 저장·retirement가 남으면 Waiting으로 다음 회차에서 관측. 닫기 정리의 receipt 대기는 관측을 멈추지 않지만 종료는 이를 기다린다. 이 대기 동안 plugin pump가 돌지 않으므로 이 단계가 plugin 회수 응답을 직접 처리한다. 상한은 receipt 시한(5초)이며, 시한이 지나면 닫기는 `Uncertain`으로 기록되고 한 번 응답한 뒤 종료가 이어진다 |
+| `SavingLayout` | `shutdown.phase_saving_layout` | publication·공개 뒤 정리(child CR·교체한 이전 owner의 receipt)·닫기 정리·View 저장·retirement가 남으면 Waiting으로 다음 회차에서 관측. 닫기 정리의 receipt 대기는 관측을 멈추지 않지만 종료는 이를 기다린다. 이 대기 동안 plugin pump가 돌지 않으므로 이 단계가 plugin 회수 응답을 직접 처리한다. 닫기의 상한은 receipt 시한(5초)이며, 시한이 지나면 닫기는 `Uncertain`으로 기록되고 한 번 응답한 뒤 종료가 이어진다. 이 단계 전체의 publication 대기는 첫 대기 때 정한 15초 기한을 넘지 않는다. 기한이 지나면 journal 실행을 중단하고 미완 operation을 다음 시작의 Recovery에 남긴 채 진행한다. 예외로 원 standalone 등록에 반납하지 못한 채택 후보가 있으면 `restore_layout`이 꺼진 엔진의 retirement가 그 생성을 기다려 이 단계가 기한 없이 Waiting에 머문다. 이 경우의 처리는 후속 작업에서 정한다 |
 | `ReclaimingBootWorker` | `shutdown.phase_stopping_background_worker` | 예 (부팅 중 종료 전용) |
 | `ClosingSurfaces` | `shutdown.phase_closing_surfaces` | runner stop의 실제 join 관측 등이 남으면 기한까지 Waiting. 완료 또는 명시한 미회수 처리 뒤 다음 단계로 진행 |
 | `StoppingPlugins` | `shutdown.phase_stopping_plugins` | 남은 대상이 있으면 다음 회차에서 확인. kill·wait는 동기 호출. plugin 정리 뒤 memory writer join이 남으면 기한까지 Waiting |

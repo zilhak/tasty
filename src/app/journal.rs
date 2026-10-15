@@ -77,6 +77,11 @@ pub(crate) struct JournalApplication {
     halted: Option<String>,
 }
 
+/// Longer than each stage shutdown waits for: a settling creation's child input and replaced
+/// owner receipts and a closing retirement's receipts each have a 5 second deadline. So it ends
+/// only a wait that no longer progresses.
+const SHUTDOWN_PUBLICATION_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
+
 impl JournalApplication {
     /// 엔진의 workspace 를 보여 주는 창들의 터미널 영역을 기록한다. 기록이 없는 workspace 의 split 에는
     /// 하한이 없다.
@@ -284,10 +289,39 @@ impl JournalApplication {
                 .any(creation::Creation::pauses_observation)
     }
 
-    /// Shutdown waits for publication and also for retirements that only await their receipts,
-    /// so a close replies once and records its outcome. The receipt deadline bounds the wait.
+    /// Shutdown waits for publication, for the settling of published creations (their child CR
+    /// and replaced owner receipts) and for retirements that only await their receipts, so a
+    /// command replies once and records its outcome. Each stage has its own deadline, and the
+    /// shutdown deadline bounds the whole wait.
     pub(crate) fn shutdown_waits_for_publication(&self) -> bool {
-        self.pauses_observation() || self.cleanup_awaits_any_receipts()
+        self.pauses_observation()
+            || self
+                .creations
+                .values()
+                .any(creation::Creation::awaits_settlement)
+            || self.cleanup_awaits_any_receipts()
+    }
+
+    /// Shutdown waits for publication within one deadline fixed at its first wait; a later poll
+    /// never extends it. Past it, execution halts: unfinished operations keep their records for
+    /// restart recovery. Headless shutdown then moves their owners to the halted release; GUI
+    /// shutdown drops them with the App. Nothing is reported as done.
+    pub(crate) fn shutdown_publication_pending(
+        &mut self,
+        deadline: &mut Option<std::time::Instant>,
+        now: std::time::Instant,
+    ) -> bool {
+        if !self.shutdown_waits_for_publication() || self.is_halted() {
+            return false;
+        }
+        if now < *deadline.get_or_insert(now + SHUTDOWN_PUBLICATION_DEADLINE) {
+            return true;
+        }
+        let reason = "shutdown stopped waiting for unfinished journal publication; its outcome is left to restart recovery";
+        tracing::warn!("{reason}");
+        self.halted = Some(reason.into());
+        self.fail_pending_commands(reason);
+        false
     }
 
     pub(crate) fn cleanup_poll_deadline(&self) -> Option<std::time::Instant> {

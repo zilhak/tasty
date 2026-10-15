@@ -108,6 +108,7 @@ impl Creation {
     ) -> Result<Stage, String> {
         let reason = failure.reason;
         if failure.uncertain {
+            super::uncertain::log_uncertain(&lease, "prepare", &reason);
             self.submit(
                 worker,
                 Work::PreparationUncertain {
@@ -202,13 +203,7 @@ impl Creation {
         let spawned = match outcome {
             Ok(spawned) => spawned,
             Err(reason) => {
-                tracing::warn!(
-                    operation = %lease.operation.0,
-                    stream = %lease.stream,
-                    attempt = lease.attempt,
-                    generation = lease.resource_generation,
-                    "terminal preparation failed after its child may have started: {reason}"
-                );
+                // The failure may follow a started child; preparation_failed logs it once.
                 let failure = PreparationFailure {
                     reason,
                     uncertain: true,

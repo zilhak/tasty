@@ -111,17 +111,19 @@ pub struct TastyInstance {
     startup: StartupTimeline,
 }
 
+/// 격리 설정의 셸이다. 사용자 셸 설정에 의존하지 않도록 /bin/sh, Windows는 시험용 Git Bash를 쓴다.
+/// 셸 설정을 잠시 바꾼 시험이 공유 인스턴스를 이 값으로 되돌린다.
+pub const ISOLATED_SHELL: &str = if cfg!(windows) {
+    "C:/Program Files/Git/bin/bash.exe"
+} else {
+    "/bin/sh"
+};
+
 fn write_isolated_config(isolated_home: &std::path::Path, inherit_cwd: bool, restore_layout: bool) {
     let tasty_dir = isolated_home.join(".tasty");
     std::fs::create_dir_all(&tasty_dir).expect("failed to create isolated .tasty dir");
 
-    let shell_path = if cfg!(windows) {
-        // Windows 시험용 Git Bash 경로.
-        "C:/Program Files/Git/bin/bash.exe"
-    } else {
-        // 사용자 셸 설정에 의존하지 않도록 /bin/sh를 지정한다.
-        "/bin/sh"
-    };
+    let shell_path = ISOLATED_SHELL;
 
     let config = format!(
         r#"[general]

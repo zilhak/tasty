@@ -62,6 +62,8 @@ pub(crate) struct ShutdownState {
     /// memory writer drain의 기한. 첫 대기에서 정하고, 기한을 넘기면 None으로 두고 진행한다.
     memory_writer_deadline: Option<Instant>,
     memory_writer_gave_up: bool,
+    /// Fixed at the first publication wait; it is not reset by later polls.
+    publication_deadline: Option<Instant>,
 }
 
 enum StepOutcome {
@@ -111,6 +113,7 @@ impl App {
             runner_stop_deadline: Instant::now() + Duration::from_secs(5),
             memory_writer_deadline: None,
             memory_writer_gave_up: false,
+            publication_deadline: None,
         });
 
         for session in self.engines.all_sessions_mut() {
@@ -255,7 +258,11 @@ impl App {
             tracing::warn!("shutdown could not advance plugin retirements: {error}");
         }
         self.poll_journal_application();
-        self.journal.shutdown_waits_for_publication() && !self.journal.is_halted()
+        let Some(shutdown) = self.state.shutdown.as_mut() else {
+            return false;
+        };
+        self.journal
+            .shutdown_publication_pending(&mut shutdown.publication_deadline, Instant::now())
     }
 
     /// 부팅 중에는 저장 대상 engine이 아직 없어 빈 레이아웃으로 덮어쓰지 않는다.
