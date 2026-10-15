@@ -40,6 +40,35 @@ Journal이 멈춘 경우의 plugin control pump는 회수 요청과 해당 응�
 일반 응답은 제한된 backlog에 남기며 정상 pump가 명시적으로 재개될 때 원 process
 binding을 확인한다. backlog가 차면 읽기를 멈추고 완료를 추측하지 않는다.
 
+## 생성의 완료 조건
+
+생성·교체(신규 탭·pane·surface 분할·workspace·convert·respawn·adopt·lazy restore·assembly·새
+윈도우 초기화)는 아래 세 사실을 구별한다. 셋은 서로의 증거가 아니다.
+
+| 사실 | 판정 근거 | 증거가 아닌 것 |
+|---|---|---|
+| 구조 사용 가능 | 최종 완료 batch(`FinishCleanup`)를 담은 전체 publication ACK | 설치 허가(`FinishCreation`), 후보 설치, journal commit만 끝난 상태 |
+| 원 자원 회수 | 교체한 이전 PTY의 `Reaped`, 이전 plugin binding의 원 process destroy 응답 | 신호 전송, 등록 제거, FIFO enqueue, 기한 경과, PID 부재 |
+| 입력 전달 | child 본문 ACK(또는 본문 기한) 뒤 settle을 거친 CR의 큐 수락 | 외부 앱의 명령 실행 완료. CR 수락도 실행 결과를 뜻하지 않는다 |
+
+GUI intent·IPC·plugin·headless 진입점은 모두 같은 command 경계를 거치며, 원 명령의 성공 응답은
+해당 command의 확정 결과를 읽은 뒤 한 번 전달한다. 같은 키의 재요청은 저장된 결과를 돌려주고
+외부 실행을 새로 만들지 않는다.
+
+현재 구현의 대기 관계는 다음과 같다.
+
+| 단계 | 기다리는 조건 | App 관측 |
+|---|---|---|
+| 준비(`PrepareCreation` 뒤 claim) | App journal pump 안에서 PTY spawn·kind factory 실행 | 실행 동안 App 이벤트 처리가 멈춘다 |
+| 설치(`FinishCreation` 공개 중) | publication 처리 안에서 후보 설치·이전 owner 분리 | 전역 보류 |
+| 설치 뒤 | child 입력 전달과 원 자원 회수를 모두 기다린 뒤 `CleanupFinished` 제출(각 기한 5초) | 전역 보류 |
+| 최종 공개 | `FinishCleanup` commit과 전체 publication ACK | 전역 보류 |
+| 불명(`Uncertain`) | 설치 owner·폐기 receipt가 있을 때만 1초 간격 재확인. 실패한 설치와 준비 중 불명은 재확인 요청이 없다 | 전역 보류가 정합까지 유지된다 |
+| 원 명령 응답 | 최종 commit의 확정 결과. 불명이면 InProgress로 남는다 | - |
+
+standalone 채택은 준비 완료부터 설치 또는 원위치 반납까지도 전역 보류한다. GUI 종료의
+`SavingLayout`은 이 보류가 풀리기를 기다리며 별도 기한이 없다.
+
 ## EngineSession 해제
 
 닫힌 View나 실패한 View 생성의 EngineSession도 필수 의무를 먼저 배출한다.
