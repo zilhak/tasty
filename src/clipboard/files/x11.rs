@@ -1,4 +1,5 @@
-//! X11 CLIPBOARD 선택으로 파일 목록을 주고받는다. Wayland 세션에서는 XWayland 가 Wayland 클립보드와 잇는다.
+//! X11 CLIPBOARD 선택으로 파일 목록을 주고받고, 스크린샷의 경로 텍스트와 PNG 를 함께 올린다.
+//! Wayland 세션에서는 XWayland 가 Wayland 클립보드와 잇는다.
 //!
 //! 쓰기는 별도 연결과 1×1 창으로 선택을 소유하고, 소유를 잃을 때까지(다른 앱이 복사하거나
 //! [`clear`]) 스레드 하나가 요청에 답한다. 읽기는 호출마다 연결을 새로 열어 TARGETS 를 묻고
@@ -33,6 +34,7 @@ x11rb::atom_manager! {
         UTF8_STRING,
         TEXT_PLAIN_UTF8: b"text/plain;charset=utf-8",
         URI_LIST: b"text/uri-list",
+        PNG: b"image/png",
         GNOME_COPIED_FILES: b"x-special/gnome-copied-files",
         KDE_CUT_SELECTION: b"application/x-kde-cutselection",
         TASTY_FILES_REPLY,
@@ -109,6 +111,38 @@ pub(super) fn write(files: &OsFiles) -> Result<(), ClipboardError> {
         (a.UTF8_STRING, text.clone().into_bytes()),
         (a.TEXT_PLAIN_UTF8, text.into_bytes()),
     ];
+    own(s, offers, "file-clipboard-owner")
+}
+
+/// 경로 텍스트와 PNG 를 한 소유자의 형식으로 함께 올린다. 다른 앱은 같은 선택에서 글자와 그림을
+/// 각각 읽는다. PNG 가 X11 요청 하나에 담기지 않으면 소유하지 않고 실패한다(응답을 INCR 로 나눠
+/// 보내지 않는다). 그때는 호출자가 텍스트만 다시 쓴다.
+pub(crate) fn write_text_and_png(text: &str, png: &[u8]) -> Result<(), ClipboardError> {
+    let s = open(EventMask::NO_EVENT)?;
+    let limit = offer_limit(&s);
+    if png.len() > limit {
+        return Err(ClipboardError::TransferFailed(format!(
+            "X11: image of {} bytes is larger than one X11 request ({limit} bytes)",
+            png.len()
+        )));
+    }
+    let a = &s.atoms;
+    let offers = vec![
+        (a.PNG, png.to_vec()),
+        (a.UTF8_STRING, text.as_bytes().to_vec()),
+        (a.TEXT_PLAIN_UTF8, text.as_bytes().to_vec()),
+    ];
+    own(s, offers, "capture-clipboard-owner")
+}
+
+/// 응답 하나에 실을 수 있는 바이트 수.
+fn offer_limit(s: &Session) -> usize {
+    s.conn.maximum_request_bytes().saturating_sub(64)
+}
+
+/// 선택을 잡고, 잃을 때까지 `offers` 로 답하는 스레드를 띄운다.
+fn own(s: Session, offers: Vec<(u32, Vec<u8>)>, thread: &str) -> Result<(), ClipboardError> {
+    let a = &s.atoms;
     s.conn
         .set_selection_owner(s.win, a.CLIPBOARD, CURRENT_TIME)
         .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
@@ -123,7 +157,7 @@ pub(super) fn write(files: &OsFiles) -> Result<(), ClipboardError> {
         return Err("X11: could not take the clipboard".into());
     }
     std::thread::Builder::new()
-        .name("file-clipboard-owner".into())
+        .name(thread.into())
         .spawn(move || serve(&s, &offers))
         .map_err(|e| ClipboardError::TransferFailed(e.to_string()))?;
     Ok(())
@@ -161,7 +195,7 @@ fn answer(
         req.property
     };
     // 한 요청에 담을 수 있는 크기를 넘으면 거절한다(INCR 로 나눠 보내지 않는다).
-    let limit = s.conn.maximum_request_bytes().saturating_sub(64);
+    let limit = offer_limit(s);
     let answered = if req.selection != a.CLIPBOARD {
         false
     } else if req.target == a.TARGETS {

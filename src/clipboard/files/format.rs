@@ -2,7 +2,8 @@
 //!
 //! - Linux: `text/uri-list`(RFC 2483, 줄 끝 CRLF), GNOME `x-special/gnome-copied-files`(첫 줄 `copy`·`cut`,
 //!   뒤 줄마다 URI), KDE `application/x-kde-cutselection`(`1` 이면 잘라내기).
-//! - Windows: `CF_HDROP` 의 `DROPFILES` 구조와 `Preferred DropEffect` DWORD.
+//! - Windows: `CF_HDROP` 의 `DROPFILES` 구조와 `Preferred DropEffect` DWORD. 스크린샷 게시용
+//!   `CF_UNICODETEXT`(NUL 로 끝나는 UTF-16)와 `CF_DIB`(32비트 BGRA, 아래에서 위 행 순서).
 //! - macOS: pasteboard 항목마다의 URL 문자열.
 
 #[cfg(any(target_os = "linux", all(test, unix)))]
@@ -124,6 +125,48 @@ pub(crate) fn dropfiles(paths: &[PathBuf]) -> Vec<u8> {
     out
 }
 
+/// `CF_UNICODETEXT` 메모리 내용. UTF-16LE 뒤에 NUL 을 붙인다.
+#[cfg(any(windows, test))]
+pub(crate) fn unicode_text(text: &str) -> Vec<u8> {
+    text.encode_utf16()
+        .chain(std::iter::once(0))
+        .flat_map(u16::to_le_bytes)
+        .collect()
+}
+
+/// `CF_DIB` 의 `BITMAPINFOHEADER` 크기.
+#[cfg(any(windows, test))]
+const BITMAPINFOHEADER_LEN: usize = 40;
+
+/// `CF_DIB` 메모리 내용. 위에서 아래 RGBA 픽셀을 `BI_RGB` 32비트, 아래에서 위 행 순서의 BGRA 로
+/// 바꾼다. `rgba` 길이가 `width × height × 4` 가 아니면 None.
+#[cfg(any(windows, test))]
+pub(crate) fn dib(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {
+    let row = usize::try_from(width).ok()?.checked_mul(4)?;
+    let image_len = row.checked_mul(usize::try_from(height).ok()?)?;
+    if rgba.len() != image_len {
+        return None;
+    }
+    let mut out = Vec::with_capacity(BITMAPINFOHEADER_LEN + image_len);
+    out.extend_from_slice(&(BITMAPINFOHEADER_LEN as u32).to_le_bytes());
+    out.extend_from_slice(&i32::try_from(width).ok()?.to_le_bytes());
+    // 양수 높이는 아래 행부터 저장한다는 뜻이다.
+    out.extend_from_slice(&i32::try_from(height).ok()?.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&32u16.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // BI_RGB
+    out.extend_from_slice(&u32::try_from(image_len).ok()?.to_le_bytes());
+    out.extend_from_slice(&[0u8; 16]); // 해상도·색 표 항목 없음
+    if row > 0 {
+        for line in rgba.chunks_exact(row).rev() {
+            for px in line.chunks_exact(4) {
+                out.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
+            }
+        }
+    }
+    Some(out)
+}
+
 /// `CF_HDROP` 메모리 내용을 경로 목록으로 읽는다. 구조가 맞지 않으면 None.
 #[cfg(any(windows, test))]
 pub(crate) fn parse_dropfiles(bytes: &[u8]) -> Option<Vec<PathBuf>> {
@@ -242,6 +285,38 @@ mod tests {
             OsClip::NotLocal
         );
         assert_eq!(parse_uri_list("# comment\r\n\r\n", None), OsClip::Other);
+    }
+
+    #[test]
+    fn unicode_text_is_nul_terminated_utf16() {
+        assert_eq!(unicode_text("a한"), vec![b'a', 0, 0x5C, 0xD5, 0, 0]);
+    }
+
+    #[test]
+    fn dib_stores_bgra_rows_bottom_up_behind_the_header() {
+        // 2×2: 위 행 빨강·초록, 아래 행 파랑·흰색.
+        let rgba = [
+            255, 0, 0, 255, 0, 255, 0, 255, //
+            0, 0, 255, 255, 255, 255, 255, 128,
+        ];
+        let out = dib(2, 2, &rgba).expect("dib");
+        assert_eq!(out.len(), 40 + 16);
+        let word = |at: usize| u32::from_le_bytes(out[at..at + 4].try_into().unwrap());
+        assert_eq!(word(0), 40);
+        assert_eq!(word(4), 2);
+        assert_eq!(word(8), 2);
+        assert_eq!(u16::from_le_bytes([out[12], out[13]]), 1);
+        assert_eq!(u16::from_le_bytes([out[14], out[15]]), 32);
+        assert_eq!(word(16), 0);
+        assert_eq!(word(20), 16);
+        assert_eq!(
+            &out[40..],
+            &[
+                255, 0, 0, 255, 255, 255, 255, 128, //
+                0, 0, 255, 255, 0, 255, 0, 255,
+            ]
+        );
+        assert_eq!(dib(2, 2, &rgba[..12]), None);
     }
 
     #[test]

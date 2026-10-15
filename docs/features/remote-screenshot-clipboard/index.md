@@ -8,7 +8,7 @@
 
 ## 목적
 
-포커스된 surface 가 **mirror(원격 attach) 워크스페이스**에 속할 때, 인터랙티브 화면 캡처 결과를 로컬이 아니라 **원격 인스턴스의 클립보드**에 반영한다. 로컬 surface 를 보며 찍은 스크린샷이 로컬 클립보드로 가는 기존 동작(OS 네이티브 캡처 → `ClipboardSystem::write_text(경로)`)은 그대로 유지하고, mirror 포커스일 때만 캡처 파일을 attach 채널로 원격에 올려 원격 클립보드에 쓴다 — "찍은 화면이 실제로 보고 있는 머신의 클립보드로 간다"는 사용자 기대를 만족시키기 위함.
+포커스된 surface 가 **mirror(원격 attach) 워크스페이스**에 속할 때, 인터랙티브 화면 캡처 결과를 로컬이 아니라 **원격 인스턴스의 클립보드**에 반영한다. 로컬 surface 를 보며 찍은 스크린샷은 로컬 클립보드에 저장 경로 텍스트와 이미지로 올리고, mirror 포커스일 때만 캡처 파일을 attach 채널로 원격에 올려 원격 클립보드에 같은 두 형식으로 올린다 — "찍은 화면이 실제로 보고 있는 머신의 클립보드로 간다"는 사용자 기대를 만족시키기 위함.
 
 ## 내부 동작 (headless-valid)
 
@@ -39,7 +39,7 @@
 | 출력 없음 (`NoOutput`) | 파일이 없고 취소 신호도 없다. 취소인지 출력 없는 실패인지 구별할 수 없다 | 멈춤 |
 
 - 모든 후보가 없으면 `Unavailable`, 하나 이상 실행했지만 모두 실패하면 각 후보의 실패 사유를 모은 `Tool` 오류다.
-- 저장 디렉터리를 만들지 못하거나 mirror 전송을 위해 저장된 파일을 다시 읽지 못하면 `Storage` 다. 도구가 지정 경로에 쓰지 못한 경우는 도구 실패로 나타난다.
+- 저장 디렉터리를 만들지 못하거나 저장된 파일을 다시 읽지 못하면(로컬 디코딩·mirror 전송 모두) `Storage` 다. 도구가 지정 경로에 쓰지 못한 경우는 도구 실패로 나타난다.
 - 사용자 취소와 출력 없음에서 멈추는 것은 사용자가 이미 닫은 선택 UI 뒤에 다른 도구의 선택 UI를 연달아 열지 않기 위해서다. 두 경우 모두 클립보드를 바꾸지 않는다.
 
 도구별 판정은 다음과 같다.
@@ -66,7 +66,25 @@ preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해�
 
 ### 로컬 케이스
 
-캡처 성공 시 파일 경로 문자열을 `ClipboardSystem::write_text(path)` 로 로컬 클립보드에 쓴다(기존 `ui.screenshot`/이미지 붙여넣기와 동일한 "경로를 클립보드에 넣는다" 관례).
+캡처 성공 시 캡처 워커가 저장 파일을 읽어 PNG 를 디코딩하고(`clipboard::capture_image::decode_png`), UI 스레드는 `ports::clipboard::publish_text_with_image` 로 저장 경로 텍스트와 이미지를 로컬 클립보드에 함께 올린다.
+
+### 클립보드 게시 (경로 텍스트 + 이미지)
+
+로컬과 원격 서버가 같은 규칙으로 게시한다.
+
+- `ClipboardSystem::write_text_and_image` 가 한 번의 게시로 두 형식을 올린다. arboard 의 setter 는 부를 때마다 이전 형식을 지우므로 쓰지 않고, Explorer 파일 클립보드와 같은 플랫폼 소유자(`src/clipboard/files.rs::write_text_and_image`)를 쓴다.
+
+| OS | 올리는 형식 |
+|---|---|
+| Linux (X11·XWayland) | 한 CLIPBOARD 소유자가 `image/png`(저장 파일과 같은 바이트), `UTF8_STRING`, `text/plain;charset=utf-8` 를 함께 제공한다. PNG 가 X11 요청 하나(`maximum_request_bytes` − 64)를 넘으면 소유하지 않고 실패한다(INCR 로 나눠 보내지 않는다) |
+| Windows | 클립보드를 한 번 열어 `CF_UNICODETEXT`, 등록 형식 `PNG`, `CF_DIB`(32비트 BGRA, 아래 행부터)를 올린다 |
+| macOS | 일반 pasteboard 를 비운 뒤 `NSPasteboardTypeString` 과 `NSPasteboardTypePNG` 를 올린다(`tasty-platform::pasteboard`) |
+
+- 결과는 `CaptureCopy` 셋 중 하나다. 경로 텍스트와 이미지를 함께 올리면 `TextAndImage`. 디코딩 실패, 함께 게시 실패, 이미지 미지원 어댑터면 경로 텍스트만 다시 써서 `TextOnly`(이미지 실패 사유 포함). 텍스트도 쓰지 못하면 `Failed`. 일부 형식만 남았을 수 있는 실패를 성공으로 보고하지 않으려고 텍스트를 다시 쓴다.
+- 헤드리스 빌드의 클립보드 어댑터는 이미지를 지원하지 않고 텍스트 쓰기도 실패하므로 `Failed` 다. 성공을 가장하지 않는다.
+- 터미널 붙여넣기는 텍스트 형식을 먼저 읽으므로(`ClipboardContext::read_paste`) 저장 경로가 들어가고, 이미지 붙여넣기를 받는 앱은 이미지 형식을 읽는다. Clipboard Viewer 는 열 때 읽는 snapshot 에 Text 와 Image 를 함께 보인다.
+- 클립보드 소유는 다른 앱이 복사하거나 Tasty 가 다른 내용을 쓸 때까지 이어진다. Linux 는 그동안 소유 스레드가 PNG 바이트를 들고 있다.
+- 디코딩 비용: 3840×2160 PNG(무작위 픽셀, 33MB)에 약 26~30ms(이 저장소의 dev 프로필은 의존 크레이트를 최적화한다). 로컬은 캡처 워커에서 디코딩한다. 원격 서버는 저장 파일 재읽기·PNG 디코딩·클립보드 게시를 서버 GUI 의 이벤트 루프 스레드에서 동기로 처리한다(`event_handler.rs` 의 `CaptureCommit` 처리 → `finalize_capture_upload` → `save_capture_and_set_clipboard`). 그래서 mirror 캡처 하나마다 서버 화면이 디코딩 시간(위 실측 26.0·28.7·30.1ms)과 재읽기·게시 시간(미측정)만큼 멈춘다. 헤드리스 서버는 이미지를 디코딩하지 않는다.
 
 ### 원격(mirror) 케이스 — 기존 attach 채널 확장 (신규 프로토콜 없음)
 
@@ -75,17 +93,17 @@ preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해�
 
 - `capture_chunk` { `upload_id`, `seq`, `total`, `data_b64` } — 캡처 파일을 raw 700KiB 청크 단위로 base64 인코딩해 전송(base64 인플레이션 후에도 `MAX_FRAME_LEN`(1MiB) 아래 유지).
 - `capture_commit` { `upload_id`, `file_name` } — 마지막 청크 뒤 1회, 업로드 종료를 알림.
-- `capture_result` { `ok`, `path?`, `reason?` } — 서버(원격)→client 회신.
+- `capture_result` { `upload_id`, `ok`, `path?`, `reason?`, `image?`, `image_reason?` } — 서버(원격)→client 회신. `ok` 는 경로 텍스트를 원격 클립보드에 쓴 것이고, `image` 는 이미지도 함께 올렸는지다. 저장은 했지만 클립보드에 쓰지 못하면 `ok:false` 와 함께 저장 `path` 를 싣는다. `image` 를 싣지 않는 옛 서버의 `ok:true` 는 경로만 쓴 성공으로 읽는다.
 
 client 측(`src/app/attach_client/bulk.rs::forward_capture_to_remote_clipboard`)은 로컬 워크스페이스 id 로 해당 attach 세션을 찾아 청크+커밋을 순서대로 보낸다. 서버(원격 인스턴스) 측은 `stream_hub.rs::pump_inbound` 가 `StreamControl` 파싱 실패 시 `CaptureUploadMsg` 로 재시도해 분류하고, `CaptureUploadRegistry`(`(client_id, upload_id)` 키)에 청크를 누적하다 커밋에서 `attach_runtime::finalize_capture_upload` 를 호출한다.
 
 **서버측 처리(`finalize_capture_upload`)**:
 1. 그 client 가 해당 engine의 workspace를 hard 점유 중인지(`OccupancyRegistry::client_holds_workspace`) 확인 — attach 연결 자체가 이미 권한 경계이므로 별도 인증 계층을 새로 만들지 않는다(구조 변경 forward 와 동일한 신뢰 모델).
 2. `file_name` 을 **basename 만** 취해(path traversal 방지) `~/.tasty/screenshots/<name>` 에 저장.
-3. `Core::clipboard_arc().write_text(경로)` 로 **원격 인스턴스의** 클립보드에 쓴다(`clipboard.set_text` IPC 와 동일 코드 경로, 다만 attach 미니 프로토콜은 이 IPC 를 거치지 않고 직접 `ClipboardSystem` 을 호출한다 — 같은 프로세스 내부 호출이라 JSON-RPC 왕복이 불필요).
+3. 저장 파일을 디코딩해 `publish_text_with_image` 로 **원격 인스턴스의** 클립보드에 경로 텍스트와 이미지를 올린다(위 "클립보드 게시"). 텍스트 쓰기는 `clipboard.set_text` IPC 와 같은 `ClipboardSystem` 을 쓰지만, attach 미니 프로토콜은 이 IPC 를 거치지 않고 같은 프로세스 안에서 직접 호출한다(JSON-RPC 왕복이 불필요).
 4. 결과를 `capture_result` 프레임으로 client 에 회신.
 
-client 는 `capture_result` 를 받아 성공/실패 토스트(`attach.toast.mirror_capture_saved`/`attach.toast.mirror_capture_failed`)를 띄운다.
+client 는 `capture_result` 를 받아 토스트를 띄운다. `ok:false` 는 `attach.toast.mirror_capture_failed`, 이미지까지 올렸으면 `attach.toast.mirror_capture_saved`, 경로만 올렸으면 `attach.toast.mirror_capture_path_only`(이미지 실패 사유), `image` 가 없는 옛 서버의 성공은 `attach.toast.mirror_capture_path_only_old_server` 다.
 
 ## 인터페이스
 
@@ -102,8 +120,10 @@ client 는 `capture_result` 를 받아 성공/실패 토스트(`attach.toast.mir
 
 ## Acceptance Criteria
 
-- Given 로컬(비-mirror) surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then OS 인터랙티브 캡처 후 캡처 파일 경로가 로컬 클립보드에 쓰인다.
-- Given mirror 워크스페이스의 surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then 캡처 파일이 attach 채널로 원격에 전송되고, 원격 인스턴스의 클립보드에 그 원격 경로가 쓰인다(로컬 클립보드는 바뀌지 않는다).
+- Given 로컬(비-mirror) surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then OS 인터랙티브 캡처 후 캡처 파일 경로 텍스트와 같은 그림의 이미지가 로컬 클립보드에 함께 올라간다.
+- Given 저장 PNG 를 디코딩하지 못하거나 이미지 게시가 실패 When 캡처를 게시 Then 경로 텍스트만 올라가고 결과는 경로만 복사한 부분 성공이다.
+- Given mirror 워크스페이스의 surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then 캡처 파일이 attach 채널로 원격에 전송되고, 원격 인스턴스의 클립보드에 그 원격 경로 텍스트와 이미지가 올라간다(로컬 클립보드는 바뀌지 않는다).
+- Given 원격 서버가 `capture_result` 에 `image` 를 싣지 않는 옛 버전 When mirror 캡처가 성공 Then 클라이언트는 이미지까지 복사한 성공이 아니라 경로만 복사한 성공으로 안내한다.
 - Given 캡처가 사용자에 의해 취소됨(Esc 등) Then 로컬/원격 어느 클립보드도 바뀌지 않는다.
 - Given Linux 에서 첫 캡처 도구가 비정상 종료하고 다음 후보가 설치됨 When 캡처 트리거 Then 다음 후보를 실행하고 그 결과를 사용한다. 모든 후보가 실패하면 결과는 취소가 아니라 도구 실패다.
 - Given 캡처 도구가 정상 종료했지만 파일을 남기지 않음 When 캡처 트리거 Then 다음 후보를 실행하지 않고 어느 클립보드도 바꾸지 않으며, 결과는 사용자 취소가 아니라 출력 없음으로 분류된다.
@@ -135,6 +155,7 @@ Wayland 도구(grim·slurp)와 macOS·Windows 는 실제 실행하지 않았고 
 - App 폴링/스레딩: `src/app/screenshot_capture.rs`(`poll_screenshot_captures`/`trigger_pending_screenshot_captures`/`drain_screenshot_capture_results`), `src/app.rs`(`screenshot_capture_tx/rx`), `src/app/event.rs`(`AppEvent::ScreenshotCaptureReady`).
 - 큐: `src/remote/state.rs`의 `RemoteState.pending_screenshot_captures` — 원 mirror workspace와 View를 보관하며 `src/app/engine_action.rs`에서 채운다.
 - 키바인딩: `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard` 필드 + `default_screenshot_to_clipboard`), `presets.rs`(4 프리셋 공통값), `crud.rs`(`GENERAL_BINDING_FIELDS`/`get_bindings(_mut)`), 매치는 `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`). Settings UI: `src/view/settings/ui/keybindings_tab.rs`(Clipboard 서브탭).
+- 클립보드 게시: `src/ports/clipboard.rs`(`ClipboardImage`, `CaptureCopy`, `publish_text_with_image`), `src/clipboard/capture_image.rs`(`decode_png`), `src/clipboard/files.rs`(`write_text_and_image`)와 `files/x11.rs`·`files/windows.rs`·`files/format.rs`(`dib`, `unicode_text`), `crates/tasty-platform/src/pasteboard.rs`(macOS), `src/adapters/production/arboard_clip.rs`.
 - 원격 전송(client): `src/app/attach_client/bulk.rs`(`forward_capture_to_remote_clipboard`), `src/app/attach_client/wire.rs`(`send_control_frame`, `parse_capture_result`), `src/app/attach_client/output.rs`(`MirrorEvent::CaptureResult`).
 - 원격 수신(server): `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`, `pump_inbound` 분류), `src/remote/capture_upload.rs`(`CaptureUploadRegistry`), `src/remote/server.rs`(`finalize_capture_upload`, `save_capture_and_set_clipboard`). GUI(`src/app/event_handler.rs::apply_capture_upload_msg`)와 headless(`src/boot/headless_stream.rs::apply_capture_uploads`) 양쪽 진입점에서 동일 서버 로직을 호출.
 - IPC/CLI: `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text` → `Permission::ClipboardWrite`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`), `crates/tasty-cli/src/commands/clipboard.rs`(`ClipboardCommands::SetText`), `crates/tasty-cli/src/request/clipboard.rs`.

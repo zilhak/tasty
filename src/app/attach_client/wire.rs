@@ -57,13 +57,20 @@ pub(super) fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
     }
 }
 
+/// 옛 서버는 `image`·`image_reason` 을 싣지 않는다. 그 응답의 `ok` 는 경로만 쓴 성공이다.
 #[derive(serde::Deserialize)]
 struct CaptureResultWire {
+    #[serde(default)]
+    upload_id: Option<u64>,
     ok: bool,
     #[serde(default)]
     path: Option<String>,
     #[serde(default)]
     reason: Option<String>,
+    #[serde(default)]
+    image: Option<bool>,
+    #[serde(default)]
+    image_reason: Option<String>,
 }
 
 fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
@@ -73,9 +80,12 @@ fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
     }
     let wire: CaptureResultWire = serde_json::from_value(value).ok()?;
     Some(MirrorEvent::CaptureResult {
+        upload_id: wire.upload_id,
         ok: wire.ok,
         path: wire.path,
         reason: wire.reason,
+        image: wire.image,
+        image_reason: wire.image_reason,
     })
 }
 

@@ -77,3 +77,64 @@ fn a_resize_rejection_becomes_its_own_event() {
         Some(MirrorEvent::ResizeRejected(4, 90, 30))
     ));
 }
+
+#[test]
+fn capture_result_keeps_the_image_scope_and_reads_an_old_server_as_path_only() {
+    let new_ok = serde_json::json!({
+        "event": "capture_result", "upload_id": 7, "ok": true,
+        "path": "/r/s.png", "image": true,
+    });
+    let Some(MirrorEvent::CaptureResult {
+        upload_id,
+        ok,
+        image,
+        image_reason,
+        ..
+    }) = parse_capture_result(&serde_json::to_vec(&new_ok).unwrap())
+    else {
+        panic!("not a capture result");
+    };
+    assert_eq!(
+        (upload_id, ok, image, image_reason),
+        (Some(7), true, Some(true), None)
+    );
+
+    let path_only = serde_json::json!({
+        "event": "capture_result", "upload_id": 8, "ok": true,
+        "path": "/r/s.png", "image": false, "image_reason": "decode",
+    });
+    let Some(MirrorEvent::CaptureResult {
+        image,
+        image_reason,
+        ..
+    }) = parse_capture_result(&serde_json::to_vec(&path_only).unwrap())
+    else {
+        panic!("not a capture result");
+    };
+    assert_eq!(
+        (image, image_reason.as_deref()),
+        (Some(false), Some("decode"))
+    );
+
+    // 옛 서버는 image 를 싣지 않는다. 이미지까지 복사했다고 읽으면 안 된다.
+    let old = serde_json::json!({
+        "event": "capture_result", "upload_id": 9, "ok": true, "path": "/r/s.png",
+    });
+    let Some(MirrorEvent::CaptureResult { ok, image, .. }) =
+        parse_capture_result(&serde_json::to_vec(&old).unwrap())
+    else {
+        panic!("not a capture result");
+    };
+    assert_eq!((ok, image), (true, None));
+
+    // upload_id 없는 거절 회신도 읽는다.
+    let rejected = serde_json::json!({ "event": "capture_result", "ok": false, "reason": "x" });
+    assert!(matches!(
+        parse_capture_result(&serde_json::to_vec(&rejected).unwrap()),
+        Some(MirrorEvent::CaptureResult {
+            upload_id: None,
+            ok: false,
+            ..
+        })
+    ));
+}

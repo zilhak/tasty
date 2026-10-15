@@ -25,7 +25,7 @@ tray-icon = { version = "0.22", optional = true }
 # macOS 권한 조회도 본체와 같은 홈 디렉터리 해석을 사용한다.
 directories = { version = "6", optional = true }
 objc2 = { version = "0.6", optional = true }
-objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"], optional = true }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray", "NSData"], optional = true }
 objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "libc"], optional = true }
 
 [target.'cfg(windows)'.dependencies]

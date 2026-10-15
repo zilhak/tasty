@@ -1,4 +1,5 @@
 //! Windows 클립보드의 `CF_HDROP` 과 `Preferred DropEffect`. Explorer 가 쓰는 형식과 같다.
+//! 스크린샷은 `CF_UNICODETEXT`(경로)·`PNG`·`CF_DIB` 를 한 번 연 클립보드에 함께 올린다.
 //!
 //! 클립보드는 호출 스레드의 메시지 전용 창을 소유자로 열어 연다. 소유 창 없이 연 클립보드에서
 //! `EmptyClipboard` 뒤 `SetClipboardData` 는 실패한다고 문서화돼 있다.
@@ -23,6 +24,9 @@ use super::{OsClip, OsFiles};
 
 /// 표준 형식 `CF_HDROP`.
 const CF_HDROP: u32 = 15;
+/// 표준 형식 `CF_UNICODETEXT`·`CF_DIB`.
+const CF_UNICODETEXT: u32 = 13;
+const CF_DIB: u32 = 8;
 
 /// 다른 프로그램이 클립보드를 잡고 있을 때 다시 여는 횟수와 간격.
 const OPEN_ATTEMPTS: u32 = 10;
@@ -167,6 +171,27 @@ pub(super) fn write(files: &OsFiles) -> Result<(), String> {
     unsafe { EmptyClipboard() }.map_err(|e| format!("EmptyClipboard failed: {e}"))?;
     set(CF_HDROP, &format::dropfiles(&files.paths))?;
     set(effect_format, &effect.to_le_bytes())
+}
+
+/// 경로 텍스트와 이미지를 한 번 연 클립보드에 함께 올린다. 형식 하나라도 실패하면 Err 이며, 그때
+/// 클립보드에 일부 형식이 남을 수 있어 호출자가 텍스트만 다시 쓴다.
+pub(crate) fn write_text_and_image(
+    text: &str,
+    image: &crate::ports::clipboard::ClipboardImage,
+) -> Result<(), String> {
+    let dib = format::dib(image.width, image.height, &image.rgba)
+        .ok_or("image pixels do not match its size")?;
+    // SAFETY: 상수 와이드 문자열을 넘긴다.
+    let png_format = match unsafe { RegisterClipboardFormatW(w!("PNG")) } {
+        0 => return Err("RegisterClipboardFormatW(PNG) failed".into()),
+        id => id,
+    };
+    let _open = Opened::new()?;
+    // SAFETY: 클립보드가 열려 있다.
+    unsafe { EmptyClipboard() }.map_err(|e| format!("EmptyClipboard failed: {e}"))?;
+    set(CF_UNICODETEXT, &format::unicode_text(text))?;
+    set(png_format, &image.png)?;
+    set(CF_DIB, &dib)
 }
 
 pub(super) fn read() -> Result<OsClip, String> {

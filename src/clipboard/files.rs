@@ -7,6 +7,8 @@
 //! - macOS: 파일 URL(`macos.rs`). Finder 의 클립보드에는 잘라내기 표지가 없어 늘 복사로 읽고, 파일이 아닌 URL 이
 //!   섞이면 목록 전체를 이 컴퓨터의 파일이 아닌 것으로 본다.
 //!
+//! 스크린샷의 경로 텍스트+이미지 게시([`write_text_and_image`])도 같은 플랫폼 소유자를 쓴다.
+//!
 //! 호출은 [`Handle`] 을 거친다. 시험 빌드의 기본값은 메모리 대역이라 시험이 실제 클립보드를 건드리지 않는다.
 
 mod format;
@@ -16,6 +18,27 @@ mod macos;
 mod windows;
 #[cfg(target_os = "linux")]
 mod x11;
+
+/// 스크린샷의 경로 텍스트와 이미지를 한 번의 게시로 함께 올린다. 파일 목록과 같은 플랫폼 소유자를
+/// 쓴다. macOS 는 `tasty-platform` 의 pasteboard 쓰기를 쓴다.
+pub(crate) fn write_text_and_image(
+    text: &str,
+    image: &crate::ports::clipboard::ClipboardImage,
+) -> Result<(), ClipboardError> {
+    #[cfg(target_os = "linux")]
+    return x11::write_text_and_png(text, &image.png);
+    #[cfg(windows)]
+    return windows::write_text_and_image(text, image).map_err(ClipboardError::TransferFailed);
+    #[cfg(target_os = "macos")]
+    return crate::platform::pasteboard::write_text_and_png(text, &image.png)
+        .map_err(ClipboardError::TransferFailed);
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+    Err(format!(
+        "image clipboard is not supported on this OS ({} bytes)",
+        image.png.len()
+    )
+    .into())
+}
 
 use super::error::{ClipboardError, DisplayBackend};
 use std::path::PathBuf;
@@ -315,6 +338,33 @@ mod tests {
         assert!(!read.cut);
         #[cfg(not(target_os = "macos"))]
         assert!(read.cut);
+    }
+
+    /// 경로 텍스트와 PNG 를 함께 올린 뒤 다른 클립보드 연결이 두 형식을 각각 읽는다. 뒤의 형식이 앞의
+    /// 형식을 지우지 않는지 본다. Linux 는 격리된 X 서버에서
+    /// `DISPLAY=:N cargo test -- --ignored text_and_image`.
+    #[test]
+    #[ignore = "writes the real OS clipboard; run on an isolated display"]
+    fn the_os_clipboard_keeps_text_and_image_published_together() {
+        let _clipboard = os_clipboard_test_lock();
+        let pixels = image::RgbaImage::from_fn(3, 2, |x, y| {
+            image::Rgba([(x * 80) as u8, (y * 120) as u8, 200, 255])
+        });
+        let mut png = Vec::new();
+        pixels
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .expect("encode");
+        let image = crate::clipboard::capture_image::decode_png(png).expect("decode");
+        write_text_and_image("/tmp/tasty capture 한.png", &image).expect("publish");
+        let mut reader =
+            crate::clipboard::ClipboardContext::new(crate::clipboard::error::DisplayBackend::Other);
+        assert_eq!(
+            reader.get_text().expect("text").as_deref(),
+            Some("/tmp/tasty capture 한.png")
+        );
+        let read = reader.get_image().expect("image").expect("an image format");
+        assert_eq!((read.width, read.height), (3, 2));
+        assert_eq!(read.bytes.as_ref(), image.rgba.as_slice());
     }
 
     /// 실제 OS 클립보드로 쓰기·읽기·비우기를 한 바퀴 돈다. 사용자 클립보드를 덮어쓰므로 기본으로는

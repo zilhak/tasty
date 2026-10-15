@@ -1718,8 +1718,12 @@ mirror_structural_forward_failed = "원격 워크스페이스가 그 변경을 �
 mirror_restore_empty = "원격 워크스페이스에 복원할 항목이 없습니다."
 mirror_markdown_truncated = "원격 문서가 너무 커서 미러 화면에는 일부만 표시합니다."
 close_blocked_hard_occupied = "원격 세션이 사용 중인 터미널이 있어 닫지 않았습니다. 강제 끊기로 회수한 뒤 다시 시도하세요."
-mirror_capture_saved = "스크린샷을 원격 클립보드로 복사했습니다."
+mirror_capture_saved = "스크린샷 이미지와 경로를 원격 클립보드로 복사했습니다."
 mirror_capture_failed = "스크린샷을 원격 클립보드로 복사하지 못했습니다."
+# 경로 텍스트는 원격 클립보드에 썼지만 이미지는 올리지 못했다. 괄호 안에 사유가 붙는다.
+mirror_capture_path_only = "스크린샷 경로만 원격 클립보드로 복사했습니다. 이미지는 복사하지 못했습니다."
+# 원격 Tasty가 이미지 게시 여부를 알리지 않는 옛 버전이다. 경로만 복사됐다.
+mirror_capture_path_only_old_server = "스크린샷 경로를 원격 클립보드로 복사했습니다. 원격 Tasty는 이미지를 복사하지 못합니다."
 # 임시 mirror는 연결 종료 시 제거한다. 매핑된 mirror는 재연결 안내를 사용한다.
 mirror_disconnected = "원격 연결이 끊어졌습니다. 미러 워크스페이스를 닫았습니다."
 # 매핑된 워크스페이스와 scrollback을 유지한 채 자동 재연결을 시도한다.

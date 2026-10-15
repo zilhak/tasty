@@ -1718,8 +1718,12 @@ mirror_structural_forward_failed = "リモートワークスペースがその�
 mirror_restore_empty = "リモートワークスペースに復元できる項目がありません。"
 mirror_markdown_truncated = "リモートのドキュメントが大きすぎるため、ミラー画面には一部だけを表示します。"
 close_blocked_hard_occupied = "リモートセッションが使用中の端末があるため閉じませんでした。強制切断で回収してから再試行してください。"
-mirror_capture_saved = "スクリーンショットをリモートのクリップボードにコピーしました。"
+mirror_capture_saved = "スクリーンショットの画像とパスをリモートのクリップボードにコピーしました。"
 mirror_capture_failed = "スクリーンショットをリモートのクリップボードにコピーできませんでした。"
+# 경로 텍스트는 원격 클립보드에 썼지만 이미지는 올리지 못했다. 괄호 안에 사유가 붙는다.
+mirror_capture_path_only = "スクリーンショットのパスだけをリモートのクリップボードにコピーしました。画像はコピーできませんでした。"
+# 원격 Tasty가 이미지 게시 여부를 알리지 않는 옛 버전이다. 경로만 복사됐다.
+mirror_capture_path_only_old_server = "スクリーンショットのパスをリモートのクリップボードにコピーしました。リモートの Tasty は画像をコピーできません。"
 # 임시 mirror는 연결 종료 시 제거한다. 매핑된 mirror는 재연결 안내를 사용한다.
 mirror_disconnected = "リモート接続が切断されました。ミラーワークスペースを閉じました。"
 # 매핑된 워크스페이스와 scrollback을 유지한 채 자동 재연결을 시도한다.

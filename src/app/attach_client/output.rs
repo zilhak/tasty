@@ -335,31 +335,52 @@ fn release_for_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_, 
     );
 }
 
-fn show_mirror_capture_result(
-    host: &mut MirrorHost<'_, '_>,
-    ok: bool,
-    path: Option<String>,
-    reason: Option<String>,
-) {
-    let msg = if ok {
-        format!(
-            "{} ({})",
-            crate::i18n::t("attach.toast.mirror_capture_saved"),
-            path.unwrap_or_default()
-        )
-    } else {
-        let base = crate::i18n::t("attach.toast.mirror_capture_failed");
-        match reason {
-            Some(r) if !r.is_empty() => format!("{base} ({r})"),
+/// 회신이 말한 범위만 알린다. 이미지 게시 여부를 싣지 않은 옛 서버의 성공은 경로만 쓴 성공이다.
+fn show_mirror_capture_result(host: &mut MirrorHost<'_, '_>, result: MirrorCaptureResult) {
+    use crate::adapters::ui::ToastKind;
+    let MirrorCaptureResult {
+        ok,
+        path,
+        reason,
+        image,
+        image_reason,
+    } = result;
+    let with_detail = |key: &str, detail: Option<String>| {
+        let base = crate::i18n::t(key);
+        match detail {
+            Some(d) if !d.is_empty() => format!("{base} ({d})"),
             _ => base.to_string(),
         }
     };
-    let kind = if ok {
-        crate::adapters::ui::ToastKind::Success
-    } else {
-        crate::adapters::ui::ToastKind::Warning
+    let (msg, kind) = match (ok, image) {
+        (false, _) => (
+            with_detail("attach.toast.mirror_capture_failed", reason),
+            ToastKind::Warning,
+        ),
+        (true, Some(true)) => (
+            with_detail("attach.toast.mirror_capture_saved", path),
+            ToastKind::Success,
+        ),
+        (true, Some(false)) => (
+            with_detail("attach.toast.mirror_capture_path_only", image_reason),
+            ToastKind::Warning,
+        ),
+        // 경로는 클립보드에 있다. 붙이면 토스트 길이 한도에 걸려 안내가 잘린다.
+        (true, None) => (
+            crate::i18n::t("attach.toast.mirror_capture_path_only_old_server").to_string(),
+            ToastKind::Info,
+        ),
     };
     host.toast(msg, kind);
+}
+
+/// `MirrorEvent::CaptureResult` 중 안내에 쓰는 필드.
+struct MirrorCaptureResult {
+    ok: bool,
+    path: Option<String>,
+    reason: Option<String>,
+    image: Option<bool>,
+    image_reason: Option<String>,
 }
 
 fn apply_one_mirror_event(
@@ -452,8 +473,24 @@ fn apply_one_mirror_event(
             }
         }
         MirrorEvent::ExplorerOp(value) => sess.transport.explorer_inbox.push(value),
-        MirrorEvent::CaptureResult { ok, path, reason } => {
-            show_mirror_capture_result(host, ok, path, reason);
+        MirrorEvent::CaptureResult {
+            upload_id: _,
+            ok,
+            path,
+            reason,
+            image,
+            image_reason,
+        } => {
+            show_mirror_capture_result(
+                host,
+                MirrorCaptureResult {
+                    ok,
+                    path,
+                    reason,
+                    image,
+                    image_reason,
+                },
+            );
         }
         ev @ MirrorEvent::ListDirResult { .. } => list_dir::apply(sess, host, ev),
         MirrorEvent::GitQueryResult {

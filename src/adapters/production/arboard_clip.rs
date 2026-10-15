@@ -4,7 +4,7 @@ use crate::clipboard::{
     ClipboardContext,
     error::{ClipboardError, DisplayBackend},
 };
-use crate::ports::clipboard::ClipboardSystem;
+use crate::ports::clipboard::{ClipboardImage, ClipboardSystem};
 use std::sync::Mutex;
 
 #[derive(Default)]
@@ -33,5 +33,11 @@ impl ClipboardSystem for ArboardClipboard {
 
     fn write_text(&self, text: &str) -> anyhow::Result<()> {
         self.with_clipboard(|cb| cb.set_text(text))
+    }
+
+    /// arboard 의 setter 는 매번 이전 형식을 지워 두 형식을 함께 올리지 못한다. 파일 클립보드와 같은
+    /// 플랫폼 소유자로 한 번에 올린다. 이 소유자가 선택을 가져가면 arboard 의 이전 텍스트는 사라진다.
+    fn write_text_and_image(&self, text: &str, image: &ClipboardImage) -> anyhow::Result<()> {
+        Ok(crate::clipboard::files::write_text_and_image(text, image)?)
     }
 }

@@ -25,6 +25,8 @@ pub mod macos_permissions;
 mod macos_fda_history;
 #[cfg(feature = "gui")]
 pub mod native_menu;
+#[cfg(all(target_os = "macos", feature = "gui"))]
+pub mod pasteboard;
 #[cfg(all(windows, feature = "gui"))]
 pub mod power_windows;
 #[cfg(feature = "gui")]

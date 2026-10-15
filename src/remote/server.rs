@@ -232,20 +232,7 @@ pub(crate) fn finalize_capture_upload(
         }
         (true, Some(_)) => Err("capture origin grant or registration retired".into()),
     };
-    let payload = match &result {
-        Ok(path) => serde_json::json!({
-            "event": "capture_result",
-            "upload_id": upload_id,
-            "ok": true,
-            "path": path,
-        }),
-        Err(reason) => serde_json::json!({
-            "event": "capture_result",
-            "upload_id": upload_id,
-            "ok": false,
-            "reason": reason,
-        }),
-    };
+    let payload = capture_result_payload(upload_id, result);
     let frame = StreamFrame::new(
         StreamTag::Control,
         serde_json::to_vec(&payload).unwrap_or_default(),
@@ -253,20 +240,98 @@ pub(crate) fn finalize_capture_upload(
     let _ = hub.push(client_id, frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
 }
 
-/// 캡처를 저장한 뒤 경로를 클립보드에 쓴다. 클립보드 기록에 실패해도 파일은 남는다.
+/// 저장한 캡처와 클립보드 게시 결과.
+struct SavedCapture {
+    path: String,
+    copy: crate::ports::clipboard::CaptureCopy,
+}
+
+/// `capture_result` 회신. `ok` 는 경로 텍스트를 클립보드에 쓴 것을 뜻한다(옛 클라이언트와 같은 의미).
+/// 이미지 게시 여부는 `image`(그리고 실패 사유 `image_reason`)로 따로 싣는다. 옛 서버는 `image` 를
+/// 싣지 않으므로 클라이언트는 그 응답을 이미지까지 복사한 성공으로 읽지 않는다. 저장은 됐지만
+/// 클립보드에 쓰지 못했으면 `ok:false` 와 함께 저장 `path` 를 싣는다.
+fn capture_result_payload(
+    upload_id: u64,
+    result: Result<SavedCapture, String>,
+) -> serde_json::Value {
+    use crate::ports::clipboard::CaptureCopy;
+    match result {
+        Ok(SavedCapture {
+            path,
+            copy: CaptureCopy::TextAndImage,
+        }) => serde_json::json!({
+            "event": "capture_result",
+            "upload_id": upload_id,
+            "ok": true,
+            "path": path,
+            "image": true,
+        }),
+        Ok(SavedCapture {
+            path,
+            copy: CaptureCopy::TextOnly { image_error },
+        }) => serde_json::json!({
+            "event": "capture_result",
+            "upload_id": upload_id,
+            "ok": true,
+            "path": path,
+            "image": false,
+            "image_reason": image_error,
+        }),
+        Ok(SavedCapture {
+            path,
+            copy: CaptureCopy::Failed { error },
+        }) => serde_json::json!({
+            "event": "capture_result",
+            "upload_id": upload_id,
+            "ok": false,
+            "path": path,
+            "reason": error,
+        }),
+        Err(reason) => serde_json::json!({
+            "event": "capture_result",
+            "upload_id": upload_id,
+            "ok": false,
+            "reason": reason,
+        }),
+    }
+}
+
+/// 캡처를 저장한 뒤 경로 텍스트와 이미지를 클립보드에 올린다. 클립보드 기록에 실패해도 파일은 남는다.
+/// GUI 서버는 이 함수를 이벤트 루프 스레드에서 동기로 부른다. 저장 파일 재읽기·PNG 디코딩
+/// (3840×2160 무작위 PNG 에 26~30ms 실측)·클립보드 게시 동안 화면이 멈춘다.
 fn save_capture_and_set_clipboard(
     core: &AppServices,
     file_name: &str,
     bytes: Spool,
-) -> Result<String, String> {
+) -> Result<SavedCapture, String> {
     let dir = crate::paths::tasty_home()
         .map(|h| h.join("screenshots"))
         .ok_or_else(|| "no tasty home directory".to_string())?;
-    let path_str = save_bulk_file(&dir, file_name, "screenshot.png", bytes)?;
-    core.clipboard_arc()
-        .write_text(&path_str)
-        .map_err(|e| e.to_string())?;
-    Ok(path_str)
+    let path = save_bulk_file(&dir, file_name, "screenshot.png", bytes)?;
+    let image = read_capture_image(std::path::Path::new(&path));
+    let copy = crate::ports::clipboard::publish_text_with_image(
+        core.clipboard_arc().as_ref(),
+        &path,
+        image.as_ref().map_err(String::as_str),
+    );
+    Ok(SavedCapture { path, copy })
+}
+
+#[cfg(feature = "gui")]
+fn read_capture_image(
+    path: &std::path::Path,
+) -> Result<crate::ports::clipboard::ClipboardImage, String> {
+    let bytes =
+        std::fs::read(path).map_err(|e| format!("reading the saved capture failed: {e}"))?;
+    crate::clipboard::capture_image::decode_png(bytes)
+}
+
+/// 헤드리스 빌드에는 시스템 클립보드가 없어 이미지를 준비하지 않는다.
+#[cfg(not(feature = "gui"))]
+fn read_capture_image(
+    _path: &std::path::Path,
+) -> Result<crate::ports::clipboard::ClipboardImage, String> {
+    Err("headless build has no image clipboard".into())
 }
 
 /// file_name의 마지막 경로 요소를 dir 아래에 저장한다. 이름이 없으면 fallback_name을 쓴다.
@@ -1134,5 +1199,52 @@ pub(crate) fn append_capture_upload(
             hub.unregister_bound(client, &binding);
         }
         engine.remote.capture_uploads.clear_client(client);
+    }
+}
+
+#[cfg(test)]
+mod capture_result_tests {
+    use super::{SavedCapture, capture_result_payload};
+    use crate::ports::clipboard::CaptureCopy;
+
+    fn saved(copy: CaptureCopy) -> Result<SavedCapture, String> {
+        Ok(SavedCapture {
+            path: "/home/u/.tasty/screenshots/a.png".into(),
+            copy,
+        })
+    }
+
+    #[test]
+    fn the_reply_separates_text_and_image_scope() {
+        let both = capture_result_payload(3, saved(CaptureCopy::TextAndImage));
+        assert_eq!(both["upload_id"], 3);
+        assert_eq!(both["ok"], true);
+        assert_eq!(both["image"], true);
+
+        let text_only = capture_result_payload(
+            4,
+            saved(CaptureCopy::TextOnly {
+                image_error: "PNG decode failed".into(),
+            }),
+        );
+        assert_eq!(text_only["ok"], true);
+        assert_eq!(text_only["image"], false);
+        assert_eq!(text_only["image_reason"], "PNG decode failed");
+
+        // 저장은 했지만 클립보드에 쓰지 못했다. 경로를 함께 알린다.
+        let failed = capture_result_payload(
+            5,
+            saved(CaptureCopy::Failed {
+                error: "no clipboard".into(),
+            }),
+        );
+        assert_eq!(failed["ok"], false);
+        assert_eq!(failed["path"], "/home/u/.tasty/screenshots/a.png");
+        assert_eq!(failed["reason"], "no clipboard");
+        assert!(failed.get("image").is_none());
+
+        let rejected = capture_result_payload(6, Err("not a holder".into()));
+        assert_eq!(rejected["ok"], false);
+        assert!(rejected.get("path").is_none());
     }
 }

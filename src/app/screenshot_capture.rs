@@ -11,12 +11,22 @@ pub(crate) struct ScreenshotCaptureOutcome {
     pub(crate) engine: crate::runtime::engine_session::EngineId,
     pub(crate) source_view: Option<std::sync::Weak<()>>,
     pub(crate) remote_target: Option<crate::app::attach_client::RemoteTarget>,
-    /// 요청 시점의 로컬 mirror workspace ID. None이면 로컬 클립보드를 사용한다.
-    pub(crate) mirror_ws_id: Option<u32>,
     /// 요청의 원 View에 해당하는 창. View 없는 요청은 worker 시작 전에 버린다.
     pub(crate) source_window: Option<WindowId>,
-    /// 로컬 파일 경로와, 원격 전송에만 필요한 파일 바이트.
-    pub(crate) result: Result<(std::path::PathBuf, Option<Vec<u8>>), CaptureError>,
+    pub(crate) result: Result<CapturedFile, CaptureError>,
+}
+
+/// 워커가 준비한 캡처 파일. 로컬 게시에는 디코딩한 이미지를, mirror 전송에는 파일 바이트를 싣는다.
+pub(crate) struct CapturedFile {
+    pub(crate) path: std::path::PathBuf,
+    pub(crate) payload: CapturePayload,
+}
+
+pub(crate) enum CapturePayload {
+    /// 로컬 클립보드에 올릴 이미지. 디코딩하지 못했으면 그 사유다.
+    Local(Result<crate::ports::clipboard::ClipboardImage, String>),
+    /// 원격에 올릴 파일 바이트.
+    Mirror(Vec<u8>),
 }
 
 impl App {
@@ -100,7 +110,6 @@ impl App {
                 engine,
                 source_view,
                 remote_target,
-                mirror_ws_id,
                 source_window,
                 result,
             });
@@ -121,7 +130,6 @@ impl App {
                 engine,
                 source_view,
                 remote_target,
-                mirror_ws_id,
                 source_window,
                 result,
             } = outcome;
@@ -143,16 +151,18 @@ impl App {
                 tracing::debug!("discarding screenshot result for retired origin");
                 continue;
             }
-            let (path, bytes) = match result {
+            let CapturedFile { path, payload } = match result {
                 Ok(v) => v,
                 Err(err) => {
                     self.report_capture_failure(err, source_window);
                     continue;
                 }
             };
-            match mirror_ws_id {
-                None => self.write_capture_to_local_clipboard(&path),
-                Some(_) => {
+            match payload {
+                CapturePayload::Local(image) => {
+                    self.write_capture_to_local_clipboard(&path, image);
+                }
+                CapturePayload::Mirror(bytes) => {
                     if let Some(target) =
                         remote_target.filter(|target| self.remote_target_is_current(target))
                     {
@@ -195,23 +205,31 @@ impl App {
         main.mark_dirty();
     }
 
-    fn write_capture_to_local_clipboard(&mut self, path: &std::path::Path) {
+    /// 경로 텍스트와 이미지를 함께 올린다. 이미지를 올리지 못하면 경로만 올리고 그 결과를 구분한다.
+    fn write_capture_to_local_clipboard(
+        &mut self,
+        path: &std::path::Path,
+        image: Result<crate::ports::clipboard::ClipboardImage, String>,
+    ) -> crate::ports::clipboard::CaptureCopy {
         let path_str = path.to_string_lossy().to_string();
-        if let Err(e) = self.services.clipboard_arc().write_text(&path_str) {
-            tracing::warn!("screenshot capture: local clipboard write failed: {e}");
+        let clipboard = self.services.clipboard_arc();
+        let outcome = crate::ports::clipboard::publish_text_with_image(
+            clipboard.as_ref(),
+            &path_str,
+            image.as_ref().map_err(String::as_str),
+        );
+        if outcome != crate::ports::clipboard::CaptureCopy::TextAndImage {
+            tracing::warn!("screenshot capture: local clipboard publish incomplete: {outcome:?}");
         }
+        outcome
     }
 
     fn upload_capture_to_mirror(
         &mut self,
         target: &crate::app::attach_client::RemoteTarget,
         path: &std::path::Path,
-        bytes: Option<Vec<u8>>,
+        bytes: Vec<u8>,
     ) {
-        let Some(bytes) = bytes else {
-            tracing::warn!("screenshot capture: mirror upload requested but no bytes were read");
-            return;
-        };
         let file_name = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -234,17 +252,17 @@ fn log_capture_failure(err: &CaptureError) {
     }
 }
 
-fn capture_and_maybe_read(
-    needs_bytes: bool,
-) -> Result<(std::path::PathBuf, Option<Vec<u8>>), CaptureError> {
+/// 캡처한 파일을 읽어 목적지에 맞게 준비한다. 큰 그림의 디코딩도 여기(워커)에서 한다.
+fn capture_and_maybe_read(for_mirror: bool) -> Result<CapturedFile, CaptureError> {
     let path = crate::platform::screen_capture::capture_interactive()?;
-    let bytes = if needs_bytes {
-        // 캡처 뒤 파일 읽기 실패는 사용자 취소·캡처 권한 거절과 구별한다.
-        Some(std::fs::read(&path).map_err(|e| CaptureError::Storage(e.into()))?)
+    // 캡처 뒤 파일 읽기 실패는 사용자 취소·캡처 권한 거절과 구별한다.
+    let bytes = std::fs::read(&path).map_err(|e| CaptureError::Storage(e.into()))?;
+    let payload = if for_mirror {
+        CapturePayload::Mirror(bytes)
     } else {
-        None
+        CapturePayload::Local(crate::clipboard::capture_image::decode_png(bytes))
     };
-    Ok((path, bytes))
+    Ok(CapturedFile { path, payload })
 }
 
 /// Native capture may wait for the user. No timeout is treated as completion or OS cancellation.

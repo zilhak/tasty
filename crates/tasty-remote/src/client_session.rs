@@ -38,11 +38,16 @@ pub enum MirrorEvent {
         tree: Value,
         surfaces: Vec<Value>,
     },
-    /// capture_result 커스텀 이벤트. 성공 경로는 원격 파일시스템의 경로다.
+    /// capture_result 커스텀 이벤트. 경로는 원격 파일시스템의 경로다. `ok` 는 경로 텍스트를 원격
+    /// 클립보드에 쓴 것이고, 저장만 하고 쓰지 못했으면 `ok` 가 false 인 채 `path` 가 온다.
     CaptureResult {
+        upload_id: Option<u64>,
         ok: bool,
         path: Option<String>,
         reason: Option<String>,
+        /// 이미지도 함께 게시했는가. None 이면 이 필드를 싣지 않는 옛 서버라 경로만 쓴 것이다.
+        image: Option<bool>,
+        image_reason: Option<String>,
     },
     /// list_dir_result 커스텀 이벤트. dir은 서버가 반환한 절대경로다.
     ListDirResult {
@@ -410,7 +415,14 @@ impl MirrorEvent {
                 ),
                 |sum, value| sum.saturating_add(json(value)),
             ),
-            Self::CaptureResult { path, reason, .. } => text(path).saturating_add(text(reason)),
+            Self::CaptureResult {
+                path,
+                reason,
+                image_reason,
+                ..
+            } => text(path)
+                .saturating_add(text(reason))
+                .saturating_add(text(image_reason)),
             Self::ExplorerOp(value) => json(value),
             Self::ListDirResult {
                 dir,

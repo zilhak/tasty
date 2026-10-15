@@ -1772,8 +1772,12 @@ mirror_restore_empty = "Nothing to restore in the remote workspace."
 # attach 프레임 용량을 넘어 문서 일부만 수신한 경우.
 mirror_markdown_truncated = "The remote document is too large. Only part of it is shown in the mirror."
 close_blocked_hard_occupied = "Not closed — a remote session is using one of these terminals. Force-detach it first, then try again."
-mirror_capture_saved = "Screenshot copied to the remote clipboard."
+mirror_capture_saved = "Screenshot image and path copied to the remote clipboard."
 mirror_capture_failed = "Couldn't copy the screenshot to the remote clipboard."
+# 경로 텍스트는 원격 클립보드에 썼지만 이미지는 올리지 못했다. 괄호 안에 사유가 붙는다.
+mirror_capture_path_only = "Only the screenshot path was copied to the remote clipboard. The image couldn't be copied."
+# 원격 Tasty가 이미지 게시 여부를 알리지 않는 옛 버전이다. 경로만 복사됐다.
+mirror_capture_path_only_old_server = "Screenshot path copied to the remote clipboard. The remote Tasty can't copy the image."
 # 임시 mirror는 연결 종료 시 제거한다. 매핑된 mirror는 재연결 안내를 사용한다.
 mirror_disconnected = "The remote connection was lost. The mirror workspace has been closed."
 # 매핑된 워크스페이스와 scrollback을 유지한 채 자동 재연결을 시도한다.
