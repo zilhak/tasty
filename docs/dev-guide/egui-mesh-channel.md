@@ -124,8 +124,8 @@ markdown 본문은 WebView로 렌더하며 `file_watch`가 변경을 감지하�
 아래 "egui-mesh popup 채널")과 egui-mesh banner 도 동일하게 무입력 재-forward 가 필요한
 경우가 있어(아래 "egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용" 참조)
 `PluginEvent::PopupInvalidated { instance_id }` 와 `PluginEvent::BannerInvalidated
-{ instance_id }` 를 별도로 둔다. 처리 경로는 surface 와 대칭이되 종착지만 다르고, 두
-variant 는 서로 완전히 같은 모양이다(아래 설명은 popup 기준으로 읽고 이름만 바꾼다):
+{ instance_id }` 를 별도로 둔다. 처리 경로는 surface 와 같고, 마지막에 다시 그리기를
+표시하는 대상만 surface 대신 popup·banner 인스턴스다. 두 variant 는 서로 완전히 같은 모양이다(아래 설명은 popup 기준으로 읽고 이름만 바꾼다):
 
 1. `PluginManager::pump()` 가 `invalidated_popups` 에 누적, `take_invalidated_popups()` 로 드레인.
 2. `App::mark_invalidated_popups_dirty`(`src/app/event_handler.rs`, `about_to_wait()` 에서
