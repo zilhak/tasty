@@ -1,5 +1,5 @@
-//! 원격 목록 캐시의 쓰기용 보조. 원격 작업 뒤 목록을 낡은 것으로 표시하고(로컬 작업의
-//! `invalidate_local` 과 같은 규칙), 끌어 놓기가 쓰는 폴더별 디스크 식별값을 기억한다.
+//! 원격 목록 캐시의 쓰기용 보조. 원격 작업 뒤나 연결이 돌아온 뒤 목록을 낡은 것으로 표시하고(로컬
+//! 작업의 `invalidate_local` 과 같은 규칙), 끌어 놓기가 쓰는 폴더별 디스크 식별값을 기억한다.
 
 use std::path::{Path, PathBuf};
 
@@ -38,6 +38,22 @@ impl super::ExplorerViewStore {
                 any = true;
             }
             any |= !stale.is_empty();
+        }
+        any
+    }
+
+    /// 연결이 돌아온 mirror workspace 의 View 를 다시 읽게 한다. 옛 연결의 목록 요청은 응답이 오지
+    /// 않으므로 기다리던 폴더도, 응답 시간 초과로 오류가 된 폴더도 함께 잊는다. 끊긴 동안 원격에서
+    /// 바뀐 내용도 이 다시 읽기로 보인다. 다시 읽은 View 가 있으면 true.
+    pub(crate) fn reload_mirror(&mut self, workspace: u32) -> bool {
+        let mut any = false;
+        for view in self.views.values_mut() {
+            if view.mirror_ws_id != Some(workspace) {
+                continue;
+            }
+            view.remote_state.clear();
+            view.request_reload();
+            any = true;
         }
         any
     }

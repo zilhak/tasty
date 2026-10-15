@@ -281,6 +281,16 @@ impl ConnectionWorkers {
     pub(crate) fn retire_tunnel(&mut self, tunnel: Option<tasty_ssh::SshTunnel>) {
         self.tunnel = tunnel;
     }
+    /// 끊겼다고 판단한 연결의 소켓을 바로 닫는다. 응답이 멈췄던 상대가 돌아오면 이 연결의 끝을 곧바로
+    /// 읽고 점유를 놓으므로, 같은 상대에 다시 붙는 새 연결이 already_attached 로 거절되지 않는다.
+    /// 작업 스레드 정리는 drop 이 맡는다.
+    pub fn close_socket(&self) {
+        if let Some(control) = &self.control
+            && let Err(error) = control.shutdown(std::net::Shutdown::Both)
+        {
+            tracing::debug!("remote socket already closed: {error}");
+        }
+    }
 }
 impl Drop for ConnectionWorkers {
     fn drop(&mut self) {
@@ -435,3 +445,7 @@ pub(crate) fn retire_tunnel(tunnel: tasty_ssh::SshTunnel) -> RetirementReceipt {
     });
     receipt
 }
+
+#[cfg(test)]
+#[path = "transport_tests.rs"]
+mod tests;

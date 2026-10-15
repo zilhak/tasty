@@ -334,11 +334,7 @@ impl App {
                 .replace_mirror_workspace(ws)
                 .unwrap_or_else(|_| panic!("mirror workspace disappeared"));
             main.state.reconcile_presentation(engine.core);
-            main.state.toasts.push(
-                crate::i18n::t("attach.toast.mirror_reconnected").to_string(),
-                crate::adapters::ui::ToastKind::Success,
-                crate::adapters::ui::ToastScope::Window,
-            );
+            finish_reconnected_view(&mut main.state, local_workspace);
             main.mark_dirty();
         }
         destroy_mirror_markdown_surfaces(&mut self.plugin_manager, removed_markdown);
@@ -418,6 +414,9 @@ impl App {
             let sess = &mut self.remote.sessions[idx];
             sess.state.phase = SessionState::Reconnecting;
             sess.transport.frame_tx.retire();
+            // 옛 소켓을 재연결 성공까지 열어 두면 서버는 그 연결을 살아 있는 점유자로 보고 새 attach 를
+            // already_attached 로 거절한다(긴 재시도 간격). 끊겼다고 본 지금 닫는다.
+            sess.transport.workers.close_socket();
             (
                 sess.state.anchor_ws_id,
                 sess.state.local_workspace,
@@ -540,6 +539,17 @@ impl App {
         }
     }
 }
+/// 재연결(재동기화 포함) 설치를 마친 mirror 를 View 에 알린다. 옛 연결의 목록 요청은 응답하지
+/// 않으므로 이 mirror 의 탐색기는 새 연결로 다시 읽는다.
+fn finish_reconnected_view(state: &mut crate::state::MainViewState, local_workspace: u32) {
+    state.toasts.push(
+        crate::i18n::t("attach.toast.mirror_reconnected").to_string(),
+        crate::adapters::ui::ToastKind::Success,
+        crate::adapters::ui::ToastScope::Window,
+    );
+    state.explorer_views.reload_mirror(local_workspace);
+}
+
 /// 이 engine에 해당 workspace가 있으면 mirror 자원을 함께 정리하고 활성 인덱스를 보정한다.
 fn remove_mirror_workspace_from_engine(
     engine: &mut EngineMut<'_>,

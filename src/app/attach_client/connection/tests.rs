@@ -215,3 +215,55 @@ fn removing_a_mirror_workspace_forgets_the_occupancy_of_its_surfaces() {
         "정리된 mirror surface 의 soft 점유가 남았다"
     );
 }
+
+/// 재연결 설치의 View 마무리는 그 mirror 의 탐색기를 다시 읽게 한다. 옛 연결로 보낸 목록 요청은 응답이
+/// 오지 않으므로, 다시 읽지 않으면 그 폴더는 시간 초과 오류에 머문다.
+#[test]
+fn finishing_a_reconnect_rereads_that_mirrors_explorers() {
+    let (mut state, _engine) = crate::state::tests::test_state();
+    let panel = tasty_model::ExplorerPanel::new(41, std::path::PathBuf::from("/remote/project"));
+    let other = tasty_model::ExplorerPanel::new(42, std::path::PathBuf::from("/remote/other"));
+    // 옛 연결로 보낸 요청이 응답을 기다리는 중이다.
+    assert_eq!(
+        state
+            .explorer_views
+            .get_or_init(&panel, Some(7))
+            .drain_outbox()
+            .len(),
+        1
+    );
+    assert_eq!(
+        state
+            .explorer_views
+            .get_or_init(&other, Some(8))
+            .drain_outbox()
+            .len(),
+        1
+    );
+    assert!(
+        state
+            .explorer_views
+            .get_or_init(&panel, Some(7))
+            .drain_outbox()
+            .is_empty()
+    );
+
+    finish_reconnected_view(&mut state, 7);
+    assert_eq!(
+        state
+            .explorer_views
+            .get_or_init(&panel, Some(7))
+            .drain_outbox()
+            .len(),
+        1,
+        "the reconnected mirror asks for its folder again"
+    );
+    assert!(
+        state
+            .explorer_views
+            .get_or_init(&other, Some(8))
+            .drain_outbox()
+            .is_empty(),
+        "another mirror keeps its request"
+    );
+}

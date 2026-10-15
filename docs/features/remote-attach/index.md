@@ -249,6 +249,7 @@ move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때�
 **첫 자동 attach 가 실패하면 간격을 두고 다시 시도한다**: 프로필 해석·포트 발견·터널 수립(엔드포인트 해석)이 실패하거나, mirror 접수가 바로 실패하거나, 접수 뒤 연결·설치 단계에서 실패하면, 같은 매핑의 다음 시도를 재연결과 같은 지수 백오프(0.5초에서 두 배씩 30초 상한, ±20% jitter)로 미룬다(`Remote.attach_retry`). 그 시각이 되면 타이머가 루프를 깨워 그 워크스페이스가 활성일 때 다시 시도한다. 자동 재시도 상한은 없다. 사용자가 그 워크스페이스로 돌아오면(엣지) 대기 없이 바로 시도하지만 간격은 초기화하지 않는다. 매핑을 바꾸면 기록을 적용하지 않고 바로 시도한다. mirror 설치에 성공하거나, 매핑을 지우거나 바꾸거나, 그 워크스페이스를 닫으면 기록을 지운다.
 
 **연결이 끊기면 mirror 는 살아있는 채로 자동 재연결을 시도한다**: heartbeat TTL 만료·force-detach 등 원격발 disconnect 로 앵커(매핑된 워크스페이스) 세션이 끊기면, mirror workspace/터미널을 걷어내는 대신 `Reconnecting` 상태로 전이해 살려두고(`src/app/attach_client/connection.rs::enter_reconnecting`), 지수 백오프(0.5s→30s, ±20% jitter)로 재연결을 자동 시도한다(`src/app/auto_attach.rs::maybe_trigger_reconnect`).
+Reconnecting 에 들어갈 때 옛 연결의 소켓을 바로 닫는다(`ConnectionWorkers::close_socket`). 열어 두면 응답이 멈췄던 서버가 돌아온 직후 옛 연결을 살아 있는 점유자로 보고 새 attach 를 `already_attached` 로 거절해 아래 30초 간격으로 밀린다. 닫아 두면 서버가 재개 즉시 끊김을 읽어 점유를 놓고, 자동 재연결은 서버가 돌아온 뒤 약 1초 안에 성공한다(Linux 실제 실행 2회, 같은 컴퓨터의 두 인스턴스를 `--ssh 127.0.0.1:<port>` 직결로 매핑, 서버를 SIGSTOP 25초 뒤 SIGCONT — SSH 터널·원격 호스트·macOS·Windows 는 미측정).
 재연결에 성공하면 살아있던 surface 는 scrollback/local id 를 그대로 유지한 채(survivor mapping, `merge_survivor_mapping`) 연결만 새로 맺는다 — 사용자가 아무 조작을 하지 않아도(그 워크스페이스를 계속 보고 있어도) 백그라운드에서 재시도가 진행된다.
 사용자가 그 워크스페이스로 전환해 돌아오면(엣지) 백오프 대기 없이 즉시 한 번 더 시도한다.
 다른 클라이언트가 여전히 그 원격 워크스페이스를 점유 중이면(`already_attached`) 지수 증가 없이 30초 간격으로 계속 대기하고, 20회 시도 후에도 실패하면 자동 재시도를 멈추고 안내 toast 를 띄운다(단, 그 워크스페이스를 왕복하는 수동 재시도는 계속 유효).

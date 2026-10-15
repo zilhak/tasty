@@ -1336,6 +1336,47 @@ mod tests {
     }
 
     #[test]
+    fn a_reconnected_mirror_rereads_folders_the_old_connection_left_behind() {
+        let panel = ExplorerPanel::new(1, PathBuf::from("/remote/project"));
+        let other = ExplorerPanel::new(2, PathBuf::from("/remote/other"));
+        let mut store = ExplorerViewStore::default();
+        drop(store.get_or_init(&other, Some(8)).drain_outbox());
+        let view = store.get_or_init(&panel, Some(7));
+        drop(view.drain_outbox());
+        // 옛 연결에서 시간 초과로 오류가 된 지금 폴더와, 응답이 오지 않을 옛 요청.
+        view.remote_state.insert(
+            "/remote/project".into(),
+            RemoteLoadState::Error("timed out".into()),
+        );
+        view.remote_state.insert(
+            "/remote/project/pending".into(),
+            RemoteLoadState::Loading {
+                request_id: 99,
+                sent_at: Instant::now(),
+            },
+        );
+        let view = store.get_or_init(&panel, Some(7));
+        assert!(matches!(view.state, LoadState::Error(_)));
+        assert!(view.drain_outbox().is_empty());
+
+        assert!(store.reload_mirror(7));
+        let view = store.get_or_init(&panel, Some(7));
+        assert_eq!(view.state, LoadState::Loading);
+        assert_eq!(view.drain_outbox().len(), 1, "the folder is asked again");
+        assert!(
+            !view
+                .remote_state
+                .contains_key(Path::new("/remote/project/pending")),
+            "a request sent on the old connection is forgotten"
+        );
+        let untouched = store.get_or_init(&other, Some(8));
+        assert!(
+            untouched.drain_outbox().is_empty(),
+            "another mirror workspace is left alone"
+        );
+    }
+
+    #[test]
     fn converting_away_and_back_under_the_same_id_shows_the_new_panels_preview() {
         use crate::model::ExplorerPreview;
         use tasty_type_geometry::length::LogicalPx;
