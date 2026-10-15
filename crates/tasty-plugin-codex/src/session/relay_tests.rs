@@ -136,6 +136,7 @@ fn later_explicit_permission_choices_are_not_replaced_by_launch_defaults() {
             sandbox: Some("danger-full-access".into()),
             model: Some("launch-model".into()),
         },
+        true,
     );
     assert_eq!(params, original);
     assert_eq!(effective.approval.as_deref(), Some("on-request"));
@@ -157,7 +158,224 @@ fn explicit_permission_profile_config_is_not_combined_with_launch_bypass() {
             sandbox: Some("danger-full-access".into()),
             model: Some("launch-model".into()),
         },
+        false,
     );
     assert_eq!(params, original);
     assert_eq!(effective, ResumeSettings::default());
+}
+
+/// Runs the given client calls through a relay and returns the thread request parameters the
+/// backend received. The backend echoes the requested policy in the 0.154 reply shape.
+fn backend_params(launch: ResumeSettings, calls: &[(&str, Value)]) -> Vec<Value> {
+    relay_run(launch, calls).0
+}
+
+/// Like `backend_params`, and also returns the thread IDs the relay registered.
+fn relay_run(launch: ResumeSettings, calls: &[(&str, Value)]) -> (Vec<Value>, Vec<String>) {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        test_server::accept_handshake(&mut socket);
+        let mut seen = Vec::new();
+        while let Some(text) = test_server::read_text(&mut socket) {
+            let request: Value = serde_json::from_str(&text).unwrap();
+            let Some(id) = request.get("id") else {
+                continue;
+            };
+            let params = &request["params"];
+            let result = if request["method"]
+                .as_str()
+                .is_some_and(|m| m.starts_with("thread/") && m != "thread/settings/update")
+            {
+                seen.push(params.clone());
+                let sandbox = match params["sandbox"].as_str() {
+                    Some("read-only") => "readOnly",
+                    Some("workspace-write") => "workspaceWrite",
+                    Some("danger-full-access") => "dangerFullAccess",
+                    _ => "workspaceWrite",
+                };
+                let id = if params["ephemeral"] == true {
+                    "aux"
+                } else {
+                    "t"
+                };
+                json!({"thread":{"id":id},"approvalPolicy":params["approvalPolicy"],"sandbox":{"type":sandbox},"model":params["model"]})
+            } else {
+                json!({})
+            };
+            test_server::write_text(&mut socket, &json!({"id":id,"result":result}).to_string());
+        }
+        seen
+    });
+    let bound = Arc::new(Mutex::new(Vec::new()));
+    let record = bound.clone();
+    let relay = Relay::start(
+        Endpoint::Ws {
+            port,
+            token: "backend-secret".into(),
+        },
+        launch,
+        Arc::new(move |reply: &Value| {
+            record
+                .lock()
+                .unwrap()
+                .push(reply["thread"]["id"].to_string());
+            Ok(())
+        }),
+    )
+    .unwrap();
+    let port = relay.url.rsplit(':').next().unwrap().parse().unwrap();
+    let mut client = Client::connect(
+        &Endpoint::Ws {
+            port,
+            token: relay.token.clone(),
+        },
+        Duration::from_secs(3),
+    )
+    .unwrap();
+    for (method, params) in calls {
+        client.call(method, params.clone()).unwrap();
+    }
+    drop(client);
+    drop(relay);
+    let seen = server.join().unwrap();
+    let bound = bound.lock().unwrap().clone();
+    (seen, bound)
+}
+
+fn bypass() -> ResumeSettings {
+    ResumeSettings::from_tui_args(&["--dangerously-bypass-approvals-and-sandbox".into()])
+}
+
+/// Policy fields as Codex 0.154 TUI sends them without launch overrides (measured).
+fn tui_defaults(sandbox: &str) -> Value {
+    json!({"approvalPolicy":"on-request","sandbox":sandbox,"model":null,"config":{"personality":"pragmatic","web_search":"cached"}})
+}
+
+fn policy(params: &Value) -> (Value, Value) {
+    (params["approvalPolicy"].clone(), params["sandbox"].clone())
+}
+
+#[test]
+fn launch_policy_replaces_tui_defaults_until_the_user_changes_permissions() {
+    let seen = backend_params(
+        bypass(),
+        &[
+            ("thread/start", tui_defaults("workspace-write")),
+            ("thread/start", tui_defaults("read-only")),
+            (
+                "thread/resume",
+                json!({"threadId":"t","approvalPolicy":null,"sandbox":null}),
+            ),
+            (
+                "thread/fork",
+                json!({"threadId":"t","approvalPolicy":"on-request","sandbox":"read-only"}),
+            ),
+            // A model change carries no permission fields and is not a permission choice.
+            (
+                "thread/settings/update",
+                json!({"threadId":"t","approvalPolicy":null,"sandboxPolicy":null,"permissions":null,"model":"other"}),
+            ),
+            ("thread/start", tui_defaults("workspace-write")),
+        ],
+    );
+    for params in &seen {
+        assert_eq!(
+            policy(params),
+            (json!("never"), json!("danger-full-access"))
+        );
+    }
+    assert_eq!(seen.len(), 5);
+    assert_eq!(seen[0]["config"]["personality"], "pragmatic");
+}
+
+#[test]
+fn a_later_permission_choice_in_the_tui_is_kept() {
+    let seen = backend_params(
+        bypass(),
+        &[
+            ("thread/start", tui_defaults("workspace-write")),
+            (
+                "thread/settings/update",
+                json!({"threadId":"t","approvalPolicy":"on-request","approvalsReviewer":"user","sandboxPolicy":null,"permissions":":workspace","model":null}),
+            ),
+            ("thread/start", tui_defaults("workspace-write")),
+        ],
+    );
+    assert_eq!(
+        policy(&seen[0]),
+        (json!("never"), json!("danger-full-access"))
+    );
+    assert_eq!(
+        policy(&seen[1]),
+        (json!("on-request"), json!("workspace-write"))
+    );
+}
+
+#[test]
+fn separate_or_missing_launch_options_only_set_what_was_given() {
+    let sandbox_only = ResumeSettings::from_tui_args(&["-s".into(), "read-only".into()]);
+    let seen = backend_params(
+        sandbox_only,
+        &[("thread/start", tui_defaults("workspace-write"))],
+    );
+    assert_eq!(policy(&seen[0]), (json!("on-request"), json!("read-only")));
+    let both = ResumeSettings::from_tui_args(&[
+        "-a".into(),
+        "on-request".into(),
+        "-s".into(),
+        "read-only".into(),
+    ]);
+    let seen = backend_params(
+        both,
+        &[(
+            "thread/start",
+            json!({"approvalPolicy":"never","sandbox":"danger-full-access"}),
+        )],
+    );
+    assert_eq!(policy(&seen[0]), (json!("on-request"), json!("read-only")));
+    // No launch options: the TUI's values pass through and nothing is widened.
+    let seen = backend_params(
+        ResumeSettings::default(),
+        &[("thread/start", tui_defaults("read-only"))],
+    );
+    assert_eq!(policy(&seen[0]), (json!("on-request"), json!("read-only")));
+}
+
+#[test]
+fn the_reply_is_verified_against_the_launch_policy_not_the_tui_default() {
+    let mut params = tui_defaults("workspace-write").as_object().unwrap().clone();
+    let effective = apply_settings(&mut params, &bypass(), false);
+    assert_eq!(effective.approval.as_deref(), Some("never"));
+    assert_eq!(effective.sandbox.as_deref(), Some("danger-full-access"));
+    let kept_default = json!({"approvalPolicy":"on-request","sandbox":{"type":"workspaceWrite"}});
+    assert!(effective.verify(&kept_default).is_err());
+}
+
+#[test]
+fn ephemeral_helper_threads_keep_their_policy_and_are_not_registered() {
+    // Codex 0.154 TUI starts an ephemeral read-only thread for structured side tasks such as
+    // naming the conversation (measured). It is not the user's conversation.
+    let helper =
+        json!({"approvalPolicy":"never","sandbox":"read-only","model":"small","ephemeral":true});
+    let (seen, bound) = relay_run(
+        bypass(),
+        &[
+            (
+                "thread/start",
+                json!({"approvalPolicy":"on-request","sandbox":"workspace-write","ephemeral":false}),
+            ),
+            ("thread/start", helper.clone()),
+        ],
+    );
+    assert_eq!(
+        policy(&seen[0]),
+        (json!("never"), json!("danger-full-access"))
+    );
+    assert_eq!(seen[1], helper);
+    assert_eq!(bound, vec!["\"t\"".to_string()]);
 }

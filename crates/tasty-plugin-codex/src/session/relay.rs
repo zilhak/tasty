@@ -1,5 +1,10 @@
 //! A launch-scoped relay for the native resume picker. Permission overrides are applied to
 //! thread requests because the remote TUI cannot send them when resuming a conversation.
+//!
+//! The native TUI is started without launch permission options so that its own `/resume`
+//! keeps working. Codex 0.154 then fills thread requests with its configured defaults, so the
+//! launch policy replaces those values until the user picks permissions in the TUI, which the
+//! TUI reports with `thread/settings/update`.
 use super::command::ResumeSettings;
 use crate::{rpc::Endpoint, ws::WsConn};
 use serde_json::{Value, json};
@@ -15,6 +20,8 @@ use std::time::Duration;
 
 type Bind = Arc<dyn Fn(&Value) -> Result<(), String> + Send + Sync>;
 type Pending = Arc<Mutex<HashMap<String, ResumeSettings>>>;
+/// Set once the TUI reports a permission choice made after launch.
+type Chosen = Arc<AtomicBool>;
 
 #[derive(Debug)]
 enum Stream {
@@ -170,6 +177,7 @@ impl Relay {
         let stop = Arc::new(AtomicBool::new(false));
         let streams = Arc::new(Mutex::new(Vec::new()));
         let (done, sockets, secret) = (stop.clone(), streams.clone(), token.clone());
+        let chosen: Chosen = Arc::new(AtomicBool::new(false));
         let task = std::thread::Builder::new()
             .name("codex-tui-relay".into())
             .spawn(move || {
@@ -183,7 +191,7 @@ impl Relay {
                                 continue;
                             }
                             connections.push(spawn_connection(
-                                socket, &endpoint, &settings, &bind, &secret, &sockets,
+                                socket, &endpoint, &settings, &chosen, &bind, &secret, &sockets,
                             ));
                         }
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -227,13 +235,15 @@ fn spawn_connection(
     socket: TcpStream,
     endpoint: &Endpoint,
     settings: &ResumeSettings,
+    chosen: &Chosen,
     bind: &Bind,
     secret: &str,
     sockets: &Arc<Mutex<Vec<Weak<Stream>>>>,
 ) -> JoinHandle<()> {
-    let (endpoint, settings, bind, secret, sockets) = (
+    let (endpoint, settings, chosen, bind, secret, sockets) = (
         endpoint.clone(),
         settings.clone(),
+        chosen.clone(),
         bind.clone(),
         secret.to_string(),
         sockets.clone(),
@@ -243,7 +253,7 @@ fn spawn_connection(
             Stream::Tcp(socket),
             &endpoint,
             &secret,
-            &settings,
+            (&settings, chosen),
             bind,
             &sockets,
         ) {
@@ -290,9 +300,26 @@ impl Drop for Relay {
     }
 }
 
+/// Whether a `thread/settings/update` from the TUI carries a permission choice. Codex 0.154
+/// sends these fields as null when only the model or effort changes.
+fn is_permission_choice(params: &Value) -> bool {
+    [
+        "approvalPolicy",
+        "approvalsReviewer",
+        "sandboxPolicy",
+        "permissions",
+    ]
+    .iter()
+    .any(|key| params.get(*key).is_some_and(|value| !value.is_null()))
+}
+
+/// Puts the launch policy into a thread request and returns the settings the reply must show.
+/// Before the user picks permissions in the TUI, its approval and sandbox values are defaults
+/// and are replaced. After a choice, present values are kept and only missing ones are filled.
 fn apply_settings(
     params: &mut serde_json::Map<String, Value>,
     defaults: &ResumeSettings,
+    chosen: bool,
 ) -> ResumeSettings {
     let config = params.get("config").and_then(Value::as_object);
     let permission_config = config.is_some_and(|config| {
@@ -316,12 +343,14 @@ fn apply_settings(
         {
             continue;
         }
-        if key != "threadId" && key != "excludeTurns" && params.get(key).is_none_or(Value::is_null)
-        {
+        if key == "threadId" || key == "excludeTurns" {
+            continue;
+        }
+        let launch_wins = !chosen && matches!(key.as_str(), "approvalPolicy" | "sandbox");
+        if launch_wins || params.get(key).is_none_or(Value::is_null) {
             params.insert(key.clone(), value.clone());
         }
     }
-    // Later explicit choices in the TUI take precedence over launch defaults.
     let string = |key| params.get(key).and_then(Value::as_str).map(str::to_owned);
     ResumeSettings {
         approval: string("approvalPolicy"),
@@ -351,7 +380,7 @@ fn connection(
     mut front: Stream,
     endpoint: &Endpoint,
     token: &str,
-    settings: &ResumeSettings,
+    (settings, chosen): (&ResumeSettings, Chosen),
     bind: Bind,
     sockets: &Mutex<Vec<Weak<Stream>>>,
 ) -> io::Result<()> {
@@ -401,15 +430,24 @@ fn connection(
             loop {
                 let text = from_tui.recv_text()?;
                 let mut message: Value = serde_json::from_str(&text).map_err(io::Error::other)?;
+                if message["method"] == "thread/settings/update"
+                    && is_permission_choice(&message["params"])
+                {
+                    chosen.store(true, Ordering::Release);
+                }
+                // Ephemeral threads are the TUI's own side tasks, such as naming the
+                // conversation. They keep their policy and never become the restorable thread.
                 if matches!(
                     message["method"].as_str(),
                     Some("thread/start" | "thread/resume" | "thread/fork")
-                ) {
+                ) && message["params"]["ephemeral"] != true
+                {
                     let params = message
                         .get_mut("params")
                         .and_then(Value::as_object_mut)
                         .ok_or_else(|| io::Error::other("missing thread parameters"))?;
-                    let effective = apply_settings(params, &overrides);
+                    let effective =
+                        apply_settings(params, &overrides, chosen.load(Ordering::Acquire));
                     requests
                         .lock()
                         .map_err(|_| io::Error::other("relay pending poisoned"))?

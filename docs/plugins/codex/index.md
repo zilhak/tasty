@@ -216,12 +216,38 @@ Codex 도구 안의 실행, 비대화형 stdin, `command codex`, 유틸리티 �
 자동 복원은 등록하지 않는다. Bash·zsh 외의 셸에서는 `tasty codex launch`를 사용한다.
 
 native TUI는 세대별 전용 서버 앞의 loopback relay에 임의 capability token으로 연결한다.
-relay는 thread/start·resume·fork 요청에 명시된 정책·모델을 넣고 응답의 적용 결과를 확인한다.
-재개 TUI에는 승인·sandbox 옵션을 중복 전달하지 않으므로 Codex 0.154의 원격 재개 제한을 피하면서 선택기를 유지한다.
-TUI에서 나중에 명시한 정책·모델이 있으면 실행 기본값보다 우선한다.
+relay는 thread/start·resume·fork 요청에 실행 때 명시한 정책·모델을 넣고, 응답이 그 값을 적용했는지 확인한다.
+native TUI에는 새 대화든 재개든 승인·sandbox 옵션을 넘기지 않는다. Codex 0.154 TUI는 이 옵션을 받으면
+시작 때의 원격 재개뿐 아니라 TUI 안의 `/resume`도 "Permission overrides are not supported when resuming a
+remote task."로 거부하기 때문이다. 모델(`-m`)은 TUI에 그대로 넘긴다.
+
+옵션 없이 시작한 TUI는 thread 요청에 자기 설정의 기본 승인·sandbox 값을 채워 보낸다(측정: 첫
+`thread/start`와 `/new`에 `on-request`와 `workspace-write` 또는 `read-only`). 값만으로는 기본값과 사용자
+선택을 구분할 수 없으므로 relay는 요청 종류로 구분한다.
+
+| 시점 | relay가 thread/start·resume·fork의 승인·sandbox를 다루는 방식 |
+|---|---|
+| TUI에서 권한을 고르기 전 | 실행 때 지정한 값으로 바꾼다. 지정하지 않은 항목은 TUI 값을 그대로 둔다 |
+| TUI가 권한 필드(`approvalPolicy`·`approvalsReviewer`·`sandboxPolicy`·`permissions`)가 non-null인 `thread/settings/update`를 보낸 뒤(`/permissions`) | TUI 값을 그대로 두고 빠진 항목만 채운다 |
+| 요청 `config`에 권한 profile·sandbox 설정이 있음 | 승인·sandbox를 넣지 않는다 |
+
+- 이 판정은 relay(TUI 실행 하나) 단위로 유지된다. 모델만 바꾼 `thread/settings/update`는 권한 필드를
+  null로 보내므로 권한 선택으로 보지 않는다.
+- 모델은 요청에 값이 없을 때만 채운다.
+- 응답 확인은 relay가 실제로 보낸 값을 기준으로 한다. 서버가 실행 정책 대신 다른 값을 적용하면
+  TUI에는 오류로 전달하고 thread를 등록하지 않는다.
+- `turn/start`는 relay가 바꾸지 않는다. TUI는 thread 응답의 정책을 자기 상태로 받아 사용자 턴의
+  `turn/start`에 싣는다(측정: relay가 바꾼 `never`·`danger-full-access` 응답 뒤 TUI 헤더가 YOLO mode로
+  바뀌고 이후 턴의 rollout `turn_context`도 같은 값이었다).
+- `ephemeral: true`인 thread 요청은 TUI가 대화 이름 짓기 같은 보조 작업에 쓰는 thread다(측정: 첫 턴 뒤
+  `read-only`·작은 모델로 시작한다). relay는 이 요청의 정책을 바꾸지 않고, 응답을 확인하거나 세대의
+  thread로 등록하지 않는다. 기록이 남지 않는 thread라 복원 대상이 될 수 없기 때문이다.
+- 실행 옵션이 없으면 relay는 승인·sandbox를 넣지 않으므로 권한을 넓히지 않는다.
+
 성공 응답을 TUI에 보내기 전에 `session-bind`가 현재 세대와 소유 서버의 로드 목록을 확인하고
 선택된 UUID·복원 명령을 저장한다. 첫 모델 턴을 시작하지 않은 재개도 저장된다.
 복원 명령에는 검색 조건이나 최초 프롬프트를 넣지 않고 UUID, 실행 옵션과 모델을 넣는다.
+TUI에서 `/permissions`로 고른 권한은 복원 명령에 기록하지 않으므로 복원한 대화는 실행 옵션으로 다시 열린다.
 
 native 세대의 현재 thread는 relay의 선택 응답으로만 바뀐다. 같은 서버에 남아 있는 다른 대화의
 훅은 상태·복원 대상·결과 반환 경로를 바꾸지 않는다. 이 등록은 native 훅 승인과 별개이며,

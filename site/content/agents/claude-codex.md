@@ -40,6 +40,8 @@ tasty codex install --config-file /absolute/codex-home/work.config.toml
 `tasty codex install` 후 Tasty의 Bash·zsh 터미널에서는 평소처럼 `codex`나 `codex resume`을
 입력해도 복원 정보가 저장됩니다. 세션 선택기를 그대로 사용할 수 있고, 선택한 대화는 새 메시지를
 보내기 전에도 복원 대상으로 기록됩니다. 승인·샌드박스·모델 옵션도 유지됩니다.
+실행할 때 지정한 승인·샌드박스 옵션은 같은 Codex 안에서 시작한 새 대화(`/new`)에도 적용됩니다.
+Codex 안에서 `/permissions`로 권한을 바꾸면 그 뒤의 새 대화는 바꾼 값을 따르고, 복원은 실행할 때 지정한 옵션으로 다시 엽니다.
 업데이트 후에는 설치 명령을 다시 실행하고 새 터미널에서 시작하세요. 사용자 전역 셸 설정은 바꾸지 않습니다.
 
 Tasty는 터미널마다 전용 Codex 서버를 띄우며, Codex를 끝내거나 터미널을 닫으면 함께 정리합니다.

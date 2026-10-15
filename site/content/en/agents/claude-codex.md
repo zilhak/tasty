@@ -1,4 +1,4 @@
-<!-- source-hash: 73982c4c1c98 -->
+<!-- source-hash: bd6db3e49932 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -41,6 +41,8 @@ When the installed hooks run successfully in the current session, Tasty receives
 After `tasty codex install`, typing `codex` or `codex resume` in a Tasty Bash or zsh terminal
 also records the conversation for restoration. The native resume picker stays available, and the selected
 conversation is recorded before you send another message. Approval, sandbox, and model options are preserved.
+Approval and sandbox options given at launch also apply to new conversations started in the same Codex (`/new`).
+If you change permissions inside Codex with `/permissions`, later new conversations follow that choice, and restoration reopens with the launch options.
 After upgrading, run the install command again and start in a new terminal. Your global shell startup files are unchanged.
 
 Tasty starts a dedicated Codex server for each integrated terminal and ends it when Codex exits or the terminal closes.
