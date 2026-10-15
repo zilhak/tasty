@@ -1899,7 +1899,7 @@ goal_surface_required = "エラー: サーフェスを指定してください�
 
 [cli.agent]
 inputs_empty = "エラー: --inputs にタスク ID を 1 つ以上指定してください"
-command_workspace_id_overridden = "--command JSON の workspace_id({}) が --workspace-id フラグの値({}) と異なるため {} で上書きしました"
+command_workspace_id_overridden = "--command JSON の workspace_id({}) が --workspace フラグの値({}) と異なるため {} で上書きしました"
 flag_file_read_failed = "エラー: {} を読み込めませんでした ({} 用): {}"
 flag_not_json = "エラー: {} を JSON として解析できませんでした: {}"
 purge_filter_required = "エラー: --states または --older-than-ms を指定してください。条件なしでワークスペース内の全タスクを削除することはできません。"
@@ -2498,14 +2498,14 @@ help = "対象サーフェス ID（必須）"
 
 [cli.help._root.close.workspace]
 about = "ID を指定してワークスペースをまるごと閉じる — 中のペイン・タブ・サーフェスもすべて"
-long = "ID で指定したワークスペースと、その中のすべてのペイン、タブ、サーフェスを閉じます。\n\nこの操作は取り消せません。ワークスペース内のターミナルをすべて終了し、再オープン履歴やスクロールバックには残しません。再オープンできるのは、ユーザーが画面で直接閉じた項目だけです。\n\n対象の ID は `--id` で指定してください (`tasty list workspaces` を参照)。現在の画面から対象を選ぶことはありません。別のワークスペースを閉じても、現在表示中のワークスペースは変わりません。呼び出したサーフェスが属するワークスペース、リモート attach セッションをミラーリングするワークスペース、最後の 1 つのワークスペースは閉じられません。ウィンドウを閉じるには `tasty close window` を使ってください。"
+long = "ID で指定したワークスペースと、その中のすべてのペイン、タブ、サーフェスを閉じます。\n\nこの操作は取り消せません。ワークスペース内のターミナルをすべて終了し、再オープン履歴やスクロールバックには残しません。再オープンできるのは、ユーザーが画面で直接閉じた項目だけです。\n\n対象の ID は `--workspace` で指定してください (`tasty list workspaces` を参照)。現在の画面から対象を選ぶことはありません。別のワークスペースを閉じても、現在表示中のワークスペースは変わりません。呼び出したサーフェスが属するワークスペース、リモート attach セッションをミラーリングするワークスペース、最後の 1 つのワークスペースは閉じられません。ウィンドウを閉じるには `tasty close window` を使ってください。"
 
 [cli.help._root.close.workspace.arg.id]
 help = "対象ワークスペース ID（必須）"
 
 [cli.help._root.close.window]
 about = "ID を指定してウィンドウを閉じる"
-long = "ID で指定したウィンドウを閉じます。\n\n対象の ID は `--id` で指定してください (`tasty list windows` を参照)。最後のメインウィンドウは閉じられません。アプリの終了はユーザーが直接行う必要があります。"
+long = "ID で指定したウィンドウを閉じます。\n\n対象の ID は `--window` で指定してください (`tasty list windows` を参照)。最後のメインウィンドウは閉じられません。アプリの終了はユーザーが直接行う必要があります。"
 
 [cli.help._root.close.window.arg.id]
 help = "対象ウィンドウ ID（必須）"
@@ -3246,7 +3246,7 @@ help = "親サーフェスの代わりに使う外部親キー（`spawn --parent
 help = "子があるワークスペース（IDまたは名前）。複数のウィンドウが開いている場合は --parent-external と一緒に指定する必要があります"
 
 [cli.help._root.terminal.kill.arg.child]
-help = "終了する子インデックス"
+help = "終了する子の番号 (`terminal children` の番号で、サーフェス ID ではない)"
 
 [cli.help._root.terminal.respawn]
 about = "子ターミナルを再生成（PTYの置換またはコマンド再実行）"
@@ -3261,7 +3261,7 @@ help = "親サーフェスの代わりに使う外部親キー（`spawn --parent
 help = "子があるワークスペース（IDまたは名前）。複数のウィンドウが開いている場合は --parent-external と一緒に指定する必要があります"
 
 [cli.help._root.terminal.respawn.arg.child]
-help = "再生成する子インデックス"
+help = "再生成する子の番号 (`terminal children` の番号で、サーフェス ID ではない)"
 
 [cli.help._root.terminal.respawn.arg.cwd]
 help = "新しい作業ディレクトリを指定して PTY を置き換えます。"
@@ -3333,7 +3333,7 @@ help = "親サーフェスの代わりに使う外部親キー（`spawn --parent
 help = "子があるワークスペース（IDまたは名前）。複数のウィンドウが開いている場合は --parent-external と一緒に指定する必要があります"
 
 [cli.help._root.terminal.release.arg.child]
-help = "解除する子インデックス"
+help = "解除する子の番号 (`terminal children` の番号で、サーフェス ID ではない)"
 
 [cli.help._root.pty]
 about = "サーフェスやタブのないバックグラウンド PTY を管理します (spawn/write/read/wait/kill/list)。`terminal` とは別のコマンドです。"
@@ -5759,7 +5759,7 @@ help = "ワークスペース id（フォーカス非依存 — 必須）"
 help = "表示名"
 
 [cli.help._root.agent.task-create.arg.command]
-help = "タスクのコマンドを JSON で指定します (例: `{\"kind\":\"run\",\"command\":[\"cargo\",\"build\"]}`)。`workspace_id` を省略すると `--workspace-id` から補います。両者が異なる場合は `--workspace-id` を使い、警告を出します。JSON を直接指定するか `@path/to/file.json` から読み取れます。"
+help = "タスクのコマンドを JSON で指定します (例: `{\"kind\":\"run\",\"command\":[\"cargo\",\"build\"]}`)。`workspace_id` を省略すると `--workspace` から補います。両者が異なる場合は `--workspace` を使い、警告を出します。JSON を直接指定するか `@path/to/file.json` から読み取れます。"
 
 [cli.help._root.agent.task-create.arg.depends_on]
 help = "カンマ区切りの依存 task id 一覧"
@@ -5778,7 +5778,7 @@ help = "後のtask-create --on-failure fallback:<this-id>で主タスクに関�
 
 [cli.help._root.agent.task-graph-submit]
 about = "型付き（contract_version 2）のタスクグラフを一度に送信します"
-long = "型付き（contract_version 2）のタスクグラフを一度に送信します。\n\nまずグラフ全体を検証します。id、参照、入力 binding、型、マッピング、fallback、循環を確認します。検証に失敗したグラフは何も保存せず、エラーにはタスクと送信したグラフ内の JSON Pointer の位置が示されます。正しいグラフはまとめて保存して有効化するため、すべてのタスクが保存されるまでどのタスクも実行されません。`workspace_id` のない run・agent コマンド（inline fallback のコマンドを含む）には `--workspace-id` の値を補います。ほかの種類のコマンドにはこのフィールドがないため、そのまま送ります。"
+long = "型付き（contract_version 2）のタスクグラフを一度に送信します。\n\nまずグラフ全体を検証します。id、参照、入力 binding、型、マッピング、fallback、循環を確認します。検証に失敗したグラフは何も保存せず、エラーにはタスクと送信したグラフ内の JSON Pointer の位置が示されます。正しいグラフはまとめて保存して有効化するため、すべてのタスクが保存されるまでどのタスクも実行されません。`workspace_id` のない run・agent コマンド（inline fallback のコマンドを含む）には `--workspace` の値を補います。ほかの種類のコマンドにはこのフィールドがないため、そのまま送ります。"
 
 [cli.help._root.agent.task-graph-submit.arg.workspace_id]
 help = "ワークスペース id（フォーカス非依存 — 必須）"
@@ -5856,7 +5856,7 @@ help = "ワークスペース id（フォーカス非依存 — 必須）"
 help = "形式: json | dot。デフォルト: json"
 
 [cli.help._root.agent.dag-list]
-about = "登録済みタスクから DAG 一覧を計算します。同じ `metadata.dag` 文字列を持つタスクを 1 つのグループにし、残りは `depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2 `transitions` の接続を方向に関係なくたどってまとめます。DAG を別に保存することはありません。`--workspace-id` を省略すると現在の全ワークスペースを調べます。"
+about = "登録済みタスクから DAG 一覧を計算します。同じ `metadata.dag` 文字列を持つタスクを 1 つのグループにし、残りは `depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2 `transitions` の接続を方向に関係なくたどってまとめます。DAG を別に保存することはありません。`--workspace` を省略すると現在の全ワークスペースを調べます。"
 
 [cli.help._root.agent.dag-list.arg.workspace_id]
 help = "1 つのワークスペースに絞る。省略すると生きているワークスペース全部"

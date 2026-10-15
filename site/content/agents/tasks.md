@@ -6,16 +6,16 @@
 
 작업은 `tasty` CLI로 만들고 관리합니다. 실행 상황을 화면에서 확인하려면 [진행 보기](#진행-보기)를 참고하세요.
 
-각 명령에는 작업이 속한 워크스페이스의 `--workspace-id`를 지정합니다. 다른 워크스페이스를 보고 있어도 지정한 곳에서 작업합니다.
+각 명령에는 작업이 속한 워크스페이스를 `--workspace`로 지정합니다(예전 표기 `--workspace-id`도 받습니다). 다른 워크스페이스를 보고 있어도 지정한 곳에서 작업합니다.
 
 ## 러너 켜기
 
 작업을 만들어도 러너가 꺼져 있으면 아무것도 실행되지 않습니다. 워크스페이스마다 한 번 켭니다.
 
 ```sh
-tasty agent task-run --workspace-id 2 --action start
-tasty agent task-run --workspace-id 2 --action status
-tasty agent task-run --workspace-id 2 --action stop
+tasty agent task-run --workspace 2 --action start
+tasty agent task-run --workspace 2 --action status
+tasty agent task-run --workspace 2 --action stop
 ```
 
 tasty 를 재시작하면 러너는 자동으로 켜지지 않습니다. 작업 자체는 남아 있으니 다시 `start` 하면 이어서 진행합니다. 러너가 멈춰 있으면 DAG 화면의 러너 표시에도 그 사실이 나오고, 표시 위에 마우스를 올리면 다시 켜는 명령이 그대로 보입니다. DAG 탭에서는 그 명령이 머리말에 한 줄로도 적힙니다.
@@ -23,7 +23,7 @@ tasty 를 재시작하면 러너는 자동으로 켜지지 않습니다. 작업 
 ## 작업 만들기
 
 ```sh
-BUILD=$(tasty agent task-create --workspace-id 2 --name build \
+BUILD=$(tasty agent task-create --workspace 2 --name build \
   --command '{"kind":"run","command":["cargo","build"]}' | jq -r .id)
 ```
 
@@ -46,7 +46,7 @@ BUILD=$(tasty agent task-create --workspace-id 2 --name build \
 ## 순서와 실패 처리
 
 ```sh
-TEST=$(tasty agent task-create --workspace-id 2 --name test \
+TEST=$(tasty agent task-create --workspace 2 --name test \
   --command '{"kind":"run","command":["cargo","test"]}' \
   --depends-on "$BUILD" --on-failure abort | jq -r .id)
 ```
@@ -81,8 +81,8 @@ ${task.<작업 ID>.output/stdout/text}   결과 안의 한 값
 결과의 타입까지 정해 두고 싶으면 작업들을 그래프 하나로 묶어 보냅니다. 그래프 전체를 먼저 검사하므로, 하나라도 잘못되면 아무 작업도 만들어지지 않고 오류에 어느 작업의 어느 자리가 틀렸는지 나옵니다. 모든 작업이 만들어지기 전에는 어떤 작업도 실행되지 않습니다. 그래프 하나에는 작업을 1000 개까지 담을 수 있고, 더 많으면 여러 그래프로 나눠 보냅니다.
 
 ```sh
-tasty agent task-graph-submit --workspace-id 2 --graph @graph.json --dry-run   # 검사만
-tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
+tasty agent task-graph-submit --workspace 2 --graph @graph.json --dry-run   # 검사만
+tasty agent task-graph-submit --workspace 2 --graph @graph.json
 ```
 
 ```json
@@ -105,7 +105,7 @@ tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
 set -eu
 diff_file=$(mktemp)
 git diff > "$diff_file"
-tasty agent task-graph-submit --workspace-id "$1" --graph "$(cat <<JSON
+tasty agent task-graph-submit --workspace "$1" --graph "$(cat <<JSON
 {"contract_version": 2, "tasks": [
   {"id": "lint", "command": {"kind": "run", "command": ["my-lint", "--diff"]},
    "input_schema": {"type": "object", "fields": {"diff": {"type": "string"}}},
@@ -306,9 +306,9 @@ DAG id 는 `tasty agent dag-list` 에서 봅니다. 다시 실행(retry)한 작�
 
 ```sh
 tasty agent dag-list                                   # 모든 워크스페이스의 DAG
-tasty agent task-list --workspace-id 2 --state waiting,ready,running
-tasty agent task-get --workspace-id 2 --id "$BUILD"
-tasty agent task-graph --workspace-id 2 --format dot   # Graphviz 로 그리기
+tasty agent task-list --workspace 2 --state waiting,ready,running
+tasty agent task-get --workspace 2 --id "$BUILD"
+tasty agent task-graph --workspace 2 --format dot   # Graphviz 로 그리기
 ```
 
 `--format dot` 은 Graphviz 에 바로 넘길 수 있는 그래프만 표준 출력에 씁니다(예: `... --format dot | dot -Tsvg > graph.svg`). 순환이 있다는 안내와 러너 상태는 표준 오류에 나옵니다. `dag-get --format dot` 도 같습니다.
@@ -320,11 +320,11 @@ tasty agent task-graph --workspace-id 2 --format dot   # Graphviz 로 그리기
 ## 작업 기다리기와 관리
 
 ```sh
-tasty agent task-await --workspace-id 2 --id "$TEST"             # 끝날 때까지 대기
-tasty agent task-retry --workspace-id 2 --id "$TEST"             # 실패·취소·건너뜀·알수없음 작업 재시도
-tasty agent task-cancel --workspace-id 2 --id "$TEST"
-tasty agent task-set-result --workspace-id 2 --id "$MANUAL" --state succeeded
-tasty agent task-purge --workspace-id 2 --states succeeded
+tasty agent task-await --workspace 2 --id "$TEST"             # 끝날 때까지 대기
+tasty agent task-retry --workspace 2 --id "$TEST"             # 실패·취소·건너뜀·알수없음 작업 재시도
+tasty agent task-cancel --workspace 2 --id "$TEST"
+tasty agent task-set-result --workspace 2 --id "$MANUAL" --state succeeded
+tasty agent task-purge --workspace 2 --states succeeded
 ```
 
 - `task-await` 는 기본 10분까지 기다리고 그 안에 안 끝나면 시간 초과로 돌아옵니다. `--timeout-ms 0` 이면 무한정 기다립니다.
@@ -373,10 +373,10 @@ done
 | 요청량 제한 | 에이전트별 · 지표별로 정해진 시간에 몇 번까지 허용할지 정합니다 |
 
 ```sh
-tasty agent semaphore-create --workspace-id 2 --name build --permits 2
-tasty agent barrier-create --workspace-id 2 --name ready --count-required 3
-tasty agent lease-acquire --workspace-id 2 --resource file:/tmp/db --holder agent-a --ttl-ms 60000
-tasty agent task-reduce --workspace-id 2 --inputs "$A,$B" --strategy all --extract-path /stdout/text
+tasty agent semaphore-create --workspace 2 --name build --permits 2
+tasty agent barrier-create --workspace 2 --name ready --count-required 3
+tasty agent lease-acquire --workspace 2 --resource file:/tmp/db --holder agent-a --ttl-ms 60000
+tasty agent task-reduce --workspace 2 --inputs "$A,$B" --strategy all --extract-path /stdout/text
 ```
 
 세마포어 · 배리어 이름에는 영문 소문자 · 숫자 · `.` · `_` · `-` 만 씁니다. 다른 문자가 섞이면 명령이 어느 글자가 문제인지 알려 주며 거절합니다. 리스의 자원 이름에는 이 제한이 없습니다.

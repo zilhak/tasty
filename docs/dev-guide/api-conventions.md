@@ -5,16 +5,26 @@ IPC 메서드와 CLI 명령의 이름, 호환성, 버전 정책을 설명한다.
 
 ## 형식
 
-```
-IPC 메서드: <namespace>.<verb>[_<modifier>]
-CLI 명령:  tasty <namespace> <verb> [--<option>]
-```
+IPC 메서드 이름과 CLI 명령 경로는 서로 다른 규칙을 따른다. 둘을 1:1로 옮기지 않는다.
 
-예: `surface.list` ↔ `tasty surface list`, `claude.spawn` ↔ `tasty claude spawn`.
+### IPC 메서드 이름
+
+```
+<namespace>.<verb>[_<modifier>]
+```
 
 - **namespace 단수형** (`surface`, NOT `surfaces`). list 반환 키는 복수 (`surfaces: [...]`).
 - **root 예외**: `split`(pane 분할) · `tree`(surface tree)만 namespace 없이 root 에 등록(자주 쓰는 짧은 명령). 새 메서드는 namespace를 생략하지 않는다.
 - **보조 도메인은 3단** `<namespace>.<sub>.<verb>` (예: `remote.profile.*`, `surface.meta.*` 점 표기).
+
+### CLI 명령 경로
+
+기존 기본 조작 명령은 동작이 앞에 오는 경로를 유지한다. 예: `surface.list` ↔ `tasty list surfaces`,
+`surface.close` ↔ `tasty close surface`, `surface.send` ↔ `tasty send text`. `tasty surface list`라는 명령은 없다.
+`list`·`new`·`close`·`set`·`unset`·`move`·`send`·`read`는 이 형태의 명시적 예외다.
+
+새 도메인은 대상이 앞에 오는 `tasty <namespace> <verb>` 경로로 만든다. 예: `claude.spawn` ↔ `tasty claude spawn`,
+`pty.spawn` ↔ `tasty pty spawn`. 기존 경로를 이 규칙에 맞추려고 옮기지 않는다.
 
 namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요). 제거·이름 변경은 0.x 에서 유예 없이 `(BREAK)` 로 내고([안정성 정책](#안정성-정책)), 같은 커밋에서 이 기록과 0.7.0 기준 목록(`crates/tasty-ipc/fixtures/method_baseline_0_7.txt`, 절차는 그 파일 머리 주석)을 고친다. 메서드 수는 테스트의 snapshot에서 관리하며 이 문서에 중복 기록하지 않는다.
 
@@ -36,8 +46,28 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 ## 인자 규칙
 
-- 대상 식별은 항상 `--<namespace> <id>` (`--surface 42`, `--tab 7`). **활성 객체 의존 금지**(포커스 독립성 — [focus 정책](../design/policies/focus.md)).
+- 대상 식별은 `--<대상 종류> <id>` (`--surface 42`, `--tab 7`, `--workspace 3`). **활성 객체 의존 금지**(포커스 독립성 — [focus 정책](../design/policies/focus.md)).
 - 옵션은 kebab-case (`--strip-ansi`, `--since-mark`).
+- 예전 표기를 추천 표기로 바꿀 때는 예전 표기를 clap 별칭으로 남긴다. 두 표기를 함께 주면 같은 인자를 두 번 준 것으로 파싱 단계에서 거절한다. 별칭은 타입·필수성·생략 의미·IPC 키를 바꾸지 않고 새 이름 조회나 암묵 대상도 추가하지 않는다.
+
+### 대상 옵션 표
+
+| 명령 | 추천 표기(호환 표기) | 타입·필수성 | 의미와 생략 | IPC 키 |
+|---|---|---|---|---|
+| `close workspace` | `--workspace`(`--id`) | u32, 필수 | workspace ID | `workspace.close`의 `id` |
+| `close window` | `--window`(`--id`) | u64, 필수 | window ID | `window.close`의 `id` |
+| `agent` 하위 명령 전체 | `--workspace`(`--workspace-id`) | u32. 명령마다 필수 또는 선택 | workspace ID. `dag-list` 등 선택인 명령은 생략 시 모든 live workspace | 각 메서드의 `workspace_id` |
+| `split` | `--surface`(`--target-surface`) | 문자열, 선택 | 숫자 surface ID, `this`, nickname. 해석은 기존 resolver·서버 계약 | `split`의 `target_surface` |
+| `split` | `--pane`(`--target-pane`) | u32, 선택 | pane 분할의 대상 pane ID | `split`의 `target_pane` |
+| `pty attach-surface` | `--pty`(`--pty-id`) | u32, 필수 | standalone PTY ID | `pty.attach_surface`의 `id` |
+| `pty attach-surface` | `--pane`(`--pane-id`) | u32, 필수 | 새 탭을 만들 pane ID | `pty.attach_surface`의 `pane_id` |
+| `terminal spawn` | `--workspace` | 문자열, 필수 | workspace ID 또는 이름 | `terminal.spawn`의 `workspace` |
+| `terminal kill` | `--surface` / `--child` | u32 선택 / u32 필수 | 부모 surface ID / 자식 번호(child index). 부모는 기존 환경변수·단일 부모 처리를 따른다 | `terminal.kill`의 `surface` / `child` |
+
+필수·선택은 CLI 파싱 단계 기준이다. 어느 대상이 실제로 필요한지는 서버가 다시 검증한다.
+child index와 surface ID는 서로 바꿔 넣지 않는다. `this`·nickname은 원래 받던 명령에서만 받으며 숫자만
+받는 인자로 넓히지 않는다. plugin 인자는 매니페스트에 별칭 필드가 없어 이 표의 대상이 아니다.
+`crates/tasty-cli/tests/target_aliases.rs`가 두 표기의 요청 동일성, 중복 거절, 타입 범위를 확인한다.
 
 ### 잘못된 인자는 거절한다 — 자르지도, 버리지도 않는다
 

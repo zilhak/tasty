@@ -29,14 +29,14 @@ pub enum AgentCommands {
     /// Without a runner, ready tasks remain queued and task-await can time out.
     TaskCreate {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Display name.
         #[arg(long)]
         name: String,
         /// TaskCommand as JSON (e.g. `{"kind":"run","command":["cargo","build"]}`).
-        /// `workspace_id` is auto-filled from `--workspace-id` if omitted; if present
-        /// and different, `--workspace-id` wins and a warning is returned.
+        /// `workspace_id` is auto-filled from `--workspace` if omitted; if present
+        /// and different, `--workspace` wins and a warning is returned.
         /// Accepts inline JSON or `@path/to/file.json`.
         #[arg(long)]
         command: String,
@@ -73,11 +73,11 @@ pub enum AgentCommands {
     /// stores nothing; the error names the task and a JSON pointer into the
     /// submitted graph. A valid graph is stored and activated together, so no
     /// task of it runs before every task exists. Run and agent commands without
-    /// a `workspace_id`, including inline fallback commands, get `--workspace-id`.
+    /// a `workspace_id`, including inline fallback commands, get `--workspace`.
     /// Other command kinds have no such field and are sent unchanged.
     TaskGraphSubmit {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Graph JSON (`{"contract_version":2,"types":{..},"tasks":[..]}`).
         /// Accepts inline JSON or `@path/to/file.json`.
@@ -90,7 +90,7 @@ pub enum AgentCommands {
     /// List tasks in a workspace.
     TaskList {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Filter by state (comma-separated: waiting,ready,running,succeeded,failed,cancelled,skipped,unknown).
         /// With several states, every task matching any of them is returned
@@ -104,7 +104,7 @@ pub enum AgentCommands {
     /// Fetch a single task.
     TaskGet {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Task id.
         #[arg(long)]
@@ -118,7 +118,7 @@ pub enum AgentCommands {
     /// to 10 minutes (provisional default). `--timeout-ms 0` = wait indefinitely.
     TaskAwait {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Task id to wait on.
         #[arg(long)]
@@ -130,7 +130,7 @@ pub enum AgentCommands {
     /// Cancel a task. Downstream is cascaded according to on_failure.
     TaskCancel {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Task id to cancel.
         #[arg(long)]
@@ -139,7 +139,7 @@ pub enum AgentCommands {
     /// Retry a Failed/Cancelled/Skipped/Unknown task.
     TaskRetry {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Task id to retry.
         #[arg(long)]
@@ -152,7 +152,7 @@ pub enum AgentCommands {
     /// Output the task DAG as JSON or Graphviz dot.
     TaskGraph {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Format: json | dot. Default: json.
         #[arg(long, default_value = "json")]
@@ -162,10 +162,10 @@ pub enum AgentCommands {
     /// with the same `metadata.dag` string form one explicit group, and the
     /// rest are grouped by weak connectivity (`depends_on` / `Fallback.task` /
     /// `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2
-    /// `transitions`). Omit `--workspace-id` to scan every live workspace.
+    /// `transitions`). Omit `--workspace` to scan every live workspace.
     DagList {
         /// Restrict to one workspace. Omitted = every live workspace.
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: Option<u32>,
         /// Also include each DAG's task id list (`task_ids`).
         #[arg(long, default_value_t = false)]
@@ -179,7 +179,7 @@ pub enum AgentCommands {
         id: String,
         /// Restrict the lookup to one workspace. Explicit ids are user-chosen,
         /// so two workspaces can carry the same one; pass this to disambiguate.
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: Option<u32>,
         /// Format: json | dot. Default: json.
         #[arg(long, default_value = "json")]
@@ -192,7 +192,7 @@ pub enum AgentCommands {
         /// DAG id from `dag-list` (`d:<metadata.dag>` or `c:<root task id>`).
         dag: String,
         /// Restrict the lookup to one workspace. Omitted = every live workspace.
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: Option<u32>,
         /// Only this task.
         #[arg(long)]
@@ -221,7 +221,7 @@ pub enum AgentCommands {
     /// alive or have a saved exit result.
     TaskRun {
         /// Workspace id whose runner is being controlled (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// start | stop | status. Default: status.
         #[arg(long, value_enum, default_value_t = TaskRunAction::Status)]
@@ -232,7 +232,7 @@ pub enum AgentCommands {
     /// thread did not dispatch.
     TaskSetResult {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Task id whose result is being reported.
         #[arg(long)]
@@ -259,7 +259,7 @@ pub enum AgentCommands {
     /// value may be submitted again; a different value for the same attempt is rejected.
     TaskSubmit {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Agent task id.
         #[arg(long)]
@@ -280,7 +280,7 @@ pub enum AgentCommands {
     /// rejected regardless of `--cascade`/`--force` (cancel first).
     TaskDelete {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Task id to delete.
         #[arg(long)]
@@ -298,7 +298,7 @@ pub enum AgentCommands {
     /// are actually removed; the rest are reported as retained.
     TaskPurge {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Comma-separated state names (waiting|ready|running|succeeded|failed|cancelled|skipped|unknown).
         #[arg(long, value_delimiter = ',')]
@@ -318,7 +318,7 @@ pub enum AgentCommands {
     /// A timed-out barrier rejects signals and remains until barrier-delete.
     BarrierCreate {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Barrier name (unique within the workspace).
         #[arg(long)]
@@ -334,7 +334,7 @@ pub enum AgentCommands {
     /// Signal a barrier (count_signaled++).
     BarrierSignal {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Barrier name to signal.
         #[arg(long)]
@@ -343,7 +343,7 @@ pub enum AgentCommands {
     /// Poll a barrier's current state.
     BarrierAwait {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Barrier name to poll.
         #[arg(long)]
@@ -352,7 +352,7 @@ pub enum AgentCommands {
     /// Read a barrier's current state (alias of barrier_await).
     BarrierState {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Barrier name to read.
         #[arg(long)]
@@ -361,7 +361,7 @@ pub enum AgentCommands {
     /// Create a semaphore with N permits.
     SemaphoreCreate {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Semaphore name (unique within the workspace).
         #[arg(long)]
@@ -375,7 +375,7 @@ pub enum AgentCommands {
     /// acquires are refused until the holder count falls under the new limit.
     SemaphoreSetPermits {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Semaphore name to resize.
         #[arg(long)]
@@ -392,7 +392,7 @@ pub enum AgentCommands {
     /// caller's job.
     SemaphoreAcquire {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Semaphore name to acquire a permit from.
         #[arg(long)]
@@ -409,7 +409,7 @@ pub enum AgentCommands {
     /// Release a permit. No-op if holder isn't currently holding.
     SemaphoreRelease {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Semaphore name the permit belongs to.
         #[arg(long)]
@@ -421,13 +421,13 @@ pub enum AgentCommands {
     /// List all barriers in a workspace.
     BarrierList {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
     },
     /// Delete a barrier (no-op if missing).
     BarrierDelete {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Barrier name to delete.
         #[arg(long)]
@@ -436,13 +436,13 @@ pub enum AgentCommands {
     /// List all semaphores in a workspace.
     SemaphoreList {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
     },
     /// Delete a semaphore (no-op if missing).
     SemaphoreDelete {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Semaphore name to delete.
         #[arg(long)]
@@ -461,7 +461,7 @@ pub enum AgentCommands {
     /// running task holds under its own task id.
     LeaseAcquire {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Resource identifier (e.g. `file:/path`, `workspace:foo`).
         #[arg(long)]
@@ -483,7 +483,7 @@ pub enum AgentCommands {
     /// Release a lease. Only the current holder can release.
     LeaseRelease {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Resource identifier the lease was acquired on.
         #[arg(long)]
@@ -495,13 +495,13 @@ pub enum AgentCommands {
     /// List all leases in a workspace (expired leases auto-evicted).
     LeaseList {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
     },
     /// Combine results from N tasks into one value (strategies: first_success | all | merge_json | concat_text | custom:<cmd>).
     TaskReduce {
         /// Workspace id (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Comma-separated input task IDs (in reduce order).
         #[arg(long, value_delimiter = ',')]

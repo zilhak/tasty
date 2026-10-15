@@ -1,4 +1,4 @@
-<!-- source-hash: b9db6af4240e -->
+<!-- source-hash: c5e73471e9b5 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -7,16 +7,16 @@ Run tests after a build finishes, then pass the results to the next task. Regist
 
 Create and manage tasks with the `tasty` CLI. To follow them in the app, see [Watching progress](#watching-progress).
 
-Pass the task's workspace as `--workspace-id` in each command. The command uses that workspace even while you are viewing another one.
+Pass the task's workspace as `--workspace` in each command (the older `--workspace-id` is still accepted). The command uses that workspace even while you are viewing another one.
 
 ## Starting the runner
 
 You can create tasks, but nothing runs while the runner is off. Start it once per Workspace.
 
 ```sh
-tasty agent task-run --workspace-id 2 --action start
-tasty agent task-run --workspace-id 2 --action status
-tasty agent task-run --workspace-id 2 --action stop
+tasty agent task-run --workspace 2 --action start
+tasty agent task-run --workspace 2 --action status
+tasty agent task-run --workspace 2 --action stop
 ```
 
 Restarting Tasty does not start the runner again automatically. The tasks themselves are still there, so `start` again and it picks up where it left off. When the runner is stopped, the runner pill on the DAG screen says so, and hovering it shows the command that starts it again. In a DAG tab that command is also spelled out on the header line.
@@ -24,7 +24,7 @@ Restarting Tasty does not start the runner again automatically. The tasks themse
 ## Creating a task
 
 ```sh
-BUILD=$(tasty agent task-create --workspace-id 2 --name build \
+BUILD=$(tasty agent task-create --workspace 2 --name build \
   --command '{"kind":"run","command":["cargo","build"]}' | jq -r .id)
 ```
 
@@ -47,7 +47,7 @@ A `run` command, the postprocess command below and a reducer that merges results
 ## Order and failure handling
 
 ```sh
-TEST=$(tasty agent task-create --workspace-id 2 --name test \
+TEST=$(tasty agent task-create --workspace 2 --name test \
   --command '{"kind":"run","command":["cargo","test"]}' \
   --depends-on "$BUILD" --on-failure abort | jq -r .id)
 ```
@@ -82,8 +82,8 @@ The real value goes in that spot when the task is dispatched. Use it for values 
 To fix the types of results too, bundle tasks into one graph and send it. The whole graph is checked first, so if anything is wrong no task is created and the error says which spot in which task is wrong. No task runs before every task exists. One graph holds up to 1000 tasks; split larger sets into several graphs.
 
 ```sh
-tasty agent task-graph-submit --workspace-id 2 --graph @graph.json --dry-run   # check only
-tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
+tasty agent task-graph-submit --workspace 2 --graph @graph.json --dry-run   # check only
+tasty agent task-graph-submit --workspace 2 --graph @graph.json
 ```
 
 ```json
@@ -106,7 +106,7 @@ To hand an existing file to a `run` task, put `{"file": "/<field>"}` in `args`. 
 set -eu
 diff_file=$(mktemp)
 git diff > "$diff_file"
-tasty agent task-graph-submit --workspace-id "$1" --graph "$(cat <<JSON
+tasty agent task-graph-submit --workspace "$1" --graph "$(cat <<JSON
 {"contract_version": 2, "tasks": [
   {"id": "lint", "command": {"kind": "run", "command": ["my-lint", "--diff"]},
    "input_schema": {"type": "object", "fields": {"diff": {"type": "string"}}},
@@ -307,9 +307,9 @@ To see it from a terminal:
 
 ```sh
 tasty agent dag-list                                   # DAGs across every Workspace
-tasty agent task-list --workspace-id 2 --state waiting,ready,running
-tasty agent task-get --workspace-id 2 --id "$BUILD"
-tasty agent task-graph --workspace-id 2 --format dot   # draw it with Graphviz
+tasty agent task-list --workspace 2 --state waiting,ready,running
+tasty agent task-get --workspace 2 --id "$BUILD"
+tasty agent task-graph --workspace 2 --format dot   # draw it with Graphviz
 ```
 
 `--format dot` writes only the graph to standard output, so you can hand it straight to Graphviz (for example `... --format dot | dot -Tsvg > graph.svg`). A cycle warning and the runner status go to standard error. `dag-get --format dot` works the same way.
@@ -319,11 +319,11 @@ tasty agent task-graph --workspace-id 2 --format dot   # draw it with Graphviz
 ## Waiting and fixing up
 
 ```sh
-tasty agent task-await --workspace-id 2 --id "$TEST"             # wait until it finishes
-tasty agent task-retry --workspace-id 2 --id "$TEST"             # retry a failed, cancelled, skipped or unknown task
-tasty agent task-cancel --workspace-id 2 --id "$TEST"
-tasty agent task-set-result --workspace-id 2 --id "$MANUAL" --state succeeded
-tasty agent task-purge --workspace-id 2 --states succeeded
+tasty agent task-await --workspace 2 --id "$TEST"             # wait until it finishes
+tasty agent task-retry --workspace 2 --id "$TEST"             # retry a failed, cancelled, skipped or unknown task
+tasty agent task-cancel --workspace 2 --id "$TEST"
+tasty agent task-set-result --workspace 2 --id "$MANUAL" --state succeeded
+tasty agent task-purge --workspace 2 --states succeeded
 ```
 
 - `task-await` waits up to 10 minutes by default and comes back with a timeout if the task has not finished by then. With `--timeout-ms 0` it waits indefinitely.
@@ -372,10 +372,10 @@ Coordination devices for running several tasks at once come along with it.
 | Rate limit | Decides how many times per period is allowed, per agent and per metric |
 
 ```sh
-tasty agent semaphore-create --workspace-id 2 --name build --permits 2
-tasty agent barrier-create --workspace-id 2 --name ready --count-required 3
-tasty agent lease-acquire --workspace-id 2 --resource file:/tmp/db --holder agent-a --ttl-ms 60000
-tasty agent task-reduce --workspace-id 2 --inputs "$A,$B" --strategy all --extract-path /stdout/text
+tasty agent semaphore-create --workspace 2 --name build --permits 2
+tasty agent barrier-create --workspace 2 --name ready --count-required 3
+tasty agent lease-acquire --workspace 2 --resource file:/tmp/db --holder agent-a --ttl-ms 60000
+tasty agent task-reduce --workspace 2 --inputs "$A,$B" --strategy all --extract-path /stdout/text
 ```
 
 Semaphore and barrier names use only lowercase letters, digits, `.`, `_`, and `-`. If a name contains any other character, the command is rejected and tells you which character is the problem. Lease resource names have no such limit.

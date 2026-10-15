@@ -59,10 +59,37 @@ pub(crate) fn localize(mut cmd: Command) -> Command {
 }
 
 fn localize_annotations(mut arg: clap::Arg) -> clap::Arg {
-    if !arg.get_action().takes_values() {
-        return arg;
-    }
     let mut notes = Vec::new();
+    // clap의 영어 `[aliases: ...]` 대신 번역된 안내를 붙인다. 별칭은 숨김 별칭으로 남아 계속 받는다.
+    let aliases: Vec<String> = arg
+        .get_visible_aliases()
+        .unwrap_or_default()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    if !aliases.is_empty() {
+        let hidden: Vec<String> = arg
+            .get_aliases()
+            .unwrap_or_default()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        arg = arg.visible_alias(None::<&str>);
+        for alias in hidden.iter().chain(&aliases) {
+            // clap은 static 문자열을 요구한다. 도움말 트리는 프로세스당 한 번 만든다.
+            let alias: &'static str = Box::leak(alias.clone().into_boxed_str());
+            arg = arg.alias(alias);
+        }
+        let shown = aliases
+            .iter()
+            .map(|a| format!("--{a}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        notes.push(tasty_i18n::t_fmt("cli.help_frame.aliases", &shown));
+    }
+    if !arg.get_action().takes_values() {
+        return with_notes(arg, notes);
+    }
     if !arg.is_hide_default_value_set() && !arg.get_default_values().is_empty() {
         let values = arg
             .get_default_values()
@@ -88,6 +115,10 @@ fn localize_annotations(mut arg: clap::Arg) -> clap::Arg {
             arg = arg.hide_possible_values(true);
         }
     }
+    with_notes(arg, notes)
+}
+
+fn with_notes(mut arg: clap::Arg, notes: Vec<String>) -> clap::Arg {
     if !notes.is_empty() {
         let notes = notes.join("; ");
         let help = arg.get_help().map(ToString::to_string).unwrap_or_default();

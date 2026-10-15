@@ -23,9 +23,9 @@
 탭 스트립 오른쪽의 분할 아이콘은 그 페인을 좌우로 나눕니다. 다른 종류의 서피스로 나누려면 CLI 를 씁니다.
 
 ```sh
-tasty split --level pane --target-pane 1 --direction horizontal
-tasty split --level surface --target-surface 5 --type markdown --file notes.md
-tasty split --level surface --target-surface 5 --type explorer --path ~/proj
+tasty split --level pane --pane 1 --direction horizontal
+tasty split --level surface --surface 5 --type markdown --file notes.md
+tasty split --level surface --surface 5 --type explorer --path ~/proj
 ```
 
 ## 탭

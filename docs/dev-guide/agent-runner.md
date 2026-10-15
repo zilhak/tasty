@@ -121,7 +121,7 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 `--extract-path <JSON Pointer>`(예: `/stdout/text`)를 주면, reducer 전략을 적용하기 전에 각 input 의 `output` 에서 그 경로(RFC 6901 JSON Pointer)만 뽑아낸다 — `crates/tasty-agent/src/reducer.rs::extract_paths`. 예:
 
 ```sh
-tasty agent task-reduce --workspace-id 1 --inputs t-a,t-b \
+tasty agent task-reduce --workspace 1 --inputs t-a,t-b \
   --strategy concat_text --extract-path /stdout/text
 # → {"value": "out1\nout2\n", "warnings": []}
 ```
@@ -149,12 +149,12 @@ ${task.<task_id>.output<JSON Pointer>}
 
 ```sh
 # A: 자식 spawn → output {"child_surface_id": 3, ...}
-tasty agent task-create --workspace-id 1 --name spawn-child \
+tasty agent task-create --workspace 1 --name spawn-child \
   --command '{"kind":"custom","ipc_method":"claude.spawn",
               "params":{"surface_id":1,"workspace":"ws","cwd":"/tmp","prompt":"..."}}'
 
 # B: 그 자식에게 tell — A 의 응답을 참조. depends_on 은 필수다(아래).
-tasty agent task-create --workspace-id 1 --name tell-child --depends-on "$T_A" \
+tasty agent task-create --workspace 1 --name tell-child --depends-on "$T_A" \
   --command '{"kind":"custom","ipc_method":"claude.tell",
               "params":{"surface_id":"${task.'"$T_A"'.output/child_surface_id}",
                         "message":"..."}}'
@@ -459,8 +459,8 @@ TTL 없이 잡은 점유는 자동 만료하지 않으므로 운영자가 실제
 한도를 바꿀 때는 삭제·재생성하지 않고 다음 명령을 쓴다. create는 기존 이름을 거절한다.
 
 ```sh
-tasty agent semaphore-set-permits --workspace-id 1 --name cap2 --permits 3
-tasty agent semaphore-set-permits --workspace-id 1 --name cap2 --permits 1
+tasty agent semaphore-set-permits --workspace 1 --name cap2 --permits 3
+tasty agent semaphore-set-permits --workspace 1 --name cap2 --permits 1
 ```
 
 한도를 줄여 현재 홀더 수보다 작아져도 기존 작업은 그대로 둔다.
@@ -475,7 +475,7 @@ Semaphore 를 이 용도로 쓴다. 로컬 오케스트레이터(예: conductor 
 
 절차:
 
-1. 세마포어를 원하는 permit 수로 만든다: `agent semaphore-create --workspace-id 1 --name cap2 --permits 2`.
+1. 세마포어를 원하는 permit 수로 만든다: `agent semaphore-create --workspace 1 --name cap2 --permits 2`.
 2. 동시성을 묶고 싶은 task 들을 만들 때 각각 `--metadata '{"semaphore":{"name":"cap2"}}'` 를 붙인다(편의 플래그가 있으면 `--concurrency-limit cap2` 로 대체 가능 — 아래 "CLI 예" 참조).
 3. `metadata.semaphore` 를 안 붙인 task 는 이 제한과 무관하게 즉시 병렬 실행된다 — 세마포어는 **태그가 붙은 task 끼리만** 경쟁한다. 서로 다른 이름의 세마포어를 쓰면 그룹별로 독립된 상한을 걸 수 있다.
 
@@ -484,17 +484,17 @@ Semaphore 를 이 용도로 쓴다. 로컬 오케스트레이터(예: conductor 
 라이브 검증 예(2-permit 세마포어에 독립 task 4개, 각 4초 sleep):
 
 ```sh
-tasty agent semaphore-create --workspace-id 1 --name cap2 --permits 2
+tasty agent semaphore-create --workspace 1 --name cap2 --permits 2
 for i in 1 2 3 4; do
-  tasty agent task-create --workspace-id 1 --name "t$i" \
+  tasty agent task-create --workspace 1 --name "t$i" \
     --command '{"kind":"run","command":["sleep","4"]}' \
     --concurrency-limit cap2   # 또는 --metadata '{"semaphore":{"name":"cap2"}}'
 done
-tasty agent task-run --workspace-id 1 --action start
-tasty agent task-list --workspace-id 1   # 즉시 조회 시 2개만 running, 2개는 ready
+tasty agent task-run --workspace 1 --action start
+tasty agent task-list --workspace 1   # 즉시 조회 시 2개만 running, 2개는 ready
 # … 4초 후
-tasty agent task-list --workspace-id 1   # 앞 2개가 끝나며 나머지 2개가 자동으로 running 전환
-tasty agent semaphore-list --workspace-id 1
+tasty agent task-list --workspace 1   # 앞 2개가 끝나며 나머지 2개가 자동으로 running 전환
+tasty agent semaphore-list --workspace 1
 # 전부 종결 후 cap2 항목: permits_available == 2, holders: []
 # holders 원소는 { id, acquired_at?, expires_at? } — 누가 언제부터 잡고 있는지가 보인다
 ```
@@ -546,13 +546,13 @@ lease pool 전용 CLI 플래그는 없다. `--metadata '{"lease":{"candidates":[
 ```sh
 mkdir -p /tmp/wt-1 /tmp/wt-2 /tmp/wt-3
 for i in 1 2 3 4 5; do
-  tasty agent task-create --workspace-id 1 --name "t$i" \
+  tasty agent task-create --workspace 1 --name "t$i" \
     --command '{"kind":"run","command":["pwd"]}' \
     --metadata '{"lease":{"candidates":["/tmp/wt-1","/tmp/wt-2","/tmp/wt-3"]}}'
 done
-tasty agent task-run --workspace-id 1 --action start
-tasty agent task-list --workspace-id 1   # 3개만 running(서로 다른 cwd), 2개는 ready(대기)
-tasty agent task-get --workspace-id 1 --id t-...   # command.cwd 로 실제 배정된 candidate 확인
+tasty agent task-run --workspace 1 --action start
+tasty agent task-list --workspace 1   # 3개만 running(서로 다른 cwd), 2개는 ready(대기)
+tasty agent task-get --workspace 1 --id t-...   # command.cwd 로 실제 배정된 candidate 확인
 ```
 
 elastic 을 켜면 5개 모두 대기 없이 동시 실행되고, 그중 2개는 `/tmp/wt-3-overflow-1`/`-2` 처럼 아직 디스크에 없는 합성 경로를 받는다 — 위 "주의" 대로 `cwd` 를 그 합성 경로로 직접 채우면(fill-when-absent) spawn 이 즉시 실패하므로, `cwd` 는 존재하는 고정 경로에 두고 `${lease.resource}` 를 command 인자로 받아 스스로 `mkdir -p`/`cd` 하게 한다:
@@ -560,13 +560,13 @@ elastic 을 켜면 5개 모두 대기 없이 동시 실행되고, 그중 2개는
 ```sh
 mkdir -p /tmp/wt-1 /tmp/wt-2 /tmp/wt-3
 for i in 1 2 3 4 5; do
-  tasty agent task-create --workspace-id 1 --name "e$i" \
+  tasty agent task-create --workspace 1 --name "e$i" \
     --command '{"kind":"run","command":["sh","-c","mkdir -p \"$1\" && cd \"$1\" && pwd","_","${lease.resource}"],"cwd":"/tmp"}' \
     --metadata '{"lease":{"candidates":["/tmp/wt-1","/tmp/wt-2","/tmp/wt-3"],"elastic":{}}}'
 done
-tasty agent task-run --workspace-id 1 --action start
-tasty agent task-list --workspace-id 1   # 5개 모두 즉시 running, 대기 없음
-tasty agent lease-list --workspace-id 1  # 3개 원본 + wt-3-overflow-1/-2 총 5개 holder
+tasty agent task-run --workspace 1 --action start
+tasty agent task-list --workspace 1   # 5개 모두 즉시 running, 대기 없음
+tasty agent lease-list --workspace 1  # 3개 원본 + wt-3-overflow-1/-2 총 5개 holder
 ```
 
 `cwd:"/tmp"`는 이미 존재하는 경로이므로 미생성 lease 경로 때문에 spawn이 실패하는 문제를 피한다. `sh -c '...' _ ${lease.resource}` 에서 `$1` 로 실제 배정된(원본 또는 합성) 경로를 받아 그 안에서 직접 생성·이동한다 — `${lease.resource}` 를 `cwd` 자체에 두는 방식(위 "주의")과 달리 이 패턴은 elastic 로 새로 합성된, 아직 존재하지 않는 경로에도 그대로 쓸 수 있다.
@@ -595,17 +595,17 @@ ensure_allowed → check_cap_block → rate_limit_try_consume → record_ipc_cal
 ## CLI 예
 
 ```sh
-tasty agent task-run --workspace-id 1 --action start    # 시작(실행 중이면 no-op)
-tasty agent task-run --workspace-id 1                    # 상태 조회
-tasty agent task-run --workspace-id 1 --action stop      # 중단(자식 프로세스는 생존)
+tasty agent task-run --workspace 1 --action start    # 시작(실행 중이면 no-op)
+tasty agent task-run --workspace 1                    # 상태 조회
+tasty agent task-run --workspace 1 --action stop      # 중단(자식 프로세스는 생존)
 ```
 
 `--action` 은 `clap::ValueEnum { Start, Stop, Status }` — 오타는 CLI 시점 거부.
 
 ```sh
-tasty agent task-list --workspace-id 1                                   # 전체
-tasty agent task-list --workspace-id 1 --state running                   # 단일 state
-tasty agent task-list --workspace-id 1 --state waiting,ready,running     # 콤마 다중값 = "아직 안 끝난 task"
+tasty agent task-list --workspace 1                                   # 전체
+tasty agent task-list --workspace 1 --state running                   # 단일 state
+tasty agent task-list --workspace 1 --state waiting,ready,running     # 콤마 다중값 = "아직 안 끝난 task"
 ```
 
 `task-list --state` 는 `task-purge --states` 와 **동일한 콤마 다중값 파싱**을 쓴다(플래그 이름만 단수/복수로 다르다 — 하위호환 때문에 유지). 여러 state 는 OR 매칭이고, 단일값은 예전과 같이 동작한다. IPC(`agent.task_list` / `agent.task_purge`)도 배열 `["waiting","ready"]` · 콤마 문자열 `"waiting,ready"` · 단일 문자열을 모두 받고, 단수/복수 키(`state` ↔ `states`)를 서로 폴백한다 — 콤마 목록을 단일값 필터로 넘겨 매칭이 0 건이 되고 "아직 안 끝난 task 가 있는가" 판정이 조용히 무력화되던 함정을 없앤 것. 매칭이 없으면 빈 목록, 필터 미지정이면 전체다.
@@ -613,7 +613,7 @@ tasty agent task-list --workspace-id 1 --state waiting,ready,running     # 콤�
 **단, "빈 값" 의 의미는 두 커맨드가 다르다.** `task_list` 는 빈 값(`[]` / `""` / 콤마만)을 "필터 없음"(= 전체)으로 접지만, `task_purge` 는 **키가 있는데 이름이 하나도 없으면 "매칭 없음"** 으로 본다 — 즉 `{"states": [], "older_than_ms": ...}` 는 아무것도 지우지 않는다. 상태 목록을 동적으로 조립하는 호출자가 상태를 하나도 안 골랐을 때, 파괴적 명령에서 그걸 "상태 무관 전체 삭제" 로 승격시키지 않기 위해서다. `states` 키가 **아예 없거나 `null`** 이면 그건 그대로 "상태 필터 없음" 이므로 `older_than_ms` 만으로 전체가 후보가 된다(둘 다 미지정이면 `TaskService::task_purge` 가 거부).
 
 ```sh
-tasty agent task-create --workspace-id 1 --name build --command '{"kind":"run","command":["cargo","build"]}' \
+tasty agent task-create --workspace 1 --name build --command '{"kind":"run","command":["cargo","build"]}' \
   --concurrency-limit cap2   # metadata.semaphore.name=cap2 를 자동 조립(위 "동시성 제한" 참조)
 ```
 
@@ -621,17 +621,17 @@ tasty agent task-create --workspace-id 1 --name build --command '{"kind":"run","
 
 ```sh
 tasty agent dag-list                                   # 살아있는 전 workspace 의 DAG
-tasty agent dag-list --workspace-id 1                  # 한 workspace 로 한정
+tasty agent dag-list --workspace 1                  # 한 workspace 로 한정
 tasty agent dag-list --include-tasks                   # 각 DAG 에 task id 목록 동봉
 tasty agent dag-get --id c:t-1716800000123-1           # 그 DAG 만의 nodes/edges
-tasty agent dag-get --id d:build --workspace-id 1 --format dot
+tasty agent dag-get --id d:build --workspace 1 --format dot
 ```
 
 `task-graph`·`dag-get` 의 `--format dot` 은 응답의 `dot` 본문만 stdout 에 쓰고 `cycle`·`runner` 는 stderr 에 한 줄씩 쓴다(`crates/tasty-cli/src/format/graph_dot.rs`). stdout 을 그대로 Graphviz 에 넘기기 위해서다. 응답 전체(JSON)가 필요하면 `--format json` 이나 IPC `agent.task_graph`·`agent.dag_get` 을 쓴다.
 
 DAG 는 영속 레코드가 아니라 `metadata.dag`(explicit, id `d:<값>`) 또는 그래프 연결성
 (derived, id `c:<root task id>`)에서 도출된다 — 같은 task 집합이면 id 가 항상 같다.
-`dag-list` 는 `--workspace-id` 를 생략하면 *살아있는* workspace 전부를 순회하며
+`dag-list` 는 `--workspace` 를 생략하면 *살아있는* workspace 전부를 순회하며
 (응답 `scope: "live_workspaces"`), 삭제된 workspace 에 남은 고아 task 는 열거하지
 않는다(그건 아래 "자동 GC" 의 몫). 도출 규칙과 응답 필드는
 [features/agent-collaboration](../features/agent-collaboration/index.md) 의 Task DAG 항목.
@@ -640,14 +640,14 @@ DAG 는 영속 레코드가 아니라 `metadata.dag`(explicit, id `d:<값>`) 또
 `metadata` 로 태깅한다:
 
 ```sh
-tasty agent task-create --workspace-id 1 --name build --command '{"kind":"run","command":["true"]}' \
+tasty agent task-create --workspace 1 --name build --command '{"kind":"run","command":["true"]}' \
   --metadata '{"dag":"release","dag_name":"Release pipeline"}'
 ```
 
 ```sh
-tasty agent task-delete --workspace-id 1 --id t-...              # 참조 있으면 거부 + 참조자 목록
-tasty agent task-delete --workspace-id 1 --id t-... --cascade    # 참조자까지 함께 삭제
-tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-ms 604800000 --dry-run
+tasty agent task-delete --workspace 1 --id t-...              # 참조 있으면 거부 + 참조자 목록
+tasty agent task-delete --workspace 1 --id t-... --cascade    # 참조자까지 함께 삭제
+tasty agent task-purge --workspace 1 --states succeeded,failed --older-than-ms 604800000 --dry-run
 ```
 
 ## v2 타입 계약 (`contract_version: 2`)
@@ -933,7 +933,7 @@ stdin 으로 파일 내용을 흘리는 방식 대신 경로를 argv 에 넣는�
 set -eu
 diff_file=$(mktemp)
 git diff > "$diff_file"
-tasty agent task-graph-submit --workspace-id "$1" --graph "$(cat <<JSON
+tasty agent task-graph-submit --workspace "$1" --graph "$(cat <<JSON
 {"contract_version": 2, "tasks": [
   {"id": "lint", "command": {"kind": "run", "command": ["my-lint", "--diff"]},
    "input_schema": {"type": "object", "fields": {"diff": {"type": "string"}}},
@@ -1097,7 +1097,7 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 결과:
 
 - 출력 타입이 `string`(기본)이면 최종 답변이 출력이다(`provenance.output_source`: `agent.final_answer`).
-- 그 밖의 타입은 같은 회차에 명시 제출한 값이 출력이다(`agent.submitted`). 지시문 끝에 제출 방법(`tasty agent task-submit --workspace-id … --id … --attempt-id … --token … --output '<JSON>'`)과 출력 스키마를 붙인다. 후처리가 있으면 제출이 필요 없고 후처리가 받는 실행 결과에 최종 답변이 든다.
+- 그 밖의 타입은 같은 회차에 명시 제출한 값이 출력이다(`agent.submitted`). 지시문 끝에 제출 방법(`tasty agent task-submit --workspace … --id … --attempt-id … --token … --output '<JSON>'`)과 출력 스키마를 붙인다. 후처리가 있으면 제출이 필요 없고 후처리가 받는 실행 결과에 최종 답변이 든다.
 - `agent.task_submit_result` 는 값이 도착할 때 출력 타입으로 검사하고(실패하면 `-32602` 와 `output_validation`) 턴이 끝날 때 결과로 확정한다. 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다. 같은 값을 다시 내면 `duplicate: true`, 거절은 `-32018` 과 `error.data.reason`: `not_running`·`stale_attempt`·`conflict`(같은 회차의 다른 값)·`turn_ended`·`not_the_session`(세션 토큰의 agent 가 그 task 의 세션이 아님)·`wrong_token`(회차 토큰이 다름).
 - 회차마다 예측할 수 없는 회차 토큰(16바이트 난수, 16진수 32자)을 새로 만들어 지시의 제출 안내에 싣고(`--token`), 제출은 `token` 이 그 회차의 것과 같아야 받는다. 회차 id(`<task id>#<n>`)는 짐작할 수 있어 다른 회차나 다른 호출자가 실수로 낸 값을 막지 못하기 때문이다. 로컬 IPC 가 신뢰 경계라는 원칙은 그대로이고, 토큰은 보안 경계가 아니다(같은 컴퓨터의 호출자는 세션 화면이나 handle 기록에서 토큰을 읽을 수 있다).
 - 원본 보고(`provider`·`surface_id`·`final_answer`·`submitted`)는 `raw.execution` 에 남는다. 직렬화가 64 KiB 를 넘으면 앞부분만 `raw.execution_truncated` 에 남는다(위 §결과 확정의 응답 상한).
@@ -1172,7 +1172,7 @@ custom 기록은 회차마다 memory 키 하나(`tasty.agent.task_report.<task i
 | agent | 지시문 끝에 사용법을 읽는 명령(`tasty agent report usage`) 한 줄과 그 회차의 주소를 붙인다. 에이전트는 `tasty agent report append --address '<주소>' '<text>'` 로 쓴다 |
 | custom(IPC 메서드) · reduce 기본 전략 · wait_barrier | custom 기록이 없다. 자동 항목만 있다 |
 
-조회는 `agent.dag_report`(`{id, workspace_id?, task?, attempt?, include_raw?}`, CLI `tasty agent dag-report <dag> [--workspace-id N] [--task <id> [--attempt <n>]] [--include-raw]`)다. 응답은 `{dag, workspace_id, name, tasks: [{task_id, name, auto, attempts: [{attempt, state, custom, auto?}]}]}` 이다. 맨 위 `auto` 는 고른 회차(주지 않으면 지금 레코드)의 자동 항목이다. retry 로 닫힌 회차는 `attempts[]` 항목에도 굳힌 `auto` 가 실리고, 굳힌 값이 없는 회차(이 저장이 생기기 전에 닫힌 회차)는 `null` 이다. 지금 회차의 항목에는 `auto` 가 없다(맨 위와 같다). 굳힌 `raw` 도 `include_raw` 일 때만 싣는다. `attempt` 는 `task` 가 있어야 한다. append 는 `agent.report_append`(`{address, text}`, 응답 `{result: "stored", seq, omit_by_limit?}` 또는 `{result: "omitted", seq}`)다. agent task 의 세션은 세션 토큰으로 부르므로 `agent` 권한으로 열려 있다. 세션 호출은 자기 세션의 회차로 묶이고, 그 밖의 호출은 주소의 토큰이 쓸 블록을 정한다. CLI `tasty agent report append` 는 성공하면 아무것도 출력하지 않고 종료 코드 0 으로 끝난다(잘리거나 세기만 한 경우도 같다). 거절·연결 실패만 표준 오류에 쓰고 0 이 아닌 코드로 끝난다. 후처리와 reduce 셸에서는 표준 출력이 결과 자리이기 때문이다.
+조회는 `agent.dag_report`(`{id, workspace_id?, task?, attempt?, include_raw?}`, CLI `tasty agent dag-report <dag> [--workspace N] [--task <id> [--attempt <n>]] [--include-raw]`)다. 응답은 `{dag, workspace_id, name, tasks: [{task_id, name, auto, attempts: [{attempt, state, custom, auto?}]}]}` 이다. 맨 위 `auto` 는 고른 회차(주지 않으면 지금 레코드)의 자동 항목이다. retry 로 닫힌 회차는 `attempts[]` 항목에도 굳힌 `auto` 가 실리고, 굳힌 값이 없는 회차(이 저장이 생기기 전에 닫힌 회차)는 `null` 이다. 지금 회차의 항목에는 `auto` 가 없다(맨 위와 같다). 굳힌 `raw` 도 `include_raw` 일 때만 싣는다. `attempt` 는 `task` 가 있어야 한다. append 는 `agent.report_append`(`{address, text}`, 응답 `{result: "stored", seq, omit_by_limit?}` 또는 `{result: "omitted", seq}`)다. agent task 의 세션은 세션 토큰으로 부르므로 `agent` 권한으로 열려 있다. 세션 호출은 자기 세션의 회차로 묶이고, 그 밖의 호출은 주소의 토큰이 쓸 블록을 정한다. CLI `tasty agent report append` 는 성공하면 아무것도 출력하지 않고 종료 코드 0 으로 끝난다(잘리거나 세기만 한 경우도 같다). 거절·연결 실패만 표준 오류에 쓰고 0 이 아닌 코드로 끝난다. 후처리와 reduce 셸에서는 표준 출력이 결과 자리이기 때문이다.
 
 ### 저장 형식
 

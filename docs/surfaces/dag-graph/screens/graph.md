@@ -12,7 +12,7 @@ workspace 의 task DAG 를 노드/엣지 그래프로 **관찰**하는 화면이
 
 ```bash
 tasty new tab --pane <PANE> --type dag_graph
-tasty split --level surface --target-surface <SID> --type dag_graph
+tasty split --level surface --surface <SID> --type dag_graph
 ```
 
 - 변환 팝업(`Alt+'`)에도 다른 kind 와 같이 나온다 — 파일 입력이 없어 즉시 변환된다

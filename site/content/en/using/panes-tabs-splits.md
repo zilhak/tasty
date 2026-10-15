@@ -1,4 +1,4 @@
-<!-- source-hash: 02edac11cbae -->
+<!-- source-hash: 16d27cfdcd50 -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -24,9 +24,9 @@ The terminal in the new cell starts in the working directory of the original cel
 The split icon on the right of the tab strip divides that Pane side by side. To split into a different kind of Surface, use the CLI.
 
 ```sh
-tasty split --level pane --target-pane 1 --direction horizontal
-tasty split --level surface --target-surface 5 --type markdown --file notes.md
-tasty split --level surface --target-surface 5 --type explorer --path ~/proj
+tasty split --level pane --pane 1 --direction horizontal
+tasty split --level surface --surface 5 --type markdown --file notes.md
+tasty split --level surface --surface 5 --type explorer --path ~/proj
 ```
 
 ## Tabs

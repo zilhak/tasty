@@ -94,7 +94,7 @@ pub enum CloseCommands {
     /// workspace does not enter the user's reopen history, and its scrollback is
     /// not kept. Only closes the user made by hand can be reopened.
     ///
-    /// The target is always given explicitly with --id (see `tasty list workspaces`);
+    /// The target is always given explicitly with --workspace (see `tasty list workspaces`);
     /// it is never inferred from what is on screen. Closing a workspace the user is
     /// not looking at leaves their current workspace on screen. A workspace holding
     /// your own surface is refused, as is a workspace mirroring a remote attach
@@ -102,16 +102,16 @@ pub enum CloseCommands {
     /// decision, see `tasty close window`.
     Workspace {
         /// Target workspace ID (required)
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "id", value_name = "ID")]
         id: u32,
     },
     /// Close a window by its ID.
     ///
-    /// The target is always given explicitly with --id (see `tasty list windows`).
+    /// The target is always given explicitly with --window (see `tasty list windows`).
     /// The last remaining main window is refused - quitting is a user action.
     Window {
         /// Target window ID (required)
-        #[arg(long)]
+        #[arg(long = "window", visible_alias = "id", value_name = "ID")]
         id: u64,
     },
     /// Close the calling surface itself (uses TASTY_SURFACE_ID)

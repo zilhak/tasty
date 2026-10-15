@@ -1899,7 +1899,7 @@ goal_surface_required = "오류: 서피스를 지정하세요. --surface <id>를
 
 [cli.agent]
 inputs_empty = "오류: --inputs에 작업 ID가 하나 이상 필요합니다"
-command_workspace_id_overridden = "--command JSON의 workspace_id({})가 --workspace-id 값({})과 달라 {}로 변경했습니다"
+command_workspace_id_overridden = "--command JSON의 workspace_id({})가 --workspace 값({})과 달라 {}로 변경했습니다"
 flag_file_read_failed = "오류: 파일 {}을(를) 읽지 못했습니다 ({}에 사용): {}"
 flag_not_json = "오류: {}을(를) JSON으로 읽을 수 없습니다: {}"
 purge_filter_required = "오류: --states 또는 --older-than-ms를 지정하세요. 워크스페이스의 모든 작업을 조건 없이 삭제할 수 없습니다."
@@ -2498,14 +2498,14 @@ help = "대상 서피스 ID (필수)"
 
 [cli.help._root.close.workspace]
 about = "ID 로 워크스페이스를 통째로 닫기 — 그 안의 모든 페인·탭·서피스까지"
-long = "ID로 지정한 워크스페이스와 그 안의 모든 페인, 탭, 서피스를 닫습니다.\n\n이 작업은 되돌릴 수 없습니다. 워크스페이스의 터미널을 모두 종료하며 다시 열기 기록과 스크롤백을 남기지 않습니다. 다시 열기는 사용자가 화면에서 직접 닫은 항목에만 적용됩니다.\n\n대상 ID는 `--id`로 지정하세요(`tasty list workspaces` 참고). 현재 화면을 기준으로 대상을 선택하지 않습니다. 다른 워크스페이스를 닫아도 현재 보고 있는 워크스페이스는 바뀌지 않습니다. 호출한 서피스가 속한 워크스페이스, 원격 attach 세션을 미러링하는 워크스페이스, 마지막으로 남은 워크스페이스는 닫을 수 없습니다. 윈도우를 닫으려면 `tasty close window`를 사용하세요."
+long = "ID로 지정한 워크스페이스와 그 안의 모든 페인, 탭, 서피스를 닫습니다.\n\n이 작업은 되돌릴 수 없습니다. 워크스페이스의 터미널을 모두 종료하며 다시 열기 기록과 스크롤백을 남기지 않습니다. 다시 열기는 사용자가 화면에서 직접 닫은 항목에만 적용됩니다.\n\n대상 ID는 `--workspace`로 지정하세요(`tasty list workspaces` 참고). 현재 화면을 기준으로 대상을 선택하지 않습니다. 다른 워크스페이스를 닫아도 현재 보고 있는 워크스페이스는 바뀌지 않습니다. 호출한 서피스가 속한 워크스페이스, 원격 attach 세션을 미러링하는 워크스페이스, 마지막으로 남은 워크스페이스는 닫을 수 없습니다. 윈도우를 닫으려면 `tasty close window`를 사용하세요."
 
 [cli.help._root.close.workspace.arg.id]
 help = "대상 워크스페이스 ID (필수)"
 
 [cli.help._root.close.window]
 about = "ID 로 윈도우 닫기"
-long = "ID로 지정한 윈도우를 닫습니다.\n\n대상 ID는 `--id`로 지정하세요(`tasty list windows` 참고). 마지막으로 남은 주 윈도우는 닫을 수 없습니다. 앱 종료는 사용자가 직접 해야 합니다."
+long = "ID로 지정한 윈도우를 닫습니다.\n\n대상 ID는 `--window`로 지정하세요(`tasty list windows` 참고). 마지막으로 남은 주 윈도우는 닫을 수 없습니다. 앱 종료는 사용자가 직접 해야 합니다."
 
 [cli.help._root.close.window.arg.id]
 help = "대상 윈도우 ID (필수)"
@@ -3246,7 +3246,7 @@ help = "부모 서피스 대신 사용할 외부 부모 키(`spawn --parent-exte
 help = "자식이 있는 워크스페이스(ID 또는 이름). 윈도우가 여러 개 열려 있으면 --parent-external과 함께 지정해야 합니다"
 
 [cli.help._root.terminal.kill.arg.child]
-help = "종료할 자식 인덱스"
+help = "종료할 자식 번호(`terminal children`의 번호이며 surface ID가 아님)"
 
 [cli.help._root.terminal.respawn]
 about = "자식 터미널 재생성(PTY 교체 또는 명령 재실행)"
@@ -3261,7 +3261,7 @@ help = "부모 서피스 대신 사용할 외부 부모 키(`spawn --parent-exte
 help = "자식이 있는 워크스페이스(ID 또는 이름). 윈도우가 여러 개 열려 있으면 --parent-external과 함께 지정해야 합니다"
 
 [cli.help._root.terminal.respawn.arg.child]
-help = "재생성할 자식 인덱스"
+help = "재생성할 자식 번호(`terminal children`의 번호이며 surface ID가 아님)"
 
 [cli.help._root.terminal.respawn.arg.cwd]
 help = "새 작업 디렉터리를 지정하여 PTY를 교체합니다."
@@ -3333,7 +3333,7 @@ help = "부모 서피스 대신 사용할 외부 부모 키(`spawn --parent-exte
 help = "자식이 있는 워크스페이스(ID 또는 이름). 윈도우가 여러 개 열려 있으면 --parent-external과 함께 지정해야 합니다"
 
 [cli.help._root.terminal.release.arg.child]
-help = "해제할 자식 인덱스"
+help = "해제할 자식 번호(`terminal children`의 번호이며 surface ID가 아님)"
 
 [cli.help._root.pty]
 about = "서피스나 탭이 없는 백그라운드 PTY를 관리합니다(spawn/write/read/wait/kill/list). `terminal` 명령과 별도로 사용합니다."
@@ -5759,7 +5759,7 @@ help = "워크스페이스 id (포커스 무관 — 필수)"
 help = "표시 이름"
 
 [cli.help._root.agent.task-create.arg.command]
-help = "작업 명령의 JSON입니다(예: `{\"kind\":\"run\",\"command\":[\"cargo\",\"build\"]}`). `workspace_id`를 생략하면 `--workspace-id` 값으로 채웁니다. 두 값이 다르면 `--workspace-id`를 사용하고 경고합니다. JSON을 직접 지정하거나 `@path/to/file.json`으로 읽을 수 있습니다."
+help = "작업 명령의 JSON입니다(예: `{\"kind\":\"run\",\"command\":[\"cargo\",\"build\"]}`). `workspace_id`를 생략하면 `--workspace` 값으로 채웁니다. 두 값이 다르면 `--workspace`를 사용하고 경고합니다. JSON을 직접 지정하거나 `@path/to/file.json`으로 읽을 수 있습니다."
 
 [cli.help._root.agent.task-create.arg.depends_on]
 help = "쉼표로 구분한 선행 task id 목록"
@@ -5778,7 +5778,7 @@ help = "나중에 task-create --on-failure fallback:<this-id>로 본 작업과 �
 
 [cli.help._root.agent.task-graph-submit]
 about = "타입 계약(contract_version 2) 작업 그래프를 한 번에 제출합니다"
-long = "타입 계약(contract_version 2) 작업 그래프를 한 번에 제출합니다.\n\n먼저 그래프 전체를 검증합니다. id, 참조, 입력 binding, 타입, 매핑, fallback, 순환을 확인합니다. 검증에 실패한 그래프는 아무것도 저장하지 않으며, 오류에는 작업과 제출한 그래프 안의 JSON Pointer 위치가 나옵니다. 올바른 그래프는 한꺼번에 저장하고 활성화하므로 모든 작업이 저장되기 전에는 어떤 작업도 실행되지 않습니다. `workspace_id`가 없는 run·agent 명령(inline fallback 명령 포함)에는 `--workspace-id` 값을 채웁니다. 다른 종류의 명령에는 이 필드가 없어 그대로 보냅니다."
+long = "타입 계약(contract_version 2) 작업 그래프를 한 번에 제출합니다.\n\n먼저 그래프 전체를 검증합니다. id, 참조, 입력 binding, 타입, 매핑, fallback, 순환을 확인합니다. 검증에 실패한 그래프는 아무것도 저장하지 않으며, 오류에는 작업과 제출한 그래프 안의 JSON Pointer 위치가 나옵니다. 올바른 그래프는 한꺼번에 저장하고 활성화하므로 모든 작업이 저장되기 전에는 어떤 작업도 실행되지 않습니다. `workspace_id`가 없는 run·agent 명령(inline fallback 명령 포함)에는 `--workspace` 값을 채웁니다. 다른 종류의 명령에는 이 필드가 없어 그대로 보냅니다."
 
 [cli.help._root.agent.task-graph-submit.arg.workspace_id]
 help = "워크스페이스 id (포커스 무관 — 필수)"
@@ -5856,7 +5856,7 @@ help = "워크스페이스 id (포커스 무관 — 필수)"
 help = "형식: json | dot. 기본값: json"
 
 [cli.help._root.agent.dag-list]
-about = "등록된 작업에서 DAG 목록을 계산합니다. 같은 `metadata.dag` 문자열을 가진 작업을 묶고, 나머지는 `depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2 `transitions` 연결을 방향과 무관하게 따라 묶습니다. DAG를 별도로 저장하지 않습니다. `--workspace-id`를 생략하면 현재 있는 모든 워크스페이스를 조회합니다."
+about = "등록된 작업에서 DAG 목록을 계산합니다. 같은 `metadata.dag` 문자열을 가진 작업을 묶고, 나머지는 `depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2 `transitions` 연결을 방향과 무관하게 따라 묶습니다. DAG를 별도로 저장하지 않습니다. `--workspace`를 생략하면 현재 있는 모든 워크스페이스를 조회합니다."
 
 [cli.help._root.agent.dag-list.arg.workspace_id]
 help = "한 워크스페이스로 좁힌다. 생략하면 살아 있는 워크스페이스 전부"

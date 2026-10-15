@@ -65,7 +65,7 @@ tasty pty wait --id 2147483648
 
 ```sh
 tasty list panes
-tasty pty attach-surface --pty-id 2147483648 --pane-id 1
+tasty pty attach-surface --pty 2147483648 --pane 1
 ```
 
 목록에서 고른 페인 ID를 사용하세요. **아직 실행 중인 PTY만** 가져올 수 있습니다. 프로세스와 출력 기록이 유지된 새 백그라운드 탭이 생기고, 기존 PTY ID는 `pty list`에서 빠집니다.

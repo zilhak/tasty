@@ -67,7 +67,7 @@ PtyState의 standalone 표시가 제거되어 이후에는 surface API로 다룬
 | `tasty pty wait --id <n>` | `pty.wait` | `TerminalRead` | 즉시 반환 폴링(blocking 아님). exit cell 조회 → `{exited, exit_code, success}`. idle 리셋. |
 | `tasty pty kill --id <n>` | `pty.kill` | `TerminalWrite` | 소유 프로세스 종료 요청 + collection 항목 회수(실제 reap 완료와 구분)(Surface 를 닫는 게 아님 — headless 라 없음). |
 | `tasty pty list` | `pty.list` | `TerminalRead` | 살아있는 headless PTY 전체 목록(`id`/`owner_agent_id`/`cwd`/`command`/`has_exited`/`exit_code`). 접근 시 idle sweep(주기 타이머와 별개로 항상 돈다). |
-| `tasty pty attach-surface --pty-id <n> --pane-id <p>` | `pty.attach_surface` | `SurfaceWrite, TerminalSpawn` | headless PTY 를 Pane `p` 의 실제 Tab 으로 승격(상태 보존). `{pane_id, tab_id, surface_id}` 반환. |
+| `tasty pty attach-surface --pty <n> --pane <p>` | `pty.attach_surface` | `SurfaceWrite, TerminalSpawn` | headless PTY 를 Pane `p` 의 실제 Tab 으로 승격(상태 보존). `{pane_id, tab_id, surface_id}` 반환. |
 
 ### headless → 승격 흐름
 

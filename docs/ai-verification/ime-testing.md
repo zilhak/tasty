@@ -21,7 +21,7 @@ call("surface.ime_disable")
 1. **Preedit 렌더링 위치** — 터미널에 텍스트 입력 후 `ime_enable`+`ime_preedit "한"` → [스크린샷](screenshot-methods.md)으로 preedit 오버레이가 커서 위치에 파란 배경으로 셀 그리드 정렬되는지.
 2. **연속 커밋 후 위치 이동** — `preedit "한"`→`commit "한"`→`preedit "글"` → preedit 이 오른쪽으로 이동하는지. (셸 에코 처리 전 다음 preedit 시작 시 커서 미갱신 — `sleep 0.1`.)
 3. **IME 활성 중 ASCII** — ASCII 는 `surface.send` 로(KeyboardInput 통과), 한글은 IME 경로 → `tasty read since-mark --strip-ansi` 로 결과 확인.
-4. **분할 패널** — `tasty split --level surface --target-surface this --direction horizontal` 후 아래 surface 에서 preedit 위치 검증.
+4. **분할 패널** — `tasty split --level surface --surface this --direction horizontal` 후 아래 surface 에서 preedit 위치 검증.
 
 ## 검증 체크리스트
 

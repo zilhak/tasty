@@ -93,7 +93,7 @@ pub enum TerminalCommands {
         /// when several windows are open
         #[arg(long, requires = "parent_external")]
         workspace: Option<String>,
-        /// Child index to kill
+        /// Child index to kill (the number in `terminal children`, not a surface ID)
         #[arg(long)]
         child: u32,
     },
@@ -109,7 +109,7 @@ pub enum TerminalCommands {
         /// when several windows are open
         #[arg(long, requires = "parent_external")]
         workspace: Option<String>,
-        /// Child index to respawn
+        /// Child index to respawn (the number in `terminal children`, not a surface ID)
         #[arg(long)]
         child: u32,
         /// Override working directory (replaces the PTY at a new cwd)
@@ -185,7 +185,7 @@ pub enum TerminalCommands {
         /// when several windows are open
         #[arg(long, requires = "parent_external")]
         workspace: Option<String>,
-        /// Child index to release
+        /// Child index to release (the number in `terminal children`, not a surface ID)
         #[arg(long)]
         child: u32,
     },

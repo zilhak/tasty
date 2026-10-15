@@ -138,7 +138,7 @@ TTL이 있는 협조적 자원 점유 표시이며 OS 잠금은 아니다. 충�
 Claude / Codex 자식을 **띄우고 그 완료를 기다리는 일**을 Task DAG 노드 하나로 표현할 수 있다. 전용 command kind 는 없다 — `custom` 노드로 plugin 의 spawn 메서드를 호출하면 된다. 코어는 어떤 에이전트인지 모른 채 IPC dispatch → 폴링만 한다.
 
 ```sh
-tasty agent task-create --workspace-id 1 --name spawn-worker \
+tasty agent task-create --workspace 1 --name spawn-worker \
   --command '{"kind":"custom","ipc_method":"claude.spawn",
               "params":{"surface_id":560,"workspace":"wt-11",
                         "cwd":"/home/me/work/wt-11","prompt":"이 디렉토리의 테스트를 고쳐라"}}'
@@ -170,7 +170,7 @@ poll 파라미터 키가 다른 것은 각 plugin 의 state 핸들러가 요구�
 `tell` 에도 기본 전략(`tell-wait`)이 있어 **자식이 그 지시를 마칠 때까지** 노드가 `running` 에 머문다. Claude 자식의 서브에이전트 종료나 백그라운드 작업을 남긴 채 끝난 응답은 지시를 마친 것으로 보지 않는다. 백그라운드 작업이 끝난 뒤 이어지는 턴의 응답이 끝나야 노드가 끝난다. 끝나지 않는 백그라운드 명령(개발 서버 등)을 남기면 노드도 끝나지 않으므로 제한 시간을 둔다([Claude 통합](../../plugins/claude/index.md)). spawn 노드와 달리 `surface_id` 는 **자식** surface 다:
 
 ```sh
-tasty agent task-create --workspace-id 1 --name tell-worker \
+tasty agent task-create --workspace 1 --name tell-worker \
   --command '{"kind":"custom","ipc_method":"claude.tell",
               "params":{"surface_id":561,"message":"방금 고친 테스트를 다시 돌려라"}}'
 ```

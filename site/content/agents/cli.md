@@ -134,17 +134,19 @@ fish 등 다른 셸은 직접 셸 통합을 설치하지 않으면 빈 목록이
 tasty new workspace --name build --cwd ~/proj          # 새 워크스페이스
 tasty new workspace --surface 42                       # 서피스 42 가 있는 윈도우에 새 워크스페이스 (작업 디렉토리도 서피스 42 에서)
 tasty new window                                        # 새 윈도우 (응답에 window_id)
-tasty split --level surface --target-surface this --direction vertical   # 내 서피스를 좌우 분할
-tasty split --level pane --target-pane 3 --direction horizontal          # 페인 분할
+tasty split --level surface --surface this --direction vertical  # 내 서피스를 좌우 분할
+tasty split --level pane --pane 3 --direction horizontal          # 페인 분할
 tasty new tab --pane 3 --cwd ~/proj                     # 페인에 새 탭
 tasty close surface --surface 99                        # 서피스 닫기
 tasty close tab --tab 12
-tasty close workspace --id 3                            # 워크스페이스를 통째로 (안의 탭·서피스까지)
-tasty close window --id 1                               # 윈도우 닫기
+tasty close workspace --workspace 3                     # 워크스페이스를 통째로 (안의 탭·서피스까지)
+tasty close window --window 1                           # 윈도우 닫기
 tasty close self                                        # 지금 이 서피스 닫기
 ```
 
-`--target-surface this` 는 자기 자신(`TASTY_SURFACE_ID`)입니다. `--type markdown --file README.md` 처럼 터미널이 아닌 표면도 만들 수 있습니다 ([파일 열기](../using/files.md)). `new workspace` · `new tab` · `split` 의 `--cwd` 는 탐색기(`--type explorer`)에서도 통해, `--path` 가 없으면 그 폴더를 루트로 엽니다. 둘 다 적으면 `--path` 가 이깁니다. 탐색기는 `--cwd` 를 생략해도 다른 서피스의 작업 디렉토리를 이어받지 않고 홈을 엽니다.
+예전 표기 `split --target-surface`·`--target-pane`, `close workspace|window --id`도 그대로 받습니다. 두 표기를 함께 주면 같은 옵션을 두 번 준 것으로 거절합니다.
+
+`--surface this` 는 자기 자신(`TASTY_SURFACE_ID`)입니다. `--type markdown --file README.md` 처럼 터미널이 아닌 표면도 만들 수 있습니다 ([파일 열기](../using/files.md)). `new workspace` · `new tab` · `split` 의 `--cwd` 는 탐색기(`--type explorer`)에서도 통해, `--path` 가 없으면 그 폴더를 루트로 엽니다. 둘 다 적으면 `--path` 가 이깁니다. 탐색기는 `--cwd` 를 생략해도 다른 서피스의 작업 디렉토리를 이어받지 않고 홈을 엽니다.
 
 `tasty new tab` 으로 연 탭은 종류와 상관없이 사용자가 보던 탭을 바꾸지 않습니다. 새 탭은 페인의 맨 뒤에 붙고, 사용자가 고를 때까지 뒤에 있습니다. 응답의 `active_tab` 은 새 탭이 아니라 그 페인에서 지금 선택된 탭이므로, 새 탭을 다룰 때는 응답의 `surface_id` 를 씁니다. 단축키나 메뉴로 사용자가 직접 연 탭은 바로 선택됩니다.
 

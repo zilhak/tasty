@@ -1,4 +1,4 @@
-<!-- source-hash: ca28b48f1d92 -->
+<!-- source-hash: b6eab9ab9466 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -135,17 +135,19 @@ Other shells such as fish return an empty list unless you install shell integrat
 tasty new workspace --name build --cwd ~/proj          # new Workspace
 tasty new workspace --surface 42                       # new Workspace in the window that holds Surface 42 (working directory from Surface 42 too)
 tasty new window                                        # new window (the reply carries window_id)
-tasty split --level surface --target-surface this --direction vertical   # split my Surface left/right
-tasty split --level pane --target-pane 3 --direction horizontal          # split a Pane
+tasty split --level surface --surface this --direction vertical  # split my Surface left/right
+tasty split --level pane --pane 3 --direction horizontal          # split a Pane
 tasty new tab --pane 3 --cwd ~/proj                     # new Tab in a Pane
 tasty close surface --surface 99                        # close a Surface
 tasty close tab --tab 12
-tasty close workspace --id 3                            # a whole Workspace, tabs and surfaces included
-tasty close window --id 1                               # close a window
+tasty close workspace --workspace 3                     # a whole Workspace, tabs and surfaces included
+tasty close window --window 1                           # close a window
 tasty close self                                        # close this very Surface
 ```
 
-`--target-surface this` means yourself (`TASTY_SURFACE_ID`). You can also create non-terminal surfaces, for example `--type markdown --file README.md` ([Opening files](../using/files.md)). The `--cwd` of `new workspace` · `new tab` · `split` works for an Explorer (`--type explorer`) too: without `--path` it opens that folder as the root. With both, `--path` wins. An Explorer does not inherit another surface's working directory when `--cwd` is omitted; it opens your home folder.
+The older forms `split --target-surface` · `--target-pane` and `close workspace|window --id` are still accepted. Giving both forms at once is refused as the same option given twice.
+
+`--surface this` means yourself (`TASTY_SURFACE_ID`). You can also create non-terminal surfaces, for example `--type markdown --file README.md` ([Opening files](../using/files.md)). The `--cwd` of `new workspace` · `new tab` · `split` works for an Explorer (`--type explorer`) too: without `--path` it opens that folder as the root. With both, `--path` wins. An Explorer does not inherit another surface's working directory when `--cwd` is omitted; it opens your home folder.
 
 A tab opened with `tasty new tab` does not change the tab the person was looking at, whatever its kind. The new tab is added at the end of the pane and stays in the background until the person picks it. The reply's `active_tab` is the tab currently selected in that pane, not the new one, so use the reply's `surface_id` to work with the new tab. A tab the person opens by shortcut or menu is selected right away.
 

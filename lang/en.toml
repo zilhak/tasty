@@ -1954,7 +1954,7 @@ goal_surface_required = "Error: must specify a surface. Use --surface <id>, or r
 
 [cli.agent]
 inputs_empty = "Error: --inputs must contain at least one task id"
-command_workspace_id_overridden = "--command JSON's workspace_id({}) differs from the --workspace-id flag ({}); overridden with {}"
+command_workspace_id_overridden = "--command JSON's workspace_id({}) differs from the --workspace flag ({}); overridden with {}"
 flag_file_read_failed = "Error: reading {} for {}: {}"
 flag_not_json = "Error: parsing {} as JSON: {}"
 purge_filter_required = "Error: specify --states or --older-than-ms. Deleting every task in the workspace without a condition is not allowed."
@@ -2564,14 +2564,14 @@ help = "Target surface ID (required)"
 
 [cli.help._root.close.workspace]
 about = "Close a whole workspace by its ID, with every pane, tab and surface in it"
-long = "Close a whole workspace by its ID, with every pane, tab and surface in it.\n\nThis cannot be undone: every terminal in the workspace is killed, the workspace does not enter the user's reopen history, and its scrollback is not kept. Only closes the user made by hand can be reopened.\n\nThe target is always given explicitly with --id (see `tasty list workspaces`); it is never inferred from what is on screen. Closing a workspace the user is not looking at leaves their current workspace on screen. A workspace holding your own surface is refused, as is a workspace mirroring a remote attach session and the last remaining workspace - closing the window is a separate decision, see `tasty close window`."
+long = "Close a whole workspace by its ID, with every pane, tab and surface in it.\n\nThis cannot be undone: every terminal in the workspace is killed, the workspace does not enter the user's reopen history, and its scrollback is not kept. Only closes the user made by hand can be reopened.\n\nThe target is always given explicitly with --workspace (see `tasty list workspaces`); it is never inferred from what is on screen. Closing a workspace the user is not looking at leaves their current workspace on screen. A workspace holding your own surface is refused, as is a workspace mirroring a remote attach session and the last remaining workspace - closing the window is a separate decision, see `tasty close window`."
 
 [cli.help._root.close.workspace.arg.id]
 help = "Target workspace ID (required)"
 
 [cli.help._root.close.window]
 about = "Close a window by its ID"
-long = "Close a window by its ID.\n\nThe target is always given explicitly with --id (see `tasty list windows`). The last remaining main window is refused - quitting is a user action."
+long = "Close a window by its ID.\n\nThe target is always given explicitly with --window (see `tasty list windows`). The last remaining main window is refused - quitting is a user action."
 
 [cli.help._root.close.window.arg.id]
 help = "Target window ID (required)"
@@ -3312,7 +3312,7 @@ help = "External parent key instead of a parent surface (see `spawn --parent-ext
 help = "Workspace (ID or name) holding the children; needed with --parent-external when several windows are open"
 
 [cli.help._root.terminal.kill.arg.child]
-help = "Child index to kill"
+help = "Child index to kill (the number in `terminal children`, not a surface ID)"
 
 [cli.help._root.terminal.respawn]
 about = "Respawn a child terminal (replace PTY and/or re-run a command)"
@@ -3327,7 +3327,7 @@ help = "External parent key instead of a parent surface (see `spawn --parent-ext
 help = "Workspace (ID or name) holding the children; needed with --parent-external when several windows are open"
 
 [cli.help._root.terminal.respawn.arg.child]
-help = "Child index to respawn"
+help = "Child index to respawn (the number in `terminal children`, not a surface ID)"
 
 [cli.help._root.terminal.respawn.arg.cwd]
 help = "Override working directory (replaces the PTY at a new cwd)"
@@ -3399,7 +3399,7 @@ help = "External parent key instead of a parent surface (see `spawn --parent-ext
 help = "Workspace (ID or name) holding the children; needed with --parent-external when several windows are open"
 
 [cli.help._root.terminal.release.arg.child]
-help = "Child index to release"
+help = "Child index to release (the number in `terminal children`, not a surface ID)"
 
 [cli.help._root.pty]
 about = "Manage headless PTYs (spawn/write/read/wait/kill/list) — background PTYs with no Surface/tab. Separate namespace from `terminal`"
@@ -5825,7 +5825,7 @@ help = "Workspace id (focus-independent — required)"
 help = "Display name"
 
 [cli.help._root.agent.task-create.arg.command]
-help = "TaskCommand as JSON (e.g. `{\"kind\":\"run\",\"command\":[\"cargo\",\"build\"]}`). `workspace_id` is auto-filled from `--workspace-id` if omitted; if present and different, `--workspace-id` wins and a warning is returned. Accepts inline JSON or `@path/to/file.json`"
+help = "TaskCommand as JSON (e.g. `{\"kind\":\"run\",\"command\":[\"cargo\",\"build\"]}`). `workspace_id` is auto-filled from `--workspace` if omitted; if present and different, `--workspace` wins and a warning is returned. Accepts inline JSON or `@path/to/file.json`"
 
 [cli.help._root.agent.task-create.arg.depends_on]
 help = "Comma-separated dependency task IDs"
@@ -5844,7 +5844,7 @@ help = "Keep this fallback candidate waiting until a later task-create links it 
 
 [cli.help._root.agent.task-graph-submit]
 about = "Submit a typed (contract_version 2) task graph in one call"
-long = "Submit a typed (contract_version 2) task graph in one call.\n\nThe whole graph is validated first: ids, references, input bindings, types, mappings, fallbacks and cycles. A graph that fails validation stores nothing; the error names the task and a JSON pointer into the submitted graph. A valid graph is stored and activated together, so no task of it runs before every task exists. Run and agent commands without a `workspace_id`, including inline fallback commands, get `--workspace-id`. Other command kinds have no such field and are sent unchanged."
+long = "Submit a typed (contract_version 2) task graph in one call.\n\nThe whole graph is validated first: ids, references, input bindings, types, mappings, fallbacks and cycles. A graph that fails validation stores nothing; the error names the task and a JSON pointer into the submitted graph. A valid graph is stored and activated together, so no task of it runs before every task exists. Run and agent commands without a `workspace_id`, including inline fallback commands, get `--workspace`. Other command kinds have no such field and are sent unchanged."
 
 [cli.help._root.agent.task-graph-submit.arg.workspace_id]
 help = "Workspace id (focus-independent — required)"
@@ -5922,7 +5922,7 @@ help = "Workspace id (focus-independent — required)"
 help = "Format: json | dot. Default: json"
 
 [cli.help._root.agent.dag-list]
-about = "List every registered DAG. A DAG is derived, not stored: tasks tagged with the same `metadata.dag` string form one explicit group, and the rest are grouped by weak connectivity (`depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2 `transitions`). Omit `--workspace-id` to scan every live workspace"
+about = "List every registered DAG. A DAG is derived, not stored: tasks tagged with the same `metadata.dag` string form one explicit group, and the rest are grouped by weak connectivity (`depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2 `transitions`). Omit `--workspace` to scan every live workspace"
 
 [cli.help._root.agent.dag-list.arg.workspace_id]
 help = "Restrict to one workspace. Omitted = every live workspace"

@@ -1,4 +1,4 @@
-<!-- source-hash: 86e130788d88 -->
+<!-- source-hash: 7c7f9d23d86e -->
 # Bring a background task into a tab
 
 Not every task needs a visible tab from the start. Run work in a hidden PTY, inspect its output, then bring the same process and history into a tab when needed.
@@ -66,7 +66,7 @@ A command finishing inside a shell does not mean the shell exited. Distinguish t
 
 ```sh
 tasty list panes
-tasty pty attach-surface --pty-id 2147483648 --pane-id 1
+tasty pty attach-surface --pty 2147483648 --pane 1
 ```
 
 Use a Pane ID from the list. **Only a running PTY** can be brought into a tab. A new background tab keeps its process and output history, and the old PTY ID leaves `pty list`.

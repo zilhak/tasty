@@ -191,7 +191,7 @@ Core의 결과 ID를 App의 공통 구조 adapter가 받아 navigation을 보정
 
 - ID 지정 close(`close surface --surface <ID>` / `close pane --pane <ID>` / `close tab --tab <ID>`)에서 caller 자신이 속한 대상을 지정하면 거부한다.
 - **자기 자신을 닫는 유일한 방법은 `tasty close self`** (`TASTY_SURFACE_ID` 로 자신을 식별, 해당 surface 만 닫음).
-- 워크스페이스를 통째로 정리할 때는 `tasty close workspace --id <W>` 를 쓴다 — 안의 surface 를 하나씩 닫을 필요가 없다. 자기 자신 닫기 보호는 여기에도 걸린다: caller 의 surface 가 그 워크스페이스 안에 있으면 거부한다.
+- 워크스페이스를 통째로 정리할 때는 `tasty close workspace --workspace <W>` 를 쓴다 — 안의 surface 를 하나씩 닫을 필요가 없다. 자기 자신 닫기 보호는 여기에도 걸린다: caller 의 surface 가 그 워크스페이스 안에 있으면 거부한다.
 
 ## 에이전트 닫기와 포커스
 

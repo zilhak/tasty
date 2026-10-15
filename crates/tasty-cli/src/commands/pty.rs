@@ -67,10 +67,10 @@ pub enum PtyCommands {
     /// headless list.
     AttachSurface {
         /// Target pty id to promote.
-        #[arg(long = "pty-id")]
+        #[arg(long = "pty", visible_alias = "pty-id")]
         pty_id: u32,
         /// Pane to attach the promoted terminal to (new background tab).
-        #[arg(long = "pane-id")]
+        #[arg(long = "pane", visible_alias = "pane-id")]
         pane_id: u32,
     },
 }

@@ -154,32 +154,7 @@ fn assert_child_side(locale: &str) {
     let report = tasty_i18n::init(locale);
     let locale = report.effective;
     if locale == "en" {
-        use clap::CommandFactory;
-        let mut localized = tasty_cli::localized_command();
-        let mut raw = tasty_cli::Cli::command();
-        // 목적별 그룹은 루트·agent의 명령 목록만 바꾼다. 다른 명령은 clap 기본 출력과 같다.
-        for path in [
-            &["new"][..],
-            &["surface", "completion"],
-            &["read", "since-mark"],
-        ] {
-            let mut l = &mut localized;
-            let mut r = &mut raw;
-            for p in path {
-                l = l.find_subcommand_mut(p).unwrap();
-                r = r.find_subcommand_mut(p).unwrap();
-            }
-            assert_eq!(
-                l.render_long_help().to_string(),
-                r.render_long_help().to_string(),
-                "{path:?}"
-            );
-        }
-        let options = |text: String| text.split("Options:").nth(1).map(str::to_string);
-        assert_eq!(
-            options(localized.render_long_help().to_string()),
-            options(raw.render_long_help().to_string())
-        );
+        assert_english_matches_clap();
     }
     let home = tasty_utils::path::tasty_home().unwrap();
     let entries = tasty_cli::dynamic::discover_plugin_clis(&home.join("plugins"));
@@ -219,6 +194,7 @@ fn assert_child_side(locale: &str) {
     let matches = cmd.try_get_matches_from(args).unwrap();
     assert_eq!(matches.subcommand().unwrap().0, "fixture");
     let mut host = tasty_cli::localized_command();
+    assert_alias_note(&mut host, &locale);
     let completion = host
         .find_subcommand_mut("surface")
         .unwrap()
@@ -227,6 +203,59 @@ fn assert_child_side(locale: &str) {
     assert_eq!(
         completion.get_long_about().unwrap().to_string(),
         tasty_i18n::t("cli.help._root.surface.completion.long")
+    );
+}
+
+/// 목적별 그룹은 루트·agent의 명령 목록만 바꾼다. 다른 명령과 옵션 절은 clap 기본 출력과 같다.
+fn assert_english_matches_clap() {
+    use clap::CommandFactory;
+    let mut localized = tasty_cli::localized_command();
+    let mut raw = tasty_cli::Cli::command();
+    // 목적별 그룹은 루트·agent의 명령 목록만 바꾼다. 다른 명령은 clap 기본 출력과 같다.
+    for path in [
+        &["new"][..],
+        &["surface", "completion"],
+        &["read", "since-mark"],
+    ] {
+        let mut l = &mut localized;
+        let mut r = &mut raw;
+        for p in path {
+            l = l.find_subcommand_mut(p).unwrap();
+            r = r.find_subcommand_mut(p).unwrap();
+        }
+        assert_eq!(
+            l.render_long_help().to_string(),
+            r.render_long_help().to_string(),
+            "{path:?}"
+        );
+    }
+    let options = |text: String| text.split("Options:").nth(1).map(str::to_string);
+    assert_eq!(
+        options(localized.render_long_help().to_string()),
+        options(raw.render_long_help().to_string())
+    );
+}
+
+/// 대상 옵션의 호환 표기 안내는 선택 언어로 표시되고 호환 표기는 계속 받는다.
+fn assert_alias_note(host: &mut clap::Command, locale: &str) {
+    let close = host
+        .find_subcommand_mut("close")
+        .unwrap()
+        .find_subcommand_mut("workspace")
+        .unwrap();
+    let help = close.render_help().to_string();
+    assert!(help.contains("--id"), "{help}");
+    if matches!(locale, "ko" | "ja") {
+        assert!(
+            help.contains(&tasty_i18n::t_fmt("cli.help_frame.aliases", "--id")),
+            "{help}"
+        );
+        assert!(!help.contains("[aliases:"), "{help}");
+    }
+    assert!(
+        tasty_cli::localized_command()
+            .try_get_matches_from(["tasty", "close", "workspace", "--id", "7"])
+            .is_ok()
     );
 }
 

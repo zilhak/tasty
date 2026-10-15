@@ -135,10 +135,10 @@ pub enum Commands {
         #[arg(long)]
         level: String,
         /// Target surface: numeric surface ID, "this" (TASTY_SURFACE_ID), or nickname
-        #[arg(long)]
+        #[arg(long = "surface", visible_alias = "target-surface")]
         target_surface: Option<String>,
         /// Target pane: numeric pane ID (only for --level pane)
-        #[arg(long)]
+        #[arg(long = "pane", visible_alias = "target-pane")]
         target_pane: Option<u32>,
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
