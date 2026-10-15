@@ -52,6 +52,7 @@ struct ReadErrorActions {
 
 /// 목록 대신 상태 화면을 그려야 하면 받은 영역에 그리고 true 를 돌려준다.
 /// 읽기 오류 화면의 버튼을 누르면 `action` 에 Refresh 또는 GoUp 을 넣는다.
+/// 빈 폴더라도 새 항목 이름을 입력하는 중이면 목록 영역이 그 이름 행을 그려야 하므로 false 다.
 pub(super) fn show_for(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -87,7 +88,7 @@ pub(super) fn show_for(
             reason: None,
             actions: None,
         },
-        LoadState::Ok if view.entries.is_empty() => StateScreen {
+        LoadState::Ok if view.entries.is_empty() && view.create.is_none() => StateScreen {
             glyph: StateGlyph::Icon(icons::FOLDER_OPEN),
             tone: Tone::Neutral,
             title: t("explorer.state.empty"),
@@ -115,12 +116,16 @@ pub(super) fn no_filter_matches_title(query: &str) -> String {
 
 /// Find 결과가 없거나 하위 폴더 검색이 실패했으면 목록 대신 상태 화면을 그리고 true 를 돌려준다.
 /// 실패 화면의 Retry 는 새로고침이고, 새로고침은 하위 폴더 검색을 처음부터 다시 한다.
+/// 새 항목 이름을 입력하는 중이면 목록 영역이 그 이름 행을 그리도록 어느 화면이든 false 다.
 pub(super) fn show_find(
     ui: &mut egui::Ui,
     theme: &Theme,
     view: &ExplorerView,
     action: &mut Option<ExplorerAction>,
 ) -> bool {
+    if view.create.is_some() {
+        return false;
+    }
     let title;
     let screen = match view.find_screen() {
         None => return false,

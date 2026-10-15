@@ -31,6 +31,8 @@ struct Harness {
     focused: bool,
     /// 마지막 프레임이 낸 동작.
     action: Option<super::ExplorerAction>,
+    /// 마지막 프레임이 그린 글자 전부.
+    texts: Vec<String>,
 }
 
 impl Harness {
@@ -60,6 +62,7 @@ impl Harness {
             view,
             focused: false,
             action: None,
+            texts: Vec::new(),
         }
     }
 
@@ -106,6 +109,14 @@ impl Harness {
                     );
                 });
         });
+        self.texts = out
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                _ => None,
+            })
+            .collect();
         out.shapes
             .iter()
             .filter_map(|clipped| match &clipped.shape {
@@ -456,3 +467,6 @@ fn a_local_name_closes_the_row_on_enter() {
 
 #[path = "virtual_tests/keyboard_select.rs"]
 mod keyboard_select;
+
+#[path = "virtual_tests/empty_create.rs"]
+mod empty_create;
