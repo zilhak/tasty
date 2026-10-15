@@ -117,49 +117,59 @@ pub(super) fn start(request: &Request) -> Result<Outcome, String> {
     else {
         return Err("OLE requires a Win32 window".into());
     };
-    // SAFETY: Called by App on the winit UI thread after all View/engine guards are released.
-    // The Arc<Window> in request outlives OLE's nested message loop and the borrowed HWND.
-    unsafe {
-        let hwnd = HWND(handle.hwnd.get() as *mut _);
-        if !IsWindow(Some(hwnd)).as_bool() {
-            return Err("drag source window is closed".into());
+    let hwnd = HWND(handle.hwnd.get() as *mut _);
+    // SAFETY: IsWindow only inspects the handle value; the Arc<Window> in request keeps the
+    // Rust owner alive for the whole drag, including OLE's nested message loop.
+    if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
+        return Err("drag source window is closed".into());
+    }
+    // SAFETY: hwnd was validated above and is only borrowed; no ownership is transferred.
+    let window_thread = unsafe { GetWindowThreadProcessId(hwnd, None) };
+    // SAFETY: GetCurrentThreadId has no preconditions.
+    if window_thread != unsafe { GetCurrentThreadId() } {
+        return Err("OLE drag must run on the source window UI thread".into());
+    }
+    // SAFETY: Called by App on the winit UI thread (checked above) after all View/engine guards
+    // are released; the matching OleUninitialize runs in the Ole guard on this same thread.
+    unsafe { OleInitialize(None) }.map_err(|e| e.to_string())?;
+    let _ole = Ole;
+    let mut pidls = Vec::with_capacity(request.paths.len());
+    for path in &request.paths {
+        let wide: Vec<_> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        // SAFETY: wide is NUL-terminated and outlives the call; the returned PIDL is owned by Pidl.
+        let pidl = unsafe { ILCreateFromPathW(PCWSTR(wide.as_ptr())) };
+        if pidl.is_null() {
+            return Err("Shell could not resolve a drag path".into());
         }
-        if GetWindowThreadProcessId(hwnd, None) != GetCurrentThreadId() {
-            return Err("OLE drag must run on the source window UI thread".into());
-        }
-        OleInitialize(None).map_err(|e| e.to_string())?;
-        let _ole = Ole;
-        let mut pidls = Vec::with_capacity(request.paths.len());
-        for path in &request.paths {
-            let wide: Vec<_> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-            let pidl = ILCreateFromPathW(PCWSTR(wide.as_ptr()));
-            if pidl.is_null() {
-                return Err("Shell could not resolve a drag path".into());
-            }
-            pidls.push(Pidl(pidl));
-        }
-        let pointers: Vec<*const ITEMIDLIST> = pidls.iter().map(|p| p.0.cast_const()).collect();
-        let items = SHCreateShellItemArrayFromIDLists(&pointers).map_err(|e| e.to_string())?;
-        let data: IDataObject = items
-            .BindToHandler(None, &BHID_DataObject)
-            .map_err(|e| e.to_string())?;
-        let source: IDropSource = Source {
-            cancelled: request.cancelled.clone(),
-            own_target: Cell::new(false),
-            no_drop: LoadCursorW(None, IDC_NO).map_err(|e| e.to_string())?,
-            window: hwnd,
-        }
-        .into();
-        let mut effect = DROPEFFECT::default();
-        let status = DoDragDrop(&data, &source, DROPEFFECT_COPY, &mut effect);
-        if status == DRAGDROP_S_CANCEL {
-            Ok(Outcome::Cancelled)
-        } else if status == DRAGDROP_S_DROP && effect == DROPEFFECT_COPY {
-            Ok(Outcome::Copied)
-        } else if status.is_err() {
-            Err(format!("DoDragDrop failed: {status:?}"))
-        } else {
-            Ok(Outcome::Unknown)
-        }
+        pidls.push(Pidl(pidl));
+    }
+    let pointers: Vec<*const ITEMIDLIST> = pidls.iter().map(|p| p.0.cast_const()).collect();
+    // SAFETY: Every pointer is a live PIDL held by pidls, which outlives the shell item array use.
+    let items =
+        unsafe { SHCreateShellItemArrayFromIDLists(&pointers) }.map_err(|e| e.to_string())?;
+    // SAFETY: items is a valid IShellItemArray and BHID_DataObject is a static GUID.
+    let data: IDataObject =
+        unsafe { items.BindToHandler(None, &BHID_DataObject) }.map_err(|e| e.to_string())?;
+    // SAFETY: A shared system cursor requires no bitmap or DestroyCursor ownership.
+    let no_drop = unsafe { LoadCursorW(None, IDC_NO) }.map_err(|e| e.to_string())?;
+    let source: IDropSource = Source {
+        cancelled: request.cancelled.clone(),
+        own_target: Cell::new(false),
+        no_drop,
+        window: hwnd,
+    }
+    .into();
+    let mut effect = DROPEFFECT::default();
+    // SAFETY: OLE is initialized on this UI thread by _ole; data and source are live COM objects,
+    // and effect outlives the modal drag loop.
+    let status = unsafe { DoDragDrop(&data, &source, DROPEFFECT_COPY, &mut effect) };
+    if status == DRAGDROP_S_CANCEL {
+        Ok(Outcome::Cancelled)
+    } else if status == DRAGDROP_S_DROP && effect == DROPEFFECT_COPY {
+        Ok(Outcome::Copied)
+    } else if status.is_err() {
+        Err(format!("DoDragDrop failed: {status:?}"))
+    } else {
+        Ok(Outcome::Unknown)
     }
 }
