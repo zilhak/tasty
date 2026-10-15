@@ -210,6 +210,7 @@ arm(gui 창 라우터)이 있어 `plugin_only` 표식을 달지 않는다. 그�
 | `-32013` | approval.* | 요청이 취소됐다(cancelled) |
 | `-32014` | approval.* | 승인 저장소 락이 poison 됐다(store_poisoned) |
 | `-32018` | agent.* | 회차에 묶인 결과 쓰기(`task_set_result` 완료 보고·`task_submit_result` 제출)를 거절했다. `data` 에 `reason`·`attempt_id`·`current_attempt_id` |
+| `-32019` | approval.* | host 가 발행한 권한 상승 요청에 사용자가 아닌 caller 가 응답·취소했다(user_response_required) |
 | `-32020` | attach.*, terminal 점유 | 다른 소유자가 이미 점유했다 |
 | `-32021` | attach.release | 해제하지 못했다(점유자가 아니다 등) |
 | `-32040` | passkey.*, remote.profile.* | 이름으로 찾지 못했다 |

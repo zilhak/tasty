@@ -7,7 +7,7 @@ use crate::app::services::AppServices;
 pub fn handle_cancel(
     core: &mut crate::app::services::AppServices,
     _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    _caller: &CallerContext,
+    caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -15,6 +15,14 @@ pub fn handle_cancel(
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(id, "Missing 'id'"),
     };
+    // 권한 상승 요청은 응답과 마찬가지로 사용자만 취소한다.
+    let host_elevation = core
+        .approval_store
+        .get(&req_id)
+        .is_some_and(|r| r.request.host_elevation.is_some());
+    if host_elevation && responder_from_caller(caller) != Responder::User {
+        return map_error(id, ApprovalError::UserResponseRequired(req_id));
+    }
     match core.cancel_approval(&req_id) {
         Ok(transition) => {
             let body = record_to_json(&transition.change.record);

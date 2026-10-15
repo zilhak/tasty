@@ -54,6 +54,9 @@ pub(super) fn map_error(id: Value, err: ApprovalError) -> JsonRpcResponse {
             JsonRpcResponse::error(id, -32010, format!("already_responded: {aid}"))
         }
         SelfResponse => JsonRpcResponse::error(id, -32011, "self_response_forbidden"),
+        UserResponseRequired(aid) => {
+            JsonRpcResponse::error(id, -32019, format!("user_response_required: {aid}"))
+        }
         InvalidChoice(c) => JsonRpcResponse::invalid_params(id, format!("invalid_choice: {c}")),
         InvalidRequest(m) => JsonRpcResponse::invalid_params(id, format!("invalid_request: {m}")),
         TimedOut => JsonRpcResponse::error(id, -32012, "timed_out"),
@@ -248,3 +251,7 @@ mod writer_tests;
 #[cfg(test)]
 #[path = "approval/elevation_guard_tests.rs"]
 mod elevation_guard_tests;
+
+#[cfg(test)]
+#[path = "approval/elevation_responder_tests.rs"]
+mod elevation_responder_tests;

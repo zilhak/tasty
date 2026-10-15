@@ -129,7 +129,7 @@ Tasty 가 실행 중일 때 터미널에서 씁니다. 출력은 JSON 입니다.
 | `tasty plugin extension list` | 플러그인이 다른 플러그인에 덧붙인 확장(extension)과 상태 |
 | `tasty plugin grant-agent-permission --agent <id> --permission <권한> [--ttl <초>]` · `revoke-agent-permission` | 실행 중인 에이전트 세션에 임시 권한을 주거나 회수합니다. `--ttl` 을 빼면 회수할 때까지 유지됩니다 |
 | `tasty plugin list-agent-permissions [--agent <id>]` | 에이전트 세션의 기본 권한과 임시 권한 |
-| `tasty plugin request-permission --agent <id> --permission <권한> [--reason <이유>]` | 에이전트에게 권한을 줄지 묻는 승인 팝업을 미리 띄웁니다 |
+| `tasty plugin request-permission --agent <id> --permission <권한> [--reason <이유>]` | 에이전트에게 권한을 줄지 묻는 승인 팝업을 미리 띄웁니다. 에이전트가 직접 실행하면 자기 자신만 대상으로 할 수 있고, 이 팝업은 사용자만 승인·거절할 수 있습니다 |
 | `tasty plugin audit-query` · `audit-summary` · `audit-follow` · `audit-clear` | Tasty 가 받은 요청(CLI·플러그인·에이전트)의 허용·거부 기록을 조회 · 집계 · 실시간 확인 · 삭제합니다 |
 
 `enable`과 `disable`은 설치된 플러그인의 ID만 받습니다. 설치되지 않은 ID를 지정하면 오류로 끝나고 설정은 바뀌지 않습니다. ID는 `tasty plugin list`에서 확인할 수 있습니다.

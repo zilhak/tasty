@@ -78,7 +78,9 @@
 
 ### Security
 
-- **승인 요청으로 에이전트 권한 상승 요청을 흉내 낼 수 없다.** 승인 기능 권한만 가진 에이전트·플러그인이 `approval.request`(`tasty approval request --metadata`)의 metadata 를 권한 상승 요청과 같은 모양(`kind: capability_elevation`, 대상 agent·권한)으로 보내면, 사용자가 그 요청을 승인할 때 임의의 agent 에게 임의의 권한이 붙을 수 있었다. 이제 권한 부여는 Tasty 가 직접 만든 권한 상승 요청에만 적용하고, metadata 의 `kind` 에 `capability_elevation` 을 준 `approval.request` 는 `-32602`(`invalid_request: …`)로 거절한다. 권한 거부 뒤 승인 팝업이나 `approval respond` 로 승인해 다시 호출하는 기존 흐름과 `tasty plugin request-permission` 은 그대로 동작한다.
+- **승인 요청으로 에이전트 권한 상승 요청을 흉내 낼 수 없다.** 승인 기능 권한만 가진 에이전트·플러그인이 `approval.request`(`tasty approval request --metadata`)의 metadata 를 권한 상승 요청과 같은 모양(`kind: capability_elevation`, 대상 agent·권한)으로 보내면, 사용자가 그 요청을 승인할 때 임의의 agent 에게 임의의 권한이 붙을 수 있었다. 이제 권한 부여는 Tasty 가 직접 만든 권한 상승 요청에만 적용하고, metadata 의 `kind` 에 `capability_elevation` 을 준 `approval.request` 는 `-32602`(`invalid_request: …`)로 거절한다. 권한 거부 뒤 사용자가 승인 팝업이나 `approval respond` 로 승인해 다시 호출하는 기존 흐름과 `tasty plugin request-permission` 은 그대로 동작한다.
+
+- **다른 에이전트가 권한 상승 요청을 대신 승인해 권한을 붙일 수 없다.** 승인 기능 권한을 가진 에이전트·플러그인이 다른 에이전트의 권한 상승 요청을 `approval.respond` 로 승인하면 사용자 개입 없이 그 에이전트에게 권한이 붙었다. `plugin.request_permission` 으로 다른 에이전트를 대상으로 요청을 만든 뒤 스스로 승인할 수도 있었다. 이제 Tasty 가 만든 권한 상승 요청은 사용자(승인 팝업, 사용자가 실행한 `tasty approval respond`·`cancel`)만 승인·거절·취소할 수 있고, 에이전트·플러그인이 응답하거나 취소하면 `-32019`(`user_response_required`)로 거절되고 요청은 그대로 남는다. 에이전트가 `plugin.request_permission`(`tasty plugin request-permission`)으로 요청할 수 있는 대상은 자기 자신뿐이며 다른 `agent_id` 는 `-32602` 로 거절된다. 일반 승인 요청에 에이전트가 응답하는 동작은 바뀌지 않는다. 이 보장은 세션 토큰으로 접속한 에이전트·플러그인에 대한 것이며, 토큰 없이 접속한 프로세스는 지금처럼 사용자로 취급된다.
 
 ## [0.12.2] - 2026-10-12
 

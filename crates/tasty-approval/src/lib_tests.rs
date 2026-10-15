@@ -300,3 +300,39 @@ fn a_poisoned_store_refuses_writes_but_still_answers_reads() {
     let e = store.request(req("a2", Requester::User)).unwrap_err();
     assert!(matches!(e, ApprovalError::StorePoisoned), "got {e:?}");
 }
+
+/// 호스트가 발행한 권한 상승 요청은 사용자 응답만 받는다. 다른 agent 의 응답은 상태를 바꾸지 않는다.
+#[test]
+fn host_elevation_accepts_only_the_user() {
+    let store = ApprovalStore::new();
+    let mut request = req(
+        "req_ELEVATION01",
+        Requester::Plugin {
+            id: "target".into(),
+        },
+    );
+    request.choices = vec![ApprovalChoice::approve(), ApprovalChoice::deny()];
+    request.host_elevation = Some(HostElevation {
+        agent_id: "target".into(),
+        permission: "fs.write".into(),
+        grant_ttl_secs: Some(3600),
+    });
+    let id = store.request(request).unwrap().record.request.id;
+
+    for choice in ["approve", "deny"] {
+        let err = store
+            .respond(
+                &id,
+                choice.into(),
+                Responder::Agent { id: "other".into() },
+                None,
+            )
+            .unwrap_err();
+        assert!(matches!(err, ApprovalError::UserResponseRequired(ref e) if *e == id));
+    }
+    assert_eq!(store.get(&id).unwrap().state, ApprovalState::Pending);
+
+    store
+        .respond(&id, "approve".into(), Responder::User, None)
+        .expect("the user answers");
+}

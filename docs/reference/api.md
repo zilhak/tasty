@@ -138,7 +138,7 @@ DAG는 별도로 저장하지 않고 `metadata.dag`의 명시적 지정 또는 �
 CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연결할 때 `--epoch`으로 인스턴스를 구별한다. 연결이 끊기면 재연결에 쓸 인자를 출력하며, `--reconnect`를 지정하면 자동으로 다시 연결한다. 키 목록과 등급은 [event-catalog](event-catalog.md)를 참고한다.
 
 ### 휴먼 핸드오프 (`approval.*`)
-`request,respond,await,cancel,get,list,history,summary.{set,get}`. `request` 의 metadata `kind` 에 host 전용 값 `capability_elevation` 을 주면 `-32602`(`invalid_request: …`)로 거절한다. [human-handoff](../features/human-handoff/index.md).
+`request,respond,await,cancel,get,list,history,summary.{set,get}`. `request` 의 metadata `kind` 에 host 전용 값 `capability_elevation` 을 주면 `-32602`(`invalid_request: …`)로 거절한다. host 가 발행한 권한 상승 요청에 agent·plugin 이 `respond`·`cancel` 하면 `-32019`(`user_response_required`)로 거절한다. [human-handoff](../features/human-handoff/index.md).
 
 ### 텔레메트리 (`telemetry.*`)
 `record,record_batch,summary,timeseries,top` · `cap.{set,list,remove,status,reset}` · `anomaly.list` · `session_summary`. [telemetry](../features/telemetry/index.md).
@@ -214,7 +214,7 @@ CLI는 `tasty list pressure`다. 자세한 기준은 [telemetry](../features/tel
 - 원격 전송 저장 정책: `settings.get_remote_transfer` / `settings.set_remote_transfer {dir?, max_mb?}` (local-only, focus 독립 — 전역 설정) — 원격 bulk 파일 전송 수신측 저장 폴더(`dir`, 빈 값=기본 `~/.tasty/transfers/`)와 폴더 최대 용량(`max_mb`, MiB). set 은 지정 필드만 현재 설정 위에 덮어쓴 변경을 요청하며, 응답 `applied: true` 는 적용·저장 완료를 보장하지 않는다([완료 의미](../architecture/data-flows.md#에이전트plugin-설정-변경-요청의-완료-의미)). CLI `tasty settings {get-remote-transfer,set-remote-transfer}`. — [remote-attach](../features/remote-attach/index.md)
 
 ### Plugin 관리 (`plugin.*`, local-only)
-`list,show,install,remove,enable,disable,upgrade_builtins,permissions,grant,revoke` · `grant_agent_permission`/`revoke_agent_permission`/`list_agent_permissions` · `request_permission` · `audit_{query,summary,follow,clear}`(**deny 만 기록된다** — allow 는 저장하지 않으므로 평시 조회 결과는 비어 있는 것이 정상이다, [ADR-0009](../adr/0009-state-storage-and-retention.md)) · `extension.list`. [plugin-system](../features/plugin-system/index.md) · [capability-elevation](../features/capability-elevation/index.md).
+`list,show,install,remove,enable,disable,upgrade_builtins,permissions,grant,revoke` · `grant_agent_permission`/`revoke_agent_permission`/`list_agent_permissions` · `request_permission`(Agent caller 는 자기 자신만 대상, 다른 `agent_id` 는 `-32602`) · `audit_{query,summary,follow,clear}`(**deny 만 기록된다** — allow 는 저장하지 않으므로 평시 조회 결과는 비어 있는 것이 정상이다, [ADR-0009](../adr/0009-state-storage-and-retention.md)) · `extension.list`. [plugin-system](../features/plugin-system/index.md) · [capability-elevation](../features/capability-elevation/index.md).
 
 ### Lua 스크립트
 release IPC 없음 — 등록한 스크립트를 단축키 또는 이벤트 트리거로 실행한다(ADR-0027). 임의 Lua 주입은 debug 빌드 전용 `debug.lua.eval`. [lua-hooks](../features/lua-hooks/index.md).

@@ -412,7 +412,7 @@ fn reply_session<T: Send + 'static>(
 ///
 /// params:
 /// - `agent_id` (str) — 대상. Agent caller 면 미지정 시 caller 자신의 agent_id
-///   로 기본값. Plugin/Local caller 는 필수 (운영자가 대신 발행).
+///   로 기본값이며 자기 자신 외의 값은 거절한다. Plugin/Local caller 는 필수 (운영자가 대신 발행).
 /// - `permission` (str, 필수) — 요청 권한 토큰.
 /// - `reason` (str, 옵션) — 사용자에게 보여줄 사유.
 ///
@@ -444,6 +444,21 @@ pub fn handle_request_permission(
             );
         }
     };
+    // agent 는 자기 권한만 요청한다. 다른 agent 를 대상으로 한 요청은 사용자 승인 하나로 그 agent 에게
+    // 권한을 붙이는 경로가 된다.
+    if let CallerContext::Agent {
+        agent_id: caller_id,
+        ..
+    } = caller
+        && *caller_id != agent_id
+    {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!(
+                "agent callers can only request permissions for themselves: 'agent_id' must be omitted or '{caller_id}'"
+            ),
+        );
+    }
     let permission = match params.get("permission").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'permission'"),

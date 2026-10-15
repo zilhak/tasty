@@ -1,4 +1,4 @@
-<!-- source-hash: c968209ccd2e -->
+<!-- source-hash: bedeb0a8a865 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -130,7 +130,7 @@ Use it from a terminal while Tasty is running. The output is JSON.
 | `tasty plugin extension list` | Extensions that plugins add to other plugins, and their state |
 | `tasty plugin grant-agent-permission --agent <id> --permission <permission> [--ttl <secs>]` · `revoke-agent-permission` | Grants a temporary permission to a running agent session, or revokes it. Without `--ttl` it lasts until revoked |
 | `tasty plugin list-agent-permissions [--agent <id>]` | Base and temporary permissions of agent sessions |
-| `tasty plugin request-permission --agent <id> --permission <permission> [--reason <reason>]` | Shows the approval popup that asks whether to give an agent a permission, ahead of time |
+| `tasty plugin request-permission --agent <id> --permission <permission> [--reason <reason>]` | Shows the approval popup that asks whether to give an agent a permission, ahead of time. When an agent runs it, the agent can only name itself, and only the user can approve or deny this popup |
 | `tasty plugin audit-query` · `audit-summary` · `audit-follow` · `audit-clear` | Queries · summarizes · follows live · deletes the allow/deny records of requests Tasty received (CLI, plugins, agents) |
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.

@@ -295,6 +295,9 @@ pub enum ApprovalError {
     AlreadyResponded(ApprovalId),
     #[error("self-response forbidden: requester and responder are the same caller")]
     SelfResponse,
+    /// 호스트가 발행한 권한 상승 요청에 사용자가 아닌 응답자가 답했다.
+    #[error("user response required: {0} is a host-issued elevation request")]
+    UserResponseRequired(ApprovalId),
     #[error("invalid choice: {0}")]
     InvalidChoice(String),
     #[error("invalid request: {0}")]
@@ -452,6 +455,7 @@ impl ApprovalStore {
     }
 
     /// 응답 적용. 이미 종료된 요청이면 `AlreadyResponded`. self-response 면 `SelfResponse`.
+    /// 호스트가 발행한 권한 상승 요청에 사용자가 아닌 응답자가 답하면 `UserResponseRequired`.
     pub fn respond(
         &self,
         id: &ApprovalId,
@@ -466,6 +470,10 @@ impl ApprovalStore {
             .ok_or_else(|| ApprovalError::NotFound(id.to_string()))?;
         if record.state.is_terminal() {
             return Err(ApprovalError::AlreadyResponded(id.clone()));
+        }
+        // 권한 상승은 사용자만 결정한다. 다른 agent·plugin 이 승인해 권한을 붙이거나 거절로 닫지 못한다.
+        if record.request.host_elevation.is_some() && by != Responder::User {
+            return Err(ApprovalError::UserResponseRequired(id.clone()));
         }
         if record.request.requester.matches_responder(&by) {
             return Err(ApprovalError::SelfResponse);

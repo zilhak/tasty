@@ -459,12 +459,32 @@ pub(crate) mod tests {
         core: &mut AppServices,
         req: &JsonRpcRequest,
     ) -> (JsonRpcResponse, bool) {
+        run_checked(core, req, &CallerContext::local(), true)
+    }
+
+    /// `run_request`와 같고 호출자를 정한다. 게이트가 거절한 요청은 그 응답을 바로 돌려준다.
+    pub(crate) fn run_request_as(
+        core: &mut AppServices,
+        req: &JsonRpcRequest,
+        caller: &CallerContext,
+    ) -> (JsonRpcResponse, bool) {
+        run_checked(core, req, caller, false)
+    }
+
+    fn run_checked(
+        core: &mut AppServices,
+        req: &JsonRpcRequest,
+        caller: &CallerContext,
+        panic_on_reject: bool,
+    ) -> (JsonRpcResponse, bool) {
         let (mut state, mut session) = crate::state::tests::test_state();
         let mut engine = session.borrow_mut();
-        let caller = CallerContext::local();
         let checked =
-            crate::ipc::handler::check_request(core, &mut state, &mut engine, req, &caller)
-                .unwrap_or_else(|r| panic!("request rejected: {r:?}"));
+            match crate::ipc::handler::check_request(core, &mut state, &mut engine, req, caller) {
+                Ok(checked) => checked,
+                Err(r) if panic_on_reject => panic!("request rejected: {r:?}"),
+                Err(response) => return (response, false),
+            };
         match crate::ipc::handler::handle_checked_request(core, &mut state, &mut engine, &checked) {
             Handled::Now(response) => (response, false),
             Handled::Later(deferred) => {
