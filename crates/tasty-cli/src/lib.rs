@@ -15,6 +15,7 @@ pub mod help;
 mod help_error;
 mod help_frame;
 pub mod help_i18n;
+pub mod help_route;
 pub mod hook_failure;
 pub mod local;
 pub mod out;

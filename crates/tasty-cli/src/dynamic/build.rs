@@ -72,7 +72,9 @@ pub fn build_augmented_cli(entries: &[PluginCliEntry]) -> Command {
 
 /// 정적 명령과 alias를 clap 트리에서 읽는다.
 pub(super) fn host_command_names(cmd: &Command) -> HashSet<String> {
-    let mut names = HashSet::new();
+    // clap이 build 때 만드는 help 하위 명령의 이름도 예약돼 있다. en 트리는 아직 build 전이라
+    // 목록에 없으므로 항상 넣어 모든 언어에서 같은 경고·거부 경로를 타게 한다.
+    let mut names = HashSet::from(["help".to_string()]);
     for sub in cmd.get_subcommands() {
         names.insert(sub.get_name().to_string());
         for alias in sub.get_all_aliases() {

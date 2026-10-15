@@ -58,25 +58,34 @@ fn connect_ipc(port: u16) -> std::result::Result<TcpStream, ConnectFailure> {
         .map_err(|source| ConnectFailure { port, source })
 }
 
-pub fn try_run_plugin_cli() -> Option<Result<()>> {
+/// 도움말·버전 출력은 오류가 아니라 clap이 렌더링하는 정상 출력이다.
+fn is_help_output(kind: clap::error::ErrorKind) -> bool {
+    use clap::error::ErrorKind;
+    matches!(
+        kind,
+        ErrorKind::DisplayHelp
+            | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+            | ErrorKind::DisplayVersion
+    )
+}
+
+/// 정적 트리가 해석하지 못한 argv를 플러그인 명령을 포함한 트리로 다시 해석한다.
+/// 도움말 요청이면 그 트리의 도움말을 출력하고 종료한다. 플러그인 명령이 아니면 `None`.
+pub fn try_run_plugin_cli(args: &[String]) -> Option<Result<()>> {
     let plugins_root = tasty_host_plugin::plugin_root()?;
     let entries = dynamic::discover_plugin_clis(&plugins_root);
     if entries.is_empty() {
         return None;
     }
-    // 사용자가 입력한 첫 인자가 plugin command 이름인지 확인. plugin 명령이 맞다면
-    // clap 에러도 자체 출력으로 처리한다 (정적 CLI의 "unrecognized subcommand"가
-    // 대신 뜨면 안 됨).
-    let first_arg = std::env::args().nth(1);
-    let is_plugin_cmd = first_arg
-        .as_deref()
-        .map(|name| entries.iter().any(|e| e.cli.name == name))
-        .unwrap_or(false);
     let augmented = dynamic::build_augmented_cli(&entries);
-    let matches = match augmented.try_get_matches() {
+    // 루트 옵션과 `help` 접두를 건너뛴 첫 명령이 plugin 이름이면 clap 오류도 자체 출력으로
+    // 처리한다. 정적 CLI의 "unrecognized subcommand"가 대신 뜨면 안 된다.
+    let is_plugin_cmd = crate::help_route::first_command_name(&augmented, args)
+        .is_some_and(|name| entries.iter().any(|e| e.cli.name == name));
+    let matches = match augmented.try_get_matches_from(args) {
         Ok(m) => m,
         Err(err) => {
-            if is_plugin_cmd {
+            if is_plugin_cmd || is_help_output(err.kind()) {
                 crate::help::format_parse_error(err);
                 unreachable!();
             }

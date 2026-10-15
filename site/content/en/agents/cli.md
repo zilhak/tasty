@@ -1,4 +1,4 @@
-<!-- source-hash: 3584adbea362 -->
+<!-- source-hash: 7187f0f31b52 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -542,7 +542,7 @@ per-limit total, so it is a different value.
 | Read the screen | `tasty read screen --surface ID --lines N` |
 | Notification | `tasty notify "body" --title "title"` |
 | Screenshot | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
-| Help | `tasty --help`, `tasty <command> --help`, `tasty -a -h` (full tree) |
+| Help | `tasty help`, `tasty help <command>` (= `tasty <command> --help`), `tasty -a -h` (full tree) |
 
 ## Troubleshooting
 

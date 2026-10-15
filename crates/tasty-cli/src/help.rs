@@ -81,8 +81,9 @@ fn format_args(cmd: &clap::Command) -> String {
 }
 
 /// Resolve the deepest matched command from raw CLI args.
+/// 루트 옵션과 그 값, `help <경로>`의 `help`를 건너뛰어 실제 하위 명령 문맥을 찾는다.
 fn resolve_command_path() -> (clap::Command, String) {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args().collect();
     let root = match tasty_host_plugin::plugin_root() {
         Some(root) => dynamic::build_augmented_cli(&dynamic::discover_plugin_clis(&root)),
         None => crate::help_i18n::command(),
@@ -90,7 +91,7 @@ fn resolve_command_path() -> (clap::Command, String) {
     let mut current = root.clone();
     let mut matched_path: Vec<String> = Vec::new();
 
-    for arg in &args {
+    for arg in crate::help_route::command_path_tokens(&root, &args) {
         if arg.starts_with('-') {
             break;
         }

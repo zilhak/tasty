@@ -3,6 +3,6 @@
 //! 양쪽에 필요한 기능은 tasty-ssh·tasty-remote·tasty_ipc::client에서 공유한다.
 
 pub use tasty_cli::{
-    Cli, Commands, Envelope, format_parse_error, localized_command, print_augmented_help,
-    print_command_tree, run_client_with, try_run_plugin_cli,
+    Cli, Commands, Envelope, format_parse_error, help_route, localized_command,
+    print_augmented_help, print_command_tree, run_client_with, try_run_plugin_cli,
 };

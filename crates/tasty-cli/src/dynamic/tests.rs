@@ -392,7 +392,9 @@ fn no_host_command_name_can_be_shadowed_by_a_plugin() {
             .get_subcommands()
             .filter(|c| c.get_name() == name)
             .count();
-        assert_eq!(hits, 1, "'{name}' 이 중복 등록됐다");
+        // help는 clap이 build 때 만드는 예약 이름이라 build 전 트리에는 아직 없다.
+        let expected = usize::from(name != "help");
+        assert_eq!(hits, expected, "'{name}' 이 중복 등록됐다");
         augmented.debug_assert();
     }
 }

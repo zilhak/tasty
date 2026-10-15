@@ -79,6 +79,24 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 기본값·누적/교체 방식·플랫폼 차이는 실행 코드를 읽고 설명하고, 같은 이름의 옵션도
 각 명령에서 실제로 무엇을 뜻하는지 적는다.
 
+### 도움말 진입점
+
+`tasty help`, `tasty -h`, `tasty --help`는 같은 명령 집합을 표시한다. 정적 트리가
+도움말 요청(`DisplayHelp`)이나 모르는 이름(`InvalidSubcommand`)으로 끝나면
+`try_run_plugin_cli`가 설치된 plugin 명령을 포함한 트리(`build_augmented_cli`)로 같은 argv를
+다시 해석한다. 그래서 `help <경로>`와 `<경로> --help`는 host·plugin·3단 host 하위 명령에서 같은
+대상을 가리킨다. 유효한 경로는 종료 코드 0, 없는 경로는 2이며 가장 가까운 유효 부모의 하위 명령을
+후보로 보여 준다.
+
+루트 옵션 구간은 `help_route::scan_root`가 루트 인자 선언을 읽어 해석한다. 값을 받는 옵션의 값과
+`--` 뒤의 토큰은 명령이나 도움말 제어로 보지 않는다. 따라서 `--port-file <경로> help <경로>`도 같은
+도움말을 출력하며, 하위 명령 뒤의 `--all`은 데이터로 남는다. 전체 트리(`-a`/`--all`)는 루트 위치에
+있을 때만 요청으로 본다. 루트의 인자 없는 `tasty help`는 `-h`와 같은 짧은 도움말로 보낸다.
+
+도움말은 매니페스트만 읽는다. plugin 프로세스·GUI·IPC 연결·stdin 읽기는 일어나지 않는다.
+읽지 못한 매니페스트는 기존 경고를 출력하고 건너뛰며 host 도움말은 계속 표시한다.
+시험은 `tests/cli_help_entrypoints.rs`다.
+
 ## 진입점 (`run.rs`)
 
 `run_client` 는 갈래를 묻고 `ClientDriven` 이면 넘긴 뒤, 나머지 단발 RPC 경로
