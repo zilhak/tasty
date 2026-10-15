@@ -1049,3 +1049,26 @@ fn double_tap_registration_and_arms_agree() {
         "등록됐는데 실행 arm 없음: {unarmed:?} · arm 인데 등록 안 됨: {unregistered:?}"
     );
 }
+
+/// 팔레트의 `enter_copy_mode` 는 진입 요청만 남긴다. 같은 실행 안에서 소비하지 않으면
+/// 요청이 남아 있다가 다음 단축키(Ctrl+F 등)에서 엉뚱하게 복사 모드에 들어간다.
+#[test]
+fn palette_copy_mode_request_is_consumed_in_the_same_dispatch() {
+    use tasty_doc_guards::match_arms::Source;
+    const SRC: &str = include_str!("dispatch.rs");
+    let s = Source::new(SRC);
+    let bodies = s.fn_bodies("dispatch_action_by_id");
+    assert_eq!(
+        bodies.len(),
+        1,
+        "`fn dispatch_action_by_id` 를 하나만 찾아야 한다"
+    );
+    let body = &s.code[bodies[0].clone()];
+    let request = body
+        .find("pending_enter_copy_mode = true")
+        .expect("팔레트가 진입을 요청하는 자리를 찾지 못했다");
+    assert!(
+        body[request..].contains("self.try_enter_vi_copy_mode(engine)"),
+        "요청 뒤에서 같은 실행 안에 진입을 시도해야 한다"
+    );
+}

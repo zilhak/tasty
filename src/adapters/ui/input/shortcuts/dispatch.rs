@@ -476,6 +476,8 @@ impl MainView {
             }
             None => {}
         }
+        // 키 경로의 after_shortcut_consumed와 같이 진입 요청을 이 실행 안에서 소비한다.
+        self.try_enter_vi_copy_mode(engine);
         if let Some(text) = pending_copy_text {
             let scope = pending_copy_scope
                 .map(crate::adapters::ui::ToastScope::Surface)
