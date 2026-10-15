@@ -1,4 +1,4 @@
-<!-- source-hash: 788d8c536d37 -->
+<!-- source-hash: e311f659c0f3 -->
 # CLI command reference
 
 How to use the `tasty` commands the [introduction](cli.md) does not cover: reading `read since-mark` from a saved position, looking into a surface, permission tokens, notifications, metadata, queues between Surfaces, running several terminals, headless PTYs, shared memory, observers, usage records, and other queries and settings, organised by purpose. Check every argument a command takes with `tasty help <command>`.
@@ -41,6 +41,9 @@ tasty surface respawn-terminal --surface 42    # restart the shell, keeping the 
 tasty surface fire-hook --surface 42 --event process-exit    # fire a hook yourself
 tasty surface fire-hook --surface 42 --event idle-timeout:300 # some events carry a number
 ```
+
+`respawn-terminal` replies only after the previous shell is confirmed to have exited, even though the new shell already appears.
+If that exit is not confirmed within 5 seconds, the new shell stays usable but the reply is a recovery-required error (`-32068`).
 
 ## Granting permissions to a child agent
 

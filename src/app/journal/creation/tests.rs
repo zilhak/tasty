@@ -21,7 +21,6 @@ fn uncertain_installation_release_waits_for_its_original_remote_receipt() {
     let stage = Stage::Installing {
         installed: Installed::with_test_retirement(lease(), receipt),
         answered: true,
-        started: std::time::Instant::now(),
     };
     let owner = UncertainOwner::from_stage(stage).expect("installation owner");
     assert!(matches!(&owner, UncertainOwner::Installed(installed) if installed.lease == lease()));
@@ -125,9 +124,9 @@ fn executed() -> ResultValue {
     })
 }
 
-/// Synthesizes the uncertain stage with a Discard owner instead of calling `install_candidate` or
-/// `discard_candidate`, whose owners (FailedInstallation, EngineOwned) never reconcile. The Discard
-/// owner reconciles, so the full overlap chain that ends in an ownerless reply is reachable here.
+/// Synthesizes the uncertain stage with a Discard owner instead of calling `discard_candidate`,
+/// whose EngineOwned owner never reconciles. The Discard owner reconciles, so the full overlap
+/// chain that ends in an ownerless reply is reachable here.
 /// Guards the in-flight gate in `flush` and the reply-kind matching in `answered`.
 #[test]
 fn synthesized_uncertain_discard_keeps_one_outstanding_request_per_creation() {

@@ -12,6 +12,8 @@ pub(crate) struct PreparedLeaf {
 }
 use tasty_terminal::{Pty, ResourceGeneration, Terminal};
 
+#[cfg(test)]
+pub(crate) use installation::{INSTALL_FAULT, InstallFault};
 pub(crate) use installation::{Installation, Installed, RetiringKind};
 
 /// An application binding permits execution for this selected engine in this process only.
@@ -377,7 +379,24 @@ impl PreparedMaterialization {
             one_shot_input: self.one_shot_input.take(),
             retirement: None,
             remote_retirements: Vec::new(),
+            candidate_retirement: None,
+            installed_child: None,
+            installed_candidate: None,
         })
+    }
+
+    /// Return the handles of an installation that failed before changing any owner, so the
+    /// ordinary discard path retires the candidate or restores a standalone transfer.
+    pub(crate) fn revert_installation(&mut self, installation: Installation) {
+        debug_assert!(installation.retirement.is_none());
+        debug_assert!(installation.remote_retirements.is_empty());
+        self.connection = installation.connection;
+        self.publication = installation.publication;
+        self.registration = installation.registration;
+        self.scrollback_persist_id = installation.scrollback_persist_id;
+        self.metadata = installation.metadata;
+        self.one_shot_input = installation.one_shot_input;
+        self.installed = false;
     }
 
     pub(crate) fn discard(
@@ -408,9 +427,11 @@ impl PreparedMaterialization {
         Ok(Some(pty.retire()))
     }
 
+    /// Publication needs the installed owner only. Retiring the replaced owner is a separate
+    /// completion that the creation keeps observing after the structure is published.
     pub(crate) fn into_leaf(self, installed: &Installed) -> anyhow::Result<PreparedLeaf> {
         if self.lease != installed.lease
-            || !installed.cleanup_complete()?
+            || installed.waiting_input()
             || !self.installed
             || self.connection.is_some()
             || self.publication.is_some()

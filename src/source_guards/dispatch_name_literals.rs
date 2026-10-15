@@ -23,6 +23,7 @@ const ROUTERS: &[&str] = &[
     "src/app/journal/commands/forwarding.rs",
     "src/app/journal/commands/replacement.rs",
     "src/app/journal/commands/tests.rs",
+    "src/app/journal/commands/replacement_settle_tests.rs",
     "src/app/journal/commands/category.rs",
     "src/app/journal/commands/create_spec.rs",
     "src/app/journal/commands/assembly.rs",

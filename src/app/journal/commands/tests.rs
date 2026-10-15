@@ -612,6 +612,9 @@ mod metadata;
 #[path = "close_receipt_tests.rs"]
 mod close_receipt;
 
+#[path = "replacement_settle_tests.rs"]
+mod replacement_settle;
+
 #[path = "closing_surfaces_tests.rs"]
 mod closing_surfaces;
 

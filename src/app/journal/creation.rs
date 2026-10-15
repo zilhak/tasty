@@ -1,4 +1,5 @@
 //! A live request continuation. The engine owns the unpublished materialization, never this router.
+mod settle;
 mod uncertain;
 use super::*;
 use crate::runtime::effect_runner::{self, ExecutionBinding, Installed};
@@ -36,10 +37,16 @@ pub(super) struct Creation {
     assembly_member: bool,
     transfers_existing: bool,
     one_shot_input: Option<String>,
+    /// The public command whose stored result this creation completes. Its reply waits until the
+    /// replaced owner is retired, as it did before publication was separated from that receipt.
+    origin_command: Option<String>,
     queued: Option<Work>,
     /// One ticket carries every step, so a reply is matched to the only submitted request.
     in_flight: Option<InFlight>,
 }
+
+/// Upper bound for observing the retirement of a replaced owner after publication.
+const SETTLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The submitted request whose reply this ticket awaits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,7 +85,6 @@ enum Stage {
     Installing {
         installed: Installed,
         answered: bool,
-        started: std::time::Instant,
     },
     Uncertain(Uncertain),
     Finish {
@@ -87,6 +93,15 @@ enum Stage {
     },
     AwaitPublication(Installed),
     Published(Installed),
+    /// The structure is published; only the replaced owner's receipts remain.
+    Settling {
+        installed: Installed,
+        deadline: std::time::Instant,
+    },
+    /// `unconfirmed` keeps the reason a replaced owner's retirement was not observed in time.
+    Settled {
+        unconfirmed: Option<String>,
+    },
     Rejected {
         discard_committed: bool,
         lease: crate::runtime::journal_product::EffectLease,
@@ -138,6 +153,7 @@ impl Creation {
             assembly_member: false,
             transfers_existing: false,
             one_shot_input: None,
+            origin_command: None,
             stage: Stage::Claim,
             fixed_plan: None,
             requested_restore: None,
@@ -196,6 +212,7 @@ impl Creation {
             assembly_member: false,
             transfers_existing: false,
             one_shot_input: None,
+            origin_command: None,
             queued: None,
             in_flight: Some(InFlight::Step),
             fixed_plan: None,
@@ -268,6 +285,7 @@ impl Creation {
             assembly_member: false,
             transfers_existing: false,
             one_shot_input: None,
+            origin_command: None,
             queued: Some(admission),
             in_flight: None,
         })
@@ -498,16 +516,12 @@ impl Creation {
                     acknowledged: true,
                 }
             }
-            (
+            (Stage::Installing { installed, .. }, ResultValue::Executed(_)) if preparation => {
                 Stage::Installing {
-                    installed, started, ..
-                },
-                ResultValue::Executed(_),
-            ) if preparation => Stage::Installing {
-                installed,
-                answered: true,
-                started,
-            },
+                    installed,
+                    answered: true,
+                }
+            }
             // Publication can fail while the preparation reply is in flight; that reply only
             // releases the queued uncertainty record and must not acknowledge it.
             (Stage::Uncertain(uncertain), ResultValue::Executed(_) | ResultValue::Stored(_))
@@ -531,10 +545,13 @@ impl Creation {
             ) if self.assembly_member && in_flight == Some(InFlight::Step) => {
                 Stage::AwaitPublication(installed)
             }
-            (Stage::Finish { .. }, ResultValue::Executed(_))
+            (Stage::Finish { installed, .. }, ResultValue::Executed(_))
                 if in_flight == Some(InFlight::Step) =>
             {
-                return Ok(true);
+                match Self::settle(installed) {
+                    Some(stage) => stage,
+                    None => return Ok(true),
+                }
             }
             (
                 Stage::Rejected {
@@ -716,34 +733,6 @@ impl Creation {
             physical,
         });
     }
-    pub(super) fn publication_released(&self) -> bool {
-        matches!(self.stage, Stage::Published(_))
-    }
-
-    /// A failed install still owns any candidate handles and already-issued retirement receipts.
-    pub(super) fn install_candidate(
-        &mut self,
-        session: &mut EngineSession,
-        plugins: Option<&mut crate::plugin::PluginManager>,
-        retiring: Option<effect_runner::RetiringKind>,
-        mut installation: effect_runner::Installation,
-    ) -> Result<(), String> {
-        match installation.install(&mut session.borrow_mut(), plugins, retiring) {
-            Ok(installed) => self.installed(installed),
-            Err(error) => {
-                let reason = error.to_string();
-                let lease = installation.lease.clone();
-                // The stage keeps the owner even if the record cannot be queued.
-                self.stage = Stage::Uncertain(Uncertain::pending(
-                    reason.clone(),
-                    UncertainOwner::FailedInstallation(Box::new(installation)),
-                ));
-                self.enqueue(Work::PreparationUncertain { lease, reason })?;
-            }
-        }
-        Ok(())
-    }
-
     pub(super) fn retain_for_release(
         mut self,
         release: &mut crate::runtime::resource_retirement::EngineRelease,
@@ -752,7 +741,8 @@ impl Creation {
             Stage::Installing { installed, .. }
             | Stage::Finish { installed, .. }
             | Stage::AwaitPublication(installed)
-            | Stage::Published(installed) => release.retain_installation(installed),
+            | Stage::Published(installed)
+            | Stage::Settling { installed, .. } => release.retain_installation(installed),
             Stage::Rejected {
                 retirement: Some(receipt),
                 ..
@@ -773,7 +763,6 @@ impl Creation {
         self.stage = Stage::Installing {
             installed,
             answered: preparation_acked,
-            started: std::time::Instant::now(),
         };
     }
 
@@ -795,23 +784,30 @@ impl Creation {
         }
     }
 
+    /// Only an installed owner that the published structure does not yet describe pauses
+    /// observation. Published, settling, rejected and withdrawn owners leave the live state
+    /// consistent with the structure, so their receipts are observed without a pause.
     pub(super) fn pauses_observation(&self) -> bool {
         (self.transfers_existing
             && matches!(self.stage, Stage::Prepared { .. } | Stage::Rejected { .. }))
             || matches!(
                 self.stage,
                 Stage::Installing { .. }
-                    | Stage::Finish { .. }
+                    | Stage::Finish {
+                        publication: Publication::Pending,
+                        ..
+                    }
                     | Stage::AwaitPublication(_)
-                    | Stage::Published(_)
-                    | Stage::Uncertain(_)
             )
+            || matches!(&self.stage, Stage::Uncertain(uncertain) if uncertain.holds_unpublished_installation())
     }
 
     pub(super) fn needs_cleanup_poll(&self) -> bool {
         matches!(
             self.stage,
-            Stage::Installing { answered: true, .. } | Stage::Rejected { answered: true, .. }
+            Stage::Installing { answered: true, .. }
+                | Stage::Rejected { answered: true, .. }
+                | Stage::Settling { .. }
         )
     }
 
@@ -879,10 +875,12 @@ impl Creation {
             }
             return Ok(());
         }
+        if self.poll_settling(session) {
+            return Ok(());
+        }
         let ready = if let Stage::Installing {
             installed,
             answered: true,
-            started,
         } = &mut self.stage
         {
             if let Err(error) = installed.poll_input(&mut session.borrow_mut()) {
@@ -899,31 +897,8 @@ impl Creation {
                 self.flush(worker)?;
                 return Ok(());
             }
-            if installed.waiting_input() {
-                return Ok(());
-            }
-            let uncertain = match installed.cleanup_complete() {
-                Ok(true) => None,
-                Ok(false) if started.elapsed() < std::time::Duration::from_secs(5) => return Ok(()),
-                Ok(false) => {
-                    Some("old resource cleanup did not complete before its deadline".to_owned())
-                }
-                Err(error) => Some(error.to_string()),
-            };
-            if let Some(reason) = uncertain {
-                let lease = installed.lease.clone();
-                self.submit(
-                    worker,
-                    Work::PreparationUncertain {
-                        lease,
-                        reason: reason.clone(),
-                    },
-                )?;
-                self.retain_uncertain(reason);
-                self.flush(worker)?;
-                return Ok(());
-            }
-            true
+            // Retiring the replaced owner continues after publication.
+            !installed.waiting_input()
         } else {
             false
         };

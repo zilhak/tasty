@@ -98,8 +98,29 @@ impl JournalApplication {
             view.mirror_count = mirror_count;
             creation.poll_cleanup(&self.worker, view, session)?;
         }
-
+        self.finish_settled_creations();
         Ok(())
+    }
+
+    /// A settled creation leaves; its held command reply is read again. An unconfirmed retirement
+    /// of the replaced owner is answered as recovery-required for requests already waiting on it.
+    fn finish_settled_creations(&mut self) {
+        let settled: Vec<_> = self
+            .creations
+            .iter()
+            .filter(|(_, creation)| creation.is_settled())
+            .map(|(key, _)| *key)
+            .collect();
+        if settled.is_empty() {
+            return;
+        }
+        for key in settled {
+            let creation = self.creations.remove(&key).expect("settled creation");
+            if let Some((command, reason)) = creation.unconfirmed_cleanup() {
+                self.commands.note_unconfirmed_cleanup(command, reason);
+            }
+        }
+        self.refresh_in_progress_commands();
     }
 
     fn accept_bootstrap(
@@ -227,7 +248,7 @@ impl JournalApplication {
             }
         }
         self.creations
-            .retain(|_, creation| !creation.publication_released());
+            .retain(|_, creation| !creation.release_published());
 
         Ok(())
     }

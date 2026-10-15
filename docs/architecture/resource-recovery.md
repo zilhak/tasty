@@ -61,10 +61,21 @@ GUI intent·IPC·plugin·headless 진입점은 모두 같은 command 경계를 �
 |---|---|---|
 | 준비(`PrepareCreation` 뒤 claim) | App journal pump 안에서 PTY spawn·kind factory 실행 | 실행 동안 App 이벤트 처리가 멈춘다 |
 | 설치(`FinishCreation` 공개 중) | publication 처리 안에서 후보 설치·이전 owner 분리 | 전역 보류 |
-| 설치 뒤 | child 입력 전달과 원 자원 회수를 모두 기다린 뒤 `CleanupFinished` 제출(각 기한 5초) | 전역 보류 |
-| 최종 공개 | `FinishCleanup` commit과 전체 publication ACK | 전역 보류 |
-| 불명(`Uncertain`) | 설치 owner·폐기 receipt가 있을 때만 1초 간격 재확인. 실패한 설치와 준비 중 불명은 재확인 요청이 없다 | 전역 보류가 정합까지 유지된다 |
-| 원 명령 응답 | 최종 commit의 확정 결과. 불명이면 InProgress로 남는다 | - |
+| 설치 뒤 | child 입력 전달만 기다린 뒤 `CleanupFinished` 제출(본문 기한 5초) | 전역 보류 |
+| 최종 공개 | `FinishCleanup` commit과 전체 publication ACK | commit 전까지 전역 보류 |
+| 공개 뒤 회수(`Settling`) | 교체한 이전 PTY·plugin binding의 receipt(기한 5초) | 보류하지 않는다 |
+| 불명(`Uncertain`) | 설치 owner·폐기 receipt·회수한 실패 설치가 있을 때만 1초 간격 재확인. 준비 중 불명은 재확인 요청이 없다 | 미공개 설치 owner를 가진 경우만 보류 |
+| 원 명령 응답 | 최종 commit의 확정 결과를 공개 뒤 회수가 끝난 다음 읽는다. 불명이면 InProgress로 남는다 | - |
+
+공개 뒤 회수가 기한을 넘기거나 실패하면 receipt를 EngineSession의 해제 owner(`EngineRelease`)로
+넘기고 원 요청에 복구 필요(`ERR_OPERATION_RECOVERY_REQUIRED`)를 응답한다. 구조는 이미 공개됐으므로
+이 응답은 구조 실패를 뜻하지 않는다. 같은 키의 이후 재요청은 확정된 구조 결과를 돌려준다.
+
+설치 실패는 두 가지로 나눈다. 이전 owner를 은퇴시키거나 새 owner를 등록·설치하기 전의 실패는
+알려진 거절이다. 후보를 기존 폐기 경로로 회수하고 원 명령은 실패로 끝난다. 그 뒤의 실패는 미공개 새
+owner(PTY·plugin 등록·child 관계)를 회수하고, 이전 owner가 이미 은퇴한 대상만 Recovery 차단
+placeholder로 바꿔 사용할 수 없음을 표시한다. operation은 `Uncertain`으로 기록하며, 회수 receipt가
+모두 완료되면 폐기 evidence로 정합해 실패로 끝낸다. 이 동안 관측은 보류하지 않는다.
 
 standalone 채택은 준비 완료부터 설치 또는 원위치 반납까지도 전역 보류한다. GUI 종료의
 `SavingLayout`은 이 보류가 풀리기를 기다리며 별도 기한이 없다.

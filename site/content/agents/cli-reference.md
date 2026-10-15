@@ -43,6 +43,9 @@ tasty surface fire-hook --surface 42 --event process-exit    # 훅을 직접 발
 tasty surface fire-hook --surface 42 --event idle-timeout:300 # 초 단위가 붙는 이벤트도 있음
 ```
 
+`respawn-terminal` 은 새 셸이 화면에 나타난 뒤에도 이전 셸의 종료를 확인하고 나서 응답합니다.
+5초 안에 종료를 확인하지 못하면 새 셸은 그대로 쓸 수 있지만 응답은 복구 필요 오류(`-32068`)입니다.
+
 ## 자식 에이전트에게 권한 주기
 
 ```sh

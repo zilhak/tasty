@@ -179,11 +179,34 @@ pub(super) struct Commands {
         crate::intent::IntentOrigin,
         JsonRpcResponse,
     )>,
+    /// Commands whose published creation could not confirm the replaced owner's retirement,
+    /// kept only while a request still waits on them.
+    unconfirmed_cleanup: std::collections::HashMap<String, String>,
 }
 
 impl Commands {
     pub(super) fn pending_count(&self) -> usize {
         self.pending.len()
+    }
+
+    pub(super) fn note_unconfirmed_cleanup(&mut self, command: &str, reason: &str) {
+        if self
+            .pending
+            .values()
+            .any(|pending| pending.waiting_command.as_deref() == Some(command))
+        {
+            self.unconfirmed_cleanup
+                .insert(command.to_owned(), reason.to_owned());
+        }
+    }
+
+    fn forget_unconfirmed_cleanup(&mut self) {
+        let pending = &self.pending;
+        self.unconfirmed_cleanup.retain(|command, _| {
+            pending
+                .values()
+                .any(|pending| pending.waiting_command.as_deref() == Some(command.as_str()))
+        });
     }
 
     #[cfg(feature = "gui")]

@@ -18,6 +18,44 @@ pub(crate) struct Installation {
     pub(super) one_shot_input: Option<String>,
     pub(super) retirement: Option<PtyRetirement>,
     pub(super) remote_retirements: Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
+    /// Receipts of the new candidate withdrawn after a partially applied installation.
+    pub(super) candidate_retirement: Option<PtyRetirement>,
+    pub(super) installed_child: Option<crate::core::child_parent::ParentKey>,
+    /// The candidate's physical generation once it replaced the live owner.
+    pub(super) installed_candidate: Option<ResourceGeneration>,
+}
+
+/// `applied` is false only when no old owner was retired and no new owner was registered or
+/// installed. Such a failure leaves the published target intact and is a known rejection.
+#[derive(Debug)]
+pub(crate) struct InstallFailure {
+    pub(crate) error: anyhow::Error,
+    pub(crate) applied: bool,
+}
+
+/// Test-only failure injection at a fixed installation step of the production path.
+#[cfg(test)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum InstallFault {
+    /// After validation, before any owner changes.
+    BeforeChange,
+    /// After the candidate replaced the live owner.
+    AfterSwap,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static INSTALL_FAULT: std::cell::Cell<Option<InstallFault>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn inject(point: InstallFault) -> anyhow::Result<()> {
+    if INSTALL_FAULT.with(|fault| fault.get()) == Some(point) {
+        INSTALL_FAULT.with(|fault| fault.set(None));
+        anyhow::bail!("injected installation failure {point:?}");
+    }
+    Ok(())
 }
 
 pub(crate) struct RetiringKind {
@@ -165,14 +203,28 @@ impl Installation {
     }
 
     /// The caller keeps the entire affected batch hidden until the completion commit is applied.
-    /// A failure after external registration requires halt/reconciliation, never legacy fallback.
+    /// A failure after external registration is never answered by a legacy fallback.
     pub(crate) fn install(
+        &mut self,
+        engine: &mut EngineMut<'_>,
+        plugins: Option<&mut crate::plugin::PluginManager>,
+        retired_kind: Option<RetiringKind>,
+    ) -> Result<Installed, InstallFailure> {
+        let mut applied = false;
+        self.install_steps(engine, plugins, retired_kind, &mut applied)
+            .map_err(|error| InstallFailure { error, applied })
+    }
+
+    fn install_steps(
         &mut self,
         engine: &mut EngineMut<'_>,
         mut plugins: Option<&mut crate::plugin::PluginManager>,
         retired_kind: Option<RetiringKind>,
+        applied: &mut bool,
     ) -> anyhow::Result<Installed> {
         self.validate_installation_owner(engine)?;
+        #[cfg(test)]
+        inject(InstallFault::BeforeChange)?;
         if let Some(old) = retired_kind {
             if old.surface_id != self.surface_id {
                 anyhow::bail!("retired kind belongs to another surface");
@@ -186,6 +238,7 @@ impl Installation {
                         .enqueue_observed_remote_retirement(self.surface_id, binding)
                         .map_err(anyhow::Error::msg)?,
                 );
+                *applied = true;
             } else if let Some(binding) = old.mesh {
                 let manager =
                     plugins.ok_or_else(|| anyhow::anyhow!("mesh retirement has no plugin host"))?;
@@ -194,14 +247,18 @@ impl Installation {
                         .enqueue_observed_mesh_retirement(self.surface_id, &binding)
                         .map_err(anyhow::Error::msg)?,
                 );
+                *applied = true;
             }
         }
         // Destroy of the old registration precedes enqueueing Created/Restored for the new one.
         if let Some(publication) = self.publication.take() {
+            *applied = true;
             publication()?;
         }
+        *applied = true;
         let previous = match self.connection.take() {
             Some((mut terminal, mut pty)) => {
+                self.installed_candidate = Some(pty.generation());
                 if let Some(adoption) = &self.adoption {
                     if pty.generation().value() != adoption.resource_generation {
                         anyhow::bail!("standalone installation has another physical owner");
@@ -224,6 +281,8 @@ impl Installation {
             drop(terminal);
             pty.map(Pty::retire)
         });
+        #[cfg(test)]
+        inject(InstallFault::AfterSwap)?;
         if let Some(persist_id) = self.scrollback_persist_id.take() {
             engine
                 .runtime
@@ -253,6 +312,7 @@ impl Installation {
                     .map_err(|error| {
                         anyhow::anyhow!("child occupancy install failed: {error:?}")
                     })?;
+                self.installed_child = Some(child.parent.clone());
                 engine.runtime.child_terminals.register_child(
                     child.parent,
                     crate::runtime::child_terminal::ChildEntry {
@@ -306,6 +366,114 @@ impl Installation {
 }
 
 impl Installation {
+    /// Withdraw the unpublished new owner after a partially applied installation, so no live
+    /// resource remains that the committed structure does not describe. Returns whether the old
+    /// published owner was already retired; that target is then unavailable, not usable.
+    pub(crate) fn withdraw_unpublished(
+        &mut self,
+        engine: &mut EngineMut<'_>,
+        plugins: Option<&mut crate::plugin::PluginManager>,
+    ) -> bool {
+        let old_retired = self.retirement.is_some() || !self.remote_retirements.is_empty();
+        self.withdraw_child(engine);
+        self.withdraw_candidate_terminal(engine);
+        self.withdraw_remote_registration(plugins);
+        old_retired
+    }
+
+    fn withdraw_child(&mut self, engine: &mut EngineMut<'_>) {
+        let Some(parent) = self.installed_child.take() else {
+            return;
+        };
+        engine
+            .runtime
+            .child_terminals
+            .unregister_child_by_surface(self.surface_id);
+        if let Err(error) = engine.release_soft_occupancy(self.surface_id, parent) {
+            tracing::warn!(
+                surface = self.surface_id,
+                "withdrawn child kept no soft occupancy: {error:?}"
+            );
+        }
+    }
+
+    /// A standalone pair is retained in this owner, never killed by the withdrawal.
+    fn withdraw_candidate_terminal(&mut self, engine: &mut EngineMut<'_>) {
+        let installed_new = self.installed_candidate.is_some_and(|generation| {
+            engine
+                .runtime
+                .terminals
+                .matches_generation(self.surface_id, generation)
+        });
+        let pair = if installed_new {
+            engine
+                .runtime
+                .terminals
+                .remove(self.surface_id)
+                .and_then(|(terminal, pty)| pty.map(|pty| (terminal, pty)))
+        } else {
+            self.connection.take()
+        };
+        let Some((terminal, pty)) = pair else {
+            return;
+        };
+        if self.adoption.is_some() {
+            self.connection = Some((terminal, pty));
+        } else {
+            drop(terminal);
+            self.candidate_retirement = Some(pty.retire());
+        }
+    }
+
+    fn withdraw_remote_registration(&mut self, plugins: Option<&mut crate::plugin::PluginManager>) {
+        if self.publication.take().is_some() {
+            // Consuming the still-private closure proves Created/Restored was never enqueued.
+            self.unpublished_remote = None;
+            return;
+        }
+        let Some(binding) = self.unpublished_remote.take() else {
+            return;
+        };
+        match plugins.map(|manager| {
+            manager.enqueue_observed_remote_retirement(self.surface_id, binding.clone())
+        }) {
+            Some(Ok(receipt)) => self.remote_retirements.push(receipt),
+            Some(Err(error)) => {
+                tracing::warn!(
+                    surface = self.surface_id,
+                    "new plugin owner retained: {error}"
+                );
+                self.unpublished_remote = Some(binding);
+            }
+            None => self.unpublished_remote = Some(binding),
+        }
+    }
+
+    /// Every withdrawn or retired owner has its exact completion receipt.
+    pub(crate) fn release_complete(&self) -> anyhow::Result<bool> {
+        if self.connection.is_some() || self.unpublished_remote.is_some() {
+            return Ok(false);
+        }
+        for receipt in &self.remote_retirements {
+            match receipt.observation() {
+                Some(Ok(())) => {}
+                Some(Err(reason)) => anyhow::bail!(reason),
+                None => return Ok(false),
+            }
+        }
+        for receipt in [&self.retirement, &self.candidate_retirement]
+            .into_iter()
+            .flatten()
+        {
+            match receipt.observation().phase {
+                PtyPhase::Reaped => {}
+                PtyPhase::WaitFailed => anyhow::bail!("withdrawn PTY owner could not confirm reap"),
+                _ => return Ok(false),
+            }
+        }
+        Ok(true)
+    }
+
     pub(crate) fn retire_for_release(
         mut self,
         release: &mut crate::runtime::resource_retirement::EngineRelease,
@@ -313,6 +481,9 @@ impl Installation {
         if let Some((terminal, pty)) = self.connection.take() {
             drop(terminal);
             release.retain_pty(pty.retire());
+        }
+        if let Some(receipt) = self.candidate_retirement.take() {
+            release.retain_pty(receipt);
         }
         if self.publication.take().is_some()
             && let Some(binding) = self.unpublished_remote.take()
