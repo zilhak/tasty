@@ -68,7 +68,7 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 | Custom 실행(`claude.spawn` 등, 다시 보내면 두 번 실행될 수 있는 요청) | `DispatchOutcome::Deferred` — 점유를 반환하고 Ready 로 둔 채 다음 tick 에 다시 보낸다 | `AwaitDispatchAnswer` — 다시 보내지 않는다 | `PermanentFail` |
 
 - poll 의 재시도에 따로 횟수 상한은 없다. poll 기한(`PollSpec.timeout_ms` → `deadline_ms`)이 있으면 그 기한이 지난 뒤의 지연은 `<poll_method>: poll timeout (last poll: <오류>)` 로 실패한다. 기한이 없으면 응답 상태가 비종결일 때와 같이 계속 기다린다.
-- `AwaitDispatchAnswer` 는 `HostIpcInjector::dispatch_keeping_late_answer` 가 넘긴 응답 통로(`LateAnswer`)를 executor 가 task 별로 보관하고 poll 마다 확인한다. 응답이 오면 즉시 응답을 받은 경우와 같은 경로(`custom_after_answer`)로 완료 전략 handle(`PolledDispatch`·`AwaitExternal`, 전략이 없으면 Done)을 만들고, 저장 handle 을 그것으로 바꿔 재시작 뒤에도 그 handle 로 복원한다. poll 기한은 요청을 처음 보낸 시각부터 잰다. 응답이 RPC 오류면 Failed 다.
+- `AwaitDispatchAnswer` 는 `HostIpcInjector::dispatch_keeping_late_answer` 가 넘긴 응답 통로(`LateAnswer`)를 executor 가 task 별로 보관하고 poll 마다 확인한다. 응답이 오면 즉시 응답을 받은 경우와 같은 경로(`custom_after_answer`)로 완료 전략 handle(`PolledDispatch`·`AwaitExternal`, 전략이 없으면 Done)을 만들고, 저장 handle 을 그것으로 바꿔 재시작 뒤에도 그 handle 로 복원한다. poll 기한은 요청을 처음 보낸 시각부터 잰다. 응답이 RPC 오류면 Failed 다. 늦은 응답을 기다리는 동안에는 따로 기한을 검사하지 않는다(전략은 응답을 받은 뒤에 해석한다). 응답이 오거나 통로가 닫히거나 task 를 `cancel` 할 때까지 Running 이다.
 - 통로가 답 없이 닫혔거나, 재시작 등으로 이 executor 가 통로를 갖고 있지 않으면 결과를 알 수 없다. `PollOutcome::Lost` → task `unknown`(`reason` 머리말 `dispatch outcome unknown:`)이다. 요청이 반영됐는지 확인한 뒤 `retry`·`cancel` 로 정한다(아래 "한계"의 `unknown` 과 같다).
 - agent task 의 `<provider>.spawn` 은 이 표가 아니라 아래 §agent task 의 별도 대기(30초 + 정리 대기)를 쓴다.
 
