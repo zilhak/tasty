@@ -495,6 +495,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.poll_screenshot_captures();
 
         self.poll_image_uploads();
+        self.poll_image_jobs();
 
         let hello_pairs = if let Some(ref mut mgr) = self.plugin_manager {
             mgr.pump(now)

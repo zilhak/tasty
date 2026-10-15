@@ -39,6 +39,8 @@ pub(crate) mod global_hooks;
 #[cfg(feature = "gui")]
 pub(crate) mod idle_hooks;
 #[cfg(feature = "gui")]
+pub(crate) mod image_jobs;
+#[cfg(feature = "gui")]
 pub(crate) mod image_upload;
 #[cfg(feature = "gui")]
 pub(crate) mod ipc;
@@ -222,6 +224,9 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) screenshot_capture_rx:
         std::sync::mpsc::Receiver<screenshot_capture::ScreenshotCaptureOutcome>,
+    /// 이미지 파일 저장처럼 이벤트 루프를 멈추는 작업을 실행하는 worker.
+    #[cfg(feature = "gui")]
+    pub(crate) image_jobs: image_jobs::ImageWorker<image_jobs::ImageJobDone>,
     /// mirror 이미지 paste 업로드 워커 스레드 → 메인 루프 결과 채널.
     #[cfg(feature = "gui")]
     pub(crate) image_upload_tx: std::sync::mpsc::Sender<image_upload::ImageUploadOutcome>,
@@ -361,6 +366,14 @@ impl App {
             screenshot_workers: Default::default(),
             screenshot_capture_tx,
             screenshot_capture_rx,
+            image_jobs: image_jobs::ImageWorker::new({
+                let proxy = proxy.clone();
+                Arc::new(move || {
+                    if proxy.send_event(AppEvent::TimerTick).is_err() {
+                        tracing::debug!("image job wake after shutdown");
+                    }
+                })
+            }),
             image_upload_tx,
             image_upload_rx,
             transfer_progress_tx,

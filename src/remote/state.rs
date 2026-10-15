@@ -51,6 +51,9 @@ pub(crate) struct RemoteState {
     /// mirror 이미지 붙여넣기 요청. App이 업로드하고 저장 경로를 미리 정한 surface로 보낸다.
     #[cfg(feature = "gui")]
     pub(crate) pending_image_uploads: Vec<PendingImageUpload>,
+    /// 로컬 터미널 이미지 붙여넣기의 저장 요청. App 이 worker 에 넘기고 완료 때 경로를 입력한다.
+    #[cfg(feature = "gui")]
+    pub(crate) pending_image_saves: Vec<crate::app::image_jobs::paste::PendingImageSave>,
     /// GUI·헤드리스 attach 서버가 공유하는 캡처 업로드 버퍼.
     pub(crate) capture_uploads: crate::remote::capture_upload::CaptureUploadRegistry,
     /// 전용 bulk 연결의 (client_id, transfer_id)별 메타데이터·바이트 버퍼.
@@ -125,6 +128,8 @@ impl RemoteState {
             pending_screenshot_captures: Vec::new(),
             #[cfg(feature = "gui")]
             pending_image_uploads: Vec::new(),
+            #[cfg(feature = "gui")]
+            pending_image_saves: Vec::new(),
             capture_uploads: crate::remote::capture_upload::CaptureUploadRegistry::new(),
             bulk_transfers: crate::remote::bulk_transfer::BulkTransferRegistry::new(),
             #[cfg(feature = "gui")]

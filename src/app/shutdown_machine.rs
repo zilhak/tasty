@@ -120,6 +120,7 @@ impl App {
         self.port_scans.begin_shutdown();
         self.services.profile_detections.begin_shutdown();
         self.screenshot_workers.begin_shutdown();
+        self.image_jobs.begin_shutdown();
         self.explorer_files.begin_shutdown();
         self.tutorial_progress.stop();
         self.dag_reads.begin_shutdown();
@@ -478,6 +479,7 @@ impl App {
     }
     fn wait_for_explorer_file_shutdown(&mut self) -> bool {
         let remaining = self.explorer_files.poll_shutdown()
+            + self.image_jobs.poll_shutdown()
             + self.local_reads.poll_shutdown()
             + self.dag_reads.poll_shutdown()
             + self.tutorial_progress.poll_shutdown();

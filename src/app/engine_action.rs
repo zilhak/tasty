@@ -418,25 +418,16 @@ impl EngineAction {
                     png_bytes: png_bytes.clone(),
                 });
         } else {
-            let directory = match tempfile::Builder::new()
-                .prefix("tasty-clipboard-")
-                .tempdir()
-            {
-                Ok(directory) => directory,
-                Err(error) => {
-                    tracing::warn!(%error, "clipboard image directory creation failed");
-                    return;
-                }
-            };
-            let path = directory.path().join(file_name);
-            match std::fs::write(&path, png_bytes) {
-                Ok(()) => {
-                    // The receiving shell reads this file asynchronously, after this action.
-                    drop(directory.keep());
-                    send_saved_image_path(engine, target.surface_id(), *bracketed, &path);
-                }
-                Err(error) => tracing::warn!(%error,"clipboard image save failed"),
-            }
+            // 파일 저장은 App worker 가 하고, 완료 때 이 대상을 다시 확인해 경로를 입력한다.
+            engine.remote.pending_image_saves.push(
+                crate::app::image_jobs::paste::PendingImageSave {
+                    target: target.clone(),
+                    origin_view: view.clone(),
+                    bracketed: *bracketed,
+                    file_name: file_name.clone(),
+                    png_bytes: png_bytes.clone(),
+                },
+            );
         }
     }
     #[cfg(feature = "gui")]
@@ -600,29 +591,6 @@ impl EngineAction {
             explorer.active_tab_mut().set_cwd(folder.clone());
             engine.mark_layout_dirty();
         }
-    }
-}
-
-#[cfg(feature = "gui")]
-fn send_saved_image_path(
-    engine: &mut EngineMut<'_>,
-    surface: u32,
-    bracketed: bool,
-    path: &std::path::Path,
-) {
-    if engine.live.occupancy.is_hard_occupied(surface) {
-        return;
-    }
-    if let Some(terminal) = engine.runtime.terminals.get_mut(surface) {
-        let mut bytes = Vec::new();
-        if bracketed {
-            bytes.extend_from_slice(b"\x1b[200~");
-        }
-        bytes.extend_from_slice(path.to_string_lossy().as_bytes());
-        if bracketed {
-            bytes.extend_from_slice(b"\x1b[201~");
-        }
-        terminal.send_bytes(&bytes);
     }
 }
 
