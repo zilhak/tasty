@@ -167,14 +167,10 @@ impl App {
 
     /// 취소는 debug로만 남긴다. 권한 거절은 사용자가 해결할 수 있도록 toast도 표시한다.
     fn report_capture_failure(&mut self, err: CaptureError, source_window: Option<WindowId>) {
-        if matches!(err, CaptureError::Cancelled) {
-            tracing::debug!("screenshot capture cancelled by the user");
-            return;
-        }
         if matches!(err, CaptureError::PermissionDenied) {
             self.warn_screen_recording_permission(source_window);
         }
-        tracing::warn!("screenshot capture failed: {err}");
+        log_capture_failure(&err);
     }
 
     /// 원 요청 창에만 권한 안내를 표시한다. 원 View가 없으면 로그만 남긴다.
@@ -229,13 +225,22 @@ impl App {
     }
 }
 
+/// 사용자 취소와 취소인지 알 수 없는 무출력은 debug, 나머지는 warn 이다.
+fn log_capture_failure(err: &CaptureError) {
+    if matches!(err, CaptureError::Cancelled | CaptureError::NoOutput(_)) {
+        tracing::debug!("screenshot capture ended without a file: {err}");
+    } else {
+        tracing::warn!("screenshot capture failed: {err}");
+    }
+}
+
 fn capture_and_maybe_read(
     needs_bytes: bool,
 ) -> Result<(std::path::PathBuf, Option<Vec<u8>>), CaptureError> {
     let path = crate::platform::screen_capture::capture_interactive()?;
     let bytes = if needs_bytes {
         // 캡처 뒤 파일 읽기 실패는 사용자 취소·캡처 권한 거절과 구별한다.
-        Some(std::fs::read(&path).map_err(|e| CaptureError::Tool(e.into()))?)
+        Some(std::fs::read(&path).map_err(|e| CaptureError::Storage(e.into()))?)
     } else {
         None
     };

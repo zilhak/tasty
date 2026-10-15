@@ -1,4 +1,4 @@
-<!-- source-hash: 51a5edb6b65a -->
+<!-- source-hash: 2a76a4fb5bcf -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -47,6 +47,15 @@ With the default key encoding, Codex CLI for Windows uses `Shift+Enter` or `Ctrl
 - If the clipboard has no text but has an image, it is saved as a PNG file and the path is pasted. Use this to hand a screenshot to an agent.
 - Lines wrapped because of the window width are joined into one line when copied.
 - When you copy from a right-click menu, the "Copied" notice also shows the copy shortcut on its right. Copying a path from the Explorer right-click menu shows the copy-path shortcut. It does not appear when you copied with the shortcut or left the shortcut empty.
+
+### Screenshot to clipboard
+
+Press `Ctrl+Alt+S` and pick an area of the screen: the PNG file is saved under `~/.tasty/screenshots/` and its path goes to the clipboard. Pressed in a remote mirror workspace, the file is saved on the remote computer and goes to the remote clipboard.
+
+- **macOS**: picks the area with `screencapture`. Screen recording permission is required.
+- **Linux**: on Wayland it uses `grim`·`slurp`, or `gnome-screenshot` if they are missing. On X11 it uses the installed tool in the order `gnome-screenshot` → `scrot` → ImageMagick `import`. If one tool fails, the next one is tried.
+- **Windows**: captures the whole screen across all monitors, without area selection.
+- If you cancel the area selection with Esc, no other tool opens and the clipboard is left as is. The same applies when the tool ends without leaving a file.
 
 ### Selecting
 

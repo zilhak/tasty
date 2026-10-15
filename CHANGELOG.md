@@ -55,6 +55,7 @@
 
 - **빈 폴더에서 새 폴더·새 파일 이름 입력 칸이 보이지 않던 문제.** 항목이 없는 폴더나 찾기(Find) 결과가 0건인 목록에서 `F7`·`Shift+F4`·툴바 New folder·New file 을 누르면 빈 화면만 남고 이름을 넣을 수 없었다. 이제 그 자리에 이름 행이 열리고, `Esc` 로 취소하면 빈 화면으로 돌아온다. 원격(attach) Explorer 도 같다.
 
+- **Linux에서 첫 스크린샷 도구가 실패하면 다음 도구를 쓰지 않던 문제.** `screenshot_to_clipboard` 단축키가 `gnome-screenshot` 비정상 종료 뒤 `scrot`·`import` 를 시도하지 않고 취소로 끝났다. 이제 비정상 종료, 실행할 수 없는 도구, 잘린 PNG 를 실패로 보고 다음 후보를 시도한다. `slurp` 만 있고 `grim` 이 없으면 선택 UI를 열지 않고 넘어간다. 도구가 취소 메시지를 낸 경우(scrot Esc, slurp 취소)와 파일 없이 정상 종료한 경우에는 다른 선택 UI를 다시 열지 않는다. 파일 없이 정상 종료한 결과는 사용자 취소로 확정하지 않고 따로 분류한다. Linux X11만 실제 도구로 확인했고 Wayland·macOS·Windows는 실행하지 않았다.
 - **터미널 생성이 진행 중일 때 다른 생성·닫기가 끝나면 Tasty 전체가 멈추던 문제.** 생성 명령을 기다리는 동안 다른 생성이나 surface 정리가 연달아 끝나면 같은 명령의 완료 조회가 두 번 제출됐다. 두 번째 응답이 받을 곳 없이 도착해 `journal publication halted: bootstrap completion belongs to another request`를 기록했고, 이후 재시작 전까지 모든 IPC·CLI·Claude 훅이 `structure publication is halted`로 거절됐다. 이제 명령마다 처리 중인 조회는 하나뿐이다.
 
 - **시작 화면의 Codex 자동 복원이 포트 파일 없음 오류로 끝나던 문제.** 터미널 복원이 IPC 서버보다 먼저 실행되는 경우, helper가 같은 인스턴스의 준비를 최대 30초 기다린 뒤 세션을 한 번만 등록한다. 사용자가 부팅 후 따로 터미널을 깨울 필요가 없다.
