@@ -223,13 +223,15 @@ impl App {
             choice.clone(),
             tasty_approval::Responder::User,
             comment.clone(),
+            |_, _| {},
         ) {
-            Ok(change) => {
-                crate::app::approval_records::persist(core.memory_access(), &change.record);
+            Ok(transition) => {
+                // 기록은 App이 이미 제출했다. 결과는 메인 루프가 거두므로 popup 수명과 무관하다.
+                transition.record.detach(core.memory_access());
                 state
                     .dialogs
                     .approval_records
-                    .insert(request_id.clone(), change.record);
+                    .insert(request_id.clone(), transition.change.record);
             }
             Err(error) => tracing::warn!("approval response failed: {error}"),
         }

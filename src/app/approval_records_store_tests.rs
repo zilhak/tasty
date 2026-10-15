@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use tasty_approval::{
     ApprovalChoice, ApprovalId, ApprovalRequest, ApprovalState, ApprovalStore, Requester,
-    Responder, Severity, WaitOutcome,
+    Responder, Severity, StateChange, WaitOutcome,
 };
 use tasty_memory::writer::MemoryAccess;
 use tasty_memory::{MemoryConfig, MemoryStore, MemoryValue, PutOpts, Scope};
@@ -40,11 +40,18 @@ fn open(path: &Path, config: MemoryConfig) -> (Arc<Mutex<MemoryStore>>, MemoryAc
     (store, access)
 }
 
-/// IPC 경로처럼 쓰기 결과를 받아 저장소가 거절하면 실패한다.
-fn write(access: &MemoryAccess, record: &ApprovalRecord) {
-    let request = record_write(record).expect("a generated id has a record key");
-    if let Err(why) = access.run_and_wait(request, Duration::from_secs(5)) {
-        panic!("record {} was not stored: {why:?}", record.request.id);
+/// IPC 경로처럼 App이 제출한 기록의 결과를 받아 저장소가 거절하면 실패한다.
+fn write(access: &MemoryAccess, change: StateChange) {
+    let transition = submit(access, change);
+    let id = transition.change.record.request.id;
+    let RecordReceipt::Accepted(mut ticket) = transition.record else {
+        panic!("record {id} was not submitted: {:?}", transition.record);
+    };
+    let completion = ticket
+        .wait_timeout(Duration::from_secs(5))
+        .expect("the write finishes");
+    if let Err(why) = tasty_memory::writer::settle(completion) {
+        panic!("record {id} was not stored: {why:?}");
     }
 }
 
@@ -82,27 +89,26 @@ fn generated_ids_are_stored_and_read_back_after_reopen() {
                 id.as_str().bytes().any(|b| b.is_ascii_uppercase()),
                 "the generated id carries uppercase letters: {id}"
             );
-            write(&access, &created.record);
+            write(&access, created);
             let change = approvals
                 .respond(&id, "approve".into(), Responder::User, None)
                 .unwrap();
-            write(&access, &change.record);
+            write(&access, change);
             expected.push((id, workspace, "responded"));
 
             let created = approvals.request(request(workspace, None)).unwrap();
             let id = created.record.request.id.clone();
-            write(&access, &created.record);
-            write(&access, &approvals.cancel(&id).unwrap().record);
+            write(&access, created);
+            write(&access, approvals.cancel(&id).unwrap());
             expected.push((id, workspace, "cancelled"));
 
             let created = approvals.request(request(workspace, Some(1))).unwrap();
             let id = created.record.request.id.clone();
-            write(&access, &created.record);
+            write(&access, created);
             assert!(matches!(
-                approvals.await_response(&id, Some(1)),
+                await_approval(&approvals, &access, &id, Some(1)),
                 Ok(WaitOutcome::TimedOut { .. })
             ));
-            persist_and_wait(&access, &approvals.get(&id).unwrap());
             expected.push((id, workspace, "timed_out"));
         }
     }
@@ -133,10 +139,10 @@ fn generated_ids_are_stored_and_read_back_after_reopen() {
             None => Scope::Global,
         };
         let key = record_key(id).expect("a generated id has a record key");
-        assert!(
-            guard.get(&scope, &key).unwrap().is_some(),
-            "{key} in {scope:?}"
-        );
+        let entry = guard.get(&scope, &key).unwrap();
+        // 생성과 마지막 전이 한 번씩만 썼다. 대기 워커는 다른 쪽이 만든 전이를 다시 쓰지 않는다.
+        assert_eq!(entry.as_ref().map(|e| e.version), Some(2), "{key}");
+        assert!(entry.is_some(), "{key} in {scope:?}");
     }
     let workspace_only = stored_records(&mut *guard, Some(7), None, None).unwrap();
     assert_eq!(workspace_only.len(), 3);
@@ -161,12 +167,21 @@ fn a_refused_write_keeps_the_memory_transition() {
     let change = approvals
         .respond(&id, "approve".into(), Responder::User, None)
         .unwrap();
-    persist_and_wait(&access, &change.record);
-    persist(&access, &change.record);
+    submit(&access, change).record.detach(&access);
+    let expiring = approvals.request(request(None, Some(1))).unwrap();
+    let expiring = expiring.record.request.id;
+    assert!(matches!(
+        await_approval(&approvals, &access, &expiring, Some(1)),
+        Ok(WaitOutcome::TimedOut { .. })
+    ));
 
     assert!(matches!(
         approvals.get(&id).unwrap().state,
         ApprovalState::Responded { .. }
+    ));
+    assert!(matches!(
+        approvals.get(&expiring).unwrap().state,
+        ApprovalState::TimedOut { .. }
     ));
     let mut guard = memory.lock().unwrap();
     assert!(
@@ -174,4 +189,78 @@ fn a_refused_write_keeps_the_memory_transition() {
             .unwrap()
             .is_empty()
     );
+}
+
+fn version_of(memory: &Arc<Mutex<MemoryStore>>, scope: &Scope, id: &ApprovalId) -> Option<u64> {
+    let key = record_key(id).expect("a generated id has a record key");
+    memory
+        .lock()
+        .unwrap()
+        .get(scope, &key)
+        .unwrap()
+        .map(|e| e.version)
+}
+
+/// 여러 대기 워커가 같은 요청의 만료를 기다려도 만료 기록은 한 번만 제출된다.
+#[test]
+fn concurrent_waiters_record_one_timeout() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (memory, access) = open(&dir.path().join("memory.db"), MemoryConfig::default());
+    let approvals = Arc::new(ApprovalStore::new());
+    let created = approvals.request(request(Some(3), None)).unwrap();
+    let id = created.record.request.id.clone();
+    write(&access, created);
+    let waiters: Vec<_> = (0..4)
+        .map(|_| {
+            let (approvals, access, id) = (approvals.clone(), access.clone(), id.clone());
+            std::thread::spawn(move || await_approval(&approvals, &access, &id, Some(30)))
+        })
+        .collect();
+    for waiter in waiters {
+        assert!(matches!(
+            waiter.join().unwrap(),
+            Ok(WaitOutcome::TimedOut { .. })
+        ));
+    }
+    assert_eq!(version_of(&memory, &Scope::Workspace(3), &id), Some(2));
+    let stored = stored_records(&mut *memory.lock().unwrap(), Some(3), None, None).unwrap();
+    assert!(matches!(stored[0].state, ApprovalState::TimedOut { .. }));
+}
+
+/// 응답이 만료보다 먼저 오면 응답 기록 하나만 남고 대기 워커는 쓰지 않는다. 만료가 먼저면
+/// 만료 기록이 남고 늦은 응답은 거절돼 쓰지 않는다. 어느 쪽이든 저장 결과가 메모리 상태와 같다.
+#[test]
+fn a_response_and_a_timeout_race_to_one_record() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (memory, access) = open(&dir.path().join("memory.db"), MemoryConfig::default());
+    let approvals = Arc::new(ApprovalStore::new());
+    for wait_ms in [5_000, 1] {
+        let created = approvals.request(request(None, None)).unwrap();
+        let id = created.record.request.id.clone();
+        write(&access, created);
+        let waiter = {
+            let (approvals, access, id) = (approvals.clone(), access.clone(), id.clone());
+            std::thread::spawn(move || await_approval(&approvals, &access, &id, Some(wait_ms)))
+        };
+        std::thread::sleep(Duration::from_millis(20));
+        if let Ok(change) = approvals.respond(&id, "approve".into(), Responder::User, None) {
+            write(&access, change);
+        }
+        let outcome = waiter.join().unwrap().unwrap();
+        assert_eq!(version_of(&memory, &Scope::Global, &id), Some(2));
+        let live = approvals.get(&id).unwrap();
+        let stored = stored_records(&mut *memory.lock().unwrap(), None, None, None)
+            .unwrap()
+            .into_iter()
+            .find(|r| r.request.id == id)
+            .expect("stored");
+        assert_eq!(
+            serde_json::to_value(&stored.state).unwrap(),
+            serde_json::to_value(&live.state).unwrap()
+        );
+        match wait_ms {
+            1 => assert!(matches!(outcome, WaitOutcome::TimedOut { .. })),
+            _ => assert!(matches!(outcome, WaitOutcome::Responded { .. })),
+        }
+    }
 }

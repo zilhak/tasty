@@ -1,4 +1,5 @@
 //! Process-wide application services and execution coordination. Engine structure has another owner.
+use crate::app::approval_records::{self, ApprovalTransition};
 use crate::app::command::{CoreEvent, DomainIntent, ProcessPtyOutcome};
 use crate::core::*;
 use crate::ports::{
@@ -382,28 +383,37 @@ impl AppServices {
         crate::hook_runtime::HookExecutor::new(self.host_ipc_injector.get().cloned())
     }
 
+    /// 승인 요청을 등록하고 그 기록을 제출한다. 호출자는 기록을 다시 제출하지 않는다.
     pub(crate) fn request_approval(
         &mut self,
         req: tasty_approval::ApprovalRequest,
-    ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
-        self.approval_store.request(req)
+    ) -> Result<ApprovalTransition, tasty_approval::ApprovalError> {
+        let change = self.approval_store.request(req)?;
+        Ok(approval_records::submit(self.memory_access(), change))
     }
 
+    /// 응답을 적용하고 그 기록을 제출한다. `before_record`는 전이 직후 기록 제출 전에 실행되어
+    /// 권한 부여처럼 기록보다 먼저 일어나야 하는 후처리를 맡는다.
     pub(crate) fn respond_approval(
         &mut self,
         req_id: &tasty_approval::ApprovalId,
         choice: String,
         by: tasty_approval::Responder,
         comment: Option<String>,
-    ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
-        self.approval_store.respond(req_id, choice, by, comment)
+        before_record: impl FnOnce(&Self, &tasty_approval::ApprovalRecord),
+    ) -> Result<ApprovalTransition, tasty_approval::ApprovalError> {
+        let change = self.approval_store.respond(req_id, choice, by, comment)?;
+        before_record(self, &change.record);
+        Ok(approval_records::submit(self.memory_access(), change))
     }
 
+    /// 요청을 취소하고 그 기록을 제출한다.
     pub(crate) fn cancel_approval(
         &mut self,
         req_id: &tasty_approval::ApprovalId,
-    ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
-        self.approval_store.cancel(req_id)
+    ) -> Result<ApprovalTransition, tasty_approval::ApprovalError> {
+        let change = self.approval_store.cancel(req_id)?;
+        Ok(approval_records::submit(self.memory_access(), change))
     }
 
     /// Core를 직접 받지 않는 뷰·정리 코드에도 같은 저장소를 주입하기 위한 Arc 사본.

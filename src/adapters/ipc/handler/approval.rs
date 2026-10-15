@@ -8,6 +8,7 @@ use tasty_approval::{
 };
 use tasty_memory::{MemoryValue, PutOpts, Scope};
 
+use crate::app::approval_records::{ApprovalTransition, RecordReceipt};
 use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -62,24 +63,30 @@ pub(super) fn map_error(id: Value, err: ApprovalError) -> JsonRpcResponse {
     }
 }
 
-/// 기록이 끝난 뒤 `body`로 응답한다. 기록 실패는 경고만 남기고 응답은 그대로 보낸다.
-pub(super) fn persist_record_and_reply(
+/// App이 제출한 기록이 끝난 뒤 `body`로 응답한다. 기록 실패는 경고만 남기고 응답은 그대로
+/// 보낸다. writer가 접수하지 않았으면 그 거절로 응답한다.
+pub(super) fn reply_after_record(
     core: &AppServices,
     id: Value,
-    record: &ApprovalRecord,
+    transition: ApprovalTransition,
     body: Value,
 ) -> JsonRpcResponse {
-    let Some(request) = crate::app::approval_records::record_write(record) else {
-        return crate::adapters::ipc::handler::memory::written(core, id, body);
-    };
-    let record_id = record.request.id.clone();
-    let reply_id = id.clone();
-    core.reply_with_memory(id, request, move |core, completion| {
-        if let Err(failure) = tasty_memory::writer::settle(completion) {
-            tracing::warn!("approval: memory put failed for {record_id}: {failure:?}");
+    match transition.record {
+        RecordReceipt::Accepted(ticket) => {
+            let record_id = transition.change.record.request.id;
+            let reply_id = id.clone();
+            core.reply_with_ticket(id, ticket, move |core, completion| {
+                if let Err(failure) = tasty_memory::writer::settle(completion) {
+                    tracing::warn!("approval: memory put failed for {record_id}: {failure:?}");
+                }
+                crate::adapters::ipc::handler::memory::written(core, reply_id, body)
+            })
         }
-        crate::adapters::ipc::handler::memory::written(core, reply_id, body)
-    })
+        RecordReceipt::Refused(error) => {
+            crate::adapters::ipc::handler::deferred::submit_error_response(id, &error)
+        }
+        RecordReceipt::Skipped => crate::adapters::ipc::handler::memory::written(core, id, body),
+    }
 }
 
 pub(super) fn record_to_json(record: &ApprovalRecord) -> Value {
@@ -170,9 +177,9 @@ pub(crate) fn publish_capability_elevation_at(
     };
 
     match core.request_approval(req) {
-        Ok(change) => {
-            crate::app::approval_records::persist(core.memory_access(), &change.record);
-            Some(change.record)
+        Ok(transition) => {
+            transition.record.detach(core.memory_access());
+            Some(transition.change.record)
         }
         Err(e) => {
             tracing::warn!("capability elevation publish failed: {e}");
@@ -305,3 +312,7 @@ pub use summary::{handle_summary_get, handle_summary_set};
 #[cfg(test)]
 #[path = "approval/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "approval/writer_tests.rs"]
+mod writer_tests;

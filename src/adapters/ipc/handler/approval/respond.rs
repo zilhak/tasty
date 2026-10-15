@@ -23,12 +23,15 @@ pub fn handle_respond(
         .map(str::to_string);
     let by = responder_from_caller(caller);
 
-    match core.respond_approval(&req_id, choice.clone(), by, comment) {
-        Ok(change) => {
-            // 권한 부여에 실패해도 승인 응답은 보존한다. agent 재시도 때 다시 권한을 요청한다.
-            apply_elevation_grant_if_any(core, &change.record, &choice);
-            let body = record_to_json(&change.record);
-            persist_record_and_reply(core, id, &change.record, body)
+    // 권한 부여에 실패해도 승인 응답은 보존한다. agent 재시도 때 다시 권한을 요청한다.
+    // 권한 부여는 기록 제출보다 먼저 일어난다.
+    let grant = |core: &AppServices, record: &ApprovalRecord| {
+        apply_elevation_grant_if_any(core, record, &choice)
+    };
+    match core.respond_approval(&req_id, choice.clone(), by, comment, grant) {
+        Ok(transition) => {
+            let body = record_to_json(&transition.change.record);
+            reply_after_record(core, id, transition, body)
         }
         Err(e) => map_error(id, e),
     }

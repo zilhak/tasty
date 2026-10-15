@@ -161,6 +161,62 @@ fn timeout_transitions_to_timed_out() {
     assert!(matches!(rec.state, ApprovalState::TimedOut { .. }));
 }
 
+/// 여러 대기자가 같은 요청의 만료를 기다려도 만료 전이를 적용한 호출 하나만 변경을 받는다.
+#[test]
+fn only_the_waiter_that_applies_the_timeout_gets_the_change() {
+    let s = Arc::new(ApprovalStore::new());
+    s.request(req("req_a", Requester::User)).unwrap();
+    let waiters: Vec<_> = (0..4)
+        .map(|_| {
+            let s = s.clone();
+            thread::spawn(move || {
+                s.await_transition(&ApprovalId("req_a".into()), Some(40))
+                    .unwrap()
+            })
+        })
+        .collect();
+    let awaited: Vec<Awaited> = waiters.into_iter().map(|h| h.join().unwrap()).collect();
+    assert!(
+        awaited
+            .iter()
+            .all(|a| matches!(a.outcome, WaitOutcome::TimedOut { .. }))
+    );
+    let changes: Vec<_> = awaited.iter().filter_map(|a| a.change.as_ref()).collect();
+    assert_eq!(changes.len(), 1);
+    assert!(matches!(changes[0].kind, ChangeKind::TimedOut));
+    assert!(matches!(
+        changes[0].record.state,
+        ApprovalState::TimedOut { .. }
+    ));
+}
+
+/// 응답이 만료보다 먼저 오면 대기자는 변경을 받지 않는다. 기록은 응답한 쪽 몫이다.
+#[test]
+fn a_waiter_released_by_a_response_has_no_change() {
+    let s = Arc::new(ApprovalStore::new());
+    s.request(req("req_a", Requester::User)).unwrap();
+    let s2 = s.clone();
+    let h = thread::spawn(move || {
+        s2.await_transition(&ApprovalId("req_a".into()), Some(5000))
+            .unwrap()
+    });
+    thread::sleep(Duration::from_millis(30));
+    s.respond(
+        &ApprovalId("req_a".into()),
+        "approve".into(),
+        Responder::User,
+        None,
+    )
+    .unwrap();
+    let awaited = h.join().unwrap();
+    assert!(matches!(awaited.outcome, WaitOutcome::Responded { .. }));
+    assert!(awaited.change.is_none());
+    let again = s
+        .await_transition(&ApprovalId("req_a".into()), Some(10))
+        .unwrap();
+    assert!(again.change.is_none());
+}
+
 #[test]
 fn cancel_resolves_waiters() {
     let s = Arc::new(ApprovalStore::new());

@@ -45,13 +45,15 @@ store 락이 poison 된 뒤(다른 스레드가 락을 든 채 패닉)의 `reque
 
 승인 ID는 `req_` 와 Crockford base32 대문자 12자로 호스트가 만든다. memory key 는 소문자만 허용하므로 저장 key 에는 ID 를 소문자로 바꿔 쓴다. 이 형식 안에서는 대소문자 말고 다른 차이가 없어 서로 다른 ID 가 같은 key 로 모이지 않는다. 원래 ID 는 기록 값에 그대로 남고 `approval.history` 는 값에서 ID 를 읽어 원래 표기로 돌려준다. 이 형식이 아닌 ID 의 기록은 대소문자만 다른 ID 와 key 가 겹칠 수 있어 저장하지 않고 경고만 남긴다.
 
-key·scope·직렬화는 app 기능 모듈 `approval_records` 한 곳에서 만들고, 경로마다 memory writer에 넣는 방식만 다르다.
+key·scope·직렬화와 기록 제출은 app 기능 모듈 `approval_records` 가 맡는다. 상태를 바꾸는 호출은 App 의 `request_approval`·`respond_approval`·`cancel_approval` 과 대기 워커의 `await_approval` 뿐이고, 이들이 전이를 적용한 직후 그 전이의 기록을 memory writer 에 제출한 뒤 접수 결과(접수·거절·제출 안 함)를 돌려준다. 진입점은 기록을 다시 제출하지 않고 완료를 어떻게 관측할지만 정한다.
 
-| 경로 | 쓰기 방식 |
+| 경로 | 완료 관측 |
 |---|---|
-| IPC `approval.request`·`approval.respond`·`approval.cancel` | 기록이 commit 된 뒤 응답한다 |
-| GUI popup 응답, capability elevation 발행, cap `require_approval` | 결과를 기다리지 않는 쓰기 |
-| `approval.await` 대기 워커(만료 포함) | 워커 스레드에서 최대 30초 기다리는 쓰기 |
+| IPC `approval.request`·`approval.respond`·`approval.cancel` | 기록이 commit 된 뒤 응답한다. writer 가 접수하지 않으면 그 거절로 응답한다 |
+| GUI popup 응답, capability elevation 발행, cap `require_approval` | 기다리지 않는다. 메인 루프가 App 의 memory 핸들에서 결과를 거두므로 popup·View 수명과 무관하다 |
+| `approval.await` 대기 워커(만료) | 그 대기가 만료 전이를 적용했을 때만 기록을 제출하고 워커 스레드에서 최대 30초 기다린다 |
+
+응답·취소로 끝난 대기는 그 전이를 만든 쪽이 이미 기록을 제출했으므로 워커가 다시 쓰지 않는다. 같은 요청을 여러 워커가 기다려도 만료 전이와 그 기록은 하나다. `approval.respond` 의 capability elevation 권한 부여는 전이 직후, 기록 제출 전에 실행한다.
 
 저장 실패는 경고 로그로만 남긴다. 이미 끝난 메모리 상태 전이와 IPC 응답 내용은 바뀌지 않는다.
 

@@ -121,14 +121,15 @@ pub fn handle_request(
     };
 
     match core.request_approval(req) {
-        Ok(change) => {
+        Ok(transition) => {
+            let record = &transition.change.record;
             #[cfg(feature = "gui")]
-            window.enqueue_approval_popup(engine, &change.record);
+            window.enqueue_approval_popup(engine, record);
             let body = json!({
-                "id": change.record.request.id,
-                "record": record_to_json(&change.record),
+                "id": record.request.id,
+                "record": record_to_json(record),
             });
-            persist_record_and_reply(core, id, &change.record, body)
+            reply_after_record(core, id, transition, body)
         }
         Err(e) => map_error(id, e),
     }

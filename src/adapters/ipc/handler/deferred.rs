@@ -325,11 +325,21 @@ impl AppServices {
         finish: impl FnOnce(&AppServices, MemoryCompletion) -> JsonRpcResponse + Send + 'static,
     ) -> JsonRpcResponse {
         // 경로를 적어 라우팅 키 검사가 이름이 같은 `agent` 핸들러로 따라가지 않게 한다.
-        let mut ticket =
-            match tasty_memory::writer::MemoryAccess::submit(self.memory_access(), request) {
-                Ok(ticket) => ticket,
-                Err(error) => return submit_error_response(id, &error),
-            };
+        let ticket = match tasty_memory::writer::MemoryAccess::submit(self.memory_access(), request)
+        {
+            Ok(ticket) => ticket,
+            Err(error) => return submit_error_response(id, &error),
+        };
+        self.reply_with_ticket(id, ticket, finish)
+    }
+
+    /// 이미 writer에 접수한 요청의 결과로 응답한다. 제출을 App 기능이 맡는 경로가 쓴다.
+    pub(crate) fn reply_with_ticket(
+        &self,
+        id: Value,
+        mut ticket: MemoryTicket,
+        finish: impl FnOnce(&AppServices, MemoryCompletion) -> JsonRpcResponse + Send + 'static,
+    ) -> JsonRpcResponse {
         if let Some(completion) = ticket.try_take() {
             return finish(self, completion);
         }
@@ -377,7 +387,7 @@ impl AppServices {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::{Arc, Mutex, mpsc};
     use std::time::{Duration, Instant};
 
@@ -400,7 +410,10 @@ mod tests {
         )
     }
 
-    fn writer_core_with(memory: Arc<Mutex<dyn MemoryStorage>>, queue_items: usize) -> AppServices {
+    pub(crate) fn writer_core_with(
+        memory: Arc<Mutex<dyn MemoryStorage>>,
+        queue_items: usize,
+    ) -> AppServices {
         let changes = Arc::new(tasty_memory::writer::ChangeFeed::default());
         let wake = tasty_utils::batch_writer::WakeLatch::new(Arc::new(|| {}));
         let writer = tasty_memory::writer::spawn(
@@ -423,7 +436,12 @@ mod tests {
             .expect("test AppServices")
     }
 
-    fn make_request(id: u64, method: &str, params: Value, key: Option<&str>) -> JsonRpcRequest {
+    pub(crate) fn make_request(
+        id: u64,
+        method: &str,
+        params: Value,
+        key: Option<&str>,
+    ) -> JsonRpcRequest {
         JsonRpcRequest {
             caller_agent_id: None,
             response_timeout_ms: None,
@@ -437,7 +455,10 @@ mod tests {
     }
 
     /// 요청을 실행하고 지연됐으면 연결 응답으로 받는다. 지연 여부를 함께 돌려준다.
-    fn run_request(core: &mut AppServices, req: &JsonRpcRequest) -> (JsonRpcResponse, bool) {
+    pub(crate) fn run_request(
+        core: &mut AppServices,
+        req: &JsonRpcRequest,
+    ) -> (JsonRpcResponse, bool) {
         let (mut state, mut session) = crate::state::tests::test_state();
         let mut engine = session.borrow_mut();
         let caller = CallerContext::local();

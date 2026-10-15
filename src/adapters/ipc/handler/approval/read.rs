@@ -16,9 +16,9 @@ pub fn handle_cancel(
         _ => return JsonRpcResponse::invalid_params(id, "Missing 'id'"),
     };
     match core.cancel_approval(&req_id) {
-        Ok(change) => {
-            let body = record_to_json(&change.record);
-            persist_record_and_reply(core, id, &change.record, body)
+        Ok(transition) => {
+            let body = record_to_json(&transition.change.record);
+            reply_after_record(core, id, transition, body)
         }
         Err(e) => map_error(id, e),
     }
@@ -41,11 +41,8 @@ pub fn await_blocking(
         Some(v) => Some(v),
         None => store.get(&req_id).and_then(|r| r.request.timeout_ms),
     };
-    let outcome = store.await_response(&req_id, timeout_ms);
-    // timeout을 포함해 상태가 바뀌었으면 워커의 memory port로 저장한다.
-    if let Some(record) = store.get(&req_id) {
-        crate::app::approval_records::persist_and_wait(memory, &record);
-    }
+    // 이 대기가 만료 전이를 적용했을 때만 App 기능이 그 기록을 제출하고 기다린다.
+    let outcome = crate::app::approval_records::await_approval(store, memory, &req_id, timeout_ms);
     match outcome {
         Ok(WaitOutcome::Responded {
             choice,

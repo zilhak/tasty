@@ -172,14 +172,19 @@ impl MemoryAccess {
     /// 스레드(메인 루프)에서 일어난다.
     pub fn submit_detached(&self, request: MemoryRequest, what: &'static str, done: Option<Done>) {
         match self.submit(request) {
-            Ok(mut ticket) => match ticket.try_take() {
-                Some(completion) => finish_detached(what, done, completion),
-                None => self
-                    .detached
-                    .lock()
-                    .push(DetachedWrite { ticket, what, done }),
-            },
+            Ok(ticket) => self.detach(ticket, what, done),
             Err(error) => tracing::warn!(what, %error, "memory writer did not accept a write"),
+        }
+    }
+
+    /// 이미 접수한 요청의 결과를 기다리지 않고 메인 루프의 수거에 맡긴다.
+    pub fn detach(&self, mut ticket: MemoryTicket, what: &'static str, done: Option<Done>) {
+        match ticket.try_take() {
+            Some(completion) => finish_detached(what, done, completion),
+            None => self
+                .detached
+                .lock()
+                .push(DetachedWrite { ticket, what, done }),
         }
     }
 

@@ -1,11 +1,17 @@
-//! 승인 기록의 영속 저장. GUI 응답·IPC 요청·대기 워커가 같은 key·scope·직렬화로 memory writer에 쓴다.
+//! 승인 기록의 영속 저장. 상태 전이를 만든 App 기능이 그 전이의 기록을 같은 key·scope·직렬화로
+//! memory writer에 제출하고, 진입점(IPC·GUI·대기 워커)은 받은 접수 결과의 완료를 어떻게 관측할지만 정한다.
 //!
 //! workspace가 있으면 그 scope에, 없으면 global에 `tasty.approval.<소문자 id>`로 저장한다. 저장 실패는
 //! 경고로만 남기고 이미 끝난 메모리 상태 전이는 되돌리지 않는다.
 
-use tasty_approval::ApprovalRecord;
-use tasty_memory::writer::{MemoryAccess, MemoryRequest};
+use std::time::Duration;
+
+use tasty_approval::{
+    ApprovalError, ApprovalId, ApprovalRecord, ApprovalStore, StateChange, WaitOutcome,
+};
+use tasty_memory::writer::{MemoryAccess, MemoryRequest, MemoryTicket, Waited};
 use tasty_memory::{MemoryValue, PutOpts, Scope};
+use tasty_utils::batch_writer::SubmitError;
 
 /// 승인 기록 key의 접두사. 기록 조회도 이 접두사로 목록을 읽는다.
 pub(crate) const APPROVAL_KEY_PREFIX: &str = "tasty.approval.";
@@ -23,7 +29,7 @@ fn scope_for(record: &ApprovalRecord) -> Scope {
 /// 승인 기록의 저장 key. memory key는 소문자만 허용하므로 생성 ID의 소문자 표기를 쓰고,
 /// 원래 ID는 기록 값에 남는다. 생성 형식이 아닌 ID는 다른 ID와 같은 key가 될 수 있어 None이다.
 /// 생성 ID는 `req_`로 시작해 세션 요약 key와 겹치지 않는다.
-pub(crate) fn record_key(id: &tasty_approval::ApprovalId) -> Option<String> {
+pub(crate) fn record_key(id: &ApprovalId) -> Option<String> {
     id.lowercase_token()
         .map(|token| format!("{APPROVAL_KEY_PREFIX}{token}"))
 }
@@ -56,25 +62,85 @@ pub(crate) fn record_write(record: &ApprovalRecord) -> Option<MemoryRequest> {
     }))
 }
 
-/// 응답과 무관한 경로의 기록. 결과를 기다리지 않고 실패는 writer가 경고로 남긴다.
-pub(crate) fn persist(memory: &MemoryAccess, record: &ApprovalRecord) {
-    if let Some(request) = record_write(record) {
-        memory.submit_detached(request, "approval record", None);
+/// 승인 상태 전이와 그 기록의 제출 결과. 기록 제출은 전이를 만든 App 기능이 이미 끝냈다.
+#[derive(Debug)]
+#[must_use = "the record receipt decides how its completion is observed"]
+pub(crate) struct ApprovalTransition {
+    pub(crate) change: StateChange,
+    pub(crate) record: RecordReceipt,
+}
+
+/// 기록 제출 결과. 호출자는 완료를 어떻게 관측할지만 정하고 같은 전이를 다시 제출하지 않는다.
+#[derive(Debug)]
+#[must_use = "detach or wait on the receipt so a failed write is logged"]
+pub(crate) enum RecordReceipt {
+    /// writer가 접수했다. 표를 버려도 쓰기는 계속된다.
+    Accepted(MemoryTicket),
+    /// writer가 접수하지 않았다.
+    Refused(SubmitError),
+    /// key나 직렬화를 만들지 못해 제출하지 않았다. 경고는 이미 남겼다.
+    Skipped,
+}
+
+impl RecordReceipt {
+    /// 메인 루프 경로. 결과는 메인 루프가 거두고 실패는 경고로만 남는다. View 수명과 무관하다.
+    pub(crate) fn detach(self, memory: &MemoryAccess) {
+        match self {
+            Self::Accepted(ticket) => memory.detach(ticket, "approval record", None),
+            Self::Refused(error) => {
+                tracing::warn!(%error, "approval: memory writer did not accept the record")
+            }
+            Self::Skipped => {}
+        }
+    }
+
+    /// 메인 루프 밖 워커 경로. 결과를 `timeout`까지 기다리고 실패는 경고만 남긴다.
+    fn wait(self, id: &ApprovalId, timeout: Duration) {
+        let failure = match self {
+            Self::Accepted(mut ticket) => match ticket.wait_timeout(timeout) {
+                Some(completion) => tasty_memory::writer::settle(completion)
+                    .err()
+                    .map(Waited::Failed),
+                None => Some(Waited::TimedOut),
+            },
+            Self::Refused(error) => Some(Waited::Refused(error)),
+            Self::Skipped => None,
+        };
+        if let Some(why) = failure {
+            tracing::warn!("approval: memory put failed for {id}: {why:?}");
+        }
     }
 }
 
-/// 메인 루프 밖의 대기 워커가 쓰는 기록. 워커 스레드라 결과를 기다리고 실패는 경고만 남긴다.
-pub(crate) fn persist_and_wait(memory: &MemoryAccess, record: &ApprovalRecord) {
-    let Some(request) = record_write(record) else {
-        return;
+/// 전이 하나의 기록을 writer에 제출한다. 상태 전이는 이미 끝났고 제출 실패로 되돌리지 않는다.
+pub(crate) fn submit(memory: &MemoryAccess, change: StateChange) -> ApprovalTransition {
+    let record = match record_write(&change.record) {
+        Some(request) => match memory.submit(request) {
+            Ok(ticket) => RecordReceipt::Accepted(ticket),
+            Err(error) => RecordReceipt::Refused(error),
+        },
+        None => RecordReceipt::Skipped,
     };
-    if let Err(why) = memory.run_and_wait(request, std::time::Duration::from_secs(30)) {
-        tracing::warn!(
-            "approval: memory put failed for {}: {why:?}",
-            record.request.id
-        );
-    }
+    ApprovalTransition { change, record }
 }
+
+/// 대기 워커 경로. 이 대기가 만료 전이를 적용했을 때만 그 기록을 제출하고 결과를 기다린다.
+/// 응답·취소로 끝난 대기는 그 전이를 만든 쪽이 이미 제출했으므로 다시 쓰지 않는다.
+pub(crate) fn await_approval(
+    store: &ApprovalStore,
+    memory: &MemoryAccess,
+    id: &ApprovalId,
+    timeout_ms: Option<u64>,
+) -> Result<WaitOutcome, ApprovalError> {
+    let awaited = store.await_transition(id, timeout_ms)?;
+    if let Some(change) = awaited.change {
+        submit(memory, change).record.wait(id, AWAIT_RECORD_TIMEOUT);
+    }
+    Ok(awaited.outcome)
+}
+
+/// 대기 워커가 만료 기록의 결과를 기다리는 시한.
+const AWAIT_RECORD_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 저장된 승인 기록. scope 목록을 읽지 못하면 오류이고, scope 하나를 읽지 못하면 건너뛴다.
 pub(crate) fn stored_records(
@@ -179,9 +245,9 @@ mod tests {
         let store = ApprovalStore::new();
 
         for (workspace, scope) in [(Some(7), Scope::Workspace(7)), (None, Scope::Global)] {
-            let responded = store.request(request(workspace, None)).unwrap();
-            let id = responded.record.request.id.clone();
-            persist(&access, &responded.record);
+            let requested = submit(&access, store.request(request(workspace, None)).unwrap());
+            let id = requested.change.record.request.id.clone();
+            requested.record.detach(&access);
             assert!(matches!(
                 stored(&memory, &scope, &id).state,
                 ApprovalState::Pending
@@ -189,7 +255,7 @@ mod tests {
             let change = store
                 .respond(&id, "approve".into(), Responder::User, None)
                 .unwrap();
-            persist(&access, &change.record);
+            submit(&access, change).record.detach(&access);
             assert!(matches!(
                 stored(&memory, &scope, &id).state,
                 ApprovalState::Responded { .. }
@@ -197,21 +263,21 @@ mod tests {
 
             let cancelled = store.request(request(workspace, None)).unwrap();
             let id = cancelled.record.request.id.clone();
-            let change = store.cancel(&id).unwrap();
-            persist(&access, &change.record);
+            submit(&access, store.cancel(&id).unwrap())
+                .record
+                .detach(&access);
             assert!(matches!(
                 stored(&memory, &scope, &id).state,
                 ApprovalState::Cancelled { .. }
             ));
 
-            // 대기 워커가 만료를 관측하고 기다리는 쓰기로 같은 자리에 남긴다.
+            // 대기 워커가 만료를 적용하고 기다리는 쓰기로 같은 자리에 남긴다.
             let expiring = store.request(request(workspace, Some(1))).unwrap();
             let id = expiring.record.request.id.clone();
             assert!(matches!(
-                store.await_response(&id, Some(1)),
+                await_approval(&store, &access, &id, Some(1)),
                 Ok(tasty_approval::WaitOutcome::TimedOut { .. })
             ));
-            persist_and_wait(&access, &store.get(&id).unwrap());
             assert!(matches!(
                 stored(&memory, &scope, &id).state,
                 ApprovalState::TimedOut { .. }

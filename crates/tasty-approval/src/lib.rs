@@ -340,6 +340,13 @@ pub enum WaitOutcome {
     Cancelled,
 }
 
+/// [`ApprovalStore::await_transition`]의 결과. `change`는 이 호출이 만료 전이를 적용했을 때만 있다.
+#[derive(Debug, Clone)]
+pub struct Awaited {
+    pub outcome: WaitOutcome,
+    pub change: Option<StateChange>,
+}
+
 #[derive(Debug, Clone)]
 enum WaitResult {
     Responded {
@@ -524,6 +531,18 @@ impl ApprovalStore {
         id: &ApprovalId,
         timeout_ms: Option<u64>,
     ) -> Result<WaitOutcome, ApprovalError> {
+        self.await_transition(id, timeout_ms)
+            .map(|awaited| awaited.outcome)
+    }
+
+    /// [`await_response`](Self::await_response)와 같지만 이 호출이 만료 전이를 적용했으면 그
+    /// 변경을 함께 돌려준다. 같은 요청을 여러 호출자가 기다려도 만료 전이는 하나만 적용되고,
+    /// 응답·취소로 끝난 대기에는 변경이 없다. 기록 저장 책임을 전이를 만든 쪽 하나에 두기 위함이다.
+    pub fn await_transition(
+        &self,
+        id: &ApprovalId,
+        timeout_ms: Option<u64>,
+    ) -> Result<Awaited, ApprovalError> {
         let rx = {
             let mut g = self.lock_for_write()?;
             let record = g
@@ -531,20 +550,23 @@ impl ApprovalStore {
                 .get(id)
                 .ok_or_else(|| ApprovalError::NotFound(id.to_string()))?;
             if let Some(outcome) = terminal_to_outcome(&record.state) {
-                return Ok(outcome);
+                return Ok(Awaited {
+                    outcome,
+                    change: None,
+                });
             }
             let (tx, rx) = sync_channel::<WaitResult>(1);
             g.waiters.entry(id.clone()).or_default().push(tx);
             rx
         };
-        let result = match timeout_ms {
+        let (result, change) = match timeout_ms {
             Some(ms) => self.wait_with_timeout(id, &rx, Duration::from_millis(ms)),
             None => match rx.recv() {
-                Ok(r) => r,
-                Err(_) => WaitResult::Cancelled,
+                Ok(r) => (r, None),
+                Err(_) => (WaitResult::Cancelled, None),
             },
         };
-        Ok(match result {
+        let outcome = match result {
             WaitResult::Responded {
                 choice,
                 by,
@@ -556,29 +578,30 @@ impl ApprovalStore {
             },
             WaitResult::TimedOut { default_choice } => WaitOutcome::TimedOut { default_choice },
             WaitResult::Cancelled => WaitOutcome::Cancelled,
-        })
+        };
+        Ok(Awaited { outcome, change })
     }
 
-    /// 응답 대기 — timeout 만료 처리. 만료되면 store 상태를 TimedOut 으로 전이.
+    /// 응답 대기 — timeout 만료 처리. 만료되면 store 상태를 TimedOut 으로 전이하고 그 변경을 돌려준다.
     fn wait_with_timeout(
         &self,
         id: &ApprovalId,
         rx: &Receiver<WaitResult>,
         timeout: Duration,
-    ) -> WaitResult {
+    ) -> (WaitResult, Option<StateChange>) {
         match rx.recv_timeout(timeout) {
-            Ok(r) => r,
+            Ok(r) => (r, None),
             Err(RecvTimeoutError::Timeout) => {
                 // 이미 응답됐으면 그 결과를 쓴다. poison이면 상태를 더 바꾸지 않고 취소한다.
                 let Ok(mut g) = self.inner.lock() else {
                     self.report_poison("cancelling the wait instead of applying the timeout");
-                    return WaitResult::Cancelled;
+                    return (WaitResult::Cancelled, None);
                 };
                 let Some(record) = g.records.get_mut(id) else {
-                    return WaitResult::Cancelled;
+                    return (WaitResult::Cancelled, None);
                 };
                 if let Some(outcome) = terminal_to_outcome(&record.state) {
-                    return match outcome {
+                    let result = match outcome {
                         WaitOutcome::Responded {
                             choice,
                             by,
@@ -593,6 +616,7 @@ impl ApprovalStore {
                         }
                         WaitOutcome::Cancelled => WaitResult::Cancelled,
                     };
+                    return (result, None);
                 }
                 let default_choice = record.request.default_choice.clone();
                 let at = now_ms();
@@ -607,6 +631,10 @@ impl ApprovalStore {
                     by: Some(Responder::System),
                     comment: None,
                 });
+                let change = StateChange {
+                    record: record.clone(),
+                    kind: ChangeKind::TimedOut,
+                };
                 // 같은 id 의 다른 waiter 도 모두 깨운다.
                 if let Some(waiters) = g.waiters.remove(id) {
                     for tx in waiters {
@@ -616,9 +644,9 @@ impl ApprovalStore {
                         notify_waiter(&tx, timed_out);
                     }
                 }
-                WaitResult::TimedOut { default_choice }
+                (WaitResult::TimedOut { default_choice }, Some(change))
             }
-            Err(RecvTimeoutError::Disconnected) => WaitResult::Cancelled,
+            Err(RecvTimeoutError::Disconnected) => (WaitResult::Cancelled, None),
         }
     }
 

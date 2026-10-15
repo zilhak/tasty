@@ -182,8 +182,7 @@ fn marks_durability(body: &str) -> bool {
 
 /// 응답을 만들며 표시를 붙이는 도우미와 그 정의 파일. 도우미 본문이 표시하는지는
 /// `every_marking_helper_marks_its_reply`가 확인한다.
-const MARKING_HELPERS: &[(&str, &str)] =
-    &[("persist_record_and_reply", include_str!("../approval.rs"))];
+const MARKING_HELPERS: &[(&str, &str)] = &[("reply_after_record", include_str!("../approval.rs"))];
 
 #[test]
 fn every_marking_helper_marks_its_reply() {
