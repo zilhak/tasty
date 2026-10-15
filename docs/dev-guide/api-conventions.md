@@ -26,6 +26,12 @@ IPC 메서드 이름과 CLI 명령 경로는 서로 다른 규칙을 따른다. 
 새 도메인은 대상이 앞에 오는 `tasty <namespace> <verb>` 경로로 만든다. 예: `claude.spawn` ↔ `tasty claude spawn`,
 `pty.spawn` ↔ `tasty pty spawn`. 기존 경로를 이 규칙에 맞추려고 옮기지 않는다.
 
+CLI 명령 이름은 동작 방식을 드러낸다. 즉시 현재 값을 돌려주는 조회는 `state`를, 조건이 될 때까지 응답을 미루는 대기는 `await`를 쓴다.
+IPC 메서드 이름과 CLI 이름이 다를 수 있다. 예: `pty.wait`는 즉시 조회라 CLI 추천 표기가 `tasty pty state`이고
+`tasty pty wait`는 호환 별칭이다. `agent.barrier_await`도 즉시 조회라 CLI 추천 표기는 `tasty agent barrier-state`다.
+`agent.task_await`는 실제로 기다리며, 결과의 `outcome`(`terminal`·`timed_out`·`not_found`)이 모두 성공 응답이므로
+CLI 종료 코드 0이 작업 성공을 뜻하지 않는다.
+
 namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요). 제거·이름 변경은 0.x 에서 유예 없이 `(BREAK)` 로 내고([안정성 정책](#안정성-정책)), 같은 커밋에서 이 기록과 0.7.0 기준 목록(`crates/tasty-ipc/fixtures/method_baseline_0_7.txt`, 절차는 그 파일 머리 주석)을 고친다. 메서드 수는 테스트의 snapshot에서 관리하며 이 문서에 중복 기록하지 않는다.
 
 ## verb 화이트리스트

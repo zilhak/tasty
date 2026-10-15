@@ -251,6 +251,16 @@ fn assert_alias_note(host: &mut clap::Command, locale: &str) {
             "{help}"
         );
         assert!(!help.contains("[aliases:"), "{help}");
+        let pty = host
+            .find_subcommand_mut("pty")
+            .unwrap()
+            .render_help()
+            .to_string();
+        assert!(
+            pty.contains(&tasty_i18n::t_fmt("cli.help_frame.aliases", "wait")),
+            "{pty}"
+        );
+        assert!(!pty.contains("[aliases:"), "{pty}");
     }
     assert!(
         tasty_cli::localized_command()

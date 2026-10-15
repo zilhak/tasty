@@ -3336,7 +3336,7 @@ help = "子があるワークスペース（IDまたは名前）。複数のウ�
 help = "解除する子の番号 (`terminal children` の番号で、サーフェス ID ではない)"
 
 [cli.help._root.pty]
-about = "サーフェスやタブのないバックグラウンド PTY を管理します (spawn/write/read/wait/kill/list)。`terminal` とは別のコマンドです。"
+about = "サーフェスやタブのないバックグラウンド PTY を管理します (spawn/write/read/state/kill/list)。`terminal` とは別のコマンドです。"
 
 [cli.help._root.pty.spawn]
 about = "サーフェスやタブのないヘッドレス PTY を作成し、PTY ID を返します。"
@@ -3369,10 +3369,11 @@ help = "末尾の N 行を読みます。省略すると現在表示中の全画
 [cli.help._root.pty.read.arg.show_dim]
 help = "淡色で表示されたセルも含めます (例: Claude Code の補完候補)。未送信の候補を実際の出力と取り違えないよう、既定では除外します。"
 
-[cli.help._root.pty.wait]
-about = "ヘッドレス PTY の終了を待たずに、現在の状態をすぐに返します。"
+[cli.help._root.pty.state]
+about = "ヘッドレス PTY の終了状態を今すぐ取得します。すぐに返り、プロセスの終了は待ちません。"
+long = "ヘッドレス PTY の終了状態を今すぐ取得します。すぐに返り、プロセスの終了は待ちません。\n\n実行中は `exited: false`、終了後は `exited: true` と `exit_code`、`success` を返します。待つには再度呼び出します。`wait` はこのコマンドの旧名で、動作は同じです。"
 
-[cli.help._root.pty.wait.arg.id]
+[cli.help._root.pty.state.arg.id]
 help = "対象PTY ID"
 
 [cli.help._root.pty.kill]
@@ -5814,7 +5815,8 @@ help = "task id"
 help = "テキストの代わりに IPC 応答を JSON で出力する。`typed_result.raw` と `input_snapshot` も含む"
 
 [cli.help._root.agent.task-await]
-about = "task が終端状態に達するまで待つ（ブロッキング）。省略すると最大 10 分待つ（暫定のデフォルト）。`--timeout-ms 0` = 無期限に待つ"
+about = "task が終端状態に達するまで待つ（ブロッキング）。応答の `outcome` を確認する: 終了コード 0 はタスクの成功を意味しない"
+long = "task が終端状態に達するまで待つ（ブロッキング）。応答の `outcome` を確認する: 終了コード 0 はタスクの成功を意味しない。\n\n`--timeout-ms` を省略すると最大 10 分待つ（暫定のデフォルト）。`--timeout-ms 0` は無期限に待つ。応答の `outcome` は `terminal`（`state` に succeeded・failed など）、`timed_out`、`not_found` のいずれか。いずれも終了コード 0 なので、まず `outcome`、次に `state` を読む。ルートの `--response-timeout-ms` は CLI がサーバーの応答を待つ上限であり、タスクのタイムアウトではない。"
 
 [cli.help._root.agent.task-await.arg.workspace_id]
 help = "ワークスペース id（フォーカス非依存 — 必須）"
@@ -6017,7 +6019,7 @@ help = "ワークスペース id（フォーカス非依存 — 必須）"
 help = "signal を送る barrier 名"
 
 [cli.help._root.agent.barrier-await]
-about = "barrier の現在の状態をポーリングする"
+about = "barrier の現在の状態を読む（barrier-state の旧名）。すぐに返り、待たない"
 
 [cli.help._root.agent.barrier-await.arg.workspace_id]
 help = "ワークスペース id（フォーカス非依存 — 必須）"
@@ -6026,7 +6028,7 @@ help = "ワークスペース id（フォーカス非依存 — 必須）"
 help = "ポーリングする barrier 名"
 
 [cli.help._root.agent.barrier-state]
-about = "barrier の現在の状態を読む（barrier_await の別名）"
+about = "barrier の現在の状態を読む。すぐに返り、barrier が閉じるのを待たない"
 
 [cli.help._root.agent.barrier-state.arg.workspace_id]
 help = "ワークスペース id（フォーカス非依存 — 必須）"

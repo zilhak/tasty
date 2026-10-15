@@ -50,12 +50,31 @@ pub(crate) fn localize(mut cmd: Command) -> Command {
             let sub = if name == "help" {
                 sub.about(t("cli.help_frame.help_command").to_owned())
             } else {
-                sub
+                localize_command_aliases(sub)
             };
             localize(sub)
         });
     }
     cmd
+}
+
+/// 하위 명령 목록의 영어 `[aliases: ...]` 대신 번역된 안내를 설명 끝에 붙인다.
+/// 별칭은 숨김 별칭으로 남아 계속 받는다.
+fn localize_command_aliases(mut cmd: Command) -> Command {
+    let visible: Vec<String> = cmd.get_visible_aliases().map(str::to_owned).collect();
+    if visible.is_empty() {
+        return cmd;
+    }
+    let hidden: Vec<String> = cmd.get_aliases().map(str::to_owned).collect();
+    cmd = cmd.visible_alias(None::<&str>);
+    for alias in hidden.iter().chain(&visible) {
+        // clap은 static 문자열을 요구한다. 도움말 트리는 프로세스당 한 번 만든다.
+        let alias: &'static str = Box::leak(alias.clone().into_boxed_str());
+        cmd = cmd.alias(alias);
+    }
+    let note = tasty_i18n::t_fmt("cli.help_frame.aliases", &visible.join(", "));
+    let about = cmd.get_about().map(ToString::to_string).unwrap_or_default();
+    cmd.about(format!("{about} [{note}]"))
 }
 
 fn localize_annotations(mut arg: clap::Arg) -> clap::Arg {

@@ -3402,7 +3402,7 @@ help = "Workspace (ID or name) holding the children; needed with --parent-extern
 help = "Child index to release (the number in `terminal children`, not a surface ID)"
 
 [cli.help._root.pty]
-about = "Manage headless PTYs (spawn/write/read/wait/kill/list) — background PTYs with no Surface/tab. Separate namespace from `terminal`"
+about = "Manage headless PTYs (spawn/write/read/state/kill/list) — background PTYs with no Surface/tab. Separate namespace from `terminal`"
 
 [cli.help._root.pty.spawn]
 about = "Spawn a headless PTY (no Surface/tab). Returns a pty id"
@@ -3435,10 +3435,11 @@ help = "Last N lines of content (default: full visible screen). Trailing blank r
 [cli.help._root.pty.read.arg.show_dim]
 help = "Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) cells. Default excludes them so unsubmitted UI suggestions aren't mistaken for real buffer content"
 
-[cli.help._root.pty.wait]
-about = "Poll a headless PTY's exit status (returns immediately, non-blocking)"
+[cli.help._root.pty.state]
+about = "Read a headless PTY's exit state now. Returns immediately; it does not wait for the process to exit"
+long = "Read a headless PTY's exit state now. Returns immediately; it does not wait for the process to exit.\n\nThe reply is `exited: false` while the process runs, or `exited: true` with `exit_code` and `success` after it ends. To wait, call this again. `wait` is the older name of this command and behaves the same."
 
-[cli.help._root.pty.wait.arg.id]
+[cli.help._root.pty.state.arg.id]
 help = "Target pty id"
 
 [cli.help._root.pty.kill]
@@ -5880,7 +5881,8 @@ help = "Task id"
 help = "Print the IPC response as JSON instead of text, including `typed_result.raw` and `input_snapshot`"
 
 [cli.help._root.agent.task-await]
-about = "Wait for a task to reach a terminal state (blocking). Omitted = wait up to 10 minutes (provisional default). `--timeout-ms 0` = wait indefinitely"
+about = "Wait for a task to reach a terminal state (blocking). Check the reply's `outcome`: exit status 0 does not mean the task succeeded"
+long = "Wait for a task to reach a terminal state (blocking). Check the reply's `outcome`: exit status 0 does not mean the task succeeded.\n\nWithout `--timeout-ms` it waits up to 10 minutes (provisional default); `--timeout-ms 0` waits indefinitely. The reply's `outcome` is `terminal` (with `state`, for example succeeded or failed), `timed_out`, or `not_found`. All three exit with status 0, so read `outcome` first and then `state`. The root `--response-timeout-ms` only bounds how long the CLI waits for the server's reply; it is not the task's timeout."
 
 [cli.help._root.agent.task-await.arg.workspace_id]
 help = "Workspace id (focus-independent — required)"
@@ -6083,7 +6085,7 @@ help = "Workspace id (focus-independent — required)"
 help = "Barrier name to signal"
 
 [cli.help._root.agent.barrier-await]
-about = "Poll a barrier's current state"
+about = "Read a barrier's current state (older name of barrier-state). Returns immediately; it does not wait"
 
 [cli.help._root.agent.barrier-await.arg.workspace_id]
 help = "Workspace id (focus-independent — required)"
@@ -6092,7 +6094,7 @@ help = "Workspace id (focus-independent — required)"
 help = "Barrier name to poll"
 
 [cli.help._root.agent.barrier-state]
-about = "Read a barrier's current state (alias of barrier_await)"
+about = "Read a barrier's current state. Returns immediately; it does not wait for the barrier to close"
 
 [cli.help._root.agent.barrier-state.arg.workspace_id]
 help = "Workspace id (focus-independent — required)"

@@ -1,4 +1,4 @@
-<!-- source-hash: c5e73471e9b5 -->
+<!-- source-hash: 6b98dda2cc50 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -327,6 +327,8 @@ tasty agent task-purge --workspace 2 --states succeeded
 ```
 
 - `task-await` waits up to 10 minutes by default and comes back with a timeout if the task has not finished by then. With `--timeout-ms 0` it waits indefinitely.
+- The `outcome` in the `task-await` reply is `terminal` (finished, with `state` such as succeeded or failed), `timed_out`, or `not_found`. All three exit with status 0, so do not judge success by the exit status; read `outcome` and `state`. The root option `--response-timeout-ms` only limits how long the CLI waits for a reply; it is not the task wait time.
+- Read a barrier with `tasty agent barrier-state`. It returns immediately and does not wait for the barrier to close. The older name `barrier-await` gives the same result.
 - For a typed task, `task-retry` is refused once its fallback has run. If the main task succeeded again, a task that takes either of the two would see two values. To run it again, send it as a new task.
 - `task-retry` is refused for a task skipped because its branch was not chosen (**Not selected**). Running it again would skip it again for the same reason.
 - Typed tasks do not take `--reset-downstream`. The tasks after them already finished on the earlier run's failure or chosen path. `task-retry` runs only that task again. To rerun the tasks after it, send a new graph.

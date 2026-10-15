@@ -195,7 +195,7 @@ pub(super) fn pty_command_to_method_params(
             "pty.read",
             serde_json::json!({ "id": id, "lines": lines, "show_dim": show_dim }),
         ),
-        P::Wait { id } => ("pty.wait", serde_json::json!({ "id": id })),
+        P::State { id } => ("pty.wait", serde_json::json!({ "id": id })),
         P::Kill { id } => ("pty.kill", serde_json::json!({ "id": id })),
         P::List => ("pty.list", serde_json::json!({})),
         P::AttachSurface { pty_id, pane_id } => (

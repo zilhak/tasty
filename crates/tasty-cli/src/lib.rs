@@ -212,7 +212,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: TerminalCommands,
     },
-    /// Manage headless PTYs (spawn/write/read/wait/kill/list) — background PTYs with
+    /// Manage headless PTYs (spawn/write/read/state/kill/list) — background PTYs with
     /// no Surface/tab. Separate namespace from `terminal`.
     Pty {
         #[command(subcommand)]

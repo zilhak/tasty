@@ -3336,7 +3336,7 @@ help = "자식이 있는 워크스페이스(ID 또는 이름). 윈도우가 여�
 help = "해제할 자식 번호(`terminal children`의 번호이며 surface ID가 아님)"
 
 [cli.help._root.pty]
-about = "서피스나 탭이 없는 백그라운드 PTY를 관리합니다(spawn/write/read/wait/kill/list). `terminal` 명령과 별도로 사용합니다."
+about = "서피스나 탭이 없는 백그라운드 PTY를 관리합니다(spawn/write/read/state/kill/list). `terminal` 명령과 별도로 사용합니다."
 
 [cli.help._root.pty.spawn]
 about = "서피스나 탭 없이 헤드리스 PTY를 만들고 PTY ID를 반환합니다."
@@ -3369,10 +3369,11 @@ help = "마지막 N줄을 읽습니다. 생략하면 현재 보이는 전체 화
 [cli.help._root.pty.read.arg.show_dim]
 help = "흐리게 표시된 셀도 포함합니다(예: Claude Code 자동완성 제안). 기본적으로는 입력하지 않은 제안을 실제 출력으로 잘못 읽지 않도록 제외합니다."
 
-[cli.help._root.pty.wait]
-about = "헤드리스 PTY의 종료 상태를 기다리지 않고 즉시 조회합니다."
+[cli.help._root.pty.state]
+about = "헤드리스 PTY의 종료 상태를 지금 조회합니다. 즉시 반환하며 프로세스 종료를 기다리지 않습니다."
+long = "헤드리스 PTY의 종료 상태를 지금 조회합니다. 즉시 반환하며 프로세스 종료를 기다리지 않습니다.\n\n실행 중이면 `exited: false`, 끝났으면 `exited: true`와 `exit_code`, `success`를 돌려줍니다. 기다리려면 다시 호출합니다. `wait`는 이 명령의 예전 이름이며 동작이 같습니다."
 
-[cli.help._root.pty.wait.arg.id]
+[cli.help._root.pty.state.arg.id]
 help = "대상 PTY ID"
 
 [cli.help._root.pty.kill]
@@ -5814,7 +5815,8 @@ help = "task id"
 help = "텍스트 대신 IPC 응답을 JSON 으로 출력한다. `typed_result.raw` 와 `input_snapshot` 도 들어 있다"
 
 [cli.help._root.agent.task-await]
-about = "task 가 종료 상태에 이를 때까지 기다린다 (블로킹). 생략하면 최대 10 분 기다린다 (잠정 기본값). `--timeout-ms 0` = 무기한 대기"
+about = "task 가 종료 상태에 이를 때까지 기다린다 (블로킹). 응답의 `outcome`을 확인한다: 종료 코드 0은 작업 성공을 뜻하지 않는다"
+long = "task 가 종료 상태에 이를 때까지 기다린다 (블로킹). 응답의 `outcome`을 확인한다: 종료 코드 0은 작업 성공을 뜻하지 않는다.\n\n`--timeout-ms`를 생략하면 최대 10분 기다린다(잠정 기본값). `--timeout-ms 0`은 무기한 기다린다. 응답의 `outcome`은 `terminal`(`state`에 succeeded·failed 등), `timed_out`, `not_found` 중 하나다. 셋 다 종료 코드 0이므로 `outcome`을 먼저, 그다음 `state`를 읽는다. 루트 `--response-timeout-ms`는 CLI가 서버 응답을 기다리는 시간의 상한일 뿐 작업의 timeout이 아니다."
 
 [cli.help._root.agent.task-await.arg.workspace_id]
 help = "워크스페이스 id (포커스 무관 — 필수)"
@@ -6017,7 +6019,7 @@ help = "워크스페이스 id (포커스 무관 — 필수)"
 help = "신호를 보낼 barrier 이름"
 
 [cli.help._root.agent.barrier-await]
-about = "barrier 의 현재 상태를 폴링한다"
+about = "barrier 의 현재 상태를 읽는다 (barrier-state 의 예전 이름). 즉시 반환하며 기다리지 않는다"
 
 [cli.help._root.agent.barrier-await.arg.workspace_id]
 help = "워크스페이스 id (포커스 무관 — 필수)"
@@ -6026,7 +6028,7 @@ help = "워크스페이스 id (포커스 무관 — 필수)"
 help = "폴링할 barrier 이름"
 
 [cli.help._root.agent.barrier-state]
-about = "barrier 의 현재 상태를 읽는다 (barrier_await 의 별칭)"
+about = "barrier 의 현재 상태를 읽는다. 즉시 반환하며 barrier 가 닫히기를 기다리지 않는다"
 
 [cli.help._root.agent.barrier-state.arg.workspace_id]
 help = "워크스페이스 id (포커스 무관 — 필수)"

@@ -1,4 +1,4 @@
-<!-- source-hash: 7c7f9d23d86e -->
+<!-- source-hash: 1f32c56ceb9c -->
 # Bring a background task into a tab
 
 Not every task needs a visible tab from the start. Run work in a hidden PTY, inspect its output, then bring the same process and history into a tab when needed.
@@ -55,10 +55,10 @@ Check that output shows the working directory. Read again if output has not appe
 ## 3. Check the process state
 
 ```sh
-tasty pty wait --id 2147483648
+tasty pty state --id 2147483648
 ```
 
-Despite its name, `wait` returns the current exit state immediately; it does not block until exit. While the shell is alive, `exited` is `false`. After exit, the response also includes its exit code and success flag.
+`state` returns the current exit state immediately; it does not block until exit. To wait, call it again. The older name `pty wait` is still accepted and behaves the same. While the shell is alive, `exited` is `false`. After exit, the response also includes its exit code and success flag.
 
 A command finishing inside a shell does not mean the shell exited. Distinguish the PTY's exit state from individual shell command results.
 

@@ -328,6 +328,8 @@ tasty agent task-purge --workspace 2 --states succeeded
 ```
 
 - `task-await` 는 기본 10분까지 기다리고 그 안에 안 끝나면 시간 초과로 돌아옵니다. `--timeout-ms 0` 이면 무한정 기다립니다.
+- `task-await` 응답의 `outcome` 은 `terminal`(끝남, `state` 에 succeeded·failed 등), `timed_out`(시간 초과), `not_found`(없는 작업) 중 하나입니다. 셋 다 종료 코드 0 이므로 종료 코드로 성공을 판단하지 말고 `outcome` 과 `state` 를 읽으세요. 루트 옵션 `--response-timeout-ms` 는 응답을 기다리는 시간일 뿐 작업 대기 시간이 아닙니다.
+- 배리어 상태는 `tasty agent barrier-state` 로 봅니다. 즉시 돌아오며 닫힐 때까지 기다리지 않습니다. 예전 이름 `barrier-await` 도 같은 결과를 줍니다.
 - 타입을 정한 작업은 폴백이 이미 실행됐으면 `task-retry` 가 거부됩니다. 본 작업이 다시 성공하면 둘 중 하나를 받는 다음 작업이 값을 둘 보게 되기 때문입니다. 다시 돌리려면 새 작업으로 보냅니다.
 - 경로가 선택되지 않아 건너뛴 작업(**선택 안 됨**)은 `task-retry` 가 거부됩니다. 다시 돌려도 같은 이유로 곧장 건너뛰기 때문입니다.
 - 타입을 정한 작업에는 `--reset-downstream` 을 쓸 수 없습니다. 다음 작업들은 이미 이전 실행의 실패나 고른 경로대로 끝났기 때문입니다. `task-retry` 는 그 작업만 다시 실행합니다. 뒤따르는 작업까지 다시 돌리려면 새 그래프로 보냅니다.

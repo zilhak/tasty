@@ -114,8 +114,14 @@ pub enum AgentCommands {
         #[arg(long)]
         json: bool,
     },
-    /// Wait for a task to reach a terminal state (blocking). Omitted = wait up
-    /// to 10 minutes (provisional default). `--timeout-ms 0` = wait indefinitely.
+    /// Wait for a task to reach a terminal state (blocking). Check the reply's `outcome`: exit status 0 does not mean the task succeeded.
+    ///
+    /// Without `--timeout-ms` it waits up to 10 minutes (provisional default);
+    /// `--timeout-ms 0` waits indefinitely. The reply's `outcome` is `terminal`
+    /// (with `state`, for example succeeded or failed), `timed_out`, or `not_found`.
+    /// All three exit with status 0, so read `outcome` first and then `state`.
+    /// The root `--response-timeout-ms` only bounds how long the CLI waits for the
+    /// server's reply; it is not the task's timeout.
     TaskAwait {
         /// Workspace id (focus-independent — required).
         #[arg(long = "workspace", visible_alias = "workspace-id")]
@@ -340,7 +346,7 @@ pub enum AgentCommands {
         #[arg(long)]
         name: String,
     },
-    /// Poll a barrier's current state.
+    /// Read a barrier's current state (older name of barrier-state). Returns immediately; it does not wait.
     BarrierAwait {
         /// Workspace id (focus-independent — required).
         #[arg(long = "workspace", visible_alias = "workspace-id")]
@@ -349,7 +355,7 @@ pub enum AgentCommands {
         #[arg(long)]
         name: String,
     },
-    /// Read a barrier's current state (alias of barrier_await).
+    /// Read a barrier's current state. Returns immediately; it does not wait for the barrier to close.
     BarrierState {
         /// Workspace id (focus-independent — required).
         #[arg(long = "workspace", visible_alias = "workspace-id")]

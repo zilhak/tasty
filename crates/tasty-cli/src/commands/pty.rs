@@ -48,8 +48,13 @@ pub enum PtyCommands {
         #[arg(long)]
         show_dim: bool,
     },
-    /// Poll a headless PTY's exit status (returns immediately, non-blocking).
-    Wait {
+    /// Read a headless PTY's exit state now. Returns immediately; it does not wait for the process to exit.
+    ///
+    /// The reply is `exited: false` while the process runs, or `exited: true` with
+    /// `exit_code` and `success` after it ends. To wait, call this again. `wait` is
+    /// the older name of this command and behaves the same.
+    #[command(visible_alias = "wait")]
+    State {
         /// Target pty id.
         #[arg(long)]
         id: u32,
