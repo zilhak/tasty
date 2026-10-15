@@ -86,7 +86,7 @@ pub struct Cli {
     #[arg(long, default_value_t = false)]
     pub headless: bool,
 
-    /// Show all commands in a tree (use with -h)
+    /// Show all commands in a tree. Only valid before any command; see each command's --help for its arguments
     #[arg(short = 'a', long = "all")]
     pub all: bool,
 

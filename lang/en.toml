@@ -2470,7 +2470,7 @@ help = "Force GUI launch even inside a tasty terminal"
 help = "Run as headless terminal emulator (no GUI, IPC + PTY + plugin only). Only a no-default-features build is headless. A default-features (GUI) build does NOT embed headless mode: this flag logs a warning and boots the GUI anyway, so a window opens on whatever DISPLAY it inherits"
 
 [cli.help._root.arg.all]
-help = "Show all commands in a tree (use with -h)"
+help = "Show all commands in a tree. Only valid before any command; see each command's --help for its arguments"
 
 [cli.help._root.arg.enable_input_simulation]
 help = "Enable input simulation IPC (debug builds only). Required for debug.inject_mouse, debug.inject_key, etc"
@@ -6599,6 +6599,8 @@ required = "Required arguments for '{}':"
 optional = "Optional:"
 details = "Run '{} --help' for full details."
 error = "error:"
+aliases = "aliases: {}"
+tree_details = "Run 'tasty <command> --help' for arguments and full details."
 
 [cli.parse]
 cause = "Parser detail: {}"

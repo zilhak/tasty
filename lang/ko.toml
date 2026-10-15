@@ -2404,7 +2404,7 @@ help = "tasty 터미널 안에서도 GUI 를 강제로 실행"
 help = "헤드리스 터미널 에뮬레이터로 실행 (GUI 없이 IPC + PTY + plugin 만). 헤드리스는 no-default-features 빌드뿐이다 — GUI 빌드는 경고만 남기고 그대로 GUI 를 띄워, 물려받은 DISPLAY 에 윈도우가 뜬다"
 
 [cli.help._root.arg.all]
-help = "모든 명령을 트리로 표시 (-h 와 함께 사용)"
+help = "모든 명령을 트리로 표시한다. 명령 앞(루트 위치)에서만 유효하며, 각 명령의 인자는 그 명령의 --help로 본다"
 
 [cli.help._root.arg.enable_input_simulation]
 help = "입력 시뮬레이션 IPC 활성화 (debug 빌드 전용). debug.inject_mouse, debug.inject_key 등에 필요"
@@ -6533,6 +6533,8 @@ required = "'{}'에 필요한 인자:"
 optional = "선택 사항:"
 details = "자세한 내용은 '{} --help'를 실행하세요."
 error = "오류:"
+aliases = "별칭: {}"
+tree_details = "인자와 자세한 내용은 'tasty <명령> --help'를 실행하세요."
 
 [cli.parse]
 cause = "파서 상세: {}"

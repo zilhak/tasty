@@ -97,6 +97,20 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 읽지 못한 매니페스트는 기존 경고를 출력하고 건너뛰며 host 도움말은 계속 표시한다.
 시험은 `tests/cli_help_entrypoints.rs`다.
 
+### 전체 트리와 인자 사용법
+
+`tasty -a`는 해당 빌드에 있는 host·plugin 명령을 모든 깊이까지 `경로 — 짧은 설명` 형태로 출력한다.
+`help::tree_lines`가 clap 트리를 재귀로 순회하므로 수작업 명령 목록을 두지 않는다. clap이 만드는
+help 하위 명령은 펼치지 않고, 별칭은 canonical 명령 줄에 함께 표시해 명령 수에 중복으로 세지 않는다.
+debug 전용 명령은 release 빌드의 트리에 존재하지 않는다. 인자는 트리에 펼치지 않고 마지막 줄에서
+개별 `--help`로 안내한다.
+
+파싱 오류의 사용법 요약(`ArgInfo`)은 clap 인자 선언의 action과 값 개수를 읽는다. 값 없는 플래그는
+`--strip-ansi`, 값 있는 옵션은 `--name <NAME>`, 여러 값은 `<COMMAND>...`, 선택 인자는 `[...]`로
+표시한다. 인자 간 requires/conflicts와 허용값은 요약에 넣지 않으며 개별 `--help`가 안내한다.
+`help.rs`의 `every_option_usage_is_accepted_by_the_parser`가 모든 옵션의 표기로 만든 argv를
+실제 파서에 넣어 값 유무 표기가 맞는지 확인한다.
+
 ## 진입점 (`run.rs`)
 
 `run_client` 는 갈래를 묻고 `ClientDriven` 이면 넘긴 뒤, 나머지 단발 RPC 경로

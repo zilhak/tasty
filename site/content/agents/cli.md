@@ -560,7 +560,7 @@ judged는 권한 등을 검사한 요청 수이며 CLI 요청과 플러그인 �
 | 화면 읽기 | `tasty read screen --surface ID --lines N` |
 | 알림 | `tasty notify "본문" --title "제목"` |
 | 스크린샷 | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
-| 도움말 | `tasty help`, `tasty help <명령>`(= `tasty <명령> --help`), `tasty -a -h` (전체 트리) |
+| 도움말 | `tasty help`, `tasty help <명령>`(= `tasty <명령> --help`), `tasty -a` (모든 명령 경로와 짧은 설명. 인자는 각 명령의 `--help`) |
 
 ## 문제 해결
 

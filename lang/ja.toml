@@ -2404,7 +2404,7 @@ help = "tasty ターミナル内でも GUI を強制的に起動する"
 help = "ヘッドレスターミナルエミュレータとして実行（GUI なしで IPC + PTY + plugin のみ）。ヘッドレスになるのは no-default-features ビルドだけで、GUI ビルドは警告を出したうえで GUI を起動し、継承した DISPLAY にウィンドウが開く"
 
 [cli.help._root.arg.all]
-help = "すべてのコマンドをツリー表示する（-h と併用）"
+help = "すべてのコマンドをツリー表示する。コマンドより前（ルート位置）でのみ有効で、各コマンドの引数はそのコマンドの --help で確認する"
 
 [cli.help._root.arg.enable_input_simulation]
 help = "入力シミュレーション IPC を有効にする（debug ビルド専用）。debug.inject_mouse、debug.inject_key などに必要"
@@ -6533,6 +6533,8 @@ required = "'{}' に必要な引数:"
 optional = "任意:"
 details = "詳細は '{} --help' を実行してください。"
 error = "エラー:"
+aliases = "別名: {}"
+tree_details = "引数と詳細は 'tasty <コマンド> --help' を実行してください。"
 
 [cli.parse]
 cause = "パーサー詳細: {}"
