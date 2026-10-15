@@ -286,6 +286,9 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
   - 정체로 판정하면 패닉 전에 그 worker를 버린다고 표시한다. `JournalWorker` 의 Drop은 평소
     worker를 join하는데, 표시가 있으면 join하지 않고 스레드를 떼어 낸다. 그래서 멈춘 worker가
     있어도 시험은 그 자리에서 걸리지 않고 실패로 끝난다.
+  - 저널 애플리케이션의 시험(`StallBudget::new`)은 터미널 준비 스레드도 함께 본다. 새 터미널의 셸
+    시작은 그 스레드가 맡으므로 그동안 저널 worker가 잠들어 있어도 정체로 세지 않는다. 정체로
+    판정하면 준비 스레드도 버린다고 표시해 Drop이 join하지 않는다.
   - `runtime::journal_product` 시험도 worker의 완료를 같은 `StallBudget`으로 기다린다(`receive`).
     완료 하나를 `recv_timeout(10초)`로 받던 때는 부하 평균이 코어 수의 두세 배인 병렬 실행에서
     실행마다 다른 시험이 `Timeout`으로 실패했다. worker가 완료 채널을 닫으면 정체 한도를 기다리지
@@ -445,7 +448,8 @@ gh api "repos/<owner>/<repo>/actions/jobs/<job_id>/logs"
 - WebView kind 와 오버레이 등록(`markdown`)은 플러그인 프로세스 없이 등록한다.
 
 실제 셸·PTY 를 실행하는 시험은 이 픽스처가 아니라 저널·PTY 하네스를 쓴다. 예를 들어
-`runtime::journal_product` 의 준비 시험은 `effect_runner::prepare` 로 `/bin/sh` 를 띄운다.
+`runtime::journal_product` 의 준비 시험은 `effect_runner::prepare_and_wait` 로 터미널 준비 스레드에서
+`/bin/sh` 를 띄운다. 준비 스레드의 실행을 붙잡아 두려면 `TerminalSpawner::hold` 를 쓴다.
 
 <a id="몇-번-띄우는지는-이렇게-센다"></a>
 <a id="안-쟀다--그-총수의-귀속-그리고-재려면-무엇이-필요한가"></a>

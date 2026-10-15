@@ -59,7 +59,7 @@ GUI intent·IPC·plugin·headless 진입점은 모두 같은 command 경계를 �
 
 | 단계 | 기다리는 조건 | App 관측 |
 |---|---|---|
-| 준비(`PrepareCreation` 뒤 claim) | App journal pump 안에서 PTY spawn·kind factory 실행 | 실행 동안 App 이벤트 처리가 멈춘다 |
+| 준비(`PrepareCreation` 뒤 claim) | 터미널은 전용 준비 스레드의 PTY spawn·capture 주입. kind factory·standalone 채택은 App 안에서 실행 | 터미널 준비 동안 보류하지 않는다. kind factory 실행 동안은 App 이벤트 처리가 멈춘다 |
 | 설치(`FinishCreation` 공개 중) | publication 처리 안에서 후보 설치·이전 owner 분리 | 전역 보류 |
 | 설치 뒤 | child 입력 전달만 기다린 뒤 `CleanupFinished` 제출(본문 기한 5초) | 전역 보류 |
 | 최종 공개 | `FinishCleanup` commit과 전체 publication ACK | commit 전까지 전역 보류 |
@@ -76,6 +76,19 @@ GUI intent·IPC·plugin·headless 진입점은 모두 같은 command 경계를 �
 owner(PTY·plugin 등록·child 관계)를 회수하고, 이전 owner가 이미 은퇴한 대상만 Recovery 차단
 placeholder로 바꿔 사용할 수 없음을 표시한다. operation은 `Uncertain`으로 기록하며, 회수 receipt가
 모두 완료되면 폐기 evidence로 정합해 실패로 끝낸다. 이 동안 관측은 보류하지 않는다.
+
+터미널 준비는 App이 검증과 고정 입력(셸 실행 정보·waker·색·복원 capture)을 마친 뒤 전용 스레드
+하나에 맡긴다. 동시 실행은 하나이며 앞선 작업 뒤 대기열은 16개로 제한한다. 대기열이 차면 아무것도
+실행하지 않은 채 알려진 준비 실패로 응답한다. 완료된 child는 App이 claim 때 본 대상과 다시 대조한다.
+대상 터미널의 물리 generation이 바뀌었거나 새 대상에 다른 owner가 생겼으면 설치하지 않고 새 child를
+retire하며, reap이 확인되면 알려진 준비 실패로, 기한 5초 안에 확인하지 못하면 불명으로 기록한다.
+엔진 해제가 준비 중인 생성을 넘겨받으면 `EngineRelease`가 결과를 기다려 PTY를 retire하고 reap 전에는
+해제를 끝내지 않는다. 결과를 받을 owner가 사라졌으면 준비 스레드가 child를 retire해 reap까지 보관하고,
+시작 전이면 실행하지 않는다. 프로세스 종료 때 App은 생성 continuation보다 준비 스레드를 먼저 닫는다. 이때
+대기열에 남은 작업은 결과를 받을 owner가 있어도 실행하지 않고, 닫히는 동안 시작을 마친 child는 결과로
+넘기지 않고 retire해 보관한다. 준비 스레드는 보관한 child의 reap을 확인한 뒤 끝난다.
+kind factory는 반환하는 surface와 native 자원의 스레드 제약을 일반적으로 보장할 수 없어 App
+스레드에 남긴다. standalone 채택은 이미 있는 PTY의 소유권 이전이라 다시 실행할 작업이 아니다.
 
 standalone 채택은 준비 완료부터 설치 또는 원위치 반납까지도 전역 보류한다. GUI 종료의
 `SavingLayout`은 이 보류가 풀리기를 기다리며 별도 기한이 없다.

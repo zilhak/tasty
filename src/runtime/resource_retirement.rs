@@ -425,9 +425,36 @@ pub(crate) struct EngineRelease {
     owners: Vec<Box<dyn crate::model::Surface>>,
     ptys: Vec<PtyRetirement>,
     remote: Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
+    /// Terminal children still starting for a creation this release took over.
+    spawns: Vec<crate::runtime::effect_runner::PendingSpawn>,
     warned: bool,
 }
 impl EngineRelease {
+    pub(crate) fn retain_spawn(&mut self, pending: crate::runtime::effect_runner::PendingSpawn) {
+        self.spawns.push(pending);
+    }
+    /// A finished spawn becomes an ordinary retired PTY; a failed one left its owner to the
+    /// spawner. Returns whether any spawn is still running.
+    fn collect_spawns(&mut self) -> bool {
+        let mut ptys = Vec::new();
+        self.spawns.retain(|pending| match pending.try_take() {
+            None => true,
+            Some(Ok(spawned)) => {
+                drop(spawned.terminal);
+                ptys.push(spawned.pty.retire());
+                false
+            }
+            Some(Err(reason)) => {
+                tracing::warn!(
+                    operation = %pending.lease().operation.0,
+                    "released terminal preparation ended without a candidate: {reason}"
+                );
+                false
+            }
+        });
+        self.ptys.extend(ptys);
+        !self.spawns.is_empty()
+    }
     #[cfg(all(test, unix))]
     pub(crate) fn retained_pty_generations(&self) -> Vec<tasty_terminal::ResourceGeneration> {
         self.ptys.iter().map(PtyRetirement::generation).collect()
@@ -453,6 +480,7 @@ impl EngineRelease {
         session: &mut EngineSession,
         plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> bool {
+        let spawning = self.collect_spawns();
         if !self.begin_release(session) {
             return false;
         }
@@ -471,7 +499,8 @@ impl EngineRelease {
             );
             self.warned = true;
         }
-        self.owners.is_empty()
+        !spawning
+            && self.owners.is_empty()
             && self
                 .ptys
                 .iter()

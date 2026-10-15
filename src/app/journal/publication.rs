@@ -662,7 +662,7 @@ impl JournalApplication {
                 .creations
                 .get_mut(&key)
                 .expect("creation exists")
-                .answered(&self.worker, session, result?)?
+                .answered(&self.worker, session, &self.spawner, result?)?
             {
                 if let Some(mut creation) = self.creations.remove(&key)
                     && let Some(request) = creation.failed_restore(session)

@@ -7,6 +7,7 @@
 //!   프로세스 때문에 fsync가 몇 초씩 늦어지면 벽시계 기한은 교착이 없어도 실패했다.
 //! - worker가 잠든 채 진행이 없으면 그 시간은 정체다. 응답을 잃었거나 잠금을 기다리며 멈춘
 //!   교착이 이렇게 보이므로 [`StallBudget::IDLE_LIMIT`] 안에 실패한다.
+//! - 터미널 준비 스레드처럼 저널 작업의 일부를 맡은 스레드가 일하는 시간도 세지 않는다.
 //!
 //! worker 상태는 Linux에서만 읽는다. 다른 OS에서는 쉰 시간을 모두 센다.
 //! 끝없이 도는 worker는 잠들지 않으므로 [`StallBudget::CEILING`]의 벽시계 상한으로 잡는다.
@@ -26,6 +27,8 @@ pub(crate) struct StallBudget {
     idle: Duration,
     started: Instant,
     worker: ThreadProbe,
+    /// worker 대신 일을 맡은 다른 스레드. 하나라도 일하는 중이면 쉰 시간을 세지 않는다.
+    helpers: Vec<ThreadProbe>,
     /// 실패 메시지에서 지켜본 대상을 가리키는 말.
     subject: &'static str,
 }
@@ -41,8 +44,14 @@ impl StallBudget {
             idle: Duration::ZERO,
             started: Instant::now(),
             worker: worker.thread_probe.clone(),
+            helpers: Vec::new(),
             subject: "the journal worker",
         }
+    }
+
+    /// 저널 작업의 일부를 맡은 스레드도 지켜본다. 예: 터미널 준비 스레드의 PTY 시작.
+    pub(crate) fn watch_helper(&mut self, probe: ThreadProbe) {
+        self.helpers.push(probe);
     }
 
     /// `pid` 프로세스를 지켜보는 대기. 그 프로세스가 실행 중이거나 디스크 I/O를 기다리는 시간은
@@ -53,6 +62,7 @@ impl StallBudget {
             idle: Duration::ZERO,
             started: Instant::now(),
             worker: pid.map(ThreadProbe::process).unwrap_or_default(),
+            helpers: Vec::new(),
             subject: "the watched process",
         }
     }
@@ -70,7 +80,7 @@ impl StallBudget {
     /// [`Self::nap`]과 같다. 실패 메시지의 상태 덤프는 실패할 때만 만든다.
     pub(crate) fn nap_with(&mut self, what: impl FnOnce() -> String) {
         if self.idle >= Self::IDLE_LIMIT {
-            self.worker.abandon();
+            self.abandon();
             panic!(
                 "{} stalled: {} slept {:?} without progress",
                 what(),
@@ -79,7 +89,7 @@ impl StallBudget {
             );
         }
         if self.started.elapsed() >= Self::CEILING {
-            self.worker.abandon();
+            self.abandon();
             panic!(
                 "{} stalled: still waiting after {:?} although {} was busy",
                 what(),
@@ -89,8 +99,15 @@ impl StallBudget {
         }
         let napped = Instant::now();
         std::thread::sleep(Duration::from_millis(1));
-        if !self.worker.is_working() {
+        if !self.worker.is_working() && !self.helpers.iter().any(ThreadProbe::is_working) {
             self.idle += napped.elapsed();
+        }
+    }
+
+    fn abandon(&self) {
+        self.worker.abandon();
+        for helper in &self.helpers {
+            helper.abandon();
         }
     }
 }

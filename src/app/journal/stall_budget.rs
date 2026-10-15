@@ -6,11 +6,14 @@ use super::JournalApplication;
 
 impl StallBudget {
     pub(crate) fn new(journal: &JournalApplication) -> Self {
-        Self::for_worker(&journal.worker)
+        let mut budget = Self::for_worker(&journal.worker);
+        budget.watch_helper(journal.spawner.thread_probe());
+        budget
     }
 
     /// worker를 새로 띄운 journal로 바꾼다. 쌓인 정체 시간은 유지한다.
     pub(crate) fn watch(&mut self, journal: &JournalApplication) {
         self.watch_worker(&journal.worker);
+        self.watch_helper(journal.spawner.thread_probe());
     }
 }

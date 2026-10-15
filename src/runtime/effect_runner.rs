@@ -1,6 +1,7 @@
 //! Executes an already claimed materialization. Prepared objects remain private until publication.
 
 mod installation;
+mod spawner;
 
 use crate::model::TerminalSurface;
 use crate::runtime::engine_access::EngineMut;
@@ -15,6 +16,9 @@ use tasty_terminal::{Pty, ResourceGeneration, Terminal};
 #[cfg(test)]
 pub(crate) use installation::{INSTALL_FAULT, InstallFault};
 pub(crate) use installation::{Installation, Installed, RetiringKind};
+pub(crate) use spawner::{PendingSpawn, SpawnOutcome, TerminalJob, TerminalSpawner};
+#[cfg(test)]
+pub(crate) use spawner::{QUEUE_CAPACITY as SPAWN_QUEUE_CAPACITY, test_job as spawn_test_job};
 
 /// An application binding permits execution for this selected engine in this process only.
 #[derive(Clone, Debug)]
@@ -38,6 +42,8 @@ pub(crate) struct PreparedMaterialization {
     metadata: Vec<(String, String)>,
     child: Option<crate::runtime::journal_product::ChildRecipe>,
     one_shot_input: Option<String>,
+    /// Convert and Restore replace a surface that already exists in the structure.
+    replaces_structure: bool,
 }
 
 #[derive(Clone)]
@@ -78,11 +84,23 @@ impl std::fmt::Display for PreparationFailure {
     }
 }
 
+/// A claimed preparation either finished on the App owner or waits for its terminal child.
+pub(crate) enum Begun {
+    Ready(Box<PreparedMaterialization>),
+    Spawning(Box<SpawnRequest>),
+}
+
+/// The private candidate whose terminal child the spawner starts. The App completes it.
+pub(crate) struct SpawnRequest {
+    pub(crate) job: TerminalJob,
+    partial: Box<PreparedMaterialization>,
+}
+
 pub(crate) fn prepare(
     engine: &mut EngineMut<'_>,
     binding: &ExecutionBinding,
     claimed: ClaimedPreparation,
-) -> Result<PreparedMaterialization, PreparationFailure> {
+) -> Result<Begun, PreparationFailure> {
     let mut execution_started = false;
     prepare_inner(engine, binding, claimed, &mut execution_started).map_err(|error| {
         PreparationFailure {
@@ -92,12 +110,102 @@ pub(crate) fn prepare(
     })
 }
 
+/// Runs a whole preparation, waiting on the spawner, for tests that inspect the private candidate.
+#[cfg(test)]
+pub(crate) fn prepare_and_wait(
+    engine: &mut EngineMut<'_>,
+    binding: &ExecutionBinding,
+    claimed: ClaimedPreparation,
+    spawner: &TerminalSpawner,
+) -> Result<PreparedMaterialization, String> {
+    let request = match prepare(engine, binding, claimed).map_err(|error| error.reason)? {
+        Begun::Ready(prepared) => return Ok(*prepared),
+        Begun::Spawning(request) => request,
+    };
+    let (job, candidate) = (*request).split();
+    let pending = spawner.submit(job).map_err(|(_, reason)| reason)?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let spawned = loop {
+        if let Some(outcome) = pending.try_take() {
+            break outcome?;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "terminal spawn stalled"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    };
+    match candidate.complete(engine, spawned) {
+        SpawnCompletion::Ready(prepared) => Ok(*prepared),
+        SpawnCompletion::Stale { reason, .. } => Err(reason),
+    }
+}
+
+/// How a spawned candidate meets the engine it was prepared for.
+pub(crate) enum SpawnCompletion {
+    Ready(Box<PreparedMaterialization>),
+    /// The target changed while the child started; the child is retired, nothing was installed.
+    Stale {
+        lease: EffectLease,
+        reason: String,
+        retirement: tasty_terminal::PtyRetirement,
+    },
+}
+
+impl SpawnRequest {
+    pub(crate) fn split(self) -> (TerminalJob, PendingCandidate) {
+        (self.job, PendingCandidate(self.partial))
+    }
+}
+
+/// The candidate whose child is still starting. It owns no external resource yet.
+pub(crate) struct PendingCandidate(Box<PreparedMaterialization>);
+
+impl PendingCandidate {
+    pub(crate) fn lease(&self) -> &EffectLease {
+        &self.0.lease
+    }
+    /// Compares the target with the claim-time observation before the child joins the candidate.
+    pub(crate) fn complete(
+        self,
+        engine: &EngineMut<'_>,
+        spawned: spawner::SpawnedTerminal,
+    ) -> SpawnCompletion {
+        let mut partial = self.0;
+        let surface_id = partial
+            .surface_id()
+            .expect("terminal candidate has a fixed ID");
+        let current = engine.runtime.terminals.generation(surface_id);
+        let stale = if current != partial.previous_resource {
+            Some("the target terminal changed while its replacement was starting")
+        } else if partial.previous_resource.is_none()
+            && !partial.replaces_structure
+            && engine.find_surface_by_id(surface_id).is_some()
+        {
+            Some("reserved surface ID gained a live owner while its terminal was starting")
+        } else {
+            None
+        };
+        if let Some(reason) = stale {
+            drop(spawned.terminal);
+            return SpawnCompletion::Stale {
+                lease: partial.lease,
+                reason: reason.to_owned(),
+                retirement: spawned.pty.retire(),
+            };
+        }
+        partial.connection = Some((spawned.terminal, spawned.pty));
+        partial.scrollback_persist_id = spawned.scrollback_persist_id;
+        SpawnCompletion::Ready(partial)
+    }
+}
+
 fn prepare_inner(
     engine: &mut EngineMut<'_>,
     binding: &ExecutionBinding,
     claimed: ClaimedPreparation,
     execution_started: &mut bool,
-) -> anyhow::Result<PreparedMaterialization> {
+) -> anyhow::Result<Begun> {
     if binding.stream != claimed.lease.stream
         || binding.runtime_epoch != claimed.lease.runtime_epoch
         || binding.engine_incarnation != claimed.engine_incarnation
@@ -106,11 +214,13 @@ fn prepare_inner(
     }
     let surface_id = claimed.plan.surface.id;
     let previous_resource = engine.runtime.terminals.generation(surface_id);
-    if !matches!(
+    let replaces_structure = matches!(
         claimed.plan.destination,
         tasty_core::CreationDestination::Convert { .. }
             | tasty_core::CreationDestination::Restore { .. }
-    ) && (previous_resource.is_some() || engine.find_surface_by_id(surface_id).is_some())
+    );
+    if !replaces_structure
+        && (previous_resource.is_some() || engine.find_surface_by_id(surface_id).is_some())
     {
         anyhow::bail!("reserved surface ID already has a live owner");
     }
@@ -168,6 +278,7 @@ fn prepare_inner(
             .surface_registry
             .get_live(&input.kind)
             .is_none();
+    let mut spawn_job = None;
     let (surface, connection, publication, registration) = if let Some(adoption) = &adoption {
         if input.kind != "terminal" || adoption.runtime_epoch != binding.runtime_epoch {
             anyhow::bail!("standalone transfer belongs to another runtime or kind");
@@ -188,47 +299,30 @@ fn prepare_inner(
         let shell = input
             .shell
             .ok_or_else(|| anyhow::anyhow!("terminal preparation has no shell recipe"))?;
-        let args: Vec<_> = shell.arguments.iter().map(String::as_str).collect();
-        let environment: Vec<_> = shell
-            .environment
-            .iter()
-            .map(|(key, value)| (key.as_str(), value.as_str()))
-            .collect();
-        let initial = shell
-            .restore_command
-            .as_ref()
-            .map(|command| format!("{command}\r"));
-        *execution_started = true;
-        let (mut terminal, pty) = tasty_terminal::spawn_terminal(
-            tasty_terminal::TerminalConfig {
-                cols: shell.cols,
-                rows: shell.rows,
-                shell: (!shell.executable.is_empty()).then_some(shell.executable.as_str()),
-                args: &args,
-                extra_env: &environment,
-                surface_id,
-                working_dir: input.cwd.as_deref(),
-                initial_input: initial.as_deref(),
-            },
-            engine.make_waker(surface_id),
-        )?;
-        terminal.set_color_palette(crate::runtime::terminal_store::current_terminal_palette());
-        terminal.set_scrollback_limit(shell.scrollback_lines);
-        if shell.disk_scrollback {
-            terminal.enable_disk_scrollback(surface_id);
-        }
-        restore_terminal_capture(
-            &mut terminal,
+        let job = TerminalJob {
+            lease: claimed.lease.clone(),
             surface_id,
-            decoded_capture,
-            &mut scrollback_persist_id,
-        )?;
-        if !shell.startup_command.trim().is_empty() {
-            terminal.send_key(&format!("{}\n", shell.startup_command.trim()));
-        }
+            cols: shell.cols,
+            rows: shell.rows,
+            shell: (!shell.executable.is_empty()).then_some(shell.executable),
+            arguments: shell.arguments,
+            environment: shell.environment,
+            working_dir: input.cwd.clone(),
+            initial_input: shell
+                .restore_command
+                .as_ref()
+                .map(|command| format!("{command}\r")),
+            waker: engine.make_waker(surface_id),
+            palette: crate::runtime::terminal_store::current_terminal_palette(),
+            scrollback_lines: shell.scrollback_lines,
+            disk_scrollback: shell.disk_scrollback,
+            capture: decoded_capture,
+            startup_command: shell.startup_command,
+        };
+        spawn_job = Some(job);
         (
             Box::new(TerminalSurface { id: surface_id }) as Box<dyn crate::model::Surface>,
-            Some((terminal, pty)),
+            None,
             None,
             None,
         )
@@ -287,7 +381,7 @@ fn prepare_inner(
             Some(registration),
         )
     };
-    Ok(PreparedMaterialization {
+    let prepared = PreparedMaterialization {
         lease: claimed.lease,
         leaf: PreparedLeaf {
             logical_kind: input.kind,
@@ -304,6 +398,14 @@ fn prepare_inner(
         metadata,
         child,
         one_shot_input: None,
+        replaces_structure,
+    };
+    Ok(match spawn_job {
+        Some(job) => Begun::Spawning(Box::new(SpawnRequest {
+            job,
+            partial: Box::new(prepared),
+        })),
+        None => Begun::Ready(Box::new(prepared)),
     })
 }
 

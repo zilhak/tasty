@@ -40,6 +40,8 @@ struct Opening {
 
 pub(crate) struct JournalApplication {
     worker: JournalWorker,
+    /// Starts claimed terminal candidates so a slow child start does not block the App.
+    spawner: crate::runtime::effect_runner::TerminalSpawner,
     commands: commands::Commands,
     captures: std::collections::BTreeMap<u64, capture::PendingCapture>,
     preset_captures: capture::PresetCaptures,
@@ -145,8 +147,10 @@ impl JournalApplication {
             .ok_or_else(|| anyhow::anyhow!("data home unavailable for structure journal"))?;
         let worker = JournalWorker::spawn_with(home, wake.clone(), writer_lock)
             .map_err(anyhow::Error::msg)?;
+        let spawner = crate::runtime::effect_runner::TerminalSpawner::spawn(wake.clone())?;
         Ok(Self {
             worker,
+            spawner,
             commands: Default::default(),
             captures: Default::default(),
             preset_captures: Default::default(),

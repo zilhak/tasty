@@ -132,6 +132,7 @@ fn executed() -> ResultValue {
 fn synthesized_uncertain_discard_keeps_one_outstanding_request_per_creation() {
     let home = tempfile::tempdir().unwrap();
     let worker = JournalWorker::spawn(home.path().to_owned(), Arc::new(|| {})).unwrap();
+    let spawner = effect_runner::TerminalSpawner::spawn(Arc::new(|| {})).unwrap();
     let mut session = EngineSession::new(80, 24, Arc::new(|| {})).unwrap();
     let binding = crate::runtime::journal_product::EngineBinding {
         journal_id: "journal".into(),
@@ -182,7 +183,7 @@ fn synthesized_uncertain_discard_keeps_one_outstanding_request_per_creation() {
     );
     assert!(
         !creation
-            .answered(&worker, &mut session, executed())
+            .answered(&worker, &mut session, &spawner, executed())
             .unwrap()
     );
     std::thread::sleep(std::time::Duration::from_millis(1100));
@@ -199,7 +200,7 @@ fn synthesized_uncertain_discard_keeps_one_outstanding_request_per_creation() {
     );
     assert!(
         !creation
-            .answered(&worker, &mut session, executed())
+            .answered(&worker, &mut session, &spawner, executed())
             .unwrap()
     );
     creation
@@ -211,7 +212,7 @@ fn synthesized_uncertain_discard_keeps_one_outstanding_request_per_creation() {
     );
     assert!(
         creation
-            .answered(&worker, &mut session, executed())
+            .answered(&worker, &mut session, &spawner, executed())
             .unwrap(),
         "C's reply finishes the creation with no reply left without an owner"
     );

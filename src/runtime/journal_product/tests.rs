@@ -633,7 +633,8 @@ fn a_durable_claim_precedes_real_pty_preparation_and_the_candidate_stays_private
     let mut engine = session.borrow_mut();
     let old_ids = engine.live_surface_ids();
     let reserved_surface = claimed.plan.surface.id;
-    let prepared = effect_runner::prepare(&mut engine, &binding, claimed)
+    let spawner = effect_runner::TerminalSpawner::spawn(Arc::new(|| {})).unwrap();
+    let prepared = effect_runner::prepare_and_wait(&mut engine, &binding, claimed, &spawner)
         .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(
         engine.live_surface_ids(),
@@ -706,8 +707,13 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
         tasty_terminal::Terminal::new_detached(80, 24),
         None,
     );
-    let mut prepared = effect_runner::prepare(&mut engine, &binding, claimed)
-        .unwrap_or_else(|error| panic!("{error}"));
+    let mut prepared = effect_runner::prepare_and_wait(
+        &mut engine,
+        &binding,
+        claimed,
+        &effect_runner::TerminalSpawner::spawn(Arc::new(|| {})).unwrap(),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
     let generation = prepared
         .connection
         .as_ref()
@@ -924,8 +930,13 @@ fn complete_conversion_and_reap(
         .unwrap();
     finished(worker, 10).unwrap();
     let claimed = claim(worker, 11, operation);
-    let mut candidate =
-        effect_runner::prepare(engine, binding, claimed).unwrap_or_else(|error| panic!("{error}"));
+    let mut candidate = effect_runner::prepare_and_wait(
+        engine,
+        binding,
+        claimed,
+        &effect_runner::TerminalSpawner::spawn(Arc::new(|| {})).unwrap(),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(engine.runtime.terminals.generation(sid), Some(original));
     assert_eq!(
         engine.runtime.terminals.pty(sid).unwrap().process_id(),
@@ -1038,8 +1049,13 @@ fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publ
             &declaration,
             sender.clone(),
         );
-        let mut candidate = effect_runner::prepare(&mut engine, &binding, claimed)
-            .unwrap_or_else(|error| panic!("{error}"));
+        let mut candidate = effect_runner::prepare_and_wait(
+            &mut engine,
+            &binding,
+            claimed,
+            &effect_runner::TerminalSpawner::spawn(Arc::new(|| {})).unwrap(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
         let lease = candidate.lease.clone();
         submit(
             &worker,

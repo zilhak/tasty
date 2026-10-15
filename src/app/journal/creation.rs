@@ -1,4 +1,5 @@
 //! A live request continuation. The engine owns the unpublished materialization, never this router.
+mod preparing;
 mod settle;
 mod uncertain;
 use super::*;
@@ -78,6 +79,7 @@ enum Stage {
     Input(Vec<tasty_event_store::IdRange>),
     Commit,
     Claim,
+    Preparing(preparing::Preparing),
     Prepared {
         operation: OperationId,
         acknowledged: bool,
@@ -333,6 +335,7 @@ impl Creation {
         &mut self,
         worker: &JournalWorker,
         session: &mut EngineSession,
+        spawner: &effect_runner::TerminalSpawner,
         value: ResultValue,
     ) -> Result<bool, String> {
         let value = match value {
@@ -451,64 +454,7 @@ impl Creation {
                     claimed.plan.destination,
                     CreationDestination::Assembly { .. }
                 );
-                let lease = claimed.lease.clone();
-                let binding = ExecutionBinding {
-                    stream: self.binding.stream.clone(),
-                    runtime_epoch: self.binding.runtime_epoch,
-                    engine_incarnation: self.binding.incarnation,
-                };
-                match effect_runner::prepare(&mut session.borrow_mut(), &binding, claimed) {
-                    Ok(mut prepared) => {
-                        prepared.set_one_shot_input(self.one_shot_input.take());
-                        let preparation_result = if prepared.is_deferred() {
-                            PreparationResult::Deferred { data: None }
-                        } else {
-                            PreparationResult::Ready { data: None }
-                        };
-                        let operation = prepared.lease.operation.clone();
-                        session
-                            .pending_materializations
-                            .insert(operation.clone(), prepared);
-                        self.submit(
-                            worker,
-                            Work::Prepared {
-                                lease,
-                                result: preparation_result,
-                            },
-                        )?;
-                        Stage::Prepared {
-                            operation,
-                            acknowledged: false,
-                        }
-                    }
-                    Err(error) => {
-                        let reason = error.to_string();
-                        if error.uncertain {
-                            self.submit(
-                                worker,
-                                Work::PreparationUncertain {
-                                    lease,
-                                    reason: reason.clone(),
-                                },
-                            )?;
-                            Stage::Uncertain(Uncertain::pending(
-                                reason,
-                                UncertainOwner::EngineOwned,
-                            ))
-                        } else {
-                            self.submit(
-                                worker,
-                                Work::Prepared {
-                                    lease,
-                                    result: PreparationResult::Failed {
-                                        reason: reason.clone(),
-                                    },
-                                },
-                            )?;
-                            Stage::Failed(reason)
-                        }
-                    }
-                }
+                self.begin_preparation(worker, session, spawner, claimed)?
             }
             (Stage::Prepared { operation, .. }, ResultValue::Executed(_)) if preparation => {
                 Stage::Prepared {
@@ -748,6 +694,7 @@ impl Creation {
                 ..
             } => release.retain_pty(receipt),
             Stage::Uncertain(uncertain) => uncertain.retain_for_release(release),
+            Stage::Preparing(preparing) => preparing.retain_for_release(release),
             _ => {}
         }
     }
@@ -808,6 +755,7 @@ impl Creation {
             Stage::Installing { answered: true, .. }
                 | Stage::Rejected { answered: true, .. }
                 | Stage::Settling { .. }
+                | Stage::Preparing(preparing::Preparing::Discarding { .. })
         )
     }
 
@@ -875,7 +823,7 @@ impl Creation {
             }
             return Ok(());
         }
-        if self.poll_settling(session) {
+        if self.poll_settling(session) || self.poll_preparing(worker, session)? {
             return Ok(());
         }
         let ready = if let Stage::Installing {

@@ -615,6 +615,9 @@ mod close_receipt;
 #[path = "replacement_settle_tests.rs"]
 mod replacement_settle;
 
+#[path = "preparation_tests.rs"]
+mod preparation;
+
 #[path = "closing_surfaces_tests.rs"]
 mod closing_surfaces;
 
