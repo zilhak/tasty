@@ -61,15 +61,19 @@ GUI intent·IPC·plugin·headless 진입점은 모두 같은 command 경계를 �
 |---|---|---|
 | 준비(`PrepareCreation` 뒤 claim) | 터미널은 전용 준비 스레드의 PTY spawn·capture 주입. kind factory·standalone 채택은 App 안에서 실행 | 터미널 준비 동안 보류하지 않는다. kind factory 실행 동안은 App 이벤트 처리가 멈춘다 |
 | 설치(`FinishCreation` 공개 중) | publication 처리 안에서 후보 설치·이전 owner 분리 | 전역 보류 |
-| 설치 뒤 | child 입력 전달만 기다린 뒤 `CleanupFinished` 제출(본문 기한 5초) | 전역 보류 |
+| 설치 뒤 | 기다리지 않고 `CleanupFinished` 제출. child 본문은 설치 때 이미 썼다 | 전역 보류 |
 | 최종 공개 | `FinishCleanup` commit과 전체 publication ACK | commit 전까지 전역 보류 |
-| 공개 뒤 회수(`Settling`) | 교체한 이전 PTY·plugin binding의 receipt(기한 5초) | 보류하지 않는다 |
+| 공개 뒤 정리(`Settling`) | child 본문 ACK(기한 5초)와 settle 20ms 뒤 CR, 교체한 이전 PTY·plugin binding의 receipt(기한 5초) | 보류하지 않는다 |
 | 불명(`Uncertain`) | 설치 owner·폐기 receipt·회수한 실패 설치가 있을 때만 1초 간격 재확인. 준비 중 불명은 재확인 요청이 없다 | 미공개 설치 owner를 가진 경우만 보류 |
-| 원 명령 응답 | 최종 commit의 확정 결과를 공개 뒤 회수가 끝난 다음 읽는다. 불명이면 InProgress로 남는다 | - |
+| 원 명령 응답 | 최종 commit의 확정 결과를 공개 뒤 정리가 끝난 다음 읽는다. 불명이면 InProgress로 남는다 | - |
 
 공개 뒤 회수가 기한을 넘기거나 실패하면 receipt를 EngineSession의 해제 owner(`EngineRelease`)로
-넘기고 원 요청에 복구 필요(`ERR_OPERATION_RECOVERY_REQUIRED`)를 응답한다. 구조는 이미 공개됐으므로
-이 응답은 구조 실패를 뜻하지 않는다. 같은 키의 이후 재요청은 확정된 구조 결과를 돌려준다.
+넘기고 원 요청에 복구 필요(`ERR_OPERATION_RECOVERY_REQUIRED`)를 응답한다. child의 CR을 보내기 전에
+대상의 물리 generation이 바뀌었거나 hard 점유됐거나 CR 큐가 닫혔으면 CR을 보내지 않고 같은 오류로
+응답한다. 본문은 설치 때 한 번만 쓰며 다시 보내지 않는다. 구조는 이미 공개됐으므로 이 응답은 구조
+실패를 뜻하지 않는다. 같은 키의 이후 재요청은 확정된 구조 결과를 돌려주고 본문을 다시 쓰지 않는다.
+CR을 기다리는 동안 그 터미널의 출력과 다른 창의 입력·렌더·조회는 진행한다. 사용자가 그 터미널에
+입력하면 본문과 CR 사이에 들어갈 수 있다. terminal tell의 본문·CR 사이 입력과 같은 조건이다.
 
 설치 실패는 두 가지로 나눈다. 이전 owner를 은퇴시키거나 새 owner를 등록·설치하기 전의 실패는
 알려진 거절이다. 후보를 기존 폐기 경로로 회수하고 원 명령은 실패로 끝난다. 그 뒤의 실패는 미공개 새

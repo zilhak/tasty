@@ -2,6 +2,10 @@
 use super::*;
 
 impl Creation {
+    #[cfg(all(test, unix))]
+    pub(in crate::app::journal) fn waits_child_input(&self) -> bool {
+        matches!(&self.stage, Stage::Settling { installed, .. } if installed.waiting_input())
+    }
     pub(in crate::app::journal) fn set_origin_command(&mut self, command: String) {
         self.origin_command = Some(command);
     }
@@ -20,14 +24,16 @@ impl Creation {
             _ => None,
         }
     }
-    /// Finished publication leaves the creation; outstanding receipts keep it as Settling.
+    /// Finished publication leaves the creation; a pending child CR or outstanding receipts keep
+    /// it as Settling.
     pub(super) fn settle(installed: Installed) -> Option<Stage> {
-        if matches!(installed.release_complete(), Ok(true)) {
+        if !installed.waiting_input() && matches!(installed.release_complete(), Ok(true)) {
             None
         } else {
             Some(Stage::Settling {
                 installed,
                 deadline: std::time::Instant::now() + SETTLE_DEADLINE,
+                input_failure: None,
             })
         }
     }
@@ -132,44 +138,75 @@ impl Creation {
     /// The structure is published; observes the replaced owner without pausing observation.
     /// Returns true while this stage handled the poll.
     pub(in crate::app::journal) fn poll_settling(&mut self, session: &mut EngineSession) -> bool {
-        if let Stage::Settling {
+        let Stage::Settling {
             installed,
             deadline,
-        } = &self.stage
-        {
-            let unconfirmed = match installed.release_complete() {
-                Ok(true) => None,
-                Ok(false) if std::time::Instant::now() < *deadline => return true,
-                Ok(false) => {
-                    Some("replaced owner did not confirm retirement before its deadline".to_owned())
-                }
-                Err(error) => Some(error.to_string()),
-            };
-            let Stage::Settling { installed, .. } =
-                std::mem::replace(&mut self.stage, Stage::Transition)
-            else {
-                unreachable!("checked settling stage")
-            };
-            if let Some(reason) = &unconfirmed {
-                tracing::warn!(
-                    operation = %installed.lease.operation.0,
-                    stream = %installed.lease.stream,
-                    surface = installed.surface_id,
-                    attempt = installed.lease.attempt,
-                    generation = installed.lease.resource_generation,
-                    phase = "settle",
-                    "published creation kept an unconfirmed replaced owner: {reason}"
-                );
-                // The engine release is the single later owner; a timeout is not a reap.
-                session
-                    .engine_release
-                    .get_or_insert_with(Default::default)
-                    .retain_installation(installed);
-            }
-            self.stage = Stage::Settled { unconfirmed };
+            input_failure,
+        } = &mut self.stage
+        else {
+            return false;
+        };
+        // The child CR follows its body on the published owner; it never waits for a receipt.
+        if let Err(error) = installed.poll_input(&mut session.borrow_mut()) {
+            *input_failure = Some(format!("its one-shot input was not delivered: {error}"));
+        }
+        if installed.waiting_input() {
             return true;
         }
-        false
+        let retirement = match installed.release_complete() {
+            Ok(true) => None,
+            Ok(false) if std::time::Instant::now() < *deadline => return true,
+            Ok(false) => {
+                Some("replaced owner did not confirm retirement before its deadline".into())
+            }
+            Err(error) => Some(error.to_string()),
+        };
+        let Stage::Settling {
+            installed,
+            input_failure,
+            ..
+        } = std::mem::replace(&mut self.stage, Stage::Transition)
+        else {
+            unreachable!("checked settling stage")
+        };
+        let retirement = retirement
+            .map(|reason| format!("the replaced resource did not confirm retirement: {reason}"));
+        for reason in input_failure.iter().chain(&retirement) {
+            tracing::warn!(
+                operation = %installed.lease.operation.0,
+                stream = %installed.lease.stream,
+                surface = installed.surface_id,
+                attempt = installed.lease.attempt,
+                generation = installed.lease.resource_generation,
+                phase = "settle",
+                "published creation did not finish: {reason}"
+            );
+        }
+        if retirement.is_some() {
+            // The engine release is the single later owner; a timeout is not a reap.
+            session
+                .engine_release
+                .get_or_insert_with(Default::default)
+                .retain_installation(installed);
+        }
+        let unconfirmed = match (input_failure, retirement) {
+            (Some(input), Some(retirement)) => Some(format!("{input}; {retirement}")),
+            (input, retirement) => input.or(retirement),
+        };
+        self.stage = Stage::Settled { unconfirmed };
+        true
+    }
+
+    /// When a settling creation should be polled again.
+    pub(in crate::app::journal) fn settling_deadline(&self) -> Option<std::time::Instant> {
+        let Stage::Settling { installed, .. } = &self.stage else {
+            return None;
+        };
+        Some(
+            installed.input_deadline().unwrap_or_else(|| {
+                std::time::Instant::now() + std::time::Duration::from_millis(10)
+            }),
+        )
     }
 }
 

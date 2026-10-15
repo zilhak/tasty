@@ -1,6 +1,7 @@
 //! Install an authorized candidate before publishing its final structural result.
 
 use super::*;
+use crate::runtime::pending_submit::PendingSubmit;
 use tasty_terminal::{PtyPhase, PtyRetirement};
 
 pub(crate) struct Installation {
@@ -88,15 +89,8 @@ pub(crate) struct Installed {
     retirement: Option<PtyRetirement>,
     remote_retirements: Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
     installed_generation: Option<ResourceGeneration>,
+    /// The one-shot body was written; its CR follows on the same physical owner.
     input: Option<PendingSubmit>,
-}
-
-struct PendingSubmit {
-    surface: u32,
-    generation: ResourceGeneration,
-    ack: tasty_terminal::WriteAck,
-    started: std::time::Instant,
-    settled: Option<std::time::Instant>,
 }
 
 impl Installed {
@@ -132,6 +126,8 @@ impl Installed {
     pub(crate) fn waiting_input(&self) -> bool {
         self.input.is_some()
     }
+    /// Sends the CR once it is due. A target whose physical owner changed or that became hard
+    /// occupied never receives it; the failure drops the input so no later poll retries it.
     pub(crate) fn poll_input(&mut self, engine: &mut EngineMut<'_>) -> anyhow::Result<()> {
         let Some(input) = self.input.as_mut() else {
             return Ok(());
@@ -139,31 +135,29 @@ impl Installed {
         if !engine
             .runtime
             .terminals
-            .matches_generation(input.surface, input.generation)
-            || engine.live.occupancy.is_hard_occupied(input.surface)
+            .matches_generation(input.surface(), input.generation())
+            || engine.live.occupancy.is_hard_occupied(input.surface())
         {
+            self.input = None;
             anyhow::bail!("child input target changed after body enqueue; late submit discarded");
         }
-        if input.settled.is_none()
-            && (input.ack.is_complete()
-                || input.started.elapsed() >= std::time::Duration::from_secs(5))
-        {
-            input.settled = Some(std::time::Instant::now());
+        if !input.submit_due(std::time::Instant::now()) {
+            return Ok(());
         }
-        if input
-            .settled
-            .is_some_and(|settled| settled.elapsed() >= std::time::Duration::from_millis(20))
-        {
-            engine
-                .runtime
-                .terminals
-                .get_mut(input.surface)
-                .ok_or_else(|| anyhow::anyhow!("child input owner disappeared"))?
-                .try_send_key_with_ack("\r")
-                .map_err(|_| anyhow::anyhow!("child submit queue closed"))?;
-            self.input = None;
-        }
+        let surface = input.surface();
+        self.input = None;
+        engine
+            .runtime
+            .terminals
+            .get_mut(surface)
+            .ok_or_else(|| anyhow::anyhow!("child input owner disappeared"))?
+            .try_send_key_with_ack("\r")
+            .map_err(|_| anyhow::anyhow!("child submit queue closed"))?;
         Ok(())
+    }
+    /// When the pending CR should be checked next.
+    pub(crate) fn input_deadline(&self) -> Option<std::time::Instant> {
+        self.input.as_ref().map(PendingSubmit::next)
     }
 
     /// Signalling/removing an old owner is not evidence that the OS child was reaped.
@@ -339,13 +333,7 @@ impl Installation {
                 .ok_or_else(|| anyhow::anyhow!("child input has no terminal"))?
                 .try_send_key_with_ack(&body)
                 .map_err(|_| anyhow::anyhow!("child body queue closed after installation"))?;
-            submit.then_some(PendingSubmit {
-                surface: self.surface_id,
-                generation,
-                ack,
-                started: std::time::Instant::now(),
-                settled: None,
-            })
+            submit.then(|| PendingSubmit::new(self.surface_id, generation, ack))
         } else {
             None
         };

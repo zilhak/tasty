@@ -95,12 +95,13 @@ enum Stage {
     },
     AwaitPublication(Installed),
     Published(Installed),
-    /// The structure is published; only the replaced owner's receipts remain.
+    /// The structure is published; the child CR and the replaced owner's receipts remain.
     Settling {
         installed: Installed,
         deadline: std::time::Instant,
+        input_failure: Option<String>,
     },
-    /// `unconfirmed` keeps the reason a replaced owner's retirement was not observed in time.
+    /// `unconfirmed` keeps why the input or the replaced owner's retirement did not finish.
     Settled {
         unconfirmed: Option<String>,
     },
@@ -826,30 +827,8 @@ impl Creation {
         if self.poll_settling(session) || self.poll_preparing(worker, session)? {
             return Ok(());
         }
-        let ready = if let Stage::Installing {
-            installed,
-            answered: true,
-        } = &mut self.stage
-        {
-            if let Err(error) = installed.poll_input(&mut session.borrow_mut()) {
-                let reason = error.to_string();
-                let lease = installed.lease.clone();
-                self.submit(
-                    worker,
-                    Work::PreparationUncertain {
-                        lease,
-                        reason: reason.clone(),
-                    },
-                )?;
-                self.retain_uncertain(reason);
-                self.flush(worker)?;
-                return Ok(());
-            }
-            // Retiring the replaced owner continues after publication.
-            !installed.waiting_input()
-        } else {
-            false
-        };
+        // The child body is already written; its CR follows publication in Settling.
+        let ready = matches!(self.stage, Stage::Installing { answered: true, .. });
         if ready && let Stage::Installing { installed, .. } = &self.stage {
             self.submit(
                 worker,

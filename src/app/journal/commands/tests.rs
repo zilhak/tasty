@@ -618,6 +618,11 @@ mod replacement_settle;
 #[path = "preparation_tests.rs"]
 mod preparation;
 
+/// The child command uses `sh` arithmetic and waits on the PTY child process.
+#[cfg(unix)]
+#[path = "child_input_tests.rs"]
+mod child_input;
+
 #[path = "closing_surfaces_tests.rs"]
 mod closing_surfaces;
 

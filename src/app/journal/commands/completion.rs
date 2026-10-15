@@ -39,9 +39,7 @@ impl JournalApplication {
             JsonRpcResponse::error(
                 serde_json::Value::Null,
                 crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED,
-                format!(
-                    "command {command} published its structure but the replaced resource did not confirm retirement: {reason}"
-                ),
+                format!("command {command} published its structure but did not finish: {reason}"),
             )
         } else {
             match result {

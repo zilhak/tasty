@@ -532,8 +532,8 @@ impl PreparedMaterialization {
     /// Publication needs the installed owner only. Retiring the replaced owner is a separate
     /// completion that the creation keeps observing after the structure is published.
     pub(crate) fn into_leaf(self, installed: &Installed) -> anyhow::Result<PreparedLeaf> {
+        // A pending child CR does not hold publication back; it follows on the published owner.
         if self.lease != installed.lease
-            || installed.waiting_input()
             || !self.installed
             || self.connection.is_some()
             || self.publication.is_some()

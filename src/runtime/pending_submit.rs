@@ -44,7 +44,21 @@ impl PendingSubmit {
     pub(crate) fn surface(&self) -> u32 {
         self.surface
     }
-    fn next(&self) -> Instant {
+    pub(crate) fn generation(&self) -> ResourceGeneration {
+        self.generation
+    }
+    /// Advances the body ACK → settle clock. The CR is due 20ms after the body ACK, or after the
+    /// ACK wait of 5 seconds ends without one.
+    pub(crate) fn submit_due(&mut self, now: Instant) -> bool {
+        if self.settle.is_none()
+            && (self.ack.is_complete()
+                || now.saturating_duration_since(self.started) >= Duration::from_secs(5))
+        {
+            self.settle = Some(now + Duration::from_millis(20));
+        }
+        self.settle.is_some_and(|deadline| now >= deadline)
+    }
+    pub(crate) fn next(&self) -> Instant {
         self.settle.unwrap_or_else(|| {
             (Instant::now() + Duration::from_millis(10)).min(self.started + Duration::from_secs(5))
         })
@@ -107,13 +121,7 @@ impl EngineMut<'_> {
             {
                 continue;
             }
-            if submit.settle.is_none()
-                && (submit.ack.is_complete()
-                    || now.saturating_duration_since(submit.started) >= Duration::from_secs(5))
-            {
-                submit.settle = Some(now + Duration::from_millis(20));
-            }
-            if submit.settle.is_some_and(|deadline| now >= deadline) {
+            if submit.submit_due(now) {
                 if let Some(terminal) = self.runtime.terminals.get_mut(submit.surface)
                     && terminal.try_send_key_with_ack("\r").is_err()
                 {

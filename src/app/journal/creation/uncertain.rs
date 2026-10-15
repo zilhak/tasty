@@ -139,6 +139,8 @@ impl Creation {
     pub(in crate::app::journal) fn cleanup_deadline(&self) -> Option<std::time::Instant> {
         if let Stage::Uncertain(uncertain) = &self.stage {
             Some(uncertain.deadline())
+        } else if let Some(deadline) = self.settling_deadline() {
+            Some(deadline)
         } else {
             self.needs_cleanup_poll()
                 .then(|| std::time::Instant::now() + std::time::Duration::from_millis(10))

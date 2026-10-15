@@ -1,0 +1,180 @@
+//! A child's structure is published before its one-shot CR. Only the original reply waits for
+//! the input; a target that changes after publication never receives the late CR.
+use super::*;
+
+type Receiver = std::sync::mpsc::Receiver<JsonRpcResponse>;
+
+/// The command prints a value that its typed echo does not contain.
+const COMMAND: &str = "echo $((6*7))";
+const OUTPUT: &str = "42";
+
+fn turn(journal: &mut JournalApplication, session: &mut EngineSession) {
+    journal.poll_bootstrap(&mut [&mut *session], None).unwrap();
+    let services = crate::ipc::handler::cli_entry_tests::test_core();
+    for (ticket, request) in journal.requests_needing_resolution() {
+        match request.method.as_str() {
+            "terminal.spawn" => journal.resolve_public_creation(ticket, session, &services),
+            "workspace.create" => journal.resolve_workspace_creation(ticket, session, None),
+            _ => journal.resolve_ipc_for_engine(ticket, session),
+        }
+    }
+}
+
+/// The quiet test shell replaces itself with `sleep`; a child that runs commands needs a shell.
+fn boot_with_shell() -> (EngineSession, JournalApplication) {
+    let (mut session, journal) = boot();
+    session.runtime.settings.general.startup_command = String::new();
+    (session, journal)
+}
+
+fn spawn(journal: &mut JournalApplication, session: &EngineSession, id: u64) -> Receiver {
+    let workspace = &session.core_state.local_workspaces()[0];
+    send(
+        journal,
+        request(
+            "terminal.spawn",
+            serde_json::json!({
+                "parent": workspace.all_surface_ids()[0],
+                "workspace": workspace.id.to_string(),
+                "command": COMMAND,
+            }),
+            Some("child-input-key"),
+            id,
+        ),
+    )
+}
+
+fn child_surface(session: &EngineSession) -> Option<u32> {
+    let workspace = &session.core_state.local_workspaces()[0];
+    let parent = workspace.all_surface_ids()[0];
+    workspace
+        .all_surface_ids()
+        .into_iter()
+        .find(|surface| *surface != parent)
+}
+
+fn waiting_input(journal: &JournalApplication) -> bool {
+    journal
+        .creations
+        .values()
+        .any(|creation| creation.waits_child_input())
+}
+
+fn outputs(session: &EngineSession, surface: u32) -> usize {
+    session
+        .runtime
+        .terminals
+        .get(surface)
+        .map(|terminal| terminal.with_content(|view| view.screen_text(false)))
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| line.trim() == OUTPUT)
+        .count()
+}
+
+/// Pumps until the child is published while its CR is still pending.
+fn published_before_submit(journal: &mut JournalApplication, session: &mut EngineSession) -> u32 {
+    let mut stall = StallBudget::new(journal);
+    loop {
+        turn(journal, session);
+        if let Some(child) = child_surface(session)
+            && waiting_input(journal)
+        {
+            assert!(
+                !journal.pauses_observation(),
+                "a pending child CR does not pause observation"
+            );
+            return child;
+        }
+        stall.nap("child published before its CR");
+    }
+}
+
+fn reply(
+    journal: &mut JournalApplication,
+    session: &mut EngineSession,
+    rx: &Receiver,
+) -> JsonRpcResponse {
+    let mut stall = StallBudget::new(journal);
+    loop {
+        turn(journal, session);
+        if let Ok(response) = rx.try_recv() {
+            return response;
+        }
+        stall.nap("child spawn reply");
+    }
+}
+
+#[test]
+fn a_child_is_published_before_its_command_runs_and_the_reply_waits_for_the_submit() {
+    let (mut session, mut journal) = boot_with_shell();
+    let rx = spawn(&mut journal, &session, 900);
+    let child = published_before_submit(&mut journal, &mut session);
+    assert!(
+        matches!(rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty)),
+        "the reply waits for the submit"
+    );
+    let response = reply(&mut journal, &mut session, &rx);
+    assert!(response.error.is_none(), "{response:?}");
+    assert!(!waiting_input(&journal));
+    let terminal = session
+        .runtime
+        .terminals
+        .pty(child)
+        .and_then(|pty| pty.process_id());
+    let mut stall = StallBudget::for_process(terminal);
+    while outputs(&session, child) == 0 {
+        stall.nap_with(|| {
+            format!(
+                "child command output: {:?}",
+                session
+                    .runtime
+                    .terminals
+                    .get(child)
+                    .map(|terminal| terminal.with_content(|view| view.screen_text(false)))
+            )
+        });
+    }
+    // The same key replays the stored result without writing the body again.
+    let again = spawn(&mut journal, &session, 901);
+    let replay = reply(&mut journal, &mut session, &again);
+    assert_eq!(replay.result, response.result);
+    for _ in 0..50 {
+        turn(&mut journal, &mut session);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(outputs(&session, child), 1, "body and CR were sent once");
+}
+
+#[test]
+fn a_child_held_after_publication_never_receives_the_late_submit() {
+    let (mut session, mut journal) = boot_with_shell();
+    let rx = spawn(&mut journal, &session, 910);
+    let child = published_before_submit(&mut journal, &mut session);
+    session
+        .borrow_mut()
+        .live
+        .occupancy
+        .acquire(child, 99)
+        .unwrap();
+    let response = reply(&mut journal, &mut session, &rx);
+    let error = response
+        .error
+        .expect("an undelivered submit is not a success");
+    assert_eq!(
+        error.code,
+        crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED
+    );
+    assert!(
+        error.message.contains("published its structure"),
+        "{error:?}"
+    );
+    assert!(error.message.contains("one-shot input"), "{error:?}");
+    assert_eq!(child_surface(&session), Some(child), "the structure stays");
+    for _ in 0..50 {
+        turn(&mut journal, &mut session);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(outputs(&session, child), 0, "the late CR was not sent");
+    assert!(!journal.has_creation(session.id));
+}
