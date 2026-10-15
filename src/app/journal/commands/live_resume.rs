@@ -792,6 +792,64 @@ mod tests {
         assert!(received(&second).is_empty());
     }
 
+    /// mirror child는 고정한 투영 연결이 바뀌면 건너뛴다. 같은 surface 번호라도 새 연결에는 쓰지 않는다.
+    #[test]
+    fn a_resumed_broadcast_skips_a_child_whose_mirror_projection_was_replaced() {
+        const MIRROR_CHILD: u32 = 9_003;
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut session) = session();
+        let mut engine = session.borrow_mut();
+        let [first, second] = children(&mut engine);
+        let mirror = || {
+            let mut workspace = crate::model::Workspace::new_with_terminal_marker(
+                9_000,
+                "mirror".to_string(),
+                9_001,
+                9_002,
+                MIRROR_CHILD,
+            );
+            workspace.mirror = true;
+            workspace
+        };
+        engine.push_mirror_workspace(mirror());
+        engine.runtime.terminals.insert(
+            MIRROR_CHILD,
+            tasty_terminal::Terminal::new_detached(80, 24),
+            None,
+        );
+        let (tx, mirrored) = mpsc::channel();
+        engine
+            .runtime
+            .terminals
+            .get_mut(MIRROR_CHILD)
+            .expect("terminal")
+            .set_input_sink(tx);
+        let index = engine
+            .runtime
+            .child_terminals
+            .reserve_index(&ParentKey::Surface(PARENT))
+            .expect("index");
+        engine
+            .runtime
+            .child_terminals
+            .register_child(PARENT, child(MIRROR_CHILD, index));
+        let request = request(
+            "terminal.broadcast",
+            json!({ "surface": PARENT, "text": "go\r" }),
+        );
+        let (resume, reply) = waiting(&mut core, &mut state, &mut engine, &request, FIRST);
+        assert!(engine.replace_mirror_workspace(mirror()).is_ok());
+        let response = run(&mut core, &mut state, &mut engine, resume, &reply);
+        assert_eq!(
+            response.result,
+            Some(json!({ "sent_count": 3, "children": [FIRST, SECOND, MIRROR_CHILD] }))
+        );
+        assert_eq!(received(&first), b"go\r");
+        assert_eq!(received(&second), b"go\r");
+        assert!(received(&mirrored).is_empty());
+    }
+
     #[test]
     fn a_resumed_respawn_refuses_a_replaced_child() {
         let _home = crate::test_support::TastyHomeGuard::new();
