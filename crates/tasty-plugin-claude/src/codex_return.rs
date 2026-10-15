@@ -1624,7 +1624,9 @@ mod tests {
         returns.bind_new_child(40, &b("r1"), true).unwrap();
         returns.observe("session-start", 40, Some("sA"), None);
         returns.turn_end(end(40, "sA", ReturnStatus::TurnEnded, "kept"));
-        let t0 = now_ms();
+        // 실패 기록은 호출이 끝난 뒤의 벽시계와 넘긴 시각 중 늦은 쪽이다. 벽시계가 따라잡지 못할
+        // 미래 시각을 넘겨 첫 실패 시각을 t0 으로 고정한다.
+        let t0 = now_ms() + 3_600_000;
         returns.pump_once(&host, t0);
         let late = t0 + ms(AUTO_RETRY_WINDOW) + 1;
         let round = returns.pump_once(&host, late);
@@ -2465,20 +2467,47 @@ mod tests {
         assert_eq!(routed(json!({}), None).unwrap(), None);
     }
 
-    /// 다른 스레드에서 쓰는 느린 호스트. `codex.deliver` 가 `delay` 만큼 걸린다.
-    struct SlowHost {
-        delay: Duration,
+    /// 다른 스레드에서 쓰는 호스트. `codex.deliver` 는 들어왔다고 알린 뒤 시험이 풀어 줄 때까지 멈춘다.
+    struct GatedHost {
+        entered: std::sync::mpsc::SyncSender<()>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
         delivered: Mutex<Vec<Value>>,
     }
 
-    impl HostCall for SlowHost {
+    /// 시험이 쥐는 쪽. `entered` 로 deliver 진입을 보고 `release` 로 하나씩 풀어 준다.
+    struct Gate {
+        entered: std::sync::mpsc::Receiver<()>,
+        release: std::sync::mpsc::SyncSender<()>,
+    }
+
+    /// 순서 단언이 기다리는 상한. 넘으면 그 순서가 오지 않은 것이다. 디스크 동기화가 느린 부하에서도
+    /// 정상 진행이 이 안에 끝나도록 넉넉히 둔다.
+    const ORDER_WAIT: Duration = Duration::from_secs(30);
+
+    fn gated_host() -> (Arc<GatedHost>, Gate) {
+        let (entered_tx, entered) = std::sync::mpsc::sync_channel(8);
+        let (release, release_rx) = std::sync::mpsc::sync_channel(8);
+        let host = Arc::new(GatedHost {
+            entered: entered_tx,
+            release: Mutex::new(release_rx),
+            delivered: Mutex::new(Vec::new()),
+        });
+        (host, Gate { entered, release })
+    }
+
+    impl HostCall for GatedHost {
         fn call(
             &self,
             method: &str,
             params: Value,
         ) -> Result<Value, tasty_plugin_sdk::PluginError> {
             if method == "codex.deliver" {
-                std::thread::sleep(self.delay);
+                self.entered.send(()).expect("the test watches deliveries");
+                self.release
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(ORDER_WAIT)
+                    .expect("the test releases codex.deliver");
                 self.delivered.lock().unwrap().push(params);
             }
             Ok(json!({ "event_id": "e", "delivery_state": "captured" }))
@@ -2486,7 +2515,7 @@ mod tests {
     }
 
     /// 송신 스레드로 옮기는 공유 핸들.
-    struct Shared(Arc<SlowHost>);
+    struct Shared(Arc<GatedHost>);
 
     impl HostCall for Shared {
         fn call(
@@ -2498,8 +2527,11 @@ mod tests {
         }
     }
 
-    /// 송신 스레드가 느린 `codex.deliver` 를 기다리는 동안에도 확정은 바로 돌아온다. 스레드는 시작할 때
-    /// 남은 요청을 보내고, 플러그인이 끝나면(값이 사라지면) 멈추고 회수된다.
+    /// 송신 스레드가 `codex.deliver` 에 막혀 있는 동안에도 확정은 끝난다. 스레드는 시작할 때 남은
+    /// 요청을 보내고, 플러그인이 끝나면(값이 사라지면) 멈추고 회수된다.
+    ///
+    /// 걸린 시간이 아니라 순서를 본다. 확정은 파일을 동기화해 기록하므로 디스크가 바쁘면 그 자체로
+    /// 수백 ms~초가 걸리고, 그 시간은 deliver 를 기다렸는지와 관계없다.
     #[test]
     fn the_delivery_thread_keeps_hooks_unblocked_and_is_joined_on_drop() {
         let (dir, returns) = store();
@@ -2509,22 +2541,37 @@ mod tests {
         drop(returns);
 
         let returns = Arc::new(Returns::new(Some(dir.path())));
-        let host = Arc::new(SlowHost {
-            delay: Duration::from_millis(400),
-            delivered: Mutex::new(Vec::new()),
-        });
+        let (host, gate) = gated_host();
         let pump = ReturnPump::start(Arc::clone(&returns), Shared(Arc::clone(&host))).unwrap();
-        // 시작한 송신이 느린 deliver 에 들어갈 시간을 준다.
-        std::thread::sleep(Duration::from_millis(100));
+        // 시작한 송신이 남은 요청을 deliver 하다 멈췄다.
+        gate.entered
+            .recv_timeout(ORDER_WAIT)
+            .expect("the pump delivers the result left from before");
+
         returns.observe("prompt-submit", 40, Some("sA"), None);
-        let started = std::time::Instant::now();
-        returns.turn_end(end(40, "sA", ReturnStatus::TurnEnded, "new"));
+        let (done_tx, done) = std::sync::mpsc::sync_channel(1);
+        let hook = {
+            let returns = Arc::clone(&returns);
+            std::thread::spawn(move || {
+                returns.turn_end(end(40, "sA", ReturnStatus::TurnEnded, "new"));
+                done_tx.send(()).expect("the test waits for turn_end");
+            })
+        };
+        // deliver 를 풀기 전에 확정이 끝나야 한다. 확정이 deliver 를 기다리면 여기서 멈춘다.
+        done.recv_timeout(ORDER_WAIT)
+            .expect("turn_end finished while codex.deliver was blocked");
         assert!(
-            started.elapsed() < Duration::from_millis(200),
-            "turn_end waited for codex.deliver: {:?}",
-            started.elapsed()
+            host.delivered.lock().unwrap().is_empty(),
+            "the first delivery is still blocked"
         );
-        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        hook.join().expect("the hook thread");
+
+        for _ in 0..2 {
+            gate.release
+                .send(())
+                .expect("the pump waits in codex.deliver");
+        }
+        let deadline = std::time::Instant::now() + ORDER_WAIT;
         while host.delivered.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -2537,11 +2584,13 @@ mod tests {
             .collect();
         assert_eq!(bodies, [json!("left from before"), json!("new")]);
 
+        // 쉬는 송신 스레드는 다음 차례까지 PUMP_IDLE_WAIT 만큼 기다린다. 멈춤 신호가 깨우지 않으면
+        // 그만큼 걸리므로 그 절반을 상한으로 둔다.
         let stopping = std::time::Instant::now();
         drop(pump);
         assert!(
-            stopping.elapsed() < Duration::from_secs(2),
-            "an idle delivery thread stops promptly: {:?}",
+            stopping.elapsed() < PUMP_IDLE_WAIT / 2,
+            "an idle delivery thread stops when the plugin ends: {:?}",
             stopping.elapsed()
         );
     }
