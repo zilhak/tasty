@@ -27,6 +27,34 @@ fn id_generate_format() {
     assert_eq!(id.as_str().len(), 4 + 12);
 }
 
+/// 생성 ID는 항상 소문자 표기가 있고, 형식 밖 ID는 대소문자만 다른 ID와 겹칠 수 있어 없다.
+#[test]
+fn lowercase_token_only_for_the_generated_form() {
+    for _ in 0..64 {
+        let id = ApprovalId::generate();
+        let token = id.lowercase_token().expect("generated ids have a token");
+        assert_eq!(token, id.as_str().to_ascii_lowercase());
+    }
+    assert_eq!(
+        ApprovalId("req_0123456789AB".into())
+            .lowercase_token()
+            .as_deref(),
+        Some("req_0123456789ab")
+    );
+    for other in [
+        "req_0123456789ab",
+        "req_0123456789A",
+        "req_0123456789ABC",
+        "REQ_0123456789AB",
+        "req_0123456789AI",
+        "summary",
+        "test-1",
+        "",
+    ] {
+        assert_eq!(ApprovalId(other.into()).lowercase_token(), None, "{other}");
+    }
+}
+
 #[test]
 fn request_default_choices() {
     let s = ApprovalStore::new();

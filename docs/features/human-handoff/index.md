@@ -41,7 +41,9 @@ store 락이 poison 된 뒤(다른 스레드가 락을 든 채 패닉)의 `reque
 
 ### 영속
 
-매 상태 전이마다 `tasty.approval.<id>` 키로 직렬화(workspace_id 있으면 `workspace:<id>`, 없으면 `global`, owner는 host). 응답/타임아웃/취소 후에도 보존 → `approval.history` 로 재시작 후 조회. 세션 요약은 별도 키(`approval.summary.set/get`, markdown).
+매 상태 전이마다 `tasty.approval.<id의 소문자 표기>` 키로 직렬화(workspace_id 있으면 `workspace:<id>`, 없으면 `global`, owner는 host). 응답/타임아웃/취소 후에도 보존 → `approval.history` 로 재시작 후 조회. 세션 요약은 별도 키(`tasty.approval.summary`, `approval.summary.set/get`, markdown)이고 history 에 섞이지 않는다.
+
+승인 ID는 `req_` 와 Crockford base32 대문자 12자로 호스트가 만든다. memory key 는 소문자만 허용하므로 저장 key 에는 ID 를 소문자로 바꿔 쓴다. 이 형식 안에서는 대소문자 말고 다른 차이가 없어 서로 다른 ID 가 같은 key 로 모이지 않는다. 원래 ID 는 기록 값에 그대로 남고 `approval.history` 는 값에서 ID 를 읽어 원래 표기로 돌려준다. 이 형식이 아닌 ID 의 기록은 대소문자만 다른 ID 와 key 가 겹칠 수 있어 저장하지 않고 경고만 남긴다.
 
 key·scope·직렬화는 app 기능 모듈 `approval_records` 한 곳에서 만들고, 경로마다 memory writer에 넣는 방식만 다르다.
 

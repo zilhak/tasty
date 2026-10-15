@@ -289,7 +289,7 @@ pub(super) fn transition_at(state: &tasty_approval::ApprovalState) -> Option<u64
     }
 }
 
-const SUMMARY_KEY: &str = "tasty.approval.summary";
+use crate::app::approval_records::SUMMARY_KEY;
 
 mod read;
 mod request;

@@ -61,13 +61,28 @@ impl ApprovalId {
             .unwrap_or(0) as u64;
         let mixed = (ms << 24) | (nanos & 0xFF_FFFF);
         let s = encode_crockford(mixed);
-        Self(format!("req_{}", &s[..12]))
+        Self(format!("{ID_PREFIX}{}", &s[..ID_BODY_LEN]))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// [`generate`](Self::generate)가 만드는 형식(`req_` + Crockford 대문자 12자)이면 같은
+    /// ID의 소문자 표기. 이 형식 안에서는 대소문자 말고 다른 차이가 없어 서로 다른 ID가 같은
+    /// 표기로 모이지 않는다. 다른 형식은 소문자로 바꾸면 겹칠 수 있어 None이다.
+    pub fn lowercase_token(&self) -> Option<String> {
+        let body = self.0.strip_prefix(ID_PREFIX)?;
+        if body.len() != ID_BODY_LEN || !body.bytes().all(|b| CROCKFORD.contains(&b)) {
+            return None;
+        }
+        Some(self.0.to_ascii_lowercase())
+    }
 }
+
+const ID_PREFIX: &str = "req_";
+const ID_BODY_LEN: usize = 12;
+const CROCKFORD: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 impl std::fmt::Display for ApprovalId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -77,13 +92,12 @@ impl std::fmt::Display for ApprovalId {
 
 /// 13자리 Crockford base32. 앞쪽 빈 자리는 0으로 채운다.
 fn encode_crockford(mut n: u64) -> String {
-    const ALPHA: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
     if n == 0 {
         return "0".repeat(13);
     }
     let mut buf = [0u8; 13];
     for i in 0..13 {
-        buf[12 - i] = ALPHA[(n & 0x1F) as usize];
+        buf[12 - i] = CROCKFORD[(n & 0x1F) as usize];
         n >>= 5;
     }
     String::from_utf8(buf.to_vec()).expect("alphabet ascii")

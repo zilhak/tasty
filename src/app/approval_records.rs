@@ -1,6 +1,6 @@
 //! 승인 기록의 영속 저장. GUI 응답·IPC 요청·대기 워커가 같은 key·scope·직렬화로 memory writer에 쓴다.
 //!
-//! workspace가 있으면 그 scope에, 없으면 global에 `tasty.approval.<id>`로 저장한다. 저장 실패는
+//! workspace가 있으면 그 scope에, 없으면 global에 `tasty.approval.<소문자 id>`로 저장한다. 저장 실패는
 //! 경고로만 남기고 이미 끝난 메모리 상태 전이는 되돌리지 않는다.
 
 use tasty_approval::ApprovalRecord;
@@ -10,6 +10,9 @@ use tasty_memory::{MemoryValue, PutOpts, Scope};
 /// 승인 기록 key의 접두사. 기록 조회도 이 접두사로 목록을 읽는다.
 pub(crate) const APPROVAL_KEY_PREFIX: &str = "tasty.approval.";
 
+/// workspace별 세션 요약 key. 개별 승인 기록과 같은 접두사를 쓰므로 기록 조회에서 뺀다.
+pub(crate) const SUMMARY_KEY: &str = "tasty.approval.summary";
+
 fn scope_for(record: &ApprovalRecord) -> Scope {
     match record.request.workspace_id {
         Some(wid) => Scope::Workspace(wid),
@@ -17,8 +20,23 @@ fn scope_for(record: &ApprovalRecord) -> Scope {
     }
 }
 
-/// 승인 기록 하나를 쓰는 writer 요청. 직렬화하지 못하면 경고하고 None이다.
+/// 승인 기록의 저장 key. memory key는 소문자만 허용하므로 생성 ID의 소문자 표기를 쓰고,
+/// 원래 ID는 기록 값에 남는다. 생성 형식이 아닌 ID는 다른 ID와 같은 key가 될 수 있어 None이다.
+/// 생성 ID는 `req_`로 시작해 세션 요약 key와 겹치지 않는다.
+pub(crate) fn record_key(id: &tasty_approval::ApprovalId) -> Option<String> {
+    id.lowercase_token()
+        .map(|token| format!("{APPROVAL_KEY_PREFIX}{token}"))
+}
+
+/// 승인 기록 하나를 쓰는 writer 요청. key를 만들지 못하거나 직렬화하지 못하면 경고하고 None이다.
 pub(crate) fn record_write(record: &ApprovalRecord) -> Option<MemoryRequest> {
+    let Some(key) = record_key(&record.request.id) else {
+        tracing::warn!(
+            "approval: {} is not a generated id; the record is not stored",
+            record.request.id
+        );
+        return None;
+    };
     let value = match serde_json::to_value(record) {
         Ok(v) => MemoryValue::Json(v),
         Err(e) => {
@@ -29,7 +47,7 @@ pub(crate) fn record_write(record: &ApprovalRecord) -> Option<MemoryRequest> {
     Some(MemoryRequest::Write(tasty_memory::WriteOp::Put {
         owner: tasty_memory::HOST_OWNER.to_string(),
         scope: scope_for(record),
-        key: format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id),
+        key,
         value,
         opts: PutOpts {
             expires_at: None,
@@ -57,6 +75,53 @@ pub(crate) fn persist_and_wait(memory: &MemoryAccess, record: &ApprovalRecord) {
         );
     }
 }
+
+/// 저장된 승인 기록. scope 목록을 읽지 못하면 오류이고, scope 하나를 읽지 못하면 건너뛴다.
+pub(crate) fn stored_records(
+    s: &mut dyn tasty_memory::MemoryStorage,
+    workspace_filter: Option<u32>,
+    since: Option<i64>,
+    until: Option<i64>,
+) -> tasty_memory::Result<Vec<ApprovalRecord>> {
+    let mut collected: Vec<ApprovalRecord> = Vec::new();
+    for scope_str in s.scopes()? {
+        let Ok(scope) = Scope::parse(&scope_str) else {
+            continue;
+        };
+        if let Some(wid) = workspace_filter
+            && !matches!(scope, Scope::Workspace(s) if s == wid)
+        {
+            continue;
+        }
+        let list_opts = tasty_memory::ListOpts {
+            prefix: Some(APPROVAL_KEY_PREFIX.to_string()),
+            limit: None,
+            since,
+            until,
+            offset: None,
+        };
+        let Ok(entries) = s.list(&scope, &list_opts) else {
+            continue;
+        };
+        for entry in entries {
+            if entry.key == SUMMARY_KEY {
+                continue;
+            }
+            let MemoryValue::Json(v) = entry.value else {
+                continue;
+            };
+            let Ok(record) = serde_json::from_value::<ApprovalRecord>(v) else {
+                continue;
+            };
+            collected.push(record);
+        }
+    }
+    Ok(collected)
+}
+
+#[cfg(test)]
+#[path = "approval_records_store_tests.rs"]
+mod store_tests;
 
 #[cfg(test)]
 mod tests {
@@ -96,7 +161,7 @@ mod tests {
         let entry = memory
             .lock()
             .unwrap()
-            .get(scope, &format!("{APPROVAL_KEY_PREFIX}{id}"))
+            .get(scope, &record_key(id).expect("generated id"))
             .unwrap()
             .expect("the record is stored");
         assert_eq!(entry.owner.as_deref(), Some(tasty_memory::HOST_OWNER));

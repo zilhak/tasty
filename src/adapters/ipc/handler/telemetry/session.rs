@@ -164,7 +164,7 @@ pub(super) fn collect_approvals(
             continue;
         }
         let list_opts = ListOpts {
-            prefix: Some("tasty.approval.".to_string()),
+            prefix: Some(crate::app::approval_records::APPROVAL_KEY_PREFIX.to_string()),
             limit: None,
             since: since.map(|v| v as i64),
             until: until.map(|v| v as i64),
@@ -174,7 +174,7 @@ pub(super) fn collect_approvals(
             continue;
         };
         for entry in entries {
-            if entry.key == "tasty.approval.summary" {
+            if entry.key == crate::app::approval_records::SUMMARY_KEY {
                 continue;
             }
             let MemoryValue::Json(v) = entry.value else {

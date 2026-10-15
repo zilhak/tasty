@@ -182,7 +182,7 @@ pub fn handle_history(
     core.reply_unit(
         id,
         crate::adapters::ipc::handler::deferred::params_bytes(params),
-        move |s| stored_records(s, workspace_filter, since, until),
+        move |s| crate::app::approval_records::stored_records(s, workspace_filter, since, until),
         move |_, id, result| {
             let mut collected = match result {
                 Ok(records) => records,
@@ -238,48 +238,4 @@ pub fn handle_history(
             )
         },
     )
-}
-
-/// 저장된 승인 기록. scope 목록을 읽지 못하면 오류이고, scope 하나를 읽지 못하면 건너뛴다.
-fn stored_records(
-    s: &mut dyn tasty_memory::MemoryStorage,
-    workspace_filter: Option<u32>,
-    since: Option<i64>,
-    until: Option<i64>,
-) -> tasty_memory::Result<Vec<ApprovalRecord>> {
-    let mut collected: Vec<ApprovalRecord> = Vec::new();
-    for scope_str in s.scopes()? {
-        let Ok(scope) = Scope::parse(&scope_str) else {
-            continue;
-        };
-        if let Some(wid) = workspace_filter
-            && !matches!(scope, Scope::Workspace(s) if s == wid)
-        {
-            continue;
-        }
-        let list_opts = tasty_memory::ListOpts {
-            prefix: Some(crate::app::approval_records::APPROVAL_KEY_PREFIX.to_string()),
-            limit: None,
-            since,
-            until,
-            offset: None,
-        };
-        let Ok(entries) = s.list(&scope, &list_opts) else {
-            continue;
-        };
-        for entry in entries {
-            // 세션 요약은 개별 승인 기록이 아니다.
-            if entry.key == "tasty.approval.summary" {
-                continue;
-            }
-            let MemoryValue::Json(v) = entry.value else {
-                continue;
-            };
-            let Ok(record) = serde_json::from_value::<ApprovalRecord>(v) else {
-                continue;
-            };
-            collected.push(record);
-        }
-    }
-    Ok(collected)
 }
