@@ -622,7 +622,7 @@ fn classify_persisted_handle(
             task_id,
             attempt,
             PollOutcome::Lost(format!(
-                "{DISPATCH_OUTCOME_UNKNOWN}: Custom '{ipc_method}' had started but had not answered \
+                "{DISPATCH_OUTCOME_UNKNOWN}: '{ipc_method}' had started but had not answered \
                  before the host restarted; check whether it took effect before retrying"
             )),
         ),

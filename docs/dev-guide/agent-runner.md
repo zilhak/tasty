@@ -66,10 +66,12 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 |---|---|---|---|
 | `PolledDispatch` 의 poll(`claude.state` 등, 다시 물어도 되는 조회) | Active — 다음 poll 에서 다시 묻는다 | Active — 다음 poll 에서 다시 묻는다 | Failed |
 | Custom 실행(`claude.spawn` 등, 다시 보내면 두 번 실행될 수 있는 요청) | `DispatchOutcome::Deferred` — 점유를 반환하고 Ready 로 둔 채 다음 tick 에 다시 보낸다 | `AwaitDispatchAnswer` — 다시 보내지 않는다 | `PermanentFail` |
+| agent task 의 `<provider>.tell`(기존 세션에 지시, 다시 보내면 지시가 두 번 간다) | 턴 묶음을 풀고 Active — 다음 poll 에서 세션이 idle 이면 다시 보낸다(`timeout_ms` 가 지났으면 `timed_out`) | 늦은 응답 대기 — 다시 보내지 않는다 | Failed `agent_unavailable` |
 
 - poll 의 재시도에 따로 횟수 상한은 없다. poll 기한(`PollSpec.timeout_ms` → `deadline_ms`)이 있으면 그 기한이 지난 뒤의 지연은 `<poll_method>: poll timeout (last poll: <오류>)` 로 실패한다. 기한이 없으면 응답 상태가 비종결일 때와 같이 계속 기다린다.
 - `AwaitDispatchAnswer` 는 `HostIpcInjector::dispatch_keeping_late_answer` 가 넘긴 응답 통로(`LateAnswer`)를 executor 가 task 별로 보관하고 poll 마다 확인한다. 응답이 오면 즉시 응답을 받은 경우와 같은 경로(`custom_after_answer`)로 완료 전략 handle(`PolledDispatch`·`AwaitExternal`, 전략이 없으면 Done)을 만들고, 저장 handle 을 그것으로 바꿔 재시작 뒤에도 그 handle 로 복원한다. poll 기한은 요청을 처음 보낸 시각부터 잰다. 응답이 RPC 오류면 Failed 다. 늦은 응답을 기다리는 동안에는 따로 기한을 검사하지 않는다(전략은 응답을 받은 뒤에 해석한다). 응답이 오거나 통로가 닫히거나 task 를 `cancel` 할 때까지 Running 이다.
 - 통로가 답 없이 닫혔거나, 재시작 등으로 이 executor 가 통로를 갖고 있지 않으면 결과를 알 수 없다. `PollOutcome::Lost` → task `unknown`(`reason` 머리말 `dispatch outcome unknown:`)이다. 요청이 반영됐는지 확인한 뒤 `retry`·`cancel` 로 정한다(아래 "한계"의 `unknown` 과 같다).
+- agent task 의 `<provider>.tell` 이 상한을 넘기면 executor 가 그 응답 통로를 task 별로 보관하고, 턴 묶음은 남겨 그 사이 시작한 이 회차의 턴을 받는다. 러너는 `AgentTurn` 을 그대로 들고 있고 저장 handle 만 `AwaitDispatchAnswer`(`ipc_method` = `<provider>.tell`)로 바꾼다. 그래서 응답을 기다리는 동안 재시작하면 위와 같이 `unknown` 이다. 응답이 성공이면 저장 handle 을 `AgentTurn` 으로 되돌리고 턴 판단을 잇는다. RPC 오류면 지시가 전달되지 않았으므로 묶음을 풀고 `agent_unavailable` 로 끝난다. 통로가 답 없이 닫히면 `unknown`(`dispatch outcome unknown: '<provider>.tell' …`)이다. 기다리는 동안에도 `timeout_ms` 가 지나면 `timed_out` 이다.
 - agent task 의 `<provider>.spawn` 은 이 표가 아니라 아래 §agent task 의 별도 대기(30초 + 정리 대기)를 쓴다.
 
 > 자식 에이전트 완료 판정(`claude.spawn`/`codex.spawn` · `claude.tell`/`codex.tell`)과 셸 명령 완료(`host/command-completed`)가 이 범용 `Custom { poll }` 메커니즘의 실사용자다 — 코어는 특정 에이전트를 모른 채 임의 IPC dispatch→폴링/훅-보고를 표현한다. CLI auto_wait(`AutoWaitDecl`/`PollingDecl`)와 동형 스펙으로 폴링 semantics 를 통일한다.
@@ -1090,7 +1092,7 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 | `session` | 동작 |
 |---|---|
 | `{"kind": "new", "parent_surface": N, "cwd"?: "..."}` | `<provider>.spawn` 으로 자식을 띄우고 지시를 첫 프롬프트로 준다. 그 자식의 첫 턴이 이 회차의 턴이다. spawn 은 다시 보내면 세션이 하나 더 생기므로 일반 호출(5초)보다 긴 30초까지 응답을 기다린다. 그래도 답이 없으면 `agent_unavailable` 로 끝난다. 그 뒤에도 spawn 응답을 5분까지 기다려, 그 사이 뜬 세션은 task 가 `surface.close` 로 닫는다(이 task 가 만든 세션이라 회차에 묶이지 않은 채 남기지 않는다). 5분이 지나도 답이 없으면 결과를 알 수 없어 닫지 못한다 |
-| `{"kind": "existing", "surface_id": N}` | 세션이 idle 이고 다른 task 가 쥐지 않았을 때만 `<provider>.tell` 로 보낸다. 사용자의 턴이 진행 중이거나 입력을 기다리면 끼어들지 않고 기다린다(`timeout_ms` 가 지나면 `timed_out`) |
+| `{"kind": "existing", "surface_id": N}` | 세션이 idle 이고 다른 task 가 쥐지 않았을 때만 `<provider>.tell` 로 보낸다. 사용자의 턴이 진행 중이거나 입력을 기다리면 끼어들지 않고 기다린다(`timeout_ms` 가 지나면 `timed_out`). tell 이 5초 안에 답하지 않으면 실행되지 않았음이 확실할 때(큐 대기 중 만료)만 다시 보내고, 시작된 tell 은 다시 보내지 않고 늦은 응답을 기다린다(위 §호스트 응답 지연) |
 
 턴 귀속은 메모리의 턴 표(`AgentTurns`)가 한다. surface 하나에 회차 하나만 묶이므로 같은 세션의 agent task 는 차례로 실행된다. task id 는 workspace 마다 정해지므로 표는 회차를 (workspace, task) 로 찾고 풀며, 다른 workspace 의 같은 이름 task 와 섞이지 않는다. provider 플러그인은 훅에서 `agent.task_turn_report` 로 턴 시작(`turn_started`)과 끝(`turn_ended`: `final_answer` 또는 `error`)을 알린다. 이 메서드는 `agent.turn_report` 권한(이 메서드만 연다)을 가진 플러그인 중 그 provider namespace 를 소유한 플러그인만 부를 수 있다(그 밖의 호출은 `-32001`). 기존 세션은 시작 보고를 받은 뒤의 종료만 이 회차의 것으로 본다(앞선 사용자 턴의 늦은 종료를 섞지 않는다). 지시 끝에는 회차 표지 줄(`[tasty-task-attempt:<회차 토큰>]`)을 붙이고, provider 플러그인은 시작 보고에 프롬프트에서 찾은 표지 토큰을 싣는다(`prompt_seen: true`·`attempt_marker`). 기존 세션의 시작 보고는 표지가 그 회차 토큰일 때만 받으므로, 묶은 뒤 지시가 전달되기 전에 사용자가 시작한 턴은 이 회차의 턴이 되지 않는다. 훅이 프롬프트를 넘기지 않은 시작 보고(`prompt_seen` 없음)는 가릴 수 없어 그대로 받는다. 이때는 묶음과 지시 전달 사이의 짧은 창에 시작한 사용자 턴이 섞일 수 있다. 다른 provider 의 보고와 종결 뒤 보고는 무시한다. Claude 세션에 Stop 게이트가 붙어 있으면 게이트가 응답을 이어 가게 한 Stop 은 턴 끝이 아니다. 플러그인은 게이트 판정이 턴 종료로 확정된 Stop 에서 그 Stop 의 최종 답변으로 끝을 한 번 보고한다([Claude 플러그인](../plugins/claude/index.md)의 턴 보고 표). 그래서 게이트 세션의 최종 답변은 게이트에 대한 마지막 응답이다. 게이트 세션에서 지시의 첫 답이 필요하면 명시 제출(`agent.task_submit_result`)을 쓴다. 회차에 적용된 턴 보고는 호스트 로그에 debug 레벨 한 줄(provider·surface·보고 종류·task id·회차 id)로 남는다. 실제 실행에서 보고 횟수와 귀속을 확인할 때 `TASTY_LOG="info,tasty::adapters::ipc::handler::agent::agent_turn=debug"` 로 켠다.
 
@@ -1109,10 +1111,11 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 | 세션이 끝났다(`exited`) | Failed, `agent_exited` |
 | `timeout_ms` 초과 | Failed, `timed_out` |
 | provider 를 호출할 수 없다, 재시작으로 턴 귀속을 잃었다 | Failed, `agent_unavailable` |
+| 시작한 tell 의 응답 통로가 답 없이 닫혔다, tell 응답을 기다리는 동안 재시작했다 | Unknown, `reason` 머리말 `dispatch outcome unknown:`. 지시가 전달됐는지 세션에서 확인한 뒤 `retry`·`cancel` 로 정한다 |
 | 입력 대기(`needs_input`) | Running 유지. 회차에 `agent: {provider, surface_id, awaiting_input_since}` 를 남기고 `task_get` 의 `phase` 는 `awaiting_input`(그 밖의 Running agent task 는 `executing`) |
 | idle 인데 종료 보고가 없다 | Running 유지. 성공으로 보지 않는다 |
 
-실패 코드는 `typed_result.error.code` 다. 업무 값 `"revise"` 같은 출력은 성공이다. 취소·실패·종결 때 턴 묶음만 풀고 세션은 닫지 않는다(사용자가 결과를 확인할 수 있게 둔다). 예외는 위의 늦게 뜬 spawn 세션 하나다. 기존 세션(`existing`)은 어떤 경우에도 닫지 않는다. 턴 표는 영속하지 않으므로 호스트가 재시작되면 실행 중이던 agent task 는 `agent_unavailable` 로 끝난다.
+실패 코드는 `typed_result.error.code` 다. 업무 값 `"revise"` 같은 출력은 성공이다. 취소·실패·종결 때 턴 묶음만 풀고 세션은 닫지 않는다(사용자가 결과를 확인할 수 있게 둔다). 예외는 위의 늦게 뜬 spawn 세션 하나다. 기존 세션(`existing`)은 어떤 경우에도 닫지 않는다. 턴 표는 영속하지 않으므로 호스트가 재시작되면 실행 중이던 agent task 는 `agent_unavailable` 로 끝난다. tell 의 늦은 응답을 기다리던 task 는 지시가 전달됐는지 알 수 없어 `unknown` 이다.
 
 세션은 provider 의 spawn 이 만드는 터미널 surface 이고, 그 셸 환경은 터미널 규칙을 따른다. 위 §runner 자식의 환경의 규칙은 러너가 직접 띄우는 프로세스에만 적용된다.
 

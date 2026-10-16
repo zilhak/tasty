@@ -10,10 +10,11 @@ use tasty_agent::runner::{DispatchHandle, PollOutcome};
 use tasty_agent::task::FailureCode;
 use tasty_agent::task::agent::{self, AgentLink, AgentSession};
 use tasty_agent::{Task, TaskCommand, TaskStore};
-use tasty_ipc::host_call::HostIpcInjector;
+use tasty_ipc::host_call::{HostIpcInjector, InjectError, LateAnswer};
 use tasty_memory::HOST_OWNER;
 
-use super::{HostExecutor, INJECTOR_UNINIT_MSG, now_ms};
+use super::late_answer::DISPATCH_OUTCOME_UNKNOWN;
+use super::{HostExecutor, INJECTOR_UNINIT_MSG, LateCall, PluginCallError, now_ms};
 use crate::agent_turns::{TurnBinding, TurnPoll, decide};
 
 /// provider spawn 의 응답 대기. spawn 은 셸을 띄우고 CLI 를 실행한 뒤 답하므로 일반 호출(5초)보다
@@ -250,6 +251,9 @@ impl HostExecutor {
             return PollOutcome::Failed("poll_agent: not an agent handle".into());
         };
         let now = now_ms();
+        if let Some(outcome) = self.poll_late_tell(handle, now) {
+            return outcome;
+        }
         let state = self.provider_state(provider, *surface_id);
         let binding = match self.ctx.agent_turns.find(*workspace_id, task_id) {
             Some((_, b)) if b.attempt == *attempt_id => b,
@@ -345,17 +349,54 @@ impl HostExecutor {
             return PollOutcome::Active;
         }
         let method = format!("{provider}.tell");
-        let sent = self.ctx.dispatch_plugin(
+        let sent = self.ctx.dispatch_plugin_keeping_late_answer(
             &method,
             json!({ "surface_id": surface_id, "message": text }),
         );
-        if let Err(e) = sent {
-            self.ctx.agent_turns.release(*workspace_id, task_id);
-            return PollOutcome::Failed(
-                FailureCode::AgentUnavailable.message(format!("{method}: {e}")),
-            );
+        match sent {
+            Ok(_) => {}
+            // 시작했지만 상한 안에 답이 없다. 지시가 이미 전달됐을 수 있어 다시 보내지 않고 늦은
+            // 응답을 기다린다. 묶음은 남겨 그 사이 시작한 이 회차의 턴을 받는다.
+            Err(LateCall::Pending(late)) => {
+                self.park_late_tell(handle, &method, late);
+                return PollOutcome::Active;
+            }
+            // 큐에서 기다리다 만료된 지시는 전달되지 않았다. 묶음을 풀고 다음 poll 에서 다시 본다.
+            Err(LateCall::Failed(PluginCallError::Inject(e @ InjectError::Expired(_)))) => {
+                self.ctx.agent_turns.release(*workspace_id, task_id);
+                if deadline_ms.is_some_and(|d| now >= d) {
+                    return PollOutcome::Failed(
+                        FailureCode::TimedOut.message(format!("{method}: {e}")),
+                    );
+                }
+                tracing::warn!("agent task {task_id}: {method}: {e}; sending it again later");
+                return PollOutcome::Active;
+            }
+            Err(LateCall::Failed(e)) => {
+                self.ctx.agent_turns.release(*workspace_id, task_id);
+                return PollOutcome::Failed(
+                    FailureCode::AgentUnavailable.message(format!("{method}: {e}")),
+                );
+            }
         }
         self.held_turns.insert(task_id.clone(), *workspace_id);
+        self.note_told(handle, now);
+        PollOutcome::Active
+    }
+
+    /// 지시를 보낸 회차의 세션 연결을 기록한다.
+    fn note_told(&self, handle: &DispatchHandle, now: u64) {
+        let DispatchHandle::AgentTurn {
+            workspace_id,
+            task_id,
+            attempt_id,
+            provider,
+            surface_id,
+            ..
+        } = handle
+        else {
+            return;
+        };
         if let Some(since) = self
             .ctx
             .agent_turns
@@ -370,7 +411,79 @@ impl HostExecutor {
                 since,
             );
         }
-        PollOutcome::Active
+    }
+
+    /// 상한을 넘긴 tell 의 응답 통로를 보관한다. 저장 handle 은 응답을 기다리는 요청으로 바꿔
+    /// 재시작 뒤에는 다시 보내지 않고 결과 불명으로 끝나게 한다.
+    fn park_late_tell(&mut self, handle: &DispatchHandle, method: &str, late: LateAnswer) {
+        let DispatchHandle::AgentTurn {
+            workspace_id,
+            task_id,
+            attempt_id,
+            ..
+        } = handle
+        else {
+            return;
+        };
+        tracing::warn!(
+            "agent task {task_id}: {method} started but did not answer within {:?}; \
+             waiting for its late answer instead of sending it again",
+            late.timeout()
+        );
+        self.held_turns.insert(task_id.clone(), *workspace_id);
+        self.late.tells.insert(task_id.clone(), late);
+        let waiting = DispatchHandle::AwaitDispatchAnswer {
+            workspace_id: *workspace_id,
+            task_id: task_id.clone(),
+            ipc_method: method.to_string(),
+        };
+        self.persist_handle(*workspace_id, task_id, &waiting, Some(attempt_id));
+    }
+
+    /// 늦은 tell 응답을 기다리는 중이면 그 결과. 기다리는 tell 이 없거나 전달됐으면 `None` 이고
+    /// 턴 판단을 이어 간다.
+    fn poll_late_tell(&mut self, handle: &DispatchHandle, now: u64) -> Option<PollOutcome> {
+        let DispatchHandle::AgentTurn {
+            workspace_id,
+            task_id,
+            attempt_id,
+            provider,
+            deadline_ms,
+            ..
+        } = handle
+        else {
+            return None;
+        };
+        let method = format!("{provider}.tell");
+        let Some(answer) = self.late.tells.get(task_id)?.try_take() else {
+            if deadline_ms.is_some_and(|d| now >= d) {
+                return Some(PollOutcome::Failed(
+                    FailureCode::TimedOut
+                        .message(format!("{method} did not answer before the deadline")),
+                ));
+            }
+            return Some(PollOutcome::Active);
+        };
+        self.late.tells.remove(task_id);
+        match answer {
+            Ok(_) => {
+                tracing::info!("agent task {task_id}: {method} answered late");
+                self.persist_handle(*workspace_id, task_id, handle, Some(attempt_id));
+                self.note_told(handle, now);
+                None
+            }
+            Err(InjectError::Disconnected) => Some(PollOutcome::Lost(format!(
+                "{DISPATCH_OUTCOME_UNKNOWN}: '{method}' started but its answer channel closed \
+                 without an answer; check whether the session received the instruction before \
+                 retrying"
+            ))),
+            Err(e) => {
+                self.ctx.agent_turns.release(*workspace_id, task_id);
+                Some(PollOutcome::Failed(
+                    FailureCode::AgentUnavailable.message(format!("{method}: {e}")),
+                ))
+            }
+        }
     }
 
     /// `<provider>.state` 의 상태. 조회하지 못하면 `None` 이다(턴 판단은 보고로 한다).

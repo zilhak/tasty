@@ -549,3 +549,6 @@ fn a_session_that_starts_after_the_task_gave_up_is_closed() {
     assert_eq!(closed.len(), 1);
     assert_eq!(closed[0]["surface_id"], 42);
 }
+
+#[path = "agent_tell_tests.rs"]
+mod tell;

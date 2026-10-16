@@ -29,12 +29,15 @@ pub(super) struct LateAnswers {
     /// 늦은 응답 뒤 이어 간 handle. 러너는 계속 [`DispatchHandle::AwaitDispatchAnswer`] 를
     /// 들고 있으므로 poll 을 여기 handle 로 넘긴다.
     continued: HashMap<TaskId, DispatchHandle>,
+    /// 시작한 뒤 상한을 넘긴 agent task 의 `<provider>.tell`. 러너는 `AgentTurn` 을 들고 있다.
+    pub(super) tells: HashMap<TaskId, LateAnswer>,
 }
 
 impl LateAnswers {
     pub(super) fn forget(&mut self, task_id: &TaskId) {
         self.pending.remove(task_id);
         self.continued.remove(task_id);
+        self.tells.remove(task_id);
     }
 }
 
