@@ -202,12 +202,13 @@ impl Creation {
         let lease = candidate.lease().clone();
         let spawned = match outcome {
             Ok(spawned) => spawned,
-            Err(reason) => {
-                // The failure may follow a started child; preparation_failed logs it once.
-                let failure = PreparationFailure {
-                    reason,
-                    uncertain: true,
-                };
+            // Uncertain only when a child may have started; preparation_failed logs it once.
+            Err(mut failure) => {
+                // A known failure of an engine's first workspace halts the journal, while the
+                // uncertain path settles it as an engine without a workspace.
+                if !self.public && self.restore_retry.is_none() {
+                    failure.uncertain = true;
+                }
                 return self.preparation_failed(worker, lease, failure);
             }
         };

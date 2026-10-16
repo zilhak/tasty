@@ -22,7 +22,7 @@ pub(crate) fn spawn_shell_terminal(
     surface_id: u32,
     spawn: ShellSpawnOpts<'_>,
 ) -> anyhow::Result<(Terminal, Pty)> {
-    tasty_terminal::spawn_terminal(
+    Ok(tasty_terminal::spawn_terminal(
         TerminalConfig {
             cols: spawn.cols,
             rows: spawn.rows,
@@ -34,7 +34,7 @@ pub(crate) fn spawn_shell_terminal(
             extra_env: spawn.extra_env,
         },
         spawn.waker,
-    )
+    )?)
 }
 
 #[cfg(test)]

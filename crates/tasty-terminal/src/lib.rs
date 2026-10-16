@@ -16,6 +16,7 @@ mod screen;
 mod scrollback;
 mod sink;
 mod snapshot;
+mod spawn_error;
 mod viewport;
 mod vte_handler;
 
@@ -28,7 +29,6 @@ pub mod waker_factory;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
-use anyhow::Result;
 use termwiz::cell::CellAttributes;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
@@ -51,6 +51,7 @@ pub use pty::{
     Pty, PtyExit, PtyObservation, PtyPhase, PtyRetirement, PtyState, StandalonePty, pty_drop_totals,
 };
 pub use scrollback::ScrollbackLine;
+pub use spawn_error::{SpawnError, SpawnStage};
 pub use viewport::{ContentCut, ContentEpoch, TerminalViewport, ViewportInfo};
 
 /// Configuration for creating a new Terminal.
@@ -607,7 +608,11 @@ fn is_screen_repaint_action(action: &Action) -> bool {
 
 /// Spawn both independent owners and connect their byte endpoints before the reader starts.
 /// The caller must retain both values; dropping Pty terminates its own child.
-pub fn spawn_terminal(config: TerminalConfig<'_>, waker: Waker) -> Result<(Terminal, Pty)> {
+/// A failure reports whether a child existed; see [`SpawnStage`].
+pub fn spawn_terminal(
+    config: TerminalConfig<'_>,
+    waker: Waker,
+) -> Result<(Terminal, Pty), SpawnError> {
     let (mut pty, reader, sink) = Pty::spawn(&config)?;
     let mut terminal = Terminal::new_detached(config.cols, config.rows);
     terminal.waker = Arc::new(Mutex::new(waker));
@@ -624,7 +629,8 @@ pub fn spawn_terminal(config: TerminalConfig<'_>, waker: Waker) -> Result<(Termi
             dirty: Arc::clone(&terminal.dirty),
             waker: Arc::clone(&terminal.waker),
         },
-    )?;
+    )
+    .map_err(SpawnError::after_child)?;
     Ok((terminal, pty))
 }
 

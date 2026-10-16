@@ -41,21 +41,15 @@ fn reply(
     }
 }
 
-/// The shell cannot start, and the failure is reported after the child may have been forked.
-/// A missing path would be replaced by the detected shell, so the configured path is an existing
-/// non-executable file named like a shell. The returned guard keeps it alive.
-fn unstartable_shell(session: &mut EngineSession) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let shell = dir.path().join("bash");
-    std::fs::write(&shell, "").expect("non-executable shell file");
-    session.runtime.settings.general.shell = shell.to_string_lossy().into_owned();
-    dir
+/// Terminal setup fails after the child started, so the creation's result is unknown.
+fn fail_after_start(journal: &JournalApplication) {
+    journal.spawner.fail_after_start();
 }
 
 #[test]
 fn an_unknown_creation_answers_recovery_required_without_holding_or_polling() {
     let (mut session, mut journal) = boot();
-    let _shell = unstartable_shell(&mut session);
+    fail_after_start(&journal);
     let rx = send(
         &mut journal,
         request(
@@ -111,7 +105,7 @@ fn an_unknown_creation_is_answered_without_an_outside_wake() {
         None,
         Arc::new(move || flag.store(true, std::sync::atomic::Ordering::Release)),
     );
-    let _shell = unstartable_shell(&mut session);
+    fail_after_start(&journal);
     let rx = send(
         &mut journal,
         request(

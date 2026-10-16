@@ -18,6 +18,7 @@ use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
 use crate::TerminalConfig;
 use crate::sink::{OutputSink, WriteProgress, lock_write_progress, new_write_progress};
+use crate::spawn_error::SpawnError;
 
 /// `Pty::drop` 누적 소요(ns) — [`pty_drop_totals`] 참조.
 static PTY_DROP_NANOS: AtomicU64 = AtomicU64::new(0);
@@ -189,7 +190,9 @@ impl Pty {
     /// PTY를 열고 자식을 실행한 뒤 writer worker를 시작한다. 반환한 sink가 writer로 가는
     /// 유일한 입력 연결이며, 모든 sink가 사라지면 writer가 끝난다. reader는 호출자가
     /// 받는 쪽을 준비한 뒤 [`start_reader`](Self::start_reader)로 시작한다.
-    pub(crate) fn spawn(config: &TerminalConfig<'_>) -> Result<(Self, PtyReader, OutputSink)> {
+    pub(crate) fn spawn(
+        config: &TerminalConfig<'_>,
+    ) -> std::result::Result<(Self, PtyReader, OutputSink), SpawnError> {
         Self::spawn_with_setup(config, |pty| {
             let master = pty.master.as_ref().expect("spawned master");
             Ok((master.take_writer()?, master.try_clone_reader()?))
@@ -199,8 +202,10 @@ impl Pty {
     fn spawn_with_setup(
         config: &TerminalConfig<'_>,
         prepare: impl FnOnce(&Pty) -> Result<PreparedIo>,
-    ) -> Result<(Self, PtyReader, OutputSink)> {
-        let pair = NativePtySystem::default().openpty(pty_size(config.cols, config.rows))?;
+    ) -> std::result::Result<(Self, PtyReader, OutputSink), SpawnError> {
+        let pair = NativePtySystem::default()
+            .openpty(pty_size(config.cols, config.rows))
+            .map_err(SpawnError::before_child)?;
 
         let shell = match config.shell {
             Some(s) if !s.is_empty() => s.to_string(),
@@ -214,7 +219,11 @@ impl Pty {
             config.extra_env,
         );
 
-        let child = pair.slave.spawn_command(cmd)?;
+        // An error here leaves no child; see the stage boundary in spawn_error.
+        let child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(SpawnError::before_child)?;
         drop(pair.slave);
 
         // From this point every fallible setup operation is protected by Pty::drop.
@@ -227,7 +236,7 @@ impl Pty {
             child: Some(child),
             _reader_thread: None,
         };
-        let (mut pty_writer, pty_reader) = prepare(&pty)?;
+        let (mut pty_writer, pty_reader) = prepare(&pty).map_err(SpawnError::after_child)?;
 
         // writer 스레드가 시작되기 전에 초기 입력을 쓴다. 자식은 이미 실행 중이므로
         // 셸의 tcflush/TCSAFLUSH 등으로 입력이 사라질 수 있다.
@@ -249,7 +258,8 @@ impl Pty {
             .name("pty-writer".into())
             .spawn(move || {
                 run_writer_loop(pty_writer, write_rx, progress_for_writer, Some(connection));
-            })?;
+            })
+            .map_err(SpawnError::after_child)?;
         pty.writer_wake = Some(write_tx.clone());
         pty._writer_thread = Some(writer_thread);
         let sink = OutputSink::with_progress(write_tx, write_progress).bind(pty.connection());
@@ -885,7 +895,8 @@ mod tests {
                     anyhow::bail!("injected I/O handle preparation failure");
                 },
             );
-            assert!(result.is_err());
+            let error = result.err().expect("injected setup failure");
+            assert_eq!(error.stage(), crate::SpawnStage::AfterChild);
             assert!(
                 child_pid.is_some(),
                 "the injected error must follow an actual spawn"
@@ -895,6 +906,40 @@ mod tests {
                 observe(&completion).phase == PtyPhase::Reaped
             });
         }
+    }
+
+    fn spawn_shell(shell: &str) -> Result<(Pty, PtyReader, OutputSink), SpawnError> {
+        Pty::spawn(&TerminalConfig {
+            cols: 80,
+            rows: 24,
+            shell: Some(shell),
+            args: &[],
+            surface_id: 0,
+            working_dir: None,
+            initial_input: None,
+            extra_env: &[],
+        })
+    }
+
+    /// The executable check fails before fork.
+    #[test]
+    fn a_missing_shell_fails_before_any_child() {
+        let error = spawn_shell("/nonexistent/tasty-test-shell")
+            .err()
+            .expect("a missing shell cannot start");
+        assert_eq!(error.stage(), crate::SpawnStage::BeforeChild);
+        assert!(error.to_string().contains("tasty-test-shell"), "{error}");
+    }
+
+    /// A directory passes the executable check, so exec fails after fork. portable-pty's pre_exec
+    /// closes every descriptor above stderr, including the pipe std uses to report an exec
+    /// error, so the spawn succeeds and the child exits on its own.
+    #[test]
+    fn an_exec_failure_after_fork_is_a_started_child_that_exits() {
+        let (mut pty, _reader, _sink) = spawn_shell("/").expect("the exec error is not reported");
+        wait_until("child that failed exec exits", || !pty.check_alive());
+        let exit = pty.state.exit().expect("observed exit");
+        assert!(!exit.success, "{exit:?}");
     }
 
     #[test]

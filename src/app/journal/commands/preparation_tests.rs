@@ -314,3 +314,106 @@ fn a_released_engine_waits_for_the_child_that_was_still_starting() {
         "the release took over a child that really started"
     );
 }
+
+/// A missing path would be replaced by the detected shell, so the configured shell is an existing
+/// non-executable file named like a shell. It fails the executable check before any fork. The
+/// returned guard keeps the file alive.
+fn unexecutable_shell(session: &mut EngineSession) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let shell = dir.path().join("bash");
+    std::fs::write(&shell, "").expect("non-executable shell file");
+    session.runtime.settings.general.shell = shell.to_string_lossy().into_owned();
+    dir
+}
+
+/// A misconfigured shell path fails before any child exists. The failure is known: the caller
+/// gets an ordinary error, the same key replays that failure, and a corrected request starts.
+#[test]
+fn a_shell_that_cannot_start_is_a_known_failure() {
+    let (mut session, mut journal) = boot();
+    let configured = session.runtime.settings.general.shell.clone();
+    let _shell = unexecutable_shell(&mut session);
+    let created = send(
+        &mut journal,
+        request(
+            "workspace.create",
+            serde_json::json!({}),
+            Some("missing-shell"),
+            840,
+        ),
+    );
+    let response = reply_labeled(&mut journal, &mut [&mut session], &created, "missing shell");
+    let error = response
+        .error
+        .expect("a missing shell does not create a terminal");
+    assert_ne!(
+        error.code,
+        crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED,
+        "no child existed, so the failure is known: {error:?}"
+    );
+    #[cfg(unix)]
+    assert!(error.message.contains("not executable"), "{error:?}");
+    assert!(
+        journal
+            .creations
+            .values()
+            .all(|creation| creation.uncertain_reason().is_none()),
+        "no uncertain creation remains"
+    );
+    let again = send(
+        &mut journal,
+        request(
+            "workspace.create",
+            serde_json::json!({}),
+            Some("missing-shell"),
+            841,
+        ),
+    );
+    let replay = reply_labeled(
+        &mut journal,
+        &mut [&mut session],
+        &again,
+        "replayed failure",
+    );
+    let replayed = replay.error.expect("the recorded failure replays");
+    assert_ne!(
+        replayed.code,
+        crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED,
+        "the recorded outcome is the known failure: {replayed:?}"
+    );
+    assert_eq!(session.core_state.local_workspaces().len(), 1);
+    session.runtime.settings.general.shell = configured;
+    let retried = send(
+        &mut journal,
+        request(
+            "workspace.create",
+            serde_json::json!({}),
+            Some("corrected-shell"),
+            842,
+        ),
+    );
+    let response = reply_labeled(
+        &mut journal,
+        &mut [&mut session],
+        &retried,
+        "corrected shell",
+    );
+    assert!(response.error.is_none(), "{response:?}");
+    assert_eq!(session.core_state.local_workspaces().len(), 2);
+}
+
+/// An engine's first workspace has no caller to answer. Its known failure would halt every
+/// engine's journal, so it settles as an engine without a workspace like an unknown result.
+#[test]
+fn a_first_workspace_whose_shell_cannot_start_does_not_halt_the_journal() {
+    let (mut first, mut journal) = boot();
+    let configured = first.runtime.settings.general.shell.clone();
+    let _shell = unexecutable_shell(&mut first);
+    let second = second_engine(&mut first, &mut journal);
+    assert!(!journal.is_halted());
+    assert!(second.core_state.local_workspaces().is_empty());
+    first.runtime.settings.general.shell = configured;
+    let created = create(&mut journal, 850);
+    let response = reply(&mut journal, &mut [&mut first], &created);
+    assert!(response.error.is_none(), "{response:?}");
+}

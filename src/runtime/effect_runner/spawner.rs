@@ -4,6 +4,7 @@
 //! One worker keeps the serial order that preparation had on the App thread. The queue is bounded
 //! and a full queue refuses the job before any external execution, so the refusal is a known
 //! failure. A result nobody receives is retired by this worker and kept until its child is reaped.
+use super::PreparationFailure;
 use crate::core::layout_persistence::import::surface_data::SurfaceData;
 use crate::runtime::journal_product::EffectLease;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,8 +41,9 @@ pub(crate) struct SpawnedTerminal {
     pub(crate) scrollback_persist_id: Option<String>,
 }
 
-/// A failure after the child may have started. Its owner, if any, was retired by the worker.
-pub(crate) type SpawnOutcome = Result<SpawnedTerminal, String>;
+/// A failure is uncertain when a child may have started; its owner, if any, was retired by the
+/// worker. A failure before any child is known.
+pub(crate) type SpawnOutcome = Result<SpawnedTerminal, PreparationFailure>;
 
 /// The exact owner of one submitted job's result. Dropping it before the job starts skips the
 /// execution; dropping it later leaves the result to the worker's retirement list.
@@ -60,9 +62,10 @@ impl PendingSpawn {
         match self.receiver.try_recv() {
             Ok(outcome) => Some(outcome),
             Err(mpsc::TryRecvError::Empty) => None,
-            Err(mpsc::TryRecvError::Disconnected) => Some(Err(
-                "terminal preparation worker ended without a result".into(),
-            )),
+            Err(mpsc::TryRecvError::Disconnected) => Some(Err(PreparationFailure {
+                reason: "terminal preparation worker ended without a result".into(),
+                uncertain: true,
+            })),
         }
     }
 }
@@ -164,6 +167,11 @@ impl TerminalSpawner {
     #[cfg(test)]
     pub(crate) fn executed(&self) -> usize {
         self.gate.executed()
+    }
+    /// Every later job fails after its child started, as a setup failure would.
+    #[cfg(test)]
+    pub(crate) fn fail_after_start(&self) {
+        self.gate.fail_after_start();
     }
     /// The worker took a job and is held before running it.
     #[cfg(test)]
@@ -278,7 +286,19 @@ impl Worker {
             },
             job.waker,
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| PreparationFailure {
+            reason: error.to_string(),
+            uncertain: !error.is_before_child(),
+        })?;
+        #[cfg(test)]
+        if self.gate.fails_after_start() {
+            drop(terminal);
+            self.abandoned.push(pty.retire());
+            return Err(PreparationFailure {
+                reason: "injected failure after the child started".into(),
+                uncertain: true,
+            });
+        }
         terminal.set_color_palette(job.palette);
         terminal.set_scrollback_limit(job.scrollback_lines);
         if job.disk_scrollback {
@@ -293,7 +313,10 @@ impl Worker {
         ) {
             drop(terminal);
             self.abandoned.push(pty.retire());
-            return Err(error.to_string());
+            return Err(PreparationFailure {
+                reason: error.to_string(),
+                uncertain: true,
+            });
         }
         if !job.startup_command.trim().is_empty() {
             terminal.send_key(&format!("{}\n", job.startup_command.trim()));
@@ -358,6 +381,7 @@ pub(crate) mod test_gate {
         executed: usize,
         /// Whether the worker has taken a job and waits at the gate.
         parked: bool,
+        fail_after_start: bool,
     }
     pub(crate) struct Held(std::sync::Arc<Gate>);
 
@@ -382,6 +406,12 @@ pub(crate) mod test_gate {
         }
         pub(super) fn executed(&self) -> usize {
             self.state.lock().unwrap().executed
+        }
+        pub(super) fn fail_after_start(&self) {
+            self.state.lock().unwrap().fail_after_start = true;
+        }
+        pub(super) fn fails_after_start(&self) -> bool {
+            self.state.lock().unwrap().fail_after_start
         }
         pub(super) fn release_all(&self) {
             self.state.lock().unwrap().holds = 0;

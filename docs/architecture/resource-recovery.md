@@ -92,11 +92,28 @@ metadata·scrollback 보존 ID)으로 돌려놓는다. 원 ID를 다른 owner가
 때만 다른 PTY처럼 retire한다. 이 owner는 receipt가 완료될 수 없으므로 불명 기록이 확정된 뒤에는 1초
 재확인을 하지 않고 App 깨움 기한도 내지 않는다.
 
-생성이 불명이 되는 순간(준비 오류·폐기 실패·폐기 reap 기한 경과·설치 실패) operation·stream·attempt·
-generation·단계·원인을 경고 로그로 한 번 남긴다. 입력 본문은 기록하지 않는다. 같은 키의 재요청은 기록된
-불명 결과를 읽어 복구 필요로 응답하며 다시 실행하지 않는다. 새 셸 실행 파일을 찾지 못한 경우처럼 child
-fork 전 실패일 수 있는 spawn 오류도 현재는 불명으로 분류한다. terminal 계층이 fork 전·후 실패를 구분해
-돌려주지 않기 때문이다.
+생성이 불명이 되는 순간(child가 생겼을 수 있는 준비 오류·폐기 실패·폐기 reap 기한 경과·설치 실패)
+operation·stream·attempt·generation·단계·원인을 경고 로그로 한 번 남긴다. 입력 본문은 기록하지 않는다.
+같은 키의 재요청은 기록된 불명 결과를 읽어 복구 필요로 응답하며 다시 실행하지 않는다.
+
+터미널 spawn 오류는 child가 생기기 전 실패와 생긴 뒤 실패로 나뉜다(`tasty_terminal::SpawnStage`).
+경계는 portable-pty `spawn_command`의 반환이다. PTY 할당·셸 실행 파일 확인·프로세스 생성 실패는
+child를 남기지 않으므로 알려진 준비 실패로 응답하고 불명 기록을 남기지 않는다. 같은 키의 재요청은
+기록된 실패를 돌려주고, 설정을 고친 뒤 새 키로 요청하면 다시 실행한다. 설정한 셸 경로에 파일이 없으면 실행 시 탐지한 셸로
+대신하므로(`GeneralSettings::runtime_shell`) spawn 오류가 되지 않는다. 대신할 셸도 없을 때만 실행 파일 확인에서
+실패한다. child가 생긴 뒤 입출력 준비·
+reader/writer worker 시작·capture 주입이 실패하면 불명이다.
+
+- Unix: `openpty`와 실행 파일 검색(`access(X_OK)`)은 fork 전에 실패한다. fork 뒤 pre_exec의
+  `setsid`·`TIOCSCTTY` 실패는 std `Command::spawn`이 오류 파이프로 받아 그 child를 회수한 뒤 돌려준다.
+  exec 실패는 오류로 돌아오지 않는다. portable-pty의 pre_exec가 stderr 위 descriptor를 모두 닫아 std의
+  오류 파이프도 닫히기 때문이다. 이 경우 생성은 성공하고 child가 곧바로 종료된다(디렉터리를 셸로
+  지정한 경우 등).
+- Windows: `CreatePseudoConsole`과 `CreateProcessW` 전 준비가 실패하거나 `CreateProcessW`가 실패하면
+  프로세스가 만들어지지 않는다.
+
+엔진 첫 workspace 생성은 예외로, child가 생기기 전 실패도 불명 경로로 끝낸다. 응답할 호출자가 없는 이
+생성의 알려진 실패는 journal 전체를 중단(halt)시키기 때문이다.
 
 새 창이나 첫 부팅의 첫 workspace 생성이 실패하거나 불명이 되면 engine은 준비됐지만 workspace가 없다.
 View는 workspace 없이 그릴 수 없으므로 새 창은 창 생성 실패(`window.create` 오류와 실패 알림)로

@@ -127,7 +127,7 @@ pub(crate) fn prepare_and_wait(
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     let spawned = loop {
         if let Some(outcome) = pending.try_take() {
-            break outcome?;
+            break outcome.map_err(|failure| failure.reason)?;
         }
         assert!(
             std::time::Instant::now() < deadline,
