@@ -59,6 +59,7 @@
 
 ### Fixed
 
+- **설정한 셸 경로가 없을 때 자동 탐지한 셸로 `config.toml` 을 덮어쓰지 않는다.** GUI 부팅은 셸 값을 그대로 두고 새 터미널을 만들 때만 탐지한 셸로 대신 실행하며, 설정 값과 대체 셸을 `warn` 로그에 남긴다. 설정 창의 터미널 탭도 쓸 수 없는 경로를 탐지값으로 바꾸지 않아, 다른 항목만 고쳐 저장해도 셸 값이 바뀌지 않는다. 탐지한 셸도 없을 때만 셸 설정 화면이 뜬다.
 - **GUI 승인 팝업에서 에이전트의 권한 요청을 승인해도 권한이 부여되지 않던 문제.** 권한이 없어 거부된 에이전트가 승인을 받고 다시 호출해도 다시 거부되고 같은 승인 팝업이 또 떴다. `tasty approval respond`로 답할 때만 권한이 부여됐다. 이제 팝업에서 승인(`approve`)하면 유효 시간이 있는 권한을, 영구 승인(`approve_permanently`)하면 시간 제한 없는 권한을 `approval respond`와 똑같이 부여하므로 재호출이 통과한다. 거절·취소·만료는 권한을 부여하지 않는다.
 
 - **호스트가 잠시 늦게 답하면 task runner 가 Custom task 를 실패로 확정하던 문제.** 부하로 메인 루프가 5초 안에 답하지 못하면 `claude.spawn` 노드가 `claude.state: host_dispatch timeout after 5s`나 `Custom 'claude.spawn': host_dispatch timeout after 5s`로 `failed` 가 돼, 자식은 계속 일하는데 하류 task 가 건너뛰어졌다. 이제 상태 조회의 지연은 다음 poll 에서 다시 묻고(poll 기한이 있으면 그 안에서), 큐에서 만료돼 실행되지 않은 실행 요청은 다음 tick 에 다시 보낸다. 이미 시작된 실행 요청은 다시 보내지 않고 늦은 응답을 받아 완료 전략으로 이어 간다. 그 응답을 받지 못하면(통로가 닫히거나 재시작) task 는 `failed` 가 아니라 `unknown`(`dispatch outcome unknown: …`)이 된다.

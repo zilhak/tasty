@@ -312,6 +312,14 @@ impl GeneralSettings {
         matches_blacklist(&self.mouse_capture_banner_blacklist, fg_name)
     }
 
+    /// 새 터미널에 실행할 셸. 설정값을 쓸 수 없으면 탐지한 셸로 대신하며 설정값은 바꾸지 않는다.
+    pub fn runtime_shell(&self) -> String {
+        if self.is_shell_valid() {
+            return self.shell.clone();
+        }
+        Self::detect_bash().unwrap_or_else(|| self.shell.clone())
+    }
+
     /// 사용할 셸 경로를 찾고 없으면 빈 문자열을 반환한다.
     pub fn detect_shell() -> String {
         Self::detect_bash().unwrap_or_default()
@@ -404,14 +412,20 @@ impl GeneralSettings {
         }
     }
 
-    /// bash 통합의 --rcfile 인자. zsh는 환경변수로 설정하며 다른 셸에는 주입하지 않는다.
-    pub fn effective_shell_args(&self) -> Vec<String> {
-        self.effective_shell_args_in(tasty_dir().as_deref())
+    /// `shell` 을 실행할 때의 bash 통합 --rcfile 인자. [`Self::runtime_shell`] 의 결과를 넘긴다.
+    /// zsh는 환경변수로 설정하며 다른 셸에는 주입하지 않는다.
+    pub fn shell_args_for(&self, shell: &str) -> Vec<String> {
+        self.shell_args_in(shell, tasty_dir().as_deref())
     }
 
     /// 시험에서 전역 환경변수 대신 명시한 홈 경로를 사용한다.
+    #[cfg(test)]
     fn effective_shell_args_in(&self, dir: Option<&std::path::Path>) -> Vec<String> {
-        match tasty_utils::shell_family::ShellFamily::detect(&self.shell) {
+        self.shell_args_in(&self.shell, dir)
+    }
+
+    fn shell_args_in(&self, shell: &str, dir: Option<&std::path::Path>) -> Vec<String> {
+        match tasty_utils::shell_family::ShellFamily::detect(shell) {
             tasty_utils::shell_family::ShellFamily::Bash => {
                 ensure_compiled_bashrc_in(dir);
                 bash_rcfile_args_in(self, dir)
@@ -420,20 +434,26 @@ impl GeneralSettings {
         }
     }
 
-    /// zsh 통합에 필요한 ZDOTDIR 환경변수. bash 통합은 인자를 사용한다.
-    pub fn effective_shell_envs(&self) -> Vec<(String, String)> {
-        self.effective_shell_envs_in(tasty_dir().as_deref())
+    /// `shell` 을 실행할 때 zsh 통합에 필요한 ZDOTDIR 환경변수. [`Self::runtime_shell`] 의
+    /// 결과를 넘긴다. bash 통합은 인자를 사용한다.
+    pub fn shell_envs_for(&self, shell: &str) -> Vec<(String, String)> {
+        shell_envs_in(shell, tasty_dir().as_deref())
     }
 
     /// 시험에서 명시한 홈 경로로 환경변수 목록을 만든다.
+    #[cfg(test)]
     fn effective_shell_envs_in(&self, dir: Option<&std::path::Path>) -> Vec<(String, String)> {
-        if tasty_utils::shell_family::ShellFamily::detect(&self.shell)
-            != tasty_utils::shell_family::ShellFamily::Zsh
-        {
-            return Vec::new();
-        }
-        zsh_shell_envs_in(dir)
+        shell_envs_in(&self.shell, dir)
     }
+}
+
+fn shell_envs_in(shell: &str, dir: Option<&std::path::Path>) -> Vec<(String, String)> {
+    if tasty_utils::shell_family::ShellFamily::detect(shell)
+        != tasty_utils::shell_family::ShellFamily::Zsh
+    {
+        return Vec::new();
+    }
+    zsh_shell_envs_in(dir)
 }
 
 /// zsh 통합의 환경변수. 홈을 찾지 못하면 wrapper를 만들거나 ZDOTDIR를 주입하지 않는다.
@@ -982,6 +1002,19 @@ mod tests {
         }
     }
 
+    /// 쓸 수 없는 설정값은 실행 셸만 대체하고 설정값은 그대로 둔다.
+    #[test]
+    fn runtime_shell_falls_back_without_touching_the_configured_value() {
+        let configured = "/nonexistent/tasty-runtime-shell";
+        let s = settings_with_shell(configured);
+        let expected = GeneralSettings::detect_bash().unwrap_or_else(|| configured.to_string());
+        assert_eq!(s.runtime_shell(), expected);
+        assert_eq!(s.shell, configured);
+        if let Some(valid) = GeneralSettings::detect_bash() {
+            assert_eq!(settings_with_shell(&valid).runtime_shell(), valid);
+        }
+    }
+
     // 대부분의 시험은 홈을 직접 주입해 환경변수를 바꾸지 않는다.
     // 상대 TASTY_HOME 시험과 CWD 오염 검사는 같은 SERIAL 락으로 직렬화한다.
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -1469,14 +1502,14 @@ mod tests {
 
     /// zsh 환경변수도 절대화한 루트를 사용하는지 확인한다. wrapper 파일은 임시 디렉터리에 만든다.
     #[test]
-    fn effective_shell_envs_uses_the_resolved_root() {
+    fn shell_envs_for_uses_the_resolved_root() {
         let _home = RelativeHomeGuard::temp();
 
         let settings = GeneralSettings {
             shell: "zsh".to_string(),
             ..GeneralSettings::default()
         };
-        let envs = settings.effective_shell_envs();
+        let envs = settings.shell_envs_for(&settings.shell);
 
         let zdotdir = envs
             .iter()

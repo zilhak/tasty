@@ -16,6 +16,11 @@
 
 ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`).
 
+**실행할 셸**: `general.shell` 을 쓸 수 없으면(빈 값, 경로 없음, Windows 에서 파일명에 bash·zsh 없음) 새 터미널을 만들 때마다 탐지한 셸(`GeneralSettings::detect_bash`)로 대신 실행한다. 이 대체는 실행 시점에만 적용하며 설정값과 `config.toml` 은 바꾸지 않는다. 모든 셸 실행 경로가 `ShellConfig::from_settings` 에서 `GeneralSettings::runtime_shell` 을 읽는다. GUI 부팅은 대체 셸이 있으면 `warn` 로그(설정값·대체 셸)를 남기고 그대로 부팅하며, 대체 셸도 없을 때만 [첫 실행 셸 설정 화면](../../architecture/boot-sequence.md)을 연다. 설정 창 터미널 탭의 셸 입력란도 쓸 수 없는 값을 그대로 보여 주고 경고 줄을 표시한다. 저장은 사용자가 셸 설정 화면이나 설정 창에서 확정할 때만 일어난다.
+
+- Given `general.shell` 이 존재하지 않는 경로이고 탐지한 셸이 있다 When GUI 를 시작한다 Then 설정 화면 없이 부팅하고 새 터미널은 탐지한 셸로 실행되며 `config.toml` 의 값은 그대로다.
+- Given 같은 상태 When 설정 창을 열고 다른 항목만 바꿔 저장한다 Then 셸 값은 사용자가 적은 경로로 남는다.
+
 **자식 셸 환경변수**: Tasty 가 `TERM`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 넣고 `PATH` 앞에 자기 실행 파일 디렉터리를 붙인다. Tasty 프로세스에서 상속한 환경변수 중 다음은 지운다.
 
 - `CMUX_*`: 터미널 안에서 cmux CLI 가 동작하지 않게 한다.

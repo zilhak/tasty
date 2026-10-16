@@ -629,7 +629,7 @@ fn build_shell_command(
     let mut cmd = CommandBuilder::new(shell);
     // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded —
     // *unless* `args` already carries an explicit `--rcfile`-based bash startup
-    // (`GeneralSettings::effective_shell_args`): bash's `--rcfile` is
+    // (`GeneralSettings::shell_args_for` on `runtime_shell`): bash's `--rcfile` is
     // silently ignored for login shells (`bash(1)`: it only applies to
     // interactive *non-login* shells), so login mode must be dropped in that
     // case — the args themselves append `-i` to keep the shell interactive.

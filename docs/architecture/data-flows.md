@@ -134,7 +134,7 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
   → Cancel/일반 close는 Save 실행 초안을 만들지 않음
 
 즉시 반영: font·theme·opacity(렌더러 재초기화/테마 전환), notification·keybindings(매 프레임/이벤트 참조).
-새 터미널부터 반영: shell·shell_mode·scrollback (effective_shell_args — tasty 모드 --rcfile 주입은 플랫폼별).
+새 터미널부터 반영: shell·shell_mode·scrollback (`ShellConfig::from_settings` 가 `runtime_shell` 로 실행 셸을 정하고 그 셸 기준 `shell_args_for` — tasty 모드 --rcfile 주입은 플랫폼별).
 ```
 
 ### 에이전트·plugin 설정 변경 요청의 완료 의미

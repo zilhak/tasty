@@ -1138,9 +1138,13 @@ fn a_new_window_whose_first_workspace_fails_is_refused_and_the_app_keeps_running
     let tasty = common::shared();
     let before = tasty.call("window.list", json!({}));
     let _restore = RestoreShell(tasty);
+    // 없는 경로는 실행 시 탐지한 셸로 대신하므로, 셸 이름을 가진 실행 불가 파일을 둔다.
+    let shell_dir = tempfile::tempdir().expect("shell dir");
+    let shell = shell_dir.path().join("bash");
+    std::fs::write(&shell, "").expect("non-executable shell file");
     tasty.call(
         "debug.settings.apply",
-        json!({ "settings": { "general": { "shell": "/nonexistent/tasty-e2e-shell" } } }),
+        json!({ "settings": { "general": { "shell": shell.to_string_lossy() } } }),
     );
     let resp = tasty.call_raw("window.create", json!({}));
     assert!(

@@ -14,10 +14,11 @@ pub struct ShellConfig {
 
 impl ShellConfig {
     pub fn from_settings(settings: &Settings) -> Self {
+        let shell = settings.general.runtime_shell();
         Self {
-            shell: settings.general.shell.clone(),
-            args: settings.general.effective_shell_args(),
-            envs: settings.general.effective_shell_envs(),
+            args: settings.general.shell_args_for(&shell),
+            envs: settings.general.shell_envs_for(&shell),
+            shell,
         }
     }
 

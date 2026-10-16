@@ -2,7 +2,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButto
 
 use crate::adapters::ui::icons;
 use crate::i18n::t;
-use crate::settings::{GeneralSettings, Settings};
+use crate::settings::Settings;
 use tasty_ui_widgets::{SettingsRow, settings_label_column, vspace};
 
 pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
@@ -48,12 +48,8 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     );
     ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
 
+    // 쓸 수 없는 경로도 사용자가 고칠 때까지 그대로 보여 준다. 실행 시 대체 셸은 ShellConfig가 고른다.
     shell.show(ui, &th, col, |ui| {
-        if let Some(detected) = GeneralSettings::detect_bash()
-            && (settings.general.shell.is_empty() || !settings.general.is_shell_valid())
-        {
-            settings.general.shell = detected;
-        }
         ui.text_edit_singleline(&mut settings.general.shell);
     });
 

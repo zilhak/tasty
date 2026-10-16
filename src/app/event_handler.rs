@@ -217,12 +217,11 @@ impl ApplicationHandler<AppEvent> for App {
         // 첫 로딩 프레임을 그리기 전에 OS 기본 배경이 드러나지 않도록 hidden으로 만든다.
         let window = Self::boot_create_hidden_window(event_loop, boot_t0);
 
-        let mut init_settings = Self::boot_load_normalized_settings();
+        let init_settings = Self::boot_load_normalized_settings();
 
         let gpu = self.try_init_boot_gpu(&window, &init_settings.appearance);
 
-        let (window, gpu) = match self.enter_shell_setup_if_needed(&mut init_settings, window, gpu)
-        {
+        let (window, gpu) = match self.enter_shell_setup_if_needed(&init_settings, window, gpu) {
             Some(pair) => pair,
             None => return,
         };
@@ -684,19 +683,11 @@ impl App {
     /// 셸을 사용할 수 없고 bash도 찾지 못하면 setup 화면으로 소유권을 옮겨 None을 반환한다.
     fn enter_shell_setup_if_needed(
         &mut self,
-        settings: &mut crate::settings::Settings,
+        settings: &crate::settings::Settings,
         window: std::sync::Arc<winit::window::Window>,
         gpu: crate::gpu::GpuState,
     ) -> Option<(std::sync::Arc<winit::window::Window>, crate::gpu::GpuState)> {
-        if settings.general.is_shell_valid() {
-            return Some((window, gpu));
-        }
-        if let Some(detected) = crate::settings::GeneralSettings::detect_bash() {
-            tracing::info!("configured shell invalid; auto-detected bash at {detected}");
-            settings.general.shell = detected;
-            if let Err(e) = settings.save() {
-                tracing::warn!("failed to save auto-detected shell: {e}");
-            }
+        if boot_shell_usable(settings) {
             return Some((window, gpu));
         }
         self.enter_shell_setup_mode(window, gpu);
@@ -2212,10 +2203,43 @@ impl App {
     }
 }
 
+/// 사용자가 정한 셸은 경로가 없어도 저장하지 않는다. 대체 셸은 실행할 때 `ShellConfig` 가 고른다.
+fn boot_shell_usable(settings: &crate::settings::Settings) -> bool {
+    let general = &settings.general;
+    if general.is_shell_valid() {
+        return true;
+    }
+    let runtime = general.runtime_shell();
+    if runtime == general.shell {
+        return false;
+    }
+    tracing::warn!(
+        configured = %general.shell,
+        fallback = %runtime,
+        "configured shell is unusable; new terminals use the fallback shell until it is fixed"
+    );
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::merge_wakeup;
     use winit::event_loop::ControlFlow;
+
+    /// 설정한 셸 경로가 없어도 설정값은 그대로 두고 실행할 때만 대체 셸을 쓴다.
+    #[test]
+    fn missing_configured_shell_is_not_overwritten_at_boot() {
+        let Some(detected) = crate::settings::GeneralSettings::detect_bash() else {
+            return;
+        };
+        let configured = "/nonexistent/tasty-t354/user-shell".to_string();
+        let mut settings = crate::settings::Settings::default();
+        settings.general.shell = configured.clone();
+        assert!(super::boot_shell_usable(&settings));
+        assert_eq!(settings.general.shell, configured);
+        let shell = crate::core::state::ShellConfig::from_settings(&settings);
+        assert_eq!(shell.shell, detected);
+    }
 
     #[test]
     fn merge_wakeup_keeps_the_earlier_deadline() {
