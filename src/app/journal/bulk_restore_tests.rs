@@ -565,3 +565,114 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
         "{broken legacy after successful import"
     );
 }
+
+/// A selected terminal whose shell fails before any fork is a known failure of that restore. The
+/// placeholder keeps the reason and retries up to its cap, and the journal keeps running.
+#[test]
+fn a_selected_restore_whose_shell_cannot_start_records_its_failure_on_the_placeholder() {
+    let memory = Arc::new(std::sync::Mutex::new(
+        tasty_memory::testing::InMemoryStorage::new(),
+    ));
+    let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
+    // A missing path would be replaced by the detected shell, so the shell is an existing
+    // non-executable file named like a shell.
+    let shell_dir = tempfile::tempdir().unwrap();
+    let shell = shell_dir.path().join("bash");
+    std::fs::write(&shell, "").unwrap();
+    let mut settings = crate::settings::Settings::default();
+    settings.general.shell = shell.to_string_lossy().into_owned();
+    settings.general.startup_command = String::new();
+    let mut session = EngineSession::new_with_ids_and_settings(
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory,
+            runner_registry: runners,
+        },
+        settings,
+    )
+    .unwrap();
+    let home = tasty_utils::path::tasty_home().unwrap();
+    let directory = home.join("structure");
+    std::fs::create_dir(&directory).unwrap();
+    let journal_id = "journal-fedcba0987654321fedcba0987654321";
+    std::fs::write(
+        directory.join("journal.json"),
+        serde_json::to_vec(
+            &serde_json::json!({"version":1,"journal_id":journal_id,"phase":"Preparing"}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let tab = serde_json::json!({"name":"terminal","explicit_name":null,"surface":{"Leaf":{"Terminal":{"cwd":home.to_string_lossy(),"restore_command":null,"scrollback_ref":null}}}});
+    let layout = serde_json::json!({"version":2,"active_workspace":0,"workspaces":[{"name":"restore","subtitle":"","description":"","category":0,"focused_pane_index":0,"pane_layout":{"Leaf":{"tabs":[tab],"active_tab":0}}}]});
+    let sid = {
+        let mut store =
+            tasty_event_store::EventStore::open(&directory.join("journal.db"), journal_id).unwrap();
+        let epoch = store.acquire_writer().unwrap();
+        crate::core::layout_persistence::import::import_slot(
+            &mut store,
+            epoch,
+            1,
+            &layout.to_string(),
+            &NoScrollback,
+        )
+        .unwrap()
+        .mapping
+        .workspaces[0]
+            .panes[0]
+            .tabs[0]
+            .surfaces[0]
+    };
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal
+        .begin_engine(
+            &session,
+            EngineSelection::Slot {
+                slot: 1,
+                resume: true,
+            },
+        )
+        .unwrap();
+    let placeholder = |session: &EngineSession| {
+        let surface = session.runtime.surfaces.get(&sid).unwrap();
+        let placeholder = surface
+            .as_any()
+            .downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>()
+            .expect("the failed restore keeps its placeholder");
+        (placeholder.attempts, placeholder.failure.clone())
+    };
+    let mut stall = StallBudget::new(&journal);
+    loop {
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+        journal.poll_restore_bootstrap(&session).unwrap();
+        if journal.is_ready(session.id)
+            && placeholder(&session).0 >= crate::runtime::surface_restorer::MAX_ACTIVATION_ATTEMPTS
+        {
+            break;
+        }
+        stall.nap("failed selected restore");
+    }
+    assert!(!journal.is_halted());
+    let (attempts, failure) = placeholder(&session);
+    assert_eq!(
+        attempts,
+        crate::runtime::surface_restorer::MAX_ACTIVATION_ATTEMPTS,
+        "automatic retries stop at the cap"
+    );
+    let failure = failure.expect("the known failure is recorded on the placeholder");
+    assert!(!failure.is_empty());
+    #[cfg(unix)]
+    assert!(failure.contains("not executable"), "{failure}");
+    assert!(journal.restorations.ready(session.id).is_empty());
+    assert!(!journal.has_creation(session.id));
+    assert!(session.engine_release.is_none(), "no child was started");
+    assert_eq!(session.runtime.terminals.iter().count(), 0);
+    assert_eq!(
+        session.core_state.local_workspaces()[0].all_surface_ids(),
+        vec![sid]
+    );
+}
