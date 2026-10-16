@@ -64,7 +64,7 @@ GUI intent·IPC·plugin·headless 진입점은 모두 같은 command 경계를 �
 | 설치 뒤 | 기다리지 않고 `CleanupFinished` 제출. child 본문은 설치 때 이미 썼다 | 전역 보류 |
 | 최종 공개 | `FinishCleanup` commit과 전체 publication ACK | commit 전까지 전역 보류 |
 | 공개 뒤 정리(`Settling`) | child 본문 ACK(기한 5초)와 settle 20ms 뒤 CR, 교체한 이전 PTY·plugin binding의 receipt(기한 5초) | 보류하지 않는다. 종료는 이 단계가 끝나기를 기다린다 |
-| 불명(`Uncertain`) | 불명 기록 확정 뒤 receipt로 정합할 수 있는 owner(설치 owner·폐기 receipt·회수한 실패 설치)만 1초 간격으로 5초 동안 재확인한다. 그 뒤 owner를 `EngineRelease`로 넘기고 continuation을 끝낸다. 증거 수단이 없는 불명(준비 중 불명, 원 standalone 등록으로 돌려놓지 못한 채택)은 기록 확정 즉시 끝낸다 | 미공개 설치 owner를 가진 경우만 보류 |
+| 불명(`Uncertain`) | 불명 기록 확정 뒤 receipt로 정합할 수 있는 owner(설치 owner·폐기 receipt·회수한 실패 설치)만 1초 간격으로 5초 동안 재확인한다. 그 뒤 owner를 `EngineRelease`로 넘기고 continuation을 끝낸다. 증거 수단이 없는 불명(준비 중 불명, 원 standalone 등록으로 돌려놓지 못한 채택)은 기록 확정 즉시 끝낸다. 기록 확정 전에는 App 깨움 기한을 내지 않으며 worker의 응답이 App을 깨운다 | 미공개 설치 owner를 가진 경우만 보류 |
 | 원 명령 응답 | 최종 commit의 확정 결과를 공개 뒤 정리가 끝난 다음 읽는다. 불명 continuation이 끝나면 복구 필요(`ERR_OPERATION_RECOVERY_REQUIRED`)로 응답한다. durable 명령은 InProgress로 남는다 | - |
 
 공개 뒤 회수가 기한을 넘기거나 실패하면 receipt를 EngineSession의 해제 owner(`EngineRelease`)로
@@ -141,17 +141,23 @@ kind factory는 반환하는 surface와 native 자원의 스레드 제약을 일
 
 standalone 채택은 준비 완료부터 설치 또는 원위치 반납까지도 전역 보류한다.
 
-GUI 종료의 `SavingLayout`과 headless 종료는 세 가지 대기가 풀리기를 첫 대기 때 정한 기한 15초까지만
-기다린다. 대상은 관측 보류(미공개 설치·standalone 채택 보류), 공개됐지만 끝나지 않은 생성(공개 ACK·child
-CR·교체한 이전 owner의 receipt), 닫기 정리의 receipt 대기다. 이후 회차는 기한을 늘리지 않는다. 15초는 이
-대기들의 단계별 기한(child 입력 5초, 교체 receipt 5초, 닫기 receipt 5초)보다 길어 진행 중인 대기를 끊지 않도록
-정한 값이며 측정값이 아니다. 기한이 지나면 journal
+GUI 종료의 `SavingLayout`과 headless 종료는 journal 대기를 첫 대기 때 정한 기한 15초까지만 기다린다.
+대상은 관측 보류(미공개 설치·standalone 채택 보류), 공개됐지만 끝나지 않은 생성(공개 ACK·child CR·교체한
+이전 owner의 receipt), 닫기 정리의 receipt 대기다. GUI 종료는 그 뒤에 이어지는 종료 시점 View 저장(View
+기록·surface capture)과 `restore_layout`이 꺼진 엔진의 slot retirement도 같은 기한 안에서 기다린다. 기한은
+`SavingLayout` 전체에 하나이며 이후 회차는 늘리지 않는다. 15초는 앞의 세 대기의 단계별 기한(child 입력 5초,
+교체 receipt 5초, 닫기 receipt 5초)보다 길어 진행 중인 대기를 끊지 않도록 정한 값이며 측정값이 아니다. View
+저장과 slot retirement는 worker 응답만 기다리며 자체 단계 기한이 없다. 기한이 지나면 journal
 실행을 중단(halt)한다. 대기 중인 요청은 중단 사유로 응답하고, 미완 operation은 다음 시작의 Recovery
 대상으로 남는다. 남은 owner의 처리는 종료 방식마다 다르다. headless 종료는 중단 경로로 남은 생성·미공개
 후보·회수 receipt를 `EngineRelease`에 모아 종료 상한 안에서 reap·plugin 응답을 관측한다. GUI 종료는 중단 뒤
 이 경로를 부르지 않는다. 남은 owner는 App과 함께 버려지며, PTY는 drop 때 child 종료를 시도하지만 reap을
 관측하거나 회수 완료를 기록하지 않는다. 중단 뒤에는 종료 시점 View를 저장하지 않으므로
-마지막으로 저장된 View가 남는다. 이 중단은 회수 완료나 명령 결과를 뜻하지 않는다.
+마지막으로 저장된 View가 남는다. View 저장이나 surface capture를 기다리던 중 기한이 지나면 아직 응답받지 못한
+기록과 capture는 저장됐는지 알 수 없고, 다음 시작은 마지막으로 확정된 View·capture를 읽는다. slot
+retirement를 기다리던 중 기한이 지나면 그 slot은 은퇴하지 않고 stream이 journal에 남는다. `restore_layout`이
+꺼진 GUI의 다음 부팅은 slot을 복원(resume)하지 않으므로 남은 stream을 화면에 되살리지 않는다. 이 중단은 회수
+완료나 명령 결과를 뜻하지 않는다.
 
 ## EngineSession 해제
 

@@ -131,9 +131,10 @@ impl Uncertain {
             _ => false,
         }
     }
+    /// Before the ACK nothing can be polled; the worker's reply wakes the App by itself.
     pub(super) fn deadline(&self) -> Option<std::time::Instant> {
         match self.phase {
-            Reconciliation::AwaitingCommit { not_before } => Some(not_before),
+            Reconciliation::AwaitingCommit { .. } => None,
             Reconciliation::Committed { next, until } => Some(next.min(until)),
         }
     }
@@ -318,10 +319,28 @@ impl Creation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Only the worker's ACK moves an unacknowledged record on, and that reply wakes the App.
+    /// A deadline that has already passed would wake every turn until it arrives.
+    #[test]
+    fn an_unacknowledged_record_asks_for_no_past_wake_up() {
+        let mut state = Uncertain::pending("waiting".into(), UncertainOwner::EngineOwned);
+        state.phase = Reconciliation::AwaitingCommit {
+            not_before: std::time::Instant::now() - std::time::Duration::from_secs(1),
+        };
+        let now = std::time::Instant::now();
+        assert!(
+            state.deadline().is_none_or(|deadline| deadline > now),
+            "a past deadline: {:?}",
+            state.deadline()
+        );
+    }
     #[test]
     fn reconciliation_requires_commit_and_preserves_the_original_deadline() {
         let mut state = Uncertain::pending("waiting".into(), UncertainOwner::EngineOwned);
-        let due = state.deadline().unwrap();
+        let Reconciliation::AwaitingCommit { not_before: due } = state.phase else {
+            unreachable!("a new record awaits its commit")
+        };
+        assert_eq!(state.deadline(), None);
         assert!(!state.begin_poll(due + std::time::Duration::from_secs(10)));
         assert!(!state.window_closed(due + std::time::Duration::from_secs(10)));
         state.acknowledge();

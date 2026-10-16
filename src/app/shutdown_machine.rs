@@ -62,8 +62,9 @@ pub(crate) struct ShutdownState {
     /// memory writer drain의 기한. 첫 대기에서 정하고, 기한을 넘기면 None으로 두고 진행한다.
     memory_writer_deadline: Option<Instant>,
     memory_writer_gave_up: bool,
-    /// Fixed at the first publication wait; it is not reset by later polls.
-    publication_deadline: Option<Instant>,
+    /// One deadline for every journal wait of SavingLayout (publication, final View write, slot
+    /// retirements). Fixed at the first of them; later polls never reset it.
+    journal_deadline: Option<Instant>,
 }
 
 enum StepOutcome {
@@ -113,7 +114,7 @@ impl App {
             runner_stop_deadline: Instant::now() + Duration::from_secs(5),
             memory_writer_deadline: None,
             memory_writer_gave_up: false,
-            publication_deadline: None,
+            journal_deadline: None,
         });
 
         for session in self.engines.all_sessions_mut() {
@@ -262,7 +263,7 @@ impl App {
             return false;
         };
         self.journal
-            .shutdown_publication_pending(&mut shutdown.publication_deadline, Instant::now())
+            .shutdown_publication_pending(&mut shutdown.journal_deadline, Instant::now())
     }
 
     /// 부팅 중에는 저장 대상 engine이 아직 없어 빈 레이아웃으로 덮어쓰지 않는다.
@@ -311,7 +312,11 @@ impl App {
                 .final_view_sequence = Some(self.journal.latest_view_sequence());
         }
         self.poll_journal_application();
-        if self.journal.has_pending_view_writes() || self.journal.has_pending_retirements() {
+        if let Some(shutdown) = self.state.shutdown.as_mut()
+            && self
+                .journal
+                .shutdown_persistence_pending(&mut shutdown.journal_deadline, Instant::now())
+        {
             return StepOutcome::Waiting;
         }
         tracing::info!(

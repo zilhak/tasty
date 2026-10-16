@@ -56,8 +56,14 @@ pub(super) fn run(
     closed: Arc<AtomicBool>,
     wake: Arc<dyn Fn() + Send + Sync>,
     #[cfg(test)] fail_next_publication: Arc<AtomicBool>,
+    #[cfg(test)] muted: Arc<AtomicBool>,
 ) {
     let send = |completion| {
+        #[cfg(test)]
+        if muted.load(Ordering::Acquire) {
+            drop(completion);
+            return true;
+        }
         if completions.send(completion).is_err() {
             return false;
         }

@@ -314,6 +314,9 @@ pub(crate) struct JournalWorker {
     thread: Option<JoinHandle<()>>,
     #[cfg(test)]
     pub(crate) fail_next_publication: Arc<AtomicBool>,
+    /// 시험에서 응답하지 않는 worker를 흉내 낸다. 켜진 동안의 완료는 App에 보내지 않고 버린다.
+    #[cfg(all(test, feature = "gui"))]
+    pub(crate) mute_replies: Arc<AtomicBool>,
     /// 시험의 정체 감지가 worker 스레드의 상태를 읽는다.
     #[cfg(test)]
     pub(crate) thread_probe: thread_probe::ThreadProbe,
@@ -346,6 +349,10 @@ impl JournalWorker {
         #[cfg(test)]
         let publication_fault = fail_next_publication.clone();
         #[cfg(test)]
+        let mute_replies = Arc::new(AtomicBool::new(false));
+        #[cfg(test)]
+        let muted = Arc::clone(&mute_replies);
+        #[cfg(test)]
         let thread_probe = thread_probe::ThreadProbe::default();
         #[cfg(test)]
         let bound_probe = thread_probe.clone();
@@ -365,6 +372,8 @@ impl JournalWorker {
                     wake,
                     #[cfg(test)]
                     publication_fault,
+                    #[cfg(test)]
+                    muted,
                 );
             })
             .map_err(|e| e.to_string())?;
@@ -378,6 +387,8 @@ impl JournalWorker {
             thread: Some(thread),
             #[cfg(test)]
             fail_next_publication,
+            #[cfg(all(test, feature = "gui"))]
+            mute_replies,
             #[cfg(test)]
             thread_probe,
         })

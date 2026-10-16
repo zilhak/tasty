@@ -342,4 +342,66 @@ mod tests {
         assert!(journal.layout_slot_retired(1));
         assert_eq!(journal.take_retired_engines(), vec![id]);
     }
+
+    /// A GUI shutdown waits for its slot retirement within the shutdown deadline. A worker that
+    /// stops answering halts the journal at that deadline instead of holding the shutdown.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn shutdown_stops_waiting_for_an_unanswered_retirement_at_its_deadline() {
+        let mut settings = crate::settings::Settings::default();
+        crate::app::journal::test_shell::use_quiet_shell(&mut settings);
+        let mut session = EngineSession::new_with_ids_and_settings(
+            crate::runtime::engine_session::EngineSessionSpec {
+                cols: 80,
+                rows: 24,
+                waker: Arc::new(|| {}),
+                shared_ids: None,
+                layout_slot: Some(1),
+                memory: Arc::new(std::sync::Mutex::new(
+                    tasty_memory::testing::InMemoryStorage::new(),
+                )),
+                runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+            },
+            settings,
+        )
+        .unwrap();
+        let id = session.id;
+        let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+        journal
+            .begin_engine(
+                &session,
+                EngineSelection::Slot {
+                    slot: 1,
+                    resume: false,
+                },
+            )
+            .unwrap();
+        pump(&mut journal, &mut session, |j| j.is_ready(id));
+        journal
+            .worker
+            .mute_replies
+            .store(true, std::sync::atomic::Ordering::Release);
+        journal.retire_engine(id, session.journal_binding.clone().unwrap(), false);
+        // The production pump submits it; no reply ever arrives.
+        for _ in 0..20 {
+            journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(journal.retirements.pending[&id].ticket.is_some());
+        let start = std::time::Instant::now();
+        let mut deadline = None;
+        assert!(journal.shutdown_persistence_pending(&mut deadline, start));
+        let fixed = deadline.expect("the first wait fixes the deadline");
+        let late = fixed - std::time::Duration::from_millis(1);
+        assert!(journal.shutdown_persistence_pending(&mut deadline, late));
+        assert_eq!(deadline, Some(fixed), "a later poll does not extend it");
+        assert!(!journal.is_halted());
+        assert!(!journal.shutdown_persistence_pending(&mut deadline, fixed));
+        assert!(
+            journal.is_halted(),
+            "the unanswered work is left to recovery"
+        );
+        assert!(!journal.has_pending_retirements());
+        assert!(!journal.layout_slot_retired(1));
+    }
 }

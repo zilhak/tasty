@@ -79,8 +79,9 @@ pub(crate) struct JournalApplication {
 
 /// Longer than each stage shutdown waits for: a settling creation's child input and replaced
 /// owner receipts and a closing retirement's receipts each have a 5 second deadline. So it ends
-/// only a wait that no longer progresses.
-const SHUTDOWN_PUBLICATION_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
+/// only a wait that no longer progresses. It also bounds the GUI shutdown's final View write and
+/// slot retirements, which have no stage deadline of their own.
+const SHUTDOWN_JOURNAL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
 
 impl JournalApplication {
     /// 엔진의 workspace 를 보여 주는 창들의 터미널 영역을 기록한다. 기록이 없는 workspace 의 split 에는
@@ -311,13 +312,35 @@ impl JournalApplication {
         deadline: &mut Option<std::time::Instant>,
         now: std::time::Instant,
     ) -> bool {
-        if !self.shutdown_waits_for_publication() || self.is_halted() {
+        let waiting = self.shutdown_waits_for_publication();
+        self.shutdown_waits_within(waiting, deadline, now)
+    }
+
+    /// The final View write and slot retirements of a GUI shutdown share the publication
+    /// deadline. Past it, the halt leaves the last stored View and keeps the unretired slots.
+    #[cfg(feature = "gui")]
+    pub(crate) fn shutdown_persistence_pending(
+        &mut self,
+        deadline: &mut Option<std::time::Instant>,
+        now: std::time::Instant,
+    ) -> bool {
+        let waiting = self.has_pending_view_writes() || self.has_pending_retirements();
+        self.shutdown_waits_within(waiting, deadline, now)
+    }
+
+    fn shutdown_waits_within(
+        &mut self,
+        waiting: bool,
+        deadline: &mut Option<std::time::Instant>,
+        now: std::time::Instant,
+    ) -> bool {
+        if !waiting || self.is_halted() {
             return false;
         }
-        if now < *deadline.get_or_insert(now + SHUTDOWN_PUBLICATION_DEADLINE) {
+        if now < *deadline.get_or_insert(now + SHUTDOWN_JOURNAL_DEADLINE) {
             return true;
         }
-        let reason = "shutdown stopped waiting for unfinished journal publication; its outcome is left to restart recovery";
+        let reason = "shutdown stopped waiting for unfinished journal work; its outcome is left to restart recovery";
         tracing::warn!("{reason}");
         self.halted = Some(reason.into());
         self.fail_pending_commands(reason);
