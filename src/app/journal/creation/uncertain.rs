@@ -10,8 +10,10 @@ pub(in crate::app::journal) struct Withdrawn {
 
 /// An uncertain transition retains either the installed owner or the rejected candidate receipt.
 pub(super) enum UncertainOwner {
-    /// The candidate is retained by EngineSession, or preparation produced no local owner.
+    /// Preparation produced no local owner.
     EngineOwned,
+    /// A standalone transfer that could not return to its original registration.
+    Unreturned(Box<effect_runner::PreparedMaterialization>),
     FailedInstallation(Box<Withdrawn>),
     Installed(Installed),
     Discard {
@@ -53,6 +55,7 @@ impl UncertainOwner {
     ) {
         match self {
             Self::EngineOwned => {}
+            Self::Unreturned(candidate) => candidate.release_keeping_standalone(release),
             Self::FailedInstallation(withdrawn) => {
                 let Withdrawn {
                     installation,
@@ -117,28 +120,24 @@ impl Uncertain {
             };
         }
     }
-    /// An adopted standalone process that could not return to its registration. The observation
-    /// window never ends it; it waits for the engine release.
-    fn retains_user_process(&self) -> bool {
-        matches!(&self.owner, UncertainOwner::FailedInstallation(withdrawn) if withdrawn.installation.retains_adopted_standalone())
-    }
-    /// No receipt or state notice can ever reconcile this owner.
+    /// No receipt or state notice can ever reconcile this owner. An adopted standalone process
+    /// that could not return to its registration has no receipt either, since nothing retires it.
     pub(super) fn has_no_evidence(&self) -> bool {
-        matches!(self.owner, UncertainOwner::EngineOwned)
+        match &self.owner {
+            UncertainOwner::EngineOwned | UncertainOwner::Unreturned(_) => true,
+            UncertainOwner::FailedInstallation(withdrawn) => {
+                withdrawn.installation.retains_adopted_standalone()
+            }
+            _ => false,
+        }
     }
-    /// A committed retained process has neither a receipt to observe nor a window to close, so
-    /// it asks for no wake-up; only the halt path or engine release ends it.
     pub(super) fn deadline(&self) -> Option<std::time::Instant> {
         match self.phase {
             Reconciliation::AwaitingCommit { not_before } => Some(not_before),
-            Reconciliation::Committed { .. } if self.retains_user_process() => None,
             Reconciliation::Committed { next, until } => Some(next.min(until)),
         }
     }
     fn begin_poll(&mut self, now: std::time::Instant) -> bool {
-        if self.retains_user_process() {
-            return false;
-        }
         let Reconciliation::Committed { next, .. } = &mut self.phase else {
             return false;
         };
@@ -149,8 +148,7 @@ impl Uncertain {
         true
     }
     fn window_closed(&self, now: std::time::Instant) -> bool {
-        !self.retains_user_process()
-            && matches!(self.phase, Reconciliation::Committed { until, .. } if now >= until)
+        matches!(self.phase, Reconciliation::Committed { until, .. } if now >= until)
     }
     pub(super) fn retain_for_release(
         self,
@@ -193,10 +191,7 @@ impl Creation {
         };
         self.receipt
             .get_or_init(|| ActivationOutcome::Failed(uncertain.reason.clone()));
-        if !uncertain.has_no_evidence() {
-            uncertain
-                .retain_for_release(session.engine_release.get_or_insert_with(Default::default));
-        }
+        uncertain.retain_for_release(session.engine_release.get_or_insert_with(Default::default));
         self.stage = Stage::Settled { unconfirmed: None };
     }
     pub(super) fn retain_uncertain(&mut self, reason: String) {

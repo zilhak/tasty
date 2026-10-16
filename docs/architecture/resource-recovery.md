@@ -64,7 +64,7 @@ GUI intent·IPC·plugin·headless 진입점은 모두 같은 command 경계를 �
 | 설치 뒤 | 기다리지 않고 `CleanupFinished` 제출. child 본문은 설치 때 이미 썼다 | 전역 보류 |
 | 최종 공개 | `FinishCleanup` commit과 전체 publication ACK | commit 전까지 전역 보류 |
 | 공개 뒤 정리(`Settling`) | child 본문 ACK(기한 5초)와 settle 20ms 뒤 CR, 교체한 이전 PTY·plugin binding의 receipt(기한 5초) | 보류하지 않는다. 종료는 이 단계가 끝나기를 기다린다 |
-| 불명(`Uncertain`) | 불명 기록 확정 뒤 receipt로 정합할 수 있는 owner(설치 owner·폐기 receipt·회수한 실패 설치)만 1초 간격으로 5초 동안 재확인한다. 그 뒤 owner를 `EngineRelease`로 넘기고 continuation을 끝낸다. 증거 수단이 없는 불명(준비 중 불명 등)은 기록 확정 즉시 끝낸다 | 미공개 설치 owner를 가진 경우만 보류 |
+| 불명(`Uncertain`) | 불명 기록 확정 뒤 receipt로 정합할 수 있는 owner(설치 owner·폐기 receipt·회수한 실패 설치)만 1초 간격으로 5초 동안 재확인한다. 그 뒤 owner를 `EngineRelease`로 넘기고 continuation을 끝낸다. 증거 수단이 없는 불명(준비 중 불명, 원 standalone 등록으로 돌려놓지 못한 채택)은 기록 확정 즉시 끝낸다 | 미공개 설치 owner를 가진 경우만 보류 |
 | 원 명령 응답 | 최종 commit의 확정 결과를 공개 뒤 정리가 끝난 다음 읽는다. 불명 continuation이 끝나면 복구 필요(`ERR_OPERATION_RECOVERY_REQUIRED`)로 응답한다. durable 명령은 InProgress로 남는다 | - |
 
 공개 뒤 회수가 기한을 넘기거나 실패하면 receipt를 EngineSession의 해제 owner(`EngineRelease`)로
@@ -84,13 +84,20 @@ placeholder로 바꿔 사용할 수 없음을 표시한다. operation은 `Uncert
 receipt가 모두 완료되면 폐기 evidence로 정합해 실패로 끝낸다. 기간이 지나면 남은 receipt는
 `EngineRelease`가 보관하고 원 명령은 복구 필요로 응답한다. 이 동안 관측은 보류하지 않는다.
 standalone 채택 후보는 회수할 때 종료하지 않는다. 연결을 끊지 않은 채 원래 standalone 등록(pty ID·
-metadata·scrollback 보존 ID)으로 돌려놓는다. 원 ID를 다른 owner가 차지해 돌려놓지 못하면 그 프로세스는
-불명 생성이 계속 보관한다. 재확인 기간이 지나도 `EngineRelease`로 넘기지 않으며, 원 명령은 응답을 받지
-못하고 그 엔진의 닫기도 이 생성이 끝나기를 기다린다. 이 생성은 종료의 15초 기한 대상이 아니므로
-`restore_layout`이 꺼진 GUI 종료도 그 엔진 해제를 기한 없이 기다린다. 이 경우의 처리는 후속 작업에서 정한다.
-중단(halt) 경로가 owner를 `EngineRelease`에 모을
-때만 다른 PTY처럼 retire한다. 이 owner는 receipt가 완료될 수 없으므로 불명 기록이 확정된 뒤에는 1초
-재확인을 하지 않고 App 깨움 기한도 내지 않는다.
+metadata·scrollback 보존 ID)으로 돌려놓는다. 설치 전 거절로 후보를 폐기할 때와 설치 뒤 실패로 새 owner를
+회수할 때가 같다. 원 ID를 다른 owner가 차지해 돌려놓지 못하면 operation을 `Uncertain`으로 기록한다. 이
+프로세스를 정합할 receipt는 없으므로 기록이 확정되면 바로 continuation을 끝내고 원 명령에 복구 필요로
+응답한다. 프로세스는 EngineSession의 대기 후보(`pending_materializations`)에 남지 않고 `EngineRelease`의
+반납 불가 standalone으로 넘어간다. `EngineRelease`는 이 프로세스를 retire하지 않고 해제 완료 조건에도
+넣지 않으므로 그 엔진의 닫기와 해제를 막지 않는다. 엔진 해제가 끝나면 App이 이 프로세스를 넘겨받아 앱이
+끝날 때까지 보관한다. 이때 다른 PTY처럼 drop에서 child 종료를 시도한다. 보관 중인 프로세스의 종료는 따로
+관측하지 않는다. `EngineRelease`가 있는 엔진의 해제가 끝날 때마다 App이 보관 목록의 종료를 확인하고, 끝난
+프로세스는 reap한 뒤 목록에서 뺀다. `EngineRelease`가 새 프로세스를 넘겨받을 때도 자기 목록을 같은 방법으로
+정리한다. 그 사이에 스스로 끝난 프로세스는 reap되지 않은 채(zombie) 남고, 그 PTY reader는 종료가 관측될
+때까지 늘어나는 간격(최대 500ms)으로 깨움을 반복한다. 보관 중인 프로세스는 `pty.list`와 surface 조회에
+나타나지 않는다. 중단(halt) 경로가 owner를 `EngineRelease`에 모을 때도 같다. 중단 시점에 아직 설치 전인
+채택 후보(`pending_materializations`)도 원 프로세스를 retire하지 않고 같은 방법으로 보관한다. 이 처리는 사용자 프로세스를 종료하지 않으면서
+엔진 해제를 끝내기 위한 것이며, 그 엔진의 다른 standalone PTY가 엔진 해제 때 retire되는 것과 다르다.
 
 생성이 불명이 되는 순간(child가 생겼을 수 있는 준비 오류·폐기 실패·폐기 reap 기한 경과·설치 실패)
 operation·stream·attempt·generation·단계·원인을 경고 로그로 한 번 남긴다. 입력 본문은 기록하지 않는다.
@@ -145,15 +152,13 @@ CR·교체한 이전 owner의 receipt), 닫기 정리의 receipt 대기다. 이�
 이 경로를 부르지 않는다. 남은 owner는 App과 함께 버려지며, PTY는 drop 때 child 종료를 시도하지만 reap을
 관측하거나 회수 완료를 기록하지 않는다. 중단 뒤에는 종료 시점 View를 저장하지 않으므로
 마지막으로 저장된 View가 남는다. 이 중단은 회수 완료나 명령 결과를 뜻하지 않는다.
-예외로 원 standalone 등록에 반납하지 못한 채택 후보를 보관한 불명 생성은 이 15초 대기의 대상이 아니다.
-`restore_layout`이 꺼진 GUI 종료는 그 엔진의 retire가 이 생성이 끝나기를 기다리므로 기한 없이 대기하며
-중단도 일어나지 않는다. 이 경우의 처리는 후속 작업에서 정한다.
 
 ## EngineSession 해제
 
 닫힌 View나 실패한 View 생성의 EngineSession도 필수 의무를 먼저 배출한다.
 `EngineRelease`는 남은 kind 인스턴스, standalone을 포함한 PTY, 기존 installation 및
-private candidate의 회수 receipt를 보관한다. 실제 reap·plugin 응답이 끝나기 전에는
+private candidate의 회수 receipt를 보관한다. 원 등록 밖에 있는 채택 프로세스(반납 실패, 중단 시점의 설치 전 후보)는 예외로 retire하지
+않고 해제 완료를 기다리게 하지도 않는다(위 생성의 완료 조건 참조). 실제 reap·plugin 응답이 끝나기 전에는
 registry owner를 버리지 않는다. stream 보존 close는 구조·metadata를 지우지 않는다.
 private candidate가 아직 publication closure를 보유하면 그 closure를 실행하지 않고
 폐기했다는 원 binding의 완료 receipt를 전달한다. closure가 Installation으로 이동한

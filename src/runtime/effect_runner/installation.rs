@@ -457,7 +457,7 @@ impl Installation {
         }
     }
 
-    /// An adopted standalone process that could not return. Only an engine release may end it.
+    /// An adopted standalone process that could not return. No receipt can reconcile it.
     pub(crate) fn retains_adopted_standalone(&self) -> bool {
         self.adoption.is_some() && self.connection.is_some()
     }
@@ -515,6 +515,11 @@ impl Installation {
         mut self,
         release: &mut crate::runtime::resource_retirement::EngineRelease,
     ) {
+        if let Some(adoption) = &self.adoption
+            && let Some((terminal, pty)) = self.connection.take()
+        {
+            release.retain_unreturned_standalone(adoption.pty_id, terminal, pty);
+        }
         if let Some((terminal, pty)) = self.connection.take() {
             drop(terminal);
             release.retain_pty(pty.retire());

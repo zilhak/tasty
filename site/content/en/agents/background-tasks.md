@@ -1,4 +1,4 @@
-<!-- source-hash: 1f32c56ceb9c -->
+<!-- source-hash: 763b80498331 -->
 # Bring a background task into a tab
 
 Not every task needs a visible tab from the start. Run work in a hidden PTY, inspect its output, then bring the same process and history into a tab when needed.
@@ -70,6 +70,8 @@ tasty pty attach-surface --pty 2147483648 --pane 1
 ```
 
 Use a Pane ID from the list. **Only a running PTY** can be brought into a tab. A new background tab keeps its process and output history, and the old PTY ID leaves `pty list`.
+
+If bringing it in fails, the process is not ended and returns to its original PTY ID. In the rare case it cannot return to that ID, you get the recovery-required error (`-32068`), and the process stays running outside `pty list` until Tasty exits.
 
 Your view does not switch automatically. Select the tab when you want to inspect it. The response includes new tab and Surface IDs for subsequent CLI operations. Do not use the old PTY ID with `pty read` or `pty kill`.
 

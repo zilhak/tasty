@@ -45,6 +45,8 @@ pub(crate) struct EngineRegistry {
     /// 창에 배정되기 전의 engine.
     pending: Option<EngineId>,
     retiring: HashMap<EngineId, RetiringView>,
+    /// 원 standalone 등록으로 돌아가지 못한 채 engine이 해제된 채택 프로세스. 종료하지 않고 App이 끝날 때까지 보관한다.
+    unreturned: Vec<crate::runtime::resource_retirement::UnreturnedStandalone>,
 }
 
 impl EngineRegistry {
@@ -149,10 +151,25 @@ impl EngineRegistry {
             .any(|relation| matches!(relation, RetiringView::Releasing))
     }
 
+    /// The released session is dropped by the caller, so unreturned processes move here first.
     pub(crate) fn finish_retiring(&mut self, id: EngineId) -> Option<EngineSession> {
-        self.retiring
+        let mut session = self
+            .retiring
             .remove(&id)
-            .and_then(|_| self.sessions.remove(&id))
+            .and_then(|_| self.sessions.remove(&id))?;
+        if let Some(release) = session.engine_release.as_mut() {
+            self.unreturned.retain_mut(|kept| !kept.has_exited());
+            self.unreturned
+                .extend(release.take_unreturned_standalones());
+        }
+        Some(session)
+    }
+    #[cfg(all(test, unix))]
+    pub(crate) fn unreturned_process_ids(&self) -> Vec<Option<u32>> {
+        self.unreturned
+            .iter()
+            .map(crate::runtime::resource_retirement::UnreturnedStandalone::process_id)
+            .collect()
     }
 
     pub(crate) fn preserve_closed_view(
@@ -308,6 +325,7 @@ impl EngineRegistry {
             parked,
             pending,
             retiring: _,
+            unreturned: _,
         } = self;
         let by_id = sessions
             .values_mut()

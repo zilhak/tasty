@@ -427,9 +427,53 @@ pub(crate) struct EngineRelease {
     remote: Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
     /// Terminal children still starting for a creation this release took over.
     spawns: Vec<crate::runtime::effect_runner::PendingSpawn>,
+    unreturned: Vec<UnreturnedStandalone>,
     warned: bool,
 }
+
+/// An adopted standalone process outside its original registration: its return failed, or a halt
+/// found the transfer still private. No release retires it, and it does not hold the release
+/// open; the App keeps it until the process ends.
+pub(crate) struct UnreturnedStandalone {
+    // The Terminal drains the PTY output, so it stays with its process.
+    _terminal: tasty_terminal::Terminal,
+    pty: tasty_terminal::Pty,
+}
+impl UnreturnedStandalone {
+    /// Nothing else observes a kept process, so this reaps an exited child and settles its
+    /// reader; a child that is never waited for stays a zombie and its reader keeps waking.
+    pub(crate) fn has_exited(&mut self) -> bool {
+        self.pty.observe_exit();
+        self.pty.state().exit().is_some()
+    }
+    #[cfg(all(test, unix, feature = "gui"))]
+    pub(crate) fn process_id(&self) -> Option<u32> {
+        self.pty.process_id()
+    }
+}
+
 impl EngineRelease {
+    pub(crate) fn retain_unreturned_standalone(
+        &mut self,
+        pty_id: u32,
+        terminal: tasty_terminal::Terminal,
+        pty: tasty_terminal::Pty,
+    ) {
+        tracing::warn!(
+            pty = pty_id,
+            "adopted standalone PTY is outside its registration; it is kept alive outside the engine"
+        );
+        self.unreturned.retain_mut(|kept| !kept.has_exited());
+        self.unreturned.push(UnreturnedStandalone {
+            _terminal: terminal,
+            pty,
+        });
+    }
+    /// Moves the unreturned processes out before the released session is dropped.
+    #[cfg(feature = "gui")]
+    pub(crate) fn take_unreturned_standalones(&mut self) -> Vec<UnreturnedStandalone> {
+        std::mem::take(&mut self.unreturned)
+    }
     pub(crate) fn retain_spawn(&mut self, pending: crate::runtime::effect_runner::PendingSpawn) {
         self.spawns.push(pending);
     }

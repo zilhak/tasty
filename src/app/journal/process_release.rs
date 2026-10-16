@@ -40,7 +40,7 @@ impl JournalApplication {
             }
         }
         for (_, candidate) in session.pending_materializations.drain() {
-            candidate.retire_for_release(&mut release);
+            candidate.release_keeping_standalone(&mut release);
         }
         for (_, retirement) in session.pending_resource_retirements.drain() {
             retirement.retain_for_release(&mut release);

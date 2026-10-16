@@ -408,54 +408,164 @@ fn a_failed_adoption_returns_the_standalone_process_alive() {
     assert!(!journal.is_halted());
 }
 
-/// When the registration is taken, the process stays with its uncertain creation past the
-/// observation window instead of being retired.
+/// Runs the adoption until its installation is about to run, then lets another owner take the
+/// standalone ID so the withdrawal or discard cannot return the process.
 #[cfg(unix)]
-#[test]
-fn a_failed_adoption_that_cannot_return_is_not_retired_by_the_observation_window() {
-    let (mut session, mut journal) = boot();
-    terminal_workspace(&mut journal, &mut session);
-    let (pty_id, pid) = standalone_pty(&mut session);
-    inject(InstallFault::AfterSwap);
-    let rx = adopt(&mut journal, &session, pty_id, 708);
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
-    let mut stall = StallBudget::new(&journal);
-    let mut occupied = false;
-    while !occupied {
-        turn(&mut journal, &mut session, None, &services);
+fn occupy_after_claim(
+    journal: &mut JournalApplication,
+    session: &mut EngineSession,
+    pty_id: u32,
+    services: &crate::app::services::AppServices,
+) {
+    let mut stall = StallBudget::new(journal);
+    loop {
+        turn(journal, session, None, services);
         if !session.runtime.terminals.contains(pty_id) {
             assert!(
                 injected().is_some(),
                 "the occupant must be in place before the installation runs"
             );
-            // Another owner takes the ID, so the withdrawal cannot return the process.
             session.runtime.terminals.insert(
                 pty_id,
                 tasty_terminal::Terminal::new_detached(80, 24),
                 None,
             );
-            occupied = true;
+            return;
         }
         stall.nap("adoption claims the standalone owner");
     }
-    let until = Instant::now() + std::time::Duration::from_secs(7);
-    while Instant::now() < until {
-        turn(&mut journal, &mut session, None, &services);
+}
+
+/// The engine release must finish in bounded time while the unreturned process stays alive,
+/// including after the released session is dropped.
+#[cfg(unix)]
+fn release_engine_keeping(mut session: EngineSession, pid: u32) {
+    let until = Instant::now() + std::time::Duration::from_secs(10);
+    while !crate::runtime::resource_retirement::poll_engine_release(&mut session, None) {
         assert!(
-            rx.try_recv().is_err(),
-            "the retained process is still uncertain"
+            Instant::now() < until,
+            "the engine release never finishes while an unreturned adoption exists"
         );
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    assert!(process_exists(pid), "the engine release never kills it");
+    // Only the GUI releases an engine before the process ends.
+    #[cfg(feature = "gui")]
+    {
+        let mut engines = crate::app::engine_registry::EngineRegistry::default();
+        let id = engines
+            .insert_pending(session)
+            .unwrap_or_else(|_| panic!("the registry has no other pending engine"));
+        assert!(engines.begin_retiring_pending(id));
+        engines.mark_retiring_release(id);
+        drop(engines.finish_retiring(id).expect("released owner"));
+        assert_eq!(engines.unreturned_process_ids(), vec![Some(pid)]);
+        assert!(
+            process_exists(pid),
+            "dropping the released session never kills it"
+        );
+        // A kept process that ends on its own is reaped when a later engine release finishes.
+        // SAFETY: the test owns this child process; SIGKILL only ends it.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGKILL) }, 0);
+        let until = Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let mut later =
+                EngineSession::new(80, 24, std::sync::Arc::new(|| {})).expect("later engine");
+            later.engine_release = Some(Default::default());
+            let id = engines
+                .insert_pending(later)
+                .unwrap_or_else(|_| panic!("the registry has no other pending engine"));
+            assert!(engines.begin_retiring_pending(id));
+            engines.mark_retiring_release(id);
+            drop(engines.finish_retiring(id).expect("released owner"));
+            if engines.unreturned_process_ids().is_empty() && !process_exists(pid) {
+                break;
+            }
+            assert!(
+                Instant::now() < until,
+                "an exited kept process is never observed: kept {:?}, zombie {}",
+                engines.unreturned_process_ids(),
+                process_exists(pid)
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+}
+
+/// A halt while an adoption candidate is still private must not kill the standalone process; the
+/// halted release keeps it like one that could not return.
+#[cfg(unix)]
+#[test]
+fn a_halt_keeps_a_pending_adoption_candidate_alive() {
+    let (mut session, mut journal) = boot();
+    terminal_workspace(&mut journal, &mut session);
+    let (pty_id, pid) = standalone_pty(&mut session);
+    let _rx = adopt(&mut journal, &session, pty_id, 711);
+    let services = crate::ipc::handler::cli_entry_tests::test_core();
+    let mut stall = StallBudget::new(&journal);
+    while session.pending_materializations.is_empty() {
+        turn(&mut journal, &mut session, None, &services);
+        stall.nap("adoption claims the standalone owner");
+    }
+    assert!(!session.runtime.terminals.contains(pty_id));
+    journal.halted = Some("halted while the adoption candidate is private".into());
+    assert!(journal.release_halted_resources(&mut session, None));
+    assert!(session.pending_materializations.is_empty());
+    release_engine_keeping(session, pid);
+}
+
+/// A rejection before any owner changed discards the candidate. When the registration is taken
+/// the process cannot return, yet the creation ends and the engine release still finishes.
+#[cfg(unix)]
+#[test]
+fn a_rejected_adoption_that_cannot_return_does_not_block_the_engine_release() {
+    let (mut session, mut journal) = boot();
+    terminal_workspace(&mut journal, &mut session);
+    let (pty_id, pid) = standalone_pty(&mut session);
+    inject(InstallFault::BeforeChange);
+    let rx = adopt(&mut journal, &session, pty_id, 709);
+    let services = crate::ipc::handler::cli_entry_tests::test_core();
+    occupy_after_claim(&mut journal, &mut session, pty_id, &services);
+    let response = reply(&mut journal, &mut session, &rx, |_, _| {});
     assert_eq!(injected(), None, "the installation reached the fault");
-    assert!(journal.has_creation(session.id));
-    assert!(process_exists(pid), "the observation window never kills it");
-    assert!(!journal.is_halted());
-    // Nothing reconciles the retained process, so the App must not keep waking for it.
-    let wake = journal.cleanup_poll_deadline();
-    assert!(
-        wake.is_none_or(|wake| wake > Instant::now()),
-        "a retained process asks for no past wake-up: {:?}",
-        wake.map(|wake| Instant::now().saturating_duration_since(wake))
+    let error = response
+        .error
+        .expect("an unreturned adoption is not a success");
+    assert_eq!(
+        error.code,
+        crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED
     );
+    assert!(!journal.has_creation(session.id));
+    assert!(!journal.pauses_observation());
+    assert!(session.pending_materializations.is_empty());
+    assert!(process_exists(pid));
+    release_engine_keeping(session, pid);
+}
+
+/// After the swap the withdrawal cannot return the process either. The creation ends once its
+/// uncertainty is recorded instead of holding the engine, and the process is never killed.
+#[cfg(unix)]
+#[test]
+fn a_failed_adoption_that_cannot_return_does_not_block_the_engine_release() {
+    let (mut session, mut journal) = boot();
+    terminal_workspace(&mut journal, &mut session);
+    let (pty_id, pid) = standalone_pty(&mut session);
+    inject(InstallFault::AfterSwap);
+    let rx = adopt(&mut journal, &session, pty_id, 710);
+    let services = crate::ipc::handler::cli_entry_tests::test_core();
+    occupy_after_claim(&mut journal, &mut session, pty_id, &services);
+    let response = reply(&mut journal, &mut session, &rx, |_, _| {});
+    assert_eq!(injected(), None, "the installation reached the fault");
+    let error = response
+        .error
+        .expect("an unreturned adoption is not a success");
+    assert_eq!(
+        error.code,
+        crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED
+    );
+    assert!(!journal.has_creation(session.id));
+    #[cfg(feature = "gui")]
+    assert!(!journal.has_pending_engine_effects(session.id));
+    assert!(process_exists(pid));
+    release_engine_keeping(session, pid);
 }

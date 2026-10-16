@@ -546,6 +546,19 @@ impl PreparedMaterialization {
 }
 
 impl PreparedMaterialization {
+    /// A standalone transfer keeps its process: a release never retires a user's adopted PTY,
+    /// whether its return failed or a halt found it still private. The rest of the private
+    /// candidate is released as usual.
+    pub(crate) fn release_keeping_standalone(
+        mut self,
+        release: &mut crate::runtime::resource_retirement::EngineRelease,
+    ) {
+        if let (Some(adoption), Some((terminal, pty))) = (&self.adoption, self.connection.take()) {
+            release.retain_unreturned_standalone(adoption.pty_id, terminal, pty);
+        }
+        self.retire_for_release(release);
+    }
+
     pub(crate) fn retire_for_release(
         mut self,
         release: &mut crate::runtime::resource_retirement::EngineRelease,

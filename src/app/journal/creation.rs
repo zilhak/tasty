@@ -605,12 +605,13 @@ impl Creation {
             Ok(receipt) => Ok(Some(receipt)),
             Err((candidate, reason)) => {
                 let lease = candidate.lease.clone();
-                session
-                    .pending_materializations
-                    .insert(lease.operation.clone(), candidate);
                 uncertain::log_uncertain(&lease, "discard", &reason);
-                // The stage keeps the owner even if the record cannot be queued.
-                self.retain_uncertain(reason.clone());
+                // The stage keeps the owner even if the record cannot be queued. The session's
+                // pending candidates do not, so the engine release never waits for it.
+                self.stage = Stage::Uncertain(Uncertain::pending(
+                    reason.clone(),
+                    UncertainOwner::Unreturned(Box::new(candidate)),
+                ));
                 self.enqueue(Work::PreparationUncertain { lease, reason })?;
                 Ok(None)
             }

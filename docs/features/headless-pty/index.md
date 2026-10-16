@@ -54,6 +54,7 @@ read·write·wait는 idle 시각을 갱신하며 기본값은 override할 수 �
 새 ID로 waker를 연결하고 기존 Pane에 background tab을 추가한다. 프로세스와 화면 내용은 유지한다.
 사용자의 활성 탭은 바꾸지 않으며 tab.created·surface.created를 보낸다.
 PtyState의 standalone 표시가 제거되어 이후에는 surface API로 다룬다. 물리 generation과 child handle은 유지된다. 옛 PTY ID의 waker 등록도 정리한다.
+연결이 실패하면 프로세스를 종료하지 않고 원래 PTY ID로 돌려놓는다. 그 ID를 다른 owner가 차지해 돌려놓지 못하면 요청은 `-32068`(복구 필요)로 끝나고, 프로세스는 `pty.list`에 나타나지 않은 채 앱이 끝날 때까지 남는다([자원 회수](../../architecture/resource-recovery.md)).
 
 ## 인터페이스
 
