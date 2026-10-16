@@ -10,9 +10,7 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     vspace(ui, th.spacing_sm);
 
     if !settings.general.is_shell_valid() {
-        ui.label(
-            egui::RichText::new(t("settings.terminal.shell_not_found")).color(th.accent_warning()),
-        );
+        ui.label(egui::RichText::new(shell_not_found_notice()).color(th.accent_warning()));
         vspace(ui, th.spacing_xs);
     }
 
@@ -426,4 +424,25 @@ pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Setting
             .small()
             .color(th.accent_warning()),
     );
+}
+
+/// 설정한 셸을 쓸 수 없을 때의 안내. Windows 는 Git Bash 를, 다른 OS 는 로그인 셸 등을 대신 쓴다.
+fn shell_not_found_notice() -> &'static str {
+    if cfg!(windows) {
+        t("settings.terminal.shell_not_found_windows")
+    } else {
+        t("settings.terminal.shell_not_found_unix")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Git Bash 안내는 Windows 에서만 쓴다. 다른 OS 는 대체 셸을 찾는다.
+    #[test]
+    fn the_shell_notice_mentions_git_bash_only_on_windows() {
+        let notice = shell_not_found_notice();
+        assert_eq!(notice.contains("Git Bash"), cfg!(windows), "{notice}");
+    }
 }
