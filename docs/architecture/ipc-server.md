@@ -4,7 +4,7 @@
 
 ## 연결과 신뢰 범위
 
-로컬 IPC는 127.0.0.1의 동적 TCP 포트와 JSON-RPC를 사용하고 포트 파일로 접속 위치를 알린다. 단일 사용자 데스크톱을 대상으로 OS별 socket·pipe 구현을 두지 않는다. loopback 자체는 같은 머신의 다른 OS 사용자를 인증하거나 차단하지 않는다. 원격 접속은 SSH에 위임한다. agent 세션 토큰의 권한 검사는 존재하지만 Local 연결에 대한 OS 사용자 인증을 대신하지는 않는다. 공유 머신·다중 사용자 서비스를 지원하려면 Unix socket 권한이나 Windows named pipe ACL을 다시 검토한다.
+로컬 IPC는 127.0.0.1의 동적 TCP 포트와 JSON-RPC를 사용하고 포트 파일로 접속 위치를 알린다. 단일 사용자 데스크톱을 대상으로 OS별 socket·pipe 구현을 두지 않는다. loopback 자체는 같은 머신의 다른 OS 사용자를 인증하거나 차단하지 않는다. 원격 접속은 SSH에 위임한다. agent 세션 토큰은 요청이 어느 agent 의 것인지 구분하는 표지이며 인증 수단이 아니다. 토큰 없는 Local 연결은 사용자로 취급하고, 세션 권한 검사는 협조적인 agent 의 실수를 막는다([ADR-0073](../adr/0073-local-caller-agent-id-is-a-self-reported-label.md#신뢰-모델-구분-표지와-보안-경계)). 공유 머신·다중 사용자 서비스를 지원하려면 Unix socket 권한이나 Windows named pipe ACL을 다시 검토한다.
 
 ## 입장 상한
 

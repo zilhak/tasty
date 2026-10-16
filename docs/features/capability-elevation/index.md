@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent (요청) · 로컬 사용자 (승인) · 운영자 (audit 조회)
-- **ADR**: 없음
+- **ADR**: [ADR-0073](../../adr/0073-local-caller-agent-id-is-a-self-reported-label.md) (신뢰 모델)
 - **코드**: dispatcher 권한 게이트(`handler.rs`), `src/adapters/ipc/audit.rs`, session/elevation 핸들러, 승인 응답의 권한 부여(`src/app/approval_grant.rs`)
 - **화면**: capability_elevation approval popup
 - **메서드 목록**: [reference/api](../../reference/api.md#plugin-관리-plugin-local-only)
@@ -23,7 +23,7 @@ plugin/agent 가 IPC 호출 시 호스트가 권한을 강제하고, 부족하�
 
 ### Agent session 권한
 
-claude.spawn 등으로 띄운 자식은 `session.issue` 로 토큰 발급(base permissions = 부모 권한의 부분집합, escalation 금지 — 단 plugin 은 자기 namespace의 `ipc.invoke:<prefix>` 권한이 없어도 그 권한을 자식에게 부여할 수 있다). plugin namespace 메서드(표에 이름이 없는 것)는 agent 에게도 그 namespace 의 `ipc.invoke:<prefix>` 를 요구한다 — 없으면 아래 elevation 으로 연다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)). 자식은 모든 호출에 `TASTY_SESSION_TOKEN` 을 envelope `session_token` 으로 첨부 → 호스트가 `CallerContext::Agent` 구성. invalid/expired/revoked 토큰은 `-32001`(Local fallback 안 함 — 위조 방어). 런타임 추가 grant 는 `plugin.grant_agent_permission`(TTL 가능, base 와 분리 슬롯).
+claude.spawn 등으로 띄운 자식은 `session.issue` 로 토큰 발급(base permissions = 부모 권한의 부분집합, escalation 금지 — 단 plugin 은 자기 namespace의 `ipc.invoke:<prefix>` 권한이 없어도 그 권한을 자식에게 부여할 수 있다). plugin namespace 메서드(표에 이름이 없는 것)는 agent 에게도 그 namespace 의 `ipc.invoke:<prefix>` 를 요구한다 — 없으면 아래 elevation 으로 연다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)). 자식은 모든 호출에 `TASTY_SESSION_TOKEN` 을 envelope `session_token` 으로 첨부 → 호스트가 `CallerContext::Agent` 구성. invalid/expired/revoked 토큰은 `-32001`(Local fallback 안 함 — 신원을 밝히려 한 요청이 조용히 사용자 권한으로 실행되지 않게 한다). 런타임 추가 grant 는 `plugin.grant_agent_permission`(TTL 가능, base 와 분리 슬롯).
 
 ### Elevation flow
 
@@ -31,7 +31,7 @@ Agent 가 권한 부족으로 거부되면 호스트가 (같은 (agent, permissi
 
 grant 대상(agent·권한·유효 시간)은 host 가 권한 거부·`plugin.request_permission` 으로 요청을 만들 때 기록 구조의 host 전용 필드(`ApprovalRequest.host_elevation`)에 담는다. 이 필드는 직렬화하지 않으므로 IPC 요청이나 저장된 기록으로 채울 수 없다. grant 와 같은 (agent, permission) Pending 재사용은 이 필드로만 판정하고, metadata 의 `kind`·`agent_id`·`permission`·`grant_ttl_secs` 는 조회용 사본일 뿐 grant 근거가 아니다. 공개 `approval.request` 가 metadata `kind` 에 `capability_elevation` 을 주면 `-32602`(`invalid_request: …`)로 거절한다 — 승인 권한만 가진 caller 가 권한 상승 요청을 흉내 내 다른 agent 에게 권한을 붙이지 못하게 한다. agent 가 `plugin.request_permission` 으로 **미리** 발행할 수도 있다(거부 대기 없이).
 
-**권한 상승 요청은 사용자만 종결한다.** `host_elevation` 이 있는 기록에 사용자(GUI popup·Local caller, `Responder::User`)가 아닌 응답자 — agent 세션·plugin — 가 `approval.respond` 를 보내면 선택지(`approve`·`approve_permanently`·`deny`)와 관계없이 `-32019`(`user_response_required: <id>`)로 거절하고 상태를 바꾸지 않는다. 같은 caller 의 `approval.cancel` 도 같은 오류로 거절한다. 검사는 승인 저장소의 응답 전이 안에서 하므로 grant 보다 앞선다. 거절·취소까지 막는 이유: agent 가 사용자의 판단보다 먼저 다른 agent 의 요청을 닫으면, 사용자는 popup 에서 그 요청을 볼 수 없고 대상 agent 는 이유 없이 거부된다. 만료는 elevation 요청에 `timeout_ms` 가 없고 `approval.await` 가 local-only 라 세션 토큰을 쓰는 agent 는 일으킬 수 없다. 일반 승인 요청(`host_elevation` 없음)은 지금처럼 `Approval` 권한을 가진 agent·plugin 도 응답·취소할 수 있다. 이 보장은 세션 토큰으로 접속한 agent 와 plugin 에 대한 것이고, 토큰 없이 접속한 프로세스는 기존 신뢰 모델(로컬 TCP 접속 = 사용자, [ADR-0073](../../adr/0073-local-caller-agent-id-is-a-self-reported-label.md))대로 사용자로 취급된다.
+**권한 상승 요청은 사용자만 종결한다.** `host_elevation` 이 있는 기록에 사용자(GUI popup·Local caller, `Responder::User`)가 아닌 응답자 — agent 세션·plugin — 가 `approval.respond` 를 보내면 선택지(`approve`·`approve_permanently`·`deny`)와 관계없이 `-32019`(`user_response_required: <id>`)로 거절하고 상태를 바꾸지 않는다. 같은 caller 의 `approval.cancel` 도 같은 오류로 거절한다. 검사는 승인 저장소의 응답 전이 안에서 하므로 grant 보다 앞선다. 거절·취소까지 막는 이유: agent 가 사용자의 판단보다 먼저 다른 agent 의 요청을 닫으면, 사용자는 popup 에서 그 요청을 볼 수 없고 대상 agent 는 이유 없이 거부된다. 만료는 elevation 요청에 `timeout_ms` 가 없고 `approval.await` 가 local-only 라 세션 토큰을 쓰는 agent 는 일으킬 수 없다. 일반 승인 요청(`host_elevation` 없음)은 지금처럼 `Approval` 권한을 가진 agent·plugin 도 응답·취소할 수 있다. 이 보장은 세션 토큰으로 접속한 agent 와 plugin 에 대한 것이고, 토큰 없이 접속한 프로세스는 로컬 TCP 접속 = 사용자라는 정의대로 사용자로 취급된다.
 
 `plugin.request_permission` 의 Agent caller 는 자기 자신만 대상으로 지정한다. `agent_id` 를 생략하거나 자기 agent_id 를 주면 되고, 다른 값은 `-32602` 로 거절한다. Plugin·Local caller 는 지금처럼 대상 agent 를 지정한다. 이 두 제한이 없으면 `Approval` 권한을 가진 agent 가 다른 agent 를 대상으로 요청을 만들거나(또는 다른 agent 의 거부로 생긴 요청을 찾아) 스스로 승인해 사용자 개입 없이 권한을 붙일 수 있다. 메커니즘은 [human-handoff](../human-handoff/index.md) 위에 얹힘.
 
@@ -47,6 +47,10 @@ grant 대상(agent·권한·유효 시간)은 host 가 권한 거부·`plugin.re
 elevation 자체는 이 로그에 의존하지 않는다 — 승인 이력은 `tasty.approval.*` 로 별도 영속되고, elevation 발행 트리거도 deny 경로다.
 
 보존: 관측 로그 3종 공통 정책(`store::log_retention`)을 따른다 — 50시간 + 5만 건 상한이며 부팅과 런타임 양쪽에서 집행된다.
+
+### 무엇을 막는 장치인가
+
+agent 의 세션 토큰은 요청이 어느 agent 의 것인지 구분하는 표지이고, agent 권한과 권한 상승 승인은 협조적인 agent 의 실수를 막고 의도를 드러내는 장치다. agent 는 사용자가 자기 컴퓨터에서 띄운 프로세스이므로 agent 와 사용자 사이에는 보안 경계를 두지 않는다. 토큰을 지운 agent 의 요청이 사용자 요청으로 처리되는 것은 결함이 아니라 정의된 동작이다. plugin 은 다르다. 사용자가 직접 등록한 커스텀 plugin 은 신뢰할 수 없으므로 보안 경계를 둘 대상이다. 다만 현재 plugin 권한은 호스트 IPC 호출만 제한해 완전한 보안을 제공하지 않는다([plugin 권한 한계](../../dev-guide/plugin-permissions.md#한계)). 근거와 기각한 대안은 [ADR-0073](../../adr/0073-local-caller-agent-id-is-a-self-reported-label.md#신뢰-모델-구분-표지와-보안-경계)에 있다.
 
 ## 인터페이스
 

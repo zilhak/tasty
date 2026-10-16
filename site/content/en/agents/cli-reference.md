@@ -1,4 +1,4 @@
-<!-- source-hash: 1b746cb9ea71 -->
+<!-- source-hash: 38e30c183f9c -->
 # CLI command reference
 
 How to use the `tasty` commands the [introduction](cli.md) does not cover: reading `read since-mark` from a saved position, looking into a surface, permission tokens, notifications, metadata, queues between Surfaces, running several terminals, headless PTYs, shared memory, observers, usage records, and other queries and settings, organised by purpose. Check every argument a command takes with `tasty help <command>`.
@@ -57,6 +57,7 @@ tasty session revoke --token <token>
 ```
 
 When a child uses the issued token as `TASTY_SESSION_TOKEN`, Tasty checks its requests against the permissions on that token.
+A session token tells Tasty which agent a request comes from and keeps agents from making mistakes; it is not a security boundary. A command run without a token is handled as the user's command.
 
 Commands that a plugin adds (`tasty markdown recent`, `tasty codex spawn` and so on) need a permission too.
 For `tasty <command> …`, add `--permission ipc.invoke:<command>` — `tasty markdown …` needs

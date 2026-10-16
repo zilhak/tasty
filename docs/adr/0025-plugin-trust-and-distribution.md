@@ -56,3 +56,4 @@ WASM은 선형 메모리, 공유 버퍼, 디버깅, 파일 경로와 동적 권�
 - [패키징과 생태계 정책](../dev-guide/plugin-packaging.md)
 - [호스트 API 권한과 OS 접근](../dev-guide/plugin-permissions.md)
 - [플러그인 개념](../concepts/plugins.md)
+- [ADR-0073](0073-local-caller-agent-id-is-a-self-reported-label.md#신뢰-모델-구분-표지와-보안-경계) — 보안 경계의 대상은 커스텀 plugin 이고 agent 와 사용자 사이에는 경계가 없다

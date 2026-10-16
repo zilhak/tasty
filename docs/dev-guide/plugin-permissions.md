@@ -215,6 +215,8 @@ grant/revoke → `plugins.toml` 저장 → `refresh_plugin_permissions` 가 (매
 
 ## Agent caller — session token + temp grants
 
+세션 토큰은 요청이 어느 agent 의 것인지 구분하는 표지이고, agent 권한은 협조적인 agent 의 실수를 막는 장치다. 보안 경계가 아니다. 보안 경계를 둘 대상은 커스텀 plugin 하나이며, 그 수단인 plugin 권한의 현재 범위는 아래 [한계](#한계)에 있다([ADR-0073](../adr/0073-local-caller-agent-id-is-a-self-reported-label.md#신뢰-모델-구분-표지와-보안-경계)).
+
 Agent는 `session.issue`로 받은 토큰을 `TASTY_SESSION_TOKEN`과 IPC 봉투의 `session_token`으로 전달한다. 잘못됐거나 만료·취소된 토큰은 -32001로 거절하며 Local로 바꾸지 않는다. 권한은 발급 때 정한 base와 만료되지 않은 temp grant의 합이다. MissingPermission은 같은 agent·권한의 Pending 격상을 재사용해 승인 요청을 만든다.
 
 호스트 표에 없는 plugin namespace 호출은 모든 권한 보유 caller에게 ipc.invoke:<prefix>를 요구한다.
@@ -223,7 +225,7 @@ Agent는 `session.issue`로 받은 토큰을 `TASTY_SESSION_TOKEN`과 IPC 봉투
 agent의 재발급은 받은 권한의 부분집합이다.
 표에 정확한 이름이 있는 image.open 같은 host 메서드는 표의 기존 권한을 따른다.
 거절된 호출은 plugin 기동 전에 끝나야 한다.
-세션 발급 실패 뒤 토큰 없이 자식을 띄우는 기존 경로는 별도의 fail-open 한계로 남아 있다.
+세션 발급 실패 뒤에는 토큰 없이 자식을 띄우며, 그 자식은 Local 로 취급된다. 실수 방지 장치가 빠지는 경로이고 보안 결함은 아니다.
 
 <a id="비-local-caller-가-유발할-수-있는-plugin-수명주기"></a>
 
@@ -263,6 +265,8 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 ## 한계
 
 권한 게이트는 **호스트 IPC 호출만** 막는다. 플러그인이 자기 프로세스에서 `std::fs::write` 로 임의 경로에 쓰면 호스트는 모른다 — 진짜 격리는 OS 샌드박스(seccomp/sandbox-exec/WASM)가 필요하고 현재 범위 밖. 즉 매니페스트 `permissions[]` 는 **"호스트 API 호출 권한"** 이지 "OS 자원 권한"이 아니다 — UI/문서에서 grant 요청 시 이 표현을 유지해 OS 자원까지 보호한다고 오해하게 하지 않는다.
+
+같은 이유로 plugin 프로세스는 로컬 IPC 포트에 세션 토큰 없이 직접 접속할 수 있고, 그 요청은 Local(사용자)로 처리된다. 따라서 현재 plugin 권한은 커스텀 plugin 에 대해 완전한 보안을 제공하지 않는다. 보안 경계를 둘 대상이 커스텀 plugin 이라는 결정과 남은 한계는 [ADR-0073](../adr/0073-local-caller-agent-id-is-a-self-reported-label.md#신뢰-모델-구분-표지와-보안-경계)·[ADR-0025](../adr/0025-plugin-trust-and-distribution.md)에 있다.
 
 플러그인 권한과 attach 접근 범위는 따로 관리한다. 이 문서의 권한은 플러그인이
 호스트 IPC를 호출할 수 있는지를 정한다. 플러그인이 그린 화면을 attach로 원격에

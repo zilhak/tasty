@@ -1,4 +1,4 @@
-<!-- source-hash: bedeb0a8a865 -->
+<!-- source-hash: cf6d0b8aa5ae -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -79,7 +79,7 @@ Installing grants the permissions the plugin requests. Review the permission lis
 
 ## Permissions
 
-A plugin declares the permissions it needs in advance. Tasty rejects requests to the host when the required permission has not been granted. Common names and their meanings:
+A plugin declares the permissions it needs in advance. Tasty rejects requests to the host when the required permission has not been granted. Permissions only limit the requests a plugin sends to Tasty; they do not stop the plugin process from reading and writing files or connecting to the network on its own. Install only plugins you trust. Common names and their meanings:
 
 | Permission | What it allows |
 |------|-------------|

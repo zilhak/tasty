@@ -39,6 +39,9 @@ IPC에서 plugin 간 secret을 분리하면서 실제보다 강한 저장 보호
 loopback TCP도 다른 OS 사용자를 인증하지 않으므로 공유 머신의 격리 수단이 아니다.
 keyring을 쓴다는 사실만으로 모든 플랫폼에서 같은 사용자 공격자까지 막는다고 약속하지 않는다.
 
+이 한계 때문에 agent 와 사용자 사이에는 보안 경계를 두지 않는다. 세션 토큰과 agent 권한은 구분과 실수 방지 장치이고,
+보안 경계를 둘 대상은 커스텀 plugin ↔ Tasty·사용자 하나다([ADR-0073](0073-local-caller-agent-id-is-a-self-reported-label.md#신뢰-모델-구분-표지와-보안-경계)).
+
 ## Alternatives Considered
 
 - host가 AES-GCM과 keyring만 추가해도 sandbox 없는 plugin의 접근 모델 전체를 해결하지 못한다.
@@ -56,6 +59,7 @@ sandbox 도입만으로 안전하다고 선언하지 않고 DB·Passkey·keyring
 ## References
 
 - [메모리 보안과 Passkey 운영](../design/systems/memory.md#보안신뢰-모델)
+- [ADR-0073](0073-local-caller-agent-id-is-a-self-reported-label.md) — 세션 토큰은 구분 표지, 보안 경계의 대상은 커스텀 plugin 하나
 - [IPC 연결의 신뢰 범위](../architecture/ipc-server.md#연결과-신뢰-범위)
 - [플러그인 민감 데이터](../dev-guide/plugin-development.md#민감-데이터--regular--secret--keyring-선택)
 - 구현: `crates/tasty-memory/`, `crates/tasty-remote-profiles/src/passkey.rs`.
