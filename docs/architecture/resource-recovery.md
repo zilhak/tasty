@@ -119,12 +119,18 @@ reader/writer worker 시작·capture 주입이 실패하면 불명이다.
 - Windows: `CreatePseudoConsole`과 `CreateProcessW` 전 준비가 실패하거나 `CreateProcessW`가 실패하면
   프로세스가 만들어지지 않는다.
 
-엔진 첫 workspace 생성은 예외로, child가 생기기 전 실패도 불명 경로로 끝낸다. 응답할 호출자가 없는 이
-생성의 알려진 실패는 journal 전체를 중단(halt)시키기 때문이다.
+이 분류는 생성 경로마다 다음과 같이 끝난다.
+
+- IPC 공개 생성: 호출자에게 알려진 실패로 응답한다.
+- 선택 복원: placeholder에 실패 이유를 기록하고 시도 횟수를 늘린다. 자동 재시도는 시도 5회
+  (`MAX_ACTIVATION_ATTEMPTS`)에서 멈추며 placeholder는 그대로 남는다.
+- 엔진 첫 workspace: 응답할 호출자가 없으므로 그 생성만 실패로 끝낸다. journal은 계속 동작하며,
+  실패 이유는 engine별로 보관해 아래 실패 표시의 오류 본문에 붙인다.
 
 새 창이나 첫 부팅의 첫 workspace 생성이 실패하거나 불명이 되면 engine은 준비됐지만 workspace가 없다.
 View는 workspace 없이 그릴 수 없으므로 새 창은 창 생성 실패(`window.create` 오류와 실패 알림)로
 끝나고 그 engine을 실패한 opening으로 해제한다. 첫 부팅은 엔진 생성 실패 화면으로 넘어간다.
+알려진 실패라면 두 표시 모두 오류 본문에 그 이유(예: 셸 실행 파일 확인 실패)를 함께 보여 준다.
 
 터미널 준비는 App이 검증과 고정 입력(셸 실행 정보·waker·색·복원 capture)을 마친 뒤 전용 스레드
 하나에 맡긴다. 동시 실행은 하나이며 앞선 작업 뒤 대기열은 16개로 제한한다. 대기열이 차면 아무것도

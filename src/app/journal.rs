@@ -62,6 +62,9 @@ pub(crate) struct JournalApplication {
     resource_cleanups: std::collections::BTreeMap<u64, resource_cleanup::Cleanup>,
     restorations: restorations::Restorations,
     restored_views: HashMap<EngineId, crate::model::RestoredPresentation>,
+    /// Why an engine's first workspace ended unpublished, for the View that cannot open it.
+    #[cfg(feature = "gui")]
+    first_workspace_failures: HashMap<EngineId, String>,
     #[cfg(feature = "gui")]
     view_writes: view_writes::ViewWrites,
     #[cfg(feature = "gui")]
@@ -175,6 +178,8 @@ impl JournalApplication {
             forwards: Default::default(),
             restorations: Default::default(),
             restored_views: Default::default(),
+            #[cfg(feature = "gui")]
+            first_workspace_failures: Default::default(),
             #[cfg(feature = "gui")]
             view_writes: Default::default(),
             #[cfg(feature = "gui")]
@@ -433,6 +438,12 @@ impl JournalApplication {
         id: EngineId,
     ) -> Option<crate::model::RestoredPresentation> {
         self.restored_views.remove(&id)
+    }
+
+    /// The reason an engine became ready without a workspace, when its first creation failed.
+    #[cfg(feature = "gui")]
+    pub(crate) fn take_first_workspace_failure(&mut self, id: EngineId) -> Option<String> {
+        self.first_workspace_failures.remove(&id)
     }
 
     /// Selection is supplied by the application/View. Loading a payload alone grants no activation.

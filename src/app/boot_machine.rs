@@ -47,6 +47,14 @@ fn boot_engine_error_info(err: &anyhow::Error) -> crate::gpu::BootErrorInfo {
     crate::gpu::BootErrorInfo { title, body, hint }
 }
 
+/// 첫 workspace가 만들어지지 않은 엔진의 오류. 실패 이유를 알면 함께 보여 준다.
+fn first_workspace_error(reason: Option<String>) -> String {
+    match reason {
+        Some(reason) => format!("the first workspace was not created: {reason}"),
+        None => "the first workspace was not created".into(),
+    }
+}
+
 /// 저널 실패 문구. `home_in_use`는 worker가 "다른 프로세스가 같은 홈을 쓰고 있음"으로 보낸
 /// 실패일 때의 홈 경로다. 오류 문자열을 해석하지 않는다.
 fn journal_error_info(
@@ -442,9 +450,8 @@ impl App {
         // A failed or uncertain first creation leaves the engine ready without a workspace,
         // which no View can show. Report it like other engine startup failures.
         if session.core_state.workspaces().is_empty() {
-            self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(
-                "the first workspace was not created"
-            )));
+            let error = first_workspace_error(self.journal.take_first_workspace_failure(id));
+            self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
             return false;
         }
         self.boot_transition_after_journal(boot, progress)

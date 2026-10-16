@@ -78,6 +78,7 @@ impl JournalApplication {
     pub(crate) fn forget_released_engine(&mut self, id: EngineId) {
         self.opening.remove(&id);
         self.restored_views.remove(&id);
+        self.first_workspace_failures.remove(&id);
         self.restorations.forget(id);
     }
 

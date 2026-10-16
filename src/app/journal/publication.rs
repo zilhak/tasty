@@ -116,6 +116,7 @@ impl JournalApplication {
         }
         for key in settled {
             let creation = self.creations.remove(&key).expect("settled creation");
+            self.note_first_workspace_failure(key.0, &creation);
             if let Some((command, reason)) = creation.unconfirmed_cleanup() {
                 self.commands.note_unconfirmed_cleanup(command, reason);
             }
@@ -125,6 +126,18 @@ impl JournalApplication {
         // request it, so ask for it here.
         (self.wake)();
     }
+
+    #[cfg(feature = "gui")]
+    fn note_first_workspace_failure(&mut self, engine: EngineId, creation: &creation::Creation) {
+        if let Some(reason) = creation.first_workspace_failure() {
+            tracing::error!(engine = ?engine, "the first workspace was not created: {reason}");
+            self.first_workspace_failures.insert(engine, reason);
+        }
+    }
+
+    /// Without a View no window waits for an engine's first workspace.
+    #[cfg(not(feature = "gui"))]
+    fn note_first_workspace_failure(&mut self, _engine: EngineId, _creation: &creation::Creation) {}
 
     fn accept_bootstrap(
         &mut self,
@@ -667,10 +680,11 @@ impl JournalApplication {
                 .expect("creation exists")
                 .answered(&self.worker, session, &self.spawner, result?)?
             {
-                if let Some(mut creation) = self.creations.remove(&key)
-                    && let Some(request) = creation.failed_restore(session)
-                {
-                    self.restorations.return_ready(id, request);
+                if let Some(mut creation) = self.creations.remove(&key) {
+                    self.note_first_workspace_failure(id, &creation);
+                    if let Some(request) = creation.failed_restore(session) {
+                        self.restorations.return_ready(id, request);
+                    }
                 }
                 self.refresh_in_progress_commands();
             }

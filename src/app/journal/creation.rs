@@ -35,6 +35,8 @@ pub(super) struct Creation {
     restore_failure: Option<String>,
     stage: Stage,
     public: bool,
+    /// An engine's first workspace has no caller; its failure leaves the engine without one.
+    first_workspace: bool,
     assembly_member: bool,
     transfers_existing: bool,
     one_shot_input: Option<String>,
@@ -153,6 +155,7 @@ impl Creation {
             ticket,
             binding,
             public: true,
+            first_workspace: false,
             assembly_member: false,
             transfers_existing: false,
             one_shot_input: None,
@@ -212,6 +215,7 @@ impl Creation {
             binding,
             stage: Stage::Admit,
             public: false,
+            first_workspace: true,
             assembly_member: false,
             transfers_existing: false,
             one_shot_input: None,
@@ -285,6 +289,7 @@ impl Creation {
             receipt: Default::default(),
             stage: Stage::Admit,
             public: false,
+            first_workspace: false,
             assembly_member: false,
             transfers_existing: false,
             one_shot_input: None,
@@ -524,7 +529,8 @@ impl Creation {
                 answered: true,
                 started,
             },
-            (Stage::Failed(reason), _) if self.public => {
+            // The first workspace's failure ends here; its engine stays ready without one.
+            (Stage::Failed(reason), _) if self.public || self.first_workspace => {
                 // OnceLock rejection means the original observer already has its terminal result.
                 self.receipt
                     .get_or_init(|| ActivationOutcome::Failed(reason));
@@ -643,6 +649,15 @@ impl Creation {
             .map_err(|error| error.to_string())?;
         self.stage.mark_published();
         Ok(Some(leaf))
+    }
+
+    /// Why an engine's first workspace ended without being published, once it has ended.
+    #[cfg(feature = "gui")]
+    pub(super) fn first_workspace_failure(&self) -> Option<String> {
+        match self.receipt.get() {
+            Some(ActivationOutcome::Failed(reason)) if self.first_workspace => Some(reason.clone()),
+            _ => None,
+        }
     }
 
     pub(super) fn failed_restore(

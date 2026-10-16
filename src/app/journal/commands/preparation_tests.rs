@@ -402,18 +402,39 @@ fn a_shell_that_cannot_start_is_a_known_failure() {
     assert_eq!(session.core_state.local_workspaces().len(), 2);
 }
 
-/// An engine's first workspace has no caller to answer. Its known failure would halt every
-/// engine's journal, so it settles as an engine without a workspace like an unknown result.
+/// An engine's first workspace has no caller to answer. Its known failure ends that creation, so
+/// the engine is ready without a workspace and keeps the reason for the View that cannot open,
+/// while every other engine's journal keeps running.
 #[test]
 fn a_first_workspace_whose_shell_cannot_start_does_not_halt_the_journal() {
     let (mut first, mut journal) = boot();
     let configured = first.runtime.settings.general.shell.clone();
     let _shell = unexecutable_shell(&mut first);
-    let second = second_engine(&mut first, &mut journal);
+    let mut second = second_engine(&mut first, &mut journal);
     assert!(!journal.is_halted());
     assert!(second.core_state.local_workspaces().is_empty());
+    assert!(
+        journal
+            .creations
+            .keys()
+            .all(|(engine, _)| *engine != second.id),
+        "the failed first creation ended"
+    );
+    assert!(
+        second.engine_release.is_none(),
+        "no child existed, so nothing is left to the engine release"
+    );
+    #[cfg(feature = "gui")]
+    {
+        let reason = journal
+            .take_first_workspace_failure(second.id)
+            .expect("the known failure is kept for the View");
+        assert!(!reason.is_empty());
+        #[cfg(unix)]
+        assert!(reason.contains("not executable"), "{reason}");
+    }
     first.runtime.settings.general.shell = configured;
     let created = create(&mut journal, 850);
-    let response = reply(&mut journal, &mut [&mut first], &created);
+    let response = reply(&mut journal, &mut [&mut first, &mut second], &created);
     assert!(response.error.is_none(), "{response:?}");
 }
