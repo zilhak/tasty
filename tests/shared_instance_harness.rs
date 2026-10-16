@@ -177,3 +177,6 @@ fn per_test_workspace_surface_runs_a_shell() {
 
 #[path = "common/startup_tests.rs"]
 mod startup_tests;
+
+#[path = "common/call_tests.rs"]
+mod call_tests;

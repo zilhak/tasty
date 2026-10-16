@@ -149,6 +149,55 @@ link_click_modifier = "ctrl"
         .expect("failed to write isolated config.toml");
 }
 
+/// 응답 한 줄을 기다리는 상한이다. 응답 속도를 단언하는 값이 아니라 멈춘 인스턴스에서 시험을 끝내는 값이다.
+/// 구조를 바꾸는 요청은 journal에서 단계마다 동기 commit을 거치므로, 다른 프로세스가 디스크 동기화를
+/// 채우면 응답이 수십 초 늦어질 수 있다. 근거와 측정은 docs/dev-guide/e2e-tests.md의 공유 하네스 절에 있다.
+pub const RESPONSE_WAIT: Duration = Duration::from_secs(60);
+
+/// 요청 한 줄을 보내고 응답 한 줄을 읽어 전체 JSON-RPC 응답을 돌려준다.
+/// 아무것도 보내지 못한 연결 실패만 다시 시도한다. 보낸 뒤에 응답을 못 받으면 요청이 실행됐을 수 있으므로
+/// 다시 보내지 않는다. 다시 보내면 workspace.create 같은 요청이 두 번 실행된다.
+pub fn exchange(port: u16, method: &str, params: &Value, wait: Duration) -> Result<Value, String> {
+    let mut connected = None;
+    for attempt in 0..3 {
+        match TcpStream::connect(format!("127.0.0.1:{}", port)) {
+            Ok(s) => {
+                connected = Some(s);
+                break;
+            }
+            Err(e) if attempt == 2 => {
+                return Err(format!("failed to connect for '{}': {}", method, e));
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(500)),
+        }
+    }
+    let mut stream = connected.expect("the loop returns or connects");
+    stream.set_read_timeout(Some(wait)).ok();
+
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+        "id": 1
+    });
+    let mut msg = serde_json::to_string(&request).unwrap();
+    msg.push('\n');
+    let unanswered = "the request may have run, so it was not sent again";
+    stream
+        .write_all(msg.as_bytes())
+        .map_err(|e| format!("failed to send '{}': {}; {}", method, e, unanswered))?;
+
+    let mut line = String::new();
+    BufReader::new(&stream).read_line(&mut line).map_err(|e| {
+        format!(
+            "failed to read response for '{}' within {:?}: {}; {}",
+            method, wait, e, unanswered
+        )
+    })?;
+    serde_json::from_str(&line)
+        .map_err(|e| format!("invalid JSON response for '{}': {}", method, e))
+}
+
 impl TastyInstance {
     /// 시작 설정이 다르거나 프로세스 전체를 측정해야 할 때만 전용 인스턴스를 사용한다.
     pub fn spawn() -> Self {
@@ -322,63 +371,21 @@ impl TastyInstance {
         self.stderr.find(pred)
     }
 
-    /// JSON-RPC 결과를 반환한다. 연결·쓰기·읽기의 일시 실패는 제한된 횟수만 재시도한다.
+    /// JSON-RPC 결과를 반환한다. 재시도 범위와 응답 대기 상한은 [`exchange`]를 따른다.
     pub fn call(&self, method: &str, params: Value) -> Value {
         let _failure = StartupFailure::new(&self.startup, Some(&self.stderr));
-        for attempt in 0..3 {
-            let mut stream = match TcpStream::connect(format!("127.0.0.1:{}", self.port)) {
-                Ok(s) => s,
-                Err(e) => {
-                    if attempt < 2 {
-                        std::thread::sleep(Duration::from_millis(500));
-                        continue;
-                    }
-                    panic!("failed to connect for '{}': {}", method, e);
-                }
-            };
-            stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
-
-            let request = serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": method,
-                "params": params,
-                "id": 1
-            });
-
-            let mut msg = serde_json::to_string(&request).unwrap();
-            msg.push('\n');
-            if stream.write_all(msg.as_bytes()).is_err() {
-                if attempt < 2 {
-                    std::thread::sleep(Duration::from_millis(500));
-                    continue;
-                }
-                panic!("failed to send for '{}'", method);
-            }
-
-            let mut reader = BufReader::new(&stream);
-            let mut line = String::new();
-            match reader.read_line(&mut line) {
-                Ok(_) => {}
-                Err(_) if attempt < 2 => {
-                    std::thread::sleep(Duration::from_millis(500));
-                    continue;
-                }
-                Err(e) => panic!("failed to read response for '{}': {}", method, e),
-            }
-
-            let resp: Value = serde_json::from_str(&line).expect("invalid JSON response");
-            self.startup.first_response();
-            if let Some(error) = resp.get("error") {
-                panic!(
-                    "IPC error for '{}': {}{}",
-                    method,
-                    error,
-                    bundle_staging_note()
-                );
-            }
-            return resp.get("result").cloned().unwrap_or(Value::Null);
+        let resp =
+            exchange(self.port, method, &params, RESPONSE_WAIT).unwrap_or_else(|e| panic!("{e}"));
+        self.startup.first_response();
+        if let Some(error) = resp.get("error") {
+            panic!(
+                "IPC error for '{}': {}{}",
+                method,
+                error,
+                bundle_staging_note()
+            );
         }
-        unreachable!()
+        resp.get("result").cloned().unwrap_or(Value::Null)
     }
 
     /// 회전하는 stderr 꼬리와 별도로 보관한 시작 기록.
@@ -389,24 +396,7 @@ impl TastyInstance {
     /// 오류를 포함한 전체 JSON-RPC 응답. 연결·I/O 실패는 panic한다.
     #[allow(dead_code)] // 일부 test binary 만 사용
     pub fn call_raw(&self, method: &str, params: Value) -> Value {
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.port))
-            .expect("failed to connect to tasty IPC");
-        stream.set_read_timeout(Some(Duration::from_secs(15))).ok();
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-            "id": 1
-        });
-        let mut msg = serde_json::to_string(&request).unwrap();
-        msg.push('\n');
-        stream.write_all(msg.as_bytes()).expect("failed to send");
-        let mut reader = BufReader::new(&stream);
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .expect("failed to read response");
-        serde_json::from_str(&line).expect("invalid JSON response")
+        exchange(self.port, method, &params, RESPONSE_WAIT).unwrap_or_else(|e| panic!("{e}"))
     }
 
     /// workspace 생성은 활성 대상을 바꾸지 않으므로 시험별로 분리해 사용할 수 있다. PTY가 필요하면 wait_for_shell로 기다린다.

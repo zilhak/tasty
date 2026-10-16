@@ -108,6 +108,8 @@ GUI 테스트 바이너리와 headless 데몬의 혼합을 동종 조합의 검�
 | 테스트 격리 | `TastyInstance::create_workspace()` 로 테스트마다 자기 workspace | IPC 생성은 `IntentOrigin::Agent` 라 active 를 전환하지 않고(원칙 1·3), attach 점유도 workspace/surface 단위 lock 이라 서로 다른 workspace 는 병렬 공존한다 |
 | 정리 | `Drop` 이 아니라 `atexit` | 정적 저장이라 `Drop` 이 영원히 돌지 않는다. atexit 가 graceful `system.shutdown` → force kill → port file·격리 HOME 삭제를 수행한다. `Drop` 은 전용 인스턴스 경로로 그대로 남는다. 다만 Drop/atexit 둘 다 프로세스가 강제로 죽으면 실행되지 않는다 — 그 구멍은 §2-1 참조 |
 | spawn 실패 | 첫 실패 후 **재시도하지 않는다** | `OnceLock::get_or_init` 은 초기화 클로저가 panic 하면 미초기화로 남아 다음 테스트가 그대로 재시도한다 — 부팅 timeout 상황에서 테스트 수만큼 GUI 프로세스가 더 뜨는 증폭을 막는다. 핸들이 서기 **전**의 패닉(S1 timeout · 조기 종료 · 입력 장치 생성 실패 등)은 `Drop` 을 못 부르므로, 그 구간의 자식은 `spawn_diag::ChildReaper` 가 소유해 되감기에서 kill 하고 거둔다(`Child` 의 Drop 은 kill 하지 않아 그냥 두면 orphan 이 된다). 세 하네스(`common`·`webhook_common`·`gui_common`) 모두 같은 타입을 거친다. 회수기 자체의 계약은 `spawn_diag` 의 단위 시험 둘이 잰다(패닉하면 죽이고 거둔다 · 넘기면 산 채로 넘긴다). 하네스가 그것을 실제 갈래에서 쓰는지는 시험이 없다 — 재는 법은 §2-1 끝 |
+| 요청 재전송 | `call()`·`call_raw()` 는 아무것도 보내지 못한 **연결 실패만** 다시 시도한다(최대 3 회). 요청을 보낸 뒤 응답을 못 받으면 다시 보내지 않고 실패한다 | 응답이 늦었을 뿐 요청은 실행됐을 수 있다. 다시 보내면 `workspace.create` 가 두 번 실행되고, `pty.attach_surface` 재전송은 이미 입양된 PTY 를 찾지 못해 `headless pty … not found` 로 실패한다. 중복 요청은 직렬 journal worker 의 대기열도 늘려 뒤 요청을 더 늦춘다 |
+| 응답 대기 상한 | 요청 한 건당 `RESPONSE_WAIT`(60 초) | 응답 속도를 단언하는 값이 아니라 멈춘 인스턴스에서 시험을 끝내는 값이다. 구조를 바꾸는 요청은 journal worker 가 한 스레드에서 단계마다 동기 commit(WAL · `synchronous=FULL`)을 하므로 저장 장치의 fsync 지연이 그대로 쌓인다. 다른 프로세스가 동기 쓰기로 디스크를 채운 상태에서 단계 하나가 수 초, 공유 인스턴스의 `workspace.create` 응답이 33 초까지 걸린 것을 측정했다(2026-10-16, 이 머신 한 대) |
 
 격리 헬퍼가 돌려주는 `TestWorkspace` 는 `workspace.create` 응답의 `id` / `index` / `surface_id` 를 그대로 담는다. 공유 경로에서는 `first_surface_id()` / `first_pane_id()`(목록의 `[0]` 번째를 집는다 — 전용 인스턴스 전용) 대신 `first_surface_id_in_workspace()` / `first_pane_id_in_workspace()` 를 쓴다. 갓 만든 workspace 의 PTY 가 필요하면 `wait_for_shell()` 로 첫 프롬프트를 기다린다.
 
@@ -115,7 +117,7 @@ GUI 테스트 바이너리와 headless 데몬의 혼합을 동종 조합의 검�
 
 `attach_*` test binary 들이 쓰는 attach 스트림 frame/handshake 헬퍼(`read_frame` / `write_control_frame` / `open_workspace_attach` / `open_surface_attach` / `open_stream_without_attach` / `wait_for_control_event`)는 **`tests/attach_common/mod.rs`** 한 곳에 있다 — `tests/common`(인스턴스 하네스)·`tests/webhook_common`(웹훅 하네스)과 같은 층위의 세 번째 공유 test 모듈이다. 개별 `#[test]` 파일끼리는 서로 `mod` 할 수 없지만 디렉토리 모듈은 여러 test binary 가 각자 `mod attach_common;` 으로 가져갈 수 있으므로, 파일마다 복제하지 않는다. 이 모듈에는 "첫 workspace 를 집는" 헬퍼를 두지 않는다 — 공유 인스턴스 위에서 그 습관이 남으면 남의 격리 단위를 밟는다.
 
-하네스 자체 검증은 `tests/shared_instance_harness.rs` — 공유 재사용(spawn 횟수 1 · 동일 port), workspace id 유일성과 그것이 `workspace.list[0]` 이 아님, 전역 `pty.list` 의 `any` assert 가 병렬/`--test-threads=1` 양쪽에서 통과하는지를 확인한다.
+하네스 자체 검증은 `tests/shared_instance_harness.rs` — 공유 재사용(spawn 횟수 1 · 동일 port), workspace id 유일성과 그것이 `workspace.list[0]` 이 아님, 전역 `pty.list` 의 `any` assert 가 병렬/`--test-threads=1` 양쪽에서 통과하는지를 확인한다. 같은 타깃의 `call_tests` 는 시험이 소유한 loopback 서버로 요청 교환(`common::exchange`)을 검사한다. 대기 상한보다 늦게 답하는 서버가 요청을 한 번만 받는지, 상한 안의 늦은 응답은 그대로 돌려주는지 본다. 응답을 못 받으면 재전송하던 이전 동작에서는 서버가 같은 요청을 3 번 받아 첫 시험이 실패한다.
 
 ### 2-1. 강제 종료 시 자식 정리 — `PR_SET_PDEATHSIG` (Linux)
 
