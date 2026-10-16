@@ -191,6 +191,131 @@ mod tests {
         );
     }
 
+    /// prepare_redraw가 낸 기본 grid는 첫 drain에서 바로 적용돼 입력 준비가 새 값을 본다.
+    #[test]
+    fn the_geometry_drain_applies_the_default_grid_before_inputs() {
+        use crate::app::engine_action::EngineAction;
+        use crate::intent::Intent;
+
+        let (mut state, mut session) = crate::state::tests::test_state();
+        state.dispatch_intent(
+            Intent::Engine(EngineAction::DefaultGrid {
+                cols: 133,
+                rows: 41,
+            })
+            .from_user_shortcut("grid-resize"),
+        );
+
+        super::apply_frame_engine_actions(&mut state, &mut session, None);
+
+        let engine = session.borrow_mut();
+        assert_eq!(
+            (engine.runtime.default_cols, engine.runtime.default_rows),
+            (133, 41)
+        );
+        assert!(state.take_pending_intents().is_empty());
+    }
+
+    /// html 탭 하나와 스크립트가 있는 확정 문서를 만든다. 배너가 허용을 기다린다.
+    fn state_with_html_document() -> (
+        crate::state::RequestContext,
+        crate::runtime::engine_session::EngineSession,
+        u32,
+    ) {
+        use tasty_core::{DomainEvent as E, SurfaceSpec};
+        use tasty_model::html_script::{Fingerprint, ScriptDetection, ScriptScan};
+        let model = crate::state::tests::test_model(vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: 1,
+                name: "workspace".into(),
+                category: 0,
+                index: 0,
+                pane: 1,
+            },
+            E::TabCreated {
+                id: 1,
+                pane: 1,
+                index: 0,
+                name: "html".into(),
+                surface: SurfaceSpec {
+                    id: 1,
+                    kind: "html".into(),
+                    data: None,
+                },
+            },
+        ]);
+        let (state, mut session) = crate::state::tests::test_state_from_model(model);
+        let remote = crate::plugin_bridge::remote_surface::RemoteSurface::new(
+            1,
+            "html",
+            "com.tasty.html".into(),
+            "html".into(),
+        );
+        remote.with_html_script(|st| {
+            st.on_host_load_requested();
+            st.on_load_started();
+            st.on_main_response(
+                "file:///docs/a.html",
+                Some(ScriptScan {
+                    fingerprint: Fingerprint([0xab; 32]),
+                    detection: ScriptDetection::Scripts,
+                }),
+            );
+            st.on_committed(Some("file:///docs/a.html"));
+            st.on_load_finished();
+            st.update_banner();
+        });
+        session.runtime.surfaces.insert(1, Box::new(remote));
+        (state, session, 1)
+    }
+
+    fn take_reload_request(
+        session: &mut crate::runtime::engine_session::EngineSession,
+        sid: u32,
+    ) -> bool {
+        session
+            .runtime
+            .surfaces
+            .get(&sid)
+            .and_then(|s| {
+                s.as_any()
+                    .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+            })
+            .expect("html remote surface")
+            .with_html_script(|st| st.take_reload_request())
+    }
+
+    /// draw에서 누른 허용은 그 프레임의 마지막 drain에서 gate에 반영돼 native 동기화가 reload를 본다.
+    #[test]
+    fn an_allow_drawn_this_frame_reaches_the_gate_before_native_sync() {
+        use crate::app::engine_action::EngineAction;
+        use crate::intent::Intent;
+        use crate::runtime::html_script::HtmlActionKind;
+
+        let (mut state, mut session, sid) = state_with_html_document();
+        let allow = session
+            .read()
+            .html_script(sid)
+            .expect("html snapshot")
+            .request(HtmlActionKind::Allow);
+        state.dispatch_intent(
+            Intent::Engine(EngineAction::Html(allow)).from_user_menu("html-script-banner"),
+        );
+        assert!(!take_reload_request(&mut session, sid));
+
+        super::apply_frame_engine_actions(&mut state, &mut session, None);
+
+        assert!(
+            take_reload_request(&mut session, sid),
+            "the allowance must request the reload before webview sync"
+        );
+    }
+
     use crate::core::explorer_favorites::ExplorerFavorites;
     use crate::core::port_favorites::PortFavorites;
     use crate::core::shared_list::SharedList;

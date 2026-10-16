@@ -734,6 +734,9 @@ mod frame_draw_order;
 mod frame_clock_arming;
 
 #[cfg(test)]
+mod frame_phase_order;
+
+#[cfg(test)]
 mod committed_tap_order;
 
 #[cfg(test)]
