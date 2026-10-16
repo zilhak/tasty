@@ -31,7 +31,8 @@ fn split_and_read_new_surface(stream: &mut TcpStream, anchor: u64) -> u64 {
 }
 
 /// 다른 출력 프레임이 계속 오면 소켓 타임아웃이 발생하지 않을 수 있어 별도 경과 시간 제한을 둔다.
-const STRUCTURAL_WAIT: Duration = Duration::from_secs(20);
+/// holder의 구조 요청도 IPC 요청처럼 journal commit을 거치므로 하네스의 응답 대기 상한을 쓴다.
+const STRUCTURAL_WAIT: Duration = common::RESPONSE_WAIT;
 
 /// 예상한 구조 프레임을 기다린다. 성공한 structural_result는 delta 앞에서 건너뛰고 다른 순서는 실패시킨다.
 fn next_structural(stream: &mut TcpStream, event: &str) -> Value {
