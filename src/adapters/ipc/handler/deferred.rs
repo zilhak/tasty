@@ -7,7 +7,9 @@
 //!
 //! - 응답 시점은 commit 뒤다. 기존 IPC의 확정 성공·version·CAS 의미가 유지된다.
 //! - 호출자의 응답 시한·연결 종료는 이미 접수한 요청을 취소하지 않는다. 응답만 버려진다.
-//! - writer 없는 시험 구성은 결과가 바로 있어 지연하지 않고 그 자리에서 응답한다.
+//! - 제출 직후 결과가 이미 있으면 지연하지 않고 그 자리에서 응답한다. writer 없는 시험 구성이
+//!   그렇고, 운영 writer에서도 수집 창 없이 실행되는 barrier 요청(Section·Read)은 제출 직후
+//!   결과가 나와 있을 수 있다.
 
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -316,8 +318,9 @@ impl AppServices {
         }
     }
 
-    /// 요청을 writer에 넣고 결과가 나오면 `finish`로 응답한다. 결과가 바로 있으면(시험 구성)
-    /// 지금 응답하고, 아니면 continuation을 등록하고 자리표시를 돌려준다.
+    /// 요청을 writer에 넣고 결과가 나오면 `finish`로 응답한다. 결과가 바로 있으면(writer 없는
+    /// 시험 구성, 운영 중 이미 끝난 barrier 요청) 지금 응답하고, 아니면 continuation을 등록하고
+    /// 자리표시를 돌려준다.
     pub(crate) fn reply_with_memory(
         &self,
         id: Value,
