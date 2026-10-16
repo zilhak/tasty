@@ -1,4 +1,5 @@
-//! 시작한 뒤 응답 대기 상한을 넘긴 Custom 요청의 늦은 응답을 기다린다.
+//! 시작한 뒤 응답 대기 상한을 넘긴 Custom 요청의 늦은 응답을 기다린다. agent task 의 spawn·tell 응답
+//! 대기도 여기 둔다([`super::agent_spawn`], [`super::agent`]).
 //!
 //! 실행 요청(예: `claude.spawn`)은 다시 보내면 두 번 실행될 수 있다. 상한이 지나도 요청을 다시
 //! 보내지 않고, 보관한 응답 통로에서 늦은 응답을 받아 완료 전략의 handle 로 이어 간다.
@@ -28,7 +29,9 @@ pub(super) struct LateAnswers {
     pending: HashMap<TaskId, Pending>,
     /// 늦은 응답 뒤 이어 간 handle. 러너는 계속 [`DispatchHandle::AwaitDispatchAnswer`] 를
     /// 들고 있으므로 poll 을 여기 handle 로 넘긴다.
-    continued: HashMap<TaskId, DispatchHandle>,
+    pub(super) continued: HashMap<TaskId, DispatchHandle>,
+    /// 응답을 기다리는 agent task 의 `<provider>.spawn`. 러너는 `AwaitDispatchAnswer` 를 들고 있다.
+    pub(super) spawns: HashMap<TaskId, super::agent_spawn::PendingSpawn>,
     /// 시작한 뒤 상한을 넘긴 agent task 의 `<provider>.tell`. 러너는 `AgentTurn` 을 들고 있다.
     pub(super) tells: HashMap<TaskId, LateAnswer>,
 }
@@ -38,6 +41,7 @@ impl LateAnswers {
         self.pending.remove(task_id);
         self.continued.remove(task_id);
         self.tells.remove(task_id);
+        self.spawns.remove(task_id);
     }
 }
 
@@ -83,10 +87,13 @@ impl HostExecutor {
         if let Some(handle) = self.late.continued.get(task_id).cloned() {
             return self.poll_handle(&handle);
         }
+        if let Some(outcome) = self.poll_agent_spawn(task_id) {
+            return outcome;
+        }
         let Some(pending) = self.late.pending.get(task_id) else {
             // 통로는 이 executor 에만 있다. 없으면(재시작 뒤 복원 등) 요청의 결과를 알 수 없다.
             return PollOutcome::Lost(format!(
-                "{DISPATCH_OUTCOME_UNKNOWN}: Custom '{ipc_method}' started but its answer channel \
+                "{DISPATCH_OUTCOME_UNKNOWN}: '{ipc_method}' started but its answer channel \
                  is gone; check whether it took effect before retrying"
             ));
         };

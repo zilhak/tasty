@@ -3,7 +3,7 @@
 
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, TaskExecutor};
@@ -18,8 +18,8 @@ use tasty_memory::HOST_OWNER;
 
 use super::HostExecutor;
 use crate::agent_turns::{StartPrompt, TurnEnd, TurnEvent};
-use crate::runner_host::RunnerContext;
 use crate::runner_host::tests::fresh_ctx;
+use crate::runner_host::{RunnerContext, load_dispatch_handle};
 
 /// 가짜 provider. 상태를 바꾸며 호출을 기록한다.
 struct FakeProvider {
@@ -51,8 +51,20 @@ impl FakeProvider {
                 let body = if method.ends_with(".state") {
                     json!({ "state": s.lock().unwrap().clone() })
                 } else if method.ends_with(".spawn") {
-                    std::thread::sleep(spawn_delay);
-                    json!({ "child_surface_id": 42 })
+                    // 늦은 spawn 이 다른 명령의 응답을 막지 않게 따로 답한다.
+                    std::thread::spawn(move || {
+                        std::thread::sleep(spawn_delay);
+                        let id = cmd.request.id.clone().unwrap_or(Value::Null);
+                        let body = json!({ "child_surface_id": 42 });
+                        if cmd
+                            .response_tx
+                            .send(JsonRpcResponse::success(id, body))
+                            .is_err()
+                        {
+                            tracing::warn!("spawn reply: the caller is gone");
+                        }
+                    });
+                    continue;
                 } else {
                     json!({ "ok": true })
                 };
@@ -144,6 +156,27 @@ fn dispatch(exec: &mut HostExecutor, ctx: &RunnerContext, task: &Task) -> Dispat
             .expect("running")
     });
     h
+}
+
+/// 새 세션 task 의 spawn 이 답해 회차에 묶일 때까지 러너가 드는 handle 을 poll 한다.
+/// 이어 간 `AgentTurn`(저장 handle)을 돌려준다.
+fn wait_spawned(
+    exec: &mut HostExecutor,
+    ctx: &RunnerContext,
+    task: &Task,
+    h: &DispatchHandle,
+) -> DispatchHandle {
+    let until = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(turn @ DispatchHandle::AgentTurn { .. }) =
+            load_dispatch_handle(ctx, task.workspace_id, &task.id)
+        {
+            return turn;
+        }
+        assert!(Instant::now() < until, "the spawn never bound its session");
+        assert!(matches!(exec.poll(h), PollOutcome::Active));
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 fn v2() -> TaskContract {
@@ -308,6 +341,7 @@ fn a_structured_output_needs_a_submission_and_the_new_session_is_told_how() {
         c,
     );
     let h = dispatch(&mut exec, &ctx, &task);
+    wait_spawned(&mut exec, &ctx, &task, &h);
     let spawned = fake.sent(".spawn");
     assert_eq!(spawned.len(), 1);
     assert_eq!(spawned[0]["surface"], 3);
@@ -416,11 +450,12 @@ fn a_session_in_another_workspace_submits_to_the_task_workspace() {
     };
     let task = create_in(&ctx, 1, 5, new, c);
     let h = dispatch(&mut exec, &ctx, &task);
+    let turn = wait_spawned(&mut exec, &ctx, &task, &h);
     let spawned = fake.sent(".spawn");
     assert_eq!(spawned[0]["workspace"], "5");
     let prompt = spawned[0]["prompt"].as_str().unwrap();
     assert!(prompt.contains("--workspace-id 1 "), "{prompt}");
-    let DispatchHandle::AgentTurn { workspace_id, .. } = &h else {
+    let DispatchHandle::AgentTurn { workspace_id, .. } = &turn else {
         panic!("agent handle");
     };
     assert_eq!(*workspace_id, 1);
@@ -448,7 +483,8 @@ fn a_slow_spawn_still_binds_the_new_session() {
         },
         v2(),
     );
-    dispatch(&mut exec, &ctx, &task);
+    let h = dispatch(&mut exec, &ctx, &task);
+    wait_spawned(&mut exec, &ctx, &task, &h);
     assert_eq!(ctx.agent_turns.holder(42), Some(task.id.clone()));
 }
 
@@ -522,33 +558,8 @@ fn the_plugins_read_the_marker_the_host_writes() {
     assert_eq!(plugin::attempt_marker(&prompt), Some(token.as_str()));
 }
 
-/// 기다리는 동안 답한 spawn 은 그대로 쓰고, 포기한 뒤에 뜬 세션은 task 가 닫는다.
-#[test]
-fn a_session_that_starts_after_the_task_gave_up_is_closed() {
-    let (_td, ctx) = fresh_ctx();
-    let fake = FakeProvider::install_with(&ctx, "idle", Duration::from_millis(300));
-    let inj = ctx.host_ipc.get().expect("injector").clone();
-    let long = Duration::from_secs(5);
-    let got = super::spawn_session(&inj, "claude.spawn", json!({}), long, long);
-    assert_eq!(got.expect("in time")["child_surface_id"], 42);
-    assert!(fake.sent("surface.close").is_empty());
-
-    let got = super::spawn_session(
-        &inj,
-        "claude.spawn",
-        json!({}),
-        Duration::from_millis(50),
-        long,
-    );
-    assert!(got.is_err());
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while fake.sent("surface.close").is_empty() && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let closed = fake.sent("surface.close");
-    assert_eq!(closed.len(), 1);
-    assert_eq!(closed[0]["surface_id"], 42);
-}
-
 #[path = "agent_tell_tests.rs"]
 mod tell;
+
+#[path = "agent_spawn_tests.rs"]
+mod spawn;

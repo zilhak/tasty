@@ -3,6 +3,7 @@
 
 mod acquire;
 mod agent;
+mod agent_spawn;
 mod attempt_record;
 mod child_env;
 mod clock;

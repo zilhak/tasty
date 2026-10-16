@@ -62,8 +62,9 @@ pub enum DispatchHandle {
     /// Custom 실행 요청이 시작된 뒤 응답 대기 상한을 넘겼다. 요청을 다시 보내지 않고 executor 가
     /// 보관한 응답 통로에서 늦은 응답을 기다린다. 응답이 오면 executor 가 완료 전략의 handle 로
     /// 이어 간다. 통로는 영속되지 않으므로 재시작 뒤에는 실행 결과 불명(Unknown)으로 끝난다.
-    /// agent task 의 `<provider>.tell` 이 늦은 응답을 기다리는 동안에는 러너가 `AgentTurn` 을
-    /// 들고 저장 handle 만 이것으로 바꾼다(재시작 뒤 같은 규칙으로 Unknown).
+    /// agent task 의 새 세션 `<provider>.spawn` 을 기다리는 동안에도 이 handle 이며, 응답 뒤
+    /// `AgentTurn` 으로 이어 간다. `<provider>.tell` 이 늦은 응답을 기다리는 동안에는 러너가
+    /// `AgentTurn` 을 들고 저장 handle 만 이것으로 바꾼다(재시작 뒤 같은 규칙으로 Unknown).
     AwaitDispatchAnswer {
         workspace_id: u32,
         task_id: TaskId,

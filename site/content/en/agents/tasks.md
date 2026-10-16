@@ -1,4 +1,4 @@
-<!-- source-hash: 084912cc628d -->
+<!-- source-hash: 93e7e509a8da -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -208,7 +208,7 @@ An `agent` task sends one instruction to a Claude or Codex session and takes the
 - While the agent waits for input such as a permission prompt, the task stays running and `task-get` shows a `phase: awaiting_input` line and a line like `agent session: claude surface 12, awaiting input since …`.
 - When Tasty is busy and the reply to an instruction sent to an open session comes late, the instruction is not sent again. The task waits for the late reply so the same instruction does not arrive twice, and sends it again only when it certainly was not sent yet. If it can no longer tell whether the instruction was sent, the task becomes `unknown` rather than failed. Check whether the session got the instruction, then retry or cancel the task.
 - Finishing or cancelling the task does not close the session. If Tasty restarts, running agent tasks fail. A task that was waiting for the reply to its instruction becomes `unknown`.
-- If a new session does not come up within 30 seconds, the task fails. A session that comes up later is closed by the task. A session that was already open is never closed.
+- Other tasks keep going while a new session is starting. If a new session does not come up within 30 seconds, the task fails. A session that comes up later is closed by the task. Cancelling the task while it waits also closes a session that comes up later. A session that was already open is never closed. If Tasty restarts while the task waits, the task becomes `unknown`.
 - When Codex runs in a sandbox that blocks the network, `task-submit` cannot reach Tasty, so a task with a result type fails. Tasks without a result type (the last answer is the result) are not affected.
 - To deliver the result of an existing task to a Codex parent automatically, see [Automatic delivery to a Codex parent](claude-codex.md#automatic-delivery-to-a-codex-parent).
 
