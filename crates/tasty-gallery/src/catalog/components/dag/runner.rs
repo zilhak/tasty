@@ -13,7 +13,7 @@ fn resume_cmd() -> &'static str {
 }
 
 /// 헤더 한 줄에 들어가는 힌트 문구 — 알약 옆에 이어 붙인다.
-pub const RESUME_HINT: &str = "resume with tasty agent task-run --workspace-id <N> --action start";
+pub const RESUME_HINT: &str = "resume with tasty agent task-run --workspace <N> --action start";
 
 /// 배지 톤 — 오류나 실행 가능한 작업을 남긴 정지 상태를 강조한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

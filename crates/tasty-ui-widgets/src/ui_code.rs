@@ -448,7 +448,7 @@ mod tests {
     fn a_run_that_starts_a_row_keeps_its_text_on_the_column() {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let pad = UiCodeTokens::of(&theme).padding_x.value();
-        let text = "Create one with: `tasty agent task-create --workspace-id 1`";
+        let text = "Create one with: `tasty agent task-create --workspace 1`";
         let wraps = widths_that_move_the_run_to_a_new_row(&theme, text);
         assert!(!wraps.is_empty(), "no width moved the run to a new row");
         with_layouts(&theme, text, &wraps, |wrap, galley| {
@@ -466,7 +466,7 @@ mod tests {
         let pad = UiCodeTokens::of(&theme).padding_x.value();
         // run 이 둘째 줄 머리로 넘어가는 경우와, 문장과 run 이 한 줄에 함께 있는 경우를 모두 본다.
         for text in [
-            "Create one with: `tasty agent task-create --workspace-id 1`",
+            "Create one with: `tasty agent task-create --workspace 1`",
             "Run `tasty agent task-list` to see the tasks of every workspace here.",
         ] {
             let wraps = (40..200).map(|i| 2.0 * i as f32).collect::<Vec<_>>();

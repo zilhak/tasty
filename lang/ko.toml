@@ -2200,7 +2200,7 @@ stalled = "러너 정지 · 대기 {} 개"
 crashed = "러너 비정상 종료 · 대기 {} 개"
 resume_hint_lead = "재개:"
 # 사용자가 셸에 붙여 넣는 명령이므로 번역하지 않는다.
-resume_hint_command = "tasty agent task-run --workspace-id <N> --action start"
+resume_hint_command = "tasty agent task-run --workspace <N> --action start"
 
 [dag.zoom]
 in = "확대"
@@ -2217,7 +2217,7 @@ lead = "순환 의존성 발견 — 러너가 작업 {}개를 진행하지 못�
 
 [dag.empty]
 none = "이 워크스페이스에 작업이 없습니다"
-none_hint = "생성: `tasty agent task-create --workspace-id {} ...`"
+none_hint = "생성: `tasty agent task-create --workspace {} ...`"
 missing = "DAG 를 찾을 수 없습니다: {}"
 missing_hint = "삭제되었을 수 있습니다. 헤더에서 다른 DAG 를 선택하세요."
 

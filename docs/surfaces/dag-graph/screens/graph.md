@@ -63,7 +63,7 @@ tasty split --level surface --surface <SID> --type dag_graph
   선택 노드에 연결된 엣지는 강조색으로 표시한다.
 - **러너 배지**는 `idle` / `active` / `stopped` / `crashed`를 구분한다.
   `stopped`는 할 일이 남았는데 러너가 없는 상태다. `stopped`·`crashed`는 경고색을 쓰고,
-  배지 옆에 재개 명령 `tasty agent task-run --workspace-id <N> --action start`를 표시한다.
+  배지 옆에 재개 명령 `tasty agent task-run --workspace <N> --action start`를 표시한다.
   안내는 비례폭 글꼴, 복사할 명령은 고정폭 글꼴을 쓴다. 폭이 640px 미만이면 이 설명을
   숨긴다. 이 화면은 관찰 전용이므로 러너를 실행하는 버튼은 없다.
 - **노드 상세**에서는 상태 옆에 종류 태그를 표시한다. 입력 대기 노드는 그 아래 노란 알림에

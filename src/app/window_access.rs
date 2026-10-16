@@ -555,7 +555,7 @@ fn find_workspace_by_name<'a>(
         0 => Ok(None),
         1 => Ok(Some(matches[0])),
         n => Err(format!(
-            "workspace name '{target}' matches {n} windows, use --surface/--workspace-id instead"
+            "workspace name '{target}' matches {n} windows, use --surface or a numeric --workspace ID instead"
         )),
     }
 }
@@ -652,6 +652,10 @@ mod tests {
         assert!(
             err.contains('2'),
             "에러 메시지에 매칭 개수가 포함돼야 한다: {err}"
+        );
+        assert!(
+            err.contains("--workspace ID") && !err.contains("--workspace-id"),
+            "에러 메시지는 추천 표기 --workspace 를 안내해야 한다: {err}"
         );
     }
 

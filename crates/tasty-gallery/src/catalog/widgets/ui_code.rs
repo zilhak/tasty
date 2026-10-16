@@ -46,7 +46,7 @@ radius-sm. A run that starts a wrapped line keeps its text on the column and let
 const RAISED_SAMPLE: &str = "Copied. Run `tasty agent task-list` to see it.";
 const MODAL_SAMPLE: &str = "Reset the permission with `tccutil reset`, then sign the build with \
 `./scripts/macos-codesign-identity.sh --create`.";
-const CENTRED_SAMPLE: &str = "Create one with: `tasty agent task-create --workspace-id 1 ...`";
+const CENTRED_SAMPLE: &str = "Create one with: `tasty agent task-create --workspace 1 ...`";
 
 /// `spec::spec`와 같은 제목·설명 배치. 설명 문장의 CLI 조각도 code run 으로 그린다.
 fn heading(ui: &mut egui::Ui, theme: &Theme, title: &str, when: &str) {

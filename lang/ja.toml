@@ -2200,7 +2200,7 @@ stalled = "ランナー停止 · 待機 {} 件"
 crashed = "ランナー異常終了 · 待機 {} 件"
 resume_hint_lead = "再開:"
 # 사용자가 셸에 붙여 넣는 명령이므로 번역하지 않는다.
-resume_hint_command = "tasty agent task-run --workspace-id <N> --action start"
+resume_hint_command = "tasty agent task-run --workspace <N> --action start"
 
 [dag.zoom]
 in = "拡大"
@@ -2217,7 +2217,7 @@ lead = "循環依存を検出 — ランナーはタスク {} 件を進められ
 
 [dag.empty]
 none = "このワークスペースにタスクがありません"
-none_hint = "作成: `tasty agent task-create --workspace-id {} ...`"
+none_hint = "作成: `tasty agent task-create --workspace {} ...`"
 missing = "DAG が見つかりません: {}"
 missing_hint = "削除された可能性があります。ヘッダーから別の DAG を選択してください。"
 

@@ -2261,7 +2261,7 @@ stalled = "Runner stopped · {} ready"
 crashed = "Runner crashed · {} ready"
 resume_hint_lead = "Resume with:"
 # 사용자가 셸에 붙여 넣는 명령이므로 번역하지 않는다.
-resume_hint_command = "tasty agent task-run --workspace-id <N> --action start"
+resume_hint_command = "tasty agent task-run --workspace <N> --action start"
 
 [dag.zoom]
 in = "Zoom in"
@@ -2279,7 +2279,7 @@ lead_one = "Cycle detected — the runner will not advance {} task:"
 
 [dag.empty]
 none = "No tasks in this workspace"
-none_hint = "Create one with: `tasty agent task-create --workspace-id {} ...`"
+none_hint = "Create one with: `tasty agent task-create --workspace {} ...`"
 missing = "DAG not found: {}"
 missing_hint = "It may have been deleted. Pick another from the header."
 

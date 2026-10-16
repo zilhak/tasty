@@ -175,7 +175,7 @@ pub fn submission_instructions(
     let schema = serde_json::to_string(output_schema).unwrap_or_default();
     format!(
         "When you have finished, submit your result before ending your turn:\n\
-         tasty agent task-submit --workspace-id {workspace_id} --id '{task_id}' --attempt-id '{attempt_id}' --token '{attempt_token}' --output '<JSON>'\n\
+         tasty agent task-submit --workspace {workspace_id} --id '{task_id}' --attempt-id '{attempt_id}' --token '{attempt_token}' --output '<JSON>'\n\
          The result must be JSON of this Tasty type: {schema}\n\
          If the command reports a type error, fix the JSON and submit again."
     )

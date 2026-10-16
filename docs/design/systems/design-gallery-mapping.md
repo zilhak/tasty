@@ -653,7 +653,7 @@ egui 글자 배치의 배경색은 여백과 반경을 줄 수 없어 위젯이 
 가운데 정렬 안내는 왼쪽 정렬로 배치한 뒤 `center_ui_copy_rows` 로 줄마다 가운데에 옮긴다. 줄 폭은 줄 끝 공백을 빼고 run 채움을 넣어 재므로 CSS `text-align: center` 처럼 채움까지 보이는 모양이 가운데에 온다. 이동 거리는 픽셀에 맞춘다.
 run 하나가 줄 폭보다 길면 egui 가 run 안에서도 자른다. 갤러리는 시안처럼 13 body(text-secondary)와 11 caption(text-muted) 두 예문을 그리며,
 Spec 설명 문장의 `--webhook-port`도 같은 위젯으로 그린다. 세 번째 Spec "Code runs — on raised containers · info modal chips · line start · centred hints"(`draw_followups`)는
-토스트 카드(`toast-bg` 위 `Raised` run), 안내 모달 문단(두 명령, 두 번째가 줄 머리), 가운데 정렬 caption 안내를 그린다. 가운데 안내는 DAG 빈 화면처럼 `measure-sm` 폭에서 줄을 바꾼다(시안 예문은 260). 카탈로그 등록은 Hint text Section 의 spec 하나가 세 Spec 을 이어 그린다.
+토스트 카드(`toast-bg` 위 `Raised` run), 안내 모달 문단(두 명령, 두 번째가 줄 머리), 가운데 정렬 caption 안내를 그린다. 가운데 안내는 DAG 빈 화면처럼 `measure-sm` 폭에서 줄을 바꾼다(시안 예문은 260). 시안 예문의 명령은 예전 표기 `--workspace-id 1` 이고, 본체 문구(`dag.empty.none_hint`)와 갤러리 예문은 추천 표기 `--workspace 1` 을 쓴다. 카탈로그 등록은 Hint text Section 의 spec 하나가 세 Spec 을 이어 그린다.
 
 ## warning-callout (Components)
 
@@ -1353,7 +1353,7 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
 - **탭 머리글 숫자 문구**: 시안은 `{done}/{total} done`, 본체는 기존 번역 문구 `{} / {} done`
   (`dag.header.progress`)을 유지하고 글꼴·색만 시안에 맞췄다.
 - **러너 재개 힌트 문구**: 시안은 `tasty dag runner start` 를 적지만 그런 CLI 는 없다. 본체와
-  갤러리 모두 실제 명령(`tasty agent task-run --workspace-id <N> --action start`)을 쓴다.
+  갤러리 모두 실제 명령(`tasty agent task-run --workspace <N> --action start`)을 쓴다.
 - **기본 방향**: 시안 기본은 top-down, 본체 기본은 left-right(`DagDirection::LeftRight` —
   `agent.task_graph --format dot` 의 `rankdir=LR` 과 멘탈 모델 일치, 168×48 카드가 가로로
   길어 화면 폭을 아낌). 갤러리 specimen 은 시안대로 top-down 으로 전시한다.

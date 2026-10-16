@@ -454,7 +454,7 @@ fn a_session_in_another_workspace_submits_to_the_task_workspace() {
     let spawned = fake.sent(".spawn");
     assert_eq!(spawned[0]["workspace"], "5");
     let prompt = spawned[0]["prompt"].as_str().unwrap();
-    assert!(prompt.contains("--workspace-id 1 "), "{prompt}");
+    assert!(prompt.contains("--workspace 1 "), "{prompt}");
     let DispatchHandle::AgentTurn { workspace_id, .. } = &turn else {
         panic!("agent handle");
     };
