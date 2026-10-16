@@ -130,8 +130,13 @@ pub enum Intent {
     AttachSizeSync(AttachSizeSyncAction),
     #[cfg(feature = "gui")]
     PatchSettings(crate::app::engine_action::SettingsPatch),
+    /// 일반 명령. 일반 dispatch만 실행한다.
     #[cfg(feature = "gui")]
     Engine(crate::app::engine_action::EngineAction),
+    /// 프레임 단계 효과. 그리는 창의 drain은 도달한 단계까지 적용하고, 일반 dispatch는 프레임 밖에서
+    /// 만든 효과를 적용한다.
+    #[cfg(feature = "gui")]
+    Frame(crate::app::frame_effect::FrameEffect),
     #[cfg(feature = "gui")]
     ForwardMirror {
         op: tasty_ipc::stream::StructuralOp,

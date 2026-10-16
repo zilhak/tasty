@@ -1,4 +1,5 @@
 //! Non-journal execution requests carry targets observed by a View, never a mutable Engine borrow.
+//! 여기의 일반 명령은 일반 dispatch만 실행한다. 프레임 단계 효과는 `super::frame_effect`에 있다.
 use crate::runtime::engine_access::EngineMut;
 use crate::runtime::surface_binding::SurfaceBinding;
 
@@ -102,12 +103,9 @@ impl SettingsPatch {
     }
 }
 
+/// 프레임 단계와 무관한 일반 명령. 프레임 drain은 이것을 실행하지 않고 일반 dispatch에 넘긴다.
 #[derive(Clone, Debug)]
 pub(crate) enum EngineAction {
-    #[cfg(feature = "gui")]
-    Html(crate::runtime::html_script::HtmlAction),
-    #[cfg(feature = "gui")]
-    PluginDisplay(super::plugin_display::PluginDisplayRequest),
     #[cfg(feature = "gui")]
     PasteImage {
         target: SurfaceBinding,
@@ -137,21 +135,12 @@ pub(crate) enum EngineAction {
     },
     /// 탐색기의 숨김 파일 표시 여부를 model 에 남겨 레이아웃 스냅샷에 싣는다.
     #[cfg(feature = "gui")]
-    ExplorerHidden {
-        target: SurfaceBinding,
-        show: bool,
-    },
+    ExplorerHidden { target: SurfaceBinding, show: bool },
     #[cfg(feature = "gui")]
     DagSelection {
         target: SurfaceBinding,
         dag_id: Option<String>,
         direction: crate::model::DagDirection,
-    },
-    #[cfg(feature = "gui")]
-    FocusObserved {
-        target: SurfaceBinding,
-        /// 창이 OS 포커스를 가졌는지. attention은 사용자가 실제로 볼 때만 지운다.
-        window_focused: bool,
     },
     RecordTyping {
         target: SurfaceBinding,
@@ -162,9 +151,7 @@ pub(crate) enum EngineAction {
         folder: std::path::PathBuf,
     },
     #[cfg(feature = "gui")]
-    RemoveExplorerFavorite {
-        path: std::path::PathBuf,
-    },
+    RemoveExplorerFavorite { path: std::path::PathBuf },
     #[cfg(feature = "gui")]
     AddExplorerFavorite {
         path: std::path::PathBuf,
@@ -177,18 +164,11 @@ pub(crate) enum EngineAction {
         label: String,
     },
     #[cfg(feature = "gui")]
-    DetachSurface {
-        surface: u32,
-        grant: u64,
-    },
+    DetachSurface { surface: u32, grant: u64 },
     DetachWorkspace {
         workspace: u32,
         holder: u32,
         grant: u64,
-    },
-    #[cfg(feature = "gui")]
-    RemoteMeshFull {
-        targets: Vec<SurfaceBinding>,
     },
     #[cfg(feature = "gui")]
     ListDirectory {
@@ -196,44 +176,10 @@ pub(crate) enum EngineAction {
         projection: std::sync::Weak<()>,
         target: Option<SurfaceBinding>,
     },
-    DefaultGrid {
-        cols: usize,
-        rows: usize,
-    },
-    #[cfg(feature = "gui")]
-    Resize {
-        targets: Vec<(SurfaceBinding, usize, usize)>,
-    },
-    #[cfg(feature = "gui")]
-    LocalMesh {
-        target: SurfaceBinding,
-        plugin: String,
-        registration: crate::runtime::kind_catalog::Registration,
-        bootstrap: Option<(String, Option<String>, String)>,
-        params: tasty_plugin_protocol::protocol::SurfaceSetContextParams,
-    },
-    #[cfg(feature = "gui")]
-    RemoteMesh {
-        target: SurfaceBinding,
-        context: Option<crate::core::state::AttachMeshContextForward>,
-        input: Option<tasty_plugin_protocol::protocol::RawInputWire>,
-    },
 }
 impl EngineAction {
-    pub(crate) fn apply(
-        &self,
-        engine: &mut EngineMut<'_>,
-        plugins: Option<&crate::plugin::PluginManager>,
-    ) {
+    pub(crate) fn apply(&self, engine: &mut EngineMut<'_>) {
         match self {
-            #[cfg(feature = "gui")]
-            Self::Html(action) => action.apply(engine),
-            #[cfg(feature = "gui")]
-            Self::PluginDisplay(request) => {
-                if let Some(manager) = plugins {
-                    request.apply(manager);
-                }
-            }
             #[cfg(feature = "gui")]
             Self::Explorer(request) => {
                 super::explorer_action::apply_bound_explorer_command(engine, request);
@@ -328,33 +274,6 @@ impl EngineAction {
                     .explorer_favorites
                     .change(|favorites| favorites.remove(path));
             }
-            #[cfg(feature = "gui")]
-            Self::RemoteMeshFull { targets } => {
-                for target in targets {
-                    if target.current(&engine.as_ref()) {
-                        engine
-                            .remote
-                            .pending_mesh_full_resend_forward
-                            .insert(target.surface_id());
-                    }
-                }
-            }
-            #[cfg(feature = "gui")]
-            Self::LocalMesh { .. } => self.apply_local_mesh(engine, plugins),
-            #[cfg(feature = "gui")]
-            Self::RemoteMesh { .. } => self.apply_remote_mesh(engine),
-            #[cfg(feature = "gui")]
-            Self::FocusObserved {
-                target,
-                window_focused,
-            } => {
-                if target.current(&engine.as_ref()) {
-                    if *window_focused {
-                        engine.clear_attention_local(target.surface_id());
-                    }
-                    engine.reconcile_soft_occupancy_on_focus(target.surface_id());
-                }
-            }
             Self::RecordTyping { target, at } if target.current(&engine.as_ref()) => {
                 engine.live.last_key_input.insert(target.surface_id(), *at);
             }
@@ -372,20 +291,6 @@ impl EngineAction {
                 {
                     engine.remote.pending_list_dir_forward.push(request.clone());
                 }
-            }
-            Self::DefaultGrid { cols, rows } => {
-                engine.runtime.default_cols = *cols;
-                engine.runtime.default_rows = *rows;
-            }
-            #[cfg(feature = "gui")]
-            Self::Resize { targets } => {
-                let targets = targets
-                    .iter()
-                    .filter(|(target, _, _)| target.current(&engine.as_ref()))
-                    .map(|(target, cols, rows)| (target.surface_id(), *cols, *rows))
-                    .collect();
-                #[cfg(feature = "gui")]
-                crate::app::services::AppServices::resize_terminals(engine, targets);
             }
         }
     }
@@ -428,99 +333,6 @@ impl EngineAction {
                     png_bytes: png_bytes.clone(),
                 },
             );
-        }
-    }
-    #[cfg(feature = "gui")]
-    fn apply_local_mesh(
-        &self,
-        engine: &mut EngineMut<'_>,
-        plugins: Option<&crate::plugin::PluginManager>,
-    ) {
-        let Self::LocalMesh {
-            target,
-            plugin,
-            registration,
-            bootstrap,
-            params,
-        } = self
-        else {
-            unreachable!("variant-specific action dispatch")
-        };
-        if !target.current(&engine.as_ref()) {
-            return;
-        }
-        let Some(kind) = engine
-            .core
-            .find_surface_by_id(target.surface_id())
-            .map(|surface| surface.kind.as_str())
-        else {
-            return;
-        };
-        let Some(current) = engine.runtime.surface_registry.get_live(kind) else {
-            return;
-        };
-        if !registration.matches(&current) {
-            return;
-        }
-        let Some(manager) = plugins else {
-            return;
-        };
-        if let Some((kind, file, name)) = bootstrap {
-            let Some(binding) = engine
-                .runtime
-                .surfaces
-                .get(&target.surface_id())
-                .and_then(|surface| {
-                    surface
-                        .as_any()
-                        .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
-                })
-                .map(|surface| surface.retirement_binding.clone())
-            else {
-                return;
-            };
-            manager.send_egui_mesh_surface_create(
-                plugin,
-                target.surface_id(),
-                kind,
-                file.as_deref(),
-                name,
-                &binding,
-            );
-        }
-        manager.send_surface_set_context(plugin, params);
-    }
-    #[cfg(feature = "gui")]
-    fn apply_remote_mesh(&self, engine: &mut EngineMut<'_>) {
-        let Self::RemoteMesh {
-            target,
-            context,
-            input,
-        } = self
-        else {
-            unreachable!("variant-specific action dispatch")
-        };
-        if !target.current(&engine.as_ref()) {
-            return;
-        }
-        if let Some(context) = context {
-            engine
-                .remote
-                .pending_mesh_context_forward
-                .insert(target.surface_id(), context.clone());
-        }
-        if let Some(input) = input {
-            engine
-                .remote
-                .pending_mesh_input_forward
-                .entry(target.surface_id())
-                .and_modify(|pending| {
-                    pending.events.extend(input.events.clone());
-                    pending.focused = input.focused;
-                    pending.modifiers = input.modifiers;
-                    pending.time = input.time;
-                })
-                .or_insert_with(|| input.clone());
         }
     }
     #[cfg(feature = "gui")]
@@ -597,40 +409,6 @@ impl EngineAction {
 #[cfg(all(test, feature = "gui"))]
 mod tests {
     use super::EngineAction;
-    use crate::core::state::attention::AttentionKind;
-    use crate::runtime::surface_binding::SurfaceBinding;
-
-    /// 창이 OS 포커스를 잃은 동안 그린 포커스 surface는 attention을 지우지 않는다.
-    #[test]
-    fn focus_observation_clears_attention_only_while_the_window_is_focused() {
-        let mut session = crate::state::tests::test_state().1;
-        let sid = session
-            .borrow_mut()
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .all_surface_ids()[0];
-        let target = SurfaceBinding::capture(&session.read(), sid).expect("binding");
-        session
-            .borrow_mut()
-            .raise_attention(sid, AttentionKind::NeedsInput);
-
-        EngineAction::FocusObserved {
-            target: target.clone(),
-            window_focused: false,
-        }
-        .apply(&mut session.borrow_mut(), None);
-        assert_eq!(
-            session.borrow_mut().attention_kind(sid),
-            Some(AttentionKind::NeedsInput)
-        );
-
-        EngineAction::FocusObserved {
-            target,
-            window_focused: true,
-        }
-        .apply(&mut session.borrow_mut(), None);
-        assert_eq!(session.borrow_mut().attention_kind(sid), None);
-    }
 
     fn engine_with(
         registries: &crate::runtime::registries::RuntimeRegistries,
@@ -667,7 +445,7 @@ mod tests {
                 path: crate::test_support::abs_path(name),
                 label: String::new(),
             }
-            .apply(&mut session.borrow_mut(), None);
+            .apply(&mut session.borrow_mut());
         };
         add(&mut first, "w/alpha");
         add(&mut second, "w/beta");
@@ -695,7 +473,7 @@ mod tests {
         EngineAction::RemoveExplorerFavorite {
             path: crate::test_support::abs_path("w/alpha"),
         }
-        .apply(&mut second.borrow_mut(), None);
+        .apply(&mut second.borrow_mut());
         assert_eq!(
             labels(&crate::core::explorer_favorites::ExplorerFavorites::load()),
             ["beta"]
@@ -717,7 +495,7 @@ mod tests {
                 port,
                 label: format!("p{port}"),
             }
-            .apply(&mut session.borrow_mut(), None);
+            .apply(&mut session.borrow_mut());
         };
         let ports = |favorites: &crate::core::port_favorites::PortFavorites| {
             favorites.items.iter().map(|f| f.port).collect::<Vec<_>>()

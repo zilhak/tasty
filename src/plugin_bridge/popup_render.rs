@@ -217,8 +217,8 @@ pub fn draw_plugin_popups(
                 .or_default()
                 .record_sent(geom, &current_theme, has_frame);
             state.dispatch_intent(
-                crate::intent::Intent::Engine(
-                    crate::app::engine_action::EngineAction::PluginDisplay(
+                crate::intent::Intent::Frame(
+                    crate::app::frame_effect::DrawEffect::PluginDisplay(
                         crate::app::plugin_display::PluginDisplayRequest::Popup {
                             plugin: snap.plugin_id.clone(),
                             params: PopupSetContextParams {
@@ -231,7 +231,8 @@ pub fn draw_plugin_popups(
                                 need_full_textures: need_full,
                             },
                         },
-                    ),
+                    )
+                    .into(),
                 )
                 .from_user_menu("plugin-render-context"),
             );

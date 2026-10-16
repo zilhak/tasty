@@ -146,9 +146,12 @@ fn show_html_script_banner(
         return;
     };
     state.dispatch_intent(
-        crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Html(
-            snapshot.request(crate::runtime::html_script::HtmlActionKind::Reshow),
-        ))
+        crate::intent::Intent::Frame(
+            crate::app::frame_effect::DrawEffect::Html(
+                snapshot.request(crate::runtime::html_script::HtmlActionKind::Reshow),
+            )
+            .into(),
+        )
         .from_user_menu("html-script-marker"),
     );
 }

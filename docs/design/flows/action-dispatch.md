@@ -80,7 +80,17 @@ GUI의 `App::dispatch_pending_intents`는 창과 parked state의 큐를 처리�
 
 Domain 처리는 App 전체를 대여하므로 state별 처리 뒤로 분리한다. 큐를 `mem::take`로 꺼낸 뒤 순회하며, 처리 중 새로 등록한 Intent는 재진입을 피하기 위해 다음 프레임에 처리한다. journal admission·완료 오류는 원 요청의 engine 및 View binding을 확인해 표시한다. 그래서 사용자 메뉴에서 고른 mirror 차단 이동도 차단 toast를 띄운다.
 
-그리는 중인 창은 `App::redraw_main_window`(`src/app/view_frame.rs`)의 세 지점에서 그 창의 큐를 한 번 더 비운다. prepare_redraw 뒤, prepare_render_inputs 뒤, render_if_dirty 뒤(finish_redraw와 native webview 동기화 전)다. 세 지점 모두 같은 private 함수 `apply_frame_engine_actions`를 부른다. `Intent::Engine`만 그 자리에서 `EngineAction::apply`로 적용하고, 나머지 요청은 출처 봉투를 그대로 둔 채 원래 순서로 큐에 되돌려 위 일반 처리에 맡긴다. 이 지점은 `classify_intent`와 debug intent 관측을 거치지 않는다. 단계 순서는 호출 위치가 정한다.
+그리는 중인 창은 `App::redraw_main_window`(`src/app/view_frame.rs`)의 세 지점에서 그 창의 큐를 한 번 더 비운다. 실행 요청은 두 타입으로 나뉜다. 프레임 단계 효과는 `Intent::Frame(FrameEffect)`(`src/app/frame_effect.rs`)이고, 그 밖의 실행 요청은 일반 명령 `Intent::Engine(EngineAction)`(`src/app/engine_action.rs`)이다. 효과의 단계는 `FrameEffect`의 변종이 정한다.
+
+| drain 지점 | 단계 | 이 단계의 효과 | 다음 단계보다 먼저 적용하는 이유 |
+|---|---|---|---|
+| prepare_redraw 뒤 | `FramePhase::Geometry` | `GeometryEffect`: `DefaultGrid`, `Resize` | 입력 context와 IME가 새 grid를 본다(grid → tap → 입력) |
+| prepare_render_inputs 뒤 | `FramePhase::Inputs` | `InputEffect`: `FocusObserved`, `LocalMesh`, `RemoteMesh` | mesh 중계와 draw 전에 포커스 관측과 mesh context를 전달한다 |
+| render_if_dirty 뒤, finish_redraw와 native webview 동기화 전 | `FramePhase::Draw` | `DrawEffect`: `Html`, `PluginDisplay`, `RemoteMeshFull` | 이번 프레임의 HTML 배너 결정이 native reload·동기화 전에 gate에 반영된다 |
+
+세 지점 모두 private 함수 `apply_frame_effects`에 도달한 단계를 넘긴다. 이 함수는 단계가 도달한 단계 이하인 `Intent::Frame`만 그 자리에서 원 요청의 `IntentOrigin`과 함께 적용한다. 일반 명령과 아직 오지 않은 단계의 효과는 출처 봉투를 그대로 둔 채 원래 순서로 큐에 되돌린다. 뒤 단계 효과는 같은 프레임의 해당 drain이, 일반 명령은 다음 일반 처리(`about_to_wait` 또는 다음 프레임 시작)가 처리한다. 그래서 draw 중 egui가 낸 탐색기 변경·원격 목록 조회·즐겨찾기·이미지 업로드 같은 일반 명령은 finish_redraw 전에 실행되지 않는다. 이 지점은 `classify_intent`와 debug intent 관측을 거치지 않는다. 단계 순서는 호출 위치와 넘기는 단계가 함께 정하며 `src/source_guards/frame_phase_order.rs`가 소스 순서를 검사한다.
+
+일반 처리의 `dispatch_one_intent`는 일반 명령과 함께 프레임 밖에서 만든 효과도 적용한다. 창 resize 이벤트·단축키·분할선 드래그가 내는 grid·resize 효과가 여기에 해당한다. 프레임 사이에는 모든 단계가 이미 지났기 때문이다. 화면 프레임 밖의 IPC 핸들러(`file_picker.trigger`)가 내는 원격 목록 조회도 일반 명령이므로 일반 처리가 실행한다. 대상 binding이 오래된 효과·명령은 조용히 버리며 사용자 오류 토스트를 만들지 않는다. HTML 스크립트 허용은 사용자 결정이므로 사용자 출처가 아닌 허용 요청은 거절하고 로그만 남긴다.
 
 헤드리스는 `crate::intent::headless::drain_pending_intents`로 engine 하나의 큐를 다음 시점에 처리한다.
 

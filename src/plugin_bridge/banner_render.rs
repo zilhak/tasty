@@ -106,8 +106,8 @@ pub fn draw_plugin_banners(
         {
             fwd.record_sent(geom, &current_theme, has_frame);
             state.dispatch_intent(
-                crate::intent::Intent::Engine(
-                    crate::app::engine_action::EngineAction::PluginDisplay(
+                crate::intent::Intent::Frame(
+                    crate::app::frame_effect::DrawEffect::PluginDisplay(
                         crate::app::plugin_display::PluginDisplayRequest::Banner {
                             plugin: slot.plugin_id.clone(),
                             params: BannerSetContextParams {
@@ -120,7 +120,8 @@ pub fn draw_plugin_banners(
                                 need_full_textures: need_full,
                             },
                         },
-                    ),
+                    )
+                    .into(),
                 )
                 .from_user_menu("plugin-render-context"),
             );

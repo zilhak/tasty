@@ -253,7 +253,8 @@ impl App {
             Intent::MouseCaptureHint { .. } => {
                 Self::dispatch_mouse_capture_hint(state, engine, intent, view)
             }
-            Intent::Engine(action) => action.apply(engine, plugins),
+            Intent::Engine(action) => action.apply(engine),
+            Intent::Frame(effect) => effect.apply(engine, plugins, &intent.origin),
             Intent::RespondApproval { .. } => Self::dispatch_approval_response(core, state, intent),
             Intent::Ui(_) => {
                 crate::intent::popup::handle(state, engine, intent);

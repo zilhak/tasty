@@ -458,8 +458,9 @@ impl MainView {
                     let terminal_rect = self.compute_terminal_rect();
                     let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
                     self.state.dispatch_intent(
-                        crate::intent::Intent::Engine(
-                            crate::app::engine_action::EngineAction::DefaultGrid { cols, rows },
+                        crate::intent::Intent::Frame(
+                            crate::app::frame_effect::GeometryEffect::DefaultGrid { cols, rows }
+                                .into(),
                         )
                         .from_user_shortcut("window-resize"),
                     );

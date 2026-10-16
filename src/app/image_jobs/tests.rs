@@ -266,7 +266,7 @@ fn applying_a_local_image_paste_leaves_file_work_to_the_app() {
         file_name: "paste-6.png".into(),
         png_bytes: b"png".to_vec(),
     }
-    .apply(&mut engine.borrow_mut(), None);
+    .apply(&mut engine.borrow_mut());
     assert!(
         input.try_recv().is_err(),
         "no path before the file is saved"

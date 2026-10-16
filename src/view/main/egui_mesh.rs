@@ -385,14 +385,15 @@ impl MainView {
                 && let Some(registration) = engine.surface_registry.get_live(kind)
             {
                 self.state.dispatch_intent(
-                    crate::intent::Intent::Engine(
-                        crate::app::engine_action::EngineAction::LocalMesh {
+                    crate::intent::Intent::Frame(
+                        crate::app::frame_effect::InputEffect::LocalMesh {
                             target,
                             plugin: plugin_id,
                             registration: registration.registration(),
                             bootstrap: need_bootstrap.then(|| (kind.into(), file, display_name)),
                             params,
-                        },
+                        }
+                        .into(),
                     )
                     .from_user_shortcut("mesh-frame"),
                 );
@@ -431,14 +432,15 @@ impl MainView {
                 && let Some(registration) = engine.surface_registry.get_live(&kind.kind)
             {
                 self.state.dispatch_intent(
-                    crate::intent::Intent::Engine(
-                        crate::app::engine_action::EngineAction::LocalMesh {
+                    crate::intent::Intent::Frame(
+                        crate::app::frame_effect::InputEffect::LocalMesh {
                             target,
                             plugin: plugin_id.clone(),
                             registration: registration.registration(),
                             bootstrap: None,
                             params,
-                        },
+                        }
+                        .into(),
                     )
                     .from_user_shortcut("mesh-frame"),
                 );

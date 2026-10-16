@@ -1,23 +1,26 @@
 //! 그리는 창의 단계 순서를 소스에서 확인한다. grid → tap → 입력·mesh → draw → HTML gate → native sync.
-//! 각 drain은 바로 앞 단계가 낸 효과를 다음 단계 전에 적용한다. resize가 입력 준비 뒤로 밀리면 입력
-//! context가 옛 grid를 읽고, HTML 허용이 webview 동기화 뒤로 밀리면 허용 직후 reload가 한 프레임 늦는다.
+//! 각 drain은 바로 앞 단계까지의 효과를 다음 단계 전에 적용하며, 호출 위치와 넘기는 단계가 일치해야
+//! 한다. resize가 입력 준비 뒤로 밀리면 입력 context가 옛 grid를 읽고, HTML 허용이 webview 동기화 뒤로 밀리면 허용 직후 reload가 한 프레임 늦는다.
 //! 텍스트의 호출 위치를 앞에서부터 차례로 찾으며 조건 분기의 실제 실행 여부는 판단하지 않는다.
 
 use super::{fn_body, repo_root, strip_comments};
 
 const HOME: &str = "src/app/view_frame.rs";
 const FRAME_FN: &str = "fn redraw_main_window(";
-const DRAIN: &str = "apply_frame_engine_actions(";
+const DRAIN: &str = "apply_frame_effects(";
 
 /// 순서대로 나타나야 하는 호출. 같은 문자열은 앞 단계 뒤에서 다시 찾는다.
 const STEPS: &[&str] = &[
     "view.prepare_redraw(",
     DRAIN,
+    "FramePhase::Geometry",
     "view.prepare_render_inputs(",
     DRAIN,
+    "FramePhase::Inputs",
     "view_mesh::relay_subscribed_mesh(",
     "view.render_if_dirty(",
     DRAIN,
+    "FramePhase::Draw",
     "view.finish_redraw(",
     "webview_sync::synchronize(",
 ];

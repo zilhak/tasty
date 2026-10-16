@@ -1,5 +1,6 @@
 //! HTML display values and one-shot decisions retain their captured document and resource identity.
 use super::surface_binding::SurfaceBinding;
+use crate::core::origin::IntentOrigin;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
 use crate::runtime::engine_access::EngineMut;
 use std::sync::{Arc, Mutex, Weak};
@@ -57,7 +58,16 @@ pub(crate) fn snapshot(remote: &RemoteSurface, target: SurfaceBinding) -> HtmlSn
     })
 }
 impl HtmlAction {
-    pub(crate) fn apply(&self, engine: &mut EngineMut<'_>) {
+    /// 허용은 사용자 결정이다. 사용자 출처가 아닌 허용 요청은 소비하지 않고 거절한다.
+    pub(crate) fn apply(&self, engine: &mut EngineMut<'_>, origin: &IntentOrigin) {
+        if matches!(self.kind, HtmlActionKind::Allow) && !origin.is_user() {
+            tracing::warn!(
+                surface = self.surface,
+                ?origin,
+                "html script allowance refused: not a user request"
+            );
+            return;
+        }
         if self
             .consumed
             .swap(true, std::sync::atomic::Ordering::AcqRel)

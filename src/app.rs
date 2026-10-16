@@ -514,6 +514,9 @@ pub(crate) mod terminal_input;
 pub(crate) mod engine_action;
 
 #[cfg(feature = "gui")]
+pub(crate) mod frame_effect;
+
+#[cfg(feature = "gui")]
 mod view_frame;
 
 #[cfg(feature = "gui")]

@@ -1,5 +1,6 @@
 //! Application frame sequencing: View geometry first, engine effects second, readonly drawing last.
 use super::App;
+use super::frame_effect::FramePhase;
 impl App {
     pub(crate) fn redraw_main_window(&mut self, id: winit::window::WindowId) {
         self.dispatch_pending_intents();
@@ -28,7 +29,12 @@ impl App {
             crate::view::ui::View::mark_dirty(view);
         }
         view.prepare_redraw(&session.read());
-        apply_frame_engine_actions(&mut view.state, session, self.plugin_manager.as_ref());
+        apply_frame_effects(
+            &mut view.state,
+            session,
+            self.plugin_manager.as_ref(),
+            FramePhase::Geometry,
+        );
         // TerminalStore owns grid → tap → throttled OS resize. Input contexts see that cut.
         view.prepare_render_inputs(
             &session.read(),
@@ -36,7 +42,12 @@ impl App {
                 .as_ref()
                 .map(super::plugin_display::PluginDisplay::new),
         );
-        apply_frame_engine_actions(&mut view.state, session, self.plugin_manager.as_ref());
+        apply_frame_effects(
+            &mut view.state,
+            session,
+            self.plugin_manager.as_ref(),
+            FramePhase::Inputs,
+        );
         if let Some(manager) = self.plugin_manager.as_ref() {
             for update in super::view_mesh::relay_subscribed_mesh(
                 &mut session.borrow_mut(),
@@ -60,7 +71,12 @@ impl App {
                 .map(super::plugin_display::PluginDisplay::new),
         );
         // A banner decision from this frame must update its gate before native reload/sync.
-        apply_frame_engine_actions(&mut view.state, session, self.plugin_manager.as_ref());
+        apply_frame_effects(
+            &mut view.state,
+            session,
+            self.plugin_manager.as_ref(),
+            FramePhase::Draw,
+        );
         view.finish_redraw(
             &session.read(),
             self.plugin_manager
@@ -79,8 +95,9 @@ impl App {
     }
 
     /// 공용 목록(Explorer·포트 즐겨찾기) 원본이 마지막으로 알린 리비전 뒤에 바뀌었으면 모든 메인 윈도우를
-    /// 다시 그리게 한다. 변경은 프레임 안의 intent 루프에서도, 프레임 밖의 `dispatch_pending_intents` 에서도
-    /// 적용되므로 두 곳 모두 이것을 부른다. 각 윈도우는 그리기 전에 사본을 맞춘다.
+    /// 다시 그리게 한다. 즐겨찾기 변경은 일반 명령이라 프레임 시작·`about_to_wait` 의 일반 처리
+    /// (`dispatch_pending_intents`)에서 적용되고 그쪽이 이것을 불러 알린다. 프레임 끝의 호출은 그 경로를
+    /// 거치지 않은 변경을 위한 안전망이다. 각 윈도우는 그리기 전에 사본을 맞춘다.
     pub(crate) fn redraw_windows_for_shared_lists(&mut self) {
         let registries = &self.services.registries;
         redraw_other_windows(
@@ -98,17 +115,19 @@ impl App {
     }
 }
 
-/// 프레임 단계 사이에 View가 낸 요청 중 Engine 효과만 지금 적용한다. 다른 요청은 출처 봉투를 그대로 둔 채
-/// 같은 순서로 큐에 되돌려 다음 일반 dispatch가 처리한다. 호출 위치가 단계 순서를 정한다.
-fn apply_frame_engine_actions(
+/// 프레임 단계 사이에 View가 낸 요청 중 `reached` 단계까지의 프레임 효과만 지금 출처와 함께 적용한다.
+/// 일반 명령과 아직 오지 않은 단계의 효과는 출처 봉투를 그대로 둔 채 같은 순서로 큐에 되돌린다. 뒤 단계
+/// 효과는 이 프레임의 해당 drain이, 일반 명령은 다음 일반 dispatch가 처리한다.
+fn apply_frame_effects(
     state: &mut crate::state::MainViewState,
     session: &mut crate::runtime::engine_session::EngineSession,
     plugins: Option<&crate::plugin::PluginManager>,
+    reached: FramePhase,
 ) {
     for intent in state.take_pending_intents() {
-        match intent.body {
-            crate::intent::Intent::Engine(action) => {
-                action.apply(&mut session.borrow_mut(), plugins)
+        match &intent.body {
+            crate::intent::Intent::Frame(effect) if effect.phase() <= reached => {
+                effect.apply(&mut session.borrow_mut(), plugins, &intent.origin)
             }
             _ => state.dispatch_intent(intent),
         }
@@ -133,10 +152,17 @@ fn redraw_other_windows<K: PartialEq + Copy, W>(
 
 #[cfg(test)]
 mod tests {
-    /// Engine 효과만 그 자리에서 적용되고, 나머지 요청은 출처와 함께 원래 순서로 큐에 남는다.
+    fn describe(intent: &crate::intent::DispatchedIntent) -> String {
+        format!("{:?} {:?}", intent.body, intent.origin)
+    }
+
+    /// 도달한 단계까지의 프레임 효과만 그 자리에서 적용된다. 일반 명령과 뒤 단계 효과는 출처와 함께
+    /// 원래 순서로 큐에 남고, 뒤 단계 효과는 그 단계의 drain에서 적용된다.
     #[test]
-    fn a_frame_drain_applies_engine_effects_and_requeues_the_rest_in_order() {
+    fn a_frame_drain_applies_due_effects_and_requeues_the_rest_in_order() {
+        use super::FramePhase;
         use crate::app::engine_action::{EngineAction, SettingsPatch};
+        use crate::app::frame_effect::{DrawEffect, InputEffect};
         use crate::core::state::attention::AttentionKind;
         use crate::intent::Intent;
 
@@ -152,61 +178,165 @@ mod tests {
             .borrow_mut()
             .raise_attention(sid, AttentionKind::NeedsInput);
         let patch = |mode: &str| Intent::PatchSettings(SettingsPatch::ExplorerMode(mode.into()));
+        let typing = Intent::Engine(EngineAction::RecordTyping {
+            target: target.clone(),
+            at: std::time::Instant::now(),
+        })
+        .from_user_shortcut("typing");
+        let full = Intent::Frame(
+            DrawEffect::RemoteMeshFull {
+                targets: vec![target.clone()],
+            }
+            .into(),
+        )
+        .from_user_shortcut("mesh-full-recovery");
         state.dispatch_intent(patch("first").from_user_menu("first"));
         state.dispatch_intent(
-            Intent::Engine(EngineAction::FocusObserved {
-                target,
-                window_focused: true,
-            })
+            Intent::Frame(
+                InputEffect::FocusObserved {
+                    target,
+                    window_focused: true,
+                }
+                .into(),
+            )
             .from_user_context_menu(),
         );
+        state.dispatch_intent(typing.clone());
+        state.dispatch_intent(full.clone());
         state.dispatch_intent(patch("second").from_agent_ipc());
 
-        super::apply_frame_engine_actions(&mut state, &mut session, None);
+        super::apply_frame_effects(&mut state, &mut session, None, FramePhase::Inputs);
 
         assert_eq!(
             session.borrow_mut().attention_kind(sid),
             None,
-            "engine effect ran"
+            "the input effect ran"
         );
-        let rest: Vec<String> = state
-            .take_pending_intents()
-            .into_iter()
-            .map(|intent| format!("{:?} {:?}", intent.body, intent.origin))
-            .collect();
+        assert!(
+            session.borrow_mut().live.last_key_input.is_empty(),
+            "a general command is not run by a frame drain"
+        );
+        assert!(
+            session
+                .borrow_mut()
+                .remote
+                .pending_mesh_full_resend_forward
+                .is_empty(),
+            "a draw effect waits for the draw drain"
+        );
+        let first = patch("first").from_user_menu("first");
+        let second = patch("second").from_agent_ipc();
+        let rest: Vec<String> = state.take_pending_intents().iter().map(describe).collect();
         assert_eq!(
             rest,
             [
-                format!(
-                    "{:?} {:?}",
-                    patch("first"),
-                    patch("first").from_user_menu("first").origin
-                ),
-                format!(
-                    "{:?} {:?}",
-                    patch("second"),
-                    patch("second").from_agent_ipc().origin
-                ),
+                describe(&first),
+                describe(&typing),
+                describe(&full),
+                describe(&second)
             ]
+        );
+
+        for intent in [first.clone(), typing.clone(), full, second.clone()] {
+            state.dispatch_intent(intent);
+        }
+        super::apply_frame_effects(&mut state, &mut session, None, FramePhase::Draw);
+        assert!(
+            session
+                .borrow_mut()
+                .remote
+                .pending_mesh_full_resend_forward
+                .contains(&sid)
+        );
+        let rest: Vec<String> = state.take_pending_intents().iter().map(describe).collect();
+        assert_eq!(
+            rest,
+            [describe(&first), describe(&typing), describe(&second)]
+        );
+    }
+
+    /// 화면 프레임 밖의 IPC가 낸 원격 목록 조회는 일반 명령이다. 프레임 drain은 받지 않고 일반 dispatch가
+    /// 적용한다.
+    #[test]
+    fn an_ipc_list_directory_is_left_for_the_general_dispatch() {
+        use super::FramePhase;
+        use crate::app::engine_action::EngineAction;
+        use crate::intent::Intent;
+
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let ws_id = 9_000u32;
+        let mut ws = crate::model::Workspace::new_with_terminal_marker(
+            ws_id,
+            "mirror".to_string(),
+            9_001,
+            9_002,
+            9_003,
+        );
+        ws.mirror = true;
+        session.borrow_mut().push_mirror_workspace(ws);
+        let projection = session
+            .read()
+            .mirror_projection_token(ws_id)
+            .expect("mirror projection");
+        let list = Intent::Engine(EngineAction::ListDirectory {
+            request: crate::core::PendingListDirForward {
+                local_ws_id: ws_id,
+                request_id: 7,
+                dir: "/srv".into(),
+                consumer: None,
+            },
+            projection,
+            target: None,
+        })
+        .from_agent_ipc();
+        state.dispatch_intent(list.clone());
+
+        for phase in [FramePhase::Geometry, FramePhase::Inputs, FramePhase::Draw] {
+            super::apply_frame_effects(&mut state, &mut session, None, phase);
+        }
+
+        let rest = state.take_pending_intents();
+        assert_eq!(
+            rest.iter().map(describe).collect::<Vec<_>>(),
+            [describe(&list)]
+        );
+        assert!(
+            session
+                .borrow_mut()
+                .remote
+                .pending_list_dir_forward
+                .is_empty()
+        );
+
+        let Intent::Engine(action) = &rest[0].body else {
+            unreachable!("checked above")
+        };
+        action.apply(&mut session.borrow_mut());
+        assert_eq!(
+            session.borrow_mut().remote.pending_list_dir_forward.len(),
+            1
         );
     }
 
     /// prepare_redraw가 낸 기본 grid는 첫 drain에서 바로 적용돼 입력 준비가 새 값을 본다.
     #[test]
     fn the_geometry_drain_applies_the_default_grid_before_inputs() {
-        use crate::app::engine_action::EngineAction;
+        use crate::app::frame_effect::GeometryEffect;
         use crate::intent::Intent;
 
         let (mut state, mut session) = crate::state::tests::test_state();
         state.dispatch_intent(
-            Intent::Engine(EngineAction::DefaultGrid {
-                cols: 133,
-                rows: 41,
-            })
+            Intent::Frame(
+                GeometryEffect::DefaultGrid {
+                    cols: 133,
+                    rows: 41,
+                }
+                .into(),
+            )
             .from_user_shortcut("grid-resize"),
         );
 
-        super::apply_frame_engine_actions(&mut state, &mut session, None);
+        super::apply_frame_effects(&mut state, &mut session, None, super::FramePhase::Geometry);
 
         let engine = session.borrow_mut();
         assert_eq!(
@@ -293,7 +423,7 @@ mod tests {
     /// draw에서 누른 허용은 그 프레임의 마지막 drain에서 gate에 반영돼 native 동기화가 reload를 본다.
     #[test]
     fn an_allow_drawn_this_frame_reaches_the_gate_before_native_sync() {
-        use crate::app::engine_action::EngineAction;
+        use crate::app::frame_effect::DrawEffect;
         use crate::intent::Intent;
         use crate::runtime::html_script::HtmlActionKind;
 
@@ -304,16 +434,37 @@ mod tests {
             .expect("html snapshot")
             .request(HtmlActionKind::Allow);
         state.dispatch_intent(
-            Intent::Engine(EngineAction::Html(allow)).from_user_menu("html-script-banner"),
+            Intent::Frame(DrawEffect::Html(allow).into()).from_user_menu("html-script-banner"),
         );
         assert!(!take_reload_request(&mut session, sid));
 
-        super::apply_frame_engine_actions(&mut state, &mut session, None);
+        super::apply_frame_effects(&mut state, &mut session, None, super::FramePhase::Draw);
 
         assert!(
             take_reload_request(&mut session, sid),
             "the allowance must request the reload before webview sync"
         );
+    }
+
+    /// 허용은 사용자 결정이다. 사용자 출처가 아닌 허용은 gate를 바꾸지 않는다.
+    #[test]
+    fn an_allow_without_a_user_origin_is_refused() {
+        use crate::app::frame_effect::DrawEffect;
+        use crate::intent::Intent;
+        use crate::runtime::html_script::HtmlActionKind;
+
+        let (mut state, mut session, sid) = state_with_html_document();
+        let allow = session
+            .read()
+            .html_script(sid)
+            .expect("html snapshot")
+            .request(HtmlActionKind::Allow);
+        state.dispatch_intent(Intent::Frame(DrawEffect::Html(allow).into()).from_agent_ipc());
+
+        super::apply_frame_effects(&mut state, &mut session, None, super::FramePhase::Draw);
+
+        assert!(!take_reload_request(&mut session, sid));
+        assert!(state.take_pending_intents().is_empty());
     }
 
     use crate::core::explorer_favorites::ExplorerFavorites;

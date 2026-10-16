@@ -237,9 +237,9 @@ impl RequestContext {
             }
         }
         self.dispatch_intent(
-            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Resize {
-                targets,
-            })
+            crate::intent::Intent::Frame(
+                crate::app::frame_effect::GeometryEffect::Resize { targets }.into(),
+            )
             .from_user_shortcut("layout-resize"),
         );
     }

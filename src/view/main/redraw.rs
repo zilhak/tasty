@@ -227,10 +227,9 @@ impl MainView {
         let terminal_rect = self.compute_terminal_rect();
         let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
         self.state.dispatch_intent(
-            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DefaultGrid {
-                cols,
-                rows,
-            })
+            crate::intent::Intent::Frame(
+                crate::app::frame_effect::GeometryEffect::DefaultGrid { cols, rows }.into(),
+            )
             .from_user_shortcut("grid-resize"),
         );
     }
@@ -258,11 +257,12 @@ impl MainView {
                 self.webviews.values().any(|wv| wv.holds_keyboard_focus())
             });
             self.state.dispatch_intent(
-                crate::intent::Intent::Engine(
-                    crate::app::engine_action::EngineAction::FocusObserved {
+                crate::intent::Intent::Frame(
+                    crate::app::frame_effect::InputEffect::FocusObserved {
                         target,
                         window_focused,
-                    },
+                    }
+                    .into(),
                 )
                 .from_user_menu("render-focus"),
             );
@@ -387,8 +387,8 @@ impl MainView {
                 })
                 .collect();
             self.state.dispatch_intent(
-                crate::intent::Intent::Engine(
-                    crate::app::engine_action::EngineAction::RemoteMeshFull { targets },
+                crate::intent::Intent::Frame(
+                    crate::app::frame_effect::DrawEffect::RemoteMeshFull { targets }.into(),
                 )
                 .from_user_shortcut("mesh-full-recovery"),
             );

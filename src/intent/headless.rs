@@ -201,6 +201,7 @@ fn route_non_domain(
         | Intent::AttachSizeSync(_)
         | Intent::PatchSettings(_)
         | Intent::Engine(_)
+        | Intent::Frame(_)
         | Intent::ForwardMirror { .. }
         | Intent::RespondApproval { .. }
         | Intent::Ui(_)

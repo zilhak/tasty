@@ -220,12 +220,13 @@ impl MainView {
                     crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
             {
                 self.state.dispatch_intent(
-                    crate::intent::Intent::Engine(
-                        crate::app::engine_action::EngineAction::RemoteMesh {
+                    crate::intent::Intent::Frame(
+                        crate::app::frame_effect::InputEffect::RemoteMesh {
                             target,
                             context,
                             input,
-                        },
+                        }
+                        .into(),
                     )
                     .from_user_shortcut("remote-mesh-frame"),
                 );

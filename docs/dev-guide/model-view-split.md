@@ -11,7 +11,7 @@
 
 `EngineRead::find_surface_by_id`는 내부 실행 객체를 숨긴 `SurfaceRead`를 반환한다. 이 wrapper는 `as_any`나 `Deref`로 원 `dyn Surface`를 꺼내는 출구를 제공하지 않는다. ID·kind·표시 이름·CWD 같은 조회와 내장 Empty·Explorer·DAG의 불변 표시 참조를 사용한다. 이 타입들은 값을 보유하며 변경에는 실행 owner의 가변 차용이 필요하다. mesh의 표시 정보도 실행 binding과 구분한다. `remote_webview()`는 kind·URL·NavState만 제공하며 RemoteSurface의 writer Arc나 sender를 노출하지 않는다.
 
-View는 로컬 표시 상태를 직접 바꾸고, 실행 변경은 고정 대상의 `EngineAction`, Explorer 파일 요청 또는 journal 요청으로 App에 반환한다. App이 원 binding을 대조한 뒤 Engine 실행 owner를 빌려 적용한다. 읽기 위해 전체 surface 모델을 복제하거나, 화면 store를 빌리기 위해 도메인 writer를 View에 전달하지 않는다.
+View는 로컬 표시 상태를 직접 바꾸고, 실행 변경은 고정 대상의 `EngineAction`(일반 명령)·`FrameEffect`(프레임 단계 효과), Explorer 파일 요청 또는 journal 요청으로 App에 반환한다. App이 원 binding을 대조한 뒤 Engine 실행 owner를 빌려 적용한다. 읽기 위해 전체 surface 모델을 복제하거나, 화면 store를 빌리기 위해 도메인 writer를 View에 전달하지 않는다.
 
 HTML은 같은 경계의 예다. native WebView 객체는 MainView에 남고, App의 `webview_sync`가 gate·load·reload·navigation proof를 처리한다. 배너는 `runtime::html_script`의 `HtmlSnapshot`에서 만든 일회 요청만 반환한다. 원 대상의 logical/physical/mirror 세대는 `runtime::surface_binding`이 검증하며 필드 조립을 외부에 노출하지 않는다. App은 요청 적용 순서와 View별 navigation proof를 관리한다. App의 프레임 순서는 렌더에서 나온 실행 요청 적용 후 native 동기화이며, 세부 계약은 [WebView 호스트 계약](../design/systems/webview.md#탐색-상태와-실행-소유)에 둔다.
 

@@ -342,7 +342,7 @@ pub fn draw_egui_panels(
 
     for action in html_actions {
         state.dispatch_intent(
-            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Html(action))
+            crate::intent::Intent::Frame(crate::app::frame_effect::DrawEffect::Html(action).into())
                 .from_user_menu("html-script-banner"),
         );
     }
