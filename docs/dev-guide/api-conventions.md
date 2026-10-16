@@ -53,6 +53,7 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 ## 인자 규칙
 
 - 대상 식별은 `--<대상 종류> <id>` (`--surface 42`, `--tab 7`, `--workspace 3`). **활성 객체 의존 금지**(포커스 독립성 — [focus 정책](../design/policies/focus.md)).
+- 명령이 다루는 객체 자신의 ID 는 `--id` 를 쓴다(`tasty approval get --id req_…`). `close` 처럼 한 명령이 여러 대상 종류를 다루면 대상 종류 옵션을 쓴다(아래 표의 `close workspace --workspace`·`close window --window`).
 - 옵션은 kebab-case (`--strip-ansi`, `--since-mark`).
 - 예전 표기를 추천 표기로 바꿀 때는 예전 표기를 clap 별칭으로 남긴다. 두 표기를 함께 주면 같은 인자를 두 번 준 것으로 파싱 단계에서 거절한다. 별칭은 타입·필수성·생략 의미·IPC 키를 바꾸지 않고 새 이름 조회나 암묵 대상도 추가하지 않는다.
 
@@ -63,6 +64,8 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 | `close workspace` | `--workspace`(`--id`) | u32, 필수 | workspace ID | `workspace.close`의 `id` |
 | `close window` | `--window`(`--id`) | u64, 필수 | window ID | `window.close`의 `id` |
 | `agent` 하위 명령 전체 | `--workspace`(`--workspace-id`) | u32. 명령마다 필수 또는 선택 | workspace ID. `dag-list` 등 선택인 명령은 생략 시 모든 live workspace | 각 메서드의 `workspace_id` |
+| `approval request`·`list`·`history`·`summary set`·`summary get` | `--workspace`(`--workspace-id`) | u32. `summary set`·`get`은 필수, 나머지는 선택 | workspace ID. `request`는 생략 시 `--surface`의 workspace, 그다음 활성 workspace. `list`·`history`는 생략 시 필터 없음 | 각 메서드의 `workspace_id` |
+| `approval request` | `--surface`(`--surface-id`) | u32, 선택 | 요청을 묶을 surface ID | `approval.request`의 `surface_id` |
 | `split` | `--surface`(`--target-surface`) | 문자열, 선택 | 숫자 surface ID, `this`, nickname. 해석은 기존 resolver·서버 계약 | `split`의 `target_surface` |
 | `split` | `--pane`(`--target-pane`) | u32, 선택 | pane 분할의 대상 pane ID | `split`의 `target_pane` |
 | `pty attach-surface` | `--pty`(`--pty-id`) | u32, 필수 | standalone PTY ID | `pty.attach_surface`의 `id` |

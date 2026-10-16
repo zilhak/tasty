@@ -30,11 +30,11 @@ pub enum ApprovalCommands {
         /// Severity: info | warn | danger. Default: info.
         #[arg(long)]
         severity: Option<String>,
-        /// Workspace id binding (defaults to the workspace of --surface-id, then the active workspace).
-        #[arg(long)]
+        /// Workspace id binding (defaults to the workspace of --surface, then the active workspace).
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: Option<u32>,
         /// Surface id binding (optional).
-        #[arg(long)]
+        #[arg(long = "surface", visible_alias = "surface-id")]
         surface_id: Option<u32>,
         /// Free-form JSON metadata (string passed verbatim; must parse).
         /// The kind "capability_elevation" is reserved for host-issued requests and is rejected.
@@ -80,7 +80,7 @@ pub enum ApprovalCommands {
         #[arg(long)]
         state: Option<String>,
         /// Filter by workspace id.
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: Option<u32>,
     },
     /// Set or read the workspace markdown summary (manual write/read only).
@@ -97,7 +97,7 @@ pub enum ApprovalCommands {
         #[arg(long)]
         until: Option<i64>,
         /// Filter by workspace id.
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: Option<u32>,
         /// Filter by requester id (plugin/agent id or "user").
         #[arg(long)]
@@ -119,7 +119,7 @@ pub enum ApprovalSummaryCommands {
     /// Overwrite the workspace summary with `content` (or `@file`).
     Set {
         /// Workspace whose summary is overwritten (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
         /// Inline content, or `@path` to read from a file.
         #[arg(long)]
@@ -128,7 +128,7 @@ pub enum ApprovalSummaryCommands {
     /// Print the workspace summary.
     Get {
         /// Workspace whose summary is printed (focus-independent — required).
-        #[arg(long)]
+        #[arg(long = "workspace", visible_alias = "workspace-id")]
         workspace_id: u32,
     },
 }

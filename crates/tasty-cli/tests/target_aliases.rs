@@ -48,6 +48,64 @@ fn recommended_and_compatible_names_build_the_same_request() {
             &["tasty", "split", "--level", "surface", "--surface", "this"],
         ),
         (
+            &[
+                "tasty",
+                "approval",
+                "request",
+                "--title",
+                "t",
+                "--workspace-id",
+                "7",
+                "--surface-id",
+                "9",
+            ],
+            &[
+                "tasty",
+                "approval",
+                "request",
+                "--title",
+                "t",
+                "--workspace",
+                "7",
+                "--surface",
+                "9",
+            ],
+        ),
+        (
+            &["tasty", "approval", "list", "--workspace-id", "7"],
+            &["tasty", "approval", "list", "--workspace", "7"],
+        ),
+        (
+            &["tasty", "approval", "history", "--workspace-id", "7"],
+            &["tasty", "approval", "history", "--workspace", "7"],
+        ),
+        (
+            &["tasty", "approval", "summary", "get", "--workspace-id", "7"],
+            &["tasty", "approval", "summary", "get", "--workspace", "7"],
+        ),
+        (
+            &[
+                "tasty",
+                "approval",
+                "summary",
+                "set",
+                "--workspace-id",
+                "7",
+                "--content",
+                "x",
+            ],
+            &[
+                "tasty",
+                "approval",
+                "summary",
+                "set",
+                "--workspace",
+                "7",
+                "--content",
+                "x",
+            ],
+        ),
+        (
             &["tasty", "split", "--level", "pane", "--target-pane", "3"],
             &["tasty", "split", "--level", "pane", "--pane", "3"],
         ),
@@ -80,6 +138,8 @@ fn recommended_and_compatible_names_build_the_same_request() {
         request(&["tasty", "agent", "dag-list"]),
         request(&["tasty", "agent", "dag-list"])
     );
+    let (_, params) = request(&["tasty", "approval", "list"]);
+    assert!(params.get("workspace_id").is_none(), "{params}");
 }
 
 #[test]
@@ -104,6 +164,27 @@ fn giving_both_names_is_refused_before_any_request() {
             "7",
             "--workspace",
             "8",
+        ],
+        &[
+            "tasty",
+            "approval",
+            "request",
+            "--title",
+            "t",
+            "--surface-id",
+            "1",
+            "--surface",
+            "2",
+        ],
+        &[
+            "tasty",
+            "approval",
+            "summary",
+            "get",
+            "--workspace-id",
+            "1",
+            "--workspace",
+            "2",
         ],
         &[
             "tasty",
@@ -148,6 +229,7 @@ fn types_and_required_flags_stay_as_declared() {
         ],
         &["tasty", "agent", "task-list", "--workspace", "4294967296"],
         &["tasty", "split", "--level", "pane", "--pane", "abc"],
+        &["tasty", "approval", "list", "--workspace", "4294967296"],
     ] {
         let kind = rejected(args);
         assert!(
@@ -170,6 +252,10 @@ fn types_and_required_flags_stay_as_declared() {
         rejected(&["tasty", "close", "workspace"]),
         ErrorKind::MissingRequiredArgument
     );
+    assert_eq!(
+        rejected(&["tasty", "approval", "summary", "get"]),
+        ErrorKind::MissingRequiredArgument
+    );
 }
 
 #[test]
@@ -183,4 +269,23 @@ fn help_shows_the_recommended_name_with_the_compatible_one() {
     let help = close.render_help().to_string();
     assert!(help.contains("--workspace <ID>"), "{help}");
     assert!(help.contains("--id"), "{help}");
+}
+
+#[test]
+fn approval_help_shows_the_recommended_names_with_the_compatible_ones() {
+    let mut root = tasty_cli::localized_command();
+    let request = root
+        .find_subcommand_mut("approval")
+        .unwrap()
+        .find_subcommand_mut("request")
+        .unwrap();
+    let help = request.render_help().to_string();
+    for name in [
+        "--workspace <",
+        "--workspace-id",
+        "--surface <",
+        "--surface-id",
+    ] {
+        assert!(help.contains(name), "{name}: {help}");
+    }
 }

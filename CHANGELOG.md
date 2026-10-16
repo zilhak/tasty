@@ -19,6 +19,7 @@
 
 ### Added
 
+- **`tasty approval` 의 대상 옵션에 추천 표기를 더했다.** `approval request`·`list`·`history`·`summary set`·`summary get` 은 `--workspace <ID>`(예전 `--workspace-id`)를, `approval request` 는 `--surface <ID>`(예전 `--surface-id`)를 받는다. 예전 표기도 계속 받으며 요청 내용·타입·필수 여부는 같다. 두 표기를 함께 주면 종료 코드 2로 거절한다. 도움말은 추천 표기를 보이고 예전 표기를 별칭으로 안내한다.
 - **스크린샷 단축키의 결과를 단축키를 누른 윈도우에 토스트로 알린다.** 로컬 캡처는 이미지와 경로를 모두 복사하면 성공, 경로만 복사하면 경고, 도구 없음·도구 실패·저장 실패·클립보드 실패·동시 캡처 상한 초과에는 사유를 보인다. Esc 취소에는 토스트가 없고, 도구가 파일 없이 끝나면 정보 토스트만 뜬다. mirror 캡처는 원격 회신을 upload_id 로 요청과 짝지어 그 요청을 만든 윈도우에만 한 번 알리며, 연결이 없어 보내지 못했거나 회신 전에 연결이 끊긴 경우도 알린다. 영역 선택 중 다른 윈도우로 옮겨도 처음 윈도우에 뜨고, 그 윈도우가 닫혔으면 다른 윈도우에 띄우지 않는다. 경로·사유가 길면 가운데를 줄여 200자 상한 안에 넣는다. Linux X11(Xvfb)에서만 실제 실행으로 확인했다.
 - **스크린샷 단축키가 저장 경로와 함께 이미지도 클립보드에 넣는다.** `screenshot_to_clipboard` 로 찍은 PNG 를 경로 텍스트와 같은 게시로 이미지 형식(Linux X11 `image/png`, Windows `CF_DIB`·`PNG`, macOS PNG)에도 올린다. 터미널 붙여넣기는 그대로 경로를 받고, 그림을 받는 앱은 이미지를 받는다. 그림을 디코딩하지 못하거나 함께 올리지 못하면 경로만 넣는다. mirror 워크스페이스에서는 원격 클립보드에 같은 두 형식을 넣고, attach 회신 `capture_result` 에 `image`(이미지도 올렸는가)와 `image_reason` 이 더해졌다. 저장은 했지만 클립보드에 쓰지 못한 실패에는 `path` 도 실린다. `image` 가 없는 옛 서버의 성공은 경로만 복사한 것으로 안내한다. Linux X11만 실제 실행으로 확인했고 Windows·macOS는 실 기기 미측정이다.
 - **`tasty pty state` 를 추가했다.** 헤드리스 PTY의 종료 상태를 즉시 조회하는 추천 이름이며, 예전 이름 `tasty pty wait` 도 같은 동작으로 받는다. 도움말과 가이드는 `tasty agent barrier-state` 를 추천 표기로 안내하고, `task-await` 의 기본 대기 시간·`--timeout-ms 0`·`outcome`(terminal·timed_out·not_found)과 종료 코드 0이 작업 성공을 뜻하지 않는다는 점을 설명한다. 비영어 도움말은 하위 명령 별칭도 번역된 안내로 보여 준다.

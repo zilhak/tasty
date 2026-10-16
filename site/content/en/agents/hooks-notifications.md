@@ -1,4 +1,4 @@
-<!-- source-hash: e11a19d26d20 -->
+<!-- source-hash: 48282b9c4665 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -164,7 +164,7 @@ tasty approval await --id "$ID"            # wait until a response arrives, prin
 - The popup does not close on Esc (to prevent bypassing). Query with `tasty approval list` / `get` / `history`.
 - `approval await` is for the user only. An agent connected with a session token (`TASTY_SESSION_TOKEN`) cannot call it; check the state with `tasty approval get --id "$ID"` instead (this needs the `approval` permission).
 - `--metadata` cannot use `capability_elevation` as its `kind`. That value is reserved for agent permission requests, so the request is rejected. Ask for an agent permission with `tasty plugin request-permission` instead.
-- A request is bound to a workspace: the one given by `--workspace-id`, otherwise the workspace of the terminal given by `--surface-id`, otherwise the workspace you are looking at. An agent is safest passing its own terminal with `--surface-id "$TASTY_SURFACE_ID"` — the request then lands in the same place even when the user is looking at another workspace.
+- A request is bound to a workspace: the one given by `--workspace`, otherwise the workspace of the terminal given by `--surface`, otherwise the workspace you are looking at (the older `--workspace-id` and `--surface-id` are still accepted). An agent is safest passing its own terminal with `--surface "$TASTY_SURFACE_ID"` — the request then lands in the same place even when the user is looking at another workspace.
 
 ## Webhooks (outside → Tasty)
 
