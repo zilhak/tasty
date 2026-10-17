@@ -83,12 +83,15 @@ pub fn draw_collapsed_sidebar(
         )
     };
 
+    let notification_data = crate::adapters::ui::notification::summary_data(engine);
+    let notifications = notification_data.view(state.popups.is_open("notifications"));
     let panel_resp = egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
         .show_separator_line(false)
         .show(ctx, |ui| {
             let props = SidebarCollapsedProps {
+                notifications: Some(&notifications),
                 theme: &th,
                 kb: &engine.settings.keybindings,
                 workspaces: &workspaces,
@@ -123,6 +126,9 @@ pub fn draw_collapsed_sidebar(
             SidebarCollapsedAction::Plugins => result.plugins_clicked = true,
             SidebarCollapsedAction::Settings => result.settings_clicked = true,
             SidebarCollapsedAction::ToolsClicked(rect) => result.tools_rect = Some(rect),
+            SidebarCollapsedAction::NotificationsClicked(rect) => {
+                crate::adapters::ui::notification::toggle_from_sidebar(state, rect)
+            }
             SidebarCollapsedAction::WorkspaceClicked(i) => result.switch_ws = Some(i),
             SidebarCollapsedAction::NewWorkspace => result.add_ws = true,
             SidebarCollapsedAction::NewWorkspaceContextMenu { x, y } => {

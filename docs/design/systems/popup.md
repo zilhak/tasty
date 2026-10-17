@@ -43,7 +43,7 @@ Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존�
 
 닫기 경로는 draw_fn의 `PopupAction::Close`, X·바깥 클릭, `UiIntent::ClosePopup`, 열린 팝업의 `UiIntent::TogglePopup`, App의 직접 `close()`, debug IPC의 여섯 가지다. 모두 `PopupManager::close()`를 거쳐 `PopupState.open`을 false로 바꾼다.
 
-초안이나 대상 ID의 정리를 draw_fn에만 두면 다른 닫기 경로에서 실행되지 않는다. `PopupDef.on_close`를 등록하면 close가 `closed_queue`에 넣고 다음 `draw_popup_layer`에서 한 번 호출한다. 훅이 다른 팝업을 닫으면 같은 처리 중 이어서 정리하되, 상호 재열기 같은 오류를 막는 라운드 상한을 둔다. `on_close: None`에는 상태가 없거나 남겨도 되는 이유를 적는다. 예를 들어 notifications는 정리할 상태가 없고 tutorial_topics는 남겨도 되는 상태다.
+초안이나 대상 ID의 정리를 draw_fn에만 두면 다른 닫기 경로에서 실행되지 않는다. `PopupDef.on_close`를 등록하면 close가 `closed_queue`에 넣고 다음 `draw_popup_layer`에서 한 번 호출한다. 훅이 다른 팝업을 닫으면 같은 처리 중 이어서 정리하되, 상호 재열기 같은 오류를 막는 라운드 상한을 둔다. `on_close: None`에는 상태가 없거나 남겨도 되는 이유를 적는다. 예를 들어 notifications는 펼친 항목과 스크롤 위치를 다시 열 때 유지하고 tutorial_topics도 남겨도 되는 상태다. notifications fullscreen 무대의 스크롤 상태는 무대 종료 시 별도로 지운다.
 
 절차·필드 상세는 [popup-implementation §닫힘 정리](../../dev-guide/popup-implementation.md#닫힘-정리).
 

@@ -25,6 +25,8 @@ const CSS = `
     radial-gradient(circle, currentColor 42%, transparent 46%) 100% 50% / 28% 28% no-repeat;
 }
 
+.tasty-spinner--paused svg { animation: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .tasty-spinner svg { animation: none; }
   .tasty-spinner { position: relative; }
@@ -36,6 +38,8 @@ const CSS = `
       radial-gradient(circle, currentColor 42%, transparent 46%) 50% 50% / 28% 28% no-repeat,
       radial-gradient(circle, currentColor 42%, transparent 46%) 100% 50% / 28% 28% no-repeat;
   }
+  .tasty-spinner.tasty-spinner--rm-arc svg { display: block; }
+  .tasty-spinner.tasty-spinner--rm-arc::before { content: none; }
 }
 `;
 
@@ -49,9 +53,11 @@ function ensureCss() {
   injected = true;
 }
 
-export function Spinner({ size = 16, stroke = 2, label = null, className = "", style, ...rest }) {
+export function Spinner({ size = 16, stroke = 2, label = null, paused = false, reducedMotion = "dots", className = "", style, ...rest }) {
   ensureCss();
-  const cls = ["tasty-spinner", className].filter(Boolean).join(" ");
+  // paused = force the still arc (no rotation) · reducedMotion "arc" = under prefers-reduced-motion keep the
+  // still arc instead of the 3-dot fallback (used by LoadingOverlay, 2026-10-16)
+  const cls = ["tasty-spinner", paused && "tasty-spinner--paused", reducedMotion === "arc" && "tasty-spinner--rm-arc", className].filter(Boolean).join(" ");
   const r = 12 - stroke; // keep the stroke inside the 24-unit viewBox
   return (
     <span

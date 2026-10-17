@@ -1174,7 +1174,7 @@ function Page() {
 
       <Section id="html" title="HTML viewer">
         <Spec title="HTML — webview chrome (4 states)"
-          when={<>The html surface is <b>thin chrome + a native OS WebView overlay</b> — tasty does <b>not</b> theme the page pixels. What tasty paints is the tile skeleton before/instead of the overlay: <b>boundary</b> (region marker), <b>placeholder</b> (no URL), <b>loading</b> (Spinner), <b>error</b> (danger). Same tile (<span className="tok">--tasty-bg-panel</span> + 1px border), centered content. Toolbar / address bar / nav are <b>not</b> drawn today — left out per the brief (not guessed).</>}>
+          when={<>The html surface is <b>thin chrome + a native OS WebView overlay</b> — tasty does <b>not</b> theme the page pixels. What tasty paints is the tile skeleton before/instead of the overlay: <b>boundary</b> (region marker), <b>placeholder</b> (no URL), <b>loading</b> (Spinner), <b>error</b> (danger). Same tile (<span className="tok">--tasty-bg-panel</span> + 1px border), centered content. The address bar band above these states is specified below (2026-10-12).</>}>
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 14, flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>boundary</div><HtmlTile state="boundary" /></div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>placeholder</div><HtmlTile state="placeholder" /></div>
@@ -1184,6 +1184,96 @@ function Page() {
           <Meta
             specs={[["content", "native OS WebView (token-agnostic)"], ["tile", <><span className="tok">--tasty-bg-panel</span> + 1px <span className="tok">--tasty-border-default</span></>], ["boundary (2026-10-06)", "plain tile only (bg-panel + 1px border) — shown only while an egui overlay hides a loaded page; no glyph, label or URL / path"], ["placeholder", "GLOBE (disabled) + 'No page loaded'"], ["loading", "Spinner + 'Loading…'"], ["error", "ALERT (danger) + URL"]]}
             tokens={[{ tok: "--tasty-text-muted", use: "placeholder / loading label", color: "var(--tasty-text-muted)" }, { tok: "--tasty-text-disabled", use: "placeholder / URL", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-spinner-indicator", use: "loading", color: "var(--tasty-spinner-indicator)" }, { tok: "--tasty-accent-danger", use: "error", color: "var(--tasty-accent-danger)" }]} />
+        </Spec>
+        <Spec title="HTML — address bar band (2026-10-12)"
+          when={<>The page is a native WebView that tasty cannot paint over, so the address bar is a <b>host band above it</b> and the WebView rect starts below the band (same inset idea as the script banner). Composition = the Explorer toolbar recipe: <b>Back · Forward · Reload</b> (IconButton sm) then the <b>PathField box</b> — without the Go button (Enter opens; the band already carries three buttons). Height 40 and <span className="tok">--tasty-bg-sidebar</span> + 1px separator match the markdown address bar. Local files show as a <b>path</b> (<code>file://</code> input is accepted and shown as the path after open); web pages show the full URL. Loading swaps Reload for a Spinner in the same 24 cell. Input errors stand in a 24px row <b>inside the band</b> (danger edge on the field, glyph + message below); they clear on the next keystroke, on Esc, or on a successful open — never on a timer. Stack order under the band: <b>size banner → script banner → page</b>, banner-margin 8 above the first, banner-inset-gap 8 between and below.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[
+              ["1 · empty tab — placeholder + hint", { kind: "empty", canBack: false }, "empty"],
+              ["2 · local file — shown as a path", { kind: "local", address: "~/work/tasty/target/report.html", canBack: true }, "page"],
+              ["3 · web page", { kind: "web", address: "https://docs.example.com/guide/getting-started#install", canBack: true, canForward: true }, "page"],
+              ["4 · loading — Reload slot spins", { kind: "web", address: "https://docs.example.com/guide/", state: "loading", canBack: true }, "loading"],
+              ["5 · load failed — band keeps the tried address", { kind: "web", address: "https://offline.example", canBack: true }, "failed"],
+              ["6 · editing — focus edge + caret, keys stay in the field", { kind: "local", address: "~/work/tasty/target/rep", state: "editing" }, "page"],
+              ["7a · input error — missing file, page unchanged", { kind: "local", address: "/tmp/x/missing.html", state: "error", error: "File not found: /tmp/x/missing.html" }, "page"],
+              ["7b · input error — no base for a relative path", { kind: "empty", address: "docs/index.html", state: "error", canBack: false, error: "Can't resolve a relative path — no document or working folder" }, "empty"],
+            ].map(([cap, bar, page]) => (
+              <div key={cap} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                  <window.TastyKit.HtmlAddressSurfaceG width="var(--tasty-size-460)" height={240} bar={bar} page={page} url="https://offline.example" />
+                </div>
+              </div>
+            ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>8 · with the script banner — band, then the inset banner, then the page</span>
+              <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                <window.TastyKit.HtmlAddressSurfaceG width="var(--tasty-size-560)" height={300} bar={{ kind: "local", address: "~/work/tasty/target/report.html" }} banners={["script"]} />
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>9 · mirror — read-only field, Reload only</span>
+              <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                <window.TastyKit.HtmlAddressSurfaceG width="var(--tasty-size-460)" height={240} bar={{ kind: "remote", address: "build-eu:~/work/site/index.html" }} />
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>10 · narrow (360 &lt; 440) — Forward hidden</span>
+              <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                <window.TastyKit.HtmlAddressSurfaceG width="var(--tasty-size-360)" height={300} narrow bar={{ kind: "web", address: "https://docs.example.com/guide/getting-started", canBack: true, canForward: true }} banners={["script"]} />
+              </div>
+            </div>
+            {[["Latte · local + editing", { kind: "local", address: "~/work/tasty/target/rep", state: "editing" }, "page"], ["Latte · input error", { kind: "local", address: "/tmp/x/missing.html", state: "error", error: "File not found: /tmp/x/missing.html" }, "page"], ["Latte · empty tab", { kind: "empty", canBack: false }, "empty"]].map(([cap, bar, page]) => (
+              <div key={cap} data-theme="latte" style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-sm)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                  <window.TastyKit.HtmlAddressSurfaceG width="var(--tasty-size-460)" height={220} bar={bar} page={page} />
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["band", "40 · bg-sidebar · 1px separator below · padding-x 8"], ["nav", "Back · Forward · Reload — IconButton sm 24, gap 4 · disabled at history ends"], ["field", "PathField box (input tokens, 28, mono) · no Go · leading glyph file / link / html / remote"], ["address", "local = path (~ for home) · web = full URL · typed and shown the same"], ["loading", "Spinner in the Reload cell, not clickable"], ["error", "danger edge + 24 row in the band · clears on keystroke / Esc / successful open"], ["stack", "band → size banner → script banner → page · 8 / 8 / 8"], ["narrow", "< banner-narrow-below 440 → Forward hidden · field floor 96"], ["mirror", "read-only field + Reload only · band hidden while mirror HTML is a placeholder"], ["tooltips", "top — never down into the WebView"], ["empty", "keep glyph + 'No page loaded' · add hint + Alt+L / ⌘L"]]}
+            tokens={[{ tok: "--tasty-html-address-bar-height", use: "→ size-40" }, { tok: "--tasty-html-address-bar-bg", use: "→ bg-sidebar", color: "var(--tasty-html-address-bar-bg)" }, { tok: "--tasty-html-address-bar-border", use: "→ separator", color: "var(--tasty-html-address-bar-border)" }, { tok: "--tasty-html-address-bar-padding-x", use: "→ space-sm" }, { tok: "--tasty-html-address-bar-gap", use: "→ space-sm" }, { tok: "--tasty-html-address-bar-nav-gap", use: "→ space-xs" }, { tok: "--tasty-html-address-field-min-width", use: "→ size-96" }, { tok: "--tasty-html-address-error-height", use: "→ size-24" }, { tok: "--tasty-html-address-error-glyph", use: "→ accent-danger", color: "var(--tasty-html-address-error-glyph)" }, { tok: "--tasty-input-border-invalid", use: "field edge on error", color: "var(--tasty-input-border-invalid)" }]} />
+          <Note>An agent changing the address while the user edits does not touch the typed text or focus, and gets no extra marker — Esc reverts to whatever the current address is by then.</Note>
+        </Spec>
+        <Spec title="HTML mirror — remote size banners and the receiving state (2026-10-12)"
+          when={<>A mirror receives the entry document first, then each resource the page asks for. One file over 100 KB raises the <b>large-file banner</b> (name, size Tag, Decline / Allow); several waiting files are asked <b>one at a time</b>, with a “+N more waiting” count. Over 2 MB per entry document raises the <b>limit banner</b> (Stop / Continue) and auto receiving pauses. Both use the script banner's inset shell and button boxes, and sit <b>above</b> the script banner (they block rendering; the script banner is about the rendered document). Neither has × — each is a decision; neither takes keyboard focus. While a banner waits the page rect shows <b>Receiving remote files…</b> with a static glyph and “Paused”; while receiving runs it shows a Spinner with bytes · files received, so it reads differently from the local Loading state. Declined files leave a <b>“N skipped” Tag</b> in the read-only field (tooltip lists them) until Reload.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[
+              ["1 · receiving the entry document", { banners: [], page: "receiving", progress: "18 KB · 1 file" }],
+              ["2 · large file waiting (+2 more)", { banners: ["size-more"], page: "paused" }],
+              ["3 · cumulative limit reached", { banners: ["limit"], page: "paused" }],
+              ["4 · size banner + script banner", { banners: ["size", "script"], page: "paused", height: 360 }],
+              ["5 · after declining — page shown, “2 skipped” in the field", { banners: [], page: "page", skipped: 2 }],
+              ["6 · macOS 11–13, remote web address", { banners: [], page: "macos", address: "build-eu ↦ https://intranet.example/status" }],
+              ["7 · disconnected before the page arrived", { banners: [], page: "disconnected", disconnected: true }],
+            ].map(([cap, o]) => (
+              <div key={cap} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                  <window.TastyKit.HtmlAddressSurfaceG width="var(--tasty-size-560)" height={o.height || 280} label="index.html" bar={{ kind: "remote", address: o.address || "build-eu:~/work/site/index.html", skipped: o.skipped, disconnected: o.disconnected }} banners={o.banners} page={o.page} progress={o.progress} />
+                </div>
+              </div>
+            ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>8 · narrow (360) — actions wrap under the body</span>
+              <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                <window.TastyKit.HtmlAddressSurfaceG width="var(--tasty-size-360)" height={320} narrow label="index.html" bar={{ kind: "remote", address: "build-eu:~/work/site/index.html" }} banners={["size"]} page="paused" />
+              </div>
+            </div>
+            {[["Latte · large file", ["size"]], ["Latte · limit", ["limit"]]].map(([cap, b]) => (
+              <div key={cap} data-theme="latte" style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-sm)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                  <window.TastyKit.HtmlAddressSurfaceG width="var(--tasty-size-560)" height={260} label="index.html" bar={{ kind: "remote", address: "build-eu:~/work/site/index.html" }} banners={b} page="paused" />
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["placement", "inset, same as the script banner · above it when both show"], ["large file", "download glyph (info) · title · path (left-ellipsis) + size Tag warning · Decline ghost / Allow secondary"], ["several files", "one at a time · '+N more waiting'"], ["limit", "alertTriangle (warning) · received total · Stop ghost / Continue secondary"], ["dismiss", "no × · no keyboard focus · click only"], ["receiving", "Spinner + bytes · files (mono)"], ["paused", "static download glyph + 'Paused — answer the notice above'"], ["declined", "'N skipped' Tag in the read-only field, tooltip lists names · cleared by Reload"], ["macOS 11–13", "info glyph + copy in the page rect · band stays"], ["disconnected", "Reload disabled (tooltip says why) · page rect notice if nothing arrived; a received page stays"]]}
+            tokens={[{ tok: "--tasty-html-size-banner-glyph", use: "→ accent-info", color: "var(--tasty-html-size-banner-glyph)" }, { tok: "--tasty-html-limit-banner-glyph", use: "→ accent-warning", color: "var(--tasty-html-limit-banner-glyph)" }, { tok: "--tasty-html-receiving-fg", use: "→ text-muted", color: "var(--tasty-html-receiving-fg)" }, { tok: "--tasty-html-receiving-glyph", use: "→ glyph-dim", color: "var(--tasty-html-receiving-glyph)" }, { tok: "--tasty-banner-inset-gap", use: "between banners + below the last" }]} />
         </Spec>
         <Spec title="HTML — settings (Appearance › HTML viewer)">
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)" }}>

@@ -1870,7 +1870,7 @@ pub fn pages() -> Vec<Page> {
                 single(
                     "notifications",
                     "Notification panel",
-                    "Unread header · entry list · empty state",
+                    "Level counts · expand / acknowledge · closed source · empty",
                     Some("352×400 · 전체화면 무대를 선언한 유일한 popup (fit + X)"),
                     components::notification_panel::draw,
                 ),
@@ -1987,6 +1987,7 @@ pub fn pages() -> Vec<Page> {
                             Some("Full 212 expands names; collapsed 52 rail keeps icon slots"),
                             components::sidebar::draw,
                         ),
+                        spec("notification-summary", "Notification summary", Some("Unread error, warning and info · expanded and rail"), components::notification_panel::draw_summary),
                         spec(
                             "sidebar-attached-ring",
                             "Attached ring in the workspace row",

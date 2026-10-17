@@ -1378,3 +1378,12 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
   그래서 두 specimen 은 **차이가 아니라 두 갈래**를 전시한다 — `dag-surface`
   (`dag/surface.rs::paint`)가 `Own`, `dag-window-detail`(`dag/window.rs::detail_view`)가 `BackBar`
   이고, 둘 다 본체와 1:1 이다.
+
+## 알림 요약과 상세 목록
+
+| 디자인 | 공용 위젯·본체 | Rust 갤러리 |
+|---|---|---|
+| `feedback/NotificationBadge`, `terminal/notification_summary` | `tasty_ui_widgets::notification_summary`, sidebar full/collapsed 하단 | Layouts `notification-summary`: empty, mixed, 각 레벨, overflow, open 및 rail |
+| `feedback/NotificationItem`, `terminal/overlays/notifications` | `tasty_ui_widgets::notification_panel`, notifications popup/fullscreen | Overlays notification panel 및 fullscreen stage |
+
+배지는 error→warning→info 순서이고 0을 숨기며 `99+`로 제한한다. 요약의 최신 미확인 제목은 full에서만 표시한다. popup은 352×400, toolbar는 28이며 본문은 popup 2줄/fullscreen 3줄을 넘길 때 더 보기를 제공한다. 크기·색은 notification component 토큰을 사용한다. 정보 배지의 semantic 색은 completion attention과 같다. 알림 수와 surface attention 수는 합치지 않는다. 본체와 갤러리는 같은 위젯으로 행 펼치기·읽음·닫힌 출처를 표시하며 host가 읽음과 Jump를 도메인 동작으로 연결한다.

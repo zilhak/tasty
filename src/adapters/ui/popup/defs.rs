@@ -38,6 +38,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::notification::draw_notification_popup,
+                // Preserve the expanded row and popup scroll position across reopen.
                 on_close: None,
             },
             PopupDef {

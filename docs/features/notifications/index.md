@@ -12,7 +12,7 @@
 - **주체**: 로컬 사용자 (에이전트도 `notification.create` 로 발행 가능)
 - **설계**: [국제화 (i18n)](../../dev-guide/i18n.md) (제목은 표시 전용 · `notification.create` 기본 제목은 UI 문구)
 - **코드**: `NotificationStore` (notification 모델); IPC `notification.{list,create,counts,read}`
-- **화면**: 알림 패널 popup (Window 스코프) · 사이드바 배지
+- **화면**: LNB 알림 요약 · 알림 패널 popup/fullscreen (Window 스코프) · workspace attention 배지
 
 ## 목적
 
@@ -78,7 +78,8 @@ headless는 소리를 내지 않는다. 기존 항목에 합쳐진 알림과 터
 - **사이드바 배지**: attention surface 가 있는 워크스페이스 행 우측에 `attention_count` 개수 pill
   배지(`paint_workspace_count_badge`, 99 초과 시 "99+" — 확장 사이드바는 이름 우측 숫자 배지, 축소
   사이드바는 dot). 모두 방문하거나 읽음 처리하면 소멸.
-- **알림 패널** (Popup, Window 스코프): 최신순 목록, 워크스페이스·제목·본문·경과시간 + "Jump" 버튼. 열거나 닫는 것만으로 읽음 처리하지 않는다. "Mark all read"는 현재 창의 알림 ID 집합에만 적용하고 다른 창의 알림은 보존한다. 출처 워크스페이스가 이미 닫힌 알림은 워크스페이스명 자리에 `notification_panel.unknown_workspace` 번역값을 표시한다. Popup 이라 터미널 입력을 차단하지 않고 워크스페이스 전환과 무관하게 보임([popup](../../design/systems/popup.md)).
+- **LNB 알림 요약**: 도구/플러그인/설정 바로 위의 별도 버튼이다. 현재 창의 미확인 알림을 오류(빨강), 경고(노랑), 정보(완료 attention과 같은 파랑) 순서로 글리프와 숫자를 함께 표시한다. 0은 숨기고 99 초과는 `99+`로 표시한다. full은 제목·배지 아래에 가장 최근 생성된 미확인 항목의 제목·시간을 한 줄로 보여주며, 미확인이 없으면 한 줄로 접힌다. collapsed는 벨 아래 세로 배지를 쌓는다. 클릭하면 기존 알림 팝업을 토글하며 알림 도착만으로 팝업이나 사용자 포커스를 바꾸지 않는다. 워크스페이스 행의 attention 배지와 별도로 집계한다.
+- **알림 패널** (Popup, Window 스코프): 최신순 목록, 워크스페이스·제목·본문·경과시간 + "Jump" 버튼. 열거나 닫는 것만으로 읽음 처리하지 않는다. "Mark all read"는 현재 창의 알림 ID 집합에만 적용하고 다른 창의 알림은 보존한다. 레벨 글리프·미확인 점·개별 읽음 버튼을 제공한다. 본문은 popup에서 2줄, fullscreen에서 3줄로 접으며 넘칠 때만 더 보기 링크를 표시한다. 행 또는 더 보기를 눌러 펼치면 해당 항목만 읽음 처리하고 전문을 선택할 수 있다. Jump는 출처 surface를 드러내거나 surface 없는 알림의 workspace로 이동한다. 출처가 닫혀도 기록은 유지하며 닫힘 표시와 비활성 Jump를 보여준다. 출처 workspace가 사라졌으면 이름은 `notification_panel.unknown_workspace` 번역값이다. 목록을 스크롤한 상태에서 새 항목이 도착하면 보던 항목과 오프셋을 유지한다. Popup 이라 터미널 입력을 차단하지 않고 워크스페이스 전환과 무관하게 보임([popup](../../design/systems/popup.md)).
 
 ### 알림 레벨과 미확인 집계
 
@@ -108,7 +109,7 @@ surface는 해제하지 않는다. 사용자 포커스·팝업 열림 상태는 
 
 ## 인터페이스
 
-- **사용자**: 단축키로 알림 패널 토글, Jump/Mark all read.
+- **사용자**: LNB 요약 클릭 또는 설정 가능한 단축키로 알림 패널 토글, 행 펼치기/개별 읽음/Jump/Mark all read. 기존 fullscreen 전환을 지원한다.
 - **AI Agent / CLI**: `notification.list` / `notification.create`(workspace_id/surface_id 라우팅, 포커스 비의존). `notification.create` 의 `title` 은 선택 — 생략하면 호스트가 `notification.default_title` 번역값을 채운다(`tasty notify <body> [--title ..]`). 기본 제목은 프로토콜 토큰이 아니라 UI 문구이므로 언어에 따라 달라진다.
 
 ```sh

@@ -1,4 +1,4 @@
-<!-- source-hash: 68d164d7266a -->
+<!-- source-hash: d433ae7f3b95 -->
 # Workspaces
 
 Give each project or task its own workspace. Keep its terminals and layout together, then use names and categories to find it easily. If the window structure is new to you, start with [A first look](../getting-started/first-look.md).
@@ -39,7 +39,7 @@ tasty list workspaces
 - Click a sidebar card.
 - `Alt+1` to `Alt+9` (macOS `Cmd+1` and so on). Hold `Alt` and a number keycap appears next to each card showing which number it is.
 - `Alt+J` / `Alt+K` — next / previous Workspace. Wraps around at either end.
-- The **Jump** button in the notification panel — goes to the Workspace that sent the notification.
+- The **Jump** button in the notification panel — goes to the Surface or Workspace that sent the notification. The button is disabled if the source has closed.
 
 The modifier and number keys are changed in the **Workspace switch modifier** item under **Settings** > **Keybindings**.
 

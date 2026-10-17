@@ -116,6 +116,16 @@
      override its own slot) */
   --tasty-attention-needs-input-fg: var(--tasty-text-on-accent);
   --tasty-attention-completion-fg:  var(--tasty-text-on-accent);
+  /* notification levels (2026-10-17, notification-center) — the channel's three levels. info is the
+     completion blue ON PURPOSE (same hue as the LNB completion count). The counts are a separate axis:
+     never summed with surface attention counts, never painted on workspace rows. */
+  --tasty-notify-error:      var(--tasty-accent-danger);
+  --tasty-notify-warning:    var(--tasty-accent-warning);
+  --tasty-notify-info:       var(--tasty-attention-completion);
+  --tasty-notify-error-fg:   var(--tasty-text-on-accent);
+  --tasty-notify-warning-fg: var(--tasty-text-on-accent);
+  --tasty-notify-info-fg:    var(--tasty-text-on-accent);
+  --tasty-notify-unread:     var(--tasty-accent-primary);   /* unread dot on a list item */
   /* rank — urgency order, resolved by the implementation, exposed as tokens so
      design and code can't drift apart */
   --tasty-attention-rank-needs-input: 30; /* @kind other */
@@ -231,6 +241,11 @@
   --tasty-state-disabled-fg:      var(--tasty-text-disabled);
   --tasty-state-disabled-fill:    var(--tasty-surface-raised);
   --tasty-state-disabled-border:  var(--tasty-border-default);
+  /* 2026-10-14 — the same disabled / read-only box on a RAISED ground (surface-raised: menus,
+     banners, popovers). There fill = surface-raised and border-default = surface-raised, so the box
+     vanished. On raised, the box steps DOWN one ramp step and takes the strong edge. */
+  --tasty-state-disabled-fill-raised:   var(--tasty-bg-panel);
+  --tasty-state-disabled-border-raised: var(--tasty-border-strong);
   --tasty-state-dim-opacity:      var(--tasty-opacity-disabled);   /* 0.5 — dimmed ITEMS, not disabled controls */
   --tasty-state-disabled-opacity: var(--tasty-opacity-disabled);   /* DEPRECATED alias (2026-09-29): no control reads it; migrate readers to state-dim-opacity or to the ink rule */
 
@@ -349,7 +364,7 @@
      sit within 1.2:1 of each other), so the same ramp step reads fainter than in
      Mocha. One step up restores parity: Mocha n700 on panel 4.44 · Latte n800 3.49.
      Still strictly below text-muted (n900) → the enabled > disabled order holds.
-     No contrast TARGET for disabled (WCAG 1.4.3 / 1.4.11 exempt it). */
+     No contrast TARGET for disabled (WCAG 1.4.3 / 1.4.11 exempt it) — */
   --tasty-text-disabled: var(--tasty-color-neutral-800);
 
   /* secondary-on-raised — Latte n1000 on surface0 = 4.05:1 (< 4.5). n1100 = 5.17:1. The theme rule

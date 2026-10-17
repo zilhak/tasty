@@ -238,6 +238,7 @@ const NAV = [
   { id: "scripts", label: "Misc · Scripts" },
   { id: "gitviewer", label: "Git viewer" },
   { id: "clipboard", label: "Clipboard viewer" },
+  { id: "notifications", label: "Notifications" },
   { id: "moveresize", label: "Move & resize" },
 ];
 
@@ -1666,6 +1667,10 @@ function Page() {
             tokens={[{ tok: "--tasty-bg-panel", use: "frame", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-bg-app", use: "code well", color: "var(--tasty-bg-app)" }, { tok: "--tasty-bg-sidebar", use: "type bar", color: "var(--tasty-bg-sidebar)" }, { tok: "--tasty-accent-primary", use: "selected type segment", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-accent-danger", use: "read-failed", color: "var(--tasty-accent-danger)" }]} />
           <Dont><b>Don't</b> add any mutate action (copy / re-copy / clear) or a master-detail type rail — this is a one-column snapshot inspector. Snapshot is taken once at open; no live polling, no history. <b>Don't</b> render the HTML payload (no live preview, no styled output) and <b>don't</b> let the type bar scroll horizontally or truncate labels with ellipsis — compact to icon-only instead.</Dont>
         </Spec>
+      </Section>
+
+      <Section id="notifications" title="Notifications — popup · fullscreen">
+        {window.GalleryNotifications ? <window.GalleryNotifications.Popup /> : null}
       </Section>
 
       <Section id="moveresize" title="Move & resize — popup interaction spec">

@@ -57,6 +57,7 @@ pub struct SidebarFullProps<'a> {
     /// `Some` 이면 카테고리 섹션으로 그룹 렌더(토글 on), `None` 이면 기존 평면 렌더.
     pub categories: Option<&'a [CategorySectionView]>,
     pub drag: Option<DragSnapshot>,
+    pub notifications: Option<&'a tasty_ui_widgets::NotificationSummary<'a>>,
     pub tools_label: &'a str,
     pub collapse_label: &'a str,
     pub plugins_label: &'a str,
@@ -92,6 +93,7 @@ pub struct SidebarCollapsedProps<'a> {
     /// `Some` 이면 카테고리 그룹으로 렌더(토글 on) — `---` 버튼 + 소속 아바타.
     /// `None` 이면 기존 평면 아바타 나열.
     pub categories: Option<&'a [CategorySectionView]>,
+    pub notifications: Option<&'a tasty_ui_widgets::NotificationSummary<'a>>,
     pub tools_hover: &'a str,
     /// "확인 필요" plugin 개수. >0 이면 Plugins 레일 버튼에 danger 배지.
     pub plugin_alert: usize,
@@ -108,6 +110,7 @@ pub enum SidebarFullAction {
     Plugins,
     Settings,
     ToolsClicked(egui::Rect),
+    NotificationsClicked(egui::Rect),
     WorkspaceClicked(usize),
     WorkspaceContextMenu {
         ws_idx: usize,
@@ -156,6 +159,7 @@ pub enum SidebarCollapsedAction {
     Plugins,
     Settings,
     ToolsClicked(egui::Rect),
+    NotificationsClicked(egui::Rect),
     WorkspaceClicked(usize),
     NewWorkspace,
     /// "+" 아이콘 우클릭 — 프리셋으로 새 워크스페이스 생성 진입점.
@@ -297,6 +301,13 @@ pub fn draw_full_sidebar_view(
         .show_separator_line(false)
         .show_inside(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
+            if let Some(summary) = props.notifications {
+                let response = tasty_ui_widgets::notification_summary(ui, th, summary, false);
+                resize_priority_hovered |= response.hovered();
+                if response.clicked() {
+                    actions.push(SidebarFullAction::NotificationsClicked(response.rect));
+                }
+            }
             ui.separator();
             vspace(ui, STRUCT_GAP_2);
 
@@ -634,6 +645,14 @@ pub fn draw_collapsed_sidebar_view(
         .show_inside(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
+                if let Some(summary) = props.notifications {
+                    let response = tasty_ui_widgets::notification_summary(ui, th, summary, true);
+                    resize_priority_hovered |= response.hovered();
+                    if response.clicked() {
+                        actions.push(SidebarCollapsedAction::NotificationsClicked(response.rect));
+                    }
+                    vspace(ui, th.spacing_xs);
+                }
                 ui.separator();
                 vspace(ui, STRUCT_GAP_2);
 
@@ -1566,6 +1585,7 @@ mod tests {
                     workspaces: &workspaces,
                     categories: None,
                     drag: None,
+                    notifications: None,
                     tools_label: "Tools",
                     collapse_label: "Collapse",
                     plugins_label: "Plugins",
@@ -1600,6 +1620,7 @@ mod tests {
                     kb: &kb,
                     workspaces: &workspaces,
                     categories: None,
+                    notifications: None,
                     tools_hover: "Tools menu",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
@@ -1627,6 +1648,7 @@ mod tests {
                     kb: &kb,
                     workspaces: &workspaces,
                     categories: Some(&sections),
+                    notifications: None,
                     tools_hover: "Tools menu",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
@@ -1785,6 +1807,7 @@ mod tests {
                     workspaces: &workspaces,
                     categories: Some(&sections),
                     drag: None,
+                    notifications: None,
                     tools_label: "Tools",
                     collapse_label: "Collapse",
                     plugins_label: "Plugins",

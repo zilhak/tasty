@@ -167,6 +167,13 @@ for (const file of kitFiles) {
     return "";
   });
 
+  // Lazy DS lookups used by notification widgets resolve through the module namespace.
+  src = src.replace(/^([ \t]*)const\s+([A-Za-z_$][\w$]*)\s*=\s*\(\)\s*=>\s*window\.TastyDesignSystem_41fd3f\s*;[ \t]*$/gm,
+    (_all, indent, local) => {
+      add(join(outDs, "index.js"), `* as ${local}_ns`);
+      return `${indent}const ${local} = () => ${local}_ns;`;
+    });
+
   // `window.TastyKit && window.TastyKit.X` — a late lookup the kit uses to avoid
   // load-order coupling. ES modules resolve that for us, so import X directly.
   src = src.replace(OPTIONAL, (all, which, name) => {
@@ -257,6 +264,7 @@ writeFileSync(
 
 const GALLERY_MODULE = {
   Gallery: "./shell.jsx",
+  GalleryNotifications: "./notifications.jsx",
   OverlaysShared: "./overlays-shared.jsx",
   PresetEditor: "./preset_editor.jsx",
   ExplorerKit: "./plugins.jsx",
@@ -265,6 +273,7 @@ const GALLERY_MODULE = {
   ExplorerOpsB12: "./explorer-ops-b12.jsx",
   OverlaysWindowsB12: "./overlays-windows-b12.jsx",
   ExplorerOpsRemote: "./explorer-ops-remote.jsx",
+  ExplorerOpsStaging: "./explorer-ops-staging.jsx",
   ExplorerOpsDelete: "./explorer-ops-delete.jsx",
   ExplorerDeleteFrame: "./explorer-delete-frame.jsx",
   ExplorerOpsY: "./explorer-ops.jsx",
@@ -373,6 +382,16 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
     if (found.length !== syms.length) return all;
     return `${indent}const ${local} = { ${found.map((sym) => `${sym}: Kit_${sym}`).join(", ")} };`;
   });
+  // A lazy kit namespace can be destructured or accessed as K().member.
+  src = src.replace(/^([ \t]*)const\s+([A-Za-z_$][\w$]*)\s*=\s*\(\)\s*=>\s*window\.TastyKit\s*(?:\|\|\s*\{\})?\s*;[ \t]*$/gm, (all, indent, local) => {
+    const members = new Set([...src.matchAll(new RegExp(String.raw`\b${local}\(\)\.([A-Za-z_$][\w$]*)`, "g"))].map((m) => m[1]));
+    for (const m of src.matchAll(new RegExp(String.raw`const\s*\{([^{}]+)\}\s*=\s*${local}\(\)`, "g")))
+      for (const piece of splitArgs(m[1])) members.add(piece.split(":")[0].trim());
+    const found = [...members].filter((sym) => addKit(sym, `${sym} as Kit_${sym}`));
+    if (found.length !== members.size) return all;
+    return `${indent}const ${local} = () => ({ ${found.map((sym) => `${sym}: Kit_${sym}`).join(", ")} });`;
+  });
+
   // `window.TastyKit && window.TastyKit.X` — a load-order guard; the import resolves it.
   src = src.replace(/window\.TastyKit\s*&&\s*window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, sym) =>
     addKit(sym, sym) ? sym : all);
@@ -435,6 +454,7 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
   // `window.PresetEditor && <window.PresetEditor.Section />` — a load-order
   // guard plus a late lookup. Modules resolve both, so import the symbol.
   src = src.replace(new RegExp(String.raw`window\.(${GLOBALS})\s*&&\s*`, "g"), "");
+  src = src.replace(new RegExp(String.raw`window\.(${GLOBALS})\s*\?\s*`, "g"), "true ? ");
   src = src.replace(
     new RegExp(String.raw`<window\.(${GLOBALS})\.([A-Za-z_$][\w$]*)`, "g"),
     (_all, global, sym) => {

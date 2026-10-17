@@ -52,6 +52,7 @@ mod mac_permissions;
 mod menu_item;
 mod move_source;
 mod multi_select;
+mod notifications;
 mod override_row;
 mod path_field;
 mod plugin_add;
@@ -291,3 +292,8 @@ pub use ui_code::{
     ui_code_font, ui_code_rects, ui_copy, ui_copy_in, ui_copy_job, ui_copy_size,
 };
 pub use warning_callout::warning_callout;
+
+pub use notifications::{
+    NotificationAction, NotificationLabels, NotificationPanelState, NotificationRow,
+    NotificationSummary, NotificationTone, notification_panel, notification_summary,
+};

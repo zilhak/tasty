@@ -159,6 +159,8 @@ pub fn draw_full_sidebar(
         )
     };
 
+    let notification_data = crate::adapters::ui::notification::summary_data(engine);
+    let notifications = notification_data.view(state.popups.is_open("notifications"));
     let panel_resp = egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
@@ -167,6 +169,7 @@ pub fn draw_full_sidebar(
         .frame(egui::Frame::new().fill(th.bg_sidebar().to_egui()))
         .show(ctx, |ui| {
             let props = SidebarFullProps {
+                notifications: Some(&notifications),
                 theme: &th,
                 kb: &engine.settings.keybindings,
                 workspaces: &workspaces,
@@ -211,6 +214,9 @@ pub fn draw_full_sidebar(
             SidebarFullAction::Plugins => result.plugins_clicked = true,
             SidebarFullAction::Settings => result.settings_clicked = true,
             SidebarFullAction::ToolsClicked(rect) => result.tools_rect = Some(rect),
+            SidebarFullAction::NotificationsClicked(rect) => {
+                crate::adapters::ui::notification::toggle_from_sidebar(state, rect)
+            }
             SidebarFullAction::WorkspaceClicked(i) => {
                 state.switch_workspace(engine, i);
             }

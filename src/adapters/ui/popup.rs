@@ -406,6 +406,7 @@ impl PopupState {
         let margin = if matches!(
             self.id,
             "remote_tool"
+                | "notifications"
                 | "remote_attach"
                 | "command_palette"
                 | "port_scanner"

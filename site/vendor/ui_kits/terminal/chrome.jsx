@@ -201,7 +201,7 @@ function RailCategoryBtn({ label, onOpen, forceState }) {
       style={{ appearance: "none", border: 0, cursor: "pointer", padding: 0,
         width: "var(--tasty-size-36)", height: "var(--tasty-size-16)", display: "flex", alignItems: "center", justifyContent: "center",
         borderRadius: "var(--tasty-radius-sm)", background: st === "pressed" ? "var(--tasty-overlay-active)" : st === "hover" ? "var(--tasty-overlay-hover)" : "transparent" }}>
-      <span style={{ width: "var(--tasty-size-24)", height: "var(--tasty-rail-category-line-width)", borderRadius: "var(--tasty-radius-pill)",
+      <span style={{ width: "var(--tasty-rail-category-line-length)", height: "var(--tasty-rail-category-line-width)", borderRadius: "var(--tasty-radius-pill)",
         background: st === "idle" ? "var(--tasty-rail-category-line)" : "var(--tasty-rail-category-line-hover)" }} />
     </button>
   );
@@ -215,7 +215,11 @@ function useCategoryCollapse(categories) {
   return { isCollapsed, toggle };
 }
 
-function CollapsedSidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, onTools, onToggle, pluginAlert = 0, categories = null, workspacesHeading = "Workspaces" }) {
+// notifications = { counts: {error, warning, info}, latest, open } — LNB summary block above Tools
+// (notification_summary.jsx, 2026-10-17). Always drawn; all-zero = muted label / bell only.
+const NO_NOTIFS = { counts: { error: 0, warning: 0, info: 0 }, latest: null, open: false };
+function CollapsedSidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, onTools, onToggle, pluginAlert = 0, categories = null, workspacesHeading = "Workspaces", notifications = NO_NOTIFS, onNotifications }) {
+  const RailNotif = window.TastyKit && window.TastyKit.RailNotificationSummary;
   const { isCollapsed, toggle } = useCategoryCollapse(categories);
   const [popup, setPopup] = React.useState(null); // { anchor, cat }
   const Popup = window.TastyKit && window.TastyKit.RailCategoryPopup;
@@ -243,7 +247,7 @@ function CollapsedSidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, o
         <span title={w.mirrorTarget ? `Mirror of remote → ${w.mirrorTarget}` : "Mirror of a remote workspace"}
           aria-label="Remote mirror" style={{ position: "absolute", bottom: -1, right: -1, pointerEvents: "none",
           display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: "var(--tasty-size-12)", height: "var(--tasty-size-12)", borderRadius: "var(--tasty-radius-pill)",
+          width: "var(--tasty-workspace-mirror-chip-size)", height: "var(--tasty-workspace-mirror-chip-size)", borderRadius: "var(--tasty-radius-pill)",
           boxSizing: "border-box", border: "var(--tasty-border-width) solid var(--tasty-workspace-mirror-chip-border)",
           background: "var(--tasty-workspace-mirror-chip-bg)", color: "var(--tasty-workspace-mirror-fg)",
           boxShadow: "0 0 0 var(--tasty-size-2) var(--tasty-bg-sidebar)" }}>
@@ -275,12 +279,13 @@ function CollapsedSidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, o
         ))
       ) : (
         <>
-          <div style={{ width: "var(--tasty-size-28)", height: "var(--tasty-rail-category-line-width)", borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-rail-category-line)", marginBottom: "var(--tasty-space-xs)" }} />
+          <div style={{ width: "var(--tasty-rail-flat-divider-length)", height: "var(--tasty-rail-category-line-width)", borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-rail-category-line)", marginBottom: "var(--tasty-space-xs)" }} />
           {workspaces.map((w) => Avatar(w))}
         </>
       )}
       {!categories && <RailBtn title="New Workspace" onClick={() => {}}>{ic.plus}</RailBtn>}
       <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
+        {RailNotif && <RailNotif counts={notifications.counts} open={notifications.open} onOpen={onNotifications} />}
         <RailBtn title="Tools" onClick={(e) => onTools(e.currentTarget.getBoundingClientRect())}>{ic.tools}</RailBtn>
         <div style={{ position: "relative", display: "flex", justifyContent: "center" }}>
           <RailBtn title={pluginAlert > 0 ? `Plugins — ${pluginAlert} need attention` : "Plugins"} onClick={onPlugins}>{ic.plug}</RailBtn>
@@ -303,7 +308,8 @@ function CollapsedSidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, o
   );
 }
 
-function Sidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, onTools, collapsed, onToggle, pluginAlert = 0, categories = null, workspacesHeading = "Workspaces" }) {
+function Sidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, onTools, collapsed, onToggle, pluginAlert = 0, categories = null, workspacesHeading = "Workspaces", notifications = NO_NOTIFS, onNotifications }) {
+  const NotifSummary = window.TastyKit && window.TastyKit.NotificationSummary;
   const Heading = ({ children }) => (
     <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", textTransform: "uppercase",
       letterSpacing: "var(--tasty-sidebar-section-heading-tracking)", color: "var(--tasty-text-muted)", padding: "var(--tasty-space-md) var(--tasty-space-sm) var(--tasty-space-xs)" }}>{children}</div>
@@ -327,7 +333,7 @@ function Sidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, onTools, c
   );
   if (collapsed) return <CollapsedSidebar workspaces={workspaces} activeWs={activeWs} onWs={onWs}
     onSettings={onSettings} onPlugins={onPlugins} onTools={onTools} onToggle={onToggle} pluginAlert={pluginAlert}
-    categories={categories} workspacesHeading={workspacesHeading} />;
+    categories={categories} workspacesHeading={workspacesHeading} notifications={notifications} onNotifications={onNotifications} />;
   return (
     <div style={{ width: 212, flex: "none", height: "100%", zoom: "var(--tasty-ui-scale)",
       display: "flex", flexDirection: "column",
@@ -366,7 +372,10 @@ function Sidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, onTools, c
         </div>
       )}
 
-      <div style={{ marginTop: "auto", padding: "var(--tasty-space-sm)", borderTop: "var(--tasty-border-width) solid var(--tasty-separator)",
+      <div style={{ marginTop: "auto" }}>
+        {NotifSummary && <NotifSummary counts={notifications.counts} latest={notifications.latest} open={notifications.open} onOpen={onNotifications} />}
+      </div>
+      <div style={{ padding: "var(--tasty-space-sm)", borderTop: "var(--tasty-border-width) solid var(--tasty-separator)",
         display: "flex", flexDirection: "column", gap: "var(--tasty-size-2)" }}>
         <Button variant="ghost" size="sm" block leadingIcon={ic.tools}
           onClick={(e) => onTools(e.currentTarget.getBoundingClientRect())}

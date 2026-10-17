@@ -9,6 +9,8 @@ import React from "react";
  *   Appearance colour row at Default showing the base hex). Same neutral box as
  *   disabled, the value keeps --tasty-input-readonly-fg (text-secondary). It stays
  *   focusable, selectable and copyable; focus shows the 1px focus edge, no ring.
+ * ground="raised" — the field sits on surface-raised (menu, banner, popover). The box
+ *   steps down to bg-panel + border-strong in every state (2026-10-14); ink is unchanged.
  */
 
 const CSS = `
@@ -45,6 +47,11 @@ const CSS = `
 .tasty-input[data-readonly="true"] { background: var(--tasty-input-readonly-bg); border-color: var(--tasty-input-readonly-border); }
 .tasty-input[data-readonly="true"] input { color: var(--tasty-input-readonly-fg); cursor: text; }
 .tasty-input[data-readonly="true"]:focus-within { border-color: var(--tasty-border-focus); box-shadow: none; }
+.tasty-input--raised { background: var(--tasty-input-raised-bg); border-color: var(--tasty-input-raised-border); }
+.tasty-input--raised[data-disabled="true"] { background: var(--tasty-state-disabled-fill-raised); border-color: var(--tasty-state-disabled-border-raised); }
+.tasty-input--raised[data-readonly="true"] { background: var(--tasty-input-readonly-raised-bg); border-color: var(--tasty-input-readonly-raised-border); }
+.tasty-input--raised.tasty-input--invalid { border-color: var(--tasty-accent-danger); }
+.tasty-input--raised:focus-within, .tasty-input--raised[data-readonly="true"]:focus-within { border-color: var(--tasty-border-focus); }
 .tasty-input__icon { display: inline-flex; color: var(--tasty-text-muted); flex: none; }
 .tasty-input__icon svg { width: var(--tasty-icon-size-md); height: var(--tasty-icon-size-md); display: block; }
 .tasty-input__addon { color: var(--tasty-text-muted); font-family: var(--tasty-font-mono); font-size: var(--tasty-font-size-caption); flex: none; }
@@ -68,6 +75,7 @@ export function Input({
   invalid = false,
   disabled = false,
   readOnly = false,
+  ground = "panel",
   className = "",
   ...rest
 }) {
@@ -77,6 +85,7 @@ export function Input({
     block ? "tasty-input--block" : "",
     mono ? "tasty-input--mono" : "",
     invalid ? "tasty-input--invalid" : "",
+    ground === "raised" ? "tasty-input--raised" : "",
     className,
   ].filter(Boolean).join(" ");
   return (

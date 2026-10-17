@@ -133,6 +133,15 @@
   --tasty-input-readonly-bg:       var(--tasty-state-disabled-fill);
   --tasty-input-readonly-border:   var(--tasty-state-disabled-border);
   --tasty-input-readonly-fg:       var(--tasty-text-secondary);
+  /* 2026-10-14 — Input on a RAISED ground (Input ground="raised"): every state steps the box down
+     one ramp step + strong edge so it never merges with surface-raised. Ink is unchanged per state. */
+  --tasty-input-raised-bg:              var(--tasty-bg-panel);
+  --tasty-input-raised-border:          var(--tasty-border-strong);
+  --tasty-input-readonly-raised-bg:     var(--tasty-state-disabled-fill-raised);
+  --tasty-input-readonly-raised-border: var(--tasty-state-disabled-border-raised);
+  /* 2026-10-14 — centred confirm/edit dialog ground (rename popup: workspace · tab · category ·
+     explorer item; every overlays-dialogs frame). Input assumes a ground no higher than this. */
+  --tasty-dialog-bg:                    var(--tasty-bg-panel);
 
   /* Select */
   --tasty-select-height:           var(--tasty-control-height);
@@ -388,6 +397,21 @@
   --tasty-html-script-marker-size:    var(--tasty-icon-size-xs);      /* 12 — sits inside the 24px tab strip */
   --tasty-html-script-marker-hit:     var(--tasty-size-16);           /* 16 square cell around the 12 glyph — lock click / hover target */
   --tasty-html-script-marker-hover-bg: var(--tasty-overlay-hover);    /* lock only; scriptFile has no hover fill */
+  /* HTML surface — address bar band (host egui, ABOVE the WebView; the page rect starts below it) — 2026-10-12 */
+  --tasty-html-address-bar-height:    var(--tasty-size-40);           /* 40 — same as the markdown address bar */
+  --tasty-html-address-bar-bg:        var(--tasty-bg-sidebar);
+  --tasty-html-address-bar-border:    var(--tasty-separator);         /* 1px rule under the band */
+  --tasty-html-address-bar-padding-x: var(--tasty-space-sm);          /* 8 */
+  --tasty-html-address-bar-gap:       var(--tasty-space-sm);          /* 8 — nav cluster ↔ field */
+  --tasty-html-address-bar-nav-gap:   var(--tasty-space-xs);          /* 4 — back · forward · reload */
+  --tasty-html-address-field-min-width: var(--tasty-size-96);         /* field floor before the band drops Forward */
+  --tasty-html-address-error-height:  var(--tasty-size-24);           /* inline error row under the band (part of the band) */
+  --tasty-html-address-error-glyph:   var(--tasty-accent-danger);
+  /* HTML mirror — remote size banners + receiving state (2026-10-12) */
+  --tasty-html-size-banner-glyph:     var(--tasty-accent-info);       /* large-file ask — a question, not a warning */
+  --tasty-html-limit-banner-glyph:    var(--tasty-accent-warning);    /* cumulative limit reached — auto receive paused */
+  --tasty-html-receiving-fg:          var(--tasty-text-muted);        /* receiving / paused / notice copy in the page rect */
+  --tasty-html-receiving-glyph:       var(--tasty-glyph-dim);         /* static glyph while paused */
   --tasty-banner-glyph-offset:        var(--tasty-size-1);            /* 1 — leading glyph nudge onto the title's cap line */
   --tasty-banner-text-gap:            var(--tasty-label-detail-gap);  /* 2 — title ↔ body (every banner) */
   --tasty-banner-narrow-below:        var(--tasty-size-440);          /* SCOPE content width (before banner margins) below which the action wraps under the body — surface / tab / pane = that content, workspace = union of panes under the tab bar; × stays top-right (2026-10-09 b10) */
@@ -476,6 +500,10 @@
   --tasty-rail-category-line-width:    var(--tasty-focus-ring-width);  /* 2 */
   --tasty-rail-category-line:          var(--tasty-text-muted);        /* = idle avatar glyph */
   --tasty-rail-category-line-hover:    var(--tasty-text-secondary);
+  /* 2026-10-14 — rail mark lengths: own roles, no longer borrowed from avatar height / move chip */
+  --tasty-rail-category-line-length:   var(--tasty-size-24);   /* category `---` line */
+  --tasty-rail-flat-divider-length:    var(--tasty-size-28);   /* top divider when categories are off */
+  --tasty-workspace-mirror-chip-size:  var(--tasty-size-12);   /* rail avatar mirror chip (bottom-right) */
   /* Workspace row (expanded sidebar) — the status dot sits in a RESERVED slot the
      size of the attached mark's full bbox: 8 + 2×(2+2) = 16. Reserved on every
      row (attached or not) so title x never shifts. Ring clearances at scale 1:
@@ -512,6 +540,70 @@
   --tasty-spinner-track:           var(--tasty-surface-active);
   --tasty-spinner-indicator:       var(--tasty-accent-primary);
   --tasty-spinner-duration:        var(--tasty-duration-900); /* 900ms full rotation — matches source SPIN_PERIOD=0.9s. Corrected from duration-90 (a dropped digit; 90ms strobes at ~11 rev/s). */
+
+  /* Loading overlay — a Spinner laid over EXISTING content (surface · tab · LNB card · rail avatar),
+     never a new slot. Non-blocking, no dim mask; a bed only as big as the slot it covers. 2026-10-16 */
+  --tasty-loading-overlay-indicator:        var(--tasty-spinner-indicator);   /* arc ink, every placement (track = arc ink @ 22%, Spinner's own) */
+  --tasty-loading-overlay-delay:            var(--tasty-motion-ui-fade);      /* 200 — show only if still loading after this; hide is immediate */
+  --tasty-loading-overlay-surface-size:     var(--tasty-spinner-size);        /* 16 */
+  --tasty-loading-overlay-surface-bed-size: var(--tasty-size-24);             /* square bed, bottom-right of the surface rect */
+  --tasty-loading-overlay-surface-bed-bg:   var(--tasty-surface-raised);
+  --tasty-loading-overlay-surface-bed-border: var(--tasty-border-default);
+  --tasty-loading-overlay-surface-inset:    var(--tasty-space-sm);            /* 8 from the surface rect's right + bottom edges */
+  --tasty-loading-overlay-tab-size:         var(--tasty-tab-icon-size);       /* 14 — sits exactly on the tab's kind-icon slot */
+  --tasty-loading-overlay-lnb-size:         var(--tasty-icon-size-sm);        /* 14 — centred in the 16 workspace-dot-slot */
+  --tasty-loading-overlay-rail-size:        var(--tasty-size-28);             /* ring around the initial, inside the 36 avatar */
+
+  /* Notifications (2026-10-17, notification-center) — level count badge, LNB / rail summary, popup list item.
+     Badge = glyph + count pill, fixed order error › warning › info, 0 = not drawn, > max = "99+". */
+  --tasty-notification-badge-error-bg:      var(--tasty-notify-error);
+  --tasty-notification-badge-error-fg:      var(--tasty-notify-error-fg);
+  --tasty-notification-badge-warning-bg:    var(--tasty-notify-warning);
+  --tasty-notification-badge-warning-fg:    var(--tasty-notify-warning-fg);
+  --tasty-notification-badge-info-bg:       var(--tasty-notify-info);
+  --tasty-notification-badge-info-fg:       var(--tasty-notify-info-fg);
+  --tasty-notification-badge-glyph-size:    var(--tasty-size-10);   /* level glyph inside the 16 pill */
+  --tasty-notification-badge-glyph-gap:     var(--tasty-size-2);
+  --tasty-notification-badge-group-gap:     var(--tasty-space-xs);  /* 4 — badges side by side (LNB, popup toolbar) */
+  --tasty-notification-badge-stack-gap:     var(--tasty-size-2);    /* 2 — badges stacked (rail) */
+  --tasty-notification-badge-max:           99; /* @kind other */                     /* above → "99+" */
+  --tasty-notification-summary-pad:         var(--tasty-space-sm);  /* 8 — block padding, same as the Tools block */
+  --tasty-notification-summary-row-height:  var(--tasty-size-24);   /* line 1 = ghost sm button height */
+  --tasty-notification-summary-pad-x:       var(--tasty-space-sm);
+  --tasty-notification-summary-icon-gap:    var(--tasty-space-sm);  /* bell ↔ label, same as Button leading icon */
+  --tasty-notification-summary-label-fg:    var(--tasty-text-secondary);
+  --tasty-notification-summary-label-fg-empty: var(--tasty-text-muted);
+  --tasty-notification-summary-preview-font-size: var(--tasty-font-size-caption);
+  --tasty-notification-summary-preview-fg:  var(--tasty-text-secondary);
+  --tasty-notification-summary-meta-fg:     var(--tasty-text-muted);
+  --tasty-notification-summary-bg-hover:    var(--tasty-overlay-hover);
+  --tasty-notification-summary-bg-open:     var(--tasty-overlay-active);  /* popup is open */
+  --tasty-notification-rail-width:          var(--tasty-size-44);   /* rail block — fits "99+" with glyph */
+  --tasty-notification-item-pad-x:          var(--tasty-space-md);  /* 12 */
+  --tasty-notification-item-pad-y:          var(--tasty-space-sm);  /* 8 */
+  --tasty-notification-item-line-gap:       var(--tasty-size-2);
+  --tasty-notification-item-glyph-size:     var(--tasty-icon-size-sm);  /* 14 */
+  --tasty-notification-item-glyph-gap:      var(--tasty-space-sm);
+  --tasty-notification-item-error-glyph:    var(--tasty-notify-error);
+  --tasty-notification-item-warning-glyph:  var(--tasty-notify-warning);
+  --tasty-notification-item-info-glyph:     var(--tasty-notify-info);
+  --tasty-notification-item-title-fg:       var(--tasty-text-primary);    /* unread */
+  --tasty-notification-item-title-fg-read:  var(--tasty-text-secondary);
+  --tasty-notification-item-title-weight:   var(--tasty-font-weight-semibold); /* unread */
+  --tasty-notification-item-body-fg:        var(--tasty-text-secondary);
+  --tasty-notification-item-body-fg-read:   var(--tasty-text-muted);
+  --tasty-notification-item-meta-fg:        var(--tasty-text-muted);
+  --tasty-notification-item-closed-fg:      var(--tasty-text-placeholder); /* "closed" source tag */
+  --tasty-notification-item-more-fg:        var(--tasty-accent-primary);   /* "More" / "Less" text toggle */
+  --tasty-notification-item-unread-dot:     var(--tasty-notify-unread);
+  --tasty-notification-item-unread-dot-size: var(--tasty-badge-dot-size);
+  --tasty-notification-item-body-lines:     2; /* @kind other */   /* popup — clamp, "More" expands */
+  --tasty-notification-item-body-lines-wide: 3; /* @kind other */  /* fullscreen stage */
+  --tasty-notification-item-bg-hover:       var(--tasty-overlay-hover);
+  --tasty-notification-item-bg-selected:    var(--tasty-surface-active);
+  --tasty-notification-item-separator:      var(--tasty-separator);
+  --tasty-notifications-popup-height:       var(--tasty-size-400);  /* 352 × 400 default */
+  --tasty-notifications-toolbar-height:     var(--tasty-control-height);  /* 28 — counts + Mark all read */
 
   /* Surface border — OCCUPANCY & COMPLETION. Three surface states ride ONE
      visual channel (the terminal / markdown surface's border) and are separated
@@ -1269,7 +1361,8 @@
   --tasty-approval-danger-bg: color-mix(in srgb, var(--tasty-accent-danger) calc(var(--tasty-tint-fill-alpha) * 100%), var(--tasty-bg-panel)); /* agent approval danger choice fill — OPAQUE mix over bg-panel (Mocha 56,43,61 · Latte 236,214,222) */
   --tasty-approval-danger-border: var(--tasty-accent-danger); /* agent approval danger choice 1px border (vs surface-raised: Mocha 5.43 · Latte 3.52) */
   --tasty-approval-danger-fg: var(--tasty-text-primary); /* agent approval danger choice label (on fill: Mocha 9.18 · Latte 5.80) */
-  --tasty-explorer-address-pending-delay: var(--tasty-motion-ui-fade); /* remote address check: spinner appears only after 200ms (no flash on a fast round trip) */
+  --tasty-explorer-address-pending-delay: var(--tasty-motion-ui-fade);
+  --tasty-explorer-remote-queue-head-gap: var(--tasty-space-xs); /* 2026-10-14 — remote queue head “On ‹host› · one at a time”: gap between text pieces and host mark = a word space */ /* remote address check: spinner appears only after 200ms (no flash on a fast round trip) */
   --tasty-explorer-address-pending-size: var(--tasty-icon-size-sm); /* remote address check spinner in the address field trailing slot */
   --tasty-explorer-create-field-max-width: var(--tasty-size-240); /* create-in-folder / new item name field max width; caption follows at space-sm */
   --tasty-explorer-drag-expand-delay: var(--tasty-duration-800); /* dragging over a closed tree folder expands it after this hover time */

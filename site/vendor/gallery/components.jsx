@@ -280,6 +280,13 @@ function Components() {
               <Input mono readOnly defaultValue="#89b4fa" style={{ width: "var(--tasty-field-width-xs)" }} />
               <Input mono disabled defaultValue="#89b4fa" style={{ width: "var(--tasty-field-width-xs)" }} />
             </Cluster>
+            <Cluster label={'ground="raised" — on surface-raised, box steps down to bg-panel + border-strong (2026-10-14)'}>
+              <div style={{ display: "flex", gap: 12, padding: 12, background: "var(--tasty-surface-raised)", borderRadius: "var(--tasty-radius)" }}>
+                <Input ground="raised" placeholder="Editable" style={{ width: 140 }} />
+                <Input ground="raised" mono readOnly defaultValue="#89b4fa" style={{ width: "var(--tasty-field-width-xs)" }} />
+                <Input ground="raised" mono disabled defaultValue="#89b4fa" style={{ width: "var(--tasty-field-width-xs)" }} />
+              </div>
+            </Cluster>
           </Stage>
           <Meta
             specs={[["height", <>28px <span className="tok">--tasty-control-height</span></>], ["border", "1px → focus ring 2px"], ["padding", <>0 <span className="tok">--tasty-space-sm</span></>]]}
@@ -837,7 +844,7 @@ function Components() {
               Copied. Run <code style={{ ...{ fontFamily: "var(--tasty-ui-code-font)", fontSize: "1em", color: "var(--tasty-ui-code-fg)", padding: "0 var(--tasty-ui-code-padding-x)", borderRadius: "var(--tasty-ui-code-radius)", whiteSpace: "nowrap" }, background: "var(--tasty-ui-code-bg-on-raised)" }}>tasty agent task-list</code> to see it.
             </div>
             <div style={{ fontSize: 13, color: "var(--tasty-text-secondary)", lineHeight: 1.5 }}>Reset the permission with <code style={{ ...{ fontFamily: "var(--tasty-ui-code-font)", fontSize: "1em", color: "var(--tasty-ui-code-fg)", padding: "0 var(--tasty-ui-code-padding-x)", borderRadius: "var(--tasty-ui-code-radius)", whiteSpace: "nowrap" }, background: "var(--tasty-ui-code-bg)" }}>tccutil reset</code>, then sign the build with <code style={{ ...{ fontFamily: "var(--tasty-ui-code-font)", fontSize: "1em", color: "var(--tasty-ui-code-fg)", padding: "0 var(--tasty-ui-code-padding-x)", borderRadius: "var(--tasty-ui-code-radius)", whiteSpace: "nowrap" }, background: "var(--tasty-ui-code-bg)" }}>./scripts/macos-codesign-identity.sh --create</code>.</div>
-            <div style={{ alignSelf: "center", maxWidth: 260, textAlign: "center", fontSize: 11, color: "var(--tasty-text-muted)", lineHeight: 1.5 }}>Create one with: <code style={{ ...{ fontFamily: "var(--tasty-ui-code-font)", fontSize: "1em", color: "var(--tasty-ui-code-fg)", padding: "0 var(--tasty-ui-code-padding-x)", borderRadius: "var(--tasty-ui-code-radius)", whiteSpace: "nowrap" }, background: "var(--tasty-ui-code-bg)" }}>tasty agent task-create --workspace-id 1 ...</code></div>
+            <div style={{ alignSelf: "center", maxWidth: 260, textAlign: "center", fontSize: 11, color: "var(--tasty-text-muted)", lineHeight: 1.5 }}>Create one with: <code style={{ ...{ fontFamily: "var(--tasty-ui-code-font)", fontSize: "1em", color: "var(--tasty-ui-code-fg)", padding: "0 var(--tasty-ui-code-padding-x)", borderRadius: "var(--tasty-ui-code-radius)", whiteSpace: "nowrap" }, background: "var(--tasty-ui-code-bg)" }}>tasty agent task-create --workspace 1 ...</code></div>
           </Stage>
           <Meta
             specs={[["on raised", "ui-code-bg-on-raised → bg-panel (toast · tooltip · raised cards)"], ["elsewhere", "ui-code-bg → surface-raised (unchanged)"], ["info modal", "command chips = code runs (sentence size · padding-x 4 · radius-sm)"], ["line start", "text on the column · fill may extend 4 outside it"], ["centred hint", "every line centred (text-align center)"]]}

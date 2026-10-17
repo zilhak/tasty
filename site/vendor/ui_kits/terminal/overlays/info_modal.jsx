@@ -28,7 +28,7 @@
 // Buttons are IconButton sm (24, popup-title-btn-size) — the product's 20 goes. Fullscreen (glyph fit)
 // sits left of ×, popup-title-btn-gap (4) apart, and only on popups that declare a fullscreen stage.
 (() => {
-const { Button, IconButton, Icon, MenuItem } = window.TastyDesignSystem_41fd3f;
+const { Button, IconButton, Icon, MenuItem, Kbd } = window.TastyDesignSystem_41fd3f;
 
 const TITLE_RESERVE = (n) => `calc(var(--tasty-popup-title-edge-inset) + ${n} * var(--tasty-popup-title-btn-size) + ${n - 1} * var(--tasty-popup-title-btn-gap) + var(--tasty-popup-title-text-gap))`;
 
@@ -119,14 +119,22 @@ function NotificationsPopupHead({ title = "Notifications", w = "var(--tasty-noti
 // Convert surface (2026-09-29): the product's small list popup is the target shape (the 400 dialog
 // is retired). Title bar + one MenuItem per kind the surface can become; click converts, Esc / × close.
 // Width = convert-popup-width (240 × ui_scale); height = title + rows.
-const CONVERT_KINDS = [["markdown", "Markdown"], ["html", "HTML"], ["folder", "Explorer"], ["image", "Image"]];
-function ConvertSurfacePopup({ title = "Surface Type", kinds = CONVERT_KINDS, active = 0 }) {
+// Shortcut chip (2026-10-12): each row ends in a DS Kbd
+// keycap with its letter (kind id's first latin letter, upper-cased, locale-independent) through the
+// MenuItem `shortcut` slot. Display only — no click target. Same keycap in every row state (rest /
+// hover / active). A row whose letter collides with an earlier row has no shortcut → no chip and no
+// reserved slot; the label runs to the row's end. Label ellipsises, the chip never shrinks.
+// kinds: [icon, label, key | null]
+const CONVERT_KINDS = [["markdown", "Markdown", "M"], ["image", "Image", "I"], ["gitTree", "DAG", "D"], ["html", "HTML", "H"], ["folder", "Explorer", "E"]];
+function ConvertSurfacePopup({ title = "Surface Type", kinds = CONVERT_KINDS, active = 0, hover = -1 }) {
   return (
     <div style={{ width: "var(--tasty-convert-popup-width)", display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)",
       borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", overflow: "hidden" }}>
       <PopupTitleBar title={title} />
       <div style={{ display: "flex", flexDirection: "column", padding: "var(--tasty-space-xs)" }}>
-        {kinds.map(([ic, label], i) => <MenuItem key={ic} icon={<Icon name={ic} />} label={label} active={i === active} />)}
+        {kinds.map(([ic, label, key], i) => <MenuItem key={ic + i} icon={<Icon name={ic} />} label={label} active={i === active}
+          shortcut={key ? <Kbd keys={[key]} aria-hidden="true" /> : null}
+          style={i === hover && i !== active ? { background: "var(--tasty-menu-item-bg-hover)", color: "var(--tasty-menu-item-fg-hover)" } : undefined} />)}
       </div>
     </div>
   );

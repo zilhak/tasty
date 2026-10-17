@@ -154,7 +154,7 @@ impl NotificationStore {
         Some(id)
     }
 
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn unread_count(&self) -> usize {
         self.unread_counts(None).total()
     }

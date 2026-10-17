@@ -134,6 +134,13 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-success", "accent_success()"),
     ("semantic.accent-warning", "accent_warning()"),
     ("semantic.accent-window-close", "accent_window_close()"),
+    ("semantic.notify-error", "accent_danger()"),
+    ("semantic.notify-warning", "accent_warning()"),
+    ("semantic.notify-info", "attention_completion()"),
+    ("semantic.notify-error-fg", "text_on_accent()"),
+    ("semantic.notify-warning-fg", "text_on_accent()"),
+    ("semantic.notify-info-fg", "text_on_accent()"),
+    ("semantic.notify-unread", "accent_primary()"),
     ("semantic.attention-completion", "attention_completion()"),
     (
         "semantic.attention-completion-fg",

@@ -1,203 +1,225 @@
-use std::time::Instant;
-
+//! Host adapter for the shared notification widgets. Only explicit user actions acknowledge items.
 use crate::i18n::{t, t_fmt};
 use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
-use crate::theme;
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{margin_all, vspace};
+use tasty_ui_widgets::{
+    NotificationAction, NotificationLabels, NotificationPanelState, NotificationRow,
+    NotificationSummary, NotificationTone,
+};
 
-/// Draw notification panel content inside a popup Ui.
-/// Called by the notifications popup's `draw_fn` (see popup_defs).
+fn tone(level: crate::notification::NotificationLevel) -> NotificationTone {
+    match level {
+        crate::notification::NotificationLevel::Error => NotificationTone::Error,
+        crate::notification::NotificationLevel::Warning => NotificationTone::Warning,
+        crate::notification::NotificationLevel::Info => NotificationTone::Info,
+    }
+}
+
+fn level_labels() -> [&'static str; 3] {
+    [
+        t("notification_panel.errors"),
+        t("notification_panel.warnings"),
+        t("notification_panel.info"),
+    ]
+}
+
+fn elapsed(timestamp: std::time::Instant) -> String {
+    let secs = timestamp.elapsed().as_secs();
+    let (key, value) = if secs < 60 {
+        ("notification_panel.elapsed_seconds", secs)
+    } else if secs < 3600 {
+        ("notification_panel.elapsed_minutes", secs / 60)
+    } else {
+        ("notification_panel.elapsed_hours", secs / 3600)
+    };
+    t_fmt(key, &value.to_string())
+}
+
+pub(crate) struct SummaryData {
+    counts: [usize; 3],
+    latest: Option<(NotificationTone, String, String)>,
+    tooltip: String,
+}
+impl SummaryData {
+    pub(crate) fn view(&self, open: bool) -> NotificationSummary<'_> {
+        NotificationSummary {
+            counts: self.counts,
+            label: t("notification_panel.window_title"),
+            tooltip: &self.tooltip,
+            level_labels: level_labels(),
+            latest: self
+                .latest
+                .as_ref()
+                .map(|(tone, title, time)| (*tone, title.as_str(), time.as_str())),
+            open,
+        }
+    }
+}
+
+pub(crate) fn summary_data(engine: &EngineRead<'_>) -> SummaryData {
+    let n = engine.live.notifications.unread_counts(None);
+    let counts = [n.error, n.warning, n.info];
+    let latest = engine
+        .live
+        .notifications
+        .all()
+        .rev()
+        .find(|n| !n.read)
+        .map(|n| (tone(n.level), n.title.clone(), elapsed(n.timestamp)));
+    let labels = level_labels();
+    let tooltip = if counts.iter().all(|n| *n == 0) {
+        format!(
+            "{} — {}",
+            t("notification_panel.window_title"),
+            t("notification_panel.no_unread")
+        )
+    } else {
+        format!(
+            "{} — {}: {} · {}: {} · {}: {}",
+            t("notification_panel.window_title"),
+            labels[0],
+            counts[0],
+            labels[1],
+            counts[1],
+            labels[2],
+            counts[2]
+        )
+    };
+    SummaryData {
+        counts,
+        latest,
+        tooltip,
+    }
+}
+
+pub(crate) fn toggle_from_sidebar(state: &mut MainViewState, rect: egui::Rect) {
+    let th = crate::theme::theme();
+    let pos = egui::pos2(
+        rect.right() + th.spacing_xs.value(),
+        (rect.bottom() - th.notifications_popup_height().value()).max(th.spacing_sm.value()),
+    );
+    state.dispatch_intent(
+        crate::intent::UiIntent::TogglePopup {
+            id: "notifications",
+            mode: crate::intent::OpenPopupMode::AtFocused(pos),
+        }
+        .from_user_menu("notifications.summary"),
+    );
+}
+
 pub(crate) fn draw_notification_content_inner(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
     engine: &EngineRead<'_>,
 ) {
-    let th = theme::theme();
+    draw_notification_content(ui, state, engine, false);
+}
 
-    ui.horizontal(|ui| {
-        let unread = engine.live.notifications.unread_count();
-        ui.label(
-            egui::RichText::new(t_fmt(
-                "notification_panel.unread_count",
-                &unread.to_string(),
-            ))
-            .small()
-            .color(th.text_muted()),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button(t("button.mark_all_read")).clicked() {
-                state.dispatch_intent(
-                    crate::app::command::DomainIntent::MarkAllNotificationsRead {
-                        ids: engine
-                            .live
-                            .notifications
-                            .all()
-                            .filter(|n| !n.read)
-                            .map(|n| n.id)
-                            .collect(),
-                    }
-                    .from_user_menu("notification_panel.mark_all_read"),
-                );
-            }
-        });
-    });
-    ui.separator();
-
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .drag_to_scroll(false)
-        .show(ui, |ui| {
-            let notification_count = engine.live.notifications.all().len();
-            if notification_count == 0 {
-                ui.centered_and_justified(|ui| {
-                    ui.label(
-                        egui::RichText::new(t("notification_panel.empty_message"))
-                            .color(th.text_muted()),
-                    );
-                });
-                return;
-            }
-
-            let now = Instant::now();
-            let entries: Vec<_> = engine
-                .live
-                .notifications
-                .all()
-                .rev()
-                .map(|n| {
-                    let elapsed = now.duration_since(n.timestamp);
-                    let time_str = if elapsed.as_secs() < 60 {
-                        format!("{}s ago", elapsed.as_secs())
-                    } else if elapsed.as_secs() < 3600 {
-                        format!("{}m ago", elapsed.as_secs() / 60)
-                    } else {
-                        format!("{}h ago", elapsed.as_secs() / 3600)
-                    };
-
-                    let ws_name = engine
+pub(crate) fn draw_notification_content(
+    ui: &mut egui::Ui,
+    state: &mut MainViewState,
+    engine: &EngineRead<'_>,
+    wide: bool,
+) {
+    let th = crate::theme::theme();
+    let items: Vec<_> = engine.live.notifications.all().rev().collect();
+    let sources: Vec<_> = items
+        .iter()
+        .map(|n| {
+            let ws = engine
+                .workspaces()
+                .into_iter()
+                .find(|ws| ws.id == n.source_workspace);
+            let closed =
+                ws.is_none() || (n.source_surface != 0 && !engine.has_surface(n.source_surface));
+            let name = ws
+                .map(|ws| ws.name.as_str())
+                .unwrap_or(t("notification_panel.unknown_workspace"));
+            let source = if n.source_surface == 0 {
+                name.to_string()
+            } else {
+                format!("{name} › #{}", n.source_surface)
+            };
+            (source, closed, elapsed(n.timestamp))
+        })
+        .collect();
+    let rows: Vec<_> = items
+        .iter()
+        .zip(&sources)
+        .map(|(n, (source, closed, time))| NotificationRow {
+            id: n.id,
+            tone: tone(n.level),
+            unread: !n.read,
+            title: &n.title,
+            body: &n.body,
+            source,
+            source_closed: *closed,
+            time,
+        })
+        .collect();
+    let labels = NotificationLabels {
+        levels: level_labels(),
+        no_unread: t("notification_panel.no_unread"),
+        empty: t("notification_panel.empty_message"),
+        mark_all: t("button.mark_all_read"),
+        mark_read: t("notification_panel.mark_read"),
+        jump: t("button.jump_to_workspace"),
+        closed: t("notification_panel.closed"),
+        source_closed: t("notification_panel.source_closed"),
+        more: t("notification_panel.more"),
+        less: t("notification_panel.less"),
+    };
+    let key = ui.id().with("notification_view_state");
+    let mut panel = ui
+        .data(|d| d.get_temp::<NotificationPanelState>(key))
+        .unwrap_or_default();
+    let actions = tasty_ui_widgets::notification_panel(ui, &th, &rows, &labels, &mut panel, wide);
+    ui.data_mut(|d| d.insert_temp(key, panel));
+    for action in actions {
+        match action {
+            NotificationAction::Read(id) => mark_read(state, id),
+            NotificationAction::ReadAll => state.dispatch_intent(
+                crate::app::command::DomainIntent::MarkAllNotificationsRead {
+                    ids: items.iter().filter(|n| !n.read).map(|n| n.id).collect(),
+                }
+                .from_user_menu("notification_panel.mark_all_read"),
+            ),
+            NotificationAction::Jump(id) => {
+                if let Some(n) = items.iter().find(|n| n.id == id) {
+                    if n.source_surface != 0 {
+                        state.reveal_surface(engine, n.source_surface);
+                    } else if let Some(idx) = engine
                         .workspaces()
                         .into_iter()
-                        .find(|ws| ws.id == n.source_workspace)
-                        .map(|ws| ws.name.as_str())
-                        .unwrap_or(t("notification_panel.unknown_workspace"));
-
-                    (
-                        n.id,
-                        n.read,
-                        n.title.clone(),
-                        n.body.clone(),
-                        time_str,
-                        ws_name.to_string(),
-                        n.source_workspace,
-                    )
-                })
-                .collect();
-
-            let mut mark_read_id = None;
-            let mut jump_to_ws = None;
-
-            for (id, read, title, body, time_str, ws_name, ws_id) in &entries {
-                let bg = if *read {
-                    egui::Color32::TRANSPARENT
-                } else {
-                    // 대응 토큰이 없는 읽지 않은 알림 배경색.
-                    const UNREAD_ROW_BG_ALPHA: u8 = 20;
-                    crate::theme::theme()
-                        .blue
-                        .with_alpha(UNREAD_ROW_BG_ALPHA)
-                        .to_egui()
-                };
-
-                egui::Frame::new()
-                    .fill(bg)
-                    .inner_margin(margin_all(th.spacing_xs))
-                    .corner_radius(th.corner_radius.value())
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            if !*read {
-                                ui.label(
-                                    egui::RichText::new("*").color(th.accent_primary()).strong(),
-                                );
-                            }
-                            ui.label(egui::RichText::new(title).strong().small());
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    ui.label(
-                                        egui::RichText::new(time_str)
-                                            .small()
-                                            .color(th.text_muted()),
-                                    );
-                                },
-                            );
-                        });
-
-                        if !body.is_empty() {
-                            ui.label(egui::RichText::new(body).small());
-                        }
-
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(ws_name)
-                                    .small()
-                                    .color(th.accent_primary()),
-                            );
-
-                            if ui
-                                .small_button(t("button.jump_to_workspace"))
-                                .on_hover_text(t("tooltip.jump_to_workspace"))
-                                .clicked()
-                            {
-                                jump_to_ws = Some(*ws_id);
-                                mark_read_id = Some(*id);
-                            }
-                        });
-                    });
-
-                vspace(ui, STRUCT_GAP_2);
+                        .position(|ws| ws.id == n.source_workspace)
+                    {
+                        state.switch_workspace(engine, idx);
+                    }
+                    mark_read(state, id);
+                }
             }
-
-            if let Some(id) = mark_read_id {
-                state.dispatch_intent(
-                    crate::app::command::DomainIntent::MarkNotificationRead { id }
-                        .from_user_menu("notification_panel.mark_read"),
-                );
-            }
-            if let Some(ws_id) = jump_to_ws
-                && let Some(idx) = engine
-                    .workspaces()
-                    .into_iter()
-                    .position(|ws| ws.id == ws_id)
-            {
-                state.switch_workspace(engine, idx);
-            }
-        });
+            NotificationAction::Toggle(_) => {}
+        }
+    }
 }
 
-/// 알림 popup 기본 높이. 대응하는 토큰이 없어 배율 전 값으로 둔다.
-const POPUP_HEIGHT: tasty_type_geometry::length::LogicalPx =
-    tasty_type_geometry::length::LogicalPx(400.0);
+fn mark_read(state: &mut MainViewState, id: u64) {
+    state.dispatch_intent(
+        crate::app::command::DomainIntent::MarkNotificationRead { id }
+            .from_user_menu("notification_panel.mark_read"),
+    );
+}
 
-/// 폭은 `notifications-popup-width` 토큰, 높이는 기본 높이이며 둘 다 UI 배율을 따른다.
 pub fn notifications_popup_size() -> egui::Vec2 {
-    let th = theme::theme();
+    let th = crate::theme::theme();
     egui::vec2(
         th.notifications_popup_width().value(),
-        crate::adapters::ui::zoomed_px(&th, POPUP_HEIGHT).value(),
+        th.notifications_popup_height().value(),
     )
 }
-
-/// PopupDef.sizer — 배율이 바뀌어도 폭 토큰을 다시 계산한다.
-pub fn notifications_popup_sizer(
-    _state: &MainViewState,
-    _engine: &crate::runtime::engine_read::EngineRead<'_>,
-) -> egui::Vec2 {
+pub fn notifications_popup_sizer(_state: &MainViewState, _engine: &EngineRead<'_>) -> egui::Vec2 {
     notifications_popup_size()
 }
-
-/// PopupDef::draw_fn for the notifications panel.
 pub fn draw_notification_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,

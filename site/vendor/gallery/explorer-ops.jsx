@@ -19,6 +19,7 @@ const NAV = [
   { id: "remaining12", label: "Remaining UI (b12)" },
   { id: "remotewrite", label: "Remote write" },
   { id: "permdelete", label: "Delete permanently" },
+  { id: "stagingleft", label: "Temporary folder left" },
 ];
 
 // ── Progress ──────────────────────────────────────────────
@@ -482,6 +483,7 @@ function Page() {
       <window.ExplorerOpsB12.RemainingB12Section />
       <window.ExplorerOpsRemote.RemoteWriteSection />
       <window.ExplorerOpsDelete.PermanentDeleteSection />
+      <window.ExplorerOpsStaging.StagingLeftSection />
     </>
   );
 }

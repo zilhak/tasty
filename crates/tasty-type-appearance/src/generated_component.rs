@@ -1312,6 +1312,12 @@ impl crate::theme::Theme {
         self.text_muted()
     }
 
+    /// `component.dialog-bg` → `{semantic.bg-panel}`
+    #[inline]
+    pub fn dialog_bg(&self) -> HexColor {
+        self.bg_panel()
+    }
+
     /// `component.drilldown-backbar-border` → `{semantic.separator}`
     #[inline]
     pub fn drilldown_backbar_border(&self) -> PremulColor {
@@ -1624,6 +1630,12 @@ impl crate::theme::Theme {
         LogicalPx((360.0 * self.ui_zoom).round())
     }
 
+    /// `component.explorer-remote-queue-head-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn explorer_remote_queue_head_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
     /// `component.explorer-search-bar-height` → `{primitive.size-36}` = 36px
     #[inline]
     pub fn explorer_search_bar_height(&self) -> LogicalPx {
@@ -1840,6 +1852,78 @@ impl crate::theme::Theme {
         self.icon_glyph_size_sm
     }
 
+    /// `component.html-address-bar-bg` → `{semantic.bg-sidebar}`
+    #[inline]
+    pub fn html_address_bar_bg(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+
+    /// `component.html-address-bar-border` → `{semantic.separator}`
+    #[inline]
+    pub fn html_address_bar_border(&self) -> PremulColor {
+        self.separator
+    }
+
+    /// `component.html-address-bar-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn html_address_bar_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.html-address-bar-height` → `{primitive.size-40}` = 40px
+    #[inline]
+    pub fn html_address_bar_height(&self) -> LogicalPx {
+        LogicalPx((40.0 * self.ui_zoom).round())
+    }
+
+    /// `component.html-address-bar-nav-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn html_address_bar_nav_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.html-address-bar-padding-x` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn html_address_bar_padding_x(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.html-address-error-glyph` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn html_address_error_glyph(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.html-address-error-height` → `{primitive.size-24}` = 24px
+    #[inline]
+    pub fn html_address_error_height(&self) -> LogicalPx {
+        LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
+    /// `component.html-address-field-min-width` → `{primitive.size-96}` = 96px
+    #[inline]
+    pub fn html_address_field_min_width(&self) -> LogicalPx {
+        LogicalPx((96.0 * self.ui_zoom).round())
+    }
+
+    /// `component.html-limit-banner-glyph` → `{semantic.accent-warning}`
+    #[inline]
+    pub fn html_limit_banner_glyph(&self) -> HexColor {
+        self.accent_warning()
+    }
+
+    /// `component.html-receiving-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn html_receiving_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.html-receiving-glyph` → `{semantic.glyph-dim}`
+    #[inline]
+    pub fn html_receiving_glyph(&self) -> HexColor {
+        self.glyph_dim()
+    }
+
     /// `component.html-script-banner-glyph` → `{semantic.accent-info}`
     #[inline]
     pub fn html_script_banner_glyph(&self) -> HexColor {
@@ -1874,6 +1958,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn html_script_marker_size(&self) -> LogicalPx {
         self.icon_glyph_size_xs
+    }
+
+    /// `component.html-size-banner-glyph` → `{semantic.accent-info}`
+    #[inline]
+    pub fn html_size_banner_glyph(&self) -> HexColor {
+        self.accent_info()
     }
 
     /// `component.icon-button-bg-active` → `{semantic.overlay-active}`
@@ -2102,6 +2192,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn input_radius(&self) -> LogicalPx {
         self.corner_radius
+    }
+
+    /// `component.input-raised-bg` → `{semantic.bg-panel}`
+    #[inline]
+    pub fn input_raised_bg(&self) -> HexColor {
+        self.bg_panel()
+    }
+
+    /// `component.input-raised-border` → `{semantic.border-strong}`
+    #[inline]
+    pub fn input_raised_border(&self) -> HexColor {
+        self.border_strong()
     }
 
     /// `component.input-readonly-bg` → `{semantic.state-disabled-fill}`
@@ -2474,6 +2576,66 @@ impl crate::theme::Theme {
     #[inline]
     pub fn loading_lockup_tracking(&self) -> LogicalPx {
         LogicalPx((-(1.0 * self.ui_zoom)).round())
+    }
+
+    /// `component.loading-overlay-delay` → `{semantic.motion-ui-fade}` = 200ms
+    #[inline]
+    pub fn loading_overlay_delay(&self) -> Millis {
+        Millis(200.0)
+    }
+
+    /// `component.loading-overlay-indicator` → `{component.spinner-indicator}`
+    #[inline]
+    pub fn loading_overlay_indicator(&self) -> HexColor {
+        self.spinner_indicator()
+    }
+
+    /// `component.loading-overlay-lnb-size` → `{semantic.icon-size-sm}` = 14px
+    #[inline]
+    pub fn loading_overlay_lnb_size(&self) -> LogicalPx {
+        self.icon_glyph_size_sm
+    }
+
+    /// `component.loading-overlay-rail-size` → `{primitive.size-28}` = 28px
+    #[inline]
+    pub fn loading_overlay_rail_size(&self) -> LogicalPx {
+        LogicalPx((28.0 * self.ui_zoom).round())
+    }
+
+    /// `component.loading-overlay-surface-bed-bg` → `{semantic.surface-raised}`
+    #[inline]
+    pub fn loading_overlay_surface_bed_bg(&self) -> HexColor {
+        self.surface_raised()
+    }
+
+    /// `component.loading-overlay-surface-bed-border` → `{semantic.border-default}`
+    #[inline]
+    pub fn loading_overlay_surface_bed_border(&self) -> HexColor {
+        self.border_default()
+    }
+
+    /// `component.loading-overlay-surface-bed-size` → `{primitive.size-24}` = 24px
+    #[inline]
+    pub fn loading_overlay_surface_bed_size(&self) -> LogicalPx {
+        LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
+    /// `component.loading-overlay-surface-inset` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn loading_overlay_surface_inset(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.loading-overlay-surface-size` → `{component.spinner-size}` = 16px
+    #[inline]
+    pub fn loading_overlay_surface_size(&self) -> LogicalPx {
+        self.spinner_size
+    }
+
+    /// `component.loading-overlay-tab-size` → `{component.tab-icon-size}` = 14px
+    #[inline]
+    pub fn loading_overlay_tab_size(&self) -> LogicalPx {
+        self.tab_icon_size()
     }
 
     /// `component.md-callout-icon-gap` → `{semantic.space-xs}` = 4px
@@ -2956,10 +3118,274 @@ impl crate::theme::Theme {
         self.text_placeholder()
     }
 
+    /// `component.notification-badge-error-bg` → `{semantic.notify-error}`
+    #[inline]
+    pub fn notification_badge_error_bg(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.notification-badge-error-fg` → `{semantic.notify-error-fg}`
+    #[inline]
+    pub fn notification_badge_error_fg(&self) -> HexColor {
+        self.text_on_accent()
+    }
+
+    /// `component.notification-badge-glyph-gap` → `{primitive.size-2}` = 2px
+    #[inline]
+    pub fn notification_badge_glyph_gap(&self) -> LogicalPx {
+        LogicalPx((2.0 * self.ui_zoom).round())
+    }
+
+    /// `component.notification-badge-glyph-size` → `{primitive.size-10}` = 10px
+    #[inline]
+    pub fn notification_badge_glyph_size(&self) -> LogicalPx {
+        LogicalPx((10.0 * self.ui_zoom).round())
+    }
+
+    /// `component.notification-badge-group-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn notification_badge_group_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.notification-badge-info-bg` → `{semantic.notify-info}`
+    #[inline]
+    pub fn notification_badge_info_bg(&self) -> HexColor {
+        self.attention_completion()
+    }
+
+    /// `component.notification-badge-info-fg` → `{semantic.notify-info-fg}`
+    #[inline]
+    pub fn notification_badge_info_fg(&self) -> HexColor {
+        self.text_on_accent()
+    }
+
+    /// `component.notification-badge-stack-gap` → `{primitive.size-2}` = 2px
+    #[inline]
+    pub fn notification_badge_stack_gap(&self) -> LogicalPx {
+        LogicalPx((2.0 * self.ui_zoom).round())
+    }
+
+    /// `component.notification-badge-warning-bg` → `{semantic.notify-warning}`
+    #[inline]
+    pub fn notification_badge_warning_bg(&self) -> HexColor {
+        self.accent_warning()
+    }
+
+    /// `component.notification-badge-warning-fg` → `{semantic.notify-warning-fg}`
+    #[inline]
+    pub fn notification_badge_warning_fg(&self) -> HexColor {
+        self.text_on_accent()
+    }
+
+    /// `component.notification-item-bg-hover` → `{semantic.overlay-hover}`
+    #[inline]
+    pub fn notification_item_bg_hover(&self) -> PremulColor {
+        self.overlay_hover()
+    }
+
+    /// `component.notification-item-bg-selected` → `{semantic.surface-active}`
+    #[inline]
+    pub fn notification_item_bg_selected(&self) -> HexColor {
+        self.surface_active()
+    }
+
+    /// `component.notification-item-body-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn notification_item_body_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.notification-item-body-fg-read` → `{semantic.text-muted}`
+    #[inline]
+    pub fn notification_item_body_fg_read(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.notification-item-closed-fg` → `{semantic.text-placeholder}`
+    #[inline]
+    pub fn notification_item_closed_fg(&self) -> HexColor {
+        self.text_placeholder()
+    }
+
+    /// `component.notification-item-error-glyph` → `{semantic.notify-error}`
+    #[inline]
+    pub fn notification_item_error_glyph(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.notification-item-glyph-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn notification_item_glyph_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.notification-item-glyph-size` → `{semantic.icon-size-sm}` = 14px
+    #[inline]
+    pub fn notification_item_glyph_size(&self) -> LogicalPx {
+        self.icon_glyph_size_sm
+    }
+
+    /// `component.notification-item-info-glyph` → `{semantic.notify-info}`
+    #[inline]
+    pub fn notification_item_info_glyph(&self) -> HexColor {
+        self.attention_completion()
+    }
+
+    /// `component.notification-item-line-gap` → `{primitive.size-2}` = 2px
+    #[inline]
+    pub fn notification_item_line_gap(&self) -> LogicalPx {
+        LogicalPx((2.0 * self.ui_zoom).round())
+    }
+
+    /// `component.notification-item-meta-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn notification_item_meta_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.notification-item-more-fg` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn notification_item_more_fg(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.notification-item-pad-x` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn notification_item_pad_x(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
+    /// `component.notification-item-pad-y` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn notification_item_pad_y(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.notification-item-separator` → `{semantic.separator}`
+    #[inline]
+    pub fn notification_item_separator(&self) -> PremulColor {
+        self.separator
+    }
+
+    /// `component.notification-item-title-fg` → `{semantic.text-primary}`
+    #[inline]
+    pub fn notification_item_title_fg(&self) -> HexColor {
+        self.text_primary()
+    }
+
+    /// `component.notification-item-title-fg-read` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn notification_item_title_fg_read(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.notification-item-unread-dot` → `{semantic.notify-unread}`
+    #[inline]
+    pub fn notification_item_unread_dot(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.notification-item-unread-dot-size` → `{component.badge-dot-size}` = 8px
+    #[inline]
+    pub fn notification_item_unread_dot_size(&self) -> LogicalPx {
+        self.badge_dot_size()
+    }
+
+    /// `component.notification-item-warning-glyph` → `{semantic.notify-warning}`
+    #[inline]
+    pub fn notification_item_warning_glyph(&self) -> HexColor {
+        self.accent_warning()
+    }
+
+    /// `component.notification-rail-width` → `{primitive.size-44}` = 44px
+    #[inline]
+    pub fn notification_rail_width(&self) -> LogicalPx {
+        LogicalPx((44.0 * self.ui_zoom).round())
+    }
+
+    /// `component.notification-summary-bg-hover` → `{semantic.overlay-hover}`
+    #[inline]
+    pub fn notification_summary_bg_hover(&self) -> PremulColor {
+        self.overlay_hover()
+    }
+
+    /// `component.notification-summary-bg-open` → `{semantic.overlay-active}`
+    #[inline]
+    pub fn notification_summary_bg_open(&self) -> PremulColor {
+        self.overlay_active()
+    }
+
+    /// `component.notification-summary-icon-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn notification_summary_icon_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.notification-summary-label-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn notification_summary_label_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.notification-summary-label-fg-empty` → `{semantic.text-muted}`
+    #[inline]
+    pub fn notification_summary_label_fg_empty(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.notification-summary-meta-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn notification_summary_meta_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.notification-summary-pad` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn notification_summary_pad(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.notification-summary-pad-x` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn notification_summary_pad_x(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.notification-summary-preview-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn notification_summary_preview_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.notification-summary-preview-font-size` → `{semantic.font-size-caption}` = 11px
+    #[inline]
+    pub fn notification_summary_preview_font_size(&self) -> LogicalPx {
+        self.font_size_caption
+    }
+
+    /// `component.notification-summary-row-height` → `{primitive.size-24}` = 24px
+    #[inline]
+    pub fn notification_summary_row_height(&self) -> LogicalPx {
+        LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
+    /// `component.notifications-popup-height` → `{primitive.size-400}` = 400px
+    #[inline]
+    pub fn notifications_popup_height(&self) -> LogicalPx {
+        LogicalPx((400.0 * self.ui_zoom).round())
+    }
+
     /// `component.notifications-popup-width` → `{primitive.size-352}` = 352px
     #[inline]
     pub fn notifications_popup_width(&self) -> LogicalPx {
         LogicalPx((352.0 * self.ui_zoom).round())
+    }
+
+    /// `component.notifications-toolbar-height` → `{semantic.control-height}` = 28px
+    #[inline]
+    pub fn notifications_toolbar_height(&self) -> LogicalPx {
+        self.item_height_interactive
     }
 
     /// `component.palette-list-max-height` → `{primitive.size-320}` = 320px
@@ -3262,10 +3688,22 @@ impl crate::theme::Theme {
         self.text_secondary()
     }
 
+    /// `component.rail-category-line-length` → `{primitive.size-24}` = 24px
+    #[inline]
+    pub fn rail_category_line_length(&self) -> LogicalPx {
+        LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
     /// `component.rail-category-line-width` → `{semantic.focus-ring-width}` = 2px
     #[inline]
     pub fn rail_category_line_width(&self) -> LogicalPx {
         self.focus_ring_width
+    }
+
+    /// `component.rail-flat-divider-length` → `{primitive.size-28}` = 28px
+    #[inline]
+    pub fn rail_flat_divider_length(&self) -> LogicalPx {
+        LogicalPx((28.0 * self.ui_zoom).round())
     }
 
     /// `component.remote-filter-dropdown-width` → `{primitive.size-240}` = 240px
@@ -4556,6 +4994,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn workspace_mirror_chip_border(&self) -> HexColor {
         self.workspace_mirror_fg()
+    }
+
+    /// `component.workspace-mirror-chip-size` → `{primitive.size-12}` = 12px
+    #[inline]
+    pub fn workspace_mirror_chip_size(&self) -> LogicalPx {
+        LogicalPx((12.0 * self.ui_zoom).round())
     }
 
     /// `component.workspace-mirror-fg` → `{semantic.accent-remote}`

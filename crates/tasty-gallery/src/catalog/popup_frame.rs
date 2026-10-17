@@ -168,7 +168,7 @@ impl ContentInset {
 }
 
 /// 호출자가 지정한 높이·여백·그림자로 프레임을 그린다.
-/// paint는 콘텐츠 영역의 child Ui를 받는다. 알림창처럼 그림자가 없는 종류도 허용한다.
+/// paint는 콘텐츠 영역의 child Ui를 받는다. 그림자가 없는 표본도 허용한다.
 #[allow(clippy::too_many_arguments)] // reason: popup frame 은 chrome 파라미터가 본래 많다.
 pub fn draw(
     ui: &mut egui::Ui,
@@ -181,14 +181,92 @@ pub fn draw(
     shadow: Option<tasty_type_appearance::theme::ShadowToken>,
     paint: impl FnOnce(&mut egui::Ui),
 ) {
+    draw_frame(
+        ui,
+        theme,
+        title,
+        width,
+        total_h,
+        FrameStyle {
+            inset,
+            buttons,
+            shadow,
+            panel: false,
+        },
+        paint,
+    );
+}
+
+/// Flush bg-panel content with the host notification popup's sidebar title bar.
+pub fn draw_panel(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    title: &str,
+    width: LogicalPx,
+    total_h: LogicalPx,
+    buttons: TitleButtons,
+    paint: impl FnOnce(&mut egui::Ui),
+) {
+    draw_frame(
+        ui,
+        theme,
+        title,
+        width,
+        total_h,
+        FrameStyle {
+            inset: ContentInset::FLUSH,
+            buttons,
+            shadow: Some(theme.shadow_modal()),
+            panel: true,
+        },
+        paint,
+    );
+}
+
+struct FrameStyle {
+    inset: ContentInset,
+    buttons: TitleButtons,
+    shadow: Option<tasty_type_appearance::theme::ShadowToken>,
+    panel: bool,
+}
+
+fn draw_frame(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    title: &str,
+    width: LogicalPx,
+    total_h: LogicalPx,
+    style: FrameStyle,
+    paint: impl FnOnce(&mut egui::Ui),
+) {
+    let FrameStyle {
+        inset,
+        buttons,
+        shadow,
+        panel,
+    } = style;
     let (frame_rect, _) = ui.allocate_exact_size(
         egui::vec2(width.value(), total_h.value()),
         egui::Sense::hover(),
     );
-    let painter = ui.painter_at(frame_rect);
+    let painter = if panel {
+        ui.painter().clone()
+    } else {
+        ui.painter_at(frame_rect)
+    };
 
-    let bg: egui::Color32 = theme.surface_raised().into();
-    let title_bg: egui::Color32 = theme.surface_hover().into();
+    let bg: egui::Color32 = if panel {
+        theme.bg_panel()
+    } else {
+        theme.surface_raised()
+    }
+    .into();
+    let title_bg: egui::Color32 = if panel {
+        theme.bg_sidebar()
+    } else {
+        theme.surface_hover()
+    }
+    .into();
     let border: egui::Color32 = theme.border_frame().into();
 
     if let Some(shadow) = shadow {
@@ -224,7 +302,19 @@ pub fn draw(
     let cut_band = draw_title_text(&painter, theme, title_rect, buttons_left, title);
     title_tooltip(ui, theme, title, cut_band, false);
 
-    let content_top = LogicalPx(title_rect.bottom()) + CONTENT_MARGIN;
+    if panel {
+        painter.hline(
+            title_rect.x_range(),
+            title_rect.bottom(),
+            egui::Stroke::new(theme.border_width.value(), border),
+        );
+    }
+    let vertical = if panel {
+        LogicalPx(0.0)
+    } else {
+        CONTENT_MARGIN
+    };
+    let content_top = LogicalPx(title_rect.bottom()) + vertical;
     let content_rect = egui::Rect::from_min_max(
         egui::pos2(
             frame_rect.min.x + inset.horizontal,
@@ -232,7 +322,7 @@ pub fn draw(
         ),
         egui::pos2(
             frame_rect.max.x - inset.horizontal,
-            frame_rect.max.y - CONTENT_MARGIN.value(),
+            frame_rect.max.y - vertical.value(),
         ),
     );
     // 상위 가로 레이아웃을 상속하지 않도록 콘텐츠의 세로 방향을 명시한다.

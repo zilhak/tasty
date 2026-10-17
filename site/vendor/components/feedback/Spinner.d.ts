@@ -7,6 +7,10 @@ export interface SpinnerProps extends React.HTMLAttributes<HTMLSpanElement> {
   stroke?: number;
   /** Accessible label announced to screen readers. Default "Loading". */
   label?: React.ReactNode;
+  /** Force the still arc (no rotation) regardless of the OS setting. Default false. */
+  paused?: boolean;
+  /** What prefers-reduced-motion shows: "dots" (3 static dots, default) or "arc" (the arc, not rotating). */
+  reducedMotion?: "dots" | "arc";
 }
 
 /**

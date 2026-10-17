@@ -54,7 +54,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         painter.rect_filled(
             content,
             theme.corner_radius.value(),
-            theme.surface_raised().to_egui(),
+            theme.bg_panel().to_egui(),
         );
         painter.rect_stroke(
             content,
@@ -63,27 +63,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             egui::StrokeKind::Inside,
         );
         // 제목과 종료 버튼은 셸이 이미 그리므로 콘텐츠에 타이틀바를 추가하지 않는다.
-        let row_h = theme.item_height_interactive.value();
-        let mut y = content.top() + theme.spacing_xs.value();
-        for i in 0..3 {
-            let row = egui::Rect::from_min_size(
-                egui::pos2(content.left() + theme.spacing_xs.value(), y),
-                egui::vec2(content.width() - theme.spacing_xs.value() * 2.0, row_h),
-            );
-            painter.rect_filled(
-                row,
-                theme.corner_radius_sm.value(),
-                theme.surface_hover().to_egui(),
-            );
-            painter.text(
-                egui::pos2(row.left() + theme.spacing_sm.value(), row.center().y),
-                egui::Align2::LEFT_CENTER,
-                format!("Build {} finished", i + 1),
-                egui::FontId::proportional(theme.font_size_body.value()),
-                theme.text_primary().to_egui(),
-            );
-            y += row_h + theme.spacing_xs.value();
-        }
+        ui.scope_builder(egui::UiBuilder::new().max_rect(content), |ui| {
+            super::notification_panel::content(ui, theme, false, true);
+        });
     });
 
     spec::meta(
@@ -104,7 +86,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "surface-raised",
                 "content frame",
-                theme.surface_raised().to_egui(),
+                theme.bg_panel().to_egui(),
             ),
             TokenChip::new(
                 "border-strong",

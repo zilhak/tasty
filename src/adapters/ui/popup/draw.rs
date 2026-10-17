@@ -20,16 +20,11 @@ const ANCHORED_POPUPS: &[PopupId] = &[
     crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID,
 ];
 
-/// 알림 패널은 앵커형도 중앙 모달도 아니므로 그림자를 사용하지 않는다.
-const SHADOWLESS_POPUPS: &[PopupId] = &["notifications"];
-
-/// 그림자 없음·popover 목록에 없는 팝업은 modal 그림자를 사용한다.
+/// popover 목록에 없는 팝업은 modal 그림자를 사용한다.
 /// scrim 여부와는 별개인 분류다(docs/architecture/ui-widgets-crate.md).
 fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::ShadowToken> {
     let th = theme::theme();
-    if SHADOWLESS_POPUPS.contains(&popup_id) {
-        None
-    } else if ANCHORED_POPUPS.contains(&popup_id) {
+    if ANCHORED_POPUPS.contains(&popup_id) {
         Some(th.shadow_popover())
     } else {
         Some(th.shadow_modal())
@@ -43,7 +38,7 @@ fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::Shado
 /// 읽기 실패 화면의 Retry 가 같은 Secondary 버튼이다.
 fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
     match popup_id {
-        "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach"
+        "notifications" | "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach"
         | "convert_surface" => th.bg_panel().into(),
         super::transfer::TRANSFER_PROGRESS_POPUP_ID
         | super::transfer::TRANSFER_ERROR_POPUP_ID

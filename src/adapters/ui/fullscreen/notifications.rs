@@ -26,7 +26,7 @@ pub(crate) fn draw(
     let frame = ui.max_rect();
     let painter = ui.painter().clone();
 
-    painter.rect_filled(frame, th.corner_radius.value(), th.surface_raised());
+    painter.rect_filled(frame, th.corner_radius.value(), th.bg_panel());
     painter.rect_stroke(
         frame,
         th.corner_radius.value(),
@@ -34,13 +34,13 @@ pub(crate) fn draw(
         egui::StrokeKind::Outside,
     );
 
-    let content_rect = frame.shrink(crate::adapters::ui::popup::content_margin().value());
+    let content_rect = frame;
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
     let scroll_id = content_scroll_id(&content);
     content
         .ctx()
         .memory_mut(|m| m.data.insert_temp(scroll_id_slot(), scroll_id));
-    crate::adapters::ui::notification::draw_notification_content_inner(&mut content, state, engine);
+    crate::adapters::ui::notification::draw_notification_content(&mut content, state, engine, true);
 
     StageAction::None
 }

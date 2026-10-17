@@ -479,6 +479,9 @@ pub mod explorer {
     /// `component.explorer-props-width` → `{primitive.size-360}` = 360px
     pub const PROPS_WIDTH: LogicalPx = crate::generated::primitive::SIZE_360;
 
+    /// `component.explorer-remote-queue-head-gap` → `{semantic.space-xs}` = 4px
+    pub const REMOTE_QUEUE_HEAD_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
     /// `component.explorer-search-bar-height` → `{primitive.size-36}` = 36px
     pub const SEARCH_BAR_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_36;
 
@@ -601,6 +604,24 @@ pub mod help_hint {
 
 pub mod html {
     use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.html-address-bar-gap` → `{semantic.space-sm}` = 8px
+    pub const ADDRESS_BAR_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.html-address-bar-height` → `{primitive.size-40}` = 40px
+    pub const ADDRESS_BAR_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_40;
+
+    /// `component.html-address-bar-nav-gap` → `{semantic.space-xs}` = 4px
+    pub const ADDRESS_BAR_NAV_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.html-address-bar-padding-x` → `{semantic.space-sm}` = 8px
+    pub const ADDRESS_BAR_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.html-address-error-height` → `{primitive.size-24}` = 24px
+    pub const ADDRESS_ERROR_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_24;
+
+    /// `component.html-address-field-min-width` → `{primitive.size-96}` = 96px
+    pub const ADDRESS_FIELD_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_96;
 
     /// `component.html-script-marker-hit` → `{primitive.size-16}` = 16px
     pub const SCRIPT_MARKER_HIT: LogicalPx = crate::generated::primitive::SIZE_16;
@@ -825,6 +846,27 @@ pub mod loading {
 
     /// `component.loading-lockup-tracking` → `{primitive.letter-spacing-n1px}` = -1px
     pub const LOCKUP_TRACKING: LogicalPx = crate::generated::primitive::LETTER_SPACING_N1PX;
+
+    /// `component.loading-overlay-delay` → `{semantic.motion-ui-fade}` = 200ms (ms)
+    pub const OVERLAY_DELAY: f32 = crate::generated::semantic::MOTION_UI_FADE;
+
+    /// `component.loading-overlay-lnb-size` → `{semantic.icon-size-sm}` = 14px
+    pub const OVERLAY_LNB_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_SM;
+
+    /// `component.loading-overlay-rail-size` → `{primitive.size-28}` = 28px
+    pub const OVERLAY_RAIL_SIZE: LogicalPx = crate::generated::primitive::SIZE_28;
+
+    /// `component.loading-overlay-surface-bed-size` → `{primitive.size-24}` = 24px
+    pub const OVERLAY_SURFACE_BED_SIZE: LogicalPx = crate::generated::primitive::SIZE_24;
+
+    /// `component.loading-overlay-surface-inset` → `{semantic.space-sm}` = 8px
+    pub const OVERLAY_SURFACE_INSET: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.loading-overlay-surface-size` → `{component.spinner-size}` = 16px
+    pub const OVERLAY_SURFACE_SIZE: LogicalPx = super::spinner::SIZE;
+
+    /// `component.loading-overlay-tab-size` → `{component.tab-icon-size}` = 14px
+    pub const OVERLAY_TAB_SIZE: LogicalPx = super::tab::ICON_SIZE;
 }
 
 pub mod md {
@@ -988,11 +1030,81 @@ pub mod multiselect {
     pub const ROW_PADDING_X: LogicalPx = super::menu::ITEM_PADDING_X;
 }
 
+pub mod notification {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.notification-badge-glyph-gap` → `{primitive.size-2}` = 2px
+    pub const BADGE_GLYPH_GAP: LogicalPx = crate::generated::primitive::SIZE_2;
+
+    /// `component.notification-badge-glyph-size` → `{primitive.size-10}` = 10px
+    pub const BADGE_GLYPH_SIZE: LogicalPx = crate::generated::primitive::SIZE_10;
+
+    /// `component.notification-badge-group-gap` → `{semantic.space-xs}` = 4px
+    pub const BADGE_GROUP_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.notification-badge-max` = 99
+    pub const BADGE_MAX: f32 = 99.0;
+
+    /// `component.notification-badge-stack-gap` → `{primitive.size-2}` = 2px
+    pub const BADGE_STACK_GAP: LogicalPx = crate::generated::primitive::SIZE_2;
+
+    /// `component.notification-item-body-lines` = 2
+    pub const ITEM_BODY_LINES: f32 = 2.0;
+
+    /// `component.notification-item-body-lines-wide` = 3
+    pub const ITEM_BODY_LINES_WIDE: f32 = 3.0;
+
+    /// `component.notification-item-glyph-gap` → `{semantic.space-sm}` = 8px
+    pub const ITEM_GLYPH_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.notification-item-glyph-size` → `{semantic.icon-size-sm}` = 14px
+    pub const ITEM_GLYPH_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_SM;
+
+    /// `component.notification-item-line-gap` → `{primitive.size-2}` = 2px
+    pub const ITEM_LINE_GAP: LogicalPx = crate::generated::primitive::SIZE_2;
+
+    /// `component.notification-item-pad-x` → `{semantic.space-md}` = 12px
+    pub const ITEM_PAD_X: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.notification-item-pad-y` → `{semantic.space-sm}` = 8px
+    pub const ITEM_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.notification-item-title-weight` → `{semantic.font-weight-semibold}` = 600
+    pub const ITEM_TITLE_WEIGHT: u16 = crate::generated::semantic::FONT_WEIGHT_SEMIBOLD;
+
+    /// `component.notification-item-unread-dot-size` → `{component.badge-dot-size}` = 8px
+    pub const ITEM_UNREAD_DOT_SIZE: LogicalPx = super::badge::DOT_SIZE;
+
+    /// `component.notification-rail-width` → `{primitive.size-44}` = 44px
+    pub const RAIL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_44;
+
+    /// `component.notification-summary-icon-gap` → `{semantic.space-sm}` = 8px
+    pub const SUMMARY_ICON_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.notification-summary-pad` → `{semantic.space-sm}` = 8px
+    pub const SUMMARY_PAD: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.notification-summary-pad-x` → `{semantic.space-sm}` = 8px
+    pub const SUMMARY_PAD_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.notification-summary-preview-font-size` → `{semantic.font-size-caption}` = 11px
+    pub const SUMMARY_PREVIEW_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_CAPTION;
+
+    /// `component.notification-summary-row-height` → `{primitive.size-24}` = 24px
+    pub const SUMMARY_ROW_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_24;
+}
+
 pub mod notifications {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.notifications-popup-height` → `{primitive.size-400}` = 400px
+    pub const POPUP_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_400;
+
     /// `component.notifications-popup-width` → `{primitive.size-352}` = 352px
     pub const POPUP_WIDTH: LogicalPx = crate::generated::primitive::SIZE_352;
+
+    /// `component.notifications-toolbar-height` → `{semantic.control-height}` = 28px
+    pub const TOOLBAR_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT;
 }
 
 pub mod palette {
@@ -1138,8 +1250,14 @@ pub mod progress {
 pub mod rail {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.rail-category-line-length` → `{primitive.size-24}` = 24px
+    pub const CATEGORY_LINE_LENGTH: LogicalPx = crate::generated::primitive::SIZE_24;
+
     /// `component.rail-category-line-width` → `{semantic.focus-ring-width}` = 2px
     pub const CATEGORY_LINE_WIDTH: LogicalPx = crate::generated::semantic::FOCUS_RING_WIDTH;
+
+    /// `component.rail-flat-divider-length` → `{primitive.size-28}` = 28px
+    pub const FLAT_DIVIDER_LENGTH: LogicalPx = crate::generated::primitive::SIZE_28;
 }
 
 pub mod remote {
@@ -1615,6 +1733,9 @@ pub mod workspace {
 
     /// `component.workspace-dot-slot` → `{primitive.size-16}` = 16px
     pub const DOT_SLOT: LogicalPx = crate::generated::primitive::SIZE_16;
+
+    /// `component.workspace-mirror-chip-size` → `{primitive.size-12}` = 12px
+    pub const MIRROR_CHIP_SIZE: LogicalPx = crate::generated::primitive::SIZE_12;
 
     /// `component.workspace-mirror-gap` → `{semantic.space-xs}` = 4px
     pub const MIRROR_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;

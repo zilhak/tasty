@@ -35,14 +35,14 @@ function PendingDetailRow({ glyph = K.ic.folder, value }) {
     </div>
   );
 }
-function RenamePending({ lang = "en" }) {
+function RenamePending({ lang = "en", idle = false }) {
   const t = { en: ["Rename", "Renaming on build-eu…", "Cancel", "Rename"], ko: ["이름 바꾸기", "build-eu에서 이름 바꾸는 중…", "취소", "이름 바꾸기"], ja: ["名前の変更", "build-eu で名前を変更中…", "キャンセル", "名前を変更"] }[lang];
   return (
-    <div style={{ width: "var(--tasty-size-360)", maxWidth: "100%", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", padding: "var(--tasty-space-md) var(--tasty-size-14)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+    <div style={{ width: "var(--tasty-size-360)", maxWidth: "100%", background: "var(--tasty-dialog-bg)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", padding: "var(--tasty-space-md) var(--tasty-size-14)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
       <span style={{ fontSize: "var(--tasty-font-size-body)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{t[0]}</span>
-      <Input block readOnly defaultValue="report-final.pdf" />
-      <span style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}><Spinner size="var(--tasty-icon-size-sm)" />{t[1]}</span>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)" }}><Button variant="ghost" size="sm" disabled>{t[2]}</Button><Button variant="primary" size="sm" disabled>{t[3]}</Button></div>
+      <Input block readOnly={!idle} defaultValue="report-final.pdf" />
+      <span style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-icon-size-sm)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{idle ? <>Press <Kbd keys="↵" /> to confirm, <Kbd keys="Esc" /> to cancel.</> : <><Spinner size="var(--tasty-icon-size-sm)" />{t[1]}</>}</span>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)" }}><Button variant="ghost" size="sm" disabled={!idle}>{t[2]}</Button><Button variant="primary" size="sm" disabled={!idle}>{t[3]}</Button></div>
     </div>
   );
 }
@@ -59,7 +59,7 @@ function RemoteQueue() {
   );
   return (
     <div style={{ position: "absolute", right: "var(--tasty-space-sm)", bottom: "calc(var(--tasty-status-bar-height) + var(--tasty-space-xs))", width: "var(--tasty-size-288)", background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)", borderRadius: "var(--tasty-menu-radius)", boxShadow: "var(--tasty-shadow-popover)", padding: "var(--tasty-space-xs)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-xs) var(--tasty-space-sm)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>On <Host /> · one at a time</div>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-explorer-remote-queue-head-gap)", padding: "var(--tasty-space-xs) var(--tasty-space-sm)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}><span>On</span><Host /><span>· one at a time</span></div>
       {row("Copy 6 items to logs/archive", "2 of 6 · 14 / 52 MB", true)}
       {row("Move to Trash 3 items", "Queued", false)}
     </div>
@@ -130,6 +130,37 @@ function RemoteWriteSection() {
           specs={[["input row", "stays in place · Input readOnly · text kept"], ["indicator", "Spinner icon-size-sm · trailing slot · tooltip “Waiting for {host}”"], ["Esc / blur", "ignored while waiting"], ["success", "row → item at its sorted place, selected"], ["failure", "field editable again, text kept · error toast (unchanged)"], ["Rename popup", "open · field readOnly · Spinner line · Cancel + Rename disabled · closes on success"]]}
           tokens={[{ tok: "--tasty-input-readonly-fg", use: "sent text", color: "var(--tasty-input-readonly-fg)" }, { tok: "--tasty-spinner-indicator", use: "waiting", color: "var(--tasty-spinner-indicator)" }]} />
         <Note>i18n: <code>explorer.remote.waiting</code> “Waiting for {"{host}"}” / “{"{host}"} 응답 기다리는 중” / “{"{host}"} の応答を待っています” · <code>explorer.remote.renaming</code> “Renaming on {"{host}"}…” / “{"{host}"}에서 이름 바꾸는 중…” / “{"{host}"} で名前を変更中…”.</Note>
+      </Spec>
+
+
+      <Spec title="Rename popup — the read-only field against the popup ground (2026-10-14)"
+        when={<>The rename popup (workspace · tab · category · explorer item) is a <b>dialog</b>: its ground is <span className="tok">--tasty-dialog-bg</span> → <code>bg-panel</code>, the same as every frame on Overlays › Dialogs. It is <b>not</b> the popover ground <code>surface-raised</code>. On <code>bg-panel</code> the read-only field keeps its normal neutral box (<code>state-disabled-fill</code> → surface-raised, <code>state-disabled-border</code> → border-default) and its edge reads. The waiting state changes only the ink and the buttons, never the box. Inputs that really sit on <code>surface-raised</code> (menus, banners, popovers) pass <code>ground="raised"</code>: every state steps the box down to <code>bg-panel</code> with a <code>border-strong</code> edge.</>}>
+        <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <XThemes gap="var(--tasty-space-md)" render={() => (
+            <div style={{ display: "flex", gap: "var(--tasty-space-md)", flexWrap: "wrap" }}>
+              <XCol label="normal" w={360}><RenamePending idle /></XCol>
+              <XCol label="waiting — field read-only" w={360}><RenamePending /></XCol>
+            </div>
+          )} />
+          <XThemes gap="var(--tasty-space-md)" render={() => (
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: "var(--tasty-size-360)", maxWidth: "100%" }}>
+              {[["on surface-raised · default ground — box vanishes (don't)", "panel"], ["on surface-raised · ground=\"raised\"", "raised"]].map(([cap, g]) => (
+                <div key={g} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)", borderRadius: "var(--tasty-radius)" }}>
+                    <Input block ground={g} defaultValue="editable" />
+                    <Input block ground={g} readOnly defaultValue="read-only · report-final.pdf" />
+                    <Input block ground={g} disabled defaultValue="disabled" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )} />
+        </Stage>
+        <Meta
+          specs={[["rename popup ground", "dialog-bg → bg-panel (was surface-raised in the product)"], ["field · waiting", "Input readOnly · state-disabled-fill (surface-raised) + border-default on bg-panel"], ["field · normal", "Input · input-bg + input-border"], ["on surface-raised", "Input ground=\"raised\" · bg-panel + border-strong · all states"], ["disabled on raised", "state-disabled-fill-raised + state-disabled-border-raised"], ["ink", "unchanged: readonly text-secondary · disabled text-disabled"]]}
+          tokens={[{ tok: "--tasty-dialog-bg", use: "→ bg-panel", color: "var(--tasty-dialog-bg)" }, { tok: "--tasty-input-readonly-bg", use: "→ state-disabled-fill", color: "var(--tasty-input-readonly-bg)" }, { tok: "--tasty-input-raised-bg", use: "→ bg-panel", color: "var(--tasty-input-raised-bg)" }, { tok: "--tasty-input-raised-border", use: "→ border-strong", color: "var(--tasty-input-raised-border)" }, { tok: "--tasty-input-readonly-raised-bg", use: "→ state-disabled-fill-raised", color: "var(--tasty-input-readonly-raised-bg)" }, { tok: "--tasty-input-readonly-raised-border", use: "→ state-disabled-border-raised", color: "var(--tasty-input-readonly-raised-border)" }]} />
+        <Note>The editable field keeps <code>input-bg</code> (surface-raised) like every dialog Input. The product's current crust fill for the editable rename field is not a token value; align it to <code>input-bg</code> when the ground moves to <code>dialog-bg</code>.</Note>
       </Spec>
 
       <Spec title="D3 · Connection lost — result unknown"

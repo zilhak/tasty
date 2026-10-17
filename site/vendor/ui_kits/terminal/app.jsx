@@ -68,6 +68,8 @@ function App() {
   const [activeWs, setActiveWs] = React.useState("prod");
   const [activeTab, setActiveTab] = React.useState("t1");
   const [toast, setToast] = React.useState(null);
+  const notifs = window.TastyKit.useNotifications();
+  const [notifAnchor, setNotifAnchor] = React.useState(null); // DOMRect of the LNB notification summary
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [uiScale, setUiScale] = React.useState("md"); // sm | md | lg — chrome zoom
   React.useEffect(() => {
@@ -88,7 +90,7 @@ function App() {
     const h = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOverlay("palette"); setToolsAnchor(null); }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") { e.preventDefault(); setSearchOpen(true); }
-      if (e.key === "Escape") { setOverlay(null); setToolsAnchor(null); setSearchOpen(false); }
+      if (e.key === "Escape") { setOverlay(null); setToolsAnchor(null); setSearchOpen(false); setNotifAnchor(null); }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
@@ -175,7 +177,9 @@ function App() {
           collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((v) => !v)}
           pluginAlert={(window.TastyKit && window.TastyKit.pluginAttentionCount) || 0}
           onSettings={() => setOverlay("settings")} onPlugins={() => setOverlay("plugins")}
-          onTools={(rect) => setToolsAnchor((a) => (a ? null : rect))} />
+          onTools={(rect) => setToolsAnchor((a) => (a ? null : rect))}
+          notifications={{ counts: notifs.counts, latest: notifs.latest, open: !!notifAnchor }}
+          onNotifications={(rect) => setNotifAnchor((a) => (a ? null : rect))} />
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           <TabStrip tabs={tabs} active={activeTab} onSelect={setActiveTab} onClose={closeTab} onNew={newTab}
             onSearch={() => setSearchOpen((v) => !v)} />
@@ -212,6 +216,13 @@ function App() {
         </div>
       </div>
 
+      {notifAnchor && (
+        <div style={{ position: "absolute", left: notifAnchor.right + 4, bottom: Math.max(8, window.innerHeight - notifAnchor.bottom), zIndex: 50 }}>
+          <window.TastyKit.NotificationsPopup items={notifs.items} expandedId={notifs.expandedId}
+            onToggle={notifs.onToggle} onMarkRead={notifs.onMarkRead} onMarkAllRead={notifs.onMarkAllRead}
+            onJump={(n) => { setNotifAnchor(null); flash("Jump → " + n.source); }} />
+        </div>
+      )}
       {toolsAnchor && <ToolsMenu anchor={toolsAnchor} onClose={() => setToolsAnchor(null)} onAction={runTool} />}
       {overlay === "palette" && <CommandPalette onClose={() => setOverlay(null)} onRun={runCmd} />}
       {overlay === "settings" && <SettingsWindow theme={theme} onTheme={setTheme}

@@ -173,6 +173,6 @@ function TermSurfaceG({ height = 260 }) {
   );
 }
 
-window.TastyKit = Object.assign(window.TastyKit || {}, { HtmlScriptBanner, HtmlScriptMarker, HtmlSurfaceG, TermSurfaceG, HS_COPY });
+window.TastyKit = Object.assign(window.TastyKit || {}, { HtmlScriptBanner, HtmlScriptMarker, HtmlSurfaceG, TermSurfaceG, HsTab, HsPage, HS_COPY });
 
 })();

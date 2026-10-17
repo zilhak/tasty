@@ -128,6 +128,7 @@ const NAV = [
   { id: "htmlscript", label: "HTML script notice" },
   { id: "attachrefusal", label: "Auto-attach refused" },
   { id: "attachsizesync", label: "Attach size sync failed" },
+  { id: "htmlremotesize", label: "HTML mirror size notices" },
 ];
 
 function Page() {
@@ -479,6 +480,31 @@ function Page() {
           <Meta
             specs={[["judged on", "scope content width before margins · workspace = pane union under the tab bar"], ["threshold", "banner-narrow-below 440"], ["action", "own line · left = body edge (glyph 16 + banner-gap) · banner-gap above"], ["×", "stays top-right of the card (not part of the wrapped group)"], ["retrying / Retry all", "same on the wrapped line"], ["sample width", "360"]]}
             tokens={[{ tok: "--tasty-banner-narrow-below", use: "→ size-440" }, { tok: "--tasty-banner-gap", use: "glyph ↔ text · text ↔ action line" }]} />
+        </Spec>
+      </Section>
+      <Section id="htmlremotesize" title="HTML mirror — large-file and limit notices (2026-10-12)">
+        <Spec title="Two inset banners · Mocha / Latte · wide / narrow"
+          when={<>The two remote-size questions of a mirrored HTML surface, as banners. Same inset shell and button boxes as the script notice; <b>no ×</b> (each is a decision) and no keyboard focus. When both a size notice and the script notice show, the size notice sits <b>first</b>. Full surface placement (address bar band, receiving state, stacking) lives in <a href="plugins.html#html">Plugins › HTML viewer</a>.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([th, dt]) => (
+              <div key={th} data-theme={dt || undefined} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", borderRadius: "var(--tasty-radius)", width: "var(--tasty-size-560)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{th} · large file · one file</span>
+                <window.TastyKit.HtmlSizeBanner kind="file" />
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{th} · large file · more waiting, long path</span>
+                <window.TastyKit.HtmlSizeBanner kind="file" name="assets/media/marketing/2026/launch/hero-background-loop-4k.mp4" size="12.4 MB" more={2} />
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{th} · cumulative limit</span>
+                <window.TastyKit.HtmlSizeBanner kind="limit" />
+              </div>
+            ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", borderRadius: "var(--tasty-radius)", width: "var(--tasty-size-360)" }}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>narrow (&lt; 440) — actions wrap under the body</span>
+              <window.TastyKit.HtmlSizeBanner kind="file" narrow />
+              <window.TastyKit.HtmlSizeBanner kind="limit" narrow />
+            </div>
+          </Stage>
+          <Meta
+            specs={[["shell", "script-notice inset shell · no ×"], ["large file", "download (info) · title · path left-ellipsis + size Tag warning [+N more waiting] · Decline / Allow"], ["limit", "alertTriangle (warning) · total received · limit sentence · Stop / Continue"], ["order", "size notice above script notice"], ["narrow", "banner-narrow-below 440 → actions wrap"]]}
+            tokens={[{ tok: "--tasty-html-size-banner-glyph", use: "→ accent-info", color: "var(--tasty-html-size-banner-glyph)" }, { tok: "--tasty-html-limit-banner-glyph", use: "→ accent-warning", color: "var(--tasty-html-limit-banner-glyph)" }]} />
         </Spec>
       </Section>
     </>
