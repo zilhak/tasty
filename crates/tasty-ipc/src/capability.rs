@@ -11,7 +11,14 @@ pub struct Capability {
 }
 
 /// 이 빌드의 지원 기능. 새 기능은 항목을 추가하고 기존 계약 변경은 해당 기능 버전에 반영한다.
+pub const NOTIFICATION_LEVELS: &str = "notification.levels";
+pub const NOTIFICATION_LEVELS_VERSION: u32 = 1;
+
 pub const CAPABILITIES: &[Capability] = &[
+    Capability {
+        name: NOTIFICATION_LEVELS,
+        version: NOTIFICATION_LEVELS_VERSION,
+    },
     Capability {
         name: "ipc.capabilities",
         version: 1,

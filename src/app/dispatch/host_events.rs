@@ -165,10 +165,11 @@ impl App {
                 }
                 PendingHostEvent::NotificationCreated {
                     id,
+                    level,
                     title,
                     body,
                     source,
-                } => misc::emit_notification_created(mgr, id, title, body, source),
+                } => misc::emit_notification_created(mgr, id, title, body, source, level),
                 PendingHostEvent::HookFired {
                     hook_id,
                     event_kind,

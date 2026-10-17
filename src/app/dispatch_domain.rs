@@ -240,19 +240,20 @@ impl App {
                 self.cascade_settings_updated(new_settings, origin);
             }
             CoreEvent::NotificationPushRequested {
+                level,
                 ws_id,
                 surface_id,
                 title,
                 body,
                 source: src,
             } => {
-                self.cascade_notification_pushed(ws_id, surface_id, title, body, src);
+                self.cascade_notification_pushed(ws_id, surface_id, title, body, src, level);
             }
             CoreEvent::NotificationReadRequested { id } => {
                 self.cascade_notification_read(id);
             }
-            CoreEvent::AllNotificationsReadRequested => {
-                self.cascade_all_notifications_read();
+            CoreEvent::AllNotificationsReadRequested { ids } => {
+                self.cascade_all_notifications_read(&ids);
             }
             CoreEvent::SurfaceCwdChanged { surface_id, .. } => {
                 self.cascade_surface_cwd_changed(surface_id);
@@ -659,23 +660,25 @@ impl App {
         title: String,
         body: String,
         source: String,
+        level: crate::notification::NotificationLevel,
     ) {
-        let Some(wid) = self.find_main_with_workspace(ws_id) else {
+        let Some((_, mut engine)) = engines_mut!(self)
+            .sessions()
+            .find(|(_, engine)| engine.has_workspace(ws_id))
+        else {
             tracing::warn!(
                 ws_id,
                 "cascade NotificationPushRequested: workspace not found"
             );
             return;
         };
-        let Some((_, mut engine)) = engines_mut!(self).window_pair(wid) else {
-            return;
-        };
-
-        let created_id =
-            engine
-                .live
-                .notifications
-                .add(ws_id, surface_id, title.clone(), body.clone());
+        let created_id = engine.live.notifications.add_with_level(
+            ws_id,
+            surface_id,
+            title.clone(),
+            body.clone(),
+            level,
+        );
         if let Some(nid) = created_id {
             engine.raise_attention(surface_id, AttentionKind::Completion);
             // OS 벨과의 중복을 피하려는 TerminalBellRing 표지는 사운드에서 제외한다.
@@ -684,6 +687,7 @@ impl App {
             }
             engine.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
                 id: nid,
+                level,
                 title,
                 body,
                 source,
@@ -691,7 +695,7 @@ impl App {
         }
     }
 
-    /// 창과 parked engine에 읽음 처리를 전달한다. attention 해제 여부는 engine이 정한다.
+    /// Shared IDs find the owning store; its existing attention policy applies.
     fn cascade_notification_read(&mut self, id: u64) {
         for (_, main, mut engine) in self.engines_mut().window_pairs() {
             engine.mark_notification_read(id);
@@ -702,13 +706,17 @@ impl App {
         }
     }
 
-    fn cascade_all_notifications_read(&mut self) {
+    fn cascade_all_notifications_read(&mut self, ids: &[u64]) {
         for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            engine.mark_all_notifications_read();
+            for id in ids {
+                engine.mark_notification_read(*id);
+            }
             main.mark_dirty();
         }
         for mut engine in self.engines_mut().parked() {
-            engine.mark_all_notifications_read();
+            for id in ids {
+                engine.mark_notification_read(*id);
+            }
         }
     }
 }

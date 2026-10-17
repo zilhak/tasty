@@ -68,6 +68,7 @@ pub(in crate::adapters::ipc::handler) fn fire_anomaly_notification(
     let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄.
     out.push(
         crate::app::command::DomainIntent::PushNotification {
+            level: crate::notification::NotificationLevel::Warning,
             ws_id,
             surface_id: 0,
             title,

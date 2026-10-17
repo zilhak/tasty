@@ -39,8 +39,6 @@ impl MainView {
             return true;
         }
         if has_dt(&kb.toggle_notifications) {
-            // intent 적용은 다음 프레임이므로 현재 상태에서 열릴지를 판단해 읽음 처리한다.
-            let will_open = !self.state.popups.is_open("notifications");
             self.state.dispatch_intent(
                 UiIntent::TogglePopup {
                     id: "notifications",
@@ -48,12 +46,6 @@ impl MainView {
                 }
                 .from_user_shortcut("toggle_notifications_double_tap"),
             );
-            if will_open {
-                self.state.dispatch_intent(
-                    crate::app::command::DomainIntent::MarkAllNotificationsRead
-                        .from_user_shortcut("toggle_notifications_double_tap"),
-                );
-            }
             return true;
         }
 

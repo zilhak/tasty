@@ -256,6 +256,7 @@ pub(crate) enum DomainIntent {
 
     /// workspace ID로 알림을 라우팅한다. source는 생성 주체를 구별하는 태그다.
     PushNotification {
+        level: crate::notification::NotificationLevel,
         ws_id: u32,
         surface_id: u32,
         title: String,
@@ -267,7 +268,9 @@ pub(crate) enum DomainIntent {
         id: u64,
     },
     #[cfg(feature = "gui")]
-    MarkAllNotificationsRead,
+    MarkAllNotificationsRead {
+        ids: Vec<u64>,
+    },
 
     #[cfg(feature = "gui")]
     SurfaceCwdChanged {
@@ -341,6 +344,7 @@ pub(crate) enum CoreEvent {
         )
     )]
     NotificationPushRequested {
+        level: crate::notification::NotificationLevel,
         ws_id: u32,
         surface_id: u32,
         title: String,
@@ -352,7 +356,9 @@ pub(crate) enum CoreEvent {
         id: u64,
     },
     #[cfg(feature = "gui")]
-    AllNotificationsReadRequested,
+    AllNotificationsReadRequested {
+        ids: Vec<u64>,
+    },
 
     #[cfg(feature = "gui")]
     SurfaceCwdChanged {

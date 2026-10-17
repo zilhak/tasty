@@ -863,10 +863,12 @@ fn format_notification_list(result: &serde_json::Value) -> Result<()> {
             let body = n.get("body").and_then(|v| v.as_str()).unwrap_or("");
             let read = n.get("read").and_then(|v| v.as_bool()).unwrap_or(false);
             let marker = if read { " " } else { "*" };
+            let id = n.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let level = n.get("level").and_then(|v| v.as_str()).unwrap_or("info");
             if body.is_empty() {
-                outln!("{} {}", marker, title)?;
+                outln!("{} #{} [{}] {}", marker, id, level, title)?;
             } else {
-                outln!("{} {}: {}", marker, title, body)?;
+                outln!("{} #{} [{}] {}: {}", marker, id, level, title, body)?;
             }
         }
     }

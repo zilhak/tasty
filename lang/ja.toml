@@ -6640,3 +6640,33 @@ target_size = "リンク先のサイズ"
 target_modified = "リンク先の更新日時"
 target_missing = "リンク先が見つかりません"
 partial = "一部のフォルダーを読み取れませんでした"
+
+[cli.help._root.notify.arg.level]
+help = "通知レベル"
+
+[cli.help._root.notify.arg.surface]
+help = "発信元サーフェス ID"
+
+[cli.help._root.notify.arg.workspace]
+help = "発信元ワークスペース ID"
+
+[cli.help._root.notification]
+about = "通知の照会と既読処理"
+
+[cli.help._root.notification.counts]
+about = "全ウィンドウの未読通知をレベル別に集計"
+
+[cli.help._root.notification.counts.arg.workspace]
+help = "閉じたワークスペースも含めて発信元ワークスペース ID で絞り込む"
+
+[cli.help._root.notification.read]
+about = "通知を既読にする"
+
+[cli.help._root.notification.read.arg.id]
+help = "list notifications で取得した通知 ID"
+
+[cli.help._root.notification.read.arg.all]
+help = "選択した範囲の通知をすべて既読にする"
+
+[cli.help._root.notification.read.arg.workspace]
+help = "閉じたワークスペースも含めて発信元ワークスペース ID で絞り込む"

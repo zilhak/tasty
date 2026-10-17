@@ -41,6 +41,19 @@ impl Envelope {
 /// 요청에 필요한 capability 이름과 최소 버전. 없으면 사전 조회도 생략한다.
 pub(crate) fn required(request: &JsonRpcRequest) -> Vec<(&'static str, u32)> {
     let mut out = Vec::new();
+    // Old servers silently discard level, which would turn a failure into info.
+    if request.method == "notification.create"
+        && request
+            .params
+            .get("level")
+            .and_then(|v| v.as_str())
+            .is_some_and(|level| level != "info")
+    {
+        out.push((
+            tasty_ipc::capability::NOTIFICATION_LEVELS,
+            tasty_ipc::capability::NOTIFICATION_LEVELS_VERSION,
+        ));
+    }
     // `Some(0)` 은 봉투 규약상 "상한 없음" 이라 계약을 안 쓴다.
     if request.response_timeout_ms.is_some_and(|ms| ms > 0) {
         out.push((RESPONSE_TIMEOUT, RESPONSE_TIMEOUT_VERSION));
@@ -178,6 +191,21 @@ mod tests {
             response_timeout_ms: timeout,
             idempotency_key: None,
         }
+    }
+
+    #[test]
+    fn non_info_notifications_require_level_support_before_sending() {
+        for level in ["error", "warning"] {
+            assert_eq!(
+                required(&req("notification.create", json!({"level":level}), None)),
+                vec![(
+                    tasty_ipc::capability::NOTIFICATION_LEVELS,
+                    tasty_ipc::capability::NOTIFICATION_LEVELS_VERSION
+                )]
+            );
+        }
+        assert!(required(&req("notification.create", json!({"level":"info"}), None)).is_empty());
+        assert!(required(&req("notification.create", json!({}), None)).is_empty());
     }
 
     #[test]

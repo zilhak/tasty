@@ -20,9 +20,17 @@ impl App {
             return;
         };
         if engine.runtime.settings.notification.enabled {
-            let ws_id = state.active_workspace(engine.core).id;
+            let Some((workspace_index, _)) = engine.find_workspace_index_for_surface(surface_id)
+            else {
+                return;
+            };
+            let ws_id = engine
+                .workspace_at(workspace_index)
+                .expect("source workspace exists")
+                .id;
             state.dispatch_intent(
                 crate::app::command::DomainIntent::PushNotification {
+                    level: crate::notification::NotificationLevel::Info,
                     ws_id,
                     surface_id,
                     title,
@@ -58,9 +66,17 @@ impl App {
         if engine.runtime.settings.notification.enabled
             && engine.runtime.settings.general.bell_notification
         {
-            let ws_id = state.active_workspace(engine.core).id;
+            let Some((workspace_index, _)) = engine.find_workspace_index_for_surface(surface_id)
+            else {
+                return;
+            };
+            let ws_id = engine
+                .workspace_at(workspace_index)
+                .expect("source workspace exists")
+                .id;
             state.dispatch_intent(
                 crate::app::command::DomainIntent::PushNotification {
+                    level: crate::notification::NotificationLevel::Info,
                     ws_id,
                     surface_id,
                     title: crate::i18n::t("notification.bell_title").to_string(),

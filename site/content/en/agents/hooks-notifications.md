@@ -1,4 +1,4 @@
-<!-- source-hash: 48282b9c4665 -->
+<!-- source-hash: c61ccac655ef -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -117,18 +117,31 @@ With `kind = "ipc_sequence"` it runs a list of Tasty-internal actions (`calls = 
 
 ```sh
 tasty notify "Build finished"                    # the title defaults to "Notification"
-tasty notify "3 tests failed" --title "cargo test"
+tasty notify "3 tests failed" --title "cargo test" --level error --surface 42
 tasty list notifications
 ```
 
-`list notifications` returns the 50 most recently created notifications across all windows. IDs are unique across windows within one run. When nearby notifications merge into an existing entry, that entry keeps its position. The on-screen panel and read state remain local to each window.
+`list notifications` returns the 50 most recently created notifications across all windows. IDs are unique across windows within one run. When nearby notifications merge into an existing entry, that entry keeps its position. The on-screen panel shows its own window’s notifications. Counts and explicit read commands can cover all windows.
 
 
 Notification sequences sent by terminal programs (OSC 9 / 99 / 777) and bells are collected as the same kind of notification.
 
+Choose `--level error` for a critical failure, `--level warning` for a non-critical problem, or `--level info` for information. Omitted levels default to `info`. Different levels never merge; new content merged into a read entry makes it unread again.
+
+```sh
+tasty notification counts
+tasty notification counts --workspace 12
+tasty notification read 7
+tasty notification read --all --workspace 12
+```
+
+Counts cover all retained unread notifications, beyond the latest 50 returned by the list. Use the notification ID printed by `list notifications` to mark one read. `read --all` without a workspace filter covers every window. Reading the last unread notification from a Surface clears its attention unless the Surface is hard-occupied. Notification counts and Surface counts remain separate.
+
+Use `notify --workspace 12` for an alert without a Surface. This does not add a Surface attention mark. With an explicit workspace, the Surface ID from your environment is not added automatically.
+
 ### Where they appear
 
-- **Notification panel** — open it with `Ctrl+Shift+I`. The newest-first list shows Workspace, title, body, and elapsed time, and **Jump** takes you to that Workspace. Opening it marks everything read; there is also a **Mark all read** button.
+- **Notification panel** — open it with `Ctrl+Shift+I`. The newest-first list shows Workspace, title, body, and elapsed time, and **Jump** takes you to that Workspace. Opening it keeps unread notifications unchanged. **Mark all read** acknowledges the notifications in that window.
 - **Surface border** — a blue border on the Surface where the notification occurred. It disappears when you focus that Surface while the Tasty window is active. While you are in another app it stays, and it disappears when you return to the window.
 - **Sidebar badge** — a count badge on the row of any Workspace that has a Surface needing attention.
 - **Sound** — when enabled in settings, one system beep per notification.

@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (에이전트도 `notification.create` 로 발행 가능)
 - **ADR**: [ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md) (제목은 표시 전용 · `notification.create` 기본 제목은 UI 문구)
-- **코드**: `NotificationStore` (notification 모델); IPC `notification.{list,create}`
+- **코드**: `NotificationStore` (notification 모델); IPC `notification.{list,create,counts,read}`
 - **화면**: 알림 패널 popup (Window 스코프) · 사이드바 배지
 
 ## 목적
@@ -25,7 +25,8 @@ termwiz Parser 의 OSC 액션을 인터셉트해 알림 이벤트 생성 — OSC
 ### NotificationStore
 
 `VecDeque`에 최대 100개를 보관하고 초과하면 가장 오래된 항목을 `pop_front`로 제거한다.
-같은 source의 알림이 설정 간격(기본 500ms) 안에 이어지면 기존 항목에 합친다.
+같은 workspace·surface·level의 알림이 설정 간격(기본 500ms) 안에 이어지면 기존 항목에 합친다.
+새 내용이 읽은 항목에 합쳐지면 그 항목은 다시 미확인 상태가 된다. 다른 레벨은 합치지 않는다.
 개별 또는 전체 읽음 처리를 지원한다.
 
 새 알림은 해당 surface의 `AttentionStore`에도 주의 표시를 요청한다. 알림 기록과 주의
@@ -40,7 +41,7 @@ surface 수(`attention_count`)를 보여준다. 자세한 규칙은 [surface-hig
 
 ID는 인스턴스의 공유 IdGenerator에서 발급하는 u64이며 재시작 동안 보존되는 ID가
 아니다. 목록은 ID 내림차순, 즉 **신규 생성 순서의 역순**으로 전체 최대 50개다.
-창 순회 순서나 포커스는 결과를 바꾸지 않는다. coalescing은 기존 ID와 생성 순서를
+각 항목은 `level: error|warning|info`를 포함한다. 창 순회 순서나 포커스는 결과를 바꾸지 않는다. coalescing은 기존 ID와 생성 순서를
 유지하므로 최근 내용 갱신이 항목을 앞으로 옮기지는 않는다. 기존 한 engine의 순서와
 고정 50개 응답 계약을 유지하며 새로운 limit/필터 인자를 도입하지 않는다.
 
@@ -69,12 +70,47 @@ headless는 소리를 내지 않는다. 기존 항목에 합쳐진 알림과 터
 - **사이드바 배지**: attention surface 가 있는 워크스페이스 행 우측에 `attention_count` 개수 pill
   배지(`paint_workspace_count_badge`, 99 초과 시 "99+" — 확장 사이드바는 이름 우측 숫자 배지, 축소
   사이드바는 dot). 모두 방문하거나 읽음 처리하면 소멸.
-- **알림 패널** (Popup, Window 스코프): 최신순 목록, 워크스페이스·제목·본문·경과시간 + "Jump" 버튼. 열 때 전체 읽음, "Mark all read". 출처 워크스페이스가 이미 닫힌 알림은 워크스페이스명 자리에 `notification_panel.unknown_workspace` 번역값을 표시한다. Popup 이라 터미널 입력을 차단하지 않고 워크스페이스 전환과 무관하게 보임([popup](../../design/systems/popup.md)).
+- **알림 패널** (Popup, Window 스코프): 최신순 목록, 워크스페이스·제목·본문·경과시간 + "Jump" 버튼. 열거나 닫는 것만으로 읽음 처리하지 않는다. "Mark all read"는 현재 창의 알림 ID 집합에만 적용하고 다른 창의 알림은 보존한다. 출처 워크스페이스가 이미 닫힌 알림은 워크스페이스명 자리에 `notification_panel.unknown_workspace` 번역값을 표시한다. Popup 이라 터미널 입력을 차단하지 않고 워크스페이스 전환과 무관하게 보임([popup](../../design/systems/popup.md)).
+
+### 알림 레벨과 미확인 집계
+
+알림의 `level`은 로그 레벨이나 `AttentionKind`와 별도다. `error`는 크리티컬한 실패,
+`warning`은 문제가 있지만 크리티컬하지 않은 실패, `info`는 기능이 의도적으로 전달하는 정보다.
+생성 시 생략한 레벨은 `info`이며 잘못된 값은 오류로 반환한다. 기존 OSC·벨·승인 요청은
+정보 알림이고 telemetry anomaly/cap은 경고다. 임의 터미널 출력을 분석해 실패를 추정하지 않는다.
+
+`notification.counts`는 모든 main/parked engine의 전체 보관 항목에서 미확인 수를 합산해
+`{error, warning, info, total}`을 반환한다. 목록의 50개 응답 상한과 무관하다.
+선택적 `workspace_id`는 출처 필터이며 닫힌 워크스페이스의 보관 항목에도 적용한다.
+이 수는 완료·입력대기 surface 수를 합산하거나 대체하지 않는다.
+
+`notification.read`는 `notification_id` 하나 또는 `all:true` 중 하나를 반드시 받는다.
+선택적 `workspace_id`로 출처 범위를 좁힌다. `all:true`에 필터가 없으면 인스턴스의 모든
+engine이 대상이다. 응답은 `{read:true, changed:N}`이며 이미 읽은 항목은 변경 수에 넣지 않는다.
+ID가 해당 범위에 없으면 오류다. 읽음은 기존 surface attention 해제 규칙을 따르며 hard 점유
+surface는 해제하지 않는다. 사용자 포커스·팝업 열림 상태는 바꾸지 않는다. headless도 같은 계약이다.
+
+`notification.created` 이벤트에도 `level`을 전달한다. 새 CLI의 error/warning 생성은
+`notification.levels` capability를 확인해 구 서버가 레벨을 무시하는 경우 전송 전에 거절한다.
+기존 info 생성 호출은 이 추가 capability를 요구하지 않는다.
 
 ## 인터페이스
 
 - **사용자**: 단축키로 알림 패널 토글, Jump/Mark all read.
 - **AI Agent / CLI**: `notification.list` / `notification.create`(workspace_id/surface_id 라우팅, 포커스 비의존). `notification.create` 의 `title` 은 선택 — 생략하면 호스트가 `notification.default_title` 번역값을 채운다(`tasty notify <body> [--title ..]`). 기본 제목은 프로토콜 토큰이 아니라 UI 문구이므로 언어에 따라 달라진다.
+
+```sh
+tasty notify "Job stopped" --level error --workspace 12
+tasty notify "Retry scheduled" --level warning --surface 42
+tasty notification counts
+tasty notification counts --workspace 12
+tasty notification read 7
+tasty notification read --all --workspace 12
+```
+
+`notify`는 명시적 `--surface` 또는 `--workspace`를 받는다. workspace를 지정하면
+환경의 surface ID를 자동으로 더하지 않는다. 둘 다 지정하면 소속을 검증한다.
+둘 다 생략하면 기존 `TASTY_SURFACE_ID` 기본값을 유지한다.
 
 ## 비-목표
 

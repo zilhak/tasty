@@ -64,6 +64,7 @@ const HOST_ROOT: &[(&str, &str)] = &[
     ("completion-strategy", "automation"),
     ("telemetry", "automation"),
     ("notify", "automation"),
+    ("notification", "automation"),
     ("file-handler", "files"),
     ("clipboard", "files"),
     ("plugin", "settings"),

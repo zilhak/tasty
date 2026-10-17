@@ -29,8 +29,16 @@ pub(crate) fn draw_notification_content_inner(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.small_button(t("button.mark_all_read")).clicked() {
                 state.dispatch_intent(
-                    crate::app::command::DomainIntent::MarkAllNotificationsRead
-                        .from_user_menu("notification_panel.mark_all_read"),
+                    crate::app::command::DomainIntent::MarkAllNotificationsRead {
+                        ids: engine
+                            .live
+                            .notifications
+                            .all()
+                            .filter(|n| !n.read)
+                            .map(|n| n.id)
+                            .collect(),
+                    }
+                    .from_user_menu("notification_panel.mark_all_read"),
                 );
             }
         });

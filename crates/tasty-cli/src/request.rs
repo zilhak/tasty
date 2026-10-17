@@ -27,9 +27,10 @@ use telemetry::telemetry_command_to_method_params;
 use terminal::{pty_command_to_method_params, terminal_command_to_method_params};
 
 use super::{
-    CloseCommands, Commands, EventsCommands, ListCommands, MoveCommands, NewCommands, ReadCommands,
-    RemoteCommands, SendCommands, SessionCommands, SetCommands, SurfaceAttentionCommands,
-    SurfaceCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands, WorkspaceCategoryCommands,
+    CloseCommands, Commands, EventsCommands, ListCommands, MoveCommands, NewCommands,
+    NotificationCommands, ReadCommands, RemoteCommands, SendCommands, SessionCommands, SetCommands,
+    SurfaceAttentionCommands, SurfaceCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
+    WorkspaceCategoryCommands,
 };
 use tasty_ipc::protocol::JsonRpcRequest;
 
@@ -231,14 +232,32 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         // 일반 attach는 ClientDriven이 처리한다. 여기서는 into-gui와 force-detach만 변환한다.
         Commands::Remote { command } => remote_command_to_method_params(command),
         Commands::Read { command } => read_command_to_method_params(command),
-        Commands::Notify { body, title } => (
+        Commands::Notify {
+            body,
+            title,
+            level,
+            surface,
+            workspace,
+        } => (
             "notification.create",
             serde_json::json!({
                 "title": title,
                 "body": body,
-                "surface_id": resolve_surface_id(None),
+                "level": level,
+                "surface_id": if workspace.is_some() { *surface } else { resolve_surface_id(*surface) },
+                "workspace_id": workspace,
             }),
         ),
+        Commands::Notification { command } => match command {
+            NotificationCommands::Counts { workspace } => (
+                "notification.counts",
+                serde_json::json!({"workspace_id": workspace}),
+            ),
+            NotificationCommands::Read { id, all, workspace } => (
+                "notification.read",
+                serde_json::json!({"notification_id": id, "all": all, "workspace_id": workspace}),
+            ),
+        },
         Commands::Unset { command } => unset_command_to_method_params(command),
         Commands::SurfaceMeta { command } => surface_meta_command_to_method_params(command),
         Commands::Surface { command } => match command {
@@ -1059,12 +1078,47 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn notification_cli_levels_targets_and_read_scope() {
+        let req = command_to_request(&cmd_from(&[
+            "tasty",
+            "notify",
+            "failure",
+            "--level",
+            "error",
+            "--workspace",
+            "12",
+        ]));
+        assert_eq!(req.method, "notification.create");
+        assert_eq!(req.params["level"], "error");
+        assert_eq!(req.params["workspace_id"], 12);
+        assert!(req.params["surface_id"].is_null());
+        let req = command_to_request(&cmd_from(&[
+            "tasty",
+            "notification",
+            "counts",
+            "--workspace",
+            "12",
+        ]));
+        assert_eq!(req.method, "notification.counts");
+        assert_eq!(req.params["workspace_id"], 12);
+        let req = command_to_request(&cmd_from(&["tasty", "notification", "read", "7"]));
+        assert_eq!(req.method, "notification.read");
+        assert_eq!(req.params["notification_id"], 7);
+        assert_eq!(req.params["all"], false);
+        let req = command_to_request(&cmd_from(&["tasty", "notification", "read", "--all"]));
+        assert_eq!(req.params["all"], true);
+    }
+
     // 환경변수는 프로세스 전체가 공유하므로 모든 변경 시나리오를 한 시험 안에서 직렬화한다.
     #[test]
     fn surface_id_env_scenarios() {
         let cmd = Commands::Notify {
             body: "msg".to_string(),
             title: Some("T".to_string()),
+            level: "info".into(),
+            surface: None,
+            workspace: None,
         };
 
         let env = SurfaceIdEnvGuard::new();

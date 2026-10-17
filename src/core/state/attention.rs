@@ -160,14 +160,12 @@ impl EngineMut<'_> {
     }
 
     /// 하드 점유 중에는 로컬 사용자가 확인 처리할 수 없다. soft 점유는 제외한다.
-    #[cfg(any(feature = "gui", test))]
     pub(crate) fn local_attention_clear_allowed(&self, surface_id: u32) -> bool {
         !self.live.occupancy.is_hard_occupied(surface_id)
     }
 
     /// 로컬 사용자 확인에만 하드 점유 제한을 적용한다. 검증된 holder의 요청까지
     /// 막지 않도록 clear_attention 자체에는 이 제한을 두지 않는다.
-    #[cfg(any(feature = "gui", test))]
     pub(crate) fn clear_attention_local(&mut self, surface_id: u32) -> bool {
         if !self.local_attention_clear_allowed(surface_id) {
             tracing::trace!(
@@ -247,7 +245,6 @@ impl EngineMut<'_> {
 
     /// 알림을 읽음 처리하고 같은 surface의 안읽음 알림이 없으면 로컬 attention 해제를 요청한다.
     /// 하드 점유 중에는 attention이 남지만 알림의 읽음 상태는 바뀐다.
-    #[cfg(any(feature = "gui", test))]
     pub(crate) fn mark_notification_read(&mut self, id: u64) {
         let source_surface = self
             .live
@@ -265,7 +262,7 @@ impl EngineMut<'_> {
 
     /// 모든 알림을 읽음 처리한다. 이전에 안읽음 알림이 있던 surface만 해제를 요청하며
     /// 하드 점유 중인 surface의 attention은 유지한다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub(crate) fn mark_all_notifications_read(&mut self) {
         let unread_surfaces: std::collections::HashSet<u32> = self
             .live

@@ -268,12 +268,6 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "debug 전용 핸들러 파일이므로 release 빌드의 검사 대상에서 제외된다.",
     ),
     (
-        "src/app/dispatch_domain/terminal.rs",
-        Attribution,
-        2,
-        "알림을 밀어 넣을 때 어느 워크스페이스 알림인지를 채운다",
-    ),
-    (
         "src/app/dispatch_domain.rs",
         Projection,
         2,

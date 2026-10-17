@@ -225,6 +225,10 @@ pub(crate) fn engine_has_resource(engine: &EngineRef<'_>, rid: ResourceId) -> bo
 
 /// 일반 키를 먼저 찾고 없으면 메서드별 키를 찾는다. file_handler.dispatch는 명시된 origin 키만 사용한다.
 pub(crate) fn request_resource_id(method: &str, params: &serde_json::Value) -> Option<ResourceId> {
+    // Notification workspace IDs are source filters, including closed workspaces.
+    if matches!(method, "notification.counts" | "notification.read") {
+        return None;
+    }
     // 다른 부가 키가 파일 열기의 origin 대상을 바꾸지 않게 한다.
     if method == "file_handler.dispatch" {
         return method_scoped_resource_id(method, params);
@@ -251,6 +255,17 @@ pub(crate) fn unowned_target_message(rid: ResourceId, method: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn notification_source_filters_do_not_require_a_live_workspace() {
+        for method in ["notification.counts", "notification.read"] {
+            assert!(
+                request_resource_id(method, &json!({"workspace_id":999,"notification_id":7}))
+                    .is_none()
+            );
+        }
+        assert!(request_resource_id("notification.create", &json!({"workspace_id":999})).is_some());
+    }
 
     #[test]
     fn file_dispatch_origin_is_its_only_method_scoped_target() {

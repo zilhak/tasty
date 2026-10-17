@@ -83,6 +83,16 @@ const ROSTER: &[(&str, Class, &str)] = &[
         "전역 훅 등록(HookRuntimeState)은 CoreState마다 있어 합산이 필요하다. ID는 공유하며 개별 항목의 소유 창은 Kind::GlobalHook으로 찾는다.",
     ),
     (
+        "notification.counts",
+        Aggregated,
+        "레벨별 미확인 개수를 전체 engine에서 합산한다. workspace_id는 출처 필터이며 포커스와 무관하다.",
+    ),
+    (
+        "notification.read",
+        Aggregated,
+        "공유 notification ID 또는 명시적 all 범위로 전체 engine에 읽음을 적용하고 변경 수를 합산한다. workspace_id는 출처 필터다.",
+    ),
+    (
         "notification.list",
         Aggregated,
         "각 engine의 알림을 합치며 IdGenerator 공유 카운터가 ID 충돌을 막는다. 생성 ID 역순으로 전체 50개를 반환하고 UI 패널은 창별로 유지한다",

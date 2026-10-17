@@ -116,7 +116,6 @@ impl MainView {
                 send_app_event(proxy, crate::AppEvent::OpenSettings);
             }
             "toggle_notifications" => {
-                let will_open = !state.popups.is_open("notifications");
                 state.dispatch_intent(
                     UiIntent::TogglePopup {
                         id: "notifications",
@@ -124,12 +123,6 @@ impl MainView {
                     }
                     .from_user_shortcut("toggle_notifications"),
                 );
-                if will_open {
-                    state.dispatch_intent(
-                        crate::app::command::DomainIntent::MarkAllNotificationsRead
-                            .from_user_shortcut("toggle_notifications"),
-                    );
-                }
             }
             "fullscreen_stage_exit" => {
                 // 키 경로는 앞단에서 닫지만 팔레트도 같은 액션 ID로 종료할 수 있어야 한다.

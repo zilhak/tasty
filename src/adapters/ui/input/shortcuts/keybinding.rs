@@ -234,7 +234,6 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.toggle_notifications, key, mods) {
-            let will_open = !state.popups.is_open("notifications");
             state.dispatch_intent(
                 UiIntent::TogglePopup {
                     id: "notifications",
@@ -242,12 +241,6 @@ impl MainView {
                 }
                 .from_user_shortcut("toggle_notifications"),
             );
-            if will_open {
-                state.dispatch_intent(
-                    crate::app::command::DomainIntent::MarkAllNotificationsRead
-                        .from_user_shortcut("toggle_notifications"),
-                );
-            }
             return true;
         }
         if matches_any_binding(&kb.toggle_dag_list, key, mods) {

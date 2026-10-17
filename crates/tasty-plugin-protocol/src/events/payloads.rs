@@ -378,10 +378,17 @@ pub struct LanguageChanged {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct NotificationCreated {
     pub id: String,
+    /// error, warning, or info. Older hosts omit this and mean info.
+    #[serde(default = "default_notification_level")]
+    pub level: String,
     pub title: String,
     pub body: String,
     /// "host" 또는 plugin_id.
     pub source: String,
+}
+
+fn default_notification_level() -> String {
+    "info".to_owned()
 }
 
 /// `notification.dismissed` 페이로드. scope=System.
@@ -513,6 +520,17 @@ pub struct SystemShutdownInitiated {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notification_level_defaults_for_older_hosts_and_round_trips() {
+        let mut payload =
+            serde_json::json!({"id":"7","title":"Notice","body":"body","source":"host"});
+        let legacy: NotificationCreated = serde_json::from_value(payload.clone()).unwrap();
+        assert_eq!(legacy.level, "info");
+        payload["level"] = serde_json::json!("error");
+        let error: NotificationCreated = serde_json::from_value(payload.clone()).unwrap();
+        assert_eq!(serde_json::to_value(error).unwrap(), payload);
+    }
 
     #[test]
     fn surface_created_round_trip() {

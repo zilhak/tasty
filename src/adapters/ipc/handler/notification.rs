@@ -15,6 +15,7 @@ pub fn handle_notification_list(
         .map(|n| {
             json!({
                 "id": n.id,
+                "level": n.level,
                 "title": n.title,
                 "body": n.body,
                 "workspace_id": n.source_workspace,
@@ -41,6 +42,18 @@ pub fn handle_notification_create(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    let level = match params.get("level") {
+        None => crate::notification::NotificationLevel::Info,
+        Some(value) => match serde_json::from_value(value.clone()) {
+            Ok(level) => level,
+            Err(_) => {
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    "level must be error, warning, or info",
+                );
+            }
+        },
+    };
     let title = params
         .get("title")
         .and_then(|v| v.as_str())
@@ -96,9 +109,20 @@ pub fn handle_notification_create(
             }
         }
     };
+    if !engine.has_workspace(ws_id) {
+        return JsonRpcResponse::invalid_params(id, format!("workspace_id {ws_id} not found"));
+    }
+    if surface_id > 0
+        && engine
+            .find_workspace_index_for_surface(surface_id)
+            .is_none_or(|(idx, _)| engine.workspace_at(idx).is_none_or(|ws| ws.id != ws_id))
+    {
+        return JsonRpcResponse::invalid_params(id, "surface_id does not belong to workspace_id");
+    }
     // 저장과 이벤트 통지는 후속 intent 처리에 맡긴다.
     out.push(
         crate::app::command::DomainIntent::PushNotification {
+            level,
             ws_id,
             surface_id,
             title,
@@ -113,6 +137,50 @@ pub fn handle_notification_create(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn create_validates_level_and_explicit_ownership_before_enqueueing() {
+        let (_, mut session) = crate::state::tests::test_state();
+        let mut engine = session.borrow_mut();
+        let ws = engine.workspace_at(0).unwrap().id;
+        let sid = engine.workspace_at(0).unwrap().all_surface_ids()[0];
+        for params in [
+            json!({"workspace_id":ws,"level":"fatal"}),
+            json!({"workspace_id":ws,"level":null}),
+            json!({"workspace_id":u32::MAX}),
+            json!({"workspace_id":ws,"surface_id":u32::MAX}),
+        ] {
+            let mut out = crate::ipc::window_port::IntentOutbox::default();
+            assert!(
+                handle_notification_create(&mut out, &mut engine, json!(1), &params)
+                    .error
+                    .is_some()
+            );
+            assert!(out.is_empty());
+        }
+        for (level, expected) in [
+            (None, crate::notification::NotificationLevel::Info),
+            (Some("error"), crate::notification::NotificationLevel::Error),
+            (
+                Some("warning"),
+                crate::notification::NotificationLevel::Warning,
+            ),
+        ] {
+            let mut params = json!({"surface_id":sid});
+            if let Some(level) = level {
+                params["level"] = json!(level);
+            }
+            let mut out = crate::ipc::window_port::IntentOutbox::default();
+            assert!(
+                handle_notification_create(&mut out, &mut engine, json!(2), &params)
+                    .error
+                    .is_none()
+            );
+            assert!(
+                matches!(&out.into_vec()[0].body, crate::intent::Intent::Domain(crate::app::command::DomainIntent::PushNotification { level, ws_id, .. }) if *level==expected && *ws_id==ws)
+            );
+        }
+    }
 
     #[test]
     fn notification_merge_has_one_global_limit_and_matches_creation_order() {

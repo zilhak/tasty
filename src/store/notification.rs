@@ -8,8 +8,50 @@ use crate::model::{SurfaceId, WorkspaceId};
 
 type NotificationId = u64;
 
+/// User-facing notification severity, independent of logs and surface attention.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationLevel {
+    Error,
+    Warning,
+    #[default]
+    Info,
+}
+
+impl NotificationLevel {
+    #[cfg(feature = "gui")]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Info => "info",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct UnreadCounts {
+    pub error: usize,
+    pub warning: usize,
+    pub info: usize,
+}
+
+impl UnreadCounts {
+    pub fn total(self) -> usize {
+        self.error + self.warning + self.info
+    }
+
+    #[cfg(any(feature = "gui", test))]
+    pub fn add(&mut self, other: Self) {
+        self.error += other.error;
+        self.warning += other.warning;
+        self.info += other.info;
+    }
+}
+
 pub struct Notification {
     pub id: NotificationId,
+    pub level: NotificationLevel,
     pub source_workspace: WorkspaceId,
     pub source_surface: SurfaceId,
     pub title: String,
@@ -43,7 +85,8 @@ impl NotificationStore {
         }
     }
 
-    /// 같은 출처의 최근 알림에 합치면 None, 새로 추가하면 Some(id)을 반환한다.
+    /// Tests without an explicit level use the backwards-compatible info default.
+    #[cfg(test)]
     pub fn add(
         &mut self,
         source_workspace: WorkspaceId,
@@ -51,11 +94,29 @@ impl NotificationStore {
         title: String,
         body: String,
     ) -> Option<u64> {
+        self.add_with_level(
+            source_workspace,
+            source_surface,
+            title,
+            body,
+            NotificationLevel::Info,
+        )
+    }
+
+    pub fn add_with_level(
+        &mut self,
+        source_workspace: WorkspaceId,
+        source_surface: SurfaceId,
+        title: String,
+        body: String,
+        level: NotificationLevel,
+    ) -> Option<u64> {
         let now = Instant::now();
         let coalesce_window = Duration::from_millis(self.coalesce_ms);
 
         if let Some(existing) = self.notifications.iter_mut().rev().find(|n| {
-            n.source_workspace == source_workspace
+            n.level == level
+                && n.source_workspace == source_workspace
                 && n.source_surface == source_surface
                 && now.duration_since(n.timestamp) < coalesce_window
         }) {
@@ -70,6 +131,7 @@ impl NotificationStore {
                 existing.title = title;
             }
             existing.timestamp = now;
+            existing.read = false;
             return None;
         }
 
@@ -81,6 +143,7 @@ impl NotificationStore {
 
         self.notifications.push_back(Notification {
             id,
+            level,
             source_workspace,
             source_surface,
             title,
@@ -93,11 +156,44 @@ impl NotificationStore {
 
     #[cfg(any(feature = "gui", test))]
     pub fn unread_count(&self) -> usize {
-        self.notifications.iter().filter(|n| !n.read).count()
+        self.unread_counts(None).total()
     }
 
-    /// 이 surface에 읽지 않은 알림이 있는지 확인해 highlight 해제 여부를 판단한다.
-    #[cfg(any(feature = "gui", test))]
+    pub fn unread_counts(&self, workspace: Option<WorkspaceId>) -> UnreadCounts {
+        let mut counts = UnreadCounts::default();
+        for n in self
+            .notifications
+            .iter()
+            .filter(|n| !n.read && workspace.is_none_or(|id| n.source_workspace == id))
+        {
+            match n.level {
+                NotificationLevel::Error => counts.error += 1,
+                NotificationLevel::Warning => counts.warning += 1,
+                NotificationLevel::Info => counts.info += 1,
+            }
+        }
+        counts
+    }
+
+    /// Updates channel state; the engine applies the existing attention clear policy.
+    pub fn acknowledge(
+        &mut self,
+        id: Option<NotificationId>,
+        workspace: Option<WorkspaceId>,
+    ) -> usize {
+        let mut changed = 0;
+        for n in &mut self.notifications {
+            if id.is_none_or(|id| n.id == id)
+                && workspace.is_none_or(|id| n.source_workspace == id)
+                && !n.read
+            {
+                n.read = true;
+                changed += 1;
+            }
+        }
+        changed
+    }
+
     pub fn has_unread_for_surface(&self, surface_id: SurfaceId) -> bool {
         self.notifications
             .iter()
@@ -109,14 +205,13 @@ impl NotificationStore {
         self.notifications.iter()
     }
 
-    #[cfg(any(feature = "gui", test))]
     pub fn mark_read(&mut self, id: NotificationId) {
         if let Some(n) = self.notifications.iter_mut().find(|n| n.id == id) {
             n.read = true;
         }
     }
 
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn mark_all_read(&mut self) {
         for n in &mut self.notifications {
             n.read = true;
@@ -218,5 +313,82 @@ mod tests {
             store.add(1, i as u32, format!("N{}", i), "".into());
         }
         assert_eq!(store.all().len(), 100);
+    }
+}
+
+#[cfg(test)]
+mod level_tests {
+    use super::*;
+
+    #[test]
+    fn levels_coalesce_independently_and_new_content_reopens_read_item() {
+        let mut store = NotificationStore::with_coalesce_ms(60_000);
+        let error = store
+            .add_with_level(
+                1,
+                10,
+                "Error".into(),
+                "first".into(),
+                NotificationLevel::Error,
+            )
+            .unwrap();
+        store.add_with_level(
+            1,
+            10,
+            "Warning".into(),
+            String::new(),
+            NotificationLevel::Warning,
+        );
+        store.add(1, 10, "Info".into(), String::new());
+        assert_eq!(
+            store.unread_counts(None),
+            UnreadCounts {
+                error: 1,
+                warning: 1,
+                info: 1
+            }
+        );
+        assert_eq!(store.acknowledge(Some(error), None), 1);
+        assert_eq!(
+            store.add_with_level(
+                1,
+                10,
+                "Error".into(),
+                "second".into(),
+                NotificationLevel::Error
+            ),
+            None
+        );
+        assert_eq!(store.all().len(), 3);
+        assert_eq!(store.unread_counts(None).error, 1);
+        let row = store.all().find(|n| n.id == error).unwrap();
+        assert_eq!(row.body, "first\nsecond");
+        assert!(!row.read);
+    }
+
+    #[test]
+    fn counts_include_rows_outside_list_limit_and_follow_eviction_and_scope() {
+        let mut store = NotificationStore::with_coalesce_ms(0);
+        for i in 0..110 {
+            store.add_with_level(
+                if i < 60 { 1 } else { 2 },
+                i,
+                String::new(),
+                String::new(),
+                NotificationLevel::Warning,
+            );
+        }
+        assert_eq!(store.unread_counts(None).total(), 100);
+        assert_eq!(store.unread_counts(Some(1)).warning, 50);
+        assert_eq!(store.acknowledge(None, Some(1)), 50);
+        assert_eq!(store.unread_counts(None).warning, 50);
+        assert_eq!(store.acknowledge(None, Some(1)), 0);
+        let mut merged = store.unread_counts(None);
+        merged.add(UnreadCounts {
+            error: 2,
+            warning: 0,
+            info: 3,
+        });
+        assert_eq!(merged.total(), 55);
     }
 }

@@ -363,6 +363,7 @@ pub fn enqueue_approval(
     let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄 처리.
     state.dispatch_intent(
         crate::app::command::DomainIntent::PushNotification {
+            level: crate::notification::NotificationLevel::Info,
             ws_id: workspace,
             surface_id: surface,
             title: format!("{severity_prefix}{}", record.request.title),

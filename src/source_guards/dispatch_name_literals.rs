@@ -16,6 +16,7 @@ use super::{
 
 /// request.method로 분기하는 라우터 파일. 시험의 리터럴 분기도 같은 문법 검사를 받는다.
 const ROUTERS: &[&str] = &[
+    "crates/tasty-cli/src/contract.rs",
     "src/app/journal.rs",
     "src/app/journal/commands.rs",
     "src/app/journal/commands/headless.rs",

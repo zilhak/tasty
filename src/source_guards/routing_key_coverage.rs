@@ -22,6 +22,10 @@ const MIN_HANDLER_FILES: usize = 50;
 
 /// id 형태이지만 요청의 라우팅 대상이 아닌 키와 그 사유.
 pub(super) const NOT_A_ROUTING_TARGET: &[(&str, &str)] = &[
+    (
+        "notification_id",
+        "notification.read는 공유 ID를 모든 engine에서 찾는 전역 처리다. workspace_id도 출처 필터이며 닫힌 출처를 허용한다.",
+    ),
     ("agent_id", "session.* 의 agent 이름(문자열)"),
     ("attempt_id", "agent task 실행 회차 이름(문자열)"),
     ("banner_id", "debug 배너 식별자(문자열)"),

@@ -44,6 +44,7 @@ mod memory;
 mod message;
 mod meta;
 pub(crate) mod notification;
+pub(crate) mod notification_channel;
 // 창별 목록을 호스트에서 합산할 수 있도록 공개한다.
 pub(crate) mod output;
 pub(crate) mod pane;
@@ -734,6 +735,12 @@ fn route_engine_handler(
         "message.read" => message::handle_message_read(core, engine, id, &request.params),
         "message.count" => message::handle_message_count(engine, id, &request.params),
         "message.clear" => message::handle_message_clear(core, engine, id, &request.params),
+        "notification.counts" | "notification.read" => notification_channel::handle(
+            engine,
+            id,
+            &request.params,
+            request.method == "notification.read",
+        ),
         "notification.list" => notification::handle_notification_list(&engine.as_ref(), id),
         "notification.create" => {
             notification::handle_notification_create(out, engine, id, &request.params)

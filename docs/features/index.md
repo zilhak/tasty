@@ -36,7 +36,7 @@ Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces
 | [listening-ports](listening-ports/index.md) — 리스닝 포트 뷰어 | 로컬 사용자 | [팝업](listening-ports/index.md#화면) |
 | [keybindings](keybindings/index.md) — 단축키 (KeybindingSettings 도메인) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [clipboard](clipboard/index.md) — 클립보드 (복사/붙여넣기/선택·접근 실패 안내) | 로컬 사용자 | [뷰어 plugin](../plugins/clipboard-viewer/index.md) |
-| [notifications](notifications/index.md) — 알림 (전역 IPC 목록·창별 패널/배지) | 로컬 사용자 · AI Agent | 패널 popup |
+| [notifications](notifications/index.md) — 알림 (3레벨·전역 IPC 집계/읽음·창별 패널) | 로컬 사용자 · AI Agent | 패널 popup |
 | [surface-highlight](surface-highlight/index.md) — Surface 주의 환기 (공유 상태·3채널·completion) | AI Agent · 로컬 사용자 | 없음 (테두리/탭/배지) |
 | [file-handler](file-handler/index.md) — 파일 핸들러 (식별→디스패치, origin 소유권·탭 선택 보존) | 로컬 사용자 · AI Agent · plugin | [설정 탭](settings/screens/settings.md) · picker |
 | [native-file-picker](native-file-picker/index.md) — 네이티브 파일 피커 (로컬+원격 겸용, Tools 메뉴 · 탭 스트립 메뉴 "새 HTML..." · plugin 트리거 · 설정 창 안의 로컬 전용 재사용 · 긴 파일명 말줄임 · 부모 범위 상속과 숨김 보존) | 로컬 사용자 · plugin | popup (갤러리 specimen) |

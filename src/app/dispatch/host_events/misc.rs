@@ -23,9 +23,11 @@ pub(super) fn emit_notification_created(
     title: String,
     body: String,
     source: String,
+    level: crate::notification::NotificationLevel,
 ) {
     let payload = NotificationCreated {
         id: id.to_string(),
+        level: level.as_str().to_owned(),
         title,
         body,
         source,

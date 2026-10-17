@@ -6640,3 +6640,33 @@ target_size = "대상 크기"
 target_modified = "대상 수정 시각"
 target_missing = "대상을 찾을 수 없음"
 partial = "일부 폴더를 읽지 못함"
+
+[cli.help._root.notify.arg.level]
+help = "알림 레벨"
+
+[cli.help._root.notify.arg.surface]
+help = "출처 서피스 ID"
+
+[cli.help._root.notify.arg.workspace]
+help = "출처 워크스페이스 ID"
+
+[cli.help._root.notification]
+about = "알림 조회 및 읽음 처리"
+
+[cli.help._root.notification.counts]
+about = "모든 윈도우의 미확인 알림을 레벨별로 집계"
+
+[cli.help._root.notification.counts.arg.workspace]
+help = "닫힌 워크스페이스를 포함해 출처 워크스페이스 ID로 필터"
+
+[cli.help._root.notification.read]
+about = "알림을 읽음 처리"
+
+[cli.help._root.notification.read.arg.id]
+help = "list notifications에서 조회한 알림 ID"
+
+[cli.help._root.notification.read.arg.all]
+help = "선택한 범위의 모든 알림을 읽음 처리"
+
+[cli.help._root.notification.read.arg.workspace]
+help = "닫힌 워크스페이스를 포함해 출처 워크스페이스 ID로 필터"

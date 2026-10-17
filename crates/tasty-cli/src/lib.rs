@@ -186,6 +186,20 @@ pub enum Commands {
         /// carry an English default of its own.
         #[arg(long)]
         title: Option<String>,
+        /// Notification level
+        #[arg(long, value_parser = ["error", "warning", "info"], default_value = "info")]
+        level: String,
+        /// Source surface ID
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Source workspace ID
+        #[arg(long)]
+        workspace: Option<u32>,
+    },
+    /// Query and acknowledge notifications
+    Notification {
+        #[command(subcommand)]
+        command: NotificationCommands,
     },
     /// Remove resources (hook, global-hook)
     Unset {

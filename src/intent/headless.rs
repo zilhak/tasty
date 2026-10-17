@@ -221,13 +221,14 @@ fn handle_core_event(core: &AppServices, engine: &mut EngineMut<'_>, event: Core
     match event {
         CoreEvent::SettingsUpdated(new_settings) => apply_settings(core, engine, new_settings),
         CoreEvent::NotificationPushRequested {
+            level,
             ws_id,
             surface_id,
             title,
             body,
             // 헤드리스에서는 알림음을 재생하지 않는다.
             source: _,
-        } => push_notification(engine, ws_id, surface_id, title, body),
+        } => push_notification(engine, ws_id, surface_id, title, body, level),
         CoreEvent::TerminalMarkSet { surface_id } => {
             if let Some(t) = engine.find_terminal_by_id_mut(surface_id) {
                 t.set_mark();
@@ -269,6 +270,7 @@ fn push_notification(
     surface_id: u32,
     title: String,
     body: String,
+    level: crate::notification::NotificationLevel,
 ) {
     if !engine.has_workspace(ws_id) {
         tracing::warn!(ws_id, "NotificationPushRequested: workspace not found");
@@ -277,7 +279,7 @@ fn push_notification(
     if engine
         .live
         .notifications
-        .add(ws_id, surface_id, title, body)
+        .add_with_level(ws_id, surface_id, title, body, level)
         .is_some()
     {
         // 기존 알림에 합친 경우에는 attention을 다시 올리지 않는다.

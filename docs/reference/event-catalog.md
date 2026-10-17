@@ -188,7 +188,7 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 | `ime.composition_start` / `_end` | surface | Experimental | `surface_id` / `surface_id, committed_text` |
 | `theme.changed` | system | Stable | `theme_id` |
 | `language.changed` | system | Stable | `language_code` |
-| `notification.created` | system | Stable | `id, title, body, source` |
+| `notification.created` | system | Stable | `id, level, title, body, source` |
 | `notification.dismissed` | system | **Planned**(예약, 아직 발행하지 않음) | `id` |
 | `hook.fired` | surface/system | Experimental | `hook_id, event_kind, surface_id?, payload` |
 | `system.startup_complete` | system | Stable | `{}` |

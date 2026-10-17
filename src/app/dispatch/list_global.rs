@@ -19,6 +19,42 @@ impl App {
     ) -> Option<JsonRpcResponse> {
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);
         match request.method.as_str() {
+            "notification.counts" | "notification.read" => {
+                let read = request.method == "notification.read";
+                let selected = match crate::ipc::handler::notification_channel::selection(
+                    &request.params,
+                    read,
+                ) {
+                    Ok(value) => value,
+                    Err(message) => return Some(JsonRpcResponse::invalid_params(id, message)),
+                };
+                let mut counts = crate::notification::UnreadCounts::default();
+                let mut found = selected.id.is_none();
+                let mut changed = 0;
+                for (_, mut engine) in engines_mut!(self).sessions() {
+                    if read {
+                        let (has_id, updated) =
+                            crate::ipc::handler::notification_channel::acknowledge(
+                                &mut engine,
+                                &selected,
+                            );
+                        found |= has_id;
+                        changed += updated;
+                    } else {
+                        counts.add(engine.live.notifications.unread_counts(selected.workspace));
+                    }
+                }
+                if changed > 0 {
+                    for (_, main, _) in engines_mut!(self).window_pairs() {
+                        main.base.state.dirty = true;
+                    }
+                }
+                Some(if read {
+                    crate::ipc::handler::notification_channel::read_response(id, found, changed)
+                } else {
+                    crate::ipc::handler::notification_channel::counts_response(id, counts)
+                })
+            }
             "notification.list" => {
                 // A row outside its engine's newest 50 cannot be in the global top 50.
                 let rows = one(self.merge_fields(

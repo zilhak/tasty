@@ -46,7 +46,7 @@ alias는 canonical 이름으로 판정·집계한다.
 |------|-----------------|----------------|
 | `surface.read` | 트리·메타 조회 (`tree` · `workspace.list` · `tab.list` · `surface.list` · `surface.meta.get` · `hook.list` · `message.read` · `recent.query` 등) | — |
 | `surface.write` | 트리 변경 (`workspace.create` · `tab.create` · `tab.close` · `split` · `surface.close` · `surface.set_cwd` · `surface.meta.set` · `hook.set` · `message.send` 등) | — |
-| `notification` | `notification.create` · `notification.list` · `surface.completion` · `surface.attention.get` · `surface.attention.clear` | — |
+| `notification` | `notification.create` · `notification.list` · `notification.counts` · `notification.read` · `surface.completion` · `surface.attention.get` · `surface.attention.clear` | — |
 | `clipboard.read` | `image.paste` **하나뿐** | — |
 | `clipboard.write` | `clipboard.set_text` | — |
 | `fs.read` | `file_handler.dispatch` · `image.open` · `image.reload` · `markdown.navigate` · `git_viewer.query` · `markdown_mirror.content_request` · `file_picker.trigger` | — |

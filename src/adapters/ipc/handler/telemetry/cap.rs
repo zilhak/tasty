@@ -527,6 +527,7 @@ pub(super) fn fire_notify(
     );
     out.push(
         crate::app::command::DomainIntent::PushNotification {
+            level: crate::notification::NotificationLevel::Warning,
             ws_id,
             surface_id: 0,
             title,

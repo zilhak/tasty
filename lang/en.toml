@@ -6706,3 +6706,33 @@ target_size = "Target size"
 target_modified = "Target modified"
 target_missing = "Target not found"
 partial = "Some folders couldn't be read"
+
+[cli.help._root.notify.arg.level]
+help = "Notification level"
+
+[cli.help._root.notify.arg.surface]
+help = "Source surface ID"
+
+[cli.help._root.notify.arg.workspace]
+help = "Source workspace ID"
+
+[cli.help._root.notification]
+about = "Query and acknowledge notifications"
+
+[cli.help._root.notification.counts]
+about = "Count unread notifications by level across all windows"
+
+[cli.help._root.notification.counts.arg.workspace]
+help = "Filter by source workspace ID, including closed workspaces"
+
+[cli.help._root.notification.read]
+about = "Mark notifications read"
+
+[cli.help._root.notification.read.arg.id]
+help = "Notification ID from list notifications"
+
+[cli.help._root.notification.read.arg.all]
+help = "Acknowledge every notification in the selected scope"
+
+[cli.help._root.notification.read.arg.workspace]
+help = "Filter by source workspace ID, including closed workspaces"

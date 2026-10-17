@@ -17,12 +17,14 @@ impl AppServices {
                 Ok(vec![CoreEvent::SettingsUpdated(new_settings)])
             }
             DomainIntent::PushNotification {
+                level,
                 ws_id,
                 surface_id,
                 title,
                 body,
                 source,
             } => Ok(vec![CoreEvent::NotificationPushRequested {
+                level,
                 ws_id,
                 surface_id,
                 title,
@@ -34,8 +36,8 @@ impl AppServices {
                 Ok(vec![CoreEvent::NotificationReadRequested { id }])
             }
             #[cfg(feature = "gui")]
-            DomainIntent::MarkAllNotificationsRead => {
-                Ok(vec![CoreEvent::AllNotificationsReadRequested])
+            DomainIntent::MarkAllNotificationsRead { ids } => {
+                Ok(vec![CoreEvent::AllNotificationsReadRequested { ids }])
             }
             #[cfg(feature = "gui")]
             DomainIntent::SurfaceCwdChanged {

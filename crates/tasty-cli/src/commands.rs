@@ -12,6 +12,7 @@ pub mod list_set;
 pub mod memory;
 pub mod move_send;
 pub mod new_close;
+pub mod notification;
 pub mod output;
 pub mod passkey;
 pub mod plugin_cmd;
@@ -50,6 +51,7 @@ pub use memory::{
 };
 pub use move_send::{MoveCommands, SendCommands};
 pub use new_close::{CloseCommands, NewCommands};
+pub use notification::NotificationCommands;
 pub use output::{OutputCommands, OutputObserveCommands};
 pub use plugin_cmd::{ExtensionCommands, PluginCommands, ToolCommands};
 pub use preset::PresetCommands;

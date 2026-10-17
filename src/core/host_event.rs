@@ -78,6 +78,7 @@ pub enum PendingHostEvent {
     /// 알림 source는 host 또는 생성한 plugin ID다.
     NotificationCreated {
         id: u64,
+        level: crate::notification::NotificationLevel,
         title: String,
         body: String,
         source: String,
