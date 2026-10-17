@@ -628,7 +628,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(Read, &[Notification])),
         ("notification.counts", plugin(Read, &[Notification])),
-        ("notification.read", plugin(Mutate, &[Notification])),
+        (
+            "notification.read",
+            plugin(Mutate, &[Notification]).kept_by_app_layer(),
+        ),
         ("notification.create", plugin(Mutate, &[Notification])),
         // ── settings (plugin 이 자기 plugin_settings 값을 read-back) ──────
         // [[contributes.settings_pages]] 를 선언하려면 이미 UiSettingsPage 권한이

@@ -55,6 +55,33 @@ impl App {
             return IpcStep::Handled;
         }
 
+        // Global acknowledgment bypasses the engine handler that normally retains keys.
+        // It is synchronous, so retain its result before publishing the response.
+        if cmd.request.method == "notification.read" {
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            let response = match host_ipc::handler::idempotency::begin(
+                std::time::Instant::now(),
+                checked.caller(),
+                &cmd.request,
+                &id,
+            ) {
+                Ok(pending) => {
+                    let response = self
+                        .dispatch_list_global(&cmd.request)
+                        .expect("notification.read has a global handler");
+                    host_ipc::handler::idempotency::finish(
+                        std::time::Instant::now(),
+                        pending,
+                        &response,
+                    );
+                    response
+                }
+                Err(response) => response,
+            };
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+
         if let Some(resp) = self.dispatch_list_global(&cmd.request) {
             send_response(&cmd.response_tx, resp);
             return IpcStep::Handled;

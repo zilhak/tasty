@@ -87,7 +87,11 @@ headless는 소리를 내지 않는다. 기존 항목에 합쳐진 알림과 터
 `notification.read`는 `notification_id` 하나 또는 `all:true` 중 하나를 반드시 받는다.
 선택적 `workspace_id`로 출처 범위를 좁힌다. `all:true`에 필터가 없으면 인스턴스의 모든
 engine이 대상이다. 응답은 `{read:true, changed:N}`이며 이미 읽은 항목은 변경 수에 넣지 않는다.
-ID가 해당 범위에 없으면 오류다. 읽음은 기존 surface attention 해제 규칙을 따르며 hard 점유
+ID가 해당 범위에 없으면 오류다. `idempotency_key`를 붙인 읽음은 GUI와 headless 모두
+첫 응답을 보관한다. GUI에서는 engine 핸들러 전에 실행하므로 App 층의
+`Kept { since: 2 }`를 선언하고 공통 저장소의 begin/finish를 사용한다. 같은 키·같은 인자의 재시도는 `idempotent_replay:true`로 원래 응답을
+돌려주며 그 사이 도착한 알림을 읽지 않는다. 같은 키에 다른 인자를 보내면 `-32063`이다.
+읽음은 기존 surface attention 해제 규칙을 따르며 hard 점유
 surface는 해제하지 않는다. 사용자 포커스·팝업 열림 상태는 바꾸지 않는다. headless도 같은 계약이다.
 
 `notification.created` 이벤트에도 `level`을 전달한다. 새 CLI의 error/warning 생성은

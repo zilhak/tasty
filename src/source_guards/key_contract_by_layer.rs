@@ -27,6 +27,7 @@ const GUI_ROUTING: &str = "src/app/ipc/routing.rs";
 const HEADLESS_DISPATCH: &str = "src/boot/headless_dispatch.rs";
 const GUI_APP_STEP: &str = "src/app/ipc/app_methods.rs";
 const GUI_APP_FN: &str = "fn ipc_step_app_methods";
+const GUI_GLOBAL_STEP: &str = "src/app/dispatch/list_global.rs";
 /// GUI debug 메서드 이름을 수집할 파일들.
 const GUI_DEBUG_STEPS: &[&str] = &["src/app/ipc/debug_methods.rs", GUI_WINDOW_STEP];
 const GUI_WINDOW_STEP: &str = "src/app/ipc/window_required.rs";
@@ -127,7 +128,12 @@ fn gui_app_step_mutations() -> BTreeSet<&'static str> {
     let src = read(GUI_APP_STEP);
     let body = fn_body(&src, GUI_APP_FN)
         .unwrap_or_else(|| panic!("{GUI_APP_STEP} 에서 `{GUI_APP_FN}` 본문을 못 잘랐다"));
-    mutating(&method_literals(&strip_comments(&body)))
+    let mut mutations = mutating(&method_literals(&strip_comments(&body)));
+    let global = read(GUI_GLOBAL_STEP);
+    let body = fn_body(&global, "fn dispatch_list_global")
+        .expect("global engine dispatcher must remain visible to the contract guard");
+    mutations.extend(mutating(&method_literals(&strip_comments(&body))));
+    mutations
 }
 
 fn gui_debug_step_mutations() -> BTreeSet<&'static str> {
