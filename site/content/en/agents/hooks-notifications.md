@@ -1,4 +1,4 @@
-<!-- source-hash: 325d39c21435 -->
+<!-- source-hash: e7f30c397a76 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -142,7 +142,7 @@ Use `notify --workspace 12` for an alert without a Surface. This does not add a 
 ### Where they appear
 
 - **Sidebar notification summary** — just above Tools, badges show unread errors (red), warnings (yellow), and information (blue). Zero counts are hidden and counts above 99 appear as `99+`. The expanded sidebar also shows the latest unread title. Click the summary to open the notification panel.
-- **Notification panel** — open it from the summary or with `Ctrl+Shift+I`. The newest-first list shows level, title, body, source, and elapsed time. Opening or closing the panel keeps unread notifications unchanged. Click a row or **More** to expand the full text and mark that notification as read. Use the check button for one notification or **Mark all read** for that window. **Jump** takes you to the source Surface or Workspace. A closed source keeps its notification history, with Jump disabled. The title bar lets you switch to fullscreen. New notifications do not open the panel automatically or scroll the list back to the top.
+- **Notification panel** — open it from the summary or with `Ctrl+Shift+I`. The newest-first list shows level, title, body, source, and elapsed time. Opening or closing the panel keeps unread notifications unchanged. Click a row or **More** to expand the full text and mark that notification as read. Use the check button for one notification or **Mark all read** for that window. **Jump** takes you to the source Surface or Workspace. A closed source keeps its notification history, with Jump disabled. The title bar lets you switch to fullscreen. New notifications do not open the panel automatically or scroll the list back to the top. Your reading position also stays in place when new content is merged into an existing notification and makes its body longer.
 - **Surface border** — a blue border on the Surface where the notification occurred. It disappears when you focus that Surface while the Tasty window is active. While you are in another app it stays, and it disappears when you return to the window.
 - **Sidebar badge** — a count badge on the row of any Workspace that has a Surface needing attention.
 - **Sound** — when enabled in settings, one system beep per notification.

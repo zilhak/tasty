@@ -99,3 +99,45 @@ fn arrival_keeps_the_visible_item_and_closing_the_stage_discards_the_anchor() {
         "opening after stage close starts at the top"
     );
 }
+
+#[test]
+fn coalesced_arrival_keeps_existing_visible_row() {
+    let ctx = Context::default();
+    let mut panel = NotificationPanelState::default();
+    let mut rows = vec![
+        row(5, "Fifth"),
+        row(4, "Fourth"),
+        row(3, "Third"),
+        row(2, "Second"),
+        row(1, "First"),
+    ];
+    rows[0].body = "";
+    let (id, _) = frame(&ctx, &mut panel, &rows);
+    let mut scroll = ScrollState::load(&ctx, id).unwrap();
+    scroll.offset.y = 100.0;
+    scroll.store(&ctx, id);
+    let (_, before) = frame(&ctx, &mut panel, &rows);
+    // The store preserves ID/order when a new notification coalesces with this row.
+    rows[0].body = "New content that wraps into multiple lines above the viewport, delivered by a coalesced notification.";
+    let (_, after) = frame(&ctx, &mut panel, &rows);
+    let before_y = title_y(&before, "Third");
+    let after_y = title_y(&after, "Third");
+    assert!(
+        (before_y - after_y).abs() < 0.1,
+        "coalesced arrival moved visible row: {before_y} -> {after_y}"
+    );
+    rows[0].body = "";
+    let (_, shorter) = frame(&ctx, &mut panel, &rows);
+    assert!(
+        (title_y(&shorter, "Third") - before_y).abs() < 0.1,
+        "shrinking a row above the viewport must also preserve the visible row"
+    );
+    let mut scroll = ScrollState::load(&ctx, id).unwrap();
+    scroll.offset.y += 20.0;
+    scroll.store(&ctx, id);
+    let (_, moved) = frame(&ctx, &mut panel, &rows);
+    assert!(
+        (title_y(&moved, "Third") - (before_y - 20.0)).abs() < 0.1,
+        "unchanged layout must not undo the user's scroll"
+    );
+}

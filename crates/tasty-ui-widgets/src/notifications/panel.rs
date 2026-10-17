@@ -4,7 +4,7 @@ use crate::{Button, ButtonVariant, ControlSize};
 #[derive(Clone, Debug, Default)]
 pub struct NotificationPanelState {
     pub expanded: Option<u64>,
-    previous_order: Vec<u64>,
+    previous_layout: Vec<(u64, LogicalPx)>,
     anchor: Option<(u64, LogicalPx)>,
     viewport_width: Option<LogicalPx>,
 }
@@ -120,7 +120,6 @@ pub fn notification_panel(
         .zip(&plans)
         .map(|(row, plan)| (row.id, plan.height))
         .collect();
-    let order: Vec<_> = rows.iter().map(|r| r.id).collect();
     let mut scroll = egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .drag_to_scroll(false);
@@ -128,8 +127,9 @@ pub fn notification_panel(
     let scroll_id = ui.make_persistent_id(egui::Id::new("scroll_area"));
     let was_scrolled = egui::containers::scroll_area::State::load(ui.ctx(), scroll_id)
         .is_some_and(|s| s.offset.y > 0.0);
+    // Coalescing keeps the ID but can grow a row above the viewport.
     if was_scrolled
-        && order != state.previous_order
+        && heights != state.previous_layout
         && let Some(anchor) = state.anchor
         && let Some(offset) = anchor_offset(&heights, anchor)
     {
@@ -170,7 +170,7 @@ pub fn notification_panel(
             y += *height;
         }
     }
-    state.previous_order = order;
+    state.previous_layout = heights;
     for action in &mut actions {
         if let NotificationAction::Toggle(id) = *action {
             if state.expanded == Some(id) {
