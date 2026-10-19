@@ -205,6 +205,138 @@ pub(crate) mod test_support {
     }
 }
 
+/// 저장이 막혀 있는 동안 결과는 대기이고, 저장이 끝나면 원 결과가 한 번 나오는지 실제 적용 경로로 본다.
+#[cfg(test)]
+mod boundary_tests {
+    use super::*;
+    use std::sync::Mutex;
+    use std::sync::mpsc::{Receiver, Sender, channel};
+
+    /// `save`에 들어오면 알리고, 풀어 줄 때까지 기다린다.
+    struct GatedStorage {
+        entered: Mutex<Sender<Settings>>,
+        release: Mutex<Receiver<()>>,
+        fail: bool,
+        files: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl tasty_settings::SettingsStorage for GatedStorage {
+        fn load(&self) -> Settings {
+            Settings::default()
+        }
+
+        fn save(&self, settings: &Settings) -> anyhow::Result<()> {
+            self.entered
+                .lock()
+                .unwrap()
+                .send(settings.clone())
+                .expect("observer alive");
+            self.release.lock().unwrap().recv().expect("released");
+            if self.fail {
+                anyhow::bail!("config.toml is not writable");
+            }
+            self.files.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    fn run(fail: bool) {
+        use std::sync::atomic::Ordering;
+        let (entered_tx, entered_rx) = channel();
+        let (release_tx, release_rx) = channel();
+        let files = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let storage = Arc::new(GatedStorage {
+            entered: Mutex::new(entered_tx),
+            release: Mutex::new(release_rx),
+            fail,
+            files: files.clone(),
+        });
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core_builder()
+            .with_settings_storage(storage)
+            .build()
+            .expect("test AppServices");
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
+        let wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = wakes.clone();
+        let (done, wait) = pair(Arc::new(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }));
+        let intent = crate::app::command::DomainIntent::ChangeSettings {
+            change: SettingsChange::RemoteTransfer {
+                dir: None,
+                max_mb: Some(4242),
+            },
+            done,
+        }
+        .from_agent_ipc();
+
+        // 저장 안에서 막힌 동안 다른 스레드가 결과와 파일 완료를 본다.
+        let observer_files = files.clone();
+        let observer = std::thread::spawn(move || {
+            let mut wait = wait;
+            let saving = entered_rx.recv().expect("save entered");
+            assert_eq!(saving.remote_transfer.max_mb, 4242);
+            assert!(
+                matches!(wait.poll(), SettingsPoll::Pending),
+                "no answer while the save is still running"
+            );
+            assert_eq!(observer_files.load(Ordering::SeqCst), 0);
+            release_tx.send(()).expect("storage waits");
+            wait
+        });
+        crate::intent::headless::apply_one_for_test(&mut core, &mut state, &mut engine, intent);
+        let mut wait = observer.join().expect("observer");
+
+        assert_eq!(
+            engine.runtime.settings.remote_transfer.max_mb, 4242,
+            "applied to memory whether or not the save succeeded"
+        );
+        let SettingsPoll::Ready(outcome) = wait.poll() else {
+            panic!("the result arrives after the save");
+        };
+        let response = crate::ipc::handler::deferred::settings_outcome_response(
+            serde_json::json!(1),
+            Some(outcome),
+            |id, changed, settings| {
+                tasty_ipc::protocol::JsonRpcResponse::success(
+                    id,
+                    serde_json::json!({ "changed": changed, "max_mb": settings.remote_transfer.max_mb }),
+                )
+            },
+        );
+        if fail {
+            let error = response.error.expect("a failed save is not a success");
+            assert_eq!(
+                error.data.unwrap(),
+                serde_json::json!({ "applied": true, "saved": false })
+            );
+            assert_eq!(files.load(Ordering::SeqCst), 0);
+        } else {
+            assert_eq!(
+                response.result.unwrap(),
+                serde_json::json!({ "changed": true, "max_mb": 4242 })
+            );
+            assert_eq!(files.load(Ordering::SeqCst), 1);
+        }
+        assert_eq!(wakes.load(Ordering::SeqCst), 1, "woken once");
+        assert!(
+            matches!(wait.poll(), SettingsPoll::Dropped),
+            "answered once"
+        );
+    }
+
+    #[test]
+    fn a_held_save_keeps_the_answer_pending_then_reports_success_once() {
+        run(false);
+    }
+
+    #[test]
+    fn a_held_save_keeps_the_answer_pending_then_reports_the_failure_once() {
+        run(true);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

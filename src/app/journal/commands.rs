@@ -73,6 +73,33 @@ pub(crate) struct SettingsCompletion {
     pub(crate) response: JsonRpcResponse,
 }
 
+#[cfg(feature = "gui")]
+impl SettingsCompletion {
+    /// 성공이면 적용할 설정과 결과를 기다리는 요청을 돌려준다. 초기화가 실패했으면 설정을 적용하지 않고
+    /// 기다리는 요청에 거절을 넣은 뒤, 공통 오류 보고에 쓸 출처와 사유를 돌려준다.
+    pub(crate) fn into_settings(
+        self,
+    ) -> Result<
+        (
+            crate::settings::Settings,
+            crate::intent::IntentOrigin,
+            Option<crate::app::settings_change::SettingsDone>,
+        ),
+        (crate::intent::IntentOrigin, String),
+    > {
+        if let Some(error) = self.response.error {
+            if let Some(done) = self.done {
+                done.finish(crate::app::settings_change::SettingsOutcome::Rejected(
+                    format!("category reset failed: {}", error.message),
+                ));
+            }
+            return Err((self.origin, error.message));
+        }
+        let settings = *self.settings.expect("successful settings continuation");
+        Ok((settings, self.origin, self.done))
+    }
+}
+
 #[allow(clippy::large_enum_variant)] // reason: 처리 중 요청만 담는 맵이라 MAX_PENDING(64)으로 상한이 걸려 있다 — 낭비는 몇 KB로 묶이고 Box 는 요청마다 붙는다
 enum Reply {
     Resume(live_resume::Resume),

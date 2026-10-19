@@ -525,6 +525,65 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
     assert_eq!(session.core_state.local_workspaces()[0].category, 0);
 }
 
+/// category 초기화가 journal 오류로 끝나면 기다리는 요청은 거절을 받고 설정은 적용되지 않는다.
+#[cfg(feature = "gui")]
+#[test]
+fn failed_settings_reset_rejects_the_waiting_request_without_applying_the_settings() {
+    let (mut session, mut journal) = boot();
+    let before = session.runtime.settings.general.startup_command.clone();
+    let mut target = session.runtime.settings.clone();
+    target.general.workspace_categories_enabled = false;
+    target.general.startup_command = "must-not-apply".into();
+    let generation = journal.note_settings_intent().unwrap();
+    let (done, mut wait) = crate::app::settings_change::pair(std::sync::Arc::new(|| {}));
+    // 없는 stream 을 가리켜 reset 이 journal 오류로 끝나게 한다.
+    journal.admit_settings_reset(
+        generation,
+        vec![StreamCommand {
+            stream: "missing-stream-for-reset".into(),
+            command: tasty_core::StructuralCommand::ResetCategories,
+        }],
+        target,
+        &crate::intent::IntentOrigin::System,
+        Some(done),
+    );
+    let mut stall = StallBudget::new(&journal);
+    while !journal.commands.pending.is_empty() {
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+        stall.nap("failed settings reset");
+    }
+    assert!(
+        matches!(
+            wait.poll(),
+            crate::app::settings_change::SettingsPoll::Pending
+        ),
+        "the journal completion alone does not answer the request"
+    );
+    let mut completions = journal.take_settings_results();
+    assert_eq!(completions.len(), 1);
+    let completion = completions.pop().unwrap();
+    assert!(completion.response.error.is_some(), "the reset failed");
+    let Err((_, message)) = completion.into_settings() else {
+        panic!("a failed reset yields no settings to apply");
+    };
+    assert!(!message.is_empty());
+    let crate::app::settings_change::SettingsPoll::Ready(
+        crate::app::settings_change::SettingsOutcome::Rejected(reason),
+    ) = wait.poll()
+    else {
+        panic!("the waiting request is rejected");
+    };
+    assert!(reason.starts_with("category reset failed"), "{reason}");
+    assert_eq!(session.runtime.settings.general.startup_command, before);
+    assert!(
+        matches!(
+            wait.poll(),
+            crate::app::settings_change::SettingsPoll::Dropped
+        ),
+        "the request is answered once"
+    );
+}
+
 #[cfg(feature = "gui")]
 #[test]
 fn fixed_intent_budget_counts_its_commands_and_rejects_before_admission_without_losing_capacity() {
