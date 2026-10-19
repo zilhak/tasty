@@ -14,7 +14,7 @@ ESC·Enter처럼 당연하게 쓰이는 기본 조작을 제외한 Tasty 자체 
 
 ### 액션 ↔ 바인딩 목록
 
-각 액션은 **바인딩 문자열의 `Vec`** 를 가진다(다중 바인딩 — 한 액션에 여러 키 조합 허용). 예: `copy`, `paste`, `enter_copy_mode`, `apply_workspace_preset` 등. 빈 `vec` 이면 그 액션엔 단축키가 없다(메뉴엔 단축키 없는 항목으로 표시).
+각 액션은 **바인딩 문자열의 `Vec`** 를 가진다(다중 바인딩 — 한 액션에 여러 키 조합 허용). 예: `copy`, `paste`, `enter_copy_mode`, `apply_workspace_preset` 등. 빈 `vec` 이면 그 액션엔 단축키가 없다(메뉴엔 단축키 없는 항목으로 표시). OS 메뉴 항목에는 첫 조합만 key equivalent 로 표시되며, 나머지 조합도 단축키 경로에서 실행된다. macOS 창 최소화·확대·닫기는 첫 조합을 메뉴가, 나머지를 단축키 경로가 실행한다([키 매핑 정책](../../design/policies/key-mapping.md#os-메뉴-key-equivalent)).
 
 바인딩 문자열은 **OS 독립 표기**다 — 위치 기반 추상화로 macOS 에선 `alt`→⌘ 등으로 매핑된다([key-mapping](../../design/policies/key-mapping.md)). 쓸 수 있는 키 토큰(문자 하나, `plus`·`minus`·`equals`, `f1`~`f24` 를 포함한 이름 키)은 [바인딩 문자열 문법](../../design/policies/key-mapping.md#바인딩-문자열-문법)에 있다.
 

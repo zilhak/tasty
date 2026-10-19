@@ -9,6 +9,7 @@ mod numeric;
 #[cfg(test)]
 mod tests;
 mod webview_claims;
+mod window_control;
 mod zoom;
 
 pub(crate) use webview_claims::webview_shortcut_policy;

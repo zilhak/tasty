@@ -481,8 +481,7 @@ impl MainView {
         true
     }
 
-    /// 창 제어는 공용 액션으로 실행한다. macOS는 NSMenu가 처리하므로 이 경로를 제외한다.
-    #[cfg(not(target_os = "macos"))]
+    /// 창 제어는 공용 액션으로 실행한다. macOS의 첫 조합은 Window 메뉴가 실행한다.
     fn handle_window_control_shortcuts(
         &mut self,
         engine: &EngineRead<'_>,
@@ -490,16 +489,13 @@ impl MainView {
         mods: ModifiersState,
         kb: &crate::settings::KeybindingSettings,
     ) -> bool {
-        for (binding, action_id) in [
-            (&kb.minimize_window, "minimize_window"),
-            (&kb.maximize_window, "maximize_window"),
-            (&kb.close_window, "close_window"),
-        ] {
-            if matches_any_binding(binding, key, mods) {
-                return self.dispatch_action_by_id(engine, action_id);
-            }
-        }
-        false
+        super::window_control::window_control_action(
+            kb,
+            key,
+            mods,
+            super::window_control::OS_MENU_OWNS_FIRST,
+        )
+        .is_some_and(|action_id| self.dispatch_action_by_id(engine, action_id))
     }
 
     /// 사용자 스크립트를 읽어 App의 Lua 워커에 실행을 요청한다.
@@ -582,8 +578,6 @@ impl MainView {
 
         let kb = engine.settings.keybindings.clone();
 
-        // macOS는 AppKit의 메뉴 단축키가 처리하므로 winit에서 중복 실행하지 않는다.
-        #[cfg(not(target_os = "macos"))]
         if self.handle_window_control_shortcuts(engine, key, mods, &kb) {
             return true;
         }
