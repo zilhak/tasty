@@ -180,7 +180,7 @@ mirror 이름·부제·설명·분류와 혼합 표시 순서는 비영속 App c
 `tasty-task-runtime`(TaskService/TaskScope·runner thread·작업 실행·완료 대기 hub/feed와 hook wait. task 원본은 tasty-agent/MemoryStorage이며 App/Core/View 의존 없음, → agent/memory/ipc/utils). App은 실제 completion registry resolver와 명시 DAG 대상 값을 주입한다. runner stop, task 취소, OS child 종료는 별개 계약이다.
 
 ### 번들 plugin (bin 크레이트, 모두 `tasty-plugin-sdk` 의존)
-`tasty-plugin-claude`(lib 도 함께 노출) · `tasty-plugin-codex` · `tasty-plugin-git-viewer` · `tasty-plugin-clipboard-viewer` · `tasty-plugin-image` · `tasty-plugin-html` · `tasty-plugin-markdown` · `tasty-plugin-agent-stream` · `tasty-plugin-mesh-demo`(+ manifest). 뒤의 둘은 `bundle = false` 라 배포 패키징에서는 빠지고 dev 번들 sync 로만 붙는다. — [concepts/plugins](../concepts/plugins.md)
+`tasty-plugin-claude` · `tasty-plugin-codex` · `tasty-plugin-git-viewer` · `tasty-plugin-clipboard-viewer` · `tasty-plugin-image` · `tasty-plugin-html` · `tasty-plugin-markdown` · `tasty-plugin-agent-stream` · `tasty-plugin-mesh-demo`(+ manifest). 뒤의 둘은 `bundle = false` 라 배포 패키징에서는 빠지고 dev 번들 sync 로만 붙는다. — [concepts/plugins](../concepts/plugins.md)
 
 ### 도구 / standalone
 `tasty-tui-simulator`(E2E TUI 시뮬레이터, lib + `tasty-tui-sim` binary — 로직은 lib 공유, debug 빌드에선 `tasty debug sim` 으로도 노출) · `tasty-gallery`(ui-widgets 데모 바이너리, `cargo run -p tasty-gallery` — 본체 빌드와 분리)

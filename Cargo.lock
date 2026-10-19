@@ -5591,7 +5591,6 @@ dependencies = [
  "tasty-model",
  "tasty-output",
  "tasty-platform",
- "tasty-plugin-claude",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
  "tasty-portscan",
@@ -6053,7 +6052,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude"
-version = "0.1.218"
+version = "0.1.219"
 dependencies = [
  "anyhow",
  "directories",
