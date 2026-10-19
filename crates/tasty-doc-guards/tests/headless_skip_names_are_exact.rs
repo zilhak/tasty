@@ -387,14 +387,14 @@ fn the_fixtures_in_this_file_are_not_counted_as_tests() {
     );
 }
 
-/// 헤드리스 조합에서 실행할 수 없는 시험은 `#[cfg(feature = "gui")]`로 컴파일하지 않는다(ADR-0045).
+/// 헤드리스 조합에서 실행할 수 없는 시험은 `#[cfg(feature = "gui")]`로 컴파일하지 않는다(docs/dev-guide/unit-test-isolation.md).
 /// 워크플로의 이름 제외는 실행 범위를 소스 밖에서 줄이므로 쓰지 않는다.
 #[test]
 fn the_headless_step_skips_nothing() {
     let skips = skips_from_workflow();
     assert!(
         skips.is_empty(),
-        "헤드리스 --skip이 {}건이다: {:?}. ADR-0045에 따라 GUI가 필요한 시험은 gui feature로 묶고, 헤드리스 구성 누락은 skip으로 숨기지 말고 고친다. 이름 제외가 꼭 필요하다고 결정했다면 ADR-0045와 ci-gates.md를 먼저 고친다.",
+        "헤드리스 --skip이 {}건이다: {:?}. docs/dev-guide/unit-test-isolation.md에 따라 GUI가 필요한 시험은 gui feature로 묶고, 헤드리스 구성 누락은 skip으로 숨기지 말고 고친다. 이름 제외가 꼭 필요하다고 결정했다면 docs/dev-guide/unit-test-isolation.md와 ci-gates.md를 먼저 고친다.",
         skips.len(),
         skips
     );

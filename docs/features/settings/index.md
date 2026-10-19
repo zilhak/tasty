@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (원격 접속 사용자는 mirror 로 봄)
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `src/view/settings.rs`, `src/view/settings/ui/`
 - **화면**: [screens/settings.md](screens/settings.md)
 
@@ -49,9 +49,9 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 
 > **설정 적용**: host 가 `resolve_webview_settings` 로 `plugin_settings."com.tasty.html"` 을 읽어 네이티브 webview 에 직접 적용한다(별도 host→plugin IPC 없음 — `font_override` 호스트 적용과 같은 선례). 적용 현황:
 > - **zoom**: 3 OS 모두 실효.
-> - **sandbox scripts**: 켜 두면 main frame 문서마다 JS를 끄고, 사용자가 허용한 문서에서만 켠다. `resolve_webview_settings`는 전역 값만 넘기고 문서별 판정은 navigation 콜백이 한다([ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)). 끄면 모든 문서에서 JS를 켠다. 문서별 적용 시점은 Linux에서만 측정했다.
+> - **sandbox scripts**: 켜 두면 main frame 문서마다 JS를 끄고, 사용자가 허용한 문서에서만 켠다. `resolve_webview_settings`는 전역 값만 넘기고 문서별 판정은 navigation 콜백이 한다([HTML Viewer (`com.tasty.html`)](../../surfaces/html/index.md)). 끄면 모든 문서에서 JS를 켠다. 문서별 적용 시점은 Linux에서만 측정했다.
 > - **color_scheme**(`prefers-color-scheme` 강제): macOS 실효(NSAppearance). Windows/Linux 는 no-op(후속).
-> - **allow remote content**(원격 http/https 서브리소스 차단): 3 OS 모두 실효 — macOS 는 `WKContentRuleList`, Windows 는 `WebResourceRequested` 403, Linux 는 같은 스키마의 content filter 를 `WebKitUserContentFilterStore` 로 컴파일해 user content manager 에 붙인다(네비게이션은 decide-policy 가 따로 막는다). 근거·대안은 [ADR-0029](../../adr/0029-webview-host-integration.md). 플랫폼별 백엔드는 해당 OS에서 검증해야 한다.
+> - **allow remote content**(원격 http/https 서브리소스 차단): 3 OS 모두 실효 — macOS 는 `WKContentRuleList`, Windows 는 `WebResourceRequested` 403, Linux 는 같은 스키마의 content filter 를 `WebKitUserContentFilterStore` 로 컴파일해 user content manager 에 붙인다(네비게이션은 decide-policy 가 따로 막는다). 근거·대안은 [WebView 호스트 계약](../../design/systems/webview.md). 플랫폼별 백엔드는 해당 OS에서 검증해야 한다.
 
 ### draft / save 모델
 

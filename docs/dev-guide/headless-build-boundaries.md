@@ -4,7 +4,7 @@ headless(`--no-default-features`)는 IPC/CLI 와 attach 서버를 실행하는 �
 없다는 이유로 공유 Core·registry를 통째로 숨기지 않는다. GUI는 MainViewState, headless는 별도 CommandContext를 소유한다. `dead_code` 진단이
 가리키는 정의의 생산자와 소비자를 따라가며 아래 기준으로 컴파일 대상을 나눈다.
 
-결정과 그 근거는 [ADR-0058](../adr/0058-headless-without-local-views.md).
+결정과 그 근거는 [헤드리스 IPC 지원 범위](headless-ipc-surface.md).
 
 ## 세 갈래
 
@@ -34,7 +34,7 @@ dead_code 예외는 쓰지 않는다.
 (`tests/*/mod.rs`: test binary 마다 쓰는 부분집합이 달라 binary 별로 dead 가 생긴다)과 생성
 파일(`tasty-design-tokens` 의 `generated/primitive.rs` 와 그것을 쓰는 생성기: `pub(crate)` 스케일을
 미참조 엔트리까지 보존한다). 둘 다 자리에 사유가 붙어 있다. 그 밖에는 0 이고, 결정과 재검토
-조건은 [ADR-0058](../adr/0058-headless-without-local-views.md).
+조건은 [헤드리스 IPC 지원 범위](headless-ipc-surface.md).
 세는 법: `git grep -nE '#!\[(cfg_attr\([^]]*)?allow\([^)]*dead_code' -- '*.rs'`.
 
 ③에 해당하는 정의는 아래처럼 분류한다.

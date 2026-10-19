@@ -1,4 +1,4 @@
-//! 창 전체를 쓰는 별도 화면. 기존 workspace/pane/tab/surface 레이아웃을 바꾸지 않는다(ADR-0018).
+//! 창 전체를 쓰는 별도 화면. 기존 workspace/pane/tab/surface 레이아웃을 바꾸지 않는다(docs/ai-verification/screenshot-methods.md).
 //! 창당 하나의 StageState를 두며 정적 StageDef에 등록된 ID만 연다.
 //! 콘텐츠별 임시 상태는 egui 메모리에 두고 on_close에서 정리한다.
 

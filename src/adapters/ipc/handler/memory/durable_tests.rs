@@ -1,4 +1,4 @@
-//! 대체 메모리 저장소의 쓰기 응답이 durable:false를 알리는지 확인한다(ADR-0010).
+//! 대체 메모리 저장소의 쓰기 응답이 durable:false를 알리는지 확인한다(docs/design/systems/storage-contract.md).
 
 use serde_json::{Value, json};
 

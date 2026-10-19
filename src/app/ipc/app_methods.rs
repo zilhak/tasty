@@ -791,7 +791,7 @@ impl App {
 /// 명시한 창 ID는 모달·preset도 허용한다. ID가 없으면 MainView 하나만 자동 선택한다.
 /// 포커스나 열린 모달을 대체 대상으로 쓰지 않는다. 반환값은 입력 목록의 인덱스다.
 /// 캡처 허용 범위가 window.list·window.close의 범위를 넓히는 것은 아니다.
-/// docs/adr/0018-explicit-capture-and-fullscreen-stage.md 참조.
+/// docs/ai-verification/screenshot-methods.md 참조.
 fn resolve_screenshot_window(
     windows: &[(u64, bool)],
     requested: Option<u64>,

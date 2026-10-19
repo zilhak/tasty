@@ -1,4 +1,4 @@
-//! 테스트의 환경변수·현재 디렉터리 변경에 직렬화 근거가 있는지 확인한다(ADR-0045).
+//! 테스트의 환경변수·현재 디렉터리 변경에 직렬화 근거가 있는지 확인한다(docs/dev-guide/unit-test-isolation.md).
 //! 함수 안의 락 참조, 직렬화 사유 주석 또는 단일 테스트 격리 표시를 인정한다.
 //! 정확한 판정 범위와 한계는 env_isolation 모듈에 있다.
 //!
@@ -136,7 +136,7 @@ fn every_test_env_mutation_is_serialized() {
 
     assert!(
         c.bare.is_empty(),
-        "직렬화 근거가 없는 테스트의 env/cwd 변경이 {}곳 있다. 병렬 테스트가 상태를 덮어쓸 수 있으므로 함수에서 직렬화 락을 잡거나 RAII 가드의 호출자가 지킬 직렬화 조건을 주석에 적는다(ADR-0045):\n{}",
+        "직렬화 근거가 없는 테스트의 env/cwd 변경이 {}곳 있다. 병렬 테스트가 상태를 덮어쓸 수 있으므로 함수에서 직렬화 락을 잡거나 RAII 가드의 호출자가 지킬 직렬화 조건을 주석에 적는다(docs/dev-guide/unit-test-isolation.md):\n{}",
         c.bare.len(),
         c.bare
             .iter()

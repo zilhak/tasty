@@ -3,7 +3,7 @@
 //!
 //! 개수와 보존 기간을 기준으로 삭제를 시도한다. 주기 사이에는 keep을 초과할 수 있고,
 //! 스케줄 지연이나 저장소 오류가 있으면 정리가 더 늦어진다. 엄격한 메모리·디스크 상한은 아니다.
-//! 결정 근거는 [ADR-0009](../../docs/adr/0009-state-storage-and-retention.md)를 참고한다.
+//! 결정 근거는 [저장소 시스템 (Storage System)](../../docs/design/systems/storage.md)를 참고한다.
 //!
 //! 파일 로그에는 이 정책을 적용하지 않는다. 완료 알림은 tasty_utils::notify,
 //! hook 실패는 crates/tasty-cli/src/hook_failure.rs, 호스트 로그는 crash_report,

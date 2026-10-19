@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (복사/붙여넣기는 사용자 행동)
-- **ADR**: [ADR-0025](../../adr/0025-plugin-trust-and-distribution.md) (뷰어의 plugin 직접-read 모델)
+- **설계**: [플러그인 권한 모델](../../dev-guide/plugin-permissions.md) (뷰어의 plugin 직접-read 모델)
 - **코드**: 시스템 클립보드 `arboard`; 복사/붙여넣기/선택 = `src/view/main/`
 - **화면**: 현재 클립보드 뷰어는 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md)
 
@@ -87,9 +87,9 @@ IME preedit와 OS 후보창 위치도 같은 epoch·행 좌표를 사용한다. 
 
 **한계 — 키를 받는 WebView 위에서는 사유가 보이지 않는다.** markdown·html surface가 키를 받는 중에 진입 키를 누르면 요청은 접수되고(host 포워딩 경로) `toast.vi_copy_needs_terminal`이 그 surface 범위에 쌓인다. 그러나 [토스트](../../design/systems/toast.md#native-webview-위의-토스트) 정책상 지금 키를 받는 WebView는 숨기지 않으므로 카드가 WebView 아래에 가려 사용자에게 보이지 않는다. 진입하지 않고 화면·데이터도 바뀌지 않는다는 점은 같다. 이 판단은 코드와 토스트 정책 문서를 읽은 결과이며 실제 실행으로 확인하지 않았다. 표시 방식은 토스트 설계의 과제로 남긴다.
 
-마우스 선택은 기본적으로 **마우스 트래킹이 꺼진 화면에서만** 동작한다. 앱이 마우스 트래킹(DECSET 1000/1002/1003)을 켜면(vim `:set mouse=a`, htop, Claude Code 등) 마우스 이벤트를 앱에 전달하므로 plain 좌클릭 드래그는 앱으로 보고된다 — 근거: [ADR-0015](../../adr/0015-terminal-user-input-routing.md).
+마우스 선택은 기본적으로 **마우스 트래킹이 꺼진 화면에서만** 동작한다. 앱이 마우스 트래킹(DECSET 1000/1002/1003)을 켜면(vim `:set mouse=a`, htop, Claude Code 등) 마우스 이벤트를 앱에 전달하므로 plain 좌클릭 드래그는 앱으로 보고된다 — 근거: [터미널 (Terminal)](../../surfaces/terminal/index.md).
 
-**트래킹 ON 에서도 `Shift`+좌클릭 드래그로 로컬 텍스트 선택이 가능하다** (xterm/iTerm2 표준 modifier 우회). Shift 여부는 press 시점에 1회만 판정해 release 까지 유지하므로, 드래그 도중 Shift 를 떼도 선택이 깨지지 않는다. `Shift`+더블/트리플클릭은 word/line 선택. 선택 후 복사 단축키로 클립보드에 복사된다. 일반 좌클릭은 계속 앱으로 전달된다 (우클릭 `Shift` 우회는 [ADR-0015](../../adr/0015-terminal-user-input-routing.md) 의 동일 패턴).
+**트래킹 ON 에서도 `Shift`+좌클릭 드래그로 로컬 텍스트 선택이 가능하다** (xterm/iTerm2 표준 modifier 우회). Shift 여부는 press 시점에 1회만 판정해 release 까지 유지하므로, 드래그 도중 Shift 를 떼도 선택이 깨지지 않는다. `Shift`+더블/트리플클릭은 word/line 선택. 선택 후 복사 단축키로 클립보드에 복사된다. 일반 좌클릭은 계속 앱으로 전달된다 (우클릭 `Shift` 우회는 [터미널 (Terminal)](../../surfaces/terminal/index.md) 의 동일 패턴).
 
 ### OSC 52
 
@@ -104,20 +104,20 @@ IME preedit와 OS 후보창 위치도 같은 epoch·행 좌표를 사용한다. 
 
 host 가 아니라 plugin 자신의 egui `Context` 로 텍스트를 그리는 kind(`rendering = "egui-mesh"`)는, 매니페스트에서 `egui_copy = true` 를 선언하면 copy 단축키(위 `KeybindingSettings` 바인딩)가 그 surface 에 `Copy` wire 이벤트로 forward된다(`src/adapters/ui/input/shortcuts/copy_paste.rs` → `src/view/main/egui_mesh.rs`). host 자신의 top-level egui `Context` 는 plugin 위젯을 갖고 있지 않으므로 대상이 될 수 없다 — 반드시 포커스된 egui-mesh surface 자신에게 보내야 한다.
 
-plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 매핑해 자기 `Context::run` 에 흘린다. selectable label/`TextEdit` 등 egui 내장 선택-복사 로직이 텍스트를 만들면 plugin 이 그 값을 `EguiMeshSurface::take_copied_text()` 로 회수해 **자기 프로세스에서 직접** OS 클립보드에 쓴다([ADR-0025](../../adr/0025-plugin-trust-and-distribution.md) — clipboard-viewer plugin 의 read 선례와 동일한 write 대응, host round-trip 없음). 메커니즘 자체는 host 코드([`src/view/main/egui_mesh.rs`](../../../src/view/main/egui_mesh.rs) 등)에 남아 있으나, `markdown` 이 webview 로 전환된 뒤([ADR-0029](../../adr/0029-webview-host-integration.md)) 현재 이를 선언하는 번들 plugin 은 없다 — webview surface 는 native WebView 가 Ctrl+C 를 자체 처리하므로 이 wire 이벤트 자체가 불필요하다.
+plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 매핑해 자기 `Context::run` 에 흘린다. selectable label/`TextEdit` 등 egui 내장 선택-복사 로직이 텍스트를 만들면 plugin 이 그 값을 `EguiMeshSurface::take_copied_text()` 로 회수해 **자기 프로세스에서 직접** OS 클립보드에 쓴다([플러그인 권한 모델](../../dev-guide/plugin-permissions.md) — clipboard-viewer plugin 의 read 선례와 동일한 write 대응, host round-trip 없음). 메커니즘 자체는 host 코드([`src/view/main/egui_mesh.rs`](../../../src/view/main/egui_mesh.rs) 등)에 남아 있으나, `markdown` 이 webview 로 전환된 뒤([WebView 호스트 계약](../../design/systems/webview.md)) 현재 이를 선언하는 번들 plugin 은 없다 — webview surface 는 native WebView 가 Ctrl+C 를 자체 처리하므로 이 wire 이벤트 자체가 불필요하다.
 
 ### egui-mesh plugin 의 붙여넣기 (`egui_paste` capability)
 
-매니페스트에서 `egui_paste = true` 를 선언한 kind 에 포커스가 있으면, paste 단축키(위 `KeybindingSettings` 바인딩)와 팔레트의 붙여넣기는 터미널로 가지 않고 그 surface 에 `Paste` wire 이벤트로 전달된다(`src/adapters/ui/input/shortcuts/copy_paste.rs` `run_paste` → `src/view/main/egui_mesh.rs`). 이벤트에는 클립보드 내용이 없다. plugin 이 이 이벤트를 보고 필요한 형식을 **자기 프로세스에서 직접** 읽는다(위 복사와 같은 ADR-0025 근거). 현재 이를 선언하는 번들 plugin 은 image 다.
+매니페스트에서 `egui_paste = true` 를 선언한 kind 에 포커스가 있으면, paste 단축키(위 `KeybindingSettings` 바인딩)와 팔레트의 붙여넣기는 터미널로 가지 않고 그 surface 에 `Paste` wire 이벤트로 전달된다(`src/adapters/ui/input/shortcuts/copy_paste.rs` `run_paste` → `src/view/main/egui_mesh.rs`). 이벤트에는 클립보드 내용이 없다. plugin 이 이 이벤트를 보고 필요한 형식을 **자기 프로세스에서 직접** 읽는다(위 복사와 같은 docs/dev-guide/plugin-permissions.md 근거). 현재 이를 선언하는 번들 plugin 은 image 다.
 
 ### 현재 클립보드 뷰어
 
-지금 시스템 클립보드에 담긴 내용은 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md) 이 popup 으로 보여준다. host 백엔드 없이 **plugin 프로세스가 `arboard` 로 직접 read** 한다([ADR-0025](../../adr/0025-plugin-trust-and-distribution.md) — plugin 은 비-샌드박스 OS 프로세스라 host 가 OS 클립보드 접근을 막을 수 없으므로, 단발 read 는 host 를 경유하지 않는다). 히스토리 누적·재복사는 없다.
+지금 시스템 클립보드에 담긴 내용은 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md) 이 popup 으로 보여준다. host 백엔드 없이 **plugin 프로세스가 `arboard` 로 직접 read** 한다([플러그인 권한 모델](../../dev-guide/plugin-permissions.md) — plugin 은 비-샌드박스 OS 프로세스라 host 가 OS 클립보드 접근을 막을 수 없으므로, 단발 read 는 host 를 경유하지 않는다). 히스토리 누적·재복사는 없다.
 
 ## 인터페이스
 
 - **사용자**: 복사/붙여넣기/선택(위), 현재 클립보드 내용은 plugin 뷰어 팝업.
-- **AI Agent / CLI**: 단발 클립보드 **read** 는 각 에이전트 프로세스의 직접 접근 영역(ADR-0025) — host 가 read IPC 를 노출하지 않는다. **write** 는 `clipboard.set_text` IPC(`Permission::ClipboardWrite`)/CLI `tasty clipboard set-text <text>` 로 host 가 노출한다 — [remote-screenshot-clipboard](../remote-screenshot-clipboard/index.md) 의 원격 캡처 반영도 같은 `ClipboardSystem` 을 쓰되, 이 IPC 를 거치지 않고 경로 텍스트와 이미지를 함께 올린다(`write_text_and_image`).
+- **AI Agent / CLI**: 단발 클립보드 **read** 는 각 에이전트 프로세스의 직접 접근 영역(docs/dev-guide/plugin-permissions.md) — host 가 read IPC 를 노출하지 않는다. **write** 는 `clipboard.set_text` IPC(`Permission::ClipboardWrite`)/CLI `tasty clipboard set-text <text>` 로 host 가 노출한다 — [remote-screenshot-clipboard](../remote-screenshot-clipboard/index.md) 의 원격 캡처 반영도 같은 `ClipboardSystem` 을 쓰되, 이 IPC 를 거치지 않고 경로 텍스트와 이미지를 함께 올린다(`write_text_and_image`).
 
 ## 비-목표
 

@@ -1,5 +1,5 @@
 //! 단축키 구성을 내보내고, 가져온 파일을 미리 본 뒤 선택한 행을 적용한다.
-//! Apply는 호스트·plugin 초안만 바꾸며 설정의 Save가 저장한다(ADR-0019).
+//! Apply는 호스트·plugin 초안만 바꾸며 설정의 Save가 저장한다(docs/design/policies/key-mapping.md).
 //!
 //! 계산은 model·labels·view_model·bundle_notices, 화면은 entry·diff_table·notices에 있다.
 //! 치수는 갤러리의 kb_import_export와 대조하므로 이 파일에 둔다.

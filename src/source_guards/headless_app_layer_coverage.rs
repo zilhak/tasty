@@ -69,7 +69,7 @@ const NOT_IN_HEADLESS: &[(&str, &str)] = &[
     ),
     (
         "window.focus",
-        "포커스 전환이라 애초에 debug 격리(ADR-0012)이고, 대상도 창이다",
+        "포커스 전환이라 애초에 debug 격리(docs/dev-guide/plugin-permissions.md)이고, 대상도 창이다",
     ),
     (
         "window.list",
@@ -364,7 +364,7 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
     ),
     (
         "debug.popup.close",
-        "렌더의 close 큐를 통해 자식 파일 선택기까지 정리해야 한다(ADR-0036). enqueue_plugin_popup_close는 GUI dispatch에 있다.",
+        "렌더의 close 큐를 통해 자식 파일 선택기까지 정리해야 한다(docs/design/systems/popup.md). enqueue_plugin_popup_close는 GUI dispatch에 있다.",
     ),
     (
         "debug.plugin_banner.",

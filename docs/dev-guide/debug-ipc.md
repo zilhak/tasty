@@ -1,8 +1,13 @@
 # Debug 전용 IPC
 
-[identity.md](../identity.md) 원칙 1 ②(사용자 입력 재현은 release 에 없다)에 따라, **사용자의 키/마우스/단축키 입력을 그대로 재현하거나 내부 렌더 상태를 덤프하는 IPC** 는 release 빌드에 노출되지 않는다. `#[cfg(debug_assertions)]` 로 격리되어 debug 빌드에서만 컴파일·등록된다.
+## 원칙과 현재 제공 범위
 
-판단 기준(원칙 1):
+[주체별 원칙](../principles/control-and-data.md)은 release에서 에이전트가 Tasty 포커스를 빼앗는 동작을 제한한다. 아래 debug 전용 목록은 현재 구현의 제공 범위다. 포커스와 무관한 HTML 스크립트 허용·관찰 기능까지 보안 이유로 제한하는 부분은 원칙의 미충족이며, 입력 재현과 별개로 정합한다. debug 전용 모듈의 cfg 분리와 격리된 검증 절차는 유지한다.
+
+
+현재 구현은 사용자 키·마우스·단축키 입력 재현과 내부 렌더 덤프를 debug 전용으로 제공한다. 포커스와 무관한 기능까지 같은 이유로 제한해야 한다는 제품 원칙은 아니다. 해당 모듈은 cfg(debug_assertions)로 분리되어 있다.
+
+현재 구현의 경로 구분:
 
 - **에이전트 기능 → release IPC**: surface/tab/workspace 생성·조회·닫기, 클립보드, 알림, 메타데이터 등 — 에이전트가 *자기 작업* 을 하려고 필요한 동작. 예: **`surface.completion`**(surface highlight 발동) — 에이전트가 "이 surface 확인 필요" 라고 *자기 작업 결과를 보고* 하는 것이라 PushNotification 과 동류 → **release 정식**. 반면 그 highlight 를 *포커스를 주입해* 해제하는 경로는 사용자 입력 재현이라 debug 격리 대상(상태 해제 자체는 `surface.attention.clear` 로 release 에 있다 — 포커스를 옮겨서 해제하는 방식만 debug 격리 대상이다).
 - **디버그 기능 → debug 전용**: 사용자 단축키/마우스로 트리거되는 동작의 자동 재현(키/마우스 주입, 단축키로만 여는 popup/도구 메뉴의 IPC 트리거), 그리고 렌더러·파서 검증용 저수준 덤프.
@@ -52,7 +57,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 응답(`debug.native_menu.answer`)으로 끝난 메뉴는 남지 않아 `present:false`다. 우클릭 라우팅 회귀 관찰용 |
 | `debug.native_menu.answer` | `menu`(필수) + `item` · `label` · `dismiss: true` 중 하나 | 포커스된 창이 **다음에 여는 `menu` 종류의** native 메뉴 하나를 OS 팝업 없이 지정 항목을 고른 것으로 끝낸다(`menu`는 `debug.pending_menu`의 `kind`와 같은 이름, `item`은 항목 id, `label`은 표시 문구, `dismiss`는 고르지 않고 닫기). 다른 종류의 메뉴에는 쓰지 않는다. 응답은 그 종류의 메뉴가 열릴 때까지 남아 있고 새 응답이 덮어쓴다. 결과는 `armed: true`와, 덮어쓴 응답이 있었으면 그 종류(`replaced`, 없으면 `null`)다. 아래 [native 메뉴 항목 선택 재현](#native-메뉴-항목-선택-재현-debugnative_menuanswer) |
 | `debug.pending_move` | `{}` | 포커스된 창의 이동 대기 슬롯 read-only 덤프(`present`·`kind` = `surface`/`tab`/`pane`·`id`) |
-| `debug.window.list` | `{}` | 메인 창과 보조 창(설정·Preset·Plugins·종료 확인)을 모두 나열한다. release `window.list` 는 메인 창만 다룬다([ADR-0018](../adr/0018-explicit-capture-and-fullscreen-stage.md)). 응답 `windows[]` 는 `window_id`·`kind`(`main`·`settings`·`preset`·`plugins`·`quit`)·`title`(winit 이 제목을 돌려주는 플랫폼에서만, X11·Wayland 는 `null`)·`inner_size`(물리 px `width`·`height`)·`scale_factor`·`focused`·`modal` 이며 `window_id` 오름차순이다. 보조 창의 id 는 `window_id` 를 받는 debug 메서드(`debug.inject_egui_*`·`debug.toast`)와 `ui.screenshot` 에 넘기는 값이다. 조회만 한다. CLI 는 `tasty debug windows`. gui 빌드 전용 |
+| `debug.window.list` | `{}` | 메인 창과 보조 창(설정·Preset·Plugins·종료 확인)을 모두 나열한다. release `window.list` 는 메인 창만 다룬다([스크린샷 방법](../ai-verification/screenshot-methods.md)). 응답 `windows[]` 는 `window_id`·`kind`(`main`·`settings`·`preset`·`plugins`·`quit`)·`title`(winit 이 제목을 돌려주는 플랫폼에서만, X11·Wayland 는 `null`)·`inner_size`(물리 px `width`·`height`)·`scale_factor`·`focused`·`modal` 이며 `window_id` 오름차순이다. 보조 창의 id 는 `window_id` 를 받는 debug 메서드(`debug.inject_egui_*`·`debug.toast`)와 `ui.screenshot` 에 넘기는 값이다. 조회만 한다. CLI 는 `tasty debug windows`. gui 빌드 전용 |
 | `debug.focused_surface` | `{}` | 현재 포커스된 surface id read-only 덤프(`surface_id`, 없으면 null). `surface.list` 가 노출 않는 view-layer 포커스를 관찰 — click-to-activate 라우팅 회귀 net 용 |
 | `debug.surface_rect` | `surface_id` | 활성 탭에 있는 surface 의 화면 사각형 read-only 덤프(`rect` = 물리 px `x`·`y`·`width`·`height`, 화면에 없으면 null, `scale_factor`). 터미널이 아닌 surface 도 같은 leaf rect 다. native WebView 창이 surface 를 채우는지 재는 기준값 |
 | `debug.switch_workspace` | `index` (0-based) | 활성 워크스페이스 전환 — 사용자 포커스 조작 재현. **`index` 는 포커스된 창 안의 순번이라 포커스 독립성을 만족하지 않는다** — 사용자가 보고 있는 창에서 전환하는 것이 이 메서드의 뜻이므로 그것이 정답이다(`surface.ime_*` 와 같은 부류) |
@@ -62,12 +67,12 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.tool.invoke` | `key` (`<plugin_id>/<tool_id>`) | 도구 항목을 사용자 클릭과 동일하게 dispatch |
 | `debug.popup.list` | `{}` | contribute 된 popup 정의 + 현재 열린 instance (각 instance 에 `z_seq` — host popup 과 공유하는 전역 시퀀스라 `debug.host_popup.list` 값과 직접 비교 가능 — 와 소속 범위 `scope`(매니페스트 선언) · `scope_surface`(host 진입점이 바인딩한 대상, 없으면 `null`)) |
 | `debug.popup.open` | `plugin_id, popup_id, context?` | popup 인스턴스 강제 open (응답에 `instance_id`) |
-| `debug.popup.close` | `instance_id` | 팝업 인스턴스를 닫는다. release의 플러그인 `popup.close`와 같은 큐를 사용해 부모·자식 팝업 정리까지 같은 경로로 검증한다([ADR-0036](../adr/0036-overlay-scope-and-lifetime.md)) |
+| `debug.popup.close` | `instance_id` | 팝업 인스턴스를 닫는다. release의 플러그인 `popup.close`와 같은 큐를 사용해 부모·자식 팝업 정리까지 같은 경로로 검증한다([내부 팝업 시스템](../design/systems/popup.md)) |
 | `debug.host_popup.list` | `{}` | 호스트 빌트인 popup(`PopupDef`) 전체 목록 (id + title_key + `close_on_outside_click`). 열려 있는 항목은 `open:true` 와 함께 `z_seq`·`rect`(논리 pt) 를 노출한다 — 겹친 popup 의 마우스 소유권 판정을 좌표 실측 없이 검증하기 위한 관찰면 |
 | `debug.host_popup.open` | `popup_id, workspace_scope?` | 호스트 빌트인 popup 을 focused window 중앙에 강제 open (사용자 클릭 경로 우회, 시각 검증용). `workspace_scope:true` 면 활성 workspace 스코프로 연다 — 런타임 스코프 주입(`OpenPopupMode::WithScope`)을 쓰는 popup(`dag_list`)의 가시성 게이트를 재현하려면 이 플래그가 필요하다 |
 | `debug.host_popup.close` | `popup_id` | 호스트 빌트인 popup 강제 close |
 | `debug.modifier_hint.hold` | `ctrl?`, `alt?`, `option?`, `shift?`, `elapsed_ms?` | modifier-hint 오버레이의 홀드 조합을 직접 세팅(생략 축=false, 모두 false 면 홀드 해제). `elapsed_ms` 는 홀드 타이머를 그만큼 과거로 백데이트해 표시 지연(500/1200ms) 게이트를 즉시 통과. 실 modifier 홀드 우회 force-state(사용자 홀드 경로 우회). 응답은 `state` 와 동일한 렌더 상태 덤프 |
-| `debug.modifier_hint.state` | `{}` | 오버레이 렌더 상태를 draw 경로와 동일 로직으로 재평가해 덤프: `held{ctrl,alt,option,shift}\|null` · `hold_elapsed_ms` · `dismissed` · `reveal_delay_ms`(기본값: Shift 단독 1200ms, 그 외 500ms) · `visible` · `alpha` · `header_combo`(전체 조합 키캡) · `sections[{combo,rows,roles,empty}]`(눌린 조합으로 좁혀진 섹션 — `combo`=섹션 헤더의 조합 전체 키캡, `rows`=각 행의 **leaf 키캡만**(`Ctrl+K` 가 아니라 `K` — modifier 는 섹션 헤더가 담당), `roles`=역할 설명 키, `empty`=바인딩·역할 모두 없는 조합(draw 가 "바인딩 없음" 플레이스홀더로 렌더, ADR-0019)). 스크린샷 없이 좁힘·즉시갱신·지연·빈-플레이스홀더 자동 단정용 |
+| `debug.modifier_hint.state` | `{}` | 오버레이 렌더 상태를 draw 경로와 동일 로직으로 재평가해 덤프: `held{ctrl,alt,option,shift}\|null` · `hold_elapsed_ms` · `dismissed` · `reveal_delay_ms`(기본값: Shift 단독 1200ms, 그 외 500ms) · `visible` · `alpha` · `header_combo`(전체 조합 키캡) · `sections[{combo,rows,roles,empty}]`(눌린 조합으로 좁혀진 섹션 — `combo`=섹션 헤더의 조합 전체 키캡, `rows`=각 행의 **leaf 키캡만**(`Ctrl+K` 가 아니라 `K` — modifier 는 섹션 헤더가 담당), `roles`=역할 설명 키, `empty`=바인딩·역할 모두 없는 조합(draw 가 "바인딩 없음" 플레이스홀더로 렌더, docs/design/policies/key-mapping.md)). 스크린샷 없이 좁힘·즉시갱신·지연·빈-플레이스홀더 자동 단정용 |
 | `debug.settings.open` | `tab?`, `subtab?` | 설정 모달 강제 open (사용자 클릭/단축키 우회, 시각 검증용). `tab` = L1 `general`/`terminal`/`appearance`/`keybindings`/`file_handler`/`misc`/`plugins` (생략 시 `general`). `subtab` = 선택한 L1 의 L2 섹션 키(아래 표), 생략·미지정 키면 해당 L1 의 기본 L2 유지. `AppEvent::OpenSettings` 발행 → 별도 모달 윈도우 생성. 응답 `{scheduled:true, tab, subtab}`. **설정 창이 이미 열려 있으면** 새로 열지 않고 그 창의 탭·하위 탭을 바꾼다 — 응답 `{scheduled:false, window_id, tab, subtab, tab_applied, subtab_applied}`(지정하지 않은 쪽 `null`, 알 수 없는 키 `false` 이고 그 단계는 현재 선택 유지). `subtab` 만 주면 지금 보고 있는 L1 안에서 바꾼다. 다른 모달(Plugins·종료 확인)이 열려 있으면 `-32000` 으로 거절한다 |
 | `debug.settings.close` | `{}` | 설정 모달만 닫는다. 바닥글 Save 를 누르지 않은 상태로 닫으므로 편집은 저장하지 않는다(Cancel 과 같다). 응답 `closed` — 닫았으면 `true` 와 `window_id`, 설정 창이 없으면 `false`, 다른 모달이 열려 있으면 그 모달은 두고 `false` 와 `active_modal_kind`. CLI `tasty debug settings close`. gui 빌드 전용 |
 | `debug.modal.close_request` | `{}` | 활성 모달에 **창 닫기 요청**을 흘린다 — 사용자가 창 닫기 버튼을 누른 것의 재현. 응답 `closed` 는 실제로 닫은 모달이 있었는지(없었으면 `false`). release `window.close` 가 main view 만 대상으로 두고 모달을 명시적으로 뺀 것과 같은 범위를 따른다. **WM 없는 Xvfb 에서는 이 경로가 유일하다** — 창은 `WM_DELETE_WINDOW` 를 광고하지만 `xdotool windowclose` 는 그것을 안 쓰고 `XDestroyWindow` 를 불러 winit 이 `GetGeometry` 에서 패닉하고, `wmctrl -i -c` 가 보내는 `_NET_CLOSE_WINDOW` 는 WM 이 없으면 아무도 처리하지 않는다(rc 0, 무효과) |
@@ -88,7 +93,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.lua.eval` | `source` | Lua 스크립트를 워커에서 실행한다 — fire-and-forget 이라 응답은 `scheduled` 뿐이고 결과·부수효과는 로그로 관측한다. 임의 코드 실행이라 debug 격리가 유일한 경계다 |
 | `debug.plugin_banner.open` | `banner_id`, `surface_id` | plugin 이 기여한 배너를 강제로 띄운다 (응답 `instance_id`). 위 `debug.banner.*` 는 빌트인 배너 쪽이다 |
 | `debug.plugin_banner.close` | `instance_id` | plugin 배너 인스턴스 강제 close (응답 `closed`) |
-| `debug.html_script.allow` | `surface_id` | html surface의 스크립트 허용 클릭을 재현한다. 현재 문서를 허용으로 기록하고 재로드를 요청한다(응답 `url`·`detection`, `detection`은 `surface.html_script`와 같은 `none`/`scripts`/`scripts_remote_only`). 지문이 없는 문서(`file://`이 아니거나 응답 단계 없이 commit된 문서)는 `-32000`으로 거절한다. release에서는 사용자만 GUI로 허용한다([ADR-0053](../adr/0053-html-script-detection-and-per-document-allowance.md)) |
+| `debug.html_script.allow` | `surface_id` | html surface의 스크립트 허용 클릭을 재현한다. 현재 문서를 허용으로 기록하고 재로드를 요청한다(응답 `url`·`detection`, `detection`은 `surface.html_script`와 같은 `none`/`scripts`/`scripts_remote_only`). 지문이 없는 문서(`file://`이 아니거나 응답 단계 없이 commit된 문서)는 `-32000`으로 거절한다. release에서는 사용자만 GUI로 허용한다([HTML Viewer (`com.tasty.html`)](../surfaces/html/index.md)) |
 | `debug.webview.history` | `surface_id`, `action`(open/back/forward/reload/stop), `url`(open일 때 필수, `file://`·`http(s)://`) | html surface의 사용자 탐색을 재현한다. open은 주소 표시줄 입력, back/forward/reload는 같은 이름의 버튼이다. 이 넷은 release 사용자 경로(사용자 출처 로드, [html surface](../surfaces/html/index.md))를 그대로 지나며, 히스토리 끝의 back/forward와 문서 없는 reload는 아무것도 하지 않는다. stop은 사용자 진입점이 없어 debug에만 있다. 요청을 받은 창의 다음 redraw에서 적용하며, 그 창에 해당 webview가 없으면 경고 로그만 남긴다(응답 `queued`). CLI `tasty debug webview-history --action <a> [--url <u>]` |
 | `system.shutdown` | `{}` | 프로세스 종료를 요청한다 — 응답 `shutdown`을 먼저 보내고 `AppEvent::Shutdown`을 발행한다. 사용자만 내리던 것을 에이전트가 내리므로 debug 전용이다 |
 | `window.focus` / `view.focus` | — | 프로그래밍적 포커스 전환(사용자 단축키/마우스 영역이라 debug 전용) |
@@ -127,9 +132,9 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 > 다른 표를 넣는 형식까지 검사하려면 별도 파서가 필요하다. 검사 도입 기준은
 > [duplicated-sets](duplicated-sets.md)를 따른다.
 
-† **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 **게이트 없이 cfg 격리만 받는 입력 재현이 다섯 있다** — `surface.ime_*` 와 `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key` · `debug.inject_egui_text`. 다섯 다 tasty 프로세스 **안**의 창 상태(IME 조합 / winit·egui 입력 큐)만 바꾸는 in-process 시뮬레이션이라, 인스턴스를 debug 로 띄운 사람 밖으로 효과가 나가지 않는다. 위 넷과 갈리는 기준이 PTY·OS 전역이냐 in-process 냐이므로 이쪽은 cfg 격리로 충분하다. 근거는 [ADR-0012](../adr/0012-request-admission-and-isolation.md).
+† **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 **게이트 없이 cfg 격리만 받는 입력 재현이 다섯 있다** — `surface.ime_*` 와 `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key` · `debug.inject_egui_text`. 다섯 다 tasty 프로세스 **안**의 창 상태(IME 조합 / winit·egui 입력 큐)만 바꾸는 in-process 시뮬레이션이라, 인스턴스를 debug 로 띄운 사람 밖으로 효과가 나가지 않는다. 위 넷과 갈리는 기준이 PTY·OS 전역이냐 in-process 냐이므로 이쪽은 cfg 격리로 충분하다. 근거는 [플러그인 권한 모델](plugin-permissions.md).
 
-‡ **다른 플랫폼의 답은 `-32601` 이 아니다.** 위 둘은 등재(`DEBUG_METHODS`)와 CLI 서브커맨드에 플랫폼 조건이 없다 — 이 저장소에서 그 두 층은 플랫폼 균일하고(실측 2026-09-05: `crates/tasty-cli/src/` 와 `crates/tasty-ipc/src/method_meta.rs` 에 `target_os` 게이트 0 건) 차이는 dispatch 층에만 둔다. 그래서 macOS gui 가 아닌 조합에서는 상보 arm 이 **`-32015` 와 사유**로 답한다("이 플랫폼엔 `CGEventPost`/`TISSelectInputSource` 대응물이 없다"). `-32601`("그런 메서드 없음")로 답하면 이름이 틀렸다는 뜻이 되어 호출자가 오타를 의심하게 되는데, 이름은 맞고 표에도 있다 — 고칠 방향이 달라진다. 짝이 빠지지 않게 `src/source_guards/platform_gated_dispatch_complement.rs` 가 강제한다. 근거는 [ADR-0004](../adr/0004-ipc-discovery-and-errors.md).
+‡ **다른 플랫폼의 답은 `-32601` 이 아니다.** 위 둘은 등재(`DEBUG_METHODS`)와 CLI 서브커맨드에 플랫폼 조건이 없다 — 이 저장소에서 그 두 층은 플랫폼 균일하고(실측 2026-09-05: `crates/tasty-cli/src/` 와 `crates/tasty-ipc/src/method_meta.rs` 에 `target_os` 게이트 0 건) 차이는 dispatch 층에만 둔다. 그래서 macOS gui 가 아닌 조합에서는 상보 arm 이 **`-32015` 와 사유**로 답한다("이 플랫폼엔 `CGEventPost`/`TISSelectInputSource` 대응물이 없다"). `-32601`("그런 메서드 없음")로 답하면 이름이 틀렸다는 뜻이 되어 호출자가 오타를 의심하게 되는데, 이름은 맞고 표에도 있다 — 고칠 방향이 달라진다. 짝이 빠지지 않게 `src/source_guards/platform_gated_dispatch_complement.rs` 가 강제한다. 근거는 [CLI / IPC API 규약 — 명명 + 안정성](api-conventions.md).
 
 ### egui 프레임이 세우는 컨텍스트 메뉴 관찰 (`TASTY_DEBUG_SUPPRESS_NATIVE_MENU`)
 
@@ -163,13 +168,13 @@ tasty 가 OS 기본 핸들러에 무언가를 넘기는 자리 — 링크·`Syst
 
 `TASTY_DEBUG_OS_OPEN_LOG=<파일>` 로 띄우면 그 자리들이 프로세스를 띄우지 않고 `<via>\t<대상>` 한 줄을 그 파일에 붙인다(`via` ∈ `open_uri` · `open_path` · `open_settings`). 무엇이 열리려 했는지는 그 줄로 판정한다. 변수가 **있기만 하면** 억제한다 — 값이 비었거나 파일에 못 쓰면 경고 로그만 남기고 여전히 열지 않는다. 호출부는 성공으로 돌아가므로 뒤따르는 동작(recent 기록 등)은 실제로 연 것과 같다. e2e 하네스 셋(`tests/common` · `tests/gui_common` · `tests/webhook_common`)이 격리 홈 아래 `os-open.log` 로 이것을 켠다.
 
-덮지 **않는** 것: tasty 가 띄운 **다른 프로세스**가 스스로 여는 것 — PTY 안의 셸이 부른 `xdg-open`, plugin 프로세스가 스스로 부르는 OS 열기(번들 plugin 에는 없다 — markdown 외부 링크는 host 를 거친다, [ADR-0030](../adr/0030-bundled-plugin-data.md)). 그쪽은 [self-verification](self-verification.md) 의 가짜 브라우저 절차로 막는다. e2e 하네스는 같은 파일에 기록하는 가짜 `BROWSER` 를 준다(Linux·BSD 한정, [e2e-tests](e2e-tests.md) §3). 구현은 `crates/tasty-platform/src/debug_os_open.rs`(모듈 선언에 `#[cfg(debug_assertions)]`), 근거는 [ADR-0045](../adr/0045-test-isolation-and-harness.md). debug 격리, release 미노출.
+덮지 **않는** 것: tasty 가 띄운 **다른 프로세스**가 스스로 여는 것 — PTY 안의 셸이 부른 `xdg-open`, plugin 프로세스가 스스로 부르는 OS 열기(번들 plugin 에는 없다 — markdown 외부 링크는 host 를 거친다, [플러그인 제작 가이드](plugin-development.md)). 그쪽은 [self-verification](self-verification.md) 의 가짜 브라우저 절차로 막는다. e2e 하네스는 같은 파일에 기록하는 가짜 `BROWSER` 를 준다(Linux·BSD 한정, [e2e-tests](e2e-tests.md) §3). 구현은 `crates/tasty-platform/src/debug_os_open.rs`(모듈 선언에 `#[cfg(debug_assertions)]`), 근거는 [유닛 테스트 격리 — 사용자 환경을 읽지 않는다](unit-test-isolation.md). debug 격리, release 미노출.
 
 ### 회차 시간 예산 줄이기 (`TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS`)
 
 IPC dispatch 한 회차의 시간 예산(제품값 16 ms)을 밀리초로 **줄여** 띄운다 — 제품값 이상은 버린다.
 `0` 이면 회차마다 첫 명령 하나만 꺼내므로, 동시에 든 나머지 명령은 잘린 회차가 루프를 다시 깨우는
-갈래(headless와 GUI, ADR-0007)로만 진척한다. 기본 예산에서는 시험의 동시 요청이 회차를
+갈래(headless와 GUI, docs/architecture/ipc-server.md)로만 진척한다. 기본 예산에서는 시험의 동시 요청이 회차를
 안 잘라 그 갈래를 실행 파일째로 지날 길이 없어 둔 손잡이다. 쓰는 곳은
 `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered_when_every_round_is_cut`. 부팅 뒤
 처음 회차에서 한 번 읽는다. debug 격리(`#[cfg(debug_assertions)]`), release 미노출 — release 의
@@ -287,7 +292,7 @@ tasty debug settings apply --json '{"general":{"workspace_categories_enabled":fa
 사용자의 mirror 조작을 재현하는 로컬 CLI 진입점만 debug로 제한하며, 원격 attach는
 release에서도 `tasty remote attach`로 실행한다. 같은 머신의 다른 인스턴스에 loopback 주소(`127.0.0.1:PORT`·`localhost:PORT`·`[::1]:PORT`)로
 붙는 GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach도 release에 있다. 두 명령은 같은 attach 세션 구현을 쓴다.
-결정 근거는 [ADR-0020](../adr/0020-remote-connection-profiles.md),
+결정 근거는 [원격 접속 프로필 + Passkey (remote_tool)](../features/remote-profiles/index.md),
 동작은 [attach-behavior.md](attach-behavior.md)를 참고한다.
 
 - 명령: `tasty debug attach [SURFACE] [--workspace <id>] [--dump-after <ms>] [--send <str>] [--send-to <sid>] [--raw] [--force-detach]`. `--ssh`/`--profile`/`--into-gui` 같은 원격 옵션은 없다(loopback 전용).
@@ -363,9 +368,9 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 
 ## 관련
 
-- [identity.md](../identity.md) — 원칙 1 ②(사용자 입력 재현 격리), 포커스 독립성
-- [ADR-0020](../adr/0020-remote-connection-profiles.md) — 로컬 attach 를 debug 로 격리한 결정
-- [ADR-0012](../adr/0012-request-admission-and-isolation.md) — OS 전역 입력 조작(`raw_key`/`switch_input_source`/`ime_*`)을 debug 로 격리한 결정 + `tests/ipc_release_table_excludes_input_reproduction.rs` 회귀 가드
-- [ADR-0004](../adr/0004-ipc-discovery-and-errors.md) — 플랫폼 게이트가 걸린 dispatch arm 은 `-32601` 이 아니라 `-32015` 와 사유로 답한다 + `src/source_guards/platform_gated_dispatch_complement.rs` 짝 가드
+- [주체별 원칙](../principles/control-and-data.md) — 포커스와 debug 조작 범위
+- [원격 접속 프로필 + Passkey (remote_tool)](../features/remote-profiles/index.md) — 로컬 attach 를 debug 로 격리한 결정
+- [플러그인 권한 모델](plugin-permissions.md) — OS 전역 입력 조작(`raw_key`/`switch_input_source`/`ime_*`)을 debug 로 격리한 결정 + `tests/ipc_release_table_excludes_input_reproduction.rs` 회귀 가드
+- [CLI / IPC API 규약 — 명명 + 안정성](api-conventions.md) — 플랫폼 게이트가 걸린 dispatch arm 은 `-32601` 이 아니라 `-32015` 와 사유로 답한다 + `src/source_guards/platform_gated_dispatch_complement.rs` 짝 가드
 - [attach-behavior.md](attach-behavior.md) — attach 메커니즘
 - [self-verification 독립 검증](self-verification.md#독립-검증--개발도-agent-가-스스로-확인할-수-있어야-한다) — debug IPC 를 쓴 자체 검증

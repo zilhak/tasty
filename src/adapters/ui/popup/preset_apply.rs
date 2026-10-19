@@ -6,7 +6,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 /// preset 행 라벨. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
-/// `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
+/// `Theme` 필드가 없다 — docs/design/systems/theme.md 대로 **이름에 primitive 임을 남긴다**.
 const PRESET_ROW_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 use crate::adapters::ui::popup::PopupAction;

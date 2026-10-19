@@ -1,6 +1,6 @@
 //! IPC 호출자를 감사 레코드로 변환해 store에 전달한다.
 //! Allow는 저장하지 않는다. 보존 정책은
-//! [ADR-0009](../../../docs/adr/0009-state-storage-and-retention.md)를 따른다.
+//! [저장소 시스템 (Storage System)](../../../docs/design/systems/storage.md)를 따른다.
 
 use crate::ipc::caller::CallerContext;
 use crate::store::audit::{AuditCallerKind, AuditDecision};

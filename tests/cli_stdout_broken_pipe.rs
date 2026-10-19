@@ -1,5 +1,5 @@
 //! CLI의 stdout·stderr 파이프를 일찍 닫아도 panic과 crash report가 생기지 않는지 확인한다.
-//! stdout은 정상 종료, stderr는 같은 명령의 정상 오류 코드를 유지해야 한다(ADR-0043).
+//! stdout은 정상 종료, stderr는 같은 명령의 정상 오류 코드를 유지해야 한다(docs/dev-guide/cli-structure.md).
 //! 서버가 필요 없는 명령과 임시 TASTY_HOME을 사용하며 출력 매크로의 우회도 소스에서 검사한다.
 
 use std::path::{Path, PathBuf};

@@ -2,7 +2,7 @@
 
 WebView는 winit 창 안에 놓이는 별도의 OS 자식 창이나 뷰다. Linux는 X11 child window, macOS는 WKWebView subview, Windows는 child HWND를 사용한다. 콘텐츠는 OS의 웹 엔진이 그리고 호스트는 위치·표시·수명·키보드 입력을 관리한다.
 
-이 문서는 세 백엔드가 공통으로 제공할 동작을 설명한다. 선택 이유는 [ADR-0029](../../adr/0029-webview-host-integration.md)에 있다.
+이 문서는 세 백엔드가 공통으로 제공할 동작을 설명한다. 선택 이유는 이 문서에 있다.
 
 <a id="계약의-형태--trait-이-아니라-이름이다"></a>
 
@@ -10,7 +10,7 @@ WebView는 winit 창 안에 놓이는 별도의 OS 자식 창이나 뷰다. Linu
 
 PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출부가 쓰는 메서드와 시그니처는
 해당 OS 컴파일이 검사한다. 같은 빌드에서 런타임 다형성을 쓰지 않으므로 별도 backend trait은 두지 않는다.
-선택 근거는 [Webview 통합 ADR](../../adr/0029-webview-host-integration.md)에 있다.
+선택 근거는 Webview 통합 ADR에 있다.
 
 컴파일 성공은 실제 크기·focus·navigation·종료 행동이 같다는 증거가 아니다.
 백엔드 변경 때는 아래 계약으로 세 구현을 비교하고 해당 OS에서 동작을 확인한다.
@@ -30,14 +30,14 @@ PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출
 | `nav_state` | — | `NavState` | |
 | `take_pending_navigations` | — | `Vec<PendingNavigation>` | `user_gesture` 는 Linux 가 `is_user_gesture`, Windows 가 `IsUserInitiated` 에서 옮긴다. macOS 는 늘 `false` 다 — 아래 "탐색" |
 | `set_zoom` | `f64` | — | |
-| `set_javascript_enabled` | `bool` | — | 스크립트 게이트가 붙은 webview 에서는 값을 전역 sandbox 설정으로 `gate.set_sandbox` 에 넘기고, 적용하는 값은 문서별 판정이다([ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)). macOS 는 전역 preference 를 켜 두고 문서별 값을 navigation 정책의 webpage preferences 로 준다 |
-| `attach_script_gate` | `ScriptGate` | — | 첫 로드 전에 부른다. Linux 만 page cache 를 꺼서 뒤로·앞으로 가기도 응답 단계를 거치게 한다([ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)) |
+| `set_javascript_enabled` | `bool` | — | 스크립트 게이트가 붙은 webview 에서는 값을 전역 sandbox 설정으로 `gate.set_sandbox` 에 넘기고, 적용하는 값은 문서별 판정이다([HTML Viewer (`com.tasty.html`)](../../surfaces/html/index.md)). macOS 는 전역 preference 를 켜 두고 문서별 값을 navigation 정책의 webpage preferences 로 준다 |
+| `attach_script_gate` | `ScriptGate` | — | 첫 로드 전에 부른다. Linux 만 page cache 를 꺼서 뒤로·앞으로 가기도 응답 단계를 거치게 한다([HTML Viewer (`com.tasty.html`)](../../surfaces/html/index.md)) |
 | `reload` | — | — | |
 | `go_back` · `go_forward` | — | — | 세션 히스토리로 이동한다. 사용자 탐색 큐와 에이전트 히스토리 큐가 부른다([html surface §사용자 탐색·에이전트 히스토리 이동](../../surfaces/html/index.md#내부-동작)) |
 | `nav_info` | — | `WebViewNavInfo` | commit 주소의 출처는 Linux 가 WebKitGTK `load-changed` Committed, macOS 가 WKWebView `didCommitNavigation`, Windows 가 WebView2 `ContentLoading` 이다. 주소 선택은 공통 `committed_document_url`(로드가 끝났으면 엔진 현재 주소, 로드 중·실패면 마지막 commit 주소)이다. 이동 가능 여부는 WebKitGTK `can_go_back`·`can_go_forward`, WKWebView `canGoBack`·`canGoForward`, WebView2 `CanGoBack`·`CanGoForward` 다. Windows 는 조회 실패를 웹뷰별 첫 번째만 warn 으로 남긴다. macOS·Windows 는 실 기기 미측정이다([html surface §문서 주소와 히스토리](../../surfaces/html/index.md#내부-동작)) |
 | `debug_stop` | — | — | debug 빌드 전용이다. 로드 중지를 재현한다. 사용자 진입점이 없는 조작이라 사용자 탐색 큐와 나눈다 |
 | `set_color_scheme` | `ColorScheme` | — | |
-| `set_remote_content_allowed` | `bool` | — | Linux 는 WebKit content filter 로 막는다([ADR-0029](../../adr/0029-webview-host-integration.md)) |
+| `set_remote_content_allowed` | `bool` | — | Linux 는 WebKit content filter 로 막는다(이 문서) |
 | `Drop` | — | — | 아래 "수명" |
 
 ## 생성 — 부모 handle 과 실패 분류
@@ -120,9 +120,9 @@ PlatformWebView의 Drop이 OS 자원을 정리하며 부모 winit 창이 먼저 
 NavState(Idle·Loading·Done·Failed)는 tasty-model의 OS 비의존 값이다.
 App adapter가 native backend의 현재 상태를 읽어 EngineRuntime의 `RemoteSurface` 관측값에 반영하고, egui chrome은 `SurfaceRead::remote_webview()`의 조회 값으로 표시한다. CoreState의 확정 구조가 native handle이나 탐색 실행을 소유하지 않는다.
 `nav_state`는 현재 상태를 읽고 `take_pending_navigations`는 쌓인 요청을 꺼내 비운다.
-Done·Failed 전이는 마지막에 시작하거나 요청한 로드의 종료만 따른다. 앞 로드의 늦은 종료는 새 로드의 Loading을 바꾸지 않고, web process 종료는 세대와 관계없이 Failed다. OS별 세대 출처는 [ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)에 있다(Linux는 신호 순서).
+Done·Failed 전이는 마지막에 시작하거나 요청한 로드의 종료만 따른다. 앞 로드의 늦은 종료는 새 로드의 Loading을 바꾸지 않고, web process 종료는 세대와 관계없이 Failed다. OS별 세대 출처는 [HTML Viewer (`com.tasty.html`)](../../surfaces/html/index.md)에 있다(Linux는 신호 순서).
 
-HTML 배너는 [값 snapshot과 요청](../../../src/runtime/html_script.rs)을 사용한다. Allow·Dismiss·Reshow 요청은 표시 당시 `DocumentRecord`, `SurfaceBinding`, 원 `HtmlScriptState`의 weak identity에 묶이고 한 번만 소비된다. App은 현재 surface와 문서가 일치할 때만 요청을 적용한다. 프레임에서는 배너 렌더 뒤 요청을 적용하고 `finish_redraw` 뒤 같은 호출 흐름에서 native 동기화를 수행하므로, 허용 상태 갱신이 reload보다 먼저다. 문서별 허용 정책은 [ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)을 유지한다.
+HTML 배너는 [값 snapshot과 요청](../../../src/runtime/html_script.rs)을 사용한다. Allow·Dismiss·Reshow 요청은 표시 당시 `DocumentRecord`, `SurfaceBinding`, 원 `HtmlScriptState`의 weak identity에 묶이고 한 번만 소비된다. App은 현재 surface와 문서가 일치할 때만 요청을 적용한다. 프레임에서는 배너 렌더 뒤 요청을 적용하고 `finish_redraw` 뒤 같은 호출 흐름에서 native 동기화를 수행하므로, 허용 상태 갱신이 reload보다 먼저다. 문서별 허용 정책은 [HTML Viewer (`com.tasty.html`)](../../surfaces/html/index.md)을 유지한다.
 
 사용자 navigation proof의 원본은 AppServices가 보유한 `NavigationProofs`다. App adapter는 plugin 통지 전에 원 View·surface·페이지 작성자·resource identity를 기록하고, 프레임 끝에 owner takeover와 사라진 surface를 반영한다. IPC `RequestScope`는 원 View의 weak identity와 현재 Engine 실행 문맥으로 proof를 한 번 소비한다. 닫힌 View나 교체된 resource의 기록은 새 대상에 사용할 수 없다.
 

@@ -8,7 +8,7 @@ use tasty_terminal::search::{SearchError, SearchOptions};
 use tasty_type_geometry::length::LogicalPx;
 
 /// 매치 카운터(`3/17`) 폰트. DTCG primitive `font-size-12` 는 있으나 semantic role 이
-/// 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
+/// 없어 `Theme` 필드가 없다 — docs/design/systems/theme.md 대로 **이름에 primitive 임을 남긴다**.
 const COUNTER_FONT_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 const SEARCH_BAR_POPUP_ID: &str = "search_bar";

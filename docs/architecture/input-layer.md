@@ -27,7 +27,7 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 
 `handle_cursor_moved` / `handle_mouse_input` / `handle_mouse_wheel` 이 모두 같은 가드(`egui_consumed || overlay_open || state.popup_hovered || state.banner_hovered || state.modifier_hint_hovered`)로 상위 레이어를 먼저 거른 뒤 divider → terminal 로 내려간다. 배너는 **자기 영역의 마우스를 소비**(뒤로 전파 X)하는 focus-less 오버레이라 popup 과 같은 precedence 에서 차단한다(Toast 는 입력을 통과시키므로 이 가드에 없다 — [banner 시스템](../design/systems/banner.md)).
 
-**순서 6 은 버튼 없는 hover motion 보고에도 적용된다.** DECSET 1003(AnyEventMouse)을 켠 앱에 커서 이동을 보고하기 전에 press 경로와 **같은 threshold**(`state::mouse::DIVIDER_HIT_THRESHOLD`)로 divider 밴드를 먼저 판정하고, 밴드 안이면 보고하지 않는다 — 밴드는 gap(1~2px)보다 넓어 양쪽 surface rect 안쪽까지 겹치므로, 이 가드가 없으면 "커서는 ↔ 인데 그 아래 TUI 는 hover 를 계속 받는" 불일치가 생긴다. OS 창 리사이즈 가장자리 밴드와 divider 드래그 진행 중에도 같은 이유로 보고하지 않는다. 대상은 focused surface 한정이다([ADR-0015](../adr/0015-terminal-user-input-routing.md)) — 순서 3(비활성 surface 전환)이 클릭에 대해 세운 "배경 캡쳐 TUI 로 마우스가 새지 않게" 원칙을 hover 에도 적용한 것이며, 다만 hover 는 포커스를 옮기지 않는다. **버튼을 누른 채 시작한 드래그 motion 은 이 가드들의 적용 대상이 아니다** — 대상 surface 가 press 시점에 고정되므로 밴드/이웃 surface 로 나가도 원래 surface 기준으로 계속 보고된다.
+**순서 6 은 버튼 없는 hover motion 보고에도 적용된다.** DECSET 1003(AnyEventMouse)을 켠 앱에 커서 이동을 보고하기 전에 press 경로와 **같은 threshold**(`state::mouse::DIVIDER_HIT_THRESHOLD`)로 divider 밴드를 먼저 판정하고, 밴드 안이면 보고하지 않는다 — 밴드는 gap(1~2px)보다 넓어 양쪽 surface rect 안쪽까지 겹치므로, 이 가드가 없으면 "커서는 ↔ 인데 그 아래 TUI 는 hover 를 계속 받는" 불일치가 생긴다. OS 창 리사이즈 가장자리 밴드와 divider 드래그 진행 중에도 같은 이유로 보고하지 않는다. 대상은 focused surface 한정이다([터미널 (Terminal)](../surfaces/terminal/index.md)) — 순서 3(비활성 surface 전환)이 클릭에 대해 세운 "배경 캡쳐 TUI 로 마우스가 새지 않게" 원칙을 hover 에도 적용한 것이며, 다만 hover 는 포커스를 옮기지 않는다. **버튼을 누른 채 시작한 드래그 motion 은 이 가드들의 적용 대상이 아니다** — 대상 surface 가 press 시점에 고정되므로 밴드/이웃 surface 로 나가도 원래 surface 기준으로 계속 보고된다.
 
 **분할선 hit 띠의 좌클릭 press 는 click-to-activate 보다 먼저 드래그를 시작한다(순서 2c).**
 hit 띠는 분할선 양쪽 surface 안쪽까지 겹친다. 전환을 먼저 보면 비활성 surface 쪽 띠의 첫 press 가
@@ -209,7 +209,7 @@ host popup을 위에 배치한다. 이 호출은 parent와 child를 모두 `Area
 | 2 | `src/view/main/keyboard.rs` 터미널 포워딩 게이트 | **없음** | 같은 함수 **앞**의 0단계 게이트(`try_consume_fullscreen_stage_key`)가 무대 키를 전부 소비하고 return 하므로 여기까지 오지 않는다. 그 게이트가 사라지면 이 식도 무대 항이 필요해진다 |
 | 3 | `src/view/main/ime.rs` | `\|\| fullscreen_stage_active()` | 필수. 무대만 떠 있으면 `keyboard_overlay_open()` 의 네 항이 전부 false 라 아무도 안 막고, 조합 중이던 IME 의 Commit 이 뒤 터미널 PTY로 전달된다 |
 | 4 | `src/app/plugin_glue/shortcut.rs` plugin 단축키 | `\|\| fullscreen_stage_active()` | 필수. 이 경로는 `dispatch_window_event_to_view` **이전에** 호출되므로(`src/app/event_handler.rs`) 2 의 0단계 게이트가 아예 도달하지 못한다 |
-| 5 | `src/app/webview_keys.rs` native webview 포워딩 키 | `\|\| fullscreen_stage_active()` | 필수. webview 자식 창에서 올라온 키는 winit `KeyboardInput` 경로를 타지 않아 2 의 0단계 게이트를 거치지 않는다([ADR-0029](../adr/0029-webview-host-integration.md)) |
+| 5 | `src/app/webview_keys.rs` native webview 포워딩 키 | `\|\| fullscreen_stage_active()` | 필수. webview 자식 창에서 올라온 키는 winit `KeyboardInput` 경로를 타지 않아 2 의 0단계 게이트를 거치지 않는다([WebView 호스트 계약](../design/systems/webview.md)) |
 | 6 | `mouse_overlay_open()` 정의 | 정의에 포함 | 마우스 다섯 호출부 전부가 이 하나를 본다 |
 | 7 | `has_egui_overlay_open()` 정의 | 정의에 포함 | WebView 가 무대 위로 뚫고 나오지 못하게 |
 | 8 | `src/adapters/ui/egui_panels.rs` explorer 타입어헤드 게이트 | `\|\| fullscreen_stage_active()` | 필수. 무대 콘텐츠는 1이 egui로 들여보낸 키를 쓰는데, 그 키가 같은 egui `Context`의 이벤트 큐에 들어가 뒤에 있는 explorer 패널에도 전달된다. 무대 항을 빼면 무대에서 입력한 글자가 뒤쪽 explorer의 선택을 움직인다 |

@@ -90,7 +90,7 @@ impl super::MainViewState {
         destination: std::path::PathBuf,
         origin: crate::intent::IntentOrigin,
     ) {
-        // 표시된 경로는 원격 호스트의 경로다(ADR-0022). 원격 쓰기는 그 서버가 알린 연결에서만 한다.
+        // 표시된 경로는 원격 호스트의 경로다(docs/features/remote-attach/index.md). 원격 쓰기는 그 서버가 알린 연결에서만 한다.
         if self.refuse_remote_write(engine, surface_id) {
             return;
         }

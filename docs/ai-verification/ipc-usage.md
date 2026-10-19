@@ -71,7 +71,7 @@ Tasty에서는 `send`와 `read screen`을 별도 요청으로 반복하고, 프�
 
 ssh 비밀번호/`sudo` 암호/OTP 프롬프트, 대화형 REPL, 설치 마법사, `git rebase -i` 같은 풀스크린 에디터 등 — 파이프 도구로는 손댈 수 없던 대화형 절차를 surface 안에서 진행할 수 있다.
 
-> SSH 연결은 [원격 attach](../features/remote-attach/index.md)와 [로컬 신뢰 정책](../adr/0011-secrets-and-local-trust.md)에 따라 키 인증을 사용한다. PTY가 비밀번호 프롬프트를 처리할 수 있다는 설명이 비밀번호 자동화를 권장하는 것은 아니다.
+> SSH 연결은 [원격 attach](../features/remote-attach/index.md)와 [로컬 신뢰 정책](../design/systems/memory.md)에 따라 키 인증을 사용한다. PTY가 비밀번호 프롬프트를 처리할 수 있다는 설명이 비밀번호 자동화를 권장하는 것은 아니다.
 
 ### 한계
 

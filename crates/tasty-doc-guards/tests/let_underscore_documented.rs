@@ -18,7 +18,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// (경로, 허용 코드 조각). 해당 조각을 담은 줄만 면제한다.
-/// vendor/tiny_http의 상류 코드를 불필요하게 수정하지 않기 위한 예외다(ADR-0032).
+/// vendor/tiny_http의 상류 코드를 불필요하게 수정하지 않기 위한 예외다(docs/features/webhook/index.md).
 /// 같은 파일의 다른 위반은 계속 검사한다. pre-commit C.6은 이 예외를 사용하지 않는다.
 const ALLOWLIST: &[(&str, &[&str])] = &[(
     "vendor/tiny_http/src/lib.rs",
@@ -265,7 +265,7 @@ fn violations_in(text: &str) -> Vec<(usize, String)> {
     out
 }
 
-/// 순회 실패로 빈 결과가 통과하지 않게 하는 하한이다(ADR-0048).
+/// 순회 실패로 빈 결과가 통과하지 않게 하는 하한이다(docs/dev-guide/guard-verification.md).
 /// 2026-09-05에 gather가 수집한 Rust 파일은 1180개였다.
 /// 파일 정리를 허용할 여유를 두며, 하한 통과가 수집의 완전성을 보장하지는 않는다.
 const MIN_SCANNED_FILES: usize = 700;

@@ -129,19 +129,14 @@ enum Kind {
 /// 검색 결과 중 현재 값 설명이 아닌 파일과 제외 근거.
 const EXCLUDED: &[(&str, Kind, &str)] = &[
     (
+        "docs/dev-guide/agent-runner.md",
+        Kind::OtherMeaning,
+        "task 그래프의 MAX_GRAPH_TASKS 상한이며 파일 SLOC 임계값이 아니다",
+    ),
+    (
         "crates/tasty-agent/src/task/store/graph_submit.rs",
         Kind::OtherMeaning,
         "task 그래프 하나의 task 수 상한 1000 이며 파일 SLOC 임계값이 아니다",
-    ),
-    (
-        "docs/adr/0068-typed-task-graphs-activate-through-a-graph-record.md",
-        Kind::OtherMeaning,
-        "task 그래프 하나의 task 수 상한 1000 과 그 측정값이며 파일 SLOC 임계값이 아니다",
-    ),
-    (
-        "docs/adr/0047-ci-and-complexity-checks.md",
-        Kind::Dated,
-        "임계값을 품질 공식에서 도출하지 않았다는 결정 당시의 선택 근거",
     ),
     (
         "CHANGELOG.md",

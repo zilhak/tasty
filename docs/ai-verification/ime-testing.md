@@ -1,6 +1,6 @@
 # IME 시뮬레이션 검증
 
-`surface.ime_*` IPC로 한글·CJK 입력을 재현한다. 사용자 입력기의 조합 과정을 재현하는 기능이므로 debug 빌드의 local caller에게만 허용한다([ADR-0012](../adr/0012-request-admission-and-isolation.md)).
+`surface.ime_*` IPC로 한글·CJK 입력을 재현한다. 사용자 입력기의 조합 과정을 재현하는 기능이므로 debug 빌드의 local caller에게만 허용한다([플러그인 권한 모델](../dev-guide/plugin-permissions.md)).
 
 상태는 창 단위다. 핸들러는 `src/adapters/ipc/handler/ime.rs`, 접근 규칙은 `crates/tasty-ipc/src/method_meta.rs::PREFIX_RULES`에 있다. 기본 debug 포트는 `~/.tasty-debug/tasty.port`, 격리 인스턴스는 `$TASTY_HOME/tasty.port`를 사용한다.
 
@@ -72,6 +72,6 @@ call("surface.ime_disable")
   "입력 forward"·"입력 게이트"). 어느 쪽도 이 IPC 로는 주입되지 않는다 —
   `surface.ime_*` 는 focused surface 의 **터미널** 오버레이 상태를 만지고, `debug.inject_key` 는
   키만 주입한다. 인라인 조합 표시는 헤드리스 시뮬레이션 불가 — 실제 OS IME 로 육안 검증한다.
-  (markdown 주소창은 [ADR-0029](../adr/0029-webview-host-integration.md) 로 문서에 내장된
+  (markdown 주소창은 [WebView 호스트 계약](../design/systems/webview.md) 로 문서에 내장된
   HTML `<input>` 이 됐다 — IME 는 host native WebView 가 자체 처리하며 이 경로/egui-mesh 어느
   쪽에도 속하지 않는다.)

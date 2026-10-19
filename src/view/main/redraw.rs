@@ -1425,7 +1425,7 @@ impl MainView {
         let multi = paths.len() > 1;
         let is_empty_target = paths.is_empty();
         let is_folder = paths.len() == 1 && single_is_dir;
-        // 쓸 수 없는 원격 칸은 쓰기 행을 꺼 두고 이유를 툴팁으로 단다(ADR-0022).
+        // 쓸 수 없는 원격 칸은 쓰기 행을 꺼 두고 이유를 툴팁으로 단다(docs/features/remote-attach/index.md).
         // 다른 호출 경로도 있으므로 각 핸들러의 검사도 유지한다.
         let is_mirror = engine.is_mirror_surface(surface_id);
         let refusal = engine.explorer_write_refusal(surface_id);
@@ -1598,7 +1598,7 @@ impl MainView {
         items
     }
 
-    /// (ADR-0022) mirror explorer 에서 하지 않는 로컬 전용 조작(시스템 열기·즐겨찾기 추가·새 탭)의 안내 —
+    /// (docs/features/remote-attach/index.md) mirror explorer 에서 하지 않는 로컬 전용 조작(시스템 열기·즐겨찾기 추가·새 탭)의 안내 —
     /// `apply_explorer_action` 의 `OpenFile` mirror 가드(`egui_panels.rs`)와 동일한 toast kind/scope.
     /// 파일을 바꾸는 조작은 `refuse_remote_write` 가 그 칸에 이유를 알린다.
     pub(crate) fn toast_remote_write_unsupported(&mut self) {
@@ -1692,7 +1692,7 @@ impl MainView {
         surface_id: u32,
         paths: &[std::path::PathBuf],
     ) {
-        // (ADR-0022) 원격 쓰기를 알리지 않은 서버의 mirror explorer 는 파일을 바꾸지 않는다.
+        // (docs/features/remote-attach/index.md) 원격 쓰기를 알리지 않은 서버의 mirror explorer 는 파일을 바꾸지 않는다.
         if self.state.refuse_remote_write(engine, surface_id) {
             return;
         }
@@ -1714,7 +1714,7 @@ impl MainView {
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
     ) {
-        // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다.
+        // (docs/features/remote-attach/index.md) mirror explorer 는 파일 변경을 지원하지 않는다.
         if engine.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
@@ -1738,7 +1738,7 @@ impl MainView {
         paths: &[std::path::PathBuf],
         binding: crate::runtime::surface_binding::SurfaceBinding,
     ) {
-        // (ADR-0022) 원격 쓰기를 알리지 않은 서버의 mirror explorer 는 파일을 바꾸지 않는다.
+        // (docs/features/remote-attach/index.md) 원격 쓰기를 알리지 않은 서버의 mirror explorer 는 파일을 바꾸지 않는다.
         // 이 가드가 먼저 막아 rename 팝업(`draw_rename_popup`) 자체가 열리지 않는다.
         if self.state.refuse_remote_write(engine, surface_id) {
             return;
@@ -1767,7 +1767,7 @@ impl MainView {
         is_empty_target: bool,
     ) {
         // 원격 경로를 전역 즐겨찾기에 저장하면 로컬·다른 호스트에서도 사용될 수 있다.
-        // 팝업에는 surface_id가 없으므로 여기서 mirror를 차단한다(ADR-0022).
+        // 팝업에는 surface_id가 없으므로 여기서 mirror를 차단한다(docs/features/remote-attach/index.md).
         if engine.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;

@@ -106,10 +106,10 @@ use crate::ipc::window_port::IpcWindow;
 use crate::state::RequestContext;
 
 /// 호출자를 인증된 종류로 전달하고 공통 권한·cap·rate 검사를 수행한다.
-/// 이미 검사한 요청은 handle_checked_request를 사용한다(ADR-0012).
+/// 이미 검사한 요청은 handle_checked_request를 사용한다(docs/dev-guide/plugin-permissions.md).
 ///
 /// 엔진 핸들러는 IpcWindow와 IntentOutbox로 창에 접근한다.
-/// 창 자체를 조작하는 GUI·debug 핸들러만 RequestContext를 받는다(ADR-0054).
+/// 창 자체를 조작하는 GUI·debug 핸들러만 RequestContext를 받는다(docs/dev-guide/app-state-ownership.md).
 #[cfg(test)]
 pub fn handle_with_caller(
     core: &mut crate::app::services::AppServices,
@@ -369,7 +369,7 @@ pub(crate) fn check_rate_limit_gate(
 }
 
 /// 허용된 비-host 호출을 집계한다. telemetry 자체 호출은 재귀 집계를 막기 위해 제외한다.
-/// Allow 감사 기록의 보존 여부는 audit 모듈이 결정한다(ADR-0009).
+/// Allow 감사 기록의 보존 여부는 audit 모듈이 결정한다(docs/design/systems/storage.md).
 fn record_telemetry_and_audit(
     core: &mut crate::app::services::AppServices,
     window: &mut dyn IpcWindow,
@@ -437,7 +437,7 @@ pub(crate) fn display_plugin_rss_anomalies(
 
 /// 점유자가 아닌 호출자의 workspace 구조 변경을 IPC 라우터에서 거절한다.
 /// holder의 forward는 structural_exec을 직접 호출하므로 이 검사를 거치지 않는다.
-/// 공통 도메인 실행부에 검사하면 정당한 forward까지 막힌다(ADR-0021).
+/// 공통 도메인 실행부에 검사하면 정당한 forward까지 막힌다(docs/dev-guide/attach-behavior.md).
 ///
 /// terminal.spawn은 pane 재지정 이후의 spawn_target_guard에서 검사한다.
 /// convert는 아래 열거한 메서드만 검사하며 GUI의 직접 intent나 새 kind의 진입점은 포함하지 않는다.
@@ -540,7 +540,7 @@ pub(crate) fn hard_occupied_denial(ws_id: u32, id: &serde_json::Value) -> JsonRp
 /// workspace 인자만 검사하면 다른 workspace의 pane을 지정해 우회할 수 있다.
 ///
 /// spawn은 holder가 forward하는 구조 변경에 포함되지 않아 이 위치에서 거절해도 된다.
-/// 나머지 mirror 구조 변경은 원격 전달을 허용하므로 mirror 검사를 공통 라우터에 넣지 않는다(ADR-0021).
+/// 나머지 mirror 구조 변경은 원격 전달을 허용하므로 mirror 검사를 공통 라우터에 넣지 않는다(docs/dev-guide/attach-behavior.md).
 pub(crate) fn spawn_target_guard(
     engine: &crate::runtime::engine_access::EngineRef<'_>,
     pane_id: u32,
@@ -603,7 +603,7 @@ fn route_engine_handler(
         "tab.list" => {
             tab::handle_tab_list(window.presentation(), &engine.as_ref(), id, &request.params)
         }
-        // terminal: child-terminal 관리와 점유 검사 (ADR-0021)
+        // terminal: child-terminal 관리와 점유 검사 (docs/dev-guide/attach-behavior.md)
         "terminal.tell" => terminal::handle_tell(engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
@@ -748,7 +748,7 @@ fn route_engine_handler(
         "file_handler.reload" => file_handler::handle_reload(core, id),
         "file_handler.detectors" => file_handler::handle_detectors(core, id),
         // identify worker와 결과를 여는 창이 GUI에만 있다.
-        // 헤드리스에서는 예약 성공 뒤 요청을 버리지 않도록 라우팅하지 않는다(ADR-0031).
+        // 헤드리스에서는 예약 성공 뒤 요청을 버리지 않도록 라우팅하지 않는다(docs/features/file-handler/index.md).
         #[cfg(feature = "gui")]
         "file_handler.dispatch" => file_handler::handle_dispatch(
             out,
@@ -776,10 +776,10 @@ fn route_engine_handler(
         ),
         // kind에 상관없이 최근 목록만 조회하므로 GUI가 필요 없다.
         "recent.query" => recent::handle_query(window, id, request.params.clone()),
-        // 결과를 전달하는 App::dispatch_pending_git_query_forwards가 GUI 전용이다(ADR-0022).
+        // 결과를 전달하는 App::dispatch_pending_git_query_forwards가 GUI 전용이다(docs/features/remote-attach/index.md).
         #[cfg(feature = "gui")]
         "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),
-        // mirror 원문도 GUI의 전달 큐에서 처리한다(ADR-0022).
+        // mirror 원문도 GUI의 전달 큐에서 처리한다(docs/features/remote-attach/index.md).
         #[cfg(feature = "gui")]
         "markdown_mirror.content_request" => {
             markdown_mirror::handle_content_request(engine, id, &request.params)
@@ -1113,7 +1113,7 @@ fn route_debug_handler(
         "debug.inject_mouse" => debug::handle_debug_inject_mouse(engine, id, &request.params),
         #[cfg(feature = "gui")]
         "debug.inject_key" => debug::handle_debug_inject_key(engine, id, &request.params),
-        // surface 이름을 쓰지만 CGEvent/TIS는 OS 전역에 작용한다. debug로 제한한다(ADR-0012).
+        // surface 이름을 쓰지만 CGEvent/TIS는 OS 전역에 작용한다. debug로 제한한다(docs/dev-guide/plugin-permissions.md).
         #[cfg(all(target_os = "macos", feature = "gui"))]
         "surface.switch_input_source" => {
             input_source::handle_switch_input_source(state, &engine.as_ref(), id, &request.params)
@@ -1168,7 +1168,7 @@ fn route_debug_handler(
         "debug.banner.set_countdown" => {
             debug::handle_debug_banner_set_countdown(state, id, &request.params)
         }
-        // 허용 클릭과 페이지 이동 조작을 재현한다(ADR-0053).
+        // 허용 클릭과 페이지 이동 조작을 재현한다(docs/surfaces/html/index.md).
         #[cfg(feature = "gui")]
         "debug.html_script.allow" => {
             debug_html_script::handle_allow(&engine.as_ref(), id, &request.params)
@@ -1183,7 +1183,7 @@ fn route_debug_handler(
 
 /// 필수 surface_id의 타입·u32 범위·Surface ID 공간을 검사한다.
 /// PTY_ID_BASE 이상의 값이 memory scope에 들어가면 다음 부팅의 surface 카운터를
-/// PTY 공간으로 올릴 수 있으므로 거절한다(ADR-0059).
+/// PTY 공간으로 올릴 수 있으므로 거절한다(docs/design/policies/focus.md).
 pub(super) fn require_surface_id(
     params: &serde_json::Value,
     id: &serde_json::Value,

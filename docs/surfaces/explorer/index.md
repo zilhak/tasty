@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent ([주체](../../concepts/actors.md))
-- **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (원격 attach mirror 브라우징 — list_dir 채널 재사용, 파일 변경은 원격 쓰기를 알린 server 가 실행, 더블클릭은 원격 탭 열기)
+- **설계**: [원격 attach (Remote attach)](../../features/remote-attach/index.md) (원격 attach mirror 브라우징 — list_dir 채널 재사용, 파일 변경은 원격 쓰기를 알린 server 가 실행, 더블클릭은 원격 탭 열기)
 - **코드**: surface kind 등록 `register_explorer` (`src/runtime/surface_registry/builtins.rs`), 모델 `ExplorerPanel`/`ExplorerTab` (`crates/tasty-model/src/explorer_panel.rs`), 뷰 스토어 `ExplorerView`/`ExplorerViewStore` (`src/adapters/ui/surface/explorer/view.rs`), 렌더 `draw_explorer` (`src/adapters/ui/surface/explorer.rs`), deferred action 적용 `apply_explorer_action` (`src/adapters/ui/egui_panels.rs`)
 - **화면**: 호스트 내장 egui surface
 
@@ -51,7 +51,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 
 ### 외부 변경 확인
 
-다른 프로그램이 바꾼 폴더는 OS 파일 감시 없이 주기 확인으로 찾는다. 결정과 대안은 [ADR-0076](../../adr/0076-explorer-outside-changes-by-focused-tab-polling.md)에 있다(`src/adapters/ui/surface/explorer/view/poll.rs`).
+다른 프로그램이 바꾼 폴더는 OS 파일 감시 없이 주기 확인으로 찾는다. 결정과 대안은 이 문서에 있다(`src/adapters/ui/surface/explorer/view/poll.rs`).
 
 - **대상 칸**: 입력을 받는 창(OS 창 포커스)에서 포커스를 가진 surface 가 속한 탭의 로컬 explorer 만 확인한다(`checks_outside_changes`). 같은 탭을 나눈 다른 surface 에 포커스가 있어도 그 탭의 explorer 는 확인한다. 다른 탭에 가려졌거나 다른 Pane 의 탭에 있는 explorer, 포커스가 없는 창의 explorer 는 확인하지 않는다. Tasty 가 배경 앱이면 어느 explorer 도 확인하지 않는다. 창 포커스는 egui-winit 이 winit `Focused` 이벤트로 갱신하는 `RawInput.focused` 를 읽는다.
 - **주기**: 탭이나 창이 포커스를 얻은 프레임에 바로 한 번 확인하고, 그 뒤로는 2 초(`EXTERNAL_POLL_INTERVAL`)마다 확인한다. 포커스를 잃으면 멈추고, 다시 얻으면 주기를 기다리지 않고 확인한다. 창 포커스가 바뀌면 `Focused` 이벤트가 그 창을 다시 그리게 표시하므로 그 프레임이 확인을 시작하거나 멈춘다. 주기 확인은 창을 그리지 않는다. App 은 가장 이른 다음 확인 시각에 `Tick::ExplorerPoll` 로 깨어나 마지막 프레임에 포커스 창의 포커스 탭으로 그려진 칸의 확인을 시작하고(`ExplorerViewStore::start_due_checks`), 확인 결과에서 바뀐 폴더만 다시 읽는다. 바뀐 폴더가 없으면 프레임을 그리지 않으며, 다시 읽은 결과가 와야 그린다.
@@ -96,7 +96,7 @@ explorer 는 일반 surface 생성 메커니즘으로 다룬다 (전용 IPC 추�
 
 ### mirror(attach) explorer 의 파일 변경
 
-ADR-0022에 따라 mirror explorer 의 파일 변경(새 폴더·새 파일·이름 변경·휴지통·같은 연결 안의 붙여넣기·드래그 놓기)은 원격 server 가 실행한다. 이쪽은 요청을 보내고 server 가 돌려준 진행·충돌 질문·결과를 로컬 작업과 같은 진행 표시·충돌 popup·결과 카드로 보인다. 동작 규칙은 [파일 작업 계약](file-operations.md)에 있다. 파일 더블클릭 열기(`OpenFile`)는 로컬과 같은 `DispatchFile` 로 가고, origin 이 mirror surface 라 원격 열기 규칙을 따른다(아래 "mirror explorer 의 파일 열기"). mirror 워크스페이스(`ws.mirror`)에 속한 explorer surface 에서는:
+docs/features/remote-attach/index.md에 따라 mirror explorer 의 파일 변경(새 폴더·새 파일·이름 변경·휴지통·같은 연결 안의 붙여넣기·드래그 놓기)은 원격 server 가 실행한다. 이쪽은 요청을 보내고 server 가 돌려준 진행·충돌 질문·결과를 로컬 작업과 같은 진행 표시·충돌 popup·결과 카드로 보인다. 동작 규칙은 [파일 작업 계약](file-operations.md)에 있다. 파일 더블클릭 열기(`OpenFile`)는 로컬과 같은 `DispatchFile` 로 가고, origin 이 mirror surface 라 원격 열기 규칙을 따른다(아래 "mirror explorer 의 파일 열기"). mirror 워크스페이스(`ws.mirror`)에 속한 explorer surface 에서는:
 
 - **원격 쓰기 지원 여부**: 연결의 server 가 attach descriptor 에 원격 쓰기 capability 를 알렸고 연결이 살아 있으면 쓰기를 허용한다. App 이 매 회차 세션에서 이 목록을 engine 과 explorer View 에 맞추고, 메뉴·단축키·툴바·끌기는 `EngineRead::blocks_explorer_write` 와 View 의 `writes_allowed` 로 판정한다.
 - **받지 않는 server**: 새 폴더/새 파일/붙여넣기/잘라내기/이름 변경/휴지통으로 이동 항목을 `build_explorer_context_menu` 에서 숨기지 않고 꺼 두며, 툴팁(Linux·macOS 네이티브 메뉴)에 이유를 단다. More 메뉴의 생성 행과 툴바의 create 묶음도 같은 툴팁으로 꺼 둔다. 이유는 `EngineRead::explorer_write_refusal` 이 정한다. 연결돼 있지만 server 가 원격 쓰기 capability 를 알리지 않은 옛 Tasty 면 `explorer.remote.write_needs_update`("Update Tasty on {host} to change remote files.", host 는 연결의 `remote_label`)이고, 연결이 끊기는 중이라 호스트 정보가 없으면 `explorer.state.remote_write_unsupported` 다. 메뉴가 아닌 경로(키보드 단축키 등)로 같은 핸들러가 불리면(`explorer_menu_paste`/`_trash`/`_rename`, `explorer_menu_set_clipboard`의 `cut=true`, 새 항목) 진입부의 `refuse_remote_write` 가 다시 확인하고 같은 문구를 그 칸의 info toast 로 알린 뒤 반환한다. Windows 네이티브 메뉴에는 툴팁이 없어 이 토스트가 이유를 알리는 경로다. copy_path/복사/이 폴더로 루트 설정은 켜져 있다. server 는 attach descriptor 에 원격 쓰기 capability 를 늘 싣는다. 그래서 화면 없는 server 를 따로 알아볼 신호가 없고, 화면 없는 server 용 이유 문구는 쓰지 않는다.
@@ -156,7 +156,7 @@ mirror explorer 에서 파일을 더블클릭하면 원격 호스트에 그 파�
   - 타입어헤드·새 항목 고르기처럼 화면 밖 항목으로 가야 할 때는 그 항목의 자리를 행 높이로 계산해 가운데로 스크롤한다.
   - list·grid 의 항목 위젯 id 는 화면 위치가 아니라 항목 경로에 묶는다. 스크롤해도 누름·hover 상태가 같은 항목에 남는다. detail 은 공용 `Table` 의 `virtual_rows`·`scroll_to_row` 를 쓴다.
   - Find 로 이름을 거르면 맞는 항목의 목록 번호를 한 번 만들어 두고(`find.rs` 의 `refresh_filter`, Find 바를 그릴 때) 검색어와 목록이 그대로인 동안 다시 쓴다. 목록은 `set_entries` 로 바꿀 때마다 세대가 오르고, 거른 결과는 그 세대·목록 주소·길이와 검색어가 모두 같을 때만 쓴다. 맞지 않는 프레임에는 그 자리에서 다시 거른다. 그래서 거르는 동안 목록 전체의 이름을 보는 것은 검색어나 목록이 바뀐 프레임뿐이다. 검색어가 바뀌면 보이지 않게 된 항목을 선택에서 빼는데, 이때는 선택된 항목만 본다. 선택은 읽은 목록과 하위 폴더 검색 결과 안에만 있으므로 지금 폴더 항목은 부모 폴더와 이름을 검색어에 대 보고, 하위 폴더 검색 결과는 결과 목록에서 찾는다. 거르지 않을 때와 하위 폴더 검색 결과는 목록을 훑지 않는다.
-- detail 행은 **행 전체가 클릭 타겟**이다 — 파일 이름·Size·Date·Type 글자 위에서도 좌클릭 선택 / Ctrl·Cmd+클릭 토글 / Shift+클릭 범위 선택 / 더블클릭 열기(Navigate·OpenFile) / 우클릭 컨텍스트 메뉴가 동일하게 동작한다. 그 대가로 셀 텍스트를 드래그로 선택·복사할 수는 없다(대체: 우클릭 "경로 복사"). 이 정합은 공용 `Table` 이 selectable 모드에서 셀 라벨 선택성을 끄는 계약으로 보장한다 — [ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md). 헤더 컬럼 제목 클릭(정렬 토글)은 영향을 받지 않는다. 우클릭이 좌클릭과 섞이지 않고 스크롤한 뒤에도 그 행 번호로 오는지는 공용 Table 의 회귀 검사가 본다([공용 위젯 크레이트](../../architecture/ui-widgets-crate.md)).
+- detail 행은 **행 전체가 클릭 타겟**이다 — 파일 이름·Size·Date·Type 글자 위에서도 좌클릭 선택 / Ctrl·Cmd+클릭 토글 / Shift+클릭 범위 선택 / 더블클릭 열기(Navigate·OpenFile) / 우클릭 컨텍스트 메뉴가 동일하게 동작한다. 그 대가로 셀 텍스트를 드래그로 선택·복사할 수는 없다(대체: 우클릭 "경로 복사"). 이 정합은 공용 `Table` 이 selectable 모드에서 셀 라벨 선택성을 끄는 계약으로 보장한다 — [`tasty-ui-widgets` — 본체·갤러리 공유 UI primitive](../../architecture/ui-widgets-crate.md). 헤더 컬럼 제목 클릭(정렬 토글)은 영향을 받지 않는다. 우클릭이 좌클릭과 섞이지 않고 스크롤한 뒤에도 그 행 번호로 오는지는 공용 Table 의 회귀 검사가 본다([공용 위젯 크레이트](../../architecture/ui-widgets-crate.md)).
 
 ### 주소 입력
 
@@ -260,7 +260,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 우클릭 컨텍스트 메뉴는 **2-단계 네이티브 메뉴 패턴**([context-menu](../../dev-guide/context-menu.md))을 따른다: 렌더 중 우클릭을 감지하면 `ExplorerAction::ContextMenu { target, cwd, x, y }` 를 모으고, `apply_explorer_action` 이 이를 `PendingNativeMenu::Explorer`/`ExplorerFavorite` 슬롯에 선점한다.
 비-terminal 컨텍스트 메뉴는 winit 이 만들지 않고 egui 프레임이 단일 생산자다 — explorer 메뉴는 같은 egui 프레임 안에서 `apply_explorer_action`(렌더 루프 종료 직후)이 generic surface fallback(`emit_surface_menu_fallback`)보다 **먼저** 슬롯을 선점하므로, fallback은 `is_none()` 확인 후 건너뛰어 explorer 전용 메뉴를 유지한다.
-이후 `MainView::process_pending_native_menu` 가 `open_native_menu` 로 OS 네이티브 메뉴를 띄우고, 선택 id 를 조작으로 번역하는 처리는 continuation 으로 예약된다(Linux 는 메뉴가 닫힌 뒤 프레임에 실행 — [context-menu](../../dev-guide/context-menu.md) · [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).
+이후 `MainView::process_pending_native_menu` 가 `open_native_menu` 로 OS 네이티브 메뉴를 띄우고, 선택 id 를 조작으로 번역하는 처리는 continuation 으로 예약된다(Linux 는 메뉴가 닫힌 뒤 프레임에 실행 — [context-menu](../../dev-guide/context-menu.md) · [내부 팝업 시스템](../../design/systems/popup.md)).
 메뉴를 열 때 대상 경로·현재 폴더와 그 surface 의 세대(`SurfaceBinding`)를 고정한다. 고른 항목을 실행할지 정하는 규칙과 rename 팝업의 확인은 [파일 작업 계약](file-operations.md#경로-출처와-작업-대상-공통-계약)에 있다. 즐겨찾기 행 메뉴도 같은 규칙을 쓰며 그중 이 폴더로 루트 설정만 파일을 바꾸지 않는 항목으로 본다.
 
 대상(target)은 우클릭 위치/선택 상태로 결정한다(design §3.3 target rule): 선택 안의 항목 → 선택 전체, 선택 밖 → 그 항목으로 선택 리셋, 빈 영역 → 현재 폴더(current). variant 4종(빈 영역 / 파일 / 폴더 / 다중). 좌측 사이드바 트리 폴더 우클릭도 **단일 폴더 target 을 직접 구성**해(선택집합 미조작) 동일 메뉴를 띄운다.
@@ -346,7 +346,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_back`·`explorer_forward`·`explorer_focus_address`·`explorer_new_folder`·`explorer_new_file`·`explorer_undo`·`explorer_redo`·`explorer_toggle_preview`·`explorer_toggle_hidden`·`explorer_properties`·`find`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path`·`explorer_rename`·`explorer_trash` 가 `copy_paste.rs`, 이동·넓히기·열기·선택 해제가 `explorer_keys.rs` 다. 이동·넓히기·열기·선택 해제·이름 변경·휴지통은 전역 목록이 아닌 탐색기 목록(`EXPLORER_LIST_BINDING_FIELDS`, [단축키](../../features/keybindings/index.md#탐색기-목록-바인딩--explorer_list_binding_fields))에 있다. action-id/Command Palette `dispatch.rs` 는 열여덟 개 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. `find` 는 터미널 검색과 같은 바인딩이며, 포커스가 explorer 면 터미널 검색 대신 Find 바를 연다([터미널 검색](../../features/terminal-search/index.md)). 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_back`·`explorer_forward`·`explorer_focus_address`·`explorer_new_folder`·`explorer_new_file`·`explorer_undo`·`explorer_redo`·`explorer_rename`·`explorer_trash`·`explorer_open`·`explorer_clear_selection`·`explorer_toggle_preview`·`explorer_toggle_hidden`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
 주소창·새 항목 이름 입력·Find 입력이 키를 받는 동안(`ExplorerView::text_input_active`)에는 explorer 목록 단축키(`keybinding.rs` 의 explorer 묶음, `copy_paste.rs` 의 전체 선택·경로 복사·복사·잘라내기·붙여넣기·이름 변경·휴지통)가 키를 소비하지 않고 글자 편집에 양보한다.
 
-**새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발생시키므로 CLI 의 `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 — 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 이 액션은 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션은 `keybinding.rs`·`double_tap.rs`·`dispatch.rs` 세 진입점 전부에서 처리한다.
+**새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발생시키므로 CLI 의 `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 — 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다([포커스 정책 (운영 상세)](../../design/policies/focus.md)). 이 액션은 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션은 `keybinding.rs`·`double_tap.rs`·`dispatch.rs` 세 진입점 전부에서 처리한다.
 
 **드래그 반전 modifier(`explorer_drag_flip_modifier`)** 는 키 조합이 아니라 드래그 중 누르고 있는 modifier 다. 값은 `tab_switch_modifier` 와 같은 modifier 조합 문자열이고, 기본은 macOS `option`, 다른 OS `ctrl` 이다. 누르고 있으면 드래그 놓기의 기본 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는다([드래그 앤 드롭](file-operations.md#드래그-앤-드롭)). 설정 › 단축키 › General 서브탭 끝(엔트리 아래 구분선 뒤)의 한 행에서 고르거나 config.toml 의 `[keybindings]` 에서 바꾼다. 단축키 가져오기는 이 값도 그대로 옮기며, macOS 에서 내보낸 `option` 은 다른 OS 에서 Win·Super 를 누른 채 끄는 동작이 된다([key-mapping](../../design/policies/key-mapping.md#이식-시-option-처리)).
 

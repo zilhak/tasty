@@ -1,6 +1,6 @@
 //! 공유 로그 파일은 host로 역할을 결정한 뒤에만 열어야 한다.
 //! CLI도 같은 바이너리를 사용하므로 공통 초기화에서 열면 실행 중인 host의 로그를 덮어쓸 수 있다.
-//! 호출 위치와 분기를 소스에서 검사한다([ADR-0043](../../../docs/adr/0043-cli-errors-and-diagnostic-logs.md)).
+//! 호출 위치와 분기를 소스에서 검사한다([CLI 크레이트 내부 구조 — 세 갈래 대칭](../../../docs/dev-guide/cli-structure.md)).
 
 use std::path::{Path, PathBuf};
 
@@ -120,7 +120,7 @@ fn log_file_is_opened_from_the_host_path_only() {
 
     assert!(
         offenders.is_empty(),
-        "{OPEN_FN} 호출이 허용 범위 밖에 있다:\n{}\nCLI가 host 로그를 열지 않도록 {CALL_SITE_FILE}에서 host 역할을 결정한 뒤 호출한다(ADR-0043).",
+        "{OPEN_FN} 호출이 허용 범위 밖에 있다:\n{}\nCLI가 host 로그를 열지 않도록 {CALL_SITE_FILE}에서 host 역할을 결정한 뒤 호출한다(docs/dev-guide/cli-structure.md).",
         offenders.join("\n")
     );
 }
@@ -175,7 +175,7 @@ fn tracing_init_does_not_open_the_log_file() {
         }
         assert!(
             offset > open_fn_at,
-            "{IMPL_FILE}에서 로그 파일명을 {OPEN_FN} 정의보다 앞에서 사용한다. 역할 판정 전 초기화에서 파일을 열지 않는지 확인한다(ADR-0043)."
+            "{IMPL_FILE}에서 로그 파일명을 {OPEN_FN} 정의보다 앞에서 사용한다. 역할 판정 전 초기화에서 파일을 열지 않는지 확인한다(docs/dev-guide/cli-structure.md)."
         );
     }
 }

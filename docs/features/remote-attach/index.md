@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 원격 접속 사용자(점유 후 조작) · AI Agent(원격 mirror 를 정당한 행동으로 attach) · 로컬 사용자(force-detach 권한)
-- **ADR**: [ADR-0020](../../adr/0020-remote-connection-profiles.md) (attach 는 원격 대상 · 로컬 self-attach 는 debug 격리). 보안 위임 근거는 [ADR-0011](../../adr/0011-secrets-and-local-trust.md) (loopback trust boundary). mirror 탭 제목 폴백의 i18n 은 [ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md)
+- **설계**: [원격 접속 프로필 + Passkey (remote_tool)](../remote-profiles/index.md) (attach 는 원격 대상 · 로컬 self-attach 는 debug 격리). 보안 위임 근거는 [에이전트 메모리 시스템](../../design/systems/memory.md) (loopback trust boundary). mirror 탭 제목 폴백의 i18n 은 [국제화 (i18n)](../../dev-guide/i18n.md)
 - **코드**: `src/core/attach.rs`(`OccupancyRegistry`), `src/remote/server.rs`, `src/app/auto_attach.rs`, `src/adapters/ipc/handler/attach.rs`, `src/app/ipc/app_methods.rs`(`remote.workspaces`/`remote.attach`), `crates/tasty-remote/src/browse.rs`(브라우징 코어), CLI `crates/tasty-cli/src/commands/remote.rs`(clap 선언) · `crates/tasty-cli/src/local/{attach,remote_check,remote_workspaces}.rs`(실행)
 - **화면**: [아래 절](#화면)
 
@@ -14,18 +14,18 @@
 
 ### 점유 (Occupation)
 
-attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md) 2계층 점유 중 강한 점유 계층의 사례다(약한 점유는 [child-terminal](../child-terminal/index.md)). 개념 정의는 [actors 점유 모델](../../concepts/actors.md#점유-occupation-모델), 여기선 동작:
+attach 의 본질은 **강한(hard) 배타 점유**다 — [Attach 메커니즘](../../dev-guide/attach-behavior.md) 2계층 점유 중 강한 점유 계층의 사례다(약한 점유는 [child-terminal](../child-terminal/index.md)). 개념 정의는 [actors 점유 모델](../../concepts/actors.md#점유-occupation-모델), 여기선 동작:
 
 - **배타 lock**: 한 surface 는 한 client 만 점유한다(`OccupancyRegistry`). 점유는 `stream.open{target}` 핸드셰이크의 `attach.acquire` 로 잡고, 동시 attach 는 holder 정보를 담아 `already_attached` 로 거부.
-- **점유 중 격리**: 점유된 surface 의 서버 로컬 입력(GUI 키 / `surface.send`)은 차단되고, **점유 client 입력만** PTY 에 도달한다. 로컬 사용자·AI Agent 는 그 대상에 대해 **readonly** — 내용은 보이되 조작은 막힌다. readonly 는 PTY/TUI 조작(키 입력·마우스 트래킹 보고·휠 스크롤·Ctrl+click 링크 열기)만 차단하는 것이고, **드래그로 텍스트를 선택해 클립보드로 복사하는 tasty 자체 기능은 예외적으로 계속 동작**한다 — PTY 에 아무것도 보내지 않는 순수 로컬 UI 동작이기 때문이다(좌표·복사 텍스트는 실제 렌더되는 mirror 기준). 근거: [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md).
+- **점유 중 격리**: 점유된 surface 의 서버 로컬 입력(GUI 키 / `surface.send`)은 차단되고, **점유 client 입력만** PTY 에 도달한다. 로컬 사용자·AI Agent 는 그 대상에 대해 **readonly** — 내용은 보이되 조작은 막힌다. readonly 는 PTY/TUI 조작(키 입력·마우스 트래킹 보고·휠 스크롤·Ctrl+click 링크 열기)만 차단하는 것이고, **드래그로 텍스트를 선택해 클립보드로 복사하는 tasty 자체 기능은 예외적으로 계속 동작**한다 — PTY 에 아무것도 보내지 않는 순수 로컬 UI 동작이기 때문이다(좌표·복사 텍스트는 실제 렌더되는 mirror 기준). 근거: [Attach 메커니즘](../../dev-guide/attach-behavior.md).
 - **점유 중 attention 해제 권한**: 강하게 점유된 surface의 attention은 점유한 클라이언트(holder)만 지울 수 있다. 서버의 로컬 포커스나 알림 패널의 읽음·모두 읽음 처리는 attention을 지우지 못한다. 클라이언트는 `ClientAttentionClear`를 보내며 서버는 holder가 맞는지 확인한 뒤 적용한다.
 
-  서버 알림 패널의 읽음 상태는 이 제한과 별개로 바뀐다. 약한 점유(soft)에는 이 제한이 없으며, 강한 점유가 풀리면 서버 로컬 포커스가 다시 attention을 해제할 수 있어 남은 배지도 정리된다([ADR-0024](../../adr/0024-attention-ownership-and-clear.md)).
+  서버 알림 패널의 읽음 상태는 이 제한과 별개로 바뀐다. 약한 점유(soft)에는 이 제한이 없으며, 강한 점유가 풀리면 서버 로컬 포커스가 다시 attention을 해제할 수 있어 남은 배지도 정리된다([Surface Highlight (주의 환기)](../surface-highlight/index.md)).
 
   텍스트 선택과 복사는 점유 중에도 허용한다. 이 동작은 로컬 화면과 클립보드에만 영향을 준다. 반면 attention은 클라이언트에도 전달되는 공유 상태이므로 holder의 확인 없이 지우지 않는다.
 
 - **자동 해제**: client 연결 종료(EOF) 또는 attach heartbeat TTL 만료(FIN/RST 없는 silent disconnect 감지) 시 lock 이 free 로 환원. 점유는 **휘발성** — 서버 재시작 시 전부 free(영속 안 함).
-- **실패하는 attach 는 점유를 잡지 않는다**: 핸드셰이크의 스트림 프로토콜 버전(`stream.open` 의 `proto`)이 서버와 다르면 attach 를 dispatch 하기 **전에** 거절 ack(`ok:false` + 사유)로 끊는다 — 성립할 수 없는 세션이 점유만 가져가 정상 attach 를 `already_attached` 로 막는 것을 방지한다. 검증 없이 잡으면, 소켓을 닫지 않는 구버전/hung peer 에서는 EOF 도 안 와 heartbeat TTL(20초)까지 그 workspace 가 붙잡힌다. 근거: [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md).
+- **실패하는 attach 는 점유를 잡지 않는다**: 핸드셰이크의 스트림 프로토콜 버전(`stream.open` 의 `proto`)이 서버와 다르면 attach 를 dispatch 하기 **전에** 거절 ack(`ok:false` + 사유)로 끊는다 — 성립할 수 없는 세션이 점유만 가져가 정상 attach 를 `already_attached` 로 막는 것을 방지한다. 검증 없이 잡으면, 소켓을 닫지 않는 구버전/hung peer 에서는 EOF 도 안 와 heartbeat TTL(20초)까지 그 workspace 가 붙잡힌다. 근거: [Attach 메커니즘](../../dev-guide/attach-behavior.md).
 - **self-attach(자기 인스턴스 포트로 attach)는 거절된다**. GUI 원격 연결 팝업·IPC `attach.into_gui`·IPC `remote.attach`·자동 attach 모두 debug/release 공통으로 연결 전에 거절한다. handshake 는 `queue_mirror_connection` 을 거쳐 Remote worker 가 비동기로 수행하므로 교착하지 않는다. 거절하지 않으면 attach 가 성립해 자기 mirror 가 자기 workspace 를 hard 점유하고, 그동안 원본 workspace 의 로컬 입력이 막힌다. 같은 머신의 self-mirror 를 검증할 때는 별도 프로세스인 `tasty debug attach` 를 쓴다. 이 CLI 는 GUI 의 자기 포트 검사를 거치지 않고 서버 포트에 직접 붙는다.
   - **IPC 계약 요약**: 자기 자신을 향한 `remote.attach` 의 결과는 대상 표기에 따라 다르다. loopback 표기(`127.0.0.1`·`localhost`·`[::1]` + 포트, 또는 그렇게 해석되는 프로필)는 **동기 오류**(`-32602`)로 응답하고 아무것도 시작하지 않는다. SSH 경로(호스트명·LAN IP)는 판정에 터널과 `system.info` 왕복이 필요하므로, `new_workspace:true` 만 생성 전에 같은 `-32602` 로 응답하고, 기존 워크스페이스 attach 는 응답을 늦추지 않고 즉시 `{attaching:true, attempt}` 를 준 뒤 **비동기로 거절**해 `remote.refusals` 에 `via_ssh: true` 로 기록한다. 호출자는 응답의 `attempt` 로 그 기록을 찾는다. `attach.into_gui` 는 GUI 에서 항상 동기로 답한다. 받은 `port` 가 이 인스턴스의 IPC 포트면 바로 `-32602` 이고, 다른 포트(사용자가 직접 연 SSH 터널의 로컬 포트 등)는 그 포트의 `system.info` 를 워커에서 물어 같은 `instance_id` 면 `-32602`(`... reaches this instance itself ...`), 아니면 `{queued:true}` 로 답한다. 이 확인 동안 응답이 그 왕복만큼 늦어지지만 메인 루프는 막히지 않는다(이 머신 실측 응답 약 0.1~0.2초). 상대가 연결을 받고 답하지 않으면 확인 상한(`PROBE_TIMEOUT`, 5초)까지 기다린 뒤 판정 없이 접수한다(실측 5.42초). 연결을 거부하거나 `instance_id` 를 보고하지 않는 상대도 판정 없이 접수한다. plugin host-call 로 부른 경우도 같다. 헤드리스는 자기 포트만 거절하고 접수하며, 접수한 요청을 처리하지 않는다.
   - **처리 시점 거절(IPC)**: `attach.into_gui` 는 `port` 가, `remote.attach` 는 loopback 직결 대상(`--ssh 127.0.0.1:PORT` 형식, 또는 그렇게 해석되는 프로필)의 포트가 이 인스턴스의 IPC 포트면 요청을 처리하기 전에 `-32602` 오류(`... is this instance's own IPC port ...`)로 응답한다. 큐에 넣거나 연결 시도를 시작하지 않으며, `new_workspace:true` 여도 원격(=자기)에 워크스페이스를 만들지 않는다. GUI·헤드리스가 같은 응답을 준다. 프로필은 이 판정을 위해 요청 처리 중에 파일에서 읽는다.
@@ -91,10 +91,10 @@ client에 번들 plugin이 아직 등록되지 않았으면 placeholder를 유�
 상한 내에서 읽는다. 그 확인은 렌더링 여부에 관한 것이며 파일 읽기 권한 검사는 아니다.
 연결이 끊기면 끊김 화면을 표시하고, 재연결 후 원문을 표시할 수 없는 문서는 다시 요청한다.
 이미 원문을 표시 중인 문서는 원격 변경 신호를 받아도 자동으로 다시 읽지 않는다
-([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)).
+(이 문서).
 
 미지원 kind는 기술적 제한이며 보안을 위해 제외한 것은 아니다. 콘텐츠 접근의 신뢰 경계는
-[SSH와 loopback](../../adr/0011-secrets-and-local-trust.md)이다. 자세한 범위는
+[SSH와 loopback](../../design/systems/memory.md)이다. 자세한 범위는
 [attach IPC](../../dev-guide/attach-behavior.md#ipc-표면-attach)와
 [plugin 권한](../../dev-guide/plugin-permissions.md)을 따른다.
 
@@ -102,9 +102,9 @@ client에 번들 plugin이 아직 등록되지 않았으면 placeholder를 유�
 
 attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push 하고, 이후 변화는 delta 로 흐른다. client 는 PTY 없는 mirror 터미널에 바이트를 전달해 같은 grid 를 재구성한다. 프로토콜·mux 상세는 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
 
-workspace mirror 의 **탭 제목**은 스냅샷 pane JSON 의 tab `name`(원격 `Pane::to_attach_json` 이 `Tab::display_name()` 으로 항상 채운다)을 그대로 쓴다. `name` 이 빠진 비정상 스냅샷이거나 트리가 비어 placeholder tab/pane 을 합성할 때만 로컬 번역값 `attach.tab_title_fallback` 을 제목으로 쓴다 — 방어 폴백이지만 사용자 표면이라 하드코딩하지 않는다([ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md)).
+workspace mirror 의 **탭 제목**은 스냅샷 pane JSON 의 tab `name`(원격 `Pane::to_attach_json` 이 `Tab::display_name()` 으로 항상 채운다)을 그대로 쓴다. `name` 이 빠진 비정상 스냅샷이거나 트리가 비어 placeholder tab/pane 을 합성할 때만 로컬 번역값 `attach.tab_title_fallback` 을 제목으로 쓴다 — 방어 폴백이지만 사용자 표면이라 하드코딩하지 않는다([국제화 (i18n)](../../dev-guide/i18n.md)).
 
-**그리드 크기는 client 가 구동(client-driven)** — mirror 의 cols×rows 는 그것을 띄운 **로컬 pane 크기**를 따르고, 원격 PTY 를 그 크기로 reflow 시킨다(ADR-0022). "remote authoritative" 는 메커니즘으로만 남는다: 원격 PTY 가 실제 크기의 실제 상태의 기준이라 콘텐츠 래핑(reflow)을 담당하고, 그 확정 크기를 client 에 되돌린다. client가 크기를 요청하고 원격이 확정된 크기를 회신한다. 구현:
+**그리드 크기는 client 가 구동(client-driven)** — mirror 의 cols×rows 는 그것을 띄운 **로컬 pane 크기**를 따르고, 원격 PTY 를 그 크기로 reflow 시킨다(docs/features/remote-attach/index.md). "remote authoritative" 는 메커니즘으로만 남는다: 원격 PTY 가 실제 크기의 실제 상태의 기준이라 콘텐츠 래핑(reflow)을 담당하고, 그 확정 크기를 client 에 되돌린다. client가 크기를 요청하고 원격이 확정된 크기를 회신한다. 구현:
 
 - mirror 는 detached 터미널(PTY 없음)이라 로컬 레이아웃 리사이즈 스윕(`Core::resize_all_terminals` / `MainViewState::resize_all`)이 detached 터미널을 로컬에 직접 적용하지 않고, 목표 grid 를 forward 큐에 넣는다. `about_to_wait` 에서 **`StreamControl::ClientResize`**(client→server) 로 원격에 요청한다.
 - 서버가 그 surface 의 **실제 원격 PTY 를 요청 크기로 resize**(reflow)한다(holder 만 구동 가능 — 배타 점유라 구동자는 항상 유일). 서버가 **GUI 인스턴스**(창 보유)면 그 host 창의 레이아웃 sweep(`Core::resize_all_terminals`)이 **hard-점유 surface 를 skip**(`is_hard_occupied`)해 자기 창 grid 로 되돌리지 않는다 — skip 이 없으면 host 창이 client-driven grid 를 덮어써 mirror 가 host 창 크기에 고정된다(레터박스). headless 서버는 창이 없어 무해하지만 GUI-hosted 서버엔 필수. detach 시 원복.
@@ -124,9 +124,9 @@ client ack도 없다.
 mirror에서 attention을 새로 만들지 않고, 사용자 확인에 따른 해제는 `ClientAttentionClear`로
 소유 인스턴스에 전달한다. 상세는 [주의 환기 전파](../../dev-guide/attach-behavior.md#주의-환기attention-전파)를 따른다.
 
-client→server 요청 채널은 `ClientResize`(geometry 구동), `ClientAttentionClear`(주의 환기 해제 edge), `StructuralOp`(구조 변경 forward), `MeshContext`/`MeshInput`/`MeshFullResendRequest`(mesh mirror), 그리고 원격 스크린샷 캡처 업로드([remote-screenshot-clipboard](../remote-screenshot-clipboard/index.md)) · 원격 디렉토리 조회(native file picker, [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)) · git 조회 · markdown 원문 조회다.
-이들은 **점유한 연결 자체가 권한**(ADR-0021 하드 점유)이라는 같은 원칙을 쓰되 검증 지점이 두 갈래다 — 앞의 네 종류는 요청에 실린 **anchor 의 holder 인지**를 직접 확인하고(`workspace_holder(ws) == client`), 캡처·디렉토리·git·markdown 원문 조회 네 종류는 그 client 가 점유한 워크스페이스를 가진 engine(`client_holds_workspace`)을 찾아 그 engine 안에서 처리한다 — 인가되는 집합이 그 engine 전체라는 뜻이다([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)).
-네이티브 bulk 파일 전송([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md))은 이 모델 **밖**이다 — 전용 연결이라 holder 가 아니고, 결속 workspace 를 **소유한** engine 으로 라우팅한 뒤 commit 시점의 finalize 가 인가를 확인한다.
+client→server 요청 채널은 `ClientResize`(geometry 구동), `ClientAttentionClear`(주의 환기 해제 edge), `StructuralOp`(구조 변경 forward), `MeshContext`/`MeshInput`/`MeshFullResendRequest`(mesh mirror), 그리고 원격 스크린샷 캡처 업로드([remote-screenshot-clipboard](../remote-screenshot-clipboard/index.md)) · 원격 디렉토리 조회(native file picker, 이 문서) · git 조회 · markdown 원문 조회다.
+이들은 **점유한 연결 자체가 권한**(docs/dev-guide/attach-behavior.md 하드 점유)이라는 같은 원칙을 쓰되 검증 지점이 두 갈래다 — 앞의 네 종류는 요청에 실린 **anchor 의 holder 인지**를 직접 확인하고(`workspace_holder(ws) == client`), 캡처·디렉토리·git·markdown 원문 조회 네 종류는 그 client 가 점유한 워크스페이스를 가진 engine(`client_holds_workspace`)을 찾아 그 engine 안에서 처리한다 — 인가되는 집합이 그 engine 전체라는 뜻이다(이 문서).
+네이티브 bulk 파일 전송(이 문서)은 이 모델 **밖**이다 — 전용 연결이라 holder 가 아니고, 결속 workspace 를 **소유한** engine 으로 라우팅한 뒤 commit 시점의 finalize 가 인가를 확인한다.
 
 ### 모드
 
@@ -154,7 +154,7 @@ attention 의 관리 주체는 **surface 를 소유한 인스턴스**다: produc
 **surface 의 현재 폴더(cwd)도 같은 방향의 채널이다** — 원격이 점유 surface 의 cwd 를 같은 1Hz tick 에 `StreamControl::Cwd{surface_id, cwd}` 로 보낸다.
 mirror 터미널은 로컬 셸이 없어 원격 셸이 OSC 7 을 쏠 때만 cwd 를 알 수 있었는데, 원격은 셸 프로세스를 직접 조회할 수 있어 어떤 셸이든 값이 온다.
 그 값은 **원격 경로**로 표시되어 로컬 파일시스템 연산(새 로컬 워크스페이스의 시작 폴더, 로컬 git 브랜치 조회, preset 저장)에는 쓰이지 않고, 원격에서 실행되거나 원격을 조회하는 소비자(예: mirror 에서 연 파일 피커의 시작 폴더)만 쓴다.
-규칙과 근거는 [surface-cwd invariant §3-2](../../design/policies/cwd.md#3-2-원격-출처-cwd-는-로컬-실행-경로로-새지-않는다) · [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md), 메커니즘은 [dev-guide/attach-behavior "surface cwd 전파"](../../dev-guide/attach-behavior.md#surface-cwd-전파).
+규칙과 근거는 [surface-cwd invariant §3-2](../../design/policies/cwd.md#3-2-원격-출처-cwd-는-로컬-실행-경로로-새지-않는다) · 이 문서, 메커니즘은 [dev-guide/attach-behavior "surface cwd 전파"](../../dev-guide/attach-behavior.md#surface-cwd-전파).
 
 **서버가 프레임을 버리면 `Loss`로 알린다.** PTY 출력 일부를 놓친 client는 그 상태로
 계속 그리면 잘못된 화면을 보여줄 수 있다. 그래서 서버는 그 연결에서 버린 프레임 수를 `StreamControl::Loss{frames}` 로 되돌려
@@ -168,7 +168,7 @@ GUI mirror 는 "원격 화면 일부를 놓쳤다" 경고 toast 를 띄운 뒤 �
 끝난다. 서버 전체의 손실 누계와 지금 쌓인 양은 `tasty list pressure` 의 `stream_push` 로
 읽는다([telemetry](../telemetry/index.md)). 종류별 계약·순서·한도는
 [dev-guide/attach-behavior "통지를 받은 client 가 하는 일"](../../dev-guide/attach-behavior.md#통지를-받은-client-가-하는-일-재동기화-계약),
-근거는 [ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)에 정리되어 있다.
+근거는 [Attach 메커니즘](../../dev-guide/attach-behavior.md)에 정리되어 있다.
 
 
 ### mirror 워크스페이스 내 구조 변경
@@ -179,7 +179,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 - **forward 요청**: 로컬 anchor와 원격 anchor, connection registration, origin을 원 요청에 고정한다. journal에 forward 의무를 확정한 뒤 App의 `src/app/journal/forward.rs`가 원 연결로 전달한다. 로컬 View의 선택 후속 처리는 원 View identity·선택 세대를 확인한 뒤에만 실행한다.
 - **원격 실행**: 서버의 `src/app/journal/commands/inbound.rs`는 holder와 명시 대상을 검증하고 공통 journal 명령·효과 경계로 실행한다. 확정 결과를 `StructuralResult`로 보내고 해당 workspace의 `StructuralDelta`, 새 surface의 출력 tap 순서로 공개한다.
 
-- **점유 상속 (필수 불변식)**: forward 로 원격에 **새로 생긴 터미널은 그 workspace 의 hard 점유를 상속**한다("workspace 전체가 remote" 유지 — ADR-0021 은 점유가 surface 생성 방식과 무관함을 못박는다).
+- **점유 상속 (필수 불변식)**: forward 로 원격에 **새로 생긴 터미널은 그 workspace 의 hard 점유를 상속**한다("workspace 전체가 remote" 유지 — docs/dev-guide/attach-behavior.md 은 점유가 surface 생성 방식과 무관함을 못박는다).
   점유는 attach 시점 멤버 스냅샷으로 끝나는 게 아니라, 구조 변경으로 늘어난 멤버까지 확장돼야 한다.
   `execute_forwarded_structural_op` 이 added 터미널을 `OccupancyRegistry::add_workspace_member` 로 `surface_locks`(→`is_hard_occupied`: 서버 입력차단·resize sweep skip·readonly) + `surface_to_workspace`(→`feed_attached_workspace_input`/`apply_attached_workspace_resize` 의 holder 검증)에 같은 holder 로 등록한다.
   이 등록이 빠지면 새 surface 가 비점유로 남아 (1) host 창 sweep 이 자기 grid 로 되돌리는 레터박스 (2) 점유 미표시 (3) client 입력·resize 거부가 발생한다.
@@ -187,32 +187,32 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
     `tab::handle_tab_create` → `apply_create_tab`을 사용한다. 로컬 호출로 생성한 직후
     원격 점유를 상속하면 호출자 자신이 새 자식에게 입력하지 못하므로 생성부터 거절한다.
     `pty.attach_surface`도 같은 후처리를 쓰며, 아래 비-holder 구조 변경 차단으로 hard 점유
-    workspace의 pane에 입양하는 요청을 거절한다([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
+    workspace의 pane에 입양하는 요청을 거절한다([Attach 메커니즘](../../dev-guide/attach-behavior.md)).
   - hard-occupied workspace 에 새로 생긴 surface 는(차단을 통과한, 즉 holder 본인의 forward 경로로 생긴 surface 는) 위와 동일하게 `OccupancyRegistry::add_workspace_member` + `tap_surface_for_stream` 이 실행돼야 한다 — 실행되지 않으면 PTY/화면버퍼는 정상인데 attach client 로의 스트리밍만 시작되지 않아 그 tab 이 검정 화면으로만 보인다(스트림 tap 이 아예 안 걸린 상태).
     journal publication이 새 멤버의 원 generation을 pending tap으로 기록하고 `src/remote/structure_sync.rs`가 Result/Delta 이후 전송 성공 분기에서 구독을 연다. notifier와 pending reply/tap은 `RemoteState`가 소유한다.
 - **실패 회신**: 원격이 op 를 실패 처리(대표적으로 **원격에 등록되지 않은 plugin surface kind** — 원격의 kind 레지스트리가 그 호스트에서 생성 가능한 kind 의 authority)하면 `ok:false`+`reason` 을 회신하고, client 가 실패 toast(`attach.toast.mirror_structural_forward_failed`)를 띄운다.
-  단 에이전트가 건 op — IPC 구조 요청(split · tab.create/close/move · pane.close · surface.close · `image.open`)과 에이전트 origin intent(`markdown.navigate`(주소창 이동·외부 요청) · `file_handler.dispatch`(`origin_surface_id` 없이)의 새 탭) — 의 실패는 toast 없이 warn 로그로만 남는다([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).
-  사용자가 만진 plugin popup 에서 온 `file_handler.dispatch`·`markdown.navigate`(markdown 파일열기 팝업의 새 탭 열기·제자리 변환)는 사용자 origin 이라 그 실패는 toast 가 된다([ADR-0031](../../adr/0031-file-handler-routing.md)).
+  단 에이전트가 건 op — IPC 구조 요청(split · tab.create/close/move · pane.close · surface.close · `image.open`)과 에이전트 origin intent(`markdown.navigate`(주소창 이동·외부 요청) · `file_handler.dispatch`(`origin_surface_id` 없이)의 새 탭) — 의 실패는 toast 없이 warn 로그로만 남는다([내부 팝업 시스템](../../design/systems/popup.md)).
+  사용자가 만진 plugin popup 에서 온 `file_handler.dispatch`·`markdown.navigate`(markdown 파일열기 팝업의 새 탭 열기·제자리 변환)는 사용자 origin 이라 그 실패는 toast 가 된다([파일 핸들러 (File handler)](../file-handler/index.md)).
   요청/응답이라 실패 시 로컬·원격 어느 쪽도 구조가 바뀌지 않는다.
-  - **`reason` 은 원격에서 실패를 낸 자리의 문구 그대로다** — split · 새 탭 · convert 모두 같다(예: convert 대상 kind 가 원격에 없으면 `unknown surface kind: <kind>`). client 는 그것을 고치지 않고 toast 끝 괄호 안에 싣는다. 사유가 없을 때의 폴백은 두 층이다: 원격 convert 가 사유 없이 실패하면 `surface <id> was not converted` 를 싣고(원인을 짐작한 "not found" 류 문구를 쓰지 않는다 — 원인이 다를 때 실제 사유를 가린다, [ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)), wire 에 `reason` 이 아예 없으면 client 는 괄호 없는 기본 문구만 띄운다.
+  - **`reason` 은 원격에서 실패를 낸 자리의 문구 그대로다** — split · 새 탭 · convert 모두 같다(예: convert 대상 kind 가 원격에 없으면 `unknown surface kind: <kind>`). client 는 그것을 고치지 않고 toast 끝 괄호 안에 싣는다. 사유가 없을 때의 폴백은 두 층이다: 원격 convert 가 사유 없이 실패하면 `surface <id> was not converted` 를 싣고(원인을 짐작한 "not found" 류 문구를 쓰지 않는다 — 원인이 다를 때 실제 사유를 가린다, [Attach 메커니즘](../../dev-guide/attach-behavior.md)), wire 에 `reason` 이 아예 없으면 client 는 괄호 없는 기본 문구만 띄운다.
 - **역반영 (성공 시)**: 성공한 forward 로 원격에 생긴/사라진 surface 를 mirror 트리에 반영한다. 원격이 실행 후 워크스페이스 **전체 트리+surfaces** 를 `StreamControl::StructuralDelta` 로 push(`StructuralResult` 성공 회신 **직후**)하고, client 가 이를 받아 mirror 트리를 증분 재구성한다. survivor(이미 mirror 로 존재하는 원격 surface)는 **기존 mirror 터미널을 그대로 유지**(scrollback 보존)하고, 새 원격 surface 만 새 mirror 로 추가, 사라진 surface 는 제거한다. 최소 증분(surface 별 diff) 대신 full-tree 재동기화를 쓰는 이유: client 는 surface 매핑만 보유한다는 불변식을 지키면서 split·새 탭·닫기(cascade)·탭 순서 변경을 균일하게 반영하기 위함. pane 상위 배치(direction/ratio)도 핸드셰이크와 동일한 트리 필드로 정확히 승계된다.
 - **focus 는 원격이 아니라 client 가 보존한다**: 위 역반영 트리가 담는 focus(어느 pane/탭이 focused 인지)는 원격 값 그대로다 — 순수 pane/탭 전환은 forward 되지 않으므로 원격의 focus 는 사실상 워크스페이스 생성 시점에 고정돼 있다. 매 역반영마다 이 고정값으로 로컬을 통째로 교체하면 사용자가 mirror 안에서 실제로 보고 있던 pane/탭이 매번 첫 pane/첫 탭으로 튀는 문제가 있었다. client 는 교체 직전 로컬 focus 위치를 remote surface id 기준으로 기억해뒀다가 교체 직후 그 위치로 되돌린다.
   - **단, "무관한 delta 로부터 옛 focus 를 지키는 것"과 "이번 조작 자체의 결과로 focus 가 움직여야 하는 것"은 다른 문제다.** 사용자가 mirror 안에서 직접 새 탭/split 을 만들면 옛 focus 복원만으로는 새로 생긴 리소스로 focus 가 전혀 안 옮겨가고, focus 중인 surface 자체를 닫으면 복원 대상이 사라져 원격의 고정값(대개 워크스페이스 첫 pane/첫 탭/첫 surface)으로 튀어 버린다.
     그래서 client 는 이 op 이 **실제 사용자 GUI 조작**(단축키/버튼/컨텍스트 메뉴 — IPC/CLI/에이전트 호출은 제외)이었는지를 forward 시점부터 태그(`user_triggered`)해두고, 성공 회신에 상관지어(op_id) 뒤따르는 delta 적용에서: 새 탭/split 이면 새로 생긴 surface 로 focus 를 옮기고, close 로 옛 focus 복원이 실패했으면 닫히기 **전** 캡처해둔 인접 후보(같은 tab 의 형제 surface, 또는 같은 pane 의 인접 탭)로 fallback 한다.
     IPC/CLI 로 같은 조작을 했을 때는 이 태그가 항상 꺼져 있어 focus 가 그대로 안 움직인다(회귀 없음 — "포커스 독립성" 유지).
   - 메커니즘 상세는 [dev-guide/attach-behavior "focus 보존"](../../dev-guide/attach-behavior.md#mirror-구조-변경-forward).
-- **서버 쪽에서 바뀐 구조도 역반영한다**: 원격 셸이 끝나(`exit`) 원격에서 탭/pane 이 닫히면, forward 가 없었어도 원격이 같은 `StructuralDelta` 를 push 해 mirror 에서도 곧바로 사라진다. 원격에서 로컬 경로로 워크스페이스에 편입된 surface 도 같은 메시지로 mirror 에 나타난다(그 surface 의 화면 스냅샷보다 트리가 먼저 간다). holder 가 이미 받은 트리와 내용이 같으면 다시 보내지 않는다. 새 메시지는 없다 — 역반영 메시지를 forward 성공 말고도 보낼 뿐이다([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)). 그 셸이 워크스페이스의 마지막 surface 였으면 아래 강제 detach 와 같다.
+- **서버 쪽에서 바뀐 구조도 역반영한다**: 원격 셸이 끝나(`exit`) 원격에서 탭/pane 이 닫히면, forward 가 없었어도 원격이 같은 `StructuralDelta` 를 push 해 mirror 에서도 곧바로 사라진다. 원격에서 로컬 경로로 워크스페이스에 편입된 surface 도 같은 메시지로 mirror 에 나타난다(그 surface 의 화면 스냅샷보다 트리가 먼저 간다). holder 가 이미 받은 트리와 내용이 같으면 다시 보내지 않는다. 새 메시지는 없다 — 역반영 메시지를 forward 성공 말고도 보낼 뿐이다([Attach 메커니즘](../../dev-guide/attach-behavior.md)). 그 셸이 워크스페이스의 마지막 surface 였으면 아래 강제 detach 와 같다.
 - **역반영 대신 강제 detach (workspace 자체가 cascade 로 사라지는 경우)**: workspace 의 **마지막 surface** 를 forward `CloseSurface` 로 닫으면, 원격의 `close_case_workspace`("Case 4: last pane in workspace")가 트리 일부가 아니라 **workspace 자체**를 통째로 purge 한다 — 이 경우 되돌릴 delta 자체가 없다.
   `src/app/journal/commands/inbound.rs`의 `deliver_result`가 실행 후 원 workspace의 부재를 확인하면 `force_detach_workspace`로 holder를 분리하고 점유를 정리한다.
   client 는 이를 일반 force-detach 와 동일하게 처리해 mirror 를 정리한다 — 재attach 없이도 즉시 반영된다.
   메커니즘 상세는 [dev-guide/attach-behavior "점유 레지스트리"](../../dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry).
-- **닫은 항목 복원(`Ctrl+Shift+T`)도 forward 대상이다 ([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md))**: mirror 를 보는 중에 누르면 **원격에서** 닫혔던 탭이 되살아나 mirror 에 나타나고, 그 안의 입력은 원격 PTY 로 간다. 복원은 새 PTY spawn 이고 스냅샷의 스크롤백은 서버 디스크에 있으므로 서버만 실행할 수 있다. **원격에 복원할 것이 없어도 로컬 항목을 대신 되살리지 않는다** — 안내 toast 만 뜨고 로컬 스택은 그대로 남아, 로컬 워크스페이스로 돌아가 같은 키를 누르면 그때 복원된다. 즉 **스택이 둘이고 보고 있는 워크스페이스가 어느 쪽을 쓸지 정한다.**
+- **닫은 항목 복원(`Ctrl+Shift+T`)도 forward 대상이다 ([Attach 메커니즘](../../dev-guide/attach-behavior.md))**: mirror 를 보는 중에 누르면 **원격에서** 닫혔던 탭이 되살아나 mirror 에 나타나고, 그 안의 입력은 원격 PTY 로 간다. 복원은 새 PTY spawn 이고 스냅샷의 스크롤백은 서버 디스크에 있으므로 서버만 실행할 수 있다. **원격에 복원할 것이 없어도 로컬 항목을 대신 되살리지 않는다** — 안내 toast 만 뜨고 로컬 스택은 그대로 남아, 로컬 워크스페이스로 돌아가 같은 키를 누르면 그때 복원된다. 즉 **스택이 둘이고 보고 있는 워크스페이스가 어느 쪽을 쓸지 정한다.**
   - **원격에서 누른 복원은 그 워크스페이스 것만 꺼낸다**: 서버의 복원 스택은 워크스페이스로 스코프돼, mirror 사용자의 복원이 서버 앞에 앉은 사용자가 방금 닫은 다른 워크스페이스의 탭을 가져가지 않는다. 반대 방향은 스코프를 걸지 않는다 — 서버 로컬 복원은 지금까지처럼 전역 LIFO 다. forward 된 close 가 서버 자신의 트리에서 탭을 없애므로, 그 기계 앞의 사용자에게도 undo 가 남아야 하기 때문이다.
   - **mirror 안에서 손으로 닫은 것은 되돌려진다**: 원격 사용자의 손으로 닫힌 탭/pane/surface 는 서버의 복원 스택에 남는다.
-  - **에이전트가 닫은 것은 어느 쪽 복원 스택에도 안 남는다**: 클라이언트의 에이전트가 CLI/IPC 로 mirror 를 닫으면 그 close 도 원격으로 forward 되지만, forward 가 "에이전트의 요청" 이라는 표시를 싣고 서버는 그것을 복원 스택에 넣지 않는다. 그렇지 않으면 서버 앞 사용자의 복원 단축키가 에이전트가 닫은 것을 되살린다 — 사용자의 닫은 항목 히스토리는 사용자가 닫은 것만 담는다([identity](../../identity.md) 원칙 1). 표시가 없는 forward(이 표시 이전의 클라이언트)는 사용자 조작으로 읽는다([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)).
+  - **에이전트가 닫은 것은 어느 쪽 복원 스택에도 안 남는다**: 클라이언트의 에이전트가 CLI/IPC 로 mirror 를 닫으면 그 close 도 원격으로 forward 되지만, forward 가 "에이전트의 요청" 이라는 표시를 싣고 서버는 그것을 복원 스택에 넣지 않는다. 그렇지 않으면 서버 앞 사용자의 복원 단축키가 에이전트가 닫은 것을 되살린다 — 사용자의 닫은 항목 히스토리는 사용자가 닫은 것만 담는다([identity](../../identity.md) 원칙 1). 표시가 없는 forward(이 표시 이전의 클라이언트)는 사용자 조작으로 읽는다([Attach 메커니즘](../../dev-guide/attach-behavior.md)).
   - **복원된 탭의 옛 스크롤백은 mirror 에 전량 오지 않는다**: 서버 쪽 터미널은 스크롤백까지 되살아나지만, mirror 는 기존 규약대로 보이는 화면 1 회 스냅샷 + 이후 변경분만 받는다. 원격 윈도우에서 보면 스크롤백이 그대로 있다.
 - **mirror 워크스페이스 자체를 닫는 것**은 로컬 mirror 뷰를 걷어내는 정당한 로컬 동작이라 차단·forward 대상이 아니다.
-- **`terminal.spawn` 은 forward 대상이 아니라 거부 대상이다 ([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md))**: 위 forward 는 fire-and-forget 이라 응답이 원격에서 생긴 리소스의 id 를 담지 않는다.
+- **`terminal.spawn` 은 forward 대상이 아니라 거부 대상이다 ([Attach 메커니즘](../../dev-guide/attach-behavior.md))**: 위 forward 는 fire-and-forget 이라 응답이 원격에서 생긴 리소스의 id 를 담지 않는다.
   `tasty claude/codex/terminal spawn` 이 타는 `terminal.spawn` 은 그 id 를 **동기로** 받아 child registry 등록·soft 점유·후속 command 주입까지 이어가야 하므로 이 응답 모델 위에 얹힐 수 없다.
   막지 않으면 로컬은 에러를 돌려주는데 forward 큐는 IPC 응답과 무관하게 드레인되어 **호출자가 관리하지 못하는 원격 탭**이 생긴다.
   그래서 mirror 워크스페이스를 대상으로 한 `terminal.spawn` 은 tab/surface 를 하나도 만들지 않고 `invalid_params` 로 즉시 거부하며, 메시지에 mirror 사유와 대안(다른 워크스페이스 사용 / 원격 인스턴스에서 직접 spawn)을 담는다.
@@ -227,12 +227,12 @@ move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때�
 
 ### 서버(피점유)측 비-holder 구조 변경 차단
 
-위 절이 다루는 것은 **client(점유 holder)측** 구조 변경이 원격(서버)에서 실행되도록 forward 되는 경로다. 반대 방향 — **서버 자신이 hard-occupied 상태인 자기 workspace 에 대해, 점유 holder 가 아닌 제3자(서버 로컬 IPC/CLI/agent)가 직접** 구조 변경 IPC(`split`/`workspace.close`/`tab.create`/`terminal.spawn`/`pane.close`/`tab.close`/`tab.move`/`surface.close`/`markdown.navigate`/`image.open`/`preset.apply`/`pty.attach_surface`)를 호출하는 경우도 배타성 위반이다 — [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md) 이 정의하는 hard 점유의 배타성은 입력(`apply_send_to_surface`)·resize(`resize_all_terminals`)뿐 아니라 구조 변경까지 적용돼야 한다.
+위 절이 다루는 것은 **client(점유 holder)측** 구조 변경이 원격(서버)에서 실행되도록 forward 되는 경로다. 반대 방향 — **서버 자신이 hard-occupied 상태인 자기 workspace 에 대해, 점유 holder 가 아닌 제3자(서버 로컬 IPC/CLI/agent)가 직접** 구조 변경 IPC(`split`/`workspace.close`/`tab.create`/`terminal.spawn`/`pane.close`/`tab.close`/`tab.move`/`surface.close`/`markdown.navigate`/`image.open`/`preset.apply`/`pty.attach_surface`)를 호출하는 경우도 배타성 위반이다 — [Attach 메커니즘](../../dev-guide/attach-behavior.md) 이 정의하는 hard 점유의 배타성은 입력(`apply_send_to_surface`)·resize(`resize_all_terminals`)뿐 아니라 구조 변경까지 적용돼야 한다.
 
 - **차단 대상**: 위 IPC 12종을 **일반 IPC/CLI 진입점**(서버 로컬 호출)으로 직접 호출하고, 대상 pane/tab/surface(`terminal.spawn` 은 `pane` 오버라이드까지 반영해 확정된 **최종 pane**) 가 hard-occupied workspace 에 속한 경우.
   요청은 `invalid_params` 에러(안내 문구: "점유 중이라 불가능, 다른 workspace 사용")로 거부되고 트리는 전혀 바뀌지 않는다.
-  `terminal.spawn`(`tasty claude/codex spawn` 이 호출) 은 [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md) 으로 이 목록에 추가됐다 — spawn 자체는 성공 응답을 주면서 그 결과물(새 surface)이 즉시 같은 hard lock 을 상속받아, spawn 을 호출한 쪽조차 자기 결과물에 입력을 못 넣게 되는 부작용을 막기 위함.
-  다만 `terminal.spawn` 의 판정만 다른 11종과 **집행 지점이 다르다** — 나머지는 라우터 가드(`hard_occupied_structural_guard`)가 method 파라미터로 대상을 찾지만, `terminal.spawn` 의 실제 대상은 `pane` 오버라이드까지 반영해 확정된 pane 이라 그것을 아는 핸들러 안(`spawn_target_guard`)에서 건다([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
+  `terminal.spawn`(`tasty claude/codex spawn` 이 호출) 은 [Attach 메커니즘](../../dev-guide/attach-behavior.md) 으로 이 목록에 추가됐다 — spawn 자체는 성공 응답을 주면서 그 결과물(새 surface)이 즉시 같은 hard lock 을 상속받아, spawn 을 호출한 쪽조차 자기 결과물에 입력을 못 넣게 되는 부작용을 막기 위함.
+  다만 `terminal.spawn` 의 판정만 다른 11종과 **집행 지점이 다르다** — 나머지는 라우터 가드(`hard_occupied_structural_guard`)가 method 파라미터로 대상을 찾지만, `terminal.spawn` 의 실제 대상은 `pane` 오버라이드까지 반영해 확정된 pane 이라 그것을 아는 핸들러 안(`spawn_target_guard`)에서 건다([Attach 메커니즘](../../dev-guide/attach-behavior.md)).
   덕분에 `--workspace <비점유 ws>` + `--pane <hard-occupied ws 의 pane>` 조합으로 이 가드를 우회하던 구멍도 함께 닫혔다.
   `markdown.navigate`/`image.open` 은 convert 진입점이 kind 별로 흩어져 있어 이 두 method 만 커버한다(완전하지 않음 — host 범용 convert 팝업은 `state.dispatch_intent` 를 직접 호출해 이 IPC 라우팅 자체를 안 타고, 향후 새 kind 가 자기 전용 convert 진입 method 를 추가하면 이 목록에 없는 한 가드가 적용되지 않는다).
 - **차단 대상이 아닌 경우(중요)**: 점유 holder 본인이 mirror 안에서 실제로 만든 구조 변경이 위 forward 경로로 서버에 도달해 실행되는 것은 **정상 동작이며 이 차단의 대상이 아니다** — "attach 연결 자체가 그 workspace 에 대한 구조 변경 권한을 증명한다"는 forward 모델(위 절)을 그대로 유지한다. `terminal.spawn` 은 forward 대상(위 "현재 범위")에 포함되지 않으므로 이 예외와 무관 — 가드 추가가 holder 의 정당한 forward 요청을 막는 회귀는 없다.
@@ -272,7 +272,7 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 ### 연결 시도 상한 (no-hang)
 
-포트 발견은 **무기한 블록하지 않는다.** 상한이 없으면 무응답 호스트에서 연결 수립이 OS 기본 SYN 재시도(리눅스 `tcp_syn_retries=6` ≈ 127초)에 맡겨지고, auto 체인은 그 대기를 3배로 곱한다. 상수는 `crates/tasty-ssh/src/lib.rs` 에 `pub const` 로 노출되며(소비자가 진행 표시/문구를 같은 값에 맞출 수 있게), 세 겹이 각각 다른 구간을 덮는다 — 근거는 [ADR-0020](../../adr/0020-remote-connection-profiles.md).
+포트 발견은 **무기한 블록하지 않는다.** 상한이 없으면 무응답 호스트에서 연결 수립이 OS 기본 SYN 재시도(리눅스 `tcp_syn_retries=6` ≈ 127초)에 맡겨지고, auto 체인은 그 대기를 3배로 곱한다. 상수는 `crates/tasty-ssh/src/lib.rs` 에 `pub const` 로 노출되며(소비자가 진행 표시/문구를 같은 값에 맞출 수 있게), 세 겹이 각각 다른 구간을 덮는다 . TCP 연결만 제한하면 인증·명령·프롬프트 대기가 남고, 단계별 상한만 두면 auto 체인의 전체 대기가 늘어나므로 연결·단계·전체 예산을 각각 둔다.
 
 | 상수 | 값 | 덮는 구간 |
 |------|-----|-----------|
@@ -292,7 +292,7 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 `remote attach` 가 대상 workspace id 를 **미리 알아야** 동작하는 것과 달리, 브라우징은 그 id 를 **발견**한다 — attach 프로필/ssh 대상에 붙어 원격 인스턴스의 워크스페이스 목록(각 `id`/`name`/`pane_count`/`busy_count`/`attached`)을 받아온다. 흐름: 접속 스펙 resolve → (SSH 터널 or `127.0.0.1:PORT` loopback 직결) → 그 포트로 `workspace.list` + `attach.list` **2회 IPC** → workspace 단위 lock 을 join 해 `attached`(타 client 점유 여부)/`holder` 를 채운다(서버측 변경 0). 순수 조회라 로컬 사용자 상태(focus/닫은항목/선택)에 닿지 않는다([포커스 독립성](../../identity.md)).
 
-이 능력은 **CLI(`remote workspaces`)와 로컬 IPC method(`remote.workspaces`) 양면**으로 노출된다(원칙 2 — 에이전트가 CLI 없이 소켓만으로도 브라우징 가능). 둘 다 동일한 코어(`tasty_remote::browse`)를 공유하며, 블로킹 SSH I/O 는 호스트 IPC 경로에서 **워커 스레드**로 돌려 이벤트루프를 막지 않는다. RA02 원격 추가 팝업의 우측 목록이 이 출력을 데이터 소스로 소비한다. IPC `remote.workspaces`가 실패하면 -32050으로 답하고, 문구는 `remote browse failed: <바깥 문맥>: <원격의 원인>` 처럼 원인 체인까지 담는다(`remote.attach` 생성 실패와 같은 형식).
+이 능력은 **CLI(`remote workspaces`)와 로컬 IPC method(`remote.workspaces`) 양면**으로 노출된다(에이전트 기능 기준 — 에이전트가 CLI 없이 소켓만으로도 브라우징 가능). 둘 다 동일한 코어(`tasty_remote::browse`)를 공유하며, 블로킹 SSH I/O 는 호스트 IPC 경로에서 **워커 스레드**로 돌려 이벤트루프를 막지 않는다. RA02 원격 추가 팝업의 우측 목록이 이 출력을 데이터 소스로 소비한다. IPC `remote.workspaces`가 실패하면 -32050으로 답하고, 문구는 `remote browse failed: <바깥 문맥>: <원격의 원인>` 처럼 원인 체인까지 담는다(`remote.attach` 생성 실패와 같은 형식).
 
 ### 원격 요청의 세션 토큰
 
@@ -343,15 +343,15 @@ Remote는 원 attempt의 SSH 취소와 터널 회수를 요청하고 worker의 �
 
 ### 창 없는 상태(parked)에서의 세션 수명
 
-attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** 마지막 창을 닫거나(macOS 는 최소화도) 창은 사라지지만 engine 은 `App.engines` 에 parked 관계로 그대로 살아 있고([multi-window](../../architecture/multi-window.md), [ADR-0054](../../adr/0054-app-core-view-layers-and-state-ownership.md) — parked engine 은 레이아웃 슬롯 점유를 유지한다), mirror 워크스페이스와 그 mirror 터미널도 그 engine 안에 남는다. 따라서:
+attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** 마지막 창을 닫거나(macOS 는 최소화도) 창은 사라지지만 engine 은 `App.engines` 에 parked 관계로 그대로 살아 있고([multi-window](../../architecture/multi-window.md), [App·Engine·View 상태 소유권](../../dev-guide/app-state-ownership.md) — parked engine 은 레이아웃 슬롯 점유를 유지한다), mirror 워크스페이스와 그 mirror 터미널도 그 engine 안에 남는다. 따라서:
 
 - **parking 만으로는 세션이 끊기지 않는다.** 고아 판정(`detach_orphaned_mirror_sessions`)이 묻는 것은 "창이 있는가"가 아니라 **"그 mirror 워크스페이스를 들고 있는 engine 이 살아 있는가"** 다 — 창 있는 engine 과 parked engine 을 함께 본다. 창 유무로 판정하면 사용자가 창을 최소화했을 뿐인데 원격에 `Detach` 가 나가 점유가 조용히 풀린다.
 - **사용자가 mirror 워크스페이스를 직접 닫으면** 어느 engine 에도 그 워크스페이스가 없으므로 고아로 판정되어 기존대로 정리된다 — `Detach` 통지 → 원격 점유 해제 + anchor 게이트 해제 + 터널 kill. 두 상황(창이 없어졌을 뿐 vs 워크스페이스가 없어짐)은 이 판정으로 구분된다.
 - **정리는 parked engine 에도 동일하게 적용된다.** mirror 워크스페이스 행뿐 아니라 mirror 터미널·mirror busy 엔트리·mesh 프레임 캐시를 함께 걷어내고 `active_workspace` 인덱스를 클램프한다.
-  걷어낸 뒤 그 engine 에 워크스페이스가 하나도 없으면(사용자가 로컬 워크스페이스를 다 닫고 mirror 만 남겼던 경우) 기본 터미널 워크스페이스를 다시 만들어 활성으로 삼는다 — 원격이 끊겼다고 사용자 창을 닫지 않고, 워크스페이스 0 개인 창이 다음 redraw 에서 죽지도 않는다(`MainViewState::recreate_workspace_if_empty`, 에이전트가 마지막 surface 를 닫은 경우와 같은 복구 — [ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)).
+  걷어낸 뒤 그 engine 에 워크스페이스가 하나도 없으면(사용자가 로컬 워크스페이스를 다 닫고 mirror 만 남겼던 경우) 기본 터미널 워크스페이스를 다시 만들어 활성으로 삼는다 — 원격이 끊겼다고 사용자 창을 닫지 않고, 워크스페이스 0 개인 창이 다음 redraw 에서 죽지도 않는다(`MainViewState::recreate_workspace_if_empty`, 에이전트가 마지막 surface 를 닫은 경우와 같은 복구 — [Attach 메커니즘](../../dev-guide/attach-behavior.md)).
   판정과 정리의 순회 범위는 **같아야** 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면, 그 engine 이 나중에 창에 다시 실릴 때 아무 데도 연결되지 않은 mirror 워크스페이스가 되살아난다.
 - parked engine 에는 창이 없으므로 정리 시 toast 를 쌓지 않는다(토스트 수명이 wall-clock 기준이라 창 복원 시점엔 이미 만료된다).
-- **도착하는 mirror 이벤트도 parked engine 에 즉시 적용된다**([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)).
+- **도착하는 mirror 이벤트도 parked engine 에 즉시 적용된다**([Attach 메커니즘](../../dev-guide/attach-behavior.md)).
   `apply_attach_client_output` 은 적용 대상을 **창 있는 engine → parked engine** 순으로 찾고(`mirror_output_host`), 대상을 찾은 **뒤에야** reader 버퍼를 drain 한다.
   창이 없는 동안 도착한 `Data`/`Resize`/`StructuralDelta`/`Activity`/`Attention`/`Cwd`/`Mesh` 는 그 engine 의 mirror 터미널·매핑·트리에 도착 순서대로 반영되므로, 창 복원 시 mirror 는 이미 최신이고 `remote_to_local` 매핑도 desync 되지 않는다 — 로컬 PTY 출력이 parked engine 에서도 파싱되는 것과 같은 대칭이다.
   판정·정리·적용 세 순회의 범위는 **같다**.
@@ -362,7 +362,7 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
 
 - **AI Agent / 원격 (CLI)**:
   - `tasty tool attach <name> [SURFACE] [--workspace <id>] [옵션…]` — **tasty-attach 프로필**로 attach(profile-우선 편의 표면). `--list` = tasty-attach 목록만.
-  - `tasty remote attach [SURFACE] --ssh|--profile [옵션…]` — 원격 surface attach. `--profile` 은 **tasty-attach kind**(ADR-0020; ref/inline resolve).
+  - `tasty remote attach [SURFACE] --ssh|--profile [옵션…]` — 원격 surface attach. `--profile` 은 **tasty-attach kind**(docs/features/remote-profiles/index.md; ref/inline resolve).
   - `tasty remote attach --workspace <id> --ssh|--profile …` — 원격 workspace attach.
   - `tasty remote attach --force-detach [--workspace <id>]` — 점유 강제 해제(로컬 JSON-RPC; `--ssh` 와 상호배타).
   - `tasty remote attach --into-gui --target-port <p> --workspace <ws>` — 실행 GUI 에 mirror.
@@ -378,7 +378,7 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
 
 ## 원격 파일 전송 수신측 저장 정책
 
-원격 attach 채널 위 native bulk 파일 전송(ADR-0022)의 **수신측**은 저장 폴더와 폴더 최대 용량을 설정한다("원격이 경로를 소유"). 설정은 `Settings.remote_transfer` — `dir`(저장 폴더, 빈 값이면 기본 `~/.tasty/transfers/`) + `max_mb`(폴더 최대 용량, MiB, 기본 500).
+원격 attach 채널 위 native bulk 파일 전송(docs/features/remote-attach/index.md)의 **수신측**은 저장 폴더와 폴더 최대 용량을 설정한다("원격이 경로를 소유"). 설정은 `Settings.remote_transfer` — `dir`(저장 폴더, 빈 값이면 기본 `~/.tasty/transfers/`) + `max_mb`(폴더 최대 용량, MiB, 기본 500).
 
 - **IPC/CLI (focus 독립, 전역 설정)**: `settings.get_remote_transfer` / `settings.set_remote_transfer {dir?, max_mb?}` (local-only) · `tasty settings {get-remote-transfer, set-remote-transfer --dir --max-mb}`.
 - **GUI 설정**: Settings › General › Remote transfer 서브탭(`src/view/settings/ui/tabs/remote_transfer.rs`) — 저장 폴더(Browse 포함)와 최대 용량(MiB). 디자인↔본체 매핑은 [design-gallery-mapping](../../design/systems/design-gallery-mapping.md) 의 Remote transfer 절.
@@ -386,7 +386,7 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
 
 ## mirror 터미널 이미지 붙여넣기 → 원격 경로 삽입
 
-mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로컬 PNG 경로 대신 그 이미지를 bulk 파일 전송 채널(ADR-0022)로 원격에 업로드하고 **원격 파일시스템 경로**를 터미널 입력에 삽입한다(원격이 읽을 수 있는 경로). 로컬(비-mirror) 터미널의 이미지 붙여넣기는 기존대로 로컬 temp PNG 경로를 삽입한다(회귀 없음). 텍스트 붙여넣기는 mirror 여부와 무관하게 불변.
+mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로컬 PNG 경로 대신 그 이미지를 bulk 파일 전송 채널(docs/features/remote-attach/index.md)로 원격에 업로드하고 **원격 파일시스템 경로**를 터미널 입력에 삽입한다(원격이 읽을 수 있는 경로). 로컬(비-mirror) 터미널의 이미지 붙여넣기는 기존대로 로컬 temp PNG 경로를 삽입한다(회귀 없음). 텍스트 붙여넣기는 mirror 여부와 무관하게 불변.
 
 - **호스트 generic**: surface kind/claude 특화가 아니라 모든 mirror 터미널에 적용된다(claude CLI 가 그 경로 포맷을 인식하는지는 런타임 외부 동작 — 범위 밖).
 - **판정**: 붙여넣기 시점에 focused surface 가 mirror workspace(`Workspace.mirror`) 소속인지로 mirror/로컬을 가른다(판정을 트리거 시점에 끝내 업로드 완료 전 포커스 변경에 흔들리지 않게).
@@ -405,7 +405,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 
 - **자체 원격 프로토콜/암호화/인증** — 전부 SSH 에 위임. attach 채널에 별도 토큰 없음(연결 경계 = 권한 경계).
 - **단발 화면 읽기** — attach 세션을 열 필요 없음. 정식 경로는 `tasty read screen` / `tasty read since-mark`(별도 기능).
-- **self attach(자기 인스턴스)의 release 노출** — release 는 자기 인스턴스 포트를 대상으로 한 attach 를 거절하고, 로컬 self-mirror CLI(`tasty debug attach`)는 debug 빌드에만 둔다. 같은 머신의 **다른** 인스턴스에 `127.0.0.1:PORT`·`localhost:PORT`·`[::1]:PORT` 로 붙는 것은 비-목표가 아니다 — GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 release 에서도 SSH 없이 직결한다(CLI `remote attach`·`tool attach`·`remote check` 에는 loopback 분기가 없다). 같은 OS 사용자의 다른 인스턴스는 이미 같은 권한으로 실행되고 같은 사용자 프로세스의 접근은 Tasty 가 막지 못한다. loopback TCP 도 연결한 OS 사용자를 인증하지 않아 공유 머신의 격리 수단이 아니다. 따라서 이 직결은 SSH 로 정한 신뢰 경계를 넓히지 않는다([ADR-0020](../../adr/0020-remote-connection-profiles.md) · [ADR-0011](../../adr/0011-secrets-and-local-trust.md)).
+- **self attach(자기 인스턴스)의 release 노출** — release 는 자기 인스턴스 포트를 대상으로 한 attach 를 거절하고, 로컬 self-mirror CLI(`tasty debug attach`)는 debug 빌드에만 둔다. 같은 머신의 **다른** 인스턴스에 `127.0.0.1:PORT`·`localhost:PORT`·`[::1]:PORT` 로 붙는 것은 비-목표가 아니다 — GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 release 에서도 SSH 없이 직결한다(CLI `remote attach`·`tool attach`·`remote check` 에는 loopback 분기가 없다). 같은 OS 사용자의 다른 인스턴스는 이미 같은 권한으로 실행되고 같은 사용자 프로세스의 접근은 Tasty 가 막지 못한다. loopback TCP 도 연결한 OS 사용자를 인증하지 않아 공유 머신의 격리 수단이 아니다. 따라서 이 직결은 SSH 로 정한 신뢰 경계를 넓히지 않는다([원격 접속 프로필 + Passkey (remote_tool)](../remote-profiles/index.md) · [에이전트 메모리 시스템](../../design/systems/memory.md)).
 - **프로토콜 프레임/터널 연결/재연결 백오프 등 메커니즘** — [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
 - **SSH 프로필 CRUD** — [ssh-tool](../remote-profiles/index.md).
 
@@ -456,7 +456,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 
 ## 구현
 
-- 점유 레지스트리: `src/core/attach.rs` `OccupancyRegistry`(hard: `surface_locks` / `workspace_locks` / `surface_to_workspace`, acquire/release/force_detach/release_all_for_client · soft: 별도 엔트리 + acquire_soft/release_soft, ADR-0021). 휘발성.
+- 점유 레지스트리: `src/core/attach.rs` `OccupancyRegistry`(hard: `surface_locks` / `workspace_locks` / `surface_to_workspace`, acquire/release/force_detach/release_all_for_client · soft: 별도 엔트리 + acquire_soft/release_soft, docs/dev-guide/attach-behavior.md). 휘발성.
 - 런타임/스냅샷: `src/remote/server.rs`(서버측 수신, transport 무관 loopback), `src/remote/readonly.rs`(서버측 readonly mirror), `src/app/attach_poll.rs`(3초 tick).
 - 자동 매핑: `src/app/auto_attach.rs`(`Workspace.attach_mapping` 활성화 시 SSH 터널 + GUI mirror).
 - IPC: `src/adapters/ipc/handler/attach.rs`(`attach.*`). 원격 브라우징/attach IPC는 `src/app/ipc/app_methods/remote.rs`와 `src/app/auto_attach.rs`를 거친다. `src/app/attach_client.rs`는 원 engine/attempt에 연결된 결과를 Remote projection에 설치한다. IPC 경로는 사용자 선택을 옮기지 않는다.

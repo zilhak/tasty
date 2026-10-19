@@ -7,7 +7,7 @@ use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
 use tasty_ui_widgets::{ControlSize, IconButton, TagVariant, hspace, tag_caps, vspace};
 
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
-/// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
+/// semantic role 이 없어 `Theme` 필드가 없다 — docs/design/systems/theme.md 대로 **이름에 primitive 임을 남긴다**.
 const GHOST_WS_NAME_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// 사이드바의 워크스페이스 행 입력.

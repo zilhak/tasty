@@ -366,7 +366,7 @@ impl<'a, K> Table<'a, K> {
                     {
                         // 본문의 세로 스크롤바는 고정 폭 열 위에 겹쳐 그려진다. Flex 열이 남는 폭을
                         // 받을 때 그 폭을 빼 두어 끝 열이 바 아래로 들어가지 않게 한다. 바 표시 여부를
-                        // 표가 알 수 없어 폭을 예약하는 예외다(ADR-0037).
+                        // 표가 알 수 없어 폭을 예약하는 예외다(docs/architecture/ui-widgets-crate.md).
                         let bar =
                             ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_inner_margin;
                         let available = LogicalPx(ui.available_rect_before_wrap().width() - bar)

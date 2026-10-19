@@ -17,7 +17,7 @@ pub(crate) trait IpcWindow {
         surface: u32,
     ) -> Option<PathBuf>;
     /// 이 창의 활성 workspace 인덱스. 대상 생략 호환 경로나 응답의 활성 표시에서 쓴다.
-    /// 명시 대상이 있는 요청은 그 대상의 소속을 우선한다(ADR-0059).
+    /// 명시 대상이 있는 요청은 그 대상의 소속을 우선한다(docs/design/policies/focus.md).
     fn active_workspace_index(&self, engine: &CoreState) -> usize;
 
     /// 새 워크스페이스의 cwd 상속 원본 — 설정(`inherit_cwd`)과 이 창의 포커스 surface 를 본다.
@@ -39,7 +39,7 @@ pub(crate) trait IpcWindow {
     fn plugin_popup_user_activated(&self, plugin_id: &str, instance_id: u64) -> bool;
 
     /// 호출 플러그인의 webview에서 기록한 사용자 URL인지 확인하고 기록을 소비한다.
-    /// 같은 navigation은 한 번만 사용자 요청 근거로 사용할 수 있다(ADR-0031).
+    /// 같은 navigation은 한 번만 사용자 요청 근거로 사용할 수 있다(docs/features/file-handler/index.md).
     #[cfg(feature = "gui")]
     fn take_webview_user_navigation(
         &mut self,

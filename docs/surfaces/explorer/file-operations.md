@@ -2,7 +2,7 @@
 
 - **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소·다시 실행은 동작한다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. 복사·잘라내기·붙여넣기는 OS 파일 클립보드와 이어진다(Linux 는 X11 선택, Wayland 세션은 XWayland 경유. Windows·macOS 는 실 기기 미측정). 원격(mirror) explorer 에서도 그 서버가 원격 쓰기를 알리면 새 폴더·새 파일·이름 변경·휴지통 이동·같은 연결 안의 붙여넣기·드래그 놓기·충돌 선택·진행 취소·결과 카드의 Retry·Undo 가 동작한다. 원격 작업의 실행 취소 이력과 이 컴퓨터와 원격 사이의 전송은 없다. 로컬 Explorer는 Windows OLE·macOS AppKit·Linux X11/Wayland에서 외부 앱으로 Copy 드래그를 시작한다. Windows·macOS는 크로스 타깃 컴파일 확인, 실 기기 동작 미측정이다.
 - **주체**: 로컬 사용자 ([주체](../../concepts/actors.md)). 에이전트(IPC/CLI)는 이 문서의 파일 작업을 호출하지 않는다.
-- **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (mirror explorer 의 파일 작업은 원격 server 가 실행한다), [ADR-0077](../../adr/0077-explorer-shares-files-through-the-os-clipboard.md) (OS 파일 클립보드 공유와 나중 복사 우선)
+- **설계**: [원격 attach (Remote attach)](../../features/remote-attach/index.md) (mirror explorer 의 파일 작업은 원격 server 가 실행한다), 이 문서 (OS 파일 클립보드 공유와 나중 복사 우선)
 - **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/file_jobs/ops.rs`·작업 엔진 `src/app/file_jobs/job.rs`·화면 동기화 `src/app/explorer_files/ui_sync.rs`·원격 요청 `src/app/explorer_files/remote.rs`·원격 server 실행 `src/app/file_jobs/remote.rs`, 새 항목 입력 `src/adapters/ui/surface/explorer/create.rs`·툴바 More 메뉴 `src/view/main/explorer_create.rs`, 찾기 `src/adapters/ui/surface/explorer/find.rs`, 칸 표시 `src/adapters/ui/surface/explorer/view/ops.rs`·드래그 `src/adapters/ui/surface/explorer/view/drag.rs`·충돌 popup `src/adapters/ui/popup/explorer_conflict.rs`, OS 파일 드롭 `src/view/main/file_drop.rs`, OS 파일 클립보드 `src/clipboard/files.rs`·창 목록과의 조정 `src/state/explorer_os_clipboard.rs`
 - **화면**: [Explorer](index.md) 의 컨텍스트 메뉴·rename 팝업·토스트, 상태줄 진행 표시·대기열 팝오버·충돌 popup·결과 카드·드래그 칩 (갤러리 `explorer-ops-*` 예제)
 
@@ -236,7 +236,7 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 
 ## 비-목표 (Out of scope)
 
-- 이 컴퓨터와 원격 호스트 사이의 파일 전송(복사·이동·드래그). 원격 쓰기는 같은 연결 안에서만 한다 (ADR-0022).
+- 이 컴퓨터와 원격 호스트 사이의 파일 전송(복사·이동·드래그). 원격 쓰기는 같은 연결 안에서만 한다 (docs/features/remote-attach/index.md).
 - 원격 작업의 실행 취소 이력. 결과 카드의 Undo 만 쓴다.
 - surface 이동. [surface-move](../../features/surface-move/index.md) 가 맡는다.
 

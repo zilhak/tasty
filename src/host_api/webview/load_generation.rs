@@ -1,4 +1,4 @@
-//! 로드 종료 신호가 스크립트 게이트가 시작한 마지막 로드의 것인지 판정한다(ADR-0053).
+//! 로드 종료 신호가 스크립트 게이트가 시작한 마지막 로드의 것인지 판정한다(docs/surfaces/html/index.md).
 //! 앞 로드의 늦은 종료가 새 로드의 대기 값을 지우지 않게 한다. WebView2는 `NavigationId`, macOS는 `WKNavigation`을 세대로 쓴다.
 //! chrome의 `NavState`도 같은 판정으로 마지막에 시작한 main frame 탐색의 종료만 따른다.
 //! WebKitGTK 종료 신호에는 navigation 식별자가 없어 Linux는 신호 순서로 세대를 매긴다(`SignalOrderLoads`).

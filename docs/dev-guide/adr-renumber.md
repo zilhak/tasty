@@ -8,8 +8,8 @@
 `crates/tasty-doc-guards/src/bin/adr-renumber.rs`, 합성 레포 시험은
 `crates/tasty-doc-guards/tests/adr_renumber_bin.rs` 에 있다.
 
-번호 변경을 명시적으로 요청받은 대규모 재정리에 사용한다. 평소에는 기존 번호를 유지한다.
-[ADR 작성과 관리](../adr/0050-architecture-decision-records.md)에 따라 이전 번호와 새 번호의 대응표를
+번호 변경을 명시적으로 요청받은 대규모 재정리에 사용한다. 평소에는 현재 체계의 기존 번호를 유지한다. 원칙 재편 전 번호의 목적지는 [문서 이동표](adr-migration.md)에 있다. 현재 체계에 ADR이 없으면 재번호할 대상도 없으며 첫 새 예외는 0001로 작성한다.
+[ADR 작성과 관리](../adr/template.md)에 따라 이전 번호와 새 번호의 대응표를
 보관하고, 저장소 안의 인용을 모두 갱신한다. 다른 브랜치나 외부 링크의 옛 번호는 자동으로 바뀌지 않는다.
 
 ## 명령

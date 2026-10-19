@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자
-- **ADR**: [ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md)
+- **설계**: [국제화 (i18n)](../../dev-guide/i18n.md)
 - **코드**: `crates/tasty-i18n/src/lib.rs`(로더 · 스캐너 · `LoadReport`), `src/boot/locale.rs`(부팅 적용), `src/boot/locale_font.rs`(`[font]` resolve), `crates/tasty-egui-theme/src/lib.rs`(`install_locale_font_fallback`), `src/app/boot_machine.rs`(폴백 토스트), `crates/tasty-ui-widgets/src/language_select.rs` + `src/view/settings/ui/tabs/general.rs`(콤보)
 - **화면**: [설정 창](../settings/screens/settings.md) General › Language 콤보 · 부팅 직후 경고 토스트
 
@@ -19,7 +19,7 @@
   - `[font]` — **필수**. `builtin = true` / `file = "<팩 기준 상대경로>"` / `family = "<패밀리명>"` / `candidates = [...]` 중 하나(우선순위 그 순서). 섹션이 없거나 넷 다 없으면 유효하지 않은 팩으로 처리.
   - 나머지 문자열 키 — 내장 lang 파일과 같은 트리. 영어 베이스 위에 overlay.
   - **크기 상한 2 MiB** — 넘으면 파싱 전에 거부하고 warn 후 목록에서 뺀다. 설정 창을 처음 열 때 렌더 스레드에서 파일을 읽으므로 큰 파일이 화면 처리를 오래 막지 않게 제한한다.
-  - **빈 값은 "번역 없음"** — 값이 비었거나 공백뿐인 키는 overlay 에서 빠져 아래 층이 그대로 보인다(라벨 없는 버튼이 생기지 않는다). 로드 시 몇 개가 빠졌는지 `tracing::warn!` 한 줄. **세 로드 경로에 같은 규칙**이 걸리고([ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md)), 드러나는 것만 다르다 — 팩은 영어 베이스 위에 얹히므로 영어가, 오버라이드는 그 내장 언어 위에 얹히므로 **그 언어의 원래 문구**가, plugin 언어파일은 그 plugin 의 `en.toml` 위에 얹히므로 **그 plugin 의 영어**가 보인다. 일부러 비운 텍스트가 필요하면 **폭 없는 문자(U+200B)** 를 쓴다 — NBSP(U+00A0)는 안 된다(`str::trim` 이 유니코드 `White_Space`를 모두 제거한다).
+  - **빈 값은 "번역 없음"** — 값이 비었거나 공백뿐인 키는 overlay 에서 빠져 아래 층이 그대로 보인다(라벨 없는 버튼이 생기지 않는다). 로드 시 몇 개가 빠졌는지 `tracing::warn!` 한 줄. **세 로드 경로에 같은 규칙**이 걸리고([국제화 (i18n)](../../dev-guide/i18n.md)), 드러나는 것만 다르다 — 팩은 영어 베이스 위에 얹히므로 영어가, 오버라이드는 그 내장 언어 위에 얹히므로 **그 언어의 원래 문구**가, plugin 언어파일은 그 plugin 의 `en.toml` 위에 얹히므로 **그 plugin 의 영어**가 보인다. 일부러 비운 텍스트가 필요하면 **폭 없는 문자(U+200B)** 를 쓴다 — NBSP(U+00A0)는 안 된다(`str::trim` 이 유니코드 `White_Space`를 모두 제거한다).
 - **오버라이드** = `~/.tasty/lang/<builtin>.toml` 단일 파일. 내장 코드 전용, `[font]` 불필요. 내장이 아닌 코드의 단일 파일은 팩이 아니다(경고 후 무시). 크기 상한과 **빈 값 규칙**은 팩과 같다 — 빠진 키는 내장 `<code>.toml` 의 문구로 되돌아간다.
 - 내장 `lang/{en,ko,ja}.toml` 도 `[meta] name` 을 갖는다(`English` / `한국어` / `日本語`).
 
@@ -70,7 +70,7 @@ RTL(아랍·히브리) 어순은 egui 한계로 범위 밖이다.
 
 ## 비-목표 (Out of scope)
 
-- **RTL 어순**(아랍·히브리) — egui 가 양방향 텍스트를 지원하지 않아 글리프가 붙어도 어순이 깨진다. `[font]` 는 글리프 유무만 해결한다([ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md)).
+- **RTL 어순**(아랍·히브리) — egui 가 양방향 텍스트를 지원하지 않아 글리프가 붙어도 어순이 깨진다. `[font]` 는 글리프 유무만 해결한다([국제화 (i18n)](../../dev-guide/i18n.md)).
 - **"전부 팩 폰트"** — 팩 폰트는 마지막 폴백이라 라틴은 기본 폰트로 남는다(혼합 렌더). 팩 폰트를 최우선으로 두는 `priority` 옵션은 없다.
 - 재시작 없는 언어 전환.
 - 팩 설치/배포 도구(다운로드 · 서명 · 버전).
@@ -95,4 +95,4 @@ RTL(아랍·히브리) 어순은 egui 한계로 범위 밖이다.
 
 - [설정 창](../settings/screens/settings.md) — General › Language 콤보(갤러리 Settings specimen 의 `language_select` 행과 같은 위젯).
 
-CLI 도움말의 표시/프로토콜 경계는 [ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md)을 따른다.
+CLI 도움말의 표시/프로토콜 경계는 [국제화 (i18n)](../../dev-guide/i18n.md)을 따른다.

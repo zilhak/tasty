@@ -45,7 +45,7 @@ pub struct PaneTabBarView {
     pub tab_html_script_marker: Vec<Option<TabScriptMarker>>,
 }
 
-/// 탭 칸의 html 스크립트 표지. lock 을 누르면 이 surface 의 배너를 다시 보인다(ADR-0053).
+/// 탭 칸의 html 스크립트 표지. lock 을 누르면 이 surface 의 배너를 다시 보인다(docs/surfaces/html/index.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TabScriptMarker {
     pub surface_id: u32,

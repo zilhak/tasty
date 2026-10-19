@@ -1,6 +1,6 @@
 //! 플러그인 상태의 직접 변경이 등록된 갱신 파일 밖에 있는지 검사한다.
 //! packages를 바꾼 뒤 namespace·extensions를 갱신하지 않으면 제거한 플러그인이 호출을 가릴 수 있다.
-//! 관련 설계는 [ADR-0026](../../docs/adr/0026-plugin-registration-and-lifecycle.md)에 있다.
+//! 관련 설계는 [플러그인 제작 가이드](../../docs/dev-guide/plugin-development.md)에 있다.
 //!
 //! 필드는 비공개라는 전제 아래 소유 크레이트 안에서만 검색한다. namespace 쓰기는
 //! namespaces_write 이름으로 찾으며, 공유 표 타입의 외부 사용과 표를 돌려주는 함수도 별도로 검사한다.

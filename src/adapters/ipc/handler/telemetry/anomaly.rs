@@ -1,4 +1,4 @@
-//! 이상 탐지 기록·조회·알림. 보존은 store::log_retention의 공통 정책을 따른다(ADR-0009).
+//! 이상 탐지 기록·조회·알림. 보존은 store::log_retention의 공통 정책을 따른다(docs/design/systems/storage.md).
 
 use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};

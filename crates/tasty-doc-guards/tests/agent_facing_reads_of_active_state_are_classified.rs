@@ -30,7 +30,7 @@ const NEEDLES: &[&str] = &[
 ];
 
 /// IPC handler, 현재 journal resolver/completion과 RequestScope adapter를 검사한다.
-/// 순수 domain은 선택을 소유하지 않으며 이 명부는 host 진입·소비 경계를 다룬다(ADR-0059).
+/// 순수 domain은 선택을 소유하지 않으며 이 명부는 host 진입·소비 경계를 다룬다(docs/design/policies/focus.md).
 /// src/state와 src/file에는 사용자 입력 경로도 있으므로 필요한 파일만 등록한다.
 /// 새 진입·completion adapter가 추가되면 이 목록도 갱신한다. 임의 호출 그래프를 자동 추적하지 않는다.
 const AGENT_FACING: &[&str] = &[
@@ -235,7 +235,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "src/adapters/ipc/handler/approval/request.rs",
         Attribution,
         1,
-        "승인 요청에 workspace_id와 surface_id가 모두 없을 때만 활성 워크스페이스를 쓴다. surface_id가 있으면 해당 서피스의 워크스페이스를 쓴다(ADR-0017).",
+        "승인 요청에 workspace_id와 surface_id가 모두 없을 때만 활성 워크스페이스를 쓴다. surface_id가 있으면 해당 서피스의 워크스페이스를 쓴다(docs/design/policies/focus.md).",
     ),
     (
         "src/adapters/ipc/handler/telemetry/record.rs",

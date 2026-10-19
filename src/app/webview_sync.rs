@@ -264,7 +264,7 @@ fn create_missing_webviews(
     }
 }
 
-/// html surface에 문서 단위 스크립트 허용을 붙인다(ADR-0053). 첫 로드 전에 sandbox 값을 맞춘다.
+/// html surface에 문서 단위 스크립트 허용을 붙인다(docs/surfaces/html/index.md). 첫 로드 전에 sandbox 값을 맞춘다.
 fn attach_script_gate(
     view: &MainView,
     engine: &crate::runtime::engine_access::EngineRef<'_>,
@@ -772,7 +772,7 @@ fn sync_webviews(
 
     // navigation 시도를 소유 plugin에 알린다. 원격 콘텐츠 차단 여부와 별개이며
     // plugin이 없어도 큐를 비운다. 사용자 제스처와 페이지 작성자가 확인된 경우에만
-    // 사용자 탐색 기록을 남긴다. plugin 응답보다 먼저 기록해야 한다(ADR-0031).
+    // 사용자 탐색 기록을 남긴다. plugin 응답보다 먼저 기록해야 한다(docs/features/file-handler/index.md).
     let identity = view.state.webview_identity.clone();
     for (sid, wv) in &view.webviews {
         for nav in wv.take_pending_navigations() {
@@ -872,7 +872,7 @@ fn resolve_webview_settings(
     // HTML plugin은 임의 콘텐츠를 열 수 있어 기본적으로 JS를 막는다.
     // markdown은 정화한 문서의 탐색 스크립트를 실행해야 하므로 기본값이 다르다.
     // 사용자가 저장한 설정은 이 기본값보다 우선한다.
-    // html은 이 값을 전역 sandbox로 받고 문서 단위 허용은 backend의 게이트가 적용한다(ADR-0053).
+    // html은 이 값을 전역 sandbox로 받고 문서 단위 허용은 backend의 게이트가 적용한다(docs/surfaces/html/index.md).
     let sandbox_default = plugin_id != "com.tasty.markdown";
     let sandbox = match s.plugin_setting(plugin_id, "sandbox_scripts") {
         Some(PluginSettingValue::Bool(b)) => *b,

@@ -1,8 +1,12 @@
 # 에이전트 메모리 시스템
 
+## 원칙과 현재 동작
+
+[데이터 원칙](../../principles/control-and-data.md)은 터미널에서 읽을 수 있는 자료의 접근·전송을 별도로 제한하지 않는다. 아래 secret owner·Passkey API 마스킹은 현행 구현 범위이며 별도 실행 보안 경계나 향후 Tasty 로그인 예외로 승인된 것은 아니다.
+
 `~/.tasty/memory.db`는 AI 에이전트와 plugin의 작업 데이터를 저장하는 SQLite WAL 기반 키-값 저장소다. 본체는 `init_with_config`로 열고 `Arc<Mutex<dyn MemoryStorage>>`로 Core에 전달해 동기 접근한다(`crates/tasty-memory/`).
 
-이 문서는 조회 범위와 소유권을 설명한다. 저장 암호화를 제공하지 않는 이유는 [ADR-0011](../../adr/0011-secrets-and-local-trust.md), IPC의 신뢰 범위는 [ADR-0006](../../adr/0006-bounded-ipc-transport.md)을 따른다.
+이 문서는 조회 범위와 소유권을 설명한다. 저장 암호화를 제공하지 않는 이유는 이 문서, IPC의 신뢰 범위는 [IPC 서버](../../architecture/ipc-server.md)을 따른다.
 
 ## 책임 범위
 
@@ -23,7 +27,7 @@
 
 둘 다 같은 `Scope`(`global`/`account:<u>`/`window:<id>`/`workspace:<id>`/`surface:<id>`)와 키 규칙(1..=256자 `[a-z0-9._-]+`)을 공유한다. 차이는 **`owner` 차원** 하나다.
 
-`surface:<id>` 의 `<id>` 는 **surface id 공간**(`< 0x8000_0000`)이어야 한다 — 그 이상은 headless PTY id 공간이라 실재하는 surface 가 가질 수 없는 값이고, IPC 가 `invalid_params` 로 거부한다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)).
+`surface:<id>` 의 `<id>` 는 **surface id 공간**(`< 0x8000_0000`)이어야 한다 — 그 이상은 headless PTY id 공간이라 실재하는 surface 가 가질 수 없는 값이고, IPC 가 `invalid_params` 로 거부한다([포커스 정책 (운영 상세)](../policies/focus.md)).
 
 `surface:<id>` scope 에 항목을 새로 만드는 쓰기(`memory.put` · `memory.secret.put`)는 **지금 열린 surface** 에만 받는다.
 - 라우터가 그 scope 의 surface 를 요청 대상으로 읽어 소유 창·parked engine 으로 보낸다. 어느 engine 에도 없으면 다른 surface 대상 요청과 같은 `-32602`(`no live surface <id> (named by 'memory.put')`)로 거절한다. 핸들러도 받은 engine 에 그 surface 가 없으면 `-32602 Surface <id> not found` 로 한 번 더 거절한다.
@@ -113,11 +117,11 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
   파일이 없어 SQLite 가 WAL 을 못 쓰고, 요청은 조용히 거절돼 `journal_mode` 가 `memory` 로
   남는다(반환값은 성공이다). 그 모드에는 `-wal`·`-shm` 도, 여기 적은 위생 문제도 없다.
   그래서 그 값은 실패가 아니라 정상 결과로 규정하고 경고하지 않는다 —
-  [ADR-0010](../../adr/0010-storage-failure-reporting.md).
+  [저장 계약과 writer 명부](storage-contract.md).
   반대로 **파일 DB가 `memory` 모드로 열리면 정상이 아니다** — 허용 결과는 모드별이다. 열린
   스토어는 되읽은 결과를 `MemoryStore::applied_pragmas()` 로 들고 있고, 실행 중에는
   `system.pressure` 의 `db_pragmas.memory_db`(CLI `tasty list pressure`)로 조회한다
-  ([ADR-0010](../../adr/0010-storage-failure-reporting.md)).
+  ([저장 계약과 writer 명부](storage-contract.md)).
 - **내구성 범위**(`synchronous=NORMAL` — 프로세스 kill 은 견디고 전원 장애는 최신 commit 을
   약속하지 않는다)와 **저장 실패의 의미**(원인 분류 · 실패한 쓰기는 quota 카운터와 변경
   알림 버퍼를 갱신하지 않는다)는 [storage](storage.md) 의 두 절이 정본이다.
@@ -125,7 +129,7 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
   않는다. 그 상태의 쓰기는 재시작에 사라지므로 `db_pragmas.memory_db` 가 `degraded: true` 와
   `init_failure` 로, 쓰기 응답이 `durable: false` 로 그 사실을 말한다. 정본은 [storage](storage.md)
   "초기화 실패" 절의 `memory.db` 항이고 근거는
-  [ADR-0010](../../adr/0010-storage-failure-reporting.md).
+  [저장 계약과 writer 명부](storage-contract.md).
 
 ## 보안·신뢰 모델
 
@@ -140,6 +144,6 @@ Passkey는 프로필에서 이름으로 참조하며 passkeys.toml에는 name·k
 ## 관련
 
 - 코드: `crates/tasty-memory/`
-- [ADR-0011](../../adr/0011-secrets-and-local-trust.md) · [ADR-0006](../../adr/0006-bounded-ipc-transport.md)
+- 이 문서 · [IPC 서버](../../architecture/ipc-server.md)
 - [plugin-permissions](../../dev-guide/plugin-permissions.md) · [plugin-development 민감 데이터](../../dev-guide/plugin-development.md#민감-데이터--regular--secret--keyring-선택)
 - 저장 위치 규칙: [storage.md](storage.md) (`~/.tasty/` 전체 저장소 지도; `memory.db` 는 `state.db` 와 별도 연결)

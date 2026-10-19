@@ -9,7 +9,7 @@
 | [focus](policies/focus.md) | 포커스는 사용자의 것 — 에이전트 행동(IPC/CLI)은 포커스를 바꾸지 않고 release 엔 포커스 변경 API 가 없다 |
 | [cwd](policies/cwd.md) | surface별 현재 폴더와 생성·분할·변환 시 상속 규칙. 링크 해석과 닫은 항목 복원에도 사용 |
 | [busy-indicator](policies/busy-indicator.md) | 탭·워크스페이스의 "실행 중" 시각 표시 — focus 와 무관 |
-| [key-mapping](policies/key-mapping.md) | 바인딩 문자열의 OS별 키 매핑과 위치 기반 추상화 — 모든 단축키는 `KeybindingSettings` 로 노출 |
+| [key-mapping](policies/key-mapping.md) | 바인딩 문자열의 OS별 키 매핑과 위치 기반 추상화 — 설정 대상 단축키는 `KeybindingSettings`로 노출 |
 | [gallery-completeness](policies/gallery-completeness.md) | 본체의 모든 UI 컴포넌트를 갤러리에 포함 |
 | [system-tray](policies/system-tray.md) | 가능한 환경에서 트레이/상태 영역 사용. 없으면 태스크바·도크로 복귀 |
 

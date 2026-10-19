@@ -1,6 +1,6 @@
 //! 캐시를 만들거나 저장한 시점의 레이아웃. 저장 직전 충돌 검사와 보기 모드 갱신에 사용한다.
 //! 저장은 레이아웃만 교체하므로 이름·부제 변경은 충돌로 보지 않는다.
-//! 배경: docs/adr/0038-preset-drafts-and-store-conflicts.md.
+//! 배경: docs/features/layout-presets/index.md.
 
 use crate::view::preset::draft::PresetDrafts;
 use tasty_presets::{PresetKind, PresetPane, PresetPaneNode, PresetSurfaceLayout};

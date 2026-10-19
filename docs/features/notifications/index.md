@@ -1,8 +1,16 @@
 # 알림 (Notifications)
 
+## 전용 알림 영역의 기준과 현재 범위
+
+[피드백 원칙](../../principles/feedback-and-recovery.md)에 따른 전용 알림 영역은 LNB 하단 Tools 등 버튼 블록 바로 위의 작은 공간에 둔다. 워크스페이스 행의 attention 배지와 별개이며, 간단한 정보를 표시하고 사용자가 직접 누르면 팝업에서 상세 내용을 확인한다.
+
+오류·경고·정보마다 확인하지 않은 알림 개수를 표시한다. 오류는 빨간색, 경고는 노란색, 정보는 파란색이며 정보 색은 LNB의 완료된 surface 개수 표시와 같다. 색을 공유해도 완료 surface 수와 미확인 알림 수를 합치지 않는다.
+
+현재 알림 모델·API는 세 레벨과 조회·읽음 처리를 지원한다. 위 위치의 LNB 요약 영역과 레벨별 배지·상세 팝업의 새 구성은 이 문서의 확정된 화면 요구이며 아직 본체에 반영되지 않았다. 아래 기존 workspace attention 표시는 이를 구현한 것으로 보지 않는다.
+
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (에이전트도 `notification.create` 로 발행 가능)
-- **ADR**: [ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md) (제목은 표시 전용 · `notification.create` 기본 제목은 UI 문구)
+- **설계**: [국제화 (i18n)](../../dev-guide/i18n.md) (제목은 표시 전용 · `notification.create` 기본 제목은 UI 문구)
 - **코드**: `NotificationStore` (notification 모델); IPC `notification.{list,create,counts,read}`
 - **화면**: 알림 패널 popup (Window 스코프) · 사이드바 배지
 
@@ -20,7 +28,7 @@ termwiz Parser 의 OSC 액션을 인터셉트해 알림 이벤트 생성 — OSC
 
 ### 제목은 표시 전용 — 식별은 별도 필드로
 
-호스트가 스스로 만드는 알림 제목은 전부 `t()` 번역값이라 `general.language` 에 따라 달라진다 — 벨은 `notification.bell_title`, `notification.create` 가 `title` 없이 호출되면(`tasty notify "본문"`) `notification.default_title`. 따라서 제목 문자열은 **기계적 식별자가 아니다**. 알림의 출처를 구분해야 하는 소비자는 식별 필드를 본다 — 훅은 `HookEvent::Bell`(셸 env `TASTY_HOOK_EVENT=bell`, payload 에 제목 없음 — [hooks](../hooks/index.md)), plugin 은 `notification.created` 이벤트의 `source`. 제목 비교(`title == "Bell"`)로 분기하는 코드는 언어를 바꾸는 순간 깨지므로 두지 않는다. 근거·대안: [ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md).
+호스트가 스스로 만드는 알림 제목은 전부 `t()` 번역값이라 `general.language` 에 따라 달라진다 — 벨은 `notification.bell_title`, `notification.create` 가 `title` 없이 호출되면(`tasty notify "본문"`) `notification.default_title`. 따라서 제목 문자열은 **기계적 식별자가 아니다**. 알림의 출처를 구분해야 하는 소비자는 식별 필드를 본다 — 훅은 `HookEvent::Bell`(셸 env `TASTY_HOOK_EVENT=bell`, payload 에 제목 없음 — [hooks](../hooks/index.md)), plugin 은 `notification.created` 이벤트의 `source`. 제목 비교(`title == "Bell"`)로 분기하는 코드는 언어를 바꾸는 순간 깨지므로 두지 않는다. 근거·대안: [국제화 (i18n)](../../dev-guide/i18n.md).
 
 ### NotificationStore
 
@@ -45,7 +53,7 @@ ID는 인스턴스의 공유 IdGenerator에서 발급하는 u64이며 재시작 
 유지하므로 최근 내용 갱신이 항목을 앞으로 옮기지는 않는다. 기존 한 engine의 순서와
 고정 50개 응답 계약을 유지하며 새로운 limit/필터 인자를 도입하지 않는다.
 
-이는 [목록 합산 원칙](../../adr/0059-id-targets-and-view-owned-selection.md)의
+이는 [목록 합산 원칙](../../design/policies/focus.md)의
 적용이며, GUI 패널을 전역 패널로 바꾸는 결정이 아니다.
 
 <a id="시스템-알림--사운드"></a>
@@ -64,7 +72,7 @@ headless는 소리를 내지 않는다. 기존 항목에 합쳐진 알림과 터
   surface 발 알림을 읽음 처리(개별/모두 읽음)했을 때 그 surface 에 남은 안읽음 알림이 없으면
   해제(같은 surface 의 다른 알림이 아직 안읽음이면 유지). 단 그 surface 가 **하드 점유
   (attach)** 중이면 해제되지 않는다 — 점유 중 attention 의 해제 주체는 홀더다
-  ([ADR-0024](../../adr/0024-attention-ownership-and-clear.md)). **알림 자체의
+  ([Surface Highlight (주의 환기)](../surface-highlight/index.md)). **알림 자체의
   읽음 처리는 점유와 무관하게 그대로 동작한다** — 게이트가 걸리는 것은 attention 해제
   하나뿐이다. 상세 [`surface-highlight`](../surface-highlight/index.md).
 - **사이드바 배지**: attention surface 가 있는 워크스페이스 행 우측에 `attention_count` 개수 pill

@@ -841,7 +841,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         "debug.modal.close_request",
         local_only(MethodEffect::Idempotent),
     ),
-    // 보조 창까지 포함한 창 목록. release window.list 는 메인 창만 다룬다(ADR-0018).
+    // 보조 창까지 포함한 창 목록. release window.list 는 메인 창만 다룬다(docs/ai-verification/screenshot-methods.md).
     ("debug.window.list", local_only(MethodEffect::Read)),
     // 범위·대상을 지정한 토스트 발화 — 토스트는 사용자 행동의 결과라 release 미노출. 위치 실측용.
     (

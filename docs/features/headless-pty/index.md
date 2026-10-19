@@ -1,8 +1,12 @@
 # 화면 없는 PTY (`tasty pty`)
 
+## 원칙과 현재 동작
+
+[자원·설정 원칙](../../principles/performance-and-settings.md)에 맞춰 강제 자원 통제와 선택 도구를 구분한다. 현재 standalone PTY의 8개 상한·300초 유휴 회수는 제품 상수로 강제되며 설정으로 바꾸는 제품 경로는 없다. set_standalone_limits는 테스트 전용이다. 실행 중 프로세스에도 적용되는 이 수명 정책은 원칙과 정합할 범위다.
+
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [ADR-0060](../../adr/0060-terminal-and-pty-separation.md) (신규 `pty.*` 네임스페이스 결정) · [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md) (surface와 PTY의 ID 범위 분리)
+- **설계**: [터미널 (Terminal)](../../surfaces/terminal/index.md) (신규 `pty.*` 네임스페이스 결정) · [포커스 정책 (운영 상세)](../../design/policies/focus.md) (surface와 PTY의 ID 범위 분리)
 - **코드**: `src/runtime/terminal_store/standalone.rs` (단일 collection의 standalone 정책) · `crates/tasty-terminal/src/pty.rs` (PtyState·exit/reap) · `src/adapters/ipc/handler/pty.rs` (IPC) · `src/runtime/effect_runner.rs` 및 `src/runtime/effect_runner/installation.rs` (원 PTY 준비·승격) · `crates/tasty-cli` `pty` 서브커맨드 (CLI)
 - **화면**: 없음 — headless 전용. 렌더되지 않고 포커스/닫은-항목 히스토리/선택에 닿지 않는다(identity.md 원칙 1). 승격(`pty.attach_surface`) 후에만 일반 terminal surface 로 렌더.
 
@@ -76,7 +80,7 @@ PtyState의 standalone 표시가 제거되어 이후에는 surface API로 다룬
 
 ## 비-목표 (Out of scope)
 
-- **GUI 상시 가시화** — headless PTY 실행 중임을 상태바/점유 계약(ADR-0021)으로 노출하는 것은 이번 범위 밖(후속 선택). 승격 전까지는 `pty.list` 로만 보인다.
+- **GUI 상시 가시화** — headless PTY 실행 중임을 상태바/점유 계약(docs/dev-guide/attach-behavior.md)으로 노출하는 것은 이번 범위 밖(후속 선택). 승격 전까지는 `pty.list` 로만 보인다.
 - **`agent.task` Run 의 pty backend 전환** — DAG 러너 subprocess(`runner_host.rs` 의 `shell_children`) 를 이 PTY 기능으로 옮기는 것은 범위 밖이다. `Run` 은 bare subprocess + `Stdio::piped()` 캡처로 대응한다(argv 의미·exit code 주체·재시작 수명을 그대로 유지하는 게 우선이라 tty 지원은 필요해질 때 재검토) — [dev-guide/agent-runner](../../dev-guide/agent-runner.md#run-출력-캡처).
 - **blocking wait** — `pty.wait` 는 즉시 반환 폴링이다(다른 poll-based 모델과 동일). 호출자가 반복 폴링한다.
 

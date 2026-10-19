@@ -25,7 +25,7 @@ tasty 의 영속 데이터는 텍스트 파일과 SQLite에 나눠 저장된다.
 
 로컬 engine/workspace/pane/tab/surface 구조는 데이터 홈의 단일 journal이 원본이다. 각 engine은 별도 stream을 사용한다. `JournalModel`과 domain snapshot은 확정 이벤트에서 도출하며, CoreState는 실행 객체를 소유하지 않는 읽기 projection이다. terminal·plugin 콘텐츠 payload와 View 선택 checkpoint는 별도 원본이다. mirror 트리는 로컬 구조 journal에 편입하지 않는다.
 
-App worker가 commit한 batch를 모든 대상 엔진에 공개하고 ACK를 받은 뒤 응답·checkpoint를 진행한다. `state.db`와 `memory.db`의 SQLite 설정이나 복구 정책을 journal에 그대로 적용하지 않는다. journal에는 독점 writer fencing, 원자 명령·effect 기록, payload pin·GC와 별도 저장 예산이 있다. 세부 계약은 [레이아웃 저장](../../features/layout-persistence/index.md)과 [ADR-0063](../../adr/0063-event-store-storage-fencing-and-effect-states.md)을 따른다.
+App worker가 commit한 batch를 모든 대상 엔진에 공개하고 ACK를 받은 뒤 응답·checkpoint를 진행한다. `state.db`와 `memory.db`의 SQLite 설정이나 복구 정책을 journal에 그대로 적용하지 않는다. journal에는 독점 writer fencing, 원자 명령·effect 기록, payload pin·GC와 별도 저장 예산이 있다. 세부 계약은 [레이아웃 저장](../../features/layout-persistence/index.md)과 [이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md)을 따른다.
 
 ## SQLite `state.db`
 
@@ -38,7 +38,7 @@ App worker가 commit한 batch를 모든 대상 엔진에 공개하고 ACK를 받
   - `== SCHEMA_VERSION` → **additive ensure**. `CREATE TABLE IF NOT EXISTS` 만 다시 돌린다.
   - 그 외 → `SchemaMismatch{expected, found}` 에러 → 호출자가 사용자에게 안내 후 종료.
 
-기존 버전의 DB에도 `CREATE TABLE IF NOT EXISTS`로 테이블을 추가할 수 있다. `tutorial_progress`가 이 방식을 사용한다([ADR-0009](../../adr/0009-state-storage-and-retention.md)). 버전값만으로는 추가 여부를 알 수 없으므로 `an_existing_database_still_gets_the_tutorial_table`이 기존 DB에도 테이블이 생기는지 확인한다.
+기존 버전의 DB에도 `CREATE TABLE IF NOT EXISTS`로 테이블을 추가할 수 있다. `tutorial_progress`가 이 방식을 사용한다(이 문서). 버전값만으로는 추가 여부를 알 수 없으므로 `an_existing_database_still_gets_the_tutorial_table`이 기존 DB에도 테이블이 생기는지 확인한다.
 
 컬럼 변경이나 데이터 이동을 이 경로에 넣지는 않는다. 그런 마이그레이션이 필요하면 SCHEMA_VERSION 변경과 새 DB 시작 정책을 함께 검토한다.
 
@@ -104,7 +104,7 @@ AppliedPragmas는 journal_mode·synchronous·foreign_keys·journal_size_limit의
   commit 들은 잃을 수 있다. DB 가 깨지지는 않는다 — 잃는 것은 끝부분의 commit 이고, 남은
   것은 일관된 이전 상태다.
 - 이 값을 바꾸지 않는다. FULL 로 올리는 것은 commit 마다 fsync 비용을 받는 **별도 결정**이고,
-  지금 코드는 적용 여부만 본다([ADR-0010](../../adr/0010-storage-failure-reporting.md)).
+  지금 코드는 적용 여부만 본다([저장 계약과 writer 명부](storage-contract.md)).
 - **전원 장애 쪽은 측정된 적이 없다.** 그 줄은 SQLite 문서의 계약이다. 재는 법은 commit 직후
   전원을 끊고 재시작해 마지막 commit 의 생존을 보는 것인데 — **이 레포에 그 장비는 없다.**
 - **프로세스 kill 쪽은 쟀다**(2026-09-21, Linux, 격리 홈의 GUI debug 인스턴스): `memory.put` 다섯
@@ -127,13 +127,13 @@ fallback에서 memory.db를 쓰는 memory·agent·approval·surface.meta·teleme
 `output.observe_start`의 memory sink는 파싱한 항목을 `memory.db`에 쓴다.
 `src/runtime/output_observer/memory_sink.rs`가 채널에 쌓인 항목을 최대 256건씩 꺼내 [memory writer](storage-contract.md#저장-실행기)에 독립 요청 묶음(`Batch`, `Independent`) 하나로 넣는다. 함께 꺼낸 항목은 commit 한 번으로 저장된다. sink는 결과를 기다리지 않고 다음 항목을 받으며, 끝난 결과는 접수 순서대로 거둔다.
 
-- **키**: `global` 범위에 `tasty.observer.<id>.<ms>.<seq>`로 저장하고 owner는 `_host`다. `<ms>`는 묶음을 만든 시각의 밀리초, `<seq>`는 sink별로 0부터 세는 순번이며 최소 6자리로 표시한다. 같은 밀리초의 여러 항목은 순번으로 구분한다. 시계가 역행하지 않고 순번이 6자리 범위에 있으면 키의 정렬 순서가 도착 순서와 같아 `memory.list --prefix tasty.observer.<id>.`로 시간순 조회할 수 있다([저장·보존 설계](../../adr/0009-state-storage-and-retention.md)). 모든 항목이 자기 키를 받으므로 같은 키로 합쳐지는 기록은 없다.
+- **키**: `global` 범위에 `tasty.observer.<id>.<ms>.<seq>`로 저장하고 owner는 `_host`다. `<ms>`는 묶음을 만든 시각의 밀리초, `<seq>`는 sink별로 0부터 세는 순번이며 최소 6자리로 표시한다. 같은 밀리초의 여러 항목은 순번으로 구분한다. 시계가 역행하지 않고 순번이 6자리 범위에 있으면 키의 정렬 순서가 도착 순서와 같아 `memory.list --prefix tasty.observer.<id>.`로 시간순 조회할 수 있다(저장·보존 설계). 모든 항목이 자기 키를 받으므로 같은 키로 합쳐지는 기록은 없다.
 - **`max_records`**: 저장이 확정된 키만 순서대로 기억하고 최근 N건을 넘으면 넘친 옛 키의 삭제를 다음 묶음에 싣는다. 채널이 끊기면 남은 삭제를 마지막 묶음으로 보낸다. 이미 없는 키는 조용히 넘어가고 그 밖의 삭제 실패는 경고만 남긴다. 삭제한 키는 다시 시도하지 않으므로 N건보다 많이 남을 수 있다. 확정 여부를 모르는 기록도 세지 않으므로 그만큼 더 남을 수 있다. 재시작하면 이 목록은 비워지며 이전 실행이 남긴 키에는 이 상한을 적용하지 않는다.
 - **실패 집계**: 세 종류를 따로 센다. 채널이 가득 차 넣지 못한 항목은 `dropped`, writer가 접수하지 않은 항목(큐 포화·종료 중)은 `submit_rejected`, writer가 거절했거나(크기·quota) 확정하지 못했거나 확정 여부를 모르는 항목은 `store_failed`다. 세 값 모두 `output.observe_list`·`output.observe_info` 응답에 있다. 접수하지 않은 항목을 sink가 대신 저장하지 않으며, 실패한 항목은 경고를 남기고 버린다. 소비자에게 gap을 보내지 않는다.
 - **잠금**: sink는 저장소 잠금을 잡지 않는다. 저장소에 닿는 것은 writer worker다. writer 없는 시험 구성에서는 같은 실행 규칙으로 sink 스레드에서 바로 실행하며, 이때 잠금 poison은 `tasty_utils::poison::recover_mutex`로 복구하고 `tasty_memory::STORE_LOCK_WHAT`·`STORE_LOCK_POISONED`를 쓴다. `core`의 `MEMORY_WHAT`·`MEMORY_POISONED`는 같은 static을 재수출한다.
 - **종료**: surface가 닫히면 sender를 해제하고 워커 join은 미룬다. 워커는 채널에 남은 항목을 넣고 결과를 기다린 뒤(최대 30초) 종료한다. 앱 종료는 observer 워커를 회수한 뒤 writer를 drain하므로 워커가 기다리는 결과는 writer가 끝내기 전에 나온다. 앱 종료의 `join_retired`와 라우터 Drop이 남은 워커를 기다린다. 워커가 끝나기 전에 프로세스가 종료되면 남은 항목을 잃을 수 있다.
 
-저장 실패 처리의 근거는 [ADR-0010](../../adr/0010-storage-failure-reporting.md)에 있다.
+저장 실패 처리의 근거는 [저장 계약과 writer 명부](storage-contract.md)에 있다.
 
 ### 관측 로그 보존
 
@@ -188,7 +188,7 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
 - **화면 안내는 없다** — `state.db` 와 달리 InfoModal 도 toast 도 뜨지 않는다.
 
 근거·대안(fatal · 쓰기 거절)·재검토 조건은
-[ADR-0010](../../adr/0010-storage-failure-reporting.md).
+[저장 계약과 writer 명부](storage-contract.md).
 
 ## 저장 기준선
 

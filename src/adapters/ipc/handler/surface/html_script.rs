@@ -1,6 +1,6 @@
 //! html surface 상태 조회.
 //!
-//! - `surface.html_script`: 스크립트 감지·허용·배너 상태(ADR-0053). 배너 표지를 갱신하는
+//! - `surface.html_script`: 스크립트 감지·허용·배너 상태(docs/surfaces/html/index.md). 배너 표지를 갱신하는
 //!   `update_banner`가 아니라 `banner_phase`를 부르므로 조회가 배너를 띄우거나 사용자 열람으로
 //!   기록되지 않는다.
 //! - `surface.html_nav`: commit된 문서 주소와 히스토리 이동 가능 여부. 호스트가 프레임마다 옮긴

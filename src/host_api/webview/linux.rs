@@ -367,7 +367,7 @@ impl PlatformWebView {
                     }
                     _ => None,
                 };
-                // navigation action에는 frame 정보가 없어 main frame 응답에서만 문서 JS를 정한다(ADR-0053).
+                // navigation action에는 frame 정보가 없어 main frame 응답에서만 문서 JS를 정한다(docs/surfaces/html/index.md).
                 if matches!(decision_type, PolicyDecisionType::Response)
                     && let Some(gate) = gate.borrow().as_ref()
                     && decision
@@ -899,7 +899,7 @@ impl PlatformWebView {
     }
 
     /// 문서 단위 스크립트 허용을 붙인다. 첫 로드 전에 호출한다.
-    /// page cache를 끄면 뒤로·앞으로 가기도 응답 단계를 거쳐 모든 문서가 지문을 가진다(ADR-0053).
+    /// page cache를 끄면 뒤로·앞으로 가기도 응답 단계를 거쳐 모든 문서가 지문을 가진다(docs/surfaces/html/index.md).
     pub fn attach_script_gate(&self, gate: ScriptGate) {
         if let Some(settings) = WebViewExt::settings(&self.webview) {
             settings.set_enable_page_cache(false);

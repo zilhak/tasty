@@ -51,7 +51,7 @@ finish_boot
 
 ## 부팅에 걸리는 일 (트리거와 무관한 일)
 
-첫 요청이 없어도 필요한 초기화는 부팅에서 수행한다. 플러그인 설치·namespace 표 등록과 프로세스 기동은 구분한다. 판단 기준은 [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)에 있다.
+첫 요청이 없어도 필요한 초기화는 부팅에서 수행한다. 플러그인 설치·namespace 표 등록과 프로세스 기동은 구분한다. 판단 기준은 [플러그인 제작 가이드](../dev-guide/plugin-development.md)에 있다.
 
 지금 명부에 오른 일과 조합별 자리:
 
@@ -61,7 +61,7 @@ finish_boot
 | namespace 소유 표 설치 (`install_namespace_table`) | `run_headless` (`src/boot.rs`) | `build_plugin_manager` (`src/app/window_lifecycle.rs`) |
 | agent 재시작 기록 정리·핸들 재적재 (`purge_stale_agent_state_on_boot`) | `bootstrap_engine` (`src/boot.rs`) | `finish_boot` (`src/app/boot_machine.rs`) |
 
-소유 표 설치는 `PluginManager`가 사용하는 표의 핸들을 `tasty-ipc`에 전달하는 작업이다. 두 크레이트는 같은 표를 읽으며, `refresh_packages`가 설치된 매니페스트에서 표 내용을 갱신한다. 표를 복사하지 않는 이유는 [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)에 있다.
+소유 표 설치는 `PluginManager`가 사용하는 표의 핸들을 `tasty-ipc`에 전달하는 작업이다. 두 크레이트는 같은 표를 읽으며, `refresh_packages`가 설치된 매니페스트에서 표 내용을 갱신한다. 표를 복사하지 않는 이유는 [플러그인 제작 가이드](../dev-guide/plugin-development.md)에 있다.
 
 설치와 namespace 표 등록 자체는 프로세스를 시작하지 않는다. 헤드리스는 이 메타데이터만 준비하고 플러그인이 필요한 첫 호출까지 기동을 미룬다. GUI의 `build_plugin_manager`는 준비 후 `discover_and_start`를 호출해 활성 플러그인을 기동한다. agent 러너 스레드는 두 환경 모두 `agent.task_run --action start` 전까지 시작하지 않는다([작업 러너](../dev-guide/agent-runner.md)).
 
@@ -104,7 +104,7 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   따라간다.
 - **종료와 공유한다** — `render_loading` 은 phase 타입이 아니라 i18n 키를 받으므로
   종료 상태 머신도 같은 함수로 같은 락업을 그린다(문구만 다르다). 종료 쪽은
-  [shutdown-sequence "종료 화면"](shutdown-sequence.md) · [ADR-0016](../adr/0016-window-platform-and-shutdown.md).
+  [shutdown-sequence "종료 화면"](shutdown-sequence.md) · [종료 시퀀스 — 종료 cascade + Drop tail](shutdown-sequence.md).
 - 갤러리 specimen: `crates/tasty-gallery/src/catalog/chrome_loading.rs`
   (Chrome 카테고리) — 부팅 5종(기본/최소창/phase 문구 3종/문구 없음/Latte) +
   종료 2종(기본/phase 문구 4종) + 첫 실행 셸 설정 화면 8장(Windows 판정 4종, macOS 2종, Latte 2장)

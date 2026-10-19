@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (GUI 전용)
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `crates/tasty-ui-widgets/src/status_bar.rs`(view) · `src/adapters/ui/status_bar.rs`(wrapper)
 - **화면**: [아래 절](#화면)
 

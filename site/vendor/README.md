@@ -8,7 +8,7 @@ Claude Design 프로젝트 **Tasty Design System**에서 받아온 디자인 사
 
 디자인이 바뀌면 사이트 사본도 갱신한다. 빌드와 아래 비교 검사는 일부 차이만 검출하므로, 통과했다고 사본이 최신인 것은 아니다.
 
-앱 토큰 사본의 갱신 절차는 `crates/tasty-design-tokens/README.md`에 있다. 앱은 `tokens/tasty.tokens.json` 한 파일을 가져오지만, 사이트는 원격 파일 목록을 비교하고 트리 전체를 가져온 뒤 로컬 변형을 다시 적용한다. 결정 이유와 대안은 `docs/adr/0035-shared-design-and-theme.md`에 있다.
+앱 토큰 사본의 갱신 절차는 `crates/tasty-design-tokens/README.md`에 있다. 앱은 `tokens/tasty.tokens.json` 한 파일을 가져오지만, 사이트는 원격 파일 목록을 비교하고 트리 전체를 가져온 뒤 로컬 변형을 다시 적용한다. 결정 이유와 대안은 `docs/design/systems/theme.md`에 있다.
 
 1~4단계는 DesignSync로 원격 프로젝트에 접근할 수 있어야 한다. 접근할 수 없으면 갱신하지 못한 범위를 보고한다. 5단계부터는 로컬 사본만으로 실행할 수 있다.
 
@@ -82,9 +82,20 @@ Claude Design 프로젝트 **Tasty Design System**에서 받아온 디자인 사
     - `ui_kits/terminal/overlays/html_script_banner.jsx`, `ui_kits/terminal/overlays/macos_permissions.jsx`: 머리 주석의 "Design request:" 줄.
     - `ui_kits/terminal/overlays/dag_view.jsx`, `gallery/dag.jsx`, `ui_kits/terminal/overlays/kb_import_export.jsx`, `ui_kits/terminal/overlays/kb_plugins_subtab.jsx`: 머리 주석.
     - `ui_kits/terminal/overlays/port_scanner.jsx`: FAVORITES 주석.
-- **옛 ADR 번호 인용**: 원격 사본은 저장소의 ADR을 재정리하기 전 번호를 인용한다. 이 번호는 지금 저장소의 ADR과 맞지 않으므로 인용을 지우거나 현재 ADR·기능 문서로 바꾸고 뜻은 남긴다. `gallery/components.jsx`, `gallery/overlays-windows.jsx`, `ui_kits/terminal/overlays/settings_window.jsx`, `ui_kits/terminal/overlays/plugins_window.jsx`에 있다. 갱신할 때는 `git diff`로 이전 사본의 처리 방식을 확인해 같은 방식으로 적용한다.
+- **옛 ADR 번호 인용**: 원격 사본은 저장소의 ADR을 재정리하기 전 번호를 인용한다. 이 번호는 지금 저장소의 ADR과 맞지 않으므로 인용을 지우거나 현재 원칙·기능 문서로 바꾸고 뜻은 남긴다. `gallery/components.jsx`, `gallery/overlays-windows.jsx`, `ui_kits/terminal/overlays/settings_window.jsx`, `ui_kits/terminal/overlays/plugins_window.jsx`, `tokens/primitives.css`에 있다. 갱신할 때는 `git diff`로 이전 사본의 처리 방식을 확인해 같은 방식으로 적용한다.
 - **출처 메타데이터**: 렌더링에 쓰지 않는 base64 C2PA 매니페스트가 사본 크기를 늘리므로 `<metadata>` 요소와 `xmlns:c2pa` 속성을 제거한다. 원격에서 이 메타데이터가 있는 아이콘은 일부(`icons/` 아래 agent·filePlus·fit·folderPlus·info·link·sun)다. 렌더링 구조와 값은 유지한다. `grep -rl c2pa site/vendor/ --exclude=README.md`의 출력이 없어야 한다. README와 `MANIFEST`는 사본을 설명하는 파일이므로 이 검사와 사본 수정일 계산에서 제외한다.
 
 ## 통합 시 주의
 
 `ui_kits/terminal/app.jsx`는 마운트할 때 `document.documentElement.dataset.theme`을 자신의 state로 덮어쓴다. 사이트는 별도 래퍼에서 테마를 props로 전달해 사이트 테마 토글과 충돌하지 않도록 한다.
+
+## 로컬 인용만 정정할 때
+
+허용된 옛 ADR 인용 정정은 렌더링 값·구조를 바꾸지 않는 로컬 변형이다. 새 원격 사본을 받지 않고 이 변형만 적용할 때는 기존 원격 해시를 유지한 채 다음 도구로 지정 파일의 로컬 해시와 이유만 갱신한다. 이는 원격의 최신 여부를 확인하는 명령이 아니다.
+
+```sh
+cd site
+node scripts/vendor-manifest.mjs --local-variant tokens/primitives.css=Current-document-reference
+```
+
+여러 파일은 옵션을 반복한다. `--check`는 기록된 로컬 해시와의 일치만 검사하며 `--remote`와 함께 사용할 수 없다. 새 파일·원격 내용 변경은 기존 전체 갱신 절차를 따른다.

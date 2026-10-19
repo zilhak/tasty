@@ -30,7 +30,7 @@ def call(method, params=None):
         raise TimeoutError("IPC 연결 또는 응답 대기 시간이 지났습니다.") from error
 ```
 
-- 전송: loopback TCP, 동적 포트(`~/.tasty/tasty.port`), 줄단위 JSON-RPC 2.0. 근거 [ADR-0006](../adr/0006-bounded-ipc-transport.md).
+- 전송: loopback TCP, 동적 포트(`~/.tasty/tasty.port`), 줄단위 JSON-RPC 2.0. 근거 [IPC 서버](../architecture/ipc-server.md).
 - 대부분의 CLI 서브커맨드가 동명 IPC 를 감싼다. 대상은 가능한 한 ID로 직접 지정한다. 생략 시의 기본 대상은 메서드별 규칙을 따른다([focus 정책](../design/policies/focus.md)).
 - **포커스 독립**: release 표면엔 포커스 변경 API 가 없다. 사용자 입력 재현(키/마우스 주입, popup 강제 open, `window.focus`)은 debug 전용 → [debug-ipc](../dev-guide/debug-ipc.md).
 
@@ -53,9 +53,9 @@ plugin caller 는 메서드별 권한 토큰이 필요하다(`method_meta`). Loc
   - `read_since_mark` 은 **위치를 받을 수 있다.** `cursor`(절대 바이트 위치) + `stream`(스트림 표지)을 주면 마크 대신 그 위치부터 읽고, **소비자가 읽기 위치를 보관한다** — 여러 소비자가 서로의 조회 범위를 바꾸지 않는다. 안 주면 예전 그대로 `set_mark` 이 세운 마크에서 읽는다. `max_bytes` 로 한 번에 읽을 **원문** 바이트를 줄일 수 있고(상한은 보존 크기 1 MiB), 생략하면 보존 전체다. **하한은 1 이다 — `0` 은 한도 없음이 아니라 1 바이트로 올린다**(0 이면 기다리는 바이트가 있어도 매번 빈 답이라 소비자가 못 나아간다). 음수·정수 아닌 값은 인자 오류로 거절한다.
     - 응답은 두 형태 모두 `stream` · `cursor`(실제로 읽기 시작한 위치) · `next_cursor` · `raw_bytes` · `retention_start` · `retention_end` · `skipped` 를 함께 싣는다. **`skipped` 가 0 이 아니면 그만큼이 보존 범위를 벗어나 더 이상 조회할 수 없다** — 마크가 잘려 나가도 이제는 조용히 처음부터 주지 않는다.
     - **전진은 `next_cursor` 가 정한다.** `text` 의 길이는 읽은 원문 구간의 길이가 아니다(손실 디코딩이 U+FFFD 를 넣고 `strip_ansi` 가 바이트를 뺀다). 그 길이로 이어 읽으면 스트림과 어긋난다.
-    - `cursor` 에는 `stream` 이 **반드시** 따라야 한다 — surface id 는 재사용되고 `respawn_terminal` 은 id 를 그대로 둔 채 터미널을 바꾸므로, 표지가 없으면 옛 위치가 남의 출력에 조용히 적용된다. 표지가 안 맞는 위치 · 스트림 끝을 넘은 위치 · 터미널이 없는 surface 는 **빈 답이 아니라 거절**이고, `error.data.reason` 이 `stream_mismatch` · `cursor_ahead_of_stream` · `cursor_without_stream` · `no_terminal` 로 갈린다 — [ADR-0034](../adr/0034-output-cursor-contract.md).
-    - CLI 는 `tasty read since-mark --cursor N --stream S [--max-bytes N]` 이다. 구 서버는 이 인자를 **조용히 버리고** 공유 마크에서 읽으므로, 서버는 capability `ipc.output-cursor` 로 이 계약을 선언하고 CLI 는 위치 인자를 실은 요청을 보내기 전에 그 이름을 묻는다 — 없으면 보내지 않고 구조화된 거절(`sent:false`)로 끝난다([ADR-0034](../adr/0034-output-cursor-contract.md)).
-  - `read_since_scan_mark` 는 **다른 커서**를 쓴다 — 주기적으로 출력을 훑는 소비자(번들 claude plugin 의 에러 스캐너)용이고, 읽으면 커서가 그만큼 전진하므로 같은 구간이 두 번 오지 않는다. `set_mark` 이 그 커서를 밀지 않고 그 반대도 아니다. 소비자가 하나라는 전제 위에 있어 CLI 명령은 제공하지 않는다 — [ADR-0060](../adr/0060-terminal-and-pty-separation.md).
+    - `cursor` 에는 `stream` 이 **반드시** 따라야 한다 — surface id 는 재사용되고 `respawn_terminal` 은 id 를 그대로 둔 채 터미널을 바꾸므로, 표지가 없으면 옛 위치가 남의 출력에 조용히 적용된다. 표지가 안 맞는 위치 · 스트림 끝을 넘은 위치 · 터미널이 없는 surface 는 **빈 답이 아니라 거절**이고, `error.data.reason` 이 `stream_mismatch` · `cursor_ahead_of_stream` · `cursor_without_stream` · `no_terminal` 로 갈린다 — [터미널 출력 구조화 (Terminal output)](../features/terminal-output/index.md).
+    - CLI 는 `tasty read since-mark --cursor N --stream S [--max-bytes N]` 이다. 구 서버는 이 인자를 **조용히 버리고** 공유 마크에서 읽으므로, 서버는 capability `ipc.output-cursor` 로 이 계약을 선언하고 CLI 는 위치 인자를 실은 요청을 보내기 전에 그 이름을 묻는다 — 없으면 보내지 않고 구조화된 거절(`sent:false`)로 끝난다([터미널 출력 구조화 (Terminal output)](../features/terminal-output/index.md)).
+  - `read_since_scan_mark` 는 **다른 커서**를 쓴다 — 주기적으로 출력을 훑는 소비자(번들 claude plugin 의 에러 스캐너)용이고, 읽으면 커서가 그만큼 전진하므로 같은 구간이 두 번 오지 않는다. `set_mark` 이 그 커서를 밀지 않고 그 반대도 아니다. 소비자가 하나라는 전제 위에 있어 CLI 명령은 제공하지 않는다 — [터미널 (Terminal)](../surfaces/terminal/index.md).
   - `lines:N`(CLI `--lines N`) 생략 시 보이는 화면 전체. 지정하면 **내용 기준 마지막 N 줄** — 내용 아래의 공백 행은 건너뛰고, 화면 내용이 N 에 모자라면 스크롤백에서 채운다(합쳐도 모자라면 있는 만큼). 내용 *중간* 의 빈 줄은 출력의 일부이므로 보존하고 줄 수에도 포함한다. 빈 행 판정은 `show_dim` 과 같은 값으로 하므로 `--show-dim` 유무가 반환 줄 수를 바꾸지 않는다. alternate screen(TUI)이 떠 있을 때도 부족분은 primary 스크롤백으로 채운다 — alt screen 은 자체 스크롤백이 없기 때문이다.
   - **N 보다 적게 왔을 때 왜인지 물을 수 있다.** 응답에 `is_terminal`(그 surface 뒤에 터미널이 있는가) · `scrollback_len`(현재 스크롤백 줄 수) · `alt_screen`(대체 화면인가)이 함께 실린다. `scrollback_len: 0` 이면 **받은 것이 가진 전부**이고(정상 포화), 0 이 아닌데 N 보다 적게 왔다면 그건 결함이다. 터미널이 아닌 surface(markdown/html/explorer/image)나 없는 surface 는 `is_terminal: false` 와 두 필드 `null` 로 나온다 — **`0` 이 아니다**(0 은 "스크롤백이 비었다" 라는 다른 사실이다). 같은 필드가 `pty.read` 응답에도 실린다.
 - 명령(OSC 133): `surface.{commands,last_command,command_at}`
@@ -70,8 +70,8 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 모델·권한은 [design/systems/memory](../design/systems/memory.md).
 `surface:<id>` scope 에 새 항목을 만드는 `memory.put` · `memory.secret.put` · `memory.import` 는 열린 surface 에만 쓰고, 닫혔거나 없는 surface 는 `-32602` 로 거절한다. `memory.import` 는 항목 하나라도 걸리면 요청 전체를 거절하고 아무 항목도 넣지 않는다. 읽기·삭제는 그대로 받는다(남은 옛 항목 정리용) — [design/systems/memory](../design/systems/memory.md).
 저장소 자체가 실패하면 `-32603 memory db error: …` 이고 `error.data.storage_failure` 가 원인을 싣는다(`busy` · `disk_full` · `io` · `corrupt` · `permission_denied` · `other`) — 실패한 쓰기는 quota 도 변경 알림도 남기지 않는다([storage](../design/systems/storage.md) "저장 실패의 의미").
-부팅이 `memory.db` 를 못 열어 in-memory 대체로 떴으면 쓰기 계열의 성공 응답에 `durable: false` 가 더해진다(`ok` 는 그대로, 정상 저장소에서는 칸 없음 — [ADR-0010](../adr/0010-storage-failure-reporting.md)).
-같은 저장소에 쓰는 `agent.*` · `approval.*` · `surface.meta.*` · `telemetry.*` · `session.*` 의 쓰기 응답도 같다([ADR-0010](../adr/0010-storage-failure-reporting.md)).
+부팅이 `memory.db` 를 못 열어 in-memory 대체로 떴으면 쓰기 계열의 성공 응답에 `durable: false` 가 더해진다(`ok` 는 그대로, 정상 저장소에서는 칸 없음 — [저장 계약과 writer 명부](../design/systems/storage-contract.md)).
+같은 저장소에 쓰는 `agent.*` · `approval.*` · `surface.meta.*` · `telemetry.*` · `session.*` 의 쓰기 응답도 같다([저장 계약과 writer 명부](../design/systems/storage-contract.md)).
 `memory.*` · `memory.secret.*` · `surface.meta.*` · `approval.*`(기록을 쓰거나 읽는 메서드)와 에이전트 협업·task 의 `agent.barrier_*` · `agent.semaphore_*` · `agent.lease_*` · `agent.rate_limit_*` · `agent.task_*` · `agent.task_graph_*` · `agent.dag_*` · `agent.report_append` · `agent.task_submit`, telemetry 조회·cap 관리(`telemetry.summary` · `telemetry.timeseries` · `telemetry.top` · `telemetry.session_summary` · `telemetry.anomaly.list` · `telemetry.cap.*`), 감사 조회(`plugin.audit_query` · `plugin.audit_summary`), 세션(`session.*` · `plugin.grant_agent_permission` · `plugin.revoke_agent_permission` · `plugin.list_agent_permissions`), 명령 기록 조회(`surface.commands` · `surface.last_command` · `surface.command_at`) 는 memory writer 가 commit 한 뒤 응답한다. 응답 시한이 지나거나 연결이 끊겨도 이미 접수한 요청은 취소되지 않는다. 같은 `idempotency_key` 의 Mutate 요청을 결과 전에 다시 보내면 `-32061` 로 답한다. writer 를 거치며 생기는 경우의 응답은 다음과 같다([storage-contract](../design/systems/storage-contract.md#ipc-응답)).
 
 | 경우 | 코드 | 메시지 | `error.data` |
@@ -116,7 +116,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 
 `task_get` 과 `task_list` 의 각 task 는 실행 중인 타입 작업(`contract_version: 2`)에 실행 단계 `phase` 를 싣는다. 값은 `executing`(본 작업 실행), `awaiting_input`(agent 세션이 사람 입력을 기다림), `postprocessing`(후처리 실행 중), `retry_wait`(후처리 재시도 대기)다. v1 task 와 실행 중이 아닌 task 에는 없다. 예외로 `ready` task 가 이전 회차의 프로세스 종료 확인을 기다리느라 시작하지 못하면(v1 포함) `waiting_previous_attempt` 를 싣는다. `state.kind` 가 `unknown` 인 task 는 결과를 알 수 없게 된 이유를 `state.reason` 에 싣는다(예: 호스트 재시작 사이 run 의 종료 코드를 받지 못함, `run result lost: …`). 이유가 없는 옛 레코드는 `reason` 이 없다. unknown 은 종결이 아니며 `task_retry`·`task_cancel` 로 정한다.
 
-`semaphore_set_permits`는 세마포어를 삭제하지 않고 한도를 바꾼다. 한도를 줄여도 기존 사용 권한을 강제로 회수하지 않고 새 acquire를 거절한다. `semaphore_acquire`의 `ttl_ms`는 선택 사항이다. 지정한 경우에만 사용 권한이 만료되어 회수되며, 기본값은 만료 없음이다([ADR-0042](../adr/0042-agent-coordination-and-task-views.md)).
+`semaphore_set_permits`는 세마포어를 삭제하지 않고 한도를 바꾼다. 한도를 줄여도 기존 사용 권한을 강제로 회수하지 않고 새 acquire를 거절한다. `semaphore_acquire`의 `ttl_ms`는 선택 사항이다. 지정한 경우에만 사용 권한이 만료되어 회수되며, 기본값은 만료 없음이다([다중 에이전트 협업 (Agent collaboration)](../features/agent-collaboration/index.md)).
 
 DAG는 별도로 저장하지 않고 `metadata.dag`의 명시적 지정 또는 작업 그래프의 연결 관계에서 도출한다. `dag_list`에서 `workspace_id`를 생략하면 현재 살아 있는 모든 workspace를 조회하고 `scope: "live_workspaces"`를 반환한다. `dag_get`은 해당 DAG의 작업만 골라 `task_graph`와 같은 `nodes`/`edges` 또는 dot 형식으로 반환한다. 전이는 `kind: "transition"` 간선이며 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. DAG 요약의 `state_counts.not_selected` 는 경로가 선택되지 않아 끝난 작업 수이고, `recovered` 는 fallback 이 대신 성공한 실패 수다. 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 `rollup_state` 는 `succeeded` 다. `blocked` 는 저절로는 더 실행되지 않는 대기 수(선행 결과를 쓸 수 없어 대기로 남은 작업과, 그런 작업이나 `unknown` 작업을 전이적으로 기다리는 대기)이고, `succeeded_ends` 는 그룹의 끝 작업(그룹 안에 선택되지 않은 작업을 뺀 하류가 없는 작업, fallback 작업 제외) 중 성공했거나 fallback 이 대신 성공한 수다. `awaiting_input` 은 `running` 중 agent 세션이 사람의 입력을 기다리는(`phase: "awaiting_input"`) 작업 수이며 `rollup_state` 를 바꾸지 않는다. 저절로 진행할 수 있는 작업(`unknown` 제외)이 남아 있으면 실패가 섞여 있어도 `rollup_state` 는 `running`·`ready`·`waiting` 중 하나이고, 더 진행할 수 없을 때 복구되지 않은 실패가 있으면 성공한 끝 작업이 있을 때 `partially_failed`, 없을 때 `failed` 다. 자세한 흐름은 [agent-collaboration](../features/agent-collaboration/index.md)을 따른다.
 
@@ -133,7 +133,7 @@ DAG는 별도로 저장하지 않고 `metadata.dag`의 명시적 지정 또는 �
 
 보관 범위보다 오래된 위치로 요청하면 `truncated: true`와 건너뛴 수 `skipped`를 반환한다. 서버가 재시작하면 `epoch`이 바뀌므로 이전 인스턴스에서 받은 위치와 구별할 수 있다.
 
-요청 위치가 현재 끝인 `stream_end`보다 뒤에 있으면 `ahead_of_stream: true`를 반환한다. 이때 `next_offset`은 요청 위치 그대로이며, `wait_ms`를 지정했다면 기다린 뒤 응답한다. 나머지 응답 필드는 이 표시가 추가되기 전과 같다([ADR-0033](../adr/0033-event-feed-delivery.md)).
+요청 위치가 현재 끝인 `stream_end`보다 뒤에 있으면 `ahead_of_stream: true`를 반환한다. 이때 `next_offset`은 요청 위치 그대로이며, `wait_ms`를 지정했다면 기다린 뒤 응답한다. 나머지 응답 필드는 이 표시가 추가되기 전과 같다([Event Bus 1.0 카탈로그](event-catalog.md)).
 
 CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연결할 때 `--epoch`으로 인스턴스를 구별한다. 연결이 끊기면 재연결에 쓸 인자를 출력하며, `--reconnect`를 지정하면 자동으로 다시 연결한다. 키 목록과 등급은 [event-catalog](event-catalog.md)를 참고한다.
 
@@ -168,7 +168,7 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 
 응답은 `queue_before_gate` · `handler_after_gate` · `plugin_round_trip` · `db` · `connections` · `db_pragmas` · `stream_push` · `queue_admission` · `queue_dispatch` · `keyed_requests` · `slow_requests` · `gate_refusals` 열두 항목이며 각각 세는 대상이 다르다.
 
-- **큐 대기(`queue_before_gate`)**: 권한 검사 전에 기록하므로 뒤에 거부될 요청도 센다. `waits`는 대기를 기록한 명령 수로 `wait_us_mean` 의 분모이며 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 끝날 때 오르므로 조회 순간에는 아직 도는 회차만큼 `waits` 보다 작다 — [ADR-0008](../adr/0008-ipc-pressure-observability.md).
+- **큐 대기(`queue_before_gate`)**: 권한 검사 전에 기록하므로 뒤에 거부될 요청도 센다. `waits`는 대기를 기록한 명령 수로 `wait_us_mean` 의 분모이며 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 끝날 때 오르므로 조회 순간에는 아직 도는 회차만큼 `waits` 보다 작다 — [IPC 서버](../architecture/ipc-server.md).
 
 - **실행한 핸들러(`handler_after_gate`)**: 게이트를 통과해 실행된 요청만 센다.
 
@@ -177,29 +177,29 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 - **저장소(`db`)**: `MemoryStore` 의 트랜잭션 commit 과 WAL checkpoint 지연이고, commit 은 **성공한 것만** 센다(거부는 롤백이라 남긴 것이 없다) — checkpoint 는 다른 커넥션과 경합해 못 끝낸 횟수를 `checkpoints_busy` 로 따로 센다. `writes_per_commit`(`le` 구간 상한 · `counts`)은 commit 하나에 확정된 쓰기 수의 분포이고, VACUUM 은 `vacuums` · `vacuum_us_sum` 으로 commit 과 따로 센다([텔레메트리](../features/telemetry/index.md#db-지연)).
 
 - **TCP 연결(`connections`)**: 이 포트에 붙은 TCP 연결 전부를 세고(요청을 안 보내는 attach·mesh 스트림 포함), 누계·순간값 중 `live` 만 내려가는 순간값이며(평균 `accept_wait_bound_us_mean` 은 파생값이라 내려갈 수 있다) `limit` 은 서버가 집행하는 동시 연결 상한, `refused_saturated` 는 그 상한에 걸려 **요청이 되기도 전에** 거절된 연결의 누계다(그래서 `ipc_calls` 에 안 남는다).
-  이 항목의 유일한 시간 `accept_wait_bound_us_sum` · `_max` · `_mean`(기록 수 `accept_waits` = `accepted + refused_saturated`)은 연결이 OS 의 accept 큐에서 기다렸을 수 있는 시간의 **상한**이다 — accept 루프가 큐를 마지막으로 비어 있다고 본 뒤 지난 시간이고, 루프가 빈 큐에서 100 ms 자므로 호출마다 연결을 여는 client 에게는 그만큼까지가 되며 다른 어느 항목에도 안 잡힌다([ADR-0008](../adr/0008-ipc-pressure-observability.md)).
+  이 항목의 유일한 시간 `accept_wait_bound_us_sum` · `_max` · `_mean`(기록 수 `accept_waits` = `accepted + refused_saturated`)은 연결이 OS 의 accept 큐에서 기다렸을 수 있는 시간의 **상한**이다 — accept 루프가 큐를 마지막으로 비어 있다고 본 뒤 지난 시간이고, 루프가 빈 큐에서 100 ms 자므로 호출마다 연결을 여는 client 에게는 그만큼까지가 되며 다른 어느 항목에도 안 잡힌다([IPC 서버](../architecture/ipc-server.md)).
 
 - **저장 실행기(`memory_writer`)**: memory.db 전담 writer 의 누계다 — `admitted` · `rejected_saturated` · `rejected_closed`, 묶음 수 `batches` 와 요청 합 `batch_requests` · `batch_size_max` · 분포 `batch_sizes`(`le` · `counts`), `superseded` · `retries` · `flushes`, 지금 잡힌 `held_items` · `held_bytes` 와 최댓값 `peak_items` · `peak_bytes`. writer 가 없는 구성이면 `null` 이다([저장 실행기](../design/systems/storage-contract.md#저장-실행기)).
 
-- **저장소 초기 설정(`db_pragmas`)**: **누계가 아니라 열 때 한 번 되읽은 설정**이다 — `memory_db` · `state_db` 마다 `in_memory` · `degraded` 와 pragma 별 `requested` · `effective` · `took` · `error` 를 싣고(열리지 않은 DB 는 `null`, 헤드리스의 `state_db` 는 늘 `null`), `degraded` 는 오류가 아니라 열린 채로 쓰이는 상태다([ADR-0010](../adr/0010-storage-failure-reporting.md)). `memory_db` 에는 `init_failure`(파일을 못 열어 in-memory 대체로 떴으면 `{cause, error}`, 아니면 `null` — 대체면 `degraded` 도 `true`, [ADR-0010](../adr/0010-storage-failure-reporting.md))가 더 있다.
+- **저장소 초기 설정(`db_pragmas`)**: **누계가 아니라 열 때 한 번 되읽은 설정**이다 — `memory_db` · `state_db` 마다 `in_memory` · `degraded` 와 pragma 별 `requested` · `effective` · `took` · `error` 를 싣고(열리지 않은 DB 는 `null`, 헤드리스의 `state_db` 는 늘 `null`), `degraded` 는 오류가 아니라 열린 채로 쓰이는 상태다([저장 계약과 writer 명부](../design/systems/storage-contract.md)). `memory_db` 에는 `init_failure`(파일을 못 열어 in-memory 대체로 떴으면 `{cause, error}`, 아니면 `null` — 대체면 `degraded` 도 `true`, [저장 계약과 writer 명부](../design/systems/storage-contract.md))가 더 있다.
 
-- **스트림 전송(`stream_push`)**: 서버가 attach·mesh 스트림으로 보낸 프레임을 센다. `frames_dropped`(연결이 살아 있는데 큐가 차서 버린 프레임 누계) · `clients_lagged_out`(연속 drop 한도로 끊은 연결 누계)는 안 내려가며 `backlog`(지금 살아 있는 연결들의 큐에 쌓여 아직 안 쓰인 프레임 수의 합)만 내려가고, `sink_capacity` 는 연결 하나의 큐 상한이다([ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)).
+- **스트림 전송(`stream_push`)**: 서버가 attach·mesh 스트림으로 보낸 프레임을 센다. `frames_dropped`(연결이 살아 있는데 큐가 차서 버린 프레임 누계) · `clients_lagged_out`(연속 drop 한도로 끊은 연결 누계)는 안 내려가며 `backlog`(지금 살아 있는 연결들의 큐에 쌓여 아직 안 쓰인 프레임 수의 합)만 내려가고, `sink_capacity` 는 연결 하나의 큐 상한이다([Attach 메커니즘](../dev-guide/attach-behavior.md)).
 
-- **명령 큐 입장(`queue_admission`)**: 지금 큐에 든 `queued_bytes` · `queued_commands` · `queued_injected`(내려간다) · `peak_bytes` · 상한에 걸려 **큐에 들어가지도 못한** 요청의 누계 `refused_bytes` · `refused_depth` · 집행하는 상한 `limit_bytes` · `limit_injected_depth` 를 싣고, IPC 서버가 없는 조립이면 `null` 이다([ADR-0006](../adr/0006-bounded-ipc-transport.md)).
+- **명령 큐 입장(`queue_admission`)**: 지금 큐에 든 `queued_bytes` · `queued_commands` · `queued_injected`(내려간다) · `peak_bytes` · 상한에 걸려 **큐에 들어가지도 못한** 요청의 누계 `refused_bytes` · `refused_depth` · 집행하는 상한 `limit_bytes` · `limit_injected_depth` 를 싣고, IPC 서버가 없는 조립이면 `null` 이다([IPC 서버](../architecture/ipc-server.md)).
 
-- **명령 실행(`queue_dispatch`)**: 큐에서 **꺼낸** 쪽이다 — `rounds` · `rounds_stopped_by_count` · `rounds_stopped_by_time` · `expired_before_run`(큐에서 기한이 지나 실행하지 않은 명령 — 소켓 요청은 `-32067` 로 답한 것이고, 호스트 주입 명령도 센다. 주입 명령은 `-32067` 로 답해지지 않고 호출자 스레드에서 `InjectError::Expired` 로 끝난다 — [ADR-0007](../adr/0007-ipc-scheduling-and-deadlines.md)) · `started` · `in_flight`(실행을 시작했고 명령 처리 또는 응답 대기가 끝나지 않은 요청, 내려간다) · `in_flight_max`([ADR-0008](../adr/0008-ipc-pressure-observability.md)).
+- **명령 실행(`queue_dispatch`)**: 큐에서 **꺼낸** 쪽이다 — `rounds` · `rounds_stopped_by_count` · `rounds_stopped_by_time` · `expired_before_run`(큐에서 기한이 지나 실행하지 않은 명령 — 소켓 요청은 `-32067` 로 답한 것이고, 호스트 주입 명령도 센다. 주입 명령은 `-32067` 로 답해지지 않고 호출자 스레드에서 `InjectError::Expired` 로 끝난다 — [IPC 서버](../architecture/ipc-server.md)) · `started` · `in_flight`(실행을 시작했고 명령 처리 또는 응답 대기가 끝나지 않은 요청, 내려간다) · `in_flight_max`([IPC 서버](../architecture/ipc-server.md)).
 
-- **멱등 키 요청(`keyed_requests`)**: **멱등 키를 실은 요청만** 판정마다 센다 — `executed` · `replayed` · `conflicted` · `discarded` · `in_flight`(진행 중인 같은 요청에 합류, `queue_dispatch.in_flight` 와 다르다)([ADR-0008](../adr/0008-ipc-pressure-observability.md)). 세 항목의 분할 근거는 [ADR-0008](../adr/0008-ipc-pressure-observability.md).
+- **멱등 키 요청(`keyed_requests`)**: **멱등 키를 실은 요청만** 판정마다 센다 — `executed` · `replayed` · `conflicted` · `discarded` · `in_flight`(진행 중인 같은 요청에 합류, `queue_dispatch.in_flight` 와 다르다)([IPC 서버](../architecture/ipc-server.md)). 세 항목의 분할 근거는 [IPC 서버](../architecture/ipc-server.md).
 
 - **느린 요청(`slow_requests`)**: 느린 요청을 개별 기록한다.
   큐 대기 · 호스트 처리 · plugin 대기의 합이 `threshold_us`(100 ms) 이상인 요청만 메모리 안 고정 용량 링(`capacity` 32)에 한 줄씩 싣는다.
-  줄은 `request_seq`(호스트가 요청마다 매기는 프로세스 전역 번호 — JSON-RPC `id` 도 Event Bus `trace_id` 도 아니다) · `host`(`method` · `caller` · `queue_wait_us` · `host_us` — 게이트 포함이라 `handler_after_gate` 와 집계 대상이 다르다 · `outcome` = `ok`/`error` 와 `error_code` — 호출자가 실제로 받은 답이라 `-32067` · `-32001` · 정상이 갈리고, 아직 답이 안 나갔으면 둘 다 `null` 이다, [ADR-0008](../adr/0008-ipc-pressure-observability.md)) · `plugin_hops`(hop 마다 `plugin_id` · `host_request_id`(= plugin 이 받은 JSON-RPC id) · `wait_us` · `outcome` = `ok`/`error`/`expired`/`cancelled`) · `total_us` 이고, 항목에 `admitted`(켜진 뒤 링에 든 누계) 가 함께 나간다.
+  줄은 `request_seq`(호스트가 요청마다 매기는 프로세스 전역 번호 — JSON-RPC `id` 도 Event Bus `trace_id` 도 아니다) · `host`(`method` · `caller` · `queue_wait_us` · `host_us` — 게이트 포함이라 `handler_after_gate` 와 집계 대상이 다르다 · `outcome` = `ok`/`error` 와 `error_code` — 호출자가 실제로 받은 답이라 `-32067` · `-32001` · 정상이 갈리고, 아직 답이 안 나갔으면 둘 다 `null` 이다, [IPC 서버](../architecture/ipc-server.md)) · `plugin_hops`(hop 마다 `plugin_id` · `host_request_id`(= plugin 이 받은 JSON-RPC id) · `wait_us` · `outcome` = `ok`/`error`/`expired`/`cancelled`) · `total_us` 이고, 항목에 `admitted`(켜진 뒤 링에 든 누계) 가 함께 나간다.
   집계 대상은 호스트 IPC 큐를 지난 요청이고 `system.pressure` 자신은 안 넣는다.
-  params · 토큰 · 멱등 키 · RPC `id` 는 싣지 않는다([ADR-0008](../adr/0008-ipc-pressure-observability.md)).
+  params · 토큰 · 멱등 키 · RPC `id` 는 싣지 않는다([IPC 서버](../architecture/ipc-server.md)).
 
 - **요청 거부(`gate_refusals`)**: 진입 게이트의 판정 누계다 — `judged`(게이트에 든 요청 전부, Local 과 큐를 안 지나는 plugin host-call 도 센다) · `permission_denied`(`-32001` — 권한 부족만이 아니라 plugin · agent 가 부른 없는 메서드와 그들에게 열리지 않은 메서드도 든다.
   Local 호출은 없는 메서드여도 안 든다) · `cap_blocked`(`-32007`) · `throttled`(`-32010`).
-  한 요청은 많아야 한 칸이고 재시작하면 0 이며, 봉투 검사(멱등 키 길이) 거절은 안 센다([ADR-0008](../adr/0008-ipc-pressure-observability.md)).
+  한 요청은 많아야 한 칸이고 재시작하면 0 이며, 봉투 검사(멱등 키 길이) 거절은 안 센다([IPC 서버](../architecture/ipc-server.md)).
   `queue_before_gate`와 `handler_after_gate`의 차이를 거부 수로 읽으면 안 된다 — 게이트를 통과하고도 app 층에서 답하고 돌아가는 갈래가 있다.
   거부된 수는 `gate_refusals` 에 센 값으로 있다.
 
@@ -214,10 +214,10 @@ CLI는 `tasty list pressure`다. 자세한 기준은 [telemetry](../features/tel
 - 원격 전송 저장 정책: `settings.get_remote_transfer` / `settings.set_remote_transfer {dir?, max_mb?}` (local-only, focus 독립 — 전역 설정) — 원격 bulk 파일 전송 수신측 저장 폴더(`dir`, 빈 값=기본 `~/.tasty/transfers/`)와 폴더 최대 용량(`max_mb`, MiB). set 은 지정 필드만 현재 설정 위에 덮어쓴 변경을 요청하며, 응답 `applied: true` 는 적용·저장 완료를 보장하지 않는다([완료 의미](../architecture/data-flows.md#에이전트plugin-설정-변경-요청의-완료-의미)). CLI `tasty settings {get-remote-transfer,set-remote-transfer}`. — [remote-attach](../features/remote-attach/index.md)
 
 ### Plugin 관리 (`plugin.*`, local-only)
-`list,show,install,remove,enable,disable,upgrade_builtins,permissions,grant,revoke` · `grant_agent_permission`/`revoke_agent_permission`/`list_agent_permissions` · `request_permission`(Agent caller 는 자기 자신만 대상, 다른 `agent_id` 는 `-32602`) · `audit_{query,summary,follow,clear}`(**deny 만 기록된다** — allow 는 저장하지 않으므로 평시 조회 결과는 비어 있는 것이 정상이다, [ADR-0009](../adr/0009-state-storage-and-retention.md)) · `extension.list`. [plugin-system](../features/plugin-system/index.md) · [capability-elevation](../features/capability-elevation/index.md).
+`list,show,install,remove,enable,disable,upgrade_builtins,permissions,grant,revoke` · `grant_agent_permission`/`revoke_agent_permission`/`list_agent_permissions` · `request_permission`(Agent caller 는 자기 자신만 대상, 다른 `agent_id` 는 `-32602`) · `audit_{query,summary,follow,clear}`(**deny 만 기록된다** — allow 는 저장하지 않으므로 평시 조회 결과는 비어 있는 것이 정상이다, [저장소 시스템 (Storage System)](../design/systems/storage.md)) · `extension.list`. [plugin-system](../features/plugin-system/index.md) · [capability-elevation](../features/capability-elevation/index.md).
 
 ### Lua 스크립트
-release IPC 없음 — 등록한 스크립트를 단축키 또는 이벤트 트리거로 실행한다(ADR-0027). 임의 Lua 주입은 debug 빌드 전용 `debug.lua.eval`. [lua-hooks](../features/lua-hooks/index.md).
+release IPC 없음 — 등록한 스크립트를 단축키 또는 이벤트 트리거로 실행한다(docs/features/hooks/index.md). 임의 Lua 주입은 debug 빌드 전용 `debug.lua.eval`. [lua-hooks](../features/lua-hooks/index.md).
 
 ### Plugin 확장 네임스페이스
 plugin 이 `[[contributes.ipc_namespace]]` 로 prefix 를 선언하면 `<prefix>.<method>` 가 그 plugin 으로 forward 된다(예: `claude.*`, `codex.*`). [plugins/](../plugins/index.md).
@@ -251,7 +251,7 @@ SSH 너머의 attach 상대가 자기 자신인지 판정하는 데 쓴다. `sys
 `capabilities`는 이 서버가 협상할 수 있는 기능을 `{name, version}` 목록으로 제공한다.
 같은 패키지 버전도 빌드 기능 조합이 다를 수 있어 버전 번호만으로 지원 기능을 판단하지 않는다.
 이 필드를 모르는 client는 무시할 수 있다. 서버 기능이므로 `system.info`에만 포함하고
-`window.list`에는 반복하지 않는다([ADR-0004](../adr/0004-ipc-discovery-and-errors.md)).
+`window.list`에는 반복하지 않는다([CLI / IPC API 규약 — 명명 + 안정성](../dev-guide/api-conventions.md)).
 
 `window.list`에는 각 main 창의 `id`, `focused`, `title`과 함께 같은 engine 조회 필드가
 들어간다. parked engine은 OS 창 ID가 없어 목록에 포함하지 않는다. `workspace.list`는

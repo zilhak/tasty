@@ -1,6 +1,6 @@
 //! Theme의 색·길이 타입 이외 필드와 ThemeRuntime의 설정 필드를 등록 목록과 비교한다.
 //! 둘을 따로 봐야 Theme에 직접 추가된 값도 빠뜨리지 않는다.
-//! ADR-0037은 시각 값 외 런타임 설정이 셋 이상 필요할 때 별도 컨텍스트를 검토하도록 한다.
+//! docs/architecture/ui-widgets-crate.md은 시각 값 외 런타임 설정이 셋 이상 필요할 때 별도 컨텍스트를 검토하도록 한다.
 //! 등록 목록의 추가·삭제는 사람이 용도와 사유를 검토하며, 소스에서 자동 생성하지 않는다.
 
 use std::collections::BTreeSet;
@@ -22,7 +22,7 @@ const NON_VISUAL_ROSTER: &[(&str, &str)] = &[
     ("ui_zoom", "ThemeRuntime으로 전달하는 호스트 UI 배율이다."),
     (
         "reduced_motion",
-        "ThemeRuntime으로 전달하는 모션 감소 설정이다(ADR-0037).",
+        "ThemeRuntime으로 전달하는 모션 감소 설정이다(docs/architecture/ui-widgets-crate.md).",
     ),
     (
         "is_light",
@@ -34,7 +34,7 @@ const NON_VISUAL_ROSTER: &[(&str, &str)] = &[
     ),
 ];
 
-/// ThemeRuntime이 전달하는 설정 필드. 늘면 ADR-0037의 별도 컨텍스트 조건을 검토한다.
+/// ThemeRuntime이 전달하는 설정 필드. 늘면 docs/architecture/ui-widgets-crate.md의 별도 컨텍스트 조건을 검토한다.
 const RUNTIME_ROSTER: &[&str] = &["ui_zoom", "reduced_motion"];
 
 /// 2026-09-08 측정 113필드보다 낮게 둔 파싱 하한. 실제 필드 정리를 허용할 여유를 둔다.
@@ -131,7 +131,7 @@ fn every_non_visual_theme_field_is_on_the_declared_roster() {
     let gone: Vec<&str> = declared.difference(&actual).copied().collect();
     assert!(
         added.is_empty() && gone.is_empty(),
-        "Theme의 색·길이 외 필드가 등록 목록과 다르다. 추가: {added:?}, 삭제: {gone:?}. 실제 용도와 타입을 검토해 목록의 이름·사유를 갱신한다. 시각 값 외 런타임 설정이 셋 이상 필요하면 ADR-0037에 따라 별도 컨텍스트도 검토한다. 소스: {THEME_SRC}"
+        "Theme의 색·길이 외 필드가 등록 목록과 다르다. 추가: {added:?}, 삭제: {gone:?}. 실제 용도와 타입을 검토해 목록의 이름·사유를 갱신한다. 시각 값 외 런타임 설정이 셋 이상 필요하면 docs/architecture/ui-widgets-crate.md에 따라 별도 컨텍스트도 검토한다. 소스: {THEME_SRC}"
     );
 }
 
@@ -152,7 +152,7 @@ fn the_runtime_bundle_still_carries_only_the_declared_settings_values() {
     );
     assert_eq!(
         actual, declared,
-        "ThemeRuntime의 설정 필드가 목록과 다르다. 변경된 값의 역할을 확인하고 목록을 갱신한다. 시각 값 외 런타임 설정이 셋 이상 필요하면 ADR-0037에 따라 별도 컨텍스트를 검토한다."
+        "ThemeRuntime의 설정 필드가 목록과 다르다. 변경된 값의 역할을 확인하고 목록을 갱신한다. 시각 값 외 런타임 설정이 셋 이상 필요하면 docs/architecture/ui-widgets-crate.md에 따라 별도 컨텍스트를 검토한다."
     );
 }
 

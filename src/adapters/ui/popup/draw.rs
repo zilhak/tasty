@@ -24,7 +24,7 @@ const ANCHORED_POPUPS: &[PopupId] = &[
 const SHADOWLESS_POPUPS: &[PopupId] = &["notifications"];
 
 /// 그림자 없음·popover 목록에 없는 팝업은 modal 그림자를 사용한다.
-/// scrim 여부와는 별개인 분류다(ADR-0037).
+/// scrim 여부와는 별개인 분류다(docs/architecture/ui-widgets-crate.md).
 fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::ShadowToken> {
     let th = theme::theme();
     if SHADOWLESS_POPUPS.contains(&popup_id) {
@@ -942,7 +942,7 @@ mod tests {
     }
 
     /// scrim 여부는 범위가 아니라 id 로 정한다 — `search_bar` 는 surface 범위를 쓰지만
-    /// anchored + scrim-less 갈래다(ADR-0037).
+    /// anchored + scrim-less 갈래다(docs/architecture/ui-widgets-crate.md).
     #[test]
     fn the_anchored_search_bar_takes_no_scrim_although_it_is_surface_scoped() {
         assert!(!PopupManager::popup_has_scrim("search_bar"));
@@ -961,7 +961,7 @@ mod tests {
             assert!(
                 !PopupManager::popup_has_scrim(id),
                 "`{id}` 는 anchored + scrim-less 갈래인데 scrim 명부에 있다 — 둘 중 \
-                 하나가 틀렸다(ADR-0037)"
+                 하나가 틀렸다(docs/architecture/ui-widgets-crate.md)"
             );
         }
     }

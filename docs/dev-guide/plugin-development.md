@@ -9,11 +9,11 @@
 | 만들고 싶은 것 | 보면 되는 번들 플러그인 | 난이도 |
 |---------------|------------------------|--------|
 | **egui-mesh surface** (자가 렌더 mesh 합성) | [image](../surfaces/image/index.md) · [mesh-demo](egui-mesh-channel.md)(최소 PoC) | ★★ |
-| **webview surface** | [html](../surfaces/html/index.md) · [markdown](../surfaces/markdown/index.md)(+파일 핸들러·settings, ADR-0029) | ★★ |
+| **webview surface** | [html](../surfaces/html/index.md) · [markdown](../surfaces/markdown/index.md)(+파일 핸들러·settings, docs/design/systems/webview.md) | ★★ |
 | **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
-| **wasm 플러그인** (frozen POC) | `crates/tasty-plugin-sdk-wasm`(workspace-exclude harness) — [ADR-0025](../adr/0025-plugin-trust-and-distribution.md) | ★★ |
+| **wasm 플러그인** (frozen POC) | `crates/tasty-plugin-sdk-wasm`(workspace-exclude harness) — [플러그인 권한 모델](plugin-permissions.md) | ★★ |
 
 전부 `crates/tasty-plugin-<name>/` 에 있다.
 
@@ -82,7 +82,7 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 ### Surface kind — `rendering` 3 종
 
 - **`rendering = "egui-mesh"`** (image/mesh_demo, 그리고 markdown 의 확인 팝업 2 개만): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. bundled 화이트리스트 + api_version gate. 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md).
-- **`rendering = "webview"`** (html, markdown — [ADR-0029](../adr/0029-webview-host-integration.md)): host 의 네이티브 WebView 오버레이로 그림. html 은 surface 의 URL 을 host 가 동기화하고, markdown 은 plugin 이 직접 sanitize 된 HTML 문서를 생성해 로드시킨다.
+- **`rendering = "webview"`** (html, markdown — [WebView 호스트 계약](../design/systems/webview.md)): host 의 네이티브 WebView 오버레이로 그림. html 은 surface 의 URL 을 host 가 동기화하고, markdown 은 plugin 이 직접 sanitize 된 HTML 문서를 생성해 로드시킨다.
 - **`rendering = "remote"` (기본)**: webview 와 같은 `RemoteSurface` stand-in 등록만 하는 marker — host 는 이 kind 의 콘텐츠를 그리지 않는다. `snapshot_surface`/`restore_surface` 로 세션 복원.
 
 remote·webview surface 를 연 채 플러그인 프로세스가 바뀌면(disable 뒤 enable, 무응답 재시작, `upgrade-builtins --restart-running` 교체) 호스트는 새 프로세스가 뜰 때 남은 surface 를 다시 게시한다. 마지막 snapshot 이 있으면 그 값으로 `restore_surface` 를 부르고, 없으면 처음 받은 `create_surface` 요청을 그대로 다시 보낸다. 그래서 `restore_surface` 는 세션 복원뿐 아니라 실행 중에도 불릴 수 있고, 이미 열린 host 쪽 surface(webview 포함)를 그대로 이어 써야 한다. egui-mesh surface 는 렌더할 때 새 프로세스에 `create_surface` 를 다시 보내는 bootstrap 경로로 이어진다. 호스트가 이미 접수한 닫기의 대상 surface 는 다시 보내지 않는다. 닫기가 그 surface 를 남긴 채 끝나면 그때 보낸다([닫기 시퀀스](../architecture/close-sequence.md)).
@@ -98,12 +98,12 @@ surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 �
 - **capability flags**(모두 기본 false) — host 의 입력/줌/복사/붙여넣기 게이트를 kind 하드코딩 없이 판정한다:
   - **`consumes_egui_input`** — host 가 이 kind 를 host egui 위젯으로 렌더해 winit 키/IME 를 host egui 로 흘린다(예: explorer). egui-mesh 렌더 kind 는 false(중앙 키 디스패처가 forward).
   - **`zoomable`** — 줌 in/out/reset 단축키로 폰트 크기 override 조절(예: markdown/explorer).
-  - **`egui_copy`** — copy 단축키를 이 kind 의 egui-mesh surface 에 `Copy` wire 이벤트로 forward한다. plugin 자신의 egui `Context` 가 텍스트 선택(selectable label/`TextEdit`)을 복사하고, plugin 이 그 텍스트를 OS 클립보드에 직접 쓴다(ADR-0025 — host round-trip 없음). markdown 이 webview 로 전환된 뒤([ADR-0029](../adr/0029-webview-host-integration.md)) 현재 이를 선언하는 번들 plugin 은 없다.
+  - **`egui_copy`** — copy 단축키를 이 kind 의 egui-mesh surface 에 `Copy` wire 이벤트로 forward한다. plugin 자신의 egui `Context` 가 텍스트 선택(selectable label/`TextEdit`)을 복사하고, plugin 이 그 텍스트를 OS 클립보드에 직접 쓴다(docs/dev-guide/plugin-permissions.md — host round-trip 없음). markdown 이 webview 로 전환된 뒤([WebView 호스트 계약](../design/systems/webview.md)) 현재 이를 선언하는 번들 plugin 은 없다.
   - **`copy_path`** — select-all / copy-path 단축키(선택 항목 경로 복사) 소비(예: explorer).
   - **`egui_paste`** — paste 단축키를 이 kind 가 소비한다. host 는 terminal paste 로 흘리지 않고 포커스된 egui-mesh surface 에 `Paste` wire 이벤트(클립보드 내용 없음)를 보낸다. SDK 는 내용 없는 `egui::Event::Paste` 로 바꾸고, plugin 이 클립보드에서 필요한 형식을 직접 읽는다(예: image 는 이미지를 떠 있는 선택으로 붙인다).
 - **`name_from_param`** — 자동 탭 명명 시 basename 을 파생할 params 키. 선언하면 그 키 값의 basename 을 탭 표시명으로 쓴다(예: markdown/image 는 `"file"`, explorer(builtin)는 `"path"` → `README.md`). 미선언이거나 params 에 그 키가 없으면 kind 표시명(`display_name_i18n_key`)으로 fallback. host 의 `kind == "markdown"` basename 명명 하드코딩을 대체. host 내장 kind 는 그 사이에 `SurfaceKindDef::tab_name_from_params`(create 에 넘길 cwd 와 params 를 받는 함수)를 둘 수 있다. explorer 는 이것으로 capture 한 preset 의 이름을 짓는다([explorer](../surfaces/explorer/index.md#저장복원)). 매니페스트 필드가 아니라 플러그인 kind 는 쓰지 않는다.
 - **`records_recent`**(기본 false) — 이 kind 의 surface 를 파일로 열 때 host 가 "최근 연 파일" 목록에 kind 별로 기록할지. host 는 특정 kind 이름을 모르고 이 플래그로 기록 대상을 판정한다(generic per-kind). plugin 은 host 의 generic `recent.query {kind}` IPC 로 자기 최근 목록을 조회한다(예: markdown 주소창 드롭다운). 예: markdown 은 `true`.
-- **`convert_requires_input`**(기본 false) + **`convert_input_popup`** — 이 kind 로 convert 하려면 host 가 먼저 "파일 입력 팝업"을 띄워야 하는지, 그리고 그때 열 이 plugin 의 팝업 **local id**. host 는 kind 이름·event key 하드코딩 없이 이 데이터만 따라 `<plugin_id>/<popup_id>` 팝업을 `open_popup_instance` 로 연다(payload 의 `surface_id` 로 제자리 변환 / 새 탭 분기). 예: markdown 은 `convert_requires_input = true`, `convert_input_popup = "file-open"`([ADR-0031](../adr/0031-file-handler-routing.md)). 미선언이면 빈 params 즉시 변환.
+- **`convert_requires_input`**(기본 false) + **`convert_input_popup`** — 이 kind 로 convert 하려면 host 가 먼저 "파일 입력 팝업"을 띄워야 하는지, 그리고 그때 열 이 plugin 의 팝업 **local id**. host 는 kind 이름·event key 하드코딩 없이 이 데이터만 따라 `<plugin_id>/<popup_id>` 팝업을 `open_popup_instance` 로 연다(payload 의 `surface_id` 로 제자리 변환 / 새 탭 분기). 예: markdown 은 `convert_requires_input = true`, `convert_input_popup = "file-open"`([파일 핸들러 (File handler)](../features/file-handler/index.md)). 미선언이면 빈 params 즉시 변환.
 
 변환 입력 popup 요청은 pending popup queue로 전달해 렌더 중 직접 상태를 변경하지 않는다.
 
@@ -202,7 +202,7 @@ self-loop·backoff로 건너뛸 hook은 시작하지 않고 소유자 기동 실
 ### 이벤트 구독 / 윈도우 / 확장
 
 - **event_subscribe** — `event_subscribe = ["surface.closed"]` + `on_start` 에서 `bus.subscribe(...)`. `on_event` 로 envelope 수신(`reason`: user/ipc/crash). 예: [claude](../plugins/claude/index.md)/[codex](../plugins/codex/index.md).
-  - **`event.dispatch` 에 응답하라.** 호스트는 그 응답을 기다리지 않지만, 응답이 오기 전까지 그 dispatch 의 hop 을 기억해 그 사이 이 plugin 이 publish 하는 사건의 hop 하한으로 쓴다. 응답하지 않으면 그 기억이 재시작 전까지 남아, hop 이 높은 사건을 한 번 받은 뒤의 publish 가 무엇이든 `MAX_HOP` 으로 거절될 수 있다. SDK 는 `on_event` 를 마친 뒤 자동으로 응답한다 — SDK 없이 프로토콜을 직접 구현할 때의 계약이다. 근거는 [ADR-0033](../adr/0033-event-feed-delivery.md).
+  - **`event.dispatch` 에 응답하라.** 호스트는 그 응답을 기다리지 않지만, 응답이 오기 전까지 그 dispatch 의 hop 을 기억해 그 사이 이 plugin 이 publish 하는 사건의 hop 하한으로 쓴다. 응답하지 않으면 그 기억이 재시작 전까지 남아, hop 이 높은 사건을 한 번 받은 뒤의 publish 가 무엇이든 `MAX_HOP` 으로 거절될 수 있다. SDK 는 `on_event` 를 마친 뒤 자동으로 응답한다 — SDK 없이 프로토콜을 직접 구현할 때의 계약이다. 근거는 [Event Bus 1.0 카탈로그](../reference/event-catalog.md).
 - **window** — `[[contributes.window]]`(`window.spawn`). 현재는 schema + 등록 stub 까지(실 spawn 은 별도 영역).
 - **extension** — 다른 플러그인의 IPC/event 흐름을 가로채기. `[extends]` + `ext:<target>` 권한 + `handle_extension_hook`. mode: `transform`/`filter`/`observe`. target 당 활성 1개(나머지 `Conflict`). fail-open(timeout/에러 시 원래 값 사용).
 
@@ -271,7 +271,7 @@ canonical 아이콘을 쓴다. plugin `build.rs` 가 `[build-dependencies] tasty
 + usvg 로 `Icon.svg` 를 평탄화해 점배열을 `OUT_DIR` 에 베이크하고, 런타임엔
 `tasty_plugin_sdk::baked_icon::draw(painter, icon, center, size, color)` 로 텍스처 없이
 DPI 독립·theme tint 벡터 stroke 로 그린다. 새 아이콘 = `tasty-icons` 에 const 추가 +
-plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0035](../adr/0035-shared-design-and-theme.md).
+plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [테마 시스템 (운영 상세)](../design/systems/theme.md).
 
 ## 5. 호스트 IPC 호출
 
@@ -360,7 +360,7 @@ CLI도 설치 영어 → 선택 언어 → host 홈의 사용자 plugin 파일 �
 | `TASTY_PLUGIN_TOKEN` | 핸드셰이크 토큰(1 회용) |
 | `TASTY_HOST_API_VERSION` | 호스트 protocol 메이저 |
 | `TASTY_PLUGIN_HANDLE_ENDPOINT` | handle 채널 엔드포인트(있을 때) |
-| `TASTY_LOCALE` | 활성 로케일(`general.language`) — host 본 바이너리가 부팅 시 자기 프로세스 env 에 set 하고(`src/boot/locale.rs`) spawn 시 그대로 propagate 한다(host-plugin 은 `tasty-i18n` 비의존). SDK `Translator` 가 소비. spawn 시점 고정 — 언어 변경은 재시작 후 반영([ADR-0040](../adr/0040-locale-catalogs-and-display-text.md)) |
+| `TASTY_LOCALE` | 활성 로케일(`general.language`) — host 본 바이너리가 부팅 시 자기 프로세스 env 에 set 하고(`src/boot/locale.rs`) spawn 시 그대로 propagate 한다(host-plugin 은 `tasty-i18n` 비의존). SDK `Translator` 가 소비. spawn 시점 고정 — 언어 변경은 재시작 후 반영([국제화 (i18n)](i18n.md)) |
 | `TASTY_LOCALE_FONT` | 언어팩이 제공하는 폰트 파일의 절대경로 — **언어팩 폰트가 resolve 됐을 때만** 주입(내장 폰트 · 미제공이면 미설정, 셸에서 상속된 값도 자식에서 제거). 출처와 고정 시점은 `TASTY_LOCALE` 과 같다 |
 | `TASTY_HOST_PID` | 호스트 프로세스 PID (**macOS 만** — SDK watchdog 가 부모 사망 감지에 사용) |
 
@@ -466,9 +466,9 @@ disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 s
 
 | 상한 | 값 | 무엇을 묶나 | 근거 |
 |---|---|---|---|
-| 개수 | 채널마다 1024 건 | 큐에 쌓인 메시지 수 | [ADR-0006](../adr/0006-bounded-ipc-transport.md) |
-| 큐 바이트 | 큐마다 16 MiB | 큐 하나에 쌓인 줄의 바이트 | [ADR-0006](../adr/0006-bounded-ipc-transport.md) |
-| 합계 바이트 | 프로세스 전체 64 MiB | 모든 plugin · 모든 채널을 더한 바이트 | ADR-0006 |
+| 개수 | 채널마다 1024 건 | 큐에 쌓인 메시지 수 | [IPC 서버](../architecture/ipc-server.md) |
+| 큐 바이트 | 큐마다 16 MiB | 큐 하나에 쌓인 줄의 바이트 | [IPC 서버](../architecture/ipc-server.md) |
+| 합계 바이트 | 프로세스 전체 64 MiB | 모든 plugin · 모든 채널을 더한 바이트 | docs/architecture/ipc-server.md |
 
 - **포화의 답은 방향이 정한다** — 호스트 → plugin 요청은 **거절**(호스트 프레임이 서지 않게),
   plugin → 호스트 응답·이벤트는 **대기**(plugin 의 소켓 읽기가 선다 = backpressure). 세 상한 모두
@@ -479,13 +479,13 @@ disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 s
 - **바이트는 소켓의 줄 길이로 잰다**(개행 포함). 추정하지 않는다.
 - **제어(ping · shutdown)는 합계 상한을 면제한다** — 개수와 큐 바이트 상한은 그대로 받는다. 합계는
   다른 plugin 이 채울 수 있어서, 거기에 제어를 걸면 건강한 plugin 이 남의 포화로 무응답 재시작되거나
-  graceful 없이 kill 된다(ADR-0006의 전송 거절 처리).
+  graceful 없이 kill 된다(docs/architecture/ipc-server.md의 전송 거절 처리).
 - **합계는 plugin 을 가로지른다.** 합계가 찬 동안에는 **다른** plugin 의 요청도 거절되고 다른
   plugin 의 reader 도 기다린다. 큐 상한이 합계보다 작아 plugin 하나가 혼자서는 합계를 못 채운다.
 - 호스트 로그에서 구분된다 — `request queue full`(개수) · `request queue over its byte budget`
   (큐 바이트) · `plugin channels over their total byte budget`(합계).
 - 렌더 데이터(egui-mesh 기하·텍스처)는 이 채널을 안 탄다 — 공유 메모리 버퍼 한 칸을 덮어쓰고
-  host 는 surface 마다 마지막 프레임만 든다. 쌓이는 큐가 없다(ADR-0006의 공유 메모리 예외).
+  host 는 surface 마다 마지막 프레임만 든다. 쌓이는 큐가 없다(docs/architecture/ipc-server.md의 공유 메모리 예외).
 - 현재 누적은 `PluginManager::channel_bytes`(큐별 바이트·최댓값·거절·대기 누계)가 낸다. **이
   값을 읽는 IPC/CLI 는 아직 없다.**
 
@@ -494,14 +494,14 @@ disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 s
 ### 큐 포화 통지 (호스트가 버린 요청을 plugin 이 안다)
 
 호스트 → plugin 요청 큐는 유한하고, 차면(개수든 바이트든 — 위 "채널 상한") **기다리지 않고 거절**한다 — 그 방향에서
-기다리면 호스트 프레임이 통째로 선다([ADR-0006](../adr/0006-bounded-ipc-transport.md)).
+기다리면 호스트 프레임이 통째로 선다([IPC 서버](../architecture/ipc-server.md)).
 거절된 요청은 소켓에 안 나가므로 plugin 은 그것이 있었다는 사실 자체를 모른다.
 
 그래서 버린 수를 **다음으로 실제 큐에 들어가는 요청**에 얹는다 —
 `PluginRequest.dropped_requests`. 별도 통지 메시지를 만들면 그 통지도 같은(찬) 큐를
 써야 해서 자기모순이고, 자리가 났다는 것은 plugin 이 하나라도 소비했다는 뜻이므로
 다음 요청이 실제로 전달되면 plugin이 이 값을 읽을 수 있다. 근거는
-[ADR-0006](../adr/0006-bounded-ipc-transport.md).
+[IPC 서버](../architecture/ipc-server.md).
 
 SDK 가 셋으로 노출한다.
 
@@ -541,7 +541,7 @@ Unix에서는 PTY master가 닫히며 SIGHUP이 전경 프로세스 그룹에 �
 신호를 무시하거나 분리된 자식까지 모두 종료한다고 일반화하지 않는다.
 `portable-pty::CommandBuilder`는 `pre_exec`를 제공하지 않아 셸에 PDEATHSIG를 설치하지 않는다.
 
-정상 종료 경로(surface 닫기/quit)에서는 `tasty-terminal` 의 `Pty` Drop 이 셸을 명시적으로 kill 해 PTY master HUP 에만 의존하지 않는다. 결정 배경·대안·재검토 조건은 [ADR-0060](../adr/0060-terminal-and-pty-separation.md).
+정상 종료 경로(surface 닫기/quit)에서는 `tasty-terminal` 의 `Pty` Drop 이 셸을 명시적으로 kill 해 PTY master HUP 에만 의존하지 않는다. 결정 배경·대안·재검토 조건은 [터미널 (Terminal)](../surfaces/terminal/index.md).
 
 ### 토큰 핸드셰이크 (보안)
 
@@ -554,7 +554,7 @@ Unix에서는 PTY master가 닫히며 SIGHUP이 전경 프로세스 그룹에 �
 - **권한 표기**: 실제 필요한 것만. 자기 namespace `ipc.invoke:<self>` 는 적지 않는다 — 자기 호출에는 필요 없고, 자식 agent 토큰에 넘길 때도 소유자라 쥐지 않고 넘긴다([plugin-permissions](plugin-permissions.md#agent-caller--session-token--temp-grants)).
 - **모듈 분리**: `main.rs`가 약 300줄을 넘으면 역할에 따라 `state.rs`·`handlers.rs`·
   `install.rs` 등으로 나눈다. Claude·Codex·image plugin의 모듈 구성을 참고한다.
-  파일별 현재 줄 수는 문서에 복제하지 않는다(ADR-0049).
+  파일별 현재 줄 수는 문서에 복제하지 않는다(docs/documentation-model.md).
 
 - **Cargo**: `tasty-plugin-protocol` 직접 의존 금지 — SDK 가 re-export. `[lints] workspace = true`.
 
@@ -603,12 +603,12 @@ tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재s
 #      'nothing to write' 면 이미 같았다는 뜻이다. `--force` 는 **설치본 버전이 번들보다 높아** 건너뛰는 갈래에만 필요하다.
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
 # 기존 회수가 진행 중이면 enable이 그 작업의 완료를 기다린 뒤 새 프로세스를 시작한다.
-# 이 대기도 전체 2s 상한은 아니다. enable 성공은 spawn 완료이며 연결·hello 완료는 아니다(ADR-0026).
+# 이 대기도 전체 2s 상한은 아니다. enable 성공은 spawn 완료이며 연결·hello 완료는 아니다(docs/dev-guide/plugin-development.md).
 # 새 프로세스가 뜨면 열어 둔 surface 를 다시 게시한다(§ Surface kind 의 재게시 문단).
 ```
 
 내용 비교를 **해시가 아니라 바이트로** 하는 근거와 잰 값·대안·재검토 조건은
-[ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md).
+이 문서.
 
 **4) 실행 중 tasty 에 대해 실동작 검증**
 ```bash

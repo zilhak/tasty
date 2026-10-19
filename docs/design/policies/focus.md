@@ -141,7 +141,7 @@ recent.query는 state.db의 공유 캐시에서 종류별 최근 항목 최대 1
 | 알림 배치 | cap 임계·이상 탐지·승인 요청 알림이 활성 워크스페이스에 뜬다 | 사용자에게 보이라고 두는 자리라 에이전트 대상 결정이 아니다 |
 | 효과 scope | `debug.host_popup.open` 의 `workspace_scope` | debug 전용. 사용자 조작 재현이라 창 종속이 뜻 자체다 |
 
-기본값에 활성 상태를 사용하는 요청은 인자를 생략하면 같은 호출도 결과가 달라질 수 있다. 재현 가능한 결과가 필요하면 인자를 명시한다. 요청이 대상을 지정했다면 기록도 그 대상에 귀속한다. 구체적인 예외와 이유는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)을 따른다.
+기본값에 활성 상태를 사용하는 요청은 인자를 생략하면 같은 호출도 결과가 달라질 수 있다. 재현 가능한 결과가 필요하면 인자를 명시한다. 요청이 대상을 지정했다면 기록도 그 대상에 귀속한다. 구체적인 예외와 이유는 이 문서을 따른다.
 
 계측 태그의 workspace는 요청 대상이 아닐 수 있다. 따라서 이 필드만으로 해당 workspace에서 발생한 작업이라고 판단하지 않는다.
 
@@ -153,7 +153,7 @@ recent.query는 state.db의 공유 캐시에서 종류별 최근 항목 최대 1
     # 다섯 포인터를 센다
     grep -rn 'focused_view_id\|active_workspace\|focused_pane\|active_tab\|focused_surface' <out>
 
-    # 합산 집합의 소속 판정(ADR-0059) — 창 소유 컬렉션을 순회하는 핸들러를 뽑아
+    # 합산 집합의 소속 판정(docs/design/policies/focus.md) — 창 소유 컬렉션을 순회하는 핸들러를 뽑아
     # `src/app/dispatch/list_global.rs` 의 arm 과 대조한다. 대상 인자가 있는 것
     # (`surface_id` 등을 받는 것)은 라우터가 주인 창을 푸니 합산 대상이 아니다.
     grep -rn 'for ws in &engine.workspaces\|engine.workspaces.iter()' <out>/src/adapters/ipc
@@ -172,7 +172,7 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 
 ## 삭제로 인한 인덱스 이동에서도 포커스 대상은 보존된다
 
-사용자가 보던 대상 자체가 사라졌을 때만 다른 대상으로 이동한다. 보지 않던 workspace·tab·pane을 닫아도 보고 있는 대상은 유지한다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)).
+사용자가 보던 대상 자체가 사라졌을 때만 다른 대상으로 이동한다. 보지 않던 workspace·tab·pane을 닫아도 보고 있는 대상은 유지한다(이 문서).
 
 `MainViewState.navigation`이 workspace ID, workspace별 pane ID, pane별 tab ID, tab별 surface ID를 소유한다. 기존 응답의 index는 현재 구조에서 계산한다.
 
@@ -211,7 +211,7 @@ Core의 결과 ID를 App의 공통 구조 adapter가 받아 navigation을 보정
 - `webview.set_url`은 에이전트도 호출할 수 있다. 에이전트가 작성한 페이지의 클릭은 사용자 요청으로 인정할 근거가 아니다. 페이지 작성자가 바뀐 뒤 늦게 도착한 탐색 이벤트의 구분은 아직 완전히 검증되지 않았다.
 - 근거가 없는 plugin 중계 요청은 `PluginUnverified`다. macOS 엔진은 같은 제스처 정보를 제공하지 않아 plugin webview 링크가 항상 여기에 해당한다. 결과 탭 선택은 에이전트 요청처럼 유지하고, 매칭 핸들러가 없을 때의 picker는 사용자 클릭일 수 있어 연다. 외부 IPC 요청(`Agent`)은 picker를 열지 않는다.
 
-상세 조건과 한계는 [파일 열기 가이드](../../features/file-handler/index.md), 결정 이유는 [ADR-0031](../../adr/0031-file-handler-routing.md)에 있다.
+상세 조건과 한계는 [파일 열기 가이드](../../features/file-handler/index.md), 결정 이유는 [파일 핸들러 (File handler)](../../features/file-handler/index.md)에 있다.
 
 workspace.close는 마지막 workspace, mirror workspace, hard 점유 surface가 포함된 workspace를 거절한다.
 호출자 자신을 포함한 대상도 자기 닫기 보호를 따른다. mirror는 attach 해제로 정리한다.
@@ -232,10 +232,10 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
   대상 없는 요청(`tasty new workspace` 등)은 사용자가 보던 창에서 실행된다. 새 창에 워크스페이스를
   만들려면 그 창의 surface 를 `workspace.create` 의 `surface_id`(CLI `tasty new workspace --surface`)로
   지목한다 — `window_id` 는 창 자체를 다루는 요청(닫기 · 스크린샷 등)에만 쓴다
-  ([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)).
+  ([CLI 크레이트 내부 구조 — 세 갈래 대칭](../../dev-guide/cli-structure.md)).
   그 `surface_id` 는 `cwd` 를 생략했을 때의 상속 원본도 정한다 — 지목했는데 그 창의 포커스 surface 를
   읽으면 결과가 사용자가 그 창에서 보는 탭에 좌우되기 때문이다
-  ([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)).
+  ([CLI 크레이트 내부 구조 — 세 갈래 대칭](../../dev-guide/cli-structure.md)).
   - 예외: 가리키던 창이 없으면(main 창이 0 개였으면) 에이전트 창을 기본 대상으로 삼는다.
 - 에이전트 창은 숨긴 채 만들어, 등록 뒤 사용자가 보던 창 **뒤에** 키 포커스 없이 보인다
   (`tasty_platform::window_stacking::show_behind`). OS 마다 할 수 있는 데까지다.
@@ -249,7 +249,7 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 - 사용자가 에이전트 창을 직접 고르면 `WindowEvent::Focused(true)` 추적이 `focused_view_id` 를
   옮긴다.
 
-근거와 플랫폼별 결과는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md).
+근거와 플랫폼별 결과는 이 문서.
 
 ## 같은 홈으로 다시 실행했을 때 (release 단일 실행)
 
@@ -265,7 +265,7 @@ Tasty에는 포커스를 주는 IPC 메서드가 없다.
   - Wayland: 두 번째 실행이 받은 xdg-activation 토큰으로 기존 창 surface에 `xdg_activation_v1.activate`를 보낸다(winit 포크의 `WindowExtWayland::activate_with_token`). 위 복원 대신 새 `User` 창을 열고 숨김·최소화 창은 그대로 두는 경우가 둘이다. 토큰이 없으면 토큰 없는 새 창이고, 컴포지터가 `xdg_activation_v1`을 제공하지 않으면 토큰을 실은 새 창이다. MainView가 없어 새 창을 열 때는 토큰을 생성 속성에만 싣고 등록 뒤 다시 요청하지 않는다.
   - MainView가 하나도 없으면 증거를 실은 `User` 창을 연다. 만드는 중인 창이 있으면 새로 만들지 않고 그 창이 등록될 때 요청한다.
 - 증거는 OS 판단의 근거일 뿐 위조 불가능한 증명은 아니다. X11 startup id는 같은 사용자의 어떤 프로세스든 만들 수 있다.
-  한계와 근거는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)의 "같은 홈의 다시 실행" 절에 있다.
+  한계와 근거는 이 문서의 "같은 홈의 다시 실행" 절에 있다.
 
 ## 에이전트가 만든 탭과 선택
 
@@ -283,20 +283,19 @@ Tasty에는 포커스를 주는 IPC 메서드가 없다.
     발화점은 origin 없는 `file_handler.dispatch` 하나이고, 그 갈래는 이제 사용자가 보던 탭을
     바꾸지 않는다. markdown plugin 의 파일열기 팝업(사용자의 `open_markdown`)은 같은 호출에 자기
     popup 을 실어 사용자로 도착하므로 종전대로 새 탭을 선택한다(아래 "에이전트 닫기와 포커스" 의
-    파일 열기 항목 · [ADR-0031](../../adr/0031-file-handler-routing.md)).
+    파일 열기 항목 · [파일 핸들러 (File handler)](../../features/file-handler/index.md)).
 - terminal kind 는 `activate` 와 무관하게 background 다. 사용자의 새 터미널 탭은 이 인텐트가
   아니라 `MainViewState::add_tab` 이 연다.
 - 에이전트가 만든 새 비터미널 탭은 사용자가 선택하기 전까지 렌더되지 않는다.
 - 응답의 `active_tab` 은 "생성 뒤 그 pane 의 활성 탭" 이다 — 에이전트가 만든 탭이면 사용자가
   보던 탭의 인덱스다. 새 탭은 응답의 `surface_id` 로 다룬다.
 
-근거는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md).
 
 <a id="원격이-점유한-surface-는-닫기-요청이-죽이지-않는다"></a>
 
 ## hard 점유 대상의 닫기 보호
 
-hard 점유 대상은 원격 사용자가 사용 중이므로 로컬 사용자와 에이전트의 닫기 요청을 모두 거절한다. 닫은 항목 복원은 같은 명령으로 새 세션을 만들 뿐 기존 PTY 작업을 되살리지 못한다. 로컬 사용자는 점유 표시의 강제 끊기로 점유를 회수한 뒤 닫을 수 있다([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
+hard 점유 대상은 원격 사용자가 사용 중이므로 로컬 사용자와 에이전트의 닫기 요청을 모두 거절한다. 닫은 항목 복원은 같은 명령으로 새 세션을 만들 뿐 기존 PTY 작업을 되살리지 못한다. 로컬 사용자는 점유 표시의 강제 끊기로 점유를 회수한 뒤 닫을 수 있다([Attach 메커니즘](../../dev-guide/attach-behavior.md)).
 
 닫기 진입점은 `MainViewState::refuse_if_hard_occupied`에 닫을 surface 집합을 넘긴다. workspace·tab·pane은 그 안의 모든 surface, surface 닫기는 해당 하나를 검사한다.
 
@@ -319,6 +318,6 @@ IPC에는 토스트 대신 사유를 담은 오류를 반환한다. `surface.clo
 - 워크스페이스 close의 origin: View producer는 `src/state/workspace.rs`, 실제 원 reply/origin 분류와 retirement 계획은 `src/app/journal/commands/close.rs`다.
 - 워크스페이스 제거 후 뒷정리: 확정 닫기의 `workspace.closed` 전달은 App의 완료 후처리이며 workspace 범위 memory 정리는 `ResourceRetirement`의 metadata 정리(`src/runtime/resource_retirement.rs`).
 
-외부 소켓의 전 창 합산·namespace·App 조기 응답도 일반 handler와 같은 진입 검사와 허용된 요청의 사용량 집계를 한 번 거친다. 검사 완료 요청을 하위 라우터에 전달하므로 라우팅 층 수만큼 예산이 소비되지 않는다. [ADR-0012](../../adr/0012-request-admission-and-isolation.md).
+외부 소켓의 전 창 합산·namespace·App 조기 응답도 일반 handler와 같은 진입 검사와 허용된 요청의 사용량 집계를 한 번 거친다. 검사 완료 요청을 하위 라우터에 전달하므로 라우팅 층 수만큼 예산이 소비되지 않는다. [플러그인 권한 모델](../../dev-guide/plugin-permissions.md).
 
 순서 이동도 source를 ID로 고정한다. IPC·remote의 기존 `from_index`는 App adapter에서 `workspace_id` 또는 `tab_id`로 해소한 뒤 Core 명령을 만든다. `to_index`는 목적지 순서 좌표이며 기존 범위 밖·동일 위치 no-op을 유지한다. 먼저 실행된 이동이 목록을 재정렬해도 이미 수락한 명령의 source가 다른 객체로 바뀌지 않는다.

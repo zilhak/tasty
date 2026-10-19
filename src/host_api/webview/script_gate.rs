@@ -1,4 +1,4 @@
-//! html surface의 문서 단위 스크립트 허용(ADR-0053)을 backend navigation 콜백에 연결한다.
+//! html surface의 문서 단위 스크립트 허용(docs/surfaces/html/index.md)을 backend navigation 콜백에 연결한다.
 //!
 //! 상태는 surface 모델이 가진 [`HtmlScriptState`]와 공유한다. backend는 main frame 신호가 올 때
 //! 아래 메서드를 부르고 돌려받은 JS 값을 즉시 적용한다. redraw에서 사후에 바꾸지 않는다.

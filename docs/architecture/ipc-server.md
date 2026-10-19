@@ -1,10 +1,14 @@
 # IPC 서버
 
+## 원칙과 현재 동작
+
+현재 Local 전용 진단·호출 권한 제한은 구현 계약이다. [사용자 통제 원칙](../principles/control-and-data.md)과 [플러그인 원칙](../principles/plugins.md)에 따라 포커스와 무관한 추가 보호 제한을 정합해야 하며, 다른 호출자의 부하가 보인다는 사실을 영구 비공개 원칙으로 삼지 않는다.
+
 호스트 IPC의 수신, 큐 처리, 응답 대기와 진단 방법을 설명한다. 메서드 이름·오류 코드·멱등 키의 공개 계약은 [API 규약](../dev-guide/api-conventions.md)을 따른다.
 
 ## 연결과 신뢰 범위
 
-로컬 IPC는 127.0.0.1의 동적 TCP 포트와 JSON-RPC를 사용하고 포트 파일로 접속 위치를 알린다. 단일 사용자 데스크톱을 대상으로 OS별 socket·pipe 구현을 두지 않는다. loopback 자체는 같은 머신의 다른 OS 사용자를 인증하거나 차단하지 않는다. 원격 접속은 SSH에 위임한다. agent 세션 토큰은 요청이 어느 agent 의 것인지 구분하는 표지이며 인증 수단이 아니다. 토큰 없는 Local 연결은 사용자로 취급하고, 세션 권한 검사는 협조적인 agent 의 실수를 막는다([ADR-0073](../adr/0073-local-caller-agent-id-is-a-self-reported-label.md#신뢰-모델-구분-표지와-보안-경계)). 공유 머신·다중 사용자 서비스를 지원하려면 Unix socket 권한이나 Windows named pipe ACL을 다시 검토한다.
+로컬 IPC는 127.0.0.1의 동적 TCP 포트와 JSON-RPC를 사용하고 포트 파일로 접속 위치를 알린다. 단일 사용자 데스크톱을 대상으로 OS별 socket·pipe 구현을 두지 않는다. loopback 자체는 같은 머신의 다른 OS 사용자를 인증하거나 차단하지 않는다. 원격 접속은 SSH에 위임한다. agent 세션 토큰은 요청이 어느 agent 의 것인지 구분하는 표지이며 인증 수단이 아니다. 토큰 없는 Local 연결은 사용자로 취급하고, 세션 권한 검사는 협조적인 agent 의 실수를 막는다([플러그인 권한 모델](../dev-guide/plugin-permissions.md)). 공유 머신·다중 사용자 서비스를 지원하려면 Unix socket 권한이나 Windows named pipe ACL을 다시 검토한다.
 
 ## 입장 상한
 
@@ -83,7 +87,7 @@ GUI와 헤드리스는 IpcRound로 256명령 또는 16ms 중 먼저 닿는 제�
 
 응답 대기 상한은 호출자가 response_timeout_ms로 정한다. 없거나 0이면 무한 대기를 유지해 승인·task await의 의도적 대기를 자르지 않는다. 시작 뒤 만료는 -32061 결과 불명이며 취소가 아니다. 만료해도 작업은 계속될 수 있고 연결은 유지한다. 늦은 응답은 사라진 전용 수신자에게 전달 실패해 다음 요청과 섞이지 않는다. capability ipc.response-timeout으로 지원을 확인한다. 연결 끊김을 작업 취소로 해석하지 않으며 소켓 생존 감지를 통한 대기 회수는 별도 검토 대상이다.
 
-세션 토큰이 없는 요청의 선택 필드 caller_agent_id는 호출자가 스스로 밝힌 agent ID다. CLI는 자기 환경의 TASTY_AGENT_ID를 싣는다. 호스트는 이 값을 텔레메트리·감사·헤드리스 PTY 소유자 표시에만 쓰고 권한 판단에는 쓰지 않는다. 형식이 틀리면 버리고 요청은 처리한다. 세션 토큰이 있으면 무시한다. capability ipc.caller-agent-id로 지원을 알린다([ADR-0073](../adr/0073-local-caller-agent-id-is-a-self-reported-label.md)).
+세션 토큰이 없는 요청의 선택 필드 caller_agent_id는 호출자가 스스로 밝힌 agent ID다. CLI는 자기 환경의 TASTY_AGENT_ID를 싣는다. 호스트는 이 값을 텔레메트리·감사·헤드리스 PTY 소유자 표시에만 쓰고 권한 판단에는 쓰지 않는다. 형식이 틀리면 버리고 요청은 처리한다. 세션 토큰이 있으면 무시한다. capability ipc.caller-agent-id로 지원을 알린다([플러그인 권한 모델](../dev-guide/plugin-permissions.md)).
 
 요청은 QUEUED에서 STARTED 또는 WITHDRAWN으로 한 번만 전환한다. dequeue와 응답 대기 timeout이 공유 lifecycle을 원자적으로 비교·교환해 실행 시작 여부를 결정한다. 큐에서 기한이 지나면 권한·rate·audit 전에 -32067 미실행으로 답하고 나중에도 실행하지 않는다. 시작 뒤 만료만 -32061이다. ipc.response-timeout.not-run capability로 이를 알린다. 미실행 만료도 dequeue 전까지는 큐 장부에 남는다. timeout과 연결 종료는 실행 중 작업의 취소를 뜻하지 않는다.
 
@@ -155,9 +159,9 @@ caller별 값이 필요하면 별도의 개인정보·권한 범위를 검토한
 
 ## 관련
 
-- [전송 설계](../adr/0006-bounded-ipc-transport.md)
-- [실행 순서와 기한](../adr/0007-ipc-scheduling-and-deadlines.md)
-- [진단 설계](../adr/0008-ipc-pressure-observability.md)
+- 전송 설계
+- 실행 순서와 기한
+- 진단 설계
 - [데이터 흐름](data-flows.md)
 - [저장소 상태](../design/systems/storage.md)
 

@@ -174,7 +174,7 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) boot_error_window: Option<Arc<Window>>,
     /// System tray / status item. Must be kept alive for the tray to remain visible.
-    /// `None` when the platform tray is unavailable (graceful degradation, ADR-0016).
+    /// `None` when the platform tray is unavailable (graceful degradation, docs/architecture/shutdown-sequence.md).
     #[cfg(all(
         any(windows, target_os = "macos", target_os = "linux"),
         feature = "gui"

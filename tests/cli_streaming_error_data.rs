@@ -1,5 +1,5 @@
 //! 스트리밍 CLI의 호스트 오류가 기존 첫 줄 형식을 유지하고 error.data만 둘째 줄 JSON으로 추가하는지 확인한다.
-//! 실제 CLI를 loopback 모의 호스트에 연결하며 TASTY_HOME과 포트 파일은 임시 디렉터리에 둔다(ADR-0043).
+//! 실제 CLI를 loopback 모의 호스트에 연결하며 TASTY_HOME과 포트 파일은 임시 디렉터리에 둔다(docs/dev-guide/cli-structure.md).
 
 #[path = "spawn_diag/mod.rs"]
 mod spawn_diag;

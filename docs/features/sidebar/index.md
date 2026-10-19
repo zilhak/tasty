@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (원격 접속 사용자는 mirror 로 봄)
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `src/adapters/ui/sidebar/`
 - **화면**: [아래 절](#화면)
 

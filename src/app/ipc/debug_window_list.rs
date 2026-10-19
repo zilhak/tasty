@@ -1,5 +1,5 @@
 //! `debug.window.list` — 메인 창과 보조 창(설정·Preset·Plugins·종료 확인)을 모두 나열한다.
-//! release `window.list` 는 메인 창만 다룬다(ADR-0018). 보조 창 ID 는 그 창에 입력을 주입하는
+//! release `window.list` 는 메인 창만 다룬다(docs/ai-verification/screenshot-methods.md). 보조 창 ID 는 그 창에 입력을 주입하는
 //! debug 경로에만 필요하므로 이 목록도 debug 빌드에만 둔다.
 
 use crate::app::App;

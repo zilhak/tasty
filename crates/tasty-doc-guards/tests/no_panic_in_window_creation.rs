@@ -1,5 +1,5 @@
 //! 창·모달 생성 경로의 panic/expect/unwrap을 찾는다.
-//! 새 창을 열지 못해도 이미 열린 창의 세션은 유지해야 한다(ADR-0016).
+//! 새 창을 열지 못해도 이미 열린 창의 세션은 유지해야 한다(docs/architecture/shutdown-sequence.md).
 //! 실제 창 생성 실패를 실행하는 검사가 아니라 지정한 소스의 형태를 검사한다.
 
 use std::path::PathBuf;
@@ -58,7 +58,7 @@ fn window_and_modal_creation_paths_contain_no_panics() {
     assert!(
         hits.is_empty(),
         "창·모달 생성 경로에 패닉이 들어왔다. 창 생성 실패는 그 창만 취소하고 나머지 창의 \
-         세션을 살려야 한다(ADR-0016). 실패를 `Result` 로 돌리고 \
+         세션을 살려야 한다(docs/architecture/shutdown-sequence.md). 실패를 `Result` 로 돌리고 \
          `notify_window_creation_failed` 로 알려라. 정말 불변식이라면 \
          `INVARIANT_ALLOWLIST` 에 근거와 함께 등록한다.\n{}",
         hits.join("\n")

@@ -52,7 +52,7 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 | control-height-tree | 22 | |
 | font-size body / caption / heading | 13 / 11 / 13(weight 600) | `font_size_body/caption/heading` |
 | font-size micro | 10 | `font_size_micro` — Badge/Tag/Kbd·command_palette footer 힌트 |
-| font-size prose-h1 | 20 | `font_size_prose_h1` — markdown 헤딩 사다리의 h1 앵커(`render.rs::heading_sizes_px` 가 h1↔`font-size-body`(h6) 사이를 CSS 로 5단계 선형보간, UI cap 면제). `prose-h2`·`line-height-prose` 는 [ADR-0029](../../adr/0029-webview-host-integration.md) 이전 egui_commonmark 시절 라이브러리 제약으로 은퇴한 토큰이며, webview 전환(CSS) 이후로도 부활하지 않았다 — 헤딩 사다리는 이제 `--md-h1`..`--md-h6` CSS custom property 로 직접 표현되므로 별도 semantic 토큰이 필요 없다. 정본은 여전히 tokens/·vendor json·생성 const 모두에서 제거된 상태 |
+| font-size prose-h1 | 20 | `font_size_prose_h1` — markdown 헤딩 사다리의 h1 앵커(`render.rs::heading_sizes_px` 가 h1↔`font-size-body`(h6) 사이를 CSS 로 5단계 선형보간, UI cap 면제). `prose-h2`·`line-height-prose` 는 [WebView 호스트 계약](webview.md) 이전 egui_commonmark 시절 라이브러리 제약으로 은퇴한 토큰이며, webview 전환(CSS) 이후로도 부활하지 않았다 — 헤딩 사다리는 이제 `--md-h1`..`--md-h6` CSS custom property 로 직접 표현되므로 별도 semantic 토큰이 필요 없다. 정본은 여전히 tokens/·vendor json·생성 const 모두에서 제거된 상태 |
 | font-size term-sm / term / term-lg | 12 / 14 / 16 | `font_size_term_sm` / `font_size_term` / `font_size_term_lg` — 터미널 스케일 |
 | icon-size xs | 12 | `icon_glyph_size_xs` |
 | icon-size md | 16 | `icon_glyph_size_md` (기존) — Button leading/trailing·MenuItem 글리프, **spinner 지름**(폰트가 아니라 아이콘 가족) |
@@ -184,7 +184,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-banner-fg` | → `text-primary` | `text_primary()` | 〃 |
 | `--tasty-banner-border` | → `border-strong` | `border_strong()` | 〃 |
 | `--tasty-banner-radius` | → `radius-8` (8px) | `corner_radius_lg`(8) | 기존 토큰 — 본체 배너 셸도 `corner_radius_lg` 를 쓴다(시스템 기본 4px 의 의도적 2배) |
-| `--tasty-banner-shadow` | → `shadow-popover` | `shadow_popover()` | 기존 토큰 — 본체 배너 셸도 같은 접근자를 쓴다([ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md) 그림자 선택 기준 중 popover) |
+| `--tasty-banner-shadow` | → `shadow-popover` | `shadow_popover()` | 기존 토큰 — 본체 배너 셸도 같은 접근자를 쓴다([`tasty-ui-widgets` — 본체·갤러리 공유 UI primitive](../../architecture/ui-widgets-crate.md) 그림자 선택 기준 중 popover) |
 | `--tasty-banner-margin` | → `space-sm` → size-8 (8px) | `spacing_sm` | 기존 토큰 |
 | `--tasty-banner-padding-x` | → `space-md` (12) | `spacing_md` | 기존 토큰 |
 | `--tasty-banner-padding-y` | → `space-sm` (8) | `spacing_sm` | 기존 토큰 |
@@ -209,7 +209,7 @@ modifier-hint는 보조키를 누르는 동안 유지되며 키보드 포커스 
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
 |---|---|---|---|
 | `--tasty-motion-hold-reveal` | → `duration-500` (500ms) | `modhint_hold_delay()` (생성, `Millis`) | 홀드→표시 지연. 모션 아님 → reduced_motion 무관 유지 |
-| (대응 토큰 없음) | 1200ms | `motion_hold_reveal_shift()` = `MOTION_HOLD_REVEAL_SHIFT_MS` (수기, [ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)) | **Shift 단독** 홀드만 이 지연. 타이핑 중 Shift 스침으로 팝업이 튀는 것 억제. 모션 아님 → reduced_motion 무관 |
+| (대응 토큰 없음) | 1200ms | `motion_hold_reveal_shift()` = `MOTION_HOLD_REVEAL_SHIFT_MS` (수기, [키 매핑 설계 (운영 상세)](../policies/key-mapping.md)) | **Shift 단독** 홀드만 이 지연. 타이핑 중 Shift 스침으로 팝업이 튀는 것 억제. 모션 아님 → reduced_motion 무관 |
 | `--tasty-motion-ui-fade` | → `duration-200` (200ms) | `modhint_fade()` (생성, `Millis`) | 등장 페이드(opacity 0.2→1.0). reduced_motion 시 0ms |
 | `--tasty-modhint-width` | → `size-180` (180px) | `modhint_width()` | 열린 사이드바 폭(기본 180)과 정렬 |
 | `--tasty-modhint-height` | → 400px | `modhint_height()` | 기본 세로 높이 |
@@ -229,7 +229,7 @@ modifier-hint는 보조키를 누르는 동안 유지되며 키보드 포커스 
 | `--tasty-modhint-bg` | → `bg-panel` (불투명) | `modhint_bg()` | 라이브 출력 위 불투명 셸 |
 | `--tasty-modhint-border` | → `border-strong` | `modhint_border()` | 1px 셸 보더 |
 | `--tasty-modhint-radius` | → `radius` (4) | `corner_radius` | 셸 코너 |
-| `--tasty-modhint-shadow` | → `shadow-popover` | `shadow_popover()` | anchored + scrim-less lift(banner 와 공유). 디자인 체인이 한때 `shadow-modal` 을 가리켜 구현과 갈려 있었으나, [ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md) 의 그림자 선택 기준에 맞춰 디자인이 `components.css` 의 이 토큰을 `shadow-popover` 로 재타깃했다 — 발산은 남아 있지 않다 |
+| `--tasty-modhint-shadow` | → `shadow-popover` | `shadow_popover()` | anchored + scrim-less lift(banner 와 공유). 디자인 체인이 한때 `shadow-modal` 을 가리켜 구현과 갈려 있었으나, [`tasty-ui-widgets` — 본체·갤러리 공유 UI primitive](../../architecture/ui-widgets-crate.md) 의 그림자 선택 기준에 맞춰 디자인이 `components.css` 의 이 토큰을 `shadow-popover` 로 재타깃했다 — 발산은 남아 있지 않다 |
 | `--tasty-modhint-strip-bg` | → `bg-sidebar` | `modhint_strip_bg()` | 드래그 스트립 배경 |
 | `--tasty-modhint-separator` | → `separator` | `modhint_separator()` | 스트립/헤더 하단 구분선 |
 | `--tasty-modhint-held-fg` | → `text-muted` | `modhint_held_fg()` | 스트립 "held" 라벨 |
@@ -267,7 +267,7 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 
 ### duration 접근자에서 값을 벗기는 자리 — 감시 대상
 
-디자인 모션은 Theme에서 `Millis`로 반환한다. 표시 문자열이나 단위 없는 ms 계산이 필요한 경계에서는 `to_millis_f32()`로 변환한다([ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md)). 변환 위치가 많아지면 전체 모션 접근자 사용과 함께 검토한다. 사용처가 늘어난 것인지 단위를 벗기는 비율만 늘어난 것인지 구분해야 한다.
+디자인 모션은 Theme에서 `Millis`로 반환한다. 표시 문자열이나 단위 없는 ms 계산이 필요한 경계에서는 `to_millis_f32()`로 변환한다([`tasty-ui-widgets` — 본체·갤러리 공유 UI primitive](../../architecture/ui-widgets-crate.md)). 변환 위치가 많아지면 전체 모션 접근자 사용과 함께 검토한다. 사용처가 늘어난 것인지 단위를 벗기는 비율만 늘어난 것인지 구분해야 한다.
 
 ```bash
 rg 'to_millis_f32\(\)' src crates -g '*.rs'
@@ -371,7 +371,7 @@ text-gap(버튼 하나 32, 둘 60).
 |---|---|---|---|
 | `--tasty-convert-popup-width` | → `size-240` (240px) | `convert_popup_width()` | 배율 적용. 본체 `popup/convert.rs` 의 sizer 와 갤러리 `components/convert.rs` 가 읽는다 |
 
-<a id="attention-kind--needsinputcompletion-surface-highlight-adr-0062"></a>
+<a id="attention-kind--needsinputcompletion-surface-highlight-docs/dev-guide/agent-runner.md"></a>
 
 ## Attention kind — NeedsInput/Completion (surface-highlight)
 
@@ -560,7 +560,7 @@ vendor·치수 codegen·드리프트 테스트는 완료됐다 (`crates/tasty-de
 
 #### SIZING을 토큰에 연결하기 전에 값과 배율을 비교한다
 
-현재 화면의 값과 토큰값이 다르면 단순 코드 정리로 바꾸지 않는다. 실제 값과 지원 배율을 먼저 비교하고 차이가 있으면 디자인 결정을 받는다. 이유와 재검토 조건은 [ADR-0035](../../adr/0035-shared-design-and-theme.md)에 있다.
+현재 화면의 값과 토큰값이 다르면 단순 코드 정리로 바꾸지 않는다. 실제 값과 지원 배율을 먼저 비교하고 차이가 있으면 디자인 결정을 받는다. 이유와 재검토 조건은 [테마 시스템 (운영 상세)](theme.md)에 있다.
 
 접근자 호출 여부와 값 일치는 별개다. 접근자를 쓰지 않아도 기반 필드로 같은 값을 읽을 수 있고, 기반 필드를 사용해도 해당 컴포넌트가 다른 값을 그릴 수 있다. `GAP`·`POPUP_WIDTH`·`MIN_HEIGHT`처럼 흔한 이름만 비교하면 무관한 토큰이 연결될 수 있으므로 정의와 사용처를 읽는다.
 

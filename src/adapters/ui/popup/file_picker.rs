@@ -1,5 +1,5 @@
 //! Tasty 자체 파일 열기 팝업. 로컬과 원격 디렉터리 조회를 같은 UI로 제공한다.
-//! 동작은 `docs/features/native-file-picker/index.md`, 원격 조회 권한은 ADR-0022를 따른다.
+//! 동작은 `docs/features/native-file-picker/index.md`, 원격 조회 권한은 docs/features/remote-attach/index.md를 따른다.
 //! OS의 로컬 파일 선택 대화상자는 원격 경로를 탐색할 수 없어 이 화면을 따로 둔다.
 //!
 //! 표시 함수는 FilePickerProps를 받아 동작을 반환하며 갤러리에서 따로 그릴 수 있다.
@@ -107,7 +107,7 @@ pub struct FilePickerProps<'a> {
     /// 선택된 엔트리 이름(현재 디렉토리 기준).
     pub selected: &'a [String],
     pub mode: FilePickerMode<'a>,
-    /// 이 프레임에 Esc 를 소비할 자격이 있는가(ADR-0036).
+    /// 이 프레임에 Esc 를 소비할 자격이 있는가(docs/design/systems/popup.md).
     /// `false` 면 위에 다른 popup 이 있다는 뜻이라 Esc 를 무시한다 — 한 번의 Esc 로
     /// 스택 전체가 닫히는 것을 막는다. 판정은 `MainViewState.popup_escape_owner`.
     pub owns_escape: bool,

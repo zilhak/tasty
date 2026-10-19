@@ -8,7 +8,7 @@ Tasty는 한 인스턴스를 여러 주체가 동시에 사용하도록 설계�
 
 ## AI Agent (에이전트)
 
-에이전트는 IPC·CLI로 대상을 ID로 지정해 자기 작업을 수행한다. 여러 에이전트가 동시에 동작하더라도 사용자의 포커스·닫은 항목 히스토리·선택을 바꾸지 않는다. `surface.send`·`surface.read`처럼 점유 없이 요청할 수 있으며 필요하면 soft 또는 hard 점유를 사용한다. `terminal` 명령이 만든 child-terminal의 soft 점유가 한 예다([ADR-0021](../adr/0021-occupancy-and-attach-admission.md)).
+에이전트는 IPC·CLI로 대상을 ID로 지정해 자기 작업을 수행한다. 여러 에이전트가 동시에 동작하더라도 사용자의 포커스·닫은 항목 히스토리·선택을 바꾸지 않는다. `surface.send`·`surface.read`처럼 점유 없이 요청할 수 있으며 필요하면 soft 또는 hard 점유를 사용한다. `terminal` 명령이 만든 child-terminal의 soft 점유가 한 예다([Attach 메커니즘](../dev-guide/attach-behavior.md)).
 
 ## 원격 접속 사용자 (Remote user)
 
@@ -18,7 +18,7 @@ tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach �
 
 ## 점유 (Occupation) 모델
 
-점유는 원격 사용자나 에이전트가 surface·workspace를 사용 중임을 계속 표시하는 관계다. 일회성 `surface.send`·`surface.read` 요청과 구분한다. soft는 green, hard는 peach 테두리로 표시한다. 선택 이유와 표시 규칙은 [ADR-0021](../adr/0021-occupancy-and-attach-admission.md)에 있다.
+점유는 원격 사용자나 에이전트가 surface·workspace를 사용 중임을 계속 표시하는 관계다. 일회성 `surface.send`·`surface.read` 요청과 구분한다. soft는 green, hard는 peach 테두리로 표시한다. 선택 이유와 표시 규칙은 [Attach 메커니즘](../dev-guide/attach-behavior.md)에 있다.
 
 ### 약한 점유 (soft)
 
@@ -48,4 +48,4 @@ tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach �
 | 타 점유 강제해제(force-detach) | **있음** | 없음 (자기 점유 self-release 만) | 없음 (자기 점유 self-release 만) |
 | 동시 수 | 보통 1 | 0..N | 0..N |
 
-API를 설계할 때는 로컬 직접 입력과 에이전트·원격 요청을 구분한다. [사용자와 에이전트 행동의 분리](../identity.md#21-사용자-행동--에이전트-행동-분리-soul)를 따른다.
+API를 설계할 때는 로컬 직접 입력과 에이전트·원격 요청을 구분한다. [사용자와 에이전트 행동의 분리](../principles/control-and-data.md#사용자에이전트원격-사용자)를 따른다.

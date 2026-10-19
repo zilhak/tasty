@@ -24,7 +24,7 @@ pub const REMOTE_ATTACH_POPUP_ID: &str = "remote_attach";
 
 const UI_MEMORY_ID: &str = "remote_attach.ui";
 
-/// attach kind(같은 레지스트리의 예약 kind, ADR-0020). remote_tool Attach 탭이 편집하고
+/// attach kind(같은 레지스트리의 예약 kind, docs/features/remote-profiles/index.md). remote_tool Attach 탭이 편집하고
 /// 이 팝업은 **소비만** 한다.
 const ATTACH_KIND: &str = "tasty-attach";
 

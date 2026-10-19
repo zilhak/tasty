@@ -1,5 +1,5 @@
 //! 원격 자격증명 관리. 응답에는 name과 kind만 포함하고 경로·내용은 공개하지 않는다.
-//! inline 값은 데이터 루트의 passkeys/<name>에 저장하며 Unix에서는 0600을 적용한다(ADR-0011).
+//! inline 값은 데이터 루트의 passkeys/<name>에 저장하며 Unix에서는 0600을 적용한다(docs/design/systems/memory.md).
 
 use serde_json::{Value, json};
 

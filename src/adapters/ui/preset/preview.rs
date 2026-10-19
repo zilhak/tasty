@@ -33,7 +33,7 @@ pub(super) fn draw_preview(
     // 보기에서 편집으로 들어가는 첫 프레임은 아직 사용자 변경이 없어 저장소 값을 먼저 읽는다.
     let entering_edit = editing && !drew_editing_last(ui, &cache.key);
     if !editing || entering_edit {
-        // 편집 중에는 저장 직전에만 저장소와 비교한다(ADR-0038).
+        // 편집 중에는 저장 직전에만 저장소와 비교한다(docs/features/layout-presets/index.md).
         let refreshed = refresh_view_cache(store, kind, name, catalog, &mut cache);
         if refreshed {
             ui.ctx().request_repaint();

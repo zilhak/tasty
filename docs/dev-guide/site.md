@@ -85,7 +85,7 @@ site/
 [`site/vendor/README.md`](../../site/vendor/README.md) 의 "vendor 갱신 절차" 에 있고,
 정합 루프에서 이 단계가 차지하는 자리는
 [design-change-workflow](design-change-workflow.md#정합-대상--사이트-사본-필수) 에 있다. 결정 근거는
-[ADR-0035](../adr/0035-shared-design-and-theme.md).
+[테마 시스템 (운영 상세)](../design/systems/theme.md).
 
 오래된 vendor 사본도 정상 빌드할 수 있다. 저장소의 두 사본을 대조하는 검사는
 `site_vendor_tokens_track_the_app_export.rs`(토큰 이름)와

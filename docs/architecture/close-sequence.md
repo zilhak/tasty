@@ -1,6 +1,6 @@
 # 닫기와 실행 자원 회수
 
-로컬 구조 닫기는 확정된 구조 변경, 원 실행 자원의 회수, 명령 완료를 구분한다. View가 사라졌다는 사실이나 논리 트리에서 surface가 빠졌다는 사실만으로 PTY·plugin 자원 회수가 끝난 것은 아니다. 계약의 근거는 [ADR-0055](../adr/0055-structural-domain-event-sourcing.md), [ADR-0063](../adr/0063-event-store-storage-fencing-and-effect-states.md), [ADR-0064](../adr/0064-journal-source-and-core-state-projection.md)다.
+로컬 구조 닫기는 확정된 구조 변경, 원 실행 자원의 회수, 명령 완료를 구분한다. View가 사라졌다는 사실이나 논리 트리에서 surface가 빠졌다는 사실만으로 PTY·plugin 자원 회수가 끝난 것은 아니다. 계약의 근거는 [이벤트 저장소 (`tasty-event-store`)](event-store.md), [이벤트 저장소 (`tasty-event-store`)](event-store.md), [이벤트 저장소 (`tasty-event-store`)](event-store.md)다.
 
 ## 명령에서 완료까지
 
@@ -11,7 +11,7 @@
 
 ## 관측 일시정지 범위
 
-App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC·창 입력을 보류하고 plugin pump를 돌리지 않는다. 닫기에서는 다음 구간만 멈춘다([ADR-0071](../adr/0071-close-receipt-wait-does-not-pause-observation.md)).
+App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC·창 입력을 보류하고 plugin pump를 돌리지 않는다. 닫기에서는 다음 구간만 멈춘다(이 문서).
 
 - 커밋 전(대상·cleanup 의무 확정과 batch 게시).
 - 정리 항목의 claim 단계와 결과 확정 단계.
@@ -19,7 +19,7 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 
 3·4단계 사이의 receipt 대기에서는 관측을 멈추지 않는다. 닫히는 surface는 이미 구조와 View에서 빠졌으므로, 이때의 조회와 입력은 닫기가 반영된 구조를 본다. 닫힘 이벤트와 닫기 응답은 결과 확정 뒤에 나간다. receipt 대기로 넘어가는 즉시 plugin 회수 게시를 적용한다. 그래서 claim 이후에 처리되는 enable은 파괴 중인 surface를 새 프로세스에 다시 게시하지 않는다.
 
-닫기는 접수한 뒤 대상을 해석하기까지 시간이 걸린다. 그 사이에 plugin 프로세스가 새로 떠도 접수된 닫기가 회수할 수 있는 surface는 다시 게시하지 않는다. App은 IPC 명령마다 처리 직전에, 그리고 journal 턴마다 이 목록을 plugin host에 넘긴다. 아직 해석하지 않은 닫기는 현재 구조로 해석해 대상을 구한다. 닫기가 그 surface를 회수하지 않고 끝나면(실패·취소) 목록에서 빠질 때 다시 게시한다. Tasty가 닫기보다 enable을 먼저 처리했다면 그 시점의 surface는 살아 있으므로 새 프로세스에 게시한다. 이후의 닫기는 새 프로세스에 파괴 요청을 보내고 그 응답으로 확정하므로, 닫힌 surface의 인스턴스는 새 프로세스에 남지 않는다. 서로 다른 IPC 연결로 보낸 요청은 보낸 순서대로 처리된다는 보장이 없고, Tasty는 그 순서를 맞추지 않는다([ADR-0071](../adr/0071-close-receipt-wait-does-not-pause-observation.md)의 다른 연결 절).
+닫기는 접수한 뒤 대상을 해석하기까지 시간이 걸린다. 그 사이에 plugin 프로세스가 새로 떠도 접수된 닫기가 회수할 수 있는 surface는 다시 게시하지 않는다. App은 IPC 명령마다 처리 직전에, 그리고 journal 턴마다 이 목록을 plugin host에 넘긴다. 아직 해석하지 않은 닫기는 현재 구조로 해석해 대상을 구한다. 닫기가 그 surface를 회수하지 않고 끝나면(실패·취소) 목록에서 빠질 때 다시 게시한다. Tasty가 닫기보다 enable을 먼저 처리했다면 그 시점의 surface는 살아 있으므로 새 프로세스에 게시한다. 이후의 닫기는 새 프로세스에 파괴 요청을 보내고 그 응답으로 확정하므로, 닫힌 surface의 인스턴스는 새 프로세스에 남지 않는다. 서로 다른 IPC 연결로 보낸 요청은 보낸 순서대로 처리된다는 보장이 없고, Tasty는 그 순서를 맞추지 않는다(이 문서의 다른 연결 절).
 
 앱 종료는 receipt 대기도 기다린다. 닫기가 한 번 응답하고 결과(시한이 지나면 `Uncertain`)를 기록한 뒤 종료가 진행된다([종료 시퀀스](shutdown-sequence.md)).
 
@@ -27,7 +27,7 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 
 ## 같은 자원을 다루는 다른 명령
 
-receipt 대기 중 관측이 재개돼도 같은 자원을 다루는 다른 명령에 대해 다음을 보장한다([ADR-0071](../adr/0071-close-receipt-wait-does-not-pause-observation.md)).
+receipt 대기 중 관측이 재개돼도 같은 자원을 다루는 다른 명령에 대해 다음을 보장한다(이 문서).
 
 | 상황 | 보장 | 근거 |
 |---|---|---|
@@ -122,7 +122,7 @@ Releasing 단계는 원 runner의 실제 join과 `EngineRelease`의 물리 자�
   `Option` 으로 두고 drop 본문 안에서 `take()` 한다 — 필드 자연 해제에 맡기면 그
   비용이 계측 구간 밖으로 새어나간다. 종료 계측 S5b 도 같은 누적기를 쓴다.
 - **C5b 는 자식이 죽기를 기다리지 않는다** — unix 는 SIGHUP 만 보내고 유예 폴링과
-  SIGKILL escalation 을 detached reap 스레드에 넘긴다([ADR-0016](../adr/0016-window-platform-and-shutdown.md)).
+  SIGKILL escalation 을 detached reap 스레드에 넘긴다([종료 시퀀스 — 종료 cascade + Drop tail](shutdown-sequence.md)).
   SIGHUP 을 무시하는 자식은 이 escalation 으로만 끝나며, tasty-terminal 의
   `retiring_a_child_that_ignores_hangup_kills_and_reaps_it` 가 그 경로를 지킨다(SIGKILL 을 빼면
   자식이 스스로 정상 종료해 실패한다). 마스터를 닫을 때 커널이 보내는 SIGHUP 으로 죽는 자식만 쓰는
@@ -151,7 +151,7 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 각 조�
 절대값이 아니라 구간 비율과 N 에 대한 기울기로 읽는다. 단위 ms.
 
 아래는 **벌크 캡처(C1) · surface purge 중복 제거(C5) ·
-[ADR-0016](../adr/0016-window-platform-and-shutdown.md)(C5b) 이 모두
+[종료 시퀀스 — 종료 cascade + Drop tail](shutdown-sequence.md)(C5b) 이 모두
 적용된 뒤의 측정 기록**이다. 당시 환경의 성능을 보장하는 값은 아니다.
 측정 당시 C1은 화면도 복제했고 스크롤백 인코딩은 C2b에서 했다. 지금은 C1이 화면을 복제하지
 않고 스크롤백 인코딩을 맡으며 C2b는 파일 쓰기만 한다. 그래서 아래 C1·C2b 값의 배분은 당시
@@ -166,7 +166,7 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 각 조�
 | 30 | 없음 | **33** | 20 | 0.0004 | 0.036 | 0.094 | 12 | 7.1 |
 | 30 | 만재(300k) | **403** | 97 | 234 | 0.038 | 0.12 | 71 | 53 |
 
-<a id="adr-0073-전후-같은-조건-스크롤백-없음"></a>
+<a id="docs/dev-guide/plugin-permissions.md-전후-같은-조건-스크롤백-없음"></a>
 
 #### 자식 종료 대기 분리 전후 (같은 조건, 스크롤백 없음)
 
@@ -202,7 +202,7 @@ C1 은 surface 마다 화면(rows x cols)과 스크롤백 전량을 `ClosedItem`
 라인당 경로(`scrollback_line_full`)도 남아 있지만 selection / search / link 처럼
 소수 라인만 만지는 소비자용이다. 벌크 캡처에 쓰면 두 가지가 겹쳐 비싸진다:
 
-- 라인마다 state mutex — 파서 스레드가 `ingest` 로 잡는 것과 같은 lock(ADR-0060)
+- 라인마다 state mutex — 파서 스레드가 `ingest` 로 잡는 것과 같은 lock(docs/surfaces/terminal/index.md)
   이라, 만재 스크롤백 캡처가 파서와 수만 회 경합한다.
 - 디스크 영역 라인은 `line_owned` / `line_wrapped` 가 같은 인덱스를 독립적으로
   읽어 `File::open` 이 라인당 2회가 된다(당시는 `line_full` 단일 조회로 1회).

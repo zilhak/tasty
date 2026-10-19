@@ -2,7 +2,7 @@
 
 - **Status**: Implemented — 수동 설정
 - **주체**: 로컬 사용자
-- **ADR**: [ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md) — Theme의 모션 감소 설정
+- **설계**: [`tasty-ui-widgets` — 본체·갤러리 공유 UI primitive](../../architecture/ui-widgets-crate.md) — Theme의 모션 감소 설정
 - **코드**: `AccessibilitySettings` · `ModifierHintSettings` · `Settings::theme_runtime()`(`tasty-settings`), `ThemeRuntime`(`tasty-themes`), `Theme.reduced_motion`(`tasty-type-appearance`), `crates/tasty-ui-widgets/src/{toast,spinner}.rs`, `src/adapters/ui/switch_overlay.rs`, `src/app/modal/shake.rs`, `src/adapters/ui/input/shortcuts/modifier_hint.rs`, `src/adapters/ui/modifier_hint_overlay.rs`
 - **화면**: [설정 창](../settings/screens/settings.md)의 Accessibility 탭
 
@@ -33,7 +33,7 @@
 
 `modifier_hint.enabled`의 기본값은 true다. 보조키를 누르고 기다리면 현재 누른 키를 모두 포함하는 단축키 조합을 보여 준다. 기본 위치는 사이드바 하단이다. 키를 놓으면 즉시 사라지고 Ctrl에서 Ctrl+Shift로 바꾸면 목록도 즉시 좁혀진다.
 
-표시 지연은 500ms이며 Shift 단독만 1200ms다. 타이핑 중 자주 누르는 Shift 때문에 안내가 뜨는 것을 줄이기 위한 구분이다([ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)). 처음 누를 때 타이머를 시작하고 조합 변경만으로는 다시 시작하지 않는다. 현재 조합으로 지연을 계산하므로 Shift 대기 중 다른 보조키를 추가하면 500ms 기준을 적용한다.
+표시 지연은 500ms이며 Shift 단독만 1200ms다. 타이핑 중 자주 누르는 Shift 때문에 안내가 뜨는 것을 줄이기 위한 구분이다([키 매핑 설계 (운영 상세)](../../design/policies/key-mapping.md)). 처음 누를 때 타이머를 시작하고 조합 변경만으로는 다시 시작하지 않는다. 현재 조합으로 지연을 계산하므로 Shift 대기 중 다른 보조키를 추가하면 500ms 기준을 적용한다.
 
 아직 표시 전일 때 실제 키 입력으로 등록된 단축키나 보조키 더블탭을 실행하면 타이머를 다시 시작한다. 명령 팔레트 같은 다른 실행 경로에는 적용하지 않는다. 기본 등장 페이드는 200ms(opacity 0.2→1.0)이며 모션 감소를 켜도 표시 지연은 유지한다.
 

@@ -1,5 +1,5 @@
 //! 실행한 서버에 loopback attach를 연결해 markdown 역할·파일 경로와 원문 조회 응답을 확인한다.
-//! 서버의 실제 파일을 사용하지만 클라이언트 GUI의 문서 렌더링은 검사하지 않는다(ADR-0022).
+//! 서버의 실제 파일을 사용하지만 클라이언트 GUI의 문서 렌더링은 검사하지 않는다(docs/features/remote-attach/index.md).
 
 // 이유: 시험의 정리용 결과 무시는 제품 코드의 오류 처리 목록과 구분한다.
 #![allow(clippy::let_underscore_must_use)]
@@ -177,7 +177,7 @@ fn markdown_content_request_reports_a_reason_for_a_missing_file() {
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
-/// 점유 없는 클라이언트의 원문 조회가 거절되는지 확인한다(ADR-0022).
+/// 점유 없는 클라이언트의 원문 조회가 거절되는지 확인한다(docs/features/remote-attach/index.md).
 #[test]
 fn markdown_content_request_rejected_without_workspace_occupancy() {
     let server = common::shared();
@@ -274,7 +274,7 @@ fn markdown_content_over_budget_arrives_truncated_instead_of_killing_the_session
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
-/// 같은 engine의 다른 workspace만 점유한 클라이언트도 문서 원문을 조회할 수 있어야 한다. 대상 workspace holder로 제한된 인가가 아니다(ADR-0022).
+/// 같은 engine의 다른 workspace만 점유한 클라이언트도 문서 원문을 조회할 수 있어야 한다. 대상 workspace holder로 제한된 인가가 아니다(docs/features/remote-attach/index.md).
 #[test]
 fn markdown_content_request_is_authorized_engine_wide_not_per_workspace() {
     let server = common::shared();

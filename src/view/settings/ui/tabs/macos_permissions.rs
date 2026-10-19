@@ -1,10 +1,10 @@
 //! macOS 전용 화면. 권한 상태를 보여주고, 한 번에 요청하고, 시스템 설정으로 보낸다.
 //!
 //! 권한 요청은 여기에서만 시작한다. 부팅 직후에 자동으로 요청하지는 않는다
-//! ([ADR-0052](../../../../../docs/adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md)).
+//! ([macOS 권한 (TCC)](../../../../../docs/features/macos-permissions/index.md)).
 //! [모든 권한 요청하기]를 누르면 파일 폴더와 화면 기록을 순서대로 하나씩 요청한다.
 //! Full Disk Access는 요청하는 API가 없어 사용자가 시스템 설정에서 직접 추가해야 한다.
-//! 손쉬운 사용은 `surface.raw_key`를 쓰는 debug 빌드에서만 표시한다(ADR-0012).
+//! 손쉬운 사용은 `surface.raw_key`를 쓰는 debug 빌드에서만 표시한다(docs/dev-guide/plugin-permissions.md).
 //!
 //! Full Disk Access 상태는 보호된 경로에 접근해 본 결과로 추정하며, 이 값으로 기능을
 //! 막지는 않는다. 경로가 없어 판단할 수 없으면 미승인이 아니라 확인 불가로 표시한다.
@@ -95,7 +95,7 @@ pub fn draw_macos_permissions_tab(ui: &mut egui::Ui) {
     }
 }
 
-/// 손쉬운 사용 행. `surface.raw_key`를 쓰는 debug 빌드에만 있다(ADR-0012).
+/// 손쉬운 사용 행. `surface.raw_key`를 쓰는 debug 빌드에만 있다(docs/dev-guide/plugin-permissions.md).
 #[cfg(debug_assertions)]
 fn accessibility_row(
     snapshot: &crate::macos_permissions::PermissionSnapshot,

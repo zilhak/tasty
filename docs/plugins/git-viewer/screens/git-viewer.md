@@ -5,7 +5,7 @@
 
 도구 메뉴/IPC 로 뜨는 git status/log/diff 읽기 전용 popup. **egui-mesh** 로 그린다 — plugin 이
 자기 프로세스 egui Context 에서 콘텐츠를 직접 페인트하고, host 는 셸(scrim/border/Esc/outside-click)만
-소유한다(ADR-0028). Theme 은 `popup.set_context` 의 `ThemeWire` 로 매 frame 전달돼 host 와
+소유한다(docs/dev-guide/egui-mesh-channel.md). Theme 은 `popup.set_context` 의 `ThemeWire` 로 매 frame 전달돼 host 와
 동일 `Theme` 으로 재구성된다.
 
 ## 트리거
@@ -39,7 +39,7 @@
 
 리스트 4개(worktree rail · Changes · Commits · Diff)는 모두 **보이는 행만 레이아웃한다** —
 `ScrollArea::show_rows` 로 뷰포트에 걸치는 행 범위만 그린다(근거·대안:
-[ADR-0028](../../../adr/0028-egui-mesh-rendering.md)). 커밋 목록은
+[egui-mesh 렌더 채널](../../../dev-guide/egui-mesh-channel.md)). 커밋 목록은
 조회 상한 200 행, diff 는 파일 전체 라인이라 목록 길이와 무관하게 프레임당 비용이 뷰포트 높이에
 비례한다.
 
@@ -59,7 +59,7 @@
 
 로컬 모드는 **활성 worktree 의 `Repository` 핸들 하나만** 들고 재사용한다 — 조작마다 다시 열지
 않는다(근거·대안:
-[ADR-0030](../../../adr/0030-bundled-plugin-data.md)). 그 결과 파일을
+아래 기능 계약). 그 결과 파일을
 연달아 클릭할 때 repo open 이 일어나지 않는다. popup 최초 로드와 Refresh 는 **plugin 자체
 `discover` 기준 1 회**다 — 단 활성 worktree 가 popup cwd 의 worktree(`current`)일 때이고, 활성이
 다른 worktree 면 목록 수집용 1 회 + 대상 재바인딩용 1 회로 2 회다. 여기에 더해 **worktree 목록
@@ -108,11 +108,11 @@ popup을 닫으면 핸들을 해제한다. 다중 thread dispatch나 저장소 �
 `crates/tasty-gallery/src/catalog/components/git_viewer.rs`의 Overlays › `Git worktree viewer
 popup`에서 확인한다. 상단 정보 영역, 섹션 제목, 두 줄로 표시한 워크트리 행,
 Changes·Commits 목록과 diff 영역에 디자인의 구조와 토큰을 반영한다.
-픽셀까지 똑같이 재현하는 것은 목표가 아니며, 필요한 UI 요소를 빠짐없이 포함하는 기준은 ADR-0035를 따른다.
+픽셀까지 똑같이 재현하는 것은 목표가 아니며, 필요한 UI 요소를 빠짐없이 포함하는 기준은 docs/design/systems/theme.md를 따른다.
 디자인·갤러리·제품 구현의 대응표:
 [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#git-viewer-plugins).
 
 ## 시각 소스
 
 디자인 `ui_kits/terminal/overlays/git_viewer.jsx`(+`.html` preview). popup 구현은 egui-mesh
-채널(ADR-0028) + `EguiMeshPopup` SDK 헬퍼.
+채널(docs/dev-guide/egui-mesh-channel.md) + `EguiMeshPopup` SDK 헬퍼.

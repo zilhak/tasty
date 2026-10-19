@@ -506,7 +506,7 @@ pub struct PopupInstance {
 
 /// surface 범위로 선언한 이벤트 팝업을 대상 surface 와 함께 연다는 요청.
 /// 호스트는 대상이 `plugin_id` 소유의 플러그인 surface 이고, 플러그인이 발행한 이벤트라면
-/// 발행자가 `plugin_id` 일 때만 연다. 그 밖에는 거절한다(ADR-0036).
+/// 발행자가 `plugin_id` 일 때만 연다. 그 밖에는 거절한다(docs/design/systems/popup.md).
 #[derive(Debug, Clone)]
 pub struct PendingSurfacePopup {
     pub plugin_id: String,

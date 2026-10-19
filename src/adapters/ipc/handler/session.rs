@@ -31,7 +31,7 @@ fn session_err_to_response(id: Value, err: SessionError) -> JsonRpcResponse {
 
 /// 호출자는 가진 권한만 넘길 수 있다. 플러그인은 자신이 소유한 namespace의 invoke 권한도
 /// 자식에게 줄 수 있어야 자식이 발급 플러그인에 다시 호출할 수 있다. Agent에는 이 예외가 없다.
-/// owns_prefix는 시험에서 전역 등록표를 바꾸지 않도록 주입한다(ADR-0012).
+/// owns_prefix는 시험에서 전역 등록표를 바꾸지 않도록 주입한다(docs/dev-guide/plugin-permissions.md).
 fn caller_may_grant(
     caller: &CallerContext,
     p: &Permission,

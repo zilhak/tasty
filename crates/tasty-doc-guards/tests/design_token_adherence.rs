@@ -28,7 +28,7 @@ const SCAN_ROOTS: &[&str] = &[
     "crates/tasty-egui-theme/src",
 ];
 
-/// host UI와 위젯에서는 primitive 색 필드 대신 역할별 접근자를 사용한다(ADR-0035).
+/// host UI와 위젯에서는 primitive 색 필드 대신 역할별 접근자를 사용한다(docs/design/systems/theme.md).
 /// 팔레트 원색을 보여 주는 갤러리는 제외한다.
 const COLOR_SCAN_ROOTS: &[&str] = &[
     "src/view",
@@ -40,7 +40,7 @@ const COLOR_SCAN_ROOTS: &[&str] = &[
 /// host UI의 글리프만 검사한다. 기호 견본이 있는 갤러리와 위젯·플러그인은 제외한다.
 const GLYPH_SCAN_ROOTS: &[&str] = &["src/view", "src/adapters/ui", "src/gfx/gpu"];
 
-/// 갤러리는 egui 전역 zoom으로 리터럴도 확대하므로 길이 검사에서 제외한다(ADR-0039).
+/// 갤러리는 egui 전역 zoom으로 리터럴도 확대하므로 길이 검사에서 제외한다(docs/concepts/typed-length.md).
 const LENGTH_SETTER_SCAN_ROOTS: &[&str] = &[
     "src/view",
     "src/adapters/ui",
@@ -130,7 +130,7 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
     "Stroke::new(",
     // RichText 크기와 Spinner 지름이 같은 메서드명이라 지름 견본만 별도로 면제한다.
     ".size(",
-    // 아이콘 크기도 토큰을 사용하고 스케일 밖 값은 이유를 적은 명명 상수로 둔다(ADR-0035).
+    // 아이콘 크기도 토큰을 사용하고 스케일 밖 값은 이유를 적은 명명 상수로 둔다(docs/design/systems/theme.md).
     ".image(",
     // 직접 반경을 넘기는 형태와 CornerRadius 생성자로 감싼 형태를 모두 검사한다.
     // 스케일 밖 반경을 명명 상수로 빼면 그 값에는 Theme의 배율이 적용되지 않는다는 차이가 있다.
@@ -846,7 +846,7 @@ fn no_new_length_literal_at_call_sites() {
         added.is_empty(),
         "호출부에 길이 리터럴이 새로 들어왔다 — 본체는 egui zoom_factor 를 1.0 으로 \
          고정하므로 이 숫자는 `ui_scale` 을 안 탄다. `Theme` 의 `field_width_*` 등 \
-         대응 토큰을 넘겨라(ADR-0039):\n{}",
+         대응 토큰을 넘겨라(docs/concepts/typed-length.md):\n{}",
         show(&added)
     );
     assert!(

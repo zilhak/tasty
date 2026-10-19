@@ -18,6 +18,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 | 문서 | 내용 |
 |------|------|
 | [commit-convention](commit-convention.md) | Conventional Commits |
+| [adr-migration](adr-migration.md) | 이전 ADR 번호에서 현재 원칙·설계·기능 정본 찾기 |
 | [adr-index](adr-index.md) | ADR 헤더로 인덱스 생성, 충돌 해결, 병합할 결정의 중복 검토 |
 | [adr-renumber](adr-renumber.md) | ADR 을 새 번호로 옮기고 레포 전체의 인용을 한 번에 고치는 도구(`adr-renumber` bin) — 매핑 파일 형식, 고치는 형태와 보고만 하는 형태, 삭제되는 ADR 을 부르는 자리가 쓰기를 막는 이유, 도구가 못 보는 것 |
 | [error-handling](error-handling.md) | Result 처리·종료 시 반환값·락 poison 복구와 관측 범위 |
@@ -42,7 +43,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 |------|------|
 | [model-view-split](model-view-split.md) | Model + Host View 분리와 Runtime 요청 계약 |
 | [gpu-rendering](gpu-rendering.md) | View 분할 비율 미리보기·확정 경계, GPU 렌더링 구조 · 성능 측정 |
-| [egui-mesh-channel](egui-mesh-channel.md) | plugin egui mesh → host 합성 렌더 채널 (ADR-0028) |
+| [egui-mesh-channel](egui-mesh-channel.md) | plugin egui mesh → host 합성 렌더 채널 (docs/dev-guide/egui-mesh-channel.md) |
 | [design-change-workflow](design-change-workflow.md) | 디자인 변경 루프 — 요청문서→Claude design 시안→갤러리/본체/사이트 사본 정합 |
 | [gallery-first](gallery-first.md) | 새 UI 컴포넌트는 디자인→갤러리→본체 순서 (cut 금지), specimen 기하의 역할 명명 |
 | [popup-implementation](popup-implementation.md) | Popup(`PopupDef` 시스템) |

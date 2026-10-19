@@ -1,6 +1,6 @@
 # 갤러리 완전성 정책 (운영 상세)
 
-공용 구현과 갤러리 유지의 결정 이유는 [ADR-0035](../../adr/0035-shared-design-and-theme.md)에 있다.
+공용 구현과 갤러리 유지의 결정 이유는 [테마 시스템 (운영 상세)](../systems/theme.md)에 있다.
 
 갤러리(`crates/tasty-gallery`)에는 본체의 모든 UI 컴포넌트를 포함한다.
 
@@ -54,10 +54,9 @@ enum만 같다고 화면이 같은 것은 아니다. 복사한 치수와 종류�
 3. 갱신된 디자인을 받은 뒤 그 기준으로 갤러리 예제를 맞춘다.
 
 
-
 ## 관련
 
-- [ADR-0035](../../adr/0035-shared-design-and-theme.md) — 결정 근거.
+- [테마 시스템 (운영 상세)](../systems/theme.md) — 결정 근거.
 - [dev-guide/gallery-first](../../dev-guide/gallery-first.md) — 새 컴포넌트는 디자인→갤러리→본체 순서.
 - [design/systems/design-gallery-mapping](../systems/design-gallery-mapping.md) — 디자인 jsx ↔ 갤러리 항목 ↔ 본체 함수 3자 매핑.
 - [design/systems/theme](../systems/theme.md) — 토큰 사용과 검사 범위. 갤러리 전시 공간의 예외는 위 절을 따른다.

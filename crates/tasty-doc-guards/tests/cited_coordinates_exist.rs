@@ -50,7 +50,7 @@ const PRUNE_DIRS: &[&str] = &[
     "vendor",
 ];
 
-/// 로컬 작업 폴더 이름은 추적 문서에서 인용을 금지하므로 조각으로 조립한다(ADR-0049).
+/// 로컬 작업 폴더 이름은 추적 문서에서 인용을 금지하므로 조각으로 조립한다(docs/documentation-model.md).
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
 
@@ -713,7 +713,7 @@ fn cited_markdown_links_resolve_from_their_own_document() {
     );
 }
 
-/// 링크 수집 실패를 찾는 보조 하한(ADR-0048).
+/// 링크 수집 실패를 찾는 보조 하한(docs/dev-guide/guard-verification.md).
 /// 2026-09-05 실측 3154의 절반보다 낮은 1500으로 정했다. 현재 링크 수를 뜻하지 않는다.
 /// 문서 편집에 따른 증감을 허용하는 여유이며 개별 누락을 검출하지 않는다.
 /// 파서 변경으로 측정 범위가 크게 달라지면 --nocapture 출력의 실제 수를 확인해 하한을 다시 정한다.

@@ -3,7 +3,7 @@
 //!
 //! MainView 창은 전용 클래스 이름 [`MAIN_VIEW_CLASS`]로 만들어 tray-icon의 숨김 창 등과 구별한다.
 //! 메시지에는 증거가 실리지 않는다. 같은 데스크톱의 어떤 프로세스든 보낼 수 있지만, 같은 사용자의
-//! 프로세스는 원래 Win32 `ShowWindow`·`SetForegroundWindow`로 같은 일을 할 수 있다(ADR-0059).
+//! 프로세스는 원래 Win32 `ShowWindow`·`SetForegroundWindow`로 같은 일을 할 수 있다(docs/design/policies/focus.md).
 
 /// MainView 창의 Win32 클래스 이름.
 pub const MAIN_VIEW_CLASS: &str = "TastyMainView";

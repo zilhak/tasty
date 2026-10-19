@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `tasty-themes`(scan/load/apply), `~/.tasty/themes/`
 - **화면**: [설정 창](../settings/screens/settings.md) Appearance 탭
 

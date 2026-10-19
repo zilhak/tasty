@@ -1,6 +1,10 @@
 # 이벤트 저장소 (`tasty-event-store`)
 
-데이터 홈 구조 journal의 저장 계약 중 수치·형식·보조 규칙과, App이 그 journal을 원본으로 연결한 현재 상태를 적는다. 결정과 기각한 대안은 [ADR-0063](../adr/0063-event-store-storage-fencing-and-effect-states.md),
+## 원칙과 현재 동작
+
+[복구 원칙](../principles/feedback-and-recovery.md)은 복원 데이터를 읽지 못해도 오류 안내 후 초기 상태에서 작업을 계속할 수 있어야 한다. 아래 저장소의 잠금·schema·내구성 검사는 원본 보호를 위한 현재 계약이다. 그 실패를 앱 전체의 영구 정지로 연결하는 현재 bootstrap/halt 경로는 제품 원칙의 미충족이며, 저장소 검사를 우회하거나 원본을 덮어쓰라는 뜻은 아니다.
+
+데이터 홈 구조 journal의 저장 계약 중 수치·형식·보조 규칙과, App이 그 journal을 원본으로 연결한 현재 상태를 적는다. 저장 형식과 제약의 이유는 아래 각 절에,
 저장소가 제공하는 기능의 개요는 [아키텍처](index.md)의 `tasty-event-store` 문단에 있다. 구현은 `crates/tasty-event-store/src/`다.
 
 ## import의 전송 identity
@@ -121,7 +125,7 @@ checkpoint의 이전 snapshot/pin 유지·다음 기회 재시도는 기존 오�
 
 ## 구조 journal의 App 연결
 
-원본과 projection의 관계는 [ADR-0064](../adr/0064-journal-source-and-core-state-projection.md)가 정한다.
+원본과 projection의 관계는 이 문서가 정한다.
 
 `src/app/journal.rs`가 데이터 홈의 worker 하나와 엔진별 비동기 continuation을 연결한다.
 worker의 순수 구조 모델을 초기 논리 projection과 확정 batch 적용에 사용하며,
@@ -148,4 +152,4 @@ workspace와 tab은 마지막 항목, pane은 첫 항목을 고르는 복원 규
 
 정상 resume는 journal/stream/incarnation과 확정 cut/revision을 붙인 최신 View checkpoint를 초기 import 선택보다 우선한다. 이 선택은 구조 이벤트가 아니다. `src/runtime/journal_product/view_record.rs`는 DB restore manifest를 먼저 읽고 그 domain checkpoint와 View의 binding을 대조한다. DB 원본이 없는 경우에만 legacy sidecar를 최초 이관 자료로 읽으며, DB 자료가 손상됐다고 옛 sidecar로 조용히 돌아가지 않는다.
 
-현재 incarnation을 선택하지 않은 시작에서는 과거 View를 읽지 않는다. worker는 옛 incarnation과 더 늦게 도착한 과거 sequence의 저장을 거절한다. 저장 실패의 후보와 dirty 상태는 재시도를 위해 남기며 종료는 기존 tick 저장과 별도로 최신 final capture를 요청한다. View manifest와 도메인 checkpoint·payload 참조를 연결하는 pin/보존 구현은 저장 계층에 있다([ADR-0063](../adr/0063-event-store-storage-fencing-and-effect-states.md)). 해당 코드의 존재가 crash·전원 장애 검증을 완료했다는 뜻은 아니다.
+현재 incarnation을 선택하지 않은 시작에서는 과거 View를 읽지 않는다. worker는 옛 incarnation과 더 늦게 도착한 과거 sequence의 저장을 거절한다. 저장 실패의 후보와 dirty 상태는 재시도를 위해 남기며 종료는 기존 tick 저장과 별도로 최신 final capture를 요청한다. View manifest와 도메인 checkpoint·payload 참조를 연결하는 pin/보존 구현은 저장 계층에 있다(이 문서). 해당 코드의 존재가 crash·전원 장애 검증을 완료했다는 뜻은 아니다.

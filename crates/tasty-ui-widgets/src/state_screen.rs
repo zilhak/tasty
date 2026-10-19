@@ -18,7 +18,7 @@ use crate::{
 
 /// 시안 글리프 확대 비율(`transform: scale(1.6)`). 대응 토큰이 없다.
 const GLYPH_SCALE: f32 = 1.6;
-/// 시안 보조 줄·이유 줄 최대 폭(`maxWidth: 200`). Theme 역할에 연결하지 않은 화면 전용 고정 치수다(ADR-0035).
+/// 시안 보조 줄·이유 줄 최대 폭(`maxWidth: 200`). Theme 역할에 연결하지 않은 화면 전용 고정 치수다(docs/design/systems/theme.md).
 const SUB_MAX_W: LogicalPx = LogicalPx(200.0);
 /// 시안 버튼 크기(`size="sm"`).
 const ACTION_SIZE: ControlSize = ControlSize::Sm;

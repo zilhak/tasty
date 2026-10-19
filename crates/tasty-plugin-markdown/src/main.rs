@@ -1118,7 +1118,7 @@ fn navigate_params(sid: u32, path: &str, owner_popup_instance: Option<u64>) -> O
 }
 
 /// 외부 `markdown.navigate` 를 host 로 다시 보낼 때는 `owner_popup_instance` 를 뺀다.
-/// host 는 이 플러그인을 호출자로 보므로, 남기면 외부 요청이 사용자 요청으로 판정될 수 있다(ADR-0031).
+/// host 는 이 플러그인을 호출자로 보므로, 남기면 외부 요청이 사용자 요청으로 판정될 수 있다(docs/features/file-handler/index.md).
 fn forwarded_navigate_params(mut params: Value) -> Value {
     if let Some(map) = params.as_object_mut() {
         map.remove("owner_popup_instance");

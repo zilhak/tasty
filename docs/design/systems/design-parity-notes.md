@@ -32,7 +32,7 @@ egui는 위젯 사이에 `item_spacing`을 추가하므로 명시한 간격과 �
 
 팝업의 `default_size`만 확대하고 내부 길이를 리터럴로 두면 UI 배율에서 비율이 달라진다. 기본 크기 비교는 `appearance.ui_scale="medium"`(1.0)으로 하되, 지원 배율에서 내부 내용이 함께 커지는지도 확인한다.
 
-본체는 egui 전역 zoom 대신 배율을 적용하는 Theme 접근자를 사용한다. 토큰으로 전환하지 않은 호출부 리터럴은 여전히 누락될 수 있다. 이유와 검사 한계는 [ADR-0039](../../adr/0039-typed-length-and-dpi-boundaries.md)를 따른다. 검증 설정은 격리 인스턴스에서 바꾸거나 검사 뒤 복원한다.
+본체는 egui 전역 zoom 대신 배율을 적용하는 Theme 접근자를 사용한다. 토큰으로 전환하지 않은 호출부 리터럴은 여전히 누락될 수 있다. 이유와 검사 한계는 [타입 있는 길이 (Typed length)](../../concepts/typed-length.md)를 따른다. 검증 설정은 격리 인스턴스에서 바꾸거나 검사 뒤 복원한다.
 
 <a id="remote_tool--css-line-height-vs-egui-텍스트-박스-높이-헤더-8px-얕음"></a>
 
@@ -184,7 +184,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   `Spinner::reduced_motion(bool)` 은 남아 있지만 이제 **설정을 무시하는 override** 이며,
   두 상태를 나란히 보여야 하는 갤러리 specimen 전용이다.
 - **왜 파라미터가 아닌가**: 종전엔 호출부 파라미터였고, 그러자 실제로 넘기는 자리가 레포
-  전체에 하나도 없어 설정을 켜도 스피너가 돌았다([ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md)).
+  전체에 하나도 없어 설정을 켜도 스피너가 돌았다([`tasty-ui-widgets` — 본체·갤러리 공유 UI primitive](../../architecture/ui-widgets-crate.md)).
 - **근거**: `crates/tasty-ui-widgets/src/spinner.rs`.
 
 ## CenterState — 가운데 계산과 시안 밖 요소
@@ -474,7 +474,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   그린다. 본체 툴바는 문구만 그리고 갤러리에는 이 툴바 예제가 없어 이 간격이 적용될 자리가 없다.
 - **근거**: `gallery/preset_editor.jsx` (`SurfaceSettings`/`useSurfaceCfg`/`switchKind`/`normalize`).
 - **결정 근거**: kind 전환 · default 선채움 · autofocus 없음 · 저장 실패 시 화면 유지 · 더블클릭 범위의
-  근거 · 대안 · 재검토 조건은 [ADR-0038](../../adr/0038-preset-drafts-and-store-conflicts.md).
+  근거 · 대안 · 재검토 조건은 [레이아웃 프리셋 (Layout presets)](../../features/layout-presets/index.md).
 
 <a id="explorer-gridcell--아이콘-축소--파일명-3줄-wrap-말줄임-2026-07-09-디자인-확정-반영"></a>
 
@@ -548,7 +548,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
 
 탭 제목의 NeedsInput은 `tab_fg_needs_input()`, Completion은 `tab_fg_completion()`을 사용한다(각각 attention-needs-input·attention-completion). 입력 요청과 작업 완료를 구분하는 색이며 별도의 값 보존 예외를 두지 않는다.
 
-구현은 `src/adapters/ui/tab_bar/tab.rs`의 `text_color`와 `AttentionKind` 분기다. 값과 대응은 [토큰 매핑](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062), [갤러리 대응표](design-gallery-mapping.md#attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062)를 따른다.
+구현은 `src/adapters/ui/tab_bar/tab.rs`의 `text_color`와 `AttentionKind` 분기다. 값과 대응은 [토큰 매핑](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-docs/dev-guide/agent-runner.md), [갤러리 대응표](design-gallery-mapping.md#attention-kind--needsinput-배지dot테두리탭-제목-surfaces-docs/dev-guide/agent-runner.md)를 따른다.
 
 <a id="pluginavatar--색은-갈래가-하나뿐이고-글리프는-상한에서-잘린다-2026-09-08"></a>
 
@@ -572,7 +572,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   토큰 접근자 `plugin_avatar_initial_font_size_sm()`·`_lg()` 로 읽는다. 둘 다 UI 폰트 상한 14
   안이라 상한 예외가 없다. 굵기 토큰 `plugin-avatar-initial-weight` 는 `font-weight-normal` 이고
   위젯도 보통 굵기 mono 로 그린다. 사각형 한 변 46 은 그대로다
-  (ADR-0035 대로 44 · 48 로 스냅하지 않는다).
+  (docs/design/systems/theme.md 대로 44 · 48 로 스냅하지 않는다).
 - **근거**: `crates/tasty-ui-widgets/src/plugin_avatar.rs` (위젯 · 두 갈래의 유일한 구현부),
   `crates/tasty-type-appearance/src/theme.rs` 의 `plugin_avatar_bg` · `plugin_avatar_border`
   (위 color-mix 절의 처방 그대로 — 불투명 블렌드는 `mix_srgb`, `transparent` 항은 알파만).

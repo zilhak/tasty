@@ -51,7 +51,7 @@ const FILTER_MEMORY_ID: &str = "remote_tool.filter";
 /// 프로토콜 필터 드롭다운 egui popup id. Escape/바깥클릭 닫힘 판정에 사용.
 const FILTER_POPUP_ID: &str = "remote_tool.filter_popup";
 
-/// attach 레코드의 kind (같은 레지스트리 안의 예약 kind, ADR-0020).
+/// attach 레코드의 kind (같은 레지스트리 안의 예약 kind, docs/features/remote-profiles/index.md).
 const ATTACH_KIND: &str = "tasty-attach";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -412,7 +412,7 @@ pub fn draw_remote_tool_popup(
 
 /// 오른쪽 행 버튼 위를 스크롤바가 가리지 않도록 막대를 숨긴다.
 /// 남은 스크롤 영역은 가장자리 페이드로 알리며 휠·드래그·키보드 스크롤은 유지한다.
-/// 근거: docs/adr/0037-ui-input-motion-and-elevation.md.
+/// 근거: docs/architecture/ui-widgets-crate.md.
 fn scroll_list_with_fade<R>(
     ui: &mut egui::Ui,
     th: &Theme,

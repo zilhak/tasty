@@ -1,6 +1,6 @@
 //! html surface 문서의 스크립트 감지 결과와 문서 단위 허용 상태.
 //!
-//! 규칙은 ADR-0053을 따른다. 허용은 main frame 문서의 URL(fragment 제외)과
+//! 규칙은 docs/surfaces/html/index.md을 따른다. 허용은 main frame 문서의 URL(fragment 제외)과
 //! 로드 때 구한 파일 전체 지문에 묶이고, 다른 main frame 문서가 commit되면 풀린다.
 //! backend의 navigation 콜백이 아래 `on_*` 메서드를 순서대로 부르고 돌려받은 값으로 JS를 켜거나 끈다.
 

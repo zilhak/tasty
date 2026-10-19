@@ -35,7 +35,7 @@ struct NavDelegateIvars {
     /// 게이트가 정책 결정에서 로드를 시작했고 그 provisional 시작을 아직 받지 않았다.
     gate_load_pending: Cell<bool>,
     /// 게이트가 시작한 마지막 로드의 WKNavigation. 새 로드가 앞 로드를 취소하면 앞 로드의 종료가
-    /// 새 로드 시작 뒤에 올 수 있으므로, 종료 신호는 이 세대의 것일 때만 게이트를 마무리한다(ADR-0053).
+    /// 새 로드 시작 뒤에 올 수 있으므로, 종료 신호는 이 세대의 것일 때만 게이트를 마무리한다(docs/surfaces/html/index.md).
     /// 값을 붙잡아 두어 같은 주소가 다른 navigation에 다시 쓰이지 않게 한다.
     gate_navigation: RefCell<Option<Retained<WKNavigation>>>,
     /// 마지막에 provisional 시작한 main frame navigation. 게이트 세대와 달리 모든 로드를 기록해,
@@ -152,7 +152,7 @@ define_class!(
             self.ivars().gate_navigation_ended(navigation);
         }
 
-        /// main frame 문서가 commit됐다(ADR-0053 후보 이벤트, 미측정).
+        /// main frame 문서가 commit됐다(docs/surfaces/html/index.md 후보 이벤트, 미측정).
         #[unsafe(method(webView:didCommitNavigation:))]
         fn did_commit(&self, web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
             // SAFETY: main thread WebKit delegate 호출. URL()은 Retained 값을 반환한다.
@@ -200,7 +200,7 @@ define_class!(
             self.ivars().gate_navigation_failed(navigation);
         }
 
-        /// web content process가 끝나면 Linux처럼 게이트 로드를 끝낸다(ADR-0053, 실 기기 미측정).
+        /// web content process가 끝나면 Linux처럼 게이트 로드를 끝낸다(docs/surfaces/html/index.md, 실 기기 미측정).
         /// 실패 콜백이 뒤따라 와도 finished()는 로드 중이 아닐 때 아무것도 하지 않는다.
         #[unsafe(method(webViewWebContentProcessDidTerminate:))]
         fn web_content_process_did_terminate(&self, _web_view: &WKWebView) {
@@ -215,7 +215,7 @@ define_class!(
 
         /// 탐색 시도를 기록하고 Allow로 응답한다. 원격 차단은 별도 content rule에 맡긴다.
         /// 이 메서드를 구현하면 preferences가 없는 판단 메서드는 불리지 않는다.
-        /// main frame 탐색의 JS는 여기서 탐색 단위 preferences로 정한다(ADR-0053 후보 이벤트, 미측정).
+        /// main frame 탐색의 JS는 여기서 탐색 단위 preferences로 정한다(docs/surfaces/html/index.md 후보 이벤트, 미측정).
         #[unsafe(method(webView:decidePolicyForNavigationAction:preferences:decisionHandler:))]
         fn decide_policy(
             &self,

@@ -1,6 +1,6 @@
 # 키 매핑 설계 (운영 상세)
 
-tasty 의 모든 단축키는 [`KeybindingSettings`](../../features/settings/index.md) 로 노출되며 코드에 하드코딩되지 않는다. 본 문서는 바인딩 문자열의 OS별 키 매핑과 위치 기반 추상화를 기술한다.
+ESC·Enter처럼 당연하게 쓰이는 기본 조작을 제외한 Tasty 자체 단축키는 [`KeybindingSettings`](../../features/settings/index.md) 로 노출되며 코드에 하드코딩되지 않는다. 본 문서는 바인딩 문자열의 OS별 키 매핑과 위치 기반 추상화를 기술한다.
 
 ## 핵심 원칙: 물리적 키 위치 일관성
 

@@ -1,4 +1,4 @@
-//! window.create·view.create가 요청을 예약했다는 응답으로 끝나지 않고 생성 결과를 반환하는 구조인지 확인한다(ADR-0007).
+//! window.create·view.create가 요청을 예약했다는 응답으로 끝나지 않고 생성 결과를 반환하는 구조인지 확인한다(docs/architecture/ipc-server.md).
 //! GUI·이벤트 루프는 실행하지 않는다. 완료 채널의 동작은 app/event.rs의 단위 테스트가,
 //! 이 검사는 생성 경로의 Result·IpcCompletion·응답 함수 사용을 확인한다.
 
@@ -35,7 +35,7 @@ fn create_new_window_returns_a_result() {
     assert!(
         sig.contains("-> Result<"),
         "create_new_window 은 생성 성공/실패를 요청자에게 돌려줄 수 있게 Result 를 반환해야 \
-         한다 (ADR-0007). 지금 시그니처:\n{sig}"
+         한다 (docs/architecture/ipc-server.md). 지금 시그니처:\n{sig}"
     );
 }
 
@@ -59,16 +59,16 @@ fn window_create_ipc_routes_through_a_completion_channel() {
 
     assert!(
         !code.contains(r#""scheduled""#),
-        "window.create 핸들러에 scheduled 응답이 있다. 완료 채널로 실제 생성 결과를 반환해야 한다(ADR-0007).\n블록:\n{block}"
+        "window.create 핸들러에 scheduled 응답이 있다. 완료 채널로 실제 생성 결과를 반환해야 한다(docs/architecture/ipc-server.md).\n블록:\n{block}"
     );
     assert!(
         block.contains("IpcCompletion::new("),
-        "window.create 핸들러가 완료 채널(IpcCompletion)을 만들지 않는다 (ADR-0007).\n블록:\n{block}"
+        "window.create 핸들러가 완료 채널(IpcCompletion)을 만들지 않는다 (docs/architecture/ipc-server.md).\n블록:\n{block}"
     );
     assert!(
         block.contains("AppEvent::CreateWindow(") && block.contains("Some(completion)"),
         "window.create 는 완료 채널을 실은 AppEvent::CreateWindow(.., Some(completion)) 를 \
-         보내야 한다 (ADR-0007).\n블록:\n{block}"
+         보내야 한다 (docs/architecture/ipc-server.md).\n블록:\n{block}"
     );
 }
 
@@ -83,6 +83,6 @@ fn winit_handler_routes_the_outcome_through_the_contract_mapping() {
     let arm = &tail[..tail.find("\n            }").unwrap_or(tail.len().min(600))];
     assert!(
         arm.contains("reply_window_create"),
-        "CreateWindow 이벤트 처리에서 reply_window_create를 찾지 못했다. 생성 실패도 요청자에게 반환해야 한다(ADR-0007).\n처리 블록:\n{arm}"
+        "CreateWindow 이벤트 처리에서 reply_window_create를 찾지 못했다. 생성 실패도 요청자에게 반환해야 한다(docs/architecture/ipc-server.md).\n처리 블록:\n{arm}"
     );
 }

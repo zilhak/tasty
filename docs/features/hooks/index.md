@@ -1,8 +1,12 @@
 # 훅 (Surface / Global hooks)
 
+## 원칙과 현재 동작
+
+[피드백·실패 원칙](../../principles/feedback-and-recovery.md)에 따라 결과와 실패가 후속 진행에 미치는 영향을 전달해야 한다. 아래 훅 접수/HookFired와 완료는 다르며, 로그만 남기거나 의존 단계도 무조건 계속하는 경로는 현행 구현의 미충족이다.
+
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`hook.*` / `global_hook.*`)
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 발화 판정·바인딩 실행·`HookFired` 생성 `HookRuntimeState::fire`(`src/hook_runtime/mod.rs`), 바인딩 실행 연결 `src/hook_runtime/trigger.rs`, 전역 훅 감시·셸 실행 `src/hook_runtime/global.rs`. IdleTimeout 판정: `HookRuntimeState::fire_idle_timeouts` + `src/hook_runtime/engine.rs`(터미널 출력 시각 제공), 전달: `src/app/idle_hooks.rs`(GUI 창과 parked engine)/`src/boot.rs`(headless). OutputMatch 라인 버퍼 공유: `src/runtime/output_observer.rs::ObserverRouter::dispatch_text`
 - **화면**: 없음
 
@@ -34,7 +38,7 @@ surface hook 은 셸 명령 문자열 대신 **공유 훅 핸들러 레지스트
 
 - 줄바꿈 없이 끝나는 청크(예: 프롬프트 대기 중 부분 출력)는 매칭 대상이 아니다 — 다음 청크가 도착해 줄이 완성돼야 매칭된다. 패턴이 청크 경계에 걸쳐 있어도(`"partial ERR"` + `"OR\n"` → `"partial ERROR"`) 완성 시점에 합쳐진 전체 줄로 매칭된다.
 - 옵저버(`output.observe`)가 하나도 등록되지 않은 surface 도 OutputMatch 훅만으로 라인 버퍼 게이트가 열린다(`has_output_match_hook`) — 옵저버 등록이 OutputMatch 동작의 전제조건이 아니다.
-- PTY emit 게이트(`sync_output_event_gates`)는 `hook.set`/`hook.unset` 처리 시점에 **즉시(eager)** 동기화된다(`Core::register_surface_hook`/`unregister_surface_hook`) — `observer_register`/`observer_unregister` 와 동일 패턴. VTE 파싱은 전용 parser thread(ADR-0060)가 PTY 바이트 도착 즉시 처리하므로, 게이트를 다음 `process_surface` 호출까지 지연시키면 등록 직후 도착하는 매칭 출력이 게이트 OFF 상태로 파싱되어 이벤트가 유실된다.
+- PTY emit 게이트(`sync_output_event_gates`)는 `hook.set`/`hook.unset` 처리 시점에 **즉시(eager)** 동기화된다(`Core::register_surface_hook`/`unregister_surface_hook`) — `observer_register`/`observer_unregister` 와 동일 패턴. VTE 파싱은 전용 parser thread(docs/surfaces/terminal/index.md)가 PTY 바이트 도착 즉시 처리하므로, 게이트를 다음 `process_surface` 호출까지 지연시키면 등록 직후 도착하는 매칭 출력이 게이트 OFF 상태로 파싱되어 이벤트가 유실된다.
 
 #### IdleTimeout — 1Hz 폴링 + epoch 기반 anti-spam
 
@@ -177,9 +181,9 @@ Plugin 선언에는 ShellCommand variant가 없어 매니페스트 파싱 단계
 
 - **`upsert` 는 patch 다** — 안 준 필드는 지우는 것이 아니라 그대로 둔다. id·우선순위·나머지가 유지되므로 그 id 를 참조하는 훅 바인딩(`HookBinding::Handler(id)`)은 계속 같은 것을 가리킨다. 지우고 다시 만드는 경로(`remove` 후 재등록)와 **관측 가능하게 다르다**: 후자는 사이에 들어온 트리거가 갈 곳이 없고, host/plugin 기본값이 잠시 드러나며, 안 적은 필드가 기본값으로 되돌아간다.
 - **최소 한 필드**는 있어야 한다. 아무 필드도 없는 upsert 는 아무것도 안 고친 채 성공으로 보고되므로 거부한다. 형식이 틀린 `action` 도 같은 이유로 조용히 무시하지 않는다.
-- **이미 등록된 웹훅은 안 따라온다.** 웹훅 엔트리는 등록 시점의 `calls` 스냅샷을 직접 소유하고 발생 시 그것을 실행한다 — `--handler <id>` 로 바인딩한 것도 마찬가지다. 바뀐 시퀀스를 외부 URL 에도 적용하려면 그 웹훅을 다시 등록한다. owner 가 등록 시 흐름을 고정한다는 [ADR-0032](../../adr/0032-webhook-admission.md) 의 규칙이다.
+- **이미 등록된 웹훅은 안 따라온다.** 웹훅 엔트리는 등록 시점의 `calls` 스냅샷을 직접 소유하고 발생 시 그것을 실행한다 — `--handler <id>` 로 바인딩한 것도 마찬가지다. 바뀐 시퀀스를 외부 URL 에도 적용하려면 그 웹훅을 다시 등록한다. owner 가 등록 시 흐름을 고정한다는 [웹훅 (Inbound webhook listener)](../webhook/index.md) 의 규칙이다.
 - **`remove` 는 user 기여분만** 지운다. host/plugin 이 같은 id 에 기본값을 심어 뒀으면 그것이 다시 드러나므로, 응답의 `still_present` 가 기본값이 남아 있는지를 알려준다.
-- **병합 순서는 출처 순서다** — 한 id 에 모인 contribution 은 설치 순서와 무관하게 Host → Plugin → User 순서로 병합한다. 원 출처(host 또는 plugin)가 base 가 되고, user 설정은 적은 필드만 그 위에 덮는다. 그래서 `hook-handlers.toml` 로 plugin 핸들러를 patch 하면, 부팅이 user 설정을 plugin 보다 먼저 읽든(headless 는 plugin 을 필요할 때 띄운다) plugin 을 껐다 켜든 reload 없이 user 값을 우선한다. host 와 plugin 은 id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈려 한 id 에 함께 오지 않는다([ADR-0027](../../adr/0027-lua-and-hook-execution.md)).
+- **병합 순서는 출처 순서다** — 한 id 에 모인 contribution 은 설치 순서와 무관하게 Host → Plugin → User 순서로 병합한다. 원 출처(host 또는 plugin)가 base 가 되고, user 설정은 적은 필드만 그 위에 덮는다. 그래서 `hook-handlers.toml` 로 plugin 핸들러를 patch 하면, 부팅이 user 설정을 plugin 보다 먼저 읽든(headless 는 plugin 을 필요할 때 띄운다) plugin 을 껐다 켜든 reload 없이 user 값을 우선한다. host 와 plugin 은 id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈려 한 id 에 함께 오지 않는다(이 문서).
 - **TOML에는 null이 없다.** `IpcSequence` 호출의 params 자체가 null이면 `params` 키를 쓰지 않고, 읽을 때 null로 채운다. params 안쪽에 null이 있으면(예: `{"a":null}`) 그 호출만 params 전체를 JSON 문자열 키 `params_json`으로 쓰고 읽을 때 되돌린다. null이 없는 params는 TOML 표 `params`로 쓰므로 이 규칙 이전의 파일도 그대로 읽힌다. 한 호출에 `params`와 `params_json`이 함께 있거나 `params_json`이 JSON이 아니면 파일 전체를 파싱 실패로 보고 이전 사용자 설정을 유지한다. null 키를 지우지 않는 것은 받는 IPC 메서드가 키의 존재 여부로 동작을 가를 수 있어서다. IPC 계약은 바뀌지 않는다(IPC 요청은 JSON이라 null을 그대로 받는다).
   - 한 파일 안에 params 표기가 두 가지가 되고, `params_json`은 JSON 문자열이라 TOML 편집기의 구조 표시와 검증을 받지 못한다. `params_json` 오류의 위치는 그 호출을 담은 action 표다(호출이 인라인 배열 안에 있다).
   - 파일 전체를 JSON으로 바꾸는 안은 기존 TOML 파일의 이관과 두 형식의 공존 기간이 필요하고 다른 사용자 설정(config.toml·preset)과 표기가 갈라져 택하지 않았다. 모든 params를 JSON 문자열로 쓰는 안은 손으로 쓴 파일의 모양이 바뀌고 TOML 편집의 이점을 모든 호출에서 잃는다.
@@ -187,5 +191,5 @@ Plugin 선언에는 ShellCommand variant가 없어 매니페스트 파싱 단계
 
 ## 관련
 
-- **트리거 출처 대칭**: 훅(내부 이벤트)은 웹훅([webhook](../webhook/index.md), 외부 HTTP 트리거)과 대칭인 trigger 출처다. 두 출처는 [공유 훅 핸들러 레지스트리(ADR-0027)](../../adr/0027-lua-and-hook-execution.md)를 공유한다 — `source: hook|webhook|any` 게이트로 셸 action 은 `hook` 출처 전용이다. 훅은 위 "바인딩" 절대로 `HookBinding::Handler(id)` 로 레지스트리 핸들러를 참조해 소비하며, 인라인 셸(`--command`)은 하위호환 익명 경로다.
+- **트리거 출처 대칭**: 훅(내부 이벤트)은 웹훅([webhook](../webhook/index.md), 외부 HTTP 트리거)과 대칭인 trigger 출처다. 두 출처는 이 문서를 공유한다 — `source: hook|webhook|any` 게이트로 셸 action 은 `hook` 출처 전용이다. 훅은 위 "바인딩" 절대로 `HookBinding::Handler(id)` 로 레지스트리 핸들러를 참조해 소비하며, 인라인 셸(`--command`)은 하위호환 익명 경로다.
 - [agent-collaboration](../agent-collaboration/index.md) · [notifications](../notifications/index.md) · [claude plugin](../../plugins/claude/index.md)(Claude hook 발생)

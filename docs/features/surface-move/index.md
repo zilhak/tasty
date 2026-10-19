@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (우클릭 컨텍스트 메뉴 — `서피스 이동` → `서피스를 이곳으로 이동`, 탭 헤더 `탭 이동` → `탭을 이곳으로 이동`, 탭 헤더 `페인 이동` → `페인을 이곳으로 이동`)
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: 명시 이동 요청 `src/app/command.rs`, journal 이동·교체 해석 `src/app/journal/commands/replacement.rs`, 순수 구조 교체 `crates/tasty-core/src/replacement.rs`, 원 자원 회수 `src/runtime/resource_retirement.rs`, 사용자 선택 후처리 `src/app/journal/commands/view_completion.rs`.
 - **화면**: OS 네이티브 컨텍스트 메뉴 (`PendingNativeMenu::TerminalSurface`/`Surface`/`Tab`), 대기 대상의 점선 링과 move 글리프([이동 대기 표시](#이동-대기-표시)). 갤러리 Layouts › Move source highlight
 
@@ -19,7 +19,7 @@
 - **대기 슬롯**: 종류(`PendingMove::Surface`/`Tab`/`Pane`)와 ID 를 함께 담는 슬롯 하나뿐이다. 새로 이동을 지정하면 종류와 관계없이 이전 대기를 덮어쓴다. 저장하지 않으며, 이동 요청을 실행하면(성공 여부와 무관) 비운다. 대상이 닫혀 어느 워크스페이스에서도 찾을 수 없으면 다음 GUI 프레임에서 비운다(`move_source::clear_if_target_closed`) — 닫힌 대상의 표시와 "이곳으로 이동" 항목이 남지 않는다. 대기 해제 조작은 없다. `CoreState` 가 윈도우마다 있으므로 슬롯도 윈도우별이며, 윈도우를 넘는 이동은 지원하지 않는다.
 - **서피스를 이곳으로 이동**: 슬롯의 source(A) 를 우클릭한 위치의 target(B) 로 이동시키는 `DomainIntent::MoveSurface { source_surface_id, target_surface_id }` 를 `from_user_context_menu` origin 으로 발행한다.
 - surface 종류에 따라 두 생산 경로가 있다 — 타입은 `PendingNativeMenu::TerminalSurface`(terminal, selection-copy 항목이 있어 별도 variant) / `Surface`(비-terminal)로 나뉘지만, "서피스 이동"/"서피스를 이곳으로 이동" 두 항목은 두 variant 모두에 동일하게 뜬다:
-  - **terminal**(winit, `src/view/main/mouse.rs`) — winit 경로는 **terminal 전용**이다. mouse-tracking 위임(ADR-0015) 미해당 시 terminal surface 메뉴를 낸다. 비-terminal 은 winit 이 메뉴를 만들지 않고 egui 프레임에 위임(`return`)한다.
+  - **terminal**(winit, `src/view/main/mouse.rs`) — winit 경로는 **terminal 전용**이다. mouse-tracking 위임(docs/surfaces/terminal/index.md) 미해당 시 terminal surface 메뉴를 낸다. 비-terminal 은 winit 이 메뉴를 만들지 않고 egui 프레임에 위임(`return`)한다.
   - **비-terminal surface**(explorer/empty/markdown/image/mesh/webview chrome/remote) — **egui 패널 단일 경로**(`emit_surface_menu_fallback`, `src/adapters/ui/egui_panels.rs`)가 release 시점 `secondary_clicked()` 를 패널 논리 rect 와 대조해 surface 를 식별하고 메뉴를 낸다. explorer 는 예외적으로 `apply_explorer_action` 이 위치별 `Explorer`/`ExplorerFavorite` 를 먼저 슬롯에 선점하며, fallback 은 `is_none()` 가드로 이를 존중한다(한 프레임 한 메뉴, 중복 메뉴 없음).
 
 ### replace 시맨틱과 cascade

@@ -9,7 +9,7 @@
 surface 우클릭 컨텍스트 메뉴는 surface 종류에 따라 생산 경로가 갈린다:
 
 - **terminal**: winit의 `src/view/main/mouse.rs::handle_right_button`이 메뉴를 만든다.
-  이 함수가 mouse-tracking 위임 여부도 판단한다(ADR-0015).
+  이 함수가 mouse-tracking 위임 여부도 판단한다(docs/surfaces/terminal/index.md).
   `terminal_menu_open_state`는 **Linux에서는 release**, **macOS/Windows에서는 press**에 메뉴를 연다.
   Linux에서는 버튼을 누른 상태로 GTK `popup_at_rect()`를 호출하면 메뉴가 표시되지 않을 수 있다.
   macOS/Windows의 `show_context_menu`는 `MenuOutcome::Ready`를 동기적으로 반환하므로
@@ -97,7 +97,7 @@ PendingNativeMenu::MyMenu { data, x, y } => {
 
 `macos.rs` / `windows.rs` / `linux.rs` 가 플랫폼 구현.
 
-<a id="해소-타이밍은-플랫폼별로-다르다-adr-0069"></a>
+<a id="해소-타이밍은-플랫폼별로-다르다-docs/dev-guide/agent-runner.md"></a>
 
 ### 메뉴 선택을 처리하는 시점은 플랫폼별로 다르다
 
@@ -112,7 +112,7 @@ API 형태는 세 OS 가 같지만 **언제 결과가 나오는지**는 다르�
 
 호출부(`MainView::pending_menu` + `poll_pending_native_menu`)가 두 경로를 모두 다루므로 새
 메뉴를 추가할 때 플랫폼 분기를 쓸 일은 없다. 결정 근거·대안은
-[docs/adr/0036-overlay-scope-and-lifetime.md](../adr/0036-overlay-scope-and-lifetime.md).
+[docs/design/systems/popup.md](../design/systems/popup.md).
 
 ### Linux 구현 (GTK 3, X11 only)
 

@@ -4,7 +4,7 @@
 - **kind**: `empty` — host 내장
 - **렌더 경로**: host-egui
 - **주체**: 로컬 사용자 · AI Agent · 원격 접속 사용자(mirror)
-- **ADR**: [ADR-0055](../../adr/0055-structural-domain-event-sourcing.md) · [ADR-0064](../../adr/0064-journal-source-and-core-state-projection.md) — 복원 자리와 지연 활성화
+- **설계**: [이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md) · [이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md) — 복원 자리와 지연 활성화
 - **코드**: 등록 `register_empty`(`src/runtime/surface_registry/builtins.rs`), 모델 `EmptySurface`(`crates/tasty-model/src/empty_surface.rs`), 복원 자리 `JournalPlaceholder`(`src/runtime/surface_restorer.rs`), 화면 `draw_empty`(`src/adapters/ui/surface/empty.rs`)
 - **화면**: [아래 절](#화면)
 

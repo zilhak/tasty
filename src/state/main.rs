@@ -306,7 +306,7 @@ pub struct MainViewState {
     pub(crate) plugin_mesh_banner_pending_repaint: std::collections::HashSet<u64>,
 
     /// html surface마다 스크립트 배너가 차지하는 높이. 패널 위쪽에서 페이지가 시작할 곳까지다.
-    /// egui 패스가 다시 채우고 WebView 동기화가 이만큼 native 페이지를 내린다(ADR-0053).
+    /// egui 패스가 다시 채우고 WebView 동기화가 이만큼 native 페이지를 내린다(docs/surfaces/html/index.md).
     #[cfg(feature = "gui")]
     pub(crate) html_script_banner_insets:
         std::collections::HashMap<u32, tasty_type_geometry::length::LogicalPx>,

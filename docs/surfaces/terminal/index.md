@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent(입력 주입은 [terminal-output](../../features/terminal-output/index.md)/`surface.send*`) · 원격(mirror)
-- **ADR**: [ADR-0060](../../adr/0060-terminal-and-pty-separation.md) — 파서 스레드와 PTY 수명·절전 복구. [ADR-0014](../../adr/0014-terminal-compatibility-scope.md) — 지원 범위와 인라인 그래픽 보류.
+- **설계**: 이 문서 — 파서 스레드와 PTY 수명·절전 복구. 이 문서 — 지원 범위와 인라인 그래픽 보류.
 - **코드**: `crates/tasty-terminal/` (PTY·VTE·grid·scrollback), 렌더 `src/gfx/`
 - **화면**: GPU 렌더링 셀 그리드 (egui 아님)
 
@@ -128,7 +128,7 @@ DECOM(6)은 절대 커서 위치를 스크롤 영역 기준으로 해석하고, 
 
 창 이동·크기 변경·최대화·최소화·전체화면·앞뒤 순서 변경은 지원하지 않는다.
 창 위치·상태·제목 조회와 픽셀 크기 조회(`14/16 t`)도 응답하지 않는다.
-지원 범위와 보류 이유는 [터미널 호환성 결정](../../adr/0014-terminal-compatibility-scope.md)을 참고한다.
+지원 범위와 보류 이유는 터미널 호환성 결정을 참고한다.
 
 ### 마우스 입력
 
@@ -220,7 +220,7 @@ ED/EL은 커서 위치를 유지하며 현재 셀을 포함해 지운다.
 새 접근자도 상태 잠금을 거치며 mutex가 poison 상태이면 내부 값을 꺼내 복구한다. 백그라운드 터미널의 잠금은 사용자가 보는 터미널의 잠금과 독립이다.
 EOF 뒤 계속 실행하는 자식이 있으면 해당 터미널만 처리하는 targeted polling으로 깨우지만, GUI에서 보이는 surface는 그 창을 다시 그릴 수 있다. targeted polling을 끄면 전체 터미널을 처리하고 모든 창을 다시 그릴 수 있다. Terminal을 버릴 때 parser 종료를 기다리지 않는다(최대 한 대기 간격 뒤 종료).
 Windows에서는 호스트 종료 시 `nohup`·백그라운드 작업도 종료되고 Job 등록 실패는 경고를 남긴 뒤 기존 정리 방법을 쓴다. 플러그인과 터미널은 종료 구현을 공유하되 Job Object는 각 소유자가 따로 보관한다.
-선택 이유는 [PTY 처리 결정](../../adr/0060-terminal-and-pty-separation.md)을 참고한다.
+선택 이유는 PTY 처리 결정을 참고한다.
 
 ### 스크롤백
 
@@ -246,7 +246,7 @@ CLI는 `tasty settings get-input-rules`, `set-input-rule --app claude --shift-en
 
 ### 색상 / 폰트
 
-xterm-256color(ANSI 16 + 216 큐브 + 24 그레이) + TrueColor. 색은 Theme 의 ansi 팔레트([theme](../../design/systems/theme.md)). 폰트는 번들 D2Coding ligature(OFL 1.1, 임베드 — OS 미설치에도 동작), CJK fallback, 블록/박스 드로잉 글리프는 픽셀 퍼펙트 커스텀 렌더. 번들 폰트 파일은 합자 글리프를 포함하지만(폰트 자원), tasty 는 셀-격자 cross-cell 합자(프로그래밍 ligature) 적용도 설정 토글도 **미지원** — 보류 결정은 [ADR-0014](../../adr/0014-terminal-compatibility-scope.md). 렌더 파이프라인(누적→flush→단일 패스, atlas LRU)은 [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md).
+xterm-256color(ANSI 16 + 216 큐브 + 24 그레이) + TrueColor. 색은 Theme 의 ansi 팔레트([theme](../../design/systems/theme.md)). 폰트는 번들 D2Coding ligature(OFL 1.1, 임베드 — OS 미설치에도 동작), CJK fallback, 블록/박스 드로잉 글리프는 픽셀 퍼펙트 커스텀 렌더. 번들 폰트 파일은 합자 글리프를 포함하지만(폰트 자원), tasty 는 셀-격자 cross-cell 합자(프로그래밍 ligature) 적용도 설정 토글도 **미지원** — 보류 결정은 이 문서. 렌더 파이프라인(누적→flush→단일 패스, atlas LRU)은 [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md).
 
 ### 이벤트 드리븐 렌더
 
@@ -262,16 +262,16 @@ Windows 에서는 focused terminal cursor 를 프로그램 주도 화면 갱신 
 
 ## 비-목표
 
-- **인라인 그래픽**(Sixel/Kitty/iTerm 이미지) — 보류([ADR-0014](../../adr/0014-terminal-compatibility-scope.md)). 이미지는 [image surface](../image/index.md).
-- **XTWINOPS 창 조작·창 탐침·픽셀 크기 리포트** — 미지원([ADR-0014](../../adr/0014-terminal-compatibility-scope.md), 사용자/에이전트 분리).
-- **tmux control mode(DCS)·DECRQSS** — 미지원([ADR-0014](../../adr/0014-terminal-compatibility-scope.md), 범위 밖/드묾).
-- **일부 사설 입력 모드** — Utf8Mouse(1005), SGRPixels(1016), Win32InputMode(9001), DECCOLM(3), ReverseWraparound(45), Meta/AltSendsEscape(1036/1039), GraphemeClustering(2027)은 지원하지 않는다. 표준 입력 방식으로 대신할 수 있어 구현을 보류했다([ADR-0014](../../adr/0014-terminal-compatibility-scope.md)).
+- **인라인 그래픽**(Sixel/Kitty/iTerm 이미지) — 보류(이 문서). 이미지는 [image surface](../image/index.md).
+- **XTWINOPS 창 조작·창 탐침·픽셀 크기 리포트** — 미지원(이 문서, 사용자/에이전트 분리).
+- **tmux control mode(DCS)·DECRQSS** — 미지원(이 문서, 범위 밖/드묾).
+- **일부 사설 입력 모드** — Utf8Mouse(1005), SGRPixels(1016), Win32InputMode(9001), DECCOLM(3), ReverseWraparound(45), Meta/AltSendsEscape(1036/1039), GraphemeClustering(2027)은 지원하지 않는다. 표준 입력 방식으로 대신할 수 있어 구현을 보류했다(이 문서).
 - 렌더/폰트 atlas 내부 구현 — [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md).
 
 ## 관련
 
 - [terminal-search](../../features/terminal-search/index.md) · [terminal-link](../../features/terminal-link/index.md) · [clipboard](../../features/clipboard/index.md)
-- [ADR-0060](../../adr/0060-terminal-and-pty-separation.md) · [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md)
+- 이 문서 · [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md)
 
 ## 휠 스크롤 거리
 

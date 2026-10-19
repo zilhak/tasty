@@ -1,4 +1,4 @@
-//! 휠 Line 환산 파일에서 egui의 line_scroll_speed를 읽는 표지를 확인한다(ADR-0015).
+//! 휠 Line 환산 파일에서 egui의 line_scroll_speed를 읽는 표지를 확인한다(docs/surfaces/terminal/index.md).
 //! 기본값 상수를 직접 쓰면 사용자가 바꾼 설정을 반영하지 못한다.
 //! 실제 컨텍스트 값을 읽는 동작은 src/plugin_bridge/wire_scroll.rs의 one_notch_per_context가 검사한다.
 //! 여기서는 새 경로도 등록 규칙을 따르는지 파일별 소스 표지로 확인한다.
@@ -126,7 +126,7 @@ fn every_conversion_site_reads_the_runtime_option() {
         .collect();
     assert!(
         bad.is_empty(),
-        "휠 Line 처리 파일에서 런타임 line_scroll_speed를 읽는 표지를 찾지 못했다. 현재 egui 설정으로 환산해야 한다(ADR-0015). 단위만 전달하는 파일은 근거와 함께 ALLOWLIST에 등록한다:\n{}",
+        "휠 Line 처리 파일에서 런타임 line_scroll_speed를 읽는 표지를 찾지 못했다. 현재 egui 설정으로 환산해야 한다(docs/surfaces/terminal/index.md). 단위만 전달하는 파일은 근거와 함께 ALLOWLIST에 등록한다:\n{}",
         bad.join("\n")
     );
 }
@@ -140,7 +140,7 @@ fn no_conversion_site_freezes_the_notch_at_its_default() {
         .collect();
     assert!(
         bad.is_empty(),
-        "휠 환산에서 기본값 {FROZEN_DEFAULT}를 직접 읽는다. 사용자가 변경한 현재 값은 egui 컨텍스트에서 읽는다(ADR-0015):\n{}",
+        "휠 환산에서 기본값 {FROZEN_DEFAULT}를 직접 읽는다. 사용자가 변경한 현재 값은 egui 컨텍스트에서 읽는다(docs/surfaces/terminal/index.md):\n{}",
         bad.join("\n")
     );
 }

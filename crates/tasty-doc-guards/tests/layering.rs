@@ -3,7 +3,7 @@
 //! 정당한 진입·조립 경로(ALLOWED_PATHS), 제거해야 할 기존 참조(BASELINE_FILES),
 //! 테스트 전용 파일(TEST_ONLY_FILES)은 이유가 달라 분리한다.
 //! 한시 참조는 제거되면 명부도 줄이고, 테스트 예외는 부모의 test 조건을 확인한다.
-//! 정책은 [ADR-0048](../../../docs/adr/0048-source-guards-and-exemptions.md)을 따른다.
+//! 정책은 [가드 검증](../../../docs/dev-guide/guard-verification.md)을 따른다.
 
 // 이유: 테스트의 반환값 무시는 제품 코드의 lint 예외 명부에 포함하지 않는다.
 #![allow(clippy::let_underscore_must_use)]

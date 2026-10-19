@@ -101,7 +101,7 @@ fn reject_pty_space_surface_scope(scope: &Scope, id: &Value) -> Result<(), JsonR
 }
 
 /// 호스트 전용 키 접두어. 플러그인·에이전트는 일반 memory API로 읽거나 바꿀 수 없다.
-/// 전용 메서드의 권한 검사를 일반 KV API로 우회하지 못하도록 한다(ADR-0012).
+/// 전용 메서드의 권한 검사를 일반 KV API로 우회하지 못하도록 한다(docs/dev-guide/plugin-permissions.md).
 /// 개별 하위 namespace를 나열하지 않아 새 호스트 키도 같은 제한을 받는다.
 pub(super) const HOST_KEY_NAMESPACE: &str = "tasty.";
 
@@ -395,7 +395,7 @@ pub(crate) fn map_error_ref(id: Value, err: &MemoryError) -> JsonRpcResponse {
 }
 
 /// 대체 메모리 저장소의 쓰기에는 durable:false를 붙인다. 정상 저장소에서는 생략한다.
-/// 같은 저장소를 쓰는 agent/approval/meta/telemetry/session도 이 규칙을 따른다(ADR-0010).
+/// 같은 저장소를 쓰는 agent/approval/meta/telemetry/session도 이 규칙을 따른다(docs/design/systems/storage-contract.md).
 pub(crate) fn written(core: &AppServices, id: Value, body: Value) -> JsonRpcResponse {
     mark_durability(core, JsonRpcResponse::success(id, body))
 }

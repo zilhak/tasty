@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자(GUI 직접) · AI Agent(IPC/CLI 로 내부 surface/tab/workspace 조작) · 원격 접속 사용자(내부 surface/workspace 점유)
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `src/view/main.rs`, `src/view/main/`, `src/app/window_lifecycle.rs`
 - **화면**: [아래 절](#화면)
 

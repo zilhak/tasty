@@ -1307,7 +1307,9 @@ impl App {
     pub(crate) fn resume_health_pass(&mut self) {
         use crate::app::command::CoreEvent;
         use crate::app::dispatch_domain::DispatchSource;
-        tracing::info!("system resumed — running PTY health pass (ADR-0013)");
+        tracing::info!(
+            "system resumed — running PTY health pass (docs/surfaces/terminal/index.md)"
+        );
         let core = &mut self.services;
         let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
         for (id, main, mut engine) in engines_mut!(self).window_entries() {

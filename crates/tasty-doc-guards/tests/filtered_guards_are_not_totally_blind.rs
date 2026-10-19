@@ -1,7 +1,7 @@
 //! crossplatform-check의 경로 필터가 입력 전체를 제외하는 소스 검사를 찾는다.
 //! 별도의 필터 없는 호출이 해당 타깃·패키지를 포함하면 제외되지 않는 것으로 본다.
 //! 입력 일부만 필터에 걸리는 검사와 워크스페이스 의존 때문에 이동이 어려운 검사는 이유를 등록한다.
-//! 독립된 소스 검사 크레이트를 사용하는 이유는 ADR-0048에서 설명한다.
+//! 독립된 소스 검사 크레이트를 사용하는 이유는 docs/dev-guide/guard-verification.md에서 설명한다.
 //!
 //! 판정은 소스의 읽기·프로세스 실행 표지와 경로 리터럴, use문을 바탕으로 한다.
 //! 실제 호출 그래프·동적 경로·링크 의존을 모두 알아내지는 못한다.
@@ -281,7 +281,7 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
 
     assert!(
         blind.is_empty(),
-        "다음 검사의 경로 리터럴은 모두 {WORKFLOW}의 paths-ignore에 속하고 별도 실행도 찾지 못했다:\n{}\n입력만 바꾼 push에서도 검사하도록 {FILTER_FREE_DIR}로 옮기거나 필터 없는 호출을 구성한다(ADR-0048). 런타임 상수를 소스 판독으로 대체한다면 실제 값과의 대조 검사도 필요하다.",
+        "다음 검사의 경로 리터럴은 모두 {WORKFLOW}의 paths-ignore에 속하고 별도 실행도 찾지 못했다:\n{}\n입력만 바꾼 push에서도 검사하도록 {FILTER_FREE_DIR}로 옮기거나 필터 없는 호출을 구성한다(docs/dev-guide/guard-verification.md). 런타임 상수를 소스 판독으로 대체한다면 실제 값과의 대조 검사도 필요하다.",
         blind.join("\n")
     );
 

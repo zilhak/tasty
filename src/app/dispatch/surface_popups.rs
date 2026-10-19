@@ -1,5 +1,5 @@
 //! surface 범위로 선언한 플러그인 이벤트 팝업을 대상 surface 의 소유를 확인한 뒤 연다.
-//! 플러그인이 자기 surface 가 아닌 곳에 팝업을 띄우지 못하게 하는 경계다(ADR-0036).
+//! 플러그인이 자기 surface 가 아닌 곳에 팝업을 띄우지 못하게 하는 경계다(docs/design/systems/popup.md).
 
 use crate::app::App;
 use tasty_host_plugin::manager::PendingSurfacePopup;

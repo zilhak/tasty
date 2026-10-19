@@ -6,8 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-const DOC: &str =
-    "docs/dev-guide/e2e-tests.md (원칙 근거: docs/adr/0045-test-isolation-and-harness.md)";
+const DOC: &str = "docs/dev-guide/e2e-tests.md (원칙 근거: docs/dev-guide/unit-test-isolation.md)";
 
 const SELF_FILE: &str = "e2e_single_instance_guard.rs";
 

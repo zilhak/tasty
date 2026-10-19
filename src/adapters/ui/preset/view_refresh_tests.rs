@@ -1,4 +1,4 @@
-//! 실제 프레임에서 보기 캐시는 저장소에 맞춰 갱신하고 편집 캐시는 보존하는지 확인한다(ADR-0038).
+//! 실제 프레임에서 보기 캐시는 저장소에 맞춰 갱신하고 편집 캐시는 보존하는지 확인한다(docs/features/layout-presets/index.md).
 
 use super::demo_cache::{DemoCache, demo_cache_id, preset_key};
 use super::*;
@@ -115,7 +115,7 @@ fn view_mode_shows_an_agent_save_on_the_next_frame() {
 }
 
 /// 편집 모드: 에이전트가 저장해도 캐시(사용자가 고치고 있는 트리)와 선택은 그대로다 —
-/// 대조는 ADR-0038 대로 저장 직전에만 한다.
+/// 대조는 docs/features/layout-presets/index.md 대로 저장 직전에만 한다.
 #[test]
 fn edit_mode_keeps_its_cache_through_an_agent_save() {
     let (_tmp, mut store) = seeded();

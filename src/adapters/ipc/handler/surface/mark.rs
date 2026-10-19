@@ -26,7 +26,7 @@ pub(crate) fn handle_set_mark(
 /// cursor가 없으면 공유 마크부터, 있으면 호출자가 지정한 위치부터 원문 출력을 읽는다.
 /// cursor를 쓰는 소비자는 서버의 공유 마크를 바꾸지 않아 서로 독립적으로 읽을 수 있다.
 /// 두 방식 모두 보관 범위·다음 위치·유실 바이트·스트림 식별자를 반환한다.
-/// surface ID 재사용이나 터미널 재시작을 구분하도록 cursor에는 stream도 필요하다(ADR-0034).
+/// surface ID 재사용이나 터미널 재시작을 구분하도록 cursor에는 stream도 필요하다(docs/features/terminal-output/index.md).
 pub(crate) fn handle_read_since_mark(
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
@@ -180,7 +180,7 @@ fn refused(
 }
 
 /// 스캐너 전용 커서를 읽고 전진시킨다. 사용자 마크와 별개다.
-/// 소비자가 둘이면 서로 읽을 구간을 건너뛰게 되므로 하나만 사용해야 한다(ADR-0013).
+/// 소비자가 둘이면 서로 읽을 구간을 건너뛰게 되므로 하나만 사용해야 한다(docs/surfaces/terminal/index.md).
 pub(crate) fn handle_read_since_scan_mark(
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,

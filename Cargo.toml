@@ -1,7 +1,7 @@
 [workspace]
 members = ["crates/*"]
 # WASM 실험 SDK는 자체 Cargo.lock으로 관리해 기본 빌드의 의존성 해석에서 제외한다.
-# 보류 이유: docs/adr/0025-plugin-trust-and-distribution.md
+# 보류 이유: docs/dev-guide/plugin-permissions.md
 # vendor 사본은 workspace lint·fmt 대상에 포함하지 않는다.
 exclude = ["crates/tasty-plugin-sdk-wasm", "vendor/tiny_http"]
 resolver = "2"

@@ -1004,7 +1004,7 @@ const COLOR_SWATCH_SIZE: LogicalPx = LogicalPx(18.0);
 /// opacity 0.4 를 알파로 옮긴 값(102/255)이다. 대응 토큰이 없어 이름만 둔다.
 const SWATCH_INHERITED_ALPHA: u8 = 102;
 
-/// 색 override 여부를 표시하는 점. 상태 점과 역할·크기가 달라 별도 치수를 유지한다(ADR-0035).
+/// 색 override 여부를 표시하는 점. 상태 점과 역할·크기가 달라 별도 치수를 유지한다(docs/design/systems/theme.md).
 const COLOR_OVERRIDE_DOT_SIZE: LogicalPx = LogicalPx(5.0);
 
 /// 색 토큰 이름 컬럼 폭 — 행 간 입력/스와치/체크박스 정렬용.

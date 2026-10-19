@@ -1,6 +1,6 @@
 # Surface 종류 (Surfaces)
 
-Surface 종류(kind)마다 명세를 한 곳에 둔다. host 내장인지 번들 plugin이 등록하는지와 관계없이 이 폴더에서 찾는다. Surface는 화면만이 아니라 콘텐츠 타입, 수명, 저장·복원, IPC·CLI 계약을 함께 가진다. 배치 이유는 [문서 구조 결정](../adr/0049-documentation-structure-and-evidence.md)에 있다.
+Surface 종류(kind)마다 명세를 한 곳에 둔다. host 내장인지 번들 plugin이 등록하는지와 관계없이 이 폴더에서 찾는다. Surface는 화면만이 아니라 콘텐츠 타입, 수명, 저장·복원, IPC·CLI 계약을 함께 가진다. 배치 이유는 [문서 구조 결정](../documentation-model.md)에 있다.
 
 여러 kind가 공유하는 구조는 이 폴더에 두지 않는다.
 

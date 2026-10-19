@@ -1,5 +1,5 @@
 //! 플랫폼 조건이 있는 IPC 분기에는 반대 조건의 분기도 있어야 한다.
-//! CLI·메서드 표에 있는 기능을 지원하지 않는 플랫폼에서는 메서드 없음 대신 미지원 이유를 응답한다(ADR-0004).
+//! CLI·메서드 표에 있는 기능을 지원하지 않는 플랫폼에서는 메서드 없음 대신 미지원 이유를 응답한다(docs/dev-guide/api-conventions.md).
 //!
 //! 소스의 조건 문자열에서 공백을 제거한 뒤 cond와 not(cond)를 비교한다.
 //! 동등한 다른 논리식을 모두 인정하거나 응답의 오류 코드·실제 도달 여부를 검증하는 것은 아니다.
@@ -237,7 +237,7 @@ match m {
     }
 }
 
-/// CLI·메서드 표에 target_os가 없어 플랫폼 차이를 dispatch에서 처리한다는 전제를 확인한다. 바뀌면 ADR-0004의 선택을 다시 검토한다.
+/// CLI·메서드 표에 target_os가 없어 플랫폼 차이를 dispatch에서 처리한다는 전제를 확인한다. 바뀌면 docs/dev-guide/api-conventions.md의 선택을 다시 검토한다.
 mod platform_uniform_layers {
     use super::*;
 
@@ -296,7 +296,7 @@ mod platform_uniform_layers {
         }
         assert!(
             hits.is_empty(),
-            "CLI 또는 메서드 표에서 target_os를 찾았다. 플랫폼 차이는 dispatch에서 처리한다는 ADR-0004의 전제가 바뀌었는지 검토한다:\n  {}",
+            "CLI 또는 메서드 표에서 target_os를 찾았다. 플랫폼 차이는 dispatch에서 처리한다는 docs/dev-guide/api-conventions.md의 전제가 바뀌었는지 검토한다:\n  {}",
             hits.join("\n  ")
         );
     }

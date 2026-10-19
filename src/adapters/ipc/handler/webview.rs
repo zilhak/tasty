@@ -25,7 +25,7 @@ fn notify_content_changed(
 
 /// RemoteSurface에 URL과 페이지 작성자 정보를 기록한다.
 /// 외부 호출도 URL을 설정할 수 있지만 소유 플러그인이 쓴 페이지의 클릭만
-/// 파일 열기의 사용자 행동으로 인정한다(ADR-0031).
+/// 파일 열기의 사용자 행동으로 인정한다(docs/features/file-handler/index.md).
 pub fn handle_set_url(
     engine: &crate::runtime::engine_access::EngineRef<'_>,
     caller: &tasty_ipc::caller::CallerContext,

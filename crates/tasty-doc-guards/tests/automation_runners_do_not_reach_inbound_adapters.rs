@@ -1,5 +1,5 @@
 //! webhook·hook handler·hook runtime의 제품 코드가 IPC 수신부·CLI 진입부·메인 루프를 직접 참조하는지 검사한다.
-//! 내부 IPC 호출은 tasty_ipc::host_call::HostIpcInjector로 주입해야 한다(ADR-0002).
+//! 내부 IPC 호출은 tasty_ipc::host_call::HostIpcInjector로 주입해야 한다(docs/dev-guide/app-state-ownership.md).
 //! 같은 크레이트 안의 경계이므로 컴파일러가 의존 방향을 제한하지 않는다.
 //! 공유 crate_paths 파서로 경로를 읽고 파일·인라인 test 전용 코드를 제외한다.
 //! 전이 의존과 outbound adapter 사용은 검사하지 않는다. 허용 목록은 두지 않는다.
@@ -94,7 +94,7 @@ fn automation_runners_do_not_name_an_inbound_adapter() {
     );
     assert!(
         offenders.is_empty(),
-        "자동화 실행부가 inbound adapter나 메인 루프를 직접 참조한다:\n{}\n내부 호출은 tasty_ipc::host_call로 주입한다(ADR-0002). 필요한 타입은 공용 계약으로 옮기고 핸들러가 사용하게 한다. 허용 목록을 추가해 통과시키지 않는다.",
+        "자동화 실행부가 inbound adapter나 메인 루프를 직접 참조한다:\n{}\n내부 호출은 tasty_ipc::host_call로 주입한다(docs/dev-guide/app-state-ownership.md). 필요한 타입은 공용 계약으로 옮기고 핸들러가 사용하게 한다. 허용 목록을 추가해 통과시키지 않는다.",
         offenders.join("\n")
     );
 }

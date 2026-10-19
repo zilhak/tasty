@@ -1,4 +1,4 @@
-//! tiny_http 기반 SSE 서버. accept 스레드와 연결별 스레드를 사용한다(ADR-0032).
+//! tiny_http 기반 SSE 서버. accept 스레드와 연결별 스레드를 사용한다(docs/features/webhook/index.md).
 //! 연결 수가 적다는 전제이며, 규모가 커지면 docs/plugins/agent-stream/index.md#sse-엔드포인트를 재검토한다.
 //! 연결별 스레드는 시작할 때 재전송 버퍼를 읽고 이후에는 자기 구독 큐를 사용한다.
 

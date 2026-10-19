@@ -1,9 +1,12 @@
 # 전체화면 무대(Fullscreen stage) 시스템
 
+## 설계 기준
+
+기존 요소를 확대하면 GPU·egui·WebView·PTY resize·hit-test·방향 이동을 함께 바꿔야 하므로, 기존 레이아웃과 독립된 무대를 사용한다. 여러 모니터의 창을 독립적으로 사용할 수 있도록 무대 상태는 전역이 아니라 창마다 소유한다. 콘텐츠는 정적 StageDef로 등록하여 임의 draw closure가 콘텐츠 ID와 선언 목록을 우회하지 않게 한다.
+
 무대는 **창 전체를 독점하는 독립 표면**이다. 기존 Workspace/Pane/Tab/Surface 트리와
 **병렬로** 존재하며, 기존 요소를 확대한 것이 아니다. 용어 구분은
-[concepts/ubiquitous-language](../../concepts/ubiquitous-language.md), 결정의 근거·대안은
-[ADR-0018](../../adr/0018-explicit-capture-and-fullscreen-stage.md). 이 문서는 시스템 *동작 모델* 이고, 끝의 [기능 명세](#기능-명세--상태--인터페이스--acceptance-criteria) 절이 상태 · 인터페이스 · Acceptance Criteria 를 담는다.
+[concepts/ubiquitous-language](../../concepts/ubiquitous-language.md), 독립 무대와 창별 소유의 이유는 아래 설계 기준에 있다. 이 문서는 시스템 *동작 모델* 이고, 끝의 [기능 명세](#기능-명세--상태--인터페이스--acceptance-criteria) 절이 상태 · 인터페이스 · Acceptance Criteria 를 담는다.
 
 구현: `src/adapters/ui/fullscreen.rs`(무대 셸·닫힘 훅 처리) + `.../fullscreen/defs.rs`(정적
 테이블) + `src/fullscreen_stages.rs`(gui 무관 메타) + `MainViewState`(상태) + `Gpu::render`(렌더 분기).
@@ -78,7 +81,7 @@
   올라와 있으면 **그 무대를 닫고**(훅 경유) 교체한다. 같은 id 재진입은 no-op(콘텐츠 상태가
   날아가지 않게).
 - 종료 `MainViewState::close_fullscreen_stage()` — **닫는 경로 전부가 지나는 유일한 지점**
-  ([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md) 과 같은 패턴). 닫힌 id 를
+  ([내부 팝업 시스템](popup.md) 과 같은 패턴). 닫힌 id 를
   훅 대기열에 넣고, draw 경로가 `on_close`를 정확히 1회 호출한다.
 - 훅 처리는 **무대 프레임과 일반 프레임 양쪽**에서 돈다. 무대를 나오면 다음 프레임은 일반
   프레임이라 무대 draw 경로가 아예 돌지 않기 때문이다.
@@ -176,10 +179,10 @@ grid 로 돌아온다.
 
 ### 창 전환을 허용하는 경로
 
-`set_fullscreen` 은 사용자가 보는 창을 바꾸므로 `docs/identity.md` 원칙 1 의 사용자 상태다.
+`set_fullscreen` 은 사용자가 보는 창을 바꾸므로 `docs/principles/control-and-data.md`의 주체별 기준 의 사용자 상태다.
 release IPC/CLI 에 창 전환 API 를 노출하지 않는다 — 전환은 무대 상태를 따라갈 뿐이고, 무대
 진입 경로(사용자 버튼 / debug 전용 `debug.fullscreen.open`)만이 그 전환을 부른다. 터미널 이스케이프로 창을 조작하는
-경로도 없다([ADR-0014](../../adr/0014-terminal-compatibility-scope.md) 의 거부 결정 그대로).
+경로도 없다([터미널 (Terminal)](../../surfaces/terminal/index.md) 의 거부 결정 그대로).
 
 ### 플랫폼별 확인 결과
 
@@ -342,7 +345,7 @@ OS 가 직접 띄우는 UI 는 wgpu 표면 **위**에 있어 무대가 덮지 �
 
 ## headless
 
-무대는 화면 투영이라 headless 에 대응 도메인이 없다(`docs/identity.md` §2.2). 상태 필드와
+무대는 화면 투영이라 headless 에 대응 도메인이 없다(`docs/principles/control-and-data.md`). 상태 필드와
 API 는 `#[cfg(feature = "gui")]` 안에 있고, `MainViewState::fullscreen_stage_active()` 는
 `#[cfg(any(feature = "gui", debug_assertions))]` 라 debug headless 에도 있고 거기서는 항상 `false` 를 돌려준다(release headless 에는 없다).
 
@@ -350,13 +353,12 @@ API 는 `#[cfg(feature = "gui")]` 안에 있고, `MainViewState::fullscreen_stag
 
 - **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트) + OS 창 전체화면 전환 + 첫 콘텐츠(알림 무대) + 사용자 진입 경로(popup 타이틀바 전체화면 버튼) + 셸 종료 버튼 + 입력 라우팅 게이트 + 설정 가능한 종료 단축키(`fullscreen_stage_exit`, 기본 ESC) + 에이전트 진입/조회(debug 전용 IPC/CLI)까지 있다. release 표면은 없다.
 - **주체**: 로컬 사용자
-- **ADR**: [ADR-0018](../../adr/0018-explicit-capture-and-fullscreen-stage.md)
 - **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/adapters/ui/fullscreen/notifications.rs` · `src/adapters/ui/popup/draw.rs`(진입 버튼) · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs` · `src/view/main/keyboard.rs` · `src/view/main/mouse.rs` · `src/view/main/fullscreen_window.rs`(OS 창 전환 + 상태 덤프) · `src/app/ipc/debug_methods.rs`(debug IPC) · `crates/tasty-settings/src/keybindings.rs`(종료 바인딩)
 - **화면**: 없음 — 무대 자체가 화면이다. 동작 모델은 이 문서 위 절들
 
 ### 목적
 
-창 전체를 쓰는 독립 콘텐츠를 제공한다. 기존 레이아웃을 확대하거나 원본 데이터를 변경하지 않는다([ADR-0018](../../adr/0018-explicit-capture-and-fullscreen-stage.md)).
+창 전체를 쓰는 독립 콘텐츠를 제공한다. 기존 레이아웃을 확대하거나 원본 데이터를 변경하지 않는다.
 
 ### 내부 동작
 

@@ -474,7 +474,7 @@ fn a_postprocess_that_ended_during_the_restart_ends_unknown_at_the_cleanup() {
 
 /// Linux 에서 호스트가 비정상 종료하면 리더만 PDEATHSIG 로 끝나고 리더가 띄운 프로세스는 남는다.
 /// 재시작 판정은 리더만 보므로 task 는 결과 불명으로 끝나고 permit 을 반환한다. 남은 그룹 구성원은
-/// 정리하지 않는다(ADR-0070 의 비정상 종료 한계).
+/// 정리하지 않는다(docs/dev-guide/agent-runner.md 의 비정상 종료 한계).
 #[cfg(target_os = "linux")]
 #[test]
 fn a_dead_leader_ends_unknown_even_while_its_group_member_lives() {

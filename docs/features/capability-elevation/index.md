@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent (요청) · 로컬 사용자 (승인) · 운영자 (audit 조회)
-- **ADR**: [ADR-0073](../../adr/0073-local-caller-agent-id-is-a-self-reported-label.md) (신뢰 모델)
+- **설계**: [플러그인 권한 모델](../../dev-guide/plugin-permissions.md) (신뢰 모델)
 - **코드**: dispatcher 권한 게이트(`handler.rs`), `src/adapters/ipc/audit.rs`, session/elevation 핸들러, 승인 응답의 권한 부여(`src/app/approval_grant.rs`)
 - **화면**: capability_elevation approval popup
 - **메서드 목록**: [reference/api](../../reference/api.md#plugin-관리-plugin-local-only)
@@ -23,7 +23,7 @@ plugin/agent 가 IPC 호출 시 호스트가 권한을 강제하고, 부족하�
 
 ### Agent session 권한
 
-claude.spawn 등으로 띄운 자식은 `session.issue` 로 토큰 발급(base permissions = 부모 권한의 부분집합, escalation 금지 — 단 plugin 은 자기 namespace의 `ipc.invoke:<prefix>` 권한이 없어도 그 권한을 자식에게 부여할 수 있다). plugin namespace 메서드(표에 이름이 없는 것)는 agent 에게도 그 namespace 의 `ipc.invoke:<prefix>` 를 요구한다 — 없으면 아래 elevation 으로 연다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)). 자식은 모든 호출에 `TASTY_SESSION_TOKEN` 을 envelope `session_token` 으로 첨부 → 호스트가 `CallerContext::Agent` 구성. invalid/expired/revoked 토큰은 `-32001`(Local fallback 안 함 — 신원을 밝히려 한 요청이 조용히 사용자 권한으로 실행되지 않게 한다). 런타임 추가 grant 는 `plugin.grant_agent_permission`(TTL 가능, base 와 분리 슬롯).
+claude.spawn 등으로 띄운 자식은 `session.issue` 로 토큰 발급(base permissions = 부모 권한의 부분집합, escalation 금지 — 단 plugin 은 자기 namespace의 `ipc.invoke:<prefix>` 권한이 없어도 그 권한을 자식에게 부여할 수 있다). plugin namespace 메서드(표에 이름이 없는 것)는 agent 에게도 그 namespace 의 `ipc.invoke:<prefix>` 를 요구한다 — 없으면 아래 elevation 으로 연다([플러그인 권한 모델](../../dev-guide/plugin-permissions.md)). 자식은 모든 호출에 `TASTY_SESSION_TOKEN` 을 envelope `session_token` 으로 첨부 → 호스트가 `CallerContext::Agent` 구성. invalid/expired/revoked 토큰은 `-32001`(Local fallback 안 함 — 신원을 밝히려 한 요청이 조용히 사용자 권한으로 실행되지 않게 한다). 런타임 추가 grant 는 `plugin.grant_agent_permission`(TTL 가능, base 와 분리 슬롯).
 
 ### Elevation flow
 
@@ -37,12 +37,12 @@ grant 대상(agent·권한·유효 시간)은 host 가 권한 거부·`plugin.re
 
 ### Audit log
 
-레코드: `ts_ms, seq, caller_kind(local/plugin/agent), caller_id, method, decision(allow/deny), reason?, workspace_id?`. `local` 의 `caller_id` 는 호출자가 요청 봉투로 밝힌 자기 신고 agent ID 이고 없으면 빈 값이다([ADR-0073](../../adr/0073-local-caller-agent-id-is-a-self-reported-label.md)). 영속 키 `tasty.audit.{ts}.{seq}`(global, query 시 lazy evict). `seq` 는 telemetry 와 공유 단조 증가.
+레코드: `ts_ms, seq, caller_kind(local/plugin/agent), caller_id, method, decision(allow/deny), reason?, workspace_id?`. `local` 의 `caller_id` 는 호출자가 요청 봉투로 밝힌 자기 신고 agent ID 이고 없으면 빈 값이다([플러그인 권한 모델](../../dev-guide/plugin-permissions.md)). 영속 키 `tasty.audit.{ts}.{seq}`(global, query 시 lazy evict). `seq` 는 telemetry 와 공유 단조 증가.
 
 **권한 거부(`deny`)만 기록한다.** 허용된 호출까지 저장하면 반복 조회가 대부분인 에이전트
 작업에서 불필요한 데이터가 계속 쌓인다. 따라서 이 로그로 허용된 작업의 수행 이력을
 추적할 수는 없다. 거부는 메서드와 관계없이 모두 기록한다.
-근거와 재검토 조건은 [ADR-0009](../../adr/0009-state-storage-and-retention.md)를 따른다.
+근거와 재검토 조건은 [저장소 시스템 (Storage System)](../../design/systems/storage.md)를 따른다.
 
 elevation 자체는 이 로그에 의존하지 않는다 — 승인 이력은 `tasty.approval.*` 로 별도 영속되고, elevation 발행 트리거도 deny 경로다.
 
@@ -50,7 +50,7 @@ elevation 자체는 이 로그에 의존하지 않는다 — 승인 이력은 `t
 
 ### 무엇을 막는 장치인가
 
-agent 의 세션 토큰은 요청이 어느 agent 의 것인지 구분하는 표지이고, agent 권한과 권한 상승 승인은 협조적인 agent 의 실수를 막고 의도를 드러내는 장치다. agent 는 사용자가 자기 컴퓨터에서 띄운 프로세스이므로 agent 와 사용자 사이에는 보안 경계를 두지 않는다. 토큰을 지운 agent 의 요청이 사용자 요청으로 처리되는 것은 결함이 아니라 정의된 동작이다. plugin 은 다르다. 사용자가 직접 등록한 커스텀 plugin 은 신뢰할 수 없으므로 보안 경계를 둘 대상이다. 다만 현재 plugin 권한은 호스트 IPC 호출만 제한해 완전한 보안을 제공하지 않는다([plugin 권한 한계](../../dev-guide/plugin-permissions.md#한계)). 근거와 기각한 대안은 [ADR-0073](../../adr/0073-local-caller-agent-id-is-a-self-reported-label.md#신뢰-모델-구분-표지와-보안-경계)에 있다.
+agent 의 세션 토큰은 요청이 어느 agent 의 것인지 구분하는 표지이고, agent 권한과 권한 상승 승인은 협조적인 agent 의 실수를 막고 의도를 드러내는 장치다. agent 는 사용자가 자기 컴퓨터에서 띄운 프로세스이므로 agent 와 사용자 사이에는 보안 경계를 두지 않는다. 토큰을 지운 agent 의 요청이 사용자 요청으로 처리되는 것은 결함이 아니라 정의된 동작이다. 플러그인에도 별도 실행 보안 경계를 제품 원칙으로 요구하지 않는다. 인증·미인증 설치 경고 정책은 [플러그인 원칙](../../principles/plugins.md)에 있다. 아래 권한 검사는 현재 구현의 제한이며 새 원칙과 정합해야 한다. 다만 현재 plugin 권한은 호스트 IPC 호출만 제한해 완전한 보안을 제공하지 않는다([plugin 권한 한계](../../dev-guide/plugin-permissions.md#한계)). 근거와 기각한 대안은 [플러그인 권한 모델](../../dev-guide/plugin-permissions.md)에 있다.
 
 ## 인터페이스
 

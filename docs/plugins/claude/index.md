@@ -83,7 +83,7 @@ Codex 대화에서 실행한 `spawn`·`tell`·`children`·`broadcast`·`kill`·`
   전경이 계속 Claude로 보이면 resume 명령을 보내지 않고, 복귀를 확인하지 못하면 안내 문구를 보내지 않는다. 같은 surface의 중복 reboot는 거절한다.
   **턴의 마지막 행동으로 호출할 것** — delay 이후 진행 중이던 턴은 잘린다.
   - **`claude-session-id` meta 가 비어 reboot 가 실패하는 경우**: `no active claude session on surface {id} (claude-session-id meta not set …)` 에러는 hook 미설치가 아니어도 발생할 수 있다 — session-start hook 이 이 meta 를 못 심은 것이 원인.
-    조용히 실패할 수 있는 지점이 최소 3곳: ① `install.rs`의 등록 커맨드가 `if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook … || true; fi` 라 `TASTY_SURFACE_ID` 미설정 시 tasty 바이너리 자체가 실행되지 않음(로그 불가), ② `hook.rs`의 `apply_hook` session-start 분기가 stdin JSON 에 `session_id` 가 없으면 meta 기록을 건너뜀(`tracing::warn!`으로 로그, `tasty plugin logs com.tasty.claude --follow` 또는 `~/.tasty/plugins-logs/com.tasty.claude.log` 에서 확인), ③ `dynamic/stdin.rs`의 `read_stdin_json` 이 TTY/파싱 실패로 `None` 을 반환(hook 은 CLI 프로세스라 tracing 이 **stderr 로만** 나간다 — 공유 로그 파일에는 남지 않는다, [ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md).
+    조용히 실패할 수 있는 지점이 최소 3곳: ① `install.rs`의 등록 커맨드가 `if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook … || true; fi` 라 `TASTY_SURFACE_ID` 미설정 시 tasty 바이너리 자체가 실행되지 않음(로그 불가), ② `hook.rs`의 `apply_hook` session-start 분기가 stdin JSON 에 `session_id` 가 없으면 meta 기록을 건너뜀(`tracing::warn!`으로 로그, `tasty plugin logs com.tasty.claude --follow` 또는 `~/.tasty/plugins-logs/com.tasty.claude.log` 에서 확인), ③ `dynamic/stdin.rs`의 `read_stdin_json` 이 TTY/파싱 실패로 `None` 을 반환(hook 은 CLI 프로세스라 tracing 이 **stderr 로만** 나간다 — 공유 로그 파일에는 남지 않는다, [CLI 크레이트 내부 구조 — 세 갈래 대칭](../../dev-guide/cli-structure.md).
     전달 실패 자체는 `$TASTY_HOME/hook-failures.log` 에 기록된다).
     수동 복구: `tasty surface-meta set --key claude-session-id --value <세션ID>`.
 - **`child-profile`** (`tasty claude child-profile [--surface <부모>] --child <index> [--delay <초>] [--prompt <추가문구>] [--profile-file <경로> | --profile <이름[,이름2,...]>] [--clear-profile] [--permission-mode <모드>]`) — **부모가 자식에게 지속 세션 프로필을 부착**한다.
@@ -174,7 +174,7 @@ Codex와 옵션을 억지로 맞추지 않으며, 각각의 기본값은 해당 
 ### Stop-훅 게이트 레지스트리
 
 Stop 게이트는 턴을 끝내기 전에 확인할 본문, 종료 표시 문자열(sentinel), 반복 상한을
-이름으로 등록한 것이다. 선택 이유는 [에이전트 작업 조율](../../adr/0042-agent-coordination-and-task-views.md)을 따른다.
+이름으로 등록한 것이다. 선택 이유는 [에이전트 작업 조율](../../features/agent-collaboration/index.md)을 따른다.
 
 | 명령 | 동작 |
 |---|---|
@@ -267,7 +267,7 @@ SessionEnd는 모든 게이트에서 해당 세션의 반복 파일을 지우고
 
 ### Claude Code 훅 통합
 
-훅은 호스트 호출에 실패해도 뒤의 로컬 정리를 계속한다. 응답의 `host_call_failures`에 실패한 호출 수를 넣고, 0이 아니면 `<tasty_home>/hook-failures.log`에도 기록을 시도한다. 따라서 응답의 `ok`만으로 모든 호출이 성공했다고 판단하지 않는다. [오류 처리](../../dev-guide/error-handling.md)와 [훅 실행 설계](../../adr/0027-lua-and-hook-execution.md)를 참고한다.
+훅은 호스트 호출에 실패해도 뒤의 로컬 정리를 계속한다. 응답의 `host_call_failures`에 실패한 호출 수를 넣고, 0이 아니면 `<tasty_home>/hook-failures.log`에도 기록을 시도한다. 따라서 응답의 `ok`만으로 모든 호출이 성공했다고 판단하지 않는다. [오류 처리](../../dev-guide/error-handling.md)와 [훅 실행 설계](../../features/hooks/index.md)를 참고한다.
 
 `tasty claude install`이 `~/.claude/settings.json`의 `hooks`에 아래 10개 항목을 심는다. 이벤트는 9개이며 `PostToolUse`에는 matcher가 다른 항목이 둘이다. `background-start`를 뺀 모든 항목이 같은 형태의 명령 문자열을 쓴다(`background-start`는 아래 "백그라운드 작업이 남은 `StopFailure`"의 셸 판정 명령):
 
@@ -275,7 +275,7 @@ SessionEnd는 모든 게이트에서 해당 세션의 반복 파일을 지우고
 if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 ```
 
-`TASTY_SURFACE_ID`가 없으면 Tasty 밖에서 실행한 것으로 보고 훅 명령을 호출하지 않는다. 값이 있으면 훅을 실행하며, `|| true`는 훅 실패가 에이전트 턴을 막지 않게 한다. 훅 전달 실패는 `<tasty_home>/hook-failures.log`에 기록하는 경로를 사용한다([CLI 진단 로그](../../adr/0043-cli-errors-and-diagnostic-logs.md)).
+`TASTY_SURFACE_ID`가 없으면 Tasty 밖에서 실행한 것으로 보고 훅 명령을 호출하지 않는다. 값이 있으면 훅을 실행하며, `|| true`는 훅 실패가 에이전트 턴을 막지 않게 한다. 훅 전달 실패는 `<tasty_home>/hook-failures.log`에 기록하는 경로를 사용한다([CLI 진단 로그](../../dev-guide/cli-structure.md)).
 
 명령 문자열 생성은 `install.rs::tasty_guarded_command` 한 곳뿐이다 — 세션 프로필(`continue-checklist`)의 hook 명령도 같은 함수를 쓴다.
 
@@ -361,7 +361,7 @@ Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-s
   다른 도구 호출과 포그라운드 호출은 기록하지 않으며 상태도 바꾸지 않는다.
   이 훅이 끝날 때까지 Claude Code는 다음 API 요청을 보내지 않으므로, 설치 명령은 stdin payload에 `"backgroundTaskId":"` 또는
   `"isAsync":true`가 있을 때만 `tasty claude hook background-start`를 실행하고 나머지는 셸에서 바로 끝낸다(2.1.291 payload는 공백 없는 JSON).
-  실측 지연과 한계는 ADR-0041 결과 절에 있다.
+  실측 지연과 한계는 docs/features/child-terminal/index.md 결과 절에 있다.
 - 끝: `UserPromptSubmit`의 `prompt`가 `<task-notification>`으로 시작하면 그 안의 `<task-id>` 작업을 지운다.
 - `Stop`의 `background_tasks`를 읽을 수 있으면 기록을 그 목록의 끝나지 않은 항목으로 바꾼다.
   `SessionStart`·`SessionEnd`는 기록을 버린다.
@@ -398,7 +398,7 @@ Claude Code 2.1.283 실측 payload에는 `background_tasks`(항목 `id`·`type`�
 작업이라 하고 진행 중인 작업이 없으면 배열이 비어 있다고 설명하므로, 끝을 뜻하는 값이 아니면 모르는 값도
 대기로 본다. Tasty는 문서에 없는 `waiting_on_background_work`도 방어적으로 읽는다.
 끝나지 않는 백그라운드 명령(개발 서버 등)을 남긴 채 턴을 끝내면 그 자식은 idle이 되지 않는다.
-판정 근거와 재검토 조건은 [에이전트 상태와 완료 전달](../../adr/0041-agent-state-and-completion.md)에 있다.
+판정 근거와 재검토 조건은 [에이전트 상태와 완료 전달](../../features/child-terminal/index.md)에 있다.
 
 #### Stop 게이트와 idle
 
@@ -460,7 +460,7 @@ API 에러로 턴이 **끝나면** `StopFailure`가 구조적 신호를 주지�
 ### API 에러 뒤 자동 재개 (`auto_resume.rs`)
 
 `StopFailure`로 끝난 턴에 일정 시간 뒤 재개 문구를 보낸다. 기본은 꺼짐이다.
-선택 이유는 [에이전트 상태와 완료 전달](../../adr/0041-agent-state-and-completion.md)을 따른다.
+선택 이유는 [에이전트 상태와 완료 전달](../../features/child-terminal/index.md)을 따른다.
 
 | 설정 키 | 기본값 | 범위와 의미 |
 |---|---|---|
@@ -534,13 +534,13 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 
 `surface.read_since_scan_mark`는 에이전트의 `tasty set mark`·`read since-mark`·`parse-since-mark`와 별도의 커서를 사용한다. 읽을 때마다 해당 커서만 전진하며, 다음 호출에는 그 이후 출력이 온다.
 
-패턴 비교를 위해 플러그인이 읽은 출력을 크기 제한 안에서 누적한다. 이 커서는 스캐너 하나만 소비한다는 전제다. 다른 소비자가 같은 API를 호출하면 한쪽이 읽은 출력을 다른 쪽이 놓칠 수 있어 CLI로 제공하지 않는다. [터미널 입출력 설계](../../adr/0060-terminal-and-pty-separation.md)를 참고한다.
+패턴 비교를 위해 플러그인이 읽은 출력을 크기 제한 안에서 누적한다. 이 커서는 스캐너 하나만 소비한다는 전제다. 다른 소비자가 같은 API를 호출하면 한쪽이 읽은 출력을 다른 쪽이 놓칠 수 있어 CLI로 제공하지 않는다. [터미널 입출력 설계](../../surfaces/terminal/index.md)를 참고한다.
 
 ### 정지 알림 (`claude-error-stalled` → 부모 completion-log)
 
 `claude-error`는 부모 알림에 직접 연결하지 않는다. 자동 재시도 중에도 오류 문구가 나올 수 있기 때문이다. 일정 기간 누적 출력이 바뀌지 않으면 정지를 의심해 `claude-error-stalled`를 발생시키며, 부모 알림은 이 이벤트를 구독한다. 재시도와 실제 멈춤을 확정적으로 구분하는 검사는 아니다.
 
-이벤트 이름에 `error`가 있지만 오류 문구가 없는 장시간 정적 상태와 호스트가 `stale`로 분류한 자식도 대상이다. 기존 등록과 호환되도록 키를 유지한다. 알림 직전 화면에서 오류 문구를 찾으면 이를 힌트로 붙이고, 없으면 출력과 완료 신호가 없다는 안내를 보낸다([에이전트 상태 설계](../../adr/0041-agent-state-and-completion.md)).
+이벤트 이름에 `error`가 있지만 오류 문구가 없는 장시간 정적 상태와 호스트가 `stale`로 분류한 자식도 대상이다. 기존 등록과 호환되도록 키를 유지한다. 알림 직전 화면에서 오류 문구를 찾으면 이를 힌트로 붙이고, 없으면 출력과 완료 신호가 없다는 안내를 보낸다([에이전트 상태 설계](../../features/child-terminal/index.md)).
 
 판정 기준은 두 조건의 **동시** 충족이다(`error_scan.rs`):
 

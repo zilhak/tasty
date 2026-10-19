@@ -89,7 +89,7 @@ fn rel_of(file: &Path, root: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// 빈 순회가 통과하지 않게 하는 하한이다(ADR-0048).
+/// 빈 순회가 통과하지 않게 하는 하한이다(docs/dev-guide/guard-verification.md).
 /// 2026-09-05에 gather와 is_scan_target으로 1120파일을 수집했다.
 /// 파일 정리를 허용할 여유를 두므로 하한 통과가 수집의 완전성을 보장하지는 않는다.
 const MIN_SCANNED_FILES: usize = 700;

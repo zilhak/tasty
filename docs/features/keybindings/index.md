@@ -2,13 +2,13 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자
-- **ADR**: [ADR-0019](../../adr/0019-keybinding-settings-and-hints.md) — 파서 위치, 이식 번들, 가져오기 적용 단위. 입력 정책은 [키 매핑](../../design/policies/key-mapping.md)을 따른다.
+- **설계**: [키 매핑 설계 (운영 상세)](../../design/policies/key-mapping.md) — 파서 위치, 이식 번들, 가져오기 적용 단위. 입력 정책은 [키 매핑](../../design/policies/key-mapping.md)을 따른다.
 - **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs` · `parse.rs`) · 이식 번들 `crates/tasty-host-plugin/src/keybinding_bundle.rs` · 가져오기/내보내기 화면 `src/view/settings/ui/keybindings_tab/import_export.rs`
 - **화면**: [설정 창](../settings/screens/settings.md) Keybindings 탭
 
 ## 목적
 
-tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되며 코드에 하드코딩되지 않는다([CLAUDE.md](../../../CLAUDE.md) "단축키" 필수 정책). 사용자가 Settings 의 Keybindings 탭에서 액션별 키 조합을 추가/삭제/변경한다. OS 메뉴(macOS NSMenu / Windows AcceleratorTable)의 key equivalent 도 이 binding 을 따라간다.
+ESC·Enter처럼 당연하게 쓰이는 기본 조작을 제외한 Tasty 자체 **단축키는 `KeybindingSettings` 한 곳에서 정의**되며 코드에 하드코딩되지 않는다([CLAUDE.md](../../../CLAUDE.md) "단축키" 필수 정책). 사용자가 Settings 의 Keybindings 탭에서 액션별 키 조합을 추가/삭제/변경한다. OS 메뉴(macOS NSMenu / Windows AcceleratorTable)의 key equivalent 도 이 binding 을 따라간다.
 
 ## 내부 동작
 
@@ -18,7 +18,7 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 바인딩 문자열은 **OS 독립 표기**다 — 위치 기반 추상화로 macOS 에선 `alt`→⌘ 등으로 매핑된다([key-mapping](../../design/policies/key-mapping.md)). 쓸 수 있는 키 토큰(문자 하나, `plus`·`minus`·`equals`, `f1`~`f24` 를 포함한 이름 키)은 [바인딩 문자열 문법](../../design/policies/key-mapping.md#바인딩-문자열-문법)에 있다.
 
-그 문자열을 보조키와 일반 키로 나누는 **파싱**(`parse_binding` · 축 modifier 조합의 `Combo::parse_modifiers`)은 값을 저장하는 크레이트인 `tasty_settings::keybindings::parse` 에 있고, 그 결과를 실제 키 이벤트와 대조하는 **매칭**만 `src/adapters/ui/input/shortcuts/` 에 남는다. 이식 판정처럼 UI 밖에서도 같은 규칙이 필요하기 때문이다([ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)).
+그 문자열을 보조키와 일반 키로 나누는 **파싱**(`parse_binding` · 축 modifier 조합의 `Combo::parse_modifiers`)은 값을 저장하는 크레이트인 `tasty_settings::keybindings::parse` 에 있고, 그 결과를 실제 키 이벤트와 대조하는 **매칭**만 `src/adapters/ui/input/shortcuts/` 에 남는다. 이식 판정처럼 UI 밖에서도 같은 규칙이 필요하기 때문이다([키 매핑 설계 (운영 상세)](../../design/policies/key-mapping.md)).
 
 사이드바 도구 메뉴의 호스트 항목 일곱에는 각각 단축키 필드가 있다:
 `toggle_command_palette`, `open_port_scanner`, `open_remote_tool`, `open_preset_window`,
@@ -163,7 +163,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 새 최상위 번들 필드는 BUNDLE_KEYS와 함께 수정하고 비호환 형식 변경은 BUNDLE_VERSION을 올린다.
 
 `option` 바인딩은 모든 OS 에서 같은 위치의 키로 동작한다([키 매핑](../../design/policies/key-mapping.md#이식-시-option-처리)).
-선택 이유는 [단축키 설정 결정](../../adr/0019-keybinding-settings-and-hints.md)에 있다.
+선택 이유는 [단축키 설정 결정](../../design/policies/key-mapping.md)에 있다.
 
 ### webview surface(markdown/html)에서의 단축키 — native 자식 창에서 host 로 포워딩
 
@@ -171,7 +171,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 위에 그려진다(X11 child window + WebKitGTK / WKWebView subview / child HWND + WebView2).
 그 자식이 키보드 입력을 받으면 winit 최상위 창은 `WindowEvent::KeyboardInput` 을 아예 받지
 못하므로, 아무 조치가 없으면 그 상태에서 사용자가 설정한 단축키가 동작하지 않는다. 그래서 세
-백엔드가 native 키를 가로채 host 로 올린다([ADR-0029](../../adr/0029-webview-host-integration.md)).
+백엔드가 native 키를 가로채 host 로 올린다([WebView 호스트 계약](../../design/systems/webview.md)).
 
 - **계약은 한 곳**: 백엔드는 자기 native 키 표현(GDK keyval / NSEvent
   `charactersIgnoringModifiers` / Win32 VK)을 winit `Key`+`ModifiersState` 로 정규화해
@@ -184,7 +184,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   명령의 effective binding(매니페스트 `default_keybinding` / 사용자 override / host 액션
   상속). 포워딩 계층에 키 리터럴은 없다. 도출은 단축키 계층
   (`src/adapters/ui/input/shortcuts/webview_claims.rs`)이 하고, 브리지의 정책은 그 결과인
-  콤보 목록만 받는다([ADR-0029](../../adr/0029-webview-host-integration.md)).
+  콤보 목록만 받는다([WebView 호스트 계약](../../design/systems/webview.md)).
 - **plugin 바인딩은 scope 로 미리 거르지 않되, 비활성 plugin 은 제외한다** — 스냅샷은
   활성 plugin 의 모든 명령을 담는 상위집합이다(키가 host 에 도착하는 시점의 모델 포커스를
   브리지가 claim 시점에는 알 수 없다). 비활성 plugin 명령은 실행할 수 없으므로 claim
@@ -416,7 +416,7 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
 - **Apply** — 고른 행만 settings draft 와 `plugin_shortcuts_draft` 에 쓴다(`apply_rows`). 적용되면 toast 로 알린다. 디스크 커밋은 footer **Save** 가 한다(Preset 과 같은 2 단계).
 - **Cancel** — 설정 draft 와 함께 `plugin_shortcuts_draft` 도 버린다. plugin draft 는 **Save 로 닫혔을 때만** 적용된다 — 창 닫기·`toggle_settings` 로 닫혀도 버린다. Plugins 서브탭 편집도 같은 규칙이다.
 
-결정의 근거·대안·재검토 조건은 [ADR-0019](../../adr/0019-keybinding-settings-and-hints.md).
+결정의 근거·대안·재검토 조건은 [키 매핑 설계 (운영 상세)](../../design/policies/key-mapping.md).
 
 ### Plugins 서브탭
 
@@ -480,6 +480,6 @@ General → Workspace → Pane → Tab → Surface → Clipboard → Zoom → Ex
 
 ## 관련
 
-- [ADR-0029](../../adr/0029-webview-host-integration.md) — webview 자식 창의 키를 host 로 포워딩하는 결정
+- [WebView 호스트 계약](../../design/systems/webview.md) — webview 자식 창의 키를 host 로 포워딩하는 결정
 - [design/policies/key-mapping](../../design/policies/key-mapping.md) — modifier 매핑(바인딩 문자열 → 물리 키 OS별 매핑)·OS 메뉴 key equivalent 정책
 - [settings](../settings/index.md) — 편집 표면

@@ -5,7 +5,7 @@
 //! workspace가 닫혀도 남도록 Global scope에 저장하며 workspace_id는 레코드에 넣는다.
 //! 조회 시 만료 기록을 제외하고 삭제를 시도한다. 주기 정리는 log_retention과
 //! 같은 정책을 사용한다. 결정 근거는
-//! [ADR-0009](../../docs/adr/0009-state-storage-and-retention.md)를 참고한다.
+//! [저장소 시스템 (Storage System)](../../docs/design/systems/storage.md)를 참고한다.
 
 use serde::{Deserialize, Serialize};
 use tasty_memory::{ListOpts, MemoryError, MemoryValue, PutOpts, Scope};

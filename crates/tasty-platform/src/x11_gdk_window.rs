@@ -139,7 +139,7 @@ mod tests {
     /// 창 생성과 조회가 서로 다른 연결을 쓰며 그 사이 XSync가 있는지 확인한다.
     /// XFlush는 송신만 하므로 생성 완료 확인을 대신할 수 없다. 연결 구조가 바뀌면 이 전제도 검토한다.
     #[test]
-    fn adr_0159_two_connection_premise_still_holds() {
+    fn two_connection_premise_still_holds() {
         let path = repo_root().join("src/host_api/webview/linux.rs");
         let text = std::fs::read_to_string(&path).expect("webview/linux.rs 를 읽지 못했다");
         let code: Vec<String> = text.lines().map(mask_non_code).collect();
@@ -179,7 +179,7 @@ mod tests {
     /// foreign GdkWindow를 직접 연결하면 size_allocate도 직접 전달해야 한다.
     /// 두 동작 중 하나만 남은 경우를 검사한다. 둘을 함께 제거하는 설계 변경은 별도 검토가 필요하다.
     #[test]
-    fn adr_0301_foreign_bind_and_explicit_allocation_move_together() {
+    fn foreign_bind_and_explicit_allocation_move_together() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .and_then(std::path::Path::parent)

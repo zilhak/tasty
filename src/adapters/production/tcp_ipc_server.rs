@@ -49,7 +49,7 @@ enum LineRead {
 pub(crate) const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 
 /// 한 회차의 처리 건수를 제한해 다른 이벤트도 처리할 수 있게 한다.
-/// 연결 상한과 같은 값을 사용하며 시간 예산도 별도로 적용한다(ADR-0007).
+/// 연결 상한과 같은 값을 사용하며 시간 예산도 별도로 적용한다(docs/architecture/ipc-server.md).
 /// 한 연결은 응답을 기다린 뒤 다음 요청을 보내지만 회차 중 새 요청이 들어올 수 있으므로
 /// 연결 수를 회차 전체의 처리 건수로 해석하지 않는다.
 /// 남은 명령은 헤드리스의 재깨움 또는 GUI IpcPacer로 다음 회차에서 처리한다.
@@ -267,7 +267,7 @@ impl TcpIpcServer {
     /// 포트 파일이 데이터 루트에 있을 때만 그 루트의 notify를 정리한다.
     /// 외부 경로를 지정한 호스트가 같은 홈을 쓰는 다른 호스트의 로그를 지우지 않게 한다.
     /// 로그 writer의 경로는 데이터 루트이므로 포트 파일 옆 notify로 대체하지 않는다.
-    /// 경로를 정규화할 수 없으면 입력 경로 그대로 비교한다(ADR-0041).
+    /// 경로를 정규화할 수 없으면 입력 경로 그대로 비교한다(docs/features/child-terminal/index.md).
     fn notify_dir_to_clear(
         data_root: Option<std::path::PathBuf>,
         custom_port_file: Option<&std::path::Path>,
@@ -495,7 +495,7 @@ impl TcpIpcServer {
     }
 
     /// 스트림 writer는 push를 보내고 현재 스레드는 수신 프레임을 메인 루프로 넘긴다.
-    /// SSH와 loopback 접근을 신뢰하며 핸드셰이크 session_token은 검사하지 않는다(ADR-0011).
+    /// SSH와 loopback 접근을 신뢰하며 핸드셰이크 session_token은 검사하지 않는다(docs/design/systems/memory.md).
     fn handle_stream_connection(
         mut reader: BufReader<std::net::TcpStream>,
         writer: std::net::TcpStream,
@@ -532,7 +532,7 @@ impl TcpIpcServer {
     }
 
     /// 프로토콜이 다르면 ok:false ack를 보내고 attach 전에 거절한다.
-    /// 사용할 수 없는 클라이언트가 점유를 먼저 잡아 정상 접속을 막지 않게 하기 위해서다(ADR-0021).
+    /// 사용할 수 없는 클라이언트가 점유를 먼저 잡아 정상 접속을 막지 않게 하기 위해서다(docs/dev-guide/attach-behavior.md).
     fn validate_stream_proto(
         ctx: &StreamContext,
         client_id: StreamClientId,
@@ -764,7 +764,7 @@ impl TcpIpcServer {
     /// accept 스레드를 막지 않도록 non-blocking 쓰기 한 번으로 포화 거절을 시도하고 닫는다.
     /// 닫기 전에 이미 도착한 요청 바이트를 기다리지 않고 비워 RST 가 응답을 지우지 않게 한다.
     /// 부분 전송이나 실패, 비운 뒤 도착한 바이트가 있으면 거절 사유 전달을 보장하지 못한다.
-    /// 업그레이드 판별 전이므로 스트림 클라이언트는 이 JSON을 프레임 오류로 읽을 수 있다(ADR-0006).
+    /// 업그레이드 판별 전이므로 스트림 클라이언트는 이 JSON을 프레임 오류로 읽을 수 있다(docs/architecture/ipc-server.md).
     /// 포화 진입의 warn은 슬롯 검사에서 이미 남기므로 여기서는 debug로 기록한다.
     fn refuse_saturated_connection(stream: std::net::TcpStream) {
         if let Err(e) = stream.set_nonblocking(true) {
@@ -917,7 +917,7 @@ impl TcpIpcServer {
             Some(bound) => match resp_rx.recv_timeout(bound) {
                 Ok(response) => Ok(response),
                 // 만료 순간 명령이 아직 큐에 있었으면 실행되지 않게 막고 "실행 안 됨" 으로
-                // 답한다(ADR-0007). 이미 시작됐으면 종전 그대로 결과 불명이다.
+                // 답한다(docs/architecture/ipc-server.md). 이미 시작됐으면 종전 그대로 결과 불명이다.
                 Err(mpsc::RecvTimeoutError::Timeout) => Ok(match lifecycle.withdraw() {
                     tasty_ipc::server::Withdraw::NotRun => {
                         tasty_ipc::server::expired_before_run_response(rpc_id, bound)
@@ -1177,7 +1177,7 @@ mod admission_tests {
             Some(tasty_telemetry::slow_requests::HostOutcome::Error {
                 code: crate::ipc::protocol::ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN
             }),
-            "the slow-request row reads the answer the waiter sent (ADR-0008)"
+            "the slow-request row reads the answer the waiter sent (docs/architecture/ipc-server.md)"
         );
 
         let mut got = String::new();
@@ -1236,7 +1236,7 @@ mod admission_tests {
             Some(tasty_telemetry::slow_requests::HostOutcome::Error {
                 code: crate::ipc::protocol::ERR_EXPIRED_BEFORE_RUN
             }),
-            "the slow-request row reads the answer the waiter sent (ADR-0008)"
+            "the slow-request row reads the answer the waiter sent (docs/architecture/ipc-server.md)"
         );
 
         drop(server_side);

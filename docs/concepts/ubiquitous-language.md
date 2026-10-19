@@ -24,12 +24,12 @@
 - **로컬 사용자** — 이 머신에서 GUI 를 직접 쓰는 사람. 포커스의 주인. 점유 불필요. 점유를 끊을 수 있는 유일한 주체.
 - **AI Agent** — IPC·CLI로 Tasty를 조작하는 AI. 대상을 ID로 지정하며 사용자의 포커스·히스토리·선택을 바꾸지 않는다. 점유 없이 작업하는 것이 기본이며 필요하면 soft/hard 점유를 사용한다. child-terminal의 soft 점유가 한 예다.
 - **원격 접속 사용자** — SSH를 통해 attach한 사람. 로컬 GUI 입력이 아니라 연결을 통해 작업하며, 점유한 대상만 조작한다.
-- **점유(occupation)** — 원격 사용자나 AI가 surface/workspace를 사용 중임을 표시하는 관계. soft는 입력을 제한하지 않는 표시, hard는 다른 주체를 읽기 전용으로 제한하는 점유다(ADR-0021). 한 대상의 점유자는 한 명이고 한 주체는 여러 대상을 점유할 수 있다. 본인의 self-release나 로컬 사용자의 force-detach로 해제한다.
+- **점유(occupation)** — 원격 사용자나 AI가 surface/workspace를 사용 중임을 표시하는 관계. soft는 입력을 제한하지 않는 표시, hard는 다른 주체를 읽기 전용으로 제한하는 점유다(docs/dev-guide/attach-behavior.md). 한 대상의 점유자는 한 명이고 한 주체는 여러 대상을 점유할 수 있다. 본인의 self-release나 로컬 사용자의 force-detach로 해제한다.
 
 ### 원격 연결 (→ [features/remote-profiles](../features/remote-profiles/index.md))
 
-- **원격 접속 프로필(Remote profile)** — 확장 가능한 문자열 `kind`로 연결 유형을 구분한다. 비밀 값은 담지 않고 Passkey 이름을 참조한다. `ssh`는 연결 정보, `tasty-attach`는 attach 설정이다. `tasty-attach`는 `ssh_ref` 또는 인라인 SSH 정보와 `remote_tasty`·`port_mode`·`port_file`을 사용한다. attach는 `tasty-attach`만 받는다(ADR-0020).
-- **Passkey** — 이름으로 관리하는 자격증명. `kind=path`는 기존 파일을 참조하고 `inline`은 값을 권한 0600 파일에 저장한다. TOML에는 비밀 대신 파일 경로를 기록한다. 값은 로컬 GUI의 Reveal에서만 볼 수 있고 IPC·에이전트에는 공개하지 않는다([ADR-0011](../adr/0011-secrets-and-local-trust.md)).
+- **원격 접속 프로필(Remote profile)** — 확장 가능한 문자열 `kind`로 연결 유형을 구분한다. 비밀 값은 담지 않고 Passkey 이름을 참조한다. `ssh`는 연결 정보, `tasty-attach`는 attach 설정이다. `tasty-attach`는 `ssh_ref` 또는 인라인 SSH 정보와 `remote_tasty`·`port_mode`·`port_file`을 사용한다. attach는 `tasty-attach`만 받는다(docs/features/remote-profiles/index.md).
+- **Passkey** — 이름으로 관리하는 자격증명. `kind=path`는 기존 파일을 참조하고 `inline`은 값을 권한 0600 파일에 저장한다. TOML에는 비밀 대신 파일 경로를 기록한다. 값은 로컬 GUI의 Reveal에서만 볼 수 있고 IPC·에이전트에는 공개하지 않는다([에이전트 메모리 시스템](../design/systems/memory.md)).
 - **미등록 타입** — 내장 기능(ssh/smb)이나 설치된 플러그인이 처리한다고 선언하지 않은 `kind`. 등록은 허용하되 노란 배지로 알린다.
 
 ### 구조 (→ [hierarchy.md](hierarchy.md))
@@ -82,7 +82,7 @@
 - **마커 오버레이(Marker overlay)** — 대상 rect 위 최상위에 링·glow를 그리는 장치. 메시지나 심각도는 다루지 않는다. 마커와 scrim은 입력을 통과시키며(`pointer-events:none`) 옆 안내 말풍선만 상호작용을 처리한다.
   좌표는 매 프레임 `LayoutContext`·`terminal_rect`·`tab_bar_height`로 다시 계산한다. 현재는 튜토리얼에서만 사용하고 메뉴 선택·Next 클릭 등 사용자 행동으로 진행한다. 에이전트 IPC·CLI에는 표시 API가 없다([튜토리얼](../features/tutorial/index.md), `src/adapters/ui/tutorial/`).
 - **전체화면 무대(Fullscreen stage)** — 창 전체에 별도 콘텐츠를 표시한다. Workspace·Pane·Tab·Surface 트리의 요소를 확대하는 기능이 아니며, popup을 표시할 때도 별도 인스턴스를 만든다. 무대 뒤 콘텐츠는 redraw하지 않고 무대를 닫으면 다시 그린다.
-  창마다 최대 1개이며 `StageDef`에 선언한 것만 표시하고 영속화하지 않는다. popup 타이틀바 버튼 등 사용자 조작으로 열며 release에는 제어 API가 없다. 자체 검증은 debug 전용 `debug.fullscreen.*`을 사용한다([전체화면 무대](../design/systems/fullscreen-stage.md), [ADR-0018](../adr/0018-explicit-capture-and-fullscreen-stage.md)).
+  창마다 최대 1개이며 `StageDef`에 선언한 것만 표시하고 영속화하지 않는다. popup 타이틀바 버튼 등 사용자 조작으로 열며 release에는 제어 API가 없다. 자체 검증은 debug 전용 `debug.fullscreen.*`을 사용한다([전체화면 무대](../design/systems/fullscreen-stage.md), [스크린샷 방법](../ai-verification/screenshot-methods.md)).
   - **Zoom 과 혼동 금지** — tasty 에서 `Zoom` 은 **UI 배율**(설정 › 단축키 › Zoom)로 이미 선점된 용어다. tmux 식 "pane zoom" 명칭을 쓰지 않고 **전체화면 / 무대(stage)** 로 통일한다.
 - **상태바(Workspace status bar)** — 작업 영역 하단을 항상 차지하는 고정 strip(타이틀바 `top_inset` 과 대칭인 `bottom_inset`). focus surface 컨텍스트 표시 + 우측 빠른 액션(팔레트·테마). GUI 전용 표시 위젯(에이전트 표면 없음). 정본 [`features/workspace-status-bar`](../features/workspace-status-bar/index.md).
 
@@ -97,7 +97,7 @@
 
 - **host 내장** — `terminal`(PTY·GPU 셰이더), `empty`, `dag_graph`, `explorer`.
 - **egui-mesh plugin** — `image` (plugin 이 `rendering=egui-mesh` 선언, plugin 프로세스가 tessellate 한 mesh 를 host 가 합성).
-- **webview plugin** — `html` / `markdown`([ADR-0029](../adr/0029-webview-host-integration.md)) — `rendering=webview`, host 의 네이티브 WebView 오버레이로 그림.
+- **webview plugin** — `html` / `markdown`([WebView 호스트 계약](../design/systems/webview.md)) — `rendering=webview`, host 의 네이티브 WebView 오버레이로 그림.
 
 ### Claude plugin (→ [plugins/claude](../plugins/claude/index.md))
 
@@ -111,7 +111,7 @@
 
 - **server / client** — 서버는 PTY를 관리하며 점유 요청을 받고, loopback 주소에서만 연결을 받는다. 클라이언트는 서버에 연결해 대상을 점유하고 입력·출력을 전달한다. "로컬/원격"은 **클라이언트에서 서버에 연결하는 방식**을 구분하는 말이다.
 - **mirror** — client 가 받은 출력으로 PTY 없이 재구성한 복제 화면. GUI mirror = 원격 워크스페이스를 로컬 GUI 에 일반 워크스페이스로 띄운 것.
-- **remote** — client 가 SSH 너머인 경우. tasty 는 자체 원격 프로토콜 없이 SSH 에 위임 → release CLI `tasty remote attach`. (로컬 self-attach 는 debug 전용, [ADR-0020](../adr/0020-remote-connection-profiles.md).)
+- **remote** — client 가 SSH 너머인 경우. tasty 는 자체 원격 프로토콜 없이 SSH 에 위임 → release CLI `tasty remote attach`. (로컬 self-attach 는 debug 전용, [원격 접속 프로필 + Passkey (remote_tool)](../features/remote-profiles/index.md).)
 - **SSH 위임(SSH delegation)** — 시스템 `ssh` 바이너리에 원격 연결을 맡기는 기능. 프로세스 실행, 터널 수명, 원격 포트 찾기, 재시도 간격, 취소를 `tasty-ssh`가 담당하며 CLI와 GUI가 함께 사용한다. 포트 찾기·프로필 재감지·대화형 접속은 터널 기능과 구분한다.
 - **원격 인스턴스 능력(remote capability)** — 원격 Tasty의 워크스페이스를 조회하고 만드는 기능. `tasty-remote`가 담당한다. `tasty-ssh`는 연결 방법, `tasty-remote`는 연결 후의 작업, `tasty-remote-profiles`는 이름으로 관리하는 연결 설정을 담당한다.
 

@@ -15,11 +15,11 @@
 
 ### Added
 
-- `PluginRequest`에 `dropped_requests: u64`를 추가했다. 호스트 요청 큐가 포화되면 기다리지 않고 요청을 버리며, 다음으로 큐에 넣는 요청에 그 수를 전달한다. 기본값은 0이고, 0이면 직렬화에서 생략한다. 알 수 없는 필드는 기본 Serde 동작으로 무시된다. 선택 필드 추가이므로 `api_version`은 유지한다. [ADR-0006](../../docs/adr/0006-bounded-ipc-transport.md).
+- `PluginRequest`에 `dropped_requests: u64`를 추가했다. 호스트 요청 큐가 포화되면 기다리지 않고 요청을 버리며, 다음으로 큐에 넣는 요청에 그 수를 전달한다. 기본값은 0이고, 0이면 직렬화에서 생략한다. 알 수 없는 필드는 기본 Serde 동작으로 무시된다. 선택 필드 추가이므로 `api_version`은 유지한다. [IPC 서버](../../docs/architecture/ipc-server.md).
 
   SDK는 `Plugin::on_host_dropped_requests` 콜백과 `HostHandle::dropped_by_host()` 조회, `warn` 로그로 이 수를 알린다. 콜백의 기본 구현은 아무것도 하지 않는다.
 
-- `IpcCallResult`에 `error_code: Option<i32>`를 추가해 `ipc.result`로 JSON-RPC 오류 코드도 전달한다. 호출자는 메시지 문자열뿐 아니라 코드로 실패를 구분할 수 있다. 필드가 없는 구버전 호스트의 응답은 `None`으로 읽는다. 선택 필드 추가이므로 `api_version`은 유지한다. [ADR-0004](../../docs/adr/0004-ipc-discovery-and-errors.md).
+- `IpcCallResult`에 `error_code: Option<i32>`를 추가해 `ipc.result`로 JSON-RPC 오류 코드도 전달한다. 호출자는 메시지 문자열뿐 아니라 코드로 실패를 구분할 수 있다. 필드가 없는 구버전 호스트의 응답은 `None`으로 읽는다. 선택 필드 추가이므로 `api_version`은 유지한다. [CLI / IPC API 규약 — 명명 + 안정성](../../docs/dev-guide/api-conventions.md).
 
 - `PluginEvent::BannerInvalidated { instance_id }`를 추가했다. `PopupInvalidated`와 같은 방식으로 배너의 다음 렌더링을 요청한다. SDK가 egui의 `viewport_output`에서 받은 재렌더 요청을 호스트에 전달할 때 사용한다. `#[serde(other)]`가 있는 구버전 호스트는 `PluginEvent::Unknown`으로 읽어 무시한다. 변형 추가이며 `api_version`은 유지한다.
 

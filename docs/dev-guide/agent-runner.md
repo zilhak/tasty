@@ -1,5 +1,9 @@
 # Agent task runner
 
+## 원칙과 현재 동작
+
+[플러그인 경계](../principles/plugins.md)에 따라 특정 제품에 대한 실행 규칙은 해당 플러그인이 소유한다. 현재 공용 child_env가 사용하는 tasty-utils의 Claude 전용 환경변수 목록은 이 경계와 정합할 범위다. 일반 task·후처리·재시도 계약 자체를 특정 제품 기능으로 보지는 않는다.
+
 workspace마다 스레드 하나가 준비된 task를 실행하고 완료 여부를 확인해 DAG를 진행한다.
 상태 전이·영속 저장·custom reducer의 기본 셸 runner(`run_custom_shell`)는
 [`tasty-agent`](../../crates/tasty-agent/)가 맡고 실제 task 실행은 host가 맡는다.
@@ -109,7 +113,7 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 
 ### runner 자식의 환경
 
-`Run` task, 후처리 CLI, reduce 의 custom 전략 셸(`run_custom_shell` — runner 의 reduce task 와 `agent.task_reduce` 모두)의 자식은 같은 규칙(`crates/tasty-agent/src/child_env.rs`)으로 Tasty 프로세스의 환경을 받는다. 규칙이 한 곳에 있어 세 경로가 같이 바뀐다. 결정과 대안은 [ADR-0070](../adr/0070-typed-task-postprocess-runs-inside-the-attempt.md).
+`Run` task, 후처리 CLI, reduce 의 custom 전략 셸(`run_custom_shell` — runner 의 reduce task 와 `agent.task_reduce` 모두)의 자식은 같은 규칙(`crates/tasty-agent/src/child_env.rs`)으로 Tasty 프로세스의 환경을 받는다. 규칙이 한 곳에 있어 세 경로가 같이 바뀐다.
 
 - 지우는 것 1 — 바깥 Claude Code 세션의 표지·비밀. 남기면 자식이 부르는 Claude Code 가 자신을 바깥 세션의 자식으로 오인하고 세션 비밀이 무관한 프로세스로 샌다. 터미널 셸에서도 지우는 목록(`tasty_utils::process` 의 `STRIPPED_ENV_*`)이다: `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_ENTRYPOINT`·`CLAUDE_CODE_MESSAGING_TOKEN` 등의 고정 목록, `CLAUDE_PLUGIN_OPTION_*`·`CMUX_*`, `claude-code_`·`claude-code/` 로 시작하는 `AI_AGENT`, 바깥 Codex 대화의 `CODEX_THREAD_ID`.
 - 지우는 것 2 — 바깥 Tasty 인스턴스의 신원: `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`·`TASTY_AGENT_ID`. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면 이 값들은 그 인스턴스의 surface·세션 토큰·완료 알림 경로를 가리킨다. 터미널 셸은 `TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 자기 값으로 덮어쓰지만 runner 의 자식에는 덮어쓸 surface 가 없어 지운다. 그래서 자식이 부른 `tasty` 는 다른 인스턴스의 신원으로 요청하지 않는다. 목록은 터미널 셸·훅과 같은 `tasty_utils::process::OUTER_IDENTITY_ENV` 이고, 판정은 훅 실행과 같은 `is_child_stripped_env` 다.
@@ -280,7 +284,7 @@ IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tast
 - 수명 종료의 stop 요청은 원 hub와 실행 control을 고정한 receipt를 반환한다. `Waiting`은 미회수, `Joined`는 정상 join, `WorkerFailed`는 실패한 worker의 실제 join이다. 옛 receipt가 같은 숫자 workspace ID의 새 owner를 지우지 않는다.
 - `status(ctx, ws)` — `running`/`crashed`/`ready_count`/`running_count`/`store_error`/`list_failures`. 두 카운트는 `Option` 이다 — store 를 못 읽으면 `None`(응답에선 `null`)이고 `store_error` 가 이유를 싣는다. `list_failures` 는 러너 스레드의 연속 조회 실패 횟수(러너가 없으면 0).
 
-TaskScope의 Drop은 task 취소가 아니다. runner stop도 task 상태를 바꾸지 않고 Run의 OS 자식을 끝내지 않는다. 예외로 진행 중인 후처리 실행은 그룹을 끝내고 `cancelled` 보고를 저장한다(아래 §후처리 CLI, [ADR-0070](../adr/0070-typed-task-postprocess-runs-inside-the-attempt.md)). workspace가 확정 구조에서 사라졌을 때만 해당 runner를 중지하며 같은 Engine 안의 순서 변경은 유지한다. Engine 해제는 scope의 모든 runner와 물리 자원 receipt를 기다린다. 앱 종료 대기 상한을 넘기면 남은 worker를 미회수로 기록하며 join 완료로 간주하지 않는다.
+TaskScope의 Drop은 task 취소가 아니다. runner stop도 task 상태를 바꾸지 않고 Run의 OS 자식을 끝내지 않는다. 예외로 진행 중인 후처리 실행은 그룹을 끝내고 `cancelled` 보고를 저장한다(아래 §후처리 CLI, 이 문서). workspace가 확정 구조에서 사라졌을 때만 해당 runner를 중지하며 같은 Engine 안의 순서 변경은 유지한다. Engine 해제는 scope의 모든 runner와 물리 자원 receipt를 기다린다. 앱 종료 대기 상한을 넘기면 남은 worker를 미회수로 기록하며 join 완료로 간주하지 않는다.
 
 scope 전체 stop 뒤에는 같은 scope의 늦은 runner 시작을 거절한다. 이미 등록된 hook wait와 awaiter는 지우지 않으며, 늦은 hook 완료도 등록 당시의 `TaskWakerHub`와 `agent_seq`로 전달한다. 현재 선택된 다른 Engine의 허브로 재해소하지 않는다.
 
@@ -312,7 +316,7 @@ tick 머리의 `TaskStore::list` 가 실패하면 **빈 목록으로 흡수하�
 
 runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)를 직접 못 부른다. injector 경유: `IpcCommand`+`sync_channel(1)` 을 App IPC 큐에 push → waker 로 App 깨움 → tick 의 routing 이 plugin 에 forward → 응답이 sync_channel 회신 → runner 의 `recv_timeout(5s)`. `Core::set_host_ipc_injector` 가 IPC 시작 직후 1회 등록(boot.rs headless + app/boot_machine.rs gui 양쪽).
 
-주입은 IPC 서버와 **같은 큐 개수·바이트 제한**을 거친다. 큐에 든 호스트 주입 명령이 이미 상한만큼이거나(메인 루프가 서 있는 동안 시간 초과로 돌아간 호출이 남긴 명령이 쌓인 경우) 큐의 바이트 합이 넘치면, 명령은 큐에 들어가지 않고 `InjectError::Refused` 로 즉시 돌아온다 — `InjectError::nothing_ran()` 이 참이라 실행되지 않았음을 알 수 있고, 시간 초과(결과 불명)와 갈린다. runner 의 `dispatch_plugin` 은 그 오류를 문자열(문구에 "nothing ran")로 task 결과에 올리고 다시 걸지 않는다(만료·시간 초과의 처리는 위 "호스트 응답 지연"). 상한 값과 근거는 [ADR-0006](../adr/0006-bounded-ipc-transport.md). 주입은 제 대기 상한(5 s)을 명령의 기한으로도 싣는다 — 상한까지 큐에서 못 나간 명령은 나중에도 실행되지 않고 `InjectError::Expired`(문구 `… while still queued (nothing ran)`)로 돌아오며, 상한 전에 시작된 명령만 `InjectError::Timeout`(결과 불명)이다. 근거는 [ADR-0007](../adr/0007-ipc-scheduling-and-deadlines.md).
+주입은 IPC 서버와 **같은 큐 개수·바이트 제한**을 거친다. 큐에 든 호스트 주입 명령이 이미 상한만큼이거나(메인 루프가 서 있는 동안 시간 초과로 돌아간 호출이 남긴 명령이 쌓인 경우) 큐의 바이트 합이 넘치면, 명령은 큐에 들어가지 않고 `InjectError::Refused` 로 즉시 돌아온다 — `InjectError::nothing_ran()` 이 참이라 실행되지 않았음을 알 수 있고, 시간 초과(결과 불명)와 갈린다. runner 의 `dispatch_plugin` 은 그 오류를 문자열(문구에 "nothing ran")로 task 결과에 올리고 다시 걸지 않는다(만료·시간 초과의 처리는 위 "호스트 응답 지연"). 상한 값과 근거는 [IPC 서버](../architecture/ipc-server.md). 주입은 제 대기 상한(5 s)을 명령의 기한으로도 싣는다 — 상한까지 큐에서 못 나간 명령은 나중에도 실행되지 않고 `InjectError::Expired`(문구 `… while still queued (nothing ran)`)로 돌아오며, 상한 전에 시작된 명령만 `InjectError::Timeout`(결과 불명)이다. 근거는 [IPC 서버](../architecture/ipc-server.md).
 
 ## 동기화 primitive 통합
 
@@ -442,7 +446,7 @@ v1 task 는 회차 id 가 없다)(`runner_host/holding_warning.rs`,
 memory 키 `tasty.agent.holding_warning.<task_id>`, task 당 최근 16건, task 를 지울 때 함께 지운다).
 러너가 tick 을 오래 건너뛴 경우(앱 멈춤·저장소 대기)에만 생긴다. 러너가 꺼진 동안에는 아무도
 갱신하지 않으므로, 그 사이 TTL 이 지나면 다른 holder 가 얻을 수 있다. TTL 은 이제 "task 를
-지켜보는 러너가 없어진 뒤 자원을 돌려받을 시간" 으로 정한다. 근거는 ADR-0042 의 "task
+지켜보는 러너가 없어진 뒤 자원을 돌려받을 시간" 으로 정한다. 근거는 docs/features/agent-collaboration/index.md 의 "task
 lease·semaphore TTL 갱신" 절.
 
 호스트 재시작 시에는 `holder == task.id`인 러너 소유 점유만 정리한다.
@@ -654,7 +658,7 @@ tasty agent task-purge --workspace 1 --states succeeded,failed --older-than-ms 6
 
 ## v2 타입 계약 (`contract_version: 2`)
 
-task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다. 결정 근거는 [ADR-0067](../adr/0067-typed-task-contracts-live-in-a-separate-record-namespace.md).
+task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다.
 
 코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`(입력 매핑 `binding/mapping.rs`), 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`(형식 읽기 `store/graph_parse.rs`), 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`, 후처리 계약·결과 확정 `crates/tasty-agent/src/task/postprocess.rs`, 후처리 단계의 완료 기록 `crates/tasty-agent/src/task/store/postprocess.rs`, 후처리 프로세스 실행 `crates/tasty-task-runtime/src/runner_host/postprocess.rs`, 전이와 경로 선택 `crates/tasty-agent/src/task/route.rs`, 자식 환경 `crates/tasty-agent/src/child_env.rs`, agent task 계약 `crates/tasty-agent/src/task/agent.rs`, 턴 표 `crates/tasty-task-runtime/src/agent_turns.rs`, agent task 실행 `crates/tasty-task-runtime/src/runner_host/agent.rs`.
 
@@ -677,7 +681,7 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 - 이름 붙은 타입은 `types` 에 선언하며 재귀를 허용하지 않는다.
 - `nullable` 은 값 자리에 null 을 허용한다. `unit`·`json` 에는 쓸 수 없다. 필드 전용 키는 `optional`(생략 가능)과 `default`(생략 시 채울 값)다. 기본값은 선언할 때 그 필드 타입으로 검사한다.
 - 선언하지 않은 필드는 오류다. int64 의 10진 문자열(아래) 외에는 암묵 변환이 없다. `42.0` 은 int64 가 아니고 정수는 float64 로 바꾸지 않는다.
-- 한도: 스키마 깊이 32, 값 깊이 64, 값의 직렬화 크기 256KiB(`types.rs` 의 `MAX_SCHEMA_DEPTH`·`MAX_VALUE_DEPTH`·`MAX_VALUE_BYTES`). 근거는 ADR-0067.
+- 한도: 스키마 깊이 32, 값 깊이 64, 값의 직렬화 크기 256KiB(`types.rs` 의 `MAX_SCHEMA_DEPTH`·`MAX_VALUE_DEPTH`·`MAX_VALUE_BYTES`). 근거는 docs/dev-guide/agent-runner.md.
   - 크기: memory 값 하나의 한도가 1MiB이고 v2 레코드에는 출력 외에 계약·raw 응답(run은 stdout·stderr 각 64KiB tail)·v1 투영이 함께 실리므로, 출력 하나를 그 4분의 1로 두었다.
   - 깊이: 검증·직렬화가 재귀하는 깊이를 막는 값이며 사람이 쓰는 스키마·결과에 충분한 여유를 둔 초기값이다.
 - 오류(`TypeError`)는 종류, JSON Pointer 경로, 기대 타입, 실제 값 요약을 가진다. 결과 검증 실패는 task id 도 싣는다. IPC 는 `AgentError::TypeContract` 를 `-32602` 로 돌려주고 `error.data` 에 실패 단계와 타입 오류를 싣는다.
@@ -733,9 +737,9 @@ custom 의 최종 응답과 agent 의 실행 보고(`raw.execution`)에도 같�
 
 v2 task 는 Running 이 될 때마다 새 회차(`attempt`: `id` 는 `<task id>#<번호>`, `number`, `started_at`)를 받는다. `retry` 는 회차를 지우지 않으므로 다음 실행은 번호를 이어 간다. v1 task 에는 회차가 없다.
 
-v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 task 의 `retry` 는 `-32602` 로 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되고(input 단계 실패), 이미 끝난 fallback 의 결과와 전파를 되돌릴 수 없기 때문이다. 다시 실행하려면 새 task 로 제출한다. fallback 이 실패했거나 실행 전에 끝났으면(Failed·Skipped·Cancelled) 재시도할 수 있다. v2 task 의 `retry` 는 `reset_downstream: true` 도 `-32602` 로 거절한다. 하류는 이전 회차의 실패 전파나 경로 선택으로 이미 판정됐고, 되감으면 두 회차의 판단이 섞이기 때문이다(근거 ADR-0072). 재시도는 그 task 만 새 회차로 다시 실행하며 저장된 경로(`route`)와 skip 이유를 지운다. 경로가 선택되지 않아 건너뛴(`branch_not_selected`) v2 task 는 다시 판정해도 선택되지 않으면 `retry` 를 `-32602` 로 거절한다(메시지에 `not selected`). 받아들이면 곧장 같은 이유로 건너뛰어 아무것도 실행하지 않은 채 성공 응답만 남기 때문이다. v1 task 는 이 제한이 없다.
+v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 task 의 `retry` 는 `-32602` 로 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되고(input 단계 실패), 이미 끝난 fallback 의 결과와 전파를 되돌릴 수 없기 때문이다. 다시 실행하려면 새 task 로 제출한다. fallback 이 실패했거나 실행 전에 끝났으면(Failed·Skipped·Cancelled) 재시도할 수 있다. v2 task 의 `retry` 는 `reset_downstream: true` 도 `-32602` 로 거절한다. 하류는 이전 회차의 실패 전파나 경로 선택으로 이미 판정됐고, 되감으면 두 회차의 판단이 섞이기 때문이다(근거 docs/dev-guide/agent-runner.md). 재시도는 그 task 만 새 회차로 다시 실행하며 저장된 경로(`route`)와 skip 이유를 지운다. 경로가 선택되지 않아 건너뛴(`branch_not_selected`) v2 task 는 다시 판정해도 선택되지 않으면 `retry` 를 `-32602` 로 거절한다(메시지에 `not selected`). 받아들이면 곧장 같은 이유로 건너뛰어 아무것도 실행하지 않은 채 성공 응답만 남기 때문이다. v1 task 는 이 제한이 없다.
 
-완료 보고(`Completion`: 회차 id·결과·성공/실패)는 저장소의 `complete` 하나로 기록한다(근거 ADR-0069).
+완료 보고(`Completion`: 회차 id·결과·성공/실패)는 저장소의 `complete` 하나로 기록한다(근거 docs/dev-guide/agent-runner.md).
 
 - v2 는 결과 확정(출력 검증 포함)과 종결 상태, 성공했을 때 고른 경로(`route`, 아래 §전이 조건과 경로 선택)를 레코드 한 번의 쓰기로 저장한다. 쓰기가 실패하면 상태·결과가 그대로이고 하류 readiness·fallback 도 움직이지 않는다. 그 쓰기가 끝난 뒤에야 하류를 평가하고 대기자에게 종결을 알린다.
 - 보고의 회차가 지금 회차와 다르면 적용하지 않는다(`stale_attempt`). 회차 id 를 생략하면 지금 회차로 본다.
@@ -766,9 +770,9 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 | 같은 보고 재전송 | 이미 종결이면 전이 오류(`-32602`) | `duplicate: true` 로 같은 응답 |
 | 다른 회차·다른 내용 보고 | 구별하지 않는다 | `-32018` 거절 |
 
-Running 인 v2 task 는 `agent.task_get` 과 `agent.task_list` 의 각 task 에 세부 단계 `phase` 를 싣는다(`Task::phase`). `postprocessing`·`retry_wait` 는 후처리(아래 §후처리 CLI), `awaiting_input` 은 입력을 기다리는 agent task(아래 §agent task), 그 밖은 `executing` 이다. Running 이 아니거나 v1 task 면 없다. 예외로 handle 이 남은 Ready task(v1 포함)는 `waiting_previous_attempt` 다(`tasty_task_runtime::task::task_phase`). 이전 회차의 프로세스가 끝난 것을 확인할 때까지 러너가 시작하지 않고 있다는 뜻이다(위 §dispatch 게이트 아래 취소·정리 설명). `task_get` 은 그 task 의 handle 키 하나만, `task_list` 는 handle 목록을 한 번 읽어 판정한다. 목록 읽기는 key 의 `LIKE` 접두사 검색이라 워크스페이스의 레코드 수에 비례한다. 완료는 한 번의 쓰기라 출력 검증·저장 중인 단계(`validating`)는 바깥에서 관측되지 않아 두지 않는다(ADR-0069). CLI `task-list` 는 줄 끝에 `(phase)` 를, `task-get` 은 `phase:` 줄을 보인다.
+Running 인 v2 task 는 `agent.task_get` 과 `agent.task_list` 의 각 task 에 세부 단계 `phase` 를 싣는다(`Task::phase`). `postprocessing`·`retry_wait` 는 후처리(아래 §후처리 CLI), `awaiting_input` 은 입력을 기다리는 agent task(아래 §agent task), 그 밖은 `executing` 이다. Running 이 아니거나 v1 task 면 없다. 예외로 handle 이 남은 Ready task(v1 포함)는 `waiting_previous_attempt` 다(`tasty_task_runtime::task::task_phase`). 이전 회차의 프로세스가 끝난 것을 확인할 때까지 러너가 시작하지 않고 있다는 뜻이다(위 §dispatch 게이트 아래 취소·정리 설명). `task_get` 은 그 task 의 handle 키 하나만, `task_list` 는 handle 목록을 한 번 읽어 판정한다. 목록 읽기는 key 의 `LIKE` 접두사 검색이라 워크스페이스의 레코드 수에 비례한다. 완료는 한 번의 쓰기라 출력 검증·저장 중인 단계(`validating`)는 바깥에서 관측되지 않아 두지 않는다(docs/dev-guide/agent-runner.md). CLI `task-list` 는 줄 끝에 `(phase)` 를, `task-get` 은 `phase:` 줄을 보인다.
 
-단계가 바뀔 때 사건은 발행하지 않는다. task 사건은 종결(`agent.task_finished`)과 barrier 닫힘뿐이다([ADR-0067](../adr/0067-typed-task-contracts-live-in-a-separate-record-namespace.md)). 진행 신호가 필요하면 DAG 에 신호를 보내는 task 를 끼운다. 신호 task 는 앞 task 가 끝난 뒤 실행되므로 그 경계의 신호가 된다. 실행 중 단계는 `task_get` 으로 조회한다.
+단계가 바뀔 때 사건은 발행하지 않는다. task 사건은 종결(`agent.task_finished`)과 barrier 닫힘뿐이다(이 문서). 진행 신호가 필요하면 DAG 에 신호를 보내는 task 를 끼운다. 신호 task 는 앞 task 가 끝난 뒤 실행되므로 그 경계의 신호가 된다. 실행 중 단계는 `task_get` 으로 조회한다.
 
 ```json
 {"id": "built", "command": {"kind": "run", "command": ["tasty", "notify", "build finished", "--title", "release DAG"]},
@@ -785,7 +789,7 @@ inline fallback 은 v2 에서 거절한다.
 
 ### 후처리 CLI (`postprocess`)
 
-run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 삼을 수 있다. 모델 접속·인증·질문 작성은 CLI 의 일이고, Tasty 는 명령 실행·입출력·타입 검증·실패 처리만 한다. 인증은 기존 환경을 쓴다. 근거는 [ADR-0070](../adr/0070-typed-task-postprocess-runs-inside-the-attempt.md).
+run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 삼을 수 있다. 모델 접속·인증·질문 작성은 CLI 의 일이고, Tasty 는 명령 실행·입출력·타입 검증·실패 처리만 한다. 인증은 기존 환경을 쓴다.
 
 ```json
 {"id": "judge",
@@ -1010,7 +1014,7 @@ task 레코드는 memory 값 하나라 직렬화가 memory 값 상한(기본 1 M
 
 - task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`, `postprocess`, `transitions`. 모르는 키는 거절한다. `command`·`on_failure` 안(`poll`·inline fallback 포함)의 모르는 키도 거절한다. 이 둘의 타입은 v1 `task_create` 와 저장된 기록도 읽으므로 타입 자체는 모르는 키를 무시한다. 그래프 제출만 값을 표지 값으로 바꿔 다시 읽어 보고 결과가 같은 키를 모르는 키로 본다(`params`·`metadata` 같은 JSON 값 필드 안의 키는 결과가 달라지므로 받는다). `types` 는 모든 task 가 함께 쓴다.
 - 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 전이(아래 절), 위 조합 규칙, 순환(전이 간선 포함). 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
-- 그래프 하나에는 task 를 1000 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 앱의 IPC 처리 경로에서 활성화하기 때문이다(근거 ADR-0068). 그동안 러너 tick 과 memory 를 쓰지 않는 요청을 포함한 다른 IPC 전체가 기다린다. 1000 개 제출 중 다른 연결의 `system.ping` 은 0.25~1.4s 기다렸다(아래 측정). 초과하면 `location: /tasks` 로 거절한다.
+- 그래프 하나의 현재 상한은 1000개(MAX_GRAPH_TASKS)이며 초과하면 location: /tasks로 거절한다. 제출은 reply_task가 memory writer의 Section에 접수하고 완료 후 응답한다. 메인 루프에서 전체 그래프를 직접 실행하는 계약이 아니다. 남은 직접 잠금 경계는 [저장 계약](../design/systems/storage-contract.md)을 따른다.
 - 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다. JSON 형식 오류(모르는 키, 필수 필드 누락, 타입이 다른 값)도 같다(`TaskGraphSpec::from_json`, `store/graph_parse.rs`). 형식 오류의 위치는 다음과 같다.
   - 모르는 키는 그 키다(`/tasks/0/bogus`, `/tasks/0/command/session/bogus`). 한 object 에 둘 이상이면 메시지가 말하는 키다.
   - 타입이나 값이 틀린 필드는 그 필드다(`/tasks/0/command/workspace_id`, `/tasks/0/on_failure/task`). 태그 enum(`kind`) 안의 오류도 `kind` 가 아니라 틀린 필드를 가리킨다. 틀린 것이 `kind` 값이면 `kind` 다.
@@ -1020,12 +1024,12 @@ task 레코드는 memory 값 하나라 직렬화가 memory 값 상한(기본 1 M
 - 통과하면 task 를 활성화 전 상태로 모두 저장한 뒤 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다. 그래프 레코드가 없는 task 는 Ready 가 되지 않으므로 저장 도중 러너가 돌아도 실행되지 않는다. task 나 그래프 레코드를 쓰다 실패하면 저장한 task 를 지운다. 레코드를 쓴 뒤 readiness 반영이 실패하면 지우지 않고 `-32603` 으로 답하며 `error.data` 에 `graph_id`·`possibly_active: true`·`cause` 를 싣는다(복구는 아래 §한계). 응답은 `{valid, activated, graph_id, durability, tasks}` 다.
 - 그래프 id 는 `g-<ms>-<순번>` 이며 task 의 `graph_id` 에 기록한다. `metadata.dag` 가 없으면 그래프 id 를 넣어 DAG 로 묶는다. 그래프의 task 가 모두 삭제되면 그래프 레코드도 지운다.
 - `agent.task_graph_validate` 는 같은 검증만 하고 저장하지 않는다(`{valid, activated: false, durability, tasks}`). CLI 는 `--dry-run` 이다.
-- 그래프의 `durability` 는 `required`(기본) 또는 `best_effort` 다. memory 저장소가 대체 모드(`memory_init_fallback`, 재시작하면 사라진다)일 때 `required` 그래프는 검증·제출 모두 `-32602`(`error.data`: `location: /durability`, `store_durable: false`, `cause`)로 거절하고 아무것도 저장하지 않는다. `best_effort` 는 그대로 실행하되 재시작 복구를 약속하지 않는다. 판정은 `TaskService::task_graph_submit` 이 하므로(`AgentError::StoreNotDurable`) IPC 를 거치지 않는 호출자도 같다. 그래프 레코드에 `durability` 를 남기고, 제출 응답은 `durability` 와(대체 모드면) `durable: false` 를 싣는다(근거 ADR-0068).
+- 그래프의 `durability` 는 `required`(기본) 또는 `best_effort` 다. memory 저장소가 대체 모드(`memory_init_fallback`, 재시작하면 사라진다)일 때 `required` 그래프는 검증·제출 모두 `-32602`(`error.data`: `location: /durability`, `store_durable: false`, `cause`)로 거절하고 아무것도 저장하지 않는다. `best_effort` 는 그대로 실행하되 재시작 복구를 약속하지 않는다. 판정은 `TaskService::task_graph_submit` 이 하므로(`AgentError::StoreNotDurable`) IPC 를 거치지 않는 호출자도 같다. 그래프 레코드에 `durability` 를 남기고, 제출 응답은 `durability` 와(대체 모드면) `durable: false` 를 싣는다(근거 docs/dev-guide/agent-runner.md).
 - 러너는 켜지 않는다. 정지한 러너에서는 활성화된 task 가 Ready 로 남는다.
 
 그래프 한도의 측정:
 
-- 지금은 3단계와 하류 전파(`TaskStore::settle_waiting`)가 저장소 목록을 한 번 읽고 작업본을 갱신한다. 메모리 안의 readiness 그래프 재구성은 task 마다 남아 있어 비용은 여전히 제곱이지만 상수가 작다. `TaskStore::submit_graph` 를 같은 머신에서 번갈아 잰 값(dev 프로필, 3회 최소~최대)은 이전 구현이 200 개 178~539ms · 1000 개 3781~5441ms, 지금 구현이 200 개 38~85ms · 1000 개 181~488ms 다. 지금 구현의 1000 개가 이전 구현의 200 개와 같은 범위라 한도을 1000 으로 둔다. 초과는 `-32602`(`location: /tasks`)로 거절한다.
+- 지금은 3단계와 하류 전파(`TaskStore::settle_waiting`)가 저장소 목록을 한 번 읽고 작업본을 갱신한다. 메모리 안의 readiness 그래프 재구성은 task 마다 남아 있어 비용은 여전히 제곱이지만 상수가 작다. `TaskStore::submit_graph` 를 같은 머신에서 번갈아 잰 값(dev 프로필, 3회 최소~최대)은 이전 구현이 200 개 178~539ms · 1000 개 3781~5441ms, 지금 구현이 200 개 38~85ms · 1000 개 181~488ms 다. 당시 구현의 1000개가 이전 200개와 같은 범위여서 상한을 정했다. 이 비교는 writer 이행 전의 알고리즘 측정이다. 초과는 `-32602`(`location: /tasks`)로 거절한다.
 - 호스트 IPC 실측(격리 GUI 인스턴스, dev 빌드, 러너 정지, 제출 동안 다른 연결이 10ms 간격으로 `system.ping`, 측정 전 ping 기준선 0.09~0.10s):
 
   | 형태 | 제출 시간 | 제출 중 ping 최대 |
@@ -1034,11 +1038,11 @@ task 레코드는 memory 값 하나라 직렬화가 memory 값 상한(기본 1 M
   | 독립 1000(새 workspace, 2회) | 1.515s / 0.390s | 1.404s / 0.285s |
   | 사슬 1000(새 workspace, 2회) | 0.354s / 0.391s | 0.247s / 0.285s |
 
-  한도 크기의 그래프를 제출하면 그동안 호스트의 다른 IPC 가 최악 약 1.4s 멈출 수 있다. 이 지연을 받아들이고 한도을 1000 으로 유지한다. release 빌드는 재지 않았다.
+  위 수치는 memory writer 이행 전 동기 IPC 경로의 과거 측정이며 현재 지연 보장이 아니다. 현재 경로의 상한은 1000이며 실행 위치는 위 writer 계약을 따른다. 이 문서에 현재 경로를 다시 실측한 값은 없다.
 
 ### 전이 조건과 경로 선택
 
-생산자 task 의 `transitions` 는 성공한 출력으로 후속 task 를 고른다(근거 ADR-0072). 대상이 함께 제출돼야 하므로 그래프 제출로만 정한다. 저장소의 단건 생성(`TaskStore::create_typed`)은 전이가 든 계약을 거절한다.
+생산자 task 의 `transitions` 는 성공한 출력으로 후속 task 를 고른다(근거 docs/dev-guide/agent-runner.md). 대상이 함께 제출돼야 하므로 그래프 제출로만 정한다. 저장소의 단건 생성(`TaskStore::create_typed`)은 전이가 든 계약을 거절한다.
 
 ```json
 {"id": "review", "output_schema": {"ref": "ReviewResult"},
@@ -1087,7 +1091,7 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 
 ### agent task
 
-`{"kind": "agent", "provider": "claude"|"codex", "workspace_id": N, "session": ..., "instruction": "...", "timeout_ms"?: N}` 는 provider 세션에 지시 하나를 보내고 그 턴의 끝을 task 결과로 만든다. v2 계약이 필요하다(`task_create` 는 `-32602`). 근거는 [ADR-0069](../adr/0069-typed-task-completion-is-one-write-per-attempt.md)의 "agent task 회차의 결과" 절. 명령의 `workspace_id` 는 새 세션이 뜨는 workspace 다. 회차 기록, 제출 안내의 `--workspace`, 턴 표의 키는 task 자신의 workspace 를 쓴다.
+`{"kind": "agent", "provider": "claude"|"codex", "workspace_id": N, "session": ..., "instruction": "...", "timeout_ms"?: N}` 는 provider 세션에 지시 하나를 보내고 그 턴의 끝을 task 결과로 만든다. v2 계약이 필요하다(`task_create` 는 `-32602`).  명령의 `workspace_id` 는 새 세션이 뜨는 workspace 다. 회차 기록, 제출 안내의 `--workspace`, 턴 표의 키는 task 자신의 workspace 를 쓴다.
 
 | `session` | 동작 |
 |---|---|
@@ -1140,7 +1144,7 @@ custom 셸(v1·v2·`agent.task_reduce` 공통, `run_custom_shell`)의 입력은 
 
 ### DAG report
 
-report 는 사람이 읽는 실행 기록이다. 근거는 [ADR-0075](../adr/0075-typed-task-report-projects-auto-and-seals-custom-per-attempt.md). task 마다 자동 항목(`auto`)과 회차별 custom 기록을 둔다. 뒤 task 가 읽는 데이터가 아니다. binding 은 출력 문서의 위치만 가리키므로 report 를 입력으로 받을 수 없다. 코드: 모델 `crates/tasty-agent/src/task/report.rs`, 저장 `crates/tasty-agent/src/task/store/report.rs`, 주소 발급·stderr 표지 `crates/tasty-task-runtime/src/runner_host/report.rs`, 조회 `crates/tasty-task-runtime/src/report.rs`.
+report 는 사람이 읽는 실행 기록이다.  task 마다 자동 항목(`auto`)과 회차별 custom 기록을 둔다. 뒤 task 가 읽는 데이터가 아니다. binding 은 출력 문서의 위치만 가리키므로 report 를 입력으로 받을 수 없다. 코드: 모델 `crates/tasty-agent/src/task/report.rs`, 저장 `crates/tasty-agent/src/task/store/report.rs`, 주소 발급·stderr 표지 `crates/tasty-task-runtime/src/runner_host/report.rs`, 조회 `crates/tasty-task-runtime/src/report.rs`.
 
 자동 항목은 원본인 task 레코드가 살아 있는 동안 복사하지 않고 조회할 때 레코드에서 만든다. retry 로 닫히는 회차만 그 원본이 지워지기 직전에 한 번 굳혀 저장한다(아래).
 
@@ -1184,7 +1188,7 @@ v2 task 는 `tasty.agent.typed_task.<id>` 키에 `{"record_format": "tasty.task/
 
 ## 한계
 
-호스트가 Run 의 자식이 끝나기 전에 죽으면 자식은 init(1) 등으로 넘어가 Tasty 가 종료 코드를 받을 수 없다. 재시작 뒤 그 task 는 결과를 꾸미지 않고 `unknown`(`state.reason` 에 사유)이 된다. 프로세스가 아직 살아 있으면 끝날 때까지 Running 으로 기다린 뒤 `unknown` 이 된다. `unknown` 은 종결이 아니다. 하류는 실패 전파 없이 기다리고(DAG 집계에서는 `blocked`), fallback 도 실행되지 않는다. 사람이 결과를 확인한 뒤 `retry`(새 회차로 다시 실행)나 `cancel` 로 정한다. 근거는 ADR-0069 "결과를 회수할 수 없는 회차" 절. 감시 프로세스를 두어 종료 코드를 남기는 방식은 쓰지 않는다(같은 절의 대안). semaphore·lease 를 쥔 Run 도 같다. 프로세스가 살아 있는 동안 점유를 유지하고, 끝난 것을 확인한 때 반환한다. `unknown` task 는 점유를 쥐지 않으며 `retry` 가 새 회차로 다시 얻는다. 감시할 Run handle 이 없는 Running task 의 점유는 부팅 정리(`purge_stale_{semaphore,lease}_holders`)가 반환하고 `Failed("host restart")` 로 끝낸다.
+호스트가 Run 의 자식이 끝나기 전에 죽으면 자식은 init(1) 등으로 넘어가 Tasty 가 종료 코드를 받을 수 없다. 재시작 뒤 그 task 는 결과를 꾸미지 않고 `unknown`(`state.reason` 에 사유)이 된다. 프로세스가 아직 살아 있으면 끝날 때까지 Running 으로 기다린 뒤 `unknown` 이 된다. `unknown` 은 종결이 아니다. 하류는 실패 전파 없이 기다리고(DAG 집계에서는 `blocked`), fallback 도 실행되지 않는다. 사람이 결과를 확인한 뒤 `retry`(새 회차로 다시 실행)나 `cancel` 로 정한다. 근거는 docs/dev-guide/agent-runner.md "결과를 회수할 수 없는 회차" 절. 감시 프로세스를 두어 종료 코드를 남기는 방식은 쓰지 않는다(같은 절의 대안). semaphore·lease 를 쥔 Run 도 같다. 프로세스가 살아 있는 동안 점유를 유지하고, 끝난 것을 확인한 때 반환한다. `unknown` task 는 점유를 쥐지 않으며 `retry` 가 새 회차로 다시 얻는다. 감시할 Run handle 이 없는 Running task 의 점유는 부팅 정리(`purge_stale_{semaphore,lease}_holders`)가 반환하고 `Failed("host restart")` 로 끝낸다.
 
 같은 이유로 **캡처한 stdout/stderr 도 유실된다** — 자식은 호스트 재시작 후에도 살아남지만(수명 계약은 그대로 유지), 파이프를 들고 있던 드레인 스레드는 호스트와 함께 사라지므로 그 사이의 출력은 다시 읽을 방법이 없다. 장시간 작업(빌드/배포)의 결과 보존이 중요해지면 `pty.*` 기반 별도 경로가 더 맞다.
 

@@ -1,6 +1,6 @@
 //! 셸 종료로 바뀐 구조가 attach holder에 전달되고, 이미 사라진 surface의 요청은 IPC와 같은 이유로 거절되는지 확인한다.
 //! holder가 아닌 로컬 IPC가 점유된 workspace에 탭을 끼워 넣거나 닫는 우회 경로도 거절되는지 확인한다.
-//! 각 실행은 빌드한 GUI 또는 헤드리스 서버 경로 하나를 검증한다(ADR-0023).
+//! 각 실행은 빌드한 GUI 또는 헤드리스 서버 경로 하나를 검증한다(docs/dev-guide/attach-behavior.md).
 
 // 이유: 시험의 정리용 결과 무시는 제품 코드의 오류 처리 목록과 구분한다.
 #![allow(clippy::let_underscore_must_use)]

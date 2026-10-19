@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md) (soft 점유 소비자)
+- **설계**: [Attach 메커니즘](../../dev-guide/attach-behavior.md) (soft 점유 소비자)
 - **코드**: `src/runtime/child_terminal.rs` (registry) · `src/adapters/ipc/handler/terminal.rs` (IPC) · `crates/tasty-cli/src/commands/terminal.rs` (CLI)
 - **화면**: 없음 — headless 전용 (자식은 일반 terminal surface 로 렌더; soft 점유 테두리는 [surface-highlight](../surface-highlight/index.md)/점유 계약)
 
@@ -86,7 +86,7 @@ spawn은 지정한 workspace의 pane에 `terminal` 탭을 만들고 registry에 
 
 점유 처리는 내부 함수 `occupy_soft(child, parent)`, `release_occupancy(child)`,
 `release_soft_occupancy(child, parent)`를 사용한다. 외부 `occupancy.*` IPC는 없다
-([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
+([Attach 메커니즘](../../dev-guide/attach-behavior.md)).
 
 ### adopt와 release
 
@@ -110,7 +110,6 @@ release는 해당 자식의 `claude-error` 알림도 중단한다
 
 ## 훅과 출력 관측을 함께 사용하는 상태 판정
 
-설계 근거는 [ADR-0041](../../adr/0041-agent-state-and-completion.md)이다.
 
 `terminal.children`과 `terminal.state`는 훅으로 보고받은 상태와 호스트 관측을 함께 사용한다.
 두 경로는 `EngineRef::child_liveness{,_with_live}`를 공유한다.

@@ -6,7 +6,7 @@
 //!
 //! 두 전제는 각각 manifest와 공용 제품 포함 여부 분석기로 확인한다.
 //! 별도 픽스처 크레이트를 만드는 등 이 검사가 직접 발견하지 못하는 변경은 리뷰한다.
-//! 정책은 `docs/adr/0048-source-guards-and-exemptions.md`와
+//! 정책은 `docs/dev-guide/guard-verification.md`와
 //! `docs/dev-guide/guard-population.md`의 검사 범위·예외 관리 절을 따른다.
 
 use std::fs;
@@ -31,7 +31,10 @@ fn root_manifest() -> String {
 fn the_cli_crate_is_still_a_production_dependency_of_the_root_package() {
     let manifest = root_manifest();
     let all = declared_deps(&manifest);
-    println!("[ADR-0048 검사 범위] 루트 매니페스트 의존 {} 개", all.len());
+    println!(
+        "[docs/dev-guide/guard-verification.md 검사 범위] 루트 매니페스트 의존 {} 개",
+        all.len()
+    );
     assert!(
         all.len() >= MIN_ROOT_DEPS,
         "루트 매니페스트 의존을 {}개만 읽었다(하한 {MIN_ROOT_DEPS}). 파서와 의존 목록을 확인한다.",
@@ -41,11 +44,11 @@ fn the_cli_crate_is_still_a_production_dependency_of_the_root_package() {
     let sections = sections_declaring(&manifest, CLI_CRATE);
     assert!(
         !sections.is_empty(),
-        "루트 매니페스트에 {CLI_CRATE} 의존 선언이 없다. 본체가 CLI 파서를 소유한다는 전제가 바뀌었다면 ADR-0048과 layering 검사의 예외·범위를 함께 재검토한다."
+        "루트 매니페스트에 {CLI_CRATE} 의존 선언이 없다. 본체가 CLI 파서를 소유한다는 전제가 바뀌었다면 docs/dev-guide/guard-verification.md과 layering 검사의 예외·범위를 함께 재검토한다."
     );
     assert!(
         sections.iter().any(|s| s == "dependencies"),
-        "{CLI_CRATE}가 제품 의존성에 없다(선언 절: {sections:?}). 컴파일러가 제품 참조를 막게 됐다면 layering 검사의 필요성과 범위를 ADR-0048에 따라 재검토한다."
+        "{CLI_CRATE}가 제품 의존성에 없다(선언 절: {sections:?}). 컴파일러가 제품 참조를 막게 됐다면 layering 검사의 필요성과 범위를 docs/dev-guide/guard-verification.md에 따라 재검토한다."
     );
 }
 
@@ -63,7 +66,7 @@ fn the_root_lib_target_still_cannot_hand_the_fixtures_to_tests() {
     );
     let test_only = test_only_files(&root, &sources);
     println!(
-        "[ADR-0048 검사 범위] src 스캔 {} 파일 · 선언상 test 전용 파일 {} 개",
+        "[docs/dev-guide/guard-verification.md 검사 범위] src 스캔 {} 파일 · 선언상 test 전용 파일 {} 개",
         sources.len(),
         test_only.len()
     );
@@ -71,7 +74,7 @@ fn the_root_lib_target_still_cannot_hand_the_fixtures_to_tests() {
     for rel in FIXTURES_ALTERNATIVE_B_NEEDS {
         assert!(
             test_only.contains(std::path::Path::new(rel)),
-            "{rel}이 더 이상 테스트 전용 파일로 분류되지 않는다. 외부 통합 테스트가 픽스처를 사용할 수 있는지 확인하고 layering의 TEST_ONLY_FILES와 ADR-0048의 근거를 재검토한다."
+            "{rel}이 더 이상 테스트 전용 파일로 분류되지 않는다. 외부 통합 테스트가 픽스처를 사용할 수 있는지 확인하고 layering의 TEST_ONLY_FILES와 docs/dev-guide/guard-verification.md의 근거를 재검토한다."
         );
     }
 }

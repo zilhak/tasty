@@ -82,7 +82,7 @@ fn check_scope_request<'a>(
     let ws = engine
         .workspace_at(window.active_workspace_index(engine))
         .map(|w| w.id);
-    // 거부 사유별 대응이 달라 따로 센다(ADR-0008). 첫 거부에서 반환하므로 중복 집계하지 않는다.
+    // 거부 사유별 대응이 달라 따로 센다(docs/architecture/ipc-server.md). 첫 거부에서 반환하므로 중복 집계하지 않는다.
     use tasty_telemetry::GateRefusal;
     core.gate().record_judged();
     let refused = super::check_permission_gate(core, window, engine, caller, canonical, ws, &id)
@@ -100,7 +100,7 @@ fn check_scope_request<'a>(
     }
     super::record_telemetry_and_audit(core, window, engine, caller, canonical, &request.params, ws);
     // 멱등성 키는 모든 라우터에 앞서 검사한다. 권한 검사를 먼저 거쳐
-    // 권한 없는 호출에는 `-32001`을 반환하고, 허용된 호출은 한 번 집계한다(ADR-0057).
+    // 권한 없는 호출에는 `-32001`을 반환하고, 허용된 호출은 한 번 집계한다(docs/dev-guide/api-conventions.md).
     super::idempotency::check_envelope(request, &id)?;
     Ok(CheckedRequest {
         request,

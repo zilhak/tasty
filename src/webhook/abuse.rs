@@ -4,7 +4,7 @@
 //! 이때 같은 IP의 정상 요청도 차단되며 재시작하면 카운터와 차단 상태가 사라진다.
 //!
 //! 시간은 인자로 받아 시험에서 통제한다. 전역 진입점은 Instant::now()를 사용한다.
-//! [Webhook 접수 정책](../../docs/adr/0032-webhook-admission.md)과
+//! [Webhook 접수 정책](../../docs/features/webhook/index.md)과
 //! [락 poison 처리](../../docs/dev-guide/error-handling.md#락-poison-mutex--rwlock)를 따른다.
 
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ use super::ack::AckStatus;
 /// 실제 크기는 유입량뿐 아니라 항목별 윈도우·쿨다운과 정리 시점에도 영향을 받는다.
 /// 유입이 멎어도 시간 경과만으로 정리하지 않는다. 이후 실패 기록이 prune에 도달했을 때도
 /// 크기와 순회 간격 조건을 통과해야 만료 항목을 지운다.
-/// 정책은 [Webhook 접수 결정](../../docs/adr/0032-webhook-admission.md)을 따른다.
+/// 정책은 [Webhook 접수 결정](../../docs/features/webhook/index.md)을 따른다.
 const PRUNE_TRIGGER_SOURCES: usize = 4096;
 
 /// 전체 표를 훑는 최소 간격. 크기 문턱을 넘은 뒤에도 이 간격 안에는 다시 순회하지 않는다.
@@ -41,7 +41,7 @@ pub struct AbuseConfig {
     pub cooldown: Duration,
 }
 
-/// 기본값의 근거는 [ADR-0032](../../docs/adr/0032-webhook-admission.md)를 참고한다.
+/// 기본값의 근거는 [웹훅 (Inbound webhook listener)](../../docs/features/webhook/index.md)를 참고한다.
 impl Default for AbuseConfig {
     fn default() -> Self {
         Self {
@@ -264,7 +264,7 @@ mod tests {
 
     /// **문턱은 상한이 아니다.** 서로 다른 출처가 같은 윈도우 안에서 실패하면
     /// 모든 항목이 보존 조건을 만족하므로 `prune`은 하나도 지우지 않는다.
-    /// 표 크기가 정리 문턱으로 제한되지 않는 사례를 확인한다(ADR-0032).
+    /// 표 크기가 정리 문턱으로 제한되지 않는 사례를 확인한다(docs/features/webhook/index.md).
     #[test]
     fn the_table_grows_past_the_prune_trigger() {
         let mut t = AbuseTracker::new(cfg(20));

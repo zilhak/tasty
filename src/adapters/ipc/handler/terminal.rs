@@ -1,6 +1,6 @@
 //! 자식 터미널의 생성·입력·조회·종료를 관리한다. 에이전트별 명령 구성과 훅은 플러그인이 맡는다.
 //! 구조 생성·닫기는 App의 journal admission에서 처리하며 여기에는 입력·관계 서비스가 남는다.
-//! 부모·자식 관계와 soft 점유를 함께 관리한다(ADR-0021).
+//! 부모·자식 관계와 soft 점유를 함께 관리한다(docs/dev-guide/attach-behavior.md).
 
 mod fixed_input;
 use crate::runtime::engine_access::{EngineMut, EngineRef};

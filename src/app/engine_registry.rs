@@ -3,7 +3,7 @@
 //! engine은 [`EngineSession`] 하나로 `sessions`에 머물고, 창을 열거나 닫아도 컬렉션을 옮기지 않는다.
 //! 창·parked·임시·retiring은 관계 상태다. retiring owner도 확정 완료까지 같은 표에 남는다.
 //! MainView는 engine을 소유하거나 id를 들지 않고 자기 창 ID로 이 registry를 조회한다.
-//! 규칙은 [ADR-0054](../../docs/adr/0054-app-core-view-layers-and-state-ownership.md)를 따른다.
+//! 규칙은 [App·Engine·View 상태 소유권](../../docs/dev-guide/app-state-ownership.md)를 따른다.
 
 use std::collections::HashMap;
 

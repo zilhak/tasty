@@ -35,19 +35,25 @@ function fail(msg) {
 }
 
 function parseArgs(argv) {
-  const out = { remote: null, reasons: new Map(), check: false };
+  const out = { remote: null, reasons: new Map(), localVariants: new Map(), check: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--remote") out.remote = argv[++i];
     else if (a === "--check") out.check = true;
-    else if (a === "--reason") {
+    else if (a === "--local-variant") {
+      const spec = argv[++i] ?? "";
+      const eq = spec.indexOf("=");
+      if (eq <= 0 || !spec.slice(eq + 1).trim()) fail(`--local-variant needs <path>=<reason>: ${spec}`);
+      out.localVariants.set(spec.slice(0, eq), spec.slice(eq + 1).trim());
+    } else if (a === "--reason") {
       const spec = argv[++i] ?? "";
       const eq = spec.indexOf("=");
       if (eq <= 0 || !spec.slice(eq + 1).trim()) fail(`--reason needs <path>=<text>: ${spec}`);
       out.reasons.set(spec.slice(0, eq), spec.slice(eq + 1).trim());
     } else fail(`unknown argument: ${a}`);
   }
-  if (!out.remote) fail("usage: vendor-manifest.mjs --remote <dir> [--reason <path>=<text>]... [--check]");
+  if (out.remote && out.localVariants.size) fail("--remote and --local-variant are exclusive");
+  if (!out.remote && !out.localVariants.size) fail("usage: vendor-manifest.mjs --remote <dir> [--reason <path>=<text>]... [--check]");
   return out;
 }
 
@@ -75,7 +81,40 @@ function recordedReasons() {
   return reasons;
 }
 
+// A documented local reference correction does not fetch a new remote snapshot.
+// Preserve the recorded remote hash and compute only the explicitly named variant hashes.
+function refreshLocalVariants(args) {
+  const original = readFileSync(manifestPath, "utf8");
+  const pending = new Map(args.localVariants);
+  const lines = original.split("\n").map((line) => {
+    if (!line || line.startsWith("#")) return line;
+    const fields = line.split("\t");
+    if (!(fields.length === 2 || (fields.length === 5 && fields[2] === "variant"))) fail(`invalid manifest row: ${fields[0]}`);
+    if (!/^[a-f0-9]{64}$/.test(fields[1])) fail(`invalid recorded remote hash: ${fields[0]}`);
+    const reason = pending.get(fields[0]);
+    if (reason === undefined) return line;
+    const path = resolve(vendor, fields[0]);
+    if (relative(vendor, path).startsWith("..") || OWN_FILES.has(fields[0])) fail(`invalid local variant: ${fields[0]}`);
+    if (/[\t\r\n]/.test(reason)) fail("variant reason must be one line");
+    pending.delete(fields[0]);
+    const local = sha256(path);
+    return local === fields[1] ? fields.slice(0, 2).join("\t") : [fields[0], fields[1], "variant", local, reason].join("\t");
+  });
+  if (pending.size) fail(`local variant absent from recorded manifest: ${[...pending.keys()].join(", ")}`);
+  const updated = lines.join("\n");
+  if (args.check) {
+    if (updated !== original) fail("recorded local variant hashes differ");
+  } else {
+    writeFileSync(manifestPath, updated);
+  }
+  console.log(`Local reference variants: ${args.localVariants.size}; recorded remote hashes preserved`);
+}
+
 const args = parseArgs(process.argv.slice(2));
+if (args.localVariants.size) {
+  refreshLocalVariants(args);
+  process.exit(0);
+}
 const remoteDir = resolve(args.remote);
 if (!existsSync(remoteDir)) fail(`no remote directory at ${remoteDir}`);
 

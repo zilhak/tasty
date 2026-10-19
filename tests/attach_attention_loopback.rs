@@ -218,7 +218,7 @@ fn repeated_clear_frames_do_not_respam_the_stream() {
     );
 }
 
-/// 점유된 workspace를 활성화한 뒤에도 로컬 포커스에 의한 해제 프레임이 오지 않는지 확인한다(ADR-0024).
+/// 점유된 workspace를 활성화한 뒤에도 로컬 포커스에 의한 해제 프레임이 오지 않는지 확인한다(docs/features/surface-highlight/index.md).
 #[test]
 fn hard_occupied_attention_survives_the_servers_local_focus() {
     let server = common::shared();

@@ -1,5 +1,5 @@
 //! 문서·소스·워크플로를 읽어 정합성을 검사한다.
-//! 본체를 빌드하지 않고 문서 변경도 검사할 수 있도록 추가 의존성을 두지 않는다(ADR-0048).
+//! 본체를 빌드하지 않고 문서 변경도 검사할 수 있도록 추가 의존성을 두지 않는다(docs/dev-guide/guard-verification.md).
 //! 별도 의존성 검사는 없으므로 Cargo.toml 변경을 검토할 때 이 조건을 확인한다.
 
 // 이유: 테스트 본문의 의도적인 반환값 무시는 허용한다. cfg_attr(test)이므로 제품 코드의 lint는 유지한다.
@@ -7,6 +7,8 @@
 
 /// ADR 인덱스의 행을 ADR 헤더에서 만든다 — 생성기와 가드가 같은 함수를 부른다.
 pub mod adr_index;
+/// ADR 파일 집합과 명시적인 빈 인덱스를 대조한다.
+pub mod adr_inventory;
 /// ADR 재번호의 판정(매핑 파일 · 인용 형태) — `adr-renumber` 가 부른다.
 pub mod adr_renumber;
 
@@ -38,11 +40,11 @@ pub mod shipping_scope;
 /// 락 poison 을 보고 없이 복구하는 자리를 집는다.
 pub mod poison_recovery;
 
-/// 공유 temp 아래 고정 이름 임시 경로를 집는다(ADR-0045, 공유 임시 경로 격리).
+/// 공유 temp 아래 고정 이름 임시 경로를 집는다(docs/dev-guide/unit-test-isolation.md, 공유 임시 경로 격리).
 pub mod temp_path;
 pub mod temp_scratch;
 
-/// env·cwd 를 직렬화 없이 만지는 테스트를 집는다(ADR-0045, 프로세스 환경 격리).
+/// env·cwd 를 직렬화 없이 만지는 테스트를 집는다(docs/dev-guide/unit-test-isolation.md, 프로세스 환경 격리).
 pub mod env_isolation;
 
 /// 워크플로의 `on:` 트리거를 구조로 읽는다 — 주석과 트리거 키를 가른다.

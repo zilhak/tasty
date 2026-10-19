@@ -1,6 +1,6 @@
 //! UI 폰트·반경 토큰 값을 복사한 명명 상수, 생성 길이 상수의 직접 사용과 익명 색·점 치수를 검사한다.
 //! 배율 적용은 Theme가 맡으므로 토큰 값과 같은 const라도 직접 쓰면 설정을 반영하지 못할 수 있다.
-//! 토큰 없는 값의 이름·사유 규칙은 ADR-0035를 따른다. 자동 실행 범위는 docs/dev-guide/ci-gates.md에 있다.
+//! 토큰 없는 값의 이름·사유 규칙은 docs/design/systems/theme.md를 따른다. 자동 실행 범위는 docs/dev-guide/ci-gates.md에 있다.
 //!
 //! 숫자나 LogicalPx 숫자로 정의한 const만 읽으며 계산식·다른 상수·지역 변수는 추적하지 않는다.
 //! 상수는 스캔 루트 전체에서 이름으로 찾으므로 루트 밖 정의와 같은 이름의 다른 모듈을 정확히 구별하지 못한다.
@@ -62,7 +62,7 @@ fn sister_scan_roots(src: &str) -> Vec<String> {
 /// 어떤 역할의 토큰인지까지는 이 검사로 결정하지 않는다.
 const UI_FONT_TOKEN_VALUES: &[f32] = &[10.0, 11.0, 13.0, 14.0];
 
-/// UI semantic이 없는 primitive 폰트 값은 상수 이름에 primitive와 값을 표시한다(ADR-0035).
+/// UI semantic이 없는 primitive 폰트 값은 상수 이름에 primitive와 값을 표시한다(docs/design/systems/theme.md).
 /// 여기서는 아래 등록된 12·16만 확인하며 brand-wordmark/prose의 semantic 값은 제외한다.
 const UNMAPPED_PRIMITIVE_FONT_VALUES: &[f32] = &[12.0, 16.0];
 
@@ -352,7 +352,7 @@ fn const_radius_violations(
     }
 }
 
-/// 갤러리는 egui 전역 배율을 적용하므로 생성 길이 상수도 함께 커진다(ADR-0039).
+/// 갤러리는 egui 전역 배율을 적용하므로 생성 길이 상수도 함께 커진다(docs/concepts/typed-length.md).
 /// 이 예외만 제외하며 본체가 사용하는 UI 크레이트는 계속 검사한다.
 const ZOOM_CONST_EXCLUDED_ROOT: &str = "crates/tasty-gallery/";
 
@@ -936,7 +936,7 @@ fn no_named_const_copies_a_radius_token() {
 
     assert!(
         violations.is_empty(),
-        "반경 토큰 값을 복사한 명명 상수를 반경 인자에 사용했다. 같은 역할의 Theme 토큰을 쓴다. 토큰 범위 밖 값은 이름·사유를 둔 상수를 허용한다(ADR-0035):\n{}",
+        "반경 토큰 값을 복사한 명명 상수를 반경 인자에 사용했다. 같은 역할의 Theme 토큰을 쓴다. 토큰 범위 밖 값은 이름·사유를 둔 상수를 허용한다(docs/design/systems/theme.md):\n{}",
         violations.join("\n")
     );
 }
@@ -952,7 +952,7 @@ fn no_named_const_copies_a_ui_font_token() {
 
     assert!(
         violations.is_empty(),
-        "폰트 토큰 값을 복사한 명명 상수를 폰트 인자에 사용했다. font_size_* 또는 역할별 Theme 접근자를 쓴다. 토큰 범위 밖 값은 이름·사유를 둔 상수를 허용한다(ADR-0035):\n{}",
+        "폰트 토큰 값을 복사한 명명 상수를 폰트 인자에 사용했다. font_size_* 또는 역할별 Theme 접근자를 쓴다. 토큰 범위 밖 값은 이름·사유를 둔 상수를 허용한다(docs/design/systems/theme.md):\n{}",
         violations.join("\n")
     );
 }
@@ -1001,7 +1001,7 @@ fn unmapped_primitive_font_consts_say_so_in_their_name() {
 
     assert!(
         violations.is_empty(),
-        "UI semantic이 없는 primitive 폰트 상수 이름에 primitive와 값을 표시해야 한다. 예: ATTN_PRIMITIVE_12. semantic 토큰이 생기면 해당 토큰으로 옮긴다(ADR-0035):\n{}",
+        "UI semantic이 없는 primitive 폰트 상수 이름에 primitive와 값을 표시해야 한다. 예: ATTN_PRIMITIVE_12. semantic 토큰이 생기면 해당 토큰으로 옮긴다(docs/design/systems/theme.md):\n{}",
         violations.join("\n")
     );
 }
@@ -1342,7 +1342,7 @@ fn color_coeff_literals(line: &str) -> Vec<(&'static str, String)> {
     hits
 }
 
-/// 모든 색 계수에 대응하는 토큰이 있는 것은 아니므로 이름과 사유를 요구한다(ADR-0035).
+/// 모든 색 계수에 대응하는 토큰이 있는 것은 아니므로 이름과 사유를 요구한다(docs/design/systems/theme.md).
 /// 값을 통합하거나 바꾸는 것은 별도의 디자인 결정이다.
 #[test]
 fn no_color_derivation_coefficient_is_an_anonymous_literal() {
@@ -1427,7 +1427,7 @@ fn the_color_coeff_scan_sees_both_forms_and_ignores_the_named_one() {
 /// 점을 그리는 세 호출의 반지름을 검사한다.
 const DOT_RADIUS_CALLS: &[&str] = &["circle_filled(", "circle_stroke(", "circle("];
 
-/// 점 치수는 길이이므로 전역 zoom을 쓰는 갤러리를 제외한다(ADR-0039).
+/// 점 치수는 길이이므로 전역 zoom을 쓰는 갤러리를 제외한다(docs/concepts/typed-length.md).
 /// 무차원 색 계수 검사는 이 예외를 적용하지 않는다.
 fn dot_scan_roots() -> Vec<&'static str> {
     SCAN_ROOTS
@@ -1522,7 +1522,7 @@ fn no_dot_radius_is_an_anonymous_literal() {
     assert!(
         violations.is_empty(),
         "점 반지름이 익명 리터럴이다 ({} 자리). 토큰(`th.status_dot_size`)이 맞으면 \
-         그것을, 스케일 밖 값이면 사유를 적은 명명 const 를 써라(ADR-0035):\n  {}",
+         그것을, 스케일 밖 값이면 사유를 적은 명명 const 를 써라(docs/design/systems/theme.md):\n  {}",
         violations.len(),
         violations.join("\n  ")
     );
@@ -1568,7 +1568,7 @@ fn no_dot_named_const_copies_the_status_dot_token() {
     );
     assert!(
         violations.is_empty(),
-        "점 토큰 값{}을 복사한 DOT 이름 상수다. 같은 역할의 th.status_dot_size를 사용한다. 토큰 범위 밖 값은 이름·사유를 둔 상수를 허용한다(ADR-0035):\n{}",
+        "점 토큰 값{}을 복사한 DOT 이름 상수다. 같은 역할의 th.status_dot_size를 사용한다. 토큰 범위 밖 값은 이름·사유를 둔 상수를 허용한다(docs/design/systems/theme.md):\n{}",
         DOT_SIZE_TOKEN_VALUE.value(),
         violations.join("\n")
     );

@@ -58,7 +58,7 @@ tasty-ui-widgets     layout / 위젯 primitive (본 문서)
 - **값이 토큰과 같으면 이쪽이 아니라 SIZING 쪽이다.** 값이 같은 const 는 토큰의
   사본이고, 사본은 `Theme::with_colors_and_zoom` 의 `zoomed()` 경로 밖이라 `ui_scale`
   을 타지 않는다 — zoom 1 에서만 같고 나머지 배율에서 갈라진다
-  ([ADR-0035](../adr/0035-shared-design-and-theme.md)).
+  ([테마 시스템 (운영 상세)](../design/systems/theme.md)).
 - **그래서 스케일 밖 const 에는 사유를 적는다.** 어느 토큰 근처인지, 왜 스냅하지
   않는지, 그리고 zoom 을 안 타는 대가를 doc 주석에 남긴다. 대가의 크기는 축마다
   다르다 — 반경 토큰은 zoom 을 타므로 실재하고, `border_width` 처럼 애초에 zoom 을
@@ -151,6 +151,6 @@ Table 빌더의 길이 setter(`header_pad_x`·`header_pad_right`·`header_height
 
 `Table::virtual_rows(true)`는 화면에 걸친 행만 그린다(egui_extras `TableBody::rows`). 모든 본문 행의 높이가 같다는 전제에서 안 그린 행의 자리를 같은 높이로 비워 두므로 스크롤 길이는 행 수 그대로다. egui_extras 는 본문 맨 위를 기준으로 보이는 범위를 정하므로 모든 행을 한 번에 넘긴다. 앞에 따로 그린 행이 있으면 그 수만큼 범위가 밀려 위쪽 끝 행이 빠진다. 화면 밖 행의 셀 함수는 불리지 않으므로, 화면 밖에서도 유지해야 할 위젯(탐색기 detail 의 이름 입력)은 호출자가 표 밖에서 그린다. 클릭·우클릭 결과의 행 번호는 `rows` 기준이다. 셀 내용 폭으로 넓어지는 열(clip 없는 Remainder)은 그린 행으로만 폭을 잰다. `scroll_to_row(Some(i))`는 그 프레임에 `i` 행을 가운데로 스크롤한다. 보이는 행만 그리는 표에서 화면 밖 행으로 갈 때 쓴다. 회귀 검사는 `crates/tasty-ui-widgets/tests/table_virtual_rows.rs`의 `only_the_rows_on_screen_are_drawn`, `a_far_row_is_reached_with_every_row_in_view_drawn_and_clicks_report_its_index`(행 경계와 맞지 않는 여러 스크롤 위치에서 화면에 걸친 행이 모두 그려지는지 포함), `the_skipped_rows_keep_their_space_down_to_the_last_row`다. `virtual_rows`를 켜지 않은 소비처(포트 스캐너 표, 갤러리 표)는 기존 경로대로 매 프레임 모든 행의 셀을 그린다. 이 구분은 `table_secondary_click.rs`의 `only_virtual_tables_skip_rows_off_screen`이 검사한다.
 
-`TableColumnWidth::Flex { min_width }`는 시안 Table 열 옵션 `minWidth`에 대응한다. 열은 남는 폭을 받지만 `min_width` 아래로 줄지 않는다. 시안처럼 고정 열(`Exact`)은 그 폭이 곧 하한이다. 가로 스크롤 표(`horizontal_scroll(true)`)에서는 그리기 전에 `resolve_scroll_widths`가 Flex 열의 폭을 정한다. 열 하한과 열 사이 간격의 합(`fixed_total_width`)이 표 폭보다 작으면 남는 폭을 Flex 열에 똑같이 나누고, 크거나 같으면 Flex 열도 하한을 유지해 본문이 스크롤한다. 표 폭에서는 본문의 세로 스크롤바 폭을 미리 뺀다. 고정 폭 열 위에 바가 겹쳐 그려지기 때문이며 [ADR-0037](../adr/0037-ui-input-motion-and-elevation.md)의 폭 예약 예외에 해당한다. Flex 열이 없는 표는 열 폭을 바꾸지 않는다. 가로 스크롤을 쓰지 않는 표에서 Flex 열은 egui_extras remainder 열(최소 폭·clip)이 된다. 긴 셀 내용의 말줄임은 셀을 그리는 쪽이 맡는다. 회귀 검사는 `table.rs`의 `flex_keeps_its_floor_when_the_table_is_narrower_than_the_floors`, `spare_width_is_shared_equally_by_flex_columns_only`, `tables_without_flex_columns_keep_their_widths`다.
+`TableColumnWidth::Flex { min_width }`는 시안 Table 열 옵션 `minWidth`에 대응한다. 열은 남는 폭을 받지만 `min_width` 아래로 줄지 않는다. 시안처럼 고정 열(`Exact`)은 그 폭이 곧 하한이다. 가로 스크롤 표(`horizontal_scroll(true)`)에서는 그리기 전에 `resolve_scroll_widths`가 Flex 열의 폭을 정한다. 열 하한과 열 사이 간격의 합(`fixed_total_width`)이 표 폭보다 작으면 남는 폭을 Flex 열에 똑같이 나누고, 크거나 같으면 Flex 열도 하한을 유지해 본문이 스크롤한다. 표 폭에서는 본문의 세로 스크롤바 폭을 미리 뺀다. 고정 폭 열 위에 바가 겹쳐 그려지기 때문이며 이 문서의 폭 예약 예외에 해당한다. Flex 열이 없는 표는 열 폭을 바꾸지 않는다. 가로 스크롤을 쓰지 않는 표에서 Flex 열은 egui_extras remainder 열(최소 폭·clip)이 된다. 긴 셀 내용의 말줄임은 셀을 그리는 쪽이 맡는다. 회귀 검사는 `table.rs`의 `flex_keeps_its_floor_when_the_table_is_narrower_than_the_floors`, `spare_width_is_shared_equally_by_flex_columns_only`, `tables_without_flex_columns_keep_their_widths`다.
 
 포트 스캐너 표의 열 정의는 `ports_table.rs`의 `PortsColumn`이다. 열별 하한·가변 여부·정렬, 표 꾸밈(`ports_table`: 행 선택·가로 스크롤·헤더 배경·헤더 왼쪽 여백), Process 셀(`ports_process_cell`: 이름만 말줄임하고 PID Tag 는 유지)을 본체 popup 과 갤러리 예제가 함께 쓴다.

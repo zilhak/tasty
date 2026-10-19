@@ -41,7 +41,7 @@ caller 인증 뒤 공통 `check_request`가 권한·cap·rate-limit을 검사하
 한 번 집계한다. App 인터셉트·plugin namespace·일반 handler 모두 그 뒤에 온다.
 통과한 `CheckedRequest`를 일반 handler에 전달하므로 예산을 이중으로 차감하거나 사용량을 중복 집계하지 않는다.
 GUI 외부 IPC와 plugin host-call도 같은 경계를 사용한다.
-[ADR-0012](../adr/0012-request-admission-and-isolation.md).
+[플러그인 권한 모델](plugin-permissions.md).
 
 권한 부족의 Agent 거부는 기존 capability elevation을 한 번 발행하고
 `error.data`에 approval_id·permission·method를 싣는다. 거부된 요청은 실행하지 않고 허용된 요청으로 집계하지 않는다. Local 및 복구 메서드의 기존 예외는 유지한다.
@@ -51,7 +51,7 @@ GUI 외부 IPC와 plugin host-call도 같은 경계를 사용한다.
 잘못 적은 요청이 그대로 실행된다(핸들러가 그 키를 안 읽으면 성공까지 돌아온다). gui 와
 같은 코드를 쓰고, **호스트 예약 prefix 에 한정한다** — 예약되지 않은 prefix 는 plugin 이
 답할 수 있어서 제외하면 plugin으로 전달할 요청까지 거절된다. 근거는
-[ADR-0058](../adr/0058-headless-without-local-views.md).
+이 문서.
 
 읽기 전용 plugin 조회는 GUI와 헤드리스 모두
 `crate::adapters::ipc::handler::plugin::READONLY_METHODS`와 `dispatch_readonly`를 쓴다.
@@ -68,7 +68,7 @@ GUI 외부 IPC와 plugin host-call도 같은 경계를 사용한다.
 `register_one_surface_kind`(`boot/headless_plugins.rs`)는 webview·remote·egui-mesh 선언을
 모두 등록한다. markdown mirror는 서버의 픽셀이 아닌 원문을 client에서 그리므로,
 서버에 창이 없어도 해당 kind의 surface를 가질 수 있다
-([ADR-0022](../adr/0022-remote-mirror-content-and-queries.md)).
+([원격 attach (Remote attach)](../features/remote-attach/index.md)).
 같은 plugin이 실행 중이면 두 빌드의 kind 집합도 같다.
 
 등록 시점은 다르다. GUI는 첫 창을 만들 때 `discover_and_start`를 호출하고
@@ -83,7 +83,7 @@ markdown 활성화 뒤 다섯, 번들 9개가 실행된 뒤 여덟(`html`·`imag
 기동 대기 없이 `unknown surface kind`로 거절한다. 헤드리스 메인 루프가 하나이므로
 시작할 수 없는 plugin을 기다리면 다른 IPC 요청도 지연된다.
 namespace forward도 소유 plugin만 준비하되, 매칭 IPC hook이 있으면 해당 active
-extension을 함께 준비한다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)).
+extension을 함께 준비한다([플러그인 제작 가이드](plugin-development.md)).
 
 ## `plugin.*` — 19 개 메서드의 판정
 
@@ -120,7 +120,7 @@ extension을 함께 준비한다([ADR-0026](../adr/0026-plugin-registration-and-
 키와 payload 자체(`plugin.enabled` / `plugin.disabled` / `plugin.unloaded`)는 두 경로가
 `src/app/plugin_events.rs`의 같은 함수를 부른다. hook 이벤트 등록 해제도 gui 의 `cascade_plugin_unloaded` 와 같다.
 
-근거·대안·재검토 조건은 [ADR-0058](../adr/0058-headless-without-local-views.md).
+근거·대안·재검토 조건은 이 문서.
 
 **매니저는 메타데이터 층까지만 세운다** (`ensure_plugin_manager_metadata`). 번들 설치는
 부팅이 이미 했고(`src/boot.rs`), `PluginManager::enable` 은 그 package 표에서 **지목한
@@ -139,7 +139,7 @@ extension을 함께 준비한다([ADR-0026](../adr/0026-plugin-registration-and-
 
 ### 아직 없다 — 별도 lifecycle과 권한 계약이 필요한 기능 (6)
 
-plugin의 GUI lifecycle 통지는 `src/app/dispatch_domain.rs`가 처리하며 headless 일반 plugin bus는 제공하지 않는다. enable·disable은 지정 plugin의 실행 경계로 처리한다. 설치·삭제·권한 변경을 headless에 추가하는 일은 각각의 공개 권한·오류·완료 계약과 [ADR-0058](../adr/0058-headless-without-local-views.md)에 따라 판단한다.
+plugin의 GUI lifecycle 통지는 `src/app/dispatch_domain.rs`가 처리하며 headless 일반 plugin bus는 제공하지 않는다. enable·disable은 지정 plugin의 실행 경계로 처리한다. 설치·삭제·권한 변경을 headless에 추가하는 일은 각각의 공개 권한·오류·완료 계약과 이 문서에 따라 판단한다.
 
 `plugin.install` · `plugin.remove` · `plugin.grant` · `plugin.revoke` ·
 `plugin.upgrade_builtins` · `plugin.audit_follow`
@@ -211,7 +211,7 @@ GUI 조건에 따른다. 창이 없다는 이유로 권한 요청 자체를 막�
 |--------|-----|
 | `window.create` / `view.create` | winit 이벤트루프에 창 생성을 맡긴다. 헤드리스엔 그 루프가 없다 |
 | `window.close` / `view.close` | `App.view.views` 에서 창을 닫는다. 그 레지스트리가 없다 |
-| `window.focus` / `view.focus` | 포커스 전환이라 애초에 debug 격리(ADR-0012)이고, 대상도 창이다 |
+| `window.focus` / `view.focus` | 포커스 전환이라 애초에 debug 격리(docs/dev-guide/plugin-permissions.md)이고, 대상도 창이다 |
 | `window.list` / `view.list` | 빈 목록이 아니라 **개념이 없다** — `[]` 를 주면 "창이 0 개인 GUI" 로 읽혀 호출자가 `window.create` 를 시도한다 |
 | `ui.screenshot` | 창의 화면을 캡처해 파일로 쓴다. 캡처할 창이 필요하다 |
 | `remote.attach` | mirror workspace 를 띄울 창이 필요하다 |
@@ -235,7 +235,7 @@ GUI와 헤드리스에서 같은 인자로 호출한 조사와 이후 확인한 
 겹치지 않았다. 이 조사 수치를 현재 전체 메서드 수로 사용하지 않는다.
 
 등록된 이름이 현재 빌드에 구현되지 않았을 때의 코드는 `-32017`, 알 수 없는 이름은
-`-32601`이다([ADR-0004](../adr/0004-ipc-discovery-and-errors.md)).
+`-32601`이다([CLI / IPC API 규약 — 명명 + 안정성](api-conventions.md)).
 구 조사에서는 두 경우를 `-32601`로 응답했으므로 과거 로그를 읽을 때 구분한다.
 
 ### 갈리는 축이 조합 하나가 아니다 — 플랫폼도 같은 자리에서 자른다
@@ -251,7 +251,7 @@ GUI와 헤드리스에서 같은 인자로 호출한 조사와 이후 확인한 
 
 `-32015` 는 "이 플랫폼에서 안 된다" 이고, 호출자를 **조합이 아니라 플랫폼을 보는 쪽**으로
 보낸다(코드 넷의 구분은 `crates/tasty-ipc/src/protocol.rs` 의 표와
-[ADR-0004](../adr/0004-ipc-discovery-and-errors.md)).
+[CLI / IPC API 규약 — 명명 + 안정성](api-conventions.md)).
 
 두 메서드의 실제 조건은 `#[cfg(all(target_os = "macos", feature = "gui"))]`다.
 따라서 Linux 헤드리스의 `-32015`만으로 OS와 GUI 중 어느 조건 때문인지 나눌 수 없다.
@@ -293,7 +293,7 @@ image 요청은 host arm까지 전달되지만 헤드리스 구현이 없어 거
 
 | 메서드 | 왜 |
 |--------|-----|
-| `markdown.navigate` | host arm(`src/adapters/ipc/handler.rs` 의 `"markdown.navigate" =>`)이 `#[cfg(feature = "gui")]` 다 — `file_picker.trigger` 와 같은 구성이다. 핸들러 자체(`handler/markdown.rs::handle_navigate`)는 `CoreState`(mirror 여부)와 `IpcWindow`(팝업의 사용자 입력 기록)만 읽고 `ConvertSurface` intent 를 발행할 뿐 `App.view` 를 안 본다. [ADR-0058](../adr/0058-headless-without-local-views.md)의 역할 분리에 따라 GUI와 core의 책임을 나누면 headless에서 이 host arm을 제공할 여지가 있다. 그래서 이것은 창이 없어서가 아니라 **경계가 아직 안 열려서** 없는 것이다 |
+| `markdown.navigate` | host arm(`src/adapters/ipc/handler.rs` 의 `"markdown.navigate" =>`)이 `#[cfg(feature = "gui")]` 다 — `file_picker.trigger` 와 같은 구성이다. 핸들러 자체(`handler/markdown.rs::handle_navigate`)는 `CoreState`(mirror 여부)와 `IpcWindow`(팝업의 사용자 입력 기록)만 읽고 `ConvertSurface` intent 를 발행할 뿐 `App.view` 를 안 본다. 이 문서의 역할 분리에 따라 GUI와 core의 책임을 나누면 headless에서 이 host arm을 제공할 여지가 있다. 그래서 이것은 창이 없어서가 아니라 **경계가 아직 안 열려서** 없는 것이다 |
 
 헤드리스에서 부르면 응답이 한 겹 감싸여 온다 — `-32017 host call 'call#N' failed: method
 'markdown.navigate' is registered but this binary has no dispatch arm for it`. 번들
@@ -313,8 +313,8 @@ markdown plugin 이 그 namespace 를 점유해 host 로 되돌리기 때문이�
 
 | 메서드 | 왜 |
 |--------|-----|
-| `file_handler.dispatch` | 요청을 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. arm 이 헤드리스에 있던 동안은 `{"accepted": true}` 로 답하고 요청을 버렸다 — `git_viewer.query` 와 같은 모양이다. 근거 [ADR-0031](../adr/0031-file-handler-routing.md). 같은 namespace 의 `file_handler.reload` · `file_handler.detectors` 는 헤드리스에서도 답한다 |
-| `git_viewer.query` · `markdown_mirror.content_request` | 요청을 큐에 넣고 `request_id` 만 답한 뒤 결과를 attach 채널로 받아 오는 비동기 accept 다. 큐를 비워 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, arm 이 헤드리스에 있던 동안은 수락해 놓고 결과가 영영 안 왔다. `-32017` 문구가 메서드 이름을 실어 두 거절이 갈린다. 같은 줄의 셋째 forward(mirror 구조 op)는 메서드가 아니라 대상이 mirror 인지로 갈려 arm 을 못 뺀다 — headless의 명시 mirror 대상 해소가 거절한다([ADR-0058](../adr/0058-headless-without-local-views.md)). 시험 `tests/e2e_tests.rs` 의 `mirror_forward_requests_are_refused_by_name_in_a_headless_daemon` |
+| `file_handler.dispatch` | 요청을 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. arm 이 헤드리스에 있던 동안은 `{"accepted": true}` 로 답하고 요청을 버렸다 — `git_viewer.query` 와 같은 모양이다. 근거 [파일 핸들러 (File handler)](../features/file-handler/index.md). 같은 namespace 의 `file_handler.reload` · `file_handler.detectors` 는 헤드리스에서도 답한다 |
+| `git_viewer.query` · `markdown_mirror.content_request` | 요청을 큐에 넣고 `request_id` 만 답한 뒤 결과를 attach 채널로 받아 오는 비동기 accept 다. 큐를 비워 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, arm 이 헤드리스에 있던 동안은 수락해 놓고 결과가 영영 안 왔다. `-32017` 문구가 메서드 이름을 실어 두 거절이 갈린다. 같은 줄의 셋째 forward(mirror 구조 op)는 메서드가 아니라 대상이 mirror 인지로 갈려 arm 을 못 뺀다 — headless의 명시 mirror 대상 해소가 거절한다(이 문서). 시험 `tests/e2e_tests.rs` 의 `mirror_forward_requests_are_refused_by_name_in_a_headless_daemon` |
 | `surface.html_back` · `surface.html_forward` · `surface.html_reload` | 이동을 실행하는 것이 gui 전용인 네이티브 WebView와 그것을 매 프레임 동기화하는 창이다. 헤드리스에는 html surface의 WebView가 없어 큐를 소비할 쪽이 없다 |
 | `surface.html_nav` | 읽는 주소와 히스토리 정보가 gui 전용인 네이티브 WebView에서 프레임마다 옮겨진다. 헤드리스에는 html surface의 WebView가 없어 답할 상태가 없다 |
 | `surface.html_script` | 읽는 스크립트 상태가 gui 전용인 네이티브 WebView의 탐색 콜백에서만 채워진다. 헤드리스에는 html surface의 WebView가 없어 답할 상태가 없다 |
@@ -351,7 +351,7 @@ release 헤드리스 실행에서도 아래 다섯 메서드가 모두 `-32601`�
 | `debug.fullscreen.list` | `src/fullscreen_stages.rs` 의 gui 무관 무대 메타(id·제목 키). **조회만이다** — 같은 갈래의 `open`/`close`/`state` 는 창을 지목해야 해서 아래 표에 있다 |
 
 event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 — 조회가 plugin 프로세스를
-띄우면 관측이 자기 대상을 바꾼다([ADR-0058](../adr/0058-headless-without-local-views.md)).
+띄우면 관측이 자기 대상을 바꾼다(이 문서).
 그래서 아무 plugin 도 안 뜬 데몬에서는 구독자가 0 으로 나오고, 그것이 그 시점의 사실이다.
 
 #### 없는 것이 정답 (34)
@@ -370,7 +370,7 @@ event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 —
 | `debug.plugin_banner.*` (2) | 소유 view 의 BannerManager 와 host 매니저를 함께 다룬다 — `open` 도 `close` 도 `self.view.views` 를 순회한다. 두 메서드 모두 같은 창 의존성이 있다 |
 | `debug.inject_mouse` · `debug.inject_key` · `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key` · `debug.inject_egui_text` (6) | 사용자 입력 재현이다. 앞 둘은 대상 surface 의 PTY 로, 뒤 넷은 winit·egui 입력 큐로 들어간다 — 그 큐가 창에 딸려 있다 |
 | `debug.popup.open` | 매니저만 읽어 **답은 정의된다.** 그런데 헤드리스에는 그 인스턴스를 **닫는 경로가 하나도 없다** — debug close 도, plugin 자신의 release `popup.close` 도 gui 게이트 안의 `app::dispatch` 에 산다. 여는 것만 열면 그 빌드에서 닫을 수 없는 상태가 남는다 |
-| `debug.popup.close` | 렌더가 수집하는 close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돈다([ADR-0036](../adr/0036-overlay-scope-and-lifetime.md)). 그 glue 가 gui 게이트 안이다 |
+| `debug.popup.close` | 렌더가 수집하는 close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돈다([내부 팝업 시스템](../design/systems/popup.md)). 그 glue 가 gui 게이트 안이다 |
 
 `src/source_guards/headless_app_layer_coverage.rs` 가 이 표와 두 라우터의 정합을 강제한다 —
 app 층 step 과 debug step 두 쌍을 같은 규약으로 본다.

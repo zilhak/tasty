@@ -1,4 +1,4 @@
-//! 단축키 번들 타입에 TOML로 표현하기 어려운 Option 구조가 추가되는지 확인한다(ADR-0019).
+//! 단축키 번들 타입에 TOML로 표현하기 어려운 Option 구조가 추가되는지 확인한다(docs/design/policies/key-mapping.md).
 //! TOML에는 null이 없어 시퀀스 원소의 None과 중첩 Option의 Some(None)이 문제가 된다.
 //! 일반 Option 필드는 생략할 수 있고, 맵 값의 None도 키가 생략되지만 해당 엔트리를 그대로 복원할 수는 없다.
 //! 기존 왕복 테스트에 None 값이 없으면 새 타입 문제가 드러나지 않아 선언 형태를 별도로 검사한다.
@@ -124,7 +124,7 @@ fn type_body(src: &str, rel: &str, kind: TypeKind, name: &str) -> String {
     let start = src.find(&header).unwrap_or_else(|| {
         panic!(
             "{rel} 에서 `{header}` 를 못 찾았다 — 타입이 옮겨졌으면 이 가드의 \
-             명부(`CARRIED`)도 함께 옮겨야 한다 (ADR-0019)."
+             명부(`CARRIED`)도 함께 옮겨야 한다 (docs/design/policies/key-mapping.md)."
         )
     });
     let after = &src[start..];
@@ -187,7 +187,7 @@ fn keybinding_types_have_no_option_inside_a_sequence() {
         for shape in FORBIDDEN {
             assert!(
                 !squeezed.contains(shape),
-                "{name}({rel})에 TOML에서 None을 표현할 수 없는 타입 형태 {shape}가 있다. 필드 표현이나 번들 포맷을 ADR-0019에 따라 재검토한다. 일반 Option 필드는 생략할 수 있지만 맵 값의 None은 엔트리 자체가 사라진다는 차이가 있다.\n{body}"
+                "{name}({rel})에 TOML에서 None을 표현할 수 없는 타입 형태 {shape}가 있다. 필드 표현이나 번들 포맷을 docs/design/policies/key-mapping.md에 따라 재검토한다. 일반 Option 필드는 생략할 수 있지만 맵 값의 None은 엔트리 자체가 사라진다는 차이가 있다.\n{body}"
             );
         }
     }
@@ -202,7 +202,7 @@ fn roster_covers_every_type_declared_in_the_settings_source() {
             CARRIED
                 .iter()
                 .any(|(rel, k, n)| *rel == KEYBINDINGS_SRC && *k == kind && *n == name),
-            "{KEYBINDINGS_SRC}의 {} {name}이 CARRIED에 없다. 번들에 저장할 타입인지 확인하고 명부를 갱신한다(ADR-0019).",
+            "{KEYBINDINGS_SRC}의 {} {name}이 CARRIED에 없다. 번들에 저장할 타입인지 확인하고 명부를 갱신한다(docs/design/policies/key-mapping.md).",
             kind.keyword()
         );
     }

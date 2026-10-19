@@ -1,8 +1,12 @@
 # 레이아웃 영속화 (Layout persistence)
 
+## 원칙과 현재 동작
+
+[복구 원칙](../../principles/feedback-and-recovery.md)은 일부 손실 시 가능한 부분 복원, 전체 읽기 불가 시 오류 알림·앱 우측 상단 비포커스 팝업 후 초기 상태에서 계속 작업을 요구한다. 현재 journal 실패가 부팅 오류와 종료로 이어지는 경로는 이 기준을 충족하지 못한다. 읽지 못한 원본을 보존하며 복원 중단과 새 작업의 실행을 분리해야 한다.
+
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (설정 토글)
-- **ADR**: [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md) — 슬롯 점유 모델
+- **설계**: [포커스 정책 (운영 상세)](../../design/policies/focus.md) — 슬롯 점유 모델
 - **코드**: `src/app/journal.rs`, `src/runtime/journal_product/view_record.rs`, legacy 입력 `src/core/layout_persistence/`
 - **화면**: 없음 (앱 시작 시 자동 복원)
 
@@ -36,7 +40,7 @@
 
 `NN.json.tmp`에 쓴 뒤 rename으로 슬롯 파일을 교체한다. 쓰기나 rename이 실패하면 로그를 남긴다. 이 방식이 디스크 오류나 전원 중단 뒤의 저장까지 보장하는 것은 아니다.
 
-각 engine은 자신이 점유한 슬롯에 저장한다. 종료 flush도 윈도우별 파일에 나누어 쓴다. 한 `TASTY_HOME`의 슬롯 파일은 그 홈을 쓰는 GUI 프로세스 하나만 저장한다. 두 번째 GUI 프로세스는 아래 [데이터 홈 단일 소유](#데이터-홈-단일-소유)에 따라 슬롯 파일을 읽거나 쓰기 전에 멈춘다([슬롯 설계](../../adr/0059-id-targets-and-view-owned-selection.md)).
+각 engine은 자신이 점유한 슬롯에 저장한다. 종료 flush도 윈도우별 파일에 나누어 쓴다. 한 `TASTY_HOME`의 슬롯 파일은 그 홈을 쓰는 GUI 프로세스 하나만 저장한다. 두 번째 GUI 프로세스는 아래 [데이터 홈 단일 소유](#데이터-홈-단일-소유)에 따라 슬롯 파일을 읽거나 쓰기 전에 멈춘다([슬롯 설계](../../design/policies/focus.md)).
 
 **레거시 마이그레이션** — 단일 파일 시절의 `~/.tasty/layout.json` 은 부팅 1회 `layouts/01.json` 으로 **이동**(rename)된다. `layouts/` 가 이미 있으면 이동하지 않고 남은 레거시 파일을 로그로 알린다.
 
@@ -71,7 +75,7 @@
 
 저장된 슬롯이 여러 개여도 **부팅 시 창은 1개**다. 나머지 슬롯은 free 로 남아 있다가 창을 더 열면 순서대로 복원된다.
 
-headless 빌드(`--no-default-features`)는 레이아웃을 영속하지 않는다 — 슬롯을 점유하지도, 저장하지도, 복원하지도 않고, 워크스페이스는 프로세스 수명 동안만 산다. `general.restore_layout` 이 켜져 있으면 부팅 때 그 설정이 무시된다는 warn 을 한 줄 남긴다([ADR-0058](../../adr/0058-headless-without-local-views.md)). (gui 빌드에 `--headless` 를 주면 헤드리스가 아니라 GUI 로 폴백하므로 이 절이 아니라 위 규칙을 따른다.)
+headless 빌드(`--no-default-features`)는 레이아웃을 영속하지 않는다 — 슬롯을 점유하지도, 저장하지도, 복원하지도 않고, 워크스페이스는 프로세스 수명 동안만 산다. `general.restore_layout` 이 켜져 있으면 부팅 때 그 설정이 무시된다는 warn 을 한 줄 남긴다([헤드리스 IPC 지원 범위](../../dev-guide/headless-ipc-surface.md)). (gui 빌드에 `--headless` 를 주면 헤드리스가 아니라 GUI 로 폴백하므로 이 절이 아니라 위 규칙을 따른다.)
 
 ### 슬롯 점유
 
@@ -107,7 +111,7 @@ release는 같은 홈에 프로세스 하나만 둔다. 잠금을 얻은 인스�
 - Given 요청을 넘기지 못했고(기다림 초과, 세션 버스·D-Bus 이름 없음, IPC 연결 실패) 다시 확인해도 잠금을 얻지 못했을 때, When 두 번째 프로세스가 끝나면, Then Tasty 창 없이 OS 메시지 상자(`app.name`, `boot.already_running.body`)를 띄우고 종료 코드 1로 끝난다. Linux에서 `zenity`가 없으면 데스크톱 알림으로 대신한다.
 - Given 두 번째 실행이 있을 때, Then 그 과정이 `<홈>/launch.log`(256 KiB 상한, `launch.log.lock`으로 직렬화)와 stderr에 한 줄씩 남는다. 증거는 종류만 남기고 값은 남기지 않는다. 실행 중인 인스턴스의 `debug.log`는 열지 않는다.
 
-증거 판정과 포커스 규칙은 [포커스 정책](../../design/policies/focus.md#같은-홈으로-다시-실행했을-때-release-단일-실행), 근거와 한계는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)에 있다.
+증거 판정과 포커스 규칙은 [포커스 정책](../../design/policies/focus.md#같은-홈으로-다시-실행했을-때-release-단일-실행), 근거와 한계는 [포커스 정책 (운영 상세)](../../design/policies/focus.md)에 있다.
 
 #### 점유 조회
 
@@ -260,7 +264,7 @@ source pin 해제 실패는 보수적으로 참조를 남기고 다음 같은 �
 ## 관련
 
 - [closed-tab-restore](../closed-tab-restore/index.md) · [layout-presets](../layout-presets/index.md) · [terminal](../../surfaces/terminal/index.md)(scrollback)
-- [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md) — 슬롯 모델을 고른 이유·대안·재검토 조건
+- [포커스 정책 (운영 상세)](../../design/policies/focus.md) — 슬롯 모델을 고른 이유·대안·재검토 조건
 - [멀티 윈도우 아키텍처](../../architecture/multi-window.md) — GUI 저장 슬롯의 조건부 대응과 parked·retiring engine, headless 수명
 
 
@@ -279,7 +283,7 @@ checkpoint에서 reader lease를 잠그고 최신 참조를 durable pin으로 �
 admission gate가 그 동기화 없이 독립 GC를 실행하지 않는다.
 이미 확정된 명령의 같은 key 조회와 효과 완료·정리·복구는 이 gate 때문에 거절하지 않는다.
 이 값은 전체 DB 파일의 hard cap이나 OS 저장 공간 보장이 아니다. 정확한 범위와 설정 API는
-[저장소 결정](../../adr/0063-event-store-storage-fencing-and-effect-states.md#활성-저장량의-신규-admission-예산)에 있다.
+[저장소 결정](../../architecture/event-store.md)에 있다.
 
 ### 복원 입력과 View 저장의 수명
 

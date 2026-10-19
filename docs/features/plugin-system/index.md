@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자(플러그인 창) · AI Agent(`tasty plugin` CLI). 원격 접속 사용자는 mirror 로 봄.
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `src/view/plugins.rs`, `src/view/plugins/ui/`, `crates/tasty-cli/src/commands/plugin_cmd.rs`
 - **화면**: [아래 절](#화면)
 
@@ -10,7 +10,7 @@
 
 ## 목적
 
-플러그인을 설치·활성/비활성·제거하는 기능. [사이드바](../sidebar/index.md) 플러그인 버튼이 여는 **관리 창**(GUI)과 **`tasty plugin` CLI** 두 가지로 제공한다 — tasty-특화 기능이라 [identity §2.2](../../identity.md) 에 따라 IPC/CLI 양면 제공.
+플러그인을 설치·활성/비활성·제거하는 기능. [사이드바](../sidebar/index.md) 플러그인 버튼이 여는 **관리 창**(GUI)과 **`tasty plugin` CLI** 두 가지로 제공한다 — tasty-특화 기능이라 [에이전트 기능 원칙](../../identity.md) 에 따라 IPC/CLI 양면 제공.
 
 ## 내부 동작
 
@@ -45,7 +45,7 @@ GUI·headless 모두 실패하며, 설정 파일과 메모리의 활성/비활�
 목록을 채운 뒤 토글을 수행한다.
 
 끄거나(`disable`) 지우면(`remove`) 그 플러그인이 등록한 surface kind 는 재부팅 없이 **철회**된다
-([ADR-0026](../../adr/0026-plugin-registration-and-lifecycle.md)). 그 kind 로
+([플러그인 제작 가이드](../../dev-guide/plugin-development.md)). 그 kind 로
 새 surface 를 만들려는 요청은 "그 kind 를 제공하던 plugin 이 꺼졌거나, 다시 켠 뒤 아직 연결되지 않았다" 는
 사유로 거절되고(IPC 오류 문장, 사용자 조작이면 경고 toast), `surface.kinds` · 서피스 변환 팝업 목록에서 빠진다. 이미 열린 surface 는
 닫거나 바꾸지 않는다 — 다시 켜면 이어진다. 닫은 탭 복원 · 프리셋 적용처럼 복원하는 경로는 그 자리를
@@ -66,7 +66,7 @@ kind 대기 placeholder 로 두었다가 다시 켜면 채운다.
 ## 비-목표
 
 - 플러그인 *제작*(SDK·매니페스트·권한 모델·서명) — dev-guide.
-- 마켓플레이스(registry/install-by-id) — 현재 미도입(보류, [ADR-0025](../../adr/0025-plugin-trust-and-distribution.md)).
+- 마켓플레이스(registry/install-by-id) — 현재 미도입(보류, [플러그인 권한 모델](../../dev-guide/plugin-permissions.md)).
 - 권한 *변경* UI — 창은 read-only. (권한은 설치 시 grant.)
 
 ## Acceptance Criteria

@@ -218,7 +218,7 @@ fn build_add_detector_decl(form: &AddDetectorForm) -> Result<DetectorDecl, Strin
 }
 
 /// 출처 표시와 삭제 버튼은 합쳐진 rule이 아닌 출처별 등록 자료를 읽는다.
-/// 중복 제거된 user rule이나 rule 없이 상태만 바꾼 user 항목도 표시해야 한다(ADR-0031).
+/// 중복 제거된 user rule이나 rule 없이 상태만 바꾼 user 항목도 표시해야 한다(docs/features/file-handler/index.md).
 fn detector_row_origin(file_format: &FileFormatRegistry, id: &DetectorId) -> (String, bool) {
     (
         detector_origins_summary(&file_format.rule_origins(id)),

@@ -13,17 +13,17 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
     (
         "tasty-file-format",
         "tasty-plugin-protocol",
-        "형식 레지스트리 조회 trait은 tasty-plugin-protocol에 있고 구현은 레지스트리 타입을 소유한 크레이트에 둔다. 선택한 의존 방향의 근거는 ADR-0001과 docs/architecture/index.md의 도메인-IO 절에 있다.",
+        "형식 레지스트리 조회 trait은 tasty-plugin-protocol에 있고 구현은 레지스트리 타입을 소유한 크레이트에 둔다. 선택한 의존 방향의 근거는 docs/architecture/index.md과 docs/architecture/index.md의 도메인-IO 절에 있다.",
     ),
     (
         "tasty-file-handler",
         "tasty-plugin-protocol",
-        "handler 레지스트리 조회 trait은 tasty-plugin-protocol에 있고 구현은 레지스트리 타입을 소유한 크레이트에 둔다. tasty-file-format과 같은 구조이며 ADR-0001과 docs/architecture/index.md의 도메인-IO 절에서 설명한다.",
+        "handler 레지스트리 조회 trait은 tasty-plugin-protocol에 있고 구현은 레지스트리 타입을 소유한 크레이트에 둔다. tasty-file-format과 같은 구조이며 docs/architecture/index.md과 docs/architecture/index.md의 도메인-IO 절에서 설명한다.",
     ),
     (
         "tasty-remote",
         "tasty-ipc",
-        "원격 client가 IPC 호출을 사용한다. tasty-ssh나 tasty-ipc에 합치면 각각 불필요한 의존이 추가되므로 분리를 유지한다(ADR-0001, docs/architecture/index.md의 도메인-IO 절).",
+        "원격 client가 IPC 호출을 사용한다. tasty-ssh나 tasty-ipc에 합치면 각각 불필요한 의존이 추가되므로 분리를 유지한다(docs/architecture/index.md, docs/architecture/index.md의 도메인-IO 절).",
     ),
 ];
 

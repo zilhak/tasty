@@ -203,7 +203,7 @@ impl GpuState {
         // but not the terminal renderer, causing inconsistent scaling.
         egui_ctx.options_mut(|opts| {
             opts.zoom_with_keyboard = false;
-            // 이 Context의 스크롤 거리는 Tasty 설정을 공유한다(ADR-0015).
+            // 이 Context의 스크롤 거리는 Tasty 설정을 공유한다(docs/surfaces/terminal/index.md).
             opts.line_scroll_speed = wheel_line_scroll;
         });
 

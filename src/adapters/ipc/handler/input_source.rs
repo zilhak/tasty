@@ -1,5 +1,5 @@
 //! macOS 전역 입력기 전환과 키 주입. 특정 surface가 아니라 OS 포커스 대상에 영향을 준다.
-//! macOS GUI 디버그 빌드와 --enable-input-simulation에서만 허용한다(ADR-0012).
+//! macOS GUI 디버그 빌드와 --enable-input-simulation에서만 허용한다(docs/dev-guide/plugin-permissions.md).
 
 use super::params::{self, p_try};
 use serde_json::json;

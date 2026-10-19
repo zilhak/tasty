@@ -1,5 +1,5 @@
 //! 엔진 생성에 실패해도 부팅 오류 화면이 유지되도록 소스의 호출·분기 형태를 검사한다.
-//! 런처로 실행하면 stderr를 볼 수 없으므로 프로세스를 바로 종료하면 안 된다(ADR-0016).
+//! 런처로 실행하면 stderr를 볼 수 없으므로 프로세스를 바로 종료하면 안 된다(docs/architecture/shutdown-sequence.md).
 //! GPU·ActiveEventLoop를 실행하지 않는 정적 검사이며, 화면 표시 자체를 검증하지는 않는다.
 //! 오류별 진단 내용은 boot_machine.rs의 단위 테스트에서 확인한다.
 
@@ -49,7 +49,7 @@ fn boot_error_screen_renderer_exists() {
     let src = read("src/gfx/gpu/boot_error.rs");
     assert!(
         src.contains("fn render_boot_error"),
-        "부팅 실패 화면 렌더러 render_boot_error가 없다(ADR-0016)."
+        "부팅 실패 화면 렌더러 render_boot_error가 없다(docs/architecture/shutdown-sequence.md)."
     );
 }
 
@@ -63,7 +63,7 @@ fn engine_failure_routes_to_the_visible_error_path_not_a_blind_exit() {
         .count();
     assert!(
         routed >= 2,
-        "엔진 실패 두 경로가 모두 boot_error_info를 설정해야 한다(현재 {routed}건). 바로 종료하면 런처 사용자에게 오류가 보이지 않는다(ADR-0016)."
+        "엔진 실패 두 경로가 모두 boot_error_info를 설정해야 한다(현재 {routed}건). 바로 종료하면 런처 사용자에게 오류가 보이지 않는다(docs/architecture/shutdown-sequence.md)."
     );
 
     // 화면을 그리기 전에 종료하지 않도록 진단 빌더는 정보만 반환해야 한다.
@@ -71,7 +71,7 @@ fn engine_failure_routes_to_the_visible_error_path_not_a_blind_exit() {
     assert!(
         !builder.contains("exit("),
         "boot_engine_error_info 가 프로세스를 종료한다 — 진단만 만들고 돌려줘야 화면을 \
-         그린 뒤 사용자가 종료할 수 있다 (ADR-0016).\n{builder}"
+         그린 뒤 사용자가 종료할 수 있다 (docs/architecture/shutdown-sequence.md).\n{builder}"
     );
 }
 
@@ -82,10 +82,10 @@ fn event_loop_dispatches_and_renders_the_boot_error_screen() {
         src.contains("self.state.boot_error_mode")
             && src.contains("handle_boot_error_window_event"),
         "window_event 가 boot_error_mode 를 분기해 handle_boot_error_window_event 로 \
-         보내야 한다 (ADR-0016)."
+         보내야 한다 (docs/architecture/shutdown-sequence.md)."
     );
     assert!(
         src.contains("render_boot_error"),
-        "boot error 이벤트 처리가 render_boot_error 로 화면을 그려야 한다 (ADR-0016)."
+        "boot error 이벤트 처리가 render_boot_error 로 화면을 그려야 한다 (docs/architecture/shutdown-sequence.md)."
     );
 }

@@ -39,7 +39,7 @@ pub enum LoadState {
 /// 원격 디렉터리 응답의 UI 대기 제한. 로컬 worker 수명과는 별개다.
 pub(super) const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
-/// 경로 하나의 원격 list_dir 요청 생애주기(ADR-0022 — `ExplorerView` 가
+/// 경로 하나의 원격 list_dir 요청 생애주기(docs/features/remote-attach/index.md — `ExplorerView` 가
 /// 자체 소유하는 경로별 pending 상태, host 범용 레지스트리 없음).
 #[derive(Clone)]
 enum RemoteLoadState {
@@ -98,10 +98,10 @@ pub struct ExplorerView {
     pub(crate) focus_address: bool,
     /// 파일인지 확인하려고 부모 폴더 목록을 기다리는 원격 주소 입력.
     pub(super) addr_probe: Option<super::address::AddressProbe>,
-    /// (ADR-0022) 이 surface 가 원격 mirror 인가 — `Some(local_ws_id)` 면 원격, `None`
+    /// (docs/features/remote-attach/index.md) 이 surface 가 원격 mirror 인가 — `Some(local_ws_id)` 면 원격, `None`
     /// 이면 로컬. `sync()`가 매 호출마다 최신값으로 갱신한다.
     pub(super) mirror_ws_id: Option<u32>,
-    /// (ADR-0022) 경로별 원격 요청 상태 — 로컬 surface 는 항상 비어 있다.
+    /// (docs/features/remote-attach/index.md) 경로별 원격 요청 상태 — 로컬 surface 는 항상 비어 있다.
     remote_state: HashMap<PathBuf, RemoteLoadState>,
     /// 이 칸의 파일을 바꿀 수 있는가. 로컬은 늘 참이고, 원격은 그 서버가 원격 쓰기를 알린 동안 참이다.
     pub(crate) writes_allowed: bool,
@@ -109,7 +109,7 @@ pub struct ExplorerView {
     pub(crate) remote_host: Option<crate::remote::state::ExplorerRemoteHost>,
     /// 원격 폴더가 있는 디스크의 서버 쪽 식별값. 끌어 놓기의 기본 동작(이동·복사)을 정한다.
     remote_volumes: HashMap<PathBuf, u64>,
-    /// (ADR-0022) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
+    /// (docs/features/remote-attach/index.md) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
     pub(super) outbox: Vec<ExplorerListRequest>,
     /// 영숫자로 항목을 선택하는 타입어헤드의 입력 버퍼. 동작 규칙은 `type_ahead`
     /// 모듈에 있다.
@@ -498,7 +498,7 @@ impl ExplorerView {
 
     /// 활성 탭 기준으로 엔트리 캐시를 동기화. 로컬은 디렉토리/정렬이 바뀌었거나
     /// 새로고침이 요청됐으면 디스크에서 다시 읽는다. `mirror_ws_id` 가 `Some` 이면
-    /// (ADR-0022) 원격 mirror surface — 동기 IO 대신 `list_dir_request` 를 큐잉하고
+    /// (docs/features/remote-attach/index.md) 원격 mirror surface — 동기 IO 대신 `list_dir_request` 를 큐잉하고
     /// 경로별 pending 상태로 진행 상황을 추적한다. 디렉토리가 바뀌면 선택을 초기화한다.
     pub fn sync(&mut self, panel: &ExplorerPanel, mirror_ws_id: Option<u32>) {
         self.preview.adopt(&panel.preview);
@@ -756,7 +756,7 @@ impl ExplorerView {
 
     /// 사이드바 트리에서 `dir` 의 하위 디렉토리를 (캐시에 없으면) 읽어 반환한다.
     /// 숨김 파일을 끈 동안에는 숨김 폴더를 뺀다. 캐시에는 모두 남겨 토글만으로 다시 보인다.
-    /// `mirror_ws_id` 가 `Some` 이면(ADR-0022) 동기 IO 대신 `list_dir_request` 를
+    /// `mirror_ws_id` 가 `Some` 이면(docs/features/remote-attach/index.md) 동기 IO 대신 `list_dir_request` 를
     /// 큐잉하고, 응답이 올 때까지 빈 목록을 반환한다(다음 프레임들에서 자동 채움).
     pub fn tree_children_of(
         &mut self,
@@ -883,7 +883,7 @@ impl ExplorerViewStore {
     }
 
     /// surface 의 뷰를 가져오고 (없으면 생성) 활성 탭 기준으로 동기화. `mirror_ws_id`
-    /// 가 `Some` 이면(ADR-0022) 이 surface 가 속한 mirror workspace id — view 는 동기
+    /// 가 `Some` 이면(docs/features/remote-attach/index.md) 이 surface 가 속한 mirror workspace id — view 는 동기
     /// 로컬 IO 대신 원격 `list_dir_request` 를 큐잉한다.
     pub fn get_or_init(
         &mut self,
@@ -909,7 +909,7 @@ impl ExplorerViewStore {
         self.views.get_mut(&sid)
     }
 
-    /// (ADR-0022) `request_id` 로 대기 중인 view 를 찾아 응답을 반영한다. 어느 view도
+    /// (docs/features/remote-attach/index.md) `request_id` 로 대기 중인 view 를 찾아 응답을 반영한다. 어느 view도
     /// 이 `request_id` 를 기다리지 않았으면(stale) `false`.
     pub(crate) fn apply_remote_list_dir_result(
         &mut self,
@@ -1164,7 +1164,7 @@ mod tests {
         assert_eq!(view.addr_buffer, "/tmp/beta");
     }
 
-    /// (ADR-0022) `mirror_ws_id` 가 `Some` 이면 동기 IO 대신 `list_dir_request` 를
+    /// (docs/features/remote-attach/index.md) `mirror_ws_id` 가 `Some` 이면 동기 IO 대신 `list_dir_request` 를
     /// outbox 에 큐잉하고 `LoadState::Loading` 으로 전이한다.
     #[test]
     fn sync_remote_queues_request_and_sets_loading() {
@@ -1179,7 +1179,7 @@ mod tests {
         assert!(view.drain_outbox().is_empty());
     }
 
-    /// (ADR-0022) 이 view 가 실제로 기다리던 request_id 가 아니면(stale)
+    /// (docs/features/remote-attach/index.md) 이 view 가 실제로 기다리던 request_id 가 아니면(stale)
     /// 조용히 무시 — `entries`/`state` 를 바꾸지 않고 `false` 를 반환한다.
     #[test]
     fn apply_remote_list_dir_result_ignores_stale_request_id() {

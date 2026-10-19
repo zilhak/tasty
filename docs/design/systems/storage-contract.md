@@ -1,5 +1,9 @@
 # 저장 계약과 writer 명부
 
+## 원칙과 현재 동작
+
+[응답성 원칙](../../principles/performance-and-settings.md)에 따라 사용자 경로의 저장 대기를 줄인다. 아래 직접 잠금 게이트는 현재 남아 있는 구현 한계이며 영구 예외로 승인된 것이 아니다. 판정 원본의 메모리화나 비동기 판정 등 구체 이행 방식은 별도로 정한다.
+
 호스트가 디스크에 쓰는 경로와 각 경로의 성공·오류·실행 계약을 정리한다.
 파일 위치와 SQLite 설정, 실패 분류는 [저장소 시스템](storage.md)에, 측정값은 그 문서의 [저장 기준선](storage.md#저장-기준선)에 있다.
 
@@ -25,7 +29,7 @@
 | `approval.await` 결과 기록 | 대기 워커가 memory writer에 넣고 그 결과를 기다린다 | writer가 commit한다 | commit과 같다 | 기록 결과를 받은 뒤 응답한다. 실패는 경고만 남긴다 |
 | memory.db background writer(runner 결과·보고) | 각 스레드가 직접 잠금을 잡는다 | 그 스레드 안에서 끝난다 | commit과 같다 | 해당 없음 |
 | task runner 실행 | Ready task를 tick snapshot으로 고른다(별도 잠금) | lease·semaphore 획득, 실행 handle 기록, `Running` 전이가 각각 별도 잠금·commit이다 | commit과 같다 | 점유 획득 뒤, `Running` 기록 **전에** 프로세스를 시작한다. `Running` 기록이 실패하면 경고만 남고 handle을 보관하지 않는다 |
-| 구조 journal | 전용 worker 채널에 넣는다. surface capture의 terminal `restore.command`는 비워 두고 worker가 memory writer 순서로 읽어 채운다(읽지 못하면 주기 capture는 실패해 앞 capture를 유지하고, 닫기 capture는 그 값 없이 진행한다) | worker가 commit한다 | commit된 batch만 CoreState에 적용한다([ADR-0064](../../adr/0064-journal-source-and-core-state-projection.md)) | 대상 엔진 공개와 ACK 뒤에 응답·checkpoint를 진행한다 |
+| 구조 journal | 전용 worker 채널에 넣는다. surface capture의 terminal `restore.command`는 비워 두고 worker가 memory writer 순서로 읽어 채운다(읽지 못하면 주기 capture는 실패해 앞 capture를 유지하고, 닫기 capture는 그 값 없이 진행한다) | worker가 commit한다 | commit된 batch만 CoreState에 적용한다([이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md)) | 대상 엔진 공개와 ACK 뒤에 응답·checkpoint를 진행한다 |
 | 최근 파일(state.db) | 별도 접수 없음 | 호출 스레드에서 끝난다 | 공유 캐시를 DB 쓰기 전에 같은 잠금 안에서 바꾼다. 저장이 실패해도 캐시는 바뀐 채 남는다 | 해당 없음 |
 | 튜토리얼 진행(state.db) | 전용 worker에 넣고 receipt를 받는다 | worker가 요청마다 transaction으로 commit한다 | receipt 결과로 반영한다 | 해당 없음 |
 | 설정·프리셋·공용 목록 등 파일 | 별도 접수 없음 | 호출 스레드에서 끝난다 | 호출자가 메모리 값을 먼저 갖고 있다 | 해당 없음 |
@@ -66,7 +70,7 @@
 
 ### 저장 실행기
 
-호출자가 저장 요청을 큐에 넘기고 바로 진행하며, 저장소를 소유한 전담 worker 한 개가 여러 요청을 묶어 실행하는 실행기다. 접수·수집·순서·결과·예산·재시도·종료 규칙은 저장소와 관계없는 공용 실행기(`tasty_utils::batch_writer`)가 정한다. 무엇을 어떻게 저장하는지는 저장소별 실행기가 정한다. memory.db 실행기는 `tasty_memory::writer`다. GUI·headless 부팅이 `AppServices`에 memory writer(`memory-writer` 스레드)를 만들고 메인 루프와 종료 단계에 연결한다. 호스트 소비자는 `tasty_memory::writer::MemoryAccess`로 요청을 넣는다. writer 없는 시험 구성의 `MemoryAccess`는 같은 실행 규칙으로 호출 스레드에서 바로 실행한다. 요청을 넣는 소비자는 "소비자 분류" 표에 적는다. 이 구조를 택한 근거와 대안은 [ADR-0078](../../adr/0078-storage-requests-queue-to-a-dedicated-batching-writer.md)에 있다.
+호출자가 저장 요청을 큐에 넘기고 바로 진행하며, 저장소를 소유한 전담 worker 한 개가 여러 요청을 묶어 실행하는 실행기다. 접수·수집·순서·결과·예산·재시도·종료 규칙은 저장소와 관계없는 공용 실행기(`tasty_utils::batch_writer`)가 정한다. 무엇을 어떻게 저장하는지는 저장소별 실행기가 정한다. memory.db 실행기는 `tasty_memory::writer`다. GUI·headless 부팅이 `AppServices`에 memory writer(`memory-writer` 스레드)를 만들고 메인 루프와 종료 단계에 연결한다. 호스트 소비자는 `tasty_memory::writer::MemoryAccess`로 요청을 넣는다. writer 없는 시험 구성의 `MemoryAccess`는 같은 실행 규칙으로 호출 스레드에서 바로 실행한다. 요청을 넣는 소비자는 "소비자 분류" 표에 적는다. 이 구조를 택한 근거와 대안은 이 문서에 있다.
 
 #### 접수와 결과
 
@@ -172,7 +176,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 - `agent.task_graph_submit`은 저장소가 in-memory 대체 상태이고 요청 durability가 required이면 잠금을 잡기 전에 `StoreNotDurable`(-32602, `/durability`)로 거절한다. dry-run도 같다.
 - runner는 lease·semaphore 획득 결과로 dispatch 여부를 정한다. 획득은 읽기-판단-쓰기를 한 잠금 안에서 하므로 두 runner가 같은 이전 상태를 보고 같은 permit을 얻지 않는다. 이 판단을 읽기와 쓰기로 나누면 이 보장이 사라진다.
 - graph submit의 stage 실패는 롤백하고, activate 뒤 단계 실패는 `GraphPartiallyActivated`로 알린다.
-- in-memory 대체 상태의 쓰기 성공 응답은 `durable:false`를 더한다([ADR-0010](../../adr/0010-storage-failure-reporting.md)).
+- in-memory 대체 상태의 쓰기 성공 응답은 `durable:false`를 더한다(이 문서).
 
 ## writer 명부
 
@@ -182,7 +186,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 |---|---|---|---|---|---|---|---|
 | `memory.db` | `AppServices`의 공유 `Arc<Mutex<dyn MemoryStorage>>`. memory writer도 묶음마다 같은 잠금을 잡는다 | 메인 루프, runner, 결과·보고 스레드, `memory-writer`(위 네 시점 표에서 접수가 memory writer인 경로) | WAL·NORMAL, 되읽어 degraded 표시 | put·delete·secret·purge·prune은 명시 transaction, VACUUM은 자동 commit. 실행 단위·쓰기 묶음은 transaction 하나(memory writer가 사용) | `run_gui`가 열고 부팅 정비 후 `App::new`에 주입. 실패 시 in-memory 대체. writer는 `AppServices` 구성 때 시작 | `boot_memory`가 같은 절차로 연다 | writer는 producer 정리 뒤 drain·join한다. 연결은 명시 close·checkpoint 없이 마지막 `Arc`가 drop될 때 닫힌다 |
 | `state.db` | 전역 `OnceLock<Mutex<Db>>`, `with_state_db`로 접근 | 메인 루프(최근 파일), `tutorial-progress` worker | WAL·NORMAL | 튜토리얼 저장과 스키마 생성은 transaction. `RecentFiles::add`의 같은 키 정리·upsert·개수 정리는 각각 자동 commit | GUI 부팅의 `init_boot_db_and_theme`과 새 창 생성 | 열지 않는다. 최근 목록 쓰기를 건너뛴다 | static이라 프로세스 끝까지 닫지 않는다. 튜토리얼 worker는 종료 단계에서 stop·join한다 |
-| `structure/journal.db` | `JournalWorker`(App의 첫 필드) | 전용 `structure-journal` 스레드 | WAL·FULL이 아니면 열지 않는다([ADR-0063](../../adr/0063-event-store-storage-fencing-and-effect-states.md)) | 모든 쓰기가 즉시 잠금 transaction, writer 잠금과 세대 검사 | 부팅 첫머리에 writer 잠금을 선점하고 `App::new`에서 worker를 만든다 | 선점 없이 `App::new_headless`에서 만든다 | stop 후 Drop에서 join하며 worker가 마지막 checkpoint를 쓴다 |
+| `structure/journal.db` | `JournalWorker`(App의 첫 필드) | 전용 `structure-journal` 스레드 | WAL·FULL이 아니면 열지 않는다([이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md)) | 모든 쓰기가 즉시 잠금 transaction, writer 잠금과 세대 검사 | 부팅 첫머리에 writer 잠금을 선점하고 `App::new`에서 worker를 만든다 | 선점 없이 `App::new_headless`에서 만든다 | stop 후 Drop에서 join하며 worker가 마지막 checkpoint를 쓴다 |
 
 ### 파일
 

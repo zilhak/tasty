@@ -1,5 +1,9 @@
 # HTML Viewer (`com.tasty.html`)
 
+## 원칙과 현재 동작
+
+[주체별 원칙](../../principles/control-and-data.md)에 따라 포커스와 무관한 문서 실행 제어와 사용자 입력 재현은 구분한다. 아래 release 에이전트의 스크립트 허용 금지는 현재 구현의 추가 제한이며 제품 원칙의 예외로 승인된 것은 아니다. 동기 파일 스캔의 응답성 한계도 [응답성 원칙](../../principles/performance-and-settings.md)에 맞춰 정합할 범위다.
+
 - **Status**: Implemented (bundled plugin)
 - **주체**: 로컬 사용자 (GUI surface) · AI Agent (`tasty html` CLI)
 - **배포/통합**: bundled · surface_kind(webview) · 파일 핸들러 — [plugins 개념](../../concepts/plugins.md)
@@ -21,7 +25,7 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
   - `url` 인자는 URL(`http://`·`https://`·`file://`) 또는 로컬 파일 경로다. CLI 매니페스트가 `path_kind = "url_or_file"`이라 상대 경로는 CLI를 호출한 디렉터리 기준 절대 경로로 바뀌고, 파일이 없으면 요청을 보내지 않고 실패한다.
   - `html.open`은 생성 경로와 같은 `local_path_to_file_uri`로 절대 경로를 `file://` URI로 바꿔 `webview.set_url`에 넘긴다. IPC로 직접 온 상대 경로는 기준 디렉터리가 없어 `invalid_params`로 거절한다.
   - `html.open`으로 바꾼 URL은 스냅샷에 남지 않는다. 스냅샷은 생성·복원 때의 URL이며 호스트가 `surface.snapshot`을 다시 묻지 않으므로, 재시작하거나 플러그인 프로세스가 바뀌면 생성 URL로 돌아간다.
-- **스크립트 감지와 문서 단위 허용** — 전역 설정 sandbox scripts가 켜져 있으면 host가 main frame 문서마다 JS를 끈다. `file://` 문서는 응답 단계에서 원본 파일을 읽어 스크립트를 감지하고 파일 전체 지문을 구한다. 허용은 URL(fragment 제외)과 지문에 묶이며 다른 문서가 commit되면 풀린다. 규칙은 아래 [스크립트 감지와 허용 규칙](#스크립트-감지와-허용-규칙) 절, 결정은 [ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md).
+- **스크립트 감지와 문서 단위 허용** — 전역 설정 sandbox scripts가 켜져 있으면 host가 main frame 문서마다 JS를 끈다. `file://` 문서는 응답 단계에서 원본 파일을 읽어 스크립트를 감지하고 파일 전체 지문을 구한다. 허용은 URL(fragment 제외)과 지문에 묶이며 다른 문서가 commit되면 풀린다. 규칙은 아래 [스크립트 감지와 허용 규칙](#스크립트-감지와-허용-규칙) 절.
   - 스캔 상한: 감지는 파일 앞 4 MiB(`SCAN_LIMIT_BYTES`)까지만 읽는다. 지문은 상한과 관계없이 파일 전체를 해시한다.
   - 정규 파일만 스캔한다. FIFO·장치 같은 파일은 읽지 않고 지문 없음으로 두므로 그 문서는 허용할 수 없다.
   - 파일 열기와 정규 파일 확인은 host(`src/host_api/webview/script_gate.rs`)가 한다. `tasty_model::html_script::scan`은 받은 바이트로 감지와 지문만 계산하며 파일 시스템에 접근하지 않는다.
@@ -71,7 +75,7 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 
 ## 스크립트 감지와 허용 규칙
 
-결정과 기각한 대안은 [ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)에 있다. 이 절은 현재 규칙과 OS별 구현·측정이다.
+ 이 절은 현재 규칙과 OS별 구현·측정이다.
 
 ### 감지 대상
 

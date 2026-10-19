@@ -121,7 +121,7 @@ jobs:
       # e2e 하네스는 같은 feature로 빌드한 headless 바이너리를 실행한다.
       #
       # 창이 필요한 시험은 #[cfg(feature = "gui")]로 이 조합에서 컴파일하지 않으므로
-      # 이름으로 건너뛰는 시험은 없다(ADR-0045).
+      # 이름으로 건너뛰는 시험은 없다(docs/dev-guide/unit-test-isolation.md).
       - name: cargo test (headless)
         run: cargo test --workspace --no-default-features --locked --no-fail-fast
 

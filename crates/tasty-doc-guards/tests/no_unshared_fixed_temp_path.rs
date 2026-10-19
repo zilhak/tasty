@@ -1,4 +1,4 @@
-//! 공유 임시 디렉터리의 경로가 실행마다 구분되거나 의도한 공유 사유가 있는지 확인한다(ADR-0045).
+//! 공유 임시 디렉터리의 경로가 실행마다 구분되거나 의도한 공유 사유가 있는지 확인한다(docs/dev-guide/unit-test-isolation.md).
 //! 판정 규칙과 수신자 추적의 한계는 temp_path 모듈에 있다.
 //! 사용자 설정의 홈 미해결 폴백처럼 의도한 공유는 해당 위치에 이유를 적는다.
 //! 디렉터리를 공유하고 파일명으로 구분하는 경우도 있다.
@@ -111,7 +111,7 @@ fn verdicts(c: &Census, f: &Floors) -> Vec<String> {
 
     if !c.silent.is_empty() {
         out.push(format!(
-            "공유 temp 아래 고정 이름 임시 경로가 {}곳 있다. 동시 실행이 같은 파일이나 디렉터리를 덮어쓸 수 있다(ADR-0045). 프로세스·호출을 구분하는 성분이나 TempDir을 사용하고, 의도한 공유라면 그 위치에 이유를 적는다:\n{}",
+            "공유 temp 아래 고정 이름 임시 경로가 {}곳 있다. 동시 실행이 같은 파일이나 디렉터리를 덮어쓸 수 있다(docs/dev-guide/unit-test-isolation.md). 프로세스·호출을 구분하는 성분이나 TempDir을 사용하고, 의도한 공유라면 그 위치에 이유를 적는다:\n{}",
             c.silent.len(),
             c.silent
                 .iter()
@@ -453,7 +453,7 @@ mod wording {
         };
         let m = only(&c);
         assert!(m.contains("고정 이름 임시 경로가"), "{m}");
-        assert!(m.contains("ADR-0045"), "{m}");
+        assert!(m.contains("docs/dev-guide/unit-test-isolation.md"), "{m}");
         assert!(m.contains("c/d.rs:3"), "좌표가 문구에 안 실렸다: {m}");
     }
 }

@@ -9,7 +9,7 @@
 //! 마지막 인자는 저장소 루트이며 생략하면 현재 디렉터리다.
 //! 종료코드: 0은 일치/갱신 완료, 1은 차이·생성 구역 밖 표/충돌·행 누락/중복이다.
 //! 마커 밖 표/충돌과 잘못된 Group은 --write로 해결되지 않아 직접 고쳐야 한다.
-//! 인자·읽기·쓰기·마커 오류나 ADR이 없는 경우는 2로 끝난다.
+//! 인자·읽기·쓰기·마커 오류나 명시하지 않은 빈 ADR 집합은 2로 끝난다.
 
 use std::path::PathBuf;
 
@@ -35,13 +35,15 @@ fn main() {
         }
     }
     let adrs = collect(&root).unwrap_or_else(|e| fail(&e));
-    if adrs.is_empty() {
-        fail("ADR을 찾지 못했다. 저장소 루트와 수집 범위를 확인한다.");
-    }
     let path = root.join(INDEX);
     let current = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| fail(&format!("{INDEX} 를 못 읽었다: {e}")))
         .replace("\r\n", "\n");
+    let inventory = tasty_doc_guards::adr_inventory::violations(&root, &adrs, &current)
+        .unwrap_or_else(|e| fail(&e));
+    if !inventory.is_empty() {
+        fail(&inventory.join("\n"));
+    }
     let rendered = render_index(&current, &adrs)
         .unwrap_or_else(|errs| fail(&format!("마커 구조가 깨졌다:\n  {}", errs.join("\n  "))));
     let stray = stray_table_lines(&current);

@@ -5,7 +5,7 @@ use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 
 /// semantic 역할을 지정하지 않은 primitive 폰트 크기. ui_scale을 적용하지 않는다.
-/// 토큰으로 바꾸면 표시 크기가 달라질 수 있어 디자인 검토가 필요하다(ADR-0035).
+/// 토큰으로 바꾸면 표시 크기가 달라질 수 있어 디자인 검토가 필요하다(docs/design/systems/theme.md).
 const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};

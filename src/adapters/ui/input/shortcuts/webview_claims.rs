@@ -1,6 +1,6 @@
 //! 설정과 플러그인 바인딩에서 webview 위에서도 host가 처리할 키 조합을 만든다.
 //! 페이지 액션은 제외하며 quick-switch 조합은 numeric.rs와 같은 규칙을 따른다.
-//! 배경: `docs/adr/0029-webview-host-integration.md`.
+//! 배경: `docs/design/systems/webview.md`.
 
 use crate::settings::KeybindingSettings;
 use crate::webview::{HostShortcutPolicy, ShortcutSources};

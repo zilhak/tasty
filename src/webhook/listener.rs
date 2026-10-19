@@ -103,7 +103,7 @@ struct BodyTooLarge;
 /// 이 값은 JSON 입력에 적용된다. 동시에 들어오는 요청 수는 제한하지 않으며,
 /// 프로세스 전체 메모리 상한이 아니다. 리스너는 요청마다 스레드를 띄운다.
 /// 초과 요청의 잔여 body 는 읽지 않고 연결을 닫는다([`Screened::respond`]).
-/// ([ADR-0032](../../docs/adr/0032-webhook-admission.md)).
+/// ([웹훅 (Inbound webhook listener)](../../docs/features/webhook/index.md)).
 ///
 /// 기본 1 MiB. `TASTY_WEBHOOK_MAX_BODY_BYTES` 로 오버라이드한다(0·파싱 실패는 기본값).
 fn max_body_bytes() -> usize {

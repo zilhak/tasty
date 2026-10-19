@@ -1,5 +1,5 @@
 //! mirror workspace의 원격 git 조회. request_id를 즉시 반환하고
-//! attach 응답이 오면 git_viewer.query_result 이벤트를 요청 플러그인에게만 보낸다(ADR-0022).
+//! attach 응답이 오면 git_viewer.query_result 이벤트를 요청 플러그인에게만 보낸다(docs/features/remote-attach/index.md).
 
 use serde::Deserialize;
 use serde_json::json;

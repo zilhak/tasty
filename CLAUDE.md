@@ -2,7 +2,7 @@
 
 cmux(macOS 전용)에서 영감을 받은 크로스 플랫폼 GPU 가속 터미널 에뮬레이터.
 Rust 기반 네이티브 GUI 앱으로 Windows, macOS, Linux 를 모두 지원한다.
-WezTerm/Alacritty 와 유사한 접근이지만 AI 코딩 에이전트에 특화된 기능을 제공한다.
+제작자의 입맛에 맞춘 터미널이며 AI 에이전트 협업은 편의를 위해 더하는 기능이다.
 
 - 레포: git@github.com:zilhak/tasty.git
 - 라이선스: MIT
@@ -21,20 +21,17 @@ WezTerm/Alacritty 와 유사한 접근이지만 AI 코딩 에이전트에 특화
 
 # 핵심 원칙
 
-작업 전에 [Tasty의 기본 원칙](docs/identity.md)을 읽는다. 아래는 코드 작업에 적용하는 주요 규칙이다.
+작업 전에 [정체성](docs/identity.md)과 [제품 원칙](docs/principles/index.md)을 읽는다. 일반 구현의 계약과 이유는 해당 설계·기능·개발 문서에 기록한다. 원칙 간 충돌은 원칙 문서에서 우선순위를 해소하고, 원칙의 예외·미충족을 채택한 결정만 ADR에 남긴다.
 
-1. **사용자 행동 ↔ 에이전트 행동 분리** — 에이전트의 IPC·CLI 호출은 사용자의 포커스, 닫은 항목 히스토리, 선택·스크롤·커서를 바꾸지 않는다.
-   에이전트가 자기 작업에 사용하는 기능은 release에서 제공한다. 키·마우스 입력, 팝업 열기·닫기, 메뉴 실행, 포커스 전환처럼 사용자 조작을 재현하는 기능은 debug 빌드에서만 제공한다.
-   해당 핸들러는 **모듈 선언에 `#[cfg(debug_assertions)]`가 붙은 별도 파일**에 둔다. 폴더 이름만 debug인 것으로는 충분하지 않다. `src/adapters/ipc/handler/`의 `debug.rs`·`popup.rs`가 그 예다. 상세 조건은 [debug IPC 가이드](docs/dev-guide/debug-ipc.md)를 따른다.
-2. **AI 에이전트 조작 가능성** — surface·tab·workspace 생성·닫기·조회, 클립보드, 알림, 파일 열기, 메타데이터 등의 기능은 **IPC와 CLI 양쪽에서 제공한다.** 에이전트에게 필요한 기능이 GUI에만 있거나 아직 없다면 추가한다.
-3. **포커스 독립성** — 모든 명령은 대상을 ID로 직접 지정한다. 목록 조회는 모든 워크스페이스를 확인하며, 현재 활성 상태에 의존해 동작하지 않는다. release에는 포커스 변경 API를 제공하지 않는다. 상세 규칙은 [포커스 정책](docs/design/policies/focus.md)을 따른다.
-4. **크로스 플랫폼** — Windows·macOS·Linux를 동등하게 지원한다. OS별 코드는 `#[cfg(...)]`로 구분하고, 한 OS 전용 기능이 다른 OS의 컴파일을 깨뜨리지 않도록 한다.
+- 에이전트는 터미널 작업을 수행할 수 있다. release에서는 사용자 포커스를 빼앗는 동작을 제공하지 않고 debug에서는 사용자 조작 재현이 가능해야 한다. debug 핸들러는 모듈 선언에 cfg(debug_assertions)를 둔 별도 파일로 분리한다([debug IPC](docs/dev-guide/debug-ipc.md)).
+- 에이전트가 자기 작업에 사용하는 기능은 IPC·CLI 양쪽에서 제공한다. 대상은 ID로 지정하며 현재 선택·스크롤·히스토리 보존 계약은 [포커스 정책](docs/design/policies/focus.md)에 있다.
+- Windows·macOS(Apple Silicon)·Linux를 1급 지원한다. Windows ARM도 릴리스 대상이다. 검증 여건과 지원 등급을 구분하며 OS별 코드는 cfg로 나누어 다른 OS의 컴파일을 깨뜨리지 않는다.
 
 # 작업 규칙
 
 ## 시작 전 (필수)
 
-1. [`docs/identity.md`](docs/identity.md)를 먼저 읽는다. Tasty의 목적과 모든 설계에서 지켜야 할 원칙을 설명한다.
+1. [`docs/identity.md`](docs/identity.md)와 [제품 원칙](docs/principles/index.md)을 먼저 읽는다.
 2. [`docs/concepts/ubiquitous-language.md`](docs/concepts/ubiquitous-language.md) — 용어를 잘못 쓰면 코드/문서 일관성이 깨진다. 특히 Window / Pane / Tab / Surface 계층, 상위/하위 레이아웃 구분, Modal / Popup / Toast 구분.
 3. 해당 작업 영역의 가이드 문서 확인 — [`docs/index.md`](docs/index.md) 에서 전체 인덱스 확인.
 
@@ -57,7 +54,7 @@ WezTerm/Alacritty 와 유사한 접근이지만 AI 코딩 에이전트에 특화
 - docs 문서에는 마크다운 체크박스(task list)를 넣지 않는다. 진행 상태는 계속 바뀌므로 로컬 작업 문서에서 관리한다. 완료 조건은 Given/When/Then 형식의 평문 불릿으로, 검증·절차 항목은 평문 불릿이나 번호 목록으로 적는다([`docs/documentation-model.md`](docs/documentation-model.md) §6). `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs`가 이를 검사한다.
 - 같은 사실을 고치기 전에 인용을 검색하고 변경 뒤 코드·문서를 함께 대조한다. 같은 목록을 여러 곳에서 관리하면 서로 일치하는지 검사한다([`docs/dev-guide/duplicated-sets.md`](docs/dev-guide/duplicated-sets.md)). 자세한 규칙은 [`docs/documentation-model.md`](docs/documentation-model.md) §6에 있다.
 - 검사가 특정 사실을 보장한다고 쓸 때는 해당 결함을 실제로 검출하는지 확인한다. 확인한 범위와 한계는 [문서 작성 규칙](docs/documentation-model.md)과 [자체 검증](docs/dev-guide/self-verification.md)에 따라 적는다.
-- 결정의 *근거 / 대안 / 재검토 조건* 은 `docs/adr/`의 ADR에 남긴다. 상한값·시한·오류 코드·동작 표 같은 명세는 ADR이 아니라 해당 가이드·기능 문서에 쓰고, 기존 결정을 늘리는 내용은 새 번호 대신 그 ADR을 보강한다. design/ 본문은 결정의 *현재 운영 상태* 만 기술. ADR 작성/수정 시 [`docs/adr/template.md`](docs/adr/template.md) 의 작성규칙을 먼저 읽는다 — 무엇이 ADR 이 될 자격인지와 쓰기 전에 기존 ADR 을 찾는 법은 그 안의 "새 ADR 을 쓰기 전에" 가 정한다.
+- 일반 구현의 계약·이유는 해당 가이드에, 원칙의 예외·미충족을 채택한 결정만 ADR에 쓴다. 원칙 간 충돌은 원칙에서 해소하고 원칙 변경 이력을 누적하지 않는다. ADR 작성 전 [양식](docs/adr/template.md)을 읽는다.
 
 ## 커밋 정책
 
@@ -172,7 +169,7 @@ Cargo에는 별도 의존성 설치 단계가 없고 build/test 때 필요한 �
 
 갤러리(`crates/tasty-gallery`)에는 본체의 모든 UI 컴포넌트를 포함한다. 디자인 카탈로그에서 빠진 컴포넌트도 갤러리에서 삭제하지 않고 디자인 요청으로 보완한다. 새 modal·popup·공용 위젯은 디자인 수령, 갤러리 예제 작성, 본체 반영 순서로 만든다.
 
-상세·근거: [ADR-0035](docs/adr/0035-shared-design-and-theme.md) · [`docs/dev-guide/gallery-first.md`](docs/dev-guide/gallery-first.md) · [`docs/design/policies/gallery-completeness.md`](docs/design/policies/gallery-completeness.md).
+상세·근거: [테마 시스템 (운영 상세)](docs/design/systems/theme.md) · [`docs/dev-guide/gallery-first.md`](docs/dev-guide/gallery-first.md) · [`docs/design/policies/gallery-completeness.md`](docs/design/policies/gallery-completeness.md).
 
 **UI를 디자인에 맞출 때는 구조와 토큰을 모두 확인한다.**
 
@@ -189,7 +186,7 @@ Cargo에는 별도 의존성 설치 단계가 없고 build/test 때 필요한 �
 
 ## 단축키 (필수)
 
-**tasty 의 모든 단축키는 `KeybindingSettings` 로 노출되며, 코드에 하드코딩되어서는 안 된다.** macOS NSMenu / Windows AcceleratorTable / Linux Wayland 같은 OS 메뉴 측 key equivalent 도 `KeybindingSettings` 의 대응 binding 값을 따라가야 한다.
+**ESC·Enter 같은 기본 조작을 제외한 Tasty 자체 단축키는 설정의 단축키 탭에서 변경 가능해야 한다.** 설정 대상은 `KeybindingSettings`로 노출하고 하드코딩하지 않는다. macOS NSMenu / Windows AcceleratorTable / Linux Wayland 같은 OS 메뉴 측 key equivalent 도 `KeybindingSettings` 의 대응 binding 값을 따라가야 한다.
 
 예외는 **OS가 관리하며 Tasty가 변경·해제·가로채기할 수 없는 단축키**다. macOS Spotlight의 `Cmd+Space`나 OS 전역 윈도우 전환 등이 해당한다. Tasty가 제어할 수 없는 단축키는 설정에 노출하는 대상에서 제외한다.
 

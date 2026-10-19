@@ -43,7 +43,7 @@
 끝까지 스크롤하면 그쪽 페이드만 사라진다. 스크롤 자체(휠·드래그·키보드)는 그대로다.
 
 기본 오버레이 스크롤바가 행 끝의 버튼과 겹쳐 클릭을 막을 수 있어 가장자리 페이드를 쓴다.
-공통 입력 규칙은 [ADR-0037](../../../adr/0037-ui-input-motion-and-elevation.md)을 따른다.
+공통 입력 규칙은 [`tasty-ui-widgets` — 본체·갤러리 공유 UI primitive](../../../architecture/ui-widgets-crate.md)을 따른다.
 
 ### 원격 접속 프로필 탭
 
@@ -54,7 +54,7 @@
 
 - **프로토콜 필터** (원격 접속 프로필 탭 전용): add-bar 우측의 `Filter` 버튼(funnel 아이콘). 현재 프로필에 존재하는 프로토콜(`kind`, tasty-attach 제외)이 2종 이상일 때만 표시. 클릭 시 드롭다운이 열린다. 드롭다운은 네 구획으로 나뉘고 구획 사이에 `separator` 선이 있다: 대문자 mono 제목(`프로토콜 필터`), 체크박스 목록(높이 상한 168, 넘치면 스크롤), accent 색 글자 버튼 `모두 선택` · `모두 해제`, 왼쪽 `초기화`(ghost sm)와 오른쪽 `적용`(primary sm). 구획마다 위아래 `space-sm`, 좌우 `space-md` 여백을 두고 프레임 자체에는 안쪽 여백이 없다. 드롭다운 폭은 테두리를 포함해 `remote-filter-dropdown-width`(240)다. Apply-on-confirm(적용 눌러야 반영), 선택된 프로토콜만 목록에 표시. 결과 0건이면 "선택한 프로토콜에 해당하는 프로필이 없습니다" 빈 상태. 필터 상태는 **세션 한정·비영속**(popup 재오픈에는 유지, tasty 재시작 시 전체 선택으로 리셋).
 - **프로필 목록**: 각 행 = 이름 + 요약(user@host:port) + 편집/삭제. **tasty-attach kind 는 이 목록에 나오지 않는다**(Attach 탭 전담).
-- **추가/편집 폼 (ssh)**: name · host · user · port · label 텍스트 입력 + **shell**(콤보박스, 선택 가능 셸 목록 + `auto`) + **passkey**(저장된 passkey 선택 드롭다운, `passkey_ref`) + 저장/취소 — **순수 연결정보만**(remote_tasty 는 Attach 탭으로 이관, ADR-0020). (라벨 키 `field_name`/`field_host`/`field_user`/`field_port`/`field_label`/`field_shell`/`field_passkey`.)
+- **추가/편집 폼 (ssh)**: name · host · user · port · label 텍스트 입력 + **shell**(콤보박스, 선택 가능 셸 목록 + `auto`) + **passkey**(저장된 passkey 선택 드롭다운, `passkey_ref`) + 저장/취소 — **순수 연결정보만**(remote_tasty 는 Attach 탭으로 이관, docs/features/remote-profiles/index.md). (라벨 키 `field_name`/`field_host`/`field_user`/`field_port`/`field_label`/`field_shell`/`field_passkey`.)
   - **인증 = passkey**: GUI 폼에 `identity_file` 입력은 없다 — passkey 를 고르면 실제 ssh `-i` 경로는 내부에서 `passkey_ref → Passkey.path` 로 resolve 한다(`crates/tasty-ssh/src/lib.rs`).
   - **`port_mode` 는 ssh 폼 입력이 아니다**: shell 선택에서 자동 도출되는 내부 필드(`shell_to_port_mode`). `auto` 면 저장 후 워커가 감지해 채운다. (attach 가 명시 override 하려면 Attach 폼의 Port mode.)
   - (`use_agent` / `extra_options` / `remote_command` 은 폼에 없음 — 파일 직접 편집.)
@@ -72,7 +72,7 @@
 
 ### Attach 탭 (가운데)
 
-tasty-attach kind(같은 레지스트리, ADR-0020) 전담 탭. add-bar 는 `Attach 추가` 버튼만 있다(프로토콜 필터 없음).
+tasty-attach kind(같은 레지스트리, docs/features/remote-profiles/index.md) 전담 탭. add-bar 는 `Attach 추가` 버튼만 있다(프로토콜 필터 없음).
 
 - **목록 행 (AttachRow)**:
   - row1 = 이름 + (label) + mode 태그(`profile`=ssh_ref 참조 / `inline`) + **비활성** 경고 배지(참조 ssh 프로필 감지실패 또는 인라인 detect_failed — 이름도 disabled 색).

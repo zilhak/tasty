@@ -39,8 +39,8 @@
 
 surface kind 는 콘텐츠를 **누가 렌더하느냐**로 다시 갈린다 (→ [work-area Surface 종류](../features/work-area/index.md#surface-종류)):
 
-- **`rendering = "egui-mesh"`** — plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다(ADR-0028). bundled 전용 화이트리스트 + api_version 게이트. 예: image, mesh-demo(+ markdown 의 대용량/파일열기 확인 팝업 2개만 — 본문은 아님).
-- **`rendering = "webview"`** — host 의 네이티브 WebView 오버레이로 그린다. 예: html, markdown([ADR-0029](../adr/0029-webview-host-integration.md), 본문).
+- **`rendering = "egui-mesh"`** — plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다(docs/dev-guide/egui-mesh-channel.md). bundled 전용 화이트리스트 + api_version 게이트. 예: image, mesh-demo(+ markdown 의 대용량/파일열기 확인 팝업 2개만 — 본문은 아님).
+- **`rendering = "webview"`** — host 의 네이티브 WebView 오버레이로 그린다. 예: html, markdown([WebView 호스트 계약](../design/systems/webview.md), 본문).
 - **(기본)** — 플러그인 프로세스가 직접 그린다. 호스트 트리에는 `RemoteSurface`를 두고 UI DSL로 콘텐츠를 받는다. 현재 이 모드를 사용하는 번들 플러그인은 없다.
 
 ## 권한 (Permissions)

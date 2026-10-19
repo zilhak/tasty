@@ -246,7 +246,7 @@ impl PlatformWebView {
             let gate_start = script_gate.clone();
             // 게이트가 시작한 마지막 로드의 NavigationId. 새 로드가 앞 로드를 취소하면 앞 로드의
             // NavigationCompleted가 새 로드의 NavigationStarting 뒤에 올 수 있으므로, 종료 신호는
-            // 이 세대의 것일 때만 게이트를 마무리한다(ADR-0053).
+            // 이 세대의 것일 때만 게이트를 마무리한다(docs/surfaces/html/index.md).
             let gate_generation: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
             let generation_start = gate_generation.clone();
             // 마지막에 시작한 main frame 탐색의 NavigationId. 게이트 세대와 달리 fragment 이동과
@@ -255,7 +255,7 @@ impl PlatformWebView {
             let chrome_start = chrome_generation.clone();
             let mut tok_start: i64 = 0;
             // NavigationStarting은 main frame 탐색에서만 온다. WebView2는 응답 단계가 없어
-            // 로드 시작과 응답 결정을 여기서 함께 한다(ADR-0053 후보 이벤트, 미측정).
+            // 로드 시작과 응답 결정을 여기서 함께 한다(docs/surfaces/html/index.md 후보 이벤트, 미측정).
             let h_start = NavigationStartingEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
                     tracing::debug!("WebView surface {surface_id}: load started");
@@ -322,7 +322,7 @@ impl PlatformWebView {
                 .add_NavigationStarting(&h_start, &mut tok_start)
                 .map_err(|e| transient(format!("add_NavigationStarting failed: {e}")))?;
 
-            // ContentLoading을 main frame commit으로 본다(ADR-0053 후보 이벤트, 미측정).
+            // ContentLoading을 main frame commit으로 본다(docs/surfaces/html/index.md 후보 이벤트, 미측정).
             let gate_commit = script_gate.clone();
             let committed_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
             let commit_url = committed_url.clone();
@@ -409,7 +409,7 @@ impl PlatformWebView {
                 .add_NavigationCompleted(&h_done, &mut tok_done)
                 .map_err(|e| transient(format!("add_NavigationCompleted failed: {e}")))?;
 
-            // main frame 문서를 그리던 process가 끝나면 Linux처럼 게이트 로드를 끝낸다(ADR-0053, 실 기기 미측정).
+            // main frame 문서를 그리던 process가 끝나면 Linux처럼 게이트 로드를 끝낸다(docs/surfaces/html/index.md, 실 기기 미측정).
             // NavigationCompleted가 뒤따라 와도 finished()는 로드 중이 아닐 때 아무것도 하지 않는다.
             // iframe·GPU·utility process 종료는 main frame 로드를 끝내지 않으므로 건너뛴다.
             let nav_failed = nav_state.clone();

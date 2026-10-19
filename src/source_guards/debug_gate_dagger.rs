@@ -1,5 +1,5 @@
 //! debug-ipc.md의 † 표시·각주 목록·require_input_simulation 호출 핸들러의 메서드 목록을 대조한다.
-//! 입력 게이트가 필요한 기준은 [ADR-0012](../../docs/adr/0012-request-admission-and-isolation.md)를 따른다.
+//! 입력 게이트가 필요한 기준은 [플러그인 권한 모델](../../docs/dev-guide/plugin-permissions.md)를 따른다.
 //! 게이트 호출의 존재만 확인하며, 실제 거절 동작이나 모든 실행 경로의 도달 여부는 검증하지 않는다.
 //!
 //! 문자열 리터럴이 아닌 dispatch 이름은 수집하지 못한다. 메서드 수 하한도 이런 누락을 보장하지 못하므로

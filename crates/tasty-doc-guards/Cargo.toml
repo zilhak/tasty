@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
-# 문서 검사는 추가 의존성 없이 실행한다. 근거: ADR-0048.
+# 문서 검사는 추가 의존성 없이 실행한다. 근거: docs/dev-guide/guard-verification.md.
 [dependencies]
 
 [lints]

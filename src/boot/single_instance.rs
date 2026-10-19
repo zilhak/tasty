@@ -3,7 +3,7 @@
 //! 다시 실행한 두 번째 프로세스는 창 없이 실행 중인 Tasty에 요청을 넘기고 끝난다. 사용자가 앱 목록·
 //! Dock·시작 메뉴로 열어 OS가 활성화 증거를 붙여 준 경우에만 기존 View를 OS가 올리게 하고, 증거가
 //! 없으면 `tasty new window`와 같은 새 View 하나로 끝난다. Tasty에는 포커스를 주는 API가 없다
-//! (원칙 3). 결정과 한계는 ADR-0059의 "단일 실행" 절에 있다. debug는 "홈 사용 중" 오류로 끝난다.
+//! (원칙 3). 결정과 한계는 docs/design/policies/focus.md의 "단일 실행" 절에 있다. debug는 "홈 사용 중" 오류로 끝난다.
 
 pub(crate) mod evidence;
 pub(crate) mod instance_file;

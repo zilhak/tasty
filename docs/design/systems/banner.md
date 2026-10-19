@@ -153,7 +153,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
   프로그램 이름 세그먼트만 축소+ellipsis 한다. 줄을 바꾼 행은 최소 `menu-item-height`, 위아래
   `menu-item-wrap-padding-y`, 줄 높이 `line-height-ui` × 본문 크기이고 아이콘은 세로 가운데다. 이름은 단어
   중간에서 끊지 않고 혼자 한 줄보다 길 때만 ellipsis 한다. 이름을 줄였으면 전체 이름을 항목 tooltip 으로 보완한다.
-- 두 블랙리스트는 Settings › Terminal › Mouse Capture 탭과 데이터를 공유한다. 메뉴와 설정 화면은 같은 저장·매칭 규칙을 사용한다([ADR-0015](../../adr/0015-terminal-user-input-routing.md)).
+- 두 블랙리스트는 Settings › Terminal › Mouse Capture 탭과 데이터를 공유한다. 메뉴와 설정 화면은 같은 저장·매칭 규칙을 사용한다([터미널 (Terminal)](../../surfaces/terminal/index.md)).
 
 ## TTL (살아있는 시간)
 
@@ -244,4 +244,4 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 - [toast.md](toast.md) — 휘발성 알림(info 만, 입력 통과)
 - [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md) — Modal/Popup/Toast/Banner 구분
 - [identity](../../identity.md) — 사용자/에이전트 행동 분리(발생 정책 근거)
-- [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md) — 배너의 입력과 수명 규칙
+- [내부 팝업 시스템](popup.md) — 배너의 입력과 수명 규칙

@@ -1,5 +1,5 @@
 //! 플러그인 팝업 닫기가 공용 큐를 우회하지 않도록 직접 호출을 검사한다.
-//! 큐를 처리할 때 자식 파일 피커도 취소하므로 매니저를 바로 부르면 자식 정리가 빠진다(ADR-0036).
+//! 큐를 처리할 때 자식 파일 피커도 취소하므로 매니저를 바로 부르면 자식 정리가 빠진다(docs/design/systems/popup.md).
 //! 사유별 정리 동작은 src/state/popup_ownership_tests.rs에서 검사한다.
 //! 여기서는 주석 줄을 제외한 호출 문자열과 진입 파일의 공용 함수 이름을 확인한다.
 
@@ -68,7 +68,7 @@ fn close_popup_instance_is_only_called_from_the_drain() {
 
     assert!(
         offenders.is_empty(),
-        "close_popup_instance 직접 호출은 {CHOKEPOINT_FILE}에서만 허용한다. 자식 file_picker 정리를 거치도록 App::{GLUE_FN}을 사용한다(ADR-0036):\n{}",
+        "close_popup_instance 직접 호출은 {CHOKEPOINT_FILE}에서만 허용한다. 자식 file_picker 정리를 거치도록 App::{GLUE_FN}을 사용한다(docs/design/systems/popup.md):\n{}",
         offenders.join("\n")
     );
 }
@@ -101,7 +101,7 @@ fn both_close_entry_points_go_through_the_glue() {
             .unwrap_or_else(|e| panic!("{rel} 를 읽을 수 없다: {e}"));
         assert!(
             text.contains(GLUE_FN),
-            "{rel} ({what})에서 {GLUE_FN} 이름을 찾지 못했다. 자식 피커 정리를 거치는 호출 경로인지 확인한다(ADR-0036)."
+            "{rel} ({what})에서 {GLUE_FN} 이름을 찾지 못했다. 자식 피커 정리를 거치는 호출 경로인지 확인한다(docs/design/systems/popup.md)."
         );
     }
 }

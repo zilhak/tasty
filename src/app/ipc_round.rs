@@ -2,7 +2,7 @@
 //! 수·시간 예산에 닿으면 나머지는 큐와 대기 계측에 남기고 호출자가 다음 회차를 깨운다.
 //! 시간은 명령 사이에서 확인하며 실행 중인 동기 핸들러를 중단하지 못한다.
 //! 시간 예산은 첫 명령 뒤부터 확인한다. 종료 중 남은 요청을 거절하는 drain은 이 예산을 쓰지 않는다.
-//! [IPC 실행 정책](../../docs/adr/0007-ipc-scheduling-and-deadlines.md)을 따른다.
+//! [IPC 실행 정책](../../docs/architecture/ipc-server.md)을 따른다.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};

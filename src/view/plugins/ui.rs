@@ -7,10 +7,10 @@ use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 
 /// 헤더 아이콘의 기존 크기. Theme 토큰과 별도로 지정하며 ui_scale을 적용하지 않는다.
-/// 값 변경은 디자인 검토가 필요하다(ADR-0035).
+/// 값 변경은 디자인 검토가 필요하다(docs/design/systems/theme.md).
 const PLUG_HEADER_GLYPH: LogicalPx = LogicalPx(17.0);
 
-/// semantic 역할을 지정하지 않은 탭 라벨의 primitive 폰트 크기(ADR-0035).
+/// semantic 역할을 지정하지 않은 탭 라벨의 primitive 폰트 크기(docs/design/systems/theme.md).
 const SEGMENT_TAB_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// 상세 패널에 표시할 plugin command 한 줄.

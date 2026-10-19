@@ -1,6 +1,6 @@
 # 종료 시퀀스 — 종료 cascade + Drop tail
 
-GUI 종료는 일반 종료의 `App::begin_shutdown`과 오류 종료의 `begin_error_shutdown`이 공유하는 `start_shutdown`에서 `ShutdownPhase` 상태 머신을 설치해 진행한다. 표시할 윈도우가 있으면 대기 단계 사이에 종료 화면을 그리며, 없으면 같은 단계를 블로킹 루프로 실행한다. Observer join이나 프로세스 kill·wait처럼 동기 대기가 있는 단계에서는 렌더링도 기다릴 수 있다. 선택 이유는 [종료 설계](../adr/0016-window-platform-and-shutdown.md)를 따른다.
+GUI 종료는 일반 종료의 `App::begin_shutdown`과 오류 종료의 `begin_error_shutdown`이 공유하는 `start_shutdown`에서 `ShutdownPhase` 상태 머신을 설치해 진행한다. 표시할 윈도우가 있으면 대기 단계 사이에 종료 화면을 그리며, 없으면 같은 단계를 블로킹 루프로 실행한다. Observer join이나 프로세스 kill·wait처럼 동기 대기가 있는 단계에서는 렌더링도 기다릴 수 있다. 선택 이유는 종료 설계를 따른다.
 
 계측은 `event_loop.exit()`까지의 종료 단계와 `run_app` 반환 뒤 `App`을 drop하는 정리 구간(Drop tail)을 나눈다. 후자는 종료 화면을 더 그리지 않는 구간이며, App 해제까지의 소요는 `shutdown_total_with_drop`으로 확인한다.
 
@@ -76,9 +76,9 @@ Wayland의 GLES/EGL 정리는 surface에서 빌린 display를 다시 사용하�
   같은 `req_tx` 에 이미 넣어 둔 `surface.closed` 뒤에 놓인다. plugin 이 cleanup
   대상 surface 를 모르는 채 종료되면 안 되므로 S3 → S4 순서는 고정이다.
 - **요청이 큐에 못 들어갈 수 있다** — 그 큐는 개수로도 바이트로도 유한하고(바이트는 큐마다와
-  모든 plugin 채널의 합계로 — [ADR-0006](../adr/0006-bounded-ipc-transport.md)),
+  모든 plugin 채널의 합계로 — [IPC 서버](ipc-server.md)),
   호스트→plugin 방향의 포화는
-  대기가 아니라 **거절**이다([ADR-0006](../adr/0006-bounded-ipc-transport.md)).
+  대기가 아니라 **거절**이다([IPC 서버](ipc-server.md)).
   writer 스레드가 소켓에서 막혀 큐가 차 있으면 shutdown 요청이 거절되고, 그 plugin 은
   정상 종료 요청을 받지 못하고 deadline 뒤 kill·wait 경로로 처리된다. **S4a의 `killed`만으로는 원인을 구분할 수 없다.** 이 값은 "요청이 거절됐다" 와 "요청은 갔는데 plugin 이 2s 안에 안
   빠졌다" 를 모두 포함한다. 전자는 호스트 큐·writer를, 후자는 plugin을 조사해야 한다.
@@ -86,13 +86,13 @@ Wayland의 GLES/EGL 정리는 surface에서 빌린 display를 다시 사용하�
   `plugin '<id>' shutdown send failed: ...` 한 줄이고(사유는 `request queue full` ·
   `request queue over its byte budget` 둘 중 하나 — shutdown 은 제어 요청이라 합계 바이트
   판정을 면제받으므로 `plugin channels over their total byte budget` 로는 거절되지 않는다,
-  ADR-0006의 전송 거절 처리), 그 줄이 있으면 거절이다. 그 줄은 `warn` 이라 기본 필터(stderr `warn` · 파일 dev `debug`/release `warn`)
+  docs/architecture/ipc-server.md의 전송 거절 처리), 그 줄이 있으면 거절이다. 그 줄은 `warn` 이라 기본 필터(stderr `warn` · 파일 dev `debug`/release `warn`)
   에 남는다.
 - **2s의 범위**: 정상 종료를 기다리는 공통 기한이다. 요청 준비와 kill·wait까지 포함한 전체 종료 시간의 상한이 아니다. S4a는 개별 처리 시간과 `graceful|killed` 결과를 기록한다.
 - **종료 결과의 한계**: `poll_shutdown_all()`의 true는 관리 중인 대기 항목을 모두 처리했다는 뜻이다. kill이나 wait 실패도 로그를 남기고 `Killed`를 반환하므로, 이 값만으로 모든 OS 프로세스가 사라졌다고 단정하지 않는다.
 - **단건 종료**: disable과 헬스체크 재시작은 보통 `plugin-retire-<id>` 스레드에 기다리기를 맡긴다. 스레드 생성이 실패하면 호출한 스레드가 직접 기다린다. 50ms 주기의 `PluginRetire` 타이머는 완료한 항목을 확인하며 `plugin process retired` 로그에 `ms`와 `reason`을 남긴다.
 - **재시작**: 회수 작업이 끝난 tick에서 새 프로세스를 시작한다. 회수 중 disable이 오면 재시작 예약을 취소한다. 명시적 enable은 해당 회수를 기다린 뒤 시작하므로 호출이 지연될 수 있다. 이 대기도 전체 2s 상한은 아니다. 호스트 종료 중에는 다시 시작하지 않고 S4a에 `retiring before exit`를 기록한다.
-- **파일 변경 전 대기**: plugin remove, swap, upgrade-builtins의 실제 쓰기, 명시적 enable은 기존 회수 작업을 기다린다. 더 높은 설치 버전이나 변경 없는 동일 버전 때문에 쓰기를 생략하면 기다리지 않는다. 쓰기 경로는 재시작 예약도 인계받아 작업 뒤 다시 시작한다. [플러그인 수명 관리](../adr/0026-plugin-registration-and-lifecycle.md)를 따른다.
+- **파일 변경 전 대기**: plugin remove, swap, upgrade-builtins의 실제 쓰기, 명시적 enable은 기존 회수 작업을 기다린다. 더 높은 설치 버전이나 변경 없는 동일 버전 때문에 쓰기를 생략하면 기다리지 않는다. 쓰기 경로는 재시작 예약도 인계받아 작업 뒤 다시 시작한다. [플러그인 수명 관리](../dev-guide/plugin-development.md)를 따른다.
 
 ## 종료 화면
 
@@ -140,7 +140,7 @@ SavingLayout과 ClosingSurfaces가 1ms 미만으로 끝난 측정은 아래 조�
 - **IPC 요청은 무시하지 않고 거절한다** — 가드가 `process_ipc()` 를 막으므로 이
   구간의 요청은 정상 핸들러로 처리하지 않는다. 클라이언트가 응답 없이 기다리지 않도록 매 프레임과 `exit()` 직전에 큐를 drain 해
   핸들러를 실행하지 않고 `-32000 "host is shutting down"` 으로 회신한다
-  ([ADR-0016](../adr/0016-window-platform-and-shutdown.md)). 창 없는 블로킹 경로도
+  (이 문서). 창 없는 블로킹 경로도
   같은 루프를 쓰므로 함께 덮인다.
 
 갤러리 specimen 은 Chrome 카테고리의 "Shutdown screen" — 부팅 specimen 과
@@ -172,7 +172,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 | shutdown_total | 종료 진입 → `event_loop.exit()` 직전 | — |
 | S5d ipc_server_drop | `TcpIpcServer::drop` (accept stop + port 파일 제거) | — |
 | S5a lua_join | `LuaEngine::drop` (Shutdown send + 워커 join) | — |
-| S5b pty_drop | `Pty::drop` 합계 (자식 종료 **대기는 포함하지 않는다** — [ADR-0016](../adr/0016-window-platform-and-shutdown.md)) | `ptys` = drop 된 PTY 수 |
+| S5b pty_drop | `Pty::drop` 합계 (자식 종료 **대기는 포함하지 않는다** — 이 문서) | `ptys` = drop 된 PTY 수 |
 | S5c ssh_tunnel_drop | `SshTunnel::drop` 합계 | `tunnels` = drop 된 터널 수 |
 | S5 drop_tail | `run_app` 반환 → `App` drop 완료 | — |
 | shutdown_total_with_drop | 종료 진입 → Drop tail 완료 (**체감 종료 시간**) | — |
@@ -253,6 +253,6 @@ S4a 는 세 회 모두 plugin 마다 1.6~3.8 ms 였다.
 - [boot-sequence](boot-sequence.md) — 대칭 구조인 부팅 상태 머신 + 부팅 계측(T1~T7)
 - [`docs/dev-guide/error-handling.md`](../dev-guide/error-handling.md) — 로그 레벨 선택 기준
 - [`docs/dev-guide/self-verification.md`](../dev-guide/self-verification.md) — debug 인스턴스로 시나리오 재현
-- [ADR-0016](../adr/0016-window-platform-and-shutdown.md) — 종료를 프레임 구동으로 전개하고 로딩 화면을 씌운 결정
+- 이 문서 — 종료를 프레임 구동으로 전개하고 로딩 화면을 씌운 결정
 
 일반 종료와 오류 모달 종료가 같은 이벤트 회차에 겹치면 오류 종료 코드와 최종 화면 저장 생략을 우선한다. DAG 조회 워커는 종료 시작부터 새 요청을 받지 않으며 View I/O 회수 단계에서 완료를 기다린다.

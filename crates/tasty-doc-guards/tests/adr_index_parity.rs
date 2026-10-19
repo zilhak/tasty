@@ -1,7 +1,7 @@
 //! ADR 헤더와 인덱스의 번호·내용·그룹 배치를 대조한다.
 //! 생성기가 수정하지 않는 머리말의 번호·표·충돌 표지도 검사한다.
 //! 대체·개정 관계가 있으면 양방향 기록을 확인하고, 없는 경우도 합성 입력으로 판독을 검증한다.
-//! Tags의 의미와 편집 판단은 검사하지 않는다. 작성 규칙은 docs/adr/0050-architecture-decision-records.md를 따른다.
+//! Tags의 의미와 편집 판단은 검사하지 않는다. 작성 규칙은 docs/adr/template.md를 따른다.
 
 // 이유: 테스트 본문의 반환값 무시는 제품 코드의 lint 예외 목록에 포함하지 않는다.
 #![allow(clippy::let_underscore_must_use)]
@@ -15,12 +15,12 @@ use tasty_doc_guards::adr_index::{
 };
 use tasty_doc_guards::temp_scratch::Scratch;
 
-/// 9d1b15669에서 ADR51편을 확인했다. 하한 50은 수집 누락을 찾는 보조 검사다.
-/// 개별 누락·중복은 헤더와 생성 행을 대조한다. 의도적으로 파일 수를 줄일 때만 다시 측정해 갱신한다.
-const MIN_ADRS: usize = 50;
-
-/// 여섯 주제 머리말에서 대표 ADR을 확인한다. 없는 번호는 합성 입력에서도 검사한다.
-const MIN_PREAMBLE_NUMBERS: usize = 6;
+/// 의도적인 빈 집합과 수집 실패를 독립적인 디렉터리 목록으로 구분한다.
+fn assert_inventory(root: &Path, all: &[Adr]) {
+    let errors = tasty_doc_guards::adr_inventory::violations(root, all, &index_text(root))
+        .expect("ADR 디렉터리를 읽는다");
+    assert!(errors.is_empty(), "{}", errors.join("\n"));
+}
 
 fn repo_root() -> PathBuf {
     tasty_doc_guards::repo_root()
@@ -39,16 +39,11 @@ fn index_text(root: &Path) -> String {
 #[test]
 fn an_adr_number_names_exactly_one_document() {
     let all = adrs(&repo_root());
-    println!("[ADR 인덱스] ADR 파일 {} · 하한 {MIN_ADRS}", all.len());
-    assert!(
-        all.len() >= MIN_ADRS,
-        "ADR 파일을 {}개만 수집했다(하한 {MIN_ADRS}). 저장소 경로와 파일 목록을 확인한다.",
-        all.len()
-    );
+    assert_inventory(&repo_root(), &all);
     let dupes = duplicate_numbers(&all);
     assert!(
         dupes.is_empty(),
-        "ADR 번호가 중복됐다. 새 문서를 현재 최대 번호 다음으로 옮기고 파일명·제목·참조를 함께 고친 뒤 인덱스를 재생성한다. 빈 번호는 재사용하지 않는다(docs/adr/0050-architecture-decision-records.md).\n  {}",
+        "ADR 번호가 중복됐다. 새 문서를 현재 최대 번호 다음으로 옮기고 파일명·제목·참조를 함께 고친 뒤 인덱스를 재생성한다. 빈 번호는 재사용하지 않는다(docs/adr/template.md).\n  {}",
         dupes.join("\n  ")
     );
 }
@@ -88,11 +83,7 @@ fn every_adr_header_carries_the_row_fields() {
             }
         }
     }
-    assert!(
-        all.len() >= MIN_ADRS,
-        "ADR 수집 결과가 {}개로 하한보다 적다.",
-        all.len()
-    );
+    assert_inventory(&repo_root(), &all);
     assert!(
         missing.is_empty(),
         "헤더 값이 빠져 생성된 행에 빈 칸이 생긴다:\n  {}",
@@ -129,10 +120,7 @@ fn the_index_rows_are_what_the_generator_renders() {
         all.len(),
         group_slugs(&current).len()
     );
-    assert!(
-        rows >= MIN_ADRS,
-        "생성 구역 행이 {rows} 개다(하한 {MIN_ADRS})"
-    );
+    assert_inventory(&root, &all);
     assert!(
         rendered == current,
         "{INDEX}의 생성 구역이 ADR 헤더와 다르다. 생성 행을 직접 수정하지 말고 ADR 헤더의 제목·Status·Date·Tags·Group을 고친 뒤 cargo run -p tasty-doc-guards --bin adr-index -- --write로 갱신한다.\n{}",
@@ -156,7 +144,7 @@ fn no_table_line_sits_outside_the_generated_regions() {
         stray.len()
     );
     assert!(
-        !group_slugs(&current).is_empty(),
+        !group_slugs(&current).is_empty() || adrs(&repo_root()).is_empty(),
         "생성 구역을 하나도 읽지 못했다. 인덱스 마커를 확인한다."
     );
     assert!(
@@ -179,7 +167,7 @@ fn every_adr_sits_in_exactly_one_known_group() {
         slugs.len()
     );
     assert!(
-        !slugs.is_empty(),
+        !slugs.is_empty() || all.is_empty(),
         "인덱스에서 `adr-rows:begin` 마커를 하나도 못 읽었다"
     );
     let v = placement_violations(&all, &slugs);
@@ -205,7 +193,7 @@ fn decision_chains_are_written_on_both_ends() {
         all.len(),
         v.len()
     );
-    assert!(all.len() >= MIN_ADRS, "ADR 수집 결과가 너무 작다");
+    assert_inventory(&repo_root(), &all);
     assert!(
         v.is_empty(),
         "결정 사슬이 한쪽에만 적혔다 {} 건. 작성 규칙은 docs/adr/template.md를 따른다:\n  {}",
@@ -219,10 +207,7 @@ fn group_preambles_cite_only_existing_adrs() {
     let root = repo_root();
     let (v, seen) = preamble_violations(&index_text(&root), &adrs(&root));
     println!("[adr-preamble] 번호 토큰 {seen} · 위반 {}", v.len());
-    assert!(
-        seen >= MIN_PREAMBLE_NUMBERS,
-        "머리말에서 번호를 {seen}개만 읽었다(하한 {MIN_PREAMBLE_NUMBERS}). 머리말과 번호 판독을 확인한다."
-    );
+
     assert!(
         v.is_empty(),
         "머리말이 없는 ADR 번호를 부른다:\n  {}",
@@ -688,7 +673,7 @@ fn the_adr_floor_sees_a_collapsed_collection() {
         3,
         "번호 아닌 `.md` 를 세거나 디렉터리를 안 읽었다"
     );
-    assert!(adrs(&root).len() < MIN_ADRS, "이 대조는 하한 아래여야 한다");
+
     // 뒷정리 실패는 무시한다 — 임시 디렉토리라 다음 실행이 먼저 지운다.
     let _ = std::fs::remove_dir_all(&root);
 }

@@ -94,7 +94,7 @@ fn list_dir_request_reports_permission_error_for_missing_dir() {
 
 #[test]
 fn list_dir_request_rejected_without_workspace_occupancy() {
-    // 점유 없는 연결의 거절을 검증하므로 workspace를 만들거나 attach하지 않는다(ADR-0022).
+    // 점유 없는 연결의 거절을 검증하므로 workspace를 만들거나 attach하지 않는다(docs/features/remote-attach/index.md).
     let server = common::shared();
     let mut stream = open_stream_without_attach(server.port());
 

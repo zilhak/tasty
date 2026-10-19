@@ -208,7 +208,7 @@ fn hovered_link_text(
 }
 
 /// hover 링크가 우클릭한 surface에 속하고 hard 점유 mirror가 아닐 때 허용한다.
-/// hard 점유 화면은 지연된 스냅샷이므로 실제 PTY 상태와 다를 수 있다(ADR-0021).
+/// hard 점유 화면은 지연된 스냅샷이므로 실제 PTY 상태와 다를 수 있다(docs/dev-guide/attach-behavior.md).
 fn link_menu_gate(hovered_surface: Option<u32>, clicked_surface: u32, hard_occupied: bool) -> bool {
     hovered_surface == Some(clicked_surface) && !hard_occupied
 }

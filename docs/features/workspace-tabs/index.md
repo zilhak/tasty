@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (탭 도메인 조작은 AI Agent 도 — [work-area](../work-area/index.md))
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `src/adapters/ui/tab_bar.rs` (`PaneTabBarView`/`TabBarAction`/`draw_pane_tab_bars_view`), drag 상태 `src/state/dialogs.rs` `TabDragState`
 - **화면**: [아래 절](#화면)
 

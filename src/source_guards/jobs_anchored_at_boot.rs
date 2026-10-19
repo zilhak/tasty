@@ -103,7 +103,7 @@ fn every_boot_anchored_job_runs_on_every_build_combination() {
     }
     assert!(
         missing.is_empty(),
-        "초기화 함수에서 필수 작업을 찾지 못한 조합이 있다. 요청이 와야만 설치·상태 정리가 수행되는 구조는 아닌지 확인한다(ADR-0026):\n  {}",
+        "초기화 함수에서 필수 작업을 찾지 못한 조합이 있다. 요청이 와야만 설치·상태 정리가 수행되는 구조는 아닌지 확인한다(docs/dev-guide/plugin-development.md):\n  {}",
         missing.join("\n  ")
     );
 }

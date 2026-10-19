@@ -1,4 +1,4 @@
-//! html surface의 스크립트 차단 배너를 webview chrome 위에 inset으로 그린다(ADR-0053).
+//! html surface의 스크립트 차단 배너를 webview chrome 위에 inset으로 그린다(docs/surfaces/html/index.md).
 //!
 //! 배너 단계는 `tasty_model::html_script`가 정하고 여기서는 읽기만 한다. 그린 카드 아래
 //! `banner_inset_gap`까지의 높이를 돌려주면 호출자가 native WebView를 그만큼 내린다.

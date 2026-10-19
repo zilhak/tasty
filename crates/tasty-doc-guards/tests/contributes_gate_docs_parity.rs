@@ -1,5 +1,5 @@
 //! contributes 권한 표와 매니페스트 검증 코드의 게이트를 양방향으로 대조한다.
-//! 문서만 바꾼 push도 검사하도록 경로 필터 없는 doc-guards 크레이트에 둔다(ADR-0048).
+//! 문서만 바꾼 push도 검사하도록 경로 필터 없는 doc-guards 크레이트에 둔다(docs/dev-guide/guard-verification.md).
 //! 런타임 열거 대신 manifest_text로 소스를 읽는다. 실제 ContributesGate::ALL과의 일치는
 //! 루트의 tests/contributes_gate_readings_agree.rs에서 별도로 확인한다.
 

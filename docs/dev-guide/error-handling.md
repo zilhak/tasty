@@ -172,7 +172,7 @@ surface 를 가리킨다.
 
 호출 실패가 드물어도 뒤따르는 로컬 정리는 필요하다. 훅 명령은 `|| true`로 감싸져
 있으므로 단순 오류 전파가 외부 호출자에게 전달되지 않을 수도 있다. 실패는 기록하고
-정리를 끝낸다([ADR-0027](../adr/0027-lua-and-hook-execution.md)).
+정리를 끝낸다([훅 (Surface / Global hooks)](../features/hooks/index.md)).
 
 ### 최선노력의 대가는 치르되 **값으로 노출한다**
 
@@ -195,7 +195,7 @@ surface 를 가리킨다.
 
 집계는 IPC 응답과 그 응답을 출력하는 CLI(`tasty claude hook …`)에서 확인한다.
 실제 훅 명령은 CLI 출력을 버리므로, 실패 수가 0이 아니면
-`hook-failures.log`에도 기록한다([ADR-0043](../adr/0043-cli-errors-and-diagnostic-logs.md)).
+`hook-failures.log`에도 기록한다([CLI 크레이트 내부 구조 — 세 갈래 대칭](cli-structure.md)).
 
 ## 락 poison (`Mutex` / `RwLock`)
 
@@ -295,7 +295,7 @@ Condvar 대기 중 발생한 poison은 최초 lock 성공 뒤에 생기므로 **
 `println!` / `print!` 는 stdout 쓰기 실패를 panic 으로 승격한다. 읽는 쪽이 파이프를 먼저 닫으면
 (`tasty list tree | head -1`, `| true`) EPIPE 가 돌아오고, 그 panic 이 종료 코드 101 + 가짜
 crash report 가 된다. Rust 런타임은 SIGPIPE 를 무시하도록 두고 Windows 에는 SIGPIPE 가 없으므로,
-**stdout 쓰기도 `Result` 로 받아 처리한다** — 근거와 대안은 [ADR-0043](../adr/0043-cli-errors-and-diagnostic-logs.md).
+**stdout 쓰기도 `Result` 로 받아 처리한다** — 근거와 대안은 [CLI 크레이트 내부 구조 — 세 갈래 대칭](cli-structure.md).
 
 - `crates/tasty-cli` 는 stdout 에 **`crate::out` 의 `outln!` / `out!`** 로만 쓴다(`println!` /
   `print!` 금지 — `tests/cli_stdout_broken_pipe.rs` 가 소스 스캔으로 강제). 값은
@@ -315,7 +315,7 @@ crash report 가 된다. Rust 런타임은 SIGPIPE 를 무시하도록 두고 Wi
   파일의 소스 스캔이 강제). `eprintln!` 도 쓰기 실패를 panic 으로 승격해 `2>&1 | head` 에서
   crash report 가 된다. stderr 는 실패를 알리는 마지막 채널이라 그 쓰기의 실패는 **버리고**,
   종료 코드는 명령이 원래 내던 값 그대로다(stdout 처럼 0 으로 접지 않는다 — 대개 이미 실패한
-  명령이다). 근거는 [ADR-0043](../adr/0043-cli-errors-and-diagnostic-logs.md).
+  명령이다). 근거는 [CLI 크레이트 내부 구조 — 세 갈래 대칭](cli-structure.md).
 - 예외: `local/attach.rs` raw bridge 는 `std::io::stdout()` 핸들에 best-effort 미러하고 결과를
   주석과 함께 무시한다 — stdout 이 닫혀도 attach 세션은 계속돼야 한다.
 
@@ -333,7 +333,7 @@ println!("{}", serde_json::to_string_pretty(&value)?);
 
 생성 실패는 패닉하지 않는다. 이미 터미널 세션이 떠 있는 상태에서 패닉하면 그 창 하나가
 아니라 **실행 중인 모든 창의 작업**이 사라진다. 결정 전문과 근거는
-[ADR-0016](../adr/0016-window-platform-and-shutdown.md).
+[종료 시퀀스 — 종료 cascade + Drop tail](../architecture/shutdown-sequence.md).
 
 | 지점 | 처리 |
 |------|------|
@@ -349,7 +349,7 @@ println!("{}", serde_json::to_string_pretty(&value)?);
 `InfoModal`, 에이전트 IPC(`window.create`)발 실패는 **요청자에게 IPC 응답 에러로만** 돌려주고
 사용자 화면에는 아무것도 띄우지 않는다(toast 도 아니다). `InfoModal` 은 포커스를 가져가고
 toast 도 요청하지 않은 일의 통지라, 어느 쪽이든 에이전트 행동의 부수효과가 사용자 상태에
-닿지 않는다는 핵심 원칙 1 을 어기게 된다([ADR-0007](../adr/0007-ipc-scheduling-and-deadlines.md)).
+닿지 않는다는 핵심 원칙 1 을 어기게 된다([IPC 서버](../architecture/ipc-server.md)).
 
 이 경로들은 winit `ActiveEventLoop` 가 있어야 돌아가 행동 테스트로 감쌀 수 없다 —
 `crates/tasty-doc-guards/tests/no_panic_in_window_creation.rs` 가 소스 형태로 패닉 재유입을 막는다.

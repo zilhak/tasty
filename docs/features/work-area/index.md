@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자(GUI 직접) · AI Agent(IPC/CLI 로 ID 지정 조작) · 원격 접속 사용자(surface/workspace 점유)
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `crates/tasty-model/` (`workspace.rs`/`pane.rs`/`tab.rs`/`surface_layout.rs`/`pane_tree.rs`), `crates/tasty-core/src/state.rs` (`CoreState`), `src/runtime/engine_session.rs` (`EngineSession`), `src/state/navigation.rs` (View 선택 `NavigationState`), `src/state/` (`workspace.rs`/`pane.rs`/`tab.rs` 요청 구성)
 - **화면**: [아래 절](#화면)
 
@@ -35,7 +35,7 @@ CoreState
 | 탭 제목 관측값(OSC 제목·cwd 이름), 점유, 알림, busy | `EngineSession.live`(`LiveDomainState`, `src/core/live.rs`) |
 | 선택된 워크스페이스·pane·탭·surface, 분할 노드별 선택 힌트 | View 의 `NavigationState`(`src/state/navigation.rs`) — 창마다 따로 둔다 |
 
-선택이 View 에 있는 이유와 ID 지정 원칙은 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)에 있다.
+선택이 View 에 있는 이유와 ID 지정 원칙은 [포커스 정책 (운영 상세)](../../design/policies/focus.md)에 있다.
 
 ### Workspace
 
@@ -92,7 +92,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 트리에는 고유 `
 |------|-----------|------|------|------|
 | `terminal` | Terminal | **host 내장** | GPU 셰이더 | 쉘 PTY. 재시작 뒤 지연 활성화 가능(`empty` 의 복원 자리) |
 | `empty` | Empty | **host 내장** | egui | 빈 자리(변환 버튼). plugin 대기 자리·복원 자리도 이 kind |
-| `markdown` | Remote | `com.tasty.markdown` plugin (`rendering=webview`) | 네이티브 WebView overlay — plugin 이 sanitize HTML 문서 생성(`RemoteSurface`) | [ADR-0029](../../adr/0029-webview-host-integration.md). 대용량/파일열기 확인 popup 2개는 surface 가 아니라 egui-mesh popup 기여 |
+| `markdown` | Remote | `com.tasty.markdown` plugin (`rendering=webview`) | 네이티브 WebView overlay — plugin 이 sanitize HTML 문서 생성(`RemoteSurface`) | [WebView 호스트 계약](../../design/systems/webview.md). 대용량/파일열기 확인 popup 2개는 surface 가 아니라 egui-mesh popup 기여 |
 | `image` | EguiMesh | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh whitelist |
 | `explorer` | Explorer | **host 내장** | egui | host builtin surface |
 | `dag_graph` | DAG | **host 내장** | egui | agent task DAG 뷰 ([agent-collaboration](../agent-collaboration/index.md)) |
@@ -100,23 +100,23 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 트리에는 고유 `
 | `mesh_demo` | EguiMesh | `com.tasty.mesh-demo` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh | 개발/검증용. 매니페스트가 `bundle = false` 라 배포 패키징에는 안 들어간다 |
 
 - **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`explorer`/`dag_graph`) 가 부팅 시 등록.
-- **egui-mesh plugin surface**(`image`, 개발용 `mesh_demo`)는 매니페스트의 `[[surface_kinds]]` 가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (ADR-0028). markdown 의 확인 popup 2개는 같은 egui-mesh 채널을 쓰지만 `[[contributes.popup]]` 기여이며 surface kind 로 등록되지 않는다([popup 구현](../../dev-guide/popup-implementation.md)).
-- **webview plugin**(`html`/`markdown`)은 `RemoteSurface` stand-in 위에 host 가 native WebView overlay 를 자동 관리한다. `html` 은 `webview.set_url` IPC 로 URL/navigation 만 제어하고, `markdown` 은 plugin 이 직접 sanitize 된 HTML 문서 전체를 생성해 로드시킨다([ADR-0029](../../adr/0029-webview-host-integration.md)).
-  - **overlay 생성에 실패하면 그 surface 는 비어 있고, 앱은 계속 돈다.** 실패는 두 종류로 갈린다 — 다음 시도에 달라질 수 있는 것(서버 자원 고갈 등)은 상한까지 다시 시도하고, 이 프로세스에서 달라지지 않는 것(창 종류·라이브러리 부재 등)은 한 번에 포기한다. 어느 쪽이든 시도 횟수에 상한이 있어 실패가 무한히 반복되지 않는다. 로그에는 첫 실패와 포기하는 순간만 남고, 포기 줄이 실제로 몇 번 시도했는지를 적는다. 그 surface 를 닫았다 다시 열면 시도 예산도 새로 생긴다. 근거·재검토 조건은 [ADR-0029](../../adr/0029-webview-host-integration.md).
+- **egui-mesh plugin surface**(`image`, 개발용 `mesh_demo`)는 매니페스트의 `[[surface_kinds]]` 가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (docs/dev-guide/egui-mesh-channel.md). markdown 의 확인 popup 2개는 같은 egui-mesh 채널을 쓰지만 `[[contributes.popup]]` 기여이며 surface kind 로 등록되지 않는다([popup 구현](../../dev-guide/popup-implementation.md)).
+- **webview plugin**(`html`/`markdown`)은 `RemoteSurface` stand-in 위에 host 가 native WebView overlay 를 자동 관리한다. `html` 은 `webview.set_url` IPC 로 URL/navigation 만 제어하고, `markdown` 은 plugin 이 직접 sanitize 된 HTML 문서 전체를 생성해 로드시킨다([WebView 호스트 계약](../../design/systems/webview.md)).
+  - **overlay 생성에 실패하면 그 surface 는 비어 있고, 앱은 계속 돈다.** 실패는 두 종류로 갈린다 — 다음 시도에 달라질 수 있는 것(서버 자원 고갈 등)은 상한까지 다시 시도하고, 이 프로세스에서 달라지지 않는 것(창 종류·라이브러리 부재 등)은 한 번에 포기한다. 어느 쪽이든 시도 횟수에 상한이 있어 실패가 무한히 반복되지 않는다. 로그에는 첫 실패와 포기하는 순간만 남고, 포기 줄이 실제로 몇 번 시도했는지를 적는다. 그 surface 를 닫았다 다시 열면 시도 예산도 새로 생긴다. 근거·재검토 조건은 [WebView 호스트 계약](../../design/systems/webview.md).
   - webview kind 는 **탭 내부 분할(SurfaceGroup)의 어느 leaf 에서도** 동작한다. host 는 탭의 `SurfaceLayout` 트리 전체를 순회해 URL 을 가진 leaf 마다 overlay 를 만들고(포커스 leaf 로 한정하지 않는다), overlay 의 bounds 는 pane 전체가 아니라 `SurfaceLayout::compute_rects` 가 준 **그 leaf 의 rect** 다 — 같은 탭의 옆 surface 를 덮지 않는다. Linux 에서는 overlay 가 leaf rect 를 꽉 채운다. native 창은 마우스를 직접 받으므로, pane·surface 분할선의 hit 띠(`DIVIDER_HIT_THRESHOLD` 양쪽)와 창 가장자리 리사이즈 밴드(`RESIZE_EDGE_MARGIN`, 최대화·전체화면이면 없음)에 겹치는 부분만 X input shape 에서 뺀다(`state::webview_edges`). 빼는 픽셀은 host 의 분할선·리사이즈 판정이 보는 픽셀과 같다. 그 띠의 포인터 입력은 host 가 받고, 띠 밖의 클릭·스크롤은 페이지로 간다. macOS·Windows 는 아직 input shape 에 해당하는 처리가 없어, leaf 의 변이 **pane 콘텐츠 영역 외곽에 닿을 때만** divider 드래그용 4px inset 을 두고 분할된 leaf 사이 내부 경계에는 divider gap 만 둔다. 그 OS 의 webview chrome 은 배경·테두리를 leaf 전체에 그리고 안내 글자는 WebView 가 덮는 영역 안으로 자르는 코드 경로를 쓴다(그 OS 실 기기에서는 미측정). `webview.set_url` / `webview.navigation_attempt` 의 surface 조회도 같은 기준이라 비포커스 leaf 도 도달한다.
 - 새 kind 는 `SurfaceKindRegistry` 에 동적 등록 — plugin 이 hello 후 추가 가능.
-- **등록된 kind 는 `surface.kinds` / `tasty list surface-kinds` 로 묻는다.** 이 조회가 읽는 것은 매니페스트가 아니라 `SurfaceKindRegistry` — 런타임의 사실이다. 여기 나오는 kind 가 정확히 `--type <kind>` 로 만들 수 있는 kind 이고(끄거나 지운 plugin 의 kind 는 곧바로 빠진다 — [ADR-0026](../../adr/0026-plugin-registration-and-lifecycle.md)), host 내장 4 종도 함께 나온다(그쪽은 plugin 이 아니라 어느 `plugin.*` 조회에도 안 나온다). 칸은 kind · 표시명 i18n 키 · icon · **실제** 렌더 경로(`rendering`: `host-egui`/`egui-mesh`/`webview`/`remote`) · 출처(`source`: `host`/`plugin` + `plugin_id`) · 필수 params 다.
+- **등록된 kind 는 `surface.kinds` / `tasty list surface-kinds` 로 묻는다.** 이 조회가 읽는 것은 매니페스트가 아니라 `SurfaceKindRegistry` — 런타임의 사실이다. 여기 나오는 kind 가 정확히 `--type <kind>` 로 만들 수 있는 kind 이고(끄거나 지운 plugin 의 kind 는 곧바로 빠진다 — [플러그인 제작 가이드](../../dev-guide/plugin-development.md)), host 내장 4 종도 함께 나온다(그쪽은 plugin 이 아니라 어느 `plugin.*` 조회에도 안 나온다). 칸은 kind · 표시명 i18n 키 · icon · **실제** 렌더 경로(`rendering`: `host-egui`/`egui-mesh`/`webview`/`remote`) · 출처(`source`: `host`/`plugin` + `plugin_id`) · 필수 params 다.
 - **`plugin.show` 는 선언과 사실을 갈라 낸다.** `declared_rendering` 이 매니페스트가 요청한 값이고, `registered` 가 그 선언이 **이 plugin 의 것으로** 등록됐는지, `effective_rendering` 이 등록됐을 때 host 가 실제로 쓰는 경로다. kind 이름이 registry 에 있는데 소유자가 다르면(host 내장 kind 를 remote 로 재선언 · 다른 plugin 이 먼저 등록) `registered` 는 false 이고 소유자가 `registered_by`로 나온다. 헤드리스도 `webview`·`remote`·`egui-mesh` 선언을 GUI 와 같이 모두 등록한다(`src/boot/headless_plugins.rs` 의 `register_one_surface_kind` — 서버는 원문·제어를 맡고 렌더는 attach 한 클라이언트가 할 수 있다). 그래서 이 갈림은 kind 소유가 겹칠 때만 난다. `plugin.list` 는 여전히 kind **이름만** 배열로 준다.
 - kind 각각의 동작은 [Surface 종류](../../surfaces/index.md)(terminal/empty/explorer/dag_graph/markdown/image/html). 분류 축·렌더 분기 개념은 [concepts/plugins](../../concepts/plugins.md).
 
 ## 인터페이스
 
 - **AI Agent (IPC/CLI)**: 작업 영역의 도메인을 ID 로 직접 조작.
-  - 생성: `tasty new workspace [--surface <S>]` · `tasty new tab --pane <P> [--type terminal|markdown|explorer|html|image]`. `--surface` 는 새 워크스페이스를 **그 surface 를 가진 창**에 만든다(IPC `workspace.create` 의 `surface_id` — 라우터가 주인 창을 고르고, 그 surface 를 가진 창이 없으면 포커스로 새지 않고 거절한다). 생략하면 사용자가 보고 있는 창이다([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)). `--cwd` 를 생략한 terminal 워크스페이스는 `--surface` 를 주면 **그 surface** 의 cwd 를, 안 주면 그 창의 포커스 surface 의 cwd 를 상속한다(`inherit_cwd` 설정이 켜져 있을 때 · [ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)).
+  - 생성: `tasty new workspace [--surface <S>]` · `tasty new tab --pane <P> [--type terminal|markdown|explorer|html|image]`. `--surface` 는 새 워크스페이스를 **그 surface 를 가진 창**에 만든다(IPC `workspace.create` 의 `surface_id` — 라우터가 주인 창을 고르고, 그 surface 를 가진 창이 없으면 포커스로 새지 않고 거절한다). 생략하면 사용자가 보고 있는 창이다([CLI 크레이트 내부 구조 — 세 갈래 대칭](../../dev-guide/cli-structure.md)). `--cwd` 를 생략한 terminal 워크스페이스는 `--surface` 를 주면 **그 surface** 의 cwd 를, 안 주면 그 창의 포커스 surface 의 cwd 를 상속한다(`inherit_cwd` 설정이 켜져 있을 때 · [CLI 크레이트 내부 구조 — 세 갈래 대칭](../../dev-guide/cli-structure.md)).
     에이전트가 만든 탭은 kind 와 무관하게 선택되지 않는다 — pane 의 `active_tab` 과 포커스가 그대로다([focus 정책](../../design/policies/focus.md) "에이전트가 만든 탭과 선택").
   - 분할: `tasty split --level pane|surface [--surface <S>] [--pane <P>] [--direction …]` (상위/하위 레이아웃 각각, `--pane` 은 `--level pane` 전용).
   - 닫기: `tasty close tab|pane|surface --… <ID>` · `tasty close workspace --workspace <W>`(안의 모든 pane/tab/surface 포함) · `tasty close window --window <N>`.
-    워크스페이스 닫기는 마지막 하나, mirror 워크스페이스, **원격 attach 가 하드 점유 중인 surface 를 든 워크스페이스**를 거부한다 — 창까지 없앨지는 별개의 결정이라 `close window` 로 명시하고(헤드리스는 `window.close` 가 없어 거절 문구가 그것을 권하지 않고 마지막 워크스페이스를 닫을 수 없다고만 말한다), mirror 는 attach 세션 쪽에서 거두며, 점유 중인 터미널은 그것을 쓰고 있는 원격 세션이 놓아야 닫힌다. **되돌릴 수 없다**(안의 터미널이 죽고 되돌리기 스택·스크롤백에 남지 않는다). 경계와 근거는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md).
+    워크스페이스 닫기는 마지막 하나, mirror 워크스페이스, **원격 attach 가 하드 점유 중인 surface 를 든 워크스페이스**를 거부한다 — 창까지 없앨지는 별개의 결정이라 `close window` 로 명시하고(헤드리스는 `window.close` 가 없어 거절 문구가 그것을 권하지 않고 마지막 워크스페이스를 닫을 수 없다고만 말한다), mirror 는 attach 세션 쪽에서 거두며, 점유 중인 터미널은 그것을 쓰고 있는 원격 세션이 놓아야 닫힌다. **되돌릴 수 없다**(안의 터미널이 죽고 되돌리기 스택·스크롤백에 남지 않는다). 경계와 근거는 [포커스 정책 (운영 상세)](../../design/policies/focus.md).
     사용자가 보고 있지 않은 워크스페이스를 닫아도 화면에 있는 워크스페이스는 그대로다([포커스 독립성](../../design/policies/focus.md)).
   - 조회: `tasty list workspaces|panes|surfaces` · `tasty list tabs --pane <P>` (전 워크스페이스 순회, 포커스 무관 — [포커스 독립성](../../identity.md)).
 - **사용자 트리거**: 단축키/마우스로 탭 추가·전환·이동, Pane/Surface 분할, 닫기. (단축키는 `KeybindingSettings` — 하드코딩 금지.)
@@ -259,4 +259,4 @@ MainView 가 열리면 항상 표시(중앙 고정 영역). 사이드바에서 W
 
 ### 시각 소스
 
-`site/vendor/ui_kits/terminal/work.jsx` — 작업 영역 치수·보더·타일 배치의 단일 출처. 보더 폭은 코드 상수와 일치하되 **두 상수의 좌표계가 다르다**: `PANE_BORDER_WIDTH` 는 논리 2px(디자인이 정한 두께라 배율을 따라 커진다 — 배율 2 에서 4 물리px), `SURFACE_BORDER_WIDTH` 는 물리 1px(hairline 이라 밀도와 무관하게 1 device px 로 남는다). 근거는 [docs/adr/0039-typed-length-and-dpi-boundaries.md](../../adr/0039-typed-length-and-dpi-boundaries.md).
+`site/vendor/ui_kits/terminal/work.jsx` — 작업 영역 치수·보더·타일 배치의 단일 출처. 보더 폭은 코드 상수와 일치하되 **두 상수의 좌표계가 다르다**: `PANE_BORDER_WIDTH` 는 논리 2px(디자인이 정한 두께라 배율을 따라 커진다 — 배율 2 에서 4 물리px), `SURFACE_BORDER_WIDTH` 는 물리 1px(hairline 이라 밀도와 무관하게 1 device px 로 남는다). 근거는 [docs/concepts/typed-length.md](../../concepts/typed-length.md).

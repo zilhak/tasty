@@ -1,6 +1,6 @@
 //! 터미널 격자를 GPU 인스턴스 버퍼로 만든다. 강조·선택 등은 인자로 받아 앱 상태를 조회하지 않는다.
 //! 입력 타입은 소유 크레이트를 직접 참조한다. 셀 색 해석은 헤드리스와 같은 cell_palette를 사용한다.
-//! 의존 경계: docs/adr/0001-crate-dependency-boundaries.md.
+//! 의존 경계: docs/architecture/index.md.
 
 mod line_render;
 mod overlay;

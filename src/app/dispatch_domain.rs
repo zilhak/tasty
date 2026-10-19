@@ -1,7 +1,7 @@
 //! DomainIntent를 적용하고 CoreEvent에 따른 후속 처리를 실행한다.
 //! 구조 변경은 journal 명령에 합류하고 비저널 결과와 사용자 표시 후속을 원 engine으로 전달한다.
 //! 설정·테마·플러그인 등 App 자원이 필요한 처리는 여기에 둔다.
-//! [계층 경계](../../docs/adr/0002-domain-execution-and-ports.md)를 따른다.
+//! [계층 경계](../../docs/dev-guide/app-state-ownership.md)를 따른다.
 
 mod terminal;
 mod theme_order;

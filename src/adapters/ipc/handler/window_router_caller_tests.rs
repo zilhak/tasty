@@ -36,7 +36,7 @@ enum WindowCallers {
 const WINDOW_ROUTER_CALLERS: &[(&str, WindowCallers, &str)] = &[(
     "file_picker.trigger",
     WindowCallers::PluginOnly,
-    "고른 경로는 호출한 plugin 에만 push 된다 — CLI·agent 호출은 사용자 포커스만 가져간다(ADR-0031)",
+    "고른 경로는 호출한 plugin 에만 push 된다 — CLI·agent 호출은 사용자 포커스만 가져간다(docs/features/file-handler/index.md)",
 )];
 
 /// 모든 정의에서 명시된 메서드를 읽는다. match 밖의 추가 라우팅은 허용하지 않는다.

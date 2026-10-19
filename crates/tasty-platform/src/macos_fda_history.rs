@@ -3,7 +3,7 @@
 //! 보유를 마지막으로 관측했을 때의 자기 서명 해시(cdhash)를 데이터 홈에 남기고, 거부로 보일 때
 //! 지금 해시와 비교한다. 안내를 띄울지는 이 기록과 관계없이 매 부팅 현재 상태로 정한다.
 //! 기록을 두는 이유와 대안은
-//! [ADR-0074](../../../docs/adr/0074-macos-fda-grant-record-picks-the-notice-cause.md)에 있다.
+//! [macOS 권한 (TCC)](../../../docs/features/macos-permissions/index.md)에 있다.
 //!
 //! 갈래 판정과 기록 형식은 순수 함수라 macOS가 아닌 환경에서도 시험한다. 파일 읽기·쓰기와
 //! 해시 취득은 `#[cfg(all(target_os = "macos", feature = "gui"))]` 안에만 있다.

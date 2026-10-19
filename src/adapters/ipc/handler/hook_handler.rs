@@ -6,7 +6,7 @@
 //! 플러그인이 임의 시퀀스를 등록해 자신의 권한을 넘지 못하게 하기 위해서다.
 //!
 //! 등록된 웹훅은 calls 사본을 보관하므로 upsert로 바뀌지 않는다.
-//! 변경은 이후의 바인딩과 hook_handler.dispatch에 적용된다(ADR-0032).
+//! 변경은 이후의 바인딩과 hook_handler.dispatch에 적용된다(docs/features/webhook/index.md).
 
 use serde_json::json;
 
@@ -125,7 +125,7 @@ pub fn handle_dispatch(
     }
 }
 
-/// surface 훅과 같은 실행기에 넣어 시퀀스의 각 단계가 서로 끼어들지 않도록 한다(ADR-0027).
+/// surface 훅과 같은 실행기에 넣어 시퀀스의 각 단계가 서로 끼어들지 않도록 한다(docs/features/hooks/index.md).
 fn start_dispatched_sequence(
     handler_id: &str,
     injector: &HostIpcInjector,

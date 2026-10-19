@@ -41,7 +41,7 @@ pub struct RemoteSurface {
     /// 네이티브 WebView의 commit 주소와 히스토리 이동 가능 여부 사본. 주소 표시와 조회가 쓴다.
     #[cfg(feature = "gui")]
     pub webview_nav: Arc<Mutex<tasty_model::WebViewNavInfo>>,
-    /// html 문서의 스크립트 감지와 문서 단위 허용(ADR-0053). native backend의 navigation 콜백과 공유한다.
+    /// html 문서의 스크립트 감지와 문서 단위 허용(docs/surfaces/html/index.md). native backend의 navigation 콜백과 공유한다.
     #[cfg(feature = "gui")]
     pub html_script: Arc<Mutex<tasty_model::html_script::HtmlScriptState>>,
     /// 호스트가 보관하는 cwd. 생성 시 선언된 파일 경로나 상속 cwd로 채우고,

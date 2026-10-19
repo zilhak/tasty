@@ -1,4 +1,4 @@
-//! 등록된 Lua 스크립트와 현재 해시가 다르면 실행 전 확인한다(ADR-0027).
+//! 등록된 Lua 스크립트와 현재 해시가 다르면 실행 전 확인한다(docs/features/hooks/index.md).
 //! 사용자가 실행을 확정해야 dispatch_pending_script_confirm이 해시를 저장하고 워커를 시작한다.
 
 use crate::adapters::ui::popup::{self, PopupAction};

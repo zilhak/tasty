@@ -1,5 +1,9 @@
 # 릴리스 절차
 
+## 원칙과 현재 동작
+
+[플랫폼 원칙](../principles/platform-and-compatibility.md)은 Windows ARM을 1급 지원·릴리스 대상으로 포함한다. 현재 아래 Windows 스크립트·워크플로의 x64 산출물만으로는 이 범위를 충족하지 못하며 ARM 배포는 아직 구현되지 않았다. 지원 등급과 실제 산출물·검증 결과를 구분한다.
+
 릴리스는 **Git 태그 push** 로 트리거된다(`.github/workflows/release.yml`). 버전 형식은 `MAJOR.MINOR.PATCH`. 버전 정책은 [`../../CLAUDE.md`](../../CLAUDE.md) "버전 정책" — 이 문서는 절차다.
 
 ## 버전 자동 bump 규칙 (요약)
@@ -203,7 +207,7 @@ cd ~/actions-runner && ./config.sh remove --token <REMOVAL_TOKEN>   # token: Set
 ## 헤드리스 산출물
 
 릴리스는 GUI 산출물과 함께 `gui` feature를 끈 헤드리스 빌드를 OS별 압축 파일로 올린다.
-선택 근거와 대안은 [ADR-0066](../adr/0066-headless-build-ships-as-a-per-os-archive.md)에 있다.
+선택 근거와 대안은 이 문서에 있다.
 
 | OS | 파일 | 만드는 스크립트 |
 |---|---|---|

@@ -2,7 +2,7 @@
 //! 네이티브 백엔드의 user_gesture와 페이지 작성자가 소유 플러그인인지 함께 확인한다.
 //! surface마다 마지막 시도만 저장하고 플러그인·surface·URL이 맞으면 한 번 소비한다.
 //! 조건이 맞지 않는 시도와 작성자가 바뀐 프레임은 이전 기록도 지운다.
-//! 상세 규칙: docs/adr/0031-file-handler-routing.md.
+//! 상세 규칙: docs/features/file-handler/index.md.
 
 use std::collections::HashMap;
 

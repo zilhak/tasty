@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent · 로컬 사용자. 에이전트별 활동을 측정하고 한도(cap)를 설정·해제한다.
-- **ADR**: [ADR-0012](../../adr/0012-request-admission-and-isolation.md) — 검사를 선택적으로 끄지 않는다, 권한 토큰은 선언이다
+- **설계**: [플러그인 권한 모델](../../dev-guide/plugin-permissions.md) — 검사를 선택적으로 끄지 않는다, 권한 토큰은 선언이다
 - **코드**: `telemetry.*` 핸들러, `tasty-telemetry`, 영속 `tasty-memory`
 - **화면**: 없음 (cap 도달 시 알림)
 - **메서드 목록**: [reference/api](../../reference/api.md#텔레메트리-telemetry)
@@ -17,7 +17,7 @@ AI 에이전트 활동을 도메인 메트릭으로 **기록·집계·차단**�
 
 Metric(`input_tokens`/`ipc_calls`/…) × Agent(plugin 은 id 의 비허용 문자를 `_` 로 바꾼 값 — 예 `com_tasty_claude`, Local 은 `_host`, 미명시 시 CallerContext 자동) × Workspace(없으면 `global`) × Op(`Set`/`Inc`/`Dec`, 집계에서 `Inc`·`Dec` 는 sum 누적·`Set` 은 덮어쓰기) × Window(`1m/1h/1d`) × Tags. 이벤트는 `tasty.telemetry.event.{ts}.{seq}` 로 영속, 조회는 prefix scan + 순수 집계(재시작 후 누적 보존).
 
-**집계본은 영속되지 않는다.** bucket 은 조회할 때마다 raw event 로부터 새로 만들어지고 버려진다 — 주기 rollup task 도, `tasty.telemetry.bucket.*` 키도 없다. 따라서 **raw event 보존량이 곧 조회 가능 범위**이며, 그 상한은 관측 로그 3종 공통 정책(`store::log_retention`)이 정하는 **최근 20,000 이벤트**다. 조용한 인스턴스에서는 수일치, 폴링이 도는 인스턴스에서는 수십 분치가 되므로 조회 범위가 데이터 양에 종속된다. 롤업을 신설하지 않기로 한 근거와 재검토 조건은 [ADR-0009](../../adr/0009-state-storage-and-retention.md).
+**집계본은 영속되지 않는다.** bucket 은 조회할 때마다 raw event 로부터 새로 만들어지고 버려진다 — 주기 rollup task 도, `tasty.telemetry.bucket.*` 키도 없다. 따라서 **raw event 보존량이 곧 조회 가능 범위**이며, 그 상한은 관측 로그 3종 공통 정책(`store::log_retention`)이 정하는 **최근 20,000 이벤트**다. 조용한 인스턴스에서는 수일치, 폴링이 도는 인스턴스에서는 수십 분치가 되므로 조회 범위가 데이터 양에 종속된다. 롤업을 신설하지 않기로 한 근거와 재검토 조건은 [저장소 시스템 (Storage System)](../../design/systems/storage.md).
 
 `ipc_calls` 는 dispatcher 가 plugin IPC 호출마다 자동 1회 기록(`tags.method`). `_host` 또는 `telemetry.*` 는 자기측정/재귀 방지로 skip.
 
@@ -60,7 +60,7 @@ $ TASTY_SURFACE_ID=<surface_id> TASTY_AGENT_ID=claude_s<surface_id> TASTY_SESSIO
 | `CallerContext::owner()` | Local → `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
 | `CallerContext::agent_id()` | Local → 봉투의 `caller_agent_id` 또는 `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
 
-Local 분기에서 `owner()` 는 항상 `_host` 이고 `agent_id()` 는 호출자가 봉투로 밝힌 `caller_agent_id` 다. 이 값은 검증할 수 없는 자기 신고라 텔레메트리 기록(`telemetry record` 의 기본 agent, `ipc_calls` 집계)·감사 `caller_id`·헤드리스 PTY `owner_agent_id` 표시에만 쓰고, 권한·memory owner·rate limit·cap 차단 판단에는 쓰지 않는다([ADR-0073](../../adr/0073-local-caller-agent-id-is-a-self-reported-label.md)). 형식(`[a-zA-Z0-9_-]`, 64자 이하)이 틀리면 버리고 `_host` 로 기록하며 요청은 거절하지 않는다. 세션 토큰이 있으면 세션의 ID 가 우선한다. 호스트 프로세스 자신의 `TASTY_AGENT_ID` 는 이 Tasty 를 띄운 바깥 인스턴스에서 상속한 값이라 읽지 않는다. 구 서버는 봉투 필드를 무시하고 `_host` 로 기록하며, 지원 여부는 capability `ipc.caller-agent-id` 로 확인한다.
+Local 분기에서 `owner()` 는 항상 `_host` 이고 `agent_id()` 는 호출자가 봉투로 밝힌 `caller_agent_id` 다. 이 값은 검증할 수 없는 자기 신고라 텔레메트리 기록(`telemetry record` 의 기본 agent, `ipc_calls` 집계)·감사 `caller_id`·헤드리스 PTY `owner_agent_id` 표시에만 쓰고, 권한·memory owner·rate limit·cap 차단 판단에는 쓰지 않는다([플러그인 권한 모델](../../dev-guide/plugin-permissions.md)). 형식(`[a-zA-Z0-9_-]`, 64자 이하)이 틀리면 버리고 `_host` 로 기록하며 요청은 거절하지 않는다. 세션 토큰이 있으면 세션의 ID 가 우선한다. 호스트 프로세스 자신의 `TASTY_AGENT_ID` 는 이 Tasty 를 띄운 바깥 인스턴스에서 상속한 값이라 읽지 않는다. 구 서버는 봉투 필드를 무시하고 `_host` 로 기록하며, 지원 여부는 capability `ipc.caller-agent-id` 로 확인한다.
 
 #### 보안 한계
 
@@ -80,7 +80,7 @@ GUI·headless의 외부 소켓과 plugin host-call은 라우팅 전에 권한·c
 소비하거나 기록하지 않는다. 별칭은 canonical 메서드 태그로 남는다.
 권한/한도 거부는 Allow 관측을 남기지 않고 기존 Deny audit·권한 격상 흐름을 유지한다.
 `telemetry.*`와 호스트 caller의 관측 제외, Local의 rate 면제는 그대로다.
-[ADR-0012](../../adr/0012-request-admission-and-isolation.md).
+[플러그인 권한 모델](../../dev-guide/plugin-permissions.md).
 
 
 ### Cost Cap
@@ -117,7 +117,7 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 
 `SlowLoop` 는 쿨다운에 더해 **루프 하나를 한 번만 알린다.** 조합의 창에 든 호출 수가 `SLOW_LOOP_THRESHOLD` 이상인 동안에는 쿨다운이 지나도 다시 레코드를 만들지 않는다. 호출이 멈춰 창의 호출 수가 그 아래로 줄어든 뒤 다시 넘으면 새 루프로 보고 다시 알린다. 감시 대상마다 800ms 로 도는 claude plugin 폴링이 대상 하나·메서드 하나에 1분마다 알림을 쌓던 것을 이렇게 막는다. `SLOW_LOOP_THRESHOLD`·`SLOW_LOOP_WINDOW_MS` 는 그대로라 첫 알림은 이전과 같은 시점에 나간다.
 
-탐지기의 창과 emit 기록은 메모리에만 있다. `SLOW_LOOP_WINDOW_MS` 마다 한 번, 창 안에 호출이 남지 않은 조합과 쿨다운이 지난 emit 기록을 지운다. 닫힌 surface 처럼 다시 오지 않는 params 조합이 프로세스 수명 동안 쌓이지 않게 하려는 것이다. 지운 항목은 빈 창·기록 없음과 판정이 같아 검출 결과는 바뀌지 않는다. 보존 상한은 [ADR-0009](../../adr/0009-state-storage-and-retention.md) 의 공통 정책(50시간 · 5,000건)을 따른다.
+탐지기의 창과 emit 기록은 메모리에만 있다. `SLOW_LOOP_WINDOW_MS` 마다 한 번, 창 안에 호출이 남지 않은 조합과 쿨다운이 지난 emit 기록을 지운다. 닫힌 surface 처럼 다시 오지 않는 params 조합이 프로세스 수명 동안 쌓이지 않게 하려는 것이다. 지운 항목은 빈 창·기록 없음과 판정이 같아 검출 결과는 바뀌지 않는다. 보존 상한은 [저장소 시스템 (Storage System)](../../design/systems/storage.md) 의 공통 정책(50시간 · 5,000건)을 따른다.
 
 ### 세션 요약
 
@@ -129,7 +129,7 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 큐 대기·실행 시간·연결 수·거절·스트림 손실을 고정 크기 메모리에 기록하며 저장소에는 쓰지 않는다.
 시간은 count·sum·max를 기록하고 평균은 조회할 때 계산한다. 일부 지연에는 구간별 분포도 제공한다.
 DB 설정과 느린 요청 기록은 아래 표처럼 별도 항목이다.
-[설계 근거](../../adr/0008-ipc-pressure-observability.md)를 참고한다.
+[설계 근거](../../architecture/ipc-server.md)를 참고한다.
 
 | 응답 항목 | 측정 위치 | 포함 대상 |
 |---|---|---|
@@ -147,7 +147,7 @@ DB 설정과 느린 요청 기록은 아래 표처럼 별도 항목이다.
 | `memory_writer` | memory.db 전담 writer의 접수와 묶음 실행 (`tasty_utils::batch_writer`) | writer에 **접수된** 요청과 거절, 실행한 묶음 크기 분포(`batch_sizes`), busy 재실행, flush, 지금·최대 잡힌 항목 수와 바이트. writer가 없는 시험 구성이면 `null` |
 | `gate_refusals` | 공통 진입 게이트 (`handler/checked.rs` 의 `check_request`) | 게이트에 **든** 요청 전부(`judged`) — Local 도, 큐를 안 지나는 plugin host-call 도 센다. 거절은 게이트마다 한 칸 |
 
-`queue_before_gate` 안에서 명령을 세는 수가 둘이다. `waits` 는 대기를 기록한 명령 수로, 명령을 **꺼내는 순간** 대기 합·최댓값·분포와 함께 오른다 — `wait_us_mean` 의 분모이고 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 **끝날 때** 그 회차가 꺼낸 수만큼 오르고 `depth_mean`(= `commands / drains`)의 분자다. 조회는 늘 자기 회차 안에서 답하므로 한 답 안에서 `commands` 는 아직 도는 회차(조회 자신 포함)만큼 `waits` 보다 작다 — 평균을 `commands` 로 나누면 최댓값을 넘는 값이 나왔다([ADR-0008](../../adr/0008-ipc-pressure-observability.md)).
+`queue_before_gate` 안에서 명령을 세는 수가 둘이다. `waits` 는 대기를 기록한 명령 수로, 명령을 **꺼내는 순간** 대기 합·최댓값·분포와 함께 오른다 — `wait_us_mean` 의 분모이고 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 **끝날 때** 그 회차가 꺼낸 수만큼 오르고 `depth_mean`(= `commands / drains`)의 분자다. 조회는 늘 자기 회차 안에서 답하므로 한 답 안에서 `commands` 는 아직 도는 회차(조회 자신 포함)만큼 `waits` 보다 작다 — 평균을 `commands` 로 나누면 최댓값을 넘는 값이 나왔다([IPC 서버](../../architecture/ipc-server.md)).
 
 #### plugin 왕복 시간
 
@@ -193,7 +193,7 @@ VACUUM이며 commit 수에 들어가지 않는다.
 보이므로, 재는 것은 **루프가 큐를 마지막으로 비어 있다고 본 뒤 지난 시간**이다. 그 뒤에 꺼낸 연결은 그
 순간 뒤에 도착했으므로 실제 대기 시간은 이 값을 넘지 않으므로 **상한**으로 사용하며, 잠든 동안 고르게 도착하면 실제
 대기는 평균적으로 그 절반이다. 집계 대상은 루프가 꺼낸 TCP 연결 전부라 `accept_waits = accepted +
-refused_saturated` 다([ADR-0008](../../adr/0008-ipc-pressure-observability.md)).
+refused_saturated` 다([IPC 서버](../../architecture/ipc-server.md)).
 
 #### DB에 적용된 설정
 
@@ -205,11 +205,11 @@ DB 모드의 허용 결과와 다르다는 뜻이고 **오류가 아니라 열�
 같은 DB 를 말하므로 한 응답에서 "commit 이 느리다" 와 "WAL이 적용되지 않았다" 가 함께 읽힌다. 열리지
 않은 DB 는 `null` 이다 — 헤드리스의 `state_db` 는 늘 `null` 이다(허용 결과표·근거는
 [storage](../../design/systems/storage.md) 와
-[ADR-0010](../../adr/0010-storage-failure-reporting.md)).
+[저장 계약과 writer 명부](../../design/systems/storage-contract.md)).
 `memory_db` 에만 `init_failure` 가 하나 더 있다 — 부팅이 `memory.db` 를 못 열어 in-memory 대체로
 떴으면 `{cause, error}`(원인 이름과 오류 문구), 아니면 `null` 이다. 대체면 pragma가 모두 적용됐어도
 `degraded` 가 `true` 다 — `in_memory: true` 만으로는 "원래 in-memory" 와 "파일을 못 열어
-in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting.md)).
+in-memory" 가 안 갈린다([저장 계약과 writer 명부](../../design/systems/storage-contract.md)).
 
 #### 스트림 전송
 
@@ -220,7 +220,7 @@ in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting
 내려가는 값**) · `sink_capacity`(연결 하나의 큐 상한 — `connections.limit` 과 같은 이유로 값과 함께
 나간다). 연결별 **연속** drop 수는 없다 — 성공 한 번에 0 이 되는 강제 연결 해제 조건이라 읽는 시점에 따라
 같은 사건이 0 으로 보인다. 세 값의 정의와 손실을 받은 client 가 하는 일은
-[ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)
+[Attach 메커니즘](../../dev-guide/attach-behavior.md)
 과 [attach-behavior](../../dev-guide/attach-behavior.md) 에 있다. 허브가 엔진에 주입되지 않은
 조립(단위 시험)에서는 항목이 `null` 이다.
 
@@ -238,15 +238,15 @@ in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting
 번도 안 들어가므로 **다른 어느 항목에도 안 남는다** — 이 항목이 없으면 그 거절은 요청자가 받은
 응답과 `debug` 로그로만 드러난다. 접수 통계는 IPC 서버가 만들고 호스트 주입기가 같은 것을 든다. 서버가
 안 뜬 조립(단위 시험)에서는 항목이 `null` 이다. 1 바이트의 정의와 상한 값은
-[ADR-0006](../../adr/0006-bounded-ipc-transport.md).
+[IPC 서버](../../architecture/ipc-server.md).
 
 `queue_dispatch` 는 큐에서 **꺼낸** 쪽의 누계다(`tasty_ipc::dispatch::DispatchStats`). 값은 일곱이다 —
 `rounds`(명령을 하나 이상 꺼낸 회차) · `rounds_stopped_by_count` · `rounds_stopped_by_time`(그중 명령 수 ·
 시간 예산에 닿아 멈춘 회차) · `expired_before_run`(호출자의 응답 대기 상한이 큐에서 지나 실행하지 않은
-명령 — 소켓 요청은 `-32067` 로 답한 것이고, 호스트 주입 명령([ADR-0007](../../adr/0007-ipc-scheduling-and-deadlines.md))도
+명령 — 소켓 요청은 `-32067` 로 답한 것이고, 호스트 주입 명령([IPC 서버](../../architecture/ipc-server.md))도
 센다. 주입 명령은 `-32067` 로 답해지지 않고 주입한 호출자 스레드에서 `InjectError::Expired` 로 끝난다) · `started`(실행을 시작한 명령) · `in_flight`(실행을 시작한 뒤 명령 또는 응답 대기자가 lifecycle을 보유한 요청 — 이 항목에서 유일하게 내려가는 값) · `in_flight_max`. 호출자 대기가 끝나도 실행 중인 명령이 lifecycle을 보유하면 계속 센다. 메인
 스레드 handler 는 한 번에 하나라 `in_flight` 가 1 을 넘는 것은 응답을 워커로 넘긴 요청이 기다리는
-동안이다. 정의는 [ADR-0008](../../adr/0008-ipc-pressure-observability.md).
+동안이다. 정의는 [IPC 서버](../../architecture/ipc-server.md).
 두 항목을 합치지 않는 이유는 집계 대상이 달라서다 — `queued_commands` 와 `started` 의 차는 "아직 큐에
 있다" 가 아니다(큐 안에서 만료된 것과 기다리던 쪽이 물러난 것이 섞인다).
 
@@ -258,7 +258,7 @@ in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting
 진행 중이어서 거기에 합류했다). 전부 누계다. `executed` 는 재시도가 아니지만 **집계 대상**이다 — 재생 수만으로는
 그것이 키 실은 실행 열 건 중 하나인지 만 건 중 하나인지 모른다. 한 요청은 자기를 맡은 층의 판정으로
 **한 번만** 세진다. 이 `in_flight` 는 `queue_dispatch.in_flight` 와 이름만 같다. 정의는
-[ADR-0008](../../adr/0008-ipc-pressure-observability.md).
+[IPC 서버](../../architecture/ipc-server.md).
 
 #### 느린 요청 기록
 
@@ -282,7 +282,7 @@ in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting
   링의 줄이 같은 칸을 들고 있어 **읽는 순간의 값**이 나간다. 그래서 큐에서 만료된 요청(`-32067`) ·
   게이트가 거절한 요청(`-32001`) · 정상 답이 링만으로 갈린다. 아직 답이 안 나갔으면(plugin 으로 넘긴
   요청이 기다리는 중) 둘 다 `null` 이다. 기한 없는 주입이 상한에서 물러난 경우도 `null` 이다 — 그 명령은
-  큐에 남아 뒤에 실행될 수 있어 호출자에게 나간 답이 없다([ADR-0008](../../adr/0008-ipc-pressure-observability.md)).
+  큐에 남아 뒤에 실행될 수 있어 호출자에게 나간 답이 없다([IPC 서버](../../architecture/ipc-server.md)).
 - **plugin 로그로 되짚기** — `host_request_id` 는 plugin 이 받은 JSON-RPC id 와 같은 값이다. 호스트의
   plugin 오류 응답 경고와 namespace 만료 경고도 같은 줄에 `id=<host_request_id>` 와
   `request_seq=<번호>` 를 싣는다(번호를 모르는 plugin 요청이면 `none` — IPC 요청에서 오지 않은 것과 아래 "집계 대상 밖" 의 파일 핸들러 경로). 번호는 plugin 에게
@@ -301,7 +301,7 @@ in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting
   그 명령이 파일 핸들러 큐를 거쳐 plugin 으로 넘기는 forward 는 번호를 잃는다 — 그 plugin 대기는 원 요청 줄에
   안 붙는다(그 forward 는 호출자에게 답하지 않는다). `host` 가 `null` 인 줄은 열린 자리가 밀려난 뒤 hop 만 온 것이다.
 
-값과 상수의 근거는 [ADR-0008](../../adr/0008-ipc-pressure-observability.md).
+값과 상수의 근거는 [IPC 서버](../../architecture/ipc-server.md).
 
 #### 진입 검사 거절
 

@@ -1,5 +1,5 @@
 //! 순수 tasty-core와 구조 값 tasty-model의 제품 코드가 상위 host·GUI를 참조하는지 검사한다.
-//! root src/core와 ports는 실행 adapter이므로 이 순수 crate 검사 범위가 아니다(ADR-0054/0056).
+//! root src/core와 ports는 실행 adapter이므로 이 순수 crate 검사 범위가 아니다(docs/dev-guide/app-state-ownership.md · docs/architecture/index.md).
 //! root 실행 owner는 engine_resource_ownership, 지정 writer 호출은 별도 shell guard가 검사한다.
 //! 상위 모듈 참조, gui 조건의 개수, GUI 크레이트 경로를 각각 검사한다.
 //! 기존 gui 조건 안에 새 GUI 참조를 넣으면 조건 수는 그대로라 경로 검사도 필요하다.
@@ -230,7 +230,7 @@ fn the_domain_does_not_name_an_upper_layer() {
     );
     assert!(
         offenders.is_empty(),
-        "도메인 제품 코드가 상위 계층을 참조한다:\n{}\nADR-0054/0056에 따라 순수 모델과 적용기는 host 실행 객체를 참조하지 않는다. 실행과 GUI adapter는 root에 둔다. 예외 목록을 추가해 통과시키지 않는다.",
+        "도메인 제품 코드가 상위 계층을 참조한다:\n{}\ndocs/dev-guide/app-state-ownership.md와 docs/architecture/index.md에 따라 순수 모델과 적용기는 host 실행 객체를 참조하지 않는다. 실행과 GUI adapter는 root에 둔다. 예외 목록을 추가해 통과시키지 않는다.",
         offenders.join("\n")
     );
 }
@@ -349,7 +349,7 @@ fn the_domain_names_no_gui_crate_beyond_the_pinned_list() {
         .collect();
     assert!(
         new.is_empty(),
-        "도메인에서 GUI 크레이트를 참조한다:\n{}\ngui 조건 뒤에 있어도 금지된다(ADR-0002). GUI 동작을 옮기거나 도메인 포트로 분리한다. GUI_CRATE_PATHS_IN_DOMAIN에 새 예외를 넣어 통과시키지 않는다.",
+        "도메인에서 GUI 크레이트를 참조한다:\n{}\ngui 조건 뒤에 있어도 금지된다(docs/dev-guide/app-state-ownership.md). GUI 동작을 옮기거나 도메인 포트로 분리한다. GUI_CRATE_PATHS_IN_DOMAIN에 새 예외를 넣어 통과시키지 않는다.",
         new.join("\n")
     );
     let stale: Vec<String> = GUI_CRATE_PATHS_IN_DOMAIN

@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 탭 스트립 메뉴 "새 HTML..." 트리거 · 설정 창 안의 파일 선택) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
-- **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0031](../../adr/0031-file-handler-routing.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
+- **설계**: [원격 attach (Remote attach)](../remote-attach/index.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [내부 팝업 시스템](../../design/systems/popup.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [파일 핸들러 (File handler)](../file-handler/index.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
 - **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/view/main/redraw.rs`의 `apply_pane_menu_selection`(탭 스트립 메뉴 "새 HTML..." 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
@@ -10,7 +10,7 @@
 
 Tasty 안에서 파일을 선택하는 창이다. 로컬 파일시스템과 attach mirror workspace의
 원격 파일시스템을 같은 UI로 탐색한다. OS 파일 선택기 대신 자체 창을 사용하는 이유는
-[ADR-0031](../../adr/0031-file-handler-routing.md)에 설명한다.
+[파일 핸들러 (File handler)](../file-handler/index.md)에 설명한다.
 
 ## 내부 동작 (headless-valid)
 
@@ -26,7 +26,7 @@ workspace)의 `Workspace.mirror` 플래그를 1 회 확인해 로컬/원격을 �
 `FilePickerData.on_confirm` 은 `NewTab { pane_id, kind: "html", param_key: "url" }` 이다. 피커를 여는
 `OpenPopup` 의 출처는 사용자 컨텍스트 메뉴다. 메뉴를 연 pane 이 mirror workspace 에 속하면 피커를
 열지 않고 `explorer.state.remote_open_unsupported` 토스트만 띄운다. html 은 mirror 에서 내용이
-보이지 않아(원격 파일 열기가 같은 kind 의 핸들러를 거절하는 [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)와 같은 이유) 원격에 탭을 만들어도
+보이지 않아(원격 파일 열기가 같은 kind 의 핸들러를 거절하는 [원격 attach (Remote attach)](../remote-attach/index.md)와 같은 이유) 원격에 탭을 만들어도
 사용자가 볼 수 없기 때문이다.
 
 ### 로컬 브라우징
@@ -181,7 +181,7 @@ micro 대문자로 쓰고, 열 위치는 행과 같은 계산을 써서 값 바�
 서버가 돌려준 경로 문자열 자체에 `\` 가 있는지로 Windows 스타일(`C:\Users\alice`, 드라이브 루트
 보존)과 POSIX(`/`)를 구분한다(`is_windows_style_remote_path`).
 
-<a id="plugin-트리거adr-0058--즉시-ack--이벤트-push"></a>
+<a id="plugin-트리거docs/dev-guide/headless-ipc-surface.md--즉시-ack--이벤트-push"></a>
 
 ### 플러그인의 피커 요청 — 즉시 접수하고 결과는 이벤트로 전달
 
@@ -196,7 +196,7 @@ markdown의 Browse처럼 plugin이 호스트의 파일 선택 창을 열어야 �
 
 1. plugin 이 `file_picker.trigger { filters?: string[] }` 를 호출한다(`FsRead` 권한,
    `gui` feature 전용). CLI·agent 호출자는 popup 을 열지 않고 `-32016` 을 받는다 — 결과를 받을
-   곳이 없고 popup 이 사용자 입력 포커스를 가져가기 때문이다([ADR-0031](../../adr/0031-file-handler-routing.md)). host 는 popup 확정을 **기다리지 않고** `{ request_id }` 만 즉시
+   곳이 없고 popup 이 사용자 입력 포커스를 가져가기 때문이다([파일 핸들러 (File handler)](../file-handler/index.md)). host 는 popup 확정을 **기다리지 않고** `{ request_id }` 만 즉시
    회신한다(`src/adapters/ipc/handler/file_picker.rs::handle_trigger`).
 2. host 는 `(plugin_id, request_id)` 를 `FilePickerData.requester`(`FilePickerRequester`)
    에 기록하고 popup 을 연다 — 이후 로컬/원격 판별·엔트리 로드는 위 기존 경로(Tools 메뉴
@@ -233,7 +233,7 @@ mono caption 이며, 칩은 내용 폭이다. `fp-filter-max-width` 를 넘으�
   stat 할 수 없으므로 그대로 `list_dir_request` 에 싣고 서버의 에러 회신에 맡긴다. 둘 다 없으면
   종전대로 로컬 홈 / 원격 홈(빈 `dir`)이다.
 - **`inherit_cwd` 설정과 무관하다** — 그 설정은 "새 surface 가 cwd 를 상속하는가" 이고 피커는 새
-  surface 를 만들지 않는다([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)
+  surface 를 만들지 않는다([원격 attach (Remote attach)](../remote-attach/index.md)
   참조). Tools 메뉴·단축키로 연 피커도 focus surface 의 폴더에서 출발한다.
 - plugin 은 popup context 의 `observed_cwd`(로컬) / `remote_cwd`(mirror) 와 `origin_surface_id` 를
   그대로 실어 보내면 된다(키 의미는 `MainViewState::popup_surface_context`). 게이트가 걸린 `cwd` 키를
@@ -241,7 +241,7 @@ mono caption 이며, 칩은 내용 폭이다. `fp-filter-max-width` 를 넘으�
 - `path_input` 등 plugin 팝업에 사용자가 이미 적어 둔 경로를 시작점으로 삼는 것은 다루지 않는다.
 
 **부모 범위와 숨김**: `owner_popup_instance`가 요청자 plugin의 부모 popup을 가리키면 host가
-선언 종류와 target으로 유효 scope를 해석해 첫 paint 전에 적용한다([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).
+선언 종류와 target으로 유효 scope를 해석해 첫 paint 전에 적용한다([내부 팝업 시스템](../../design/systems/popup.md)).
 Surface 부모가 보이지 않으면 자식도 paint/hit/Esc/키 게이트에서 빠진다. 숨김은 close가 아니며
 부모·자식 draft, 선택, 요청 ID를 보존한다. 돌아오면 같은 작업을 계속한다. Window 부모와
 owner 없는 단독 피커는 창 범위다. surface가 작으면 기존 clamp가 피커 크기를 제한한다.
@@ -273,7 +273,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   목록은 위 "로컬 브라우징" 과 같은 `read_dir_entries` + `sort_entries` 동기 호출로 채운다.
 - **블로킹의 성질**: 동기 I/O라 느리거나 응답하지 않는 파일시스템에서는 해당 프레임의 처리가 지연될 수 있다 — 메인
   피커의 로컬 경로와 같은 성질이다. OS 네이티브 다이얼로그는 쓰지 않는다(포털 없는 Linux 에서
-  끝나지 않는다, ADR-0031).
+  끝나지 않는다, docs/features/file-handler/index.md).
 - **모드**: `Open`(기존 파일 하나) · `Save { default_name }`(디렉토리를 고르고 파일명을 정한다).
   view 는 `FilePickerMode` 로 두 모드를 함께 그린다. 저장 모드는 파일명을 정할 뿐 파일을 만들지 않는다.
 - **저장 모드의 확정 수단은 하나다**: footer 의 이름 칸이 편집 가능해지고 footer primary 버튼만이
@@ -318,7 +318,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   편집이 더해진다.
 - **AI Agent (IPC/CLI)**: 없음 — popup 조작(선택/확정/취소) 자체는 순수 로컬 사용자 입력
   UI 다(release 의 사용자 입력 재현 금지 원칙). 단, **popup 을 여는 트리거**는
-  `file_picker.trigger` IPC 로 plugin 에 열려 있다(ADR-0036) — markdown Browse
+  `file_picker.trigger` IPC 로 plugin 에 열려 있다(docs/design/systems/popup.md) — markdown Browse
   버튼이 실사용처. 이건 "에이전트가 사용자 대신 파일을 고른다"가 아니라 "plugin 이 host 소유
   UI 를 사용자에게 대신 띄워준다" 는 위임이라 원칙과 상충하지 않는다(뒤이은 선택/확정은
   여전히 사용자 몫).
@@ -449,7 +449,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `format_modified`) — `src/adapters/ui/surface/explorer/view.rs`(Explorer surface)와 공유.
 - 트리거: `src/adapters/ui/tools_menu.rs`(`BuiltinAction::OpenFilePicker`, `popup::file_picker::open`,
   `requester: None`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin
-  트리거, ADR-0036), `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` →
+  트리거, docs/design/systems/popup.md), `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` →
   `FsRead`).
 - Result drain: `src/app/dispatch/file_picker.rs`(`dispatch_pending_file_picker_results`,
   `apply_remote_confirm`, `emit_file_picker_result` — `requester` 가 `Some` 이면

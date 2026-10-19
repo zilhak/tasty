@@ -20,7 +20,7 @@ Surface kind 하나의 명세 템플릿.
 - **kind**: `<kind>` — host 내장 | 번들 plugin `<plugin id>`
 - **렌더 경로**: host-egui | egui-mesh | webview
 - **주체**: 로컬 사용자 / AI Agent / 원격 접속 사용자 중 이 kind 를 쓰는 주체
-- **ADR**: ADR-XXXX (있으면)
+- **설계**: ADR-XXXX (있으면)
 - **코드**: `src/...` / `crates/...`
 - **화면**: 아래 절 또는 `screens/<screen>.md`
 

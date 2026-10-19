@@ -1,7 +1,7 @@
 //! 공용 소스 스캔의 파일 목록을 Git이 알려주는 목록과 비교한다.
 //! 파일 수 하한만으로는 일부 크레이트·파일의 누락을 찾지 못해 경로 집합도 대조한다.
 //! 추적 파일과 무시되지 않은 미추적 파일을 함께 읽고 디스크에 없는 파일은 제외한다.
-//! Git 실행이 실패하면 비교할 수 없으므로 검사를 중단한다(ADR-0048).
+//! Git 실행이 실패하면 비교할 수 없으므로 검사를 중단한다(docs/dev-guide/guard-verification.md).
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;

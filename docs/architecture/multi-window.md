@@ -19,7 +19,7 @@ App (프로세스 실행 조정; GUI에서는 winit ApplicationHandler)
 
 headless는 로컬 ViewRegistry나 attach client를 만들지 않는다. 실행 루프가 EngineSession을 소유하며 AppServices·journal·서버 attach를 사용한다.
 
-`focused_view_id` 는 대상 없는 IPC 요청이 떨어지는 main 창이다. 창을 등록할 때는 그 창을 사용자가 만들었을 때만 옮긴다 — 에이전트가 만든 창은 옮기지 않는다([포커스 정책](../design/policies/focus.md#에이전트가-만든-창과-포커스), [ADR-0059](../adr/0059-id-targets-and-view-owned-selection.md)).
+`focused_view_id` 는 대상 없는 IPC 요청이 떨어지는 main 창이다. 창을 등록할 때는 그 창을 사용자가 만들었을 때만 옮긴다 — 에이전트가 만든 창은 옮기지 않는다([포커스 정책](../design/policies/focus.md#에이전트가-만든-창과-포커스), [포커스 정책 (운영 상세)](../design/policies/focus.md)).
 
 모든 View는 하나의 `views` 맵에 보관한다. 모달도 별도 객체 집합으로 관리하지 않고 `active_modal`로 활성 View와 종류를 표시한다. 활성 모달의 원본은 이 필드 하나이며 창별 MainViewState에는 사본이 없다.
 
@@ -94,7 +94,7 @@ engine만 다루는 App의 순회는 `src/app/window_access.rs`의 `EngineScan`(
 - parked 보관과 복원은 `park`(뒤에 붙인다)·`unpark_first`(가장 먼저 보관한 항목)로 한다.
 - engine 은 생성할 때 받은 `EngineId` 를 관계가 바뀌어도 유지한다. engine 기준 요청과 특정 parked engine 은 보관 위치가 아니라 이 id 로 찾는다(`parked_session`, `DispatchSource::Engine`, attach mirror 출력 대상). 다른 engine 을 보관하거나 꺼내 위치가 바뀌어도 같은 engine 을 가리킨다.
 
-engine의 존재 여부는 창 관계와 parked 관계를 함께 확인한다. 창이 없다는 이유만으로 원격 attach 세션을 끊으면 안 된다. mirror 이벤트도 parked engine에 적용하며 창을 복원하면 그 상태를 표시한다([원격 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명), [ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)).
+engine의 존재 여부는 창 관계와 parked 관계를 함께 확인한다. 창이 없다는 이유만으로 원격 attach 세션을 끊으면 안 된다. mirror 이벤트도 parked engine에 적용하며 창을 복원하면 그 상태를 표시한다([원격 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명), [Attach 메커니즘](../dev-guide/attach-behavior.md)).
 
 ### 창이 스스로 닫히는 자리 — `close_requested`
 
@@ -115,7 +115,7 @@ engine의 존재 여부는 창 관계와 parked 관계를 함께 확인한다. �
 - **parked engine 은 슬롯을 계속 쥔다.** 창이 없어도 engine 이 살아 있으므로 점유에 포함되고, 다시 창을 열 때 그 engine 이 같은 슬롯을 이어쓴다. 재배정했다면 남의 슬롯 파일을 덮어썼을 것이다.
 - 프로세스가 죽으면 점유는 전부 사라진다 — 크래시가 슬롯을 영구 점유로 남기지 않는다.
 
-결정의 근거·대안·재검토 조건은 [ADR-0059](../adr/0059-id-targets-and-view-owned-selection.md), 배정 규칙과 창 닫힘 정책의 현재 동작은 [layout-persistence](../features/layout-persistence/index.md).
+결정의 근거·대안·재검토 조건은 [포커스 정책 (운영 상세)](../design/policies/focus.md), 배정 규칙과 창 닫힘 정책의 현재 동작은 [layout-persistence](../features/layout-persistence/index.md).
 
 ## 윈도우 간 GPU·통신
 
@@ -139,5 +139,5 @@ engine의 존재 여부는 창 관계와 parked 관계를 함께 확인한다. �
 - [아키텍처 개요](index.md) — headless `gui` feature 분리
 - [input-layer](input-layer.md) — 윈도우 내부 마우스 입력 계층
 - [concepts/hierarchy](../concepts/hierarchy.md) — Workspace·Pane·Tab·Surface 도메인 계층
-- [ADR-0059](../adr/0059-id-targets-and-view-owned-selection.md) — 레이아웃 슬롯 점유 모델의 근거·대안
+- [포커스 정책 (운영 상세)](../design/policies/focus.md) — 레이아웃 슬롯 점유 모델의 근거·대안
 - [features/layout-persistence](../features/layout-persistence/index.md) — 슬롯 배정·저장·복원의 현재 동작

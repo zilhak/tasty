@@ -48,7 +48,7 @@ workspace는 본 바이너리(`src/`)와 `crates/*`로 구성한다. 전체 목�
 | `release` | `opt-level = 3`, `strip = true` | **thin** | 최적화 검증 `cargo build --release` |
 | `dist` | `inherits = "release"` | **full** (`lto = true`) | 배포 산출물 `cargo build --profile dist` |
 
-- **`dev` 는 본체와 등재되지 않은 워크스페이스 크레이트가 opt 0 이다**: 외부 의존성은 `[profile.dev.package."*"]` 로 opt 3 이고, 워크스페이스 크레이트는 glob 에 안 걸려 루트 `Cargo.toml` 에 `[profile.dev.package.<이름>]` 으로 **하나씩 등재**한다. `tasty-doc-guards`는 opt 2, 나머지 등재된 크레이트는 opt 3 이다. 새 크레이트를 만들면 등재 여부를 정한다 — dev 최적화 선택과 재검토 기준은 [ADR-0001](../adr/0001-crate-dependency-boundaries.md).
+- **`dev` 는 본체와 등재되지 않은 워크스페이스 크레이트가 opt 0 이다**: 외부 의존성은 `[profile.dev.package."*"]` 로 opt 3 이고, 워크스페이스 크레이트는 glob 에 안 걸려 루트 `Cargo.toml` 에 `[profile.dev.package.<이름>]` 으로 **하나씩 등재**한다. `tasty-doc-guards`는 opt 2, 나머지 등재된 크레이트는 opt 3 이다. 새 크레이트를 만들면 등재 여부를 정한다 — dev 최적화 선택과 재검토 기준은 [아키텍처 개요](../architecture/index.md).
 - **문서 가드는 개발·테스트 프로필에서 opt 2로 실행한다**: `test`가 `dev` 설정을 상속하므로 `cargo test -p tasty-doc-guards`에도 적용된다. 저장소를 반복 분석하는 실행 비용을 줄이며, debug assertions와 overflow checks는 개발 프로필의 기본값을 유지한다. 검사 대상과 실행 항목은 줄이지 않는다.
 - **`release` = thin LTO**: 크레이트 IR 요약을 공유해 cross-crate inlining 을 **병렬** 적용. 일상 "릴리즈 검증" 은 모두 이걸 쓴다.
 - **`dist` = full LTO**: 모든 IR 을 단일 LLVM 모듈로 합쳐 재최적화. 최적화 비용이 커 빌드가 오래 걸림. **배포 바이너리(DMG/MSI/AppImage) 빌드 시에만** 쓴다. (AI 자체 검증 빌드에는 절대 사용 금지.)
@@ -75,7 +75,7 @@ GUI 패키지가 읽는 `target/<프로필>/tasty` 를 덮지 않으려고 targe
 
 Windows 에서 GUI 서브시스템(`windows_subsystem = "windows"`)은 release 이면서 `gui` feature 인 조합에서만 링크한다(`src/main.rs`).
 그래서 헤드리스판과 debug 빌드는 콘솔 서브시스템이며, 콘솔에서 실행하면 셸이 종료를 기다리고 출력과 종료 코드를 받는다.
-부모 콘솔에 붙는 `src/boot/os.rs` 의 `attach_windows_console_if_needed` 도 같은 조합에서만 동작한다. 콘솔 서브시스템을 고른 이유는 [ADR-0066](../adr/0066-headless-build-ships-as-a-per-os-archive.md).
+부모 콘솔에 붙는 `src/boot/os.rs` 의 `attach_windows_console_if_needed` 도 같은 조합에서만 동작한다. 콘솔 서브시스템을 고른 이유는 [릴리스 절차](release.md).
 
 #### Linux 시험 빌드의 시스템 라이브러리
 
@@ -122,7 +122,7 @@ cargo tree --no-default-features --edges normal -i wgpu
 없는 것: `egui` 계열(`egui`·`ecolor`·`emath`·`epaint`·`egui_extras`) · `winit` ·
 **`wgpu` 계열(`wgpu`·`wgpu-core`·`wgpu-hal`·`wgpu-types`·`naga`·`glow`·`ash`)**.
 `wgpu` 가 빠진 것은 `tasty-font` 이 그것을 `gpu` feature 뒤 optional 로 들고 루트의 `gui` 만
-켜기 때문이다([ADR-0001](../adr/0001-crate-dependency-boundaries.md)).
+켜기 때문이다([아키텍처 개요](../architecture/index.md)).
 
 **아직 있는 것: `cosmic-text`·`fontdb`·`swash`·`skrifa`·`read-fonts`·`ttf-parser`.**
 이것은 미완이 아니라 결정이다 — `FontConfig` 의 필드 셋이 cosmic-text 타입이고 헤드리스
@@ -249,7 +249,7 @@ append 하게 해서 **실행 횟수**를 세야 갈린다. 저장소 밖 임시
 ### plugin 세 개가 자기 자신만 거는 이유
 
 세 plugin 의 빌드 스크립트는 `tasty-icons` 의 `Icon.svg` 문자열을 읽어 `OUT_DIR` 에 점배열을
-베이크한다([ADR-0035](../adr/0035-shared-design-and-theme.md)).
+베이크한다([테마 시스템 (운영 상세)](../design/systems/theme.md)).
 그런데 거는 것은 `build.rs` 자기 자신뿐이다. **형태만 보면 입력을 빠뜨린 것 같지만 아니다** —
 아이콘은 파일이 아니라 `crates/tasty-icons/src/lib.rs` 안의 문자열 리터럴이고, 그것이 바뀌면
 `tasty-icons` 가 다시 컴파일되며, `tasty-icons` 는 세 스크립트의 **build-dependency** 라 그
@@ -408,7 +408,7 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 
 본 바이너리의 큰 leaf 모듈을 떼어낼 때 후보 조건: **out-degree 작음**(다른 src/ 모듈 거의 미참조) · **사이클 없음** · **충분히 큼**(1000줄+). 절차: `crates/tasty-<name>/` 생성 → `git mv` → 내부 경로 갱신 → 본 `Cargo.toml` 의존 추가 → `pub use tasty_<name> as <name>` 재수출(backward path 유지) → `cargo check`/`build` 검증. 기존 `crate::model::Foo` 경로가 그대로 동작하는 게 핵심이라 reverse import 갈아끼우기가 불필요하다.
 
-**세 조건 중 크기는 보조 지표다** — 소비자가 둘 이상이고, 합칠 후보 크레이트에 *그 크레이트가 원래 몰라도 되는 의존* 을 들이게 되는 코드는 1000줄에 못 미쳐도 분리한다(판정은 의존 방향이 우선, [ADR-0001](../adr/0001-crate-dependency-boundaries.md)).
+**세 조건 중 크기는 보조 지표다** — 소비자가 둘 이상이고, 합칠 후보 크레이트에 *그 크레이트가 원래 몰라도 되는 의존* 을 들이게 되는 코드는 1000줄에 못 미쳐도 분리한다(판정은 의존 방향이 우선, [아키텍처 개요](../architecture/index.md)).
 
 **재수출 형태는 둘 중 하나를 고른다.**
 
@@ -436,8 +436,8 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 
 순수 명령 판단·이벤트 적용과 구조 projection은 `tasty-core`, 구조 값은 `tasty-model`에 있다.
 root의 `src/core/`·`src/ports/`는 실행 adapter와 호환 조회 경계를 포함하므로 순수 domain crate와 동일하게 취급하지 않는다.
-배치 근거는 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)와
-[ADR-0056](../adr/0056-crate-boundaries-for-core-event-store-and-task-runtime.md)의 도메인 경계 절을 따른다.
+배치 근거는 [App·Engine·View 상태 소유권](app-state-ownership.md)와
+[아키텍처 개요](../architecture/index.md)의 도메인 경계 절을 따른다.
 
 `domain_does_not_reach_up.rs`는 두 crate의 제품 source에서 지정 상위 모듈·host crate 및 GUI 경로를 검사한다.
 package별 anchor와 Git 추적 Rust 파일 명부를 순회 결과와 대조하고, 제품 GUI 조건은 0으로 고정한다.

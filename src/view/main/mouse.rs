@@ -529,7 +529,7 @@ impl MainView {
         false
     }
 
-    /// 우클릭 라우팅: 트래킹 ON+Shift없음이면 앱 위임(ADR-0015), 아니면 tasty 컨텍스트
+    /// 우클릭 라우팅: 트래킹 ON+Shift없음이면 앱 위임(docs/surfaces/terminal/index.md), 아니면 tasty 컨텍스트
     /// 메뉴(terminal/비-terminal 별도). 결정은 순수 `right_click_delegates_to_app`.
     fn handle_right_button(&mut self, engine: &EngineRead<'_>, button_state: ElementState) {
         // 링크 메뉴 스냅샷은 한 클릭 사이클의 것이다 — press 는 이전 값을 버리고, release 는
@@ -585,10 +585,10 @@ impl MainView {
         let shift = self.base.state.modifiers.shift_key();
         if right_click_delegates_to_app(tracking, shift) {
             // 트래킹 앱이 마우스를 캡처 중이라 우클릭이 앱으로 간다 — Shift+드래그/
-            // Shift+우클릭 우회 안내를 트래킹 세션당 1회(Pressed, 설정 ON, ADR-0015).
+            // Shift+우클릭 우회 안내를 트래킹 세션당 1회(Pressed, 설정 ON, docs/surfaces/terminal/index.md).
             if button_state == ElementState::Pressed {
                 self.report_left_press_capture(engine, surface_id);
-                // Shift+우클릭(ADR-0015)은 이 분기에 들어오지 않으므로 스택에도 안
+                // Shift+우클릭(docs/surfaces/terminal/index.md)은 이 분기에 들어오지 않으므로 스택에도 안
                 // 오른다 — press 를 안 보낸 드래그의 motion 이 새지 않는다.
                 push_report_button(&mut self.report_buttons_down, 2, surface_id);
             }
@@ -703,7 +703,7 @@ impl MainView {
         if !(link_mods_match && button_state == ElementState::Pressed) {
             return false;
         }
-        // hard 점유 화면은 지연된 스냅샷이므로 링크를 열지 않는다(ADR-0021).
+        // hard 점유 화면은 지연된 스냅샷이므로 링크를 열지 않는다(docs/dev-guide/attach-behavior.md).
         // false를 반환해 로컬 텍스트 선택은 계속 허용한다.
         if let Some(sid) = self.state.surface_id_at_position(
             engine,
@@ -897,7 +897,7 @@ impl MainView {
                 self.left_select_bypass = true;
                 self.start_selection(engine, x, y, terminal_rect);
             } else {
-                // 트래킹 ON + Shift 없음: 버튼 press 를 앱에 보고 (ADR-0015 앱 위임). 단,
+                // 트래킹 ON + Shift 없음: 버튼 press 를 앱에 보고 (docs/surfaces/terminal/index.md 앱 위임). 단,
                 // 트래킹 진입 후 첫 캡처 상호작용이면 캡처 안내를 1회 띄운다.
                 if let Some(sid) = self.state.focused_surface_id(engine) {
                     self.report_left_press_capture(engine, sid);
@@ -913,7 +913,7 @@ impl MainView {
         }
     }
 
-    /// 트래킹 세션의 첫 캡처 조작에 Shift 우회 안내를 표시한다(ADR-0015).
+    /// 트래킹 세션의 첫 캡처 조작에 Shift 우회 안내를 표시한다(docs/surfaces/terminal/index.md).
     /// 설정이 꺼져 있거나 배너 억제 목록에 해당하면 표시하지 않는다.
     /// 억제된 앱에서는 첫 조작 표지를 남겨 이후 다른 앱에서 안내할 수 있게 한다.
     fn report_left_press_capture(&mut self, engine: &EngineRead<'_>, surface_id: u32) {
@@ -1034,7 +1034,7 @@ impl MainView {
     }
 
     /// 캡처 제외 목록에 해당하거나 hard 점유 중이면 클릭 트래킹을 None으로 처리한다.
-    /// 앱에 보고하는 대신 로컬 선택·메뉴를 허용한다(ADR-0021).
+    /// 앱에 보고하는 대신 로컬 선택·메뉴를 허용한다(docs/dev-guide/attach-behavior.md).
     /// 휠은 이 함수를 쓰지 않고 별도로 hard 점유를 차단한다.
     fn effective_click_tracking(
         &self,
@@ -1051,7 +1051,7 @@ impl MainView {
 
     /// DECSET 1003의 버튼 없는 셀 이동을 보고한다.
     /// OS 창과 대상 surface 모두 포커스되어야 하며 포커스를 옮기지는 않는다.
-    /// divider와 창 리사이즈 영역에서는 보고하지 않는다(ADR-0015).
+    /// divider와 창 리사이즈 영역에서는 보고하지 않는다(docs/surfaces/terminal/index.md).
     fn report_hover_motion(
         &mut self,
         engine: &EngineRead<'_>,
@@ -1160,7 +1160,7 @@ impl MainView {
             if let Some(pos) = self.cursor_position {
                 let (x, y) = (pos.x as f32, pos.y as f32);
                 // 노치 거리는 host egui 옵션이 런타임 단일 출처다 — host 위젯이 스크롤하는
-                // 거리와 plugin 표면이 받는 거리를 같게 유지한다(ADR-0015).
+                // 거리와 plugin 표면이 받는 거리를 같게 유지한다(docs/surfaces/terminal/index.md).
                 let line_scroll =
                     crate::plugin_bridge::wire_scroll::line_scroll(&self.base.gpu.egui_ctx);
                 if let Some((sid, _plugin_id, _rect)) = self.egui_mesh_target_at(engine, x, y) {
@@ -1418,7 +1418,7 @@ pub(super) fn terminal_menu_open_state() -> ElementState {
 }
 
 /// 우클릭을 앱(PTY)에 위임할지 결정한다. 트래킹 ON 이고 Shift 가 없을 때만 위임하고
-/// (ADR-0015), 트래킹 OFF 이거나 Shift+우클릭이면 tasty 컨텍스트 메뉴로 우회한다 (ADR-0015).
+/// (docs/surfaces/terminal/index.md), 트래킹 OFF 이거나 Shift+우클릭이면 tasty 컨텍스트 메뉴로 우회한다 (docs/surfaces/terminal/index.md).
 fn right_click_delegates_to_app(tracking: tasty_terminal::MouseTrackingMode, shift: bool) -> bool {
     tracking != tasty_terminal::MouseTrackingMode::None && !shift
 }
@@ -1742,7 +1742,7 @@ mod right_click_tests {
 
     #[test]
     fn tracking_on_no_shift_delegates_to_app() {
-        // ADR-0015: 트래킹 ON + Shift 없음 → 앱에 위임 (tasty 메뉴 안 뜸).
+        // docs/surfaces/terminal/index.md: 트래킹 ON + Shift 없음 → 앱에 위임 (tasty 메뉴 안 뜸).
         assert!(right_click_delegates_to_app(
             MouseTrackingMode::Click,
             false
@@ -1759,7 +1759,7 @@ mod right_click_tests {
 
     #[test]
     fn tracking_on_with_shift_bypasses_to_menu() {
-        // ADR-0015: 트래킹 ON + Shift → 앱에 보고 안 하고 tasty 컨텍스트 메뉴로 우회.
+        // docs/surfaces/terminal/index.md: 트래킹 ON + Shift → 앱에 보고 안 하고 tasty 컨텍스트 메뉴로 우회.
         assert!(!right_click_delegates_to_app(
             MouseTrackingMode::Click,
             true
@@ -2089,7 +2089,7 @@ mod hover_motion_tests {
     }
 
     /// 확정 정책: 비포커스 대상에는 어떤 hover 도 보내지 않는다 — 배경 TUI 로 마우스
-    /// 입력이 새지 않게 한다(포커스 전환도 하지 않는다, ADR-0015).
+    /// 입력이 새지 않게 한다(포커스 전환도 하지 않는다, docs/surfaces/terminal/index.md).
     #[test]
     fn never_reports_to_a_non_focused_target() {
         assert!(!should_report_hover_motion(HoverReportInput {

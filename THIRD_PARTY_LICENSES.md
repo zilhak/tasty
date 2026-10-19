@@ -84,7 +84,7 @@ MIT는 위 저작권 고지와 허가 문구를 "소프트웨어의 모든 사�
 ## 고지 세트
 
 다음 파일을 배포물에 함께 넣습니다. 저장소의 원본을 사용하며 릴리스 때 새로 생성하지
-않습니다. [ADR-0051](docs/adr/0051-release-artifacts-and-versioning.md).
+않습니다. [릴리스 절차](docs/dev-guide/release.md).
 
 - `LICENSE` — Tasty 자체 코드의 MIT 본문
 - `THIRD_PARTY_LICENSES.md` — 본 문서 (무엇이 번들되고 무슨 의무가 따르는지)

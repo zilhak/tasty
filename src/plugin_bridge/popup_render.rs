@@ -56,7 +56,7 @@ pub fn draw_plugin_popups(
         .plugin_mesh_popup_forward
         .retain(|k, _| live_mesh.contains(k));
     // 사용자 활성화 기록은 조회로 소비하지 않고 팝업이 닫힐 때 제거한다.
-    // 열린 동안 같은 팝업을 근거로 여러 번 사용자 요청을 보낼 수 있다(ADR-0031).
+    // 열린 동안 같은 팝업을 근거로 여러 번 사용자 요청을 보낼 수 있다(docs/features/file-handler/index.md).
     state
         .plugin_popup_user_activated
         .retain(|k, _| live_mesh.contains(k));

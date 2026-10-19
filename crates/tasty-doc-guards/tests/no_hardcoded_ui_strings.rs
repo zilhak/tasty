@@ -52,7 +52,7 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
     ),
     (
         "crates/tasty-doc-guards/src/bin/",
-        "개발자용 검사 도구의 진단이다. 의존성이 없는 크레이트이므로 번역 테이블을 추가하지 않는다(ADR-0048). 바이너리 경로만 제외한다.",
+        "개발자용 검사 도구의 진단이다. 의존성이 없는 크레이트이므로 번역 테이블을 추가하지 않는다(docs/dev-guide/guard-verification.md). 바이너리 경로만 제외한다.",
     ),
 ];
 

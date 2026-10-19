@@ -9,10 +9,10 @@
 //! 영역별 수는 상한을 넘으면 실패하고 줄어든 것은 실패가 아니다. 늘면 실제 새 사용·스케일 확대·
 //! 수집 방식 변경을 구별한다. 당장 토큰을 쓸 수 없다면 역할과 남긴 이유를 해당 선언에 적는다.
 //! 값이 같다는 이유만으로 역할이 다른 토큰을 적용하거나 스케일 밖 값을 반올림해서는 안 된다.
-//! 기준은 [ADR-0035]와 [ADR-0039]를 따른다.
+//! 기준은 [docs/design/systems/theme.md]와 [docs/concepts/typed-length.md]를 따른다.
 //!
-//! [ADR-0035]: ../../docs/adr/0035-shared-design-and-theme.md
-//! [ADR-0039]: ../../docs/adr/0039-typed-length-and-dpi-boundaries.md
+//! [docs/design/systems/theme.md]: ../../docs/design/systems/theme.md
+//! [docs/concepts/typed-length.md]: ../../docs/concepts/typed-length.md
 
 use super::test_gate::blank_test_modules;
 use super::{mask_non_code, repo_root, rust_sources};
@@ -179,7 +179,7 @@ const AREAS: &[(&str, Option<usize>, &str)] = &[
         // 탐색기 파일 작업 예제는 표본 칸 폭·본문 높이·대기열 본문 높이·드래그 행 폭을 지역 상수로 둔다.
         // 탐색기 폴더 안 만들기 예제는 시안 칸 폭 560을 지역 상수로 둔다.
         None,
-        "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
+        "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(docs/concepts/typed-length.md). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
         "crates/tasty-ui-widgets/",
@@ -837,7 +837,7 @@ mod detector {
         );
     }
 
-    /// 스케일 밖 값을 통과시킨다고 가까운 토큰으로 바꾸라는 뜻은 아니다. ADR-0035의 디자인 절차를 따른다.
+    /// 스케일 밖 값을 통과시킨다고 가까운 토큰으로 바꾸라는 뜻은 아니다. docs/design/systems/theme.md의 디자인 절차를 따른다.
     #[test]
     fn a_value_off_the_scale_is_not_this_guards_business() {
         assert!(hits("egui::vec2(17.0, 13.0)").is_empty());

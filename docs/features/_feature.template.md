@@ -17,7 +17,7 @@
 
 - **Status**: Implemented | Partial | Planned
 - **주체**: 로컬 사용자 / AI Agent / 원격 접속 사용자 중 이 기능을 쓰는 주체 (복수 가능 — [주체](../../concepts/actors.md))
-- **ADR**: ADR-XXXX (있으면)
+- **설계**: ADR-XXXX (있으면)
 - **코드**: `src/...` / `crates/...`
 - **화면**: [아래 절](#화면) 또는 `screens/<screen>.md` (없으면 "없음 — headless 전용")
 

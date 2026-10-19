@@ -32,7 +32,7 @@ pub(crate) fn handle_attention_get(
 /// 더 높은 우선순위의 새 알림을 늦게 도착한 해제 요청이 지우지 않게 하기 위해서다.
 /// 원래 알림이 없어도 성공하며 cleared로 실제 삭제 여부를 알린다.
 /// hard 점유와 mirror surface는 거절한다. 원격 알림은 소유 인스턴스가 관리하며,
-/// mirror의 해제 전달은 실제 포커스나 로컬 알림 읽음 같은 사용자 확인에서만 허용한다(ADR-0024).
+/// mirror의 해제 전달은 실제 포커스나 로컬 알림 읽음 같은 사용자 확인에서만 허용한다(docs/features/surface-highlight/index.md).
 pub(crate) fn handle_attention_clear(
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,

@@ -234,7 +234,7 @@ fn git_query_reports_error_for_non_repo_path() {
 
 #[test]
 fn git_query_rejected_without_workspace_occupancy() {
-    // 점유 없는 클라이언트의 거절을 확인하므로 workspace를 만들거나 attach하지 않는다(ADR-0022).
+    // 점유 없는 클라이언트의 거절을 확인하므로 workspace를 만들거나 attach하지 않는다(docs/features/remote-attach/index.md).
     let server = common::shared();
     let mut stream = open_stream_without_attach(server.port());
 

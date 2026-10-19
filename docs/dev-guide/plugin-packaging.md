@@ -85,7 +85,7 @@ release workflow는 각 빌드 러너에서 서명 스크립트를 실행한다.
 매니페스트 서명은 그 파일의 변조를 확인한다. 외부 생태계의 장기 발급자 신원이나 binary·lang 파일 전체를 보증하지 않는다.
 앱과 독립적으로 플러그인을 배포하거나 업데이트할 때는 신뢰 루트·키 회전·서명 범위를 함께 다시 정한다.
 구체적인 빌드·배포 절차는 [release](release.md), 보류 중인 생태계 결정은
-[플러그인 신뢰와 배포](../adr/0025-plugin-trust-and-distribution.md)를 따른다.
+[플러그인 신뢰와 배포](plugin-permissions.md)를 따른다.
 
 ## staging 7 위치 동기화
 
@@ -127,20 +127,12 @@ plugin 시스템의 작성 형식·배포·신뢰·호환성·hot reload 정책�
 
 호스트 API 권한은 플러그인의 직접 파일·네트워크 접근을 제한하지 않는다.
 OS 샌드박스는 아직 제공하지 않으며 WASM도 지원 기능으로 안내하지 않는다.
-마켓플레이스를 도입할 때는 자동 권한 부여를 폐지하고 설치할 때마다 사용자 권한 승인을 받는다.
-마켓플레이스 출처 플러그인에는 OS 수준 샌드박스를 강제해야 한다.
-이 세 조건은 함께 충족해야 하는 도입 조건이며 현재 구현된 기능은 아니다.
-현재 선택의 근거는 [신뢰와 배포 ADR](../adr/0025-plugin-trust-and-distribution.md)에 있다.
+제품의 보안 기준은 [플러그인 원칙](../principles/plugins.md)의 인증과 미인증 설치 경고다. 마켓플레이스의 도입 조건으로 OS 샌드박스나 설치 후 권한 제약을 요구하지 않는다. 현재 release의 매니페스트 서명 거절·신뢰 DB 검사는 새 인증 제도와 다르며 원칙을 충족한 구현으로 설명하지 않는다.
 Lua는 호스트에 등록한 사용자 스크립트 실행 기능이며 플러그인 실행 형식과 별개다.
 
-### 호환성 분류 (plugin-protocol)
+### 프로토콜 호환성
 
-| 변경 | 분류 |
-|------|------|
-| 새 메시지 타입 / optional+default 필드 추가 | minor |
-| required 필드 추가 · 필드 의미/타입/nullability 변경·제거 · 에러 코드 의미 변경 · fallback 없는 enum variant 추가 | major |
-
-새 필드는 **optional + default**로 추가해 같은 minor 버전 안에서 호환성을 유지한다. 플러그인은 별도 OS 프로세스에서 JSON으로 통신하므로, 공유 라이브러리의 ABI 대신 JSON 스키마의 호환성을 지켜야 한다. 변경 이력은 `crates/tasty-plugin-protocol/CHANGELOG.md`, IPC 전반의 호환성 정책은 [api-conventions](api-conventions.md)을 따른다.
+현재 handshake는 HOST_API_VERSION의 메이저 일치를 검사한다. optional+default 필드 추가는 기존 reader와 양립하고, required 필드·타입·의미·enum 변경은 기존 소비자를 깨뜨릴 수 있다. 이 영향은 검토하되 패키지 버전·유예 여부를 자동으로 강제하지 않는다. [호환성 원칙](../principles/platform-and-compatibility.md)에 따라 개발자가 결정한다. 프로토콜의 현재 형식은 crates/tasty-plugin-protocol, 변경 안내는 그 CHANGELOG에 있다.
 
 ### 번들 plugin 자동 upgrade
 

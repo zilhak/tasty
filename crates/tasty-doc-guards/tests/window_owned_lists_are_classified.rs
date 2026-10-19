@@ -55,7 +55,7 @@ const ROSTER: &[(&str, Class, &str)] = &[
     (
         "tree",
         Aggregated,
-        "workspace 트리를 전 창에서 모아야 한다. .list 접미사가 없어 별도로 등록한다(ADR-0017).",
+        "workspace 트리를 전 창에서 모아야 한다. .list 접미사가 없어 별도로 등록한다(docs/design/policies/focus.md).",
     ),
     (
         "tab.list",

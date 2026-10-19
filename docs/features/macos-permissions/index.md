@@ -2,7 +2,7 @@
 
 - **Status**: Partial — 사용자가 요청하면 파일 계열과 화면 기록을 한 번에 요청하고(debug 빌드에서는 손쉬운 사용까지), Full Disk Access 상태를 추정하며, 허용되지 않은 권한이 있으면 부팅 안내를 띄운다
 - **주체**: 로컬 사용자 (에이전트 작업 중 권한 요청으로 멈추는 상황도 줄인다)
-- **ADR**: [0052](../../adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md) (요청 시점) · [0012](../../adr/0012-request-admission-and-isolation.md) (손쉬운 사용 debug 격리)
+- **설계**: 이 문서 (요청 시점) · [플러그인 권한 모델](../../dev-guide/plugin-permissions.md) (손쉬운 사용 debug 격리)
 - **코드**: `crates/tasty-platform/src/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics/ApplicationServices FFI + FDA 추정 + 표시용 스냅샷), 요청 호출부와 설정 탭 `src/view/settings/ui/tabs/macos_permissions.rs`, 안내 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `crates/tasty-platform/src/screen_capture.rs`, 키 주입측 소비처 `src/adapters/ipc/handler/input_source.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
 - **화면**: 프롬프트는 OS 가 그린다. tasty 쪽 UI 는 부팅 안내 InfoModal + [설정 창](../settings/screens/settings.md) 일반 > 권한 탭
 
@@ -15,7 +15,7 @@ macOS의 파일 접근 권한 요청은 보호된 경로에 처음 접근할 때
 요청은 사용자가 설정 > 일반 > 권한에서 [모든 권한 요청하기]를 눌렀을 때만 일어난다.
 부팅 직후에 자동으로 요청하지는 않는다. 앱을 처음 켠 사람에게 이유를 알 수 없는 프롬프트가
 연달아 뜨고 그것을 끌 방법도 없었기
-때문이다([ADR-0052](../../adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md)).
+때문이다(이 문서).
 대신 허용되지 않은 권한이 남아 있으면 부팅할 때 안내로 알린다(아래 "부팅 권한 안내").
 
 ## 내부 동작
@@ -96,7 +96,7 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 
 `surface.raw_key` 는 `CGEventPost` 로 시스템에 키 이벤트를 주입한다. 이 API 는 손쉬운 사용(`kTCCServiceAccessibility`) 권한을 요구하며, 권한이 없으면 **이벤트가 조용히 버려진다** — 호출자는 성공 응답을 받고도 아무 일도 일어나지 않는 것을 본다.
 
-**이 기능은 debug 빌드 전용이다** — OS 전역 키 주입은 사용자 입력 재현이라 release IPC/CLI 표면에 없다([ADR-0012](../../adr/0012-request-admission-and-isolation.md), [debug-ipc](../../dev-guide/debug-ipc.md)). 따라서 **손쉬운 사용 권한을 소비하는 코드가 release 빌드에는 하나도 없다.**
+**이 기능은 debug 빌드 전용이다** — OS 전역 키 주입은 사용자 입력 재현이라 release IPC/CLI 표면에 없다([플러그인 권한 모델](../../dev-guide/plugin-permissions.md), [debug-ipc](../../dev-guide/debug-ipc.md)). 따라서 **손쉬운 사용 권한을 소비하는 코드가 release 빌드에는 하나도 없다.**
 
 손쉬운 사용 권한은 debug 빌드에서만 요청한다. release에는 이 권한을 사용하는 코드가
 없으므로 요청 프롬프트나 활성화 안내를 표시하지 않는다.
@@ -176,7 +176,6 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 허용하면 "다른 앱의 데이터"
   환경에서도 시험한다. 파일 접근과 해시 취득은 macOS GUI 빌드에만 있다. macOS가 아니면 갈래는
   언제나 `Never`다.
 
-결정의 근거와 대안은 [ADR-0074](../../adr/0074-macos-fda-grant-record-picks-the-notice-cause.md)에 있다.
 
 **실 기기 확인 범위** — 2026-10-08 macOS 27.0.1 실 기기(arm64, ad-hoc 서명 `target/debug/tasty`)에서 debug 빌드를 실제 실행해 확인한 것:
 

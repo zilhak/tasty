@@ -1,4 +1,4 @@
-//! system.pressure는 프로세스 진단값을 읽는다. 각 항목은 측정 대상이 다르다(ADR-0008).
+//! system.pressure는 프로세스 진단값을 읽는다. 각 항목은 측정 대상이 다르다(docs/architecture/ipc-server.md).
 //!
 //! ## 요청 처리 시간
 //!
@@ -343,7 +343,7 @@ pub(super) fn stream_push_json(
 
 /// DB를 열 때 확인한 pragma 값. memory_db 초기화 실패로 대체 저장소를 쓰면
 /// init_failure에 원인을 담고 pragma가 정상이어도 degraded로 표시한다.
-/// state_db 초기화 실패는 대체 없이 종료하므로 init_failure 필드가 없다(ADR-0010).
+/// state_db 초기화 실패는 대체 없이 종료하므로 init_failure 필드가 없다(docs/design/systems/storage-contract.md).
 pub(super) fn db_pragmas_json(
     memory_db: Option<&tasty_memory::pragma::AppliedPragmas>,
     memory_fallback: Option<&tasty_memory::InitFallback>,

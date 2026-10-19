@@ -1,6 +1,6 @@
 //! html surface 스크립트 허용의 debug 재현 명령.
 //!
-//! 허용은 release에서 사용자가 GUI로만 한다(ADR-0053). 이 파일의 명령은 허용 클릭과
+//! 허용은 release에서 사용자가 GUI로만 한다(docs/surfaces/html/index.md). 이 파일의 명령은 허용 클릭과
 //! 주소 입력·뒤로·앞으로·새로고침·중지 조작을 재현하므로 debug 빌드에만 둔다.
 //! 주소 입력·뒤로·앞으로·새로고침은 release 사용자 경로(`webview_user_nav`)를 그대로 쓴다.
 

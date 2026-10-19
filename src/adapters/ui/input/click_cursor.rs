@@ -44,7 +44,7 @@ impl EditableRegion {
             return None;
         }
 
-        // 파서 갱신 사이에 커서와 그리드를 따로 읽지 않도록 같은 잠금에서 가져온다(ADR-0013).
+        // 파서 갱신 사이에 커서와 그리드를 따로 읽지 않도록 같은 잠금에서 가져온다(docs/surfaces/terminal/index.md).
         let (cols, rows) = terminal.dimensions();
         let (cursor_col, cursor_row) = terminal.cursor_position();
         let screen_lines = terminal.screen_lines();

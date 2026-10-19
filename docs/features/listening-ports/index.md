@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (원격 접속 사용자는 mirror 로 동일 화면을 본다)
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `src/adapters/ui/popup/port_scanner.rs`, `crates/tasty-portscan`
 - **화면**: [아래 절](#화면)
 
@@ -87,7 +87,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 
 ### 행 선택 / 주소 복사
 
-- 행을 클릭하면 선택(강조)되고, 같은 행을 다시 클릭하면 해제된다(`selected_port`, `egui::Memory` 영속). 셀 글자(주소·프로세스명 등) 위에서도 동일하게 행 선택이 잡힌다 — 대신 셀 텍스트를 드래그로 선택·복사할 수는 없다([ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md), 대체는 아래 `Copy address`).
+- 행을 클릭하면 선택(강조)되고, 같은 행을 다시 클릭하면 해제된다(`selected_port`, `egui::Memory` 영속). 셀 글자(주소·프로세스명 등) 위에서도 동일하게 행 선택이 잡힌다 — 대신 셀 텍스트를 드래그로 선택·복사할 수는 없다([`tasty-ui-widgets` — 본체·갤러리 공유 UI primitive](../../architecture/ui-widgets-crate.md), 대체는 아래 `Copy address`).
 - footer `Copy address` 는 선택 행의 `host:port`(IPv6 는 `[..]` bracket)를 클립보드에 복사한다(egui platform-output copy → `handle_platform_output`).
 
 ## 인터페이스

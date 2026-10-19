@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (단축키 트리거)
-- **ADR**: 없음 (기존 [ADR-0020](../../adr/0020-remote-connection-profiles.md) attach 채널을 그대로 재사용, 신규 프로토콜/enum 없음)
+- **설계**: 없음 (기존 [원격 접속 프로필 + Passkey (remote_tool)](../remote-profiles/index.md) attach 채널을 그대로 재사용, 신규 프로토콜/enum 없음)
 - **코드**: `crates/tasty-platform/src/screen_capture.rs`(OS 캡처 + `CaptureError`), `crates/tasty-platform/src/macos_permissions.rs`(화면 기록 권한 preflight), `src/app/screenshot_capture.rs`(폴링/스레드·결과 안내), `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard`), `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`), `src/app/attach_client/bulk.rs`(원격 전송), `src/app/attach_client/output.rs`(`capture_result` 안내), `src/remote/capture_upload.rs` + `src/remote/server.rs`(`admit_capture_upload`·`prepare_capture`·`publish_capture`·`push_capture_result`, 서버측 수신) + `src/app/image_jobs/capture.rs`(GUI 서버의 worker 실행), `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`), `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`)
 - **화면**: 없음 — 트리거는 단축키, 피드백은 요청한 윈도우의 결과 토스트(아래 "결과 안내"; 기존 [토스트](../../design/systems/toast.md) 재사용)
 

@@ -623,7 +623,7 @@ fn draw_changed_badge(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Them
         ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT.value()), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
     // 채움은 `tint-fill-alpha`. 테두리 계수는 디자인이 "채움만" 으로 한정한
-    // 부분 사용이라(ADR-0035) 이 자리 고유 값으로 남는다.
+    // 부분 사용이라(docs/design/systems/theme.md) 이 자리 고유 값으로 남는다.
     const WARN_BADGE_STROKE_OPACITY: f32 = 0.4;
     ui.painter()
         .rect_filled(rect, radius, warn.gamma_multiply(th.tint_fill_alpha()));
@@ -687,7 +687,7 @@ fn draw_add_card(
                         .show(ui, th)
                         .clicked()
                     {
-                        // 포털에 의존하지 않는 설정 창의 파일 선택을 사용한다(ADR-0031).
+                        // 포털에 의존하지 않는 설정 창의 파일 선택을 사용한다(docs/features/file-handler/index.md).
                         st.browse_requested = true;
                     }
                     Input::new()

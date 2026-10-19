@@ -4,7 +4,7 @@
 //! `tasty_ui_widgets::mac_permissions`를 호출한다. 본체는 실제 장비의 TCC 상태 하나만
 //! 보여주지만, 여기서는 시안의 A~G 조합을 나란히 둔다. 특히 Full Disk Access의 "Unknown"은
 //! 추정에 쓰는 경로가 하나도 없는 macOS에서만 나오고, 요청 진행 중 화면은 실제 프롬프트를
-//! 띄우지 않고서는 볼 수 없다. 손쉬운 사용 행은 debug 빌드에만 있다(ADR-0012).
+//! 띄우지 않고서는 볼 수 없다. 손쉬운 사용 행은 debug 빌드에만 있다(docs/dev-guide/plugin-permissions.md).
 
 use tasty_platform::macos_permission_notice::{FdaNoticeBranch, fda_settings_detail_key};
 use tasty_type_appearance::theme::Theme;
@@ -220,7 +220,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "This is the only place a permission request starts — Tasty raises no prompts at \
-         boot (ADR-0052). Unknown (inference failed) and Cannot check (deliberately not looked \
+         boot (docs/features/macos-permissions/index.md). Unknown (inference failed) and Cannot check (deliberately not looked \
          at) share the muted ink but never the glyph; an empty status cell would read as fine.",
     );
 }

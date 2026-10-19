@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent (요청) · 로컬 사용자 (응답)
-- **ADR**: 없음
+- **설계**: 없음
 - **코드**: `approval.*` 핸들러(`src/adapters/ipc/handler/approval/`), 기록 저장 `src/app/approval_records.rs`, 영속 `tasty-memory`
 - **화면**: approval popup (pending 큐 head)
 - **메서드 목록**: [reference/api](../../reference/api.md#휴먼-핸드오프-approval)
@@ -37,7 +37,7 @@ store 락이 poison 된 뒤(다른 스레드가 락을 든 채 패닉)의 `reque
 
 ### 귀속 워크스페이스
 
-요청이 묶일 워크스페이스는 **명시 `workspace_id` → `surface_id`가 속한 워크스페이스 → 그 창의 활성 워크스페이스** 순으로 정한다. surface를 지정한 요청은 사용자가 어느 워크스페이스를 보고 있든 같은 곳에 묶인다. 둘 다 안 준 요청만 활성 워크스페이스로 떨어지고 현재 화면에 따라 결과가 달라진다 — 재현이 필요하면 둘 중 하나를 준다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 이 값은 아래 영속 스코프와 함께 뜨는 알림의 워크스페이스를 정한다. popup 자체는 창 단위라 이 값에 안 걸린다.
+요청이 묶일 워크스페이스는 **명시 `workspace_id` → `surface_id`가 속한 워크스페이스 → 그 창의 활성 워크스페이스** 순으로 정한다. surface를 지정한 요청은 사용자가 어느 워크스페이스를 보고 있든 같은 곳에 묶인다. 둘 다 안 준 요청만 활성 워크스페이스로 떨어지고 현재 화면에 따라 결과가 달라진다 — 재현이 필요하면 둘 중 하나를 준다([포커스 정책 (운영 상세)](../../design/policies/focus.md)). 이 값은 아래 영속 스코프와 함께 뜨는 알림의 워크스페이스를 정한다. popup 자체는 창 단위라 이 값에 안 걸린다.
 
 ### 영속
 

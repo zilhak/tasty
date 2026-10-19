@@ -1,7 +1,7 @@
 //! 범위별 콘텐츠 위에 표시하는 배너. 마우스 입력은 받지만 키보드 포커스·드래그 이동은 없다.
 //! 큐와 TTL은 BannerManager가 관리하고 내용은 호스트 또는 플러그인이 그린다.
 //! 사용자 동작에서 시작한 안내에 사용하며 강제 표시 시험은 디버그 경로로 제한한다.
-//! 자세한 동작은 docs/design/systems/banner.md와 ADR-0036을 따른다.
+//! 자세한 동작은 docs/design/systems/banner.md와 docs/design/systems/popup.md을 따른다.
 
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;

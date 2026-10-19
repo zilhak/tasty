@@ -1,6 +1,6 @@
 # Gallery-first — 새 UI 컴포넌트 추가 순서
 
-**새 modal · popup · 공용 위젯은 본체에 넣기 전에 갤러리(`crates/tasty-gallery`)에 먼저 만든다.** 갤러리는 본체 UI 컴포넌트를 한곳에서 확인하는 카탈로그이며([gallery-completeness](../design/policies/gallery-completeness.md), [ADR-0035](../adr/0035-shared-design-and-theme.md)), 새 컴포넌트는 여기서 확인한 뒤 본체에 연결한다.
+**새 modal · popup · 공용 위젯은 본체에 넣기 전에 갤러리(`crates/tasty-gallery`)에 먼저 만든다.** 갤러리는 본체 UI 컴포넌트를 한곳에서 확인하는 카탈로그이며([gallery-completeness](../design/policies/gallery-completeness.md), [테마 시스템 (운영 상세)](../design/systems/theme.md)), 새 컴포넌트는 여기서 확인한 뒤 본체에 연결한다.
 
 ## 순서 (필수)
 
@@ -93,7 +93,7 @@ gallery-first 이전에 만들어져 본체 binary 에만 있는 view 는 갤러
 ## 관련
 
 - [design-change-workflow](design-change-workflow.md) — 0단계 "디자인 확보"의 전체 절차(요청문서→시안→정합 루프).
-- [ADR-0035](../adr/0035-shared-design-and-theme.md) — cut 금지 + gallery-first 결정 근거.
+- [테마 시스템 (운영 상세)](../design/systems/theme.md) — cut 금지 + gallery-first 결정 근거.
 - [design/policies/gallery-completeness](../design/policies/gallery-completeness.md) — 갤러리 완전성 운영 상태.
 - [popup-implementation](popup-implementation.md) — 본체 팝업 추가(`PopupDef`).
 - [architecture/ui-widgets-crate › 무엇을 공용 위젯으로](../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로) · [model-view-split](model-view-split.md) — 부품 단위 공용화 + view 분리.

@@ -716,7 +716,7 @@ compact/image/html-raw/html-pretty/other/empty/read-failed/already-open) 를
 
 디자인 `ui_kits/terminal/overlays/git_viewer.jsx` ↔ plugin `crates/tasty-plugin-git-viewer/src/render.rs`
 (egui-mesh 자가 렌더) ↔ 갤러리 `catalog/components/git_viewer.rs` (Plugins › `Git worktree viewer
-popup`). git-viewer 팝업은 UiNode tree 가 아니라 **egui-mesh** 로 그린다(ADR-0028의 egui-mesh 렌더링) — plugin 이
+popup`). git-viewer 팝업은 UiNode tree 가 아니라 **egui-mesh** 로 그린다(docs/dev-guide/egui-mesh-channel.md의 egui-mesh 렌더링) — plugin 이
 자기 egui Context 에서 새 디자인을 직접 페인트하고 host 는 셸(scrim/border/Esc/outside-click)만
 소유한다. 갤러리는 plugin crate 비의존이라 같은 구성을 Theme 토큰 mock 으로 전사한다. [갤러리 정책](../policies/gallery-completeness.md)에 따라 예제를 유지한다. 토큰·구조 정합 목표, 픽셀 동일성 비목표.
 
@@ -740,7 +740,7 @@ host gallery Tag specimen(prim_chips)에도 노출된다.
 
 egui-mesh surface(`image`) + webview surface/chrome(`markdown`/`html`) 의 Plugins 페이지
 specimen 묶음(각 surface 가 독립 Section). plugin crate 비의존 — plugin render 경로의 토큰·구성만
-painter/egui 로 전사. markdown 은 [ADR-0029](../../adr/0029-webview-host-integration.md)로
+painter/egui 로 전사. markdown 은 [WebView 호스트 계약](webview.md)로
 Stage B 부터 image 와 다른 채널(webview)로 이동했지만, html 과 달리 (콘텐츠가 없는 chrome-only
 specimen 이 아니라) 실제 CSS 출력 내용까지 손으로 전사한다 — plugin 이 아직 host chrome 을 얹지
 않는 대신 문서 자체(주소창 포함)를 통째로 생성하기 때문.
@@ -757,7 +757,7 @@ glyph: `crates/tasty-icons` 의 `IMAGE`(image fallback) · `HTML`(webview) — �
 markdown 본 spec 은 Column · Solo · Wrap 세 무대이고, 제목 단계 견본은 `markdown-heading-hierarchy` spec 의 Column 무대에 있다. 화면 전용 고정값(560/360/300, control 버튼 24×20/30×20)은
 용도를 명시한 모듈 상수.
 
-<a id="misc--scripts-lua-script-manager--05-adr-0031"></a>
+<a id="misc--scripts-lua-script-manager--05-docs/features/file-handler/index.md"></a>
 
 <a id="misc--scripts-lua-script-manager--05"></a>
 
@@ -871,7 +871,7 @@ Icons › `keys-in-use`(`catalog/icons_keys.rs`)의 "option per OS" 묶음에 �
   둔다(Preset · Hook Handlers 관례). diff 표 머리글과 그룹 라벨의 자간은 생성 접근자
   `letter_spacing_caps(font_size_micro)` 를 `paint::truncated_tracked` 로 적용한다. `color-mix(tone X%, transparent)` 는 명명 const
   계수의 `gamma_multiply`.
-- 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 가까운 값으로 바꾸지 않고 용도를 명시한 상수로 둔다([ADR-0035](../../adr/0035-shared-design-and-theme.md)).
+- 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 가까운 값으로 바꾸지 않고 용도를 명시한 상수로 둔다([테마 시스템 (운영 상세)](theme.md)).
 - 선택 열 32 는 본체와 갤러리가 모두 Theme 의 `kb_ie_select_column_width` 를 읽는다. 나머지 `kb-ie-*` 토큰
   (`kb-ie-action-column-width` · `kb-ie-from-column-width` · `kb-ie-slot-min-width` · `kb-ie-notice-inset` ·
   `kb-ie-slot-height`)은 이 화면이 읽지 않는다. 그중 slot 둘은 녹화 슬롯의 `kb-record-*` 가 참조한다.
@@ -941,7 +941,7 @@ General L1의 마지막 L2 서브탭이다. 디자인은 원격 킷의
 `ui_kits/terminal/overlays/macos_permissions.jsx`(권한 화면)와
 `ui_kits/terminal/overlays/info_modal.jsx`(부팅 안내 모달과 모든 안내 메시지의 셸)에 있다.
 요청 버튼과 진행 표시는
-[ADR-0052](../../adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md)로 생긴
+[macOS 권한 (TCC)](../../features/macos-permissions/index.md)로 생긴
 요소다. 본체와 갤러리는 `tasty_ui_widgets`의 같은 함수를 호출한다.
 
 | 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
@@ -964,7 +964,7 @@ General L1의 마지막 L2 서브탭이다. 디자인은 원격 킷의
 Full Disk Access 확인 불가, 업데이트 뒤 잃은 Full Disk Access, 밖에서 꺼진 Full Disk Access, 요청 중, debug 빌드)을 나란히 놓는데, 특히 `Unknown`은 추정에
 쓰는 경로가 하나도 없는 macOS에서만 나와 실제 장비에서 재현하기 어렵다. 본체는 그 장비의
 TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌드에서만
-보인다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)).
+보인다([플러그인 권한 모델](../../dev-guide/plugin-permissions.md)).
 
 안내 모달은 제목을 공용 팝업 타이틀바에 둔다. 시안도 이 모양이다: 채움 `bg-sidebar`,
 높이 `control-height`, 한 줄 제목(넘치면 말줄임하고 잘렸을 때만 호버 Tooltip 으로 전체 제목, 위 → 아래 배치), 오른쪽 닫기 ×. 제목은 양쪽에 버튼 예약 폭을 대칭으로 비운 스트립 전체 기준 가운데에 온다(`tasty_ui_widgets::popup_title_text_rect`, 본체와 갤러리 공용). 예약 폭은 버튼 하나면 32, 전체화면 버튼까지 둘이면 60이고, 버튼은 IconButton sm(24 칸, `close`·`fit` 글리프, 호버·누름 표시)으로 그린다. 갤러리 Overlays "Info modal shell" 절의 `popup-title-bar` spec(`components/info_modal.rs::draw_title_bar`)이 시안 `gallery/overlays-dialogs.jsx` 의 두 버튼 Spec(알림 popup 머리, 짧은/긴 제목, Mocha·Latte)을 옮긴다. 제목은 모든 popup 에서 `font-size-max` 크기다(`tasty_ui_widgets::popup_title_font`, 본체와 갤러리 공용). 디자인의 semibold 는 굵기를 재현하지 않는다. 이 spec 의 머리는 본체 알림 popup 처럼 `border-frame` 선으로 그린다. 안내 모달만
@@ -1005,7 +1005,7 @@ General L1 의 4번째 L2 "Overlay" 의 한 행. 디자인: `gallery/overlays-sh
 
 ## Settings › General › Remote transfer
 
-General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror 파일 전송(bulk, [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md))
+General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror 파일 전송(bulk, [원격 attach (Remote attach)](../../features/remote-attach/index.md))
 수신측 저장 정책(`RemoteTransferSettings{dir, max_mb}`) 편집. 디자인:
 `gallery/overlays-shared.jsx` `SettingsRemoteTransferFrame` + `gallery/overlays-windows.jsx`
 "Settings · General › Remote transfer" spec. 저장 정책을 편집하는 화면이다.
@@ -1162,7 +1162,7 @@ i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suff
 
 본체의 `upload_file_over_bulk`는 청크마다 `on_progress(sent,total)`을 호출한다. 이미지 업로드 워커가 `transfer_progress` 채널로 보내고 `drain_transfer_progress`가 화면 행을 갱신한다. `drain_image_upload_results`의 실패는 팝업으로 알린다. `BULK_REJECT_PREFIX`인 원격 거절에는 Dismiss만 제공하고, 그 밖의 실패에는 다시 큐에 넣는 Retry를 제공한다. 자세한 동작은 [원격 attach](../../features/remote-attach/index.md)를 따른다.
 
-<a id="attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062"></a>
+<a id="attention-kind--needsinput-배지dot테두리탭-제목-surfaces-docs/dev-guide/agent-runner.md"></a>
 
 ## Attention kind — NeedsInput 배지/dot/테두리/탭 제목
 
@@ -1171,9 +1171,9 @@ i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suff
 `src/adapters/ui/{divider,egui_panels,tab_bar/tab,sidebar/view}.rs` ↔ 갤러리 Layouts ›
 Attention kinds(`catalog/layouts_attention.rs`). 순위와 색 토큰의 판정은 공용
 `tasty_ui_widgets` attention 함수(`crates/tasty-ui-widgets/src/attention.rs`)에 있고 본체와 갤러리가
-같은 함수를 부른다. 요청·확정 절차는 [ADR-0024](../../adr/0024-attention-ownership-and-clear.md)
+같은 함수를 부른다. 요청·확정 절차는 [Surface Highlight (주의 환기)](../../features/surface-highlight/index.md)
 가 정한 kind-aware 모델을 그대로 따르며, 토큰 값은 [design-token-mapping §attention
-kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
+kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-docs/dev-guide/agent-runner.md)
 참조.
 
 | 시안 Spec / 컴포넌트 | 공용 함수 | 본체 호출부 | 갤러리 spec |
@@ -1186,7 +1186,7 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 
 **별도 Theme 필드 없음** — 전부 기존 component 접근자(`tab_fg*`·`surface_highlight_*`·
 `surface_occupied_*`·`status_dot_*`·`badge_group_gap`)로 해소([design-token-mapping
-§attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
+§attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-docs/dev-guide/agent-runner.md)
 참조). `AttentionKind`(host, `src/core/state/attention.rs`)는 `divider.rs`의 `From` 변환으로 공용
 `Attention`이 된다. 갤러리는 라이브 attention 상태에 연결되지 않고 경우 데이터를 공용 함수에 넘긴다.
 레일 점은 compact 지름(`status-dot-size-compact` 6)이고 실행 중 점을 포함한 모든 점을

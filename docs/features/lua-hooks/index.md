@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (자기 머신의 자기 스크립트)
-- **ADR**: [ADR-0027](../../adr/0027-lua-and-hook-execution.md) (설계 배경은 아래 [설계 경계](#설계-경계))
+- **설계**: [훅 (Surface / Global hooks)](../hooks/index.md) (설계 배경은 아래 [설계 경계](#설계-경계))
 - **코드**: `tasty-lua` 크레이트(engine/host_api/sandbox/bridge), 스크립트 저장소 `tasty-settings`(`ScriptRegistry`), 단축키 바인딩 `KeybindingSettings.script_bindings`
 - **화면**: 설정 modal 단축키 탭 › Scripts (단축키 바인딩) + 기타(Misc) 탭 › Scripts (관리 + 자동실행 트리거 편집)
 
@@ -67,14 +67,14 @@ Lua5.4의 instruction-count hook이 기한을 확인해 초과 job을 오류로 
 
 ## 설계 경계
 
-사용자가 등록한 Lua 스크립트로 tasty 를 조작·자동화하는 시스템의 *설계 근거*. 전체 결정은 [ADR-0027](../../adr/0027-lua-and-hook-execution.md). 사용법은 위 절들, payload 매핑은 아래 [구현 — 이벤트 발생 위치와 payload](#구현--발화-site--payload).
+사용자가 등록한 Lua 스크립트로 tasty 를 조작·자동화하는 시스템의 *설계 근거*. 전체 결정은 [훅 (Surface / Global hooks)](../hooks/index.md). 사용법은 위 절들, payload 매핑은 아래 [구현 — 이벤트 발생 위치와 payload](#구현--발화-site--payload).
 
-<a id="위치-결정-adr-0031"></a>
+<a id="위치-결정-docs/features/file-handler/index.md"></a>
 
 ### 실행 모델
 
 호스트만 Lua를 사용한다. plugin은 별도 OS 프로세스로 실행되며 Lua API를 제공하지 않는다.
-plugin에서 사용자 스크립트를 지원하려면 이 경계를 별도로 검토해야 한다(ADR-0025).
+plugin에서 사용자 스크립트를 지원하려면 이 경계를 별도로 검토해야 한다(docs/dev-guide/plugin-permissions.md).
 
 실행·무결성·메모리 제한은 위 [실행 격리](#실행-격리--안전-장치)와 [TOFU](#무결성-tofu)를
 따른다. 콜백 반환값으로 이벤트를 취소하거나 내용을 바꿀 수는 없다. 변경 작업은 명시적인
@@ -221,4 +221,4 @@ EmmyLua 자동완성: 스크립트 파일 옆 `.luarc.json` 에 `"workspace.libr
 ## 관련
 
 - [reference/event-catalog](../../reference/event-catalog.md) — plugin 용 Event Bus(별개 경로)
-- [ADR-0027](../../adr/0027-lua-and-hook-execution.md) — 결정 근거
+- [훅 (Surface / Global hooks)](../hooks/index.md) — 결정 근거

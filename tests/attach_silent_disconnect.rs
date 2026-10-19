@@ -1,4 +1,4 @@
-//! 소켓을 닫지 않고 Ping을 멈춘 뒤 heartbeat TTL로 점유가 회수되는지 확인한다(ADR-0021).
+//! 소켓을 닫지 않고 Ping을 멈춘 뒤 heartbeat TTL로 점유가 회수되는지 확인한다(docs/dev-guide/attach-behavior.md).
 //! raw TcpStream을 사용하며 각 시험은 별도 workspace의 surface를 점유한다.
 //! 서버는 이 시험과 같은 feature의 바이너리로 실행되므로 GUI·헤드리스 각각의 실행 결과를 구별해야 한다.
 //!

@@ -391,7 +391,7 @@ pub(crate) mod tests {
             }
             PtyPhase::Signalled => "종료 신호가 전달됐지만 결과 기록 완료는 아직 확인되지 않았다",
             PtyPhase::Reaped => {
-                "종료 결과가 기록됐다. 대기를 마친 뒤 확인한 상태이므로 결과 기록 시각과 스케줄 지연을 함께 확인한다(ADR-0046)"
+                "종료 결과가 기록됐다. 대기를 마친 뒤 확인한 상태이므로 결과 기록 시각과 스케줄 지연을 함께 확인한다(docs/dev-guide/self-verification.md)"
             }
             PtyPhase::WaitFailed => "wait 실패로 종료/회수 여부가 불명확하다",
         }
@@ -492,7 +492,10 @@ pub(crate) mod tests {
             "완료 상태에서 결과 미수신 대기를 원인으로 단정했다: {reaped}"
         );
         assert!(reaped.contains("종료 결과가 기록됐다"), "{reaped}");
-        assert!(reaped.contains("ADR-0046"), "{reaped}");
+        assert!(
+            reaped.contains("docs/dev-guide/self-verification.md"),
+            "{reaped}"
+        );
 
         let all = [
             owner_phase_note(PtyPhase::Running),

@@ -3,10 +3,10 @@
 유닛 테스트의 결과는 **실행하는 사람의 로컬 상태에 좌우되면 안 된다.** 사용자 홈의
 `config.toml` 값 하나로 무관한 테스트가 깨지면, "내 변경이 깬 것인가" 판정이 매번 수동
 대조가 되고 CI 러너와 개발자 머신의 결과가 갈린다. 결정 근거는
-[ADR-0045](../adr/0045-test-isolation-and-harness.md).
+이 문서.
 
 e2e 테스트의 격리 단위(프로세스 vs workspace)는 다른 축이다 — [e2e-tests](e2e-tests.md) ·
-[ADR-0045](../adr/0045-test-isolation-and-harness.md).
+이 문서.
 
 ## 1. 설정: 테스트 생성자는 `Settings::default()` 를 쓴다
 
@@ -162,7 +162,7 @@ assert_eq!(result, Some(tmp.path().join("notes")));
 이 규칙은 `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 와도 맞물린다 — 로컬 작업 폴더를 언급하면 하위
 경로가 무엇이든, 아예 없든 그 테스트가 잡으므로(P6) 픽스처 때문에 allowlist 에 예외를 두지
 않는다. 금지 범위와 범위 밖 항목은
-[ADR-0049](../adr/0049-documentation-structure-and-evidence.md) 가 정본이다.
+[Tasty 문서 모델 (Documentation Model)](../documentation-model.md) 가 정본이다.
 
 의존이 없는 작은 fixture에서 직접 이름을 짓는 경우에는 PID로 프로세스를 가르고,
 함수 호출 사이에 유지되는 `static` 단조 counter로 같은 프로세스의 재호출을 가른다.
@@ -222,7 +222,7 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
 위 1~4 는 테스트가 **사용자 환경**을 읽어 로컬 상태에 좌우되는 축이다. 이 절은 다른 축 —
 테스트끼리 **같은 프로세스에서 병렬로** 공유 상태를 밟아 스케줄링에 따라 나타났다 사라지는
 실패다. 부류별 표준 처방과 근거·대안·재검토 조건은
-[ADR-0045](../adr/0045-test-isolation-and-harness.md).
+이 문서.
 
 ### 형태 A — 프로세스 내 전역 공유 상태
 
@@ -327,7 +327,7 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
   다른 holder 의 획득과 만료 판정도 그 시각으로 하며, 매 tick 의 `maintain` 직전에 점유가 아직
   만료되지 않았는지 단언해 갱신 누락과 늦은 갱신 주기를 함께 잡는다.
 - **타임아웃 상향은 처방이 아니다** — 발생 빈도만 낮추고(확률 저감) 부하가 그 상한을 넘는
-  날 다시 깨진다. 근거는 [유닛 테스트 격리](unit-test-isolation.md).
+  날 다시 깨진다. 근거는 유닛 테스트 격리.
 
 ### 형태 D — 사용자 홈을 기준선으로 삼는 시험
 

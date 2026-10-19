@@ -8,7 +8,7 @@
 //! <!-- adr-rows:end <slug> -->
 //! ```
 //!
-//! 설계 근거: docs/adr/0050-architecture-decision-records.md.
+//! 설계 근거: docs/adr/template.md.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

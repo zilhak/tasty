@@ -4,7 +4,7 @@
 //! redraw·토스트·메뉴 갱신은 제외하며, 알림을 플러그인 이벤트 버스로 보내지 않는다.
 //! HookFired는 완료를 기다리는 작업을 깨워야 하므로 여기서 처리한다.
 //! 기본 GUI 시험에서도 이 모듈을 컴파일해 큐 처리를 검증한다.
-//! 설계: docs/design/flows/action-dispatch.md, docs/adr/0003-headless-behavior.md.
+//! 설계: docs/design/flows/action-dispatch.md, docs/dev-guide/headless-ipc-surface.md.
 
 use crate::app::command::CoreEvent;
 use crate::app::services::AppServices;

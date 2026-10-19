@@ -1,6 +1,6 @@
 //! mirror(원격 attach) origin의 파일 열기. 경로는 원격 파일이라 client 로컬에서 식별·실행하지 않는다.
 //! 식별은 파일 이름만 보는 DetectDepth::Name으로 끝나며, 원격 NewTab으로 보낼 수 있는 핸들러만 실행한다.
-//! 규칙은 [ADR-0022](../../../docs/adr/0022-remote-mirror-content-and-queries.md)를 따른다.
+//! 규칙은 [원격 attach (Remote attach)](../../../docs/features/remote-attach/index.md)를 따른다.
 
 use crate::app::services::AppServices;
 use crate::file::dispatch::{DispatchTarget, FileDispatchOrigin};
