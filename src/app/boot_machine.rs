@@ -258,7 +258,7 @@ impl App {
                 tracing::error!("boot engine worker channel disconnected — synchronous fallback");
                 if let Err(e) = self.ensure_engine_and_plugins(
                     &boot.gpu,
-                    progress.settings.appearance.sidebar_width,
+                    progress.settings.appearance.scaled_sidebar_width(),
                 ) {
                     self.state.boot_error_info = Some(boot_engine_error_info(&e));
                     return false;
@@ -333,7 +333,7 @@ impl App {
     > {
         let (cols, rows) = crate::app::window_lifecycle::boot_grid_size(
             &boot.gpu,
-            progress.settings.appearance.sidebar_width,
+            progress.settings.appearance.scaled_sidebar_width(),
         );
         let factory: crate::waker::SharedWakerFactory = Arc::new(
             crate::waker_factory_winit::WinitWakerFactory::new(self.view.proxy.clone()),

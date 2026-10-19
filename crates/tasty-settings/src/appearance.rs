@@ -144,7 +144,6 @@ pub struct AppearanceSettings {
     /// 터미널 폰트의 합자 표시 여부. 기본값은 켜짐이다.
     #[serde(default = "default_ligatures")]
     pub ligatures: bool,
-    pub sidebar_width: LogicalPx,
     /// UI scale: "small", "medium", or "large". Affects all egui UI elements.
     pub ui_scale: String,
     /// Active tab indicator style (Underline / Fill / Dot) for the tab bar.
@@ -181,7 +180,6 @@ impl Default for AppearanceSettings {
             theme_is_light: false,
             background_opacity: 1.0,
             ligatures: default_ligatures(),
-            sidebar_width: LogicalPx(180.0),
             ui_scale: "medium".to_string(),
             active_tab_indicator: ActiveTabIndicator::default(),
             tab_width: 150.0,
@@ -238,7 +236,8 @@ impl AppearanceSettings {
         }
     }
 
-    /// Get the sidebar width adjusted for UI scale.
+    /// 펼친 사이드바 폭. `ui_scale`만으로 정하며 부팅 격자 계산과 렌더가 같이 쓴다.
+    /// 사이드바 폭을 따로 정하는 설정 키는 없다(`Settings::RETIRED_KEYS`).
     pub fn scaled_sidebar_width(&self) -> LogicalPx {
         match self.ui_scale.as_str() {
             "small" => LogicalPx(150.0),

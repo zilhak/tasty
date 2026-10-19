@@ -1649,7 +1649,7 @@ impl Theme {
 
     // 보조 키 안내 패널의 치수와 색상.
     /// 기본 너비 (180px). `--tasty-modhint-width` → `--tasty-size-180`.
-    /// 열린 사이드바 폭(`AppearanceSettings.sidebar_width` 기본 180)과 정렬.
+    /// 열린 사이드바 폭(`AppearanceSettings::scaled_sidebar_width`의 medium 값 180)과 정렬.
     #[inline]
     pub fn modhint_width(&self) -> LogicalPx {
         LogicalPx((180.0 * self.ui_zoom).round())

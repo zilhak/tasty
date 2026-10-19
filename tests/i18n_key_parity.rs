@@ -1074,10 +1074,6 @@ const ORPHAN_KEYS: &[(&str, &str)] = &[
         "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
     ),
     (
-        "settings.appearance.sidebar_width_label",
-        "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
-    ),
-    (
         "settings.appearance.theme_label",
         "소비자 검사에서 사용처를 찾지 못했다. 문서의 키 이름 예시는 실제 소비가 아니다.",
     ),

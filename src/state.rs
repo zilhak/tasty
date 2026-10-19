@@ -176,7 +176,7 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             plugins_open: false,
             #[cfg(feature = "gui")]
-            sidebar_width: engine.settings.appearance.sidebar_width,
+            sidebar_width: engine.settings.appearance.scaled_sidebar_width(),
             #[cfg(feature = "gui")]
             sidebar_visible: true,
             #[cfg(feature = "gui")]

@@ -16,6 +16,12 @@
 
 접기 버튼으로 full ↔ collapsed 토글. collapsed 는 아이콘만 남긴 좁은 형태 (카테고리 토글 on 이면 레일에 카테고리 경계 `---` 버튼도 놓인다 — 아래 영역 구성).
 
+### 폭
+
+full 의 폭은 `appearance.ui_scale` 이 정한다(small 150 · medium 180 · large 220, `AppearanceSettings::scaled_sidebar_width`). collapsed 는 48, 숨김은 0 이다. 끌어서 폭을 바꾸는 경로는 없다(`resizable(false)`). 부팅은 펼친 상태로 시작하므로 첫 터미널 격자도 같은 `scaled_sidebar_width` 로 계산한다.
+
+사이드바 폭만 따로 정하는 설정 키는 없다. 예전 `appearance.sidebar_width` 는 읽었지만 적용되지 않던 키라 폐기했다. 이 키가 남은 config.toml 도 오류 없이 읽고, 경고 로그(`settings key appearance.sidebar_width is no longer used …`)를 남긴 뒤 무시한다. 다음 저장에서 키가 빠진다(`Settings::RETIRED_KEYS`).
+
 ### 영역 구성
 
 - **헤더**: 워드마크 `tasty.` + 수박 로고 + 접기 버튼.

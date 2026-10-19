@@ -206,11 +206,20 @@ impl Settings {
     /// 충돌 판정에 "원본 파일에 실제로 있던 키" 목록이 필요해, TOML 을 `toml::Value` 로
     /// 먼저 훑어 `[keybindings]` 테이블의 키 이름을 뽑아둔다.
     fn parse_with_migration(contents: &str) -> std::result::Result<Self, toml::de::Error> {
-        let existing_kb_keys: HashSet<String> = toml::from_str::<toml::Value>(contents)
-            .ok()
+        let raw = toml::from_str::<toml::Value>(contents).ok();
+        let existing_kb_keys: HashSet<String> = raw
+            .as_ref()
             .and_then(|v| v.get("keybindings").and_then(|kb| kb.as_table().cloned()))
             .map(|t| t.keys().cloned().collect())
             .unwrap_or_default();
+        if let Some(raw) = &raw {
+            for (key, replacement) in Self::retired_keys_in(raw) {
+                tracing::warn!(
+                    "settings key {key} is no longer used and is ignored; {replacement} decides \
+                     this value now, and the key is dropped on the next save"
+                );
+            }
+        }
 
         let mut settings = toml::from_str::<Settings>(contents)?;
         settings.appearance.migrate_legacy_font_overrides();
@@ -218,6 +227,20 @@ impl Settings {
             .keybindings
             .remove_conflicts_from_defaults(&existing_kb_keys);
         Ok(settings)
+    }
+
+    /// 더 이상 읽지 않는 설정 키(`[테이블, 키, 대신 정하는 설정]`). 남아 있어도 읽기는 실패하지
+    /// 않으며 경고를 남기고 무시한다. 저장은 현재 필드만 쓰므로 다음 저장에서 빠진다.
+    pub const RETIRED_KEYS: &'static [(&'static str, &'static str, &'static str)] =
+        &[("appearance", "sidebar_width", "appearance.ui_scale")];
+
+    /// 파일에 남아 있는 폐기 키를 `(테이블.키, 대신 정하는 설정)`으로 돌려준다.
+    fn retired_keys_in(raw: &toml::Value) -> Vec<(String, &'static str)> {
+        Self::RETIRED_KEYS
+            .iter()
+            .filter(|(table, key, _)| raw.get(table).and_then(|t| t.get(key)).is_some())
+            .map(|(table, key, replacement)| (format!("{table}.{key}"), *replacement))
+            .collect()
     }
 
     /// 현재 파일을 다시 파싱할 수 없는지 확인한다. 없거나 읽지 못하면 false다.
@@ -482,7 +505,44 @@ mod tests {
         let settings = Settings::default();
         assert!(!settings.general.shell.is_empty());
         assert!(settings.appearance.default_font.font_size > 0.0);
-        assert!(settings.appearance.sidebar_width > tasty_type_geometry::length::LogicalPx(0.0));
+        assert!(
+            settings.appearance.scaled_sidebar_width()
+                > tasty_type_geometry::length::LogicalPx(0.0)
+        );
+    }
+
+    #[test]
+    fn retired_sidebar_width_is_read_without_error_and_dropped_on_save() {
+        let contents = "[appearance]\nsidebar_width = 260.0\nui_scale = \"medium\"\n";
+        let settings = Settings::parse_with_migration(contents).expect("old config still parses");
+        assert_eq!(
+            settings.appearance.scaled_sidebar_width(),
+            tasty_type_geometry::length::LogicalPx(180.0)
+        );
+        let raw: toml::Value = toml::from_str(contents).unwrap();
+        assert_eq!(
+            Settings::retired_keys_in(&raw),
+            vec![(
+                "appearance.sidebar_width".to_string(),
+                "appearance.ui_scale"
+            )]
+        );
+        let saved = toml::to_string_pretty(&settings).unwrap();
+        assert!(!saved.contains("sidebar_width"), "got: {saved}");
+    }
+
+    #[test]
+    fn sidebar_width_follows_ui_scale_only() {
+        for (scale, width) in [("small", 150.0), ("medium", 180.0), ("large", 220.0)] {
+            let contents = format!("[appearance]\nui_scale = \"{scale}\"\n");
+            let settings = Settings::parse_with_migration(&contents).unwrap();
+            assert_eq!(
+                settings.appearance.scaled_sidebar_width(),
+                tasty_type_geometry::length::LogicalPx(width)
+            );
+            let raw: toml::Value = toml::from_str(&contents).unwrap();
+            assert!(Settings::retired_keys_in(&raw).is_empty());
+        }
     }
 
     #[test]

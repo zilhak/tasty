@@ -240,7 +240,7 @@ startup_command = ""
 
 [appearance]
 theme = "mocha"                  # ~/.tasty/themes/<id>.toml
-ui_scale = "medium"              # "small" | "medium" | "large"
+ui_scale = "medium"              # "small" | "medium" | "large" — 사이드바 폭도 이 값을 따름
 ligatures = true
 background_opacity = 1.0
 active_tab_indicator = "underline"   # "underline" | "fill" | "dot"

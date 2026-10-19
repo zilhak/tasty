@@ -584,7 +584,7 @@ impl App {
             );
             (state, engine)
         } else {
-            self.ensure_engine_and_plugins(&gpu, settings.appearance.sidebar_width)
+            self.ensure_engine_and_plugins(&gpu, settings.appearance.scaled_sidebar_width())
                 .map_err(|error| error.to_string())?;
             let engine = self
                 .engines

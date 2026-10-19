@@ -61,7 +61,7 @@ terminal tell·broadcast·respawn 실행 함수는 `EngineMut` 대신 `TerminalI
 | `tab_bar_scroll` | pane ID별 사용자 탭바 스크롤 | 세션 | 사용자 입력·표시 보정 → pane 삭제 시 회수 | 없음 |
 | `category_last_active` | 사용자 view 상태 | 세션 | 사용자 전환 → — | debug 헤드리스만 읽힘(release 에는 필드 없음) |
 | `settings_open_requested` · `plugins_open` | 사용자 view 상태 | 요청 | 사이드바 버튼 → 다음 프레임 `dispatch_pending_modal_opens` | 없음 |
-| `sidebar_width` · `sidebar_visible` · `sidebar_collapsed` | 사용자 view 상태 | 세션 | 설정·사용자 토글 → — | 없음 |
+| `sidebar_width` · `sidebar_visible` · `sidebar_collapsed` | 사용자 view 상태 | 세션 | 폭은 매 렌더에 `ui_scale`·접힘·숨김에서 도출, 접힘·숨김은 사용자 토글 → — | 없음 |
 | `pending_resize_cursor` · `switch_overlay` · `modifier_hint` · `tutorial` | 사용자 view 상태 | 프레임·열림 | GUI 입력 → GUI | 없음 |
 | `dialogs` | 사용자 view 상태 | 열림·요청 | 위 절 | 없음 |
 | `tab_bar_height` | 사용자 view 상태 | 프레임 | 탭바 실측 → — | 없음 (테스트 구성에는 있다 — ②) |

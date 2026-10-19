@@ -1,4 +1,4 @@
-<!-- source-hash: 889a19ff7d3a -->
+<!-- source-hash: 2194f99faa27 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -250,7 +250,7 @@ startup_command = ""
 
 [appearance]
 theme = "mocha"                  # ~/.tasty/themes/<id>.toml
-ui_scale = "medium"              # "small" | "medium" | "large"
+ui_scale = "medium"              # "small" | "medium" | "large"; also sets the sidebar width
 ligatures = true
 background_opacity = 1.0
 active_tab_indicator = "underline"   # "underline" | "fill" | "dot"
