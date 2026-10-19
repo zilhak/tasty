@@ -22,7 +22,7 @@ Toast는 “복사됨”, “저장됨”처럼 사용자 조작의 결과를 �
 | 상황 | 처리 |
 |---|---|
 | 사용자 복사·저장 | 토스트 표시 |
-| 사용자 조작의 OS 열기 실패(터미널 링크 클릭, 사용자 출처 System 파일 핸들러, Plugins 창의 폴더 열기·홈페이지) | 실패 토스트(Error) 1건. 성공에는 표시하지 않음. 에이전트·미증명 플러그인 출처의 System 핸들러 실패는 로그만 남김 |
+| 사용자 조작의 OS 열기 실패(터미널 링크 클릭, 사용자 출처 System 파일 핸들러, Plugins 창의 폴더 열기·홈페이지) | 실패 토스트(Error) 1건. 성공에는 표시하지 않음. 에이전트·미증명 플러그인 출처의 System 핸들러 실패에는 토스트를 띄우지 않고, 요청의 `run`을 `failed`("the OS opener could not be started")로 끝낸다 |
 | 사용자 intent·구조 변경·분할선 확정·카테고리 초기화 실패 | 실패 토스트(Error) 1건. preset·split 하한·철회된 kind의 기존 안내와 중복하지 않음. 화면 없는 엔진에는 표시하지 않음 |
 | 에이전트 IPC 쓰기·intent 적용 실패 | 사용자 토스트 없음. 에이전트는 결과를 IPC 응답 문자열로 받는다. 접수 뒤 끝나는 요청(`file_handler.dispatch`·`markdown.navigate`·`hook_handler.dispatch`·`attach.into_gui`·기존 workspace `remote.attach`)은 응답의 `run`으로 최종 결과를 조회한다. 접수 응답 뒤의 적용 실패가 경고 로그로만 남는 그 밖의 경로는 [결과 피드백 원칙](../../principles/feedback-and-recovery.md#시작-경로에-따른-결과-전달)의 현행 미충족이다 |
 | mirror 연결 끊김·재연결·손실 | 연결 상태 토스트 허용. parked engine에서는 표시하지 않음 |
@@ -41,7 +41,7 @@ Toast는 “복사됨”, “저장됨”처럼 사용자 조작의 결과를 �
 
 구조 변경은 App journal의 원 reply·origin에 오류를 전달한다. IPC·plugin·원격 요청은 에이전트 origin을 유지하며, 사용자 View continuation만 현재 identity와 선택 세대를 확인해 토스트를 만든다. 원격 요청을 재전달하는 경우도 사용자 조작으로 승격하지 않는다.
 
-`file_handler.dispatch`는 사용자가 조작한 플러그인 팝업을 검증할 수 있으면 사용자 origin이 된다. markdown 파일열기 팝업이 이 경로다. 사용자 origin을 보존한 mirror forward는 원 요청의 실패 표시 정책을 유지한다. accepted 응답 뒤 적용한 실패 사유는 기존 응답에 소급해 넣을 수 없어 로그에 남는다.
+`file_handler.dispatch`는 사용자가 조작한 플러그인 팝업을 검증할 수 있으면 사용자 origin이 된다. markdown 파일열기 팝업이 이 경로다. 사용자 origin을 보존한 mirror forward는 원 요청의 실패 표시 정책을 유지한다. accepted 응답 뒤의 실패 사유는 이미 보낸 응답에 넣지 않고, 접수 응답의 `run`을 `failed`(원격이 결과 전에 끊기면 `unknown`)로 끝내 `run.result {run}`으로 돌려준다([file-handler](../../features/file-handler/index.md#접수-뒤-최종-결과)).
 
 관련 검사는 `src/intent/apply_error_tests.rs`, `src/app/attach_client/agent_origin.rs`, markdown 원문 요청 테스트에 있다. 이 테스트들이 모든 토스트 생성 경로를 검사하는 것은 아니다.
 
