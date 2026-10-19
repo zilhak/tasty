@@ -157,8 +157,8 @@ picker에서 고른 핸들러는 이번 한 번만 실행한다. 형식별 기�
 | `System` 핸들러 | OS opener에 넘기면 `succeeded`("handed to the OS opener"). 외부 프로그램의 작업 완료는 판정하지 않는다. 넘기지 못하면 `failed` |
 | `Ipc` 핸들러 | plugin 응답이 오면 `succeeded`("<method> answered", `response`), 오류 응답은 `failed`("<method> failed: <message>", `code`). plugin manager가 없거나 응답 없이 채널이 닫히면 `failed` |
 | `markdown.navigate` | 변환 journal 완료로 `succeeded`(같은 `surface_id`). 접수 뒤 대상 surface가 사라지는 등 변환 오류는 `failed`(오류 문장, `code`) |
-| 실행 전 실패 | 맞는 핸들러 없음(Agent), 접수 뒤 origin pane 소멸, 원격에서 열 수 없음, 핸들러가 대상을 받지 않음, 식별 worker 없음, picker에서 고른 핸들러가 사라짐은 모두 `failed`와 그 이유다 |
-| fallback picker(PluginUnverified) | 선택하면 그 실행의 결과다. 취소·설정 열기는 `cancelled`, 새 picker로 대체되면 `cancelled`("replaced by a newer file handler picker"), picker 상태가 결과 없이 사라지면(창 닫힘 등) `cancelled` |
+| 실행 전 실패 | 맞는 핸들러 없음(Agent), 접수 뒤 origin pane 소멸, 원격에서 열 수 없음, 핸들러가 대상을 받지 않음, 식별 worker 없음, picker에서 고른 핸들러가 사라짐, origin 없는 요청의 식별이 끝났을 때 포커스된 창이 없음(마지막 창 park·닫힘 등, "no window was focused to open the file in")은 모두 `failed`와 그 이유다 |
+| fallback picker(PluginUnverified) | 선택하면 그 실행의 결과다. 취소·설정 열기는 `cancelled`, 새 picker로 대체되면 `cancelled`("replaced by a newer file handler picker"), picker 상태가 결과 없이 사라지면(창 닫힘 등) `cancelled`. 창이 park되면 picker 상태는 복원용으로 남지만 그것을 보여 주던 View가 사라졌으므로 park 시점에 `cancelled`("the window showing the file handler picker was closed")로 끝낸다. 복원한 창의 picker는 그대로 쓸 수 있고 그 선택은 결과를 남기지 않는다 |
 
 - 실행한 핸들러는 결과의 `handler`와 `action`(`open_surface`·`ipc`·`system`)에 실린다.
 - 대용량 markdown 확인은 plugin이 surface를 만든 뒤 하므로 host에는 크기 상한 거절 경로가 없다. surface가 만들어지면 `succeeded`다.

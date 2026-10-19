@@ -110,8 +110,9 @@ impl EngineRegistry {
     }
 
     /// 창 관계만 끊고 engine은 그대로 둔다. View 복원 자료를 parked 뒤에 붙인다.
-    pub(crate) fn park(&mut self, wid: WindowId, state: MainViewState) -> Option<EngineId> {
+    pub(crate) fn park(&mut self, wid: WindowId, mut state: MainViewState) -> Option<EngineId> {
         let id = self.by_window.remove(&wid)?;
+        end_view_bound_runs(&mut state);
         self.parked.push(ParkedView { engine: id, state });
         Some(id)
     }
@@ -375,6 +376,26 @@ pub(crate) struct RelationIds {
     pub(crate) pending: Option<EngineId>,
 }
 
+/// parked 자료가 남아 있어도 그것을 보여 주던 View는 사라졌으므로, 그 View의 선택을 기다리던
+/// 요청은 지금 끝낸다. 복원한 창의 picker는 그대로 쓸 수 있고 그 선택은 결과를 남기지 않는다.
+fn end_view_bound_runs(state: &mut MainViewState) {
+    if let Some(guard) = state
+        .dialogs
+        .file_handler_picker
+        .as_mut()
+        .and_then(|picker| picker.run.take())
+    {
+        crate::request_runs::finish(
+            guard.take(),
+            crate::request_runs::RunState::Cancelled,
+            PICKER_VIEW_GONE,
+            serde_json::Value::Null,
+        );
+    }
+}
+
+const PICKER_VIEW_GONE: &str = "the window showing the file handler picker was closed";
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -429,6 +450,38 @@ mod tests {
         };
         reg.attach_window(w, id);
         id
+    }
+
+    #[test]
+    fn parking_a_window_ends_the_run_its_open_picker_was_holding() {
+        let mut reg = EngineRegistry::default();
+        let (mut state, engine) = test_engine(Some(1));
+        open_window(&mut reg, wid(1), engine);
+        let run =
+            crate::request_runs::begin("file_handler.dispatch", None, serde_json::Value::Null);
+        state.dialogs.file_handler_picker = Some(crate::state::FileHandlerPickerData {
+            origin_surface_id: None,
+            dispatch_origin: crate::file::dispatch::FileDispatchOrigin::Agent,
+            target: crate::file::format::FileTarget::new("/tmp/park-picker.txt").into(),
+            target_display: "/tmp/park-picker.txt".to_string(),
+            detector: None,
+            candidates: vec![],
+            candidates_are_fallback: false,
+            recent: vec![],
+            default_handler: None,
+            selected: None,
+            result: None,
+            ignore_size_limit: false,
+            run: Some(crate::request_runs::RunGuard::new(run, "picker dropped")),
+        });
+        assert!(reg.park(wid(1), state).is_some());
+        let ended = crate::request_runs::lookup(run, None).unwrap();
+        assert_eq!(ended["state"], "cancelled");
+        assert_eq!(ended["result"], PICKER_VIEW_GONE);
+        // 복원한 창에서 picker를 계속 쓸 수 있다.
+        let (_, restored) = reg.unpark_first().unwrap();
+        let picker = restored.dialogs.file_handler_picker.as_ref().unwrap();
+        assert!(picker.run.is_none());
     }
 
     #[test]

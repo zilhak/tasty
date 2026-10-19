@@ -57,6 +57,15 @@ impl App {
                 tracing::warn!(%request_id, "{message}");
                 crate::file::dispatch::fail_run(policy.run, message);
             }
+        } else {
+            fail_without_focus(request_id, &target, policy.run);
         }
     }
+}
+
+/// origin 없는 요청은 포커스된 창에서 연다. 마지막 창이 닫혔거나 parked면 열 곳이 없다.
+fn fail_without_focus(request_id: IdentifyRequestId, target: &FileTarget, run: Option<u64>) {
+    let message = "no window was focused to open the file in";
+    tracing::warn!(%request_id, target = %target.display(), "{message}");
+    crate::file::dispatch::fail_run(run, message);
 }
