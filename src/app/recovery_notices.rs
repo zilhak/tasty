@@ -7,8 +7,8 @@ use crate::notification::NotificationLevel;
 const SOURCE: &str = "tasty.recovery";
 
 impl App {
-    /// 쌓인 알림을 받을 엔진의 첫 workspace에 넣는다. 아직 workspace가 없는 엔진의 알림은 다음
-    /// 차례로 미룬다.
+    /// 쌓인 알림을 받을 엔진의 첫 workspace에 넣는다. 아직 workspace가 없거나 창에 붙기 전인 엔진의
+    /// 알림은 다음 차례로 미룬다.
     pub(crate) fn deliver_recovery_notices(&mut self) {
         let mut pending = std::mem::take(&mut self.pending_recovery_notices);
         pending.extend(self.journal.take_notices());
@@ -26,7 +26,13 @@ impl App {
                 .or(fallback)
                 .and_then(|id| self.engines.get(id))
                 .and_then(|engine| engine.core.local_workspaces().first().map(|ws| ws.id));
-            let Some(workspace) = workspace else {
+            // 알림 전달은 창이나 parked 엔진의 workspace만 찾는다. 새 창에 붙기 전인 엔진의 알림은
+            // 그 창이 생길 때까지 미룬다.
+            let Some(workspace) = workspace.filter(|id| {
+                crate::app::window_access::engines_mut!(self)
+                    .sessions()
+                    .any(|(_, engine)| engine.has_workspace(*id))
+            }) else {
                 self.pending_recovery_notices.push(notice);
                 continue;
             };
