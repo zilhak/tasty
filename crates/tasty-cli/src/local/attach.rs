@@ -273,7 +273,7 @@ pub fn run_attach_ssh(
     let ssh = ssh::resolve_ssh_path();
     let dest = target.destination.clone();
     let mode = PortMode::parse(port_mode)?;
-    // 자동 검증(Claude Bash) 한정 host key accept-new. 평상시는 기본 strict 유지(보안).
+    // 자동 검증 한정 host key accept-new. 변수가 없으면 host key 옵션을 넘기지 않고 사용자 ssh 설정을 따른다.
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
     let debug = cfg!(debug_assertions);
 

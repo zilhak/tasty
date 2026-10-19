@@ -336,7 +336,9 @@ impl Deadline {
 ///
 /// - `BatchMode=no`: 첫 연결의 host key/passphrase 프롬프트 허용(무암호면 무영향).
 /// - `ServerAliveInterval`/`CountMax`: 네트워크 단절 감지(~45s 내 ssh 자가 종료).
-/// - `verify` 시 `StrictHostKeyChecking=accept-new`: 자동 검증 한정(평상시 기본 strict 유지).
+/// - `verify` 시 `StrictHostKeyChecking=accept-new`: 자동 검증 한정. `verify`가 거짓이면 host key
+///   옵션을 넘기지 않아 사용자 ssh 설정(설정이 없으면 ssh 기본값 `ask`)을 따른다. 참이면 이 값이
+///   뒤의 `extra_options`와 `~/.ssh/config`보다 먼저 와서 이긴다.
 /// - `ConnectTimeout`: 연결 수립 상한([`SSH_CONNECT_TIMEOUT`]).
 ///
 /// **`ConnectTimeout` 은 사용자 `extra_options` 보다 뒤에 push 한다** — ssh(1) 은 같은 키가

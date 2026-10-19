@@ -666,7 +666,8 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
 
     let ssh = ssh::resolve_ssh_path();
     let mode = PortMode::parse(&port_mode)?;
-    // TASTY_SSH_VERIFY가 설정된 검증 환경에서는 accept-new를 사용한다. 기본은 strict다.
+    // TASTY_SSH_VERIFY가 설정된 검증 환경에서는 accept-new를 사용한다. 없으면 host key 옵션을
+    // 넘기지 않고 사용자 ssh 설정을 따른다.
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
     let debug = cfg!(debug_assertions);
     let remote_port = ssh::discover_remote_port(
