@@ -44,9 +44,30 @@ pub(crate) struct StreamEvent {
 #[derive(Default)]
 pub(crate) struct StructureDecider {
     report: std::sync::Mutex<journal::LoadReport>,
+    /// 보존 pin을 아직 걸지 못한 복원 실패 원본. 남아 있는 동안 checkpoint가 GC하지 않는다.
+    unpreserved: std::sync::Mutex<std::collections::BTreeSet<u64>>,
 }
 
 impl StructureDecider {
+    pub(crate) fn remember_unpreserved(&self, payload: u64) {
+        if let Ok(mut set) = self.unpreserved.lock() {
+            set.insert(payload);
+        }
+    }
+
+    pub(crate) fn unpreserved(&self) -> std::collections::BTreeSet<u64> {
+        self.unpreserved
+            .lock()
+            .map(|set| set.clone())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn forget_unpreserved(&self, payload: u64) {
+        if let Ok(mut set) = self.unpreserved.lock() {
+            set.remove(&payload);
+        }
+    }
+
     pub(crate) fn report(&self) -> journal::LoadReport {
         self.report
             .lock()

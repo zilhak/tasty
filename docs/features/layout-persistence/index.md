@@ -338,7 +338,7 @@ App의 `Restorations`가 payload 읽기 대기·접수된 ticket·사용 가능�
 
 - 손상으로 보는 경우: payload 행이 없음(`PayloadMissing`), checksum 불일치(`PayloadCorrupt`), seed JSON 해석 실패, seed kind 불일치, `SurfaceData` 해석 실패, 저장된 kind와 다른 capture.
 - 손상된 surface는 그 자리에서 빈 상태로 다시 시작한다. 터미널은 현재 셸 설정으로 새로 열고 이전 CWD·`restore.command`·scrollback을 쓰지 않는다. 다른 kind는 저장된 복원 값 없이 시작한다. 활성화 요청은 원본 capture를 다시 읽지 않는다.
-- 원본 payload는 지우거나 덮어쓰지 않는다. `restore-failure` holder로 pin해 두므로 다음 capture가 surface의 참조를 새 자료로 바꾼 뒤에도 GC되지 않는다. 이 holder는 자동으로 풀지 않는다. 행 자체가 없는 경우에는 보존할 바이트가 없다.
+- 원본 payload는 지우거나 덮어쓰지 않는다. `restore-failure` holder로 pin해 두므로 다음 capture가 surface의 참조를 새 자료로 바꾼 뒤에도 GC되지 않는다. 이 holder는 자동으로 풀지 않는다. 행 자체가 없는 경우에는 보존할 바이트가 없다. 있는 행에 pin을 쓰지 못하면(디스크 가득 참 등) worker가 그 payload를 기억하고 다음 checkpoint마다 pin을 다시 건다. 다시 걸 때까지 checkpoint(snapshot·압축·GC)를 건너뛰므로 다음 capture가 참조를 바꿔도 원본이 수거되지 않는다. 이 기억은 프로세스 안에만 있으며, 재시작하면 같은 surface를 다시 읽어 같은 실패를 다시 보존한다.
 - workspace 이름·surface ID·원인을 담은 경고 알림을 남기고 같은 내용을 warn 로그로 남긴다. 한 번에 여러 surface가 실패하면 같은 엔진의 경고 하나로 묶는다.
 - 손상이 아닌 경쟁 상태는 결과를 버린다. 읽는 사이 엔진이 닫혔거나 surface가 더 이상 그 capture를 기다리지 않으면 아무것도 하지 않는다. 읽는 사이 capture가 바뀌었으면 새 capture를 다시 읽는다.
 - 저장소 자체를 더 쓸 수 없는 읽기 오류(SQLite I/O 오류 등)와 결과 종류 불일치 같은 내부 오류만 halt로 남는다.

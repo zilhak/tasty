@@ -3,6 +3,8 @@ mod assembly;
 mod binding;
 mod capture;
 mod effects;
+#[cfg(all(test, unix))]
+mod preservation_tests;
 mod recovery;
 
 use std::collections::{HashMap, VecDeque};
@@ -724,21 +726,26 @@ fn read_payload(
     }
 }
 
+/// 행이 없는 payload는 보존할 바이트가 없다. 있는 행에 pin을 걸지 못하면 기억해 두고 checkpoint가
+/// 다시 시도한다. 그 전까지 checkpoint는 압축·GC를 하지 않는다.
 fn preserve_failed_payload(
     executor: &Executor<StructureDecider>,
     reference: tasty_core::DataRef,
 ) -> Result<ResultValue, String> {
     let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
     let epoch = inner.epoch;
-    inner
-        .store
-        .pin_payload(
-            epoch,
-            tasty_event_store::PayloadRef(reference.0),
-            RESTORE_FAILURE_HOLDER,
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(ResultValue::PayloadPreserved)
+    match inner.store.pin_payload(
+        epoch,
+        tasty_event_store::PayloadRef(reference.0),
+        RESTORE_FAILURE_HOLDER,
+    ) {
+        Ok(()) => Ok(ResultValue::PayloadPreserved),
+        Err(error @ tasty_event_store::StoreError::PayloadMissing(_)) => Err(error.to_string()),
+        Err(error) => {
+            executor.decider().remember_unpreserved(reference.0);
+            Err(format!("{error}; retrying before the next checkpoint"))
+        }
+    }
 }
 
 fn publish(
