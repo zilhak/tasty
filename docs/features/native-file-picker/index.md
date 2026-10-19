@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 탭 스트립 메뉴 "새 HTML..." 트리거 · 설정 창 안의 파일 선택) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
 - **설계**: [원격 attach (Remote attach)](../remote-attach/index.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [내부 팝업 시스템](../../design/systems/popup.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [파일 핸들러 (File handler)](../file-handler/index.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
-- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/view/main/redraw.rs`의 `apply_pane_menu_selection`(탭 스트립 메뉴 "새 HTML..." 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
+- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/app/local_reads.rs`(`directory` 로컬 읽기 요청 · `poll_file_picker_reads` 결과 반영), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/view/main/redraw.rs`의 `apply_pane_menu_selection`(탭 스트립 메뉴 "새 HTML..." 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
 ## 목적
@@ -31,8 +31,13 @@ workspace)의 `Workspace.mirror` 플래그를 1 회 확인해 로컬/원격을 �
 
 ### 로컬 브라우징
 
-`crate::core::fs_list::read_dir_entries` 를 popup wrapper 가 직접 동기 호출한다(host 프로세스
-내부 함수 — 별도 IPC 왕복 없음). 결과를 `sort_entries` 로 정렬해 즉시 `Loaded`/`Empty` 로 전이한다.
+popup wrapper 는 `crate::app::local_reads::directory` 로 디렉토리 읽기를 요청하고
+`FpLoadState::Loading` 으로 전이한다. App 의 로컬 읽기 worker(동시 실행 최대 4개,
+[요청 문맥과 headless](../../dev-guide/model-view-split.md#요청-문맥과-headless))가
+`crate::core::fs_list::read_dir_entries` 로 읽는다(host 프로세스 안 — 별도 IPC 왕복 없음).
+UI 스레드는 읽기를 기다리지 않는다. `poll_file_picker_reads` 가 결과를 받아 `sort_entries` 로 이름순 정렬하고
+`Loaded`/`Empty` 로, 실패하면 `ErrorPerm`(권한 거부는 번역 문구, 그 밖은 OS 오류 문구)으로 전이한다.
+popup 이 닫히거나 다른 디렉토리로 옮기면 이전 요청의 receipt 를 버려 늦은 결과가 새 표시를 바꾸지 않는다.
 
 ### 원격 브라우징 (attach 커스텀 이벤트)
 
@@ -47,7 +52,7 @@ workspace)의 `Workspace.mirror` 플래그를 1 회 확인해 로컬/원격을 �
    전송(`src/app/attach_client/forward.rs::send_list_dir_request`).
 3. 원격 인스턴스 서버측(`src/remote/server/content_queries.rs::handle_list_dir_request`)이
    **attach 점유 = 신뢰**(`engine.live.occupancy.client_holds_workspace(client_id)`)만으로 인가 판정 —
-   별도 permission 게이트 없음. 인가되면 같은 `read_dir_entries` 로 대상 디렉토리를 읽어
+   별도 permission 게이트 없음. 인가되면 로컬 worker 와 같은 `read_dir_entries` 로 대상 디렉토리를 읽어
    `list_dir_result` 로 회신.
 4. client 의 attach reader thread 가 `list_dir_result` 를 파싱해 `MirrorEvent::ListDirResult` 로
    변환하고, `apply_attach_client_output` 이 그 popup 상태(`request_id` 일치 확인 — stale reply
@@ -270,9 +275,11 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   popup 과 같은 매니저). 크기는 두 모드 모두 메인 피커와 같은 상수(640×480)다.
 - **로컬 전용**: 원격(mirror) 조회 경로(`pending_list_dir_forward` → attach client)는 메인 창 App
   루프가 소유하므로 설정 창에는 없다. 설정은 이 인스턴스 자신의 구성이라 로컬 파일시스템만 본다.
-  목록은 위 "로컬 브라우징" 과 같은 `read_dir_entries` + `sort_entries` 동기 호출로 채운다.
-- **블로킹의 성질**: 동기 I/O라 느리거나 응답하지 않는 파일시스템에서는 해당 프레임의 처리가 지연될 수 있다 — 메인
-  피커의 로컬 경로와 같은 성질이다. OS 네이티브 다이얼로그는 쓰지 않는다(포털 없는 Linux 에서
+  목록은 위 "로컬 브라우징" 과 같은 `local_reads::directory` worker 요청으로 채운다. `reload` 가
+  `FpViewState::Loading` 으로 전이하고, `accept_read` 가 결과를 `sort_entries` 로 정렬해
+  `Loaded`/`Empty`/`ErrorPerm` 으로 바꾼다.
+- **블로킹의 성질**: 읽기는 worker 에서 하므로 느리거나 응답하지 않는 파일시스템이어도 설정 창 프레임은
+  기다리지 않고 `Loading` 을 표시한다 — 메인 피커의 로컬 경로와 같다. OS 네이티브 다이얼로그는 쓰지 않는다(포털 없는 Linux 에서
   끝나지 않는다, docs/features/file-handler/index.md).
 - **모드**: `Open`(기존 파일 하나) · `Save { default_name }`(디렉토리를 고르고 파일명을 정한다).
   view 는 `FilePickerMode` 로 두 모드를 함께 그린다. 저장 모드는 파일명을 정할 뿐 파일을 만들지 않는다.
@@ -345,7 +352,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 ## Acceptance Criteria
 
 - Given 로컬(비-mirror) workspace 가 활성이고 focus surface 의 cwd 를 알 수 없음 When Tools 메뉴에서
-  파일 피커를 열면 Then 로컬 홈 디렉토리 엔트리가 즉시(동기) 로드되어 표시된다.
+  파일 피커를 열면 Then `Loading` 을 거쳐 로컬 홈 디렉토리 엔트리가 표시된다.
 - Given focus 된 로컬 터미널의 cwd 가 `/tmp` When Tools 메뉴에서 파일 피커를 열면 Then `/tmp` 의
   엔트리가 표시된다(`inherit_cwd` 가 꺼져 있어도 같다).
 - Given mirror workspace 가 활성이고 원격 cwd 를 모름 When Tools 메뉴에서 파일 피커를 열면 Then
@@ -447,6 +454,8 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `src/adapters/ui/popup/defs.rs`(`PopupDef` 등록), `src/adapters/ui/popup.rs`(모듈 선언).
 - 공유 나열: `src/core/fs_list.rs`(`DirEntryInfo`/`read_dir_entries`/`sort_entries`/`human_size`/
   `format_modified`) — `src/adapters/ui/surface/explorer/view.rs`(Explorer surface)와 공유.
+- 로컬 읽기: `src/app/local_reads.rs`(`directory` 요청 생성 · worker 실행 · `poll_file_picker_reads` 결과 반영).
+  설정 창은 `src/view/settings/ui/file_chooser.rs`(`reload`/`accept_read`)가 같은 요청을 쓴다.
 - 트리거: `src/adapters/ui/tools_menu.rs`(`BuiltinAction::OpenFilePicker`, `popup::file_picker::open`,
   `requester: None`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin
   트리거, docs/design/systems/popup.md), `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` →
