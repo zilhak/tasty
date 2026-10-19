@@ -17,6 +17,8 @@ pub enum PluginAttentionBarAction<'a> {
     Reapprove(&'a str),
     /// 실행 오류 — ghost, settings 아이콘.
     Configure(&'a str),
+    /// 미인증 서명 사유 — danger. 누르기 전에는 등록하지 않는다.
+    RegisterAnyway(&'a str),
 }
 
 /// Attention 액션 바 입력.
@@ -68,6 +70,10 @@ fn action_button(ui: &mut egui::Ui, theme: &Theme, action: PluginAttentionBarAct
                     .image(rect.height(), c)
                     .paint_at(ui, rect)
             })
+            .show(ui, theme)
+            .clicked(),
+        PluginAttentionBarAction::RegisterAnyway(label) => Button::new(label)
+            .variant(ButtonVariant::Danger)
             .show(ui, theme)
             .clicked(),
     }

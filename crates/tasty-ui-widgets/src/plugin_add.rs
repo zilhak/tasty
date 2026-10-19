@@ -23,64 +23,77 @@ use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
 /// 디자인 `plugins_window.jsx`의 `--tasty-size-14`·`gap: 14`이며 역할 토큰이 없다.
 pub const PLUGIN_ADD_INSET: LogicalPx = LogicalPx(14.0);
 
-/// 신뢰 판정 다섯 가지. 상자 톤은 추가가 무엇을 하는지를 나타낸다.
+/// 신뢰 판정 여섯 가지. 상자 톤은 추가가 무엇을 하는지를 나타낸다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginTrustKind {
     /// 신뢰 목록의 키로 서명됐다. 그대로 추가한다.
     Trusted,
-    /// 신뢰 목록에 없는 키다. 추가하면 키를 신뢰한다.
-    UnknownKey,
     /// 신뢰한 게시자지만 권한이 늘었다. 추가하면 새 권한 묶음을 신뢰한다.
     PermissionsChanged,
-    /// 서명은 있지만 공개 키 파일이 없어 추가할 수 없다.
+    /// 미인증 — 신뢰 목록에 없는 키다. 추가하면 공개 키 파일의 키도 신뢰한다.
+    UnknownKey,
+    /// 미인증 — 서명은 있지만 공개 키 파일이 없거나 읽을 수 없다.
     MissingPubkey,
-    /// 서명을 검증하지 못해 추가할 수 없다. fingerprint 줄이 없다.
+    /// 미인증 — 서명이 없다. fingerprint 줄이 없다.
+    Unsigned,
+    /// 미인증 — 이 파일들로 서명을 검증하지 못했다. fingerprint 줄이 없다.
     SignatureError,
 }
 
 impl PluginTrustKind {
+    /// 미인증 네 가지. 같은 danger 상자·위험 문단을 쓰고, 사용자가 명시적으로 골라야 추가한다.
+    pub fn is_unverified(self) -> bool {
+        !matches!(
+            self,
+            PluginTrustKind::Trusted | PluginTrustKind::PermissionsChanged
+        )
+    }
+
     fn tone(self, theme: &Theme) -> HexColor {
         match self {
             PluginTrustKind::Trusted => theme.accent_success(),
-            PluginTrustKind::UnknownKey | PluginTrustKind::PermissionsChanged => {
-                theme.accent_warning()
-            }
-            PluginTrustKind::MissingPubkey | PluginTrustKind::SignatureError => {
-                theme.accent_danger()
-            }
+            PluginTrustKind::PermissionsChanged => theme.accent_warning(),
+            _ => theme.accent_danger(),
+        }
+    }
+
+    fn glyph_color(self, theme: &Theme) -> HexColor {
+        match self {
+            PluginTrustKind::Trusted => theme.plugin_trust_glyph_success(),
+            PluginTrustKind::PermissionsChanged => theme.plugin_trust_glyph_warning(),
+            _ => theme.plugin_trust_glyph_danger(),
         }
     }
 
     fn glyph(self) -> tasty_icons::Icon {
         match self {
             PluginTrustKind::Trusted => tasty_icons::SHIELD_CHECK,
-            PluginTrustKind::UnknownKey | PluginTrustKind::PermissionsChanged => {
-                tasty_icons::ALERT_TRIANGLE
-            }
-            PluginTrustKind::MissingPubkey | PluginTrustKind::SignatureError => {
-                tasty_icons::ALERT_CIRCLE
-            }
+            PluginTrustKind::PermissionsChanged => tasty_icons::ALERT_TRIANGLE,
+            _ => tasty_icons::ALERT_CIRCLE,
         }
     }
 
-    /// 상자 아래에 fingerprint 줄을 두는지. 서명 오류는 식별할 서명이 없다.
+    /// 상자 아래에 fingerprint 줄을 두는지. 서명이 없거나 깨지면 식별할 서명이 없다.
     pub fn shows_fingerprint(self) -> bool {
-        !matches!(
+        matches!(
             self,
-            PluginTrustKind::Trusted | PluginTrustKind::SignatureError
+            PluginTrustKind::PermissionsChanged
+                | PluginTrustKind::UnknownKey
+                | PluginTrustKind::MissingPubkey
         )
     }
 }
 
 /// 신뢰 판정 상자. 톤 색의 tint 채움과 테두리를 쓴다.
-/// `Trusted`는 글리프와 `body` 한 줄이고 나머지는 제목 줄, 본문, fingerprint 줄 순이다.
+/// `Trusted`는 글리프와 `body` 첫 문단 한 줄이고, 나머지는 제목 줄(톤은 글리프만 진다), 본문
+/// 문단들, fingerprint 줄 순이다. 미인증은 원인 문장과 위험 문단 두 문단이다.
 /// `fingerprint`는 [`PluginTrustKind::shows_fingerprint`]가 참일 때만 불린다.
 pub fn plugin_trust_box(
     ui: &mut egui::Ui,
     theme: &Theme,
     kind: PluginTrustKind,
     title: &str,
-    body: &str,
+    body: &[&str],
     fingerprint: impl FnOnce(&mut egui::Ui),
 ) -> egui::Response {
     let tone = kind.tone(theme).to_egui();
@@ -105,30 +118,36 @@ pub fn plugin_trust_box(
                 ui.horizontal(|ui| {
                     glyph_cell(ui, kind, glyph, tone);
                     ui.add(
-                        egui::Label::new(egui::RichText::new(body).size(term_sm).color(tone))
-                            .wrap(),
+                        egui::Label::new(
+                            egui::RichText::new(body.first().copied().unwrap_or_default())
+                                .size(term_sm)
+                                .color(tone),
+                        )
+                        .wrap(),
                     );
                 });
                 return;
             }
-            // 600 굵기는 굵은 UI 글꼴이 없어 크기와 색으로 근사한다.
+            // 600 굵기는 굵은 UI 글꼴이 없어 크기로 근사한다.
             ui.horizontal(|ui| {
-                glyph_cell(ui, kind, glyph, tone);
+                glyph_cell(ui, kind, glyph, kind.glyph_color(theme).to_egui());
                 ui.label(
                     egui::RichText::new(title)
                         .size(theme.font_size_body.value())
-                        .color(tone),
+                        .color(theme.plugin_trust_title_fg().to_egui()),
                 );
             });
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(body)
-                        .size(term_sm)
-                        .line_height(Some(term_sm * theme.line_height_ui))
-                        .color(theme.text_secondary().to_egui()),
-                )
-                .wrap(),
-            );
+            for paragraph in body {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(*paragraph)
+                            .size(term_sm)
+                            .line_height(Some(term_sm * theme.line_height_ui))
+                            .color(theme.plugin_trust_body_fg().to_egui()),
+                    )
+                    .wrap(),
+                );
+            }
             if kind.shows_fingerprint() {
                 fingerprint(ui);
             }
@@ -394,14 +413,20 @@ fn tag_list(ui: &mut egui::Ui, theme: &Theme, label: &str, items: &[String], non
     });
 }
 
-/// 액션 바 문구.
+/// 액션 바 문구와 상태.
 pub struct PluginAddBarView<'a> {
     /// 왼쪽 문구. 추가할 수 없으면 이유, 아니면 부여할 권한 수. 매니페스트가 없으면 빈 문자열.
     pub left: &'a str,
     pub cancel: &'a str,
-    /// `Add plugin` 또는 미신뢰일 때 `Trust & add`. 매니페스트를 확인하기 전에는 `None`이다.
+    /// 추가 버튼 문구. 매니페스트를 확인하기 전에는 `None`이다. `busy` 면 진행 문구다.
     pub add: Option<&'a str>,
     pub add_enabled: bool,
+    /// 미인증 판정. 추가 버튼을 danger 로 그린다.
+    pub danger: bool,
+    /// 추가 처리 중. 두 버튼을 끄고 추가 버튼 앞에 Spinner 를 둔다.
+    pub busy: bool,
+    /// 이 프레임에 Cancel 로 포커스를 옮긴다. 미인증 판정을 처음 보일 때 쓴다.
+    pub focus_cancel: bool,
 }
 
 /// 액션 바에서 눌린 버튼.
@@ -411,9 +436,9 @@ pub struct PluginAddBarClicks {
     pub cancel: bool,
 }
 
-/// 위 구분선 아래에 왼쪽 문구, 오른쪽 Cancel(ghost) + 추가(primary)를 둔다.
+/// 위 구분선 아래에 왼쪽 문구, 오른쪽 Cancel(ghost) + 추가(primary, 미인증이면 danger)를 둔다.
 /// 추가할 수 없으면 추가 버튼을 숨기지 않고 disabled로 둔다. 매니페스트를 확인하기 전에는
-/// Cancel 만 둔다.
+/// Cancel 만 둔다. 기본 버튼은 없다 — Enter 는 포커스가 있는 버튼만 누른다.
 pub fn plugin_add_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -440,16 +465,33 @@ pub fn plugin_add_bar(
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if let Some(add) = view.add {
-                            clicks.add = Button::new(add)
-                                .variant(ButtonVariant::Primary)
-                                .enabled(view.add_enabled)
-                                .show(ui, theme)
-                                .clicked();
+                            let variant = if view.danger {
+                                ButtonVariant::Danger
+                            } else {
+                                ButtonVariant::Primary
+                            };
+                            let spinner =
+                                |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+                                    crate::spinner::Spinner::new()
+                                        .color(c)
+                                        .paint_in(ui, theme, rect)
+                                };
+                            let mut button = Button::new(add)
+                                .variant(variant)
+                                .enabled(view.add_enabled && !view.busy);
+                            if view.busy {
+                                button = button.leading_icon(&spinner);
+                            }
+                            clicks.add = button.show(ui, theme).clicked();
                         }
-                        clicks.cancel = Button::new(view.cancel)
+                        let cancel = Button::new(view.cancel)
                             .variant(ButtonVariant::Ghost)
-                            .show(ui, theme)
-                            .clicked();
+                            .enabled(!view.busy)
+                            .show(ui, theme);
+                        if view.focus_cancel && !view.busy {
+                            cancel.request_focus();
+                        }
+                        clicks.cancel = cancel.clicked();
                     });
                 },
             );

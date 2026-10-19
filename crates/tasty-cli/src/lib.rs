@@ -18,6 +18,7 @@ pub mod help_groups;
 pub mod help_i18n;
 pub mod help_route;
 pub mod hook_failure;
+mod install_warning;
 pub mod local;
 pub mod out;
 pub mod plugin;

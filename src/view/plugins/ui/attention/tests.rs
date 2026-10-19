@@ -16,6 +16,7 @@ fn entry(kind: AttentionKind) -> AttentionEntry {
         permissions_removed: Vec::new(),
         health_detail: None,
         cause: None,
+        unverified: None,
     }
 }
 

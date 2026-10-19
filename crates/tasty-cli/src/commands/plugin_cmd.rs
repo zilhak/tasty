@@ -21,9 +21,18 @@ pub enum PluginCommands {
     /// started unless a disabled mark for that id is already on file. Inspect
     /// `tasty-plugin.toml` first, or check afterwards with
     /// `plugin permissions <id>` and `plugin revoke <id> <permission>`.
+    ///
+    /// A plugin whose signature Tasty cannot check against a trusted key is
+    /// unverified. It is not installed unless `--allow-unverified` is given, and
+    /// the refusal explains why. The choice is remembered until the manifest
+    /// changes or the plugin is removed.
     Install {
         /// Path to plugin directory (must contain tasty-plugin.toml).
         path: String,
+        /// Install even if the plugin is unverified. It runs with your account's
+        /// access; use this only if you trust where it came from.
+        #[arg(long)]
+        allow_unverified: bool,
     },
     /// Remove an installed plugin by id.
     ///

@@ -1,4 +1,4 @@
-<!-- source-hash: 99b2484395bc -->
+<!-- source-hash: 0544fa25885d -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -62,8 +62,8 @@ The **Attention** tab. Plugins whose registration was rejected or that failed to
 
 | Shown | Meaning | What to do |
 |------|----|------|
-| **Signature not trusted** | Signed with a key not in the trust list | This tab has no approve button. Confirm the source, then copy the fingerprint with the **Copy fingerprint** button next to it and compare. If you trust it, remove the plugin with `tasty plugin remove <id>`, add its original folder again in the **Add plugin** tab, and press **Trust & add** |
-| **Signature invalid** | No signature, or verification failed. The detail shows the cause (such as a missing signature file) on one line | Get a correct package from the distributor |
+| **Signature not trusted** | Signed with a key not in the trust list | The details show an **Unverified plugin** warning. Confirm the source, then copy the fingerprint with the **Copy fingerprint** button in the Signature section and compare. If you trust it, press **Register anyway** |
+| **Signature invalid** | No signature, or verification failed. The detail shows the cause (such as a missing signature file) on one line | Getting a correct package from the distributor is safest. If you trust the source, you can use it with **Register anyway** |
 | **Permissions changed** | An update changed the required permissions | Read the **newly requested** list and **Re-approve** |
 | **Runtime error** | Enabled but failed while running | Check the **Log** |
 
@@ -73,9 +73,9 @@ The **Add plugin** tab.
 
 1. In the **Plugin folder** field, enter a folder containing `tasty-plugin.toml`, or pick one with **Find folder…**.
 2. Press **Verify** and the manifest card appears right under the field: name · version · id · authors · description · **required permissions** · surface kinds · source path, plus the homepage when the plugin has one. An `http://` or `https://` address is an underlined link that opens in your browser (if the browser can't be started, a notice says it couldn't be opened); any other value is shown as plain text. With several authors, the first one is followed by `+N`; hover to see them all. Editing the path clears the card, so press **Verify** again. If the folder has no `tasty-plugin.toml` or the file can't be parsed, a **Can't read tasty-plugin.toml** box takes the card's place with the reader's error on the line below. If the file reads but breaks a manifest rule (for example, the listed binary is not in the folder), a **tasty-plugin.toml is not valid** box appears in the same place with what is wrong on the line below. Fix the path and press **Verify** again.
-3. The box under the card tells you how the signature was judged: **Signed by a trusted publisher**, **Unverified publisher**, **Permissions changed**, **Public key file missing**, or **Signature check failed**. For an unverified publisher or changed permissions the box shows the fingerprint, which you can copy with its button. A long fingerprint shows only its first and last 8 bytes with `…` in between; hovering or copying gives the full value.
-4. The left of the bottom bar shows how many permissions the plugin will get. Press **Add plugin**. For an unverified publisher or changed permissions the same button reads **Trust & add**; pressing it records that key (or the new permission set) in the trust list so you are not asked again.
-5. If the plugin cannot be added, the button stays disabled and the reason is shown on its left: **Already installed**, **Signed, but the publisher's public key file is missing**, or **Signature check failed**. A plugin without its public key file (`tasty-plugin.toml.pub`) cannot be registered, so ask the distributor for it.
+3. The box under the card tells you how the signature was judged: **Signed by a trusted publisher**, **Permissions changed**, or **Unverified plugin**. For an unverified plugin the box gives the cause (a key not in the trust list, a missing public key file, no signature, or a failed signature check) and warns that the plugin runs with your account's access and that its permissions only limit what it can ask Tasty to do. When the judgment involves a key, the box shows the fingerprint, which you can copy with its button. A long fingerprint shows only its first and last 8 bytes with `…` in between; hovering or copying gives the full value.
+4. The left of the bottom bar shows how many permissions the plugin will get. Press **Add plugin**. For changed permissions the same button reads **Trust & add**; pressing it records the new permission set in the trust list. For an unverified plugin the button reads **Add anyway** (**Trust key & add anyway** for a key not in the trust list), and **Cancel** has focus at first, so Enter or Esc goes back without installing. Press it only if you trust where the plugin came from. The choice is remembered until the manifest changes or the plugin is removed; once installed, the plugin has no other restriction beyond its mark in the list. While adding, the button reads **Adding…**.
+5. If the plugin is already installed, the button stays disabled and **Already installed** is shown on its left.
 
 Installing grants the permissions the plugin requests. Review the permission list in the preview before adding it.
 
@@ -121,7 +121,7 @@ Use it from a terminal while Tasty is running. The output is JSON.
 |------|---------|
 | `tasty plugin list` | The id · version · enabled · running state of installed plugins |
 | `tasty plugin show <id>` | The full manifest · permissions · commands · running state |
-| `tasty plugin install <folder>` | Installs from a folder containing `tasty-plugin.toml`. Grants the manifest permissions as they are |
+| `tasty plugin install <folder> [--allow-unverified]` | Installs from a folder containing `tasty-plugin.toml`. Grants the manifest permissions as they are. An unverified plugin is installed only with `--allow-unverified` |
 | `tasty plugin remove <id>` | Removes it |
 | `tasty plugin enable <id>` · `disable <id>` | Enables · disables it |
 | `tasty plugin logs <id> [--follow]` | Prints the log. `--follow` keeps showing new lines (stop with `Ctrl+C`) |
@@ -135,7 +135,7 @@ Use it from a terminal while Tasty is running. The output is JSON.
 | `tasty plugin request-permission --agent <id> --permission <permission> [--reason <reason>]` | Shows the approval popup that asks whether to give an agent a permission, ahead of time. When an agent runs it, the agent can only name itself, and only the user can approve or deny this popup |
 | `tasty plugin audit-query` · `audit-summary` · `audit-follow` · `audit-clear` | Queries · summarizes · follows live · deletes the allow/deny records of requests Tasty received (CLI, plugins, agents) |
 
-`install` checks the signature before copying the folder. When the signature check refuses the install, it tells you the actual reason (no signature, a key you have not trusted, a public key file that is missing or does not match, and so on) and leaves nothing behind in the plugins folder, the permissions or the trust list. Fix the problem and run the same command again to install. If the plugin is registered but then fails to start, the installed folder stays; check `tasty plugin logs <id>` for the cause.
+`install` checks the signature before copying the folder. For an unverified plugin it warns about the cause and the risk, installs nothing, and shows the `tasty plugin install --allow-unverified <folder>` command to use if you trust the source. When the signature check refuses the install, it tells you the actual reason (no signature, a key you have not trusted, a public key file that is missing or does not match, and so on) and leaves nothing behind in the plugins folder, the permissions or the trust list. Fix the problem and run the same command again to install. If the plugin is registered but then fails to start, the installed folder stays; check `tasty plugin logs <id>` for the cause.
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 

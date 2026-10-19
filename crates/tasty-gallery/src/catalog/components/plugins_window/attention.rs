@@ -6,8 +6,8 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginAvatarSize, PluginFingerprintLineView,
-    PluginIdentityView, PluginMetaView, is_web_homepage, margin_all, paint_plugin_avatar,
-    plugin_attention_bar, plugin_detail_bar_height, plugin_detail_desc_hidden,
+    PluginIdentityView, PluginMetaView, PluginTrustKind, is_web_homepage, margin_all,
+    paint_plugin_avatar, plugin_attention_bar, plugin_detail_bar_height, plugin_detail_desc_hidden,
     plugin_detail_description, plugin_detail_identity, plugin_fingerprint_line, plugin_mono_header,
     plugin_signature_invalid_detail,
 };
@@ -53,8 +53,8 @@ impl Kind {
         }
     }
 
-    /// 액션 바 우측 버튼 — 본체 `attention_bar_action` 의 사유별 분기.
-    /// 서명 사유는 복사를 fingerprint 줄이 맡아 버튼이 없다.
+    /// 액션 바 우측 버튼 — 본체 `draw_action_bar` 의 사유별 분기.
+    /// 서명 사유는 danger `Register anyway` 다. 누르기 전에는 등록하지 않는다.
     fn action(self) -> Option<PluginAttentionBarAction<'static>> {
         match self {
             Self::PermissionsChanged => Some(PluginAttentionBarAction::Reapprove(crate::i18n::t(
@@ -63,7 +63,20 @@ impl Kind {
             Self::HealthError => Some(PluginAttentionBarAction::Configure(crate::i18n::t(
                 "plugins.configure",
             ))),
-            Self::UnknownKey | Self::SignatureInvalid => None,
+            Self::UnknownKey | Self::SignatureInvalid => {
+                Some(PluginAttentionBarAction::RegisterAnyway(crate::i18n::t(
+                    "plugins.attn_register_anyway",
+                )))
+            }
+        }
+    }
+
+    /// 서명 사유의 미인증 상자 종류. 본체는 거부 기록의 원인 이름으로 고른다.
+    fn trust_kind(self) -> Option<PluginTrustKind> {
+        match self {
+            Self::UnknownKey => Some(PluginTrustKind::UnknownKey),
+            Self::SignatureInvalid => Some(PluginTrustKind::SignatureError),
+            Self::PermissionsChanged | Self::HealthError => None,
         }
     }
 
@@ -200,8 +213,13 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, sele
     }
 }
 
-/// 사유 배너 — 본체 `draw_detail` 의 severity 프레임.
+/// 사유 배너 — 본체 `draw_detail` 의 severity 프레임. 서명 사유는 Add 탭과 같은 미인증 상자이고
+/// fingerprint 는 아래 Signature 절이 보인다.
 fn banner(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
+    if let Some(trust) = kind.trust_kind() {
+        super::add::unverified_box(ui, theme, trust, false, "");
+        return;
+    }
     let color = sev_color(theme, kind);
     egui::Frame::new()
         .fill(color.gamma_multiply(theme.tint_fill_alpha()))

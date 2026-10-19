@@ -547,7 +547,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::cluster(
         ui,
         theme,
-        "Add plugin — action bar (grants · trust & add · 3 blocked reasons)",
+        "Add plugin — action bar (trusted · permissions changed · 4 unverified · adding · already installed)",
         |ui| {
             theme_pair(ui, theme, &mocha, &latte, |ui, th| {
                 add::add_bars(ui, th, th.measure_xl.value());
@@ -564,11 +564,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
         },
     );
-    spec::cluster(ui, theme, "Add plugin — trust judgment (5 kinds)", |ui| {
-        theme_pair(ui, theme, &mocha, &latte, |ui, th| {
-            add::trust_boxes(ui, th, th.measure_xl.value());
-        });
-    });
+    spec::cluster(
+        ui,
+        theme,
+        "Add plugin — trust judgment (6 kinds, 4 unverified share one danger box)",
+        |ui| {
+            theme_pair(ui, theme, &mocha, &latte, |ui, th| {
+                add::trust_boxes(ui, th, th.measure_xl.value());
+            });
+        },
+    );
     spec::cluster(ui, theme, "attention reasons (4)", |ui| {
         attention::reason_cards(ui, theme);
     });
@@ -604,11 +609,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("health error", "enabled + error 인 행만 우측 danger dot"),
             (
                 "attention",
-                "같은 2열 · 2번째 줄이 사유 라벨(severity 색) · 상세는 배너 + 사유 detail + 액션 바 · 0 건이면 배지가 사라지고 본문이 안내로 바뀐다",
+                "같은 2열 · 2번째 줄이 사유 라벨(severity 색) · 상세는 배너 + 사유 detail + 액션 바 · 서명 사유의 배너는 Add 탭과 같은 미인증 상자(fingerprint 줄 없음)이고 바 오른쪽이 Register anyway(danger) · 0 건이면 배지가 사라지고 본문이 안내로 바뀐다",
             ),
             (
                 "add",
-                "단일 열 · 제목 없이 경로 선택 블록(Plugin folder 머리글 · mono 입력 + Find folder…(secondary) + Verify(primary) · 설명 문단) 바로 아래에 확인 전 안내 상자 또는 매니페스트 카드(아바타 lg · 이름 + 버전 Tag · id · 작성자 · 설명 · Permissions/Surface kinds Tag, 비면 caption None · Source · Homepage 링크) + 신뢰 상자 · 액션 바는 왼쪽 Grants 문구 또는 막힌 이유(caption, text-muted) + 오른쪽 Cancel(ghost) + Add plugin(primary, 미신뢰면 Trust & add), 막히면 disabled, 확인 전에는 Cancel 만",
+                "단일 열 · 제목 없이 경로 선택 블록(Plugin folder 머리글 · mono 입력 + Find folder…(secondary) + Verify(primary) · 설명 문단) 바로 아래에 확인 전 안내 상자 또는 매니페스트 카드(아바타 lg · 이름 + 버전 Tag · id · 작성자 · 설명 · Permissions/Surface kinds Tag, 비면 caption None · Source · Homepage 링크) + 신뢰 상자 · 액션 바는 왼쪽 Grants 문구 또는 막힌 이유(caption, text-muted) + 오른쪽 Cancel(ghost) + Add plugin(primary, 권한 변경이면 Trust & add), 미인증 네 가지는 Add anyway(danger, 모르는 키는 Trust key & add anyway)이고 처음 포커스는 Cancel, 추가 중에는 두 버튼 disabled + Spinner Adding…, 막힘은 이미 설치됨뿐, 확인 전에는 Cancel 만",
             ),
             (
                 "copy fingerprint",

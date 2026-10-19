@@ -112,6 +112,8 @@ pub struct RejectedPlugin {
     pub permissions_removed: Vec<String>,
     /// SignatureInvalid 일 때 서명 검증이 실패한 원인(`UnverifiedCause::describe`).
     pub cause: Option<String>,
+    /// 서명 사유일 때 미인증 원인 이름(`UnverifiedCause::token`).
+    pub unverified: Option<&'static str>,
 }
 
 /// plugin 이 자동 로드에서 거부된 사유. `bundle_sig::TrustDecision` 을 UI 친화적
@@ -152,7 +154,12 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
     #[cfg(not(debug_assertions))]
     {
         use crate::trust_verdict::{TrustVerdict, UnverifiedCause, judge};
-        let mk = |reason, fingerprint, added: Vec<String>, removed: Vec<String>, cause| {
+        let mk = |reason,
+                  fingerprint,
+                  added: Vec<String>,
+                  removed: Vec<String>,
+                  cause,
+                  unverified: Option<&'static str>| {
             TrustOutcome::Rejected(Box::new(RejectedPlugin {
                 id: manifest.id.clone(),
                 dir: dir.to_path_buf(),
@@ -167,6 +174,7 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                 permissions_added: added,
                 permissions_removed: removed,
                 cause,
+                unverified,
             }))
         };
         match judge(dir) {
@@ -182,17 +190,21 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                     added,
                     removed,
                     None,
+                    None,
                 )
             }
             TrustVerdict::Unverified(
-                UnverifiedCause::UnknownKey { fingerprint, .. }
-                | UnverifiedCause::MissingPubkey { fingerprint },
+                ref cause @ (UnverifiedCause::UnknownKey {
+                    ref fingerprint, ..
+                }
+                | UnverifiedCause::MissingPubkey { ref fingerprint }),
             ) => mk(
                 RejectionReason::UnknownKey,
-                Some(fingerprint),
+                Some(fingerprint.clone()),
                 vec![],
                 vec![],
                 None,
+                Some(cause.token()),
             ),
             TrustVerdict::Unverified(cause) => {
                 tracing::warn!(
@@ -206,6 +218,7 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                     vec![],
                     vec![],
                     Some(cause.describe()),
+                    Some(cause.token()),
                 )
             }
         }

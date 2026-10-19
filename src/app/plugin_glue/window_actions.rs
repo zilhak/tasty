@@ -100,6 +100,26 @@ impl App {
         }
     }
 
+    /// 확인 필요 탭의 "그래도 등록" 결과 토스트. 실패 토스트는 실제 원인을 보인다.
+    fn handle_register_unverified(&mut self, id: &str) -> (String, crate::adapters::ui::ToastKind) {
+        match self.plugin_register_unverified(id) {
+            Ok(events) => {
+                self.cascade_plugin_events(events);
+                (
+                    crate::i18n::t_fmt("plugins.attn_registered", id),
+                    crate::adapters::ui::ToastKind::Success,
+                )
+            }
+            Err(e) => {
+                tracing::warn!("plugins modal: register_unverified({id}) failed: {e}");
+                (
+                    crate::i18n::t_fmt("plugins.attn_register_failed", &e.to_string()),
+                    crate::adapters::ui::ToastKind::Error,
+                )
+            }
+        }
+    }
+
     /// 기존 신뢰 키는 유지하고 현재 매니페스트의 권한을 다시 승인한다.
     /// 저장 후 재검색·enable을 시도하며, 이 함수가 서명 유효성을 보장하는 것은 아니다.
     fn reapprove_plugin(&mut self, id: &str) -> anyhow::Result<()> {
@@ -196,6 +216,17 @@ impl App {
                     );
                     pending_toasts.push(toast);
                     add_result = Some(ok);
+                }
+                plugins_ui::PluginsAction::InstallUnverified { src_path } => {
+                    let (toast, ok) = self.handle_install(
+                        &src_path,
+                        &super::install_trust::InstallChoice::AllowUnverified,
+                    );
+                    pending_toasts.push(toast);
+                    add_result = Some(ok);
+                }
+                plugins_ui::PluginsAction::RegisterUnverified { id } => {
+                    pending_toasts.push(self.handle_register_unverified(&id));
                 }
                 plugins_ui::PluginsAction::TrustAndInstall {
                     src_path,

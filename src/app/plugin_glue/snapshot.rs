@@ -91,6 +91,7 @@ impl App {
                     permissions_removed: r.permissions_removed.clone(),
                     health_detail: None,
                     cause: r.cause.clone(),
+                    unverified: r.unverified,
                 }
             })
             .collect();
@@ -114,6 +115,7 @@ impl App {
                 permissions_removed: Vec::new(),
                 health_detail: Some(mgr.log_path(id).to_string_lossy().into_owned()),
                 cause: None,
+                unverified: None,
             })
         }));
 

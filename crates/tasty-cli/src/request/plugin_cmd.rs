@@ -8,7 +8,13 @@ pub(super) fn plugin_command_to_method_params(
     match command {
         PluginCommands::List => ("plugin.list", serde_json::json!({})),
         PluginCommands::Show { id } => ("plugin.show", serde_json::json!({ "id": id })),
-        PluginCommands::Install { path } => ("plugin.install", serde_json::json!({ "path": path })),
+        PluginCommands::Install {
+            path,
+            allow_unverified,
+        } => (
+            "plugin.install",
+            serde_json::json!({ "path": path, "allow_unverified": allow_unverified }),
+        ),
         PluginCommands::Remove { id } => ("plugin.remove", serde_json::json!({ "id": id })),
         PluginCommands::UpgradeBuiltins {
             force,

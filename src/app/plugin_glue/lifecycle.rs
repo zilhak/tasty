@@ -264,6 +264,39 @@ impl App {
         install_into(mgr, &src_path, choice)
     }
 
+    /// 확인 필요 탭의 "그래도 등록". 플러그인 폴더에서 거부된 미인증 플러그인을 쓰기로 한 선택을
+    /// 기록하고 설치와 같은 방식으로 등록한다. 실패하면 선택 기록을 되돌린다.
+    pub(crate) fn plugin_register_unverified(
+        &mut self,
+        plugin_id: &str,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        let Some(mgr) = self.plugin_manager.as_mut() else {
+            anyhow::bail!("plugin manager not initialized");
+        };
+        let dir = mgr
+            .rejected
+            .iter()
+            .find(|r| r.id == plugin_id)
+            .map(|r| r.dir.clone())
+            .ok_or_else(|| anyhow::anyhow!("plugin '{plugin_id}' is not waiting for a choice"))?;
+        let manifest =
+            Manifest::load(&dir).map_err(|e| anyhow::anyhow!("load manifest failed: {e}"))?;
+        let undo = super::install_trust::authorize(
+            &dir,
+            &manifest.id,
+            &manifest.permissions,
+            &super::install_trust::InstallChoice::AllowUnverified,
+        )?;
+        mgr.refresh_packages();
+        if !mgr.packages().iter().any(|p| p.manifest.id == manifest.id) {
+            let reason = not_registered_reason(mgr, &manifest.id);
+            super::install_trust::undo(undo, &manifest.id);
+            mgr.refresh_packages();
+            anyhow::bail!("plugin '{}' was not registered: {reason}", manifest.id);
+        }
+        register_installed(mgr, &manifest, &dir)
+    }
+
     pub(crate) fn plugin_remove(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
         let hook_event_registry = self.services.registries.plugin_hook_events.clone();
         let surface_registry = self.services.registries.surface_registry.clone();

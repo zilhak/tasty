@@ -7,11 +7,8 @@ use tasty_ui_widgets::{
     plugin_add_path_picker, plugin_add_read_error, plugin_manifest_card, plugin_trust_box, vspace,
 };
 
-use super::attention::fingerprint_line;
-use super::{
-    AddError, AddPreview, AddTrustReason, AddTrustState, PluginsAction, PluginsSnapshot,
-    PluginsUiState,
-};
+use super::attention::{fingerprint_line, unverified_cause_key};
+use super::{AddError, AddPreview, AddTrustState, PluginsAction, PluginsSnapshot, PluginsUiState};
 
 pub(super) fn draw_add_tab(
     ctx: &egui::Context,
@@ -44,7 +41,12 @@ fn draw_add_form(
                 .sizing_pass()
                 .invisible(),
         );
-        draw_add_footer(&mut probe, ui_state.add_preview.as_ref());
+        draw_add_footer(
+            &mut probe,
+            ui_state.add_preview.as_ref(),
+            ui_state.add_in_flight,
+            false,
+        );
         probe.min_rect().height()
     };
     let scroll_height =
@@ -71,32 +73,39 @@ fn draw_add_form(
         });
 
     let preview = ui_state.add_preview.clone();
-    let footer = draw_add_footer(ui, preview.as_ref());
+    let focus_cancel = std::mem::take(&mut ui_state.add_focus_pending);
+    let footer = draw_add_footer(ui, preview.as_ref(), ui_state.add_in_flight, focus_cancel);
     if footer.add
+        && !ui_state.add_in_flight
         && let Some(preview) = &preview
     {
-        let action = match &preview.trust_state {
-            AddTrustState::Trusted => PluginsAction::Install {
-                src_path: preview.src_path.clone(),
-            },
-            AddTrustState::UntrustedWithPubkey { pubkey_b64, .. } => {
-                PluginsAction::TrustAndInstall {
-                    src_path: preview.src_path.clone(),
-                    pubkey_b64: pubkey_b64.clone(),
-                }
-            }
-            // 이 상태는 blocked_key가 있어 버튼이 disabled라 도달하지 않는다. 안전망으로 일반 Install.
-            AddTrustState::UntrustedNoPubkey { .. } | AddTrustState::SigError => {
-                PluginsAction::Install {
-                    src_path: preview.src_path.clone(),
-                }
-            }
-        };
-        actions.push(action);
+        actions.push(add_action(preview));
         ui_state.add_in_flight = true;
     }
-    if footer.cancel {
+    // 미인증 판정에서는 Esc 가 Cancel 과 같다. 아무것도 설치하지 않고 경로 입력으로 돌아간다.
+    let esc_cancels = preview
+        .as_ref()
+        .is_some_and(|p| p.trust_state.is_unverified())
+        && !ui_state.add_in_flight
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    if (footer.cancel || esc_cancels) && !ui_state.add_in_flight {
         reset_add_state(ui_state);
+    }
+}
+
+/// 추가 버튼이 보낼 동작. 미인증은 사용자의 명시적 선택으로 보낸다.
+fn add_action(preview: &AddPreview) -> PluginsAction {
+    let src_path = preview.src_path.clone();
+    match &preview.trust_state {
+        AddTrustState::Trusted => PluginsAction::Install { src_path },
+        AddTrustState::PermissionsChanged { pubkey_b64, .. }
+        | AddTrustState::UnknownKey { pubkey_b64, .. } => PluginsAction::TrustAndInstall {
+            src_path,
+            pubkey_b64: pubkey_b64.clone(),
+        },
+        AddTrustState::MissingPubkey { .. }
+        | AddTrustState::Unsigned
+        | AddTrustState::SignatureError => PluginsAction::InstallUnverified { src_path },
     }
 }
 
@@ -176,8 +185,13 @@ fn draw_preview(
 
 /// 하단 액션 바. 높이 측정과 실제 그리기가 같은 함수를 쓴다.
 /// 매니페스트가 없으면 Cancel 만 둔다. 추가할 수 없으면 추가 버튼을 disabled로 두고 이유를,
-/// 아니면 부여할 권한 수를 왼쪽에 적는다.
-fn draw_add_footer(ui: &mut egui::Ui, preview: Option<&AddPreview>) -> PluginAddBarClicks {
+/// 아니면 부여할 권한 수를 왼쪽에 적는다. 미인증이면 추가 버튼이 danger 다.
+fn draw_add_footer(
+    ui: &mut egui::Ui,
+    preview: Option<&AddPreview>,
+    busy: bool,
+    focus_cancel: bool,
+) -> PluginAddBarClicks {
     let th = theme::theme();
     let blocked_key = preview.and_then(add_blocked_reason_key);
     let left = match (preview, blocked_key) {
@@ -185,14 +199,24 @@ fn draw_add_footer(ui: &mut egui::Ui, preview: Option<&AddPreview>) -> PluginAdd
         (Some(_), Some(key)) => t(key).to_owned(),
         (Some(preview), None) => grants_label(preview.permissions.len()),
     };
+    let add = preview.map(|p| {
+        if busy {
+            t("plugins.add_adding")
+        } else {
+            t(add_button_key(p, blocked_key))
+        }
+    });
     plugin_add_bar(
         ui,
         &th,
         &PluginAddBarView {
             left: &left,
             cancel: t("button.cancel"),
-            add: preview.map(|p| t(add_button_key(p, blocked_key))),
+            add,
             add_enabled: blocked_key.is_none(),
+            danger: blocked_key.is_none() && preview.is_some_and(|p| p.trust_state.is_unverified()),
+            busy,
+            focus_cancel,
         },
     )
 }
@@ -205,78 +229,75 @@ fn grants_label(count: usize) -> String {
     }
 }
 
-/// 추가 버튼 키. 추가하면 키나 새 권한 묶음을 신뢰하게 되는 경우만 `Trust & add`다.
+/// 추가 버튼 키. 키나 새 권한 묶음을 신뢰하게 되면 그 사실을, 미인증이면 "그래도"를 버튼에 적는다.
 fn add_button_key(preview: &AddPreview, blocked_key: Option<&'static str>) -> &'static str {
-    match (&preview.trust_state, blocked_key) {
-        (AddTrustState::UntrustedWithPubkey { .. }, None) => "plugins.add_trust_and_add",
-        _ => "plugins.add_button",
+    if blocked_key.is_some() {
+        return "plugins.add_button";
+    }
+    match preview.trust_state {
+        AddTrustState::Trusted => "plugins.add_button",
+        AddTrustState::PermissionsChanged { .. } => "plugins.add_trust_and_add",
+        AddTrustState::UnknownKey { .. } => "plugins.add_trust_key_anyway",
+        AddTrustState::MissingPubkey { .. }
+        | AddTrustState::Unsigned
+        | AddTrustState::SignatureError => "plugins.add_anyway",
     }
 }
 
-/// 추가할 수 없는 매니페스트의 이유 키. 추가할 수 있으면 `None`.
+/// 추가할 수 없는 매니페스트의 이유 키. 이미 설치된 경우뿐이며, 추가할 수 있으면 `None`.
 fn add_blocked_reason_key(preview: &AddPreview) -> Option<&'static str> {
-    if preview.already_installed {
-        return Some("plugins.add_blocked_installed");
-    }
-    match preview.trust_state {
-        AddTrustState::UntrustedNoPubkey { .. } => Some("plugins.add_blocked_missing_pubkey"),
-        AddTrustState::SigError => Some("plugins.add_blocked_sig_error"),
-        AddTrustState::Trusted | AddTrustState::UntrustedWithPubkey { .. } => None,
-    }
+    preview
+        .already_installed
+        .then_some("plugins.add_blocked_installed")
 }
 
 /// 신뢰 상태의 상자 종류와 fingerprint.
 fn trust_kind(state: &AddTrustState) -> (PluginTrustKind, Option<&str>) {
-    let untrusted = |reason: &AddTrustReason| match reason {
-        AddTrustReason::UnknownKey => PluginTrustKind::UnknownKey,
-        AddTrustReason::PermissionsChanged => PluginTrustKind::PermissionsChanged,
-    };
     match state {
         AddTrustState::Trusted => (PluginTrustKind::Trusted, None),
-        AddTrustState::UntrustedWithPubkey {
-            fingerprint,
-            reason,
-            ..
-        } => (untrusted(reason), Some(fingerprint)),
-        AddTrustState::UntrustedNoPubkey { fingerprint } => {
+        AddTrustState::PermissionsChanged { fingerprint, .. } => {
+            (PluginTrustKind::PermissionsChanged, Some(fingerprint))
+        }
+        AddTrustState::UnknownKey { fingerprint, .. } => {
+            (PluginTrustKind::UnknownKey, Some(fingerprint))
+        }
+        AddTrustState::MissingPubkey { fingerprint } => {
             (PluginTrustKind::MissingPubkey, Some(fingerprint))
         }
-        AddTrustState::SigError => (PluginTrustKind::SignatureError, None),
+        AddTrustState::Unsigned => (PluginTrustKind::Unsigned, None),
+        AddTrustState::SignatureError => (PluginTrustKind::SignatureError, None),
     }
 }
 
-/// 상자 종류의 제목·본문 키. `Trusted`는 본문 한 줄만 쓴다.
-fn trust_copy_keys(kind: PluginTrustKind) -> (&'static str, &'static str) {
+/// 상자의 제목과 본문 문단. 미인증 네 가지는 같은 제목·위험 문단이고 원인 문장만 다르다.
+/// 모르는 키는 추가하면 그 키도 신뢰한다는 문장을 위험 문단 끝에 붙인다.
+fn trust_copy(kind: PluginTrustKind) -> (&'static str, Vec<String>) {
     match kind {
-        PluginTrustKind::Trusted => ("", "plugins.trust_trusted_body"),
-        PluginTrustKind::UnknownKey => {
-            ("plugins.trust_unknown_title", "plugins.trust_unknown_body")
-        }
+        PluginTrustKind::Trusted => ("", vec![t("plugins.trust_trusted_body").to_owned()]),
         PluginTrustKind::PermissionsChanged => (
-            "plugins.trust_permissions_changed_title",
-            "plugins.trust_permissions_changed_body",
+            t("plugins.trust_permissions_changed_title"),
+            vec![t("plugins.trust_permissions_changed_body").to_owned()],
         ),
-        PluginTrustKind::MissingPubkey => (
-            "plugins.trust_missing_pubkey_title",
-            "plugins.trust_missing_pubkey_body",
-        ),
-        PluginTrustKind::SignatureError => (
-            "plugins.trust_sig_error_title",
-            "plugins.trust_sig_error_body",
-        ),
+        _ => {
+            let mut risk = t("plugins.trust_unverified_risk").to_owned();
+            if kind == PluginTrustKind::UnknownKey {
+                risk.push(' ');
+                risk.push_str(t("plugins.trust_key_note"));
+            }
+            (
+                t("plugins.trust_unverified_title"),
+                vec![t(unverified_cause_key(kind)).to_owned(), risk],
+            )
+        }
     }
 }
 
 /// 매니페스트 카드 아래의 신뢰 판정 상자. 이미 설치된 플러그인도 판정대로 그린다.
 fn draw_trust_box(ui: &mut egui::Ui, state: &AddTrustState, th: &theme::Theme) {
     let (kind, fingerprint) = trust_kind(state);
-    let (title_key, body_key) = trust_copy_keys(kind);
-    let title = if title_key.is_empty() {
-        ""
-    } else {
-        t(title_key)
-    };
-    plugin_trust_box(ui, th, kind, title, t(body_key), |ui| {
+    let (title, body) = trust_copy(kind);
+    let body: Vec<&str> = body.iter().map(String::as_str).collect();
+    plugin_trust_box(ui, th, kind, title, &body, |ui| {
         if let Some(fp) = fingerprint {
             fingerprint_line(ui, th, fp);
         }
@@ -288,6 +309,7 @@ fn reset_add_state(ui_state: &mut PluginsUiState) {
     ui_state.add_preview = None;
     ui_state.add_error = None;
     ui_state.add_path_input.clear();
+    ui_state.add_focus_pending = false;
 }
 
 /// 입력 경로로 매니페스트를 로드하고 preview/에러를 채운다.
@@ -311,7 +333,9 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
     match checked {
         Ok(manifest) => {
             let already = snapshot.plugins.iter().any(|p| p.id == manifest.id);
-            let trust_state = compute_trust_state(&path);
+            let trust_state = compute_trust_state(&path, &manifest.id);
+            // 미인증 판정을 처음 보이면 Cancel 이 포커스를 받는다. Enter 로 설치되지 않는다.
+            ui_state.add_focus_pending = trust_state.is_unverified();
             ui_state.add_preview = Some(AddPreview {
                 src_path: path.to_string_lossy().to_string(),
                 id: manifest.id.clone(),
@@ -337,38 +361,43 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
     }
 }
 
-/// 매니페스트 sig 검증 + `.pub` sidecar 조회 결과를 UI 가 분기 가능한 enum 으로
-/// 매핑.
-fn compute_trust_state(dir: &std::path::Path) -> AddTrustState {
-    use tasty_host_plugin::bundle_sig::{
-        TrustDecision, UntrustedReason, read_pubkey_sidecar, verify_bundle_signature,
-    };
-    use tasty_host_plugin::known_plugins::KnownPluginEntry;
+/// 설치·부팅과 같은 서명 판정을 UI 상태로 바꾼다. 사용자 선택 기록은 보지 않는다.
+fn compute_trust_state(dir: &std::path::Path, plugin_id: &str) -> AddTrustState {
+    use tasty_host_plugin::known_plugins::{KnownPluginEntry, KnownPlugins};
+    use tasty_host_plugin::trust_verdict::{TrustVerdict, UnverifiedCause, judge_signature};
 
-    match verify_bundle_signature(dir) {
-        Ok(TrustDecision::Trusted) => AddTrustState::Trusted,
-        Ok(TrustDecision::Untrusted {
-            fingerprint,
-            reason,
-            ..
-        }) => {
-            let mapped_reason = match reason {
-                UntrustedReason::UnknownKey => AddTrustReason::UnknownKey,
-                UntrustedReason::PermissionsChanged => AddTrustReason::PermissionsChanged,
-            };
-            match read_pubkey_sidecar(dir) {
-                Some(pk) => AddTrustState::UntrustedWithPubkey {
+    match judge_signature(dir) {
+        TrustVerdict::Trusted | TrustVerdict::AcceptedUnverified => AddTrustState::Trusted,
+        TrustVerdict::PermissionsChanged { fingerprint, .. } => {
+            let key = KnownPlugins::load()
+                .ok()
+                .and_then(|db| db.lookup(plugin_id).map(|e| e.pubkey.clone()));
+            match key {
+                Some(pubkey_b64) => AddTrustState::PermissionsChanged {
                     fingerprint,
-                    pubkey_b64: KnownPluginEntry::encode_pubkey(&pk),
-                    reason: mapped_reason,
+                    pubkey_b64,
                 },
-                None => AddTrustState::UntrustedNoPubkey { fingerprint },
+                None => {
+                    tracing::warn!(plugin_id, "trusted key vanished while verifying");
+                    AddTrustState::SignatureError
+                }
             }
         }
-        Err(e) => {
+        TrustVerdict::Unverified(UnverifiedCause::UnknownKey {
+            fingerprint,
+            pubkey,
+        }) => AddTrustState::UnknownKey {
+            fingerprint,
+            pubkey_b64: KnownPluginEntry::encode_pubkey(&pubkey),
+        },
+        TrustVerdict::Unverified(UnverifiedCause::MissingPubkey { fingerprint }) => {
+            AddTrustState::MissingPubkey { fingerprint }
+        }
+        TrustVerdict::Unverified(UnverifiedCause::Unsigned) => AddTrustState::Unsigned,
+        TrustVerdict::Unverified(cause @ UnverifiedCause::SignatureError { .. }) => {
             // 신뢰 상자는 고정 문구만 보이므로 검증 실패의 원인은 로그로 남긴다.
-            tracing::warn!(dir = %dir.display(), error = %e, "plugin signature check failed");
-            AddTrustState::SigError
+            tracing::warn!(dir = %dir.display(), error = %cause.describe(), "plugin signature check failed");
+            AddTrustState::SignatureError
         }
     }
 }
@@ -394,87 +423,135 @@ mod tests {
         }
     }
 
-    #[test]
-    fn blocked_reason_names_each_state_that_cannot_be_added() {
-        let no_pubkey = AddTrustState::UntrustedNoPubkey {
-            fingerprint: "fp".into(),
-        };
-        let with_pubkey = AddTrustState::UntrustedWithPubkey {
-            fingerprint: "fp".into(),
-            pubkey_b64: "k".into(),
-            reason: AddTrustReason::UnknownKey,
-        };
-        assert_eq!(
-            add_blocked_reason_key(&preview(AddTrustState::Trusted, true)),
-            Some("plugins.add_blocked_installed")
-        );
-        // 이미 설치됐다는 이유가 서명 이유보다 먼저다.
-        assert_eq!(
-            add_blocked_reason_key(&preview(AddTrustState::SigError, true)),
-            Some("plugins.add_blocked_installed")
-        );
-        assert_eq!(
-            add_blocked_reason_key(&preview(no_pubkey, false)),
-            Some("plugins.add_blocked_missing_pubkey")
-        );
-        assert_eq!(
-            add_blocked_reason_key(&preview(AddTrustState::SigError, false)),
-            Some("plugins.add_blocked_sig_error")
-        );
-        assert_eq!(
-            add_blocked_reason_key(&preview(AddTrustState::Trusted, false)),
-            None
-        );
-        assert_eq!(add_blocked_reason_key(&preview(with_pubkey, false)), None);
-    }
-
-    /// 막힌 프리뷰에서도 액션 바(막힌 이유·Cancel·Add plugin)가 창 안에 보이고,
-    /// 충분히 높은 창이면 신뢰 상자 제목도 보인다.
-    #[test]
-    fn action_bar_stays_inside_the_window_below_a_trust_warning() {
-        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 그리기 전에 초기화한다.
-        crate::i18n::init("en");
-        let states = [
-            AddTrustState::UntrustedNoPubkey {
+    fn unverified_states() -> [AddTrustState; 4] {
+        [
+            AddTrustState::UnknownKey {
+                fingerprint: "16:43:83:e3".into(),
+                pubkey_b64: "k".into(),
+            },
+            AddTrustState::MissingPubkey {
                 fingerprint: "16:43:83:e3:a7:6d:5c:20".into(),
             },
-            AddTrustState::SigError,
-        ];
-        for trust_state in states {
-            let reason = t(add_blocked_reason_key(&preview(trust_state.clone(), false))
-                .expect("blocked state"))
-            .to_string();
-            let wanted = [
-                reason,
-                t("button.cancel").to_string(),
-                t("plugins.add_button").to_string(),
-            ];
-            let trust_title = t(trust_copy_keys(trust_kind(&trust_state).0).0).to_string();
-            for height in [300.0, 560.0, 760.0] {
-                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(880.0, height));
-                let mut ui_state = PluginsUiState {
-                    add_preview: Some(preview(trust_state.clone(), false)),
-                    ..Default::default()
-                };
-                let mut actions = Vec::new();
-                let ctx = egui::Context::default();
-                let raw = egui::RawInput {
-                    screen_rect: Some(screen),
-                    ..Default::default()
-                };
-                let output = ctx.run(raw, |ctx| {
-                    draw_add_tab(
-                        ctx,
-                        &PluginsSnapshot::default(),
-                        &mut ui_state,
-                        &mut actions,
+            AddTrustState::Unsigned,
+            AddTrustState::SignatureError,
+        ]
+    }
+
+    #[test]
+    fn only_an_already_installed_plugin_blocks_adding() {
+        let mut states = unverified_states().to_vec();
+        states.push(AddTrustState::Trusted);
+        states.push(AddTrustState::PermissionsChanged {
+            fingerprint: "fp".into(),
+            pubkey_b64: "k".into(),
+        });
+        for state in states {
+            assert_eq!(
+                add_blocked_reason_key(&preview(state.clone(), false)),
+                None,
+                "{state:?}"
+            );
+            assert_eq!(
+                add_blocked_reason_key(&preview(state.clone(), true)),
+                Some("plugins.add_blocked_installed"),
+                "{state:?}"
+            );
+        }
+    }
+
+    /// 미인증 네 가지는 모두 명시적 선택으로 추가한다. 모르는 키는 공개 키를 신뢰하고, 나머지는
+    /// 선택을 기록하는 설치다. 버튼 문구가 선택의 뜻을 말한다.
+    #[test]
+    fn each_unverified_state_is_added_by_an_explicit_choice() {
+        for state in unverified_states() {
+            let p = preview(state.clone(), false);
+            assert!(state.is_unverified());
+            let (action, key) = (add_action(&p), add_button_key(&p, None));
+            match state {
+                AddTrustState::UnknownKey { .. } => {
+                    assert!(matches!(action, PluginsAction::TrustAndInstall { .. }));
+                    assert_eq!(key, "plugins.add_trust_key_anyway");
+                }
+                _ => {
+                    assert!(
+                        matches!(action, PluginsAction::InstallUnverified { .. }),
+                        "{state:?}"
                     );
-                });
+                    assert_eq!(key, "plugins.add_anyway");
+                }
+            }
+        }
+        let trusted = preview(AddTrustState::Trusted, false);
+        assert!(matches!(
+            add_action(&trusted),
+            PluginsAction::Install { .. }
+        ));
+        assert!(!AddTrustState::Trusted.is_unverified());
+    }
+
+    fn run_frames(
+        ui_state: &mut PluginsUiState,
+        height: f32,
+        events: &[Vec<egui::Event>],
+    ) -> (Vec<PluginsAction>, egui::FullOutput) {
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(880.0, height));
+        let ctx = egui::Context::default();
+        let mut actions = Vec::new();
+        let mut output = None;
+        for frame in events {
+            let raw = egui::RawInput {
+                screen_rect: Some(screen),
+                events: frame.clone(),
+                ..Default::default()
+            };
+            output = Some(ctx.run(raw, |ctx| {
+                draw_add_tab(ctx, &PluginsSnapshot::default(), ui_state, &mut actions);
+            }));
+        }
+        (actions, output.expect("drawn"))
+    }
+
+    fn key(key: egui::Key) -> Vec<egui::Event> {
+        [true, false]
+            .into_iter()
+            .map(|pressed| egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            })
+            .collect()
+    }
+
+    /// 미인증 판정에서도 액션 바(권한 수·Cancel·그래도 추가)가 창 안에 보이고, 충분히 높은 창이면
+    /// 상자 제목과 원인 문장도 보인다.
+    #[test]
+    fn action_bar_stays_inside_the_window_below_an_unverified_warning() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 그리기 전에 초기화한다.
+        crate::i18n::init("en");
+        for trust_state in unverified_states() {
+            let p = preview(trust_state.clone(), false);
+            let (kind, _) = trust_kind(&trust_state);
+            let wanted = [
+                t("plugins.add_grants_none").to_string(),
+                t("button.cancel").to_string(),
+                t(add_button_key(&p, None)).to_string(),
+            ];
+            let tall = [
+                t("plugins.trust_unverified_title").to_string(),
+                t(unverified_cause_key(kind)).to_string(),
+            ];
+            for height in [300.0, 560.0, 760.0] {
+                let mut ui_state = PluginsUiState {
+                    add_preview: Some(p.clone()),
+                    ..Default::default()
+                };
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(880.0, height));
+                let (_, output) = run_frames(&mut ui_state, height, &[vec![]]);
                 let texts = visible_text_rects(&output, screen);
                 // 낮은 창에서는 카드와 신뢰 상자가 스크롤 영역 아래로 밀려도 된다.
-                let shown = wanted
-                    .iter()
-                    .chain((height >= 560.0).then_some(&trust_title));
+                let shown = wanted.iter().chain(tall.iter().filter(|_| height >= 760.0));
                 for label in shown {
                     assert!(
                         texts.iter().any(|(text, _)| text == label),
@@ -483,6 +560,60 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// 미인증 판정을 막 보이면 Cancel 이 포커스를 받아 Enter 는 취소한다. Esc 도 취소다.
+    /// 어느 쪽도 설치 요청을 보내지 않는다.
+    #[test]
+    fn enter_and_escape_on_a_fresh_unverified_verdict_cancel() {
+        crate::i18n::init("en");
+        for keys in [key(egui::Key::Enter), key(egui::Key::Escape)] {
+            let mut ui_state = PluginsUiState {
+                add_preview: Some(preview(AddTrustState::Unsigned, false)),
+                add_path_input: "/tmp/p".into(),
+                add_focus_pending: true,
+                ..Default::default()
+            };
+            let (actions, _) = run_frames(&mut ui_state, 760.0, &[vec![], keys, vec![]]);
+            assert!(actions.is_empty(), "{actions:?}");
+            assert!(ui_state.add_preview.is_none());
+            assert!(ui_state.add_path_input.is_empty());
+        }
+    }
+
+    /// 추가 요청을 보낸 뒤 결과가 오기 전에는 두 번째 요청을 보내지 않는다. 실패하면 판정이 남고,
+    /// 성공하면 입력 화면으로 돌아간다.
+    #[test]
+    fn an_add_in_flight_sends_one_request_and_a_failure_keeps_the_verdict() {
+        let mut ui_state = PluginsUiState {
+            add_preview: Some(preview(AddTrustState::Unsigned, false)),
+            add_in_flight: true,
+            ..Default::default()
+        };
+        let (actions, _) = run_frames(&mut ui_state, 760.0, &[vec![], key(egui::Key::Escape)]);
+        assert!(actions.is_empty());
+        assert!(ui_state.add_preview.is_some(), "busy state ignores Esc");
+        ui_state.finish_add(false);
+        assert!(!ui_state.add_in_flight);
+        assert!(ui_state.add_preview.is_some());
+        ui_state.add_in_flight = true;
+        ui_state.finish_add(true);
+        assert!(ui_state.add_preview.is_none());
+    }
+
+    /// Add 탭은 설치·부팅과 같은 판정 함수를 쓰므로 debug 에서도 서명 없는 폴더는 미인증이다.
+    #[test]
+    fn the_add_tab_judges_an_unsigned_folder_as_unverified() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("tasty-plugin.toml"),
+            "id = \"com.example.p\"\n",
+        )
+        .expect("manifest");
+        assert_eq!(
+            compute_trust_state(dir.path(), "com.example.p"),
+            AddTrustState::Unsigned
+        );
     }
 
     /// 매니페스트 읽기 실패와 선언 검사 실패는 서로 다른 제목의 오류 상자로 남는다.

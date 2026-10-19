@@ -12,10 +12,10 @@ use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, Plugi
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginAvatarSize, PluginFingerprintLineView,
-    PluginIdentityView, PluginMetaView, is_web_homepage, margin_all, margin_sym,
+    PluginIdentityView, PluginMetaView, PluginTrustKind, is_web_homepage, margin_all, margin_sym,
     paint_plugin_avatar, plugin_attention_bar, plugin_detail_bar_height, plugin_detail_desc_hidden,
     plugin_detail_description, plugin_detail_identity, plugin_fingerprint_line, plugin_mono_header,
-    plugin_signature_invalid_detail, vspace,
+    plugin_signature_invalid_detail, plugin_trust_box, vspace,
 };
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
@@ -250,6 +250,26 @@ fn draw_detail(
                 plugin_detail_description(ui, th, &entry.description);
             }
 
+            // 서명 사유는 Add 탭과 같은 미인증 상자다. fingerprint 는 아래 Signature 절이 보인다.
+            if let Some(kind) = unverified_kind(entry) {
+                plugin_trust_box(
+                    ui,
+                    th,
+                    kind,
+                    t("plugins.trust_unverified_title"),
+                    &[
+                        t(unverified_cause_key(kind)),
+                        t("plugins.trust_unverified_risk"),
+                    ],
+                    |_| {},
+                );
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = inner_gap;
+                    draw_reason_detail(ui, th, entry);
+                });
+                return;
+            }
+
             // 사유 배너 (severity 색 프레임) — tinted 채움/테두리 짝
             // (`tint-fill-alpha` / `tint-border-alpha`).
             egui::Frame::new()
@@ -281,6 +301,32 @@ fn draw_detail(
                 draw_reason_detail(ui, th, entry);
             });
         });
+}
+
+/// 서명 사유의 미인증 상자 종류. 거부 기록의 원인 이름이 없으면 사유로 정한다.
+fn unverified_kind(entry: &AttentionEntry) -> Option<PluginTrustKind> {
+    let by_reason = match entry.kind {
+        AttentionKind::UnknownKey => PluginTrustKind::UnknownKey,
+        AttentionKind::SignatureInvalid => PluginTrustKind::SignatureError,
+        AttentionKind::PermissionsChanged | AttentionKind::HealthError => return None,
+    };
+    Some(match entry.unverified {
+        Some("unknown-key") => PluginTrustKind::UnknownKey,
+        Some("missing-pubkey") => PluginTrustKind::MissingPubkey,
+        Some("unsigned") => PluginTrustKind::Unsigned,
+        Some("signature-error") => PluginTrustKind::SignatureError,
+        _ => by_reason,
+    })
+}
+
+/// 미인증 상자의 원인 문장 키. Add 탭과 같은 문장이다.
+pub(super) fn unverified_cause_key(kind: PluginTrustKind) -> &'static str {
+    match kind {
+        PluginTrustKind::UnknownKey => "plugins.trust_cause_unknown_key",
+        PluginTrustKind::MissingPubkey => "plugins.trust_cause_missing_pubkey",
+        PluginTrustKind::Unsigned => "plugins.trust_cause_unsigned",
+        _ => "plugins.trust_cause_signature_error",
+    }
 }
 
 /// 사유별 추가 정보 — 권한 diff / 서명 지문 / health 상세.
@@ -407,8 +453,10 @@ fn draw_action_bar(
         AttentionKind::HealthError => {
             Some(PluginAttentionBarAction::Configure(t("plugins.configure")))
         }
-        // 복사는 fingerprint 줄의 IconButton이 맡으므로 액션 바에 버튼을 두지 않는다.
-        AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => None,
+        // 누르기 전에는 등록하지 않는다. 행을 골라도 이 버튼으로 포커스를 옮기지 않는다.
+        AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => Some(
+            PluginAttentionBarAction::RegisterAnyway(t("plugins.attn_register_anyway")),
+        ),
     };
     let clicked = plugin_attention_bar(
         ui,
@@ -424,7 +472,12 @@ fn draw_action_bar(
             AttentionKind::PermissionsChanged => PluginsAction::Reapprove {
                 id: entry.id.clone(),
             },
-            _ => PluginsAction::OpenSettings,
+            AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {
+                PluginsAction::RegisterUnverified {
+                    id: entry.id.clone(),
+                }
+            }
+            AttentionKind::HealthError => PluginsAction::OpenSettings,
         });
     }
 }

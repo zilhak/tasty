@@ -105,6 +105,9 @@ pub struct AttentionEntry {
     pub health_detail: Option<String>,
     /// SignatureInvalid 일 때 서명 검증이 실패한 원인. 표시용.
     pub cause: Option<String>,
+    /// 서명 사유일 때 미인증 원인 이름(`unknown-key` · `missing-pubkey` · `unsigned` ·
+    /// `signature-error`). 신뢰 상자의 원인 문장을 고른다.
+    pub unverified: Option<&'static str>,
 }
 
 /// `PluginsView`가 메인 루프에 발행하는 동작.
@@ -135,9 +138,17 @@ pub enum PluginsAction {
     OpenHomepage {
         url: String,
     },
-    /// 외부 디렉터리를 데이터 루트의 plugins/<id>로 복사한다.
+    /// 외부 디렉터리를 데이터 루트의 plugins/<id>로 복사한다. 키로 확인된 플러그인만 설치한다.
     Install {
         src_path: String,
+    },
+    /// 미인증 경고를 보고 "그래도 추가"를 골랐다. 선택을 기록하고 설치한다.
+    InstallUnverified {
+        src_path: String,
+    },
+    /// 확인 필요 탭의 "그래도 등록". 플러그인 폴더에 있는 미인증 플러그인을 등록한다.
+    RegisterUnverified {
+        id: String,
     },
     /// 공개 키 파일의 키를 신뢰하고 설치한다. 호스트가 그 키로 서명이 검증되는지 다시 확인하고
     /// 현재 매니페스트의 권한과 함께 신뢰 DB에 기록한다.
@@ -175,32 +186,41 @@ pub struct AddPreview {
     pub trust_state: AddTrustState,
 }
 
-/// 매니페스트 trust 결정 — UI 가 분기.
-#[derive(Debug, Clone)]
+/// 매니페스트 신뢰 판정 — 신뢰 상자와 추가 버튼을 정한다. 사용자 선택 기록은 보지 않으므로
+/// 미인증 플러그인은 매번 경고를 보인다.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddTrustState {
     /// 임베드 키 또는 known-plugins.toml 통과. 바로 install 가능.
     Trusted,
-    /// 출처 미상. 사용자 명시 trust + install 가능 (`.pub` sidecar 존재).
-    UntrustedWithPubkey {
-        /// `KnownPluginEntry::publisher_fingerprint` 로 표시 / 저장.
+    /// 신뢰한 키지만 권한이 늘었다. 그 키를 새 권한과 함께 다시 신뢰하며 추가한다.
+    PermissionsChanged {
+        fingerprint: String,
+        /// 신뢰 DB에 있는 키(base64) — TrustAndInstall action 으로 전달.
+        pubkey_b64: String,
+    },
+    /// 미인증 — 신뢰 목록에 없는 키. 공개 키 파일의 키로 서명이 검증되며, 추가하면 그 키를 신뢰한다.
+    UnknownKey {
+        /// 공개 키의 SHA-256 지문.
         fingerprint: String,
         /// base64 (32-byte) — TrustAndInstall action 으로 전달.
         pubkey_b64: String,
-        /// 권한 변경 vs 첫 설치 — 메시지 분기.
-        reason: AddTrustReason,
     },
-    /// 출처 미상 + `.pub` sidecar 가 없거나 손상 — trust 등록 불가, install 차단.
-    /// 신뢰 상자는 사유와 관계없이 공개 키 파일이 없다는 한 문구다.
-    UntrustedNoPubkey { fingerprint: String },
-    /// 매니페스트 sig 검증 자체 에러 (sidecar 누락 / 길이 / placeholder 키 등).
-    /// 신뢰 상자는 고정 문구만 보이며 원인은 검증 시점에 로그로 남긴다.
-    SigError,
+    /// 미인증 — 신뢰 목록에 없는 키이고 공개 키 파일이 없거나 읽을 수 없다.
+    MissingPubkey { fingerprint: String },
+    /// 미인증 — 서명 파일이 없다.
+    Unsigned,
+    /// 미인증 — 서명을 검증하지 못했다(공개 키 불일치 포함). 원인은 검증 시점에 로그로 남긴다.
+    SignatureError,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AddTrustReason {
-    UnknownKey,
-    PermissionsChanged,
+impl AddTrustState {
+    /// 경고를 보고 명시적으로 골라야 추가하는 미인증 판정인지.
+    pub fn is_unverified(&self) -> bool {
+        !matches!(
+            self,
+            AddTrustState::Trusted | AddTrustState::PermissionsChanged { .. }
+        )
+    }
 }
 
 /// 모달 자체 상태 (탭, 선택, 검색 입력 등).
@@ -224,6 +244,8 @@ pub struct PluginsUiState {
     pub add_error: Option<AddError>,
     /// 추가 요청을 보냈고 App의 결과를 기다린다. 그동안 두 버튼을 끈다.
     pub add_in_flight: bool,
+    /// 미인증 판정을 막 보였다. 다음 프레임에 Cancel 로 포커스를 옮기고 지운다.
+    pub add_focus_pending: bool,
 }
 
 impl PluginsUiState {

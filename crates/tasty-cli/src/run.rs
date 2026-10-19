@@ -486,6 +486,12 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
             std::process::exit(1);
         }
         Err(e) => {
+            if let Some(warning) = crate::install_warning::unverified_install_warning(&command, &e)
+            {
+                crate::out::errln!("{}", crate::rpc_error::render(&e));
+                crate::out::errln!("{warning}");
+                std::process::exit(1);
+            }
             crate::rpc_error::exit_with(&e);
         }
     }
