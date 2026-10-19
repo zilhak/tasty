@@ -151,7 +151,8 @@ pub(crate) struct TerminalState {
     pub(crate) alt_saved_cursor: Option<(usize, usize)>,
     /// Events accumulated during ingest(), consumed via take_events().
     pub(crate) events: Vec<TerminalEvent>,
-    /// Raw PTY output buffer for read-mark API and ClaudeError scanner.
+    /// Raw PTY output buffer behind the read-mark, positional output read and
+    /// scan-mark IPC reads; it does not interpret the output itself.
     output: output_buffer::OutputBuffer,
     /// DECCKM: application cursor keys mode.
     pub(crate) application_cursor_keys: bool,
