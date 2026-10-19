@@ -1924,6 +1924,26 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
+                section(
+                    "restore-notice",
+                    "Restore failure / save halt — non-focus notice, top right",
+                    vec![
+                        spec(
+                            "restore-notice",
+                            "Restore failure — one flow",
+                            Some(
+                                "notice column · inset 8 · width 360 · no scrim · no focus · × = Continue",
+                            ),
+                            components::restore_notice::draw,
+                        ),
+                        spec(
+                            "restore-notice-variants",
+                            "Narrow window · long path · save halt",
+                            Some("width = work area − 16 · path wraps anywhere · halt cause write"),
+                            components::restore_notice::draw_variants,
+                        ),
+                    ],
+                ),
                 single(
                     "script-confirm",
                     "Script changed confirm",

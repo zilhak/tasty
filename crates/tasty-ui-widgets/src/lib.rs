@@ -66,6 +66,7 @@ mod ports_table;
 mod rail_marks;
 mod remote_tool;
 mod resize_grip;
+mod restore_notice;
 mod script_confirm;
 mod script_trigger;
 mod segmented;
@@ -246,6 +247,9 @@ pub use remote_tool::{
     selectable_text, warn_badge, warn_badge_width,
 };
 pub use resize_grip::{modhint_resize_grip, resize_grip_segments};
+pub use restore_notice::{
+    RestoreNoticeOutput, RestoreNoticeView, notice_column_rect, restore_notice,
+};
 pub use script_confirm::{
     SCRIPT_CONFIRM_PAD_X, ScriptConfirmOutput, ScriptConfirmView, script_confirm,
 };

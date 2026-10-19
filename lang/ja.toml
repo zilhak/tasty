@@ -6835,8 +6835,15 @@ auto_disabled_body = "{} 回続けて起動できなかったため、再びオ�
 [notice]
 restore_failed_title = "前回のセッションを復元できませんでした"
 restore_failed_body = "新しい既定のワークスペースで起動しました。保存されたレイアウトは変更・移動・削除していません。この内容は通知に残ります。"
+save_halted_title = "レイアウトの変更が保存されていません"
+save_halted_body = "ターミナルは動作を続け、入力もそのまま続けられます。これ以降のタブや分割などのレイアウト変更は、次回復元されない場合があります。この内容は通知に残ります。"
 cause_read_denied = "保存されたレイアウトを読み取る権限がありません。"
 cause_corrupt = "保存されたレイアウトが破損しているため読み取れません。"
+cause_write_failed = "保存されたレイアウトに書き込めません。"
+saved_layout_label = "保存されたレイアウト"
+copy_path = "パスをコピー"
+continue = "続行"
+close = "閉じる"
 
 [recovery]
 multiple_title = "保存されたデータの一部を復元できませんでした"

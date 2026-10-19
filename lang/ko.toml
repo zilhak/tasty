@@ -6835,8 +6835,15 @@ auto_disabled_body = "연속 {}번 시작하지 못해, 다시 켤 때까지 Tas
 [notice]
 restore_failed_title = "마지막 세션을 복원하지 못했습니다"
 restore_failed_body = "새 기본 워크스페이스로 시작했습니다. 저장된 레이아웃은 바꾸거나 옮기거나 지우지 않았습니다. 이 내용은 알림에 남아 있습니다."
+save_halted_title = "레이아웃 변경이 저장되지 않고 있습니다"
+save_halted_body = "터미널은 계속 실행되고 입력도 그대로 할 수 있습니다. 지금부터 만든 탭·분할 등 레이아웃 변경은 다음 실행 때 복원되지 않을 수 있습니다. 이 내용은 알림에 남아 있습니다."
 cause_read_denied = "저장된 레이아웃을 읽을 권한이 없습니다."
 cause_corrupt = "저장된 레이아웃이 손상되어 읽을 수 없습니다."
+cause_write_failed = "저장된 레이아웃에 쓸 수 없습니다."
+saved_layout_label = "저장된 레이아웃"
+copy_path = "경로 복사"
+continue = "계속"
+close = "닫기"
 
 [recovery]
 multiple_title = "저장된 자료 일부를 복원하지 못했습니다"
