@@ -36,14 +36,14 @@ Lua5.4의 instruction-count hook이 기한을 확인해 초과 job을 오류로 
 읽기는 메인 스냅샷, 변경 요청은 메인 명령 큐를 사용한다.
 
 자동실행은 `AutofireGuard`가 실행 중과 완료 직후 한 프레임 동안 새 자동실행을 억제한다.
-스크립트가 자기 trigger 대상을 만드는 연쇄를 막으며 억제는 warning으로 남긴다.
+스크립트가 자기 trigger 대상을 만드는 연쇄를 막으며 억제는 경고 로그와 경고 알림으로 남긴다([실행 결과 전달](#실행-결과-전달)).
 
 ### 무결성 (TOFU)
 
 등록 시 엔트리 파일의 SHA256 을 기록한다. 실행(단축키·자동실행)할 때마다 현재 파일 해시와 비교한다:
 
 - **단축키(수동)**: 불일치 시 실행 전 **확인 popup**(승인 시 해시 갱신 후 실행). 사용자가 계기이므로 popup 이 정당. popup 폭은 360(UI 배율 적용)이다. changed 태그는 단독 줄이고, 안내문은 그 아래 전폭 문단으로 폭 안에서 줄바꿈한다. 본문과 버튼(sm) 사이는 space-md 다. 콘텐츠 여백은 위아래 space-md · 좌우 14(시안 Padding 12/14)이며 공용 위젯이 넣는다. 그래서 이 popup 에는 셸 공통 내부 여백을 두지 않는다. 높이는 직전 프레임에 잰 콘텐츠에 맞추며 최소값이 없다. 높이 식은 타이틀바 + 잰 콘텐츠(여백 포함)다. 아직 재지 않은 첫 프레임만 기본 높이 152 를 쓴다(`script_confirm_sizer`). 콘텐츠는 갤러리 예제(Overlays › Script changed confirm)와 같은 `tasty_ui_widgets::script_confirm` 이 그린다.
-- **자동실행**: 불일치 시 **실행 차단 + `tracing::warn`** — 관리 창의 changed 배지로 확인하고 재승인해야 한다. 사용자 개입 없이 발생하므로 popup/배너를 띄우지 않고, 해시도 자동 갱신하지 않는다(자동 승인은 TOFU 무의미).
+- **자동실행**: 불일치 시 **실행 차단 + 경고 로그 + 경고 알림**(`lua_run.autofire_blocked_title`, [실행 결과 전달](#실행-결과-전달)) — 관리 창의 changed 배지로 확인하고 재승인해야 한다. 사용자 개입 없이 발생하므로 결과는 알림 채널로만 보내고 popup/배너를 띄우지 않는다. 해시도 자동 갱신하지 않는다(자동 승인은 TOFU 무의미).
 
 - **갱신한 해시의 저장**: 설정은 윈도우(engine)마다 같은 사본을 둔다. 확인 popup 에서 승인하면 `dispatch_pending_script_confirm` 이 모든 engine 의 설정 사본(창·parked)에 새 해시를 넣은 뒤 저장한다. 그래서 다른 윈도우가 다른 스크립트를 승인해 자기 사본을 저장해도 이 해시가 지워지지 않고, 다른 윈도우에서 같은 스크립트를 실행할 때 다시 묻지 않는다. 설정 modal 의 Save 는 스크립트 목록을 id 로 맞춰 필드 단위로 병합하므로([설정 Save 병합](../settings/index.md)), modal 이 해시를 바꾸지 않은 스크립트는 저장 시점의 해시를 쓰고 modal 에서 추가·삭제·이름 변경한 것은 modal 결과를 따른다. 사용자 입력으로는 modal 이 열린 동안 메인 윈도우의 확인 popup 을 누를 수 없다(모든 입력 차단).
 - Given 윈도우 두 개 When 각 윈도우에서 다른 스크립트의 변경을 승인한다 Then 재시작 뒤 두 해시가 모두 남는다(`lua_commands.rs` 의 `script_hashes_approved_in_two_windows_both_survive_a_restart`).
@@ -156,8 +156,26 @@ fn fire<T: Serialize>(
 
 `src/host_api/hooks/autofire.rs`:
 
-- `dispatch(lua, scripts, guard, event)` — `ScriptRegistry::entries_for_event` 매칭 → 소스 read → `hash_bytes` 재검 → 일치 시 `run_script_tracked`(완료 추적) / 불일치 시 차단 + `tracing::warn`(해시 자동 갱신 금지). 단축키 경로(`try_dispatch_script_shortcut`)와 동형 시퀀스.
-- `AutofireGuard` — cascade 재진입 방어. `App.lua_autofire` 가 소유하고 `about_to_wait` 시작에서 `checkpoint()` 1 회. 완료 acknowledge 를 1 프레임 지연시켜, `run_cli` 가 유발한 이벤트(스크립트 완료보다 먼저 큐잉됨)가 자동실행을 다시 실행하지 못하게 한다. 워커의 완료 신호는 `tasty_lua::CompletionToken`(RAII — 큐 drop/abort 포함 어떤 경로로도 누락 없음).
+- `dispatch(lua, scripts, guard, runs, event)` — `ScriptRegistry::entries_for_event` 매칭 → 소스 read → `hash_bytes` 재검 → 일치 시 `submit_script`(완료 추적 token 동반)로 접수하고 ticket을 `LuaRuns`에 `Autofire` 경로로 기록한다. 불일치·읽기 실패·접수 거절·엔진 없음·억제는 경고 로그와 함께 경고 알림(`SystemNotice`)을 돌려주고 `hooks::lua::fire`가 알림 대기열에 넣는다(해시 자동 갱신 금지). 단축키 경로(`try_dispatch_script_shortcut`)와 동형 시퀀스.
+- `AutofireGuard` — cascade 재진입 방어. `App.lua_autofire` 가 소유하고 `about_to_wait` 시작에서 `checkpoint()` 1 회. 완료 acknowledge 를 1 프레임 지연시켜, `run_cli` 가 유발한 이벤트(스크립트 완료보다 먼저 큐잉됨)가 자동실행을 다시 실행하지 못하게 한다. 워커의 완료 신호는 `tasty_lua::CompletionToken`(RAII — 결과를 보낸 뒤, 또는 접수 거절·큐 drop/abort 때 job과 함께 한 번 drop된다).
+
+<a id="실행-결과-전달"></a>
+
+### 실행 결과 전달
+
+단축키·자동실행 모두 `LuaEngine::submit_script`로 실행을 맡기고 결과는 시작 경로로 돌아간다([결과 피드백 원칙](../../principles/feedback-and-recovery.md#시작-경로에-따른-결과-전달)). 메인 루프와 워커 어느 쪽도 막히지 않는다.
+
+- **접수와 결과 슬롯**: `submit_script`는 접수할 때 결과 슬롯 하나를 잡는다(256개, `OUTCOME_QUEUE_CAP`). 슬롯은 메인이 `drain_run_outcomes`로 결과를 꺼낼 때 돌아온다. 결과 채널 용량이 슬롯 수와 같으므로 접수한 결과는 버려지지 않는다. job 큐(256)가 가득 찼거나 메인이 결과를 꺼내지 않아 슬롯이 모두 찼으면 접수하지 않고 곧바로 `RunRejected::QueueFull`을 돌려준다. 워커가 없으면 `WorkerGone`이다. 거절은 결과가 아니라 접수 실패로 즉시 시작 경로에 보인다. 결과 소비자가 사라진 경우(엔진 종료)에만 결과를 버린다.
+- **결과**: 워커는 실행이 끝나면 `RunOutcome { ticket, result }`를 보내고 IPC와 같은 waker로 메인 루프를 깨운다. 실패는 `RunFailure::Error`(Lua 오류의 첫 줄, traceback은 로그에만)와 `RunFailure::TimedOut`(실행 기한 초과)이다. 결과를 보낸 뒤 완료 token을 drop한다. debug 전용 `run_script`(`debug.lua.eval`)는 결과를 보내지 않는다.
+- **귀속**: `App.lua_runs`(`src/host_api/hooks/lua_runs.rs`)가 ticket과 시작 경로를 보관한다. GUI는 `about_to_wait`의 `settle_lua_runs`, headless는 메인 루프가 결과를 꺼내 짝을 맞춘다. 결과가 오지 않은 항목은 512개를 넘으면 오래된 것부터 버린다.
+- **단축키(사용자 입력)**: 실패하면 단축키를 누른 창(`AppEvent::RunLuaScript.window`)에 `ToastKind::Error`·`ToastScope::Window` 토스트를 띄운다. 대상은 등록 없음, 읽기 큐(8건) 포화, 파일 읽기 실패, 엔진 없음, 접수 거절, 실행 오류, 시간 초과다. 변경 확인 popup에서 승인한 실행도 승인한 창으로 돌아온다. 그 창이 닫혔으면 다른 창에 옮기지 않고 버린다. 문구는 `lua_run.toast.*`이며 길이를 모르는 사유는 가운데를 줄인다.
+- **자동실행(입력에서 시작하지 않은 동작)**: 읽기 실패, TOFU 차단, 억제, 엔진 없음, 접수 거절, 실행 오류, 시간 초과를 `level: warning` 알림으로 남긴다. `src/system_notice.rs` 대기열을 거쳐 `NotificationMerge::Separate`로 저장하며 받는 곳은 활성 workspace(`surface_id: 0`)다. GUI `notification.created` 이벤트의 `source`는 `lua.autofire`다. 저장소와 `notification.list`에는 source를 저장하지 않는다. headless는 이벤트를 보내지 않는다. popup·배너는 띄우지 않는다. 문구는 `lua_run.autofire_*`이며 본문에 스크립트 이름과 이벤트를 넣는다.
+- **반복 합치기**: 같은 source·레벨·제목·본문의 알림은 10초(`system_notice::REPEAT_WINDOW`) 안에 한 번만 남긴다. 억제 알림은 스크립트가 아니라 이벤트당 하나이므로 연쇄 중 같은 이벤트가 반복돼도 한 건이다. 다른 스크립트·이벤트·사유는 합치지 않는다.
+- **성공**: 토스트·알림을 띄우지 않는다. 스크립트가 `tasty.run_cli`로 직접 보낸 알림은 일반 알림 규칙을 그대로 따른다.
+- Given 접수한 스크립트가 `error()`를 던진다 When 결과를 꺼낸다 Then 오류 사유가 그 ticket의 결과로 돌아온다(`tasty-lua` `engine.rs`의 `submitted_runs_report_success_and_the_error_reason`, 시간 초과는 `a_run_over_the_deadline_reports_timed_out`).
+- Given 메인이 결과를 꺼내지 않아 결과 슬롯이 모두 찼다 When 새 실행을 요청한다 Then 접수하지 않고 `QueueFull`을 돌려주며 접수한 결과는 모두 순서대로 남는다. token은 접수·거절 모두 한 번씩 해제된다(`a_slow_consumer_gets_rejections_instead_of_lost_results`, job 큐 포화는 `a_full_job_queue_rejects_and_releases_the_token_once`, 워커 부재는 `a_gone_worker_rejects_and_releases_the_token_once`).
+- Given 자동실행 스크립트가 실패한다 When 결과를 정산한다 Then `lua.autofire` 경고 알림이 생기고 토스트로 섞이지 않으며 다음 트리거는 억제되지 않고 실행된다(`autofire.rs`의 `a_failing_autofire_reports_a_warning_and_the_next_trigger_still_runs`, 단축키 결과가 알림으로 섞이지 않는 쪽은 `lua_runs.rs`의 `shortcut_failures_go_back_to_the_caller_not_to_the_notice_channel`).
+- Given 자동실행 스크립트 파일이 바뀌었거나 사라졌다 When 트리거 이벤트가 온다 Then 실행하지 않고 경고 알림을 돌려주며 해시는 바꾸지 않는다(`dispatch_blocks_on_tofu_mismatch`, `a_missing_script_file_reports_a_read_warning`).
 - 트리거 저장 = `ScriptEntry.triggers`(`Vec<AutoTrigger>`, serde default). 등록 가능 이벤트 화이트리스트 = `AUTO_TRIGGER_EVENTS`(`crates/tasty-settings/src/scripts.rs`) — 아래 표의 이벤트와 1:1.
 
 <a id="이벤트--발화-site"></a>
@@ -215,7 +233,7 @@ EmmyLua 자동완성: 스크립트 파일 옆 `.luarc.json` 에 `"workspace.libr
 ### 에러 / 실행
 
 - 콜백 Lua 에러 → `tracing::warn!` + 같은 이벤트 다음 콜백 계속(dispatch 안 멈춤). payload 직렬화 실패 → warn + 이 이벤트 콜백 전부 skip.
-- 스크립트 실행 = 단축키 트리거(release) / 이벤트 자동실행(release, TOFU 차단·재진입 가드 동반) / `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 해당 job만 중단하며 워커는 다음 job을 처리. 자동실행 job 도 같은 `Run` 경로라 deadline 동일 적용. `script.reload`는 제공하지 않는다.
+- 스크립트 실행 = 단축키 트리거(release) / 이벤트 자동실행(release, TOFU 차단·재진입 가드 동반) / `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 해당 job만 중단하며 워커는 다음 job을 처리. 자동실행 job 도 같은 `Run` 경로라 deadline 동일 적용. 단축키·자동실행의 실패는 [실행 결과 전달](#실행-결과-전달)에 따라 토스트나 알림으로 보인다. `script.reload`는 제공하지 않는다.
 - 디버그: `TASTY_LOG=tasty_lua=debug` (본체가 읽는 변수는 `TASTY_LOG` 다 — [crash-diagnostics](../../dev-guide/crash-diagnostics.md)).
 
 ## 관련

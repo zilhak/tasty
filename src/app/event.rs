@@ -94,11 +94,12 @@ pub(crate) enum AppEvent {
     /// CSD 닫기 버튼도 OS 닫기 이벤트와 같은 종료 경로를 사용한다.
     #[cfg(feature = "gui")]
     CloseWindow(winit::window::WindowId),
-    /// 사용자 단축키로 읽은 스크립트를 Lua 워커에 전달한다.
+    /// 사용자 단축키로 읽은 스크립트를 Lua 워커에 전달한다. 실패는 `window`의 토스트로만 보인다.
     #[cfg(feature = "gui")]
     RunLuaScript {
         source: String,
         name: String,
+        window: winit::window::WindowId,
     },
     #[cfg(feature = "gui")]
     OpenSettings,

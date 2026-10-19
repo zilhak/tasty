@@ -196,6 +196,8 @@ pub(crate) struct App {
     /// 자동실행 스크립트가 일으킨 이벤트로 같은 스크립트를 다시 실행하지 않게 한다.
     /// `about_to_wait` 시작 시 [`checkpoint`](crate::hooks::autofire::AutofireGuard::checkpoint)로 회차를 갱신한다.
     pub(crate) lua_autofire: crate::hooks::autofire::AutofireGuard,
+    /// 결과를 기다리는 Lua 실행의 시작 경로. 단축키 결과는 원 창 토스트, 자동실행 결과는 알림으로 보낸다.
+    pub(crate) lua_runs: crate::hooks::lua_runs::LuaRuns,
     /// GUI와 헤드리스의 주기 작업을 예약한다. docs/dev-guide/timer-hub.md 참조.
     pub(crate) timers: tasty_timer::TimerHub<timers::Tick>,
     /// 창이 없거나 최소화되어도 send_event로 타이머 처리를 깨운다.
@@ -354,6 +356,7 @@ impl App {
             plugin_manager: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
+            lua_runs: crate::hooks::lua_runs::LuaRuns::default(),
             timers,
             timer_waker,
             ipc_pacer: crate::app::ipc::IpcPacer::new({
@@ -411,6 +414,7 @@ impl App {
             plugin_manager: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
+            lua_runs: crate::hooks::lua_runs::LuaRuns::default(),
             timers,
         })
     }

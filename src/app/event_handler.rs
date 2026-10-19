@@ -90,13 +90,11 @@ impl ApplicationHandler<AppEvent> for App {
                     completion.reply_window_create(outcome.map(u64::from));
                 }
             }
-            AppEvent::RunLuaScript { source, name } => {
-                if let Some(engine) = self.lua_engine.as_ref() {
-                    engine.run_script(&source, Some(&name));
-                } else {
-                    tracing::warn!(target: "tasty_lua", "RunLuaScript dropped — lua engine unavailable");
-                }
-            }
+            AppEvent::RunLuaScript {
+                source,
+                name,
+                window,
+            } => self.submit_shortcut_script(window, &source, name),
             AppEvent::OpenSettings => {
                 self.open_settings_modal(event_loop);
             }
@@ -519,6 +517,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_intents();
         self.publish_lua_snapshot();
         self.dispatch_pending_lua_commands();
+        self.settle_lua_runs();
         self.dispatch_pending_popup_opens();
         self.dispatch_pending_surface_popups();
         self.dispatch_pending_handler_ipc();
@@ -1409,6 +1408,7 @@ impl App {
                 crate::hooks::lua::AutofireCtx {
                     scripts: &scripts,
                     guard: &mut self.lua_autofire,
+                    runs: &mut self.lua_runs,
                 },
                 "window.delete.post",
                 &payload,

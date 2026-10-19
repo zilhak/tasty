@@ -1207,6 +1207,27 @@ changed_tag = "변경됨"
 body = "내용을 확인한 뒤 변경본을 실행하세요. 기록된 해시가 갱신됩니다."
 run = "그래도 실행"
 
+[lua_run]
+autofire_failed_title = "자동 실행 스크립트 실패"
+autofire_blocked_title = "자동 실행 스크립트 차단"
+autofire_suppressed_title = "자동 실행 건너뜀"
+autofire_read_failed = "'{}' 스크립트({} 자동 실행)를 읽지 못했습니다: {}"
+autofire_changed = "'{}' 스크립트({} 자동 실행)가 등록 이후 바뀌어 실행하지 않았습니다. 설정 › 기타 › 스크립트에서 다시 승인하세요."
+autofire_queue_full = "Lua 작업 큐가 가득 차서 '{}' 스크립트({} 자동 실행)를 실행하지 않았습니다."
+autofire_unavailable = "Lua를 사용할 수 없어 '{}' 스크립트({} 자동 실행)를 실행하지 않았습니다."
+autofire_error = "'{}' 스크립트({} 자동 실행)가 실패했습니다: {}"
+autofire_timed_out = "'{}' 스크립트({} 자동 실행)가 실행 시간 상한을 넘어 중단됐습니다."
+autofire_suppressed = "다른 자동 실행 스크립트가 실행 중이거나 막 끝나서 {} 이벤트의 자동 실행을 건너뛰었습니다."
+
+[lua_run.toast]
+not_registered = "이 단축키에 등록된 스크립트가 없습니다({})"
+read_queue_full = "읽기를 기다리는 스크립트가 많아 '{}' 스크립트를 실행하지 않았습니다"
+read_failed = "'{}' 스크립트를 읽지 못했습니다: {}"
+queue_full = "Lua 작업 큐가 가득 차서 '{}' 스크립트를 실행하지 않았습니다"
+unavailable = "Lua를 사용할 수 없어 '{}' 스크립트를 실행하지 않았습니다"
+failed = "'{}' 스크립트 실패: {}"
+timed_out = "'{}' 스크립트가 실행 시간 상한을 넘어 중단됐습니다"
+
 [convert_popup]
 title = "서피스 타입 전환"
 terminal = "터미널"

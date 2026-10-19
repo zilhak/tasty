@@ -725,6 +725,10 @@ impl App {
             waker: stream_waker,
         };
         let connections = self.services.connections().clone();
+        // Lua 실행 결과도 IPC와 같은 깨우기로 메인 루프에 전달한다.
+        if let Some(lua) = self.lua_engine.as_ref() {
+            lua.set_outcome_waker(ipc_waker.clone());
+        }
         if let Some(injector) = self.hub.start_ipc(ipc_waker, stream_ctx, connections) {
             if let Some(server) = self.hub.ipc_server.as_ref() {
                 self.services.record_ipc_port(server.port());

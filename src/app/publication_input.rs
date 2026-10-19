@@ -119,7 +119,7 @@ fn weight(event: &DeferredEvent) -> usize {
                 .map_or(0, crate::app::event::IpcCompletion::retained_bytes)
         }
         #[cfg(feature = "gui")]
-        DeferredEvent::App(AppEvent::RunLuaScript { source, name }) => {
+        DeferredEvent::App(AppEvent::RunLuaScript { source, name, .. }) => {
             base + source.len() + name.len()
         }
         #[cfg(feature = "gui")]

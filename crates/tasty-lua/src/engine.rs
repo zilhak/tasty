@@ -1,9 +1,9 @@
 //! Lua VM을 전용 워커에서만 사용한다. 메인은 실행 요청을 보내고 HostCommand를 처리하며
 //! 읽기 전용 LuaSnapshot을 발행한다. 워커는 요청을 직렬로 실행한다.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -64,6 +64,39 @@ impl Drop for CompletionToken {
     }
 }
 
+/// [`LuaEngine::submit_script`]가 돌려주는 실행 식별자. 결과의 [`RunOutcome::ticket`]과 짝을 맞춘다.
+pub type RunTicket = u64;
+
+/// 실행 요청을 접수하지 않은 이유. job과 함께 완료 토큰도 drop된다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunRejected {
+    /// job 큐가 가득 찼거나, 메인이 아직 꺼내지 않은 결과가 결과 슬롯을 모두 차지했다.
+    QueueFull,
+    WorkerGone,
+}
+
+/// 워커에서 끝난 스크립트의 실패.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunFailure {
+    Error(String),
+    /// 실행 기한을 넘겨 중단했다.
+    TimedOut,
+}
+
+/// 제출한 스크립트 한 건의 결과. 워커가 결과 채널로 보낸다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunOutcome {
+    pub ticket: RunTicket,
+    pub result: Result<(), RunFailure>,
+}
+
+/// 결과 슬롯 수. 접수할 때 슬롯 하나를 잡고 메인이 결과를 꺼낼 때 돌려준다.
+/// 결과 채널 용량과 같으므로 접수한 결과는 채널이 가득 차서 버려지지 않는다.
+/// 슬롯이 모두 차 있으면 새 요청은 접수 단계에서 [`RunRejected::QueueFull`]로 거절한다.
+const OUTCOME_QUEUE_CAP: usize = 256;
+
+type OutcomeWaker = Arc<OnceLock<Arc<dyn Fn() + Send + Sync>>>;
+
 /// 워커 스레드에 보내는 실행 요청. 워커는 이들을 **직렬**로 처리한다.
 enum LuaJob {
     /// 임의 소스 실행 + 결과 회신 (블로킹 호출용 — 테스트/부팅 로드).
@@ -72,11 +105,13 @@ enum LuaJob {
         name: Option<String>,
         reply: SyncSender<Result<(), LuaEngineError>>,
     },
-    /// 임의 소스 실행 (fire-and-forget — 단축키/디버그/자동실행 트리거).
+    /// 임의 소스 실행 (메인을 막지 않음 — 단축키/디버그/자동실행 트리거).
     Run {
         source: String,
         name: Option<String>,
-        /// 실행 종료 시 drop 되어 완료를 알린다 (자동실행 경로만 Some).
+        /// 있으면 실행 결과를 결과 채널로 보낸다.
+        ticket: Option<RunTicket>,
+        /// 결과를 보낸 뒤 drop 되어 완료를 알린다 (자동실행 경로만 Some).
         token: Option<CompletionToken>,
     },
     /// 이벤트 hook 발화 (observe-only, fire-and-forget).
@@ -96,6 +131,11 @@ enum LuaJob {
 pub struct LuaEngine {
     job_tx: SyncSender<LuaJob>,
     command_rx: Receiver<HostCommand>,
+    outcome_rx: Receiver<RunOutcome>,
+    outcome_waker: OutcomeWaker,
+    /// 접수했지만 메인이 아직 꺼내지 않은 결과 수.
+    reserved_outcomes: AtomicUsize,
+    next_ticket: AtomicU64,
     snapshot: SharedSnapshot,
     worker: Option<JoinHandle<()>>,
 }
@@ -120,13 +160,23 @@ impl LuaEngine {
         crate::host_api::install(&lua, command_tx, snapshot.clone())?;
 
         let (job_tx, job_rx) = sync_channel(JOB_QUEUE_CAP);
+        let (outcome_tx, outcome_rx) = sync_channel(OUTCOME_QUEUE_CAP);
+        let outcome_waker: OutcomeWaker = Arc::new(OnceLock::new());
+        let worker_outcomes = Outcomes {
+            tx: outcome_tx,
+            waker: outcome_waker.clone(),
+        };
         let worker = std::thread::Builder::new()
             .name("tasty-lua-worker".to_string())
-            .spawn(move || worker_loop(lua, job_rx, budget, deadline))?;
+            .spawn(move || worker_loop(lua, job_rx, budget, deadline, worker_outcomes))?;
 
         Ok(Self {
             job_tx,
             command_rx,
+            outcome_rx,
+            outcome_waker,
+            reserved_outcomes: AtomicUsize::new(0),
+            next_ticket: AtomicU64::new(1),
             snapshot,
             worker: Some(worker),
         })
@@ -158,30 +208,70 @@ impl LuaEngine {
         );
     }
 
-    /// 스크립트 소스를 워커에서 실행 (fire-and-forget). 단축키/디버그 트리거용.
+    /// 스크립트 소스를 워커에서 실행 (fire-and-forget, 결과 없음). 디버그 트리거용.
     pub fn run_script(&self, source: &str, name: Option<&str>) {
         self.send_ff(
             LuaJob::Run {
                 source: source.to_string(),
                 name: name.map(str::to_string),
+                ticket: None,
                 token: None,
             },
             "run_script",
         );
     }
 
-    /// [`LuaEngine::run_script`] 와 동일하되 실행 종료 시 `token` 을 drop 해 완료를
-    /// 알린다. 자동실행(autofire) 재진입 가드가 이 신호로 in-flight 를 추적한다.
-    /// 큐 포화 등으로 job 이 실행되지 못해도 token 은 drop 된다 (가드 잠김 방지).
-    pub fn run_script_tracked(&self, source: &str, name: Option<&str>, token: CompletionToken) {
-        self.send_ff(
-            LuaJob::Run {
-                source: source.to_string(),
-                name: name.map(str::to_string),
-                token: Some(token),
-            },
-            "run_script",
-        );
+    /// 스크립트 실행을 요청하고 결과를 [`LuaEngine::drain_run_outcomes`]로 돌려받는다.
+    /// 메인을 막지 않는다. 큐 포화·결과 슬롯 소진·워커 부재는 곧바로 Err이고 결과는 오지 않는다.
+    /// Ok로 접수한 요청은 결과 슬롯을 잡았으므로 결과가 반드시 채널에 들어간다.
+    /// `token`은 결과를 보낸 뒤 drop된다. 실행되지 못한 job과 함께 버려질 때도 drop된다.
+    /// 자동실행 재진입 가드가 이 신호로 실행 중인 job을 추적한다.
+    pub fn submit_script(
+        &self,
+        source: &str,
+        name: Option<&str>,
+        token: Option<CompletionToken>,
+    ) -> Result<RunTicket, RunRejected> {
+        if self
+            .reserved_outcomes
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < OUTCOME_QUEUE_CAP).then_some(n + 1)
+            })
+            .is_err()
+        {
+            return Err(RunRejected::QueueFull);
+        }
+        let ticket = self.next_ticket.fetch_add(1, Ordering::Relaxed);
+        let job = LuaJob::Run {
+            source: source.to_string(),
+            name: name.map(str::to_string),
+            ticket: Some(ticket),
+            token,
+        };
+        let rejected = match self.job_tx.try_send(job) {
+            Ok(()) => return Ok(ticket),
+            Err(TrySendError::Full(_)) => RunRejected::QueueFull,
+            Err(TrySendError::Disconnected(_)) => RunRejected::WorkerGone,
+        };
+        self.reserved_outcomes.fetch_sub(1, Ordering::AcqRel);
+        Err(rejected)
+    }
+
+    /// 워커가 보낸 실행 결과를 모두 꺼내고 그 수만큼 결과 슬롯을 돌려준다. 메인이 안전지점에서 호출한다.
+    pub fn drain_run_outcomes(&self) -> Vec<RunOutcome> {
+        let outcomes: Vec<RunOutcome> = self.outcome_rx.try_iter().collect();
+        if !outcomes.is_empty() {
+            self.reserved_outcomes
+                .fetch_sub(outcomes.len(), Ordering::AcqRel);
+        }
+        outcomes
+    }
+
+    /// 결과를 보낼 때 메인 루프를 깨울 함수를 한 번 등록한다.
+    pub fn set_outcome_waker(&self, waker: Arc<dyn Fn() + Send + Sync>) {
+        if self.outcome_waker.set(waker).is_err() {
+            tracing::debug!(target: "tasty_lua", "outcome waker already installed");
+        }
     }
 
     /// 임의 Lua 소스 실행 (블로킹 — 완료까지 대기해 결과 반환). 테스트/디버그 용도.
@@ -256,7 +346,13 @@ impl Drop for LuaEngine {
 /// job을 직렬로 실행한다. Lua 명령 hook이 기한 초과를 중단하며 다음 job은 계속 처리한다.
 /// Shutdown 또는 채널 종료를 받으면 루프를 끝낸다.
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: LuaJob 평면 match 디스패치 — job 종류별 guarded exec + reply/로그 나열. 워커 스레드가 job 을 직렬 처리하는 단일 루프라 쪼개면 job 별 소함수만 늘고 흐름 추적이 어려워짐, 중첩 얕음.
-fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>, budget: Duration, deadline: SharedDeadline) {
+fn worker_loop(
+    lua: Lua,
+    job_rx: Receiver<LuaJob>,
+    budget: Duration,
+    deadline: SharedDeadline,
+    outcomes: Outcomes,
+) {
     while let Ok(job) = job_rx.recv() {
         match job {
             LuaJob::Eval {
@@ -275,13 +371,24 @@ fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>, budget: Duration, deadline: S
             LuaJob::Run {
                 source,
                 name,
+                ticket,
                 token,
             } => {
+                let started = Instant::now();
                 let result = guarded(&deadline, budget, || {
                     exec_source(&lua, &source, name.as_deref())
-                });
-                if let Err(e) = result {
+                })
+                .map_err(|e| {
                     tracing::warn!(target: "tasty_lua", "script run failed: {e}");
+                    // 기한 hook의 오류는 mlua가 감싸므로 문구 대신 경과 시간으로 판정한다.
+                    if started.elapsed() >= budget {
+                        RunFailure::TimedOut
+                    } else {
+                        RunFailure::Error(first_line(&e))
+                    }
+                });
+                if let Some(ticket) = ticket {
+                    outcomes.send(RunOutcome { ticket, result });
                 }
                 // 실행이 끝난 뒤에야 완료를 알린다 — 재진입 가드의 in-flight 판정 기준.
                 drop(token);
@@ -303,6 +410,41 @@ fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>, budget: Duration, deadline: S
             LuaJob::Shutdown => break,
         }
     }
+}
+
+/// 워커 쪽 결과 채널. 보내기는 막히지 않는다.
+struct Outcomes {
+    tx: SyncSender<RunOutcome>,
+    waker: OutcomeWaker,
+}
+
+impl Outcomes {
+    fn send(&self, outcome: RunOutcome) {
+        match self.tx.try_send(outcome) {
+            Ok(()) => {
+                if let Some(wake) = self.waker.get() {
+                    wake();
+                }
+            }
+            // 접수할 때 슬롯을 잡았으므로 정상 흐름에서는 일어나지 않는다. 일어났다면 슬롯 계산이 틀렸다.
+            Err(TrySendError::Full(o)) => {
+                tracing::error!(target: "tasty_lua", ticket = o.ticket, "run outcome channel full despite a reserved slot")
+            }
+            // 엔진이 사라져 결과를 받을 쪽이 없다(종료 중).
+            Err(TrySendError::Disconnected(o)) => {
+                tracing::debug!(target: "tasty_lua", ticket = o.ticket, "run outcome receiver gone")
+            }
+        }
+    }
+}
+
+/// 사용자에게 보일 실패 사유. Lua 오류의 stack traceback은 로그에만 남긴다.
+fn first_line(e: &LuaEngineError) -> String {
+    let text = match e {
+        LuaEngineError::Eval(inner) => inner.to_string(),
+        other => other.to_string(),
+    };
+    text.lines().next().unwrap_or_default().trim().to_string()
 }
 
 /// 스냅샷 락 poison은 한 번만 보고한다.
@@ -737,15 +879,187 @@ mod tests {
             .expect("normal loop under budget");
     }
 
+    /// 결과를 기다린다. 워커는 직렬이므로 뒤따른 eval이 끝나면 앞선 run의 결과는 채널에 있다.
+    fn outcomes_after_sync(engine: &LuaEngine) -> Vec<RunOutcome> {
+        engine.eval("return 0").expect("worker alive");
+        engine.drain_run_outcomes()
+    }
+
+    #[test]
+    fn submitted_runs_report_success_and_the_error_reason() {
+        let engine = LuaEngine::new().expect("init");
+        let ok = engine
+            .submit_script("local x = 1", Some("ok"), None)
+            .unwrap();
+        let bad = engine
+            .submit_script("error('boom')", Some("bad.lua"), None)
+            .unwrap();
+        let outcomes = outcomes_after_sync(&engine);
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(
+            outcomes[0],
+            RunOutcome {
+                ticket: ok,
+                result: Ok(())
+            }
+        );
+        assert_eq!(outcomes[1].ticket, bad);
+        match &outcomes[1].result {
+            Err(RunFailure::Error(reason)) => {
+                assert!(
+                    reason.contains("boom"),
+                    "사유에 오류 문구가 있어야 한다: {reason}"
+                );
+                assert!(
+                    !reason.contains('\n'),
+                    "traceback은 사유에 싣지 않는다: {reason}"
+                );
+            }
+            other => panic!("오류 결과여야 한다: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_run_over_the_deadline_reports_timed_out() {
+        let engine = LuaEngine::with_deadline(Duration::from_millis(50)).expect("init");
+        let t = engine
+            .submit_script("while true do end", Some("loop"), None)
+            .unwrap();
+        assert_eq!(
+            outcomes_after_sync(&engine),
+            vec![RunOutcome {
+                ticket: t,
+                result: Err(RunFailure::TimedOut)
+            }]
+        );
+    }
+
+    #[test]
+    fn untracked_run_script_sends_no_outcome() {
+        let engine = LuaEngine::new().expect("init");
+        engine.run_script("error('debug')", Some("debug.lua.eval"));
+        assert!(outcomes_after_sync(&engine).is_empty());
+    }
+
+    #[test]
+    fn a_full_job_queue_rejects_and_releases_the_token_once() {
+        let engine = LuaEngine::with_deadline(Duration::from_millis(500)).expect("init");
+        let counter = Arc::new(AtomicU64::new(0));
+        engine
+            .submit_script("while true do end", None, None)
+            .unwrap();
+        let mut rejected = None;
+        for _ in 0..=JOB_QUEUE_CAP + 1 {
+            match engine.submit_script("local x = 1", None, None) {
+                Ok(_) => continue,
+                Err(e) => {
+                    rejected = Some(e);
+                    break;
+                }
+            }
+        }
+        assert_eq!(rejected, Some(RunRejected::QueueFull));
+        let result = engine.submit_script(
+            "local x = 1",
+            None,
+            Some(CompletionToken::new(counter.clone())),
+        );
+        assert_eq!(result, Err(RunRejected::QueueFull));
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            1,
+            "거절된 job의 token은 그 자리에서 한 번 drop된다"
+        );
+    }
+
+    #[test]
+    fn a_gone_worker_rejects_and_releases_the_token_once() {
+        let mut engine = LuaEngine::new().expect("init");
+        engine.job_tx.send(LuaJob::Shutdown).unwrap();
+        engine.worker.take().unwrap().join().unwrap();
+        let counter = Arc::new(AtomicU64::new(0));
+        let result = engine.submit_script(
+            "local x = 1",
+            None,
+            Some(CompletionToken::new(counter.clone())),
+        );
+        assert_eq!(result, Err(RunRejected::WorkerGone));
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    /// 메인이 결과를 꺼내지 않는 동안 결과 슬롯이 다 차면 접수 단계에서 거절한다.
+    /// 접수한 결과는 하나도 버리지 않고, token은 접수·거절 어느 쪽이든 한 번씩 해제된다.
+    #[test]
+    fn a_slow_consumer_gets_rejections_instead_of_lost_results() {
+        let engine = LuaEngine::new().expect("init");
+        let counter = Arc::new(AtomicU64::new(0));
+        let token = || Some(CompletionToken::new(counter.clone()));
+        let mut accepted = Vec::new();
+        // job 큐 거절과 섞이지 않도록 조금씩 넣고 워커가 비울 때까지 기다린다.
+        while accepted.len() < OUTCOME_QUEUE_CAP {
+            for _ in 0..16 {
+                accepted.push(engine.submit_script("error('x')", None, token()).unwrap());
+            }
+            engine.eval("return 0").unwrap();
+        }
+        assert_eq!(
+            engine.submit_script("error('x')", None, token()),
+            Err(RunRejected::QueueFull),
+            "결과 슬롯이 없으면 접수하지 않는다"
+        );
+        assert_eq!(counter.load(Ordering::SeqCst), OUTCOME_QUEUE_CAP as u64 + 1);
+
+        let tickets: Vec<RunTicket> = engine
+            .drain_run_outcomes()
+            .into_iter()
+            .map(|o| o.ticket)
+            .collect();
+        assert_eq!(tickets, accepted, "접수한 결과는 모두 순서대로 돌아온다");
+        assert!(
+            engine.submit_script("local x = 1", None, None).is_ok(),
+            "결과를 꺼내면 슬롯이 돌아온다"
+        );
+    }
+
+    #[test]
+    fn a_rejected_submission_returns_its_result_slot() {
+        let mut engine = LuaEngine::new().expect("init");
+        engine.job_tx.send(LuaJob::Shutdown).unwrap();
+        engine.worker.take().unwrap().join().unwrap();
+        for _ in 0..OUTCOME_QUEUE_CAP + 1 {
+            assert_eq!(
+                engine.submit_script("local x = 1", None, None),
+                Err(RunRejected::WorkerGone)
+            );
+        }
+        assert_eq!(engine.reserved_outcomes.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn the_outcome_waker_runs_per_delivered_outcome() {
+        let engine = LuaEngine::new().expect("init");
+        let woke = Arc::new(AtomicU64::new(0));
+        let w = woke.clone();
+        engine.set_outcome_waker(Arc::new(move || {
+            w.fetch_add(1, Ordering::SeqCst);
+        }));
+        engine.submit_script("local x = 1", None, None).unwrap();
+        engine.submit_script("error('x')", None, None).unwrap();
+        assert_eq!(outcomes_after_sync(&engine).len(), 2);
+        assert_eq!(woke.load(Ordering::SeqCst), 2);
+    }
+
     #[test]
     fn tracked_run_signals_completion_after_execution() {
         let engine = LuaEngine::new().expect("init");
         let counter = Arc::new(AtomicU64::new(0));
-        engine.run_script_tracked(
-            "local x = 1",
-            Some("t"),
-            CompletionToken::new(counter.clone()),
-        );
+        engine
+            .submit_script(
+                "local x = 1",
+                Some("t"),
+                Some(CompletionToken::new(counter.clone())),
+            )
+            .expect("queued");
         // 워커는 job 을 직렬 처리하므로, 후속 블로킹 eval 이 돌아오면 run 은 끝난 상태.
         engine.eval("return 0").expect("worker alive");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
@@ -757,11 +1071,13 @@ mod tests {
         // abort 되고, abort 여도 완료 token 은 drop 되어 가드가 풀린다.
         let engine = LuaEngine::with_deadline(Duration::from_millis(50)).expect("init");
         let counter = Arc::new(AtomicU64::new(0));
-        engine.run_script_tracked(
-            "while true do end",
-            Some("loop"),
-            CompletionToken::new(counter.clone()),
-        );
+        engine
+            .submit_script(
+                "while true do end",
+                Some("loop"),
+                Some(CompletionToken::new(counter.clone())),
+            )
+            .expect("queued");
         engine.eval("return 0").expect("worker alive after abort");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
     }

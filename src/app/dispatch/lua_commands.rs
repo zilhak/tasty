@@ -5,6 +5,7 @@ use crate::app::App;
 use crate::app::window_access::engines_mut;
 use crate::view::ui::View;
 use tasty_lua::{HostCommand, LuaSnapshot};
+use winit::window::WindowId;
 
 impl App {
     pub(crate) fn dispatch_pending_lua_commands(&mut self) {
@@ -38,7 +39,6 @@ impl App {
     /// 스크립트 변경을 승인하면 해시 저장을 시도하고 이미 읽은 소스를 실행한다.
     /// 저장 실패는 경고만 남기며 실행을 막지 않는다.
     pub(crate) fn dispatch_pending_script_confirm(&mut self) {
-        use winit::window::WindowId;
         let ids: Vec<WindowId> = self
             .view
             .views
@@ -81,10 +81,74 @@ impl App {
                 main.mark_dirty();
             }
             // 승인한 내용과 실행할 내용이 달라지지 않도록 파일을 다시 읽지 않는다.
-            if let Some(engine) = self.lua_engine.as_ref() {
-                engine.run_script(&pending.source, Some(&pending.name));
+            self.submit_shortcut_script(id, &pending.source, pending.name);
+        }
+    }
+
+    /// 사용자가 시작한 스크립트 실행을 요청한다. 실행하지 못하면 요청한 창에 실패 토스트를 띄운다.
+    pub(crate) fn submit_shortcut_script(&mut self, window: WindowId, source: &str, name: String) {
+        use crate::hooks::lua_runs::{RunOrigin, ShortcutFailure};
+        let submitted = match self.lua_engine.as_ref() {
+            Some(engine) => engine.submit_script(source, Some(&name), None),
+            None => Err(tasty_lua::RunRejected::WorkerGone),
+        };
+        match submitted {
+            Ok(ticket) => self
+                .lua_runs
+                .record(ticket, RunOrigin::Shortcut { window, name }),
+            Err(rejected) => {
+                tracing::warn!(target: "tasty_lua", "script '{name}' not queued: {rejected:?}");
+                self.toast_script_failure(window, &name, &ShortcutFailure::Rejected(rejected));
             }
         }
+    }
+
+    /// 워커가 돌려준 실행 결과를 시작 경로로 보낸다. 자동실행 실패는 알림 채널, 단축키 실패는 원 창의 토스트다.
+    pub(crate) fn settle_lua_runs(&mut self) {
+        let Some(engine) = self.lua_engine.as_ref() else {
+            return;
+        };
+        let outcomes = engine.drain_run_outcomes();
+        if outcomes.is_empty() {
+            return;
+        }
+        let settled = self.lua_runs.settle(outcomes);
+        for notice in settled.notices {
+            crate::system_notice::post(notice);
+        }
+        for (origin, failure) in settled.for_views {
+            if let crate::hooks::lua_runs::RunOrigin::Shortcut { window, name } = origin {
+                self.toast_script_failure(
+                    window,
+                    &name,
+                    &crate::hooks::lua_runs::ShortcutFailure::Run(&failure),
+                );
+            }
+        }
+    }
+
+    /// 원 창이 닫혔으면 다른 창에 옮기지 않고 버린다.
+    fn toast_script_failure(
+        &mut self,
+        window: WindowId,
+        name: &str,
+        failure: &crate::hooks::lua_runs::ShortcutFailure<'_>,
+    ) {
+        let Some(main) = self
+            .view
+            .views
+            .get_mut(&window)
+            .and_then(|w| w.as_main_mut())
+        else {
+            tracing::debug!(target: "tasty_lua", "script '{name}' result arrived after its window closed");
+            return;
+        };
+        main.state.toasts.push(
+            crate::hooks::lua_runs::shortcut_failure_text(name, failure),
+            crate::adapters::ui::ToastKind::Error,
+            crate::adapters::ui::ToastScope::Window,
+        );
+        main.mark_dirty();
     }
 }
 

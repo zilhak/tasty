@@ -3,6 +3,7 @@
 pub(crate) struct AutofireCtx<'a> {
     pub scripts: &'a tasty_settings::ScriptRegistry,
     pub guard: &'a mut super::autofire::AutofireGuard,
+    pub runs: &'a mut super::lua_runs::LuaRuns,
 }
 
 /// observe-hook을 먼저 요청하고 자동실행을 따로 요청한다.
@@ -21,7 +22,11 @@ pub(crate) fn fire<T: serde::Serialize>(
             }
         }
     }
-    super::autofire::dispatch(lua, autofire.scripts, autofire.guard, event);
+    for notice in
+        super::autofire::dispatch(lua, autofire.scripts, autofire.guard, autofire.runs, event)
+    {
+        crate::system_notice::post(notice);
+    }
 }
 
 /// worker 초기화 실패는 로그 후 None이다. 호스트 부팅을 여기서 중단하지 않는다.

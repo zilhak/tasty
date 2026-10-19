@@ -520,6 +520,10 @@ impl MainView {
                 target: "tasty_lua",
                 "script shortcut matched but script '{script_id}' not registered — ignoring"
             );
+            self.toast_script_failure(
+                &script_id,
+                &crate::hooks::lua_runs::ShortcutFailure::NotRegistered,
+            );
             return true;
         };
         let path = entry.path.clone();
@@ -542,8 +546,25 @@ impl MainView {
                 });
         } else {
             tracing::warn!("script read queue is full");
+            self.toast_script_failure(
+                &name,
+                &crate::hooks::lua_runs::ShortcutFailure::ReadQueueFull,
+            );
         }
         true
+    }
+
+    fn toast_script_failure(
+        &mut self,
+        name: &str,
+        failure: &crate::hooks::lua_runs::ShortcutFailure<'_>,
+    ) {
+        self.state.toasts.push(
+            crate::hooks::lua_runs::shortcut_failure_text(name, failure),
+            crate::adapters::ui::ToastKind::Error,
+            crate::adapters::ui::ToastScope::Window,
+        );
+        self.base.state.dirty = true;
     }
 
     pub(crate) fn handle_shortcut(

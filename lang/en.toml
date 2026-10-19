@@ -1255,6 +1255,27 @@ changed_tag = "changed"
 body = "Review it, then run the new version. Its recorded hash will be updated."
 run = "Run anyway"
 
+[lua_run]
+autofire_failed_title = "Auto-run script failed"
+autofire_blocked_title = "Auto-run script blocked"
+autofire_suppressed_title = "Auto-run skipped"
+autofire_read_failed = "Could not read '{}' (run on {}): {}"
+autofire_changed = "'{}' (run on {}) changed after it was registered, so it did not run. Re-approve it in Settings › Misc › Scripts."
+autofire_queue_full = "'{}' (run on {}) did not run because the Lua job queue is full."
+autofire_unavailable = "'{}' (run on {}) did not run because Lua is not available."
+autofire_error = "'{}' (run on {}) failed: {}"
+autofire_timed_out = "'{}' (run on {}) was stopped because it exceeded the time limit."
+autofire_suppressed = "Auto-run scripts for {} were skipped because an auto-run script was still running or had just finished."
+
+[lua_run.toast]
+not_registered = "No registered script for this shortcut ({})"
+read_queue_full = "Too many scripts are waiting to be read, so '{}' did not run"
+read_failed = "Could not read script '{}': {}"
+queue_full = "Script '{}' did not run: the Lua job queue is full"
+unavailable = "Script '{}' did not run: Lua is not available"
+failed = "Script '{}' failed: {}"
+timed_out = "Script '{}' was stopped: it exceeded the time limit"
+
 [convert_popup]
 title = "Surface Type"
 terminal = "Terminal"

@@ -1207,6 +1207,27 @@ changed_tag = "変更あり"
 body = "内容を確認してから新しいバージョンを実行してください。記録済みハッシュが更新されます。"
 run = "それでも実行"
 
+[lua_run]
+autofire_failed_title = "自動実行スクリプトが失敗しました"
+autofire_blocked_title = "自動実行スクリプトをブロックしました"
+autofire_suppressed_title = "自動実行をスキップしました"
+autofire_read_failed = "'{}'（{} で自動実行）を読み込めませんでした: {}"
+autofire_changed = "'{}'（{} で自動実行）は登録後に変更されたため実行しませんでした。設定 › その他 › スクリプトで再承認してください。"
+autofire_queue_full = "Lua のジョブキューがいっぱいのため、'{}'（{} で自動実行）を実行しませんでした。"
+autofire_unavailable = "Lua を使用できないため、'{}'（{} で自動実行）を実行しませんでした。"
+autofire_error = "'{}'（{} で自動実行）が失敗しました: {}"
+autofire_timed_out = "'{}'（{} で自動実行）は実行時間の上限を超えたため停止しました。"
+autofire_suppressed = "別の自動実行スクリプトが実行中か終了直後だったため、{} の自動実行をスキップしました。"
+
+[lua_run.toast]
+not_registered = "このショートカットに登録されたスクリプトがありません（{}）"
+read_queue_full = "読み込み待ちのスクリプトが多いため、'{}' を実行しませんでした"
+read_failed = "スクリプト '{}' を読み込めませんでした: {}"
+queue_full = "Lua のジョブキューがいっぱいのため、スクリプト '{}' を実行しませんでした"
+unavailable = "Lua を使用できないため、スクリプト '{}' を実行しませんでした"
+failed = "スクリプト '{}' が失敗しました: {}"
+timed_out = "スクリプト '{}' は実行時間の上限を超えたため停止しました"
+
 [convert_popup]
 title = "サーフェスタイプ切替"
 terminal = "ターミナル"

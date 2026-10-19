@@ -1,4 +1,4 @@
-<!-- source-hash: b562a9d1a420 -->
+<!-- source-hash: c6916cbaa1fd -->
 # Lua scripts
 
 Turn repeated tasks into Lua scripts. Run them with a shortcut, or set them to run when a window, workspace, or tab opens or closes.
@@ -64,7 +64,7 @@ File I/O and running external commands from the Lua standard library are availab
 The file's hash is recorded at registration time and compared against the current file on every run. Edit the script in an editor and a **changed** badge appears in the list.
 
 - **Running from a keybinding** — A confirmation dialog appears. Approve it and the new contents run and the hash is updated. The updated hash applies to every window, so running it from another window does not ask again.
-- **Auto-run** — It is blocked and does not run. This is to stop a script that changed while nobody was looking from running. Check the badge in the list and run it by hand once to approve it, and it runs again.
+- **Auto-run** — It is blocked and does not run, and a warning notification is added to the notification list. This is to stop a script that changed while nobody was looking from running. Check the badge in the list and run it by hand once to approve it, and it runs again.
 
 Other files pulled in with `require` are not checked.
 
@@ -77,13 +77,14 @@ Other files pulled in with `require` are not checked.
 
 ## When something goes wrong
 
-To see what is not running and why, raise the log level.
+- **Scripts run from a shortcut** — If the script could not run or failed, a failure toast appears in the window where you pressed the shortcut. This covers a missing registration, a file that could not be read, an error raised by the script, going over the time limit, and a full run queue. If you closed that window before the result arrived, the toast does not appear in another window.
+- **Auto-run** — A warning notification is added to the notification list when a script was blocked because its file changed, failed to read or run, or was skipped to stop a chain. No popup appears. The same notification is recorded only once within 10 seconds.
+
+Nothing is shown for a successful run. To see the details, raise the log level.
 
 ```sh
 TASTY_LOG=tasty_lua=debug tasty
 ```
-
-An auto-run that was blocked, or a chain that was suppressed, is also recorded here as a warning.
 
 <a id="what-to-read-next"></a>
 

@@ -507,6 +507,7 @@ impl App {
                 crate::hooks::lua::AutofireCtx {
                     scripts: &scripts,
                     guard: &mut self.lua_autofire,
+                    runs: &mut self.lua_runs,
                 },
                 "window.create.post",
                 &payload,

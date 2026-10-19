@@ -275,6 +275,7 @@ fn run_gui(
         hooks::lua::AutofireCtx {
             scripts: &boot_settings.scripts,
             guard: &mut app.lua_autofire,
+            runs: &mut app.lua_runs,
         },
         "tasty.startup.post",
         &serde_json::Value::Null,
@@ -536,6 +537,9 @@ fn start_ipc_and_seed(
         waker: waker.stream_waker(),
     };
     let connections = app.services.connections().clone();
+    if let Some(lua) = app.lua_engine.as_ref() {
+        lua.set_outcome_waker(waker.ipc_waker());
+    }
     if let Some(injector) = app
         .hub
         .start_ipc(waker.ipc_waker(), stream_ctx, connections)
@@ -878,6 +882,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
         hooks::lua::AutofireCtx {
             scripts: &boot_settings.scripts,
             guard: &mut app.lua_autofire,
+            runs: &mut app.lua_runs,
         },
         "tasty.startup.post",
         &serde_json::Value::Null,
@@ -894,6 +899,15 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
             // The service applies/logs results; headless has no popup to receive display updates.
             let _ = app.services.profile_detections.poll();
             engine.poll_attach_subscriptions();
+            // 자동실행 결과를 알림 대기열에 넣어 같은 회차에 저장한다. headless에는 단축키 실행이 없다.
+            if let Some(lua) = app.lua_engine.as_ref() {
+                let outcomes = lua.drain_run_outcomes();
+                if !outcomes.is_empty() {
+                    for notice in app.lua_runs.settle(outcomes).notices {
+                        crate::system_notice::post(notice);
+                    }
+                }
+            }
             crate::intent::headless::queue_system_notices(&mut state, &engine);
             crate::intent::headless::drain_pending_intents_in_app(
                 &mut app.services,

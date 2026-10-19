@@ -429,6 +429,7 @@ impl crate::view::MainView {
                         .send_event(crate::AppEvent::RunLuaScript {
                             source: read.source,
                             name: request.name,
+                            window: self.base.winit.id(),
                         })
                         .is_err()
                     {
@@ -453,7 +454,18 @@ impl crate::view::MainView {
                         .from_user_menu("script_tofu_gate"),
                     );
                 }
-                Err(error) => tracing::warn!(%error, "script read failed"),
+                Err(error) => {
+                    tracing::warn!(%error, "script read failed");
+                    let text = crate::hooks::lua_runs::shortcut_failure_text(
+                        &request.name,
+                        &crate::hooks::lua_runs::ShortcutFailure::ReadFailed(&error.to_string()),
+                    );
+                    self.state.toasts.push(
+                        text,
+                        crate::adapters::ui::ToastKind::Error,
+                        crate::adapters::ui::ToastScope::Window,
+                    );
+                }
             }
             changed = true;
         }
