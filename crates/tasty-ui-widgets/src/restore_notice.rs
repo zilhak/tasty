@@ -79,6 +79,8 @@ pub fn restore_notice(
     let top_left = ui.cursor().min;
     let mut dismissed = false;
     let mut copy_path = false;
+    // 안쪽 컨트롤(×·경로·복사·Continue)에 포커스가 있을 때의 Esc만 Continue로 받는다.
+    let mut focused_inside = false;
     let glyph_error = std::cell::RefCell::new(None);
 
     ui.allocate_ui_with_layout(
@@ -87,13 +89,17 @@ pub fn restore_notice(
         |ui| {
             ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
             ui.set_width(width);
-            dismissed |= title_bar(ui, theme, view, width, &glyph_error);
+            let close = title_bar(ui, theme, view, width, &glyph_error);
+            dismissed |= close.clicked();
+            focused_inside |= close.has_focus();
             let padding = theme.restore_notice_padding().value();
             egui::Frame::NONE.inner_margin(padding).show(ui, |ui| {
                 ui.set_width(width - 2.0 * padding);
                 ui.spacing_mut().item_spacing.y = theme.restore_notice_gap().value();
                 cause_row(ui, theme, view.cause, &glyph_error);
-                copy_path = path_block(ui, theme, view, &glyph_error);
+                let (path, copy) = path_block(ui, theme, view, &glyph_error);
+                copy_path = copy.clicked();
+                focused_inside |= path.has_focus() || copy.has_focus();
                 ui.label(
                     egui::RichText::new(view.body)
                         .size(theme.font_size_term_sm.value())
@@ -105,10 +111,15 @@ pub fn restore_notice(
                         .size(ControlSize::Sm)
                         .show(ui, theme);
                     dismissed |= response.clicked();
-                    dismissed |=
-                        response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+                    focused_inside |= response.has_focus();
                 });
             });
+            // egui는 Esc가 눌린 프레임을 시작할 때 포커스를 먼저 푼다. 직전 프레임의 포커스로 판정한다.
+            let memory = view.id_salt.with("focused_inside");
+            let was_focused = ui.data(|d| d.get_temp::<bool>(memory)).unwrap_or(false);
+            ui.data_mut(|d| d.insert_temp(memory, focused_inside));
+            dismissed |=
+                (focused_inside || was_focused) && ui.input(|i| i.key_pressed(egui::Key::Escape));
         },
     );
 
@@ -146,7 +157,7 @@ fn title_bar(
     view: &RestoreNoticeView<'_>,
     width: f32,
     errors: &GlyphError,
-) -> bool {
+) -> egui::Response {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(width, view.title_bar_height.value()),
         egui::Sense::hover(),
@@ -201,7 +212,7 @@ fn title_bar(
     {
         *errors.borrow_mut() = Some(error);
     }
-    response.clicked()
+    response
 }
 
 /// alertCircle 글리프와 원인 문장. 글리프는 문장 첫 줄의 가운데에 맞춘다.
@@ -238,16 +249,15 @@ fn cause_row(ui: &mut egui::Ui, theme: &Theme, cause: &str, errors: &GlyphError)
     );
 }
 
-/// mono label과 경로 상자. 경로는 선택할 수 있고 어디서든 줄을 바꾼다. 복사 버튼이 눌리면 true다.
+/// mono label과 경로 상자. 경로는 선택할 수 있고 어디서든 줄을 바꾼다. 경로와 복사 버튼의 응답을 돌려준다.
 fn path_block(
     ui: &mut egui::Ui,
     theme: &Theme,
     view: &RestoreNoticeView<'_>,
     errors: &GlyphError,
-) -> bool {
+) -> (egui::Response, egui::Response) {
     let xs = theme.spacing_xs.value();
     let sm = theme.spacing_sm.value();
-    let mut copied = false;
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = xs;
         ui.label(
@@ -284,12 +294,12 @@ fn path_block(
                     );
                     job.wrap.max_width = text_width;
                     job.wrap.break_anywhere = true;
-                    ui.allocate_ui(egui::vec2(text_width, 0.0), |ui| {
+                    let path = ui.allocate_ui(egui::vec2(text_width, 0.0), |ui| {
                         ui.set_min_width(text_width);
                         // 가로 layout의 Label은 줄바꿈 폭을 무한대로 바꾼다. 미리 배치한 galley를 넘겨
                         // 어디서든 줄을 바꾸는 폭을 지킨다.
                         let galley = ui.fonts(|fonts| fonts.layout_job(job));
-                        ui.add(egui::Label::new(galley).selectable(true));
+                        ui.add(egui::Label::new(galley).selectable(true))
                     });
                     let response = crate::icon_button::IconButton::new()
                         .size(ControlSize::Sm)
@@ -305,11 +315,13 @@ fn path_block(
                             }
                         })
                         .on_hover_text(view.copy_label);
-                    copied = response.clicked();
-                });
-            });
-    });
-    copied
+                    (path.inner, response)
+                })
+                .inner
+            })
+            .inner
+    })
+    .inner
 }
 
 #[cfg(test)]
@@ -318,6 +330,70 @@ mod tests {
 
     fn theme() -> Theme {
         Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0)
+    }
+
+    fn frame(ctx: &egui::Context, theme: &Theme, events: Vec<egui::Event>) -> RestoreNoticeOutput {
+        let mut output = None;
+        // 시험은 그린 결과만 보고 출력 텍스처·명령은 쓰지 않는다.
+        let _output = ctx.run(
+            egui::RawInput {
+                events,
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    output = Some(restore_notice(
+                        ui,
+                        theme,
+                        &RestoreNoticeView {
+                            id_salt: egui::Id::new("test_notice"),
+                            title: "title",
+                            close_label: "close",
+                            cause: "cause",
+                            label: "label",
+                            path: "/path",
+                            copy_label: "copy",
+                            body: "body",
+                            continue_label: "continue",
+                            title_bar_height: LogicalPx(28.0),
+                        },
+                        360.0,
+                    ));
+                });
+            },
+        );
+        output.expect("drawn")
+    }
+
+    fn key(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn esc_continues_only_while_a_control_inside_has_focus() {
+        let theme = theme();
+        let ctx = egui::Context::default();
+        frame(&ctx, &theme, Vec::new());
+        assert!(
+            !frame(&ctx, &theme, vec![key(egui::Key::Escape)]).dismissed,
+            "Esc outside the notice is left alone"
+        );
+        frame(&ctx, &theme, vec![key(egui::Key::Tab)]);
+        assert!(
+            ctx.memory(|m| m.focused().is_some()),
+            "Tab reached a control"
+        );
+        assert!(frame(&ctx, &theme, vec![key(egui::Key::Escape)]).dismissed);
     }
 
     #[test]
