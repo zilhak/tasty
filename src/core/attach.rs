@@ -202,6 +202,8 @@ impl OccupancyRegistry {
     }
 
     /// holder 확인 없이 점유를 해제하고 통지 대상 holder를 반환한다.
+    /// 호출자인 `EngineMut::force_detach`와 같은 조건으로만 컴파일한다.
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn force_detach(&mut self, surface_id: SurfaceId) -> Option<AttachClientId> {
         let lock = self.surface_locks.remove(&surface_id)?;
         Some(lock.holder)
