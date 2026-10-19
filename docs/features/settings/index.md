@@ -117,6 +117,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 - `src/view/settings.rs` — `SettingsView`, `SettingsUiState`(draft/active_tab/sub-tab 상태).
 - `src/view/settings/ui.rs` — `SettingsTab`(L1 7탭: General / Terminal / Appearance / Keybindings / FileHandler / Misc / Plugins), L2 enum 군 `GeneralSubTab` / `TerminalSubTab` / `AppearanceSubTab`(Theme / Colors / General / Display / Tasty / Terminal / Explorer / Plugin) / `MiscSubTab` / `PluginSubTab`, L2 필터. FileHandler 의 L2 는 `FileHandlerSubTab`(ExtensionMapping / Detectors / Handlers / HookHandlers).
 - 언어 콤보: `src/view/settings/ui/tabs/general.rs` → `tasty_ui_widgets::language_select`(갤러리 Settings specimen 공유), 목록은 `SettingsUiState.languages`(창 오픈 시 `tasty_i18n::available_languages()` 1회).
+- `src/app/settings_change.rs` — 설정 변경 요청(`SettingsChange`)과 결과 채널(`SettingsDone`·`SettingsWait`), 결과 전달(적용·저장 결과와 거절을 기다리는 요청에 돌려주고 사용자 출처면 토스트). 바로 적용하는 경로와 category 초기화 뒤 journal 완료 경로가 같은 결과 전달을 쓴다. 단축키가 바뀌면 plugin에 `command.host_shortcut_changed`를 발행한다.
 - 탭별: `src/view/settings/ui/tabs/*` + `keybindings_tab.rs` + `file_handler_tab.rs`(+ `file_handler_tab/hook_handlers.rs` — 훅 핸들러 레지스트리 편집).
 
 ## 화면

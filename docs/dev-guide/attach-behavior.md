@@ -25,6 +25,7 @@ attach의 서버·클라이언트 처리와 연결·점유·복구 규칙을 설
 | `forward.rs` | 원 target에 묶인 구조·입력·조회 요청 전달 |
 | `bulk.rs` | 캡처·bulk 전송과 원 connection epoch 검사 |
 | `wire.rs` | control payload 해석·인코딩; App/Engine 접근 없음 |
+| `user_waits.rs` | 사용자 요청 접수와 대기: 구조 요청의 View draft 등록과 journal 접수, mirror surface로 보낸 사용자 입력의 확인 receipt, 원격 구조 결과·Delta 적용 뒤 run·draft 정산과 포커스 대상 결정 |
 
 내부 파서·트리 구성 보조 함수·출력 적용 함수는 해당 모듈에서만 보인다. 회귀 테스트도
 소유 모듈의 `tests.rs` 아래에 두며, 테스트를 위해 제품 함수의 공개 범위를 넓히지 않는다.
@@ -144,7 +145,8 @@ ACK가 확인하는 wire 순서 범위는 시각 정렬로 바꾸지 않는다. 
 `PumpOutcome.input_events`는 Data·MeshContext·MeshInput·확인 지점을 받은 순서대로
 유지한다. GUI·headless의 메인 루프가 그 순서로 전달한 뒤 확인 지점에 답한다. 확인은
 PTY writer flush·셸 소비·명령 종료·렌더 완료를 보장하지 않으며, 대상 거절은 기존 오류
-경로를 따른다. reader는 유효한 연결의 ACK를 즉시 관측한다. 구조 Delta의 ID 예약이
+경로를 따른다. GUI는 `src/app/attach_input.rs`, headless는 `src/boot/headless_stream.rs`가
+이 순서로 적용한다. reader는 유효한 연결의 ACK를 즉시 관측한다. 구조 Delta의 ID 예약이
 Pending이라 뒤 이벤트가 보류되어도 입력 확인 수명은 그 보류에 묶이지 않는다.
 
 사용자 생성 요청은 `state::attach_pending`의 View draft에만 선행 배치한다. 별도
@@ -161,6 +163,13 @@ PendingId로 식별하며 CoreState·journal·surface 저장소에 임시 도메
 실제로 겹칠 수 있는 송신된 임시 영역만 접는다. 어느 요청의 생성인지 모호하면 확정 구조를
 보이고 요청 확인은 남기며 임의의 surface를 선택하거나 완료로 처리하지 않는다. 원 View·선택·epoch가 바뀐 결과는
 다른 View나 새 연결의 선택을 바꾸지 않는다.
+`output.rs`는 결과와 Delta를 받은 순서대로 `user_waits.rs`의 정산을 호출하고, 정산이 돌려준
+local surface만 포커스한다. 클라이언트의 사용자 입력 확인은 입력이 실제로 surface에
+전달됐을 때만 시작한다.
+
+대기 중인 draft·응답이 있는 workspace의 사이드바 항목은 `src/adapters/ui/attach_loading.rs`가
+`loading_overlay_delay`가 지난 뒤에만 로딩 overlay로 덮는다. 지연 전에는 그 시각에 다시 그리도록
+예약한다.
 
 ## 프레임 전송 지연 (Nagle 금지)
 
