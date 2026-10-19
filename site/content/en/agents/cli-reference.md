@@ -1,4 +1,4 @@
-<!-- source-hash: 38e30c183f9c -->
+<!-- source-hash: 75977ad3a71a -->
 # CLI command reference
 
 How to use the `tasty` commands the [introduction](cli.md) does not cover: reading `read since-mark` from a saved position, looking into a surface, permission tokens, notifications, metadata, queues between Surfaces, running several terminals, headless PTYs, shared memory, observers, usage records, and other queries and settings, organised by purpose. Check every argument a command takes with `tasty help <command>`.
@@ -159,7 +159,7 @@ Switch scope with `--global` · `--surface 3` · `--window 42` · `--account me`
 
 Storing in a `--surface` scope works only for an open Surface. A closed Surface ID is rejected with an error. `tasty memory import` follows the same rule: if the file has even one entry in the scope of a closed Surface, nothing is imported and the command fails with an error. Closing a Surface removes the values in its scope as well. Values left in the scope of a Surface closed earlier can be found with `tasty memory list --surface <ID>` and removed with `tasty memory delete`.
 
-If Tasty cannot open its memory file (`~/.tasty/memory.db`) when it starts — the file is damaged or not accessible — Tasty does not stop; it keeps running on **temporary memory**. Values stored in that state are gone after Tasty restarts. This also applies to everything else kept in the same file: agent tasks and coordination tools such as semaphores, approvals, surface metadata, telemetry, and sessions. While it lasts, every such store result also carries `"durable": false`, and `db_pragmas.memory_db` in `tasty list pressure` shows `degraded: true` with the cause (`init_failure`). No notice appears on screen.
+If Tasty cannot open its memory file (`~/.tasty/memory.db`) when it starts — the file is damaged or not accessible — Tasty does not stop; it keeps running on **temporary memory**. Values stored in that state are gone after Tasty restarts. This also applies to everything else kept in the same file: agent tasks and coordination tools such as semaphores, approvals, surface metadata, telemetry, and sessions. While it lasts, every such store result also carries `"durable": false`, and `db_pragmas.memory_db` in `tasty list pressure` shows `degraded: true` with the cause (`init_failure`). A warning notification with the cause and this effect is also left in the notification list.
 
 ## Pulling signals out of the output (observers)
 

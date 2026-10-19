@@ -172,7 +172,7 @@ Tasty 가 시작할 때 메모리 파일(`~/.tasty/memory.db`)을 열지 못하�
 조율 장치, 승인, surface 메타데이터, 텔레메트리, 세션도 마찬가지입니다. 이 상태에서는 그런 저장
 결과에 `"durable": false` 가 함께 나오고,
 `tasty list pressure` 의 `db_pragmas.memory_db` 가 `degraded: true` 와 원인(`init_failure`)을
-보여 줍니다. 화면에는 따로 안내가 뜨지 않습니다.
+보여 줍니다. 알림 목록에도 원인과 이 영향을 적은 경고 알림이 하나 남습니다.
 
 <a id="출력에서-신호-뽑기-관찰자"></a>
 

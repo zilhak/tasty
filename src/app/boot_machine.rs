@@ -553,10 +553,14 @@ impl App {
             .engines
             .get_mut(engine)
             .expect("pending engine must be present to register a main window");
-        // state.db 실패는 앱을 멈추지 않고 첫 engine의 알림으로 한 번 남긴다.
+        // 두 저장소 실패는 앱을 멈추지 않고 첫 engine의 알림으로 한 번 남긴다.
         if let Some(error) = db_init_error.as_ref() {
             crate::app::storage_notice::report_state_db_unavailable(&mut core_state, error);
         }
+        crate::app::storage_notice::report_memory_fallback(
+            &mut core_state,
+            self.services.memory_init_fallback(),
+        );
         // force-detach 통지를 IPC와 같은 스트림으로 보낸다.
         core_state.remote.set_notifier(self.stream_hub.clone());
         crate::app::task_report::apply(&self.services, &core_state.runtime.settings);

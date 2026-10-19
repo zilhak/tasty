@@ -127,7 +127,7 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
   알림 버퍼를 갱신하지 않는다)는 [storage](storage.md) 의 두 절이 정본이다.
 - **부팅이 `memory.db` 를 못 열면 앱은 in-memory 대체로 계속 뜬다** — 종료하지
   않는다. 그 상태의 쓰기는 재시작에 사라지므로 `db_pragmas.memory_db` 가 `degraded: true` 와
-  `init_failure` 로, 쓰기 응답이 `durable: false` 로 그 사실을 말한다. 정본은 [storage](storage.md)
+  `init_failure` 로, 쓰기 응답이 `durable: false` 로, 사용자에게는 경고 알림 하나로 그 사실을 말한다. 정본은 [storage](storage.md)
   "초기화 실패" 절의 `memory.db` 항이고 근거는
   [저장 계약과 writer 명부](storage-contract.md).
 

@@ -193,7 +193,8 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
   `telemetry.*` · `session.*`)의 성공 응답이 `durable: false` 를 더한다(위 "저장 실패의 의미").
 - 로그에 `memory.db falls back to an in-memory store (cause=…) — writes will not survive a
   restart` 가 한 줄 더 남는다.
-- **화면 안내는 없다** — InfoModal 도 toast 도 뜨지 않는다.
+- 첫 engine이 준비되면 그 알림 목록에 경고 하나(`storage_notice.memory_fallback_title`·`storage_notice.memory_fallback_body`)를 남긴다. 본문은 원인(`init_failure.error`와 같은 문구)과 영향(이후 저장한 memory·agent 작업·승인·surface 메타데이터·텔레메트리·세션이 종료하면 사라짐)을 싣는다. 대체 사실은 부팅 초기에 `AppServices`가 보관하므로 알림 저장소가 생기기 전의 사실을 잃지 않는다. GUI는 첫 창의 부팅 완료, headless는 첫 engine 준비 직후 한 번 남긴다. InfoModal·toast·우측 상단 notice는 띄우지 않는다(복원 데이터가 아니므로 경고 수준이다).
+- 대체 저장소마저 열지 못하면 `AppServices` 구성이 기본 원인(`other`, "no memory store was handed over at boot")으로 한 번 더 대체를 시도하고, 그 원인이 알림에 실린다. 첫 원인은 로그(`in-memory fallback for memory.db failed to open`)에만 남는다. 두 번째 시도도 실패하면 부팅이 실패한다.
 
 근거·대안(fatal · 쓰기 거절)·재검토 조건은
 [저장 계약과 writer 명부](storage-contract.md).

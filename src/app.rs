@@ -73,7 +73,6 @@ pub(crate) mod shutdown_machine;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_trace;
 pub(crate) mod state;
-#[cfg(feature = "gui")]
 pub(crate) mod storage_notice;
 #[cfg(feature = "gui")]
 pub(crate) mod sweeps;

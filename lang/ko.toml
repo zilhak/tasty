@@ -1538,6 +1538,8 @@ body = "\"{}\" 테마가 없어 Catppuccin Mocha 테마를 사용합니다."
 [storage_notice]
 state_db_title = "최근 목록과 튜토리얼 진행이 저장되지 않습니다"
 state_db_body = "{} Tasty는 계속 실행됩니다. 터미널과 레이아웃 복원에는 영향이 없지만, 이번 실행에서는 최근 파일 목록과 튜토리얼 진행이 비어 있고 저장되지 않습니다. 파일은 그대로 두었습니다."
+memory_fallback_title = "에이전트 데이터가 Tasty를 끌 때까지만 유지됩니다"
+memory_fallback_body = "memory.db를 열지 못했습니다({}). Tasty는 임시 메모리 저장소로 계속 실행됩니다. 지금부터 저장하는 memory 항목, 에이전트 작업, 승인, surface 메타데이터, 텔레메트리, 세션은 Tasty를 끄면 사라집니다. 파일은 그대로 두었습니다."
 
 [db_error]
 title = "데이터베이스 초기화 오류"

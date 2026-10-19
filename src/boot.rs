@@ -591,6 +591,11 @@ fn bootstrap_engine(
     );
     // force-detach 통지에 IPC 서버와 같은 스트림 허브를 사용한다.
     engine.remote.set_notifier(app.stream_hub.clone());
+    // 부팅 초기에 보관한 memory.db 대체 사실을 알림 저장소가 생긴 지금 남긴다.
+    crate::app::storage_notice::report_memory_fallback(
+        &mut engine.borrow_mut(),
+        app.services.memory_init_fallback(),
+    );
     Ok(engine)
 }
 
