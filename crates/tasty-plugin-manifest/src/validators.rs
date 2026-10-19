@@ -121,6 +121,7 @@ pub const RESERVED_IPC_PREFIXES: &[&str] = &[
     "pty",
     "recent",
     "remote",
+    "run",
     "session",
     "settings",
     "split",

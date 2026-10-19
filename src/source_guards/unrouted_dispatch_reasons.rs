@@ -340,6 +340,16 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "전역 등록부의 id는 문자열 핸들러 이름이며 창 ID가 아니다.",
     ),
     (
+        "hook_handler.result",
+        NotWindowOwned,
+        "run 값으로 프로세스 전역 실행 기록(request_runs)을 조회한다. run은 창 ID가 아니며 창 상태를 읽지 않는다.",
+    ),
+    (
+        "run.result",
+        NotWindowOwned,
+        "run 값으로 프로세스 전역 실행 기록(request_runs)을 조회하고 호출자 신원으로 읽을 수 있는 run만 돌려준다. 창 상태를 읽지 않는다.",
+    ),
+    (
         "completion_strategy.list",
         NotWindowOwned,
         "`completion_strategy::global()` — 프로세스 전역",

@@ -135,8 +135,12 @@ pub fn handle_dispatch(
 /// 수동 dispatch의 진행·최종 결과. `done`이 false면 아직 실행 중이다.
 /// 보관 수를 넘어 지워졌거나 발급하지 않은 run은 invalid params다.
 pub fn handle_result(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
-    let Some(run) = params.get("run").and_then(|v| v.as_u64()) else {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'run' parameter");
+    let run = match super::params::opt_int::<u64>(params, "run", &id) {
+        Ok(Some(run)) => run,
+        Ok(None) => {
+            return JsonRpcResponse::invalid_params(id, "Missing required 'run' parameter");
+        }
+        Err(response) => return response,
     };
     match runs::lookup(run) {
         Some(result) => JsonRpcResponse::success(id, result),
@@ -398,6 +402,29 @@ fn string_map(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn result_reads_run_through_the_shared_number_parser() {
+        let missing = handle_result(json!(1), &json!({})).error.unwrap();
+        assert_eq!(missing.code, -32602);
+        assert_eq!(missing.message, "Missing required 'run' parameter");
+        for bad in [json!(-1), json!("3"), json!(1.5)] {
+            let error = handle_result(json!(1), &json!({ "run": bad }))
+                .error
+                .unwrap();
+            assert_eq!(error.code, -32602);
+            assert!(
+                error.message.starts_with("'run' was given as"),
+                "{}",
+                error.message
+            );
+        }
+        let run = runs::begin("h", runs::ACTION_SEQUENCE);
+        let found = handle_result(json!(1), &json!({ "run": run }))
+            .result
+            .unwrap();
+        assert_eq!(found["state"], "running");
+    }
 
     // 수동 실행과 surface 훅 사이에도 시퀀스의 단계가 섞이지 않아야 한다.
     #[test]

@@ -385,7 +385,7 @@ debug 메서드까지 대조할 수 없다([debug-ipc](debug-ipc.md)).
 
 ## plugin 점유 namespace
 
-plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예약어와 충돌 금지(`system surface tab pane workspace plugin hook global_hook webhook message tool notification window debug ui ime split tree memory output approval telemetry timer` 등). 상세는 [plugin-development](plugin-development.md) "예약 prefix".
+plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예약어와 충돌 금지(`system surface tab pane workspace plugin hook global_hook webhook message tool notification window debug ui ime split tree memory output approval telemetry timer run` 등). 상세는 [plugin-development](plugin-development.md) "예약 prefix".
 
 ### 대상 surface 는 `surface` / `surface_id` 어느 이름으로 와도 같은 필드다
 
