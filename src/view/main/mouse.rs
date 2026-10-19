@@ -362,16 +362,26 @@ impl MainView {
         }
 
         let overlay_open = self.mouse_overlay_open();
+        // 복원 안내 카드 위의 press는 안내가 받는다. 아래 surface를 활성화하거나 선택·분할선
+        // 드래그를 시작하지 않는다. 바깥에서 시작한 드래그의 release는 그대로 마무리한다.
+        let notice_hit = button_state == ElementState::Pressed && self.restore_notice_hit();
         // 분할선 hit 띠의 press 는 포커스를 바꾸지 않고 곧바로 드래그를 시작한다. 비활성 surface 쪽
         // 띠도 첫 press 부터 분할선을 잡아야 하므로 click-to-activate 보다 먼저 본다.
-        if self.try_press_divider_first(engine, button, button_state, egui_consumed, overlay_open) {
+        if self.try_press_divider_first(
+            engine,
+            button,
+            button_state,
+            egui_consumed || notice_hit,
+            overlay_open,
+        ) {
             return;
         }
-        if self.try_click_to_activate(engine, button, button_state, overlay_open) {
+        if !notice_hit && self.try_click_to_activate(engine, button, button_state, overlay_open) {
             return;
         }
 
         if egui_consumed
+            || notice_hit
             || overlay_open
             || self.state.popup_hovered
             || self.state.banner_hovered
@@ -408,6 +418,17 @@ impl MainView {
             MouseButton::Left => self.handle_left_button(engine, button_state),
             _ => {}
         }
+    }
+
+    /// 현재 포인터가 직전 프레임에 그린 복원 안내 카드 위인지.
+    fn restore_notice_hit(&self) -> bool {
+        self.cursor_position.is_some_and(|pos| {
+            self.state.restore_notices.covers_physical(
+                PhysicalPx(pos.x as f32),
+                PhysicalPx(pos.y as f32),
+                self.base.gpu.egui_pixels_per_point(),
+            )
+        })
     }
 
     /// 창 가장자리에서 좌버튼을 누르면 OS 리사이즈를 시작한다. macOS는 제외한다.

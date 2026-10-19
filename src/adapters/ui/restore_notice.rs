@@ -4,7 +4,7 @@
 //! 키·선택·스크롤은 터미널로 그대로 간다. ×·Continue·안쪽 컨트롤 포커스의 Esc는 같은 응답이며,
 //! 안내를 지우고 그 id를 App이 확인 응답으로 가져가게 남긴다.
 
-use crate::model::{LogicalPx, LogicalRect, PhysicalRect};
+use crate::model::{LogicalPx, LogicalRect, PhysicalPx, PhysicalRect};
 
 /// 안내 한 장의 표시 문구. 모두 번역된 문자열이다.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,6 +65,20 @@ impl RestoreNotices {
         self.cards.iter().any(|rect| {
             x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height
         })
+    }
+
+    /// winit 포인터의 물리 좌표가 직전 프레임에 그린 안내 카드 위인지. egui가 아직 그 포인터로
+    /// 프레임을 돌리지 않은 첫 클릭에도 맞도록 egui의 hover 판정이 아니라 카드 사각형으로 가린다.
+    pub(crate) fn covers_physical(
+        &self,
+        x: PhysicalPx,
+        y: PhysicalPx,
+        pixels_per_point: f32,
+    ) -> bool {
+        self.covers(egui::pos2(
+            x.to_logical(pixels_per_point).value(),
+            y.to_logical(pixels_per_point).value(),
+        ))
     }
 
     pub(crate) fn take_acknowledged(&mut self) -> Vec<u64> {
@@ -247,6 +261,29 @@ mod tests {
             column_top(base, INSET, columns, &[search, banner]),
             LogicalPx(108.0)
         );
+    }
+
+    #[test]
+    fn a_physical_pointer_is_compared_with_cards_in_logical_points() {
+        let mut notices = RestoreNotices {
+            cards: vec![rect(632.0, 44.0, 360.0, 100.0)],
+            ..Default::default()
+        };
+        let hit = |notices: &RestoreNotices, x: f32, y: f32, ppp: f32| {
+            notices.covers_physical(PhysicalPx(x), PhysicalPx(y), ppp)
+        };
+        assert!(hit(&notices, 640.0, 50.0, 1.0));
+        assert!(
+            hit(&notices, 1280.0, 100.0, 2.0),
+            "logical (640, 50) at scale 2"
+        );
+        assert!(
+            !hit(&notices, 640.0, 50.0, 2.0),
+            "logical (320, 25) is outside the card"
+        );
+        assert!(!hit(&notices, 2000.0, 100.0, 2.0));
+        notices.cards.clear();
+        assert!(!hit(&notices, 1280.0, 100.0, 2.0), "no card drawn, no hit");
     }
 
     #[test]
