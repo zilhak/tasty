@@ -110,6 +110,9 @@ pub struct MainViewState {
     /// 연결하지 않은 자동 attach 매핑의 행 표지·배너 상태. 안내는 App이 넘긴다.
     #[cfg(feature = "gui")]
     pub(crate) attach_notices: crate::adapters::ui::attach_notice::AttachNotices,
+    /// 창 오른쪽 위 안내 열의 복원 실패·저장 멈춤 안내. 내용은 App이 넘긴다.
+    #[cfg(feature = "gui")]
+    pub(crate) restore_notices: crate::adapters::ui::restore_notice::RestoreNotices,
     /// mirror 터미널 크기 동기화 실패의 배너 상태. 실패 목록은 App이 넘긴다.
     #[cfg(feature = "gui")]
     pub(crate) attach_size_syncs: crate::adapters::ui::attach_size_sync::AttachSizeSyncs,

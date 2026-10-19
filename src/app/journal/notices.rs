@@ -40,6 +40,11 @@ impl NoticePopup {
         }
     }
 
+    #[cfg(feature = "gui")]
+    pub(crate) fn label(&self) -> &'static str {
+        crate::i18n::t("notice.saved_layout_label")
+    }
+
     pub(crate) fn body(&self) -> &'static str {
         match self.variant {
             NoticeVariant::Restore => crate::i18n::t("notice.restore_failed_body"),

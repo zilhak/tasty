@@ -149,6 +149,9 @@ pub(crate) struct App {
     /// 받을 workspace가 아직 없어 전달을 미룬 복원·저장 알림.
     #[cfg(feature = "gui")]
     pub(crate) pending_recovery_notices: Vec<journal::notices::RecoveryNotice>,
+    /// 마지막으로 띄운 오른쪽 위 복원 안내 id.
+    #[cfg(feature = "gui")]
+    pub(crate) next_restore_notice_id: u64,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) services: AppServices,
     pub(crate) state: state::AppState,
@@ -299,6 +302,8 @@ impl App {
             journal,
             pending_server_attaches: Vec::new(),
             pending_recovery_notices: Vec::new(),
+            #[cfg(feature = "gui")]
+            next_restore_notice_id: 0,
             settings_edit_owner: None,
             port_scans: Default::default(),
             #[cfg(feature = "gui")]

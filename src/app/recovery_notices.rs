@@ -37,6 +37,9 @@ impl App {
                 continue;
             };
             log(&notice);
+            if let Some(popup) = &notice.popup {
+                self.show_restore_notice(workspace, popup);
+            }
             self.cascade_notification_pushed(crate::app::command::NotificationPush {
                 ws_id: workspace,
                 surface_id: 0,
@@ -46,6 +49,35 @@ impl App {
                 level: notice.level,
                 merge: crate::app::command::NotificationMerge::Separate,
             });
+        }
+    }
+
+    /// workspace가 있는 창의 오른쪽 위 안내 열에 비포커스 안내를 띄운다. parked 엔진이면 그 엔진이
+    /// 창에 붙을 때까지 띄우지 않는다. 오류 알림 항목은 따로 남으므로 안내를 잃지 않는다.
+    fn show_restore_notice(&mut self, workspace: u32, popup: &notices::NoticePopup) {
+        self.next_restore_notice_id = self.next_restore_notice_id.wrapping_add(1);
+        let entry = crate::adapters::ui::restore_notice::RestoreNoticeEntry {
+            id: self.next_restore_notice_id,
+            title: popup.title().to_owned(),
+            cause: popup.cause.text().to_owned(),
+            label: popup.label().to_owned(),
+            path: popup.path.clone(),
+            body: popup.body().to_owned(),
+        };
+        if let Some((state, _)) = crate::app::window_access::engines_mut!(self)
+            .sessions()
+            .find(|(_, engine)| engine.has_workspace(workspace))
+        {
+            state.restore_notices.push(entry);
+        }
+    }
+
+    /// 사용자가 닫은 안내를 거둔다. 안내를 닫아도 원본·저장 상태는 바뀌지 않는다.
+    pub(crate) fn collect_restore_notice_acknowledgements(&mut self) {
+        for (state, _) in crate::app::window_access::engines_mut!(self).sessions() {
+            for id in state.restore_notices.take_acknowledged() {
+                tracing::info!(id, "restore notice dismissed");
+            }
         }
     }
 }

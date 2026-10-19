@@ -27,6 +27,7 @@ pub(crate) mod notification;
 pub(crate) mod overlay;
 pub mod popup;
 pub mod preset;
+pub(crate) mod restore_notice;
 pub(crate) mod search_bar;
 pub mod surface;
 pub mod terminal_link;

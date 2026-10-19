@@ -119,6 +119,7 @@ impl App {
         }
         drop(sessions);
         self.deliver_recovery_notices();
+        self.collect_restore_notice_acknowledgements();
         let mut sessions: Vec<_> = self.engines.all_sessions_mut().collect();
         if !self.journal.pauses_observation() {
             crate::app::attach_activation::poll(

@@ -746,7 +746,13 @@ fn sync_webviews(
     for (sid, wv) in &view.webviews {
         // active 면 bounds 는 숨겨져 있어도 갱신(다음 reveal 대비).
         if let Some(bounds) = active_html.get(sid) {
-            wv.set_bounds(*bounds, scale_factor);
+            // 오른쪽 위 안내와 겹치면 안내 열 왼쪽까지 줄인다. 숨기거나 포커스를 옮기지 않는다.
+            let bounds = crate::adapters::ui::restore_notice::shrink_beside_notices(
+                *bounds,
+                view.state.restore_notices.occupied(),
+                crate::theme::theme().notice_column_inset().value(),
+            );
+            wv.set_bounds(bounds, scale_factor);
             apply_input_holes(wv, active_holes.get(sid).map_or(&[][..], Vec::as_slice));
         }
         // 스캔을 기다리며 미룬 탐색 결정을 끝낸다. 읽기가 끝나면 작업 스레드가 이 윈도우를 깨운다.

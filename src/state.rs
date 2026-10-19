@@ -270,6 +270,8 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             attach_notices: Default::default(),
             #[cfg(feature = "gui")]
+            restore_notices: Default::default(),
+            #[cfg(feature = "gui")]
             attach_size_syncs: Default::default(),
             #[cfg(feature = "gui")]
             shell_integration_hint_shown: std::collections::HashSet::new(),

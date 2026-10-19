@@ -110,7 +110,22 @@ impl GpuState {
             ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
             ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor);
-            ui::attach_loading::draw(ctx, state, engine, terminal_rect, scale_factor, None);
+            // 안내 열의 첫 항목이다. attach 대기 칩은 반환한 사각형 아래에 이어 그린다.
+            let notice_column_occupied = ui::restore_notice::draw_notice_column(
+                ctx,
+                &mut state.restore_notices,
+                terminal_rect,
+                state.tab_bar_height,
+                scale_factor,
+            );
+            ui::attach_loading::draw(
+                ctx,
+                state,
+                engine,
+                terminal_rect,
+                scale_factor,
+                notice_column_occupied,
+            );
             // 탭 바와 점유 테두리 뒤에 그려 대상 rect에서 가장 마지막에 둔다.
             let move_mark = ui::move_source::resolve(
                 state.pending_move,

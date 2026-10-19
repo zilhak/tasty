@@ -1,0 +1,203 @@
+//! 창 오른쪽 위 안내 열에 띄우는 복원 실패·저장 멈춤 비포커스 안내의 창별 상태와 그리기.
+//!
+//! 안내 내용은 App이 넘긴다. 안내는 나타날 때 포커스를 가져가지 않고 scrim도 없다. 바깥의
+//! 키·선택·스크롤은 터미널로 그대로 간다. ×·Continue·안쪽 컨트롤 포커스의 Esc는 같은 응답이며,
+//! 안내를 지우고 그 id를 App이 확인 응답으로 가져가게 남긴다.
+
+use crate::model::PhysicalRect;
+
+/// 안내 한 장의 표시 문구. 모두 번역된 문자열이다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RestoreNoticeEntry {
+    pub(crate) id: u64,
+    pub(crate) title: String,
+    pub(crate) cause: String,
+    pub(crate) label: String,
+    pub(crate) path: String,
+    pub(crate) body: String,
+}
+
+impl RestoreNoticeEntry {
+    /// 같은 안내인지 가린다. 제목·원인·경로가 같으면 열에 다시 쌓지 않는다.
+    fn same_as(&self, other: &Self) -> bool {
+        self.title == other.title && self.cause == other.cause && self.path == other.path
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct RestoreNotices {
+    entries: Vec<RestoreNoticeEntry>,
+    /// 사용자가 닫은 안내 id. App이 가져간다.
+    acknowledged: Vec<u64>,
+    /// 직전 프레임에 그린 안내 전체 사각형(논리 좌표). native WebView bounds 축소에 쓴다.
+    occupied: Option<egui::Rect>,
+}
+
+impl RestoreNotices {
+    /// 안내를 더한다. 같은 안내가 이미 떠 있으면 더하지 않고 false다.
+    pub(crate) fn push(&mut self, entry: RestoreNoticeEntry) -> bool {
+        if self.entries.iter().any(|shown| shown.same_as(&entry)) {
+            return false;
+        }
+        self.entries.push(entry);
+        true
+    }
+
+    pub(crate) fn take_acknowledged(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.acknowledged)
+    }
+
+    /// 직전 프레임에 그린 안내 영역. 안내가 없으면 `None`이다.
+    pub(crate) fn occupied(&self) -> Option<egui::Rect> {
+        self.occupied
+    }
+
+    fn dismiss(&mut self, id: u64) {
+        self.entries.retain(|entry| entry.id != id);
+        self.acknowledged.push(id);
+    }
+}
+
+/// 작업 영역(`terminal_rect`) 오른쪽 위, 탭 바 아래의 안내 열에 안내를 위에서부터 쌓아 그린다.
+/// 이번 프레임에 그린 안내 전체 사각형(논리 좌표)을 돌려준다. 같은 열 아래에 이어 그리는 attach
+/// 대기 칩은 이 값의 아래쪽 + `notice-column-gap`에서 시작한다. 안내가 없으면 `None`이다.
+pub(crate) fn draw_notice_column(
+    ctx: &egui::Context,
+    notices: &mut RestoreNotices,
+    terminal_rect: PhysicalRect,
+    tab_bar_height: crate::model::PhysicalPx,
+    scale: f32,
+) -> Option<egui::Rect> {
+    let theme = crate::theme::theme();
+    let work = super::to_egui_rect(terminal_rect, scale);
+    let top = work.top() + tab_bar_height.to_logical(scale).value();
+    let column = tasty_ui_widgets::notice_column_rect(&theme, work, top);
+    let gap = theme.notice_column_gap().value();
+    let mut next_top = column.top();
+    let mut occupied: Option<egui::Rect> = None;
+    let mut dismissed = Vec::new();
+    for entry in &notices.entries {
+        let view = tasty_ui_widgets::RestoreNoticeView {
+            id_salt: egui::Id::new("restore_notice").with(entry.id),
+            title: &entry.title,
+            close_label: crate::i18n::t("notice.close"),
+            cause: &entry.cause,
+            label: &entry.label,
+            path: &entry.path,
+            copy_label: crate::i18n::t("notice.copy_path"),
+            body: &entry.body,
+            continue_label: crate::i18n::t("notice.continue"),
+            title_bar_height: super::popup::title_bar_height(),
+        };
+        // 포커스를 가져가지 않는 Area다. 안내 상자만 포인터를 받는다.
+        let output = egui::Area::new(egui::Id::new("restore_notice_area").with(entry.id))
+            .order(egui::Order::Foreground)
+            .fixed_pos(egui::pos2(column.left(), next_top))
+            .constrain(false)
+            .show(ctx, |ui| {
+                tasty_ui_widgets::restore_notice(ui, &theme, &view, column.width())
+            })
+            .inner;
+        if let Some(error) = &output.glyph_error {
+            tracing::warn!("restore notice glyph failed to load: {error}");
+        }
+        if output.copy_path {
+            ctx.copy_text(entry.path.clone());
+        }
+        if output.dismissed {
+            dismissed.push(entry.id);
+        }
+        occupied = Some(occupied.map_or(output.rect, |rect| rect.union(output.rect)));
+        next_top = output.rect.bottom() + gap;
+    }
+    for id in dismissed {
+        notices.dismiss(id);
+    }
+    if notices.entries.is_empty() {
+        occupied = None;
+    }
+    notices.occupied = occupied;
+    occupied
+}
+
+/// 안내와 겹치는 native WebView의 bounds를 안내 열 왼쪽 경계(열 x − inset)까지 줄인다.
+/// WebView를 숨기지 않고 포커스·입력 대상도 바꾸지 않는다. 겹치지 않으면 그대로 돌려준다.
+pub(crate) fn shrink_beside_notices(
+    bounds: crate::webview::WebViewBounds,
+    occupied: Option<egui::Rect>,
+    inset: f32,
+) -> crate::webview::WebViewBounds {
+    let Some(notice) = occupied else {
+        return bounds;
+    };
+    let left = f64::from(notice.left() - inset);
+    let overlaps = bounds.x < f64::from(notice.right())
+        && bounds.x + bounds.width > left
+        && bounds.y < f64::from(notice.bottom())
+        && bounds.y + bounds.height > f64::from(notice.top());
+    if !overlaps {
+        return bounds;
+    }
+    crate::webview::WebViewBounds {
+        width: (left - bounds.x).max(0.0),
+        ..bounds
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(id: u64, path: &str) -> RestoreNoticeEntry {
+        RestoreNoticeEntry {
+            id,
+            title: "title".into(),
+            cause: "cause".into(),
+            label: "label".into(),
+            path: path.into(),
+            body: "body".into(),
+        }
+    }
+
+    #[test]
+    fn the_same_notice_is_not_stacked_twice() {
+        let mut notices = RestoreNotices::default();
+        assert!(notices.push(entry(1, "/a")));
+        assert!(!notices.push(entry(2, "/a")));
+        assert!(notices.push(entry(3, "/b")));
+        notices.dismiss(1);
+        assert_eq!(notices.take_acknowledged(), vec![1]);
+        assert!(notices.take_acknowledged().is_empty());
+    }
+
+    fn bounds(x: f64, width: f64) -> crate::webview::WebViewBounds {
+        crate::webview::WebViewBounds {
+            x,
+            y: 0.0,
+            width,
+            height: 400.0,
+        }
+    }
+
+    #[test]
+    fn an_overlapping_webview_ends_left_of_the_notice() {
+        let notice = egui::Rect::from_min_max(egui::pos2(600.0, 40.0), egui::pos2(960.0, 240.0));
+        let shrunk = shrink_beside_notices(bounds(0.0, 968.0), Some(notice), 8.0);
+        assert_eq!(shrunk.width, 592.0);
+        assert_eq!(shrunk.x, 0.0);
+        assert_eq!(shrunk.height, 400.0);
+    }
+
+    #[test]
+    fn a_webview_away_from_the_notice_keeps_its_bounds() {
+        let notice = egui::Rect::from_min_max(egui::pos2(600.0, 40.0), egui::pos2(960.0, 240.0));
+        assert_eq!(
+            shrink_beside_notices(bounds(0.0, 400.0), Some(notice), 8.0),
+            bounds(0.0, 400.0)
+        );
+        assert_eq!(
+            shrink_beside_notices(bounds(0.0, 968.0), None, 8.0),
+            bounds(0.0, 968.0)
+        );
+    }
+}
