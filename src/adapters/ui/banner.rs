@@ -489,6 +489,17 @@ impl BannerManager {
         self.card_rects.get(&(scope.clone(), key.clone())).copied()
     }
 
+    /// 직전에 그린 창 범위(View·Workspace) 배너 카드의 사각형. pane·tab·surface 범위는 뺀다.
+    pub fn window_scope_rects(&self) -> Vec<egui::Rect> {
+        self.card_rects
+            .iter()
+            .filter(|((scope, _), _)| {
+                matches!(scope, BannerScope::View | BannerScope::Workspace(_))
+            })
+            .map(|(_, rect)| *rect)
+            .collect()
+    }
+
     pub fn has_any(&self) -> bool {
         !self.scopes.is_empty()
     }

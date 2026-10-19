@@ -682,6 +682,14 @@ impl PopupManager {
         self.popups.iter().any(|p| p.id == id && p.open)
     }
 
+    /// 열려 있고 직전 그리기에서 범위가 보인 팝업의 사각형.
+    pub fn visible_rect(&self, id: PopupId) -> Option<egui::Rect> {
+        self.popups
+            .iter()
+            .find(|p| p.id == id && p.open && p.scope_visible)
+            .map(|p| p.popup_rect())
+    }
+
     /// 열린 팝업의 범위. 닫혀 있으면 `None`이다. 범위가 지금 보이는지는 따지지 않는다.
     pub fn open_scope(&self, id: PopupId) -> Option<&PopupScope> {
         self.popups

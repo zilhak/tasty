@@ -65,7 +65,31 @@ impl RestoreNotices {
     }
 }
 
+/// 열이 시작할 y. 탭 바 아래(`base`)에서 시작하되, 열과 가로로 겹치고 열 시작점보다 위에서
+/// 시작하는 장애물(창 범위 배너, 오른쪽 위 pane의 열린 검색 막대)이 있으면 그 아래로 내린다.
+/// 장애물은 옮기지 않는다. 반환값에는 `notice_column_rect`가 inset을 더한다.
+fn column_top(
+    base: f32,
+    inset: f32,
+    columns: impl Fn(f32) -> egui::Rect,
+    obstacles: &[egui::Rect],
+) -> f32 {
+    let mut top = base;
+    let mut sorted: Vec<egui::Rect> = obstacles.to_vec();
+    sorted.sort_by(|a, b| a.min.y.total_cmp(&b.min.y));
+    for obstacle in sorted {
+        let column = columns(top);
+        let beside = obstacle.max.x <= column.min.x || obstacle.min.x >= column.max.x;
+        if !beside && obstacle.min.y <= column.min.y + inset && obstacle.max.y > top {
+            top = obstacle.max.y;
+        }
+    }
+    top
+}
+
 /// 작업 영역(`terminal_rect`) 오른쪽 위, 탭 바 아래의 안내 열에 안내를 위에서부터 쌓아 그린다.
+/// `obstacles`는 같은 프레임에 먼저 그린 창 범위 배너와 열린 검색 막대의 사각형이다. 열은 그 아래에서
+/// 시작한다.
 /// 이번 프레임에 그린 안내 전체 사각형(논리 좌표)을 돌려준다. 같은 열 아래에 이어 그리는 attach
 /// 대기 칩은 이 값의 아래쪽 + `notice-column-gap`에서 시작한다. 안내가 없으면 `None`이다.
 pub(crate) fn draw_notice_column(
@@ -74,11 +98,19 @@ pub(crate) fn draw_notice_column(
     terminal_rect: PhysicalRect,
     tab_bar_height: crate::model::PhysicalPx,
     scale: f32,
+    obstacles: &[egui::Rect],
 ) -> Option<egui::Rect> {
     let theme = crate::theme::theme();
     let work = super::to_egui_rect(terminal_rect, scale);
-    let top = work.top() + tab_bar_height.to_logical(scale).value();
-    let column = tasty_ui_widgets::notice_column_rect(&theme, work, top);
+    let base = work.top() + tab_bar_height.to_logical(scale).value();
+    let columns = |top| tasty_ui_widgets::notice_column_rect(&theme, work, top);
+    let top = column_top(
+        base,
+        theme.notice_column_inset().value(),
+        columns,
+        obstacles,
+    );
+    let column = columns(top);
     let gap = theme.notice_column_gap().value();
     let mut next_top = column.top();
     let mut occupied: Option<egui::Rect> = None;
@@ -186,6 +218,26 @@ mod tests {
             path: path.into(),
             body: "body".into(),
         }
+    }
+
+    fn columns(top: f32) -> egui::Rect {
+        egui::Rect::from_min_max(egui::pos2(632.0, top + 8.0), egui::pos2(992.0, top + 108.0))
+    }
+
+    #[test]
+    fn the_column_starts_under_a_window_banner_and_an_open_search_bar() {
+        let banner = egui::Rect::from_min_max(egui::pos2(0.0, 36.0), egui::pos2(1000.0, 68.0));
+        let search = egui::Rect::from_min_max(egui::pos2(700.0, 76.0), egui::pos2(992.0, 108.0));
+        assert_eq!(column_top(36.0, 8.0, columns, &[]), 36.0);
+        assert_eq!(column_top(36.0, 8.0, columns, &[banner]), 68.0);
+        assert_eq!(column_top(36.0, 8.0, columns, &[search, banner]), 108.0);
+    }
+
+    #[test]
+    fn obstacles_beside_or_below_the_column_do_not_move_it() {
+        let left = egui::Rect::from_min_max(egui::pos2(0.0, 36.0), egui::pos2(600.0, 68.0));
+        let lower = egui::Rect::from_min_max(egui::pos2(700.0, 400.0), egui::pos2(992.0, 432.0));
+        assert_eq!(column_top(36.0, 8.0, columns, &[left, lower]), 36.0);
     }
 
     #[test]

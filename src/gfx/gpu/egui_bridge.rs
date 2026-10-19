@@ -110,22 +110,6 @@ impl GpuState {
             ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
             ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor);
-            // 안내 열의 첫 항목이다. attach 대기 칩은 반환한 사각형 아래에 이어 그린다.
-            let notice_column_occupied = ui::restore_notice::draw_notice_column(
-                ctx,
-                &mut state.restore_notices,
-                terminal_rect,
-                state.tab_bar_height,
-                scale_factor,
-            );
-            ui::attach_loading::draw(
-                ctx,
-                state,
-                engine,
-                terminal_rect,
-                scale_factor,
-                notice_column_occupied,
-            );
             // 탭 바와 점유 테두리 뒤에 그려 대상 rect에서 가장 마지막에 둔다.
             let move_mark = ui::move_source::resolve(
                 state.pending_move,
@@ -178,6 +162,29 @@ impl GpuState {
                 plugin_manager,
             );
             ui::drop_overlay::draw_drop_overlay(ctx, state, engine, terminal_rect, scale_factor);
+            // 안내 열은 같은 프레임의 배너·검색 막대 아래에 놓고, attach 대기는 그 아래에 잇는다.
+            let mut obstacles = state.banners.window_scope_rects();
+            obstacles.extend(
+                state
+                    .popups
+                    .visible_rect(ui::search_bar::SEARCH_BAR_POPUP_ID),
+            );
+            let notice_column_occupied = ui::restore_notice::draw_notice_column(
+                ctx,
+                &mut state.restore_notices,
+                terminal_rect,
+                state.tab_bar_height,
+                scale_factor,
+                &obstacles,
+            );
+            ui::attach_loading::draw(
+                ctx,
+                state,
+                engine,
+                terminal_rect,
+                scale_factor,
+                notice_column_occupied,
+            );
 
             // egui가 프레임마다 커서를 갱신하므로 저장된 창 리사이즈 방향도 여기서 반영한다.
             if let Some(dir) = state.pending_resize_cursor {
