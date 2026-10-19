@@ -21,7 +21,7 @@ use objc2_web_kit::{
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
-use super::load_generation::{is_current_load, nav_state_after_end};
+use super::load_generation::{CancelledDecisions, is_current_load, nav_state_after_end};
 use super::script_gate::{DeferredScan, ReadSlot, Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
 
@@ -66,6 +66,8 @@ struct NavDelegateIvars {
     committed_url: RefCell<Option<String>>,
     /// 스캔 결과를 기다리는 정책 결정. 허용 기록과 같은 URL의 응답만 여기 온다.
     pending_decision: RefCell<Option<PendingDecision>>,
+    /// Cancel로 끝낸 결정의 늦은 실패 신호를 새 로드의 실패로 보지 않게 센다.
+    cancelled_decisions: RefCell<CancelledDecisions>,
 }
 
 /// 세대 비교용 WKNavigation 식별 값. 알 수 없으면 None이다.
@@ -91,11 +93,31 @@ impl NavDelegateIvars {
             self.surface_id
         );
         pending.scan.abandon();
+        self.cancelled_decisions.borrow_mut().cancelled();
         complete_decision(
             &pending.handler,
             &pending.preferences,
             WKNavigationActionPolicy::Cancel,
         );
+    }
+
+    /// 실패 신호가 Tasty가 Cancel한 결정의 것이면 소비하고 `true`를 준다. 그 신호는 chrome과
+    /// 게이트를 건드리지 않는다.
+    fn absorbs_cancelled_failure(&self, navigation: Option<&WKNavigation>) -> bool {
+        let current = navigation_key(self.gate_navigation.borrow().as_deref());
+        if !self
+            .cancelled_decisions
+            .borrow_mut()
+            .absorbs_failure(current)
+        {
+            return false;
+        }
+        tracing::debug!(
+            "WebView surface {}: ignoring the failure of a decision Tasty cancelled ({:?})",
+            self.surface_id,
+            navigation_key(navigation)
+        );
+        true
     }
 
     /// 읽기가 끝났으면 보류한 결정을 끝낸다. 표가 아직 현재 로드의 것일 때만 JS를 적용해 Allow하고,
@@ -118,7 +140,10 @@ impl NavDelegateIvars {
                 unsafe { pending.preferences.setAllowsContentJavaScript(js) };
                 WKNavigationActionPolicy::Allow
             }
-            None => WKNavigationActionPolicy::Cancel,
+            None => {
+                self.cancelled_decisions.borrow_mut().cancelled();
+                WKNavigationActionPolicy::Cancel
+            }
         };
         complete_decision(&pending.handler, &pending.preferences, policy);
     }
@@ -202,6 +227,7 @@ define_class!(
             let sid = self.ivars().surface_id;
             tracing::debug!("WebView surface {sid}: load started");
             self.ivars().nav_state.set(NavState::Loading);
+            self.ivars().cancelled_decisions.borrow_mut().started();
             *self.ivars().chrome_navigation.borrow_mut() = navigation.map(|n| n.retain());
             // 정책 결정에서 게이트가 시작한 로드라면 이 navigation이 새 세대다(실 기기 미측정).
             if self.ivars().gate_load_pending.replace(false) {
@@ -245,6 +271,9 @@ define_class!(
                 self.ivars().surface_id,
                 error.localizedDescription()
             );
+            if self.ivars().absorbs_cancelled_failure(navigation) {
+                return;
+            }
             self.ivars().chrome_navigation_ended(navigation, false);
             self.ivars().gate_navigation_failed(navigation);
         }
@@ -261,6 +290,9 @@ define_class!(
                 self.ivars().surface_id,
                 error.localizedDescription()
             );
+            if self.ivars().absorbs_cancelled_failure(navigation) {
+                return;
+            }
             self.ivars().chrome_navigation_ended(navigation, false);
             self.ivars().gate_navigation_failed(navigation);
         }
@@ -390,6 +422,7 @@ impl NavDelegate {
             chrome_navigation: RefCell::new(None),
             committed_url: RefCell::new(None),
             pending_decision: RefCell::new(None),
+            cancelled_decisions: RefCell::new(CancelledDecisions::default()),
         });
         // SAFETY: NSObject 의 지정 초기화자 init 을 super 로 호출.
         unsafe { msg_send![super(this), init] }

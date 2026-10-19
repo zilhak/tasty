@@ -86,9 +86,71 @@ impl SignalOrderLoads {
     }
 }
 
+/// macOS에서 Tasty가 Cancel로 끝낸 정책 결정의 실패 신호를 흡수한다.
+///
+/// WebKit은 정책 Cancel 뒤에도 그 navigation에 `didFailProvisionalNavigation` 계열을 부른다.
+/// 그 navigation은 provisional 시작 전에 끝나 Tasty가 `WKNavigation`을 기록한 적이 없다.
+/// 새 로드의 정책 결정부터 첫 provisional 시작까지는 게이트 세대가 비어(모름 = 현재) 이 늦은 실패가
+/// 새 로드의 것으로 보인다. 그러면 결정을 보류한 새 로드의 스캔 대기가 지워지고 그 결정까지 Cancel된다.
+/// 그래서 이 구간에서는 Cancel한 수만큼 실패 신호를 Tasty가 끝낸 결정의 것으로 본다.
+/// provisional 시작 뒤에는 세대 판정이 앞 로드의 실패를 이미 무시하므로 수를 비운다.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Default)]
+pub(super) struct CancelledDecisions {
+    expected: u32,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl CancelledDecisions {
+    /// 보류한 결정을 Cancel로 끝냈다.
+    pub(super) fn cancelled(&mut self) {
+        self.expected = self.expected.saturating_add(1);
+    }
+
+    /// main frame provisional 시작. 이후 세대가 생기므로 기대하던 실패를 잊는다.
+    pub(super) fn started(&mut self) {
+        self.expected = 0;
+    }
+
+    /// 실패 신호가 Tasty가 Cancel한 결정의 것이면 `true`이며 하나를 소비한다. 게이트 세대가
+    /// 있으면(`current_gate`) 세대 판정에 맡긴다.
+    pub(super) fn absorbs_failure(&mut self, current_gate: Option<u64>) -> bool {
+        if self.expected == 0 || current_gate.is_some() {
+            return false;
+        }
+        self.expected -= 1;
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{NavState, SignalOrderLoads, is_current_load, nav_state_after_end};
+    use super::{
+        CancelledDecisions, NavState, SignalOrderLoads, is_current_load, nav_state_after_end,
+    };
+
+    /// Cancel한 결정의 실패는 세대가 빈 구간에서만 흡수하고, 수만큼만 흡수한다.
+    #[test]
+    fn cancelled_decision_failures_are_absorbed_only_before_the_next_start() {
+        let mut cancelled = CancelledDecisions::default();
+        assert!(
+            !cancelled.absorbs_failure(None),
+            "Cancel한 결정이 없으면 흡수하지 않는다"
+        );
+        cancelled.cancelled();
+        assert!(
+            !cancelled.absorbs_failure(Some(7)),
+            "세대가 있으면 세대 판정에 맡긴다"
+        );
+        assert!(cancelled.absorbs_failure(None));
+        assert!(!cancelled.absorbs_failure(None), "한 번만 흡수한다");
+        cancelled.cancelled();
+        cancelled.started();
+        assert!(
+            !cancelled.absorbs_failure(None),
+            "provisional 시작 뒤에는 잊는다"
+        );
+    }
 
     /// WebKitGTK 2.50.4에서 측정한 순서: 진행 중 로드를 `load_uri`로 바꾸면 앞 로드의 취소 실패와
     /// `FINISHED`가 새 로드의 `STARTED`보다 먼저 온다.

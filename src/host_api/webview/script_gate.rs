@@ -679,6 +679,59 @@ mod tests {
         cleanup(&dir);
     }
 
+    /// macOS 순서: 보류한 A를 새 탐색 B가 Cancel하고 B도 보류한다. B의 provisional 시작 전에
+    /// A의 늦은 실패가 온다. 흡수하지 않으면 그 실패가 B의 대기를 지워 B의 결정까지 Cancel된다.
+    #[test]
+    fn a_late_failure_of_a_cancelled_decision_does_not_cancel_the_next_one() {
+        use super::super::load_generation::{CancelledDecisions, is_current_load};
+        let (gate, rx, dir, url) = gate_with_doc("macfail", "<script>a()</script>");
+        gate.load_started();
+        gate.main_response(&url);
+        gate.committed(Some(&url));
+        gate.finished();
+        wait_scan(&rx);
+        gate.lock().allow_current().expect("allow");
+        // 흡수했을 때와 하지 않았을 때를 같은 순서로 재현한다.
+        for absorb in [true, false] {
+            let mut cancelled = CancelledDecisions::default();
+            // 게이트 세대: 정책 결정은 세대를 비우고 provisional 시작이 채운다.
+            let mut gate_navigation: Option<u64> = None;
+            gate.load_started();
+            let Response::Deferred(a) = gate.main_response(&url) else {
+                panic!("allowed URL defers");
+            };
+            gate.load_started();
+            a.abandon();
+            cancelled.cancelled();
+            let Response::Deferred(b) = gate.main_response(&url) else {
+                panic!("allowed URL defers");
+            };
+            let read = wait_slot(&b.spawn_read());
+            // A의 didFailProvisionalNavigation(A). B는 아직 provisional 시작 전이다.
+            let failure_of_a = Some(1);
+            let swallowed = absorb && cancelled.absorbs_failure(gate_navigation);
+            if !swallowed && is_current_load(gate_navigation, failure_of_a) {
+                gate.failed();
+                gate.finished();
+            }
+            let decided = b.apply(read);
+            if absorb {
+                assert_eq!(decided, Some(true), "B는 자기 스캔으로 Allow된다");
+                // B의 provisional 시작 뒤 A의 실패가 더 와도 세대 판정이 무시한다.
+                cancelled.started();
+                gate_navigation = Some(2);
+                assert!(!cancelled.absorbs_failure(gate_navigation));
+                assert!(!is_current_load(gate_navigation, failure_of_a));
+                assert!(gate.committed(Some(&url)));
+                assert!(gate.lock().current_is_allowed());
+            } else {
+                assert_eq!(decided, None, "흡수하지 않으면 B의 결정이 낡아 Cancel된다");
+            }
+            gate.finished();
+        }
+        cleanup(&dir);
+    }
+
     /// 감지는 상한까지, 지문은 파일 전체다. 상한 뒤에만 스크립트가 있는 큰 파일에서 두 값이 갈린다.
     #[test]
     fn a_large_file_is_fingerprinted_in_full_off_the_caller() {
