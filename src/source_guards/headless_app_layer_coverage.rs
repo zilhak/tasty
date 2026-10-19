@@ -41,7 +41,7 @@ const NOT_IN_HEADLESS: &[(&str, &str)] = &[
     ),
     (
         "attach.into_gui",
-        "헤드리스는 engine 처리기가 자기 포트만 거절하고 큐에 넣는다 — 큐를 처리하지 않아 mirror 가 생기지 않으므로 터널 너머 자기 판정이 필요 없다",
+        "mirror 를 띄우는 attach 큐 소비자가 GUI 에만 있다. 헤드리스는 접수하지 않고 -32017 로 거절한다",
     ),
     (
         "remote.refusals",

@@ -3,6 +3,9 @@ mod checked;
 mod cli_entry_debug_tests;
 #[cfg(test)]
 pub(crate) mod cli_entry_tests;
+// 헤드리스에는 attach.into_gui arm이 없다. GUI는 App 층이 먼저 답한다.
+#[cfg(all(test, not(feature = "gui")))]
+mod attach_into_gui_headless_tests;
 mod completion_strategy;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
@@ -1040,9 +1043,8 @@ fn route_engine_handler(
         "session.list" => session::handle_list(core, id),
         "attach.acquire" => attach::handle_acquire(engine, id, &request.params),
         "attach.release" => attach::handle_release(engine, id, &request.params),
-        "attach.into_gui" => {
-            attach::handle_into_gui(engine, core.own_ipc_port(), id, &request.params)
-        }
+        // attach.into_gui는 GUI App 층이 답한다. 헤드리스에는 mirror 큐를 처리할 쪽이 없으므로
+        // 접수하지 않고 미라우팅 응답(-32017, 메서드 이름 포함)으로 거절한다.
         "attach.list" => attach::handle_list(&engine.read(), id),
         "remote.profile.list" => remote_profile::handle_list(id),
         "remote.profile.get" => remote_profile::handle_get(id, &request.params),

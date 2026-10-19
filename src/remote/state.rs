@@ -43,6 +43,7 @@ pub(crate) struct RemoteState {
     #[cfg(feature = "gui")]
     pub(crate) attach_mesh_frames: crate::remote::mesh_frames::AttachMeshFrameStore,
     /// IPC가 요청한 GUI attach 대기열. 처리 후 사용자의 선택을 옮기지 않는다.
+    #[cfg(feature = "gui")]
     pub(crate) pending_gui_attach: Vec<(u16, u32)>,
     /// 캡처 시점에 정한 mirror workspace. None이면 로컬 클립보드에 기록한다.
     /// 캡처 도중 포커스가 바뀌어도 업로드 대상은 바뀌지 않는다.
@@ -123,6 +124,7 @@ impl RemoteState {
             mesh_mirror: crate::remote::mesh_mirror::MeshMirrorRegistry::default(),
             #[cfg(feature = "gui")]
             attach_mesh_frames: crate::remote::mesh_frames::AttachMeshFrameStore::default(),
+            #[cfg(feature = "gui")]
             pending_gui_attach: Vec::new(),
             #[cfg(feature = "gui")]
             pending_screenshot_captures: Vec::new(),

@@ -3,7 +3,7 @@
 //! 서버는 이 시험과 같은 feature의 바이너리로 실행되므로 GUI·헤드리스 각각의 실행 결과를 구별해야 한다.
 //!
 //! GUI self-attach는 dispatcher 완료 기록과 connector 진입 수로 확인하고 RTT는 진단으로만 쓴다.
-//! 헤드리스의 GUI attach 큐 미처리는 별도 시험이며 GUI 거절의 증거가 아니다.
+//! 헤드리스의 attach.into_gui 미지원 거절은 별도 시험이며 GUI 거절의 증거가 아니다.
 //! 같은 처리 배치의 disconnect·재attach 순서는 core::attach의 합성 시험과 소스 가드에서 따로 확인한다.
 
 mod attach_common;
@@ -184,11 +184,8 @@ fn the_stream_channel_ignores_session_token_so_auth_cannot_strand_occupancy() {
     );
 }
 
-/// RTT는 진단 기준이며 통과·실패를 결정하지 않는다.
-#[cfg(all(not(feature = "gui"), debug_assertions))]
-const SELF_ATTACH_RTT_NOTICE: Duration = Duration::from_secs(2);
-
-#[cfg(debug_assertions)]
+/// 거절 기록을 기다리는 상한. 자동 attach 거절 시험이 쓴다.
+#[cfg(all(feature = "gui", debug_assertions))]
 const SELF_ATTACH_WATCH: Duration = Duration::from_secs(6);
 
 /// GUI dispatcher 완료 기록의 source 값. `AttachSource::label`과 같아야 한다.
@@ -219,57 +216,6 @@ fn dispatch_completion(
     parse(&line)
 }
 
-#[cfg(all(not(feature = "gui"), debug_assertions))]
-fn observe_queued_gui_attach(
-    server: &TastyInstance,
-    ws: &common::TestWorkspace,
-    port: u16,
-) -> Option<serde_json::Value> {
-    let queued = server.call(
-        "attach.into_gui",
-        json!({ "port": port, "workspace": ws.id }),
-    );
-    assert_eq!(
-        queued["queued"], true,
-        "IPC only acknowledges queueing: {queued:?}"
-    );
-
-    let mut completion = None;
-    let mut rtts = Vec::new();
-    let deadline = Instant::now() + SELF_ATTACH_WATCH;
-    while Instant::now() < deadline {
-        let t = Instant::now();
-        let alive = server.call("ui.state", json!({}));
-        rtts.push(t.elapsed());
-        assert!(
-            alive.get("active_workspace").is_some(),
-            "ui.state: {alive:?}"
-        );
-        // 뒤의 진단이 로그를 밀어내기 전에 이 요청의 완료 기록을 보관한다.
-        completion = completion.or_else(|| dispatch_completion(server, ws.id, INTO_GUI_SOURCE));
-        assert!(
-            !is_attached(server, ws.surface_id),
-            "self-attach took occupancy; RTTs={rtts:?}"
-        );
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    completion = completion.or_else(|| dispatch_completion(server, ws.id, INTO_GUI_SOURCE));
-    let worst = rtts.iter().copied().max().unwrap_or_default();
-    let mut sorted = rtts.clone();
-    sorted.sort_unstable();
-    let typical = sorted.get(sorted.len() / 2).copied().unwrap_or_default();
-    let over = rtts
-        .iter()
-        .filter(|d| **d >= SELF_ATTACH_RTT_NOTICE)
-        .count();
-    common::spawn_diag::init_test_tracing();
-    tracing::info!(
-        "self-attach RTT diagnostic: worst={worst:?} median={typical:?} over_2s={over}/{} sequence={rtts:?}; completion={completion:?}",
-        rtts.len(),
-    );
-    completion
-}
-
 /// 늦게 처리되는 일도 관측하도록 요청 몇 개로 이벤트 루프를 돌린다.
 fn settle(server: &TastyInstance) {
     for _ in 0..10 {
@@ -278,15 +224,17 @@ fn settle(server: &TastyInstance) {
     }
 }
 
-/// 자기 포트 거절이 처리 시점의 인자 오류로 오는지 확인한다.
+/// 자기 포트 거절이 처리 시점의 인자 오류로 오는지 확인한다. 헤드리스는 이 판정 전에 거절한다.
+#[cfg(feature = "gui")]
 fn assert_own_port_refusal(reply: &serde_json::Value) {
     assert_eq!(reply["error"]["code"], -32602, "{reply}");
     let message = reply["error"]["message"].as_str().unwrap_or_default();
     assert!(message.contains("own IPC port"), "{reply}");
 }
 
-/// 자기 포트를 가리키는 attach.into_gui는 큐에 넣기 전에 오류로 응답한다(GUI·헤드리스 공통).
-/// GUI dispatcher와 connector에는 도달하지 않는다.
+/// 자기 포트를 가리키는 attach.into_gui는 큐에 넣기 전에 오류로 응답한다.
+/// GUI dispatcher와 connector에는 도달하지 않는다. 헤드리스는 아래 미지원 거절 시험이 맡는다.
+#[cfg(feature = "gui")]
 #[test]
 fn attach_into_gui_to_the_own_port_is_refused_before_queueing() {
     let server = common::shared();
@@ -480,15 +428,29 @@ fn a_self_port_mapping_is_refused_once_until_it_changes() {
     );
 }
 
-/// 헤드리스에서 GUI attach 큐가 처리되지 않더라도 점유를 잡지 않는지 확인한다.
-#[cfg(all(not(feature = "gui"), debug_assertions))]
+/// 헤드리스에는 GUI attach 큐를 처리할 쪽이 없으므로 자기 포트든 다른 포트든 접수하지 않고
+/// 이름을 실은 미지원 오류로 거절한다. 거절 뒤에도 점유를 잡지 않는다.
+#[cfg(not(feature = "gui"))]
 #[test]
-fn a_queued_gui_attach_does_not_take_headless_occupancy() {
+fn a_headless_daemon_refuses_gui_attach_without_taking_occupancy() {
     let server = common::shared();
-    let ws = server.create_workspace("headless-gui-attach-queued");
-    // 자기 포트는 접수 전에 거절하므로 다른 포트로 접수만 확인한다. 헤드리스는 큐를 처리하지 않는다.
-    let elsewhere = server.port().wrapping_add(1);
-    assert!(observe_queued_gui_attach(server, &ws, elsewhere).is_none());
+    let ws = server.create_workspace("headless-gui-attach-refused");
+    for port in [server.port(), server.port().wrapping_add(1)] {
+        let reply = server.call_raw(
+            "attach.into_gui",
+            json!({ "port": port, "workspace": ws.id }),
+        );
+        assert!(
+            reply.get("result").is_none(),
+            "처리하지 않을 into_gui 를 접수했다(port {port}): {reply}"
+        );
+        assert_eq!(reply["error"]["code"], -32017, "port {port}: {reply}");
+        let message = reply["error"]["message"].as_str().unwrap_or_default();
+        assert!(message.contains("attach.into_gui"), "{reply}");
+    }
+    settle(server);
+    #[cfg(debug_assertions)]
+    assert_eq!(dispatch_completion(server, ws.id, INTO_GUI_SOURCE), None);
     assert!(!is_attached(server, ws.surface_id));
     let outcome = attach_common::try_open_workspace_attach(server.port(), ws.id);
     assert_eq!(outcome, "attached_workspace");

@@ -218,7 +218,7 @@ GUI 조건에 따른다. 창이 없다는 이유로 권한 요청 자체를 막�
 | `remote.refusals` | 거절을 기록하는 `remote.attach` 와 자동 attach 가 GUI 에만 있다 |
 | `system.gpu_stats` | 창마다의 GpuState 와 wgpu 전역 리포트를 센다. GPU 컨텍스트가 없다 |
 
-`attach.into_gui` 는 위 두 표 어디에도 속하지 않는다. GUI 는 app 층이 가로채 다른 포트를 거쳐 자기 자신에 닿는지 워커에서 확인한 뒤 응답하고, 헤드리스는 engine 처리기가 그대로 답한다(자기 포트만 거절하고 큐에 넣는다). 헤드리스는 그 큐를 처리하지 않아 mirror 가 생기지 않으므로 터널 너머의 자기 판정이 필요 없다. 소스 검사의 `NOT_IN_HEADLESS` 에는 이 사유로 등록돼 있다.
+`attach.into_gui` 는 위 표의 메서드와 달리 창이 아니라 mirror 큐의 소비자가 GUI 에만 있다. GUI 는 app 층이 가로채 다른 포트를 거쳐 자기 자신에 닿는지 워커에서 확인한 뒤 응답한다. 헤드리스에는 큐를 비워 mirror 를 만드는 쪽이 없으므로 engine 처리기에 arm 을 두지 않는다. 접수하면 처리하지 않을 요청을 성공처럼 답하게 되므로 자기 포트를 포함한 모든 요청을 `-32017`(메서드 이름 포함)로 거절한다. plugin host-call 도 같은 engine 처리기에 닿아 같은 거절을 받는다. 소스 검사의 `NOT_IN_HEADLESS` 에는 이 사유로 등록돼 있다. 아래 "census 뒤에 게이트된 arm" 표에도 같은 거절 모양으로 적는다.
 
 `plugin.*`의 현재 분류는 위 "`plugin.*` — 19 개 메서드의 판정" 절을 따른다.
 
@@ -315,6 +315,7 @@ markdown plugin 이 그 namespace 를 점유해 host 로 되돌리기 때문이�
 |--------|-----|
 | `file_handler.dispatch` | 요청을 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. arm 이 헤드리스에 있던 동안은 `{"accepted": true}` 로 답하고 요청을 버렸다 — `git_viewer.query` 와 같은 모양이다. 근거 [파일 핸들러 (File handler)](../features/file-handler/index.md). 같은 namespace 의 `file_handler.reload` · `file_handler.detectors` 는 헤드리스에서도 답한다 |
 | `git_viewer.query` · `markdown_mirror.content_request` | 요청을 큐에 넣고 `request_id` 만 답한 뒤 결과를 attach 채널로 받아 오는 비동기 accept 다. 큐를 비워 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, arm 이 헤드리스에 있던 동안은 수락해 놓고 결과가 영영 안 왔다. `-32017` 문구가 메서드 이름을 실어 두 거절이 갈린다. 같은 줄의 셋째 forward(mirror 구조 op)는 메서드가 아니라 대상이 mirror 인지로 갈려 arm 을 못 뺀다 — headless의 명시 mirror 대상 해소가 거절한다(이 문서). 시험 `tests/e2e_tests.rs` 의 `mirror_forward_requests_are_refused_by_name_in_a_headless_daemon` |
+| `attach.into_gui` | 접수한 요청을 비워 mirror 를 만드는 쪽이 gui 의 `about_to_wait` 에만 있다. arm 이 헤드리스에 있던 동안은 자기 포트만 거절하고 `{queued:true}` 로 답한 뒤 요청을 처리하지 않았다. 지금은 engine 처리기에 arm 이 없어 자기 포트를 포함해 `-32017` 로 거절한다. GUI 는 app 층이 먼저 답하므로 이 arm 에 닿지 않는다. 시험 `tests/attach_silent_disconnect.rs` 의 `a_headless_daemon_refuses_gui_attach_without_taking_occupancy` |
 | `surface.html_back` · `surface.html_forward` · `surface.html_reload` | 이동을 실행하는 것이 gui 전용인 네이티브 WebView와 그것을 매 프레임 동기화하는 창이다. 헤드리스에는 html surface의 WebView가 없어 큐를 소비할 쪽이 없다 |
 | `surface.html_nav` | 읽는 주소와 히스토리 정보가 gui 전용인 네이티브 WebView에서 프레임마다 옮겨진다. 헤드리스에는 html surface의 WebView가 없어 답할 상태가 없다 |
 | `surface.html_script` | 읽는 스크립트 상태가 gui 전용인 네이티브 WebView의 탐색 콜백에서만 채워진다. 헤드리스에는 html surface의 WebView가 없어 답할 상태가 없다 |

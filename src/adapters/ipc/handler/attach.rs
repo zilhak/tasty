@@ -1,7 +1,8 @@
 //! attach 점유의 획득·해제·조회. 대상은 ID로 지정하며 사용자 포커스를 바꾸지 않는다.
 //! 별도 토큰 대신 SSH와 loopback 연결을 신뢰한다. client_id는 stream.open에서 발급한다.
 
-use super::params::{self, p_try};
+#[cfg(feature = "gui")]
+use super::params;
 use crate::runtime::engine_access::EngineMut;
 use serde_json::json;
 
@@ -82,6 +83,7 @@ pub(crate) fn handle_release(
 /// attach 대상 포트가 이 인스턴스의 IPC 포트면 처리를 시작하기 전에 거절 응답을 만든다.
 /// 자기 자신을 mirror하면 그 mirror가 원본 workspace를 점유해 로컬 입력이 막힌다.
 /// 연결 직전의 `connect_unless_self` 검사는 비동기로 해석한 엔드포인트에 계속 적용한다.
+#[cfg(feature = "gui")]
 pub(crate) fn refuse_own_port(
     own_port: Option<u16>,
     port: u16,
@@ -98,7 +100,8 @@ pub(crate) fn refuse_own_port(
 }
 
 /// `attach.into_gui`의 대상 port와 원격 workspace를 읽고 자기 포트를 거절한다.
-/// GUI는 App 층에서, 헤드리스는 아래 engine 처리기에서 같은 판정을 쓴다.
+/// GUI App 층만 사용한다. 헤드리스에는 mirror 큐를 처리할 쪽이 없어 engine 처리기에 arm을 두지 않는다.
+#[cfg(feature = "gui")]
 pub(crate) fn into_gui_target(
     own_port: Option<u16>,
     id: &serde_json::Value,
@@ -121,24 +124,12 @@ pub(crate) fn into_gui_target(
 }
 
 /// `attach.into_gui`의 접수 응답.
+#[cfg(feature = "gui")]
 pub(crate) fn into_gui_queued(id: serde_json::Value, port: u16, workspace: u32) -> JsonRpcResponse {
     JsonRpcResponse::success(
         id,
         json!({ "queued": true, "port": port, "workspace": workspace }),
     )
-}
-
-/// 헤드리스의 `attach.into_gui`. 자기 포트만 거절하고 큐에 넣는다. 헤드리스는 이 큐를 처리하지
-/// 않으므로 mirror가 생기지 않는다. GUI는 App 층(`attach_client::into_gui`)이 먼저 처리한다.
-pub(crate) fn handle_into_gui(
-    engine: &mut EngineMut<'_>,
-    own_port: Option<u16>,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let (port, workspace) = p_try!(into_gui_target(own_port, &id, params));
-    engine.remote.pending_gui_attach.push((port, workspace));
-    into_gui_queued(id, port, workspace)
 }
 
 /// surface와 workspace 점유 목록을 함께 반환한다.

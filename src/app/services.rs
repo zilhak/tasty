@@ -445,6 +445,7 @@ impl AppServices {
     }
 
     /// 자기 자신을 향한 attach 요청을 거절할 때 쓴다. IPC 서버가 없으면 None이다.
+    #[cfg(feature = "gui")]
     pub(crate) fn own_ipc_port(&self) -> Option<u16> {
         self.ports.ipc_port()
     }

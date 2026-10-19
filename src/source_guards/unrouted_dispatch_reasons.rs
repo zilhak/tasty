@@ -510,11 +510,6 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "condition과 command로 새 훅을 만든다. 생성 뒤의 대상 선택은 Kind::GlobalHook으로 처리한다.",
     ),
     (
-        "attach.into_gui",
-        CreatesWithoutATarget,
-        "로컬 대상 창 인자가 없다. workspace는 원격 ID이며 요청을 받은 창의 pending_gui_attach에 작업을 넣는다.",
-    ),
-    (
         "file_picker.trigger",
         CreatesWithoutATarget,
         "대상 창 인자가 없어 요청을 받은 창의 dialogs에 팝업을 만든다. owner_popup_instance는 플러그인 팝업 ID다.",

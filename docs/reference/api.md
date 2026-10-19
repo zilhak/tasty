@@ -144,7 +144,7 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 `record,record_batch,summary,timeseries,top` · `cap.{set,list,remove,status,reset}` · `anomaly.list` · `session_summary`. [telemetry](../features/telemetry/index.md).
 
 ### 세션 / attach
-`session.{issue,revoke,list}` · `attach.{acquire,release,into_gui,list}`. attach 는 [remote-attach](../features/remote-attach/index.md), 신원 토큰은 [capability-elevation](../features/capability-elevation/index.md).
+`session.{issue,revoke,list}` · `attach.{acquire,release,into_gui,list}`. `attach.into_gui` 는 GUI 전용이며 헤드리스는 접수하지 않고 `-32017` 로 거절한다. attach 는 [remote-attach](../features/remote-attach/index.md), 신원 토큰은 [capability-elevation](../features/capability-elevation/index.md).
 
 ### 기타 호스트
 - 알림: `notification.{list,create}` — [notifications](../features/notifications/index.md)

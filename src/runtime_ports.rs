@@ -59,6 +59,8 @@ impl RuntimePorts {
         }
     }
 
+    /// 기록한 IPC 포트는 GUI의 자기 attach 거절과 단일 인스턴스 포트 게시만 읽는다.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn ipc(&self) -> Option<BoundPort> {
         self.ipc.get().copied()
     }
@@ -67,6 +69,7 @@ impl RuntimePorts {
         self.webhook.get().copied()
     }
 
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn ipc_port(&self) -> Option<u16> {
         self.ipc().map(|b| b.addr.port())
     }
