@@ -72,12 +72,15 @@ fn rules_come_from_installed_manifests_without_starting_processes() {
     m.debug_assert_extensions_fresh();
 }
 
-/// 반영을 켜지 않은 매니저는 공용 표를 바꾸지 않는다.
+/// 반영을 켜지 않은 매니저는 공용 표를 바꾸지 않는다. 반영하는 시험과 병렬로 돌아도 결과가
+/// 섞이지 않도록 이 시험에만 쓰는 ID를 쓴다.
 #[test]
 fn a_manager_that_does_not_publish_leaves_the_shared_table_alone() {
-    let m = manager();
-    assert!(m.inherited_env_rules().contains_key(VENDOR));
-    assert!(!plugin_inherited_env_rules().contains_key(VENDOR));
+    const QUIET: &str = "com.example.inherited_env_quiet";
+    let mut m = PluginManager::new(Arc::new(NoopWakerFactory));
+    m.set_packages_for_tests(vec![pkg(QUIET, r#"names = ["XTEST_MGR_QUIET"]"#)]);
+    assert!(m.inherited_env_rules().contains_key(QUIET));
+    assert!(!plugin_inherited_env_rules().contains_key(QUIET));
 }
 
 /// 반영을 켠 뒤 비활성화하면 그 규칙이 빠지고, 다시 활성화하면 이후 판정에 다시 적용된다.
