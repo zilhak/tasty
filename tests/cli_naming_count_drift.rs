@@ -25,7 +25,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("markdown_mirror", 1), // markdown_mirror.content_request — plugin 전용 host 메서드, CLI 진입점 없음
     ("memory", 49),
     ("message", 4),
-    ("notification", 2),
+    ("notification", 4),
     ("output", 4),
     ("pane", 2),
     ("plugin", 19),
