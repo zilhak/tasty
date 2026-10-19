@@ -86,39 +86,78 @@ impl SignalOrderLoads {
     }
 }
 
-/// macOS에서 Tasty가 Cancel로 끝낸 정책 결정의 실패 신호를 흡수한다.
+/// macOS에서 Tasty가 Cancel로 끝낸 정책 결정의 실패 신호를 가려낸다.
 ///
-/// WebKit은 정책 Cancel 뒤에도 그 navigation에 `didFailProvisionalNavigation` 계열을 부른다.
-/// 그 navigation은 provisional 시작 전에 끝나 Tasty가 `WKNavigation`을 기록한 적이 없다.
-/// 새 로드의 정책 결정부터 첫 provisional 시작까지는 게이트 세대가 비어(모름 = 현재) 이 늦은 실패가
-/// 새 로드의 것으로 보인다. 그러면 결정을 보류한 새 로드의 스캔 대기가 지워지고 그 결정까지 Cancel된다.
-/// 그래서 이 구간에서는 Cancel한 수만큼 실패 신호를 Tasty가 끝낸 결정의 것으로 본다.
-/// provisional 시작 뒤에는 세대 판정이 앞 로드의 실패를 이미 무시하므로 수를 비운다.
+/// WebKit은 정책 Cancel 뒤 그 navigation에 `didFailProvisionalNavigation` 계열을 부를 수 있다. 다만
+/// 1:1로 부른다는 보장은 없다. 새 로드의 정책 결정부터 첫 provisional 시작까지는 게이트 세대가 비어
+/// (모름 = 현재) 이 늦은 실패가 새 로드의 것으로 보이고, 새 로드가 보류한 결정까지 Cancel된다.
+/// 반대로 새 로드의 진짜 실패(정책 단계 실패는 provisional 시작 없이 온다)를 삼키면 로드가 끝나지 않는다.
+///
+/// 그래서 실패를 두 가지로만 Cancel한 결정의 것으로 본다.
+/// - 호스트가 시작한 탐색은 WebKit이 돌려준 `WKNavigation`을 안다. 그 navigation의 결정을 Cancel했으면
+///   그 식별값의 실패만 흡수한다.
+/// - 페이지가 시작한 탐색은 `WKNavigation`을 알 수 없다. 세대가 빈 구간에서, 지금 결정 중인 호스트 탐색이
+///   아닌 navigation의, 정책 변경으로 중단됐다는 오류(`WebKitErrorDomain` 102)만 Cancel한 수만큼 흡수한다.
+///   Tasty는 main frame 정책을 Cancel로만 바꾸므로 이 오류는 Tasty의 Cancel에서 나온다. 다른 오류는
+///   흡수하지 않는다.
+///
+/// provisional 시작 뒤에는 세대 판정이 앞 결정의 실패를 무시하므로 기록을 비운다.
 #[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Default)]
 pub(super) struct CancelledDecisions {
-    expected: u32,
+    /// Cancel한 호스트 탐색의 `WKNavigation` 식별값.
+    known: Vec<u64>,
+    /// `WKNavigation`을 모르는 채 Cancel한 결정 수.
+    unknown: u32,
+}
+
+/// 실패 신호의 내용.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Failure {
+    /// 실패한 navigation.
+    pub ended: Option<u64>,
+    /// 오류가 정책 변경으로 인한 중단(`WebKitErrorDomain` 102)인지.
+    pub interrupted_by_policy: bool,
 }
 
 #[cfg(any(target_os = "macos", test))]
 impl CancelledDecisions {
-    /// 보류한 결정을 Cancel로 끝냈다.
-    pub(super) fn cancelled(&mut self) {
-        self.expected = self.expected.saturating_add(1);
+    /// 보류한 결정을 Cancel로 끝냈다. `navigation`은 호스트 탐색이면 그 식별값이다.
+    pub(super) fn cancelled(&mut self, navigation: Option<u64>) {
+        match navigation {
+            Some(key) => self.known.push(key),
+            None => self.unknown = self.unknown.saturating_add(1),
+        }
     }
 
-    /// main frame provisional 시작. 이후 세대가 생기므로 기대하던 실패를 잊는다.
+    /// main frame provisional 시작. 이후 세대가 생기므로 기록을 비운다.
     pub(super) fn started(&mut self) {
-        self.expected = 0;
+        self.known.clear();
+        self.unknown = 0;
     }
 
-    /// 실패 신호가 Tasty가 Cancel한 결정의 것이면 `true`이며 하나를 소비한다. 게이트 세대가
-    /// 있으면(`current_gate`) 세대 판정에 맡긴다.
-    pub(super) fn absorbs_failure(&mut self, current_gate: Option<u64>) -> bool {
-        if self.expected == 0 || current_gate.is_some() {
+    /// 실패가 Tasty가 Cancel한 결정의 것이면 `true`이며 그 기록을 소비한다.
+    /// `current_gate`는 게이트 세대, `deciding`은 지금 결정 중이거나 결정을 마친 호스트 탐색이다.
+    pub(super) fn absorbs_failure(
+        &mut self,
+        failure: Failure,
+        current_gate: Option<u64>,
+        deciding: Option<u64>,
+    ) -> bool {
+        if let Some(ended) = failure.ended
+            && let Some(at) = self.known.iter().position(|k| *k == ended)
+        {
+            self.known.swap_remove(at);
+            return true;
+        }
+        if current_gate.is_some() || self.unknown == 0 || !failure.interrupted_by_policy {
             return false;
         }
-        self.expected -= 1;
+        if failure.ended.is_some() && failure.ended == deciding {
+            return false;
+        }
+        self.unknown -= 1;
         true
     }
 }
@@ -126,30 +165,77 @@ impl CancelledDecisions {
 #[cfg(test)]
 mod tests {
     use super::{
-        CancelledDecisions, NavState, SignalOrderLoads, is_current_load, nav_state_after_end,
+        CancelledDecisions, Failure, NavState, SignalOrderLoads, is_current_load,
+        nav_state_after_end,
     };
 
-    /// Cancel한 결정의 실패는 세대가 빈 구간에서만 흡수하고, 수만큼만 흡수한다.
+    fn policy(ended: Option<u64>) -> Failure {
+        Failure {
+            ended,
+            interrupted_by_policy: true,
+        }
+    }
+
+    /// 호스트 탐색은 Cancel한 그 navigation의 실패만 흡수한다. 세대가 비어 있어도 다른 실패는 두고,
+    /// 정책 단계의 진짜 실패(102가 아님)도 두며, 한 번만 흡수한다.
     #[test]
-    fn cancelled_decision_failures_are_absorbed_only_before_the_next_start() {
+    fn a_cancelled_host_navigation_absorbs_only_its_own_failure() {
+        let mut cancelled = CancelledDecisions::default();
+        cancelled.cancelled(Some(1));
+        let real = Failure {
+            ended: Some(2),
+            interrupted_by_policy: false,
+        };
+        assert!(
+            !cancelled.absorbs_failure(real, None, Some(2)),
+            "새 로드의 진짜 실패"
+        );
+        assert!(!cancelled.absorbs_failure(policy(Some(2)), None, Some(2)));
+        assert!(cancelled.absorbs_failure(policy(Some(1)), None, Some(2)));
+        assert!(
+            !cancelled.absorbs_failure(policy(Some(1)), None, Some(2)),
+            "한 번만"
+        );
+    }
+
+    /// 페이지 탐색처럼 navigation을 모르면, 세대가 빈 구간의 정책 중단 오류만 수만큼 흡수한다.
+    #[test]
+    fn an_unknown_cancelled_decision_absorbs_only_policy_interruptions() {
         let mut cancelled = CancelledDecisions::default();
         assert!(
-            !cancelled.absorbs_failure(None),
-            "Cancel한 결정이 없으면 흡수하지 않는다"
+            !cancelled.absorbs_failure(policy(Some(5)), None, None),
+            "Cancel한 결정이 없다"
         );
-        cancelled.cancelled();
+        cancelled.cancelled(None);
+        let real = Failure {
+            ended: Some(5),
+            interrupted_by_policy: false,
+        };
         assert!(
-            !cancelled.absorbs_failure(Some(7)),
-            "세대가 있으면 세대 판정에 맡긴다"
+            !cancelled.absorbs_failure(real, None, None),
+            "정책 중단이 아닌 실패는 두고 수도 남긴다"
         );
-        assert!(cancelled.absorbs_failure(None));
-        assert!(!cancelled.absorbs_failure(None), "한 번만 흡수한다");
-        cancelled.cancelled();
+        assert!(
+            !cancelled.absorbs_failure(policy(Some(5)), Some(9), None),
+            "세대가 있으면 세대 판정"
+        );
+        assert!(
+            !cancelled.absorbs_failure(policy(Some(5)), None, Some(5)),
+            "결정 중인 호스트 탐색"
+        );
+        assert!(cancelled.absorbs_failure(policy(Some(5)), None, Some(6)));
+        assert!(
+            !cancelled.absorbs_failure(policy(Some(7)), None, None),
+            "수만큼만"
+        );
+        cancelled.cancelled(None);
+        cancelled.cancelled(Some(3));
         cancelled.started();
         assert!(
-            !cancelled.absorbs_failure(None),
+            !cancelled.absorbs_failure(policy(Some(3)), None, None),
             "provisional 시작 뒤에는 잊는다"
         );
+        assert!(!cancelled.absorbs_failure(policy(Some(8)), None, None));
     }
 
     /// WebKitGTK 2.50.4에서 측정한 순서: 진행 중 로드를 `load_uri`로 바꾸면 앞 로드의 취소 실패와

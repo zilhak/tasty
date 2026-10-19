@@ -726,11 +726,13 @@ mod tests {
         cleanup(&dir);
     }
 
-    /// macOS 순서: 보류한 A를 새 탐색 B가 Cancel하고 B도 보류한다. B의 provisional 시작 전에
-    /// A의 늦은 실패가 온다. 흡수하지 않으면 그 실패가 B의 대기를 지워 B의 결정까지 Cancel된다.
+    /// macOS 순서: 보류한 A를 새 탐색 B가 Cancel하고 B도 보류한다. B의 provisional 시작 전에 실패가
+    /// 온다. 실패를 귀속하는 방식마다(A가 호스트 탐색이면 그 `WKNavigation`, 페이지 탐색이면 정책 중단
+    /// 오류) A의 실패는 흡수해 B가 자기 스캔으로 Allow되고, B의 진짜 실패는 흡수하지 않아 B의 로드를
+    /// 끝낸다. 흡수하지 않으면 A의 실패가 B의 결정까지 Cancel하는 결함도 같은 순서로 재현한다.
     #[test]
     fn a_late_failure_of_a_cancelled_decision_does_not_cancel_the_next_one() {
-        use super::super::load_generation::{CancelledDecisions, is_current_load};
+        use super::super::load_generation::{CancelledDecisions, Failure, is_current_load};
         let (gate, rx, dir, url) = gate_with_doc("macfail", "<script>a()</script>");
         gate.load_started();
         gate.main_response(&url);
@@ -738,44 +740,95 @@ mod tests {
         gate.finished();
         wait_scan(&rx);
         gate.lock().allow_current().expect("allow");
-        // 흡수했을 때와 하지 않았을 때를 같은 순서로 재현한다.
-        for absorb in [true, false] {
+        const A: u64 = 1;
+        const B: u64 = 2;
+        // (A가 호스트 탐색인지, 오는 실패, 흡수하는지, 그 뒤 B의 결정)
+        let cases = [
+            // A 호스트 탐색: A의 실패는 흡수, B는 Allow.
+            (
+                true,
+                Failure {
+                    ended: Some(A),
+                    interrupted_by_policy: true,
+                },
+                true,
+                Some(true),
+            ),
+            // A 페이지 탐색: 정책 중단 오류는 흡수, B는 Allow.
+            (
+                false,
+                Failure {
+                    ended: Some(A),
+                    interrupted_by_policy: true,
+                },
+                true,
+                Some(true),
+            ),
+            // B의 진짜 정책 단계 실패: 흡수하지 않고 B의 로드를 끝낸다(결정은 낡아 Cancel).
+            (
+                true,
+                Failure {
+                    ended: Some(B),
+                    interrupted_by_policy: false,
+                },
+                false,
+                None,
+            ),
+            (
+                false,
+                Failure {
+                    ended: Some(B),
+                    interrupted_by_policy: false,
+                },
+                false,
+                None,
+            ),
+        ];
+        for (host_a, failure, absorbs, b_decision) in cases {
             let mut cancelled = CancelledDecisions::default();
             // 게이트 세대: 정책 결정은 세대를 비우고 provisional 시작이 채운다.
-            let mut gate_navigation: Option<u64> = None;
+            let gate_navigation: Option<u64> = None;
             gate.load_started();
             let Response::Deferred(a) = gate.main_response(&url) else {
                 panic!("allowed URL defers");
             };
             gate.load_started();
             a.abandon();
-            cancelled.cancelled();
+            cancelled.cancelled(host_a.then_some(A));
             let Response::Deferred(b) = gate.main_response(&url) else {
                 panic!("allowed URL defers");
             };
             let read = wait_slot(&b.spawn_read());
-            // A의 didFailProvisionalNavigation(A). B는 아직 provisional 시작 전이다.
-            let failure_of_a = Some(1);
-            let swallowed = absorb && cancelled.absorbs_failure(gate_navigation);
-            if !swallowed && is_current_load(gate_navigation, failure_of_a) {
+            let swallowed = cancelled.absorbs_failure(failure, gate_navigation, Some(B));
+            assert_eq!(swallowed, absorbs, "{host_a} {failure:?}");
+            if !swallowed && is_current_load(gate_navigation, failure.ended) {
                 gate.failed();
                 gate.finished();
             }
-            let decided = b.apply(read);
-            if absorb {
-                assert_eq!(decided, Some(true), "B는 자기 스캔으로 Allow된다");
+            assert_eq!(b.apply(read), b_decision, "{host_a} {failure:?}");
+            if b_decision == Some(true) {
                 // B의 provisional 시작 뒤 A의 실패가 더 와도 세대 판정이 무시한다.
                 cancelled.started();
-                gate_navigation = Some(2);
-                assert!(!cancelled.absorbs_failure(gate_navigation));
-                assert!(!is_current_load(gate_navigation, failure_of_a));
+                let started = Some(B);
+                assert!(!cancelled.absorbs_failure(failure, started, Some(B)));
+                assert!(!is_current_load(started, Some(A)));
                 assert!(gate.committed(Some(&url)));
                 assert!(gate.lock().current_is_allowed());
             } else {
-                assert_eq!(decided, None, "흡수하지 않으면 B의 결정이 낡아 Cancel된다");
+                assert!(!gate.lock().scan_pending(), "B의 로드는 끝났다");
             }
             gate.finished();
         }
+        // 흡수하지 않으면 A의 실패가 B의 결정을 Cancel한다(고치기 전 결함).
+        gate.load_started();
+        let Response::Deferred(b) = gate.main_response(&url) else {
+            panic!("allowed URL defers");
+        };
+        let read = wait_slot(&b.spawn_read());
+        assert!(is_current_load(None, Some(A)));
+        gate.failed();
+        gate.finished();
+        assert_eq!(b.apply(read), None);
         cleanup(&dir);
     }
 
