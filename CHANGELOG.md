@@ -19,6 +19,8 @@
 
 ### Added
 
+- **접수 뒤 끝나는 요청의 최종 결과를 `run` 번호로 조회한다.** `hook_handler.dispatch`·`file_handler.dispatch`·`markdown.navigate`·`attach.into_gui`·기존 워크스페이스 `remote.attach` 의 접수 응답에 `run` 이 더해졌다. IPC `run.result {run}`(파일 핸들러·markdown·attach)과 `hook_handler.result {run}` 이 진행 중이면 `running`, 끝나면 `succeeded`·`failed`·`cancelled`·`unknown`(훅은 `partial` 도)과 영어 한 줄 사유를 돌려준다. 처음 기록한 결과만 남고 최근 128건을 보관한다. 토큰 없는 로컬 호출자는 모든 run을, plugin과 세션 토큰 에이전트는 자기가 시작한 run만 읽는다. markdown plugin이 대신 보낸 외부 `markdown.navigate` 의 run은 요청한 호출자의 것이다. CLI `tasty hook-handler result --run <번호>`·`tasty file-handler result --run <번호>` 가 생겼다.
+- **원격 연결 팝업의 연결이 실패하면 그 윈도우에 오류 토스트를 띄운다.** 연결 버튼이 접수된 뒤 연결·핸드셰이크·mirror 준비에 실패하면 시작한 윈도우에 사유와 함께 알린다. 윈도우를 닫았거나 보던 화면이 바뀌었으면 띄우지 않는다. IPC·자동 attach·재연결 실패는 이 토스트를 내지 않는다.
 - **agent task 의 provider 를 고정 목록이 아니라 플러그인 정보로 판정한다.** `"provider": "<p>"` 는 namespace `<p>` 를 소유한 설치 플러그인이 활성이고 `agent.turn_report` 를 허가받았으면 받는다. 그래서 그 조건을 갖추고 `<p>.spawn`·`<p>.tell`·`<p>.state` 와 턴 보고를 구현한 커스텀 플러그인도 provider 가 된다. 자격이 없으면 생성 때 입력 오류로, 생성 뒤 플러그인을 끄거나 지우거나 권한을 회수했으면 실행 직전에 `agent_unavailable` 로 실패하며, 문구가 원인(namespace 소유자 없음·소유 플러그인 비활성·`agent.turn_report` 권한 없음·플러그인 정보 미적재)을 구분한다. 판정은 플러그인 프로세스 준비 여부와 무관하다. 플러그인 권한을 허가·회수하면 이후 판정에 바로 반영된다.
 - **플러그인 매니페스트가 CLI 호출자 문맥을 선언한다.** `[[contributes.caller_context]]`의 `provider`·`id_env`·`id_format`(`text`·`uuid`)·`id_field`·`path_env`(`{ env, field }`, 절대 경로로 싣는다)·`executable`(PATH에서 찾아 `execution`으로 싣는다)·`suppress_env_surface`(기본 true)로 다른 프로그램의 도구 호출 안에서 실행한 `tasty`가 어느 대화에서 왔는지 알린다. 유효한 호출자의 문맥은 모든 플러그인 명령의 `_tasty_context`에 실리고, 값의 형식이 틀리면 선언한 플러그인과 `[contributes] requires_caller_context`에 그 provider를 적은 플러그인의 명령만 실행하지 않는다. CLI는 설치된 매니페스트를 직접 읽어 첫 호출부터 적용하며 비활성화한 플러그인의 선언도 읽는다. Codex 호출자 판별(`CODEX_THREAD_ID` UUID·`CODEX_HOME`·`codex` 실행 파일)은 이제 본체 CLI가 아니라 Codex 플러그인의 선언이며 `_tasty_context` 형식은 그대로다. 그래서 `CODEX_THREAD_ID`가 잘못된 환경에서도 Codex·Claude와 무관한 플러그인 명령은 거절하지 않는다. 필드가 없는 옛 매니페스트도 그대로 읽힌다.
 - **플러그인이 Tasty bash·zsh 터미널에 셸 통합 스크립트를 넣을 수 있다.** 생성 프롬프트 함수가 데이터 홈 `shell-integrations/`의 `*.sh` 일반 파일을 C 로캘 바이트 순서로 매 프롬프트마다 읽는다(예전에는 `codex.sh` 하나만 읽었다). 한 스크립트가 실패해도 다음 스크립트와 프롬프트는 계속된다. 사용자가 errexit(`set -e`)를 켰어도 셸이 끝나지 않는다. OSC 133 D는 직전 명령의 종료 코드를 그대로 보낸다. 사용자가 noglob(`set -f`)을 켰어도 스크립트를 모두 읽는다. 스크립트는 사용자의 원래 셸 옵션으로 실행된다. 생성 rc·zshenv 스탬프를 올려 기존 파일을 다시 만든다. `tasty codex install`은 이제 `shell-integrations/com.tasty.codex.sh`를 쓰고, 이전 이름 `codex.sh`는 install·uninstall 때 지운다.
@@ -44,6 +46,9 @@
 
 ### Changed
 
+- (BREAK) **`tasty hook-handler dispatch`·`tasty file-handler dispatch` 가 최종 결과를 기다린다.** 접수 줄 뒤에 최종 결과 줄을 출력하고, `succeeded` 가 아니거나 기다리는 상한(훅 단계당 10초, 파일 30초) 안에 끝나지 않으면 종료 코드 1로 끝난다. Tasty가 결과 조회에 답하지 않아도 상한에서 멈추고 `"timed_out": true` 를 붙인다. 결과를 기다릴 때는 루트 옵션 `--response-timeout-ms` 를 받지 않는다(종료 코드 2). 예전처럼 접수만 받으려면 `--no-wait` 를 붙인다. 세션 토큰과 에이전트 ID는 결과 조회에도 실린다.
+- **mirror 대상의 파일 열기·markdown 이동이 원격 결과로 끝난다.** 원격 큐에 넣은 것을 성공으로 보지 않고 원격이 실제로 적용했는지 기다린다. 성공하면 새 탭의 로컬 `surface_id` 와 `remote_surface_id` 를, 원격이 거절하면 원격 사유를 남긴다. 결과 전에 연결이 끊기면 원격 적용 여부를 모르므로 `unknown` 이다.
+- **같은 대상의 수동 attach 요청은 앞선 요청을 대체한다.** `attach.into_gui`(같은 `port`·`workspace`)나 기존 워크스페이스 `remote.attach`(같은 `profile`·`ssh`·`remote_workspace`)를 다시 보내면 아직 끝나지 않은 앞 요청은 `cancelled`("replaced by a newer attach to the same target")로 끝나고 새 요청이 결과를 받는다.
 - **macOS에서 기본 제공 플러그인 복사본의 quarantine 속성을 지우지 않는다.** 부팅이나 `tasty plugin upgrade-builtins` 가 앱 번들의 기본 제공 플러그인을 설치 폴더로 복사할 때 `com.apple.quarantine` 확장 속성을 더 이상 자동으로 제거하지 않는다. 앱에 이 속성이 남아 있으면 복사본도 가질 수 있으며, 기본 제공 플러그인이 실행되지 않으면 `tasty plugin logs <id>` 로 원인을 확인하고 필요하면 사용자가 직접 `xattr -dr com.apple.quarantine /Applications/Tasty.app ~/.tasty/plugins` 를 실행한다. Linux·Windows 동작은 같다. macOS 실 기기 미측정.
 - **(BREAK) 실행 중인 헤드리스 PTY를 유휴 시간만으로 끝내지 않는다.** 예전에는 `pty read`·`write`·`state` 가 5분 동안 없으면 실행 중이어도 프로세스를 끝내고 항목을 지웠다. 이제 실행 중인 PTY는 `tasty pty kill` 이나 생성할 때 고른 `tasty pty spawn --idle-timeout <초>`(IPC `pty.spawn` 의 `idle_timeout_secs`, 1 이상)로만 끝난다. 유휴 제한이 만료되면 경고 알림을, 이미 끝난 항목을 Tasty가 목록 정리 과정에서 종료를 처음 확인한 때와 마지막 `read`·`write`·`state` 호출 중 늦은 때부터 5분 뒤(실제 종료보다 최대 90초 늦게 확인할 수 있다) 정리하면 정보 알림을 남긴다. Tasty가 지운 최근 256개 ID로 `pty.*` 를 부르면 대상 없음 응답 대신 회수 이유(유휴 제한 만료, 또는 종료 코드와 보존 기간)를 담은 `invalid params` 를 받는다. `pty.spawn` 응답과 `pty.list` 항목에 `idle_timeout_secs` 가 더해졌다.
 - **헤드리스 PTY를 개수 때문에 거절하지 않는다.** 창마다 8개를 넘는 `tasty pty spawn`(IPC `pty.spawn`)이 `headless PTY concurrency limit reached` 로 실패하던 상한을 없앴다. 이미 끝난 항목이 남아 있어도 새 PTY를 만든다. PTY ID 공간이 소진됐을 때만 `-32000 headless PTY ID space exhausted` 로 거절한다. 동시 실행 수를 맞추려면 `tasty agent semaphore-*` 를 사용한다.
@@ -73,6 +78,9 @@
 
 ### Fixed
 
+- **파일 핸들러 요청이 창을 잃어도 결과 없이 남지 않는다.** origin 없이 보낸 `file_handler.dispatch` 가 식별을 마쳤을 때 포커스된 윈도우가 없으면 `failed` 로 끝난다. 열려 있던 핸들러 선택 팝업의 윈도우가 park되면 그 요청은 `cancelled` 로 끝나고, 복원한 윈도우의 팝업은 그대로 쓸 수 있다.
+- **원격 attach 연결 대기열이 가득 차면 run에 그 사유를 남긴다.** 이전에는 대기 8건 상한 등으로 거절된 요청이 사유 없는 `cancelled` 로 끝났다.
+- **journal이 멈추면 아직 보내지 않은 원격 변경을 보내지 않고 그 요청을 `failed` 로 끝낸다.**
 - **사용자 조작의 일반 실패를 토스트로 알린다.** intent·구조 변경·분할선 확정·카테고리 초기화와 원격 연결 시작의 동기 실패에 작업별 안내를 한 번 표시한다. preset·split 하한의 기존 안내는 중복하지 않으며 에이전트·시스템 요청과 화면 없는 엔진에는 표시하지 않는다. 내부 오류 원문은 로그에만 남긴다.
 
 - **설정을 바꾸는 요청이 실제 결과를 돌려준다.** `settings.set_remote_transfer`, `settings.set_input_rule`·`remove_input_rule`·`initialize_input_rule`, `webhook.config`의 `allow_external`, `debug.settings.apply`는 설정을 메모리에 적용하고 `config.toml`에 저장한 뒤에 응답한다. 적용됐지만 저장하지 못하면 `-32603`(`data: {applied: true, saved: false}`), 검사·category 초기화가 실패하면 `-32603`(`data: {applied: false}`), 더 새 설정 변경에 밀리면 `superseded: true` 오류다. 예전에는 요청을 큐에 넣은 시점에 성공으로 응답했다. 바꿀 값만 실행 시점의 최신 설정에 적용하므로 그 사이에 바뀐 다른 설정을 덮지 않는다. 설정 창의 Save도 적용 거절은 오류 토스트, 저장 실패는 경고 토스트로 구분해 알린다.
