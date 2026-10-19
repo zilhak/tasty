@@ -3454,7 +3454,7 @@ long = "Read a headless PTY's exit state now. Returns immediately; it does not w
 help = "Target pty id"
 
 [cli.help._root.pty.kill]
-about = "Kill a headless PTY's process and reclaim its slot"
+about = "Kill a headless PTY's process and remove its entry from the list"
 
 [cli.help._root.pty.kill.arg.id]
 help = "Target pty id"

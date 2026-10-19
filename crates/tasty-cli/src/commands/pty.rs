@@ -59,7 +59,7 @@ pub enum PtyCommands {
         #[arg(long)]
         id: u32,
     },
-    /// Kill a headless PTY's process and reclaim its slot.
+    /// Kill a headless PTY's process and remove its entry from the list.
     Kill {
         /// Target pty id.
         #[arg(long)]

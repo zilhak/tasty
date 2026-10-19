@@ -49,7 +49,6 @@ pub(crate) fn current_terminal_palette() -> ColorPalette {
 pub(crate) struct TerminalStore {
     terminals: HashMap<SurfaceId, (Terminal, Option<Pty>)>,
     next_pty_id: Arc<AtomicU32>,
-    max_standalone: usize,
     idle_ttl: std::time::Duration,
 
     /// Terminal 등록과 별도로 설정하는 디스크 scrollback 저장 ID.
@@ -62,7 +61,6 @@ impl TerminalStore {
             terminals: HashMap::new(),
             scrollback_persist_ids: HashMap::new(),
             next_pty_id,
-            max_standalone: DEFAULT_MAX_CONCURRENT,
             idle_ttl: DEFAULT_IDLE_TTL,
         }
     }
@@ -280,6 +278,4 @@ pub(crate) fn closed_capture_of(
 }
 
 mod standalone;
-pub(crate) use standalone::{
-    DEFAULT_IDLE_TTL, DEFAULT_MAX_CONCURRENT, PTY_ID_BASE, is_surface_id_space,
-};
+pub(crate) use standalone::{DEFAULT_IDLE_TTL, PTY_ID_BASE, is_surface_id_space};

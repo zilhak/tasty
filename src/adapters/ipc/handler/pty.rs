@@ -1,5 +1,5 @@
 //! surface 없이 백그라운드 PTY를 관리한다. 화면·포커스·복원 기록은 만들지 않는다.
-//! 등록 수와 idle TTL을 제한하며, 메타데이터를 가진 Pty와 Terminal은 같은 PTY ID의 단일 저장소 항목에 둔다.
+//! 동시 개수는 제한하지 않는다. 메타데이터를 가진 Pty와 Terminal은 같은 PTY ID의 단일 저장소 항목에 둔다.
 //! PTY_ID_BASE 이상의 ID를 사용해 surface ID와 구분하고 회수할 때 내용과 물리 owner를 함께 제거한다.
 
 use super::params::{self, p_try};
@@ -40,8 +40,8 @@ fn parse_command(params: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// 주기 정리와 별도로 spawn/list 직전에도 만료 항목을 회수한다.
-/// spawn 상한을 검사하기 전에 빈 슬롯을 확보해야 하므로 주기 타이머만으로 대체하지 않는다.
+/// 주기 정리와 별도로 spawn/list 접근 시점에도 같은 회수를 적용한다.
+/// 주기 타이머를 기다리지 않고 기한이 지난 항목을 응답과 목록에서 빼기 위해서다.
 fn lazy_sweep(engine: &mut EngineMut<'_>) {
     // 공용 함수가 회수까지 마쳤으므로 반환된 ID 목록은 사용하지 않는다.
     let _ = engine.sweep_idle_ptys(Instant::now());
@@ -617,38 +617,53 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn spawn_beyond_limit_returns_error() {
+    fn spawn_beyond_the_former_limit_succeeds() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        e.runtime
-            .terminals
-            .set_standalone_limits(2, crate::runtime::terminal_store::DEFAULT_IDLE_TTL);
         let caller = CallerContext::local();
-        let a = handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({}));
-        let b = handle_spawn(&mut c, &mut e, &caller, json!(2), &json!({}));
-        assert!(a.result.is_some());
-        assert!(b.result.is_some());
-        let resp = handle_spawn(&mut c, &mut e, &caller, json!(3), &json!({}));
-        assert!(
-            resp.error.is_some(),
-            "3rd spawn must fail with LimitReached"
-        );
-        let err = resp.error.unwrap();
-        assert!(
-            err.message.contains("limit"),
-            "error should mention limit: {}",
-            err.message
-        );
-        let ids: Vec<_> = e
-            .runtime
-            .terminals
-            .standalone_iter()
-            .map(|(id, _)| id)
-            .collect();
-        for pid in ids {
-            handle_kill(&mut e, json!(0), &json!({ "id": pid }));
+        let mut ids = Vec::new();
+        for n in 0..12 {
+            let resp = handle_spawn(&mut c, &mut e, &caller, json!(n), &json!({}));
+            assert!(
+                resp.error.is_none(),
+                "spawn {} must not be refused by a concurrency limit: {:?}",
+                n + 1,
+                resp.error
+            );
+            ids.push(ok(resp)["pty_id"].as_u64().unwrap());
         }
+        let listed = ok(handle_list(&mut e, json!(20)));
+        let listed: Vec<u64> = listed["ptys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p["id"].as_u64())
+            .collect();
+        assert!(ids.iter().all(|id| listed.contains(id)), "{listed:?}");
+        for pid in ids {
+            ok(handle_kill(&mut e, json!(0), &json!({ "id": pid })));
+        }
+    }
+
+    #[test]
+    fn exhausted_id_space_still_refuses_spawn() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        let (mut c, _home) = core();
+        e.runtime.terminals = crate::runtime::terminal_store::TerminalStore::new(
+            std::sync::Arc::new(std::sync::atomic::AtomicU32::new(u32::MAX)),
+        );
+        let resp = handle_spawn(
+            &mut c,
+            &mut e,
+            &CallerContext::local(),
+            json!(1),
+            &json!({}),
+        );
+        let err = resp.error.expect("ID exhaustion must refuse");
+        assert_eq!(err.code, -32000);
+        assert_eq!(err.message, "headless PTY ID space exhausted");
     }
 
     #[test]
@@ -692,9 +707,7 @@ pub(crate) mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        e.runtime
-            .terminals
-            .set_standalone_limits(8, std::time::Duration::ZERO);
+        e.runtime.terminals.set_idle_ttl(std::time::Duration::ZERO);
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
         e.runtime.waker_factory = Some(shared);
@@ -764,11 +777,11 @@ pub(crate) mod tests {
         }
     }
 
-    fn short_ttl(engine: &mut EngineMut<'_>, max: usize) {
+    fn short_ttl(engine: &mut EngineMut<'_>) {
         engine
             .runtime
             .terminals
-            .set_standalone_limits(max, Duration::from_millis(1));
+            .set_idle_ttl(Duration::from_millis(1));
     }
 
     // 주기 정리도 registry·Terminal·waker를 모두 회수해야 한다.
@@ -779,7 +792,7 @@ pub(crate) mod tests {
         let (mut c, _home) = core();
         let recorder = std::sync::Arc::new(RecordingWakerFactory::default());
         e.runtime.waker_factory = Some(recorder.clone());
-        short_ttl(&mut e, 8);
+        short_ttl(&mut e);
 
         let spawned = ok(handle_spawn(
             &mut c,
@@ -814,14 +827,14 @@ pub(crate) mod tests {
         );
     }
 
-    // 주기 정리를 기다리지 않고 spawn 직전에 만료 항목을 회수해야 상한을 정확히 검사한다.
+    // spawn 접근도 주기 정리를 기다리지 않고 같은 회수를 적용한다.
     #[test]
-    fn spawn_still_reclaims_idle_slots_before_checking_the_limit() {
+    fn spawn_applies_the_same_reclaim_without_waiting_for_the_timer() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        short_ttl(&mut e, 1);
-        spawn_test_pty(&mut c, &mut e);
+        short_ttl(&mut e);
+        let first = spawn_test_pty(&mut c, &mut e);
         std::thread::sleep(Duration::from_millis(5));
 
         let resp = handle_spawn(
@@ -831,10 +844,11 @@ pub(crate) mod tests {
             json!(1),
             &json!({}),
         );
+        let second = ok(resp)["pty_id"].as_u64().unwrap() as u32;
         assert!(
-            resp.error.is_none(),
-            "lazy sweep 이 먼저 돌아 슬롯을 회수해야 한다 (상한 초과 실패 = lazy 가 제거된 것): {:?}",
-            resp.error
+            !e.runtime.terminals.is_standalone(first),
+            "spawn 접근의 회수가 빠졌다"
         );
+        handle_kill(&mut e, json!(2), &json!({ "id": second }));
     }
 }

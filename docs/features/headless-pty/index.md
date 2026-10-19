@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[자원·설정 원칙](../../principles/performance-and-settings.md)에 맞춰 강제 자원 통제와 선택 도구를 구분한다. 현재 standalone PTY의 8개 상한·300초 유휴 회수는 제품 상수로 강제되며 설정으로 바꾸는 제품 경로는 없다. set_standalone_limits는 테스트 전용이다. 실행 중 프로세스에도 적용되는 이 수명 정책은 원칙과 정합할 범위다.
+[자원·설정 원칙](../../principles/performance-and-settings.md)에 맞춰 강제 자원 통제와 선택 도구를 구분한다. 동시 개수는 제한하지 않는다. ID 공간이 소진됐을 때만 생성을 거절하며 이는 ID 무결성을 지키는 제한이다. 동시 실행 수를 맞추고 싶은 호출자는 선택형 조율 기능인 [semaphore](../agent-collaboration/index.md#semaphore)로 spawn 전에 permit을 얻고 kill 뒤 반납한다. 별도 설정은 두지 않는다. 현재 300초 유휴 회수는 제품 상수로 강제되며 설정으로 바꾸는 제품 경로는 없다. 테스트 전용 조정 함수만 있다. 실행 중 프로세스에도 적용되는 이 수명 정책은 원칙과 정합할 범위다.
 
 - **Status**: Implemented
 - **주체**: AI Agent
@@ -41,10 +41,10 @@ surface ID는 `[1, PTY_ID_BASE)`, PTY ID는 `0x8000_0000` 이상이다.
 
 ### 자원 회수
 
-동시 개수 기본 상한은 8, idle TTL은 5분이다. 상한 초과는 오류로 반환한다.
-read·write·wait는 idle 시각을 갱신하며 기본값은 override할 수 있다.
+동시 개수 상한은 없다. 이미 끝난 항목도 새 PTY 생성을 막지 않는다. idle TTL은 5분이며 제품 상수다.
+read·write·wait는 idle 시각을 갱신한다. 테스트 밖에서 TTL을 바꾸는 경로는 없고, 유휴 회수는 실행 중인 프로세스도 끝낸다.
 
-- spawn/list 접근에서 만료 항목을 먼저 정리한다. 특히 spawn의 상한 판단보다 먼저 수행한다.
+- spawn/list 접근에서도 주기 타이머를 기다리지 않고 같은 회수를 적용한다.
 - Tick::PtySweep는 30초 주기, Lax slack 60초로 정리한다. 아무 호출이 없어도 TTL 뒤 최대 90초 안에 회수한다.
 - GUI main·parked engine과 headless 모두 같은 EngineMut::sweep_idle_ptys를 사용한다.
   Terminal/Pty 쌍과 waker 중복 방지 등록을 함께 정리한다.
@@ -66,7 +66,7 @@ PtyState의 standalone 표시가 제거되어 이후에는 surface API로 다룬
 
 | CLI | IPC method | 권한 | 목적 |
 |-----|-----------|------|------|
-| `tasty pty spawn [--cwd <dir>] [-- <cmd>...]` | `pty.spawn` | `TerminalSpawn` | headless PTY 를 띄우고 pty id 반환. command(trailing var-arg) 생략 시 bare shell, 지정 시 즉시 실행(initial stdin 주입). 상한 초과 시 에러. |
+| `tasty pty spawn [--cwd <dir>] [-- <cmd>...]` | `pty.spawn` | `TerminalSpawn` | headless PTY 를 띄우고 pty id 반환. command(trailing var-arg) 생략 시 bare shell, 지정 시 즉시 실행(initial stdin 주입). 동시 개수로 거절하지 않으며 ID 공간 소진 때만 `-32000` 에러. |
 | `tasty pty write --id <n> "<text>"` | `pty.write` | `TerminalWrite` | 실행 중 PTY 에 stdin 을 as-is 전송(자동 제출 없음 — 개행은 호출자 포함). idle 리셋. |
 | `tasty pty read --id <n> [--lines <k>] [--show-dim]` | `pty.read` | `TerminalRead` | 현재 화면 텍스트 읽기(옵션 `lines`=내용 기준 마지막 N줄 — 하단 공백 행 건너뜀, 모자라면 스크롤백에서 채움). `surface.screen_text` 와 동일 추출이며 진단 필드(`is_terminal`·`scrollback_len`·`alt_screen`)도 같이 낸다 — N 보다 적게 왔을 때 "그게 전부" 와 "잘렸다" 를 가른다. idle 리셋. dim(ghost-suggestion, 예: Claude Code 자동완성 제안) 셀은 기본 제외 — `--show-dim`/`show_dim:true` 로 포함. |
 | `tasty pty state --id <n>` (예전 이름 `pty wait`) | `pty.wait` | `TerminalRead` | 즉시 반환 폴링(blocking 아님). exit cell 조회 → `{exited, exit_code, success}`. idle 리셋. |
@@ -86,11 +86,11 @@ PtyState의 standalone 표시가 제거되어 이후에는 surface API로 다룬
 
 ## Acceptance Criteria
 
-- Given 상한 미만 When `pty.spawn{command}` Then surface와 겹치지 않는 고범위 pty id 반환 + `pty.list` 에 등장, command 즉시 실행.
+- Given 끝난 항목을 포함해 이미 8개 넘게 등록됨 When `pty.spawn{command}` Then surface와 겹치지 않는 고범위 pty id 반환 + `pty.list` 에 등장, command 즉시 실행.
 - Given 실행 중 pty When `pty.write` → 종료 유발 → `pty.wait` Then Pty가 관측한 실제 exit_code 반환.
-- Given 상한 도달 When `pty.spawn` Then `LimitReached` 에러(자원 미생성) — panic 없음.
+- Given PTY ID 공간 소진 When `pty.spawn` Then `headless PTY ID space exhausted` 에러(자원 미생성) — panic 없음.
 - Given idle 이 TTL 초과 When `pty.spawn`/`pty.list` 접근 Then 같은 collection에서 Terminal/Pty를 함께 회수.
 - Given idle 이 TTL 초과 When `pty.*` 를 **한 번도 부르지 않음** Then 주기 타이머가 최대 90초 안에 같은 collection에서 Terminal/Pty를 함께 회수.
-- Given 상한이 꽉 찼고 그 항목들이 idle 만료 When `pty.spawn` Then lazy sweep 이 먼저 돌아 spawn 이 성공(주기 타이머를 기다리지 않는다).
+- Given idle 만료 항목이 있음 When `pty.spawn` Then 주기 타이머를 기다리지 않고 같은 회수를 적용한 뒤 spawn 이 성공.
 - Given 살아있는 headless pty When `pty.attach_surface{pane}` Then Terminal 이 surface_id 로 re-key(상태 보존) + pane tab 등장 + `pty.list` 에서 제거 + `tab.created` cascade.
 - kill/idle-sweep/adopt 각각이 회수/재배선하는 pty_id 의 waker dedup 게이트를 정리(`forget_surface`) — 누수 없음.

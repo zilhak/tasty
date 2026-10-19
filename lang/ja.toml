@@ -3388,7 +3388,7 @@ long = "ヘッドレス PTY の終了状態を今すぐ取得します。すぐ�
 help = "対象PTY ID"
 
 [cli.help._root.pty.kill]
-about = "headless PTYのプロセスを終了しスロットを回収"
+about = "headless PTYのプロセスを終了し一覧から項目を削除"
 
 [cli.help._root.pty.kill.arg.id]
 help = "対象PTY ID"

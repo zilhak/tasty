@@ -4,25 +4,20 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tasty_terminal::Pty;
 
-pub(crate) const DEFAULT_MAX_CONCURRENT: usize = 8;
 pub(crate) const DEFAULT_IDLE_TTL: Duration = Duration::from_secs(300);
 pub(crate) const PTY_ID_BASE: u32 = 0x8000_0000;
 pub(crate) const fn is_surface_id_space(id: u32) -> bool {
     id < PTY_ID_BASE
 }
 
+/// 동시 개수는 거절 사유가 아니다. ID 무결성을 지킬 수 없을 때만 생성을 거절한다.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum PtySpawnError {
-    LimitReached { current: usize, max: usize },
     IdExhausted,
 }
 impl std::fmt::Display for PtySpawnError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::LimitReached { current, max } => write!(
-                f,
-                "headless PTY concurrency limit reached ({current}/{max})"
-            ),
             Self::IdExhausted => f.write_str("headless PTY ID space exhausted"),
         }
     }
@@ -31,13 +26,6 @@ impl std::error::Error for PtySpawnError {}
 
 impl TerminalStore {
     pub(crate) fn reserve_pty_id(&self) -> Result<u32, PtySpawnError> {
-        let current = self.standalone_iter().count();
-        if current >= self.max_standalone {
-            return Err(PtySpawnError::LimitReached {
-                current,
-                max: self.max_standalone,
-            });
-        }
         self.next_pty_id
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
             .map_err(|_| PtySpawnError::IdExhausted)
@@ -72,8 +60,7 @@ impl TerminalStore {
             .collect()
     }
     #[cfg(test)]
-    pub(crate) fn set_standalone_limits(&mut self, max: usize, ttl: Duration) {
-        self.max_standalone = max;
+    pub(crate) fn set_idle_ttl(&mut self, ttl: Duration) {
         self.idle_ttl = ttl;
     }
 }
@@ -127,27 +114,31 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn exited_entries_keep_their_limit_slot_until_the_single_entry_is_removed() {
+    fn exited_entries_do_not_block_new_entries_beyond_the_former_limit() {
         let _home = crate::test_support::IsolatedHome::new();
         let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
-        store.set_standalone_limits(1, DEFAULT_IDLE_TTL);
-        let id = add(&mut store, Instant::now(), "exit 7");
+        let now = Instant::now();
+        let exited: Vec<u32> = (0..3).map(|_| add(&mut store, now, "exit 7")).collect();
         let deadline = Instant::now() + Duration::from_secs(10);
-        while store.standalone(id).unwrap().state().exit().is_none() {
-            store.process_surface(id);
-            assert!(Instant::now() < deadline, "actual child exit not observed");
-            std::thread::sleep(Duration::from_millis(5));
+        for &id in &exited {
+            while store.standalone(id).unwrap().state().exit().is_none() {
+                store.process_surface(id);
+                assert!(Instant::now() < deadline, "actual child exit not observed");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let pty = store.standalone(id).unwrap();
+            assert_eq!(pty.state().exit().unwrap().code, Some(7));
+            assert_eq!(pty.state().standalone().unwrap().owner_agent_id, "owner");
         }
-        let pty = store.standalone(id).unwrap();
-        assert_eq!(pty.state().exit().unwrap().code, Some(7));
-        assert_eq!(pty.state().standalone().unwrap().owner_agent_id, "owner");
-        assert_eq!(
-            store.reserve_pty_id(),
-            Err(PtySpawnError::LimitReached { current: 1, max: 1 })
-        );
-        drop(store.remove(id));
-        assert!(store.get(id).is_none() && store.pty(id).is_none());
-        assert!(store.reserve_pty_id().unwrap() > id);
+        let running: Vec<u32> = (0..9)
+            .map(|_| add(&mut store, now, "exec sleep 60"))
+            .collect();
+        assert_eq!(store.standalone_iter().count(), 12);
+        assert!(running.iter().all(|&id| store.is_standalone(id)));
+        let next = store.reserve_pty_id().expect("no concurrency refusal");
+        assert!(next > *running.last().unwrap());
+        drop(store.remove(exited[0]));
+        assert!(store.get(exited[0]).is_none() && store.pty(exited[0]).is_none());
     }
 
     #[cfg(unix)]
@@ -155,7 +146,7 @@ mod tests {
     fn adoption_transfer_and_rollback_keep_the_physical_owner() {
         let _home = crate::test_support::IsolatedHome::new();
         let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
-        store.set_standalone_limits(2, Duration::from_secs(10));
+        store.set_idle_ttl(Duration::from_secs(10));
         let now = Instant::now();
         let first = add(&mut store, now, "exec sleep 60");
         let second = add(&mut store, now, "exec sleep 60");

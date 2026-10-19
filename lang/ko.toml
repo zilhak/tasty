@@ -3388,7 +3388,7 @@ long = "헤드리스 PTY의 종료 상태를 지금 조회합니다. 즉시 반�
 help = "대상 PTY ID"
 
 [cli.help._root.pty.kill]
-about = "headless PTY 프로세스를 종료하고 슬롯 회수"
+about = "headless PTY 프로세스를 종료하고 목록에서 항목 제거"
 
 [cli.help._root.pty.kill.arg.id]
 help = "대상 PTY ID"

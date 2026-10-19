@@ -1,4 +1,4 @@
-<!-- source-hash: 763b80498331 -->
+<!-- source-hash: 6fbf71fb2054 -->
 # Bring a background task into a tab
 
 Not every task needs a visible tab from the start. Run work in a hidden PTY, inspect its output, then bring the same process and history into a tab when needed.
@@ -80,7 +80,7 @@ Your view does not switch automatically. Select the tab when you want to inspect
 - For a PTY that is still hidden, run `tasty pty kill --id 2147483648` with its actual ID. This terminates the process and removes it from the hidden PTY list.
 - After bringing it into a tab, close that tab when finished. It is no longer managed through the hidden PTY list.
 
-The default limit is eight hidden PTYs. After five minutes of inactivity they become eligible for cleanup. `read`, `write`, and `wait` refresh the idle timer. Do not assume background output alone keeps a PTY alive. Use a regular terminal tab for work you will leave unchecked for a long time.
+There is no limit on the number of hidden PTYs, and exited PTYs that remain do not prevent new ones. To cap how many run at once, use a semaphore from [task ordering](tasks.md). After five minutes of inactivity a PTY is cleaned up from the list, and its process is ended even if it is still running. The five minutes cannot be changed. `read`, `write`, and `wait` refresh the idle timer. Do not assume background output alone keeps a PTY alive. Use a regular terminal tab for work you will leave unchecked for a long time.
 
 ## If something goes wrong
 

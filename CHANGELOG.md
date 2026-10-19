@@ -36,6 +36,7 @@
 
 ### Changed
 
+- **헤드리스 PTY를 개수 때문에 거절하지 않는다.** 창마다 8개를 넘는 `tasty pty spawn`(IPC `pty.spawn`)이 `headless PTY concurrency limit reached` 로 실패하던 상한을 없앴다. 이미 끝난 항목이 남아 있어도 새 PTY를 만든다. PTY ID 공간이 소진됐을 때만 `-32000 headless PTY ID space exhausted` 로 거절한다. 동시 실행 수를 맞추려면 `tasty agent semaphore-*` 를 사용한다.
 - **화면 안내와 자식 에이전트 안내가 대상 옵션의 추천 표기를 쓴다.** DAG 그래프의 재개 명령과 빈 화면 안내는 `tasty agent task-run --workspace <N>`·`task-create --workspace <N>` 을, agent task 자식에게 주는 결과 제출 안내는 `tasty agent task-submit --workspace <N>` 을 보인다. 같은 이름의 워크스페이스가 여러 윈도우에 있어 거절할 때의 오류는 `--surface` 나 숫자 `--workspace` ID 를 쓰라고 안내한다. 예전 표기 `--workspace-id` 도 계속 받는다.
 - **mirror 에서 찍은 스크린샷을 받는 서버 창이 저장·디코딩·클립보드 게시 동안 멈추지 않는다.** GUI 서버는 받은 캡처를 뒤에서 저장·디코딩하고 서버 클립보드에 올린 뒤 `capture_result` 로 회신한다. Windows 는 다른 프로그램의 복사를 막지 않도록 클립보드에 올리는 단계만 화면 스레드에서 한다. 회신은 업로드한 연결이 그대로 붙어 있을 때만 보내며, 끊긴 뒤 같은 번호로 새로 붙은 연결에는 보내지 않는다(client 는 지금처럼 회신 미확인을 안내한다). 서버에 처리 대기 중인 이미지 작업이 8건이면 저장하지 않고 `ok:false` 와 사유 `server is busy storing other captures` 로 회신한다. Linux 에서 단위 시험과 단계별 시간 측정으로 확인했고, mirror 캡처를 실제 실행으로 끝까지 재현하지는 못했다. Windows·macOS 는 실 기기 미측정이다.
 - **로컬 터미널의 이미지 붙여넣기가 파일 저장을 기다리며 화면을 멈추지 않는다.** PNG 파일 저장을 뒤에서 하고, 저장이 끝나면 붙여넣은 그 터미널에 경로를 넣는다. 그 사이에 친 글자는 경로보다 먼저 들어갈 수 있다. 그 사이 터미널이 닫히거나 다시 만들어졌거나 다른 client 가 점유하면 경로를 넣지 않고 파일을 지운다(전에는 점유 중이라 넣지 않은 파일도 남았다). 저장 대기가 8건이거나, 다른 저장이 진행 중일 때 대기 이미지가 합쳐 256 MiB 를 넘으면 저장하지 않고 경고 토스트를, 저장에 실패하면 오류 토스트를 띄운다(전에는 로그만 남았다). 다른 저장이 없으면 256 MiB 를 넘는 이미지 한 장도 저장한다. PNG 인코딩은 여전히 붙여넣는 순간에 한다. Linux X11(Xvfb)에서 실제 실행으로 확인했고 Windows 는 크로스 타깃 컴파일만, macOS 는 확인하지 못했다.
