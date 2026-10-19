@@ -172,6 +172,7 @@ tasty approval await --id "$ID"            # 응답이 올 때까지 대기, 결
 ```
 
 - 팝업이 뜨고 알림도 함께 갑니다. 사용자는 팝업 버튼 클릭, 팝업에서 숫자 키 `1`~`9`(선택지 순서), 또는 `tasty approval respond --id <ID> --choice approve` 로 답합니다.
+- 코멘트 칸에 입력하는 동안 친 숫자는 코멘트 글자로 들어가고 선택지를 고르지 않습니다. 코멘트를 쓴 뒤 숫자 키로 고르려면 Tab으로 코멘트 칸을 벗어나거나 팝업의 빈 곳을 누르세요.
 - `--severity info` 는 팝업 없이 알림만, `warn`/`danger` 는 팝업 + 알림. `danger` 는 사용자가 직접 답해야 합니다.
 - 팝업은 Esc 로 닫히지 않습니다 (우회 방지). `tasty approval list` / `get` / `history` 로 조회.
 - `approval await` 는 사용자 전용입니다. 세션 토큰(`TASTY_SESSION_TOKEN`)으로 접속한 에이전트는 부를 수 없으니 `tasty approval get --id "$ID"` 로 상태를 확인하세요(`approval` 권한이 필요합니다).

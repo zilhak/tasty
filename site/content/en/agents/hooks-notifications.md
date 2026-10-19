@@ -1,4 +1,4 @@
-<!-- source-hash: 5d13197d33d4 -->
+<!-- source-hash: 1a742d6145db -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -174,6 +174,7 @@ tasty approval await --id "$ID"            # wait until a response arrives, prin
 ```
 
 - A popup appears and a notification goes out as well. The user answers by clicking a popup button, pressing number keys `1`~`9` in the popup (in choice order), or with `tasty approval respond --id <ID> --choice approve`.
+- Digits typed while the comment field is focused go into the comment and do not pick a choice. To pick with a number key after writing a comment, leave the comment field with Tab or click an empty part of the popup.
 - `--severity info` sends only a notification with no popup; `warn`/`danger` show a popup plus a notification. `danger` must be answered by the user directly.
 - The popup does not close on Esc (to prevent bypassing). Query with `tasty approval list` / `get` / `history`.
 - `approval await` is for the user only. An agent connected with a session token (`TASTY_SESSION_TOKEN`) cannot call it; check the state with `tasty approval get --id "$ID"` instead (this needs the `approval` permission).

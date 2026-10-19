@@ -17,6 +17,8 @@
 
 `approval.request` → 큐 push + popup 노출 + `notification.create` 자동 생성 → 에이전트가 `approval.await(id)` 로 blocking 대기 → 사용자 응답 → await 반환. 응답 경로 3가지가 모두 같은 `approval.respond` 로 수렴: popup 버튼 클릭 · popup 단축키 `1..=9`(선택지 순서) · CLI `tasty approval respond`.
 
+숫자 키는 코멘트 입력칸에 포커스가 없을 때만 선택이다. 코멘트를 쓰는 동안 친 숫자(IME 조합 중 포함)는 코멘트 글자로 들어가고 응답을 보내지 않는다. egui `TextEdit`은 Key 이벤트를 소비하지 않으므로 뷰가 입력칸 포커스를 직접 확인한다. 코멘트를 쓴 뒤 키보드로 고르려면 Tab으로 입력칸을 벗어나거나 팝업의 다른 곳을 누른 뒤 숫자를 친다.
+
 ### severity 별 표시
 
 | severity | 채널 |

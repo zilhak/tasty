@@ -95,17 +95,23 @@ pub struct ApprovalProps<'a> {
     pub comment_buffer: &'a mut String,
 }
 
+/// 코멘트 입력칸의 egui ID. 승인 팝업은 하나만 열린다.
+const COMMENT_FIELD_ID: &str = "approval.comment";
+
 /// View 의 출력 — 사용자 의도. wrapper 가 store/queue mutation 으로 변환.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApprovalViewAction {
     None,
-    /// 사용자가 한 선택지를 마우스 클릭 또는 1..=9 숫자 키로 선택.
+    /// 사용자가 한 선택지를 마우스 클릭 또는 1..=9 숫자 키로 선택. 숫자 키는 코멘트
+    /// 입력칸에 포커스가 없을 때만 선택이다.
     Chosen {
         key: String,
     },
 }
 
 /// 클릭과 1..=9 키 입력을 선택 결과로 반환한다. Escape는 응답으로 처리하지 않는다.
+/// 코멘트 입력 중의 숫자는 글자다. egui의 `TextEdit`은 Key 이벤트를 소비하지 않으므로
+/// 입력칸 포커스를 직접 확인한다.
 pub fn draw_approval_view(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -144,11 +150,13 @@ pub fn draw_approval_view(
             .size(theme.font_size_caption.value())
             .color(theme.text_muted().to_egui()),
     );
-    ui.add(
+    let comment = ui.add(
         egui::TextEdit::singleline(props.comment_buffer)
+            .id(egui::Id::new(COMMENT_FIELD_ID))
             .desired_width(ui.available_width())
             .hint_text(props.comment_hint.clone()),
     );
+    let digits_choose = !comment.has_focus();
     vspace(ui, theme.spacing_sm);
 
     let mut action = ApprovalViewAction::None;
@@ -169,26 +177,30 @@ pub fn draw_approval_view(
         }
     });
 
-    let pressed_num = ui.ctx().input(|i| {
-        for n in 1..=9u8 {
-            let key = match n {
-                1 => egui::Key::Num1,
-                2 => egui::Key::Num2,
-                3 => egui::Key::Num3,
-                4 => egui::Key::Num4,
-                5 => egui::Key::Num5,
-                6 => egui::Key::Num6,
-                7 => egui::Key::Num7,
-                8 => egui::Key::Num8,
-                9 => egui::Key::Num9,
-                _ => continue,
-            };
-            if i.key_pressed(key) {
-                return Some(n as usize);
-            }
-        }
-        None
-    });
+    let pressed_num = digits_choose
+        .then(|| {
+            ui.ctx().input(|i| {
+                for n in 1..=9u8 {
+                    let key = match n {
+                        1 => egui::Key::Num1,
+                        2 => egui::Key::Num2,
+                        3 => egui::Key::Num3,
+                        4 => egui::Key::Num4,
+                        5 => egui::Key::Num5,
+                        6 => egui::Key::Num6,
+                        7 => egui::Key::Num7,
+                        8 => egui::Key::Num8,
+                        9 => egui::Key::Num9,
+                        _ => continue,
+                    };
+                    if i.key_pressed(key) {
+                        return Some(n as usize);
+                    }
+                }
+                None
+            })
+        })
+        .flatten();
     if let Some(idx) = pressed_num
         && let Some(choice) = props.choices.get(idx - 1)
     {
@@ -554,6 +566,88 @@ mod view_tests {
                 key: "deny".to_string()
             }
         );
+    }
+
+    fn two_choices() -> Vec<ApprovalChoiceView> {
+        vec![
+            ApprovalChoiceView {
+                key: "approve".to_string(),
+                label: "Approve".to_string(),
+                destructive: false,
+            },
+            ApprovalChoiceView {
+                key: "deny".to_string(),
+                label: "Deny".to_string(),
+                destructive: true,
+            },
+        ]
+    }
+
+    fn num2_events(raw: &mut egui::RawInput) {
+        raw.events.push(egui::Event::Key {
+            key: egui::Key::Num2,
+            physical_key: Some(egui::Key::Num2),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        raw.events.push(egui::Event::Text("2".to_string()));
+    }
+
+    /// 같은 Context로 두 프레임을 그린다. 첫 프레임 뒤 `focus_comment`면 코멘트 칸에 포커스를
+    /// 주고, 둘째 프레임에 Num2 Key와 Text "2"를 함께 넣는다. 둘째 프레임의 결과와 버퍼를 돌려준다.
+    fn run_digit_frames(focus_comment: bool) -> (ApprovalViewAction, String) {
+        let ctx = egui::Context::default();
+        let theme = mocha_fallback();
+        let choices = two_choices();
+        let mut buf = String::new();
+        let mut action = ApprovalViewAction::None;
+        let frame = |raw: egui::RawInput, buf: &mut String, action: &mut ApprovalViewAction| {
+            drop(ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let mut props = ApprovalProps {
+                        id: "abc".to_string(),
+                        severity: Severity::Info,
+                        severity_label: "INFO".to_string(),
+                        comment_label: "Comment".to_string(),
+                        comment_hint: "Hint".to_string(),
+                        body: None,
+                        choices: choices.clone(),
+                        comment_buffer: buf,
+                    };
+                    *action = draw_approval_view(ui, &theme, &mut props);
+                });
+            }));
+        };
+        frame(egui::RawInput::default(), &mut buf, &mut action);
+        if focus_comment {
+            ctx.memory_mut(|m| m.request_focus(egui::Id::new(COMMENT_FIELD_ID)));
+            frame(egui::RawInput::default(), &mut buf, &mut action);
+            assert!(ctx.memory(|m| m.has_focus(egui::Id::new(COMMENT_FIELD_ID))));
+        }
+        let mut raw = egui::RawInput::default();
+        num2_events(&mut raw);
+        frame(raw, &mut buf, &mut action);
+        (action, buf)
+    }
+
+    #[test]
+    fn digit_typed_into_focused_comment_is_text_not_a_choice() {
+        let (action, buf) = run_digit_frames(true);
+        assert_eq!(action, ApprovalViewAction::None);
+        assert_eq!(buf, "2");
+    }
+
+    #[test]
+    fn digit_chooses_when_popup_focused_and_comment_is_not() {
+        let (action, buf) = run_digit_frames(false);
+        assert_eq!(
+            action,
+            ApprovalViewAction::Chosen {
+                key: "deny".to_string()
+            }
+        );
+        assert!(buf.is_empty());
     }
 
     #[test]
