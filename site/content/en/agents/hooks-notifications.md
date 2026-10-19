@@ -1,4 +1,4 @@
-<!-- source-hash: b106b38336af -->
+<!-- source-hash: cb6442ed970e -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -76,6 +76,8 @@ tasty hook-handler get --id user/my-handler                 # one handler in ful
 tasty hook-handler dispatch --id user/my-handler            # run directly to test
 tasty hook-handler reload                                   # re-read ~/.tasty/hook-handlers.toml
 ```
+
+`dispatch` first prints a line saying the run was accepted (with its `run` number), then waits until it finishes and prints the result line. The result's `state` is `succeeded` when every step worked, `partial` when only some did, `failed` when none did, and `unknown` when no answer came back so the outcome is not known; `result` and `steps` say which step failed and why. A shell command handler counts as succeeded once its process starts, and its exit code is shown for reference only once it ends. Unless the result is `succeeded`, the command exits with code 1. To skip waiting, add `--no-wait` and check later with `tasty hook-handler result --run <number>`.
 
 You can also **change or create** a handler from the command line. Anything you leave out
 stays as it was, so a handler can keep its name while what it does changes (every hook

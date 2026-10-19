@@ -177,6 +177,9 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
         }),
 
         // ── 폴링/스트리밍 루프 (반복 IPC) ───────────────────────────────────
+        Commands::HookHandler {
+            command: crate::commands::HookHandlerCommands::Dispatch { no_wait: false, .. },
+        } => Box::new(crate::local::hook_dispatch::HookDispatch { command }),
         Commands::Plugin {
             command: PluginCommands::Logs { id, follow },
         } => Box::new(crate::local::PluginLogs {

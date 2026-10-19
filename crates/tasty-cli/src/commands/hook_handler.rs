@@ -65,8 +65,13 @@ pub enum HookHandlerCommands {
     /// Manually fire a registered hook handler by id (test / automation entry point).
     ///
     /// For an IpcSequence handler, `--body`/`--header`/`--query` fill its
-    /// `${body.x}`/`${header.x}`/`${query.x}` value slots. The response is an
-    /// acknowledgement only — the handler runs fire-and-forget.
+    /// `${body.x}`/`${header.x}`/`${query.x}` value slots. Prints the
+    /// acceptance (with a `run` number) on one line, then waits for the final
+    /// result and prints it on a second line: `state` is `succeeded`,
+    /// `partial`, `failed` or `unknown`, `result` says what happened and
+    /// `steps` lists each step. A shell command handler succeeds once its
+    /// process starts; `exit_code` is filled once it exits and is not judged.
+    /// Exits with code 1 unless the final state is `succeeded`.
     Dispatch {
         /// Hook handler id to fire (e.g. `host/notify`, `user/wh-...`).
         #[arg(long)]
@@ -80,5 +85,18 @@ pub enum HookHandlerCommands {
         /// Query substitution values as a JSON object `{"token":"t"}`. Optional.
         #[arg(long)]
         query: Option<String>,
+        /// Print only the acceptance and return without waiting. Look the
+        /// result up later with `tasty hook-handler result --run <N>`.
+        #[arg(long)]
+        no_wait: bool,
+    },
+    /// Show the progress or final result of a dispatch by its `run` number.
+    ///
+    /// `done` is false while it is still running. The last 128 dispatches are
+    /// kept; an older or unknown run is an error.
+    Result {
+        /// The `run` number from the dispatch acceptance.
+        #[arg(long)]
+        run: u64,
     },
 }

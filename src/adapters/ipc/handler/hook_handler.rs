@@ -16,7 +16,7 @@ use crate::hook_handler::{
     SubstitutionContext, UserHookHandlerActionDecl, UserHookHandlerUpsertDecl, build_env,
     spawn_shell,
 };
-use crate::hook_runtime::{Delivery, SequenceNotQueued, enqueue_sequence};
+use crate::hook_runtime::{Delivery, SequenceNotQueued, enqueue_sequence, runs};
 use tasty_ipc::host_call::HostIpcInjector;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -66,8 +66,8 @@ pub fn handle_reload(id: serde_json::Value) -> JsonRpcResponse {
 }
 
 /// 등록된 핸들러를 ID로 실행한다. body/headers/query는 params의 값에만 치환한다.
-/// 응답은 접수 여부만 나타낸다. 대기 한도 초과나 실행기 부재로 넘기지 못하면 오류로 답한다.
-/// 비활성 핸들러는 거절한다.
+/// 응답은 접수(`accepted`)와 최종 결과를 조회할 `run`이다. 결과는 [`handle_result`]가 돌려준다.
+/// 대기 한도 초과나 실행기 부재로 넘기지 못하면 오류로 답한다. 비활성 핸들러는 거절한다.
 pub fn handle_dispatch(
     core: &AppServices,
     id: serde_json::Value,
@@ -95,7 +95,11 @@ pub fn handle_dispatch(
             };
             let ctx = build_context(params);
             let steps = calls.len();
-            if let Err(e) = start_dispatched_sequence(&hid.0, &injector, &calls, ctx) {
+            let run = runs::begin(&hid.0, runs::ACTION_SEQUENCE);
+            if let Err(e) =
+                start_dispatched_sequence(&hid.0, &injector, &calls, ctx, Delivery::Run(run))
+            {
+                runs::forget(run);
                 return JsonRpcResponse::internal_error(
                     id,
                     format!("hook handler '{hid}' not run — {e}"),
@@ -103,7 +107,7 @@ pub fn handle_dispatch(
             }
             JsonRpcResponse::success(
                 id,
-                json!({ "accepted": true, "id": hid.0, "action": "ipc_sequence", "steps": steps }),
+                json!({ "accepted": true, "id": hid.0, "action": "ipc_sequence", "steps": steps, "run": run }),
             )
         }
         HookHandlerAction::ShellCommand { command, args } => {
@@ -116,12 +120,33 @@ pub fn handle_dispatch(
                     .cloned()
                     .unwrap_or(serde_json::Value::Null),
             });
-            spawn_shell(command, args, env, |_| {});
+            let run = runs::begin(&hid.0, runs::ACTION_SHELL);
+            spawn_shell(command, args, env, move |event| {
+                runs::shell_event(run, event)
+            });
             JsonRpcResponse::success(
                 id,
-                json!({ "accepted": true, "id": hid.0, "action": "shell_command" }),
+                json!({ "accepted": true, "id": hid.0, "action": "shell_command", "run": run }),
             )
         }
+    }
+}
+
+/// 수동 dispatch의 진행·최종 결과. `done`이 false면 아직 실행 중이다.
+/// 보관 수를 넘어 지워졌거나 발급하지 않은 run은 invalid params다.
+pub fn handle_result(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let Some(run) = params.get("run").and_then(|v| v.as_u64()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'run' parameter");
+    };
+    match runs::lookup(run) {
+        Some(result) => JsonRpcResponse::success(id, result),
+        None => JsonRpcResponse::invalid_params(
+            id,
+            format!(
+                "unknown run {run} — not issued, or older than the last {} dispatches",
+                runs::KEEP
+            ),
+        ),
     }
 }
 
@@ -131,9 +156,10 @@ fn start_dispatched_sequence(
     injector: &HostIpcInjector,
     calls: &[IpcCall],
     ctx: SubstitutionContext,
+    delivery: Delivery,
 ) -> Result<(), SequenceNotQueued> {
     let origin = SequenceOrigin::Dispatch;
-    enqueue_sequence(origin, handler_id, injector, calls, ctx, Delivery::Log).inspect_err(|e| {
+    enqueue_sequence(origin, handler_id, injector, calls, ctx, delivery).inspect_err(|e| {
         tracing::error!("{origin} IpcSequence '{handler_id}' not run — {e}");
     })
 }
@@ -391,6 +417,7 @@ mod tests {
             &injector,
             &[step("first.a"), step("first.b")],
             SubstitutionContext::default(),
+            Delivery::Run(0),
         )
         .expect("the first dispatch is queued");
         enqueue_sequence(
@@ -399,7 +426,7 @@ mod tests {
             &injector,
             &[step("hook.a"), step("hook.b")],
             SubstitutionContext::default(),
-            Delivery::Log,
+            Delivery::Run(0),
         )
         .expect("the surface hook sequence is queued");
         start_dispatched_sequence(
@@ -407,6 +434,7 @@ mod tests {
             &injector,
             &[step("second.a")],
             SubstitutionContext::default(),
+            Delivery::Run(0),
         )
         .expect("the second dispatch is queued");
 

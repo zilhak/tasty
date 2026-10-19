@@ -26,8 +26,8 @@ struct SequenceJob {
 pub enum Delivery {
     /// 자동 실행: 성공하지 못한 스텝이 있으면 알림을 남긴다.
     Notify(AutoOrigin),
-    /// 결과를 로그에만 남긴다.
-    Log,
+    /// 수동 dispatch: 결과를 그 run 기록에 남겨 호출자가 조회하게 한다.
+    Run(u64),
 }
 
 /// 최초 스레드 생성 실패도 OnceLock에 남겨 이후 자동 재시도하지 않는다.
@@ -43,8 +43,11 @@ fn sequence_worker() -> Option<&'static SyncSender<SequenceJob>> {
                         tracing::debug!("{} IpcSequence '{}' running", job.origin, job.handler_id);
                         let outcome =
                             execute_sequence(job.origin, &job.injector, &job.calls, &job.ctx);
-                        if let Delivery::Notify(origin) = job.delivery {
-                            notice::sequence(origin, &job.handler_id, &outcome);
+                        match job.delivery {
+                            Delivery::Notify(origin) => {
+                                notice::sequence(origin, &job.handler_id, &outcome)
+                            }
+                            Delivery::Run(run) => super::runs::finish_sequence(run, &outcome),
                         }
                     }
                 });

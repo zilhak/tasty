@@ -1,5 +1,6 @@
 //! IpcSequence·셸 실행의 결과. 수동 dispatch는 호출자 조회 결과로, 자동 실행은 알림으로 전달한다.
 
+use serde_json::{Value, json};
 use tasty_ipc::host_call::InjectError;
 use tasty_ipc::protocol::{ERR_EXPIRED_BEFORE_RUN, ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN};
 
@@ -31,6 +32,15 @@ impl StepStatus {
         }
     }
 
+    fn key(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Failed(_) => "failed",
+            Self::NotRun(_) => "not_run",
+            Self::Unknown(_) => "unknown",
+        }
+    }
+
     fn error(&self) -> Option<&str> {
         match self {
             Self::Ok => None,
@@ -56,6 +66,17 @@ pub enum Verdict {
     Failed,
     /// 실패는 없지만 결과를 모르는 스텝이 있다.
     Unknown,
+}
+
+impl Verdict {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Succeeded => "succeeded",
+            Self::Partial => "partial",
+            Self::Failed => "failed",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -100,6 +121,54 @@ impl SequenceOutcome {
             .collect::<Vec<_>>()
             .join("; ")
     }
+
+    /// 에이전트 응답용 한 줄. 표시 언어와 관계없이 영어로 고정한다.
+    pub fn result_line(&self) -> String {
+        let total = self.steps.len();
+        let ok = self
+            .steps
+            .iter()
+            .filter(|s| s.status == StepStatus::Ok)
+            .count();
+        let problems: Vec<String> = self
+            .steps
+            .iter()
+            .filter_map(|s| {
+                let error = s.status.error()?;
+                let what = match s.status {
+                    StepStatus::Failed(_) => "failed",
+                    StepStatus::NotRun(_) => "did not run",
+                    _ => "gave no answer in time (result unknown)",
+                };
+                Some(format!(
+                    "step {} ({}) {what}: {error}",
+                    s.index + 1,
+                    s.method
+                ))
+            })
+            .collect();
+        if problems.is_empty() {
+            format!("{} of {total} steps succeeded", ok)
+        } else {
+            format!("{} of {total} steps succeeded; {}", ok, problems.join("; "))
+        }
+    }
+
+    pub fn steps_json(&self) -> Value {
+        Value::Array(
+            self.steps
+                .iter()
+                .map(|s| {
+                    json!({
+                        "step": s.index + 1,
+                        "method": s.method,
+                        "status": s.status.key(),
+                        "error": s.status.error(),
+                    })
+                })
+                .collect(),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -135,6 +204,12 @@ mod tests {
         );
         let partial = outcome(vec![StepStatus::Ok, fail()]);
         assert!(partial.failure_summary().contains("2 (m1)"));
+        assert_eq!(partial.steps_json()[1]["status"], "failed");
+        assert!(
+            partial
+                .result_line()
+                .starts_with("1 of 2 steps succeeded; step 2 (m1) failed")
+        );
     }
 
     #[test]

@@ -76,11 +76,13 @@ pub(super) fn hook_handler_command_to_method_params(
         }
         H::Remove { id } => ("hook_handler.remove", serde_json::json!({ "id": id })),
         H::Reload => ("hook_handler.reload", serde_json::Value::Null),
+        H::Result { run } => ("hook_handler.result", serde_json::json!({ "run": run })),
         H::Dispatch {
             id,
             body,
             header,
             query,
+            no_wait: _,
         } => {
             // body/header/query 는 JSON 문자열 → Value 파싱(서버가 치환 컨텍스트로 사용).
             let parse = |s: &Option<String>| {

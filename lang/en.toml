@@ -6422,7 +6422,7 @@ about = "Reload `~/.tasty/hook-handlers.toml` (user source only; host/plugin una
 
 [cli.help._root.hook-handler.dispatch]
 about = "Manually fire a registered hook handler by id (test / automation entry point)"
-long = "Manually fire a registered hook handler by id (test / automation entry point).\n\nFor an IpcSequence handler, `--body`/`--header`/`--query` fill its `${body.x}`/`${header.x}`/`${query.x}` value slots. The response is an acknowledgement only — the handler runs fire-and-forget."
+long = "Manually fire a registered hook handler by id (test / automation entry point).\n\nFor an IpcSequence handler, `--body`/`--header`/`--query` fill its `${body.x}`/`${header.x}`/`${query.x}` value slots. Prints the acceptance (with a `run` number) on one line, then waits for the final result and prints it on a second line: `state` is `succeeded`, `partial`, `failed` or `unknown`, `result` says what happened and `steps` lists each step. A shell command handler succeeds once its process starts; `exit_code` is filled once it exits and is not judged. Exits with code 1 unless the final state is `succeeded`."
 
 [cli.help._root.hook-handler.dispatch.arg.id]
 help = "Hook handler id to fire (e.g. `host/notify`, `user/wh-...`)"
@@ -6435,6 +6435,16 @@ help = "Header substitution values as a JSON object `{\"X-Sig\":\"abc\"}`. Optio
 
 [cli.help._root.hook-handler.dispatch.arg.query]
 help = "Query substitution values as a JSON object `{\"token\":\"t\"}`. Optional"
+
+[cli.help._root.hook-handler.dispatch.arg.no_wait]
+help = "Print only the acceptance and return without waiting. Look the result up later with `tasty hook-handler result --run <N>`"
+
+[cli.help._root.hook-handler.result]
+about = "Show the progress or final result of a dispatch by its `run` number"
+long = "Show the progress or final result of a dispatch by its `run` number.\n\n`done` is false while it is still running. The last 128 dispatches are kept; an older or unknown run is an error."
+
+[cli.help._root.hook-handler.result.arg.run]
+help = "The `run` number from the dispatch acceptance"
 
 [cli.help._root.completion-strategy]
 about = "List registered task completion strategies"

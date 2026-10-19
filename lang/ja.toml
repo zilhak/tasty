@@ -6354,7 +6354,7 @@ about = "`~/.tasty/hook-handlers.toml` を再読み込み（ユーザー項目�
 
 [cli.help._root.hook-handler.dispatch]
 about = "登録済みフックハンドラーをIDで手動実行（テスト・自動化の入口）"
-long = "登録済みフックハンドラーをIDで手動実行します（テスト・自動化の入口）。IpcSequenceハンドラーでは `--body`/`--header`/`--query` で `${body.x}`/`${header.x}`/`${query.x}` の値を埋めます。応答は受付確認のみで、ハンドラーの完了は待ちません。"
+long = "登録済みフックハンドラーをIDで手動実行します（テスト・自動化の入口）。IpcSequenceハンドラーでは `--body`/`--header`/`--query` で `${body.x}`/`${header.x}`/`${query.x}` の値を埋めます。1行目に受付応答（`run` 番号付き）を出力し、最終結果を待って2行目に出力します。`state` は `succeeded`・`partial`・`failed`・`unknown` のいずれかで、`result` は何が起きたか、`steps` はステップごとの結果です。シェルコマンドハンドラーはプロセスが起動すれば成功で、`exit_code` は終了後に入り、判定には使いません。最終状態が `succeeded` でなければ終了コード 1 で終わります。"
 
 [cli.help._root.hook-handler.dispatch.arg.id]
 help = "実行するフックハンドラーID（例：`host/notify`、`user/wh-...`）"
@@ -6367,6 +6367,16 @@ help = "ヘッダー置換値のJSONオブジェクト `{\"X-Sig\":\"abc\"}`。�
 
 [cli.help._root.hook-handler.dispatch.arg.query]
 help = "クエリ置換値のJSONオブジェクト `{\"token\":\"t\"}`。任意"
+
+[cli.help._root.hook-handler.dispatch.arg.no_wait]
+help = "受付応答だけを出力し、待たずに戻ります。結果は後で `tasty hook-handler result --run <N>` で確認します"
+
+[cli.help._root.hook-handler.result]
+about = "dispatch の進行状況または最終結果を `run` 番号で表示"
+long = "dispatch の進行状況または最終結果を `run` 番号で表示します。\n\n実行中は `done` が false です。直近 128 件だけを保持し、それより古いか不明な run はエラーです。"
+
+[cli.help._root.hook-handler.result.arg.run]
+help = "dispatch 受付応答の `run` 番号"
 
 [cli.help._root.completion-strategy]
 about = "登録済みのタスク完了判定方法を一覧表示します"

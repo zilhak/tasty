@@ -76,6 +76,8 @@ tasty hook-handler dispatch --id user/my-handler            # 직접 실행해 �
 tasty hook-handler reload                                   # ~/.tasty/hook-handlers.toml 다시 읽기
 ```
 
+`dispatch` 는 받아들였다는 줄(`run` 번호 포함)을 먼저 출력하고, 끝날 때까지 기다린 뒤 결과 줄을 출력합니다. 결과의 `state` 는 모두 성공하면 `succeeded`, 일부만 성공하면 `partial`, 모두 실패하면 `failed`, 응답을 받지 못해 결과를 알 수 없으면 `unknown` 이고, `result` 와 `steps` 에 어느 단계가 왜 실패했는지 나옵니다. 셸 명령 핸들러는 프로세스가 시작되면 성공으로 보며, 끝났을 때의 종료 코드는 참고로만 보여 줍니다. 결과가 `succeeded` 가 아니면 명령은 종료 코드 1로 끝납니다. 기다리지 않으려면 `--no-wait` 를 붙이고, 나중에 `tasty hook-handler result --run <번호>` 로 결과를 확인하세요.
+
 핸들러를 **고치거나 새로 만드는** 것도 명령으로 됩니다. 적지 않은 항목은 그대로 두므로,
 이름을 유지한 채 하는 일만 바꿀 수 있습니다 (그 핸들러를 가리키는 훅들은 그대로 따라옵니다).
 

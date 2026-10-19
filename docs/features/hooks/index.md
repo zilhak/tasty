@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[피드백·실패 원칙](../../principles/feedback-and-recovery.md)에 따라 결과와 실패가 후속 진행에 미치는 영향을 전달해야 한다. 아래 훅 접수/HookFired와 완료는 다르며, 자동 실행(surface 훅·전역 훅)이 실패하면 알림으로 남긴다. 수동 dispatch가 접수 응답만 주고 최종 결과를 돌려주지 않는 경로와 의존 단계도 무조건 계속하는 경로는 현행 구현의 미충족이다.
+[피드백·실패 원칙](../../principles/feedback-and-recovery.md)에 따라 결과와 실패가 후속 진행에 미치는 영향을 전달해야 한다. 아래 훅 접수/HookFired와 완료는 다르며, 자동 실행(surface 훅·전역 훅)이 실패하면 알림으로 남긴다. 수동 dispatch는 접수 응답의 `run` 번호로 최종 결과(`hook_handler.result`)를 돌려준다. 의존 단계도 무조건 계속하는 경로는 현행 구현의 미충족이다.
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`hook.*` / `global_hook.*`)
@@ -95,12 +95,24 @@ webhook은 요청별 스레드에서 실행하므로 이 순서에 포함되지 
 
 대기 시퀀스 수는 `PENDING_SEQUENCE_LIMIT`로 제한하며 현재 `INJECTED_DEPTH_LIMIT`의 256 건을 사용한다.
 포화·워커 시작 실패·중단이면 실행하지 않고 로그를 남긴다. 메인 스레드에서 대신 실행하거나 자동 재시도하지 않는다.
-수동 dispatch는 이 경우 `-32603`으로 거절하고, 접수되면 기존 accepted 응답을 즉시 보낸다.
-`HookFired`와 accepted는 step 완료를 뜻하지 않는다. 스텝의 10 초 대기 종료 뒤에도 이미 주입된 요청은 실행될 수 있다.
+수동 dispatch는 이 경우 `-32603`으로 거절하고, 접수되면 accepted 응답을 즉시 보낸다.
+`HookFired`와 accepted는 step 완료를 뜻하지 않는다. 수동 dispatch의 완료는 아래 [수동 dispatch의 최종 결과](#수동-dispatch의-최종-결과)로 확인한다. 스텝의 10 초 대기 종료 뒤에도 이미 주입된 요청은 실행될 수 있다.
 느린 시퀀스가 뒤 작업을 지연시키며 수동 요청과 surface hook은 같은 상한을 사용한다.
 
 로그의 출처는 `SequenceOrigin`에 따라 `webhook`, `surface hook`, `hook_handler.dispatch`로 구분한다.
 로컬 실행에 필요한 injector가 없으면 warning을 남기고 실행을 건너뛴다.
+
+#### 수동 dispatch의 최종 결과
+
+`hook_handler.dispatch` 응답은 접수 확인이다. `accepted: true`의 의미는 그대로이며 `run`(실행 번호)이 추가됐다. 호출자는 `hook_handler.result {run}`으로 진행·최종 결과를 조회한다(`src/hook_runtime/runs.rs`).
+
+- 응답: `{run, id, action, done, state, result, steps?, exit_code?}`. `done`이 false면 `state: "running"`이다.
+- `state`: `IpcSequence`는 `SequenceOutcome::verdict`로 정한다. 모든 step이 `ok`면 `succeeded`, 성공한 step이 없으면 `failed`, 일부만 성공하면 `partial`, 실패는 없지만 결과 불명 step이 있으면 `unknown`이다. 결과 불명은 성공으로 보고하지 않는다.
+- `result`: 표시 언어와 관계없는 영어 한 줄. 예: `1 of 2 steps succeeded; step 2 (nosuch.method) failed: rpc error -32601: ...`. `steps`는 step별 `{step, method, status(ok|failed|not_run|unknown), error}`다.
+- `ShellCommand`는 프로세스를 띄웠으면 `succeeded`("process started"), 띄우지 못했으면 `failed`("process could not start: <원인>")다. 종료 코드는 끝난 뒤 `exit_code`와 `result`에 정보로 실으며 판정에 쓰지 않는다.
+- 최근 128건(`runs::KEEP`)만 보관한다. 그보다 오래되었거나 알 수 없는 `run`은 `-32602`다. 큐 포화·실행기 부재로 동기 거절된 dispatch는 기록을 남기지 않는다.
+- CLI `tasty hook-handler dispatch`는 접수 줄을 출력한 뒤 200ms 간격으로 조회해 최종 결과 줄을 출력한다. 기다리는 상한은 10초 × (step 수 + 1)이다. 최종 상태가 `succeeded`가 아니거나 상한 안에 끝나지 않으면 종료 코드 1이다. `--no-wait`는 접수 줄만 출력하고, 결과는 `tasty hook-handler result --run <N>`으로 조회한다.
+- 수동 dispatch의 결과는 호출자에게만 돌려주며 알림을 남기지 않는다. 자동 실행의 실패만 아래 알림으로 남긴다.
 
 #### 자동 실행 실패 알림
 
@@ -196,7 +208,8 @@ Plugin 선언에는 ShellCommand variant가 없어 매니페스트 파싱 단계
 | `hook_handler.upsert` | `tasty hook-handler upsert --id <id> [--source ...] [--priority N] [--display-name-key K] [--disabled <bool>] (--action <json> \| --calls <json>)` | user 출처 핸들러를 **제자리 수정**하거나 신규 생성 |
 | `hook_handler.remove` | `tasty hook-handler remove --id <id>` | user 기여분만 제거(host/plugin 기본값 보존) |
 | `hook_handler.reload` | `tasty hook-handler reload` | user config 재로드(host/plugin 영향 없음) |
-| `hook_handler.dispatch` | `tasty hook-handler dispatch --id <id> [--body/--header/--query <json>]` | id 로 수동 실행(fire-and-forget). `IpcSequence` 는 surface 훅과 같은 실행기에 발생 순서대로 줄 선다 |
+| `hook_handler.dispatch` | `tasty hook-handler dispatch --id <id> [--body/--header/--query <json>] [--no-wait]` | id 로 수동 실행. 응답은 접수(`accepted`, `run`)이고 CLI 는 최종 결과까지 기다린다. `IpcSequence` 는 surface 훅과 같은 실행기에 발생 순서대로 줄 선다 |
+| `hook_handler.result` | `tasty hook-handler result --run <N>` | dispatch 의 진행·최종 결과 조회. [수동 dispatch의 최종 결과](#수동-dispatch의-최종-결과) |
 
 - **`upsert` 는 patch 다** — 안 준 필드는 지우는 것이 아니라 그대로 둔다. id·우선순위·나머지가 유지되므로 그 id 를 참조하는 훅 바인딩(`HookBinding::Handler(id)`)은 계속 같은 것을 가리킨다. 지우고 다시 만드는 경로(`remove` 후 재등록)와 **관측 가능하게 다르다**: 후자는 사이에 들어온 트리거가 갈 곳이 없고, host/plugin 기본값이 잠시 드러나며, 안 적은 필드가 기본값으로 되돌아간다.
 - **최소 한 필드**는 있어야 한다. 아무 필드도 없는 upsert 는 아무것도 안 고친 채 성공으로 보고되므로 거부한다. 형식이 틀린 `action` 도 같은 이유로 조용히 무시하지 않는다.

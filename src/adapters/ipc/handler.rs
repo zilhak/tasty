@@ -774,6 +774,7 @@ fn route_engine_handler(
         "hook_handler.remove" => hook_handler::handle_remove(id, &request.params),
         "hook_handler.reload" => hook_handler::handle_reload(id),
         "hook_handler.dispatch" => hook_handler::handle_dispatch(core, id, &request.params),
+        "hook_handler.result" => hook_handler::handle_result(id, &request.params),
         "completion_strategy.list" => completion_strategy::handle_list(id),
         #[cfg(feature = "gui")]
         "markdown.navigate" => markdown::handle_navigate(

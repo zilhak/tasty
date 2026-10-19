@@ -2,6 +2,7 @@
 
 pub mod attach;
 pub mod debug;
+pub mod hook_dispatch;
 pub mod passkey;
 pub mod port;
 pub mod remote_check;
