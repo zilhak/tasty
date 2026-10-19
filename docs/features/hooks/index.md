@@ -111,7 +111,7 @@ webhook은 요청별 스레드에서 실행하므로 이 순서에 포함되지 
 - `result`: 표시 언어와 관계없는 영어 한 줄. 예: `1 of 2 steps succeeded; step 2 (nosuch.method) failed: rpc error -32601: ...`. `steps`는 step별 `{step, method, status(ok|failed|not_run|unknown), error}`다.
 - `ShellCommand`는 프로세스를 띄웠으면 `succeeded`("process started"), 띄우지 못했으면 `failed`("process could not start: <원인>")다. 종료 코드는 끝난 뒤 `exit_code`와 `result`에 정보로 실으며 판정에 쓰지 않는다.
 - 최근 128건(`runs::KEEP`)만 보관한다. 그보다 오래되었거나 알 수 없는 `run`은 `-32602`다. 큐 포화·실행기 부재로 동기 거절된 dispatch는 기록을 남기지 않는다.
-- CLI `tasty hook-handler dispatch`는 접수 줄을 출력한 뒤 200ms 간격으로 조회해 최종 결과 줄을 출력한다. 기다리는 상한은 10초 × (step 수 + 1)이다. 최종 상태가 `succeeded`가 아니거나 상한 안에 끝나지 않으면 종료 코드 1이다. `--no-wait`는 접수 줄만 출력하고, 결과는 `tasty hook-handler result --run <N>`으로 조회한다.
+- CLI `tasty hook-handler dispatch`는 접수 줄을 출력한 뒤 200ms 간격으로 조회해 최종 결과 줄을 출력한다. 기다리는 상한은 10초 × (step 수 + 1)이다. 최종 상태가 `succeeded`가 아니거나 상한 안에 끝나지 않으면 종료 코드 1이다. 결과 조회 응답도 남은 시간까지만 읽는다(소켓 읽기 timeout). 상한 안에 응답이 오지 않으면 `{run, done: false, state: "running", timed_out: true, result: "no answer to hook_handler.result within <N> ms; the final result is unknown"}`를 마지막 줄로 출력하고 종료 코드 1로 끝난다. `--no-wait`는 접수 줄만 출력하고, 결과는 `tasty hook-handler result --run <N>`으로 조회한다.
 - 기다리는 dispatch는 요청을 여러 번 보내는 client-driven 명령(`crates/tasty-cli/src/dispatch.rs`의 `ClientDriven`)이다. 요청 하나에 싣는 루트 옵션 `--response-timeout-ms`를 주면 `Envelope::refuse_if_set`이 아무것도 보내지 않고 종료 코드 2로 끝낸다. `--no-wait`는 요청 하나라 일반 경로로 보내고 이 옵션을 그 요청에 싣는다. CLI에는 멱등 키 옵션이 없으며, 결과 조회 요청은 항상 멱등 키 없이 보낸다(`hook_handler.result`는 `Read`라 키를 보존하지 않는다).
 - 결과 조회 요청은 접수 요청을 복제해 만들므로 셸 환경의 `TASTY_SESSION_TOKEN`(세션 토큰)과 `TASTY_AGENT_ID`(호출자 agent ID)를 그대로 싣는다.
 - 수동 dispatch의 결과는 호출자에게만 돌려주며 알림을 남기지 않는다. 자동 실행의 실패만 아래 알림으로 남긴다.
