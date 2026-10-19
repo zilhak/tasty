@@ -4432,10 +4432,13 @@ help = "実行ファイルを置き換える組み込みプラグインを再起
 
 [cli.help._root.plugin.enable]
 about = "無効化された plugin を有効にして起動する"
-long = "無効化されたプラグインを有効にして起動します。\n\nプラグインが接続する、起動に失敗する、または取り消されるまで待ちます。接続しなかった場合は 0 以外の状態で終了します。応答には起動の世代と最終状態が入ります。"
+long = "無効化されたプラグインを有効にして起動します。\n\nプラグインが接続する、起動に失敗する、または取り消されるまで待ちます。接続しなかった場合は 0 以外の状態で終了します。応答には起動の世代と最終状態が入ります。 待っている間は --response-timeout-ms を受け付けません。--no-wait を指定すると要求を一度だけ送ります。"
 
 [cli.help._root.plugin.enable.arg.id]
 help = "プラグイン ID"
+
+[cli.help._root.plugin.enable.arg.no_wait]
+help = "受け付けた起動を出力し、結果を待たずに終了します"
 
 [cli.help._root.plugin.disable]
 about = "plugin を無効化する（動作中なら正常終了させる）"

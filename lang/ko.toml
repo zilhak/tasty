@@ -4432,10 +4432,13 @@ help = "실행 파일이 바뀌는 기본 제공 플러그인을 재시작합니
 
 [cli.help._root.plugin.enable]
 about = "비활성화된 plugin 을 활성화하고 기동한다"
-long = "비활성화된 플러그인을 활성화하고 시작합니다.\n\n플러그인이 연결되거나, 시작에 실패하거나, 취소될 때까지 기다립니다. 연결되지 않았으면 0이 아닌 상태로 끝납니다. 응답에는 기동 세대와 최종 상태가 실립니다."
+long = "비활성화된 플러그인을 활성화하고 시작합니다.\n\n플러그인이 연결되거나, 시작에 실패하거나, 취소될 때까지 기다립니다. 연결되지 않았으면 0이 아닌 상태로 끝납니다. 응답에는 기동 세대와 최종 상태가 실립니다. 기다리는 동안에는 --response-timeout-ms를 받지 않으며, --no-wait를 주면 요청을 한 번만 보냅니다."
 
 [cli.help._root.plugin.enable.arg.id]
 help = "플러그인 ID"
+
+[cli.help._root.plugin.enable.arg.no_wait]
+help = "접수된 기동을 출력하고 결과를 기다리지 않고 끝냅니다"
 
 [cli.help._root.plugin.disable]
 about = "plugin 을 비활성화한다 (돌고 있으면 정상 종료)"

@@ -74,10 +74,14 @@ pub enum PluginCommands {
     ///
     /// Waits until the plugin connects, fails to start or is cancelled, then
     /// exits with a non-zero status unless it connected. The reply carries the
-    /// start generation and its final state.
+    /// start generation and its final state. While waiting it does not take
+    /// --response-timeout-ms; with --no-wait it sends the request once.
     Enable {
         /// Plugin id.
         id: String,
+        /// Print the accepted start and return without waiting for the result.
+        #[arg(long)]
+        no_wait: bool,
     },
     /// Disable a plugin (graceful shutdown if running).
     ///

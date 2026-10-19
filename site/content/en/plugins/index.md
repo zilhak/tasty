@@ -1,4 +1,4 @@
-<!-- source-hash: 5fd27faf5a2b -->
+<!-- source-hash: e1052f53a7e1 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -123,7 +123,7 @@ Use it from a terminal while Tasty is running. The output is JSON.
 | `tasty plugin show <id>` | The full manifest · permissions · commands · running state |
 | `tasty plugin install <folder> [--allow-unverified]` | Installs from a folder containing `tasty-plugin.toml`. Grants the manifest permissions as they are. An unverified plugin is installed only with `--allow-unverified` |
 | `tasty plugin remove <id>` | Removes it |
-| `tasty plugin enable <id>` · `disable <id>` | Enables · disables it. `enable` waits until the plugin connects (up to 15 seconds) and fails with the cause if it does not start. If it is still starting after 3 seconds, it shows a progress line once |
+| `tasty plugin enable <id> [--no-wait]` · `disable <id>` | Enables · disables it. `enable` waits until the plugin connects (up to 15 seconds) and fails with the cause if it does not start. If it is still starting after 3 seconds, it shows a progress line once |
 | `tasty plugin logs <id> [--follow]` | Prints the log. `--follow` keeps showing new lines (stop with `Ctrl+C`) |
 | `tasty plugin permissions <id>` | The permissions the manifest requires and those actually granted |
 | `tasty plugin grant <id> <permission>` · `revoke <id> <permission>` | Grants · revokes one permission. Only permissions declared in the manifest can be granted |
@@ -141,7 +141,7 @@ When a plugin does not start, a warning is left in the notification list. If it 
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 
-`disable` starts shutdown, normally in the background. If the plugin has not exited after a 2-second grace period, Tasty attempts to force-stop it. Those 2 seconds are not a limit on the entire operation; waiting for the OS to finish the process can take longer. An `enable` during shutdown waits for the previous process to finish before starting a new one. It does not wait for the new plugin to finish connecting. Requests may wait for that connection; check the logs if startup or connection fails.
+`disable` starts shutdown, normally in the background. If the plugin has not exited after a 2-second grace period, Tasty attempts to force-stop it. Those 2 seconds are not a limit on the entire operation; waiting for the OS to finish the process can take longer. An `enable` during shutdown waits for the previous process to finish before starting a new one. `tasty plugin enable` then waits (up to 15 seconds) for the new plugin to connect and reports the result. Pass `--no-wait` to return right away. In that case, and when an agent calls IPC directly, the reply only says the start was accepted, so check the result with `tasty plugin show <id>`. If startup or connection fails, check the notification and the logs.
 
 While closing a Surface of a stuck plugin takes time, other commands and input are still handled as usual. If you `disable` that plugin while the close is waiting, the close succeeds as soon as the process exits. If you quit Tasty in the meantime, quitting waits for that close to finish (up to 5 seconds).
 

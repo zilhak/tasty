@@ -4500,10 +4500,13 @@ help = "Restart running builtin processes whose binary is replaced — graceful 
 
 [cli.help._root.plugin.enable]
 about = "Enable a disabled plugin and start it"
-long = "Enable a disabled plugin and start it.\n\nWaits until the plugin connects, fails to start or is cancelled, then exits with a non-zero status unless it connected. The reply carries the start generation and its final state."
+long = "Enable a disabled plugin and start it.\n\nWaits until the plugin connects, fails to start or is cancelled, then exits with a non-zero status unless it connected. The reply carries the start generation and its final state. While waiting it does not take --response-timeout-ms; with --no-wait it sends the request once."
 
 [cli.help._root.plugin.enable.arg.id]
 help = "Plugin id"
+
+[cli.help._root.plugin.enable.arg.no_wait]
+help = "Print the accepted start and return without waiting for the result"
 
 [cli.help._root.plugin.disable]
 about = "Disable a plugin (graceful shutdown if running)"

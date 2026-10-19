@@ -438,6 +438,10 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
 
     // 인자 오류를 인스턴스 미실행 오류보다 먼저 알리도록 연결 전에 요청을 만든다.
     // 서버의 capability 확인만 연결 뒤에 수행한다.
+    // 결과를 기다리는 명령은 루프라 첫 요청의 응답 시한을 받지 않는다(contract 모듈).
+    if crate::plugin_enable_wait::waits(&command) {
+        envelope.refuse_if_set();
+    }
     let mut request = command_to_request(&command);
     envelope.apply(&mut request);
     let cli_warnings = take_cli_warnings(&mut request);
@@ -472,8 +476,13 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
 
     match result {
         Ok(mut value) => {
-            let failure =
-                crate::plugin_enable_wait::settle(&command, &request, &mut conn, &mut value);
+            let failure = crate::plugin_enable_wait::settle(
+                &command,
+                &request,
+                conn,
+                || IpcConnection::new(connect_ipc(port)?),
+                &mut value,
+            );
             merge_cli_warnings(&mut value, cli_warnings);
             format_output(&command, &value)?;
             if let Some(failure) = failure {

@@ -30,7 +30,7 @@ pub(super) fn plugin_command_to_method_params(
                 "restart_running": restart_running,
             }),
         ),
-        PluginCommands::Enable { id } => ("plugin.enable", serde_json::json!({ "id": id })),
+        PluginCommands::Enable { id, .. } => ("plugin.enable", serde_json::json!({ "id": id })),
         PluginCommands::Disable { id } => ("plugin.disable", serde_json::json!({ "id": id })),
         // Logs는 IPC를 거치지 않음 — run_client에서 special-case로 처리.
         PluginCommands::Logs { .. } => ("plugin.list", serde_json::json!({})),
