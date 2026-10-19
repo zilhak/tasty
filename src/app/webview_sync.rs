@@ -592,6 +592,26 @@ fn apply_input_holes(_wv: &crate::webview::PlatformWebView, _holes: &[crate::mod
 }
 
 /// Synchronize native WebView instances with the current state.
+/// 살아있는 webview 마다 현재 설정을 해석해, 마지막 적용값과 다를 때만 backend 에 재적용한다
+/// (변경 없으면 backend 호출 0 — 매 프레임 호출 회피).
+fn reapply_changed_settings(
+    view: &mut MainView,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+) {
+    let live_sids: Vec<u32> = view.webviews.keys().copied().collect();
+    for sid in live_sids {
+        let resolved = resolve_webview_settings(view, engine, sid);
+        if view.webview_applied_settings.get(&sid) == Some(&resolved) {
+            continue;
+        }
+        if let Some(wv) = view.webviews.get(&sid) {
+            tracing::debug!("WebView surface {sid}: requesting settings {resolved:?}");
+            resolved.apply(wv);
+        }
+        view.webview_applied_settings.insert(sid, resolved);
+    }
+}
+
 /// Creates webviews for new Html panels, destroys removed ones,
 /// updates bounds and visibility based on active workspace/tab.
 fn sync_webviews(
@@ -746,19 +766,7 @@ fn sync_webviews(
     view.webview_create_attempts
         .retain(|sid, _| all_html_ids.contains(sid));
 
-    // 설정 변경 재적용 — 살아있는 webview 마다 현재 설정을 해석해, 마지막 적용값과
-    // 다를 때만 backend 에 재적용한다(변경 없으면 backend 호출 0 — 매 프레임 호출 회피).
-    let live_sids: Vec<u32> = view.webviews.keys().copied().collect();
-    for sid in live_sids {
-        let resolved = resolve_webview_settings(view, engine, sid);
-        if view.webview_applied_settings.get(&sid) != Some(&resolved) {
-            if let Some(wv) = view.webviews.get(&sid) {
-                tracing::debug!("WebView surface {sid}: requesting settings {resolved:?}");
-                resolved.apply(wv);
-            }
-            view.webview_applied_settings.insert(sid, resolved);
-        }
-    }
+    reapply_changed_settings(view, engine);
     apply_webview_requests(view, engine);
 
     // native nav_state 를 RemoteSurface 로 mirror — egui 렌더 경로(egui_panels →
