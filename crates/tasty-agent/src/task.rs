@@ -176,7 +176,7 @@ pub enum TaskCommand {
     /// agent 세션 한 턴. v2 계약으로만 만든다. 턴이 끝나고 결과를 수집·검증해야 성공한다
     /// (idle·needs_input 만으로는 끝나지 않는다).
     Agent {
-        /// 결과 수집을 지원하는 provider([`agent::AGENT_PROVIDERS`]).
+        /// 결과 수집을 지원하는 provider. IPC namespace 이름이며 자격은 [`agent::check_provider`] 가 판정한다.
         provider: String,
         workspace_id: WorkspaceId,
         session: agent::AgentSession,

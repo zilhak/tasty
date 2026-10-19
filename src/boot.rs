@@ -885,7 +885,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
         mgr.install_namespace_table_once();
         mgr.refresh_packages();
         mgr.recompute_extensions();
-        mgr.publish_inherited_env();
+        mgr.publish_shared_tables();
     }
 
     let mut session = bootstrap_engine(&mut app, &boot_settings, factory)?;

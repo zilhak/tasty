@@ -11,6 +11,7 @@ pub mod id;
 pub mod notify;
 pub mod path;
 pub mod plugin_id;
+pub mod plugin_namespaces;
 pub mod poison;
 pub mod process;
 pub mod shell_family;

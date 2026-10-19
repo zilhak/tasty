@@ -174,7 +174,7 @@ fn prepare_plugin_manager(
     mgr.install_namespace_table_once();
     mgr.refresh_packages();
     mgr.recompute_extensions();
-    mgr.publish_inherited_env();
+    mgr.publish_shared_tables();
     tracing::info!(
         target: "tasty::boot",
         ms = t3.elapsed().as_secs_f64() * 1000.0,

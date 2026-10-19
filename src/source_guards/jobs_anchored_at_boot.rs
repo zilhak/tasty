@@ -51,16 +51,17 @@ const ANCHORS: &[Anchor] = &[
         func: "fn prepare_plugin_manager",
     },
     Anchor {
-        // 엔진이 첫 셸을 만들기 전에 반영하지 않으면 복원 셸이 제품 세션 변수를 물려받는다.
-        job: "상속 환경변수 제거 규칙 반영",
-        call: "publish_inherited_env",
+        // 엔진이 첫 셸을 만들기 전에 반영하지 않으면 복원 셸이 제품 세션 변수를 물려받고,
+        // 복원된 작업 러너가 agent provider 자격을 판정하지 못한다.
+        job: "공용 표 반영(상속 환경변수 제거 규칙·namespace 소유 상태)",
+        call: "publish_shared_tables",
         combo: "headless",
         file: "src/boot.rs",
         func: "fn run_headless",
     },
     Anchor {
-        job: "상속 환경변수 제거 규칙 반영",
-        call: "publish_inherited_env",
+        job: "공용 표 반영(상속 환경변수 제거 규칙·namespace 소유 상태)",
+        call: "publish_shared_tables",
         combo: "gui",
         file: "src/app/window_lifecycle.rs",
         func: "fn prepare_plugin_manager",
@@ -131,7 +132,7 @@ fn inherited_env_rules_are_published_before_the_engine_is_built() {
         (
             "src/boot.rs",
             "fn run_headless",
-            "publish_inherited_env",
+            "publish_shared_tables",
             "bootstrap_engine(",
         ),
         (

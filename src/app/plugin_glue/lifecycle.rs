@@ -272,9 +272,8 @@ impl App {
             tracing::warn!("plugins.toml save failed: {e}");
         }
         refresh_plugin_permissions(mgr, &plugin_id);
-        if token.starts_with("ext:") {
-            mgr.recompute_extensions();
-        }
+        // 확장 연결과 namespace 소유 상태(agent provider 자격)가 허가 권한을 읽는다.
+        mgr.recompute_extensions();
         Ok(vec![CoreEvent::PluginRegistryChanged {
             plugin_id,
             change: PluginRegistryChange::PermissionGranted { permission: token },
@@ -294,9 +293,8 @@ impl App {
             tracing::warn!("plugins.toml save failed: {e}");
         }
         refresh_plugin_permissions(mgr, &plugin_id);
-        if token.starts_with("ext:") {
-            mgr.recompute_extensions();
-        }
+        // 확장 연결과 namespace 소유 상태(agent provider 자격)가 허가 권한을 읽는다.
+        mgr.recompute_extensions();
         Ok(vec![CoreEvent::PluginRegistryChanged {
             plugin_id,
             change: PluginRegistryChange::PermissionRevoked { permission: token },

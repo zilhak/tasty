@@ -12,6 +12,7 @@ use super::*;
 use crate::AgentError;
 
 fn fresh_store() -> (TempDir, MemoryStore, AtomicU64) {
+    tasty_test_support::namespace_owners::publish_fixture();
     let td = tempfile::tempdir().expect("tempdir");
     let mem = MemoryStore::open(&td.path().join("mem.db")).expect("mem");
     (td, mem, AtomicU64::new(0))
@@ -131,6 +132,39 @@ fn agent_tasks_need_a_v2_contract_and_a_supported_provider() {
         super::types::TypeSchema::string(),
         "기본 출력은 최종 답변 string"
     );
+}
+
+/// provider 는 고정 목록이 아니라 설치 플러그인 정보로 판정하며 원인을 구분해 알린다.
+#[test]
+fn agent_provider_qualification_follows_plugin_information() {
+    use tasty_test_support::namespace_owners::{DISABLED, NO_PERMISSION};
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "host", &seq);
+    store
+        .create_typed(opts(agent_cmd("foo")), v2())
+        .expect("a custom provider plugin qualifies");
+    for (provider, reason) in [
+        ("bar", "no installed plugin owns the 'bar' namespace"),
+        (
+            DISABLED,
+            "plugin 'com.example.off' that owns the 'off' namespace is disabled",
+        ),
+        (
+            NO_PERMISSION,
+            "does not have the agent.turn_report permission",
+        ),
+    ] {
+        let f = input_failure(
+            store
+                .create_typed(opts(agent_cmd(provider)), v2())
+                .expect_err(provider),
+        );
+        assert!(
+            f.message.contains("does not support result collection"),
+            "{f:?}"
+        );
+        assert!(f.message.contains(reason), "{provider}: {f:?}");
+    }
 }
 
 #[test]

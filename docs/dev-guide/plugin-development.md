@@ -13,6 +13,7 @@
 | **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
+| **agent task provider (턴 결과를 작업 결과로)** | [claude](../plugins/claude/index.md) · [codex](../plugins/codex/index.md) (namespace + `agent.turn_report`) | ★★★ |
 | **CLI 호출자(다른 프로그램의 대화) 알아보기** | [codex](../plugins/codex/index.md)(`caller_context`) · [claude](../plugins/claude/index.md)(`requires_caller_context`) (매니페스트만) | ★ |
 | **Tasty bash·zsh 셸에 넣는 셸 함수** | [codex](../plugins/codex/index.md)(`install`이 쓰는 `codex` 함수) | ★ |
 | **Tasty 자식에서 지울 상속 환경변수** | [claude](../plugins/claude/index.md#tasty-자식에서-지우는-세션-변수) · [codex](../plugins/codex/index.md#tasty-자식에서-지우는-세션-변수) (매니페스트만) | ★ |
@@ -149,6 +150,10 @@ values = [{ name = "AI_AGENT", prefixes = ["vendor_", "vendor/"] }]  # 이름이
 - `TASTY_`로 시작하는 이름·접두사는 매니페스트 검증에서 거부한다. 바깥 Tasty 인스턴스 신원(`OUTER_IDENTITY_ENV`) 제거와 셸의 자기 신원 재주입은 본체가 정한다. `CMUX_*`도 본체가 지운다.
 - 이름은 영문자·숫자·밑줄이며 숫자로 시작하지 않는다(1..=128자). `values`의 값 접두사는 비어 있을 수 없다.
 - 예: [Claude 플러그인](../plugins/claude/index.md#tasty-자식에서-지우는-세션-변수), [Codex 플러그인](../plugins/codex/index.md#tasty-자식에서-지우는-세션-변수).
+
+### agent task provider
+
+플러그인이 IPC namespace `<p>` 를 소유하고 `agent.turn_report` 를 선언·허가받았으며 활성이면 agent task 의 `"provider": "<p>"` 를 받을 수 있다. 별도 매니페스트 선언은 없다. 플러그인은 `<p>.spawn`·`<p>.tell`·`<p>.state` 를 구현하고 훅에서 `agent.task_turn_report` 로 턴 시작·끝을 보고한다. 판정은 설치 목록과 설정만 보므로 프로세스가 준비되기 전에도 같다. 계약과 오류 문구는 [작업 러너 §agent task](agent-runner.md#agent-task), 권한은 [플러그인 권한](plugin-permissions.md)에 있다. 예: [Claude 플러그인](../plugins/claude/index.md), [Codex 플러그인](../plugins/codex/index.md).
 
 ### CLI 호출자 문맥 (`contributes.caller_context`)
 

@@ -89,21 +89,31 @@ impl PluginManager {
         self.extensions.iter()
     }
 
-    /// 설치 목록·설정이 바뀐 뒤 부르는 파생 상태 갱신. 확장 상태와 상속 환경변수 제거 규칙을
-    /// 함께 다시 계산한다.
+    /// 설치 목록·설정이 바뀐 뒤 부르는 파생 상태 갱신. 확장 상태, 상속 환경변수 제거 규칙,
+    /// namespace 소유 상태를 함께 다시 계산한다.
     pub fn recompute_extensions(&mut self) {
         let fresh = self.freshly_computed_extensions();
         self.extensions = fresh;
-        self.recompute_inherited_env();
+        self.recompute_shared_tables();
     }
 
-    /// 이 매니저의 규칙을 자식 생성 경로(터미널 셸·훅·작업 자식)가 읽는 공용 표에 반영하기
-    /// 시작한다. 부팅이 엔진을 만들기 전에 한 번 부른다. 시험용 매니저는 부르지 않는다.
-    pub fn publish_inherited_env(&mut self) {
-        self.publishes_inherited_env = true;
+    /// 이 매니저의 파생 상태를 다른 스레드가 읽는 공용 표에 반영하기 시작한다. 상속 환경변수
+    /// 제거 규칙은 자식 생성 경로(터미널 셸·훅·작업 자식)가, namespace 소유 상태는 agent provider
+    /// 자격 판정(작업 생성·러너)이 읽는다. 부팅이 엔진을 만들기 전에 한 번 부른다.
+    /// 시험용 매니저는 부르지 않는다.
+    pub fn publish_shared_tables(&mut self) {
+        self.publishes_shared_tables = true;
         for (owner, rules) in &self.inherited_env {
             tasty_utils::process::set_plugin_inherited_env_rules(owner, rules.clone());
         }
+        tasty_utils::plugin_namespaces::publish(self.namespace_owners.clone());
+    }
+
+    /// 설치된 플러그인의 namespace 별 소유 상태.
+    pub fn namespace_owners(
+        &self,
+    ) -> &std::collections::BTreeMap<String, tasty_utils::plugin_namespaces::NamespaceOwner> {
+        &self.namespace_owners
     }
 
     /// 설치·활성 플러그인별 상속 환경변수 제거 규칙.
@@ -114,9 +124,9 @@ impl PluginManager {
     }
 
     /// 설치 목록 갱신(`refresh_packages`)도 이 계산을 부른다. 설정만 바뀌면 `recompute_extensions`가 부른다.
-    pub(super) fn recompute_inherited_env(&mut self) {
+    pub(super) fn recompute_shared_tables(&mut self) {
         let fresh = self.freshly_computed_inherited_env();
-        if self.publishes_inherited_env {
+        if self.publishes_shared_tables {
             for owner in self.inherited_env.keys() {
                 if !fresh.contains_key(owner) {
                     tasty_utils::process::set_plugin_inherited_env_rules(
@@ -132,6 +142,41 @@ impl PluginManager {
             }
         }
         self.inherited_env = fresh;
+        let owners = self.freshly_computed_namespace_owners();
+        if self.publishes_shared_tables && owners != self.namespace_owners {
+            tasty_utils::plugin_namespaces::publish(owners.clone());
+        }
+        self.namespace_owners = owners;
+    }
+
+    /// 설치된 모든 패키지의 namespace 를 담는다. 비활성 소유자도 남겨 "소유자 없음"과 구분한다.
+    /// 권한은 매니페스트가 선언하고 사용자가 허가한 것만 담는다. 프로세스 준비 여부와 무관하다.
+    fn freshly_computed_namespace_owners(
+        &self,
+    ) -> std::collections::BTreeMap<String, tasty_utils::plugin_namespaces::NamespaceOwner> {
+        let mut out = std::collections::BTreeMap::new();
+        for package in &self.packages {
+            let id = &package.manifest.id;
+            let granted = self.config.granted_permissions(id);
+            let permissions: std::collections::BTreeSet<String> = package
+                .manifest
+                .permissions
+                .iter()
+                .filter(|token| granted.contains(*token))
+                .cloned()
+                .collect();
+            for ns in &package.manifest.contributes.ipc_namespace {
+                // 겹친 prefix 는 namespace 표처럼 먼저 등록한 패키지가 갖는다.
+                out.entry(ns.prefix.clone()).or_insert_with(|| {
+                    tasty_utils::plugin_namespaces::NamespaceOwner {
+                        plugin_id: id.clone(),
+                        enabled: !self.config.is_disabled(id),
+                        permissions: permissions.clone(),
+                    }
+                });
+            }
+        }
+        out
     }
 
     /// 사용자 설정의 비활성만 제외한다. 기동 실패로 인한 자동 비활성화나 프로세스 준비 여부는
@@ -178,6 +223,10 @@ impl PluginManager {
             assert!(
                 self.freshly_computed_inherited_env() == self.inherited_env,
                 "상속 환경변수 제거 규칙이 낡았다 — packages 또는 config의 마지막 변경 뒤 recompute_extensions를 호출해야 한다"
+            );
+            assert!(
+                self.freshly_computed_namespace_owners() == self.namespace_owners,
+                "namespace 소유 상태가 낡았다 — packages 또는 config의 마지막 변경 뒤 recompute_extensions를 호출해야 한다"
             );
         }
     }

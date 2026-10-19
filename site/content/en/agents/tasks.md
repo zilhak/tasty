@@ -1,4 +1,4 @@
-<!-- source-hash: 61f099313886 -->
+<!-- source-hash: e03b7762c547 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -36,7 +36,7 @@ Creating one returns a task ID. Use that ID to define dependencies and to query 
 | `custom` | Turns one of Tasty's own actions into a task. Things that create a terminal, such as spawning a child agent, belong here. When the action is waited on separately until it finishes, a task sent in a graph keeps the first acceptance reply in the result's `raw.accepted`, apart from the final reply |
 | `reduce` | Merges the results of several tasks into one |
 | `wait_barrier` | Waits until all the signals have gathered at a barrier |
-| `agent` | Sends one instruction to a Claude or Codex session and takes its answer as the result. See [Asking an agent and taking its answer as the result](#asking-an-agent-and-taking-its-answer-as-the-result) below |
+| `agent` | Sends one instruction to an agent session such as Claude or Codex and takes its answer as the result. See [Asking an agent and taking its answer as the result](#asking-an-agent-and-taking-its-answer-as-the-result) below |
 
 You can also pull the command JSON out into a file and pass it as `--command @build.json`.
 
@@ -186,7 +186,7 @@ Give a task `transitions` and it picks which tasks run next from its result. In 
 
 ### Asking an agent and taking its answer as the result
 
-An `agent` task sends one instruction to a Claude or Codex session and takes the answer as the task's result. The result can feed the next task's input or the branch conditions above.
+An `agent` task sends one instruction to an agent session such as Claude or Codex and takes the answer as the task's result. The result can feed the next task's input or the branch conditions above.
 
 ```json
 {"id": "review",
@@ -197,6 +197,7 @@ An `agent` task sends one instruction to a Claude or Codex session and takes the
  "output_schema": {"type": "enum", "values": ["approve", "revise"]}}
 ```
 
+- `provider` names the plugin that runs the session: `claude` for the Claude plugin and `codex` for the Codex plugin. Other plugins that support agent tasks use their own name. If that plugin is not installed, is turned off, or lacks the turn-report permission, creating the task is refused with the reason. If you turn the plugin off after creating the task, the task fails when it runs.
 - The `workspace_id` in `command` is the workspace a new session opens in. `task-submit` hands the value to the workspace the task lives in, and the guidance appended to the instruction carries that number.
 - With `session` set to `{"kind": "new", "parent_surface": <surface>}`, a new session starts under that surface and gets the instruction. Add `"cwd": "<path>"` to set the new session's working folder. With `{"kind": "existing", "surface_id": <surface>}`, the instruction goes to a session that is already open.
 - An open session gets the instruction only when it is idle. If you are talking to it, the task waits until you finish, so the conversations do not mix. A one-line marker for that run is added to the end of the instruction, and only a turn started with that marker counts as the task's turn. Tasks that use the same session run one after another.

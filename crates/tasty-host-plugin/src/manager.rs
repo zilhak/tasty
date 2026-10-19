@@ -419,8 +419,11 @@ pub struct PluginManager {
     extensions: super::extension_registry::ExtensionRegistry,
     /// 설치·활성 플러그인의 상속 환경변수 제거 규칙. `recompute_extensions`가 함께 갱신한다.
     inherited_env: std::collections::BTreeMap<String, tasty_utils::process::InheritedEnvRules>,
-    /// 부팅 매니저만 켠다. 켜져 있으면 위 규칙을 자식 생성 경로가 읽는 공용 표에 반영한다.
-    publishes_inherited_env: bool,
+    /// 설치된 플러그인의 namespace 별 소유 상태(활성·허가 권한). agent provider 자격 판정이 읽는다.
+    namespace_owners:
+        std::collections::BTreeMap<String, tasty_utils::plugin_namespaces::NamespaceOwner>,
+    /// 부팅 매니저만 켠다. 켜져 있으면 위 규칙과 소유 상태를 다른 스레드가 읽는 공용 표에 반영한다.
+    publishes_shared_tables: bool,
     /// (ext_id, method) 단위 hook 실패 추적. 3회 연속 실패하면 60초간 backoff.
     pub(super) hook_failures: HashMap<(String, String), HookFailureState>,
     /// plugin별 namespace 연속 만료 횟수. 응답을 받거나 plugin을 정리하면 지운다.

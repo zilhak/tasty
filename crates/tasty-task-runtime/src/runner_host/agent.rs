@@ -37,11 +37,8 @@ impl HostExecutor {
             return Err("dispatch_agent: not an agent task".into());
         };
         let unavailable = |detail: String| FailureCode::AgentUnavailable.message(detail);
-        if !agent::AGENT_PROVIDERS.contains(&provider.as_str()) {
-            return Err(unavailable(format!(
-                "provider '{provider}' does not support result collection"
-            )));
-        }
+        // 생성 뒤 플러그인이 비활성화·제거되거나 권한이 회수됐을 수 있어 실행 직전에 다시 판정한다.
+        agent::check_provider(provider).map_err(unavailable)?;
         let contract = task
             .contract
             .as_ref()

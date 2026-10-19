@@ -1,4 +1,5 @@
-//! 매니페스트의 상속 환경변수 제거 선언이 설치·활성 상태만 따라 공용 표에 반영되는지 확인한다.
+//! 매니페스트의 상속 환경변수 제거 선언과 namespace 소유 상태가 설치·설정만 따라 공용 표에
+//! 반영되는지 확인한다.
 
 use std::sync::Arc;
 
@@ -13,7 +14,15 @@ const VENDOR: &str = "com.example.inherited_env_vendor";
 const PLAIN: &str = "com.example.inherited_env_plain";
 const SESSION_KEY: &str = "XTEST_MGR_VENDOR_SESSION";
 
+/// VENDOR 가 소유하는 namespace. 공용 소유 표를 반영하는 시험은 이 파일의 하나뿐이다.
+const VENDOR_NS: &str = "xtestvendor";
+
 fn pkg(id: &str, strip: &str) -> PluginPackage {
+    let namespace = if id == VENDOR {
+        format!("[[contributes.ipc_namespace]]\nprefix = \"{VENDOR_NS}\"\n")
+    } else {
+        String::new()
+    };
     let manifest: Manifest = toml::from_str(&format!(
         r#"
 manifest_version = 1
@@ -21,6 +30,9 @@ id = "{id}"
 name = "Inherited Env Fixture"
 version = "0.1.0"
 api_version = "1.0"
+permissions = ["agent.turn_report"]
+
+{namespace}
 
 [contributes.strip_inherited_env]
 {strip}
@@ -88,15 +100,21 @@ fn a_manager_that_does_not_publish_leaves_the_shared_table_alone() {
 #[test]
 fn publishing_follows_disable_and_enable() {
     let mut m = manager();
-    m.publish_inherited_env();
+    m.publish_shared_tables();
     let published = (
         stripped(SESSION_KEY, "outer"),
         stripped("XTEST_MGR_AGENT", "vendor_1"),
         stripped("XTEST_MGR_AGENT", "user"),
     );
 
+    m.config
+        .set_granted(VENDOR, vec!["agent.turn_report".into()]);
+    m.recompute_extensions();
+    let owner_granted = tasty_utils::plugin_namespaces::lookup(VENDOR_NS);
+
     m.config.disable(VENDOR);
     m.recompute_extensions();
+    let owner_disabled = tasty_utils::plugin_namespaces::lookup(VENDOR_NS);
     let after_disable = (
         stripped(SESSION_KEY, "outer"),
         plugin_inherited_env_rules().contains_key(VENDOR),
@@ -109,6 +127,15 @@ fn publishing_follows_disable_and_enable() {
     // 제거된 것과 같은 상태로 설치 목록에서 빠져도 규칙이 남지 않는다.
     m.set_packages_for_tests(vec![pkg(PLAIN, "")]);
     let after_removal = stripped(SESSION_KEY, "outer");
+    let owner_removed = tasty_utils::plugin_namespaces::lookup(VENDOR_NS);
+
+    use tasty_utils::plugin_namespaces::Lookup;
+    let Lookup::Owner(granted) = owner_granted else {
+        panic!("published owner: {owner_granted:?}");
+    };
+    assert!(granted.enabled && granted.permissions.contains("agent.turn_report"));
+    assert!(matches!(owner_disabled, Lookup::Owner(o) if !o.enabled && o.plugin_id == VENDOR));
+    assert_eq!(owner_removed, Lookup::NoOwner);
 
     assert_eq!(published, (true, true, false));
     assert_eq!(after_disable, (false, false));
@@ -123,5 +150,40 @@ fn a_config_write_without_recompute_is_caught() {
     let mut m = manager();
     m.config.disable(VENDOR);
     // 확장 상태는 이 설정 변경과 무관하므로 제거 규칙 검사만 실패한다.
+    m.debug_assert_extensions_fresh();
+}
+
+/// namespace 소유 상태는 프로세스 없이 설치 목록과 설정으로 정해진다. 선언했어도 허가하지 않은
+/// 권한은 담지 않고, 비활성 소유자도 "소유자 없음"과 구분되게 남는다.
+#[test]
+fn namespace_owners_follow_grants_and_disable_without_processes() {
+    let mut m = manager();
+    assert!(!m.is_running(VENDOR));
+    let owner = |m: &PluginManager| m.namespace_owners()[VENDOR_NS].clone();
+    assert_eq!(owner(&m).plugin_id, VENDOR);
+    assert!(owner(&m).enabled);
+    assert!(owner(&m).permissions.is_empty(), "declared but not granted");
+    m.config
+        .set_granted(VENDOR, vec!["agent.turn_report".into()]);
+    m.recompute_extensions();
+    assert!(owner(&m).permissions.contains("agent.turn_report"));
+    m.config.disable(VENDOR);
+    m.recompute_extensions();
+    assert!(!owner(&m).enabled);
+    assert_eq!(
+        m.namespace_owners().len(),
+        1,
+        "plugins without a namespace have no entry"
+    );
+    m.debug_assert_extensions_fresh();
+}
+
+/// 권한 허가만 바꾸고 다시 계산하지 않으면 debug 신선도 검사가 잡는다.
+#[test]
+#[should_panic(expected = "namespace 소유 상태가 낡았다")]
+fn a_grant_without_recompute_is_caught() {
+    let mut m = manager();
+    m.config
+        .set_granted(VENDOR, vec!["agent.turn_report".into()]);
     m.debug_assert_extensions_fresh();
 }

@@ -1097,7 +1097,12 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 
 ### agent task
 
-`{"kind": "agent", "provider": "claude"|"codex", "workspace_id": N, "session": ..., "instruction": "...", "timeout_ms"?: N}` 는 provider 세션에 지시 하나를 보내고 그 턴의 끝을 task 결과로 만든다. v2 계약이 필요하다(`task_create` 는 `-32602`).  명령의 `workspace_id` 는 새 세션이 뜨는 workspace 다. 회차 기록, 제출 안내의 `--workspace`, 턴 표의 키는 task 자신의 workspace 를 쓴다.
+`{"kind": "agent", "provider": "<namespace>", "workspace_id": N, "session": ..., "instruction": "...", "timeout_ms"?: N}` 는 provider 세션에 지시 하나를 보내고 그 턴의 끝을 task 결과로 만든다. v2 계약이 필요하다(`task_create` 는 `-32602`).  명령의 `workspace_id` 는 새 세션이 뜨는 workspace 다. 회차 기록, 제출 안내의 `--workspace`, 턴 표의 키는 task 자신의 workspace 를 쓴다.
+
+`provider` 는 IPC namespace 이름이다(번들 예: `claude`·`codex`). 고정 목록은 없다. 그 namespace 를 소유한 설치 플러그인이 활성이고 `agent.turn_report` 를 허가받았으면 결과 수집을 지원하는 provider 다(`tasty_agent::task::agent::check_provider`). 플러그인 관리자가 설치 목록과 설정으로 계산해 발행한 namespace 소유 표(`tasty_utils::plugin_namespaces`)를 읽으므로 플러그인 프로세스가 아직 준비되지 않았어도 판정은 같다. 첫 `<provider>.spawn`·`tell` 호출이 프로세스를 띄운다. 부팅은 엔진이 복원 task 의 러너를 만들기 전에 표를 발행한다([부팅 순서](../architecture/boot-sequence.md)). provider 플러그인은 `<provider>.spawn`·`<provider>.tell`·`<provider>.state` 를 구현하고 아래 턴 보고를 보내야 한다.
+
+- Given 자격이 없는 provider When 생성하면 Then 계약 오류(입력 단계)로 거절하고 문구가 원인을 구분한다: `no installed plugin owns the '<p>' namespace`, `plugin '<id>' that owns the '<p>' namespace is disabled`, `... does not have the agent.turn_report permission`, 표 발행 전 `plugin information is not loaded yet`. 모두 `agent provider '<p>' does not support result collection:` 으로 시작한다.
+- Given 생성 뒤 플러그인이 비활성화·제거되거나 권한이 회수된 task When 실행하면 Then 실행 직전에 다시 판정해 `agent_unavailable` 로 실패하고 같은 원인 문구를 남긴다. 성공으로 끝나지 않는다.
 
 | `session` | 동작 |
 |---|---|

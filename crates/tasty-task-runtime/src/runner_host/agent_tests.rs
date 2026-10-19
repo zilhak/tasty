@@ -119,6 +119,7 @@ fn create_in(
     session: AgentSession,
     c: TaskContract,
 ) -> Task {
+    tasty_test_support::namespace_owners::publish_fixture();
     let seq = ctx.agent_seq.clone();
     ctx.with_memory(|mem| {
         TaskStore::new(mem, HOST_OWNER, seq.as_ref())
@@ -513,21 +514,64 @@ fn a_restored_handle_without_a_binding_cannot_be_attributed() {
     );
 }
 
+/// 생성 뒤 provider 자격을 잃은 task 는 실행 직전에 거절하고 원인을 구분해 남긴다.
 #[test]
 fn an_unsupported_provider_is_refused_at_dispatch() {
+    use tasty_test_support::namespace_owners::{DISABLED, NO_PERMISSION};
     let (_td, ctx) = fresh_ctx();
+    let mut exec = HostExecutor::new(ctx.clone());
+    for (provider, reason) in [
+        ("other", "no installed plugin owns the 'other' namespace"),
+        (DISABLED, "that owns the 'off' namespace is disabled"),
+        (
+            NO_PERMISSION,
+            "does not have the agent.turn_report permission",
+        ),
+    ] {
+        let mut task = create(&ctx, existing(), v2());
+        if let TaskCommand::Agent { provider: p, .. } = &mut task.command {
+            *p = provider.into();
+        }
+        let DispatchOutcome::PermanentFail(e) = exec.dispatch(&task) else {
+            panic!("expected refusal for {provider}");
+        };
+        assert_eq!(
+            FailureCode::parse_message(&e),
+            Some(FailureCode::AgentUnavailable),
+            "{e}"
+        );
+        assert!(e.contains(reason), "{provider}: {e}");
+    }
+}
+
+/// 고정 목록에 없던 커스텀 provider 도 같은 spawn·tell·state 와 턴 보고로 결과가 확정된다.
+#[test]
+fn a_custom_provider_plugin_runs_and_its_turn_report_finishes_the_task() {
+    let (_td, ctx) = fresh_ctx();
+    let fake = FakeProvider::install(&ctx, "idle");
     let mut exec = HostExecutor::new(ctx.clone());
     let mut task = create(&ctx, existing(), v2());
     if let TaskCommand::Agent { provider, .. } = &mut task.command {
-        *provider = "other".into();
+        *provider = "foo".into();
     }
-    let DispatchOutcome::PermanentFail(e) = exec.dispatch(&task) else {
-        panic!("expected refusal");
-    };
+    let h = dispatch(&mut exec, &ctx, &task);
+    assert!(matches!(exec.poll(&h), PollOutcome::Active));
     assert_eq!(
-        FailureCode::parse_message(&e),
-        Some(FailureCode::AgentUnavailable)
+        fake.sent("foo.tell").len(),
+        1,
+        "foo.tell must carry the instruction"
     );
+    assert!(fake.sent("claude.tell").is_empty());
+    ctx.agent_turns.report(7, "foo", ours(&ctx, 7));
+    ctx.agent_turns.report(
+        7,
+        "foo",
+        TurnEvent::Ended(TurnEnd::Answer(Some("from foo".into()))),
+    );
+    let PollOutcome::Done(r) = exec.poll(&h) else {
+        panic!("expected done");
+    };
+    assert_eq!(r.output.unwrap()[report::FINAL_ANSWER], "from foo");
 }
 
 #[test]
