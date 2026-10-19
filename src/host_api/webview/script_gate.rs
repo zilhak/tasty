@@ -8,12 +8,14 @@
 //! 정한다. 그 결정은 모든 backend가 미룬다([`Response::Deferred`]). Linux·macOS는 응답 결정을 보류하고,
 //! Windows는 탐색을 취소했다가 스캔 뒤 같은 종류의 탐색으로 다시 시작한다.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tasty_model::html_script::scan::{SCAN_LIMIT_BYTES, scan_reader};
 use tasty_model::html_script::{HtmlScriptState, ScanTicket, ScriptScan, strip_fragment};
+
+use super::file_stamp::FileStamp;
 
 static STATE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 const STATE_WHAT: &str = "html script state";
@@ -48,14 +50,21 @@ pub struct DeferredScan {
 /// 작업 스레드가 읽기 결과를 넣고 UI 스레드가 꺼내는 칸. 보류한 결정을 콜백 밖에서 넘기는
 /// backend(macOS·Windows)가 쓴다. 네이티브 결정 객체는 UI 스레드에 남고 이 칸만 스레드를 건넌다.
 #[derive(Clone, Default)]
-pub struct ReadSlot(Arc<Mutex<Option<Option<ScriptScan>>>>);
+pub struct ReadSlot(Arc<Mutex<Option<StampedRead>>>);
+
+/// 한 번의 읽기 결과와, 그 읽기 동안 바뀌지 않았으면 그 파일 판의 식별값.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StampedRead {
+    pub scan: Option<ScriptScan>,
+    pub stamp: Option<FileStamp>,
+}
 
 static READ_SLOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
 // 이유: macOS·Windows backend와 시험만 쓴다.
 #[cfg_attr(all(target_os = "linux", not(test)), allow(dead_code))]
 impl ReadSlot {
-    fn lock(&self) -> MutexGuard<'_, Option<Option<ScriptScan>>> {
+    fn lock(&self) -> MutexGuard<'_, Option<StampedRead>> {
         tasty_utils::poison::recover_mutex(
             self.0.lock(),
             "html script read slot",
@@ -63,12 +72,19 @@ impl ReadSlot {
         )
     }
 
-    fn put(&self, scan: Option<ScriptScan>) {
-        *self.lock() = Some(scan);
+    fn put(&self, read: StampedRead) {
+        *self.lock() = Some(read);
     }
 
     /// 읽기가 끝났으면 결과를 꺼낸다. 아직이면 `None`.
+    // 이유: macOS backend와 시험만 쓴다(Windows는 파일 판과 함께 꺼낸다).
+    #[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
     pub fn take(&self) -> Option<Option<ScriptScan>> {
+        self.take_stamped().map(|read| read.scan)
+    }
+
+    /// [`Self::take`]와 같고 파일 판의 식별값도 준다.
+    pub fn take_stamped(&self) -> Option<StampedRead> {
         self.lock().take()
     }
 }
@@ -96,7 +112,7 @@ impl DeferredScan {
         let spawned = std::thread::Builder::new()
             .name("html-script-scan".into())
             .spawn(move || {
-                worker_slot.put(scan_path(surface_id, &path));
+                worker_slot.put(scan_path_stamped(surface_id, &path));
                 if let Some(notify) = &notify {
                     notify();
                 }
@@ -106,9 +122,19 @@ impl DeferredScan {
                 "WebView surface {surface_id}: html script scan thread not started ({e}); \
                  the document is left without a fingerprint"
             );
-            slot.put(None);
+            slot.put(StampedRead {
+                scan: None,
+                stamp: None,
+            });
         }
         slot
+    }
+
+    /// 스캔하는 로컬 파일 경로.
+    // 이유: Windows backend와 시험만 쓴다.
+    #[cfg_attr(not(any(windows, test)), allow(dead_code))]
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// 읽은 결과를 보류한 결정에 적용한다. 결정을 실제로 넘기는 UI 스레드에서 그 직전에 부른다.
@@ -324,15 +350,26 @@ impl ScriptGate {
 
 /// 로컬 파일을 읽어 스캔한다. 읽지 못하면 지문이 없는 문서가 된다(허용 불가).
 fn scan_path(surface_id: u32, path: &std::path::Path) -> Option<ScriptScan> {
-    match scan_file(path) {
-        Ok(scan) => Some(scan),
+    scan_path_stamped(surface_id, path).scan
+}
+
+/// [`scan_path`]와 같고, 읽는 동안 같은 핸들의 메타데이터가 바뀌지 않았으면 그 파일 판의 식별값도 준다.
+fn scan_path_stamped(surface_id: u32, path: &std::path::Path) -> StampedRead {
+    match scan_file_stamped(path) {
+        Ok((scan, stamp)) => StampedRead {
+            scan: Some(scan),
+            stamp,
+        },
         Err(e) => {
             tracing::warn!(
                 "WebView surface {surface_id}: html script scan failed for {}: {e} \
                  — the document cannot be allowed",
                 path.display()
             );
-            None
+            StampedRead {
+                scan: None,
+                stamp: None,
+            }
         }
     }
 }
@@ -341,15 +378,25 @@ fn scan_path(surface_id: u32, path: &std::path::Path) -> Option<ScriptScan> {
 ///
 /// FIFO·장치 파일은 읽기가 끝나지 않거나 쓰는 쪽을 기다리며 막힐 수 있어 거절한다.
 /// 경로를 연 뒤 같은 핸들로 종류를 확인하므로 확인과 읽기 사이에 파일이 바뀌지 않는다.
+#[cfg(test)]
 fn scan_file(path: &std::path::Path) -> std::io::Result<ScriptScan> {
+    scan_file_stamped(path).map(|(scan, _)| scan)
+}
+
+/// [`scan_file`]과 같고, 읽기 전후 같은 핸들의 식별값이 같으면 그 값을 준다.
+fn scan_file_stamped(path: &std::path::Path) -> std::io::Result<(ScriptScan, Option<FileStamp>)> {
     let file = open_without_blocking(path)?;
-    if !file.metadata()?.is_file() {
+    let before = file.metadata()?;
+    if !before.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "not a regular file",
         ));
     }
-    scan_reader(file, SCAN_LIMIT_BYTES)
+    let before = FileStamp::of(&before);
+    let scan = scan_reader(&file, SCAN_LIMIT_BYTES)?;
+    let after = FileStamp::of(&file.metadata()?);
+    Ok((scan, (before == after).then_some(before)))
 }
 
 /// FIFO를 열 때 쓰는 쪽을 기다리지 않도록 unix에서는 `O_NONBLOCK`으로 연다.

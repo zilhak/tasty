@@ -8,13 +8,17 @@
 //!
 //! 다시 시작한 탐색을 확정할 식별자는 없다. `Navigate`·`Reload`·`GoBack`·`GoForward`는
 //! `NavigationId`를 돌려주지 않고, WebView2 API로 시작한 탐색은 `IsUserInitiated`가 참이다.
-//! 그래서 재시작을 기다리는 동안 온 `NavigationStarting`은 주소, 다시 시작한 종류, 사용자 시작 여부가
-//! 모두 맞을 때만 그 재시작으로 본다. 하나라도 다르면 새 탐색으로 보고 읽어 둔 결과를 쓰지 않는다.
-//! 세 값이 모두 같은 사용자 탐색(재시작 호출과 그 시작 신호 사이에 사용자가 같은 주소를 같은 종류로
-//! 연 경우)은 구별하지 못한다.
+//! 그래서 읽어 둔 결과를 탐색이 아니라 파일 판에 묶는다. 재시작을 기다리는 동안 온
+//! `NavigationStarting`은 주소, 다시 시작한 종류, 사용자 시작 여부가 모두 맞고, 그 경로의 파일 판이
+//! 스캔한 판과 같을 때만 결과를 받는다([`FileStamp`]). 결과를 받는 탐색이 재시작이 아니라 같은 조건의
+//! 사용자 탐색이어도, 그 탐색이 여는 파일 판은 스캔한 판과 같으므로 다른 내용의 결과를 받지 않는다.
+//! 하나라도 다르면 새 탐색으로 보고 다시 취소해 자기 스캔을 받는다.
 
 use tasty_model::html_script::ScriptScan;
 
+use std::path::PathBuf;
+
+use super::file_stamp::FileStamp;
 use super::script_gate::{DeferredScan, ReadSlot, Response, ScriptGate};
 
 /// `NavigationStarting`이 알려 준 탐색 종류.
@@ -69,6 +73,9 @@ enum State {
         url: String,
         kind: StartKind,
         scan: Option<ScriptScan>,
+        /// 스캔한 파일 판. 읽는 동안 파일이 바뀌었으면 없고, 그러면 결과를 누구에게도 넘기지 않는다.
+        stamp: Option<FileStamp>,
+        path: PathBuf,
     },
 }
 
@@ -214,7 +221,7 @@ impl ScanResume {
     /// 읽는 중이거나 표가 낡았으면 `None`이다.
     pub fn poll(&mut self) -> Option<(Replay, String)> {
         let read = match &self.state {
-            State::Scanning { read, .. } => read.take()?,
+            State::Scanning { read, .. } => read.take_stamped()?,
             _ => return None,
         };
         let State::Scanning {
@@ -223,13 +230,16 @@ impl ScanResume {
         else {
             unreachable!("matched above");
         };
+        let path = scan.path().to_path_buf();
         // 표 확인과 상태 반영은 다시 시작하기 직전 이 UI 스레드 호출 안에서 한다.
-        scan.apply(read)?;
+        scan.apply(read.scan)?;
         self.unmatched_replays += 1;
         self.state = State::Resuming {
             url: url.clone(),
             kind: replay.start_kind(),
-            scan: read,
+            scan: read.scan,
+            stamp: read.stamp,
+            path,
         };
         Some((replay, url))
     }
@@ -240,7 +250,8 @@ impl ScanResume {
     }
 
     /// 다시 시작한 탐색이면 읽어 둔 결과를 꺼낸다. 주소·종류·사용자 시작 여부 중 하나라도
-    /// 다르면 다른 탐색이다(모듈 설명 참고).
+    /// 다르거나, 경로의 파일 판이 스캔한 판과 다르면 꺼내지 않는다(모듈 설명 참고).
+    /// 파일 판 확인은 메타데이터 조회 한 번이며 내용을 읽지 않는다.
     fn take_resume(
         &mut self,
         url: &str,
@@ -251,8 +262,13 @@ impl ScanResume {
             State::Resuming {
                 url: waiting,
                 kind: expected,
+                stamp: Some(stamp),
+                path,
                 ..
-            } if waiting == url && *expected == kind && user_initiated => {}
+            } if waiting == url
+                && *expected == kind
+                && user_initiated
+                && FileStamp::of_path(path).as_ref() == Some(stamp) => {}
             _ => return None,
         }
         match std::mem::replace(&mut self.state, State::Idle) {

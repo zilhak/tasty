@@ -317,9 +317,10 @@ fn a_page_script_navigation_does_not_take_the_replay_scan() {
     );
 }
 
-/// 주소·종류·사용자 시작 여부가 모두 같은 사용자 탐색은 구별할 수 없다(API 한계, 문서화).
+/// 주소·종류·사용자 시작 여부가 모두 같은 탐색은 재시작인지 알 수 없다(API 한계). 그래서 결과를
+/// 파일 판에 묶는다. 판이 그대로면 그 탐색이 여는 내용이 스캔한 내용과 같아 결과를 받는다.
 #[test]
-fn an_identical_user_navigation_is_indistinguishable_from_the_replay() {
+fn an_identical_navigation_gets_the_scan_only_for_the_same_file_version() {
     let doc = allowed_doc("identical");
     let mut resume = ScanResume::new(1);
     assert_eq!(
@@ -330,6 +331,73 @@ fn an_identical_user_navigation_is_indistinguishable_from_the_replay() {
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(11), StartKind::NewDocument, true),
         Start::Resumed(true)
+    );
+}
+
+/// 재시작을 기다리는 동안 같은 주소의 파일을 제자리에서 바꾸면, 그 뒤 오는 탐색은 재시작이든 같은
+/// 조건의 사용자 탐색이든 앞 결과를 받지 않는다. 다시 취소하고 자기 스캔으로 JS를 정한다.
+#[test]
+fn a_file_rewritten_before_the_replay_starts_is_scanned_again() {
+    let doc = allowed_doc("rewrite");
+    let mut resume = ScanResume::new(1);
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
+        Start::Cancel
+    );
+    assert_eq!(wait(|| resume.poll()).0, Replay::Reload);
+    std::fs::write(doc.dir.join("doc.html"), "<script>b()</script>").expect("rewrite");
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(11), StartKind::Reload, true),
+        Start::Cancel,
+        "바뀐 파일 판에는 앞 결과를 넘기지 않는다"
+    );
+    assert_eq!(wait(|| resume.poll()).0, Replay::Reload);
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(12), StartKind::Reload, true),
+        Start::Resumed(false),
+        "자기 스캔은 허용한 지문과 달라 JS를 끈다"
+    );
+}
+
+/// 이름 바꾸기로 같은 내용의 새 파일로 교체해도 다른 파일 판이다. 앞 결과를 넘기지 않고 다시 읽는다.
+#[test]
+fn a_file_replaced_by_rename_is_another_version() {
+    let doc = allowed_doc("rename");
+    let mut resume = ScanResume::new(1);
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
+        Start::Cancel
+    );
+    wait(|| resume.poll());
+    let tmp = doc.dir.join("next.html");
+    std::fs::write(&tmp, "<script>a()</script>").expect("write");
+    std::fs::rename(&tmp, doc.dir.join("doc.html")).expect("rename");
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(11), StartKind::Reload, true),
+        Start::Cancel
+    );
+    wait(|| resume.poll());
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(12), StartKind::Reload, true),
+        Start::Resumed(true),
+        "같은 내용이면 자기 스캔으로 다시 켠다"
+    );
+}
+
+/// 경로가 사라지면 파일 판을 확인할 수 없어 결과를 넘기지 않는다.
+#[test]
+fn a_missing_file_gets_no_replay_scan() {
+    let doc = allowed_doc("missing");
+    let mut resume = ScanResume::new(1);
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
+        Start::Cancel
+    );
+    wait(|| resume.poll());
+    std::fs::remove_file(doc.dir.join("doc.html")).expect("remove");
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(11), StartKind::Reload, true),
+        Start::Cancel
     );
 }
 
