@@ -3200,6 +3200,19 @@ long = "Print the script state of an html surface: what was detected in the curr
 [cli.help._root.surface.html-script.arg.surface]
 help = "Surface ID (required)"
 
+[cli.help._root.surface.html-script-allow]
+about = "Allow the scripts of the document an html surface shows, as the banner button does, and reload it"
+long = "Allow the scripts of the document an html surface shows, as the banner button does, and reload it.\n\nPass the url and fingerprint printed by html-script so a document replaced after that query is refused instead of allowed. The result field is \"allowed\" or \"already_allowed\". A refusal names its reason: document_changed, loading, no_document or no_fingerprint. Focus, selection and the active tab stay as they are. The target surface is always given explicitly with --surface. Not available in a headless build."
+
+[cli.help._root.surface.html-script-allow.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.html-script-allow.arg.url]
+help = "Document url from html-script; refuse if the document differs"
+
+[cli.help._root.surface.html-script-allow.arg.fingerprint]
+help = "Document fingerprint from html-script; refuse if it differs"
+
 [cli.help._root.surface.html-nav]
 about = "Print the address of the document an html surface shows and whether it can go back or forward in its history"
 long = "Print the address of the document an html surface shows and whether it can go back or forward in its history.\n\nThe address is the last committed one: the final address after redirects, with a #fragment move applied, and the previous document while a load is in flight or after it failed. Read-only. The target surface is always given explicitly with --surface. Not available in a headless build."
@@ -4171,12 +4184,6 @@ about = "Close a plugin banner instance by id"
 
 [cli.help._root.debug.plugin-banner.close.arg.instance_id]
 help = "Banner instance id returned by `plugin-banner open`"
-
-[cli.help._root.debug.html-script-allow]
-about = "Reproduce the \"allow scripts\" click on an html surface: record the current document as allowed and reload it. Debug builds only — in release only the user allows scripts, through the GUI"
-
-[cli.help._root.debug.html-script-allow.arg.surface]
-help = "Target html surface id (defaults to the current surface)"
 
 [cli.help._root.debug.webview-history]
 about = "Reproduce a user navigation on an html surface: open an address as if typed into the address bar, or go back, forward, reload or stop. Debug builds only — it stands in for user navigation"

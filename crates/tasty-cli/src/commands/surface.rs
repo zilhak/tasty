@@ -70,6 +70,27 @@ pub enum SurfaceCommands {
         #[arg(long)]
         surface: u32,
     },
+    /// Allow the scripts of the document an html surface shows, as the
+    /// banner button does, and reload it.
+    ///
+    /// Pass the url and fingerprint printed by html-script so a document
+    /// replaced after that query is refused instead of allowed. The result
+    /// field is "allowed" or "already_allowed". A refusal names its reason:
+    /// document_changed, loading, no_document or no_fingerprint. Focus,
+    /// selection and the active tab stay as they are. The target surface is
+    /// always given explicitly with --surface. Not available in a headless
+    /// build.
+    HtmlScriptAllow {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+        /// Document url from html-script; refuse if the document differs
+        #[arg(long)]
+        url: Option<String>,
+        /// Document fingerprint from html-script; refuse if it differs
+        #[arg(long)]
+        fingerprint: Option<String>,
+    },
     /// Print the address of the document an html surface shows and whether
     /// it can go back or forward in its history.
     ///

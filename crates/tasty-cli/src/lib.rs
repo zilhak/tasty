@@ -943,6 +943,26 @@ mod workspace_category_tests {
     }
 
     #[test]
+    fn surface_html_script_allow_maps_to_ipc() {
+        let r = req(&["tasty", "surface", "html-script-allow", "--surface", "42"]);
+        assert_eq!(r.method, "surface.html_script_allow");
+        assert_eq!(r.params, serde_json::json!({ "surface_id": 42 }));
+        let r = req(&[
+            "tasty",
+            "surface",
+            "html-script-allow",
+            "--surface",
+            "42",
+            "--url",
+            "file:///a.html",
+            "--fingerprint",
+            "ab",
+        ]);
+        assert_eq!(r.params["url"], "file:///a.html");
+        assert_eq!(r.params["fingerprint"], "ab");
+    }
+
+    #[test]
     fn surface_html_nav_maps_to_ipc() {
         let r = req(&["tasty", "surface", "html-nav", "--surface", "42"]);
         assert_eq!(r.method, "surface.html_nav");

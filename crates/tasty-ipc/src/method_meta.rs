@@ -314,6 +314,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.foreground_process", plugin(Read, &[TerminalRead])),
         ("surface.locate", plugin(Read, &[SurfaceRead])),
         ("surface.html_script", plugin(Read, &[SurfaceRead])),
+        ("surface.html_script_allow", plugin(Mutate, &[SurfaceWrite])),
         ("surface.html_nav", plugin(Read, &[SurfaceRead])),
         ("surface.html_back", plugin(Mutate, &[SurfaceWrite])),
         ("surface.html_forward", plugin(Mutate, &[SurfaceWrite])),
@@ -876,8 +877,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         "debug.plugin_banner.close",
         local_only(MethodEffect::Idempotent),
     ),
-    // html 문서 스크립트 허용 클릭과 뒤로·앞으로·재로드·중지 재현. release 미노출.
-    ("debug.html_script.allow", local_only(MethodEffect::Mutate)),
+    // html 문서의 사용자 탐색(주소 입력·뒤로·앞으로·재로드·중지) 재현. release 미노출.
     ("debug.webview.history", local_only(MethodEffect::Mutate)),
     (
         "debug.event_bus.list_subscribers",

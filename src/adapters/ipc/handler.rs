@@ -709,6 +709,10 @@ fn route_engine_handler(
         #[cfg(feature = "gui")]
         "surface.html_script" => surface::handle_html_script(&engine.as_ref(), id, &request.params),
         #[cfg(feature = "gui")]
+        "surface.html_script_allow" => {
+            surface::handle_html_script_allow(&engine.as_ref(), id, &request.params)
+        }
+        #[cfg(feature = "gui")]
         "surface.html_nav" => surface::handle_html_nav(&engine.as_ref(), id, &request.params),
         #[cfg(feature = "gui")]
         "surface.html_back" => surface::handle_html_history(
@@ -1177,11 +1181,7 @@ fn route_debug_handler(
         "debug.banner.set_countdown" => {
             debug::handle_debug_banner_set_countdown(state, id, &request.params)
         }
-        // 허용 클릭과 페이지 이동 조작을 재현한다(docs/surfaces/html/index.md).
-        #[cfg(feature = "gui")]
-        "debug.html_script.allow" => {
-            debug_html_script::handle_allow(&engine.as_ref(), id, &request.params)
-        }
+        // 사용자의 페이지 이동 조작을 재현한다(docs/surfaces/html/index.md).
         #[cfg(feature = "gui")]
         "debug.webview.history" => {
             debug_html_script::handle_history(state, &engine.as_ref(), id, &request.params)

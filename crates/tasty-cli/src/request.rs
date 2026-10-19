@@ -268,6 +268,20 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 "surface.html_script",
                 serde_json::json!({ "surface_id": surface }),
             ),
+            SurfaceCommands::HtmlScriptAllow {
+                surface,
+                url,
+                fingerprint,
+            } => {
+                let mut params = serde_json::json!({ "surface_id": surface });
+                if let Some(url) = url {
+                    params["url"] = serde_json::json!(url);
+                }
+                if let Some(fingerprint) = fingerprint {
+                    params["fingerprint"] = serde_json::json!(fingerprint);
+                }
+                ("surface.html_script_allow", params)
+            }
             SurfaceCommands::HtmlNav { surface } => (
                 "surface.html_nav",
                 serde_json::json!({ "surface_id": surface }),

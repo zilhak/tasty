@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[주체별 원칙](../../principles/control-and-data.md)에 따라 포커스와 무관한 문서 실행 제어와 사용자 입력 재현은 구분한다. 아래 release 에이전트의 스크립트 허용 금지는 현재 구현의 추가 제한이며 제품 원칙의 예외로 승인된 것은 아니다. 동기 파일 스캔의 응답성 한계도 [응답성 원칙](../../principles/performance-and-settings.md)에 맞춰 정합할 범위다.
+[주체별 원칙](../../principles/control-and-data.md)에 따라 포커스와 무관한 문서 실행 제어와 사용자 입력 재현은 구분한다. 스크립트 허용은 포커스와 무관한 문서 실행 제어이므로 release에서 사용자(배너)와 에이전트(`surface.html_script_allow`) 모두 할 수 있다. 동기 파일 스캔의 응답성 한계도 [응답성 원칙](../../principles/performance-and-settings.md)에 맞춰 정합할 범위다.
 
 - **Status**: Implemented (bundled plugin)
 - **주체**: 로컬 사용자 (GUI surface) · AI Agent (`tasty html` CLI)
@@ -36,7 +36,11 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
     - chrome의 Failed와 이 실패 표지는 같은 로드의 실패에만 선다. Windows·macOS는 새 로드가 앞 로드를 취소해 앞 로드의 실패가 늦게 오면 둘 다 건드리지 않는다. 앞 로드의 늦은 성공도 새 로드의 Loading을 Done으로 바꾸지 않는다(로드 세대 판정, [OS별 적용](#os별-적용)). web process 종료는 세대와 관계없이 둘 다 세운다. 화면 문서를 잃었기 때문이다. Linux는 취소된 앞 로드의 `load-failed`가 새 로드의 시작보다 먼저 와서 세대 판정 없이 같은 결과가 된다(측정).
   - 탭 표지: `HtmlScriptState::marker`가 표지를 정한다. 차단된 배너를 닫았으면 lock(`Blocked`), 현재 문서를 허용했으면 scriptFile(`Allowed`)이고 sandbox가 꺼져 있으면 없다. 탭 바는 이동 글리프 왼쪽에 `html_script_marker_hit` 칸과 `tab_status_gap`을 잡아 표지를 그린다. 탭에 html surface가 여럿이면 `Blocked`를 먼저 보인다. lock 클릭은 배너만 다시 보이며 탭 전환·포커스 변경은 하지 않는다. scriptFile은 툴팁만 있다. 표지 툴팁은 [탭 스트립 툴팁 규칙](../../design/systems/banner.md#탭-스트립-툴팁)을 따라 탭 위쪽에 뜨므로 html 탭이 활성이어도 WebView에 가려지지 않는다.
   - 조회: `tasty surface html-script --surface <id>`(IPC `surface.html_script`)가 현재 문서의 URL·감지 결과(`none`/`scripts`/`scripts_remote_only`)·지문, 허용 기록, 현재 JS 적용 값, 로드 진행 여부(`loading`, 로드 시작 뒤 commit 전이면 `true`), 배너 단계(`hidden`/`blocked`/`loading`/`reloading`)와 표지(`viewed`·`pending_view`·`shown`·`dismissed`)를 돌려준다. 읽기만 하므로 배너를 띄우거나 사용자가 본 것으로 기록하지 않는다. html이 아닌 surface는 거절하고 헤드리스 빌드는 빌드 미지원 오류(`-32017`)로 답한다.
-  - 허용: release에서는 사용자만 GUI로 허용한다. 에이전트용 허용 재현은 debug 전용 `debug.html_script.allow`다([debug IPC](../../dev-guide/debug-ipc.md)).
+  - 허용: 사용자는 배너의 허용 버튼으로, 에이전트는 `tasty surface html-script-allow --surface <id> [--url <url> --fingerprint <hex>]`(IPC `surface.html_script_allow`, release, 권한 `surface.write`)로 허용한다. 둘 다 `HtmlScriptState::allow_current`로 현재 문서의 URL·지문을 허용 기록에 넣고 재로드를 요청한다. 에이전트 경로는 포커스·선택·활성 탭과 배너 표지를 바꾸지 않는다.
+    - 응답은 `{surface_id, result, reload, document}`다. `result`는 새로 허용했으면 `allowed`(`reload: true`), 이미 허용된 문서면 `already_allowed`(`reload: false`, 재로드하지 않음)다.
+    - `url`·`fingerprint`는 `surface.html_script` 조회의 `document.url`·`document.fingerprint`를 넘긴다. 현재 문서와 다르면 허용하지 않는다. 생략하면 그 비교를 하지 않는다.
+    - 거절은 `-32022`이고 `error.data.reason`으로 이유를 구분한다. `document_changed`(조회 뒤 문서가 바뀌었다), `loading`(새 문서가 commit 전이다), `no_document`(commit된 문서가 없다), `no_fingerprint`(`file://`이 아니거나 응답 단계 없이 commit된 문서다). `error.data.document`에 현재 문서를 싣는다. 거절하면 상태를 바꾸지 않는다.
+    - html이 아닌 surface·없는 surface·mirror workspace의 html leaf는 invalid params로 거절하고, 헤드리스 빌드는 `-32017`로 답한다.
 - **문서 주소와 히스토리** — 주소 표시용 주소는 backend가 관측한 commit 주소다. `webview_url()`은 호스트가 넣은 주소라 페이지 안 이동을 반영하지 않으므로 표시에 쓰지 않는다.
   - backend는 main frame commit마다 그 시점의 엔진 주소를 기록한다(WebKitGTK `load-changed` Committed, WKWebView `didCommitNavigation`, WebView2 `ContentLoading`). 주소 선택은 `tasty_model::committed_document_url`이 정한다. 로드가 끝난 상태(`Done`·`Idle`)에서는 엔진의 현재 주소를 쓰고, 로드 중(`Loading`)이나 실패(`Failed`)에서는 마지막 commit 주소를 쓴다.
   - 그래서 리다이렉트 뒤에는 최종 주소가 보이고, 같은 문서 안 `#fragment` 이동과 history API 이동은 commit 신호 없이도 반영된다. commit 전에 실패한 로드는 이전 문서의 주소를 남긴다. commit 뒤 로드가 끝나기 전에는 새 문서 주소다.
@@ -218,7 +222,7 @@ OS별 구현은 다음과 같다.
 
 - **사용자**: HTML·SVG 파일 열기 → html surface(WebView). 탭 스트립 빈 곳 메뉴의 **새 HTML...** 은 파일 피커(`html`·`htm`·`svg` 필터)를 열고, 고른 파일의 절대 경로를 `url` 파라미터로 넘겨 메뉴를 연 pane 에 html 탭을 만든다([파일 피커 확정](../../features/native-file-picker/index.md#확정confirm)). mirror workspace 의 pane 에서는 피커를 열지 않고 원격 열기 불가 토스트를 띄운다.
 - **AI Agent**: `tasty html …` CLI / `html.*` IPC. surface 생성은 [work-area](../../features/work-area/index.md) (`--type html --url …`).
-- **AI Agent**: 스크립트 감지·허용·배너 상태 조회는 `tasty surface html-script --surface <id>`(IPC `surface.html_script`).
+- **AI Agent**: 스크립트 감지·허용·배너 상태 조회는 `tasty surface html-script --surface <id>`(IPC `surface.html_script`), 현재 문서의 스크립트 허용은 `tasty surface html-script-allow --surface <id>`(IPC `surface.html_script_allow`).
 - **AI Agent**: 보여 주는 문서 주소와 뒤로·앞으로 이동 가능 여부 조회는 `tasty surface html-nav --surface <id>`(IPC `surface.html_nav`).
 - **AI Agent**: 뒤로·앞으로·새로고침은 `tasty surface html-back`·`html-forward`·`html-reload --surface <id>`(IPC `surface.html_back`·`surface.html_forward`·`surface.html_reload`).
 
@@ -245,6 +249,8 @@ OS별 구현은 다음과 같다.
 - Given 배너가 `blocked`이거나 탭에 lock·scriptFile 표지가 있다 When 다음 로드가 문서를 commit하지 못하고 실패한다 Then host chrome이 "Failed to load"를 보이는 동안 조회의 `banner.phase`는 `hidden`이고 탭 표지가 없다. 그 뒤 재로드가 commit되면 배너와 표지를 새 문서로 다시 정한다.
 - Given 배너 단계가 `loading`이고 그 로드는 에이전트가 넣은 이동(`tasty html open` 등)이다 When 스크립트가 있는 새 문서가 commit된다 Then [사용자가 봤다는 판정](#사용자가-봤다는-판정)대로 `banner.phase`는 `hidden`, `banner.pending_view`는 `true`이고 사용자가 그 surface를 선택할 때 배너가 `blocked`로 뜬다.
 - Given 터미널이나 markdown surface When `surface.html_script` Then invalid params로 거절한다.
+- Given sandbox 기본값에서 에이전트가 연 스크립트 있는 `file://` 문서와 사용자가 보는 다른 탭 When 에이전트가 `surface.html_script` 응답의 `url`·`fingerprint`로 `tasty surface html-script-allow`를 실행한다 Then 응답 `result`는 `allowed`이고, 재로드 뒤 조회의 `allowance`·`allowed`·`javascript`는 배너로 허용했을 때와 같으며, 사용자가 보던 탭과 포커스는 그대로다.
+- Given 조회 뒤 문서가 바뀌었거나 로드 중이거나 지문이 없는 문서 When `surface.html_script_allow` Then `-32022`와 `error.data.reason` `document_changed`·`loading`·`no_fingerprint`로 거절하고 허용 기록은 그대로다.
 - Given html 탭이 `file:///tmp/x/a.html`을 보여 준다 When 페이지 안 `#sec` 링크를 누른다 Then `surface.html_nav`의 `url`은 `file:///tmp/x/a.html#sec`이고 `requested_url`은 그대로다.
 - Given html 탭이 리다이렉트되는 주소를 열었다 When 로드가 끝난다 Then `url`은 최종 주소다.
 - Given html 탭이 문서 A를 보여 준다 When 다음 로드가 commit 전에 실패한다 Then `nav_state`는 `failed`이고 `url`은 A다.

@@ -283,14 +283,6 @@ pub enum DebugCommands {
     /// Debug builds only — `debug banner` is the host built-in banner instead.
     #[command(subcommand)]
     PluginBanner(PluginBannerDebugCommands),
-    /// Reproduce the "allow scripts" click on an html surface: record the
-    /// current document as allowed and reload it. Debug builds only — in
-    /// release only the user allows scripts, through the GUI.
-    HtmlScriptAllow {
-        /// Target html surface id (defaults to the current surface).
-        #[arg(long)]
-        surface: Option<u32>,
-    },
     /// Reproduce a user navigation on an html surface: open an address as if
     /// typed into the address bar, or go back, forward, reload or stop.
     /// Debug builds only — it stands in for user navigation.

@@ -1,7 +1,7 @@
-//! html surface 스크립트 허용의 debug 재현 명령.
+//! html surface 사용자 탐색의 debug 재현 명령.
 //!
-//! 허용은 release에서 사용자가 GUI로만 한다(docs/surfaces/html/index.md). 이 파일의 명령은 허용 클릭과
-//! 주소 입력·뒤로·앞으로·새로고침·중지 조작을 재현하므로 debug 빌드에만 둔다.
+//! 주소 입력·뒤로·앞으로·새로고침·중지 조작을 재현하므로 debug 빌드에만 둔다. 스크립트 허용은
+//! release 메서드 `surface.html_script_allow`가 맡는다(docs/surfaces/html/index.md).
 //! 주소 입력·뒤로·앞으로·새로고침은 release 사용자 경로(`webview_user_nav`)를 그대로 쓴다.
 
 use serde_json::{Value, json};
@@ -30,40 +30,6 @@ fn find_html_surface<'a>(
             -32000,
             "surface is not an html surface",
         )),
-    }
-}
-
-/// `debug.html_script.allow` — 허용 클릭을 재현한다. 현재 문서를 기록하고 재로드를 요청한다.
-pub(super) fn handle_allow(
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
-    let sid = match super::require_surface_id(params, &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let rs = match find_html_surface(engine, sid, &id) {
-        Ok(rs) => rs,
-        Err(e) => return e,
-    };
-    let result = rs.with_html_script(|st| {
-        st.allow_current().map(|()| {
-            (
-                st.current().map(|d| d.url.clone()),
-                st.current_detection().map(|d| d.as_str()),
-            )
-        })
-    });
-    match result {
-        Ok((url, detection)) => JsonRpcResponse::success(
-            id,
-            json!({ "allowed": true, "url": url, "detection": detection }),
-        ),
-        Err(e) => {
-            tracing::warn!("debug.html_script.allow: surface {sid}: {e}");
-            JsonRpcResponse::error(id, -32000, e.to_string())
-        }
     }
 }
 

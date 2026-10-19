@@ -3132,6 +3132,19 @@ long = "htmlサーフェスのスクリプト状態を出力します。現在�
 [cli.help._root.surface.html-script.arg.surface]
 help = "サーフェスID（必須）"
 
+[cli.help._root.surface.html-script-allow]
+about = "バナーのボタンと同様に、htmlサーフェスが表示する文書のスクリプトを許可して再読み込み"
+long = "バナーのボタンと同様に、htmlサーフェスが表示する文書のスクリプトを許可して再読み込みします。html-script が出力した url と fingerprint を渡すと、照会後に置き換わった文書は許可せず拒否します。結果フィールドは \"allowed\" または \"already_allowed\" です。拒否した場合は document_changed、loading、no_document、no_fingerprint のいずれかで理由を示します。フォーカス、選択、アクティブなタブは変わりません。対象は必ず --surface で指定します。ヘッドレスビルドでは使用できません。"
+
+[cli.help._root.surface.html-script-allow.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.html-script-allow.arg.url]
+help = "html-script が出力した文書の url。文書が異なれば拒否"
+
+[cli.help._root.surface.html-script-allow.arg.fingerprint]
+help = "html-script が出力した文書の fingerprint。異なれば拒否"
+
 [cli.help._root.surface.html-nav]
 about = "html サーフェスが表示している文書のアドレスと、履歴で戻る・進むができるかを出力"
 long = "html サーフェスが表示している文書のアドレスと、履歴で戻る・進むができるかを出力します。アドレスは最後に commit されたものです。リダイレクト後は最終アドレス、#fragment 移動後はその fragment 付きのアドレスで、読み込み中や読み込み失敗後は前の文書のアドレスです。照会のみです。対象は必ず --surface で指定します。ヘッドレスビルドでは使用できません。"
@@ -4103,12 +4116,6 @@ about = "ID で指定したプラグインのバナーを閉じる"
 
 [cli.help._root.debug.plugin-banner.close.arg.instance_id]
 help = "`plugin-banner open` が返したバナーインスタンスID"
-
-[cli.help._root.debug.html-script-allow]
-about = "html サーフェスで「スクリプトを許可」のクリックを再現します。現在のドキュメントを許可として記録し、再読み込みします (debug ビルド専用)。release ではユーザーだけが GUI でスクリプトを許可します。"
-
-[cli.help._root.debug.html-script-allow.arg.surface]
-help = "対象 html サーフェスID（既定値：現在のサーフェス）"
 
 [cli.help._root.debug.webview-history]
 about = "html サーフェスでユーザーのページ移動を再現します。アドレスバーに入力したようにアドレスを開くか、戻る・進む・再読み込み・停止を行います (debug ビルド専用)。"

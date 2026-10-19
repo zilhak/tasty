@@ -90,7 +90,7 @@ Domain 처리는 App 전체를 대여하므로 state별 처리 뒤로 분리한�
 
 세 지점 모두 private 함수 `apply_frame_effects`에 도달한 단계를 넘긴다. 이 함수는 단계가 도달한 단계 이하인 `Intent::Frame`만 그 자리에서 원 요청의 `IntentOrigin`과 함께 적용한다. 일반 명령과 아직 오지 않은 단계의 효과는 출처 봉투를 그대로 둔 채 원래 순서로 큐에 되돌린다. 뒤 단계 효과는 같은 프레임의 해당 drain이, 일반 명령은 다음 일반 처리(`about_to_wait` 또는 다음 프레임 시작)가 처리한다. 그래서 draw 중 egui가 낸 탐색기 변경·원격 목록 조회·즐겨찾기·이미지 업로드 같은 일반 명령은 finish_redraw 전에 실행되지 않는다. 이 지점은 `classify_intent`와 debug intent 관측을 거치지 않는다. 단계 순서는 호출 위치와 넘기는 단계가 함께 정하며 `src/source_guards/frame_phase_order.rs`가 소스 순서를 검사한다.
 
-일반 처리의 `dispatch_one_intent`는 일반 명령과 함께 프레임 밖에서 만든 효과도 적용한다. 창 resize 이벤트·단축키·분할선 드래그가 내는 grid·resize 효과가 여기에 해당한다. 프레임 사이에는 모든 단계가 이미 지났기 때문이다. 화면 프레임 밖의 IPC 핸들러(`file_picker.trigger`)가 내는 원격 목록 조회도 일반 명령이므로 일반 처리가 실행한다. 대상 binding이 오래된 효과·명령은 조용히 버리며 사용자 오류 토스트를 만들지 않는다. HTML 스크립트 허용은 사용자 결정이므로 사용자 출처가 아닌 허용 요청은 거절하고 로그만 남긴다.
+일반 처리의 `dispatch_one_intent`는 일반 명령과 함께 프레임 밖에서 만든 효과도 적용한다. 창 resize 이벤트·단축키·분할선 드래그가 내는 grid·resize 효과가 여기에 해당한다. 프레임 사이에는 모든 단계가 이미 지났기 때문이다. 화면 프레임 밖의 IPC 핸들러(`file_picker.trigger`)가 내는 원격 목록 조회도 일반 명령이므로 일반 처리가 실행한다. 대상 binding이 오래된 효과·명령은 조용히 버리며 사용자 오류 토스트를 만들지 않는다. 배너가 만든 HTML 스크립트 허용 요청은 사용자 출처일 때만 적용하고, 사용자 출처가 아닌 요청은 거절하고 로그만 남긴다. 에이전트의 허용은 이 요청을 거치지 않고 release IPC `surface.html_script_allow`가 처리한다.
 
 헤드리스는 `crate::intent::headless::drain_pending_intents`로 engine 하나의 큐를 다음 시점에 처리한다.
 

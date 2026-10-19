@@ -8,6 +8,8 @@ pub(crate) mod cwd;
 mod html_history;
 #[cfg(feature = "gui")]
 mod html_script;
+#[cfg(feature = "gui")]
+mod html_script_allow;
 mod kinds;
 mod list;
 mod mark;
@@ -22,6 +24,8 @@ pub(crate) use cwd::handle_set_cwd;
 pub(crate) use html_history::handle_html_history;
 #[cfg(feature = "gui")]
 pub(crate) use html_script::{handle_html_nav, handle_html_script};
+#[cfg(feature = "gui")]
+pub(crate) use html_script_allow::handle_html_script_allow;
 pub(crate) use kinds::handle_surface_kinds;
 pub(crate) use list::handle_surface_list;
 pub(crate) use mark::{
