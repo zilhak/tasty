@@ -73,7 +73,7 @@ impl JournalApplication {
             let surfaces = match crate::runtime::surface_capture::capture(session) {
                 Ok(surfaces) => surfaces,
                 Err(error) => {
-                    tracing::warn!("surface capture failed; dirty state retained: {error}");
+                    self.capture_failed(session, &error);
                     self.capture_requests.remove(&id);
                     continue;
                 }
@@ -90,7 +90,7 @@ impl JournalApplication {
             };
             let size = crate::runtime::journal_product::request_size(&work);
             if size > tasty_ipc::admission::QUEUED_BYTES_LIMIT {
-                self.reject_oversized(id, candidate, "capture", size as u64);
+                self.reject_oversized(session, candidate, "capture", size as u64);
                 self.capture_requests.remove(&id);
                 continue;
             }
@@ -168,14 +168,15 @@ impl JournalApplication {
         }
         if candidate.lower_bound > tasty_ipc::admission::QUEUED_BYTES_LIMIT as u64 {
             let bytes = candidate.lower_bound;
-            self.reject_oversized(id, candidate, "terminal history", bytes);
+            self.reject_oversized(session, candidate, "terminal history", bytes);
             return None;
         }
         Some(candidate)
     }
+    /// 다음 변경 전까지 다시 시도하지 않으므로 처음 거절할 때 경고 알림을 남긴다.
     fn reject_oversized(
         &mut self,
-        id: EngineId,
+        session: &EngineSession,
         rejection: CaptureRejection,
         what: &str,
         bytes: u64,
@@ -184,7 +185,11 @@ impl JournalApplication {
         tracing::warn!(
             "{what} of {bytes} bytes exceeds the {limit} byte capture limit; previous immutable data retained until the layout or history changes"
         );
-        self.capture_rejections.insert(id, rejection);
+        self.capture_rejections.insert(session.id, rejection);
+        if self.save_failures.oversized(session.id) {
+            self.notices
+                .push(save_failures::oversized_notice(session, bytes, limit));
+        }
     }
     pub(super) fn answer_capture(
         &mut self,
@@ -200,13 +205,14 @@ impl JournalApplication {
             .find(|session| session.id == capture.engine)
         {
             match result {
-                Ok(ResultValue::Executed(_) | ResultValue::Stored(_)) => session
-                    .persistence
-                    .dirty
-                    .clear_if_generation(&capture.dirty_generation),
-                Err(error) => {
-                    tracing::warn!("surface capture failed; dirty state retained: {error}")
+                Ok(ResultValue::Executed(_) | ResultValue::Stored(_)) => {
+                    self.save_failures.succeeded(&capture.engine);
+                    session
+                        .persistence
+                        .dirty
+                        .clear_if_generation(&capture.dirty_generation)
                 }
+                Err(error) => self.capture_failed(session, error),
                 _ => tracing::error!("capture returned an unrelated result; dirty state retained"),
             }
         }

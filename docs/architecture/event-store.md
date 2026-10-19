@@ -101,6 +101,8 @@ payload 페이지는 계속 과금되고 pin은 기존 event/snapshot/GC 수명�
 명시한 더 큰 내부 예산으로 다시 수락할 수 있다.
 
 기존 worker queue는 64건/64 MiB, 공개 원 요청은 8 MiB이며 App command 대기는 64건이다.
+주기 surface capture가 이 64 MiB를 넘어 거절되거나 계속 실패할 때의 경고 알림은
+[레이아웃 복원의 저장 실패 알림](../features/layout-persistence/index.md#저장-실패-알림)에 있다.
 이 한도와 별도로 DB의 Pending/Deferred/Running/Uncertain effect 총수 기본 상한은 4,096개다.
 `AdmissionBudget.max_pending_effects`로 정하며 실제 신규 `NewEffect` 개수가 고정된 commit의
 write transaction에서 기존 총수와 더해 검사한다. 같은 key의 최초 결과는 이 검사보다 먼저

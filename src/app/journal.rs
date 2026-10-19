@@ -12,6 +12,7 @@ mod resource_cleanup;
 mod restorations;
 #[cfg(feature = "gui")]
 mod retirement;
+mod save_failures;
 mod unowned;
 #[cfg(feature = "gui")]
 mod view_writes;
@@ -48,6 +49,8 @@ pub(crate) struct JournalApplication {
     preset_captures: capture::PresetCaptures,
     capture_requests: HashMap<EngineId, bool>,
     capture_rejections: HashMap<EngineId, capture::CaptureRejection>,
+    /// 주기 capture의 연속 실패와 상한 거절 알림 여부.
+    save_failures: save_failures::FailureStreaks<EngineId>,
     execution_id_requests: HashMap<u64, EngineId>,
     replacements: Vec<(EngineId, tasty_core::Replacement)>,
     changed_engines: std::collections::HashSet<EngineId>,
@@ -207,6 +210,7 @@ impl JournalApplication {
             preset_captures: Default::default(),
             capture_requests: Default::default(),
             capture_rejections: Default::default(),
+            save_failures: Default::default(),
             execution_id_requests: Default::default(),
             changed_engines: Default::default(),
             replacements: Vec::new(),
@@ -341,6 +345,19 @@ impl JournalApplication {
             return Err(reason.clone());
         }
         let result = self.poll_initial(sessions, plugins);
+        #[cfg(feature = "gui")]
+        for (stream, failures, cause) in self.view_writes.take_alerts() {
+            if let Some(session) = sessions.iter().find(|session| {
+                session
+                    .journal_binding
+                    .as_ref()
+                    .is_some_and(|binding| binding.stream == stream)
+            }) {
+                self.notices.push(save_failures::view_failing_notice(
+                    session, failures, &cause,
+                ));
+            }
+        }
         #[cfg(feature = "gui")]
         for session in sessions {
             if session
