@@ -19,9 +19,6 @@ jump_to_workspace = "Jump"
 settings = "Settings"
 plugins = "Plugins"
 
-[tooltip]
-jump_to_workspace = "Switch to this workspace"
-
 [badge]
 overflow = "99+"
 
@@ -869,7 +866,6 @@ elapsed_seconds = "{}s"
 elapsed_minutes = "{}m"
 elapsed_hours = "{}h"
 window_title = "Notifications"
-unread_count = "{} unread"
 empty_message = "No notifications"
 # 알림을 만든 워크스페이스가 닫혔을 때 쓰는 출처 표시.
 unknown_workspace = "Unknown"

@@ -19,9 +19,6 @@ jump_to_workspace = "移動"
 settings = "設定"
 plugins = "プラグイン"
 
-[tooltip]
-jump_to_workspace = "このワークスペースに切り替え"
-
 [badge]
 overflow = "99+"
 
@@ -857,7 +854,6 @@ elapsed_seconds = "{}秒"
 elapsed_minutes = "{}分"
 elapsed_hours = "{}時間"
 window_title = "通知"
-unread_count = "{}件の未読"
 empty_message = "通知はありません"
 unknown_workspace = "不明"
 

@@ -35,7 +35,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("recent", 1),
     ("remote", 14),
     ("session", 3),
-    ("settings", 7),
+    ("settings", 8),
     // 입력 재현 메서드는 release에서 제외된 debug 표에 있어 이 개수에 포함되지 않는다(docs/dev-guide/plugin-permissions.md).
     ("surface", 39),
     ("system", 3),
