@@ -33,6 +33,12 @@ impl crate::core::layout_persistence::import::ScrollbackSource for NoHistory {
 
 /// Slots 1 and 2 each hold one workspace; the last event of slot 2 is made undecodable.
 fn damaged_home() -> TempHome {
+    damaged_home_with(&[2])
+}
+
+/// Slots 1 to 3 each hold one workspace; the last event of every slot in `damaged` is made
+/// undecodable.
+fn damaged_home_with(damaged: &[u32]) -> TempHome {
     let home = TempHome::new();
     let directory = home.dir.path().join("structure");
     std::fs::create_dir(&directory).unwrap();
@@ -46,7 +52,7 @@ fn damaged_home() -> TempHome {
     .unwrap();
     let mut store = tasty_event_store::EventStore::open(&home.database(), JOURNAL_ID).unwrap();
     let epoch = store.acquire_writer().unwrap();
-    for slot in [1u32, 2] {
+    for slot in [1u32, 2, 3] {
         let layout = serde_json::json!({"version":2,"active_workspace":0,"workspaces":[{"name":format!("slot-{slot}"),"subtitle":"","description":"","category":0,"focused_pane_index":0,"pane_layout":{"Leaf":{"tabs":[{"name":"t","explicit_name":null,"surface":{"Leaf":{"Terminal":{"cwd":null,"restore_command":null,"scrollback_ref":null}}}}],"active_tab":0}}}]});
         crate::core::layout_persistence::import::import_slot(
             &mut store,
@@ -59,14 +65,17 @@ fn damaged_home() -> TempHome {
     }
     drop(store);
     let connection = rusqlite::Connection::open(home.database()).unwrap();
-    let changed = connection
-        .execute(
-            "UPDATE events SET payload = X'00' WHERE stream_id = 'structure:slot-2'
-             AND stream_revision = (SELECT MAX(stream_revision) FROM events WHERE stream_id = 'structure:slot-2')",
-            [],
-        )
-        .unwrap();
-    assert_eq!(changed, 1);
+    for slot in damaged {
+        let stream = format!("structure:slot-{slot}");
+        let changed = connection
+            .execute(
+                "UPDATE events SET payload = X'00' WHERE stream_id = ?1
+                 AND stream_revision = (SELECT MAX(stream_revision) FROM events WHERE stream_id = ?1)",
+                [&stream],
+            )
+            .unwrap();
+        assert_eq!(changed, 1);
+    }
     home
 }
 
@@ -179,7 +188,11 @@ fn opening_the_damaged_slot_starts_a_fresh_slot_instead() {
         Some(2),
     );
     assert!(!journal.is_halted());
-    assert_eq!(engine.persistence.slot, Some(3));
+    assert_eq!(
+        engine.persistence.slot,
+        Some(4),
+        "slot 3 is a healthy existing slot"
+    );
     assert!(
         !workspace_names(&engine).contains(&"slot-2".to_owned()),
         "the damaged layout is not shown as if it were whole"
@@ -239,6 +252,38 @@ fn headless_starts_a_fresh_stream_despite_a_damaged_slot() {
     let (journal, engine) = boot(EngineSelection::FreshHeadless, None);
     assert!(!journal.is_halted());
     assert!(engine.journal_binding.is_some());
+    drop(journal);
+    drop(home);
+}
+
+#[test]
+fn two_damaged_openings_in_one_bootstrap_get_different_fresh_slots() {
+    let home = damaged_home_with(&[2, 3]);
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    let mut first = session(Some(2));
+    let mut second = session(Some(3));
+    for engine in [&first, &second] {
+        let slot = engine.persistence.slot.unwrap();
+        journal
+            .begin_engine(engine, EngineSelection::Slot { slot, resume: true })
+            .unwrap();
+    }
+    let mut stall = StallBudget::new(&journal);
+    while !(journal.is_ready(first.id) && journal.is_ready(second.id)) {
+        journal
+            .poll_bootstrap(&mut [&mut first, &mut second], None)
+            .unwrap();
+        journal.poll_restore_bootstrap(&first).unwrap();
+        journal.poll_restore_bootstrap(&second).unwrap();
+        stall.nap("two damaged openings");
+    }
+    assert!(!journal.is_halted());
+    let slots = [first.persistence.slot, second.persistence.slot];
+    assert_eq!(
+        slots,
+        [Some(4), Some(5)],
+        "each opening gets its own fresh slot"
+    );
     drop(journal);
     drop(home);
 }

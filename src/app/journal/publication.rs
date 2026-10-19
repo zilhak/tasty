@@ -168,6 +168,8 @@ impl JournalApplication {
             .iter()
             .map(|session| (session.id, session.persistence.slot))
             .collect();
+        // 이번 bootstrap에서 새로 배정한 슬롯. 같은 bootstrap의 다른 opening이 같은 번호를 받지 않게 한다.
+        let mut assigned: Vec<u32> = Vec::new();
         for session in sessions.iter_mut() {
             let Some(opening) = self.opening.get_mut(&session.id) else {
                 continue;
@@ -198,9 +200,11 @@ impl JournalApplication {
                     .chain(&self.damaged_slots)
                     .copied()
                     .chain(occupied.iter().filter_map(|(_, used)| *used))
+                    .chain(assigned.iter().copied())
                     .max()
                     .unwrap_or(0)
                     + 1;
+                assigned.push(fresh);
                 tracing::warn!(damaged = *slot, fresh, "starting a new layout slot instead");
                 *slot = fresh;
                 session.persistence.slot = Some(fresh);
