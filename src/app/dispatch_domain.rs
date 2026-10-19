@@ -260,8 +260,8 @@ impl App {
             return;
         }
         match event {
-            CoreEvent::SettingsUpdated(new_settings) => {
-                self.cascade_settings_updated(new_settings, origin);
+            CoreEvent::SettingsUpdated { settings, done } => {
+                self.cascade_settings_updated(settings, origin, done);
             }
             CoreEvent::NotificationPushRequested {
                 level,
@@ -557,29 +557,33 @@ impl App {
         });
     }
 
-    /// 검사를 통과한 설정만 journal 에 들인다. 거절하면 이전 설정을 유지한다.
-    fn admit_settings(&mut self, new_settings: &Settings) -> Option<u64> {
+    /// 검사를 통과한 설정만 journal 에 들인다. 거절하면 이전 설정을 유지하고 사유를 돌려준다.
+    fn admit_settings(&mut self, new_settings: &Settings) -> Result<u64, String> {
         if let Err(e) = new_settings.task_pipeline.validate() {
             tracing::error!("settings not applied: {e}");
-            return None;
+            return Err(e);
         }
-        match self.journal.note_settings_intent() {
-            Ok(generation) => Some(generation),
-            Err(error) => {
-                tracing::error!("settings admission failed: {error}");
-                None
-            }
-        }
+        self.journal.note_settings_intent().map_err(|error| {
+            tracing::error!("settings admission failed: {error}");
+            error
+        })
     }
 
     /// 창과 parked 상태의 설정을 모두 갱신해야 복원된 창이 옛 설정을 쓰지 않는다.
+    /// 결과는 `done`(기다리는 요청)과 사용자 출처의 토스트로 알린다. category 초기화가 필요하면
+    /// journal 완료 뒤 `finish_settings_results`가 같은 일을 한다.
     pub(crate) fn cascade_settings_updated(
         &mut self,
         new_settings: Settings,
         origin: &IntentOrigin,
+        done: Option<crate::app::settings_change::SettingsDone>,
     ) {
-        let Some(generation) = self.admit_settings(&new_settings) else {
-            return;
+        let generation = match self.admit_settings(&new_settings) {
+            Ok(generation) => generation,
+            Err(reason) => {
+                self.settle_settings_rejected(origin, done, reason);
+                return;
+            }
         };
         let turning_off = self
             .engines()
@@ -598,6 +602,11 @@ impl App {
             for id in ids {
                 let Some(binding) = self.engines.journal_binding(id) else {
                     tracing::error!("category reset engine has no journal binding");
+                    self.settle_settings_rejected(
+                        origin,
+                        done,
+                        "category reset engine has no journal binding".into(),
+                    );
                     return;
                 };
                 changes.push(crate::runtime::journal_product::StreamCommand {
@@ -606,13 +615,87 @@ impl App {
                 });
             }
             self.journal
-                .admit_settings_reset(generation, changes, new_settings, origin);
+                .admit_settings_reset(generation, changes, new_settings, origin, done);
             return;
         }
-        self.apply_settings_after_structure(new_settings);
+        let saved = self.apply_settings_after_structure(new_settings.clone());
+        self.settle_settings(origin, done, new_settings, saved);
     }
 
-    pub(crate) fn apply_settings_after_structure(&mut self, new_settings: Settings) {
+    /// 메모리에 적용한 설정의 저장 결과를 기다리는 요청에 돌려주고, 사용자 출처면 저장 실패를 알린다.
+    pub(crate) fn settle_settings(
+        &mut self,
+        origin: &IntentOrigin,
+        done: Option<crate::app::settings_change::SettingsDone>,
+        settings: Settings,
+        saved: Result<(), String>,
+    ) {
+        if let Err(error) = &saved
+            && origin.is_user()
+        {
+            self.toast_settings_result(
+                crate::i18n::t_fmt_fit("toast.settings_not_saved", error),
+                crate::adapters::ui::ToastKind::Warning,
+            );
+        }
+        if let Some(done) = done {
+            done.finish(crate::app::settings_change::SettingsOutcome::Applied {
+                changed: true,
+                saved,
+                settings: Box::new(settings),
+            });
+        }
+    }
+
+    fn settle_settings_rejected(
+        &mut self,
+        origin: &IntentOrigin,
+        done: Option<crate::app::settings_change::SettingsDone>,
+        reason: String,
+    ) {
+        if origin.is_user() {
+            self.toast_settings_result(
+                crate::i18n::t_fmt_fit("toast.settings_not_applied", &reason),
+                crate::adapters::ui::ToastKind::Error,
+            );
+        }
+        if let Some(done) = done {
+            done.finish(crate::app::settings_change::SettingsOutcome::Rejected(
+                reason,
+            ));
+        }
+    }
+
+    /// 설정 결과 토스트는 포커스된 메인 창에, 없으면 첫 메인 창에 띄운다.
+    fn toast_settings_result(&mut self, message: String, kind: crate::adapters::ui::ToastKind) {
+        let focused = self.view.focused_view_id;
+        let main = match focused.and_then(|id| self.view.views.get(&id)) {
+            Some(view) if view.as_main().is_some() => focused,
+            _ => None,
+        }
+        .or_else(|| {
+            self.view
+                .views
+                .iter()
+                .find_map(|(id, view)| view.as_main().map(|_| *id))
+        });
+        let Some(main) = main.and_then(|id| self.view.views.get_mut(&id)) else {
+            tracing::warn!("settings result without a main window: {message}");
+            return;
+        };
+        if let Some(main) = main.as_main_mut() {
+            main.state
+                .toasts
+                .push(message, kind, crate::adapters::ui::ToastScope::Window);
+            main.mark_dirty();
+        }
+    }
+
+    /// 창과 parked 상태에 새 설정을 적용하고 저장한다. 저장 결과를 돌려준다(실패는 오류로도 남긴다).
+    pub(crate) fn apply_settings_after_structure(
+        &mut self,
+        new_settings: Settings,
+    ) -> Result<(), String> {
         crate::app::task_report::apply(&self.services, &new_settings);
         let prev_settings = self
             .engines()
@@ -637,10 +720,11 @@ impl App {
         for main in self.main_windows_iter_mut() {
             main.mark_dirty();
         }
-        if let Err(e) = new_settings.save() {
-            // 메모리에 적용됐어도 다음 실행에 보존할 수 없는 실패이므로 오류로 남긴다.
+        // 메모리에 적용됐어도 다음 실행에 보존할 수 없는 실패이므로 오류로 남긴다.
+        let saved = self.services.save_settings(&new_settings).map_err(|e| {
             tracing::error!("failed to save settings: {e}");
-        }
+            e.to_string()
+        });
 
         let appearance_changed =
             theme_order::appearance_changed(prev_appearance.as_ref(), &new_settings.appearance);
@@ -656,6 +740,7 @@ impl App {
         // 바뀐 단축키가 macOS 메뉴 표시에도 반영되도록 재구성한다.
         #[cfg(target_os = "macos")]
         crate::macos_delegate::rebuild_main_menu(&new_settings.keybindings);
+        saved
     }
 
     /// 전역 Theme 설치 뒤에 창·터미널 색을 갱신하고 plugin에 설정 변경 이벤트를 발행한다.

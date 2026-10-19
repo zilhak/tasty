@@ -167,6 +167,20 @@ impl AppServices {
         &self.memory_replies
     }
 
+    /// 주입한 설정 저장소에 저장한다. 설정 변경 요청의 완료 결과가 이 결과를 싣는다.
+    pub(crate) fn save_settings(&self, settings: &tasty_settings::Settings) -> anyhow::Result<()> {
+        self.settings_storage.save(settings)
+    }
+
+    /// 지연 응답의 결과가 메인 루프 안에서 생겼을 때 다음 회차가 응답을 거두도록 깨운다.
+    /// writer가 없는 시험 구성은 호출자가 직접 거둔다.
+    pub(crate) fn reply_wake(&self) -> std::sync::Arc<dyn Fn() + Send + Sync> {
+        match &self.memory_writer {
+            Some(parts) => parts.wake.notifier(),
+            None => std::sync::Arc::new(|| {}),
+        }
+    }
+
     /// 원 호출자를 붙여 writer 결과를 기다리게 한다.
     pub(crate) fn defer_reply(
         &self,

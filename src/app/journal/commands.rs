@@ -60,6 +60,16 @@ pub(crate) struct IntentViewContinuation {
     pub(crate) tutorial_surface: Option<(u32, crate::runtime::surface_binding::SurfaceBinding)>,
 }
 
+/// 끝난 category 초기화와 그 뒤에 적용할 설정.
+#[cfg(feature = "gui")]
+pub(crate) struct SettingsCompletion {
+    pub(crate) generation: u64,
+    pub(crate) settings: Option<Box<crate::settings::Settings>>,
+    pub(crate) origin: crate::intent::IntentOrigin,
+    pub(crate) done: Option<crate::app::settings_change::SettingsDone>,
+    pub(crate) response: JsonRpcResponse,
+}
+
 #[allow(clippy::large_enum_variant)] // reason: 처리 중 요청만 담는 맵이라 MAX_PENDING(64)으로 상한이 걸려 있다 — 낭비는 몇 KB로 묶이고 Box 는 요청마다 붙는다
 enum Reply {
     Resume(live_resume::Resume),
@@ -75,6 +85,8 @@ enum Reply {
         settings: Option<Box<crate::settings::Settings>>,
         generation: u64,
         origin: crate::intent::IntentOrigin,
+        /// 이 설정 변경을 기다리는 요청. 결과는 `finish_settings_results`가 넣는다.
+        done: Option<crate::app::settings_change::SettingsDone>,
     },
     Ipc(SyncSender<JsonRpcResponse>),
     Plugin {
@@ -173,12 +185,7 @@ pub(super) struct Commands {
     #[cfg(feature = "gui")]
     settings_generation: u64,
     #[cfg(feature = "gui")]
-    completed_settings: Vec<(
-        u64,
-        Option<Box<crate::settings::Settings>>,
-        crate::intent::IntentOrigin,
-        JsonRpcResponse,
-    )>,
+    completed_settings: Vec<SettingsCompletion>,
     /// Commands whose published creation could not confirm the replaced owner's retirement,
     /// kept only while a request still waits on them.
     unconfirmed_cleanup: std::collections::HashMap<String, String>,
@@ -282,14 +289,20 @@ impl Commands {
                 settings,
                 generation,
                 origin,
+                done,
             } => {
                 let settings = if response.error.is_some() {
                     None
                 } else {
                     settings
                 };
-                self.completed_settings
-                    .push((generation, settings, origin, response));
+                self.completed_settings.push(SettingsCompletion {
+                    generation,
+                    settings,
+                    origin,
+                    done,
+                    response,
+                });
             }
             Reply::Ipc(sender) => crate::ipc::server::send_response(&sender, response),
             Reply::Plugin {

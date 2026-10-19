@@ -14,7 +14,32 @@ impl AppServices {
                     .task_pipeline
                     .validate()
                     .map_err(|e| anyhow::anyhow!("settings not applied: {e}"))?;
-                Ok(vec![CoreEvent::SettingsUpdated(new_settings)])
+                Ok(vec![CoreEvent::SettingsUpdated {
+                    settings: new_settings,
+                    done: None,
+                }])
+            }
+            DomainIntent::ChangeSettings { change, done } => {
+                use crate::app::settings_change::SettingsOutcome;
+                let mut new_settings = engine.runtime.settings.clone();
+                let checked = change.apply(&mut new_settings).and_then(|changed| {
+                    new_settings.task_pipeline.validate()?;
+                    Ok(changed)
+                });
+                match checked {
+                    Ok(true) => Ok(vec![CoreEvent::SettingsUpdated {
+                        settings: new_settings,
+                        done: Some(done),
+                    }]),
+                    Ok(false) => {
+                        done.finish(SettingsOutcome::unchanged(new_settings));
+                        Ok(Vec::new())
+                    }
+                    Err(reason) => {
+                        done.finish(SettingsOutcome::Rejected(reason));
+                        Ok(Vec::new())
+                    }
+                }
             }
             DomainIntent::PushNotification {
                 level,

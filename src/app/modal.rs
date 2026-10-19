@@ -61,7 +61,7 @@ impl App {
                     crate::app::command::DomainIntent::UpdateSettings(new_settings.clone())
                         .from_user_menu("settings_save")
                         .origin;
-                self.cascade_settings_updated(new_settings, &origin);
+                self.cascade_settings_updated(new_settings, &origin, None);
             }
 
             for main in self.main_windows_iter_mut() {

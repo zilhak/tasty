@@ -79,10 +79,11 @@ pub(super) fn handle_ui_state(
     )
 }
 
-/// 현재 설정의 직렬화 사본에 부분 patch를 합친 뒤 UpdateSettings로 적용한다.
+/// 현재 설정의 직렬화 사본에 부분 patch를 합친 뒤 전체 교체로 적용한다.
 /// 실제 설정을 미리 바꾸면 후속 처리에서 이전 값과의 차이를 알 수 없으므로 사본만 수정한다.
 /// 알 수 없는 키는 무시하고 잘못된 타입은 거절한다. GUI 없이도 같은 설정 변경 경로를 쓴다.
 pub(super) fn handle_debug_settings_apply(
+    core: &crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
@@ -123,10 +124,13 @@ pub(super) fn handle_debug_settings_apply(
         tasty_themes::apply_theme,
     );
 
-    state.dispatch_intent(
-        crate::app::command::DomainIntent::UpdateSettings(new_settings).from_agent_ipc(),
-    );
-    JsonRpcResponse::success(id, json!({ "applied": true }))
+    // 적용과 저장이 끝난 뒤 응답한다. 합친 설정 전체로 바꾸는 기존 의미는 그대로다.
+    core.request_settings_change(
+        id,
+        crate::app::settings_change::SettingsChange::Replace(Box::new(new_settings)),
+        |intent| state.dispatch_intent(intent),
+        |id, _changed, _settings| JsonRpcResponse::success(id, json!({ "applied": true })),
+    )
 }
 
 /// theme id가 바뀌었으면 설정 모달·상태바 토글처럼 그 테마의 색 세트와 밝기를 적용한다.
@@ -198,6 +202,8 @@ mod tests {
     /// test_state 의 엔진이 이 스레드의 tasty_home 을 임시 디렉터리로 격리한다.
     #[test]
     fn settings_apply_with_a_new_theme_dispatches_that_themes_colour_set() {
+        use crate::app::settings_change::test_support::{ProbeStorage, core_with, settle};
+        let mut core = core_with(std::sync::Arc::new(ProbeStorage::default()));
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         {
@@ -209,22 +215,23 @@ mod tests {
             assert!(appearance.theme_overrides.crust.is_some());
         }
 
-        let resp = super::handle_debug_settings_apply(
+        let placeholder = super::handle_debug_settings_apply(
+            &core,
             &mut state,
             &mut engine,
             serde_json::json!(1),
             &serde_json::json!({ "settings": { "appearance": { "theme": "mocha" } } }),
         );
-        assert!(resp.result.is_some(), "{:?}", resp.error);
+        assert!(
+            placeholder.error.is_some(),
+            "the answer waits for the result"
+        );
 
         let intents = state.take_pending_intents();
         assert_eq!(intents.len(), 1);
-        let crate::intent::Intent::Domain(crate::app::command::DomainIntent::UpdateSettings(
-            settings,
-        )) = &intents[0].body
-        else {
-            panic!("expected UpdateSettings: {:?}", intents[0].body);
-        };
+        let resp = settle(&mut core, &mut state, &mut engine, intents);
+        assert_eq!(resp.result, Some(serde_json::json!({ "applied": true })));
+        let settings = &engine.runtime.settings;
         assert_eq!(settings.appearance.theme, "mocha");
         assert!(!settings.appearance.theme_is_light);
         assert!(
@@ -237,10 +244,12 @@ mod tests {
     /// report 의 append 상한은 블록 상한보다 작아야 한다. 어긋난 쌍은 적용 전에 거절한다.
     #[test]
     fn settings_apply_refuses_a_task_pipeline_pair_that_fails_the_check() {
+        let core = crate::ipc::handler::cli_entry_tests::test_core();
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let apply = |state: &mut _, engine: &mut _, append: u64, block: u64| {
             super::handle_debug_settings_apply(
+                &core,
                 state,
                 engine,
                 serde_json::json!(1),
@@ -252,9 +261,10 @@ mod tests {
         assert_eq!(resp.error.expect("refused").code, -32602);
         assert!(state.take_pending_intents().is_empty());
 
-        let resp = apply(&mut state, &mut engine, 2048, 4096);
-        assert!(resp.result.is_some(), "{:?}", resp.error);
+        apply(&mut state, &mut engine, 2048, 4096);
         assert_eq!(state.take_pending_intents().len(), 1);
+        // 적용 결과를 기다리는 응답을 치운다.
+        drop(core.answer_parked_for_test());
     }
 
     #[test]

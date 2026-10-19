@@ -75,6 +75,8 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 
 **저장 실패는 오류 토스트로 알린다.** Tastyrc(Windows) 편집 저장이 실패하면 그 사유를 모달이 들고 있다가, 창이 닫힐 때 host 가 회수해 main window 에 Error 토스트(`toast.bashrc_save_failed`)로 띄운다 — Save 는 곧바로 설정 창을 닫으므로 설정 창 안에 띄우면 보이지 않는다. 사유에는 대상 경로와 OS 에러가 들어 있어 문구에 함께 싣되, 토스트 200자 캡에 맞춰 **가운데를 생략**한다(`tasty_i18n::t_fmt_fit`) — 호스트 기본 잘림은 꼬리(=OS 에러)를 버린다. 성공 토스트는 없다(저장은 기본 기대 동작이라 매번 알리면 소음). → [toast](../../design/systems/toast.md)
 
+**설정 적용 결과도 기존 토스트로 알린다.** Save 한 설정이 검사·admission 에서 거절되면 Error 토스트(`toast.settings_not_applied`), 메모리에는 적용됐지만 `config.toml` 에 저장하지 못하면 Warning 토스트(`toast.settings_not_saved` — 이번 실행에만 적용되고 다시 시작하면 사라진다)를 포커스된 main window(없으면 첫 main window)에 띄운다. 두 경우를 다른 종류·문구로 구분한다. 사유는 `t_fmt_fit` 으로 가운데를 줄인다. category 초기화(`workspace_categories_enabled` 끄기)의 journal 실패는 공통 적용 오류 보고가 맡는다. 에이전트·plugin 요청의 같은 결과는 토스트 대신 응답으로 돌려준다 → [완료 의미](../../architecture/data-flows.md#에이전트plugin-설정-변경-요청의-완료-의미)
+
 ### 단축키 탭 (Keybindings)
 
 키 조합을 직접 녹화해 바인딩 할당. 충돌 시 확인 팝업으로 수락/거부. (모든 단축키는 `KeybindingSettings` 경유 — 코드 하드코딩 금지.)

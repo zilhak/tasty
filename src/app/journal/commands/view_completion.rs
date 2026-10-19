@@ -194,20 +194,33 @@ impl crate::app::App {
     }
 
     fn finish_settings_results(&mut self) {
-        for (settings, origin, response) in self.journal.take_settings_results() {
+        for completion in self.journal.take_settings_results() {
+            let crate::app::journal::commands::SettingsCompletion {
+                settings,
+                origin,
+                done,
+                response,
+                ..
+            } = completion;
             if let Some(error) = response.error {
                 if let Some((state, _)) = self.engines_mut().sessions().next() {
                     crate::intent::report_apply_error(
                         state,
                         &origin,
                         "journal category reset",
-                        &anyhow::anyhow!(error.message),
+                        &anyhow::anyhow!(error.message.clone()),
                     );
                 }
+                // 실패 표시는 위 공통 보고가 맡고, 기다리는 요청에는 사유를 돌려준다.
+                if let Some(done) = done {
+                    done.finish(crate::app::settings_change::SettingsOutcome::Rejected(
+                        format!("category reset failed: {}", error.message),
+                    ));
+                }
             } else {
-                self.apply_settings_after_structure(
-                    *settings.expect("successful settings continuation"),
-                );
+                let settings = *settings.expect("successful settings continuation");
+                let saved = self.apply_settings_after_structure(settings.clone());
+                self.settle_settings(&origin, done, settings, saved);
             }
         }
     }

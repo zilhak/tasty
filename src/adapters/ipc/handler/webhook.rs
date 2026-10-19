@@ -274,7 +274,7 @@ pub fn handle_unregister(id: serde_json::Value, params: &serde_json::Value) -> J
 /// `port`를 주면 webhooks.toml에 저장하고, `unset_port`가 true면 저장한 값을 지운다.
 /// `allow_external`은 설정(config.toml)의 외부 수신 허용을 바꾼다. 모두 다음 실행부터 적용된다.
 pub fn handle_config(
-    ports: &crate::runtime_ports::RuntimePorts,
+    core: &crate::app::services::AppServices,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
     id: serde_json::Value,
@@ -292,16 +292,23 @@ pub fn handle_config(
                 "'allow_external' is set on its own, without 'port' or 'unset_port'",
             );
         }
-        let mut settings = engine.settings.clone();
-        settings.webhook.allow_external = allow;
-        out.push(crate::app::command::DomainIntent::UpdateSettings(settings).from_agent_ipc());
-        return JsonRpcResponse::success(
+        let restart_required =
+            core.ports.webhook().map(|b| !b.addr.ip().is_loopback()) != Some(allow);
+        // 설정에 적용하고 저장한 뒤에 응답한다. 저장하지 못하면 다음 실행에 쓰이지 않으므로 오류다.
+        return core.request_settings_change(
             id,
-            json!({
-                "allow_external": allow,
-                "applies_from": "next_start",
-                "restart_required": ports.webhook().map(|b| !b.addr.ip().is_loopback()) != Some(allow),
-            }),
+            crate::app::settings_change::SettingsChange::WebhookAllowExternal(allow),
+            |intent| out.push(intent),
+            move |id, _changed, _settings| {
+                JsonRpcResponse::success(
+                    id,
+                    json!({
+                        "allow_external": allow,
+                        "applies_from": "next_start",
+                        "restart_required": restart_required,
+                    }),
+                )
+            },
         );
     }
     let unset = params
@@ -321,7 +328,7 @@ pub fn handle_config(
         (None, false) => {
             return JsonRpcResponse::success(
                 id,
-                listener_status(ports, engine.settings.webhook.allow_external),
+                listener_status(&core.ports, engine.settings.webhook.allow_external),
             );
         }
     };
@@ -331,7 +338,7 @@ pub fn handle_config(
             json!({
                 "saved_port": saved_port,
                 "applies_from": "next_start",
-                "restart_required": ports.webhook_port() != saved_port,
+                "restart_required": core.ports.webhook_port() != saved_port,
             }),
         ),
         Err(e) => {
@@ -533,5 +540,40 @@ mod tests {
             !msg.contains("inline 'sequence'") && !msg.contains("may only bind its own"),
             "local caller must not hit plugin gate, got: {msg}"
         );
+    }
+
+    #[test]
+    fn allow_external_answers_after_the_setting_is_saved_and_reports_a_failed_save() {
+        use crate::app::settings_change::test_support::{ProbeStorage, core_with, settle};
+        for fail in [false, true] {
+            let mut core = core_with(Arc::new(ProbeStorage {
+                fail,
+                ..Default::default()
+            }));
+            let (mut state, mut engine_session) = crate::state::tests::test_state();
+            let mut engine = engine_session.borrow_mut();
+            let mut out = crate::ipc::window_port::IntentOutbox::default();
+            let placeholder = handle_config(
+                &core,
+                &mut out,
+                &engine.read(),
+                json!(1),
+                &json!({ "allow_external": true }),
+            );
+            assert!(
+                placeholder.error.is_some(),
+                "the answer waits for the result"
+            );
+            let response = settle(&mut core, &mut state, &mut engine, out.into_vec());
+            assert!(engine.runtime.settings.webhook.allow_external);
+            if fail {
+                let error = response.error.expect("a failed save is not a success");
+                assert_eq!(error.data.unwrap()["saved"], false);
+            } else {
+                let result = response.result.expect("saved");
+                assert_eq!(result["allow_external"], true);
+                assert_eq!(result["applies_from"], "next_start");
+            }
+        }
     }
 }

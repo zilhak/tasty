@@ -220,7 +220,7 @@ fn dispatch_routed(
     }
 
     #[cfg(debug_assertions)]
-    if let Some(resp) = route_debug_handler(state, engine, request, id.clone()) {
+    if let Some(resp) = route_debug_handler(core, state, engine, request, id.clone()) {
         return resp;
     }
 
@@ -701,9 +701,7 @@ fn route_engine_handler(
         "webhook.info" => webhook::handle_info(id, &request.params),
         "webhook.unregister" => webhook::handle_unregister(id, &request.params),
         "webhook.sweep" => webhook::handle_sweep(id),
-        "webhook.config" => {
-            webhook::handle_config(&core.ports, out, &engine.read(), id, &request.params)
-        }
+        "webhook.config" => webhook::handle_config(core, out, &engine.read(), id, &request.params),
         #[cfg(feature = "gui")]
         "webview.set_url" => webview::handle_set_url(&engine.as_ref(), caller, id, &request.params),
         #[cfg(feature = "gui")]
@@ -907,15 +905,15 @@ fn route_engine_handler(
         "settings.set_input_rule"
         | "settings.remove_input_rule"
         | "settings.initialize_input_rule" => terminal_input::handle_input_rule_update(
+            core,
             out,
-            &engine.read(),
             caller,
             id,
             &request.params,
             &request.method,
         ),
         "settings.set_remote_transfer" => {
-            settings::handle_set_remote_transfer(out, &engine.read(), id, &request.params)
+            settings::handle_set_remote_transfer(core, out, id, &request.params)
         }
         // approval.await는 별도 워커에서 대기한다.
         "approval.request" => {
@@ -1091,6 +1089,7 @@ fn route_window_handler(
 
 #[cfg(debug_assertions)]
 fn route_debug_handler(
+    core: &crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     request: &JsonRpcRequest,
@@ -1100,7 +1099,7 @@ fn route_debug_handler(
         "ui.state" => debug_state::handle_ui_state(state, engine, id),
         // 설정 적용은 창이 없어도 동작하므로 debug_state에 둔다.
         "debug.settings.apply" => {
-            debug_state::handle_debug_settings_apply(state, engine, id, &request.params)
+            debug_state::handle_debug_settings_apply(core, state, engine, id, &request.params)
         }
         // present를 막아 이벤트 루프 정지와 watchdog 진단을 재현한다.
         #[cfg(feature = "gui")]

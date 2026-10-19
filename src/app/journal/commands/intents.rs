@@ -327,6 +327,7 @@ impl JournalApplication {
         changes: Vec<StreamCommand>,
         settings: crate::settings::Settings,
         origin: &crate::intent::IntentOrigin,
+        done: Option<crate::app::settings_change::SettingsDone>,
     ) {
         let request = JsonRpcRequest {
             caller_agent_id: None,
@@ -345,6 +346,7 @@ impl JournalApplication {
                 settings: Some(Box::new(settings)),
                 generation,
                 origin: origin.clone(),
+                done,
             },
             intent_actor(origin).into(),
             &format!("intent:{origin:?}"),
@@ -369,18 +371,20 @@ impl JournalApplication {
         Ok(generation)
     }
 
-    pub(super) fn take_settings_results(
-        &mut self,
-    ) -> Vec<(
-        Option<Box<crate::settings::Settings>>,
-        crate::intent::IntentOrigin,
-        JsonRpcResponse,
-    )> {
+    /// 현재 세대의 완료만 돌려준다. 더 새 설정 변경에 밀린 완료는 적용하지 않고, 기다리는 요청에는
+    /// 대체됐다고 알린다.
+    pub(super) fn take_settings_results(&mut self) -> Vec<super::SettingsCompletion> {
+        let current = self.commands.settings_generation;
         std::mem::take(&mut self.commands.completed_settings)
             .into_iter()
-            .filter_map(|(generation, settings, origin, response)| {
-                (generation == self.commands.settings_generation)
-                    .then_some((settings, origin, response))
+            .filter_map(|completion| {
+                if completion.generation == current {
+                    return Some(completion);
+                }
+                if let Some(done) = completion.done {
+                    done.finish(crate::app::settings_change::SettingsOutcome::Superseded);
+                }
+                None
             })
             .collect()
     }

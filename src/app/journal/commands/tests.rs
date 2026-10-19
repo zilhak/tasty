@@ -468,6 +468,7 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
     let mut off = session.runtime.settings.clone();
     off.general.workspace_categories_enabled = false;
     let first = journal.note_settings_intent().unwrap();
+    let (done, mut wait) = crate::app::settings_change::pair(std::sync::Arc::new(|| {}));
     journal.admit_settings_reset(
         first,
         vec![StreamCommand {
@@ -476,6 +477,7 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
         }],
         off,
         &crate::intent::IntentOrigin::System,
+        Some(done),
     );
     let second = journal.note_settings_intent().unwrap();
     assert!(second > first);
@@ -494,6 +496,15 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
     assert!(
         journal.take_settings_results().is_empty(),
         "the actual App continuation drain must not deliver obsolete Settings A"
+    );
+    assert!(
+        matches!(
+            wait.poll(),
+            crate::app::settings_change::SettingsPoll::Ready(
+                crate::app::settings_change::SettingsOutcome::Superseded
+            )
+        ),
+        "the request that waited on obsolete Settings A learns it was replaced"
     );
     assert!(
         session

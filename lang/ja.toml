@@ -1293,6 +1293,9 @@ clipboard_files_internal_copy = "ファイル一覧をこのTastyインスタン
 clipboard_files_internal_paste = "このTastyインスタンスに保存したファイルを貼り付けます。システムクリップボードは確認できませんでした。"
 input_queue_full = "処理中に入力が多く届いたため、一部を受け付けられませんでした。もう一度入力してください。"
 bashrc_save_failed = "Tastyモードの bashrc を保存できませんでした — 編集は反映されていません: {}"
+# 설정 변경 결과. 사용자가 바꾼 설정에만 띄운다. {} 에는 영어 사유가 들어간다.
+settings_not_applied = "設定を適用できませんでした: {}"
+settings_not_saved = "設定は今回の実行にだけ適用され、保存できなかったため再起動すると失われます: {}"
 char_limit_notice = "({}文字制限)"
 copied = "コピーしました"
 copied_osc52 = "コピーしました (OSC 52)"

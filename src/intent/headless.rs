@@ -145,6 +145,17 @@ pub(crate) fn apply_terminal_cwd_changed(engine: &mut EngineMut<'_>, surface_id:
     engine.mark_layout_dirty();
 }
 
+/// 시험이 intent 하나를 headless 적용 경로로 실행한다.
+#[cfg(test)]
+pub(crate) fn apply_one_for_test(
+    core: &mut AppServices,
+    state: &mut RequestContext,
+    engine: &mut EngineMut<'_>,
+    dispatched: DispatchedIntent,
+) {
+    apply_one(core, state, engine, dispatched);
+}
+
 fn apply_one(
     core: &mut AppServices,
     state: &mut RequestContext,
@@ -219,7 +230,9 @@ fn reject_non_domain(reason: &str) {
 /// CoreEvent에서 engine 상태 변경만 처리한다. 창 갱신과 토스트는 제외한다.
 fn handle_core_event(core: &AppServices, engine: &mut EngineMut<'_>, event: CoreEvent) {
     match event {
-        CoreEvent::SettingsUpdated(new_settings) => apply_settings(core, engine, new_settings),
+        CoreEvent::SettingsUpdated { settings, done } => {
+            apply_settings(core, engine, settings, done)
+        }
         CoreEvent::NotificationPushRequested {
             level,
             ws_id,
@@ -252,15 +265,25 @@ fn handle_core_event(core: &AppServices, engine: &mut EngineMut<'_>, event: Core
     }
 }
 
+/// 메모리에 적용한 뒤 주입한 저장소에 저장하고, 요청이 기다리면 두 결과를 함께 돌려준다.
 fn apply_settings(
     core: &AppServices,
     engine: &mut EngineMut<'_>,
     new_settings: tasty_settings::Settings,
+    done: Option<crate::app::settings_change::SettingsDone>,
 ) {
     crate::app::task_report::apply(core, &new_settings);
     engine.runtime.settings = new_settings.clone();
-    if let Err(e) = new_settings.save() {
+    let saved = core.save_settings(&new_settings).map_err(|e| {
         tracing::warn!("failed to save settings: {e}");
+        e.to_string()
+    });
+    if let Some(done) = done {
+        done.finish(crate::app::settings_change::SettingsOutcome::Applied {
+            changed: true,
+            saved,
+            settings: Box::new(new_settings),
+        });
     }
 }
 

@@ -1,4 +1,4 @@
-//! memory writer의 결과를 기다려 응답하는 요청.
+//! memory writer의 결과나 설정 변경의 적용 결과를 기다려 응답하는 요청.
 //!
 //! 핸들러는 요청을 writer에 넣고 결과로 응답을 만드는 continuation을 등록한 뒤 자리표시 응답을
 //! 돌려준다. `handle_checked_request`가 자리표시를 [`Handled::Later`]로 바꾸고, 호출 경로가 원
@@ -26,11 +26,32 @@ use crate::app::services::AppServices;
 /// writer 결과로 응답을 만드는 continuation.
 pub(crate) type Finish = Box<dyn FnOnce(&AppServices, MemoryCompletion) -> JsonRpcResponse + Send>;
 
-/// writer에 넣은 요청과 그 결과를 응답으로 바꾸는 continuation.
+/// 설정 변경 결과로 응답을 만드는 continuation. 결과 없이 버려진 요청은 `None`을 받는다.
+pub(crate) type SettingsFinish =
+    Box<dyn FnOnce(Option<crate::app::settings_change::SettingsOutcome>) -> JsonRpcResponse + Send>;
+
+/// 응답을 미룬 요청이 기다리는 결과.
+enum Wait {
+    Memory {
+        ticket: MemoryTicket,
+        finish: Finish,
+    },
+    Settings {
+        wait: crate::app::settings_change::SettingsWait,
+        finish: SettingsFinish,
+    },
+}
+
+/// 나온 결과.
+enum Ready {
+    Memory(MemoryCompletion),
+    Settings(Option<crate::app::settings_change::SettingsOutcome>),
+}
+
+/// 기다리는 결과와 그 결과를 응답으로 바꾸는 continuation.
 pub(crate) struct Deferred {
     id: Value,
-    ticket: MemoryTicket,
-    finish: Finish,
+    wait: Wait,
     idempotency: Option<super::idempotency::Pending>,
 }
 
@@ -47,11 +68,17 @@ impl Handled {
         match self {
             Self::Now(response) => response,
             Self::Later(mut deferred) => {
-                let completion = deferred
-                    .ticket
-                    .wait_timeout(std::time::Duration::from_secs(30))
-                    .expect("memory writer result");
-                deferred.complete(core, completion)
+                let ready = match &mut deferred.wait {
+                    Wait::Memory { ticket, .. } => Ready::Memory(
+                        ticket
+                            .wait_timeout(std::time::Duration::from_secs(30))
+                            .expect("memory writer result"),
+                    ),
+                    Wait::Settings { .. } => deferred
+                        .try_ready()
+                        .expect("settings result must be ready; drain intents before waiting"),
+                };
+                deferred.complete(core, ready)
             }
         }
     }
@@ -63,8 +90,24 @@ impl Deferred {
         self
     }
 
-    fn complete(self, core: &AppServices, completion: MemoryCompletion) -> JsonRpcResponse {
-        let response = (self.finish)(core, completion);
+    fn try_ready(&mut self) -> Option<Ready> {
+        use crate::app::settings_change::SettingsPoll;
+        match &mut self.wait {
+            Wait::Memory { ticket, .. } => ticket.try_take().map(Ready::Memory),
+            Wait::Settings { wait, .. } => match wait.poll() {
+                SettingsPoll::Pending => None,
+                SettingsPoll::Ready(outcome) => Some(Ready::Settings(Some(outcome))),
+                SettingsPoll::Dropped => Some(Ready::Settings(None)),
+            },
+        }
+    }
+
+    fn complete(self, core: &AppServices, ready: Ready) -> JsonRpcResponse {
+        let response = match (self.wait, ready) {
+            (Wait::Memory { finish, .. }, Ready::Memory(completion)) => finish(core, completion),
+            (Wait::Settings { finish, .. }, Ready::Settings(outcome)) => finish(outcome),
+            _ => unreachable!("a result always matches the wait that produced it"),
+        };
         super::idempotency::finish(core.now_instant(), self.idempotency, &response);
         response
     }
@@ -153,7 +196,7 @@ impl MemoryReplies {
             let mut pending = core.memory_replies().pending();
             let mut index = 0;
             while index < pending.len() {
-                match pending[index].deferred.ticket.try_take() {
+                match pending[index].deferred.try_ready() {
                     Some(completion) => {
                         if let Some(entry) = pending.remove(index) {
                             ready.push((entry, completion));
@@ -205,7 +248,50 @@ pub(crate) fn params_bytes(params: &Value) -> usize {
 
 /// 자리표시 응답. `handle_checked_request` 밖으로 나가면 호출자는 오류를 받는다.
 fn placeholder(id: Value) -> JsonRpcResponse {
-    JsonRpcResponse::internal_error(id, "memory response was deferred outside a reply path")
+    JsonRpcResponse::internal_error(id, "response was deferred outside a reply path")
+}
+
+/// 설정 변경 결과의 응답. 메모리 적용과 저장이 모두 끝났을 때만 `ok`로 성공을 만든다.
+/// 적용됐지만 저장하지 못한 경우는 `applied:true, saved:false`인 오류다.
+pub(crate) fn settings_outcome_response(
+    id: Value,
+    outcome: Option<crate::app::settings_change::SettingsOutcome>,
+    ok: impl FnOnce(Value, bool, &tasty_settings::Settings) -> JsonRpcResponse,
+) -> JsonRpcResponse {
+    use crate::app::settings_change::SettingsOutcome;
+    match outcome {
+        Some(SettingsOutcome::Applied {
+            changed,
+            saved: Ok(()),
+            settings,
+        }) => ok(id, changed, &settings),
+        Some(SettingsOutcome::Applied {
+            saved: Err(error), ..
+        }) => JsonRpcResponse::error_with_data(
+            id,
+            -32603,
+            format!("settings applied for this run but not saved: {error}"),
+            json!({ "applied": true, "saved": false }),
+        ),
+        Some(SettingsOutcome::Rejected(reason)) => JsonRpcResponse::error_with_data(
+            id,
+            -32603,
+            format!("settings not applied: {reason}"),
+            json!({ "applied": false }),
+        ),
+        Some(SettingsOutcome::Superseded) => JsonRpcResponse::error_with_data(
+            id,
+            -32603,
+            "settings change was replaced by a newer change before it finished",
+            json!({ "applied": false, "superseded": true }),
+        ),
+        None => JsonRpcResponse::error_with_data(
+            id,
+            -32603,
+            "settings change was dropped before it finished",
+            json!({ "applied": false }),
+        ),
+    }
 }
 
 /// writer가 접수하지 않은 요청의 응답. 포화는 다시 시도할 수 있는 busy로 분류한다.
@@ -348,8 +434,56 @@ impl AppServices {
         }
         self.memory_replies().park(Deferred {
             id: id.clone(),
-            ticket,
-            finish: Box::new(finish),
+            wait: Wait::Memory {
+                ticket,
+                finish: Box::new(finish),
+            },
+            idempotency: None,
+        });
+        placeholder(id)
+    }
+
+    /// 시험이 park된 응답을 지금 결과로 만든다. 결과가 아직 없으면 실패한다.
+    #[cfg(test)]
+    pub(crate) fn answer_parked_for_test(&self) -> JsonRpcResponse {
+        let mut deferred = self.memory_replies().take_parked().expect("a parked reply");
+        let ready = deferred.try_ready().expect("the parked reply has a result");
+        deferred.complete(self, ready)
+    }
+
+    /// 좁은 설정 변경을 intent로 넣고 그 결과 뒤에 응답한다. `ok`는 적용과 저장이 끝난 성공 응답을
+    /// 만든다(인자: 요청 id, 실제로 바뀌었는지, 적용 뒤의 설정).
+    pub(crate) fn request_settings_change(
+        &self,
+        id: Value,
+        change: crate::app::settings_change::SettingsChange,
+        push: impl FnOnce(crate::intent::DispatchedIntent),
+        ok: impl FnOnce(Value, bool, &tasty_settings::Settings) -> JsonRpcResponse + Send + 'static,
+    ) -> JsonRpcResponse {
+        let (done, wait) = crate::app::settings_change::pair(self.reply_wake());
+        push(crate::app::command::DomainIntent::ChangeSettings { change, done }.from_agent_ipc());
+        let reply_id = id.clone();
+        self.reply_with_settings(id, wait, move |outcome| {
+            settings_outcome_response(reply_id, outcome, ok)
+        })
+    }
+
+    /// 설정 변경 결과가 나오면 `finish`로 응답한다. 핸들러는 `done`을 실은 intent를 넣고 이 함수의
+    /// 자리표시 응답을 돌려준다. 원 호출자는 진입 경로가 붙인다.
+    pub(crate) fn reply_with_settings(
+        &self,
+        id: Value,
+        wait: crate::app::settings_change::SettingsWait,
+        finish: impl FnOnce(Option<crate::app::settings_change::SettingsOutcome>) -> JsonRpcResponse
+        + Send
+        + 'static,
+    ) -> JsonRpcResponse {
+        self.memory_replies().park(Deferred {
+            id: id.clone(),
+            wait: Wait::Settings {
+                wait,
+                finish: Box::new(finish),
+            },
             idempotency: None,
         });
         placeholder(id)

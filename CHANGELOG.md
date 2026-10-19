@@ -72,6 +72,7 @@
 
 ### Fixed
 
+- **설정을 바꾸는 요청이 실제 결과를 돌려준다.** `settings.set_remote_transfer`, `settings.set_input_rule`·`remove_input_rule`·`initialize_input_rule`, `webhook.config`의 `allow_external`, `debug.settings.apply`는 설정을 메모리에 적용하고 `config.toml`에 저장한 뒤에 응답한다. 적용됐지만 저장하지 못하면 `-32603`(`data: {applied: true, saved: false}`), 검사·category 초기화가 실패하면 `-32603`(`data: {applied: false}`), 더 새 설정 변경에 밀리면 `superseded: true` 오류다. 예전에는 요청을 큐에 넣은 시점에 성공으로 응답했다. 바꿀 값만 실행 시점의 최신 설정에 적용하므로 그 사이에 바뀐 다른 설정을 덮지 않는다. 설정 창의 Save도 적용 거절은 오류 토스트, 저장 실패는 경고 토스트로 구분해 알린다.
 - **첫 부팅·새 윈도우의 첫 터미널이 셸 실행 전에 실패하면 곧바로 원인을 보여 준다.** 설정한 셸 파일을 실행할 수 없는 경우처럼 프로세스가 생기기 전 실패는 알려진 실패로 끝난다. 첫 부팅은 "터미널을 시작할 수 없음" 화면의 자세한 내용에, 새 윈도우는 `window.create` 오류와 "새 윈도우를 열 수 없음" 안내에 원인을 붙인다. 예전에는 결과를 알 수 없는 실패로 처리해 원인을 보여 주지 않았다. Linux(Xvfb)에서 실제 실행으로 첫 부팅 화면과 에이전트가 요청한 새 윈도우 거절을 확인했고, 사용자 단축키로 연 새 윈도우의 안내는 미측정이다.
 - **설정한 셸 경로가 없을 때 자동 탐지한 셸로 `config.toml` 을 덮어쓰지 않는다.** GUI 부팅은 셸 값을 그대로 두고 새 터미널을 만들 때만 탐지한 셸로 대신 실행하며, 설정 값과 대체 셸을 `warn` 로그에 남긴다. 설정 창의 터미널 탭도 쓸 수 없는 경로를 탐지값으로 바꾸지 않아, 다른 항목만 고쳐 저장해도 셸 값이 바뀌지 않는다. 탐지한 셸도 없을 때만 셸 설정 화면이 뜬다.
 - **agent task 가 새 세션을 띄우는 동안 다른 task 가 최대 30초 멈추던 문제.** 새 세션 agent task 의 `<provider>.spawn` 응답을 task runner 스레드에서 기다려, 그동안 같은 workspace 의 다른 task 가 시작되거나 끝나지 않았다. 이제 응답은 따로 띄운 스레드가 기다리고 runner 는 다른 task 를 계속 진행한다. 30초 안에 세션이 뜨지 않으면 `agent_unavailable` 로 끝나고 뒤에 뜬 세션을 닫는 규칙은 같으며, 기다리는 동안 취소해도 뒤에 뜬 세션을 닫는다. 기다리는 동안 재시작하면 같은 spawn 을 다시 보내지 않고 `unknown`(`dispatch outcome unknown: …`)이 된다.

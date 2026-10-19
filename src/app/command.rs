@@ -90,7 +90,14 @@ pub(crate) enum DomainIntent {
         category: Option<u32>,
     },
     /// 새 설정을 후속 처리 이벤트로 넘긴다. AppServices::apply 자체가 테마·스크롤백 등을 갱신하지는 않는다.
+    // reason: 전체 설정 교체는 설정 창 같은 GUI 경로만 만든다. 헤드리스 요청은 ChangeSettings를 쓴다.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     UpdateSettings(Settings),
+    /// 에이전트·plugin의 좁은 설정 변경. 실행 시점의 최신 설정에 적용하고 결과를 `done`으로 돌려준다.
+    ChangeSettings {
+        change: crate::app::settings_change::SettingsChange,
+        done: crate::app::settings_change::SettingsDone,
+    },
 
     /// cwd와 대상을 호출자가 지정한다. empty 종류는 거절하고 이름이 없으면 자동 이름을 쓴다.
     CreateWorkspace {
@@ -369,7 +376,11 @@ pub(crate) enum DomainIntent {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: 큐 항목마다 Box를 추가 할당하지 않도록 값을 직접 보관한다.
 pub(crate) enum CoreEvent {
-    SettingsUpdated(Settings),
+    /// `done`이 있으면 적용·저장 결과를 원 요청에 돌려준다.
+    SettingsUpdated {
+        settings: Settings,
+        done: Option<crate::app::settings_change::SettingsDone>,
+    },
 
     /// sent는 터미널 입력 함수를 호출했는지이며 PTY 쓰기 완료를 뜻하지 않는다.
     /// 거절 사유 중 attach 점유는 hard_occupied로 구별한다.

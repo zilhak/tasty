@@ -1,0 +1,266 @@
+//! 에이전트·plugin 설정 변경 요청의 실행 시점 적용과 완료 결과.
+//!
+//! 요청은 바꿀 값만 담고, 실행 시점의 최신 설정 사본에 적용한다. 결과는 원 요청에 한 번 돌아간다.
+//! 접수(intent를 넣음)·메모리 적용·파일 저장을 구분하며 계약은 docs/architecture/data-flows.md의
+//! "에이전트·plugin 설정 변경 요청의 완료 의미" 절에 있다.
+
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
+
+use tasty_settings::Settings;
+
+/// 실행 시점 설정에 적용할 변경.
+#[derive(Debug, Clone)]
+pub(crate) enum SettingsChange {
+    /// 지정한 필드만 바꾼다.
+    RemoteTransfer {
+        dir: Option<String>,
+        max_mb: Option<u64>,
+    },
+    InputRule {
+        op: InputRuleOp,
+        /// 기본값을 처음 넣는 호출자. `Initialize` 만 쓴다.
+        owner: String,
+        app: String,
+        newline: bool,
+    },
+    WebhookAllowExternal(bool),
+    /// debug 전용 전체 교체. 호출자가 이미 합친 설정이다.
+    Replace(Box<Settings>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InputRuleOp {
+    Set,
+    Remove,
+    Initialize,
+}
+
+impl SettingsChange {
+    /// `settings`에 적용하고 바뀐 것이 있는지 돌려준다. `false`면 저장하지 않는다.
+    pub(crate) fn apply(&self, settings: &mut Settings) -> Result<bool, String> {
+        match self {
+            Self::RemoteTransfer { dir, max_mb } => {
+                if let Some(dir) = dir {
+                    settings.remote_transfer.dir = dir.clone();
+                }
+                if let Some(max_mb) = max_mb {
+                    settings.remote_transfer.max_mb = *max_mb;
+                }
+                Ok(true)
+            }
+            Self::InputRule {
+                op,
+                owner,
+                app,
+                newline,
+            } => {
+                let input = &mut settings.terminal_input;
+                match op {
+                    InputRuleOp::Remove => {
+                        input.remove_rule(app);
+                        Ok(true)
+                    }
+                    InputRuleOp::Set => input.set_rule(app, *newline).map(|()| true),
+                    InputRuleOp::Initialize => input.initialize_rule(owner, app, *newline),
+                }
+            }
+            Self::WebhookAllowExternal(allow) => {
+                settings.webhook.allow_external = *allow;
+                Ok(true)
+            }
+            Self::Replace(new) => {
+                *settings = (**new).clone();
+                Ok(true)
+            }
+        }
+    }
+}
+
+/// 설정 변경 요청의 결과.
+#[derive(Debug, Clone)]
+pub(crate) enum SettingsOutcome {
+    /// 메모리에 적용됐다. `changed`가 거짓이면 바꿀 것이 없어 저장도 하지 않았다.
+    /// `saved`가 오류면 이번 실행에만 적용되고 파일에는 남지 않았다. `settings`는 적용 뒤의 설정이다.
+    Applied {
+        changed: bool,
+        saved: Result<(), String>,
+        settings: Box<Settings>,
+    },
+    /// 검사·admission·category 초기화 실패. 설정은 바뀌지 않았다.
+    Rejected(String),
+    /// 끝나기 전에 더 새 설정 변경이 들어와 이 결과는 적용하지 않고 버렸다.
+    // reason: 결과를 미루는 category 초기화 경로가 GUI에만 있다.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
+    Superseded,
+}
+
+impl SettingsOutcome {
+    pub(crate) fn unchanged(settings: Settings) -> Self {
+        Self::Applied {
+            changed: false,
+            saved: Ok(()),
+            settings: Box::new(settings),
+        }
+    }
+}
+
+/// 결과를 넣는 쪽. 처음 넣은 결과만 유효하다. 결과 없이 모든 사본이 버려지면 받는 쪽은 그 사실을 안다.
+#[derive(Clone)]
+pub(crate) struct SettingsDone {
+    tx: SyncSender<SettingsOutcome>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl std::fmt::Debug for SettingsDone {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SettingsDone")
+    }
+}
+
+impl SettingsDone {
+    pub(crate) fn finish(self, outcome: SettingsOutcome) {
+        if self.tx.try_send(outcome).is_ok() {
+            (self.wake)();
+        }
+    }
+}
+
+/// 결과를 기다리는 쪽.
+pub(crate) struct SettingsWait {
+    rx: Receiver<SettingsOutcome>,
+}
+
+/// 기다림의 상태.
+pub(crate) enum SettingsPoll {
+    Pending,
+    Ready(SettingsOutcome),
+    /// 결과 없이 요청이 버려졌다.
+    Dropped,
+}
+
+impl SettingsWait {
+    pub(crate) fn poll(&mut self) -> SettingsPoll {
+        match self.rx.try_recv() {
+            Ok(outcome) => SettingsPoll::Ready(outcome),
+            Err(TryRecvError::Empty) => SettingsPoll::Pending,
+            Err(TryRecvError::Disconnected) => SettingsPoll::Dropped,
+        }
+    }
+}
+
+/// `wake`는 결과를 넣은 뒤 메인 루프가 응답을 거두도록 깨운다.
+pub(crate) fn pair(wake: Arc<dyn Fn() + Send + Sync>) -> (SettingsDone, SettingsWait) {
+    let (tx, rx) = sync_channel(1);
+    (SettingsDone { tx, wake }, SettingsWait { rx })
+}
+
+/// 핸들러 시험이 요청을 headless 적용 경로로 끝까지 실행할 때 쓴다.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use tasty_settings::{Settings, SettingsStorage};
+
+    /// 저장 횟수를 세고, `fail`이면 저장을 실패시킨다.
+    #[derive(Default)]
+    pub(crate) struct ProbeStorage {
+        pub(crate) saves: AtomicUsize,
+        pub(crate) fail: bool,
+    }
+
+    impl SettingsStorage for ProbeStorage {
+        fn load(&self) -> Settings {
+            Settings::default()
+        }
+
+        fn save(&self, _settings: &Settings) -> anyhow::Result<()> {
+            self.saves.fetch_add(1, Ordering::SeqCst);
+            if self.fail {
+                anyhow::bail!("config.toml is not writable");
+            }
+            Ok(())
+        }
+    }
+
+    pub(crate) fn core_with(storage: Arc<ProbeStorage>) -> crate::app::services::AppServices {
+        crate::ipc::handler::cli_entry_tests::test_core_builder()
+            .with_settings_storage(storage)
+            .build()
+            .expect("test AppServices")
+    }
+
+    /// 핸들러가 넣은 intent를 headless 경로로 적용하고 미뤄 둔 응답을 만든다.
+    pub(crate) fn settle(
+        core: &mut crate::app::services::AppServices,
+        state: &mut crate::state::RequestContext,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        intents: Vec<crate::intent::DispatchedIntent>,
+    ) -> tasty_ipc::protocol::JsonRpcResponse {
+        for intent in intents {
+            crate::intent::headless::apply_one_for_test(core, state, engine, intent);
+        }
+        core.answer_parked_for_test()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn quiet() -> (SettingsDone, SettingsWait) {
+        pair(Arc::new(|| {}))
+    }
+
+    #[test]
+    fn first_outcome_wins_and_wakes_once() {
+        let wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = wakes.clone();
+        let (done, mut wait) = pair(Arc::new(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }));
+        let second = done.clone();
+        done.finish(SettingsOutcome::Rejected("first".into()));
+        second.finish(SettingsOutcome::Superseded);
+        assert!(matches!(
+            wait.poll(),
+            SettingsPoll::Ready(SettingsOutcome::Rejected(reason)) if reason == "first"
+        ));
+        assert_eq!(wakes.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn dropping_every_sender_without_an_outcome_is_visible() {
+        let (done, mut wait) = quiet();
+        assert!(matches!(wait.poll(), SettingsPoll::Pending));
+        drop(done);
+        assert!(matches!(wait.poll(), SettingsPoll::Dropped));
+    }
+
+    #[test]
+    fn initializing_an_already_seeded_rule_changes_nothing() {
+        let mut settings = Settings::default();
+        let change = |owner: &str| SettingsChange::InputRule {
+            op: InputRuleOp::Initialize,
+            owner: owner.into(),
+            app: "claude".into(),
+            newline: true,
+        };
+        assert_eq!(change("plugin.a").apply(&mut settings), Ok(true));
+        assert_eq!(change("plugin.a").apply(&mut settings), Ok(false));
+    }
+
+    #[test]
+    fn remote_transfer_keeps_the_field_it_was_not_given() {
+        let mut settings = Settings::default();
+        settings.remote_transfer.dir = "/latest".into();
+        let change = SettingsChange::RemoteTransfer {
+            dir: None,
+            max_mb: Some(7),
+        };
+        assert_eq!(change.apply(&mut settings), Ok(true));
+        assert_eq!(settings.remote_transfer.dir, "/latest");
+        assert_eq!(settings.remote_transfer.max_mb, 7);
+    }
+}

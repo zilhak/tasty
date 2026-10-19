@@ -35,38 +35,41 @@ pub fn handle_get_remote_transfer(engine: &EngineRead<'_>, id: Value) -> JsonRpc
     }
 }
 
-/// 현재 설정의 사본에 지정 필드만 합쳐 UpdateSettings로 적용한다.
-/// 원본을 미리 바꾸면 이전 값과의 차이를 잃으므로 후속 처리에서 저장까지 맡긴다.
+/// 지정 필드만 실행 시점의 설정에 적용하고, 메모리 적용과 저장이 끝난 뒤 응답한다.
+/// 응답의 `remote_transfer`는 적용 뒤의 값이다.
 pub fn handle_set_remote_transfer(
+    core: &crate::app::services::AppServices,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &EngineRead<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let mut new_settings = engine.settings.clone();
-    let mut changed = false;
-
-    if let Some(dir) = params.get("dir") {
-        let Some(dir) = dir.as_str() else {
+    let mut dir = None;
+    if let Some(value) = params.get("dir") {
+        let Some(value) = value.as_str() else {
             return JsonRpcResponse::invalid_params(id, "'dir' must be a string");
         };
-        new_settings.remote_transfer.dir = dir.to_string();
-        changed = true;
+        dir = Some(value.to_string());
     }
+    let mut max_mb = None;
     if params.get("max_mb").is_some_and(|v| !v.is_null()) {
-        let Some(max_mb) = p_try!(params::opt_int::<u64>(params, "max_mb", &id)) else {
+        let Some(value) = p_try!(params::opt_int::<u64>(params, "max_mb", &id)) else {
             return JsonRpcResponse::invalid_params(id, "'max_mb' must be a non-negative integer");
         };
-        new_settings.remote_transfer.max_mb = max_mb;
-        changed = true;
+        max_mb = Some(value);
     }
-    if !changed {
+    if dir.is_none() && max_mb.is_none() {
         return JsonRpcResponse::invalid_params(id, "expected at least one of 'dir', 'max_mb'");
     }
 
-    let applied = serde_json::to_value(&new_settings.remote_transfer).unwrap_or(Value::Null);
-    out.push(crate::app::command::DomainIntent::UpdateSettings(new_settings).from_agent_ipc());
-    JsonRpcResponse::success(id, json!({ "applied": true, "remote_transfer": applied }))
+    core.request_settings_change(
+        id,
+        crate::app::settings_change::SettingsChange::RemoteTransfer { dir, max_mb },
+        |intent| out.push(intent),
+        |id, _changed, settings| {
+            let applied = serde_json::to_value(&settings.remote_transfer).unwrap_or(Value::Null);
+            JsonRpcResponse::success(id, json!({ "applied": true, "remote_transfer": applied }))
+        },
+    )
 }
 
 #[cfg(test)]
@@ -163,5 +166,69 @@ mod tests {
             &json!({ "storage_key": "spawn_child_warn_threshold", "plugin_id": "com.tasty.codex" }),
         );
         assert_eq!(resp.result.unwrap()["value"], Value::Null);
+    }
+
+    use crate::app::settings_change::test_support::{ProbeStorage, core_with, settle};
+
+    fn set_remote_transfer(
+        storage: Arc<ProbeStorage>,
+        params: Value,
+        meanwhile: impl FnOnce(&mut tasty_settings::Settings),
+    ) -> (JsonRpcResponse, tasty_settings::Settings) {
+        let mut core = core_with(storage);
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
+        let mut out = crate::ipc::window_port::IntentOutbox::default();
+        let placeholder = handle_set_remote_transfer(&core, &mut out, json!(1), &params);
+        assert!(
+            placeholder.error.is_some(),
+            "the answer waits for the result"
+        );
+        meanwhile(&mut engine.runtime.settings);
+        let response = settle(&mut core, &mut state, &mut engine, out.into_vec());
+        (response, engine.runtime.settings.clone())
+    }
+
+    /// 핸들러 뒤에 바뀐 `dir`을 지우지 않고, 응답은 적용 뒤의 값을 보여 준다.
+    #[test]
+    fn remote_transfer_applies_only_the_given_field_on_the_latest_settings() {
+        let (response, settings) = set_remote_transfer(
+            Arc::new(ProbeStorage::default()),
+            json!({ "max_mb": 7 }),
+            |settings| settings.remote_transfer.dir = "/changed-meanwhile".into(),
+        );
+        let result = response.result.expect("applied and saved");
+        assert_eq!(result["remote_transfer"]["dir"], "/changed-meanwhile");
+        assert_eq!(result["remote_transfer"]["max_mb"], 7);
+        assert_eq!(settings.remote_transfer.dir, "/changed-meanwhile");
+    }
+
+    #[test]
+    fn remote_transfer_reports_a_failed_save_instead_of_success() {
+        let (response, settings) = set_remote_transfer(
+            Arc::new(ProbeStorage {
+                fail: true,
+                ..Default::default()
+            }),
+            json!({ "max_mb": 9 }),
+            |_| {},
+        );
+        let error = response.error.expect("not a success");
+        assert_eq!(error.code, -32603);
+        assert_eq!(
+            error.data.unwrap(),
+            json!({ "applied": true, "saved": false })
+        );
+        assert_eq!(settings.remote_transfer.max_mb, 9, "in effect for this run");
+    }
+
+    #[test]
+    fn remote_transfer_reports_a_dropped_request() {
+        let core = core_with(Arc::new(ProbeStorage::default()));
+        let mut out = crate::ipc::window_port::IntentOutbox::default();
+        handle_set_remote_transfer(&core, &mut out, json!(1), &json!({ "dir": "/x" }));
+        drop(out);
+        let error = core.answer_parked_for_test().error.expect("not a success");
+        assert!(error.message.contains("dropped"), "{}", error.message);
     }
 }

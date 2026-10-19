@@ -1341,6 +1341,9 @@ clipboard_files_internal_copy = "Files are stored only in this Tasty instance. T
 clipboard_files_internal_paste = "Pasting files stored in this Tasty instance. The system clipboard could not be checked."
 input_queue_full = "Too many inputs arrived while Tasty was busy. Some were not accepted. Please try again."
 bashrc_save_failed = "Tasty-mode bashrc was not saved — your edit is not in effect: {}"
+# 설정 변경 결과. 사용자가 바꾼 설정에만 띄운다. {} 에는 영어 사유가 들어간다.
+settings_not_applied = "Settings were not applied: {}"
+settings_not_saved = "Settings are in effect for this session but were not saved, so they will be lost on restart: {}"
 char_limit_notice = "({} character limit)"
 copied = "Copied"
 copied_osc52 = "Copied (OSC 52)"
