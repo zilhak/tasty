@@ -5,6 +5,13 @@
 //! 다시 시작한 탐색은 파일을 다시 읽지 않고 이미 읽은 결과로 JS를 정한다(docs/surfaces/html/index.md).
 //!
 //! 이 모듈은 상태 전이만 가진다. native 호출(취소·재시작·JS 적용)은 backend가 한다.
+//!
+//! 다시 시작한 탐색을 확정할 식별자는 없다. `Navigate`·`Reload`·`GoBack`·`GoForward`는
+//! `NavigationId`를 돌려주지 않고, WebView2 API로 시작한 탐색은 `IsUserInitiated`가 참이다.
+//! 그래서 재시작을 기다리는 동안 온 `NavigationStarting`은 주소, 다시 시작한 종류, 사용자 시작 여부가
+//! 모두 맞을 때만 그 재시작으로 본다. 하나라도 다르면 새 탐색으로 보고 읽어 둔 결과를 쓰지 않는다.
+//! 세 값이 모두 같은 사용자 탐색(재시작 호출과 그 시작 신호 사이에 사용자가 같은 주소를 같은 종류로
+//! 연 경우)은 구별하지 못한다.
 
 use tasty_model::html_script::ScriptScan;
 
@@ -60,6 +67,7 @@ enum State {
     /// 표를 확인했고 다시 시작한 탐색의 `NavigationStarting`을 기다린다. 한 번만 쓴다.
     Resuming {
         url: String,
+        kind: StartKind,
         scan: Option<ScriptScan>,
     },
 }
@@ -72,6 +80,23 @@ pub struct ScanResume {
     cancelled: Vec<u64>,
     /// 호스트가 마지막으로 요청한 히스토리 이동. 다음 `NavigationStarting`에서 한 번 쓴다.
     host_step: Option<HistoryStep>,
+    /// 재시작했지만 그 재시작으로 알아본 시작 신호가 아직 없는 횟수. 다시 시작한 탐색의 종류가
+    /// 예상과 달라 매번 새 탐색으로 보이면 취소와 재시작이 끝나지 않으므로 상한을 둔다.
+    unmatched_replays: u32,
+}
+
+/// 알아보지 못한 재시작이 이만큼 이어지면 더 취소하지 않고 스크립트 없이 진행한다.
+const MAX_UNMATCHED_REPLAYS: u32 = 2;
+
+impl Replay {
+    /// 이 방법으로 다시 시작한 탐색의 `NavigationStarting` 종류.
+    fn start_kind(self) -> StartKind {
+        match self {
+            Replay::Reload => StartKind::Reload,
+            Replay::Navigate => StartKind::NewDocument,
+            Replay::Back | Replay::Forward => StartKind::BackOrForward,
+        }
+    }
 }
 
 impl ScanResume {
@@ -81,25 +106,30 @@ impl ScanResume {
             state: State::Idle,
             cancelled: Vec::new(),
             host_step: None,
+            unmatched_replays: 0,
         }
     }
 
     /// 호스트가 로드·재로드·히스토리 이동을 요청했다. 앞에서 기다리던 재시작은 버린다.
     pub fn host_request(&mut self, step: Option<HistoryStep>) {
         self.clear();
+        self.unmatched_replays = 0;
         self.host_step = step;
     }
 
     /// main frame `NavigationStarting`. 게이트 로드를 시작하고 JS 값이나 취소를 정한다.
+    /// `user_initiated`는 `IsUserInitiated`이며 읽지 못했으면 `false`다.
     pub fn start(
         &mut self,
         gate: &ScriptGate,
         url: &str,
         nav_id: Option<u64>,
         kind: StartKind,
+        user_initiated: bool,
     ) -> Start {
         let step = self.host_step.take();
-        if let Some(scan) = self.take_resume(url) {
+        if let Some(scan) = self.take_resume(url, kind, user_initiated) {
+            self.unmatched_replays = 0;
             gate.load_started();
             return Start::Resumed(gate.main_response_scanned(url, scan));
         }
@@ -107,17 +137,33 @@ impl ScanResume {
         // 새 탐색이 앞에서 기다리던 스캔과 재시작을 대신한다. load_started 뒤라 그 표는 이미 낡았다.
         self.clear();
         let scan = match gate.main_response(url) {
-            Response::Decided(js) => return Start::Js(js),
+            Response::Decided(js) => {
+                self.unmatched_replays = 0;
+                return Start::Js(js);
+            }
             Response::Deferred(scan) => scan,
         };
+        // 종류를 모르면 다시 시작한 탐색을 종류로 알아볼 수 없다(구형 런타임).
         let replay = match kind {
             StartKind::Reload => Some(Replay::Reload),
-            StartKind::NewDocument | StartKind::Unknown => Some(Replay::Navigate),
+            StartKind::NewDocument => Some(Replay::Navigate),
+            StartKind::Unknown => None,
             StartKind::BackOrForward => step.map(|step| match step {
                 HistoryStep::Back => Replay::Back,
                 HistoryStep::Forward => Replay::Forward,
             }),
         };
+        if self.unmatched_replays >= MAX_UNMATCHED_REPLAYS {
+            tracing::warn!(
+                "WebView surface {}: {} replays in a row were not recognised; \
+                 the document loads without scripts",
+                self.surface_id,
+                self.unmatched_replays
+            );
+            self.unmatched_replays = 0;
+            scan.abandon();
+            return Start::Js(false);
+        }
         match (nav_id, replay) {
             (Some(id), Some(replay)) => {
                 self.cancelled.push(id);
@@ -179,8 +225,10 @@ impl ScanResume {
         };
         // 표 확인과 상태 반영은 다시 시작하기 직전 이 UI 스레드 호출 안에서 한다.
         scan.apply(read)?;
+        self.unmatched_replays += 1;
         self.state = State::Resuming {
             url: url.clone(),
+            kind: replay.start_kind(),
             scan: read,
         };
         Some((replay, url))
@@ -191,10 +239,20 @@ impl ScanResume {
         self.clear();
     }
 
-    /// 다시 시작한 탐색이면 읽어 둔 결과를 꺼낸다. 주소가 다르면 다른 탐색이다.
-    fn take_resume(&mut self, url: &str) -> Option<Option<ScriptScan>> {
+    /// 다시 시작한 탐색이면 읽어 둔 결과를 꺼낸다. 주소·종류·사용자 시작 여부 중 하나라도
+    /// 다르면 다른 탐색이다(모듈 설명 참고).
+    fn take_resume(
+        &mut self,
+        url: &str,
+        kind: StartKind,
+        user_initiated: bool,
+    ) -> Option<Option<ScriptScan>> {
         match &self.state {
-            State::Resuming { url: waiting, .. } if waiting == url => {}
+            State::Resuming {
+                url: waiting,
+                kind: expected,
+                ..
+            } if waiting == url && *expected == kind && user_initiated => {}
             _ => return None,
         }
         match std::mem::replace(&mut self.state, State::Idle) {

@@ -325,9 +325,13 @@ impl PlatformWebView {
                                 }
                                 _ => StartKind::Unknown,
                             };
-                            let start = resume_start
-                                .borrow_mut()
-                                .start(gate, &uri_str, nav_id, start_kind);
+                            let start = resume_start.borrow_mut().start(
+                                gate,
+                                &uri_str,
+                                nav_id,
+                                start_kind,
+                                user_gesture,
+                            );
                             match start {
                                 Start::Js(js) => set_js(wv, js),
                                 Start::Resumed(js) => {
@@ -335,7 +339,7 @@ impl PlatformWebView {
                                     record = false;
                                 }
                                 // deferral이 없어 탐색을 취소하고, 스캔이 끝나면 UI 스레드가 같은 종류로
-                                // 다시 시작한다(resume_script_decision). 이전 문서는 화면에 남는다.
+                                // 다시 시작한다(resume_script_decision). chrome은 Loading으로 남는다.
                                 Start::Cancel => {
                                     if let Err(e) = args.SetCancel(true) {
                                         tracing::warn!(
