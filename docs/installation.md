@@ -54,6 +54,8 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 xattr -dr com.apple.quarantine /Applications/Tasty.app
 ```
 
+Tasty는 이 속성을 스스로 지우지 않는다. 기본 제공 플러그인은 부팅 때 앱 번들에서 `~/.tasty/plugins`로 복사되며 복사본이 번들 파일의 속성을 그대로 가질 수 있다. 기본 제공 플러그인이 실행되지 않으면 플러그인 로그(`tasty plugin logs <id>`)를 확인하고, 필요하면 사용자가 직접 앱과 복사본의 속성을 지운다(`xattr -dr com.apple.quarantine ~/.tasty/plugins`).
+
 ## Windows
 
 ```powershell

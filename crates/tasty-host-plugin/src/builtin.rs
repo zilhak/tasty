@@ -455,7 +455,8 @@ fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<bool> {
 
 /// 같은 디렉터리의 임시 파일에 복사한 뒤 rename으로 대상을 교체한다.
 /// macOS에서 실행 파일을 제자리 덮어쓰면 캐시된 코드 서명과 달라져 실행이 거부될 수 있다.
-/// 교체 후 macOS quarantine 속성 제거도 시도하며 실패는 로그에 남긴다.
+/// macOS의 quarantine 같은 보안 속성은 바꾸지 않는다. 복사본은 원본의 속성을 그대로 가질 수 있고,
+/// 속성 처리는 사용자가 정한다(docs/principles/control-and-data.md#본체와-기반-기술).
 fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
     let parent = dest.parent().ok_or_else(|| {
         std::io::Error::new(
@@ -489,34 +490,7 @@ fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
         }
         return Err(e);
     }
-    #[cfg(target_os = "macos")]
-    strip_quarantine(dest);
     Ok(())
-}
-
-/// `dest`의 `com.apple.quarantine` xattr을 제거한다(있으면). 속성이 애초에 없는
-/// 경우(`ENOATTR`)는 정상 상태(quarantine되지 않은 파일)이므로 조용히 넘어가고,
-/// 그 외 실패는 warn만 남긴다 — 이 정리가 실패해도 파일 자체는 정상 복사됐으니
-/// 설치 흐름을 막을 이유가 없다(best-effort).
-#[cfg(target_os = "macos")]
-fn strip_quarantine(dest: &Path) {
-    use std::os::unix::ffi::OsStrExt;
-
-    let Ok(c_path) = std::ffi::CString::new(dest.as_os_str().as_bytes()) else {
-        return;
-    };
-    // SAFETY: c_path/c_attr 모두 유효한 NUL-terminated 버퍼이고, removexattr은
-    // 이를 읽기만 한다(dest 파일 자체는 변경하지 않고 xattr만 제거).
-    let ret = unsafe { libc::removexattr(c_path.as_ptr(), c"com.apple.quarantine".as_ptr(), 0) };
-    if ret != 0 {
-        let err = std::io::Error::last_os_error();
-        if err.raw_os_error() != Some(libc::ENOATTR) {
-            tracing::warn!(
-                "strip quarantine xattr for {} failed: {err}",
-                dest.display()
-            );
-        }
-    }
 }
 
 /// 모든 기본 제공 플러그인을 점검:

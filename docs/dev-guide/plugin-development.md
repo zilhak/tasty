@@ -565,7 +565,7 @@ cargo build --release -p my-plugin
 tasty plugin install ./          # 매니페스트 권한 자동 grant + spawn
 ```
 
-**워크스페이스 내 번들 플러그인 개발**: `BUILTINS`(`crates/tasty-host-plugin/src/builtin.rs`) 등록 플러그인은 debug 빌드에서만 호스트가 부팅에 workspace→bundle 자동 sync(`ensure_dev_bundle`)한다. release/dist 는 `just build --release` 또는 해당 프로필의 `just build-plugins` 로 미리 스테이징해야 한다. bundle→설치 디렉터리 sync(`install_builtins_if_needed`)는 모든 프로필에서 유지된다. 단 루트 `cargo build` 는 본 바이너리만 빌드하므로 플러그인 변경은 `cargo build -p <crate>` 또는 `--workspace` 필요. **부팅 없이, 실행 중인 tasty 에 플러그인 변경만 반영하는 절차(호스트 재빌드·재시작 불필요)는 아래 §9.1.**
+**워크스페이스 내 번들 플러그인 개발**: `BUILTINS`(`crates/tasty-host-plugin/src/builtin.rs`) 등록 플러그인은 debug 빌드에서만 호스트가 부팅에 workspace→bundle 자동 sync(`ensure_dev_bundle`)한다. release/dist 는 `just build --release` 또는 해당 프로필의 `just build-plugins` 로 미리 스테이징해야 한다. bundle→설치 디렉터리 sync(`install_builtins_if_needed`)는 모든 프로필에서 유지된다. 이 복사는 macOS의 `com.apple.quarantine` 같은 확장 속성을 지우지 않는다. 앱 번들 안 파일에 그 속성이 남아 있으면 복사본도 같은 속성을 가질 수 있고, 처리는 사용자가 정한다([본체와 기반 기술](../principles/control-and-data.md#본체와-기반-기술)). 단 루트 `cargo build` 는 본 바이너리만 빌드하므로 플러그인 변경은 `cargo build -p <crate>` 또는 `--workspace` 필요. **부팅 없이, 실행 중인 tasty 에 플러그인 변경만 반영하는 절차(호스트 재빌드·재시작 불필요)는 아래 §9.1.**
 
 디버깅: `tasty plugin logs <id> --follow` / `~/.tasty/plugins-logs/<id>.log` / `RUST_LOG=debug`.
 

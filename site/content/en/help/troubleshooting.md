@@ -1,4 +1,4 @@
-<!-- source-hash: c3ea4c31d932 -->
+<!-- source-hash: dc977a060ce6 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -132,6 +132,7 @@ If that still does not help, look at `~/.tasty/hook-failures.log` and `tasty plu
 - **`tasty plugin list` shows enabled but not running** — a plugin that fails to run 3 times within 10 seconds is stopped automatically. Check the cause with `tasty plugin logs <id>`, then start it again with `tasty plugin enable <id>`.
 - **Right after `plugin enable` it shows running, then a moment later it does not** — `plugin enable` returns without waiting for the plugin to connect to Tasty. A plugin you just turned on therefore shows as running before it connects, and requests sent in the meantime are delivered once it connects. If it does not connect within 10 seconds, that counts as a failed run and it is no longer running. Check the cause with `tasty plugin logs <id>`.
 - **A bundled plugin is broken** — copy it again from the bundle with `tasty plugin upgrade-builtins --force`. Plugin data (bookmarks · profiles and so on) is kept.
+- **macOS: built-in plugins do not run** — the Gatekeeper quarantine flag left on the app may have been carried over to the plugin copies and blocked them. Tasty does not remove this flag by itself. Check the cause with `tasty plugin logs <id>`; to remove it yourself, run `xattr -dr com.apple.quarantine /Applications/Tasty.app ~/.tasty/plugins` in a terminal and restart Tasty.
 
 ## A notice says a link or folder couldn't be opened
 
