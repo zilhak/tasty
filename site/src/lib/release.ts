@@ -3,20 +3,25 @@ import { readFileSync } from "node:fs";
 /** pages.yml writes release.json before building. If absent, download links
  * fall back to the releases page. */
 export type Platform = "macos" | "windows" | "linux";
+export type Arch = "x64" | "arm64";
 
 export interface Download {
   platform: Platform;
-  /** Shown on the button: "Apple silicon · .dmg". */
-  label: string;
+  /** CPU architecture of the asset. The landing button only links an asset
+   * whose architecture matches the one the visitor's browser reports. */
+  arch: Arch;
   /** Direct asset URL, or undefined when the release has no asset for it. */
   href?: string;
 }
 
-/** Which asset belongs to which platform, by file-name suffix. */
-const ASSETS: ReadonlyArray<readonly [Platform, string, string]> = [
-  ["macos", "-macos-arm64.dmg", "Apple silicon · .dmg"],
-  ["windows", "-windows-x64.msi", "x64 · .msi"],
-  ["linux", "-x86_64.AppImage", "x86_64 · AppImage"],
+/** Which asset belongs to which platform and architecture, by file-name
+ * suffix. macOS ships Apple silicon only. */
+const ASSETS: ReadonlyArray<readonly [Platform, Arch, string]> = [
+  ["macos", "arm64", "-macos-arm64.dmg"],
+  ["windows", "x64", "-windows-x64.msi"],
+  ["windows", "arm64", "-windows-arm64.msi"],
+  ["linux", "x64", "-x86_64.AppImage"],
+  ["linux", "arm64", "-aarch64.AppImage"],
 ];
 
 export const RELEASES_URL = "https://github.com/zilhak/tasty/releases/latest";
@@ -46,9 +51,9 @@ function load(siteDir: string): Manifest {
 
 export function downloads(siteDir: string): { tag?: string; items: Download[] } {
   const { tag, assets } = load(siteDir);
-  const items = ASSETS.map(([platform, suffix, label]) => {
+  const items = ASSETS.map(([platform, arch, suffix]) => {
     const hit = [...assets].find(([name]) => name.endsWith(suffix));
-    return { platform, label, href: hit?.[1] };
+    return { platform, arch, href: hit?.[1] };
   });
   return { tag, items };
 }

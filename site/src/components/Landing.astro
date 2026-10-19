@@ -17,10 +17,11 @@ const version = appVersion(process.cwd());
 const guide = lang === "en" ? "guide/" : "ko/guide/";
 const { items } = downloads(process.cwd());
 
-// `site.js` swaps the primary button to the visitor's own OS when the release
-// carries an asset for it. Without a match the served label stands as it is.
+// `site.js` swaps the primary button to the visitor's own OS and architecture
+// when the release carries an asset for both. Without a match, or when the
+// browser does not report the architecture, the button keeps the releases page.
 const dataAttrs = Object.fromEntries(
-  items.filter((d) => d.href).map((d) => [`data-${d.platform}`, d.href!]),
+  items.filter((d) => d.href).map((d) => [`data-${d.platform}-${d.arch}`, d.href!]),
 );
 ---
 <main class="landing" id="content">

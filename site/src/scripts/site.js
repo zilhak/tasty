@@ -228,16 +228,41 @@
   var primary = document.getElementById("dl-primary");
   if (primary) {
     var ua = navigator.userAgent || "";
-    var plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+    var uad = navigator.userAgentData;
+    var plat = (uad && uad.platform) || navigator.platform || "";
     var os = null;
     if (/Mac/i.test(plat) && !/iPhone|iPad/i.test(ua)) { os = "macos"; }
     else if (/Win/i.test(plat)) { os = "windows"; }
     else if (/Linux/i.test(plat) && !/Android/i.test(ua)) { os = "linux"; }
-    var url = os && primary.getAttribute("data-" + os);
-    if (url) {
-      var names = { macos: "macOS", windows: "Windows", linux: "Linux" };
-      primary.href = url;
-      primary.textContent = primary.getAttribute("data-label").replace("{os}", names[os]);
+    var names = { macos: "macOS", windows: "Windows", linux: "Linux" };
+    // The asset must match both the OS and the architecture the browser reports.
+    // When the architecture is unknown the button keeps the releases page.
+    var apply = function (arch) {
+      var url = arch && primary.getAttribute("data-" + os + "-" + arch);
+      if (url) {
+        primary.href = url;
+        primary.textContent = primary.getAttribute("data-label").replace("{os}", names[os]);
+      }
+    };
+    var archOf = function (s) {
+      if (/aarch64|arm64|armv8/i.test(s)) return "arm64";
+      if (/x86_64|x86-64|amd64|\bx64\b/i.test(s)) return "x64";
+      return null;
+    };
+    var fromStrings = function () { return archOf(navigator.platform || "") || archOf(ua); };
+    if (os === "macos") {
+      // Releases carry Apple silicon only, and Safari does not report the architecture.
+      apply("arm64");
+    } else if (os && uad && typeof uad.getHighEntropyValues === "function") {
+      uad.getHighEntropyValues(["architecture", "bitness"]).then(function (v) {
+        if (!v || !v.architecture) { apply(fromStrings()); return; }
+        var a = null;
+        if (v.bitness === "64" && v.architecture === "arm") a = "arm64";
+        else if (v.bitness === "64" && v.architecture === "x86") a = "x64";
+        apply(a);
+      }, function () { apply(fromStrings()); });
+    } else if (os) {
+      apply(fromStrings());
     }
   }
 

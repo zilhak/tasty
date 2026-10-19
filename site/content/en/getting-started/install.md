@@ -1,4 +1,4 @@
-<!-- source-hash: 11f32167d8af -->
+<!-- source-hash: dec47dddf771 -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -28,6 +28,8 @@ Download the installer from the [GitHub releases page](https://github.com/zilhak
 | Windows | ARM64 | `tasty-headless-{ver}-windows-arm64.zip` | [Headless build](#headless-build) |
 
 You can verify a downloaded file against the `SHA256SUMS-*.txt` for its OS.
+
+The download button on the site's front page links straight to a file only when one matches both the OS and the architecture your browser reports. When the architecture is unknown it opens the releases page instead, so pick the file for your computer's architecture from the table above.
 
 ## Linux
 

@@ -322,6 +322,37 @@ Sätteri 의 hast 플러그인(`src/lib/satteri-*.mjs`)에서 일어난다.
 - 미디어 쿼리와 컨테이너 쿼리의 **조건**은 숫자로 남긴다. media feature 는 custom property 를
   읽지 못한다(`@media (max-width: var(--x))` 는 파싱되지 않는다). 블록 안의 선언은 위 규칙을 따른다.
 
+## 랜딩의 다운로드 버튼
+
+랜딩 hero 의 기본 다운로드 버튼(`#dl-primary`)은 처음에는 릴리스 페이지(`RELEASES_URL`)로 연결된다.
+빌드 때 `site/src/lib/release.ts` 가 `release.json`(`pages.yml` 이 빌드 전에 사이트 디렉터리에 만드는 생성물)의 자산 이름을 파일명 접미사로 OS·아키텍처에
+대응시키고, 자산이 있는 조합만 `data-<os>-<arch>` 속성으로 버튼에 싣는다.
+
+| 속성 | 자산 접미사 |
+|---|---|
+| `data-macos-arm64` | `-macos-arm64.dmg` |
+| `data-windows-x64` | `-windows-x64.msi` |
+| `data-windows-arm64` | `-windows-arm64.msi` |
+| `data-linux-x64` | `-x86_64.AppImage` |
+| `data-linux-arm64` | `-aarch64.AppImage` |
+
+브라우저에서는 `site.js` 가 OS 와 아키텍처를 판별해 두 값이 모두 맞는 속성이 있을 때만 버튼의 링크와
+문구(`{os}용 다운로드`)를 바꾼다.
+
+- OS 는 `navigator.userAgentData.platform` 또는 `navigator.platform` 으로 판별한다.
+- Windows·Linux 의 아키텍처는 `navigator.userAgentData.getHighEntropyValues(["architecture", "bitness"])` 를
+  먼저 사용한다. 64비트 `arm` 은 arm64, 64비트 `x86` 은 x64 로 본다. 이 API 가 아키텍처를 주면 그 값만
+  따르며, 32비트 같은 다른 조합은 대응 자산이 없으므로 릴리스 페이지에 남는다.
+- 이 API 가 없거나 거부되거나 빈 값을 주면 `navigator.platform`, 그다음 user agent 문자열에서
+  `aarch64`·`arm64`·`armv8` 은 arm64, `x86_64`·`amd64`·`x64` 는 x64 로 읽는다. 어느 쪽도 맞지 않으면
+  아키텍처를 모르는 것으로 보고 릴리스 페이지에 남긴다.
+- macOS 는 Apple silicon 산출물만 배포하고 Safari 가 아키텍처를 알려 주지 않으므로 아키텍처를 묻지 않고
+  `data-macos-arm64` 를 사용한다.
+- 브라우저가 보고한 값만 사용한다. Windows ARM 기기의 브라우저가 x64 라고 보고하면 x64 설치 파일로
+  연결된다. 아키텍처를 판별하지 못한 방문자에게 다른 아키텍처의 파일을 대신 고르지 않는다.
+- `release.json` 이 없거나 해당 조합의 자산이 없으면 속성이 없으므로 버튼은 릴리스 페이지로 간다.
+  한국어·영어 랜딩은 같은 컴포넌트와 스크립트를 사용한다.
+
 ## 랜딩의 제품 창
 
 랜딩 hero 의 창은 스크린샷도 전사본도 아니다 — 킷의 `app.jsx` 와 **같은 컴포넌트**를 같은
