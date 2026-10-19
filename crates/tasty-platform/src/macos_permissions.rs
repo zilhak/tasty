@@ -112,7 +112,8 @@ pub fn screen_recording_authorized() -> bool {
     true
 }
 
-/// 화면 기록 권한을 **부팅당 1 회** 요청한다. 이미 승인돼 있으면 아무것도 하지 않는다.
+/// 화면 기록 권한을 요청한다. 이미 승인돼 있으면 아무것도 하지 않는다. 부팅 경로에서는
+/// 부르지 않고, 사용자가 권한 요청 버튼을 누를 때마다 `request_all_permissions`가 부른다.
 ///
 /// 거부된 상태에서 다시 불러도 프롬프트는 뜨지 않고 즉시 false 가 돌아오므로, 재시도
 /// 루프를 두지 않는다 — 그 상태를 되돌리는 것은 시스템 설정에서 사용자가 할 일이다.
@@ -206,7 +207,8 @@ pub fn raw_key_decision(accessibility_trusted: bool) -> RawKeyDecision {
     }
 }
 
-/// debug 부팅에서 손쉬운 사용 권한 안내를 요청한다. 이미 승인됐으면 생략한다.
+/// 손쉬운 사용 권한 안내를 요청한다. 이미 승인됐으면 생략한다. 부팅 경로에서는 부르지
+/// 않고, debug 빌드에서 사용자가 권한 요청 버튼을 누를 때마다 `request_all_permissions`가 부른다.
 /// 실제 권한을 사용하는 OS 키 주입이 release에 없어 release에서는 요청하지 않는다.
 #[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 fn prewarm_accessibility() {
