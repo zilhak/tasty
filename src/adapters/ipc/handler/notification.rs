@@ -128,6 +128,7 @@ pub fn handle_notification_create(
             title,
             body,
             source: "host".to_string(),
+            merge: crate::app::command::NotificationMerge::Coalesce,
         }
         .from_agent_ipc(),
     );

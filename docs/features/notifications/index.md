@@ -46,7 +46,8 @@ surface 수(`attention_count`)를 보여준다. 자세한 규칙은 [surface-hig
 
 사용자 입력에서 시작하지 않은 작업(웹훅 리스너 시작, 자동 훅·웹훅 실행 실패 등)은 `src/system_notice.rs`의 대기열에 알림을 남긴다. GUI는 메인 루프의 `about_to_wait`에서, headless는 루프 회차마다 시스템 출처 알림으로 저장한다. surface를 지정한 알림(surface 훅)은 그 surface가 속한 workspace와 surface가 받는다. 나머지와 surface가 이미 사라진 알림은 GUI에서는 포커스 윈도우(없으면 첫 윈도우)의 활성 workspace, headless에서는 활성 workspace가 `surface_id: 0`으로 받는다. 받을 윈도우·workspace가 아직 없으면 대기열에 그대로 두므로, 부팅 중에 생긴 경고는 첫 윈도우가 등록된 뒤 저장된다.
 
-- 같은 source·레벨·제목·본문의 알림은 10초(`REPEAT_WINDOW`) 안에 한 번만 남긴다. 저장소의 500ms 합치기보다 긴 창으로, 반복 실패가 목록을 덮지 않게 한다.
+- 서로 다른 사건은 저장소의 500ms 합치기를 거치지 않는다. 대기열의 알림은 `NotificationMerge::Separate`로 `add_separate`에 넣으므로 같은 workspace·surface·레벨로 이어져도 제목·본문·미확인 수가 각각 남는다. 터미널 OSC·벨, `notification.create` 등 나머지 알림은 `Coalesce`로 기존 합치기를 따른다.
+- 같은 source·레벨·제목·본문의 알림은 10초(`REPEAT_WINDOW`) 안에 한 번만 남긴다. 이 억제는 내용이 같은 반복에만 적용되어 반복 실패가 목록을 덮지 않게 한다.
 - 대기열 상한은 32건이며 넘으면 가장 오래된 항목을 버리고 경고 로그를 남긴다.
 - source는 GUI `notification.created` 이벤트에만 실리며 저장소와 `notification.list`에는 남지 않는다.
 

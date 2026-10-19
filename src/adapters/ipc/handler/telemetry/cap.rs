@@ -533,6 +533,7 @@ pub(super) fn fire_notify(
             title,
             body,
             source: "telemetry.cap".to_string(),
+            merge: crate::app::command::NotificationMerge::Coalesce,
         }
         .from_system(),
     );

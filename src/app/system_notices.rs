@@ -24,6 +24,7 @@ impl App {
                 title: notice.title,
                 body: notice.body,
                 source: notice.source.to_string(),
+                merge: crate::app::command::NotificationMerge::Separate,
             }
             .from_system();
             if let Err(e) = self.dispatch_domain_intent(DispatchSource::Engine(engine_id), intent) {

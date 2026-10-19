@@ -74,6 +74,7 @@ pub(in crate::adapters::ipc::handler) fn fire_anomaly_notification(
             title,
             body,
             source: "telemetry.anomaly".to_string(),
+            merge: crate::app::command::NotificationMerge::Coalesce,
         }
         .from_system(),
     );

@@ -40,6 +40,46 @@ pub(crate) enum RestoreScope {
     Local,
 }
 
+/// 알림을 저장소에 넣을 때 앞 항목과 합칠지 정한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NotificationMerge {
+    /// 같은 workspace·surface·level이 설정 간격 안에 이어지면 합친다. 터미널 OSC·벨처럼 한 출처의
+    /// 연속 출력을 묶는다.
+    Coalesce,
+    /// 서로 다른 호스트 사건이다. 간격 안에 이어져도 제목·본문·미확인 수를 각각 남긴다.
+    Separate,
+}
+
+impl NotificationMerge {
+    /// 새 항목을 만들었으면 그 ID를, 앞 항목에 합쳤으면 `None`을 돌려준다.
+    pub(crate) fn add(
+        self,
+        store: &mut crate::notification::NotificationStore,
+        ws_id: u32,
+        surface_id: u32,
+        title: String,
+        body: String,
+        level: crate::notification::NotificationLevel,
+    ) -> Option<u64> {
+        match self {
+            Self::Coalesce => store.add_with_level(ws_id, surface_id, title, body, level),
+            Self::Separate => Some(store.add_separate(ws_id, surface_id, title, body, level)),
+        }
+    }
+}
+
+/// GUI 알림 저장 경로(`App::cascade_notification_pushed`)가 받는 알림 한 건.
+#[cfg(feature = "gui")]
+pub(crate) struct NotificationPush {
+    pub level: crate::notification::NotificationLevel,
+    pub ws_id: u32,
+    pub surface_id: u32,
+    pub title: String,
+    pub body: String,
+    pub source: String,
+    pub merge: NotificationMerge,
+}
+
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: 큐 항목마다 Box를 추가 할당하지 않도록 값을 직접 보관한다.
 pub(crate) enum DomainIntent {
@@ -262,6 +302,7 @@ pub(crate) enum DomainIntent {
         title: String,
         body: String,
         source: String,
+        merge: NotificationMerge,
     },
     #[cfg(feature = "gui")]
     MarkNotificationRead {
@@ -350,6 +391,7 @@ pub(crate) enum CoreEvent {
         title: String,
         body: String,
         source: String,
+        merge: NotificationMerge,
     },
     #[cfg(feature = "gui")]
     NotificationReadRequested {

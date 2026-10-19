@@ -387,6 +387,7 @@ pub fn enqueue_approval(
             title: format!("{severity_prefix}{}", record.request.title),
             body,
             source: "host".to_string(),
+            merge: crate::app::command::NotificationMerge::Coalesce,
         }
         .from_agent_ipc(),
     );

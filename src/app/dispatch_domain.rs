@@ -269,9 +269,18 @@ impl App {
                 surface_id,
                 title,
                 body,
-                source: src,
+                source,
+                merge,
             } => {
-                self.cascade_notification_pushed(ws_id, surface_id, title, body, src, level);
+                self.cascade_notification_pushed(crate::app::command::NotificationPush {
+                    level,
+                    ws_id,
+                    surface_id,
+                    title,
+                    body,
+                    source,
+                    merge,
+                });
             }
             CoreEvent::NotificationReadRequested { id } => {
                 self.cascade_notification_read(id);
@@ -709,15 +718,17 @@ impl App {
         }
     }
 
-    fn cascade_notification_pushed(
-        &mut self,
-        ws_id: u32,
-        surface_id: u32,
-        title: String,
-        body: String,
-        source: String,
-        level: crate::notification::NotificationLevel,
-    ) {
+    /// 서로 다른 호스트 사건은 `merge: Separate`로 넣어 앞 알림과 합치지 않는다.
+    fn cascade_notification_pushed(&mut self, push: crate::app::command::NotificationPush) {
+        let crate::app::command::NotificationPush {
+            level,
+            ws_id,
+            surface_id,
+            title,
+            body,
+            source,
+            merge,
+        } = push;
         let Some((_, mut engine)) = engines_mut!(self)
             .sessions()
             .find(|(_, engine)| engine.has_workspace(ws_id))
@@ -728,7 +739,8 @@ impl App {
             );
             return;
         };
-        let created_id = engine.live.notifications.add_with_level(
+        let created_id = merge.add(
+            &mut engine.live.notifications,
             ws_id,
             surface_id,
             title.clone(),

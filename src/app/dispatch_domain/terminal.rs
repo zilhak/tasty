@@ -36,6 +36,7 @@ impl App {
                     title,
                     body,
                     source: "host".to_string(),
+                    merge: crate::app::command::NotificationMerge::Coalesce,
                 }
                 .from_system(),
             );
@@ -82,6 +83,7 @@ impl App {
                     title: crate::i18n::t("notification.bell_title").to_string(),
                     body: String::new(),
                     source: "host".to_string(),
+                    merge: crate::app::command::NotificationMerge::Coalesce,
                 }
                 .from_system(),
             );

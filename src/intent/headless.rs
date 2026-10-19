@@ -228,7 +228,8 @@ fn handle_core_event(core: &AppServices, engine: &mut EngineMut<'_>, event: Core
             body,
             // 헤드리스에서는 알림음을 재생하지 않는다.
             source: _,
-        } => push_notification(engine, ws_id, surface_id, title, body, level),
+            merge,
+        } => push_notification(engine, ws_id, surface_id, title, body, level, merge),
         CoreEvent::TerminalMarkSet { surface_id } => {
             if let Some(t) = engine.find_terminal_by_id_mut(surface_id) {
                 t.set_mark();
@@ -292,6 +293,7 @@ pub(crate) fn queue_system_notices(state: &mut RequestContext, engine: &EngineMu
                 title: notice.title,
                 body: notice.body,
                 source: notice.source.to_string(),
+                merge: crate::app::command::NotificationMerge::Separate,
             }
             .from_system(),
         );
@@ -306,15 +308,21 @@ fn push_notification(
     title: String,
     body: String,
     level: crate::notification::NotificationLevel,
+    merge: crate::app::command::NotificationMerge,
 ) {
     if !engine.has_workspace(ws_id) {
         tracing::warn!(ws_id, "NotificationPushRequested: workspace not found");
         return;
     }
-    if engine
-        .live
-        .notifications
-        .add_with_level(ws_id, surface_id, title, body, level)
+    if merge
+        .add(
+            &mut engine.live.notifications,
+            ws_id,
+            surface_id,
+            title,
+            body,
+            level,
+        )
         .is_some()
     {
         // 기존 알림에 합친 경우에는 attention을 다시 올리지 않는다.
@@ -488,6 +496,61 @@ mod tests {
             engine.live.notifications.unread_count() > before,
             "notification.create 는 headless 에서도 알림을 적재해야 한다"
         );
+    }
+
+    /// 시스템 사건은 간격 안에 같은 workspace·level로 이어져도 각각 남고, 터미널 쪽 병합은 그대로다.
+    #[test]
+    fn system_notices_stay_separate_while_terminal_notices_still_merge() {
+        use crate::app::command::{DomainIntent, NotificationMerge};
+        use crate::notification::NotificationLevel;
+        let (mut core, mut state, mut engine_session, _sid) = fixture();
+        let mut engine = engine_session.borrow_mut();
+        let ws_id = engine.workspace_at(0).expect("workspace").id;
+        let push = |state: &mut RequestContext, title: &str, level, merge| {
+            state.dispatch_intent(
+                DomainIntent::PushNotification {
+                    level,
+                    ws_id,
+                    surface_id: 0,
+                    title: title.into(),
+                    body: format!("{title} cause"),
+                    source: "test".into(),
+                    merge,
+                }
+                .from_system(),
+            );
+        };
+        let warning = NotificationLevel::Warning;
+        push(&mut state, "hook A", warning, NotificationMerge::Separate);
+        push(
+            &mut state,
+            "webhook B",
+            warning,
+            NotificationMerge::Separate,
+        );
+        push(&mut state, "state.db", warning, NotificationMerge::Separate);
+        drain_pending_intents(&mut core, &mut state, &mut engine);
+        let titles: Vec<_> = engine
+            .live
+            .notifications
+            .all()
+            .map(|n| (n.title.clone(), n.body.clone()))
+            .collect();
+        assert_eq!(
+            titles,
+            [
+                ("hook A".to_string(), "hook A cause".to_string()),
+                ("webhook B".to_string(), "webhook B cause".to_string()),
+                ("state.db".to_string(), "state.db cause".to_string()),
+            ]
+        );
+        assert_eq!(engine.live.notifications.unread_count(), 3);
+
+        let info = NotificationLevel::Info;
+        push(&mut state, "osc 1", info, NotificationMerge::Coalesce);
+        push(&mut state, "osc 2", info, NotificationMerge::Coalesce);
+        drain_pending_intents(&mut core, &mut state, &mut engine);
+        assert_eq!(engine.live.notifications.unread_count(), 4);
     }
 
     // 반복해서 큐에 넣도록 once가 아닌 훅을 등록한다.
