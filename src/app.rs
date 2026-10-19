@@ -56,6 +56,7 @@ mod offview_window_events;
 #[cfg(feature = "gui")]
 pub(crate) mod persistence;
 pub(crate) mod plugin_events;
+pub(crate) mod plugin_failure_notice;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
 pub(crate) mod plugin_lifecycle;

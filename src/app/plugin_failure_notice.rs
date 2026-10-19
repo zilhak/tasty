@@ -106,5 +106,5 @@ fn notice(report: &FailureReport) -> (NotificationLevel, String, String) {
 }
 
 #[cfg(test)]
-#[path = "failure_notice_tests.rs"]
+#[path = "plugin_failure_notice_tests.rs"]
 mod tests;

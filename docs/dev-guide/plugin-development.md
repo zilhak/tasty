@@ -472,7 +472,7 @@ enable·swap 응답은 자식을 만들었다는 뜻이며 연결 완료를 보�
 - 연결 결과는 그 프로세스를 띄운 세대에만 기록한다. 앞 기동의 늦은 실패는 뒤 기동의 결과를 바꾸지 않는다.
 - 결과가 나기 전에 disable·remove(disable 을 거친다)·swap 이 겹치면 그 세대는 `cancelled`로 끝난다. 대기 상태로 남지 않는다.
 - `plugin.list`·`plugin.show`는 `auto_disabled`(자동 비활성화 여부), `last_failure: {kind, message, generation}`(마지막 기동 실패, 이후 연결해도 남는다), `start`(가장 최근 기동)를 함께 싣는다. `kind`는 `spawn_failed`(프로세스를 띄우지 못함)·`connect_failed`(핸드셰이크 전에 끝났거나 시간 안에 연결하지 않음)다. 기존 `enabled`·`running`의 뜻은 그대로다.
-- 매니저는 실패를 호스트 알림 보고로 쌓고 GUI·헤드리스 pump 가 꺼내 `NotificationStore`에 남긴다(`plugin_glue/failure_notice.rs`, `source: "plugin"`). 서로 다른 사건이라 `NotificationStore::add_separate`로 넣어 병합 창 안에 이어 나와도 합치지 않는다. `notification.create`·OSC 알림의 병합(`add_with_level`)은 그대로다. 한 번의 실패는 경고, 자동 비활성화는 오류다. 같은 plugin 의 실패는 실패 창(10 초) 안에서 첫 실패 한 건만 경고로 남기고, 자동 비활성화는 따로 한 건 남긴다. 연결에 성공하거나 사용자가 다시 켜면 묶음이 끝난다. 알림을 남길 workspace 가 없으면 꺼내지 않으므로 부팅 중 실패는 첫 workspace 가 생긴 뒤 남는다. 사용자가 끈 plugin 은 기동하지 않아 보고가 없다. 알림은 plugin 을 ID 로 가리키고 매니페스트 문구를 싣지 않는다. Event Bus 의 `plugin.error`와 Plugins 창의 실행 오류 항목은 그대로다.
+- 매니저는 실패를 호스트 알림 보고로 쌓고 GUI·헤드리스 pump 가 꺼내 `NotificationStore`에 남긴다(`app/plugin_failure_notice.rs`, gui feature 없는 헤드리스 빌드에도 들어간다, `source: "plugin"`). 서로 다른 사건이라 `NotificationStore::add_separate`로 넣어 병합 창 안에 이어 나와도 합치지 않는다. `notification.create`·OSC 알림의 병합(`add_with_level`)은 그대로다. 한 번의 실패는 경고, 자동 비활성화는 오류다. 같은 plugin 의 실패는 실패 창(10 초) 안에서 첫 실패 한 건만 경고로 남기고, 자동 비활성화는 따로 한 건 남긴다. 연결에 성공하거나 사용자가 다시 켜면 묶음이 끝난다. 알림을 남길 workspace 가 없으면 꺼내지 않으므로 부팅 중 실패는 첫 workspace 가 생긴 뒤 남는다. 사용자가 끈 plugin 은 기동하지 않아 보고가 없다. 알림은 plugin 을 ID 로 가리키고 매니페스트 문구를 싣지 않는다. Event Bus 의 `plugin.error`와 Plugins 창의 실행 오류 항목은 그대로다.
 
 #### 무응답과 늦은 응답
 
