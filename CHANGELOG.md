@@ -34,6 +34,7 @@
 
 - **출력 observer 정보에 저장 실패 수가 생겼다.** `output.observe_list`·`output.observe_info`의 memory sink 항목에 `submit_rejected`(저장 실행기가 접수하지 않아 버린 수)와 `store_failed`(저장되지 않았거나 저장 여부를 모르는 수)가 더해졌다. `dropped`는 지금처럼 채널이 가득 차 버린 수만 센다. 파일 sink는 두 값이 0이다.
 - **커스텀 플러그인도 egui-mesh surface kind 를 등록한다.** `rendering = "egui-mesh"` 인 `[[surface_kinds]]` 는 플러그인 ID 와 무관하게 `api_version` 이 호스트와 같고 kind 이름이 호스트 내장 kind(`terminal`·`empty`·`explorer`·`dag_graph`)나 다른 플러그인이 이미 등록한 kind 와 겹치지 않으면 등록된다. 이름이 겹치면 먼저 등록한 플러그인을 유지하고 나중 선언은 경고 로그와 함께 버리며 `plugin.surface_kind_registered` 이벤트도 보내지 않는다. 이전에는 번들 image·mesh_demo 만 등록됐다. attach mirror 는 서버에 같은 플러그인 소유의 egui-mesh 로 등록된 kind 를 mesh 로 전달하고, mirror 에서 연 파일도 client 에 등록된 egui-mesh kind 면 원격에 연다.
+- **webview surface kind 가 자기 플러그인 설정으로 WebView 를 설정한다.** zoom·JS·원격 콘텐츠·색 구성표를 kind 이름 대신 그 kind 를 등록한 플러그인의 `plugin_settings.<plugin_id>`(`zoom`·`sandbox_scripts`·`allow_remote_content`·`color_scheme`)에서 읽으므로 커스텀 webview kind 도 설정 페이지로 사용자 설정을 받는다. 매니페스트 `[[surface_kinds]]` 에 선택 표 `webview_defaults`(같은 키, `rendering = "webview"` 전용, zoom 25~500, color_scheme 은 `follow`·`light`·`dark`)가 생겼고, 저장된 값 → 같은 저장 키의 설정 페이지 항목 기본값 → `webview_defaults` → 호스트 기본값 순으로 쓴다. `zoomable = true` 인 webview kind 의 zoom 단축키는 그 플러그인의 zoom 을 바꾸고 초기화는 그 플러그인의 기본값으로 돌린다. html·markdown 의 기본값은 그대로다.
 
 ### Changed
 
