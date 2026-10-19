@@ -1,4 +1,4 @@
-<!-- source-hash: 92302a5e2838 -->
+<!-- source-hash: 99b2484395bc -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -135,7 +135,7 @@ Use it from a terminal while Tasty is running. The output is JSON.
 | `tasty plugin request-permission --agent <id> --permission <permission> [--reason <reason>]` | Shows the approval popup that asks whether to give an agent a permission, ahead of time. When an agent runs it, the agent can only name itself, and only the user can approve or deny this popup |
 | `tasty plugin audit-query` · `audit-summary` · `audit-follow` · `audit-clear` | Queries · summarizes · follows live · deletes the allow/deny records of requests Tasty received (CLI, plugins, agents) |
 
-`install` checks the signature before copying the folder. When it cannot install, it tells you the actual reason (no signature, a key you have not trusted, a public key file that is missing or does not match, and so on) and leaves nothing behind in the plugins folder, the permissions or the trust list. Fix the problem and run the same command again to install.
+`install` checks the signature before copying the folder. When the signature check refuses the install, it tells you the actual reason (no signature, a key you have not trusted, a public key file that is missing or does not match, and so on) and leaves nothing behind in the plugins folder, the permissions or the trust list. Fix the problem and run the same command again to install. If the plugin is registered but then fails to start, the installed folder stays; check `tasty plugin logs <id>` for the cause.
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 
