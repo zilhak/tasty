@@ -4,7 +4,7 @@
 //! 키·선택·스크롤은 터미널로 그대로 간다. ×·Continue·안쪽 컨트롤 포커스의 Esc는 같은 응답이며,
 //! 안내를 지우고 그 id를 App이 확인 응답으로 가져가게 남긴다.
 
-use crate::model::PhysicalRect;
+use crate::model::{LogicalPx, LogicalRect, PhysicalRect};
 
 /// 안내 한 장의 표시 문구. 모두 번역된 문자열이다.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,22 +91,34 @@ impl RestoreNotices {
 /// 시작하는 장애물(창 범위 배너, 오른쪽 위 pane의 열린 검색 막대)이 있으면 그 아래로 내린다.
 /// 장애물은 옮기지 않는다. 반환값에는 `notice_column_rect`가 inset을 더한다.
 fn column_top(
-    base: f32,
-    inset: f32,
-    columns: impl Fn(f32) -> egui::Rect,
-    obstacles: &[egui::Rect],
-) -> f32 {
+    base: LogicalPx,
+    inset: LogicalPx,
+    columns: impl Fn(LogicalPx) -> LogicalRect,
+    obstacles: &[LogicalRect],
+) -> LogicalPx {
     let mut top = base;
-    let mut sorted: Vec<egui::Rect> = obstacles.to_vec();
-    sorted.sort_by(|a, b| a.min.y.total_cmp(&b.min.y));
+    let mut sorted: Vec<LogicalRect> = obstacles.to_vec();
+    sorted.sort_by(|a, b| a.y.value().total_cmp(&b.y.value()));
     for obstacle in sorted {
         let column = columns(top);
-        let beside = obstacle.max.x <= column.min.x || obstacle.min.x >= column.max.x;
-        if !beside && obstacle.min.y <= column.min.y + inset && obstacle.max.y > top {
-            top = obstacle.max.y;
+        let beside =
+            obstacle.x + obstacle.width <= column.x || obstacle.x >= column.x + column.width;
+        let bottom = obstacle.y + obstacle.height;
+        if !beside && obstacle.y <= column.y + inset && bottom > top {
+            top = bottom;
         }
     }
     top
+}
+
+/// egui가 돌려준 논리 사각형을 배치 계산용 타입으로 옮긴다.
+fn logical_rect(rect: egui::Rect) -> LogicalRect {
+    LogicalRect {
+        x: LogicalPx(rect.min.x),
+        y: LogicalPx(rect.min.y),
+        width: LogicalPx(rect.width()),
+        height: LogicalPx(rect.height()),
+    }
 }
 
 /// 작업 영역(`terminal_rect`) 오른쪽 위, 탭 바 아래의 안내 열에 안내를 위에서부터 쌓아 그린다.
@@ -124,13 +136,14 @@ pub(crate) fn draw_notice_column(
 ) -> Option<egui::Rect> {
     let theme = crate::theme::theme();
     let work = super::to_egui_rect(terminal_rect, scale);
-    let base = work.top() + tab_bar_height.to_logical(scale).value();
-    let columns = |top| tasty_ui_widgets::notice_column_rect(&theme, work, top);
+    let base = LogicalPx(work.top()) + tab_bar_height.to_logical(scale);
+    let columns = |top: LogicalPx| tasty_ui_widgets::notice_column_rect(&theme, work, top.value());
+    let obstacles: Vec<LogicalRect> = obstacles.iter().copied().map(logical_rect).collect();
     let top = column_top(
         base,
-        theme.notice_column_inset().value(),
-        columns,
-        obstacles,
+        theme.notice_column_inset(),
+        |top| logical_rect(columns(top)),
+        &obstacles,
     );
     let column = columns(top);
     let gap = theme.notice_column_gap().value();
@@ -208,24 +221,40 @@ mod tests {
         }
     }
 
-    fn columns(top: f32) -> egui::Rect {
-        egui::Rect::from_min_max(egui::pos2(632.0, top + 8.0), egui::pos2(992.0, top + 108.0))
+    fn rect(x: f32, y: f32, width: f32, height: f32) -> LogicalRect {
+        LogicalRect {
+            x: LogicalPx(x),
+            y: LogicalPx(y),
+            width: LogicalPx(width),
+            height: LogicalPx(height),
+        }
     }
+
+    fn columns(top: LogicalPx) -> LogicalRect {
+        rect(632.0, top.value() + 8.0, 360.0, 100.0)
+    }
+
+    const INSET: LogicalPx = LogicalPx(8.0);
 
     #[test]
     fn the_column_starts_under_a_window_banner_and_an_open_search_bar() {
-        let banner = egui::Rect::from_min_max(egui::pos2(0.0, 36.0), egui::pos2(1000.0, 68.0));
-        let search = egui::Rect::from_min_max(egui::pos2(700.0, 76.0), egui::pos2(992.0, 108.0));
-        assert_eq!(column_top(36.0, 8.0, columns, &[]), 36.0);
-        assert_eq!(column_top(36.0, 8.0, columns, &[banner]), 68.0);
-        assert_eq!(column_top(36.0, 8.0, columns, &[search, banner]), 108.0);
+        let banner = rect(0.0, 36.0, 1000.0, 32.0);
+        let search = rect(700.0, 76.0, 292.0, 32.0);
+        let base = LogicalPx(36.0);
+        assert_eq!(column_top(base, INSET, columns, &[]), base);
+        assert_eq!(column_top(base, INSET, columns, &[banner]), LogicalPx(68.0));
+        assert_eq!(
+            column_top(base, INSET, columns, &[search, banner]),
+            LogicalPx(108.0)
+        );
     }
 
     #[test]
     fn obstacles_beside_or_below_the_column_do_not_move_it() {
-        let left = egui::Rect::from_min_max(egui::pos2(0.0, 36.0), egui::pos2(600.0, 68.0));
-        let lower = egui::Rect::from_min_max(egui::pos2(700.0, 400.0), egui::pos2(992.0, 432.0));
-        assert_eq!(column_top(36.0, 8.0, columns, &[left, lower]), 36.0);
+        let left = rect(0.0, 36.0, 600.0, 32.0);
+        let lower = rect(700.0, 400.0, 292.0, 32.0);
+        let base = LogicalPx(36.0);
+        assert_eq!(column_top(base, INSET, columns, &[left, lower]), base);
     }
 
     #[test]
