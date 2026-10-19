@@ -115,6 +115,15 @@ impl Unreadable {
         let directory = damaged_directory(home);
         std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
         let id = digest(&files);
+        // 보존 폴더 자체를 나열하지 못하면 어떤 이름도 대조할 수 없으므로 탐색하지 않고 실패한다.
+        // 나열한 이름은 유한하므로 아래 번호 탐색은 그 안에서 반드시 빈 이름에 닿는다.
+        let present: std::collections::HashSet<std::ffi::OsString> = std::fs::read_dir(&directory)
+            .and_then(|entries| {
+                entries
+                    .map(|entry| entry.map(|entry| entry.file_name()))
+                    .collect()
+            })
+            .map_err(|error| format!("{}: {error}", directory.display()))?;
         // 이름이 같아도 내용이 다르거나 읽어 대조할 수 없는 사본이 이미 있으면 다음 번호를 쓴다.
         // 읽어서 같은 내용임을 확인한 파일만 다시 쓰지 않는다.
         let stem = (1u64..)
@@ -124,7 +133,9 @@ impl Unreadable {
             })
             .find(|stem| {
                 files.iter().all(|(extension, bytes)| {
-                    existing_copy(&directory.join(format!("{stem}{extension}")), bytes).is_some()
+                    let file = format!("{stem}{extension}");
+                    !present.contains(std::ffi::OsStr::new(&file))
+                        || existing_copy(&directory.join(file), bytes).is_some()
                 })
             })
             .ok_or("no free name for the preserved View copy")?;
@@ -454,5 +465,69 @@ impl StoredView {
                 collapsed_categories: captured.collapsed_categories.into_iter().collect(),
             },
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod preserve_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn binding() -> EngineBinding {
+        EngineBinding {
+            journal_id: "journal".into(),
+            stream: "structure:slot-1".into(),
+            incarnation: 1,
+            runtime_epoch: 1,
+            published_cut: None,
+            revision: None,
+        }
+    }
+
+    fn unreadable() -> Unreadable {
+        Unreadable {
+            cause: "test".into(),
+            source: UnreadableSource::Manifest {
+                view: Some(b"view".to_vec()),
+                snapshot: Some(b"snapshot".to_vec()),
+            },
+        }
+    }
+
+    /// Runs `preserve` on another thread so a search that never ends fails the test instead of
+    /// hanging it.
+    fn preserve_within(home: &Path) -> Result<String, String> {
+        let home = home.to_path_buf();
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            // The receiver is gone only after the test already failed on the timeout.
+            if send.send(unreadable().preserve(&home, &binding())).is_err() {
+                tracing::warn!("preserve result arrived after the test gave up");
+            }
+        });
+        receive
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("preserve returned")
+    }
+
+    #[test]
+    fn a_damaged_directory_that_cannot_be_searched_fails_instead_of_searching_forever() {
+        let home = tempfile::tempdir().unwrap();
+        let directory = damaged_directory(home.path());
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("kept"), b"kept").unwrap();
+        for mode in [0o000, 0o600] {
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(mode)).unwrap();
+            if std::fs::read(directory.join("kept")).is_ok() {
+                // Running as root ignores file modes; the case cannot be produced here.
+                break;
+            }
+            let result = preserve_within(home.path());
+            assert!(result.is_err(), "mode {mode:o}: {result:?}");
+        }
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(std::fs::read(directory.join("kept")).unwrap(), b"kept");
+        let path = preserve_within(home.path()).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"view");
     }
 }
