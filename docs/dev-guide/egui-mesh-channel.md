@@ -722,7 +722,7 @@ set_context 는 **geom 변경 · 입력 · bootstrap(미paint)** 일 때만 보�
 
 ### 개방 정책
 
-surface 와 동일하게 bundled 전용이다 — egui-mesh popup(`rendering = "egui-mesh"`)은
+surface 와 동일하게 plugin ID 와 무관하다 — 번들·커스텀 plugin 모두 egui-mesh popup(`rendering = "egui-mesh"`)은
 plugin `api_version` 이 호스트와 일치할 때만 열린다(`open_popup_instance` 게이트). 단일
 인스턴스 가드로 같은 `(plugin_id, popup_id)` 는 하나만 연다(중복 open 은 기존 instance_id
 반환).
@@ -820,7 +820,7 @@ TTL 만료·close X 는 `BannerManager` 가 감지해 `closed_plugin_banners` �
 
 ### 개방 정책 · scope 소유권
 
-surface/popup 과 동일하게 bundled 전용 + api_version 게이트다. 트리거는 **IPC 전용**
+surface/popup 과 동일하게 plugin ID 와 무관한 api_version 게이트다(`open_banner_instance`). 트리거는 **IPC 전용**
 (`banner.open`, 권한 `ui.banner`). scope 는 `surface` 만 — host 는 그 plugin 이 **소유한**
 surface 에만 배너를 허용한다(`open_plugin_banner` 가 surface→plugin 매핑으로 검증). 단일
 인스턴스 가드로 같은 `(plugin_id, banner_id)` 는 하나만 연다.

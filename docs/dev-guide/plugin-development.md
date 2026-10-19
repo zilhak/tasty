@@ -627,8 +627,21 @@ Unix에서는 PTY master가 닫히며 SIGHUP이 전경 프로세스 그룹에 �
 
 ```bash
 cargo build --release -p my-plugin
-tasty plugin install ./          # 매니페스트 권한 자동 grant + spawn
+tasty plugin install <plugin-dir>    # 신뢰 판정 → 복사 → 매니페스트 권한 자동 grant → spawn
 ```
+
+**서명과 공개 키**: 설치(`tasty plugin install`·GUI Add 탭)는 debug·release 모두 폴더를 복사하기 전에 매니페스트 서명을 판정한다([플러그인 시스템](../features/plugin-system/index.md)). 서명하지 않은 커스텀 plugin 은 미인증이며, CLI 는 원인·위험 경고와 함께 거부하고 `--allow-unverified` 로 다시 설치하라고 안내한다. GUI 는 같은 경고를 보이고 사용자가 `Add anyway` 를 고를 때만 설치한다. 선택한 뒤에는 목록의 미인증 표시 외에 실행 제한이 없다. 사용자가 경고 없이 설치하게 하려면 서명과 공개 키 파일을 함께 배포한다.
+
+```bash
+openssl genpkey -algorithm Ed25519 -out my-plugin.pem                       # 1회. 비밀 키는 배포하지 않는다
+openssl pkey -in my-plugin.pem -pubout -outform DER | tail -c 32 > <plugin-dir>/tasty-plugin.toml.pub
+./scripts/sign-bundle.sh --key my-plugin.pem --manifest <plugin-dir>/tasty-plugin.toml   # → tasty-plugin.toml.sig
+```
+
+- `tasty-plugin.toml.sig` 는 매니페스트 SHA-256 digest 의 Ed25519 서명(raw 64 byte)이고, `tasty-plugin.toml.pub` 는 raw 32 byte 공개 키다. 형식은 [플러그인 패키징](plugin-packaging.md#서명)에 있다. 매니페스트를 한 줄이라도 고치면 다시 서명한다.
+- 호스트에 내장된 키가 아니므로 처음 설치하는 사용자에게는 모르는 키다. GUI 는 fingerprint 를 보이고 `Trust key & add anyway` 로 그 키를 신뢰 목록(`known-plugins.toml`)에 넣으며, 다음 버전부터는 같은 키로 서명하면 묻지 않는다. 권한이 늘면 재승인을 묻는다. CLI `install` 은 키를 신뢰 목록에 넣지 않으므로 처음 설치는 `--allow-unverified` 또는 GUI 를 쓴다.
+- `.pub` 가 없거나 서명 키와 다르면 각각 `missing-pubkey`·`signature-error` 미인증이다. 서명은 출처와 변조 여부만 확인하며 실행 중 동작을 막지 않는다.
+- 부팅 탐색은 release 에서 신뢰했거나 사용자가 고른 plugin 만 등록하고, debug 에서는 서명을 건너뛴다. debug 에서 설치가 통과했다는 사실만으로 release 사용자 경험을 확인했다고 보지 않는다.
 
 **워크스페이스 내 번들 플러그인 개발**: `BUILTINS`(`crates/tasty-host-plugin/src/builtin.rs`) 등록 플러그인은 debug 빌드에서만 호스트가 부팅에 workspace→bundle 자동 sync(`ensure_dev_bundle`)한다. release/dist 는 `just build --release` 또는 해당 프로필의 `just build-plugins` 로 미리 스테이징해야 한다. bundle→설치 디렉터리 sync(`install_builtins_if_needed`)는 모든 프로필에서 유지된다. 이 복사는 macOS의 `com.apple.quarantine` 같은 확장 속성을 지우지 않는다. 앱 번들 안 파일에 그 속성이 남아 있으면 복사본도 같은 속성을 가질 수 있고, 처리는 사용자가 정한다([본체와 기반 기술](../principles/control-and-data.md#본체와-기반-기술)). 단 루트 `cargo build` 는 본 바이너리만 빌드하므로 플러그인 변경은 `cargo build -p <crate>` 또는 `--workspace` 필요. **부팅 없이, 실행 중인 tasty 에 플러그인 변경만 반영하는 절차(호스트 재빌드·재시작 불필요)는 아래 §9.1.**
 

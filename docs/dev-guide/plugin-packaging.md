@@ -34,7 +34,8 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 | 서명 대상 | `<plugin-dir>/tasty-plugin.toml` 의 SHA-256 digest |
 | 서명 파일 | `tasty-plugin.toml.sig` (raw 64 byte) |
 | Trust store | `crates/tasty-host-plugin/keys/`의 `release-pubkey.bin`과 `dev-pubkey.bin` 두 슬롯. 추적하지 않는 로컬 파일이며, 없는 슬롯은 build.rs가 placeholder로 채운다. 실제 서명 키에 대응하는 공개키가 빌드에 포함돼야 한다 |
-| 검증 시점 | plugin 로드(`discovery.rs::trust_outcome`)와 `upgrade-builtins`(`builtin.rs::verify_builtin_bundle_trust`) — release/dist 는 실제 차단, debug 는 건너뛰거나 `debug!` 로그만(`#[cfg(debug_assertions)]`) |
+| 검증 시점 | 설치·확인 필요 탭 등록(`trust_verdict::judge`, debug·release 공통 — 미인증은 사용자가 고를 때만 설치·등록), plugin 로드(`discovery.rs::trust_outcome`)와 `upgrade-builtins`(`builtin.rs::verify_builtin_bundle_trust`) — 뒤의 둘은 release/dist 에서 판정하고 debug 는 건너뛰거나 `debug!` 로그만(`#[cfg(debug_assertions)]`) |
+| 공개 키 파일 | 커스텀 plugin 은 `tasty-plugin.toml.pub`(raw 32 byte)를 함께 배포해야 사용자가 그 키를 신뢰할 수 있다. 서명은 공개 키를 드러내지 않는다 |
 
 보호 범위는 **매니페스트 한 파일만** — 권한/contributes/kind 가 매니페스트 안이라 변조되면 host가 잘못된 권한·기여 정보를 신뢰할 수 있다. binary 는 OS codesign(macOS notarization/Windows Authenticode)에 위임, lang/ 등 부속은 검증 밖.
 
@@ -109,7 +110,7 @@ release workflow는 각 빌드 러너에서 서명 스크립트를 실행한다.
 - **`.sig` 빌드 시점 의존**: git 에 commit 안 되는 빌드 산출물. 6 staging 위치 모두 비존재 시 non-debug 빌드 fail — CI 가 `sign-bundle.sh` 를 항상 실행하도록 보장.
 - **`bundle = false` — 명시 위치(1/2/3)는 자동으로 안 걸러짐**: glob 위치(4/5/6)는 빌드 자체가 그 crate 를 건너뛰지만, deb/rpm assets·wix components 는 plugin 마다 하드코딩된 목록이라 `bundle = false` 여부와 무관하게 그대로 남아있다. 새로 `bundle = false` 를 붙일 때 1/2/3 에서도 그 plugin 항목을 반드시 제거할 것.
 
-비-staging(번들 산출물 아님): `~/.tasty/known-plugins.toml`(사용자 trust DB, 런타임 생성) · `.pub` sidecar(없음 — 공개키는 호스트 바이너리 embed).
+비-staging(번들 산출물 아님): `~/.tasty/known-plugins.toml`(사용자 trust DB, 런타임 생성) · `.pub` sidecar(번들 plugin 은 없음 — 공개키는 호스트 바이너리 embed. 커스텀 plugin 은 위 서명 표).
 
 ## 생태계 정책 — 자동 upgrade · 호환성 분류
 
