@@ -16,6 +16,14 @@ pub struct NewRestoreManifest {
     pub view: Vec<u8>,
     pub referenced_payloads: Vec<PayloadRef>,
 }
+
+/// [`EventStore::restore_manifest_raw`]의 결과. 검증하지 않은 바이트다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawRestoreManifest {
+    pub view: Option<Vec<u8>>,
+    pub snapshot: Option<Vec<u8>>,
+}
+
 #[derive(Debug, Clone)]
 pub struct RestoreManifest {
     pub incarnation: u64,
@@ -97,6 +105,45 @@ impl EventStore {
 
     /// Read a complete manifest and its verified snapshot in one read transaction. A damaged View
     /// is an error, not permission to regenerate user selection or silently consult a stale export.
+    /// manifest가 가리키는 View·snapshot 본문을 checksum 검증 없이 읽는다. 검증에 실패한 원본을
+    /// 복구할 수 있게 보존할 때만 쓴다. 행이 없는 본문은 `None`이다.
+    pub fn restore_manifest_raw(
+        &self,
+        restore_key: &str,
+    ) -> StoreResult<Option<RawRestoreManifest>> {
+        let tx = self.conn.unchecked_transaction()?;
+        let row: Option<(i64, i64)> = tx
+            .query_row(
+                "SELECT snapshot_id,payload_id FROM restore_manifests WHERE restore_key = ?1",
+                [restore_key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((snapshot_id, view)) = row else {
+            return Ok(None);
+        };
+        let body: Option<i64> = tx
+            .query_row(
+                "SELECT payload_id FROM snapshots WHERE snapshot_id = ?1",
+                [snapshot_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let raw = |payload: i64| -> StoreResult<Option<Vec<u8>>> {
+            Ok(tx
+                .query_row(
+                    "SELECT bytes FROM payloads WHERE payload_id = ?1",
+                    [payload],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        };
+        Ok(Some(RawRestoreManifest {
+            view: raw(view)?,
+            snapshot: body.map(raw).transpose()?.flatten(),
+        }))
+    }
+
     pub fn restore_manifest(&self, restore_key: &str) -> StoreResult<Option<RestoreManifest>> {
         let tx = self.conn.unchecked_transaction()?;
         read_in(&tx, restore_key)

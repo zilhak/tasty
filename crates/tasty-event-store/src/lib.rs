@@ -64,5 +64,5 @@ pub use types::{
     StoredBatch, StoredEvent, StreamAppend, StreamId, WriterEpoch,
 };
 
-pub use manifest::{NewRestoreManifest, RestoreManifest};
+pub use manifest::{NewRestoreManifest, RawRestoreManifest, RestoreManifest};
 pub use retention::Compaction;

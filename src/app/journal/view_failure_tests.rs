@@ -293,3 +293,18 @@ fn an_unreadable_legacy_sidecar_is_left_in_place() {
         "the sidecar is unchanged"
     );
 }
+
+#[test]
+fn a_view_payload_with_a_bad_checksum_falls_back_to_the_default_selection() {
+    recovers_from(|home| {
+        let bytes = b"bytes that no longer match the checksum".to_vec();
+        database(home)
+            .execute(
+                "UPDATE payloads SET bytes = ?1 WHERE payload_id =
+                 (SELECT payload_id FROM restore_manifests WHERE restore_key = 'view:slot-1')",
+                [&bytes],
+            )
+            .unwrap();
+        bytes
+    });
+}

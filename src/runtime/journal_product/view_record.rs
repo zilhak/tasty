@@ -155,10 +155,27 @@ fn load_checked(
         if incarnation != binding.incarnation {
             return Ok(Ok(None));
         }
-        let manifest = store
-            .restore_manifest(&key)
-            .map_err(|error| error.to_string())?
-            .ok_or("View manifest disappeared during worker read")?;
+        let manifest = match store.restore_manifest(&key) {
+            Ok(manifest) => manifest.ok_or("View manifest disappeared during worker read")?,
+            // 이 manifest의 본문만 읽지 못한 것이다. 저장소의 다른 오류는 그대로 올린다.
+            Err(
+                error @ (tasty_event_store::StoreError::PayloadCorrupt(_)
+                | tasty_event_store::StoreError::PayloadMissing(_)),
+            ) => {
+                let raw = store
+                    .restore_manifest_raw(&key)
+                    .map_err(|error| error.to_string())?
+                    .ok_or("View manifest disappeared during worker read")?;
+                return Ok(Err(Unreadable {
+                    cause: error.to_string(),
+                    source: UnreadableSource::Manifest {
+                        view: raw.view.unwrap_or_default(),
+                        snapshot: raw.snapshot.unwrap_or_default(),
+                    },
+                }));
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         return Ok(check_manifest(&manifest, binding)
             .map_err(|cause| Unreadable::manifest(cause, &manifest)));
     }

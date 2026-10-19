@@ -274,8 +274,9 @@ DB manifest가 없을 때만 이전 sidecar를 초기 자료로 읽으며, 첫 �
 `.legacy.json`으로 복사한다. 같은 바이트는 한 번만 쓰고 이미 있는 사본은 바꾸지 않으며 자동으로 지우지 않는다.
 읽기 권한이 없는 sidecar는 복사할 수 없으므로 원래 자리를 보존 위치로 알린다. 저장은 sidecar를 바꾸지 않으며,
 읽지 못한 sidecar는 저장을 막지 않는다. 더 새로운 형식(version이 다른) sidecar는 대체하지 않으므로 그 슬롯의
-첫 View 저장을 거절한다. View payload의 checksum이 맞지 않아 저장소가 manifest 자체를 돌려주지 못하는 경우는
-아직 엔진 열기 실패로 남는다. 새 incarnation은
+첫 View 저장을 거절한다. manifest의 View·snapshot 본문 checksum이 맞지 않거나 본문 행이 없으면 검증하지 않은
+원래 바이트를 같은 위치로 복사하고(행이 없으면 빈 파일) 기본 선택으로 계속한다. 그 밖의 저장소 오류는 엔진 열기
+실패로 남는다. 새 incarnation은
 옛 incarnation의 손상된 View 바이트를 읽지 않는다. retirement는 해당 incarnation의
 manifest만 해제하고 미완·Uncertain domain 의무의 참조는 계속 유지한다.
 구조 변경 없이 View만 반복 저장해도 같은 transaction에서 이전 cache snapshot을 정리하며,
