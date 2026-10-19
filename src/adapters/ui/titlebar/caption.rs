@@ -89,7 +89,11 @@ pub fn draw_caption_buttons(
         }
     }
 
-    CaptionDrawResult { actions, hovered }
+    CaptionDrawResult {
+        actions,
+        hovered,
+        close_rect,
+    }
 }
 
 #[derive(Clone, Copy)]

@@ -62,13 +62,26 @@ impl App {
             cause: popup.cause.text().to_owned(),
             label: popup.label().to_owned(),
             path: popup.path.clone(),
-            body: popup.body().to_owned(),
+            body: self.notice_body(popup),
         };
         if let Some((state, _)) = crate::app::window_access::engines_mut!(self)
             .sessions()
             .find(|(_, engine)| engine.has_workspace(workspace))
         {
             state.restore_notices.push(entry);
+        }
+    }
+
+    /// 안내 본문. halt 중에는 알림 영역을 열 수 없으므로 halt 사유를 안내에 함께 보인다.
+    fn notice_body(&self, popup: &notices::NoticePopup) -> String {
+        match (popup.variant, self.journal.halt_reason()) {
+            (notices::NoticeVariant::Halt, Some(reason)) => format!(
+                "{}
+
+{reason}",
+                popup.body()
+            ),
+            _ => popup.body().to_owned(),
         }
     }
 

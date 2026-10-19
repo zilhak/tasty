@@ -69,6 +69,10 @@ impl App {
                 let shown = main.state.restore_notices.len();
                 main.base.state.dirty = true;
                 main.render_if_dirty(&engine, None);
+                // 이번 프레임의 안내 카드에 맞춰 native 페이지의 그림·입력 구멍만 다시 맞춘다.
+                if let Some(engine) = self.engines.window_engine(id) {
+                    crate::app::webview_sync::sync_halted_clipping(main, &engine);
+                }
                 let dropped = main.state.take_pending_intents();
                 if !dropped.is_empty() {
                     tracing::debug!(
@@ -81,7 +85,14 @@ impl App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let ppp = main.base.gpu.egui_pixels_per_point();
-                let pos = egui::pos2(position.x as f32 / ppp, position.y as f32 / ppp);
+                let pos = egui::pos2(
+                    crate::model::PhysicalPx(position.x as f32)
+                        .to_logical(ppp)
+                        .value(),
+                    crate::model::PhysicalPx(position.y as f32)
+                        .to_logical(ppp)
+                        .value(),
+                );
                 let was = main.state.halt_pointer_inside;
                 let inside = main.state.restore_notices.covers(pos)
                     || main

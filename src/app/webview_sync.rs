@@ -43,6 +43,29 @@ pub(crate) fn synchronize(
     }
 }
 
+/// 저장이 멈춘 동안 활성 native 페이지의 bounds는 유지하고 안내 카드의 그림·입력 구멍만 갱신한다.
+/// 생성·주소 갱신·이동·설정·요청 처리는 하지 않는다.
+pub(crate) fn sync_halted_clipping(view: &mut MainView, engine: &EngineRef<'_>) {
+    let scale_factor = view.base.gpu.scale_factor() as f64;
+    let HtmlSurfaces {
+        bounds: active_html,
+        holes: active_holes,
+        clips: active_clips,
+        ..
+    } = collect_html_surfaces(view, engine, scale_factor);
+    for (sid, wv) in &view.webviews {
+        if let Some(bounds) = active_html.get(sid) {
+            wv.set_bounds(*bounds, scale_factor);
+            apply_native_holes(
+                wv,
+                active_holes.get(sid).map_or(&[][..], Vec::as_slice),
+                active_clips.get(sid).map_or(&[][..], Vec::as_slice),
+                scale_factor,
+            );
+        }
+    }
+}
+
 /// `collect_html_surfaces` 의 결과. 활성 surface 는 세 맵에 같은 키로 들어 있다.
 struct HtmlSurfaces {
     /// 플랫폼에 넘길 논리 좌표.
