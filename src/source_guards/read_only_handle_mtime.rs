@@ -38,6 +38,9 @@ const EXPECTED_MTIME_SITES: &[(&str, usize)] = &[
     ("src/app/file_jobs/job_tests.rs", 1),
     // 남은 원본 다시 지우기 시험이 같은 크기로 고친 원본의 수정 시각을 쓰기 핸들로 되돌린다.
     ("src/app/file_jobs/leftover_tests.rs", 1),
+    // HTML 재개 시험이 같은 길이로 고친 문서의 수정 시각을 쓰기 핸들(write(true))로 되돌려 파일
+    // 식별값이 그대로인 쓰기를 만든다.
+    ("src/host_api/webview/scan_resume/tests.rs", 1),
 ];
 
 fn scan_site_population() -> BTreeMap<String, usize> {
