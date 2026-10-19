@@ -515,8 +515,10 @@ macOS·Windows의 실제 실행 결과는 확인되지 않았다.
 (`render.rs::find_bar_html`/`find_in_page_script`). 페이지는 host 설정을 받지 않으므로 plugin 이
 문서를 만들 때마다 `settings.get_keybinding {action:"find"}` 로 바인딩을 읽어
 `KeyboardEvent` 판정 값(`render/find_keys.rs` — US 물리 키 `code` 와 정확한 modifier, macOS 는
-`alt`→Command·`option`→Option)으로 바꿔 스크립트에 넣는다. `ctrl`·`alt`·`option` 이 없는 바인딩은
-페이지 입력과 겹치므로 넣지 않는다. 조회에 실패하면 경고를 남기고 기본 프리셋 값(`ctrl+f`·`alt+f`)을
+`alt`→Command·`option`→Option)으로 바꿔 스크립트에 넣는다. 설정이 저장한 바인딩은 modifier 유무와
+관계없이 모두 넣는다. `ctrl`·`alt`·`option` 이 없고 F1~F24 가 아닌 바인딩(`f`·`shift+f`·`enter` 등)은
+글자 입력과 겹치므로, 입력칸(input·textarea·select·contenteditable)에 포커스가 있거나 IME 조합 중일 때는
+찾기로 가로채지 않는다. `F3`·`Shift+F3` 같은 기능 키는 어디서나 찾기를 연다. 조회에 실패하면 경고를 남기고 기본 프리셋 값(`ctrl+f`·`alt+f`)을
 쓴다. 사용자가 설정을 저장해 `find` 가 바뀌면 host 가 `command.host_shortcut_changed`
 (`action_ids` 에 `find`)를 발행하고 plugin 은 열린 문서를 모두 다시 만든다. 검색 자체는
 markdown plugin 문서에 내장된 신뢰 스크립트만으로 동작한다(네이티브 find API

@@ -1792,8 +1792,14 @@ var body=document.getElementById('tasty-md-body');
 if(!bar||!input||!countEl||!prevBtn||!nextBtn||!closeBtn||!body)return;
 var MATCH_COUNT={match_count};
 var FIND_KEYS={find_keys};
+function isEditable(t){{
+if(!t||!t.tagName)return false;
+var n=t.tagName.toLowerCase();
+return n==='input'||n==='textarea'||n==='select'||t.isContentEditable;
+}}
 function isFindKey(e){{
 return FIND_KEYS.some(function(k){{
+if(k.typing&&(e.isComposing||isEditable(e.target)))return false;
 return e.ctrlKey===k.ctrl&&e.altKey===k.alt&&e.metaKey===k.meta&&e.shiftKey===k.shift&&e.code===k.code;
 }});
 }}
@@ -4782,11 +4788,36 @@ Outro\n";
         let script = find_in_page_script(&Translator::default(), &["ctrl+shift+g".to_string()]);
         assert!(
             script.contains(
-                r#"var FIND_KEYS=[{"code":"KeyG","ctrl":true,"alt":false,"meta":false,"shift":true}];"#
+                r#"var FIND_KEYS=[{"code":"KeyG","ctrl":true,"alt":false,"meta":false,"shift":true,"typing":false}];"#
             ),
             "got: {script}"
         );
         assert!(!script.contains("KeyF"), "got: {script}");
+    }
+
+    #[test]
+    fn find_script_accepts_function_keys_and_guards_typing_keys() {
+        let bindings = ["f3".to_string(), "shift+f3".to_string(), "f".to_string()];
+        let script = find_in_page_script(&Translator::default(), &bindings);
+        assert!(
+            script.contains(r#"{"code":"F3","ctrl":false,"alt":false,"meta":false,"shift":false,"typing":false}"#),
+            "got: {script}"
+        );
+        assert!(
+            script.contains(
+                r#"{"code":"F3","ctrl":false,"alt":false,"meta":false,"shift":true,"typing":false}"#
+            ),
+            "got: {script}"
+        );
+        assert!(
+            script.contains(r#"{"code":"KeyF","ctrl":false,"alt":false,"meta":false,"shift":false,"typing":true}"#),
+            "got: {script}"
+        );
+        // 글자 입력 조합은 입력칸과 IME 조합 중에는 찾기로 가로채지 않는다.
+        assert!(
+            script.contains("if(k.typing&&(e.isComposing||isEditable(e.target)))return false;"),
+            "got: {script}"
+        );
     }
 
     #[test]

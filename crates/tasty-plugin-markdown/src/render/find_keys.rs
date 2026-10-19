@@ -13,6 +13,9 @@ pub(super) struct DomKeyMatcher {
     pub(super) alt: bool,
     pub(super) meta: bool,
     pub(super) shift: bool,
+    /// 입력칸에서 글자 입력·편집으로 쓰이는 조합이다. 페이지는 입력칸이나 IME 조합 중에는
+    /// 이 조합을 찾기로 가로채지 않는다.
+    pub(super) typing: bool,
 }
 
 /// 바인딩 목록을 판정 값의 JSON 배열로 만든다. 읽을 수 없는 바인딩은 뺀다.
@@ -24,8 +27,8 @@ pub(super) fn dom_matchers_json(bindings: &[String]) -> String {
     serde_json::to_string(&matchers).unwrap_or_else(|_| "[]".to_string())
 }
 
-/// 한 바인딩을 판정 값으로 바꾼다. ctrl·alt·option이 없는 조합은 페이지 입력칸의 글자 입력과
-/// 겹치므로 host의 webview 정책과 같이 페이지 단축키로 쓰지 않는다.
+/// 한 바인딩을 판정 값으로 바꾼다. 설정이 저장한 조합은 modifier 유무와 관계없이 모두 받는다.
+/// ctrl·alt·option이 없고 기능 키(F1~F24)가 아닌 조합은 `typing`으로 표시한다.
 pub(super) fn dom_matcher(binding: &str, macos: bool) -> Option<DomKeyMatcher> {
     let lower = binding.trim().to_ascii_lowercase();
     let mut rest = lower.as_str();
@@ -47,10 +50,8 @@ pub(super) fn dom_matcher(binding: &str, macos: bool) -> Option<DomKeyMatcher> {
             break;
         }
     }
-    if !(ctrl || alt || option) {
-        return None;
-    }
     let code = key_code(rest)?;
+    let typing = !(ctrl || alt || option || is_function_key(&code));
     let (alt_key, meta_key) = if macos { (option, alt) } else { (alt, option) };
     Some(DomKeyMatcher {
         code,
@@ -58,7 +59,14 @@ pub(super) fn dom_matcher(binding: &str, macos: bool) -> Option<DomKeyMatcher> {
         alt: alt_key,
         meta: meta_key,
         shift,
+        typing,
     })
+}
+
+/// `F1`~`F24`. 입력칸에서 글자나 편집 동작을 만들지 않는다.
+fn is_function_key(code: &str) -> bool {
+    code.strip_prefix('F')
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// 키 토큰의 US 배열 `KeyboardEvent.code`.
@@ -119,6 +127,7 @@ mod tests {
             alt,
             meta,
             shift,
+            typing: false,
         }
     }
 
@@ -155,15 +164,33 @@ mod tests {
         let json = dom_matchers_json(&["ctrl+shift+g".to_string()]);
         assert_eq!(
             json,
-            r#"[{"code":"KeyG","ctrl":true,"alt":false,"meta":false,"shift":true}]"#
+            r#"[{"code":"KeyG","ctrl":true,"alt":false,"meta":false,"shift":true,"typing":false}]"#
         );
         assert!(!json.contains("KeyF"), "got: {json}");
     }
 
     #[test]
-    fn combos_without_ctrl_alt_or_option_stay_page_text_input() {
-        assert_eq!(dom_matcher("f", false), None);
-        assert_eq!(dom_matcher("shift+f", false), None);
+    fn function_keys_without_modifiers_are_kept() {
+        assert_eq!(
+            dom_matcher("f3", false),
+            Some(m("F3", false, false, false, false))
+        );
+        assert_eq!(
+            dom_matcher("shift+f3", true),
+            Some(m("F3", false, false, false, true))
+        );
+    }
+
+    #[test]
+    fn plain_text_keys_are_kept_and_marked_as_typing() {
+        let typing = |code: &str, shift: bool| DomKeyMatcher {
+            typing: true,
+            ..m(code, false, false, false, shift)
+        };
+        assert_eq!(dom_matcher("f", false), Some(typing("KeyF", false)));
+        assert_eq!(dom_matcher("shift+f", false), Some(typing("KeyF", true)));
+        assert_eq!(dom_matcher("enter", false), Some(typing("Enter", false)));
+        assert_eq!(dom_matcher("ctrl+f", false).map(|x| x.typing), Some(false));
     }
 
     #[test]
