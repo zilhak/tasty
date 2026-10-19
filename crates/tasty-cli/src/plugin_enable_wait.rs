@@ -108,16 +108,21 @@ fn wait(
         } else {
             progress_at
         };
-        let left = until.saturating_duration_since(now);
         let mut connection = match conn.take() {
             Some(connection) => connection,
-            None => match reconnect(left) {
+            None => match reconnect(until.saturating_duration_since(now)) {
                 Ok(connection) => connection,
                 // 남은 시간 안에 연결하지 못했다. 안내 시점이나 상한에서 다시 판단한다.
                 Err(_) if Instant::now() >= until => continue,
                 Err(e) => return Err(e),
             },
         };
+        // 연결에 쓴 시간을 빼고 읽는다. 이미 기한이면 아직 쓰지 않은 연결을 두고 다음 판단으로 간다.
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            conn = Some(connection);
+            continue;
+        }
         let Some(shown) = connection.send_reading_within(show, left)? else {
             continue;
         };
@@ -315,6 +320,46 @@ mod tests {
             server.join().unwrap() >= 2,
             "a fresh connection after the progress point"
         );
+    }
+
+    /// 재연결에 걸린 시간도 대기 상한에 들어간다.
+    #[test]
+    fn time_spent_reconnecting_counts_against_the_limit() {
+        let (port, server) = silent_server();
+        let connect = move |_left| -> anyhow::Result<IpcConnection> {
+            IpcConnection::new(TcpStream::connect(("127.0.0.1", port))?)
+        };
+        let slow = move |left| -> anyhow::Result<IpcConnection> {
+            std::thread::sleep(Duration::from_millis(300));
+            connect(left)
+        };
+        let mut value = json!({"start": {"generation": 3, "state": "starting"}});
+        let show = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "plugin.show".into(),
+            params: json!({"id": "p"}),
+            id: Some(json!(2)),
+            session_token: None,
+            caller_agent_id: None,
+            response_timeout_ms: None,
+            idempotency_key: None,
+        };
+        let started = Instant::now();
+        wait(
+            connect(Duration::ZERO).unwrap(),
+            slow,
+            &show,
+            3,
+            &mut value,
+            Duration::from_millis(600),
+            Duration::from_millis(100),
+            |_| {},
+        )
+        .unwrap();
+        let waited = started.elapsed();
+        assert!(waited < Duration::from_millis(800), "waited {waited:?}");
+        assert_eq!(state_of(&value), Some("starting"));
+        server.join().unwrap();
     }
 
     /// 다른 요청이 새 세대로 기동하면 이 요청은 취소로 끝난다.
