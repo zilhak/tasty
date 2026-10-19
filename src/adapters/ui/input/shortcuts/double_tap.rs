@@ -49,37 +49,15 @@ impl MainView {
             return true;
         }
 
-        let bindings_to_check: Vec<(&[String], &str)> = vec![
-            (&kb.new_workspace, "new_workspace"),
-            (&kb.close_workspace, "close_workspace"),
-            (&kb.new_tab, "new_tab"),
-            (&kb.close_pane, "close_pane"),
-            (&kb.split_pane_vertical, "split_pane_vertical"),
-            (&kb.split_pane_horizontal, "split_pane_horizontal"),
-            (&kb.split_surface_vertical, "split_surface_vertical"),
-            (&kb.split_surface_horizontal, "split_surface_horizontal"),
-            (&kb.focus_pane_next, "focus_pane_next"),
-            (&kb.focus_pane_prev, "focus_pane_prev"),
-            (&kb.focus_surface_next, "focus_surface_next"),
-            (&kb.focus_surface_prev, "focus_surface_prev"),
-            (&kb.close_surface, "close_surface"),
-            (&kb.open_markdown, "open_markdown"),
-            (&kb.open_explorer, "open_explorer"),
-            (&kb.convert_surface, "convert_surface"),
-            (&kb.convert_to_markdown, "convert_to_markdown"),
-            (&kb.convert_to_explorer, "convert_to_explorer"),
-            (&kb.close_active, "close_active"),
-            (&kb.next_tab, "next_tab"),
-            (&kb.prev_tab, "prev_tab"),
-            (&kb.restore_closed, "restore_closed"),
-            (&kb.quit, "quit"),
-            (&kb.quit_immediate, "quit_immediate"),
-            (&kb.quit_minimize, "quit_minimize"),
-        ];
-
+        // 받는 칸의 집합은 설정 녹화와 같은 `DOUBLE_TAP_FIELDS` 하나다. 위의 두 동작은 먼저 처리했다.
         // 매칭뿐 아니라 실제 실행한 경우에만 입력을 소비한다.
-        for (bindings, action) in &bindings_to_check {
-            if has_dt(bindings) && self.run_double_tap_action(engine, action) {
+        for action in crate::settings::KeybindingSettings::DOUBLE_TAP_FIELDS
+            .iter()
+            .filter(|f| !matches!(**f, "toggle_settings" | "toggle_notifications"))
+        {
+            if has_dt(kb.get_bindings(action).unwrap_or(&[]))
+                && self.run_double_tap_action(engine, action)
+            {
                 return true;
             }
         }

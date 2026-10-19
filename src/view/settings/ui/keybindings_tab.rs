@@ -374,16 +374,13 @@ pub fn draw_keybindings_tab(
     let th = crate::theme::theme();
     let current = sub_tab;
 
-    // winit에서 직접 캡처한 키 조합을 사용. double-tap이 우선.
-    let captured = if recording_field.is_some() {
-        if let Some(dt) = captured_double_tap.take() {
-            KeyCapture::Combo(dt)
-        } else {
-            captured_winit_combo.take().unwrap_or(KeyCapture::None)
-        }
-    } else {
-        KeyCapture::None
-    };
+    // winit에서 직접 캡처한 키 조합을 사용. 더블탭은 받는 칸에서만 조합보다 앞선다.
+    let captured = double_tap_capture::take_capture(
+        ui,
+        recording_field,
+        captured_double_tap,
+        captured_winit_combo,
+    );
 
     if draws_entries(current) {
         let entries = entries_for(current);
@@ -481,11 +478,13 @@ pub fn draw_keybindings_tab(
                 .small()
                 .color(th.text_disabled()),
         );
+        double_tap_capture::draw_notices(ui, &th, settings, recording_field);
     }
 }
 
 /// Preset 서브탭: 좌측 프리셋 목록, 우측 미리보기 테이블 + 적용 버튼.
 mod capture;
+mod double_tap_capture;
 mod drag_flip;
 mod entries;
 mod entries_scripts;

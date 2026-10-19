@@ -245,6 +245,18 @@ impl View for SettingsView {
                 if event.state == ElementState::Pressed
                     && let Some(dt) = self.double_tap.take()
                 {
+                    // 메인 창에서 설정을 여는 더블탭은 설정 창 안에서 같은 입력으로 닫는다.
+                    if !is_recording
+                        && self
+                            .settings
+                            .keybindings
+                            .toggle_settings
+                            .iter()
+                            .any(|b| b == dt.binding_str())
+                    {
+                        self.should_close = true;
+                        return ViewAction::Close;
+                    }
                     self.captured_double_tap = Some(dt.binding_str().to_string());
                     self.mark_dirty();
                 }

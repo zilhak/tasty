@@ -978,19 +978,18 @@ fn dispatchable_action_ids() -> Vec<String> {
 // 등록된 액션이 실행 경로에도 있는지 확인한다.
 fn double_tap_registered_and_armed() -> (Vec<String>, Vec<String>) {
     const SRC: &str = include_str!("double_tap.rs");
-    let list_start = SRC
-        .find("let bindings_to_check")
-        .expect("bindings_to_check 를 못 찾았다");
-    let list_end = SRC[list_start..].find("];").expect("목록 끝") + list_start;
-    let registered: Vec<String> = SRC[list_start..list_end]
-        .lines()
-        .filter_map(|l| {
-            let l = l.trim();
-            let rest = l.strip_prefix("(&kb.")?;
-            let (_, after) = rest.split_once(", \"")?;
-            Some(after.split('"').next()?.to_string())
-        })
+    // 등록 집합은 설정 녹화와 공유하는 상수다. 앞에서 따로 처리하는 두 동작은 실행 함수 밖이다.
+    let registered: Vec<String> = crate::settings::KeybindingSettings::DOUBLE_TAP_FIELDS
+        .iter()
+        .filter(|f| !matches!(**f, "toggle_settings" | "toggle_notifications"))
+        .map(|f| f.to_string())
         .collect();
+    for special in ["toggle_settings", "toggle_notifications"] {
+        assert!(
+            SRC.contains(&format!("has_dt(&kb.{special})")),
+            "{special} 의 더블탭 처리를 못 찾았다"
+        );
+    }
 
     // run_double_tap_ 접두어를 가진 실행 함수를 모두 읽는다.
     let code = tasty_doc_guards::source_text::mask_non_code(SRC);

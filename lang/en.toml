@@ -643,6 +643,8 @@ hint_press_bare_key = "Press a key (no modifier)..."
 quick_switch_conflict_warning = "Conflicts with existing shortcuts: {}"
 hint_none = "None"
 hint_esc_to_clear = "Press Esc to clear a binding, or press a key combination to bind. Use + to add more."
+double_tap_rejected = "Double-tap shortcuts do not run for this action. Press a key combination, or Esc to clear."
+double_tap_unusable = "These saved double-tap shortcuts do not run: {}"
 add_binding_button = "Add binding"
 scripts_empty = "No scripts registered. Add scripts in Settings › Misc › Scripts, then bind a shortcut here."
 

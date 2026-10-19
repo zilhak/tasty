@@ -642,6 +642,8 @@ hint_press_bare_key = "キーを1つ押してください (修飾キーなし)..
 quick_switch_conflict_warning = "既存のショートカットと競合: {}"
 hint_none = "なし"
 hint_esc_to_clear = "Esc を押すと割り当てを解除します。キーの組み合わせを押して再設定するか、+ で追加してください。"
+double_tap_rejected = "この操作はダブルタップでは実行されません。キーの組み合わせを押すか、Esc で解除してください。"
+double_tap_unusable = "保存済みのダブルタップのうち実行されないもの: {}"
 add_binding_button = "ショートカットを追加"
 scripts_empty = "登録済みのスクリプトがありません。設定 › その他 › スクリプトで登録してから、ここでショートカットを指定してください。"
 
