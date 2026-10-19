@@ -1,4 +1,4 @@
-<!-- source-hash: e1052f53a7e1 -->
+<!-- source-hash: f50ce6b54e39 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -137,7 +137,7 @@ Use it from a terminal while Tasty is running. The output is JSON.
 
 `install` checks the signature before copying the folder. For an unverified plugin it warns about the cause and the risk, installs nothing, and shows the `tasty plugin install --allow-unverified <folder>` command to use if you trust the source. When the signature check refuses the install, it tells you the actual reason (no signature, a key you have not trusted, a public key file that is missing or does not match, and so on) and leaves nothing behind in the plugins folder, the permissions or the trust list. Fix the problem and run the same command again to install. If the plugin is registered but then fails to start, the installed folder stays; check `tasty plugin logs <id>` for the cause.
 
-When a plugin does not start, a warning is left in the notification list. If it fails several times in a short time and Tasty turns it off automatically, a separate error notification is left and the plugin is not started until you turn it on again. Repeated failures of the same plugin are grouped into one. The notification body and `tasty plugin logs <id>` show the cause.
+When a plugin does not start, a warning is left in the notification list. If it fails several times in a short time and Tasty turns it off automatically, a separate error notification is left and the plugin is not started until you turn it on again. Repeated failures of the same plugin that you did not turn on again are grouped into one. Each time you turn it on yourself, that result gets its own notification. The notification body and `tasty plugin logs <id>` show the cause.
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 
