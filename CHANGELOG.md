@@ -33,6 +33,7 @@
 - **`tasty surface foreground-process`(IPC `surface.foreground_process`)가 전경이 셸인지 알려 준다.** 응답에 `is_shell`이 더해졌다. 전경 PID가 터미널의 루트 셸이거나 이름이 알려진 셸이면 `true`, 다른 프로그램이면 `false`이며 `name`·`pid`와 같은 조회 결과로 정한다. 터미널이 없거나 조회할 수 없으면 `name`·`pid`와 함께 `null`이다. 읽기만 하며 권한은 그대로다.
 
 - **출력 observer 정보에 저장 실패 수가 생겼다.** `output.observe_list`·`output.observe_info`의 memory sink 항목에 `submit_rejected`(저장 실행기가 접수하지 않아 버린 수)와 `store_failed`(저장되지 않았거나 저장 여부를 모르는 수)가 더해졌다. `dropped`는 지금처럼 채널이 가득 차 버린 수만 센다. 파일 sink는 두 값이 0이다.
+- **커스텀 플러그인도 egui-mesh surface kind 를 등록한다.** `rendering = "egui-mesh"` 인 `[[surface_kinds]]` 는 플러그인 ID 와 무관하게 `api_version` 이 호스트와 같고 kind 이름이 호스트 내장 kind(`terminal`·`empty`·`explorer`·`dag_graph`)나 다른 플러그인이 이미 등록한 kind 와 겹치지 않으면 등록된다. 이름이 겹치면 먼저 등록한 플러그인을 유지하고 나중 선언은 경고 로그와 함께 버리며 `plugin.surface_kind_registered` 이벤트도 보내지 않는다. 이전에는 번들 image·mesh_demo 만 등록됐다. attach mirror 는 서버에 같은 플러그인 소유의 egui-mesh 로 등록된 kind 를 mesh 로 전달하고, mirror 에서 연 파일도 client 에 등록된 egui-mesh kind 면 원격에 연다.
 
 ### Changed
 
