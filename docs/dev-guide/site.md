@@ -344,7 +344,7 @@ Sätteri 의 hast 플러그인(`src/lib/satteri-*.mjs`)에서 일어난다.
   먼저 사용한다. 64비트 `arm` 은 arm64, 64비트 `x86` 은 x64 로 본다. 이 API 가 아키텍처를 주면 그 값만
   따르며, 32비트 같은 다른 조합은 대응 자산이 없으므로 릴리스 페이지에 남는다.
 - 이 API 가 없거나 거부되거나 빈 값을 주면 `navigator.platform`, 그다음 user agent 문자열에서
-  `aarch64`·`arm64`·`armv8` 은 arm64, `x86_64`·`amd64`·`x64` 는 x64 로 읽는다. 어느 쪽도 맞지 않으면
+  `aarch64`·`arm64` 는 arm64, `x86_64`·`amd64`·`x64` 는 x64 로 읽는다. `armv8`·`armv8l` 처럼 32비트 ARM 환경일 수 있는 이름은 arm64 로 보지 않는다. 어느 쪽도 맞지 않으면
   아키텍처를 모르는 것으로 보고 릴리스 페이지에 남긴다.
 - macOS 는 Apple silicon 산출물만 배포하고 Safari 가 아키텍처를 알려 주지 않으므로 아키텍처를 묻지 않고
   `data-macos-arm64` 를 사용한다.

@@ -245,7 +245,7 @@
       }
     };
     var archOf = function (s) {
-      if (/aarch64|arm64|armv8/i.test(s)) return "arm64";
+      if (/aarch64|arm64/i.test(s)) return "arm64";
       if (/x86_64|x86-64|amd64|\bx64\b/i.test(s)) return "x64";
       return null;
     };
