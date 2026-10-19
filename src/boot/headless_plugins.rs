@@ -18,12 +18,37 @@ pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &EngineRef<'
         );
         return;
     };
+    let registries = MetadataRegistries {
+        file_format: engine.runtime.file_format.clone(),
+        file_handler: engine.runtime.file_handler.clone(),
+        surface_registry: engine.runtime.surface_registry.clone(),
+    };
+    ensure_plugin_manager_metadata_with(app, factory, registries);
+}
+
+/// 매니저가 엔진과 공유하는 레지스트리. 엔진의 것은 `app.services.registries`와 같은 Arc다.
+pub(crate) struct MetadataRegistries {
+    pub(crate) file_format: std::sync::Arc<crate::file::format::FileFormatRegistry>,
+    pub(crate) file_handler: std::sync::Arc<crate::file::handler::FileHandlerRegistry>,
+    pub(crate) surface_registry:
+        std::sync::Arc<crate::runtime::surface_registry::SurfaceKindRegistry>,
+}
+
+/// 엔진 없이 매니저를 준비한다. 부팅은 엔진이 첫 셸을 만들기 전에 이 경로를 쓴다.
+pub(crate) fn ensure_plugin_manager_metadata_with(
+    app: &mut App,
+    factory: crate::waker::SharedWakerFactory,
+    registries: MetadataRegistries,
+) {
+    if app.plugin_manager.is_some() {
+        return;
+    }
     let mut mgr = crate::plugin::PluginManager::with_registries(
         factory,
-        engine.runtime.file_format.clone(),
-        engine.runtime.file_handler.clone(),
+        registries.file_format,
+        registries.file_handler,
     );
-    mgr.set_surface_registry(engine.runtime.surface_registry.clone());
+    mgr.set_surface_registry(registries.surface_registry);
     // 호스트 요청과 플러그인 대기를 같은 게이지에 기록한다.
     let gauges = app.services.plugin_gauges();
     mgr.set_plugin_wait(gauges.plugin_wait);

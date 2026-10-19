@@ -151,12 +151,18 @@ impl Drop for EnvVarGuard {
 }
 
 /// 상속 환경변수 제거(`tasty_utils::process::is_stripped_inherited_env`) 시험이 공유하는 키 목록.
-/// 터미널 셸·surface 훅·전역 훅·hook_handler 실행 네 경로의 시험이 같은 목록을 쓴다.
+/// 터미널 셸·surface 훅·전역 훅·hook_handler·작업 자식 경로의 시험이 같은 목록을 쓴다.
+/// 제품 세션 변수의 목록은 번들 Claude·Codex 매니페스트가 정본이며, 시험은
+/// [`install_bundled_plugin_rules`] 로 그 선언을 설치·활성 상태처럼 공용 표에 올린다.
 /// 출하 크레이트 밖에 두어 목록을 고쳐도 번들 플러그인의 배포 내용이 바뀌지 않는다.
 pub mod strip_env_keys {
+    use std::collections::BTreeMap;
     use std::ffi::OsString;
 
-    /// 지워야 하는 키. 값은 [`inherited`] 가 정한다.
+    use tasty_utils::process::{InheritedEnvRules, set_plugin_inherited_env_rules};
+
+    /// 번들 플러그인이 설치·활성일 때 지워야 하는 키. 값은 [`inherited`] 가 정한다.
+    /// `CMUX_SOCKET_PATH` 는 본체가 지운다.
     pub const STRIPPED: &[&str] = &[
         "CLAUDECODE",
         "CLAUDE_PID",
@@ -184,6 +190,7 @@ pub mod strip_env_keys {
     pub const KEPT: &[&str] = &[
         "TASTY_SURFACE_ID",
         "TASTY_PARENT_HOME",
+        "TASTY_LOCALE",
         "TERM",
         "CLAUDE_CONFIG_DIR",
         "CLAUDE_CODE_GIT_BASH_PATH",
@@ -217,16 +224,42 @@ pub mod strip_env_keys {
             .collect()
     }
 
+    /// 번들 Claude·Codex 매니페스트의 제거 선언. 키는 매니페스트 id 다.
+    pub fn bundled_plugin_rules() -> BTreeMap<String, InheritedEnvRules> {
+        let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        ["tasty-plugin-claude", "tasty-plugin-codex"]
+            .into_iter()
+            .map(|dir| {
+                let m = tasty_plugin_manifest::Manifest::load(&crates.join(dir))
+                    .unwrap_or_else(|e| panic!("{dir} 매니페스트를 읽지 못했다: {e}"));
+                (m.id, m.contributes.strip_inherited_env.to_rules())
+            })
+            .collect()
+    }
+
+    /// 번들 두 플러그인이 설치·활성인 상태처럼 공용 표에 선언을 올린다. 같은 시험 바이너리의
+    /// 다른 시험에도 보이므로, 번들 키가 남는지 보는 시험은 이 표 대신 [`bundled_plugin_rules`] 의
+    /// 규칙으로 직접 판정한다.
+    pub fn install_bundled_plugin_rules() {
+        for (owner, rules) in bundled_plugin_rules() {
+            set_plugin_inherited_env_rules(&owner, rules);
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use std::ffi::{OsStr, OsString};
 
-        use super::{STRIPPED, inherited};
+        use super::{
+            KEPT, STRIPPED, bundled_plugin_rules, inherited, install_bundled_plugin_rules,
+        };
         use tasty_utils::process::{env_keys_to_strip, is_stripped_inherited_env};
 
-        /// 공용 판정이 Claude Code 세션 키와 CMUX_* 는 고르고 사용자 설정·TASTY_*·일반 키는 남긴다.
+        /// 번들 선언이 설치되면 공용 판정이 제품 세션 키와 CMUX_* 는 고르고 사용자 설정·TASTY_*·
+        /// 일반 키는 남긴다.
         #[test]
         fn claude_session_and_cmux_keys_are_stripped_but_others_are_kept() {
+            install_bundled_plugin_rules();
             let picked = env_keys_to_strip(inherited());
             let expected: Vec<OsString> = STRIPPED.iter().map(OsString::from).collect();
             assert_eq!(picked, expected);
@@ -235,6 +268,7 @@ pub mod strip_env_keys {
         /// `AI_AGENT` 는 Claude Code 가 넣은 값만 지우고 사용자·다른 도구의 값은 남긴다.
         #[test]
         fn ai_agent_is_stripped_only_for_claude_code_values() {
+            install_bundled_plugin_rules();
             for v in [
                 "claude-code_2-1-291_agent",
                 "claude-code_2-1-291_harness",
@@ -250,6 +284,29 @@ pub mod strip_env_keys {
                     !is_stripped_inherited_env("AI_AGENT", OsStr::new(v)),
                     "{v} 는 남겨야 한다"
                 );
+            }
+        }
+
+        /// 제품 키는 그 제품 플러그인의 선언으로만 지워진다. 한 플러그인만 활성이면 다른
+        /// 플러그인의 키는 남는다(비활성·미설치 플러그인의 선언은 적용되지 않는다).
+        #[test]
+        fn each_product_key_belongs_to_its_own_plugin_only() {
+            let rules = bundled_plugin_rules();
+            let claude = &rules["com.tasty.claude"];
+            let codex = &rules["com.tasty.codex"];
+            for key in STRIPPED.iter().filter(|k| **k != "CMUX_SOCKET_PATH") {
+                let v = OsStr::new(super::value_for(key));
+                let by_codex = codex.matches(key, v);
+                let by_claude = claude.matches(key, v);
+                assert!(
+                    by_claude ^ by_codex,
+                    "{key}: claude={by_claude} codex={by_codex}"
+                );
+                assert_eq!(by_codex, *key == "CODEX_THREAD_ID", "{key}");
+            }
+            for key in KEPT {
+                let v = OsStr::new(super::value_for(key));
+                assert!(!claude.matches(key, v) && !codex.matches(key, v), "{key}");
             }
         }
     }

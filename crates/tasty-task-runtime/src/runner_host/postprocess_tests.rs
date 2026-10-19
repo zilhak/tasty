@@ -259,11 +259,13 @@ fn text_format_keeps_stdout_verbatim() {
 fn the_child_gets_the_host_environment_without_the_outer_session_identities() {
     use std::ffi::OsString;
     let os = |k: &str, v: &str| (OsString::from(k), OsString::from(v));
+    // 번들 Claude 플러그인이 설치·활성인 상태처럼 선언을 공용 표에 올린다.
+    tasty_test_support::strip_env_keys::install_bundled_plugin_rules();
     let path = std::env::var_os("PATH").unwrap_or_default();
     let inherited = vec![
         (OsString::from("PATH"), path),
         os("HOME", "/home/someone"),
-        // 바깥 Claude Code 세션의 표지·비밀은 넘기지 않는다.
+        // 활성 Claude 플러그인이 선언한 바깥 세션의 표지·비밀은 넘기지 않는다.
         os("CLAUDECODE", "1"),
         os("CLAUDE_CODE_SESSION_ID", "s-1"),
         os("CLAUDE_CODE_ENTRYPOINT", "cli"),

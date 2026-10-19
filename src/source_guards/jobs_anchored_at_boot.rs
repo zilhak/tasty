@@ -33,7 +33,7 @@ const ANCHORS: &[Anchor] = &[
         call: "install_builtins_if_needed",
         combo: "gui",
         file: "src/app/window_lifecycle.rs",
-        func: "fn build_plugin_manager",
+        func: "fn prepare_plugin_manager",
     },
     Anchor {
         // namespace 표를 전달하지 않으면 메서드 권한 조회가 플러그인 prefix를 인식하지 못한다.
@@ -48,7 +48,22 @@ const ANCHORS: &[Anchor] = &[
         call: "install_namespace_table",
         combo: "gui",
         file: "src/app/window_lifecycle.rs",
-        func: "fn build_plugin_manager",
+        func: "fn prepare_plugin_manager",
+    },
+    Anchor {
+        // 엔진이 첫 셸을 만들기 전에 반영하지 않으면 복원 셸이 제품 세션 변수를 물려받는다.
+        job: "상속 환경변수 제거 규칙 반영",
+        call: "publish_inherited_env",
+        combo: "headless",
+        file: "src/boot.rs",
+        func: "fn run_headless",
+    },
+    Anchor {
+        job: "상속 환경변수 제거 규칙 반영",
+        call: "publish_inherited_env",
+        combo: "gui",
+        file: "src/app/window_lifecycle.rs",
+        func: "fn prepare_plugin_manager",
     },
     Anchor {
         job: "agent 재시작 정화·핸들 재적재",
@@ -106,6 +121,54 @@ fn every_boot_anchored_job_runs_on_every_build_combination() {
         "초기화 함수에서 필수 작업을 찾지 못한 조합이 있다. 요청이 와야만 설치·상태 정리가 수행되는 구조는 아닌지 확인한다(docs/dev-guide/plugin-development.md):\n  {}",
         missing.join("\n  ")
     );
+}
+
+/// 상속 환경변수 제거 규칙은 엔진이 첫 셸을 만들기 전에 반영해야 한다.
+/// 주석을 지운 본문에서 두 이름의 첫 등장 위치만 비교하며 실제 실행 순서를 증명하지는 않는다.
+#[test]
+fn inherited_env_rules_are_published_before_the_engine_is_built() {
+    const ORDER: &[(&str, &str, &str, &str)] = &[
+        (
+            "src/boot.rs",
+            "fn run_headless",
+            "publish_inherited_env",
+            "bootstrap_engine(",
+        ),
+        (
+            "src/app/window_lifecycle.rs",
+            "fn ensure_engine_and_plugins",
+            "prepare_plugin_manager(",
+            "EngineSession::new_with_ids(",
+        ),
+        (
+            "src/app/window_lifecycle.rs",
+            "fn ensure_engine_and_plugins",
+            "prepare_plugin_manager(",
+            "build_core_state_first_boot(",
+        ),
+        (
+            "src/app/window_lifecycle.rs",
+            "fn build_engine_and_plugins",
+            "prepare_plugin_manager(",
+            "build_core_state_first_boot(",
+        ),
+    ];
+    for (file, func, first, then) in ORDER {
+        let src = std::fs::read_to_string(repo_root().join(file))
+            .unwrap_or_else(|e| panic!("{file} 을 읽지 못했다: {e}"))
+            .replace("\r\n", "\n");
+        let body = strip_comments(
+            &fn_body(&src, func)
+                .unwrap_or_else(|| panic!("{file}에서 `{func}` 본문을 읽지 못했다")),
+        );
+        let a = body
+            .find(first)
+            .unwrap_or_else(|| panic!("{file} `{func}` 에 {first} 가 없다"));
+        let b = body
+            .find(then)
+            .unwrap_or_else(|| panic!("{file} `{func}` 에 {then} 가 없다"));
+        assert!(a < b, "{file} `{func}`: {first} 가 {then} 보다 뒤에 있다");
+    }
 }
 
 #[test]

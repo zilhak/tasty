@@ -7,6 +7,7 @@ description = "Test-only RAII guards for Tasty — process-global env and TASTY_
 
 [dependencies]
 tasty-utils = { path = "../tasty-utils", features = ["test-support"] }
+tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }
 tempfile = "3"
 
 [lints]

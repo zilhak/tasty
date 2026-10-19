@@ -169,6 +169,8 @@ impl PluginManager {
             egui_mesh_frames: HashMap::new(),
             popup_mesh_frames: HashMap::new(),
             extensions: crate::extension_registry::ExtensionRegistry::new(),
+            inherited_env: std::collections::BTreeMap::new(),
+            publishes_inherited_env: false,
             hook_failures: HashMap::new(),
             namespace_expiries: HashMap::new(),
             expired_namespace_calls: HashMap::new(),
@@ -242,6 +244,7 @@ impl PluginManager {
         self.packages = packages;
         self.rejected = rejected;
         self.sync_ipc_namespaces_from_packages();
+        self.recompute_inherited_env();
     }
 
     /// 설치 목록으로 namespace 소유자를 갱신한다. 실행 여부는 호출 검증에서 따로 확인한다.
@@ -273,6 +276,7 @@ impl PluginManager {
     pub(crate) fn set_packages_for_tests(&mut self, packages: Vec<crate::PluginPackage>) {
         self.packages = packages;
         self.sync_ipc_namespaces_from_packages();
+        self.recompute_inherited_env();
     }
 
     /// debug 전용 신선도 검사가 낡은 표를 잡는지 확인하기 위해 갱신을 생략한다.

@@ -9,6 +9,16 @@
 
 > CLI·IPC, 부모·자식 관계, 훅 설치를 함께 제공하는 예제다. 구현 구조는 [플러그인 개발](../../dev-guide/plugin-development.md#cli--ipc-namespace)을 참고한다.
 
+## Tasty 자식에서 지우는 세션 변수
+
+매니페스트 `[contributes.strip_inherited_env]`로 Claude Code가 자기 세션의 자식에 넣는 표지·비밀·세션 값을 선언한다. 이 플러그인이 설치·활성이면 Tasty는 터미널 셸·훅·작업 자식에서 이 값을 지운다([선언 형식과 적용 조건](../../dev-guide/plugin-development.md#상속-환경변수-제거-contributesstrip_inherited_env)). 바깥 Claude Code 세션 안에서 Tasty를 띄워도 그 터미널에서 실행한 Claude가 자식 세션 표지(`CLAUDE_CODE_CHILD_SESSION`)를 물려받아 transcript 저장을 끄지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN`)이 무관한 셸로 새지 않는다. 정본은 `crates/tasty-plugin-claude/tasty-plugin.toml`이며 목록은 Claude Code 2.1.291 기준이다.
+
+- 이름: `CLAUDECODE`·`CLAUDE_PID`·`CLAUDE_EFFORT`·`CLAUDE_PLUGIN_ROOT`·`CLAUDE_PLUGIN_DATA`·`CLAUDE_PROJECT_DIR`·`CLAUDE_ENV_FILE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_CHILD_SESSION`·`CLAUDE_CODE_SESSION_ATTENDED`·`CLAUDE_CODE_EXECPATH`·`CLAUDE_CODE_ENTRYPOINT`·`CLAUDE_CODE_MESSAGING_SOCKET`·`CLAUDE_CODE_MESSAGING_TOKEN`·`CLAUDE_CODE_INVOKED_SKILLS`·`CLAUDE_CODE_BRIDGE_SESSION_ID`. Bash·훅 자식 env 조립, 플러그인 훅·MCP 자식 env 조립, 새 Claude를 띄울 때 스스로 지우는 목록을 기준으로 하며 Claude Code 버전에 따라 늘어날 수 있다.
+- 접두사: `CLAUDE_PLUGIN_OPTION_`. 플러그인 훅에 플러그인 옵션을 주입하는 이름공간이라 키가 옵션마다 다르다.
+- 값 접두사: `AI_AGENT`의 값이 `claude-code_`나 `claude-code/`로 시작할 때만 지운다. 사용자나 다른 도구가 넣은 값은 남긴다.
+- 지우지 않는 것: `CLAUDE_CODE_*` 접두사 전체는 지우지 않는다. 그 이름 대부분이 사용자가 넣는 설정(`CLAUDE_CODE_GIT_BASH_PATH`·`CLAUDE_CODE_OAUTH_TOKEN`·`CLAUDE_CODE_USE_BEDROCK` 등)이다. `ANTHROPIC_API_KEY`와 W3C 표준 이름 `TRACEPARENT`도 남는다.
+- 플러그인을 비활성화하거나 제거하면 이 목록은 적용되지 않는다.
+
 ## 부모의 완료 수신 채널
 
 자식의 상태 변경은 caller surface의 `<parent_home>/notify/<caller_surface>.log`에 한 줄로 기록한다. 자식 CLI 종류에 따라 수신 경로를 바꾸지 않는다. 훅 설치와 부모의 로그 수신 준비는 별개이며 idle·needs_input·interrupt·exit는 작업 성공을 뜻하지 않는다. [완료 알림 로그](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)를 따른다.

@@ -13,6 +13,7 @@
 | **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
+| **Tasty 자식에서 지울 상속 환경변수** | [claude](../plugins/claude/index.md#tasty-자식에서-지우는-세션-변수) · [codex](../plugins/codex/index.md#tasty-자식에서-지우는-세션-변수) (매니페스트만) | ★ |
 | **wasm 플러그인** (frozen POC) | `crates/tasty-plugin-sdk-wasm`(workspace-exclude harness) — [플러그인 권한 모델](plugin-permissions.md) | ★★ |
 
 전부 `crates/tasty-plugin-<name>/` 에 있다.
@@ -127,6 +128,25 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 ### 완료 판정 전략 (agent task `Custom` dispatch 완료 판정)
 
 `[[contributes.completion_strategy]]` — `agent.task_create` 의 `TaskCommand::Custom.poll` 이 이름으로 참조할 수 있는 완료 판정 전략을 선언한다(자세한 모델·결정 사항은 [agent-runner](agent-runner.md)의 "완료 판정 전략 레지스트리" 참고). 권한: `completion_strategy.define`. `spec.kind = "poll"`(`poll_method`/`state_field`/`terminal_states` 등, `PollSpec` 과 1:1) 또는 `"push"`(`notify_via`: 자기 자신 또는 host 소유 훅 핸들러 id + 필수 `timeout_ms`). `poll_method` 와 `default_for_methods`(이 전략을 기본으로 사용할 IPC 메서드 목록)는 plugin 소유면 자기 namespace(`<plugin_id>.*`) 만 가리킬 수 있다. id 는 short name → install 단계가 `<plugin_id>/<id>` 로 자동 prefix.
+
+### 상속 환경변수 제거 (`contributes.strip_inherited_env`)
+
+Tasty를 다른 도구의 세션 안에서 띄우면 그 도구가 자기 자식에 넣은 세션 표지·비밀 변수가 Tasty 프로세스에 남는다. 플러그인은 이 변수를 Tasty가 띄우는 자식에게 넘기지 않도록 선언한다. 권한 토큰은 필요 없다.
+
+```toml
+[contributes.strip_inherited_env]
+names = ["VENDOR_SESSION_ID"]                                   # 이름이 같으면 지운다
+prefixes = ["VENDOR_PLUGIN_OPTION_"]                            # 이름이 접두사로 시작하면 지운다
+values = [{ name = "AI_AGENT", prefixes = ["vendor_", "vendor/"] }]  # 이름이 같고 값이 접두사로 시작할 때만 지운다
+```
+
+- 적용 대상: 터미널 셸, surface 훅, 전역 훅, hook_handler 직접 실행, 작업 자식(Run·후처리·reduce custom 셸). 다섯 경로가 `tasty_utils::process::is_stripped_inherited_env` 하나로 판정한다.
+- 적용 조건: 플러그인이 설치돼 있고 사용자가 비활성화하지 않았으면 적용한다. 프로세스 기동·hello 완료나 기동 실패로 인한 자동 비활성화와는 관계없다. 호스트는 부팅 때 엔진이 첫 셸(복원 셸 포함)을 만들기 전에 설치 목록을 읽어 규칙을 반영하므로 첫 자식부터 적용된다. 번들 갱신도 그보다 먼저 끝나 갱신된 매니페스트의 선언이 쓰인다.
+- 변경 시점: 비활성화·제거하면 그 플러그인의 규칙이 빠지고, 다시 활성화하면 규칙이 돌아온다. 이미 실행 중인 자식의 환경은 바뀌지 않으며 이후 만드는 자식부터 적용된다.
+- 사용자가 직접 넣는 설정과 이름공간을 공유하면 `prefixes` 대신 `names`나 `values`로 좁힌다.
+- `TASTY_`로 시작하는 이름·접두사는 매니페스트 검증에서 거부한다. 바깥 Tasty 인스턴스 신원(`OUTER_IDENTITY_ENV`) 제거와 셸의 자기 신원 재주입은 본체가 정한다. `CMUX_*`도 본체가 지운다.
+- 이름은 영문자·숫자·밑줄이며 숫자로 시작하지 않는다(1..=128자). `values`의 값 접두사는 비어 있을 수 없다.
+- 예: [Claude 플러그인](../plugins/claude/index.md#tasty-자식에서-지우는-세션-변수), [Codex 플러그인](../plugins/codex/index.md#tasty-자식에서-지우는-세션-변수).
 
 ### 도구 메뉴 항목 + popup
 

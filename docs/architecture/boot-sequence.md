@@ -64,13 +64,16 @@ finish_boot
 
 | 일 | headless | gui |
 |----|----------|-----|
-| 번들 plugin 설치 (`install_builtins_if_needed`) | `run_headless` (`src/boot.rs`) | `build_plugin_manager` (`src/app/window_lifecycle.rs`) |
-| namespace 소유 표 설치 (`install_namespace_table`) | `run_headless` (`src/boot.rs`) | `build_plugin_manager` (`src/app/window_lifecycle.rs`) |
+| 번들 plugin 설치 (`install_builtins_if_needed`) | `run_headless` (`src/boot.rs`) | `prepare_plugin_manager` (`src/app/window_lifecycle.rs`) |
+| namespace 소유 표 설치 (`install_namespace_table`) | `run_headless` (`src/boot.rs`) | `prepare_plugin_manager` (`src/app/window_lifecycle.rs`) |
+| 상속 환경변수 제거 규칙 반영 (`publish_inherited_env`) | `run_headless` (`src/boot.rs`) | `prepare_plugin_manager` (`src/app/window_lifecycle.rs`) |
 | agent 재시작 기록 정리·핸들 재적재 (`purge_stale_agent_state_on_boot`) | `bootstrap_engine` (`src/boot.rs`) | `finish_boot` (`src/app/boot_machine.rs`) |
 
 소유 표 설치는 `PluginManager`가 사용하는 표의 핸들을 `tasty-ipc`에 전달하는 작업이다. 두 크레이트는 같은 표를 읽으며, `refresh_packages`가 설치된 매니페스트에서 표 내용을 갱신한다. 표를 복사하지 않는 이유는 [플러그인 제작 가이드](../dev-guide/plugin-development.md)에 있다.
 
-설치와 namespace 표 등록 자체는 프로세스를 시작하지 않는다. 헤드리스는 이 메타데이터만 준비하고 플러그인이 필요한 첫 호출까지 기동을 미룬다. GUI의 `build_plugin_manager`는 준비 후 `discover_and_start`를 호출해 활성 플러그인을 기동한다. agent 러너 스레드는 두 환경 모두 `agent.task_run --action start` 전까지 시작하지 않는다([작업 러너](../dev-guide/agent-runner.md)).
+설치와 namespace 표 등록 자체는 프로세스를 시작하지 않는다. 헤드리스는 이 메타데이터만 준비하고 플러그인이 필요한 첫 호출까지 기동을 미룬다. GUI는 `prepare_plugin_manager`로 메타데이터를 준비하고 엔진을 만든 뒤 `start_plugin_manager`(`discover_and_start`)로 활성 플러그인을 기동한다.
+
+두 환경 모두 메타데이터 준비(번들 설치·갱신, namespace 표, 설치 목록, 상속 환경변수 제거 규칙 반영)를 엔진 생성보다 먼저 한다. 엔진은 생성 중에 복원 셸이나 기본 셸을 만들 수 있으므로, 활성 플러그인이 선언한 제거 규칙([플러그인 제작 가이드](../dev-guide/plugin-development.md#상속-환경변수-제거-contributesstrip_inherited_env))이 그 첫 셸부터 적용된다. 헤드리스는 엔진과 매니저가 같은 waker factory를 쓴다. 가드는 이 순서도 본문 안 첫 등장 위치로 확인한다. agent 러너 스레드는 두 환경 모두 `agent.task_run --action start` 전까지 시작하지 않는다([작업 러너](../dev-guide/agent-runner.md)).
 
 `src/source_guards/jobs_anchored_at_boot.rs`는 GUI와 헤드리스의 지정된 부팅 함수가 필요한 초기화를 호출하는지 확인한다. 한쪽 환경의 호출이 빠져도 실패한다.
 
@@ -162,7 +165,7 @@ warn 이라 콘솔 노이즈는 없다. release 검증은 `TASTY_LOG=info` 로 �
 | T2.9 window_visible | 부팅 시작 → `set_visible(true)` (첫 로딩 프레임 present 후) |
 | resumed_total | `resumed()` 전체 (T1~T2.5 + 첫 프레임 — 메인 스레드 점유 구간) |
 | T2.6 engine_init | EngineSession 실행 owner 준비 (**부팅 워커 스레드**에서 계측; journal 선택·복원은 별도 대기) |
-| T3a/T3b | plugin discovery / spawn (T3b 의 total_ms = T3 전체, **부팅 워커 스레드**) |
+| T3a/T3b | plugin discovery(엔진 생성 전) / spawn(엔진 생성 뒤) (**부팅 워커 스레드**) |
 | T2.7 engine_wait | `WaitingEngine` 체류 — 메인이 워커 결과를 기다린 시간. `frames` 필드 = 그 동안 돈 로딩 프레임 스텝 수(로딩 프레임이 실제로 갱신됐다는 계측 증거) |
 | T4 layout_wait_plugins | WaitingPlugins 체류 (탈출 사유 satisfied/deadline) |
 | T5 layout_apply | ApplyPendingLayoutRestore |

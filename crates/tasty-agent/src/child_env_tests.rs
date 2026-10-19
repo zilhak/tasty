@@ -13,6 +13,14 @@ fn custom_shell_env_helper() {
         return;
     };
     let out = Path::new(&dir).join("env.txt");
+    // 제품 플러그인이 설치·활성인 상태처럼 이 helper 프로세스의 공용 표에 선언을 올린다.
+    tasty_utils::process::set_plugin_inherited_env_rules(
+        "test.vendor",
+        tasty_utils::process::InheritedEnvRules {
+            names: vec!["XTEST_VENDOR_SESSION".into()],
+            ..Default::default()
+        },
+    );
     let stdout = crate::run_custom_shell("env", "{}").expect("custom shell");
     std::fs::write(out, stdout).expect("write env dump");
 }
@@ -27,13 +35,13 @@ fn the_reduce_custom_shell_does_not_inherit_the_outer_session_identities() {
             "--test-threads=1",
         ])
         .env(DIR_ENV, td.path())
-        // 바깥 Tasty 인스턴스·Claude Code 세션이 남긴 값.
+        // 바깥 Tasty 인스턴스·제품 세션이 남긴 값.
         .env("TASTY_SESSION_TOKEN", "outer-token")
         .env("TASTY_SURFACE_ID", "777")
         .env("TASTY_PARENT_HOME", "/tmp/outer-home")
         .env("TASTY_AGENT_ID", "outer-agent")
-        .env("CLAUDECODE", "1")
-        .env("CLAUDE_CODE_SESSION_ID", "outer-session")
+        .env("XTEST_VENDOR_SESSION", "outer-session")
+        .env("CMUX_SOCKET_PATH", "/tmp/cmux")
         // 그대로 넘어가야 하는 값.
         .env("TASTY_LOCALE", "ko")
         .env("ANTHROPIC_API_KEY", "user-key")
@@ -52,8 +60,8 @@ fn the_reduce_custom_shell_does_not_inherit_the_outer_session_identities() {
         "TASTY_SURFACE_ID",
         "TASTY_PARENT_HOME",
         "TASTY_AGENT_ID",
-        "CLAUDECODE",
-        "CLAUDE_CODE_SESSION_ID",
+        "XTEST_VENDOR_SESSION",
+        "CMUX_SOCKET_PATH",
     ] {
         assert!(
             !names.contains(&gone),

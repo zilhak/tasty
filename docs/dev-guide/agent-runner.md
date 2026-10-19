@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[플러그인 경계](../principles/plugins.md)에 따라 특정 제품에 대한 실행 규칙은 해당 플러그인이 소유한다. 현재 공용 child_env가 사용하는 tasty-utils의 Claude 전용 환경변수 목록은 이 경계와 정합할 범위다. 일반 task·후처리·재시도 계약 자체를 특정 제품 기능으로 보지는 않는다.
+[플러그인 경계](../principles/plugins.md)에 따라 특정 제품에 대한 실행 규칙은 해당 플러그인이 소유한다. 공용 child_env가 지우는 제품 세션 변수는 설치·활성 플러그인의 매니페스트 선언에서 온다. 일반 task·후처리·재시도 계약 자체를 특정 제품 기능으로 보지는 않는다.
 
 workspace마다 스레드 하나가 준비된 task를 실행하고 완료 여부를 확인해 DAG를 진행한다.
 상태 전이·영속 저장·custom reducer의 기본 셸 runner(`run_custom_shell`)는
@@ -115,7 +115,7 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 
 `Run` task, 후처리 CLI, reduce 의 custom 전략 셸(`run_custom_shell` — runner 의 reduce task 와 `agent.task_reduce` 모두)의 자식은 같은 규칙(`crates/tasty-agent/src/child_env.rs`)으로 Tasty 프로세스의 환경을 받는다. 규칙이 한 곳에 있어 세 경로가 같이 바뀐다.
 
-- 지우는 것 1 — 바깥 Claude Code 세션의 표지·비밀. 남기면 자식이 부르는 Claude Code 가 자신을 바깥 세션의 자식으로 오인하고 세션 비밀이 무관한 프로세스로 샌다. 터미널 셸에서도 지우는 목록(`tasty_utils::process` 의 `STRIPPED_ENV_*`)이다: `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_ENTRYPOINT`·`CLAUDE_CODE_MESSAGING_TOKEN` 등의 고정 목록, `CLAUDE_PLUGIN_OPTION_*`·`CMUX_*`, `claude-code_`·`claude-code/` 로 시작하는 `AI_AGENT`, 바깥 Codex 대화의 `CODEX_THREAD_ID`.
+- 지우는 것 1 — 바깥 제품 세션의 표지·비밀. 남기면 자식이 부르는 에이전트가 자신을 바깥 세션의 자식으로 오인하고 세션 비밀이 무관한 프로세스로 샌다. 터미널 셸에서도 지우는 판정(`tasty_utils::process::is_stripped_inherited_env`)이다: 본체가 정하는 `CMUX_*`, 설치·활성 플러그인이 매니페스트 `contributes.strip_inherited_env` 로 선언한 변수(번들 Claude 플러그인의 `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_PLUGIN_OPTION_*`·Claude 값의 `AI_AGENT` 등, 번들 Codex 플러그인의 `CODEX_THREAD_ID`). 플러그인을 비활성화·제거하면 그 선언은 적용되지 않는다([플러그인 제작 가이드](plugin-development.md#상속-환경변수-제거-contributesstrip_inherited_env)).
 - 지우는 것 2 — 바깥 Tasty 인스턴스의 신원: `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`·`TASTY_AGENT_ID`. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면 이 값들은 그 인스턴스의 surface·세션 토큰·완료 알림 경로를 가리킨다. 터미널 셸은 `TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 자기 값으로 덮어쓰지만 runner 의 자식에는 덮어쓸 surface 가 없어 지운다. 그래서 자식이 부른 `tasty` 는 다른 인스턴스의 신원으로 요청하지 않는다. 목록은 터미널 셸·훅과 같은 `tasty_utils::process::OUTER_IDENTITY_ENV` 이고, 판정은 훅 실행과 같은 `is_child_stripped_env` 다.
 - 그대로 넘기는 것: 그 밖의 `TASTY_*`(예: `TASTY_HOME`, 부팅 때 정한 `TASTY_LOCALE`)와 `CLAUDE_CODE_OAUTH_TOKEN`·`ANTHROPIC_API_KEY` 같은 사용자 설정·인증. `TASTY_HOME` 이 남으므로 자식이 부른 `tasty` 는 이 인스턴스에 닿는다.
 - Tasty 가 더하는 task 별 변수는 v2 task 의 report 주소 `TASTY_TASK_REPORT` 하나다(아래 §DAG report). v1 task 와 `agent.task_reduce` 의 custom 셸에는 넣지 않는다. task 에는 자기 surface 가 없다. 터미널 셸과 달리 `TASTY_PARENT_HOME` 도 이 인스턴스의 값으로 넣지 않는다: 작업의 자식은 터미널 surface 가 아니고, 자식이 띄운 에이전트의 완료 알림은 그 알림을 기다리는 호출자의 것이다.

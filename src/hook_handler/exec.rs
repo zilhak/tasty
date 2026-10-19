@@ -192,12 +192,15 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// 직접 실행 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고,
+    /// 직접 실행 훅도 터미널 셸과 같은 판정으로 활성 플러그인이 선언한 세션 키와 CMUX_* 를 지우고,
     /// 바깥 인스턴스의 신원 변수도 지운다.
     #[test]
     fn hook_exec_strips_claude_session_and_cmux_env() {
-        use tasty_test_support::strip_env_keys::{KEPT, STRIPPED, inherited};
+        use tasty_test_support::strip_env_keys::{
+            KEPT, STRIPPED, inherited, install_bundled_plugin_rules,
+        };
         use tasty_utils::process::{OUTER_IDENTITY_ENV, hook_env_keys_to_strip};
+        install_bundled_plugin_rules();
         let env = KEPT
             .iter()
             .map(|k| ((*k).to_owned(), "1".to_owned()))

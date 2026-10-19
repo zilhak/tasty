@@ -564,13 +564,13 @@ fn start_ipc_and_seed(
     }
 }
 
+/// `factory`는 플러그인 매니저와 같은 인스턴스를 받는다.
 #[cfg(not(feature = "gui"))]
 fn bootstrap_engine(
     app: &mut crate::app::App,
     boot_settings: &crate::settings::Settings,
-    waker: &crate::adapters::production::headless_waker::HeadlessWaker,
+    factory: crate::waker::SharedWakerFactory,
 ) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
-    let factory = waker.waker_factory();
     let base_waker = factory.make_default_waker();
     // 부팅 때 한 번 전체 슬롯을 기준으로 마이그레이션·scrollback GC를 수행한다.
     crate::core::layout_persistence::migrate_and_gc_on_boot(boot_settings.general.restore_layout);
@@ -870,7 +870,25 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     app.hub.webhook = Some(webhook);
     start_ipc_and_seed(&mut app, &waker);
 
-    let mut session = bootstrap_engine(&mut app, &boot_settings, &waker)?;
+    // 처음 만든 홈에도 namespace 선언이 있어야 하므로 번들은 부팅 때 설치한다. 프로세스 시작은 지연한다.
+    // 엔진이 첫 셸을 만들기 전에 준비해 활성 플러그인의 상속 환경변수 제거 규칙을 그 셸부터 적용한다.
+    let factory = waker.waker_factory();
+    let registries = headless_plugins::MetadataRegistries {
+        file_format: app.services.registries.file_format.clone(),
+        file_handler: app.services.registries.file_handler.clone(),
+        surface_registry: app.services.registries.surface_registry.clone(),
+    };
+    headless_plugins::ensure_plugin_manager_metadata_with(&mut app, factory.clone(), registries);
+    if let Some(mgr) = app.plugin_manager.as_mut() {
+        crate::plugin::install_builtins_if_needed(mgr);
+        // 권한 판정과 매니저가 같은 namespace 표를 공유하며 refresh_packages가 내용을 채운다.
+        mgr.install_namespace_table_once();
+        mgr.refresh_packages();
+        mgr.recompute_extensions();
+        mgr.publish_inherited_env();
+    }
+
+    let mut session = bootstrap_engine(&mut app, &boot_settings, factory)?;
     let engine_id = session.id;
     let mut engine = session.borrow_mut();
     let preset_store = app.services.preset_store.clone();
@@ -886,15 +904,6 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
         "tasty.startup.post",
         &serde_json::Value::Null,
     );
-
-    // 처음 만든 홈에도 namespace 선언이 있어야 하므로 번들은 부팅 때 설치한다. 프로세스 시작은 지연한다.
-    headless_plugins::ensure_plugin_manager_metadata(&mut app, &engine.as_ref());
-    if let Some(mgr) = app.plugin_manager.as_mut() {
-        crate::plugin::install_builtins_if_needed(mgr);
-        // 권한 판정과 매니저가 같은 namespace 표를 공유하며 refresh_packages가 내용을 채운다.
-        mgr.install_namespace_table_once();
-        mgr.refresh_packages();
-    }
 
     app.state.started = true;
     tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");

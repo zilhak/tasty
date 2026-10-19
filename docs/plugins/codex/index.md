@@ -15,6 +15,10 @@
 
 Codex 대화에서 spawn한 자식의 턴 결과는 완료 로그와 별도로 [부모 대화에 돌아간다](#codex-부모에게-결과-반환).
 
+## Tasty 자식에서 지우는 세션 변수
+
+매니페스트 `[contributes.strip_inherited_env]`로 `CODEX_THREAD_ID`를 선언한다. Codex는 도구 명령마다 그 대화의 thread ID를 이 이름으로 넣는다. Codex 도구가 Tasty를 띄우면 이 값이 남아, 그 터미널의 셸이나 그 안의 Claude가 부른 `tasty`를 바깥 Codex 대화의 호출로 해석한다. 이 플러그인이 설치·활성이면 Tasty는 터미널 셸·훅·작업 자식에서 이 값을 지운다([선언 형식과 적용 조건](../../dev-guide/plugin-development.md#상속-환경변수-제거-contributesstrip_inherited_env)). 그 터미널에서 실행한 Codex는 도구마다 자기 thread ID를 다시 넣으므로 Codex 호출자 판정은 그대로다. `CODEX_HOME` 등 다른 `CODEX_*` 값은 사용자 설정이라 남긴다. 플러그인을 비활성화하거나 제거하면 지우지 않는다.
+
 ## 목적
 
 **Codex CLI를 tasty 안에서 실행하고 관리**하는 통합. [claude](../claude/index.md) 플러그인과 동형이며, 주로 작성한 코드/판단을 Codex 에게 교차 검증시키는 용도.

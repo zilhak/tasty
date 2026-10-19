@@ -883,6 +883,30 @@ fn bundled_claude_plugin_manifest_validates() {
         .join("tasty-plugin-claude");
     let m = Manifest::load(&path).expect("claude plugin manifest should load");
     assert_eq!(m.id, "com.tasty.claude");
+    // Claude Code 세션 변수는 Claude 플러그인이 선언한다. 사용자 설정은 선언하지 않는다.
+    let strip = &m.contributes.strip_inherited_env;
+    for name in [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+    ] {
+        assert!(strip.names.iter().any(|n| n == name), "{name} missing");
+    }
+    for user_set in [
+        "CLAUDE_CODE_GIT_BASH_PATH",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+    ] {
+        assert!(
+            !strip.names.iter().any(|n| n == user_set),
+            "{user_set} declared"
+        );
+    }
+    assert_eq!(strip.prefixes, ["CLAUDE_PLUGIN_OPTION_"]);
+    assert_eq!(strip.values.len(), 1);
+    assert_eq!(strip.values[0].name, "AI_AGENT");
+    assert_eq!(strip.values[0].prefixes, ["claude-code_", "claude-code/"]);
+    assert!(!strip.names.iter().any(|n| n.starts_with("CODEX_")));
 }
 
 /// 번들 Codex 매니페스트가 기본 검증을 통과해야 한다.
@@ -893,6 +917,10 @@ fn bundled_codex_plugin_manifest_validates() {
         .join("tasty-plugin-codex");
     let m = Manifest::load(&path).expect("codex plugin manifest should load");
     assert_eq!(m.id, "com.tasty.codex");
+    // 대화마다 바뀌는 thread ID만 지우고 사용자 설정 CODEX_HOME은 남긴다.
+    let strip = &m.contributes.strip_inherited_env;
+    assert_eq!(strip.names, ["CODEX_THREAD_ID"]);
+    assert!(strip.prefixes.is_empty() && strip.values.is_empty());
 }
 
 #[test]
@@ -1369,6 +1397,82 @@ fn hook_events_parses_and_defaults_stable() {
     assert_eq!(decl.key, "claude-idle");
     assert_eq!(decl.description, "Claude turned idle");
     assert_eq!(decl.stability, EventStability::Stable);
+}
+
+fn strip_env_manifest(body: &str) -> String {
+    format!(
+        r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [contributes.strip_inherited_env]
+        {body}
+        [entry]
+        type = "process"
+        command = "x"
+    "#
+    )
+}
+
+#[test]
+fn strip_inherited_env_parses_names_prefixes_and_values() {
+    let m = parse(&strip_env_manifest(
+        r#"names = ["VENDOR_SESSION"]
+        prefixes = ["VENDOR_OPTION_"]
+        values = [{ name = "AI_AGENT", prefixes = ["vendor_", "vendor/"] }]"#,
+    ))
+    .expect("should parse");
+    let decl = &m.contributes.strip_inherited_env;
+    assert_eq!(decl.names, ["VENDOR_SESSION"]);
+    assert_eq!(decl.prefixes, ["VENDOR_OPTION_"]);
+    assert_eq!(decl.values[0].name, "AI_AGENT");
+    assert_eq!(decl.values[0].prefixes, ["vendor_", "vendor/"]);
+}
+
+#[test]
+fn strip_inherited_env_defaults_to_empty() {
+    let m = parse(&strip_env_manifest("")).expect("should parse");
+    assert_eq!(
+        m.contributes.strip_inherited_env,
+        StripInheritedEnvDecl::default()
+    );
+}
+
+#[test]
+fn strip_inherited_env_rejects_tasty_names_bad_names_and_empty_value_prefixes() {
+    for (body, needle) in [
+        (r#"names = ["TASTY_SURFACE_ID"]"#, "targets TASTY_*"),
+        (r#"prefixes = ["tasty_"]"#, "targets TASTY_*"),
+        (
+            r#"values = [{ name = "TASTY_X", prefixes = ["a"] }]"#,
+            "targets TASTY_*",
+        ),
+        (
+            r#"names = ["A-B"]"#,
+            "invalid contributes.strip_inherited_env name",
+        ),
+        (
+            r#"prefixes = [""]"#,
+            "invalid contributes.strip_inherited_env prefix",
+        ),
+        (
+            r#"names = ["1X"]"#,
+            "invalid contributes.strip_inherited_env name",
+        ),
+        (
+            r#"values = [{ name = "AI_AGENT", prefixes = [] }]"#,
+            "non-empty value prefixes",
+        ),
+        (
+            r#"values = [{ name = "AI_AGENT", prefixes = [""] }]"#,
+            "non-empty value prefixes",
+        ),
+    ] {
+        let err = parse(&strip_env_manifest(body)).unwrap_err().to_string();
+        assert!(err.contains(needle), "{body}: got {err}");
+    }
 }
 
 #[test]

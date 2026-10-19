@@ -733,10 +733,13 @@ mod tests {
         .expect("pty spawn")
     }
 
-    /// Claude Code 세션 키와 CMUX_* 는 지우고 TASTY_*·일반 키는 남긴다.
+    /// 활성 플러그인이 선언한 세션 키와 CMUX_* 는 지우고 TASTY_*·일반 키는 남긴다.
     #[test]
     fn claude_session_and_cmux_env_are_stripped_but_tasty_env_is_kept() {
-        use tasty_test_support::strip_env_keys::{KEPT, STRIPPED, inherited};
+        use tasty_test_support::strip_env_keys::{
+            KEPT, STRIPPED, inherited, install_bundled_plugin_rules,
+        };
+        install_bundled_plugin_rules();
         let mut cmd = CommandBuilder::new("/bin/sh");
         for (key, value) in inherited() {
             cmd.env(key, value);

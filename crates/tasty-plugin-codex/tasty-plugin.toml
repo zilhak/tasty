@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.2.17"
+version = "0.2.18"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -23,6 +23,14 @@ lang_dir = "lang"
 [entry]
 type = "process"
 command = "tasty-plugin-codex"
+
+# Codex는 도구 명령마다 그 대화의 thread ID를 CODEX_THREAD_ID로 넣는다(0.154.0에서 app-server
+# 프로세스에는 없고 도구 자식에만 있음을 확인). Codex 도구가 Tasty를 띄우면 이 값이 남아, 그 터미널의
+# 셸이나 그 안의 Claude가 부른 tasty를 바깥 Codex 대화의 호출로 해석한다. Tasty 터미널에서 실행한
+# Codex는 도구마다 자기 thread ID를 다시 넣으므로 지워도 호출자 판정은 그대로다. CODEX_HOME 등
+# 사용자 설정은 지우지 않는다.
+[contributes.strip_inherited_env]
+names = ["CODEX_THREAD_ID"]
 
 [[contributes.ipc_namespace]]
 prefix = "codex"

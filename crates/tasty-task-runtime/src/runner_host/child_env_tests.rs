@@ -30,6 +30,8 @@ fn run_task_env_helper() {
         return;
     };
     let out = Path::new(&dir).join("env.txt");
+    // 번들 Claude·Codex 플러그인이 설치·활성인 상태처럼 선언을 공용 표에 올린다.
+    tasty_test_support::strip_env_keys::install_bundled_plugin_rules();
     let (_td, ctx) = fresh_ctx();
     let spec: TaskGraphSpec = serde_json::from_value(json!({
         "contract_version": 2,
@@ -70,16 +72,18 @@ fn a_run_task_does_not_inherit_the_outer_session_identities() {
             "--test-threads=1",
         ])
         .env(DIR_ENV, td.path())
-        // 바깥 Tasty 인스턴스·Claude Code 세션이 남긴 값.
+        // 바깥 Tasty 인스턴스·Claude Code·Codex 세션이 남긴 값.
         .env("TASTY_SESSION_TOKEN", "outer-token")
         .env("TASTY_SURFACE_ID", "777")
         .env("TASTY_PARENT_HOME", "/tmp/outer-home")
         .env("TASTY_AGENT_ID", "outer-agent")
         .env("CLAUDECODE", "1")
         .env("CLAUDE_CODE_SESSION_ID", "outer-session")
+        .env("CODEX_THREAD_ID", "019a0000-0000-7000-8000-000000000000")
         // 그대로 넘어가야 하는 값.
         .env("TASTY_LOCALE", "ko")
         .env("ANTHROPIC_API_KEY", "user-key")
+        .env("CODEX_HOME", "/tmp/codex-home")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -97,13 +101,18 @@ fn a_run_task_does_not_inherit_the_outer_session_identities() {
         "TASTY_AGENT_ID",
         "CLAUDECODE",
         "CLAUDE_CODE_SESSION_ID",
+        "CODEX_THREAD_ID",
     ] {
         assert!(
             !names.contains(&gone),
             "{gone} reached the Run task:\n{env}"
         );
     }
-    for kept in ["TASTY_LOCALE=ko", "ANTHROPIC_API_KEY=user-key"] {
+    for kept in [
+        "TASTY_LOCALE=ko",
+        "ANTHROPIC_API_KEY=user-key",
+        "CODEX_HOME=/tmp/codex-home",
+    ] {
         assert!(env.lines().any(|l| l == kept), "{kept} missing:\n{env}");
     }
 }

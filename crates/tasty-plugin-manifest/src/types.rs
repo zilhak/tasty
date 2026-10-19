@@ -552,6 +552,48 @@ pub struct Contributes {
     /// hook.set/surface.fire_hook 검증에 사용할 이벤트 이름 목록.
     #[serde(default)]
     pub hook_events: Vec<HookEventDecl>,
+    /// Tasty가 띄우는 자식(터미널 셸·훅·작업 자식)에게 넘기지 않을 상속 환경변수.
+    /// 설치·활성 상태만 따르며 프로세스 실행 여부와 무관하게 적용한다.
+    #[serde(default)]
+    pub strip_inherited_env: StripInheritedEnvDecl,
+}
+
+/// 상속 환경변수 제거 선언. `TASTY_`로 시작하는 이름·접두사는 본체 소유라 선언할 수 없다.
+///
+/// - names: 이름이 같으면 지운다.
+/// - prefixes: 이름이 접두사로 시작하면 지운다.
+/// - values: 이름이 같고 값이 접두사 중 하나로 시작할 때만 지운다. 사용자가 직접 넣는
+///   값과 이름을 공유하는 변수에 쓴다.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct StripInheritedEnvDecl {
+    #[serde(default)]
+    pub names: Vec<String>,
+    #[serde(default)]
+    pub prefixes: Vec<String>,
+    #[serde(default)]
+    pub values: Vec<EnvValuePrefixDecl>,
+}
+
+impl StripInheritedEnvDecl {
+    /// 자식 생성 경로가 판정에 쓰는 규칙 형식으로 바꾼다.
+    pub fn to_rules(&self) -> tasty_utils::process::InheritedEnvRules {
+        tasty_utils::process::InheritedEnvRules {
+            names: self.names.clone(),
+            prefixes: self.prefixes.clone(),
+            value_prefixes: self
+                .values
+                .iter()
+                .map(|v| (v.name.clone(), v.prefixes.clone()))
+                .collect(),
+        }
+    }
+}
+
+/// 값 접두사로 판정하는 제거 규칙 한 항목.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct EnvValuePrefixDecl {
+    pub name: String,
+    pub prefixes: Vec<String>,
 }
 
 /// 설정 페이지. 호스트가 플러그인 목록에서 읽어 카테고리별로 표시한다.

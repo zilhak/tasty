@@ -77,10 +77,10 @@ pub(super) fn build_engine_and_plugins(
     crate::runtime::engine_session::EngineSession,
     plugin::PluginManager,
 )> {
-    let factory = boot.factory.clone();
-    let registries = boot.registries.clone();
+    // 엔진이 첫 셸을 만들기 전에 활성 플러그인의 상속 환경변수 제거 규칙을 반영한다.
+    let mut mgr = prepare_plugin_manager(boot.factory.clone(), &boot.registries, gauges);
     let engine = build_core_state_first_boot(boot)?;
-    let mgr = build_plugin_manager(factory, &registries, gauges);
+    start_plugin_manager(&mut mgr);
     Ok((engine, mgr))
 }
 
@@ -144,7 +144,9 @@ fn build_core_state_first_boot(
     Ok(engine)
 }
 
-fn build_plugin_manager(
+/// 설치 목록까지만 준비하고 프로세스는 실행하지 않는다. 엔진이 첫 셸을 만들기 전에 불러
+/// 활성 플러그인의 상속 환경변수 제거 규칙을 그 셸부터 적용한다.
+fn prepare_plugin_manager(
     factory: crate::waker::SharedWakerFactory,
     registries: &crate::runtime::registries::RuntimeRegistries,
     gauges: crate::app::services::PluginGauges,
@@ -166,24 +168,30 @@ fn build_plugin_manager(
         crate::completion_strategy::HostCompletionStrategyPort,
     ));
     let t3 = std::time::Instant::now();
+    // 번들 갱신을 먼저 마쳐야 갱신된 매니페스트의 선언이 첫 셸에 적용된다.
     plugin::install_builtins_if_needed(&mut mgr);
     // namespace 해석에 같은 공유 표를 넘긴다. 이후 refresh_packages가 이 표를 갱신한다.
     mgr.install_namespace_table_once();
     mgr.refresh_packages();
+    mgr.recompute_extensions();
+    mgr.publish_inherited_env();
     tracing::info!(
         target: "tasty::boot",
         ms = t3.elapsed().as_secs_f64() * 1000.0,
         "T3a plugin_discovery (install_builtins + refresh_packages)"
     );
+    mgr
+}
+
+/// 준비한 매니저의 활성 플러그인 프로세스를 실행한다.
+fn start_plugin_manager(mgr: &mut plugin::PluginManager) {
     let t3b = std::time::Instant::now();
     mgr.discover_and_start();
     tracing::info!(
         target: "tasty::boot",
         ms = t3b.elapsed().as_secs_f64() * 1000.0,
-        total_ms = t3.elapsed().as_secs_f64() * 1000.0,
-        "T3b plugin_spawn (discover_and_start; total_ms = T3 전체)"
+        "T3b plugin_spawn (discover_and_start)"
     );
-    mgr
 }
 
 /// 실패한 창 종류에 맞게 안내한다. 종료 확인 창의 실패는 별도로 종료를 계속한다.
@@ -224,6 +232,14 @@ impl App {
             crate::waker_factory_winit::WinitWakerFactory::new(self.view.proxy.clone()),
         );
         let layout_slot = self.claim_free_layout_slot();
+
+        let prepared_plugins = self.plugin_manager.is_none().then(|| {
+            prepare_plugin_manager(
+                factory.clone(),
+                &self.services.registries,
+                self.services.plugin_gauges(),
+            )
+        });
 
         if self.engines.pending_id().is_none() {
             // 플러그인이 등록한 kind·파일 처리기와 ID 발급기를 창마다 새로 만들지 않는다.
@@ -286,9 +302,8 @@ impl App {
             self.install_pending_engine(engine);
         }
 
-        if self.plugin_manager.is_none() {
-            let gauges = self.services.plugin_gauges();
-            let mgr = build_plugin_manager(factory, &self.services.registries, gauges);
+        if let Some(mut mgr) = prepared_plugins {
+            start_plugin_manager(&mut mgr);
             self.plugin_manager = Some(mgr);
         }
         Ok(())

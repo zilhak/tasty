@@ -20,81 +20,96 @@ pub fn hide_console(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
-/// Tasty 를 띄운 프로세스에서 상속되지만 Tasty 가 띄우는 자식(터미널 셸·훅 명령)에
-/// 넘기지 않는 환경변수의 접두사.
-/// - `CMUX_`: 자식에서 cmux CLI 가 동작하지 않게 한다.
-/// - `CLAUDE_PLUGIN_OPTION_`: Claude Code 가 플러그인 훅 자식에 플러그인 사용자 옵션을
-///   `CLAUDE_PLUGIN_OPTION_<KEY>` 로 주입하는 이름공간이다(2.1.291, 훅 env 조립에서
-///   `CLAUDE_PLUGIN_ROOT`·`CLAUDE_PLUGIN_DATA` 와 같은 자리). 키 이름이 플러그인 옵션마다
-///   달라 이름 목록으로 쓸 수 없고 사용자가 직접 넣는 이름공간이 아니어서 접두사로 지운다.
-pub const STRIPPED_ENV_PREFIXES: &[&str] = &["CMUX_", "CLAUDE_PLUGIN_OPTION_"];
+/// Tasty 를 띄운 프로세스에서 상속되지만 Tasty 가 띄우는 자식(터미널 셸·훅 명령·작업 자식)에
+/// 넘기지 않는 환경변수의 접두사 중 본체가 직접 정하는 것. `CMUX_` 는 자식에서 cmux CLI 가
+/// 동작하지 않게 한다. 특정 제품의 세션 변수는 그 제품 플러그인이 매니페스트의
+/// `contributes.strip_inherited_env` 로 선언하며 [`set_plugin_inherited_env_rules`] 로 들어온다.
+pub const STRIPPED_ENV_PREFIXES: &[&str] = &["CMUX_"];
 
-/// Claude Code 가 자기 세션의 자식에 표지·비밀·세션 값으로 넣는 환경변수. 바깥 Claude 세션에서
-/// Tasty 를 띄웠을 때 이 값이 남으면 자식에서 띄운 Claude 가 자신을 자식 세션으로 판단해
-/// transcript 를 쓰지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN`)이 무관한 프로세스로 샌다.
-///
-/// 접두사(`CLAUDE_CODE_`)로 지우지 않는다. 그 이름공간의 대부분은 사용자가 직접 넣는 설정
-/// (`CLAUDE_CODE_GIT_BASH_PATH`·`CLAUDE_CODE_OAUTH_TOKEN` 등)이다. 목록은 Claude Code 2.1.291
-/// 기준이며 근거는 다음과 같다.
-/// - Bash·훅 자식에 넣는 키: `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_CHILD_SESSION`·
-///   `CLAUDE_CODE_SESSION_ATTENDED`·`CLAUDE_PID`·`CLAUDE_EFFORT`, 셸 스냅숏 키
-///   `CLAUDE_CODE_EXECPATH`·`CLAUDE_CODE_INVOKED_SKILLS`.
-/// - 플러그인 훅·MCP 자식에 넣는 키: `CLAUDE_PLUGIN_ROOT`·`CLAUDE_PLUGIN_DATA`·
-///   `CLAUDE_PROJECT_DIR`, SessionStart·Setup·CwdChanged·FileChanged 훅에만 넣는 `CLAUDE_ENV_FILE`.
-/// - Claude 가 자기 프로세스에 두어 상속되는 키: `CLAUDE_CODE_ENTRYPOINT`·
-///   `CLAUDE_CODE_BRIDGE_SESSION_ID`·`CLAUDE_CODE_MESSAGING_SOCKET`·`CLAUDE_CODE_MESSAGING_TOKEN`.
-///   마지막 셋과 세션 키는 Claude 가 새 Claude 를 띄울 때 스스로 지우는 목록에도 있다.
-///
-/// `AI_AGENT` 는 값으로 판정한다([`STRIPPED_ENV_VALUE_PREFIXES`]). `TRACEPARENT` 는 W3C
-/// trace-context 표준 이름이라 넣지 않는다.
-///
-/// `CODEX_THREAD_ID` 는 Codex 가 도구 명령마다 그 대화의 thread ID 로 넣는 값이다(0.154.0 에서
-/// app-server 프로세스에는 없고 그 도구 자식에만 있음을 확인). Codex 도구가 Tasty 를 띄우면 이
-/// 값이 남아, 그 터미널의 셸이나 그 안의 Claude 가 부른 `tasty` 를 바깥 Codex 대화의 호출로
-/// 해석한다. 그 터미널에서 실행한 Codex 는 도구마다 자기 thread ID 를 다시 넣으므로 지워도
-/// Codex 호출자 판정은 그대로다. `CODEX_HOME` 등 사용자 설정은 지우지 않는다.
-pub const STRIPPED_ENV_NAMES: &[&str] = &[
-    "CLAUDECODE",
-    "CLAUDE_PID",
-    "CLAUDE_EFFORT",
-    "CLAUDE_PLUGIN_ROOT",
-    "CLAUDE_PLUGIN_DATA",
-    "CLAUDE_PROJECT_DIR",
-    "CLAUDE_ENV_FILE",
-    "CLAUDE_CODE_SESSION_ID",
-    "CLAUDE_CODE_CHILD_SESSION",
-    "CLAUDE_CODE_SESSION_ATTENDED",
-    "CLAUDE_CODE_EXECPATH",
-    "CLAUDE_CODE_ENTRYPOINT",
-    "CLAUDE_CODE_MESSAGING_SOCKET",
-    "CLAUDE_CODE_MESSAGING_TOKEN",
-    "CLAUDE_CODE_INVOKED_SKILLS",
-    "CLAUDE_CODE_BRIDGE_SESSION_ID",
-    "CODEX_THREAD_ID",
-];
+/// 플러그인 하나가 선언한 상속 환경변수 제거 규칙. 이름이 같은 키, 접두사로 시작하는 키,
+/// 지정한 이름이면서 값이 접두사로 시작하는 키를 지운다. 사용자가 직접 넣는 설정과 이름공간을
+/// 공유하는 변수는 값 규칙으로 좁힌다.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InheritedEnvRules {
+    pub names: Vec<String>,
+    pub prefixes: Vec<String>,
+    /// `(이름, 값 접두사 목록)`.
+    pub value_prefixes: Vec<(String, Vec<String>)>,
+}
 
-/// 이름은 여러 도구가 함께 쓰지만 Claude Code 가 넣은 값만 지우는 환경변수와 그 값 접두사.
-/// `AI_AGENT` 는 에이전트가 실행한 명령임을 알리는 관례 이름이다. Claude Code 2.1.291 은 Bash
-/// 자식에 `claude-code_<버전>_<출처>` 를 넣고, 자기 프로세스에서는 `claude-code_` 나
-/// `claude-code/` 로 시작하는 값을 자기 값으로 보고 덮어쓴다. 같은 기준으로 두 접두사의 값만
-/// 지우고 사용자나 다른 도구가 넣은 값은 남긴다.
-pub const STRIPPED_ENV_VALUE_PREFIXES: &[(&str, &[&str])] =
-    &[("AI_AGENT", &["claude-code_", "claude-code/"])];
+impl InheritedEnvRules {
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.prefixes.is_empty() && self.value_prefixes.is_empty()
+    }
 
-/// `key=value` 가 자식에게 넘기지 않는 상속 환경변수인지 판정한다. Tasty 가 넣는 TASTY_* 는 대상이 아니다.
+    /// `key=value` 가 이 규칙에 걸리는지 판정한다. 값이 UTF-8 이 아니면 값 규칙에는 걸리지 않는다.
+    pub fn matches(&self, key: &str, value: &std::ffi::OsStr) -> bool {
+        if self.names.iter().any(|n| n == key)
+            || self.prefixes.iter().any(|p| key.starts_with(p.as_str()))
+        {
+            return true;
+        }
+        self.value_prefixes
+            .iter()
+            .filter(|(name, _)| name == key)
+            .any(|(_, prefixes)| {
+                value
+                    .to_str()
+                    .is_some_and(|v| prefixes.iter().any(|p| v.starts_with(p.as_str())))
+            })
+    }
+}
+
+/// 소유자(플러그인 ID)별 제거 규칙. 설치되고 활성인 플러그인의 선언만 들어 있다.
+/// 프로세스 실행 여부와 무관하게 설치·활성 상태만 따르므로 플러그인이 준비되기 전에
+/// 만든 첫 자식에도 같은 규칙이 적용된다.
+static PLUGIN_RULES: std::sync::RwLock<std::collections::BTreeMap<String, InheritedEnvRules>> =
+    std::sync::RwLock::new(std::collections::BTreeMap::new());
+static PLUGIN_RULES_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+const PLUGIN_RULES_WHAT: &str = "the plugin inherited-env rule table";
+
+/// 소유자의 제거 규칙을 바꾼다. 빈 규칙은 그 소유자를 지운다. 이후 만드는 자식부터 적용된다.
+pub fn set_plugin_inherited_env_rules(owner: &str, rules: InheritedEnvRules) {
+    let mut table = crate::poison::recover_write(
+        PLUGIN_RULES.write(),
+        PLUGIN_RULES_WHAT,
+        &PLUGIN_RULES_POISON_REPORTED,
+    );
+    if rules.is_empty() {
+        table.remove(owner);
+    } else {
+        table.insert(owner.to_string(), rules);
+    }
+}
+
+/// 현재 적용 중인 소유자별 규칙의 사본.
+pub fn plugin_inherited_env_rules() -> std::collections::BTreeMap<String, InheritedEnvRules> {
+    crate::poison::recover_read(
+        PLUGIN_RULES.read(),
+        PLUGIN_RULES_WHAT,
+        &PLUGIN_RULES_POISON_REPORTED,
+    )
+    .clone()
+}
+
+/// `key=value` 가 자식에게 넘기지 않는 상속 환경변수인지 판정한다. 본체의 [`STRIPPED_ENV_PREFIXES`]
+/// 와 활성 플러그인의 규칙을 함께 본다. Tasty 가 넣는 TASTY_* 는 대상이 아니다.
 pub fn is_stripped_inherited_env(key: &str, value: &std::ffi::OsStr) -> bool {
-    if STRIPPED_ENV_NAMES.contains(&key) || STRIPPED_ENV_PREFIXES.iter().any(|p| key.starts_with(p))
-    {
+    if STRIPPED_ENV_PREFIXES.iter().any(|p| key.starts_with(p)) {
         return true;
     }
-    STRIPPED_ENV_VALUE_PREFIXES
-        .iter()
-        .find(|(name, _)| *name == key)
-        .is_some_and(|(_, prefixes)| {
-            value
-                .to_str()
-                .is_some_and(|v| prefixes.iter().any(|p| v.starts_with(p)))
-        })
+    // TASTY_* 의 제거·재주입은 본체가 정한다. 플러그인 규칙이 덮지 못한다.
+    if key.starts_with("TASTY_") {
+        return false;
+    }
+    crate::poison::recover_read(
+        PLUGIN_RULES.read(),
+        PLUGIN_RULES_WHAT,
+        &PLUGIN_RULES_POISON_REPORTED,
+    )
+    .values()
+    .any(|rules| rules.matches(key, value))
 }
 
 /// `inherited` 의 `(키, 값)` 중 자식 환경에서 지울 키를 고른다. UTF-8 이 아닌 키는 목록과 같을 수
@@ -163,11 +178,18 @@ pub fn path_prepending_self_dir(base: Option<OsString>) -> Option<OsString> {
 mod tests {
     use super::*;
 
-    /// 훅 실행은 Claude Code 세션 키에 더해 바깥 인스턴스의 신원 변수를 지운다.
+    /// 훅 실행은 플러그인 규칙의 키에 더해 바깥 인스턴스의 신원 변수를 지운다.
     #[test]
     fn hook_keys_add_the_outer_caller_identity() {
+        set_plugin_inherited_env_rules(
+            "test.hook-keys",
+            InheritedEnvRules {
+                names: vec!["XTEST_HOOK_KEYS_SESSION".into()],
+                ..Default::default()
+            },
+        );
         let inherited = [
-            ("CLAUDECODE", "1"),
+            ("XTEST_HOOK_KEYS_SESSION", "1"),
             ("TASTY_SESSION_TOKEN", "outer"),
             ("TASTY_AGENT_ID", "outer"),
             ("TASTY_SURFACE_ID", "3"),
@@ -175,17 +197,62 @@ mod tests {
         ]
         .map(|(k, v)| (OsString::from(k), OsString::from(v)));
         let keys = hook_env_keys_to_strip(inherited.clone());
+        let shell_keys = env_keys_to_strip(inherited);
+        set_plugin_inherited_env_rules("test.hook-keys", InheritedEnvRules::default());
         assert_eq!(
             keys,
             [
-                "CLAUDECODE",
+                "XTEST_HOOK_KEYS_SESSION",
                 "TASTY_SESSION_TOKEN",
                 "TASTY_AGENT_ID",
                 "TASTY_SURFACE_ID"
             ]
             .map(OsString::from)
         );
-        assert_eq!(env_keys_to_strip(inherited), [OsString::from("CLAUDECODE")]);
+        assert_eq!(shell_keys, [OsString::from("XTEST_HOOK_KEYS_SESSION")]);
+    }
+
+    /// 이름·접두사·값 접두사 규칙이 각각 동작하고, 값 규칙은 다른 값과 다른 이름을 남긴다.
+    #[test]
+    fn plugin_rules_match_names_prefixes_and_value_prefixes() {
+        let rules = InheritedEnvRules {
+            names: vec!["XTEST_RULE_NAME".into()],
+            prefixes: vec!["XTEST_RULE_PFX_".into()],
+            value_prefixes: vec![("XTEST_RULE_AGENT".into(), vec!["vendor_".into()])],
+        };
+        let m = |k: &str, v: &str| rules.matches(k, std::ffi::OsStr::new(v));
+        assert!(m("XTEST_RULE_NAME", "x"));
+        assert!(m("XTEST_RULE_PFX_ANY", "x"));
+        assert!(m("XTEST_RULE_AGENT", "vendor_1"));
+        assert!(!m("XTEST_RULE_AGENT", "user-set"));
+        assert!(!m("XTEST_RULE_NAME_LONGER", "x"));
+        assert!(!m("XTEST_OTHER", "vendor_1"));
+    }
+
+    /// 규칙을 지우면 그 소유자의 키가 다시 남고, 플러그인 규칙은 TASTY_* 를 지우지 못한다.
+    #[test]
+    fn removing_an_owner_restores_its_keys_and_tasty_keys_stay_core_owned() {
+        let key = "XTEST_OWNER_REMOVAL";
+        let v = std::ffi::OsStr::new("1");
+        assert!(!is_stripped_inherited_env(key, v));
+        set_plugin_inherited_env_rules(
+            "test.owner-removal",
+            InheritedEnvRules {
+                names: vec![key.into(), "TASTY_LOCALE".into()],
+                prefixes: vec!["TASTY_".into()],
+                ..Default::default()
+            },
+        );
+        let while_set = (
+            is_stripped_inherited_env(key, v),
+            is_stripped_inherited_env("TASTY_LOCALE", v),
+            plugin_inherited_env_rules().contains_key("test.owner-removal"),
+        );
+        set_plugin_inherited_env_rules("test.owner-removal", InheritedEnvRules::default());
+        assert_eq!(while_set, (true, false, true));
+        assert!(!is_stripped_inherited_env(key, v));
+        assert!(!plugin_inherited_env_rules().contains_key("test.owner-removal"));
+        assert!(is_stripped_inherited_env("CMUX_SOCKET_PATH", v));
     }
 
     /// self-binary 디렉토리가 최소 PATH 맨 앞에 붙는지 검증한다 — 패키징된

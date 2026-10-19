@@ -246,6 +246,14 @@ pub(super) fn is_valid_command_id(s: &str) -> bool {
     s.split('.').all(is_valid_event_segment)
 }
 
+/// 환경변수 이름(또는 이름 접두사): 영문자·숫자·밑줄이며 숫자로 시작하지 않는다. 길이 1..=128.
+pub(super) fn is_valid_env_name(s: &str) -> bool {
+    if s.is_empty() || s.len() > 128 || s.starts_with(|c: char| c.is_ascii_digit()) {
+        return false;
+    }
+    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 fn is_valid_event_segment(s: &str) -> bool {
     if s.is_empty() {
         return false;

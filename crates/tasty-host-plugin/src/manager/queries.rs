@@ -89,9 +89,64 @@ impl PluginManager {
         self.extensions.iter()
     }
 
+    /// 설치 목록·설정이 바뀐 뒤 부르는 파생 상태 갱신. 확장 상태와 상속 환경변수 제거 규칙을
+    /// 함께 다시 계산한다.
     pub fn recompute_extensions(&mut self) {
         let fresh = self.freshly_computed_extensions();
         self.extensions = fresh;
+        self.recompute_inherited_env();
+    }
+
+    /// 이 매니저의 규칙을 자식 생성 경로(터미널 셸·훅·작업 자식)가 읽는 공용 표에 반영하기
+    /// 시작한다. 부팅이 엔진을 만들기 전에 한 번 부른다. 시험용 매니저는 부르지 않는다.
+    pub fn publish_inherited_env(&mut self) {
+        self.publishes_inherited_env = true;
+        for (owner, rules) in &self.inherited_env {
+            tasty_utils::process::set_plugin_inherited_env_rules(owner, rules.clone());
+        }
+    }
+
+    /// 설치·활성 플러그인별 상속 환경변수 제거 규칙.
+    pub fn inherited_env_rules(
+        &self,
+    ) -> &std::collections::BTreeMap<String, tasty_utils::process::InheritedEnvRules> {
+        &self.inherited_env
+    }
+
+    /// 설치 목록 갱신(`refresh_packages`)도 이 계산을 부른다. 설정만 바뀌면 `recompute_extensions`가 부른다.
+    pub(super) fn recompute_inherited_env(&mut self) {
+        let fresh = self.freshly_computed_inherited_env();
+        if self.publishes_inherited_env {
+            for owner in self.inherited_env.keys() {
+                if !fresh.contains_key(owner) {
+                    tasty_utils::process::set_plugin_inherited_env_rules(
+                        owner,
+                        tasty_utils::process::InheritedEnvRules::default(),
+                    );
+                }
+            }
+            for (owner, rules) in &fresh {
+                if self.inherited_env.get(owner) != Some(rules) {
+                    tasty_utils::process::set_plugin_inherited_env_rules(owner, rules.clone());
+                }
+            }
+        }
+        self.inherited_env = fresh;
+    }
+
+    /// 사용자 설정의 비활성만 제외한다. 기동 실패로 인한 자동 비활성화나 프로세스 준비 여부는
+    /// 제품 세션 변수가 자식에 남는지와 관계없으므로 규칙을 유지한다.
+    fn freshly_computed_inherited_env(
+        &self,
+    ) -> std::collections::BTreeMap<String, tasty_utils::process::InheritedEnvRules> {
+        self.packages
+            .iter()
+            .filter(|p| !self.config.is_disabled(&p.manifest.id))
+            .filter_map(|p| {
+                let rules = p.manifest.contributes.strip_inherited_env.to_rules();
+                (!rules.is_empty()).then(|| (p.manifest.id.clone(), rules))
+            })
+            .collect()
     }
 
     /// 설치 목록과 설정으로 확장 상태를 계산한다. 갱신과 debug 검사가 같은 계산을 쓴다.
@@ -119,6 +174,10 @@ impl PluginManager {
             assert!(
                 fresh == self.extensions,
                 "확장 집합이 낡았다 — packages 또는 config의 마지막 변경 뒤 recompute_extensions를 호출해야 한다"
+            );
+            assert!(
+                self.freshly_computed_inherited_env() == self.inherited_env,
+                "상속 환경변수 제거 규칙이 낡았다 — packages 또는 config의 마지막 변경 뒤 recompute_extensions를 호출해야 한다"
             );
         }
     }

@@ -31,6 +31,7 @@ windows-sys = { version = "0.59", features = [
 tempfile = "3"
 tasty-latency-control = { path = "../tasty-latency-control" }
 tasty-plugin-agent-common = { path = "../tasty-plugin-agent-common" }
+tasty-test-support = { path = "../tasty-test-support" }
 
 [lints]
 workspace = true

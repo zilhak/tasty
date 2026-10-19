@@ -417,6 +417,10 @@ pub struct PluginManager {
     pub(super) popup_mesh_frames: HashMap<u64, EguiMeshFrame>,
     /// 확장 plugin의 Active·Pending·Disabled·Conflict 상태. hook 전달 대상을 찾는 데 사용한다.
     extensions: super::extension_registry::ExtensionRegistry,
+    /// 설치·활성 플러그인의 상속 환경변수 제거 규칙. `recompute_extensions`가 함께 갱신한다.
+    inherited_env: std::collections::BTreeMap<String, tasty_utils::process::InheritedEnvRules>,
+    /// 부팅 매니저만 켠다. 켜져 있으면 위 규칙을 자식 생성 경로가 읽는 공용 표에 반영한다.
+    publishes_inherited_env: bool,
     /// (ext_id, method) 단위 hook 실패 추적. 3회 연속 실패하면 60초간 backoff.
     pub(super) hook_failures: HashMap<(String, String), HookFailureState>,
     /// plugin별 namespace 연속 만료 횟수. 응답을 받거나 plugin을 정리하면 지운다.
@@ -570,6 +574,10 @@ pub use test_support::NamespaceStub;
 // 패키지 변경 뒤 확장 상태가 다시 계산되는지 검사한다.
 #[cfg(test)]
 mod tests_derived_freshness;
+
+// 설치·활성 상태로 상속 환경변수 제거 규칙을 계산·반영하는지 검사한다.
+#[cfg(test)]
+mod tests_inherited_env;
 
 // 자동 reload의 기준값·변경 감지·교체 검사.
 #[cfg(test)]
