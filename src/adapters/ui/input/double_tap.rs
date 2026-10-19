@@ -18,6 +18,18 @@ impl DoubleTapKey {
     }
 }
 
+/// 감지기가 본 키의 종류.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TapInput {
+    /// 더블탭 대상 수식키.
+    Tap(DoubleTapKey),
+    /// 더블탭 대상이 아닌 수식키. 누르고 있는 동안 다른 수식키의 탭을 받지 않는다.
+    /// macOS Option(`option` 토큰)이 여기 든다. `alt+alt`는 Command 두 번이다.
+    Blocker,
+    /// 그 밖의 키. 누르면 진행 중인 탭을 취소한다.
+    Other,
+}
+
 /// 수식키 단독 누름·떼기 뒤 제한 시간 안에 같은 키를 다시 누르면 double tap으로 처리한다.
 /// 누르는 동안 다른 키가 들어오면 해당 탭은 취소한다.
 pub struct DoubleTapDetector {
@@ -31,21 +43,39 @@ pub struct DoubleTapDetector {
     first_tap: Option<(DoubleTapKey, Instant)>,
     /// Fired double-tap event, consumed by the next poll.
     fired: Option<DoubleTapKey>,
+    /// 더블탭 대상이 아닌 수식키(`TapInput::Blocker`)를 누르고 있다.
+    blocker_held: bool,
+    /// 키 토큰을 macOS 대응(`alt`=Command, `option`=Option)으로 읽는다.
+    macos_mapping: bool,
 }
 
 impl DoubleTapDetector {
     pub fn new() -> Self {
+        Self::with_mapping(cfg!(target_os = "macos"))
+    }
+
+    fn with_mapping(macos_mapping: bool) -> Self {
         Self {
             threshold_ms: 400,
             pending_key: None,
             contaminated: false,
             first_tap: None,
             fired: None,
+            blocker_held: false,
+            macos_mapping,
         }
     }
 
     pub fn on_key_event(&mut self, key: &Key, pressed: bool) {
-        let modifier = Self::as_modifier(key);
+        let input = Self::classify(key, self.macos_mapping);
+        if input == TapInput::Blocker {
+            self.blocker_held = pressed;
+        }
+        // 대상이 아닌 수식키를 누르고 있는 동안의 수식키 탭은 조합 입력이므로 일반 키처럼 다룬다.
+        let modifier = match input {
+            TapInput::Tap(m) if !self.blocker_held => Some(m),
+            _ => None,
+        };
 
         if pressed {
             if let Some(m) = modifier {
@@ -92,15 +122,16 @@ impl DoubleTapDetector {
         self.fired = None;
     }
 
-    fn as_modifier(key: &Key) -> Option<DoubleTapKey> {
+    /// 키 위치 대응은 `docs/design/policies/key-mapping.md`의 토큰 표를 따른다. macOS에서
+    /// winit은 Option을 `NamedKey::Alt`, Command를 `NamedKey::Super`로 보고한다.
+    fn classify(key: &Key, macos_mapping: bool) -> TapInput {
         match key {
-            Key::Named(NamedKey::Shift) => Some(DoubleTapKey::Shift),
-            Key::Named(NamedKey::Control) => Some(DoubleTapKey::Ctrl),
-            Key::Named(NamedKey::Alt) => Some(DoubleTapKey::Alt),
-            // macOS: Cmd key (Super) maps to Alt in our binding system
-            #[cfg(target_os = "macos")]
-            Key::Named(NamedKey::Super) => Some(DoubleTapKey::Alt),
-            _ => None,
+            Key::Named(NamedKey::Shift) => TapInput::Tap(DoubleTapKey::Shift),
+            Key::Named(NamedKey::Control) => TapInput::Tap(DoubleTapKey::Ctrl),
+            Key::Named(NamedKey::Alt) if macos_mapping => TapInput::Blocker,
+            Key::Named(NamedKey::Alt) => TapInput::Tap(DoubleTapKey::Alt),
+            Key::Named(NamedKey::Super) if macos_mapping => TapInput::Tap(DoubleTapKey::Alt),
+            _ => TapInput::Other,
         }
     }
 }
@@ -131,6 +162,92 @@ mod tests {
         d.on_key_event(&alt(), false);
         d.on_key_event(&alt(), true);
         assert_eq!(d.take(), None);
+    }
+
+    fn named(k: NamedKey) -> Key {
+        Key::Named(k)
+    }
+
+    fn tap_twice(d: &mut DoubleTapDetector, key: &Key) -> Option<DoubleTapKey> {
+        d.on_key_event(key, true);
+        d.on_key_event(key, false);
+        d.on_key_event(key, true);
+        d.on_key_event(key, false);
+        d.take()
+    }
+
+    #[test]
+    fn macos_mapping_takes_command_as_alt_and_ignores_option() {
+        let mut d = DoubleTapDetector::with_mapping(true);
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Super)),
+            Some(DoubleTapKey::Alt)
+        );
+        assert_eq!(tap_twice(&mut d, &named(NamedKey::Alt)), None);
+        // Option 탭 뒤에도 Command 더블탭은 그대로 동작한다.
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Super)),
+            Some(DoubleTapKey::Alt)
+        );
+    }
+
+    #[test]
+    fn macos_mapping_held_option_blocks_other_modifier_taps() {
+        let mut d = DoubleTapDetector::with_mapping(true);
+        d.on_key_event(&named(NamedKey::Alt), true);
+        assert_eq!(tap_twice(&mut d, &named(NamedKey::Super)), None);
+        assert_eq!(tap_twice(&mut d, &named(NamedKey::Shift)), None);
+        d.on_key_event(&named(NamedKey::Alt), false);
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Shift)),
+            Some(DoubleTapKey::Shift)
+        );
+    }
+
+    #[test]
+    fn macos_mapping_option_between_command_taps_cancels() {
+        let mut d = DoubleTapDetector::with_mapping(true);
+        d.on_key_event(&named(NamedKey::Super), true);
+        d.on_key_event(&named(NamedKey::Super), false);
+        d.on_key_event(&named(NamedKey::Alt), true);
+        d.on_key_event(&named(NamedKey::Alt), false);
+        d.on_key_event(&named(NamedKey::Super), true);
+        assert_eq!(d.take(), None);
+    }
+
+    #[test]
+    fn other_os_mapping_keeps_alt_and_ignores_super() {
+        let mut d = DoubleTapDetector::with_mapping(false);
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Alt)),
+            Some(DoubleTapKey::Alt)
+        );
+        assert_eq!(tap_twice(&mut d, &named(NamedKey::Super)), None);
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Control)),
+            Some(DoubleTapKey::Ctrl)
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn this_build_maps_option_away_from_alt_alt() {
+        let mut d = DoubleTapDetector::new();
+        assert_eq!(tap_twice(&mut d, &named(NamedKey::Alt)), None);
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Super)),
+            Some(DoubleTapKey::Alt)
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn this_build_keeps_alt_double_tap() {
+        let mut d = DoubleTapDetector::new();
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Alt)),
+            Some(DoubleTapKey::Alt)
+        );
     }
 
     #[test]

@@ -155,7 +155,7 @@ keybindings는 기본값에서 필드를 하나씩 복원한다. 필드 하나�
 저장된 문자열의 문법은 `tasty_settings::keybindings::parse`가 소유한다.
 parse_binding·ParsedBinding·Combo를 실제 키 매칭과 도움말·번들 변환이 함께 쓴다.
 OS별 실제 키 대응은 매칭 계층에 남는다. 일반 바인딩 파서는 shift+shift 같은 modifier 더블탭 표기를 거절하며
-더블탭은 전용 처리에서 해석한다.
+더블탭은 전용 처리에서 해석한다. macOS의 `alt+alt`는 Command 두 번이고 Option 두 번은 감지하지 않는다([키 매핑 정책](../../design/policies/key-mapping.md#더블탭-키-대응)).
 
 TOML에는 null이 없다. 평범한 Option 필드는 생략으로 표현할 수 있지만,
 Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다시 설계해야 한다.

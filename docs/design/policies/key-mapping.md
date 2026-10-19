@@ -198,6 +198,12 @@ Tasty는 합성 키를 사용자 입력으로 처리하지 않는다. 예를 들
 가 담당한다. 따라서 합성 modifier Pressed 를 버려도 포커스 획득 직후의 modifier 조합
 단축키는 정상 매칭된다.
 
+### 더블탭 키 대응
+
+더블탭 표기는 `shift+shift`·`ctrl+ctrl`·`alt+alt` 세 가지다. 토큰은 위 표와 같은 키를 가리킨다. macOS의 `alt+alt`는 Command(⌘) 두 번이며 Option(⌥) 두 번이 아니다. Windows·Linux의 `alt+alt`는 Alt 두 번이다. `option+option` 표기는 없으므로 macOS Option, Windows Win, Linux Super 두 번은 어떤 더블탭으로도 감지하지 않는다.
+
+macOS에서 Option을 누르고 있는 동안의 Shift·Control·Command 탭은 더블탭으로 세지 않는다. 다른 더블탭 대상 수식키를 누른 채 탭할 때와 같이 조합 입력으로 본다. 두 탭 사이에 Option을 누르면 첫 탭을 버린다. 대응은 `DoubleTapDetector::classify`가 정하고 메인 창 실행과 설정 녹화가 같은 감지기를 쓴다.
+
 ### double-tap detector 는 포커스 전환마다 초기화한다
 
 합성 키를 버리면 포커스 전환 중 누름과 뗌이 짝을 이루지 않을 수 있다. `Alt+Tab`으로 나갈 때 실제 press만 들어오고 합성 release는 버려진다. 돌아온 뒤 Alt를 떼는 입력을 첫 탭으로 오인하면 다음 한 번의 입력이 더블탭으로 처리될 수 있다.
