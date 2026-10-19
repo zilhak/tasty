@@ -15,11 +15,13 @@ const AUTOMATIC: &[(&str, &str)] = &[
     ("build-check.yml", "build-linux-x64"),
     ("build-check.yml", "build-macos"),
     ("build-check.yml", "build-windows"),
+    ("build-check.yml", "build-windows-arm64"),
     ("complexity-check.yml", "check-file-size"),
     ("crossplatform-check-macos.yml", "check-macos"),
     ("crossplatform-check.yml", "check-headless"),
     ("crossplatform-check.yml", "check-release"),
     ("crossplatform-check.yml", "check-windows"),
+    ("crossplatform-check.yml", "check-windows-arm64"),
     ("doc-guards.yml", "doc-guards"),
     ("format-check.yml", "fmt"),
     ("pages.yml", "build"),
@@ -34,13 +36,14 @@ const AUTOMATIC: &[(&str, &str)] = &[
 
 /// 같은 측정에서 수동 전용으로 분류된 잡이다.
 /// automatic_job_bodies는 workflow_dispatch 조건을 포함하는지만 본다.
-/// 따라서 OR 조건으로 태그 push에서도 실행되는 release.yml의 네 잡도 여기에 포함된다.
+/// 따라서 OR 조건으로 태그 push에서도 실행되는 release.yml의 다섯 빌드 잡도 여기에 포함된다.
 /// 해당 파일에 cargo test가 없어 테스트 실행 경로 집계에는 영향이 없다.
 const MANUAL_ONLY: &[(&str, &str)] = &[
     ("release.yml", "build-linux-arm64"),
     ("release.yml", "build-linux-x64"),
     ("release.yml", "build-macos"),
     ("release.yml", "build-windows"),
+    ("release.yml", "build-windows-arm64"),
     ("test.yml", "test-linux-x64"),
 ];
 

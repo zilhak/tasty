@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[플랫폼 원칙](../principles/platform-and-compatibility.md)은 Windows ARM을 1급 지원·릴리스 대상으로 포함한다. 현재 아래 Windows 스크립트·워크플로의 x64 산출물만으로는 이 범위를 충족하지 못하며 ARM 배포는 아직 구현되지 않았다. 지원 등급과 실제 산출물·검증 결과를 구분한다.
+[플랫폼 원칙](../principles/platform-and-compatibility.md)은 Windows ARM을 1급 지원·릴리스 대상으로 포함한다. 릴리스 워크플로는 Windows x64와 ARM64 산출물을 함께 만들어 올리며, 빌드 방법과 확인 범위는 아래 [Windows ARM64](#windows-arm64)에 있다. 지원 등급과 실제 산출물·검증 결과를 구분한다. ARM64 빌드 경로는 아직 러너에서 실행된 적이 없고 Windows ARM 기기에서 설치·실행도 확인하지 않았다(미측정). 0.12.2 이하 릴리스에는 Windows ARM64 자산이 없다.
 
 릴리스는 **Git 태그 push** 로 트리거된다(`.github/workflows/release.yml`). 버전 형식은 `MAJOR.MINOR.PATCH`. 버전 정책은 [`../../CLAUDE.md`](../../CLAUDE.md) "버전 정책" — 이 문서는 절차다.
 
@@ -72,12 +72,12 @@ git push origin main --tags
 ### 5. 워크플로 (release.yml)
 
 1. **create-release** — 버전 검증 → draft release 생성(body = 릴리스 노트).
-2. **build-macos / build-windows / build-linux-x64 / build-linux-arm64** — 각 빌드 스크립트가 로컬 키를 준비해(Linux·macOS 는 `ensure-sign-key.sh`, Windows 는 `build-windows.ps1` 이 직접) plugin 재서명 → 빌드(`--profile dist`) → GUI 패키징 → 헤드리스 압축 파일(아래 "헤드리스 산출물") → 아티팩트 업로드. GitHub Secret 관여 없음(배경은 [plugin-packaging](plugin-packaging.md) "영구 release 키를 두지 않는 이유").
+2. **build-macos / build-windows / build-windows-arm64 / build-linux-x64 / build-linux-arm64** — 각 빌드 스크립트가 로컬 키를 준비해(Linux·macOS 는 `ensure-sign-key.sh`, Windows 는 `build-windows.ps1` 이 직접) plugin 재서명 → 빌드(`--profile dist`) → GUI 패키징 → 헤드리스 압축 파일(아래 "헤드리스 산출물") → 아티팩트 업로드. GitHub Secret 관여 없음(배경은 [plugin-packaging](plugin-packaging.md) "영구 release 키를 두지 않는 이유").
 3. **publish-release** — draft 해제(공개). 파일을 올리지 않는다.
 
 ### 6. 검증
 
-GitHub Releases 에서 노트를 확인하고, 자산이 아래 [릴리스 자산](#릴리스-자산) 표의 19개와 정확히 같은지 확인한다. 빠진 파일과 표에 없는 파일 모두 결함이다.
+GitHub Releases 에서 노트를 확인하고, 자산이 아래 [릴리스 자산](#릴리스-자산) 표의 23개와 정확히 같은지 확인한다. 빠진 파일과 표에 없는 파일 모두 결함이다.
 
 > **사용자 업그레이드**: publish 되면 사용자는 GitHub Releases 에서 새 아티팩트를 직접 내려받아 SHA256SUMS 로 검증한 뒤 수동 설치한다.
 
@@ -94,6 +94,10 @@ GitHub Release 에 올리는 파일은 아래 표가 전부다. 사용자가 받
 | `tasty-{ver}-windows-x64.msi` | `build-windows` | GUI 설치 |
 | `tasty-headless-{ver}-windows-x64.zip` | `build-windows` | 헤드리스 |
 | `SHA256SUMS-windows.txt` | `build-windows` | 체크섬 |
+| `tasty-{ver}-windows-arm64.zip` | `build-windows-arm64` | GUI 압축 |
+| `tasty-{ver}-windows-arm64.msi` | `build-windows-arm64` | GUI 설치 |
+| `tasty-headless-{ver}-windows-arm64.zip` | `build-windows-arm64` | 헤드리스 |
+| `SHA256SUMS-windows-arm64.txt` | `build-windows-arm64` | 체크섬 |
 | `tasty-{ver}-linux-x64.tar.gz` | `build-linux-x64` | GUI 압축 |
 | `tasty-headless-{ver}-linux-x64.tar.gz` | `build-linux-x64` | 헤드리스 |
 | `tasty_{ver}-1_amd64.deb` | `build-linux-x64` | GUI 설치 |
@@ -107,7 +111,7 @@ GitHub Release 에 올리는 파일은 아래 표가 전부다. 사용자가 받
 | `Tasty-{ver}-aarch64.AppImage` | `build-linux-arm64` | GUI 실행 |
 | `SHA256SUMS-linux-arm64.txt` | `build-linux-arm64` | 체크섬 |
 
-- 체크섬 파일은 같은 잡이 올리는 배포물의 SHA-256 을 담는다.
+- 체크섬 파일은 같은 잡이 올리는 배포물의 SHA-256 을 담는다. Windows 는 x64 의 기존 이름 `SHA256SUMS-windows.txt` 를 유지하고 ARM64 는 `SHA256SUMS-windows-arm64.txt` 를 따로 올린다. 두 파일을 합쳐 모든 Windows 배포물을 검증한다.
 - 고지 파일(`LICENSE`, `THIRD_PARTY_LICENSES.md`, `LICENSES/`)은 자산으로 따로 올리지 않는다. 라이선스가 요구하는 고지 전달은 모든 배포물 안에 넣는 것으로 충족하고([배포물의 고지 파일](#배포물의-고지-파일)), 저장소에서도 공개돼 있다.
 - 문서·설정 예시 같은 부속 파일도 올리지 않는다. 사용자에게 필요한 내용은 사용자 가이드나 배포물 안에 둔다.
 - 자산을 추가·삭제하려면 이 표, `.github/workflows/release.yml` 의 업로드 줄, 해당 빌드 스크립트, 사용자 가이드의 설치 파일 표를 같은 커밋에서 고친다.
@@ -128,7 +132,7 @@ GitHub Release 에 올리는 파일은 아래 표가 전부다. 사용자가 받
 | systemd 서비스 | `actions.runner.zilhak-tasty.tasty-server-x64.service` | `…tasty-gx10-arm64.service` |
 | 자동 시작 | enabled | enabled |
 
-macOS/Windows 러너도 동일 패턴(라벨만 `[self-hosted, macOS]` / `[self-hosted, Windows]`).
+macOS/Windows 러너도 동일 패턴(라벨만 `[self-hosted, macOS]` / `[self-hosted, Windows]`). Windows ARM64 전용 러너는 없고, x64 Windows 러너가 ARM64 산출물을 교차 빌드한다([Windows ARM64](#windows-arm64)).
 
 같은 mac/win 러너를 `.github/workflows/crossplatform-check.yml` 이 재사용한다 — dist 빌드 없이 컴파일 정합성만 확인하는 가벼운 가드다. **언제 도는가**: `main` 에 push 될 때(문서·사이트·마크다운만 바뀐 push 는 제외) · `main` 대상 PR · 수동 dispatch. 이 저장소는 PR 없이 main 에 직접 push 하는 흐름이라 push 가 실효 트리거이고, PR 트리거는 PR 흐름을 쓰게 될 때를 위해 남아 있다(선택 근거는 워크플로 파일 상단 주석). **무엇을 도는가**: 잡은 셋(`check-windows` · `check-headless` · `check-release`)이고, macOS 잡 `check-macos` 는 같은 트리거의 `.github/workflows/crossplatform-check-macos.yml` 에 따로 있다. 잡별 명령은 [ci-gates](ci-gates.md) 의 표가 정본이다. 네이티브 host 타깃이 곧 `x86_64-pc-windows-msvc` / `aarch64-apple-darwin` 이라 `--target` 지정은 불필요. 잡들이 병렬로 돈다. 같은 ref 의 앞선 실행을 취소하는 조건은 두 워크플로가 다르다([연속 push와 실행 취소](ci-gates.md#연속-push와-실행-취소)). (무거운 dist 빌드 검증은 여전히 수동 `build-check.yml`.)
 
@@ -150,6 +154,9 @@ which cargo-deb cargo-generate-rpm linuxdeploy   # 검증
 ```powershell
 # Windows
 cargo install cargo-wix; winget install WiXToolset.WiXToolset
+# Windows ARM64 교차 빌드: Visual Studio 구성 요소 "MSVC ARM64 빌드 도구"
+# (Microsoft.VisualStudio.Component.VC.Tools.ARM64)를 Visual Studio Installer에서 추가한다.
+# Rust 타깃 aarch64-pc-windows-msvc는 build-windows.ps1이 없으면 rustup으로 추가한다.
 ```
 
 ```bash
@@ -158,6 +165,20 @@ xcode-select --install; brew install create-dmg
 ```
 
 WiX winget 은 `WIX` env 만 등록(`%WIX%\bin` PATH 추가 안 함) — `build-windows.ps1` 이 자동 prepend. 단 러너 서비스가 새 env 를 못 보면 1회 재시작.
+
+### Windows ARM64
+
+Windows ARM64 산출물은 기존 x64 Windows 러너에서 `build-windows.ps1 -Arch arm64`로 교차 빌드한다. ARM64 Windows 러너를 따로 두지 않는 이유는 저장소 밖 인프라를 늘리지 않고 같은 MSVC·WiX 환경에서 두 아키텍처를 만들 수 있기 때문이다. 이 방식은 러너에서 ARM64 실행 파일을 실행할 수 없다는 한계가 있어 아래처럼 실행 검사를 대신한다.
+
+- 두 Windows 잡 모두 `--target`(`x86_64-pc-windows-msvc` / `aarch64-pc-windows-msvc`)을 명시한다. 러너 호스트 아키텍처와 관계없이 파일 이름의 아키텍처와 실제 바이너리가 일치한다. 산출물은 `target\<triple>\<프로필>\`에 생기고 cargo-wix에도 같은 `--target`을 넘긴다.
+- 사전 조건: Rust 타깃(없으면 스크립트가 `rustup target add`로 추가), MSVC ARM64 빌드 도구(스크립트가 `vswhere`로 확인하고 없으면 중단), ARM64 MSI를 만드는 WiX 3.14 이상(스크립트가 `candle.exe` 버전을 확인). `wix/main.wxs`는 ARM64에서 64비트 Program Files와 Windows Installer 5.0(`InstallerVersion` 500)을 쓴다. x64 MSI의 `InstallerVersion` 450과 UpgradeCode는 그대로다.
+- 산출물 검사는 빌드 스크립트 안에서 dist를 지우기 전에 실행하고 결과를 잡 로그에 남긴다. 태그 없는 `workflow_dispatch` 실행도 같은 로그로 확인한다.
+  - ZIP·헤드리스 ZIP·MSI를 풀어 모든 `.exe`(본체와 번들 plugin)의 PE 헤더 Machine 값이 x64는 0x8664, ARM64는 0xAA64인지 확인한다. 실행 파일 수가 본체와 번들 plugin 수보다 적어도 실패한다.
+  - `tasty.exe --version` 실행과 MSI 관리 설치(`msiexec /a`)는 호스트와 같은 아키텍처일 때만 한다. x64 러너의 ARM64 빌드는 실행 검사를 건너뛴다는 줄을 남기고 PE 검사로 아키텍처를 확인한다. MSI 안의 파일은 WiX `dark.exe -x`로 꺼내 `main.wxs`의 File Id·Source 짝으로 원래 경로에 놓은 뒤 고지 세트 대조와 PE 검사를 한다.
+  - 체크섬 파일을 다시 읽어 그 아키텍처의 배포물 전부를 담는지와 각 해시가 맞는지 확인하고, 산출물 명부(이름과 크기)를 출력한다. staging 디렉터리는 `dist\tasty-windows-<arch>`처럼 아키텍처별이라 같은 dist에서 두 아키텍처를 만들어도 서로 덮지 않는다.
+- CI는 `crossplatform-check.yml`의 `check-windows-arm64`가 main push마다 ARM64 타깃 `cargo check`를 실행한다([ci-gates](ci-gates.md)). 테스트 실행과 링크는 포함하지 않는다.
+- 미측정: 이 빌드 경로(교차 컴파일·링크, cargo-wix의 ARM64 MSI, `dark.exe` 추출 경로)는 아직 Windows 러너에서 실행된 적이 없다. Windows ARM 기기에서 설치·실행·제거도 확인하지 않았다. 확인할 수 없다는 이유로 산출물을 빼지 않고, 확인한 범위를 릴리스마다 구분해 적는다.
+- 실제 릴리스 뒤에는 받은 산출물의 PE 머신 타입을 `dumpbin /headers` 등으로 다시 확인한다. ARM64 Windows 기기를 쓸 수 있으면 설치·실행·제거를 확인하고, 없으면 미측정으로 기록한다.
 
 ### CI PATH 매핑
 
@@ -193,6 +214,8 @@ cd ~/actions-runner && ./config.sh remove --token <REMOVAL_TOKEN>   # token: Set
 | 러너 offline | `systemctl status` → `restart` |
 | release upload 실패 | `GH_TOKEN` 권한/tag 이름 확인 (`--clobber` 재업로드) |
 | Windows `candle could not be found` | WiX 3.x 미설치/`WIX` env 누락 → `winget install` 후 서비스 재시작 |
+| Windows ARM64 `MSVC ARM64 build tools not found` | Visual Studio Installer 에서 `Microsoft.VisualStudio.Component.VC.Tools.ARM64` 추가 |
+| Windows ARM64 `cannot build ARM64 MSI packages` | WiX 3.14 이상으로 갱신 |
 | AppImage `fuse: failed to exec fusermount` | 타깃 환경 FUSE 미지원 → `--appimage-extract-and-run` |
 
 ## API 안정성 가드
@@ -213,11 +236,11 @@ cd ~/actions-runner && ./config.sh remove --token <REMOVAL_TOKEN>   # token: Set
 |---|---|---|
 | Linux x64·arm64 | `tasty-headless-<버전>-linux-{x64,arm64}.tar.gz` | `scripts/build-linux.sh` |
 | macOS Apple Silicon | `tasty-headless-<버전>-macos-arm64.tar.gz` | `scripts/build-macos-dmg.sh` (`NO_DMG=1`이면 만들지 않는다) |
-| Windows x64 | `tasty-headless-<버전>-windows-x64.zip` | `scripts/build-windows.ps1` |
+| Windows x64·ARM64 | `tasty-headless-<버전>-windows-{x64,arm64}.zip` | `scripts/build-windows.ps1 -Arch {x64,arm64}` |
 
 - 각 스크립트가 GUI 패키징을 마친 뒤 `CARGO_TARGET_DIR=target/headless`로 같은 프로필의 `cargo build --no-default-features`를 실행한다. GUI 패키지가 읽는 `target/<프로필>/tasty`를 덮지 않도록 target 디렉터리를 나눈다.
 - 압축 파일 안에는 실행 파일 `tasty`(Windows `tasty.exe`), GUI 산출물과 같은 서명된 번들 plugin(`plugins/`), 고지 파일이 들어간다. Linux는 GUI `.tar.gz`와 같은 launcher 스크립트가 `tasty.bin`을 실행한다. macOS 헤드리스 바이너리는 앱 번들과 같은 identity로 단독 서명하고 공증하지 않는다.
-- 검증: 압축 파일에서 `tasty --version` 실행, `plugins/`와 고지 파일 포함, GUI 바이너리와 같은 파일이 아님을 확인한다. macOS는 `codesign --verify`와 arm64 Mach-O도 확인한다.
+- 검증: 압축 파일에서 `tasty --version` 실행, `plugins/`와 고지 파일 포함, GUI 바이너리와 같은 파일이 아님을 확인한다. macOS는 `codesign --verify`와 arm64 Mach-O도 확인한다. Windows는 PE 머신 타입도 확인하며, 호스트에서 실행할 수 없는 아키텍처는 `--version` 대신 이 검사로 확인한다([Windows ARM64](#windows-arm64)).
 - 체크섬은 OS별 `SHA256SUMS-*.txt`에 GUI 산출물과 함께 들어간다.
 - 설치 형식(`.deb`·`.rpm`·`.AppImage`·`.dmg`·`.msi`)에는 헤드리스를 넣지 않는다.
 

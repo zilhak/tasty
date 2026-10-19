@@ -68,6 +68,8 @@ jobs:
         if: always()
         run: rm -rf dist
 
+  # 두 Windows 잡은 아키텍처를 명시해 빌드한다. 기존 Windows x64 러너는 ARM64를 교차 빌드한다.
+  # 근거와 확인 범위: docs/dev-guide/release.md#windows-arm64
   build-windows:
     needs: create-release
     if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
@@ -77,9 +79,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build ZIP, MSI and headless ZIP
+      # 빌드 스크립트가 cleanup 전에 PE 머신 타입·체크섬·산출물 명부를 확인하고 로그에 남긴다.
+      - name: Build ZIP, MSI and headless ZIP (x64)
         shell: pwsh
-        run: ./scripts/build-windows.ps1
+        run: ./scripts/build-windows.ps1 -Arch x64
 
       - name: Upload to release
         if: github.event_name == 'push'
@@ -92,6 +95,37 @@ jobs:
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.msi"
           gh release upload --clobber "v${VERSION}" "dist/tasty-headless-${VERSION}-windows-x64.zip"
           gh release upload --clobber "v${VERSION}" "dist/SHA256SUMS-windows.txt"
+
+      - name: Clean up dist
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+
+  build-windows-arm64:
+    needs: create-release
+    if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    runs-on: [self-hosted, Windows]
+    # build-windows 대리 실측 최대 11.4분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # x64 호스트에서는 ARM64 실행 파일을 실행할 수 없어 --version 대신 PE 머신 타입(0xAA64)을 확인한다.
+      - name: Build ZIP, MSI and headless ZIP (arm64)
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Arch arm64
+
+      - name: Upload to release
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $VERSION = "${{ needs.create-release.outputs.version }}"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-arm64.zip"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-arm64.msi"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-headless-${VERSION}-windows-arm64.zip"
+          gh release upload --clobber "v${VERSION}" "dist/SHA256SUMS-windows-arm64.txt"
 
       - name: Clean up dist
         if: always()
@@ -167,7 +201,7 @@ jobs:
         run: rm -rf dist
 
   publish-release:
-    needs: [create-release, build-macos, build-windows, build-linux-x64, build-linux-arm64]
+    needs: [create-release, build-macos, build-windows, build-windows-arm64, build-linux-x64, build-linux-arm64]
     if: github.event_name == 'push'
     runs-on: [self-hosted, Linux]
     # 실측 최대 0.2분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한

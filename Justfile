@@ -57,9 +57,13 @@ dist-macos:
 dist-linux:
     ./scripts/build-linux.sh
 
-# Windows 배포 패키지를 빌드한다.
+# Windows x64 배포 패키지를 빌드한다.
 dist-windows:
-    pwsh -File ./scripts/build-windows.ps1
+    pwsh -File ./scripts/build-windows.ps1 -Arch x64
+
+# Windows ARM64 배포 패키지를 빌드한다. x64 호스트에서는 교차 빌드한다.
+dist-windows-arm64:
+    pwsh -File ./scripts/build-windows.ps1 -Arch arm64
 
 # 배포 결과와 패키징 중간 파일을 삭제한다.
 dist-clean:

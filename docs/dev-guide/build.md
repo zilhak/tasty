@@ -299,7 +299,7 @@ just link-plugins                 # cp 대신 symlink (rebuild 즉시 반영)
 ```bash
 ./scripts/build-macos-dmg.sh    # .app + .dmg + 헤드리스 tar.gz (자동 --profile dist)
 ./scripts/build-linux.sh        # tar.gz + .deb + .rpm + .AppImage + 헤드리스 tar.gz (uname -m 자동 감지)
-./scripts/build-windows.ps1     # zip + .msi + 헤드리스 zip (cargo-wix + WiX 3.x)
+./scripts/build-windows.ps1     # zip + .msi + 헤드리스 zip (cargo-wix + WiX 3.x, -Arch x64|arm64)
 ```
 
 - **macOS** `.app` 은 ad-hoc 코드 서명(`codesign --sign -`). 번들 plugin 은 **`Contents/Resources/plugins/<id>/`** 에 staging 한다 — `Contents/MacOS/` 하위에 두면 codesign 이 그 디렉터리를 nested code 로 간주해 번들로 파싱하려다 `bundle format unrecognized` 로 **서명 자체가 실패**한다. `tests/macos_bundle_codesign.rs` 가 이 레이아웃을 강제하고, 런타임 탐색은 `bundle_root()`(`crates/tasty-host-plugin/src/builtin.rs`)가 담당한다.
@@ -332,7 +332,7 @@ just link-plugins                 # cp 대신 symlink (rebuild 즉시 반영)
 just dist            # 호스트 OS dist 빌드 (자동 sanity check + SHA256SUMS)
 just dist-clean      # dist/ 정리
 just dist-verify     # SHA256SUMS 재검증
-just dist-macos | dist-linux | dist-windows   # 플랫폼 명시
+just dist-macos | dist-linux | dist-windows | dist-windows-arm64   # 플랫폼 명시
 just dist-setup-linux                          # Linux 사전 도구 (1회)
 ```
 
@@ -361,15 +361,16 @@ cargo build --profile dist        # 워크스페이스 컴파일
 
 > Windows 산출물은 Windows 머신에서 빌드하고 직접 확인한다.
 
-Windows ARM 은 지원 대상([플랫폼 원칙](../principles/platform-and-compatibility.md))이지만 현재 이 스크립트는 x64 산출물만 만들고 ARM64 전용 산출물은 없다. x64 산출물을 Windows ARM 기기에서 실행하는 것은 확인하지 않았다.
+Windows ARM 은 지원 대상([플랫폼 원칙](../principles/platform-and-compatibility.md))이다. `-Arch x64`(기본)와 `-Arch arm64` 로 아키텍처를 고르며, x64 호스트에서는 ARM64 를 교차 빌드한다. 사전 도구·검사 방법·미측정 범위는 [release 의 Windows ARM64](release.md#windows-arm64). 0.12.2 이하 릴리스에는 ARM64 산출물이 없고, x64 산출물을 Windows ARM 기기에서 실행하는 것은 확인하지 않았다.
 
 ```powershell
 cargo install cargo-wix; winget install WiXToolset.WiXToolset   # 1회
-.\scripts\build-windows.ps1            # dist + ZIP + MSI
-.\scripts\build-windows.ps1 -SkipMsi   # ZIP 만
+.\scripts\build-windows.ps1              # x64: dist + ZIP + MSI
+.\scripts\build-windows.ps1 -Arch arm64  # ARM64 (x64 호스트에서는 교차 빌드)
+.\scripts\build-windows.ps1 -SkipMsi     # ZIP 만
 ```
 
-산출물: `tasty-{v}-windows-x64.{zip,msi}` · 헤드리스 `tasty-headless-{v}-windows-x64.zip` + `SHA256SUMS-windows.txt`. 헤드리스 ZIP 도 같은 방식(`tasty.exe --version`, `plugins/`, 고지 세트)으로 확인하며 Windows 빌더에서 돈 적이 없다(미측정). `build-windows.ps1` 이 MSI 단계에서 `$env:WIX\bin` 을 자동 PATH prepend. 자동 sanity check(ZIP 풀어 `tasty.exe --version`, MSI 존재). 고지 세트는 ZIP 최상단과 MSI 설치 디렉토리에 들어가고, 스크립트가 ZIP 을 푼 트리와 MSI 를 관리 설치(`msiexec /a`)로 푼 트리에서 저장소 사본과 바이트 대조한다. `wix/main.wxs` 는 파일마다 이름을 적어야 해서, MSI 빌드 전에 `LICENSES/` 의 파일마다 대응 `Source` 가 있는지 먼저 본다. 이 확인 코드들은 구현돼 있지만 Windows 빌더에서 돈 적은 아직 없다(미측정). 검증 포인트: MSI UpgradeCode 유지(`wix/main.wxs`), 설치→시작메뉴→제거.
+산출물: `tasty-{v}-windows-{x64|arm64}.{zip,msi}` · 헤드리스 `tasty-headless-{v}-windows-{x64|arm64}.zip` + `SHA256SUMS-windows.txt`(x64) / `SHA256SUMS-windows-arm64.txt`(ARM64). 모든 `.exe` 의 PE 머신 타입이 대상 아키텍처인지 확인하고, 호스트에서 실행할 수 없는 아키텍처는 `--version` 실행과 `msiexec /a` 대신 PE 검사와 `dark.exe` 추출로 확인한다. 헤드리스 ZIP 도 같은 방식(`tasty.exe --version`, `plugins/`, 고지 세트)으로 확인하며 Windows 빌더에서 돈 적이 없다(미측정). `build-windows.ps1` 이 MSI 단계에서 `$env:WIX\bin` 을 자동 PATH prepend. 자동 sanity check(ZIP 풀어 `tasty.exe --version`, MSI 존재). 고지 세트는 ZIP 최상단과 MSI 설치 디렉토리에 들어가고, 스크립트가 ZIP 을 푼 트리와 MSI 를 관리 설치(`msiexec /a`)로 푼 트리에서 저장소 사본과 바이트 대조한다. `wix/main.wxs` 는 파일마다 이름을 적어야 해서, MSI 빌드 전에 `LICENSES/` 의 파일마다 대응 `Source` 가 있는지 먼저 본다. 이 확인 코드들은 구현돼 있지만 Windows 빌더에서 돈 적은 아직 없다(미측정). 검증 포인트: MSI UpgradeCode 유지(`wix/main.wxs`), 설치→시작메뉴→제거.
 
 #### Linux
 
@@ -390,7 +391,7 @@ just dist-setup-linux              # 또는 수동 (아래)
 |--------|------|--------|
 | macOS (arm64) | `./scripts/build-macos-dmg.sh` | `Tasty-{v}-macos.dmg` · 헤드리스 `tar.gz` |
 | Windows (x64) | `.\scripts\build-windows.ps1` | `{zip,msi}` · 헤드리스 `zip` |
-| Windows (ARM64) | 없음 | 지원 대상이지만 현재 산출물 없음 |
+| Windows (ARM64) | `.\scripts\build-windows.ps1 -Arch arm64` | `{zip,msi}` · 헤드리스 `zip` (실행 확인 미측정) |
 | Linux | `./scripts/build-linux.sh` | `{tar.gz,deb,rpm,AppImage}` · 헤드리스 `tar.gz` |
 
 #### 관련

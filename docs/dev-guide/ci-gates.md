@@ -20,6 +20,7 @@ DPI 수동 변환 검사는 `src/`와 `crates/`의 파일 수 하한을 각각 �
 | SemVer 가드 | `cargo test --locked --no-default-features --no-fail-fast --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
 | macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check-macos.yml` 의 `check-macos` (self-hosted macOS) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | Windows lint + 단위테스트 **+ 지목 통합** | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` · `cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| Windows ARM64 컴파일 | `cargo check --workspace --all-targets --target aarch64-pc-windows-msvc --locked` (x64 러너에서 교차 컴파일, 테스트·링크 없음, C 의존성은 MSVC ARM64 빌드 도구 필요 — [release](release.md#windows-arm64)) | `crossplatform-check.yml` 의 `check-windows-arm64` (self-hosted Windows) | main push(문서·site 제외) · PR · 수동 | [배선] |
 | headless 컴파일 · **전체 스위트** · lint **+ Linux gui 단위테스트** | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast` · `cargo clippy --workspace --all-targets --no-default-features --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast`(스텝 `cargo test (linux, gui, unit)` — 기본 feature, 아래 [조합 격자의 빈 칸](#조합-격자의-빈-칸--linux--gui--debug-지금은-채워져-있다)) · **관측(비차단)** `xvfb-run … cargo test --workspace --locked --no-fail-fast --test e2e_tests -- multi_window_owner_routing --exact`(스텝 `cargo test (linux, gui, e2e — 관측용)`, `continue-on-error: true` — 헤드리스 조합에서 컴파일하지 않는 이 시험을 돌리되 실패해도 잡을 차단하지 않는다) · **관측(비차단)** `xvfb-run … cargo test -p tasty-plugin-markdown --locked --no-fail-fast -- --ignored --exact render::webview_layout_tests::address_bar_stays_on_top_in_webkitgtk`(스텝 `cargo test (linux, gui, webview layout — 관측용)`, `continue-on-error: true` — markdown 주소창 배치를 WebKitGTK 로 재는 Linux 전용 시험, 아래 [webview 레이아웃 시험](#webview-레이아웃-시험)) | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([가드 검증](guard-verification.md)) | [실측] |
@@ -254,18 +255,22 @@ checkout의 정리로 `target/`이 삭제되는 구성에는 로컬 증분 빌�
 - 측정 범위: crossplatform-check·supply-chain-check·test는 2026-09-17~2026-10-08의 전체
   실행, release는 2026-09-26의 1회, 나머지는 2026-10-07~2026-10-08의 최근 30회다.
 - build-check는 같은 기간 실행 기록이 없어 같은 빌드 스크립트를 같은 러너에서 실행하는
-  release 잡의 실측을 쓴다. test-linux-x64도 실행 기록이 없어 같은 러너에서 workspace
+  release 잡의 실측을 쓴다. Windows ARM64 빌드 잡(release·build-check)은 아직 실행 기록이 없어
+  같은 스크립트를 같은 러너에서 실행하는 x64 build-windows의 실측을 쓴다. check-windows-arm64도
+  실행 기록이 없어 같은 러너에서 더 많은 작업(clippy·테스트)을 하는 check-windows의 실측을 쓴다. test-linux-x64도 실행 기록이 없어 같은 러너에서 workspace
   시험을 실행하는 check-headless의 실측을 쓴다.
 
 | 워크플로 | 잡 | 성공 | 실패 | 실측 최대(분) | 배수 | timeout-minutes |
 |---|---|---|---|---|---|---|
 | build-check.yml | build-macos | 0 | 0 | 7.9 (release 대리) | 5 | 40 |
 | build-check.yml | build-windows | 0 | 0 | 11.4 (release 대리) | 5 | 60 |
+| build-check.yml | build-windows-arm64 | 0 | 0 | 11.4 (release build-windows 대리) | 5 | 60 |
 | build-check.yml | build-linux-x64 | 0 | 0 | 9.3 (release 대리) | 5 | 50 |
 | build-check.yml | build-linux-arm64 | 0 | 0 | 7.2 (release 대리) | 5 | 40 |
 | complexity-check.yml | check-file-size | 24 | 0 | 0.3 | 3 | 10 |
 | crossplatform-check-macos.yml | check-macos | 6 | 86 | 12.4 | 3 | 40 |
 | crossplatform-check.yml | check-windows | 5 | 81 | 13.7 | 3 | 45 |
+| crossplatform-check.yml | check-windows-arm64 | 0 | 0 | 13.7 (check-windows 대리) | 5 | 70 |
 | crossplatform-check.yml | check-headless | 26 | 38 | 15.7 | 3 | 50 |
 | crossplatform-check.yml | check-release | 93 | 3 | 1.7 | 3 | 10 |
 | doc-guards.yml | doc-guards | 29 | 0 | 1.8 | 3 | 10 |
@@ -276,6 +281,7 @@ checkout의 정리로 `target/`이 삭제되는 구성에는 로컬 증분 빌�
 | release.yml | create-release | 1 | 0 | 0.2 | 5 | 10 |
 | release.yml | build-macos | 1 | 0 | 7.9 | 5 | 40 |
 | release.yml | build-windows | 1 | 0 | 11.4 | 5 | 60 |
+| release.yml | build-windows-arm64 | 0 | 0 | 11.4 (build-windows 대리) | 5 | 60 |
 | release.yml | build-linux-x64 | 1 | 0 | 9.3 | 5 | 50 |
 | release.yml | build-linux-arm64 | 1 | 0 | 7.2 | 5 | 40 |
 | release.yml | publish-release | 1 | 0 | 0.2 | 5 | 10 |

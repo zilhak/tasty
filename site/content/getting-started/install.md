@@ -22,7 +22,9 @@
 | Windows | x86_64 | `tasty-{ver}-windows-x64.msi` | 설치 마법사 (권장) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.zip` | 압축만 풀어 쓰는 무설치판 |
 | Windows | x86_64 | `tasty-headless-{ver}-windows-x64.zip` | [headless 빌드](#headless-빌드) |
-| Windows | ARM64 | 없음 | 지원 대상이지만 현재 릴리스에는 ARM64 전용 파일이 없습니다. [Windows](#windows) 참고 |
+| Windows | ARM64 | `tasty-{ver}-windows-arm64.msi` | 설치 마법사. 0.12.2 이하 릴리스에는 없습니다. [Windows](#windows) 참고 |
+| Windows | ARM64 | `tasty-{ver}-windows-arm64.zip` | 압축만 풀어 쓰는 무설치판 |
+| Windows | ARM64 | `tasty-headless-{ver}-windows-arm64.zip` | [headless 빌드](#headless-빌드) |
 
 각 OS 의 `SHA256SUMS-*.txt` 로 받은 파일을 검증할 수 있습니다.
 
@@ -68,7 +70,7 @@ xattr -dr com.apple.quarantine /Applications/Tasty.app
 
 ## Windows
 
-Windows ARM 은 지원 대상이지만 현재 릴리스에는 ARM64 전용 파일이 없습니다. x64 파일을 Windows ARM 기기에서 실행하는 것은 아직 확인하지 않았습니다.
+Windows ARM 기기에서는 이름에 `windows-arm64` 가 들어간 파일을 받으세요. ARM64 파일은 0.12.2 보다 새 릴리스부터 들어가며, Windows ARM 기기에서 설치와 실행은 아직 확인하지 않았습니다. ARM64 파일이 없는 0.12.2 이하 릴리스의 x64 파일을 Windows ARM 기기에서 실행하는 것도 확인하지 않았습니다.
 
 - **`.msi` (권장)** — 더블클릭해서 설치 마법사를 따릅니다. 시작 메뉴 바로가기와 "앱 및 기능" 제거 항목이 등록됩니다.
 - **`.zip`** — 원하는 폴더에 풀고 `tasty.exe` 를 실행합니다.
@@ -118,7 +120,7 @@ tar -xzf tasty-headless-{ver}-macos-arm64.tar.gz && ./tasty-headless-macos-arm64
 ```
 
 ```powershell
-# Windows
+# Windows (ARM64 는 x64 자리를 arm64 로)
 Expand-Archive tasty-headless-{ver}-windows-x64.zip -DestinationPath tasty-headless
 .\tasty-headless\tasty.exe
 ```

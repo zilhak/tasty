@@ -1,4 +1,4 @@
-<!-- source-hash: ab3aa4193a30 -->
+<!-- source-hash: 11f32167d8af -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -23,7 +23,9 @@ Download the installer from the [GitHub releases page](https://github.com/zilhak
 | Windows | x86_64 | `tasty-{ver}-windows-x64.msi` | Setup wizard (recommended) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.zip` | Portable build — just unzip and run |
 | Windows | x86_64 | `tasty-headless-{ver}-windows-x64.zip` | [Headless build](#headless-build) |
-| Windows | ARM64 | None | Supported, but current releases have no ARM64 file. See [Windows](#windows) |
+| Windows | ARM64 | `tasty-{ver}-windows-arm64.msi` | Setup wizard. Not in releases up to 0.12.2. See [Windows](#windows) |
+| Windows | ARM64 | `tasty-{ver}-windows-arm64.zip` | Portable build — just unzip and run |
+| Windows | ARM64 | `tasty-headless-{ver}-windows-arm64.zip` | [Headless build](#headless-build) |
 
 You can verify a downloaded file against the `SHA256SUMS-*.txt` for its OS.
 
@@ -69,7 +71,7 @@ After the first launch, macOS may show permission prompts for the Downloads, Doc
 
 ## Windows
 
-Windows ARM is supported, but current releases have no ARM64 file. Running the x64 files on a Windows ARM device has not been checked yet.
+On a Windows ARM device, download the files with `windows-arm64` in the name. ARM64 files ship in releases newer than 0.12.2, and installing and running them on a Windows ARM device has not been checked yet. Running the x64 files of releases up to 0.12.2, which have no ARM64 files, on a Windows ARM device has not been checked either.
 
 - **`.msi` (recommended)** — Double-click and follow the setup wizard. A Start menu shortcut and an "Apps & features" uninstall entry are registered.
 - **`.zip`** — Extract to any folder and run `tasty.exe`.
@@ -119,7 +121,7 @@ tar -xzf tasty-headless-{ver}-macos-arm64.tar.gz && ./tasty-headless-macos-arm64
 ```
 
 ```powershell
-# Windows
+# Windows (for ARM64, replace x64 with arm64)
 Expand-Archive tasty-headless-{ver}-windows-x64.zip -DestinationPath tasty-headless
 .\tasty-headless\tasty.exe
 ```

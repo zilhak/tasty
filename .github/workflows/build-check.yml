@@ -60,9 +60,26 @@ jobs:
           }
           Write-Host "PSScriptAnalyzer OK"
 
-      - name: Build ZIP, MSI and headless ZIP
+      - name: Build ZIP, MSI and headless ZIP (x64)
         shell: pwsh
-        run: ./scripts/build-windows.ps1
+        run: ./scripts/build-windows.ps1 -Arch x64
+
+      - name: Clean up dist
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+
+  # ARM64 산출물은 x64 Windows 러너에서 교차 빌드하고 PE 머신 타입으로 아키텍처를 확인한다.
+  build-windows-arm64:
+    runs-on: [self-hosted, Windows]
+    # release build-windows 대리 실측 최대 11.4분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ZIP, MSI and headless ZIP (arm64)
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Arch arm64
 
       - name: Clean up dist
         if: always()

@@ -24,6 +24,13 @@
     <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
 <?endif ?>
 
+<!-- ARM64 packages require Windows Installer 5.0. Other architectures keep 4.5. -->
+<?if $(sys.BUILDARCH) = arm64 ?>
+    <?define PackageInstallerVersion = "500" ?>
+<?else ?>
+    <?define PackageInstallerVersion = "450" ?>
+<?endif ?>
+
 <Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
 
     <Product
@@ -39,7 +46,7 @@
             Keywords='Installer'
             Description='Cross-platform GPU-accelerated terminal emulator for AI coding agents'
             Manufacturer='zilhak'
-            InstallerVersion='450'
+            InstallerVersion='$(var.PackageInstallerVersion)'
             Languages='1033'
             Compressed='yes'
             InstallScope='perMachine'

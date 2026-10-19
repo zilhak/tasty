@@ -1,17 +1,21 @@
 # Build Windows distributables for Tasty.
 #
 # Usage:
-#   .\scripts\build-windows.ps1           # dist build (full LTO, 배포용)
-#   .\scripts\build-windows.ps1 -Release  # release build (thin LTO, 빠른 빌드)
-#   .\scripts\build-windows.ps1 -Debug    # debug build
-#   .\scripts\build-windows.ps1 -SkipMsi  # ZIP만 만들고 MSI는 건너뜀
+#   .\scripts\build-windows.ps1              # dist build (full LTO, 배포용), x64
+#   .\scripts\build-windows.ps1 -Arch arm64  # aarch64-pc-windows-msvc 산출물 (x64 호스트에서는 교차 빌드)
+#   .\scripts\build-windows.ps1 -Release     # release build (thin LTO, 빠른 빌드)
+#   .\scripts\build-windows.ps1 -Debug       # debug build
+#   .\scripts\build-windows.ps1 -SkipMsi     # ZIP만 만들고 MSI는 건너뜀
 #
-# Output:
-#   dist\tasty-{version}-windows-x64.zip   (portable)
-#   dist\tasty-{version}-windows-x64.msi   (installer; cargo-wix + WiX 3.x auto-installed if missing)
-#   dist\tasty-headless-{version}-windows-x64.zip   (gui feature 없는 헤드리스 빌드, portable)
+# Output ({arch} = x64 | arm64):
+#   dist\tasty-{version}-windows-{arch}.zip   (portable)
+#   dist\tasty-{version}-windows-{arch}.msi   (installer; cargo-wix + WiX 3.x auto-installed if missing)
+#   dist\tasty-headless-{version}-windows-{arch}.zip   (gui feature 없는 헤드리스 빌드, portable)
+#   dist\SHA256SUMS-windows.txt (x64) / dist\SHA256SUMS-windows-arm64.txt (arm64)
 
 param(
+    [ValidateSet("x64", "arm64")]
+    [string]$Arch = "x64",
     [switch]$Release,
     [switch]$Debug,
     [switch]$SkipMsi
@@ -39,6 +43,53 @@ if ($Debug) {
     $CargoFlags = @("--release")
 }
 
+# 호스트 아키텍처로 빌드하면 러너에 따라 이름과 실제 아키텍처가 어긋날 수 있으므로 타깃을 항상 지정한다.
+# 타깃을 지정하면 산출물은 target\<triple>\<profile>\ 에 생긴다.
+$Targets = @{
+    x64   = @{ Triple = "x86_64-pc-windows-msvc";  Machine = 0x8664 }
+    arm64 = @{ Triple = "aarch64-pc-windows-msvc"; Machine = 0xAA64 }
+}
+$Triple = $Targets[$Arch].Triple
+$ExpectedMachine = $Targets[$Arch].Machine
+$CargoFlags += @("--target", $Triple)
+
+# 다른 아키텍처의 실행 파일은 이 호스트에서 실행할 수 없으므로 실행 검사는 같은 아키텍처일 때만 한다.
+$HostArch = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()) {
+    "X64" { "x64" }
+    "Arm64" { "arm64" }
+    default { $_ }
+}
+$CanRunTarget = ($HostArch -eq $Arch)
+Write-Host "==> Target $Triple ($Arch) on $HostArch host"
+
+$Installed = @(rustup target list --installed)
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "rustup target list failed with exit code $LASTEXITCODE"
+    exit 1
+}
+if ($Installed -notcontains $Triple) {
+    Write-Host "==> Installing Rust target $Triple..."
+    rustup target add $Triple
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "rustup target add $Triple failed with exit code $LASTEXITCODE"
+        exit 1
+    }
+}
+
+# C 의존성(libsqlite3-sys 등)은 대상 아키텍처의 MSVC 도구로 컴파일한다.
+if ($Arch -eq "arm64") {
+    $Vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $Vswhere) {
+        $Arm64Tools = & $Vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+        if (-not $Arm64Tools) {
+            Write-Error "MSVC ARM64 build tools not found. Add the Visual Studio component Microsoft.VisualStudio.Component.VC.Tools.ARM64 (MSVC ARM64 build tools)."
+            exit 1
+        }
+    } else {
+        Write-Warning "vswhere.exe not found; cannot confirm the MSVC ARM64 build tools before building."
+    }
+}
+
 $CargoContent = Get-Content "Cargo.toml" -Raw
 if ($CargoContent -match '(?m)^version\s*=\s*"([^"]+)"') {
     $Version = $Matches[1]
@@ -48,8 +99,14 @@ if ($CargoContent -match '(?m)^version\s*=\s*"([^"]+)"') {
 }
 
 $DistDir = "dist"
-$ArchiveName = "tasty-${Version}-windows-x64.zip"
-$StageDir = Join-Path $DistDir "tasty-windows"
+$ArchiveName = "tasty-${Version}-windows-${Arch}.zip"
+$MsiName = "tasty-${Version}-windows-${Arch}.msi"
+$HeadlessArchiveName = "tasty-headless-${Version}-windows-${Arch}.zip"
+# x64 체크섬 파일은 기존 이름을 유지한다. 아키텍처마다 파일이 달라 서로 덮지 않는다.
+$ShaSumsName = if ($Arch -eq "x64") { "SHA256SUMS-windows.txt" } else { "SHA256SUMS-windows-${Arch}.txt" }
+# 두 아키텍처를 같은 dist에서 만들어도 staging 경로가 겹치지 않게 한다.
+$StageDir = Join-Path $DistDir "tasty-windows-${Arch}"
+$BuildDir = Join-Path (Join-Path "target" $Triple) $BuildProfile
 
 # WSL bash가 선택되는 일을 줄이기 위해 Git Bash를 우선 찾는다.
 function Resolve-Bash {
@@ -162,7 +219,7 @@ function Stage-Plugins {
             exit 1
         }
         $id = $idMatch.Matches[0].Groups[1].Value
-        $srcBin = Join-Path (Join-Path "target" $BuildProfile) "$c.exe"
+        $srcBin = Join-Path $BuildDir "$c.exe"
         if (-not (Test-Path $srcBin)) {
             Write-Error "Plugin binary missing: $srcBin"
             exit 1
@@ -229,14 +286,13 @@ Write-Host "==> Assembling archive..."
 if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 
-$ExePath = Join-Path (Join-Path "target" $BuildProfile) "tasty.exe"
+$ExePath = Join-Path $BuildDir "tasty.exe"
 if (-not (Test-Path $ExePath)) {
     Write-Error "Build output not found: $ExePath"
     exit 1
 }
 Copy-Item $ExePath -Destination $StageDir
 
-$BuildDir = Join-Path "target" $BuildProfile
 Get-ChildItem -Path $BuildDir -Filter "*.dll" | ForEach-Object {
     Copy-Item $_.FullName -Destination $StageDir
 }
@@ -321,6 +377,19 @@ if (-not $SkipMsi) {
             }
         }
 
+        # WiX 3은 3.14부터 ARM64 패키지(candle -arch arm64)를 만든다.
+        if ($Arch -eq "arm64") {
+            $CandleBanner = (& candle.exe -? 2>&1 | Select-Object -First 3) -join " "
+            if ($CandleBanner -match 'version (\d+)\.(\d+)') {
+                if ([int]$Matches[1] -lt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -lt 14)) {
+                    Write-Error "WiX $($Matches[1]).$($Matches[2]) cannot build ARM64 MSI packages; install WiX 3.14 or later."
+                    exit 1
+                }
+            } else {
+                Write-Warning "Could not read the WiX version from candle.exe; continuing."
+            }
+        }
+
         # WiX는 파일을 명시하므로 notice 목록의 Source 항목이 선언됐는지 먼저 확인한다.
         $WxsContent = Get-Content (Join-Path "wix" "main.wxs") -Raw
         foreach ($f in Get-NoticeSetFiles) {
@@ -335,26 +404,26 @@ if (-not $SkipMsi) {
                 "wix",
                 "--package", "tasty",
                 "--profile", $BuildProfile,
+                "--target", $Triple,
                 "--no-build",
                 "--nocapture",
-                "--output", (Join-Path $DistDir "tasty-${Version}-windows-x64.msi")
+                "--output", (Join-Path $DistDir $MsiName)
             )
             cargo @WixArgs
             if ($LASTEXITCODE -ne 0) {
                 Write-Error "cargo wix failed with exit code $LASTEXITCODE"
                 exit 1
             }
-            Write-Host "Installer: $DistDir\tasty-${Version}-windows-x64.msi"
+            Write-Host "Installer: $DistDir\$MsiName"
         }
     }
 }
 
 # 헤드리스는 gui feature를 끈 빌드라 별도 target 디렉터리를 쓴다. 같은 target을 쓰면
-# 위 ZIP·MSI가 읽은 target\<profile>\tasty.exe를 헤드리스 바이너리로 덮는다.
+# 위 ZIP·MSI가 읽은 target\<triple>\<profile>\tasty.exe를 헤드리스 바이너리로 덮는다.
 # plugin은 헤드리스 호스트도 실행하므로 위에서 빌드·서명한 번들을 그대로 넣는다.
 $HeadlessTargetDir = Join-Path "target" "headless"
-$HeadlessArchiveName = "tasty-headless-${Version}-windows-x64.zip"
-$HeadlessStageDir = Join-Path $DistDir "tasty-headless-windows"
+$HeadlessStageDir = Join-Path $DistDir "tasty-headless-windows-${Arch}"
 Write-Host "==> Building headless tasty ($BuildProfile, --no-default-features)..."
 $PrevCargoTargetDir = $env:CARGO_TARGET_DIR
 $env:CARGO_TARGET_DIR = $HeadlessTargetDir
@@ -372,7 +441,7 @@ if ($HeadlessBuildExit -ne 0) {
 Write-Host "==> Assembling headless archive..."
 if (Test-Path $HeadlessStageDir) { Remove-Item -Recurse -Force $HeadlessStageDir }
 New-Item -ItemType Directory -Force -Path $HeadlessStageDir | Out-Null
-$HeadlessBuildDir = Join-Path $HeadlessTargetDir $BuildProfile
+$HeadlessBuildDir = Join-Path (Join-Path $HeadlessTargetDir $Triple) $BuildProfile
 $HeadlessExePath = Join-Path $HeadlessBuildDir "tasty.exe"
 if (-not (Test-Path $HeadlessExePath)) {
     Write-Error "Headless build output not found: $HeadlessExePath"
@@ -396,7 +465,60 @@ if (Test-Path $HeadlessArchivePath) { Remove-Item -Force $HeadlessArchivePath }
 Compress-Archive -Path (Join-Path $HeadlessStageDir "*") -DestinationPath $HeadlessArchivePath
 Remove-Item -Recurse -Force $HeadlessStageDir
 
-Write-Host "==> Verifying artifacts..."
+# PE 헤더의 Machine 필드로 실행 파일의 아키텍처를 읽는다(x64 0x8664, ARM64 0xAA64).
+function Get-PeMachine([string]$Path) {
+    $fs = [System.IO.File]::OpenRead($Path)
+    try {
+        $br = New-Object System.IO.BinaryReader($fs)
+        if ($fs.Length -lt 0x40 -or $br.ReadUInt16() -ne 0x5A4D) { return $null }
+        $fs.Position = 0x3C
+        $peOffset = $br.ReadInt32()
+        if ($peOffset -lt 0 -or $peOffset + 6 -gt $fs.Length) { return $null }
+        $fs.Position = $peOffset
+        if ($br.ReadUInt32() -ne 0x00004550) { return $null }
+        return [int]$br.ReadUInt16()
+    } finally {
+        $fs.Dispose()
+    }
+}
+
+# 압축·설치 패키지를 푼 트리의 모든 .exe가 대상 아키텍처인지 확인하고 결과를 로그에 남긴다.
+function Test-PeTree([string]$Root, [string]$Label, [int]$MinExe) {
+    $exes = @(Get-ChildItem -Path $Root -Recurse -File -Filter "*.exe")
+    if ($exes.Count -lt $MinExe) {
+        Write-Error "$Label holds $($exes.Count) .exe files, expected at least $MinExe"
+        exit 1
+    }
+    foreach ($e in $exes) {
+        $m = Get-PeMachine $e.FullName
+        $rel = $e.FullName.Substring((Resolve-Path $Root).Path.Length).TrimStart('\')
+        $shown = if ($null -eq $m) { "not a PE file" } else { "0x{0:X4}" -f $m }
+        Write-Host "  PE $Label :: $rel = $shown"
+        if ($m -ne $ExpectedMachine) {
+            Write-Error ("$Label :: $rel is $shown, expected 0x{0:X4} ($Arch)" -f $ExpectedMachine)
+            exit 1
+        }
+    }
+}
+
+# 다른 아키텍처의 실행 파일은 실행할 수 없으므로 PE 머신 타입 검사로 대신한다.
+function Test-Launch([string]$Exe, [string]$Label) {
+    if (-not $CanRunTarget) {
+        Write-Host "  skip $Label --version: $Arch binary cannot run on this $HostArch host (PE machine check covers the architecture)"
+        return
+    }
+    & $Exe --version | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "$Label --version failed with exit code $LASTEXITCODE"
+        exit 1
+    }
+    Write-Host "  ran $Label --version"
+}
+
+# tasty.exe와 번들 plugin 실행 파일 수
+$BundleExeCount = 1 + $PluginCrates.Count
+
+Write-Host "==> Verifying artifacts ($Arch)..."
 $VerifyDir = Join-Path $env:TEMP "tasty-verify-$([guid]::NewGuid())"
 Expand-Archive -Path $ArchivePath -DestinationPath $VerifyDir
 $VerifyExe = Join-Path $VerifyDir "tasty.exe"
@@ -405,14 +527,11 @@ if (-not (Test-Path $VerifyExe)) {
     Write-Error "tasty.exe not found in ZIP"
     exit 1
 }
-& $VerifyExe --version | Out-Null
-$VersionExit = $LASTEXITCODE
+Test-PeTree $VerifyDir $ArchiveName $BundleExeCount
+Test-Launch $VerifyExe "$ArchiveName tasty.exe"
 Test-NoticeTree $VerifyDir $ArchiveName
 Remove-Item -Recurse -Force $VerifyDir -ErrorAction SilentlyContinue
-if ($VersionExit -ne 0) {
-    Write-Error "tasty.exe --version failed with exit code $VersionExit"
-    exit 1
-}
+
 $HeadlessVerifyDir = Join-Path $env:TEMP "tasty-verify-headless-$([guid]::NewGuid())"
 Expand-Archive -Path $HeadlessArchivePath -DestinationPath $HeadlessVerifyDir
 $HeadlessVerifyExe = Join-Path $HeadlessVerifyDir "tasty.exe"
@@ -426,53 +545,124 @@ if (-not (Test-Path (Join-Path $HeadlessVerifyDir "plugins"))) {
     Write-Error "plugins not found in $HeadlessArchiveName"
     exit 1
 }
-& $HeadlessVerifyExe --version | Out-Null
-$HeadlessVersionExit = $LASTEXITCODE
+Test-PeTree $HeadlessVerifyDir $HeadlessArchiveName $BundleExeCount
+Test-Launch $HeadlessVerifyExe "$HeadlessArchiveName tasty.exe"
 Test-NoticeTree $HeadlessVerifyDir $HeadlessArchiveName
 Remove-Item -Recurse -Force $HeadlessVerifyDir -ErrorAction SilentlyContinue
-if ($HeadlessVersionExit -ne 0) {
-    Write-Error "headless tasty.exe --version failed with exit code $HeadlessVersionExit"
-    exit 1
-}
-if (-not $SkipMsi -and $BuildProfile -ne "debug") {
-    $MsiPath = Join-Path $DistDir "tasty-${Version}-windows-x64.msi"
+
+$BuildsMsi = (-not $SkipMsi -and $BuildProfile -ne "debug")
+$MsiPath = Join-Path $DistDir $MsiName
+if ($BuildsMsi) {
     if (-not (Test-Path $MsiPath)) {
         Write-Error "MSI missing: $MsiPath"
         exit 1
     }
-    # MSI를 별도 디렉터리에 풀어 notice 파일을 원본과 대조한다.
     $MsiExtract = Join-Path $env:TEMP "tasty-msi-$([guid]::NewGuid())"
-    $msiProc = Start-Process -FilePath "msiexec.exe" -Wait -PassThru `
-        -ArgumentList @("/a", "`"$((Resolve-Path $MsiPath).Path)`"", "/qn", "TARGETDIR=`"$MsiExtract`"")
-    if ($msiProc.ExitCode -ne 0) {
-        Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
-        Write-Error "msiexec /a failed with exit code $($msiProc.ExitCode)"
-        exit 1
+    if ($CanRunTarget) {
+        # 관리 설치로 MSI를 별도 디렉터리에 풀어 설치 트리 그대로 대조한다.
+        $msiProc = Start-Process -FilePath "msiexec.exe" -Wait -PassThru `
+            -ArgumentList @("/a", "`"$((Resolve-Path $MsiPath).Path)`"", "/qn", "TARGETDIR=`"$MsiExtract`"")
+        if ($msiProc.ExitCode -ne 0) {
+            Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
+            Write-Error "msiexec /a failed with exit code $($msiProc.ExitCode)"
+            exit 1
+        }
+        $inventory = @(Get-ChildItem -Path $MsiExtract -Recurse -File -Filter "THIRD_PARTY_LICENSES.md")
+        if ($inventory.Count -ne 1) {
+            Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
+            Write-Error "expected one THIRD_PARTY_LICENSES.md in the MSI, found $($inventory.Count)"
+            exit 1
+        }
+        Test-NoticeTree $inventory[0].DirectoryName $MsiName
+        Test-PeTree $MsiExtract $MsiName $BundleExeCount
+    } else {
+        # 다른 아키텍처의 MSI는 이 호스트에서 관리 설치할 수 없으므로 WiX dark로 cabinet의 파일을 꺼낸다.
+        # 꺼낸 파일은 File Id 이름이라 main.wxs의 Id·Source 짝으로 원래 상대 경로에 다시 놓는다.
+        $Dark = Get-Command dark.exe -ErrorAction SilentlyContinue
+        if (-not $Dark) {
+            Write-Error "dark.exe not found next to candle.exe; cannot inspect the $Arch MSI on this $HostArch host"
+            exit 1
+        }
+        $DarkOut = Join-Path $MsiExtract "dark"
+        & $Dark.Source -nologo -x $DarkOut (Resolve-Path $MsiPath).Path (Join-Path $MsiExtract "decompiled.wxs")
+        if ($LASTEXITCODE -ne 0) {
+            Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
+            Write-Error "dark.exe failed with exit code $LASTEXITCODE"
+            exit 1
+        }
+        $MsiTree = Join-Path $MsiExtract "tree"
+        $WxsText = Get-Content (Join-Path "wix" "main.wxs") -Raw
+        foreach ($fileElement in [regex]::Matches($WxsText, '<File\b[^>]*>')) {
+            $id = [regex]::Match($fileElement.Value, "\bId='([^']+)'").Groups[1].Value
+            $src = [regex]::Match($fileElement.Value, "\bSource='([^']+)'").Groups[1].Value
+            if (-not $id -or -not $src) { continue }
+            $rel = $src -replace '^\$\(var\.CargoTargetBinDir\)\\', ''
+            $extracted = Join-Path (Join-Path $DarkOut "File") $id
+            if (-not (Test-Path $extracted)) {
+                $found = @(Get-ChildItem -Path $DarkOut -Recurse -File | Select-Object -First 5 | ForEach-Object { $_.FullName })
+                Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
+                Write-Error "File Id $id ($src) was not extracted from $MsiName; sample of extracted files: $($found -join ', ')"
+                exit 1
+            }
+            $dest = Join-Path $MsiTree $rel
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
+            Copy-Item $extracted -Destination $dest
+        }
+        Test-NoticeTree $MsiTree $MsiName
+        Test-PeTree $MsiTree $MsiName $BundleExeCount
     }
-    $inventory = @(Get-ChildItem -Path $MsiExtract -Recurse -File -Filter "THIRD_PARTY_LICENSES.md")
-    if ($inventory.Count -ne 1) {
-        Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
-        Write-Error "expected one THIRD_PARTY_LICENSES.md in the MSI, found $($inventory.Count)"
-        exit 1
-    }
-    Test-NoticeTree $inventory[0].DirectoryName (Split-Path -Leaf $MsiPath)
     Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
 }
 
-$ShaSumsPath = Join-Path $DistDir "SHA256SUMS-windows.txt"
+$ShaSumsPath = Join-Path $DistDir $ShaSumsName
+$Distributables = @($ArchivePath, $HeadlessArchivePath)
+if ($BuildsMsi) { $Distributables += $MsiPath }
 $Sums = @()
-$ZipHash = (Get-FileHash $ArchivePath -Algorithm SHA256).Hash.ToLower()
-$Sums += "$ZipHash  $(Split-Path -Leaf $ArchivePath)"
-$HeadlessZipHash = (Get-FileHash $HeadlessArchivePath -Algorithm SHA256).Hash.ToLower()
-$Sums += "$HeadlessZipHash  $(Split-Path -Leaf $HeadlessArchivePath)"
-if (-not $SkipMsi -and $BuildProfile -ne "debug") {
-    $MsiPath = Join-Path $DistDir "tasty-${Version}-windows-x64.msi"
-    if (Test-Path $MsiPath) {
-        $MsiHash = (Get-FileHash $MsiPath -Algorithm SHA256).Hash.ToLower()
-        $Sums += "$MsiHash  $(Split-Path -Leaf $MsiPath)"
-    }
+foreach ($d in $Distributables) {
+    $Sums += "$((Get-FileHash $d -Algorithm SHA256).Hash.ToLower())  $(Split-Path -Leaf $d)"
 }
 $Sums | Out-File -Encoding ASCII $ShaSumsPath
+
+# 체크섬 파일을 다시 읽어 이 아키텍처의 배포물 전부를 담는지와 각 해시가 맞는지 확인한다.
+Write-Host "==> Verifying $ShaSumsName..."
+$Listed = @{}
+foreach ($line in Get-Content $ShaSumsPath) {
+    if ($line -notmatch '^([0-9a-f]{64})  (.+)$') {
+        Write-Error "malformed line in ${ShaSumsName}: $line"
+        exit 1
+    }
+    $Listed[$Matches[2]] = $Matches[1]
+}
+$Expected = @($Distributables | ForEach-Object { Split-Path -Leaf $_ })
+if ($Listed.Count -ne $Expected.Count) {
+    Write-Error "$ShaSumsName lists $($Listed.Count) files, expected $($Expected.Count): $($Expected -join ', ')"
+    exit 1
+}
+foreach ($name in $Expected) {
+    if (-not $Listed.ContainsKey($name)) {
+        Write-Error "$ShaSumsName does not list $name"
+        exit 1
+    }
+    $actual = (Get-FileHash (Join-Path $DistDir $name) -Algorithm SHA256).Hash.ToLower()
+    if ($actual -ne $Listed[$name]) {
+        Write-Error "$name does not match its SHA-256 in $ShaSumsName"
+        exit 1
+    }
+    Write-Host "  sha256 ok $name"
+}
+
+# 이 실행이 만든 산출물 명부. staging 디렉터리가 남지 않았는지도 확인한다.
+Write-Host "==> $Arch artifacts in ${DistDir}:"
+foreach ($name in ($Expected + $ShaSumsName)) {
+    $item = Get-Item (Join-Path $DistDir $name)
+    Write-Host ("  {0}  {1} bytes" -f $name, $item.Length)
+}
+foreach ($stage in @($StageDir, $HeadlessStageDir)) {
+    if (Test-Path $stage) {
+        Write-Error "staging directory left behind: $stage"
+        exit 1
+    }
+}
 
 Write-Host ""
 Write-Host "Done!"

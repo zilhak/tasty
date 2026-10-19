@@ -1,6 +1,6 @@
 name: Cross-platform Check
 
-# Windows·Linux 컴파일과 테스트를 실행한다. macOS 잡은 crossplatform-check-macos.yml에 있다.
+# Windows·Linux 컴파일과 테스트를 실행한다. Windows ARM64는 컴파일만 검사한다. macOS 잡은 crossplatform-check-macos.yml에 있다.
 on:
   push:
     branches: [main]
@@ -99,6 +99,23 @@ jobs:
           } catch {
             "window: FAILED — $($_.Exception.Message)"
           }
+
+  # Windows ARM64 타깃 컴파일을 검사한다. 기존 Windows x64 러너에서 교차 컴파일하며
+  # 테스트 실행과 링크·패키징은 포함하지 않는다. C 의존성은 MSVC ARM64 빌드 도구로 컴파일한다.
+  check-windows-arm64:
+    runs-on: [self-hosted, Windows]
+    # check-windows 대리 실측 최대 13.7분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ensure aarch64-pc-windows-msvc target
+        shell: pwsh
+        run: rustup target add aarch64-pc-windows-msvc
+
+      - name: cargo check (windows arm64)
+        shell: pwsh
+        run: cargo check --workspace --all-targets --target aarch64-pc-windows-msvc --locked
 
   # GUI 기능을 끈 빌드와 테스트를 검사한다. 같은 러너에서 GUI 단위 테스트도 실행한다.
   check-headless:
