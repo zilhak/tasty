@@ -175,6 +175,7 @@ impl Creation {
                 cwd: None,
                 params: serde_json::Value::Null,
                 restore: None,
+                discard_capture: false,
                 shell: None,
             },
         };
@@ -234,6 +235,7 @@ impl Creation {
                 cwd: None,
                 params: serde_json::json!({}),
                 restore: None,
+                discard_capture: false,
                 shell: Some(ShellRecipe {
                     executable: shell.shell,
                     arguments: shell.args,

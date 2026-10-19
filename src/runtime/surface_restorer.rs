@@ -88,6 +88,7 @@ pub(crate) fn describe(engine: &crate::runtime::engine_access::EngineRef<'_>) ->
                     cwd: None,
                     params: serde_json::json!({}),
                     restore: None,
+                    discard_capture: false,
                     shell: (placeholder.kind == "terminal").then(|| ShellRecipe {
                         executable: shell.shell.clone(),
                         arguments: shell.args.clone(),
@@ -130,6 +131,7 @@ pub(crate) fn from_saved(id: u32, value: &tasty_core::Surface, shell: ShellRecip
             cwd: None,
             params: serde_json::json!({}),
             restore: None,
+            discard_capture: false,
             shell: (value.kind == "terminal").then_some(shell),
         },
     }
@@ -184,6 +186,18 @@ pub(crate) fn accept_payload(
         _ => return Err("restore payload kind differs from the committed surface".into()),
     }
     Ok(())
+}
+
+/// 읽거나 해석하지 못한 capture 대신 빈 상태로 시작하게 한다. 터미널은 현재 셸 설정으로 새로 열리고
+/// 다른 kind는 저장된 복원 값 없이 시작한다. 원본 payload 참조와 보존은 호출자가 맡는다.
+pub(crate) fn discard_payload(request: &mut RestoreInput) {
+    request.input.cwd = None;
+    request.input.params = serde_json::json!({});
+    request.input.restore = None;
+    request.input.discard_capture = true;
+    if let Some(shell) = request.input.shell.as_mut() {
+        shell.restore_command = None;
+    }
 }
 
 /// Initial activation follows explicit imported/restored View IDs, never a mutable tree index.
@@ -272,4 +286,52 @@ pub(crate) fn recovery_blocked_reason(
             .as_deref()
             .unwrap_or_else(|| crate::i18n::t("surface.restore.recovery_unresolved")),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seed_input(kind: &str) -> RestoreInput {
+        let mut input = from_saved(
+            7,
+            &serde_json::from_value::<tasty_core::Surface>(serde_json::json!({
+                "tab": 1, "kind": kind, "data": null, "creation_seed": 3, "metadata": {}
+            }))
+            .unwrap(),
+            ShellRecipe {
+                executable: "/bin/sh".into(),
+                arguments: Vec::new(),
+                environment: Vec::new(),
+                cols: 80,
+                rows: 24,
+                scrollback_lines: 100,
+                disk_scrollback: false,
+                startup_command: String::new(),
+                restore_command: Some("old".into()),
+            },
+        );
+        input.input.cwd = Some("/old".into());
+        input
+    }
+
+    /// An unparsable seed and a seed of another kind are both rejected, and discarding the payload
+    /// leaves a plain start with nothing from the unreadable capture.
+    #[test]
+    fn rejected_seeds_fall_back_to_an_empty_start() {
+        let mut garbage = seed_input("terminal");
+        assert!(accept_payload(&mut garbage, tasty_core::DataRef(3), b"{not json").is_err());
+        let mut other = seed_input("terminal");
+        let seed = serde_json::to_vec(&PreparationInput {
+            kind: "markdown".into(),
+            ..garbage.input.clone()
+        })
+        .unwrap();
+        assert!(accept_payload(&mut other, tasty_core::DataRef(3), &seed).is_err());
+        discard_payload(&mut other);
+        assert!(other.input.discard_capture);
+        assert_eq!(other.input.cwd, None);
+        assert_eq!(other.input.shell.as_ref().unwrap().restore_command, None);
+        assert_eq!(other.reference, Some(tasty_core::DataRef(3)));
+    }
 }

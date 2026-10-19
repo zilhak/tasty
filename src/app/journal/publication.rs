@@ -80,6 +80,8 @@ impl JournalApplication {
         self.submit_preset_captures()?;
         self.refill_execution_ids(sessions)?;
         self.submit_restore_reads()?;
+        self.restorations
+            .submit_preservations(&self.worker, &mut self.next_ticket)?;
         #[cfg(feature = "gui")]
         self.submit_retirements()?;
         #[cfg(feature = "gui")]
@@ -662,6 +664,10 @@ impl JournalApplication {
             return Ok(());
         }
         if self.restorations.complete(ticket, &result, sessions)? {
+            self.report_payload_failures();
+            return Ok(());
+        }
+        if self.restorations.complete_preservation(ticket, &result) {
             return Ok(());
         }
         if let Some(key) = self

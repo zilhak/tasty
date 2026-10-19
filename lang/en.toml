@@ -6898,3 +6898,8 @@ spawn_failed_body = "Tasty could not run the plugin program: {}. See tasty plugi
 connect_failed_body = "The plugin program exited or did not connect in time: {}. See tasty plugin logs {} for details."
 auto_disabled_title = "Plugin '{}' was turned off"
 auto_disabled_body = "It failed to start {} times in a row, so Tasty stopped starting it until you turn it on again. Last error: {}. See tasty plugin logs {} for details."
+
+[recovery]
+multiple_title = "Some saved data could not be restored"
+surface_payload_title = "A tab could not be restored"
+surface_payload_body = "In workspace \"{}\", surface {} started empty because its saved contents could not be read. The saved data is kept. Cause: {}"

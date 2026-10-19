@@ -117,6 +117,9 @@ impl App {
                 );
             }
         }
+        drop(sessions);
+        self.deliver_recovery_notices();
+        let mut sessions: Vec<_> = self.engines.all_sessions_mut().collect();
         if !self.journal.pauses_observation() {
             crate::app::attach_activation::poll(
                 &mut self.pending_server_attaches,

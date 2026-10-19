@@ -14,6 +14,9 @@ pub(crate) struct PreparationInput {
     pub(crate) params: serde_json::Value,
     pub(crate) shell: Option<ShellRecipe>,
     pub(crate) restore: Option<serde_json::Value>,
+    /// 원본 capture를 읽지 못한 복원이다. 활성화 때 capture를 다시 읽지 않고 빈 상태로 시작한다.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) discard_capture: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

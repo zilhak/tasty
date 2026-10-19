@@ -116,6 +116,7 @@ impl Request {
                 cwd,
                 params: params.clone(),
                 restore: None,
+                discard_capture: false,
                 shell: (kind == "terminal").then_some(ShellRecipe {
                     executable: shell.shell,
                     arguments: shell.args,

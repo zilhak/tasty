@@ -26,6 +26,8 @@ struct Pending {
 }
 
 const MAX_ADMISSION_IDS: u64 = 16_384;
+/// 복원하지 못한 surface payload의 보유자. 자동으로 풀지 않으므로 원본은 저장소에 남는다.
+pub(crate) const RESTORE_FAILURE_HOLDER: &str = "restore-failure";
 impl Pending {
     fn check_ids(&self, additional: u64) -> Result<(), String> {
         let held = self
@@ -636,14 +638,8 @@ fn handle_work(
         }
         #[cfg(feature = "gui")]
         Work::SaveView(view) => capture::save_view(executor, home, &view),
-        Work::ReadPayload(reference) => {
-            let inner = executor.inner.lock().map_err(|error| error.to_string())?;
-            let bytes = inner
-                .store
-                .read_payload(tasty_event_store::PayloadRef(reference.0))
-                .map_err(|error| error.to_string())?;
-            Ok(ResultValue::Payload { reference, bytes })
-        }
+        Work::ReadPayload(reference) => read_payload(executor, reference),
+        Work::PreserveFailedPayload(reference) => preserve_failed_payload(executor, reference),
         #[cfg(test)]
         Work::ReadEngine(stream) => executor
             .with_state(|models| ResultValue::Engine(models.stream(&stream)))
@@ -705,6 +701,44 @@ fn handle_work(
             Ok(ResultValue::Cancelled)
         }
     }
+}
+
+/// 행이 없거나 checksum이 맞지 않는 payload는 그 surface의 손실로 돌려준다. 저장소는 계속 쓴다.
+fn read_payload(
+    executor: &Executor<StructureDecider>,
+    reference: tasty_core::DataRef,
+) -> Result<ResultValue, String> {
+    let inner = executor.inner.lock().map_err(|error| error.to_string())?;
+    match inner
+        .store
+        .read_payload(tasty_event_store::PayloadRef(reference.0))
+    {
+        Ok(bytes) => Ok(ResultValue::Payload { reference, bytes }),
+        Err(
+            error @ (tasty_event_store::StoreError::PayloadMissing(_)
+            | tasty_event_store::StoreError::PayloadCorrupt(_)),
+        ) => Ok(ResultValue::PayloadUnavailable {
+            reason: error.to_string(),
+        }),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn preserve_failed_payload(
+    executor: &Executor<StructureDecider>,
+    reference: tasty_core::DataRef,
+) -> Result<ResultValue, String> {
+    let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
+    let epoch = inner.epoch;
+    inner
+        .store
+        .pin_payload(
+            epoch,
+            tasty_event_store::PayloadRef(reference.0),
+            RESTORE_FAILURE_HOLDER,
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(ResultValue::PayloadPreserved)
 }
 
 fn publish(

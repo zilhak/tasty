@@ -120,6 +120,7 @@ impl Builder<'_, '_> {
                         params,
                         shell,
                         restore: None,
+                        discard_capture: false,
                     },
                 );
                 self.snapshot.surfaces.insert(

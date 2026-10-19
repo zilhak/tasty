@@ -403,6 +403,7 @@ fn prepare_workspace(
                 restore_command: None,
             }),
             restore: None,
+            discard_capture: false,
         }),
     );
     let ResultValue::InputStored(DataRef(input)) = finished(worker, ticket).unwrap() else {
@@ -886,6 +887,7 @@ fn complete_conversion_and_reap(
             params: serde_json::json!({}),
             shell: None,
             restore: None,
+            discard_capture: false,
         }),
     );
     let ResultValue::InputStored(input) = finished(worker, 10).unwrap() else {

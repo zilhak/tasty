@@ -70,6 +70,7 @@ fn exercise(public: bool, restart: bool) {
             params: serde_json::json!({}),
             shell: None,
             restore: None,
+            discard_capture: false,
         }),
     );
     let ResultValue::InputStored(input) = finished(&worker, 1).unwrap() else {

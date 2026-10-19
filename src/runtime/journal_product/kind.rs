@@ -28,6 +28,7 @@ impl Work {
             Self::ReadEngine(_) => "ReadEngine",
             Self::ReadCommand(_) => "ReadCommand",
             Self::ReadPayload(_) => "ReadPayload",
+            Self::PreserveFailedPayload(_) => "PreserveFailedPayload",
             Self::PutPreparation(_) => "PutPreparation",
             Self::PutPayload(_) => "PutPayload",
             Self::ClaimRetirement { .. } => "ClaimRetirement",
@@ -63,6 +64,8 @@ impl ResultValue {
             #[cfg(test)]
             Self::Engine(_) => "Engine",
             Self::Payload { .. } => "Payload",
+            Self::PayloadUnavailable { .. } => "PayloadUnavailable",
+            Self::PayloadPreserved => "PayloadPreserved",
             Self::InputStored(_) => "InputStored",
             Self::ClosedCaptured { .. } => "ClosedCaptured",
             Self::Claimed(_) => "Claimed",

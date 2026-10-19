@@ -5,6 +5,7 @@ mod creation;
 #[cfg(feature = "gui")]
 pub(crate) mod forward;
 mod id_reservations;
+pub(crate) mod notices;
 mod process_release;
 mod publication;
 mod resource_cleanup;
@@ -78,6 +79,8 @@ pub(crate) struct JournalApplication {
     next_ticket: u64,
     command_submissions: unowned::CommandSubmissions,
     halted: Option<String>,
+    /// 사용자에게 알릴 복원·저장 사실. App이 꺼내 알림과 안내로 옮긴다.
+    notices: Vec<notices::RecoveryNotice>,
 }
 
 /// Longer than each stage shutdown waits for: a settling creation's child input and replaced
@@ -192,6 +195,7 @@ impl JournalApplication {
             next_ticket: 1,
             command_submissions: Default::default(),
             halted: None,
+            notices: Vec::new(),
         })
     }
 
@@ -266,6 +270,34 @@ impl JournalApplication {
             self.fail_pending_commands(reason);
         }
         result
+    }
+
+    /// 쌓인 복원·저장 알림을 꺼낸다.
+    pub(crate) fn take_notices(&mut self) -> Vec<notices::RecoveryNotice> {
+        std::mem::take(&mut self.notices)
+    }
+
+    /// 아직 받을 곳이 없어 전달하지 못한 알림을 다시 넣는다.
+    #[cfg(not(feature = "gui"))]
+    pub(crate) fn defer_notices(&mut self, notices: Vec<notices::RecoveryNotice>) {
+        let mut later = notices;
+        later.append(&mut self.notices);
+        self.notices = later;
+    }
+
+    /// 복원하지 못한 surface를 경고 알림으로 옮긴다. 그 surface는 빈 상태로 다시 시작한다.
+    fn report_payload_failures(&mut self) {
+        for failure in self.restorations.take_failures() {
+            let surface = failure.surface.to_string();
+            self.notices.push(notices::RecoveryNotice::warning(
+                Some(failure.engine),
+                crate::i18n::t("recovery.surface_payload_title").to_owned(),
+                crate::i18n::t_args(
+                    "recovery.surface_payload_body",
+                    &[&failure.workspace, &surface, &failure.cause],
+                ),
+            ));
+        }
     }
 
     #[cfg(feature = "gui")]
@@ -639,6 +671,8 @@ impl JournalApplication {
 mod bulk_restore_tests;
 #[cfg(all(test, unix, feature = "gui"))]
 mod content_off_tests;
+#[cfg(all(test, unix))]
+mod payload_failure_tests;
 #[cfg(test)]
 mod stall_budget;
 #[cfg(test)]

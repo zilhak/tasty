@@ -719,6 +719,34 @@ fn dispatch_headless_event(
     std::ops::ControlFlow::Continue(())
 }
 
+/// 복원·저장 알림을 엔진의 첫 workspace에 넣는다. workspace가 생기기 전이면 다음 차례로 미룬다.
+#[cfg(not(feature = "gui"))]
+fn deliver_headless_recovery_notices(
+    app: &mut crate::app::App,
+    session: &mut crate::runtime::engine_session::EngineSession,
+) {
+    let notices = app.journal.take_notices();
+    let Some(workspace) = session
+        .core_state
+        .local_workspaces()
+        .first()
+        .map(|ws| ws.id)
+    else {
+        app.journal.defer_notices(notices);
+        return;
+    };
+    for notice in crate::app::journal::notices::merge_same_level(notices) {
+        tracing::warn!("{}: {}", notice.title, notice.body);
+        session.live.notifications.add_separate(
+            workspace,
+            0,
+            notice.title,
+            notice.body,
+            notice.level,
+        );
+    }
+}
+
 /// Publish the committed cut and its replies before replaying deferred observation events.
 #[cfg(not(feature = "gui"))]
 fn handle_headless_journal_ready(
@@ -735,6 +763,7 @@ fn handle_headless_journal_ready(
     {
         tracing::error!("committed structure publication halted: {error}");
     }
+    deliver_headless_recovery_notices(app, session);
     if app.journal.is_halted() {
         crate::app::attach_activation::cancel_engine(
             &mut app.pending_server_attaches,

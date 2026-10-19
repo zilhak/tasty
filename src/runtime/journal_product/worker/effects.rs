@@ -42,11 +42,13 @@ pub(super) fn claim(
     if input.kind != plan.surface.kind {
         return Err("preparation input kind differs from its committed plan".into());
     }
-    let capture = if matches!(
-        plan.destination,
-        tasty_core::CreationDestination::Restore { .. }
-            | tasty_core::CreationDestination::Assembly { .. }
-    ) {
+    // 원본 capture를 읽지 못해 빈 상태로 다시 시작하는 복원은 그 capture를 다시 읽지 않는다.
+    let capture = if !input.discard_capture
+        && matches!(
+            plan.destination,
+            tasty_core::CreationDestination::Restore { .. }
+                | tasty_core::CreationDestination::Assembly { .. }
+        ) {
         plan.surface
             .data
             .map(|reference| {

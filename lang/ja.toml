@@ -6830,3 +6830,8 @@ spawn_failed_body = "Tasty はプラグインのプログラムを実行でき�
 connect_failed_body = "プラグインのプログラムが終了したか、時間内に接続しませんでした: {}。詳細は tasty plugin logs {} で確認してください。"
 auto_disabled_title = "プラグイン '{}' をオフにしました"
 auto_disabled_body = "{} 回続けて起動できなかったため、再びオンにするまで Tasty はこのプラグインを起動しません。最後のエラー: {}。詳細は tasty plugin logs {} で確認してください。"
+
+[recovery]
+multiple_title = "保存されたデータの一部を復元できませんでした"
+surface_payload_title = "タブを1つ復元できませんでした"
+surface_payload_body = "ワークスペース「{}」の surface {} は保存された内容を読み取れなかったため、空の状態で起動しました。保存されたデータはそのまま残っています。原因: {}"

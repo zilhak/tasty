@@ -129,6 +129,8 @@ pub(crate) enum Work {
     ReadEngine(String),
     ReadCommand(String),
     ReadPayload(tasty_core::DataRef),
+    /// 복원하지 못한 surface의 원본 payload를 다음 capture가 참조를 바꾼 뒤에도 남긴다.
+    PreserveFailedPayload(tasty_core::DataRef),
     PutPreparation(PreparationInput),
     PutPayload(Vec<u8>),
     ClaimRetirement {
@@ -212,6 +214,11 @@ pub(crate) enum ResultValue {
         reference: tasty_core::DataRef,
         bytes: Vec<u8>,
     },
+    /// payload 행이 없거나 checksum이 맞지 않는다. 저장소 자체는 계속 쓸 수 있다.
+    PayloadUnavailable {
+        reason: String,
+    },
+    PayloadPreserved,
     InputStored(tasty_core::DataRef),
     ClosedCaptured {
         input: tasty_core::DataRef,
@@ -640,7 +647,9 @@ pub(crate) fn request_size(work: &Work) -> usize {
         #[cfg(test)]
         Work::ReadEngine(stream) => stream.len(),
         Work::ReadCommand(stream) => stream.len(),
-        Work::ReadPayload(_) => std::mem::size_of::<tasty_core::DataRef>(),
+        Work::ReadPayload(_) | Work::PreserveFailedPayload(_) => {
+            std::mem::size_of::<tasty_core::DataRef>()
+        }
         Work::PutPayload(bytes) => bytes.len(),
         Work::PutPreparation(input) => json_len(input),
         #[cfg(feature = "gui")]

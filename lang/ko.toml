@@ -6830,3 +6830,8 @@ spawn_failed_body = "Tasty가 플러그인 프로그램을 실행하지 못했�
 connect_failed_body = "플러그인 프로그램이 종료됐거나 제시간에 연결하지 않았습니다: {}. 자세한 내용은 tasty plugin logs {}로 확인하세요."
 auto_disabled_title = "플러그인 '{}'을(를) 껐습니다"
 auto_disabled_body = "연속 {}번 시작하지 못해, 다시 켤 때까지 Tasty가 이 플러그인을 시작하지 않습니다. 마지막 오류: {}. 자세한 내용은 tasty plugin logs {}로 확인하세요."
+
+[recovery]
+multiple_title = "저장된 자료 일부를 복원하지 못했습니다"
+surface_payload_title = "탭 하나를 복원하지 못했습니다"
+surface_payload_body = "워크스페이스 \"{}\"의 surface {}는 저장된 내용을 읽지 못해 빈 상태로 시작했습니다. 저장된 자료는 그대로 남아 있습니다. 원인: {}"

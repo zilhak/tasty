@@ -63,6 +63,8 @@ pub(crate) mod plugin_lifecycle;
 pub(crate) mod process_exit;
 pub(crate) mod publication_input;
 #[cfg(feature = "gui")]
+mod recovery_notices;
+#[cfg(feature = "gui")]
 pub(crate) mod request_owner;
 #[cfg(feature = "gui")]
 pub(crate) mod screenshot_capture;
@@ -144,6 +146,9 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) tutorial_progress: tutorial_progress::TutorialProgress,
     pub(crate) pending_server_attaches: Vec<attach_activation::PendingAttach>,
+    /// 받을 workspace가 아직 없어 전달을 미룬 복원·저장 알림.
+    #[cfg(feature = "gui")]
+    pub(crate) pending_recovery_notices: Vec<journal::notices::RecoveryNotice>,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) services: AppServices,
     pub(crate) state: state::AppState,
@@ -293,6 +298,7 @@ impl App {
         Ok(Self {
             journal,
             pending_server_attaches: Vec::new(),
+            pending_recovery_notices: Vec::new(),
             settings_edit_owner: None,
             port_scans: Default::default(),
             #[cfg(feature = "gui")]

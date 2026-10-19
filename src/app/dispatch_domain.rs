@@ -852,7 +852,10 @@ impl App {
     }
 
     /// 서로 다른 호스트 사건은 `merge: Separate`로 넣어 앞 알림과 합치지 않는다.
-    fn cascade_notification_pushed(&mut self, push: crate::app::command::NotificationPush) {
+    pub(crate) fn cascade_notification_pushed(
+        &mut self,
+        push: crate::app::command::NotificationPush,
+    ) {
         let crate::app::command::NotificationPush {
             level,
             ws_id,
