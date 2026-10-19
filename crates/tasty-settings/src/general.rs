@@ -440,8 +440,8 @@ impl GeneralSettings {
         shell_envs_in(shell, tasty_dir().as_deref())
     }
 
-    /// 시험에서 명시한 홈 경로로 환경변수 목록을 만든다.
-    #[cfg(test)]
+    /// 시험에서 명시한 홈 경로로 환경변수 목록을 만든다. 사용하는 시험이 Unix 전용이다.
+    #[cfg(all(test, not(windows)))]
     fn effective_shell_envs_in(&self, dir: Option<&std::path::Path>) -> Vec<(String, String)> {
         shell_envs_in(&self.shell, dir)
     }
