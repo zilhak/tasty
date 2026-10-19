@@ -104,30 +104,7 @@ impl DeferredScan {
     // 이유: macOS·Windows backend와 시험만 쓴다.
     #[cfg_attr(all(target_os = "linux", not(test)), allow(dead_code))]
     pub fn spawn_read(&self) -> ReadSlot {
-        let slot = ReadSlot::default();
-        let worker_slot = slot.clone();
-        let surface_id = self.gate.surface_id;
-        let path = self.path.clone();
-        let notify = self.gate.notify.clone();
-        let spawned = std::thread::Builder::new()
-            .name("html-script-scan".into())
-            .spawn(move || {
-                worker_slot.put(scan_path_stamped(surface_id, &path));
-                if let Some(notify) = &notify {
-                    notify();
-                }
-            });
-        if let Err(e) = spawned {
-            tracing::warn!(
-                "WebView surface {surface_id}: html script scan thread not started ({e}); \
-                 the document is left without a fingerprint"
-            );
-            slot.put(StampedRead {
-                scan: None,
-                stamp: None,
-            });
-        }
-        slot
+        self.gate.spawn_read_slot(&self.path)
     }
 
     /// 스캔하는 로컬 파일 경로.
@@ -201,6 +178,45 @@ impl ScriptGate {
             self.surface_id
         );
         js
+    }
+
+    /// 작업 스레드에서 파일을 읽어 결과를 칸에 넣고 호스트를 깨운다. 상태와 표를 건드리지 않는다.
+    /// 스레드를 띄우지 못하면 읽기 실패(지문 없음)를 넣는다.
+    // 이유: macOS·Windows backend와 시험만 쓴다.
+    #[cfg_attr(all(target_os = "linux", not(test)), allow(dead_code))]
+    fn spawn_read_slot(&self, path: &Path) -> ReadSlot {
+        let slot = ReadSlot::default();
+        let worker_slot = slot.clone();
+        let surface_id = self.surface_id;
+        let path = path.to_path_buf();
+        let notify = self.notify.clone();
+        let spawned = std::thread::Builder::new()
+            .name("html-script-scan".into())
+            .spawn(move || {
+                worker_slot.put(scan_path_stamped(surface_id, &path));
+                if let Some(notify) = &notify {
+                    notify();
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::warn!(
+                "WebView surface {surface_id}: html script scan thread not started ({e}); \
+                 the document is left without a fingerprint"
+            );
+            slot.put(StampedRead {
+                scan: None,
+                stamp: None,
+            });
+        }
+        slot
+    }
+
+    /// 탐색이 실제로 요청한 문서의 지문을 작업 스레드에서 다시 구한다. 앞 스캔 결과를 받은 탐색의
+    /// 문서 요청을 붙잡아 둔 동안 쓴다. 읽지 못하면 지문이 없어 결과와 다른 것으로 본다.
+    // 이유: Windows backend와 시험만 쓴다.
+    #[cfg_attr(not(any(windows, test)), allow(dead_code))]
+    pub fn spawn_verify(&self, path: &Path) -> ReadSlot {
+        self.spawn_read_slot(path)
     }
 
     /// main frame main resource의 응답 결정.

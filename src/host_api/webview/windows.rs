@@ -20,7 +20,7 @@ use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
 use super::load_generation::{is_current_load, nav_state_after_end};
-use super::scan_resume::{HistoryStep, Replay, ScanResume, Start, StartKind};
+use super::scan_resume::{HistoryStep, Replay, RequestAction, ScanResume, Start, StartKind};
 use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
@@ -38,12 +38,50 @@ pub struct PlatformWebView {
     /// html surface의 문서 단위 스크립트 허용. 없으면 JS는 설정값을 그대로 따른다.
     script_gate: Rc<RefCell<Option<ScriptGate>>>,
     /// 스캔 결과가 JS를 정하는 탐색의 취소·재시작 상태.
-    scan_resume: Rc<RefCell<ScanResume>>,
+    scan_resume: Rc<RefCell<ScanResume<ICoreWebView2Deferral>>>,
     /// 마지막 main frame commit(ContentLoading)의 주소. 로드 중·실패 중 주소 표시가 쓴다.
     committed_url: Rc<RefCell<Option<String>>>,
     /// `nav_info` 조회가 실패한 적이 있다. 프레임마다 부르므로 첫 실패만 warn으로 남긴다.
     nav_info_failed: Cell<bool>,
     parent_hwnd: HWND,
+    surface_id: u32,
+}
+
+/// 스캔을 기다리려고 취소하거나 멈춘 탐색을 같은 종류로 다시 시작한다.
+fn replay_navigation(
+    webview: &ICoreWebView2,
+    replay: Replay,
+    url: &str,
+) -> windows::core::Result<()> {
+    // SAFETY: webview는 호출 동안 valid, main thread 호출. HSTRING은 호출 끝까지 산다.
+    unsafe {
+        match replay {
+            Replay::Reload => webview.Reload(),
+            Replay::Navigate => webview.Navigate(&HSTRING::from(url)),
+            Replay::Back => webview.GoBack(),
+            Replay::Forward => webview.GoForward(),
+        }
+    }
+}
+
+/// 붙잡아 둔 문서 요청을 놓아 준다. 확인을 통과했거나 그 탐색이 이미 끝난 요청이다.
+fn complete_requests(surface_id: u32, deferrals: Vec<ICoreWebView2Deferral>) {
+    for deferral in deferrals {
+        // SAFETY: deferral은 WebResourceRequested에서 받은 COM 객체이고 main thread 호출이다.
+        if let Err(e) = unsafe { deferral.Complete() } {
+            tracing::warn!(
+                "WebView surface {surface_id}: completing a held document request failed: {e}"
+            );
+        }
+    }
+}
+
+/// 지문이 다른 본문을 넘기기 전에 탐색을 멈춘다. 붙잡은 요청이 있는 탐색은 Stop으로 끝난다.
+fn stop_navigation(surface_id: u32, webview: &ICoreWebView2) {
+    // SAFETY: webview는 호출 동안 valid, main thread 호출.
+    if let Err(e) = unsafe { webview.Stop() } {
+        tracing::warn!("WebView surface {surface_id}: Stop failed: {e}");
+    }
 }
 
 /// `Source`를 문자열로 읽고 COM 할당을 해제한다.
@@ -209,7 +247,12 @@ impl PlatformWebView {
                 Err(e) => tracing::warn!("WebView2 Settings() failed: {e}"),
             }
 
-            // 차단 상태에서 http(s) 요청을 빈 403 응답으로 대체한다.
+            let script_gate: Rc<RefCell<Option<ScriptGate>>> = Rc::new(RefCell::new(None));
+            let scan_resume = Rc::new(RefCell::new(ScanResume::new(surface_id)));
+            let gate_request = script_gate.clone();
+            let resume_request = scan_resume.clone();
+            // 차단 상태에서 http(s) 요청을 빈 403 응답으로 대체한다. 앞 스캔 결과를 받은 탐색의 file
+            // 문서 요청은 지문을 확인할 때까지 붙잡는다(scan_resume).
             let allow_remote = Rc::new(Cell::new(false));
             webview
                 .AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
@@ -218,7 +261,7 @@ impl PlatformWebView {
             let allow_cb = allow_remote.clone();
             let mut token: i64 = 0;
             let handler = WebResourceRequestedEventHandler::create(Box::new(
-                move |_sender, args| -> windows::core::Result<()> {
+                move |sender, args| -> windows::core::Result<()> {
                     let Some(args) = args else { return Ok(()) };
                     let request = args.Request()?;
                     let mut uri = windows::core::PWSTR::null();
@@ -232,6 +275,36 @@ impl PlatformWebView {
                         let resp =
                             env_cb.CreateWebResourceResponse(None, 403, w!("Blocked"), w!(""))?;
                         args.SetResponse(&resp)?;
+                        return Ok(());
+                    }
+                    if !uri_str.starts_with("file:") {
+                        return Ok(());
+                    }
+                    let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
+                    args.ResourceContext(&mut context)?;
+                    if context != COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT {
+                        return Ok(());
+                    }
+                    let gate = gate_request.borrow();
+                    let Some(gate) = gate.as_ref() else {
+                        return Ok(());
+                    };
+                    let action =
+                        resume_request
+                            .borrow_mut()
+                            .document_request(gate, &uri_str, || match args.GetDeferral() {
+                                Ok(deferral) => Some(deferral),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "WebView surface {surface_id}: GetDeferral failed: {e}"
+                                    );
+                                    None
+                                }
+                            });
+                    if action == RequestAction::Stop
+                        && let Some(wv) = &sender
+                    {
+                        stop_navigation(surface_id, wv);
                     }
                     Ok(())
                 },
@@ -243,11 +316,9 @@ impl PlatformWebView {
             let nav_state = Rc::new(Cell::new(NavState::Idle));
             let pending_navigations: Rc<RefCell<Vec<PendingNavigation>>> =
                 Rc::new(RefCell::new(Vec::new()));
-            let script_gate: Rc<RefCell<Option<ScriptGate>>> = Rc::new(RefCell::new(None));
             let nav_start = nav_state.clone();
             let pending_nav = pending_navigations.clone();
             let gate_start = script_gate.clone();
-            let scan_resume = Rc::new(RefCell::new(ScanResume::new(surface_id)));
             let resume_start = scan_resume.clone();
             // 게이트가 시작한 마지막 로드의 NavigationId. 새 로드가 앞 로드를 취소하면 앞 로드의
             // NavigationCompleted가 새 로드의 NavigationStarting 뒤에 올 수 있으므로, 종료 신호는
@@ -370,12 +441,23 @@ impl PlatformWebView {
             let gate_commit = script_gate.clone();
             let committed_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
             let commit_url = committed_url.clone();
+            let resume_content = scan_resume.clone();
             let mut tok_content: i64 = 0;
             let h_content = ContentLoadingEventHandler::create(Box::new(
-                move |sender, _args| -> windows::core::Result<()> {
+                move |sender, args| -> windows::core::Result<()> {
                     let Some(wv) = &sender else {
                         return Ok(());
                     };
+                    let nav_id = args.as_ref().and_then(|a| {
+                        let mut id = 0u64;
+                        a.NavigationId(&mut id).ok().map(|()| id)
+                    });
+                    // 앞 스캔 결과를 받은 탐색이 문서 요청 확인 없이 commit했으면 멈추고 다시 읽는다.
+                    let (stop, release) = resume_content.borrow_mut().content_loading(nav_id);
+                    complete_requests(surface_id, release);
+                    if stop {
+                        stop_navigation(surface_id, wv);
+                    }
                     let uri_str = webview_source(wv)?;
                     *commit_url.borrow_mut() = uri_str.clone();
                     if let Some(gate) = gate_commit.borrow().as_ref() {
@@ -409,12 +491,31 @@ impl PlatformWebView {
                             }
                         }
                     });
-                    // 스캔을 기다리려고 취소한 탐색의 완료(OPERATION_CANCELED)는 로드 종료가 아니다.
-                    // 게이트 대기와 chrome의 Loading을 그대로 둔다.
-                    if resume_done.borrow_mut().completed(nav_id) {
+                    // 스캔을 기다리려고 취소한 탐색의 완료(OPERATION_CANCELED)와, 지문이 달라 멈춘
+                    // 탐색의 완료는 로드 종료가 아니다. 게이트 대기와 chrome의 Loading을 그대로 둔다.
+                    // 멈춘 탐색이 끝났으므로 붙잡은 요청을 놓아 주고 같은 종류로 다시 시작한다.
+                    let ended = resume_done.borrow_mut().completed(nav_id);
+                    complete_requests(surface_id, ended.release);
+                    if ended.internal {
                         tracing::debug!(
                             "WebView surface {surface_id}: the navigation cancelled for its scan ended"
                         );
+                        if let (Some((replay, url)), Some(wv)) = (ended.restart, &sender)
+                            && let Err(e) = replay_navigation(wv, replay, &url)
+                        {
+                            tracing::warn!(
+                                "WebView surface {surface_id}: restarting the navigation after its \
+                                 check failed ({replay:?}): {e}"
+                            );
+                            resume_done.borrow_mut().replay_failed();
+                            if let Some(gate) = gate_done.borrow().as_ref() {
+                                gate.failed();
+                                if let Some(js) = gate.finished() {
+                                    set_js(wv, js);
+                                }
+                            }
+                            nav_done.set(NavState::Failed);
+                        }
                         return Ok(());
                     }
                     let current = is_current_load(generation_done.get(), nav_id);
@@ -557,6 +658,7 @@ impl PlatformWebView {
                 pending_navigations,
                 script_gate,
                 scan_resume,
+                surface_id,
                 committed_url,
                 nav_info_failed: Cell::new(false),
                 parent_hwnd: parent,
@@ -660,19 +762,16 @@ impl PlatformWebView {
     /// 스캔을 기다리려고 취소한 탐색을 읽기가 끝났으면 같은 종류로 다시 시작한다.
     /// webview 동기화마다 부른다. 표가 낡았으면 다시 시작하지 않는다(더 새 탐색이 화면을 맡는다).
     pub fn resume_script_decision(&self) {
+        // 지문 확인이 끝난 문서 요청: 같으면 놓아 주고, 다르면 본문을 넘기기 전에 멈춘다.
+        let verified = self.scan_resume.borrow_mut().poll_verify();
+        complete_requests(self.surface_id, verified.complete);
+        if verified.stop {
+            stop_navigation(self.surface_id, &self.webview);
+        }
         let Some((replay, url)) = self.scan_resume.borrow_mut().poll() else {
             return;
         };
-        // SAFETY: webview는 self가 살아있는 동안 valid, main thread 호출. HSTRING은 호출 끝까지 산다.
-        let replayed = unsafe {
-            match replay {
-                Replay::Reload => self.webview.Reload(),
-                Replay::Navigate => self.webview.Navigate(&HSTRING::from(url.as_str())),
-                Replay::Back => self.webview.GoBack(),
-                Replay::Forward => self.webview.GoForward(),
-            }
-        };
-        if let Err(e) = replayed {
+        if let Err(e) = replay_navigation(&self.webview, replay, &url) {
             tracing::warn!(
                 "WebView surface: replaying the navigation after its scan failed ({replay:?}): {e}"
             );

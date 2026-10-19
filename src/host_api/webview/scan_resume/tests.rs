@@ -4,6 +4,9 @@ use tasty_model::html_script::HtmlScriptState;
 
 use super::*;
 
+/// 시험에서 deferral 대신 쓰는 표지.
+type Token = u32;
+
 struct Doc {
     gate: ScriptGate,
     state: Arc<Mutex<HtmlScriptState>>,
@@ -49,7 +52,7 @@ fn allowed_doc(tag: &str) -> Doc {
     };
     let state = Arc::new(Mutex::new(HtmlScriptState::new(true)));
     let gate = ScriptGate::new(1, state.clone());
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&gate, &url, Some(1), StartKind::NewDocument, true),
         Start::Js(false)
@@ -70,17 +73,17 @@ fn allowed_doc(tag: &str) -> Doc {
 #[test]
 fn an_allowed_reload_is_cancelled_scanned_and_replayed_as_a_reload() {
     let doc = allowed_doc("reload");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     resume.host_request(None);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
     );
     assert!(
-        resume.completed(Some(10)),
+        resume.completed(Some(10)).internal,
         "내부 취소의 완료는 로드 종료가 아니다"
     );
-    assert!(!resume.completed(Some(10)), "한 번만 소비한다");
+    assert!(!resume.completed(Some(10)).internal, "한 번만 소비한다");
     let (replay, url) = wait(|| resume.poll());
     assert_eq!((replay, url.as_str()), (Replay::Reload, doc.url.as_str()));
     assert_eq!(
@@ -88,7 +91,7 @@ fn an_allowed_reload_is_cancelled_scanned_and_replayed_as_a_reload() {
         Start::Resumed(true)
     );
     assert!(
-        !resume.completed(Some(11)),
+        !resume.completed(Some(11)).internal,
         "다시 시작한 탐색의 완료는 실제 종료다"
     );
     assert!(doc.gate.committed(Some(&doc.url)));
@@ -104,7 +107,7 @@ fn an_allowed_reload_is_cancelled_scanned_and_replayed_as_a_reload() {
 fn a_changed_file_is_replayed_without_scripts() {
     let doc = allowed_doc("changed");
     std::fs::write(doc.dir.join("doc.html"), "<script>b()</script>").expect("rewrite");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
@@ -120,7 +123,7 @@ fn a_changed_file_is_replayed_without_scripts() {
 #[test]
 fn a_host_request_during_the_scan_drops_the_replay() {
     let doc = allowed_doc("host");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
@@ -130,7 +133,7 @@ fn a_host_request_during_the_scan_drops_the_replay() {
     assert!(!resume.waiting());
     assert_eq!(resume.poll(), None);
     assert!(
-        resume.completed(Some(10)),
+        resume.completed(Some(10)).internal,
         "취소한 탐색의 완료는 여전히 내부 것이다"
     );
 }
@@ -139,7 +142,7 @@ fn a_host_request_during_the_scan_drops_the_replay() {
 #[test]
 fn a_navigation_between_the_read_and_the_replay_makes_the_ticket_stale() {
     let doc = allowed_doc("stale");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
@@ -157,7 +160,7 @@ fn a_navigation_between_the_read_and_the_replay_makes_the_ticket_stale() {
 #[test]
 fn another_url_while_waiting_for_the_replay_discards_it() {
     let doc = allowed_doc("other");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::NewDocument, true),
         Start::Cancel
@@ -178,7 +181,7 @@ fn another_url_while_waiting_for_the_replay_discards_it() {
 #[test]
 fn history_steps_replay_in_the_requested_direction_only() {
     let doc = allowed_doc("history");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     resume.host_request(Some(HistoryStep::Back));
     assert_eq!(
         resume.start(
@@ -214,14 +217,14 @@ fn history_steps_replay_in_the_requested_direction_only() {
         Start::Js(false)
     );
     assert!(!doc.state.lock().expect("state").scan_pending());
-    assert!(!resume.completed(Some(12)));
+    assert!(!resume.completed(Some(12)).internal);
 }
 
 /// NavigationId를 모르면 내부 취소를 구별할 수 없어 취소하지 않는다.
 #[test]
 fn an_unknown_navigation_id_is_not_cancelled() {
     let doc = allowed_doc("noid");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, None, StartKind::Reload, true),
         Start::Js(false)
@@ -233,13 +236,13 @@ fn an_unknown_navigation_id_is_not_cancelled() {
 #[test]
 fn a_failed_cancel_forgets_the_id() {
     let doc = allowed_doc("cancelfail");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
     );
     resume.cancel_failed(Some(10));
-    assert!(!resume.completed(Some(10)));
+    assert!(!resume.completed(Some(10)).internal);
     assert!(!resume.waiting());
 }
 
@@ -248,7 +251,7 @@ fn a_failed_cancel_forgets_the_id() {
 #[test]
 fn forward_replays_and_an_unknown_kind_is_not_cancelled() {
     let doc = allowed_doc("kinds");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     resume.host_request(Some(HistoryStep::Forward));
     assert_eq!(
         resume.start(
@@ -269,7 +272,7 @@ fn forward_replays_and_an_unknown_kind_is_not_cancelled() {
         resume.start(&doc.gate, &doc.url, Some(11), StartKind::Unknown, true),
         Start::Js(false)
     );
-    assert!(!resume.completed(Some(11)));
+    assert!(!resume.completed(Some(11)).internal);
 }
 
 /// 재시작을 기다리는 동안 같은 주소지만 종류가 다른 탐색이 먼저 오면 새 탐색이다.
@@ -277,7 +280,7 @@ fn forward_replays_and_an_unknown_kind_is_not_cancelled() {
 #[test]
 fn a_same_url_navigation_of_another_kind_does_not_take_the_replay_scan() {
     let doc = allowed_doc("samekind");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
@@ -305,7 +308,7 @@ fn a_same_url_navigation_of_another_kind_does_not_take_the_replay_scan() {
 #[test]
 fn a_page_script_navigation_does_not_take_the_replay_scan() {
     let doc = allowed_doc("script");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
@@ -322,7 +325,7 @@ fn a_page_script_navigation_does_not_take_the_replay_scan() {
 #[test]
 fn an_identical_navigation_gets_the_scan_only_for_the_same_file_version() {
     let doc = allowed_doc("identical");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::NewDocument, true),
         Start::Cancel
@@ -339,7 +342,7 @@ fn an_identical_navigation_gets_the_scan_only_for_the_same_file_version() {
 #[test]
 fn a_file_rewritten_before_the_replay_starts_is_scanned_again() {
     let doc = allowed_doc("rewrite");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
@@ -363,7 +366,7 @@ fn a_file_rewritten_before_the_replay_starts_is_scanned_again() {
 #[test]
 fn a_file_replaced_by_rename_is_another_version() {
     let doc = allowed_doc("rename");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
@@ -388,7 +391,7 @@ fn a_file_replaced_by_rename_is_another_version() {
 #[test]
 fn a_missing_file_gets_no_replay_scan() {
     let doc = allowed_doc("missing");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
         Start::Cancel
@@ -406,7 +409,7 @@ fn a_missing_file_gets_no_replay_scan() {
 #[test]
 fn unrecognised_replays_stop_after_the_limit() {
     let doc = allowed_doc("limit");
-    let mut resume = ScanResume::new(1);
+    let mut resume = ScanResume::<Token>::new(1);
     // 재시작 신호가 매번 예상과 다른 종류로 오는 경우를 흉내 낸다.
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
@@ -430,5 +433,191 @@ fn unrecognised_replays_stop_after_the_limit() {
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(id + 1), StartKind::Reload, true),
         Start::Cancel
+    );
+}
+
+/// 같은 길이로 내용을 바꾸고 수정 시각을 되돌린다. 크기·수정 시각·생성 시각·inode가 그대로인
+/// 쓰기(Windows에서 쓰기 핸들이 열린 동안의 시각, FAT 2초 단위)를 흉내 낸다.
+fn rewrite_keeping_stamp(path: &std::path::Path, body: &str) {
+    let before = std::fs::metadata(path).expect("meta");
+    std::fs::write(path, body).expect("rewrite");
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .expect("open");
+    file.set_modified(before.modified().expect("mtime"))
+        .expect("set mtime");
+    assert_eq!(
+        FileStamp::of_path(path),
+        Some(FileStamp::of(&before)),
+        "식별값이 그대로인 쓰기"
+    );
+}
+
+/// 재시작까지 진행해 결과를 기다리는 상태로 둔다.
+fn replay_ready(doc: &Doc, resume: &mut ScanResume<Token>) {
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(10), StartKind::Reload, true),
+        Start::Cancel
+    );
+    assert!(resume.completed(Some(10)).internal);
+    wait(|| resume.poll());
+}
+
+/// 내용이 그대로면 결과를 받은 탐색의 문서 요청은 지문 확인 뒤 그대로 진행한다.
+#[test]
+fn the_document_request_of_a_resumed_navigation_proceeds_when_its_fingerprint_matches() {
+    let doc = allowed_doc("verify-same");
+    let mut resume = ScanResume::<Token>::new(1);
+    replay_ready(&doc, &mut resume);
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(11), StartKind::Reload, true),
+        Start::Resumed(true)
+    );
+    assert_eq!(
+        resume.document_request(&doc.gate, &doc.url, || Some(7)),
+        RequestAction::Held
+    );
+    let verified = wait(|| {
+        let v = resume.poll_verify();
+        (!v.complete.is_empty() || v.stop).then_some(v)
+    });
+    assert_eq!((verified.complete, verified.stop), (vec![7], false));
+    let (stop, release) = resume.content_loading(Some(11));
+    assert!(!stop && release.is_empty());
+    assert!(doc.gate.committed(Some(&doc.url)));
+    assert!(doc.state.lock().expect("state").current_is_allowed());
+    let ended = resume.completed(Some(11));
+    assert!(!ended.internal && ended.release.is_empty() && ended.restart.is_none());
+}
+
+/// 식별값이 같아도 내용이 다르면, 결과를 받은 탐색(재시작이든 같은 조건의 다른 탐색이든)의 문서
+/// 요청을 붙잡은 채 탐색을 멈춘다. 그 탐색이 끝난 뒤에야 요청을 놓아 주고, 같은 종류로 다시
+/// 시작해 새 내용의 스캔을 받는다. 바뀐 내용은 허용을 이어받지 않는다.
+#[test]
+fn a_same_stamp_rewrite_is_caught_at_the_document_request() {
+    let doc = allowed_doc("verify-diff");
+    let mut resume = ScanResume::<Token>::new(1);
+    replay_ready(&doc, &mut resume);
+    rewrite_keeping_stamp(&doc.dir.join("doc.html"), "<script>b()</script>");
+    // 식별값만으로는 구별하지 못해 결과를 준다(이 확인이 막는 경로).
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(11), StartKind::Reload, true),
+        Start::Resumed(true)
+    );
+    assert_eq!(
+        resume.document_request(&doc.gate, &doc.url, || Some(7)),
+        RequestAction::Held
+    );
+    let verified = wait(|| {
+        let v = resume.poll_verify();
+        (!v.complete.is_empty() || v.stop).then_some(v)
+    });
+    assert!(
+        verified.stop && verified.complete.is_empty(),
+        "본문을 넘기지 않고 멈춘다"
+    );
+    let ended = resume.completed(Some(11));
+    assert!(ended.internal, "멈춘 탐색의 완료는 로드 종료가 아니다");
+    assert_eq!(ended.release, vec![7], "탐색이 끝난 뒤에 놓아 준다");
+    assert_eq!(ended.restart, Some((Replay::Reload, doc.url.clone())));
+    // 다시 시작한 탐색은 새 탐색으로 취소되어 자기 스캔을 받는다.
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(12), StartKind::Reload, true),
+        Start::Cancel
+    );
+    assert!(resume.completed(Some(12)).internal);
+    wait(|| resume.poll());
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(13), StartKind::Reload, true),
+        Start::Resumed(false),
+        "바뀐 내용은 허용을 이어받지 않는다"
+    );
+    assert_eq!(
+        resume.document_request(&doc.gate, &doc.url, || Some(8)),
+        RequestAction::Held
+    );
+    let verified = wait(|| {
+        let v = resume.poll_verify();
+        (!v.complete.is_empty() || v.stop).then_some(v)
+    });
+    assert_eq!((verified.complete, verified.stop), (vec![8], false));
+    assert!(
+        !doc.gate.committed(Some(&doc.url)),
+        "새 내용은 JS 없이 commit한다"
+    );
+    assert!(!doc.state.lock().expect("state").current_is_allowed());
+}
+
+/// 확인 창의 탐색이 문서 요청 없이 commit하면 확인하지 못한 본문이므로 멈추고 재로드한다.
+/// 요청을 붙잡지 못해도 멈춘다. 다른 파일의 요청이나 창이 없을 때의 요청은 건드리지 않는다.
+#[test]
+fn an_unchecked_resumed_document_is_stopped_and_reloaded() {
+    let doc = allowed_doc("verify-none");
+    let mut resume = ScanResume::<Token>::new(1);
+    assert_eq!(
+        resume.document_request(&doc.gate, &doc.url, || Some(1)),
+        RequestAction::Ignore,
+        "창이 없다"
+    );
+    replay_ready(&doc, &mut resume);
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(11), StartKind::Reload, true),
+        Start::Resumed(true)
+    );
+    let other = doc.url.replace("doc.html", "other.html");
+    assert_eq!(
+        resume.document_request(&doc.gate, &other, || Some(2)),
+        RequestAction::Ignore
+    );
+    let (stop, _) = resume.content_loading(Some(11));
+    assert!(stop, "요청 없이 commit했다");
+    let ended = resume.completed(Some(11));
+    assert!(ended.internal);
+    assert_eq!(ended.restart, Some((Replay::Reload, doc.url.clone())));
+
+    replay_ready(&doc, &mut resume);
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(14), StartKind::Reload, true),
+        Start::Resumed(true)
+    );
+    assert_eq!(
+        resume.document_request(&doc.gate, &doc.url, || None),
+        RequestAction::Stop,
+        "붙잡지 못하면 멈춘다"
+    );
+    assert!(resume.completed(Some(14)).restart.is_some());
+}
+
+/// 파일이 계속 바뀌어 지문이 연달아 다르면 상한 뒤 다음 로드를 스크립트 없이 둔다.
+#[test]
+fn a_file_that_keeps_changing_loads_without_scripts_after_the_limit() {
+    let doc = allowed_doc("verify-loop");
+    let mut resume = ScanResume::<Token>::new(1);
+    let mut id = 10;
+    for round in 0..=MAX_VERIFY_FAILURES {
+        assert_eq!(
+            resume.start(&doc.gate, &doc.url, Some(id), StartKind::Reload, true),
+            Start::Cancel,
+            "round {round}"
+        );
+        assert!(resume.completed(Some(id)).internal);
+        wait(|| resume.poll());
+        id += 1;
+        // 읽은 뒤 내용이 바뀐다.
+        let body = format!("<script>{round}()</script>");
+        rewrite_keeping_stamp(&doc.dir.join("doc.html"), &body);
+        assert!(matches!(
+            resume.start(&doc.gate, &doc.url, Some(id), StartKind::Reload, true),
+            Start::Resumed(_)
+        ));
+        resume.document_request(&doc.gate, &doc.url, || Some(round));
+        wait(|| resume.poll_verify().stop.then_some(()));
+        assert!(resume.completed(Some(id)).restart.is_some());
+        id += 1;
+    }
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(id), StartKind::Reload, true),
+        Start::Js(false)
     );
 }
