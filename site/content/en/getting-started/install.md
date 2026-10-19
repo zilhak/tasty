@@ -1,4 +1,4 @@
-<!-- source-hash: e79a70aee609 -->
+<!-- source-hash: ab3aa4193a30 -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -23,6 +23,7 @@ Download the installer from the [GitHub releases page](https://github.com/zilhak
 | Windows | x86_64 | `tasty-{ver}-windows-x64.msi` | Setup wizard (recommended) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.zip` | Portable build — just unzip and run |
 | Windows | x86_64 | `tasty-headless-{ver}-windows-x64.zip` | [Headless build](#headless-build) |
+| Windows | ARM64 | None | Supported, but current releases have no ARM64 file. See [Windows](#windows) |
 
 You can verify a downloaded file against the `SHA256SUMS-*.txt` for its OS.
 
@@ -67,6 +68,8 @@ xattr -dr com.apple.quarantine /Applications/Tasty.app
 After the first launch, macOS may show permission prompts for the Downloads, Documents, and Desktop folders, followed by Screen Recording. Which prompts appear depends on prior permission choices and macOS policy. Why they appear and how to answer them is in [Troubleshooting](../help/troubleshooting.md#macos-permission-prompts).
 
 ## Windows
+
+Windows ARM is supported, but current releases have no ARM64 file. Running the x64 files on a Windows ARM device has not been checked yet.
 
 - **`.msi` (recommended)** — Double-click and follow the setup wizard. A Start menu shortcut and an "Apps & features" uninstall entry are registered.
 - **`.zip`** — Extract to any folder and run `tasty.exe`.

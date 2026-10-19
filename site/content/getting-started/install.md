@@ -22,6 +22,7 @@
 | Windows | x86_64 | `tasty-{ver}-windows-x64.msi` | 설치 마법사 (권장) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.zip` | 압축만 풀어 쓰는 무설치판 |
 | Windows | x86_64 | `tasty-headless-{ver}-windows-x64.zip` | [headless 빌드](#headless-빌드) |
+| Windows | ARM64 | 없음 | 지원 대상이지만 현재 릴리스에는 ARM64 전용 파일이 없습니다. [Windows](#windows) 참고 |
 
 각 OS 의 `SHA256SUMS-*.txt` 로 받은 파일을 검증할 수 있습니다.
 
@@ -66,6 +67,8 @@ xattr -dr com.apple.quarantine /Applications/Tasty.app
 첫 실행 직후에는 macOS 권한 프롬프트(다운로드 · 문서 · 데스크탑 폴더, 화면 기록)가 차례로 뜰 수 있습니다. 표시 여부는 기존 승인 상태와 macOS 정책에 따라 다릅니다. 왜 뜨는지와 어떻게 답할지는 [문제 해결](../help/troubleshooting.md#macos-권한-프롬프트) 에 있습니다.
 
 ## Windows
+
+Windows ARM 은 지원 대상이지만 현재 릴리스에는 ARM64 전용 파일이 없습니다. x64 파일을 Windows ARM 기기에서 실행하는 것은 아직 확인하지 않았습니다.
 
 - **`.msi` (권장)** — 더블클릭해서 설치 마법사를 따릅니다. 시작 메뉴 바로가기와 "앱 및 기능" 제거 항목이 등록됩니다.
 - **`.zip`** — 원하는 폴더에 풀고 `tasty.exe` 를 실행합니다.

@@ -361,6 +361,8 @@ cargo build --profile dist        # 워크스페이스 컴파일
 
 > Windows 산출물은 Windows 머신에서 빌드하고 직접 확인한다.
 
+Windows ARM 은 지원 대상([플랫폼 원칙](../principles/platform-and-compatibility.md))이지만 현재 이 스크립트는 x64 산출물만 만들고 ARM64 전용 산출물은 없다. x64 산출물을 Windows ARM 기기에서 실행하는 것은 확인하지 않았다.
+
 ```powershell
 cargo install cargo-wix; winget install WiXToolset.WiXToolset   # 1회
 .\scripts\build-windows.ps1            # dist + ZIP + MSI
@@ -388,6 +390,7 @@ just dist-setup-linux              # 또는 수동 (아래)
 |--------|------|--------|
 | macOS (arm64) | `./scripts/build-macos-dmg.sh` | `Tasty-{v}-macos.dmg` · 헤드리스 `tar.gz` |
 | Windows (x64) | `.\scripts\build-windows.ps1` | `{zip,msi}` · 헤드리스 `zip` |
+| Windows (ARM64) | 없음 | 지원 대상이지만 현재 산출물 없음 |
 | Linux | `./scripts/build-linux.sh` | `{tar.gz,deb,rpm,AppImage}` · 헤드리스 `tar.gz` |
 
 #### 관련

@@ -17,6 +17,7 @@ Tasty는 GitHub Releases 에서 OS·아키텍처·설치 형태별 산출물로 
 | Linux | x86_64 · aarch64 | `tasty-headless-{ver}-linux-{x64,arm64}.tar.gz` | 헤드리스 빌드(`gui` feature 없음) · 번들 plugin 포함 |
 | macOS | arm64 | `tasty-headless-{ver}-macos-arm64.tar.gz` | 헤드리스 빌드 |
 | Windows | x86_64 | `tasty-headless-{ver}-windows-x64.zip` | 헤드리스 빌드 |
+| Windows | ARM64 | 없음 | 지원 대상([플랫폼 원칙](principles/platform-and-compatibility.md))이지만 현재 릴리스에는 ARM64 전용 산출물이 없다. x64 산출물을 Windows ARM 기기에서 실행하는 것은 확인하지 않았다 |
 
 ## Linux
 
