@@ -55,9 +55,9 @@ pub struct Cli {
     pub port_file: Option<String>,
 
     /// Webhook listener port for this run, overriding `tasty webhook port`.
-    /// If it cannot be opened, Tasty does not start.
+    /// If it cannot be opened, Tasty runs without the listener and leaves a warning notification.
     ///
-    /// Headless exits with code 1 in that case. Without this option and without a
+    /// Tasty does not move to another port in that case. Without this option and without a
     /// saved port, Tasty tries 28429 and the next 63 ports and takes the first free one.
     #[arg(long, value_name = "PORT", value_parser = clap::value_parser!(u16).range(1..))]
     pub webhook_port: Option<u16>,

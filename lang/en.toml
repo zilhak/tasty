@@ -2518,8 +2518,8 @@ about = "GPU-accelerated terminal emulator for AI coding agents"
 help = "Custom port file path (for test isolation)"
 
 [cli.help._root.arg.webhook_port]
-help = "Webhook listener port for this run, overriding `tasty webhook port`. If it cannot be opened, Tasty does not start"
-long = "Webhook listener port for this run, overriding `tasty webhook port`. If it cannot be opened, Tasty does not start.\n\nHeadless exits with code 1 in that case. Without this option and without a saved port, Tasty tries 28429 and the next 63 ports and takes the first free one."
+help = "Webhook listener port for this run, overriding `tasty webhook port`. If it cannot be opened, Tasty runs without the listener and leaves a warning notification"
+long = "Webhook listener port for this run, overriding `tasty webhook port`. If it cannot be opened, Tasty runs without the listener and leaves a warning notification.\n\nTasty does not move to another port in that case. Without this option and without a saved port, Tasty tries 28429 and the next 63 ports and takes the first free one."
 
 [cli.help._root.arg.response_timeout_ms]
 help = "Server response wait limit for one request, in milliseconds. On -32061 the outcome is unknown and the request may still run; 0 or no flag means no limit"

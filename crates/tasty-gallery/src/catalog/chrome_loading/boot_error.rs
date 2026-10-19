@@ -8,7 +8,7 @@ use super::CANVAS_MIN;
 use crate::catalog::spec::{TokenChip, meta, note, spec};
 use crate::i18n::{t, t_fmt, t_fmt2};
 
-/// 디자인 시안의 세 경우. 본체는 앞의 둘에서 이 화면을 띄운다.
+/// 디자인 시안의 세 경우. 본체는 앞의 둘과 App 생성·첫 화면 조립 실패에서 이 화면을 띄운다.
 #[derive(Clone, Copy)]
 enum Case {
     /// 터미널 엔진을 만들지 못했다.
@@ -80,8 +80,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Boot error screen",
         Some(
-            "Shown instead of the app when Tasty cannot start: the terminal engine failed \
-             or another Tasty holds the data folder. The webhook port frame keeps the design's \
+            "Shown instead of the app when Tasty cannot start: the terminal engine, app, or first \
+             window could not be created, or another Tasty holds the data folder. The webhook port frame keeps the design's \
              long CLI hint copy; Tasty itself starts without the listener there. Same boot \
              stage as the loading and shell setup screens, so the same structure: lockup, then a \
              360 form with no card. The glyph carries the danger tone; the title stays \
