@@ -1,4 +1,4 @@
-<!-- source-hash: d64c2d456262 -->
+<!-- source-hash: 889a19ff7d3a -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -240,6 +240,7 @@ scrollback_lines = 10000
 inherit_cwd = true
 confirm_close_running = true
 link_click_modifier = "ctrl"     # "ctrl" | "alt" | "none"
+click_to_move_cursor = true      # clicking the shell input line moves the cursor there
 allow_clipboard_read = false
 bell_notification = true
 workspace_categories_enabled = false

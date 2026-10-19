@@ -1,4 +1,4 @@
-<!-- source-hash: 278273f96228 -->
+<!-- source-hash: 6c026b6d7169 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -62,6 +62,8 @@ Press `Ctrl+Alt+S` and pick an area of the screen: the PNG file is saved under `
 ### Selecting
 
 Drag (characters) · double-click (word) · triple-click (line). Selection extends into the scrollback. Right-click after selecting and a menu appears with **Copy** · **Copy Without Line Breaks** · **Copy Terminal ID**. If the selected text is an actual file · folder path, **Open File** / **Open Folder** also appear.
+
+While typing a command in a shell, click once on the input line to move the cursor there. The cursor does not move in programs other than a shell, while you are scrolled back, or in programs that capture the mouse. To turn this off, put `click_to_move_cursor = false` under `[general]` in `config.toml` ([Settings](../customize/settings.md)).
 
 ### Copy mode (vi)
 

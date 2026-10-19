@@ -230,6 +230,7 @@ scrollback_lines = 10000
 inherit_cwd = true
 confirm_close_running = true
 link_click_modifier = "ctrl"     # "ctrl" | "alt" | "none"
+click_to_move_cursor = true      # 셸 입력 줄을 클릭하면 커서를 그 위치로 옮김
 allow_clipboard_read = false
 bell_notification = true
 workspace_categories_enabled = false
