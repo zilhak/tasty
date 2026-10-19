@@ -100,6 +100,9 @@ struct Held<D> {
     deferral: D,
     nav_id: Option<u64>,
     fingerprint: Fingerprint,
+    /// 이 요청의 탐색이 이미 끝났거나 다른 문서의 commit으로 대체됐다. 본문이 문서에 닿을 수
+    /// 없으므로 확인 결과와 관계없이 읽기가 끝나면 놓아 준다.
+    ended: bool,
 }
 
 /// 문서 요청에서 backend가 할 일.
@@ -364,6 +367,21 @@ impl<D> ScanResume<D> {
         }
     }
 
+    /// 끝났거나 대체된 탐색의 붙잡은 요청을 놓아 준다. 아직 읽는 요청은 끝났다고 표시해 두고,
+    /// 읽기가 끝나면 [`Self::poll_verify`]가 결과와 관계없이 놓아 준다.
+    fn release_ended(&mut self, ended: impl Fn(Option<u64>) -> bool) -> Vec<D> {
+        for held in &mut self.held {
+            if ended(held.nav_id) {
+                held.ended = true;
+            }
+        }
+        let (done, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut self.awaiting_end)
+            .into_iter()
+            .partition(|(n, _)| ended(*n));
+        self.awaiting_end = keep;
+        done.into_iter().map(|(_, d)| d).collect()
+    }
+
     /// main frame 문서 요청(`WebResourceRequested`의 DOCUMENT 문맥). 확인 창이 열려 있고 같은 파일이면
     /// `defer`로 요청을 붙잡고 작업 스레드에서 지문을 구한다.
     pub fn document_request(
@@ -381,7 +399,7 @@ impl<D> ScanResume<D> {
         let Some(deferral) = defer() else {
             tracing::warn!(
                 "WebView surface {}: could not hold the document request to check it; \
-                 stopping the navigation",
+                 stopping the navigation (the body is not held)",
                 self.surface_id
             );
             self.begin_stop();
@@ -393,6 +411,7 @@ impl<D> ScanResume<D> {
             deferral,
             nav_id: verify.nav_id,
             fingerprint: verify.fingerprint,
+            ended: false,
         });
         RequestAction::Held
     }
@@ -414,7 +433,9 @@ impl<D> ScanResume<D> {
                 .verify
                 .as_ref()
                 .is_some_and(|v| v.nav_id == held.nav_id);
-            if same {
+            if held.ended {
+                out.complete.push(held.deferral);
+            } else if same {
                 if open {
                     self.verify_failures = 0;
                 }
@@ -465,8 +486,9 @@ impl<D> ScanResume<D> {
     }
 
     /// `Stop` 호출이 실패했다. 멈춘 탐색의 완료 신호가 오지 않을 수 있으므로 재시작을 버린다.
-    /// 붙잡은 요청은 본문이 결과와 다르므로 놓아 주지 않는다. 그 탐색은 요청이 막힌 채 남고,
-    /// 다음 탐색이 commit하면 놓아 준다. backend는 이 로드를 실패로 끝낸다.
+    /// 지문이 달라 붙잡은 요청이 있으면 놓아 주지 않는다. 그 탐색은 요청이 막힌 채 남고, 그 탐색이
+    /// 끝나거나 다음 탐색이 commit하면 놓아 준다. 요청을 붙잡지 못했거나 이미 commit한 경우에는
+    /// 막힌 본문이 없다. backend는 어느 쪽이든 이 로드를 실패로 끝낸다.
     pub fn stop_failed(&mut self) {
         self.stopped = None;
     }
@@ -489,14 +511,6 @@ impl<D> ScanResume<D> {
             replay: verify.replay,
             url: verify.url,
         });
-    }
-
-    fn release_ended(&mut self, ended: impl Fn(Option<u64>) -> bool) -> Vec<D> {
-        let (done, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut self.awaiting_end)
-            .into_iter()
-            .partition(|(n, _)| ended(*n));
-        self.awaiting_end = keep;
-        done.into_iter().map(|(_, d)| d).collect()
     }
 
     /// 읽기가 끝났으면 표를 확인하고 다시 시작할 탐색을 준다. UI 스레드에서 부른다.

@@ -731,3 +731,41 @@ fn a_stopped_history_navigation_restarts_in_the_same_direction_and_is_scanned_ag
         );
     }
 }
+
+/// A의 문서 요청을 확인하는 동안 새 탐색 B가 시작되고 A가 끝나며 다른 문서가 commit한다. 그 뒤
+/// 늦게 끝난 A의 불일치 결과는 이미 끝난 탐색의 것이므로 바로 놓아 준다. 다음 탐색을 기다리며
+/// deferral을 붙잡아 두지 않는다.
+#[test]
+fn a_late_check_result_of_an_ended_navigation_is_released_at_once() {
+    let doc = allowed_doc("verify-late");
+    let mut resume = ScanResume::<Token>::new(1);
+    replay_ready(&doc, &mut resume);
+    rewrite_keeping_stamp(&doc.dir.join("doc.html"), "<script>b()</script>");
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(11), StartKind::Reload, true),
+        Start::Resumed(true)
+    );
+    assert_eq!(
+        resume.document_request(&doc.gate, &doc.url, || Some(7)),
+        RequestAction::Held
+    );
+    // 확인 결과를 처리하기 전에 B가 시작되고 A가 끝나며 다른 문서가 commit한다.
+    let other = doc.url.replace("doc.html", "other.html");
+    assert_eq!(
+        resume.start(&doc.gate, &other, Some(12), StartKind::NewDocument, true),
+        Start::Js(false)
+    );
+    assert!(
+        resume.completed(Some(11)).release.is_empty(),
+        "아직 읽는 요청"
+    );
+    let (stop, release) = resume.content_loading(Some(12));
+    assert!(!stop && release.is_empty());
+    let verified = wait(|| {
+        let v = resume.poll_verify();
+        (!v.complete.is_empty() || v.stop).then_some(v)
+    });
+    assert_eq!((verified.complete, verified.stop), (vec![7], false));
+    let ended = resume.completed(None);
+    assert!(ended.release.is_empty(), "남겨 둔 요청이 없다");
+}

@@ -76,12 +76,14 @@ fn complete_requests(surface_id: u32, deferrals: Vec<ICoreWebView2Deferral>) {
     }
 }
 
-/// 지문이 다른 본문을 넘기기 전에 탐색을 멈춘다. 멈춘 탐색은 오류로 끝나 `NavigationCompleted`가
-/// 온다(그 완료가 재시작을 준다). `Stop`이 실패하면 완료가 오지 않을 수 있으므로, 본문은 붙잡아 둔 채
-/// 이 로드를 실패로 끝내 Loading에 남지 않게 한다.
+/// 확인하지 못했거나 지문이 다른 본문의 탐색을 멈춘다. 멈춘 탐색은 오류로 끝나 `NavigationCompleted`가
+/// 온다(그 완료가 재시작을 준다). `Stop`이 실패하면 완료가 오지 않을 수 있으므로 이 로드를 실패로 끝내
+/// Loading에 남지 않게 한다. `body_held`는 그 탐색의 문서 요청을 deferral로 붙잡고 있는지다.
+/// 붙잡지 못했거나 이미 commit했으면 `Stop` 실패 뒤 그 본문은 확인 없이 그려질 수 있다.
 fn stop_navigation(
     surface_id: u32,
     webview: &ICoreWebView2,
+    body_held: bool,
     resume: &RefCell<ScanResume<ICoreWebView2Deferral>>,
     gate: Option<&ScriptGate>,
     nav_state: &Cell<NavState>,
@@ -90,9 +92,17 @@ fn stop_navigation(
     let Err(e) = (unsafe { webview.Stop() }) else {
         return;
     };
-    tracing::warn!(
-        "WebView surface {surface_id}: Stop failed ({e}); the load ends without the unchecked document"
-    );
+    if body_held {
+        tracing::warn!(
+            "WebView surface {surface_id}: Stop failed ({e}); the load ends as failed and the \
+             document request stays held"
+        );
+    } else {
+        tracing::error!(
+            "WebView surface {surface_id}: Stop failed ({e}) for a document that is not held; \
+             the load ends as failed but the unchecked document may still be shown"
+        );
+    }
     resume.borrow_mut().stop_failed();
     if let Some(gate) = gate {
         gate.failed();
@@ -317,7 +327,8 @@ impl PlatformWebView {
                                 Ok(deferral) => Some(deferral),
                                 Err(e) => {
                                     tracing::warn!(
-                                        "WebView surface {surface_id}: GetDeferral failed: {e}"
+                                        "WebView surface {surface_id}: GetDeferral failed ({e}); \
+                                         the document request is not held"
                                     );
                                     None
                                 }
@@ -325,7 +336,15 @@ impl PlatformWebView {
                     if action == RequestAction::Stop
                         && let Some(wv) = &sender
                     {
-                        stop_navigation(surface_id, wv, &resume_request, Some(gate), &nav_request);
+                        // GetDeferral이 실패해 본문을 붙잡지 못했다.
+                        stop_navigation(
+                            surface_id,
+                            wv,
+                            false,
+                            &resume_request,
+                            Some(gate),
+                            &nav_request,
+                        );
                     }
                     Ok(())
                 },
@@ -477,9 +496,11 @@ impl PlatformWebView {
                     let (stop, release) = resume_content.borrow_mut().content_loading(nav_id);
                     complete_requests(surface_id, release);
                     if stop {
+                        // 문서 요청 확인 없이 이미 commit했다.
                         stop_navigation(
                             surface_id,
                             wv,
+                            false,
                             &resume_content,
                             gate_commit.borrow().as_ref(),
                             &nav_content,
@@ -796,6 +817,7 @@ impl PlatformWebView {
             stop_navigation(
                 self.surface_id,
                 &self.webview,
+                true,
                 &self.scan_resume,
                 self.script_gate.borrow().as_ref(),
                 &self.nav_state,
