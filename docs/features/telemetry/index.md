@@ -49,7 +49,7 @@ $ TASTY_SURFACE_ID=<surface_id> TASTY_AGENT_ID=claude_s<surface_id> TASTY_SESSIO
 ```
 
 - `claude_s<surface_id>` 는 surface 와 1:1 — 호스트가 surface_id 로 역추적 가능.
-- inline prefix 라 export 와 달리 history/profile 오염 없음(cd echo 와 같은 정책).
+- inline prefix 라 export 와 달리 셸 환경이나 profile 에 남지 않고 그 명령의 자식 프로세스에만 전달된다. 다만 셸에 입력한 명령 줄이므로 토큰이 화면·scrollback 에 보이고, 앞 공백이 없어 `HISTCONTROL=ignorespace`·zsh `HIST_IGNORE_SPACE` 를 켠 셸에서도 history 에 남을 수 있다. 터미널에 표시된 데이터의 취급은 [사용자 통제와 데이터 원칙](../../principles/control-and-data.md#터미널-기록과-개인정보)을 따른다.
 
 #### 호환 표
 
