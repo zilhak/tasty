@@ -24,11 +24,11 @@ Toast는 “복사됨”, “저장됨”처럼 사용자 조작의 결과를 �
 | 사용자 복사·저장 | 토스트 표시 |
 | 사용자 조작의 OS 열기 실패(터미널 링크 클릭, 사용자 출처 System 파일 핸들러, Plugins 창의 폴더 열기·홈페이지) | 실패 토스트(Error) 1건. 성공에는 표시하지 않음. 에이전트·미증명 플러그인 출처의 System 핸들러 실패는 로그만 남김 |
 | 사용자 intent·구조 변경·분할선 확정·카테고리 초기화 실패 | 실패 토스트(Error) 1건. preset·split 하한·철회된 kind의 기존 안내와 중복하지 않음. 화면 없는 엔진에는 표시하지 않음 |
-| 에이전트 IPC 쓰기·intent 적용 실패 | IPC 응답 또는 경고 로그. 사용자 토스트 없음 |
+| 에이전트 IPC 쓰기·intent 적용 실패 | 사용자 토스트 없음. 에이전트는 결과를 IPC 응답 문자열로 받는다. 접수 뒤 끝나는 요청(`file_handler.dispatch`·`markdown.navigate`·`hook_handler.dispatch`·`attach.into_gui`·기존 workspace `remote.attach`)은 응답의 `run`으로 최종 결과를 조회한다. 접수 응답 뒤의 적용 실패가 경고 로그로만 남는 그 밖의 경로는 [결과 피드백 원칙](../../principles/feedback-and-recovery.md#시작-경로에-따른-결과-전달)의 현행 미충족이다 |
 | mirror 연결 끊김·재연결·손실 | 연결 상태 토스트 허용. parked engine에서는 표시하지 않음 |
 | 원격 연결 팝업의 연결 버튼이 접수된 뒤 연결·핸드셰이크·mirror 설치 실패 | 시작한 창에 실패 토스트(Error, `attach.toast.mirror_connect_failed`) 1건, 사유는 가운데를 줄여 붙임. 그 창이 닫혔거나 View가 바뀌었으면 표시하지 않음. IPC·자동 attach·재연결 실패는 이 토스트를 내지 않음 |
 | 사용자 구조 변경의 원격 적용 실패 | 실패 토스트 표시 |
-| agent origin 또는 직접 IPC 구조 요청의 원격 실패 | op_id로 origin을 기억해 토스트 대신 로그 |
+| agent origin 또는 직접 IPC 구조 요청의 원격 실패 | op_id로 origin을 기억해 토스트를 띄우지 않는다. 원격 실패 사유는 run을 가진 intent(mirror 대상 `file_handler.dispatch`·`markdown.navigate`)에만 `failed`로 전달된다([file-handler](../../features/file-handler/index.md#접수-뒤-최종-결과)). 직접 IPC 구조 요청(`split`·`tab.create` 등)은 `forwarded` 접수 응답 뒤 원격 실패가 로그로만 남으며 이는 현행 미충족이다 |
 | 원격 markdown 잘림 | 최초 열기·실패 후 변경 재조회·사용자 새로고침에는 알려진 예외로 표시. markdown.reload IPC 재조회에는 로그만 기록 |
 | 사용자 단축키·변경 확인 승인으로 실행한 Lua 스크립트의 실패 | 그 단축키를 누른 창에 실패 토스트(Error, `Window`) 1건. 성공에는 표시하지 않음. 창이 닫힌 뒤 도착한 결과는 버림. 자동실행 실패는 토스트가 아니라 경고 알림([Lua 실행 결과 전달](../../features/lua-hooks/index.md#실행-결과-전달)) |
 | OSC 52 클립보드 쓰기 | 보이지 않는 클립보드 변경을 알리기 위해 표시. PTY 바이트만으로 사용자·에이전트를 구분할 수 없는 알려진 예외 |
