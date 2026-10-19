@@ -7,6 +7,8 @@ use tasty_remote::{
     pending_connection::ConnectionTicket,
 };
 
+const REPLACED: &str = "replaced by a newer attach to the same target";
+
 #[derive(Default)]
 pub(crate) struct MirrorAttempts {
     endpoints: HashMap<AttemptToken, PendingMirrorInstall>,
@@ -16,6 +18,30 @@ impl MirrorAttempts {
     pub(crate) fn register_endpoint(&mut self, token: AttemptToken, target: PendingMirrorInstall) {
         self.discard_inactive_endpoints();
         self.endpoints.insert(token, target);
+    }
+    /// 같은 대상의 수동 요청 중 아직 끝나지 않은 것을 취소한다. 엔드포인트를 해석 중인 요청과
+    /// 연결 중인 요청을 모두 본다. 새 요청 자신은 등록 전에 부른다.
+    pub(crate) fn supersede_manual(&mut self, target: &PendingMirrorInstall, remote: &mut Remote) {
+        let Some(key) = target.manual.as_deref() else {
+            return;
+        };
+        let same = |pending: &PendingMirrorInstall| pending.manual.as_deref() == Some(key);
+        self.endpoints.retain(|token, pending| {
+            if !same(pending) {
+                return true;
+            }
+            pending.cancel_run(REPLACED);
+            remote.cancel_attempt(token);
+            false
+        });
+        self.connections.retain(|ticket, pending| {
+            if !same(pending) {
+                return true;
+            }
+            pending.cancel_run(REPLACED);
+            remote.cancel_connection(*ticket);
+            false
+        });
     }
     pub(crate) fn take_endpoint(&mut self, token: &AttemptToken) -> Option<PendingMirrorInstall> {
         self.endpoints.remove(token).filter(|_| token.is_active())
@@ -45,7 +71,7 @@ impl MirrorAttempts {
                     == target.reconnect.as_ref().map(|(id, _)| *id)
                 && pending.anchor == target.anchor;
             if replaced {
-                pending.cancel_run("replaced by a newer attach to the same target");
+                pending.cancel_run(REPLACED);
                 remote.cancel_connection(*ticket);
             }
             !replaced
@@ -102,7 +128,95 @@ mod tests {
             resync: false,
             run: None,
             user: false,
+            manual: None,
         }
+    }
+
+    #[test]
+    fn a_manual_request_replaces_only_the_earlier_one_for_the_same_target() {
+        use crate::request_runs::{begin, lookup};
+        let (_, engine) = crate::state::tests::test_state();
+        let mut remote = Remote::new();
+        let mut pending = MirrorAttempts::default();
+        let manual = |key: &str, run: u64| PendingMirrorInstall {
+            manual: Some(key.to_string()),
+            ..target(engine.id, None).with_run(Some(run))
+        };
+        let resolving = begin("remote.attach", None, serde_json::Value::Null);
+        let connecting = begin("attach.into_gui", None, serde_json::Value::Null);
+        let other = begin("attach.into_gui", None, serde_json::Value::Null);
+        let newer = begin("attach.into_gui", None, serde_json::Value::Null);
+        let token = remote.begin_attempt(None, None).unwrap();
+        pending.register_endpoint(token.clone(), manual("port 1 workspace 2", resolving));
+        pending.register_connection(
+            ConnectionTicket(1),
+            manual("port 1 workspace 2", connecting),
+        );
+        pending.register_connection(ConnectionTicket(2), manual("port 1 workspace 3", other));
+
+        let replacement = manual("port 1 workspace 2", newer);
+        pending.supersede_manual(&replacement, &mut remote);
+        pending.register_connection(ConnectionTicket(3), replacement);
+
+        for run in [resolving, connecting] {
+            let ended = lookup(run, None).unwrap();
+            assert_eq!(ended["state"], "cancelled");
+            assert_eq!(ended["result"], REPLACED);
+        }
+        assert!(
+            !token.is_active(),
+            "the replaced endpoint attempt is cancelled"
+        );
+        assert_eq!(lookup(other, None).unwrap()["state"], "running");
+        assert_eq!(lookup(newer, None).unwrap()["state"], "running");
+        // anchor 없는 요청은 기존 대체 규칙으로는 서로 바꾸지 않는다.
+        pending.supersede_connections(&target(engine.id, None), &mut remote);
+        assert_eq!(lookup(other, None).unwrap()["state"], "running");
+    }
+
+    #[test]
+    fn a_full_connection_queue_fails_the_run_with_its_reason() {
+        use crate::request_runs::{begin, lookup};
+        let (_, engine) = crate::state::tests::test_state();
+        let mut remote = Remote::new();
+        let mut pending = MirrorAttempts::default();
+        // 연결을 받고 답하지 않는 상대라 앞의 8건은 큐에 남는다.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let wake: std::sync::Arc<dyn Fn() + Send + Sync> = std::sync::Arc::new(|| {});
+        let queue = |pending: &mut MirrorAttempts, remote: &mut Remote, workspace: u32| {
+            let run = begin("attach.into_gui", None, serde_json::Value::Null);
+            let target = PendingMirrorInstall {
+                manual: Some(format!("port {port} workspace {workspace}")),
+                ..target(engine.id, None).with_run(Some(run))
+            };
+            let queued = super::super::pending::queue_on(
+                pending,
+                remote,
+                target,
+                tasty_remote::pending_connection::ConnectionTarget {
+                    port,
+                    workspace,
+                    anchor: None,
+                    mapping: None,
+                },
+                None,
+                wake.clone(),
+            );
+            (run, queued)
+        };
+        for workspace in 0..8 {
+            assert!(queue(&mut pending, &mut remote, workspace).1.is_ok());
+        }
+        let (run, queued) = queue(&mut pending, &mut remote, 8);
+        assert!(queued.is_err());
+        let ended = lookup(run, None).unwrap();
+        assert_eq!(ended["state"], "failed");
+        assert_eq!(
+            ended["result"],
+            "the mirror connection could not be queued: pending remote connection capacity exhausted"
+        );
+        drop(listener);
     }
 
     #[test]

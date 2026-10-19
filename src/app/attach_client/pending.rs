@@ -26,6 +26,9 @@ pub(crate) struct PendingMirrorInstall {
     pub run: Option<crate::request_runs::RunGuard>,
     /// 사용자가 원격 연결 팝업에서 시작했다. 실패하면 시작한 창에 토스트를 띄운다.
     pub user: bool,
+    /// anchor 없는 수동 요청(`remote.attach`·`attach.into_gui`)의 대상. 같은 대상의 새 요청은
+    /// 진행 중인 이전 요청을 대체한다.
+    pub manual: Option<String>,
 }
 
 impl PendingMirrorInstall {
@@ -147,6 +150,7 @@ impl App {
             reconnect: old,
             run: None,
             user: false,
+            manual: None,
         })
     }
     pub(crate) fn mirror_install_target_is_current(&self, target: &PendingMirrorInstall) -> bool {
@@ -200,29 +204,22 @@ impl App {
     ) -> anyhow::Result<()> {
         if !self.mirror_install_target_is_current(&target) {
             self.remote.retire_tunnel(tunnel);
+            target.cancel_run(TARGET_DISCARDED);
             anyhow::bail!("mirror origin was retired before connection");
         }
-        self.state
-            .mirror_attempts
-            .supersede_connections(&target, &mut self.remote);
-        let ticket = self
-            .remote
-            .queue_connection(
-                ConnectionTarget {
-                    port,
-                    workspace,
-                    anchor: target.anchor,
-                    mapping: target.mapping.clone(),
-                },
-                tunnel,
-                attach_wake(&self.view.proxy),
-                mirror_event_from_control,
-            )
-            .map_err(anyhow::Error::msg)?;
-        self.state
-            .mirror_attempts
-            .register_connection(ticket, target);
-        Ok(())
+        queue_on(
+            &mut self.state.mirror_attempts,
+            &mut self.remote,
+            target,
+            ConnectionTarget {
+                port,
+                workspace,
+                anchor: None,
+                mapping: None,
+            },
+            tunnel,
+            attach_wake(&self.view.proxy),
+        )
     }
     pub(crate) fn poll_pending_mirror_installs(&mut self) {
         self.remote.collect_connections();
@@ -396,6 +393,39 @@ fn attach_wake(proxy: &EventLoopProxy<AppEvent>) -> Arc<dyn Fn() + Send + Sync> 
             tracing::debug!("remote wake after event loop closed: {error}");
         }
     })
+}
+
+/// 같은 대상의 이전 시도를 대체하고 연결을 큐에 넣는다. 큐가 거절하면 target이 이 함수 안에서
+/// 사라지므로, 결과 없이 사라졌다는 `cancelled`보다 먼저 구체적인 실패를 run에 남긴다.
+pub(super) fn queue_on(
+    attempts: &mut super::attempts::MirrorAttempts,
+    remote: &mut tasty_remote::outbound::Remote,
+    target: PendingMirrorInstall,
+    connection: ConnectionTarget,
+    tunnel: Option<tasty_ssh::SshTunnel>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+) -> anyhow::Result<()> {
+    attempts.supersede_connections(&target, remote);
+    attempts.supersede_manual(&target, remote);
+    let ticket = remote
+        .queue_connection(
+            ConnectionTarget {
+                anchor: target.anchor,
+                mapping: target.mapping.clone(),
+                ..connection
+            },
+            tunnel,
+            wake,
+            mirror_event_from_control,
+        )
+        .map_err(|error| {
+            target.fail_run(format!(
+                "the mirror connection could not be queued: {error}"
+            ));
+            anyhow::Error::msg(error)
+        })?;
+    attempts.register_connection(ticket, target);
+    Ok(())
 }
 
 /// 접수 뒤 연결 단계에서 실패한 첫 자동 attach도 해석 실패와 같은 간격으로 미룬다.

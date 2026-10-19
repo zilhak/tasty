@@ -105,8 +105,18 @@ impl App {
             )),
             RemoteAttachTarget::Create { .. } => None,
         };
+        let manual = match &target {
+            RemoteAttachTarget::Existing(remote_ws) => Some(format!(
+                "profile {:?} ssh {:?} workspace {remote_ws}",
+                conn.profile, conn.ssh
+            )),
+            RemoteAttachTarget::Create { .. } => None,
+        };
         let target_binding = match self.mirror_install_target(None, None, None, false) {
-            Ok(target) => target.with_run(run),
+            Ok(target) => crate::app::attach_client::pending::PendingMirrorInstall {
+                manual,
+                ..target.with_run(run)
+            },
             Err(error) => {
                 run.into_iter().for_each(crate::request_runs::forget);
                 self.remote.finish_attempt(&attempt);
@@ -117,6 +127,9 @@ impl App {
                 return;
             }
         };
+        self.state
+            .mirror_attempts
+            .supersede_manual(&target_binding, &mut self.remote);
         self.state
             .mirror_attempts
             .register_endpoint(attempt.clone(), target_binding);

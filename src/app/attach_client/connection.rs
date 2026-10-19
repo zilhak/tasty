@@ -91,9 +91,10 @@ impl App {
     ) {
         let own_port = self.services.own_ipc_port();
         let failure = match dispatch_attach(own_port, port, workspace, AttachSource::Ipc, || {
-            let target = self
+            let mut target = self
                 .mirror_install_target(Some(engine), None, None, false)?
                 .with_run(Some(run));
+            target.manual = Some(format!("port {port} workspace {workspace}"));
             self.queue_mirror_connection(target, port, workspace, None)
         }) {
             Outcome::Connected(Ok(())) => return,
