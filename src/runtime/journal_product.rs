@@ -18,7 +18,6 @@ pub(crate) mod view_record;
 mod worker;
 
 pub(crate) use error::JournalError;
-#[cfg(feature = "gui")]
 pub(crate) use identity::journal_database_path;
 
 use std::path::PathBuf;

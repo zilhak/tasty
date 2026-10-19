@@ -35,6 +35,12 @@ impl ApplicationHandler<AppEvent> for App {
                     | AppEvent::JournalReady
             )
         {
+            match event {
+                AppEvent::EguiRepaint { window_id } => self.request_halted_repaint(window_id),
+                // 타이틀바 닫기 버튼은 OS 닫기와 같은 경로로 창을 닫는다.
+                AppEvent::CloseWindow(id) => self.request_halted_close(id, event_loop),
+                _ => {}
+            }
             return;
         }
 
@@ -296,6 +302,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         if self.journal.is_halted() && !matches!(event, WindowEvent::CloseRequested) {
+            self.handle_halted_window_event(id, event);
             return;
         }
 
@@ -307,7 +314,11 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         if let WindowEvent::CloseRequested = &event {
-            self.request_close_window(id, event_loop);
+            if self.journal.is_halted() {
+                self.request_halted_close(id, event_loop);
+            } else {
+                self.request_close_window(id, event_loop);
+            }
             return;
         }
 
@@ -374,6 +385,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         if self.journal.is_halted() {
+            self.surface_halt_notice();
             self.ipc_pacer.loop_reached_about_to_wait();
             self.process_ipc();
             event_loop.set_control_flow(
@@ -394,6 +406,7 @@ impl ApplicationHandler<AppEvent> for App {
             self.poll_pending_window();
         }
         if self.journal.is_halted() {
+            self.surface_halt_notice();
             event_loop.set_control_flow(
                 min_deadline(
                     self.engine_release_poll_deadline(),

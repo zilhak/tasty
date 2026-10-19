@@ -79,6 +79,8 @@ pub struct TitlebarDrawResult {
     pub actions: Vec<TitlebarAction>,
     /// 버튼 위에서만 가장자리 리사이즈보다 버튼 조작을 우선한다. 빈 여백은 제외한다.
     pub resize_priority_hovered: bool,
+    /// 이번 프레임의 닫기 버튼 영역. 저장이 멈춘 동안에도 이 버튼은 포인터를 받는다.
+    pub close_rect: Option<egui::Rect>,
 }
 
 /// 상단 바와 창 버튼을 그린다. 버튼·macOS 네이티브 버튼 영역은 드래그에서 제외한다.
@@ -86,6 +88,7 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Titleba
     let th = props.theme;
     let mut actions = Vec::new();
     let mut resize_priority_hovered = false;
+    let mut close_rect = None;
 
     let bg = if props.active {
         th.titlebar_bg()
@@ -112,6 +115,7 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Titleba
                     controls,
                     &mut actions,
                     &mut resize_priority_hovered,
+                    &mut close_rect,
                 );
                 match controls.side {
                     ControlSide::Left => left_controls_w = strip,
@@ -130,6 +134,7 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Titleba
                 let caption_result = super::caption::draw_caption_buttons(ui, caption_rect, props);
                 actions.extend(caption_result.actions);
                 resize_priority_hovered |= caption_result.hovered;
+                close_rect = close_rect.or(caption_result.close_rect);
                 right_controls_w = right_controls_w.max(caption_w);
             }
 
@@ -166,6 +171,7 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Titleba
     TitlebarDrawResult {
         actions,
         resize_priority_hovered,
+        close_rect,
     }
 }
 
@@ -179,6 +185,7 @@ fn draw_window_buttons(
     controls: &TitlebarControls,
     actions: &mut Vec<TitlebarAction>,
     hovered: &mut bool,
+    close_rect: &mut Option<egui::Rect>,
 ) -> f32 {
     let th = props.theme;
     let d = th.window_button_size.value(); // 원형 버튼 지름
@@ -214,6 +221,9 @@ fn draw_window_buttons(
         *hovered |= resp.hovered();
 
         let is_close = matches!(button, WindowButton::Close);
+        if is_close {
+            *close_rect = Some(btn_rect);
+        }
         let bg = if resp.is_pointer_button_down_on() {
             if is_close {
                 Some(th.accent_window_close().to_egui())

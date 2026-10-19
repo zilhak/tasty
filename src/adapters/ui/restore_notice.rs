@@ -33,6 +33,8 @@ pub(crate) struct RestoreNotices {
     occupied: Option<egui::Rect>,
     /// 직전 프레임에 안내 안쪽 컨트롤이 키보드 포커스를 가졌는지. 이때만 키를 egui로 보낸다.
     keyboard_inside: bool,
+    /// 더한 뒤 아직 그리지 않은 안내가 있는지. 프레임을 그리지 않는 halt 중에 창을 다시 그리게 한다.
+    undrawn: bool,
 }
 
 impl RestoreNotices {
@@ -42,7 +44,22 @@ impl RestoreNotices {
             return false;
         }
         self.entries.push(entry);
+        self.undrawn = true;
         true
+    }
+
+    /// 아직 그리지 않은 안내가 있는지.
+    pub(crate) fn has_undrawn(&self) -> bool {
+        self.undrawn
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// 직전 프레임에 그린 안내가 이 위치(논리 좌표)를 덮는지.
+    pub(crate) fn covers(&self, pos: egui::Pos2) -> bool {
+        self.occupied.is_some_and(|rect| rect.contains(pos))
     }
 
     pub(crate) fn take_acknowledged(&mut self) -> Vec<u64> {
@@ -160,6 +177,7 @@ pub(crate) fn draw_notice_column(
     }
     notices.occupied = occupied;
     notices.keyboard_inside = keyboard_inside;
+    notices.undrawn = false;
     occupied
 }
 

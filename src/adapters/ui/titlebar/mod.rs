@@ -70,6 +70,7 @@ pub fn draw_titlebar(
 
     let result = draw_titlebar_view(ctx, &props);
     state.resize_edge_widget_hovered = result.resize_priority_hovered;
+    state.titlebar_close_rect = result.close_rect;
     for action in result.actions {
         match action {
             TitlebarAction::StartDrag => {

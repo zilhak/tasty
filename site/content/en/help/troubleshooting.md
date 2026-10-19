@@ -1,4 +1,4 @@
-<!-- source-hash: cdf5f2adc20b -->
+<!-- source-hash: c3c55f30d1d9 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -72,6 +72,14 @@ You can see the current state in the same tab (only shown on macOS). Full Disk A
 
 - **The window does not respond to clicks · key input · the CLI at all** — when it freezes for more than 5 seconds, `~/.tasty/crash-reports/hang-*.log` is written automatically. A `Render phase` of `acquire` / `submit` / `present` records where rendering was stalled. A GPU driver issue is one possibility, so check for driver updates. Tasty does not recover on its own, so force-quit it and start it again.
 - **It exited suddenly** — look at `~/.tasty/crash-reports/crash-*.log`. Attach this file when you report the problem.
+
+### A notice says saving stopped while Tasty was running
+
+If the **Tasty stopped and needs a restart** notice appears in the top right of the window and one error is left in Notifications, saving the workspace · pane · tab layout to `~/.tasty/structure/journal.db` failed. To protect the saved layout, Tasty stops applying further changes.
+
+- In this state, key input and clicks do not reach the terminal or any other part of the window, and `tasty` commands are rejected. **Continue** or × on the notice only closes the notice.
+- Quit Tasty with the window's close button and start it again. In this state it quits right away without asking again.
+- The cause stays in Notifications in the sidebar and in `~/.tasty/debug.log`. If the same notice comes back after a restart, check the free space and permissions of the disk that holds the store, and attach the log when you report the problem.
 
 ## My settings or window layout look like they were reset
 

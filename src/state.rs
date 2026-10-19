@@ -237,6 +237,10 @@ impl RequestContext {
             modifier_hint_layer: None,
             #[cfg(feature = "gui")]
             resize_edge_widget_hovered: false,
+            #[cfg(feature = "gui")]
+            titlebar_close_rect: None,
+            #[cfg(feature = "gui")]
+            halt_pointer_inside: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             #[cfg(feature = "gui")]
             popups: {

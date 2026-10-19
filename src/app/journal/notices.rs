@@ -3,10 +3,12 @@
 use crate::notification::NotificationLevel;
 use crate::runtime::engine_session::EngineId;
 
-/// 비포커스 안내의 종류. 디자인의 restore(복원 자료를 읽지 못함)다.
+/// 비포커스 안내의 종류. 디자인의 restore(복원 자료를 읽지 못함)와 같은 틀을 쓰는 실행 중
+/// halt(저장 실패로 변경 적용을 멈춤)다. halt는 입력도 받지 않으므로 재시작이 필요하다고 적는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NoticeVariant {
     Restore,
+    Halt,
 }
 
 /// 안내 첫 줄의 원인 문구.
@@ -15,7 +17,10 @@ pub(crate) enum NoticeCause {
     ReadDenied,
     Corrupt,
     /// 읽을 수는 있지만 열리지 않았고 손상인지 알 수 없다(쓰기 거절 등). 자세한 오류는 본문에 있다.
+    /// 임시 저장소로 물러나는 GUI 부팅에서만 만든다.
+    #[cfg(feature = "gui")]
     OpenFailed,
+    SaveStopped,
 }
 
 impl NoticeCause {
@@ -23,7 +28,9 @@ impl NoticeCause {
         match self {
             Self::ReadDenied => crate::i18n::t("notice.cause_read_denied"),
             Self::Corrupt => crate::i18n::t("notice.cause_corrupt"),
+            #[cfg(feature = "gui")]
             Self::OpenFailed => crate::i18n::t("notice.cause_open_failed"),
+            Self::SaveStopped => crate::i18n::t("notice.cause_save_stopped"),
         }
     }
 }
@@ -40,6 +47,7 @@ impl NoticePopup {
     pub(crate) fn title(&self) -> &'static str {
         match self.variant {
             NoticeVariant::Restore => crate::i18n::t("notice.restore_failed_title"),
+            NoticeVariant::Halt => crate::i18n::t("notice.runtime_halted_title"),
         }
     }
 
@@ -51,6 +59,7 @@ impl NoticePopup {
     pub(crate) fn body(&self) -> &'static str {
         match self.variant {
             NoticeVariant::Restore => crate::i18n::t("notice.restore_failed_body"),
+            NoticeVariant::Halt => crate::i18n::t("notice.runtime_halted_body"),
         }
     }
 }

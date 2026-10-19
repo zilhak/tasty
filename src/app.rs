@@ -37,6 +37,8 @@ mod file_dispatch;
 #[cfg(feature = "gui")]
 pub(crate) mod global_hooks;
 #[cfg(feature = "gui")]
+mod halt_frame;
+#[cfg(feature = "gui")]
 pub(crate) mod idle_hooks;
 #[cfg(feature = "gui")]
 pub(crate) mod image_jobs;

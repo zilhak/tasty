@@ -363,6 +363,69 @@ fn resolved_rename_releases_raw_params_before_retaining_input_and_wire_reply() {
     assert!(finish(&mut journal, &mut session, &rx).error.is_none());
 }
 
+/// 실행 중 halt는 사유와 재시작 안내를 담은 오류 알림 하나와 비포커스 안내가 된다. 같은 halt는
+/// 다시 알리지 않는다.
+#[test]
+fn a_runtime_halt_is_reported_once_as_an_error_notice() {
+    let (mut session, mut journal) = boot();
+    assert!(
+        journal
+            .take_notices()
+            .iter()
+            .all(|notice| notice.popup.as_ref().is_none_or(|popup| {
+                popup.variant != crate::app::journal::notices::NoticeVariant::Halt
+            })),
+        "no halt notice before the halt"
+    );
+    journal
+        .worker
+        .fail_next_publication
+        .store(true, std::sync::atomic::Ordering::Release);
+    let _rx = send(
+        &mut journal,
+        request(
+            "workspace_category.create",
+            serde_json::json!({"name":"halt-notice"}),
+            Some("halt-notice"),
+            1,
+        ),
+    );
+    let mut stall = StallBudget::new(&journal);
+    while journal.poll_bootstrap(&mut [&mut session], None).is_ok() {
+        for (ticket, _) in journal.requests_needing_resolution() {
+            journal.resolve_ipc_for_engine(ticket, &session);
+        }
+        stall.nap("publication halt");
+    }
+    let reason = journal.halted.clone().unwrap();
+    let notices = journal.take_notices();
+    let halts: Vec<_> = notices
+        .iter()
+        .filter(|notice| {
+            notice.popup.as_ref().is_some_and(|popup| {
+                popup.variant == crate::app::journal::notices::NoticeVariant::Halt
+            })
+        })
+        .collect();
+    assert_eq!(halts.len(), 1, "{notices:?}");
+    let halt = halts[0];
+    assert_eq!(halt.level, crate::notification::NotificationLevel::Error);
+    assert_eq!(halt.title, crate::i18n::t("notice.runtime_halted_title"));
+    assert!(halt.body.contains(&reason), "{}", halt.body);
+    assert!(
+        halt.body
+            .contains(crate::i18n::t("notice.runtime_halted_body")),
+        "{}",
+        halt.body
+    );
+    assert!(halt.body.contains("structure/journal.db"), "{}", halt.body);
+    assert!(journal.poll_bootstrap(&mut [&mut session], None).is_err());
+    assert!(
+        journal.take_notices().is_empty(),
+        "the same halt is reported once"
+    );
+}
+
 #[test]
 fn committed_publication_failure_halts_readers_and_fails_all_pending_replies() {
     let (mut session, mut journal) = boot();

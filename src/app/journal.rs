@@ -84,6 +84,10 @@ pub(crate) struct JournalApplication {
     next_ticket: u64,
     command_submissions: unowned::CommandSubmissions,
     halted: Option<String>,
+    /// 실행 중 halt를 알림으로 넘겼는지. 같은 halt를 다시 알리지 않는다.
+    halt_reported: bool,
+    /// 이 저널의 저장소 파일. halt 안내가 원본 위치로 보인다.
+    database: std::path::PathBuf,
     /// 사용자에게 알릴 복원·저장 사실. App이 꺼내 알림과 안내로 옮긴다.
     notices: Vec<notices::RecoveryNotice>,
     /// 원본 저널을 열지 못해 이번 실행에만 쓰는 임시 저장소. worker가 먼저 멈추도록 마지막 필드다.
@@ -199,6 +203,7 @@ impl JournalApplication {
         wake: Arc<dyn Fn() + Send + Sync>,
         writer_lock: Option<tasty_event_store::WriterLock>,
     ) -> anyhow::Result<Self> {
+        let database = crate::runtime::journal_product::journal_database_path(&home);
         let worker = JournalWorker::spawn_with(home, wake.clone(), writer_lock)
             .map_err(anyhow::Error::msg)?;
         let spawner = crate::runtime::effect_runner::TerminalSpawner::spawn(wake.clone())?;
@@ -239,6 +244,8 @@ impl JournalApplication {
             next_ticket: 1,
             command_submissions: Default::default(),
             halted: None,
+            halt_reported: false,
+            database,
             notices: Vec::new(),
             #[cfg(feature = "gui")]
             ephemeral_home: None,
@@ -377,6 +384,19 @@ impl JournalApplication {
 
     /// 쌓인 복원·저장 알림을 꺼낸다.
     pub(crate) fn take_notices(&mut self) -> Vec<notices::RecoveryNotice> {
+        if let Some(reason) = self.halted.as_deref()
+            && !std::mem::replace(&mut self.halt_reported, true)
+        {
+            self.notices.push(notices::RecoveryNotice::critical(
+                None,
+                notices::NoticePopup {
+                    variant: notices::NoticeVariant::Halt,
+                    cause: notices::NoticeCause::SaveStopped,
+                    path: self.database.display().to_string(),
+                },
+                reason,
+            ));
+        }
         std::mem::take(&mut self.notices)
     }
 
@@ -565,6 +585,8 @@ impl JournalApplication {
         let reason = "shutdown stopped waiting for unfinished journal work; its outcome is left to restart recovery";
         tracing::warn!("{reason}");
         self.halted = Some(reason.into());
+        // 종료가 정한 halt다. 사용자가 이미 종료를 골랐으므로 알리지 않는다.
+        self.halt_reported = true;
         self.fail_pending_commands(reason);
         false
     }

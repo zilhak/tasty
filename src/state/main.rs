@@ -171,6 +171,12 @@ pub struct MainViewState {
     /// 넓은 패널의 빈 여백과 구분해 가장자리 리사이즈가 우선권을 양보할지 판단한다.
     #[cfg(feature = "gui")]
     pub(crate) resize_edge_widget_hovered: bool,
+    /// 직전 프레임에 그린 타이틀바 닫기 버튼 영역(논리 좌표). 없으면 OS가 버튼을 그린다.
+    #[cfg(feature = "gui")]
+    pub(crate) titlebar_close_rect: Option<egui::Rect>,
+    /// 저장이 멈춘 동안 포인터가 받을 수 있는 영역(안내·닫기 버튼) 위에 있는지.
+    #[cfg(feature = "gui")]
+    pub(crate) halt_pointer_inside: bool,
     /// Core와 공유하는 프리셋 저장소 Arc. GUI 팝업이 읽으며 IPC는 AppServices 쪽 핸들을 사용한다.
     #[cfg_attr(
         not(feature = "gui"),

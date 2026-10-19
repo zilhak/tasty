@@ -22,6 +22,8 @@ pub struct CaptionDrawResult {
     /// 마우스가 3버튼(min/max/close) 중 하나 위인지 — `view.rs` 가
     /// `TitlebarDrawResult::resize_priority_hovered` 로 합성한다.
     pub hovered: bool,
+    /// 닫기 버튼 칸. `TitlebarDrawResult::close_rect` 로 합성한다.
+    pub close_rect: Option<egui::Rect>,
 }
 
 /// 우측 캡션 슬롯(`rect`)에 3버튼을 그리고 클릭 액션을 보고한다.
@@ -35,6 +37,7 @@ pub fn draw_caption_buttons(
     let w = th.caption_width.value();
     let mut actions = Vec::new();
     let mut hovered = false;
+    let mut close_rect = None;
 
     for (idx, kind) in [Glyph::Minimize, Glyph::Maximize, Glyph::Close]
         .into_iter()
@@ -53,6 +56,9 @@ pub fn draw_caption_buttons(
         hovered |= btn_hovered;
         let pressed = resp.is_pointer_button_down_on();
         let is_close = matches!(kind, Glyph::Close);
+        if is_close {
+            close_rect = Some(cell);
+        }
 
         let painter = ui.painter();
         if is_close && btn_hovered {
