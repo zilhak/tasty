@@ -369,8 +369,8 @@ fn run_due_timers(
                 headless_plugins::pump_plugins(app, state, engine);
             }
             crate::app::timers::Tick::PtySweep => {
-                // 회수는 함수 안에서 끝나며 반환 ID 목록은 여기서 사용하지 않는다.
-                let _ = engine.sweep_idle_ptys(Instant::now());
+                // 회수 기록과 알림은 공용 함수가 끝낸다.
+                engine.reclaim_standalone_ptys(Instant::now());
             }
             crate::app::timers::Tick::CaptureSweep => {
                 engine.remote.capture_uploads.sweep_expired(Instant::now());

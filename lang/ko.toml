@@ -832,6 +832,10 @@ theme_tooltip = "테마 전환"
 [notification]
 bell_title = "벨"
 default_title = "알림"
+pty_idle_timeout_title = "화면 없는 PTY 종료"
+pty_idle_timeout_body = "생성할 때 고른 유휴 제한 시간 동안 읽기·쓰기·상태 확인이 없어 Tasty가 PTY {}의 프로세스를 종료했습니다."
+pty_exited_removed_title = "종료된 화면 없는 PTY 정리"
+pty_exited_removed_body = "이미 종료된 PTY {}의 종료 결과를 5분 동안 보관한 뒤 정리했습니다."
 
 [notification_panel]
 errors = "오류"
@@ -3355,6 +3359,9 @@ long = "서피스나 탭 없이 헤드리스 PTY를 만들고 PTY ID를 반환�
 
 [cli.help._root.pty.spawn.arg.cwd]
 help = "PTY 작업 디렉터리"
+
+[cli.help._root.pty.spawn.arg.idle_timeout]
+help = "이 초 동안 `pty read`·`write`·`state` 호출이 없으면 프로세스를 종료합니다. 지정하지 않으면 실행 중인 PTY를 유휴 시간 때문에 종료하지 않습니다"
 
 [cli.help._root.pty.spawn.arg.command]
 help = "생성 시 실행할 명령 토큰(예: `pty spawn -- echo hi`)"

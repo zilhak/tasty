@@ -6,11 +6,16 @@ use std::time::Instant;
 use crate::app::App;
 
 impl App {
+    /// 회수 기록과 알림은 공용 함수가 끝낸다. 창은 알림 표시를 갱신하도록 다시 그린다.
     pub(crate) fn poll_pty_sweep(&mut self) {
         let now = Instant::now();
-        for mut engine in self.engines_mut().windowed_and_parked() {
-            // 정리는 함수 안에서 끝나며 여기서는 회수한 ID 목록을 사용하지 않는다.
-            let _ = engine.sweep_idle_ptys(now);
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
+            if engine.reclaim_standalone_ptys(now) > 0 {
+                main.base.state.dirty = true;
+            }
+        }
+        for mut engine in self.engines_mut().parked() {
+            engine.reclaim_standalone_ptys(now);
         }
     }
 

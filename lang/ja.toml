@@ -832,6 +832,10 @@ theme_tooltip = "テーマを切り替え"
 [notification]
 bell_title = "ベル"
 default_title = "通知"
+pty_idle_timeout_title = "ヘッドレス PTY を終了しました"
+pty_idle_timeout_body = "作成時に指定したアイドル制限時間内に読み取り・書き込み・状態確認がなかったため、Tasty が PTY {} のプロセスを終了しました。"
+pty_exited_removed_title = "終了したヘッドレス PTY を整理しました"
+pty_exited_removed_body = "終了済みの PTY {} の終了結果を 5 分間保持した後に削除しました。"
 
 [notification_panel]
 errors = "エラー"
@@ -3355,6 +3359,9 @@ long = "サーフェスやタブのないヘッドレス PTY を作成し、PTY 
 
 [cli.help._root.pty.spawn.arg.cwd]
 help = "PTYの作業ディレクトリ"
+
+[cli.help._root.pty.spawn.arg.idle_timeout]
+help = "この秒数の間 `pty read`・`write`・`state` の呼び出しがなければプロセスを終了します。指定しない場合、実行中の PTY をアイドル時間で終了しません"
 
 [cli.help._root.pty.spawn.arg.command]
 help = "作成時に実行するコマンドトークン（例：`pty spawn -- echo hi`）"

@@ -1,5 +1,6 @@
 //! surface 없이 백그라운드 PTY를 관리한다. 화면·포커스·복원 기록은 만들지 않는다.
-//! 동시 개수는 제한하지 않는다. 메타데이터를 가진 Pty와 Terminal은 같은 PTY ID의 단일 저장소 항목에 둔다.
+//! 동시 개수는 제한하지 않는다. 실행 중인 PTY는 호출자가 spawn에서 유휴 제한을 고른 경우에만 회수한다.
+//! 메타데이터를 가진 Pty와 Terminal은 같은 PTY ID의 단일 저장소 항목에 둔다.
 //! PTY_ID_BASE 이상의 ID를 사용해 surface ID와 구분하고 회수할 때 내용과 물리 owner를 함께 제거한다.
 
 use super::params::{self, p_try};
@@ -43,8 +44,17 @@ fn parse_command(params: &Value) -> Vec<String> {
 /// 주기 정리와 별도로 spawn/list 접근 시점에도 같은 회수를 적용한다.
 /// 주기 타이머를 기다리지 않고 기한이 지난 항목을 응답과 목록에서 빼기 위해서다.
 fn lazy_sweep(engine: &mut EngineMut<'_>) {
-    // 공용 함수가 회수까지 마쳤으므로 반환된 ID 목록은 사용하지 않는다.
-    let _ = engine.sweep_idle_ptys(Instant::now());
+    // 회수 기록과 알림은 공용 함수가 끝낸다.
+    engine.reclaim_standalone_ptys(Instant::now());
+}
+
+/// 등록되지 않은 ID의 응답. Tasty가 회수한 ID는 처음부터 없던 ID와 구별되는 이유를 돌려준다.
+fn unknown_pty(engine: &EngineMut<'_>, id: Value, pty_id: u32) -> JsonRpcResponse {
+    let message = match engine.runtime.terminals.reclaim_record(pty_id) {
+        Some(reason) => reason.describe(pty_id),
+        None => format!("headless pty {pty_id} not found"),
+    };
+    JsonRpcResponse::invalid_params(id, message)
 }
 
 pub(crate) fn handle_spawn(
@@ -54,6 +64,10 @@ pub(crate) fn handle_spawn(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
+    let idle_timeout_secs = p_try!(params::opt_int::<u64>(params, "idle_timeout_secs", &id));
+    if idle_timeout_secs == Some(0) {
+        return JsonRpcResponse::invalid_params(id, "idle_timeout_secs must be at least 1");
+    }
     lazy_sweep(engine);
 
     let command = parse_command(params);
@@ -101,6 +115,8 @@ pub(crate) fn handle_spawn(
         command: command.clone(),
         created_at: now,
         last_activity: now,
+        idle_timeout: idle_timeout_secs.map(std::time::Duration::from_secs),
+        exited_at: None,
     });
     engine.runtime.terminals.insert(pty_id, terminal, Some(pty));
 
@@ -111,6 +127,7 @@ pub(crate) fn handle_spawn(
             "owner_agent_id": owner_agent_id,
             "command": command,
             "cwd": cwd,
+            "idle_timeout_secs": idle_timeout_secs,
         }),
     )
 }
@@ -131,7 +148,7 @@ pub(crate) fn handle_write(
         Err(e) => return e,
     };
     if !engine.runtime.terminals.is_standalone(pty_id) {
-        return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
+        return unknown_pty(engine, id, pty_id);
     }
     let Some(terminal) = engine.runtime.terminals.get_mut(pty_id) else {
         return JsonRpcResponse::internal_error(
@@ -159,7 +176,7 @@ pub(crate) fn handle_read(
         Err(e) => return e,
     };
     if !engine.runtime.terminals.is_standalone(pty_id) {
-        return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
+        return unknown_pty(engine, id, pty_id);
     }
     let lines = p_try!(params::opt_int::<usize>(params, "lines", &id));
     let show_dim = params
@@ -201,7 +218,7 @@ pub(crate) fn handle_wait(
         Err(e) => return e,
     };
     if !engine.runtime.terminals.is_standalone(pty_id) {
-        return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
+        return unknown_pty(engine, id, pty_id);
     }
     if let Some(pty) = engine.runtime.terminals.pty_mut(pty_id) {
         pty.observe_exit();
@@ -241,7 +258,7 @@ pub(crate) fn handle_kill(
         Err(e) => return e,
     };
     if !engine.runtime.terminals.is_standalone(pty_id) {
-        return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
+        return unknown_pty(engine, id, pty_id);
     }
     engine.runtime.terminals.remove(pty_id);
     // PTY별 waker 기록도 지워 반복 생성·삭제 시 누적되지 않게 한다.
@@ -251,7 +268,7 @@ pub(crate) fn handle_kill(
     JsonRpcResponse::success(id, json!({ "id": pty_id, "killed": true }))
 }
 
-/// idle 항목을 회수한 뒤 등록된 PTY 전체를 반환한다.
+/// 회수 정책을 적용한 뒤 등록된 PTY 전체를 반환한다.
 /// owner_phase는 시험 실패 진단에만 사용하므로 공개 응답에 포함하지 않는다.
 pub(crate) fn handle_list(engine: &mut EngineMut<'_>, id: Value) -> JsonRpcResponse {
     lazy_sweep(engine);
@@ -268,6 +285,7 @@ pub(crate) fn handle_list(engine: &mut EngineMut<'_>, id: Value) -> JsonRpcRespo
                 "command": e.command,
                 "has_exited": pty.state().exit().is_some(),
                 "exit_code": pty.state().exit().and_then(|x| x.code),
+                "idle_timeout_secs": e.idle_timeout.map(|t| t.as_secs()),
             })
         })
         .collect();
@@ -395,21 +413,6 @@ pub(crate) mod tests {
             }
             PtyPhase::WaitFailed => "wait 실패로 종료/회수 여부가 불명확하다",
         }
-    }
-
-    pub(crate) fn spawn_test_pty(
-        core: &mut crate::app::services::AppServices,
-        engine: &mut EngineMut<'_>,
-    ) -> u32 {
-        ok(handle_spawn(
-            core,
-            engine,
-            &CallerContext::local(),
-            json!(1),
-            &json!({}),
-        ))["pty_id"]
-            .as_u64()
-            .expect("standalone ID") as u32
     }
 
     /// 보낸 입력의 에코 외에 텍스트가 있는지 확인한다.
@@ -707,21 +710,27 @@ pub(crate) mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        e.runtime.terminals.set_idle_ttl(std::time::Duration::ZERO);
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
         e.runtime.waker_factory = Some(shared);
         let caller = CallerContext::local();
 
-        let a = ok(handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({})))["pty_id"]
+        let a = ok(handle_spawn(
+            &mut c,
+            &mut e,
+            &caller,
+            json!(1),
+            &json!({ "idle_timeout_secs": 60 }),
+        ))["pty_id"]
             .as_u64()
             .unwrap() as u32;
         assert!(factory.made().contains(&a), "spawn 이 게이트를 만든다");
+        expire_idle(&mut e, a);
 
         ok(handle_list(&mut e, json!(2)));
         assert!(
             !e.runtime.terminals.is_standalone(a),
-            "TTL 0 이므로 sweep 이 a 를 회수해야 한다"
+            "유휴 제한이 지났으므로 접근 시 회수가 a 를 회수해야 한다"
         );
         assert!(
             factory.forgotten().contains(&a),
@@ -734,10 +743,12 @@ pub(crate) mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let bogus = crate::runtime::terminal_store::PTY_ID_BASE + 999;
-        assert!(
+        assert_eq!(
             handle_write(&mut e, json!(1), &json!({ "id": bogus, "text": "x" }))
                 .error
-                .is_some()
+                .expect("unknown id")
+                .message,
+            format!("headless pty {bogus} not found")
         );
         assert!(
             handle_read(&mut e, json!(1), &json!({ "id": bogus }))
@@ -777,11 +788,35 @@ pub(crate) mod tests {
         }
     }
 
-    fn short_ttl(engine: &mut EngineMut<'_>) {
+    /// 고른 유휴 제한을 이미 지난 것으로 만든다. 접근 시 회수는 실제 현재 시각을 쓰기 때문이다.
+    fn expire_idle(engine: &mut EngineMut<'_>, pty_id: u32) {
         engine
             .runtime
             .terminals
-            .set_idle_ttl(Duration::from_millis(1));
+            .pty_mut(pty_id)
+            .and_then(|pty| pty.standalone_mut())
+            .expect("standalone entry")
+            .idle_timeout = Some(Duration::ZERO);
+    }
+
+    fn spawn_with(
+        core: &mut crate::app::services::AppServices,
+        engine: &mut EngineMut<'_>,
+        params: Value,
+    ) -> u32 {
+        ok(handle_spawn(
+            core,
+            engine,
+            &CallerContext::local(),
+            json!(1),
+            &params,
+        ))["pty_id"]
+            .as_u64()
+            .expect("standalone ID") as u32
+    }
+
+    fn error_message(resp: JsonRpcResponse) -> String {
+        resp.error.expect("expected an error").message
     }
 
     // 주기 정리도 registry·Terminal·waker를 모두 회수해야 한다.
@@ -792,26 +827,16 @@ pub(crate) mod tests {
         let (mut c, _home) = core();
         let recorder = std::sync::Arc::new(RecordingWakerFactory::default());
         e.runtime.waker_factory = Some(recorder.clone());
-        short_ttl(&mut e);
-
-        let spawned = ok(handle_spawn(
-            &mut c,
-            &mut e,
-            &CallerContext::local(),
-            json!(1),
-            &json!({}),
-        ));
-        let pty_id = spawned["pty_id"].as_u64().expect("pty_id") as u32;
+        let pty_id = spawn_with(&mut c, &mut e, json!({ "idle_timeout_secs": 1 }));
         assert!(e.runtime.terminals.is_standalone(pty_id), "registry entry");
         assert!(
             e.runtime.terminals.get(pty_id).is_some(),
             "TerminalStore entry"
         );
 
-        std::thread::sleep(Duration::from_millis(5));
-        let reaped = e.sweep_idle_ptys(Instant::now());
+        let reaped = e.reclaim_standalone_ptys(Instant::now() + Duration::from_secs(2));
 
-        assert_eq!(reaped, vec![pty_id], "회수 id");
+        assert_eq!(reaped, 1, "회수 수");
         assert!(
             !e.runtime.terminals.is_standalone(pty_id),
             "registry 에서 제거"
@@ -833,9 +858,8 @@ pub(crate) mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        short_ttl(&mut e);
-        let first = spawn_test_pty(&mut c, &mut e);
-        std::thread::sleep(Duration::from_millis(5));
+        let first = spawn_with(&mut c, &mut e, json!({ "idle_timeout_secs": 60 }));
+        expire_idle(&mut e, first);
 
         let resp = handle_spawn(
             &mut c,
@@ -850,5 +874,157 @@ pub(crate) mod tests {
             "spawn 접근의 회수가 빠졌다"
         );
         handle_kill(&mut e, json!(2), &json!({ "id": second }));
+    }
+
+    #[test]
+    fn a_running_pty_without_a_limit_survives_every_reclaim_path() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        let (mut c, _home) = core();
+        let quiet = spawn_with(
+            &mut c,
+            &mut e,
+            json!({ "command": ["exec", "sleep", "600"] }),
+        );
+        let chatty = spawn_with(
+            &mut c,
+            &mut e,
+            json!({ "command": ["while :; do date; sleep 1; done"] }),
+        );
+        let later = Instant::now() + Duration::from_secs(390);
+        assert_eq!(e.reclaim_standalone_ptys(later), 0);
+        assert_eq!(
+            e.reclaim_standalone_ptys(Instant::now() + Duration::from_secs(86_400)),
+            0
+        );
+        ok(handle_list(&mut e, json!(2)));
+        let spawned = ok(handle_spawn(
+            &mut c,
+            &mut e,
+            &CallerContext::local(),
+            json!(3),
+            &json!({}),
+        ))["pty_id"]
+            .as_u64()
+            .unwrap() as u32;
+        for pty_id in [quiet, chatty] {
+            assert!(e.runtime.terminals.is_standalone(pty_id));
+            let state = ok(handle_wait(&mut e, json!(4), &json!({ "id": pty_id })));
+            assert_eq!(state["exited"], Value::Bool(false));
+        }
+        for pty_id in [quiet, chatty, spawned] {
+            ok(handle_kill(&mut e, json!(5), &json!({ "id": pty_id })));
+        }
+    }
+
+    #[test]
+    fn spawn_rejects_a_zero_idle_timeout() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        let (mut c, _home) = core();
+        let resp = handle_spawn(
+            &mut c,
+            &mut e,
+            &CallerContext::local(),
+            json!(1),
+            &json!({ "idle_timeout_secs": 0 }),
+        );
+        assert_eq!(error_message(resp), "idle_timeout_secs must be at least 1");
+        assert_eq!(e.runtime.terminals.standalone_iter().count(), 0);
+    }
+
+    #[test]
+    fn an_idle_timeout_reclaim_warns_and_answers_with_its_reason() {
+        let (_state, mut session) = crate::state::tests::test_state();
+        let mut e = session.borrow_mut();
+        let (mut c, _home) = core();
+        let ws = e.workspace_at(0).expect("fixture workspace").id;
+        let limited = spawn_with(&mut c, &mut e, json!({ "idle_timeout_secs": 1 }));
+        let unlimited = spawn_with(&mut c, &mut e, json!({}));
+        let listed = ok(handle_list(&mut e, json!(2)));
+        let row = listed["ptys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"].as_u64() == Some(limited as u64))
+            .cloned()
+            .expect("listed");
+        assert_eq!(row["idle_timeout_secs"].as_u64(), Some(1));
+
+        assert_eq!(
+            e.reclaim_standalone_ptys(Instant::now() + Duration::from_secs(2)),
+            1
+        );
+        assert!(!e.runtime.terminals.is_standalone(limited));
+        assert!(e.runtime.terminals.is_standalone(unlimited));
+
+        let notice = e
+            .live
+            .notifications
+            .all()
+            .find(|n| n.body.contains(&limited.to_string()))
+            .expect("reclaim notification");
+        assert_eq!(
+            notice.level,
+            crate::notification::NotificationLevel::Warning
+        );
+        assert_eq!(notice.source_workspace, ws);
+        assert_eq!(
+            notice.title,
+            crate::i18n::t("notification.pty_idle_timeout_title")
+        );
+
+        let expected = crate::runtime::terminal_store::PtyReclaimReason::IdleTimeout {
+            timeout: Duration::from_secs(1),
+        }
+        .describe(limited);
+        let params = json!({ "id": limited, "text": "x" });
+        for message in [
+            error_message(handle_wait(&mut e, json!(3), &params)),
+            error_message(handle_read(&mut e, json!(4), &params)),
+            error_message(handle_write(&mut e, json!(5), &params)),
+            error_message(handle_kill(&mut e, json!(6), &params)),
+        ] {
+            assert_eq!(message, expected);
+            assert!(!message.contains("not found"), "{message}");
+        }
+        ok(handle_kill(&mut e, json!(7), &json!({ "id": unlimited })));
+    }
+
+    #[test]
+    fn exited_entry_cleanup_informs_and_answers_with_the_exit_code() {
+        let (_state, mut session) = crate::state::tests::test_state();
+        let mut e = session.borrow_mut();
+        let (mut c, _home) = core();
+        let pty_id = spawn_with(&mut c, &mut e, json!({ "command": ["exit", "7"] }));
+        let exited = wait_for_exit(&mut e, pty_id, "exit 7");
+        assert_eq!(exited["exit_code"].as_i64(), Some(7));
+        assert_eq!(
+            e.reclaim_standalone_ptys(Instant::now() + Duration::from_secs(3600)),
+            0,
+            "the first sweep only starts the retention"
+        );
+        let state = ok(handle_wait(&mut e, json!(2), &json!({ "id": pty_id })));
+        assert_eq!(state["exit_code"].as_i64(), Some(7));
+
+        e.runtime.terminals.set_exited_retention(Duration::ZERO);
+        ok(handle_list(&mut e, json!(3)));
+        assert!(!e.runtime.terminals.is_standalone(pty_id));
+        let notice = e
+            .live
+            .notifications
+            .all()
+            .find(|n| n.body.contains(&pty_id.to_string()))
+            .expect("cleanup notification");
+        assert_eq!(notice.level, crate::notification::NotificationLevel::Info);
+
+        let message = error_message(handle_wait(&mut e, json!(4), &json!({ "id": pty_id })));
+        assert!(message.contains("exit code 7"), "{message}");
+        assert!(!message.contains("not found"), "{message}");
+        let bogus = pty_id + 1000;
+        assert_eq!(
+            error_message(handle_wait(&mut e, json!(5), &json!({ "id": bogus }))),
+            format!("headless pty {bogus} not found")
+        );
     }
 }

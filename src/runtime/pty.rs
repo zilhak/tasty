@@ -1,6 +1,8 @@
 use std::time::Instant;
 
+use crate::notification::NotificationLevel;
 use crate::runtime::engine_access::EngineMut;
+use crate::runtime::terminal_store::PtyReclaimReason;
 #[cfg(all(test, unix))]
 use tasty_terminal::Terminal;
 use tasty_terminal::TerminalEvent;
@@ -23,19 +25,75 @@ impl crate::runtime::engine_access::EngineRef<'_> {
 }
 
 impl EngineMut<'_> {
-    /// 유휴 TTL이 지난 등록을 지우고 Terminal과 waker 기록도 함께 정리한다.
+    /// 정책상 회수할 standalone 항목을 지우고 Terminal·waker 기록도 함께 정리한다.
+    /// 실행 중인 항목은 호출자가 spawn에서 유휴 제한을 고른 경우에만 회수한다.
     /// 실제 자식 종료·회수는 같은 항목에 있던 Pty owner의 플랫폼별 Drop이 수행한다.
-    pub(crate) fn sweep_idle_ptys(&mut self, now: Instant) -> Vec<u32> {
-        let expired = self.runtime.terminals.expired_standalone_ids(now);
-        for pty_id in &expired {
-            let pty_id = *pty_id;
+    /// 회수 기록과 알림까지 여기서 끝내므로 호출 경로마다 결과 전달이 갈라지지 않는다.
+    /// 반환값은 회수한 항목 수다.
+    pub(crate) fn reclaim_standalone_ptys(&mut self, now: Instant) -> usize {
+        let due = self.runtime.terminals.due_standalone_reclaims(now);
+        for &(pty_id, reason) in &due {
             self.runtime.terminals.remove(pty_id);
             if let Some(factory) = self.runtime.waker_factory.as_ref() {
                 factory.forget_surface(pty_id);
             }
-            tracing::debug!("headless pty {pty_id} swept (idle TTL exceeded)");
+            self.runtime.terminals.record_reclaim(pty_id, reason);
+            tracing::info!("{}", reason.describe(pty_id));
         }
-        expired
+        self.notify_pty_reclaims(&due);
+        due.len()
+    }
+
+    /// 실행 중 프로세스를 끝낸 회수는 경고, 끝난 항목 정리는 정보로 묶어 한 번씩 알린다.
+    /// PTY는 workspace에 속하지 않으므로 그 engine의 첫 workspace를 출처로 쓴다.
+    fn notify_pty_reclaims(&mut self, due: &[(u32, PtyReclaimReason)]) {
+        let join = |idle: bool| {
+            due.iter()
+                .filter(|(_, reason)| {
+                    matches!(reason, PtyReclaimReason::IdleTimeout { .. }) == idle
+                })
+                .map(|(id, _)| id.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let batches = [
+            (
+                join(true),
+                NotificationLevel::Warning,
+                "notification.pty_idle_timeout_title",
+                "notification.pty_idle_timeout_body",
+            ),
+            (
+                join(false),
+                NotificationLevel::Info,
+                "notification.pty_exited_removed_title",
+                "notification.pty_exited_removed_body",
+            ),
+        ];
+        for (ids, level, title_key, body_key) in batches {
+            if ids.is_empty() {
+                continue;
+            }
+            let Some(ws_id) = self.workspace_at(0).map(|ws| ws.id) else {
+                tracing::warn!("headless pty reclaim notice for {ids} skipped: no workspace");
+                continue;
+            };
+            let title = crate::i18n::t(title_key).to_string();
+            let body = crate::i18n::t_fmt(body_key, &ids);
+            if let Some(id) =
+                self.live
+                    .notifications
+                    .add_with_level(ws_id, 0, title.clone(), body.clone(), level)
+            {
+                self.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
+                    id,
+                    level,
+                    title,
+                    body,
+                    source: "host".to_string(),
+                });
+            }
+        }
     }
 
     /// 트리는 유지하고 store의 Terminal을 교체한 뒤 기존 Terminal을 drop한다.

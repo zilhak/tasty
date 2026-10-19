@@ -210,7 +210,9 @@ pub(crate) fn engine_has_resource(engine: &EngineRef<'_>, rid: ResourceId) -> bo
         Kind::Workspace => narrow.is_some_and(|id| engine.has_workspace(id)),
         Kind::Pane => narrow.is_some_and(|id| engine.has_pane(id)),
         Kind::Tab => narrow.is_some_and(|id| engine.find_pane_for_tab(id).is_some()),
-        Kind::HeadlessPty => narrow.is_some_and(|id| engine.runtime.terminals.is_standalone(id)),
+        Kind::HeadlessPty => {
+            narrow.is_some_and(|id| engine.runtime.terminals.answers_for_standalone(id))
+        }
         Kind::Hook => engine
             .hooks
             .surface_hooks()
@@ -504,6 +506,30 @@ mod tests {
             ),
             "없는 id 를 가졌다고 답하면 라우팅이 아무 창이나 고른다"
         );
+    }
+
+    #[test]
+    fn an_engine_owns_the_pty_ids_it_reclaimed_but_not_unknown_ones() {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        let mut engine_session =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+        let engine = engine_session.borrow_mut();
+        let base = crate::runtime::terminal_store::PTY_ID_BASE;
+        engine.runtime.terminals.record_reclaim(
+            base + 3,
+            crate::runtime::terminal_store::PtyReclaimReason::IdleTimeout {
+                timeout: std::time::Duration::from_secs(5),
+            },
+        );
+        let pty = |id: u32| ResourceId {
+            kind: Kind::HeadlessPty,
+            id: u64::from(id),
+        };
+        assert!(
+            engine_has_resource(&engine.as_ref(), pty(base + 3)),
+            "회수 기록을 가진 engine이 답해야 이유가 응답까지 간다"
+        );
+        assert!(!engine_has_resource(&engine.as_ref(), pty(base + 4)));
     }
 
     #[test]

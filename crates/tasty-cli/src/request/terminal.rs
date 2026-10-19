@@ -178,10 +178,17 @@ pub(super) fn pty_command_to_method_params(
 ) -> (&'static str, serde_json::Value) {
     use crate::commands::PtyCommands as P;
     match command {
-        P::Spawn { cwd, command } => {
+        P::Spawn {
+            cwd,
+            idle_timeout,
+            command,
+        } => {
             let mut m = serde_json::Map::new();
             if let Some(c) = normalize_cwd_or_exit(cwd.as_deref()) {
                 m.insert("cwd".into(), serde_json::Value::from(c));
+            }
+            if let Some(secs) = idle_timeout {
+                m.insert("idle_timeout_secs".into(), serde_json::Value::from(*secs));
             }
             m.insert("command".into(), serde_json::json!(command));
             ("pty.spawn", serde_json::Value::Object(m))

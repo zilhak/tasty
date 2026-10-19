@@ -842,6 +842,12 @@ theme_tooltip = "Toggle theme"
 bell_title = "Bell"
 # notification.create에서 title을 생략했을 때 쓰는 표시 제목이며 프로토콜 값이 아니다.
 default_title = "Notification"
+# headless PTY 회수 알림. {} 는 쉼표로 이은 PTY ID 목록이다.
+pty_idle_timeout_title = "Headless PTY stopped"
+pty_idle_timeout_body = "Tasty ended the process of PTY {} because the idle timeout chosen at spawn passed without a read, write, or state call."
+# 보존 기간은 src/runtime/terminal_store/standalone.rs 의 EXITED_RETENTION 과 같아야 한다.
+pty_exited_removed_title = "Exited headless PTYs removed"
+pty_exited_removed_body = "PTY {} had already exited. Its exit result was kept for 5 minutes and has been removed."
 
 [notification_panel]
 errors = "Errors"
@@ -3421,6 +3427,9 @@ long = "Spawn a headless PTY (no Surface/tab). Returns a pty id.\n\nWith a comma
 
 [cli.help._root.pty.spawn.arg.cwd]
 help = "Working directory for the PTY"
+
+[cli.help._root.pty.spawn.arg.idle_timeout]
+help = "End the process if no `pty read`, `write`, or `state` call arrives for this many seconds. Without it a running PTY is never ended for idleness"
 
 [cli.help._root.pty.spawn.arg.command]
 help = "Command tokens to run on spawn (e.g. `pty spawn -- echo hi`)"

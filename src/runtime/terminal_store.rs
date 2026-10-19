@@ -49,7 +49,9 @@ pub(crate) fn current_terminal_palette() -> ColorPalette {
 pub(crate) struct TerminalStore {
     terminals: HashMap<SurfaceId, (Terminal, Option<Pty>)>,
     next_pty_id: Arc<AtomicU32>,
-    idle_ttl: std::time::Duration,
+    exited_retention: std::time::Duration,
+    /// Tasty가 스스로 지운 PTY ID와 이유. 상한을 넘으면 오래된 것부터 버린다.
+    reclaimed: std::collections::VecDeque<(u32, PtyReclaimReason)>,
 
     /// Terminal 등록과 별도로 설정하는 디스크 scrollback 저장 ID.
     scrollback_persist_ids: HashMap<SurfaceId, String>,
@@ -61,7 +63,8 @@ impl TerminalStore {
             terminals: HashMap::new(),
             scrollback_persist_ids: HashMap::new(),
             next_pty_id,
-            idle_ttl: DEFAULT_IDLE_TTL,
+            exited_retention: EXITED_RETENTION,
+            reclaimed: std::collections::VecDeque::new(),
         }
     }
 
@@ -278,4 +281,4 @@ pub(crate) fn closed_capture_of(
 }
 
 mod standalone;
-pub(crate) use standalone::{DEFAULT_IDLE_TTL, PTY_ID_BASE, is_surface_id_space};
+pub(crate) use standalone::{EXITED_RETENTION, PTY_ID_BASE, PtyReclaimReason, is_surface_id_space};

@@ -344,6 +344,8 @@ fn standalone_pty(session: &mut EngineSession) -> (u32, u32) {
         command: vec!["sleep".into()],
         created_at: now,
         last_activity: now,
+        idle_timeout: None,
+        exited_at: None,
     });
     session
         .runtime

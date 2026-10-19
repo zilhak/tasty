@@ -1,4 +1,4 @@
-<!-- source-hash: 6fbf71fb2054 -->
+<!-- source-hash: ad231e7fed05 -->
 # Bring a background task into a tab
 
 Not every task needs a visible tab from the start. Run work in a hidden PTY, inspect its output, then bring the same process and history into a tab when needed.
@@ -80,11 +80,15 @@ Your view does not switch automatically. Select the tab when you want to inspect
 - For a PTY that is still hidden, run `tasty pty kill --id 2147483648` with its actual ID. This terminates the process and removes it from the hidden PTY list.
 - After bringing it into a tab, close that tab when finished. It is no longer managed through the hidden PTY list.
 
-There is no limit on the number of hidden PTYs, and exited PTYs that remain do not prevent new ones. To cap how many run at once, use a semaphore from [task ordering](tasks.md). After five minutes of inactivity a PTY is cleaned up from the list, and its process is ended even if it is still running. The five minutes cannot be changed. `read`, `write`, and `wait` refresh the idle timer. Do not assume background output alone keeps a PTY alive. Use a regular terminal tab for work you will leave unchecked for a long time.
+There is no limit on the number of hidden PTYs, and exited PTYs that remain do not prevent new ones. To cap how many run at once, use a semaphore from [task ordering](tasks.md).
+
+Tasty does not end a running PTY just because nobody checked it for a while. It runs until you `kill` it. If you want it ended after a period without checks, pass `--idle-timeout <seconds>` when creating it. If no `read`, `write`, or `state` arrives within that time, Tasty ends the process and leaves a warning notification. Background output does not extend that time.
+
+An exited PTY stays in the list for five minutes after it exited or was last checked, whichever is later, so you can read its exit code, then it is cleaned up and an info notification records the cleanup.
 
 ## If something goes wrong
 
-- If a PTY cannot be found, check `tasty pty list`. It may have moved into a tab or been cleaned up.
+- If a PTY cannot be found, check `tasty pty list`. It may have moved into a tab or been cleaned up. If Tasty cleaned it up, the error message tells you whether its idle timeout expired or it was an exited PTY being cleaned up, and a notification records it as well.
 - An exited PTY cannot be brought into a tab. Inspect its output and exit state, then clean it up.
 - If input does not execute, check that you sent an actual newline.
 

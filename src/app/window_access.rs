@@ -488,7 +488,7 @@ impl App {
     pub(crate) fn find_main_with_headless_pty(&self, pty_id: u32) -> Option<WindowId> {
         self.engines()
             .windows()
-            .find(|(_, e)| e.runtime.terminals.is_standalone(pty_id))
+            .find(|(_, e)| e.runtime.terminals.answers_for_standalone(pty_id))
             .map(|(wid, _)| wid)
     }
 

@@ -4,7 +4,10 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tasty_terminal::Pty;
 
-pub(crate) const DEFAULT_IDLE_TTL: Duration = Duration::from_secs(300);
+/// 끝난 항목의 종료 결과를 보존하는 기간. 종료를 확인한 시각과 마지막 API 접근 중 늦은 쪽부터 센다.
+pub(crate) const EXITED_RETENTION: Duration = Duration::from_secs(300);
+/// 회수 기록은 오래된 것부터 버린다. 넘친 ID는 처음부터 없던 ID와 같은 응답을 받는다.
+pub(crate) const RECLAIM_RECORD_LIMIT: usize = 256;
 pub(crate) const PTY_ID_BASE: u32 = 0x8000_0000;
 pub(crate) const fn is_surface_id_space(id: u32) -> bool {
     id < PTY_ID_BASE
@@ -23,6 +26,42 @@ impl std::fmt::Display for PtySpawnError {
     }
 }
 impl std::error::Error for PtySpawnError {}
+
+/// Tasty가 스스로 항목을 지운 이유. 호출자가 지운 `pty.kill`은 여기에 없다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PtyReclaimReason {
+    /// 호출자가 spawn에서 고른 유휴 제한이 지나 실행 중인 프로세스를 끝냈다.
+    IdleTimeout { timeout: Duration },
+    /// 이미 끝난 항목의 보존 기간이 지나 종료 결과를 지웠다.
+    ExitedRetention {
+        exit_code: Option<i32>,
+        retention: Duration,
+    },
+}
+
+impl PtyReclaimReason {
+    /// 회수된 ID로 온 `pty.*` 호출에 돌려주는 문장. 처음부터 없던 ID의 응답과 구별된다.
+    pub(crate) fn describe(&self, id: u32) -> String {
+        match self {
+            Self::IdleTimeout { timeout } => format!(
+                "headless pty {id} was reclaimed by Tasty: the idle timeout of {}s set at spawn \
+                 passed without pty.read/write/wait, so its process was terminated",
+                timeout.as_secs()
+            ),
+            Self::ExitedRetention {
+                exit_code,
+                retention,
+            } => {
+                let code = exit_code.map_or_else(|| "unknown".to_string(), |c| c.to_string());
+                format!(
+                    "headless pty {id} was removed by Tasty: it had exited (exit code {code}) \
+                     and its result was kept for {}s",
+                    retention.as_secs()
+                )
+            }
+        }
+    }
+}
 
 impl TerminalStore {
     pub(crate) fn reserve_pty_id(&self) -> Result<u32, PtySpawnError> {
@@ -49,19 +88,63 @@ impl TerminalStore {
             pty.touch(now);
         }
     }
-    pub(crate) fn expired_standalone_ids(&self, now: Instant) -> Vec<u32> {
-        self.standalone_iter()
-            .filter(|(_, pty)| {
-                now.saturating_duration_since(
-                    pty.state().standalone().expect("standalone").last_activity,
-                ) >= self.idle_ttl
-            })
-            .map(|(id, _)| id)
-            .collect()
+    /// 회수할 항목과 이유를 고른다. 실행 중인 항목은 호출자가 유휴 제한을 골랐을 때만 고른다.
+    /// 끝난 항목은 처음 확인한 시각을 여기서 기록하므로 주기 정리의 간격만큼 늦게 셀 수 있다.
+    pub(crate) fn due_standalone_reclaims(&mut self, now: Instant) -> Vec<(u32, PtyReclaimReason)> {
+        let retention = self.exited_retention;
+        let mut due = Vec::new();
+        for (&id, (_, pty)) in &mut self.terminals {
+            let Some(pty) = pty.as_mut() else { continue };
+            if pty.state().standalone().is_none() {
+                continue;
+            }
+            pty.observe_exit();
+            let exit = pty.state().exit();
+            let meta = pty.standalone_mut().expect("standalone checked above");
+            let reason = match exit {
+                Some(exit) => {
+                    let exited_at = *meta.exited_at.get_or_insert(now);
+                    let since = exited_at.max(meta.last_activity);
+                    (now.saturating_duration_since(since) >= retention).then_some(
+                        PtyReclaimReason::ExitedRetention {
+                            exit_code: exit.code,
+                            retention,
+                        },
+                    )
+                }
+                None => meta.idle_timeout.and_then(|timeout| {
+                    (now.saturating_duration_since(meta.last_activity) >= timeout)
+                        .then_some(PtyReclaimReason::IdleTimeout { timeout })
+                }),
+            };
+            if let Some(reason) = reason {
+                due.push((id, reason));
+            }
+        }
+        due.sort_unstable_by_key(|(id, _)| *id);
+        due
+    }
+    pub(crate) fn record_reclaim(&mut self, id: u32, reason: PtyReclaimReason) {
+        if self.reclaimed.len() >= RECLAIM_RECORD_LIMIT {
+            self.reclaimed.pop_front();
+        }
+        self.reclaimed.push_back((id, reason));
+    }
+    /// 살아 있는 항목이나 회수 기록이 있어 이 저장소가 그 PTY ID에 답할 수 있는지.
+    /// 요청 라우팅이 이 판정으로 소유 engine을 골라야 회수 이유가 핸들러 응답까지 간다.
+    pub(crate) fn answers_for_standalone(&self, id: u32) -> bool {
+        self.is_standalone(id) || self.reclaim_record(id).is_some()
+    }
+    pub(crate) fn reclaim_record(&self, id: u32) -> Option<PtyReclaimReason> {
+        self.reclaimed
+            .iter()
+            .rev()
+            .find(|(reclaimed, _)| *reclaimed == id)
+            .map(|(_, reason)| *reason)
     }
     #[cfg(test)]
-    pub(crate) fn set_idle_ttl(&mut self, ttl: Duration) {
-        self.idle_ttl = ttl;
+    pub(crate) fn set_exited_retention(&mut self, retention: Duration) {
+        self.exited_retention = retention;
     }
 }
 
@@ -86,6 +169,16 @@ mod tests {
 
     #[cfg(unix)]
     fn add(store: &mut TerminalStore, now: Instant, command: &str) -> u32 {
+        add_limited(store, now, command, None)
+    }
+
+    #[cfg(unix)]
+    fn add_limited(
+        store: &mut TerminalStore,
+        now: Instant,
+        command: &str,
+        idle_timeout: Option<Duration>,
+    ) -> u32 {
         let id = store.reserve_pty_id().unwrap();
         let (terminal, mut pty) = tasty_terminal::spawn_terminal(
             tasty_terminal::TerminalConfig {
@@ -107,6 +200,8 @@ mod tests {
             command: vec![command.into()],
             created_at: now,
             last_activity: now,
+            idle_timeout,
+            exited_at: None,
         });
         store.insert(id, terminal, Some(pty));
         id
@@ -146,13 +241,13 @@ mod tests {
     fn adoption_transfer_and_rollback_keep_the_physical_owner() {
         let _home = crate::test_support::IsolatedHome::new();
         let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
-        store.set_idle_ttl(Duration::from_secs(10));
         let now = Instant::now();
-        let first = add(&mut store, now, "exec sleep 60");
-        let second = add(&mut store, now, "exec sleep 60");
+        let limit = Some(Duration::from_secs(10));
+        let first = add_limited(&mut store, now, "exec sleep 60", limit);
+        let second = add_limited(&mut store, now, "exec sleep 60", limit);
         store.touch_standalone(second, now + Duration::from_secs(9));
         assert_eq!(
-            store.expired_standalone_ids(now + Duration::from_secs(11)),
+            ids(store.due_standalone_reclaims(now + Duration::from_secs(11))),
             vec![first]
         );
         let generation = store.generation(first).unwrap();
@@ -183,8 +278,156 @@ mod tests {
         assert_eq!(store.generation(5), Some(generation));
         assert_eq!(store.pty(5).unwrap().process_id(), pid);
         assert_eq!(
-            store.expired_standalone_ids(now + Duration::from_secs(30)),
+            ids(store.due_standalone_reclaims(now + Duration::from_secs(30))),
             vec![second]
         );
+    }
+
+    #[cfg(unix)]
+    fn ids(due: Vec<(u32, PtyReclaimReason)>) -> Vec<u32> {
+        due.into_iter().map(|(id, _)| id).collect()
+    }
+
+    #[cfg(unix)]
+    fn wait_exit(store: &mut TerminalStore, id: u32) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while store.standalone(id).unwrap().state().exit().is_none() {
+            store.process_surface(id);
+            assert!(Instant::now() < deadline, "actual child exit not observed");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn running_entries_without_an_opt_in_limit_are_never_due() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
+        let now = Instant::now();
+        let quiet = add(&mut store, now, "exec sleep 60");
+        let chatty = add(&mut store, now, "while :; do echo tick; sleep 0.01; done");
+        for secs in [299, 300, 301, 390, 86_400] {
+            assert!(
+                store
+                    .due_standalone_reclaims(now + Duration::from_secs(secs))
+                    .is_empty(),
+                "running entry chosen for reclaim at {secs}s"
+            );
+        }
+        assert!(store.is_standalone(quiet) && store.is_standalone(chatty));
+        assert!(store.pty(quiet).unwrap().process_id().is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_opt_in_idle_timeout_is_due_exactly_at_its_boundary() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
+        let now = Instant::now();
+        let timeout = Duration::from_secs(300);
+        let limited = add_limited(&mut store, now, "exec sleep 60", Some(timeout));
+        let unlimited = add(&mut store, now, "exec sleep 60");
+        assert!(
+            store
+                .due_standalone_reclaims(now + Duration::from_secs(299))
+                .is_empty()
+        );
+        let expected = vec![(limited, PtyReclaimReason::IdleTimeout { timeout })];
+        assert_eq!(
+            store.due_standalone_reclaims(now + Duration::from_secs(300)),
+            expected
+        );
+        assert_eq!(
+            store.due_standalone_reclaims(now + Duration::from_secs(301)),
+            expected
+        );
+        store.touch_standalone(limited, now + Duration::from_secs(200));
+        assert!(
+            store
+                .due_standalone_reclaims(now + Duration::from_secs(499))
+                .is_empty(),
+            "API access must restart the opted-in idle timer"
+        );
+        assert!(store.is_standalone(unlimited));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exited_entries_keep_their_result_for_the_retention_period() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
+        let id = add_limited(
+            &mut store,
+            Instant::now(),
+            "exit 7",
+            Some(Duration::from_secs(1)),
+        );
+        wait_exit(&mut store, id);
+        let seen = Instant::now();
+        assert!(
+            store.due_standalone_reclaims(seen).is_empty(),
+            "an exited entry is never reclaimed by the idle timeout"
+        );
+        assert!(
+            store
+                .due_standalone_reclaims(seen + EXITED_RETENTION - Duration::from_secs(1))
+                .is_empty()
+        );
+        assert_eq!(
+            store.standalone(id).unwrap().state().exit().unwrap().code,
+            Some(7)
+        );
+        assert_eq!(
+            store.due_standalone_reclaims(seen + EXITED_RETENTION),
+            vec![(
+                id,
+                PtyReclaimReason::ExitedRetention {
+                    exit_code: Some(7),
+                    retention: EXITED_RETENTION,
+                }
+            )]
+        );
+        store.touch_standalone(id, seen + Duration::from_secs(100));
+        assert!(
+            store
+                .due_standalone_reclaims(seen + EXITED_RETENTION)
+                .is_empty(),
+            "API access after exit extends the retention"
+        );
+    }
+
+    #[test]
+    fn reclaim_records_are_bounded_and_keep_the_newest() {
+        let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
+        let reason = PtyReclaimReason::IdleTimeout {
+            timeout: Duration::from_secs(5),
+        };
+        let total = RECLAIM_RECORD_LIMIT as u32 + 10;
+        for n in 0..total {
+            store.record_reclaim(PTY_ID_BASE + n, reason);
+        }
+        assert_eq!(store.reclaimed.len(), RECLAIM_RECORD_LIMIT);
+        assert_eq!(store.reclaim_record(PTY_ID_BASE), None);
+        assert_eq!(store.reclaim_record(PTY_ID_BASE + 9), None);
+        assert_eq!(store.reclaim_record(PTY_ID_BASE + 10), Some(reason));
+        assert_eq!(store.reclaim_record(PTY_ID_BASE + total - 1), Some(reason));
+    }
+
+    #[test]
+    fn reclaim_reasons_are_distinct_from_an_unknown_id() {
+        let idle = PtyReclaimReason::IdleTimeout {
+            timeout: Duration::from_secs(60),
+        }
+        .describe(7);
+        let exited = PtyReclaimReason::ExitedRetention {
+            exit_code: Some(7),
+            retention: EXITED_RETENTION,
+        }
+        .describe(7);
+        for text in [&idle, &exited] {
+            assert!(!text.contains("not found"), "{text}");
+        }
+        assert!(idle.contains("idle timeout of 60s") && idle.contains("terminated"));
+        assert!(exited.contains("exit code 7") && exited.contains("300s"));
     }
 }

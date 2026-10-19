@@ -67,18 +67,18 @@ slack이 지난 뒤에야 후보로 추가되거나 Strict로 바뀌는 것은 �
 
 ### Lax 사용 사례 — TTL 정리를 lazy 에서 건져내기
 
-TTL 기반 정리 세 가지는 `Lax`를 사용한다. 요청이 올 때만 정리하면 요청이 끊긴 뒤
+기한 기반 정리 세 가지는 `Lax`를 사용한다. 요청이 올 때만 정리하면 요청이 끊긴 뒤
 만료된 상태가 계속 남을 수 있어 주기 실행을 함께 둔다.
 
 | 키 | 대상 | 주기 / slack | lazy 경로가 멈추는 조건 |
 |---|---|---|---|
-| `PtySweep` | headless PTY 좀비(TTL 5분) | 30s / 60s | 에이전트가 `pty.spawn`/`pty.list` 를 다시 부르지 않음 |
+| `PtySweep` | 보존 기간(5분)이 지난 끝난 headless PTY 항목과 호출자가 spawn 에서 고른 유휴 제한이 지난 실행 중 PTY(그 프로세스를 끝낸다). 유휴 제한이 없는 실행 중 PTY 는 대상이 아니다 | 30s / 60s | 에이전트가 `pty.spawn`/`pty.list` 를 다시 부르지 않음 |
 | `CaptureSweep` | 캡처 업로드 partial(TTL 5분) | 30s / 60s | 다음 청크가 안 옴(연결은 살아 있고 업로드만 중단) |
 | `LogPrune` | IPC 관측 로그 3종(집행 게이트 1시간) | 600s / 600s | 세 로그 모두 append 가 희소 + 재시작 없이 장수명 |
 
 이 정리는 수십 초 늦어도 되므로 다른 작업 때문에 깨어난 루프에서 함께 실행한다.
 계속 유휴 상태라면 slack 경계에서 깨운다. 타이머가 정상적으로 처리될 때의 회수 지연은
-`TTL + interval + slack` 이내다(PTY 기준 최대 6.5분).
+`기한 + interval + slack` 이내다(끝난 PTY 항목 기준 최대 6.5분).
 
 **주기 타이머가 lazy 를 대체하지 않는다.** `pty` 쪽 lazy 는 `pty.spawn`·`pty.list`
 접근 시점에 같은 회수를 적용해, 주기 타이머가 최대 90초 뒤에 돌기 전에도 기한이 지난
@@ -86,9 +86,9 @@ TTL 기반 정리 세 가지는 `Lax`를 사용한다. 요청이 올 때만 정�
 상한 판정을 위한 것이 아니다. 두 경로는 보완 관계다([터미널 프로세스 수명](../surfaces/terminal/index.md)).
 
 두 경로가 공존하면 **후처리가 갈라지는 것**이 다음 위험이다. headless PTY 회수는
-registry 제거 + `TerminalStore` 제거 + waker 게이트 해제 셋을 한 묶음으로 해야 하는데
-(어느 하나만 하면 좀비나 누수), 경로마다 따로 쓰면 언젠가 어긋난다. 그래서 후처리를
-`EngineMut::sweep_idle_ptys` 한 곳으로 묶고 두 경로가 그것만 부르게 했다. 로그 prune
+`TerminalStore` 제거 + waker 게이트 해제 + 회수 기록 + 알림을 한 묶음으로 해야 하는데
+(하나라도 빠지면 누수나 결과 전달 누락), 경로마다 따로 쓰면 언젠가 어긋난다. 그래서 후처리를
+`EngineMut::reclaim_standalone_ptys` 한 곳으로 묶고 lazy·GUI 주기·headless 주기 경로가 그것만 부르게 했다. 로그 prune
 도 같은 이유로 진입점(`log_retention::maybe_prune`)과 게이트(`LAST_PRUNE_MS`)를
 공유한다 — 새 게이트를 만들면 두 드라이버가 각자 주기를 세게 된다.
 

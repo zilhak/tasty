@@ -69,6 +69,10 @@ pub struct StandalonePty {
     pub command: Vec<String>,
     pub created_at: Instant,
     pub last_activity: Instant,
+    /// Caller-chosen limit; without it Tasty never ends the running process for idleness.
+    pub idle_timeout: Option<Duration>,
+    /// When the host first saw the exit; starts the exited-entry retention.
+    pub exited_at: Option<Instant>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -418,6 +422,9 @@ impl Pty {
     /// Returns the standalone metadata so a failed adoption can return the owner unchanged.
     pub fn adopt(&mut self) -> Option<StandalonePty> {
         self.state.standalone.take()
+    }
+    pub fn standalone_mut(&mut self) -> Option<&mut StandalonePty> {
+        self.state.standalone.as_mut()
     }
     pub fn touch(&mut self, now: Instant) {
         if let Some(metadata) = &mut self.state.standalone {

@@ -16,6 +16,9 @@ pub enum PtyCommands {
         /// Working directory for the PTY.
         #[arg(long)]
         cwd: Option<String>,
+        /// End the process if no `pty read`, `write`, or `state` call arrives for this many seconds. Without it a running PTY is never ended for idleness.
+        #[arg(long = "idle-timeout", value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..))]
+        idle_timeout: Option<u64>,
         /// Command tokens to run on spawn (e.g. `pty spawn -- echo hi`).
         #[arg(trailing_var_arg = true)]
         command: Vec<String>,
