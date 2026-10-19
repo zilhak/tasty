@@ -339,6 +339,23 @@ fn current_conflicts(kb: &KeybindingSettings, kind: QuickSwitchKind) -> Vec<Stri
     out
 }
 
+/// 저장 값이나 합성 조합이 더블탭 표기인 전환 슬롯·다음·이전(`라벨 값`). 이 칸은 더블탭을
+/// 실행하지 않으므로 설정 파일·가져오기로 들어온 값을 경고로 알린다.
+pub(super) fn unusable_double_taps(kb: &KeybindingSettings) -> Vec<String> {
+    QuickSwitchKind::ALL
+        .into_iter()
+        .flat_map(all_targets)
+        .filter_map(|tg| {
+            let raw = bare_key_value(kb, tg);
+            let combo = bare_combo(kb, tg);
+            let shown = [&raw, &combo]
+                .into_iter()
+                .find(|v| KeybindingSettings::is_double_tap_spelling(v))?;
+            Some(format!("{} {shown}", bare_display_label(tg)))
+        })
+        .collect()
+}
+
 /// 공통 모드에서 개별 지정으로 바꾸면 현재 조합을 저장한다.
 /// 반대로 바꾸면 해당 종류의 슬롯을 기본값으로 복원한다.
 /// 공통 수식키끼리 변경할 때는 슬롯의 단일 키를 유지한다.
@@ -509,6 +526,31 @@ mod tests {
     use super::*;
 
     const INDIVIDUAL: &str = KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER;
+
+    #[test]
+    fn stored_double_taps_in_switch_slots_and_steps_are_listed() {
+        let mut kb = KeybindingSettings::preset_tasty();
+        assert!(unusable_double_taps(&kb).is_empty());
+        kb.set_tab_slot_key(0, "shift+shift");
+        kb.set_workspace_next_key("ctrl+ctrl");
+        kb.category_switch_modifier = INDIVIDUAL.to_string();
+        kb.set_category_prev_key("alt+alt");
+        let listed = unusable_double_taps(&kb);
+        assert_eq!(listed.len(), 3, "{listed:?}");
+        assert!(listed[0].ends_with(" shift+shift"), "{listed:?}");
+        assert!(listed[1].ends_with(" ctrl+ctrl"), "{listed:?}");
+        assert!(listed[2].ends_with(" alt+alt"), "{listed:?}");
+    }
+
+    #[test]
+    fn a_modifier_and_key_that_compose_a_double_tap_are_listed() {
+        let mut kb = KeybindingSettings::preset_tasty();
+        kb.tab_switch_modifier = "shift".to_string();
+        kb.set_tab_prev_key("shift");
+        let listed = unusable_double_taps(&kb);
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        assert!(listed[0].ends_with(" shift+shift"), "{listed:?}");
+    }
 
     #[test]
     fn bare_combo_rule_based_composes_modifier() {

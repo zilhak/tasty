@@ -100,7 +100,8 @@ pub(super) fn draw_notices(
     }
 }
 
-/// 실행되지 않는 칸에 저장된 더블탭의 표시 이름(`라벨 값`).
+/// 실행되지 않는 칸에 저장된 더블탭의 표시 이름(`라벨 값`). 일반·범위 한정 칸, 스크립트,
+/// 번호 전환 슬롯·다음·이전을 본다. plugin 명령은 행 자체가 읽을 수 없는 키로 표시한다.
 fn unusable_labels(settings: &Settings) -> Vec<String> {
     let kb = &settings.keybindings;
     let label_of = |field: &str| {
@@ -126,7 +127,10 @@ fn unusable_labels(settings: &Settings) -> Vec<String> {
                 .unwrap_or_else(|| b.script_id.clone());
             format!("{name} {}", b.combo)
         });
-    fields.chain(scripts).collect()
+    fields
+        .chain(scripts)
+        .chain(super::quick_switch::unusable_double_taps(kb))
+        .collect()
 }
 
 #[cfg(test)]
@@ -208,9 +212,11 @@ mod tests {
                 script_id: "s1".into(),
                 combo: "alt+alt".into(),
             });
+        settings.keybindings.set_tab_slot_key(1, "shift+shift");
         let labels = unusable_labels(&settings);
-        assert_eq!(labels.len(), 2, "{labels:?}");
+        assert_eq!(labels.len(), 3, "{labels:?}");
         assert!(labels[0].ends_with(" shift+shift"), "{labels:?}");
         assert_eq!(labels[1], "s1 alt+alt");
+        assert!(labels[2].ends_with(" shift+shift"), "{labels:?}");
     }
 }
