@@ -20,7 +20,7 @@ use winit::raw_window_handle::{
 
 use super::keys::WebViewKeySink;
 use super::load_generation::SignalOrderLoads;
-use super::script_gate::ScriptGate;
+use super::script_gate::{DeferredScan, Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
 
 /// input shape 를 정한 X 창 크기와 구멍(이 창 기준 물리 px `[x, y, 너비, 높이]`).
@@ -375,7 +375,15 @@ impl PlatformWebView {
                         .is_some_and(|d| d.is_main_frame_main_resource())
                     && let Some(uri) = &uri
                 {
-                    set_js(wv, gate.main_response(uri.as_str()));
+                    match gate.main_response_deferrable(uri.as_str()) {
+                        Response::Decided(js) => set_js(wv, js),
+                        Response::Deferred(scan) => {
+                            // 스캔이 JS 값을 정하는 응답(허용한 문서의 재로드)은 결정을 보류하고
+                            // 작업 스레드에서 읽는다. GTK 루프는 그동안 다른 이벤트를 처리한다.
+                            defer_response(wv.clone(), decision.clone(), scan, surface_id);
+                            return true;
+                        }
+                    }
                 }
                 if let Some(uri) = &uri
                     && !matches!(decision_type, PolicyDecisionType::Response)
@@ -1014,6 +1022,30 @@ impl Drop for PlatformWebView {
 
 /// GTK의 대기 이벤트를 처리한다. 창을 먼저 지운 뒤 지연된 unmap 요청이 나가는 일을 줄인다.
 /// 전역 GTK 큐를 처리하므로 이 WebView의 콜백만 실행한다고 볼 수는 없다.
+/// 보류한 응답 결정을 스캔이 끝난 뒤 GTK 스레드에서 끝낸다. 결과가 낡았으면(그 사이 새 로드) 거절한다.
+fn defer_response(
+    wv: WebView,
+    decision: webkit2gtk::PolicyDecision,
+    scan: DeferredScan,
+    surface_id: u32,
+) {
+    gtk::glib::MainContext::default().spawn_local(async move {
+        match gtk::gio::spawn_blocking(move || scan.run()).await {
+            Ok(Some(js)) => {
+                set_js(&wv, js);
+                decision.use_();
+            }
+            Ok(None) => decision.ignore(),
+            Err(_) => {
+                tracing::warn!(
+                    "WebView surface {surface_id}: html script scan panicked; the response is refused"
+                );
+                decision.ignore();
+            }
+        }
+    });
+}
+
 fn pump_gtk() {
     while gtk::events_pending() {
         gtk::main_iteration_do(false);

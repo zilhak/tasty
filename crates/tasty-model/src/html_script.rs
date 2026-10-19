@@ -70,12 +70,33 @@ pub struct Allowance {
     pub fingerprint: Fingerprint,
 }
 
+/// 응답 단계에서 시작한 원본 스캔의 식별자. 늦게 끝난 스캔이 다른 로드에 붙지 않도록 로드마다 새로 받는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScanTicket(u64);
+
+/// 응답 단계의 스캔 결과. 스캔이 끝나지 않았으면 그 표를 들고 있다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScanSlot {
+    Done(Option<ScriptScan>),
+    Waiting(ScanTicket),
+}
+
 /// 응답 단계의 결과. 로드 시작 때 비우고 commit에서 소비한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PendingResponse {
     url: String,
-    scan: Option<ScriptScan>,
+    scan: ScanSlot,
     matched: bool,
+}
+
+/// 스캔이 끝나기 전에 commit된 문서. 같은 URL의 재로드면 이전 문서의 배너 표지를 잠정 유지하고,
+/// 스캔 결과가 이전 문서와 다르면 그때 새 문서의 표지로 바꾼다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ScanWait {
+    ticket: ScanTicket,
+    previous: Option<DocumentRecord>,
+    /// 새 문서로 판정될 때 쓸 열람 표지(commit 시점에 계산).
+    viewed_if_new: bool,
 }
 
 /// 배너 표시에 필요한 문서 단위 표지. 판정 규칙은 [`banner`] 모듈에 있다.
@@ -125,6 +146,9 @@ pub struct HtmlScriptState {
     current: Option<DocumentRecord>,
     allowance: Option<Allowance>,
     pending: Option<PendingResponse>,
+    /// 현재 문서의 스캔이 아직 끝나지 않았다.
+    current_wait: Option<ScanWait>,
+    next_ticket: u64,
     /// 마지막 로드 시작 뒤 끝나지 않았다.
     load_in_flight: bool,
     /// 마지막 로드 시작 뒤 main frame commit이 있었다.
@@ -160,6 +184,8 @@ impl HtmlScriptState {
             current: None,
             allowance: None,
             pending: None,
+            current_wait: None,
+            next_ticket: 0,
             load_in_flight: false,
             committed_since_start: false,
             reload_requested: false,
@@ -194,6 +220,42 @@ impl HtmlScriptState {
     /// 현재 문서의 감지 결과. 문서나 지문이 없으면 `None`.
     pub fn current_detection(&self) -> Option<ScriptDetection> {
         self.current.as_ref()?.scan.map(|s| s.detection)
+    }
+
+    /// 배너·탭 표지에 쓰는 감지 결과. 같은 URL의 재로드 스캔이 끝나기 전에는 이전 문서의 결과를 쓴다.
+    pub(crate) fn display_detection(&self) -> Option<ScriptDetection> {
+        match &self.current_wait {
+            Some(wait) => wait
+                .previous
+                .as_ref()
+                .filter(|prev| self.current.as_ref().is_some_and(|cur| cur.url == prev.url))
+                .and_then(|prev| prev.scan.map(|s| s.detection)),
+            None => self.current_detection(),
+        }
+    }
+
+    /// 현재 문서의 스캔이 끝나지 않았다. 이 동안 허용을 받지 않는다.
+    pub fn scan_pending(&self) -> bool {
+        self.current_wait.is_some()
+            || self
+                .pending
+                .as_ref()
+                .is_some_and(|p| matches!(p.scan, ScanSlot::Waiting(_)))
+    }
+
+    /// 로드나 스캔이 끝나지 않아 허용 판정을 아직 할 수 없다.
+    pub fn awaiting_verdict(&self) -> bool {
+        self.loading_before_commit() || self.current_wait.is_some()
+    }
+
+    /// 이 URL의 응답에서 JS를 켤지 정하려면 스캔 결과가 먼저 있어야 하는지.
+    /// sandbox가 켜져 있고 같은 URL에 허용 기록이 있을 때만 그렇다. 그 밖에는 결과와 관계없이 JS 값이 같다.
+    pub fn needs_scan_before_js(&self, url: &str) -> bool {
+        self.sandbox
+            && self
+                .allowance
+                .as_ref()
+                .is_some_and(|a| a.url == strip_fragment(url))
     }
 
     /// 현재 문서가 허용 기록과 같은 문서인지.
@@ -242,14 +304,63 @@ impl HtmlScriptState {
     /// main frame main resource의 응답 결정. `scan`은 `file://` 문서에서만 있다.
     pub fn on_main_response(&mut self, url: &str, scan: Option<ScriptScan>) -> bool {
         let url = strip_fragment(url).to_string();
-        let matched = match (&self.allowance, scan) {
+        let matched = self.matches_allowance(&url, scan);
+        self.record_response(url, ScanSlot::Done(scan), matched)
+    }
+
+    /// 스캔을 다른 스레드에서 하는 응답 결정. 결과는 돌려준 표로 [`Self::on_scan_finished`]에 넘긴다.
+    /// 결과가 오기 전에는 허용과 맞지 않는 문서로 다룬다.
+    pub fn on_main_response_pending(&mut self, url: &str) -> (bool, ScanTicket) {
+        self.next_ticket += 1;
+        let ticket = ScanTicket(self.next_ticket);
+        let url = strip_fragment(url).to_string();
+        let js = self.record_response(url, ScanSlot::Waiting(ticket), false);
+        (js, ticket)
+    }
+
+    fn matches_allowance(&self, url: &str, scan: Option<ScriptScan>) -> bool {
+        match (&self.allowance, scan) {
             (Some(allow), Some(scan)) => allow.url == url && allow.fingerprint == scan.fingerprint,
             _ => false,
-        };
+        }
+    }
+
+    fn record_response(&mut self, url: String, scan: ScanSlot, matched: bool) -> bool {
         self.pending = Some(PendingResponse { url, scan, matched });
         // 응답 단계가 로드 시작 신호보다 먼저 올 수 없지만, 신호를 놓쳐도 이 로드의 판단을 따른다.
         self.load_in_flight = true;
         self.effective_js()
+    }
+
+    /// 다른 스레드의 스캔이 끝났다. 표가 아직 commit 전 응답이나 현재 문서에 속하면 결과를 붙이고
+    /// 적용할 JS 값을 준다. 새 로드·실패·다른 commit으로 표가 낡았으면 버리고 `None`을 준다.
+    pub fn on_scan_finished(
+        &mut self,
+        ticket: ScanTicket,
+        scan: Option<ScriptScan>,
+    ) -> Option<bool> {
+        if let Some(pending) = &self.pending
+            && pending.scan == ScanSlot::Waiting(ticket)
+        {
+            let matched = self.matches_allowance(&pending.url, scan);
+            let pending = self.pending.as_mut().expect("checked above");
+            pending.scan = ScanSlot::Done(scan);
+            pending.matched = matched;
+            return Some(self.effective_js());
+        }
+        let wait = self.current_wait.take_if(|w| w.ticket == ticket)?;
+        let current = self
+            .current
+            .as_mut()
+            .expect("a scan wait belongs to a committed document");
+        current.scan = scan;
+        if wait.previous.as_ref() != Some(&*current) {
+            self.banner = BannerFlags {
+                viewed: wait.viewed_if_new,
+                ..BannerFlags::default()
+            };
+        }
+        Some(self.effective_js())
     }
 
     /// main frame 문서가 commit됐다. 응답 단계 결과를 소비해 현재 문서로 기록한다.
@@ -261,26 +372,42 @@ impl HtmlScriptState {
         if !matched {
             self.allowance = None;
         }
-        let record = match pending {
-            Some(p) => Some(DocumentRecord {
-                url: p.url,
-                scan: p.scan,
-            }),
-            None => committed_url.map(|u| DocumentRecord {
-                url: strip_fragment(u).to_string(),
-                scan: None,
-            }),
+        let (record, waiting) = match pending {
+            Some(p) => {
+                let (scan, waiting) = match p.scan {
+                    ScanSlot::Done(scan) => (scan, None),
+                    ScanSlot::Waiting(ticket) => (None, Some(ticket)),
+                };
+                (Some(DocumentRecord { url: p.url, scan }), waiting)
+            }
+            None => (
+                committed_url.map(|u| DocumentRecord {
+                    url: strip_fragment(u).to_string(),
+                    scan: None,
+                }),
+                None,
+            ),
         };
-        let same_document = matches!(
+        let viewed_if_new =
+            self.viewed_before_commit || (self.banner.viewed && !self.host_requested_load);
+        let same_url = matches!(
             (&self.current, &record),
-            (Some(a), Some(b)) if a == b
+            (Some(a), Some(b)) if a.url == b.url
         );
-        self.current = record;
+        let same_document = match waiting {
+            // 스캔이 끝나야 같은 문서인지 알 수 있다. 같은 URL이면 표지를 잠정 유지한다.
+            Some(_) => same_url,
+            None => matches!((&self.current, &record), (Some(a), Some(b)) if a == b),
+        };
+        let previous = std::mem::replace(&mut self.current, record);
+        self.current_wait = waiting.map(|ticket| ScanWait {
+            ticket,
+            previous: previous.filter(|_| same_url),
+            viewed_if_new,
+        });
         if !same_document {
-            let viewed =
-                self.viewed_before_commit || (self.banner.viewed && !self.host_requested_load);
             self.banner = BannerFlags {
-                viewed,
+                viewed: viewed_if_new,
                 ..BannerFlags::default()
             };
         }
@@ -313,8 +440,9 @@ impl HtmlScriptState {
     /// 현재 문서를 허용으로 기록하고 재로드를 요청한다. 파일을 다시 읽지 않는다.
     ///
     /// 로드 중(commit 전)에는 거절한다. 그때 기록하면 곧 commit될 새 문서의 판정이 허용을 풀기 때문이다.
+    /// 현재 문서의 스캔이 끝나기 전에도 거절한다. 허용을 묶을 지문이 아직 없다.
     pub fn allow_current(&mut self) -> Result<(), AllowError> {
-        if self.loading_before_commit() {
+        if self.awaiting_verdict() {
             return Err(AllowError::Loading);
         }
         let doc = self.current.as_ref().ok_or(AllowError::NoDocument)?;

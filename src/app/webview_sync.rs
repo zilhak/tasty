@@ -282,8 +282,19 @@ fn attach_script_gate(
     else {
         return;
     };
+    // 작업 스레드의 스캔이 끝나면 이 윈도우를 다시 그려 배너를 갱신하고 미룬 결정을 진행한다.
+    let proxy = view.proxy.clone();
+    let window_id = view.base.winit.id();
     let gate =
-        crate::webview::script_gate::ScriptGate::new(sid, std::sync::Arc::clone(&rs.html_script));
+        crate::webview::script_gate::ScriptGate::new(sid, std::sync::Arc::clone(&rs.html_script))
+            .with_notify(std::sync::Arc::new(move || {
+                if proxy
+                    .send_event(crate::AppEvent::EguiRepaint { window_id })
+                    .is_err()
+                {
+                    tracing::debug!("html script scan finished after the event loop closed");
+                }
+            }));
     gate.set_sandbox(!settings.javascript_enabled);
     wv.attach_script_gate(gate);
 }

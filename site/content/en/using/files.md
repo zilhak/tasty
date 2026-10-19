@@ -1,4 +1,4 @@
-<!-- source-hash: f6b3685381bf -->
+<!-- source-hash: 504f41e03efa -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -244,7 +244,7 @@ Shows a local HTML file or a URL in the OS web view. Right-click an empty area o
 With **Sandbox scripts** on, viewing a document that contains scripts shows a **Scripts in this document are blocked** notice above the page. The notice does not cover the page; it pushes the page down by its height. Its text is never cut off: when a narrow view wraps it onto more lines, the notice grows and the page moves down with it. When the HTML view is narrow, the button moves to the line below the description.
 
 - **Allow for this document** — turns scripts on for this document only and reloads it once. Navigating to another document or restarting Tasty blocks them again. The tab of an allowed document gets a script file icon.
-- While the view is loading a new document, **Allow for this document** can't be pressed. Hovering it shows **Available when the document finishes loading**. When a document you opened yourself (a link, going back, or reloading) has scripts, the button comes back; when it has none, the notice goes away. A document an agent opened shows the notice when you look at that tab again.
+- While the view is loading a new document, **Allow for this document** can't be pressed. Hovering it shows **Available when the document finishes loading**. When a document you opened yourself (a link, going back, or reloading) has scripts, the button comes back; when it has none, the notice goes away. A document an agent opened shows the notice when you look at that tab again. For a very large file, the button can stay off for a moment after the page appears while Tasty checks the whole file. The check does not pause other terminals or the screen.
 - **×** at the top right of the notice — closes the notice without allowing. A lock icon stays after the tab title; press the lock to show the notice again. Pressing the lock does not switch tabs.
 - A document opened by an agent, or reopened by session restore, shows the notice when a person looks at that tab. An agent can also query the state and then allow that document's scripts with `tasty surface html-script-allow`. It is refused when the document changed after the query or is still loading. Allowing keeps the tab you were looking at and the focus as they are.
 - While **Failed to load** is shown because the document could not be loaded, the notice and the tab's lock or script icon are removed. When a reloaded document opens, they are decided again for that document.

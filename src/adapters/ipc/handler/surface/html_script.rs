@@ -107,6 +107,7 @@ fn state_json(st: &HtmlScriptState) -> Value {
         "allowed": st.current_is_allowed(),
         "javascript": st.effective_js(),
         "loading": st.loading_before_commit(),
+        "scanning": st.scan_pending(),
         "banner": {
             "phase": st.banner_phase().as_str(),
             "viewed": flags.viewed,

@@ -109,6 +109,7 @@ fn reports_detection_and_a_pending_banner_without_changing_it() {
     assert_eq!(r["allowed"], false);
     assert_eq!(r["javascript"], false);
     assert_eq!(r["loading"], false);
+    assert_eq!(r["scanning"], false);
     assert!(r["allowance"].is_null());
     assert_eq!(r["banner"]["phase"], "hidden");
     assert_eq!(r["banner"]["pending_view"], true);
@@ -149,6 +150,39 @@ fn reports_a_load_before_its_commit_and_the_loading_banner() {
     });
     let r = html_script_of(&engine, sid).result.expect("result");
     assert_eq!(r["loading"], false);
+    assert_eq!(r["banner"]["phase"], "blocked");
+}
+
+#[test]
+fn reports_a_committed_document_whose_scan_has_not_ended() {
+    let (_state, mut engine_session, sid) = state_with_html_tab();
+    let engine = engine_session.borrow_mut();
+    let rs = html_surface(&engine, sid);
+    let ticket = rs.with_html_script(|st| {
+        st.on_user_view();
+        st.on_load_started();
+        let (_, ticket) = st.on_main_response_pending("file:///docs/a.html");
+        st.on_committed(Some("file:///docs/a.html"));
+        st.on_load_finished();
+        ticket
+    });
+    let r = html_script_of(&engine, sid).result.expect("result");
+    assert_eq!(r["loading"], false);
+    assert_eq!(r["scanning"], true);
+    assert!(r["document"]["fingerprint"].is_null());
+    rs.with_html_script(|st| {
+        st.on_scan_finished(
+            ticket,
+            Some(ScriptScan {
+                fingerprint: Fingerprint([7; 32]),
+                detection: ScriptDetection::Scripts,
+            }),
+        );
+        st.update_banner();
+    });
+    let r = html_script_of(&engine, sid).result.expect("result");
+    assert_eq!(r["scanning"], false);
+    assert_eq!(r["document"]["detection"], "scripts");
     assert_eq!(r["banner"]["phase"], "blocked");
 }
 

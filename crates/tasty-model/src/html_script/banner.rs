@@ -20,7 +20,7 @@ pub enum BannerPhase {
     Hidden,
     /// 스크립트가 차단된 기본 상태.
     Blocked,
-    /// 차단된 채 새 문서를 로드하는 중이다(commit 전). 허용 버튼을 비활성으로 그린다.
+    /// 차단된 채 새 문서를 로드하는 중이거나(commit 전) 그 문서의 스캔이 끝나지 않았다. 허용 버튼을 비활성으로 그린다.
     Loading,
     /// 허용한 뒤 재로드가 commit되기 전.
     Reloading,
@@ -55,7 +55,7 @@ impl HtmlScriptState {
         if self.current_is_allowed() {
             return Some(ScriptMarker::Allowed);
         }
-        let has_scripts = self.current_detection().is_some_and(|d| d.has_scripts());
+        let has_scripts = self.display_detection().is_some_and(|d| d.has_scripts());
         (has_scripts && self.banner.dismissed).then_some(ScriptMarker::Blocked)
     }
 
@@ -106,7 +106,7 @@ impl HtmlScriptState {
     /// 전역 sandbox와 관계없이 이 문서에 배너가 필요한지. 닫힘도 반영한다.
     fn wants_banner(&self) -> bool {
         self.sandbox
-            && self.current_detection().is_some_and(|d| d.has_scripts())
+            && self.display_detection().is_some_and(|d| d.has_scripts())
             && !self.current_is_allowed()
             && !self.banner.dismissed
     }
@@ -136,7 +136,7 @@ impl HtmlScriptState {
             return BannerPhase::Reloading;
         }
         if self.banner.shown && self.wants_banner() {
-            if self.loading_before_commit() {
+            if self.awaiting_verdict() {
                 BannerPhase::Loading
             } else {
                 BannerPhase::Blocked
