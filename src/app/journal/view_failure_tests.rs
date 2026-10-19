@@ -367,3 +367,45 @@ fn a_view_manifest_without_its_snapshot_row_falls_back_to_the_default_selection(
         current_view(home)
     });
 }
+
+fn preserved_snapshots(home: &std::path::Path) -> Vec<Vec<u8>> {
+    let directory = crate::runtime::journal_product::view_record::damaged_directory(home);
+    let mut files: Vec<_> = std::fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "snapshot"))
+        .map(|path| std::fs::read(path).unwrap())
+        .collect();
+    files.sort();
+    files
+}
+
+#[test]
+fn different_damaged_snapshots_under_the_same_view_are_each_preserved() {
+    let (mut session, home, _) = saved_selection();
+    let damage = |bytes: &[u8]| {
+        database(&home)
+            .execute(
+                "UPDATE payloads SET bytes = ?1 WHERE payload_id =
+                 (SELECT s.payload_id FROM snapshots s JOIN restore_manifests m
+                  ON m.snapshot_id = s.snapshot_id WHERE m.restore_key = 'view:slot-1')",
+                [bytes],
+            )
+            .unwrap();
+    };
+    damage(b"first damaged snapshot");
+    let mut journal = open(&mut session);
+    assert_eq!(journal.take_notices().len(), 1);
+    drop(journal);
+    damage(b"second damaged snapshot");
+    journal = open(&mut session);
+    assert_eq!(journal.take_notices().len(), 1);
+    drop(journal);
+    assert_eq!(
+        preserved_snapshots(&home),
+        vec![
+            b"first damaged snapshot".to_vec(),
+            b"second damaged snapshot".to_vec()
+        ]
+    );
+}

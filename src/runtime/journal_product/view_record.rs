@@ -87,26 +87,24 @@ impl Unreadable {
     }
 
     /// 보존 위치를 돌려준다. 같은 바이트는 한 번만 쓰며, 이미 있는 보존 사본은 바꾸지 않는다.
+    /// manifest의 View·snapshot 사본은 한 쌍으로 같은 이름을 쓰며, 이름은 두 본문 모두로 정한다.
     fn preserve(&self, home: &Path, binding: &EngineBinding) -> Result<String, String> {
         let name = format!(
             "view-{}-incarnation-{}",
             binding.stream.replace(':', "-"),
             binding.incarnation
         );
-        let files: Vec<(String, &[u8])> = match &self.source {
+        let files: Vec<(&str, &[u8])> = match &self.source {
             UnreadableSource::Legacy { path, bytes: None } => {
                 return Ok(path.display().to_string());
             }
             UnreadableSource::Legacy {
                 bytes: Some(bytes), ..
-            } => vec![(format!("{name}-{}.legacy.json", digest(bytes)), bytes)],
+            } => vec![(".legacy.json", bytes.as_slice())],
             UnreadableSource::Manifest { view, snapshot } => {
-                let id = digest(view.as_deref().unwrap_or_default());
                 [(".view", view), (".snapshot", snapshot)]
                     .into_iter()
-                    .filter_map(|(extension, bytes)| {
-                        Some((format!("{name}-{id}{extension}"), bytes.as_deref()?))
-                    })
+                    .filter_map(|(extension, bytes)| Some((extension, bytes.as_deref()?)))
                     .collect()
             }
         };
@@ -116,6 +114,24 @@ impl Unreadable {
         }
         let directory = damaged_directory(home);
         std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+        let id = digest(&files);
+        // 이름이 같아도 내용이 다른 사본이 이미 있으면 다음 번호를 쓴다. 같은 내용이면 다시 쓰지 않는다.
+        let stem = (1u64..)
+            .map(|n| match n {
+                1 => format!("{name}-{id}"),
+                n => format!("{name}-{id}-{n}"),
+            })
+            .find(|stem| {
+                files.iter().all(|(extension, bytes)| {
+                    std::fs::read(directory.join(format!("{stem}{extension}")))
+                        .map_or(true, |existing| existing == *bytes)
+                })
+            })
+            .ok_or("no free name for the preserved View copy")?;
+        let files: Vec<(String, &[u8])> = files
+            .into_iter()
+            .map(|(extension, bytes)| (format!("{stem}{extension}"), bytes))
+            .collect();
         for (file, bytes) in &files {
             let path = directory.join(file);
             if path.exists() {
@@ -141,9 +157,17 @@ pub(crate) fn damaged_directory(home: &Path) -> PathBuf {
     home.join("structure/damaged")
 }
 
-fn digest(bytes: &[u8]) -> String {
+/// 보존할 본문들을 함께 구분하는 짧은 이름. 각 본문의 길이를 앞에 붙여 경계를 나눈다.
+fn digest(files: &[(&str, &[u8])]) -> String {
     use sha2::Digest;
-    sha2::Sha256::digest(bytes)
+    let mut hasher = sha2::Sha256::new();
+    for (extension, bytes) in files {
+        hasher.update(extension.as_bytes());
+        hasher.update((bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+    }
+    hasher
+        .finalize()
         .iter()
         .take(6)
         .map(|byte| format!("{byte:02x}"))
