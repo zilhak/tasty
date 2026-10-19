@@ -328,3 +328,145 @@ fn view_write_failures_reach_the_engine_as_one_warning() {
         notices[0].body
     );
 }
+
+/// Move this poll's notices into a notification store the way the App does: notices of one
+/// engine and level are merged, then each one is added to the engine's first workspace. The store
+/// does not coalesce, so every delivered notice stays a separate item.
+fn deliver(
+    journal: &mut JournalApplication,
+    session: &EngineSession,
+    store: &mut crate::notification::NotificationStore,
+) {
+    let workspace = session.core_state.local_workspaces()[0].id;
+    for notice in super::notices::merge_same_level(journal.take_notices()) {
+        store.add_with_level(workspace, 0, notice.title, notice.body, notice.level);
+    }
+}
+
+#[test]
+fn save_warnings_reach_the_notification_store_once_per_cause() {
+    let (mut journal, mut session, _) = bootstrapped();
+    let mut store = crate::notification::NotificationStore::with_coalesce_ms(0);
+    let threshold = super::save_failures::REPEATED_FAILURES as u64;
+    let mut ticket = u64::MAX;
+    let mut fail = |journal: &mut JournalApplication, session: &mut EngineSession| {
+        ticket -= 1;
+        answer(journal, session, ticket, Err("disk full".into()));
+    };
+
+    for _ in 1..threshold {
+        fail(&mut journal, &mut session);
+        deliver(&mut journal, &session, &mut store);
+    }
+    assert_eq!(
+        store.all().len(),
+        0,
+        "failures below the threshold stay quiet"
+    );
+    fail(&mut journal, &mut session);
+    deliver(&mut journal, &session, &mut store);
+    assert_eq!(store.all().len(), 1, "the threshold leaves one item");
+    for _ in 0..threshold * 2 {
+        fail(&mut journal, &mut session);
+        deliver(&mut journal, &session, &mut store);
+    }
+    assert_eq!(store.all().len(), 1, "the same cause adds no item");
+
+    save(&mut journal, &mut session);
+    for _ in 0..threshold * 2 {
+        fail(&mut journal, &mut session);
+        save(&mut journal, &mut session);
+        deliver(&mut journal, &session, &mut store);
+    }
+    assert_eq!(
+        store.all().len(),
+        1,
+        "a failure the next save fixes adds no item"
+    );
+
+    // A capture run and a View run that reach the same poll are one item whose title names
+    // both saving and restoring, not only a restore failure.
+    for _ in 0..threshold {
+        fail(&mut journal, &mut session);
+    }
+    let binding = session.journal_binding.clone().unwrap();
+    for _ in 0..threshold {
+        let view = crate::runtime::journal_product::view_record::StoredView::capture(
+            binding.clone(),
+            &session.core_state,
+            None,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
+        journal.view_writes.queue(view).unwrap();
+        ticket -= 1;
+        journal.view_writes.accept_for_test(&binding.stream, ticket);
+        journal
+            .view_writes
+            .complete(ticket, &Err("disk I/O error".into()))
+            .unwrap();
+    }
+    journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+    deliver(&mut journal, &session, &mut store);
+    assert_eq!(store.all().len(), 2, "a new run after a save adds one item");
+    let merged = store.all().last().unwrap();
+    assert_eq!(merged.title, crate::i18n::t("recovery.multiple_title"));
+    assert_eq!(
+        merged
+            .body
+            .matches(crate::i18n::t("recovery.save_failing_title"))
+            .count(),
+        2,
+        "{}",
+        merged.body
+    );
+}
+
+#[test]
+fn an_oversized_rejection_reaches_the_notification_store_once_until_a_save() {
+    let (mut journal, mut session, sid) = bootstrapped();
+    let mut store = crate::notification::NotificationStore::with_coalesce_ms(0);
+    let inject = |session: &mut EngineSession| {
+        session
+            .runtime
+            .terminals
+            .get_mut(sid)
+            .unwrap()
+            .inject_scrollback(oversized_history());
+    };
+    inject(&mut session);
+    submit(&mut journal, &mut session);
+    deliver(&mut journal, &session, &mut store);
+    assert_eq!(store.all().len(), 1);
+    assert_eq!(
+        store.all().next().unwrap().title,
+        crate::i18n::t("recovery.save_oversized_title")
+    );
+    for _ in 0..3 {
+        session.persistence.dirty.mark_dirty();
+        assert_eq!(limit_warnings(&submit(&mut journal, &mut session)), 1);
+        deliver(&mut journal, &session, &mut store);
+    }
+    assert_eq!(
+        store.all().len(),
+        1,
+        "a rejection of the same cause adds no item"
+    );
+
+    // ED3 drops the history, the capture succeeds, and a later rejection is a new cause.
+    session
+        .runtime
+        .terminals
+        .get_mut(sid)
+        .unwrap()
+        .feed_bytes(b"\x1b[3J");
+    save(&mut journal, &mut session);
+    inject(&mut session);
+    session.persistence.dirty.mark_dirty();
+    submit(&mut journal, &mut session);
+    deliver(&mut journal, &session, &mut store);
+    assert_eq!(
+        store.all().len(),
+        2,
+        "a rejection after a save adds one item"
+    );
+}

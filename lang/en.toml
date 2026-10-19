@@ -6915,7 +6915,7 @@ continue = "Continue"
 close = "Close"
 
 [recovery]
-multiple_title = "Some saved data could not be restored"
+multiple_title = "Problems restoring or saving data"
 surface_payload_title = "A tab could not be restored"
 surface_payload_body = "In workspace \"{}\", surface {} started empty because its saved contents could not be read. The saved data is kept. Cause: {}"
 damaged_stream_title = "Part of the saved layout could not be restored"
@@ -6931,7 +6931,7 @@ ephemeral_session = "This run's layout records (workspaces, tabs and what Tasty 
 missing_scrollback_title = "Some terminal contents were not restored"
 missing_scrollback_body = "{} terminal(s) from {} were restored without their earlier contents because the saved contents file was missing or unreadable."
 save_oversized_title = "Layout is no longer being saved"
-save_oversized_body = "Workspaces {} are not saved because their terminal history and layout need {} MiB, more than the {} MiB save limit. Changes since the last save will not be restored at the next start. Saving resumes when the layout changes or the terminal history gets smaller, for example after clearing the scrollback."
+save_oversized_body = "Workspaces {} are not saved because their terminal history and layout need {} MiB, more than the {} MiB save limit. Changes since the last save will not be restored at the next start. Tasty tries again after the layout changes or the terminal history gets smaller, for example after clearing the scrollback, and saves once the size is within the limit."
 save_failing_title = "Saving keeps failing"
 save_failing_body = "Saving workspaces {} failed {} times in a row. Tasty keeps retrying, but changes since the last save will not be restored at the next start until a save succeeds. Cause: {}"
 view_save_failing_body = "Saving the selected workspaces and tabs of {} failed {} times in a row. Tasty keeps retrying, but the selection will not be restored at the next start until a save succeeds. Cause: {}"
