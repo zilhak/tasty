@@ -242,7 +242,7 @@ mod slots {
         SavedWorkspace,
     };
     use super::super::{
-        LAYOUT_VERSION, LegacyMigration, SlotLoad, delete_slot_in,
+        LAYOUT_VERSION, LegacyMigration, SlotLoad, collect_slots, delete_slot_in,
         gc_scrollback_orphans_all_slots_in, list_slots_in, load_slot_in, migrate_legacy_in,
         migrate_legacy_with, preserve_unparsable_slot, slot_path_in,
     };
@@ -323,6 +323,22 @@ mod slots {
     }
 
     #[test]
+    fn an_unreadable_entry_marks_the_slot_list_incomplete() {
+        let dir = Path::new("layouts");
+        let entries = vec![
+            Ok(dir.join("02.json")),
+            Err(std::io::Error::other("injected entry failure")),
+            Ok(dir.join("01.json")),
+        ];
+        let listed = collect_slots(dir, entries.into_iter());
+        assert_eq!(listed.slots, vec![1, 2], "읽은 항목은 그대로 모은다");
+        assert!(!listed.complete, "빠진 항목이 있을 수 있으면 불완전이다");
+
+        let listed = collect_slots(dir, vec![Ok(dir.join("01.json"))].into_iter());
+        assert!(listed.complete);
+    }
+
+    #[test]
     fn list_slots_is_empty_when_the_dir_does_not_exist() {
         let tmp = tempfile::tempdir().unwrap();
         let listed = list_slots_in(&tmp.path().join("layouts"));
@@ -361,7 +377,7 @@ mod slots {
     }
 
     #[test]
-    fn migrate_legacy_is_noop_when_layouts_dir_exists() {
+    fn migrate_legacy_is_noop_when_slot_files_already_exist() {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         let legacy = home.join("layout.json");

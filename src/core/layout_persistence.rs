@@ -41,52 +41,56 @@ struct SlotList {
 /// 숫자 슬롯을 정렬·중복 제거한다. 디렉터리가 없으면 완전한 빈 목록이다.
 /// 디렉터리나 개별 항목을 읽지 못하면 읽은 만큼 돌려주고 불완전으로 표시한다.
 fn list_slots_in(dir: &Path) -> SlotList {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return SlotList {
-                slots: Vec::new(),
-                complete: true,
-            };
-        }
+    match std::fs::read_dir(dir) {
+        Ok(entries) => collect_slots(dir, entries.map(|entry| entry.map(|e| e.path()))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => SlotList {
+            slots: Vec::new(),
+            complete: true,
+        },
         Err(e) => {
             tracing::warn!("layout slots: read_dir {} failed: {e}", dir.display());
-            return SlotList {
+            SlotList {
                 slots: Vec::new(),
                 complete: false,
-            };
+            }
         }
-    };
+    }
+}
+
+/// 디렉터리 항목을 슬롯 목록으로 모은다. 읽지 못한 항목이 하나라도 있으면 불완전이다.
+fn collect_slots(dir: &Path, entries: impl Iterator<Item = std::io::Result<PathBuf>>) -> SlotList {
     let mut slots = Vec::new();
     let mut complete = true;
     for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
+        match entry {
+            Ok(path) => slots.extend(slot_of_path(&path)),
             Err(e) => {
                 tracing::warn!(
                     "layout slots: reading an entry of {} failed: {e}",
                     dir.display()
                 );
                 complete = false;
-                continue;
             }
-        };
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some(SLOT_EXT) {
-            continue;
-        }
-        match path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<LayoutSlotId>().ok())
-        {
-            Some(slot) => slots.push(slot),
-            None => tracing::warn!("layout slots: ignoring {}", path.display()),
         }
     }
     slots.sort_unstable();
     slots.dedup();
     SlotList { slots, complete }
+}
+
+/// `NN.json`의 번호. 확장자가 다르면 슬롯이 아니고, 숫자가 아닌 이름은 경고 뒤 무시한다.
+fn slot_of_path(path: &Path) -> Option<LayoutSlotId> {
+    if path.extension().and_then(|s| s.to_str()) != Some(SLOT_EXT) {
+        return None;
+    }
+    let slot = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .and_then(|s| s.parse::<LayoutSlotId>().ok());
+    if slot.is_none() {
+        tracing::warn!("layout slots: ignoring {}", path.display());
+    }
+    slot
 }
 
 /// 새 창의 슬롯 배정용. 불완전한 목록도 읽은 만큼 쓴다(journal이 아는 슬롯과 합친다).
@@ -242,8 +246,8 @@ fn delete_slot_in(dir: &Path, slot: LayoutSlotId) {
 enum LegacyMigration {
     NoLegacy,
     Moved,
-    /// 슬롯 파일이 있는 layouts 디렉터리가 이미 있어 옛 파일을 그대로 둔다.
-    SlotsExist,
+    /// layouts 디렉터리에 슬롯 파일이 있거나 목록을 읽지 못해 옛 파일을 그대로 둔다.
+    LeftInPlace,
     Failed,
 }
 
@@ -272,7 +276,7 @@ fn migrate_legacy_with(
                 legacy.display(),
                 dir.display()
             );
-            return LegacyMigration::SlotsExist;
+            return LegacyMigration::LeftInPlace;
         }
     }
     match mover(&legacy, &dir) {
@@ -321,6 +325,16 @@ fn legacy_scrollback_refs(legacy: &Path) -> Option<std::collections::HashSet<Str
 /// 참조 집합을 확정하지 못하면(목록 불완전, 슬롯이나 옛 파일을 읽지 못함) 그 회차 GC를 생략한다.
 /// layouts 디렉터리가 없고 옛 파일도 없으면 참조가 없다고 확정되므로 모든 bin을 지운다.
 fn gc_scrollback_orphans_all_slots_in(layouts: &Path, legacy: &Path, scrollback: &Path) {
+    if let Some(known) = known_scrollback_refs(layouts, legacy) {
+        crate::scrollback_store::gc_orphans_in(scrollback, &known);
+    }
+}
+
+/// GC가 보호할 참조 집합. 확정하지 못하면 이유를 warn으로 남기고 None을 돌려준다.
+fn known_scrollback_refs(
+    layouts: &Path,
+    legacy: &Path,
+) -> Option<std::collections::HashSet<String>> {
     let listed = list_slots_in(layouts);
     if !listed.complete {
         tracing::warn!(
@@ -328,10 +342,28 @@ fn gc_scrollback_orphans_all_slots_in(layouts: &Path, legacy: &Path, scrollback:
              keeping every scrollback file",
             layouts.display()
         );
-        return;
+        return None;
     }
+    let mut known = slot_scrollback_refs(layouts, &listed.slots)?;
+    let Some(legacy_refs) = legacy_scrollback_refs(legacy) else {
+        tracing::warn!(
+            "scrollback GC skipped: the legacy layout {} could not be read — keeping every \
+             scrollback file",
+            legacy.display()
+        );
+        return None;
+    };
+    known.extend(legacy_refs);
+    Some(known)
+}
+
+/// 열거한 슬롯들의 scrollback 참조 합집합. 하나라도 로드하지 못하면 None이다.
+fn slot_scrollback_refs(
+    layouts: &Path,
+    slots: &[LayoutSlotId],
+) -> Option<std::collections::HashSet<String>> {
     let mut union = std::collections::HashSet::new();
-    for slot in listed.slots {
+    for &slot in slots {
         match load_slot_in(layouts, slot) {
             SlotLoad::Loaded(layout) => union.extend(layout.collect_scrollback_refs()),
             // 열거 뒤 파일이 사라진 경우도 참조를 알 수 없으므로 GC를 건너뛴다.
@@ -341,22 +373,11 @@ fn gc_scrollback_orphans_all_slots_in(layouts: &Path, legacy: &Path, scrollback:
                      keeping every scrollback file",
                     layouts.display()
                 );
-                return;
+                return None;
             }
         }
     }
-    match legacy_scrollback_refs(legacy) {
-        Some(refs) => union.extend(refs),
-        None => {
-            tracing::warn!(
-                "scrollback GC skipped: the legacy layout {} could not be read — keeping every \
-                 scrollback file",
-                legacy.display()
-            );
-            return;
-        }
-    }
-    crate::scrollback_store::gc_orphans_in(scrollback, &union);
+    Some(union)
 }
 
 fn gc_scrollback_orphans_all_slots(home: &Path) {
