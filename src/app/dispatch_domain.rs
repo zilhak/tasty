@@ -44,16 +44,7 @@ impl App {
         self.journal.set_intent_completion(Some(run));
         let applied = self.apply_domain_intent(source, dispatched);
         if let Some(run) = self.journal.take_intent_completion() {
-            let reason = match &applied {
-                Err(error) => error.to_string(),
-                Ok(()) => "the request was not applied".to_string(),
-            };
-            crate::request_runs::finish(
-                run,
-                crate::request_runs::RunState::Failed,
-                reason,
-                serde_json::Value::Null,
-            );
+            crate::request_runs::fail_unapplied(run, &applied);
         }
         applied
     }
@@ -140,31 +131,12 @@ impl App {
         } = &dispatched.body
         {
             let id = source.engine();
-            let mut continuation = self.engines_mut().resolve(id).and_then(|context| {
-                context.view.map(
-                    |view| crate::app::journal::commands::IntentViewContinuation {
-                        remote_request: None,
-                        view: view.state.identity(),
-                        selection: context.state.navigation.generation(),
-                        activate_surface: None,
-                        close_empty_engine: false,
-                        preset_apply: false,
-                        after_create: after_create.clone(),
-                        tutorial: None,
-                        tutorial_preparation: None,
-                        tutorial_surface: None,
-                    },
-                )
-            });
-            let receipt =
-                self.begin_attach_request(id, op, &dispatched.origin, dispatched.admitted);
-            if let Some(view) = continuation.as_mut() {
-                view.remote_request = receipt;
-            }
-            self.journal.admit_remote_intent(
+            let continuation = self.view_continuation(id, after_create.clone(), None);
+            self.admit_forwarded_request(
                 id,
                 op.clone(),
                 &dispatched.origin,
+                dispatched.admitted,
                 continuation,
                 close_focus_candidates.clone(),
             );
@@ -193,22 +165,8 @@ impl App {
         }
         let origin = dispatched.origin;
         let id = source.engine();
-        let mut continuation = self.engines_mut().resolve(id).and_then(|context| {
-            context.view.map(
-                |view| crate::app::journal::commands::IntentViewContinuation {
-                    remote_request: None,
-                    view: view.state.identity(),
-                    selection: context.state.navigation.generation(),
-                    activate_surface: None,
-                    close_empty_engine: false,
-                    preset_apply: false,
-                    after_create: after_create.clone(),
-                    tutorial: None,
-                    tutorial_preparation: tutorial_preparation.clone(),
-                    tutorial_surface: None,
-                },
-            )
-        });
+        let continuation =
+            self.view_continuation(id, after_create.clone(), tutorial_preparation.clone());
         if let Some(session) = self.engines.get(id)
             && session
                 .mirror_workspace_index_for_structural(&intent)
@@ -216,12 +174,14 @@ impl App {
             && let Some(op) =
                 crate::app::services::impl_mirror::build_mirror_forward_op(session.core, &intent)
         {
-            let receipt = self.begin_attach_request(id, &op, &origin, dispatched.admitted);
-            if let Some(view) = continuation.as_mut() {
-                view.remote_request = receipt;
-            }
-            self.journal
-                .admit_remote_intent(id, op, &origin, continuation, Vec::new());
+            self.admit_forwarded_request(
+                id,
+                op,
+                &origin,
+                dispatched.admitted,
+                continuation,
+                Vec::new(),
+            );
             return Ok(());
         }
         if let Some(session) = self.engines.session_mut(id)
@@ -235,23 +195,7 @@ impl App {
         {
             return Ok(());
         }
-        let input_receipt = if origin.is_user()
-            && let crate::app::command::DomainIntent::SendToSurface { surface_id, .. } = &intent
-        {
-            self.remote
-                .sessions
-                .iter()
-                .find(|session| {
-                    session
-                        .state
-                        .remote_to_local
-                        .values()
-                        .any(|local| local == surface_id)
-                })
-                .map(|session| (session.transport.frame_tx.clone(), dispatched.admitted))
-        } else {
-            None
-        };
+        let input_receipt = self.user_input_receipt(&origin, &intent, dispatched.admitted);
         let core = &mut self.services;
         let Some(DispatchCtx {
             state,
@@ -268,17 +212,37 @@ impl App {
         if failed && let Some(view) = view {
             view.mark_dirty();
         }
-        if events
-            .iter()
-            .any(|event| matches!(event, CoreEvent::SurfaceSent { sent: true, .. }))
-            && let Some((sender, admitted)) = input_receipt
-        {
-            sender.user_input_dispatched(admitted);
+        if let Some(receipt) = input_receipt {
+            receipt.settle(&events);
         }
         for event in events {
             self.handle_core_event(source, &origin, event);
         }
         Ok(())
+    }
+
+    /// journal 완료 뒤 요청한 창에서 이어 할 일. 창이 없는 engine이면 없다.
+    fn view_continuation(
+        &mut self,
+        id: crate::runtime::engine_session::EngineId,
+        after_create: Option<crate::intent::CreateFollowup>,
+        tutorial_preparation: Option<std::sync::Weak<()>>,
+    ) -> Option<crate::app::journal::commands::IntentViewContinuation> {
+        let context = self.engines_mut().resolve(id)?;
+        context.view.map(
+            |view| crate::app::journal::commands::IntentViewContinuation {
+                remote_request: None,
+                view: view.state.identity(),
+                selection: context.state.navigation.generation(),
+                activate_surface: None,
+                close_empty_engine: false,
+                preset_apply: false,
+                after_create,
+                tutorial: None,
+                tutorial_preparation,
+                tutorial_surface: None,
+            },
+        )
     }
 
     /// PTY 출력은 사용자·에이전트 요청이 아니므로 System origin으로 처리한다.
@@ -666,79 +630,6 @@ impl App {
         self.settle_settings(origin, done, new_settings, saved);
     }
 
-    /// 메모리에 적용한 설정의 저장 결과를 기다리는 요청에 돌려주고, 사용자 출처면 저장 실패를 알린다.
-    pub(crate) fn settle_settings(
-        &mut self,
-        origin: &IntentOrigin,
-        done: Option<crate::app::settings_change::SettingsDone>,
-        settings: Settings,
-        saved: Result<(), String>,
-    ) {
-        if let Err(error) = &saved
-            && origin.is_user()
-        {
-            self.toast_settings_result(
-                crate::i18n::t_fmt_fit("toast.settings_not_saved", error),
-                crate::adapters::ui::ToastKind::Warning,
-            );
-        }
-        if let Some(done) = done {
-            done.finish(crate::app::settings_change::SettingsOutcome::Applied {
-                changed: true,
-                saved,
-                settings: Box::new(settings),
-            });
-        }
-    }
-
-    fn settle_settings_rejected(
-        &mut self,
-        origin: &IntentOrigin,
-        done: Option<crate::app::settings_change::SettingsDone>,
-        reason: String,
-    ) {
-        if origin.is_user() {
-            self.toast_settings_result(
-                crate::i18n::t_fmt_fit("toast.settings_not_applied", &reason),
-                crate::adapters::ui::ToastKind::Error,
-            );
-        }
-        if let Some(done) = done {
-            done.finish(crate::app::settings_change::SettingsOutcome::Rejected(
-                reason,
-            ));
-        }
-    }
-
-    /// 설정 결과 토스트는 포커스된 메인 창에, 없으면 첫 메인 창에 띄운다.
-    pub(super) fn toast_settings_result(
-        &mut self,
-        message: String,
-        kind: crate::adapters::ui::ToastKind,
-    ) {
-        let focused = self.view.focused_view_id;
-        let main = match focused.and_then(|id| self.view.views.get(&id)) {
-            Some(view) if view.as_main().is_some() => focused,
-            _ => None,
-        }
-        .or_else(|| {
-            self.view
-                .views
-                .iter()
-                .find_map(|(id, view)| view.as_main().map(|_| *id))
-        });
-        let Some(main) = main.and_then(|id| self.view.views.get_mut(&id)) else {
-            tracing::warn!("settings result without a main window: {message}");
-            return;
-        };
-        if let Some(main) = main.as_main_mut() {
-            main.state
-                .toasts
-                .push(message, kind, crate::adapters::ui::ToastScope::Window);
-            main.mark_dirty();
-        }
-    }
-
     /// 창과 parked 상태에 새 설정을 적용하고 저장한다. 저장 결과를 돌려준다(실패는 오류로도 남긴다).
     pub(crate) fn apply_settings_after_structure(
         &mut self,
@@ -831,23 +722,11 @@ impl App {
                     EventScope::System,
                 );
             }
-            // webview 페이지에 넣은 조합은 plugin이 문서를 다시 만들어야 바뀐다.
-            let changed = prev_keybindings
-                .as_ref()
-                .map(|prev| {
-                    crate::adapters::ipc::handler::keybinding::changed_actions(
-                        prev,
-                        &new_settings.keybindings,
-                    )
-                })
-                .unwrap_or_default();
-            if !changed.is_empty() {
-                mgr.emit_host_event(
-                    "command.host_shortcut_changed",
-                    &serde_json::json!({ "action_ids": changed }),
-                    EventScope::System,
-                );
-            }
+            crate::app::settings_change::announce_shortcut_change(
+                mgr,
+                prev_keybindings.as_ref(),
+                &new_settings.keybindings,
+            );
         }
     }
 

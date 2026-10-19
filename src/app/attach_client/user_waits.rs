@@ -7,6 +7,7 @@ use crate::runtime::engine_session::EngineId;
 use crate::state::attach_pending::waits::{Wait, WaitKind};
 use crate::state::attach_pending::{Query, QueryConsumer};
 use std::collections::HashMap;
+use tasty_remote::connection::ConnectionEpoch;
 
 impl App {
     pub(super) fn begin_query_wait(
@@ -131,6 +132,23 @@ impl App {
             }
         }
     }
+    /// mirror로 보낼 구조 요청을 사용자 대기에 올린 뒤 journal에 들인다.
+    pub(crate) fn admit_forwarded_request(
+        &mut self,
+        engine: EngineId,
+        op: StructuralOp,
+        origin: &crate::intent::IntentOrigin,
+        admitted: std::time::Instant,
+        mut continuation: Option<crate::app::journal::commands::IntentViewContinuation>,
+        candidates: Vec<u32>,
+    ) {
+        let receipt = self.begin_attach_request(engine, &op, origin, admitted);
+        if let Some(view) = continuation.as_mut() {
+            view.remote_request = receipt;
+        }
+        self.journal
+            .admit_remote_intent(engine, op, origin, continuation, candidates);
+    }
     pub(crate) fn begin_attach_request(
         &mut self,
         engine: EngineId,
@@ -160,4 +178,109 @@ impl App {
         view.mark_dirty();
         receipt
     }
+    /// 사용자가 mirror surface에 보낸 입력은 원격이 받았다는 확인을 기다린다.
+    pub(crate) fn user_input_receipt(
+        &self,
+        origin: &crate::intent::IntentOrigin,
+        intent: &crate::app::command::DomainIntent,
+        admitted: std::time::Instant,
+    ) -> Option<UserInputReceipt> {
+        let crate::app::command::DomainIntent::SendToSurface { surface_id, .. } = intent else {
+            return None;
+        };
+        if !origin.is_user() {
+            return None;
+        }
+        self.remote
+            .sessions
+            .iter()
+            .find(|session| {
+                session
+                    .state
+                    .remote_to_local
+                    .values()
+                    .any(|local| local == surface_id)
+            })
+            .map(|session| UserInputReceipt {
+                sender: session.transport.frame_tx.clone(),
+                admitted,
+            })
+    }
+}
+
+pub(crate) struct UserInputReceipt {
+    sender: tasty_remote::client_session::SharedFrameSender,
+    admitted: std::time::Instant,
+}
+
+impl UserInputReceipt {
+    /// 입력이 실제로 surface에 전달됐을 때만 접수 시각을 연결에 기록한다.
+    pub(crate) fn settle(self, events: &[crate::app::command::CoreEvent]) {
+        if events.iter().any(|event| {
+            matches!(
+                event,
+                crate::app::command::CoreEvent::SurfaceSent { sent: true, .. }
+            )
+        }) {
+            self.sender.user_input_dispatched(self.admitted);
+        }
+    }
+}
+
+/// 원격 구조 요청의 실패를 그 run과 사용자 대기에 알린다.
+pub(super) fn structural_failed(
+    pending: &crate::state::attach_pending::AttachPending,
+    epoch: &ConnectionEpoch,
+    op: u64,
+    reason: &Option<String>,
+) {
+    super::op_runs::failed(epoch, op, reason.as_deref());
+    pending.result(epoch, op, None, false);
+}
+
+/// 원격 구조 요청의 성공을 그 run과 사용자 대기에 알린다. 결과보다 먼저 적용된 생성을 사용자가
+/// 선택해 두었으면 포커스할 local surface를 돌려준다.
+pub(super) fn structural_succeeded(
+    state: &mut crate::state::MainViewState,
+    epoch: &ConnectionEpoch,
+    (op, created): (u64, Option<u32>),
+    view: Option<&std::sync::Weak<()>>,
+    mapping: &HashMap<u32, u32>,
+) -> Option<u32> {
+    super::op_runs::succeeded(epoch, op, created, mapping);
+    state.attach_pending.result(epoch, op, created, true);
+    state
+        .attach_pending
+        .applied_before_result(epoch, op, &state.navigation, view, mapping)
+}
+
+/// 적용된 snapshot의 ID 매핑을 run과 사용자 대기에 알리고 포커스할 local surface를 돌려준다.
+pub(super) fn structural_applied(
+    state: &mut crate::state::MainViewState,
+    core: &crate::core::CoreState,
+    epoch: &ConnectionEpoch,
+    view: Option<&std::sync::Weak<()>>,
+    (mapping, new_remote): (&HashMap<u32, u32>, &[u32]),
+) -> Option<u32> {
+    super::op_runs::mapped(epoch, mapping);
+    state
+        .attach_pending
+        .applied(core, &state.navigation, epoch, view, mapping, new_remote)
+}
+
+/// delta의 surface 중 아직 local에 매핑되지 않은 remote ID. 적용 전에 구해야 새로 생긴 것을 안다.
+pub(super) fn unmapped_remote_ids(
+    surfaces: &[serde_json::Value],
+    mapping: &HashMap<u32, u32>,
+) -> Vec<u32> {
+    surfaces
+        .iter()
+        .filter_map(|surface| {
+            surface
+                .get("remote_id")?
+                .as_u64()
+                .and_then(|id| u32::try_from(id).ok())
+        })
+        .filter(|id| !mapping.contains_key(id))
+        .collect()
 }

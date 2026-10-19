@@ -8,6 +8,8 @@ pub(crate) mod attach_activation;
 #[cfg(feature = "gui")]
 pub(crate) mod attach_client;
 #[cfg(feature = "gui")]
+mod attach_input;
+#[cfg(feature = "gui")]
 pub(crate) mod attach_poll;
 #[cfg(feature = "gui")]
 pub(crate) mod auto_attach;

@@ -175,3 +175,35 @@ fn elapsed_label(seconds: u64) -> String {
         )
     }
 }
+
+/// 지연 시간을 넘겨 로딩 중인 사이드바 항목에 overlay를 그린다. 아직이면 그 시각에 다시 그리게 한다.
+pub(crate) fn paint_sidebar_loading(
+    ui: &mut egui::Ui,
+    theme: &tasty_type_appearance::theme::Theme,
+    since: Option<Instant>,
+    rect: egui::Rect,
+    placement: tasty_ui_widgets::LoadingPlacement,
+) {
+    if loading_visible(ui, theme, since) {
+        let fill = theme.bg_sidebar().to_egui();
+        tasty_ui_widgets::paint_loading_overlay(ui, theme, rect, placement, fill);
+    }
+}
+
+fn loading_visible(
+    ui: &egui::Ui,
+    theme: &tasty_type_appearance::theme::Theme,
+    since: Option<std::time::Instant>,
+) -> bool {
+    let Some(since) = since else {
+        return false;
+    };
+    let elapsed = since.elapsed();
+    let delay = std::time::Duration::from_secs_f64(theme.loading_overlay_delay().to_secs_f64());
+    if elapsed < delay {
+        ui.ctx().request_repaint_after(delay - elapsed);
+        false
+    } else {
+        true
+    }
+}

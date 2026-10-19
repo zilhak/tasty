@@ -140,6 +140,16 @@ pub(crate) fn finish(id: u64, state: RunState, result: impl Into<String>, extra:
     true
 }
 
+#[cfg(feature = "gui")]
+/// journal에 들어가지 못한 명령의 run을 실패로 끝낸다. 오류가 없으면 적용되지 않았다고 적는다.
+pub(crate) fn fail_unapplied(id: u64, applied: &anyhow::Result<()>) {
+    let reason = match applied {
+        Err(error) => error.to_string(),
+        Ok(()) => "the request was not applied".to_string(),
+    };
+    finish(id, RunState::Failed, reason, Value::Null);
+}
+
 /// 끝난 뒤에도 정보 필드와 결과 문장을 덧붙인다. 상태는 바꾸지 않는다(셸 종료 코드 등).
 pub(crate) fn amend(id: u64, result: Option<String>, extra: Value) {
     if let Some(run) = runs().iter_mut().find(|r| r.id == id) {

@@ -14,7 +14,7 @@ use super::types::{
 use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_event_namespace,
     is_reserved_hook_event_key, is_reserved_ipc_prefix, is_valid_cli_name, is_valid_command_id,
-    is_valid_completion_strategy_id, is_valid_env_name, is_valid_event_key, is_valid_event_pattern,
+    is_valid_completion_strategy_id, is_valid_event_key, is_valid_event_pattern,
     is_valid_hook_event_key, is_valid_hook_handler_id, is_valid_ipc_prefix, is_valid_kind,
     is_valid_plugin_id, is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
     validate_webview_defaults,
@@ -81,7 +81,7 @@ impl Manifest {
         self.validate_event_patterns()?;
         self.validate_events_emitted()?;
         self.validate_hook_events()?;
-        self.validate_strip_inherited_env()?;
+        self.contributes.strip_inherited_env.validate()?;
         crate::caller_context::validate(&self.contributes)?;
         self.validate_extends()?;
         Ok(())
@@ -268,41 +268,6 @@ impl Manifest {
             }
             if !seen.insert(decl.key.as_str()) {
                 anyhow::bail!("contributes.hook_events key '{}' declared twice", decl.key);
-            }
-        }
-        Ok(())
-    }
-
-    /// 제거할 환경변수 이름·접두사의 형식과 본체 소유 TASTY_ 접두사를 검사한다.
-    fn validate_strip_inherited_env(&self) -> anyhow::Result<()> {
-        let decl = &self.contributes.strip_inherited_env;
-        let value_names = decl.values.iter().map(|v| &v.name);
-        for (what, raw) in decl
-            .names
-            .iter()
-            .map(|n| ("name", n))
-            .chain(decl.prefixes.iter().map(|p| ("prefix", p)))
-            .chain(value_names.map(|n| ("values.name", n)))
-        {
-            if !is_valid_env_name(raw) {
-                anyhow::bail!(
-                    "invalid contributes.strip_inherited_env {what} '{raw}': must be ascii letters, \
-                     digits and '_', not starting with a digit"
-                );
-            }
-            if raw.to_ascii_uppercase().starts_with("TASTY_") {
-                anyhow::bail!(
-                    "contributes.strip_inherited_env {what} '{raw}' targets TASTY_* — \
-                     the host owns its own environment"
-                );
-            }
-        }
-        for value in &decl.values {
-            if value.prefixes.is_empty() || value.prefixes.iter().any(|p| p.is_empty()) {
-                anyhow::bail!(
-                    "contributes.strip_inherited_env values '{}' needs non-empty value prefixes",
-                    value.name
-                );
             }
         }
         Ok(())

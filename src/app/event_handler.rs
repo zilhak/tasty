@@ -1588,48 +1588,15 @@ impl App {
     }
 
     /// 창·parked engine 중 하나가 받아들이면 true다. 첫 engine에서 멈춘다.
-    fn any_engine(&mut self, mut apply: impl FnMut(&mut EngineMut<'_>) -> bool) -> bool {
+    pub(super) fn any_engine(&mut self, mut apply: impl FnMut(&mut EngineMut<'_>) -> bool) -> bool {
         self.engines_mut()
             .windowed_and_parked()
             .any(|mut engine| apply(&mut engine))
     }
-    fn apply_input_events_batch(
+    pub(super) fn apply_input_frames_batch(
         &mut self,
-        events: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::InputEvent)>,
-        hub: &StreamHub,
+        frames: impl IntoIterator<Item = (u32, Vec<u8>)>,
     ) {
-        use tasty_ipc::stream_hub::InputEvent;
-        for (client, event) in events {
-            match event {
-                InputEvent::Data(bytes) => self.apply_input_frames_batch([(client, bytes)]),
-                InputEvent::Mesh { surface_id, input } => {
-                    if !self.any_engine(|engine| {
-                        engine.apply_attached_mesh_input(surface_id, client, input.clone())
-                    }) {
-                        reply_mesh_error(hub, client, surface_id, "not_attached");
-                    }
-                }
-                InputEvent::Context(context) => {
-                    if !self.any_engine(|engine| {
-                        engine.apply_attached_mesh_context(
-                            context.surface_id,
-                            client,
-                            context.width_px,
-                            context.height_px,
-                            context.pixels_per_point,
-                            context.theme.clone(),
-                            context.focused,
-                        )
-                    }) {
-                        reply_mesh_error(hub, client, context.surface_id, "not_attached");
-                    }
-                }
-                InputEvent::Checkpoint(sequence) => hub.acknowledge_input(client, sequence),
-            }
-        }
-    }
-
-    fn apply_input_frames_batch(&mut self, frames: impl IntoIterator<Item = (u32, Vec<u8>)>) {
         for (client_id, bytes) in frames {
             if self
                 .pending_server_attaches
@@ -2071,7 +2038,7 @@ fn send_bulk_commit_failure(
     let _ = hub.push(client_id, frame); // 회신 전송 실패는 여기서 재시도하지 않는다.
 }
 
-fn reply_mesh_error(
+pub(super) fn reply_mesh_error(
     hub: &tasty_ipc::stream_hub::StreamHub,
     client_id: u32,
     surface_id: u32,

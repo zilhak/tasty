@@ -19,6 +19,7 @@ use super::resources::{
     push_markdown_content_result,
 };
 use super::survivors::{keep_terminal_resize_state, merge_survivor_mapping};
+use super::user_waits;
 use crate::app::App;
 use crate::app::attach_client::{GIT_VIEWER_PLUGIN_ID, GIT_VIEWER_QUERY_RESULT_EVENT};
 use crate::app::window_access::engines_mut;
@@ -494,10 +495,8 @@ fn apply_one_mirror_event(
             }
         }
         MirrorEvent::StructuralFailed(op_id, reason) => {
-            super::op_runs::failed(&sess.transport.frame_tx.epoch(), op_id, reason.as_deref());
-            host.state
-                .attach_pending
-                .result(&sess.transport.frame_tx.epoch(), op_id, None, false);
+            let epoch = sess.transport.frame_tx.epoch();
+            user_waits::structural_failed(&host.state.attach_pending, &epoch, op_id, &reason);
             agent_origin::apply_structural_failed(
                 sess,
                 |message, kind| host.toast(message, kind),
@@ -506,22 +505,10 @@ fn apply_one_mirror_event(
             );
         }
         MirrorEvent::StructuralSucceeded(op_id, created) => {
-            super::op_runs::succeeded(
+            let focus = user_waits::structural_succeeded(
+                host.state,
                 &sess.transport.frame_tx.epoch(),
-                op_id,
-                created,
-                &sess.state.remote_to_local,
-            );
-            host.state.attach_pending.result(
-                &sess.transport.frame_tx.epoch(),
-                op_id,
-                created,
-                true,
-            );
-            let focus = host.state.attach_pending.applied_before_result(
-                &sess.transport.frame_tx.epoch(),
-                op_id,
-                &host.state.navigation,
+                (op_id, created),
                 host.view.as_ref(),
                 &sess.state.remote_to_local,
             );
@@ -544,16 +531,8 @@ fn apply_one_mirror_event(
             tree,
             surfaces,
         } => {
-            let new_remote: Vec<u32> = surfaces
-                .iter()
-                .filter_map(|surface| {
-                    surface
-                        .get("remote_id")?
-                        .as_u64()
-                        .and_then(|id| u32::try_from(id).ok())
-                })
-                .filter(|id| !sess.state.remote_to_local.contains_key(id))
-                .collect();
+            let new_remote =
+                user_waits::unmapped_remote_ids(&surfaces, &sess.state.remote_to_local);
             let pending_focus = sess.state.next_delta_focus.take();
             let removed_markdown = apply_mirror_structural_delta(
                 &mut host.state.navigation,
@@ -566,17 +545,12 @@ fn apply_one_mirror_event(
             );
             match removed_markdown {
                 Ok(removed) => {
-                    super::op_runs::mapped(
-                        &sess.transport.frame_tx.epoch(),
-                        &sess.state.remote_to_local,
-                    );
-                    let focus = host.state.attach_pending.applied(
+                    let focus = user_waits::structural_applied(
+                        host.state,
                         host.engine.core,
-                        &host.state.navigation,
                         &sess.transport.frame_tx.epoch(),
                         host.view.as_ref(),
-                        &sess.state.remote_to_local,
-                        &new_remote,
+                        (&sess.state.remote_to_local, &new_remote),
                     );
                     host.focus_surface(sess.state.local_workspace, focus);
                     host.state.reconcile_presentation(host.engine);

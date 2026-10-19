@@ -595,6 +595,40 @@ impl StripInheritedEnvDecl {
                 .collect(),
         }
     }
+
+    /// 제거할 환경변수 이름·접두사의 형식과 본체 소유 TASTY_ 접두사를 검사한다.
+    pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        let value_names = self.values.iter().map(|v| &v.name);
+        for (what, raw) in self
+            .names
+            .iter()
+            .map(|n| ("name", n))
+            .chain(self.prefixes.iter().map(|p| ("prefix", p)))
+            .chain(value_names.map(|n| ("values.name", n)))
+        {
+            if !crate::validators::is_valid_env_name(raw) {
+                anyhow::bail!(
+                    "invalid contributes.strip_inherited_env {what} '{raw}': must be ascii letters, \
+                     digits and '_', not starting with a digit"
+                );
+            }
+            if raw.to_ascii_uppercase().starts_with("TASTY_") {
+                anyhow::bail!(
+                    "contributes.strip_inherited_env {what} '{raw}' targets TASTY_* — \
+                     the host owns its own environment"
+                );
+            }
+        }
+        for value in &self.values {
+            if value.prefixes.is_empty() || value.prefixes.iter().any(|p| p.is_empty()) {
+                anyhow::bail!(
+                    "contributes.strip_inherited_env values '{}' needs non-empty value prefixes",
+                    value.name
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 /// 값 접두사로 판정하는 제거 규칙 한 항목.

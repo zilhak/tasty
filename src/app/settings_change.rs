@@ -155,6 +155,99 @@ pub(crate) fn pair(wake: Arc<dyn Fn() + Send + Sync>) -> (SettingsDone, Settings
     (SettingsDone { tx, wake }, SettingsWait { rx })
 }
 
+#[cfg(feature = "gui")]
+impl crate::app::App {
+    /// 메모리에 적용한 설정의 저장 결과를 기다리는 요청에 돌려주고, 사용자 출처면 저장 실패를 알린다.
+    pub(crate) fn settle_settings(
+        &mut self,
+        origin: &crate::intent::IntentOrigin,
+        done: Option<SettingsDone>,
+        settings: Settings,
+        saved: Result<(), String>,
+    ) {
+        if let Err(error) = &saved
+            && origin.is_user()
+        {
+            self.toast_settings_result(
+                crate::i18n::t_fmt_fit("toast.settings_not_saved", error),
+                crate::adapters::ui::ToastKind::Warning,
+            );
+        }
+        if let Some(done) = done {
+            done.finish(SettingsOutcome::Applied {
+                changed: true,
+                saved,
+                settings: Box::new(settings),
+            });
+        }
+    }
+
+    pub(super) fn settle_settings_rejected(
+        &mut self,
+        origin: &crate::intent::IntentOrigin,
+        done: Option<SettingsDone>,
+        reason: String,
+    ) {
+        if origin.is_user() {
+            self.toast_settings_result(
+                crate::i18n::t_fmt_fit("toast.settings_not_applied", &reason),
+                crate::adapters::ui::ToastKind::Error,
+            );
+        }
+        if let Some(done) = done {
+            done.finish(SettingsOutcome::Rejected(reason));
+        }
+    }
+
+    /// 설정 결과 토스트는 포커스된 메인 창에, 없으면 첫 메인 창에 띄운다.
+    pub(super) fn toast_settings_result(
+        &mut self,
+        message: String,
+        kind: crate::adapters::ui::ToastKind,
+    ) {
+        let focused = self.view.focused_view_id;
+        let main = match focused.and_then(|id| self.view.views.get(&id)) {
+            Some(view) if view.as_main().is_some() => focused,
+            _ => None,
+        }
+        .or_else(|| {
+            self.view
+                .views
+                .iter()
+                .find_map(|(id, view)| view.as_main().map(|_| *id))
+        });
+        let Some(main) = main.and_then(|id| self.view.views.get_mut(&id)) else {
+            tracing::warn!("settings result without a main window: {message}");
+            return;
+        };
+        if let Some(main) = main.as_main_mut() {
+            main.state
+                .toasts
+                .push(message, kind, crate::adapters::ui::ToastScope::Window);
+            crate::view::ui::View::mark_dirty(main);
+        }
+    }
+}
+
+#[cfg(feature = "gui")]
+/// webview 페이지에 넣은 조합은 plugin이 문서를 다시 만들어야 바뀐다.
+pub(super) fn announce_shortcut_change(
+    mgr: &mut crate::plugin::PluginManager,
+    prev: Option<&crate::settings::KeybindingSettings>,
+    next: &crate::settings::KeybindingSettings,
+) {
+    let changed = prev
+        .map(|prev| crate::adapters::ipc::handler::keybinding::changed_actions(prev, next))
+        .unwrap_or_default();
+    if !changed.is_empty() {
+        mgr.emit_host_event(
+            "command.host_shortcut_changed",
+            &serde_json::json!({ "action_ids": changed }),
+            tasty_plugin_protocol::EventScope::System,
+        );
+    }
+}
+
 /// 핸들러 시험이 요청을 headless 적용 경로로 끝까지 실행할 때 쓴다.
 #[cfg(test)]
 pub(crate) mod test_support {

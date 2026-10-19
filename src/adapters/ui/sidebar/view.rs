@@ -1,8 +1,10 @@
 //! 앱 상태 없이 사이드바를 그려 사용자 동작을 반환한다. 호출부가 상태를 읽고 결과를 반영한다.
 
+use crate::adapters::ui::attach_loading as loading;
 use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::LoadingPlacement;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
 use tasty_ui_widgets::{ControlSize, IconButton, TagVariant, hspace, tag_caps, vspace};
 
@@ -1251,15 +1253,7 @@ fn draw_collapsed_avatar(
             text_color,
         );
     }
-    if loading_visible(ui, th, ws.loading_since) {
-        tasty_ui_widgets::paint_loading_overlay(
-            ui,
-            th,
-            rect,
-            tasty_ui_widgets::LoadingPlacement::Rail,
-            th.bg_sidebar().to_egui(),
-        );
-    }
+    loading::paint_sidebar_loading(ui, th, ws.loading_since, rect, LoadingPlacement::Rail);
     // 상태는 오른쪽 위 점, mirror는 오른쪽 아래 표시, 다른 클라이언트 점유는 둘레 링이다.
     // 왼쪽 아래는 move 칩, 왼쪽 위는 attach 거절 칩이다.
     // 점 하나로 NeedsInput > Completion > running 순서의 상태를 표시한다.
@@ -1372,15 +1366,13 @@ fn draw_workspace_card(
                     dot_resp.on_hover_text(occupied_hover);
                 }
             }
-            if loading_visible(ui, th, ws.loading_since) {
-                tasty_ui_widgets::paint_loading_overlay(
-                    ui,
-                    th,
-                    dot_rect,
-                    tasty_ui_widgets::LoadingPlacement::Lnb,
-                    th.bg_sidebar().to_egui(),
-                );
-            }
+            loading::paint_sidebar_loading(
+                ui,
+                th,
+                ws.loading_since,
+                dot_rect,
+                LoadingPlacement::Lnb,
+            );
             let name_color = if ws.is_active {
                 th.text_primary()
             } else {
@@ -1506,24 +1498,6 @@ fn draw_workspace_card(
     }
 
     card_rect
-}
-
-fn loading_visible(
-    ui: &egui::Ui,
-    theme: &tasty_type_appearance::theme::Theme,
-    since: Option<std::time::Instant>,
-) -> bool {
-    let Some(since) = since else {
-        return false;
-    };
-    let elapsed = since.elapsed();
-    let delay = std::time::Duration::from_secs_f64(theme.loading_overlay_delay().to_secs_f64());
-    if elapsed < delay {
-        ui.ctx().request_repaint_after(delay - elapsed);
-        false
-    } else {
-        true
-    }
 }
 
 #[cfg(test)]

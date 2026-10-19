@@ -276,7 +276,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/app/dispatch_domain.rs",
         Projection,
-        2,
+        1,
         "지연 완료 continuation의 원 selection generation을 고정한다. 실제 선택 변경은 user origin과 원 View를 다시 검사한다",
     ),
 ];
