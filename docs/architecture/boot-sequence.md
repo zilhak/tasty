@@ -141,9 +141,14 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   Secondary md)이며 항목 사이는 `spacing_sm`, Quit 위는 `spacing_sm`을 한 번 더 둔다. 본문과 안내의
   백틱 구간은 code run 이다. 문구는 자르지 않는다. 경로처럼 공백 없이 긴 낱말은 폼 폭에서 끊는다.
   쌓은 높이가 창 높이 − 2 × `spacing_xl`보다 크면 락업을 먼저 빼고, 그래도 넘치면 제목·본문·안내를
-  스크롤하고 Quit은 그 아래에 고정한다. 엔진 생성 실패, App 생성·첫 화면 조립 실패, 다른 프로세스가
+  스크롤하고 Quit은 그 아래에 고정한다. 엔진 생성 실패(첫 workspace를 만들지 못함 포함), App 생성·첫 화면 조립 실패, 다른 프로세스가
   쓰는 데이터 폴더에서 뜨고 Quit·Esc·Enter·창 닫기가 종료 코드 1로 끝낸다. 키 판정은 호스트가 한다.
   열지 못한 명시 웹훅 포트는 실행을 막지 않고 경고 알림으로 남긴다([웹훅](../features/webhook/index.md#리스너-주소와-포트)).
+- **저장소를 열지 못한 부팅** — 첫 엔진의 journal 시작이 저장소에 묶이기 전에 실패하고 홈 사용 중이
+  아니면 부팅 오류 화면 대신 `JournalApplication::fall_back_to_ephemeral`로 빈 임시 저장소를 열어
+  같은 엔진을 다시 시작한다. 기본 workspace가 생기면 평소처럼 창을 보이고, 원인·원본 경로를 담은
+  오류 알림과 오른쪽 위 비포커스 안내를 전달한다. 임시 저장소도 실패하면 부팅 오류 화면으로 간다.
+  판정은 `src/app/boot_machine.rs`의 `journal_failure_falls_back`.
 - **View 밖 창의 다시 그리기** — 첫 실행 셸 설정 창과 부팅 오류 화면은 View 밖에 있어 dirty
   표시나 렌더 예약을 받지 않는다. 클릭·Enter 처리는 렌더 안에서 일어나므로 창이 스스로 redraw 를
   요청한다. egui 가 입력에 repaint 를 답하거나 즉시 repaint 를 요청하면(`AppEvent::EguiRepaint`)

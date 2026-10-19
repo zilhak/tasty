@@ -1,0 +1,178 @@
+//! A data home whose journal cannot be opened continues in a temporary journal: the first engine
+//! gets a default workspace, the original files keep their bytes, and the cause is reported once.
+use super::stall_budget::StallBudget;
+use super::*;
+
+/// Builds the session first: in tests it moves this thread's home to a temporary directory.
+fn new_session() -> EngineSession {
+    let mut settings = crate::settings::Settings::default();
+    settings.general.shell = "/bin/sh".into();
+    settings.general.startup_command = String::new();
+    EngineSession::new_with_ids_and_settings(
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory: Arc::new(std::sync::Mutex::new(
+                tasty_memory::MemoryStore::open_in_memory().unwrap(),
+            )),
+            runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        },
+        settings,
+    )
+    .unwrap()
+}
+
+const SELECTION: EngineSelection = EngineSelection::Slot {
+    slot: 1,
+    resume: true,
+};
+
+/// Polls until the engine is ready, or returns the bootstrap failure.
+fn bootstrap(journal: &mut JournalApplication, session: &mut EngineSession) -> Result<(), String> {
+    let mut stall = StallBudget::new(journal);
+    loop {
+        journal.poll_bootstrap(&mut [&mut *session], None)?;
+        journal.poll_restore_bootstrap(session)?;
+        if journal.is_ready(session.id) {
+            return Ok(());
+        }
+        stall.nap("journal bootstrap");
+    }
+}
+
+fn digest(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
+        .map(|path| {
+            let bytes = std::fs::read(&path).unwrap_or_default();
+            (
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                bytes,
+            )
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+#[test]
+fn a_journal_that_is_not_a_database_continues_in_a_temporary_journal() {
+    let mut session = new_session();
+    let home = tasty_utils::path::tasty_home().unwrap();
+    let structure = home.join("structure");
+    // A first run publishes the journal identity; the database is then replaced with garbage.
+    {
+        session.core_state = crate::core::CoreState::new_base();
+        let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+        journal.begin_engine(&session, SELECTION).unwrap();
+        bootstrap(&mut journal, &mut session).unwrap();
+    }
+    std::fs::write(
+        structure.join("journal.db"),
+        b"this is not a sqlite database",
+    )
+    .unwrap();
+    for side in ["journal.db-wal", "journal.db-shm"] {
+        let path = structure.join(side);
+        if path.exists() {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+    let before = digest(&structure);
+
+    session.core_state = crate::core::CoreState::new_base();
+    session.journal_binding = None;
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal.begin_engine(&session, SELECTION).unwrap();
+    let failure = bootstrap(&mut journal, &mut session).expect_err("the original cannot open");
+    assert!(!journal.home_in_use());
+    assert!(session.journal_binding.is_none());
+
+    journal
+        .fall_back_to_ephemeral(session.id, &failure)
+        .unwrap();
+    assert!(journal.is_ephemeral());
+    journal.begin_engine(&session, SELECTION).unwrap();
+    bootstrap(&mut journal, &mut session).unwrap();
+    assert!(!journal.is_halted());
+    assert_eq!(session.core_state.local_workspaces().len(), 1);
+
+    let notices = journal.take_notices();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert_eq!(
+        notices[0].level,
+        crate::notification::NotificationLevel::Error
+    );
+    assert_eq!(notices[0].engine, Some(session.id));
+    let popup = notices[0].popup.as_ref().expect("a visible notice");
+    assert_eq!(popup.cause, notices::NoticeCause::Corrupt);
+    let database = structure.join("journal.db");
+    assert_eq!(popup.path, database.display().to_string());
+    assert!(notices[0].body.contains(&failure), "{}", notices[0].body);
+    assert!(journal.take_notices().is_empty(), "reported once");
+
+    drop(journal);
+    assert_eq!(
+        digest(&structure),
+        before,
+        "the original files are untouched"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_journal_is_reported_as_denied_and_read_again_once_allowed() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut session = new_session();
+    let home = tasty_utils::path::tasty_home().unwrap();
+    let database = home.join("structure/journal.db");
+    {
+        session.core_state = crate::core::CoreState::new_base();
+        let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+        journal.begin_engine(&session, SELECTION).unwrap();
+        bootstrap(&mut journal, &mut session).unwrap();
+        let workspace = session.core_state.local_workspaces()[0].id;
+        assert!(workspace > 0);
+    }
+    let original = session.core_state.local_workspaces()[0].id;
+    std::fs::set_permissions(&database, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::File::open(&database).is_ok() {
+        // Running as root ignores file modes; the case cannot be produced here.
+        return;
+    }
+
+    session.core_state = crate::core::CoreState::new_base();
+    session.journal_binding = None;
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal.begin_engine(&session, SELECTION).unwrap();
+    let failure = bootstrap(&mut journal, &mut session).expect_err("the original cannot open");
+    journal
+        .fall_back_to_ephemeral(session.id, &failure)
+        .unwrap();
+    journal.begin_engine(&session, SELECTION).unwrap();
+    bootstrap(&mut journal, &mut session).unwrap();
+    let notices = journal.take_notices();
+    assert_eq!(
+        notices[0].popup.as_ref().unwrap().cause,
+        notices::NoticeCause::ReadDenied
+    );
+    drop(journal);
+
+    std::fs::set_permissions(&database, std::fs::Permissions::from_mode(0o644)).unwrap();
+    session.core_state = crate::core::CoreState::new_base();
+    session.journal_binding = None;
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal.begin_engine(&session, SELECTION).unwrap();
+    bootstrap(&mut journal, &mut session).unwrap();
+    assert!(!journal.is_ephemeral());
+    assert_eq!(
+        session.core_state.local_workspaces()[0].id,
+        original,
+        "the original workspace is restored"
+    );
+}

@@ -55,6 +55,12 @@ fn first_workspace_error(reason: Option<String>) -> String {
     }
 }
 
+/// 저널을 열지 못한 첫 엔진이 임시 저장소로 계속할지. 홈 사용 중이면 다른 인스턴스의 원본을
+/// 보호하는 정상 제한이라 부팅 오류 화면에 남고, 임시 저장소마저 실패했으면 물러날 곳이 없다.
+fn journal_failure_falls_back(home_in_use: bool, ephemeral: bool) -> bool {
+    !home_in_use && !ephemeral
+}
+
 /// 저널 실패 문구. `home_in_use`는 worker가 "다른 프로세스가 같은 홈을 쓰고 있음"으로 보낸
 /// 실패일 때의 홈 경로다. 오류 문자열을 해석하지 않는다.
 fn journal_error_info(
@@ -395,19 +401,50 @@ impl App {
             .persistence
             .slot
             .expect("GUI engine has a layout slot");
+        let resume = session.runtime.settings.general.restore_layout;
         if let Err(error) = self.journal.begin_first_gui_engine(
             session,
-            crate::runtime::journal_product::EngineSelection::Slot {
-                slot,
-                resume: session.runtime.settings.general.restore_layout,
-            },
-        ) {
+            crate::runtime::journal_product::EngineSelection::Slot { slot, resume },
+        ) && !self.boot_fall_back_to_ephemeral(id, &error)
+        {
             self.state.boot_error_info =
                 Some(self.boot_journal_error_info(&anyhow::anyhow!(error)));
             return false;
         }
         progress.phase = BootPhase::WaitingJournal;
         false
+    }
+
+    /// 원본 저널을 열지 못한 첫 엔진을 임시 저장소로 다시 연다. 홈 사용 중(다른 인스턴스의 원본
+    /// 보호)이거나 이미 임시 저장소인데도 실패했으면 물러나지 않고 false다.
+    fn boot_fall_back_to_ephemeral(
+        &mut self,
+        id: crate::runtime::engine_session::EngineId,
+        failure: &str,
+    ) -> bool {
+        if !journal_failure_falls_back(self.journal.home_in_use(), self.journal.is_ephemeral()) {
+            return false;
+        }
+        if let Err(error) = self.journal.fall_back_to_ephemeral(id, failure) {
+            tracing::error!("temporary structure journal could not be opened: {error:#}");
+            return false;
+        }
+        let session = self.engines.session_mut(id).expect("pending engine exists");
+        let slot = session
+            .persistence
+            .slot
+            .expect("GUI engine has a layout slot");
+        let resume = session.runtime.settings.general.restore_layout;
+        match self.journal.begin_first_gui_engine(
+            session,
+            crate::runtime::journal_product::EngineSelection::Slot { slot, resume },
+        ) {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::error!("temporary structure journal refused the first engine: {error}");
+                false
+            }
+        }
     }
 
     fn boot_step_waiting_journal(
@@ -421,6 +458,11 @@ impl App {
             .journal
             .poll_bootstrap(&mut [session], self.plugin_manager.as_mut())
         {
+            // 저장소를 열기 전의 실패만 임시 저장소로 물러난다. 엔진이 묶인 뒤의 실패는 이미 일부를
+            // 보여 줬을 수 있어 같은 엔진을 다른 저장소로 다시 열지 않는다.
+            if session.journal_binding.is_none() && self.boot_fall_back_to_ephemeral(id, &error) {
+                return false;
+            }
             self.state.boot_error_info =
                 Some(self.boot_journal_error_info(&anyhow::anyhow!(error)));
             return false;
@@ -859,6 +901,16 @@ mod boot_error_tests {
         assert!(info.body.contains("data home unavailable"));
         assert_ne!(info.hint, crate::i18n::t("boot.engine_error.hint"));
         assert_ne!(info.title, info.body);
+    }
+
+    #[test]
+    fn only_a_journal_that_is_not_held_elsewhere_falls_back_once() {
+        assert!(journal_failure_falls_back(false, false));
+        assert!(!journal_failure_falls_back(true, false), "home in use");
+        assert!(
+            !journal_failure_falls_back(false, true),
+            "already temporary"
+        );
     }
 
     #[test]

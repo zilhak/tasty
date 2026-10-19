@@ -207,4 +207,4 @@ surface 가 다시 넓어지면 surface 범위로 돌아온다. 숨은 범위는
 
 ## 복원 오류 안내의 포커스
 
-[복구 원칙](../../principles/feedback-and-recovery.md)의 심각한 복원 실패는 앱 우측 상단 부근에 포커스를 가져가지 않는 팝업으로 알리는 대상이다. 기존 중앙 부팅 오류 화면은 이 요구를 충족한 구현이 아니다. 일반 알림 상세 팝업은 사용자가 열어 읽는 별도 화면이다.
+[복구 원칙](../../principles/feedback-and-recovery.md)의 심각한 복원 실패는 앱 우측 상단 부근에 포커스를 가져가지 않는 팝업으로 알리는 대상이다. 복원 자료를 읽지 못한 안내는 PopupDef 창이 아니라 작업 영역 오른쪽 위 안내 열의 RestoreNotice로 그린다(`src/adapters/ui/restore_notice.rs`, 위젯 `tasty_ui_widgets::restore_notice`). 포커스를 가져가지 않고 scrim이 없으며 ×·Continue·안쪽 컨트롤의 Esc가 같은 응답이다. 중앙 부팅 오류 화면은 홈 사용 중·첫 workspace 생성 실패·App 생성·첫 화면 조립처럼 계속할 수 없는 실패에만 남는다. 일반 알림 상세 팝업은 사용자가 열어 읽는 별도 화면이다.

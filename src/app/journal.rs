@@ -83,6 +83,20 @@ pub(crate) struct JournalApplication {
     halted: Option<String>,
     /// 사용자에게 알릴 복원·저장 사실. App이 꺼내 알림과 안내로 옮긴다.
     notices: Vec<notices::RecoveryNotice>,
+    /// 원본 저널을 열지 못해 이번 실행에만 쓰는 임시 저장소. worker가 먼저 멈추도록 마지막 필드다.
+    #[cfg(feature = "gui")]
+    ephemeral_home: Option<tempfile::TempDir>,
+}
+
+/// 원본 저널을 읽을 권한이 없는지, 읽을 수는 있지만 저장소로 열리지 않는지 가린다.
+#[cfg(feature = "gui")]
+fn journal_read_cause(database: &std::path::Path) -> notices::NoticeCause {
+    match std::fs::File::open(database) {
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            notices::NoticeCause::ReadDenied
+        }
+        _ => notices::NoticeCause::Corrupt,
+    }
 }
 
 /// Longer than each stage shutdown waits for: a settling creation's child input and replaced
@@ -159,6 +173,14 @@ impl JournalApplication {
     ) -> anyhow::Result<Self> {
         let home = tasty_utils::path::tasty_home()
             .ok_or_else(|| anyhow::anyhow!("data home unavailable for structure journal"))?;
+        Self::open_at(home, wake, writer_lock)
+    }
+
+    fn open_at(
+        home: std::path::PathBuf,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        writer_lock: Option<tasty_event_store::WriterLock>,
+    ) -> anyhow::Result<Self> {
         let worker = JournalWorker::spawn_with(home, wake.clone(), writer_lock)
             .map_err(anyhow::Error::msg)?;
         let spawner = crate::runtime::effect_runner::TerminalSpawner::spawn(wake.clone())?;
@@ -199,7 +221,53 @@ impl JournalApplication {
             command_submissions: Default::default(),
             halted: None,
             notices: Vec::new(),
+            #[cfg(feature = "gui")]
+            ephemeral_home: None,
         })
+    }
+
+    /// 데이터 홈의 저널을 열지 못한 첫 엔진을 이번 실행에만 쓰는 빈 임시 저장소로 다시 연다.
+    /// 원본(`structure/journal.db`와 부속 파일)은 읽지도 쓰지도 않고 그대로 둔다. 임시 저장소는
+    /// 종료할 때 지우므로 다음 실행은 원본을 다시 읽는다. 원인과 원본 위치는 오류 알림과
+    /// 비포커스 안내로 `engine`의 창에 알린다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn fall_back_to_ephemeral(
+        &mut self,
+        engine: EngineId,
+        failure: &str,
+    ) -> anyhow::Result<()> {
+        let original = tasty_utils::path::tasty_home()
+            .ok_or_else(|| anyhow::anyhow!("data home unavailable for structure journal"))?;
+        let database = crate::runtime::journal_product::journal_database_path(&original);
+        let temporary = tempfile::Builder::new()
+            .prefix("tasty-ephemeral-journal-")
+            .tempdir()?;
+        let mut fresh = Self::open_at(temporary.path().to_path_buf(), self.wake.clone(), None)?;
+        fresh.ephemeral_home = Some(temporary);
+        tracing::error!(
+            path = %database.display(),
+            "structure journal could not be opened; this run uses a temporary journal: {failure}"
+        );
+        fresh.notices.push(notices::RecoveryNotice::critical(
+            Some(engine),
+            notices::NoticePopup {
+                variant: notices::NoticeVariant::Restore,
+                cause: journal_read_cause(&database),
+                path: database.display().to_string(),
+            },
+            &format!(
+                "{}\n{failure}",
+                crate::i18n::t("recovery.ephemeral_session")
+            ),
+        ));
+        *self = fresh;
+        Ok(())
+    }
+
+    /// 이번 실행이 임시 저장소를 쓰는지. 임시 저장소도 열지 못하면 더 물러날 곳이 없다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn is_ephemeral(&self) -> bool {
+        self.ephemeral_home.is_some()
     }
 
     pub(crate) fn begin_engine(
@@ -769,6 +837,8 @@ mod tests;
 #[cfg(all(test, unix))]
 mod unowned_tests;
 
+#[cfg(all(test, unix, feature = "gui"))]
+mod ephemeral_fallback_tests;
 #[cfg(all(test, unix))]
 mod legacy_import_failure_tests;
 #[cfg(all(test, unix, feature = "gui"))]
