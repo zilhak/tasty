@@ -621,3 +621,43 @@ fn a_file_that_keeps_changing_loads_without_scripts_after_the_limit() {
         Start::Js(false)
     );
 }
+
+/// `Stop`이 실패하면 재시작을 버린다. 지문이 다른 요청은 놓아 주지 않고, 다음 탐색이 commit할 때
+/// 놓아 준다.
+#[test]
+fn a_failed_stop_drops_the_restart_and_keeps_the_request_until_another_commit() {
+    let doc = allowed_doc("verify-stopfail");
+    let mut resume = ScanResume::<Token>::new(1);
+    replay_ready(&doc, &mut resume);
+    rewrite_keeping_stamp(&doc.dir.join("doc.html"), "<script>b()</script>");
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(11), StartKind::Reload, true),
+        Start::Resumed(true)
+    );
+    resume.document_request(&doc.gate, &doc.url, || Some(7));
+    wait(|| resume.poll_verify().stop.then_some(()));
+    resume.stop_failed();
+    let ended = resume.completed(Some(11));
+    assert!(ended.internal && ended.restart.is_none());
+    assert_eq!(ended.release, vec![7], "그 탐색이 끝났다면 놓아 준다");
+
+    // 완료 신호가 오지 않은 채 다른 탐색이 commit하면 그때 놓아 준다.
+    replay_ready(&doc, &mut resume);
+    rewrite_keeping_stamp(&doc.dir.join("doc.html"), "<script>c()</script>");
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(21), StartKind::Reload, true),
+        Start::Resumed(false),
+        "허용하지 않은 내용의 스캔도 같은 요청 확인을 거친다"
+    );
+    resume.document_request(&doc.gate, &doc.url, || Some(8));
+    wait(|| resume.poll_verify().stop.then_some(()));
+    resume.stop_failed();
+    resume.host_request(None);
+    assert_eq!(
+        resume.start(&doc.gate, &doc.url, Some(22), StartKind::NewDocument, true),
+        Start::Cancel
+    );
+    let (stop, release) = resume.content_loading(Some(30));
+    assert!(!stop);
+    assert_eq!(release, vec![8]);
+}

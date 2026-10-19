@@ -455,6 +455,13 @@ impl<D> ScanResume<D> {
         (stop, self.release_ended(|n| n != nav_id))
     }
 
+    /// `Stop` 호출이 실패했다. 멈춘 탐색의 완료 신호가 오지 않을 수 있으므로 재시작을 버린다.
+    /// 붙잡은 요청은 본문이 결과와 다르므로 놓아 주지 않는다. 그 탐색은 요청이 막힌 채 남고,
+    /// 다음 탐색이 commit하면 놓아 준다. backend는 이 로드를 실패로 끝낸다.
+    pub fn stop_failed(&mut self) {
+        self.stopped = None;
+    }
+
     /// 확인 창의 탐색을 멈춘 것으로 기록한다. 그 완료 신호는 내부 신호이고 재시작을 준다.
     fn begin_stop(&mut self) {
         let Some(verify) = self.verify.take() else {

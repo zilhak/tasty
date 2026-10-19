@@ -76,12 +76,31 @@ fn complete_requests(surface_id: u32, deferrals: Vec<ICoreWebView2Deferral>) {
     }
 }
 
-/// 지문이 다른 본문을 넘기기 전에 탐색을 멈춘다. 붙잡은 요청이 있는 탐색은 Stop으로 끝난다.
-fn stop_navigation(surface_id: u32, webview: &ICoreWebView2) {
+/// 지문이 다른 본문을 넘기기 전에 탐색을 멈춘다. 멈춘 탐색은 오류로 끝나 `NavigationCompleted`가
+/// 온다(그 완료가 재시작을 준다). `Stop`이 실패하면 완료가 오지 않을 수 있으므로, 본문은 붙잡아 둔 채
+/// 이 로드를 실패로 끝내 Loading에 남지 않게 한다.
+fn stop_navigation(
+    surface_id: u32,
+    webview: &ICoreWebView2,
+    resume: &RefCell<ScanResume<ICoreWebView2Deferral>>,
+    gate: Option<&ScriptGate>,
+    nav_state: &Cell<NavState>,
+) {
     // SAFETY: webview는 호출 동안 valid, main thread 호출.
-    if let Err(e) = unsafe { webview.Stop() } {
-        tracing::warn!("WebView surface {surface_id}: Stop failed: {e}");
+    let Err(e) = (unsafe { webview.Stop() }) else {
+        return;
+    };
+    tracing::warn!(
+        "WebView surface {surface_id}: Stop failed ({e}); the load ends without the unchecked document"
+    );
+    resume.borrow_mut().stop_failed();
+    if let Some(gate) = gate {
+        gate.failed();
+        if let Some(js) = gate.finished() {
+            set_js(webview, js);
+        }
     }
+    nav_state.set(NavState::Failed);
 }
 
 /// `Source`를 문자열로 읽고 COM 할당을 해제한다.
@@ -247,9 +266,11 @@ impl PlatformWebView {
                 Err(e) => tracing::warn!("WebView2 Settings() failed: {e}"),
             }
 
+            let nav_state = Rc::new(Cell::new(NavState::Idle));
             let script_gate: Rc<RefCell<Option<ScriptGate>>> = Rc::new(RefCell::new(None));
             let scan_resume = Rc::new(RefCell::new(ScanResume::new(surface_id)));
             let gate_request = script_gate.clone();
+            let nav_request = nav_state.clone();
             let resume_request = scan_resume.clone();
             // 차단 상태에서 http(s) 요청을 빈 403 응답으로 대체한다. 앞 스캔 결과를 받은 탐색의 file
             // 문서 요청은 지문을 확인할 때까지 붙잡는다(scan_resume).
@@ -304,7 +325,7 @@ impl PlatformWebView {
                     if action == RequestAction::Stop
                         && let Some(wv) = &sender
                     {
-                        stop_navigation(surface_id, wv);
+                        stop_navigation(surface_id, wv, &resume_request, Some(gate), &nav_request);
                     }
                     Ok(())
                 },
@@ -313,7 +334,6 @@ impl PlatformWebView {
                 .add_WebResourceRequested(&handler, &mut token)
                 .map_err(|e| transient(format!("add_WebResourceRequested failed: {e}")))?;
 
-            let nav_state = Rc::new(Cell::new(NavState::Idle));
             let pending_navigations: Rc<RefCell<Vec<PendingNavigation>>> =
                 Rc::new(RefCell::new(Vec::new()));
             let nav_start = nav_state.clone();
@@ -442,6 +462,7 @@ impl PlatformWebView {
             let committed_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
             let commit_url = committed_url.clone();
             let resume_content = scan_resume.clone();
+            let nav_content = nav_state.clone();
             let mut tok_content: i64 = 0;
             let h_content = ContentLoadingEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
@@ -456,7 +477,13 @@ impl PlatformWebView {
                     let (stop, release) = resume_content.borrow_mut().content_loading(nav_id);
                     complete_requests(surface_id, release);
                     if stop {
-                        stop_navigation(surface_id, wv);
+                        stop_navigation(
+                            surface_id,
+                            wv,
+                            &resume_content,
+                            gate_commit.borrow().as_ref(),
+                            &nav_content,
+                        );
                     }
                     let uri_str = webview_source(wv)?;
                     *commit_url.borrow_mut() = uri_str.clone();
@@ -766,7 +793,13 @@ impl PlatformWebView {
         let verified = self.scan_resume.borrow_mut().poll_verify();
         complete_requests(self.surface_id, verified.complete);
         if verified.stop {
-            stop_navigation(self.surface_id, &self.webview);
+            stop_navigation(
+                self.surface_id,
+                &self.webview,
+                &self.scan_resume,
+                self.script_gate.borrow().as_ref(),
+                &self.nav_state,
+            );
         }
         let Some((replay, url)) = self.scan_resume.borrow_mut().poll() else {
             return;

@@ -207,8 +207,13 @@ OS별 구현은 다음과 같다.
     - 요청을 붙잡지 못했거나(`GetDeferral` 실패), 확인 창의 탐색이 문서 요청 없이 commit했으면 확인하지 못한 본문이다. 이때도 탐색을 멈추고 재로드한다.
     - `Stop`은 숨겨진 이전 페이지가 기다리던 자원 요청도 멈춘다. 이전 페이지는 곧 바뀌는 숨겨진 문서이므로 이 범위를 받아들였다.
     - 결과를 어느 탐색이 받았든 그 탐색이 실제로 받는 본문의 지문이 결과와 같으므로, 탐색 식별자 없이 결과가 다른 내용에 붙지 않는다. 같은 파일을 요청하는 iframe도 같은 기준으로 확인한다. 같은 지문으로 `Complete`한 뒤 WebView가 실제로 읽기 전에 파일이 바뀌는 간격은 기존의 스캔·WebView 읽기 비원자성과 같다.
-    - 하네스 측정(Windows 11, WebView2 런타임 155.0.4283.62, 격리 user data 폴더, controller 숨김·표시 두 조건): 문서 요청을 붙잡은 채 `Stop`하면 `NavigationCompleted`(실패, `WebErrorStatus` 9)가 `Complete`보다 먼저 왔다. 그 뒤 `Complete`해도 `ContentLoading`이 없고 이전 문서가 남았다. `Stop`과 `Complete`를 같은 tick에 호출해도 같았다. `Stop` 없이 붙잡기만 하면 6초 동안 완료 신호가 없었다. `Stop` 뒤 같은 종류(`Navigate`·`Reload`·`GoBack`)로 다시 시작하면 정상으로 로드됐다. Tasty 자체를 Windows에서 실행한 측정은 하지 않았다.
-    - 시험: `the_document_request_of_a_resumed_navigation_proceeds_when_its_fingerprint_matches`, `a_same_stamp_rewrite_is_caught_at_the_document_request`(식별값이 그대로인 같은 길이 쓰기), `an_unchecked_resumed_document_is_stopped_and_reloaded`, `a_file_that_keeps_changing_loads_without_scripts_after_the_limit`.
+    - 관측(Windows 11 25H2, WebView2 런타임 155.0.4283.62, 격리 user data 폴더, 서로 독립인 하네스 두 개, 시나리오마다 1회):
+      - 문서 요청을 붙잡은 채 `Stop`하면 그 `NavigationId`의 `NavigationCompleted`(실패, `WebErrorStatus` 9)가 1ms 안에, `Complete`보다 먼저 왔다.
+      - 그 뒤 `Complete`해도 그 문서의 재요청·`ContentLoading`·스크립트 실행이 없었고 이전 문서가 남았다. `Stop`과 `Complete`를 같은 tick에 호출해도, `Complete`하지 않고 deferral을 놓거나 늦게 `Complete`해도 같았다.
+      - `Stop` 없이 붙잡기만 하면 6초 동안 완료 신호가 없었다. 그래서 지문이 다르면 반드시 `Stop`한다.
+      - `Stop` 뒤 같은 종류(`Navigate`·`Reload`·`GoBack`)로 다시 시작하면 같은 목표를 정상으로 로드했고, 바뀐 내용을 새로 읽었다.
+    - API 보장 범위: 공식 문서가 보장하는 것은 세 가지다. deferral을 완료할 때까지 요청이 막힌다. `Stop`은 모든 탐색과 대기 중 자원 요청을 멈춘다. `NavigationCompleted`는 로드가 오류로 멈췄을 때도 온다. `Stop`의 완료 신호가 `Complete`보다 먼저 온다는 순서는 관측일 뿐이다. 그래서 구현은 이 순서에 의존하지 않고, 멈춘 탐색의 `NavigationCompleted`를 받은 뒤에만 `Complete`한다. `Stop` 호출이 실패하면 완료 신호를 기다리지 않는다. 재시작을 버리고, 본문은 붙잡아 둔 채 이 로드를 실패(Failed)로 끝내 Loading에 남지 않게 한다. 붙잡은 요청은 그 탐색이 끝나거나 다음 탐색이 commit할 때 놓아 준다. 겹친 main·iframe 요청, 이전 페이지에 대기 중인 하위 요청이 있을 때의 `Stop` 영향, 다른 런타임 버전은 측정하지 않았다. Tasty 자체를 Windows에서 실행한 측정도 하지 않았다.
+    - 시험: `the_document_request_of_a_resumed_navigation_proceeds_when_its_fingerprint_matches`, `a_same_stamp_rewrite_is_caught_at_the_document_request`(식별값이 그대로인 같은 길이 쓰기), `an_unchecked_resumed_document_is_stopped_and_reloaded`, `a_file_that_keeps_changing_loads_without_scripts_after_the_limit`, `a_failed_stop_drops_the_restart_and_keeps_the_request_until_another_commit`.
   - 다시 시작한 탐색의 실제 종류가 예상과 다르면 매번 새 탐색으로 보여 취소가 이어진다. 그래서 알아보지 못한 재시작이 두 번 이어지면 더 취소하지 않고 지문 없는 문서로 스크립트 없이 진행한다. 알아본 재시작, 스캔이 필요 없는 탐색, 호스트 요청이 이 횟수를 되돌린다. `Navigate`로 같은 주소를 다시 열 때 런타임이 어떤 종류를 보고하는지는 측정하지 않았다.
   - 호스트의 로드·재로드·뒤로·앞으로 요청은 기다리던 스캔과 재시작을 먼저 버린다.
   - 페이지가 시작한 뒤로·앞으로는 방향을 알 수 없다. 종류를 읽지 못한 탐색(구형 런타임, `ICoreWebView2NavigationStartingEventArgs3` 없음)은 재시작을 종류로 알아볼 수 없다. `NavigationId`를 읽지 못한 탐색은 취소를 구별할 수 없다. 이 경우들은 취소하지 않고 지문 없는 문서로 둬 스크립트 없이 진행한다. `SetCancel`이 실패해도 같다.
@@ -223,7 +228,10 @@ OS별 구현은 다음과 같다.
   - macOS 27.0.1 실 기기에서 debug 빌드로 실제 실행해 측정했다. 스크립트와 스크립트가 있는 iframe을 가진 `file://` 문서는 main frame과 서브프레임 모두 JS가 꺼진 채 그려졌고, 사용자가 본 뒤 배너가 `blocked`로 떴다. 허용하면 재로드 뒤 두 frame 모두 JS가 돌았다. 다른 문서로 이동하면 그 문서의 JS가 꺼졌고, 허용했던 문서로 돌아와도 허용이 풀려 다시 꺼졌다.
   - 허용 판단이 붙은 webview에서는 전역 `javaScriptEnabled`(deprecated)를 켜 둔다. 전역 값이 꺼져 있으면 navigation별 `allowsContentJavaScript`를 켜도 스크립트가 실행되지 않기 때문이다. 문서의 JS는 navigation별 값으로만 정한다.
   - 그래서 전역 "Sandbox scripts" 변경은 화면 문서에 바로 적용되지 않고 다음 navigation부터 적용된다(미측정).
-- Windows: 위 하네스에서 `file://` 문서의 `GoBack`·`GoForward`, 그리고 `SetCancel` 뒤 다시 시작한 `GoBack`은 매번 문서 요청(`WebResourceRequested` DOCUMENT 문맥)과 `ContentLoading`을 거쳤다. 요청 없이 복원되는 bfcache는 관측되지 않았다. 다른 런타임에서 요청 없이 commit하면 위 문서 요청 확인이 그 탐색을 멈추고 재로드한다. macOS의 bfcache 복원에 navigation별 설정이 적용되는지는 측정하지 않았다.
+- Windows bfcache:
+  - 소스 근거: Chromium의 `BackForwardCacheImpl::PopulateReasonsForMainDocument`는 main 문서의 마지막 commit URL이 HTTP/HTTPS가 아니면 `kSchemeNotHTTPOrHTTPS` 사유로 저장하지 않는다([back_forward_cache_impl.cc](https://github.com/chromium/chromium/blob/a92605a10f26b2edff954ec56a531f06716a807a/content/browser/back_forward_cache/back_forward_cache_impl.cc#L1079-L1084), Chromium main 기준). 런타임 155가 쓰는 Chromium 분기와 Edge 쪽 변경은 대조하지 않았다.
+  - 관측: 위 하네스에서 `file://` 문서의 `Reload`·`GoBack`·`GoForward`, 페이지의 `history.back()`·`location.reload()`, `SetCancel` 뒤 다시 시작한 `GoBack`은 매번 문서 요청(`WebResourceRequested` DOCUMENT 문맥)을 거쳐 바뀐 파일을 다시 실행했다. `pageshow`·`pagehide`의 `persisted`는 false였다.
+  - 보장하지 않는 것: 런타임이 file 문서를 요청 없이 복원하지 않는다는 API 보장은 없다. 그런 경로가 생기면 위 문서 요청 확인이 요청 없는 commit으로 보고 그 탐색을 멈춘 뒤 재로드한다. 그래서 허용은 실제로 읽은 지문에만 붙는다. macOS의 bfcache 복원에 navigation별 설정이 적용되는지는 측정하지 않았다.
 - 두 OS에서 bfcache를 끌 수 있는지는 구현할 때 확인한다. 응답 단계 없이 commit된 문서는 지문이 없어 허용할 수 없다.
 - 두 OS에서도 허용 기록은 새 main frame 문서가 commit될 때 갱신한다. commit 없이 끝난 로드에서는 화면 문서의 허용 상태로 JS를 되돌린다. 이 시점에 대응하는 이벤트는 구현에서 정하며 측정하지 않았다.
   - 두 OS는 로드 시작과 응답 결정을 navigation 시작 콜백에서 함께 한다. 새 로드가 앞 로드를 취소하면 앞 로드의 종료 신호가 새 로드의 시작 뒤에 올 수 있다. 이 신호가 새 로드의 대기 값을 지우면 새 문서가 지문 없이 기록된다.
