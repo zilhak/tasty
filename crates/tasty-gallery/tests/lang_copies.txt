@@ -58,7 +58,7 @@ src/catalog/components/dag.rs	just now	file_handler.picker.when_just_now
 src/catalog/components/dag.rs	run	command_palette.hint_run
 src/catalog/components/dag.rs	transition	dag.rel.transition
 src/catalog/components/dag.rs	unknown	remote_tool.filter_unknown
-src/catalog/components/dag.rs	{}s	dag.duration.seconds
+src/catalog/components/dag.rs	{}s	dag.duration.seconds,notification_panel.elapsed_seconds
 src/catalog/components/dag/detail.rs	Command	dag.detail.command
 src/catalog/components/dag/detail.rs	Duration	dag.detail.duration
 src/catalog/components/dag/detail.rs	Error	dag.detail.error
@@ -248,11 +248,9 @@ src/catalog/components/modifier_hint.rs	Switch tabs (number keys show over tabs)
 src/catalog/components/modifier_hint.rs	held	modifier_hint.held
 src/catalog/components/move_source.rs	inactive	remote_attach.inactive,remote_tool.attach_inactive
 src/catalog/components/notification_panel.rs	Empty	surface.kind.empty
-src/catalog/components/notification_panel.rs	Jump	button.jump_to_workspace
-src/catalog/components/notification_panel.rs	Mark all read	button.mark_all_read
-src/catalog/components/notification_panel.rs	No notifications	notification_panel.empty_message
-src/catalog/components/notification_panel.rs	Notifications	fullscreen.notifications.title,notification_panel.window_title,settings.notifications.heading,settings.tab.notifications
-src/catalog/components/notification_panel.rs	Unknown	dag.tooltip.unknown,notification_panel.unknown_workspace,settings.macos_permissions.status_unknown
+src/catalog/components/notification_panel.rs	Error	dag.detail.error
+src/catalog/components/notification_panel.rs	Info	notification_panel.info
+src/catalog/components/notification_panel.rs	Open	button.open,file_handler.picker.open_button,filepicker.open_button
 src/catalog/components/occupancy_borders.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/occupancy_borders.rs	Force detach	attach.force_detach
 src/catalog/components/plugin_settings.rs	Dark	settings.appearance.theme.dark

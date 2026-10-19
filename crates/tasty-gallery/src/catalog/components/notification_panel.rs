@@ -1,6 +1,7 @@
 //! The live notification widget in popup, fullscreen and sidebar specimens.
 use crate::catalog::popup_frame::{self, TitleButtons};
 use crate::catalog::spec::{self, StageVariant};
+use crate::i18n::t;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
@@ -8,18 +9,26 @@ use tasty_ui_widgets::{
     NotificationSummary, NotificationTone, notification_panel, notification_summary,
 };
 
+fn level_labels() -> [&'static str; 3] {
+    [
+        t("notification_panel.errors"),
+        t("notification_panel.warnings"),
+        t("notification_panel.info"),
+    ]
+}
+
 fn labels() -> NotificationLabels<'static> {
     NotificationLabels {
-        levels: ["Errors", "Warnings", "Info"],
-        no_unread: "No unread",
-        empty: "No notifications.",
-        mark_all: "Mark all read",
-        mark_read: "Mark as read",
-        jump: "Jump",
-        closed: "· closed",
-        source_closed: "Source closed",
-        more: "More",
-        less: "Less",
+        levels: level_labels(),
+        no_unread: t("notification_panel.no_unread"),
+        empty: t("notification_panel.empty_message"),
+        mark_all: t("button.mark_all_read"),
+        mark_read: t("notification_panel.mark_read"),
+        jump: t("button.jump_to_workspace"),
+        closed: t("notification_panel.closed"),
+        source_closed: t("notification_panel.source_closed"),
+        more: t("notification_panel.more"),
+        less: t("notification_panel.less"),
     }
 }
 
@@ -108,7 +117,7 @@ pub fn draw(ui: &mut egui::Ui, th: &Theme) {
                     popup_frame::draw_panel(
                         ui,
                         th,
-                        "Notifications",
+                        t("notification_panel.window_title"),
                         th.notifications_popup_width(),
                         th.notifications_popup_height(),
                         TitleButtons::FULLSCREEN_AND_CLOSE,
@@ -141,9 +150,9 @@ pub fn draw_summary(ui: &mut egui::Ui, th: &Theme) {
             spec::cluster(ui, th, name, |ui| {
                 let props = NotificationSummary {
                     counts,
-                    label: "Notifications",
+                    label: t("notification_panel.window_title"),
                     tooltip: "Unread notifications by level",
-                    level_labels: ["Errors", "Warnings", "Info"],
+                    level_labels: level_labels(),
                     latest: if counts[0] > 0 {
                         Some((
                             NotificationTone::Error,
