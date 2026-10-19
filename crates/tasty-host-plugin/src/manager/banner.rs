@@ -15,7 +15,7 @@ impl PluginManager {
     /// debug 전용 트리거는 해당 검사를 우회할 수 있다.
     ///
     /// 같은 (plugin_id, banner_id) 인스턴스가 이미 열려 있으면 새로 열지 않고 기존
-    /// instance_id 를 돌려준다(단일 인스턴스 dedup — host 소유 정책, identity 원칙 1).
+    /// instance_id 를 돌려준다(단일 인스턴스 dedup — host 소유 정책).
     /// plugin 이 실행 중이 아니거나 banner contribute 가 없으면 `None`.
     pub fn open_banner_instance(
         &mut self,

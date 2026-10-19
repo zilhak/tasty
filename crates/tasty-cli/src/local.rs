@@ -253,7 +253,7 @@ impl ClientCommand for RemoteCheck<'_> {
 }
 
 /// `tasty remote workspaces` — 원격 tasty 의 워크스페이스 목록 조회(browse).
-/// 순수 조회라 로컬 사용자 상태(focus)에 닿지 않는다(원칙 1).
+/// 순수 조회라 로컬 사용자 상태(focus)에 닿지 않는다(docs/design/policies/focus.md).
 pub struct RemoteWorkspaces<'a> {
     pub ssh: &'a Option<String>,
     pub profile: &'a Option<String>,
@@ -283,7 +283,7 @@ impl ClientCommand for RemoteWorkspaces<'_> {
 }
 
 /// `tasty remote new-workspace` — 원격 tasty 에 워크스페이스 생성(원격 mutate).
-/// 로컬 사용자 상태에 닿지 않는다(원칙 1).
+/// 로컬 사용자 상태에 닿지 않는다(docs/design/policies/focus.md).
 pub struct RemoteNewWorkspace<'a> {
     pub ssh: &'a Option<String>,
     pub profile: &'a Option<String>,

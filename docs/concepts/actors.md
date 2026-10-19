@@ -1,10 +1,10 @@
 # 주체 (Actors)
 
-Tasty는 한 인스턴스를 여러 주체가 동시에 사용하도록 설계한다. 주체마다 조작 방법과 권한이 다르다([기본 원칙](../identity.md)).
+Tasty는 한 인스턴스를 여러 주체가 동시에 사용하도록 설계한다. 주체마다 조작 방법과 권한이 다르다([사용자 통제와 데이터 원칙](../principles/control-and-data.md#사용자에이전트원격-사용자)).
 
 ## 로컬 사용자 (Local user)
 
-로컬 사용자는 이 머신에서 키보드·마우스·OS 입력으로 Tasty GUI를 직접 쓰는 사람이다. 포커스를 정하고 점유되지 않은 surface·workspace를 자유롭게 조작한다. 한 인스턴스에 보통 한 명이며, 다른 주체의 점유를 강제로 해제할 수 있다.
+로컬 사용자는 이 머신에서 키보드·마우스·OS 입력으로 Tasty GUI를 직접 쓰는 사람이다. 포커스를 정하고 점유되지 않은 surface·workspace를 자유롭게 조작한다. 한 인스턴스에 보통 한 명이며, GUI에서 다른 주체의 점유를 강제로 해제할 수 있다.
 
 ## AI Agent (에이전트)
 
@@ -12,7 +12,7 @@ Tasty는 한 인스턴스를 여러 주체가 동시에 사용하도록 설계�
 
 ## 원격 접속 사용자 (Remote user)
 
-원격 사용자는 SSH를 통해 attach로 접속하는 사람이다. 로컬 GUI 입력 대신 attach 스트림을 사용하고 로컬 포커스를 바꿀 수 없다. 에이전트와 비슷한 제한을 받지만, 원격 사용자는 작업 전에 surface나 workspace를 반드시 hard 점유해야 하며 점유한 대상만 조작할 수 있다.
+원격 사용자는 SSH를 통해 접속하는 사람이며 에이전트와 같은 동작 권한을 가진다. SSH 셸이나 터널로 서버의 CLI·IPC를 쓸 수 있고 로컬 포커스는 바꿀 수 없다. attach 스트림으로 화면을 조작할 때는 surface나 workspace를 hard 점유하고 점유한 대상만 조작한다.
 
 tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach 동작은 [`../features/remote-attach/`](../features/remote-attach/index.md), 메커니즘은 [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md).
 
@@ -32,7 +32,7 @@ tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach �
 
 ### 공통 규칙
 
-- **해제 권한**: 어느 계층이든 점유는 **점유 주체 본인(self-release) 또는 로컬 사용자(force-detach)** 만 끊는다. 끊으면 대상은 다시 **일반 surface/workspace 로 복귀** 한다.
+- **해제 권한**: 어느 계층이든 점유는 **점유 주체 본인(self-release) 또는 로컬 사용자의 GUI 강제 끊기(force-detach)** 로 끊는다. 연결이 끊기면 그 연결의 점유도 풀린다. 끊으면 대상은 다시 **일반 surface/workspace 로 복귀** 한다. release 에는 다른 주체의 점유를 끊는 IPC·CLI 가 없고, debug 빌드만 사용자 조작 재현용 `debug.attach.*` 를 둔다([Attach 메커니즘](../dev-guide/attach-behavior.md#force-detach)).
 - **배타(1:1)**: 계층과 무관하게 **한 대상(surface/workspace)은 한 번에 한 주체만 점유** 한다. 점유는 *주체 → 대상* 1:N, *대상 → 점유자* 1:1. 동시 점유는 불가하고, 다른 주체가 잡으려면 기존 점유가 먼저 풀려야 한다.
 - **다중성**: 원격 사용자는 여럿이 동시에 접속할 수 있고, 한 주체가 여러 대상을 동시에 점유할 수 있다.
 
@@ -42,10 +42,10 @@ tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach �
 |---|---|---|---|
 | 부류 | 사람 | AI | 사람 |
 | 동작 경로 | 직접 GUI 입력 | IPC / CLI | attach 연결 |
-| 분류 성격 | 사용자 행동 | 에이전트 행동 | **에이전트에 가까움 + 점유** |
+| 분류 성격 | 사용자 행동 | 에이전트 행동 | **에이전트와 같은 권한 + 점유** |
 | 점유 | 불필요 | **선택** (soft/hard) | **필수** (강한 점유 안에서만) |
 | 포커스 | 주인 | 안 건드림 | 로컬 포커스 비주인 |
-| 타 점유 강제해제(force-detach) | **있음** | 없음 (자기 점유 self-release 만) | 없음 (자기 점유 self-release 만) |
+| 타 점유 강제해제(force-detach) | **있음** (GUI 강제 끊기) | 없음 — release 에 공개 IPC·CLI 없음 (자기 점유 self-release 만) | 없음 — 에이전트와 같음 (자기 점유 self-release 만) |
 | 동시 수 | 보통 1 | 0..N | 0..N |
 
 API를 설계할 때는 로컬 직접 입력과 에이전트·원격 요청을 구분한다. [사용자와 에이전트 행동의 분리](../principles/control-and-data.md#사용자에이전트원격-사용자)를 따른다.

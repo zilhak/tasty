@@ -15,7 +15,7 @@
 - **데이터**: 각 `Workspace` 는 소속 카테고리 id(`category`)를 갖는다. `CoreState.categories: Vec<WorkspaceCategory>` 가 카테고리 목록이며 **Vec 순서 = 사이드바 섹션 순서**.
 - **`normal` 예약**: id `0`, 이름 `normal`, **`categories[0]` 위치 고정**. rename/delete 불가, 생성 시 이름으로 사용 불가(대소문자 무시). 미지정 워크스페이스의 기본 소속. `ensure_normal_category` 가 생성/복원 직후 이 불변식(0번 고정 + ID 발급 하한 + 없는 카테고리 소속 정리)을 보장한다.
 - **이름 규칙**: trim 후 빈 이름 거부, `normal`(대소문자 무시) 예약어 거부, 기존 이름과 대소문자 무시 중복 거부.
-- **삭제**: 카테고리를 지우면 그 안의 워크스페이스는 **순서를 보존하며** `normal` 로 귀속한다. 워크스페이스의 전역 인덱스는 불변이므로 사용자 active 는 영향받지 않는다(원칙 1·3).
+- **삭제**: 카테고리를 지우면 그 안의 워크스페이스는 **순서를 보존하며** `normal` 로 귀속한다. 워크스페이스의 전역 인덱스는 불변이므로 사용자 active 는 영향받지 않는다([포커스 정책](../../design/policies/focus.md)).
 - **reorder**: `categories` Vec 순서 변경. **from/to == 0 거부**(normal 0번 고정).
 - **변경 경로**: 생성·이름 변경·삭제·순서·workspace 소속은 App journal 명령으로 확정한다. IPC는 commit·publication 뒤 원 응답을 받으며 UI는 원 View continuation으로 표시를 갱신한다. 카테고리 접힘은 View navigation 상태이고 View checkpoint에 저장한다. mirror의 로컬 표시 변경은 원격 구조 명령과 구분한다.
 - **인덱싱**: 사용자 active 워크스페이스는 하나의 전역 인덱스로 유지([포커스 정책 (운영 상세)](../../design/policies/focus.md)). 카테고리-로컬 전환(`switch_workspace_in_active_category`)은 active 카테고리의 로컬 인덱스를 전역 인덱스로 변환해 기존 전환 경로를 재사용한다. `Alt+숫자` 는 토글 on 이면 active 카테고리 내 로컬 전환, off 면 전역 전환(무회귀).
@@ -32,14 +32,14 @@
   전환 시 (1) 대상이 접혀 있으면 `UiIntent::SetCategoryCollapsed`(`collapsed: false`)로 **자동 확장**하고 슬롯 파일에 영속, (2) 그 카테고리의 **last-active** 워크스페이스로 이동(방문 이력 없으면 첫 워크스페이스).
   last-active 는 `MainViewState.category_last_active: HashMap<WorkspaceCategoryId, WorkspaceId>` 에 `switch_workspace` 마다 기록된다.
   슬롯 키는 `KeybindingSettings.category_switch_slot_keys`(기본 `["1".."9","0"]`).
-  오버레이 modifier 는 egui raw_input(사용자 키)만 보므로 IPC/CLI 로는 유발 불가(원칙 1).
+  오버레이 modifier 는 egui raw_input(사용자 키)만 보므로 IPC/CLI 로는 유발 불가(사용자 조작 재현은 release 에 없다).
   전 기능은 folders 토글 on 게이트.
 - **영속**: 슬롯 파일(`~/.tasty/layouts/NN.json`)에 `categories`(이름·접힘 상태) + 각 워크스페이스의 `category` 가 저장된다. 둘 다 `#[serde(default)]` — 구버전 스냅샷은 카테고리 없이 로드되어 `normal` 단일로 무손실 마이그레이션된다.
 - **토글 마이그레이션**: `workspace_categories_enabled` on→off 시 normal 외 모든 카테고리를 제거하고 워크스페이스를 normal 로 귀속한다(전역 인덱스·active 불변).
 
 ## 인터페이스
 
-- **AI Agent (IPC/CLI)** — 카테고리 CRUD·reorder·소속 변경은 양면 노출(원칙 2):
+- **AI Agent (IPC/CLI)** — 카테고리 CRUD·reorder·소속 변경은 양면 노출([API 규약](../../dev-guide/api-conventions.md#ipc-메서드를-cli로-제공하는-기준)):
   - `workspace_category.list` / `tasty workspace-category list`
   - `workspace_category.create {name}` / `tasty workspace-category create --name X`
   - `workspace_category.rename {id,name}` / `tasty workspace-category rename --id N --name X`
@@ -77,7 +77,7 @@ workspace의 카테고리를 이어받는다. parked 상태나 workspace가 없�
 
 ## 비-목표 (Out of scope)
 
-- **선택(active) 카테고리 변경·접힘 토글** 은 사용자 UI 상태 — IPC 에 노출하지 않는다(원칙 1·3). 카테고리 IPC 의 어떤 부수효과도 사용자 active/포커스를 바꾸지 않는다.
+- **선택(active) 카테고리 변경·접힘 토글** 은 사용자 UI 상태 — IPC 에 노출하지 않는다(같은 포커스 정책). 카테고리 IPC 의 어떤 부수효과도 사용자 active/포커스를 바꾸지 않는다.
 - 카테고리 자동 삭제 없음(빈 카테고리 허용).
 
 ## Acceptance Criteria

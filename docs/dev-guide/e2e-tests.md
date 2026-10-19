@@ -67,7 +67,7 @@ GUI 테스트 바이너리와 headless 데몬의 혼합을 동종 조합의 검�
 **왜 workspace 로 격리해도 되나**
 
 - attach 점유는 `OccupancyRegistry` 의 `surface_locks` / `workspace_locks` — **workspace/surface 단위 lock** 이다([attach-behavior.md](attach-behavior.md)). 서로 다른 workspace 를 잡는 테스트들은 한 인스턴스 위에서 병렬 공존한다.
-- IPC 로 만든 workspace 는 `IntentOrigin::Agent` 라 active 를 전환하지 않는다([identity.md](../identity.md) 원칙 1·3). 여러 테스트가 병렬로 만들어도 서로의 활성 상태를 흔들지 않는다.
+- IPC 로 만든 workspace 는 `IntentOrigin::Agent` 라 active 를 전환하지 않는다([포커스 정책](../design/policies/focus.md)). 여러 테스트가 병렬로 만들어도 서로의 활성 상태를 흔들지 않는다.
 - `workspace.create` 응답이 `id` 와 `surface_id` 를 함께 주므로 한 번의 호출로 격리 단위 전체를 얻는다.
 
 **공유 범위는 test binary 단위다 — `cargo test` 전체가 아니다.** `OnceLock` 은 프로세스 로컬 정적 상태이고 cargo 는 test 타겟마다 별도 프로세스를 띄우므로, 이 구조로 도달 가능한 하한은 *바이너리당 1 개*다. 이걸 "저장소 전체 1 개" 로 오해하면 인스턴스 총량을 잘못 계산하게 된다. 총량을 더 줄이려면 test binary 개수 자체를 줄여야 한다.
@@ -105,7 +105,7 @@ GUI 테스트 바이너리와 headless 데몬의 혼합을 동종 조합의 검�
 |----|------|------|
 | 공유 범위 | test binary 당 1 개 | §1 참조 |
 | 직렬화 | **안 한다** — lock 없이 `&'static` 만 공유 | IPC 서버는 연결마다 별도 스레드로 받아 mpsc 로 큐잉하므로 동시 호출이 안전하다. (`gui_common::shared()` 가 `MutexGuard` 로 완전 직렬화하는 건 실제 데스크톱 마우스/포커스를 뺏는 입력 주입을 쓰기 때문이고, 이쪽은 IPC 전용이라 해당 없음) |
-| 테스트 격리 | `TastyInstance::create_workspace()` 로 테스트마다 자기 workspace | IPC 생성은 `IntentOrigin::Agent` 라 active 를 전환하지 않고(원칙 1·3), attach 점유도 workspace/surface 단위 lock 이라 서로 다른 workspace 는 병렬 공존한다 |
+| 테스트 격리 | `TastyInstance::create_workspace()` 로 테스트마다 자기 workspace | IPC 생성은 `IntentOrigin::Agent` 라 active 를 전환하지 않고([포커스 정책](../design/policies/focus.md)), attach 점유도 workspace/surface 단위 lock 이라 서로 다른 workspace 는 병렬 공존한다 |
 | 정리 | `Drop` 이 아니라 `atexit` | 정적 저장이라 `Drop` 이 영원히 돌지 않는다. atexit 가 graceful `system.shutdown` → force kill → port file·격리 HOME 삭제를 수행한다. `Drop` 은 전용 인스턴스 경로로 그대로 남는다. 다만 Drop/atexit 둘 다 프로세스가 강제로 죽으면 실행되지 않는다 — 그 구멍은 §2-1 참조 |
 | spawn 실패 | 첫 실패 후 **재시도하지 않는다** | `OnceLock::get_or_init` 은 초기화 클로저가 panic 하면 미초기화로 남아 다음 테스트가 그대로 재시도한다 — 부팅 timeout 상황에서 테스트 수만큼 GUI 프로세스가 더 뜨는 증폭을 막는다. 핸들이 서기 **전**의 패닉(S1 timeout · 조기 종료 · 입력 장치 생성 실패 등)은 `Drop` 을 못 부르므로, 그 구간의 자식은 `spawn_diag::ChildReaper` 가 소유해 되감기에서 kill 하고 거둔다(`Child` 의 Drop 은 kill 하지 않아 그냥 두면 orphan 이 된다). 세 하네스(`common`·`webhook_common`·`gui_common`) 모두 같은 타입을 거친다. 회수기 자체의 계약은 `spawn_diag` 의 단위 시험 둘이 잰다(패닉하면 죽이고 거둔다 · 넘기면 산 채로 넘긴다). 하네스가 그것을 실제 갈래에서 쓰는지는 시험이 없다 — 재는 법은 §2-1 끝 |
 | 요청 재전송 | `call()`·`call_raw()` 는 아무것도 보내지 못한 **연결 실패만** 다시 시도한다(최대 3 회). 요청을 보낸 뒤 응답을 못 받으면 다시 보내지 않고 실패한다 | 응답이 늦었을 뿐 요청은 실행됐을 수 있다. 다시 보내면 `workspace.create` 가 두 번 실행되고, `pty.attach_surface` 재전송은 이미 입양된 PTY 를 찾지 못해 `headless pty … not found` 로 실패한다. 중복 요청은 직렬 journal worker 의 대기열도 늘려 뒤 요청을 더 늦춘다 |

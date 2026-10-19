@@ -739,7 +739,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("window.close", local_only(Idempotent)),
         ("window.list", local_only(Read)),
         // ui.screenshot — 정식 focus-독립 캡처. 대상 window/surface 를 ID 로 지정하며
-        // focused 창에 의존하지 않는다(원칙 3). 임의 경로 파일 쓰기 표면이라 local_only
+        // focused 창에 의존하지 않는다(docs/design/policies/focus.md). 임의 경로 파일 쓰기 표면이라 local_only
         // (plugin 미노출) — CLI/로컬 client 만 호출.
         ("ui.screenshot", local_only(Mutate).kept_by_app_layer()),
         // view.*는 window.*의 호환 이름이다. 외부 payload의 window_id도 유지한다.
@@ -786,7 +786,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         "debug.inject_egui_text",
         local_only(MethodEffect::Mutate).kept_on_every_host_path(),
     ),
-    // 임의 Lua 주입(docs/features/lua-hooks/index.md#실행-격리--안전-장치) — release 에는 이 경로가 없다(원칙 1). local 전용.
+    // 임의 Lua 주입(docs/features/lua-hooks/index.md#실행-격리--안전-장치) — release 에는 이 경로가 없다(사용자 조작 재현). local 전용.
     (
         "debug.lua.eval",
         local_only(MethodEffect::Mutate).kept_on_every_host_path(),

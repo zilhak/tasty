@@ -108,7 +108,7 @@ modifier 드롭다운에서 **"개별 지정"**(sentinel `KeybindingSettings::IN
 - 워크스페이스: next/prev → `next_workspace_in_active_category`/`prev_workspace_in_active_category`, 슬롯 local → 카테고리 토글 on 이면 `switch_workspace_in_active_category(local)`, off 면 `switch_workspace(local)`.
 - 카테고리: next/prev → `next_category`/`prev_category`(`state/workspace.rs` — 카테고리 리스트 안에서 wrap-around ±1 이동한 뒤 `switch_to_category` 재사용, auto-expand + last-active 이동 포함), 슬롯 section → `switch_to_category(section)`. 세 매칭 모두 folders 토글 off 면 no-op·비소비. → [워크스페이스 카테고리](../workspace-category/index.md).
 
-어느 것도 매칭 안 되면 조용히 `false` 를 돌려 다른 단축키 매칭으로 넘긴다. 이 메서드들은 focused pane 의 active_tab · active_workspace(= **사용자 포커스 상태**)를 바꾸므로 **사용자 키 입력 경로에서만** 호출되며 release IPC/CLI 로 노출되지 않는다(원칙 1/3). Command Palette·더블탭 파리티는 범위 밖.
+어느 것도 매칭 안 되면 조용히 `false` 를 돌려 다른 단축키 매칭으로 넘긴다. 이 메서드들은 focused pane 의 active_tab · active_workspace(= **사용자 포커스 상태**)를 바꾸므로 **사용자 키 입력 경로에서만** 호출되며 release IPC/CLI 로 노출되지 않는다([포커스 정책](../../design/policies/focus.md)). Command Palette·더블탭 파리티는 범위 밖.
 
 #### switch-number 오버레이 — 표시 = 동작
 
@@ -225,7 +225,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   세 OS 모두 별개). 다시 보일 때 자동 복원은 하지 않는다.
   회수는 **창이 활성(`base.focused` 이거나 webview 자식이 OS 포커스를 쥠)이고, 포커스가 실제로 그 webview 자식 안에 있을 때만**
   한다 — overlay 와 탭 전환은 IPC 로도 일어나므로 무조건 회수하면 tasty 가 다른 앱의 OS 키보드
-  포커스를 빼앗는다(불가침 원칙 1). 시점과 한계는 [WebView 호스트 계약](../../design/systems/webview.md#포커스--회수는-조건부다)이 정본이다.
+  포커스를 빼앗는다([사용자 통제와 데이터 원칙](../../principles/control-and-data.md)). 시점과 한계는 [WebView 호스트 계약](../../design/systems/webview.md#포커스--회수는-조건부다)이 정본이다.
 - **폴링 tick 은 Linux 에서만 세워진다.** GDK 는 winit 과 다른 X 연결로 이벤트를 받아
   루프를 깨우지 못해, 드러난 webview 가 있고 창이 활성(`host_window_has_os_focus` — `base.focused`
   이거나 webview 자식이 X 포커스를 쥠)인 동안만 16ms tick 으로 GTK 를 펌프한다. 자식이 포커스를

@@ -100,7 +100,7 @@ fn release_table_has_no_input_reproduction_method_names() {
     assert!(
         offenders.is_empty(),
         "release 표(METHOD_TABLE)에 사용자 입력 재현 계열 메서드가 있다 \
-         (docs/identity.md 원칙 1 ② — 입력 재현은 release 에 없다). \
+         (docs/principles/control-and-data.md — 입력 재현은 release 에 없다). \
          DEBUG_METHODS 로 옮겨라. 이름이 우연히 겹친 정상 에이전트 메서드라면 \
          이 파일의 패턴을 좁히고 그 근거를 남겨라:\n  {}",
         offenders.join("\n  ")
@@ -128,7 +128,7 @@ fn ime_prefix_rule_stays_debug_only() {
         idx > 0 && lines[idx - 1].trim() == "#[cfg(debug_assertions)]",
         "`surface.ime_` prefix 규칙이 `#[cfg(debug_assertions)]` 없이 정의돼 있다. \
          IME 조합 상태 강제 세팅은 사용자 입력 재현이라 release 표면에 두지 않는다 \
-         (docs/identity.md 원칙 1 ②). 바로 앞 줄: {:?}",
+         (docs/principles/control-and-data.md). 바로 앞 줄: {:?}",
         lines.get(idx.wrapping_sub(1)).copied().unwrap_or("<없음>")
     );
     assert!(

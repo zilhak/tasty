@@ -262,7 +262,7 @@ impl App {
             return;
         };
         let Some(remote_ws) = mapping.remote_workspace else {
-            return; // 원격 workspace id 미지정 — 자동 attach 와 동일 원칙 3.
+            return; // 원격 workspace id 미지정 — 자동 attach 와 같이 대상을 추측하지 않는다.
         };
 
         let attempt = match self

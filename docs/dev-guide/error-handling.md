@@ -349,7 +349,7 @@ println!("{}", serde_json::to_string_pretty(&value)?);
 `InfoModal`, 에이전트 IPC(`window.create`)발 실패는 **요청자에게 IPC 응답 에러로만** 돌려주고
 사용자 화면에는 아무것도 띄우지 않는다(toast 도 아니다). `InfoModal` 은 포커스를 가져가고
 toast 도 요청하지 않은 일의 통지라, 어느 쪽이든 에이전트 행동의 부수효과가 사용자 상태에
-닿지 않는다는 핵심 원칙 1 을 어기게 된다([IPC 서버](../architecture/ipc-server.md)).
+닿지 않는다는 [포커스 정책](../design/policies/focus.md)을 어기게 된다([IPC 서버](../architecture/ipc-server.md)).
 
 이 경로들은 winit `ActiveEventLoop` 가 있어야 돌아가 행동 테스트로 감쌀 수 없다 —
 `crates/tasty-doc-guards/tests/no_panic_in_window_creation.rs` 가 소스 형태로 패닉 재유입을 막는다.

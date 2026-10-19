@@ -2,7 +2,7 @@
 //! 파일 머리의 내부 cfg나 부모의 mod 선언을 읽고, 예외는 이름과 사유로 등록한다.
 //! 사용자 조작 재현인지의 의미 판단과 release 빌드 제외 여부는 검사하지 않는다.
 //! release 메서드 목록은 tests/ipc_release_table_excludes_input_reproduction.rs에서 별도로 확인한다.
-//! cfg는 문자열로 판독하며 논리식을 계산하지 않는다. 배치 규칙은 docs/identity.md의 원칙 1을 따른다.
+//! cfg는 문자열로 판독하며 논리식을 계산하지 않는다. 배치 규칙은 docs/dev-guide/debug-ipc.md와 docs/principles/control-and-data.md를 따른다.
 
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::temp_scratch::Scratch;

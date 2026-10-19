@@ -1171,7 +1171,7 @@ impl MainView {
                     );
                 }
                 Some(4) => {
-                    // 원격 워크스페이스 추가 팝업 — 카테고리 헤더 우클릭 진입(원칙 1).
+                    // 원격 워크스페이스 추가 팝업 — 카테고리 헤더 우클릭 진입(사용자 조작).
                     this.state.dispatch_intent(
                         crate::intent::UiIntent::OpenPopup {
                             id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,

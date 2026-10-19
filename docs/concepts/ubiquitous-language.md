@@ -158,5 +158,5 @@ Pane 은 tmux/iTerm2 에 대응 개념이 **없는** tasty 고유 설계다. 그
 
 ## 관련
 
-- [identity.md](../identity.md) — 정체성·불가침 원칙 (이 용어들의 *왜*)
+- [identity.md](../identity.md) — 정체성, [제품 원칙](../principles/index.md) — 판단 기준 (이 용어들의 *왜*)
 - [typed-length.md](typed-length.md) — 길이 타입 newtype

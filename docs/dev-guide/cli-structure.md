@@ -49,7 +49,7 @@ SSH 터널 경유 조회(`remote workspaces`)가 여기 속한다. 용어 정의
 clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대로 노출한다.
 따라서 clap 항목(variant · `#[arg]` 필드) 의 `///` 는 영어로만 쓴다
 ([i18n.md](i18n.md) "하드코딩 허용 예외"). 값 허용 범위·상호배타 같은 사용자에게
-필요한 상세는 긴 help 에 남기고, 설계 근거(불가침 원칙 번호, 내부 단계명 등)는
+필요한 상세는 긴 help 에 남기고, 설계 근거(원칙 문서 이름, 내부 단계명 등)는
 `//` 주석이나 `docs/` 로 내린다.
 
 `clap_help_text_is_english_only`
@@ -277,7 +277,7 @@ close 계열의 호출자 자기 보호(`caller_surface_id`)는 `CODEX_THREAD_ID
 
 `commands/debug.rs`(선언)와 `local/debug.rs`(실행) 둘 다 모듈째
 `#![cfg(debug_assertions)]`로 제한한다. 사용자 입력을 재현하는 명령은 release 빌드에 포함하지 않는다.
-[debug-ipc.md](debug-ipc.md), [identity.md](../identity.md) 원칙 1.
+[debug-ipc.md](debug-ipc.md), [사용자 통제와 데이터 원칙](../principles/control-and-data.md).
 
 ## 관련
 

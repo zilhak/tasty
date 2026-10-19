@@ -199,7 +199,7 @@ Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설�
 ### 능동 프로빙 배제
 
 대상 surface 에 입력을 주입해 반응을 보는 능동 프로빙은 사용자 입력 재현이라 release
-금지 대상이고([`docs/identity.md`](../../identity.md) 원칙 1), 자식 에이전트의 프롬프트
+금지 대상이고([사용자 통제와 데이터 원칙](../../principles/control-and-data.md)), 자식 에이전트의 프롬프트
 상태도 오염시킨다. 판정은 **수동 관측만** 쓴다.
 
 ### 비용
@@ -211,7 +211,7 @@ Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설�
 
 ## 인터페이스
 
-- **AI Agent (IPC/CLI)** — 모든 대상은 ID 로 직접 지정(포커스 독립, 원칙 3):
+- **AI Agent (IPC/CLI)** — 모든 대상은 ID 로 직접 지정(포커스 독립, [포커스 정책](../../design/policies/focus.md)):
   - `tasty terminal spawn --workspace <ws> --command "<cmd>" [--surface <parent>] [--pane] [--cwd] [--role] [--nickname]` ↔ `terminal.spawn`
   - `tasty terminal tell "<text>" [--surface]` ↔ `terminal.tell`
   - `tasty terminal children [--surface]` ↔ `terminal.children`

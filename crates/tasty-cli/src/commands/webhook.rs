@@ -1,7 +1,7 @@
 //! `tasty webhook` subcommand 정의 — 인바운드 웹훅 등록/조회/해제.
 //!
-//! 웹훅 lifecycle 은 에이전트 작업이라 CLI/IPC 양면 노출(원칙 2). 대상은 opaque
-//! id 로 직접 지정, list 는 전 범위 조회(원칙 3 포커스 독립).
+//! 웹훅 lifecycle 은 에이전트 작업이라 CLI/IPC 양면 노출(docs/dev-guide/api-conventions.md). 대상은 opaque
+//! id 로 직접 지정, list 는 전 범위 조회(포커스 독립, docs/design/policies/focus.md).
 
 use clap::Subcommand;
 

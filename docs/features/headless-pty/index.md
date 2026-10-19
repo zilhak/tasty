@@ -8,7 +8,7 @@
 - **주체**: AI Agent
 - **설계**: [터미널 (Terminal)](../../surfaces/terminal/index.md) (신규 `pty.*` 네임스페이스 결정) · [포커스 정책 (운영 상세)](../../design/policies/focus.md) (surface와 PTY의 ID 범위 분리)
 - **코드**: `src/runtime/terminal_store/standalone.rs` (단일 collection의 standalone 정책) · `crates/tasty-terminal/src/pty.rs` (PtyState·exit/reap) · `src/adapters/ipc/handler/pty.rs` (IPC) · `src/runtime/effect_runner.rs` 및 `src/runtime/effect_runner/installation.rs` (원 PTY 준비·승격) · `crates/tasty-cli` `pty` 서브커맨드 (CLI)
-- **화면**: 없음 — headless 전용. 렌더되지 않고 포커스/닫은-항목 히스토리/선택에 닿지 않는다(identity.md 원칙 1). 승격(`pty.attach_surface`) 후에만 일반 terminal surface 로 렌더.
+- **화면**: 없음 — headless 전용. 렌더되지 않고 포커스/닫은-항목 히스토리/선택에 닿지 않는다([포커스 정책](../../design/policies/focus.md)). 승격(`pty.attach_surface`) 후에만 일반 terminal surface 로 렌더.
 
 ## 목적
 
@@ -73,7 +73,7 @@ PtyState의 standalone 표시가 제거되어 이후에는 surface API로 다룬
 
 ## 인터페이스
 
-- **AI Agent (IPC/CLI)** — 모든 대상은 pty id 로 직접 지정(포커스 독립, 원칙 3). `pty.list` 는 필터 없이 전 목록 반환.
+- **AI Agent (IPC/CLI)** — 모든 대상은 pty id 로 직접 지정(포커스 독립, [포커스 정책](../../design/policies/focus.md)). `pty.list` 는 필터 없이 전 목록 반환.
 
 | CLI | IPC method | 권한 | 목적 |
 |-----|-----------|------|------|

@@ -49,7 +49,7 @@
 ## 인터페이스
 
 - **사용자 트리거**: 타이틀바 드래그(이동), 더블클릭(maximize), 캡션 버튼 클릭(min/max/close), 가장자리 드래그(리사이즈). macOS 신호등은 OS 처리.
-- **AI Agent**: 없음 — 윈도우 데코/이동/리사이즈는 사용자 행동(원칙 1). 멀티 윈도우 *생성* 자체는 [main-view](../main-view/index.md).
+- **AI Agent**: 없음 — 윈도우 데코/이동/리사이즈는 사용자 행동([포커스 정책](../../design/policies/focus.md)). 멀티 윈도우 *생성* 자체는 [main-view](../main-view/index.md).
 
 ## 비-목표 (Out of scope)
 

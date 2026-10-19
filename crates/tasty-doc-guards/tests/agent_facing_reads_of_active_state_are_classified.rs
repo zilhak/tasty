@@ -1,5 +1,5 @@
 //! 에이전트가 호출하는 경로의 활성 상태 읽기를 파일·분류·횟수·사유로 기록한다.
-//! 대상을 ID로 지정해야 한다는 docs/identity.md §2.3과 docs/design/policies/focus.md의 규칙을 따른다.
+//! 대상을 ID로 지정해야 한다는 docs/design/policies/focus.md의 CLI/IPC 포커스 독립 규칙을 따른다.
 //! 같은 식별자만으로 상태 보고와 대상 선택을 구별할 수 없어, 분류의 타당성은 사람이 판단한다.
 //! 이 검사는 미등록·개수 차이·사유 누락·OpenDefect 등록을 찾는다.
 //! 주석·문자열·테스트 전용 코드는 제외한다.
@@ -259,7 +259,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "src/adapters/ipc/handler/debug_state.rs",
         DebugOnly,
         6,
-        "debug 상태 덤프 전용 파일. 원칙 1 로 release 에 없다",
+        "debug 상태 덤프 전용 파일. 사용자 조작 재현이라 release 에 없다",
     ),
     (
         "src/adapters/ipc/handler/debug.rs",
@@ -406,7 +406,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .sum();
     assert_eq!(
         open, 0,
-        "활성 상태로 대상을 고르는 OpenDefect가 등록됐다. docs/identity.md §2.3에 따라 대상을 ID로 지정하도록 수정해야 한다."
+        "활성 상태로 대상을 고르는 OpenDefect가 등록됐다. docs/design/policies/focus.md의 포커스 독립 규칙에 따라 대상을 ID로 지정하도록 수정해야 한다."
     );
 }
 

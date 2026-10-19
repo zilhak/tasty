@@ -96,4 +96,4 @@ source 또는 target 워크스페이스가 mirror 면 로컬 실행을 막는다
 
 ## 관련
 
-- [work-area](../work-area/index.md)(Surface/Tab/Pane/Workspace 계층) · [convert-surface](../convert-surface/index.md)(in-place replace 선례) · [closed-tab-restore](../closed-tab-restore/index.md)(이동은 closed-item 히스토리에 기록하지 않음) · `docs/identity.md`(불가침 원칙 1: 사용자↔에이전트 행동 분리)
+- [work-area](../work-area/index.md)(Surface/Tab/Pane/Workspace 계층) · [convert-surface](../convert-surface/index.md)(in-place replace 선례) · [closed-tab-restore](../closed-tab-restore/index.md)(이동은 closed-item 히스토리에 기록하지 않음) · [포커스 정책](../../design/policies/focus.md)(사용자↔에이전트 행동 분리)

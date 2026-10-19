@@ -362,7 +362,7 @@ Text 게이트는 command modifier·제어/사설영역 문자·IME 조합 중 n
 set_context 송신 자체는 host 렌더 파이프라인의 일부라 사용자 상태(focus/스크롤/선택)에
 부수효과가 없다. 에이전트 IPC/CLI 가 raw_input 을 합성·주입하는 진입로는 **release 에
 없다** — 입력 주입은 `#[cfg(debug_assertions)]` debug 격리(`debug.inject_window_mouse`)로만
-존재한다(불가침 원칙 1·3, [debug-ipc](debug-ipc.md)).
+존재한다([사용자 통제와 데이터 원칙](../principles/control-and-data.md), [debug-ipc](debug-ipc.md)).
 
 ### IME candidate 위치 — plugin 이 값을 되돌려준다
 
@@ -655,7 +655,7 @@ surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**�
 ### chrome 소유 경계 — host 가 셸, plugin 은 내용만
 
 팝업 셸(scrim / bg_panel / border / outside-click / Esc / 단일 인스턴스 가드 / 크기)은
-**host 가 소유**하고, plugin 은 **콘텐츠만 mesh 로** 그린다. 근거: identity 원칙 1·3 —
+**host 가 소유**하고, plugin 은 **콘텐츠만 mesh 로** 그린다. 근거: [포커스 정책](../design/policies/focus.md) —
 팝업 open/close/focus 같은 *사용자 조작*은 host 소유다(에이전트/plugin 이 사용자 상태를
 좌우하지 않는다). host 는 `draw_plugin_popups`(`src/plugin_bridge/popup_render.rs`)에서
 셸을 egui 로 그리고, plugin mesh 는 셸 내부 content_rect 에 **host egui pass 후** 합성한다

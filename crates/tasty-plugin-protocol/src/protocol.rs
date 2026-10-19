@@ -667,8 +667,8 @@ pub struct PopupClosedParams {
 /// `instance_id` 로 popup 인스턴스를 식별한다. 나머지 필드(크기/ppp/raw_input)와
 /// 좌표 규약(surface-local 논리 포인트, 좌상단 0,0)은 surface 와 동일하다.
 ///
-/// identity 경계(원칙 1·3): set_context 는 host 가 받은 *실제* 사용자 입력만 forward
-/// 한다. 에이전트 IPC/CLI 가 raw_input 을 합성·주입하는 진입로는 만들지 않는다.
+/// 사용자·에이전트 경계(docs/design/policies/focus.md): set_context 는 host 가 받은
+/// *실제* 사용자 입력만 forward 한다. 에이전트 IPC/CLI 가 raw_input 을 합성·주입하는 진입로는 만들지 않는다.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct PopupSetContextParams {
     /// host 가 발급한 popup 인스턴스 식별자.
@@ -742,7 +742,7 @@ pub struct BannerClosedParams {
 /// 좌표 규약(banner content-local 논리 포인트, 좌상단 0,0)은 popup 과 동일하다.
 ///
 /// banner 는 non-modal 공지라 scrim/키보드 포커스가 없다 — content 영역 위 포인터/스크롤
-/// 입력만 forward 된다(host 합성기가 content_rect 로 한정). identity 경계(원칙 1·3):
+/// 입력만 forward 된다(host 합성기가 content_rect 로 한정). 사용자·에이전트 경계:
 /// set_context 는 host 가 받은 *실제* 사용자 입력만 forward 한다. 에이전트 IPC/CLI 가
 /// raw_input 을 합성·주입하거나 배너를 강제 표시하는 진입로는 만들지 않는다.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

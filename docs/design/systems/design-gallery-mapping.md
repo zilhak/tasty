@@ -426,7 +426,7 @@ TASTY_GALLERY_SIZE=1500x1100 TASTY_GALLERY_SHOT="3@69000:/abs/a.png,3@70000:/abs
 ```
 
 본체 대조는 Plugins 창을 띄우고 그 창 id 로 찍는다. 이 창은 사이드바 버튼에서만 열리고 그
-경로를 여는 IPC 가 없으므로(원칙 1 — 사용자 조작 재현은 release 에 없다), 열기는 창 클릭으로
+경로를 여는 IPC 가 없으므로(사용자 조작 재현은 release 에 없다 — [사용자 통제와 데이터 원칙](../../principles/control-and-data.md)), 열기는 창 클릭으로
 한다. 창 제목은 `Tasty Plugins` 다([screenshot-methods](../../ai-verification/screenshot-methods.md)
 의 창 제목 표).
 

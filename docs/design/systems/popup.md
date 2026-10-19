@@ -62,7 +62,7 @@ plugin 이 `file_picker.trigger`로 host popup 을 열 때 `owner_popup_instance
 
 ## 발화 정책 (CRITICAL)
 
-팝업은 사용자 행동(키보드 단축키·마우스·메뉴)으로 연다. release의 시스템·에이전트 작업은 포커스를 가져오는 팝업을 자동으로 띄울 수 없다([toast.md](toast.md) 와 동일 원칙, [identity](../../identity.md) 원칙 1).
+팝업은 사용자 행동(키보드 단축키·마우스·메뉴)으로 연다. release의 시스템·에이전트 작업은 포커스를 가져오는 팝업을 자동으로 띄울 수 없다([toast.md](toast.md) 와 동일 원칙, [사용자 통제와 데이터 원칙](../../principles/control-and-data.md)).
 
 - ✅ 단축키/마우스/메뉴 → `UiIntent::OpenPopup` 발화
 - ✅ popup A 의 *사용자 액션* cascade → popup B (origin 전파)

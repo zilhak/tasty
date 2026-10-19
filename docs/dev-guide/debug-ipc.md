@@ -347,7 +347,7 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 
 `debug.inject_window_mouse` 는 debug 고 `surface.mouse_tracking` 은 release 다. 이름이 둘 다
 마우스지만 축이 다르다 — 앞은 **사용자 조작을 재현**하고, 뒤는 **터미널이 지금 어떤 상태인가**를
-읽는다. 원칙 1 의 물음("에이전트가 자기 작업에 필요한가 vs 사용자 조작을 재현하는가")에
+읽는다. [사용자 통제와 데이터 원칙](../principles/control-and-data.md)의 물음("에이전트가 자기 작업에 필요한가 vs 사용자 조작을 재현하는가")에
 `surface.mouse_tracking` 은 앞쪽으로 답한다: 안의 프로그램이 마우스를 잡았는지 모르면
 에이전트는 마우스 시퀀스를 보낼지 텍스트를 보낼지 정할 수 없고, 드래그 선택이 왜 안 먹는지도
 가릴 수 없다. `surface.foreground_process`(셸이 유휴인가)와 같은 자리다.

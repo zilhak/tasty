@@ -20,7 +20,7 @@ tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머�
 **선택 기준 — 콘텐츠의 소유자가 누구인가:**
 
 - **host `PopupDef`**: 콘텐츠가 host 데이터/위젯(설정, 파일 핸들러 picker, convert 목록, 이름변경 등)이고 host 가 렌더에 필요한 모든 상태를 가진 경우. host 가 kind 이름을 몰라야 하는 정보(특정 plugin 의 도메인 데이터)는 담지 않는다.
-- **plugin `[[contributes.popup]]`**: 콘텐츠가 **특정 plugin 의 도메인**(그 plugin 만 아는 데이터·검증·동작)인 경우. host 는 그 내용을 몰라야 한다(불가침 원칙 — host 는 plugin 이름/도메인으로 조건분기하지 않는다). 셸만 host 가 그려 준다.
+- **plugin `[[contributes.popup]]`**: 콘텐츠가 **특정 plugin 의 도메인**(그 plugin 만 아는 데이터·검증·동작)인 경우. host 는 그 내용을 몰라야 한다 — host 는 plugin 이름/도메인으로 조건분기하지 않는다. 셸만 host 가 그려 준다.
 
 **현재 plugin 팝업 예 (markdown, egui-mesh):**
 

@@ -39,7 +39,7 @@ workspace가 사라진 응답은 기존 데이터를 지운다. 저장소 잠금
 ## 생성·갱신·종료
 
 - `tasty new tab --pane <PANE> --type dag_graph`, `tasty split --level surface --surface <SID> --type dag_graph` 로 만든다. [surface 변환](../../features/convert-surface/index.md) popup 에도 다른 kind 와 같이 나온다.
-- params: `dag_id`(별칭 `dag`) · `workspace_id` · `direction`(`td` 이면 위→아래, 그 밖의 값과 생략은 좌→우). 모두 선택이다. `dag_id`·`workspace_id` 를 모두 생략하면 이 surface 가 속한 workspace 에서 진행 중인 DAG 를 고른다(없으면 가장 최근 갱신). 활성 workspace 가 아니라 소속 workspace 다(불가침 원칙 3). 생성 인자의 정본은 이 절이다.
+- params: `dag_id`(별칭 `dag`) · `workspace_id` · `direction`(`td` 이면 위→아래, 그 밖의 값과 생략은 좌→우). 모두 선택이다. `dag_id`·`workspace_id` 를 모두 생략하면 이 surface 가 속한 workspace 에서 진행 중인 DAG 를 고른다(없으면 가장 최근 갱신). 활성 workspace 가 아니라 소속 workspace 다([포커스 정책](../../design/policies/focus.md)). 생성 인자의 정본은 이 절이다.
 - 생성은 모델만 만들고 조회를 시작하지 않는다. 조회는 surface 가 화면에 보일 때 View 가 시작한다.
 - 화면 갱신 주기와 캐시는 [화면 문서의 갱신과 비용](screens/graph.md#갱신과-비용)에 있다.
 - 숨김·닫힘은 진행 중인 조회 수신 핸들을 버린다(위 조회 소유와 취소). 숨긴 surface 는 다시 보일 때 새로 조회한다. 닫으면 engine 이 모델을 지우고 창은 `release_surface_views` 로 그 surface 의 View 와 조회 예약을 지운다.

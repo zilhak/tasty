@@ -369,7 +369,7 @@ API 는 `#[cfg(feature = "gui")]` 안에 있고, `MainViewState::fullscreen_stag
 ### 인터페이스
 
 - **AI Agent (IPC/CLI)**: **debug 빌드 전용**. 무대는 화면 투영이고 진입은 사용자 조작이라
-  release 표면을 두지 않는다(불가침 원칙 1) — 대신 자기검증용으로
+  release 표면을 두지 않는다([사용자 통제와 데이터 원칙](../../principles/control-and-data.md)) — 대신 자기검증용으로
   `debug.fullscreen.{list,open,close,state}` 4 종이 `#[cfg(debug_assertions)]` 로 격리되어 있다
   (CLI: `tasty debug fullscreen {list,open,close,state}`). release 바이너리에서는 없어
   `method_not_found`를 반환한다. 전부 `local_only` 라 plugin caller 는 호출할 수 없다.

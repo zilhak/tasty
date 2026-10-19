@@ -145,7 +145,7 @@ Codex 대화에서 실행한 `spawn`·`tell`·`children`·`broadcast`·`kill`·`
   | 스칼라(보안 민감) | `permissions.defaultMode` | 값이 다르면 **거부**(에러) — 권한 모드가 조합으로 조용히 약해지는 것을 last-wins 보다 우선 차단 |
 
 - **저장 위치** — 전부 `TASTY_PLUGIN_DATA_DIR`(`~/.tasty/plugin-data/com.tasty.claude/`) 하위. 호스트가 이 디렉토리를 미리 만들어 주므로 `fs.write` 권한 없이도 쓸 수 있다. 호스트가 이 env 를 주입하지 않은 비정상 기동(`data_dir = None`)이면 등록/부착 모두 명시적 에러로 거부한다 — `~/.claude/` 나 새 경로를 조용히 쓰지 않는다.
-- IPC: `claude.profile_register`/`claude.profile_unregister`/`claude.profile_list`/`claude.profile_show`/`claude.profile_current` — CLI 서브커맨드와 1:1 대응(원칙 2, 에이전트 조작 가능성).
+- IPC: `claude.profile_register`/`claude.profile_unregister`/`claude.profile_list`/`claude.profile_show`/`claude.profile_current` — CLI 서브커맨드와 1:1 대응(IPC·CLI 양면, 에이전트 조작 가능성 — [API 규약](../../dev-guide/api-conventions.md#ipc-메서드를-cli로-제공하는-기준)).
 - spawn 시 조회한 parent의 자식 수가 설정 임계치를 넘으면 응답에 `warning`을 넣는다.
   Settings › Plugin › Claude Code에서 임계치를 조정한다. 후보 목록은 `idle` 보고를 받은
   자식과 `confidence: confirmed`인 `stale` 자식을 구분한다. 후자는 마지막으로 조회한

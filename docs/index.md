@@ -8,7 +8,7 @@
 
 | 문서 | 설명 |
 |------|------|
-| [identity.md](identity.md) | **Tasty 정체성과 불가침 원칙** — 동시성(로컬 사용자/AI Agent/원격 사용자), 사용자/에이전트 분리, headless, 점유. 설계·구현 전에 읽는다 |
+| [identity.md](identity.md) | **Tasty 정체성** — 목적과 범위, 적용 대상, 판단 기준. 판단 기준인 제품 원칙은 [principles](principles/index.md)에 있다. 설계·구현 전에 둘 다 읽는다 |
 | [concepts/actors.md](concepts/actors.md) | **주체(Actors)** — 로컬 사용자·에이전트·원격 사용자와 점유의 정의 |
 | [concepts/hierarchy.md](concepts/hierarchy.md) | **구조 계층** — Window/View › Workspace › Pane › Tab › Surface + 두 레벨 레이아웃 |
 | [concepts/plugins.md](concepts/plugins.md) | **플러그인** — 배포/통합 축, surface_kind 렌더 분기, 권한 |

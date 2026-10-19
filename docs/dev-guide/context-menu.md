@@ -27,7 +27,7 @@ surface 우클릭 컨텍스트 메뉴는 surface 종류에 따라 생산 경로�
 - **explorer의 나머지 영역**: 파일 셀, content의 빈 영역, 트리 노드, 즐겨찾기는 각 위치에 맞는
   메뉴를 만든다. `draw_explorer` 마지막에서는 전체 rect를 확인해 툴바·주소창·내부 탭바·상태줄·
   빈 사이드바의 우클릭에도 Empty 메뉴를 제공한다. 파일 브라우저 위에 무관한 Surface 메뉴
-  ("터미널 ID 복사")를 표시하지 않기 위해서다(불가침 원칙 §1·§2).
+  ("터미널 ID 복사")를 표시하지 않기 위해서다.
   `LoadState::NoPermission`에서는 붙여넣기를 할 수 없으므로 이 전체 rect 처리를 건너뛴다.
 - **fallback 의 explorer-aware 최후 방어선**: catch-all 이 어떤 이유(런타임 이벤트 프레이밍·좌표 미스 등)로 explorer 슬롯을 못 세우고 `emit_surface_menu_fallback` 이 발화하더라도, fallback 은 **explorer surface 위에서는 generic `Surface` 대신 빈영역 `Explorer` 메뉴**(paths 빈 vec + cwd = current_root)를 세운다. 첫 패스에서 각 패널의 explorer 여부와 `current_root` 를 `EguiPanelInfo.explorer_cwd` 로 캡처해 판별한다. 그래서 explorer 위에는 어떤 경로로도 surface-op 메뉴가 노출되지 않고, 사용자는 항상 explorer 메뉴를 받는다. OS 무관 순수 로직(`#[cfg]` 불필요)이며, explorer 위 generic 메뉴는 원래 어느 OS 에서도 뜨면 안 되므로 플랫폼 공통으로 같은 선택 규칙을 적용한다.
 

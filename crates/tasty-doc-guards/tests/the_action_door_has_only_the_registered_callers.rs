@@ -32,7 +32,7 @@ const DOOR_CALLERS: &[(&str, &str)] = &[(
 const SLOT_WRITERS: &[(&str, &str)] = &[(
     "src/adapters/ui/popup/command_palette.rs",
     "팝업에서 Enter 로 고른 항목을 슬롯에 넣는다. 사람이 팝업을 열어 고른 것이라 \
-     사용자 입력 경로이고, release 에서 에이전트는 팝업을 강제로 못 연다(원칙 1)",
+     사용자 입력 경로이고, release 에서 에이전트는 팝업을 강제로 못 연다(docs/principles/control-and-data.md)",
 )];
 
 /// 빈 순회가 목록 비교를 통과하지 않게 한다.

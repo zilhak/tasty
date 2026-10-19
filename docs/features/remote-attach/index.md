@@ -210,7 +210,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 - **닫은 항목 복원(`Ctrl+Shift+T`)도 forward 대상이다 ([Attach 메커니즘](../../dev-guide/attach-behavior.md))**: mirror 를 보는 중에 누르면 **원격에서** 닫혔던 탭이 되살아나 mirror 에 나타나고, 그 안의 입력은 원격 PTY 로 간다. 복원은 새 PTY spawn 이고 스냅샷의 스크롤백은 서버 디스크에 있으므로 서버만 실행할 수 있다. **원격에 복원할 것이 없어도 로컬 항목을 대신 되살리지 않는다** — 안내 toast 만 뜨고 로컬 스택은 그대로 남아, 로컬 워크스페이스로 돌아가 같은 키를 누르면 그때 복원된다. 즉 **스택이 둘이고 보고 있는 워크스페이스가 어느 쪽을 쓸지 정한다.**
   - **원격에서 누른 복원은 그 워크스페이스 것만 꺼낸다**: 서버의 복원 스택은 워크스페이스로 스코프돼, mirror 사용자의 복원이 서버 앞에 앉은 사용자가 방금 닫은 다른 워크스페이스의 탭을 가져가지 않는다. 반대 방향은 스코프를 걸지 않는다 — 서버 로컬 복원은 지금까지처럼 전역 LIFO 다. forward 된 close 가 서버 자신의 트리에서 탭을 없애므로, 그 기계 앞의 사용자에게도 undo 가 남아야 하기 때문이다.
   - **mirror 안에서 손으로 닫은 것은 되돌려진다**: 원격 사용자의 손으로 닫힌 탭/pane/surface 는 서버의 복원 스택에 남는다.
-  - **에이전트가 닫은 것은 어느 쪽 복원 스택에도 안 남는다**: 클라이언트의 에이전트가 CLI/IPC 로 mirror 를 닫으면 그 close 도 원격으로 forward 되지만, forward 가 "에이전트의 요청" 이라는 표시를 싣고 서버는 그것을 복원 스택에 넣지 않는다. 그렇지 않으면 서버 앞 사용자의 복원 단축키가 에이전트가 닫은 것을 되살린다 — 사용자의 닫은 항목 히스토리는 사용자가 닫은 것만 담는다([identity](../../identity.md) 원칙 1). 표시가 없는 forward(이 표시 이전의 클라이언트)는 사용자 조작으로 읽는다([Attach 메커니즘](../../dev-guide/attach-behavior.md)).
+  - **에이전트가 닫은 것은 어느 쪽 복원 스택에도 안 남는다**: 클라이언트의 에이전트가 CLI/IPC 로 mirror 를 닫으면 그 close 도 원격으로 forward 되지만, forward 가 "에이전트의 요청" 이라는 표시를 싣고 서버는 그것을 복원 스택에 넣지 않는다. 그렇지 않으면 서버 앞 사용자의 복원 단축키가 에이전트가 닫은 것을 되살린다 — 사용자의 닫은 항목 히스토리는 사용자가 닫은 것만 담는다([포커스 정책](../../design/policies/focus.md)). 표시가 없는 forward(이 표시 이전의 클라이언트)는 사용자 조작으로 읽는다([Attach 메커니즘](../../dev-guide/attach-behavior.md)).
   - **복원된 탭의 옛 스크롤백은 mirror 에 전량 오지 않는다**: 서버 쪽 터미널은 스크롤백까지 되살아나지만, mirror 는 기존 규약대로 보이는 화면 1 회 스냅샷 + 이후 변경분만 받는다. 원격 윈도우에서 보면 스크롤백이 그대로 있다.
 - **mirror 워크스페이스 자체를 닫는 것**은 로컬 mirror 뷰를 걷어내는 정당한 로컬 동작이라 차단·forward 대상이 아니다.
 - **`terminal.spawn` 은 forward 대상이 아니라 거부 대상이다 ([Attach 메커니즘](../../dev-guide/attach-behavior.md))**: 위 forward 는 fire-and-forget 이라 응답이 원격에서 생긴 리소스의 id 를 담지 않는다.
@@ -240,7 +240,7 @@ move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때�
   `preset.apply` 는 탭 preset 이면 `target_pane_id`, pane preset 이면 `target_workspace_id` 의 workspace 로 판정하고, 대상을 생략하면 적용 코드와 같게 그 창의 활성 workspace 를 대상으로 본다. workspace preset 은 새 workspace 를 만들므로 차단하지 않는다.
   `pty.attach_surface` 는 `pane_id` 의 workspace 로 판정한다. 거부되면 PTY 는 headless registry 에 그대로 남는다.
   `terminal.kill` 은 child 를 닫기 전에 `surface.close` 와 같은 surface 단위 점유 검사로 거부한다. 점유를 먼저 강제 해제하지 않으므로 holder 는 분리되지 않고 child 관계도 남는다([child-terminal](../child-terminal/index.md)).
-- **차단 근거**: [`docs/identity.md`](../../identity.md) 원칙1(에이전트 행동의 부수효과가 사용자 상태에 닿지 않아야 함) — 서버 로컬에서 만든/닫은/옮긴 탭이 점유 client 화면에 통지 없이 편입/소멸/재배치되면, 원격 사용자가 보고 있는 화면에 자신이 하지 않은 변화가 일어나는 셈이라 이 원칙을 위반한다.
+- **차단 근거**: [포커스 정책](../../design/policies/focus.md)(에이전트 행동의 부수효과가 사용자 상태에 닿지 않아야 함) — 서버 로컬에서 만든/닫은/옮긴 탭이 점유 client 화면에 통지 없이 편입/소멸/재배치되면, 원격 사용자가 보고 있는 화면에 자신이 하지 않은 변화가 일어나는 셈이라 이 원칙을 위반한다.
 - **메커니즘**: [dev-guide/attach-behavior "서버 로컬(비-holder) 구조 변경 차단"](../../dev-guide/attach-behavior.md#서버-로컬비-holder-구조-변경-차단).
 
 ### 자동 매핑
@@ -303,7 +303,7 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 로컬 IPC method `remote.attach` { `remote_workspace`, `profile?`/`ssh?` } — 선택한 원격 워크스페이스를 **로컬 mirror 로 attach**(호스트가 워커 스레드에서 SSH 터널을 세우고 mirror 를 재구성).
 **focus 중립**이 핵심: 이 IPC/에이전트 경로는 mirror workspace 를 *조용히 생성만* 하고 focus 를 그 ws 로 옮기지 않는다(`active_workspace` 불변).
-새 mirror 로의 focus 이동은 **사용자 입력 경로 전용 별도 단계**(RA02 팝업에서 사용자가 확정할 때)이며, release IPC 에는 focus 변경 API 가 없다(원칙 3).
+새 mirror 로의 focus 이동은 **사용자 입력 경로 전용 별도 단계**(RA02 팝업에서 사용자가 확정할 때)이며, release IPC 에는 focus 변경 API 가 없다([포커스 정책](../../design/policies/focus.md)).
 회신은 즉시 `{attaching:true}`(fire-and-forget) — mirror 는 비동기로 나타나므로 `tasty list workspaces` 로 확인한다: mirror 워크스페이스는 행에 `[mirror]` 가 붙고(`remote-ws (id:7) [mirror] (1 panes)`), `workspace.list` IPC 응답에는 `mirror: true` 로 실린다.
 
 ### 원격 워크스페이스 추가 팝업 (GUI picker — 사용자 경로)
@@ -372,7 +372,7 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
   - `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>` — 자동 매핑 선언.
   - `tasty remote refusals` — 이 인스턴스를 대상으로 해서 거절한 최근 attach 시도와, 연결하지 않은 채 남은 자동 attach 매핑의 안내(IPC `remote.refusals`). 읽기 전용.
 - **IPC (`attach.*`)**: `acquire`/`release`(stream 핸드셰이크), `into_gui`, `list`(점유 목록 조회). 남의 점유를 푸는 메서드는 없다. 표 상세 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md#ipc-표면-attach).
-- **IPC (`remote.*` — 원격 브라우징/생성/attach, 원칙 2)**: `remote.workspaces` { `profile?`/`ssh?` } → 원격 ws 목록(browse, 워커 스레드+지연 회신). `remote.attach` { `remote_workspace` | `new_workspace`, `profile?`/`ssh?`, `name?`, `cwd?` } → 원격 ws 를 로컬 mirror 로 attach(**focus 중립**: mirror 생성만, focus 이동 없음). `new_workspace:true` 면 원격에 워크스페이스를 먼저 만들고 그것을 attach 한다 — `remote_workspace` 와 상호배타이며, 이때만 **생성 완료까지 기다렸다 지연 회신**해 새 `remote_workspace` id 를 돌려준다(기존 ws attach 는 즉시 `{attaching:true}` 유지). 두 응답 모두 시도 번호 `attempt` 를 싣는다. 자기 자신이 대상이면: loopback 표기는 이 응답 대신 동기 `-32602` 오류가 오고, SSH 경로는 `new_workspace:true` 만 생성 전 `-32602` 이며 기존 ws attach 는 `{attaching:true}` 응답 뒤 비동기 거절이 `remote.refusals`(`via_ssh: true`)에 남는다(위 self-attach 절의 IPC 계약 요약). `remote.refusals` {} → 자기 포트라서 연결하지 않은 최근 시도 목록(위 self-attach 절). CLI 와 코어 공유 — 조회는 `tasty_remote::browse`, 생성은 `tasty_remote::create`.
+- **IPC (`remote.*` — 원격 브라우징/생성/attach, IPC·CLI 양면 — [API 규약](../../dev-guide/api-conventions.md#ipc-메서드를-cli로-제공하는-기준))**: `remote.workspaces` { `profile?`/`ssh?` } → 원격 ws 목록(browse, 워커 스레드+지연 회신). `remote.attach` { `remote_workspace` | `new_workspace`, `profile?`/`ssh?`, `name?`, `cwd?` } → 원격 ws 를 로컬 mirror 로 attach(**focus 중립**: mirror 생성만, focus 이동 없음). `new_workspace:true` 면 원격에 워크스페이스를 먼저 만들고 그것을 attach 한다 — `remote_workspace` 와 상호배타이며, 이때만 **생성 완료까지 기다렸다 지연 회신**해 새 `remote_workspace` id 를 돌려준다(기존 ws attach 는 즉시 `{attaching:true}` 유지). 두 응답 모두 시도 번호 `attempt` 를 싣는다. 자기 자신이 대상이면: loopback 표기는 이 응답 대신 동기 `-32602` 오류가 오고, SSH 경로는 `new_workspace:true` 만 생성 전 `-32602` 이며 기존 ws attach 는 `{attaching:true}` 응답 뒤 비동기 거절이 `remote.refusals`(`via_ssh: true`)에 남는다(위 self-attach 절의 IPC 계약 요약). `remote.refusals` {} → 자기 포트라서 연결하지 않은 최근 시도 목록(위 self-attach 절). CLI 와 코어 공유 — 조회는 `tasty_remote::browse`, 생성은 `tasty_remote::create`.
 - **로컬 self attach**(별도 CLI 프로세스가 포트 파일로 로컬 인스턴스를 mirror): 사용자 mirror 조작 재현 성격이라 release 에 없음 — `tasty debug attach`(debug 빌드 전용, [`dev-guide/debug-ipc`](../../dev-guide/debug-ipc.md)). 같은 머신의 다른 인스턴스에 loopback 주소(`127.0.0.1:PORT`·`localhost:PORT`·`[::1]:PORT`)로 붙는 GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 release 에도 있다(아래 비-목표 절).
 - **프로필**: `--profile`/`tool attach` 이 참조하는 tasty-attach 프로필(및 그것이 `ssh_ref` 로 참조하는 ssh 프로필)은 [remote-profiles](../remote-profiles/index.md) 이 관리.
 
