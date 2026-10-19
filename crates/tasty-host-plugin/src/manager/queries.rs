@@ -37,6 +37,11 @@ impl PluginManager {
         self.namespaces_read().resolve(method).is_some()
     }
 
+    /// 메서드의 namespace를 가진 플러그인 ID.
+    pub fn namespace_owner(&self, method: &str) -> Option<String> {
+        self.namespaces_read().resolve(method).map(str::to_string)
+    }
+
     /// 자기 자신이 아닌 다른 플러그인의 namespace인지 한 번의 잠금으로 확인한다.
     pub fn namespace_belongs_to_other(&self, method: &str, plugin_id: &str) -> bool {
         self.namespaces_read()

@@ -103,6 +103,23 @@ pub(crate) fn begin(method: &'static str, owner: Option<String>, fields: Value) 
     id
 }
 
+/// 플러그인이 다른 호출자의 요청을 호스트로 다시 보내 시작한 실행을 원래 호출자에게 넘긴다.
+/// 현재 소유자가 `from`일 때만 바꾼다.
+#[cfg(feature = "gui")]
+pub(crate) fn hand_over(id: u64, from: &str, to: Option<String>) -> bool {
+    let mut runs = runs();
+    match runs
+        .iter_mut()
+        .find(|r| r.id == id && r.owner.as_deref() == Some(from))
+    {
+        Some(run) => {
+            run.owner = to;
+            true
+        }
+        None => false,
+    }
+}
+
 /// 동기 오류로 답한 실행은 조회 대상에서 지운다.
 pub(crate) fn forget(id: u64) {
     runs().retain(|r| r.id != id);

@@ -23,6 +23,7 @@ fn forward_owned_namespace(
     {
         return false;
     }
+    let owner = mgr.namespace_owner(&cmd.request.method);
     host_ipc::handler::idempotency::forward_keeping_the_key(caller, cmd, |c| {
         let id = c.request.id.clone().unwrap_or(serde_json::Value::Null);
         mgr.forward_namespace_call(
@@ -30,11 +31,58 @@ fn forward_owned_namespace(
             c.request.params.clone(),
             None, // CLI/사용자 호출. plugin → plugin 호출은 별도 경로.
             id,
-            c.response_tx.clone(),
+            hand_runs_to_caller(&c.request.method, owner, caller, c.response_tx.clone()),
             Some(c.request_seq()),
         );
     });
     true
+}
+
+/// 플러그인이 호스트로 다시 보내 결과 run을 시작하는 namespace 메서드.
+const RELAYED_RUN_METHODS: &[&str] = &["markdown.navigate"];
+
+/// 플러그인이 받은 요청을 `host.call`로 다시 보내면 run의 소유자는 그 플러그인이 된다.
+/// 응답이 원래 호출자에게 가기 전에 run을 그 호출자에게 넘겨, 요청한 에이전트가 `run.result`로
+/// 읽게 한다. 멱등 키를 최초 전달에서 검사하는 것과 같은 이유다. 대상이 아니거나 relay를
+/// 시작하지 못하면 응답 채널을 그대로 쓴다.
+fn hand_runs_to_caller(
+    method: &str,
+    plugin: Option<String>,
+    caller: &host_ipc::caller::CallerContext,
+    response_tx: std::sync::mpsc::SyncSender<host_ipc::protocol::JsonRpcResponse>,
+) -> std::sync::mpsc::SyncSender<host_ipc::protocol::JsonRpcResponse> {
+    let Some(plugin) =
+        plugin.filter(|_| RELAYED_RUN_METHODS.contains(&tasty_ipc::alias::canonicalize(method)))
+    else {
+        return response_tx;
+    };
+    let reader = crate::request_runs::reader_of(caller);
+    let (relay_tx, relay_rx) =
+        std::sync::mpsc::sync_channel::<host_ipc::protocol::JsonRpcResponse>(1);
+    let reply = response_tx.clone();
+    let spawned = std::thread::Builder::new()
+        .name("ipc-run-owner-relay".into())
+        .spawn(move || {
+            let Ok(response) = relay_rx.recv() else {
+                return;
+            };
+            if let Some(run) = response
+                .result
+                .as_ref()
+                .and_then(|result| result.get("run"))
+                .and_then(serde_json::Value::as_u64)
+            {
+                crate::request_runs::hand_over(run, &plugin, reader);
+            }
+            send_response(&reply, response);
+        });
+    match spawned {
+        Ok(_) => relay_tx,
+        Err(error) => {
+            tracing::warn!("run owner relay did not start; the plugin keeps the run: {error}");
+            response_tx
+        }
+    }
 }
 
 impl App {
@@ -189,6 +237,66 @@ impl App {
 /// 없어 `ipc_step_routing` 에서 이 함수 밖에 둔 전달은 여기서 덮지 않는다. 그 전달은 실제
 /// 인스턴스 e2e `a_plugin_namespace_call_is_forwarded_to_the_plugin_exactly_once` 가 plugin
 /// 왕복 수의 차분으로 잰다.
+#[cfg(test)]
+mod run_owner_relay_tests {
+    use super::*;
+    use crate::request_runs::{begin, lookup};
+    use host_ipc::caller::CallerContext;
+    use host_ipc::protocol::JsonRpcResponse;
+
+    fn agent(id: &str) -> CallerContext {
+        CallerContext::Agent {
+            agent_id: id.to_string(),
+            permissions: std::sync::Arc::new(std::collections::HashSet::new()),
+        }
+    }
+
+    fn relay(method: &str, caller: &CallerContext, run: u64) -> JsonRpcResponse {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let relay = hand_runs_to_caller(method, Some("tasty.markdown".into()), caller, tx);
+        relay
+            .send(JsonRpcResponse::success(
+                serde_json::Value::Null,
+                serde_json::json!({ "accepted": true, "run": run }),
+            ))
+            .unwrap();
+        rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
+    }
+
+    #[test]
+    fn a_relayed_navigate_run_goes_to_the_agent_that_asked() {
+        let run = begin(
+            "markdown.navigate",
+            Some("tasty.markdown".into()),
+            serde_json::Value::Null,
+        );
+        let answer = relay("markdown.navigate", &agent("claude:a"), run);
+        assert_eq!(answer.result.unwrap()["run"], run);
+        assert!(lookup(run, Some("claude:a")).is_some());
+        assert!(lookup(run, Some("claude:b")).is_none());
+        assert!(lookup(run, Some("tasty.markdown")).is_none());
+    }
+
+    #[test]
+    fn only_listed_methods_and_plugin_owned_runs_are_handed_over() {
+        let other = begin(
+            "x.method",
+            Some("tasty.markdown".into()),
+            serde_json::Value::Null,
+        );
+        relay("markdown.reload", &agent("claude:a"), other);
+        assert!(lookup(other, Some("tasty.markdown")).is_some());
+        let foreign = begin(
+            "markdown.navigate",
+            Some("claude:z".into()),
+            serde_json::Value::Null,
+        );
+        relay("markdown.navigate", &agent("claude:a"), foreign);
+        assert!(lookup(foreign, Some("claude:z")).is_some());
+        assert!(lookup(foreign, Some("claude:a")).is_none());
+    }
+}
+
 #[cfg(test)]
 mod namespace_forward_tests {
     use std::sync::{Arc, mpsc};

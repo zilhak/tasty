@@ -147,7 +147,7 @@ picker에서 고른 핸들러는 이번 한 번만 실행한다. 형식별 기�
 
 - 응답: `{run, method, done, state, result, ...}`. 진행 중이면 `done: false`, `state: "running"`이다. `state`는 `succeeded`·`failed`·`cancelled` 중 하나로 끝난다. `result`는 표시 언어와 관계없는 영어 한 줄이다.
 - 처음 기록한 최종 결과만 남는다. 같은 파일을 겹쳐 요청해도 요청마다 run이 따로 있어 결과가 섞이지 않는다.
-- 조회 범위: 토큰 없는 로컬 IPC 호출자는 모든 run을 읽는다. plugin과 세션 토큰을 쓰는 에이전트는 자기가 시작한 run만 읽고, 다른 호출자의 run은 알 수 없는 run과 같은 `-32602`다. 외부 `markdown.navigate`는 markdown plugin이 host로 다시 보내므로 run의 소유자는 그 plugin이다. 이 run은 로컬 호출자만 읽을 수 있다.
+- 조회 범위: 토큰 없는 로컬 IPC 호출자는 모든 run을 읽는다. plugin과 세션 토큰을 쓰는 에이전트는 자기가 시작한 run만 읽고, 다른 호출자의 run은 알 수 없는 run과 같은 `-32602`다. 외부 `markdown.navigate`는 markdown plugin이 host로 다시 보내 run을 시작한다. host는 namespace 전달 응답을 원래 호출자에게 보내기 전에 그 run을 원래 호출자에게 넘기므로(`src/app/ipc/routing.rs`의 `RELAYED_RUN_METHODS`), 요청한 에이전트가 자기 토큰으로 결과를 읽는다. plugin이 시작한 run만 넘기며, 다른 plugin이나 에이전트는 여전히 읽지 못한다. 자기 namespace를 거치지 않고 plugin이 직접 부른 `markdown.navigate`(주소창 이동 등)의 run은 그 plugin의 것이다.
 - 보관: `hook_handler.dispatch`의 run과 같은 저장소에서 합쳐 최근 128건(`request_runs::KEEP`)만 보관한다. 보관 범위를 벗어난 run은 `-32602`다.
 - 접수 전 동기 오류(파라미터, origin pane 부재, URL, 없는 경로, 없는 surface, headless의 `-32017`)는 run을 만들지 않는다.
 
