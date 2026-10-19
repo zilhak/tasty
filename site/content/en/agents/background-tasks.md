@@ -1,4 +1,4 @@
-<!-- source-hash: 7b56d5c86e14 -->
+<!-- source-hash: e583e16227cb -->
 # Bring a background task into a tab
 
 Not every task needs a visible tab from the start. Run work in a hidden PTY, inspect its output, then bring the same process and history into a tab when needed.
@@ -84,7 +84,7 @@ There is no limit on the number of hidden PTYs, and exited PTYs that remain do n
 
 Tasty does not end a running PTY just because nobody checked it for a while. It runs until you `kill` it. If you want it ended after a period without checks, pass `--idle-timeout <seconds>` when creating it. If no `read`, `write`, or `state` arrives within that time, Tasty ends the process and leaves a warning notification. Background output does not extend that time.
 
-An exited PTY stays in the list so you can read its exit code. Five minutes after Tasty first notices the exit or after your last `read`, `write`, or `state` call, whichever is later, it is cleaned up and an info notification records the cleanup. Tasty checks for exited PTYs periodically, so it may first notice an exit up to 90 seconds after the process actually ended.
+An exited PTY stays in the list so you can read its exit code. Five minutes after Tasty first confirms the exit during cleanup or after your last `read`, `write`, or `state` call, whichever is later, it is cleaned up and an info notification records the cleanup. Tasty checks for exited PTYs periodically, so it may first notice an exit up to 90 seconds after the process actually ended.
 
 ## If something goes wrong
 
