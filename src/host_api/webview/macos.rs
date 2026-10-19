@@ -21,7 +21,7 @@ use objc2_web_kit::{
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
-use super::load_generation::{CancelledDecisions, Failure, is_current_load, nav_state_after_end};
+use super::load_generation::{CancelledDecisions, is_current_load, nav_state_after_end};
 use super::script_gate::{DeferredScan, ReadSlot, Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
 
@@ -35,15 +35,6 @@ struct PendingDecision {
     read: ReadSlot,
     handler: DecisionHandler,
     preferences: Retained<WKWebpagePreferences>,
-    /// 호스트가 시작한 탐색이면 WebKit이 돌려준 그 navigation. Cancel한 뒤 오는 실패를 귀속한다.
-    navigation: Option<Retained<WKNavigation>>,
-}
-
-/// 호스트가 요청했고 아직 정책 결정이 가져가지 않은 탐색. WebKit API가 돌려준 navigation과,
-/// 그 탐색의 정책 결정이 보고할 종류(`load_url`은 Other, `reload`는 Reload, 뒤로·앞으로는 BackForward).
-struct HostNavigation {
-    navigation: Retained<WKNavigation>,
-    kind: WKNavigationType,
 }
 
 /// 보류한 결정을 끝낸다. 결정마다 정확히 한 번 부른다.
@@ -75,14 +66,8 @@ struct NavDelegateIvars {
     committed_url: RefCell<Option<String>>,
     /// 스캔 결과를 기다리는 정책 결정. 허용 기록과 같은 URL의 응답만 여기 온다.
     pending_decision: RefCell<Option<PendingDecision>>,
-    /// Cancel로 끝낸 결정의 늦은 실패 신호를 새 로드의 실패로 보지 않게 기록한다.
+    /// Cancel로 끝낸 결정의 늦은 실패 신호를 새 로드의 실패로 보지 않게 센다.
     cancelled_decisions: RefCell<CancelledDecisions>,
-    /// Cancel한 호스트 탐색의 navigation. 식별값(주소)이 다른 navigation에 다시 쓰이지 않게 붙잡아 둔다.
-    cancelled_navigations: RefCell<Vec<Retained<WKNavigation>>>,
-    /// 호스트가 요청했고 아직 정책 결정이 가져가지 않은 탐색.
-    host_navigation: RefCell<Option<HostNavigation>>,
-    /// 마지막 main frame 정책 결정이 가져간 호스트 탐색. provisional 시작 전 실패의 귀속에 쓴다.
-    deciding_navigation: RefCell<Option<Retained<WKNavigation>>>,
 }
 
 /// 세대 비교용 WKNavigation 식별 값. 알 수 없으면 None이다.
@@ -108,34 +93,12 @@ impl NavDelegateIvars {
             self.surface_id
         );
         pending.scan.abandon();
-        self.note_cancelled(pending.navigation.as_deref());
+        self.cancelled_decisions.borrow_mut().cancelled();
         complete_decision(
             &pending.handler,
             &pending.preferences,
             WKNavigationActionPolicy::Cancel,
         );
-    }
-
-    /// 결정을 Cancel했다. 호스트 탐색이면 그 navigation을 붙잡아 실패를 그 식별값으로 귀속한다.
-    fn note_cancelled(&self, navigation: Option<&WKNavigation>) {
-        self.cancelled_decisions
-            .borrow_mut()
-            .cancelled(navigation_key(navigation));
-        if let Some(navigation) = navigation {
-            self.cancelled_navigations
-                .borrow_mut()
-                .push(navigation.retain());
-        }
-    }
-
-    /// 호스트가 요청한 탐색을 정책 결정이 가져간다. 종류가 다르면 이 결정은 그 탐색이 아니다
-    /// (예: 그 사이 페이지가 시작한 탐색). 그때는 호스트 탐색을 남겨 둔다.
-    fn claim_host_navigation(&self, kind: WKNavigationType) -> Option<Retained<WKNavigation>> {
-        let mut host = self.host_navigation.borrow_mut();
-        if host.as_ref().is_some_and(|h| h.kind == kind) {
-            return host.take().map(|h| h.navigation);
-        }
-        None
     }
 
     /// 실패 신호가 Tasty가 Cancel한 결정의 것이면 소비하고 `true`를 준다. 그 신호는 chrome과
@@ -148,16 +111,11 @@ impl NavDelegateIvars {
         // WebKitErrorFrameLoadInterruptedByPolicyChange(102). 상수 이름의 기능 플래그 없이 값으로 비교한다.
         let interrupted_by_policy =
             error.domain().to_string().as_str() == "WebKitErrorDomain" && error.code() == 102;
-        let failure = Failure {
-            ended: navigation_key(navigation),
-            interrupted_by_policy,
-        };
         let current = navigation_key(self.gate_navigation.borrow().as_deref());
-        let deciding = navigation_key(self.deciding_navigation.borrow().as_deref());
         if !self
             .cancelled_decisions
             .borrow_mut()
-            .absorbs_failure(failure, current, deciding)
+            .absorbs_failure(interrupted_by_policy, current)
         {
             return false;
         }
@@ -190,7 +148,7 @@ impl NavDelegateIvars {
                 WKNavigationActionPolicy::Allow
             }
             None => {
-                self.note_cancelled(pending.navigation.as_deref());
+                self.cancelled_decisions.borrow_mut().cancelled();
                 WKNavigationActionPolicy::Cancel
             }
         };
@@ -277,9 +235,6 @@ define_class!(
             tracing::debug!("WebView surface {sid}: load started");
             self.ivars().nav_state.set(NavState::Loading);
             self.ivars().cancelled_decisions.borrow_mut().started();
-            self.ivars().cancelled_navigations.borrow_mut().clear();
-            *self.ivars().deciding_navigation.borrow_mut() = None;
-            *self.ivars().host_navigation.borrow_mut() = None;
             *self.ivars().chrome_navigation.borrow_mut() = navigation.map(|n| n.retain());
             // 정책 결정에서 게이트가 시작한 로드라면 이 navigation이 새 세대다(실 기기 미측정).
             if self.ivars().gate_load_pending.replace(false) {
@@ -390,21 +345,18 @@ define_class!(
                 // SAFETY: main thread WebKit delegate 호출. targetFrame()/isMainFrame()/
                 // navigationType()은 이 호출 동안 유효한 navigation_action을 읽는다.
                 #[allow(clippy::multiple_unsafe_ops_per_block)]
-                let (target_main_frame, nav_type) = unsafe {
+                let (target_main_frame, reload) = unsafe {
                     (
                         navigation_action.targetFrame().map(|f| f.isMainFrame()),
-                        navigation_action.navigationType(),
+                        navigation_action.navigationType() == WKNavigationType::Reload,
                     )
                 };
-                let reload = nav_type == WKNavigationType::Reload;
                 match target_main_frame {
                     // 같은 문서의 fragment 이동은 로드가 아니므로 건너뛴다. 재로드는 fragment가 있어도 거친다.
                     Some(true) if reload || !gate.is_fragment_move(url) => {
                         gate.load_started();
                         // 새 로드가 앞에서 보류한 결정을 대신한다. load_started 뒤라 그 표는 이미 낡았다.
                         self.ivars().cancel_pending_decision();
-                        let claimed = self.ivars().claim_host_navigation(nav_type);
-                        *self.ivars().deciding_navigation.borrow_mut() = claimed.clone();
                         // provisional 시작이 새 세대를 기록할 때까지 어떤 종료든 이 로드를 끝낸다.
                         self.ivars().gate_load_pending.set(true);
                         *self.ivars().gate_navigation.borrow_mut() = None;
@@ -424,7 +376,6 @@ define_class!(
                                         read,
                                         handler: decision_handler.copy(),
                                         preferences: preferences.retain(),
-                                        navigation: claimed,
                                     });
                                 self.record_navigation(url.clone());
                                 return;
@@ -479,9 +430,6 @@ impl NavDelegate {
             committed_url: RefCell::new(None),
             pending_decision: RefCell::new(None),
             cancelled_decisions: RefCell::new(CancelledDecisions::default()),
-            cancelled_navigations: RefCell::new(Vec::new()),
-            host_navigation: RefCell::new(None),
-            deciding_navigation: RefCell::new(None),
         });
         // SAFETY: NSObject 의 지정 초기화자 init 을 super 로 호출.
         unsafe { msg_send![super(this), init] }
@@ -778,16 +726,6 @@ impl PlatformWebView {
         self.nav_state.get()
     }
 
-    /// 호스트가 시작한 탐색의 navigation을 정책 결정이 가져갈 때까지 기록한다. 없으면 앞 기록도 지운다.
-    fn note_host_navigation(
-        &self,
-        navigation: Option<Retained<WKNavigation>>,
-        kind: WKNavigationType,
-    ) {
-        *self._nav_delegate.ivars().host_navigation.borrow_mut() =
-            navigation.map(|navigation| HostNavigation { navigation, kind });
-    }
-
     /// 스캔을 기다리며 보류한 정책 결정을 읽기가 끝났으면 끝낸다. webview 동기화마다 부른다.
     pub fn resume_script_decision(&self) {
         self._nav_delegate.ivars().resume_pending_decision();
@@ -821,16 +759,13 @@ impl PlatformWebView {
                     .unwrap_or_else(|| "/".to_string());
                 let dir_url =
                     NSURL::fileURLWithPath_isDirectory(&NSString::from_str(&dir_path), true);
-                let navigation = self
-                    .webview
+                self.webview
                     .loadFileURL_allowingReadAccessToURL(&file_url, &dir_url);
-                self.note_host_navigation(navigation, WKNavigationType::Other);
             } else {
                 let ns_url = NSURL::URLWithString(&NSString::from_str(url));
                 if let Some(ns_url) = ns_url {
                     let request = objc2_foundation::NSURLRequest::requestWithURL(&ns_url);
-                    let navigation = self.webview.loadRequest(&request);
-                    self.note_host_navigation(navigation, WKNavigationType::Other);
+                    self.webview.loadRequest(&request);
                 }
             }
         }
@@ -875,31 +810,25 @@ impl PlatformWebView {
     pub fn reload(&self) {
         self._nav_delegate.ivars().cancel_pending_decision();
         // SAFETY: main thread WKWebView API.
-        let navigation = unsafe { self.webview.reload() };
-        if navigation.is_none() {
+        if unsafe { self.webview.reload() }.is_none() {
             tracing::debug!("WKWebView reload started no navigation");
         }
-        self.note_host_navigation(navigation, WKNavigationType::Reload);
     }
 
     pub fn go_back(&self) {
         self._nav_delegate.ivars().cancel_pending_decision();
         // SAFETY: main thread WKWebView API.
-        let navigation = unsafe { self.webview.goBack() };
-        if navigation.is_none() {
+        if unsafe { self.webview.goBack() }.is_none() {
             tracing::debug!("WKWebView goBack started no navigation");
         }
-        self.note_host_navigation(navigation, WKNavigationType::BackForward);
     }
 
     pub fn go_forward(&self) {
         self._nav_delegate.ivars().cancel_pending_decision();
         // SAFETY: main thread WKWebView API.
-        let navigation = unsafe { self.webview.goForward() };
-        if navigation.is_none() {
+        if unsafe { self.webview.goForward() }.is_none() {
             tracing::debug!("WKWebView goForward started no navigation");
         }
-        self.note_host_navigation(navigation, WKNavigationType::BackForward);
     }
 
     /// 주소 표시용 탐색 정보. 주소 선택 규칙은 `committed_document_url`이 정한다.
