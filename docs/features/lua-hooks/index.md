@@ -157,7 +157,8 @@ fn fire<T: Serialize>(
 `src/host_api/hooks/autofire.rs`:
 
 - `dispatch(lua, scripts, guard, runs, event)` — `ScriptRegistry::entries_for_event` 매칭 → 소스 read → `hash_bytes` 재검 → 일치 시 `submit_script`(완료 추적 token 동반)로 접수하고 ticket을 `LuaRuns`에 `Autofire` 경로로 기록한다. 불일치·읽기 실패·접수 거절·엔진 없음·억제는 경고 로그와 함께 경고 알림(`SystemNotice`)을 돌려주고 `hooks::lua::fire`가 알림 대기열에 넣는다(해시 자동 갱신 금지). 단축키 경로(`try_dispatch_script_shortcut`)와 동형 시퀀스.
-- `AutofireGuard` — cascade 재진입 방어. `App.lua_autofire` 가 소유하고 `about_to_wait` 시작에서 `checkpoint()` 1 회. 완료 acknowledge 를 1 프레임 지연시켜, `run_cli` 가 유발한 이벤트(스크립트 완료보다 먼저 큐잉됨)가 자동실행을 다시 실행하지 못하게 한다. 워커의 완료 신호는 `tasty_lua::CompletionToken`(RAII — 결과를 보낸 뒤, 또는 접수 거절·큐 drop/abort 때 job과 함께 한 번 drop된다).
+- `AutofireGuard` — cascade 재진입 방어. `App.lua_autofire` 가 소유하고 `about_to_wait` 시작에서 `checkpoint()` 1 회. 완료 acknowledge 를 1 프레임 지연시켜, `run_cli` 가 유발한 이벤트(스크립트 완료보다 먼저 큐잉됨)가 자동실행을 다시 실행하지 못하게 한다. 워커의 완료 신호는 `tasty_lua::CompletionToken`(RAII — 결과를 보낸 뒤, 또는 접수 거절·큐 drop/abort 때 job과 함께 한 번 drop된다). 제출 수는 token을 내줄 때(`issue_token`) 함께 센다. 거절된 token도 완료 수를 올리므로, 접수 성공 때만 세면 두 checkpoint 뒤 인정한 완료 수가 제출 수를 넘어 다음 재시도가 실행 중인 동안 같은 이벤트를 억제하지 못한다.
+- Given 자동실행이 job 큐 포화로 거절됐다 When 두 checkpoint 뒤 재시도가 접수되고 그 실행 중에 같은 이벤트가 다시 온다 Then 재시도는 실행되고 두 번째는 억제된다(`autofire.rs`의 `a_rejected_autofire_keeps_the_reentry_guard_balanced`).
 
 <a id="실행-결과-전달"></a>
 

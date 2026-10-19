@@ -48,11 +48,10 @@ impl AutofireGuard {
         self.prev_sample = self.completed.load(Ordering::SeqCst);
     }
 
-    fn note_submitted(&mut self) {
+    /// 완료 token을 하나 내주고 제출 수를 함께 센다. token은 실행 뒤든 접수 거절이든 한 번 drop되어
+    /// 완료 수를 올리므로, 두 수를 한곳에서 세야 거절이 섞여도 완료 수가 제출 수를 넘지 않는다.
+    fn issue_token(&mut self) -> tasty_lua::CompletionToken {
         self.submitted += 1;
-    }
-
-    fn token(&self) -> tasty_lua::CompletionToken {
         tasty_lua::CompletionToken::new(self.completed.clone())
     }
 }
@@ -108,9 +107,8 @@ fn try_run_entry(
         Ok(source) => source,
         Err(notice) => return Some(notice),
     };
-    match lua.submit_script(&source, Some(&name), Some(guard.token())) {
+    match lua.submit_script(&source, Some(&name), Some(guard.issue_token())) {
         Ok(ticket) => {
-            guard.note_submitted();
             let event = event.to_string();
             runs.record(ticket, RunOrigin::Autofire { event, name });
             None
@@ -192,9 +190,9 @@ mod tests {
     fn guard_reentry_state_machine() {
         let mut g = AutofireGuard::new();
         assert!(!g.suppressed());
-        g.note_submitted();
+        let token = g.issue_token();
         assert!(g.suppressed(), "제출 직후부터 억제");
-        drop(g.token());
+        drop(token);
         g.checkpoint();
         assert!(
             g.suppressed(),
@@ -305,6 +303,76 @@ mod tests {
             guard.submitted, 2,
             "실패 뒤에도 다음 자동실행은 억제되지 않는다"
         );
+    }
+
+    /// 접수 거절에서도 token은 완료 수를 올린다. 거절을 제출로 세지 않으면 두 checkpoint 뒤 인정한 완료 수가
+    /// 제출 수를 넘어, 다음 자동실행이 실행 중인 동안 들어온 같은 이벤트를 억제하지 못한다.
+    #[test]
+    fn a_rejected_autofire_keeps_the_reentry_guard_balanced() {
+        let engine = tasty_lua::LuaEngine::with_deadline(std::time::Duration::from_millis(300))
+            .expect("init");
+        let (path, hash) = temp_script("rejected", "local x = 1");
+        let reg = registry_with(path, hash, "workspace.create.post");
+        let mut guard = AutofireGuard::new();
+        let mut runs = LuaRuns::default();
+
+        // 워커를 바쁘게 하고 job 큐를 채워 다음 자동실행이 거절되게 한다.
+        engine
+            .submit_script("while true do end", None, None)
+            .expect("busy job");
+        while engine.submit_script("local y = 1", None, None).is_ok() {}
+
+        let notices = dispatch_now(
+            Some(&engine),
+            &reg,
+            &mut guard,
+            &mut runs,
+            "workspace.create.post",
+        );
+        assert_eq!(notices.len(), 1, "거절은 경고 알림으로 남는다");
+        assert!(
+            guard.completed.load(Ordering::SeqCst) == 1,
+            "거절된 token도 한 번 해제된다"
+        );
+
+        // 큐가 빌 때까지 기다린 뒤 두 checkpoint로 그 완료를 인정한다.
+        while engine.eval("return 0").is_err() {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        engine.drain_run_outcomes();
+        guard.checkpoint();
+        guard.checkpoint();
+        assert!(
+            guard.acknowledged <= guard.submitted,
+            "인정한 완료 수가 제출 수를 넘으면 안 된다 ({} > {})",
+            guard.acknowledged,
+            guard.submitted
+        );
+        assert!(!guard.suppressed(), "재시도는 허용한다");
+
+        // 재시도가 접수된 뒤, 그 완료를 인정하기 전에 같은 이벤트가 다시 오면 억제해야 한다.
+        let retried = guard.submitted;
+        dispatch_now(
+            Some(&engine),
+            &reg,
+            &mut guard,
+            &mut runs,
+            "workspace.create.post",
+        );
+        assert_eq!(guard.submitted, retried + 1, "재시도는 실행된다");
+        let notices = dispatch_now(
+            Some(&engine),
+            &reg,
+            &mut guard,
+            &mut runs,
+            "workspace.create.post",
+        );
+        assert_eq!(
+            guard.submitted,
+            retried + 1,
+            "실행 중인 재시도 동안은 억제한다"
+        );
+        assert_eq!(notices.len(), 1, "억제 경고가 하나 남는다");
     }
 
     #[test]
