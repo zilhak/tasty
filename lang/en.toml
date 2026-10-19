@@ -30,6 +30,11 @@ title = "No GPU adapter found"
 body = "Tasty could not find a compatible GPU adapter, even after trying software rendering. Check that a GPU driver (Vulkan/OpenGL) is installed."
 hint = "Install/update your GPU driver, or build Tasty from source with --no-default-features for headless (no GPU) operation."
 
+[boot.app_error]
+title = "Tasty could not start"
+body = "Tasty stopped while preparing its first window, before any terminal was opened. Details: {}"
+hint = "Start Tasty again. If it keeps happening, check that the data folder (TASTY_HOME, or ~/.tasty by default) is available and see ~/.tasty/debug.log."
+
 [boot.engine_error]
 title = "Could not start the terminal"
 body = "Tasty could not start a terminal. Details: {}"

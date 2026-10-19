@@ -30,6 +30,11 @@ title = "GPU アダプタが見つかりません"
 body = "ソフトウェアレンダリングも試しましたが、互換性のある GPU アダプタが見つかりませんでした。GPU ドライバ（Vulkan/OpenGL）がインストールされているか確認してください。"
 hint = "GPU ドライバをインストールまたは更新してください。GPU なしで使うには、--no-default-features を指定して画面を使わない headless 版をビルドしてください。"
 
+[boot.app_error]
+title = "Tasty を起動できませんでした"
+body = "ターミナルを開く前、最初のウィンドウを準備している途中で停止しました。詳細: {}"
+hint = "Tasty をもう一度起動してください。繰り返し発生する場合は、データフォルダ (TASTY_HOME、既定は ~/.tasty) が使えるか確認し、~/.tasty/debug.log を確認してください。"
+
 [boot.engine_error]
 title = "ターミナルを起動できません"
 body = "ターミナルを起動できませんでした。詳細: {}"

@@ -1107,7 +1107,7 @@ impl App {
                 false
             };
             if quit {
-                std::process::exit(1);
+                exit_from_boot_error();
             }
             // RedrawRequested에서 다시 요청하면 유휴 상태에도 렌더가 계속 반복된다.
             if let (Some(gpu), Some(window)) = (&mut self.boot_error_gpu, &self.boot_error_window) {
@@ -1126,7 +1126,7 @@ impl App {
                 window.request_redraw();
             }
             if effect.exit {
-                std::process::exit(1);
+                exit_from_boot_error();
             }
         }
     }
@@ -2226,6 +2226,13 @@ fn boot_shell_usable(settings: &crate::settings::Settings) -> bool {
         "configured shell is unusable; new terminals use the fallback shell until it is fixed"
     );
     true
+}
+
+/// 부팅 오류 화면을 닫으면 이 실행이 쓴 instance 파일을 지우고 실패 코드로 끝낸다.
+/// 정상 종료 경로를 타지 않으므로 다음 실행이 낡은 기록을 읽지 않게 여기서 지운다.
+fn exit_from_boot_error() -> ! {
+    crate::boot::single_instance::instance_file::remove_owned();
+    std::process::exit(1);
 }
 
 #[cfg(test)]

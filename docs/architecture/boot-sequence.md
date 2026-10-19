@@ -26,6 +26,13 @@ finish_boot
 
 `BootResources`의 handle과 `BootProgress`의 값은 소유자가 다르다. worker 반환형도 CoreState 한 개가 아니라 EngineSession과 PluginManager다. journal의 초기 projection만 재생하는 단계와 실제 자원 activation을 구분한다. 오류 화면을 만들 수 있는 Window/GPU가 있으면 진단을 표시하고, 초기 View 조립 실패로 기존 journal stream을 삭제하지 않는다.
 
+터미널을 열기 전의 내부 실패는 계속할 세션이 없으므로 원인을 보이고 실패 코드 1로 끝낸다. 같은 내용은 error 로그에 남고, 이 실행이 쓴 instance 파일(`tasty.instance`)은 끝나기 전에 지운다.
+
+- `App::new` 실패(데이터 홈 부재, `structure-journal` worker·`TerminalSpawner` 스레드 생성 실패): 이벤트 루프는 프로세스당 하나뿐이므로 이미 만든 루프로 부팅 오류 화면(`boot.app_error.*`)을 띄운다(`home_in_use::run_screen_on`).
+- `assemble_app_state` 실패: 부팅 창과 GPU가 준비돼 있으므로 엔진 오류와 같은 부팅 오류 화면 모드로 넘긴다. 문구는 `boot.app_error.*`다.
+- 오류 화면용 창이나 GPU를 만들지 못하면 같은 문구를 OS 메시지 상자로 보인다. Linux는 zenity가 없으면 데스크톱 알림이다(`single_instance::second::show_notice`). 웹훅 포트·데이터 폴더 사용 중 화면도 같은 폴백을 쓴다.
+- debug 빌드는 `TASTY_DEBUG_BOOT_FAULT=app_new|assemble`로 두 실패를 주입할 수 있다(`src/boot/debug_boot_fault.rs`). release에는 이 경로가 없다.
+
 일반 부팅과 shell setup 완료는 같은 begin_boot로 합류한다. 새 창·parked 복원은 `window_lifecycle/pending.rs`의 pending 관계와 journal 준비 관측을 사용한다. 공유 registry는 AppServices의 같은 Arc를 주입한다. 특정 첫 View의 실행 자원을 전역 서비스 원본으로 사용하지 않는다.
 
 ## 부팅 가드 (bootstrap 불변식)
@@ -130,8 +137,9 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   Secondary md)이며 항목 사이는 `spacing_sm`, Quit 위는 `spacing_sm`을 한 번 더 둔다. 본문과 안내의
   백틱 구간은 code run 이다. 문구는 자르지 않는다. 경로처럼 공백 없이 긴 낱말은 폼 폭에서 끊는다.
   쌓은 높이가 창 높이 − 2 × `spacing_xl`보다 크면 락업을 먼저 빼고, 그래도 넘치면 제목·본문·안내를
-  스크롤하고 Quit은 그 아래에 고정한다. 엔진 생성 실패, 다른 프로세스가 쓰는 데이터 폴더, 열지
-  못한 웹훅 포트에서 뜨고 Quit·Esc·Enter·창 닫기가 종료 코드 1로 끝낸다. 키 판정은 호스트가 한다.
+  스크롤하고 Quit은 그 아래에 고정한다. 엔진 생성 실패, App 생성·첫 화면 조립 실패, 다른 프로세스가
+  쓰는 데이터 폴더, 열지 못한 웹훅 포트에서 뜨고 Quit·Esc·Enter·창 닫기가 종료 코드 1로 끝낸다.
+  키 판정은 호스트가 한다.
 - **View 밖 창의 다시 그리기** — 첫 실행 셸 설정 창과 부팅 오류 화면은 View 밖에 있어 dirty
   표시나 렌더 예약을 받지 않는다. 클릭·Enter 처리는 렌더 안에서 일어나므로 창이 스스로 redraw 를
   요청한다. egui 가 입력에 repaint 를 답하거나 즉시 repaint 를 요청하면(`AppEvent::EguiRepaint`)

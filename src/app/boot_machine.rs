@@ -532,11 +532,24 @@ impl App {
             journal_plugins_waited: _,
         } = progress;
         self.state.started = true;
-        let mut state = match self.assemble_app_state(restored_idx) {
+        #[cfg(debug_assertions)]
+        let assembled = match crate::boot::debug_boot_fault::take(
+            crate::boot::debug_boot_fault::Stage::Assemble,
+        ) {
+            Some(error) => Err(error.to_string()),
+            None => self.assemble_app_state(restored_idx),
+        };
+        #[cfg(not(debug_assertions))]
+        let assembled = self.assemble_app_state(restored_idx);
+        let mut state = match assembled {
             Ok(state) => state,
             Err(error) => {
+                // 첫 화면을 만들 수 없으면 계속할 세션이 없다. 준비된 부팅 창에 원인을 보이고,
+                // 사용자가 닫으면 실패 코드로 끝낸다(부팅 오류 화면의 종료 경로).
                 tracing::error!("cannot register the initial committed engine: {error}");
-                event_loop.exit();
+                let error = anyhow::anyhow!("cannot assemble the first window: {error}");
+                self.state.boot_error_info = Some(crate::boot::app_error_info(&error));
+                self.enter_boot_error_mode(window, gpu);
                 return;
             }
         };
@@ -837,6 +850,17 @@ mod boot_error_tests {
         let err = anyhow::anyhow!("another store holds the journal writer lock");
         let info = journal_error_info(None, &err);
         assert_eq!(info.title, crate::i18n::t("boot.engine_error.title"));
+    }
+
+    /// App 생성·첫 화면 조립 실패 문구는 원인을 담고 셸 설정 안내(엔진 오류)와 구별된다.
+    #[test]
+    fn app_error_info_names_the_cause_and_differs_from_the_shell_hint() {
+        crate::i18n::init("en");
+        let info = crate::boot::app_error_info(&anyhow::anyhow!("data home unavailable"));
+        assert_eq!(info.title, crate::i18n::t("boot.app_error.title"));
+        assert!(info.body.contains("data home unavailable"));
+        assert_ne!(info.hint, crate::i18n::t("boot.engine_error.hint"));
+        assert_ne!(info.title, info.body);
     }
 
     #[test]

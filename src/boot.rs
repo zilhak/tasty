@@ -2,6 +2,8 @@
 //! GUI 빌드는 --headless를 경고 후 무시한다.
 
 pub(crate) mod cli_routing;
+#[cfg(all(feature = "gui", debug_assertions))]
+pub(crate) mod debug_boot_fault;
 #[cfg(feature = "gui")]
 pub(crate) mod event_loop;
 #[cfg(not(feature = "gui"))]
@@ -247,14 +249,32 @@ fn run_gui(
         }
     };
 
-    let mut app = App::new(
-        proxy,
-        cli.port_file,
-        memory_arc,
-        writer_lock,
-        #[cfg(debug_assertions)]
-        cli.enable_input_simulation,
-    )?;
+    let screen_proxy = proxy.clone();
+    #[cfg(debug_assertions)]
+    let injected = debug_boot_fault::take(debug_boot_fault::Stage::AppNew);
+    #[cfg(not(debug_assertions))]
+    let injected: Option<anyhow::Error> = None;
+    let constructed = match injected {
+        Some(error) => Err(error),
+        None => App::new(
+            proxy,
+            cli.port_file,
+            memory_arc,
+            writer_lock,
+            #[cfg(debug_assertions)]
+            cli.enable_input_simulation,
+        ),
+    };
+    let mut app = match constructed {
+        Ok(app) => app,
+        Err(error) => {
+            // 창이 없는 실패라 stderr만으로는 보이지 않는다(Windows release는 콘솔도 없다).
+            let info = app_error_info(&error);
+            let code = home_in_use::run_screen_on(event_loop, screen_proxy, info);
+            single_instance::instance_file::remove_owned();
+            return code;
+        }
+    };
     app.hub.webhook = Some(webhook);
     hooks::lua::fire(
         app.lua_engine.as_ref(),
@@ -279,6 +299,16 @@ fn run_gui(
     drop(display_owner);
 
     Ok(std::process::ExitCode::from(code))
+}
+
+/// App 생성이나 첫 화면 조립처럼 터미널을 열기 전 내부 단계의 실패 문구. 같은 내용을 로그에 남긴다.
+#[cfg(feature = "gui")]
+pub(crate) fn app_error_info(error: &anyhow::Error) -> crate::gpu::BootErrorInfo {
+    let title = crate::i18n::t("boot.app_error.title").to_string();
+    let body = crate::i18n::t_fmt("boot.app_error.body", &format!("{error:#}"));
+    let hint = crate::i18n::t("boot.app_error.hint").to_string();
+    tracing::error!("boot failed before the first window: {error:#}\n{title}\n{body}\n{hint}");
+    crate::gpu::BootErrorInfo { title, body, hint }
 }
 
 /// event_loop 종료 이후 App Drop도 기다릴 수 있어 별도 시간으로 측정한다.

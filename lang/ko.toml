@@ -30,6 +30,11 @@ title = "GPU 어댑터를 찾을 수 없음"
 body = "소프트웨어 렌더링도 시도했지만 호환되는 GPU 어댑터를 찾지 못했습니다. GPU 드라이버(Vulkan/OpenGL)가 설치되어 있는지 확인하세요."
 hint = "GPU 드라이버를 설치하거나 업데이트하세요. GPU 없이 사용하려면 --no-default-features 옵션으로 화면 없는 headless 빌드를 만드세요."
 
+[boot.app_error]
+title = "Tasty를 시작하지 못했습니다"
+body = "터미널을 열기 전, 첫 윈도우를 준비하는 중에 멈췄습니다. 자세한 내용: {}"
+hint = "Tasty를 다시 실행하세요. 계속 반복되면 데이터 폴더(TASTY_HOME, 기본값 ~/.tasty)를 사용할 수 있는지 확인하고 ~/.tasty/debug.log를 확인하세요."
+
 [boot.engine_error]
 title = "터미널을 시작할 수 없음"
 body = "터미널을 시작하지 못했습니다. 자세한 내용: {}"

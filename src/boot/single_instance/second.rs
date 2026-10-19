@@ -696,7 +696,8 @@ fn fallback(log: &LaunchLog, reason: &str) -> ExitCode {
 }
 
 /// 메시지 상자를 띄운다. Linux 메시지 상자는 외부 프로그램 zenity에 기대므로 없으면 데스크톱 알림으로 바꾼다.
-fn show_notice(title: &str, body: &str) -> String {
+/// 창을 만들 수 없는 부팅 실패도 이 경로로 원인을 보인다. 반환값은 실제로 쓴 표시 수단이다.
+pub(crate) fn show_notice(title: &str, body: &str) -> String {
     #[cfg(target_os = "linux")]
     {
         if !program_on_path("zenity") {
