@@ -1,7 +1,7 @@
 //! Lua VM을 전용 워커에서만 사용한다. 메인은 실행 요청을 보내고 HostCommand를 처리하며
 //! 읽기 전용 LuaSnapshot을 발행한다. 워커는 요청을 직렬로 실행한다.
 
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
@@ -46,6 +46,8 @@ const SCRIPT_DEADLINE: Duration = Duration::from_secs(5);
 
 /// 현재 job의 절대 기한. 같은 워커의 set_hook 콜백이 확인한다.
 type SharedDeadline = Arc<Mutex<Option<Instant>>>;
+/// 기한 hook이 실행을 중단했으면 true다. 경과 시간만으로는 느린 호스트 호출 뒤의 일반 오류와 구분할 수 없다.
+type DeadlineHit = Arc<AtomicBool>;
 
 /// job 종료나 큐 폐기 때 완료 counter를 늘리는 RAII 토큰.
 /// 실행되지 못한 job도 Drop으로 자동실행 재진입 제한을 해제한다.
@@ -156,7 +158,8 @@ impl LuaEngine {
         let deadline: SharedDeadline = Arc::new(Mutex::new(None));
 
         install_hook_api(&lua)?;
-        install_interrupt(&lua, deadline.clone());
+        let hit: DeadlineHit = Arc::new(AtomicBool::new(false));
+        install_interrupt(&lua, deadline.clone(), hit.clone());
         crate::host_api::install(&lua, command_tx, snapshot.clone())?;
 
         let (job_tx, job_rx) = sync_channel(JOB_QUEUE_CAP);
@@ -168,7 +171,7 @@ impl LuaEngine {
         };
         let worker = std::thread::Builder::new()
             .name("tasty-lua-worker".to_string())
-            .spawn(move || worker_loop(lua, job_rx, budget, deadline, worker_outcomes))?;
+            .spawn(move || worker_loop(lua, job_rx, budget, (deadline, hit), worker_outcomes))?;
 
         Ok(Self {
             job_tx,
@@ -350,7 +353,7 @@ fn worker_loop(
     lua: Lua,
     job_rx: Receiver<LuaJob>,
     budget: Duration,
-    deadline: SharedDeadline,
+    (deadline, hit): (SharedDeadline, DeadlineHit),
     outcomes: Outcomes,
 ) {
     while let Ok(job) = job_rx.recv() {
@@ -374,19 +377,7 @@ fn worker_loop(
                 ticket,
                 token,
             } => {
-                let started = Instant::now();
-                let result = guarded(&deadline, budget, || {
-                    exec_source(&lua, &source, name.as_deref())
-                })
-                .map_err(|e| {
-                    tracing::warn!(target: "tasty_lua", "script run failed: {e}");
-                    // 기한 hook의 오류는 mlua가 감싸므로 문구 대신 경과 시간으로 판정한다.
-                    if started.elapsed() >= budget {
-                        RunFailure::TimedOut
-                    } else {
-                        RunFailure::Error(first_line(&e))
-                    }
-                });
+                let result = run_job(&lua, (&deadline, &hit), budget, &source, name.as_deref());
                 if let Some(ticket) = ticket {
                     outcomes.send(RunOutcome { ticket, result });
                 }
@@ -410,6 +401,26 @@ fn worker_loop(
             LuaJob::Shutdown => break,
         }
     }
+}
+
+/// 스크립트 하나를 실행하고 실패 사유를 나눈다. 기한 hook의 오류는 mlua가 감싸므로 문구 대신
+/// hook이 남긴 표지로 시간 초과를 판정하고, 그 밖의 오류는 원래 사유를 그대로 싣는다.
+fn run_job(
+    lua: &Lua,
+    (deadline, hit): (&SharedDeadline, &DeadlineHit),
+    budget: Duration,
+    source: &str,
+    name: Option<&str>,
+) -> Result<(), RunFailure> {
+    hit.store(false, Ordering::SeqCst);
+    guarded(deadline, budget, || exec_source(lua, source, name)).map_err(|e| {
+        tracing::warn!(target: "tasty_lua", "script run failed: {e}");
+        if hit.swap(false, Ordering::SeqCst) {
+            RunFailure::TimedOut
+        } else {
+            RunFailure::Error(first_line(&e))
+        }
+    })
 }
 
 /// 워커 쪽 결과 채널. 보내기는 막히지 않는다.
@@ -458,7 +469,7 @@ static DEADLINE_POISON_REPORTED: std::sync::atomic::AtomicBool =
 const INTERRUPT_EVERY_N_INSTRUCTIONS: u32 = 10_000;
 
 /// Lua 5.4의 명령 수 기반 set_hook으로 실행 기한을 확인한다.
-fn install_interrupt(lua: &Lua, deadline: SharedDeadline) {
+fn install_interrupt(lua: &Lua, deadline: SharedDeadline, hit: DeadlineHit) {
     let triggers = mlua::HookTriggers::new().every_nth_instruction(INTERRUPT_EVERY_N_INSTRUCTIONS);
     lua.set_hook(triggers, move |_, _| {
         // 읽기 전용 임계구역의 poison을 복구해 실행 기한 검사가 꺼지지 않게 한다.
@@ -469,6 +480,7 @@ fn install_interrupt(lua: &Lua, deadline: SharedDeadline) {
         )
         .is_some_and(|dl| Instant::now() >= dl);
         if expired {
+            hit.store(true, Ordering::SeqCst);
             Err(mlua::Error::runtime(
                 "script exceeded time budget (deadline)",
             ))
@@ -829,7 +841,7 @@ mod tests {
         assert!(deadline.is_poisoned(), "전제: 락이 poison 이다");
 
         let lua = Lua::new();
-        install_interrupt(&lua, deadline.clone());
+        install_interrupt(&lua, deadline.clone(), Arc::new(AtomicBool::new(false)));
         set_deadline(&deadline, Some(Instant::now() + Duration::from_millis(50)));
 
         // 기한 검사가 고장 나도 시험이 끝나도록 유한 루프를 사용한다.
@@ -934,6 +946,48 @@ mod tests {
         );
     }
 
+    /// 느린 호스트 호출로 예산을 넘긴 뒤 난 일반 오류는 시간 초과가 아니라 원래 사유로 남는다.
+    #[test]
+    fn an_error_after_a_slow_host_call_keeps_its_reason() {
+        let lua = Lua::new();
+        let deadline: SharedDeadline = Arc::new(Mutex::new(None));
+        let hit: DeadlineHit = Arc::new(AtomicBool::new(false));
+        install_interrupt(&lua, deadline.clone(), hit.clone());
+        let slow = lua
+            .create_function(|_, ms: u64| {
+                std::thread::sleep(Duration::from_millis(ms));
+                Ok(())
+            })
+            .unwrap();
+        lua.globals().set("slow_host_call", slow).unwrap();
+        let budget = Duration::from_millis(30);
+        let started = Instant::now();
+        let result = run_job(
+            &lua,
+            (&deadline, &hit),
+            budget,
+            "slow_host_call(80) error('boom')",
+            Some("slow.lua"),
+        );
+        assert!(started.elapsed() >= budget, "전제: 예산을 넘겼다");
+        match result {
+            Err(RunFailure::Error(reason)) => assert!(reason.contains("boom"), "{reason}"),
+            other => panic!("원래 사유가 남아야 한다: {other:?}"),
+        }
+        assert_eq!(
+            run_job(&lua, (&deadline, &hit), budget, "while true do end", None),
+            Err(RunFailure::TimedOut),
+            "기한 hook이 중단한 실행만 시간 초과다"
+        );
+        assert!(
+            matches!(
+                run_job(&lua, (&deadline, &hit), budget, "error('next')", None),
+                Err(RunFailure::Error(_))
+            ),
+            "앞선 시간 초과 표지는 다음 실행에 남지 않는다"
+        );
+    }
+
     #[test]
     fn untracked_run_script_sends_no_outcome() {
         let engine = LuaEngine::new().expect("init");
@@ -985,6 +1039,42 @@ mod tests {
         );
         assert_eq!(result, Err(RunRejected::WorkerGone));
         assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    /// 결과를 받을 쪽이 사라져도 실행을 마친 job의 token은 한 번만 해제된다.
+    #[test]
+    fn a_dropped_outcome_receiver_still_releases_the_token_once() {
+        let mut engine = LuaEngine::new().expect("init");
+        let counter = Arc::new(AtomicU64::new(0));
+        let (_, fresh_rx) = sync_channel(1);
+        drop(std::mem::replace(&mut engine.outcome_rx, fresh_rx));
+        engine
+            .submit_script(
+                "error('nobody listens')",
+                None,
+                Some(CompletionToken::new(counter.clone())),
+            )
+            .expect("queued");
+        engine.eval("return 0").expect("sync");
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    /// 엔진을 drop하면 실행 중이던 job과 대기 중이던 job의 token이 각각 한 번씩 해제된다.
+    #[test]
+    fn dropping_the_engine_releases_every_pending_token_once() {
+        let engine = LuaEngine::with_deadline(Duration::from_millis(100)).expect("init");
+        let counter = Arc::new(AtomicU64::new(0));
+        let token = || Some(CompletionToken::new(counter.clone()));
+        engine
+            .submit_script("while true do end", None, token())
+            .expect("running job");
+        for _ in 0..3 {
+            engine
+                .submit_script("local x = 1", None, token())
+                .expect("queued job");
+        }
+        drop(engine);
+        assert_eq!(counter.load(Ordering::SeqCst), 4);
     }
 
     /// 메인이 결과를 꺼내지 않는 동안 결과 슬롯이 다 차면 접수 단계에서 거절한다.
