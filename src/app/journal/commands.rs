@@ -858,6 +858,8 @@ impl JournalApplication {
                 JsonRpcResponse::internal_error(pending.request.id.unwrap_or_default(), reason),
             );
         }
+        #[cfg(feature = "gui")]
+        self.fail_unsent_forwards(reason);
     }
 }
 

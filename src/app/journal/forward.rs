@@ -41,6 +41,9 @@ pub(super) struct Forward {
     draft: Option<Draft>,
     queued: Option<Work>,
     stage: Phase,
+    /// 보내기 전까지 요청의 run을 여기에 둔다. journal이 멈추면 보내지 않은 forward의 run을 끝낸다.
+    #[cfg(feature = "gui")]
+    completion: Option<crate::request_runs::RunGuard>,
 }
 enum Phase {
     Claim,
@@ -56,7 +59,7 @@ enum Phase {
 impl JournalApplication {
     pub(super) fn start_forward(
         &mut self,
-        draft: Draft,
+        #[cfg_attr(not(feature = "gui"), expect(unused_mut))] mut draft: Draft,
         operation: OperationId,
     ) -> Result<(), String> {
         let ticket = self.next_ticket;
@@ -72,6 +75,8 @@ impl JournalApplication {
                     stream: draft.stream.clone(),
                     operation,
                 }),
+                #[cfg(feature = "gui")]
+                completion: draft.completion.take(),
                 draft: Some(draft),
                 stage: Phase::Claim,
             },
@@ -129,7 +134,11 @@ impl JournalApplication {
             if let Phase::Ready { lease, payload } = &mut forward.stage {
                 let lease = lease.clone();
                 let payload = std::mem::take(payload);
-                if let Some(draft) = forward.draft.take() {
+                if let Some(mut draft) = forward.draft.take() {
+                    #[cfg(feature = "gui")]
+                    {
+                        draft.completion = forward.completion.take();
+                    }
                     out.push((*ticket, draft, payload));
                     forward.stage = Phase::Sending { lease };
                 }
@@ -148,6 +157,75 @@ impl JournalApplication {
             forward.stage = Phase::Finish;
             (self.wake)();
         }
+    }
+}
+
+impl JournalApplication {
+    /// journal이 멈추면 forward는 더 진행하지 않는다. 아직 보내지 않은 원격 변경의 요청에
+    /// 멈춘 원인을 최종 결과로 남긴다. 이미 보낸 변경의 run은 원격 결과를 기다리는 쪽이 가진다.
+    #[cfg(feature = "gui")]
+    pub(super) fn fail_unsent_forwards(&mut self, reason: &str) {
+        fail_unsent(&mut self.forwards, reason);
+    }
+}
+
+#[cfg(feature = "gui")]
+fn fail_unsent(forwards: &mut std::collections::BTreeMap<u64, Forward>, reason: &str) {
+    for forward in forwards.values_mut() {
+        if let Some(run) = forward.completion.take() {
+            crate::request_runs::finish(
+                run.take(),
+                crate::request_runs::RunState::Failed,
+                format!("the remote change was not sent because the journal stopped: {reason}"),
+                serde_json::Value::Null,
+            );
+        }
+    }
+}
+
+#[cfg(all(test, feature = "gui"))]
+mod tests {
+    use super::*;
+    use crate::request_runs::{RunGuard, begin, lookup};
+
+    fn forward(engine: EngineId, stage: Phase, completion: Option<RunGuard>) -> Forward {
+        Forward {
+            engine,
+            draft: None,
+            queued: None,
+            stage,
+            completion,
+        }
+    }
+
+    #[test]
+    fn a_halt_fails_only_the_runs_of_changes_not_yet_sent() {
+        let (_, engine) = crate::state::tests::test_state();
+        let claiming = begin("markdown.navigate", None, serde_json::Value::Null);
+        let sent = begin("markdown.navigate", None, serde_json::Value::Null);
+        let mut forwards = std::collections::BTreeMap::from([
+            (
+                1,
+                forward(
+                    engine.id,
+                    Phase::Claim,
+                    Some(RunGuard::new(claiming, FORWARD_ENDED)),
+                ),
+            ),
+            // 보낸 forward의 run은 원격 결과 대기로 넘어가 여기에 없다.
+            (2, forward(engine.id, Phase::Finish, None)),
+        ]);
+        let waiting = RunGuard::new(sent, FORWARD_ENDED);
+        fail_unsent(&mut forwards, "worker stopped");
+        let ended = lookup(claiming, None).unwrap();
+        assert_eq!(ended["state"], "failed");
+        assert_eq!(
+            ended["result"],
+            "the remote change was not sent because the journal stopped: worker stopped"
+        );
+        assert_eq!(lookup(sent, None).unwrap()["state"], "running");
+        assert_eq!(forwards.len(), 2, "a halt keeps the forwards themselves");
+        waiting.take();
     }
 }
 
