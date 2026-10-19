@@ -242,8 +242,9 @@ mod slots {
         SavedWorkspace,
     };
     use super::super::{
-        LAYOUT_VERSION, SlotLoad, delete_slot_in, gc_scrollback_orphans_all_slots_in,
-        list_slots_in, load_slot_in, migrate_legacy_in, preserve_unparsable_slot, slot_path_in,
+        LAYOUT_VERSION, LegacyMigration, SlotLoad, delete_slot_in,
+        gc_scrollback_orphans_all_slots_in, list_slots_in, load_slot_in, migrate_legacy_in,
+        migrate_legacy_with, preserve_unparsable_slot, slot_path_in,
     };
 
     fn expect_loaded(dir: &Path, slot: u32) -> SavedLayout {
@@ -308,7 +309,7 @@ mod slots {
         for name in ["01.json", "02.json", "10.json", "notes.txt", "01.json.tmp"] {
             std::fs::write(dir.join(name), "{}").unwrap();
         }
-        assert_eq!(list_slots_in(dir), vec![1, 2, 10]);
+        assert_eq!(list_slots_in(dir).slots, vec![1, 2, 10]);
     }
 
     #[test]
@@ -318,13 +319,15 @@ mod slots {
         for name in ["1.json", "01.json"] {
             std::fs::write(dir.join(name), "{}").unwrap();
         }
-        assert_eq!(list_slots_in(dir), vec![1]);
+        assert_eq!(list_slots_in(dir).slots, vec![1]);
     }
 
     #[test]
     fn list_slots_is_empty_when_the_dir_does_not_exist() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(list_slots_in(&tmp.path().join("layouts")).is_empty());
+        let listed = list_slots_in(&tmp.path().join("layouts"));
+        assert!(listed.slots.is_empty());
+        assert!(listed.complete, "디렉터리가 없으면 슬롯이 없다고 확정한다");
     }
 
     #[test]
@@ -368,12 +371,136 @@ mod slots {
         )
         .unwrap();
         let layouts = home.join("layouts");
-        std::fs::create_dir_all(&layouts).unwrap();
+        write_slot(&layouts, 2, &layout_with("slot-ws", None));
 
         migrate_legacy_in(home);
 
         assert!(legacy.exists(), "이미 슬롯을 쓰는 인스턴스면 손대지 않는다");
         assert!(!slot_path_in(&layouts, 1).exists());
+    }
+
+    fn write_legacy(home: &Path, scrollback_ref: Option<&str>) -> std::path::PathBuf {
+        let legacy = home.join("layout.json");
+        std::fs::write(
+            &legacy,
+            serde_json::to_string_pretty(&layout_with("legacy-ws", scrollback_ref)).unwrap(),
+        )
+        .unwrap();
+        legacy
+    }
+
+    /// 디렉터리만 만들고 rename은 실패하는 이관을 흉내 낸다.
+    fn fail_after_creating_dir(_: &Path, dir: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        Err(std::io::Error::other("injected rename failure"))
+    }
+
+    #[test]
+    fn failed_migration_keeps_legacy_scrollback_on_this_and_the_next_boot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let legacy = write_legacy(home, Some("aaa"));
+        let layouts = home.join("layouts");
+        let scrollback = home.join("scrollback");
+        for id in ["aaa", "zzz"] {
+            touch_bin(&scrollback, id);
+        }
+
+        // 첫 부팅: create_dir_all 뒤 rename만 실패한다.
+        assert_eq!(
+            migrate_legacy_with(home, fail_after_creating_dir),
+            LegacyMigration::Failed
+        );
+        assert!(layouts.is_dir(), "실패 분기는 빈 layouts 디렉터리를 남긴다");
+        assert!(legacy.exists());
+        gc_scrollback_orphans_all_slots_in(&layouts, &legacy, &scrollback);
+        assert!(
+            bin_exists(&scrollback, "aaa"),
+            "이관하지 못한 layout.json이 참조하는 scrollback은 남아야 한다"
+        );
+        assert!(!bin_exists(&scrollback, "zzz"), "참조 없는 파일은 지운다");
+
+        // 다음 부팅도 같은 실패: 빈 layouts와 남은 layout.json.
+        assert_eq!(
+            migrate_legacy_with(home, fail_after_creating_dir),
+            LegacyMigration::Failed,
+            "빈 layouts 디렉터리면 이관을 다시 시도한다"
+        );
+        gc_scrollback_orphans_all_slots_in(&layouts, &legacy, &scrollback);
+        assert!(bin_exists(&scrollback, "aaa"));
+
+        // 그다음 부팅에서 rename이 성공하면 슬롯 1로 옮겨지고 참조는 슬롯에서 보호된다.
+        migrate_legacy_in(home);
+        assert!(!legacy.exists());
+        assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Loaded(_)));
+        gc_scrollback_orphans_all_slots_in(&layouts, &legacy, &scrollback);
+        assert!(bin_exists(&scrollback, "aaa"));
+    }
+
+    #[test]
+    fn legacy_left_beside_slots_still_protects_its_scrollback() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let legacy = write_legacy(home, Some("aaa"));
+        let layouts = home.join("layouts");
+        let scrollback = home.join("scrollback");
+        write_slot(&layouts, 2, &layout_with("w2", Some("bbb")));
+        for id in ["aaa", "bbb", "zzz"] {
+            touch_bin(&scrollback, id);
+        }
+
+        migrate_legacy_in(home);
+        assert!(legacy.exists());
+        gc_scrollback_orphans_all_slots_in(&layouts, &legacy, &scrollback);
+
+        assert!(bin_exists(&scrollback, "aaa"));
+        assert!(bin_exists(&scrollback, "bbb"));
+        assert!(!bin_exists(&scrollback, "zzz"));
+    }
+
+    #[test]
+    fn gc_skips_when_the_legacy_layout_cannot_be_parsed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let legacy = home.join("layout.json");
+        std::fs::write(&legacy, "{ truncated").unwrap();
+        let scrollback = home.join("scrollback");
+        touch_bin(&scrollback, "aaa");
+
+        gc_scrollback_orphans_all_slots_in(&home.join("layouts"), &legacy, &scrollback);
+
+        assert!(bin_exists(&scrollback, "aaa"));
+    }
+
+    /// 권한 제거가 통하지 않는 환경(root 등)이면 시험 전제가 성립하지 않으므로 그 사실을 알린다.
+    #[cfg(unix)]
+    #[test]
+    fn gc_skips_when_the_layouts_dir_cannot_be_listed() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let scrollback = tmp.path().join("scrollback");
+        write_slot(&layouts, 1, &layout_with("w1", Some("aaa")));
+        for id in ["aaa", "zzz"] {
+            touch_bin(&scrollback, id);
+        }
+        std::fs::set_permissions(&layouts, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let unreadable = std::fs::read_dir(&layouts).is_err();
+
+        let listed = list_slots_in(&layouts);
+        gc_scrollback_orphans_all_slots_in(&layouts, &tmp.path().join("layout.json"), &scrollback);
+        std::fs::set_permissions(&layouts, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(
+            unreadable,
+            "권한을 없애도 layouts를 읽을 수 있는 환경이라 이 시험의 전제가 성립하지 않는다"
+        );
+        assert!(!listed.complete);
+        assert!(bin_exists(&scrollback, "aaa"));
+        assert!(
+            bin_exists(&scrollback, "zzz"),
+            "목록을 확정하지 못하면 아무것도 지우지 않는다"
+        );
     }
 
     #[test]
@@ -397,7 +524,7 @@ mod slots {
             touch_bin(&scrollback, id);
         }
 
-        gc_scrollback_orphans_all_slots_in(&layouts, &scrollback);
+        gc_scrollback_orphans_all_slots_in(&layouts, &tmp.path().join("layout.json"), &scrollback);
 
         assert!(bin_exists(&scrollback, "aaa"));
         assert!(
@@ -421,7 +548,7 @@ mod slots {
             touch_bin(&scrollback, id);
         }
 
-        gc_scrollback_orphans_all_slots_in(&layouts, &scrollback);
+        gc_scrollback_orphans_all_slots_in(&layouts, &tmp.path().join("layout.json"), &scrollback);
 
         assert!(bin_exists(&scrollback, "aaa"));
         assert!(
@@ -436,7 +563,11 @@ mod slots {
         let scrollback = tmp.path().join("scrollback");
         touch_bin(&scrollback, "aaa");
 
-        gc_scrollback_orphans_all_slots_in(&tmp.path().join("layouts"), &scrollback);
+        gc_scrollback_orphans_all_slots_in(
+            &tmp.path().join("layouts"),
+            &tmp.path().join("layout.json"),
+            &scrollback,
+        );
 
         assert!(!bin_exists(&scrollback, "aaa"));
     }
@@ -452,7 +583,7 @@ mod slots {
         touch_bin(&scrollback, "aaa");
 
         assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Unreadable));
-        gc_scrollback_orphans_all_slots_in(&layouts, &scrollback);
+        gc_scrollback_orphans_all_slots_in(&layouts, &tmp.path().join("layout.json"), &scrollback);
         assert!(bin_exists(&scrollback, "aaa"));
     }
 

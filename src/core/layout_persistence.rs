@@ -21,6 +21,7 @@ const LEGACY_LAYOUT_FILE: &str = "layout.json";
 const SLOT_EXT: &str = "json";
 
 /// 홈 선택·격리는 tasty_home에 맡기고 그 아래 layouts를 쓴다.
+#[cfg(feature = "gui")]
 fn layouts_dir() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join(LAYOUTS_SUBDIR))
 }
@@ -30,18 +31,46 @@ fn slot_path_in(dir: &Path, slot: LayoutSlotId) -> PathBuf {
     dir.join(format!("{slot:02}.{SLOT_EXT}"))
 }
 
-/// 숫자 슬롯을 정렬·중복 제거한다. 디렉터리 읽기 실패는 빈 목록, 개별 항목 오류는 건너뛴다.
-fn list_slots_in(dir: &Path) -> Vec<LayoutSlotId> {
+/// 슬롯 번호 목록과, 디렉터리를 끝까지 읽었는지 여부.
+/// 불완전한 목록에 빠진 슬롯의 참조는 알 수 없으므로 GC처럼 지우는 쪽은 complete를 확인해야 한다.
+struct SlotList {
+    slots: Vec<LayoutSlotId>,
+    complete: bool,
+}
+
+/// 숫자 슬롯을 정렬·중복 제거한다. 디렉터리가 없으면 완전한 빈 목록이다.
+/// 디렉터리나 개별 항목을 읽지 못하면 읽은 만큼 돌려주고 불완전으로 표시한다.
+fn list_slots_in(dir: &Path) -> SlotList {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return SlotList {
+                slots: Vec::new(),
+                complete: true,
+            };
+        }
         Err(e) => {
             tracing::warn!("layout slots: read_dir {} failed: {e}", dir.display());
-            return Vec::new();
+            return SlotList {
+                slots: Vec::new(),
+                complete: false,
+            };
         }
     };
     let mut slots = Vec::new();
-    for entry in entries.flatten() {
+    let mut complete = true;
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                tracing::warn!(
+                    "layout slots: reading an entry of {} failed: {e}",
+                    dir.display()
+                );
+                complete = false;
+                continue;
+            }
+        };
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some(SLOT_EXT) {
             continue;
@@ -57,13 +86,14 @@ fn list_slots_in(dir: &Path) -> Vec<LayoutSlotId> {
     }
     slots.sort_unstable();
     slots.dedup();
-    slots
+    SlotList { slots, complete }
 }
 
+/// 새 창의 슬롯 배정용. 불완전한 목록도 읽은 만큼 쓴다(journal이 아는 슬롯과 합친다).
 #[cfg(feature = "gui")]
 pub(crate) fn list_slots() -> Vec<LayoutSlotId> {
     match layouts_dir() {
-        Some(dir) => list_slots_in(&dir),
+        Some(dir) => list_slots_in(&dir).slots,
         None => Vec::new(),
     }
 }
@@ -207,27 +237,55 @@ fn delete_slot_in(dir: &Path, slot: LayoutSlotId) {
     }
 }
 
-/// layouts 디렉터리가 없을 때만 옛 layout.json을 슬롯 1로 rename한다. 부팅 때 호출한다.
+/// 옛 layout.json 이관 결과. 시험이 실패 분기를 실제로 지났는지 확인하는 데 쓴다.
+#[derive(Debug, PartialEq, Eq)]
+enum LegacyMigration {
+    NoLegacy,
+    Moved,
+    /// 슬롯 파일이 있는 layouts 디렉터리가 이미 있어 옛 파일을 그대로 둔다.
+    SlotsExist,
+    Failed,
+}
+
+/// 옛 layout.json을 슬롯 1로 rename한다. 부팅 때 호출한다.
+/// layouts 디렉터리가 없거나, 있어도 슬롯 파일이 하나도 없다고 확인되면 이관한다.
+/// 뒤의 경우는 앞선 부팅에서 디렉터리만 만들고 rename이 실패한 상태를 다시 시도하는 것이다.
 fn migrate_legacy_in(home: &Path) {
+    migrate_legacy_with(home, move_legacy_into_slot_one);
+}
+
+fn migrate_legacy_with(
+    home: &Path,
+    mover: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
+) -> LegacyMigration {
     let legacy = home.join(LEGACY_LAYOUT_FILE);
     if !legacy.exists() {
-        return;
+        return LegacyMigration::NoLegacy;
     }
     let dir = home.join(LAYOUTS_SUBDIR);
     if dir.exists() {
-        tracing::warn!(
-            "legacy layout {} is ignored because the slots directory {} already exists",
-            legacy.display(),
-            dir.display()
-        );
-        return;
+        let listed = list_slots_in(&dir);
+        if !(listed.complete && listed.slots.is_empty()) {
+            tracing::warn!(
+                "legacy layout {} is ignored because the slots directory {} already holds slots \
+                 or could not be listed",
+                legacy.display(),
+                dir.display()
+            );
+            return LegacyMigration::SlotsExist;
+        }
     }
-    if let Err(e) = move_legacy_into_slot_one(&legacy, &dir) {
-        tracing::warn!(
-            "layout migration: {} -> {} failed: {e}",
-            legacy.display(),
-            dir.display()
-        );
+    match mover(&legacy, &dir) {
+        Ok(()) => LegacyMigration::Moved,
+        Err(e) => {
+            tracing::warn!(
+                "layout migration: {} -> {} failed: {e} — keeping the legacy file and its \
+                 scrollback files",
+                legacy.display(),
+                dir.display()
+            );
+            LegacyMigration::Failed
+        }
     }
 }
 
@@ -236,12 +294,44 @@ fn move_legacy_into_slot_one(legacy: &Path, dir: &Path) -> std::io::Result<()> {
     std::fs::rename(legacy, slot_path_in(dir, 1))
 }
 
-/// 읽은 모든 슬롯의 scrollback 참조를 합쳐야 다른 창의 파일을 지우지 않는다.
-/// 열거된 슬롯 중 하나라도 로드하지 못하면 GC를 생략한다.
-/// 단, 목록 읽기 실패·개별 항목 누락은 list_slots_in이 오류를 반환하지 않으므로 이 보호가 적용되지 않는다.
-fn gc_scrollback_orphans_all_slots_in(layouts: &Path, scrollback: &Path) {
+/// 남아 있는 옛 layout.json의 scrollback 참조. 이관 전이거나 이관에 실패한 파일도 원본이다.
+/// None은 파일을 읽거나 해석하지 못해 참조를 알 수 없다는 뜻이다.
+fn legacy_scrollback_refs(legacy: &Path) -> Option<std::collections::HashSet<String>> {
+    let json = match std::fs::read_to_string(legacy) {
+        Ok(json) => json,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Some(Default::default()),
+        Err(e) => {
+            tracing::warn!("legacy layout {} could not be read: {e}", legacy.display());
+            return None;
+        }
+    };
+    match classify_slot_json(&json) {
+        SlotLoad::Loaded(layout) => Some(layout.collect_scrollback_refs()),
+        SlotLoad::Absent | SlotLoad::Unreadable | SlotLoad::Unparsable => {
+            tracing::warn!(
+                "legacy layout {} could not be parsed or has a newer version",
+                legacy.display()
+            );
+            None
+        }
+    }
+}
+
+/// 읽은 모든 슬롯과 남은 옛 layout.json의 scrollback 참조를 합쳐야 다른 창의 파일을 지우지 않는다.
+/// 참조 집합을 확정하지 못하면(목록 불완전, 슬롯이나 옛 파일을 읽지 못함) 그 회차 GC를 생략한다.
+/// layouts 디렉터리가 없고 옛 파일도 없으면 참조가 없다고 확정되므로 모든 bin을 지운다.
+fn gc_scrollback_orphans_all_slots_in(layouts: &Path, legacy: &Path, scrollback: &Path) {
+    let listed = list_slots_in(layouts);
+    if !listed.complete {
+        tracing::warn!(
+            "scrollback GC skipped: the layout slots in {} could not be listed completely — \
+             keeping every scrollback file",
+            layouts.display()
+        );
+        return;
+    }
     let mut union = std::collections::HashSet::new();
-    for slot in list_slots_in(layouts) {
+    for slot in listed.slots {
         match load_slot_in(layouts, slot) {
             SlotLoad::Loaded(layout) => union.extend(layout.collect_scrollback_refs()),
             // 열거 뒤 파일이 사라진 경우도 참조를 알 수 없으므로 GC를 건너뛴다.
@@ -255,28 +345,41 @@ fn gc_scrollback_orphans_all_slots_in(layouts: &Path, scrollback: &Path) {
             }
         }
     }
+    match legacy_scrollback_refs(legacy) {
+        Some(refs) => union.extend(refs),
+        None => {
+            tracing::warn!(
+                "scrollback GC skipped: the legacy layout {} could not be read — keeping every \
+                 scrollback file",
+                legacy.display()
+            );
+            return;
+        }
+    }
     crate::scrollback_store::gc_orphans_in(scrollback, &union);
 }
 
-/// 읽힌 슬롯 목록이 비면 빈 참조 집합으로 GC를 호출한다.
-fn gc_scrollback_orphans_all_slots() {
-    let (Some(layouts), Some(scrollback)) =
-        (layouts_dir(), crate::scrollback_store::scrollback_dir())
-    else {
+fn gc_scrollback_orphans_all_slots(home: &Path) {
+    let Some(scrollback) = crate::scrollback_store::scrollback_dir() else {
         return;
     };
-    gc_scrollback_orphans_all_slots_in(&layouts, &scrollback);
+    gc_scrollback_orphans_all_slots_in(
+        &home.join(LAYOUTS_SUBDIR),
+        &home.join(LEGACY_LAYOUT_FILE),
+        &scrollback,
+    );
 }
 
 /// engine 생성 전에 마이그레이션하고 GC한다. 옮겨진 슬롯의 참조도 GC에 포함해야 한다.
 /// restore_layout이 꺼져 있으면 저장하지 않는 레이아웃을 근거로 지우지 않도록 GC를 생략한다.
 /// 마이그레이션은 설정과 무관하게 시도한다.
 pub(crate) fn migrate_and_gc_on_boot(restore_layout: bool) {
-    if let Some(home) = tasty_utils::path::tasty_home() {
-        migrate_legacy_in(&home);
-    }
+    let Some(home) = tasty_utils::path::tasty_home() else {
+        return;
+    };
+    migrate_legacy_in(&home);
     if restore_layout {
-        gc_scrollback_orphans_all_slots();
+        gc_scrollback_orphans_all_slots(&home);
     }
 }
 
