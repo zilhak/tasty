@@ -1625,7 +1625,6 @@ disk_full = "Disk full. Free some space and try again."
 corrupt = "Database file is corrupted: {}. Back up and delete the file to start fresh."
 schema_mismatch = "Database schema version mismatch (expected {}, found {}). Backward compatibility was removed in 0.4. Back up and delete ~/.tasty/state.db to start fresh."
 other = "Database initialization failed: {}"
-quit = "Quit"
 
 [boot]
 phase_gpu_init = "Initializing graphics…"

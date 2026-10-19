@@ -12,7 +12,7 @@ src/catalog.rs	rename	explorer.menu.op_rename
 src/catalog/chrome_loading.rs	Choose a shell	boot.shell_setup.title
 src/catalog/chrome_loading.rs	Closing surfaces…	shutdown.phase_closing_surfaces
 src/catalog/chrome_loading.rs	Loading plugins…	boot.phase_waiting_plugins
-src/catalog/chrome_loading.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
+src/catalog/chrome_loading.rs	Quit	button.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
 src/catalog/chrome_loading.rs	Restoring layout…	boot.phase_restoring_layout
 src/catalog/chrome_loading.rs	Saving layout…	shutdown.phase_saving_layout
 src/catalog/chrome_loading.rs	Shell found	boot.shell_setup.check_valid
@@ -194,7 +194,7 @@ src/catalog/components/image_viewer.rs	Save As	image_viewer.save_path_title
 src/catalog/components/image_viewer.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/info_modal.rs	Notifications	fullscreen.notifications.title,notification_panel.window_title,settings.notifications.heading,settings.tab.notifications
 src/catalog/components/info_modal.rs	OK	button.ok
-src/catalog/components/info_modal.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
+src/catalog/components/info_modal.rs	Quit	button.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
 src/catalog/components/info_modal.rs	Theme not found	theme_error.title
 src/catalog/components/kb_import_export.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
 src/catalog/components/kb_import_export.rs	Back	explorer.nav.back,settings.keybindings.preset_back,tutorial.btn_back
@@ -418,7 +418,7 @@ src/catalog/components/prim_multiselect.rs	{} selected	explorer.status.selected
 src/catalog/components/prim_nav.rs	Ask	settings.general.close_behavior_ask
 src/catalog/components/prim_nav.rs	Move to Trash	explorer.context_menu.delete
 src/catalog/components/prim_nav.rs	New tab	explorer.tab.new
-src/catalog/components/prim_nav.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
+src/catalog/components/prim_nav.rs	Quit	button.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
 src/catalog/components/prim_nav.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/prim_path_field.rs	Go	explorer.address.go
 src/catalog/components/prim_path_field.rs	No matching path	explorer.address.empty
@@ -431,7 +431,7 @@ src/catalog/components/prim_table.rs	Proto	port_scanner.column_proto
 src/catalog/components/prim_table.rs	State	port_scanner.column_state,port_scanner.state_filter
 src/catalog/components/quit_modal.rs	Close Tasty	quit_modal.title
 src/catalog/components/quit_modal.rs	Minimize	menu.macos.minimize,quit_modal.minimize_button,titlebar.minimize
-src/catalog/components/quit_modal.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
+src/catalog/components/quit_modal.rs	Quit	button.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
 src/catalog/components/remote.rs	(none)	plugins.none,remote_tool.passkey_none
 src/catalog/components/remote.rs	(select a profile)	remote_tool.ssh_ref_none
 src/catalog/components/remote.rs	Add attach	remote_tool.attach_add
@@ -552,7 +552,7 @@ src/catalog/components/settings_font_override.rs	Use default	settings.appearance
 src/catalog/components/settings_general_grid.rs	Ask	settings.general.close_behavior_ask
 src/catalog/components/settings_general_grid.rs	Close behavior:	settings.general.close_behavior_label
 src/catalog/components/settings_general_grid.rs	Language:	settings.general.language_label
-src/catalog/components/settings_general_grid.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
+src/catalog/components/settings_general_grid.rs	Quit	button.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
 src/catalog/components/settings_general_grid.rs	pt	settings.number.unit_pt
 src/catalog/components/settings_handler.rs	Action:	settings.file_handler.hook_handlers.action_label
 src/catalog/components/settings_handler.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
