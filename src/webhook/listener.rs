@@ -16,29 +16,29 @@ use crate::hook_handler::{SequenceOrigin, SubstitutionContext, execute_sequence}
 use tasty_ipc::host_call::HostIpcInjector;
 
 /// 선점한 소켓으로 accept를 시작하고 포트 기록에 남긴다.
+/// accept 스레드를 띄운 뒤에만 bound로 표시하고 포트를 기록한다. 띄우지 못하면 소켓을 닫고 원인을 돌려준다.
 pub(super) fn start(
     server: tiny_http::Server,
     bound: crate::runtime_ports::BoundPort,
     ports: &crate::runtime_ports::RuntimePorts,
-) {
+) -> Result<(), String> {
     if registry::is_bound() {
         tracing::debug!("webhook listener already started; skip");
-        return;
+        return Ok(());
     }
+    thread::Builder::new()
+        .name("webhook-accept".into())
+        .spawn(move || accept_loop(server))
+        .map_err(|e| {
+            tracing::error!(
+                "webhook accept thread spawn failed: {e}; running without the listener"
+            );
+            e.to_string()
+        })?;
     registry::mark_bound();
     ports.record_webhook(bound);
     tracing::info!("webhook listener bound on {}", bound.addr);
-    spawn_accept_thread(server);
-}
-
-/// accept 스레드 생성에 실패하면 경고만 남긴다. bound 표시는 되돌리지 않아 자동 재시도하지 않는다.
-fn spawn_accept_thread(server: tiny_http::Server) {
-    if let Err(e) = thread::Builder::new()
-        .name("webhook-accept".into())
-        .spawn(move || accept_loop(server))
-    {
-        tracing::warn!("webhook accept thread spawn failed: {e}");
-    }
+    Ok(())
 }
 
 fn accept_loop(server: tiny_http::Server) {

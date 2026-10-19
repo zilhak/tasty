@@ -1405,6 +1405,8 @@ step_unknown = "step {} gave no answer in time, so its result is unknown: {}"
 webhook_save = "The webhook file could not be updated: {}. Webhooks keep working in this run, but after a restart the saved list may not include this change."
 
 [webhook.warn]
+moved_title = "Webhook port changed"
+listener_failed = "The webhook listener on port {} could not start: {}. Tasty runs without it, so webhook URLs do not answer until a restart. Terminals and the rest of Tasty work as usual."
 title = "Webhooks are off for this run"
 explicit_failed = "The webhook port {} could not be opened: {}. Tasty runs without the webhook listener, so webhook URLs do not answer until a restart with a free port. Terminals and the rest of Tasty work as usual."
 moved = "Webhook port {} was in use, so the listener took {}. Saved webhooks now answer on that port; `tasty webhook list` shows their URLs."

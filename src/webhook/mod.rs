@@ -33,6 +33,8 @@ pub enum WebhookInitReport {
     Unavailable,
     /// 명시 지정 포트를 열지 못해 다른 포트로 옮기지 않고 리스너 없이 실행한다.
     ExplicitUnavailable(ExplicitBindError),
+    /// 포트는 열었지만 요청을 받을 스레드를 띄우지 못해 소켓을 닫고 리스너 없이 실행한다.
+    ListenerFailed(ExplicitBindError),
 }
 
 impl WebhookInitReport {
@@ -69,10 +71,20 @@ impl WebhookInitReport {
                 &last.to_string(),
             ),
             Self::ExplicitUnavailable(failure) => failure.notice_body(),
+            Self::ListenerFailed(failure) => crate::i18n::t_fmt2(
+                "webhook.warn.listener_failed",
+                &failure.addr.port().to_string(),
+                &failure.error,
+            ),
+        };
+        // 포트만 바뀐 경우는 리스너가 동작하므로 "꺼졌다"는 제목을 쓰지 않는다.
+        let title = match self {
+            Self::MovedWithPersistent { .. } => "webhook.warn.moved_title",
+            _ => "webhook.warn.title",
         };
         Some(crate::system_notice::SystemNotice::warning(
             NOTICE_SOURCE_START,
-            crate::i18n::t("webhook.warn.title").to_string(),
+            crate::i18n::t(title).to_string(),
             body,
         ))
     }
@@ -109,21 +121,30 @@ pub fn start(
 ) -> WebhookInitReport {
     // 복원 항목의 URL을 만들기 전에 포트 기록을 연결한다.
     registry::set_runtime(injector, ports.clone());
-    let failure = reservation
+    let explicit = reservation
         .as_ref()
         .and_then(Reservation::explicit_failure)
         .cloned();
-    let bound = reservation.as_ref().and_then(Reservation::bound);
-    if let Some(failure) = &failure {
+    let mut bound = reservation.as_ref().and_then(Reservation::bound);
+    let mut thread_failure = None;
+    if let Some((server, at)) = reservation.and_then(|r| r.listener)
+        && let Err(error) = listener::start(server, at, &ports)
+    {
+        bound = None;
+        thread_failure = Some(ExplicitBindError {
+            addr: at.addr,
+            source: at.source,
+            error,
+        });
+    }
+    if let Some(failure) = explicit.as_ref().or(thread_failure.as_ref()) {
         ports.record_webhook_failure(failure.clone());
     }
-    if let Some((server, bound)) = reservation.and_then(|r| r.listener) {
-        listener::start(server, bound, &ports);
-    }
     let restored = persist::restore_into_registry();
-    let report = match failure {
-        Some(failure) => WebhookInitReport::ExplicitUnavailable(failure),
-        None => WebhookInitReport::from_bound(bound, restored > 0),
+    let report = match (explicit, thread_failure) {
+        (Some(failure), _) => WebhookInitReport::ExplicitUnavailable(failure),
+        (None, Some(failure)) => WebhookInitReport::ListenerFailed(failure),
+        (None, None) => WebhookInitReport::from_bound(bound, restored > 0),
     };
     if let Some(notice) = report.notice() {
         tracing::warn!("{}", notice.body);
@@ -177,9 +198,18 @@ mod tests {
         for report in [
             R::MovedWithPersistent { port: 28430 },
             R::Unavailable,
+            R::ListenerFailed(failure.clone()),
             R::ExplicitUnavailable(failure),
         ] {
+            let off = !matches!(report, R::MovedWithPersistent { .. });
             let notice = report.notice().expect("a warning");
+            let off_title = crate::i18n::t("webhook.warn.title");
+            assert_eq!(
+                notice.title == off_title,
+                off,
+                "{report:?}: {}",
+                notice.title
+            );
             assert_eq!(
                 notice.level,
                 crate::notification::NotificationLevel::Warning

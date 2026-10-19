@@ -155,8 +155,9 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 - **명시 지정 포트를 bind하지 못하면 리스너 없이 실행한다**(`WebhookInitReport::ExplicitUnavailable`). 다른 포트로 옮기지 않는다. 터미널과 IPC 등 나머지 기능은 그대로 쓸 수 있다. 원인(포트·OS 오류)·영향(웹훅 URL 무응답)·포트를 바꾸는 방법(인자로 지정했으면 `--webhook-port`, 저장 값이면 `tasty webhook port <N>`·`--unset`)을 경고 알림 한 건으로 남기고, `webhook.config` 조회의 `unavailable`에도 남긴다. 로그에는 `webhook listener bind ... failed` 오류 한 줄이 함께 남는다.
 - 탐색 범위가 모두 막히면 리스너 없이 실행하고 경고 알림을 남긴다(`WebhookInitReport::Unavailable`).
 - 탐색으로 `28429`가 아닌 포트를 얻었고 복원한 Persistent 웹훅이 있으면 경고 알림을 남긴다(`MovedWithPersistent`). 새 URL은 `tasty webhook list`로 확인한다. 저장한 웹훅이 없으면 경고하지 않는다.
-- **시작 경고의 전달**: 위 세 경우 모두 토스트가 아니라 알림 저장소의 경고(`level: warning`)로 남긴다. 리스너 시작은 사용자의 즉각적인 입력이 아니기 때문이다. GUI는 첫 윈도우가 등록된 뒤 그 윈도우의 활성 workspace에, headless는 활성 workspace에 저장한다(`src/system_notice.rs`의 대기열을 메인 루프가 옮긴다). 제목은 `webhook.warn.title`이고 GUI `notification.created` 이벤트의 `source`는 `webhook.start`다. 웹훅 요청의 실행 실패와는 이 source로 구분한다. 정상 bind(`Bound`)는 알림을 남기지 않는다.
-- 경고는 GUI toast(Warning, Window 범위)와 headless `tracing::warn!`이다.
+- 포트는 열었지만 요청을 받을 accept 스레드를 띄우지 못하면 소켓을 닫고 리스너 없이 실행한다(`ListenerFailed`). 이때 포트를 기록하지 않으므로 `bound: false`이고, 원인은 `unavailable`과 경고 알림(`webhook.warn.listener_failed`)에 남는다.
+- **시작 경고의 전달**: 위 네 경우 모두 토스트가 아니라 알림 저장소의 경고(`level: warning`)로 남긴다. 리스너 시작은 사용자의 즉각적인 입력이 아니기 때문이다. GUI는 첫 윈도우가 등록된 뒤 그 윈도우의 활성 workspace에, headless는 활성 workspace에 저장한다(`src/system_notice.rs`의 대기열을 메인 루프가 옮긴다). 제목은 리스너가 없는 경우 `webhook.warn.title`("이번 실행에서 웹훅이 꺼졌습니다"), 포트만 바뀐 `MovedWithPersistent`는 `webhook.warn.moved_title`("웹훅 포트가 바뀌었습니다")이고 GUI `notification.created` 이벤트의 `source`는 `webhook.start`다. 웹훅 요청의 실행 실패와는 이 source로 구분한다. 정상 bind(`Bound`)는 알림을 남기지 않는다.
+- 같은 본문이 GUI·headless 모두 `tracing::warn!` 로그에도 남는다.
 - bind한 포트는 설정 파일에 써 넣지 않는다. 써 넣으면 다음 실행부터 명시 지정이 되기 때문이다.
 - **Tasty 없이 바꾸기**: `tasty webhook port <N>`·`tasty webhook port --unset`(이전 이름 `tasty webhook config --port <N>`)은 실행 중인 인스턴스가 있으면 IPC `webhook.config`로 저장한다. 포트 파일(`tasty.port`)이 없거나 그 포트로의 연결이 거절되면(인스턴스 없음) CLI가 webhooks.toml을 직접 고치고 `{saved_port, applies_from: "next_start", instance_running: false, file, message}`를 출력한다. 연결 시간 초과 같은 다른 실패는 고치지 않고 오류로 끝난다. 연결은 됐지만 상대가 Tasty로 응답하지 않으면(JSON-RPC 오류가 아닌 실패: 연결 재설정, JSON이 아닌 응답) 다른 프로그램이 그 포트를 쥐었을 수 있으므로 파일을 고치지 않고, 원래 오류 아래에 그 가능성과 webhooks.toml의 `port` 줄을 직접 고치거나 남은 포트 파일을 지우는 방법을 안내한 뒤 종료 코드 1로 끝난다(`cli.webhook.port_not_tasty`). 파일 규칙(형식 표시, 이전 자동 기록 포트 정리, 다른 키 보존)은 `tasty_settings::webhook_port_file` 한 곳에 있고 인스턴스와 CLI가 같이 쓴다. 저장한 포트가 막혀 리스너가 꺼졌을 때 경고 알림이 이 명령을 알려 준다. 인자 없는 조회는 실행 중인 인스턴스가 있어야 한다.
 - **이전 형식 파일**: 이전 버전은 파일이 없을 때 `port = 28429`를 자동으로 써 넣었다. `format = 2` 표시가 없는 파일의 `port = 28429`는 그 자동 값으로 보고 처음 읽을 때 지운다(탐색으로 바뀐다). 다른 값은 사용자가 정한 명시 지정으로 남긴다. 이 모듈이 파일을 쓸 때마다 `format = 2`를 함께 쓴다.
@@ -186,7 +187,7 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 
 ### 부팅 초기화
 
-GUI(`boot::run_gui`)와 headless(`boot::run_headless`)는 설정을 읽은 직후 `webhook::prepare(--webhook-port, &settings.webhook)`로 소켓을 선점하고 `Hub::webhook`에 둔다. IPC와 injector가 준비되면 `webhook::start`가 그 소켓으로 accept 스레드를 시작하고 포트를 기록한 뒤 `Persistent` 웹훅을 복원한다(GUI `src/app/boot_machine.rs`, headless `boot::start_ipc_and_seed`).
+GUI(`boot::run_gui`)와 headless(`boot::run_headless`)는 설정을 읽은 직후 `webhook::prepare(--webhook-port, &settings.webhook)`로 소켓을 선점하고 `Hub::webhook`에 둔다. IPC와 injector가 준비되면 `webhook::start`가 그 소켓으로 accept 스레드를 시작하고, 시작에 성공했을 때만 포트를 기록한 뒤 `Persistent` 웹훅을 복원한다(GUI `src/app/boot_machine.rs`, headless `boot::start_ipc_and_seed`).
 
 ## 인터페이스
 
@@ -199,7 +200,7 @@ GUI(`boot::run_gui`)와 headless(`boot::run_headless`)는 설정을 읽은 직�
 | `webhook.info` | `tasty webhook info --id <id>` | 단일 상세 |
 | `webhook.unregister` | `tasty webhook unregister --id <id>` | 등록 해제(path 회수) |
 | `webhook.sweep` | `tasty webhook sweep` | 만료 웹훅 일괄 정리 → 제거된 id 목록 |
-| `webhook.config` | `tasty webhook port [<N> \| --unset]` · `tasty webhook allow-external [on\|off]` · `tasty webhook config [--port <N>]`(deprecated, 동작은 `webhook port`와 같고 출력의 `warnings`에 `deprecated: tasty webhook config, use tasty webhook port`를 싣는다) | 인자 없으면 실행 중인 리스너를 조회한다: `port`·`address`·`bound`·`source`(`argument`/`config`/`probe`)·`explicit`·`saved_port`(다음 실행 값)·`allow_external`(다음 실행 값)·`unavailable`(명시 지정 포트를 열지 못해 리스너가 없으면 `{port, source, error}`, 아니면 `null`). `port`로 저장, `unset_port: true`로 저장 값 삭제, `allow_external`로 외부 수신 설정 변경. 변경은 모두 다음 실행부터 적용된다(`applies_from: "next_start"`, `restart_required`) |
+| `webhook.config` | `tasty webhook port [<N> \| --unset]` · `tasty webhook allow-external [on\|off]` · `tasty webhook config [--port <N>]`(deprecated, 동작은 `webhook port`와 같고 출력의 `warnings`에 `deprecated: tasty webhook config, use tasty webhook port`를 싣는다) | 인자 없으면 실행 중인 리스너를 조회한다: `port`·`address`·`bound`·`source`(`argument`/`config`/`probe`)·`explicit`·`saved_port`(다음 실행 값)·`allow_external`(다음 실행 값)·`unavailable`(명시 지정 포트를 열지 못했거나 accept 스레드를 띄우지 못해 리스너가 없으면 `{port, source, error}`, 아니면 `null`). `port`로 저장, `unset_port: true`로 저장 값 삭제, `allow_external`로 외부 수신 설정 변경. 변경은 모두 다음 실행부터 적용된다(`applies_from: "next_start"`, `restart_required`) |
 
 - **register 게이트**: `methods` 빈 배열 거부, `handler`/`sequence` 정확히 하나. `handler` 는 `validate_binding(handler, Webhook)` 로 검증 — 셸/hook-전용 핸들러는 거부([훅 (Surface / Global hooks)](../hooks/index.md)). 인라인 `sequence` 는 익명 핸들러(`user/wh-<slug>`)로 레지스트리에 등록된다.
 - **lifetime 파라미터**: `--persistent`(bool), `--ttl-secs` xor `--count`(둘 다 없으면 `Unlimited`).

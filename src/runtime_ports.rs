@@ -42,7 +42,7 @@ pub(crate) struct BoundPort {
 pub(crate) struct RuntimePorts {
     ipc: OnceLock<BoundPort>,
     webhook: OnceLock<BoundPort>,
-    /// 명시 지정 포트를 열지 못해 리스너 없이 실행한 원인.
+    /// 리스너 없이 실행한 원인. 명시 지정 포트를 열지 못했거나 accept 스레드를 띄우지 못했다.
     webhook_failure: OnceLock<crate::webhook::ExplicitBindError>,
 }
 
@@ -61,7 +61,7 @@ impl RuntimePorts {
         }
     }
 
-    /// 명시 지정 포트 실패를 한 번 기록한다. `webhook.config`가 리스너 없음의 이유로 보인다.
+    /// 리스너 없이 실행한 원인을 한 번 기록한다. `webhook.config`가 리스너 없음의 이유로 보인다.
     pub(crate) fn record_webhook_failure(&self, failure: crate::webhook::ExplicitBindError) {
         if self.webhook_failure.set(failure).is_err() {
             tracing::warn!("runtime webhook failure already recorded");

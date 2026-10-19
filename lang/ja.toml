@@ -1357,6 +1357,8 @@ step_unknown = "ステップ {} が時間内に応答しなかったため結果
 webhook_save = "Webhook ファイルを更新できませんでした: {}。この実行では Webhook は動作し続けますが、再起動後の保存済み一覧にはこの変更が含まれない場合があります。"
 
 [webhook.warn]
+moved_title = "Webhook ポートが変わりました"
+listener_failed = "ポート {} の Webhook リスナーを起動できませんでした: {}。Tasty はリスナーなしで実行するため、再起動するまで Webhook URL は応答しません。ターミナルとその他の機能はそのまま使えます。"
 title = "この実行では Webhook がオフです"
 explicit_failed = "Webhook ポート {} を開けませんでした: {}。Tasty は Webhook リスナーなしで実行するため、空いているポートで再起動するまで Webhook URL は応答しません。ターミナルとその他の機能はそのまま使えます。"
 moved = "Webhook ポート {} が使用中のため、リスナーは {} を使用します。保存済みの Webhook はこのポートで受け付けます。URL は `tasty webhook list` で確認してください。"
