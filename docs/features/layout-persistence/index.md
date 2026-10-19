@@ -266,7 +266,16 @@ View checkpoint는 journal의 restore manifest가 별도 원본으로 보관한�
 View 바이트, slot binding 및 payload pin은 한 transaction으로 저장한다. incarnation·runtime
 세대·sequence가 역행하는 저장과 같은 sequence로 내용을 바꾸는 저장은 거절한다.
 DB manifest가 없을 때만 이전 sidecar를 초기 자료로 읽으며, 첫 저장 뒤에는 DB가 원본이다.
-일치하는 DB manifest가 손상돼도 sidecar로 돌아가 선택을 바꾸지 않는다. 새 incarnation은
+일치하는 DB manifest가 손상돼도 sidecar로 돌아가 선택을 바꾸지 않는다. View 원본(DB manifest나 sidecar)을
+해석하거나 검증하지 못하면 엔진은 구조를 그대로 복원하고 선택만 기본값(첫 workspace와 탭)으로 둔다. 경고 알림에
+슬롯 번호·보존 위치·원인을 적고 같은 내용을 warn 로그로 남긴다. DB manifest는 다음 View 저장이 같은 key를
+바꾸므로 그 전에 View 바이트와 domain snapshot 바이트를 데이터 홈의 `structure/damaged/`에
+`view-<stream>-incarnation-<N>-<해시>.view`·`.snapshot`으로 복사한다. 해석은 되지만 검증에 실패한 sidecar도
+`.legacy.json`으로 복사한다. 같은 바이트는 한 번만 쓰고 이미 있는 사본은 바꾸지 않으며 자동으로 지우지 않는다.
+읽기 권한이 없는 sidecar는 복사할 수 없으므로 원래 자리를 보존 위치로 알린다. 저장은 sidecar를 바꾸지 않으며,
+읽지 못한 sidecar는 저장을 막지 않는다. 더 새로운 형식(version이 다른) sidecar는 대체하지 않으므로 그 슬롯의
+첫 View 저장을 거절한다. View payload의 checksum이 맞지 않아 저장소가 manifest 자체를 돌려주지 못하는 경우는
+아직 엔진 열기 실패로 남는다. 새 incarnation은
 옛 incarnation의 손상된 View 바이트를 읽지 않는다. retirement는 해당 incarnation의
 manifest만 해제하고 미완·Uncertain domain 의무의 참조는 계속 유지한다.
 구조 변경 없이 View만 반복 저장해도 같은 transaction에서 이전 cache snapshot을 정리하며,

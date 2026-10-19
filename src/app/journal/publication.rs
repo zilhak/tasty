@@ -616,6 +616,9 @@ impl JournalApplication {
         let ResultValue::Bound(bound) = result? else {
             return Err("bootstrap did not return an engine binding".into());
         };
+        for issue in &bound.issues {
+            self.report_binding_issue(id, issue);
+        }
         #[cfg(feature = "gui")]
         if bound.restore_legacy_metadata {
             // writer 순서를 따르므로 이 engine의 뒤 요청은 정리된 상태를 본다. 메인 루프는 기다리지 않는다.

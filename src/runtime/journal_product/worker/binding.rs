@@ -198,17 +198,26 @@ fn bound(
     };
     #[cfg(feature = "gui")]
     let restore_legacy_metadata = legacy_view.is_some();
+    let mut issues = Vec::new();
     let restored_view = if matches!(
         selection,
         EngineSelection::Slot { resume: true, .. } | EngineSelection::ImportedSlot { .. }
     ) {
-        super::super::view_record::load(store, home, &binding)?.or(legacy_view)
+        let (view, issue) = super::super::view_record::load(store, home, &binding)?;
+        issues.extend(issue);
+        // 읽지 못한 View checkpoint가 있으면 더 오래된 import 선택으로 돌아가지 않는다.
+        if issues.is_empty() {
+            view.or(legacy_view)
+        } else {
+            None
+        }
     } else {
         None
     };
     Ok(ResultValue::Bound(BoundEngine {
         binding,
         imported_view: restored_view,
+        issues,
         #[cfg(feature = "gui")]
         restore_legacy_metadata,
         model,

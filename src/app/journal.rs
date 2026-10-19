@@ -324,6 +324,29 @@ impl JournalApplication {
         }
     }
 
+    fn report_binding_issue(
+        &mut self,
+        engine: EngineId,
+        issue: &crate::runtime::journal_product::BindingIssue,
+    ) {
+        use crate::runtime::journal_product::BindingIssue;
+        let notice = match issue {
+            BindingIssue::ViewUnreadable {
+                slot,
+                preserved,
+                cause,
+            } => notices::RecoveryNotice::warning(
+                Some(engine),
+                crate::i18n::t("recovery.view_unreadable_title").to_owned(),
+                crate::i18n::t_args(
+                    "recovery.view_unreadable_body",
+                    &[&slot.to_string(), preserved, cause],
+                ),
+            ),
+        };
+        self.notices.push(notice);
+    }
+
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn damaged_layout_slots(&self) -> impl Iterator<Item = u32> + '_ {
         self.damaged_slots.iter().copied()
@@ -713,5 +736,7 @@ mod tests;
 #[cfg(all(test, unix))]
 mod unowned_tests;
 
+#[cfg(all(test, unix, feature = "gui"))]
+mod view_failure_tests;
 #[cfg(all(test, unix, feature = "gui"))]
 mod view_tests;

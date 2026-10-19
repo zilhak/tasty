@@ -33,4 +33,17 @@ pub(crate) struct BoundEngine {
     #[cfg(feature = "gui")]
     pub(crate) restore_legacy_metadata: bool,
     pub(crate) imported_view: Option<crate::core::layout_persistence::import::ImportedView>,
+    /// 엔진은 열었지만 일부 복원 자료를 쓰지 못한 사실. App이 알림으로 옮긴다.
+    pub(crate) issues: Vec<BindingIssue>,
+}
+
+/// 엔진을 열며 잃은 복원 자료. 원본은 그대로 두거나 `preserved`에 보존했다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BindingIssue {
+    /// 저장된 View 선택을 읽지 못해 기본 선택을 쓴다.
+    ViewUnreadable {
+        slot: u32,
+        preserved: String,
+        cause: String,
+    },
 }

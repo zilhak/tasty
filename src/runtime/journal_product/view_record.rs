@@ -24,69 +24,221 @@ fn path(home: &Path, binding: &EngineBinding) -> Result<Option<PathBuf>, String>
     ))
 }
 
+/// 저장된 View 선택을 읽는다. 저장소 자체를 읽지 못하면 `Err`다. 원본 바이트를 해석하거나 검증하지
+/// 못하면 그 바이트를 보존한 뒤 선택 없이(기본 선택) 계속하고 그 사실을 함께 돌려준다.
 pub(super) fn load(
     store: &tasty_event_store::EventStore,
     home: &Path,
     binding: &EngineBinding,
-) -> Result<Option<ImportedView>, String> {
+) -> Result<(Option<ImportedView>, Option<super::BindingIssue>), String> {
+    match load_checked(store, home, binding)? {
+        Ok(selection) => Ok((selection, None)),
+        Err(unreadable) => {
+            let preserved = unreadable.preserve(home, binding)?;
+            tracing::warn!(
+                stream = binding.stream,
+                preserved,
+                "saved View selection could not be read; using the default selection: {}",
+                unreadable.cause
+            );
+            let slot =
+                slot(binding)?.ok_or("headless engines do not own a persistent View slot")?;
+            Ok((
+                None,
+                Some(super::BindingIssue::ViewUnreadable {
+                    slot,
+                    preserved,
+                    cause: unreadable.cause,
+                }),
+            ))
+        }
+    }
+}
+
+/// 해석·검증하지 못한 View 원본.
+struct Unreadable {
+    cause: String,
+    source: UnreadableSource,
+}
+
+enum UnreadableSource {
+    /// DB restore manifest. 다음 저장이 같은 key를 바꾸므로 바이트를 따로 보존한다.
+    Manifest { view: Vec<u8>, snapshot: Vec<u8> },
+    /// legacy sidecar. 저장은 이 파일을 바꾸지 않는다. 읽은 바이트가 있으면 사본도 남긴다.
+    Legacy {
+        path: PathBuf,
+        bytes: Option<Vec<u8>>,
+    },
+}
+
+impl Unreadable {
+    fn manifest(cause: impl Into<String>, manifest: &tasty_event_store::RestoreManifest) -> Self {
+        Self {
+            cause: cause.into(),
+            source: UnreadableSource::Manifest {
+                view: manifest.view.clone(),
+                snapshot: manifest.snapshot.bytes.clone(),
+            },
+        }
+    }
+
+    /// 보존 위치를 돌려준다. 같은 바이트는 한 번만 쓰며, 이미 있는 보존 사본은 바꾸지 않는다.
+    fn preserve(&self, home: &Path, binding: &EngineBinding) -> Result<String, String> {
+        let name = format!(
+            "view-{}-incarnation-{}",
+            binding.stream.replace(':', "-"),
+            binding.incarnation
+        );
+        let files: Vec<(String, &[u8])> = match &self.source {
+            UnreadableSource::Legacy { path, bytes: None } => {
+                return Ok(path.display().to_string());
+            }
+            UnreadableSource::Legacy {
+                bytes: Some(bytes), ..
+            } => vec![(format!("{name}-{}.legacy.json", digest(bytes)), bytes)],
+            UnreadableSource::Manifest { view, snapshot } => {
+                let id = digest(view);
+                vec![
+                    (format!("{name}-{id}.view"), view),
+                    (format!("{name}-{id}.snapshot"), snapshot),
+                ]
+            }
+        };
+        let directory = damaged_directory(home);
+        std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+        for (file, bytes) in &files {
+            let path = directory.join(file);
+            if path.exists() {
+                continue;
+            }
+            let mut temporary =
+                tempfile::NamedTempFile::new_in(&directory).map_err(|error| error.to_string())?;
+            std::io::Write::write_all(&mut temporary, bytes).map_err(|error| error.to_string())?;
+            temporary
+                .as_file()
+                .sync_all()
+                .map_err(|error| error.to_string())?;
+            temporary
+                .persist_noclobber(&path)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(directory.join(&files[0].0).display().to_string())
+    }
+}
+
+/// 읽지 못한 View 원본의 보존 위치.
+pub(crate) fn damaged_directory(home: &Path) -> PathBuf {
+    home.join("structure/damaged")
+}
+
+fn digest(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .take(6)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn load_checked(
+    store: &tasty_event_store::EventStore,
+    home: &Path,
+    binding: &EngineBinding,
+) -> Result<Result<Option<ImportedView>, Unreadable>, String> {
     let Some(key) = restore_key(binding)? else {
-        return Ok(None);
+        return Ok(Ok(None));
     };
     if let Some(incarnation) = store
         .restore_manifest_incarnation(&key)
         .map_err(|error| error.to_string())?
     {
         if incarnation != binding.incarnation {
-            return Ok(None);
+            return Ok(Ok(None));
         }
         let manifest = store
             .restore_manifest(&key)
             .map_err(|error| error.to_string())?
             .ok_or("View manifest disappeared during worker read")?;
-        let models =
-            tasty_core::decode_snapshot(manifest.snapshot.model_version, &manifest.snapshot.bytes)
-                .map_err(|error| error.to_string())?;
-        if models.batch != manifest.snapshot.cut.last_batch {
-            return Err("View manifest domain snapshot cut differs".into());
-        }
-        let model = models
-            .streams
-            .get(&binding.stream)
-            .ok_or("View manifest engine stream missing")?;
-        if model.engine_incarnation != binding.incarnation || model.engine_retired {
-            return Err("View manifest domain snapshot belongs to another incarnation".into());
-        }
-        let saved: StoredView =
-            serde_json::from_slice(&manifest.view).map_err(|error| error.to_string())?;
-        if (
-            saved.binding.incarnation,
-            saved.binding.runtime_epoch,
-            saved.sequence,
-        ) != (
-            manifest.incarnation,
-            manifest.runtime_epoch,
-            manifest.sequence,
-        ) {
-            return Err("View manifest ordering differs from its source record".into());
-        }
-        if saved.binding.journal_id != binding.journal_id
-            || saved.binding.stream != binding.stream
-            || saved.binding.incarnation != binding.incarnation
-            || saved.binding.revision > model.applied.revision
-            || saved.binding.published_cut > model.applied.batch
-        {
-            return Err("View manifest source does not match its domain checkpoint".into());
-        }
-        return validate(saved, binding);
+        return Ok(check_manifest(&manifest, binding)
+            .map_err(|cause| Unreadable::manifest(cause, &manifest)));
     }
     // Only absence permits initial legacy import. Once a DB source exists, corrupt bytes never
     // fall back to an older sidecar. The first successful save establishes the durable DB source.
-    read_legacy(home, binding)?
-        .map(|saved| validate(saved, binding))
-        .transpose()
-        .map(Option::flatten)
+    let Some(path) = path(home, binding)? else {
+        return Ok(Ok(None));
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Ok(None)),
+        Err(error) => {
+            return Ok(Err(Unreadable {
+                cause: error.to_string(),
+                source: UnreadableSource::Legacy { path, bytes: None },
+            }));
+        }
+    };
+    Ok(serde_json::from_slice(&bytes)
+        .map_err(|error| error.to_string())
+        .and_then(|saved| validate(saved, binding))
+        .map_err(|cause| Unreadable {
+            cause,
+            source: UnreadableSource::Legacy {
+                path,
+                bytes: Some(bytes),
+            },
+        }))
 }
 
+fn check_manifest(
+    manifest: &tasty_event_store::RestoreManifest,
+    binding: &EngineBinding,
+) -> Result<Option<ImportedView>, String> {
+    let models =
+        tasty_core::decode_snapshot(manifest.snapshot.model_version, &manifest.snapshot.bytes)
+            .map_err(|error| error.to_string())?;
+    if models.batch != manifest.snapshot.cut.last_batch {
+        return Err("View manifest domain snapshot cut differs".into());
+    }
+    let model = models
+        .streams
+        .get(&binding.stream)
+        .ok_or("View manifest engine stream missing")?;
+    if model.engine_incarnation != binding.incarnation || model.engine_retired {
+        return Err("View manifest domain snapshot belongs to another incarnation".into());
+    }
+    let saved: StoredView =
+        serde_json::from_slice(&manifest.view).map_err(|error| error.to_string())?;
+    if (
+        saved.binding.incarnation,
+        saved.binding.runtime_epoch,
+        saved.sequence,
+    ) != (
+        manifest.incarnation,
+        manifest.runtime_epoch,
+        manifest.sequence,
+    ) {
+        return Err("View manifest ordering differs from its source record".into());
+    }
+    if saved.binding.journal_id != binding.journal_id
+        || saved.binding.stream != binding.stream
+        || saved.binding.incarnation != binding.incarnation
+        || saved.binding.revision > model.applied.revision
+        || saved.binding.published_cut > model.applied.batch
+    {
+        return Err("View manifest source does not match its domain checkpoint".into());
+    }
+    validate(saved, binding)
+}
+
+fn slot(binding: &EngineBinding) -> Result<Option<u32>, String> {
+    binding
+        .stream
+        .strip_prefix("structure:slot-")
+        .map(|slot| slot.parse::<u32>().map_err(|error| error.to_string()))
+        .transpose()
+}
+
+#[cfg(feature = "gui")]
 fn read_legacy(home: &Path, binding: &EngineBinding) -> Result<Option<StoredView>, String> {
     let Some(path) = path(home, binding)? else {
         return Ok(None);
@@ -138,7 +290,11 @@ pub(super) fn save(
         .restore_manifest_incarnation(&key)
         .map_err(|error| error.to_string())?
         .is_none()
-        && let Some(previous) = read_legacy(home, &view.binding)?
+        && let Some(previous) = read_legacy(home, &view.binding).unwrap_or_else(|error| {
+            // 읽지 못한 sidecar는 열 때 이미 기본 선택으로 대체했다. 저장은 이 파일을 바꾸지 않는다.
+            tracing::warn!("unreadable legacy View sidecar is left unchanged: {error}");
+            None
+        })
     {
         if previous.version != 1 {
             return Err("unsupported legacy View snapshot version".into());

@@ -247,10 +247,20 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     let home = tasty_utils::path::tasty_home().unwrap();
     let binding = session.journal_binding.clone().unwrap();
     let path = home.join("structure/views/slot-1/incarnation-1.json");
-    // A fresh slot has no View manifest, so its initial legacy read still fails here.
-    std::fs::create_dir_all(&path).unwrap();
-    session.persistence.dirty.clear();
+    // A fresh slot has no View manifest, so a sidecar from a newer format still blocks the save:
+    // an unknown format is never replaced. An unreadable sidecar would not block it.
     let choice = crate::model::StructurePresentationSnapshot::default();
+    let mut newer = serde_json::to_value(StoredView::capture(
+        binding.clone(),
+        &session.core_state,
+        None,
+        &choice,
+    ))
+    .unwrap();
+    newer["version"] = 2.into();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, serde_json::to_vec(&newer).unwrap()).unwrap();
+    session.persistence.dirty.clear();
     journal.queue_view(StoredView::capture(
         binding.clone(),
         &session.core_state,
@@ -266,7 +276,7 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
         !journal.is_halted(),
         "failed View checkpoint does not roll back committed structure"
     );
-    std::fs::remove_dir(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
     journal.queue_view(StoredView::capture(
         binding.clone(),
         &session.core_state,
