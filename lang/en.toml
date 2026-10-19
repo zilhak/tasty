@@ -1584,6 +1584,10 @@ close_tooltip = "Close (Esc)"
 title = "Theme not found"
 body = "Theme \"{}\" does not exist. Falling back to Catppuccin Mocha."
 
+[storage_notice]
+state_db_title = "Recent files and tutorial progress are not being saved"
+state_db_body = "{} Tasty keeps running: terminals and layout restore are not affected, but recent files and tutorial progress stay empty and are not saved in this session. The file was left as it is."
+
 [db_error]
 title = "Database initialization error"
 home_missing = "Cannot determine home directory."

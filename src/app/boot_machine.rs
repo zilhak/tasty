@@ -123,7 +123,7 @@ impl App {
         settings: &mut crate::settings::Settings,
     ) -> (Option<crate::db::DbInitError>, Option<String>) {
         let t_db_theme = Instant::now();
-        let db_init_error = crate::db::init().err();
+        let db_init_error = crate::db::init();
         let invalid_theme_name = crate::app::window_lifecycle::boot_apply_theme(settings);
         if let Err(e) = settings.save() {
             tracing::warn!("failed to persist settings after theme apply: {e}");
@@ -540,7 +540,7 @@ impl App {
                 return;
             }
         };
-        Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
+        Self::report_boot_init_errors(&mut state, invalid_theme_name);
         Self::report_locale_fallback(&mut state);
         self.start_boot_ipc_and_webhooks(&mut state);
         Self::report_persistence_incidents(settings_origin, &mut state);
@@ -549,10 +549,14 @@ impl App {
             .engines
             .pending_id()
             .expect("pending engine must be present to register a main window");
-        let core_state = self
+        let mut core_state = self
             .engines
             .get_mut(engine)
             .expect("pending engine must be present to register a main window");
+        // state.db 실패는 앱을 멈추지 않고 첫 engine의 알림으로 한 번 남긴다.
+        if let Some(error) = db_init_error.as_ref() {
+            crate::app::storage_notice::report_state_db_unavailable(&mut core_state, error);
+        }
         // force-detach 통지를 IPC와 같은 스트림으로 보낸다.
         core_state.remote.set_notifier(self.stream_hub.clone());
         crate::app::task_report::apply(&self.services, &core_state.runtime.settings);
@@ -613,43 +617,19 @@ impl App {
         }
     }
 
-    /// DB 초기화 실패와 잘못된 테마 이름을 모달로 알린다.
+    /// 잘못된 테마 이름을 모달로 알린다. state.db 실패는 engine 알림으로 따로 남긴다.
     fn report_boot_init_errors(
         state: &mut crate::state::MainViewState,
-        db_init_error: Option<crate::db::DbInitError>,
         invalid_theme_name: Option<String>,
     ) {
-        if let Some(err) = db_init_error {
-            tracing::error!("state.db init failed: {err}");
-            let (key, args) = err.user_message_i18n();
-            let body = match args.len() {
-                0 => crate::i18n::t(key).to_string(),
-                1 => crate::i18n::t_fmt(key, &args[0]),
-                _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
-            };
-            crate::adapters::ui::info_modal::show_info_modal(
-                state,
-                crate::adapters::ui::info_modal::InfoModal {
-                    title: crate::i18n::t("db_error.title").to_string(),
-                    body,
-                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
-                    extra_buttons: Vec::new(),
-                    emphasis: false,
-                    dismiss_label: Some(crate::i18n::t("db_error.quit").to_string()),
-                },
-            );
-        }
-
         if let Some(invalid) = invalid_theme_name {
             crate::adapters::ui::info_modal::show_info_modal(
                 state,
                 crate::adapters::ui::info_modal::InfoModal {
                     title: crate::i18n::t("theme_error.title").to_string(),
                     body: crate::i18n::t_fmt("theme_error.body", &invalid),
-                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
                     extra_buttons: Vec::new(),
                     emphasis: false,
-                    dismiss_label: None,
                 },
             );
         }
@@ -673,10 +653,8 @@ impl App {
                     crate::macos_permissions::notice_inputs(),
                     crate::i18n::t,
                 ),
-                on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
                 extra_buttons: permission_notice_buttons(),
                 emphasis: true,
-                dismiss_label: None,
             },
         );
     }

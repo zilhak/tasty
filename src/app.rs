@@ -74,6 +74,8 @@ pub(crate) mod shutdown_machine;
 pub(crate) mod shutdown_trace;
 pub(crate) mod state;
 #[cfg(feature = "gui")]
+pub(crate) mod storage_notice;
+#[cfg(feature = "gui")]
 pub(crate) mod sweeps;
 pub(crate) mod timer_report;
 pub(crate) mod timers;

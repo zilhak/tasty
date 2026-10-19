@@ -1535,6 +1535,10 @@ close_tooltip = "닫기 (Esc)"
 title = "테마를 찾을 수 없습니다"
 body = "\"{}\" 테마가 없어 Catppuccin Mocha 테마를 사용합니다."
 
+[storage_notice]
+state_db_title = "최근 목록과 튜토리얼 진행이 저장되지 않습니다"
+state_db_body = "{} Tasty는 계속 실행됩니다. 터미널과 레이아웃 복원에는 영향이 없지만, 이번 실행에서는 최근 파일 목록과 튜토리얼 진행이 비어 있고 저장되지 않습니다. 파일은 그대로 두었습니다."
+
 [db_error]
 title = "데이터베이스 초기화 오류"
 home_missing = "홈 디렉터리를 찾을 수 없습니다."

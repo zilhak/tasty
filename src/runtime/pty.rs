@@ -45,7 +45,6 @@ impl EngineMut<'_> {
     }
 
     /// 실행 중 프로세스를 끝낸 회수는 경고, 끝난 항목 정리는 정보로 묶어 한 번씩 알린다.
-    /// PTY는 workspace에 속하지 않으므로 그 engine의 첫 workspace를 출처로 쓴다.
     fn notify_pty_reclaims(&mut self, due: &[(u32, PtyReclaimReason)]) {
         let join = |idle: bool| {
             due.iter()
@@ -74,25 +73,9 @@ impl EngineMut<'_> {
             if ids.is_empty() {
                 continue;
             }
-            let Some(ws_id) = self.workspace_at(0).map(|ws| ws.id) else {
-                tracing::warn!("headless pty reclaim notice for {ids} skipped: no workspace");
-                continue;
-            };
             let title = crate::i18n::t(title_key).to_string();
             let body = crate::i18n::t_fmt(body_key, &ids);
-            if let Some(id) =
-                self.live
-                    .notifications
-                    .add_with_level(ws_id, 0, title.clone(), body.clone(), level)
-            {
-                self.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
-                    id,
-                    level,
-                    title,
-                    body,
-                    source: "host".to_string(),
-                });
-            }
+            self.push_host_notification(level, title, body);
         }
     }
 

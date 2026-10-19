@@ -78,7 +78,7 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 
 ### 접근 규칙
 
-state.db는 GUI 부팅만 열고 with_state_db로 접근한다. None은 현재 열려 있지 않다는 뜻이며 헤드리스인지 GUI 초기화 실패인지 원인을 구분하지 못한다. GUI 초기화 실패 안내가 사용자 확인 전까지 살아 있을 수 있어 빈 최근 목록만으로 실행 형태를 판단하지 않는다. storage 소비자는 기본값을 사용할 수 있고 state DB lock poison은 복구 경로다. GUI 없는 실행에도 recent.query는 빈 목록으로 응답한다. state DB를 여는 범위나 초기화 오류 보존 방식이 바뀌면 이 의미를 다시 검토한다.
+state.db는 GUI 부팅만 열고 with_state_db로 접근한다. None은 현재 열려 있지 않다는 뜻이며 헤드리스인지 GUI 초기화 실패인지 원인을 구분하지 못한다. GUI 초기화가 실패해도 앱은 계속 실행되므로 빈 최근 목록만으로 실행 형태를 판단하지 않는다. storage 소비자는 기본값을 사용할 수 있고 state DB lock poison은 복구 경로다. GUI 없는 실행에도 recent.query는 빈 목록으로 응답한다. state DB를 여는 범위나 초기화 오류 보존 방식이 바뀌면 이 의미를 다시 검토한다.
 
 CLI는 DB를 직접 열지 않고 IPC로 호스트에 요청한다. state.db와 memory.db의 연결·스키마·실패 정책은 서로 다르다.
 
@@ -145,13 +145,21 @@ raw event의 별도 rollup은 구현하지 않아 조회 가능 기간은 이벤
 Allow 미기록으로 정상 호출의 사후 행동 감사가 불가능한 대가를 수용한다.
 사고 조사·장기 비용 조회·자동 이상 대응·로그 저장소 분리가 필요해지면 보존 정책을 재검토한다.
 
-### 초기화 실패 — `state.db` 는 종료, `memory.db` 는 in-memory 대체 + degraded
+### 초기화 실패 — `state.db` 는 없이 계속, `memory.db` 는 in-memory 대체 + degraded
 
-**두 DB 의 정책이 반대다.** 원인 분류는 같은 표를 쓰지만, 실패한 뒤에 하는 일은 다르다.
+두 DB 모두 열지 못해도 앱을 종료하지 않는다. 둘 다 터미널 작업과 레이아웃 복원에 쓰이지 않으므로 [피드백과 복구 원칙](../../principles/feedback-and-recovery.md)의 "알림을 남기고 계속한다"를 따른다. 원인 분류는 같은 표를 쓰지만 실패한 뒤에 쓰는 저장소가 다르다.
 
-#### `state.db` — 인메모리 폴백 없음
+#### `state.db` — 인메모리 폴백 없이 계속
 
-`db::init()` 실패는 **치명적**이다. `:memory:` 폴백을 두지 않는다 — `DbInitError` 로 분류해 사용자에게 InfoModal 로 안내한 뒤 앱을 종료한다(`src/app/window_lifecycle.rs`). 이 안내의 버튼은 하나이며 라벨이 `db_error.quit`("Quit")이다. variant 별로 i18n key 를 가진다:
+`db::init()`은 GUI 부팅에서 실행당 한 번만 시도한다. 실패하면 `:memory:` 폴백 없이 DB를 열지 않은 상태로 계속한다. 같은 실행에서 새 창을 열어도 다시 시도하지 않으므로 이미 열린 창에 영향이 없고 안내도 쌓이지 않는다. 다시 열려면 원인을 해소하고 Tasty를 다시 실행한다. 원본 파일은 열기만 시도하며 지우거나 새 파일로 덮지 않는다.
+
+실패는 첫 engine의 알림 목록에 경고 하나(`storage_notice.state_db_title`·`storage_notice.state_db_body`)로 남고 같은 내용이 warn 로그(`state.db init failed: …`)에 남는다. 본문은 아래 원인 문구와 영향(최근 목록·튜토리얼 진행이 비어 있고 저장되지 않음)을 함께 싣는다. 이후 소비자는 `with_state_db`의 None을 받아 다음처럼 동작한다.
+
+- 최근 파일·Markdown 목록: 빈 목록을 보이고 추가는 메모리 캐시에만 반영한다(`recent.query`도 빈 목록).
+- 튜토리얼: 진행은 이번 실행의 메모리에만 있고, 목록에 기존 저장 실패 문구(`tutorial.save_error`)가 보인다.
+- `system.pressure.db_pragmas.state_db`: `null`.
+
+원인 variant 별 i18n key 는 다음과 같다:
 
 | variant | 의미 | i18n key |
 |---------|------|----------|
@@ -185,7 +193,7 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
   `telemetry.*` · `session.*`)의 성공 응답이 `durable: false` 를 더한다(위 "저장 실패의 의미").
 - 로그에 `memory.db falls back to an in-memory store (cause=…) — writes will not survive a
   restart` 가 한 줄 더 남는다.
-- **화면 안내는 없다** — `state.db` 와 달리 InfoModal 도 toast 도 뜨지 않는다.
+- **화면 안내는 없다** — InfoModal 도 toast 도 뜨지 않는다.
 
 근거·대안(fatal · 쓰기 거절)·재검토 조건은
 [저장 계약과 writer 명부](storage-contract.md).

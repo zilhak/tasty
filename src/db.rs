@@ -1,5 +1,5 @@
 //! GUI의 state.db 연결. 헤드리스의 memory.db와는 수명·스키마가 다르다.
-//! init 실패는 부팅 코드가 안내 모달로 처리하며 확인 전에도 상태 조회가 일어날 수 있다.
+//! init 실패는 부팅 코드가 경고 알림으로 알리고, 앱은 이 DB 없이 계속 실행한다.
 //! with_state_db의 None은 미초기화만 나타내므로 헤드리스와 GUI 초기화 실패를 구별할 수 없다.
 //! 사용자 설정과 셸 스크립트는 이 DB에 저장하지 않는다.
 
@@ -154,18 +154,44 @@ pub fn default_db_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("state.db"))
 }
 
-/// GUI 부팅에서 초기화한다. 실패 안내와 이후 종료는 호출자가 맡는다.
+/// 이번 실행에서 초기화를 이미 시도했는지. 실패한 뒤 창마다 다시 열어 안내가 쌓이지 않게 한다.
 #[cfg(feature = "gui")]
-pub fn init() -> Result<(), DbInitError> {
-    if DB.get().is_some() {
-        return Ok(());
+static INIT_ATTEMPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// GUI 부팅에서 실행당 한 번 초기화한다. 처음 실패했을 때만 원인을 돌려주며 안내는 호출자가 맡는다.
+/// 실패한 뒤에는 같은 실행에서 다시 열지 않고, 소비자는 `with_state_db`의 None으로 기본값을 쓴다.
+/// 원본 파일은 열기만 시도하며 지우거나 새로 만들어 덮지 않는다.
+#[cfg(feature = "gui")]
+pub fn init() -> Option<DbInitError> {
+    init_once(&INIT_ATTEMPTED, &DB, || {
+        let path = default_db_path().ok_or(DbInitError::HomeDirMissing)?;
+        Db::open(&path).map(|db| (path, db))
+    })
+}
+
+#[cfg(any(feature = "gui", test))]
+fn init_once(
+    attempted: &std::sync::atomic::AtomicBool,
+    slot: &OnceLock<Mutex<Db>>,
+    open: impl FnOnce() -> Result<(PathBuf, Db), DbInitError>,
+) -> Option<DbInitError> {
+    use std::sync::atomic::Ordering;
+    if attempted.swap(true, Ordering::AcqRel) {
+        return None;
     }
-    let path = default_db_path().ok_or(DbInitError::HomeDirMissing)?;
-    let db = Db::open(&path)?;
-    tracing::info!("opened state.db at {}", path.display());
-    // 동시에 초기화한 연결이 먼저 등록됐다면 그 연결을 유지한다.
-    DB.get_or_init(|| Mutex::new(db)); // 이미 초기화된 경우 무시 (OnceLock idempotent)
-    Ok(())
+    match open() {
+        Ok((path, db)) => {
+            tracing::info!("opened state.db at {}", path.display());
+            slot.get_or_init(|| Mutex::new(db));
+            None
+        }
+        Err(error) => {
+            tracing::warn!(
+                "state.db init failed: {error} — continuing without recent files and tutorial progress"
+            );
+            Some(error)
+        }
+    }
 }
 
 /// 초기화되지 않았으면 None이다. poison은 로그 후 기존 연결로 복구하며 None으로 숨기지 않는다.
@@ -191,6 +217,29 @@ mod tests {
             .query_row("PRAGMA journal_size_limit", [], |r| r.get(0))
             .unwrap();
         assert_eq!(limit, tasty_memory::WAL_SIZE_LIMIT_BYTES);
+    }
+
+    /// 손상 파일을 열지 못해도 원본 바이트를 바꾸지 않고, 같은 실행에서는 다시 열지 않는다.
+    #[test]
+    fn a_failed_open_is_reported_once_and_leaves_the_file_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("state.db");
+        let junk = b"not a sqlite database, just bytes".repeat(64);
+        std::fs::write(&path, &junk).unwrap();
+        let attempted = std::sync::atomic::AtomicBool::new(false);
+        let slot = OnceLock::new();
+        let open = || Db::open(&path).map(|db| (path.clone(), db));
+        let first = init_once(&attempted, &slot, open);
+        assert!(matches!(first, Some(DbInitError::Corrupt(_))), "{first:?}");
+        let mut calls = 0;
+        let second = init_once(&attempted, &slot, || {
+            calls += 1;
+            Db::open(&path).map(|db| (path.clone(), db))
+        });
+        assert!(second.is_none());
+        assert_eq!(calls, 0, "the same run must not reopen after a failure");
+        assert!(slot.get().is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), junk);
     }
 
     #[test]

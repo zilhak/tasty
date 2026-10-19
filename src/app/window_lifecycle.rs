@@ -549,9 +549,6 @@ impl App {
             );
         }
 
-        // engine이 DB를 사용하기 전에 초기화한다. 오류는 아래에서 확인 후 종료하는 모달로 알린다.
-        let db_init_error = crate::db::init().err();
-
         let (settings, invalid_theme_name) = boot_load_and_normalize_settings();
         let gpu = match self.create_gpu_state(window.clone(), &settings.appearance) {
             Ok(g) => g,
@@ -598,21 +595,12 @@ impl App {
                 gpu,
                 engine,
                 origin,
-                db_init_error,
                 invalid_theme_name,
                 completion: None,
                 plugin_deadline: None,
             });
             return Ok(id);
         };
-
-        // DB 오류를 먼저 큐에 넣어 확인 시 종료 안내가 다른 모달보다 앞서도록 한다.
-        if let Some(err) = db_init_error {
-            crate::adapters::ui::info_modal::show_info_modal(
-                &mut state,
-                build_db_init_error_modal(&err),
-            );
-        }
 
         if let Some(invalid) = invalid_theme_name {
             crate::adapters::ui::info_modal::show_info_modal(
@@ -657,10 +645,8 @@ impl App {
             let modal = crate::adapters::ui::info_modal::InfoModal {
                 title: crate::i18n::t(target.title_key()).to_string(),
                 body: body.clone(),
-                on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
                 extra_buttons: Vec::new(),
                 emphasis: false,
-                dismiss_label: None,
             };
             crate::adapters::ui::info_modal::show_info_modal(&mut view.state, modal);
         } else {
@@ -691,36 +677,14 @@ fn boot_load_and_normalize_settings() -> (crate::settings::Settings, Option<Stri
     (settings, invalid_theme_name)
 }
 
-pub(super) fn build_db_init_error_modal(
-    err: &crate::db::DbInitError,
-) -> crate::adapters::ui::info_modal::InfoModal {
-    tracing::error!("state.db init failed: {err}");
-    let (key, args) = err.user_message_i18n();
-    let body = match args.len() {
-        0 => crate::i18n::t(key).to_string(),
-        1 => crate::i18n::t_fmt(key, &args[0]),
-        _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
-    };
-    crate::adapters::ui::info_modal::InfoModal {
-        title: crate::i18n::t("db_error.title").to_string(),
-        body,
-        on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
-        extra_buttons: Vec::new(),
-        emphasis: false,
-        dismiss_label: Some(crate::i18n::t("db_error.quit").to_string()),
-    }
-}
-
 pub(super) fn build_theme_fallback_modal(
     invalid_theme_name: &str,
 ) -> crate::adapters::ui::info_modal::InfoModal {
     crate::adapters::ui::info_modal::InfoModal {
         title: crate::i18n::t("theme_error.title").to_string(),
         body: crate::i18n::t_fmt("theme_error.body", invalid_theme_name),
-        on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
         extra_buttons: Vec::new(),
         emphasis: false,
-        dismiss_label: None,
     }
 }
 

@@ -76,20 +76,7 @@ enum StepOutcome {
 impl App {
     /// 종료 시작 시각과 순서를 공유한다. 이미 종료 중이면 다시 시작하지 않는다.
     pub(crate) fn begin_shutdown(&mut self, event_loop: &ActiveEventLoop) {
-        if let Some(code) = self.take_pending_modal_exit() {
-            self.begin_error_shutdown(event_loop, code);
-        } else {
-            self.start_shutdown(event_loop, 0, true);
-        }
-    }
-
-    pub(crate) fn begin_error_shutdown(&mut self, event_loop: &ActiveEventLoop, code: u8) {
-        if let Some(state) = self.state.shutdown.as_mut() {
-            state.exit_code = code;
-            state.save_final_view = false;
-        } else {
-            self.start_shutdown(event_loop, code, false);
-        }
+        self.start_shutdown(event_loop, 0, true);
     }
 
     fn start_shutdown(

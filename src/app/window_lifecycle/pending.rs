@@ -7,7 +7,6 @@ pub(crate) struct PendingWindow {
     pub(super) gpu: GpuState,
     pub(super) engine: EngineId,
     pub(super) origin: WindowRequestOrigin,
-    pub(super) db_init_error: Option<crate::db::DbInitError>,
     pub(super) invalid_theme_name: Option<String>,
     pub(crate) completion: Option<crate::app::event::IpcCompletion>,
     pub(super) plugin_deadline: Option<std::time::Instant>,
@@ -384,12 +383,6 @@ impl App {
                 return;
             }
         };
-        if let Some(error) = pending.db_init_error {
-            crate::adapters::ui::info_modal::show_info_modal(
-                &mut state,
-                build_db_init_error_modal(&error),
-            );
-        }
         if let Some(theme) = pending.invalid_theme_name {
             crate::adapters::ui::info_modal::show_info_modal(
                 &mut state,

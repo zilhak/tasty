@@ -39,7 +39,7 @@ fn test_state() -> (
     ]))
 }
 use crate::adapters::ui::draw_popups;
-use crate::adapters::ui::info_modal::{INFO_MODAL_ID, InfoModal, InfoModalAction};
+use crate::adapters::ui::info_modal::{INFO_MODAL_ID, InfoModal};
 use crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID;
 use crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID;
 use crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID;
@@ -575,10 +575,8 @@ fn info_modal_entry(body: &str) -> InfoModal {
     InfoModal {
         title: "Boot".to_string(),
         body: body.to_string(),
-        on_close: InfoModalAction::Continue,
         extra_buttons: Vec::new(),
         emphasis: false,
-        dismiss_label: None,
     }
 }
 
