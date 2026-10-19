@@ -372,7 +372,11 @@ idle 보고도 진위나 작업 성공을 검증한 값은 아니므로 현재 �
 
 Codex 대화(`CODEX_THREAD_ID`가 있는 호출자)에서 `tasty codex spawn`·`tell`·`respawn`을 호출하면
 자식의 턴 경계가 그 대화로 자동으로 돌아간다. CLI가 호출자 문맥(`_tasty_context`)을 붙이며,
-이 값은 같은 사용자의 프로세스가 알려 준 것이지 인증된 신원이 아니다. Claude 부모나 일반
+이 값은 같은 사용자의 프로세스가 알려 준 것이지 인증된 신원이 아니다. 판별 규칙은 이 플러그인의
+매니페스트 `[[contributes.caller_context]]`가 선언한다. `CODEX_THREAD_ID`(UUID 형식)를 `thread_id`로,
+비어 있지 않은 `CODEX_HOME`을 절대 경로 `codex_home`으로, PATH에서 찾은 `codex`를 `execution`으로 싣고
+`TASTY_SURFACE_ID`로 surface를 채우지 않는다. 형식이 틀리면 이 플러그인과 Claude 플러그인의 명령은
+실행하지 않는다([선언 형식](../../dev-guide/plugin-development.md#cli-호출자-문맥-contributescaller_context)). Claude 부모나 일반
 surface 부모의 spawn은 기존 상태 알림 흐름을 그대로 쓴다.
 
 ### 수신 대상

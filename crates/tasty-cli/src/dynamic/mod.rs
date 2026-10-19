@@ -11,7 +11,7 @@ mod build;
 mod request;
 mod stdin;
 
-pub use build::{build_augmented_cli, discover_plugin_clis};
+pub use build::{DiscoveredPlugins, build_augmented_cli, discover_plugin_clis, discover_plugins};
 pub use request::matches_to_request;
 
 use serde_json::{Map, Value};
@@ -38,6 +38,9 @@ pub struct AutoWaitPlan {
 #[derive(Debug, Clone)]
 pub struct PluginCliEntry {
     pub cli: CliCommandDecl,
+    /// 이 명령이 호출자 값 형식 오류를 거절할 provider. 소유 플러그인이 선언한 provider와
+    /// `requires_caller_context`를 합친 것이다.
+    pub strict_caller_contexts: Vec<String>,
 }
 
 #[cfg(test)]

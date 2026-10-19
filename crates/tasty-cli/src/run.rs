@@ -73,7 +73,10 @@ fn is_help_output(kind: clap::error::ErrorKind) -> bool {
 /// 도움말 요청이면 그 트리의 도움말을 출력하고 종료한다. 플러그인 명령이 아니면 `None`.
 pub fn try_run_plugin_cli(args: &[String]) -> Option<Result<()>> {
     let plugins_root = tasty_host_plugin::plugin_root()?;
-    let entries = dynamic::discover_plugin_clis(&plugins_root);
+    let dynamic::DiscoveredPlugins {
+        clis: entries,
+        caller_contexts,
+    } = dynamic::discover_plugins(&plugins_root);
     if entries.is_empty() {
         return None;
     }
@@ -102,10 +105,11 @@ pub fn try_run_plugin_cli(args: &[String]) -> Option<Result<()>> {
     if !entries.iter().any(|e| e.cli.name == top_name) {
         return None;
     }
-    let (mut request, polling, auto_wait) = match dynamic::matches_to_request(&entries, &matches) {
-        Ok(r) => r,
-        Err(e) => return Some(Err(e)),
-    };
+    let (mut request, polling, auto_wait) =
+        match dynamic::matches_to_request(&entries, &caller_contexts, &matches) {
+            Ok(r) => r,
+            Err(e) => return Some(Err(e)),
+        };
     if polling.is_some() || auto_wait.is_some() {
         envelope.refuse_if_set();
     }

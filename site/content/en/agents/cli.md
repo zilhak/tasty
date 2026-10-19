@@ -1,4 +1,4 @@
-<!-- source-hash: ff53b70d1147 -->
+<!-- source-hash: 2cf34617e9f8 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs. Agents such as Claude Code and Codex use the same commands.
@@ -30,7 +30,7 @@ Follow this page in order the first time. Check the connection, find target IDs,
 - Tasty must be running. The CLI connects to the running instance through the port written in `~/.tasty/tasty.port`.
 - Inside a terminal that Tasty opened, `tasty` is already on the PATH. To use it from outside (another terminal app), add the directory containing the Tasty executable to your PATH. The path for each install method is listed in [Install](../getting-started/install.md#install-locations).
 - A shell that Tasty opened carries the `TASTY_SURFACE_ID` environment variable. Most commands that omit `--surface` use this value (`tasty new workspace` · `tasty output observe start` do not), so you do not need to type an ID when driving your own terminal.
-- Inside a command that Codex runs (an environment with `CODEX_THREAD_ID`), that shell’s `TASTY_SURFACE_ID` may belong to another terminal, so commands added by plugins (for example `tasty codex …`) do not fill `--surface` from it. Pass `--surface` when a target is needed.
+- When the Codex plugin is installed, inside a command that Codex runs (an environment with `CODEX_THREAD_ID`), that shell’s `TASTY_SURFACE_ID` may belong to another terminal, so commands added by plugins (for example `tasty codex …` and `tasty claude …`) do not fill `--surface` from it. Pass `--surface` when a target is needed. If the `CODEX_THREAD_ID` value is not valid, `tasty codex …` and `tasty claude …` do not run, while other plugin commands run as usual.
 - If you run Tasty from a terminal of another Tasty, the shells and hook commands the new Tasty starts do not inherit the outer Tasty’s session token (`TASTY_SESSION_TOKEN`) or agent ID (`TASTY_AGENT_ID`). `tasty` commands run there reach the new Tasty as a regular user.
 
 ```sh

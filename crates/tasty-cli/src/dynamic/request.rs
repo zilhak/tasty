@@ -11,6 +11,7 @@ use tasty_plugin_manifest::{AutoWaitDecl, CliArgType, CompletionStrategyDecl, Po
 
 use super::stdin::{extract_value, merge_stdin_params, read_stdin_json};
 use super::{AutoWaitPlan, PluginCliEntry};
+use crate::caller_context::CallerContextSource;
 
 /// 매칭된 `ArgMatches`에서 plugin이 어떤 메서드를 호출할지 해석.
 /// 호스트 정적 서브커맨드와 충돌하지 않는 plugin 최상위 이름에 한해 진행한다.
@@ -19,6 +20,7 @@ use super::{AutoWaitPlan, PluginCliEntry};
 /// `Some(polling)` 일 때 *terminal_states 도달까지 반복 IPC 호출* 한다.
 pub fn matches_to_request(
     entries: &[PluginCliEntry],
+    caller_contexts: &[CallerContextSource],
     matches: &ArgMatches,
 ) -> Result<(JsonRpcRequest, Option<PollingDecl>, Option<AutoWaitPlan>)> {
     let (top_name, top_sub) = matches
@@ -120,7 +122,7 @@ pub fn matches_to_request(
     }
 
     // 명시하지 않은 plugin의 surface(u32)·caller_surface 인자는 TASTY_SURFACE_ID로 채운다.
-    // Codex thread 안에서는 그 값이 다른 터미널의 것일 수 있어 채우지 않고 호출 thread를 싣는다.
+    // 플러그인이 선언한 호출자가 있으면 그 선언에 따라 채우지 않고 호출자 문맥을 싣는다.
     let declares = |name: &str| {
         group.is_some_and(|g| {
             g.flags
@@ -132,7 +134,8 @@ pub fn matches_to_request(
     crate::caller_context::apply_to_plugin_params(
         &mut params,
         declares,
-        &crate::caller_context::codex_caller(),
+        &crate::caller_context::current(caller_contexts),
+        &entry.strict_caller_contexts,
         std::env::var("TASTY_SURFACE_ID").ok().as_deref(),
     )
     .map_err(|message| anyhow!("{message}"))?;

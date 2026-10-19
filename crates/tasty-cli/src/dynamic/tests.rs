@@ -110,6 +110,7 @@ fn sample_entry() -> PluginCliEntry {
             ],
             arg_groups,
         },
+        strict_caller_contexts: Vec::new(),
     }
 }
 
@@ -227,7 +228,7 @@ fn merge_stdin_ignores_null_fields() {
 fn flag_with_value_maps_to_params() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn", "--surface", "5", "--prompt", "hello"]);
-    let (req, _polling, _auto) = matches_to_request(&entries, &m).unwrap();
+    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m).unwrap();
     assert_eq!(req.method, "codex.spawn");
     let p = req.params.as_object().unwrap();
     assert_eq!(p["surface"], Value::from(5_u32));
@@ -318,7 +319,7 @@ fn non_numeric_value_for_a_number_flag_is_rejected_not_dropped() {
     tasty_i18n::init("en");
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn", "--surface", "conductor", "--prompt", "hi"]);
-    let err = matches_to_request(&entries, &m).expect_err("비수치 --surface 는 오류여야 한다");
+    let err = matches_to_request(&entries, &[], &m).expect_err("비수치 --surface 는 오류여야 한다");
     let msg = err.to_string();
     assert_ne!(
         msg, "cli.plugin_cli.flag_not_a_number",
@@ -338,7 +339,7 @@ fn an_out_of_range_number_is_not_reported_as_a_non_number() {
 
     let over = format!("{}", u64::from(u32::MAX) + 2);
     let m = parse(&["codex", "spawn", "--surface", &over, "--prompt", "hi"]);
-    let msg = matches_to_request(&entries, &m)
+    let msg = matches_to_request(&entries, &[], &m)
         .expect_err("u32 범위 밖 --surface 는 오류여야 한다")
         .to_string();
     assert!(msg.contains(&over), "받은 값을 담아야 한다: {msg}");
@@ -350,7 +351,7 @@ fn an_out_of_range_number_is_not_reported_as_a_non_number() {
 
     // 대우 — 진짜 숫자가 아닌 것은 종전 문구 그대로다.
     let m = parse(&["codex", "spawn", "--surface", "conductor", "--prompt", "hi"]);
-    let msg = matches_to_request(&entries, &m)
+    let msg = matches_to_request(&entries, &[], &m)
         .expect_err("비수치는 오류")
         .to_string();
     assert!(msg.contains("not a number"), "{msg}");
@@ -361,7 +362,7 @@ fn an_absent_number_flag_is_still_not_an_error() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn", "--prompt", "hi"]);
     let (req, _polling, _auto) =
-        matches_to_request(&entries, &m).expect("없는 플래그는 오류가 아니다");
+        matches_to_request(&entries, &[], &m).expect("없는 플래그는 오류가 아니다");
     assert_eq!(
         req.params.as_object().unwrap()["prompt"],
         Value::String("hi".into())
@@ -372,7 +373,7 @@ fn an_absent_number_flag_is_still_not_an_error() {
 fn bool_flag_present_serializes_true() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn", "--force"]);
-    let (req, _polling, _auto) = matches_to_request(&entries, &m).unwrap();
+    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m).unwrap();
     let p = req.params.as_object().unwrap();
     assert_eq!(p["force"], Value::Bool(true));
 }
@@ -424,7 +425,7 @@ fn a_plugin_name_that_does_not_collide_is_still_registered() {
 fn bool_flag_absent_serializes_false() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn"]);
-    let (req, _polling, _auto) = matches_to_request(&entries, &m).unwrap();
+    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m).unwrap();
     let p = req.params.as_object().unwrap();
     assert_eq!(p["force"], Value::Bool(false));
 }
@@ -433,7 +434,7 @@ fn bool_flag_absent_serializes_false() {
 fn default_value_applied_when_missing() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "broadcast", "hello"]);
-    let (req, _polling, _auto) = matches_to_request(&entries, &m).unwrap();
+    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m).unwrap();
     let p = req.params.as_object().unwrap();
     assert_eq!(p["text"], Value::String("hello".into()));
     assert_eq!(p["timeout"], Value::from(60_u32));

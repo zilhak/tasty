@@ -556,6 +556,14 @@ pub struct Contributes {
     /// 설치·활성 상태만 따르며 프로세스 실행 여부와 무관하게 적용한다.
     #[serde(default)]
     pub strip_inherited_env: StripInheritedEnvDecl,
+    /// tasty CLI를 실행한 호출자 대화를 알아보는 규칙. 설치된 모든 플러그인의 선언을
+    /// 모든 플러그인 명령에 적용하며 형식 오류 거절은 엄격 대상 명령에만 한다.
+    #[serde(default)]
+    pub caller_context: Vec<crate::caller_context::CallerContextDecl>,
+    /// 이 플러그인 명령이 형식 오류를 거절할 다른 플러그인의 호출자 provider.
+    /// 자기가 선언한 provider는 적지 않아도 엄격 대상이다.
+    #[serde(default)]
+    pub requires_caller_context: Vec<String>,
 }
 
 /// 상속 환경변수 제거 선언. `TASTY_`로 시작하는 이름·접두사는 본체 소유라 선언할 수 없다.

@@ -239,38 +239,53 @@ workspace 핸들러의 `resolve_create_cwd`·`inherit_cwd_for_create`가 맡는�
 ## 호출자 환경 (`caller_context.rs`)
 
 dynamic plugin 명령(`contributes.cli`)의 요청에 호출자 환경을 고정된 형식으로 싣는다.
-Codex 도구 호출 안의 `TASTY_SURFACE_ID`는 Codex 서버를 시작한 터미널의 값일 수 있으므로,
-`CODEX_THREAD_ID`가 있으면 plugin 인자를 그 값으로 채우지 않는다.
+다른 프로그램의 도구 호출 안에서 실행한 CLI는 그 프로그램이 넣은 환경 변수로 호출한 대화를
+알 수 있다. 같은 환경의 `TASTY_SURFACE_ID`는 그 프로그램을 시작한 다른 터미널의 값일 수 있다.
+무엇을 읽고 어떤 형식을 요구할지는 플러그인이 매니페스트 `[[contributes.caller_context]]`로
+선언한다([선언 형식](plugin-development.md#cli-호출자-문맥-contributescaller_context)).
+CLI는 선언을 해석만 하며 제품 이름이나 변수 이름을 알지 않는다. 예: Codex 플러그인이
+`CODEX_THREAD_ID`(UUID)·`CODEX_HOME`·`codex` 실행 파일을 선언한다.
 
-- `CODEX_THREAD_ID`가 없거나 빈 문자열이면 Codex 호출자가 없다. 기존 셸·Claude 동작과 같다.
-- 값이 하이픈 위치가 고정된 36자 16진수 UUID이면 유효한 Codex 호출자다(`is_thread_uuid`).
-- 그 밖의 값이면 plugin 명령을 실행하지 않고 오류로 끝낸다. `TASTY_SURFACE_ID`로 대신하지 않는다.
-- `CODEX_HOME`은 유효한 Codex 호출자일 때만 읽는다. 비어 있지 않으면 절대 경로로 바꿔 싣고,
-  없으면 싣지 않는다. 기본 경로 규칙은 받는 쪽 Codex plugin의 기존 함수가 정한다. 다른
-  환경 변수 중 실행 파일 탐색을 위한 `PATH`만 추가로 읽는다.
+CLI는 `~/.tasty/plugins/*`의 매니페스트를 플러그인 ID 순으로 읽어 선언을 모은다. 플러그인
+프로세스와 무관하게 디스크의 매니페스트만 보므로 첫 호출부터 적용된다. 비활성화한 플러그인의
+선언도 읽는다. 명령이 그대로 보이고, 문맥을 받은 다른 플러그인이 "provider가 꺼져 있다"는 오류를
+내야 다른 surface로 대신하지 않기 때문이다. 제거한 플러그인의 선언은 없다.
+
+선언 하나를 호출 환경에 적용한 결과는 셋이다.
+
+- `id_env`가 없거나 빈 문자열이면 그 provider의 호출자가 없다.
+- 값이 `id_format`(`text`: 비어 있지 않은 UTF-8, `uuid`: 하이픈 위치가 고정된 36자 16진수)에 맞고 `path_env` 값을 절대 경로로 만들 수 있으면 유효한 호출자다. `path_env`는 비어 있지 않을 때만 싣는다. `executable`을 선언했으면 PATH에서 찾아 실행 정보로 싣고, 찾지 못하면 싣지 않는다.
+- 그 밖에는 쓸 수 없는 값이다.
+
+어떤 명령에 적용하는가:
+
+- 유효한 호출자의 문맥은 모든 dynamic plugin 명령에 싣는다. Codex 대화에서 부른 `tasty claude spawn`처럼 선언하지 않은 플러그인의 명령도 같은 문맥으로 Codex 부모를 찾는다. 여러 provider가 함께 유효하면 플러그인 ID 순, 같은 플러그인 안에서는 선언 순의 첫 번째를 싣는다.
+- 쓸 수 없는 값은 엄격 대상 명령만 실행하지 않고 오류로 끝낸다. `TASTY_SURFACE_ID`로 대신하지 않는다. 엄격 대상은 그 provider를 선언한 플러그인의 명령과 `requires_caller_context`에 그 provider를 적은 플러그인의 명령이다(예: Claude 플러그인이 `["codex"]`). 다른 플러그인 명령은 값이 없을 때와 같이 동작한다.
 
 plugin 인자 그룹이 `surface`·`caller_surface` u32 인자를 선언했고 명시값이 없으면
 `TASTY_SURFACE_ID`로 채운다. `surface`를 채우거나 명시하면 `surface_id`도 같은 값으로 맞춘다.
-유효한 Codex 호출자이면 채우지 않는다. 명시한 `--surface`(작업 대상 child 등)는 그대로 보낸다.
+싣는 호출자의 선언이 `suppress_env_surface = true`(기본값)이면 채우지 않는다.
+명시한 `--surface`(작업 대상 child 등)는 그대로 보낸다.
 CLI는 요청 params에 예약 키 `_tasty_context`(객체)를 붙인다.
 
 | 필드 | 형식 | 언제 |
 |---|---|---|
-| `provider` | `"codex"` | 유효한 Codex 호출자 |
-| `thread_id` | 문자열(환경 값 그대로) | 유효한 Codex 호출자 |
-| `codex_home` | 절대 경로 문자열 | 유효한 Codex 호출자이고 `CODEX_HOME`이 비어 있지 않을 때 |
-| `execution` | `{executable: 절대 경로, search_path: PATH 문자열}` | 유효한 Codex 호출자이고 호출 환경에서 Codex를 찾았을 때 |
+| `provider` | 선언의 `provider` | 유효한 호출자 |
+| 선언의 `id_field` | 문자열(환경 값 그대로) | 유효한 호출자 |
+| 선언의 `path_env[].field` | 절대 경로 문자열 | 유효한 호출자이고 해당 변수가 비어 있지 않을 때 |
+| `execution` | `{executable: 절대 경로, search_path: PATH 문자열}` | 유효한 호출자이고 선언한 `executable`을 호출 환경에서 찾았을 때 |
 | `implicit` | 문자열 배열(`surface`·`surface_id`·`caller_surface` 중) | CLI가 `TASTY_SURFACE_ID`로 채운 키가 있을 때 |
 
-채울 것도 Codex 호출자도 없으면 키를 붙이지 않는다. 인자·stdin으로 같은 이름이 들어오면
+채울 것도 호출자도 없으면 키를 붙이지 않는다. 인자·stdin으로 같은 이름이 들어오면
 예약 이름 오류로 거절한다. 이 값은 호출자가 가진 환경 변수일 뿐 인증된 신원이 아니다.
-받는 쪽은 호출자의 결과를 구분하고 해당 Codex 설치본에 연결할 때 쓴다.
+받는 쪽은 호출자의 결과를 구분하고 해당 프로그램 설치본에 연결할 때 쓴다.
 실행 정보는 `tasty-utils::execution`으로 찾는다. 상대 PATH 항목은 호출 cwd 기준으로 절대화하며,
 셸 alias·function은 실행하지 않는다. POSIX에서는 실행 권한을 확인하고 Windows에서는 각 PATH
-디렉터리의 `.exe`·`.cmd`·`.bat`·`.com` 순으로 찾는다. 실행 파일과 PATH 외의 환경·인증 값은 복사하지 않는다.
+디렉터리의 `.exe`·`.cmd`·`.bat`·`.com` 순으로 찾는다. 실행 파일 경로나 PATH가 UTF-8이 아니면
+쓸 수 없는 값으로 본다. 선언한 변수·실행 파일과 PATH 외의 환경·인증 값은 복사하지 않는다.
 
 호스트 명령(`request.rs`)은 이 규칙을 쓰지 않는다. 대상 선택(`resolve_surface_id`·`"this"`)과
-close 계열의 호출자 자기 보호(`caller_surface_id`)는 `CODEX_THREAD_ID`와 관계없이
+close 계열의 호출자 자기 보호(`caller_surface_id`)는 호출자 문맥과 관계없이
 `TASTY_SURFACE_ID`를 읽는다. 대상 선택과 자기 보호는 목적이 달라 한 규칙으로 묶지 않는다.
 
 ## `debug` 갈래

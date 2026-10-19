@@ -921,6 +921,114 @@ fn bundled_codex_plugin_manifest_validates() {
     let strip = &m.contributes.strip_inherited_env;
     assert_eq!(strip.names, ["CODEX_THREAD_ID"]);
     assert!(strip.prefixes.is_empty() && strip.values.is_empty());
+    // CLI 호출자 판별 규칙은 Codex 플러그인이 선언한다.
+    let [ctx] = &m.contributes.caller_context[..] else {
+        panic!("one caller context");
+    };
+    assert_eq!(ctx.provider, "codex");
+    assert_eq!(ctx.id_env, "CODEX_THREAD_ID");
+    assert_eq!(ctx.id_format, crate::CallerIdFormat::Uuid);
+    assert_eq!(ctx.id_field, "thread_id");
+    assert_eq!(ctx.path_env.len(), 1);
+    assert_eq!(
+        (ctx.path_env[0].env.as_str(), ctx.path_env[0].field.as_str()),
+        ("CODEX_HOME", "codex_home")
+    );
+    assert_eq!(ctx.executable.as_deref(), Some("codex"));
+    assert!(ctx.suppress_env_surface);
+}
+
+/// Codex 대화에서 부른 claude 명령도 형식 오류를 거절해야 한다.
+#[test]
+fn bundled_claude_requires_the_codex_caller_context() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("tasty-plugin-claude");
+    let m = Manifest::load(&path).expect("claude plugin manifest should load");
+    assert_eq!(m.contributes.requires_caller_context, ["codex"]);
+    assert!(m.contributes.caller_context.is_empty());
+}
+
+fn caller_context_manifest(body: &str) -> String {
+    format!(
+        r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        {body}
+        [entry]
+        type = "process"
+        command = "x"
+    "#
+    )
+}
+
+#[test]
+fn caller_context_parses_with_defaults() {
+    let m = parse(&caller_context_manifest(
+        r#"[[contributes.caller_context]]
+        provider = "vendor"
+        id_env = "VENDOR_THREAD"
+        id_field = "thread_id""#,
+    ))
+    .expect("should parse");
+    let ctx = &m.contributes.caller_context[0];
+    assert_eq!(ctx.id_format, crate::CallerIdFormat::Text);
+    assert!(ctx.path_env.is_empty() && ctx.executable.is_none());
+    assert!(ctx.suppress_env_surface, "suppression is the default");
+    let m = parse(&caller_context_manifest("")).expect("should parse");
+    assert!(m.contributes.caller_context.is_empty());
+    assert!(m.contributes.requires_caller_context.is_empty());
+}
+
+#[test]
+fn caller_context_rejects_bad_names_reserved_fields_and_duplicates() {
+    let ctx = |extra: &str| {
+        format!(
+            "[[contributes.caller_context]]\nprovider = \"vendor\"\nid_env = \"VENDOR_THREAD\"\nid_field = \"thread_id\"\n{extra}"
+        )
+    };
+    for (body, needle) in [
+        (
+            ctx("").replace("\"vendor\"", "\"Vendor\""),
+            "invalid contributes.caller_context provider",
+        ),
+        (
+            ctx("").replace("VENDOR_THREAD", "TASTY_SURFACE_ID"),
+            "reads TASTY_*",
+        ),
+        (
+            ctx("").replace("VENDOR_THREAD", "A-B"),
+            "invalid contributes.caller_context id_env",
+        ),
+        (
+            ctx("").replace("\"thread_id\"", "\"provider\""),
+            "invalid contributes.caller_context field 'provider'",
+        ),
+        (
+            ctx(r#"path_env = [{ env = "VENDOR_HOME", field = "thread_id" }]"#),
+            "duplicate contributes.caller_context field",
+        ),
+        (
+            ctx(r#"path_env = [{ env = "tasty_home", field = "home" }]"#),
+            "reads TASTY_*",
+        ),
+        (ctx(r#"executable = "/bin/vendor""#), "executable"),
+        (ctx(r#"id_format = "number""#), "unknown variant"),
+        (
+            format!("{}\n{}", ctx(""), ctx("")),
+            "duplicate contributes.caller_context provider",
+        ),
+        (
+            "[contributes]\nrequires_caller_context = [\"\"]".to_string(),
+            "invalid contributes.requires_caller_context",
+        ),
+    ] {
+        let err = parse(&caller_context_manifest(&body)).expect_err(&body);
+        assert!(format!("{err:#}").contains(needle), "{body}: {err:#}");
+    }
 }
 
 #[test]

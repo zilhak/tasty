@@ -8,35 +8,39 @@ use clap::{Arg, ArgAction, Command};
 use tasty_plugin_manifest::{CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest};
 
 use super::PluginCliEntry;
+use crate::caller_context::CallerContextSource;
+
+/// 설치된 플러그인의 CLI 선언과 호출자 문맥 선언.
+#[derive(Debug, Default)]
+pub struct DiscoveredPlugins {
+    pub clis: Vec<PluginCliEntry>,
+    /// 플러그인 ID 순, 같은 플러그인 안에서는 선언 순.
+    pub caller_contexts: Vec<CallerContextSource>,
+}
+
+/// `~/.tasty/plugins/*`의 CLI 선언만 돌려준다.
+pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
+    discover_plugins(plugins_root).clis
+}
 
 /// `~/.tasty/plugins/*` 스캔. 파싱 실패한 매니페스트는 stderr에 경고만 찍고 스킵.
-pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
-    let mut out = Vec::new();
+/// 비활성화한 플러그인도 읽는다. 명령이 그대로 보이고, 호출자 문맥을 받은 다른 플러그인은
+/// 해당 provider가 꺼져 있다고 오류를 내야 하기 때문이다(다른 surface로 대신하지 않는다).
+pub fn discover_plugins(plugins_root: &Path) -> DiscoveredPlugins {
+    let mut out = DiscoveredPlugins::default();
     let Ok(read_dir) = std::fs::read_dir(plugins_root) else {
         return out;
     };
-    for entry in read_dir.flatten() {
-        let dir = entry.path();
-        if !dir.is_dir() {
-            continue;
-        }
-        if !dir.join("tasty-plugin.toml").exists() {
-            continue;
-        }
+    let mut dirs: Vec<_> = read_dir
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|dir| dir.is_dir() && dir.join("tasty-plugin.toml").exists())
+        .collect();
+    dirs.sort();
+    let mut manifests = Vec::new();
+    for dir in dirs {
         match Manifest::load(&dir) {
-            Ok(manifest) => {
-                let user_lang = tasty_utils::path::tasty_home().map(|home| home.join("lang"));
-                let strings = tasty_i18n::plugin_catalog::load(
-                    &dir.join(&manifest.lang_dir),
-                    tasty_i18n::current_language(),
-                    &manifest.id,
-                    user_lang.as_deref(),
-                );
-                for mut cli in manifest.contributes.cli {
-                    localize_decl(&mut cli, &strings);
-                    out.push(PluginCliEntry { cli });
-                }
-            }
+            Ok(manifest) => manifests.push((dir, manifest)),
             Err(e) => {
                 crate::out::errln!(
                     "{}",
@@ -48,6 +52,42 @@ pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
                 );
             }
         }
+    }
+    manifests.sort_by(|a, b| a.1.id.cmp(&b.1.id));
+    for (dir, manifest) in manifests {
+        let user_lang = tasty_utils::path::tasty_home().map(|home| home.join("lang"));
+        let strings = tasty_i18n::plugin_catalog::load(
+            &dir.join(&manifest.lang_dir),
+            tasty_i18n::current_language(),
+            &manifest.id,
+            user_lang.as_deref(),
+        );
+        let contributes = manifest.contributes;
+        let mut strict: Vec<String> = contributes
+            .caller_context
+            .iter()
+            .map(|decl| decl.provider.clone())
+            .chain(contributes.requires_caller_context.iter().cloned())
+            .collect();
+        strict.sort();
+        strict.dedup();
+        for mut cli in contributes.cli {
+            localize_decl(&mut cli, &strings);
+            out.clis.push(PluginCliEntry {
+                cli,
+                strict_caller_contexts: strict.clone(),
+            });
+        }
+        out.caller_contexts
+            .extend(
+                contributes
+                    .caller_context
+                    .into_iter()
+                    .map(|decl| CallerContextSource {
+                        plugin_id: manifest.id.clone(),
+                        decl,
+                    }),
+            );
     }
     out
 }

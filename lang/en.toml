@@ -2064,8 +2064,9 @@ auto_wait_unknown_strategy = "auto_wait '{}' references unknown strategy '{}'"
 arg_invalid = "--{}: {}"
 
 [cli.caller_context]
-invalid_codex_thread = "CODEX_THREAD_ID '{}' is not a Codex thread ID. The command was not run; it does not fall back to TASTY_SURFACE_ID."
-invalid_codex_home = "CODEX_HOME '{}' cannot be read as a path. The command was not run."
+invalid_id = "{} '{}' is not a valid {} caller ID. The command was not run; it does not fall back to TASTY_SURFACE_ID."
+invalid_path = "{} '{}' cannot be read as a path. The command was not run."
+invalid_execution = "The path of the '{}' program found on PATH is not valid UTF-8. The command was not run."
 reserved_param = "'{}' is reserved for the tasty CLI and cannot be passed as an argument."
 
 # 매니페스트 필드명과 action kind, detector는 실제 키·값이므로 번역하지 않는다.

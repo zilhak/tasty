@@ -13,6 +13,7 @@
 | **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
+| **CLI 호출자(다른 프로그램의 대화) 알아보기** | [codex](../plugins/codex/index.md)(`caller_context`) · [claude](../plugins/claude/index.md)(`requires_caller_context`) (매니페스트만) | ★ |
 | **Tasty bash·zsh 셸에 넣는 셸 함수** | [codex](../plugins/codex/index.md)(`install`이 쓰는 `codex` 함수) | ★ |
 | **Tasty 자식에서 지울 상속 환경변수** | [claude](../plugins/claude/index.md#tasty-자식에서-지우는-세션-변수) · [codex](../plugins/codex/index.md#tasty-자식에서-지우는-세션-변수) (매니페스트만) | ★ |
 | **wasm 플러그인** (frozen POC) | `crates/tasty-plugin-sdk-wasm`(workspace-exclude harness) — [플러그인 권한 모델](plugin-permissions.md) | ★★ |
@@ -148,6 +149,30 @@ values = [{ name = "AI_AGENT", prefixes = ["vendor_", "vendor/"] }]  # 이름이
 - `TASTY_`로 시작하는 이름·접두사는 매니페스트 검증에서 거부한다. 바깥 Tasty 인스턴스 신원(`OUTER_IDENTITY_ENV`) 제거와 셸의 자기 신원 재주입은 본체가 정한다. `CMUX_*`도 본체가 지운다.
 - 이름은 영문자·숫자·밑줄이며 숫자로 시작하지 않는다(1..=128자). `values`의 값 접두사는 비어 있을 수 없다.
 - 예: [Claude 플러그인](../plugins/claude/index.md#tasty-자식에서-지우는-세션-변수), [Codex 플러그인](../plugins/codex/index.md#tasty-자식에서-지우는-세션-변수).
+
+### CLI 호출자 문맥 (`contributes.caller_context`)
+
+다른 프로그램(에이전트 CLI 등)의 도구 호출 안에서 실행한 `tasty`가 그 프로그램의 어느 대화에서 왔는지 플러그인 명령에 알린다. 본체 CLI는 이 선언을 해석해 dynamic plugin 요청의 `_tasty_context`에 싣는다. 해석 규칙과 필드 표는 [CLI 구조](cli-structure.md#호출자-환경-caller_contextrs)에 있다. 권한 토큰은 필요 없다.
+
+```toml
+[[contributes.caller_context]]
+provider = "vendor"                 # _tasty_context.provider 값
+id_env = "VENDOR_THREAD_ID"         # 있으면 이 provider의 호출자
+id_format = "uuid"                  # "text"(기본, 비어 있지 않은 UTF-8) | "uuid"
+id_field = "thread_id"              # ID를 실을 키
+path_env = [{ env = "VENDOR_HOME", field = "vendor_home" }]  # 절대 경로로 실을 변수
+executable = "vendor"               # PATH에서 찾아 execution으로 싣는다(선택)
+suppress_env_surface = true         # 기본값. 호출자가 있으면 TASTY_SURFACE_ID로 surface를 채우지 않는다
+
+[contributes]
+requires_caller_context = ["vendor"]  # 다른 플러그인이 선언한 provider의 형식 오류를 이 플러그인 명령도 거절한다
+```
+
+- 적용 범위: 유효한 호출자의 문맥은 모든 플러그인의 dynamic 명령에 실린다. 형식 오류 거절은 선언한 플러그인 명령과 `requires_caller_context`에 그 provider를 적은 플러그인 명령만 한다. 무관한 플러그인 명령은 값이 없을 때처럼 동작한다.
+- 적용 시점: CLI가 설치된 매니페스트를 직접 읽으므로 플러그인 프로세스가 준비되지 않아도 첫 호출부터 적용된다. 비활성화한 플러그인의 선언도 읽는다. 문맥을 받은 쪽이 provider가 꺼져 있음을 알리고 다른 surface로 대신하지 않게 하기 위해서다.
+- 검증: `provider`는 소문자로 시작하는 소문자·숫자·`_`·`-`(64자 이하)이며 한 매니페스트 안에서 겹치지 않는다. 환경 변수 이름은 영문자·숫자·밑줄이고 `TASTY_`로 시작할 수 없다. 필드 이름은 소문자·숫자·`_`이며 `provider`·`implicit`·`execution`은 쓸 수 없고 서로 겹치지 않는다. `executable`은 경로가 아닌 프로그램 이름이다.
+- 받는 쪽은 값을 다시 검증한다. 환경 변수일 뿐 인증된 신원이 아니다.
+- 예: [Codex 플러그인](../plugins/codex/index.md#codex-부모에게-결과-반환), [Claude 플러그인](../plugins/claude/index.md).
 
 ### 셸 통합 확장 스크립트
 

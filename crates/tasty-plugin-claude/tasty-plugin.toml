@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.224"
+version = "0.1.225"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -32,6 +32,11 @@ lang_dir = "lang"
 [entry]
 type = "process"
 command = "tasty-plugin-claude"
+
+# Codex 대화에서 부른 claude 명령은 Codex 부모로 결과를 돌려보낸다. CODEX_THREAD_ID 형식이 틀리면
+# TASTY_SURFACE_ID의 다른 터미널을 부모로 삼지 않도록 명령을 거절한다.
+[contributes]
+requires_caller_context = ["codex"]
 
 # Claude Code가 자기 세션의 자식에 넣는 표지·비밀·세션 값. 바깥 Claude 세션에서 Tasty를 띄웠을 때
 # 이 값이 남으면 Tasty 터미널에서 띄운 Claude가 자신을 자식 세션으로 판단해 transcript를 쓰지 않고,

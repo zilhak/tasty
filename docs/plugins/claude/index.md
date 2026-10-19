@@ -19,6 +19,10 @@
 - 지우지 않는 것: `CLAUDE_CODE_*` 접두사 전체는 지우지 않는다. 그 이름 대부분이 사용자가 넣는 설정(`CLAUDE_CODE_GIT_BASH_PATH`·`CLAUDE_CODE_OAUTH_TOKEN`·`CLAUDE_CODE_USE_BEDROCK` 등)이다. `ANTHROPIC_API_KEY`와 W3C 표준 이름 `TRACEPARENT`도 남는다.
 - 플러그인을 비활성화하거나 제거하면 이 목록은 적용되지 않는다.
 
+## Codex 호출자 요구
+
+매니페스트 `[contributes] requires_caller_context = ["codex"]`로 Codex 플러그인이 선언한 호출자 문맥을 요구한다([선언 형식](../../dev-guide/plugin-development.md#cli-호출자-문맥-contributescaller_context)). Codex 대화에서 부른 `tasty claude …` 명령은 CLI가 붙인 `_tasty_context.provider = "codex"`로 Codex 부모를 찾는다. `CODEX_THREAD_ID` 형식이 틀리면 CLI가 이 플러그인 명령을 실행하지 않으므로 `TASTY_SURFACE_ID`의 다른 터미널을 부모로 삼지 않는다. Codex 플러그인을 제거하면 그 선언이 없어 Codex 호출자를 알아보지 않는다.
+
 ## 부모의 완료 수신 채널
 
 자식의 상태 변경은 caller surface의 `<parent_home>/notify/<caller_surface>.log`에 한 줄로 기록한다. 자식 CLI 종류에 따라 수신 경로를 바꾸지 않는다. 훅 설치와 부모의 로그 수신 준비는 별개이며 idle·needs_input·interrupt·exit는 작업 성공을 뜻하지 않는다. [완료 알림 로그](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)를 따른다.
