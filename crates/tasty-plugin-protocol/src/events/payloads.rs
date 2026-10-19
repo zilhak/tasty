@@ -459,8 +459,8 @@ pub enum MemoryChangeKind {
 // ── Agent ────────────────────────────────────────────────────────────────────
 
 /// agent.task_finished 페이로드. 종료 상태로 바뀔 때만 보내며 scope는 System이다.
-/// 실패 사유와 결과에는 명령 출력이 포함될 수 있어 이 이벤트에 넣지 않는다.
-/// 필요한 호출자는 권한 검사를 거치는 agent.task_get으로 조회한다.
+/// 종결 사실과 레코드를 다시 읽을 좌표(task_id·attempt_id·revision)만 싣는다. 실패 사유와
+/// 결과는 레코드가 정본이므로 이 이벤트에 넣지 않고, 필요한 호출자는 agent.task_get으로 읽는다.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentTaskFinished {
     /// 작업이 속한 workspace. 이벤트 scope는 system이다.
