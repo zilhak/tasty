@@ -143,7 +143,7 @@ pub fn handle_result(id: serde_json::Value, params: &serde_json::Value) -> JsonR
         None => JsonRpcResponse::invalid_params(
             id,
             format!(
-                "unknown run {run} — not issued, or older than the last {} dispatches",
+                "unknown run {run} — not issued, or older than the last {} runs",
                 runs::KEEP
             ),
         ),

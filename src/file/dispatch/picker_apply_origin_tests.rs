@@ -114,6 +114,7 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::User,
             ignore_size_limit: false,
+            run: None,
         },
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
@@ -137,6 +138,7 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: picker.dispatch_origin,
             ignore_size_limit: picker.ignore_size_limit,
+            run: None,
         },
     );
     take_creation(&mut state, pane, true);
@@ -176,7 +178,8 @@ fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
             Some(u32::MAX),
             crate::file::dispatch::FileDispatchPolicy {
                 dispatch_origin: FileDispatchOrigin::Agent,
-                ignore_size_limit: false
+                ignore_size_limit: false,
+                run: None,
             }
         ));
         assert!(state.pending_intents.is_empty());
@@ -189,7 +192,11 @@ fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
         "empty",
         serde_json::json!({}),
         Some(u32::MAX),
-        FileDispatchOrigin::Agent
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::Agent,
+            ignore_size_limit: false,
+            run: None,
+        }
     ));
     assert!(state.pending_intents.is_empty());
 }
@@ -206,7 +213,11 @@ fn no_origin_queues_the_user_new_tab_request() {
         "empty",
         serde_json::json!({}),
         None,
-        FileDispatchOrigin::User
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+            run: None,
+        }
     ));
     let pending = state.take_pending_intents();
     assert_eq!(pending.len(), 1);
@@ -237,6 +248,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_missing_target_do_not_dispatch(
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::User,
             ignore_size_limit: true,
+            run: None,
         },
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
@@ -254,6 +266,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_missing_target_do_not_dispatch(
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: picker.dispatch_origin,
             ignore_size_limit: picker.ignore_size_limit,
+            run: None,
         },
     );
     assert!(state.pending_intents.is_empty());
@@ -272,6 +285,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_missing_target_do_not_dispatch(
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::User,
             ignore_size_limit: false,
+            run: None,
         },
     );
     assert!(state.dialogs.file_handler_picker.is_none());
@@ -292,6 +306,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_missing_target_do_not_dispatch(
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::Agent,
             ignore_size_limit: false,
+            run: None,
         },
     );
     assert!(state.pending_intents.is_empty());
@@ -324,7 +339,11 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
             kind,
             serde_json::json!({}),
             Some(origin),
-            FileDispatchOrigin::Agent,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin: FileDispatchOrigin::Agent,
+                ignore_size_limit: false,
+                run: None,
+            },
         );
         assert!(succeeded);
         take_creation(&mut state, pane_id, false);
@@ -362,7 +381,11 @@ fn a_user_origin_requests_activation_in_the_original_pane() {
         "empty",
         serde_json::json!({}),
         Some(origin),
-        FileDispatchOrigin::User,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+            run: None,
+        }
     ));
 
     take_creation(&mut state, pane_id, true);
@@ -393,6 +416,7 @@ fn user_dispatch_and_remote_placeholder_open_the_picker_as_user_requests() {
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::User,
             ignore_size_limit: false,
+            run: None,
         },
     );
     take_picker_open_request(&mut state, false);
@@ -427,6 +451,7 @@ fn agent_dispatch_without_a_matching_handler_opens_no_picker() {
                 crate::file::dispatch::FileDispatchPolicy {
                     dispatch_origin: FileDispatchOrigin::Agent,
                     ignore_size_limit: false,
+                    run: None,
                 },
             );
             assert!(state.dialogs.file_handler_picker.is_none());
@@ -468,6 +493,7 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
             crate::file::dispatch::FileDispatchPolicy {
                 dispatch_origin: FileDispatchOrigin::PluginUnverified,
                 ignore_size_limit: false,
+                run: None,
             },
         );
         let picker = state
@@ -505,6 +531,7 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::PluginUnverified,
             ignore_size_limit: false,
+            run: None,
         },
     );
     take_creation(&mut state, pane_id, false);

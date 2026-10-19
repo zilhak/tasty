@@ -675,6 +675,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("hook_handler.dispatch", local_only(Mutate)),
         // dispatch가 돌려준 run의 진행·최종 결과 조회.
         ("hook_handler.result", local_only(Read)),
+        // 접수 응답의 run으로 진행·최종 결과를 조회한다. 플러그인·에이전트는 자기가 시작한 run만 읽는다.
+        ("run.result", plugin(Read, &[])),
         // ── completion_strategy.* (완료 판정 전략 레지스트리 — local-only) ──
         // 비활성 항목을 포함한 전략 목록만 제공한다. 재로드·직접 실행 명령은 없다.
         ("completion_strategy.list", local_only(Read)),

@@ -33,6 +33,8 @@ pub(crate) use crate::core::origin::require_origin_pane;
 pub struct FileDispatchPolicy {
     pub dispatch_origin: FileDispatchOrigin,
     pub ignore_size_limit: bool,
+    /// 최종 결과를 받을 요청의 run([`crate::request_runs`]). 결과를 돌려받지 않는 요청은 None이다.
+    pub run: Option<u64>,
 }
 
 /// 파일은 형식 식별을 거치고 http(s) URL은 바로 핸들러 선택·실행으로 전달한다.
@@ -190,7 +192,22 @@ pub(crate) fn open_picker_from_read(
     let FileDispatchPolicy {
         dispatch_origin,
         ignore_size_limit,
+        run,
     } = policy;
+    // 이전 picker를 기다리던 요청은 결과 없이 끝난다.
+    if let Some(guard) = state
+        .dialogs
+        .file_handler_picker
+        .take()
+        .and_then(|old| old.run)
+    {
+        finish_run(
+            Some(guard.take()),
+            crate::request_runs::RunState::Cancelled,
+            "replaced by a newer file handler picker",
+            serde_json::Value::Null,
+        );
+    }
     let recent_entries: Vec<(HandlerId, i64)> = state
         .file_handler_recent
         .list()
@@ -225,6 +242,12 @@ pub(crate) fn open_picker_from_read(
         selected: None,
         result: None,
         ignore_size_limit,
+        run: run.map(|run| {
+            crate::request_runs::RunGuard::new(
+                run,
+                "the file handler picker closed without a choice",
+            )
+        }),
     });
     let intent = crate::intent::UiIntent::OpenPopup {
         id: crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID,
@@ -276,6 +299,7 @@ pub(crate) fn open_remote_placeholder_picker(state: &mut RequestContext, target:
         selected: None,
         result: None,
         ignore_size_limit: false,
+        run: None,
     });
     // 호출자는 링크 메뉴와 마우스 클릭뿐이라 사용자 요청으로 연다.
     state.dispatch_intent(
@@ -306,8 +330,32 @@ fn handler_to_summary(h: &FileHandler, last_used_at: Option<i64>) -> PickerHandl
     }
 }
 
+/// 요청의 run에 최종 결과를 남긴다. run이 없는 요청(사용자 조작 등)이면 하지 않는다.
+#[cfg(feature = "gui")]
+pub(crate) fn finish_run(
+    run: Option<u64>,
+    state: crate::request_runs::RunState,
+    result: impl Into<String>,
+    extra: serde_json::Value,
+) {
+    if let Some(run) = run {
+        crate::request_runs::finish(run, state, result, extra);
+    }
+}
+
+#[cfg(feature = "gui")]
+pub(crate) fn fail_run(run: Option<u64>, reason: impl Into<String>) {
+    finish_run(
+        run,
+        crate::request_runs::RunState::Failed,
+        reason,
+        serde_json::Value::Null,
+    );
+}
+
 /// 핸들러 실행을 요청한다. true는 IPC 큐 등록·OS 위임·탭 생성 요청을 포함하며 최종 열기 성공은 아니다.
 /// 명시 origin이 사라졌거나 대상 종류를 받지 못하거나 OS에 넘기지 못하면 false다.
+/// 요청의 run은 OS 위임과 실패는 여기서, 탭 생성은 journal 완료가, IPC는 플러그인 응답이 끝낸다.
 #[cfg(feature = "gui")]
 pub fn execute_handler_action(
     core: &mut crate::app::services::AppServices,
@@ -321,9 +369,23 @@ pub fn execute_handler_action(
     let FileDispatchPolicy {
         dispatch_origin,
         ignore_size_limit,
+        run,
     } = policy;
-    if !handler_may_run(&engine.as_ref(), handler, target, origin_surface_id) {
+    if let Err(reason) = handler_may_run(&engine.as_ref(), handler, target, origin_surface_id) {
+        fail_run(run, reason);
         return false;
+    }
+    if let Some(run) = run {
+        let action = match &handler.action {
+            HandlerAction::OpenSurface { .. } => "open_surface",
+            HandlerAction::Ipc { .. } => "ipc",
+            HandlerAction::System => "system",
+        };
+        crate::request_runs::amend(
+            run,
+            None,
+            serde_json::json!({ "handler": handler.id.as_str(), "action": action }),
+        );
     }
     match &handler.action {
         HandlerAction::OpenSurface {
@@ -341,29 +403,46 @@ pub fn execute_handler_action(
                 surface_kind,
                 params,
                 origin_surface_id,
-                dispatch_origin,
+                policy,
             )
         }
-        HandlerAction::Ipc { method, .. } => enqueue_handler_ipc(state, method, target),
-        HandlerAction::System => open_system_target(state, target, dispatch_origin),
+        HandlerAction::Ipc { method, .. } => enqueue_handler_ipc(state, method, target, run),
+        HandlerAction::System => {
+            let opened = open_system_target(state, target, dispatch_origin);
+            if opened {
+                finish_run(
+                    run,
+                    crate::request_runs::RunState::Succeeded,
+                    "handed to the OS opener",
+                    serde_json::Value::Null,
+                );
+            } else {
+                fail_run(run, "the OS opener could not be started");
+            }
+            opened
+        }
     }
 }
 
+/// 실행하지 못하는 이유를 돌려준다. 이유는 호출자에게 돌려줄 영어 문장이다.
 #[cfg(feature = "gui")]
 fn handler_may_run(
     engine: &EngineRef<'_>,
     handler: &FileHandler,
     target: &DispatchTarget,
     origin_surface_id: Option<u32>,
-) -> bool {
+) -> Result<(), String> {
     if let Some(sid) = origin_surface_id
         && let Err(message) = require_origin_pane(engine, sid)
     {
         tracing::warn!("{message}");
-        return false;
+        return Err(message);
     }
     if remote::rejects_handler_for_origin(engine, handler, origin_surface_id) {
-        return false;
+        return Err(format!(
+            "file handler {} cannot open a remote file",
+            handler.id
+        ));
     }
     if !handler_accepts_target(&handler.action, target) {
         tracing::warn!(
@@ -371,9 +450,13 @@ fn handler_may_run(
             target = %target.display(),
             "file handler does not accept this dispatch target; not executed",
         );
-        return false;
+        return Err(format!(
+            "file handler {} does not accept {}",
+            handler.id,
+            target.display()
+        ));
     }
-    true
+    Ok(())
 }
 
 /// OS 기본 프로그램에 넘긴다. 사용자가 직접 연 요청의 실패만 토스트로 알리고
@@ -409,14 +492,20 @@ fn system_open_feedback(
 }
 
 #[cfg(feature = "gui")]
-fn enqueue_handler_ipc(state: &mut RequestContext, method: &str, target: &DispatchTarget) -> bool {
+fn enqueue_handler_ipc(
+    state: &mut RequestContext,
+    method: &str,
+    target: &DispatchTarget,
+    run: Option<u64>,
+) -> bool {
     let DispatchTarget::File(file) = target else {
         tracing::warn!(method, "Ipc handler reached with a URL target");
+        fail_run(run, format!("IPC handler {method} cannot take a URL"));
         return false;
     };
     state
         .pending_handler_ipc
-        .push((method.to_string(), file.clone()));
+        .push((method.to_string(), file.clone(), run));
     true
 }
 
@@ -433,8 +522,13 @@ pub(crate) fn open_surface_tab(
     surface_kind: &str,
     params: serde_json::Value,
     origin_surface_id: Option<u32>,
-    dispatch_origin: FileDispatchOrigin,
+    policy: FileDispatchPolicy,
 ) -> bool {
+    let FileDispatchPolicy {
+        dispatch_origin,
+        run,
+        ..
+    } = policy;
     let origin_pane = match origin_surface_id
         .map(|sid| require_origin_pane(engine, sid))
         .transpose()
@@ -442,6 +536,7 @@ pub(crate) fn open_surface_tab(
         Ok(pane) => pane,
         Err(message) => {
             tracing::warn!("{message}");
+            fail_run(run, message);
             return false;
         }
     };
@@ -456,12 +551,15 @@ pub(crate) fn open_surface_tab(
                 surface_params: params.clone(),
                 activate: dispatch_origin.selects_result(),
             };
-            state.dispatch_intent(match dispatch_origin {
-                FileDispatchOrigin::User => intent.from_user_menu("file_dispatch"),
-                FileDispatchOrigin::Agent | FileDispatchOrigin::PluginUnverified => {
-                    intent.from_agent_ipc()
+            state.dispatch_intent(
+                match dispatch_origin {
+                    FileDispatchOrigin::User => intent.from_user_menu("file_dispatch"),
+                    FileDispatchOrigin::Agent | FileDispatchOrigin::PluginUnverified => {
+                        intent.from_agent_ipc()
+                    }
                 }
-            });
+                .with_completion(run),
+            );
         }
         None => {
             // 위임한 핸들러도 사용자·에이전트를 구분하므로 origin을 보존한다.
@@ -469,12 +567,15 @@ pub(crate) fn open_surface_tab(
                 kind: Some(surface_kind.to_string()),
                 params,
             };
-            state.dispatch_intent(match dispatch_origin {
-                FileDispatchOrigin::User => intent.from_user_menu("file_dispatch"),
-                FileDispatchOrigin::Agent | FileDispatchOrigin::PluginUnverified => {
-                    intent.from_agent_ipc()
+            state.dispatch_intent(
+                match dispatch_origin {
+                    FileDispatchOrigin::User => intent.from_user_menu("file_dispatch"),
+                    FileDispatchOrigin::Agent | FileDispatchOrigin::PluginUnverified => {
+                        intent.from_agent_ipc()
+                    }
                 }
-            });
+                .with_completion(run),
+            );
         }
     }
     true
@@ -703,6 +804,7 @@ mod tests {
             crate::file::dispatch::FileDispatchPolicy {
                 dispatch_origin: FileDispatchOrigin::Agent,
                 ignore_size_limit: false,
+                run: None,
             },
         );
         assert!(

@@ -112,6 +112,7 @@ fn apply_on_mirror(
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: origin,
             ignore_size_limit: false,
+            run: None,
         },
     );
     (state, engine_session, surfaces)
@@ -187,6 +188,7 @@ fn a_mirror_open_with_only_an_ipc_handler_runs_nothing_and_toasts() {
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::User,
             ignore_size_limit: false,
+            run: None,
         },
     );
     assert!(queued_creates(&state).is_empty());
@@ -218,6 +220,7 @@ fn a_mirror_open_without_a_detector_opens_no_picker() {
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::User,
             ignore_size_limit: false,
+            run: None,
         },
     );
     assert!(queued_creates(&state).is_empty());
@@ -331,6 +334,7 @@ fn a_user_open_with_an_unopenable_first_handler_shows_only_remote_candidates() {
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::User,
             ignore_size_limit: false,
+            run: None,
         },
     );
     assert!(queued_creates(&state).is_empty());
@@ -367,6 +371,7 @@ fn an_agent_open_with_an_unopenable_first_handler_runs_the_first_remote_one() {
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::Agent,
             ignore_size_limit: false,
+            run: None,
         },
     );
     assert!(
@@ -394,6 +399,7 @@ fn an_unverified_plugin_open_with_an_unopenable_first_handler_shows_the_remote_p
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::PluginUnverified,
             ignore_size_limit: false,
+            run: None,
         },
     );
     assert!(queued_creates(&state).is_empty());
@@ -434,6 +440,7 @@ fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
             crate::file::dispatch::FileDispatchPolicy {
                 dispatch_origin: origin,
                 ignore_size_limit: false,
+                run: None,
             },
         );
         assert!(state.dialogs.file_handler_picker.is_none(), "{origin:?}");
@@ -458,6 +465,7 @@ fn a_remote_picker_selection_queues_user_creation_and_rejects_local_handlers() {
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::User,
             ignore_size_limit: false,
+            run: None,
         },
     );
     assert!(state.pending_handler_ipc.is_empty());
@@ -473,6 +481,7 @@ fn a_remote_picker_selection_queues_user_creation_and_rejects_local_handlers() {
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin: FileDispatchOrigin::User,
             ignore_size_limit: false,
+            run: None,
         },
     );
     assert_eq!(queued_creates(&state).len(), 1);
@@ -502,6 +511,7 @@ impl IdentifySpawner for RecordingSpawner {
         origin_surface_id: Option<u32>,
         _dispatch_origin: FileDispatchOrigin,
         _ignore_size_limit: bool,
+        _run: Option<u64>,
     ) {
         self.0.lock().unwrap().push((depth, origin_surface_id));
     }
@@ -527,6 +537,7 @@ fn a_mirror_origin_identifies_by_name_only() {
                 origin_surface_id: Some(sid),
                 dispatch_origin: FileDispatchOrigin::User,
                 ignore_size_limit: false,
+                run: None,
             },
         )
         .unwrap();

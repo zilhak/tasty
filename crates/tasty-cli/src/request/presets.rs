@@ -17,6 +17,7 @@ pub(super) fn file_handler_command_to_method_params(
             depth,
             origin_surface,
             ignore_size_limit,
+            no_wait: _,
         } => (
             "file_handler.dispatch",
             serde_json::json!({
@@ -26,6 +27,7 @@ pub(super) fn file_handler_command_to_method_params(
                 "ignore_size_limit": ignore_size_limit,
             }),
         ),
+        FileHandlerCommands::Result { run } => ("run.result", serde_json::json!({ "run": run })),
     }
 }
 

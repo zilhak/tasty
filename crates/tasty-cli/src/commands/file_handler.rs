@@ -13,6 +13,12 @@ pub enum FileHandlerCommands {
     Detectors,
     /// Open a path through the file-handler dispatch flow — the same route the
     /// explorer's double-click takes.
+    ///
+    /// Prints the acceptance (with a `run` number) on one line, then waits for
+    /// the final result and prints it on a second line: `state` is
+    /// `succeeded` or `failed`, and `result` says what was opened or why it
+    /// was not. An opened tab is reported in `surface_id`. Exits with code 1
+    /// unless the final state is `succeeded`.
     Dispatch {
         /// Path to dispatch.
         path: String,
@@ -30,5 +36,19 @@ pub enum FileHandlerCommands {
         /// Skip the large-file confirmation popup and open immediately.
         #[arg(long)]
         ignore_size_limit: bool,
+        /// Print only the acceptance and return without waiting. Look the
+        /// result up later with `tasty file-handler result --run <N>`.
+        #[arg(long)]
+        no_wait: bool,
+    },
+    /// Show the progress or final result of a dispatch by its `run` number.
+    ///
+    /// `done` is false while it is still running. The last 128 runs, counted
+    /// together with hook handler dispatches, are kept; an older or unknown
+    /// run is an error.
+    Result {
+        /// The `run` number from the dispatch acceptance.
+        #[arg(long)]
+        run: u64,
     },
 }

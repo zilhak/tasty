@@ -68,17 +68,6 @@ pub enum Verdict {
     Unknown,
 }
 
-impl Verdict {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Succeeded => "succeeded",
-            Self::Partial => "partial",
-            Self::Failed => "failed",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SequenceOutcome {
     pub steps: Vec<StepResult>,

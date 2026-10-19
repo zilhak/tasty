@@ -81,6 +81,7 @@ pub(crate) fn dispatch_picker_result(
                         origin_surface_id: None,
                         dispatch_origin: crate::file::dispatch::FileDispatchOrigin::User,
                         ignore_size_limit: false,
+                        run: None,
                     }
                     .from_user_menu("file_picker_confirm"),
                 );

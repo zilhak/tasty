@@ -163,6 +163,8 @@ pub(crate) enum AppEvent {
         dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
         /// 요청의 대용량 파일 허용 여부를 비동기 식별 뒤에도 유지한다.
         ignore_size_limit: bool,
+        /// 최종 결과를 받을 요청의 run.
+        run: Option<u64>,
     },
 }
 

@@ -62,8 +62,9 @@ pub(crate) fn apply_remote_identify_result(
     target: FileTarget,
     detector: Option<DetectorId>,
     origin_surface_id: u32,
-    dispatch_origin: FileDispatchOrigin,
+    policy: crate::file::dispatch::FileDispatchPolicy,
 ) {
+    let dispatch_origin = policy.dispatch_origin;
     let handlers = detector
         .as_ref()
         .map(|d| engine.runtime.file_handler.handlers_for(d))
@@ -77,6 +78,13 @@ pub(crate) fn apply_remote_identify_result(
         .collect();
     let Some(first) = openable.first() else {
         report_unsupported(state, &target, dispatch_origin);
+        crate::file::dispatch::fail_run(
+            policy.run,
+            format!(
+                "no file handler can open the remote file {}",
+                target.display()
+            ),
+        );
         return;
     };
     if first_is_openable || dispatch_origin == FileDispatchOrigin::Agent {
@@ -89,8 +97,8 @@ pub(crate) fn apply_remote_identify_result(
             &DispatchTarget::File(target),
             Some(origin_surface_id),
             crate::file::dispatch::FileDispatchPolicy {
-                dispatch_origin,
                 ignore_size_limit: false,
+                ..policy
             },
         );
         return;
@@ -102,7 +110,7 @@ pub(crate) fn apply_remote_identify_result(
         detector,
         openable,
         origin_surface_id,
-        dispatch_origin,
+        policy,
     );
 }
 
@@ -115,7 +123,7 @@ fn open_remote_picker(
     detector: Option<DetectorId>,
     openable: Vec<FileHandler>,
     origin_surface_id: u32,
-    dispatch_origin: FileDispatchOrigin,
+    policy: crate::file::dispatch::FileDispatchPolicy,
 ) {
     crate::file::dispatch::open_picker(
         state,
@@ -125,8 +133,8 @@ fn open_remote_picker(
         openable,
         false,
         crate::file::dispatch::FileDispatchPolicy {
-            dispatch_origin,
             ignore_size_limit: false,
+            ..policy
         },
     );
     let Some(picker) = state.dialogs.file_handler_picker.as_mut() else {

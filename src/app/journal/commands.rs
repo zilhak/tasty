@@ -128,6 +128,8 @@ enum Reply {
         engine: EngineId,
         origin: crate::intent::IntentOrigin,
         view: Option<IntentViewContinuation>,
+        /// 최종 결과를 받을 요청의 run([`crate::request_runs`]).
+        completion: Option<u64>,
     },
 }
 
@@ -137,6 +139,40 @@ struct IntentResult {
     engine: EngineId,
     origin: crate::intent::IntentOrigin,
     response: JsonRpcResponse,
+    completion: Option<u64>,
+}
+
+impl IntentResult {
+    /// 응답을 요청의 run에 최종 결과로 남긴다. 만든 surface가 있으면 그 ID를 싣는다.
+    fn finish_completion(&self) {
+        let Some(run) = self.completion else {
+            return;
+        };
+        if let Some(error) = &self.response.error {
+            crate::request_runs::finish(
+                run,
+                crate::request_runs::RunState::Failed,
+                error.message.clone(),
+                serde_json::json!({ "code": error.code }),
+            );
+            return;
+        }
+        let surface = self.response.result.as_ref().and_then(|value| {
+            ["surface_id", "new_surface_id"]
+                .iter()
+                .find_map(|key| value.get(*key).and_then(serde_json::Value::as_u64))
+        });
+        let result = surface.map_or_else(
+            || "completed".to_string(),
+            |surface| format!("surface {surface} is ready"),
+        );
+        crate::request_runs::finish(
+            run,
+            crate::request_runs::RunState::Succeeded,
+            result,
+            serde_json::json!({ "surface_id": surface }),
+        );
+    }
 }
 
 struct Pending {
@@ -209,6 +245,8 @@ pub(super) struct Commands {
     completed_dividers: Vec<(EngineId, u64, crate::intent::IntentOrigin, JsonRpcResponse)>,
     completed_plugins: Vec<(String, u64, std::sync::Weak<()>, JsonRpcResponse)>,
     completed_intents: Vec<IntentResult>,
+    /// 다음 `admit_intent_request`가 가져갈 run. 호출자가 admission 앞뒤로 넣고 비운다.
+    intent_completion: Option<u64>,
     completed_live: Vec<(live_resume::Resume, JsonRpcResponse)>,
     completed_remote: Vec<(inbound::RemoteReply, JsonRpcResponse)>,
     completed_host_events: Vec<(EngineId, notification::Notification)>,
@@ -346,6 +384,7 @@ impl Commands {
                 engine,
                 origin,
                 view,
+                completion,
             } => {
                 #[cfg(feature = "gui")]
                 if response.error.is_some()
@@ -363,6 +402,7 @@ impl Commands {
                     engine,
                     origin,
                     response,
+                    completion,
                 })
             }
         }

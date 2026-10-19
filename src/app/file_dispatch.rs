@@ -14,11 +14,10 @@ impl App {
         target: FileTarget,
         detector: Option<DetectorId>,
         origin_surface_id: Option<u32>,
-        dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
-        ignore_size_limit: bool,
+        policy: crate::file::dispatch::FileDispatchPolicy,
     ) {
         tracing::debug!(%request_id, target = %target.display(), ?detector,
-            ?origin_surface_id, ignore_size_limit, "IdentifyDone");
+            ?origin_surface_id, ?policy, "IdentifyDone");
         let named = origin_surface_id.map(|id| ResourceId {
             kind: Kind::Surface,
             id: u64::from(id),
@@ -35,10 +34,7 @@ impl App {
                 target,
                 detector,
                 origin_surface_id,
-                crate::file::dispatch::FileDispatchPolicy {
-                    dispatch_origin,
-                    ignore_size_limit,
-                },
+                policy,
             );
             main.mark_dirty();
             return;
@@ -53,15 +49,13 @@ impl App {
                     target,
                     detector,
                     origin_surface_id,
-                    crate::file::dispatch::FileDispatchPolicy {
-                        dispatch_origin,
-                        ignore_size_limit,
-                    },
+                    policy,
                 );
             } else {
-                // The RPC already acknowledged enqueueing. Its existing async
-                // error channel is the log; never acknowledge a second response.
-                tracing::warn!(%request_id, "{}", unowned_target_message(rid, "file_handler.dispatch"));
+                // 접수 응답은 이미 보냈다. 결과는 로그와 요청의 run으로 알린다.
+                let message = unowned_target_message(rid, "file_handler.dispatch");
+                tracing::warn!(%request_id, "{message}");
+                crate::file::dispatch::fail_run(policy.run, message);
             }
         }
     }

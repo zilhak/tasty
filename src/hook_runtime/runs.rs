@@ -1,127 +1,75 @@
-//! 수동 `hook_handler.dispatch` 실행의 최종 결과. 접수 응답의 `run` 값으로 `hook_handler.result`가 조회한다.
-//! 작업 스레드가 결과를 쓰고 IPC 처리가 읽으므로 프로세스 전역 잠금 안에 둔다. 최근 [`KEEP`]건만 보관한다.
-
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+//! 수동 `hook_handler.dispatch` 실행의 최종 결과. 공용 실행 기록([`crate::request_runs`])에
+//! `id`(핸들러)·`action` 필드를 붙여 남기며, 접수 응답의 `run` 값으로 `hook_handler.result`와
+//! `run.result`가 조회한다.
 
 use serde_json::{Value, json};
 
 use crate::hook_handler::exec::ShellEvent;
 use crate::hook_handler::outcome::{SequenceOutcome, Verdict};
+use crate::request_runs::{self, RunState};
 
-/// 보관할 실행 수. 넘으면 가장 오래된 기록부터 지우며 지운 실행은 조회하면 알 수 없는 run이 된다.
-pub(crate) const KEEP: usize = 128;
-
-#[derive(Debug, Clone)]
-struct Run {
-    id: u64,
-    handler: String,
-    action: &'static str,
-    /// None이면 진행 중이다.
-    state: Option<&'static str>,
-    result: String,
-    steps: Option<Value>,
-    exit_code: Option<i32>,
-}
-
-impl Run {
-    fn to_json(&self) -> Value {
-        let mut v = json!({
-            "run": self.id,
-            "id": self.handler,
-            "action": self.action,
-            "done": self.state.is_some(),
-            "state": self.state.unwrap_or("running"),
-            "result": self.result,
-        });
-        if let Some(steps) = &self.steps {
-            v["steps"] = steps.clone();
-        }
-        if self.action == ACTION_SHELL {
-            v["exit_code"] = json!(self.exit_code);
-        }
-        v
-    }
-}
+pub(crate) use crate::request_runs::KEEP;
 
 pub(crate) const ACTION_SEQUENCE: &str = "ipc_sequence";
 pub(crate) const ACTION_SHELL: &str = "shell_command";
 
-static NEXT: AtomicU64 = AtomicU64::new(1);
-static POISONED: AtomicBool = AtomicBool::new(false);
+const METHOD: &str = "hook_handler.dispatch";
 
-fn runs() -> std::sync::MutexGuard<'static, VecDeque<Run>> {
-    static RUNS: OnceLock<Mutex<VecDeque<Run>>> = OnceLock::new();
-    crate::poison::recover_mutex(
-        RUNS.get_or_init(Default::default).lock(),
-        "hook dispatch runs",
-        &POISONED,
-    )
-}
-
-fn update(id: u64, f: impl FnOnce(&mut Run)) {
-    if let Some(run) = runs().iter_mut().find(|r| r.id == id) {
-        f(run);
-    }
-}
-
-/// 진행 중인 실행을 만들고 run 값을 돌려준다.
+/// 진행 중인 실행을 만들고 run 값을 돌려준다. 수동 dispatch는 로컬 호출만 받으므로 소유자가 없다.
 pub(crate) fn begin(handler: &str, action: &'static str) -> u64 {
-    let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    let mut runs = runs();
-    while runs.len() >= KEEP {
-        runs.pop_front();
+    let mut fields = json!({ "id": handler, "action": action });
+    if action == ACTION_SHELL {
+        fields["exit_code"] = Value::Null;
     }
-    runs.push_back(Run {
-        id,
-        handler: handler.to_string(),
-        action,
-        state: None,
-        result: "running".into(),
-        steps: None,
-        exit_code: None,
-    });
-    id
+    request_runs::begin(METHOD, None, fields)
 }
 
 /// 실행기 대기열에 넣지 못해 동기 오류로 답한 실행은 조회 대상에서 지운다.
 pub(crate) fn forget(id: u64) {
-    runs().retain(|r| r.id != id);
+    request_runs::forget(id);
 }
 
 pub(crate) fn finish_sequence(id: u64, outcome: &SequenceOutcome) {
-    let verdict = outcome.verdict();
-    update(id, |run| {
-        run.state = Some(verdict.as_str());
-        run.result = outcome.result_line();
-        run.steps = Some(outcome.steps_json());
-    });
+    let state = match outcome.verdict() {
+        Verdict::Succeeded => RunState::Succeeded,
+        Verdict::Partial => RunState::Partial,
+        Verdict::Failed => RunState::Failed,
+        Verdict::Unknown => RunState::Unknown,
+    };
+    request_runs::finish(
+        id,
+        state,
+        outcome.result_line(),
+        json!({ "steps": outcome.steps_json() }),
+    );
 }
 
 /// 셸 핸들러는 프로세스를 띄웠는지로 판정한다. 종료 코드는 정보로만 싣는다.
 pub(crate) fn shell_event(id: u64, event: ShellEvent) {
-    update(id, |run| match event {
+    match event {
         ShellEvent::Started => {
-            run.state = Some(Verdict::Succeeded.as_str());
-            run.result = "process started".into();
+            request_runs::finish(id, RunState::Succeeded, "process started", Value::Null);
         }
         ShellEvent::NotStarted(error) => {
-            run.state = Some(Verdict::Failed.as_str());
-            run.result = format!("process could not start: {error}");
+            request_runs::finish(
+                id,
+                RunState::Failed,
+                format!("process could not start: {error}"),
+                Value::Null,
+            );
         }
         ShellEvent::Exited(code) => {
-            run.exit_code = code;
-            run.result = match code {
+            let result = match code {
                 Some(code) => format!("process started and exited with code {code}"),
                 None => "process started and exited without a code".into(),
             };
+            request_runs::amend(id, Some(result), json!({ "exit_code": code }));
         }
-    });
+    }
 }
 
 pub(crate) fn lookup(id: u64) -> Option<Value> {
-    runs().iter().find(|r| r.id == id).map(Run::to_json)
+    request_runs::lookup(id, None).filter(|run| run["method"] == METHOD)
 }
 
 #[cfg(test)]

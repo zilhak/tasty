@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[피드백 원칙](../../principles/feedback-and-recovery.md)에 따라 접수와 최종 성공·실패를 구분해야 한다. 아래 accepted 응답 뒤 warn 로그만 남기는 경로는 현재 구현의 미충족이다. 에이전트에는 최종 문자열 결과, 사용자에게는 UI 결과, 비직접 입력에는 알림을 전달하는 방향으로 정합한다.
+[피드백 원칙](../../principles/feedback-and-recovery.md)에 따라 접수와 최종 성공·실패를 구분한다. `file_handler.dispatch`와 `markdown.navigate`의 응답은 접수이며, 에이전트·plugin 호출자는 응답의 `run`으로 최종 결과 문자열을 조회한다([접수 뒤 최종 결과](#접수-뒤-최종-결과)). 사용자 요청은 기존 UI 결과(탭·picker·토스트)를 그대로 받는다.
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`file_handler.dispatch`) · plugin (contribute)
@@ -45,7 +45,7 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 `origin_surface_id` 가 mirror workspace 의 surface 이면 경로는 원격 호스트의 파일이다. 입구는 mirror explorer 의 더블클릭과 mirror origin 을 준 `file_handler.dispatch` 다.
 
 - 식별은 요청한 깊이와 관계없이 Name 으로 한다. client 에 같은 경로의 파일·디렉터리가 있어도 읽지 않는다. CLI `--depth` 도 무시된다. `file_handler.dispatch` 응답의 `depth` 는 요청값을 그대로 돌려주므로 실제 식별 방식을 나타내지 않는다.
-- 한계: 확장자·파일명으로 정해지지 않는 형식(magic·MIME 으로만 식별되는 파일)은 매칭되지 않는다. Name 은 대상을 항상 파일로 보므로 디렉터리 경로는 `$directory` 에 매칭되지 않는다. 탐색기는 원격 목록이 파일이라고 알려 준 항목만 보내지만 IPC 입구는 이를 보장하지 않는다. 두 경우 모두 Agent(외부 IPC) 요청은 `accepted:true` 응답 뒤 warn 로그로 끝나고, 사용자 요청과 PluginUnverified 요청은 아래의 toast 로 끝난다.
+- 한계: 확장자·파일명으로 정해지지 않는 형식(magic·MIME 으로만 식별되는 파일)은 매칭되지 않는다. Name 은 대상을 항상 파일로 보므로 디렉터리 경로는 `$directory` 에 매칭되지 않는다. 탐색기는 원격 목록이 파일이라고 알려 준 항목만 보내지만 IPC 입구는 이를 보장하지 않는다. 두 경우 모두 Agent(외부 IPC) 요청은 `accepted:true` 응답 뒤 run 이 `failed` 로 끝나고, 사용자 요청과 PluginUnverified 요청은 아래의 toast 로 끝난다(run 이 있으면 같은 실패를 기록한다).
 - 원격에 열 수 있는 핸들러는 `OpenSurface` 이면서 client 에 등록한 그 kind 가 원문 전달 허용 목록에 있거나 egui-mesh 인 것이다. 현재 markdown(`com.tasty.markdown`)과 egui-mesh kind 전부(plugin ID 무관)가 해당한다. 원격에 같은 kind 가 없으면 원격의 새 탭 생성이 실패한다. html 은 mirror 에서 placeholder 라 제외한다.
 - 1순위 핸들러가 원격에 열 수 있으면 로컬과 같이 바로 실행한다.
 - 1순위가 원격에 열 수 없고 다른 후보가 있으면 사용자 요청과 PluginUnverified 요청은 기존 핸들러 picker 를 띄운다. 후보와 최근 목록에는 원격에 열 수 있는 핸들러만 남기고, 1순위가 목록에 없으므로 기본 핸들러 표시는 두지 않는다. fallback 표시(전체 핸들러 그룹·1 회성 띠)도 쓰지 않는다. picker 에서 고른 핸들러도 같은 조건을 다시 확인한 뒤 원격 새 탭으로 실행한다.
@@ -141,6 +141,30 @@ picker에서 고른 핸들러는 이번 한 번만 실행한다. 형식별 기�
 
 **빈 상태**: 이 popup에 표시할 행이 없으면 빈 상태를 보여준다 — 후보와 recent 가 **둘 다 비면** 목록 자리가 중앙 블록으로 바뀐다. 그래서 실제로 이 상태에 닿는 것은 위 표의 **셋째 경로**(원격 placeholder)다. 앞의 둘은 `all_handlers()` 를 싣는데 host 기본 핸들러가 `default-file-handlers.toml` 에 박혀 있어 plugin 을 전부 꺼도 0 이 되지 않는다. 블록은 흐린 파일 글리프 + "등록된 핸들러가 없습니다." + 한 줄 안내 + "설정에서 핸들러 등록" 버튼(Settings 를 `FileHandler` 탭으로 오픈)이고, 프레임 폭과 footer 는 그대로고 [열기]만 비활성이다 — 같은 다이얼로그의 한 상태이지 다른 화면이 아니다.
 
+### 접수 뒤 최종 결과
+
+`file_handler.dispatch`와 `markdown.navigate`의 응답은 접수 확인이다. `accepted: true`의 의미는 그대로이며 `run`(실행 번호)이 추가됐다. 호출자는 `run.result {run}`으로 진행·최종 결과를 조회한다(`src/request_runs.rs`, 처리기 `src/adapters/ipc/handler/run_result.rs`).
+
+- 응답: `{run, method, done, state, result, ...}`. 진행 중이면 `done: false`, `state: "running"`이다. `state`는 `succeeded`·`failed`·`cancelled` 중 하나로 끝난다. `result`는 표시 언어와 관계없는 영어 한 줄이다.
+- 처음 기록한 최종 결과만 남는다. 같은 파일을 겹쳐 요청해도 요청마다 run이 따로 있어 결과가 섞이지 않는다.
+- 조회 범위: 토큰 없는 로컬 IPC 호출자는 모든 run을 읽는다. plugin과 세션 토큰을 쓰는 에이전트는 자기가 시작한 run만 읽고, 다른 호출자의 run은 알 수 없는 run과 같은 `-32602`다. 외부 `markdown.navigate`는 markdown plugin이 host로 다시 보내므로 run의 소유자는 그 plugin이다. 이 run은 로컬 호출자만 읽을 수 있다.
+- 보관: `hook_handler.dispatch`의 run과 같은 저장소에서 합쳐 최근 128건(`request_runs::KEEP`)만 보관한다. 보관 범위를 벗어난 run은 `-32602`다.
+- 접수 전 동기 오류(파라미터, origin pane 부재, URL, 없는 경로, 없는 surface, headless의 `-32017`)는 run을 만들지 않는다.
+
+| 경로 | 최종 결과 |
+|------|-----------|
+| `OpenSurface` 핸들러 | 탭 생성 journal 완료로 `succeeded`("surface N is ready", `surface_id`). 생성 오류는 `failed`(오류 문장, `code`) |
+| `System` 핸들러 | OS opener에 넘기면 `succeeded`("handed to the OS opener"). 외부 프로그램의 작업 완료는 판정하지 않는다. 넘기지 못하면 `failed` |
+| `Ipc` 핸들러 | plugin 응답이 오면 `succeeded`("<method> answered", `response`), 오류 응답은 `failed`("<method> failed: <message>", `code`). plugin manager가 없거나 응답 없이 채널이 닫히면 `failed` |
+| `markdown.navigate` | 변환 journal 완료로 `succeeded`(같은 `surface_id`). 접수 뒤 대상 surface가 사라지는 등 변환 오류는 `failed`(오류 문장, `code`) |
+| 실행 전 실패 | 맞는 핸들러 없음(Agent), 접수 뒤 origin pane 소멸, 원격에서 열 수 없음, 핸들러가 대상을 받지 않음, 식별 worker 없음, picker에서 고른 핸들러가 사라짐은 모두 `failed`와 그 이유다 |
+| fallback picker(PluginUnverified) | 선택하면 그 실행의 결과다. 취소·설정 열기는 `cancelled`, 새 picker로 대체되면 `cancelled`("replaced by a newer file handler picker"), picker 상태가 결과 없이 사라지면(창 닫힘 등) `cancelled` |
+
+- 실행한 핸들러는 결과의 `handler`와 `action`(`open_surface`·`ipc`·`system`)에 실린다.
+- 대용량 markdown 확인은 plugin이 surface를 만든 뒤 하므로 host에는 크기 상한 거절 경로가 없다. surface가 만들어지면 `succeeded`다.
+- 사용자 출처의 toast·탭 선택 동작은 바뀌지 않는다. Agent 출처는 여전히 picker를 띄우지 않는다.
+- CLI `tasty file-handler dispatch`는 접수 줄을 출력한 뒤 `run.result`를 200ms 간격으로 최대 30초 조회해 결과 줄을 출력한다. 최종 상태가 `succeeded`가 아니면 종료 코드 1이다. 조회 응답도 남은 시간까지만 읽고, 상한을 넘기면 `timed_out: true`를 단 진행 중 결과를 출력한다. `--no-wait`는 접수 줄만 출력하며, 결과는 `tasty file-handler result --run <N>`(`run.result`)으로 조회한다. 기다리는 dispatch는 client-driven 명령이라 루트 옵션 `--response-timeout-ms`를 받지 않는다(종료 코드 2). `--no-wait`는 요청 하나라 그 옵션이 적용된다.
+
 ### 권한
 
 `file_handler.define`(새 detector+handler) · `file_handler.extend:<id>`(기존 detector 에 rule) · `file_handler.handle:<id>`(기존 detector 에 handler). `$` sentinel 은 모든 토큰에서 reject. ([plugin-permissions](../../dev-guide/plugin-permissions.md).)
@@ -149,8 +173,8 @@ picker에서 고른 핸들러는 이번 한 번만 실행한다. 형식별 기�
 
 origin_surface_id는 결과를 만들 대상이다. 최초 요청, 식별 worker 결과, picker 선택 모두
 그 surface의 소유 engine과 pane으로 보낸다. parked engine도 포함한다.
-대상이 처음부터 없으면 -32602로 거절하고 접수 뒤 사라지면 warning을 남기고 실행하지 않는다.
-다른 focused pane으로 바꾸지 않는다. accepted:true는 큐 접수이며 완료 RPC를 한 번 더 보내지 않는다.
+대상이 처음부터 없으면 -32602로 거절하고 접수 뒤 사라지면 warning을 남기고 실행하지 않으며 run을 `failed`로 끝낸다.
+다른 focused pane으로 바꾸지 않는다. accepted:true는 큐 접수이며 완료 RPC를 한 번 더 보내지 않는다. 최종 결과는 `run.result`로 조회한다.
 picker 취소는 action과 recent 기록을 모두 생략한다. Ipc action payload는 path-only다.
 
 탭 선택 여부는 별도 FileDispatchOrigin으로 결정한다.
@@ -158,7 +182,7 @@ picker 취소는 action과 recent 기록을 모두 생략한다. Ipc action payl
 Agent 요청과 사용자 입력을 증명하지 못한 plugin 중계 요청(PluginUnverified)은 기존 탭과 surface 선택을 유지한다.
 origin 생략도 같은 원인 규칙을 적용한다.
 외부 IPC(CLI·에이전트 세션) 요청인 Agent는 로컬·원격 모두 사용자 화면에 picker 를 띄우지 않는다. 로컬에서 매칭 핸들러가 없으면
-fallback picker 대신 warn 로그를 남기고 실행하지 않는다. RPC 는 이미 accepted:true 로 응답했으므로 오류를 따로 돌려주지 않는다.
+fallback picker 대신 warn 로그를 남기고 실행하지 않으며 run 을 `failed`("no file handler matches <경로>")로 끝낸다.
 PluginUnverified는 사용자 클릭일 수 있어 아무 반응 없이 끝나지 않게 한다. 로컬에서 매칭 핸들러가 없으면 fallback picker 를 열고,
 mirror 에서 1순위를 원격에 열 수 없으면 원격 picker 를 열며, 원격에 열 수 있는 핸들러가 없으면 toast 로 알린다.
 그 picker 에서 확정해도 요청 출처는 그대로라 결과 탭을 선택하지 않는다.

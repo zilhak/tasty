@@ -151,7 +151,8 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 - 훅: `hook.{set,list,unset}` · `global_hook.{set,list,unset}` · `surface.fire_hook`
 - 웹훅(인바운드 HTTP): `webhook.{register,list,info,unregister,sweep,config}` (`register`만 Network 권한을 가진 plugin도 허용, 나머지는 local-only) — [webhook](../features/webhook/index.md)
 - 메시지 패싱: `message.{send,read,count,clear}`
-- 파일 핸들러: `file_handler.{reload,detectors,dispatch}` — `detectors` 는 finalize 된 detector 와 출처별 contribution 조회(local-only, 읽기 전용) — [file-handler](../features/file-handler/index.md)
+- 파일 핸들러: `file_handler.{reload,detectors,dispatch}` — `detectors` 는 finalize 된 detector 와 출처별 contribution 조회(local-only, 읽기 전용). `dispatch` 응답은 접수(`accepted`, `run`)이고 최종 결과는 `run.result {run}` 으로 조회한다 — [file-handler](../features/file-handler/index.md#접수-뒤-최종-결과)
+- 요청 결과: `run.result {run}` — `file_handler.dispatch`·`markdown.navigate` 접수의 진행·최종 결과(`state`: `running`/`succeeded`/`failed`/`cancelled`, `result` 영어 한 줄). plugin 도 권한 토큰 없이 부를 수 있고 자기가 시작한 run 만 읽는다 — [file-handler](../features/file-handler/index.md#접수-뒤-최종-결과)
 - 훅 핸들러: `hook_handler.{list,get,upsert,remove,reload,dispatch,result}` (local-only) — 훅/웹훅 공유 핸들러 레지스트리 조회(비활성 포함)·단건 조회(action 본문 포함)·user 핸들러 제자리 수정/제거·user config(`~/.tasty/hook-handlers.toml`) 재로드·id로 수동 실행(IpcSequence/ShellCommand). `get` 의 `action` 과 `upsert` 의 `action` 은 같은 모양이라 왕복한다. upsert/remove 는 성공 시 user config 를 즉시 atomic write 하고, 쓰기에 실패하면 성공으로 보고하지 않는다. dispatch 응답은 접수(`accepted`, `run`)이고 최종 결과는 `result {run}` 으로 조회한다(`state`: `succeeded`/`partial`/`failed`/`unknown`) — [hooks](../features/hooks/index.md#수동-dispatch의-최종-결과)
 - 완료 판정 전략: `completion_strategy.list` (local-only) — `agent.task_create` 의 `Custom.poll` 이름 참조가 가리키는 완료 판정 전략 레지스트리 조회(비활성 포함). reload/dispatch 대응물 없음(판정 함수이지 실행할 작업이 아님) — [agent-runner](../dev-guide/agent-runner.md)
 - 이미지: `image.{open,save,export_png,next,prev,paste,list}` — [image plugin](../surfaces/image/index.md)

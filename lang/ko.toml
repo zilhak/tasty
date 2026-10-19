@@ -6329,6 +6329,7 @@ about = "파일 형식 detector 가 지금 병합된 모습(표시 이름·아�
 
 [cli.help._root.file-handler.dispatch]
 about = "파일 핸들러 흐름으로 경로 열기(탐색기 더블클릭과 같은 경로)"
+long = "파일 핸들러 흐름으로 경로를 엽니다(탐색기 더블클릭과 같은 경로).\n\n접수 응답(`run` 번호 포함)을 한 줄 출력한 뒤 최종 결과를 기다려 둘째 줄로 출력합니다. `state`는 `succeeded` 또는 `failed`이고, `result`에 무엇을 열었는지나 열지 못한 이유가 나옵니다. 연 탭은 `surface_id`로 알려 줍니다. 최종 상태가 `succeeded`가 아니면 종료 코드 1로 끝납니다."
 
 [cli.help._root.file-handler.dispatch.arg.path]
 help = "열 경로"
@@ -6341,6 +6342,16 @@ help = "결과 서피스를 포커스된 페인 대신 이 서피스가 속한 �
 
 [cli.help._root.file-handler.dispatch.arg.ignore_size_limit]
 help = "대용량 파일 확인 팝업을 생략하고 즉시 열기"
+
+[cli.help._root.file-handler.dispatch.arg.no_wait]
+help = "접수 응답만 출력하고 기다리지 않습니다. 결과는 나중에 `tasty file-handler result --run <N>`으로 조회합니다"
+
+[cli.help._root.file-handler.result]
+about = "dispatch의 진행 상태나 최종 결과를 `run` 번호로 조회"
+long = "dispatch의 진행 상태나 최종 결과를 `run` 번호로 조회합니다.\n\n실행 중에는 `done`이 false입니다. 훅 핸들러 dispatch와 합쳐 최근 128건만 보관하며, 그보다 오래되었거나 알 수 없는 run은 오류입니다."
+
+[cli.help._root.file-handler.result.arg.run]
+help = "dispatch 접수 응답의 `run` 번호"
 
 [cli.help._root.clipboard]
 about = "클립보드 — 로컬 클립보드를 조작"
@@ -6420,7 +6431,7 @@ help = "접수 응답만 출력하고 기다리지 않습니다. 결과는 나�
 
 [cli.help._root.hook-handler.result]
 about = "dispatch의 진행 상태나 최종 결과를 `run` 번호로 조회"
-long = "dispatch의 진행 상태나 최종 결과를 `run` 번호로 조회합니다.\n\n실행 중에는 `done`이 false입니다. 최근 128건만 보관하며, 그보다 오래되었거나 알 수 없는 run은 오류입니다."
+long = "dispatch의 진행 상태나 최종 결과를 `run` 번호로 조회합니다.\n\n실행 중에는 `done`이 false입니다. 파일 핸들러 요청과 합쳐 최근 128건만 보관하며, 그보다 오래되었거나 알 수 없는 run은 오류입니다."
 
 [cli.help._root.hook-handler.result.arg.run]
 help = "dispatch 접수 응답의 `run` 번호"

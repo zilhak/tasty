@@ -1468,6 +1468,7 @@ mod tests {
             crate::file::dispatch::FileDispatchPolicy {
                 dispatch_origin: crate::file::dispatch::FileDispatchOrigin::User,
                 ignore_size_limit: false,
+                run: None,
             },
         );
 

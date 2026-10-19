@@ -128,10 +128,13 @@ impl AppServices {
                 origin_surface_id,
                 dispatch_origin,
                 ignore_size_limit,
+                run,
             } => {
-                if let Some(sid) = origin_surface_id {
-                    crate::core::origin::require_origin_pane(engine, sid)
-                        .map_err(anyhow::Error::msg)?;
+                if let Some(sid) = origin_surface_id
+                    && let Err(message) = crate::core::origin::require_origin_pane(engine, sid)
+                {
+                    crate::file::dispatch::fail_run(run, message.clone());
+                    anyhow::bail!(message);
                 }
                 // mirror origin의 경로는 원격 파일이다. 로컬 파일시스템으로 판정하지 않는다(docs/features/remote-attach/index.md).
                 let depth = if origin_surface_id.is_some_and(|sid| engine.is_mirror_surface(sid)) {
@@ -147,12 +150,17 @@ impl AppServices {
                             origin_surface_id,
                             dispatch_origin,
                             ignore_size_limit,
+                            run,
                         );
                     }
                     None => {
                         tracing::warn!(
                             target = %target.display(),
                             "DispatchFile: identify_worker not injected — drop",
+                        );
+                        crate::file::dispatch::fail_run(
+                            run,
+                            "file identification is not available",
                         );
                     }
                 }

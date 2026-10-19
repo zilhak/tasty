@@ -37,6 +37,7 @@ mod namespace_table_for_tests;
 mod plugin_bridge;
 mod ports;
 mod remote;
+mod request_runs;
 mod runtime;
 mod runtime_ports;
 #[cfg(test)]

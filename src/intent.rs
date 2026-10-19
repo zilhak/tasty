@@ -42,6 +42,16 @@ pub struct DispatchedIntent {
     /// Event Bus의 trace_id와는 별개다. IPC 요청 번호는
     /// [`tasty_ipc::server::RequestSeq`]를 사용한다.
     pub trace_id: Option<String>,
+    /// 구조 변경의 최종 결과를 받을 요청의 run([`crate::request_runs`]). journal 완료나 적용 실패가
+    /// 그 run을 끝낸다. 결과를 돌려받지 않는 명령은 None이다.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "headless refuses the requests that wait for a final result"
+        )
+    )]
+    pub completion: Option<u64>,
 }
 
 /// 호스트 내부 명령. UI·도메인 명령과 사용자 단축키용 명령을 같은 큐에 담는다.
@@ -332,6 +342,7 @@ impl crate::app::command::DomainIntent {
             body: Intent::Domain(self),
             origin: IntentOrigin::System,
             trace_id: None,
+            completion: None,
         }
     }
 
@@ -393,6 +404,7 @@ impl Intent {
                 source: UserSource::Shortcut(id),
             },
             trace_id: None,
+            completion: None,
         }
     }
 
@@ -405,6 +417,7 @@ impl Intent {
                 source: UserSource::Menu(id),
             },
             trace_id: None,
+            completion: None,
         }
     }
 
@@ -417,6 +430,7 @@ impl Intent {
                 source: UserSource::ContextMenu,
             },
             trace_id: None,
+            completion: None,
         }
     }
 
@@ -428,6 +442,7 @@ impl Intent {
                 source: AgentSource::Ipc,
             },
             trace_id: None,
+            completion: None,
         }
     }
 
@@ -439,6 +454,7 @@ impl Intent {
                 source: AgentSource::Plugin(plugin_id.into()),
             },
             trace_id: None,
+            completion: None,
         }
     }
 
@@ -452,6 +468,7 @@ impl Intent {
                 source: AgentSource::Cli,
             },
             trace_id: None,
+            completion: None,
         }
     }
 
@@ -464,11 +481,20 @@ impl Intent {
             body: self,
             origin: parent.origin.clone(),
             trace_id: parent.trace_id.clone(),
+            // 결과는 원 요청 하나에만 기록한다.
+            completion: None,
         }
     }
 }
 
 impl DispatchedIntent {
+    /// 이 명령의 최종 결과를 `run`에 기록하게 한다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn with_completion(mut self, run: Option<u64>) -> Self {
+        self.completion = run;
+        self
+    }
+
     /// 로그를 연결할 trace_id를 지정한다. IPC 요청 번호와는 별개다.
     // reason: 제품 코드에는 호출부가 없고 시험에서만 사용한다.
     #[allow(dead_code)]

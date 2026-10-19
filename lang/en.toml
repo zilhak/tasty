@@ -6397,6 +6397,7 @@ about = "List the file format detectors as they are merged now — display name,
 
 [cli.help._root.file-handler.dispatch]
 about = "Open a path through the file-handler dispatch flow — the same route the explorer's double-click takes"
+long = "Open a path through the file-handler dispatch flow — the same route the explorer's double-click takes.\n\nPrints the acceptance (with a `run` number) on one line, then waits for the final result and prints it on a second line: `state` is `succeeded` or `failed`, and `result` says what was opened or why it was not. An opened tab is reported in `surface_id`. Exits with code 1 unless the final state is `succeeded`."
 
 [cli.help._root.file-handler.dispatch.arg.path]
 help = "Path to dispatch"
@@ -6409,6 +6410,16 @@ help = "Add the resulting surface as a tab of this surface's pane instead of the
 
 [cli.help._root.file-handler.dispatch.arg.ignore_size_limit]
 help = "Skip the large-file confirmation popup and open immediately"
+
+[cli.help._root.file-handler.dispatch.arg.no_wait]
+help = "Print only the acceptance and return without waiting. Look the result up later with `tasty file-handler result --run <N>`"
+
+[cli.help._root.file-handler.result]
+about = "Show the progress or final result of a dispatch by its `run` number"
+long = "Show the progress or final result of a dispatch by its `run` number.\n\n`done` is false while it is still running. The last 128 runs, counted together with hook handler dispatches, are kept; an older or unknown run is an error."
+
+[cli.help._root.file-handler.result.arg.run]
+help = "The `run` number from the dispatch acceptance"
 
 [cli.help._root.clipboard]
 about = "Clipboard — operate on the local clipboard"
@@ -6488,7 +6499,7 @@ help = "Print only the acceptance and return without waiting. Look the result up
 
 [cli.help._root.hook-handler.result]
 about = "Show the progress or final result of a dispatch by its `run` number"
-long = "Show the progress or final result of a dispatch by its `run` number.\n\n`done` is false while it is still running. The last 128 dispatches are kept; an older or unknown run is an error."
+long = "Show the progress or final result of a dispatch by its `run` number.\n\n`done` is false while it is still running. The last 128 runs, counted together with file handler requests, are kept; an older or unknown run is an error."
 
 [cli.help._root.hook-handler.result.arg.run]
 help = "The `run` number from the dispatch acceptance"

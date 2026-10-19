@@ -2,6 +2,18 @@
 use super::*;
 
 impl JournalApplication {
+    /// 다음 intent admission의 결과를 `run`에 남기게 한다. 남은 값은 [`Self::take_intent_completion`]으로 거둔다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn set_intent_completion(&mut self, run: Option<u64>) {
+        self.commands.intent_completion = run;
+    }
+
+    /// admission이 가져가지 않은 run을 돌려준다. journal에 들어가지 않은 명령의 결과다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn take_intent_completion(&mut self) -> Option<u64> {
+        self.commands.intent_completion.take()
+    }
+
     pub(crate) fn admit_metadata_intent(
         &mut self,
         engine_id: EngineId,
@@ -246,12 +258,14 @@ impl JournalApplication {
             response_timeout_ms: None,
             idempotency_key: None,
         };
+        let completion = self.commands.intent_completion.take();
         self.admit_request(
             &request,
             Reply::Intent {
                 engine: engine_id,
                 origin: origin.clone(),
                 view,
+                completion,
             },
             match origin {
                 crate::intent::IntentOrigin::User { .. } => "user",
@@ -306,6 +320,7 @@ impl JournalApplication {
                 engine: session.id,
                 origin: origin.clone(),
                 view: None,
+                completion: None,
             },
             intent_actor(origin).into(),
             &format!("intent:{origin:?}"),

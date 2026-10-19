@@ -308,6 +308,8 @@ pub struct FileHandlerPickerData {
     pub(crate) result: Option<FileHandlerPickerResult>,
     /// 원래 요청의 크기 제한 우회 설정. 선택 후 실행까지 유지한다.
     pub(crate) ignore_size_limit: bool,
+    /// 최종 결과를 기다리는 요청의 run. 선택 없이 사라지면 `cancelled`로 끝난다.
+    pub(crate) run: Option<crate::request_runs::RunGuard>,
 }
 
 /// picker 의 닫기 사유.

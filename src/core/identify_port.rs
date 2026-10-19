@@ -12,5 +12,6 @@ pub(crate) trait IdentifySpawner: Send + Sync {
         origin_surface_id: Option<u32>,
         dispatch_origin: FileDispatchOrigin,
         ignore_size_limit: bool,
+        run: Option<u64>,
     );
 }

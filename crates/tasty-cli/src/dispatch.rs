@@ -180,6 +180,9 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
         Commands::HookHandler {
             command: crate::commands::HookHandlerCommands::Dispatch { no_wait: false, .. },
         } => Box::new(crate::local::hook_dispatch::HookDispatch { command }),
+        Commands::FileHandler {
+            command: crate::commands::FileHandlerCommands::Dispatch { no_wait: false, .. },
+        } => Box::new(crate::local::file_dispatch::FileDispatch { command }),
         Commands::Plugin {
             command: PluginCommands::Logs { id, follow },
         } => Box::new(crate::local::PluginLogs {

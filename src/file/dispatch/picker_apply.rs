@@ -15,27 +15,19 @@ pub(crate) fn apply_identify_result(
     origin_surface_id: Option<u32>,
     policy: crate::file::dispatch::FileDispatchPolicy,
 ) {
-    let crate::file::dispatch::FileDispatchPolicy {
-        dispatch_origin,
-        ignore_size_limit,
-    } = policy;
+    let run = policy.run;
     if let Some(sid) = origin_surface_id
         && let Err(message) = crate::file::dispatch::require_origin_pane(engine, sid)
     {
         tracing::warn!("{message}");
+        crate::file::dispatch::fail_run(run, message);
         return;
     }
     if let Some(sid) = origin_surface_id
         && engine.is_mirror_surface(sid)
     {
         crate::file::dispatch::remote::apply_remote_identify_result(
-            core,
-            state,
-            engine,
-            target,
-            detector,
-            sid,
-            dispatch_origin,
+            core, state, engine, target, detector, sid, policy,
         );
         return;
     }
@@ -43,28 +35,23 @@ pub(crate) fn apply_identify_result(
         Some(d) => engine.runtime.file_handler.handlers_for(d),
         None => Vec::new(),
     };
-    if handlers.is_empty() && dispatch_origin == crate::file::dispatch::FileDispatchOrigin::Agent {
+    if handlers.is_empty()
+        && policy.dispatch_origin == crate::file::dispatch::FileDispatchOrigin::Agent
+    {
         // 외부 IPC 요청은 사용자 화면에 picker를 띄우지 않는다. 사용자 입력을 증명하지 못한 plugin 중계 요청은
-        // 사용자 클릭일 수 있어 fallback picker를 연다. RPC는 이미 수락을 응답했으므로 로그로 알린다.
+        // 사용자 클릭일 수 있어 fallback picker를 연다.
         tracing::warn!(target = %target.display(), "no file handler matches this file; not executed");
+        crate::file::dispatch::fail_run(
+            run,
+            format!("no file handler matches {}", target.display()),
+        );
         return;
     }
     let target = DispatchTarget::File(target);
     if handlers.is_empty() {
         // 매칭이 없으면 전체 핸들러를 일회성 선택지로 보여준다. detector 연결을 저장하지 않는다.
         let fallback = engine.runtime.file_handler.all_handlers();
-        crate::file::dispatch::open_picker(
-            state,
-            engine,
-            target,
-            detector,
-            fallback,
-            true,
-            crate::file::dispatch::FileDispatchPolicy {
-                dispatch_origin,
-                ignore_size_limit,
-            },
-        );
+        crate::file::dispatch::open_picker(state, engine, target, detector, fallback, true, policy);
         if let Some(picker) = state.dialogs.file_handler_picker.as_mut() {
             picker.origin_surface_id = origin_surface_id;
         }
@@ -78,10 +65,7 @@ pub(crate) fn apply_identify_result(
         &first,
         &target,
         origin_surface_id,
-        crate::file::dispatch::FileDispatchPolicy {
-            dispatch_origin,
-            ignore_size_limit,
-        },
+        policy,
     );
 }
 
@@ -96,22 +80,30 @@ pub(crate) fn apply_file_picker_result(
     origin_surface_id: Option<u32>,
     policy: crate::file::dispatch::FileDispatchPolicy,
 ) {
-    let crate::file::dispatch::FileDispatchPolicy {
-        dispatch_origin,
-        ignore_size_limit,
-    } = policy;
+    let run = policy.run;
     let Some(handler_id) = selected_handler_id(result) else {
+        crate::file::dispatch::finish_run(
+            run,
+            crate::request_runs::RunState::Cancelled,
+            "the file handler picker closed without a choice",
+            serde_json::Value::Null,
+        );
         return;
     };
     if let Some(sid) = origin_surface_id
         && let Err(message) = crate::file::dispatch::require_origin_pane(engine, sid)
     {
         tracing::warn!("{message}");
+        crate::file::dispatch::fail_run(run, message);
         return;
     }
     let Some(handler) = engine.runtime.file_handler.get(&handler_id) else {
         tracing::warn!(handler_id = %handler_id,
             "apply_file_picker_result: handler id from picker no longer in registry");
+        crate::file::dispatch::fail_run(
+            run,
+            format!("file handler {handler_id} is no longer registered"),
+        );
         state.record_file_handler_pick(&handler_id);
         return;
     };
@@ -123,10 +115,7 @@ pub(crate) fn apply_file_picker_result(
         &handler,
         &target,
         origin_surface_id,
-        crate::file::dispatch::FileDispatchPolicy {
-            dispatch_origin,
-            ignore_size_limit,
-        },
+        policy,
     ) {
         state.record_file_handler_pick(&handler_id);
     }
@@ -148,6 +137,10 @@ fn selected_handler_id(result: FileHandlerPickerResult) -> Option<crate::file::h
 #[cfg(test)]
 #[path = "picker_apply_origin_tests.rs"]
 mod origin_tests;
+
+#[cfg(test)]
+#[path = "picker_apply_run_tests.rs"]
+mod run_tests;
 
 #[cfg(test)]
 pub(super) mod tests {
@@ -223,6 +216,7 @@ pub(super) mod tests {
             crate::file::dispatch::FileDispatchPolicy {
                 dispatch_origin: crate::file::dispatch::FileDispatchOrigin::User,
                 ignore_size_limit: false,
+                run: None,
             },
         );
 
@@ -273,6 +267,7 @@ pub(super) mod tests {
             crate::file::dispatch::FileDispatchPolicy {
                 dispatch_origin: crate::file::dispatch::FileDispatchOrigin::Agent,
                 ignore_size_limit: false,
+                run: None,
             },
         );
 

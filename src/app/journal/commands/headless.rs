@@ -127,6 +127,7 @@ impl JournalApplication {
             }
         }
         for result in std::mem::take(&mut self.commands.completed_intents) {
+            result.finish_completion();
             if let Some(error) = result.response.error {
                 tracing::warn!(engine = ?result.engine, origin = ?result.origin, "headless journal intent failed: {}", error.message);
             }

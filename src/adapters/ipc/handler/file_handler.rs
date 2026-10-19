@@ -122,6 +122,7 @@ fn default_depth() -> String {
 }
 
 /// 파일 식별을 worker에 맡기고 즉시 응답한다. 결과는 IdentifyDone으로 적용한다.
+/// 응답의 `run`으로 `run.result`가 최종 결과(열었는지, 왜 못 열었는지)를 돌려준다.
 /// depth는 확장자/glob만 보는 cheap 또는 magic/MIME도 보는 deep이며 기본값은 deep이다.
 /// origin_surface_id가 mirror surface이면 경로는 원격 파일이라 depth와 관계없이 이름 기반 식별만 한다.
 /// 응답의 depth는 요청값을 그대로 돌려주며 실제 식별 방식을 나타내지 않는다.
@@ -178,12 +179,18 @@ pub fn handle_dispatch(
         req.origin_surface_id,
         req.user_navigation_url.as_deref(),
     );
+    let run = crate::request_runs::begin(
+        "file_handler.dispatch",
+        crate::request_runs::reader_of(caller),
+        json!({ "path": req.path }),
+    );
     let intent = crate::app::command::DomainIntent::DispatchFile {
         target,
         depth,
         origin_surface_id: req.origin_surface_id,
         dispatch_origin,
         ignore_size_limit: req.ignore_size_limit,
+        run: Some(run),
     };
     // 새 탭 선택과 실패 알림도 같은 요청 출처를 사용한다.
     out.push(match dispatch_origin {
@@ -197,6 +204,7 @@ pub fn handle_dispatch(
             "accepted": true,
             "depth": req.depth,
             "ignore_size_limit": req.ignore_size_limit,
+            "run": run,
         }),
     )
 }

@@ -6329,6 +6329,7 @@ about = "ファイル形式 detector の現在のマージ結果（表示名・�
 
 [cli.help._root.file-handler.dispatch]
 about = "ファイルハンドラー経由でパスを開く（エクスプローラーのダブルクリックと同じ経路）"
+long = "ファイルハンドラー経由でパスを開きます（エクスプローラーのダブルクリックと同じ経路）。\n\n受付応答（`run` 番号を含む）を 1 行出力したあと、最終結果を待って 2 行目に出力します。`state` は `succeeded` または `failed` で、`result` に何を開いたか、または開けなかった理由が出ます。開いたタブは `surface_id` で示します。最終状態が `succeeded` でなければ終了コード 1 で終わります。"
 
 [cli.help._root.file-handler.dispatch.arg.path]
 help = "開くパス"
@@ -6341,6 +6342,16 @@ help = "結果のサーフェスをフォーカス中のペインではなく、
 
 [cli.help._root.file-handler.dispatch.arg.ignore_size_limit]
 help = "大容量ファイルの確認ポップアップを省略して即座に開く"
+
+[cli.help._root.file-handler.dispatch.arg.no_wait]
+help = "受付応答だけを出力し、待たずに戻ります。結果は後で `tasty file-handler result --run <N>` で確認します"
+
+[cli.help._root.file-handler.result]
+about = "dispatch の進行状況または最終結果を `run` 番号で表示"
+long = "dispatch の進行状況または最終結果を `run` 番号で表示します。\n\n実行中は `done` が false です。フックハンドラーの dispatch と合わせて直近 128 件だけを保持し、それより古いか不明な run はエラーです。"
+
+[cli.help._root.file-handler.result.arg.run]
+help = "dispatch 受付応答の `run` 番号"
 
 [cli.help._root.clipboard]
 about = "クリップボード — ローカルのクリップボードを操作する"
@@ -6420,7 +6431,7 @@ help = "受付応答だけを出力し、待たずに戻ります。結果は後
 
 [cli.help._root.hook-handler.result]
 about = "dispatch の進行状況または最終結果を `run` 番号で表示"
-long = "dispatch の進行状況または最終結果を `run` 番号で表示します。\n\n実行中は `done` が false です。直近 128 件だけを保持し、それより古いか不明な run はエラーです。"
+long = "dispatch の進行状況または最終結果を `run` 番号で表示します。\n\n実行中は `done` が false です。ファイルハンドラーの要求と合わせて直近 128 件だけを保持し、それより古いか不明な run はエラーです。"
 
 [cli.help._root.hook-handler.result.arg.run]
 help = "dispatch 受付応答の `run` 番号"

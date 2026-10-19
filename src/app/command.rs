@@ -369,6 +369,8 @@ pub(crate) enum DomainIntent {
         dispatch_origin: crate::core::origin::FileDispatchOrigin,
         /// 대용량 markdown 확인을 건너뛸지 여부. 기본 false다.
         ignore_size_limit: bool,
+        /// 최종 결과를 받을 요청의 run([`crate::request_runs`]). IPC 요청만 가진다.
+        run: Option<u64>,
     },
 }
 

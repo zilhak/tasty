@@ -401,6 +401,7 @@ impl crate::app::App {
     }
 
     fn finish_structural_intent(&mut self, mut result: IntentResult) {
+        result.finish_completion();
         if result.response.error.is_none()
             && let Some(surface) = result
                 .response

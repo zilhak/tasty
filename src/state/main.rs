@@ -230,9 +230,9 @@ pub struct MainViewState {
     #[cfg(feature = "gui")]
     pub(crate) pending_popup_opens: Vec<PendingPopupOpen>,
 
-    /// 파일 핸들러의 플러그인 IPC 요청 (ipc_method, target). App이 전달한다.
+    /// 파일 핸들러의 플러그인 IPC 요청(메서드, 대상, 결과를 받을 run). App이 전달한다.
     #[cfg(feature = "gui")]
-    pub(crate) pending_handler_ipc: Vec<(String, crate::file::format::FileTarget)>,
+    pub(crate) pending_handler_ipc: Vec<(String, crate::file::format::FileTarget, Option<u64>)>,
 
     /// 사용자가 선택한 파일 처리기 이력. 창을 만들 때 공용 파일에서 읽고 선택할 때마다 저장한다.
     #[cfg(feature = "gui")]

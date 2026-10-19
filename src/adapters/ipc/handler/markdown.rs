@@ -1,6 +1,7 @@
 //! 같은 surface를 새 파일의 markdown으로 바꾼다. 확장자는 제한하지 않는다.
 //! 대용량 확인은 변환 후 플러그인이 처리하므로 호스트는 크기 확인 없이 변환한다.
 //! SurfaceConverted 후속 처리가 기존 mesh 프레임을 제거한다.
+//! 접수 응답의 `run`으로 `run.result`가 변환 결과(성공·실패 사유)를 돌려준다.
 
 use serde::Deserialize;
 use serde_json::json;
@@ -52,12 +53,24 @@ pub fn handle_navigate(
             params: json!({ "file": req.path }),
         },
     };
-    out.push(match origin {
-        crate::file::dispatch::FileDispatchOrigin::User => intent.from_user_menu("plugin_popup"),
-        crate::file::dispatch::FileDispatchOrigin::Agent
-        | crate::file::dispatch::FileDispatchOrigin::PluginUnverified => intent.from_agent_ipc(),
-    });
-    JsonRpcResponse::success(id, json!({ "accepted": true }))
+    let run = crate::request_runs::begin(
+        "markdown.navigate",
+        crate::request_runs::reader_of(caller),
+        json!({ "path": req.path, "surface_id": req.surface_id }),
+    );
+    out.push(
+        match origin {
+            crate::file::dispatch::FileDispatchOrigin::User => {
+                intent.from_user_menu("plugin_popup")
+            }
+            crate::file::dispatch::FileDispatchOrigin::Agent
+            | crate::file::dispatch::FileDispatchOrigin::PluginUnverified => {
+                intent.from_agent_ipc()
+            }
+        }
+        .with_completion(Some(run)),
+    );
+    JsonRpcResponse::success(id, json!({ "accepted": true, "run": run }))
 }
 
 #[cfg(test)]

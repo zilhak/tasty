@@ -1265,3 +1265,49 @@ fn an_explicit_cwd_opens_an_explorer_there_from_every_creation_method() {
     let refused = public(&mut journal, &mut session, &rx);
     assert!(refused.error.is_some(), "{refused:?}");
 }
+
+#[test]
+fn a_finished_intent_records_its_result_in_the_requesting_run() {
+    use crate::request_runs::{begin, lookup};
+    let result = |response, completion| IntentResult {
+        #[cfg(feature = "gui")]
+        view: None,
+        engine: EngineId::for_test(),
+        origin: crate::intent::IntentOrigin::System,
+        response,
+        completion,
+    };
+    let opened = begin("file_handler.dispatch", None, serde_json::Value::Null);
+    result(
+        JsonRpcResponse::success(
+            serde_json::Value::Null,
+            serde_json::json!({"ok": true, "surface_id": 9}),
+        ),
+        Some(opened),
+    )
+    .finish_completion();
+    let v = lookup(opened, None).unwrap();
+    assert_eq!(v["state"], "succeeded");
+    assert_eq!(v["surface_id"], 9);
+    assert_eq!(v["result"], "surface 9 is ready");
+
+    let refused = begin("markdown.navigate", None, serde_json::Value::Null);
+    result(
+        JsonRpcResponse::error(serde_json::Value::Null, -32602, "surface 4 not found"),
+        Some(refused),
+    )
+    .finish_completion();
+    let v = lookup(refused, None).unwrap();
+    assert_eq!(v["state"], "failed");
+    assert_eq!(v["result"], "surface 4 not found");
+    assert_eq!(v["code"], -32602);
+
+    // run이 없는 명령은 다른 요청의 run을 건드리지 않는다.
+    let untouched = begin("markdown.navigate", None, serde_json::Value::Null);
+    result(
+        JsonRpcResponse::error(serde_json::Value::Null, -32602, "x"),
+        None,
+    )
+    .finish_completion();
+    assert_eq!(lookup(untouched, None).unwrap()["state"], "running");
+}

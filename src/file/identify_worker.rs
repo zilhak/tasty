@@ -41,6 +41,7 @@ impl IdentifyWorker {
         origin_surface_id: Option<u32>,
         dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
         ignore_size_limit: bool,
+        run: Option<u64>,
     ) -> IdentifyRequestId {
         let id = IdentifyRequestId(self.next_id.fetch_add(1, Ordering::Relaxed));
         let registry = self.registry.clone();
@@ -55,6 +56,7 @@ impl IdentifyWorker {
                 origin_surface_id,
                 dispatch_origin,
                 ignore_size_limit,
+                run,
             };
             #[expect(
                 clippy::let_underscore_must_use,
@@ -74,6 +76,7 @@ impl crate::core::identify_port::IdentifySpawner for IdentifyWorker {
         origin_surface_id: Option<u32>,
         dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
         ignore_size_limit: bool,
+        run: Option<u64>,
     ) {
         let _id = self.spawn(
             target,
@@ -81,6 +84,7 @@ impl crate::core::identify_port::IdentifySpawner for IdentifyWorker {
             origin_surface_id,
             dispatch_origin,
             ignore_size_limit,
+            run,
         );
     }
 }

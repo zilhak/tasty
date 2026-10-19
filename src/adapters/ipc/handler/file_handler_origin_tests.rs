@@ -168,6 +168,7 @@ fn dispatch_through_with(
         crate::file::dispatch::FileDispatchPolicy {
             dispatch_origin,
             ignore_size_limit,
+            run: None,
         },
     );
     // App receives creation requests; the View does not synchronously create/select a tab.
@@ -473,6 +474,7 @@ fn only_an_unverified_plugin_request_opens_the_fallback_picker() {
             crate::file::dispatch::FileDispatchPolicy {
                 dispatch_origin,
                 ignore_size_limit,
+                run: None,
             },
         );
         assert_eq!(

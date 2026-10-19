@@ -513,6 +513,7 @@ pub(crate) fn apply_explorer_action(
                     origin_surface_id: Some(sid),
                     dispatch_origin: crate::file::dispatch::FileDispatchOrigin::User,
                     ignore_size_limit: false,
+                    run: None,
                 }
                 .from_user_menu("explorer_open_file"),
             );

@@ -31,8 +31,34 @@ impl DispatchSource {
 }
 
 impl App {
-    /// Core가 반환한 이벤트를 같은 source·origin으로 처리한다.
+    /// Core가 반환한 이벤트를 같은 source·origin으로 처리한다. 결과를 받을 run이 있는 명령은
+    /// journal 완료가 그 run을 끝내며, journal에 들어가지 못했으면 여기서 실패로 끝낸다.
     pub(crate) fn dispatch_domain_intent(
+        &mut self,
+        source: DispatchSource,
+        dispatched: DispatchedIntent,
+    ) -> anyhow::Result<()> {
+        let Some(run) = dispatched.completion else {
+            return self.apply_domain_intent(source, dispatched);
+        };
+        self.journal.set_intent_completion(Some(run));
+        let applied = self.apply_domain_intent(source, dispatched);
+        if let Some(run) = self.journal.take_intent_completion() {
+            let reason = match &applied {
+                Err(error) => error.to_string(),
+                Ok(()) => "the request was not applied".to_string(),
+            };
+            crate::request_runs::finish(
+                run,
+                crate::request_runs::RunState::Failed,
+                reason,
+                serde_json::Value::Null,
+            );
+        }
+        applied
+    }
+
+    fn apply_domain_intent(
         &mut self,
         source: DispatchSource,
         mut dispatched: DispatchedIntent,

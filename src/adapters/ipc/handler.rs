@@ -50,6 +50,7 @@ mod message;
 mod meta;
 pub(crate) mod notification;
 pub(crate) mod notification_channel;
+mod run_result;
 // 창별 목록을 호스트에서 합산할 수 있도록 공개한다.
 pub(crate) mod keybinding;
 pub(crate) mod output;
@@ -775,6 +776,7 @@ fn route_engine_handler(
         "hook_handler.reload" => hook_handler::handle_reload(id),
         "hook_handler.dispatch" => hook_handler::handle_dispatch(core, id, &request.params),
         "hook_handler.result" => hook_handler::handle_result(id, &request.params),
+        "run.result" => run_result::handle(id, caller, &request.params),
         "completion_strategy.list" => completion_strategy::handle_list(id),
         #[cfg(feature = "gui")]
         "markdown.navigate" => markdown::handle_navigate(

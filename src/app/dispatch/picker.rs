@@ -32,9 +32,16 @@ impl App {
             let origin_surface_id = data.origin_surface_id;
             let dispatch_origin = data.dispatch_origin;
             let ignore_size_limit = data.ignore_size_limit;
+            let run = data.run.take().map(|guard| guard.take());
             main.state.dialogs.file_handler_picker = None;
             // 설정 창 열기는 ActiveEventLoop가 필요해 App에서 처리한다.
             if matches!(result, crate::state::FileHandlerPickerResult::OpenSettings) {
+                crate::file::dispatch::finish_run(
+                    run,
+                    crate::request_runs::RunState::Cancelled,
+                    "the file handler picker closed to open settings",
+                    serde_json::Value::Null,
+                );
                 self.state.pending_settings_file_handler_tab = true;
                 crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
             } else {
@@ -48,6 +55,7 @@ impl App {
                     crate::file::dispatch::FileDispatchPolicy {
                         dispatch_origin,
                         ignore_size_limit,
+                        run,
                     },
                 );
             }

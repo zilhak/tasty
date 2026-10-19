@@ -184,13 +184,17 @@ impl ApplicationHandler<AppEvent> for App {
                 origin_surface_id,
                 dispatch_origin,
                 ignore_size_limit,
+                run,
             } => self.handle_identify_done(
                 request_id,
                 target,
                 detector,
                 origin_surface_id,
-                dispatch_origin,
-                ignore_size_limit,
+                crate::file::dispatch::FileDispatchPolicy {
+                    dispatch_origin,
+                    ignore_size_limit,
+                    run,
+                },
             ),
         }
     }

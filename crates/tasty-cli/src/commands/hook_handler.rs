@@ -92,8 +92,9 @@ pub enum HookHandlerCommands {
     },
     /// Show the progress or final result of a dispatch by its `run` number.
     ///
-    /// `done` is false while it is still running. The last 128 dispatches are
-    /// kept; an older or unknown run is an error.
+    /// `done` is false while it is still running. The last 128 runs, counted
+    /// together with file handler requests, are kept; an older or unknown run
+    /// is an error.
     Result {
         /// The `run` number from the dispatch acceptance.
         #[arg(long)]
