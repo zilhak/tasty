@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
@@ -159,12 +159,7 @@ impl IpcConnection {
 
     /// Send a JSON-RPC request and read the response.
     pub fn send(&mut self, request: &JsonRpcRequest) -> Result<serde_json::Value> {
-        let json = serde_json::to_string(request)?;
-        // 본문과 개행을 한 버퍼로 묶어 write_all을 한 번 호출한다.
-        let mut line = json.into_bytes();
-        line.push(b'\n');
-        self.writer.write_all(&line)?;
-        self.writer.flush()?;
+        self.write_request(request)?;
 
         loop {
             let mut line = String::new();
@@ -181,22 +176,36 @@ impl IpcConnection {
                 continue;
             }
 
-            let response: JsonRpcResponse = serde_json::from_str(trimmed)?;
-
-            if let Some(error) = response.error {
-                return Err(JsonRpcCallError {
-                    code: error.code,
-                    message: error.message,
-                    data: error.data,
-                }
-                .into());
-            }
-
-            return Ok(response.result.unwrap_or(serde_json::Value::Null));
+            return Self::parse_response(trimmed);
         }
     }
 
+    fn write_request(&mut self, request: &JsonRpcRequest) -> Result<()> {
+        let json = serde_json::to_string(request)?;
+        // 본문과 개행을 한 버퍼로 묶어 write_all을 한 번 호출한다.
+        let mut line = json.into_bytes();
+        line.push(b'\n');
+        self.writer.write_all(&line)?;
+        self.writer.flush()?;
+        Ok(())
+    }
+
+    fn parse_response(line: &str) -> Result<serde_json::Value> {
+        let response: JsonRpcResponse = serde_json::from_str(line)?;
+        if let Some(error) = response.error {
+            return Err(JsonRpcCallError {
+                code: error.code,
+                message: error.message,
+                data: error.data,
+            }
+            .into());
+        }
+        Ok(response.result.unwrap_or(serde_json::Value::Null))
+    }
+
     /// 응답을 `bound`까지만 읽는다. 후속 조회처럼 호출자가 자기 대기 상한을 지켜야 할 때 쓴다.
+    /// 상한은 요청을 쓴 뒤부터 응답 한 줄을 다 읽을 때까지의 전체 시간이다. 응답이 조각으로 이어
+    /// 와도 읽을 때마다 남은 시간을 다시 계산한다. 연결과 요청 쓰기는 상한에 들지 않는다.
     /// 요청의 `response_timeout_ms`(서버가 지키는 최초 명령의 응답 시한)는 바꾸지 않는다.
     /// 상한 안에 응답 줄을 다 읽지 못하면 `Ok(None)`이다. 그 응답이 나중에 도착할 수 있으므로
     /// 이 연결을 다시 쓰지 않는다. 그 밖의 결과는 [`Self::send`]와 같고 읽기 timeout을 없앤다.
@@ -205,23 +214,49 @@ impl IpcConnection {
         request: &JsonRpcRequest,
         bound: Duration,
     ) -> Result<Option<serde_json::Value>> {
-        // 0은 timeout 없음이라 남은 시간이 없어도 최소 1ms를 둔다.
-        self.reader
-            .get_ref()
-            .set_read_timeout(Some(bound.max(Duration::from_millis(1))))?;
-        let sent = self.send(request);
-        if let Err(e) = &sent
-            && e.downcast_ref::<std::io::Error>().is_some_and(|io| {
-                matches!(
-                    io.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                )
-            })
-        {
-            return Ok(None);
+        self.write_request(request)?;
+        let deadline = Instant::now() + bound;
+        let mut line = Vec::new();
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Ok(None);
+            }
+            self.reader.get_ref().set_read_timeout(Some(left))?;
+            let available = match self.reader.fill_buf() {
+                Ok(available) => available,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    return Ok(None);
+                }
+                Err(e) => return Err(e.into()),
+            };
+            if available.is_empty() {
+                anyhow::bail!(
+                    "tasty instance closed the connection without responding \
+                     (host may be shutting down)"
+                );
+            }
+            let Some(end) = available.iter().position(|&b| b == b'\n') else {
+                let taken = available.len();
+                line.extend_from_slice(available);
+                self.reader.consume(taken);
+                continue;
+            };
+            line.extend_from_slice(&available[..end]);
+            self.reader.consume(end + 1);
+            let text = String::from_utf8(std::mem::take(&mut line))?;
+            if text.trim().is_empty() {
+                continue;
+            }
+            self.reader.get_ref().set_read_timeout(None)?;
+            return Self::parse_response(text.trim()).map(Some);
         }
-        self.reader.get_ref().set_read_timeout(None)?;
-        sent.map(Some)
     }
 
     /// 연결당 한 번 기능을 조회한다. 실제 요청과 같은 session_token으로 호출자를 유지한다.
@@ -450,6 +485,55 @@ mod tests {
         assert_eq!(second, None);
         assert!(started.elapsed() < std::time::Duration::from_secs(3));
         drop(answer.join().unwrap());
+    }
+
+    /// 한 줄 응답이 70ms마다 1바이트씩 오면 읽기마다 상한 안에 무언가 오므로, 상한은 읽기마다가
+    /// 아니라 전체에 걸려야 한다.
+    #[test]
+    fn a_bounded_read_stops_a_trickling_answer_at_the_total_bound() {
+        use std::io::{BufRead, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut conn = IpcConnection::new(TcpStream::connect(addr).unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let trickle = std::thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(server.try_clone().unwrap());
+            let mut writer = server;
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let started = std::time::Instant::now();
+            let answer = br#"{"jsonrpc":"2.0","id":1,"result":{"done":true}}"#;
+            for byte in answer {
+                if started.elapsed() > std::time::Duration::from_millis(400)
+                    || writer.write_all(&[*byte]).is_err()
+                {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(70));
+            }
+        });
+        let req = JsonRpcRequest {
+            caller_agent_id: None,
+            jsonrpc: "2.0".to_string(),
+            method: "run.result".to_string(),
+            params: serde_json::json!({ "run": 1 }),
+            id: Some(serde_json::Value::from(1)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: None,
+        };
+        let started = std::time::Instant::now();
+        let answer = conn
+            .send_reading_within(&req, std::time::Duration::from_millis(100))
+            .unwrap();
+        let waited = started.elapsed();
+        assert_eq!(answer, None);
+        assert!(
+            waited < std::time::Duration::from_millis(300),
+            "waited {waited:?}"
+        );
+        drop(conn);
+        trickle.join().unwrap();
     }
 
     #[test]
