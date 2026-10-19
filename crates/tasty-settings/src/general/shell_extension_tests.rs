@@ -93,6 +93,72 @@ fn bash_prompt_sources_every_extension_and_survives_a_failing_one() {
     assert!(stdout.contains("glob-restored"), "{stdout:?}");
 }
 
+/// 사용자가 glob을 끈 셸(bash `set -f`, zsh `setopt noglob`)에서도 확장을 모두 읽는다.
+/// 확장은 사용자의 원래 옵션으로 실행되고, 프롬프트 뒤에도 옵션이 그대로 남는다.
+/// 기본 옵션 셸은 확장 안에서도 glob이 켜져 있어 옵션을 바꾸지 않았음을 대조한다.
+#[test]
+fn extensions_load_under_a_user_noglob_and_see_the_users_options() {
+    let home = extension_home();
+    let probe = home.path().join("shell-integrations/d.sh");
+    std::fs::write(
+        &probe,
+        "if [[ -o noglob ]]; then __EXT_GLOB=off; else __EXT_GLOB=on; fi\n",
+    )
+    .unwrap();
+    let after =
+        "if [[ -o noglob ]]; then echo after=off; else echo after=on; fi\necho ext=$__EXT_GLOB\n";
+    let bash = ["--norc", "--noprofile", "-c"];
+    let zsh = ["-f", "-c"];
+    for (shell, args, body, disable) in [
+        ("bash", &bash[..], BUILTIN_BASHRC_PRE, "set -f"),
+        ("zsh", &zsh[..], BUILTIN_ZSHENV_BODY, "setopt noglob"),
+    ] {
+        for (option, expected) in [(disable, "off"), ("", "on")] {
+            let script = format!("{body}\n{option}\n{SCENARIO}\n{after}");
+            let Some(stdout) = run(shell, args, &script, home.path()) else {
+                continue;
+            };
+            assert_contract(shell, &stdout);
+            assert!(
+                stdout.contains(&format!("ext={expected}")),
+                "{shell} {option:?}: extension must see the user's glob option: {stdout:?}"
+            );
+            assert!(
+                stdout.contains(&format!("after={expected}")),
+                "{shell} {option:?}: option must be restored: {stdout:?}"
+            );
+        }
+    }
+}
+
+/// 사용자가 errexit(bash `set -e`, zsh `setopt err_exit`)를 켜도 실패하는 확장이 셸을 끝내지
+/// 않고 다음 확장과 프롬프트가 이어진다. 직전 상태는 D에 남고 사용자의 errexit도 유지된다.
+#[test]
+fn a_failing_extension_does_not_end_a_shell_with_errexit() {
+    let home = extension_home();
+    let scenario = "__x() { return 23; }\n__x || __tasty_osc133_precmd\necho\necho \"order=$__EXT_ORDER a=$EXT_A\"\nif [[ -o errexit ]]; then echo errexit=kept; fi\n";
+    let bash = ["--norc", "--noprofile", "-c"];
+    let zsh = ["-f", "-c"];
+    for (shell, args, body, enable) in [
+        ("bash", &bash[..], BUILTIN_BASHRC_PRE, "set -e"),
+        ("zsh", &zsh[..], BUILTIN_ZSHENV_BODY, "setopt err_exit"),
+    ] {
+        let script = format!("{body}\n{enable}\n{scenario}");
+        let Some(stdout) = run(shell, args, &script, home.path()) else {
+            continue;
+        };
+        assert!(
+            stdout.contains("\x1b]133;D;23\x1b\\"),
+            "{shell}: {stdout:?}"
+        );
+        assert!(
+            stdout.contains("order=abc a=1"),
+            "{shell}: scripts after the failing one must run: {stdout:?}"
+        );
+        assert!(stdout.contains("errexit=kept"), "{shell}: {stdout:?}");
+    }
+}
+
 #[test]
 fn zsh_prompt_sources_every_extension_and_survives_a_failing_one() {
     let home = extension_home();

@@ -102,6 +102,7 @@ bash·zsh 프롬프트 함수는 D·A를 보낸 뒤 데이터 홈(`TASTY_PARENT_
 규칙은 [플러그인 개발 가이드](../../dev-guide/plugin-development.md#셸-통합-확장-스크립트)에 있다.
 
 - Given 직전 명령이 23으로 끝났고 한 확장이 `return 7`로 끝날 때, When 프롬프트를 준비하면, Then D는 23을 보내고 나머지 확장과 프롬프트가 계속 동작한다.
+- Given 사용자가 errexit(`set -e`·`setopt err_exit`)나 noglob(`set -f`·`setopt noglob`)을 켰을 때, When 프롬프트를 준비하면, Then 확장을 모두 읽고 실패한 확장 때문에 셸이 끝나지 않으며 사용자의 옵션은 그대로 남는다.
 - Given 확장 디렉터리가 없거나 비어 있을 때, When 프롬프트를 준비하면, Then A·D만 보내며 bash의 `nullglob`·`failglob`과 zsh 옵션은 사용자 값 그대로다.
 - 확장 안의 `exit`처럼 셸 자체를 끝내는 동작은 막지 않는다.
 

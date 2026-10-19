@@ -49,14 +49,18 @@ __tasty_title() {
     printf '\033]0;%s\007' "$name"
 }
 
-# List extension scripts in byte order. The glob options and locale are restored before sourcing.
+# List extension scripts in byte order. The glob options (including a user's set -f) and locale
+# are restored before sourcing, so extensions run with the user's own options.
 __tasty_shell_extension_files() {
-    local LC_ALL=C nullglob_was=0 failglob_was=0
+    local LC_ALL=C nullglob_was=0 failglob_was=0 noglob_was=0
     shopt -q nullglob && nullglob_was=1
     shopt -q failglob && failglob_was=1
+    [[ $- == *f* ]] && noglob_was=1
     shopt -s nullglob
     shopt -u failglob
+    set +f
     __TASTY_SHELL_EXTENSIONS=("$1"/*.sh)
+    (( noglob_was )) && set -f
     (( nullglob_was )) || shopt -u nullglob
     (( failglob_was )) && shopt -s failglob
     return 0
@@ -73,7 +77,8 @@ __tasty_osc133_precmd() {
         __tasty_shell_extension_files "$TASTY_PARENT_HOME/shell-integrations"
         local __tasty_ext
         for __tasty_ext in ${__TASTY_SHELL_EXTENSIONS[@]+"${__TASTY_SHELL_EXTENSIONS[@]}"}; do
-            [ -f "$__tasty_ext" ] && source "$__tasty_ext"
+            # || keeps a user's errexit from ending the shell on a script's failure.
+            if [ -f "$__tasty_ext" ]; then source "$__tasty_ext" || :; fi
         done
     fi
 }
@@ -780,7 +785,8 @@ __tasty_osc133_precmd() {
         __tasty_shell_extension_files "$TASTY_PARENT_HOME/shell-integrations"
         local __tasty_ext
         for __tasty_ext in "${__TASTY_SHELL_EXTENSIONS[@]}"; do
-            [ -f "$__tasty_ext" ] && source "$__tasty_ext"
+            # || keeps a user's errexit from ending the shell on a script's failure.
+            if [ -f "$__tasty_ext" ]; then source "$__tasty_ext" || :; fi
         done
     fi
 }
