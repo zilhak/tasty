@@ -144,6 +144,26 @@ pub fn webview_input_holes(webview: PhysicalRect, zones: &[PhysicalRect]) -> Vec
         .collect()
 }
 
+/// 안내 카드와 겹치는 부분을 WebView 창 기준 좌표로 돌려준다. native 창은 이 부분을 그리지도,
+/// 포인터를 받지도 않아 뒤의 egui 안내가 보인다. 카드 경계는 바깥쪽 정수 픽셀로 넓혀 카드 가장자리가
+/// 페이지에 덮이지 않게 한다. `webview` 는 `set_bounds` 와 같이 반올림한 창 사각형이다.
+pub fn notice_clip_holes(webview: PhysicalRect, cards: &[PhysicalRect]) -> Vec<PhysicalRect> {
+    let outward: Vec<PhysicalRect> = cards
+        .iter()
+        .map(|c| {
+            let x0 = c.x.value().floor();
+            let y0 = c.y.value().floor();
+            PhysicalRect {
+                x: PhysicalPx(x0),
+                y: PhysicalPx(y0),
+                width: PhysicalPx((c.x + c.width).value().ceil() - x0),
+                height: PhysicalPx((c.y + c.height).value().ceil() - y0),
+            }
+        })
+        .collect();
+    webview_input_holes(webview, &outward)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,5 +384,34 @@ mod tests {
         );
         let holes = webview_input_holes(rect(180.0, 401.0, 1100.0, 294.0), &zones);
         assert_eq!(values(&holes), values(&[rect(0.0, 0.0, 1100.0, 3.0)]));
+    }
+
+    /// 좁은 오른쪽 pane 전체가 안내 아래에 있어도 bounds는 그대로 두고 겹친 부분만 뺀다.
+    #[test]
+    fn a_pane_entirely_under_the_notice_is_clipped_where_the_card_covers_it() {
+        let card = rect(600.0, 40.0, 360.0, 200.0);
+        let holes = notice_clip_holes(rect(700.0, 0.0, 268.0, 400.0), &[card]);
+        assert_eq!(values(&holes), vec![[0.0, 40.0, 260.0, 200.0]]);
+    }
+
+    /// 카드 경계가 소수 픽셀이면 바깥쪽으로 넓힌다. 겹치지 않는 카드와 카드 사이 간격은 빼지 않는다.
+    #[test]
+    fn card_edges_round_outward_and_gaps_between_cards_stay_visible() {
+        let cards = [
+            rect(600.4, 40.6, 359.2, 99.8),
+            rect(600.4, 152.6, 359.2, 80.0),
+            rect(0.0, 0.0, 10.0, 10.0),
+        ];
+        let holes = notice_clip_holes(rect(500.0, 30.0, 400.0, 300.0), &cards);
+        assert_eq!(
+            values(&holes),
+            vec![[100.0, 10.0, 300.0, 101.0], [100.0, 122.0, 300.0, 81.0]]
+        );
+    }
+
+    /// 안내가 없으면 구멍이 없어 원래 영역으로 돌아간다.
+    #[test]
+    fn no_cards_means_no_clip() {
+        assert!(notice_clip_holes(rect(0.0, 0.0, 800.0, 600.0), &[]).is_empty());
     }
 }

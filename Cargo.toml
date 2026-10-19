@@ -313,6 +313,9 @@ objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfigurat
 objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSWorkspace", "libc"], optional = true }
 # WKContentRuleList의 completion handler에 필요한 블록 타입이다.
 block2 = { version = "0.6", optional = true }
+# 복원 안내와 겹친 WebView 영역을 layer mask로 빼는 데 쓴다.
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAShapeLayer", "objc2-core-foundation", "objc2-core-graphics"], optional = true }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGPath"], optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-core = "0.61"
@@ -387,6 +390,8 @@ gui = [
     "dep:objc2-web-kit",
     "dep:objc2-app-kit",
     "dep:block2",
+    "dep:objc2-quartz-core",
+    "dep:objc2-core-graphics",
     "dep:webview2-com",
     "dep:tray-icon",
     "dep:webkit2gtk",

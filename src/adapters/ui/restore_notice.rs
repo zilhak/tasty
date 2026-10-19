@@ -29,8 +29,9 @@ pub(crate) struct RestoreNotices {
     entries: Vec<RestoreNoticeEntry>,
     /// 사용자가 닫은 안내 id. App이 가져간다.
     acknowledged: Vec<u64>,
-    /// 직전 프레임에 그린 안내 전체 사각형(논리 좌표). native WebView bounds 축소에 쓴다.
-    occupied: Option<egui::Rect>,
+    /// 직전 프레임에 그린 안내 카드별 사각형(논리 좌표). 카드 사이 간격은 들어가지 않는다.
+    /// native WebView가 이 영역만 그림과 포인터에서 빼서 안내가 보이게 한다.
+    cards: Vec<crate::model::LogicalRect>,
     /// 직전 프레임에 안내 안쪽 컨트롤이 키보드 포커스를 가졌는지. 이때만 키를 egui로 보낸다.
     keyboard_inside: bool,
     /// 더한 뒤 아직 그리지 않은 안내가 있는지. 프레임을 그리지 않는 halt 중에 창을 다시 그리게 한다.
@@ -59,16 +60,20 @@ impl RestoreNotices {
 
     /// 직전 프레임에 그린 안내가 이 위치(논리 좌표)를 덮는지.
     pub(crate) fn covers(&self, pos: egui::Pos2) -> bool {
-        self.occupied.is_some_and(|rect| rect.contains(pos))
+        let x = crate::model::LogicalPx(pos.x);
+        let y = crate::model::LogicalPx(pos.y);
+        self.cards.iter().any(|rect| {
+            x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height
+        })
     }
 
     pub(crate) fn take_acknowledged(&mut self) -> Vec<u64> {
         std::mem::take(&mut self.acknowledged)
     }
 
-    /// 직전 프레임에 그린 안내 영역. 안내가 없으면 `None`이다.
-    pub(crate) fn occupied(&self) -> Option<egui::Rect> {
-        self.occupied
+    /// 직전 프레임에 그린 안내 카드들. 안내가 없으면 비어 있다.
+    pub(crate) fn card_rects(&self) -> &[crate::model::LogicalRect] {
+        &self.cards
     }
 
     /// 안내 안쪽 컨트롤이 키보드 포커스를 가졌는지. 안내가 나타나는 것만으로는 true가 되지 않는다.
@@ -131,6 +136,7 @@ pub(crate) fn draw_notice_column(
     let gap = theme.notice_column_gap().value();
     let mut next_top = column.top();
     let mut occupied: Option<egui::Rect> = None;
+    let mut cards = Vec::new();
     let mut dismissed = Vec::new();
     let mut keyboard_inside = false;
     for entry in &notices.entries {
@@ -165,6 +171,12 @@ pub(crate) fn draw_notice_column(
             dismissed.push(entry.id);
         } else {
             keyboard_inside |= output.focused_inside;
+            cards.push(crate::model::LogicalRect {
+                x: crate::model::LogicalPx(output.rect.min.x),
+                y: crate::model::LogicalPx(output.rect.min.y),
+                width: crate::model::LogicalPx(output.rect.width()),
+                height: crate::model::LogicalPx(output.rect.height()),
+            });
         }
         occupied = Some(occupied.map_or(output.rect, |rect| rect.union(output.rect)));
         next_top = output.rect.bottom() + gap;
@@ -175,52 +187,10 @@ pub(crate) fn draw_notice_column(
     if notices.entries.is_empty() {
         occupied = None;
     }
-    notices.occupied = occupied;
+    notices.cards = cards;
     notices.keyboard_inside = keyboard_inside;
     notices.undrawn = false;
     occupied
-}
-
-/// 안내와 겹치는 native WebView의 bounds를 안내 옆으로 줄인다. WebView를 숨기지 않고 포커스·입력
-/// 대상도 바꾸지 않는다. 기본은 안내 열 왼쪽 경계(열 x − inset)까지 폭을 줄이는 것이다. pane이 좁아
-/// 그 왼쪽에 남는 면적이 안내 아래(안내 bottom + inset부터)에 남는 면적보다 작으면 위쪽을 안내
-/// 아래로 내린다. 어느 쪽에도 남는 면적이 없으면(pane 전체가 안내 안) 페이지를 계속 보이고 쓸 수
-/// 있도록 bounds를 그대로 둔다. 겹치지 않으면 그대로 돌려준다.
-pub(crate) fn shrink_beside_notices(
-    bounds: crate::webview::WebViewBounds,
-    occupied: Option<egui::Rect>,
-    inset: f32,
-) -> crate::webview::WebViewBounds {
-    let Some(notice) = occupied else {
-        return bounds;
-    };
-    let overlaps = bounds.x < f64::from(notice.right())
-        && bounds.x + bounds.width > f64::from(notice.left())
-        && bounds.y < f64::from(notice.bottom())
-        && bounds.y + bounds.height > f64::from(notice.top());
-    if !overlaps {
-        return bounds;
-    }
-    let left_width = (f64::from(notice.left() - inset) - bounds.x).max(0.0);
-    let below_top = f64::from(notice.bottom() + inset);
-    let below_height = (bounds.y + bounds.height - below_top).max(0.0);
-    let left_area = left_width * bounds.height;
-    let below_area = below_height * bounds.width;
-    if left_area <= 0.0 && below_area <= 0.0 {
-        return bounds;
-    }
-    if left_area >= below_area {
-        crate::webview::WebViewBounds {
-            width: left_width,
-            ..bounds
-        }
-    } else {
-        crate::webview::WebViewBounds {
-            y: below_top,
-            height: below_height,
-            ..bounds
-        }
-    }
 }
 
 #[cfg(test)]
@@ -267,55 +237,5 @@ mod tests {
         notices.dismiss(1);
         assert_eq!(notices.take_acknowledged(), vec![1]);
         assert!(notices.take_acknowledged().is_empty());
-    }
-
-    fn bounds(x: f64, width: f64) -> crate::webview::WebViewBounds {
-        crate::webview::WebViewBounds {
-            x,
-            y: 0.0,
-            width,
-            height: 400.0,
-        }
-    }
-
-    #[test]
-    fn an_overlapping_webview_ends_left_of_the_notice() {
-        let notice = egui::Rect::from_min_max(egui::pos2(600.0, 40.0), egui::pos2(960.0, 240.0));
-        let shrunk = shrink_beside_notices(bounds(0.0, 968.0), Some(notice), 8.0);
-        assert_eq!(shrunk.width, 592.0);
-        assert_eq!(shrunk.x, 0.0);
-        assert_eq!(shrunk.height, 400.0);
-    }
-
-    #[test]
-    fn a_narrow_pane_under_the_notice_moves_below_it_instead_of_vanishing() {
-        let notice = egui::Rect::from_min_max(egui::pos2(600.0, 40.0), egui::pos2(960.0, 240.0));
-        let shrunk = shrink_beside_notices(bounds(700.0, 268.0), Some(notice), 8.0);
-        assert_eq!(shrunk.x, 700.0);
-        assert_eq!(shrunk.width, 268.0);
-        assert_eq!(shrunk.y, 248.0);
-        assert_eq!(shrunk.height, 152.0);
-    }
-
-    #[test]
-    fn a_pane_entirely_inside_the_notice_keeps_its_bounds() {
-        let notice = egui::Rect::from_min_max(egui::pos2(600.0, 0.0), egui::pos2(960.0, 500.0));
-        assert_eq!(
-            shrink_beside_notices(bounds(700.0, 200.0), Some(notice), 8.0),
-            bounds(700.0, 200.0)
-        );
-    }
-
-    #[test]
-    fn a_webview_away_from_the_notice_keeps_its_bounds() {
-        let notice = egui::Rect::from_min_max(egui::pos2(600.0, 40.0), egui::pos2(960.0, 240.0));
-        assert_eq!(
-            shrink_beside_notices(bounds(0.0, 400.0), Some(notice), 8.0),
-            bounds(0.0, 400.0)
-        );
-        assert_eq!(
-            shrink_beside_notices(bounds(0.0, 968.0), None, 8.0),
-            bounds(0.0, 968.0)
-        );
     }
 }

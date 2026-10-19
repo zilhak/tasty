@@ -439,6 +439,8 @@ impl NavDelegate {
 struct KeyWebViewIvars {
     surface_id: u32,
     key_bridge: Rc<dyn WebViewKeySink>,
+    /// 위에 egui가 그리는 안내 카드 영역(이 뷰 좌표). 이 안의 포인터는 받지 않고 부모로 보낸다.
+    clip_holes: RefCell<Vec<NSRect>>,
 }
 
 define_class!(
@@ -488,6 +490,28 @@ define_class!(
             unsafe { msg_send![super(self), mouseDown: event] }
         }
 
+        /// 안내 카드 아래의 포인터는 받지 않아 뒤의 host 뷰로 간다. layer mask는 그림만 가리므로 따로 뺀다.
+        #[unsafe(method(hitTest:))]
+        fn hit_test(&self, point: NSPoint) -> *mut NSView {
+            // point는 superview 좌표다. 구멍은 이 뷰 좌표로 저장한다.
+            let local = match self.superview() {
+                Some(parent) => self.convertPoint_fromView(point, Some(&parent)),
+                None => point,
+            };
+            let in_hole = self.ivars().clip_holes.borrow().iter().any(|r| {
+                local.x >= r.origin.x
+                    && local.x < r.origin.x + r.size.width
+                    && local.y >= r.origin.y
+                    && local.y < r.origin.y + r.size.height
+            });
+            if in_hole {
+                std::ptr::null_mut()
+            } else {
+                // SAFETY: main thread AppKit. super 구현에 위임.
+                unsafe { msg_send![super(self), hitTest: point] }
+            }
+        }
+
         /// 내부 content view가 first responder가 되면 mouseDown이 여기 오지 않을 수 있어 포커스 경로도 알린다.
         #[unsafe(method(becomeFirstResponder))]
         fn become_first_responder(&self) -> bool {
@@ -510,6 +534,7 @@ impl KeyWebView {
         let this = Self::alloc(mtm).set_ivars(KeyWebViewIvars {
             surface_id,
             key_bridge,
+            clip_holes: RefCell::new(Vec::new()),
         });
         // SAFETY: WKWebView 의 지정 초기화자를 super 로 호출.
         unsafe { msg_send![super(this), initWithFrame: frame, configuration: config] }
@@ -564,6 +589,8 @@ pub struct PlatformWebView {
     script_gate: Rc<RefCell<Option<ScriptGate>>>,
     /// WKWebView의 delegate 참조가 weak이므로 여기서 수명을 유지한다.
     _nav_delegate: Retained<NavDelegate>,
+    /// 마지막으로 적용한 안내 구멍과 그때의 뷰 크기. 같으면 mask를 다시 만들지 않는다.
+    applied_clip: RefCell<Option<(Vec<[i32; 4]>, f64, f64)>>,
 }
 
 /// 이 backend의 생성 실패는 Permanent로 분류해 같은 생성 요청을 재시도하지 않는다.
@@ -669,6 +696,7 @@ impl PlatformWebView {
                 pending_navigations,
                 script_gate,
                 _nav_delegate: nav_delegate,
+                applied_clip: RefCell::new(None),
             })
         }
     }
@@ -719,6 +747,87 @@ impl PlatformWebView {
 
     pub fn set_visible(&self, visible: bool) {
         self.webview.setHidden(!visible);
+    }
+
+    /// 위에 egui가 그리는 안내 카드(`clip`, 이 뷰 왼쪽 위 기준 물리 px `[x, y, 너비, 높이]`)를 그림과
+    /// 포인터에서 뺀다. 그림은 layer mask(전체 사각형과 구멍의 even-odd 경로)로, 포인터는 `hitTest:`로
+    /// 뺀다. frame·표시·first responder는 바꾸지 않는다. 비면 mask와 구멍을 지워 원래대로 돌아간다.
+    /// host 입력 영역(`_input`)을 빼는 방법은 아직 없어 `webview_edge_inset` 여백으로 피한다.
+    pub fn set_native_holes(&self, _input: &[[i32; 4]], clip: &[[i32; 4]], scale_factor: f64) {
+        let view_bounds = self.webview.bounds();
+        let key = (
+            clip.to_vec(),
+            view_bounds.size.width,
+            view_bounds.size.height,
+        );
+        if self.applied_clip.borrow().as_ref() == Some(&key) {
+            return;
+        }
+        let scale = if scale_factor > 0.0 {
+            scale_factor
+        } else {
+            1.0
+        };
+        let flipped = self.webview.isFlipped();
+        let rects: Vec<NSRect> = clip
+            .iter()
+            .map(|&[x, y, w, h]| {
+                let (x, y, w, h) = (
+                    f64::from(x) / scale,
+                    f64::from(y) / scale,
+                    f64::from(w) / scale,
+                    f64::from(h) / scale,
+                );
+                let origin_y = if flipped {
+                    y
+                } else {
+                    view_bounds.size.height - y - h
+                };
+                NSRect::new(NSPoint::new(x, origin_y), NSSize::new(w, h))
+            })
+            .collect();
+        *self.webview.ivars().clip_holes.borrow_mut() = rects.clone();
+        if rects.is_empty() {
+            // SAFETY: main thread AppKit. 이 뷰의 layer를 읽기만 한다.
+            let layer: Option<Retained<objc2_quartz_core::CALayer>> =
+                unsafe { msg_send![&*self.webview, layer] };
+            if let Some(layer) = layer {
+                // SAFETY: main thread. mask를 지우면 layer 전체가 다시 보인다.
+                unsafe { layer.setMask(None) };
+            }
+            *self.applied_clip.borrow_mut() = Some(key);
+            return;
+        }
+        self.webview.setWantsLayer(true);
+        // SAFETY: main thread AppKit. layer-backed 뷰의 layer를 읽는다.
+        let layer: Option<Retained<objc2_quartz_core::CALayer>> =
+            unsafe { msg_send![&*self.webview, layer] };
+        let Some(layer) = layer else {
+            tracing::warn!("webview: no backing layer; the page may cover the notice");
+            return;
+        };
+        let mask = objc2_quartz_core::CAShapeLayer::new();
+        let layer_bounds = layer.bounds();
+        mask.setFrame(layer_bounds);
+        let path = objc2_core_graphics::CGMutablePath::new();
+        // SAFETY: 변환 행렬은 null(항등)이다. path는 이 함수 동안 살아 있다.
+        unsafe {
+            objc2_core_graphics::CGMutablePath::add_rect(
+                Some(&path),
+                std::ptr::null(),
+                layer_bounds,
+            );
+            for r in &rects {
+                objc2_core_graphics::CGMutablePath::add_rect(Some(&path), std::ptr::null(), *r);
+            }
+        }
+        let shape: &objc2_core_graphics::CGPath = &path;
+        mask.setPath(Some(shape));
+        // SAFETY: QuartzCore가 내보내는 상수 문자열이다.
+        mask.setFillRule(unsafe { objc2_quartz_core::kCAFillRuleEvenOdd });
+        // SAFETY: main thread. mask는 layer가 retain한다.
+        unsafe { layer.setMask(Some(&mask)) };
+        *self.applied_clip.borrow_mut() = Some(key);
     }
 
     /// delegate 콜백이 기록한 navigation 상태.

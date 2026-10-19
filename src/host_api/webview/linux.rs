@@ -23,9 +23,11 @@ use super::load_generation::SignalOrderLoads;
 use super::script_gate::{DeferredScan, Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
 
-/// input shape 를 정한 X 창 크기와 구멍(이 창 기준 물리 px `[x, y, 너비, 높이]`).
-type InputShape = ((i32, i32), Vec<[i32; 4]>);
+/// shape 를 정한 X 창 크기와 입력 구멍·그림 구멍(이 창 기준 물리 px `[x, y, 너비, 높이]`).
+type NativeShape = ((i32, i32), Vec<[i32; 4]>, Vec<[i32; 4]>);
 
+/// X SHAPE 확장의 그림 shape 종류(`ShapeBounding`). 이 밖은 그려지지도 입력을 받지도 않는다.
+const SHAPE_BOUNDING: std::os::raw::c_int = 0;
 /// X SHAPE 확장의 입력 shape 종류(`ShapeInput`).
 const SHAPE_INPUT: std::os::raw::c_int = 2;
 
@@ -55,10 +57,12 @@ pub struct PlatformWebView {
     content_filter: Rc<RefCell<Option<ContentFilter>>>,
     /// 마지막 `set_bounds` 의 X 창 크기(물리 px). input shape 의 전체 사각형이다.
     x11_size: Cell<(i32, i32)>,
-    /// X 창 input shape 를 물리 px 로 설정하는 XFixes. 열지 못하면 입력 구멍을 두지 않는다.
+    /// X 창 shape 를 물리 px 로 설정하는 XFixes. 열지 못하면 구멍을 두지 않는다.
     xfixes: Option<x11_dl::xfixes::Xlib>,
-    /// 마지막으로 적용한 input shape(GTK 크기와 구멍). 같으면 X 요청을 다시 보내지 않는다.
-    applied_input_shape: RefCell<Option<InputShape>>,
+    /// 마지막으로 적용한 shape(X 창 크기와 구멍). 같으면 X 요청을 다시 보내지 않는다.
+    applied_shape: RefCell<Option<NativeShape>>,
+    /// XFixes 없이 그림 구멍을 요청받아 경고를 남겼는지. 프레임마다 부르므로 한 번만 남긴다.
+    clip_unavailable_reported: Cell<bool>,
 }
 
 /// GObject가 아닌 ref-counted filter의 소유권. 안전 바인딩이 없어 Drop에서 직접 unref한다.
@@ -559,7 +563,8 @@ impl PlatformWebView {
             content_filter,
             x11_size: Cell::new((w.max(1) as i32, h.max(1) as i32)),
             xfixes,
-            applied_input_shape: RefCell::new(None),
+            applied_shape: RefCell::new(None),
+            clip_unavailable_reported: Cell::new(false),
         })
     }
 
@@ -610,59 +615,66 @@ impl PlatformWebView {
             .size_allocate(&gtk::Allocation::new(0, 0, gtk_w, gtk_h));
     }
 
-    /// host 가 받아야 하는 입력 영역(분할선 hit 띠·창 리사이즈 밴드)을 이 창의 입력에서 뺀다.
-    /// `holes` 는 이 X 창 기준 물리 px `[x, y, 너비, 높이]` 다. 빠진 곳의 포인터 이벤트는 X 서버가
-    /// 부모 창(winit)으로 보낸다 — 입력 shape 밖이면 이 창과 자손(GTK 창)으로 내려가지 않는다.
-    /// 화면에는 그대로 페이지가 보인다. GDK 의 input shape 는 GDK 논리 px 단위라 배율 2 에서
-    /// 홀수 경계를 나타내지 못하므로 XFixes 로 X 창에 물리 px 그대로 설정한다.
-    pub fn set_input_holes(&self, holes: &[[i32; 4]]) {
+    /// 이 창에서 구멍을 뺀다. 값은 모두 이 X 창 기준 물리 px `[x, y, 너비, 높이]` 다.
+    /// `input` 은 host 가 받아야 하는 입력 영역(분할선 hit 띠·창 리사이즈 밴드)으로, 입력에서만 빼고
+    /// 화면에는 페이지가 그대로 보인다. `clip` 은 위에 egui 가 그리는 안내 카드로, 그림(bounding
+    /// shape)과 입력에서 함께 뺀다. 빠진 곳은 부모 창(winit)의 그림이 보이고 포인터도 부모로 간다.
+    /// 창 크기·매핑·포커스는 바꾸지 않는다. 둘 다 비면 shape 를 지워 원래 사각형으로 돌아간다.
+    /// GDK 의 shape 는 GDK 논리 px 단위라 배율 2 에서 홀수 경계를 나타내지 못하므로 XFixes 로
+    /// X 창에 물리 px 그대로 설정한다.
+    pub fn set_native_holes(&self, input: &[[i32; 4]], clip: &[[i32; 4]], _scale_factor: f64) {
         self.assert_origin_thread();
         let Some(fixes) = &self.xfixes else {
+            if !clip.is_empty() && !self.clip_unavailable_reported.replace(true) {
+                tracing::warn!(
+                    "WebView clip unavailable without XFixes; the page stays drawn over the notice"
+                );
+            }
             return;
         };
         let size = self.x11_size.get();
         if self
-            .applied_input_shape
+            .applied_shape
             .borrow()
             .as_ref()
-            .is_some_and(|(s, h)| *s == size && h.as_slice() == holes)
+            .is_some_and(|(s, i, c)| *s == size && i.as_slice() == input && c.as_slice() == clip)
         {
             return;
         }
         let dpy = self.x11_display as *mut x11_dl::xlib::Display;
-        let xrect = |x: i32, y: i32, w: i32, h: i32| x11_dl::xlib::XRectangle {
+        let xrect = |&[x, y, w, h]: &[i32; 4]| x11_dl::xlib::XRectangle {
             x: x.clamp(i16::MIN.into(), i16::MAX.into()) as i16,
             y: y.clamp(i16::MIN.into(), i16::MAX.into()) as i16,
             width: w.clamp(0, u16::MAX.into()) as u16,
             height: h.clamp(0, u16::MAX.into()) as u16,
         };
-        if holes.is_empty() {
-            // SAFETY: self 가 살아 있으면 display·x11_window 는 유효하다. origin thread(위 assert).
-            // region None(0)은 input shape 를 지워 창 전체가 입력을 받게 한다.
-            unsafe {
-                (fixes.XFixesSetWindowShapeRegion)(dpy, self.x11_window, SHAPE_INPUT, 0, 0, 0);
-            }
-        } else {
-            let mut whole = xrect(0, 0, size.0, size.1);
-            let mut cut: Vec<_> = holes
-                .iter()
-                .map(|&[x, y, w, h]| xrect(x, y, w, h))
-                .collect();
-            // SAFETY: display·x11_window 는 유효하고 origin thread 다. 사각형 배열은 호출 동안
-            // 살아 있다. 만든 region 은 shape 에 복사된 뒤 이 블록에서 지운다.
-            unsafe {
-                let region = (fixes.XFixesCreateRegion)(dpy, &mut whole, 1);
+        let whole = [0, 0, size.0, size.1];
+        // 입력에서는 두 구멍을 모두 뺀다. bounding shape 도 입력을 제한하지만 둘을 같은 기준으로 둔다.
+        let input_cut: Vec<[i32; 4]> = input.iter().chain(clip).copied().collect();
+        // SAFETY: self 가 살아 있으면 display·x11_window 는 유효하고 origin thread 다(위 assert).
+        // 사각형 배열은 호출 동안 살아 있다. 만든 region 은 shape 에 복사된 뒤 이 블록에서 지운다.
+        // region None(0)은 그 종류의 shape 를 지워 창 전체 사각형으로 되돌린다.
+        unsafe {
+            let set = |kind: std::os::raw::c_int, cut: &[[i32; 4]]| {
+                if cut.is_empty() {
+                    (fixes.XFixesSetWindowShapeRegion)(dpy, self.x11_window, kind, 0, 0, 0);
+                    return;
+                }
+                let mut whole_rect = xrect(&whole);
+                let mut cut_rects: Vec<_> = cut.iter().map(xrect).collect();
+                let region = (fixes.XFixesCreateRegion)(dpy, &mut whole_rect, 1);
                 let holes_region =
-                    (fixes.XFixesCreateRegion)(dpy, cut.as_mut_ptr(), cut.len() as i32);
+                    (fixes.XFixesCreateRegion)(dpy, cut_rects.as_mut_ptr(), cut_rects.len() as i32);
                 (fixes.XFixesSubtractRegion)(dpy, region, region, holes_region);
-                (fixes.XFixesSetWindowShapeRegion)(dpy, self.x11_window, SHAPE_INPUT, 0, 0, region);
+                (fixes.XFixesSetWindowShapeRegion)(dpy, self.x11_window, kind, 0, 0, region);
                 (fixes.XFixesDestroyRegion)(dpy, holes_region);
                 (fixes.XFixesDestroyRegion)(dpy, region);
-            }
+            };
+            set(SHAPE_BOUNDING, clip);
+            set(SHAPE_INPUT, &input_cut);
+            (self.xlib.XFlush)(dpy);
         }
-        // SAFETY: 위와 같은 display. 요청을 즉시 내보낸다.
-        unsafe { (self.xlib.XFlush)(dpy) };
-        *self.applied_input_shape.borrow_mut() = Some((size, holes.to_vec()));
+        *self.applied_shape.borrow_mut() = Some((size, input.to_vec(), clip.to_vec()));
     }
 
     pub fn set_visible(&self, visible: bool) {

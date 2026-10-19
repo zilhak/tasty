@@ -51,6 +51,8 @@ struct HtmlSurfaces {
     physical: std::collections::HashMap<u32, crate::model::PhysicalRect>,
     /// WebView 입력에서 뺄 host 입력 영역(WebView 기준 물리 px).
     holes: std::collections::HashMap<u32, Vec<crate::model::PhysicalRect>>,
+    /// WebView 그림과 입력에서 함께 뺄 복원 안내 카드 영역(WebView 기준 물리 px).
+    clips: std::collections::HashMap<u32, Vec<crate::model::PhysicalRect>>,
     all_ids: Vec<u32>,
 }
 
@@ -71,6 +73,16 @@ fn collect_html_surfaces(
         std::collections::HashMap::new();
     let mut active_holes: std::collections::HashMap<u32, Vec<crate::model::PhysicalRect>> =
         std::collections::HashMap::new();
+    let mut active_clips: std::collections::HashMap<u32, Vec<crate::model::PhysicalRect>> =
+        std::collections::HashMap::new();
+    // 오른쪽 위 복원 안내 카드. native 창은 이 부분을 그리지 않고 포커스·bounds는 그대로 둔다.
+    let notice_cards: Vec<crate::model::PhysicalRect> = view
+        .state
+        .restore_notices
+        .card_rects()
+        .iter()
+        .map(|r| r.to_physical(scale_factor as f32))
+        .collect();
     let mut all_html_ids: Vec<u32> = Vec::new();
     let window = view.base.gpu.size();
     let resize_band = view.window_resize_band();
@@ -186,6 +198,13 @@ fn collect_html_surfaces(
                                     &input_zones,
                                 ),
                             );
+                            active_clips.insert(
+                                sid,
+                                crate::state::webview_edges::notice_clip_holes(
+                                    window_rect,
+                                    &notice_cards,
+                                ),
+                            );
                             active_physical.insert(sid, webview_rect);
                         }
                     }
@@ -198,6 +217,7 @@ fn collect_html_surfaces(
         bounds: active_html,
         physical: active_physical,
         holes: active_holes,
+        clips: active_clips,
         all_ids: all_html_ids,
     }
 }
@@ -590,21 +610,24 @@ fn publish_native_content_rects(
     }
 }
 
-/// host 입력 영역을 native WebView 입력에서 뺀다. Linux는 X input shape 으로 빼고 WebView 를
-/// surface 에 꽉 채운다. 다른 OS는 아직 방법이 없어 `webview_edge_inset` 여백으로 피한다.
-#[cfg(target_os = "linux")]
-fn apply_input_holes(wv: &crate::webview::PlatformWebView, holes: &[crate::model::PhysicalRect]) {
+/// native WebView에서 구멍을 뺀다. `input`은 host 입력 영역(분할선 hit 띠·창 리사이즈 밴드)으로
+/// 포인터만 빼고, `clip`은 복원 안내 카드로 그림과 포인터를 함께 뺀다. bounds·표시·포커스는
+/// 바꾸지 않는다. 둘 다 비면 원래 영역으로 돌아간다. `input`을 빼는 방법은 Linux에만 있고 다른
+/// OS는 `webview_edge_inset` 여백으로 피한다.
+fn apply_native_holes(
+    wv: &crate::webview::PlatformWebView,
+    input: &[crate::model::PhysicalRect],
+    clip: &[crate::model::PhysicalRect],
+    scale_factor: f64,
+) {
     // 구멍은 이미 정수 픽셀 경계다(`webview_edges`). 반올림은 부동소수 오차만 없앤다.
-    let holes: Vec<[i32; 4]> = holes
-        .iter()
-        .map(|r| [r.x, r.y, r.width, r.height].map(|v| v.value().round() as i32))
-        .collect();
-    wv.set_input_holes(&holes);
-}
-
-/// 입력 영역을 빼는 방법이 아직 없는 OS.
-#[cfg(not(target_os = "linux"))]
-fn apply_input_holes(_wv: &crate::webview::PlatformWebView, _holes: &[crate::model::PhysicalRect]) {
+    let ints = |rects: &[crate::model::PhysicalRect]| -> Vec<[i32; 4]> {
+        rects
+            .iter()
+            .map(|r| [r.x, r.y, r.width, r.height].map(|v| v.value().round() as i32))
+            .collect()
+    };
+    wv.set_native_holes(&ints(input), &ints(clip), scale_factor);
 }
 
 /// Synchronize native WebView instances with the current state.
@@ -641,6 +664,7 @@ fn sync_webviews(
         bounds: active_html,
         physical: active_physical,
         holes: active_holes,
+        clips: active_clips,
         all_ids: all_html_ids,
     } = collect_html_surfaces(view, engine, scale_factor);
     create_missing_webviews(view, engine, &all_html_ids, &active_html, scale_factor);
@@ -746,14 +770,14 @@ fn sync_webviews(
     for (sid, wv) in &view.webviews {
         // active 면 bounds 는 숨겨져 있어도 갱신(다음 reveal 대비).
         if let Some(bounds) = active_html.get(sid) {
-            // 오른쪽 위 안내와 겹치면 안내 열 왼쪽까지 줄인다. 숨기거나 포커스를 옮기지 않는다.
-            let bounds = crate::adapters::ui::restore_notice::shrink_beside_notices(
-                *bounds,
-                view.state.restore_notices.occupied(),
-                crate::theme::theme().notice_column_inset().value(),
+            wv.set_bounds(*bounds, scale_factor);
+            // 오른쪽 위 안내와 겹친 부분만 그림·포인터에서 뺀다. 숨기거나 포커스를 옮기지 않는다.
+            apply_native_holes(
+                wv,
+                active_holes.get(sid).map_or(&[][..], Vec::as_slice),
+                active_clips.get(sid).map_or(&[][..], Vec::as_slice),
+                scale_factor,
             );
-            wv.set_bounds(bounds, scale_factor);
-            apply_input_holes(wv, active_holes.get(sid).map_or(&[][..], Vec::as_slice));
         }
         // 스캔을 기다리며 미룬 탐색 결정을 끝낸다. 읽기가 끝나면 작업 스레드가 이 윈도우를 깨운다.
         wv.resume_script_decision();
