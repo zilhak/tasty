@@ -637,7 +637,7 @@ impl JournalApplication {
 
 #[cfg(all(test, unix))]
 mod bulk_restore_tests;
-#[cfg(all(test, unix))]
+#[cfg(all(test, unix, feature = "gui"))]
 mod content_off_tests;
 #[cfg(test)]
 mod stall_budget;
