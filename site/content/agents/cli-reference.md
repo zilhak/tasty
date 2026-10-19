@@ -221,12 +221,16 @@ tasty surface html-script --surface 42 # HTML 서피스의 스크립트 감지·
 tasty surface html-script-allow --surface 42 --url <url> --fingerprint <hex>  # 조회한 문서의 스크립트를 허용하고 다시 불러옴. 문서가 바뀌었으면 거절. 포커스는 그대로
 tasty surface html-nav --surface 42    # HTML 서피스가 보여 주는 문서 주소와 뒤로·앞으로 이동 가능 여부(조회만)
 tasty surface html-back --surface 42   # HTML 서피스를 뒤로 이동(html-forward: 앞으로, html-reload: 새로고침). 포커스는 그대로이고, 결과는 html-nav로 확인
+tasty hook-handler dispatch --id user/my-handler  # 훅 핸들러를 직접 실행하고 최종 결과까지 기다리기
+tasty hook-handler result --run 7       # dispatch가 알려 준 run 번호로 결과 다시 보기
 tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 것과 같은 경로로 파일 열기
 tasty file-handler reload               # 파일 핸들러 설정 파일을 다시 읽기
 tasty file-handler detectors            # 파일 형식 판별 규칙이 지금 어떻게 합쳐져 있는지 보기
 ```
 
 `set cwd` 와 `set url` 은 대상이 각각 원격 서피스·웹뷰 서피스일 때만 동작합니다. 일반 터미널 서피스에 쓰면 지원하지 않는 대상이라는 오류를 반환합니다.
+
+`hook-handler dispatch` 는 두 줄을 출력합니다. 첫 줄은 요청을 받아들였다는 응답이고 `run` 번호가 들어 있습니다. 둘째 줄은 기다린 뒤의 최종 결과입니다. 결과의 `state` 가 `succeeded` 이면 종료 코드 0으로 끝나고, `partial`·`failed`·`unknown` 이거나 기다리는 동안 끝나지 않았으면(`running`) 종료 코드 1로 끝납니다. 실패한 단계와 이유는 `result` 와 `steps` 에 나옵니다. 받아들이기 전에 거절된 요청(없는 핸들러, 꺼진 핸들러, 대기열이 가득 참 등)은 첫 줄 없이 오류와 종료 코드 1로 끝납니다. `--no-wait` 를 붙이면 첫 줄만 출력하고 종료 코드 0으로 끝나므로, 나중에 `hook-handler result --run <번호>` 로 결과를 봅니다. 결과를 기다릴 때는 요청을 여러 번 보내므로 루트 옵션 `--response-timeout-ms` 를 받지 않습니다. 붙이면 아무것도 보내지 않고 사용 오류(종료 코드 2)로 끝납니다. `--no-wait` 를 붙이면 요청이 하나뿐이라 이 옵션이 그 요청에 적용됩니다. 셸에 설정된 세션 토큰(`TASTY_SESSION_TOKEN`)과 에이전트 ID(`TASTY_AGENT_ID`)는 결과를 묻는 요청에도 그대로 실립니다.
 
 `file-handler dispatch` 는 파일 경로만 받습니다. `https://…` 같은 웹 주소를 넘기면 오류를 반환합니다. 이 명령으로 연 파일은 새 탭으로 뒤에 붙기만 하고, 사용자가 보고 있던 탭은 바뀌지 않습니다. 이 형식을 열 핸들러가 없으면 사용자 화면에 **다음으로 열기…** <!-- en: Open file with… --> 를 띄우지 않고 파일을 열지 않습니다. 요청은 이미 받아들였다고 답한 뒤이므로 오류가 따로 오지 않습니다. GUI 없이 서버에서 실행하는 headless 빌드는 파일을 열 수 없으므로, 이 명령에 요청을 받아들였다고 답하지 않고 이 빌드에서는 지원하지 않는다는 오류를 반환합니다.
 

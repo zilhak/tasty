@@ -45,10 +45,7 @@ impl ClientCommand for HookDispatch<'_> {
             return Ok(());
         };
         let deadline = Instant::now() + wait_limit(&accepted);
-        let mut poll = request.clone();
-        poll.method = "hook_handler.result".into();
-        poll.params = json!({ "run": run });
-        poll.idempotency_key = None;
+        let poll = poll_request(&request, run);
         loop {
             let value = conn
                 .send(&poll)
@@ -64,6 +61,18 @@ impl ClientCommand for HookDispatch<'_> {
             std::thread::sleep(POLL);
         }
     }
+}
+
+/// 결과 조회 요청. 원 요청의 세션 토큰·에이전트 ID를 그대로 싣고, 멱등 키는 원 요청에만 둔다.
+fn poll_request(
+    request: &tasty_ipc::protocol::JsonRpcRequest,
+    run: u64,
+) -> tasty_ipc::protocol::JsonRpcRequest {
+    let mut poll = request.clone();
+    poll.method = "hook_handler.result".into();
+    poll.params = json!({ "run": run });
+    poll.idempotency_key = None;
+    poll
 }
 
 /// 셸 핸들러는 프로세스 시작만 기다리고, 시퀀스는 스텝마다 응답 대기 상한을 더한다.
@@ -88,5 +97,25 @@ mod tests {
         assert!(!succeeded(&json!({"done": false, "state": "running"})));
         assert_eq!(wait_limit(&json!({"steps": 2})), Duration::from_secs(30));
         assert_eq!(wait_limit(&json!({})), Duration::from_secs(10));
+    }
+
+    #[test]
+    fn the_result_poll_keeps_the_caller_identity() {
+        let request = tasty_ipc::protocol::JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "hook_handler.dispatch".into(),
+            params: json!({ "id": "user/x" }),
+            id: Some(json!(1)),
+            session_token: Some("tok".into()),
+            caller_agent_id: Some("agent-1".into()),
+            response_timeout_ms: None,
+            idempotency_key: Some("k".into()),
+        };
+        let poll = poll_request(&request, 7);
+        assert_eq!(poll.method, "hook_handler.result");
+        assert_eq!(poll.params, json!({ "run": 7 }));
+        assert_eq!(poll.session_token.as_deref(), Some("tok"));
+        assert_eq!(poll.caller_agent_id.as_deref(), Some("agent-1"));
+        assert_eq!(poll.idempotency_key, None);
     }
 }

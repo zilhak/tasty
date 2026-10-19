@@ -1,4 +1,4 @@
-<!-- source-hash: 69dab2f02900 -->
+<!-- source-hash: 78efa52101bc -->
 # CLI command reference
 
 How to use the `tasty` commands the [introduction](cli.md) does not cover: reading `read since-mark` from a saved position, looking into a surface, permission tokens, notifications, metadata, queues between Surfaces, running several terminals, headless PTYs, shared memory, observers, usage records, and other queries and settings, organised by purpose. Check every argument a command takes with `tasty help <command>`.
@@ -201,12 +201,16 @@ tasty surface html-script --surface 42 # script detection, allowance and notice 
 tasty surface html-script-allow --surface 42 --url <url> --fingerprint <hex>  # allow the scripts of the queried document and reload it; refused if the document changed; focus stays
 tasty surface html-nav --surface 42    # the address of the document an HTML surface shows and whether it can go back or forward (read only)
 tasty surface html-back --surface 42   # go back in an HTML surface (html-forward: forward, html-reload: reload); focus stays; check the result with html-nav
+tasty hook-handler dispatch --id user/my-handler  # run a hook handler directly and wait for its final result
+tasty hook-handler result --run 7       # look up a result again by the run number dispatch printed
 tasty file-handler dispatch PATH       # open a file the same way a double-click in the explorer does
 tasty file-handler reload              # read the file handler settings file again
 tasty file-handler detectors           # see how the file format detectors are merged right now
 ```
 
 `set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Using them on a regular terminal surface returns an unsupported-target error.
+
+`hook-handler dispatch` prints two lines. The first is the reply accepting the request and contains a `run` number. The second is the final result after waiting. If the result's `state` is `succeeded`, the command exits with status 0; if it is `partial`, `failed` or `unknown`, or the run did not finish while waiting (`running`), it exits with status 1. The failed steps and their reasons are in `result` and `steps`. A request refused before it was accepted (an unknown handler, a disabled handler, a full queue and so on) prints an error without the first line and exits with status 1. With `--no-wait` it prints only the first line and exits with status 0; look the result up later with `hook-handler result --run <number>`. While waiting for the result the command sends several requests, so it does not take the root option `--response-timeout-ms`; with it, the command sends nothing and exits with a usage error (status 2). With `--no-wait` there is only one request, and the option applies to it. The session token (`TASTY_SESSION_TOKEN`) and agent ID (`TASTY_AGENT_ID`) set in the shell are also carried by the requests that ask for the result.
 
 `file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error. A file opened with this command is added as a new tab in the background; the tab the user was looking at stays selected. If no handler can open the file's format, the **Open file with…** chooser does not appear on the user's screen and the file is not opened. The request has already been reported as accepted, so no separate error comes back. A headless build, which runs Tasty on a server without a GUI, cannot open files, so instead of reporting the request as accepted it returns an error saying this build does not support it.
 
