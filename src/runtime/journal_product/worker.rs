@@ -334,10 +334,51 @@ fn handle(
     work: Work,
     deferred: &mut Option<Admission>,
 ) -> Result<ResultValue, JournalError> {
+    if drops_references(&work) {
+        retry_unpreserved(executor).map_err(JournalError::Internal)?;
+    }
     match work {
         Work::Admit(admission) => admission::admit(executor, pending, ticket, admission, deferred),
         work => handle_work(executor, home, pending, ticket, work).map_err(JournalError::Internal),
     }
+}
+
+/// 확정되면 surface의 자료 참조를 바꾸거나 없앨 수 있는 작업.
+fn drops_references(work: &Work) -> bool {
+    match work {
+        Work::Capture { .. } | Work::CaptureClosed { .. } | Work::Resolve { .. } => true,
+        #[cfg(any(feature = "gui", test))]
+        Work::RetireEngine(_) => true,
+        _ => false,
+    }
+}
+
+/// 보존 pin을 걸지 못한 복원 실패 원본에 pin을 다시 건다. 남으면 `Err`다. 이 원본의 참조를 바꾸는
+/// 작업보다 먼저 불러, 보존이 확정되기 전에 원 참조가 사라져 다음 실행의 GC가 원본을 지우지 않게 한다.
+pub(super) fn retry_unpreserved(executor: &Executor<StructureDecider>) -> Result<(), String> {
+    let remaining = executor.decider().unpreserved();
+    if remaining.is_empty() {
+        return Ok(());
+    }
+    let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
+    let epoch = inner.epoch;
+    for payload in remaining {
+        match inner.store.pin_payload(
+            epoch,
+            tasty_event_store::PayloadRef(payload),
+            RESTORE_FAILURE_HOLDER,
+        ) {
+            Ok(()) | Err(tasty_event_store::StoreError::PayloadMissing(_)) => {
+                executor.decider().forget_unpreserved(payload)
+            }
+            Err(error) => {
+                return Err(format!(
+                    "restore failure payload {payload} is not preserved yet: {error}"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn handle_work(

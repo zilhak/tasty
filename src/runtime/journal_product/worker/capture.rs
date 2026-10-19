@@ -295,24 +295,12 @@ pub(super) fn checkpoint(
         tracing::debug!("structure checkpoint skipped while damaged journal records are kept");
         return Ok(());
     }
-    let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
-    // 보존 pin을 걸지 못한 복원 실패 원본이 있으면 먼저 다시 건다. 남으면 GC가 지울 수 있으므로 쉰다.
-    let epoch = inner.epoch;
-    for payload in executor.decider().unpreserved() {
-        match inner.store.pin_payload(
-            epoch,
-            tasty_event_store::PayloadRef(payload),
-            super::RESTORE_FAILURE_HOLDER,
-        ) {
-            Ok(()) | Err(tasty_event_store::StoreError::PayloadMissing(_)) => {
-                executor.decider().forget_unpreserved(payload)
-            }
-            Err(error) => {
-                tracing::warn!(payload, %error, "structure checkpoint skipped: restore failure payload is not preserved yet");
-                return Ok(());
-            }
-        }
+    // 보존 pin을 걸지 못한 복원 실패 원본이 남으면 GC가 지울 수 있으므로 쉰다.
+    if let Err(error) = super::retry_unpreserved(executor) {
+        tracing::warn!(%error, "structure checkpoint skipped");
+        return Ok(());
     }
+    let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
     let Some(batch_id) = inner.state.batch else {
         return Ok(());
     };

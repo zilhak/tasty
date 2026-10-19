@@ -94,6 +94,24 @@ fn a_failed_preservation_pin_blocks_checkpoints_until_it_is_retried() {
     let error = preserve_failed_payload(&executor, tasty_core::DataRef(payload)).unwrap_err();
     assert!(error.contains("retrying"), "{error}");
     assert!(executor.decider().unpreserved().contains(&payload));
+    let mut pending = HashMap::new();
+    let refused = handle(
+        &executor,
+        home,
+        &mut pending,
+        1,
+        Work::Resolve {
+            changes: Vec::new(),
+            response: None,
+        },
+        &mut None,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        refused.contains("not preserved yet"),
+        "a reference-changing write waits for the pin: {refused}"
+    );
     let before = snapshots(home);
     capture::checkpoint(&executor, &readers).unwrap();
     assert_eq!(
