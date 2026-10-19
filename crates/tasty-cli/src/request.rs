@@ -43,45 +43,28 @@ pub(crate) const CLI_WARNINGS_PARAMS_KEY: &str = "__cli_warnings";
 pub(crate) const WEBHOOK_CONFIG_DEPRECATED: &str =
     "deprecated: tasty webhook config, use tasty webhook port";
 
-/// `tasty remote ...` → JsonRpcRequest 매핑. non-force/non-into_gui attach 는
+/// `tasty remote ...` → JsonRpcRequest 매핑. `--into-gui` 가 아닌 attach 는
 /// run_client 에서 raw 스트림으로 선처리되므로, 여기 도달하는 remote attach 는
-/// `--into-gui`(원격 GUI mirror 위임) 또는 `--force-detach`(이 서버에 붙은 원격
-/// 클라이언트 attach 락 강제해제 — 로컬 JSON-RPC)뿐이다.
+/// `--into-gui`(원격 GUI mirror 위임)뿐이다.
 fn remote_command_to_method_params(command: &RemoteCommands) -> (&'static str, serde_json::Value) {
     match command {
         RemoteCommands::Attach {
-            surface,
             workspace,
             target_port,
             into_gui,
-            force_detach,
             ..
         } => {
-            if *into_gui {
-                (
-                    "attach.into_gui",
-                    serde_json::json!({
-                        "port": target_port,
-                        "workspace": workspace,
-                    }),
-                )
-            } else {
-                debug_assert!(
-                    *force_detach,
-                    "non-force/non-into_gui remote attach is dispatched before request mapping"
-                );
-                if let Some(ws) = workspace {
-                    (
-                        "attach.force_detach_workspace",
-                        serde_json::json!({ "workspace_id": ws }),
-                    )
-                } else {
-                    (
-                        "attach.force_detach",
-                        serde_json::json!({ "surface_id": surface }),
-                    )
-                }
-            }
+            debug_assert!(
+                *into_gui,
+                "non-into_gui remote attach is dispatched before request mapping"
+            );
+            (
+                "attach.into_gui",
+                serde_json::json!({
+                    "port": target_port,
+                    "workspace": workspace,
+                }),
+            )
         }
         RemoteCommands::Check { .. } => {
             debug_assert!(false, "remote check is dispatched before request mapping");
@@ -229,7 +212,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             )
         }
         Commands::Send { command } => send_command_to_method_params(command),
-        // 일반 attach는 ClientDriven이 처리한다. 여기서는 into-gui와 force-detach만 변환한다.
+        // 일반 attach는 ClientDriven이 처리한다. 여기서는 into-gui만 변환한다.
         Commands::Remote { command } => remote_command_to_method_params(command),
         Commands::Read { command } => read_command_to_method_params(command),
         Commands::Notify {

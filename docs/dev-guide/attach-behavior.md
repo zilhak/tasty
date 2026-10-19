@@ -78,7 +78,7 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 
 - `surface_locks: HashMap<SurfaceId, AttachLock>` — surface 단위 배타(hard) lock. `acquire` 가 동시 점유를 `AlreadyAttached{holder}` 로 거부.
 - `workspace_locks` + `surface_to_workspace` — workspace 단위 점유. workspace 점유 시 멤버 *터미널* 은 `surface_locks` 에도 동일 holder 로 등록(서버측 placeholder 렌더·입력차단을 surface 단위와 동일 적용). 비-터미널은 역매핑(`surface_to_workspace`)으로만 "점유 표시".
-- `release` (holder 본인) / `force_detach` (서버 권한) / `release_all_for_client`(연결 생존 판정 실패 시 일괄 — workspace + 멤버 + 잔여 surface). 트리거는 4 종: **self-release**(holder 의 명시적 release) · **force-detach**(로컬 사용자 강제 해제) · **EOF-or-TTL**(연결 종료 EOF 또는 attach heartbeat TTL 만료 — 둘 다 `tcp_ipc_server.rs` read 루프의 `Err(_) => break` 를 거쳐 `StreamInbound::Disconnected` → `release_all_for_client` 로 합류한다; TTL 은 소켓 read timeout 이 heartbeat 미수신으로 만료되는 경우로, 실제 EOF 와 동일한 `io::Error` 취급이라 코드 경로가 갈라지지 않는다) · **forwarded-op에 따른 workspace 제거**. 원 holder의 요청은 `app/journal/commands/inbound.rs`에서 admission·구조 commit·필요한 resource 완료를 거친다. `deliver_result`는 원 연결 binding을 확인하고 결과를 먼저 보낸 뒤, workspace가 사라졌으면 `force_detach_workspace`로 점유를 정리한다. 남아 있으면 delta를 보내고 성공한 publication 뒤 terminal tap을 연결한다. forward 외의 committed 변경도 `remote/structure_sync.rs::push_structure_changes`에서 사라진 workspace를 강제 분리한다. 옛 `close_case_workspace`/`execute_forwarded_structural_op`의 동기 실행 순서를 현재 경로로 사용하지 않는다.
+- `release` (holder 본인) / `force_detach` (서버 권한 — 로컬 GUI·내부 정리 전용, 아래 force-detach 절) / `release_all_for_client`(연결 생존 판정 실패 시 일괄 — workspace + 멤버 + 잔여 surface). 트리거는 4 종: **self-release**(holder 의 명시적 release) · **force-detach**(로컬 사용자 강제 해제) · **EOF-or-TTL**(연결 종료 EOF 또는 attach heartbeat TTL 만료 — 둘 다 `tcp_ipc_server.rs` read 루프의 `Err(_) => break` 를 거쳐 `StreamInbound::Disconnected` → `release_all_for_client` 로 합류한다; TTL 은 소켓 read timeout 이 heartbeat 미수신으로 만료되는 경우로, 실제 EOF 와 동일한 `io::Error` 취급이라 코드 경로가 갈라지지 않는다) · **forwarded-op에 따른 workspace 제거**. 원 holder의 요청은 `app/journal/commands/inbound.rs`에서 admission·구조 commit·필요한 resource 완료를 거친다. `deliver_result`는 원 연결 binding을 확인하고 결과를 먼저 보낸 뒤, workspace가 사라졌으면 `force_detach_workspace`로 점유를 정리한다. 남아 있으면 delta를 보내고 성공한 publication 뒤 terminal tap을 연결한다. forward 외의 committed 변경도 `remote/structure_sync.rs::push_structure_changes`에서 사라진 workspace를 강제 분리한다. 옛 `close_case_workspace`/`execute_forwarded_structural_op`의 동기 실행 순서를 현재 경로로 사용하지 않는다.
 - **끊긴 holder 는 재attach 를 막지 못한다** (이 문서). inbound 한 배치(`PumpOutcome`)의 적용 순서는 attach 연결이 먼저, 연결 종료 *정리*가 마지막이다 — 끊긴 client 의 잔여 입력 프레임이 그 client 의 점유가 살아 있는 동안 적용돼야 하기 때문이다. 그래서 한 배치에 "C1 끊김" 과 "C2 attach" 가 함께 실리면 C2 가 곧 사라질 C1 의 lock 에 막힌다. 이를 막기 위해 두 pump(`App::apply_stream_outcome` · `boot::headless_stream::apply`)가 배치 **머리**에서 `mark_clients_disconnected` 로 *사실만* 먼저 알리고, `acquire`/`acquire_workspace` 는 자기를 막고 선 holder 가 그 표시를 가지면 그 자리에서 점유를 회수한다. 회수는 경쟁이 있을 때만 하므로 경쟁이 없는 잔여 입력은 그대로 처리된다. 표시는 `release_all_for_client` 가 lock 과 함께 지워 한 배치를 넘지 않는다.
 - **입력 격리**: `apply_send_to_surface` 와 terminal broadcast·respawn이 함께 쓰는 `TerminalInputAccess::send` 가 `is_hard_occupied` 면 서버 로컬 입력 거부(tell의 `write_then_submit` 도 같은 검사를 한다), client 입력만 `feed_attached_input` 우회 경로로 PTY 도달. (soft 점유는 write 를 막지 않는다 — hard 만 격리.)
 - **점유는 핸드셰이크가 검증된 뒤에만 잡힌다** (이 문서). 점유를 잡는 유일한 진입점은 `dispatch_stream_attach` → `attach_workspace_for_stream`/`attach_surface_for_stream` 인데, 그 **앞에** `tcp_ipc_server.rs::validate_stream_proto` 가 있다. `stream.open` params 의 `proto` 가 `STREAM_PROTO` 와 다르면(생략 시 serde default `0`) attach 를 dispatch 하지 않고 `StreamAck{ok:false, proto, error}` 로 거절한다 — 점유가 애초에 잡히지 않는다. 없을 때의 문제: 프로토콜이 안 맞는 client 는 그 점유를 **쓸 수 없는데도** 가져가고, 소켓을 닫지 않는 구버전/hung peer 면 아래 EOF 가 오지 않아 heartbeat TTL(20초)까지 그 workspace 가 붙잡혀 정상 attach 가 `already_attached` 로 거절됐다. 거절 ack 는 client(`StreamConnection::open_with`)가 이미 검사하는 형식이라 실패 사유가 그대로 사용자에게 전달된다.
@@ -581,11 +581,12 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 
 ## force-detach
 
-서버 권한으로 점유 강제 해제(attach 하지 않음). holder client 에 `Control{force_detached}` + `Detach` push → client 가 mirror 정리·종료, 서버는 lock free.
+서버 권한으로 점유 강제 해제(attach 하지 않음). holder client 에 `Control{force_detached}` + `Detach` push → client 가 mirror 정리·종료, 서버는 lock free. 엔진 함수는 `EngineMut::force_detach` / `force_detach_workspace`(`src/runtime/engine_access.rs`)다.
 
-- IPC: `attach.force_detach{surface_id}` / `attach.force_detach_workspace{workspace_id}`.
-- CLI: `tasty remote attach --force-detach`(surface) / `--workspace <id> --force-detach`(workspace).
-- **`--ssh` + `--force-detach` 미지원**(에러): force-detach 는 *이 서버* 에 붙은 client 락을 끊는 로컬 JSON-RPC 이지 터널 너머 원격 서버의 락을 끊는 게 아니다.
+- **로컬 사용자 GUI**: 점유 테두리의 강제 끊기 버튼(`EngineAction::DetachSurface` → `release_occupancy`)과 사이드바 우클릭 확인 팝업(`EngineAction::DetachWorkspace`). 두 intent 모두 확인 시점의 `granted_seq` 가 같을 때만 푼다 — 그 사이 다시 붙은 다른 점유를 끊지 않는다.
+- **내부 정리**: 연결 종료 일괄 해제(`release_all_for_client`)와 workspace 제거에 따른 분리는 같은 엔진 함수를 쓴다.
+- **공개 IPC·CLI 없음**: release 에는 남의 점유를 강제로 푸는 IPC 메서드나 CLI 플래그가 없다. 에이전트가 원격 사용자를 쉽게 끊는 전용 인터페이스를 두지 않는다는 [사용자 통제와 데이터 원칙](../principles/control-and-data.md)을 따른다. 토큰 없는 CLI·네트워크 호출자(Local)도 사람의 GUI 조작을 증명하지 않으므로 Local 전용으로 남기지 않는다. 점유자 본인은 `attach.release`(self-release)나 연결 종료로 끊는다. 헤드리스 서버처럼 GUI 가 없는 곳의 로컬 사용자는 원격 세션을 OS·SSH 수단(sshd 세션 종료 등)으로 끊을 수 있다 — 원칙은 이런 우회를 막지 않는다.
+- **debug 재현**: `debug.attach.force_detach{surface_id}` / `debug.attach.force_detach_workspace{workspace_id}`(local 전용, `src/adapters/ipc/handler/debug_attach.rs`)와 `tasty debug attach [SURFACE|--workspace <id>] --force-detach`([debug IPC](debug-ipc.md)).
 
 ## 원격 생존 확인 (`remote check`)
 
@@ -598,11 +599,10 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `attach.acquire` / `attach.release` | `stream.open{target}` 핸드셰이크 | 배타 lock 획득/해제 |
-| `attach.force_detach` / `attach.force_detach_workspace` | JSON-RPC | 점유 강제 해제 |
 | `attach.into_gui` | JSON-RPC | 실행 GUI 가 원격 워크스페이스를 mirror 로 재구성(`App::start_gui_attach`). GUI 는 App 층이 자기 자신 여부를 판정한 뒤 답한다(위 self-attach 절) |
 | `attach.list` | JSON-RPC | 현재 점유 목록 조회(read) |
 
-**권한**: attach 보안은 **연결 경계(SSH + 127.0.0.1 loopback)** 에 위임. 자체 권한 레이어 없음 — 소켓에 도달한 caller 는 attach 제어를 호출할 수 있다. 근거는 [identity §2](../identity.md), 주체 계약은 [actors](../concepts/actors.md).
+**권한**: attach 보안은 **연결 경계(SSH + 127.0.0.1 loopback)** 에 위임. 자체 권한 레이어 없음 — 소켓에 도달한 caller 는 위 attach 제어를 호출할 수 있다. 남의 점유를 강제로 푸는 메서드는 이 표에 없다(위 force-detach 절). 근거는 [사용자 통제와 데이터 원칙](../principles/control-and-data.md), 주체 계약은 [actors](../concepts/actors.md).
 
 ## 커스텀 이벤트 확장 (`StreamControl` 밖 raw JSON `event` 태그)
 

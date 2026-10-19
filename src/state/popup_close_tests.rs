@@ -859,6 +859,83 @@ fn confirm_force_detach_confirm_queues_the_original_grant_without_releasing_it()
     assert!(state.dialogs.pending_force_detach_workspace.is_none());
 }
 
+// release에는 강제 끊기 IPC가 없으므로 로컬 GUI 확인이 점유를 푸는 유일한 공개 경로다.
+#[test]
+fn confirm_force_detach_applied_intent_releases_and_notifies_the_holder() {
+    use tasty_ipc::stream::StreamTag;
+    let (mut state, mut owner) = test_state();
+    let mut engine = owner.borrow_mut();
+    let hub = tasty_ipc::stream_hub::StreamHub::new();
+    let holder = hub.alloc_id();
+    let rx = hub.register(holder);
+    engine.remote.set_notifier(hub);
+    let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+    let members = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids();
+    engine
+        .live
+        .occupancy
+        .acquire_workspace(ws_id, &members, &members, holder)
+        .expect("workspace is free in the fixture");
+    state.dialogs.pending_force_detach_workspace = Some(ws_id);
+
+    crate::adapters::ui::popup::confirm_force_detach_workspace::apply_force_detach(
+        &mut state,
+        &engine.read(),
+    );
+    let intents = state.take_pending_intents();
+    let [intent] = intents.as_slice() else {
+        panic!("one detach intent expected: {}", intents.len());
+    };
+    let Intent::Engine(action) = &intent.body else {
+        panic!("engine intent expected");
+    };
+    action.apply(&mut engine);
+
+    assert_eq!(engine.live.occupancy.workspace_holder(ws_id), None);
+    for sid in &members {
+        assert!(!engine.live.occupancy.is_hard_occupied(*sid), "{sid}");
+    }
+    let control = rx.recv().expect("control frame");
+    assert_eq!(control.tag, StreamTag::Control);
+    assert!(String::from_utf8_lossy(&control.payload).contains("force_detached"));
+    assert_eq!(rx.recv().expect("detach frame").tag, StreamTag::Detach);
+}
+
+// 점유 테두리의 강제 끊기 버튼이 보내는 surface 해제도 점유를 풀고 holder에 알린다.
+#[test]
+fn force_detach_button_intent_releases_and_notifies_the_holder() {
+    use tasty_ipc::stream::StreamTag;
+    let (_state, mut owner) = test_state();
+    let mut engine = owner.borrow_mut();
+    let hub = tasty_ipc::stream_hub::StreamHub::new();
+    let holder = hub.alloc_id();
+    let rx = hub.register(holder);
+    engine.remote.set_notifier(hub);
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
+    let grant = engine
+        .live
+        .occupancy
+        .acquire(sid, holder)
+        .expect("surface is free in the fixture")
+        .granted_seq;
+
+    crate::app::engine_action::EngineAction::DetachSurface {
+        surface: sid,
+        grant,
+    }
+    .apply(&mut engine);
+
+    assert!(!engine.live.occupancy.is_hard_occupied(sid));
+    assert_eq!(rx.recv().expect("control frame").tag, StreamTag::Control);
+    assert_eq!(rx.recv().expect("detach frame").tag, StreamTag::Detach);
+}
+
 #[test]
 fn confirm_force_detach_with_no_pending_target_detaches_nothing() {
     let (mut state, mut owner) = test_state();

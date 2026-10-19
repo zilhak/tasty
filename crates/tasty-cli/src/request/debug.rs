@@ -11,8 +11,8 @@ pub(super) fn debug_command_to_method_params(
 ) -> (&'static str, serde_json::Value) {
     match command {
         // 로컬 attach 의 non-force 경로는 run_client 에서 raw 스트림으로 선처리된다.
-        // 여기 도달하는 건 `--force-detach` 뿐 → workspace 면 force_detach_workspace,
-        // 아니면 surface force_detach IPC.
+        // 여기 도달하는 건 `--force-detach` 뿐이다. 로컬 사용자의 강제 끊기 재현이라
+        // release 표면이 아닌 debug 메서드로 보낸다.
         DebugCommands::Attach {
             surface,
             workspace,
@@ -25,12 +25,12 @@ pub(super) fn debug_command_to_method_params(
             );
             if let Some(ws) = workspace {
                 (
-                    "attach.force_detach_workspace",
+                    "debug.attach.force_detach_workspace",
                     serde_json::json!({ "workspace_id": ws }),
                 )
             } else {
                 (
-                    "attach.force_detach",
+                    "debug.attach.force_detach",
                     serde_json::json!({ "surface_id": surface }),
                 )
             }

@@ -512,39 +512,66 @@ mod attach_surface_tests {
         assert!(Cli::try_parse_from(["tasty", "attach", "5"]).is_err());
     }
 
+    // 원격 사용자를 끊는 release CLI는 없다. 로컬 사용자는 GUI로 끊는다.
     #[test]
-    fn remote_attach_force_detach_parses() {
-        let cli =
-            Cli::try_parse_from(["tasty", "remote", "attach", "5", "--force-detach"]).unwrap();
-        let Some(Commands::Remote {
-            command: RemoteCommands::Attach { force_detach, .. },
-        }) = cli.command
-        else {
-            panic!("expected remote attach");
-        };
-        assert!(force_detach);
+    fn remote_attach_has_no_force_detach() {
+        for args in [
+            &["tasty", "remote", "attach", "5", "--force-detach"][..],
+            &[
+                "tasty",
+                "remote",
+                "attach",
+                "--workspace",
+                "3",
+                "--force-detach",
+            ][..],
+        ] {
+            let err = match Cli::try_parse_from(args) {
+                Ok(_) => panic!("{args:?} parsed"),
+                Err(e) => e,
+            };
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::UnknownArgument,
+                "{args:?}"
+            );
+        }
     }
 
+    #[cfg(debug_assertions)]
     #[test]
-    fn remote_attach_ssh_force_detach_rejected() {
-        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
-        tasty_i18n::init("en");
-        let cli = Cli::try_parse_from([
-            "tasty",
-            "remote",
-            "attach",
-            "5",
-            "--ssh",
-            "h",
-            "--force-detach",
-        ])
-        .unwrap();
-        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains(tasty_i18n::t("cli.dispatch.ssh_force_detach_exclusive")),
-            "unexpected error: {err}"
-        );
+    fn debug_attach_force_detach_uses_debug_methods() {
+        for (args, method, key, value) in [
+            (
+                &["tasty", "debug", "attach", "5", "--force-detach"][..],
+                "debug.attach.force_detach",
+                "surface_id",
+                5,
+            ),
+            (
+                &[
+                    "tasty",
+                    "debug",
+                    "attach",
+                    "--workspace",
+                    "3",
+                    "--force-detach",
+                ][..],
+                "debug.attach.force_detach_workspace",
+                "workspace_id",
+                3,
+            ),
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            let command = cli.command.unwrap();
+            assert!(matches!(
+                command.dispatch().unwrap(),
+                crate::dispatch::Dispatch::Rpc
+            ));
+            let req = crate::request::command_to_request(&command);
+            assert_eq!(req.method, method);
+            assert_eq!(req.params[key], value);
+        }
     }
 
     #[test]

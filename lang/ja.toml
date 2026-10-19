@@ -2007,7 +2007,6 @@ surface_workspace_exclusive = "surface と --workspace は同時に使用でき�
 raw_workspace_exclusive = "--raw は workspace attach と同時に使用できません (多重化ストリーム)。"
 attach_target_required = "attach 対象が必要です: <surface_id> または --workspace <id>。"
 ssh_profile_exclusive = "--ssh と --profile は同時に使用できません。"
-ssh_force_detach_exclusive = "--ssh と --force-detach は同時に使用できません (リモート force-detach は未対応です)。"
 remote_attach_target_required = "リモート attach 対象が必要です (--ssh または --profile)。ローカル attach は `tasty debug attach` (debug ビルド) を使用してください。"
 remote_check_target_required = "リモート check 対象が必要です (--ssh または --profile)。"
 
@@ -2759,9 +2758,6 @@ help = "ワークスペースモードで `--send` の入力を受け取るリ�
 
 [cli.help._root.remote.attach.arg.raw]
 help = "生のブリッジモード：stdin/stdoutをそのまま転送（Ctrl+\\\\でdetach）"
-
-[cli.help._root.remote.attach.arg.force_detach]
-help = "占有されたサーフェス/ワークスペースのattachロックをサーバー側で強制解除（attachはしません）。このサーバーにローカルの `attach.force_detach` リクエストを送り、リモートクライアントのロックを解除します。`--ssh` と併用不可（トンネル経由の強制detachは非対応）"
 
 [cli.help._root.remote.attach.arg.ssh]
 help = "リモートSSH接続先（例：--ssh user@host、--ssh gx10）。`--profile` と併用不可"

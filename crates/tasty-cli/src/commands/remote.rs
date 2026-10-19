@@ -33,13 +33,6 @@ pub enum RemoteCommands {
         /// Raw bridge mode: stdin/stdout passthrough (detach with Ctrl+\).
         #[arg(long)]
         raw: bool,
-        /// Forcibly release the attach lock on an occupied surface/workspace
-        /// (server-side; does not attach). Sends the local `attach.force_detach`
-        /// request to this server to release a remote client's lock. Mutually
-        /// exclusive with `--ssh` (force-detach through a tunnel is not
-        /// supported).
-        #[arg(long)]
-        force_detach: bool,
         /// Remote SSH target, e.g. --ssh user@host or --ssh gx10. Mutually
         /// exclusive with `--profile`.
         #[arg(long)]

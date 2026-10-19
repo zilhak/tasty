@@ -2007,7 +2007,6 @@ surface_workspace_exclusive = "surface와 --workspace는 함께 쓸 수 없습�
 raw_workspace_exclusive = "--raw는 워크스페이스 attach에 사용할 수 없습니다(다중화 스트림)."
 attach_target_required = "attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>."
 ssh_profile_exclusive = "--ssh와 --profile은 함께 쓸 수 없습니다."
-ssh_force_detach_exclusive = "--ssh와 --force-detach는 함께 쓸 수 없습니다. 원격 force-detach는 지원하지 않습니다."
 remote_attach_target_required = "원격 attach 대상을 --ssh 또는 --profile로 지정하세요. 로컬 attach는 debug 빌드에서 `tasty debug attach`를 사용하세요."
 remote_check_target_required = "확인할 원격 대상을 --ssh 또는 --profile로 지정하세요."
 
@@ -2759,9 +2758,6 @@ help = "워크스페이스 모드에서 `--send` 입력을 받을 원격 서피�
 
 [cli.help._root.remote.attach.arg.raw]
 help = "원시 브리지 모드: stdin/stdout 그대로 전달(Ctrl+\\\\로 detach)"
-
-[cli.help._root.remote.attach.arg.force_detach]
-help = "점유된 서피스/워크스페이스의 attach 잠금을 서버에서 강제로 해제(attach하지 않음). 이 서버에 로컬 `attach.force_detach` 요청을 보내 원격 클라이언트의 잠금을 해제합니다. `--ssh`와 함께 사용 불가(터널을 통한 강제 detach 미지원)"
 
 [cli.help._root.remote.attach.arg.ssh]
 help = "원격 SSH 대상(예: --ssh user@host, --ssh gx10). `--profile`과 함께 사용 불가"

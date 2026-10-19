@@ -17,17 +17,8 @@ use std::path::Path;
 use tasty_ipc::method_meta::METHOD_TABLE;
 
 /// debug CLI에서 사용하지만 release IPC에도 필요한 메서드와 근거다.
-const CLI_DEBUG_RELEASE_METHODS: &[(&str, &str)] = &[
-    // 로컬 loopback attach 도구는 debug 전용이지만 강제 분리 메서드는 일반 원격 attach도 사용한다.
-    (
-        "attach.force_detach",
-        "원격 attach 와 공용 — release 정식 표면",
-    ),
-    (
-        "attach.force_detach_workspace",
-        "원격 attach 와 공용 — release 정식 표면",
-    ),
-];
+/// 로컬 attach의 강제 끊기도 debug 메서드(debug.attach.*)로 재현하므로 지금은 없다.
+const CLI_DEBUG_RELEASE_METHODS: &[(&str, &str)] = &[];
 
 /// 입력 재현을 나타내는 이름 패턴이다. 대상 PTY에 바이트를 쓰는 surface.send_key와 구별한다.
 const INPUT_REPRODUCTION_PATTERNS: &[(&str, &str)] = &[

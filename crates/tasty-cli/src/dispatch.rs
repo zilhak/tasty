@@ -44,9 +44,7 @@ impl Commands {
 
 /// 클라이언트 주도 명령이면 그 실행 단위를, 아니면 `None`(= 단발 RPC)을 돌려준다.
 ///
-/// arm 순서가 의미를 갖는다 — 앞선 arm 이 이긴다. 특히 `Remote::Attach` 는 거부
-/// 조합(`--ssh` + `--force-detach`)을 먼저 걸러야 그 아래 raw-stream arm 의 패턴
-/// (`force_detach: false`)에 걸리지 않고 fall-through 하는 경로와 구분된다.
+/// arm 순서가 의미를 갖는다 — 앞선 arm 이 이긴다.
 #[allow(clippy::too_many_lines)] // 평면 라우팅 표 — 쪼개면 "어디로 가는가" 를 한눈에 못 본다
 fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
     let driven: Box<dyn ClientCommand + '_> = match command {
@@ -96,24 +94,7 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
             no_reconnect: *no_reconnect,
             list: *list,
         }),
-        // `--ssh` + `--force-detach` 는 미지원 — 터널 너머 force-detach 가 아니라 로컬
-        // surface 를 강제해제할 위험이 있어 명시적으로 거부한다. `--force-detach`(no ssh)
-        // 는 로컬 JSON-RPC(attach.force_detach)라 아래 raw-stream arm(force_detach:false)
-        // 에 안 걸리고 fall-through 한다.
-        Commands::Remote {
-            command:
-                RemoteCommands::Attach {
-                    ssh: Some(_),
-                    force_detach: true,
-                    ..
-                },
-        } => {
-            anyhow::bail!(
-                "{}",
-                tasty_i18n::t("cli.dispatch.ssh_force_detach_exclusive")
-            );
-        }
-        // into-gui와 force-detach는 단발 RPC로 처리하고 일반 attach만 스트림을 연다.
+        // into-gui는 단발 RPC로 처리하고 일반 attach만 스트림을 연다.
         Commands::Remote {
             command:
                 RemoteCommands::Attach {
@@ -123,7 +104,6 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
                     send,
                     send_to,
                     raw,
-                    force_detach: false,
                     ssh,
                     profile,
                     remote_tasty,
@@ -252,7 +232,7 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
         Commands::Debug {
             command: crate::commands::DebugCommands::Sim { cmd },
         } => Box::new(crate::local::DebugSim { cmd }),
-        // force-detach는 단발 RPC로 처리한다.
+        // debug의 force-detach는 단발 RPC(debug.attach.*)로 처리한다.
         #[cfg(debug_assertions)]
         Commands::Debug {
             command:

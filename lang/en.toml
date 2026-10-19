@@ -2064,7 +2064,6 @@ surface_workspace_exclusive = "surface and --workspace cannot be used together."
 raw_workspace_exclusive = "--raw cannot be used with workspace attach (multiplexed stream)."
 attach_target_required = "attach target required: <surface_id> or --workspace <id>."
 ssh_profile_exclusive = "--ssh and --profile cannot be used together."
-ssh_force_detach_exclusive = "--ssh and --force-detach cannot be used together (remote force-detach is not supported)."
 remote_attach_target_required = "remote attach target required (--ssh or --profile). Local attach is `tasty debug attach` (debug builds)."
 remote_check_target_required = "remote check target required (--ssh or --profile)."
 
@@ -2825,9 +2824,6 @@ help = "Remote surface id that receives the `--send` input in workspace mode"
 
 [cli.help._root.remote.attach.arg.raw]
 help = "Raw bridge mode: stdin/stdout passthrough (detach with Ctrl+\\)"
-
-[cli.help._root.remote.attach.arg.force_detach]
-help = "Forcibly release the attach lock on an occupied surface/workspace (server-side; does not attach). Sends the local `attach.force_detach` request to this server to release a remote client's lock. Mutually exclusive with `--ssh` (force-detach through a tunnel is not supported)"
 
 [cli.help._root.remote.attach.arg.ssh]
 help = "Remote SSH target, e.g. --ssh user@host or --ssh gx10. Mutually exclusive with `--profile`"

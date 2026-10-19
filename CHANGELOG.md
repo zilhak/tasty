@@ -58,6 +58,7 @@
 ### Removed
 
 - (BREAK) **`tasty codex managed`(IPC `codex.managed`)를 제거했다.** Codex 부모의 결과 수신은 자동 반환으로 대신한다.
+- (BREAK) **원격 사용자의 attach 점유를 강제로 푸는 `tasty remote attach --force-detach`(IPC `attach.force_detach`·`attach.force_detach_workspace`)를 제거했다.** 로컬 사용자는 점유 테두리의 강제 끊기 버튼이나 사이드바 우클릭 > 강제 끊기로 끊는다. 서버의 에이전트가 원격 작업 중인 사용자를 끊는 전용 명령을 두지 않기 위해서다. 점유자 본인의 해제와 연결 종료에 따른 해제는 그대로다. 두 IPC 이름은 이제 알 수 없는 메서드이고 플래그는 알 수 없는 인자로 거절된다. debug 빌드는 같은 해제를 `tasty debug attach --force-detach`(IPC `debug.attach.force_detach`·`debug.attach.force_detach_workspace`)로 재현한다.
 
 ### Fixed
 

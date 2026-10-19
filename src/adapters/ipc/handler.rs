@@ -6,6 +6,8 @@ pub(crate) mod cli_entry_tests;
 mod completion_strategy;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
+#[cfg(debug_assertions)]
+mod debug_attach;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug_html_script;
 #[cfg(debug_assertions)]
@@ -1038,10 +1040,6 @@ fn route_engine_handler(
         "session.list" => session::handle_list(core, id),
         "attach.acquire" => attach::handle_acquire(engine, id, &request.params),
         "attach.release" => attach::handle_release(engine, id, &request.params),
-        "attach.force_detach" => attach::handle_force_detach(engine, id, &request.params),
-        "attach.force_detach_workspace" => {
-            attach::handle_force_detach_workspace(engine, id, &request.params)
-        }
         "attach.into_gui" => {
             attach::handle_into_gui(engine, core.own_ipc_port(), id, &request.params)
         }
@@ -1135,6 +1133,12 @@ fn route_debug_handler(
         }
         "debug.switch_tab" => {
             debug_nav::handle_debug_switch_tab(state, engine, id, &request.params)
+        }
+        "debug.attach.force_detach" => {
+            debug_attach::handle_force_detach(engine, id, &request.params)
+        }
+        "debug.attach.force_detach_workspace" => {
+            debug_attach::handle_force_detach_workspace(engine, id, &request.params)
         }
         #[cfg(feature = "gui")]
         "debug.tool.list" => tool::handle_list(state, engine, id),

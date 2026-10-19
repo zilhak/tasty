@@ -169,6 +169,8 @@ impl EngineMut<'_> {
 }
 
 impl EngineMut<'_> {
+    /// 단일 surface 점유 해제는 로컬 GUI 조작과 그 debug 재현만 부른다.
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub(crate) fn force_detach(&mut self, id: u32) -> Option<crate::core::attach::AttachClientId> {
         let holder = self.live.occupancy.force_detach(id)?;
         self.remote.notify_detached(holder, "force_detach");

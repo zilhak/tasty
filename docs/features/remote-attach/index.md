@@ -44,6 +44,7 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [Attach 메커니즘]
     - 지금 남은 안내는 `remote.refusals` 응답의 `notices`(`workspace_id` · `kind` · `target`, 워크스페이스 ID 순)로 조회한다.
 - **force-detach**: **로컬 사용자만** 점유를 강제로 끊을 수 있다(서버 권한).
   끊으면 holder client 에 종료를 통지하고 대상은 **일반 surface/workspace 로 복귀**.
+  release 에는 남의 점유를 강제로 푸는 IPC·CLI 가 없다 — 에이전트가 원격 사용자를 쉽게 끊는 전용 인터페이스를 두지 않는다([사용자 통제와 데이터](../../principles/control-and-data.md)). GUI 가 없는 서버의 로컬 사용자는 OS·SSH 수단으로 원격 세션을 끊는다. debug 빌드는 사용자 조작 재현으로 `tasty debug attach --force-detach`(IPC `debug.attach.*`)를 둔다([debug IPC](../../dev-guide/debug-ipc.md)).
   GUI 진입점은 **둘**이다 — 점유된 surface 우상단의 강제 끊기 버튼(그 워크스페이스가 활성일 때만 그려진다)과, 사이드바 워크스페이스 행 우클릭의 **강제 끊기** 항목.
   뒤엣것은 점유 중일 때만 나타나고(사이드바의 점유 표시와 같은 조건 `workspace_holder(ws.id).is_some()`), 즉시 끊지 않고 화면 중앙의 확인 팝업을 한 번 거친다 — 원격 세션을 끊는 비가역 행동이고 우클릭은 오조작이 쉬운 자리이기 때문이다.
   그 팝업은 window scope 라 **대상 워크스페이스로 전환하지 않아도** 보인다.
@@ -364,14 +365,13 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
   - `tasty tool attach <name> [SURFACE] [--workspace <id>] [옵션…]` — **tasty-attach 프로필**로 attach(profile-우선 편의 표면). `--list` = tasty-attach 목록만.
   - `tasty remote attach [SURFACE] --ssh|--profile [옵션…]` — 원격 surface attach. `--profile` 은 **tasty-attach kind**(docs/features/remote-profiles/index.md; ref/inline resolve).
   - `tasty remote attach --workspace <id> --ssh|--profile …` — 원격 workspace attach.
-  - `tasty remote attach --force-detach [--workspace <id>]` — 점유 강제 해제(로컬 JSON-RPC; `--ssh` 와 상호배타).
   - `tasty remote attach --into-gui --target-port <p> --workspace <ws>` — 실행 GUI 에 mirror.
   - `tasty remote check --ssh|--profile` — 원격 생존 확인(`--profile` = tasty-attach).
   - `tasty remote workspaces --ssh|--profile [--json]` — 원격 워크스페이스 목록 조회(browse). `--ssh 127.0.0.1:<port>` 로 loopback 직결(터널 없이 로컬 e2e).
   - `tasty remote new-workspace --ssh|--profile [--name <n>] [--cwd <원격경로>] [--json]` — 원격에 워크스페이스 생성(원격 mutate). 출력 id 를 `remote attach --workspace <id>` 에 넘기면 "만들고 그 자리에서 attach" 가 CLI 만으로 완성된다. `--cwd` 는 **원격 파일시스템** 기준이며 원격이 존재를 검증한다. 원격 active 는 불변(Agent origin).
   - `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>` — 자동 매핑 선언.
   - `tasty remote refusals` — 이 인스턴스를 대상으로 해서 거절한 최근 attach 시도와, 연결하지 않은 채 남은 자동 attach 매핑의 안내(IPC `remote.refusals`). 읽기 전용.
-- **IPC (`attach.*`)**: `acquire`/`release`(stream 핸드셰이크), `force_detach`/`force_detach_workspace`, `into_gui`, `list`(점유 목록 조회). 표 상세 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md#ipc-표면-attach).
+- **IPC (`attach.*`)**: `acquire`/`release`(stream 핸드셰이크), `into_gui`, `list`(점유 목록 조회). 남의 점유를 푸는 메서드는 없다. 표 상세 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md#ipc-표면-attach).
 - **IPC (`remote.*` — 원격 브라우징/생성/attach, 원칙 2)**: `remote.workspaces` { `profile?`/`ssh?` } → 원격 ws 목록(browse, 워커 스레드+지연 회신). `remote.attach` { `remote_workspace` | `new_workspace`, `profile?`/`ssh?`, `name?`, `cwd?` } → 원격 ws 를 로컬 mirror 로 attach(**focus 중립**: mirror 생성만, focus 이동 없음). `new_workspace:true` 면 원격에 워크스페이스를 먼저 만들고 그것을 attach 한다 — `remote_workspace` 와 상호배타이며, 이때만 **생성 완료까지 기다렸다 지연 회신**해 새 `remote_workspace` id 를 돌려준다(기존 ws attach 는 즉시 `{attaching:true}` 유지). 두 응답 모두 시도 번호 `attempt` 를 싣는다. 자기 자신이 대상이면: loopback 표기는 이 응답 대신 동기 `-32602` 오류가 오고, SSH 경로는 `new_workspace:true` 만 생성 전 `-32602` 이며 기존 ws attach 는 `{attaching:true}` 응답 뒤 비동기 거절이 `remote.refusals`(`via_ssh: true`)에 남는다(위 self-attach 절의 IPC 계약 요약). `remote.refusals` {} → 자기 포트라서 연결하지 않은 최근 시도 목록(위 self-attach 절). CLI 와 코어 공유 — 조회는 `tasty_remote::browse`, 생성은 `tasty_remote::create`.
 - **로컬 self attach**(별도 CLI 프로세스가 포트 파일로 로컬 인스턴스를 mirror): 사용자 mirror 조작 재현 성격이라 release 에 없음 — `tasty debug attach`(debug 빌드 전용, [`dev-guide/debug-ipc`](../../dev-guide/debug-ipc.md)). 같은 머신의 다른 인스턴스에 loopback 주소(`127.0.0.1:PORT`·`localhost:PORT`·`[::1]:PORT`)로 붙는 GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 release 에도 있다(아래 비-목표 절).
 - **프로필**: `--profile`/`tool attach` 이 참조하는 tasty-attach 프로필(및 그것이 `ssh_ref` 로 참조하는 ssh 프로필)은 [remote-profiles](../remote-profiles/index.md) 이 관리.
@@ -417,7 +417,8 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 - Given mirror 워크스페이스의 surface When 원격에 등록되지 않은 kind 로 convert 가 forward 돼 원격에서 실패 Then 회신 사유는 원격이 낸 `unknown surface kind: <kind>` 그대로이고, 대상 surface 가 있는데 "not found" 로 오지 않는다(`core::attach_runtime` 의 `forward_convert_unknown_kind_reports_the_remote_reason`).
 - Given surface 가 이미 점유됨 When 다른 client 가 attach 시도 Then holder 정보를 담아 거부된다.
 - Given 점유된 surface When 서버측 GUI 키/`surface.send` Then 입력이 차단되고 client 입력만 도달한다.
-- Given 점유 상태 When 로컬 사용자가 `--force-detach` Then holder 가 종료되고 대상이 일반 surface 로 복귀한다.
+- Given 점유 상태 When 로컬 사용자가 점유 테두리의 강제 끊기 버튼을 누르거나 사이드바 확인 팝업에서 확인 Then holder 가 종료되고 대상이 일반 surface 로 복귀한다.
+- Given release 빌드 When 어떤 호출자든 `attach.force_detach`·`attach.force_detach_workspace` 를 보내거나 `tasty remote attach --force-detach` 를 실행 Then 알 수 없는 메서드·인자 오류로 끝나고 점유는 유지된다.
 - Given workspace 가 점유된 상태 When 로컬 사용자가 사이드바에서 그 행을 우클릭 Then **강제 끊기** 항목이 보인다.
 - Given 그 항목을 누른 상태 When 확인 팝업이 떠 있다 Then 점유는 아직 유지되고, 취소·Escape·바깥 클릭 어느 쪽으로 닫아도 점유가 그대로 남는다.
 - Given 확인 팝업이 떠 있는 동안 원격이 스스로 끊었다 When 다음 프레임 Then 팝업은 즉시 닫힌다(대상 없는 확인을 남기지 않는다).
