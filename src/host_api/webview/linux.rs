@@ -375,7 +375,7 @@ impl PlatformWebView {
                         .is_some_and(|d| d.is_main_frame_main_resource())
                     && let Some(uri) = &uri
                 {
-                    match gate.main_response_deferrable(uri.as_str()) {
+                    match gate.main_response(uri.as_str()) {
                         Response::Decided(js) => set_js(wv, js),
                         Response::Deferred(scan) => {
                             // 스캔이 JS 값을 정하는 응답(허용한 문서의 재로드)은 결정을 보류하고
@@ -869,6 +869,9 @@ impl PlatformWebView {
     pub fn nav_state(&self) -> NavState {
         self.nav_state.get()
     }
+
+    /// Linux는 보류한 응답 결정을 GTK 작업이 직접 끝내므로 동기화에서 할 일이 없다.
+    pub fn resume_script_decision(&self) {}
 
     pub fn take_pending_navigations(&self) -> Vec<PendingNavigation> {
         std::mem::take(&mut *self.pending_navigations.borrow_mut())

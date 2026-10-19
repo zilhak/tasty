@@ -22,8 +22,29 @@ use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
 use super::load_generation::{is_current_load, nav_state_after_end};
-use super::script_gate::ScriptGate;
+use super::script_gate::{DeferredScan, ReadSlot, Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
+
+/// WebKit의 정책 결정 handler. 보류한 결정을 콜백 밖에서 끝내려고 복사해 둔다.
+type DecisionHandler = RcBlock<dyn Fn(WKNavigationActionPolicy, NonNull<WKWebpagePreferences>)>;
+
+/// 스캔 결과를 기다리며 보류한 main frame 정책 결정. 메인 스레드에만 있고 작업 스레드에는
+/// 경로와 표만 넘어간다. handler는 Allow나 Cancel로 정확히 한 번 부른다.
+struct PendingDecision {
+    scan: DeferredScan,
+    read: ReadSlot,
+    handler: DecisionHandler,
+    preferences: Retained<WKWebpagePreferences>,
+}
+
+/// 보류한 결정을 끝낸다. 결정마다 정확히 한 번 부른다.
+fn complete_decision(
+    handler: &DecisionHandler,
+    preferences: &WKWebpagePreferences,
+    policy: WKNavigationActionPolicy,
+) {
+    handler.call((policy, NonNull::from(preferences)));
+}
 
 struct NavDelegateIvars {
     surface_id: u32,
@@ -43,6 +64,8 @@ struct NavDelegateIvars {
     chrome_navigation: RefCell<Option<Retained<WKNavigation>>>,
     /// 마지막 main frame commit의 주소. 로드 중·실패 중 주소 표시가 쓴다.
     committed_url: RefCell<Option<String>>,
+    /// 스캔 결과를 기다리는 정책 결정. 허용 기록과 같은 URL의 응답만 여기 온다.
+    pending_decision: RefCell<Option<PendingDecision>>,
 }
 
 /// 세대 비교용 WKNavigation 식별 값. 알 수 없으면 None이다.
@@ -56,6 +79,48 @@ impl NavDelegateIvars {
     fn is_current_navigation(&self, navigation: Option<&WKNavigation>) -> bool {
         let current = navigation_key(self.gate_navigation.borrow().as_deref());
         is_current_load(current, navigation_key(navigation))
+    }
+
+    /// 보류한 결정을 Cancel로 끝낸다. 새 탐색·로드 요청·webview 종료가 앞 결정을 무효화할 때 부른다.
+    fn cancel_pending_decision(&self) {
+        let Some(pending) = self.pending_decision.borrow_mut().take() else {
+            return;
+        };
+        tracing::debug!(
+            "WebView surface {}: cancelling the navigation that waited for its scan",
+            self.surface_id
+        );
+        pending.scan.abandon();
+        complete_decision(
+            &pending.handler,
+            &pending.preferences,
+            WKNavigationActionPolicy::Cancel,
+        );
+    }
+
+    /// 읽기가 끝났으면 보류한 결정을 끝낸다. 표가 아직 현재 로드의 것일 때만 JS를 적용해 Allow하고,
+    /// 낡았으면 Cancel한다. 읽는 중이면 아무것도 하지 않는다.
+    fn resume_pending_decision(&self) {
+        let read = match self.pending_decision.borrow().as_ref() {
+            Some(pending) => pending.read.take(),
+            None => return,
+        };
+        let Some(read) = read else {
+            return;
+        };
+        let Some(pending) = self.pending_decision.borrow_mut().take() else {
+            return;
+        };
+        // 표 확인과 상태 반영은 결정을 넘기기 직전 이 메인 스레드 호출 안에서 한다.
+        let policy = match pending.scan.apply(read) {
+            Some(js) => {
+                // SAFETY: main thread. preferences는 이 결정이 붙잡아 둔 Retained 값이다.
+                unsafe { pending.preferences.setAllowsContentJavaScript(js) };
+                WKNavigationActionPolicy::Allow
+            }
+            None => WKNavigationActionPolicy::Cancel,
+        };
+        complete_decision(&pending.handler, &pending.preferences, policy);
     }
 
     /// 종료 신호가 게이트가 시작한 마지막 로드의 것일 때만 [`Self::gate_finished`]를 부른다.
@@ -209,6 +274,7 @@ define_class!(
                 self.ivars().surface_id
             );
             self.ivars().nav_state.set(NavState::Failed);
+            self.ivars().cancel_pending_decision();
             self.ivars().gate_failed();
             self.ivars().gate_finished();
         }
@@ -250,12 +316,32 @@ define_class!(
                     // 같은 문서의 fragment 이동은 로드가 아니므로 건너뛴다. 재로드는 fragment가 있어도 거친다.
                     Some(true) if reload || !gate.is_fragment_move(url) => {
                         gate.load_started();
-                        let js = gate.main_response(url);
+                        // 새 로드가 앞에서 보류한 결정을 대신한다. load_started 뒤라 그 표는 이미 낡았다.
+                        self.ivars().cancel_pending_decision();
                         // provisional 시작이 새 세대를 기록할 때까지 어떤 종료든 이 로드를 끝낸다.
                         self.ivars().gate_load_pending.set(true);
                         *self.ivars().gate_navigation.borrow_mut() = None;
-                        // SAFETY: main thread WebKit delegate 호출. preferences는 이 호출 동안 유효하다.
-                        unsafe { preferences.setAllowsContentJavaScript(js) };
+                        match gate.main_response(url) {
+                            Response::Decided(js) => {
+                                // SAFETY: main thread WebKit delegate 호출. preferences는 이 호출 동안 유효하다.
+                                unsafe { preferences.setAllowsContentJavaScript(js) };
+                            }
+                            // 스캔 결과가 JS를 정한다. 결정을 붙잡아 두고 반환하면 WebKit은 응답을
+                            // 기다린다. 작업 스레드는 파일만 읽고 호스트를 깨우며, 결정은 다음 webview
+                            // 동기화에서 메인 스레드가 끝낸다(resume_script_decision).
+                            Response::Deferred(scan) => {
+                                let read = scan.spawn_read();
+                                *self.ivars().pending_decision.borrow_mut() =
+                                    Some(PendingDecision {
+                                        scan,
+                                        read,
+                                        handler: decision_handler.copy(),
+                                        preferences: preferences.retain(),
+                                    });
+                                self.record_navigation(url.clone());
+                                return;
+                            }
+                        }
                     }
                     // 서브프레임은 기본 preferences(JS 켬) 대신 main frame 문서에 대한 판단을 받는다(실 기기 미측정).
                     Some(false) => {
@@ -267,18 +353,24 @@ define_class!(
                 }
             }
             if let Some(url) = url {
-                self.ivars()
-                    .pending_navigations
-                    .borrow_mut()
-                    .push(PendingNavigation {
-                        url,
-                        user_gesture: false,
-                    });
+                self.record_navigation(url);
             }
             decision_handler.call((WKNavigationActionPolicy::Allow, NonNull::from(preferences)));
         }
     }
 );
+
+impl NavDelegate {
+    fn record_navigation(&self, url: String) {
+        self.ivars()
+            .pending_navigations
+            .borrow_mut()
+            .push(PendingNavigation {
+                url,
+                user_gesture: false,
+            });
+    }
+}
 
 impl NavDelegate {
     fn new(
@@ -297,6 +389,7 @@ impl NavDelegate {
             gate_navigation: RefCell::new(None),
             chrome_navigation: RefCell::new(None),
             committed_url: RefCell::new(None),
+            pending_decision: RefCell::new(None),
         });
         // SAFETY: NSObject 의 지정 초기화자 init 을 super 로 호출.
         unsafe { msg_send![super(this), init] }
@@ -593,6 +686,11 @@ impl PlatformWebView {
         self.nav_state.get()
     }
 
+    /// 스캔을 기다리며 보류한 정책 결정을 읽기가 끝났으면 끝낸다. webview 동기화마다 부른다.
+    pub fn resume_script_decision(&self) {
+        self._nav_delegate.ivars().resume_pending_decision();
+    }
+
     pub fn take_pending_navigations(&self) -> Vec<PendingNavigation> {
         std::mem::take(&mut *self.pending_navigations.borrow_mut())
     }
@@ -600,6 +698,7 @@ impl PlatformWebView {
     /// 로드를 요청하며 chrome을 Loading으로 둔다. 시작 신호 없이 끝나는 로드가 Loading에 남지 않게
     /// chrome 세대를 비워(모름 = 현재) 다음 시작 신호 전의 종료를 이 로드의 것으로 본다.
     fn begin_load(&self) {
+        self._nav_delegate.ivars().cancel_pending_decision();
         self.nav_state.set(NavState::Loading);
         *self._nav_delegate.ivars().chrome_navigation.borrow_mut() = None;
     }
@@ -669,6 +768,7 @@ impl PlatformWebView {
     }
 
     pub fn reload(&self) {
+        self._nav_delegate.ivars().cancel_pending_decision();
         // SAFETY: main thread WKWebView API.
         if unsafe { self.webview.reload() }.is_none() {
             tracing::debug!("WKWebView reload started no navigation");
@@ -676,6 +776,7 @@ impl PlatformWebView {
     }
 
     pub fn go_back(&self) {
+        self._nav_delegate.ivars().cancel_pending_decision();
         // SAFETY: main thread WKWebView API.
         if unsafe { self.webview.goBack() }.is_none() {
             tracing::debug!("WKWebView goBack started no navigation");
@@ -683,6 +784,7 @@ impl PlatformWebView {
     }
 
     pub fn go_forward(&self) {
+        self._nav_delegate.ivars().cancel_pending_decision();
         // SAFETY: main thread WKWebView API.
         if unsafe { self.webview.goForward() }.is_none() {
             tracing::debug!("WKWebView goForward started no navigation");
@@ -762,6 +864,8 @@ impl PlatformWebView {
 
 impl Drop for PlatformWebView {
     fn drop(&mut self) {
+        // WebKit은 부르지 않은 채 해제된 결정 handler를 오류로 본다.
+        self._nav_delegate.ivars().cancel_pending_decision();
         self.webview.removeFromSuperview();
     }
 }

@@ -5,7 +5,8 @@
 //!
 //! 원본 스캔(파일 전체 지문)은 UI 스레드에서 하지 않는다. 결과와 관계없이 JS 값이 같은 응답은
 //! 바로 결정하고 스캔은 작업 스레드에서 끝낸다. 허용 기록과 같은 URL의 응답만 스캔 결과가 JS 값을
-//! 정한다. 그 결정은 backend가 미룰 수 있으면 미루고([`Response::Deferred`]), 미룰 수 없으면 그 자리에서 스캔한다.
+//! 정한다. 그 결정은 모든 backend가 미룬다([`Response::Deferred`]). Linux·macOS는 응답 결정을 보류하고,
+//! Windows는 탐색을 취소했다가 스캔 뒤 같은 종류의 탐색으로 다시 시작한다.
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -32,10 +33,8 @@ pub struct ScriptGate {
 pub enum Response {
     /// 지금 적용할 JS 값.
     Decided(bool),
-    /// 스캔 결과가 JS 값을 정한다. backend는 응답 결정을 보류하고 [`DeferredScan::run`]을 작업
-    /// 스레드에서 실행한 뒤 그 값으로 결정을 끝낸다.
-    // 이유: 결정을 미룰 수 있는 backend(Linux)만 이 값을 받는다.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    /// 스캔 결과가 JS 값을 정한다. backend는 결정을 미루고 작업 스레드에서 파일을 읽은 뒤,
+    /// 결정을 넘기는 UI 스레드에서 [`DeferredScan::apply`]로 표를 확인하고 결정을 끝낸다.
     Deferred(DeferredScan),
 }
 
@@ -46,28 +45,84 @@ pub struct DeferredScan {
     path: PathBuf,
 }
 
-// 이유: 결정을 미룰 수 있는 backend만 부른다.
-#[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
+/// 작업 스레드가 읽기 결과를 넣고 UI 스레드가 꺼내는 칸. 보류한 결정을 콜백 밖에서 넘기는
+/// backend(macOS·Windows)가 쓴다. 네이티브 결정 객체는 UI 스레드에 남고 이 칸만 스레드를 건넌다.
+#[derive(Clone, Default)]
+pub struct ReadSlot(Arc<Mutex<Option<Option<ScriptScan>>>>);
+
+static READ_SLOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
+// 이유: macOS·Windows backend와 시험만 쓴다.
+#[cfg_attr(all(target_os = "linux", not(test)), allow(dead_code))]
+impl ReadSlot {
+    fn lock(&self) -> MutexGuard<'_, Option<Option<ScriptScan>>> {
+        tasty_utils::poison::recover_mutex(
+            self.0.lock(),
+            "html script read slot",
+            &READ_SLOT_POISON_REPORTED,
+        )
+    }
+
+    fn put(&self, scan: Option<ScriptScan>) {
+        *self.lock() = Some(scan);
+    }
+
+    /// 읽기가 끝났으면 결과를 꺼낸다. 아직이면 `None`.
+    pub fn take(&self) -> Option<Option<ScriptScan>> {
+        self.lock().take()
+    }
+}
+
 impl DeferredScan {
-    /// 파일만 읽는 작업. UI 스레드가 아닌 곳에서 실행한다. 상태는 바꾸지 않고, 끝나면 호스트를 깨운다.
+    /// 파일만 읽는 작업. UI 스레드가 아닌 곳에서 실행한다. 상태를 바꾸지 않는다.
+    // 이유: Linux backend와 시험만 쓴다.
+    #[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
     pub fn reader(&self) -> impl FnOnce() -> Option<ScriptScan> + Send + 'static {
         let surface_id = self.gate.surface_id;
         let path = self.path.clone();
-        let notify = self.gate.notify.clone();
-        move || {
-            let scan = scan_path(surface_id, &path);
-            if let Some(notify) = notify {
-                notify();
-            }
-            scan
-        }
+        move || scan_path(surface_id, &path)
     }
 
-    /// 읽은 결과를 보류한 결정에 적용한다. 결정을 실제로 넘기는 스레드에서 그 직전에 부른다.
+    /// 작업 스레드에서 읽어 결과를 칸에 넣고 호스트를 깨운다. UI 스레드는 칸을 확인해
+    /// [`Self::apply`]로 결정을 끝낸다. 스레드를 띄우지 못하면 읽기 실패(지문 없음)를 넣는다.
+    // 이유: macOS·Windows backend와 시험만 쓴다.
+    #[cfg_attr(all(target_os = "linux", not(test)), allow(dead_code))]
+    pub fn spawn_read(&self) -> ReadSlot {
+        let slot = ReadSlot::default();
+        let worker_slot = slot.clone();
+        let surface_id = self.gate.surface_id;
+        let path = self.path.clone();
+        let notify = self.gate.notify.clone();
+        let spawned = std::thread::Builder::new()
+            .name("html-script-scan".into())
+            .spawn(move || {
+                worker_slot.put(scan_path(surface_id, &path));
+                if let Some(notify) = &notify {
+                    notify();
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::warn!(
+                "WebView surface {surface_id}: html script scan thread not started ({e}); \
+                 the document is left without a fingerprint"
+            );
+            slot.put(None);
+        }
+        slot
+    }
+
+    /// 읽은 결과를 보류한 결정에 적용한다. 결정을 실제로 넘기는 UI 스레드에서 그 직전에 부른다.
     /// 그 사이 새 로드가 시작됐거나 다른 문서가 commit돼 표가 낡았으면 `None`을 준다
     /// (호출자는 보류한 결정을 거절한다).
     pub fn apply(self, scan: Option<ScriptScan>) -> Option<bool> {
         self.gate.finish_scan(self.ticket, scan)
+    }
+
+    /// 보류한 결정을 결과 없이 거절할 때 그 표의 대기를 끝낸다(새 로드·webview 종료).
+    // 이유: macOS·Windows backend와 시험만 쓴다.
+    #[cfg_attr(all(target_os = "linux", not(test)), allow(dead_code))]
+    pub fn abandon(self) {
+        self.gate.finish_scan(self.ticket, None);
     }
 
     /// 읽기와 적용을 한 스레드에서 차례로 한다. 시험용이다.
@@ -122,37 +177,32 @@ impl ScriptGate {
         js
     }
 
-    /// main frame main resource의 응답 결정. 결정을 미룰 수 없는 backend가 쓴다.
-    /// 허용 기록과 같은 URL의 응답만 그 자리에서 원본을 읽는다. 나머지는 작업 스레드가 읽는다.
-    // 이유: Linux는 결정을 미룰 수 있어 main_response_deferrable을 쓴다(시험은 이 경로도 쓴다).
-    #[cfg_attr(target_os = "linux", allow(dead_code))]
-    pub fn main_response(&self, url: &str) -> bool {
-        match self.respond(url, false) {
-            Response::Decided(js) => js,
-            Response::Deferred(scan) => {
-                let read = (scan.reader())();
-                scan.apply(read).unwrap_or(false)
-            }
-        }
+    /// main frame main resource의 응답 결정.
+    pub fn main_response(&self, url: &str) -> Response {
+        self.respond(url)
     }
 
-    /// main frame main resource의 응답 결정. 결정을 미룰 수 있는 backend가 쓴다.
-    // 이유: 결정을 미룰 수 있는 backend(Linux)만 부른다.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    pub fn main_response_deferrable(&self, url: &str) -> Response {
-        self.respond(url, true)
+    /// 미룬 결정을 이미 읽은 스캔 결과로 다시 시작한 탐색의 응답 결정. 파일을 다시 읽지 않는다.
+    /// 탐색을 취소했다가 다시 시작하는 backend(Windows)가 쓴다.
+    // 이유: Windows backend와 시험만 쓴다.
+    #[cfg_attr(not(any(windows, test)), allow(dead_code))]
+    pub fn main_response_scanned(&self, url: &str, scan: Option<ScriptScan>) -> bool {
+        let js = self.lock().on_main_response(url, scan);
+        tracing::debug!(
+            "WebView surface {}: html script response {} resumed with its scan detection={:?} -> js={js}",
+            self.surface_id,
+            strip_fragment(url),
+            scan.map(|s| s.detection)
+        );
+        js
     }
 
-    fn respond(&self, url: &str, defer: bool) -> Response {
+    fn respond(&self, url: &str) -> Response {
         let Some(path) = file_url_to_path(url) else {
             return Response::Decided(self.respond_without_file(url));
         };
         let mut st = self.lock();
         let needs_scan = st.needs_scan_before_js(url);
-        if needs_scan && !defer {
-            drop(st);
-            return Response::Decided(self.respond_in_place(url, &path));
-        }
         let (js, ticket) = st.on_main_response_pending(url);
         drop(st);
         if needs_scan {
@@ -187,24 +237,10 @@ impl ScriptGate {
         js
     }
 
-    /// 결정을 미룰 수 없는 backend에서 스캔 결과가 JS 값을 정하는 응답. 그 자리에서 읽는다.
-    fn respond_in_place(&self, url: &str, path: &std::path::Path) -> bool {
-        // 파일 읽기는 잠금 밖에서 한다.
-        let scan = scan_path(self.surface_id, path);
-        let js = self.lock().on_main_response(url, scan);
-        tracing::debug!(
-            "WebView surface {}: html script response {} read in place detection={:?} -> js={js}",
-            self.surface_id,
-            strip_fragment(url),
-            scan.map(|s| s.detection)
-        );
-        js
-    }
-
-    /// 작업 스레드에서 스캔한다. 스레드를 띄우지 못하면 그 자리에서 읽는다.
+    /// 작업 스레드에서 스캔한다. 스레드를 띄우지 못하면 UI 스레드에서 읽지 않고 읽기 실패로 끝낸다
+    /// (지문 없음, 허용 불가). JS 값은 이미 결과와 관계없이 정해졌으므로 바뀌지 않는다.
     fn spawn_scan(&self, ticket: ScanTicket, path: PathBuf) {
         let gate = self.clone();
-        let fallback = (self.clone(), path.clone());
         let spawned = std::thread::Builder::new()
             .name("html-script-scan".into())
             .spawn(move || {
@@ -213,12 +249,11 @@ impl ScriptGate {
             });
         if let Err(e) = spawned {
             tracing::warn!(
-                "WebView surface {}: html script scan thread not started ({e}); reading in place",
+                "WebView surface {}: html script scan thread not started ({e}); \
+                 the document is left without a fingerprint",
                 self.surface_id
             );
-            let (gate, path) = fallback;
-            let scan = scan_path(gate.surface_id, &path);
-            gate.finish_scan(ticket, scan);
+            self.finish_scan(ticket, None);
         }
     }
 
@@ -522,7 +557,7 @@ mod tests {
         let (gate, rx, dir, url) = gate_with_doc("allow", "<script>a()</script>");
         assert!(!gate.load_started());
         assert!(
-            !gate.main_response(&url),
+            matches!(gate.main_response(&url), Response::Decided(false)),
             "허용 기록이 없으면 결과를 기다리지 않고 끈다"
         );
         assert!(!gate.committed(Some(&url)));
@@ -531,15 +566,76 @@ mod tests {
         assert!(!gate.lock().scan_pending());
         gate.lock().allow_current().expect("allow");
         gate.load_started();
-        // 허용한 URL은 결과가 JS 값을 정하므로 미룰 수 없는 경로에서는 그 자리에서 읽는다.
-        assert!(gate.main_response(&url), "같은 내용의 재로드는 켠다");
+        assert_eq!(decide(&gate, &url), Some(true), "같은 내용의 재로드는 켠다");
         assert!(gate.committed(Some(&url)));
         assert!(gate.is_fragment_move(&format!("{url}#sec")));
         assert!(!gate.is_fragment_move(&url));
         // 허용 뒤 파일이 바뀌면 재로드에서 켜지 않는다(로드 때 지문과 다르다).
         std::fs::write(dir.join("doc.html"), "<script>b()</script>").expect("rewrite");
         gate.load_started();
-        assert!(!gate.main_response(&url));
+        assert_eq!(decide(&gate, &url), Some(false));
+        cleanup(&dir);
+    }
+
+    /// 칸이 찰 때까지 기다려 결과를 꺼낸다. 결과는 한 번만 꺼낼 수 있다.
+    fn wait_slot(slot: &ReadSlot) -> Option<ScriptScan> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if let Some(read) = slot.take() {
+                assert_eq!(slot.take(), None, "결과는 한 번만 꺼낸다");
+                return read;
+            }
+            assert!(std::time::Instant::now() < deadline, "the read finished");
+            std::thread::yield_now();
+        }
+    }
+
+    /// 결정을 미루고 다른 스레드에서 읽은 뒤 이 스레드에서 적용한다.
+    fn decide(gate: &ScriptGate, url: &str) -> Option<bool> {
+        let Response::Deferred(scan) = gate.main_response(url) else {
+            panic!("an allowed URL defers its decision");
+        };
+        let read = std::thread::spawn(scan.reader()).join().expect("join");
+        scan.apply(read)
+    }
+
+    /// macOS·Windows 경로: 작업 스레드가 칸에 결과를 넣고 호출자는 칸이 차면 적용한다.
+    /// 다시 시작한 탐색은 파일을 다시 읽지 않고 그 결과로 결정한다.
+    #[test]
+    fn a_read_slot_carries_the_scan_to_the_resumed_navigation() {
+        let (gate, rx, dir, url) = gate_with_doc("slot", "<script>a()</script>");
+        gate.load_started();
+        gate.main_response(&url);
+        gate.committed(Some(&url));
+        gate.finished();
+        wait_scan(&rx);
+        gate.lock().allow_current().expect("allow");
+        gate.load_started();
+        let Response::Deferred(scan) = gate.main_response(&url) else {
+            panic!("an allowed URL defers its decision");
+        };
+        let read = wait_slot(&scan.spawn_read());
+        assert_eq!(scan.apply(read), Some(true));
+        // 취소한 탐색을 다시 시작하면 새 로드로 기록하되 같은 결과를 쓴다.
+        gate.load_started();
+        assert!(gate.main_response_scanned(&url, read));
+        assert!(gate.committed(Some(&url)));
+        // 다시 시작하기 전에 새 로드가 끼어들면 보류한 결정은 낡은 표로 거절된다.
+        gate.load_started();
+        let Response::Deferred(stale) = gate.main_response(&url) else {
+            panic!("still allowed");
+        };
+        let read = wait_slot(&stale.spawn_read());
+        gate.load_started();
+        assert_eq!(stale.apply(read), None);
+        // 결정을 결과 없이 거절하면 그 표의 대기도 끝난다.
+        gate.load_started();
+        let Response::Deferred(dropped) = gate.main_response(&url) else {
+            panic!("still allowed");
+        };
+        assert!(gate.lock().scan_pending());
+        dropped.abandon();
+        assert!(!gate.lock().scan_pending());
         cleanup(&dir);
     }
 
@@ -547,17 +643,14 @@ mod tests {
     fn a_deferred_response_is_decided_by_its_own_scan() {
         let (gate, rx, dir, url) = gate_with_doc("defer", "<script>a()</script>");
         gate.load_started();
-        assert!(matches!(
-            gate.main_response_deferrable(&url),
-            Response::Decided(false)
-        ));
+        assert!(matches!(gate.main_response(&url), Response::Decided(false)));
         gate.committed(Some(&url));
         gate.finished();
         wait_scan(&rx);
         gate.lock().allow_current().expect("allow");
         // 같은 내용: 보류한 결정이 JS를 켠다.
         gate.load_started();
-        let Response::Deferred(scan) = gate.main_response_deferrable(&url) else {
+        let Response::Deferred(scan) = gate.main_response(&url) else {
             panic!("an allowed URL defers its decision");
         };
         assert!(gate.lock().scan_pending());
@@ -569,14 +662,14 @@ mod tests {
         gate.finished();
         // 결정을 보류한 사이 새 로드가 시작되면 늦은 결과는 버린다.
         gate.load_started();
-        let Response::Deferred(stale) = gate.main_response_deferrable(&url) else {
+        let Response::Deferred(stale) = gate.main_response(&url) else {
             panic!("still allowed");
         };
         gate.load_started();
         assert_eq!(stale.run(), None);
         // 읽기가 끝난 뒤, 적용 전에 새 로드가 시작되면 적용 지점에서 낡은 결과로 거절한다.
         gate.load_started();
-        let Response::Deferred(late) = gate.main_response_deferrable(&url) else {
+        let Response::Deferred(late) = gate.main_response(&url) else {
             panic!("still allowed");
         };
         let read = std::thread::spawn(late.reader()).join().expect("join");
@@ -594,7 +687,7 @@ mod tests {
         let (gate, rx, dir, url) = gate_with_doc("large", "");
         std::fs::write(dir.join("doc.html"), &body).expect("write large");
         gate.load_started();
-        gate.main_response(&url);
+        assert!(matches!(gate.main_response(&url), Response::Decided(false)));
         gate.committed(Some(&url));
         wait_scan(&rx);
         let first = gate.lock().current().and_then(|d| d.scan).expect("scan");
@@ -605,7 +698,7 @@ mod tests {
         body.extend_from_slice(b"<script>more()</script>");
         std::fs::write(dir.join("doc.html"), &body).expect("append");
         gate.load_started();
-        gate.main_response(&url);
+        assert!(matches!(gate.main_response(&url), Response::Decided(false)));
         gate.committed(Some(&url));
         wait_scan(&rx);
         let second = gate.lock().current().and_then(|d| d.scan).expect("scan");

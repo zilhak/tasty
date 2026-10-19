@@ -749,6 +749,8 @@ fn sync_webviews(
             wv.set_bounds(*bounds, scale_factor);
             apply_input_holes(wv, active_holes.get(sid).map_or(&[][..], Vec::as_slice));
         }
+        // 스캔을 기다리며 미룬 탐색 결정을 끝낸다. 읽기가 끝나면 작업 스레드가 이 윈도우를 깨운다.
+        wv.resume_script_decision();
         let nav = wv.nav_state();
         // 드러나야 할 자리에 있는데(활성 tab · overlay 없음) nav 가 Done 이 아니면
         // 그 프레임의 그 surface 는 "만들어졌지만 안 보이는" 상태다.

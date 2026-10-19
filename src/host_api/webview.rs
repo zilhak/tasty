@@ -3,6 +3,8 @@
 
 pub mod keys;
 mod load_generation;
+#[cfg(any(windows, test))]
+mod scan_resume;
 pub mod script_gate;
 
 #[cfg(target_os = "linux")]
