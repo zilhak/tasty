@@ -833,6 +833,9 @@ App/journal 디렉터리 전체를 면제하지 않는다.
 `scripts/lib/core_writer_scan.py`의 `(파일, 함수, 호출명)`별 허용 횟수는 replay·순수 후보 모델 결정·
 publication·원격 표시 projection을 구별한다. 같은 파일의 다른 함수 또는 같은 함수의 추가 호출은
 허용되지 않는다. 이 지표의 허용 밖 호출은 0이어야 하며 `--write-baseline`으로 수락할 수 없다.
+committed replay의 허용 위치는 `src/runtime/journal.rs`의 `apply_all` 하나다. 손상 범위를 한정하는
+복원(`load_recoverable`)도 정상 batch와, 건너뛴 batch의 위치 이동(구조 이벤트를 비운 같은 batch)을
+이 함수로 적용하며 별도 evolve 위치를 두지 않는다.
 
 기존 네 지표는 합계 증가나 새로운 위치에서 실패한다. `--write-baseline`은 각 합계가 늘지 않았을
 때만 위치 명부를 갱신한다. 이동·삭제 근거 없이 현재 측정값을 기준으로 받아들이면 안 된다.

@@ -236,12 +236,10 @@ fn apply_recoverable(
             "batch {id} also changes the damaged stream {stream}"
         ))
     } else {
-        match stream_batch(batch) {
-            Err(error) => Some(format!("batch {id}: {error}")),
-            Ok(decoded) => evolve_streams(models, &decoded)
-                .err()
-                .map(|error| format!("batch {id}: {error}")),
-        }
+        // 정상 batch는 committed replay 경계인 apply_all로 적용한다. 실패하면 모델은 바뀌지 않는다.
+        apply_all(models, batch)
+            .err()
+            .map(|error| format!("batch {id}: {error}"))
     };
     let Some(cause) = failure else {
         return Ok(());
@@ -250,15 +248,16 @@ fn apply_recoverable(
         models.streams.remove(&stream);
         damaged.entry(stream).or_insert_with(|| cause.clone());
     }
-    // 건너뛴 batch도 위치는 지나간다. 남은 stream의 적용 위치를 같이 옮긴다.
-    evolve_streams(
+    // 건너뛴 batch도 위치는 지나간다. 구조 이벤트를 비운 같은 batch를 같은 replay 경계로 적용해
+    // 남은 stream의 적용 위치만 옮긴다.
+    apply_all(
         models,
-        &StreamBatch {
-            batch_id: id,
-            streams: Default::default(),
+        &StoredBatch {
+            cut: batch.cut.clone(),
+            command_id: batch.command_id.clone(),
+            events: Vec::new(),
         },
-    )?;
-    Ok(())
+    )
 }
 
 /// 엔진 stream 하나의 모델. 이벤트가 아직 없는 엔진이면 빈 모델이다.
