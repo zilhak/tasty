@@ -3310,3 +3310,57 @@ fn cli_help_group_and_internal_are_optional() {
     assert_eq!(cli[1].help_group, None);
     assert!(!cli[1].subcommands[0].internal);
 }
+
+fn webview_kind_manifest(rendering: &str, defaults: &str) -> String {
+    format!(
+        r#"
+        manifest_version = 1
+        id = "com.example.view"
+        name = "View"
+        version = "0.1.0"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "view"
+        display_name_i18n_key = "k"
+        rendering = "{rendering}"
+        [surface_kinds.webview_defaults]
+        {defaults}
+    "#
+    )
+}
+
+#[test]
+fn webview_defaults_parse_for_webview_kind() {
+    let m = parse(&webview_kind_manifest(
+        "webview",
+        "zoom = 150.0\nsandbox_scripts = false\nallow_remote_content = true\ncolor_scheme = \"dark\"",
+    ))
+    .expect("should parse");
+    assert_eq!(
+        m.surface_kinds[0].webview_defaults,
+        Some(WebViewDefaultsDecl {
+            zoom: Some(150.0),
+            sandbox_scripts: Some(false),
+            allow_remote_content: Some(true),
+            color_scheme: Some("dark".to_string()),
+        })
+    );
+}
+
+#[test]
+fn webview_defaults_rejected_outside_webview_kind_or_range() {
+    assert!(parse(&webview_kind_manifest("remote", "sandbox_scripts = false")).is_err());
+    assert!(parse(&webview_kind_manifest("webview", "zoom = 10.0")).is_err());
+    assert!(parse(&webview_kind_manifest("webview", "zoom = 600.0")).is_err());
+    assert!(
+        parse(&webview_kind_manifest(
+            "webview",
+            "color_scheme = \"sepia\""
+        ))
+        .is_err()
+    );
+    assert!(parse(&webview_kind_manifest("webview", "javascript = true")).is_err());
+}

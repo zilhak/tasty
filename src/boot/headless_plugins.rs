@@ -321,13 +321,7 @@ fn register_surface_kinds(
                 if let Some(default) = &decl.default_colors {
                     tasty_themes::add_plugin_surface_default(&decl.kind, default.clone());
                 }
-                register_one_surface_kind(
-                    registry,
-                    plugin_id,
-                    &pkg.manifest.api_version,
-                    decl,
-                    &host_cmd_tx,
-                );
+                register_one_surface_kind(registry, plugin_id, &pkg.manifest, decl, &host_cmd_tx);
             }
         }
         mgr.registered_plugins.insert(plugin_id.clone());
@@ -338,14 +332,16 @@ fn register_surface_kinds(
 fn register_one_surface_kind(
     registry: &std::sync::Arc<crate::runtime::surface_registry::SurfaceKindRegistry>,
     plugin_id: &str,
-    api_version: &str,
+    manifest: &crate::plugin::Manifest,
     decl: &crate::plugin::manifest::SurfaceKindDecl,
     host_cmd_tx: &std::sync::mpsc::Sender<crate::plugin_bridge::host_cmd::HostCmd>,
 ) {
     match decl.rendering {
         crate::plugin::manifest::SurfaceKindRendering::Webview => {
             crate::runtime::surface_registry::webview_kind::register_webview_kind(
-                plugin_id, &decl.kind,
+                plugin_id,
+                decl,
+                &manifest.contributes.settings_pages,
             );
             crate::plugin_bridge::remote_kind::register_remote_kind(
                 registry,
@@ -367,7 +363,7 @@ fn register_one_surface_kind(
                 registry,
                 plugin_id,
                 decl,
-                api_version,
+                &manifest.api_version,
             );
         }
     }

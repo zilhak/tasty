@@ -65,7 +65,9 @@ fn register_plugin_surface_kinds(
             }
             SurfaceKindRendering::Webview => {
                 crate::runtime::surface_registry::webview_kind::register_webview_kind(
-                    plugin_id, &decl.kind,
+                    plugin_id,
+                    decl,
+                    &pkg.manifest.contributes.settings_pages,
                 );
                 crate::plugin_bridge::remote_kind::register_remote_kind(
                     registry,

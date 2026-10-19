@@ -230,6 +230,32 @@ headless가 사용하지 않는 GUI 의존성은 [빌드 경계](../../dev-guide
 Windows의 fragment navigation과 사용자 제스처 전달, macOS 메뉴바와 키 중복 처리는 실제 환경에서 확인해야 하는 항목이다.
 이 문서의 소스 설명만으로 해당 플랫폼의 실행 검증을 대신하지 않는다.
 
+## 설정 출처 — kind 를 등록한 plugin
+
+webview surface 의 zoom·JS·원격 콘텐츠·색 구성표는 그 kind 를 등록한 plugin 의 설정에서 읽는다.
+번들·커스텀 plugin 을 구분하지 않으며 kind 이름으로 고정한 대응표가 없다. 등록할 때
+`webview_kind::register_webview_kind` 가 kind 마다 설정 소유 plugin 과 기본값을 기록하고,
+`HtmlWebViewSettings::resolve` 가 생성 때와 매 동기화 때 값을 정한다. 같은 kind 를 다른 plugin 이
+다시 등록하면 surface 등록부처럼 나중 등록이 설정 출처가 된다.
+
+| 저장 키 (`plugin_settings.<plugin_id>.*`) | 값 | 호스트 기본값 | 요청하는 연산 |
+|---|---|---|---|
+| `zoom` | 수치(%), 25..=500 | 100 | `set_zoom` |
+| `sandbox_scripts` | bool, 켜면 JS 끔 | 켬(JS 끔) | `set_javascript_enabled` |
+| `allow_remote_content` | bool | 끔 | `set_remote_content_allowed` |
+| `color_scheme` | `follow`·`light`·`dark` | `follow` | `set_color_scheme` |
+
+값은 위에서부터 먼저 있는 것을 쓴다.
+
+1. 사용자가 저장한 값. 저장된 값의 타입이 다르면 없는 것으로 본다.
+2. 그 plugin 의 설정 페이지(`[[contributes.settings_pages.items]]`)에서 같은 `storage_key` 를 쓰는 항목의 `default`. 설정 창이 보여 주는 기본값과 적용값이 갈리지 않게 먼저 본다.
+3. kind 선언의 `[surface_kinds.webview_defaults]`. 설정 창에 노출하지 않을 기본값을 정할 때 쓴다. markdown 은 `sandbox_scripts = false` 로 JS 를 기본으로 켠다.
+4. 호스트 기본값.
+
+zoom 단축키는 kind 가 `zoomable = true` 이고 webview kind 로 등록돼 있으면 그 설정 소유 plugin 의 `zoom` 을 10 씩 바꾸고, 초기화는 위 순서의 2~4 로 정한 기본값으로 돌린다. html 은 `zoomable` 을 선언하지 않아 단축키 대상이 아니다.
+
+html 은 이 값을 전역 sandbox 로 받고 문서마다 스크립트를 판정하는 게이트(`attach_script_gate`)를 따로 붙인다. 게이트는 html kind 에만 붙으므로 커스텀 webview kind 의 `sandbox_scripts` 는 문서 판정 없이 그대로 JS 켜기·끄기로 적용된다.
+
 ## 원격 리소스 차단
 
 allow_remote_content=false는 navigation과 페이지 내부 HTTP·HTTPS 요청을 함께 제한한다.

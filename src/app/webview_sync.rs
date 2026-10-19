@@ -248,6 +248,7 @@ fn create_missing_webviews(
                     attach_script_gate(view, engine, sid, &wv, &settings);
                     load_initial_url(view, engine, sid, &wv, url.as_ref());
                     // 생성 직후 HTML viewer 설정(zoom/JS/scheme/remote) 적용 + 기록.
+                    tracing::debug!("WebView surface {sid}: requesting settings {settings:?}");
                     settings.apply(&wv);
                     // Start hidden if not active
                     if !active_html.contains_key(&sid) {
@@ -752,6 +753,7 @@ fn sync_webviews(
         let resolved = resolve_webview_settings(view, engine, sid);
         if view.webview_applied_settings.get(&sid) != Some(&resolved) {
             if let Some(wv) = view.webviews.get(&sid) {
+                tracing::debug!("WebView surface {sid}: requesting settings {resolved:?}");
                 resolved.apply(wv);
             }
             view.webview_applied_settings.insert(sid, resolved);
@@ -862,53 +864,16 @@ fn webview_surface_kind(
     find_surface_anywhere(view, engine, surface_id).map(|s| s.kind())
 }
 
-/// surface 소유 plugin의 WebView 설정을 읽는다. 저장된 값이 없으면 기본값을 쓴다.
+/// surface kind를 등록한 plugin의 WebView 설정을 읽는다. 기본값은 그 plugin의 선언을 따른다.
+/// html의 문서 단위 스크립트 허용은 이 값을 전역 sandbox로 받아 backend 게이트가 적용한다(docs/surfaces/html/index.md).
 fn resolve_webview_settings(
     view: &MainView,
     engine: &crate::runtime::engine_access::EngineRef<'_>,
     surface_id: u32,
 ) -> crate::webview::HtmlWebViewSettings {
-    use crate::settings::PluginSettingValue;
-    use crate::webview::{ColorScheme, HtmlWebViewSettings};
-
-    let plugin_id = match webview_surface_kind(view, engine, surface_id)
-        .and_then(crate::webview::webview_settings_plugin_id)
-    {
-        Some(id) => id,
-        None => return HtmlWebViewSettings::default(),
-    };
-    let s = &engine.runtime.settings;
-    let zoom_percent = match s.plugin_setting(plugin_id, "zoom") {
-        Some(PluginSettingValue::Number(n)) => *n,
-        _ => 100.0,
-    };
-    // HTML plugin은 임의 콘텐츠를 열 수 있어 기본적으로 JS를 막는다.
-    // markdown은 정화한 문서의 탐색 스크립트를 실행해야 하므로 기본값이 다르다.
-    // 사용자가 저장한 설정은 이 기본값보다 우선한다.
-    // html은 이 값을 전역 sandbox로 받고 문서 단위 허용은 backend의 게이트가 적용한다(docs/surfaces/html/index.md).
-    let sandbox_default = plugin_id != "com.tasty.markdown";
-    let sandbox = match s.plugin_setting(plugin_id, "sandbox_scripts") {
-        Some(PluginSettingValue::Bool(b)) => *b,
-        _ => sandbox_default,
-    };
-    let allow_remote_content = match s.plugin_setting(plugin_id, "allow_remote_content") {
-        Some(PluginSettingValue::Bool(b)) => *b,
-        _ => false,
-    };
-    let color_scheme = match s.plugin_setting(plugin_id, "color_scheme") {
-        Some(PluginSettingValue::Text(t)) => match t.as_str() {
-            "light" => ColorScheme::Light,
-            "dark" => ColorScheme::Dark,
-            _ => ColorScheme::Follow,
-        },
-        _ => ColorScheme::Follow,
-    };
-    HtmlWebViewSettings {
-        zoom_percent,
-        javascript_enabled: !sandbox, // "Sandbox scripts" on(기본) → JS off
-        allow_remote_content,
-        color_scheme,
-    }
+    let source = webview_surface_kind(view, engine, surface_id)
+        .and_then(crate::runtime::surface_registry::webview_kind::webview_settings_source);
+    crate::webview::HtmlWebViewSettings::resolve(source.as_ref(), &engine.runtime.settings)
 }
 
 /// Find the URL for an Html panel by surface ID.

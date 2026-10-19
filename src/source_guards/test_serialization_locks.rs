@@ -41,6 +41,7 @@ const SERIALIZED: &[Serialized] = &[
             "WEBVIEW_KINDS",
             "register_webview_kind",
             "is_webview_kind",
+            "webview_settings_source",
             "reset_for_test",
         ],
         scope: Scope::Crate,

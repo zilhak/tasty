@@ -1,4 +1,4 @@
-<!-- source-hash: 04e6c5f8582b -->
+<!-- source-hash: 7b813a3b696c -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -33,6 +33,8 @@ In the **Settings** window, plugin pages appear in two places.
 - **Appearance** > **HTML** — **Default zoom** (%) · **Color scheme** (follow theme / light / dark) · **Allow remote content** (off by default — blocks external http/https resources) · **Sandbox scripts** (on by default).
 - **Plugins** > **Claude Code** — **Spawn child warning threshold** and so on.
 - **Plugins** > **Codex** — **Spawn child warning threshold** · **Default approval policy** · **Default sandbox mode**.
+
+A plugin that adds a Surface drawn as a web page, even one you installed yourself, applies the zoom, color scheme, allow remote content, and sandbox scripts values from its own settings page to that Surface, the same way HTML does. Values you have not changed follow the defaults the plugin sets, and on a Surface that supports the zoom shortcuts, the shortcuts change that plugin's zoom value.
 
 The **Configure** button in the plugin window goes to these pages too.
 

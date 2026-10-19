@@ -402,7 +402,35 @@ pub struct SurfaceKindDecl {
     /// 프리셋 편집기에 표시할 필드. 비어 있으면 전용 입력을 표시하지 않는다.
     #[serde(default)]
     pub preset_fields: Vec<PresetFieldDecl>,
+    /// webview kind의 WebView 설정 기본값. `rendering = "webview"`에서만 쓸 수 있다.
+    /// 사용자 설정과 같은 저장 키의 설정 페이지 항목 기본값이 없을 때 적용한다.
+    #[serde(default)]
+    pub webview_defaults: Option<WebViewDefaultsDecl>,
 }
+
+/// webview kind의 설정 기본값. 키 이름은 `plugin_settings.<plugin_id>`의 저장 키와 같다.
+/// 비운 항목은 호스트 기본값(zoom 100, sandbox 켬, 원격 콘텐츠 끔, follow)을 쓴다.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WebViewDefaultsDecl {
+    /// 페이지 배율(%). 25..=500.
+    #[serde(default)]
+    pub zoom: Option<f64>,
+    /// true면 JS를 끈다.
+    #[serde(default)]
+    pub sandbox_scripts: Option<bool>,
+    #[serde(default)]
+    pub allow_remote_content: Option<bool>,
+    /// follow | light | dark.
+    #[serde(default)]
+    pub color_scheme: Option<String>,
+}
+
+/// webview 설정 zoom의 허용 범위(%). 단축키 조정도 같은 범위로 자른다.
+pub const WEBVIEW_ZOOM_MIN: f64 = 25.0;
+pub const WEBVIEW_ZOOM_MAX: f64 = 500.0;
+/// webview 설정 color_scheme에 쓸 수 있는 값.
+pub const WEBVIEW_COLOR_SCHEMES: &[&str] = &["follow", "light", "dark"];
 
 /// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "remote" | "webview" | "egui-mesh"`.
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]

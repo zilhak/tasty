@@ -25,5 +25,6 @@ pub use types::{
     MenuItemDecl, Permission, PollingDecl, PopupAnchor, PopupContribute, PopupRendering,
     PopupScopeDecl, PopupSizeHint, PopupTrigger, PresetFieldDecl, PresetFieldInputType,
     SelectOptionDecl, SettingsCategory, SettingsItemDecl, SettingsPageContribute, SurfaceKindDecl,
-    SurfaceKindRendering, ToolAction, ToolContribute, WindowContribute, WindowSizeHint,
+    SurfaceKindRendering, ToolAction, ToolContribute, WEBVIEW_COLOR_SCHEMES, WEBVIEW_ZOOM_MAX,
+    WEBVIEW_ZOOM_MIN, WebViewDefaultsDecl, WindowContribute, WindowSizeHint,
 };

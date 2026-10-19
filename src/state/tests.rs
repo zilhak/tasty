@@ -181,7 +181,8 @@ fn state_fixture(
             .unwrap_or_else(|p| p.into_inner());
         crate::runtime::surface_registry::webview_kind::register_webview_kind(
             "com.tasty.markdown",
-            &decl.kind,
+            &decl,
+            &[],
         );
     }
     // 헤드리스 시험은 Markdown 생성 경로를 사용하지 않아 추가 등록을 생략한다.

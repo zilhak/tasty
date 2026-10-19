@@ -17,6 +17,7 @@ use super::validators::{
     is_valid_completion_strategy_id, is_valid_event_key, is_valid_event_pattern,
     is_valid_hook_event_key, is_valid_hook_handler_id, is_valid_ipc_prefix, is_valid_kind,
     is_valid_plugin_id, is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
+    validate_webview_defaults,
 };
 
 impl Manifest {
@@ -66,6 +67,7 @@ impl Manifest {
                 );
             }
             self.validate_preset_fields(kind)?;
+            validate_webview_defaults(kind)?;
         }
         for raw in &self.permissions {
             if Permission::from_token(raw).is_none() {

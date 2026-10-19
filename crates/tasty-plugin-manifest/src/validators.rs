@@ -2,6 +2,46 @@
 
 pub(super) use tasty_utils::plugin_id::is_valid_plugin_id;
 
+use super::types::{
+    SurfaceKindDecl, SurfaceKindRendering, WEBVIEW_COLOR_SCHEMES, WEBVIEW_ZOOM_MAX,
+    WEBVIEW_ZOOM_MIN,
+};
+
+/// webview_defaults는 webview kind에만 쓰며 값은 호스트가 적용할 수 있는 범위여야 한다.
+pub(super) fn validate_webview_defaults(kind: &SurfaceKindDecl) -> anyhow::Result<()> {
+    let Some(defaults) = &kind.webview_defaults else {
+        return Ok(());
+    };
+    if kind.rendering != SurfaceKindRendering::Webview {
+        anyhow::bail!(
+            "surface_kinds '{}': webview_defaults is only valid for rendering = \"webview\"",
+            kind.kind
+        );
+    }
+    if let Some(zoom) = defaults.zoom
+        && !(WEBVIEW_ZOOM_MIN..=WEBVIEW_ZOOM_MAX).contains(&zoom)
+    {
+        anyhow::bail!(
+            "surface_kinds '{}': webview_defaults.zoom {} must be within {}..={}",
+            kind.kind,
+            zoom,
+            WEBVIEW_ZOOM_MIN,
+            WEBVIEW_ZOOM_MAX
+        );
+    }
+    if let Some(scheme) = &defaults.color_scheme
+        && !WEBVIEW_COLOR_SCHEMES.contains(&scheme.as_str())
+    {
+        anyhow::bail!(
+            "surface_kinds '{}': webview_defaults.color_scheme '{}' must be one of {:?}",
+            kind.kind,
+            scheme,
+            WEBVIEW_COLOR_SCHEMES
+        );
+    }
+    Ok(())
+}
+
 pub(super) fn is_valid_kind(s: &str) -> bool {
     !s.is_empty()
         && s.chars()

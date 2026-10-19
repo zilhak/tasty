@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.396"
+version = "0.1.397"
 description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
@@ -41,6 +41,11 @@ records_recent = true
 # 변환 전에 파일 경로를 받도록 파일 열기 팝업을 지정한다.
 convert_requires_input = true
 convert_input_popup = "file-open"
+
+# 문서는 plugin이 정화한 HTML이고 주소창·탐색 스크립트가 실행돼야 하므로 JS를 기본으로 켠다.
+# 설정 페이지에 이 항목은 없다. 사용자가 저장한 sandbox_scripts가 있으면 그 값이 우선한다.
+[surface_kinds.webview_defaults]
+sandbox_scripts = false
 
 # 프리셋 편집기가 이 kind 를 편집할 때 노출할 필드. 작업 디렉토리 대신 파일 경로를
 # 입력받고, 적용 시 그 파일의 폴더를 cwd 로 파생한다(derive_cwd).

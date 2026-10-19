@@ -43,8 +43,10 @@ pub(crate) enum ZoomChange {
 
 #[derive(Clone, Debug)]
 pub(crate) enum SettingsPatch {
+    /// webview kind 설정 소유 plugin의 zoom. 저장값이 없을 때와 초기화할 때 default_zoom을 쓴다.
     PluginZoom {
         plugin: String,
+        default_zoom: f64,
         change: ZoomChange,
     },
     FontSize {
@@ -58,16 +60,21 @@ pub(crate) enum SettingsPatch {
 impl SettingsPatch {
     pub(crate) fn apply(&self, settings: &mut crate::settings::Settings) {
         match self {
-            Self::PluginZoom { plugin, change } => {
+            Self::PluginZoom {
+                plugin,
+                default_zoom,
+                change,
+            } => {
                 use crate::settings::PluginSettingValue;
+                use tasty_plugin_manifest::{WEBVIEW_ZOOM_MAX, WEBVIEW_ZOOM_MIN};
                 let current = match settings.plugin_setting(plugin, "zoom") {
                     Some(PluginSettingValue::Number(value)) => *value,
-                    _ => 100.0,
+                    _ => *default_zoom,
                 };
                 let value = match change {
-                    ZoomChange::In => (current + 10.0).min(500.0),
-                    ZoomChange::Out => (current - 10.0).max(25.0),
-                    ZoomChange::Reset => 100.0,
+                    ZoomChange::In => (current + 10.0).min(WEBVIEW_ZOOM_MAX),
+                    ZoomChange::Out => (current - 10.0).max(WEBVIEW_ZOOM_MIN),
+                    ZoomChange::Reset => *default_zoom,
                 };
                 settings.set_plugin_setting(plugin, "zoom", PluginSettingValue::Number(value));
             }
@@ -514,5 +521,31 @@ mod tests {
         assert_eq!(ports(&first.runtime.port_favorites), [47811]);
         assert!(second.runtime.sync_shared_lists());
         assert_eq!(ports(&second.runtime.port_favorites), [47811]);
+    }
+
+    #[test]
+    fn plugin_zoom_starts_from_and_resets_to_the_plugin_default() {
+        use super::{SettingsPatch, ZoomChange};
+        use crate::settings::PluginSettingValue;
+        let zoom = |settings: &crate::settings::Settings| match settings
+            .plugin_setting("com.example.view", "zoom")
+        {
+            Some(PluginSettingValue::Number(n)) => *n,
+            other => panic!("zoom not stored: {other:?}"),
+        };
+        let patch = |change| SettingsPatch::PluginZoom {
+            plugin: "com.example.view".into(),
+            default_zoom: 150.0,
+            change,
+        };
+        let mut settings = crate::settings::Settings::default();
+        patch(ZoomChange::In).apply(&mut settings);
+        assert_eq!(zoom(&settings), 160.0);
+        patch(ZoomChange::Reset).apply(&mut settings);
+        assert_eq!(zoom(&settings), 150.0);
+        for _ in 0..40 {
+            patch(ZoomChange::In).apply(&mut settings);
+        }
+        assert_eq!(zoom(&settings), tasty_plugin_manifest::WEBVIEW_ZOOM_MAX);
     }
 }

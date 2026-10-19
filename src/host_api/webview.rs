@@ -247,21 +247,163 @@ pub fn is_navigable_url(url: &str) -> bool {
     url.starts_with("file://") || url.starts_with("http://") || url.starts_with("https://")
 }
 
-/// 같은 plugin 설정을 읽고 수정하도록 surface 종류를 설정 소유 plugin에 연결한다.
-pub fn webview_settings_plugin_id(kind: &str) -> Option<&'static str> {
-    match kind {
-        "html" => Some("com.tasty.html"),
-        "markdown" => Some("com.tasty.markdown"),
-        _ => None,
-    }
-}
-
 impl HtmlWebViewSettings {
+    /// webview kind의 설정 출처에서 값을 정한다. 사용자가 저장한 값이 기본값보다 우선한다.
+    /// 출처가 없는 kind는 호스트 기본값을 쓴다. 저장된 값의 타입이 다르면 기본값으로 본다.
+    pub fn resolve(
+        source: Option<&crate::runtime::surface_registry::webview_kind::WebViewSettingsSource>,
+        settings: &crate::settings::Settings,
+    ) -> Self {
+        use crate::settings::PluginSettingValue;
+        let Some(source) = source else {
+            return Self::default();
+        };
+        let plugin_id = source.plugin_id.as_str();
+        let defaults = &source.defaults;
+        let number = |key: &str, default: f64| match settings.plugin_setting(plugin_id, key) {
+            Some(PluginSettingValue::Number(n)) => *n,
+            _ => default,
+        };
+        let flag = |key: &str, default: bool| match settings.plugin_setting(plugin_id, key) {
+            Some(PluginSettingValue::Bool(b)) => *b,
+            _ => default,
+        };
+        let scheme = match settings.plugin_setting(plugin_id, "color_scheme") {
+            Some(PluginSettingValue::Text(t)) => t.as_str(),
+            _ => defaults.color_scheme.as_str(),
+        };
+        Self {
+            zoom_percent: number("zoom", defaults.zoom_percent),
+            // sandbox_scripts가 켜져 있으면 JS를 끈다.
+            javascript_enabled: !flag("sandbox_scripts", defaults.sandbox_scripts),
+            allow_remote_content: flag("allow_remote_content", defaults.allow_remote_content),
+            color_scheme: match scheme {
+                "light" => ColorScheme::Light,
+                "dark" => ColorScheme::Dark,
+                _ => ColorScheme::Follow,
+            },
+        }
+    }
+
     /// backend에 설정을 요청한다. 비동기 필터 준비·플랫폼의 미지원 항목 때문에 즉시 적용을 보장하지 않는다.
     pub fn apply(&self, wv: &PlatformWebView) {
         wv.set_zoom(self.zoom_percent / 100.0);
         wv.set_javascript_enabled(self.javascript_enabled);
         wv.set_color_scheme(self.color_scheme);
         wv.set_remote_content_allowed(self.allow_remote_content);
+    }
+}
+
+#[cfg(test)]
+mod settings_resolve_tests {
+    use super::{ColorScheme, HtmlWebViewSettings};
+    use crate::runtime::surface_registry::webview_kind::{
+        WebViewSettingDefaults, WebViewSettingsSource,
+    };
+    use crate::settings::{PluginSettingValue, Settings};
+
+    fn bundled_source(manifest_toml: &str) -> WebViewSettingsSource {
+        let manifest: tasty_plugin_manifest::Manifest =
+            toml::from_str(manifest_toml).expect("bundled manifest");
+        manifest.validate().expect("bundled manifest validates");
+        let decl = manifest
+            .surface_kinds
+            .iter()
+            .find(|k| k.rendering == tasty_plugin_manifest::SurfaceKindRendering::Webview)
+            .expect("webview kind");
+        WebViewSettingsSource {
+            plugin_id: manifest.id.clone(),
+            defaults: WebViewSettingDefaults::from_manifest(
+                decl,
+                &manifest.contributes.settings_pages,
+            ),
+        }
+    }
+
+    #[test]
+    fn unregistered_kind_uses_host_defaults() {
+        assert_eq!(
+            HtmlWebViewSettings::resolve(None, &Settings::default()),
+            HtmlWebViewSettings::default()
+        );
+    }
+
+    #[test]
+    fn bundled_html_and_markdown_keep_their_defaults() {
+        let html = bundled_source(include_str!(
+            "../../crates/tasty-plugin-html/tasty-plugin.toml"
+        ));
+        assert_eq!(html.plugin_id, "com.tasty.html");
+        assert_eq!(
+            HtmlWebViewSettings::resolve(Some(&html), &Settings::default()),
+            HtmlWebViewSettings {
+                zoom_percent: 100.0,
+                javascript_enabled: false,
+                allow_remote_content: false,
+                color_scheme: ColorScheme::Follow,
+            }
+        );
+        let markdown = bundled_source(include_str!(
+            "../../crates/tasty-plugin-markdown/tasty-plugin.toml"
+        ));
+        assert_eq!(markdown.plugin_id, "com.tasty.markdown");
+        assert_eq!(
+            HtmlWebViewSettings::resolve(Some(&markdown), &Settings::default()),
+            HtmlWebViewSettings {
+                zoom_percent: 100.0,
+                javascript_enabled: true,
+                allow_remote_content: false,
+                color_scheme: ColorScheme::Follow,
+            }
+        );
+    }
+
+    #[test]
+    fn custom_kind_uses_its_plugin_defaults_and_saved_settings() {
+        let source = WebViewSettingsSource {
+            plugin_id: "com.example.view".into(),
+            defaults: WebViewSettingDefaults {
+                zoom_percent: 120.0,
+                sandbox_scripts: false,
+                allow_remote_content: false,
+                color_scheme: "dark".into(),
+            },
+        };
+        let mut settings = Settings::default();
+        assert_eq!(
+            HtmlWebViewSettings::resolve(Some(&source), &settings),
+            HtmlWebViewSettings {
+                zoom_percent: 120.0,
+                javascript_enabled: true,
+                allow_remote_content: false,
+                color_scheme: ColorScheme::Dark,
+            }
+        );
+        settings.set_plugin_setting(
+            "com.example.view",
+            "zoom",
+            PluginSettingValue::Number(150.0),
+        );
+        settings.set_plugin_setting(
+            "com.example.view",
+            "sandbox_scripts",
+            PluginSettingValue::Bool(true),
+        );
+        settings.set_plugin_setting(
+            "com.example.view",
+            "allow_remote_content",
+            PluginSettingValue::Bool(true),
+        );
+        // 다른 plugin의 값은 읽지 않는다.
+        settings.set_plugin_setting("com.tasty.html", "zoom", PluginSettingValue::Number(300.0));
+        assert_eq!(
+            HtmlWebViewSettings::resolve(Some(&source), &settings),
+            HtmlWebViewSettings {
+                zoom_percent: 150.0,
+                javascript_enabled: false,
+                allow_remote_content: true,
+                color_scheme: ColorScheme::Dark,
+            }
+        );
     }
 }
