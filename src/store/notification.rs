@@ -135,12 +135,42 @@ impl NotificationStore {
             return None;
         }
 
+        Some(self.push_new(source_workspace, source_surface, title, body, level, now))
+    }
+
+    /// 서로 다른 사건을 알리는 호스트 알림용이다. 짧은 간격으로 이어져도 앞 항목에 합치지 않아
+    /// 각 제목과 본문이 따로 남는다. 같은 출처의 출력 폭주를 묶는 병합은 `add_with_level`이 맡는다.
+    pub fn add_separate(
+        &mut self,
+        source_workspace: WorkspaceId,
+        source_surface: SurfaceId,
+        title: String,
+        body: String,
+        level: NotificationLevel,
+    ) -> u64 {
+        self.push_new(
+            source_workspace,
+            source_surface,
+            title,
+            body,
+            level,
+            Instant::now(),
+        )
+    }
+
+    fn push_new(
+        &mut self,
+        source_workspace: WorkspaceId,
+        source_surface: SurfaceId,
+        title: String,
+        body: String,
+        level: NotificationLevel,
+        now: Instant,
+    ) -> u64 {
         while self.notifications.len() >= self.max_count {
             self.notifications.pop_front();
         }
-
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-
         self.notifications.push_back(Notification {
             id,
             level,
@@ -151,7 +181,7 @@ impl NotificationStore {
             timestamp: now,
             read: false,
         });
-        Some(id)
+        id
     }
 
     #[cfg(test)]
@@ -304,6 +334,17 @@ mod tests {
         assert!(store.has_unread_for_surface(100));
         store.mark_read(id);
         assert!(!store.has_unread_for_surface(100));
+    }
+
+    #[test]
+    fn separate_notices_do_not_merge_inside_the_coalesce_window() {
+        let mut store = NotificationStore::with_coalesce_ms(60_000);
+        let level = NotificationLevel::Warning;
+        let a = store.add_separate(1, 0, "A".into(), "a".into(), level);
+        let b = store.add_separate(1, 0, "B".into(), "b".into(), level);
+        assert_ne!(a, b);
+        let titles: Vec<_> = store.all().map(|n| n.title.as_str()).collect();
+        assert_eq!(titles, ["A", "B"]);
     }
 
     #[test]

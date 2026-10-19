@@ -85,6 +85,30 @@ mod tests {
         assert!(warnings(&engine).is_empty());
     }
 
+    /// 두 저장소가 같은 부팅에서 실패해도 각 제목이 따로 남는다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn both_failures_stay_two_separate_warnings() {
+        crate::i18n::init("en");
+        let mut session = engine();
+        let mut engine = session.borrow_mut();
+        let error = crate::db::DbInitError::Corrupt(std::path::PathBuf::from("/home/x/state.db"));
+        let fallback = tasty_memory::InitFallback {
+            cause: "corrupt",
+            error: "database corrupted: /home/x/memory.db".into(),
+        };
+        report_state_db_unavailable(&mut engine, &error);
+        report_memory_fallback(&mut engine, Some(&fallback));
+        let titles: Vec<_> = warnings(&engine).into_iter().map(|(t, _)| t).collect();
+        assert_eq!(
+            titles,
+            [
+                crate::i18n::t("storage_notice.state_db_title").to_string(),
+                crate::i18n::t("storage_notice.memory_fallback_title").to_string(),
+            ]
+        );
+    }
+
     #[cfg(feature = "gui")]
     #[test]
     fn state_db_failure_leaves_one_warning_with_its_cause() {

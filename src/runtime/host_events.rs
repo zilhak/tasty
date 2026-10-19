@@ -22,19 +22,18 @@ impl EngineMut<'_> {
             tracing::warn!("host notification skipped: no workspace ({title}: {body})");
             return false;
         };
-        if let Some(id) =
-            self.live
-                .notifications
-                .add_with_level(ws_id, 0, title.clone(), body.clone(), level)
-        {
-            self.enqueue_host_event(PendingHostEvent::NotificationCreated {
-                id,
-                level,
-                title,
-                body,
-                source: "host".to_string(),
-            });
-        }
+        // 서로 다른 사건이 같은 부팅 회차에 이어 나와도 한 항목으로 합쳐 제목을 잃지 않게 한다.
+        let id = self
+            .live
+            .notifications
+            .add_separate(ws_id, 0, title.clone(), body.clone(), level);
+        self.enqueue_host_event(PendingHostEvent::NotificationCreated {
+            id,
+            level,
+            title,
+            body,
+            source: "host".to_string(),
+        });
         true
     }
 }
