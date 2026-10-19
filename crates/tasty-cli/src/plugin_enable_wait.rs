@@ -3,8 +3,9 @@
 //! 조금 길게 기다리고, 그래도 결과가 없으면 아직 시작 중이라고 알린다.
 //!
 //! 첫 `plugin.enable` 요청은 일반 명령처럼 보낸다. 후속 조회만 남은 대기 시간 안에서 읽는다
-//! ([`IpcConnection::send_reading_within`]). 읽기 상한에 걸린 연결은 다시 쓰지 않으므로, 진행
-//! 안내 시점에 걸리면 새로 연결해 이어 조회한다. 서버가 답하지 않아도 진행 안내와 상한이 지켜진다.
+//! ([`IpcConnection::send_reading_within`]: 응답 한 줄을 읽는 전체가 남은 시간 안이다). 상한에 걸린
+//! 연결은 다시 쓰지 않으므로 진행 안내 시점에 걸리면 새로 연결해 이어 조회하고, 그 연결 수립도
+//! 남은 시간으로 제한한다. 서버가 답하지 않거나 응답을 조금씩 보내도 진행 안내와 상한이 지켜진다.
 
 use std::time::{Duration, Instant};
 
@@ -36,7 +37,7 @@ pub(crate) fn settle(
     command: &Commands,
     request: &JsonRpcRequest,
     conn: IpcConnection,
-    reconnect: impl FnMut() -> anyhow::Result<IpcConnection>,
+    reconnect: impl FnMut(Duration) -> anyhow::Result<IpcConnection>,
     value: &mut Value,
 ) -> Option<String> {
     let Commands::Plugin {
@@ -78,8 +79,8 @@ fn show_request(request: &JsonRpcRequest, id: &str) -> JsonRpcRequest {
 
 #[allow(clippy::too_many_arguments)] // 이유: 시험이 상한·안내 시점·안내 출력을 바꿔 넣는다.
 fn wait(
-    mut conn: IpcConnection,
-    mut reconnect: impl FnMut() -> anyhow::Result<IpcConnection>,
+    conn: IpcConnection,
+    mut reconnect: impl FnMut(Duration) -> anyhow::Result<IpcConnection>,
     show: &JsonRpcRequest,
     generation: u64,
     value: &mut Value,
@@ -91,6 +92,7 @@ fn wait(
     let deadline = started + limit;
     let progress_at = started + progress_after;
     let mut progress_shown = false;
+    let mut conn = Some(conn);
     while state_of(value) == Some("starting") {
         let now = Instant::now();
         if now >= deadline {
@@ -106,14 +108,20 @@ fn wait(
         } else {
             progress_at
         };
-        let Some(shown) = conn.send_reading_within(show, until.saturating_duration_since(now))?
-        else {
-            if Instant::now() >= deadline {
-                return Ok(());
-            }
-            conn = reconnect()?;
+        let left = until.saturating_duration_since(now);
+        let mut connection = match conn.take() {
+            Some(connection) => connection,
+            None => match reconnect(left) {
+                Ok(connection) => connection,
+                // 남은 시간 안에 연결하지 못했다. 안내 시점이나 상한에서 다시 판단한다.
+                Err(_) if Instant::now() >= until => continue,
+                Err(e) => return Err(e),
+            },
+        };
+        let Some(shown) = connection.send_reading_within(show, left)? else {
             continue;
         };
+        conn = Some(connection);
         let Some(start) = shown.get("start").filter(|s| !s.is_null()) else {
             return Ok(());
         };
@@ -259,7 +267,7 @@ mod tests {
     #[test]
     fn a_silent_server_still_gets_the_progress_line_and_the_limit() {
         let (port, server) = silent_server();
-        let connect = move || -> anyhow::Result<IpcConnection> {
+        let connect = move |_left| -> anyhow::Result<IpcConnection> {
             IpcConnection::new(TcpStream::connect(("127.0.0.1", port))?)
         };
         let mut value = json!({"start": {"generation": 3, "state": "starting"}});
@@ -279,7 +287,7 @@ mod tests {
         let started = Instant::now();
         let mut progress_at = None;
         wait(
-            connect().unwrap(),
+            connect(Duration::ZERO).unwrap(),
             connect,
             &show,
             3,
@@ -340,7 +348,7 @@ mod tests {
         };
         wait(
             conn,
-            || anyhow::bail!("no reconnect"),
+            |_| anyhow::bail!("no reconnect"),
             &show,
             3,
             &mut value,

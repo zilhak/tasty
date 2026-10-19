@@ -53,9 +53,14 @@ impl From<ConnectFailure> for anyhow::Error {
 /// loopback IPC 포트에 상한을 걸고 연결한다. 실패 메시지는 `cli.request.connect_failed`
 /// 한 키를 모든 연결 지점(plugin audit-follow / debug stream-echo / attach)과 공유한다.
 fn connect_ipc(port: u16) -> std::result::Result<TcpStream, ConnectFailure> {
+    connect_ipc_within(port, IPC_CONNECT_TIMEOUT)
+}
+
+/// 호출자의 남은 대기 시간이 연결 상한보다 짧으면 그 시간까지만 연결을 기다린다.
+fn connect_ipc_within(port: u16, left: Duration) -> std::result::Result<TcpStream, ConnectFailure> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    TcpStream::connect_timeout(&addr, IPC_CONNECT_TIMEOUT)
-        .map_err(|source| ConnectFailure { port, source })
+    let bound = left.min(IPC_CONNECT_TIMEOUT).max(Duration::from_millis(1));
+    TcpStream::connect_timeout(&addr, bound).map_err(|source| ConnectFailure { port, source })
 }
 
 /// 도움말·버전 출력은 오류가 아니라 clap이 렌더링하는 정상 출력이다.
@@ -480,7 +485,7 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
                 &command,
                 &request,
                 conn,
-                || IpcConnection::new(connect_ipc(port)?),
+                |left| IpcConnection::new(connect_ipc_within(port, left)?),
                 &mut value,
             );
             merge_cli_warnings(&mut value, cli_warnings);
