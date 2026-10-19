@@ -8,14 +8,14 @@ use super::CANVAS_MIN;
 use crate::catalog::spec::{TokenChip, meta, note, spec};
 use crate::i18n::{t, t_fmt, t_fmt2};
 
-/// 본체가 이 화면을 띄우는 세 경우.
+/// 디자인 시안의 세 경우. 본체는 앞의 둘에서 이 화면을 띄운다.
 #[derive(Clone, Copy)]
 enum Case {
     /// 터미널 엔진을 만들지 못했다.
     Engine,
     /// 다른 Tasty가 같은 데이터 폴더를 쓰고 있다.
     HomeInUse,
-    /// 저장된 웹훅 포트를 열지 못했다. 안내에 CLI 명령 code run이 여럿 들어간다.
+    /// 시안의 웹훅 포트 장. 본체는 이 경우 경고 알림만 남기며, 여기서는 CLI 명령 code run이 여럿 든 긴 안내 문구 예시로 남긴다.
     WebhookPort,
 }
 
@@ -80,8 +80,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Boot error screen",
         Some(
-            "Shown instead of the app when Tasty cannot start: the terminal engine failed, \
-             another Tasty holds the data folder, or the saved webhook port is taken. Same boot \
+            "Shown instead of the app when Tasty cannot start: the terminal engine failed \
+             or another Tasty holds the data folder. The webhook port frame keeps the design's \
+             long CLI hint copy; Tasty itself starts without the listener there. Same boot \
              stage as the loading and shell setup screens, so the same structure: lockup, then a \
              360 form with no card. The glyph carries the danger tone; the title stays \
              text-primary. Quit, Esc, Enter or closing the window exits with code 1.",

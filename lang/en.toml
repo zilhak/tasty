@@ -47,7 +47,7 @@ body = "Tasty is already running."
 title = "Webhook port in use"
 body = "The webhook port {} could not be opened: {}"
 hint_argument = "It was given with `--webhook-port`. Start with a free port, or without the option to let Tasty choose one."
-hint_config = "It was saved with `tasty webhook port`. While Tasty is not running, `tasty webhook port --unset` removes it and `tasty webhook port <free port>` replaces it; then start again. Or start once with `--webhook-port <free port>`."
+hint_config = "It was saved with `tasty webhook port`. `tasty webhook port <free port>` replaces it and `tasty webhook port --unset` removes it; the change applies from the next start. Or start once with `--webhook-port <free port>`."
 differs = "Tasty is already running in this data folder with webhook port {}. Quit it first to start with --webhook-port {}."
 differs_none = "Tasty is already running in this data folder without a webhook listener. Quit it first to start with --webhook-port {}."
 
@@ -1385,6 +1385,8 @@ vi_copy_macro_replay_failed = "Macro replay failed (empty register or recursion 
 vi_copy_needs_terminal = "Copy mode works only in a terminal"
 
 [webhook.warn]
+title = "Webhooks are off for this run"
+explicit_failed = "The webhook port {} could not be opened: {}. Tasty runs without the webhook listener, so webhook URLs do not answer until a restart with a free port. Terminals and the rest of Tasty work as usual."
 moved = "Webhook port {} was in use, so the listener took {}. Saved webhooks now answer on that port; `tasty webhook list` shows their URLs."
 unavailable = "Webhook ports {}–{} are all in use, so the inbound listener did not start."
 

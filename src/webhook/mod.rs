@@ -22,7 +22,7 @@ pub use registry::{WebhookEntry, info, list, register, sweep, unregister};
 
 use tasty_ipc::host_call::HostIpcInjector;
 
-/// 리스너 시작 결과. 명시 지정 포트의 bind 실패는 부팅 초기의 [`prepare`]가 실행을 막으므로 여기 없다.
+/// 리스너 시작 결과.
 #[derive(Debug, PartialEq, Eq)]
 pub enum WebhookInitReport {
     /// 기본 포트나 명시 지정 포트에 bind했다.
@@ -31,6 +31,8 @@ pub enum WebhookInitReport {
     MovedWithPersistent { port: u16 },
     /// 탐색 범위가 모두 막혀 리스너 없이 실행한다.
     Unavailable,
+    /// 명시 지정 포트를 열지 못해 다른 포트로 옮기지 않고 리스너 없이 실행한다.
+    ExplicitUnavailable(ExplicitBindError),
 }
 
 impl WebhookInitReport {
@@ -50,24 +52,34 @@ impl WebhookInitReport {
         }
     }
 
-    /// 사용자에게 알릴 경고. GUI는 toast로, headless는 로그로 낸다.
-    pub fn warning(&self) -> Option<String> {
+    /// 사용자에게 알릴 경고 알림. GUI·headless 모두 알림 저장소에 경고로 남긴다.
+    /// 시작 단계의 경고이며 웹훅 실행 실패와는 출처 값으로 구분한다.
+    pub fn notice(&self) -> Option<crate::system_notice::SystemNotice> {
         let last = config::DEFAULT_PORT + bind::PROBE_COUNT - 1;
-        match self {
-            Self::Bound => None,
-            Self::MovedWithPersistent { port } => Some(crate::i18n::t_fmt2(
+        let body = match self {
+            Self::Bound => return None,
+            Self::MovedWithPersistent { port } => crate::i18n::t_fmt2(
                 "webhook.warn.moved",
                 &config::DEFAULT_PORT.to_string(),
                 &port.to_string(),
-            )),
-            Self::Unavailable => Some(crate::i18n::t_fmt2(
+            ),
+            Self::Unavailable => crate::i18n::t_fmt2(
                 "webhook.warn.unavailable",
                 &config::DEFAULT_PORT.to_string(),
                 &last.to_string(),
-            )),
-        }
+            ),
+            Self::ExplicitUnavailable(failure) => failure.notice_body(),
+        };
+        Some(crate::system_notice::SystemNotice::warning(
+            NOTICE_SOURCE_START,
+            crate::i18n::t("webhook.warn.title").to_string(),
+            body,
+        ))
     }
 }
+
+/// 리스너 시작 경고의 알림 source.
+pub const NOTICE_SOURCE_START: &str = "webhook.start";
 
 /// 리스너 주소. 기본은 이 컴퓨터에서만 받는 loopback이고, 설정으로 켜면 모든 IPv4 인터페이스에서 받는다.
 pub fn bind_ip(settings: &tasty_settings::WebhookSettings) -> std::net::IpAddr {
@@ -78,12 +90,9 @@ pub fn bind_ip(settings: &tasty_settings::WebhookSettings) -> std::net::IpAddr {
     }
 }
 
-/// 부팅 초기에 GUI·headless가 부른다. 실행 인자(`--webhook-port`)가 설정 파일보다 우선하며,
-/// 명시 지정 포트를 bind하지 못하면 오류를 돌려줘 호출자가 실행을 막는다.
-pub fn prepare(
-    argument: Option<u16>,
-    settings: &tasty_settings::WebhookSettings,
-) -> Result<Reservation, ExplicitBindError> {
+/// 부팅 초기에 GUI·headless가 부른다. 실행 인자(`--webhook-port`)가 설정 파일보다 우선한다.
+/// 명시 지정 포트를 bind하지 못해도 실행을 막지 않고 원인을 선점 결과에 남긴다.
+pub fn prepare(argument: Option<u16>, settings: &tasty_settings::WebhookSettings) -> Reservation {
     bind::reserve(
         bind::request(argument, config::read_port()),
         bind_ip(settings),
@@ -91,7 +100,8 @@ pub fn prepare(
 }
 
 /// IPC와 injector가 준비된 뒤 GUI·headless가 부른다. 선점한 소켓으로 리스너를 시작하고
-/// Persistent 웹훅을 복원한다. 결과의 경고는 호출자가 표시한다.
+/// Persistent 웹훅을 복원한다. 리스너를 열지 못했으면 등록은 남지만 URL이 응답하지 않는다.
+/// 경고는 알림 채널로 남기며 첫 workspace가 생긴 뒤 저장된다.
 pub fn start(
     reservation: Option<Reservation>,
     injector: HostIpcInjector,
@@ -99,14 +109,25 @@ pub fn start(
 ) -> WebhookInitReport {
     // 복원 항목의 URL을 만들기 전에 포트 기록을 연결한다.
     registry::set_runtime(injector, ports.clone());
+    let failure = reservation
+        .as_ref()
+        .and_then(Reservation::explicit_failure)
+        .cloned();
     let bound = reservation.as_ref().and_then(Reservation::bound);
+    if let Some(failure) = &failure {
+        ports.record_webhook_failure(failure.clone());
+    }
     if let Some((server, bound)) = reservation.and_then(|r| r.listener) {
         listener::start(server, bound, &ports);
     }
     let restored = persist::restore_into_registry();
-    let report = WebhookInitReport::from_bound(bound, restored > 0);
-    if let Some(message) = report.warning() {
-        tracing::warn!("{message}");
+    let report = match failure {
+        Some(failure) => WebhookInitReport::ExplicitUnavailable(failure),
+        None => WebhookInitReport::from_bound(bound, restored > 0),
+    };
+    if let Some(notice) = report.notice() {
+        tracing::warn!("{}", notice.body);
+        crate::system_notice::post(notice);
     }
     report
 }
@@ -142,5 +163,38 @@ mod tests {
         assert_eq!(R::from_bound(at(28430, PortSource::Probe), false), R::Bound);
         assert_eq!(R::from_bound(at(40000, PortSource::Config), true), R::Bound);
         assert_eq!(R::from_bound(None, true), R::Unavailable);
+    }
+
+    #[test]
+    fn every_listener_problem_becomes_one_start_warning() {
+        use WebhookInitReport as R;
+        assert!(R::Bound.notice().is_none());
+        let failure = ExplicitBindError {
+            addr: std::net::SocketAddr::from(([127, 0, 0, 1], 41000)),
+            source: PortSource::Config,
+            error: "Address in use".into(),
+        };
+        for report in [
+            R::MovedWithPersistent { port: 28430 },
+            R::Unavailable,
+            R::ExplicitUnavailable(failure),
+        ] {
+            let notice = report.notice().expect("a warning");
+            assert_eq!(
+                notice.level,
+                crate::notification::NotificationLevel::Warning
+            );
+            assert_eq!(notice.source, NOTICE_SOURCE_START);
+        }
+        let failure = ExplicitBindError {
+            addr: std::net::SocketAddr::from(([127, 0, 0, 1], 41000)),
+            source: PortSource::Argument,
+            error: "Address in use".into(),
+        };
+        let body = failure.notice_body();
+        assert!(
+            body.contains("41000") && body.contains("Address in use"),
+            "{body}"
+        );
     }
 }

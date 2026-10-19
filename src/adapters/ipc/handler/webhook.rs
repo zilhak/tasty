@@ -354,6 +354,11 @@ fn listener_status(
         "source": bound.map(|b| b.source),
         "explicit": bound.is_some_and(|b| b.source.is_explicit()),
         "saved_port": webhook::config::read_port(),
+        "unavailable": ports.webhook_failure().map(|f| json!({
+            "port": f.addr.port(),
+            "source": f.source,
+            "error": f.error,
+        })),
     })
 }
 

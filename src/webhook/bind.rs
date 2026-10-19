@@ -1,7 +1,7 @@
 //! 리스너 포트를 정하고 소켓을 선점한다. 부팅 초기에 이벤트 루프·저널보다 먼저 부른다.
 //!
-//! - 실행 인자 또는 설정 파일의 포트는 명시 지정이다. 그 포트를 bind하지 못하면 실행을 막는다.
-//!   인자가 설정보다 우선한다.
+//! - 실행 인자 또는 설정 파일의 포트는 명시 지정이다. 그 포트를 bind하지 못하면 다른 포트로 옮기지
+//!   않고 리스너 없이 실행하며, 원인을 경고 알림과 `webhook.config` 조회로 알린다. 인자가 설정보다 우선한다.
 //! - 명시 지정이 없으면 기본 포트부터 하나씩 올리며 bind를 시도한다. 상한 안에서 모두 막히면
 //!   리스너 없이 실행한다.
 //! - 점유 여부는 미리 조회하지 않고 실제 bind 결과로 판단한다. 조회와 bind 사이에 다른 프로세스가
@@ -38,8 +38,8 @@ pub fn request(argument: Option<u16>, config: Option<u16>) -> PortRequest {
     }
 }
 
-/// 명시 지정한 포트를 bind하지 못했다. 실행을 막는다.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// 명시 지정한 포트를 bind하지 못했다. 이번 실행은 리스너 없이 계속한다.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ExplicitBindError {
     pub addr: SocketAddr,
     pub source: PortSource,
@@ -47,28 +47,25 @@ pub struct ExplicitBindError {
 }
 
 impl ExplicitBindError {
-    /// 실행을 막을 때 보이는 제목·본문·안내. GUI 오류 화면과 headless 표준 오류가 같이 쓴다.
-    pub fn message(&self) -> (String, String, String) {
-        let title = crate::i18n::t("boot.webhook_port.title").to_string();
+    /// 경고 알림의 본문. 포트·원인·영향 범위와 포트를 바꾸는 방법을 함께 적는다.
+    pub fn notice_body(&self) -> String {
         let body = crate::i18n::t_fmt2(
-            "boot.webhook_port.body",
+            "webhook.warn.explicit_failed",
             &self.addr.port().to_string(),
             &self.error,
         );
         let hint = match self.source {
-            PortSource::Argument => crate::i18n::t("boot.webhook_port.hint_argument").to_string(),
-            _ => crate::i18n::t_fmt(
-                "boot.webhook_port.hint_config",
-                &super::config::config_path().display().to_string(),
-            ),
+            PortSource::Argument => crate::i18n::t("boot.webhook_port.hint_argument"),
+            _ => crate::i18n::t("boot.webhook_port.hint_config"),
         };
-        (title, body, hint)
+        format!("{body}\n{hint}")
     }
 }
 
-/// 선점 결과. `listener`가 None이면 탐색 범위가 모두 막혀 리스너 없이 실행한다.
+/// 선점 결과. `listener`가 None이면 리스너 없이 실행한다. 명시 지정 포트 실패면 그 원인이 남는다.
 pub struct Reservation {
     pub(super) listener: Option<(tiny_http::Server, BoundPort)>,
+    pub(super) explicit_failure: Option<ExplicitBindError>,
 }
 
 impl Reservation {
@@ -76,14 +73,27 @@ impl Reservation {
     pub fn bound(&self) -> Option<BoundPort> {
         self.listener.as_ref().map(|(_, bound)| *bound)
     }
+
+    /// 명시 지정 포트를 열지 못한 원인.
+    pub fn explicit_failure(&self) -> Option<&ExplicitBindError> {
+        self.explicit_failure.as_ref()
+    }
 }
 
-/// 요청대로 bind를 시도한다.
-pub fn reserve(request: PortRequest, ip: IpAddr) -> Result<Reservation, ExplicitBindError> {
-    let listener = reserve_with(request, ip, |addr| {
+/// 요청대로 bind를 시도한다. 명시 지정 포트 실패도 리스너 없는 선점 결과로 돌려준다.
+pub fn reserve(request: PortRequest, ip: IpAddr) -> Reservation {
+    match reserve_with(request, ip, |addr| {
         tiny_http::Server::http(addr).map_err(|e| e.to_string())
-    })?;
-    Ok(Reservation { listener })
+    }) {
+        Ok(listener) => Reservation {
+            listener,
+            explicit_failure: None,
+        },
+        Err(failure) => Reservation {
+            listener: None,
+            explicit_failure: Some(failure),
+        },
+    }
 }
 
 /// bind 함수를 받아 순서만 정한다. 시험은 가짜 bind를 넘긴다.
@@ -111,7 +121,7 @@ fn reserve_explicit<S>(
             // 리스너 로그와 같은 대상·문형으로 남겨 실행 로그에서 한 표지로 찾게 한다.
             tracing::error!(
                 target: "tasty::webhook::listener",
-                "webhook listener bind {addr} failed: {error} — explicit {source:?} port; not starting"
+                "webhook listener bind {addr} failed: {error} — explicit {source:?} port; running without the listener"
             );
             Err(ExplicitBindError {
                 addr,
@@ -217,14 +227,14 @@ mod tests {
     }
 
     #[test]
-    fn a_busy_explicit_port_is_an_error_and_is_not_probed_past() {
+    fn a_busy_explicit_port_fails_without_probing_past_it() {
         let mut tried = Vec::new();
         let request = PortRequest::Explicit {
             port: 28429,
             source: PortSource::Argument,
         };
         let Err(error) = reserve_with(request, LOOPBACK, fake(&[28429], &mut tried)) else {
-            panic!("a busy explicit port must refuse");
+            panic!("a busy explicit port must fail");
         };
         assert_eq!(error.addr.port(), 28429);
         assert_eq!(error.source, PortSource::Argument);
@@ -240,7 +250,10 @@ mod tests {
             port,
             source: PortSource::Config,
         };
-        assert!(reserve(request, LOOPBACK).is_err());
+        let reservation = reserve(request, LOOPBACK);
+        assert!(reservation.bound().is_none(), "no other port is taken");
+        let failure = reservation.explicit_failure().expect("the cause is kept");
+        assert_eq!(failure.addr.port(), port);
         drop(held);
     }
 }

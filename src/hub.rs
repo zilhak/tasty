@@ -38,6 +38,8 @@ impl Hub {
         ) {
             Ok(ipc) => {
                 tracing::info!("IPC server started on port {}", ipc.port());
+                // 작업 스레드가 남긴 알림도 IPC와 같은 깨우기로 메인 루프에 전달한다.
+                crate::system_notice::install_waker(ipc_waker.clone());
                 // 소켓 요청과 내부 요청이 같은 큐의 바이트 한도를 공유해야 한다.
                 let injector = HostIpcInjector::new(ipc.command_sender(), ipc_waker)
                     .with_admission(ipc.admission());

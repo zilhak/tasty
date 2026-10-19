@@ -42,6 +42,8 @@ pub(crate) struct BoundPort {
 pub(crate) struct RuntimePorts {
     ipc: OnceLock<BoundPort>,
     webhook: OnceLock<BoundPort>,
+    /// 명시 지정 포트를 열지 못해 리스너 없이 실행한 원인.
+    webhook_failure: OnceLock<crate::webhook::ExplicitBindError>,
 }
 
 impl RuntimePorts {
@@ -57,6 +59,17 @@ impl RuntimePorts {
         if self.webhook.set(bound).is_err() {
             tracing::warn!("runtime webhook port already recorded");
         }
+    }
+
+    /// 명시 지정 포트 실패를 한 번 기록한다. `webhook.config`가 리스너 없음의 이유로 보인다.
+    pub(crate) fn record_webhook_failure(&self, failure: crate::webhook::ExplicitBindError) {
+        if self.webhook_failure.set(failure).is_err() {
+            tracing::warn!("runtime webhook failure already recorded");
+        }
+    }
+
+    pub(crate) fn webhook_failure(&self) -> Option<&crate::webhook::ExplicitBindError> {
+        self.webhook_failure.get()
     }
 
     /// 기록한 IPC 포트는 GUI의 자기 attach 거절과 단일 인스턴스 포트 게시만 읽는다.

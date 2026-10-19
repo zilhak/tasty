@@ -567,6 +567,8 @@ pub(crate) mod webview_sync;
 
 #[cfg(feature = "gui")]
 pub(crate) mod remote_tool_files;
+#[cfg(feature = "gui")]
+mod system_notices;
 
 impl App {
     /// Reap only workers whose stop has been requested; never wait for a running thread here.

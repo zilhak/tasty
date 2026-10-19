@@ -425,6 +425,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.poll_local_reads();
         self.poll_dag_reads();
         self.poll_profile_detections();
+        self.poll_system_notices();
         for mut engine in self.engines_mut().windowed_and_parked() {
             engine.poll_attach_subscriptions();
         }

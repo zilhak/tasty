@@ -47,7 +47,7 @@ body = "이미 실행 중인 Tasty가 있습니다."
 title = "웹훅 포트 사용 중"
 body = "웹훅 포트 {}을(를) 열 수 없습니다: {}"
 hint_argument = "`--webhook-port`로 지정한 포트입니다. 빈 포트로 실행하거나, 옵션 없이 실행해 Tasty가 고르게 하세요."
-hint_config = "`tasty webhook port`로 저장한 포트입니다. Tasty가 실행 중이 아닐 때 `tasty webhook port --unset`으로 지우거나 `tasty webhook port <빈 포트>`로 바꾼 뒤 다시 시작하세요. 또는 한 번 `--webhook-port <빈 포트>`로 시작하세요."
+hint_config = "`tasty webhook port`로 저장한 포트입니다. `tasty webhook port <빈 포트>`로 바꾸거나 `tasty webhook port --unset`으로 지우면 다음 시작부터 적용됩니다. 또는 한 번 `--webhook-port <빈 포트>`로 시작하세요."
 differs = "이 데이터 폴더의 Tasty가 웹훅 포트 {}로 이미 실행 중입니다. --webhook-port {}로 실행하려면 먼저 종료하세요."
 differs_none = "이 데이터 폴더의 Tasty가 웹훅 리스너 없이 이미 실행 중입니다. --webhook-port {}로 실행하려면 먼저 종료하세요."
 
@@ -1337,6 +1337,8 @@ vi_copy_macro_replay_failed = "매크로 재생 실패(빈 레지스터 또는 �
 vi_copy_needs_terminal = "복사 모드는 터미널에서만 사용할 수 있습니다"
 
 [webhook.warn]
+title = "이번 실행에서 웹훅이 꺼졌습니다"
+explicit_failed = "웹훅 포트 {}을(를) 열 수 없습니다: {}. Tasty는 웹훅 리스너 없이 실행되며, 빈 포트로 다시 시작하기 전까지 웹훅 URL은 응답하지 않습니다. 터미널과 나머지 기능은 그대로 사용할 수 있습니다."
 moved = "웹훅 포트 {}이(가) 사용 중이어서 리스너가 {}을(를) 사용합니다. 저장한 웹훅은 이 포트로 받습니다. URL은 `tasty webhook list`로 확인하세요."
 unavailable = "웹훅 포트 {}–{}가 모두 사용 중이어서 인바운드 리스너를 시작하지 않았습니다."
 

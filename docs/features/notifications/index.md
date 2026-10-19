@@ -42,6 +42,14 @@ Tasty 자체가 남기는 호스트 알림(저장소 초기화 실패, headless 
 표시는 서로 다른 저장소이며, 사이드바 배지는 읽지 않은 알림 수가 아니라 주의 표시가 있는
 surface 수(`attention_count`)를 보여준다. 자세한 규칙은 [surface-highlight](../surface-highlight/index.md)를 따른다.
 
+### 작업 스레드의 시스템 알림
+
+사용자 입력에서 시작하지 않은 작업(웹훅 리스너 시작 등)은 `src/system_notice.rs`의 대기열에 알림을 남긴다. GUI는 메인 루프의 `about_to_wait`에서 포커스 윈도우(없으면 첫 윈도우)의 활성 workspace로, headless는 활성 workspace로 옮겨 `surface_id: 0`의 시스템 출처 알림으로 저장한다. 받을 윈도우·workspace가 아직 없으면 대기열에 그대로 두므로, 부팅 중에 생긴 경고는 첫 윈도우가 등록된 뒤 저장된다.
+
+- 같은 source·레벨·제목·본문의 알림은 10초(`REPEAT_WINDOW`) 안에 한 번만 남긴다. 저장소의 500ms 합치기보다 긴 창으로, 반복 실패가 목록을 덮지 않게 한다.
+- 대기열 상한은 32건이며 넘으면 가장 오래된 항목을 버리고 경고 로그를 남긴다.
+- source는 GUI `notification.created` 이벤트에만 실리며 저장소와 `notification.list`에는 남지 않는다.
+
 ### IPC 목록의 범위·ID·순서·상한
 
 `notification.list`는 모든 main/parked engine의 알림을 합쳐 반환한다. headless는

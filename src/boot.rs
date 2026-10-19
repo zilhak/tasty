@@ -202,17 +202,8 @@ fn run_gui(
     locale::init();
 
     let boot_settings = crate::settings::Settings::load();
-    // 명시 지정한 웹훅 포트를 열지 못하면 이벤트 루프·메모리·저널을 만들기 전에 오류 화면으로 끝낸다.
-    let webhook = match crate::webhook::prepare(cli.webhook_port, &boot_settings.webhook) {
-        Ok(reservation) => reservation,
-        Err(error) => {
-            let (title, body, hint) = error.message();
-            tracing::error!("boot refused: webhook port\n{title}\n{body}\n{hint}");
-            let code = home_in_use::run_screen(crate::gpu::BootErrorInfo { title, body, hint });
-            single_instance::instance_file::remove_owned();
-            return code;
-        }
-    };
+    // 명시 지정한 웹훅 포트를 열지 못해도 터미널은 시작한다. 원인은 리스너 시작 때 경고 알림으로 남는다.
+    let webhook = crate::webhook::prepare(cli.webhook_port, &boot_settings.webhook);
 
     // 비정상 종료한 프로세스가 남긴 디스크 스크롤백을 설정과 관계없이 백그라운드에서 회수한다.
     tasty_terminal::disk_scrollback::spawn_orphan_reclaim();
@@ -556,7 +547,7 @@ fn start_ipc_and_seed(
         crate::hook_handler::install_default_sources();
         // 완료 전략의 notify_via 검증이 훅 핸들러를 참조한다.
         crate::completion_strategy::install_default_sources();
-        // 헤드리스에는 toast가 없어 경고는 함수 안의 warn 로그로만 알린다.
+        // 시작 경고는 함수 안에서 알림 채널로 남긴다.
         let reservation = app.hub.webhook.take();
         let _report =
             crate::webhook::start(reservation, injector.clone(), app.services.ports.clone());
@@ -832,16 +823,6 @@ fn ipc_commands_left(core: &crate::app::services::AppServices) -> bool {
         .is_some_and(|ledger| ledger.snapshot().queued_commands > 0)
 }
 
-/// 명시 지정한 웹훅 포트를 열지 못했을 때 headless가 남기는 오류와 종료 코드.
-#[cfg(not(feature = "gui"))]
-fn refuse_headless_webhook_port(
-    error: &crate::webhook::ExplicitBindError,
-) -> std::process::ExitCode {
-    let (title, body, hint) = error.message();
-    tracing::error!("boot refused: webhook port\n{title}\n{body}\n{hint}");
-    std::process::ExitCode::from(1)
-}
-
 /// gui feature 없는 빌드의 호스트 루프. IPC·PTY·플러그인 이벤트와 타이머를 처리한다.
 #[cfg(not(feature = "gui"))]
 fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
@@ -856,11 +837,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     let waker = HeadlessWaker::new(tx);
 
     let boot_settings = crate::settings::Settings::load();
-    // 명시 지정한 웹훅 포트를 열지 못하면 다른 상태를 만들기 전에 종료 코드 1로 끝낸다.
-    let webhook = match crate::webhook::prepare(cli.webhook_port, &boot_settings.webhook) {
-        Ok(reservation) => reservation,
-        Err(error) => return Ok(refuse_headless_webhook_port(&error)),
-    };
+    // 명시 지정한 웹훅 포트를 열지 못해도 데몬은 시작한다. 원인은 경고 알림과 webhook.config로 남는다.
+    let webhook = crate::webhook::prepare(cli.webhook_port, &boot_settings.webhook);
 
     let memory_arc = boot_memory(&boot_settings);
     // 비정상 종료한 프로세스가 남긴 디스크 스크롤백을 설정과 관계없이 백그라운드에서 회수한다.
@@ -916,6 +894,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
             // The service applies/logs results; headless has no popup to receive display updates.
             let _ = app.services.profile_detections.poll();
             engine.poll_attach_subscriptions();
+            crate::intent::headless::queue_system_notices(&mut state, &engine);
             crate::intent::headless::drain_pending_intents_in_app(
                 &mut app.services,
                 &mut state,

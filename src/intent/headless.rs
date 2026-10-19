@@ -263,6 +263,30 @@ fn apply_settings(
     }
 }
 
+/// 작업 스레드가 남긴 시스템 알림을 활성 workspace 알림 intent로 바꾼다. workspace가 없으면 그대로 둔다.
+#[cfg(not(feature = "gui"))]
+pub(crate) fn queue_system_notices(state: &mut RequestContext, engine: &EngineMut<'_>) {
+    let Some(ws_id) = engine
+        .workspace_at(state.active_workspace_index(engine.core))
+        .map(|ws| ws.id)
+    else {
+        return;
+    };
+    for notice in crate::system_notice::take() {
+        state.dispatch_intent(
+            crate::app::command::DomainIntent::PushNotification {
+                level: notice.level,
+                ws_id,
+                surface_id: 0,
+                title: notice.title,
+                body: notice.body,
+                source: notice.source.to_string(),
+            }
+            .from_system(),
+        );
+    }
+}
+
 // 헤드리스는 알림을 저장하지만 알림음과 NotificationCreated 이벤트 전송은 생략한다.
 fn push_notification(
     engine: &mut EngineMut<'_>,

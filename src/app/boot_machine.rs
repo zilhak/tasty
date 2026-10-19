@@ -555,7 +555,7 @@ impl App {
         };
         Self::report_boot_init_errors(&mut state, invalid_theme_name);
         Self::report_locale_fallback(&mut state);
-        self.start_boot_ipc_and_webhooks(&mut state);
+        self.start_boot_ipc_and_webhooks();
         Self::report_persistence_incidents(settings_origin, &mut state);
 
         let engine = self
@@ -710,7 +710,7 @@ impl App {
         }
     }
 
-    fn start_boot_ipc_and_webhooks(&mut self, state: &mut crate::state::MainViewState) {
+    fn start_boot_ipc_and_webhooks(&mut self) {
         let ipc_proxy = self.view.proxy.clone();
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
             crate::shortcuts::send_app_event(&ipc_proxy, crate::AppEvent::IpcReady);
@@ -730,19 +730,13 @@ impl App {
                 self.services.record_ipc_port(server.port());
             }
             self.start_single_instance_service();
-            // 리스너가 참조할 훅 레지스트리를 먼저 채운다. 웹훅 시작 실패는 비치명적 경고로 알린다.
+            // 리스너가 참조할 훅 레지스트리를 먼저 채운다. 웹훅 시작 실패는 비치명적 경고 알림으로 남긴다.
             crate::hook_handler::install_default_sources();
             crate::completion_strategy::install_default_sources();
             let reservation = self.hub.webhook.take();
-            let report =
+            // 경고는 토스트가 아니라 알림으로 남긴다. 첫 창이 등록된 뒤 그 활성 workspace에 저장된다.
+            let _report =
                 crate::webhook::start(reservation, injector.clone(), self.services.ports.clone());
-            if let Some(msg) = report.warning() {
-                state.toasts.push(
-                    msg,
-                    crate::adapters::ui::ToastKind::Warning,
-                    crate::adapters::ui::ToastScope::Window,
-                );
-            }
             self.services.set_host_ipc_injector(injector);
         }
     }

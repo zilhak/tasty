@@ -43,6 +43,7 @@ mod runtime_ports;
 mod source_guards;
 mod state;
 mod store;
+mod system_notice;
 #[cfg(feature = "gui")]
 mod view;
 mod waker;
