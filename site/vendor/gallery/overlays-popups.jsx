@@ -12,6 +12,7 @@ const NAV = [
   { id: "switch", label: "Switch-number overlay" },
   { id: "modhint", label: "Modifier hints" },
   { id: "categories", label: "Workspace categories" },
+  { id: "notices", label: "Notice column · restore notice" },
 ];
 
 // Interactive hold-to-reveal demo: press & hold the button; after a 500ms dwell
@@ -262,6 +263,9 @@ function Page() {
             tokens={[{ tok: "--tasty-separator", use: <><code>---</code> line (idle)</>, color: "var(--tasty-separator)" }, { tok: "--tasty-text-muted", use: <><code>---</code> line (hover)</>, color: "var(--tasty-text-muted)" }, { tok: "--tasty-surface-raised", use: "popup fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-menu-border", use: "edge", color: "var(--tasty-menu-border)" }, { tok: "--tasty-popup-content-margin", use: "inner ring 4 (all sides)" }, { tok: "--tasty-accent-danger", use: "delete row", color: "var(--tasty-accent-danger)" }]} />
           <Note>Collapse state is per-category and <b>shared</b> with the full sidebar (both seed from the persisted <code>collapsed</code> flag in <code>layout.json</code>). Toggling here or in the full header updates the same state.</Note>
         </Spec>
+      </Section>
+      <Section id="notices" title="Notice column — restore failure · save halt · response wait (2026-10-19)">
+        {window.GalleryNoticeColumn ? <window.GalleryNoticeColumn /> : null}
       </Section>
     </>
   );

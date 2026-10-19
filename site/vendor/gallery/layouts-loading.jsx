@@ -185,7 +185,7 @@ function GalleryLoadingOverlay() {
   return (
     <>
       <Spec title="Loading overlay — four placements over existing content (2026-10-16)"
-        when={<>While a slow request runs (first: <b>remote attach</b> adding its structure) a <b>LoadingOverlay</b> is drawn <b>on top of what is already there</b>. No new tab, pane, slot or "Loading…" title; the stored name is never touched. Each placement has a fixed box (dashed below = the overlay rect): <b>surface</b> = the surface rect, spinner 16 on a 24 bed bottom-right · <b>tab</b> = the 14 kind-icon slot · <b>LNB card</b> = the 16 dot slot · <b>rail</b> = the 36 avatar, a 28 ring around the initial. Ink is one token everywhere. The overlay has <b>no hit-test and no focus</b>: click, drag, hover, close, select and keys behave as if it were not there. The caller passes the rect and <code>visible</code>; the part owns no timers.</>}>
+        when={<>While a slow request runs (first: <b>remote attach</b> adding its structure) a <b>LoadingOverlay</b> is drawn <b>on top of what is already there</b>. The <b>part itself</b> adds no tab, pane, slot or "Loading…" title and never touches the stored name. (2026-10-19) This is the part's responsibility only: when the user asks for a new tab or split, the <b>client first lays out a normal tab / split</b> and the part is drawn on it — see <i>Pre-layout</i> below. Each placement has a fixed box (dashed below = the overlay rect): <b>surface</b> = the surface rect, spinner 16 on a 24 bed bottom-right · <b>tab</b> = the 14 kind-icon slot · <b>LNB card</b> = the 16 dot slot · <b>rail</b> = the 36 avatar, a 28 ring around the initial. Ink is one token everywhere. The overlay has <b>no hit-test and no focus</b>: click, drag, hover, close, select and keys behave as if it were not there. The caller passes the rect and <code>visible</code>; the part owns no timers.</>}>
         <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
           {THEMES.map(([label, attr]) => (
             <Themed key={label} attr={attr}>
@@ -323,4 +323,5 @@ function GalleryLoadingOverlay() {
 }
 
 window.GalleryLoadingOverlay = GalleryLoadingOverlay;
+window.GalleryLoadingParts = { LTab, LRow, LAv, TermSurface, TabBed, LnbBed, RailBed, Themed, THEMES, mono, cap, LoadingOverlay };
 })();

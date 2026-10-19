@@ -48,6 +48,8 @@
   --tasty-accent-info:    var(--tasty-color-sky);
   --tasty-accent-success: var(--tasty-color-green);
   --tasty-accent-warning: var(--tasty-color-yellow);
+  /* 2026-10-19: a warning GLYPH that must clear 3:1 on light grounds. Mocha = accent-warning; Latte remaps (yellow #df8e1d is 2.3:1 on base). */
+  --tasty-accent-warning-glyph: var(--tasty-accent-warning);
   /* attention: a SECOND, deliberately non-yellow "notice" tone for states that
      want a heads-up without the transient/validation reading of warning-yellow.
      Used for plugin needs-attention (rejected / failing). Peach re-points per
@@ -124,6 +126,9 @@
   --tasty-notify-info:       var(--tasty-attention-completion);
   --tasty-notify-error-fg:   var(--tasty-text-on-accent);
   --tasty-notify-warning-fg: var(--tasty-text-on-accent);
+  /* 2026-10-19: FILLED warning (badge pill) — split from notify-warning so the Latte
+     fill can lighten without touching the warning glyph/accent. Mocha = notify-warning. */
+  --tasty-notify-warning-fill: var(--tasty-notify-warning);
   --tasty-notify-info-fg:    var(--tasty-text-on-accent);
   --tasty-notify-unread:     var(--tasty-accent-primary);   /* unread dot on a list item */
   /* rank — urgency order, resolved by the implementation, exposed as tokens so
@@ -359,6 +364,15 @@
   --tasty-search-match-active-bg: color-mix(in srgb, var(--tasty-color-yellow) 50%, transparent);
   --tasty-search-match-active-fg: var(--tasty-color-neutral-1100);
   --tasty-text-on-accent: var(--tasty-color-white);
+
+  /* notification warning badge (2026-10-19): Latte yellow #df8e1d under white = 2.62:1 and under
+     text (n1100) = 3.06:1 — no ink clears 4.5 on the full yellow. Fill = yellow 50% over white
+     (≈ #efc78e) + n1100 ink = 5.01:1 (glyph same ink, 5.01 ≥ 3). Same move as search-match-active.
+     Global text-on-accent and notify-warning (glyph/accent) are NOT changed. */
+  --tasty-notify-warning-fill: color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-white));
+  --tasty-notify-warning-fg:   var(--tasty-color-neutral-1100);
+  /* warning glyph (2026-10-19): yellow 50% toward text n1100 ≈ #967043 — 4.54:1 on white, ≈3.6:1 on a warning tint box (≥ 3 icon floor). */
+  --tasty-accent-warning-glyph: color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-neutral-1100));
 
   /* disabled ink — Latte's light end of the ramp is compressed (neutral-600..800
      sit within 1.2:1 of each other), so the same ramp step reads fainter than in

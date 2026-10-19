@@ -1684,16 +1684,16 @@ impl crate::theme::Theme {
         self.accent_primary()
     }
 
-    /// `component.font-combo-list-max-height` → `{primitive.size-300}` = 300px
+    /// `component.font-combo-list-max-height` → `{component.select-search-list-max-height}` = 300px
     #[inline]
     pub fn font_combo_list_max_height(&self) -> LogicalPx {
-        LogicalPx((300.0 * self.ui_zoom).round())
+        self.select_search_list_max_height()
     }
 
-    /// `component.font-combo-search-inset` → `{semantic.space-xs}` = 4px
+    /// `component.font-combo-search-inset` → `{component.select-search-inset}` = 4px
     #[inline]
     pub fn font_combo_search_inset(&self) -> LogicalPx {
-        self.spacing_xs
+        self.select_search_inset()
     }
 
     /// `component.font-preview-min-width` → `{semantic.field-width-lg}` = 200px
@@ -3118,6 +3118,24 @@ impl crate::theme::Theme {
         self.text_placeholder()
     }
 
+    /// `component.notice-column-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn notice_column_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.notice-column-inset` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn notice_column_inset(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.notice-column-width` → `{primitive.size-360}` = 360px
+    #[inline]
+    pub fn notice_column_width(&self) -> LogicalPx {
+        LogicalPx((360.0 * self.ui_zoom).round())
+    }
+
     /// `component.notification-badge-error-bg` → `{semantic.notify-error}`
     #[inline]
     pub fn notification_badge_error_bg(&self) -> HexColor {
@@ -3166,16 +3184,16 @@ impl crate::theme::Theme {
         LogicalPx((2.0 * self.ui_zoom).round())
     }
 
-    /// `component.notification-badge-warning-bg` → `{semantic.notify-warning}`
+    /// `component.notification-badge-warning-bg` → `{semantic.notify-warning-fill}`
     #[inline]
     pub fn notification_badge_warning_bg(&self) -> HexColor {
-        self.accent_warning()
+        self.notify_warning_fill()
     }
 
     /// `component.notification-badge-warning-fg` → `{semantic.notify-warning-fg}`
     #[inline]
     pub fn notification_badge_warning_fg(&self) -> HexColor {
-        self.text_on_accent()
+        self.notify_warning_fg()
     }
 
     /// `component.notification-item-bg-hover` → `{semantic.overlay-hover}`
@@ -3400,6 +3418,78 @@ impl crate::theme::Theme {
         LogicalPx((540.0 * self.ui_zoom).round())
     }
 
+    /// `component.pending-indicator-bg` → `{semantic.surface-raised}`
+    #[inline]
+    pub fn pending_indicator_bg(&self) -> HexColor {
+        self.surface_raised()
+    }
+
+    /// `component.pending-indicator-border` → `{semantic.border-strong}`
+    #[inline]
+    pub fn pending_indicator_border(&self) -> HexColor {
+        self.border_strong()
+    }
+
+    /// `component.pending-indicator-compact-below` → `{primitive.size-200}` = 200px
+    #[inline]
+    pub fn pending_indicator_compact_below(&self) -> LogicalPx {
+        LogicalPx((200.0 * self.ui_zoom).round())
+    }
+
+    /// `component.pending-indicator-delay` → `{component.loading-overlay-delay}` = 200ms
+    #[inline]
+    pub fn pending_indicator_delay(&self) -> Millis {
+        self.loading_overlay_delay()
+    }
+
+    /// `component.pending-indicator-fg` → `{semantic.text-secondary-raised}`
+    #[inline]
+    pub fn pending_indicator_fg(&self) -> HexColor {
+        self.text_secondary_raised()
+    }
+
+    /// `component.pending-indicator-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn pending_indicator_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.pending-indicator-height` → `{primitive.size-24}` = 24px
+    #[inline]
+    pub fn pending_indicator_height(&self) -> LogicalPx {
+        LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
+    /// `component.pending-indicator-padding-x` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn pending_indicator_padding_x(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.pending-indicator-radius` → `{semantic.radius}` = 4px
+    #[inline]
+    pub fn pending_indicator_radius(&self) -> LogicalPx {
+        self.corner_radius
+    }
+
+    /// `component.pending-indicator-sep-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn pending_indicator_sep_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.pending-indicator-spinner-size` → `{semantic.icon-size-sm}` = 14px
+    #[inline]
+    pub fn pending_indicator_spinner_size(&self) -> LogicalPx {
+        self.icon_glyph_size_sm
+    }
+
+    /// `component.pending-indicator-time-fg` → `{semantic.text-primary}`
+    #[inline]
+    pub fn pending_indicator_time_fg(&self) -> HexColor {
+        self.text_primary()
+    }
+
     /// `component.perm-granted-fg` → `{semantic.accent-success}`
     #[inline]
     pub fn perm_granted_fg(&self) -> HexColor {
@@ -3476,6 +3566,30 @@ impl crate::theme::Theme {
     #[inline]
     pub fn plugin_avatar_size_sm(&self) -> LogicalPx {
         LogicalPx((32.0 * self.ui_zoom).round())
+    }
+
+    /// `component.plugin-trust-body-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn plugin_trust_body_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.plugin-trust-glyph-danger` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn plugin_trust_glyph_danger(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.plugin-trust-glyph-success` → `{semantic.accent-success}`
+    #[inline]
+    pub fn plugin_trust_glyph_success(&self) -> HexColor {
+        self.accent_success()
+    }
+
+    /// `component.plugin-trust-title-fg` → `{semantic.text-primary}`
+    #[inline]
+    pub fn plugin_trust_title_fg(&self) -> HexColor {
+        self.text_primary()
     }
 
     /// `component.plugins-header-glyph` → `{semantic.accent-decorative}`
@@ -3724,6 +3838,60 @@ impl crate::theme::Theme {
         LogicalPx((112.0 * self.ui_zoom).round())
     }
 
+    /// `component.restore-notice-body-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn restore_notice_body_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.restore-notice-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn restore_notice_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.restore-notice-glyph` → `{semantic.notify-error}`
+    #[inline]
+    pub fn restore_notice_glyph(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.restore-notice-label-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn restore_notice_label_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.restore-notice-padding` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn restore_notice_padding(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
+    /// `component.restore-notice-path-bg` → `{semantic.bg-sidebar}`
+    #[inline]
+    pub fn restore_notice_path_bg(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+
+    /// `component.restore-notice-path-border` → `{semantic.border-default}`
+    #[inline]
+    pub fn restore_notice_path_border(&self) -> HexColor {
+        self.border_default()
+    }
+
+    /// `component.restore-notice-path-fg` → `{semantic.text-primary}`
+    #[inline]
+    pub fn restore_notice_path_fg(&self) -> HexColor {
+        self.text_primary()
+    }
+
+    /// `component.restore-notice-width` → `{component.notice-column-width}` = 360px
+    #[inline]
+    pub fn restore_notice_width(&self) -> LogicalPx {
+        self.notice_column_width()
+    }
+
     /// `component.search-bar-border` → `{component.menu-border}`
     #[inline]
     pub fn search_bar_border(&self) -> HexColor {
@@ -3806,6 +3974,102 @@ impl crate::theme::Theme {
     #[inline]
     pub fn select_radius(&self) -> LogicalPx {
         self.corner_radius
+    }
+
+    /// `component.select-search-field-bg` → `{component.input-raised-bg}`
+    #[inline]
+    pub fn select_search_field_bg(&self) -> HexColor {
+        self.input_raised_bg()
+    }
+
+    /// `component.select-search-field-border` → `{component.input-raised-border}`
+    #[inline]
+    pub fn select_search_field_border(&self) -> HexColor {
+        self.input_raised_border()
+    }
+
+    /// `component.select-search-field-border-focus` → `{component.input-border-focus}`
+    #[inline]
+    pub fn select_search_field_border_focus(&self) -> HexColor {
+        self.input_border_focus()
+    }
+
+    /// `component.select-search-field-fg` → `{component.input-fg}`
+    #[inline]
+    pub fn select_search_field_fg(&self) -> HexColor {
+        self.input_fg()
+    }
+
+    /// `component.select-search-field-gap` → `{component.input-gap}` = 8px
+    #[inline]
+    pub fn select_search_field_gap(&self) -> LogicalPx {
+        self.input_gap()
+    }
+
+    /// `component.select-search-field-height` → `{component.input-height}` = 28px
+    #[inline]
+    pub fn select_search_field_height(&self) -> LogicalPx {
+        self.input_height()
+    }
+
+    /// `component.select-search-field-padding-x` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn select_search_field_padding_x(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.select-search-icon-fg` → `{component.input-icon-fg}`
+    #[inline]
+    pub fn select_search_icon_fg(&self) -> HexColor {
+        self.input_icon_fg()
+    }
+
+    /// `component.select-search-inset` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn select_search_inset(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.select-search-list-max-height` → `{primitive.size-300}` = 300px
+    #[inline]
+    pub fn select_search_list_max_height(&self) -> LogicalPx {
+        LogicalPx((300.0 * self.ui_zoom).round())
+    }
+
+    /// `component.select-search-menu-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn select_search_menu_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.select-search-menu-max-width` → `{primitive.size-320}` = 320px
+    #[inline]
+    pub fn select_search_menu_max_width(&self) -> LogicalPx {
+        LogicalPx((320.0 * self.ui_zoom).round())
+    }
+
+    /// `component.select-search-placeholder` → `{component.input-placeholder}`
+    #[inline]
+    pub fn select_search_placeholder(&self) -> HexColor {
+        self.input_placeholder()
+    }
+
+    /// `component.select-search-status-fg` → `{semantic.text-secondary-raised}`
+    #[inline]
+    pub fn select_search_status_fg(&self) -> HexColor {
+        self.text_secondary_raised()
+    }
+
+    /// `component.select-search-trigger-border-hover` → `{semantic.border-strong}`
+    #[inline]
+    pub fn select_search_trigger_border_hover(&self) -> HexColor {
+        self.border_strong()
+    }
+
+    /// `component.select-search-value-placeholder` → `{semantic.text-placeholder}`
+    #[inline]
+    pub fn select_search_value_placeholder(&self) -> HexColor {
+        self.text_placeholder()
     }
 
     /// `component.settings-content-max-width` → `{primitive.size-620}` = 620px

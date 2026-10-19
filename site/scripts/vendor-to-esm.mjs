@@ -197,11 +197,14 @@ for (const file of kitFiles) {
 
   // `React.createElement(window.TastyDesignSystem_41fd3f.Icon, p)` inside a local
   // `const Icon = (p) => …` wrapper: the file declares the same name, so the
-  // import takes an alias instead of shadowing or redeclaring it.
+  // import takes an alias instead of shadowing or redeclaring it. A second
+  // namespace can also publish that name, as DS and kit both do for Spinner.
   src = src.replace(PROP, (all, which, name) => {
     const target = lookup(which, name);
     if (!target || target === dest) return all;
-    if (new RegExp(String.raw`(?:^|[^\w$.])(?:const|let|var|function|class)\s+${name}\b`).test(src)) {
+    const importedElsewhere = [...imports].some(([mod, specs]) =>
+      mod !== specifier(dest, target) && [...specs].some((spec) => spec.split(/\s+as\s+/).pop() === name));
+    if (importedElsewhere || new RegExp(String.raw`(?:^|[^\w$.])(?:const|let|var|function|class)\s+${name}\b`).test(src)) {
       const alias = `${which}_${name}`;
       add(target, `${name} as ${alias}`);
       return alias;
@@ -265,6 +268,8 @@ writeFileSync(
 const GALLERY_MODULE = {
   Gallery: "./shell.jsx",
   GalleryNotifications: "./notifications.jsx",
+  GalleryLoadingParts: "./layouts-loading.jsx",
+  OverlaysWindowsPluginTrust: "./overlays-windows-plugin-trust.jsx",
   OverlaysShared: "./overlays-shared.jsx",
   PresetEditor: "./preset_editor.jsx",
   ExplorerKit: "./plugins.jsx",
@@ -400,7 +405,7 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
 
   // `const XK = window.ExplorerKit;` — the whole global under a local name.
   src = src.replace(
-    new RegExp(String.raw`^[ \t]*const\s+([A-Za-z_$][\w$]*)\s*=\s*window\.(${GLOBALS})\s*;[ \t]*$`, "gm"),
+    new RegExp(String.raw`^[ \t]*const\s+([A-Za-z_$][\w$]*)\s*=\s*window\.(${GLOBALS})\s*(?:\|\|\s*\{\})?\s*;[ \t]*$`, "gm"),
     (_all, local, global) => {
       add(global, `* as ${local}`);
       return "";
@@ -454,6 +459,7 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
   // `window.PresetEditor && <window.PresetEditor.Section />` — a load-order
   // guard plus a late lookup. Modules resolve both, so import the symbol.
   src = src.replace(new RegExp(String.raw`window\.(${GLOBALS})\s*&&\s*`, "g"), "");
+  src = src.replace(new RegExp(String.raw`if\s*\(\s*window\.(${GLOBALS})\s*\)`, "g"), "if (true)");
   src = src.replace(new RegExp(String.raw`window\.(${GLOBALS})\s*\?\s*`, "g"), "true ? ");
   src = src.replace(
     new RegExp(String.raw`<window\.(${GLOBALS})\.([A-Za-z_$][\w$]*)`, "g"),

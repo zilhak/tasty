@@ -195,3 +195,34 @@ fn the_frame_line_outranks_the_strong_border_by_contrast_not_lightness() {
          latte frame 이 더 밝다={lighter_in_latte}) — 프레임 색 선택의 근거를 다시 확인해야 한다"
     );
 }
+
+/// 실제 배지 접근자의 대비를 검사하므로 alias를 전역 강조색으로 되돌리면 Latte에서 실패한다.
+#[test]
+fn notification_warning_badge_is_readable_in_both_shipped_themes() {
+    use tasty_type_appearance::theme::Theme;
+
+    for (name, toml, light) in [
+        ("mocha", MOCHA_TOML_TEXT, false),
+        ("latte", LATTE_TOML_TEXT, true),
+    ] {
+        let file = ThemeFile::parse(toml).expect("embedded theme must parse");
+        let (partial, _) = file.to_partial();
+        let mut colors = mocha_fallback_colors();
+        colors.apply_partial(&partial);
+        let th = Theme::with_colors(colors, light);
+        let bg = th.notification_badge_warning_bg();
+        let fg = th.notification_badge_warning_fg();
+        let ratio = contrast_ratio(bg, fg);
+        assert!(
+            ratio >= 4.5,
+            "{name} warning badge contrast {ratio:.4} < 4.5"
+        );
+        assert_eq!(th.notification_item_warning_glyph(), th.accent_warning());
+        assert_eq!(th.notification_badge_error_fg(), th.text_on_accent());
+        assert_eq!(th.notification_badge_info_fg(), th.text_on_accent());
+        if !light {
+            assert_eq!(bg, th.accent_warning());
+            assert_eq!(fg, th.text_on_accent());
+        }
+    }
+}

@@ -958,6 +958,7 @@ function Layouts() {
 
       <Section id="loading" title="Loading overlay">
         {window.GalleryLoadingOverlay ? <window.GalleryLoadingOverlay /> : null}
+        {window.GalleryLoadingPrelayout ? <window.GalleryLoadingPrelayout /> : null}
       </Section>
 
       <Section id="notifsummary" title="Notifications summary (LNB · rail)">

@@ -2,14 +2,14 @@
 // Mirrors zilhak/tasty → src/view/plugins.rs + src/view/plugins/ui/{list,add}.rs
 // Standalone preview: plugins_window.html
 const { Input, Switch, Button, IconButton, Tag, Kbd, Badge } = window.TastyDesignSystem_41fd3f;
+const PwSpinner = window.TastyDesignSystem_41fd3f.Spinner || window.TastyKit.Spinner;
 const { ic, Icon, Scrim } = window.TastyKit;
 
 // ── Plugins — installed list + add/install new plugins ──────────────────
 // Opened from the sidebar "Plugins" entry. The Settings › Plugins tab is for
 // per-plugin *configuration*; this window is for lifecycle: enable / disable
 // installed plugins, and add new ones from a LOCAL FOLDER via the Add plugin tab.
-// There is no online catalog/marketplace (deferred — docs/dev-guide/plugin-packaging.md):
-// you install from a path or a cloned repo, Tasty verifies the
+// There is no online catalog/marketplace (deferred — docs/dev-guide/plugin-packaging.md): you install from a path or a cloned repo, Tasty verifies the
 // folder's tasty-plugin.toml + signature, and copies it into ~/.tasty/plugins.
 const PLUGIN_LIST = [
   { id: "git-helper", name: "git-helper", author: "tasty-labs", version: "1.4.2", cat: "Source control",
@@ -53,12 +53,14 @@ const PLUGIN_LIST = [
 // tasty-host-plugin/src/bundle_sig.rs TrustDecision + builtin.rs Skipped
 // reasons. NOT a marketplace — only local/bundled plugins (docs/dev-guide/plugin-packaging.md).
 const ATTN = {
-  "unknown-key":        { sev: "danger",  label: "Signature not trusted",
-    blurb: "Signed by a key that isn't in your trust store — registration rejected." },
-  "signature-invalid":  { sev: "danger",  label: "Signature invalid",
-    blurb: "Signature missing or failed verification — registration rejected." },
+  // 2026-10-19 (plugin-install-warning-and-choice): signature reasons are NOT a dead end any more —
+  // the item stays unregistered until the user explicitly picks "Register anyway".
+  "unknown-key":        { sev: "danger",  label: "Signature not trusted", unverified: "unknown-key",
+    blurb: "Signed by a key that isn't in your trust store. Not registered — you can register it anyway." },
+  "signature-invalid":  { sev: "danger",  label: "Signature invalid", unverified: "signature-error",
+    blurb: "Signature missing or failed verification. Not registered — you can register it anyway." },
   "permissions-changed":{ sev: "warning", label: "Permissions changed",
-    blurb: "Manifest permissions changed since you trusted it — re-approval required." },
+    blurb: "Manifest permissions changed since you trusted it — re-approval required. Permissions limit what the plugin can ask Tasty to do; they don't isolate the plugin program." },
   "health-error":       { sev: "warning", label: "Runtime error",
     blurb: "Enabled, but failing at runtime." },
 };
@@ -152,10 +154,10 @@ function FingerprintLine({ value, onCopy }) {
 //   manifest.blocked: "installed" | "missing-pubkey" | "signature-error"
 //   2026-10-06: "unsigned-no-key" → "missing-pubkey". The host state (UntrustedNoPubkey) IS signed — by a key
 //   not in the trust store — and the .pub that would let us trust it is missing or unreadable.
+// 2026-10-19: missing-pubkey / signature-error are no longer blocked — they take the unverified
+// warning + an explicit "Add anyway". Only "installed" still disables Add.
 const ADD_BLOCKED = {
   "installed": "Already installed",
-  "missing-pubkey": "Signed, but the publisher's public key file is missing",
-  "signature-error": "Signature check failed",
 };
 const grantsLabel = (n) => n === 0 ? "No permissions" : n === 1 ? "Grants 1 permission" : "Grants " + n + " permissions";
 
@@ -164,19 +166,30 @@ const grantsLabel = (n) => n === 0 ? "No permissions" : n === 1 ? "Grants 1 perm
 // title row (glyph md + 13/600 in the tone) > body (term-sm, text-secondary) > fingerprint line (absent
 // when there is no fingerprint — signature-error never has one).
 //   manifest.trust: "trusted" | "unknown-key" | "permissions-changed" | "missing-pubkey" | "signature-error"
+//   2026-10-19 (plugin-install-warning-and-choice): the four UNVERIFIED kinds (unknown-key · missing-pubkey ·
+//   unsigned · signature-error) share ONE danger box: same title, same risk paragraph; only the cause line
+//   differs. All four are addable through an explicit "Add anyway" (danger button, never the initial focus).
+//   Title ink is text-primary (accent titles failed 4.5:1 in Latte); only the glyph carries the tone.
+const UNVERIFIED_TITLE = "Unverified plugin";
+const UNVERIFIED_RISK = "Tasty can't confirm who made this plugin or that its files are unchanged. A plugin runs as a program with your account's access: it can read and change your files, use the network, and start other programs. The permissions above only limit what it can ask Tasty to do. Add it only if you trust where it came from.";
+const UNVERIFIED_CAUSE = {
+  "unknown-key":     "It is signed by a key that isn't in your trust store.",
+  "missing-pubkey":  "It is signed, but the publisher's public key file (tasty-plugin.toml.pub) is missing or unreadable.",
+  "unsigned":        "It has no signature.",
+  "signature-error": "Its signature could not be verified against these files.",
+};
 const TRUST_KIND = {
   "trusted":             { tone: "success", glyph: "shieldCheck",  title: null },
-  "unknown-key":         { tone: "warning", glyph: "alertTriangle", title: "Unverified publisher",
-    body: "This plugin isn't signed by a key in your trust store. It runs with the permissions above on every launch — review them, and only add plugins from sources you trust. Adding it also trusts this key." },
   "permissions-changed": { tone: "warning", glyph: "alertTriangle", title: "Permissions changed",
-    body: "This publisher is trusted, but this version asks for permissions the trusted version did not have. Review the list above; adding it trusts the new set." },
-  "missing-pubkey":      { tone: "danger",  glyph: "alertCircle",  title: "Public key file missing",
-    body: "The manifest is signed by a key that isn't in your trust store, and tasty-plugin.toml.pub is missing or unreadable, so the key can't be added. Ask the publisher for this public key file." },
-  "signature-error":     { tone: "danger",  glyph: "alertCircle",  title: "Signature check failed",
-    body: "The signature could not be verified. The plugin can't be added until the publisher ships a valid signature." },
+    body: "This publisher is trusted, but this version asks for permissions the trusted version did not have. Review the list above; adding it trusts the new set. These permissions limit what the plugin can ask Tasty to do; they don't isolate the plugin program from your files, network or other programs." },
+  "unknown-key":         { tone: "danger", glyph: "alertCircle", title: UNVERIFIED_TITLE, unverified: true, after: "Adding it also trusts this key." },
+  "missing-pubkey":      { tone: "danger", glyph: "alertCircle", title: UNVERIFIED_TITLE, unverified: true },
+  "unsigned":            { tone: "danger", glyph: "alertCircle", title: UNVERIFIED_TITLE, unverified: true, noFingerprint: true },
+  "signature-error":     { tone: "danger", glyph: "alertCircle", title: UNVERIFIED_TITLE, unverified: true, noFingerprint: true },
 };
+const trustKindOf = (m) => m.trust || (m.trusted ? "trusted" : "unknown-key");
 function TrustBox({ manifest }) {
-  const kind = manifest.trust || (manifest.trusted ? "trusted" : "unknown-key");
+  const kind = trustKindOf(manifest);
   const k = TRUST_KIND[kind];
   const acc = "var(--tasty-accent-" + k.tone + ")";
   const box = { display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)",
@@ -189,26 +202,45 @@ function TrustBox({ manifest }) {
       <span>Signed by a <b>trusted publisher</b> — its key is in your trust store.</span>
     </div>
   );
+  const p = { margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-plugin-trust-body-fg)", overflowWrap: "anywhere" };
   return (
-    <div style={box}>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", color: acc, fontSize: 13, fontWeight: 600 }}>
-        <Icon name={k.glyph} size={16} /><span>{k.title}</span>
+    <div style={box} role={k.unverified ? "alert" : undefined}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", color: "var(--tasty-plugin-trust-title-fg)", fontSize: 13, fontWeight: 600 }}>
+        <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-plugin-trust-glyph-" + k.tone + ")" }}><Icon name={k.glyph} size={16} /></span><span>{k.title}</span>
       </div>
-      <p style={{ margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)" }}>{k.body}</p>
-      {kind !== "signature-error" && <FingerprintLine value={manifest.fingerprint} />}
+      {k.unverified ? <>
+        <p style={p}>{UNVERIFIED_CAUSE[kind]}</p>
+        <p style={p}>{UNVERIFIED_RISK}{k.after ? " " + k.after : ""}</p>
+      </> : <p style={p}>{k.body}</p>}
+      {!k.noFingerprint && <FingerprintLine value={manifest.fingerprint} />}
     </div>
   );
+}
+// Primary action for a verdict. Unverified = danger "Add anyway" ("Trust key & add anyway" when the .pub is
+// present, because adding also trusts the key). Never autoFocus: Cancel holds the initial focus.
+function addActionLabel(m) {
+  const kind = trustKindOf(m);
+  if (kind === "trusted") return "Add plugin";
+  if (kind === "permissions-changed") return "Trust & add";
+  return kind === "unknown-key" ? "Trust key & add anyway" : "Add anyway";
 }
 function AddPluginForm({ onAdded, onCancel }) {
   const [path, setPath] = React.useState("");
   const [manifest, setManifest] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
   const setPathReset = (v) => { setPath(v); setManifest(null); }; // re-verify after any edit
   const verify = () => {
     const p = path.trim() || SAMPLE_MANIFEST.path;
     setPath(p);
-    // demo: a path under ~/.tasty/plugins stands in for "already installed" (disabled Add)
-    setManifest({ ...SAMPLE_MANIFEST, path: p, blocked: p.startsWith("~/.tasty/plugins") ? "installed" : undefined });
+    // demo: a path under ~/.tasty/plugins stands in for "already installed" (disabled Add);
+    // "unsigned" / "nopub" / "badsig" in the path pick the other unverified verdicts
+    const trust = /unsigned/.test(p) ? "unsigned" : /nopub/.test(p) ? "missing-pubkey" : /badsig/.test(p) ? "signature-error" : undefined;
+    setManifest({ ...SAMPLE_MANIFEST, path: p, trust, fingerprint: trust === "unsigned" || trust === "signature-error" ? null : SAMPLE_MANIFEST.fingerprint,
+      blocked: p.startsWith("~/.tasty/plugins") ? "installed" : undefined });
   };
+  // explicit choice → busy (no double add) → the existing result path (onAdded / toast)
+  const add = () => { if (busy) return; setBusy(true); setTimeout(() => { setBusy(false); onAdded(manifest); }, 900); };
+  const onBarKey = (e) => { if (e.key === "Escape" && !busy) { e.stopPropagation(); onCancel && onCancel(); } };
   const pick = () => setPathReset("~/dev/tasty-logwatch"); // stands in for the native rfd folder picker
 
   const Mono = ({ children }) => (
@@ -284,26 +316,40 @@ function AddPluginForm({ onAdded, onCancel }) {
       </div>
 
       {/* action bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)",
+      {/* 2026-10-19: wraps on narrow windows (buttons drop under the reason, right-aligned). Unverified verdict:
+          initial focus = Cancel (Enter on it cancels), Esc = Cancel, Tab → "Add anyway". No implicit default button. */}
+      <div onKeyDown={onBarKey} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)",
         borderTop: "var(--tasty-border-width) solid var(--tasty-separator)", flex: "none" }}>
         {manifest && (
-          <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
+          <span style={{ flex: "1 1 auto", minWidth: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
             {manifest.blocked ? ADD_BLOCKED[manifest.blocked] : grantsLabel(manifest.perms.length)}
           </span>
         )}
-        <div style={{ flex: 1 }} />
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        {manifest && (manifest.blocked
-          ? <Button variant="primary" disabled>Add plugin</Button>
-          : manifest.trusted
-          ? <Button variant="primary" onClick={() => onAdded(manifest)}>Add plugin</Button>
-          : <Button variant="primary" onClick={() => onAdded(manifest)}>Trust &amp; add</Button>)}
+        {!manifest && <div style={{ flex: 1 }} />}
+        <div style={{ display: "flex", gap: "var(--tasty-space-sm)", marginLeft: "auto" }}>
+          <Button key={manifest ? manifest.path + trustKindOf(manifest) : "none"} variant="ghost" autoFocus={!!manifest && TRUST_KIND[trustKindOf(manifest)].unverified} disabled={busy} onClick={onCancel}>Cancel</Button>
+          {manifest && (manifest.blocked
+            ? <Button variant="primary" disabled>Add plugin</Button>
+            : <Button variant={TRUST_KIND[trustKindOf(manifest)].unverified ? "danger" : "primary"} disabled={busy} aria-busy={busy || undefined} onClick={add}
+                leadingIcon={busy ? <PwSpinner size={14} label="Adding" /> : null}>{busy ? "Adding…" : addActionLabel(manifest)}</Button>)}
+        </div>
       </div>
     </div>
   );
 }
 
 // ── Attention tab — rejected / failing plugins with reason + action ─────
+function RegisterAnyway({ name, onFlash }) {
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => setBusy(false), [name]);
+  return (
+    <Button variant="danger" disabled={busy} aria-busy={busy || undefined}
+      leadingIcon={busy ? <PwSpinner size={14} label="Registering" /> : null}
+      onClick={() => { setBusy(true); setTimeout(() => { setBusy(false); onFlash && onFlash("Registered " + name); }, 900); }}>
+      {busy ? "Registering…" : "Register anyway"}
+    </Button>
+  );
+}
 function AttentionPanel({ items, onFlash, onConfigure }) {
   const [selId, setSelId] = React.useState(items[0] ? items[0].id : null);
   const sel = items.find((p) => p.id === selId) || items[0] || null;
@@ -388,7 +434,8 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
             : sel.desc && <p style={{ margin: 0, fontSize: 13, lineHeight: "var(--tasty-line-height-ui)",
             color: "var(--tasty-text-secondary)", maxWidth: "var(--tasty-measure-lg)" }}>{sel.desc}</p>}
 
-          {/* reason banner */}
+          {/* reason banner — 2026-10-19: signature reasons take the shared unverified box (same risk copy as Add) */}
+          {meta.unverified ? <TrustBox manifest={{ trust: meta.unverified, fingerprint: null }} /> :
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "var(--tasty-space-md) var(--tasty-size-14)",
             borderRadius: "var(--tasty-radius)", color: "var(--tasty-text-secondary)",
             background: `color-mix(in srgb, ${c} 11%, transparent)`,
@@ -398,7 +445,7 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
               <span>{meta.label}</span>
             </div>
             <p style={{ margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)" }}>{meta.blurb}</p>
-          </div>
+          </div>}
 
           {/* reason-specific detail */}
           {sel.reason === "permissions-changed" && (
@@ -462,7 +509,9 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
             <Button variant="ghost" leadingIcon={ic.settings}
               onClick={() => onConfigure && onConfigure()}>Configure</Button>
           )}
-          {/* unknown-key · signature-invalid: no button (2026-10-06) — the reason panel already carries the blurb + fingerprint */}
+          {/* unknown-key · signature-invalid (2026-10-19): explicit "Register anyway" (danger). Not focused on selection;
+              not acting = stays unregistered. Busy → Spinner + "Registering…", disabled. */}
+          {meta.unverified && <RegisterAnyway name={sel.name} onFlash={onFlash} />}
         </div>
       </div>
     </React.Fragment>

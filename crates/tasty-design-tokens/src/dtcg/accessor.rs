@@ -136,9 +136,10 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-window-close", "accent_window_close()"),
     ("semantic.notify-error", "accent_danger()"),
     ("semantic.notify-warning", "accent_warning()"),
+    ("semantic.notify-warning-fill", "notify_warning_fill()"),
     ("semantic.notify-info", "attention_completion()"),
     ("semantic.notify-error-fg", "text_on_accent()"),
-    ("semantic.notify-warning-fg", "text_on_accent()"),
+    ("semantic.notify-warning-fg", "notify_warning_fg()"),
     ("semantic.notify-info-fg", "text_on_accent()"),
     ("semantic.notify-unread", "accent_primary()"),
     ("semantic.attention-completion", "attention_completion()"),
@@ -258,6 +259,14 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
 /// 단순 필드 반환이 아닌 색 접근자는 theme.rs에 직접 구현한다.
 /// 터미널 전용 색이나 사용하지 않는 토큰처럼 접근자 자체가 없는 색은 이 목록에서 제외한다.
 const SEMANTIC_COLOR_HAND_WRITTEN: &[(&str, &str)] = &[
+    (
+        "semantic.notify-warning-fill",
+        "Latte yellow 50% + white 합성색",
+    ),
+    (
+        "semantic.notify-warning-fg",
+        "Mocha=text-on-accent / Latte=text 역할 분기",
+    ),
     (
         "semantic.text-on-accent",
         "is_light role-remap (Mocha=crust / Latte=white) — 단순 alias 아님",

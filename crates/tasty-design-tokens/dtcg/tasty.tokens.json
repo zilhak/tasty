@@ -843,11 +843,13 @@
       "$type": "color",
       "$value": "{semantic.text-on-accent}"
     },
+    "accent-warning-glyph": { "$type": "color", "$value": "{semantic.accent-warning}", "$extensions": { "com.tasty.mode": { "latte": "color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-neutral-1100))" } } },
     "notify-error": { "$type": "color", "$value": "{semantic.accent-danger}" },
     "notify-warning": { "$type": "color", "$value": "{semantic.accent-warning}" },
     "notify-info": { "$type": "color", "$value": "{semantic.attention-completion}" },
     "notify-error-fg": { "$type": "color", "$value": "{semantic.text-on-accent}" },
-    "notify-warning-fg": { "$type": "color", "$value": "{semantic.text-on-accent}" },
+    "notify-warning-fg": { "$type": "color", "$value": "{semantic.text-on-accent}", "$extensions": { "com.tasty.mode": { "latte": "{primitive.color-neutral-1100}" } } },
+    "notify-warning-fill": { "$type": "color", "$value": "{semantic.notify-warning}", "$extensions": { "com.tasty.mode": { "latte": "color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-white))" } } },
     "notify-info-fg": { "$type": "color", "$value": "{semantic.text-on-accent}" },
     "notify-unread": { "$type": "color", "$value": "{semantic.accent-primary}" },
     "attention-rank-needs-input": {
@@ -1952,6 +1954,22 @@
       "$type": "color",
       "$value": "{semantic.separator}"
     },
+    "select-search-trigger-border-hover": { "$type": "color", "$value": "{semantic.border-strong}" },
+    "select-search-value-placeholder": { "$type": "color", "$value": "{semantic.text-placeholder}" },
+    "select-search-menu-gap": { "$type": "dimension", "$value": "{semantic.space-xs}" },
+    "select-search-menu-max-width": { "$type": "dimension", "$value": "{primitive.size-320}" },
+    "select-search-list-max-height": { "$type": "dimension", "$value": "{primitive.size-300}" },
+    "select-search-inset": { "$type": "dimension", "$value": "{semantic.space-xs}" },
+    "select-search-field-height": { "$type": "dimension", "$value": "{component.input-height}" },
+    "select-search-field-padding-x": { "$type": "dimension", "$value": "{semantic.space-sm}" },
+    "select-search-field-gap": { "$type": "dimension", "$value": "{component.input-gap}" },
+    "select-search-field-bg": { "$type": "color", "$value": "{component.input-raised-bg}" },
+    "select-search-field-border": { "$type": "color", "$value": "{component.input-raised-border}" },
+    "select-search-field-border-focus": { "$type": "color", "$value": "{component.input-border-focus}" },
+    "select-search-field-fg": { "$type": "color", "$value": "{component.input-fg}" },
+    "select-search-placeholder": { "$type": "color", "$value": "{component.input-placeholder}" },
+    "select-search-icon-fg": { "$type": "color", "$value": "{component.input-icon-fg}" },
+    "select-search-status-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}" },
     "checkbox-size": {
       "$type": "dimension",
       "$value": "{primitive.size-16}"
@@ -2848,7 +2866,7 @@
     "loading-overlay-rail-size": { "$type": "dimension", "$value": "{primitive.size-28}" },
     "notification-badge-error-bg": { "$type": "color", "$value": "{semantic.notify-error}" },
     "notification-badge-error-fg": { "$type": "color", "$value": "{semantic.notify-error-fg}" },
-    "notification-badge-warning-bg": { "$type": "color", "$value": "{semantic.notify-warning}" },
+    "notification-badge-warning-bg": { "$type": "color", "$value": "{semantic.notify-warning-fill}" },
     "notification-badge-warning-fg": { "$type": "color", "$value": "{semantic.notify-warning-fg}" },
     "notification-badge-info-bg": { "$type": "color", "$value": "{semantic.notify-info}" },
     "notification-badge-info-fg": { "$type": "color", "$value": "{semantic.notify-info-fg}" },
@@ -4809,12 +4827,12 @@
     },
     "font-combo-list-max-height": {
       "$type": "dimension",
-      "$value": "{primitive.size-300}",
-      "$description": "Appearance font search combo open list max height"
+      "$value": "{component.select-search-list-max-height}",
+      "$description": "Appearance font search combo open list max height (2026-10-19: alias of select-search-list-max-height)"
     },
     "font-combo-search-inset": {
       "$type": "dimension",
-      "$value": "{semantic.space-xs}",
+      "$value": "{component.select-search-inset}",
       "$description": "search field inset inside the font list (field width = list width − 2 × this)"
     },
     "attach-sync-name-min-width": {
@@ -4995,6 +5013,35 @@
       "$type": "color",
       "$value": "{semantic.accent-warning}",
       "$description": "“may be taken by the OS” caption on a text-entered shortcut"
-    }
+    },
+    "plugin-trust-title-fg": { "$type": "color", "$value": "{semantic.text-primary}", "$description": "trust box title ink (all kinds except trusted) — tone moves to the glyph only" },
+    "plugin-trust-body-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "trust box cause + risk paragraphs" },
+    "plugin-trust-glyph-danger": { "$type": "color", "$value": "{semantic.accent-danger}", "$description": "unverified (unknown key · missing .pub · unsigned · signature error) glyph" },
+    "plugin-trust-glyph-warning": { "$type": "color", "$value": "{semantic.accent-warning-glyph}", "$description": "permissions-changed glyph" },
+    "plugin-trust-glyph-success": { "$type": "color", "$value": "{semantic.accent-success}", "$description": "trusted glyph" },
+    "notice-column-inset": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "window top-right notice column: inset from the work area edge (under window banners / top-right search bar)" },
+    "notice-column-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "gap between stacked notices in the column" },
+    "notice-column-width": { "$type": "dimension", "$value": "{primitive.size-360}", "$description": "notice column width (= search bar width); max = work area − 2 × inset" },
+    "restore-notice-width": { "$type": "dimension", "$value": "{component.notice-column-width}", "$description": "restore-failure / save-halt non-focus notice width" },
+    "restore-notice-glyph": { "$type": "color", "$value": "{semantic.notify-error}", "$description": "leading alertCircle in the notice body (title stays text-primary)" },
+    "restore-notice-padding": { "$type": "dimension", "$value": "{semantic.space-md}", "$description": "notice body padding" },
+    "restore-notice-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "notice body row gap" },
+    "restore-notice-body-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "notice explanation ink" },
+    "restore-notice-label-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "“Saved layout” mono caption over the path" },
+    "restore-notice-path-bg": { "$type": "color", "$value": "{semantic.bg-sidebar}", "$description": "path box fill (selectable, wraps anywhere)" },
+    "restore-notice-path-border": { "$type": "color", "$value": "{semantic.border-default}", "$description": "path box 1px edge" },
+    "restore-notice-path-fg": { "$type": "color", "$value": "{semantic.text-primary}", "$description": "path text" },
+    "pending-indicator-height": { "$type": "dimension", "$value": "{primitive.size-24}", "$description": "response-wait chip height" },
+    "pending-indicator-padding-x": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "chip side padding" },
+    "pending-indicator-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "spinner · label · time gap" },
+    "pending-indicator-radius": { "$type": "dimension", "$value": "{semantic.radius}", "$description": "chip radius" },
+    "pending-indicator-bg": { "$type": "color", "$value": "{semantic.surface-raised}", "$description": "chip fill" },
+    "pending-indicator-border": { "$type": "color", "$value": "{semantic.border-strong}", "$description": "chip 1px edge (floating, like Toast / Banner)" },
+    "pending-indicator-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "label ink on surface-raised" },
+    "pending-indicator-time-fg": { "$type": "color", "$value": "{semantic.text-primary}", "$description": "elapsed time ink" },
+    "pending-indicator-sep-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "“·” separator" },
+    "pending-indicator-spinner-size": { "$type": "dimension", "$value": "{semantic.icon-size-sm}", "$description": "chip spinner 14" },
+    "pending-indicator-compact-below": { "$type": "dimension", "$value": "{primitive.size-200}", "$description": "notice column narrower than this → spinner + time only" },
+    "pending-indicator-delay": { "$type": "duration", "$value": "{component.loading-overlay-delay}", "$description": "show only if still pending after 200ms (same as LoadingOverlay)" }
   }
 }

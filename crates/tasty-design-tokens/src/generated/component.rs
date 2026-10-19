@@ -508,11 +508,11 @@ pub mod fh {
 pub mod font {
     use tasty_type_geometry::length::LogicalPx;
 
-    /// `component.font-combo-list-max-height` → `{primitive.size-300}` = 300px
-    pub const COMBO_LIST_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_300;
+    /// `component.font-combo-list-max-height` → `{component.select-search-list-max-height}` = 300px
+    pub const COMBO_LIST_MAX_HEIGHT: LogicalPx = super::select::SEARCH_LIST_MAX_HEIGHT;
 
-    /// `component.font-combo-search-inset` → `{semantic.space-xs}` = 4px
-    pub const COMBO_SEARCH_INSET: LogicalPx = crate::generated::semantic::SPACE_XS;
+    /// `component.font-combo-search-inset` → `{component.select-search-inset}` = 4px
+    pub const COMBO_SEARCH_INSET: LogicalPx = super::select::SEARCH_INSET;
 
     /// `component.font-preview-line-height` → `{semantic.line-height-ui}` = 1.4
     pub const PREVIEW_LINE_HEIGHT: f32 = crate::generated::semantic::LINE_HEIGHT_UI;
@@ -1030,6 +1030,19 @@ pub mod multiselect {
     pub const ROW_PADDING_X: LogicalPx = super::menu::ITEM_PADDING_X;
 }
 
+pub mod notice {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.notice-column-gap` → `{semantic.space-sm}` = 8px
+    pub const COLUMN_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.notice-column-inset` → `{semantic.space-sm}` = 8px
+    pub const COLUMN_INSET: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.notice-column-width` → `{primitive.size-360}` = 360px
+    pub const COLUMN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_360;
+}
+
 pub mod notification {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -1115,6 +1128,31 @@ pub mod palette {
 
     /// `component.palette-width` → `{primitive.size-540}` = 540px
     pub const WIDTH: LogicalPx = crate::generated::primitive::SIZE_540;
+}
+
+pub mod pending {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.pending-indicator-compact-below` → `{primitive.size-200}` = 200px
+    pub const INDICATOR_COMPACT_BELOW: LogicalPx = crate::generated::primitive::SIZE_200;
+
+    /// `component.pending-indicator-delay` → `{component.loading-overlay-delay}` = 200ms (ms)
+    pub const INDICATOR_DELAY: f32 = super::loading::OVERLAY_DELAY;
+
+    /// `component.pending-indicator-gap` → `{semantic.space-sm}` = 8px
+    pub const INDICATOR_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.pending-indicator-height` → `{primitive.size-24}` = 24px
+    pub const INDICATOR_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_24;
+
+    /// `component.pending-indicator-padding-x` → `{semantic.space-sm}` = 8px
+    pub const INDICATOR_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.pending-indicator-radius` → `{semantic.radius}` = 4px
+    pub const INDICATOR_RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+
+    /// `component.pending-indicator-spinner-size` → `{semantic.icon-size-sm}` = 14px
+    pub const INDICATOR_SPINNER_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_SM;
 }
 
 pub mod perm {
@@ -1273,6 +1311,19 @@ pub mod remote {
     pub const LABEL_COL: LogicalPx = crate::generated::primitive::SIZE_112;
 }
 
+pub mod restore {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.restore-notice-gap` → `{semantic.space-sm}` = 8px
+    pub const NOTICE_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.restore-notice-padding` → `{semantic.space-md}` = 12px
+    pub const NOTICE_PADDING: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.restore-notice-width` → `{component.notice-column-width}` = 360px
+    pub const NOTICE_WIDTH: LogicalPx = super::notice::COLUMN_WIDTH;
+}
+
 pub mod select {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -1293,6 +1344,27 @@ pub mod select {
 
     /// `component.select-radius` → `{semantic.radius}` = 4px
     pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+
+    /// `component.select-search-field-gap` → `{component.input-gap}` = 8px
+    pub const SEARCH_FIELD_GAP: LogicalPx = super::input::GAP;
+
+    /// `component.select-search-field-height` → `{component.input-height}` = 28px
+    pub const SEARCH_FIELD_HEIGHT: LogicalPx = super::input::HEIGHT;
+
+    /// `component.select-search-field-padding-x` → `{semantic.space-sm}` = 8px
+    pub const SEARCH_FIELD_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.select-search-inset` → `{semantic.space-xs}` = 4px
+    pub const SEARCH_INSET: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.select-search-list-max-height` → `{primitive.size-300}` = 300px
+    pub const SEARCH_LIST_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_300;
+
+    /// `component.select-search-menu-gap` → `{semantic.space-xs}` = 4px
+    pub const SEARCH_MENU_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.select-search-menu-max-width` → `{primitive.size-320}` = 320px
+    pub const SEARCH_MENU_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_320;
 }
 
 pub mod settings {

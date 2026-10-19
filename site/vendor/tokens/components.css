@@ -192,6 +192,25 @@
   --tasty-multiselect-all-fg:           var(--tasty-accent-primary);         /* bulk select/clear action row */
   --tasty-multiselect-separator:        var(--tasty-separator);              /* under the bulk row */
 
+  /* SearchableSelect (2026-10-19) — Select trigger (select-* tokens, unchanged) over a menu popover
+     whose top is a search field. Generalises the font combo; font-combo-* now alias these. */
+  --tasty-select-search-trigger-border-hover: var(--tasty-border-strong);       /* same hover as Select */
+  --tasty-select-search-value-placeholder:    var(--tasty-text-placeholder);    /* no value selected */
+  --tasty-select-search-menu-gap:             var(--tasty-space-xs);            /* 4 trigger → popup */
+  --tasty-select-search-menu-max-width:       var(--tasty-size-320);            /* popup may outgrow the trigger up to this */
+  --tasty-select-search-list-max-height:      var(--tasty-size-300);            /* whole popup cap; only the option list scrolls */
+  --tasty-select-search-inset:                var(--tasty-space-xs);            /* popup inner padding = search field inset (field = list − 2×4) */
+  --tasty-select-search-field-height:         var(--tasty-input-height);        /* → control-height 28 */
+  --tasty-select-search-field-padding-x:      var(--tasty-space-sm);            /* 8 */
+  --tasty-select-search-field-gap:            var(--tasty-input-gap);           /* → space-sm 8 icon → text */
+  --tasty-select-search-field-bg:             var(--tasty-input-raised-bg);     /* Input on a raised ground → bg-panel */
+  --tasty-select-search-field-border:         var(--tasty-input-raised-border); /* → border-strong */
+  --tasty-select-search-field-border-focus:   var(--tasty-input-border-focus);  /* edge only, no ring (trigger carries the ring) */
+  --tasty-select-search-field-fg:             var(--tasty-input-fg);            /* → text-primary */
+  --tasty-select-search-placeholder:          var(--tasty-input-placeholder);   /* → text-placeholder */
+  --tasty-select-search-icon-fg:              var(--tasty-input-icon-fg);       /* → text-muted */
+  --tasty-select-search-status-fg:            var(--tasty-text-secondary-raised); /* no-match / loading row ink on surface-raised */
+
   /* Checkbox */
   --tasty-checkbox-size:           var(--tasty-size-16);
   --tasty-checkbox-radius:         var(--tasty-radius-sm);
@@ -558,7 +577,7 @@
      Badge = glyph + count pill, fixed order error › warning › info, 0 = not drawn, > max = "99+". */
   --tasty-notification-badge-error-bg:      var(--tasty-notify-error);
   --tasty-notification-badge-error-fg:      var(--tasty-notify-error-fg);
-  --tasty-notification-badge-warning-bg:    var(--tasty-notify-warning);
+  --tasty-notification-badge-warning-bg:    var(--tasty-notify-warning-fill); /* 2026-10-19: was notify-warning (Latte 2.62:1) */
   --tasty-notification-badge-warning-fg:    var(--tasty-notify-warning-fg);
   --tasty-notification-badge-info-bg:       var(--tasty-notify-info);
   --tasty-notification-badge-info-fg:       var(--tasty-notify-info-fg);
@@ -1333,8 +1352,8 @@
   --tasty-kb-record-height: var(--tasty-kb-ie-slot-height); /* Keybindings shortcut record button height (24) */
   --tasty-kb-record-add-width: var(--tasty-size-32); /* Keybindings add-shortcut (+) button width */
   --tasty-kb-row-gap: var(--tasty-space-sm); /* gap between shortcut rows (8 — denser than settings-row-gap 12; no divider) */
-  --tasty-font-combo-list-max-height: var(--tasty-size-300); /* Appearance font search combo open list max height */
-  --tasty-font-combo-search-inset: var(--tasty-space-xs); /* search field inset inside the font list (field width = list width − 2 × this) */
+  --tasty-font-combo-list-max-height: var(--tasty-select-search-list-max-height); /* 2026-10-19: alias of the shared SearchableSelect token (value unchanged, 300) */
+  --tasty-font-combo-search-inset: var(--tasty-select-search-inset); /* 2026-10-19: alias of the shared SearchableSelect token (value unchanged, 4) */
   /* 2026-10-10 (batch 11) — attach names floor · explorer link / cursor / marquee / hidden / create-in · shortcut record states · CLI runs in UI copy */
   --tasty-attach-sync-name-min-width: var(--tasty-size-40); /* names-line floor: a name shrinks to here before ellipsis; a shorter name keeps its own width (no padding box) */
   --tasty-explorer-link-glyph: var(--tasty-text-muted); /* trailing link glyph after a symlink name (all views) */
@@ -1373,5 +1392,35 @@
   --tasty-ui-code-bg-on-raised: var(--tasty-bg-panel); /* CLI run fill when the container is surface-raised (toast, tooltip, raised card) — ink on it Mocha 11.34 · Latte 7.06 */
   --tasty-kb-plugin-record-height: var(--tasty-kb-plugin-control-height); /* Keybindings › Plugins Custom record slots — 28, one height per control line */
   --tasty-kb-os-reserved-fg: var(--tasty-accent-warning); /* “may be taken by the OS” caption on a text-entered shortcut */
+  /* 2026-10-19 — plugin trust box (unverified warning) · notice column · restore / save-halt notice · pending indicator */
+  --tasty-plugin-trust-title-fg: var(--tasty-text-primary); /* trust box title ink (all kinds except trusted) — tone moves to the glyph only */
+  --tasty-plugin-trust-body-fg: var(--tasty-text-secondary); /* trust box cause + risk paragraphs */
+  --tasty-plugin-trust-glyph-danger: var(--tasty-accent-danger); /* unverified (unknown key · missing .pub · unsigned · signature error) glyph */
+  --tasty-plugin-trust-glyph-warning: var(--tasty-accent-warning-glyph); /* permissions-changed glyph */
+  --tasty-plugin-trust-glyph-success: var(--tasty-accent-success); /* trusted glyph */
+  --tasty-notice-column-inset: var(--tasty-space-sm); /* window top-right notice column: inset from the work area edge (under window banners / top-right search bar) */
+  --tasty-notice-column-gap: var(--tasty-space-sm); /* gap between stacked notices in the column */
+  --tasty-notice-column-width: var(--tasty-size-360); /* notice column width (= search bar width); max = work area − 2 × inset */
+  --tasty-restore-notice-width: var(--tasty-notice-column-width); /* restore-failure / save-halt non-focus notice width */
+  --tasty-restore-notice-glyph: var(--tasty-notify-error); /* leading alertCircle in the notice body (title stays text-primary) */
+  --tasty-restore-notice-padding: var(--tasty-space-md); /* notice body padding */
+  --tasty-restore-notice-gap: var(--tasty-space-sm); /* notice body row gap */
+  --tasty-restore-notice-body-fg: var(--tasty-text-secondary); /* notice explanation ink */
+  --tasty-restore-notice-label-fg: var(--tasty-text-muted); /* “Saved layout” mono caption over the path */
+  --tasty-restore-notice-path-bg: var(--tasty-bg-sidebar); /* path box fill (selectable, wraps anywhere) */
+  --tasty-restore-notice-path-border: var(--tasty-border-default); /* path box 1px edge */
+  --tasty-restore-notice-path-fg: var(--tasty-text-primary); /* path text */
+  --tasty-pending-indicator-height: var(--tasty-size-24); /* response-wait chip height */
+  --tasty-pending-indicator-padding-x: var(--tasty-space-sm); /* chip side padding */
+  --tasty-pending-indicator-gap: var(--tasty-space-sm); /* spinner · label · time gap */
+  --tasty-pending-indicator-radius: var(--tasty-radius); /* chip radius */
+  --tasty-pending-indicator-bg: var(--tasty-surface-raised); /* chip fill */
+  --tasty-pending-indicator-border: var(--tasty-border-strong); /* chip 1px edge (floating, like Toast / Banner) */
+  --tasty-pending-indicator-fg: var(--tasty-text-secondary-raised); /* label ink on surface-raised */
+  --tasty-pending-indicator-time-fg: var(--tasty-text-primary); /* elapsed time ink */
+  --tasty-pending-indicator-sep-fg: var(--tasty-text-muted); /* “·” separator */
+  --tasty-pending-indicator-spinner-size: var(--tasty-icon-size-sm); /* chip spinner 14 */
+  --tasty-pending-indicator-compact-below: var(--tasty-size-200); /* notice column narrower than this → spinner + time only */
+  --tasty-pending-indicator-delay: var(--tasty-loading-overlay-delay); /* show only if still pending after 200ms (same as LoadingOverlay) */
 }
 

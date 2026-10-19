@@ -33,7 +33,7 @@ const { Button, IconButton, Icon, MenuItem, Kbd } = window.TastyDesignSystem_41f
 const TITLE_RESERVE = (n) => `calc(var(--tasty-popup-title-edge-inset) + ${n} * var(--tasty-popup-title-btn-size) + ${n - 1} * var(--tasty-popup-title-btn-gap) + var(--tasty-popup-title-text-gap))`;
 
 // The shared popup title bar. fullscreen = the popup declares a fullscreen stage (adds the fit button).
-function PopupTitleBar({ title, id, fullscreen = false, edge = "var(--tasty-info-modal-title-edge)" }) {
+function PopupTitleBar({ title, id, fullscreen = false, edge = "var(--tasty-info-modal-title-edge)", onClose, closeLabel = "Close" }) {
   const n = fullscreen ? 2 : 1;
   const tRef = React.useRef(null);
   const [cut, setCut] = React.useState(false);
@@ -54,7 +54,7 @@ function PopupTitleBar({ title, id, fullscreen = false, edge = "var(--tasty-info
       <span style={{ display: "flex", minWidth: 0 }}>{text}</span>
       <span style={{ position: "absolute", right: "var(--tasty-popup-title-edge-inset)", top: 0, bottom: 0, display: "flex", alignItems: "center", gap: "var(--tasty-popup-title-btn-gap)" }}>
         {fullscreen && <IconButton size="sm" aria-label="Fullscreen" title="Fullscreen"><Icon name="fit" /></IconButton>}
-        <IconButton size="sm" aria-label="Close"><Icon name="close" /></IconButton>
+        <IconButton size="sm" aria-label={closeLabel} title={closeLabel} onClick={onClose}><Icon name="close" /></IconButton>
       </span>
     </div>
   );

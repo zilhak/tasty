@@ -23,6 +23,9 @@ mod explorer_marquee;
 /// 승인 위험 선택지 채움의 color-mix 수기 접근자 (`impl Theme`).
 mod approval_danger;
 
+/// 경고 알림 배지의 테마별 대비를 위한 수기 접근자 (`impl Theme`).
+mod notification_ink;
+
 /// DAG 표시 색의 color-mix 수기 접근자 (`impl Theme`).
 mod dag_mix;
 

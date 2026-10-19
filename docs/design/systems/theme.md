@@ -282,6 +282,10 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 accent 채움과 테두리를 함께 쓰는 표현은 `tint_fill_alpha()` 0.12와 `tint_border_alpha()` 0.36을 사용한다. 승인된 채움만 사용과 테두리만 사용도 같은 값을 쓴다. 다만 별도 역할의 경고 테두리처럼 이 조합이 아닌 값은 사유가 있는 상수다. 같은 숫자라도 역할이 다르면 opacity 토큰으로 바꾸지 않는다.
 
+### 경고 알림 배지
+
+`notify-warning-fill`과 `notify-warning-fg`는 미확인 개수 배지 전용 역할이다. Mocha는 기존 yellow와 text-on-accent를 사용한다. Latte는 yellow 50%와 white를 sRGB로 혼합한 채움에 neutral-1100 글자를 올린다. 숫자와 글리프가 같은 전경을 쓰며 기본 팔레트의 대비는 약 5.01:1이다. `notification_ink.rs`의 Theme 접근자가 갤러리와 본체의 공용 배지 위젯에 같은 색을 전달한다. 상세 목록의 warning 글리프와 다른 강조색의 전경 역할은 별개다.
+
 ### 애니메이션과 스크롤
 
 터미널 셀·스크롤에 추가 transition을 두지 않는다. UI 위젯의 입력 직후 피드백은 짧은 모션을 사용한다. 시간 단위와 모션 감소 설정은 아래 [모션 설정](#모션-설정과-시간-단위)을 따른다.
