@@ -97,7 +97,9 @@ impl DoubleTapDetector {
                 self.first_tap = None;
             }
         } else {
-            if let Some(m) = modifier
+            // 뗀 키는 차단 수식키를 누르고 있어도 식별한다. 누름 기록을 정리하지 않으면 다음 탭을 막는다.
+            // 차단 수식키를 누른 뒤의 누름은 이미 오염 표지가 있어 첫 탭으로 기록하지 않는다.
+            if let TapInput::Tap(m) = input
                 && self.pending_key == Some(m)
             {
                 if !self.contaminated {
@@ -250,6 +252,33 @@ mod tests {
             tap_twice(&mut d, &named(NamedKey::Alt)),
             Some(DoubleTapKey::Alt)
         );
+    }
+
+    /// Command를 누른 채 Option을 누르고 Command를 먼저 떼도 Command 누름 기록이 정리되어야 한다.
+    /// 남으면 이후 Shift·Ctrl 더블탭이 모두 막힌다. 이 Command 누름은 조합이므로 첫 탭도 아니다.
+    #[test]
+    fn macos_mapping_command_released_under_option_clears_its_press() {
+        let mut d = DoubleTapDetector::with_mapping(true);
+        d.on_key_event(&named(NamedKey::Super), true);
+        d.on_key_event(&named(NamedKey::Alt), true);
+        d.on_key_event(&named(NamedKey::Super), false);
+        d.on_key_event(&named(NamedKey::Alt), false);
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Shift)),
+            Some(DoubleTapKey::Shift)
+        );
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Control)),
+            Some(DoubleTapKey::Ctrl)
+        );
+
+        let mut d = DoubleTapDetector::with_mapping(true);
+        d.on_key_event(&named(NamedKey::Super), true);
+        d.on_key_event(&named(NamedKey::Alt), true);
+        d.on_key_event(&named(NamedKey::Super), false);
+        d.on_key_event(&named(NamedKey::Alt), false);
+        d.on_key_event(&named(NamedKey::Super), true);
+        assert_eq!(d.take(), None, "조합의 Command가 첫 탭으로 남았다");
     }
 
     /// Option을 누른 채 포커스를 잃고 창 밖에서 떼면 release가 오지 않는다. 포커스 리셋이 막는
