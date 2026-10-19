@@ -1591,7 +1591,7 @@ body = "Theme \"{}\" does not exist. Falling back to Catppuccin Mocha."
 
 [storage_notice]
 state_db_title = "Recent files and tutorial progress are not being saved"
-state_db_body = "{} Tasty keeps running: terminals and layout restore are not affected, but recent files and tutorial progress stay empty and are not saved in this session. The file was left as it is."
+state_db_body = "{} Tasty keeps running: terminals and layout restore are not affected, but previously saved recent files and tutorial progress could not be loaded, and changes made in this session are not saved. The file was left as it is."
 memory_fallback_title = "Agent data is kept only until Tasty exits"
 memory_fallback_body = "memory.db could not be opened ({}). Tasty keeps running with a temporary in-memory store: memory entries, agent tasks, approvals, surface metadata, telemetry and sessions saved from now on are lost when Tasty exits. The file was left as it is."
 

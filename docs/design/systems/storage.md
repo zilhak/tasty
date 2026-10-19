@@ -153,9 +153,9 @@ Allow 미기록으로 정상 호출의 사후 행동 감사가 불가능한 대�
 
 `db::init()`은 GUI 부팅에서 실행당 한 번만 시도한다. 실패하면 `:memory:` 폴백 없이 DB를 열지 않은 상태로 계속한다. 같은 실행에서 새 창을 열어도 다시 시도하지 않으므로 이미 열린 창에 영향이 없고 안내도 쌓이지 않는다. 다시 열려면 원인을 해소하고 Tasty를 다시 실행한다. 원본 파일은 열기만 시도하며 지우거나 새 파일로 덮지 않는다.
 
-실패는 첫 engine의 알림 목록에 경고 하나(`storage_notice.state_db_title`·`storage_notice.state_db_body`)로 남고 같은 내용이 warn 로그(`state.db init failed: …`)에 남는다. 본문은 아래 원인 문구와 영향(최근 목록·튜토리얼 진행이 비어 있고 저장되지 않음)을 함께 싣는다. 이후 소비자는 `with_state_db`의 None을 받아 다음처럼 동작한다.
+실패는 첫 engine의 알림 목록에 경고 하나(`storage_notice.state_db_title`·`storage_notice.state_db_body`)로 남고 같은 내용이 warn 로그(`state.db init failed: …`)에 남는다. 본문은 아래 원인 문구와 영향(이전에 저장한 최근 목록·튜토리얼 진행을 불러오지 못하고 이번 실행의 변경을 저장하지 않음)을 함께 싣는다. 이번 실행의 변경이 화면에 보이지 않는다고 단정하지 않는다. 이후 소비자는 `with_state_db`의 None을 받아 다음처럼 동작한다.
 
-- 최근 파일·Markdown 목록: 빈 목록을 보이고 추가는 메모리 캐시에만 반영한다(`recent.query`도 빈 목록).
+- 최근 파일·Markdown 목록: 저장된 목록을 불러오지 못해 빈 목록으로 시작한다. `RecentFiles::add`는 DB 접근 전에 공유 메모리 캐시를 갱신하므로, 이번 실행에서 사용자가 Explorer로 이동한 폴더(`directory` 종류, 현재 유일한 추가 경로)는 Explorer 최근 폴더 목록과 GUI 인스턴스의 `recent.query`에 실행 중 나타날 수 있다. 저장은 건너뛰므로 다음 실행에는 남지 않는다. GUI 없는 실행은 state.db를 열지 않고 최근 항목도 추가하지 않으므로 `recent.query`가 빈 목록이다(위 state.db 절).
 - 튜토리얼: 진행은 이번 실행의 메모리에만 있고, 목록에 기존 저장 실패 문구(`tutorial.save_error`)가 보인다.
 - `system.pressure.db_pragmas.state_db`: `null`.
 
