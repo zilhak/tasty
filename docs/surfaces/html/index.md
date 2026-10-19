@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[주체별 원칙](../../principles/control-and-data.md)에 따라 포커스와 무관한 문서 실행 제어와 사용자 입력 재현은 구분한다. 스크립트 허용은 포커스와 무관한 문서 실행 제어이므로 release에서 사용자(배너)와 에이전트(`surface.html_script_allow`) 모두 할 수 있다. 원본 스캔은 [응답성 원칙](../../principles/performance-and-settings.md)에 따라 UI 스레드 밖에서 한다(아래 [스캔](#스캔)). 남은 미정합은 결정을 미룰 수 없는 Windows·macOS에서 허용 기록과 같은 URL의 응답만 UI 스레드에서 읽는 것이다.
+[주체별 원칙](../../principles/control-and-data.md)에 따라 포커스와 무관한 문서 실행 제어와 사용자 입력 재현은 구분한다. 스크립트 허용은 포커스와 무관한 문서 실행 제어이므로 release에서 사용자(배너)와 에이전트(`surface.html_script_allow`) 모두 할 수 있다. 원본 스캔은 [응답성 원칙](../../principles/performance-and-settings.md)에 따라 UI 스레드 밖에서 한다(아래 [스캔](#스캔)). 남은 미정합은 Windows·macOS에서 허용 기록과 같은 URL의 응답만 아직 UI 스레드에서 읽는 것이다. 두 플랫폼의 결정 보류 방식은 정하지 않았다(아래 [OS별 적용](#os별-적용)).
 
 - **Status**: Implemented (bundled plugin)
 - **주체**: 로컬 사용자 (GUI surface) · AI Agent (`tasty html` CLI)
@@ -99,9 +99,11 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 스캔은 UI 스레드 밖에서 한다. 응답 단계는 그 로드의 스캔 표(ticket)를 받고, 파일 읽기와 전체 해시는 작업 스레드가 한다.
 
 - 허용 기록과 URL이 다른 응답은 스캔 결과와 관계없이 JS 값이 같다(sandbox가 켜져 있으면 끔, 꺼져 있으면 켬). 그래서 결정은 바로 하고 스캔은 작업 스레드(`html-script-scan`)가 끝낸다. 결과는 표가 아직 그 로드의 응답(commit 전)이나 그 로드로 commit된 현재 문서에 속할 때만 붙는다. 그 사이 새 로드가 시작되거나 다른 문서가 commit되거나 로드가 실패하면 결과를 버린다.
-- 허용 기록과 같은 URL의 응답(허용 직후 재로드, 허용한 문서의 재로드)은 지문이 JS 값을 정한다. Linux는 응답 결정을 보류하고 작업 스레드에서 읽은 뒤 GTK 스레드에서 JS를 정하고 결정을 넘긴다. 그 사이 새 로드가 시작돼 결과가 낡으면 보류한 응답을 거절한다. Windows·macOS는 이 결정을 미룰 API가 없거나(Windows `NavigationStarting`에는 deferral이 없다) 검증하지 못해 이 경우만 그 자리에서 읽는다.
+- 허용 기록과 같은 URL의 응답(허용 직후 재로드, 허용한 문서의 재로드)은 지문이 JS 값을 정한다. Linux는 응답 결정을 보류하고 작업 스레드에서 파일만 읽는다. 상태 반영과 표 확인은 결정을 넘기는 GTK 작업 안에서 그 직전에 한다. 읽는 동안이나 읽기가 끝난 뒤 적용 전에 새 로드가 시작됐거나 다른 문서가 commit됐으면 표가 낡아 보류한 응답을 거절한다. Windows·macOS는 이 경우만 아직 그 자리에서 읽는다. macOS의 decision handler 지연 호출과 Windows의 대체 경로(`NavigationStarting`에는 deferral이 없다)는 구현하지 않았다.
 - 스캔이 끝나기 전에 commit된 문서는 지문이 없는 상태로 기록되고 결과가 오면 채워진다. 이 동안 허용을 받지 않고(`AllowError::Loading`) 배너는 로드 중 단계로 허용 버튼을 비활성으로 그린다. 상태 조회의 `scanning`이 참이다.
 - 같은 URL의 재로드는 결과가 오기 전까지 이전 문서의 감지 결과와 배너 표지(닫힘 등)를 잠정 유지한다. 결과의 지문이 이전 문서와 같으면 그대로 두고, 다르면 새 문서로 보고 표지를 새로 시작한다.
+- 화면 문서의 스캔이 끝나기 전에 새 로드가 시작되면, 늦게 온 결과는 화면에 남은 그 문서에만 붙고 새 로드에는 붙지 않는다. 새 로드가 commit하기 전에 실패해도 화면 문서의 대기는 유지한다. 새 문서가 commit된 뒤 온 결과는 버린다.
+- commit한 로드가 그 뒤 실패하면 그 로드의 대기를 버린다. 그 문서는 지문 없이 남아 허용할 수 없다.
 - 작업 스레드가 끝나면 그 윈도우를 다시 그리도록 깨운다.
 
 FIFO는 여는 순간 쓰는 쪽을 기다리며 막혔고 `/dev/zero`는 읽기가 끝나지 않았다(측정). 그래서 막히지 않게 연 핸들로 종류를 먼저 확인한다.
@@ -189,7 +191,7 @@ OS별 구현은 다음과 같다.
     - 측정 결과 허용 문서의 timer가 다시 돌았다(tick 14→19, JS True).
   - `stop_loading`이나 기존 정책이 무시하는 `http(s)` navigation에는 `STARTED`가 오지 않았다. 따라서 JS와 문서가 그대로다(리뷰 측정).
 - **Windows(미측정, API 문서 근거)**: `NavigationStarting`은 main frame navigation에서만 발생한다. 서브프레임은 `FrameNavigationStarting`, 새 창은 `NewWindowRequested`로 따로 온다. 이 핸들러 안에서 `IsScriptEnabled`를 정한다. 이 이벤트에는 deferral이 없어 허용 기록과 같은 URL의 응답만 핸들러 안에서 파일을 읽고, 나머지는 끈 채 작업 스레드에서 읽는다. API 문서의 예제도 이 핸들러에서 해당 navigation에 적용되도록 설정을 바꾼다. `NavigationStarting` 이후에 바꾸면 다음 top-level navigation부터 적용된다.
-- **macOS(문서 단위 적용과 서브프레임 측정)**: `webView:decidePolicyForNavigationAction:preferences:decisionHandler:`에서 navigation별 `WKWebpagePreferences.allowsContentJavaScript`를 정한다. decision handler를 나중에 부르는 경로는 이 머신에서 컴파일할 수 없어 구현하지 않았다. 허용 기록과 같은 URL의 응답만 delegate 안에서 파일을 읽고, 나머지는 작업 스레드에서 읽는다. `targetFrame.isMainFrame`이 참일 때만 로드를 시작하고 판단한다. 서브프레임 navigation에는 그 시점 main frame 문서에 대한 게이트의 판단(`ScriptGate::effective_js`)을 넣는다. Linux에서 서브프레임이 webview 전체 JS 설정을 따르는 것과 같은 결과다. 새 창 요청은 `targetFrame`이 nil이며 preferences를 바꾸지 않는다.
+- **macOS(문서 단위 적용과 서브프레임 측정)**: `webView:decidePolicyForNavigationAction:preferences:decisionHandler:`에서 navigation별 `WKWebpagePreferences.allowsContentJavaScript`를 정한다. decision handler를 나중에 부르는 경로는 아직 구현하지 않았다. 허용 기록과 같은 URL의 응답만 delegate 안에서 파일을 읽고, 나머지는 작업 스레드에서 읽는다. `targetFrame.isMainFrame`이 참일 때만 로드를 시작하고 판단한다. 서브프레임 navigation에는 그 시점 main frame 문서에 대한 게이트의 판단(`ScriptGate::effective_js`)을 넣는다. Linux에서 서브프레임이 webview 전체 JS 설정을 따르는 것과 같은 결과다. 새 창 요청은 `targetFrame`이 nil이며 preferences를 바꾸지 않는다.
   - macOS 27.0.1 실 기기에서 debug 빌드로 실제 실행해 측정했다. 스크립트와 스크립트가 있는 iframe을 가진 `file://` 문서는 main frame과 서브프레임 모두 JS가 꺼진 채 그려졌고, 사용자가 본 뒤 배너가 `blocked`로 떴다. 허용하면 재로드 뒤 두 frame 모두 JS가 돌았다. 다른 문서로 이동하면 그 문서의 JS가 꺼졌고, 허용했던 문서로 돌아와도 허용이 풀려 다시 꺼졌다.
   - 허용 판단이 붙은 webview에서는 전역 `javaScriptEnabled`(deprecated)를 켜 둔다. 전역 값이 꺼져 있으면 navigation별 `allowsContentJavaScript`를 켜도 스크립트가 실행되지 않기 때문이다. 문서의 JS는 navigation별 값으로만 정한다.
   - 그래서 전역 "Sandbox scripts" 변경은 화면 문서에 바로 적용되지 않고 다음 navigation부터 적용된다(미측정).

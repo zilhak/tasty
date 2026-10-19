@@ -430,6 +430,11 @@ impl HtmlScriptState {
     /// 이전 문서를 가리키므로 내린다. 로드 종료 처리는 호스트가 [`Self::on_load_finished`]로 따로 알린다.
     pub fn on_load_failed(&mut self) {
         self.load_failed = true;
+        // commit한 로드가 그 뒤 실패했으면 그 로드의 스캔 결과로 허용 가능한 지문을 만들지 않는다.
+        // commit 전에 실패한 다음 로드는 화면 문서의 대기를 건드리지 않는다.
+        if self.committed_since_start {
+            self.current_wait = None;
+        }
     }
 
     /// 마지막 로드가 실패한 채 새 문서가 commit되지 않았다.

@@ -46,14 +46,35 @@ pub struct DeferredScan {
     path: PathBuf,
 }
 
+// 이유: 결정을 미룰 수 있는 backend만 부른다.
+#[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
 impl DeferredScan {
-    /// 파일을 읽어 결과를 붙인다. UI 스레드가 아닌 곳에서 부른다. 적용할 JS 값을 주고, 그 사이 새 로드가
-    /// 시작돼 결과가 낡았으면 `None`을 준다(호출자는 보류한 결정을 거절한다).
-    // 이유: 결정을 미룰 수 있는 backend(Linux)만 부른다.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    pub fn run(self) -> Option<bool> {
-        let scan = scan_path(self.gate.surface_id, &self.path);
+    /// 파일만 읽는 작업. UI 스레드가 아닌 곳에서 실행한다. 상태는 바꾸지 않고, 끝나면 호스트를 깨운다.
+    pub fn reader(&self) -> impl FnOnce() -> Option<ScriptScan> + Send + 'static {
+        let surface_id = self.gate.surface_id;
+        let path = self.path.clone();
+        let notify = self.gate.notify.clone();
+        move || {
+            let scan = scan_path(surface_id, &path);
+            if let Some(notify) = notify {
+                notify();
+            }
+            scan
+        }
+    }
+
+    /// 읽은 결과를 보류한 결정에 적용한다. 결정을 실제로 넘기는 스레드에서 그 직전에 부른다.
+    /// 그 사이 새 로드가 시작됐거나 다른 문서가 commit돼 표가 낡았으면 `None`을 준다
+    /// (호출자는 보류한 결정을 거절한다).
+    pub fn apply(self, scan: Option<ScriptScan>) -> Option<bool> {
         self.gate.finish_scan(self.ticket, scan)
+    }
+
+    /// 읽기와 적용을 한 스레드에서 차례로 한다. 시험용이다.
+    #[cfg(test)]
+    pub fn run(self) -> Option<bool> {
+        let scan = (self.reader())();
+        self.apply(scan)
     }
 }
 
@@ -108,7 +129,10 @@ impl ScriptGate {
     pub fn main_response(&self, url: &str) -> bool {
         match self.respond(url, false) {
             Response::Decided(js) => js,
-            Response::Deferred(scan) => scan.run().unwrap_or(false),
+            Response::Deferred(scan) => {
+                let read = (scan.reader())();
+                scan.apply(read).unwrap_or(false)
+            }
         }
     }
 
@@ -550,6 +574,15 @@ mod tests {
         };
         gate.load_started();
         assert_eq!(stale.run(), None);
+        // 읽기가 끝난 뒤, 적용 전에 새 로드가 시작되면 적용 지점에서 낡은 결과로 거절한다.
+        gate.load_started();
+        let Response::Deferred(late) = gate.main_response_deferrable(&url) else {
+            panic!("still allowed");
+        };
+        let read = std::thread::spawn(late.reader()).join().expect("join");
+        assert!(read.is_some(), "읽기 자체는 끝났다");
+        gate.load_started();
+        assert_eq!(late.apply(read), None, "적용 직전 표 확인에서 거절");
         cleanup(&dir);
     }
 

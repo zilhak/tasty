@@ -395,3 +395,62 @@ fn without_the_sandbox_a_pending_scan_keeps_javascript_on() {
     assert!(st.on_committed(Some(A)));
     assert_eq!(st.on_scan_finished(ticket, Some(scan(1))), Some(true));
 }
+
+/// commit A → A 스캔 대기 → 새 로드 B 시작. 늦은 A 결과는 화면 문서 A에만 붙고 B에는 붙지 않는다.
+#[test]
+fn a_scan_of_the_shown_document_survives_a_new_load_but_never_reaches_it() {
+    let mut st = HtmlScriptState::new(true);
+    let a = load_with_pending_scan(&mut st, A);
+    st.on_load_started();
+    let (_, b) = st.on_main_response_pending(C);
+    assert!(st.awaiting_verdict());
+    assert_eq!(st.allow_current(), Err(AllowError::Loading));
+    assert_eq!(st.on_scan_finished(a, Some(scan(1))), Some(false));
+    assert_eq!(st.current().map(|d| d.url.as_str()), Some(A));
+    assert_eq!(st.current().and_then(|d| d.scan), Some(scan(1)));
+    assert!(st.scan_pending(), "B의 스캔은 여전히 대기");
+    assert!(!st.on_committed(Some(C)));
+    assert_eq!(st.current().and_then(|d| d.scan), None);
+    assert_eq!(st.on_scan_finished(b, Some(scan(2))), Some(false));
+    assert_eq!(st.current().and_then(|d| d.scan), Some(scan(2)));
+}
+
+/// commit A → A 스캔 대기 → 새 로드 B 시작 → B가 commit된 뒤 늦은 A 결과는 버린다.
+#[test]
+fn a_late_scan_after_the_next_commit_is_dropped() {
+    let mut st = HtmlScriptState::new(true);
+    let a = load_with_pending_scan(&mut st, A);
+    let b = load_with_pending_scan(&mut st, C);
+    assert_eq!(st.on_scan_finished(a, Some(scan(1))), None);
+    assert_eq!(st.current().map(|d| d.url.as_str()), Some(C));
+    assert_eq!(st.current().and_then(|d| d.scan), None);
+    assert_eq!(st.on_scan_finished(b, Some(scan(2))), Some(false));
+}
+
+/// commit A 뒤 그 로드가 실패하면 늦은 A 결과로 허용 가능한 지문을 만들지 않는다.
+#[test]
+fn a_late_scan_of_a_load_that_failed_after_its_commit_is_dropped() {
+    let mut st = HtmlScriptState::new(true);
+    st.on_load_started();
+    let (_, a) = st.on_main_response_pending(A);
+    st.on_committed(Some(A));
+    st.on_load_failed();
+    st.on_load_finished();
+    assert!(!st.scan_pending());
+    assert_eq!(st.on_scan_finished(a, Some(scan(1))), None);
+    assert_eq!(st.allow_current(), Err(AllowError::NoFingerprint));
+}
+
+/// 새 로드 B가 commit 전에 실패해도 화면 문서 A의 대기는 A의 것이므로 유지한다.
+#[test]
+fn a_failure_of_the_next_load_keeps_the_shown_documents_scan() {
+    let mut st = HtmlScriptState::new(true);
+    let a = load_with_pending_scan(&mut st, A);
+    st.on_load_started();
+    let (_, b) = st.on_main_response_pending(C);
+    st.on_load_failed();
+    st.on_load_finished();
+    assert_eq!(st.on_scan_finished(b, Some(scan(2))), None);
+    assert_eq!(st.on_scan_finished(a, Some(scan(1))), Some(false));
+    assert_eq!(st.current().and_then(|d| d.scan), Some(scan(1)));
+}

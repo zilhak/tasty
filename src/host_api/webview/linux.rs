@@ -1030,7 +1030,10 @@ fn defer_response(
     surface_id: u32,
 ) {
     gtk::glib::MainContext::default().spawn_local(async move {
-        match gtk::gio::spawn_blocking(move || scan.run()).await {
+        let read = gtk::gio::spawn_blocking(scan.reader()).await;
+        // 표 확인과 적용은 결정을 넘기는 이 GTK 작업 안에서 한다. 읽는 동안 새 로드가 시작됐으면
+        // 여기서 낡은 표로 판정되어 결정을 거절한다.
+        match read.map(|result| scan.apply(result)) {
             Ok(Some(js)) => {
                 set_js(&wv, js);
                 decision.use_();
