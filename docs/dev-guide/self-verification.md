@@ -13,7 +13,7 @@
 
 ### 독립 검증 — 개발도 Agent 가 스스로 확인할 수 있어야 한다
 
-> dev-guide 의 **가장 핵심 원칙**. Tasty 정체성인 *동시성*([identity.md](../identity.md))이 **개발 환경 자체에 재귀적으로 적용된 것** 이다.
+> dev-guide 의 **가장 핵심 원칙**. 한 Tasty를 사용자와 여러 에이전트가 함께 쓰고([주체](../concepts/actors.md)), debug 빌드에서 사용자 조작을 재현할 수 있어야 한다는 [사용자 통제와 데이터 원칙](../principles/control-and-data.md#사용자에이전트원격-사용자)을 **개발 환경 자체에 적용한 것** 이다.
 
 #### 원칙
 
@@ -46,7 +46,7 @@ Tasty 를 개발하는 환경이 곧 Tasty 다 (dogfooding). 보통 사용자·�
 #### 새 기능 추가 시 적용
 
 - 영속 상태(파일/소켓/포트 등)를 새로 추가하면 **debug/release 분리 패턴을 따른다** (`tasty_home()` 루트 아래에 둔다). 안 그러면 debug 검증이 release 데이터를 오염시킨다.
-- 동작은 IPC/CLI 로 트리거 가능하게 만든다 (headless 동작-우선) — 그래야 Agent 가 GUI 없이 검증한다. → [identity.md](../identity.md)
+- 동작은 IPC/CLI 로 트리거 가능하게 만든다 (headless 동작-우선) — 그래야 Agent 가 GUI 없이 검증한다. → [IPC·CLI 제공 기준](api-conventions.md#ipc-메서드를-cli로-제공하는-기준), [헤드리스 IPC 지원 범위](headless-ipc-surface.md)
 
 #### 한계 / 주의
 
@@ -60,7 +60,7 @@ Tasty 를 개발하는 환경이 곧 Tasty 다 (dogfooding). 보통 사용자·�
 - [아래 "tasty 에서 직접 검증"](#tasty-에서-직접-검증) — 실제 검증 절차 (cargo run & + CLI 시나리오)
 - [`debug-ipc.md`](debug-ipc.md) — debug 전용 IPC (사용자 입력 재현, release 미노출)
 - [`e2e-tests.md`](e2e-tests.md) — 테스트 환경 격리 정책
-- [identity.md](../identity.md) — 동시성 정체성 (이 원칙의 뿌리)
+- [사용자 통제와 데이터](../principles/control-and-data.md#사용자에이전트원격-사용자) · [주체](../concepts/actors.md) — 이 원칙의 뿌리
 
 ## tasty 에서 직접 검증
 

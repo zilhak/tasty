@@ -1,6 +1,6 @@
 # 포커스 정책 (운영 상세)
 
-포커스는 사용자가 보고 입력하는 창·워크스페이스·pane·탭·surface를 나타낸다. 에이전트의 IPC/CLI 요청은 이를 바꾸지 않으며 release에는 포커스 변경 API가 없다. 이유는 [포커스 독립성 원칙](../../identity.md), 계층 용어는 [구조 계층](../../concepts/hierarchy.md)을 따른다.
+포커스는 사용자가 보고 입력하는 창·워크스페이스·pane·탭·surface를 나타낸다. 에이전트의 IPC/CLI 요청은 이를 바꾸지 않으며 release에는 포커스 변경 API가 없다. 이유는 [사용자 통제와 데이터 원칙](../../principles/control-and-data.md#사용자에이전트원격-사용자), 계층 용어는 [구조 계층](../../concepts/hierarchy.md)을 따른다.
 
 ## 계층
 

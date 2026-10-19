@@ -245,7 +245,7 @@ move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때�
 
 ### 자동 매핑
 
-`tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>`(또는 `--ssh <user@host>`)로 로컬 워크스페이스에 원격 대상을 선언적으로 매핑한다(`Workspace.attach_mapping`, 구조 journal 영속. 설정·해제는 `DomainIntent::SetWorkspaceAttachMapping`에서 공통 journal 명령으로 합류한다). 매핑된 워크스페이스를 **활성화하면** 호스트가 자동으로 프로필 resolve → SSH 터널 → GUI mirror 를 띄운다. `remote_workspace` 가 None 이면 skip(ID 명시 필요), 이미 attach 중이면 재트리거 안 함. 자동 attach 는 mirror 를 *추가*만 하고 포커스/active 전환을 강제하지 않는다([포커스 독립성](../../identity.md)).
+`tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>`(또는 `--ssh <user@host>`)로 로컬 워크스페이스에 원격 대상을 선언적으로 매핑한다(`Workspace.attach_mapping`, 구조 journal 영속. 설정·해제는 `DomainIntent::SetWorkspaceAttachMapping`에서 공통 journal 명령으로 합류한다). 매핑된 워크스페이스를 **활성화하면** 호스트가 자동으로 프로필 resolve → SSH 터널 → GUI mirror 를 띄운다. `remote_workspace` 가 None 이면 skip(ID 명시 필요), 이미 attach 중이면 재트리거 안 함. 자동 attach 는 mirror 를 *추가*만 하고 포커스/active 전환을 강제하지 않는다([포커스 독립성](../../design/policies/focus.md#cliipc-포커스-독립-원칙)).
 
 **첫 자동 attach 가 실패하면 간격을 두고 다시 시도한다**: 프로필 해석·포트 발견·터널 수립(엔드포인트 해석)이 실패하거나, mirror 접수가 바로 실패하거나, 접수 뒤 연결·설치 단계에서 실패하면, 같은 매핑의 다음 시도를 재연결과 같은 지수 백오프(0.5초에서 두 배씩 30초 상한, ±20% jitter)로 미룬다(`Remote.attach_retry`). 그 시각이 되면 타이머가 루프를 깨워 그 워크스페이스가 활성일 때 다시 시도한다. 자동 재시도 상한은 없다. 사용자가 그 워크스페이스로 돌아오면(엣지) 대기 없이 바로 시도하지만 간격은 초기화하지 않는다. 매핑을 바꾸면 기록을 적용하지 않고 바로 시도한다. mirror 설치에 성공하거나, 매핑을 지우거나 바꾸거나, 그 워크스페이스를 닫으면 기록을 지운다.
 
@@ -291,7 +291,7 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 ### 원격 워크스페이스 브라우징 (Browse)
 
-`remote attach` 가 대상 workspace id 를 **미리 알아야** 동작하는 것과 달리, 브라우징은 그 id 를 **발견**한다 — attach 프로필/ssh 대상에 붙어 원격 인스턴스의 워크스페이스 목록(각 `id`/`name`/`pane_count`/`busy_count`/`attached`)을 받아온다. 흐름: 접속 스펙 resolve → (SSH 터널 or `127.0.0.1:PORT` loopback 직결) → 그 포트로 `workspace.list` + `attach.list` **2회 IPC** → workspace 단위 lock 을 join 해 `attached`(타 client 점유 여부)/`holder` 를 채운다(서버측 변경 0). 순수 조회라 로컬 사용자 상태(focus/닫은항목/선택)에 닿지 않는다([포커스 독립성](../../identity.md)).
+`remote attach` 가 대상 workspace id 를 **미리 알아야** 동작하는 것과 달리, 브라우징은 그 id 를 **발견**한다 — attach 프로필/ssh 대상에 붙어 원격 인스턴스의 워크스페이스 목록(각 `id`/`name`/`pane_count`/`busy_count`/`attached`)을 받아온다. 흐름: 접속 스펙 resolve → (SSH 터널 or `127.0.0.1:PORT` loopback 직결) → 그 포트로 `workspace.list` + `attach.list` **2회 IPC** → workspace 단위 lock 을 join 해 `attached`(타 client 점유 여부)/`holder` 를 채운다(서버측 변경 0). 순수 조회라 로컬 사용자 상태(focus/닫은항목/선택)에 닿지 않는다([포커스 독립성](../../design/policies/focus.md#cliipc-포커스-독립-원칙)).
 
 이 능력은 **CLI(`remote workspaces`)와 로컬 IPC method(`remote.workspaces`) 양면**으로 노출된다(에이전트 기능 기준 — 에이전트가 CLI 없이 소켓만으로도 브라우징 가능). 둘 다 동일한 코어(`tasty_remote::browse`)를 공유하며, 블로킹 SSH I/O 는 호스트 IPC 경로에서 **워커 스레드**로 돌려 이벤트루프를 막지 않는다. RA02 원격 추가 팝업의 우측 목록이 이 출력을 데이터 소스로 소비한다. IPC `remote.workspaces`가 실패하면 -32050으로 답하고, 문구는 `remote browse failed: <바깥 문맥>: <원격의 원인>` 처럼 원인 체인까지 담는다(`remote.attach` 생성 실패와 같은 형식).
 

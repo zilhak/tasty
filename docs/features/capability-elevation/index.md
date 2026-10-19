@@ -60,4 +60,4 @@ agent 의 세션 토큰은 요청이 어느 agent 의 것인지 구분하는 표
 ## 관련
 
 - [dev-guide/plugin-permissions](../../dev-guide/plugin-permissions.md) — 권한 토큰/매니페스트 · [human-handoff](../human-handoff/index.md) — approval 메커니즘
-- [identity](../../identity.md) — 사용자/에이전트 분리
+- [사용자 통제와 데이터](../../principles/control-and-data.md#사용자에이전트원격-사용자) — 사용자/에이전트 구분

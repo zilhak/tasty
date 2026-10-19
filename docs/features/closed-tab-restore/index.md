@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 전용 (`restore_closed`, 기본 `Ctrl+Shift+T`)
-- **설계**: 없음. 사용자와 에이전트의 구분은 [identity](../../identity.md)을 따른다.
+- **설계**: 없음. 사용자와 에이전트의 구분은 [포커스 정책](../../design/policies/focus.md)을 따른다.
 - **코드**: 닫기 입력과 원 대상 해석 `src/app/journal/commands/close.rs`, 불변 capture `src/runtime/journal_product/worker/capture.rs`, undo 구조 `crates/tasty-core/src/undo.rs`, 복원 준비 `src/app/journal/commands/assembly.rs`, 완료 후 사용자 선택 `src/app/journal/commands/view_completion.rs`.
 - **화면**: 없음 (복원은 focused pane 에 즉시 반영)
 
@@ -28,7 +28,7 @@
 
 ## 사용자/에이전트 분리 (핵심)
 
-복원 스택은 **사용자의 화면 상태**라 에이전트 표면에 없다([identity](../../identity.md)):
+복원 스택은 **사용자의 화면 상태**라 에이전트 표면에 없다([포커스 정책](../../design/policies/focus.md)):
 
 - 복원을 트리거하는 CLI/IPC 없음 (`RestoreClosedItem` intent 는 사용자 단축키 전용).
 - 복원 뒤 포커스 이동(복원한 워크스페이스로 활성 전환 · 복원한 pane 으로 포커스)은 **사용자 요청일 때만** 일어난다. 복원이 사용자 단축키 전용이라는 약속에 기대지 않고 cascade(`cascade_closed_item_restored`)가 origin 을 직접 본다 — 다른 요청이 복원에 닿아도 사용자의 활성 워크스페이스·포커스 pane 은 그대로다.

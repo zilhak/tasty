@@ -3932,7 +3932,7 @@ help = "入力するテキスト（UTF-8）。`--bytes` と併用不可"
 help = "入力するバイトを偶数長の16進文字列で指定（例：`1b5b3141`）"
 
 [cli.help._root.debug.inject]
-about = "入力注入：ユーザーのキーボード/マウス入力を再現。debugビルド専用（原則1：入力再現はreleaseにありません）"
+about = "入力注入：ユーザーのキーボード/マウス入力を再現。debugビルド専用（入力再現はreleaseにありません）"
 
 [cli.help._root.debug.inject.key]
 about = "サーフェスの入力経路にキーバイトを注入"

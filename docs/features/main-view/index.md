@@ -24,7 +24,7 @@ release는 같은 데이터 홈에 프로세스 하나만 둔다. 같은 홈으�
 
 ### headless 와의 관계
 
-MainView는 EngineRead와 자기 View 상태로 그리는 GUI다. headless는 MainView 없이 App·EngineSession·실행 서비스를 사용한다. CoreState에는 구조 descriptor가 있고 PTY 같은 실행 자원은 EngineRuntime에 있다. (→ [identity](../../identity.md) headless)
+MainView는 EngineRead와 자기 View 상태로 그리는 GUI다. headless는 MainView 없이 App·EngineSession·실행 서비스를 사용한다. CoreState에는 구조 descriptor가 있고 PTY 같은 실행 자원은 EngineRuntime에 있다. (→ [헤드리스 정의 경계](../../dev-guide/headless-build-boundaries.md))
 
 ### 크롬 합성
 

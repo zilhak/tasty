@@ -13,9 +13,9 @@
 
 People can work with the keyboard and mouse while agents perform their own tasks through IPC/CLI. Agent commands do not depend on which terminal the user has focused.
 
-## Identity — Separation of User Actions and Agent Actions
+## Separation of User Actions and Agent Actions
 
-Every Tasty API strictly separates **user actions** (keyboard/mouse/native OS input) from **agent actions** (IPC methods/CLI subcommands). Side effects of agent actions never touch the user's focus, history, or selection state — features that *replay* user input (key injection, forced focus switches, etc.) do not exist on the release IPC/CLI surface (debug-only isolation). Full principles: [`CLAUDE.md`](CLAUDE.md).
+Every Tasty API strictly separates **user actions** (keyboard/mouse/native OS input) from **agent actions** (IPC methods/CLI subcommands). Side effects of agent actions never touch the user's focus, history, or selection state — features that *replay* user input (key injection, forced focus switches, etc.) do not exist on the release IPC/CLI surface (debug-only isolation). Full principles: [user control and data](docs/principles/control-and-data.md) and the [focus policy](docs/design/policies/focus.md).
 
 ## Core Values
 

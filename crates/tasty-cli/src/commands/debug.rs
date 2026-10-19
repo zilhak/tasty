@@ -276,7 +276,7 @@ pub enum DebugCommands {
         bytes: Option<String>,
     },
     /// Input injection — reproduces user keyboard/mouse input. Debug builds only
-    /// (identity principle 1: input reproduction has no release surface).
+    /// (input reproduction has no release surface).
     #[command(subcommand)]
     Inject(InjectDebugCommands),
     /// Plugin-contributed banner force-open/close, bypassing the owning plugin.

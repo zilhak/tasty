@@ -1935,7 +1935,7 @@ mod tests {
 
     /// `EguiMeshCore` 는 생성 시점에 프로그램적 스크롤 애니메이션을 꺼 둔다 — dark/light
     /// 양쪽 style 모두(테마 전환에도 유지). egui-mesh 는 애니메이션 프레임 하나가 곧
-    /// 프로세스 간 왕복 한 번이다(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계).
+    /// 프로세스 간 왕복 한 번이다(docs/dev-guide/egui-mesh-channel.md#입력-forward--사용자-입력-경계).
     #[test]
     fn mesh_context_disables_scroll_animation() {
         let core = EguiMeshCore::new();

@@ -86,7 +86,7 @@ fn check(found: BTreeSet<String>, roster: &[(&str, &str)], what: &str, why_it_ma
     let stale: Vec<&String> = listed.difference(&found).collect();
     assert!(
         extra.is_empty(),
-        "{what}에 미등록 파일이 있다: {extra:?}\n{why_it_matters}\n등록 전에 docs/identity.md의 사용자·에이전트 행동 분리와 포커스 독립성 원칙을 검토한다. 이 검사는 원칙 충족 여부를 판단하지 않는다."
+        "{what}에 미등록 파일이 있다: {extra:?}\n{why_it_matters}\n등록 전에 docs/principles/control-and-data.md의 사용자·에이전트 구분과 docs/design/policies/focus.md의 포커스 독립 규칙을 검토한다. 이 검사는 원칙 충족 여부를 판단하지 않는다."
     );
     assert!(
         stale.is_empty(),

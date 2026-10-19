@@ -4000,7 +4000,7 @@ help = "Text to feed (UTF-8). Mutually exclusive with `--bytes`"
 help = "Bytes to feed as an even-length hex string (e.g. `1b5b3141`)"
 
 [cli.help._root.debug.inject]
-about = "Input injection — reproduces user keyboard/mouse input. Debug builds only (identity principle 1: input reproduction has no release surface)"
+about = "Input injection — reproduces user keyboard/mouse input. Debug builds only (input reproduction has no release surface)"
 
 [cli.help._root.debug.inject.key]
 about = "Inject key bytes into a surface's input path"

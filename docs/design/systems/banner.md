@@ -190,7 +190,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 
 ## 발화 정책 (불가침)
 
-배너는 사용자 직접 조작에 대한 안내로 표시한다. release의 IPC·CLI·플러그인·시스템 작업만으로는 표시하지 않는다. [사용자와 에이전트 행동 분리](../../identity.md)를 따른다. 토스트에 허용된 원격 연결 상태 알림은 배너의 예외가 아니다.
+배너는 사용자 직접 조작에 대한 안내로 표시한다. release의 IPC·CLI·플러그인·시스템 작업만으로는 표시하지 않는다. 에이전트 행동이 사용자 상태를 바꾸지 않는다는 [포커스 정책](../policies/focus.md)을 따른다. 토스트에 허용된 원격 연결 상태 알림은 배너의 예외가 아니다.
 
 ## 호스트 배너 목록
 
@@ -243,5 +243,5 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 - [popup.md](popup.md) — 내부 팝업 시스템(독립 기능, 포커스 가짐)
 - [toast.md](toast.md) — 휘발성 알림(info 만, 입력 통과)
 - [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md) — Modal/Popup/Toast/Banner 구분
-- [identity](../../identity.md) — 사용자/에이전트 행동 분리(발생 정책 근거)
+- [포커스 정책](../policies/focus.md) · [사용자 통제와 데이터](../../principles/control-and-data.md#사용자에이전트원격-사용자) — 사용자/에이전트 행동 구분(발생 정책 근거)
 - [내부 팝업 시스템](popup.md) — 배너의 입력과 수명 규칙

@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 전용 (마우스 + 수식키 — CLI/IPC 비노출)
-- **설계**: [URL 대상은 picker·실행 계층에만](../file-handler/index.md) (원칙은 [identity](../../identity.md))
+- **설계**: [URL 대상은 picker·실행 계층에만](../file-handler/index.md) (원칙은 [사용자 통제와 데이터](../../principles/control-and-data.md#사용자에이전트원격-사용자))
 - **코드**: 검출·하이라이트 타입 `crates/tasty-terminal-link/` · 링크 열기 `src/adapters/ui/terminal_link.rs`(`open_uri` — OS 부수효과라 `gui` 뒤에 남는다) · 클릭 `src/view/main/mouse.rs` · `LinkModifier`(settings) · 링크 우클릭 메뉴 `src/view/main/link_menu.rs` · 드래그선택 우클릭 메뉴 `src/view/main/redraw.rs`(`handle_terminal_surface_native_menu`)
 - **화면**: 링크 hover 하이라이트 (GPU)
 
@@ -75,7 +75,7 @@ hover+수식키 클릭과는 별개 입력 경로 — 사용자가 드래그(또
 ## 인터페이스
 
 - **사용자**: 수식키 + hover/클릭, hover 링크 위 우클릭 → 선택 / 복사 / 연결 동작, 링크 위에서 `copy_link` 키, 또는 드래그/더블클릭 선택 후 우클릭 → "경로 열기".
-- **AI Agent**: **없음(비노출)** — 사용자 입력 재현 금지([identity](../../identity.md)). 링크/경로 *데이터* 가 필요하면 읽기 전용 [terminal-output](../terminal-output/index.md) 의 `path`/`url`/`osc_link` 파서([reference/output-parsers](../../reference/output-parsers.md)).
+- **AI Agent**: **없음(비노출)** — 사용자 입력 재현 금지([사용자 통제와 데이터](../../principles/control-and-data.md#사용자에이전트원격-사용자)). 링크/경로 *데이터* 가 필요하면 읽기 전용 [terminal-output](../terminal-output/index.md) 의 `path`/`url`/`osc_link` 파서([reference/output-parsers](../../reference/output-parsers.md)).
 
 ## 비-목표
 

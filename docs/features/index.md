@@ -3,7 +3,7 @@
 기능별 폴더의 `index.md`에 목적과 내부 동작을 설명한다. 화면 설명은 그 문서의 `## 화면`
 절에 두고, 화면이 여럿이거나 별도 규칙이 필요하면 `screens/<s>.md`로 나눈다.
 작성 규칙은 [documentation-model.md](../documentation-model.md), 제품 원칙은
-[identity.md](../identity.md)를 따른다.
+[principles](../principles/index.md)를 따른다.
 
 양식: [`_feature.template.md`](_feature.template.md) (기획) · [`_screen.template.md`](_screen.template.md) (화면). 새 기능은 양식을 복사해 채운다.
 

@@ -234,7 +234,7 @@ CLI 는 위 IPC 를 감싼다(`tasty list workspaces`, `tasty send text`, `tasty
 ## 관련
 
 - [event-catalog](event-catalog.md) — IPC 와 별개 채널인 Event Bus
-- [identity](../identity.md) — 사용자/에이전트 행동 분리(이 표면의 설계 축)
+- [사용자 통제와 데이터](../principles/control-and-data.md#사용자에이전트원격-사용자) · [포커스 정책](../design/policies/focus.md) — 사용자/에이전트 행동 구분(이 표면의 설계 축)
 
 <a id="system-and-window-observations"></a>
 

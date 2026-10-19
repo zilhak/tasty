@@ -10,7 +10,7 @@
 
 ## 목적
 
-플러그인을 설치·활성/비활성·제거하는 기능. [사이드바](../sidebar/index.md) 플러그인 버튼이 여는 **관리 창**(GUI)과 **`tasty plugin` CLI** 두 가지로 제공한다 — tasty-특화 기능이라 [에이전트 기능 원칙](../../identity.md) 에 따라 IPC/CLI 양면 제공.
+플러그인을 설치·활성/비활성·제거하는 기능. [사이드바](../sidebar/index.md) 플러그인 버튼이 여는 **관리 창**(GUI)과 **`tasty plugin` CLI** 두 가지로 제공한다 — tasty-특화 기능이라 [IPC·CLI 제공 기준](../../dev-guide/api-conventions.md#ipc-메서드를-cli로-제공하는-기준)에 따라 IPC/CLI 양면 제공.
 
 ## 내부 동작
 

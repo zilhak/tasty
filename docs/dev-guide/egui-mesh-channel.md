@@ -283,7 +283,7 @@ plugin generation 이 정지해 새 frame 이 안 와도 이미 재전송 대기
 유지한다(재-tessellation·업로드 없이 IPC 메시지만). popup/banner 도 같은 체인 규칙·재무장·
 mesh 분리 규칙을 공유한다 — 규칙이 닮아서가 아니라 같은 MeshForwardCommon 상태 타입을 사용하기 때문이다.
 
-## 입력 forward · identity 경계
+## 입력 forward · 사용자 입력 경계
 
 host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해 `set_context.raw_input`
 으로 forward 한다. 포인터(클릭/스크롤/이동)에 더해 **포커스된 egui-mesh surface** 는
@@ -750,7 +750,7 @@ surface·popup 에 이어 **plugin banner 콘텐츠도 egui-mesh 로 자가 렌�
 
 banner chrome(컨테이너/border/close X/카운트다운/그림자)과 **스택(스코프당 표시 1 + 큐 5)·
 위치(스코프 콘텐츠 최상단, 탭바 아래)·z-order·dismiss 타이밍**은 전부 host 소유다. plugin 은
-content_rect 안 content 만 mesh 로 그린다(popup 과 동일한 identity 경계).
+content_rect 안 content 만 mesh 로 그린다(popup 과 동일한 소유 경계).
 plugin banner 는 host `BannerManager` 의 **같은 큐/TTL/z-order 단일 지점**을 그대로 타고,
 `BannerState.content` 만 `BannerContentSource::{Host, PluginMesh{..}}` 로 분기한다 — 별도
 큐를 두지 않아 생명주기 정책이 이중화되지 않는다. 동적 plugin 인스턴스는 `BannerKey`

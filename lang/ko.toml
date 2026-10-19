@@ -3932,7 +3932,7 @@ help = "입력할 텍스트(UTF-8). `--bytes`와 함께 사용 불가"
 help = "입력할 바이트를 짝수 길이 16진 문자열로 지정(예: `1b5b3141`)"
 
 [cli.help._root.debug.inject]
-about = "입력 주입: 사용자 키보드/마우스 입력 재현. debug 빌드 전용(정체성 원칙 1: 입력 재현은 release에 없음)"
+about = "입력 주입: 사용자 키보드/마우스 입력 재현. debug 빌드 전용(입력 재현은 release에 없음)"
 
 [cli.help._root.debug.inject.key]
 about = "서피스 입력 경로에 키 바이트 주입"

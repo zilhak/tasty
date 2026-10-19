@@ -1,7 +1,7 @@
 <!--
 기능의 내부 동작을 설명하는 템플릿.
 새 기능을 만들 때:  cp docs/features/_feature.template.md docs/features/<feature>/index.md
-규칙: docs/documentation-model.md / docs/identity.md (작성 전 필독).
+규칙: docs/documentation-model.md / docs/identity.md / docs/principles/index.md (작성 전 필독).
 
 작성 시 지킬 것:
 - 기능의 동작을 먼저 쓴다. 필요한 구현 경로는 "## 구현"에 핵심 크레이트·모듈·함수만 연결한다. 자주 바뀌는 호출부를 전부 나열하지 않는다.

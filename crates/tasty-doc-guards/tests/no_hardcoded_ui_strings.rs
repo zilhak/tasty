@@ -223,7 +223,7 @@ fn is_scan_target(rel: &str) -> bool {
         return false;
     }
     if rel.contains("/debug/") {
-        return false; // 사용자 입력 재현 등 debug 전용 표면 (docs/identity.md 2.1)
+        return false; // 사용자 입력 재현 등 debug 전용 표면 (docs/principles/control-and-data.md)
     }
     !ALLOWLIST_PATH_PREFIXES
         .iter()

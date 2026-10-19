@@ -82,7 +82,7 @@ ssh 비밀번호/`sudo` 암호/OTP 프롬프트, 대화형 REPL, 설치 마법�
 
 ### 제약 (불가침 — 반드시 지킨다)
 
-대화형 작업도 "에이전트 행동"이므로 [사용자 행동 ↔ 에이전트 행동 분리](../identity.md) 원칙([프로젝트 CLAUDE.md §1](../../CLAUDE.md))의 적용을 받는다.
+대화형 작업도 "에이전트 행동"이므로 [사용자 통제와 데이터 원칙](../principles/control-and-data.md#사용자에이전트원격-사용자)과 [포커스 정책](../design/policies/focus.md)의 적용을 받는다.
 
 - **사용자 활성 쉘 금지** — `foreground_process` 가 사용자 작업이거나 `busy:true` 인 surface 는 건드리지 않는다.
 - **전용 테스트 surface 에만** — `tasty new tab --pane <pane_id>` 로 만든 surface 에서만 입력 주입을 한다.

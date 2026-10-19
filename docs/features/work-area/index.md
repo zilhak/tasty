@@ -8,7 +8,7 @@
 
 ## 목적
 
-[MainView](../main-view/index.md) 의 중앙 — 사용자가 실제로 일하는 영역. **Workspace › Pane › Tab › Surface** 포함 관계와 그 위의 **두 레벨 레이아웃**을 보유한다. 이 도메인은 GUI 없이도 성립하는 `CoreState` 의 본체이며, MainView는 이 상태를 화면에 표시한다 (→ [identity](../../identity.md) headless). 계층 용어 자체는 [구조 계층](../../concepts/hierarchy.md).
+[MainView](../main-view/index.md) 의 중앙 — 사용자가 실제로 일하는 영역. **Workspace › Pane › Tab › Surface** 포함 관계와 그 위의 **두 레벨 레이아웃**을 보유한다. 이 도메인은 GUI 없이도 성립하는 `CoreState` 의 본체이며, MainView는 이 상태를 화면에 표시한다 (→ [헤드리스 정의 경계](../../dev-guide/headless-build-boundaries.md)). 계층 용어 자체는 [구조 계층](../../concepts/hierarchy.md).
 
 ## 내부 동작 (headless-valid)
 
@@ -118,7 +118,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 트리에는 고유 `
   - 닫기: `tasty close tab|pane|surface --… <ID>` · `tasty close workspace --workspace <W>`(안의 모든 pane/tab/surface 포함) · `tasty close window --window <N>`.
     워크스페이스 닫기는 마지막 하나, mirror 워크스페이스, **원격 attach 가 하드 점유 중인 surface 를 든 워크스페이스**를 거부한다 — 창까지 없앨지는 별개의 결정이라 `close window` 로 명시하고(헤드리스는 `window.close` 가 없어 거절 문구가 그것을 권하지 않고 마지막 워크스페이스를 닫을 수 없다고만 말한다), mirror 는 attach 세션 쪽에서 거두며, 점유 중인 터미널은 그것을 쓰고 있는 원격 세션이 놓아야 닫힌다. **되돌릴 수 없다**(안의 터미널이 죽고 되돌리기 스택·스크롤백에 남지 않는다). 경계와 근거는 [포커스 정책 (운영 상세)](../../design/policies/focus.md).
     사용자가 보고 있지 않은 워크스페이스를 닫아도 화면에 있는 워크스페이스는 그대로다([포커스 독립성](../../design/policies/focus.md)).
-  - 조회: `tasty list workspaces|panes|surfaces` · `tasty list tabs --pane <P>` (전 워크스페이스 순회, 포커스 무관 — [포커스 독립성](../../identity.md)).
+  - 조회: `tasty list workspaces|panes|surfaces` · `tasty list tabs --pane <P>` (전 워크스페이스 순회, 포커스 무관 — [포커스 독립성](../../design/policies/focus.md#cliipc-포커스-독립-원칙)).
 - **사용자 트리거**: 단축키/마우스로 탭 추가·전환·이동, Pane/Surface 분할, 닫기. (단축키는 `KeybindingSettings` — 하드코딩 금지.)
 - **원격 / 점유**: **Workspace 와 Surface 는 점유(attach) 대상**이다. 원격 접속 사용자가 attach 로 배타 **점유**하면 그 대상은 점유자만 조작하고 로컬·AI 는 readonly 가 된다. 점유된 surface 는 트리에서 원본 kind(terminal)를 그대로 유지하고, 점유는 `OccupancyRegistry`(`is_hard_occupied`)가 추적하며 서버측은 readonly mirror 오버레이(`src/remote/readonly.rs`)로 렌더 + 로컬 입력을 차단한다(전용 트리 marker kind 없음). 점유된 워크스페이스는 mirror 면 사이드바의 하늘색 REMOTE 표시(레일=우하단 corner chip)로 구분된다. 동작은 [remote-attach](../remote-attach/index.md), 개념은 [actors 점유](../../concepts/actors.md#점유-occupation-모델).
 

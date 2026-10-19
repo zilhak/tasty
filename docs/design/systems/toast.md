@@ -17,7 +17,7 @@ Toast는 “복사됨”, “저장됨”처럼 사용자 조작의 결과를 �
 
 ## 트리거 정책 (CRITICAL)
 
-토스트는 기본적으로 사용자 조작의 결과를 알린다. 에이전트의 CLI·IPC 요청 성공·실패는 사용자 토스트로 표시하지 않는다. [정체성 원칙](../../identity.md)의 사용자 상태 분리를 따른다.
+토스트는 기본적으로 사용자 조작의 결과를 알린다. 에이전트의 CLI·IPC 요청 성공·실패는 사용자 토스트로 표시하지 않는다. [포커스 정책](../policies/focus.md)의 사용자 상태 분리를 따른다.
 
 | 상황 | 처리 |
 |---|---|
@@ -169,7 +169,7 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 
 - [popup.md](popup.md) — 내부 팝업 시스템
 - [banner.md](banner.md) — parent 상단 info+action 오버레이 (내용 적으면 Toast 권장)
-- [identity](../../identity.md) — 사용자/에이전트 행동 분리
+- [포커스 정책](../policies/focus.md) · [사용자 통제와 데이터](../../principles/control-and-data.md#사용자에이전트원격-사용자) — 사용자/에이전트 행동 구분
 - [테마 시스템 (운영 상세)](theme.md) — 카드 치수와 색 계산을 공용 구현으로 모은 이유
 
 사용자 프리셋 적용의 journal 실패는 접수한 원 View에 `preset.toast.apply_failed` Error toast로 알린다. continuation의 View identity가 바뀌었거나 요청이 에이전트 origin 또는 replay이면 표시하지 않는다. 성공을 기다리는 동안 다른 View를 다시 골라 실패를 표시하지 않는다.

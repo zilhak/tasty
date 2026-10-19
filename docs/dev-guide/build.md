@@ -62,7 +62,7 @@ cargo build --profile dist  # 배포용
 
 ### headless(`--no-default-features`) 빌드
 
-`gui` 는 default feature 라 `cargo build` 는 winit/wgpu/egui 를 켠다. gui 없는 headless/CLI 인스턴스(로컬 GUI 사용자 없이 IPC/CLI + 원격 attach 만 쓰는 인스턴스, `docs/identity.md` "headless 환경을 의식한다")는 `--no-default-features` 로 빌드한다.
+`gui` 는 default feature 라 `cargo build` 는 winit/wgpu/egui 를 켠다. gui 없는 headless/CLI 인스턴스(로컬 GUI 사용자 없이 IPC/CLI + 원격 attach 만 쓰는 인스턴스, [헤드리스 정의 경계](headless-build-boundaries.md))는 `--no-default-features` 로 빌드한다.
 
 ```bash
 cargo check --workspace --no-default-features   # headless 컴파일 검증

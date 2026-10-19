@@ -20,7 +20,7 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
 
 ### 표시 데이터 (focus surface read)
 
-좌측 클러스터는 **현재 focus surface 를 read** 해 표시한다 — 표시 *대상 결정* 이 focus 에 의존하지만 *동작이 아니라 표시* 라 [포커스 독립성](../../identity.md) 에 위배되지 않는다(허용된 조회 read).
+좌측 클러스터는 **현재 focus surface 를 read** 해 표시한다 — 표시 *대상 결정* 이 focus 에 의존하지만 *동작이 아니라 표시* 라 [포커스 독립성](../../design/policies/focus.md#cliipc-포커스-독립-원칙) 에 위배되지 않는다(허용된 조회 read).
 
 - **브랜치 글리프 + 이름** — `git-branch` 글리프(`statusbar-glyph` 잉크)와 브랜치명.
   focus surface 의 cwd 기준 git 브랜치(`.git` 을 상위로 탐색해 `HEAD` 를 std::fs 로 파싱, git 바이너리/libgit2 비의존·크로스플랫폼).
