@@ -677,14 +677,27 @@ fn sync_webviews(
     }
     view.webview_prev_active = now_active;
 
-    // 토스트 카드는 egui가 그리므로 native 페이지가 덮는다. 카드와 겹치는 WebView만
-    // 카드가 떠 있는 동안 숨긴다. 키보드 포커스를 가진 WebView는 숨기지 않는다.
+    // 토스트 카드와 passive popup은 egui가 그리므로 native 페이지가 덮는다. 겹치는 WebView만
+    // 떠 있는 동안 숨긴다. 키보드 포커스를 가진 WebView는 숨기지 않는다.
     // 숨기면 사용자가 치던 키가 페이지에도 터미널에도 가지 않고 사라진다.
-    let toast_rects: Vec<crate::model::PhysicalRect> = view
+    let passive_popup_rects = view
+        .state
+        .popups
+        .visible_passive_rects()
+        .into_iter()
+        .map(|r| crate::model::LogicalRect {
+            x: crate::model::LogicalPx(r.min.x),
+            y: crate::model::LogicalPx(r.min.y),
+            width: crate::model::LogicalPx(r.width()),
+            height: crate::model::LogicalPx(r.height()),
+        });
+    let cover_rects: Vec<crate::model::PhysicalRect> = view
         .state
         .toasts
         .card_rects()
         .iter()
+        .copied()
+        .chain(passive_popup_rects)
         .map(|r| r.to_physical(scale_factor as f32))
         .collect();
 
@@ -702,7 +715,7 @@ fn sync_webviews(
         let nav = wv.nav_state();
         // 드러나야 할 자리에 있는데(활성 tab · overlay 없음) nav 가 Done 이 아니면
         // 그 프레임의 그 surface 는 "만들어졌지만 안 보이는" 상태다.
-        let under_toast = hidden_under_toast(active_physical.get(sid), &toast_rects, || {
+        let under_toast = hidden_under_toast(active_physical.get(sid), &cover_rects, || {
             wv.receives_keyboard_input()
         });
         let wants_reveal = reveal_wanted(overlay_open, active_html.contains_key(sid), under_toast);
@@ -982,7 +995,7 @@ fn reveal_wanted(overlay_open: bool, active: bool, under_toast: bool) -> bool {
     !overlay_open && active && !under_toast
 }
 
-/// 토스트 카드 때문에 이 WebView를 숨길지. 카드와 겹치고 키보드 포커스가 없을 때만 참이다.
+/// 토스트 카드나 passive popup 때문에 이 WebView를 숨길지. 겹치고 키보드 포커스가 없을 때만 참이다.
 /// 포커스 조회는 OS 호출이므로 겹칠 때만 한다.
 fn hidden_under_toast(
     webview: Option<&crate::model::PhysicalRect>,

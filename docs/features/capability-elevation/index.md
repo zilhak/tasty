@@ -18,7 +18,7 @@ plugin/agent 가 IPC 호출 시 호스트가 권한을 강제하고, 부족하�
 ### 세 가지 역할
 
 1. **권한 평가** — `method_meta` 가 메서드별 필요 권한 선언. caller 의 권한 셋에 모두 포함돼야 통과.
-2. **Capability elevation** — Agent 가 권한 부족으로 거부되면 자동 popup.
+2. **Capability elevation** — Agent 가 권한 부족으로 거부되면 자동 popup. 키보드 포커스는 가져가지 않는다([passive 팝업](../../design/systems/popup.md#passive-팝업)).
 3. **Audit log** — IPC 의 deny 결정을 dispatcher 단일 진입점에서 영속(allow 는 기록 안 함 — 아래).
 
 ### Agent session 권한

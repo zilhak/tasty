@@ -153,6 +153,10 @@ pub struct PopupState {
     /// Whether this popup currently has keyboard focus.
     /// When focused, keyboard input should NOT be forwarded to the terminal.
     pub focused: bool,
+    /// 사용자 조작 없이 포커스 없이 열려 아직 사용자가 누르지 않은 상태.
+    /// native WebView를 모두 숨기거나 그 키보드 포커스를 회수하지 않고, 겹치는 WebView만
+    /// 키보드 입력이 없을 때 숨긴다. 포커스를 받거나 닫히면 해제한다.
+    passive: bool,
     /// If true, clicking outside this popup will close it (not just unfocus).
     pub close_on_outside_click: bool,
     /// true면 타이틀바·닫기 버튼 없이 콘텐츠만 렌더링한다.
@@ -298,6 +302,7 @@ impl PopupState {
             drag_offset: egui::Vec2::ZERO,
             scope: PopupScope::Window,
             focused: false,
+            passive: false,
             close_on_outside_click: false,
             headless: false,
             sticky_focus: false,
@@ -562,6 +567,7 @@ impl PopupManager {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             self.popups[i].focused = true;
+            self.popups[i].passive = false;
             self.popups[i].request_center = true;
             self.popups[i].z_seq = tasty_host_plugin::next_popup_z_seq();
             let popup = self.popups.remove(i);
@@ -587,6 +593,7 @@ impl PopupManager {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             self.popups[i].focused = true;
+            self.popups[i].passive = false;
             self.popups[i].request_center = true;
             self.popups[i].scope = scope;
             self.popups[i].z_seq = tasty_host_plugin::next_popup_z_seq();
@@ -601,6 +608,7 @@ impl PopupManager {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             self.popups[i].focused = true;
+            self.popups[i].passive = false;
             self.popups[i].request_center = false;
             self.popups[i].request_top = true;
             self.popups[i].scope = scope;
@@ -615,6 +623,7 @@ impl PopupManager {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             self.popups[i].focused = true;
+            self.popups[i].passive = false;
             self.popups[i].pos = pos;
             self.popups[i].request_center = false;
             self.popups[i].z_seq = tasty_host_plugin::next_popup_z_seq();
@@ -630,6 +639,7 @@ impl PopupManager {
             p.open = false;
             p.dragging = false;
             p.focused = false;
+            p.passive = false;
             // 리사이즈 상태 리셋 → 다음 open 시 sizer 가 크기를 다시 결정하도록 복원.
             p.resizing = None;
             p.size_user_overridden = false;
@@ -708,12 +718,50 @@ impl PopupManager {
     pub fn set_focused(&mut self, id: PopupId, focused: bool) {
         if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
             p.focused = focused;
+            p.passive &= !focused;
         }
     }
 
-    /// Whether an open popup is visible in the latest draw (native overlay gate).
+    /// 사용자 조작 근거가 없는 열기다. 키보드 포커스를 빼고 passive로 표시한다.
+    pub fn mark_passive(&mut self, id: PopupId) {
+        if let Some(p) = self.popups.iter_mut().find(|p| p.id == id && p.open) {
+            p.focused = false;
+            p.passive = true;
+        }
+    }
+
+    /// 열린 popup이 passive인지. 닫혔으면 false다.
+    #[cfg(test)]
+    pub fn is_passive(&self, id: PopupId) -> bool {
+        self.popups
+            .iter()
+            .any(|p| p.id == id && p.open && p.passive)
+    }
+
+    /// 최신 draw에서 보이는 열린 popup 중 native WebView를 모두 숨겨야 하는 것이 있는지.
+    /// passive popup은 [`Self::visible_passive_rects`]로 겹치는 WebView만 숨긴다.
     pub fn has_visible_open(&self) -> bool {
-        self.popups.iter().any(|p| p.open && p.scope_visible)
+        self.popups
+            .iter()
+            .any(|p| p.open && p.scope_visible && !p.passive)
+    }
+
+    /// 최신 draw에서 보이는 passive popup의 화면 영역(logical px).
+    pub fn visible_passive_rects(&self) -> Vec<egui::Rect> {
+        self.popups
+            .iter()
+            .filter(|p| p.open && p.scope_visible && p.passive)
+            .map(|p| p.popup_rect())
+            .collect()
+    }
+
+    /// 키보드 포커스를 가진 열린 popup ID. draw 동안에는 매니저를 빌려 갈 수 없어 그리기 전에 복사해 둔다.
+    pub fn keyboard_focused_ids(&self) -> Vec<PopupId> {
+        self.popups
+            .iter()
+            .filter(|p| p.open && p.scope_visible && p.focused)
+            .map(|p| p.id)
+            .collect()
     }
 
     /// 맨 앞으로 올리고 host·plugin 공용 순번도 갱신한다.

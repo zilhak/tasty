@@ -62,13 +62,24 @@ plugin 이 `file_picker.trigger`로 host popup 을 열 때 `owner_popup_instance
 
 ## 발화 정책 (CRITICAL)
 
-팝업은 사용자 행동(키보드 단축키·마우스·메뉴)으로 연다. release의 시스템·에이전트 작업은 포커스를 가져오는 팝업을 자동으로 띄울 수 없다([toast.md](toast.md) 와 동일 원칙, [사용자 통제와 데이터 원칙](../../principles/control-and-data.md)).
+팝업은 사용자 행동(키보드 단축키·마우스·메뉴)으로 연다. 사용자 조작 근거가 없는 시스템·에이전트·플러그인 요청은 키보드 포커스를 가져오는 팝업을 띄울 수 없다([사용자 통제와 데이터 원칙](../../principles/control-and-data.md), [toast.md](toast.md) 와 같은 기준). 금지 대상은 포커스 탈취다. 사용자 결정을 기다리는 요청만 아래 허용 범위에서 포커스 없는 passive 팝업으로 보일 수 있다.
 
 - ✅ 단축키/마우스/메뉴 → `UiIntent::OpenPopup` 발화
 - ✅ popup A 의 *사용자 액션* cascade → popup B (origin 전파)
-- ❌ 사용자 조작 근거가 없는 release IPC/CLI/Plugin 요청으로 팝업 열기
-- ❌ 시스템 조건(PTY 종료·시간 경과)으로 자동 popup — 대신 *Domain Intent 로 데이터만 변경*(NotificationStore push 등)하고 UI에서 사용자가 확인
+- ❌ 사용자 조작 근거가 없는 IPC/CLI/Plugin·시스템 요청으로 키보드 포커스를 가져오는 팝업 열기
+- ❌ 결정이 필요 없는 시스템 조건(PTY 종료·시간 경과)으로 자동 popup — 대신 *Domain Intent 로 데이터만 변경*(NotificationStore push 등)하고 UI에서 사용자가 확인
 - ✅ debug 의 `debug.popup.*` — *사용자 입력 재현* 한정 ([debug-ipc](../../dev-guide/debug-ipc.md))
+- ✅ 사용자 결정을 기다리는 요청의 **passive 팝업**(아래). 허용 범위는 [승인 팝업](../../features/human-handoff/index.md) 하나다 — `approval.request`, 권한 상승 요청, telemetry cap 의 `require_approval` 이 이 팝업을 쓴다. 다른 팝업을 사용자 조작 근거 없이 열려면 먼저 이 목록에 허용 범위로 추가한다.
+
+### passive 팝업
+
+origin 이 사용자가 아닌 `UiIntent::OpenPopup`·`TogglePopup` 은 `OpenPopupMode` 가 정한 위치로 열되 키보드 포커스를 주지 않는다(`intent::popup::open` → `PopupManager::mark_passive`). 빌드와 무관하다. 이 처리는 허용 범위 밖의 요청이 실수로 들어와도 포커스를 빼앗지 않게 하는 안전장치이며, 허용 범위를 넓히지 않는다. 이미 열린 팝업에 온 요청은 무시하므로 사용자가 준 포커스를 빼앗지도 않는다. `debug.host_popup.open` 은 사용자 조작 재현이라 사용자 출처로 열어 지금처럼 포커스를 준다.
+
+- passive 팝업은 `has_focused()` 에 들지 않으므로 열려 있어도 `keyboard_overlay_open()` 이 거짓이다. 터미널 입력, explorer·dag_graph 처럼 egui 입력을 받는 surface의 입력, native WebView 의 입력이 그대로 이어진다. Esc 의 포커스 해제 대상(`focused_dismissal_target`)도 아니다.
+- native WebView 는 모두 숨기지 않고 키보드 포커스도 회수하지 않는다. 토스트 카드와 같이 팝업 영역과 겹치는 WebView 만, 그 WebView 가 키 입력을 받지 않을 때 숨긴다(`PopupManager::visible_passive_rects`, [webview](webview.md#포커스--회수는-조건부다)). 키를 받는 WebView 와 겹치면 그 WebView 가 팝업을 덮는다. native 위에 egui 를 그리는 층이 없어서이며, 요청은 함께 만든 알림으로도 보인다.
+- 팝업을 누르면 일반 팝업과 같이 포커스를 받고 passive 가 풀린다. 그때부터 일반 팝업처럼 모든 native WebView 를 숨기고 포커스를 회수한다. 닫으면 passive 도 풀린다.
+- 비포커스 상태의 별도 시각 표현은 없다. 포커스가 없는 다른 팝업(알림 패널 등)과 같은 모양이다.
+- 팝업 내용이 자기 포커스를 확인할 때는 `MainViewState.popup_keyboard_focus` 를 읽는다. draw 동안에는 매니저를 빌릴 수 없어 그리기 직전에 복사한다.
 
 **타입 차원 강제**: Core/Domain 핸들러는 `UiIntent`(`OpenPopup`/`ClosePopup`/`TogglePopup`)를 요청하는 메서드를 갖지 않는다 — GUI adapter(단축키 핸들러·메뉴 콜백·popup draw)에서만 요청할 수 있다. `state.popups.open*` 직접 호출도 금지(Intent 경유). 디스패치 상세는 [`design/flows/action-dispatch.md`](../flows/action-dispatch.md).
 

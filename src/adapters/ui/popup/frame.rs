@@ -114,6 +114,7 @@ pub(crate) fn draw_popup_layer(
         .filter(|(_, z)| plugin_top_z.is_none_or(|pz| *z > pz))
         .map(|(id, _)| id);
 
+    state.popup_keyboard_focus = state.popups.keyboard_focused_ids();
     let mut popups = std::mem::replace(&mut state.popups, crate::adapters::ui::PopupManager::new());
 
     // content_fn이 state를 가변 대여하므로 plugin 팝업 영역을 미리 복사한다.

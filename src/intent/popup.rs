@@ -1,6 +1,6 @@
-//! 팝업 Intent 처리. 요청의 origin은 여기서 검사하지 않으므로
-//! 호출자가 요청 출처에 맞는 OpenPopupMode를 골라야 한다.
-//! 정책: docs/design/flows/action-dispatch.md.
+//! 팝업 Intent 처리. 위치는 호출자가 고른 OpenPopupMode를 따른다. 사용자 조작이 아닌
+//! 요청으로 연 팝업은 키보드 포커스를 갖지 않는 passive 상태로 연다.
+//! 정책: docs/design/flows/action-dispatch.md, docs/design/systems/popup.md.
 
 #[cfg(feature = "gui")]
 use super::DispatchedIntent;
@@ -57,13 +57,13 @@ pub fn handle(
                 }
             }
 
-            UiIntent::OpenPopup { id, mode } => open(state, id, mode),
+            UiIntent::OpenPopup { id, mode } => open(state, id, mode, intent.origin.is_user()),
             UiIntent::ClosePopup { id } => state.popups.close(id),
             UiIntent::TogglePopup { id, mode } => {
                 if state.popups.is_open(id) {
                     state.popups.close(id);
                 } else {
-                    open(state, id, mode);
+                    open(state, id, mode, intent.origin.is_user());
                 }
             }
         }
@@ -75,7 +75,7 @@ pub fn handle(
 }
 
 #[cfg(feature = "gui")]
-fn open(state: &mut RequestContext, id: &'static str, mode: &OpenPopupMode) {
+fn open(state: &mut RequestContext, id: &'static str, mode: &OpenPopupMode, by_user: bool) {
     if state.popups.is_open(id) {
         return;
     }
@@ -93,6 +93,10 @@ fn open(state: &mut RequestContext, id: &'static str, mode: &OpenPopupMode) {
         OpenPopupMode::WithScope(scope) => state.popups.open_with_scope(id, scope.clone()),
         OpenPopupMode::AtTopOfScope(scope) => state.popups.open_at_top_of_scope(id, scope.clone()),
         OpenPopupMode::AtFocused(pos) => state.popups.open_at_focused(id, *pos),
+    }
+    // 에이전트·플러그인·시스템 요청이 사용자의 키 입력을 가로채지 않게 한다.
+    if !by_user {
+        state.popups.mark_passive(id);
     }
 }
 
@@ -196,6 +200,63 @@ mod tests {
         assert!(state.popups.take_closed_queue().is_empty());
         handle(&mut state, &mut engine, &toggle);
         assert_eq!(state.popups.take_closed_queue(), vec!["test_popup"]);
+    }
+
+    #[test]
+    fn agent_open_leaves_keyboard_with_the_user() {
+        let (mut state, mut engine_session) = make_state();
+        let mut engine = engine_session.borrow_mut();
+        handle(
+            &mut state,
+            &mut engine,
+            &UiIntent::OpenPopup {
+                id: "test_popup",
+                mode: OpenPopupMode::WithScope(PopupScope::Window),
+            }
+            .from_agent_ipc(),
+        );
+        assert!(state.popups.is_open("test_popup"));
+        assert!(!state.popups.is_focused("test_popup"));
+        assert!(state.popups.is_passive("test_popup"));
+        assert!(!state.popups.has_focused());
+        assert!(!state.has_egui_overlay_open());
+    }
+
+    #[test]
+    fn user_open_takes_focus_and_is_not_passive() {
+        let (mut state, mut engine_session) = make_state();
+        let mut engine = engine_session.borrow_mut();
+        handle(
+            &mut state,
+            &mut engine,
+            &dispatched_open("test_popup", OpenPopupMode::WithScope(PopupScope::Window)),
+        );
+        assert!(state.popups.is_focused("test_popup"));
+        assert!(!state.popups.is_passive("test_popup"));
+        assert!(state.popups.has_focused());
+        assert!(state.has_egui_overlay_open());
+    }
+
+    #[test]
+    fn agent_open_of_an_already_open_popup_keeps_user_focus() {
+        let (mut state, mut engine_session) = make_state();
+        let mut engine = engine_session.borrow_mut();
+        handle(
+            &mut state,
+            &mut engine,
+            &dispatched_open("test_popup", OpenPopupMode::WithScope(PopupScope::Window)),
+        );
+        handle(
+            &mut state,
+            &mut engine,
+            &UiIntent::OpenPopup {
+                id: "test_popup",
+                mode: OpenPopupMode::WithScope(PopupScope::Window),
+            }
+            .from_agent_ipc(),
+        );
+        assert!(state.popups.is_focused("test_popup"));
+        assert!(!state.popups.is_passive("test_popup"));
     }
 
     #[test]

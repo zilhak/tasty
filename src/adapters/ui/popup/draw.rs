@@ -243,6 +243,7 @@ impl PopupManager {
                 for popup in &mut self.popups {
                     if popup.scope_visible {
                         popup.focused = popup.id == id;
+                        popup.passive &= !popup.focused;
                     }
                 }
             } else {

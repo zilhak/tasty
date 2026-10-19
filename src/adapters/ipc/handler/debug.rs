@@ -146,7 +146,10 @@ pub(super) fn handle_debug_host_popup_open(
         state.dialogs.convert_popup = bound_surface;
         state.dialogs.convert_popup_selected = None;
     }
-    state.dispatch_intent(crate::intent::UiIntent::OpenPopup { id: def.id, mode }.from_agent_ipc());
+    // 사용자 조작 재현이므로 사용자 출처로 열어 포커스를 준다.
+    state.dispatch_intent(
+        crate::intent::UiIntent::OpenPopup { id: def.id, mode }.from_user_menu("debug.popup.open"),
+    );
     JsonRpcResponse::success(
         id,
         json!({

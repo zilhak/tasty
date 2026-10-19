@@ -17,7 +17,9 @@
 
 `approval.request` → 큐 push + popup 노출 + `notification.create` 자동 생성 → 에이전트가 `approval.await(id)` 로 blocking 대기 → 사용자 응답 → await 반환. 응답 경로 3가지가 모두 같은 `approval.respond` 로 수렴: popup 버튼 클릭 · popup 단축키 `1..=9`(선택지 순서) · CLI `tasty approval respond`.
 
-숫자 키는 코멘트 입력칸에 포커스가 없을 때만 선택이다. 코멘트를 쓰는 동안 친 숫자(IME 조합 중 포함)는 코멘트 글자로 들어가고 응답을 보내지 않는다. egui `TextEdit`은 Key 이벤트를 소비하지 않으므로 뷰가 입력칸 포커스를 직접 확인한다. 코멘트를 쓴 뒤 키보드로 고르려면 Tab으로 입력칸을 벗어나거나 팝업의 다른 곳을 누른 뒤 숫자를 친다.
+승인 팝업은 에이전트·플러그인·시스템 요청으로 열리므로 [passive 팝업](../../design/systems/popup.md#passive-팝업)이다. 큐에 넣을 때, 닫은 뒤 대기 요청으로 다시 열 때, 앞 요청에 답해 다음 요청으로 넘어갈 때 모두 키보드 포커스를 가져가지 않는다. 다음 요청으로 넘어갈 때는 팝업을 닫고 다시 열어 앞 요청에 준 포커스를 이어받지 않는다. 사용자가 터미널·explorer·dag_graph·native WebView 에 치던 키는 그대로 그곳으로 간다. 팝업을 누르면 포커스를 받는다.
+
+숫자 키는 팝업이 키보드 포커스를 가졌고 코멘트 입력칸에 포커스가 없을 때만 선택이다. 포커스가 없는 팝업은 egui 입력을 받는 surface 로 간 숫자도 선택으로 읽지 않는다. 코멘트를 쓰는 동안 친 숫자(IME 조합 중 포함)는 코멘트 글자로 들어가고 응답을 보내지 않는다. egui `TextEdit`은 Key 이벤트를 소비하지 않으므로 뷰가 입력칸 포커스를 직접 확인한다. 코멘트를 쓴 뒤 키보드로 고르려면 Tab으로 입력칸을 벗어나거나 팝업의 다른 곳을 누른 뒤 숫자를 친다.
 
 ### severity 별 표시
 
@@ -27,7 +29,7 @@
 | `warn` | popup + notification |
 | `info` | notification only |
 
-popup 은 `pending_approval_ids` 큐의 head 를 그리고, 응답 시 pop 하고 다음으로 자동 이동. **Esc 는 의도적으로 차단**(우회 응답 방지).
+popup 은 `pending_approval_ids` 큐의 head 를 그리고, 응답 시 pop 한 뒤 팝업을 닫았다가 다음 요청으로 다시 연다. **Esc 는 의도적으로 차단**(우회 응답 방지) — Esc 는 응답하거나 팝업을 닫지 않고 팝업의 키보드 포커스만 놓는다.
 
 `destructive` 로 표시한 선택지는 위험 선택지로 그린다. 채움은 accent-danger 12% 를 bg-panel 에 섞은 불투명 색(`approval-danger-bg`)이고, 1px accent-danger 테두리(`approval-danger-border`)와 text-primary 글자(`approval-danger-fg`)를 쓴다. 뒤 배경과 관계없이 글자 대비는 Mocha 9.18 · Latte 5.80 이다. hover·누름은 일반 버튼 overlay 를 그 채움 위에 얹는다. 본체와 갤러리는 같은 `tasty_ui_widgets::approval_choice` 로 선택지를 그린다.
 
