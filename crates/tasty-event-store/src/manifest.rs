@@ -103,8 +103,6 @@ impl EventStore {
         value.map(to_u64).transpose()
     }
 
-    /// Read a complete manifest and its verified snapshot in one read transaction. A damaged View
-    /// is an error, not permission to regenerate user selection or silently consult a stale export.
     /// manifest가 가리키는 View·snapshot 본문을 checksum 검증 없이 읽는다. 검증에 실패한 원본을
     /// 복구할 수 있게 보존할 때만 쓴다. 행이 없는 본문은 `None`이다.
     pub fn restore_manifest_raw(
@@ -144,6 +142,8 @@ impl EventStore {
         }))
     }
 
+    /// Read a complete manifest and its verified snapshot in one read transaction. A damaged View
+    /// is an error, not permission to regenerate user selection or silently consult a stale export.
     pub fn restore_manifest(&self, restore_key: &str) -> StoreResult<Option<RestoreManifest>> {
         let tx = self.conn.unchecked_transaction()?;
         read_in(&tx, restore_key)
