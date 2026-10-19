@@ -1353,7 +1353,13 @@ impl App {
             if engine
                 .live
                 .notifications
-                .add(ws_id, sid, title, body)
+                .add_with_level(
+                    ws_id,
+                    sid,
+                    title,
+                    body,
+                    crate::notification::NotificationLevel::Info,
+                )
                 .is_some()
             {
                 engine.raise_attention(sid, crate::core::AttentionKind::Completion);
