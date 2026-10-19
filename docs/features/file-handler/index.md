@@ -38,6 +38,8 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 | `System` | `file://` URI 로 OS opener | 원문 그대로 OS opener |
 | `Ipc` | plugin 에 `{"path": 경로}` | 받지 않음 |
 
+`System` 의 OS 열기가 실패하면 `execute_handler_action` 은 false 를 돌려주고(picker 선택이면 Recent 에 기록하지 않는다), 출처가 사용자(`FileDispatchOrigin::User`)일 때만 창 범위 실패 토스트(`toast.open_system_failed`)를 띄운다. Agent·PluginUnverified 출처는 `open_uri` 의 warn 로그만 남기고 사용자 화면에는 띄우지 않는다([토스트 트리거 정책](../../design/systems/toast.md#트리거-정책-critical)).
+
 ### 원격(mirror) 대상
 
 `origin_surface_id` 가 mirror workspace 의 surface 이면 경로는 원격 호스트의 파일이다. 입구는 mirror explorer 의 더블클릭과 mirror origin 을 준 `file_handler.dispatch` 다.

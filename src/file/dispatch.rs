@@ -307,7 +307,7 @@ fn handler_to_summary(h: &FileHandler, last_used_at: Option<i64>) -> PickerHandl
 }
 
 /// 핸들러 실행을 요청한다. true는 IPC 큐 등록·OS 위임·탭 생성 요청을 포함하며 최종 열기 성공은 아니다.
-/// 명시 origin이 사라졌거나 대상 종류를 받지 못하면 false다.
+/// 명시 origin이 사라졌거나 대상 종류를 받지 못하거나 OS에 넘기지 못하면 false다.
 #[cfg(feature = "gui")]
 pub fn execute_handler_action(
     core: &mut crate::app::services::AppServices,
@@ -334,7 +334,7 @@ pub fn execute_handler_action(
             let _ = ignore_size_limit;
 
             let params = open_surface_params(param_key, target);
-            return open_surface_tab(
+            open_surface_tab(
                 core,
                 state,
                 engine,
@@ -342,14 +342,11 @@ pub fn execute_handler_action(
                 params,
                 origin_surface_id,
                 dispatch_origin,
-            );
+            )
         }
-        HandlerAction::Ipc { method, .. } => {
-            return enqueue_handler_ipc(state, method, target);
-        }
-        HandlerAction::System => open_system_target(target),
+        HandlerAction::Ipc { method, .. } => enqueue_handler_ipc(state, method, target),
+        HandlerAction::System => open_system_target(state, target, dispatch_origin),
     }
-    true
 }
 
 #[cfg(feature = "gui")]
@@ -379,10 +376,36 @@ fn handler_may_run(
     true
 }
 
+/// OS 기본 프로그램에 넘긴다. 사용자가 직접 연 요청의 실패만 토스트로 알리고
+/// 에이전트·미증명 플러그인 요청에는 사용자 화면에 띄우지 않는다(docs/design/systems/toast.md).
 #[cfg(feature = "gui")]
-fn open_system_target(target: &DispatchTarget) {
+fn open_system_target(
+    state: &mut RequestContext,
+    target: &DispatchTarget,
+    dispatch_origin: FileDispatchOrigin,
+) -> bool {
     let uri = target.system_open_uri();
-    crate::terminal_link::open_uri(&uri);
+    let opened = crate::terminal_link::open_uri(&uri);
+    if let Some(message) = system_open_feedback(opened, dispatch_origin, &target.display()) {
+        state.toasts.push(
+            message,
+            crate::adapters::ui::ToastKind::Error,
+            crate::adapters::ui::ToastScope::Window,
+        );
+    }
+    opened
+}
+
+#[cfg(feature = "gui")]
+fn system_open_feedback(
+    opened: bool,
+    dispatch_origin: FileDispatchOrigin,
+    target: &str,
+) -> Option<String> {
+    if dispatch_origin != FileDispatchOrigin::User {
+        return None;
+    }
+    crate::terminal_link::open_failure_message(opened, "toast.open_system_failed", target)
 }
 
 #[cfg(feature = "gui")]
@@ -470,6 +493,24 @@ fn path_to_file_uri(abs: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "gui")]
+    #[test]
+    fn only_a_users_failed_system_open_gets_a_toast_message() {
+        for origin in [
+            FileDispatchOrigin::User,
+            FileDispatchOrigin::Agent,
+            FileDispatchOrigin::PluginUnverified,
+        ] {
+            assert_eq!(system_open_feedback(true, origin, "/tmp/a.pdf"), None);
+            let failed = system_open_feedback(false, origin, "/tmp/a.pdf");
+            assert_eq!(
+                failed.is_some(),
+                origin == FileDispatchOrigin::User,
+                "{origin:?}: {failed:?}"
+            );
+        }
+    }
 
     #[test]
     fn parse_link_external_http() {

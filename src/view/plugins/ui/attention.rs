@@ -171,7 +171,7 @@ pub(super) fn draw_attention_tab(
                     .max_rect(body_rect)
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
-            draw_detail(&mut body, &th, &entry);
+            draw_detail(&mut body, &th, &entry, actions);
 
             let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(
                 egui::Rect::from_min_max(egui::pos2(full.min.x, split), full.max),
@@ -198,7 +198,12 @@ fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
     });
 }
 
-fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
+fn draw_detail(
+    ui: &mut egui::Ui,
+    th: &theme::Theme,
+    entry: &AttentionEntry,
+    actions: &mut Vec<PluginsAction>,
+) {
     let color = sev_color(th, entry.kind);
     let (label_key, blurb_key) = reason_text(entry.kind);
 
@@ -234,8 +239,10 @@ fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
                     },
                 },
             );
-            if open_homepage && !crate::terminal_link::open_uri(homepage) {
-                tracing::warn!(homepage, "plugin homepage did not open");
+            if open_homepage {
+                actions.push(PluginsAction::OpenHomepage {
+                    url: homepage.to_string(),
+                });
             }
             if !entry.kind.shows_manifest_text() {
                 plugin_detail_desc_hidden(ui, th, t("plugins.attn_desc_hidden"));

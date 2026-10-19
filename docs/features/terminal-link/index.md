@@ -60,6 +60,10 @@ attach mirror surface(자식 PTY 없음 — `process_id().is_none()` 으로 판�
 - ctrl+클릭 시 로컬 핸들러 lookup 대신 **빈 핸들러 picker(empty-state placeholder)** 만 — 후보도 recent 도 싣지 않아 고를 수 있는 핸들러가 없다(recent 를 실으면 로컬 핸들러가 원격 경로로 실행된다). 원격 경로를 로컬 파일이나 브라우저로 잘못 여는 것을 방지.
 - `http://` 등 스킴 있는 URL 은 mirror 여부 무관하게 `webbrowser` 로 연다.
 
+### 열기 실패
+
+수식키 클릭으로 연 외부 URL 을 OS 가 넘겨받지 못하면(`open_uri` 가 false) 링크가 있던 surface 범위에 실패 토스트(`toast.open_link_failed`, Error)를 하나 띄운다. 성공에는 토스트를 더하지 않는다. `open_uri` 는 열기 프로그램을 실행했는지만 확인하므로 브라우저가 실제로 페이지를 보였는지는 판정하지 않는다. debug 빌드에서 `TASTY_DEBUG_OS_OPEN_LOG` 로 OS 열기를 가로채면 항상 성공으로 처리하므로, 실패 재현은 PATH 에서 열기 프로그램을 뺀 격리 실행으로 한다. 문구 선택은 `terminal_link::open_failure_message` 하나가 맡고 Plugins 창과 System 핸들러도 같은 함수를 쓴다.
+
 > 비-목표(후속): 실제 원격 파일 열기(`ssh host vim {path}` 등)와 그 host 컨텍스트 주입. 1차는 placeholder 까지.
 
 ### 드래그/더블클릭 선택 → 우클릭 메뉴 "경로 열기"

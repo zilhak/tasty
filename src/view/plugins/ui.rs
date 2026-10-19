@@ -131,6 +131,10 @@ pub enum PluginsAction {
     OpenInstallDir {
         path: String,
     },
+    /// 매니페스트의 homepage 를 기본 브라우저로 연다. 실패는 이 창의 토스트로 알린다.
+    OpenHomepage {
+        url: String,
+    },
     /// 외부 디렉터리를 데이터 루트의 plugins/<id>로 복사한다.
     Install {
         src_path: String,

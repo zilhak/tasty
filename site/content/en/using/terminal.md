@@ -1,4 +1,4 @@
-<!-- source-hash: 7b3b165a35c3 -->
+<!-- source-hash: 278273f96228 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -122,7 +122,7 @@ In a normal terminal, search covers the scrollback and the screen. Inside a prog
 
 ## Opening links and paths
 
-Hold `Ctrl` and hover a URL or path and a blue underline appears; click to open it in the browser or the associated program. Relative paths such as `src/main.rs` also work, but only those that actually exist relative to the current directory become links.
+Hold `Ctrl` and hover a URL or path and a blue underline appears; click to open it in the browser or the associated program. If the browser or program can't be started, a notice that it couldn't be opened appears at the bottom right of that terminal. Relative paths such as `src/main.rs` also work, but only those that actually exist relative to the current directory become links.
 
 Right-click an underlined link to open a link menu.
 

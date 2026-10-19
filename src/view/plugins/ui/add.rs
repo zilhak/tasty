@@ -1,5 +1,4 @@
 use crate::i18n::{t, t_count};
-use crate::terminal_link;
 use crate::theme;
 
 use tasty_ui_widgets::{
@@ -63,7 +62,7 @@ fn draw_add_form(
             if let Some(error) = &ui_state.add_error {
                 plugin_add_read_error(ui, th, t(error.title_key()), error.reason());
             } else if let Some(preview) = &ui_state.add_preview {
-                draw_preview(ui, preview, th);
+                draw_preview(ui, preview, th, actions);
             } else {
                 let template = t("plugins.add_empty_hint");
                 let (before, after) = template.split_once("{}").unwrap_or((template, ""));
@@ -143,7 +142,12 @@ fn draw_path_picker(
 }
 
 /// 확인한 매니페스트의 카드와 신뢰 판정 상자.
-fn draw_preview(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::Theme) {
+fn draw_preview(
+    ui: &mut egui::Ui,
+    preview: &AddPreview,
+    th: &theme::Theme,
+    actions: &mut Vec<PluginsAction>,
+) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = PLUGIN_ADD_INSET.value();
         let card = plugin_manifest_card(
@@ -166,8 +170,10 @@ fn draw_preview(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::Theme) {
                 none: t("plugins.add_none"),
             },
         );
-        if card.open_homepage && !terminal_link::open_uri(&preview.homepage) {
-            tracing::warn!(homepage = %preview.homepage, "plugin homepage did not open");
+        if card.open_homepage {
+            actions.push(PluginsAction::OpenHomepage {
+                url: preview.homepage.clone(),
+            });
         }
         draw_trust_box(ui, &preview.trust_state, th);
     });

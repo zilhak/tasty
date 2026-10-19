@@ -757,7 +757,16 @@ impl MainView {
                 }
                 crate::file_dispatch::LinkKind::External(uri) => {
                     // 외부 URL(http:// 등)은 mirror 여부와 무관하게 기존대로 처리.
-                    terminal_link::open_uri(&uri);
+                    let opened = terminal_link::open_uri(&uri);
+                    if let Some(message) =
+                        terminal_link::open_failure_message(opened, "toast.open_link_failed", &uri)
+                    {
+                        self.state.toasts.push(
+                            message,
+                            crate::adapters::ui::ToastKind::Error,
+                            crate::adapters::ui::ToastScope::Surface(hovered.surface_id),
+                        );
+                    }
                 }
             }
         }

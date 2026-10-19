@@ -81,10 +81,18 @@ impl App {
         }
     }
 
-    fn handle_open_install_dir(&self, path: &str) {
-        if !crate::terminal_link::open_uri(path) {
-            tracing::warn!("plugins modal: open install dir failed: {path}");
+    /// 사용자가 누른 열기가 실패하면 이 창에 띄울 실패 토스트를 돌려준다. 성공은 알리지 않는다.
+    fn handle_open_uri(
+        &self,
+        uri: &str,
+        failure_key: &str,
+    ) -> Option<(String, crate::adapters::ui::ToastKind)> {
+        let opened = crate::terminal_link::open_uri(uri);
+        if !opened {
+            tracing::warn!("plugins modal: open failed: {uri}");
         }
+        crate::terminal_link::open_failure_message(opened, failure_key, uri)
+            .map(|message| (message, crate::adapters::ui::ToastKind::Error))
     }
 
     fn handle_install(&mut self, src_path: &str) -> (String, crate::adapters::ui::ToastKind) {
@@ -219,7 +227,10 @@ impl App {
                     close_modal = true;
                 }
                 plugins_ui::PluginsAction::OpenInstallDir { path } => {
-                    self.handle_open_install_dir(&path);
+                    pending_toasts.extend(self.handle_open_uri(&path, "toast.open_folder_failed"));
+                }
+                plugins_ui::PluginsAction::OpenHomepage { url } => {
+                    pending_toasts.extend(self.handle_open_uri(&url, "toast.open_link_failed"));
                 }
                 plugins_ui::PluginsAction::Install { src_path } => {
                     pending_toasts.push(self.handle_install(&src_path));

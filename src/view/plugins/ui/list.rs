@@ -296,8 +296,10 @@ fn draw_detail_body(
             },
         },
     );
-    if open_homepage && !crate::terminal_link::open_uri(&entry.homepage) {
-        tracing::warn!(homepage = %entry.homepage, "plugin homepage did not open");
+    if open_homepage {
+        actions.push(PluginsAction::OpenHomepage {
+            url: entry.homepage.clone(),
+        });
     }
     vspace(ui, th.spacing_sm);
 
