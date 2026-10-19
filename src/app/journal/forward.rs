@@ -130,6 +130,11 @@ impl JournalApplication {
     }
     pub(crate) fn take_ready_forwards(&mut self) -> Vec<(u64, Draft, Vec<u8>)> {
         let mut out = Vec::new();
+        // 멈춘 journal은 송신 결과를 기록하지 못하고, 보내지 않은 run은 이미 실패로 끝났다.
+        // 같은 poll에서 Ready가 된 forward도 보내지 않는다.
+        if self.is_halted() {
+            return out;
+        }
         for (ticket, forward) in &mut self.forwards {
             if let Phase::Ready { lease, payload } = &mut forward.stage {
                 let lease = lease.clone();
@@ -166,6 +171,39 @@ impl JournalApplication {
     #[cfg(feature = "gui")]
     pub(super) fn fail_unsent_forwards(&mut self, reason: &str) {
         fail_unsent(&mut self.forwards, reason);
+    }
+}
+
+#[cfg(all(test, feature = "gui"))]
+impl Forward {
+    /// 원격 큐 확보를 기다리는 forward. 실제 확보 작업을 worker에 낸다.
+    pub(super) fn claiming(
+        engine: EngineId,
+        stream: String,
+        operation: OperationId,
+        completion: crate::request_runs::RunGuard,
+    ) -> Self {
+        Self {
+            engine,
+            draft: None,
+            queued: Some(Work::ClaimForward { stream, operation }),
+            stage: Phase::Claim,
+            completion: Some(completion),
+        }
+    }
+
+    /// 원격 큐를 확보해 보낼 차례가 된 forward.
+    pub(super) fn ready(mut draft: Draft, lease: EffectLease) -> Self {
+        Self {
+            engine: draft.engine,
+            completion: draft.completion.take(),
+            stage: Phase::Ready {
+                lease,
+                payload: draft.payload.clone(),
+            },
+            draft: Some(draft),
+            queued: None,
+        }
     }
 }
 
