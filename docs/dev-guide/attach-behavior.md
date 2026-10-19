@@ -136,7 +136,9 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_and_stream` 으로 �
 workspace descriptor의 `ipc.stream.input-ack`는 `InputCheckpoint{sequence}`와
 `InputProcessed{sequence}`를 지원한다는 뜻이다. 프로토콜 동등 비교값은 바꾸지 않는다.
 클라이언트는 사용자 입력을 큐에 넣은 뒤 확인 지점을 보낸다. 연결당 현재 확인과 후속
-입력 묶음만 보관하며 후속 묶음의 최초 입력 시각을 유지한다. 에이전트 쓰기와 터미널의
+입력 묶음만 보관하며 후속 묶음의 최초 입력 시각을 유지한다. 서로 다른 surface의 송신 순서는
+접수 시각 순서와 다를 수 있으므로 현재·후속 묶음 전체의 최소 접수 시각을 표시한다.
+ACK가 확인하는 wire 순서 범위는 시각 정렬로 바꾸지 않는다. 에이전트 쓰기와 터미널의
 자동 응답은 사용자 확인을 시작하지 않는다. 실패한 연결의 입력은 새 연결에 재생하지 않는다.
 
 `PumpOutcome.input_events`는 Data·MeshContext·MeshInput·확인 지점을 받은 순서대로

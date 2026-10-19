@@ -15,7 +15,10 @@ impl InputReceipts {
             return None;
         }
         if self.current.is_some() {
-            self.successor.get_or_insert(admitted);
+            self.successor = Some(
+                self.successor
+                    .map_or(admitted, |oldest| oldest.min(admitted)),
+            );
             return None;
         }
         self.start(admitted)
@@ -38,7 +41,11 @@ impl InputReceipts {
             .and_then(|admitted| self.start(admitted))
     }
     pub(crate) fn oldest(&self) -> Option<Instant> {
-        self.current.map(|(_, admitted)| admitted)
+        self.current
+            .map(|(_, admitted)| admitted)
+            .into_iter()
+            .chain(self.successor)
+            .min()
     }
 }
 
@@ -68,6 +75,29 @@ mod tests {
                 .as_secs(),
             3
         );
+        assert_eq!(state.received(2), None);
+        assert_eq!(state.oldest(), None);
+    }
+
+    #[test]
+    fn reversed_admission_times_do_not_move_the_oldest_wait_or_expand_an_ack() {
+        let t = Instant::now();
+        let mut state = InputReceipts {
+            enabled: true,
+            ..Default::default()
+        };
+        // A per-surface batch can enqueue later input before older input.
+        assert_eq!(state.input(t + Duration::from_secs(2)), Some(1));
+        assert_eq!(state.input(t + Duration::from_secs(1)), None);
+        assert_eq!(state.oldest(), Some(t + Duration::from_secs(1)));
+        assert_eq!(state.input(t), None);
+        assert_eq!(state.input(t + Duration::from_secs(3)), None);
+        assert_eq!(state.oldest(), Some(t));
+        // q1 still covers only its original wire prefix; the older successor needs q2.
+        assert_eq!(state.received(1), Some(2));
+        assert_eq!(state.oldest(), Some(t));
+        assert_eq!(state.received(1), None);
+        assert_eq!(state.oldest(), Some(t));
         assert_eq!(state.received(2), None);
         assert_eq!(state.oldest(), None);
     }
