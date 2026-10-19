@@ -9,6 +9,7 @@
 
 #[cfg(all(test, feature = "gui"))]
 mod apply_error_tests;
+mod failure_feedback;
 // 헤드리스용 큐 처리를 GUI 조합의 시험에서도 검증한다.
 #[cfg(any(not(feature = "gui"), test))]
 pub(crate) mod headless;
@@ -28,55 +29,7 @@ pub use preset::ClonedPreset;
 pub use crate::core::origin::UserSource;
 pub use crate::core::origin::{AgentSource, IntentOrigin};
 
-/// AppServices::apply의 오류를 처리한다. mirror 구조 변경 차단과 철회된 kind 오류는
-/// 사용자 요청일 때만 토스트로 알리고, 에이전트 요청은 로그로 남긴다.
-/// 그 밖의 오류는 warn으로 기록한다. label은 로그에서 작업을 구분하는 이름이다.
-/// 원격으로 전달한 에이전트 요청에는 실패 회신도 로그만 남기도록 표시한다.
-/// 사용자 표시 규칙은 docs/design/systems/toast.md를 따른다.
-pub fn report_apply_error(
-    state: &mut crate::state::RequestContext,
-    origin: &IntentOrigin,
-    label: &str,
-    err: &anyhow::Error,
-) {
-    if let Some(withdrawn) =
-        err.downcast_ref::<crate::runtime::surface_registry::SurfaceKindWithdrawn>()
-    {
-        report_withdrawn_kind(state, origin, label, err, withdrawn);
-    } else {
-        tracing::warn!("{label} failed: {err}");
-    }
-}
-
-// reason: 헤드리스에는 토스트 매니저가 없어 state를 사용하지 않는다.
-#[cfg_attr(not(feature = "gui"), allow(unused_variables))]
-fn report_withdrawn_kind(
-    state: &mut crate::state::RequestContext,
-    origin: &IntentOrigin,
-    label: &str,
-    err: &anyhow::Error,
-    withdrawn: &crate::runtime::surface_registry::SurfaceKindWithdrawn,
-) {
-    if !origin.is_user() {
-        tracing::warn!("{label} failed (agent origin, no toast): {err}");
-        return;
-    }
-    tracing::info!(
-        kind = %withdrawn.kind,
-        plugin_id = %withdrawn.plugin_id,
-        "{label} refused: the surface kind's plugin is off or has not reconnected"
-    );
-    #[cfg(feature = "gui")]
-    state.toasts.push(
-        crate::i18n::t_fmt2(
-            "surface.kind_toast.withdrawn",
-            &withdrawn.kind,
-            &withdrawn.plugin_id,
-        ),
-        crate::model::toast_kind::ToastKind::Warning,
-        crate::model::toast_kind::ToastScope::Window,
-    );
-}
+pub(crate) use failure_feedback::{FailureContext, report_apply_error};
 
 /// 메인 루프가 처리할 때까지 RequestContext::pending_intents에 보관하는 명령.
 #[derive(Debug, Clone)]

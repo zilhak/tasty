@@ -1339,6 +1339,11 @@ undo = "Undo"
 redo = "Redo"
 
 [toast]
+action_failed = "Could not complete the requested action."
+layout_failed = "Could not apply the layout change."
+divider_failed = "Could not apply the divider position. Its previous position was restored."
+category_reset_failed = "Could not reset the categories. Settings were not changed."
+remote_connect_failed = "Could not start the remote connection."
 clipboard_wayland_unsupported = "Native Wayland clipboard is not supported; X11 clipboard is unavailable."
 clipboard_unavailable = "System clipboard is unavailable."
 clipboard_failed = "Clipboard operation failed. Try again."

@@ -73,6 +73,8 @@
 
 ### Fixed
 
+- **사용자 조작의 일반 실패를 토스트로 알린다.** intent·구조 변경·분할선 확정·카테고리 초기화와 원격 연결 시작의 동기 실패에 작업별 안내를 한 번 표시한다. preset·split 하한의 기존 안내는 중복하지 않으며 에이전트·시스템 요청과 화면 없는 엔진에는 표시하지 않는다. 내부 오류 원문은 로그에만 남긴다.
+
 - **설정을 바꾸는 요청이 실제 결과를 돌려준다.** `settings.set_remote_transfer`, `settings.set_input_rule`·`remove_input_rule`·`initialize_input_rule`, `webhook.config`의 `allow_external`, `debug.settings.apply`는 설정을 메모리에 적용하고 `config.toml`에 저장한 뒤에 응답한다. 적용됐지만 저장하지 못하면 `-32603`(`data: {applied: true, saved: false}`), 검사·category 초기화가 실패하면 `-32603`(`data: {applied: false}`), 더 새 설정 변경에 밀리면 `superseded: true` 오류다. 예전에는 요청을 큐에 넣은 시점에 성공으로 응답했다. 바꿀 값만 실행 시점의 최신 설정에 적용하므로 그 사이에 바뀐 다른 설정을 덮지 않는다. 설정 창의 Save도 적용 거절은 오류 토스트, 저장 실패는 경고 토스트로 구분해 알린다.
 - Attach의 무관한 구조 변경이 대기 중인 선행 영역을 접거나 잘못된 생성 결과로 연결하지 않도록 했다. 응답 대기 툴팁은 요청 종류별 경과 시간을 표시한다.
 

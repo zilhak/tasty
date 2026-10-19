@@ -1291,6 +1291,11 @@ undo = "元に戻す"
 redo = "やり直し"
 
 [toast]
+action_failed = "要求された操作を完了できませんでした。"
+layout_failed = "レイアウトの変更を適用できませんでした。"
+divider_failed = "分割線の位置を適用できなかったため、元の位置に戻しました。"
+category_reset_failed = "カテゴリーを初期化できませんでした。設定は変更されていません。"
+remote_connect_failed = "リモート接続を開始できませんでした。"
 clipboard_wayland_unsupported = "ネイティブWaylandクリップボードは未対応で、X11クリップボードにもアクセスできません。"
 clipboard_unavailable = "システムクリップボードにアクセスできません。"
 clipboard_failed = "クリップボードの操作に失敗しました。もう一度お試しください。"

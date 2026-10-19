@@ -228,13 +228,20 @@ impl App {
         };
         let core = &mut self.services;
         let Some(DispatchCtx {
-            state, mut engine, ..
+            state,
+            mut engine,
+            view,
+            ..
         }) = engines_mut!(self).resolve(id)
         else {
             anyhow::bail!("dispatch_domain_intent: engine {id:?} not found");
         };
         let applied = core.apply_live(&mut engine, intent);
-        let events = events_or_report(state, &origin, applied);
+        let failed = applied.is_err();
+        let events = events_or_report(view.as_ref().map(|_| &mut *state), &origin, applied);
+        if failed && let Some(view) = view {
+            view.mark_dirty();
+        }
         if events
             .iter()
             .any(|event| matches!(event, CoreEvent::SurfaceSent { sent: true, .. }))
@@ -678,7 +685,11 @@ impl App {
     }
 
     /// 설정 결과 토스트는 포커스된 메인 창에, 없으면 첫 메인 창에 띄운다.
-    fn toast_settings_result(&mut self, message: String, kind: crate::adapters::ui::ToastKind) {
+    pub(super) fn toast_settings_result(
+        &mut self,
+        message: String,
+        kind: crate::adapters::ui::ToastKind,
+    ) {
         let focused = self.view.focused_view_id;
         let main = match focused.and_then(|id| self.view.views.get(&id)) {
             Some(view) if view.as_main().is_some() => focused,
@@ -889,12 +900,17 @@ impl App {
 /// apply 오류는 요청한 창의 state로 알린다. mirror 차단 toast도 이 경로로 뜬다.
 /// 오류를 여기서 처리하므로 후속 처리할 이벤트가 없다.
 fn events_or_report(
-    state: &mut crate::state::MainViewState,
+    state: Option<&mut crate::state::MainViewState>,
     origin: &IntentOrigin,
     applied: anyhow::Result<Vec<CoreEvent>>,
 ) -> Vec<CoreEvent> {
     applied.unwrap_or_else(|err| {
-        crate::intent::report_apply_error(state, origin, "dispatch_domain_intent", &err);
+        crate::intent::report_apply_error(
+            state,
+            origin,
+            crate::intent::FailureContext::General,
+            &err,
+        );
         Vec::new()
     })
 }

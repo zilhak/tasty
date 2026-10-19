@@ -168,8 +168,37 @@ impl App {
         )>,
     ) {
         for (source, dispatched) in domain_batch {
-            if let Err(e) = self.dispatch_domain_intent(source, dispatched) {
-                tracing::warn!("dispatch_domain_intent failed: {e}");
+            let origin = dispatched.origin.clone();
+            let context = match &dispatched.body {
+                crate::intent::Intent::RemoteBrowser(_) => {
+                    crate::intent::FailureContext::RemoteConnect
+                }
+                crate::intent::Intent::CommitDivider(_) => crate::intent::FailureContext::Divider,
+                _ => crate::intent::FailureContext::General,
+            };
+            let original = self
+                .engines_mut()
+                .resolve(source.engine())
+                .and_then(|resolved| resolved.view.map(|view| view.state.identity()));
+            if let Err(error) = self.dispatch_domain_intent(source, dispatched) {
+                if let Some(resolved) = self.engines_mut().resolve(source.engine()) {
+                    let view = resolved.view.filter(|view| {
+                        original
+                            .as_ref()
+                            .is_some_and(|original| view.state.matches_identity(original))
+                    });
+                    crate::intent::report_apply_error(
+                        view.as_ref().map(|_| resolved.state),
+                        &origin,
+                        context,
+                        &error,
+                    );
+                    if let Some(view) = view {
+                        view.mark_dirty();
+                    }
+                } else {
+                    crate::intent::report_apply_error(None, &origin, context, &error);
+                }
             }
         }
     }

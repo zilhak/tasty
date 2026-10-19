@@ -1291,6 +1291,11 @@ undo = "실행 취소"
 redo = "다시 실행"
 
 [toast]
+action_failed = "요청한 작업을 완료하지 못했습니다."
+layout_failed = "레이아웃 변경을 적용하지 못했습니다."
+divider_failed = "분할선 위치를 적용하지 못해 이전 위치로 되돌렸습니다."
+category_reset_failed = "카테고리를 초기화하지 못했습니다. 설정은 변경되지 않았습니다."
+remote_connect_failed = "원격 연결을 시작하지 못했습니다."
 clipboard_wayland_unsupported = "네이티브 Wayland 클립보드는 지원하지 않으며 X11 클립보드에도 접근할 수 없습니다."
 clipboard_unavailable = "시스템 클립보드에 접근할 수 없습니다."
 clipboard_failed = "클립보드 작업에 실패했습니다. 다시 시도해 주세요."

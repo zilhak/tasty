@@ -198,12 +198,18 @@ impl crate::app::App {
             match completion.into_settings() {
                 // 기다리는 요청에는 into_settings가 거절을 넣었고, 표시는 공통 보고가 맡는다.
                 Err((origin, message)) => {
-                    if let Some((state, _)) = self.engines_mut().sessions().next() {
-                        crate::intent::report_apply_error(
-                            state,
-                            &origin,
-                            "journal category reset",
-                            &anyhow::anyhow!(message),
+                    crate::intent::report_apply_error(
+                        None,
+                        &origin,
+                        crate::intent::FailureContext::CategoryReset,
+                        &anyhow::anyhow!(message),
+                    );
+                    if origin.is_user() {
+                        self.toast_settings_result(
+                            crate::intent::FailureContext::CategoryReset
+                                .message()
+                                .to_owned(),
+                            crate::adapters::ui::ToastKind::Error,
                         );
                     }
                 }
@@ -223,9 +229,9 @@ impl crate::app::App {
                 context.state.layout_previews.cancel(sequence);
                 if let Some(error) = response.error {
                     crate::intent::report_apply_error(
-                        context.state,
+                        context.view.as_ref().map(|_| &mut *context.state),
                         &origin,
-                        "divider commit",
+                        crate::intent::FailureContext::Divider,
                         &anyhow::anyhow!(error.message),
                     );
                 }
@@ -423,28 +429,17 @@ impl crate::app::App {
         if let Some(error) = result.response.error
             && let Some(context) = self.engines_mut().resolve(result.engine)
         {
-            if let (Some(continuation), Some(view)) = (result.view.as_ref(), context.view.as_ref())
-            {
-                show_failed_preset(
-                    &mut context.state.toasts,
-                    &view.state,
-                    continuation,
-                    &result.origin,
-                    result.response.idempotent_replay,
-                );
-            }
-            show_refused_split(
-                &mut context.state.toasts,
-                &error,
+            report_structural_failure(
+                context.state,
+                context.view.as_ref().map(|view| &view.state),
+                result.view.as_ref(),
                 &result.origin,
+                &error,
                 result.response.idempotent_replay,
             );
-            crate::intent::report_apply_error(
-                context.state,
-                &result.origin,
-                "journal structural intent",
-                &anyhow::anyhow!(error.message),
-            );
+            if let Some(view) = context.view {
+                view.mark_dirty();
+            }
         }
     }
 
@@ -497,13 +492,36 @@ fn restore_saved_presentation(
     }
 }
 
+/// Preset, split refusal and generic failure are mutually exclusive display paths.
+fn report_structural_failure(
+    state: &mut crate::state::RequestContext,
+    view: Option<&crate::view::state::ViewState>,
+    continuation: Option<&IntentViewContinuation>,
+    origin: &crate::intent::IntentOrigin,
+    error: &tasty_ipc::protocol::JsonRpcError,
+    replay: bool,
+) {
+    let view =
+        view.filter(|view| !replay && continuation.is_none_or(|c| view.matches_identity(&c.view)));
+    let shown = view.is_some_and(|view| {
+        continuation.is_some_and(|c| show_failed_preset(&mut state.toasts, view, c, origin, false))
+            || show_refused_split(&mut state.toasts, error, origin, false)
+    });
+    crate::intent::report_apply_error(
+        (view.is_some() && !shown).then_some(state),
+        origin,
+        crate::intent::FailureContext::Layout,
+        &anyhow::anyhow!(error.message.clone()),
+    );
+}
+
 fn show_failed_preset(
     toasts: &mut crate::adapters::ui::toast::ToastManager,
     view: &crate::view::state::ViewState,
     continuation: &IntentViewContinuation,
     origin: &crate::intent::IntentOrigin,
     replay: bool,
-) {
+) -> bool {
     if continuation.preset_apply
         && origin.is_user()
         && !replay
@@ -514,6 +532,9 @@ fn show_failed_preset(
             crate::model::toast_kind::ToastKind::Error,
             crate::model::toast_kind::ToastScope::Window,
         );
+        true
+    } else {
+        false
     }
 }
 
@@ -524,7 +545,7 @@ fn show_refused_split(
     error: &tasty_ipc::protocol::JsonRpcError,
     origin: &crate::intent::IntentOrigin,
     replay: bool,
-) {
+) -> bool {
     let refused = error
         .data
         .as_ref()
@@ -537,6 +558,9 @@ fn show_refused_split(
             crate::model::toast_kind::ToastKind::Info,
             crate::model::toast_kind::ToastScope::Window,
         );
+        true
+    } else {
+        false
     }
 }
 
@@ -596,6 +620,76 @@ mod preset_failure_tests {
         continuation.preset_apply = false;
         show_failed_preset(&mut toasts, &original, &continuation, &user(), false);
         assert_eq!(toasts.len(), 0);
+    }
+    #[test]
+    fn structural_failure_displays_one_message_and_respects_view_lifetime() {
+        let (mut state, _) = crate::state::tests::test_state();
+        let view = crate::view::state::ViewState::default();
+        let old = crate::view::state::ViewState::default();
+        let preset = continuation(&view);
+        report_structural_failure(
+            &mut state,
+            Some(&view),
+            Some(&preset),
+            &user(),
+            &refusal(),
+            false,
+        );
+        assert_eq!(
+            state.toasts.messages(),
+            vec![crate::i18n::t("preset.toast.apply_failed")],
+            "preset takes precedence without an extra split or generic toast"
+        );
+        state.toasts = crate::adapters::ui::toast::ToastManager::new();
+        let mut ordinary = continuation(&view);
+        ordinary.preset_apply = false;
+        report_structural_failure(
+            &mut state,
+            Some(&view),
+            Some(&ordinary),
+            &user(),
+            &refusal(),
+            false,
+        );
+        assert_eq!(
+            state.toasts.messages(),
+            vec![crate::i18n::t("toast.split_refused")]
+        );
+        state.toasts = crate::adapters::ui::toast::ToastManager::new();
+        let error = tasty_ipc::protocol::JsonRpcResponse::invalid_params(
+            serde_json::Value::Null,
+            "internal.method /private/path",
+        )
+        .error
+        .unwrap();
+        for (shown, replay, origin) in [
+            (None, false, user()),
+            (Some(&old), false, user()),
+            (Some(&view), true, user()),
+            (Some(&view), false, crate::intent::IntentOrigin::System),
+            (
+                Some(&view),
+                false,
+                crate::intent::IntentOrigin::Agent {
+                    source: crate::intent::AgentSource::Ipc,
+                },
+            ),
+        ] {
+            report_structural_failure(&mut state, shown, Some(&ordinary), &origin, &error, replay);
+        }
+        assert_eq!(state.toasts.len(), 0);
+        report_structural_failure(
+            &mut state,
+            Some(&view),
+            Some(&ordinary),
+            &user(),
+            &error,
+            false,
+        );
+        assert_eq!(
+            state.toasts.messages(),
+            vec![crate::intent::FailureContext::Layout.message()]
+        );
     }
     fn refusal() -> tasty_ipc::protocol::JsonRpcError {
         super::super::split_floor::refusal_for_tests()

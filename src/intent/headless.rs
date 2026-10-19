@@ -53,7 +53,12 @@ pub(crate) fn drain_pending_intents_in_app(
                 Ok(Some(intent)) => dispatched.body = Intent::Domain(intent),
                 Ok(None) => {}
                 Err(error) => {
-                    super::report_apply_error(state, &dispatched.origin, "creation input", &error);
+                    super::report_apply_error(
+                        None,
+                        &dispatched.origin,
+                        super::FailureContext::General,
+                        &error,
+                    );
                     continue;
                 }
             }
