@@ -14,6 +14,13 @@
 
 `general.restore_layout`(기본 on)이 켜져 있으면 journal의 구조와 별도 View checkpoint를 함께 사용해 배치를 복원한다. 저장 원본은 domain journal·immutable surface payload·DB restore manifest다. 기존 슬롯 JSON과 scrollback 파일은 최초 이관 및 호환 읽기 자료이며 현재 저장 원본을 덮어쓰지 않는다.
 
+최초 이관은 슬롯 stream에 기록이 아직 없을 때 `layouts/NN.json`을 한 번 읽는다. 실패해도 엔진 열기는 실패하지 않으며 원본 JSON과 scrollback 파일은 그대로 둔다.
+
+- 파일을 레이아웃으로 해석하지 못하거나(텍스트 아님·JSON 아님) 지원하지 않는 version이면 경고 알림(파일 경로·원인)을 남기고 그 슬롯을 초기 상태로 시작한다.
+- 권한 문제 등으로 파일을 읽지 못하면 오류 알림과 오른쪽 위 비포커스 안내(원인·파일 경로)를 남기고 초기 상태로 시작한다.
+- 이관은 성공했지만 참조한 scrollback 파일이 없거나 읽히지 않은 터미널이 있으면 그 수를 적은 경고 알림을 남긴다. 그 터미널은 이전 내용 없이 복원한다.
+- 초기 상태로 시작하면 그 슬롯 stream에 기록이 생기므로, 나중에 파일을 고쳐도 다시 가져오지 않는다. 알림 문구에도 이 사실을 적는다. 다시 가져오려면 그 슬롯을 쓰지 않은 새 데이터 홈에서 시작해야 한다.
+
 ## Legacy 파일 형식과 이전 저장 흐름
 
 이 절의 슬롯 JSON writer, 슬롯 파일 삭제, persist_id별 scrollback 파일 쓰기·교체 설명은 이전 바이너리의 동작이다. 현재 제품은 아래 Journal 절의 불변 payload와 참조 보존 계약을 따르며, 이 형식은 최초 이관 입력으로 읽는다. 아래 [Surface 내용 복원](#surface-내용-복원-현재-터미널-scrollback) 절은 현재 동작을 적는다.

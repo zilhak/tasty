@@ -6899,6 +6899,13 @@ connect_failed_body = "The plugin program exited or did not connect in time: {}.
 auto_disabled_title = "Plugin '{}' was turned off"
 auto_disabled_body = "It failed to start {} times in a row, so Tasty stopped starting it until you turn it on again. Last error: {}. See tasty plugin logs {} for details."
 
+
+[notice]
+restore_failed_title = "Couldn't restore your last session"
+restore_failed_body = "Tasty started with a new default workspace. The saved layout was not changed, moved or deleted. This message stays in Notifications."
+cause_read_denied = "Tasty doesn't have permission to read the saved layout."
+cause_corrupt = "The saved layout is damaged and can't be read."
+
 [recovery]
 multiple_title = "Some saved data could not be restored"
 surface_payload_title = "A tab could not be restored"
@@ -6909,3 +6916,7 @@ snapshot_fallback_title = "Restored from an earlier save point"
 snapshot_fallback_body = "The latest save point could not be read, so Tasty rebuilt the layout from an earlier save point and the records after it. Cause: {}"
 view_unreadable_title = "Selected tabs could not be restored"
 view_unreadable_body = "The saved selection of window layout {} could not be read, so the first workspace and tabs are selected. The unreadable record is kept at {}. Cause: {}"
+legacy_unparsable_title = "An old layout file could not be imported"
+legacy_unparsable_body = "{} could not be read as a layout, so this window started with a new default workspace. The file is kept unchanged and will not be imported again. Cause: {}"
+missing_scrollback_title = "Some terminal contents were not restored"
+missing_scrollback_body = "{} terminal(s) from {} were restored without their earlier contents because the saved contents file was missing or unreadable."

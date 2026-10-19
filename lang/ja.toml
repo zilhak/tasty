@@ -6831,6 +6831,13 @@ connect_failed_body = "プラグインのプログラムが終了したか、時
 auto_disabled_title = "プラグイン '{}' をオフにしました"
 auto_disabled_body = "{} 回続けて起動できなかったため、再びオンにするまで Tasty はこのプラグインを起動しません。最後のエラー: {}。詳細は tasty plugin logs {} で確認してください。"
 
+
+[notice]
+restore_failed_title = "前回のセッションを復元できませんでした"
+restore_failed_body = "新しい既定のワークスペースで起動しました。保存されたレイアウトは変更・移動・削除していません。この内容は通知に残ります。"
+cause_read_denied = "保存されたレイアウトを読み取る権限がありません。"
+cause_corrupt = "保存されたレイアウトが破損しているため読み取れません。"
+
 [recovery]
 multiple_title = "保存されたデータの一部を復元できませんでした"
 surface_payload_title = "タブを1つ復元できませんでした"
@@ -6841,3 +6848,7 @@ snapshot_fallback_title = "以前の保存時点から復元しました"
 snapshot_fallback_body = "最新の保存時点を読み取れなかったため、以前の保存時点とその後の記録からレイアウトを作り直しました。原因: {}"
 view_unreadable_title = "選択していたタブを復元できませんでした"
 view_unreadable_body = "ウィンドウレイアウト {} の保存された選択状態を読み取れなかったため、最初のワークスペースとタブを選択しました。読み取れなかった記録は {} に残しています。原因: {}"
+legacy_unparsable_title = "以前のレイアウトファイルを取り込めませんでした"
+legacy_unparsable_body = "{} をレイアウトとして読み取れなかったため、このウィンドウは新しい既定のワークスペースで起動しました。ファイルはそのまま残し、再び取り込むことはありません。原因: {}"
+missing_scrollback_title = "ターミナルの内容の一部を復元できませんでした"
+missing_scrollback_body = "{1} のターミナル {0} 個は、保存された内容のファイルがないか読み取れなかったため、以前の内容なしで復元しました。"

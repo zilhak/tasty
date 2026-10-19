@@ -1,5 +1,7 @@
 use super::*;
-use crate::runtime::journal_product::{BoundEngine, EngineBinding, EngineSelection, StreamCommand};
+use crate::runtime::journal_product::{
+    BindingIssue, BoundEngine, EngineBinding, EngineSelection, StreamCommand,
+};
 use tasty_core::{StructuralCommand, StructureModels};
 use tasty_event_store::{CommandKey, CommandLookup};
 
@@ -32,6 +34,7 @@ pub(super) fn open(
     }
     let digest = serde_json::to_vec(&(&selection, &normal_category_name, surface_floor))
         .map_err(|error| error.to_string())?;
+    let mut import_issues = Vec::new();
     let (key, stream, previous, reset) = {
         let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
         let epoch = inner.epoch;
@@ -58,6 +61,7 @@ pub(super) fn open(
                     stream,
                     inner.state.stream(stream),
                     &selection,
+                    Vec::new(),
                 );
             }
             CommandLookup::DigestMismatch(_) => {
@@ -113,7 +117,7 @@ pub(super) fn open(
         }
         if let EngineSelection::Slot { slot, resume: true } = &selection {
             drop(inner);
-            import_legacy(executor, home, *slot)?;
+            import_issues = import_legacy(executor, home, *slot)?;
             inner = executor.inner.lock().map_err(|error| error.to_string())?;
         }
         let (stream, reset) = match &selection {
@@ -168,9 +172,11 @@ pub(super) fn open(
         &stream,
         inner.state.stream(&stream),
         &selection,
+        import_issues,
     )
 }
 
+#[allow(clippy::too_many_arguments)] // reason: 두 호출부가 같은 결합 결과를 만드는 내부 도우미
 fn bound(
     store: &tasty_event_store::EventStore,
     home: &std::path::Path,
@@ -178,6 +184,7 @@ fn bound(
     stream: &str,
     model: tasty_core::JournalModel,
     selection: &EngineSelection,
+    mut issues: Vec<BindingIssue>,
 ) -> Result<ResultValue, String> {
     let binding = EngineBinding {
         journal_id: store.journal_id().into(),
@@ -198,18 +205,18 @@ fn bound(
     };
     #[cfg(feature = "gui")]
     let restore_legacy_metadata = legacy_view.is_some();
-    let mut issues = Vec::new();
     let restored_view = if matches!(
         selection,
         EngineSelection::Slot { resume: true, .. } | EngineSelection::ImportedSlot { .. }
     ) {
         let (view, issue) = super::super::view_record::load(store, home, &binding)?;
-        issues.extend(issue);
         // 읽지 못한 View checkpoint가 있으면 더 오래된 import 선택으로 돌아가지 않는다.
-        if issues.is_empty() {
-            view.or(legacy_view)
-        } else {
+        let unreadable = issue.is_some();
+        issues.extend(issue);
+        if unreadable {
             None
+        } else {
+            view.or(legacy_view)
         }
     } else {
         None
@@ -224,11 +231,43 @@ fn bound(
     }))
 }
 
+/// 슬롯 파일을 텍스트로 읽는다. 없으면 `None`, 읽거나 텍스트로 해석하지 못하면 그 사실이다.
+fn read_legacy_slot(path: &std::path::Path) -> Result<Option<String>, BindingIssue> {
+    let shown = path.display().to_string();
+    match std::fs::read(path) {
+        Ok(bytes) => String::from_utf8(bytes).map(Some).map_err(|error| {
+            tracing::warn!(
+                path = shown,
+                "legacy slot is not text; starting fresh: {error}"
+            );
+            BindingIssue::LegacyUnparsable {
+                path: shown,
+                cause: error.to_string(),
+            }
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => {
+            tracing::error!(
+                path = shown,
+                "legacy slot could not be read; starting fresh: {error}"
+            );
+            Err(BindingIssue::LegacyUnreadable {
+                path: shown,
+                permission_denied: error.kind() == std::io::ErrorKind::PermissionDenied,
+                cause: error.to_string(),
+            })
+        }
+    }
+}
+
+/// 이전 형식 슬롯 파일을 처음 한 번 가져온다. 파일을 읽거나 해석하지 못하면 그 슬롯은 초기 상태로
+/// 시작하고 사실만 돌려준다. 원본 파일과 scrollback 파일은 바꾸지 않는다. 초기 상태로 시작하면 그
+/// stream에 기록이 생기므로 같은 파일을 다시 가져오지 않는다.
 fn import_legacy(
     executor: &Executor<StructureDecider>,
     home: &std::path::Path,
     slot: u32,
-) -> Result<(), String> {
+) -> Result<Vec<BindingIssue>, String> {
     let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
     let stream = format!("structure:slot-{slot}");
     if inner
@@ -237,13 +276,14 @@ fn import_legacy(
         .get(&stream)
         .is_some_and(|model| model.applied.revision.is_some())
     {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let path = home.join("layouts").join(format!("{slot:02}.json"));
-    let json = match std::fs::read_to_string(&path) {
-        Ok(json) => json,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(format!("legacy slot read {}: {error}", path.display())),
+    let shown = path.display().to_string();
+    let json = match read_legacy_slot(&path) {
+        Ok(Some(json)) => json,
+        Ok(None) => return Ok(Vec::new()),
+        Err(issue) => return Ok(vec![issue]),
     };
     struct Scrollback<'a>(&'a std::path::Path);
     impl crate::core::layout_persistence::import::ScrollbackSource for Scrollback<'_> {
@@ -252,18 +292,44 @@ fn import_legacy(
         }
     }
     let epoch = inner.epoch;
-    crate::core::layout_persistence::import::import_slot(
+    use crate::core::layout_persistence::import::ImportError;
+    let outcome = match crate::core::layout_persistence::import::import_slot(
         &mut inner.store,
         epoch,
         slot,
         &json,
         &Scrollback(home),
-    )
-    .map_err(|error| error.to_string())?;
+    ) {
+        Ok(outcome) => outcome,
+        Err(error @ (ImportError::Unparsable | ImportError::UnsupportedVersion)) => {
+            tracing::warn!(
+                path = shown,
+                "legacy slot is not a layout; starting fresh: {error}"
+            );
+            return Ok(vec![BindingIssue::LegacyUnparsable {
+                path: shown,
+                cause: error.to_string(),
+            }]);
+        }
+        Err(error) => return Err(error.to_string()),
+    };
     drop(inner);
     executor
         .reload_committed()
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    let mut issues = Vec::new();
+    if !outcome.missing_scrollback.is_empty() {
+        tracing::warn!(
+            path = shown,
+            count = outcome.missing_scrollback.len(),
+            "imported terminals without their saved scrollback"
+        );
+        issues.push(BindingIssue::MissingScrollback {
+            count: outcome.missing_scrollback.len(),
+            path: shown,
+        });
+    }
+    Ok(issues)
 }
 
 fn imported_view(

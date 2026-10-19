@@ -343,6 +343,36 @@ impl JournalApplication {
                     &[&slot.to_string(), preserved, cause],
                 ),
             ),
+            BindingIssue::LegacyUnparsable { path, cause } => notices::RecoveryNotice::warning(
+                Some(engine),
+                crate::i18n::t("recovery.legacy_unparsable_title").to_owned(),
+                crate::i18n::t_args("recovery.legacy_unparsable_body", &[path, cause]),
+            ),
+            BindingIssue::LegacyUnreadable {
+                path,
+                permission_denied,
+                cause,
+            } => notices::RecoveryNotice::critical(
+                Some(engine),
+                notices::NoticePopup {
+                    variant: notices::NoticeVariant::Restore,
+                    cause: if *permission_denied {
+                        notices::NoticeCause::ReadDenied
+                    } else {
+                        notices::NoticeCause::Corrupt
+                    },
+                    path: path.clone(),
+                },
+                cause,
+            ),
+            BindingIssue::MissingScrollback { count, path } => notices::RecoveryNotice::warning(
+                Some(engine),
+                crate::i18n::t("recovery.missing_scrollback_title").to_owned(),
+                crate::i18n::t_args(
+                    "recovery.missing_scrollback_body",
+                    &[&count.to_string(), path],
+                ),
+            ),
         };
         self.notices.push(notice);
     }
@@ -736,6 +766,8 @@ mod tests;
 #[cfg(all(test, unix))]
 mod unowned_tests;
 
+#[cfg(all(test, unix))]
+mod legacy_import_failure_tests;
 #[cfg(all(test, unix, feature = "gui"))]
 mod view_failure_tests;
 #[cfg(all(test, unix, feature = "gui"))]

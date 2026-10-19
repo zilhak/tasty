@@ -46,4 +46,14 @@ pub(crate) enum BindingIssue {
         preserved: String,
         cause: String,
     },
+    /// 이전 형식 슬롯 파일을 레이아웃으로 해석하지 못해 초기 상태로 시작했다.
+    LegacyUnparsable { path: String, cause: String },
+    /// 이전 형식 슬롯 파일을 읽지 못해 초기 상태로 시작했다.
+    LegacyUnreadable {
+        path: String,
+        permission_denied: bool,
+        cause: String,
+    },
+    /// 가져왔지만 터미널 일부의 scrollback 파일이 없거나 읽히지 않았다.
+    MissingScrollback { count: usize, path: String },
 }

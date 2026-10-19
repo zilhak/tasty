@@ -380,14 +380,25 @@ fn failed_legacy_import_keeps_regular_and_secret_scopes() {
             },
         )
         .unwrap();
-    let mut stall = StallBudget::new(&journal);
-    loop {
-        if journal.poll_bootstrap(&mut [&mut session], None).is_err() {
-            break;
-        }
-        stall.nap("failed legacy import");
-    }
-    assert!(session.journal_binding.is_none());
+    poll_until(&mut journal, &mut session, |journal, session| {
+        journal.is_ready(session.id)
+    });
+    assert!(!journal.is_halted());
+    assert!(
+        session.journal_binding.is_some(),
+        "the slot starts in its initial state instead of failing"
+    );
+    let notices = journal.take_notices();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert_eq!(
+        notices[0].level,
+        crate::notification::NotificationLevel::Warning
+    );
+    assert_eq!(
+        std::fs::read(home.join("layouts/01.json")).unwrap(),
+        b"invalid legacy layout",
+        "the legacy file is kept"
+    );
     assert_legacy_scopes(&memory.lock().unwrap(), true);
 }
 
