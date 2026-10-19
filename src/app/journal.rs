@@ -88,14 +88,29 @@ pub(crate) struct JournalApplication {
     ephemeral_home: Option<tempfile::TempDir>,
 }
 
-/// 원본 저널을 읽을 권한이 없는지, 읽을 수는 있지만 저장소로 열리지 않는지 가린다.
+/// 원본 저널을 연 실패의 원인을 파일에서 확인할 수 있는 만큼만 가린다. 읽을 권한이 없으면
+/// 읽기 거절, 읽은 머리가 SQLite 저장소가 아니면 손상이다. 그 밖(머리는 맞지만 열리지 않음,
+/// 쓰기 거절, 파일 없음 등)은 손상으로 단정하지 않고 열지 못함으로 알린다.
 #[cfg(feature = "gui")]
 fn journal_read_cause(database: &std::path::Path) -> notices::NoticeCause {
-    match std::fs::File::open(database) {
+    const HEADER: &[u8] = b"SQLite format 3\0";
+    let mut file = match std::fs::File::open(database) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            return notices::NoticeCause::ReadDenied;
+        }
+        Err(_) => return notices::NoticeCause::OpenFailed,
+    };
+    let mut head = Vec::with_capacity(HEADER.len());
+    match std::io::Read::read_to_end(
+        &mut std::io::Read::take(&mut file, HEADER.len() as u64),
+        &mut head,
+    ) {
+        Ok(_) if !head.is_empty() && head != HEADER => notices::NoticeCause::Corrupt,
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
             notices::NoticeCause::ReadDenied
         }
-        _ => notices::NoticeCause::Corrupt,
+        _ => notices::NoticeCause::OpenFailed,
     }
 }
 
@@ -227,7 +242,7 @@ impl JournalApplication {
     }
 
     /// 데이터 홈의 저널을 열지 못한 첫 엔진을 이번 실행에만 쓰는 빈 임시 저장소로 다시 연다.
-    /// 원본(`structure/journal.db`와 부속 파일)은 읽지도 쓰지도 않고 그대로 둔다. 임시 저장소는
+    /// 원본(`structure/journal.db`와 부속 파일)에는 쓰지 않는다. 원인을 가리려고 머리만 읽는다. 임시 저장소는
     /// 종료할 때 지우므로 다음 실행은 원본을 다시 읽는다. 원인과 원본 위치는 오류 알림과
     /// 비포커스 안내로 `engine`의 창에 알린다.
     #[cfg(feature = "gui")]

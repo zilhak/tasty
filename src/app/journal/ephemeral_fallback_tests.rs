@@ -176,3 +176,81 @@ fn an_unreadable_journal_is_reported_as_denied_and_read_again_once_allowed() {
         "the original workspace is restored"
     );
 }
+
+#[test]
+fn only_a_file_that_is_not_a_database_is_called_damaged() {
+    let directory = tempfile::tempdir().unwrap();
+    let garbage = directory.path().join("garbage.db");
+    std::fs::write(&garbage, b"this is not a sqlite database").unwrap();
+    assert_eq!(journal_read_cause(&garbage), notices::NoticeCause::Corrupt);
+    let database = directory.path().join("real.db");
+    rusqlite::Connection::open(&database)
+        .unwrap()
+        .execute_batch("CREATE TABLE t (x INTEGER);")
+        .unwrap();
+    assert_eq!(
+        journal_read_cause(&database),
+        notices::NoticeCause::OpenFailed,
+        "a readable database that failed to open is not called damaged"
+    );
+    assert_eq!(
+        journal_read_cause(&directory.path().join("missing.db")),
+        notices::NoticeCause::OpenFailed
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_read_only_journal_falls_back_without_being_called_damaged() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut session = new_session();
+    let home = tasty_utils::path::tasty_home().unwrap();
+    let structure = home.join("structure");
+    {
+        session.core_state = crate::core::CoreState::new_base();
+        let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+        journal.begin_engine(&session, SELECTION).unwrap();
+        bootstrap(&mut journal, &mut session).unwrap();
+    }
+    let modes: Vec<_> = std::fs::read_dir(&structure)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    for path in &modes {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o444)).unwrap();
+    }
+    std::fs::set_permissions(&structure, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let restore = || {
+        std::fs::set_permissions(&structure, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for path in &modes {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+    };
+    if std::fs::write(structure.join("probe"), b"").is_ok() {
+        // Running as root ignores file modes; the case cannot be produced here.
+        restore();
+        return;
+    }
+
+    session.core_state = crate::core::CoreState::new_base();
+    session.journal_binding = None;
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal.begin_engine(&session, SELECTION).unwrap();
+    let result = bootstrap(&mut journal, &mut session);
+    let Err(failure) = result else {
+        drop(journal);
+        restore();
+        panic!("a read-only journal was expected to refuse the writer");
+    };
+    journal
+        .fall_back_to_ephemeral(session.id, &failure)
+        .unwrap();
+    let notices = journal.take_notices();
+    drop(journal);
+    restore();
+    assert_eq!(
+        notices[0].popup.as_ref().unwrap().cause,
+        notices::NoticeCause::OpenFailed,
+        "{failure}"
+    );
+}

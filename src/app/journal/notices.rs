@@ -14,6 +14,8 @@ pub(crate) enum NoticeVariant {
 pub(crate) enum NoticeCause {
     ReadDenied,
     Corrupt,
+    /// 읽을 수는 있지만 열리지 않았고 손상인지 알 수 없다(쓰기 거절 등). 자세한 오류는 본문에 있다.
+    OpenFailed,
 }
 
 impl NoticeCause {
@@ -21,6 +23,7 @@ impl NoticeCause {
         match self {
             Self::ReadDenied => crate::i18n::t("notice.cause_read_denied"),
             Self::Corrupt => crate::i18n::t("notice.cause_corrupt"),
+            Self::OpenFailed => crate::i18n::t("notice.cause_open_failed"),
         }
     }
 }
