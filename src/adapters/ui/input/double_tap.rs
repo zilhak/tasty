@@ -113,13 +113,15 @@ impl DoubleTapDetector {
         self.fired.take()
     }
 
-    /// 포커스 획득·상실 때 이전 탭을 버린다. 창 밖의 release는 합성 이벤트로 걸러질 수 있어
-    /// 이전 press와 돌아온 뒤 입력을 연결하면 탭 한 번을 두 번으로 오인할 수 있다.
+    /// 포커스 획득·상실 때 이전 탭과 누름 상태를 버린다. 창 밖의 release는 합성 이벤트로 걸러질 수
+    /// 있어 이전 press와 돌아온 뒤 입력을 연결하면 탭 한 번을 두 번으로 오인하거나, 누른 채로 남은
+    /// Option이 이후 탭을 계속 막을 수 있다.
     pub fn reset(&mut self) {
         self.pending_key = None;
         self.contaminated = false;
         self.first_tap = None;
         self.fired = None;
+        self.blocker_held = false;
     }
 
     /// 키 위치 대응은 `docs/design/policies/key-mapping.md`의 토큰 표를 따른다. macOS에서
@@ -247,6 +249,23 @@ mod tests {
         assert_eq!(
             tap_twice(&mut d, &named(NamedKey::Alt)),
             Some(DoubleTapKey::Alt)
+        );
+    }
+
+    /// Option을 누른 채 포커스를 잃고 창 밖에서 떼면 release가 오지 않는다. 포커스 리셋이 막는
+    /// 상태를 함께 지워야 돌아온 뒤의 Command·Shift 더블탭이 동작한다.
+    #[test]
+    fn macos_mapping_reset_clears_a_held_option() {
+        let mut d = DoubleTapDetector::with_mapping(true);
+        d.on_key_event(&named(NamedKey::Alt), true);
+        d.reset();
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Super)),
+            Some(DoubleTapKey::Alt)
+        );
+        assert_eq!(
+            tap_twice(&mut d, &named(NamedKey::Shift)),
+            Some(DoubleTapKey::Shift)
         );
     }
 

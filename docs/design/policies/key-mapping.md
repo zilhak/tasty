@@ -214,6 +214,8 @@ macOS에서 Option을 누르고 있는 동안의 Shift·Control·Command 탭은 
 
 `WindowEvent::Focused`의 획득·상실 양쪽에서 `DoubleTapDetector::reset`을 호출한다. `MainView`와 `SettingsView`는 별도 인스턴스를 가지므로 두 곳 모두 초기화한다.
 
+초기화는 첫 탭·오염 표지와 함께 macOS Option 누름 상태도 지운다. Option을 누른 채 창을 떠나 창 밖에서 떼면 release가 오지 않으므로, 이 상태를 남기면 돌아온 뒤 Command·Shift 더블탭이 계속 막힌다.
+
 ### `#[cfg]` 분기를 두지 않는 이유
 
 `is_synthetic` 은 플랫폼 중립 필드고 발현 원인도 winit 의 공통 계약이다. 합성을 하지 않는
