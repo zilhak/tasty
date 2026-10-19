@@ -21,6 +21,10 @@ use crate::theme;
 /// View 입력 — pane 한 개 분의 탭 데이터.
 #[derive(Clone, Debug)]
 pub struct PaneTabBarView {
+    /// View namespace for an uncommitted pane; pane_id remains its real anchor.
+    pub draft_pane: Option<u64>,
+    pub draft_tabs: Vec<Option<u64>>,
+    pub loading: Vec<bool>,
     pub pane_id: u32,
     /// Pane 의 *물리* 좌표 사각형 (view 가 scale_factor 로 logical 변환).
     pub rect: PhysicalRect,
@@ -200,6 +204,7 @@ impl TabBarAction {
 /// View 의 출력 — 사용자 의도 리스트 + 측정된 탭 바 높이.
 #[derive(Default)]
 pub struct PaneTabBarsOutput {
+    pub pending_selection: Option<u64>,
     pub actions: Vec<TabBarAction>,
     /// 첫 pane에서 측정한 탭바 높이를 물리 픽셀로 변환한 값. 측정하지 못했으면 None이다.
     pub measured_height_physical: Option<PhysicalPx>,
@@ -277,6 +282,7 @@ pub fn draw_pane_tab_bars(
     state: &mut MainViewState,
     engine: &EngineRead<'_>,
     pane_rects: &[(u32, PhysicalRect)],
+    terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) {
     let th = theme::theme();
@@ -311,6 +317,9 @@ pub fn draw_pane_tab_bars(
             let tab_is_busy = compute_tab_is_busy(engine, &pane.tabs);
             let tab_html_script_marker = compute_tab_html_script_markers(engine, &pane.tabs);
             panes.push(PaneTabBarView {
+                draft_pane: None,
+                draft_tabs: Vec::new(),
+                loading: Vec::new(),
                 pane_id,
                 rect: pane_rect,
                 tab_names: pane
@@ -348,6 +357,108 @@ pub fn draw_pane_tab_bars(
                 tab_html_script_marker,
             });
         }
+    }
+
+    let now = std::time::Instant::now();
+    let delay = std::time::Duration::from_secs_f64(th.loading_overlay_delay().to_secs_f64());
+    let selected = state
+        .attach_pending
+        .selected(engine, &state.navigation)
+        .map(|entry| entry.id);
+    for pane in &mut panes {
+        let real = engine
+            .find_pane_by_id(pane.pane_id)
+            .expect("view pane exists");
+        pane.draft_tabs.resize(pane.tab_names.len(), None);
+        pane.loading.resize(pane.tab_names.len(), false);
+        if pane.pane_id == focused_pane_id
+            && state
+                .attach_waits
+                .get(&state.active_workspace(engine).id)
+                .and_then(|times| times.iter().min())
+                .is_some_and(|time| now.duration_since(*time) >= delay)
+            && let Some(loading) = pane.loading.get_mut(pane.active_tab)
+        {
+            *loading = true;
+        }
+        if state
+            .attach_pending
+            .selected(engine, &state.navigation)
+            .is_some_and(|entry| entry.pane == pane.pane_id && !entry.visible)
+        {
+            pane.active_tab = usize::MAX;
+        }
+        for entry in state
+            .attach_pending
+            .visible(engine, state.active_workspace(engine).id)
+            .filter(|entry| entry.pane == pane.pane_id)
+        {
+            let loading = now.duration_since(entry.receipt.admitted) >= delay;
+            match entry.creation {
+                Some(crate::state::attach_pending::Creation::Tab) => {
+                    if selected == Some(entry.id) {
+                        pane.active_tab = pane.tab_names.len();
+                    }
+                    pane.tab_names
+                        .push(crate::i18n::t("attach.pending.new_tab").to_string());
+                    pane.tab_icons.push(
+                        engine
+                            .surface_registry
+                            .get(&entry.kind)
+                            .and_then(|kind| kind.icon.clone())
+                            .map(|name| icons::from_name(&name))
+                            .unwrap_or(icons::FILE),
+                    );
+                    pane.draft_tabs.push(Some(entry.id.0));
+                    pane.loading.push(loading);
+                    pane.tab_attention_kind.push(None);
+                    pane.tab_is_busy.push(false);
+                    pane.tab_html_script_marker.push(None);
+                }
+                Some(crate::state::attach_pending::Creation::Surface(_)) | None => {
+                    if let Some(index) = real.tabs.iter().position(|tab| tab.id == entry.tab) {
+                        pane.loading[index] |= loading;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    for (id, rect, is_pane) in state.pending_regions(engine, terminal_rect, scale_factor) {
+        if !is_pane {
+            continue;
+        }
+        let Some(entry) = state
+            .attach_pending
+            .entries
+            .iter()
+            .find(|entry| entry.id == id)
+        else {
+            continue;
+        };
+        panes.push(PaneTabBarView {
+            draft_pane: Some(id.0),
+            draft_tabs: vec![Some(id.0)],
+            loading: vec![now.duration_since(entry.receipt.admitted) >= delay],
+            pane_id: entry.pane,
+            rect,
+            tab_names: vec![crate::i18n::t("attach.pending.new_tab").to_string()],
+            tab_icons: vec![
+                engine
+                    .surface_registry
+                    .get(&entry.kind)
+                    .and_then(|kind| kind.icon.clone())
+                    .map(|name| icons::from_name(&name))
+                    .unwrap_or(icons::FILE),
+            ],
+            tab_attention_kind: vec![None],
+            tab_is_busy: vec![false],
+            active_tab: 0,
+            is_focused: selected == Some(id),
+            scroll_offset: 0.0,
+            move_mark: None,
+            tab_html_script_marker: vec![None],
+        });
     }
 
     let appearance = &engine.settings.appearance;
@@ -392,6 +503,12 @@ pub fn draw_pane_tab_bars(
         state.tab_bar_height = h_phys;
     }
 
+    if let Some(id) = output.pending_selection {
+        state.attach_pending.select(
+            crate::state::attach_pending::PendingId(id),
+            &state.navigation,
+        );
+    }
     apply_tab_bar_actions(state, engine, output.actions, &panes, tab_w, scale_factor);
 }
 
@@ -527,6 +644,24 @@ mod tests {
         out
     }
 
+    #[test]
+    fn pending_pane_strip_has_no_widget_identity_collision_with_its_real_anchor() {
+        let real = mk_pane_w(7, &["server"], 0, false, 400.0);
+        let mut draft = mk_pane_w(7, &["New tab"], 0, true, 400.0);
+        draft.rect.x = PhysicalPx(402.0);
+        draft.draft_pane = Some(1);
+        draft.draft_tabs = vec![Some(1)];
+        draft.loading = vec![true];
+        let ctx = egui::Context::default();
+        for _ in 0..2 {
+            let result = run_view_on(&ctx, vec![real.clone(), draft.clone()], None);
+            assert!(result.actions.iter().all(|action| !matches!(
+                action,
+                TabBarAction::AddTab { .. } | TabBarAction::RequestSplit { .. }
+            )));
+        }
+    }
+
     fn mk_pane(pane_id: u32, names: &[&str], active: usize, focused: bool) -> PaneTabBarView {
         mk_pane_w(pane_id, names, active, focused, 800.0)
     }
@@ -540,6 +675,9 @@ mod tests {
     ) -> PaneTabBarView {
         let n = names.len();
         PaneTabBarView {
+            draft_pane: None,
+            draft_tabs: Vec::new(),
+            loading: Vec::new(),
             pane_id,
             rect: PhysicalRect {
                 x: PhysicalPx(0.0),

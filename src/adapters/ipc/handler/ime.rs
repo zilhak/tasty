@@ -4,7 +4,6 @@ use super::params::{self, p_try};
 use crate::runtime::engine_access::EngineMut;
 use crate::view::main::MainView;
 use crate::view::main::ime as window_ime;
-use crate::view::ui::View as _;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// IME 상태는 창마다 다르므로 MainView를 직접 받아 입력을 재현한다.
@@ -16,8 +15,8 @@ pub fn handle_ime_method(
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     match method {
-        "surface.ime_enable" => handle_ime_enable(w, id),
-        "surface.ime_disable" => handle_ime_disable(w, id),
+        "surface.ime_enable" => handle_ime_enable(w, engine, id),
+        "surface.ime_disable" => handle_ime_disable(w, engine, id),
         "surface.ime_preedit" => handle_ime_preedit(w, engine, params, id),
         "surface.ime_commit" => handle_ime_commit(w, engine, params, id),
         "surface.ime_status" => handle_ime_status(w, id),
@@ -25,16 +24,21 @@ pub fn handle_ime_method(
     }
 }
 
-fn handle_ime_enable(w: &mut MainView, id: serde_json::Value) -> JsonRpcResponse {
-    w.ime_active = true;
-    w.mark_dirty();
+fn handle_ime_enable(
+    w: &mut MainView,
+    engine: &EngineMut<'_>,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
+    window_ime::handle_event(w, &engine.read(), winit::event::Ime::Enabled, false);
     JsonRpcResponse::success(id, json!({ "active": true }))
 }
 
-fn handle_ime_disable(w: &mut MainView, id: serde_json::Value) -> JsonRpcResponse {
-    w.ime_active = false;
-    w.ime_preedit = None;
-    w.mark_dirty();
+fn handle_ime_disable(
+    w: &mut MainView,
+    engine: &EngineMut<'_>,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
+    window_ime::handle_event(w, &engine.read(), winit::event::Ime::Disabled, false);
     JsonRpcResponse::success(id, json!({ "active": false, "preedit_cleared": true }))
 }
 
@@ -50,8 +54,12 @@ fn handle_ime_preedit(
     };
 
     if text.is_empty() {
-        w.ime_preedit = None;
-        w.mark_dirty();
+        window_ime::handle_event(
+            w,
+            &engine.read(),
+            winit::event::Ime::Preedit(String::new(), None),
+            false,
+        );
         return JsonRpcResponse::success(id, json!({ "preedit_active": false }));
     }
 

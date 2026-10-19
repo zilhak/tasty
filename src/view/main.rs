@@ -51,6 +51,7 @@ pub struct MainView {
     pub(crate) dragging_divider: Option<DividerDrag>,
     pub(crate) clipboard: ClipboardContext,
     pub(crate) ime_preedit: Option<ImePreeditState>,
+    pub(crate) ime_request_target: Option<ime::CompositionTarget>,
     pub(crate) proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     pub(crate) text_selection: Option<TextSelection>,
     /// vi-style 키보드 복사 모드. Some 일 때 키 입력이 PTY 로 전달되지 않고
@@ -211,6 +212,7 @@ impl MainView {
             dragging_divider: None,
             clipboard: ClipboardContext::new(display),
             ime_preedit: None,
+            ime_request_target: None,
             proxy,
             text_selection: None,
             vi_copy: None,

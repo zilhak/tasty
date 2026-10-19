@@ -6731,3 +6731,11 @@ help = "선택한 범위의 모든 알림을 읽음 처리"
 
 [cli.help._root.notification.read.arg.workspace]
 help = "닫힌 워크스페이스를 포함해 출처 워크스페이스 ID로 필터"
+
+[attach.pending]
+new_tab = "새 탭"
+one = "응답 대기 중"
+many = "응답 {}건 대기 중"
+seconds = "{}초"
+minutes = "{}분"
+hours = "{}시간"

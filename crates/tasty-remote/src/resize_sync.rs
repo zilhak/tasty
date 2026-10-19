@@ -24,6 +24,7 @@ enum Attempt {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Pending {
+    started: Instant,
     target: (usize, usize),
     deadline: Instant,
     attempt: Attempt,
@@ -34,6 +35,7 @@ struct Pending {
 /// 마감이 지나 다시 보내야 하는 요청. 호출자가 전송한 뒤 [`ResizeSync::note_resent`]로 알린다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Resend {
+    pub started: Instant,
     pub surface_id: u32,
     pub cols: usize,
     pub rows: usize,
@@ -53,6 +55,11 @@ pub struct ResizeSync {
 }
 
 impl ResizeSync {
+    /// Observation only; retry/failure policy remains owned by this state machine.
+    pub fn pending_times(&self) -> impl Iterator<Item = Instant> + '_ {
+        self.pending.values().map(|pending| pending.started)
+    }
+
     /// 새 연결의 빈 상태. `acks`는 서버가 모든 요청에 응답하는지다.
     pub fn for_connection(acks: bool) -> Self {
         Self {
@@ -87,6 +94,9 @@ impl ResizeSync {
         let target = (resend.cols, resend.rows);
         self.last_forwarded.insert(resend.surface_id, target);
         self.wait(resend.surface_id, target, Attempt::AutoRetry, now);
+        if let Some(pending) = self.pending.get_mut(&resend.surface_id) {
+            pending.started = resend.started;
+        }
     }
 
     fn wait(&mut self, surface_id: u32, target: (usize, usize), attempt: Attempt, now: Instant) {
@@ -96,6 +106,7 @@ impl ResizeSync {
         self.pending.insert(
             surface_id,
             Pending {
+                started: now,
                 target,
                 deadline: now + RESIZE_ACK_TIMEOUT,
                 attempt,
@@ -151,6 +162,7 @@ impl ResizeSync {
                 // 같은 요청을 다시 보내야 하므로 중복 전송 방지 기록을 지운다.
                 self.last_forwarded.remove(&surface_id);
                 resend.push(Resend {
+                    started: p.started,
                     surface_id,
                     cols: p.target.0,
                     rows: p.target.1,
@@ -173,6 +185,7 @@ impl ResizeSync {
                 self.last_forwarded.insert(surface_id, (cols, rows));
                 self.wait(surface_id, (cols, rows), Attempt::Manual, now);
                 Resend {
+                    started: now,
                     surface_id,
                     cols,
                     rows,

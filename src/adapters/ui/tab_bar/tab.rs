@@ -51,6 +51,7 @@ pub(super) fn draw_tab(
         x += separator_w;
     }
 
+    let pending = info.draft_tabs.get(i).copied().flatten().is_some();
     let is_active = i == info.active_tab;
     let tab_kind = info.tab_attention_kind.get(i).copied().flatten();
     let is_busy = info.tab_is_busy.get(i).copied().unwrap_or(false);
@@ -153,6 +154,18 @@ pub(super) fn draw_tab(
         ui.set_clip_rect(prev_clip);
     }
 
+    if info.loading.get(i).copied().unwrap_or(false) {
+        let previous_clip = ui.clip_rect();
+        ui.set_clip_rect(clip_rect.intersect(previous_clip));
+        tasty_ui_widgets::paint_loading_overlay(
+            ui,
+            th,
+            icon_rect,
+            tasty_ui_widgets::LoadingPlacement::Tab,
+            tab_bg.to_egui(),
+        );
+        ui.set_clip_rect(previous_clip);
+    }
     let text_x = icon_rect.max.x + 6.0;
     if let Some(x) = cluster.move_glyph {
         paint_move_glyph(ui, context, slot_rect(x));
@@ -168,15 +181,19 @@ pub(super) fn draw_tab(
     if !tab_clip.is_negative() {
         let resp = ui.interact(
             tab_clip,
-            egui::Id::new(format!("tab_{}_{}", info.pane_id, i)),
-            egui::Sense::click_and_drag(),
+            egui::Id::new(("tab", info.pane_id, info.draft_pane, i)),
+            if pending {
+                egui::Sense::click()
+            } else {
+                egui::Sense::click_and_drag()
+            },
         );
         // close 버튼 (active or hover) — 우측 끝. 클릭은
         // SwitchTab 보다 우선.
         let marker_clicked =
             marker_slot.and_then(|slot| paint_html_script_marker(ui, context, i, tab_rect, slot));
         // lock 칸은 click만 받아 click_and_drag인 탭 응답의 hover를 빼앗지 않는다. lock hover에도 close가 보인다.
-        let show_close = is_active || resp.hovered();
+        let show_close = !pending && (is_active || resp.hovered());
         let close_clicked = if show_close {
             let close_rect = slot_rect(cluster.close);
             // 닫기 칸의 입력과 아이콘을 뷰포트 안으로 자른다. 스크롤로 가려진 탭의 닫기 칸이
@@ -217,7 +234,7 @@ pub(super) fn draw_tab(
             marker_clicked,
             resp.clicked(),
         ));
-        if resp.secondary_clicked() {
+        if !pending && resp.secondary_clicked() {
             output.actions.push(TabBarAction::OpenContextMenu {
                 pane_id: info.pane_id,
                 tab_index: i,

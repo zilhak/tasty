@@ -69,6 +69,8 @@ enum RemoteRequester {
     /// 최초 열기 · 원격 변경 신호 재조회 · 새로고침 버튼 — 이 plugin 이 스스로 또는 사용자
     /// 클릭으로 건 요청.
     Plugin,
+    /// 문서 안 새로고침 버튼으로 시작한 요청.
+    User,
     /// `markdown.reload` IPC — 바깥 호출자(에이전트)가 건 요청.
     Agent,
 }
@@ -77,6 +79,7 @@ enum RemoteRequester {
 fn mirror_content_request_params(surface_id: u32, requester: RemoteRequester) -> Value {
     match requester {
         RemoteRequester::Plugin => json!({ "surface_id": surface_id }),
+        RemoteRequester::User => json!({ "surface_id": surface_id, "user_initiated": true }),
         RemoteRequester::Agent => json!({ "surface_id": surface_id, "agent_origin": true }),
     }
 }
@@ -619,7 +622,7 @@ impl Plugin for MarkdownPlugin {
             .is_some_and(|d| d.remote.is_some());
         match intent {
             render::NavIntent::Refresh if is_remote => {
-                self.request_remote_content(ctx.surface_id, RemoteRequester::Plugin)
+                self.request_remote_content(ctx.surface_id, RemoteRequester::User)
             }
             // 로컬 문서에서는 대용량 대기 상태의 "Open file…" 버튼만 이 요청을 낸다. 명시적
             // reload 와 같은 경로로 대용량 확인을 다시 띄운다. 그 밖의 로컬 문서에 온 것은 무시한다.

@@ -14,6 +14,7 @@ mod projection;
 mod resize_sync;
 mod resources;
 mod survivors;
+mod user_waits;
 mod wire;
 
 #[cfg(test)]

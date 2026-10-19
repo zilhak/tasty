@@ -219,6 +219,10 @@ impl RequestContext {
                         continue;
                     }
                     for region in self.tab_surface_regions(engine, tab, content, scale_factor) {
+                        // A draft clips the old grid. Only the committed Delta may resize it.
+                        if self.attach_pending.clips_surface(engine, region.id) {
+                            continue;
+                        }
                         let cols = ((region.rect.width.value() / cell_width.max(1.0)).floor()
                             as usize)
                             .max(1);

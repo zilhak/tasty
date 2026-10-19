@@ -266,6 +266,23 @@ impl super::MainViewState {
         rect: PhysicalRect,
         scale: f32,
     ) -> Vec<(u32, PhysicalRect)> {
+        self.attach_pending
+            .pane_geometry(
+                core,
+                workspace.id,
+                self.committed_pane_rects(core, workspace, rect, scale),
+                scale,
+            )
+            .0
+    }
+
+    pub(crate) fn committed_pane_rects(
+        &self,
+        core: &CoreState,
+        workspace: &crate::model::Workspace,
+        rect: PhysicalRect,
+        scale: f32,
+    ) -> Vec<(u32, PhysicalRect)> {
         let target = LayoutTarget::Workspace(workspace.id);
         if self.layout_previews.has(core, target) {
             self.layout_previews
@@ -283,7 +300,33 @@ impl super::MainViewState {
         rect: PhysicalRect,
         scale: f32,
     ) -> Vec<crate::model::SurfaceRegion<'a>> {
-        surface_regions(Some(&self.layout_previews), core, tab, rect, scale)
+        if self
+            .attach_pending
+            .selected(core, &self.navigation)
+            .is_some_and(|entry| {
+                entry.visible
+                    && matches!(entry.creation, Some(super::attach_pending::Creation::Tab))
+                    && core.find_pane_for_tab(tab.id) == Some(entry.pane)
+            })
+        {
+            return Vec::new();
+        }
+        let mut regions = surface_regions(Some(&self.layout_previews), core, tab, rect, scale);
+        let (geometry, _) = self.attach_pending.surface_geometry(
+            core,
+            tab.id,
+            regions
+                .iter()
+                .map(|region| (region.id, region.rect))
+                .collect(),
+            scale,
+        );
+        for region in &mut regions {
+            if let Some((_, rect)) = geometry.iter().find(|(id, _)| *id == region.id) {
+                region.rect = *rect;
+            }
+        }
+        regions
     }
 
     pub(crate) fn pane_dividers(

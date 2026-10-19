@@ -569,6 +569,18 @@ pub fn pages() -> Vec<Page> {
                             components_settled::draw_dot_family,
                         ),
                         spec(
+                            "attach-loading",
+                            "Attach loading overlay and response wait",
+                            Some("Paint-only slots; compact response count and oldest elapsed time"),
+                            components::attach_loading::draw,
+                        ),
+                        spec(
+                            "attach-prelayout",
+                            "Attach pre-layout — normal tabs and both split axes",
+                            Some("Next frame layout; spinner on/off leaves geometry unchanged"),
+                            components::attach_loading::draw_prelayout,
+                        ),
+                        spec(
                             "spinner",
                             "Spinner",
                             Some("Indeterminate progress — sizes and reduced-motion fallback"),

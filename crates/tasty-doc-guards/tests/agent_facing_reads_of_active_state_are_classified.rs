@@ -119,6 +119,12 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     ),
     (
         "src/app/creation_intent.rs",
+        UserOrigin,
+        1,
+        "origin.is_user() 안에서 선택된 attach 임시 영역의 불가능한 조작만 거절한다. 에이전트 대상을 현재 선택으로 바꾸지 않는다",
+    ),
+    (
+        "src/app/creation_intent.rs",
         CompatibilityDefault,
         5,
         "기존 target 없는 View intent의 preset 또는 생성 입력을 현재 명령 문맥의 ID로 고정한다. 외부 구조 IPC는 별도 journal resolver를 거친다",
@@ -258,8 +264,8 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/adapters/ipc/handler/debug_state.rs",
         DebugOnly,
-        6,
-        "debug 상태 덤프 전용 파일. 사용자 조작 재현이라 release 에 없다",
+        8,
+        "debug 상태 덤프 전용 파일. attach 임시 선택/입력 대상 관측 두 자리도 읽기 전용이며 release 에 없다",
     ),
     (
         "src/adapters/ipc/handler/debug.rs",

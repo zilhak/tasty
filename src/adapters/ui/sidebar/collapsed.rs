@@ -27,7 +27,7 @@ pub fn draw_collapsed_sidebar(
 ) -> CollapsedSidebarResult {
     let th = theme::theme();
     let active_ws = state.active_workspace_index(engine);
-    let workspaces: Vec<WorkspaceEntryView> = engine
+    let mut workspaces: Vec<WorkspaceEntryView> = engine
         .workspaces()
         .into_iter()
         .enumerate()
@@ -43,13 +43,14 @@ pub fn draw_collapsed_sidebar(
         })
         .collect();
 
-    let sections = build_category_sections(
+    let mut sections = build_category_sections(
         &state.attach_notices,
         &state.navigation,
         state.pending_move,
         engine,
         active_ws,
     );
+    super::full::apply_attach_loading(state, engine, &mut workspaces, &mut sections);
 
     let tools_hover = t("sidebar.tools_button");
 

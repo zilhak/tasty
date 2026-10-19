@@ -64,6 +64,7 @@ struct CachedRepo {
 /// 원격 조회에 사용할 호스트와 대기 중 요청.
 struct RemoteCtx {
     host: HostHandle,
+    consumer: u64,
     /// 호스트가 원격 ID로 변환할 로컬 미러 surface ID.
     local_surface_id: u32,
     /// 마지막 요청 ID. 다른 ID의 응답은 버린다(연결 종료 알림의 0은 별도 처리).
@@ -100,10 +101,11 @@ struct SnapshotWire {
 
 impl ViewerState {
     /// 원격 스냅샷을 요청하고 응답을 기다리는 상태로 시작한다.
-    fn new_remote(host: HostHandle, local_surface_id: u32) -> Self {
+    fn new_remote(host: HostHandle, local_surface_id: u32, consumer: u64) -> Self {
         let mut s = ViewerState {
             remote: Some(RemoteCtx {
                 host,
+                consumer,
                 local_surface_id,
                 pending_request_id: None,
                 pending_diff_idx: None,
@@ -123,6 +125,7 @@ impl ViewerState {
         let params = serde_json::json!({
             "kind": "snapshot",
             "local_surface_id": remote.local_surface_id,
+            "consumer": remote.consumer,
             "worktree_path": worktree_path,
         });
         match remote.host.call("git_viewer.query", params) {
@@ -152,6 +155,7 @@ impl ViewerState {
         let params = serde_json::json!({
             "kind": "diff",
             "local_surface_id": remote.local_surface_id,
+            "consumer": remote.consumer,
             "worktree_path": worktree_path,
             "diff_path": diff_path,
         });
@@ -528,7 +532,9 @@ impl Plugin for GitViewerPlugin {
                 .and_then(Value::as_u64)
                 .map(|v| v as u32);
             self.state = match (is_mirror, local_surface_id, self.host.clone()) {
-                (true, Some(sid), Some(host)) => Some(ViewerState::new_remote(host, sid)),
+                (true, Some(sid), Some(host)) => {
+                    Some(ViewerState::new_remote(host, sid, ctx.instance_id))
+                }
                 _ => {
                     let cwd = cwd_from_context(&ctx.context);
                     Some(ViewerState::load(cwd.as_deref()))

@@ -26,6 +26,12 @@ pub(crate) struct AddressProbe {
     answer: Option<Option<PathBuf>>,
 }
 
+impl AddressProbe {
+    pub(crate) fn pending_since(&self) -> Option<Instant> {
+        self.answer.is_none().then_some(self.sent_at)
+    }
+}
+
 impl ExplorerView {
     /// 주소창에서 확정한 입력이나 원격 확인의 응답을 동작으로 바꾼다. `input` 은 이번 프레임에 확정한
     /// 입력이고, 없으면 기다리던 원격 확인의 결과만 본다.

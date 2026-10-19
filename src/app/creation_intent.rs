@@ -11,6 +11,22 @@ pub(crate) fn resolve(
     origin: &IntentOrigin,
 ) -> anyhow::Result<Option<DomainIntent>> {
     let read = engine.read();
+    #[cfg(feature = "gui")]
+    if origin.is_user()
+        && let Some(pending) = state.attach_pending.selected(&read, &state.navigation)
+    {
+        let unsupported = matches!(
+            intent,
+            Intent::SplitPane { .. } | Intent::SplitSurface { .. } | Intent::ConvertSurface { .. }
+        ) || (matches!(intent, Intent::NewTab { .. })
+            && !matches!(
+                pending.creation,
+                Some(crate::state::attach_pending::Creation::Tab)
+            ));
+        if unsupported {
+            anyhow::bail!("pending attach area is not a committed operation target");
+        }
+    }
     let params_or_empty = |params: &serde_json::Value| {
         if params.is_null() {
             serde_json::json!({})

@@ -6731,3 +6731,11 @@ help = "選択した範囲の通知をすべて既読にする"
 
 [cli.help._root.notification.read.arg.workspace]
 help = "閉じたワークスペースも含めて発信元ワークスペース ID で絞り込む"
+
+[attach.pending]
+new_tab = "新しいタブ"
+one = "応答待ち"
+many = "{}件の応答待ち"
+seconds = "{}秒"
+minutes = "{}分"
+hours = "{}時間"

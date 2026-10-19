@@ -9,6 +9,7 @@ pub(crate) mod switch_overlay;
 pub(crate) mod tab_bar;
 pub(crate) mod titlebar;
 
+pub(crate) mod attach_loading;
 pub(crate) mod attach_notice;
 pub(crate) mod attach_size_sync;
 pub mod banner;

@@ -65,32 +65,80 @@ impl RequestContext {
 
     #[cfg(feature = "gui")]
     pub fn next_tab_in_pane(&mut self, engine: &CoreState) {
-        #[cfg(feature = "gui")]
-        let before = self.tutorial_tab_snapshot(engine);
-        if let Some(pane) = self.focused_pane(engine) {
-            let index = (self.navigation.tab_index(pane) + 1) % pane.tabs.len().max(1);
-            self.navigation.goto_tab(pane, index);
-        }
-        #[cfg(feature = "gui")]
-        self.observe_tutorial_tab_switch(engine, before);
+        self.step_visible_tab(engine, true);
     }
 
     #[cfg(feature = "gui")]
     pub fn prev_tab_in_pane(&mut self, engine: &CoreState) {
-        #[cfg(feature = "gui")]
-        let before = self.tutorial_tab_snapshot(engine);
-        if let Some(pane) = self.focused_pane(engine) {
-            let len = pane.tabs.len().max(1);
-            let index = (self.navigation.tab_index(pane) + len - 1) % len;
-            self.navigation.goto_tab(pane, index);
+        self.step_visible_tab(engine, false);
+    }
+
+    #[cfg(feature = "gui")]
+    fn step_visible_tab(&mut self, engine: &CoreState, forward: bool) {
+        let Some(pane) = self.focused_pane(engine) else {
+            return;
+        };
+        let drafts = self.visible_draft_tabs(engine, pane.id);
+        let real = pane.tabs.len();
+        let count = real + drafts.len();
+        if count == 0 {
+            return;
         }
-        #[cfg(feature = "gui")]
-        self.observe_tutorial_tab_switch(engine, before);
+        let selected = self
+            .attach_pending
+            .selected(engine, &self.navigation)
+            .and_then(|entry| drafts.iter().position(|id| *id == entry.id))
+            .map_or(self.navigation.tab_index(pane), |index| real + index);
+        let next = if forward {
+            (selected + 1) % count
+        } else {
+            (selected + count - 1) % count
+        };
+        self.goto_tab_in_pane(engine, next);
+    }
+
+    #[cfg(feature = "gui")]
+    fn visible_draft_tabs(
+        &self,
+        engine: &CoreState,
+        pane: u32,
+    ) -> Vec<super::attach_pending::PendingId> {
+        self.attach_pending
+            .visible(engine, self.active_workspace(engine).id)
+            .filter(|entry| {
+                entry.pane == pane
+                    && matches!(entry.creation, Some(super::attach_pending::Creation::Tab))
+            })
+            .map(|entry| entry.id)
+            .collect()
     }
 
     /// 포커스된 pane에서 0-based 인덱스로 탭을 바꾼다. pane 부재와 범위 오류를 구분한다.
     #[cfg(any(feature = "gui", debug_assertions))]
     pub fn goto_tab_in_pane(&mut self, engine: &CoreState, index: usize) -> TabSwitch {
+        #[cfg(feature = "gui")]
+        if let Some(pane) = self.focused_pane(engine) {
+            let drafts = self.visible_draft_tabs(engine, pane.id);
+            if index >= pane.tabs.len() {
+                if let Some(id) = drafts.get(index - pane.tabs.len()) {
+                    let already = self
+                        .attach_pending
+                        .selected(engine, &self.navigation)
+                        .is_some_and(|entry| entry.id == *id);
+                    self.attach_pending.select(*id, &self.navigation);
+                    return if already {
+                        TabSwitch::AlreadyActive
+                    } else {
+                        TabSwitch::Switched
+                    };
+                }
+                return TabSwitch::OutOfRange {
+                    tabs: pane.tabs.len() + drafts.len(),
+                };
+            }
+        }
+        #[cfg(feature = "gui")]
+        self.attach_pending.deselect();
         #[cfg(feature = "gui")]
         let before = self.tutorial_tab_snapshot(engine);
         let result = if let Some(pane) = self.focused_pane(engine) {
@@ -166,6 +214,13 @@ impl RequestContext {
     /// 활성 탭 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
     #[cfg(feature = "gui")]
     pub fn close_active_tab(&mut self, engine: &EngineRead<'_>) -> bool {
+        if self
+            .attach_pending
+            .selected(engine, &self.navigation)
+            .is_some()
+        {
+            return false;
+        }
         let mirror_op =
             self.focused_surface_id(engine)
                 .map(|sid| crate::ipc::stream::StructuralOp::CloseTab {

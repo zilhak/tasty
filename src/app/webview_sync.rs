@@ -76,6 +76,11 @@ fn collect_html_surfaces(
     let resize_band = view.window_resize_band();
 
     for (ws_idx, ws) in engine.workspaces().into_iter().enumerate() {
+        all_html_ids.extend(ws.all_surface_ids().into_iter().filter(|sid| {
+            engine
+                .find_surface_by_id(*sid)
+                .is_some_and(|surface| surface.webview_url().is_some())
+        }));
         let pane_rects = view
             .state
             .pane_rects(engine, ws, terminal_rect, scale_factor as f32);
@@ -135,7 +140,7 @@ fn collect_html_surfaces(
                         if surface.webview_url().is_none() {
                             continue;
                         }
-                        all_html_ids.push(sid);
+
                         if is_visible {
                             // 패널 바깥쪽 변에는 divider 드래그 영역만큼 여백을 둔다.
                             // egui chrome도 같은 여백 안쪽으로 내용을 자른다.

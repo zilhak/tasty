@@ -216,6 +216,22 @@ impl crate::app::App {
                 .unwrap_or_default();
         match self.prepare_journal_forward(engine, &op, user, &candidates) {
             Ok(mut draft) => {
+                if let Some(pending) = self.journal.commands.pending.get(&ticket)
+                    && let Reply::Intent {
+                        view: Some(view), ..
+                    } = &pending.reply
+                    && let Some(receipt) = &view.remote_request
+                {
+                    receipt.bind(draft.op_id);
+                    if matches!(
+                        op,
+                        StructuralOp::NewTab { .. }
+                            | StructuralOp::SplitPane { .. }
+                            | StructuralOp::SplitSurface { .. }
+                    ) {
+                        draft.focus = None;
+                    }
+                }
                 if request.method == "terminal.kill" {
                     draft.response = JsonRpcResponse::success(
                         serde_json::Value::Null,

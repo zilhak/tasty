@@ -18,6 +18,26 @@ pub fn apply_tab_bar_actions(
     let separator_w: f32 = 1.0;
 
     for action in actions {
+        if let TabBarAction::SwitchTab { pane_id, tab_index } = &action
+            && let Some(id) = panes
+                .iter()
+                .find(|pane| pane.pane_id == *pane_id && pane.draft_pane.is_none())
+                .and_then(|pane| pane.draft_tabs.get(*tab_index))
+                .copied()
+                .flatten()
+        {
+            state.attach_pending.select(
+                crate::state::attach_pending::PendingId(id),
+                &state.navigation,
+            );
+            continue;
+        }
+        if matches!(
+            action,
+            TabBarAction::SwitchTab { .. } | TabBarAction::FocusPane { .. }
+        ) {
+            state.attach_pending.deselect();
+        }
         if let Some(pane_id) = action.focus_target_pane() {
             state
                 .navigation

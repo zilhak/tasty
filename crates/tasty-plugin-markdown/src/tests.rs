@@ -640,6 +640,10 @@ fn only_an_agent_content_request_carries_the_agent_origin() {
         mirror_content_request_params(3, RemoteRequester::Plugin),
         json!({ "surface_id": 3 })
     );
+    assert_eq!(
+        mirror_content_request_params(3, RemoteRequester::User),
+        json!({ "surface_id": 3, "user_initiated": true })
+    );
 }
 
 #[test]

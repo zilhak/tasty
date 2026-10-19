@@ -34,6 +34,7 @@ fn no_reply_resends_once_then_fails() {
     assert_eq!(
         resend,
         vec![Resend {
+            started: t0,
             surface_id: S,
             cols: 80,
             rows: 24
@@ -101,6 +102,7 @@ fn the_banner_retry_resends_and_fails_again_without_an_automatic_retry() {
     assert_eq!(
         retry,
         vec![Resend {
+            started: t2,
             surface_id: S,
             cols: 80,
             rows: 24

@@ -188,6 +188,15 @@ struct MirrorHost<'a, 'engine> {
 }
 
 impl<'a, 'engine> MirrorHost<'a, 'engine> {
+    fn focus_surface(&mut self, workspace: u32, surface: Option<u32>) {
+        if let Some(surface) = surface
+            && let Some(index) = self.engine.find_workspace_index_for_id(workspace)
+            && let Some(workspace) = self.engine.workspace_at(index)
+        {
+            set_focus_to_surface(&mut self.state.navigation, workspace, surface);
+        }
+    }
+
     fn windowed(
         state: &'a mut crate::state::MainViewState,
         engine: &'a mut EngineMut<'engine>,
@@ -483,16 +492,42 @@ fn apply_one_mirror_event(
                 );
             }
         }
-        MirrorEvent::StructuralFailed(op_id, reason) => agent_origin::apply_structural_failed(
-            sess,
-            |message, kind| host.toast(message, kind),
-            op_id,
-            reason,
-        ),
-        MirrorEvent::StructuralSucceeded(op_id) => {
+        MirrorEvent::StructuralFailed(op_id, reason) => {
+            host.state
+                .attach_pending
+                .result(&sess.transport.frame_tx.epoch(), op_id, None, false);
+            agent_origin::apply_structural_failed(
+                sess,
+                |message, kind| host.toast(message, kind),
+                op_id,
+                reason,
+            );
+        }
+        MirrorEvent::StructuralSucceeded(op_id, created) => {
+            host.state.attach_pending.result(
+                &sess.transport.frame_tx.epoch(),
+                op_id,
+                created,
+                true,
+            );
+            let focus = host.state.attach_pending.applied_before_result(
+                &sess.transport.frame_tx.epoch(),
+                op_id,
+                &host.state.navigation,
+                host.view.as_ref(),
+                &sess.state.remote_to_local,
+            );
+            host.focus_surface(sess.state.local_workspace, focus);
             // 성공한 요청의 포커스 의도는 다음 delta가 한 번 소비한다.
             sess.state.agent_requests.forget_structural(op_id);
-            if let Some(intent) = sess.state.pending_op_focus.remove(&op_id) {
+            if let Some(intent) = sess.state.pending_op_focus.remove(&op_id)
+                && host.state.attach_pending.permits_legacy_focus(
+                    &sess.transport.frame_tx.epoch(),
+                    op_id,
+                    &host.state.navigation,
+                    host.view.as_ref(),
+                )
+            {
                 sess.state.next_delta_focus = Some(intent);
             }
         }
@@ -501,6 +536,16 @@ fn apply_one_mirror_event(
             tree,
             surfaces,
         } => {
+            let new_remote: Vec<u32> = surfaces
+                .iter()
+                .filter_map(|surface| {
+                    surface
+                        .get("remote_id")?
+                        .as_u64()
+                        .and_then(|id| u32::try_from(id).ok())
+                })
+                .filter(|id| !sess.state.remote_to_local.contains_key(id))
+                .collect();
             let pending_focus = sess.state.next_delta_focus.take();
             let removed_markdown = apply_mirror_structural_delta(
                 &mut host.state.navigation,
@@ -513,6 +558,15 @@ fn apply_one_mirror_event(
             );
             match removed_markdown {
                 Ok(removed) => {
+                    let focus = host.state.attach_pending.applied(
+                        host.engine.core,
+                        &host.state.navigation,
+                        &sess.transport.frame_tx.epoch(),
+                        host.view.as_ref(),
+                        &sess.state.remote_to_local,
+                        &new_remote,
+                    );
+                    host.focus_surface(sess.state.local_workspace, focus);
                     host.state.reconcile_presentation(host.engine);
                     destroy_mirror_markdown_surfaces(plugin_manager, removed);
                 }
@@ -553,6 +607,11 @@ fn apply_one_mirror_event(
             truncated,
             reason,
         } => {
+            host.state.attach_pending.query_result(
+                &sess.transport.frame_tx.epoch(),
+                request_id,
+                true,
+            );
             apply_git_query_result_event(
                 plugin_manager,
                 host.state,
@@ -575,6 +634,11 @@ fn apply_one_mirror_event(
             truncated,
             reason,
         } => {
+            host.state.attach_pending.query_result(
+                &sess.transport.frame_tx.epoch(),
+                request_id,
+                false,
+            );
             apply_markdown_content_result_event(
                 sess,
                 host,
@@ -770,6 +834,7 @@ fn apply_mirror_structural_delta(
         // 사용자가 새 surface를 만들었다면 옛 포커스 복원보다 새 surface 선택을 우선한다.
         let mut focus_handled = false;
         if matches!(pending_focus, Some(PendingOpFocus::NewResource))
+            && newly_created_remote_ids.len() == 1
             && let Some(&new_local) = newly_created_remote_ids
                 .first()
                 .and_then(|rid| sess.state.remote_to_local.get(rid))

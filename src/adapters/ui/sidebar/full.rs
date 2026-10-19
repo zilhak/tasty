@@ -22,6 +22,7 @@ pub(super) fn entry_view(
 ) -> WorkspaceEntryView {
     let surface_ids = ws.all_surface_ids();
     WorkspaceEntryView {
+        loading_since: None,
         name: ws.name.clone(),
         subtitle: ws.subtitle.clone(),
         description: ws.description.clone(),
@@ -92,7 +93,7 @@ pub fn draw_full_sidebar(
 ) -> FullSidebarResult {
     let th = theme::theme();
     let active_ws = state.active_workspace_index(engine);
-    let workspaces: Vec<WorkspaceEntryView> = engine
+    let mut workspaces: Vec<WorkspaceEntryView> = engine
         .workspaces()
         .into_iter()
         .enumerate()
@@ -108,13 +109,14 @@ pub fn draw_full_sidebar(
         })
         .collect();
 
-    let sections = build_category_sections(
+    let mut sections = build_category_sections(
         &state.attach_notices,
         &state.navigation,
         state.pending_move,
         engine,
         active_ws,
     );
+    super::full::apply_attach_loading(state, engine, &mut workspaces, &mut sections);
 
     let drag = state.dialogs.ws_drag.as_ref().map(|d| DragSnapshot {
         ws_idx: d.ws_idx,
@@ -304,4 +306,43 @@ pub fn draw_full_sidebar(
     }
 
     result
+}
+
+pub(super) fn apply_attach_loading(
+    state: &crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    workspaces: &mut [WorkspaceEntryView],
+    sections: &mut Option<Vec<CategorySectionView>>,
+) {
+    let since = |index| {
+        engine.workspace_at(index).and_then(|workspace| {
+            state
+                .attach_pending
+                .entries
+                .iter()
+                .filter(|entry| {
+                    entry.workspace == workspace.id
+                        && !entry.receipt.finished()
+                        && entry.epoch.is_active()
+                })
+                .map(|entry| entry.receipt.admitted)
+                .chain(
+                    state
+                        .attach_waits
+                        .get(&workspace.id)
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                )
+                .min()
+        })
+    };
+    for (index, entry) in workspaces.iter_mut().enumerate() {
+        entry.loading_since = since(index);
+    }
+    for section in sections.iter_mut().flatten() {
+        for (index, entry) in &mut section.entries {
+            entry.loading_since = since(*index);
+        }
+    }
 }

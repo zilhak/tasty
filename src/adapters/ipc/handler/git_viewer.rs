@@ -12,6 +12,8 @@ use tasty_ipc::stream_hub::GitQueryKind;
 /// `git_viewer.query { kind, local_surface_id, worktree_path?, diff_path? }` 요청.
 #[derive(Deserialize)]
 struct GitViewerQueryReq {
+    #[serde(default)]
+    consumer: Option<u64>,
     /// `"snapshot"` | `"diff"`.
     kind: String,
     /// 팝업을 연 로컬 mirror surface ID. 호스트가 원격 ID로 바꿔 전달한다.
@@ -28,6 +30,7 @@ pub fn handle_query(
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
+    plugin_origin: bool,
 ) -> JsonRpcResponse {
     let req: GitViewerQueryReq = match serde_json::from_value(params.clone()) {
         Ok(r) => r,
@@ -49,6 +52,8 @@ pub fn handle_query(
         .remote
         .pending_git_query_forward
         .push(PendingGitQueryForward {
+            admitted: std::time::Instant::now(),
+            consumer: plugin_origin.then_some(req.consumer).flatten(),
             local_surface_id: req.local_surface_id,
             request_id,
             kind,

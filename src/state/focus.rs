@@ -5,6 +5,7 @@ use super::RequestContext;
 
 impl RequestContext {
     pub fn move_pane_focus_forward(&mut self, engine: &CoreState) {
+        self.attach_pending.deselect();
         let ws = self.active_workspace(engine);
         if let Some(id) = self.navigation.pane_id(ws) {
             self.navigation
@@ -13,6 +14,7 @@ impl RequestContext {
     }
 
     pub fn move_pane_focus_backward(&mut self, engine: &CoreState) {
+        self.attach_pending.deselect();
         let ws = self.active_workspace(engine);
         if let Some(id) = self.navigation.pane_id(ws) {
             self.navigation
@@ -29,6 +31,7 @@ impl RequestContext {
     }
 
     fn move_surface_focus(&mut self, engine: &CoreState, backward: bool) {
+        self.attach_pending.deselect();
         let Some(pane) = self.focused_pane(engine) else {
             return;
         };
@@ -78,6 +81,7 @@ impl RequestContext {
         let Some(id) = self.surface_at_position(engine, x, y, terminal_rect, scale_factor) else {
             return false;
         };
+        self.attach_pending.deselect();
         let ws = self.active_workspace(engine);
         let Some(pane_id) = self.navigation.pane_id(ws) else {
             return false;
@@ -128,6 +132,7 @@ impl RequestContext {
 
     /// Native input may focus a surface only in a currently displayed tab.
     pub fn focus_surface_by_id(&mut self, engine: &CoreState, surface_id: u32) -> bool {
+        self.attach_pending.deselect();
         let ws = self.active_workspace(engine);
         for pane_id in ws.pane_layout().all_pane_ids() {
             let Some(pane) = ws.pane_layout().find_pane(pane_id) else {

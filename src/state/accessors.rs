@@ -39,6 +39,8 @@ impl RequestContext {
         #[cfg(feature = "gui")]
         self.layout_previews.retain(engine);
         #[cfg(feature = "gui")]
+        self.attach_pending.retain(engine);
+        #[cfg(feature = "gui")]
         self.terminal_views.retain(engine);
         #[cfg(feature = "gui")]
         {
@@ -99,6 +101,14 @@ impl RequestContext {
     }
 
     pub fn focused_surface_id(&self, engine: &CoreState) -> Option<u32> {
+        #[cfg(feature = "gui")]
+        if self
+            .attach_pending
+            .selected(engine, &self.navigation)
+            .is_some()
+        {
+            return None;
+        }
         let pane = self.focused_pane(engine)?;
         let tab = pane.tabs.get(self.navigation.tab_index(pane))?;
         self.navigation.surface_id(tab)

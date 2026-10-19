@@ -15,6 +15,7 @@ pub fn handle_content_request(
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
+    trusted_plugin: bool,
 ) -> JsonRpcResponse {
     let surface_id = match require_u32(params, "surface_id", &id) {
         Ok(v) => v,
@@ -30,6 +31,13 @@ pub fn handle_content_request(
         .remote
         .pending_markdown_content_forward
         .push(PendingMarkdownContentForward {
+            user_wait: trusted_plugin
+                && !agent_origin
+                && params
+                    .get("user_initiated")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false),
+            admitted: std::time::Instant::now(),
             local_surface_id: surface_id,
             request_id,
             agent_origin,
@@ -47,7 +55,7 @@ mod tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
-        let resp = handle_content_request(&mut engine, json!(1), &json!({ "surface_id": 7 }));
+        let resp = handle_content_request(&mut engine, json!(1), &json!({ "surface_id": 7 }), true);
         let rid = resp
             .result
             .as_ref()
@@ -81,9 +89,74 @@ mod tests {
             &mut engine,
             json!(1),
             &json!({ "surface_id": 7, "agent_origin": true }),
+            true,
         );
         assert!(resp.error.is_none());
         assert!(engine.remote.pending_markdown_content_forward[0].agent_origin);
+    }
+
+    #[test]
+    fn automatic_and_agent_fetches_are_not_user_waits() {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        let mut session =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let mut engine = session.borrow_mut();
+        for (params, expected) in [
+            (json!({"surface_id": 7}), false),
+            (json!({"surface_id": 7, "user_initiated": true}), true),
+            (
+                json!({"surface_id": 7, "user_initiated": true, "agent_origin": true}),
+                false,
+            ),
+        ] {
+            assert!(
+                handle_content_request(&mut engine, json!(1), &params, true)
+                    .error
+                    .is_none()
+            );
+            assert_eq!(
+                engine
+                    .remote
+                    .pending_markdown_content_forward
+                    .pop()
+                    .unwrap()
+                    .user_wait,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_params_return_invalid_params_without_panicking_or_enqueueing() {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        let mut session =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let mut engine = session.borrow_mut();
+        for params in [
+            json!(null),
+            json!("not an object"),
+            json!([]),
+            json!([7]),
+            json!({"surface_id": "bad"}),
+        ] {
+            for trusted in [false, true] {
+                let response = handle_content_request(&mut engine, json!(1), &params, trusted);
+                assert_eq!(response.error.unwrap().code, -32602);
+                assert!(engine.remote.pending_markdown_content_forward.is_empty());
+            }
+        }
+        let response = handle_content_request(
+            &mut engine,
+            json!(1),
+            &json!({"surface_id": 7, "user_initiated": true}),
+            false,
+        );
+        assert!(response.error.is_none());
+        assert!(!engine.remote.pending_markdown_content_forward[0].user_wait);
+        assert!(
+            !engine.remote.pending_markdown_content_forward[0].agent_origin,
+            "wait provenance must not rewrite the existing truncation-notice flag"
+        );
     }
 
     #[test]
@@ -92,7 +165,7 @@ mod tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
-        let resp = handle_content_request(&mut engine, json!(1), &json!({}));
+        let resp = handle_content_request(&mut engine, json!(1), &json!({}), true);
         assert!(resp.error.is_some());
         assert!(engine.remote.pending_markdown_content_forward.is_empty());
     }

@@ -25,6 +25,7 @@ pub mod client_session;
 pub mod connection;
 mod input_receipts;
 pub mod outbound;
+pub mod pending_request;
 pub mod transport;
 
 pub mod pending_connection;

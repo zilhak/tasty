@@ -11,6 +11,61 @@ use crate::app::command::{DomainIntent, SendPayload};
 use crate::gpu::ImePreeditState;
 use crate::view::ui::View as _;
 
+#[derive(Clone)]
+pub(crate) struct CompositionTarget {
+    selection: std::sync::Weak<()>,
+    pending: u64,
+    surface: Option<u32>,
+    // Keep the prior target for an ensuing Commit; the next nonempty Preedit starts anew.
+    preedit_ended: bool,
+}
+impl CompositionTarget {
+    fn capture(w: &MainView, engine: &EngineRead<'_>) -> Self {
+        Self {
+            selection: w.state.navigation.generation(),
+            pending: w.state.attach_pending.selection_serial,
+            surface: w.state.focused_surface_id(engine),
+            preedit_ended: false,
+        }
+    }
+    fn matches(&self, current: &Self) -> bool {
+        self.selection.ptr_eq(&current.selection)
+            && self.pending == current.pending
+            && self.surface == current.surface
+    }
+}
+fn accepts_commit(w: &mut MainView, engine: &EngineRead<'_>) -> bool {
+    let current = CompositionTarget::capture(w, engine);
+    w.ime_request_target
+        .take()
+        .is_none_or(|target| target.matches(&current))
+}
+
+#[cfg(test)]
+#[test]
+fn composition_cannot_cross_pending_selection_even_back_to_the_same_surface() {
+    let selection = std::sync::Arc::new(());
+    let old = CompositionTarget {
+        selection: std::sync::Arc::downgrade(&selection),
+        pending: 0,
+        surface: Some(7),
+        preedit_ended: false,
+    };
+    let pending = CompositionTarget {
+        pending: 1,
+        surface: None,
+        ..old.clone()
+    };
+    let returned = CompositionTarget {
+        pending: 2,
+        ..old.clone()
+    };
+    assert!(!old.matches(&pending));
+    assert!(!old.matches(&returned));
+    assert!(!pending.matches(&returned));
+    assert!(returned.matches(&returned.clone()));
+}
+
 /// IME 입력의 preedit/commit text 를 Intent 큐로 보낸다. surface_id 가
 /// None 이거나 text 가 비어있으면 no-op.
 fn dispatch_send_text(
@@ -35,7 +90,7 @@ fn dispatch_send_text(
     );
 }
 
-pub(super) fn handle_event(
+pub(crate) fn handle_event(
     w: &mut MainView,
     engine: &EngineRead<'_>,
     event: Ime,
@@ -45,6 +100,32 @@ pub(super) fn handle_event(
     if egui_consumed {
         w.mark_dirty();
         return;
+    }
+
+    let target = CompositionTarget::capture(w, engine);
+    match &event {
+        // Enabled activates an input method; the first nonempty Preedit begins a composition.
+        Ime::Preedit(text, _) if text.is_empty() => {
+            if let Some(target) = &mut w.ime_request_target {
+                target.preedit_ended = true;
+            }
+        }
+        Ime::Preedit(_, _)
+            if w.ime_request_target
+                .as_ref()
+                .is_none_or(|target| target.preedit_ended) =>
+        {
+            w.ime_request_target = Some(target.clone())
+        }
+        Ime::Commit(_) => {
+            if !accepts_commit(w, engine) {
+                w.ime_preedit = None;
+                w.mark_dirty();
+                return;
+            }
+        }
+        Ime::Disabled => w.ime_request_target = None,
+        _ => {}
     }
 
     // 팝업·무대가 있으면 조합 문자를 배경 터미널에 보내지 않는다.
@@ -180,6 +261,19 @@ pub(super) fn flush_preedit(w: &mut MainView, engine: &EngineRead<'_>) {
             return;
         }
     };
+    let current = CompositionTarget::capture(w, engine);
+    if w.ime_request_target
+        .as_ref()
+        .is_some_and(|target| !target.matches(&current))
+    {
+        w.ime_cursor_advance = 0;
+        w.ime_advance_base = (0, 0);
+        w.mark_dirty();
+        return;
+    }
+    if let Some(target) = &mut w.ime_request_target {
+        target.preedit_ended = true;
+    }
     dispatch_send_text(w, &engine.as_ref(), Some(preedit.surface_id), &preedit.text);
     w.record_typing_intent(engine, preedit.surface_id);
     w.ime_cursor_advance = 0;
@@ -195,6 +289,9 @@ pub(super) fn clear_preedit(
 ) {
     let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     w.ime_preedit = None;
+    if let Some(target) = &mut w.ime_request_target {
+        target.preedit_ended = true;
+    }
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
     w.mark_dirty();
@@ -219,60 +316,29 @@ pub(crate) fn ipc_set_preedit(
     text: String,
     cursor: Option<(usize, usize)>,
 ) -> Option<(usize, usize, u32)> {
-    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
-    let surface_id = w.state.focused_surface_id(engine)?;
-    let terminal = w.state.focused_terminal(&engine.as_ref())?;
-    let (col, row, cut) = terminal.with_content(|view| {
-        let (col, row) = view.cursor_position();
-        (col, row, view.cut())
-    });
-    let cols = cut.cols;
-
-    if w.ime_cursor_advance > 0 {
-        let (base_col, base_row) = w.ime_advance_base;
-        let raw_advance = compute_raw_advance(col, row, base_col, base_row, cols);
-        if raw_advance >= w.ime_cursor_advance {
-            w.ime_cursor_advance = 0;
-        } else {
-            w.ime_cursor_advance -= raw_advance;
-        }
-        w.ime_advance_base = (col, row);
+    // This debug entry remains terminal-only, including a selected pending terminal area.
+    if w.state.focused_surface_id(engine).is_some() && w.state.focused_terminal(engine).is_none() {
+        return None;
     }
-
-    let (anchor_col, anchor_row) = advanced_anchor(col, row, cols, w.ime_cursor_advance);
-    w.ime_preedit = Some(ImePreeditState {
-        text,
-        cursor,
-        anchor: tasty_selection::SelectionPoint {
-            epoch: cut.epoch,
-            col: anchor_col,
-            absolute_row: cut.screen_start + anchor_row,
-        },
-        surface_id,
-    });
-    w.update_ime_cursor_area(&engine.as_ref());
-    w.mark_dirty();
-    Some((anchor_col, anchor_row, surface_id))
+    handle_event(w, engine, Ime::Preedit(text, cursor), false);
+    let preedit = w.ime_preedit.as_ref()?;
+    let terminal = engine.find_terminal_by_id(preedit.surface_id)?;
+    Some((
+        preedit.anchor.col,
+        preedit
+            .anchor
+            .absolute_row
+            .saturating_sub(terminal.content_cut().screen_start),
+        preedit.surface_id,
+    ))
 }
 
 #[cfg(debug_assertions)]
 pub(crate) fn ipc_commit(w: &mut MainView, engine: &EngineRead<'_>, text: &str) {
-    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
-    if w.ime_cursor_advance == 0
-        && let Some(terminal) = w.state.focused_terminal(&engine.as_ref())
-    {
-        w.ime_advance_base = terminal.cursor_position();
+    if w.state.focused_surface_id(engine).is_some() && w.state.focused_terminal(engine).is_none() {
+        return;
     }
-    for ch in text.chars() {
-        w.ime_cursor_advance += tasty_cell_width::unicode_width(ch);
-    }
-    w.ime_preedit = None;
-    let sid = w.state.focused_surface_id(engine);
-    dispatch_send_text(w, &engine.as_ref(), sid, text);
-    if let Some(sid) = sid {
-        w.record_typing_intent(engine, sid);
-    }
-    w.mark_dirty();
+    handle_event(w, engine, Ime::Commit(text.to_owned()), false);
 }
 
 /// 종료 시 macOS는 위치 보정도 초기화하고 Windows·Linux는 다음 글자의 에코 보정을 위해 유지한다.

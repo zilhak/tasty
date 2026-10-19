@@ -104,6 +104,9 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 ### `ui.state` 응답 해석
 
+`attach_pending`는 GUI의 선행 배치 선택, 실제 입력 대상, 미해결 구조 요청의 op·시각·Result 관측, workspace별 입력/조회/resize 대기 수를 읽는다. `draft`는 View 전용 ID이며 공개 surface ID가 아니다. 조회 자체로 redraw하지 않는다. 헤드리스 값은 null이다.
+
+
 | 필드 | 의미 |
 |---|---|
 | `settings_open_requested` | 설정 열기 요청이 있는지 나타낸다. 모달이 실제로 표시됐다는 뜻은 아니다 |

@@ -248,6 +248,10 @@ pub enum StreamControl {
     /// 예를 들어 원격에 등록되지 않은 surface 종류는 만들 수 없다.
     StructuralResult {
         op_id: u64,
+        /// Exact resource created by this operation, when the server knows it.
+        /// Old peers omit/ignore this field; never infer an arbitrary ID from a merged snapshot.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        created_surface_id: Option<u32>,
         ok: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
@@ -1215,6 +1219,7 @@ mod tests {
     #[test]
     fn stream_control_structural_result_roundtrip() {
         let ok = StreamControl::StructuralResult {
+            created_surface_id: None,
             op_id: 9,
             ok: true,
             reason: None,
@@ -1225,6 +1230,7 @@ mod tests {
         assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), ok);
 
         let fail = StreamControl::StructuralResult {
+            created_surface_id: None,
             op_id: 9,
             ok: false,
             reason: Some("unsupported kind: markdown".to_string()),

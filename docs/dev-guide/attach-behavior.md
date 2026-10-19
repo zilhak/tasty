@@ -131,7 +131,7 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_and_stream` 으로 �
 
 이 role 분류는 `build_workspace_tree_surfaces`(`src/remote/server.rs`)가 만든다. mesh 와 markdown 은 **두 단**이다 — `tasty-model` 이 `Surface::attach_mesh_info()`/`attach_content_info()` 로 후보만 모으고(crate 가 앱의 등록부와 허용 목록을 모른다), 앱 계층이 `is_registered_egui_mesh_kind`(등록부 대조)/`is_attach_content_allowed`(원문 전달 허용 목록)로 재검증해 떨어진 후보를 placeholder 로 내린다.
 
-## 입력 처리 확인
+## 입력 처리 확인과 View의 선행 배치
 
 workspace descriptor의 `ipc.stream.input-ack`는 `InputCheckpoint{sequence}`와
 `InputProcessed{sequence}`를 지원한다는 뜻이다. 프로토콜 동등 비교값은 바꾸지 않는다.
@@ -146,6 +146,18 @@ ACK가 확인하는 wire 순서 범위는 시각 정렬로 바꾸지 않는다. 
 PTY writer flush·셸 소비·명령 종료·렌더 완료를 보장하지 않으며, 대상 거절은 기존 오류
 경로를 따른다. reader는 유효한 연결의 ACK를 즉시 관측한다. 구조 Delta의 ID 예약이
 Pending이라 뒤 이벤트가 보류되어도 입력 확인 수명은 그 보류에 묶이지 않는다.
+
+사용자 생성 요청은 `state::attach_pending`의 View draft에만 선행 배치한다. 별도
+PendingId로 식별하며 CoreState·journal·surface 저장소에 임시 도메인 객체를 넣지 않는다.
+실제 leaf와 임시 leaf는 같은 분할 기하를 사용한다. 기존 terminal은 대기 중 좁아진 화면에
+잘라 그리고, 임시 분할을 이유로 원격 PTY를 resize하지 않는다. 입력 대상 조회는 선택된
+임시 영역에서 None을 반환한다. IME는 조합 시작의 선택·임시 선택 세대를 확인한다.
+
+`StructuralResult.created_surface_id`는 서버가 생성 결과에서 알고 있는 정확한 remote ID다.
+이 필드를 모르는 peer는 무시하고, 옛 서버는 생략한다. 성공 결과와 Delta의 실제 적용을
+모두 확인한 요청만 완료한다. 생성 ID 없는 합쳐진 스냅샷은 중복 임시 영역을 접되 요청
+확인은 남기며 임의의 첫 surface를 선택하지 않는다. 원 View·선택·epoch가 바뀐 결과는
+다른 View나 새 연결의 선택을 바꾸지 않는다.
 
 ## 프레임 전송 지연 (Nagle 금지)
 
@@ -734,3 +746,5 @@ journal이 원격 요청을 실제 해소할 때도 anchor 부재 판정은 모�
 출력 처리를 사용한다. stdout 쓰기나 flush가 BrokenPipe로 끝나면 세션을 정상 종료한다.
 다른 출력 오류는 호출자에게 반환한다. detach 통지 실패나 reader 스레드 패닉은
 진단을 남기며 후속 종료 처리를 계속한다. 종료 직전 입력 송신 실패도 기록한다.
+
+Markdown 조회 대기 표시는 plugin의 `user_initiated` 출처를 함께 확인한다. 문서 안 새로고침 버튼은 표시 대상이며, 최초 mirror 원문 설치·변경 신호에 따른 자동 재조회·외부 `markdown.reload`는 표시 대상으로 삼지 않는다. 기존 `agent_origin`의 잘림 알림 정책과는 별도 필드다.

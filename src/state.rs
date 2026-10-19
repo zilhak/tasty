@@ -1,5 +1,7 @@
 mod accessors;
 #[cfg(feature = "gui")]
+pub(crate) mod attach_pending;
+#[cfg(feature = "gui")]
 pub(crate) mod branch;
 #[cfg(feature = "gui")]
 mod detect;
@@ -165,6 +167,10 @@ impl RequestContext {
             tab_bar_scroll: Default::default(),
             #[cfg(feature = "gui")]
             layout_previews: Default::default(),
+            #[cfg(feature = "gui")]
+            attach_pending: Default::default(),
+            #[cfg(feature = "gui")]
+            attach_waits: Default::default(),
             #[cfg(feature = "gui")]
             terminal_views: Default::default(),
             #[cfg(any(feature = "gui", debug_assertions, test))]

@@ -91,6 +91,8 @@ pub(crate) struct PendingListDirForward {
 #[derive(Debug, Clone)]
 #[cfg(feature = "gui")]
 pub(crate) struct PendingGitQueryForward {
+    pub(crate) admitted: std::time::Instant,
+    pub(crate) consumer: Option<u64>,
     /// 원격 ID로 바꿀 로컬 mirror surface. worktree_path가 없으면 서버가 해당 터미널 cwd를 조회한다.
     pub(crate) local_surface_id: u32,
     pub(crate) request_id: u64,
@@ -105,6 +107,8 @@ pub(crate) struct PendingGitQueryForward {
 #[derive(Debug, Clone)]
 #[cfg(feature = "gui")]
 pub(crate) struct PendingMarkdownContentForward {
+    pub(crate) user_wait: bool,
+    pub(crate) admitted: std::time::Instant,
     /// 원문을 기다리는 로컬 mirror surface ID.
     pub(crate) local_surface_id: u32,
     pub(crate) request_id: u64,

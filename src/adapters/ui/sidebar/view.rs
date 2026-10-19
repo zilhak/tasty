@@ -13,6 +13,7 @@ const GHOST_WS_NAME_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 /// 사이드바의 워크스페이스 행 입력.
 #[derive(Debug, Clone)]
 pub struct WorkspaceEntryView {
+    pub loading_since: Option<std::time::Instant>,
     pub name: String,
     pub subtitle: String,
     pub description: String,
@@ -1250,6 +1251,15 @@ fn draw_collapsed_avatar(
             text_color,
         );
     }
+    if loading_visible(ui, th, ws.loading_since) {
+        tasty_ui_widgets::paint_loading_overlay(
+            ui,
+            th,
+            rect,
+            tasty_ui_widgets::LoadingPlacement::Rail,
+            th.bg_sidebar().to_egui(),
+        );
+    }
     // 상태는 오른쪽 위 점, mirror는 오른쪽 아래 표시, 다른 클라이언트 점유는 둘레 링이다.
     // 왼쪽 아래는 move 칩, 왼쪽 위는 attach 거절 칩이다.
     // 점 하나로 NeedsInput > Completion > running 순서의 상태를 표시한다.
@@ -1361,6 +1371,15 @@ fn draw_workspace_card(
                 if ws.attached && ws.busy_count == 0 {
                     dot_resp.on_hover_text(occupied_hover);
                 }
+            }
+            if loading_visible(ui, th, ws.loading_since) {
+                tasty_ui_widgets::paint_loading_overlay(
+                    ui,
+                    th,
+                    dot_rect,
+                    tasty_ui_widgets::LoadingPlacement::Lnb,
+                    th.bg_sidebar().to_egui(),
+                );
             }
             let name_color = if ws.is_active {
                 th.text_primary()
@@ -1489,6 +1508,24 @@ fn draw_workspace_card(
     card_rect
 }
 
+fn loading_visible(
+    ui: &egui::Ui,
+    theme: &tasty_type_appearance::theme::Theme,
+    since: Option<std::time::Instant>,
+) -> bool {
+    let Some(since) = since else {
+        return false;
+    };
+    let elapsed = since.elapsed();
+    let delay = std::time::Duration::from_secs_f64(theme.loading_overlay_delay().to_secs_f64());
+    if elapsed < delay {
+        ui.ctx().request_repaint_after(delay - elapsed);
+        false
+    } else {
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1499,6 +1536,7 @@ mod tests {
 
     fn mock_ws(name: &str, is_active: bool) -> WorkspaceEntryView {
         WorkspaceEntryView {
+            loading_since: None,
             name: name.to_string(),
             subtitle: String::new(),
             description: String::new(),
@@ -1747,6 +1785,7 @@ mod tests {
             rows with a trailing ellipsis by the description renderer.";
         let ws = vec![
             WorkspaceEntryView {
+                loading_since: None,
                 name: "A workspace name long enough to require single-line ellipsis".into(),
                 subtitle: "a subtitle label that is also fairly long for ellipsis".into(),
                 description: long_desc.into(),
@@ -1760,6 +1799,7 @@ mod tests {
                 is_active: true,
             },
             WorkspaceEntryView {
+                loading_since: None,
                 name: "title only".into(),
                 subtitle: String::new(),
                 description: String::new(),
@@ -1773,6 +1813,7 @@ mod tests {
                 is_active: false,
             },
             WorkspaceEntryView {
+                loading_since: None,
                 name: "title + description".into(),
                 subtitle: String::new(),
                 description: "short desc".into(),
@@ -1896,6 +1937,7 @@ mod tests {
     #[test]
     fn collapsed_view_renders_busy_and_attached_without_panic() {
         let ws = vec![WorkspaceEntryView {
+            loading_since: None,
             name: "active".into(),
             subtitle: String::new(),
             description: String::new(),

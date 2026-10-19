@@ -670,9 +670,11 @@ fn the_gallery_share_splits_into_four_kinds() {
     );
     // 같은 Theme 값과 숫자만 같은 자리의 상한이다. 늘면 그 자리가 토큰을 써야 하는지 확인한다.
     // 갤러리의 새 인라인 리터럴은 대개 이 분류로 들어오므로 갤러리에서 남은 증가 검출이다.
+    // Attach prelayout의 560×180은 원격 디자인 storyboard 액자다. 역할별 Theme 토큰이 없으며
+    // attach_loading.rs의 이름 있는 LogicalPx 상수 두 개로만 사용한다. 본체 치수가 아니다.
     assert!(
-        named_value <= 19 && displayed <= roster,
-        "갤러리의 같은 Theme 값 자리 {named_value}(상한 19) 또는 전시 후보 {displayed}(전시 명부 {roster})가 상한을 넘었다. 줄어든 것은 실패가 아니다"
+        named_value <= 21 && displayed <= roster,
+        "갤러리의 같은 Theme 값 자리 {named_value}(상한 21) 또는 전시 후보 {displayed}(전시 명부 {roster})가 상한을 넘었다. 줄어든 것은 실패가 아니다"
     );
 }
 

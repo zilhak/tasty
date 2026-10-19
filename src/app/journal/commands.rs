@@ -43,6 +43,9 @@ struct CategoryReservation {
 #[derive(Clone)]
 pub(crate) struct IntentViewContinuation {
     #[cfg(feature = "gui")]
+    pub(crate) remote_request:
+        Option<std::sync::Arc<tasty_remote::pending_request::PendingRequest>>,
+    #[cfg(feature = "gui")]
     pub(crate) view: std::sync::Weak<()>,
     #[cfg(feature = "gui")]
     pub(crate) selection: std::sync::Weak<()>,
@@ -317,6 +320,13 @@ impl Commands {
                 origin,
                 view,
             } => {
+                #[cfg(feature = "gui")]
+                if response.error.is_some()
+                    && let Some(request) =
+                        view.as_ref().and_then(|view| view.remote_request.as_ref())
+                {
+                    request.finish();
+                }
                 // gui 가 꺼지면 IntentResult 가 view 연속을 보관하지 않는다.
                 #[cfg(not(feature = "gui"))]
                 let _ = view;

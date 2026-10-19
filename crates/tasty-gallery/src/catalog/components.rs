@@ -106,3 +106,5 @@ pub mod titlebar;
 pub mod toast;
 pub mod tools_menu;
 pub mod transfer;
+
+pub mod attach_loading;

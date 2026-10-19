@@ -7,6 +7,7 @@
 //! 기준은 docs/architecture/ui-widgets-crate.md와 docs/dev-guide/gallery-first.md를 따른다.
 
 mod approval_choice;
+mod attach_loading;
 mod attach_refusal;
 mod attach_size_sync;
 mod attention;
@@ -90,6 +91,7 @@ mod two_depth;
 mod ui_code;
 mod warning_callout;
 pub use approval_choice::approval_choice;
+pub use attach_loading::{LoadingPlacement, PendingIndicator, paint_loading_overlay};
 pub use attach_refusal::{
     AttachRefusalBannerClicks, AttachRefusalBannerView, attach_refusal_avatar_tooltip,
     attach_refusal_banner, attach_refusal_banner_content, attach_refusal_mark,

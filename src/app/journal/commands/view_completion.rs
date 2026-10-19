@@ -557,6 +557,7 @@ mod preset_failure_tests {
 
     fn continuation(view: &crate::view::state::ViewState) -> IntentViewContinuation {
         IntentViewContinuation {
+            remote_request: None,
             view: view.identity(),
             selection: std::sync::Weak::new(),
             activate_surface: None,

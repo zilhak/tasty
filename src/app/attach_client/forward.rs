@@ -10,6 +10,7 @@ use crate::app::App;
 use crate::app::attach_client::{GIT_VIEWER_PLUGIN_ID, GIT_VIEWER_QUERY_RESULT_EVENT};
 use crate::ipc::stream::{StreamControl, StreamTag, StructuralOp};
 use crate::runtime::engine_session::EngineId;
+use crate::state::attach_pending::QueryConsumer;
 use std::collections::HashMap;
 use tasty_remote::client_session::{AttachClientSession, SessionState, SharedFrameSender};
 
@@ -86,6 +87,16 @@ impl App {
                 req.worktree_path.as_deref(),
                 req.diff_path.as_deref(),
             );
+            if send_result.is_ok()
+                && let Some(consumer) = req.consumer
+            {
+                self.begin_query_wait(
+                    req.local_surface_id,
+                    req.request_id,
+                    req.admitted,
+                    QueryConsumer::Git(consumer),
+                );
+            }
             if let Err(e) = send_result {
                 tracing::warn!(
                     "git_query_request send 실패 (local surface {}, request {}): {e}",
@@ -104,7 +115,16 @@ impl App {
             pending.append(&mut engine.remote.pending_markdown_content_forward);
         }
         for req in pending {
-            if let Err(e) = self.send_markdown_content_request(&req) {
+            let result = self.send_markdown_content_request(&req);
+            if result.is_ok() && req.user_wait {
+                self.begin_query_wait(
+                    req.local_surface_id,
+                    req.request_id,
+                    req.admitted,
+                    QueryConsumer::Markdown(req.local_surface_id),
+                );
+            }
+            if let Err(e) = result {
                 tracing::warn!(
                     "markdown_content_request send 실패 (local surface {}, request {}): {e}",
                     req.local_surface_id,
@@ -347,7 +367,7 @@ fn remote_structural_op(
     Some(wire.with_move_target_surface_id(remote_target))
 }
 
-fn find_mirror_session_and_remote_id<'a>(
+pub(super) fn find_mirror_session_and_remote_id<'a>(
     sessions: &'a mut [AttachClientSession],
     local_sid: u32,
     label: &str,

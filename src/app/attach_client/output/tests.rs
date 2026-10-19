@@ -87,6 +87,7 @@ fn a_structural_failure_reason_reaches_the_toast_verbatim() {
     crate::i18n::init("en");
     let toast_for = |reason: Option<&str>| {
         let payload = serde_json::to_vec(&StreamControl::StructuralResult {
+            created_surface_id: None,
             op_id: 0,
             ok: false,
             reason: reason.map(str::to_string),

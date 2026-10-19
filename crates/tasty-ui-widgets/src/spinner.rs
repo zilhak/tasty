@@ -14,6 +14,8 @@ const ARC_SWEEP: f32 = std::f32::consts::FRAC_PI_2;
 /// Spinner 빌더.
 pub struct Spinner {
     size: Option<f32>,
+    still_arc: bool,
+    stroke: f32,
     /// 설정을 무시하는 override. `None` 이면 `theme.reduced_motion` 을 따른다.
     reduced_motion: Option<bool>,
     /// 호출부 지정 색. `None` 이면 `theme.text_muted()`.
@@ -30,6 +32,8 @@ impl Spinner {
     pub fn new() -> Self {
         Self {
             size: None,
+            still_arc: false,
+            stroke: STROKE_VB,
             reduced_motion: None,
             color: None,
         }
@@ -54,6 +58,18 @@ impl Spinner {
         self
     }
 
+    /// Stroke in the design's 24-unit view box (rail loading uses 1.72).
+    pub fn stroke(mut self, stroke: f32) -> Self {
+        self.stroke = stroke;
+        self
+    }
+
+    /// LoadingOverlay/PendingIndicator use a still arc for reduced motion.
+    pub fn still_arc(mut self) -> Self {
+        self.still_arc = true;
+        self
+    }
+
     /// 그리고 hover 응답을 반환한다.
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
         let size = self
@@ -75,7 +91,8 @@ impl Spinner {
             return;
         }
 
-        if self.reduced_motion.unwrap_or(theme.reduced_motion) {
+        let reduced = self.reduced_motion.unwrap_or(theme.reduced_motion);
+        if reduced && !self.still_arc {
             draw_dots(ui, rect, color);
             return;
         }
@@ -83,15 +100,19 @@ impl Spinner {
         let painter = ui.painter();
         let center = rect.center();
         let scale = size / VIEWBOX;
-        let stroke_w = STROKE_VB * scale;
-        let radius = (VIEWBOX * 0.5 - STROKE_VB) * scale;
+        let stroke_w = self.stroke * scale;
+        let radius = (VIEWBOX * 0.5 - self.stroke) * scale;
 
         let track_color = color.gamma_multiply(TRACK_ALPHA);
         painter.circle_stroke(center, radius, egui::Stroke::new(stroke_w, track_color));
 
         let t = ui.ctx().input(|i| i.time);
         // Theme의 회전 주기를 초 단위로 변환한다.
-        let phase = (t / theme.spinner_duration().to_secs_f64()).rem_euclid(1.0) as f32;
+        let phase = if reduced {
+            0.0
+        } else {
+            (t / theme.spinner_duration().to_secs_f64()).rem_euclid(1.0) as f32
+        };
         let start = -std::f32::consts::FRAC_PI_2 + phase * std::f32::consts::TAU;
         draw_arc(
             ui,
@@ -103,7 +124,9 @@ impl Spinner {
             color,
         );
 
-        ui.ctx().request_repaint();
+        if !reduced {
+            ui.ctx().request_repaint();
+        }
     }
 }
 

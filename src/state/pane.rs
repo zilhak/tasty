@@ -139,6 +139,13 @@ impl RequestContext {
     /// 포커스된 pane 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
     #[cfg(feature = "gui")]
     pub fn close_active_pane(&mut self, engine: &EngineRead<'_>) -> bool {
+        if self
+            .attach_pending
+            .selected(engine, &self.navigation)
+            .is_some()
+        {
+            return false;
+        }
         let mirror_op = self.focused_surface_id(engine).map(|sid| {
             crate::ipc::stream::StructuralOp::ClosePane {
                 anchor_surface_id: sid,

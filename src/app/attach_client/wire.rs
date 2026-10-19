@@ -35,10 +35,14 @@ pub(super) fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
             ok: false,
             op_id,
             reason,
+            ..
         }) => Some(MirrorEvent::StructuralFailed(op_id, reason)),
         Ok(StreamControl::StructuralResult {
-            ok: true, op_id, ..
-        }) => Some(MirrorEvent::StructuralSucceeded(op_id)),
+            ok: true,
+            op_id,
+            created_surface_id,
+            ..
+        }) => Some(MirrorEvent::StructuralSucceeded(op_id, created_surface_id)),
         Ok(StreamControl::StructuralDelta {
             workspace_id,
             tree,

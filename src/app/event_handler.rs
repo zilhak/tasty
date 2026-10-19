@@ -487,6 +487,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         self.dispatch_pending_mesh_context_forwards();
         self.dispatch_pending_mesh_input_forwards();
+        self.sync_attach_waits();
 
         self.poll_remote_browsers();
         self.poll_auto_attach();

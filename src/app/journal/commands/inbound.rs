@@ -312,7 +312,23 @@ pub(crate) fn reply(
     ok: bool,
     reason: Option<String>,
 ) -> bool {
-    let result = StreamControl::StructuralResult { op_id, ok, reason };
+    reply_with_created(hub, client, op_id, ok, reason, None)
+}
+
+fn reply_with_created(
+    hub: &StreamHub,
+    client: u32,
+    op_id: u64,
+    ok: bool,
+    reason: Option<String>,
+    created_surface_id: Option<u32>,
+) -> bool {
+    let result = StreamControl::StructuralResult {
+        op_id,
+        ok,
+        reason,
+        created_surface_id,
+    };
     match serde_json::to_vec(&result) {
         Ok(payload) => {
             hub.push(client, StreamFrame::new(StreamTag::Control, payload))
@@ -357,7 +373,14 @@ pub(crate) fn deliver_result(
         );
         return;
     }
-    if !reply(hub, remote.client, remote.op_id, true, None) {
+    let created = response.result.as_ref().and_then(|result| {
+        result
+            .get("new_surface_id")
+            .or_else(|| result.get("surface_id"))
+            .and_then(|value| value.as_u64())
+            .and_then(|id| u32::try_from(id).ok())
+    });
+    if !reply_with_created(hub, remote.client, remote.op_id, true, None, created) {
         hub.unregister(remote.client);
         return;
     }

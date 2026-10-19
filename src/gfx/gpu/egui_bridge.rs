@@ -108,8 +108,9 @@ impl GpuState {
             ui::draw_ui(ctx, state, engine, scale_factor, plugin_alert);
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
             ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);
-            ui::draw_pane_tab_bars(ctx, state, engine, pane_rects, scale_factor);
+            ui::draw_pane_tab_bars(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
             ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor);
+            ui::attach_loading::draw(ctx, state, engine, terminal_rect, scale_factor, None);
             // 탭 바와 점유 테두리 뒤에 그려 대상 rect에서 가장 마지막에 둔다.
             let move_mark = ui::move_source::resolve(
                 state.pending_move,

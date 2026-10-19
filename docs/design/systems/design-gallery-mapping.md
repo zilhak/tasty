@@ -482,6 +482,9 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `forms/AutoComplete` | `AutoComplete` / `autocomplete_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis + substring 필터 + match highlight + max-height 스크롤) | `prim_autocomplete` |
 | `plugins.jsx/PathField`(:59) | `PathField` / `PathFieldOutcome` (AutoComplete 트리거 + Go IconButton, 편집/이동/원복 결정 = markdown `addr_outcome` 포팅, idle=secondary/editing=primary) | `prim_path_field` |
 | `feedback/StatusDot` | `status_dot`(kind+pulse, 점과 라벨 사이 `space-xs`) | `prim_status_dot` |
+| `components/feedback/LoadingOverlay.jsx` · `gallery/layouts-loading.jsx` | `paint_loading_overlay` / `LoadingPlacement`, `Spinner::still_arc` | `attach-loading` (Components): surface/tab/LNB/rail의 동일 기하 on/off |
+| `components/feedback/PendingIndicator.jsx` | `PendingIndicator` (count/time은 호출자 문구, compact, reduced motion) | `attach-loading` (Components) |
+| `gallery/layouts-loading-prelayout.jsx` | View 전용 생성 draft와 공용 loading 표시 | `attach-prelayout` (Components): 새 탭·surface/pane 양축 분할 |
 | `feedback/Spinner` | `Spinner`(size/color, 모션은 `Theme` 이 결정 · reduced_motion 은 override) | `prim_spinner` |
 | `feedback/CenterState` · `gallery/components.jsx` `CenterStateG`(Section `centerstate`) | `CenterState` / `CenterStateVariant` / `CenterStateOutput` / `CENTER_STATE_ERROR_GLYPH` (loading·empty·error, 글리프 24 · 제목 · 보조 줄 슬롯 항상 예약, 받은 영역 안 세로 가운데, 오류 글리프 alertTriangle 부품 소유, 선택 액션은 가운데 정렬 밖 보조 슬롯 아래 `center-state-action-gap`, 높이 없는 호스트는 대칭 자연 높이 — 액션이 있으면 위아래 48) | `prim_center_state` (Components `CenterState — empty · loading · error` 의 `center-state` · `center-state-action` · `center-state-unsized` spec) |
 | `feedback/Tooltip` | `Tooltip`(text/placement/id_source · `placement_top_then_bottom` · 탭 스트립 규칙 `placement_clear_of_native` · painter 전용 호출부의 `show_in`) · 호버 지연 `tooltip_hover_delay_elapsed` | `prim_help_hint` · convert(잘린 제목) |

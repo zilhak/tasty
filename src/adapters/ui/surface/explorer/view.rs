@@ -868,6 +868,25 @@ pub struct ExplorerViewStore {
 }
 
 impl ExplorerViewStore {
+    pub(crate) fn pending_remote_times(&self) -> Vec<(u32, Instant)> {
+        self.views
+            .iter()
+            .flat_map(|(surface, view)| {
+                view.remote_state
+                    .values()
+                    .filter_map(move |state| match state {
+                        RemoteLoadState::Loading { sent_at, .. } => Some((*surface, *sent_at)),
+                        _ => None,
+                    })
+                    .chain(
+                        view.addr_probe
+                            .as_ref()
+                            .and_then(|probe| probe.pending_since())
+                            .map(|since| (*surface, since)),
+                    )
+            })
+            .collect()
+    }
     pub(crate) fn poll_local_reads(
         &mut self,
         owner: &mut crate::app::local_reads::ReadRequests,

@@ -63,6 +63,8 @@ impl RequestContext {
         index: usize,
     ) {
         if index < engine.workspaces().len() {
+            #[cfg(feature = "gui")]
+            self.attach_pending.deselect();
             self.set_active_workspace_index(engine, index);
             let cat = engine
                 .workspace_at(index)

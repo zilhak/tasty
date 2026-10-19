@@ -52,9 +52,23 @@ pub(super) fn handle_ui_state(
     });
     #[cfg(not(feature = "gui"))]
     let tutorial = serde_json::Value::Null;
+    #[cfg(feature = "gui")]
+    let attach_pending = json!({
+        "selected": state.attach_pending.selected(engine, &state.navigation).map(|entry| entry.id.0),
+        "focused_surface": state.focused_surface_id(engine),
+        "requests": state.attach_pending.entries.iter().filter(|entry| !entry.receipt.finished() && entry.epoch.is_active()).map(|entry| json!({
+            "workspace": entry.workspace, "draft": entry.id.0, "op": entry.receipt.op(),
+            "creation": entry.creation.is_some(), "preview": entry.visible,
+            "result_received": entry.receipt.has_result(), "elapsed_ms": entry.receipt.admitted.elapsed().as_millis(),
+        })).collect::<Vec<_>>(),
+        "waits": state.attach_waits.iter().map(|(workspace, times)| json!({"workspace": workspace, "count": times.len(), "oldest_ms": times.iter().min().map(|time| time.elapsed().as_millis())})).collect::<Vec<_>>(),
+    });
+    #[cfg(not(feature = "gui"))]
+    let attach_pending = serde_json::Value::Null;
     JsonRpcResponse::success(
         id,
         json!({
+            "attach_pending": attach_pending,
             "tutorial": tutorial,
             // 열기 요청과 실제 모달 표시는 다르다. 표시 여부는 modal_open으로 확인한다.
             "settings_open_requested": state.has_settings_open_request(),

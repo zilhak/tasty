@@ -1,4 +1,4 @@
-<!-- source-hash: 1d3ccc20817b -->
+<!-- source-hash: cd8147e8633f -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -187,6 +187,14 @@ tasty settings set-remote-transfer --dir ~/Downloads/tasty --max-mb 2000
 
 When you pass the `--raw` output of a CLI attach to another command and that command exits first, the attach also ends normally.
 Other write errors, such as a permission problem on the output device, are reported as a failure.
+
+## While waiting for a response
+
+When you create a new Tab or split in a mirror, its space appears on the next frame. You cannot send input to that new area until the server confirms it, but you can select an existing Tab or area and keep working. If you select somewhere else while waiting, a late completion does not move your selection back. A failed request removes only its own temporary area.
+
+After 200 ms without a response, spinners appear in the Tab and sidebar, and **Waiting for response** with the elapsed time appears at the top-right of the Workspace. With several requests, it shows their count and the longest wait. Closing, moving, reopening, converting, and folder, document, or Git queries also show a wait without blocking the screen or input. Native WebViews stay visible and use the Tab and sidebar indicators.
+
+For ordinary input, a server that supports input acknowledgments confirms that preceding input has reached the app's processing boundary. This does not mean a shell command or program has finished. Normal input without output and long-running commands do not keep the indicator on; older servers are not asked for unsupported input acknowledgments. If the connection drops, the existing reconnection notice takes over.
 
 ## Troubleshooting
 

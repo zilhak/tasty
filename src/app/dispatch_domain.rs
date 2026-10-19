@@ -114,9 +114,10 @@ impl App {
         } = &dispatched.body
         {
             let id = source.engine();
-            let continuation = self.engines_mut().resolve(id).and_then(|context| {
+            let mut continuation = self.engines_mut().resolve(id).and_then(|context| {
                 context.view.map(
                     |view| crate::app::journal::commands::IntentViewContinuation {
+                        remote_request: None,
                         view: view.state.identity(),
                         selection: context.state.navigation.generation(),
                         activate_surface: None,
@@ -129,6 +130,11 @@ impl App {
                     },
                 )
             });
+            let receipt =
+                self.begin_attach_request(id, op, &dispatched.origin, dispatched.admitted);
+            if let Some(view) = continuation.as_mut() {
+                view.remote_request = receipt;
+            }
             self.journal.admit_remote_intent(
                 id,
                 op.clone(),
@@ -161,9 +167,10 @@ impl App {
         }
         let origin = dispatched.origin;
         let id = source.engine();
-        let continuation = self.engines_mut().resolve(id).and_then(|context| {
+        let mut continuation = self.engines_mut().resolve(id).and_then(|context| {
             context.view.map(
                 |view| crate::app::journal::commands::IntentViewContinuation {
+                    remote_request: None,
                     view: view.state.identity(),
                     selection: context.state.navigation.generation(),
                     activate_surface: None,
@@ -183,6 +190,10 @@ impl App {
             && let Some(op) =
                 crate::app::services::impl_mirror::build_mirror_forward_op(session.core, &intent)
         {
+            let receipt = self.begin_attach_request(id, &op, &origin, dispatched.admitted);
+            if let Some(view) = continuation.as_mut() {
+                view.remote_request = receipt;
+            }
             self.journal
                 .admit_remote_intent(id, op, &origin, continuation, Vec::new());
             return Ok(());

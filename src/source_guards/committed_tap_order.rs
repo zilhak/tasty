@@ -25,7 +25,7 @@ fn ordered(source: &str, tokens: &[&str]) -> bool {
 
 const RESULT_ORDER: &[&str] = &[
     "matches_client_binding(",
-    "if!reply(hub,remote.client,remote.op_id,true,None)",
+    "if!reply_with_created(hub,remote.client,remote.op_id,true,None,created)",
     "response.idempotent_replay",
     "workspace_holder(remote.workspace)",
     "StreamControl::StructuralDelta",
@@ -98,7 +98,7 @@ fn moving_taps_ahead_of_delta_or_out_of_sent_is_detected() {
     ));
     assert!(!ordered(
         &source.replace(
-            "if!reply(hub,remote.client,remote.op_id,true,None)",
+            "if!reply_with_created(hub,remote.client,remote.op_id,true,None,created)",
             "if!removed()"
         ),
         RESULT_ORDER

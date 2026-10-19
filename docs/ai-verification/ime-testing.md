@@ -44,7 +44,7 @@ call("surface.ime_disable")
 
 ## 제한
 
-- 윈도우 레벨 상태(`MainView.ime_active`/`ime_preedit`)를 직접 조작 — OS 실제 IME 엔진 비관여.
+- `Ime::Enabled/Preedit/Commit/Disabled`의 본체 처리 함수를 호출한다. OS 실제 IME 엔진은 관여하지 않는다. Enabled는 모드 활성화이며, 조합 대상은 첫 비어 있지 않은 Preedit 때 고정한다. 빈 Preedit로 끝난 조합의 대상은 뒤따르는 Commit 검사에만 남기며, 다음 비어 있지 않은 Preedit는 새 대상으로 고정한다.
 - `surface_id` 지정 미지원 — 항상 포커스된 surface.
 - 마우스 클릭에 의한 preedit 커밋은 시뮬레이션 불가(별도 경로).
 - OS IME 후보창 위치(`set_ime_cursor_area`)는 호출되나 실제 OS IME 는 열리지 않음.
@@ -64,7 +64,7 @@ call("surface.ime_disable")
   `debug inject egui-key --key Tab` 으로 포커스 체인을 돌린다 — 몇 번째 Tab 이 입력란에
   닿는지는 그 popup 의 위젯 순서에 달렸으므로, Tab 하나마다 trace 줄 수의 **증가분**을
   재서 켜지는 자리와 꺼지는 자리를 확인한다. popup을 닫은 뒤에는 trace가 더 나오지 않아야 하며, 이 조건으로 남은 IME 캐시가 없는지 확인한다.
-- 이 IPC/오버레이 경로는 **터미널 전용**이다. egui-mesh 의 IME 는 별도 경로이고, 그 안에서
+- 이 IPC의 Preedit/Commit 응답과 오버레이 검증은 **터미널 전용**이다. Enabled/Disabled는 본체 IME 상태 전이를 통과한다. egui-mesh 의 IME 는 별도 경로이고, 그 안에서
   다시 둘로 갈린다 — **surface** 는 winit IME 를 `ime.rs` 의 forward 로 plugin 에 넘기고,
   **popup**(markdown 의 파일열기 팝업 경로 입력 필드 등)은 host egui ctx 에 들어온
   `Event::Ime` 를 `collect_mesh_popup_input` 이 긁어 넘긴다. 어느 쪽이든 plugin egui

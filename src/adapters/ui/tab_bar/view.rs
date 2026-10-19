@@ -38,6 +38,7 @@ pub fn draw_pane_tab_bars_view(
     };
 
     for info in props.panes {
+        let action_start = output.actions.len();
         let geometry = strip_geometry(info, scale_factor, &dimensions);
         let logical_x = geometry.x.value();
         let logical_y = geometry.y.value();
@@ -50,7 +51,8 @@ pub fn draw_pane_tab_bars_view(
 
         // 활성 탭이나 pane 크기·탭 수가 바뀌었을 때만 필요한 스크롤을 보정한다.
         // 매 프레임 보정하면 사용자가 옮긴 스크롤을 덮어쓰므로 이전 값을 Context에 보관한다.
-        let scroll_track_id = egui::Id::new("tab_bar_active_scroll_track").with(info.pane_id);
+        let scroll_track_id =
+            egui::Id::new("tab_bar_active_scroll_track").with((info.pane_id, info.draft_pane));
         let prev_track: Option<(usize, f32, usize)> = ctx.data(|d| d.get_temp(scroll_track_id));
         let active_changed = match prev_track {
             Some((active, _, _)) => active != info.active_tab,
@@ -90,239 +92,252 @@ pub fn draw_pane_tab_bars_view(
             )
         });
 
-        let area_response = egui::Area::new(super::pane_tab_bar_layer(info.pane_id).id)
-            .fixed_pos(egui::pos2(logical_x, logical_y))
-            .order(egui::Order::Foreground)
-            .show(ctx, |ui| {
-                let bg = if info.is_focused {
-                    th.surface_raised()
-                } else {
-                    th.bg_sidebar()
-                };
+        let area_response = egui::Area::new(if let Some(id) = info.draft_pane {
+            egui::Id::new(("pending_pane_tabs", id))
+        } else {
+            super::pane_tab_bar_layer(info.pane_id).id
+        })
+        .fixed_pos(egui::pos2(logical_x, logical_y))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            let bg = if info.is_focused {
+                th.surface_raised()
+            } else {
+                th.bg_sidebar()
+            };
 
-                egui::Frame::new()
-                    .fill(bg.into())
-                    .inner_margin(egui::Margin::ZERO)
-                    .show(ui, |ui| {
-                        ui.set_min_width(logical_w);
-                        ui.set_max_width(logical_w);
-                        ui.set_min_height(bar_h);
-                        ui.set_max_height(bar_h);
+            egui::Frame::new()
+                .fill(bg.into())
+                .inner_margin(egui::Margin::ZERO)
+                .show(ui, |ui| {
+                    ui.set_min_width(logical_w);
+                    ui.set_max_width(logical_w);
+                    ui.set_min_height(bar_h);
+                    ui.set_max_height(bar_h);
 
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
 
-                            if needs_scroll {
-                                let cue = move_cue == Some(TabScrollArrowSide::Left);
-                                let can_left = scroll > 0.0 || cue;
-                                let (r, resp) = ui.allocate_exact_size(
-                                    egui::vec2(arrow_w, bar_h),
-                                    egui::Sense::click(),
-                                );
-                                tasty_ui_widgets::paint_tab_scroll_arrow(
-                                    ui,
-                                    th,
-                                    r,
-                                    TabScrollArrowSide::Left,
-                                    arrow_ink(can_left, cue),
-                                    resp.hovered(),
-                                );
-                                if resp.clicked() && can_left {
-                                    output.actions.push(TabBarAction::ScrollLeft {
-                                        pane_id: info.pane_id,
-                                    });
-                                }
-                            }
-
-                            let clip_start_x = ui.cursor().min.x;
-                            let clip_rect = egui::Rect::from_min_size(
-                                egui::pos2(clip_start_x, ui.cursor().min.y),
-                                egui::vec2(viewport_w, bar_h),
-                            );
-                            let (_, viewport_resp) = ui.allocate_exact_size(
-                                egui::vec2(viewport_w, bar_h),
+                        if needs_scroll {
+                            let cue = move_cue == Some(TabScrollArrowSide::Left);
+                            let can_left = scroll > 0.0 || cue;
+                            let (r, resp) = ui.allocate_exact_size(
+                                egui::vec2(arrow_w, bar_h),
                                 egui::Sense::click(),
                             );
-                            if viewport_resp.secondary_clicked() {
-                                output.actions.push(TabBarAction::OpenPaneContextMenu {
-                                    pane_id: info.pane_id,
-                                    pos: viewport_resp.interact_pointer_pos().unwrap_or_default(),
-                                });
-                                ui.painter().rect_stroke(
-                                    clip_rect,
-                                    0.0,
-                                    egui::Stroke::new(
-                                        th.focus_ring_width.value(),
-                                        th.accent_success(),
-                                    ),
-                                    egui::StrokeKind::Inside,
-                                );
-                            } else if viewport_resp.clicked() {
-                                // 빈 영역 클릭은 탭 전환 없이 pane 포커스만 바꾼다.
-                                output.actions.push(TabBarAction::FocusPane {
+                            tasty_ui_widgets::paint_tab_scroll_arrow(
+                                ui,
+                                th,
+                                r,
+                                TabScrollArrowSide::Left,
+                                arrow_ink(can_left, cue),
+                                resp.hovered(),
+                            );
+                            if resp.clicked() && can_left {
+                                output.actions.push(TabBarAction::ScrollLeft {
                                     pane_id: info.pane_id,
                                 });
                             }
+                        }
 
-                            let painter = ui.painter().with_clip_rect(clip_rect);
-                            let mut x = clip_start_x - scroll;
-
-                            let tab_context = super::tab::TabRenderContext {
-                                props,
-                                info,
-                                painter: &painter,
+                        let clip_start_x = ui.cursor().min.x;
+                        let clip_rect = egui::Rect::from_min_size(
+                            egui::pos2(clip_start_x, ui.cursor().min.y),
+                            egui::vec2(viewport_w, bar_h),
+                        );
+                        let (_, viewport_resp) = ui.allocate_exact_size(
+                            egui::vec2(viewport_w, bar_h),
+                            egui::Sense::click(),
+                        );
+                        if viewport_resp.secondary_clicked() && info.draft_pane.is_none() {
+                            output.actions.push(TabBarAction::OpenPaneContextMenu {
+                                pane_id: info.pane_id,
+                                pos: viewport_resp.interact_pointer_pos().unwrap_or_default(),
+                            });
+                            ui.painter().rect_stroke(
                                 clip_rect,
-                                bg,
-                                separator_w: LogicalPx(separator_w),
-                            };
-                            for i in 0..info.tab_names.len() {
-                                x = super::tab::draw_tab(
-                                    ui,
-                                    &tab_context,
-                                    &mut output,
-                                    i,
-                                    LogicalPx(x),
-                                )
-                                .value();
-                            }
+                                0.0,
+                                egui::Stroke::new(th.focus_ring_width.value(), th.accent_success()),
+                                egui::StrokeKind::Inside,
+                            );
+                        } else if viewport_resp.clicked() {
+                            // 빈 영역 클릭은 탭 전환 없이 pane 포커스만 바꾼다.
+                            output.actions.push(TabBarAction::FocusPane {
+                                pane_id: info.pane_id,
+                            });
+                        }
 
-                            {
-                                let sep = egui::Rect::from_min_size(
-                                    egui::pos2(x, clip_rect.min.y),
-                                    egui::vec2(separator_w, bar_h),
-                                );
-                                painter.rect_filled(
-                                    sep,
-                                    0.0,
-                                    th.tab_separator().to_egui_premultiplied(),
-                                );
-                                x += separator_w;
-                            }
+                        let painter = ui.painter().with_clip_rect(clip_rect);
+                        let mut x = clip_start_x - scroll;
 
-                            // 탭 칸 링은 오른쪽 구분선까지 포함하므로 모든 탭과 구분선 뒤에 그린다.
-                            if let Some((i, super::TabMoveMark::Ring)) = info.move_mark {
-                                let cell_x =
-                                    clip_start_x - scroll + i as f32 * (tab_w + separator_w);
-                                let cell = egui::Rect::from_min_size(
-                                    egui::pos2(cell_x, clip_rect.min.y),
-                                    egui::vec2(tab_w + separator_w, bar_h),
-                                );
-                                tasty_ui_widgets::paint_move_source_ring(&painter, th, cell);
-                            }
+                        let tab_context = super::tab::TabRenderContext {
+                            props,
+                            info,
+                            painter: &painter,
+                            clip_rect,
+                            bg,
+                            separator_w: LogicalPx(separator_w),
+                        };
+                        for i in 0..info.tab_names.len() {
+                            x = super::tab::draw_tab(
+                                ui,
+                                &tab_context,
+                                &mut output,
+                                i,
+                                LogicalPx(x),
+                            )
+                            .value();
+                        }
 
-                            {
-                                let plus_rect = egui::Rect::from_min_size(
-                                    egui::pos2(x, clip_rect.min.y),
-                                    egui::vec2(plus_w, bar_h),
-                                );
-                                let plus_clip = plus_rect.intersect(clip_rect);
-                                if !plus_clip.is_negative() {
-                                    let resp = ui.interact(
-                                        plus_clip,
-                                        egui::Id::new(format!("tab_plus_{}", info.pane_id)),
-                                        egui::Sense::click(),
-                                    );
-                                    if resp.hovered() {
-                                        painter.rect_filled(
-                                            plus_rect,
-                                            0.0,
-                                            th.overlay_hover().to_egui_premultiplied(),
-                                        );
-                                    }
-                                    painter.text(
-                                        plus_rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        "+",
-                                        egui::FontId::proportional(plus_font_size),
-                                        th.text_muted().into(),
-                                    );
-                                    if resp.clicked() {
-                                        output.actions.push(TabBarAction::AddTab {
-                                            pane_id: info.pane_id,
-                                        });
-                                    }
-                                    if resp.secondary_clicked() {
-                                        output.actions.push(
-                                            TabBarAction::OpenNewTabButtonContextMenu {
-                                                pane_id: info.pane_id,
-                                                pos: resp
-                                                    .interact_pointer_pos()
-                                                    .unwrap_or_default(),
-                                            },
-                                        );
-                                        painter.rect_stroke(
-                                            plus_clip,
-                                            0.0,
-                                            egui::Stroke::new(
-                                                th.focus_ring_width.value(),
-                                                th.accent_success(),
-                                            ),
-                                            egui::StrokeKind::Inside,
-                                        );
-                                    }
-                                }
-                            }
+                        {
+                            let sep = egui::Rect::from_min_size(
+                                egui::pos2(x, clip_rect.min.y),
+                                egui::vec2(separator_w, bar_h),
+                            );
+                            painter.rect_filled(
+                                sep,
+                                0.0,
+                                th.tab_separator().to_egui_premultiplied(),
+                            );
+                            x += separator_w;
+                        }
 
-                            if needs_scroll {
-                                let cue = move_cue == Some(TabScrollArrowSide::Right);
-                                let can_right = scroll < max_scroll || cue;
-                                let (r, resp) = ui.allocate_exact_size(
-                                    egui::vec2(arrow_w, bar_h),
+                        // 탭 칸 링은 오른쪽 구분선까지 포함하므로 모든 탭과 구분선 뒤에 그린다.
+                        if let Some((i, super::TabMoveMark::Ring)) = info.move_mark {
+                            let cell_x = clip_start_x - scroll + i as f32 * (tab_w + separator_w);
+                            let cell = egui::Rect::from_min_size(
+                                egui::pos2(cell_x, clip_rect.min.y),
+                                egui::vec2(tab_w + separator_w, bar_h),
+                            );
+                            tasty_ui_widgets::paint_move_source_ring(&painter, th, cell);
+                        }
+
+                        {
+                            let plus_rect = egui::Rect::from_min_size(
+                                egui::pos2(x, clip_rect.min.y),
+                                egui::vec2(plus_w, bar_h),
+                            );
+                            let plus_clip = plus_rect.intersect(clip_rect);
+                            if !plus_clip.is_negative() && info.draft_pane.is_none() {
+                                let resp = ui.interact(
+                                    plus_clip,
+                                    egui::Id::new(format!("tab_plus_{}", info.pane_id)),
                                     egui::Sense::click(),
                                 );
-                                tasty_ui_widgets::paint_tab_scroll_arrow(
-                                    ui,
-                                    th,
-                                    r,
-                                    TabScrollArrowSide::Right,
-                                    arrow_ink(can_right, cue),
-                                    resp.hovered(),
-                                );
-                                if resp.clicked() && can_right {
-                                    output.actions.push(TabBarAction::ScrollRight {
-                                        pane_id: info.pane_id,
-                                    });
-                                }
-                            }
-
-                            for (icon, is_split) in [(icons::SPLIT, true), (icons::SEARCH, false)] {
-                                let (r, resp) = ui.allocate_exact_size(
-                                    egui::vec2(icon_btn_w, bar_h),
-                                    egui::Sense::click(),
-                                );
-                                let color = if resp.hovered() {
-                                    th.text_primary()
-                                } else {
-                                    th.text_muted()
-                                };
                                 if resp.hovered() {
-                                    ui.painter().rect_filled(
-                                        r,
+                                    painter.rect_filled(
+                                        plus_rect,
                                         0.0,
                                         th.overlay_hover().to_egui_premultiplied(),
                                     );
                                 }
-                                let icon_rect = egui::Rect::from_center_size(
-                                    r.center(),
-                                    egui::vec2(icon_glyph, icon_glyph),
+                                painter.text(
+                                    plus_rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "+",
+                                    egui::FontId::proportional(plus_font_size),
+                                    th.text_muted().into(),
                                 );
-                                icon.image(icon_glyph, color.into()).paint_at(ui, icon_rect);
                                 if resp.clicked() {
-                                    output.actions.push(if is_split {
-                                        TabBarAction::RequestSplit {
-                                            pane_id: info.pane_id,
-                                        }
-                                    } else {
-                                        TabBarAction::OpenSearch {
-                                            pane_id: info.pane_id,
-                                        }
+                                    output.actions.push(TabBarAction::AddTab {
+                                        pane_id: info.pane_id,
                                     });
                                 }
+                                if resp.secondary_clicked() {
+                                    output.actions.push(
+                                        TabBarAction::OpenNewTabButtonContextMenu {
+                                            pane_id: info.pane_id,
+                                            pos: resp.interact_pointer_pos().unwrap_or_default(),
+                                        },
+                                    );
+                                    painter.rect_stroke(
+                                        plus_clip,
+                                        0.0,
+                                        egui::Stroke::new(
+                                            th.focus_ring_width.value(),
+                                            th.accent_success(),
+                                        ),
+                                        egui::StrokeKind::Inside,
+                                    );
+                                }
                             }
-                        });
-                    });
-            });
+                        }
 
+                        if needs_scroll {
+                            let cue = move_cue == Some(TabScrollArrowSide::Right);
+                            let can_right = scroll < max_scroll || cue;
+                            let (r, resp) = ui.allocate_exact_size(
+                                egui::vec2(arrow_w, bar_h),
+                                egui::Sense::click(),
+                            );
+                            tasty_ui_widgets::paint_tab_scroll_arrow(
+                                ui,
+                                th,
+                                r,
+                                TabScrollArrowSide::Right,
+                                arrow_ink(can_right, cue),
+                                resp.hovered(),
+                            );
+                            if resp.clicked() && can_right {
+                                output.actions.push(TabBarAction::ScrollRight {
+                                    pane_id: info.pane_id,
+                                });
+                            }
+                        }
+
+                        for (icon, is_split) in [(icons::SPLIT, true), (icons::SEARCH, false)] {
+                            if info.draft_pane.is_some() {
+                                ui.allocate_space(egui::vec2(icon_btn_w, bar_h));
+                                continue;
+                            }
+                            let (r, resp) = ui.allocate_exact_size(
+                                egui::vec2(icon_btn_w, bar_h),
+                                egui::Sense::click(),
+                            );
+                            let color = if resp.hovered() {
+                                th.text_primary()
+                            } else {
+                                th.text_muted()
+                            };
+                            if resp.hovered() {
+                                ui.painter().rect_filled(
+                                    r,
+                                    0.0,
+                                    th.overlay_hover().to_egui_premultiplied(),
+                                );
+                            }
+                            let icon_rect = egui::Rect::from_center_size(
+                                r.center(),
+                                egui::vec2(icon_glyph, icon_glyph),
+                            );
+                            icon.image(icon_glyph, color.into()).paint_at(ui, icon_rect);
+                            if resp.clicked() {
+                                output.actions.push(if is_split {
+                                    TabBarAction::RequestSplit {
+                                        pane_id: info.pane_id,
+                                    }
+                                } else {
+                                    TabBarAction::OpenSearch {
+                                        pane_id: info.pane_id,
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+        });
+
+        if let Some(id) = info.draft_pane {
+            if output.actions[action_start..].iter().any(|action| {
+                matches!(
+                    action,
+                    TabBarAction::SwitchTab { .. } | TabBarAction::FocusPane { .. }
+                )
+            }) {
+                output.pending_selection = Some(id);
+            }
+            output.actions.truncate(action_start);
+        }
         if output.measured_height_physical.is_none() {
             let logical_h = LogicalPx(area_response.response.rect.height());
             output.measured_height_physical = Some(logical_h.to_physical(scale_factor));

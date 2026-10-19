@@ -6799,3 +6799,11 @@ help = "Acknowledge every notification in the selected scope"
 
 [cli.help._root.notification.read.arg.workspace]
 help = "Filter by source workspace ID, including closed workspaces"
+
+[attach.pending]
+new_tab = "New tab"
+one = "Waiting for response"
+many = "Waiting for {} responses"
+seconds = "{}s"
+minutes = "{}m"
+hours = "{}h"
