@@ -9,6 +9,7 @@ pub mod remote_check;
 pub mod remote_new_workspace;
 pub mod remote_profile;
 pub mod remote_workspaces;
+mod run_wait;
 
 use anyhow::Result;
 

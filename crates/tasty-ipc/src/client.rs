@@ -196,6 +196,34 @@ impl IpcConnection {
         }
     }
 
+    /// 응답을 `bound`까지만 읽는다. 후속 조회처럼 호출자가 자기 대기 상한을 지켜야 할 때 쓴다.
+    /// 요청의 `response_timeout_ms`(서버가 지키는 최초 명령의 응답 시한)는 바꾸지 않는다.
+    /// 상한 안에 응답 줄을 다 읽지 못하면 `Ok(None)`이다. 그 응답이 나중에 도착할 수 있으므로
+    /// 이 연결을 다시 쓰지 않는다. 그 밖의 결과는 [`Self::send`]와 같고 읽기 timeout을 없앤다.
+    pub fn send_reading_within(
+        &mut self,
+        request: &JsonRpcRequest,
+        bound: Duration,
+    ) -> Result<Option<serde_json::Value>> {
+        // 0은 timeout 없음이라 남은 시간이 없어도 최소 1ms를 둔다.
+        self.reader
+            .get_ref()
+            .set_read_timeout(Some(bound.max(Duration::from_millis(1))))?;
+        let sent = self.send(request);
+        if let Err(e) = &sent
+            && e.downcast_ref::<std::io::Error>().is_some_and(|io| {
+                matches!(
+                    io.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                )
+            })
+        {
+            return Ok(None);
+        }
+        self.reader.get_ref().set_read_timeout(None)?;
+        sent.map(Some)
+    }
+
     /// 연결당 한 번 기능을 조회한다. 실제 요청과 같은 session_token으로 호출자를 유지한다.
     pub fn capabilities(&mut self, session_token: Option<&str>) -> Result<&BTreeMap<String, u32>> {
         self.capabilities_within(session_token, None)
@@ -376,6 +404,52 @@ mod tests {
             required_key_version("workspace.list").expect("읽기"),
             IDEMPOTENCY_CAPABILITY_VERSION
         );
+    }
+
+    #[test]
+    fn a_bounded_read_gives_up_on_a_silent_server_and_keeps_a_prompt_answer() {
+        use std::io::{BufRead, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut conn = IpcConnection::new(TcpStream::connect(addr).unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let mut reader = std::io::BufReader::new(server.try_clone().unwrap());
+        let mut writer = server;
+        let req = JsonRpcRequest {
+            caller_agent_id: None,
+            jsonrpc: "2.0".to_string(),
+            method: "run.result".to_string(),
+            params: serde_json::json!({ "run": 1 }),
+            id: Some(serde_json::Value::from(1)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: None,
+        };
+
+        let answer = std::thread::spawn(move || {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            writeln!(
+                writer,
+                r#"{{"jsonrpc":"2.0","id":1,"result":{{"done":true}}}}"#
+            )
+            .unwrap();
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            (reader, writer)
+        });
+        let first = conn
+            .send_reading_within(&req, std::time::Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(first, Some(serde_json::json!({ "done": true })));
+
+        let started = std::time::Instant::now();
+        let second = conn
+            .send_reading_within(&req, std::time::Duration::from_millis(200))
+            .unwrap();
+        assert_eq!(second, None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+        drop(answer.join().unwrap());
     }
 
     #[test]
