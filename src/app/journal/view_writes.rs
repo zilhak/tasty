@@ -112,6 +112,8 @@ impl ViewWrites {
                     self.failed.remove(&view.binding.stream);
                 }
             }
+            // 손상 범위가 남아 있는 동안 선택은 저장하지 않는다. 다시 보내도 같은 응답이므로 실패로 두지 않는다.
+            Ok(ResultValue::ViewDeferred) => {}
             Err(error) => {
                 tracing::warn!("View snapshot write failed: {error}");
                 // A later value already queued is the retry; the older failure must not outlive it.

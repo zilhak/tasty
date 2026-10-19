@@ -194,6 +194,9 @@ pub(crate) enum ResultValue {
     },
     #[cfg(feature = "gui")]
     ViewSaved,
+    /// 손상 범위가 남아 있어 View를 저장하지 않았다. 저장은 domain snapshot을 함께 쓰므로 미룬다.
+    #[cfg(feature = "gui")]
+    ViewDeferred,
     Bound(BoundEngine),
     NeedsResolution,
     JoinedAdmission {

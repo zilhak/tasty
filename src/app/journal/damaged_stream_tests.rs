@@ -287,3 +287,65 @@ fn two_damaged_openings_in_one_bootstrap_get_different_fresh_slots() {
     drop(journal);
     drop(home);
 }
+
+/// A View save writes a domain snapshot of the loaded models and prunes cache snapshots. While a
+/// slot is damaged that snapshot would leave the slot out, so the next start would no longer find
+/// the damage; the save waits instead.
+#[cfg(feature = "gui")]
+#[test]
+fn a_view_save_waits_while_a_slot_is_damaged() {
+    let home = damaged_home();
+    let before = rows(&home);
+    let (mut journal, mut first) = boot(
+        EngineSelection::Slot {
+            slot: 1,
+            resume: true,
+        },
+        Some(1),
+    );
+    let workspace = first.core_state.local_workspaces()[0].id;
+    journal.queue_view(
+        crate::runtime::journal_product::view_record::StoredView::capture(
+            first.journal_binding.clone().unwrap(),
+            &first.core_state,
+            Some(workspace),
+            &crate::model::StructurePresentationSnapshot::default(),
+        ),
+    );
+    let mut stall = StallBudget::new(&journal);
+    while journal.has_pending_view_writes() {
+        journal.poll_bootstrap(&mut [&mut first], None).unwrap();
+        stall.nap("deferred View save");
+    }
+    assert!(
+        !journal.view_writes.has_failures(),
+        "waiting is not a failure"
+    );
+    drop(journal);
+    assert_eq!(rows(&home), before, "no snapshot is written or pruned");
+    let manifests: i64 = rusqlite::Connection::open(home.database())
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM restore_manifests", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(manifests, 0);
+
+    // Building the first session moved this thread's home; point the restart at the damaged home.
+    tasty_utils::path::push_home_override(home.dir.path().to_path_buf());
+    let (mut journal, _first) = boot(
+        EngineSelection::Slot {
+            slot: 1,
+            resume: true,
+        },
+        Some(1),
+    );
+    assert_eq!(
+        journal.take_notices().len(),
+        1,
+        "the next start still finds the damaged slot"
+    );
+    assert_eq!(journal.damaged_layout_slots().collect::<Vec<_>>(), vec![2]);
+    drop(journal);
+    tasty_utils::path::pop_home_override();
+}

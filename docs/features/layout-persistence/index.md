@@ -267,6 +267,7 @@ App의 읽기 lease에 잡힌 payload는 Busy 대기와 늦은 완료 동안 sna
 - 손상된 stream마다 경고 알림 하나(레이아웃 슬롯 번호와 원인), snapshot을 건너뛰었으면 경고 하나를 남기고 같은 내용을 warn 로그로 남긴다.
 - 손상된 슬롯 번호는 이번 실행에서 고르지 않는다. 그 슬롯을 복원하려던 윈도우는 어떤 기록에도 쓰이지 않은 새 슬롯 번호로 새 레이아웃을 시작한다. 새 윈도우의 슬롯 배정도 손상된 번호를 점유로 센다. worker도 손상된 슬롯의 엔진 열기를 거절한다.
 - 손상 범위가 있는 동안 checkpoint(snapshot 저장·로그 압축·payload GC·manifest 정리)를 하지 않는다. 새 snapshot은 빠진 stream을 담지 못하고 압축은 읽지 못한 원본을 지울 수 있기 때문이다. 다음 실행도 같은 손상을 다시 발견하므로 원본은 계속 남는다.
+- 해석하지 못해 건너뛴 snapshot이 있을 때도 손상 범위로 본다. 이 동안 View 선택 저장도 하지 않는다. View 저장은 지금 적재한 모델로 domain snapshot을 함께 쓰고 cache snapshot을 정리하므로, 손상 stream이 빠진 snapshot을 남기거나 건너뛴 snapshot 행을 지울 수 있기 때문이다. 이 실행에서 바꾼 선택은 다음 실행에 복원되지 않으며 이전에 저장한 선택은 그대로 남는다.
 - headless는 과거 stream을 복원하지 않으므로 손상과 관계없이 새 stream으로 시작한다.
 
 View checkpoint는 journal의 restore manifest가 별도 원본으로 보관한다. domain snapshot,

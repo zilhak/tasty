@@ -53,6 +53,8 @@ impl ResultValue {
             Self::AssemblyResolved { .. } => "AssemblyResolved",
             #[cfg(feature = "gui")]
             Self::ViewSaved => "ViewSaved",
+            #[cfg(feature = "gui")]
+            Self::ViewDeferred => "ViewDeferred",
             Self::Bound(_) => "Bound",
             Self::NeedsResolution => "NeedsResolution",
             Self::JoinedAdmission { .. } => "JoinedAdmission",

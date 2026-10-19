@@ -426,6 +426,13 @@ pub(super) fn save_view(
     {
         return Err("View snapshot belongs to a retired engine binding".into());
     }
+    // View 저장은 지금 모델로 domain snapshot을 쓰고 cache snapshot을 정리한다. 손상 범위가 있으면
+    // 그 snapshot에 빠진 stream이 없어 다음 실행이 손상을 다시 찾지 못하고, 정리가 읽지 못한
+    // snapshot 원본 행을 지울 수 있으므로 checkpoint처럼 쉰다.
+    if !executor.decider().report().is_clean() {
+        tracing::debug!("View checkpoint deferred while damaged journal records are kept");
+        return Ok(ResultValue::ViewDeferred);
+    }
     let snapshot = tasty_event_store::NewSnapshot {
         batch_id: inner
             .state
