@@ -4,10 +4,23 @@
 //! `notice_column_rect`로 정한다. 창 모형은 작업 영역과 오른쪽 위 pane의 탭 바만 그린다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{RestoreNoticeView, notice_column_rect, restore_notice};
 
 use crate::catalog::popup_frame::TITLE_BAR_HEIGHT;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+// 대응 Theme 토큰이 없는 창 모형(액자) 전용 치수. 안내가 그 안에서 놓이는 모습만 보인다.
+/// 흐름·저장 멈춤 창 모형의 폭.
+const WINDOW_W: LogicalPx = LogicalPx(560.0);
+/// 흐름 창 모형의 높이.
+const FLOW_WINDOW_H: LogicalPx = LogicalPx(340.0);
+/// 저장 멈춤 창 모형의 높이. 본문이 한 줄 길다.
+const HALT_WINDOW_H: LogicalPx = LogicalPx(360.0);
+/// 좁은 창 모형의 폭. 작업 영역 − 2 × inset 이 열 폭보다 좁아지는 경우를 보인다.
+const NARROW_WINDOW_W: LogicalPx = LogicalPx(276.0);
+/// 좁은 창 모형의 높이. 긴 경로가 여러 줄로 감긴다.
+const NARROW_WINDOW_H: LogicalPx = LogicalPx(440.0);
 
 const SHORT_PATH: &str = "~/.tasty/structure/journal.db";
 const LONG_PATH: &str = "/Users/someone/Library/Application Support/dev.zilhak.tasty/profiles/work-laptop-2026/structure/journal.db";
@@ -95,7 +108,7 @@ fn window(
 /// 흐름 1: 기본 workspace로 시작 → 안내(터미널이 포커스 유지) → Continue/× 뒤 빈 창.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let latte = crate::host_shell::latte_theme();
-    let size = egui::vec2(560.0, 340.0);
+    let size = egui::vec2(WINDOW_W.value(), FLOW_WINDOW_H.value());
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         for (label, th) in [("Mocha", theme), ("Latte", &latte)] {
             spec::cluster(
@@ -210,7 +223,7 @@ pub fn draw_variants(ui: &mut egui::Ui, theme: &Theme) {
                     window(
                         ui,
                         th,
-                        egui::vec2(276.0, 440.0),
+                        egui::vec2(NARROW_WINDOW_W.value(), NARROW_WINDOW_H.value()),
                         Some(view(
                             &format!("{label}-narrow"),
                             Variant::Restore,
@@ -224,7 +237,7 @@ pub fn draw_variants(ui: &mut egui::Ui, theme: &Theme) {
                 window(
                     ui,
                     th,
-                    egui::vec2(560.0, 360.0),
+                    egui::vec2(WINDOW_W.value(), HALT_WINDOW_H.value()),
                     Some(view(
                         &format!("{label}-halt"),
                         Variant::Halt,
