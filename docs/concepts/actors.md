@@ -28,7 +28,7 @@ tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach �
 ### 강한 점유 (hard)
 
 - **배타 + readonly.** 점유한 주체만 조작하고, 그동안 **로컬 사용자·다른 주체는 그 대상에 대해 readonly** — 무슨 일이 일어나는지 *볼 수만* 있다.
-- **원격 attach 가 이 계층의 사례** 다(원격 사용자는 hard 점유로만 동작) → [`../features/remote-attach/`](../features/remote-attach/index.md), 메커니즘 [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md).
+- **원격 attach 가 이 계층의 사례** 다(attach 스트림으로 화면을 조작하는 원격 사용자는 hard 점유 안에서만 조작한다. SSH 셸·터널로 CLI·IPC 를 쓸 때는 에이전트와 같은 조건이다) → [`../features/remote-attach/`](../features/remote-attach/index.md), 메커니즘 [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md).
 
 ### 공통 규칙
 
@@ -41,9 +41,9 @@ tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach �
 | | 로컬 사용자 | AI Agent | 원격 접속 사용자 |
 |---|---|---|---|
 | 부류 | 사람 | AI | 사람 |
-| 동작 경로 | 직접 GUI 입력 | IPC / CLI | attach 연결 |
-| 분류 성격 | 사용자 행동 | 에이전트 행동 | **에이전트와 같은 권한 + 점유** |
-| 점유 | 불필요 | **선택** (soft/hard) | **필수** (강한 점유 안에서만) |
+| 동작 경로 | 직접 GUI 입력 | IPC / CLI | SSH 셸·터널의 CLI·IPC, attach 연결 |
+| 분류 성격 | 사용자 행동 | 에이전트 행동 | **에이전트와 같은 권한** |
+| 점유 | 불필요 | **선택** (soft/hard) | CLI·IPC 는 에이전트와 같음(선택). attach 스트림 조작은 **필수** (강한 점유 안에서만) |
 | 포커스 | 주인 | 안 건드림 | 로컬 포커스 비주인 |
 | 타 점유 강제해제(force-detach) | **있음** (GUI 강제 끊기) | 없음 — release 에 공개 IPC·CLI 없음 (자기 점유 self-release 만) | 없음 — 에이전트와 같음 (자기 점유 self-release 만) |
 | 동시 수 | 보통 1 | 0..N | 0..N |

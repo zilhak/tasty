@@ -8,7 +8,7 @@
 
 ## 목적
 
-다른 호스트(또는 동일 머신의 다른 인스턴스)의 surface/workspace 를 **점유(occupy)** 해 mirror 로 보고 조작하는 기능. tasty 는 자체 원격 프로토콜·암호화를 만들지 않고 **SSH 에 위임**한다 — "그 호스트에 SSH 로 들어올 수 있는 사람 = attach 자격"(tmux 모델). 원격 접속 사용자가 tasty 를 쓰는 유일한 경로이며, [actors](../../concepts/actors.md) 의 **점유 모델**이 실제로 구현되는 지점이다.
+다른 호스트(또는 동일 머신의 다른 인스턴스)의 surface/workspace 를 **점유(occupy)** 해 mirror 로 보고 조작하는 기능. tasty 는 자체 원격 프로토콜·암호화를 만들지 않고 **SSH 에 위임**한다 — "그 호스트에 SSH 로 들어올 수 있는 사람 = attach 자격"(tmux 모델). 원격 접속 사용자가 tasty 화면을 mirror 로 보고 조작하는 경로이며(SSH 셸·터널로 CLI·IPC 를 쓰는 것은 에이전트와 같은 조건이다), [actors](../../concepts/actors.md) 의 **점유 모델**이 실제로 구현되는 지점이다.
 
 ## 내부 동작 (headless-valid)
 
