@@ -110,6 +110,13 @@ fn an_unreadable_slot_file_reports_an_error_and_starts_fresh() {
     let popup = notices[0].popup.as_ref().expect("a visible notice");
     assert_eq!(popup.cause, notices::NoticeCause::ReadDenied);
     assert_eq!(popup.path, file.display().to_string());
+    assert!(
+        notices[0]
+            .body
+            .contains(crate::i18n::t("recovery.legacy_not_reimported")),
+        "{}",
+        notices[0].body
+    );
     drop(journal);
     let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o000, "the file's permissions are unchanged");

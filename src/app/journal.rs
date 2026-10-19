@@ -363,7 +363,10 @@ impl JournalApplication {
                     },
                     path: path.clone(),
                 },
-                cause,
+                &format!(
+                    "{}\n{cause}",
+                    crate::i18n::t("recovery.legacy_not_reimported")
+                ),
             ),
             BindingIssue::MissingScrollback { count, path } => notices::RecoveryNotice::warning(
                 Some(engine),
