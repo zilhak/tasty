@@ -8,6 +8,7 @@ pub(super) fn persist(
     ticket: u64,
     binding: EngineBinding,
     captures: Vec<CapturedSurface>,
+    drop_uncaptured_scrollback: bool,
 ) -> Result<ResultValue, String> {
     executor
         .with_state(|_| ())
@@ -15,6 +16,7 @@ pub(super) fn persist(
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
     hash.update(b"tasty-surface-capture-v1");
+    hash.update([u8::from(drop_uncaptured_scrollback)]);
     let header = serde_json::to_vec(&binding).map_err(|error| error.to_string())?;
     hash.update((header.len() as u64).to_le_bytes());
     hash.update(&header);
@@ -56,8 +58,10 @@ pub(super) fn persist(
         if model.engine_retired || model.engine_incarnation != binding.incarnation {
             return Err("capture belongs to a retired engine".into());
         }
+        let observed: std::collections::HashSet<u32> =
+            captures.iter().map(|capture| capture.surface).collect();
         // Removed/replaced instances are stale observations, never a reason to write to their successors.
-        let captures: Vec<_> = captures
+        let mut captures: Vec<_> = captures
             .into_iter()
             .filter(|capture| {
                 model.surfaces.get(&capture.surface).is_some_and(|surface| {
@@ -67,6 +71,9 @@ pub(super) fn persist(
                 })
             })
             .collect();
+        if drop_uncaptured_scrollback {
+            captures.extend(without_scrollback(&inner.store, model, &observed)?);
+        }
         let high_water = inner
             .state
             .streams
@@ -129,6 +136,62 @@ pub(super) fn persist(
         })
         .map(ResultValue::Executed)
         .map_err(|error| error.to_string())
+}
+
+/// 내용 복원이 꺼진 뒤에는 이번 capture가 관측하지 못한 terminal(아직 활성화하지 않은 지연
+/// placeholder 등)의 현재 payload도 이전 scrollback을 복원 원본으로 남기지 않는다. cwd·복원 명령은
+/// 그대로 두고 scrollback과 legacy 파일 참조만 뺀 새 불변 payload를 현재 activation에 기록한다.
+/// 이전 payload는 지우지 않는다. 다른 holder(undo·snapshot)가 없으면 payload GC가 정리한다.
+fn without_scrollback(
+    store: &tasty_event_store::EventStore,
+    model: &tasty_core::JournalModel,
+    observed: &std::collections::HashSet<u32>,
+) -> Result<Vec<CapturedSurface>, String> {
+    use crate::core::layout_persistence::import::surface_data::SurfaceData;
+    let mut stripped = Vec::new();
+    for (id, surface) in &model.surfaces {
+        if surface.kind != "terminal" || observed.contains(id) {
+            continue;
+        }
+        let Some(reference) = surface.data else {
+            continue;
+        };
+        let bytes = store
+            .read_payload(tasty_event_store::PayloadRef(reference.0))
+            .map_err(|error| error.to_string())?;
+        let SurfaceData::Terminal {
+            cwd,
+            restore_command,
+            scrollback_ref,
+            scrollback,
+        } = (match SurfaceData::decode(&bytes) {
+            Ok(data) => data,
+            Err(error) => {
+                tracing::warn!(surface = id, %error, "lazy terminal payload could not be decoded");
+                continue;
+            }
+        })
+        else {
+            continue;
+        };
+        if scrollback.is_none() && scrollback_ref.is_none() {
+            continue;
+        }
+        let data = SurfaceData::Terminal {
+            cwd,
+            restore_command,
+            scrollback_ref: None,
+            scrollback: None,
+        };
+        stripped.push(CapturedSurface {
+            surface: *id,
+            kind: surface.kind.clone(),
+            activation: surface.activation.map(|activation| activation.generation),
+            bytes: data.encode().map_err(|error| error.to_string())?,
+            restore_pending: false,
+        });
+    }
+    Ok(stripped)
 }
 
 /// A user close snapshots the canonical removed subtree. Lazy payload/seed references are copied

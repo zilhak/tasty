@@ -1,4 +1,4 @@
-<!-- source-hash: 994853e3679e -->
+<!-- source-hash: d64c2d456262 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -43,6 +43,8 @@ Press the same shortcut again to close the settings window.
 | **Remote transfer** | **Save folder** (default `~/.tasty/transfers/`) · **Maximum size** (MiB) — where files received from a remote Workspace are saved |
 | **Display** (macOS only) | **Cmd key display** · **Option key display** · **Shift key display** — choose text or symbols for keybinding notation |
 | **Permissions** (macOS only) | **Full Disk Access** · **Screen recording** status, **Request all permissions** (asks for the folders and screen recording in one go), and **Open System Settings** in the Full Disk Access row |
+
+Turn off **Restore surface content on restart** and earlier terminal content no longer comes back from the next start. Content that was already saved is not restored either, while the tab layout and working directories still are. Reopening a closed tab (`Ctrl+Shift+T`) also leaves out terminal content while the setting is off.
 
 ### Terminal
 

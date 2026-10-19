@@ -82,6 +82,11 @@ impl JournalApplication {
                 binding,
                 surfaces,
                 restore: crate::runtime::surface_capture::RestoreLookup::of(session),
+                drop_uncaptured_scrollback: !session
+                    .runtime
+                    .settings
+                    .general
+                    .restore_surface_content,
             };
             let size = crate::runtime::journal_product::request_size(&work);
             if size > tasty_ipc::admission::QUEUED_BYTES_LIMIT {

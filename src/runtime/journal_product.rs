@@ -102,6 +102,9 @@ pub(crate) enum Work {
         binding: EngineBinding,
         surfaces: Vec<crate::runtime::surface_capture::CapturedSurface>,
         restore: crate::runtime::surface_capture::RestoreLookup,
+        /// 내용 복원이 꺼져 있다. 이번 capture에 없는 terminal(지연 placeholder 등)의
+        /// 기존 payload에서도 scrollback을 뺀 새 payload를 기록한다.
+        drop_uncaptured_scrollback: bool,
     },
     CapturePreset {
         draft: crate::intent::preset_capture::PresetCaptureDraft,

@@ -145,7 +145,11 @@ Parked engine은 슬롯을 점유하지만 윈도우 ID가 없어 `window.list`�
 
 `general.restore_surface_content`(기본 on)가 켜져 있으면 터미널의 scrollback과 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`에 저장한다. 파일 magic은 `TSSB`다. 복원 시 이전 scrollback과 화면 내용을 새 터미널의 출력 앞에 넣는다.
 
-`persist_id`는 당시 TerminalStore의 scrollback persist ID 목록에 보관하고 다음 저장에서 같은 파일을 교체한다. 옵션이 꺼져 있으면 새 scrollback을 캡처하지 않는다. 설정 화면에서 on→off로 바꾸면 기존 scrollback 디렉터리를 정리한다. 복원은 저장된 `scrollback_ref`와 읽을 수 있는 파일을 사용한다.
+`persist_id`는 당시 TerminalStore의 scrollback persist ID 목록에 보관하고 다음 저장에서 같은 파일을 교체한다. 옵션이 꺼져 있으면 새 capture에 scrollback을 담지 않는다. 복원할 때도 payload에 남아 있는 scrollback을 터미널에 넣지 않으며, 배치·cwd·`restore.command`는 그대로 복원한다. 닫은 항목 복원도 같은 기준을 따른다.
+
+설정을 on→off로 바꾸면(설정 화면이든 다른 설정 적용 경로든) 창과 parked engine 모두를 dirty로 표시한다. 그래서 구조가 바뀌지 않아도 다음 저장 주기와 종료 저장에서 새 capture가 생긴다. 이 capture는 live 터미널을 scrollback 없이 다시 기록한다. 아직 활성화하지 않은 지연 탭처럼 capture가 관측하지 못한 터미널은 기존 payload에서 scrollback과 legacy 파일 참조만 뺀 새 payload를 현재 activation에 기록한다. 이후 현재 surface가 가리키는 payload에는 이전 scrollback이 없다.
+
+이전 payload는 이때 지우지 않는다. 소비하지 않은 닫은 항목 기록이나 보존 중인 snapshot 같은 다른 holder가 잡고 있으면 남고, 아래 [Journal snapshot 보존](#journal-snapshot-보존)에 따라 모든 pin이 사라지면 지워진다. 남아 있는 동안에도 설정이 꺼져 있으면 그 scrollback을 복원에 쓰지 않는다. 설정을 다시 켜면 이후 capture부터 scrollback을 저장하고, 아직 남은 닫은 항목 기록을 복원하면 그 기록의 scrollback이 다시 쓰인다. 설정 화면에서 on→off로 저장하면 legacy `scrollback/*.bin`도 지운다.
 
 Surface 닫기에서는 해당 `.bin`을 삭제한다. 부팅 GC는 슬롯 파일들과 아직 남아 있는 옛 `layout.json`의 `scrollback_ref` 합집합을 구해 참조되지 않는 `.bin`을 지운다. 참조 집합을 확정하지 못하면 그 회차 GC를 건너뛰고 아무 파일도 지우지 않는다.
 

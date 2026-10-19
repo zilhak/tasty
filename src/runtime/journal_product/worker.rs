@@ -519,10 +519,17 @@ fn handle_work(
             binding,
             mut surfaces,
             restore,
+            drop_uncaptured_scrollback,
         } => {
             // 복원 명령을 읽지 못하면 앞 capture를 남기고 dirty 상태로 다시 시도한다.
             restore.fill(&mut surfaces)?;
-            capture::persist(executor, ticket, binding, surfaces)
+            capture::persist(
+                executor,
+                ticket,
+                binding,
+                surfaces,
+                drop_uncaptured_scrollback,
+            )
         }
         Work::CaptureClosed {
             view,

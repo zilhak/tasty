@@ -14,7 +14,8 @@
 
 - 트리거: `restore_closed` 단축키([keybindings](../keybindings/index.md), 4 프리셋 공통 `Ctrl+Shift+T`).
 - 스택 top 의 항목 복원. Surface/Tab 은 호출 시점 focused pane 에. Pane 은 닫기 시점 split geometry(방향/비율/형제 pane)를 최대한 재현해 현재 워크스페이스 트리에 재삽입하고, 그 형제 pane 이 그새 사라졌으면 호출 시점 focused pane 기준으로 대체 분할한다. workspace 가 0개일 때 Surface/Tab/Pane 복원은 default workspace 를 먼저 만든 뒤.
-- scrollback은 `general.restore_surface_content`와 무관하게 닫기 capture의 불변 payload에 포함된다. 저장 실패를 별도 scrollback 파일이나 메모리 사본으로 성공 처리하지 않는다.
+- 닫기 capture는 live 터미널의 scrollback을 `general.restore_surface_content`가 켜져 있을 때만 불변 payload에 담는다. 아직 활성화하지 않은 지연 탭은 기존 payload 참조를 그대로 옮긴다. 저장 실패를 별도 scrollback 파일이나 메모리 사본으로 성공 처리하지 않는다.
+- 복원할 때 이 설정이 꺼져 있으면 기록에 scrollback이 있어도 터미널에 넣지 않는다. 기록 자체는 지우지 않으므로 설정을 다시 켠 뒤 복원하면 그 scrollback이 쓰인다([layout-persistence](../layout-persistence/index.md#surface-내용-복원-현재-터미널-scrollback)).
 - 닫기 시점 surface 메타 `restore.command`(예: claude plugin 의 `claude -r <id>`)가 있었으면 셸 시작 직후 자동 실행 → TUI 세션 재개([layout-persistence](../layout-persistence/index.md) 의 동일 메커니즘).
 - 복원할 항목 없으면 no-op (토스트/알림 없음).
 

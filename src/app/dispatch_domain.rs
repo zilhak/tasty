@@ -588,9 +588,17 @@ impl App {
             .map(|e| &e.runtime.settings);
         let prev_appearance = prev_settings.map(|s| s.appearance.clone());
         let prev_language = prev_settings.map(|s| s.general.language.clone());
+        let content_restore_turned_off = prev_settings
+            .is_some_and(|s| s.general.restore_surface_content)
+            && !new_settings.general.restore_surface_content;
 
         for session in self.engines.all_sessions_mut() {
             session.runtime.settings = new_settings.clone();
+            // 구조가 바뀌지 않아도 다음 capture가 생겨야 이전 scrollback이 든 payload가
+            // 현재 복원 원본에서 빠진다. 종료 강제 capture는 내용 복원이 꺼지면 dirty를 요구한다.
+            if content_restore_turned_off {
+                session.persistence.dirty.mark_dirty();
+            }
         }
         for main in self.main_windows_iter_mut() {
             main.mark_dirty();

@@ -227,7 +227,7 @@ fn prepare_inner(
 
     // Decode and validate opaque data before acquiring an OS child. A malformed capture must not
     // drop a newly spawned Pty while reporting a known pre-execution failure.
-    let decoded_capture = claimed
+    let mut decoded_capture = claimed
         .capture
         .as_deref()
         .map(crate::core::layout_persistence::import::surface_data::SurfaceData::decode)
@@ -239,6 +239,16 @@ fn prepare_inner(
         ) != (claimed.input.kind == "terminal")
     }) {
         anyhow::bail!("activation capture belongs to another kind");
+    }
+    // 내용 복원을 끈 뒤에는 아직 남아 있는 이전 payload(지연 탭·undo 기록 등)의 scrollback도
+    // 터미널에 넣지 않는다. payload 자체는 그 holder가 계속 소유한다.
+    if !engine.runtime.settings.general.restore_surface_content
+        && let Some(crate::core::layout_persistence::import::surface_data::SurfaceData::Terminal {
+            scrollback,
+            ..
+        }) = decoded_capture.as_mut()
+    {
+        *scrollback = None;
     }
     let mut scrollback_persist_id = None;
     let metadata = if matches!(
