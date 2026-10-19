@@ -349,3 +349,67 @@ fn a_view_save_waits_while_a_slot_is_damaged() {
     drop(journal);
     tasty_utils::path::pop_home_override();
 }
+
+/// A snapshot whose checksum holds but whose body cannot be decoded is skipped when loading. Its
+/// row stays: View saves wait instead of pruning it, and the next start warns again.
+#[cfg(feature = "gui")]
+#[test]
+fn a_skipped_snapshot_row_survives_view_saves_and_restarts() {
+    use sha2::Digest;
+    let home = damaged_home_with(&[]);
+    let body = b"checksum holds but this is no snapshot".to_vec();
+    let snapshot = {
+        let mut store = tasty_event_store::EventStore::open(&home.database(), JOURNAL_ID).unwrap();
+        let epoch = store.acquire_writer().unwrap();
+        let models = crate::runtime::journal::load_all(&store).unwrap();
+        crate::runtime::journal::save_snapshot(&mut store, epoch, &models).unwrap()
+    };
+    rusqlite::Connection::open(home.database())
+        .unwrap()
+        .execute(
+            "UPDATE payloads SET bytes = ?1, sha256 = ?2 WHERE payload_id =
+             (SELECT payload_id FROM snapshots WHERE snapshot_id = ?3)",
+            rusqlite::params![body, sha2::Sha256::digest(&body).to_vec(), snapshot as i64],
+        )
+        .unwrap();
+    let kept = || -> Vec<u8> {
+        rusqlite::Connection::open(home.database())
+            .unwrap()
+            .query_row(
+                "SELECT p.bytes FROM snapshots s JOIN payloads p ON p.payload_id = s.payload_id
+                 WHERE s.snapshot_id = ?1",
+                [snapshot as i64],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    for _ in 0..2 {
+        tasty_utils::path::push_home_override(home.dir.path().to_path_buf());
+        let (mut journal, mut first) = boot(
+            EngineSelection::Slot {
+                slot: 1,
+                resume: true,
+            },
+            Some(1),
+        );
+        assert_eq!(workspace_names(&first), vec!["slot-1".to_owned()]);
+        assert_eq!(journal.take_notices().len(), 1, "every start warns");
+        let workspace = first.core_state.local_workspaces()[0].id;
+        journal.queue_view(
+            crate::runtime::journal_product::view_record::StoredView::capture(
+                first.journal_binding.clone().unwrap(),
+                &first.core_state,
+                Some(workspace),
+                &crate::model::StructurePresentationSnapshot::default(),
+            ),
+        );
+        let mut stall = StallBudget::new(&journal);
+        while journal.has_pending_view_writes() {
+            journal.poll_bootstrap(&mut [&mut first], None).unwrap();
+            stall.nap("deferred View save");
+        }
+        drop(journal);
+        tasty_utils::path::pop_home_override();
+        assert_eq!(kept(), body, "the skipped snapshot row is kept");
+    }
+}
