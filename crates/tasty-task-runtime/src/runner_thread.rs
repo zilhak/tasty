@@ -453,7 +453,7 @@ fn now_ms() -> u64 {
 /// 저장된 handle을 분류해 복원하거나 정리한다.
 /// ShellProcess는 PID가 없을 때만 저장된 종료 결과를 확인한다. PID 생존은 같은 자식임을 보장하지 않는다.
 /// PolledDispatch·BarrierPoll은 복원하며 즉시 완료 handle은 삭제 대상으로 본다.
-/// AwaitExternal은 reload 당시 만료됐으면 실패 처리한다. 미만료 복원의 한계는 아래 분기를 참고한다.
+/// AwaitExternal은 reload 당시 만료됐으면 실패 처리하고, 미만료면 복원하면서 기한을 공유 대기에 다시 건다.
 fn reload_persistent_handles(
     ctx: &RunnerContext,
     workspace_id: u32,
@@ -476,6 +476,10 @@ fn reload_persistent_handles(
     for e in entries {
         match classify_persisted_handle(ctx, workspace_id, now, e) {
             HandleClassification::Alive(task_id, handle) => alive.push((task_id, handle)),
+            HandleClassification::AwaitingExternal(task_id, attempt, handle) => {
+                restore_external_deadline(ctx, workspace_id, &task_id, attempt, &handle);
+                alive.push((task_id, handle));
+            }
             HandleClassification::Dead(task_id, attempt, err) => dead.push((task_id, attempt, err)),
             HandleClassification::Stale(task_id) => stale.push(task_id),
             HandleClassification::NotRunning(task) => settled.push(*task),
@@ -513,6 +517,8 @@ fn reload_persistent_handles(
 /// `Dead`·`Precise` 의 회차는 handle 을 저장한 dispatch 의 회차다(v1·옛 레코드는 없음).
 enum HandleClassification {
     Alive(TaskId, DispatchHandle),
+    /// 미만료 AwaitExternal. 복원하면서 저장된 기한을 다시 검사 대상으로 등록한다.
+    AwaitingExternal(TaskId, Option<String>, DispatchHandle),
     Dead(TaskId, Option<String>, String),
     Stale(TaskId),
     /// handle 이 남았는데 task 는 이미 Running 이 아니다(러너가 꺼진 동안 취소 등). 남은 프로세스를
@@ -606,11 +612,13 @@ fn classify_persisted_handle(
             )
         }
         // 미만료 AwaitExternal도 외부 상태 변경 뒤 점유를 정리할 수 있도록 복원한다.
-        // 재시작한 hook_wait 매핑은 복원하지 않아 훅과 tick의 timeout sweep이 이 작업을 찾지 못한다.
-        // poll도 항상 Active이므로 기한 만료만으로는 끝나지 않고 다음 reload에서 다시 검사한다.
-        DispatchHandle::PolledDispatch { .. }
-        | DispatchHandle::BarrierPoll { .. }
-        | DispatchHandle::AwaitExternal { .. } => HandleClassification::Alive(task_id, handle),
+        // hook ID는 재시작 뒤 다시 발급될 수 있어 훅 매핑은 되살리지 않고 기한만 다시 건다.
+        DispatchHandle::AwaitExternal { .. } => {
+            HandleClassification::AwaitingExternal(task_id, attempt, handle)
+        }
+        DispatchHandle::PolledDispatch { .. } | DispatchHandle::BarrierPoll { .. } => {
+            HandleClassification::Alive(task_id, handle)
+        }
         DispatchHandle::ReduceImmediate(_)
         | DispatchHandle::CustomImmediate(_)
         | DispatchHandle::ImmediateFail(_) => HandleClassification::Stale(task_id),
@@ -750,30 +758,83 @@ fn load_task(ctx: &RunnerContext, workspace_id: u32, task_id: &str) -> Option<ta
     })
 }
 
-/// 대기 매핑을 먼저 회수한 뒤 만료 작업을 실패로 표시하고 대기자를 깨운다.
-/// 저장 실패는 경고하며 제거한 매핑을 재등록하지 않는다. 재시작으로 사라진 매핑은 대상이 아니다.
-/// 공유 매핑의 제거가 락 안에서 이뤄져 여러 workspace 러너가 같은 항목을 중복 회수하지 않는다.
-fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
-    let overdue = ctx.hook_task_waits.take_expired(now_ms);
-    for wait in overdue {
-        let workspace_id = wait.workspace;
-        let task_id = wait.task;
-        // 다른 engine 이 건 대기는 그 engine 의 id 발급기와 대기자 hub 로 끝낸다.
-        let mut owner_ctx = ctx.clone();
-        if let Some(owner) = wait.owner {
-            owner_ctx.agent_seq = owner.agent_seq;
-            owner_ctx.task_waker_hub = owner.completion;
-        }
-        let error = "push completion strategy timed out waiting for external report".to_string();
-        let completion = Completion::failed(wait.attempt, error);
-        if let Err(e) = owner_ctx.complete_task(workspace_id, &task_id, completion, now_ms) {
-            tracing::warn!("hook wait timeout: completion for {task_id} not recorded: {e}");
-        }
-        tracing::warn!(
-            "agent task {task_id} (ws {workspace_id}): push completion strategy timed out \
-             waiting for external report; failure update attempted"
+/// 복원한 AwaitExternal의 저장된 기한을 공유 대기에 건다. 기한 검사는 hook 대기와 같이
+/// 실행 중인 러너의 tick이 맡고, 만료 처리도 같은 함수가 한다.
+fn restore_external_deadline(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+    task_id: &TaskId,
+    attempt: Option<String>,
+    handle: &DispatchHandle,
+) {
+    let DispatchHandle::AwaitExternal { deadline_ms, .. } = handle else {
+        return;
+    };
+    ctx.hook_task_waits.register_restored(
+        workspace_id,
+        task_id.clone(),
+        *deadline_ms,
+        crate::hook_wait::HookWaitOwner {
+            agent_seq: ctx.agent_seq.clone(),
+            completion: ctx.task_waker_hub.clone(),
+        },
+        attempt,
+    );
+}
+
+/// 복원한 기한이 대표하는 회차가 아직 실행 중인지 본다. 기한 전에 외부 상태 변경으로 끝났거나
+/// 새 회차가 시작됐으면 시간 초과로 보고하지 않는다.
+fn restored_wait_still_running(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+    task_id: &TaskId,
+    attempt: Option<&str>,
+) -> bool {
+    let running = load_task(ctx, workspace_id, task_id).is_some_and(|task| {
+        matches!(task.state, TaskState::Running)
+            && attempt.is_none_or(|a| task.attempt.as_ref().is_some_and(|cur| cur.id == a))
+    });
+    if !running {
+        tracing::debug!(
+            "agent task {task_id} (ws {workspace_id}): restored push wait ended before its deadline"
         );
     }
+    running
+}
+
+/// 대기 매핑을 먼저 회수한 뒤 만료 작업을 실패로 표시하고 대기자를 깨운다.
+/// 저장 실패는 경고하며 제거한 매핑을 재등록하지 않는다. 재시작 뒤 복원한 대기는 기한만으로 회수한다.
+/// 공유 매핑의 제거가 락 안에서 이뤄져 여러 workspace 러너가 같은 항목을 중복 회수하지 않는다.
+fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
+    for wait in ctx.hook_task_waits.take_expired(now_ms) {
+        expire_hook_wait(ctx, wait, now_ms);
+    }
+}
+
+/// 회수한 대기 하나를 시간 초과 실패로 끝낸다. 복원한 대기는 그 회차가 아직 실행 중일 때만 끝낸다.
+fn expire_hook_wait(ctx: &RunnerContext, wait: crate::hook_wait::ExpiredWait, now_ms: u64) {
+    let workspace_id = wait.workspace;
+    let task_id = wait.task;
+    if wait.restored
+        && !restored_wait_still_running(ctx, workspace_id, &task_id, wait.attempt.as_deref())
+    {
+        return;
+    }
+    // 다른 engine 이 건 대기는 그 engine 의 id 발급기와 대기자 hub 로 끝낸다.
+    let mut owner_ctx = ctx.clone();
+    if let Some(owner) = wait.owner {
+        owner_ctx.agent_seq = owner.agent_seq;
+        owner_ctx.task_waker_hub = owner.completion;
+    }
+    let error = "push completion strategy timed out waiting for external report".to_string();
+    let completion = Completion::failed(wait.attempt, error);
+    if let Err(e) = owner_ctx.complete_task(workspace_id, &task_id, completion, now_ms) {
+        tracing::warn!("hook wait timeout: completion for {task_id} not recorded: {e}");
+    }
+    tracing::warn!(
+        "agent task {task_id} (ws {workspace_id}): push completion strategy timed out \
+         waiting for external report; failure update attempted"
+    );
 }
 
 /// 부팅 또는 러너 시작 때 점유 정리, handle 복원, Waiting task 의 readiness 재평가를 수행한다.
@@ -1680,7 +1741,7 @@ mod tests {
         assert!(!still_there, "expired handle should be evicted");
     }
 
-    /// reload 순간 미만료인 AwaitExternal은 복원한다. 이후 시간 경과만으로 끝나는지는 이 시험에서 확인하지 않는다.
+    /// reload 순간 미만료인 AwaitExternal은 복원한다. 이후 기한 만료는 restored_await_external_tests가 확인한다.
     #[test]
     fn reload_persistent_handles_restores_await_external_before_deadline() {
         let (_td, ctx) = fresh_ctx();
@@ -2052,3 +2113,7 @@ mod ttl_renewal_tests;
 #[cfg(test)]
 #[path = "runner_thread/reload_shrink_tests.rs"]
 mod reload_shrink_tests;
+
+#[cfg(test)]
+#[path = "runner_thread/restored_await_external_tests.rs"]
+mod restored_await_external_tests;

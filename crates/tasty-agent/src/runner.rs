@@ -81,8 +81,9 @@ pub enum DispatchHandle {
     ///
     /// 핸들은 영속되지만 호스트의 hook_wait 매핑은 영속되지 않는다. 재시작 시
     /// 미만료 핸들도 복원해야 이후 외부 상태 전이에서 permit을 정리할 수 있다.
-    /// deadline_ms는 Unix epoch 밀리초다. 호스트의 reload가 만료를 검사하며,
-    /// 누락된 옛 필드는 0으로 읽어 만료 처리한다. poll 자체는 기한을 검사하지 않는다.
+    /// deadline_ms는 Unix epoch 밀리초다. 호스트는 reload에서 만료를 검사하고, 복원한
+    /// 미만료 핸들의 기한은 실행 중인 러너의 만료 회수에 다시 건다. 누락된 옛 필드는
+    /// 0으로 읽어 만료 처리한다. poll 자체는 기한을 검사하지 않는다.
     AwaitExternal {
         wait_key: String,
         #[serde(default)]

@@ -14,8 +14,16 @@ static HOOK_WAIT_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// hook ID별 일회성 대기. 보고가 없으면 sweep_expired로 만료 항목을 회수해 호출자가 처리한다.
+/// 재시작으로 hook 매핑을 잃은 대기는 기한만 남겨 같은 만료 회수에 포함한다.
 pub struct HookTaskWaits {
-    inner: Mutex<HashMap<u64, HookWait>>,
+    inner: Mutex<Waits>,
+}
+
+#[derive(Default)]
+struct Waits {
+    by_hook: HashMap<u64, HookWait>,
+    /// 재시작 뒤 복원한 대기. hook ID는 재시작 뒤 다시 발급될 수 있어 훅으로 찾지 않는다.
+    restored: HashMap<(u32, TaskId), HookWait>,
 }
 
 struct HookWait {
@@ -38,6 +46,8 @@ pub(crate) struct ExpiredWait {
     pub(crate) task: TaskId,
     pub(crate) owner: Option<HookWaitOwner>,
     pub(crate) attempt: Option<String>,
+    /// 재시작 뒤 기한만 복원한 대기다. 그 사이 외부 보고로 끝났을 수 있다.
+    pub(crate) restored: bool,
 }
 
 /// 훅으로 찾은 대기 하나.
@@ -51,7 +61,7 @@ pub(crate) struct ResolvedWait {
 impl HookTaskWaits {
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(HashMap::new()),
+            inner: Mutex::new(Waits::default()),
         }
     }
 
@@ -72,7 +82,7 @@ impl HookTaskWaits {
             HOOK_WAIT_WHAT,
             &HOOK_WAIT_POISONED,
         );
-        guard.remove(&hook_id).map(|wait| ResolvedWait {
+        guard.by_hook.remove(&hook_id).map(|wait| ResolvedWait {
             workspace: wait.workspace,
             task: wait.task,
             owner: wait.owner,
@@ -93,6 +103,40 @@ impl HookTaskWaits {
         self.insert(hook_id, workspace, task, deadline, Some(owner), attempt);
     }
 
+    /// 재시작 뒤 복원한 대기의 기한을 등록한다. 같은 작업을 기다리는 hook 매핑이 아직 있으면
+    /// 그 매핑이 만료를 맡으므로 등록하지 않는다. 같은 작업의 재등록은 마지막 값으로 바꾼다.
+    pub(crate) fn register_restored(
+        &self,
+        workspace: u32,
+        task: TaskId,
+        deadline: u64,
+        owner: HookWaitOwner,
+        attempt: Option<String>,
+    ) {
+        let mut guard = tasty_utils::poison::recover_mutex(
+            self.inner.lock(),
+            HOOK_WAIT_WHAT,
+            &HOOK_WAIT_POISONED,
+        );
+        if guard
+            .by_hook
+            .values()
+            .any(|wait| wait.workspace == workspace && wait.task == task)
+        {
+            return;
+        }
+        guard.restored.insert(
+            (workspace, task.clone()),
+            HookWait {
+                workspace,
+                task,
+                deadline,
+                owner: Some(owner),
+                attempt,
+            },
+        );
+    }
+
     fn insert(
         &self,
         hook_id: u64,
@@ -107,7 +151,9 @@ impl HookTaskWaits {
             HOOK_WAIT_WHAT,
             &HOOK_WAIT_POISONED,
         );
-        guard.insert(
+        // 새 회차가 hook을 걸면 이전 회차의 복원 기한은 더 이상 이 작업을 대표하지 않는다.
+        guard.restored.remove(&(workspace, task.clone()));
+        guard.by_hook.insert(
             hook_id,
             HookWait {
                 workspace,
@@ -134,17 +180,35 @@ impl HookTaskWaits {
             &HOOK_WAIT_POISONED,
         );
         let ids: Vec<_> = guard
+            .by_hook
             .iter()
             .filter(|(_, wait)| wait.deadline <= now_ms)
             .map(|(id, _)| *id)
             .collect();
-        ids.into_iter()
-            .filter_map(|id| guard.remove(&id))
-            .map(|wait| ExpiredWait {
+        let keys: Vec<_> = guard
+            .restored
+            .iter()
+            .filter(|(_, wait)| wait.deadline <= now_ms)
+            .map(|(key, _)| key.clone())
+            .collect();
+        let hooked = ids
+            .into_iter()
+            .filter_map(|id| guard.by_hook.remove(&id))
+            .map(|wait| (wait, false))
+            .collect::<Vec<_>>();
+        let restored = keys
+            .into_iter()
+            .filter_map(|key| guard.restored.remove(&key))
+            .map(|wait| (wait, true));
+        hooked
+            .into_iter()
+            .chain(restored)
+            .map(|(wait, restored)| ExpiredWait {
                 workspace: wait.workspace,
                 task: wait.task,
                 owner: wait.owner,
                 attempt: wait.attempt,
+                restored,
             })
             .collect()
     }
@@ -156,7 +220,7 @@ impl HookTaskWaits {
             HOOK_WAIT_WHAT,
             &HOOK_WAIT_POISONED,
         );
-        guard.len()
+        guard.by_hook.len() + guard.restored.len()
     }
 
     /// `len` 이 시험 전용이므로 짝이 되는 이 메서드도 같은 게이트를 쓴다.
@@ -270,5 +334,46 @@ mod tests {
         let waits = HookTaskWaits::new();
         waits.register(1, 1, "t-1".to_string(), 1000);
         assert_eq!(waits.sweep_expired(1000), vec![(1, "t-1".to_string())]);
+    }
+
+    fn owner() -> HookWaitOwner {
+        HookWaitOwner {
+            agent_seq: Arc::new(AtomicU64::new(1)),
+            completion: Arc::new(TaskWakerHub::new()),
+        }
+    }
+
+    #[test]
+    fn a_restored_deadline_expires_once_and_is_not_resolved_by_a_hook() {
+        let waits = HookTaskWaits::new();
+        waits.register_restored(1, "t-1".into(), 1000, owner(), Some("a1".into()));
+        waits.register_restored(1, "t-1".into(), 1000, owner(), Some("a1".into()));
+        assert_eq!(waits.len(), 1, "같은 작업의 재등록은 하나로 남아야 한다");
+        assert_eq!(waits.resolve(0), None);
+        assert!(waits.take_expired(999).is_empty());
+        let expired = waits.take_expired(1000);
+        assert_eq!(expired.len(), 1);
+        assert!(expired[0].restored);
+        assert_eq!(expired[0].attempt.as_deref(), Some("a1"));
+        assert!(
+            waits.take_expired(1000).is_empty(),
+            "두 번 회수하면 안 된다"
+        );
+    }
+
+    #[test]
+    fn a_live_hook_wait_keeps_the_deadline_and_a_new_hook_replaces_a_restored_one() {
+        let waits = HookTaskWaits::new();
+        waits.register(5, 1, "t-1".into(), 2000);
+        waits.register_restored(1, "t-1".into(), 1000, owner(), None);
+        assert_eq!(waits.len(), 1, "hook 매핑이 있으면 기한을 따로 두지 않는다");
+
+        waits.register_restored(1, "t-2".into(), 1000, owner(), None);
+        waits.register(6, 1, "t-2".into(), 3000);
+        assert!(
+            waits.take_expired(1500).is_empty(),
+            "새 회차의 hook 이 이전 회차의 복원 기한을 대신해야 한다"
+        );
+        assert_eq!(waits.len(), 2);
     }
 }
