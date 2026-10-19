@@ -313,10 +313,11 @@ pub(super) fn save(
             None
         })
     {
-        if previous.version != 1 {
-            return Err("unsupported legacy View snapshot version".into());
-        }
-        if previous.binding.journal_id == view.binding.journal_id
+        // 열 때 거부하고 기본 선택으로 대체한 sidecar(지원하지 않는 version 등)는 이 저장의 순서를
+        // 정하지 않는다. 파일은 그대로 두며, 받아들인 sidecar만 더 새로운 선택을 지킨다.
+        if let Err(error) = validate(previous.clone(), &view.binding) {
+            tracing::warn!("rejected legacy View sidecar is left unchanged: {error}");
+        } else if previous.binding.journal_id == view.binding.journal_id
             && previous.binding.stream == view.binding.stream
             && (
                 previous.binding.incarnation,

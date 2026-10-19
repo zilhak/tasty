@@ -308,3 +308,47 @@ fn a_view_payload_with_a_bad_checksum_falls_back_to_the_default_selection() {
         bytes
     });
 }
+
+#[test]
+fn a_rejected_sidecar_of_another_version_does_not_block_later_saves() {
+    let mut session = new_session();
+    let home = tasty_utils::path::tasty_home().unwrap();
+    let mut journal = open(&mut session);
+    let workspace = session.core_state.local_workspaces()[0].id;
+    let binding = session.journal_binding.clone().unwrap();
+    drop(journal);
+    let sidecar = home.join("structure/views/slot-1/incarnation-1.json");
+    std::fs::create_dir_all(sidecar.parent().unwrap()).unwrap();
+    let mut newer = serde_json::to_value(StoredView::capture(
+        binding,
+        &session.core_state,
+        Some(workspace),
+        &crate::model::StructurePresentationSnapshot::default(),
+    ))
+    .unwrap();
+    newer["version"] = 2.into();
+    newer["sequence"] = 1_000.into();
+    let original = serde_json::to_vec(&newer).unwrap();
+    std::fs::write(&sidecar, &original).unwrap();
+
+    journal = open(&mut session);
+    let notices = journal.take_notices();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    save_view(&mut journal, &mut session, workspace);
+    drop(journal);
+    let journal = open(&mut session);
+    assert!(
+        journal.notices.is_empty(),
+        "the DB manifest is the source now"
+    );
+    assert_eq!(
+        journal.restored_views[&session.id].active_workspace,
+        Some(workspace)
+    );
+    drop(journal);
+    assert_eq!(
+        std::fs::read(&sidecar).unwrap(),
+        original,
+        "the sidecar is unchanged"
+    );
+}
