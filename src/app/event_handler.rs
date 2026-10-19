@@ -1450,7 +1450,7 @@ impl App {
         // 같은 배치의 재attach가 곧 해제될 holder 때문에 거절되지 않게 먼저 끊김을 표시한다.
         self.mark_disconnected_clients(&outcome.disconnected);
         self.apply_attach_requests_batch(&mut outcome, &hub);
-        self.apply_input_frames_batch(outcome.input_frames.drain(..));
+        self.apply_input_events_batch(outcome.input_events.drain(..), &hub);
         self.apply_forwarded_batch(&mut outcome, &hub);
         self.apply_mesh_batch(&mut outcome, &hub);
         self.apply_content_batch(&mut outcome, &hub);
@@ -1516,35 +1516,10 @@ impl App {
     /// 헤드리스·GUI parked는 쌓인 입력을 공용 구동 경로가 소비한다.
     /// 창이 살아 있는 GUI 서버는 이 입력 큐를 플러그인에 전달하는 경로가 아직 없다.
     fn apply_mesh_batch(&mut self, outcome: &mut PumpOutcome, hub: &StreamHub) {
-        for (client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused) in
-            outcome.mesh_context_requests.drain(..)
-        {
-            let ok = self.any_engine(|engine| {
-                engine.apply_attached_mesh_context(
-                    surface_id,
-                    client_id,
-                    width_px,
-                    height_px,
-                    pixels_per_point,
-                    theme.clone(),
-                    focused,
-                )
-            });
-            if !ok {
-                reply_mesh_error(hub, client_id, surface_id, "not_attached");
-            }
-        }
         for (client_id, surface_id) in outcome.mesh_full_resend_requests.drain(..) {
             if !self
                 .any_engine(|engine| engine.apply_attached_mesh_full_resend(surface_id, client_id))
             {
-                reply_mesh_error(hub, client_id, surface_id, "not_attached");
-            }
-        }
-        for (client_id, surface_id, input) in outcome.mesh_input_events.drain(..) {
-            if !self.any_engine(|engine| {
-                engine.apply_attached_mesh_input(surface_id, client_id, input.clone())
-            }) {
                 reply_mesh_error(hub, client_id, surface_id, "not_attached");
             }
         }
@@ -1598,6 +1573,42 @@ impl App {
             .windowed_and_parked()
             .any(|mut engine| apply(&mut engine))
     }
+    fn apply_input_events_batch(
+        &mut self,
+        events: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::InputEvent)>,
+        hub: &StreamHub,
+    ) {
+        use tasty_ipc::stream_hub::InputEvent;
+        for (client, event) in events {
+            match event {
+                InputEvent::Data(bytes) => self.apply_input_frames_batch([(client, bytes)]),
+                InputEvent::Mesh { surface_id, input } => {
+                    if !self.any_engine(|engine| {
+                        engine.apply_attached_mesh_input(surface_id, client, input.clone())
+                    }) {
+                        reply_mesh_error(hub, client, surface_id, "not_attached");
+                    }
+                }
+                InputEvent::Context(context) => {
+                    if !self.any_engine(|engine| {
+                        engine.apply_attached_mesh_context(
+                            context.surface_id,
+                            client,
+                            context.width_px,
+                            context.height_px,
+                            context.pixels_per_point,
+                            context.theme.clone(),
+                            context.focused,
+                        )
+                    }) {
+                        reply_mesh_error(hub, client, context.surface_id, "not_attached");
+                    }
+                }
+                InputEvent::Checkpoint(sequence) => hub.acknowledge_input(client, sequence),
+            }
+        }
+    }
+
     fn apply_input_frames_batch(&mut self, frames: impl IntoIterator<Item = (u32, Vec<u8>)>) {
         for (client_id, bytes) in frames {
             if self

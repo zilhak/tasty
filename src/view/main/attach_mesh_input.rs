@@ -23,6 +23,7 @@ pub(crate) struct AttachMeshForwardState {
     last_theme: Option<ThemeWire>,
     /// 다음 forward 에 실어 보낼 누적 입력 이벤트(순서 보존).
     events: Vec<RawInputEventWire>,
+    admitted: Option<std::time::Instant>,
 }
 
 impl MainView {
@@ -77,6 +78,7 @@ impl MainView {
         let (lx, ly) = self.mesh_local_point(rect, x, y);
         let modifiers = self.mesh_modifiers();
         let st = self.attach_mesh_input.entry(surface_id).or_default();
+        st.admitted.get_or_insert_with(std::time::Instant::now);
         st.events.push(RawInputEventWire::PointerButton {
             x: lx,
             y: ly,
@@ -96,6 +98,7 @@ impl MainView {
     ) {
         let (lx, ly) = self.mesh_local_point(rect, x, y);
         let st = self.attach_mesh_input.entry(surface_id).or_default();
+        st.admitted.get_or_insert_with(std::time::Instant::now);
         st.events
             .push(RawInputEventWire::PointerMoved { x: lx, y: ly });
     }
@@ -103,12 +106,14 @@ impl MainView {
     /// 포인터가 대상 밖으로 나갔음을 다음 전송에 넣는다.
     pub(super) fn attach_mesh_push_pointer_gone(&mut self, surface_id: u32) {
         let st = self.attach_mesh_input.entry(surface_id).or_default();
+        st.admitted.get_or_insert_with(std::time::Instant::now);
         st.events.push(RawInputEventWire::PointerGone);
     }
 
     /// 스크롤 델타(논리 포인트)를 attach mesh surface 에 누적.
     pub(super) fn attach_mesh_push_scroll(&mut self, surface_id: u32, dx: f32, dy: f32) {
         let st = self.attach_mesh_input.entry(surface_id).or_default();
+        st.admitted.get_or_insert_with(std::time::Instant::now);
         st.events.push(RawInputEventWire::Scroll { x: dx, y: dy });
     }
 
@@ -125,6 +130,7 @@ impl MainView {
             return;
         };
         let st = self.attach_mesh_input.entry(surface_id).or_default();
+        st.admitted.get_or_insert_with(std::time::Instant::now);
         st.events.push(ev);
     }
 
@@ -134,6 +140,7 @@ impl MainView {
             return;
         }
         let st = self.attach_mesh_input.entry(surface_id).or_default();
+        st.admitted.get_or_insert_with(std::time::Instant::now);
         st.events.push(RawInputEventWire::Text {
             text: text.to_string(),
         });
@@ -146,6 +153,7 @@ impl MainView {
         event: tasty_plugin_protocol::protocol::ImeWire,
     ) {
         let st = self.attach_mesh_input.entry(surface_id).or_default();
+        st.admitted.get_or_insert_with(std::time::Instant::now);
         st.events.push(RawInputEventWire::Ime { event });
     }
 
@@ -225,6 +233,7 @@ impl MainView {
                             target,
                             context,
                             input,
+                            admitted: st.admitted.take().unwrap_or_else(std::time::Instant::now),
                         }
                         .into(),
                     )

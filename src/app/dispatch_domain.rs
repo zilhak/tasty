@@ -198,6 +198,23 @@ impl App {
         {
             return Ok(());
         }
+        let input_receipt = if origin.is_user()
+            && let crate::app::command::DomainIntent::SendToSurface { surface_id, .. } = &intent
+        {
+            self.remote
+                .sessions
+                .iter()
+                .find(|session| {
+                    session
+                        .state
+                        .remote_to_local
+                        .values()
+                        .any(|local| local == surface_id)
+                })
+                .map(|session| (session.transport.frame_tx.clone(), dispatched.admitted))
+        } else {
+            None
+        };
         let core = &mut self.services;
         let Some(DispatchCtx {
             state, mut engine, ..
@@ -207,6 +224,13 @@ impl App {
         };
         let applied = core.apply_live(&mut engine, intent);
         let events = events_or_report(state, &origin, applied);
+        if events
+            .iter()
+            .any(|event| matches!(event, CoreEvent::SurfaceSent { sent: true, .. }))
+            && let Some((sender, admitted)) = input_receipt
+        {
+            sender.user_input_dispatched(admitted);
+        }
         for event in events {
             self.handle_core_event(source, &origin, event);
         }

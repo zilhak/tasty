@@ -50,10 +50,8 @@ pub struct PumpOutcome {
     pub attach_requests: Vec<(StreamClientId, u32)>,
     /// `(client_id, target_workspace_id)` workspace attach requests (step 6).
     pub workspace_attach_requests: Vec<(StreamClientId, u32)>,
-    /// `(client_id, bytes)` input data frames — route to the held surface's PTY.
-    /// In workspace mode the bytes are surface-prefixed (`decode_mux`); the main
-    /// loop demuxes based on whether the client holds a workspace.
-    pub input_frames: Vec<(StreamClientId, Vec<u8>)>,
+    /// Input and receipt boundaries in wire order, including across input kinds.
+    pub input_events: Vec<(StreamClientId, InputEvent)>,
     /// 원격 구조 변경 요청. 메인 루프가 holder를 확인하고 도메인 함수를 호출한다.
     /// origin은 이미 ForwardOrigin::of_wire로 해석됐으며 생략은 User다.
     pub structural_ops: Vec<(
@@ -67,31 +65,10 @@ pub struct PumpOutcome {
     /// mirror 사용자의 attention 해제 요청. holder를 확인한 뒤 원격 상태를 지운다.
     /// 이후 attention 변경 통지가 mirror에 반영된다.
     pub attention_clear_requests: Vec<(StreamClientId, u32)>,
-    /// mesh 구독·크기·테마·포커스 요청. 메인 루프가 holder와 지원 종류를 확인한다.
-    #[allow(clippy::type_complexity)]
-    pub mesh_context_requests: Vec<(
-        StreamClientId,
-        u32,
-        u32,
-        u32,
-        f32,
-        Option<tasty_plugin_protocol::protocol::ThemeWire>,
-        bool,
-    )>,
     /// `(client_id, surface_id)` explicit full-texture-resend requests
     /// ([`StreamControl::MeshFullResendRequest`](crate::stream::StreamControl)),
     /// e.g. after a client-side decode error or reconnect.
     pub mesh_full_resend_requests: Vec<(StreamClientId, u32)>,
-    /// `(client_id, surface_id, input)` — local input captured over an attach
-    /// client's mesh mirror pane, forwarded verbatim
-    /// ([`StreamControl::MeshInput`](crate::stream::StreamControl)).
-    /// The main loop validates holder authority before appending to
-    /// `CoreState::mesh_mirror`'s pending-input queue.
-    pub mesh_input_events: Vec<(
-        StreamClientId,
-        u32,
-        tasty_plugin_protocol::protocol::RawInputWire,
-    )>,
     /// capture 업로드 제어 메시지. StreamControl과 다른 event 태그를 쓰며 그 파싱 실패 뒤 확인한다.
     pub capture_uploads: Vec<(StreamClientId, CaptureUploadMsg)>,
     /// 원격 디렉터리 조회. 같은 Control 채널에서 capture 메시지 다음으로 파싱한다.
@@ -105,6 +82,28 @@ pub struct PumpOutcome {
     /// bulk begin·chunk·commit을 도착 순서대로 보관한다. 태그별로 나누면 같은 배치의
     /// chunk를 begin보다 먼저 처리할 수 있다. 결속 workspace는 연결의 bulk_workspace에서 찾는다.
     pub bulk_events: Vec<(StreamClientId, BulkEvent)>,
+}
+
+/// Main-loop input dispatch order. A checkpoint never covers later input.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InputEvent {
+    Data(Vec<u8>),
+    Mesh {
+        surface_id: u32,
+        input: tasty_plugin_protocol::protocol::RawInputWire,
+    },
+    Checkpoint(u64),
+    Context(MeshInputContext),
+}
+/// Context must precede the MeshInput that uses it, even in the same pump batch.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeshInputContext {
+    pub surface_id: u32,
+    pub width_px: u32,
+    pub height_px: u32,
+    pub pixels_per_point: f32,
+    pub theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
+    pub focused: bool,
 }
 
 /// Control의 begin/commit과 Data의 chunk를 한 순서로 처리하기 위한 이벤트.
@@ -589,13 +588,26 @@ impl StreamHub {
         }
     }
 
+    /// Called by the GUI/headless main loop at the ordered input boundary, never by
+    /// the socket reader or heartbeat writer. A full sink follows normal loss handling.
+    pub fn acknowledge_input(&self, client: StreamClientId, sequence: u64) {
+        let payload =
+            serde_json::to_vec(&crate::stream::StreamControl::InputProcessed { sequence })
+                .expect("input receipt contains only an integer");
+        // A full/closed sink already owns disconnect handling; never replay the receipt.
+        let _ = self.push(
+            client,
+            StreamFrame::new(crate::stream::StreamTag::Control, payload),
+        );
+    }
+
     /// Number of currently connected stream clients.
     pub fn client_count(&self) -> usize {
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).len()
     }
 
     /// 수신 메시지를 종류별로 분류한다. 엔진 접근과 점유·입력 처리 자체는 메인 루프가 맡는다.
-    /// 일반 Data는 input_frames, bulk 연결의 Data는 bulk_events로 반환한다.
+    /// 일반 Data는 input_events, bulk 연결의 Data는 bulk_events로 반환한다.
     pub fn pump_inbound(&self, inbound_rx: &Receiver<StreamInbound>) -> PumpOutcome {
         let mut out = PumpOutcome::default();
         while let Ok(msg) = inbound_rx.try_recv() {
@@ -633,7 +645,8 @@ impl StreamHub {
                             }
                         }
                         crate::stream::StreamTag::Data => {
-                            out.input_frames.push((client_id, frame.payload));
+                            out.input_events
+                                .push((client_id, InputEvent::Data(frame.payload)));
                         }
                         crate::stream::StreamTag::Control => {
                             // client→server 제어 메시지만 분류한다. 다른 형태는 별도 event parser로 확인한다.
@@ -684,14 +697,16 @@ impl StreamHub {
                                     theme,
                                     focused,
                                 }) => {
-                                    out.mesh_context_requests.push((
+                                    out.input_events.push((
                                         client_id,
-                                        surface_id,
-                                        width_px,
-                                        height_px,
-                                        pixels_per_point,
-                                        theme,
-                                        focused,
+                                        InputEvent::Context(MeshInputContext {
+                                            surface_id,
+                                            width_px,
+                                            height_px,
+                                            pixels_per_point,
+                                            theme,
+                                            focused,
+                                        }),
                                     ));
                                 }
                                 Ok(crate::stream::StreamControl::MeshFullResendRequest {
@@ -703,7 +718,12 @@ impl StreamHub {
                                     surface_id,
                                     input,
                                 }) => {
-                                    out.mesh_input_events.push((client_id, surface_id, input));
+                                    out.input_events
+                                        .push((client_id, InputEvent::Mesh { surface_id, input }));
+                                }
+                                Ok(crate::stream::StreamControl::InputCheckpoint { sequence }) => {
+                                    out.input_events
+                                        .push((client_id, InputEvent::Checkpoint(sequence)));
                                 }
                                 // 연결별 선언이므로 허브에서 바로 기록한다.
                                 Ok(crate::stream::StreamControl::ClientLossNotify {}) => {
@@ -1035,7 +1055,7 @@ mod tests {
         .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
         assert!(
-            out.input_frames.is_empty() && out.structural_ops.is_empty(),
+            out.input_events.is_empty() && out.structural_ops.is_empty(),
             "선언이 다른 갈래로 샜다"
         );
 
@@ -1275,6 +1295,96 @@ mod tests {
     }
 
     #[test]
+    fn input_checkpoints_keep_their_exact_wire_prefix_across_batches() {
+        let hub = StreamHub::new();
+        let (tx, rx) = mpsc::channel();
+        let send = |tag, payload| {
+            tx.send(StreamInbound::Frame {
+                client_id: 7,
+                frame: StreamFrame::new(tag, payload),
+            })
+            .unwrap()
+        };
+        send(StreamTag::Data, b"A".to_vec());
+        send(
+            StreamTag::Control,
+            serde_json::to_vec(&crate::stream::StreamControl::InputCheckpoint { sequence: 1 })
+                .unwrap(),
+        );
+        send(StreamTag::Data, b"B".to_vec());
+        assert_eq!(
+            hub.pump_inbound(&rx).input_events,
+            vec![
+                (7, InputEvent::Data(b"A".to_vec())),
+                (7, InputEvent::Checkpoint(1)),
+                (7, InputEvent::Data(b"B".to_vec()))
+            ]
+        );
+        send(
+            StreamTag::Control,
+            serde_json::to_vec(&crate::stream::StreamControl::InputCheckpoint { sequence: 2 })
+                .unwrap(),
+        );
+        assert_eq!(
+            hub.pump_inbound(&rx).input_events,
+            vec![(7, InputEvent::Checkpoint(2))]
+        );
+    }
+
+    #[test]
+    fn input_checkpoint_preserves_mesh_and_other_surface_order() {
+        let hub = StreamHub::new();
+        let (tx, rx) = mpsc::channel();
+        let input = tasty_plugin_protocol::protocol::RawInputWire {
+            time: None,
+            focused: true,
+            modifiers: Default::default(),
+            events: vec![],
+        };
+        let enqueue = |event| {
+            tx.send(StreamInbound::Frame {
+                client_id: 7,
+                frame: StreamFrame::new(StreamTag::Control, serde_json::to_vec(&event).unwrap()),
+            })
+            .unwrap()
+        };
+        enqueue(crate::stream::StreamControl::MeshInput {
+            surface_id: 10,
+            input: input.clone(),
+        });
+        enqueue(crate::stream::StreamControl::InputCheckpoint { sequence: 1 });
+        enqueue(crate::stream::StreamControl::MeshInput {
+            surface_id: 20,
+            input: input.clone(),
+        });
+        assert_eq!(
+            hub.pump_inbound(&rx).input_events,
+            vec![
+                (
+                    7,
+                    InputEvent::Mesh {
+                        surface_id: 10,
+                        input: input.clone()
+                    }
+                ),
+                (7, InputEvent::Checkpoint(1)),
+                (
+                    7,
+                    InputEvent::Mesh {
+                        surface_id: 20,
+                        input
+                    }
+                ),
+            ]
+        );
+        enqueue(crate::stream::StreamControl::InputCheckpoint { sequence: 2 });
+        assert_eq!(
+            hub.pump_inbound(&rx).input_events,
+            vec![(7, InputEvent::Checkpoint(2))]
+        );
+    }
+
+    #[test]
     fn pump_inbound_classifies_data_as_input() {
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
@@ -1286,7 +1396,10 @@ mod tests {
         let out = hub.pump_inbound(&inbound_rx);
         assert!(out.disconnected.is_empty());
         assert!(out.attach_requests.is_empty());
-        assert_eq!(out.input_frames, vec![(5u32, b"echo me".to_vec())]);
+        assert_eq!(
+            out.input_events,
+            vec![(5u32, InputEvent::Data(b"echo me".to_vec()))]
+        );
     }
 
     #[test]
@@ -1343,7 +1456,7 @@ mod tests {
             out.structural_ops,
             vec![(8u32, 3u64, op, crate::stream::ForwardOrigin::Agent)]
         );
-        assert!(out.input_frames.is_empty());
+        assert!(out.input_events.is_empty());
     }
 
     #[test]
@@ -1384,7 +1497,7 @@ mod tests {
         let out = hub.pump_inbound(&inbound_rx);
         assert_eq!(out.resize_requests, vec![(8u32, 12u32, 203usize, 57usize)]);
         assert!(out.structural_ops.is_empty());
-        assert!(out.input_frames.is_empty());
+        assert!(out.input_events.is_empty());
     }
 
     #[test]
@@ -1407,8 +1520,18 @@ mod tests {
         .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
         assert_eq!(
-            out.mesh_context_requests,
-            vec![(9u32, 7u32, 800u32, 600u32, 2.0f32, None, true)]
+            out.input_events,
+            vec![(
+                9,
+                InputEvent::Context(MeshInputContext {
+                    surface_id: 7,
+                    width_px: 800,
+                    height_px: 600,
+                    pixels_per_point: 2.0,
+                    theme: None,
+                    focused: true
+                })
+            )]
         );
         assert!(out.resize_requests.is_empty());
         assert!(out.structural_ops.is_empty());
@@ -1429,7 +1552,11 @@ mod tests {
         .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
         assert_eq!(out.mesh_full_resend_requests, vec![(9u32, 7u32)]);
-        assert!(out.mesh_context_requests.is_empty());
+        assert!(
+            !out.input_events
+                .iter()
+                .any(|(_, event)| matches!(event, InputEvent::Context(_)))
+        );
     }
 
     #[test]
@@ -1457,8 +1584,21 @@ mod tests {
         })
         .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
-        assert_eq!(out.mesh_input_events, vec![(9u32, 7u32, input)]);
-        assert!(out.mesh_context_requests.is_empty());
+        assert_eq!(
+            out.input_events,
+            vec![(
+                9u32,
+                InputEvent::Mesh {
+                    surface_id: 7,
+                    input
+                }
+            )]
+        );
+        assert!(
+            !out.input_events
+                .iter()
+                .any(|(_, event)| matches!(event, InputEvent::Context(_)))
+        );
         assert!(out.mesh_full_resend_requests.is_empty());
     }
 
@@ -1509,7 +1649,7 @@ mod tests {
         }
         assert!(out.structural_ops.is_empty());
         assert!(out.resize_requests.is_empty());
-        assert!(out.input_frames.is_empty());
+        assert!(out.input_events.is_empty());
     }
 
     #[test]
@@ -1567,7 +1707,7 @@ mod tests {
         assert!(out.capture_uploads.is_empty());
         assert!(out.structural_ops.is_empty());
         assert!(out.resize_requests.is_empty());
-        assert!(out.input_frames.is_empty());
+        assert!(out.input_events.is_empty());
     }
 
     #[test]
@@ -1644,7 +1784,7 @@ mod tests {
                 }
             )]
         );
-        assert!(out.input_frames.is_empty());
+        assert!(out.input_events.is_empty());
     }
 
     #[test]
@@ -1657,7 +1797,10 @@ mod tests {
         })
         .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
-        assert_eq!(out.input_frames, vec![(8u32, b"keystrokes".to_vec())]);
+        assert_eq!(
+            out.input_events,
+            vec![(8u32, InputEvent::Data(b"keystrokes".to_vec()))]
+        );
         assert!(out.bulk_events.is_empty());
     }
 

@@ -209,12 +209,12 @@ impl App {
     }
 
     pub(crate) fn dispatch_pending_mesh_input_forwards(&mut self) {
-        let mut pending: Vec<(u32, tasty_plugin_protocol::protocol::RawInputWire)> = Vec::new();
+        let mut pending = Vec::new();
         for engine in self.engines_mut().windows_and_pending() {
             pending.extend(engine.remote.pending_mesh_input_forward.drain());
         }
-        for (local_sid, input) in pending {
-            self.forward_one_mesh_input(local_sid, input);
+        for (local_sid, (admitted, input)) in pending {
+            self.forward_one_mesh_input(local_sid, input, admitted);
         }
     }
 
@@ -222,6 +222,7 @@ impl App {
         &mut self,
         local_sid: u32,
         input: tasty_plugin_protocol::protocol::RawInputWire,
+        admitted: std::time::Instant,
     ) {
         let Some((sess, remote_sid)) =
             find_mirror_session_and_remote_id(&mut self.remote.sessions, local_sid, "mesh input")
@@ -235,6 +236,8 @@ impl App {
         .unwrap_or_default();
         if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("mesh input forward: 전송 큐가 닫혀 요청을 보내지 못했다: {e}");
+        } else {
+            sess.transport.frame_tx.user_input_dispatched(admitted);
         }
     }
 

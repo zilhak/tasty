@@ -81,6 +81,8 @@ fn report_withdrawn_kind(
 /// 메인 루프가 처리할 때까지 RequestContext::pending_intents에 보관하는 명령.
 #[derive(Debug, Clone)]
 pub struct DispatchedIntent {
+    /// Monotonic admission time; not serialized or replayed with journal commands.
+    pub admitted: std::time::Instant,
     pub body: Intent,
     pub origin: IntentOrigin,
     /// 현재 제품 코드에서는 None이며 debug intent 로그만 이 값을 읽는다.
@@ -373,6 +375,7 @@ impl crate::app::command::DomainIntent {
 
     pub(crate) fn from_system(self) -> DispatchedIntent {
         DispatchedIntent {
+            admitted: std::time::Instant::now(),
             body: Intent::Domain(self),
             origin: IntentOrigin::System,
             trace_id: None,
@@ -431,6 +434,7 @@ impl Intent {
     #[cfg(any(feature = "gui", test))]
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         DispatchedIntent {
+            admitted: std::time::Instant::now(),
             body: self,
             origin: IntentOrigin::User {
                 source: UserSource::Shortcut(id),
@@ -442,6 +446,7 @@ impl Intent {
     #[cfg(feature = "gui")]
     pub fn from_user_menu(self, id: &'static str) -> DispatchedIntent {
         DispatchedIntent {
+            admitted: std::time::Instant::now(),
             body: self,
             origin: IntentOrigin::User {
                 source: UserSource::Menu(id),
@@ -453,6 +458,7 @@ impl Intent {
     #[cfg(feature = "gui")]
     pub fn from_user_context_menu(self) -> DispatchedIntent {
         DispatchedIntent {
+            admitted: std::time::Instant::now(),
             body: self,
             origin: IntentOrigin::User {
                 source: UserSource::ContextMenu,
@@ -463,6 +469,7 @@ impl Intent {
 
     pub fn from_agent_ipc(self) -> DispatchedIntent {
         DispatchedIntent {
+            admitted: std::time::Instant::now(),
             body: self,
             origin: IntentOrigin::Agent {
                 source: AgentSource::Ipc,
@@ -473,6 +480,7 @@ impl Intent {
 
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         DispatchedIntent {
+            admitted: std::time::Instant::now(),
             body: self,
             origin: IntentOrigin::Agent {
                 source: AgentSource::Plugin(plugin_id.into()),
@@ -485,6 +493,7 @@ impl Intent {
     #[allow(dead_code)]
     pub fn from_agent_cli(self) -> DispatchedIntent {
         DispatchedIntent {
+            admitted: std::time::Instant::now(),
             body: self,
             origin: IntentOrigin::Agent {
                 source: AgentSource::Cli,
@@ -498,6 +507,7 @@ impl Intent {
     #[allow(dead_code)]
     pub fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         DispatchedIntent {
+            admitted: parent.admitted,
             body: self,
             origin: parent.origin.clone(),
             trace_id: parent.trace_id.clone(),

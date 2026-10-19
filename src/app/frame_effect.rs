@@ -52,6 +52,7 @@ pub(crate) enum InputEffect {
         params: tasty_plugin_protocol::protocol::SurfaceSetContextParams,
     },
     RemoteMesh {
+        admitted: std::time::Instant,
         target: SurfaceBinding,
         context: Option<crate::core::state::AttachMeshContextForward>,
         input: Option<tasty_plugin_protocol::protocol::RawInputWire>,
@@ -205,6 +206,7 @@ impl InputEffect {
 
     fn apply_remote_mesh(&self, engine: &mut EngineMut<'_>) {
         let Self::RemoteMesh {
+            admitted,
             target,
             context,
             input,
@@ -227,12 +229,12 @@ impl InputEffect {
                 .pending_mesh_input_forward
                 .entry(target.surface_id())
                 .and_modify(|pending| {
-                    pending.events.extend(input.events.clone());
-                    pending.focused = input.focused;
-                    pending.modifiers = input.modifiers;
-                    pending.time = input.time;
+                    pending.1.events.extend(input.events.clone());
+                    pending.1.focused = input.focused;
+                    pending.1.modifiers = input.modifiers;
+                    pending.1.time = input.time;
                 })
-                .or_insert_with(|| input.clone());
+                .or_insert_with(|| (*admitted, input.clone()));
         }
     }
 }

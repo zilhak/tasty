@@ -20,6 +20,9 @@ pub const STREAM_PROTO: u32 = 1;
 pub const RESIZE_ACK_CAPABILITY: &str = "ipc.stream.resize-ack";
 /// [`RESIZE_ACK_CAPABILITY`]의 버전.
 pub const RESIZE_ACK_VERSION: u32 = 1;
+/// Main-loop receipt of all Data/MeshInput frames preceding an input checkpoint.
+/// This does not acknowledge shell consumption, command completion, or rendering.
+pub const INPUT_ACK_CAPABILITY: &str = "ipc.stream.input-ack";
 /// workspace attach descriptor에서 이 연결의 서버 기능 이름 목록을 담는 키.
 /// 구 서버는 이 키를 보내지 않으므로 없으면 빈 목록으로 읽는다.
 pub const DESCRIPTOR_CAPABILITIES: &str = "stream_capabilities";
@@ -173,6 +176,11 @@ pub struct StreamAck {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum StreamControl {
+    /// Client→server: an ordered boundary after previously queued Data/MeshInput.
+    InputCheckpoint { sequence: u64 },
+    /// Server→client: the main loop dispatched the input preceding this boundary.
+    /// Rejected input still follows its existing error path; receipt is not success.
+    InputProcessed { sequence: u64 },
     /// 서버→클라이언트: 원격 PTY에 적용된 크기. 클라이언트는 로컬 요청값이 아니라
     /// 이 응답으로 mirror 크기를 바꿔 원격 reflow 결과와 맞춘다.
     Resize {

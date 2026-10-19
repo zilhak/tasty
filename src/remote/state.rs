@@ -89,8 +89,13 @@ pub(crate) struct RemoteState {
         std::collections::HashMap<u32, AttachMeshContextForward>,
     /// 로컬 mesh surface별 누적 입력. App이 원격으로 보낸다.
     #[cfg(feature = "gui")]
-    pub(crate) pending_mesh_input_forward:
-        std::collections::HashMap<u32, tasty_plugin_protocol::protocol::RawInputWire>,
+    pub(crate) pending_mesh_input_forward: std::collections::HashMap<
+        u32,
+        (
+            std::time::Instant,
+            tasty_plugin_protocol::protocol::RawInputWire,
+        ),
+    >,
     /// 원격에서 받은 busy 상태. 로컬 폴링이 집합을 교체하므로 별도로 보관한다.
     pub(crate) mirror_busy_surfaces: std::collections::HashSet<u32>,
     /// 원격 surface의 cwd. 두 호스트의 파일시스템이 달라 로컬 Path로 해석하지 않는다.

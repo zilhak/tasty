@@ -36,6 +36,7 @@ pub fn attach_handshake(
     let write_half = conn.try_clone_writer()?;
     Ok(AttachHandshake {
         resize_acks: descriptor_has_capability(&ctrl, stream::RESIZE_ACK_CAPABILITY),
+        input_acks: descriptor_has_capability(&ctrl, stream::INPUT_ACK_CAPABILITY),
         explorer_write: descriptor_has_capability(&ctrl, tasty_ipc::explorer_op::CAPABILITY),
         conn,
         client_id,
@@ -56,6 +57,7 @@ pub struct AttachHandshake {
     pub tree: Value,
     /// 서버가 모든 크기 요청에 응답한다. 구 서버 descriptor에는 이 기능이 없다.
     pub resize_acks: bool,
+    pub input_acks: bool,
     /// 서버가 원격 explorer 파일 작업을 받는다.
     pub explorer_write: bool,
 }
@@ -161,10 +163,10 @@ fn write_attach_frame(
 pub fn spawn_attach_reader_thread(
     mut conn: StreamConnection,
     output: MirrorOutbox,
+    frame_tx: FrameSender,
     disconnected: Arc<AtomicBool>,
     wake: Arc<dyn Fn() + Send + Sync>,
     local_workspace: u32,
-    log_suffix: &'static str,
     decode_control: fn(&[u8]) -> Option<MirrorEvent>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
@@ -188,6 +190,13 @@ pub fn spawn_attach_reader_thread(
                             disconnected.store(true, Ordering::SeqCst);
                             (wake)();
                             break;
+                        }
+                        if let Ok(StreamControl::InputProcessed { sequence }) =
+                            serde_json::from_slice(&frame.payload)
+                        {
+                            frame_tx.input_processed(sequence);
+                            (wake)();
+                            continue;
                         }
                         let mirror_ev = decode_control(&frame.payload);
                         if let Some(ev) = mirror_ev
@@ -214,7 +223,7 @@ pub fn spawn_attach_reader_thread(
                 },
                 Err(e) => {
                     tracing::warn!(
-                        "attach reader thread{log_suffix}: mirror workspace {local_workspace} 원격 수신 실패로 연결 종료를 알린다: {e}"
+                        "attach reader thread: mirror workspace {local_workspace} 원격 수신 실패로 연결 종료를 알린다: {e}"
                     );
                     disconnected.store(true, Ordering::SeqCst);
                     (wake)();
@@ -379,10 +388,12 @@ impl PreparedConnection {
             surfaces,
             tree,
             resize_acks,
+            input_acks,
             explorer_write,
         } = attach_handshake(port, workspace, "remote pending connection", &cancel)?;
         let control = write_half.try_clone()?;
         let (frame_tx, frame_rx) = super::connection::channel();
+        frame_tx.enable_input_receipts(input_acks);
         let disconnected = Arc::new(AtomicBool::new(false));
         frame_tx.bind_failure(disconnected.clone(), wake.clone());
         let output = MirrorOutbox::new(frame_tx.epoch());
@@ -391,10 +402,10 @@ impl PreparedConnection {
         let reader = spawn_attach_reader_thread(
             conn,
             output.clone(),
+            frame_tx.clone(),
             disconnected.clone(),
             wake,
             workspace,
-            "",
             decode,
         );
         let heartbeat = spawn_attach_heartbeat_thread(frame_tx.clone(), disconnected.clone());

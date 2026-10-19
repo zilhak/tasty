@@ -131,6 +131,20 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_and_stream` 으로 �
 
 이 role 분류는 `build_workspace_tree_surfaces`(`src/remote/server.rs`)가 만든다. mesh 와 markdown 은 **두 단**이다 — `tasty-model` 이 `Surface::attach_mesh_info()`/`attach_content_info()` 로 후보만 모으고(crate 가 앱의 등록부와 허용 목록을 모른다), 앱 계층이 `is_registered_egui_mesh_kind`(등록부 대조)/`is_attach_content_allowed`(원문 전달 허용 목록)로 재검증해 떨어진 후보를 placeholder 로 내린다.
 
+## 입력 처리 확인
+
+workspace descriptor의 `ipc.stream.input-ack`는 `InputCheckpoint{sequence}`와
+`InputProcessed{sequence}`를 지원한다는 뜻이다. 프로토콜 동등 비교값은 바꾸지 않는다.
+클라이언트는 사용자 입력을 큐에 넣은 뒤 확인 지점을 보낸다. 연결당 현재 확인과 후속
+입력 묶음만 보관하며 후속 묶음의 최초 입력 시각을 유지한다. 에이전트 쓰기와 터미널의
+자동 응답은 사용자 확인을 시작하지 않는다. 실패한 연결의 입력은 새 연결에 재생하지 않는다.
+
+`PumpOutcome.input_events`는 Data·MeshContext·MeshInput·확인 지점을 받은 순서대로
+유지한다. GUI·headless의 메인 루프가 그 순서로 전달한 뒤 확인 지점에 답한다. 확인은
+PTY writer flush·셸 소비·명령 종료·렌더 완료를 보장하지 않으며, 대상 거절은 기존 오류
+경로를 따른다. reader는 유효한 연결의 ACK를 즉시 관측한다. 구조 Delta의 ID 예약이
+Pending이라 뒤 이벤트가 보류되어도 입력 확인 수명은 그 보류에 묶이지 않는다.
+
 ## 프레임 전송 지연 (Nagle 금지)
 
 attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리사이즈 요청 · 구조 op · 출력 delta)다. 그래서 프레임 단위 전송 지연이 그대로 체감 지연이 된다 — 본문·헤더를 나눠 쓰거나 Nagle을 켜면 전송 지연이 늘 수 있다.

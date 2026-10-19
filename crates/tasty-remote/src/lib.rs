@@ -23,6 +23,7 @@ pub mod create;
 pub mod client_session;
 /// Persistent connection/session ownership shared by host adapters without App/View dependencies.
 pub mod connection;
+mod input_receipts;
 pub mod outbound;
 pub mod transport;
 

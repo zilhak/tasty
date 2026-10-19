@@ -33,7 +33,7 @@ fn apply(
         .occupancy
         .mark_clients_disconnected(&outcome.disconnected);
     apply_attach_requests(app, state, engine, outcome);
-    apply_input_frames(app, engine, outcome);
+    apply_input_events(app, engine, outcome);
     apply_structural_ops(app, state, engine, outcome);
     apply_mirror_state(&app.stream_hub, engine, outcome);
     apply_mesh_requests(app, engine, outcome);
@@ -82,6 +82,34 @@ fn apply_attach_requests(
     }
 }
 
+fn apply_input_events(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
+    use tasty_ipc::stream_hub::InputEvent;
+    for (client, event) in std::mem::take(&mut outcome.input_events) {
+        match event {
+            InputEvent::Data(bytes) => apply_input_frames(app, engine, [(client, bytes)]),
+            InputEvent::Mesh { surface_id, input } => {
+                if !engine.apply_attached_mesh_input(surface_id, client, input) {
+                    push_mesh_error(app, client, surface_id);
+                }
+            }
+            InputEvent::Context(context) => {
+                if !engine.apply_attached_mesh_context(
+                    context.surface_id,
+                    client,
+                    context.width_px,
+                    context.height_px,
+                    context.pixels_per_point,
+                    context.theme,
+                    context.focused,
+                ) {
+                    push_mesh_error(app, client, context.surface_id);
+                }
+            }
+            InputEvent::Checkpoint(sequence) => app.stream_hub.acknowledge_input(client, sequence),
+        }
+    }
+}
+
 fn apply_input_frames(
     #[cfg_attr(
         not(debug_assertions),
@@ -92,9 +120,9 @@ fn apply_input_frames(
     )]
     app: &mut App,
     engine: &mut EngineMut<'_>,
-    outcome: &mut PumpOutcome,
+    frames: impl IntoIterator<Item = (u32, Vec<u8>)>,
 ) {
-    for (client_id, bytes) in std::mem::take(&mut outcome.input_frames) {
+    for (client_id, bytes) in frames {
         if app
             .pending_server_attaches
             .iter()
@@ -185,32 +213,8 @@ fn apply_mirror_state(hub: &StreamHub, engine: &mut EngineMut<'_>, outcome: &mut
 }
 
 fn apply_mesh_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
-    for (client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused) in
-        std::mem::take(&mut outcome.mesh_context_requests)
-    {
-        // 구독의 점유 검증에 실패하면 MeshError로 회신한다.
-        let ok = engine.apply_attached_mesh_context(
-            surface_id,
-            client_id,
-            width_px,
-            height_px,
-            pixels_per_point,
-            theme,
-            focused,
-        );
-        if !ok {
-            push_mesh_error(app, client_id, surface_id);
-        }
-    }
     for (client_id, surface_id) in std::mem::take(&mut outcome.mesh_full_resend_requests) {
         let ok = engine.apply_attached_mesh_full_resend(surface_id, client_id);
-        if !ok {
-            push_mesh_error(app, client_id, surface_id);
-        }
-    }
-    for (client_id, surface_id, input) in std::mem::take(&mut outcome.mesh_input_events) {
-        // 입력의 점유 검증은 apply_attached_mesh_input이, 누적 입력 소비는 다음 mesh 전달이 맡는다.
-        let ok = engine.apply_attached_mesh_input(surface_id, client_id, input);
         if !ok {
             push_mesh_error(app, client_id, surface_id);
         }
