@@ -1,4 +1,4 @@
-<!-- source-hash: 6da99224efe1 -->
+<!-- source-hash: 3b8bc6a26899 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -110,6 +110,8 @@ args = ["notify", "Command failed", "--title", "hook"]
 ```
 
 With `kind = "ipc_sequence"` it runs a list of Tasty-internal actions (`calls = [{ method = "...", params = {} }]`) instead of a shell. TOML has no null, so when params need a null value, write them as a JSON string instead of `params`, as in `params_json = '{"a":null}'`. Saving with `tasty hook-handler upsert` writes this form for you.
+
+When a hook runs by itself and fails, the failure is left in the notification list. If it did not run at all, because its handler is gone or its command could not start, that is an **error**. If only some steps of an action list failed, or a step gave no answer in time so its result is unknown, that is a **warning**. A surface hook's notification is attached to the surface the hook is on. A shell command ending with a non-zero exit code is not counted as a failure. When the same failure repeats quickly, it is left once every 10 seconds.
 
 ## Notifications
 
@@ -238,7 +240,7 @@ Check the available handler ids with `tasty hook-handler list`. `--sequence` is 
 
 The calling service receives a status code and a fixed response message. The response does not include the action's result.
 
-**`200` means "accepted", not "done".** The answer is chosen before the action starts, so the caller gets `200` even when the action fails outright. In a multi-step `--sequence` a failing step does not stop the steps after it, so it can end half applied, and what failed appears only in Tasty's own log. If your CI decides retries from the status code, do not count `200` as success.
+**`200` means "accepted", not "done".** The answer is chosen before the action starts, so the caller gets `200` even when the action fails outright. In a multi-step `--sequence` a failing step does not stop the steps after it, so it can end half applied. What failed is left in Tasty's notification list (an error when no step succeeded, a warning when only some failed). If your CI decides retries from the status code, do not count `200` as success.
 
 | Code | Meaning |
 |---|---|

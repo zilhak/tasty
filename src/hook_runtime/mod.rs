@@ -5,10 +5,11 @@
 
 mod engine;
 pub(crate) mod global;
+pub(crate) mod notice;
 mod trigger;
 mod worker;
 
-pub(crate) use worker::{SequenceNotQueued, enqueue_sequence};
+pub(crate) use worker::{Delivery, SequenceNotQueued, enqueue_sequence};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64};

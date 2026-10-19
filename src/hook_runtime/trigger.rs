@@ -3,7 +3,8 @@
 
 use tasty_hooks::{HookBinding, HookEvent};
 
-use super::worker::enqueue_sequence;
+use super::notice::{self, AutoOrigin};
+use super::worker::{Delivery, enqueue_sequence};
 use crate::hook_handler::env::{HookShellEnv, build_env};
 use crate::hook_handler::exec::{SequenceOrigin, SubstitutionContext};
 use crate::hook_handler::registry::global;
@@ -30,12 +31,15 @@ pub(super) fn execute_binding(
             payload: payload.clone(),
         })
     };
+    let origin = AutoOrigin::SurfaceHook { surface_id };
     match binding {
         HookBinding::InlineShell(command) => {
             // 자식 완료를 기다리지 않도록 JoinHandle을 버린다. 스레드는 계속 실행된다.
-            let _ = spawn_shell(command.clone(), Vec::new(), shell_env());
+            let _ = spawn_shell(command.clone(), Vec::new(), shell_env(), origin);
         }
-        HookBinding::Handler(id) => execute_handler_binding(id, injector, &payload, shell_env),
+        HookBinding::Handler(id) => {
+            execute_handler_binding(id, injector, &payload, shell_env, origin)
+        }
     }
 }
 
@@ -44,22 +48,31 @@ fn execute_handler_binding(
     injector: Option<&HostIpcInjector>,
     payload: &serde_json::Value,
     shell_env: impl FnOnce() -> Vec<(String, String)>,
+    origin: AutoOrigin,
 ) {
     let Some(handler) = global().get(&HookHandlerId(id.to_string())) else {
         tracing::warn!("hook references unknown handler '{id}' — skipped");
+        notice::not_run(
+            origin,
+            crate::i18n::t_fmt("hook_notice.handler_missing", id),
+        );
         return;
     };
     if let Err(e) = validate_binding(&handler, TriggerSource::Hook) {
         tracing::warn!("hook handler '{id}' cannot bind to hook trigger: {e} — skipped");
+        notice::not_run(
+            origin,
+            crate::i18n::t_fmt2("hook_notice.handler_refused", id, &e.to_string()),
+        );
         return;
     }
     match handler.action {
         HookHandlerAction::ShellCommand { command, args } => {
             // 자식 완료를 기다리지 않도록 JoinHandle을 버린다.
-            let _ = spawn_shell(command, args, shell_env());
+            let _ = spawn_shell(command, args, shell_env(), origin);
         }
         HookHandlerAction::IpcSequence { calls } => {
-            execute_ipc_sequence_handler(id, injector, payload, &calls)
+            execute_ipc_sequence_handler(id, injector, payload, &calls, origin)
         }
     }
 }
@@ -69,11 +82,13 @@ fn execute_ipc_sequence_handler(
     injector: Option<&HostIpcInjector>,
     payload: &serde_json::Value,
     calls: &[IpcCall],
+    origin: AutoOrigin,
 ) {
     let Some(inj) = injector else {
         tracing::warn!(
             "hook handler '{id}' is an IpcSequence but no IPC injector is available — skipped"
         );
+        notice::not_run(origin, crate::i18n::t_fmt("hook_notice.no_injector", id));
         return;
     };
     let ctx = SubstitutionContext {
@@ -81,9 +96,20 @@ fn execute_ipc_sequence_handler(
         ..Default::default()
     };
     // 이 스레드가 host 명령도 처리하므로 응답 대기는 별도 worker가 맡아야 한다.
-    let origin = SequenceOrigin::SurfaceHook;
-    if let Err(e) = enqueue_sequence(origin, id, inj, calls, ctx) {
-        tracing::error!("{origin} IpcSequence '{id}' not run — {e}");
+    let sequence_origin = SequenceOrigin::SurfaceHook;
+    if let Err(e) = enqueue_sequence(
+        sequence_origin,
+        id,
+        inj,
+        calls,
+        ctx,
+        Delivery::Notify(origin),
+    ) {
+        tracing::error!("{sequence_origin} IpcSequence '{id}' not run — {e}");
+        notice::not_run(
+            origin,
+            crate::i18n::t_fmt2("hook_notice.not_queued", id, &e.to_string()),
+        );
     }
 }
 
@@ -113,11 +139,12 @@ fn trigger_payload(received: &HookEvent, surface_id: u32) -> serde_json::Value {
 }
 
 /// command와 args를 공백으로 합쳐 sh/cmd로 실행한다. args를 인자별로 escape하지 않는다.
-/// output 오류만 로그로 남기며 종료 코드의 성공 여부는 검사하지 않는다.
+/// 셸을 띄우지 못하면 알림을 남기며 종료 코드의 성공 여부는 검사하지 않는다.
 fn spawn_shell(
     command: String,
     args: Vec<String>,
     env: Vec<(String, String)>,
+    origin: AutoOrigin,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let full = if args.is_empty() {
@@ -132,6 +159,10 @@ fn spawn_shell(
         );
         if let Err(e) = tasty_utils::process::hide_console(&mut process).output() {
             tracing::warn!("hook shell command spawn failed: {e}; cmd: {full}");
+            notice::not_run(
+                origin,
+                crate::i18n::t_fmt2("hook_notice.spawn_failed", &full, &e.to_string()),
+            );
         }
     })
 }
@@ -254,9 +285,14 @@ mod tests {
             surface_id: Some(42),
             payload: trigger_payload(&HookEvent::Bell, 42),
         });
-        spawn_shell(cmd, Vec::new(), env)
-            .join()
-            .expect("shell thread joined");
+        spawn_shell(
+            cmd,
+            Vec::new(),
+            env,
+            AutoOrigin::SurfaceHook { surface_id: 42 },
+        )
+        .join()
+        .expect("shell thread joined");
         let content = std::fs::read_to_string(&marker).expect("marker written");
         assert_eq!(content.trim(), "bell/hook/42");
     }
@@ -327,6 +363,7 @@ mod tests {
             Some(&injector),
             &trigger_payload(&HookEvent::Notification, 5),
             &calls,
+            AutoOrigin::SurfaceHook { surface_id: 5 },
         );
         let returned_after = started.elapsed();
         assert!(
@@ -378,12 +415,14 @@ mod tests {
             Some(&injector),
             &payload,
             &[step("first.a"), step("first.b")],
+            AutoOrigin::SurfaceHook { surface_id: 5 },
         );
         execute_ipc_sequence_handler(
             "user/second",
             Some(&injector),
             &payload,
             &[step("second.a")],
+            AutoOrigin::SurfaceHook { surface_id: 5 },
         );
 
         let answer = |cmd: IpcCommand| {

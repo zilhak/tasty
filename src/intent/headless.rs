@@ -263,21 +263,32 @@ fn apply_settings(
     }
 }
 
-/// 작업 스레드가 남긴 시스템 알림을 활성 workspace 알림 intent로 바꾼다. workspace가 없으면 그대로 둔다.
+/// 작업 스레드가 남긴 시스템 알림을 알림 intent로 바꾼다. surface를 지정했으면 그 workspace가,
+/// 아니면 활성 workspace가 받는다. workspace가 없으면 그대로 둔다.
 #[cfg(not(feature = "gui"))]
 pub(crate) fn queue_system_notices(state: &mut RequestContext, engine: &EngineMut<'_>) {
-    let Some(ws_id) = engine
+    let Some(active) = engine
         .workspace_at(state.active_workspace_index(engine.core))
         .map(|ws| ws.id)
     else {
         return;
     };
     for notice in crate::system_notice::take() {
+        let owner = (notice.surface_id != 0)
+            .then(|| {
+                engine
+                    .core
+                    .find_workspace_index_for_surface(notice.surface_id)
+            })
+            .flatten()
+            .and_then(|(index, _)| engine.workspace_at(index))
+            .map(|ws| ws.id);
+        let (ws_id, surface_id) = owner.map_or((active, 0), |ws| (ws, notice.surface_id));
         state.dispatch_intent(
             crate::app::command::DomainIntent::PushNotification {
                 level: notice.level,
                 ws_id,
-                surface_id: 0,
+                surface_id,
                 title: notice.title,
                 body: notice.body,
                 source: notice.source.to_string(),

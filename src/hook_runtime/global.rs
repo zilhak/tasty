@@ -183,12 +183,16 @@ impl GlobalHookManager {
     }
 }
 
-/// 전역 훅 명령의 셸 프로세스 생성을 요청한다. 실패는 로그에 남기며 자식 완료·종료 코드는 기다리지 않는다.
+/// 전역 훅 명령의 셸 프로세스 생성을 요청한다. 실패는 로그와 오류 알림으로 남기며 자식 완료·종료 코드는 기다리지 않는다.
 pub(super) fn spawn_command(command: &str) {
     let mut cmd = global_hook_command(command, tasty_utils::process::process_env_keys_to_strip());
     let result = tasty_utils::process::hide_console(&mut cmd).spawn();
     if let Err(e) = result {
         tracing::warn!("global hook command spawn failed: {e}; cmd: {command}");
+        super::notice::not_run(
+            super::notice::AutoOrigin::GlobalHook,
+            crate::i18n::t_fmt2("hook_notice.spawn_failed", command, &e.to_string()),
+        );
     }
 }
 

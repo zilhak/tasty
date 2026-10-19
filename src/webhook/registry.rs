@@ -125,10 +125,11 @@ fn persist_locked(s: &WebhookState) -> Result<(), String> {
     super::persist::write(&persistent)
 }
 
-/// 응답할 호출자가 없는 저장(만료 정리·호출 차감·복원 정리)은 실패를 경고로 남긴다. 파일은 쓰지 않았다.
+/// 응답할 호출자가 없는 저장(만료 정리·호출 차감·복원 정리)은 실패를 경고 로그와 경고 알림으로 남긴다. 파일은 쓰지 않았다.
 fn persist_or_warn(s: &WebhookState) {
     if let Err(e) = persist_locked(s) {
         tracing::warn!("webhook persist skipped: {e}");
+        crate::hook_runtime::notice::webhook_save_failed(&e);
     }
 }
 

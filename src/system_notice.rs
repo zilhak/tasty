@@ -22,18 +22,35 @@ pub(crate) struct SystemNotice {
     pub level: NotificationLevel,
     pub title: String,
     pub body: String,
+    /// 알림을 받을 surface. 0이거나 그 surface가 사라졌으면 활성 workspace가 받는다.
+    pub surface_id: u32,
     /// GUI `notification.created` 이벤트의 source. 저장소에는 남지 않는다.
     pub source: &'static str,
 }
 
 impl SystemNotice {
     pub(crate) fn warning(source: &'static str, title: String, body: String) -> Self {
+        Self::new(NotificationLevel::Warning, source, title, body)
+    }
+
+    pub(crate) fn new(
+        level: NotificationLevel,
+        source: &'static str,
+        title: String,
+        body: String,
+    ) -> Self {
         Self {
-            level: NotificationLevel::Warning,
+            level,
             title,
             body,
+            surface_id: 0,
             source,
         }
+    }
+
+    pub(crate) fn on_surface(mut self, surface_id: u32) -> Self {
+        self.surface_id = surface_id;
+        self
     }
 }
 

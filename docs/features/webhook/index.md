@@ -2,13 +2,13 @@
 
 ## 원칙과 현재 동작
 
-[실패·복구 원칙](../../principles/feedback-and-recovery.md)에 따라 webhook 실패와 기본 터미널 작업의 지속 가능성을 구분한다. 명시 포트를 열지 못하면 다른 포트로 옮기지 않고 리스너 없이 실행하며, 원인과 영향 범위를 경고 알림으로 남긴다. 아래의 접수 뒤 로그만 남기는 동작은 현재 구현의 미충족이다.
+[실패·복구 원칙](../../principles/feedback-and-recovery.md)에 따라 webhook 실패와 기본 터미널 작업의 지속 가능성을 구분한다. 명시 포트를 열지 못하면 다른 포트로 옮기지 않고 리스너 없이 실행하며, 원인과 영향 범위를 경고 알림으로 남긴다. 실행 결과는 발신자에게 돌려주지 않고(아래 ACK 불변식) 실패를 알림으로 남긴다.
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`webhook.*` — `register` 만 plugin 허용(`Network` 권한), 나머지 local-only)
 - **설계**: 이 문서(신뢰 모델·불변식) · [훅 (Surface / Global hooks)](../hooks/index.md)(공유 핸들러 레지스트리)
 - **코드**: `src/webhook/`(리스너·레지스트리·lifetime·인증·남용차단·영속화) · `src/adapters/ipc/handler/webhook.rs`(IPC) · `crates/tasty-cli/src/commands/webhook.rs`(CLI)
-- **화면**: 전용 화면 없음. GUI와 headless에서 동작하며 경고는 기존 toast 또는 로그로 알린다
+- **화면**: 전용 화면 없음. GUI와 headless에서 동작하며 시작 경고와 실행 실패는 알림 저장소에 남긴다
 
 ## 목적
 
@@ -44,7 +44,7 @@ GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구�
 
 HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `build_ack(status)` 는 IpcSequence 실행 결과를 **인자로 받지 않아** 내부 데이터가 응답에 실릴 코드 경로 자체가 없다(이 문서).
 
-그래서 **`200` 은 매칭돼 넘겼다는 뜻이지 실행이 됐다는 뜻이 아니다.** 응답은 실행 전에 확정되므로 IpcSequence 가 통째로 실패해도 발신자는 `200` 을 받고, 한 스텝이 실패해도 다음 스텝이 계속 가서 **부분 적용이 정상 종료 상태로 남을 수 있다**(`execute_sequence` — 현재는 조건 분기가 없다). 실패의 유일한 관측점은 `tracing::error!` 로그다. 외부 발신자는 상태코드로 재시도를 정하므로 이 성질이 곧 계약이다.
+그래서 **`200` 은 매칭돼 넘겼다는 뜻이지 실행이 됐다는 뜻이 아니다.** 응답은 실행 전에 확정되므로 IpcSequence 가 통째로 실패해도 발신자는 `200` 을 받고, 한 스텝이 실패해도 다음 스텝이 계속 가서 **부분 적용이 정상 종료 상태로 남을 수 있다**(`execute_sequence` — 현재는 조건 분기가 없다). 실패는 로그와 함께 알림으로 남는다(아래 "실행 실패 알림"). 발신자 응답은 바뀌지 않는다. 외부 발신자는 상태코드로 재시도를 정하므로 이 성질이 곧 계약이다.
 
 | 상태 | 코드/바디 | 트리거 |
 |------|-----------|--------|
@@ -55,6 +55,20 @@ HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `buil
 | `Gone` | 410 `gone` | lifetime 만료(lazy 삭제) |
 | `PayloadTooLarge` | 413 `payload too large` | body 가 요청당 상한 초과 |
 | `TooManyRequests` | 429 `too many requests` | 남용차단 쿨다운 출처 |
+
+
+### 실행 실패 알림
+
+ACK를 보낸 뒤 실행한 IpcSequence가 성공하지 못하면 `src/hook_runtime/notice.rs`가 알림 하나를 남긴다. 대상은 전역 시스템 알림 선례대로 활성 workspace, `surface_id: 0`이고 GUI `notification.created`의 `source`는 `webhook`이다. 본문은 웹훅 id와 성공하지 못한 스텝(순번·메서드·사유)을 적는다.
+
+| 경우 | 레벨 | 제목 키 |
+|---|---|---|
+| 성공한 스텝이 없음, 또는 injector가 없어 실행하지 못함 | 오류 | `hook_notice.webhook_failed` |
+| 일부 스텝만 실패 | 경고 | `hook_notice.webhook_partial` |
+| 실패는 없지만 응답 대기(10초)가 끝나 결과를 모르는 스텝이 있음 | 경고 | `hook_notice.webhook_unknown` |
+| 응답할 호출자가 없는 webhooks.toml 저장 실패 | 경고 | `hook_notice.webhook_save_title` |
+
+정상 실행은 알림을 남기지 않는다. 같은 실패가 반복되면 같은 본문의 알림은 10초에 한 번만 남는다([알림](../notifications/index.md#작업-스레드의-시스템-알림)).
 
 ### lifetime 6종
 
@@ -67,7 +81,7 @@ HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `buil
 
 ### 영속화 (`~/.tasty/webhooks.toml`)
 
-`Persistent` 웹훅만 저장한다(`Temporary` 는 저장 안 함). 저장 항목: `id`, `methods`, `handler`(또는 인라인 `sequence`), `limit`(kind + `deadline_unix`/`remaining`), `auth`. `TimeLimit` deadline 은 절대 Unix 시각이라 재시작 후에도 정확히 만료한다. 재시작 복원(`restore_into_registry`)은 이미 만료된 엔트리를 등록하지 않고 파일에서 정리한다. 최상위 `port`(명시 지정 포트)·`format`(파일 형식 표시)과 `[[webhook]]` 배열이 같은 파일을 공유하며, 각각의 writer 가 상대 섹션을 보존한다. 파일을 읽거나 파싱하지 못하면 어느 writer도 쓰지 않는다(`tasty_settings::webhook_port_file::read_table`). Persistent 등록·해제는 메모리 변경을 되돌리고 `-32603`(등록: "failed to save the persistent webhook; nothing was registered", 해제: "... is still registered")으로 답한다. 응답할 호출자가 없는 저장(만료 정리, 호출 때 남은 횟수 차감, 복원 뒤 정리)은 쓰지 않고 경고만 남긴다. 저장 포트 읽기는 경고 후 없는 것으로 다루고, 포트 저장·삭제는 오류로 끝난다.
+`Persistent` 웹훅만 저장한다(`Temporary` 는 저장 안 함). 저장 항목: `id`, `methods`, `handler`(또는 인라인 `sequence`), `limit`(kind + `deadline_unix`/`remaining`), `auth`. `TimeLimit` deadline 은 절대 Unix 시각이라 재시작 후에도 정확히 만료한다. 재시작 복원(`restore_into_registry`)은 이미 만료된 엔트리를 등록하지 않고 파일에서 정리한다. 최상위 `port`(명시 지정 포트)·`format`(파일 형식 표시)과 `[[webhook]]` 배열이 같은 파일을 공유하며, 각각의 writer 가 상대 섹션을 보존한다. 파일을 읽거나 파싱하지 못하면 어느 writer도 쓰지 않는다(`tasty_settings::webhook_port_file::read_table`). Persistent 등록·해제는 메모리 변경을 되돌리고 `-32603`(등록: "failed to save the persistent webhook; nothing was registered", 해제: "... is still registered")으로 답한다. 응답할 호출자가 없는 저장(만료 정리, 호출 때 남은 횟수 차감, 복원 뒤 정리)은 쓰지 않고 경고 로그와 경고 알림(제목 `hook_notice.webhook_save_title`, source `webhook`)을 남긴다. 이번 실행의 등록은 그대로 동작하며, 다시 시작하면 저장된 목록에 그 변경이 빠져 있을 수 있다. 저장 포트 읽기는 경고 후 없는 것으로 다루고, 포트 저장·삭제는 오류로 끝난다.
 
 ### 선택적 인증 (가벼운 발신자 확인)
 

@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[피드백·실패 원칙](../../principles/feedback-and-recovery.md)에 따라 결과와 실패가 후속 진행에 미치는 영향을 전달해야 한다. 아래 훅 접수/HookFired와 완료는 다르며, 로그만 남기거나 의존 단계도 무조건 계속하는 경로는 현행 구현의 미충족이다.
+[피드백·실패 원칙](../../principles/feedback-and-recovery.md)에 따라 결과와 실패가 후속 진행에 미치는 영향을 전달해야 한다. 아래 훅 접수/HookFired와 완료는 다르며, 자동 실행(surface 훅·전역 훅)이 실패하면 알림으로 남긴다. 수동 dispatch가 접수 응답만 주고 최종 결과를 돌려주지 않는 경로와 의존 단계도 무조건 계속하는 경로는 현행 구현의 미충족이다.
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`hook.*` / `global_hook.*`)
@@ -102,9 +102,28 @@ webhook은 요청별 스레드에서 실행하므로 이 순서에 포함되지 
 로그의 출처는 `SequenceOrigin`에 따라 `webhook`, `surface hook`, `hook_handler.dispatch`로 구분한다.
 로컬 실행에 필요한 injector가 없으면 warning을 남기고 실행을 건너뛴다.
 
+#### 자동 실행 실패 알림
+
+`execute_sequence`는 스텝마다 `ok`·`failed`(실행되어 오류)·`not_run`(실행 안 됨)·`unknown`(응답 대기 종료로 결과 불명)을 담은 `SequenceOutcome`을 돌려준다(`src/hook_handler/outcome.rs`). 자동 실행 경로는 성공하지 못한 결과를 `src/hook_runtime/notice.rs`로 알림 채널에 남긴다. 수동 dispatch는 알림을 남기지 않는다.
+
+| 실패 지점 | 레벨 | 대상 | source |
+|---|---|---|---|
+| surface 훅: 핸들러 없음·훅 트리거 거절·injector 없음·실행기 대기열 거절·셸을 띄우지 못함 | 오류(`hook_notice.hook_failed`) | 발생 surface와 그 workspace | `hook` |
+| surface 훅 IpcSequence: 성공한 스텝 없음 | 오류(`hook_notice.hook_failed`) | 발생 surface | `hook` |
+| surface 훅 IpcSequence: 일부 스텝 실패 / 결과 불명 스텝 | 경고(`hook_notice.hook_partial` / `hook_unknown`) | 발생 surface | `hook` |
+| 전역 훅 명령을 띄우지 못함 | 오류(`hook_notice.global_failed`) | 활성 workspace, `surface_id: 0` | `global_hook` |
+
+- 레벨 기준은 [실패 뒤의 처리](../../principles/feedback-and-recovery.md#실패-뒤의-처리)를 따른다. 자동화가 전혀 실행되지 않았으면 오류, 일부만 적용됐거나 결과를 모르면 경고다.
+- 발생 surface가 알림 전에 닫혔으면 활성 workspace가 `surface_id: 0`으로 받는다.
+- 셸 명령의 0이 아닌 종료 코드는 실패로 판정하지 않는다. surface 훅의 `ShellCommand`·inline 명령과 전역 훅은 `sh -c`/`cmd /C`를 거치므로 없는 명령은 셸 종료 코드로 끝나며 알림 대상이 아니다.
+- 반복 실패는 같은 source·레벨·제목·본문을 10초에 한 번만 남긴다. 그 위에 저장소의 500ms 합치기가 적용된다([알림](../notifications/index.md#작업-스레드의-시스템-알림)).
+- 웹훅 실행 실패는 [웹훅](../webhook/index.md#실행-실패-알림)에 있다.
+
 #### 셸 핸들러 환경변수 (`TASTY_HOOK_*`)
 
 `ShellCommand` 핸들러(인라인 셸 포함)가 spawn 하는 자식 프로세스에는 트리거 컨텍스트가 환경변수로 노출된다 — IpcSequence 가 `${body.*}` 값슬롯 치환으로 받는 값을 셸은 env 로 받는다(의미 대칭). 조립은 `src/hook_handler/env.rs` (순수 함수).
+
+자식 프로세스는 호스트의 stdin·stdout·stderr를 물려받지 않는다. 수동 dispatch의 직접 실행(`hook_handler::exec::spawn_shell`)은 세 통로를 모두 `null`로 두고, surface 훅의 `sh -c` 실행은 출력을 모아 버린다. 결과가 필요하면 셸 안에서 파일로 돌리거나 `tasty notify` 등으로 보낸다.
 
 | 변수 | 값 |
 |------|-----|

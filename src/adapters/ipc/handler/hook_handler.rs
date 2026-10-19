@@ -16,7 +16,7 @@ use crate::hook_handler::{
     SubstitutionContext, UserHookHandlerActionDecl, UserHookHandlerUpsertDecl, build_env,
     spawn_shell,
 };
-use crate::hook_runtime::{SequenceNotQueued, enqueue_sequence};
+use crate::hook_runtime::{Delivery, SequenceNotQueued, enqueue_sequence};
 use tasty_ipc::host_call::HostIpcInjector;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -116,7 +116,7 @@ pub fn handle_dispatch(
                     .cloned()
                     .unwrap_or(serde_json::Value::Null),
             });
-            spawn_shell(command, args, env);
+            spawn_shell(command, args, env, |_| {});
             JsonRpcResponse::success(
                 id,
                 json!({ "accepted": true, "id": hid.0, "action": "shell_command" }),
@@ -133,7 +133,7 @@ fn start_dispatched_sequence(
     ctx: SubstitutionContext,
 ) -> Result<(), SequenceNotQueued> {
     let origin = SequenceOrigin::Dispatch;
-    enqueue_sequence(origin, handler_id, injector, calls, ctx).inspect_err(|e| {
+    enqueue_sequence(origin, handler_id, injector, calls, ctx, Delivery::Log).inspect_err(|e| {
         tracing::error!("{origin} IpcSequence '{handler_id}' not run — {e}");
     })
 }
@@ -399,6 +399,7 @@ mod tests {
             &injector,
             &[step("hook.a"), step("hook.b")],
             SubstitutionContext::default(),
+            Delivery::Log,
         )
         .expect("the surface hook sequence is queued");
         start_dispatched_sequence(

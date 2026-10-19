@@ -85,13 +85,26 @@ fn handle_request(request: tiny_http::Request) {
 
     request.respond(ack);
 
-    if let Some((calls, Some(injector))) = exec {
-        let ctx = SubstitutionContext {
-            body,
-            headers,
-            query,
-        };
-        execute_sequence(SequenceOrigin::Webhook, &injector, &calls, &ctx);
+    // ACK는 이미 보냈다. 실행 실패는 송신자가 아니라 알림으로 남긴다.
+    let origin = crate::hook_runtime::notice::AutoOrigin::Webhook;
+    match exec {
+        Some((calls, Some(injector))) => {
+            let ctx = SubstitutionContext {
+                body,
+                headers,
+                query,
+            };
+            let outcome = execute_sequence(SequenceOrigin::Webhook, &injector, &calls, &ctx);
+            crate::hook_runtime::notice::sequence(origin, &path, &outcome);
+        }
+        Some((_, None)) => {
+            tracing::warn!("webhook {path} matched before the IPC injector was ready; not run");
+            crate::hook_runtime::notice::not_run(
+                origin,
+                crate::i18n::t_fmt("hook_notice.no_injector", &path),
+            );
+        }
+        None => {}
     }
 }
 

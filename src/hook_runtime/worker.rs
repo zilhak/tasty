@@ -5,6 +5,7 @@
 use std::sync::OnceLock;
 use std::sync::mpsc::{SyncSender, TrySendError, sync_channel};
 
+use super::notice::{self, AutoOrigin};
 use crate::hook_handler::{IpcCall, SequenceOrigin, SubstitutionContext, execute_sequence};
 use tasty_ipc::host_call::HostIpcInjector;
 
@@ -17,6 +18,16 @@ struct SequenceJob {
     injector: HostIpcInjector,
     calls: Vec<IpcCall>,
     ctx: SubstitutionContext,
+    delivery: Delivery,
+}
+
+/// 시퀀스 결과를 받을 곳.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Delivery {
+    /// 자동 실행: 성공하지 못한 스텝이 있으면 알림을 남긴다.
+    Notify(AutoOrigin),
+    /// 결과를 로그에만 남긴다.
+    Log,
 }
 
 /// 최초 스레드 생성 실패도 OnceLock에 남겨 이후 자동 재시도하지 않는다.
@@ -30,7 +41,11 @@ fn sequence_worker() -> Option<&'static SyncSender<SequenceJob>> {
                 .spawn(move || {
                     for job in rx {
                         tracing::debug!("{} IpcSequence '{}' running", job.origin, job.handler_id);
-                        execute_sequence(job.origin, &job.injector, &job.calls, &job.ctx);
+                        let outcome =
+                            execute_sequence(job.origin, &job.injector, &job.calls, &job.ctx);
+                        if let Delivery::Notify(origin) = job.delivery {
+                            notice::sequence(origin, &job.handler_id, &outcome);
+                        }
                     }
                 });
             match spawned {
@@ -53,6 +68,7 @@ pub fn enqueue_sequence(
     injector: &HostIpcInjector,
     calls: &[IpcCall],
     ctx: SubstitutionContext,
+    delivery: Delivery,
 ) -> Result<(), SequenceNotQueued> {
     let worker = sequence_worker().ok_or(SequenceNotQueued::WorkerUnavailable)?;
     let job = SequenceJob {
@@ -61,6 +77,7 @@ pub fn enqueue_sequence(
         injector: injector.clone(),
         calls: calls.to_vec(),
         ctx,
+        delivery,
     };
     worker.try_send(job).map_err(|e| match e {
         TrySendError::Full(_) => SequenceNotQueued::Full,

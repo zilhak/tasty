@@ -1,5 +1,5 @@
 //! 등록된 IPC method는 그대로 두고 params 값의 자리표시자만 채워 순서대로 요청한다.
-//! 스텝 결과는 로그에 남기며 호출자에게 반환하지 않는다.
+//! 스텝 결과는 로그에 남기고 [`SequenceOutcome`]으로 돌려준다. 전달은 출처별 호출자가 정한다.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -8,6 +8,7 @@ use std::time::Duration;
 use regex::Regex;
 use serde_json::Value;
 
+use super::outcome::{SequenceOutcome, StepResult, StepStatus};
 use super::types::IpcCall;
 use tasty_ipc::host_call::{HostIpcInjector, InjectError};
 
@@ -108,16 +109,27 @@ pub fn execute_sequence(
     injector: &HostIpcInjector,
     calls: &[IpcCall],
     ctx: &SubstitutionContext,
-) {
+) -> SequenceOutcome {
+    let mut outcome = SequenceOutcome::default();
     for (i, call) in calls.iter().enumerate() {
         let params = substitute_params(&call.params, ctx);
-        match injector.dispatch_even_if_abandoned(&call.method, params, STEP_TIMEOUT) {
+        let status = match injector.dispatch_even_if_abandoned(&call.method, params, STEP_TIMEOUT) {
             Ok(_result) => {
                 tracing::debug!("{origin} IpcSequence step {i} ({}) ok", call.method);
+                StepStatus::Ok
             }
-            Err(e) => log_step_failure(origin, i, &call.method, &e),
-        }
+            Err(e) => {
+                log_step_failure(origin, i, &call.method, &e);
+                StepStatus::from_error(&e)
+            }
+        };
+        outcome.steps.push(StepResult {
+            index: i,
+            method: call.method.clone(),
+            status,
+        });
     }
+    outcome
 }
 
 /// 로그에 남길 호출 출처. 바인딩 허용 여부를 판단하는 TriggerSource와는 별개다.
@@ -149,27 +161,86 @@ fn log_step_failure(origin: SequenceOrigin, i: usize, method: &str, e: &InjectEr
     }
 }
 
-/// command·args로 직접 프로세스를 실행하고 작업 스레드에서 output을 기다린다.
-/// 셸을 자동으로 거치지 않는다. 비정상 exit status는 별도로 검사하지 않고 결과도 반환하지 않는다.
-pub fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)>) {
-    if let Err(e) = std::thread::Builder::new()
+/// 셸 프로세스의 진행. 종료 코드는 정보일 뿐 성공·실패 판정에 쓰지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShellEvent {
+    Started,
+    /// 프로세스나 작업 스레드를 띄우지 못했다.
+    NotStarted(String),
+    /// 종료 코드. 시그널 종료처럼 코드가 없으면 None이다.
+    Exited(Option<i32>),
+}
+
+/// command·args로 직접 프로세스를 실행하고 작업 스레드에서 종료를 기다린다.
+/// 셸을 자동으로 거치지 않는다. 시작·시작 실패·종료를 `report`에 차례로 알린다.
+pub fn spawn_shell(
+    command: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+    report: impl FnMut(ShellEvent) + Send + 'static,
+) {
+    let report: SharedReport = std::sync::Arc::new(std::sync::Mutex::new(Box::new(report)));
+    let in_thread = report.clone();
+    let spawned = std::thread::Builder::new()
         .name("hook-shell".into())
-        .spawn(move || {
-            let mut cmd = hook_exec_command(
-                &command,
-                &args,
-                env,
-                tasty_utils::process::process_env_keys_to_strip(),
-            );
-            match tasty_utils::process::hide_console(&mut cmd).output() {
-                Ok(_) => tracing::debug!("hook shell '{command}' ran"),
-                Err(e) => tracing::warn!("hook shell '{command}' spawn failed: {e}"),
-            }
-        })
-    {
+        .spawn(move || run_shell(&command, &args, env, &in_thread));
+    if let Err(e) = spawned {
         tracing::warn!("hook shell thread spawn failed: {e}");
+        send(&report, ShellEvent::NotStarted(e.to_string()));
     }
 }
+
+type SharedReport = std::sync::Arc<std::sync::Mutex<Box<dyn FnMut(ShellEvent) + Send>>>;
+
+fn send(report: &SharedReport, event: ShellEvent) {
+    let mut report =
+        crate::poison::recover_mutex(report.lock(), "hook shell report", &REPORT_POISONED);
+    (*report)(event);
+}
+
+fn run_shell(command: &str, args: &[String], env: Vec<(String, String)>, report: &SharedReport) {
+    match start_child(command, args, env) {
+        Ok(child) => {
+            send(report, ShellEvent::Started);
+            send(report, ShellEvent::Exited(wait_code(command, child)));
+        }
+        Err(e) => send(report, ShellEvent::NotStarted(e)),
+    }
+}
+
+fn start_child(
+    command: &str,
+    args: &[String],
+    env: Vec<(String, String)>,
+) -> Result<std::process::Child, String> {
+    let mut cmd = hook_exec_command(
+        command,
+        args,
+        env,
+        tasty_utils::process::process_env_keys_to_strip(),
+    );
+    tasty_utils::process::hide_console(&mut cmd)
+        .spawn()
+        .map_err(|e| {
+            tracing::warn!("hook shell '{command}' spawn failed: {e}");
+            e.to_string()
+        })
+}
+
+fn wait_code(command: &str, mut child: std::process::Child) -> Option<i32> {
+    match child.wait() {
+        Ok(status) => {
+            tracing::debug!("hook shell '{command}' ran");
+            status.code()
+        }
+        Err(e) => {
+            tracing::warn!("hook shell '{command}' wait failed: {e}");
+            None
+        }
+    }
+}
+
+static REPORT_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// 셸을 거치지 않는 훅 Command를 만든다. `strip` 키는 상속 환경에서 지운다. 터미널 셸과 같은
 /// 판정에 바깥 인스턴스의 호출자 신원을 더한 목록이다(`tasty_utils::process::hook_env_keys_to_strip`).
@@ -184,6 +255,10 @@ fn hook_exec_command(
     for key in strip {
         cmd.env_remove(key);
     }
+    // 호스트 입력을 읽거나 호스트 stdout·stderr에 쓰지 않는다. 출력은 쓰지 않으므로 모으지도 않는다.
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
     cmd
 }
 
@@ -191,6 +266,34 @@ fn hook_exec_command(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// 직접 실행 훅은 호스트의 stdin·stdout·stderr를 물려받지 않는다.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn hook_exec_does_not_inherit_host_stdio() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let marker = dir.path().join("fds");
+        // 셸의 stdout은 marker로 돌리므로 stdin(0)과 stderr(2)를 기록한다.
+        let script = format!(
+            "for n in 0 2; do readlink /proc/$$/fd/$n; done > {}",
+            marker.display()
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        spawn_shell(
+            "sh".into(),
+            vec!["-c".into(), script],
+            Vec::new(),
+            move |event| {
+                if let ShellEvent::Exited(_) = event {
+                    tx.send(()).expect("report exit");
+                }
+            },
+        );
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("the shell exits");
+        let fds = std::fs::read_to_string(&marker).expect("marker written");
+        assert_eq!(fds.lines().collect::<Vec<_>>(), ["/dev/null", "/dev/null"]);
+    }
 
     /// 직접 실행 훅도 터미널 셸과 같은 판정으로 활성 플러그인이 선언한 세션 키와 CMUX_* 를 지우고,
     /// 바깥 인스턴스의 신원 변수도 지운다.
@@ -294,10 +397,26 @@ mod tests {
                     params: json!({}),
                 },
             ];
+            let mut outcome = None;
             let logs = capture_logs(|| {
-                execute_sequence(origin, &injector, &calls, &SubstitutionContext::default())
+                outcome = Some(execute_sequence(
+                    origin,
+                    &injector,
+                    &calls,
+                    &SubstitutionContext::default(),
+                ));
             });
             answerer.join().expect("answerer thread");
+            let outcome = outcome.expect("the sequence ran");
+            assert_eq!(
+                outcome.verdict(),
+                super::super::outcome::Verdict::Partial,
+                "a failed step is not success"
+            );
+            assert!(matches!(
+                outcome.steps[1].status,
+                StepStatus::Failed(ref e) if e.contains("probe refused")
+            ));
             assert!(
                 logs.contains(&format!("{label} IpcSequence step 0 (probe.ok) ok")),
                 "{origin:?}: {logs}"
@@ -405,6 +524,7 @@ mod tests {
             command,
             args,
             vec![("TASTY_HOOK_EVENT".to_string(), "user/envtest".to_string())],
+            |_| {},
         );
         // 리다이렉트는 쓰기 전에 파일을 만들 수 있으므로 존재가 아닌 내용을 기다린다.
         let deadline = Instant::now() + Duration::from_secs(5);

@@ -1,0 +1,135 @@
+//! 자동으로 실행한 surface 훅·전역 훅·웹훅의 실패를 알림 채널로 남긴다.
+//! 수동 dispatch는 알림 대신 호출자가 조회하는 결과로 받는다.
+//!
+//! 레벨: 자동화가 전혀 실행되지 않았거나 모든 스텝이 실패하면 오류, 일부 스텝만 실패했거나
+//! 결과를 모르는 스텝이 있으면 경고다. 웹훅 등록 파일 저장 실패는 경고다.
+
+use crate::hook_handler::outcome::{SequenceOutcome, Verdict};
+use crate::notification::NotificationLevel;
+use crate::system_notice::{SystemNotice, post};
+
+/// 실패한 자동 실행의 출처. 알림의 source와 제목을 정한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AutoOrigin {
+    /// 발생 surface가 알림을 받는다.
+    SurfaceHook {
+        surface_id: u32,
+    },
+    GlobalHook,
+    Webhook,
+}
+
+impl AutoOrigin {
+    pub(crate) fn source(self) -> &'static str {
+        match self {
+            Self::SurfaceHook { .. } => "hook",
+            Self::GlobalHook => "global_hook",
+            Self::Webhook => "webhook",
+        }
+    }
+
+    fn surface_id(self) -> u32 {
+        match self {
+            Self::SurfaceHook { surface_id } => surface_id,
+            Self::GlobalHook | Self::Webhook => 0,
+        }
+    }
+
+    fn title(self, verdict: Verdict) -> &'static str {
+        let key = match (self, verdict) {
+            (Self::GlobalHook, Verdict::Failed) => "hook_notice.global_failed",
+            (Self::SurfaceHook { .. }, Verdict::Failed) => "hook_notice.hook_failed",
+            (Self::Webhook, Verdict::Failed) => "hook_notice.webhook_failed",
+            (Self::Webhook, Verdict::Unknown) => "hook_notice.webhook_unknown",
+            (Self::Webhook, _) => "hook_notice.webhook_partial",
+            (_, Verdict::Unknown) => "hook_notice.hook_unknown",
+            _ => "hook_notice.hook_partial",
+        };
+        crate::i18n::t(key)
+    }
+
+    fn notice(self, verdict: Verdict, body: String) -> SystemNotice {
+        let level = if verdict == Verdict::Failed {
+            NotificationLevel::Error
+        } else {
+            NotificationLevel::Warning
+        };
+        SystemNotice::new(level, self.source(), self.title(verdict).to_string(), body)
+            .on_surface(self.surface_id())
+    }
+}
+
+/// 자동화가 실행되지 않은 실패. `body`는 원인을 담은 번역 문구다.
+pub(crate) fn not_run(origin: AutoOrigin, body: String) {
+    post(origin.notice(Verdict::Failed, body));
+}
+
+/// 시퀀스를 실행했지만 성공하지 못한 스텝이 있으면 남긴다. 모두 성공했으면 아무것도 남기지 않는다.
+pub(crate) fn sequence(origin: AutoOrigin, label: &str, outcome: &SequenceOutcome) {
+    if let Some(notice) = sequence_notice(origin, label, outcome) {
+        post(notice);
+    }
+}
+
+fn sequence_notice(
+    origin: AutoOrigin,
+    label: &str,
+    outcome: &SequenceOutcome,
+) -> Option<SystemNotice> {
+    let verdict = outcome.verdict();
+    if verdict == Verdict::Succeeded {
+        return None;
+    }
+    let body = crate::i18n::t_fmt2("hook_notice.sequence", label, &outcome.failure_summary());
+    Some(origin.notice(verdict, body))
+}
+
+/// 응답할 호출자가 없는 웹훅 파일 저장 실패.
+pub(crate) fn webhook_save_failed(error: &str) {
+    post(SystemNotice::warning(
+        AutoOrigin::Webhook.source(),
+        crate::i18n::t("hook_notice.webhook_save_title").to_string(),
+        crate::i18n::t_fmt("hook_notice.webhook_save", error),
+    ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hook_handler::outcome::{StepResult, StepStatus};
+
+    fn outcome(statuses: Vec<StepStatus>) -> SequenceOutcome {
+        SequenceOutcome {
+            steps: statuses
+                .into_iter()
+                .enumerate()
+                .map(|(index, status)| StepResult {
+                    index,
+                    method: format!("m{index}"),
+                    status,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn levels_follow_how_much_of_the_automation_ran() {
+        let surface = AutoOrigin::SurfaceHook { surface_id: 7 };
+        let fail = || StepStatus::Failed("rpc error".into());
+        assert!(sequence_notice(surface, "h", &outcome(vec![StepStatus::Ok])).is_none());
+        let all = sequence_notice(surface, "h", &outcome(vec![fail()])).unwrap();
+        assert_eq!(all.level, NotificationLevel::Error);
+        assert_eq!(all.surface_id, 7);
+        assert_eq!(all.source, "hook");
+        let some = sequence_notice(
+            AutoOrigin::Webhook,
+            "w",
+            &outcome(vec![StepStatus::Ok, fail()]),
+        )
+        .unwrap();
+        assert_eq!(some.level, NotificationLevel::Warning);
+        assert_eq!(some.surface_id, 0);
+        assert_eq!(some.source, "webhook");
+        assert!(some.body.contains("m1"), "{}", some.body);
+    }
+}
