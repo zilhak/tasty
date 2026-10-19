@@ -332,7 +332,7 @@ pub(super) fn apply_attach_loading(
                         .get(&workspace.id)
                         .into_iter()
                         .flatten()
-                        .copied(),
+                        .map(|wait| wait.admitted),
                 )
                 .min()
         })

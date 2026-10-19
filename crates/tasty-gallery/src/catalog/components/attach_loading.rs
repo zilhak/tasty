@@ -32,18 +32,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             label: "Waiting for response",
             time: "0s",
             compact: false,
+            details: "Close tab · 0s",
         }
         .show(ui, theme);
         PendingIndicator {
             label: "Waiting for 3 responses",
             time: "1m 04s",
             compact: false,
+            details: "Close tab · 1m 04s\nMove tab · 12s\nInput · 3s",
         }
         .show(ui, theme);
         PendingIndicator {
             label: "Waiting for 3 responses",
             time: "1m 04s",
             compact: true,
+            details: "Close tab · 1m 04s\nMove tab · 12s\nInput · 3s",
         }
         .show(ui, theme);
         let mut still = theme.clone();
@@ -52,6 +55,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             label: "Waiting for response",
             time: "1h 02m",
             compact: false,
+            details: "Close tab · 1h 02m",
         }
         .show(ui, &still);
     });

@@ -16,7 +16,8 @@ pub struct MainViewState {
     pub(crate) navigation: navigation::NavigationState,
     pub(crate) layout_previews: layout_preview::LayoutPreviews,
     pub(crate) attach_pending: attach_pending::AttachPending,
-    pub(crate) attach_waits: std::collections::HashMap<u32, Vec<std::time::Instant>>,
+    pub(crate) attach_waits:
+        std::collections::HashMap<u32, Vec<super::attach_pending::waits::Wait>>,
     /// Tab bar viewport by stable pane ID; never part of the domain layout.
     #[cfg(feature = "gui")]
     pub(crate) tab_bar_scroll: std::collections::HashMap<u32, LogicalPx>,

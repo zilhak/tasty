@@ -375,8 +375,8 @@ pub fn draw_pane_tab_bars(
             && state
                 .attach_waits
                 .get(&state.active_workspace(engine).id)
-                .and_then(|times| times.iter().min())
-                .is_some_and(|time| now.duration_since(*time) >= delay)
+                .and_then(|times| times.iter().map(|wait| wait.admitted).min())
+                .is_some_and(|time| now.duration_since(time) >= delay)
             && let Some(loading) = pane.loading.get_mut(pane.active_tab)
         {
             *loading = true;

@@ -8,6 +8,8 @@ use tasty_remote::{connection::ConnectionEpoch, pending_request::PendingRequest}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PendingId(pub u64);
+mod creation_match;
+pub(crate) mod waits;
 type ProjectedRects = (Vec<(u32, PhysicalRect)>, Vec<(PendingId, PhysicalRect)>);
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Creation {
@@ -28,6 +30,8 @@ pub(crate) struct Entry {
     pub view: Weak<()>,
     selection: Weak<()>,
     pub visible: bool,
+    baseline: Option<creation_match::CreationBaseline>,
+    pub wait_kind: waits::WaitKind,
 }
 impl Entry {
     fn live(&self, core: &CoreState) -> bool {
@@ -123,6 +127,8 @@ impl AttachPending {
             view,
             selection: navigation.generation(),
             visible: true,
+            baseline: creation.map(|_| creation_match::CreationBaseline::capture(workspace)),
+            wait_kind: waits::WaitKind::from_op(op),
         });
         Some(receipt)
     }
@@ -221,22 +227,9 @@ impl AttachPending {
             .as_ref()
             .filter(|(_, generation)| navigation.matches_generation(generation))
             .map(|(id, _)| *id);
-        let creations = self
-            .entries
-            .iter()
-            .filter(|entry| {
-                entry.epoch.same(epoch) && entry.creation.is_some() && !entry.receipt.finished()
-            })
-            .count();
-        let known: std::collections::HashSet<_> = self
-            .entries
-            .iter()
-            .filter(|entry| entry.epoch.same(epoch) && entry.receipt.has_result())
-            .filter_map(|entry| entry.receipt.created())
-            .collect();
-        let ambiguous = new_remote.iter().any(|id| !known.contains(id));
+        let evidence = creation_match::plans(&self.entries, core, epoch, mapping, new_remote);
         let mut focus = None;
-        for entry in &mut self.entries {
+        for (entry, evidence) in self.entries.iter_mut().zip(evidence) {
             if !entry.epoch.same(epoch)
                 || entry.receipt.finished()
                 || !core.has_workspace(entry.workspace)
@@ -244,16 +237,11 @@ impl AttachPending {
                 continue;
             }
             if entry.receipt.has_result() {
-                let created = entry
-                    .receipt
-                    .created()
-                    .or_else(|| (creations == 1 && new_remote.len() == 1).then(|| new_remote[0]));
-                let local = created.and_then(|id| mapping.get(&id).copied());
-                if entry.creation.is_none()
-                    || local.is_some()
-                    || (entry.receipt.created().is_none()
-                        && (!new_remote.is_empty() || !entry.visible))
-                {
+                let local = match entry.receipt.created() {
+                    Some(id) => mapping.get(&id).copied(),
+                    None => evidence.target,
+                };
+                if entry.creation.is_none() || local.is_some() {
                     if selected == Some(entry.id)
                         && view.is_some_and(|view| view.ptr_eq(&entry.view))
                     {
@@ -262,9 +250,17 @@ impl AttachPending {
                     entry.receipt.finish();
                 }
             }
-            if entry.creation.is_some() && ambiguous {
+            if entry.creation.is_some() && evidence.overlap {
                 entry.visible = false;
             }
+        }
+        if self
+            .entries
+            .iter()
+            .any(|entry| selected == Some(entry.id) && !entry.visible)
+        {
+            // A folded draft has no input target. Keep the existing real selection usable.
+            self.deselect();
         }
         focus
     }

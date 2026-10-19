@@ -2,6 +2,7 @@
 use crate::model::{BinaryTree, LogicalPx, PhysicalRect};
 use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
+use crate::state::attach_pending::waits::{Wait, by_kind};
 use std::time::{Duration, Instant};
 
 pub(crate) fn draw(
@@ -94,11 +95,14 @@ pub(crate) fn draw(
             .filter(|entry| {
                 entry.workspace == workspace && entry.epoch.is_active() && !entry.receipt.finished()
             })
-            .map(|entry| entry.receipt.admitted),
+            .map(|entry| Wait::new(entry.wait_kind, entry.receipt.admitted)),
     );
     let wait_delay = Duration::from_secs_f64(theme.pending_indicator_delay().to_secs_f64());
-    let Some(summary) = tasty_remote::pending_request::WaitSummary::at(times, now, wait_delay)
-    else {
+    let Some(summary) = tasty_remote::pending_request::WaitSummary::at(
+        times.iter().map(|wait| wait.admitted),
+        now,
+        wait_delay,
+    ) else {
         return;
     };
     ctx.request_repaint_after(summary.next_update);
@@ -116,6 +120,17 @@ pub(crate) fn draw(
         crate::i18n::t_fmt("attach.pending.many", &summary.count.to_string())
     };
     let time = elapsed_label(summary.elapsed.as_secs());
+    let details = by_kind(&times)
+        .into_iter()
+        .map(|(kind, since)| {
+            format!(
+                "{} · {}",
+                crate::i18n::t(kind.label_key()),
+                elapsed_label(now.saturating_duration_since(since).as_secs())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     let base_top = LogicalPx(bounds.top()) + state.tab_bar_height.to_logical(scale) + inset;
     let top = notice_column_occupied.map_or(base_top, |occupied| {
         base_top.max(LogicalPx(occupied.bottom()) + theme.notice_column_gap())
@@ -135,6 +150,7 @@ pub(crate) fn draw(
                     label: &label,
                     time: &time,
                     compact: false,
+                    details: &details,
                 }
                 .show(ui, &theme);
             });

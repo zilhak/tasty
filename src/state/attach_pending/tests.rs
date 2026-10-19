@@ -150,69 +150,6 @@ fn result_waits_for_applied_delta_and_preserves_user_selection() {
 }
 
 #[test]
-fn merged_unknown_results_collapse_duplicates_without_arbitrary_focus() {
-    let (mut state, engine) = crate::state::tests::test_mirror_state();
-    let core = &engine.core_state;
-    let anchor = state.focused_surface_id(core).unwrap();
-    let (sender, _queue) = tasty_remote::connection::channel();
-    let view = Arc::new(());
-    let identity = Arc::downgrade(&view);
-    let a = state
-        .attach_pending
-        .begin(
-            core,
-            &state.navigation,
-            &tab(anchor),
-            sender.epoch(),
-            identity.clone(),
-            std::time::Instant::now(),
-        )
-        .unwrap();
-    a.bind(1);
-    let b = state
-        .attach_pending
-        .begin(
-            core,
-            &state.navigation,
-            &tab(anchor),
-            sender.epoch(),
-            identity.clone(),
-            std::time::Instant::now(),
-        )
-        .unwrap();
-    b.bind(2);
-    let mapping = [(99, anchor), (100, anchor)].into_iter().collect();
-    state.attach_pending.result(&sender.epoch(), 1, None, true);
-    assert_eq!(
-        state.attach_pending.applied(
-            core,
-            &state.navigation,
-            &sender.epoch(),
-            Some(&identity),
-            &mapping,
-            &[99, 100]
-        ),
-        None
-    );
-    assert!(a.finished());
-    assert!(!b.finished());
-    assert!(state.pending_regions(core, rect(), 1.0).is_empty());
-    state.attach_pending.result(&sender.epoch(), 2, None, true);
-    assert_eq!(
-        state.attach_pending.applied(
-            core,
-            &state.navigation,
-            &sender.epoch(),
-            Some(&identity),
-            &mapping,
-            &[]
-        ),
-        None
-    );
-    assert!(b.finished());
-}
-
-#[test]
 fn retired_epoch_cannot_reappear_or_become_a_new_connection_result() {
     let (mut state, engine) = crate::state::tests::test_mirror_state();
     let core = &engine.core_state;
@@ -531,3 +468,5 @@ fn noncreation_requests_wait_for_result_and_delta_without_prelayout_or_focus_cha
         state.attach_pending.retain(core);
     }
 }
+
+mod correlation;

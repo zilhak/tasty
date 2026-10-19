@@ -4,6 +4,7 @@ use crate::app::App;
 use crate::app::attach_client::GIT_VIEWER_PLUGIN_ID;
 use crate::ipc::stream::StructuralOp;
 use crate::runtime::engine_session::EngineId;
+use crate::state::attach_pending::waits::{Wait, WaitKind};
 use crate::state::attach_pending::{Query, QueryConsumer};
 use std::collections::HashMap;
 
@@ -49,8 +50,19 @@ impl App {
             .iter()
             .filter(|session| session.transport.frame_tx.epoch().is_active())
             .map(|session| {
-                let mut times: Vec<_> = session.state.resize_sync.pending_times().collect();
-                times.extend(session.transport.frame_tx.oldest_unprocessed_input());
+                let mut times: Vec<_> = session
+                    .state
+                    .resize_sync
+                    .pending_times()
+                    .map(|time| Wait::new(WaitKind::Resize, time))
+                    .collect();
+                times.extend(
+                    session
+                        .transport
+                        .frame_tx
+                        .oldest_unprocessed_input()
+                        .map(|time| Wait::new(WaitKind::Input, time)),
+                );
                 let workspace = session.state.local_workspace;
                 (
                     (workspace, times),
@@ -77,17 +89,23 @@ impl App {
                     }
             });
             for query in &main.state.attach_pending.queries {
-                waits
-                    .entry(query.workspace)
-                    .or_default()
-                    .push(query.admitted);
+                waits.entry(query.workspace).or_default().push(Wait::new(
+                    match query.consumer {
+                        QueryConsumer::Git(_) => WaitKind::Git,
+                        QueryConsumer::Markdown(_) => WaitKind::Markdown,
+                    },
+                    query.admitted,
+                ));
             }
             for (surface, since) in main.state.explorer_views.pending_remote_times() {
                 if let Some((index, _)) = engine.find_workspace_index_for_surface(surface)
                     && let Some(workspace) = engine.workspace_at(index)
                     && waits.contains_key(&workspace.id)
                 {
-                    waits.entry(workspace.id).or_default().push(since);
+                    waits
+                        .entry(workspace.id)
+                        .or_default()
+                        .push(Wait::new(WaitKind::Folder, since));
                 }
             }
             if let Some(picker) = &main.state.dialogs.file_picker
@@ -95,13 +113,16 @@ impl App {
                 && waits.contains_key(&workspace)
                 && let crate::state::FpLoadState::Loading { sent_at, .. } = picker.load
             {
-                waits.entry(workspace).or_default().push(sent_at);
+                waits
+                    .entry(workspace)
+                    .or_default()
+                    .push(Wait::new(WaitKind::Folder, sent_at));
             }
             for (workspace, times) in &mut waits {
                 if let Some(began) = epochs.get(workspace) {
-                    times.retain(|time| time >= began);
+                    times.retain(|wait| wait.admitted >= *began);
                 }
-                times.sort();
+                times.sort_by_key(|wait| wait.admitted);
             }
             main.state.attach_pending.retain(engine.core);
             if main.state.attach_waits != waits {

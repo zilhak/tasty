@@ -63,6 +63,8 @@ pub struct PendingIndicator<'a> {
     pub label: &'a str,
     pub time: &'a str,
     pub compact: bool,
+    /// One line per pending kind, each with its own elapsed time.
+    pub details: &'a str,
 }
 impl PendingIndicator<'_> {
     pub fn show(&self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
@@ -159,7 +161,7 @@ impl PendingIndicator<'_> {
                 format!("{} · {}", self.label, self.time),
             )
         });
-        response.on_hover_text(format!("{} · {}", self.label, self.time))
+        response.on_hover_text(self.details)
     }
 }
 
@@ -206,12 +208,14 @@ mod tests {
                     label: "Waiting for 3 responses",
                     time: "1m 04s",
                     compact: false,
+                    details: "Close tab · 1m 04s\nInput · 3s",
                 }
                 .show(ui, &theme);
                 let compact = PendingIndicator {
                     label: "Waiting for 3 responses",
                     time: "1m 04s",
                     compact: true,
+                    details: "Close tab · 1m 04s\nInput · 3s",
                 }
                 .show(ui, &theme);
                 assert_eq!(full.rect.height(), theme.pending_indicator_height().value());

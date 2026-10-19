@@ -510,6 +510,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 화면정의서 — **원격 attach 화면 (GUI mirror)**.
 
 - **시각 소스**: mirror 는 기존 워크스페이스 렌더러를 쓰며, 로딩·대기 표시는 `gallery/layouts-loading-prelayout.jsx`의 공용 LoadingOverlay·PendingIndicator를 따른다. 시각 요소는 사이드바/작업영역 문서로 위임(연결 개념).
+- 응답 대기 툴팁은 요청 종류마다 해당 종류의 가장 오래된 접수부터 흐른 시간을 한 줄씩 보여 준다. 내부 요청·객체 ID는 표시하지 않는다. 칩 본문은 전체 요청 수와 전체에서 가장 오래된 시간을 유지한다.
 
 원격 attach 는 대부분 headless/CLI 동작이고, GUI 로 보이는 것은 **mirror 워크스페이스**, **요청의 선행 배치·응답 대기 표시**, **점유된 대상의 readonly 표시**다. 둘 다 별도 화면을 만들지 않고 기존 화면의 상태로 표현한다.
 
