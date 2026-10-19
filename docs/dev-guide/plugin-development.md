@@ -81,7 +81,7 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 
 ### Surface kind — `rendering` 3 종
 
-- **`rendering = "egui-mesh"`** (image/mesh_demo, 그리고 markdown 의 확인 팝업 2 개만): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. bundled 화이트리스트 + api_version gate. 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md).
+- **`rendering = "egui-mesh"`** (번들 예: image/mesh_demo, 그리고 markdown 의 확인 팝업 2 개): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. 커스텀 plugin 도 번들 plugin 과 같은 조건(api_version 일치, host 내장·다른 plugin 의 kind 이름과 충돌 없음)으로 등록한다. 조건과 이름 충돌 규칙은 [egui-mesh-channel "개방 정책"](egui-mesh-channel.md#개방-정책).
 - **`rendering = "webview"`** (html, markdown — [WebView 호스트 계약](../design/systems/webview.md)): host 의 네이티브 WebView 오버레이로 그림. html 은 surface 의 URL 을 host 가 동기화하고, markdown 은 plugin 이 직접 sanitize 된 HTML 문서를 생성해 로드시킨다.
 - **`rendering = "remote"` (기본)**: webview 와 같은 `RemoteSurface` stand-in 등록만 하는 marker — host 는 이 kind 의 콘텐츠를 그리지 않는다. `snapshot_surface`/`restore_surface` 로 세션 복원.
 

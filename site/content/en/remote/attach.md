@@ -1,4 +1,4 @@
-<!-- source-hash: b47e1a7b83a0 -->
+<!-- source-hash: 1d3ccc20817b -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -112,7 +112,7 @@ Common options:
 | `--json` | `remote workspaces`, `remote new-workspace` | Prints the result as JSON |
 
 - A Workspace attach mirrors the terminals inside it, including the split structure.
-- Image Surfaces show their content as well, and clicks and key presses reach the remote.
+- Surfaces that a plugin draws itself, such as Image Surfaces, show their content as well, and clicks and key presses reach the remote. This includes Surfaces from plugins you installed yourself.
 - In the explorer you can change files on the remote computer (since 0.12.2). New folder, new file, rename, move to trash, and copy, cut, paste and drag-and-drop within the same connection are carried out by the remote Tasty, and the progress display, name-conflict popup and result card are the same as in a local explorer. The remote Tasty must also be 0.12.2 or later. The following limits apply.
   - Remote operations are not added to the undo history. To revert one, use **Undo** on its result card.
   - Pasting and drag-and-drop between local and remote, or between two different remotes, are refused.

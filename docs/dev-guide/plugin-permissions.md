@@ -279,11 +279,11 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 [attach IPC](attach-behavior.md#ipc-표면-attach)). SSH 접속 권한으로 이미 원격 파일 등에
 접근할 수 있으므로, 렌더 콘텐츠가 추가된다는 이유만으로 플러그인 권한 토큰을 늘리지 않는다.
 
-예를 들어 image/mesh_demo의 egui-mesh attach mirror는 다음 두 곳에서 범위를 제한한다.
+예를 들어 egui-mesh attach mirror는 다음 두 곳에서 범위를 제한한다.
 markdown 본문은 [webview](../design/systems/webview.md)를 사용하므로 이 채널의 대상이 아니다.
 
-- 서버가 attach 트리를 직렬화할 때 `is_egui_mesh_allowed` 목록을 다시 검사한다.
-  이는 이 채널에서 허용하는 콘텐츠 목록이며, 플러그인 권한 검사는 아니다.
+- 서버가 attach 트리를 직렬화할 때 그 kind가 같은 plugin 소유의 egui-mesh로 등록돼 있는지
+  `is_registered_egui_mesh_kind`로 다시 확인한다. plugin ID 목록이나 플러그인 권한 검사는 아니다.
 - 입력은 hard 점유를 가진 holder만 전달할 수 있다.
   `CoreState::apply_attached_mesh_input`이 holder를 검사한다.
 

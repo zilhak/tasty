@@ -574,7 +574,8 @@ impl EngineRef<'_> {
                 display_names.insert(id, surface.display_name());
             }
         }
-        let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
+        let (mesh_whitelisted, mesh_rejected) =
+            mesh_mirror_candidates(&self.runtime.surface_registry, class);
         let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
 
         let mut surfaces = Vec::new();
@@ -665,15 +666,19 @@ pub(crate) fn reject_attach(
     let _ = hub.push(client_id, StreamFrame::new(StreamTag::Detach, Vec::new())); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
 }
 
-/// model 크레이트는 앱의 허용 목록을 참조할 수 없어 여기서 mesh 후보를 다시 확인한다.
+/// model 크레이트는 앱의 등록부를 참조할 수 없어 여기서 mesh 후보를 다시 확인한다.
+/// 그 kind가 같은 plugin 소유의 egui-mesh로 등록돼 있어야 한다. plugin ID 목록은 보지 않는다.
 /// 반환값의 rejected는 비터미널 목록과 합쳐 placeholder로 처리해야 한다.
-pub(crate) fn mesh_mirror_candidates(
-    class: &AttachSurfaceClass,
-) -> (Vec<(SurfaceId, &str, &str)>, Vec<SurfaceId>) {
+pub(crate) fn mesh_mirror_candidates<'a>(
+    registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
+    class: &'a AttachSurfaceClass,
+) -> (Vec<(SurfaceId, &'a str, &'a str)>, Vec<SurfaceId>) {
     let mut whitelisted = Vec::new();
     let mut rejected = Vec::new();
     for (sid, kind, plugin_id) in &class.mesh_candidates {
-        if crate::runtime::surface_registry::egui_mesh::is_egui_mesh_allowed(kind, plugin_id) {
+        if crate::runtime::surface_registry::egui_mesh::is_registered_egui_mesh_kind(
+            registry, kind, plugin_id,
+        ) {
             whitelisted.push((*sid, kind.as_str(), plugin_id.as_str()));
         } else {
             rejected.push(*sid);
@@ -761,9 +766,34 @@ mod content_mirror_candidate_tests {
 mod mesh_mirror_candidate_tests {
     use super::mesh_mirror_candidates;
     use crate::model::AttachSurfaceClass;
+    use crate::runtime::surface_registry::SurfaceKindRegistry;
+    use crate::runtime::surface_registry::egui_mesh::register_egui_mesh_kind;
+    use tasty_plugin_manifest::{HOST_API_VERSION, SurfaceKindDecl};
+
+    fn decl(kind: &str) -> SurfaceKindDecl {
+        serde_json::from_value(serde_json::json!({
+            "kind": kind,
+            "display_name_i18n_key": "surface.kind.markdown",
+            "rendering": "egui-mesh",
+        }))
+        .unwrap()
+    }
 
     #[test]
-    fn mesh_mirror_candidates_filters_by_whitelist() {
+    fn mesh_mirror_candidates_follow_registration() {
+        let reg = SurfaceKindRegistry::new();
+        for (plugin, kind) in [
+            ("com.tasty.image", "image"),
+            ("com.tasty.mesh-demo", "mesh_demo"),
+            ("com.example.widget", "widget"),
+        ] {
+            assert!(register_egui_mesh_kind(
+                &reg,
+                plugin,
+                &decl(kind),
+                HOST_API_VERSION
+            ));
+        }
         let class = AttachSurfaceClass {
             terminals: vec![1],
             non_terminals: vec![2],
@@ -776,17 +806,19 @@ mod mesh_mirror_candidate_tests {
                     "com.tasty.mesh-demo".to_string(),
                 ),
                 (12, "widget".to_string(), "com.example.widget".to_string()),
+                // 등록부에 없는 kind와 등록 소유자가 다른 후보는 mirror하지 않는다.
                 (13, "markdown".to_string(), "com.tasty.markdown".to_string()),
+                (14, "widget".to_string(), "com.example.other".to_string()),
             ],
             content_candidates: vec![],
         };
-        let (whitelisted, rejected) = mesh_mirror_candidates(&class);
+        let (whitelisted, rejected) = mesh_mirror_candidates(&reg, &class);
         let mut whitelisted_ids: Vec<u32> = whitelisted.iter().map(|(sid, _, _)| *sid).collect();
         whitelisted_ids.sort_unstable();
         let mut rejected_ids = rejected;
         rejected_ids.sort_unstable();
-        assert_eq!(whitelisted_ids, vec![10, 11]);
-        assert_eq!(rejected_ids, vec![12, 13]);
+        assert_eq!(whitelisted_ids, vec![10, 11, 12]);
+        assert_eq!(rejected_ids, vec![13, 14]);
     }
 }
 
@@ -803,6 +835,21 @@ mod mesh_descriptor_display_name_tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
         let mut engine = engine_session.borrow_mut();
+        let decl: tasty_plugin_manifest::SurfaceKindDecl =
+            serde_json::from_value(serde_json::json!({
+                "kind": kind,
+                "display_name_i18n_key": "surface.kind.markdown",
+                "rendering": "egui-mesh",
+            }))
+            .unwrap();
+        assert!(
+            crate::runtime::surface_registry::egui_mesh::register_egui_mesh_kind(
+                &engine.runtime.surface_registry,
+                plugin_id,
+                &decl,
+                tasty_plugin_manifest::HOST_API_VERSION,
+            )
+        );
         let surface: Box<dyn crate::model::Surface> = Box::new(EguiMeshSurface::new(
             100,
             kind,
@@ -848,6 +895,7 @@ mod mesh_descriptor_display_name_tests {
         for (kind, plugin_id, name) in [
             ("image", "com.tasty.image", "screenshot.png"),
             ("mesh_demo", "com.tasty.mesh-demo", "Demo"),
+            ("widget", "com.example.widget", "Widget"),
         ] {
             let (mut engine_session, idx) = engine_with_mesh_surface(kind, plugin_id, name);
             let engine = engine_session.borrow_mut();
@@ -925,8 +973,10 @@ impl crate::runtime::engine_access::EngineMut<'_> {
             && !self.as_ref().is_surface_deferred(surface_id)
         {
             if let Some((kind, plugin_id)) = self.as_ref().find_mesh_surface_info(surface_id)
-                && crate::runtime::surface_registry::egui_mesh::is_egui_mesh_allowed(
-                    &kind, &plugin_id,
+                && crate::runtime::surface_registry::egui_mesh::is_registered_egui_mesh_kind(
+                    &self.runtime.surface_registry,
+                    &kind,
+                    &plugin_id,
                 )
             {
                 self.attach_mesh_surface_for_stream(surface_id, client_id, hub);
@@ -1044,7 +1094,8 @@ impl crate::runtime::engine_access::EngineMut<'_> {
             self.tap_surface_for_stream(sid, client_id, hub);
         }
 
-        let (mesh_whitelisted, _mesh_rejected) = mesh_mirror_candidates(&class);
+        let (mesh_whitelisted, _mesh_rejected) =
+            mesh_mirror_candidates(&self.runtime.surface_registry, &class);
         let (content_whitelisted, content_rejected) = content_mirror_candidates(&class);
         tracing::debug!(
             "attach: workspace {workspace_id} -> client {client_id} ({} terminals, {} mesh, {} content, {} placeholders)",

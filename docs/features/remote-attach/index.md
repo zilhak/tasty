@@ -61,7 +61,7 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [Attach 메커니즘]
 | kind | mirror 동작 | 제한 |
 |---|---|---|
 | terminal | 화면 스냅샷과 이후 출력 전달 | 입력은 점유 client만 보낸다 |
-| 허용된 bundled egui-mesh(image/mesh_demo) | mesh 프레임 전달 | 입력 역방향 전달은 headless 서버에서만 지원한다. GUI 서버에서는 콘텐츠만 보인다 |
+| egui-mesh(번들 image/mesh_demo와 커스텀 plugin의 egui-mesh kind) | mesh 프레임 전달 | 입력 역방향 전달은 headless 서버에서만 지원한다. GUI 서버에서는 콘텐츠만 보인다 |
 | markdown | 원문을 받아 client의 markdown plugin이 자체 테마·설정으로 렌더 | 원격 상대경로 이미지·링크는 client에 파일이 없어 깨질 수 있다. 주소창으로 다른 파일을 열 수 없다 |
 | explorer | `list_dir_request` / `list_dir_result`로 디렉토리 탐색. 파일 더블클릭은 원격에 새 탭으로 연다 | 원격에서 콘텐츠를 mirror하는 kind(markdown 등)만 열 수 있다. 파일 변경(새 폴더·새 파일·이름 변경·휴지통·같은 연결 안의 붙여넣기·끌기)은 server 가 원격 쓰기 capability 를 알린 연결에서만 server 가 실행한다. 시스템에서 열기·새 탭·즐겨찾기 추가는 막는다 |
 | 나머지(예: html) | placeholder | 콘텐츠 mirror 미지원 |
@@ -427,7 +427,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 - Given workspace attach When 멤버 터미널 하나가 이미 다른 client 점유 Then workspace attach 가 거부된다.
 - Given stale 포트 파일만 있는 죽은 인스턴스 When `tasty remote check` Then dead(exit≠0)로 판정한다.
 - Given 부모 Tasty의 `TASTY_SESSION_TOKEN`을 상속한 GUI·CLI When 다른 인스턴스로 원격 브라우징·생성·생존 확인 요청을 보낸다 Then 요청에 세션 토큰이 없고, 원격은 `session_token unknown` 없이 응답한다.
-- Given workspace attach 대상에 bundled egui-mesh surface(image/mesh_demo) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님). markdown은 아래의 원문 전달 채널을 사용한다.
+- Given workspace attach 대상에 egui-mesh surface(번들 image/mesh_demo 또는 커스텀 plugin 의 egui-mesh kind) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님). markdown은 아래의 원문 전달 채널을 사용한다.
   - image — 미검증.
   - mesh_demo — 미검증.
   - 2종 공통 시각적 렌더 확인(실제 GUI attach client 로 mirror pane 화면 비교) — 미검증.
@@ -472,7 +472,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
   갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs`(progress/error 2종).
   i18n `[transfer.progress]`/`[transfer.error]`.
 - 브라우징 코어(CLI/IPC 공유): `crates/tasty-remote/src/browse.rs`(`browse`/`resolve_endpoint`/`probe_method` — loopback 직결 + `workspace.list`+`attach.list` 병합).
-- mesh mirror(bundled egui-mesh surface): 프로토콜/분류/서버 구독·forward/클라이언트 렌더·입력 전체 상세는 [dev-guide/egui-mesh-channel "attach mesh mirror 소비 경로"](../../dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로).
+- mesh mirror(egui-mesh surface): 프로토콜/분류/서버 구독·forward/클라이언트 렌더·입력 전체 상세는 [dev-guide/egui-mesh-channel "attach mesh mirror 소비 경로"](../../dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로).
 - CLI: `crates/tasty-cli/src/commands/remote.rs`(clap 선언), `crates/tasty-cli/src/dispatch.rs`(갈래 판정), `local/attach.rs`(`run_attach_*` 세션 머신), `local/remote_check.rs`, `local/remote_workspaces.rs`(browse 얇은 래퍼), `crates/tasty-ssh/src/lib.rs`(SSH 연결 + `PortDiscoveryError`/`PortDiscoveryFailureKind` 원인 분류, `pick_most_informative` 로 auto 체인 대표 에러 선택).
 
 ## 화면

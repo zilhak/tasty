@@ -255,6 +255,30 @@ fn only_open_surface_kinds_that_mirror_content_are_remote_openable() {
     ));
 }
 
+#[test]
+fn egui_mesh_kinds_are_remote_openable_regardless_of_plugin_id() {
+    let (_state, mut engine_session) = crate::state::tests::test_mirror_state();
+    let engine = engine_session.borrow_mut();
+    let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
+        "kind": "widget",
+        "display_name_i18n_key": "surface.kind.markdown",
+        "rendering": "egui-mesh",
+    }))
+    .expect("kind decl");
+    assert!(
+        crate::runtime::surface_registry::egui_mesh::register_egui_mesh_kind(
+            &engine.runtime.surface_registry,
+            "com.example.widget",
+            &decl,
+            tasty_plugin_manifest::HOST_API_VERSION,
+        )
+    );
+    assert!(is_remote_openable(
+        &engine.as_ref(),
+        &handler(open_surface("widget"))
+    ));
+}
+
 /// 1순위가 원격에 열 수 없는 Ipc이고 2순위가 markdown인 mirror 환경을 만든다.
 fn mirror_with_ipc_first() -> (
     crate::app::services::AppServices,

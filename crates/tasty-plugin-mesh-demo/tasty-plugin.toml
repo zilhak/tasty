@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.mesh-demo"
 name = "egui-mesh Demo"
-version = "0.1.222"
+version = "0.1.223"
 description = "egui-mesh channel proof-of-concept surface (A1)"
 api_version = "1"
 # 배포 패키지에서는 제외하고 개발용 build-plugins / link-plugins에서는 준비한다.
@@ -20,7 +20,7 @@ lang_dir = "lang"
 type = "process"
 command = "tasty-plugin-mesh-demo"
 
-# 플러그인이 만든 egui mesh를 호스트가 합성한다. 등록 시 번들 목록과 API 버전을 검사한다.
+# 플러그인이 만든 egui mesh를 호스트가 합성한다. 등록 시 API 버전과 kind 이름 충돌을 검사한다.
 [[surface_kinds]]
 kind = "mesh_demo"
 display_name_i18n_key = "surface.kind.mesh_demo"

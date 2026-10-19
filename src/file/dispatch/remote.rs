@@ -37,7 +37,8 @@ pub(crate) fn rejects_handler_for_origin(
     rejected
 }
 
-/// kind와 client에 등록한 plugin 쌍이 원문 전달이나 mesh mirror 허용 목록에 있는지 확인한다.
+/// client에 등록한 kind가 원문 전달 허용 목록에 있거나 egui-mesh인지 확인한다.
+/// egui-mesh는 서버가 plugin ID와 무관하게 mesh mirror로 보낸다(docs/dev-guide/attach-behavior.md).
 /// html처럼 mirror에서 placeholder로 보이는 kind는 원격에 열어도 내용을 볼 수 없다.
 fn mirrors_content(engine: &EngineRef<'_>, kind: &str) -> bool {
     let Some(def) = engine.runtime.surface_registry.get_live(kind) else {
@@ -47,7 +48,7 @@ fn mirrors_content(engine: &EngineRef<'_>, kind: &str) -> bool {
         return false;
     };
     crate::remote::server::is_attach_content_allowed(kind, plugin_id)
-        || crate::runtime::surface_registry::egui_mesh::is_egui_mesh_allowed(kind, plugin_id)
+        || def.rendering == crate::runtime::surface_registry::RegisteredRendering::EguiMesh
 }
 
 /// mirror origin의 식별 결과를 적용한다. 로컬 핸들러 전체 picker는 띄우지 않는다.

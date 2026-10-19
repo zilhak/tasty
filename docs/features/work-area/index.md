@@ -93,14 +93,14 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 트리에는 고유 `
 | `terminal` | Terminal | **host 내장** | GPU 셰이더 | 쉘 PTY. 재시작 뒤 지연 활성화 가능(`empty` 의 복원 자리) |
 | `empty` | Empty | **host 내장** | egui | 빈 자리(변환 버튼). plugin 대기 자리·복원 자리도 이 kind |
 | `markdown` | Remote | `com.tasty.markdown` plugin (`rendering=webview`) | 네이티브 WebView overlay — plugin 이 sanitize HTML 문서 생성(`RemoteSurface`) | [WebView 호스트 계약](../../design/systems/webview.md). 대용량/파일열기 확인 popup 2개는 surface 가 아니라 egui-mesh popup 기여 |
-| `image` | EguiMesh | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh whitelist |
+| `image` | EguiMesh | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh 등록(api_version·이름 충돌) |
 | `explorer` | Explorer | **host 내장** | egui | host builtin surface |
 | `dag_graph` | DAG | **host 내장** | egui | agent task DAG 뷰 ([agent-collaboration](../agent-collaboration/index.md)) |
 | `html` | Remote | `com.tasty.html` plugin (`rendering=webview`) | 네이티브 WebView overlay (`RemoteSurface`) | plugin 은 URL/navigation 만 제어 |
 | `mesh_demo` | EguiMesh | `com.tasty.mesh-demo` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh | 개발/검증용. 매니페스트가 `bundle = false` 라 배포 패키징에는 안 들어간다 |
 
 - **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`explorer`/`dag_graph`) 가 부팅 시 등록.
-- **egui-mesh plugin surface**(`image`, 개발용 `mesh_demo`)는 매니페스트의 `[[surface_kinds]]` 가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (docs/dev-guide/egui-mesh-channel.md). markdown 의 확인 popup 2개는 같은 egui-mesh 채널을 쓰지만 `[[contributes.popup]]` 기여이며 surface kind 로 등록되지 않는다([popup 구현](../../dev-guide/popup-implementation.md)).
+- **egui-mesh plugin surface**(`image`, 개발용 `mesh_demo`)는 매니페스트의 `[[surface_kinds]]` 가 `rendering="egui-mesh"` 로 선언하고 api_version 이 일치하며 kind 이름이 host 내장·다른 plugin 의 등록과 충돌하지 않으면 `EguiMeshSurface` stand-in 으로 등록된다. 커스텀 plugin 도 같은 조건이다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (docs/dev-guide/egui-mesh-channel.md). markdown 의 확인 popup 2개는 같은 egui-mesh 채널을 쓰지만 `[[contributes.popup]]` 기여이며 surface kind 로 등록되지 않는다([popup 구현](../../dev-guide/popup-implementation.md)).
 - **webview plugin**(`html`/`markdown`)은 `RemoteSurface` stand-in 위에 host 가 native WebView overlay 를 자동 관리한다. `html` 은 `webview.set_url` IPC 로 URL/navigation 만 제어하고, `markdown` 은 plugin 이 직접 sanitize 된 HTML 문서 전체를 생성해 로드시킨다([WebView 호스트 계약](../../design/systems/webview.md)).
   - **overlay 생성에 실패하면 그 surface 는 비어 있고, 앱은 계속 돈다.** 실패는 두 종류로 갈린다 — 다음 시도에 달라질 수 있는 것(서버 자원 고갈 등)은 상한까지 다시 시도하고, 이 프로세스에서 달라지지 않는 것(창 종류·라이브러리 부재 등)은 한 번에 포기한다. 어느 쪽이든 시도 횟수에 상한이 있어 실패가 무한히 반복되지 않는다. 로그에는 첫 실패와 포기하는 순간만 남고, 포기 줄이 실제로 몇 번 시도했는지를 적는다. 그 surface 를 닫았다 다시 열면 시도 예산도 새로 생긴다. 근거·재검토 조건은 [WebView 호스트 계약](../../design/systems/webview.md).
   - webview kind 는 **탭 내부 분할(SurfaceGroup)의 어느 leaf 에서도** 동작한다. host 는 탭의 `SurfaceLayout` 트리 전체를 순회해 URL 을 가진 leaf 마다 overlay 를 만들고(포커스 leaf 로 한정하지 않는다), overlay 의 bounds 는 pane 전체가 아니라 `SurfaceLayout::compute_rects` 가 준 **그 leaf 의 rect** 다 — 같은 탭의 옆 surface 를 덮지 않는다. Linux 에서는 overlay 가 leaf rect 를 꽉 채운다. native 창은 마우스를 직접 받으므로, pane·surface 분할선의 hit 띠(`DIVIDER_HIT_THRESHOLD` 양쪽)와 창 가장자리 리사이즈 밴드(`RESIZE_EDGE_MARGIN`, 최대화·전체화면이면 없음)에 겹치는 부분만 X input shape 에서 뺀다(`state::webview_edges`). 빼는 픽셀은 host 의 분할선·리사이즈 판정이 보는 픽셀과 같다. 그 띠의 포인터 입력은 host 가 받고, 띠 밖의 클릭·스크롤은 페이지로 간다. macOS·Windows 는 아직 input shape 에 해당하는 처리가 없어, leaf 의 변이 **pane 콘텐츠 영역 외곽에 닿을 때만** divider 드래그용 4px inset 을 두고 분할된 leaf 사이 내부 경계에는 divider gap 만 둔다. 그 OS 의 webview chrome 은 배경·테두리를 leaf 전체에 그리고 안내 글자는 WebView 가 덮는 영역 안으로 자르는 코드 경로를 쓴다(그 OS 실 기기에서는 미측정). `webview.set_url` / `webview.navigation_attempt` 의 surface 조회도 같은 기준이라 비포커스 leaf 도 도달한다.
@@ -217,7 +217,7 @@ source 별 `source_cwd()` 는 [cwd 정책](../../design/policies/cwd.md). 이 �
 - 도메인 모델: `crates/tasty-model/` — `Workspace`(`workspace.rs`) · `Pane`+`PaneNode`(`pane.rs`/`pane_tree.rs`, 상위 레이아웃) · `Tab`(`tab.rs`) · `SurfaceLayout`(`surface_layout.rs`, 하위 레이아웃) · `SurfaceDescriptor` 값(`surface_descriptor.rs`). 실행 `Surface` trait과 구체 surface는 host runtime이 소유한다. markdown/image 는 별도 domain 타입이 아니라 image 는 host `src/runtime/egui_mesh_surface.rs`의 `EguiMeshSurface`(plugin 공용 mesh surface), markdown 은 `src/plugin_bridge/remote_surface.rs` 의 `RemoteSurface`(webview)로 구현된다.
 - 이진 트리 공통: `binary_tree.rs` (`BinaryTree` trait — Pane/Surface 양쪽이 구현).
 - 보유/동작: `crates/tasty-core/src/state.rs`의 `CoreState`는 확정 구조를 제공하고, `src/runtime/engine_session.rs`의 `EngineSession`은 `runtime`·`remote`·`live`를 소유한다. 실행 surface/registry는 `EngineRuntime`, 점유는 `live.occupancy`에 있다. `src/state/`의 `workspace.rs`/`pane.rs`/`tab.rs`는 View 요청을 구성한다.
-- 종류 레지스트리: `src/runtime/surface_registry/` (`register_builtin_kinds`, egui-mesh whitelist `egui_mesh.rs`), RemoteSurface: `src/plugin_bridge/remote_kind.rs`.
+- 종류 레지스트리: `src/runtime/surface_registry/` (`register_builtin_kinds`, egui-mesh 등록 `egui_mesh.rs`), RemoteSurface: `src/plugin_bridge/remote_kind.rs`.
 
 ## 화면
 

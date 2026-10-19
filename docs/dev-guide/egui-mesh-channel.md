@@ -437,12 +437,24 @@ forward 루프는 frame 이 없는 채널을 조용히 건너뛰므로, host std
 
 ## 개방 정책
 
-bundled 전용. `(kind, plugin_id)` 화이트리스트 + plugin `api_version` 이 호스트와 일치할
-때만 등록된다 (epaint 와이어가 host·plugin 동일 컴파일을 강제하는 동안의 보호). 현재
-허용: `(image, com.tasty.image)`, `(mesh_demo, com.tasty.mesh-demo)`. (`markdown` 은
-[WebView 호스트 계약](../design/systems/webview.md) 로 webview 전환되며 이
-화이트리스트에서 빠졌다 — 대용량/파일열기 확인 팝업 2 개는 이 화이트리스트와 무관하게
-`[[contributes.popup]]` 로 별도 등록된다.)
+plugin ID 와 무관하다. 번들 plugin 과 커스텀 plugin 은 같은 조건으로 egui-mesh surface kind 를
+등록한다. `register_egui_mesh_kind`(`src/runtime/surface_registry/egui_mesh.rs`)의 조건은 다음과 같다.
+
+- 매니페스트 `api_version` 이 호스트의 `HOST_API_VERSION` 과 같다. 매니페스트 검증이 이미
+  같은 값을 요구하므로 설치된 plugin 은 보통 통과한다. egui-mesh popup(`[[contributes.popup]]`)도
+  같은 비교만 한다.
+- kind 이름이 host 내장 kind(`terminal`·`empty`·`explorer`·`dag_graph`)가 아니다.
+- 다른 plugin 이 같은 kind 이름을 살아 있는 등록으로 갖고 있지 않다. 이미 있으면 **먼저 등록한
+  소유자를 유지**하고 나중 선언을 warn 로그와 함께 버린다. 이 경우 `plugin.surface_kind_registered`
+  이벤트도 내지 않는다. 같은 plugin 이 다시 등록하면 기존 정의를 유지하고 성공으로 본다. 앞
+  소유자가 비활성화·제거되어 정의가 철회된 이름은 새 plugin 이 등록할 수 있다.
+  remote·webview kind 등록은 같은 이름을 덮어쓰므로 egui-mesh 와 규칙이 다르다.
+
+API 버전 일치가 epaint 와이어 호환을 보장하지는 않는다. 와이어 호환은 디코더
+(`tasty_plugin_protocol::mesh_wire::decode_paint`)가 frame 마다 magic·`WIRE_VERSION`·`Vertex`
+크기로 검사한다. surface·popup·banner 가 같은 디코더를 쓰므로 이 검사도 plugin ID 와 무관하게
+같다. 크기를 유지한 레이아웃 변경까지 검출하지는 않는다(`mesh_wire.rs` 모듈 설명). 검사에
+실패한 frame 은 합성 캐시에 적용하지 않고 경고를 남긴다(`egui_mesh_prepare.rs`).
 
 ## attach mesh mirror 소비 경로
 
@@ -527,10 +539,11 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   자체가 같은 wire 이벤트를 타므로). IME candidate 위치는 **attach 쪽만 한계로 남았다** —
   값을 나르는 칸이 로컬 JSON 알림에만 있고 attach 의 바이너리 chunk 헤더에는 없다(위
   "알려진 한계").
-- **개방 정책은 서버측에서 재검증**: 서버(`build_workspace_tree_surfaces`, `src/remote/server.rs`)가
-  `Surface::attach_mesh_info()` + 위 "개방 정책" 화이트리스트(`is_egui_mesh_allowed`)로 재검증한
-  결과만 `role: "mesh"` 로 내려보낸다 — 화이트리스트 밖 kind 는 attach 에서도 `role:
-  "placeholder"` 로 남아 mirror 렌더 대상이 아니다.
+- **서버측 재검증은 등록 정보로**: 서버(`build_workspace_tree_surfaces`, `src/remote/server.rs`)가
+  `Surface::attach_mesh_info()` 후보를 `is_registered_egui_mesh_kind` 로 다시 확인한 결과만
+  `role: "mesh"` 로 내려보낸다. 그 kind 가 같은 plugin 소유의 egui-mesh 로 등록돼 있어야 하며
+  plugin ID 목록은 보지 않는다. 철회된 정의도 등록으로 본다. 소유자가 다르거나 등록부에 없는
+  후보는 `role: "placeholder"` 로 남는다.
 ## plugin 작성
 
 `tasty-plugin.toml` 의 `[[surface_kinds]]` 에 `rendering = "egui-mesh"` 를 선언하고,

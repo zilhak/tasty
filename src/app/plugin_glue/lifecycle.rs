@@ -76,12 +76,15 @@ fn register_plugin_surface_kinds(
                 "webview"
             }
             SurfaceKindRendering::EguiMesh => {
-                crate::runtime::surface_registry::egui_mesh::register_egui_mesh_kind(
+                // 거절된 선언은 등록 이벤트를 내지 않는다. 이유는 등록 함수가 warn으로 남긴다.
+                if !crate::runtime::surface_registry::egui_mesh::register_egui_mesh_kind(
                     registry,
                     plugin_id,
                     decl,
                     &pkg.manifest.api_version,
-                );
+                ) {
+                    continue;
+                }
                 "egui-mesh"
             }
         };
@@ -402,5 +405,68 @@ impl App {
         }
 
         self.cascade_plugin_events(events);
+    }
+}
+
+#[cfg(test)]
+mod surface_kind_event_tests {
+    use super::*;
+
+    fn package(id: &str, kind: &str) -> PluginPackage {
+        let manifest: Manifest = toml::from_str(&format!(
+            r#"
+manifest_version = 1
+id = "{id}"
+name = "probe"
+version = "0.1.0"
+api_version = "{api}"
+
+[entry]
+type = "process"
+command = "probe"
+
+[[surface_kinds]]
+kind = "{kind}"
+display_name_i18n_key = "surface.kind.markdown"
+rendering = "egui-mesh"
+"#,
+            api = tasty_plugin_manifest::HOST_API_VERSION,
+        ))
+        .expect("manifest");
+        PluginPackage {
+            dir: std::path::PathBuf::new(),
+            manifest,
+        }
+    }
+
+    fn registered_kinds(events: &[CoreEvent]) -> Vec<(String, String)> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                CoreEvent::PluginSurfaceKindRegistered {
+                    plugin_id, kind, ..
+                } => Some((plugin_id.clone(), kind.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn custom_egui_mesh_kind_registers_and_conflict_emits_no_event() {
+        let registry = crate::runtime::surface_registry::SurfaceKindRegistry::new();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let first = package("com.example.first", "widget");
+        let events = register_plugin_surface_kinds(&registry, "com.example.first", &first, &tx);
+        assert_eq!(
+            registered_kinds(&events),
+            vec![("com.example.first".to_string(), "widget".to_string())]
+        );
+        assert!(registry.contains("widget"));
+
+        let second = package("com.example.second", "widget");
+        let events = register_plugin_surface_kinds(&registry, "com.example.second", &second, &tx);
+        assert!(registered_kinds(&events).is_empty());
+        let def = registry.get_live("widget").expect("first owner kept");
+        assert_eq!(def.source.plugin_id(), Some("com.example.first"));
     }
 }

@@ -413,7 +413,7 @@ pub enum SurfaceKindRendering {
     Remote,
     /// 호스트가 네이티브 WebView 영역을 관리하고 플러그인은 IPC로 URL을 전달한다.
     Webview,
-    /// 플러그인이 만든 egui mesh를 호스트가 합성한다. 번들 허용 목록과 API 버전을 검사한다.
+    /// 플러그인이 만든 egui mesh를 호스트가 합성한다. 등록 때 API 버전과 kind 이름 충돌을 검사한다.
     /// 직렬화 이름은 하이픈을 포함한 egui-mesh다.
     #[serde(rename = "egui-mesh")]
     EguiMesh,
@@ -788,7 +788,7 @@ pub struct BannerContribute {
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum BannerRendering {
-    /// 플러그인의 egui mesh를 호스트가 합성한다. 번들 플러그인의 API 버전을 검사한다.
+    /// 플러그인의 egui mesh를 호스트가 합성한다. 열 때 플러그인의 API 버전을 검사한다.
     #[default]
     #[serde(rename = "egui-mesh")]
     EguiMesh,

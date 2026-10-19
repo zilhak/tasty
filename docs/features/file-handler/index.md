@@ -46,7 +46,7 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 
 - 식별은 요청한 깊이와 관계없이 Name 으로 한다. client 에 같은 경로의 파일·디렉터리가 있어도 읽지 않는다. CLI `--depth` 도 무시된다. `file_handler.dispatch` 응답의 `depth` 는 요청값을 그대로 돌려주므로 실제 식별 방식을 나타내지 않는다.
 - 한계: 확장자·파일명으로 정해지지 않는 형식(magic·MIME 으로만 식별되는 파일)은 매칭되지 않는다. Name 은 대상을 항상 파일로 보므로 디렉터리 경로는 `$directory` 에 매칭되지 않는다. 탐색기는 원격 목록이 파일이라고 알려 준 항목만 보내지만 IPC 입구는 이를 보장하지 않는다. 두 경우 모두 Agent(외부 IPC) 요청은 `accepted:true` 응답 뒤 warn 로그로 끝나고, 사용자 요청과 PluginUnverified 요청은 아래의 toast 로 끝난다.
-- 원격에 열 수 있는 핸들러는 `OpenSurface` 이면서 그 kind 와 client 에 등록한 plugin 쌍이 원문 전달·mesh mirror 허용 목록에 있는 것이다. 현재 markdown(`com.tasty.markdown`)과 허용된 egui-mesh kind 가 해당한다. html 은 mirror 에서 placeholder 라 제외한다.
+- 원격에 열 수 있는 핸들러는 `OpenSurface` 이면서 client 에 등록한 그 kind 가 원문 전달 허용 목록에 있거나 egui-mesh 인 것이다. 현재 markdown(`com.tasty.markdown`)과 egui-mesh kind 전부(plugin ID 무관)가 해당한다. 원격에 같은 kind 가 없으면 원격의 새 탭 생성이 실패한다. html 은 mirror 에서 placeholder 라 제외한다.
 - 1순위 핸들러가 원격에 열 수 있으면 로컬과 같이 바로 실행한다.
 - 1순위가 원격에 열 수 없고 다른 후보가 있으면 사용자 요청과 PluginUnverified 요청은 기존 핸들러 picker 를 띄운다. 후보와 최근 목록에는 원격에 열 수 있는 핸들러만 남기고, 1순위가 목록에 없으므로 기본 핸들러 표시는 두지 않는다. fallback 표시(전체 핸들러 그룹·1 회성 띠)도 쓰지 않는다. picker 에서 고른 핸들러도 같은 조건을 다시 확인한 뒤 원격 새 탭으로 실행한다.
 - Agent(외부 IPC) 요청은 로컬과 마찬가지로 사용자 화면에 picker 를 띄우지 않는다. 우선순위 순서로 원격에 열 수 있는 첫 핸들러를 실행한다.

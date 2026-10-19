@@ -124,12 +124,12 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_and_stream` 으로 �
 한 연결로 N 터미널 출력을 나르므로 workspace 모드 Data 프레임은 **surface-prefixed**(`encode_mux`/`decode_mux`). surface 단위 단일 연결은 prefix 없음. attach 직후 서버가 `attached_workspace` Control 로 트리(분할 방향/비율) + per-surface 디스크립터를 보내고, client 는 원격↔로컬 surface_id 재매핑으로 트리를 재구성한다. per-surface role 은 5종:
 
 - `{remote_id, role:"terminal", cols, rows}` — mirror 가능한 터미널.
-- `{remote_id, role:"mesh", kind, plugin_id, display_name}` — bundled egui-mesh 화이트리스트 통과(mesh mirror, 아래 절).
+- `{remote_id, role:"mesh", kind, plugin_id, display_name}` — 같은 plugin 소유의 egui-mesh 로 등록된 kind(mesh mirror, 아래 절).
 - `{remote_id, role:"explorer", root}` — 활성 탭의 현재 디렉토리만 싣고 목록은 `list_dir` 채널로 lazy 조회([원격 attach (Remote attach)](../features/remote-attach/index.md)).
 - `{remote_id, role:"markdown", file, display_name}` — 원문은 안 싣고 `markdown_content` 채널로 lazy 조회(아래 절, [원격 attach (Remote attach)](../features/remote-attach/index.md)). `file` 은 표시·제목 전용 opaque 문자열이라 client 가 그 경로로 자기 로컬 파일을 열지 않는다. 값은 plugin 의 `surface.create` snapshot 에서 오는데 그 도착이 `tab.create` 반환이나 convert 직후의 역반영보다 뒤다(핸드셰이크·역반영은 동기 경로라 host 가 기다리지 않는다). 그래서 snapshot 이 오기 전에는 서버 `RemoteSurface` 가 생성 인자의 `file` 을 대신 알린다(`attach_content_info`). 이 폴백이 없으면 갓 연·갓 변환한 surface 의 `file` 이 빈 문자열로 가고, 원문 조회도 빈 문서로 답해 mirror 가 reload 전까지 빈 문서를 보인다. 생성 인자에 `file` 이 없던 surface 는 여전히 빈 값이며 wire 상 "파일 없이 열린 surface" 와 같다. 원문은 아래 채널로 가져온다.
 - `{remote_id, role:"placeholder", kind}` — 그 외 비-터미널, mirror 불가.
 
-이 role 분류는 `build_workspace_tree_surfaces`(`src/remote/server.rs`)가 만든다. mesh 와 markdown 은 **두 단**이다 — `tasty-model` 이 `Surface::attach_mesh_info()`/`attach_content_info()` 로 후보만 모으고(crate 가 화이트리스트를 모른다), 앱 계층이 `is_egui_mesh_allowed`/`is_attach_content_allowed` 로 재검증해 떨어진 후보를 placeholder 로 내린다.
+이 role 분류는 `build_workspace_tree_surfaces`(`src/remote/server.rs`)가 만든다. mesh 와 markdown 은 **두 단**이다 — `tasty-model` 이 `Surface::attach_mesh_info()`/`attach_content_info()` 로 후보만 모으고(crate 가 앱의 등록부와 허용 목록을 모른다), 앱 계층이 `is_registered_egui_mesh_kind`(등록부 대조)/`is_attach_content_allowed`(원문 전달 허용 목록)로 재검증해 떨어진 후보를 placeholder 로 내린다.
 
 ## 프레임 전송 지연 (Nagle 금지)
 
@@ -318,7 +318,7 @@ raise에는 mirror 차단이 있고 clear에는 서버로 전달할 메시지 �
 
 ## mesh mirror 채널
 
-bundled egui-mesh surface(image/mesh_demo — `is_egui_mesh_allowed` 화이트리스트. markdown 은 WebView 본문을 사용해 이 목록에 포함되지 않는다 — attach 시 mesh 가 아니라 아래 "markdown content 채널" 로 mirror 된다)가 mirror pane 에 뜨면, 원격의 실제 plugin 프로세스가 그리는 GPU mesh 프레임을 client 로 스트리밍해 렌더하고 client 입력을 원격으로 forward 한다. 개념·기능 범위는 [features/remote-attach](../features/remote-attach/index.md#surface-단위-vs-workspace-단위), 헤드리스 부트스트랩·로컬 egui-mesh 파이프라인 자체는 [egui-mesh-channel.md](egui-mesh-channel.md#attach-mesh-mirror-소비-경로), 여기엔 attach 프로토콜 전송 경로만 설명한다.
+egui-mesh surface(번들 image/mesh_demo 와 커스텀 plugin 의 egui-mesh kind — 서버 등록부에서 같은 plugin 소유의 egui-mesh 로 확인된 것. markdown 은 WebView 본문을 사용해 대상이 아니다 — attach 시 mesh 가 아니라 아래 "markdown content 채널" 로 mirror 된다)가 mirror pane 에 뜨면, 원격의 실제 plugin 프로세스가 그리는 GPU mesh 프레임을 client 로 스트리밍해 렌더하고 client 입력을 원격으로 forward 한다. 개념·기능 범위는 [features/remote-attach](../features/remote-attach/index.md#surface-단위-vs-workspace-단위), 헤드리스 부트스트랩·로컬 egui-mesh 파이프라인 자체는 [egui-mesh-channel.md](egui-mesh-channel.md#attach-mesh-mirror-소비-경로), 여기엔 attach 프로토콜 전송 경로만 설명한다.
 
 - **구독 = `MeshContext` (별도 핸드셰이크 없음)**: client 가 mesh surface 를 그리기 시작하면 `StreamControl::MeshContext{surface_id, width_px, height_px, pixels_per_point, theme, focused}` 를 보내는 것 자체가 구독 신호를 겸한다 — capability negotiation 을 위한 별도 확인/ack 프레임이 없다. 서버 `MeshMirrorRegistry::upsert`(`src/remote/mesh_mirror.rs`)가 이 정보를 최초 수신 시점에 등록하고, 이후 값이 실제로 바뀔 때만(geometry/theme/focus 변경 시) client 가 재전송한다(`forward_attach_mesh_context`, `src/view/main/attach_mesh_input.rs`) — 매 프레임 재전송하지 않는다.
 - **`MeshInput` 누적**: 포인터/키/스크롤/IME 이벤트는 `AttachMeshForwardState.events`(client, dedup 없이 순서 보존)에 프레임마다 쌓였다가, 다음 redraw 의 `forward_attach_mesh_context` 호출에서 `RawInputWire{modifiers, events, ..}` 로 묶여 `MeshInput{surface_id, input}` 1회 전송된다. 서버는 `MeshMirrorRegistry::push_input` 이 `pending_events` 에 extend 하고 `last_modifiers` 를 갱신 + `dirty=true` 로 표시 — 구독이 없는 surface_id 면 `false` 를 반환해 서버 dispatch 가 `MeshError` 로 회신한다(아래).

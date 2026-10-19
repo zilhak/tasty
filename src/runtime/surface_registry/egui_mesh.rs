@@ -1,5 +1,6 @@
-//! egui-mesh 종류는 (kind, plugin ID) 허용 목록과 host API version 일치 여부를 검사한다.
+//! egui-mesh 종류는 plugin ID와 무관하게 host API version 일치 여부와 이름 충돌만 검사한다.
 //! 선언을 등록하는 단계이며 실제 mesh 전송·합성은 다른 경로에서 수행한다.
+//! 와이어 호환은 frame마다 디코더가 헤더로 확인한다(docs/dev-guide/egui-mesh-channel.md "개방 정책").
 
 use std::sync::Arc;
 
@@ -31,30 +32,40 @@ fn extract_display_name_and_file(
     (name, file)
 }
 
-/// surface 종류의 허용 조합. plugin 팝업의 egui-mesh 채널은 이 목록과 별개다.
-pub(crate) fn is_egui_mesh_allowed(kind: &str, plugin_id: &str) -> bool {
-    matches!(
-        (kind, plugin_id),
-        ("image", "com.tasty.image") | ("mesh_demo", "com.tasty.mesh-demo")
-    )
+/// 등록부에서 이 kind가 egui-mesh이고 소유 plugin이 같은지 확인한다. 철회된 정의도 포함한다.
+/// attach mesh mirror가 등록 조건과 같은 기준으로 후보를 고르도록 plugin ID 목록 대신 등록 정보를 본다.
+pub(crate) fn is_registered_egui_mesh_kind(
+    registry: &SurfaceKindRegistry,
+    kind: &str,
+    plugin_id: &str,
+) -> bool {
+    registry.get(kind).is_some_and(|def| {
+        def.rendering == RegisteredRendering::EguiMesh && def.source.plugin_id() == Some(plugin_id)
+    })
 }
 
-/// 허용 조합·API version을 검사하고 살아 있는 등록이 없으면 정의를 만든다.
-/// 기존 등록이 있으면 종류 이름만 보고 성공하며 소유자·메타데이터를 다시 대조하지 않는다.
+/// API version·host 내장 이름·다른 plugin의 등록과의 충돌을 검사하고 정의를 만든다.
+/// 같은 plugin이 다시 등록하면 기존 정의를 유지하고 성공한다. 다른 plugin이 살아 있는 등록을
+/// 가진 이름은 덮어쓰지 않고 거절한다. 등록했거나 이미 등록돼 있으면 true다.
 pub fn register_egui_mesh_kind(
     registry: &SurfaceKindRegistry,
     plugin_id: &str,
     decl: &SurfaceKindDecl,
     api_version: &str,
 ) -> bool {
-    if !check_egui_mesh_whitelist(plugin_id, decl) {
+    if super::builtins::is_host_builtin_kind(&decl.kind) {
+        tracing::warn!(
+            "plugin '{}' declared egui-mesh kind '{}' which is a host builtin; ignoring",
+            plugin_id,
+            decl.kind
+        );
         return false;
     }
     if !check_egui_mesh_api_version(plugin_id, decl, api_version) {
         return false;
     }
-    if registry_already_has_egui_mesh_kind(registry, plugin_id, decl) {
-        return true;
+    if let Some(existing) = registry.get_live(&decl.kind) {
+        return accept_existing_registration(&existing, plugin_id, decl);
     }
 
     let kind_static = build_and_register_egui_mesh_kind_def(registry, plugin_id, decl);
@@ -62,15 +73,28 @@ pub fn register_egui_mesh_kind(
     true
 }
 
-fn check_egui_mesh_whitelist(plugin_id: &str, decl: &SurfaceKindDecl) -> bool {
-    if is_egui_mesh_allowed(&decl.kind, plugin_id) {
+fn accept_existing_registration(
+    existing: &SurfaceKindDef,
+    plugin_id: &str,
+    decl: &SurfaceKindDecl,
+) -> bool {
+    if existing.rendering == RegisteredRendering::EguiMesh
+        && existing.source.plugin_id() == Some(plugin_id)
+    {
+        tracing::debug!(
+            "egui-mesh kind '{}' from plugin '{}' already registered",
+            decl.kind,
+            plugin_id
+        );
         return true;
     }
     tracing::warn!(
-        "plugin '{}' declared egui-mesh kind '{}' which is not allowed by the host \
-         whitelist; ignoring",
+        "plugin '{}' declared egui-mesh kind '{}' which is already registered by '{}' as {}; \
+         ignoring",
         plugin_id,
-        decl.kind
+        decl.kind,
+        existing.source.plugin_id().unwrap_or("host"),
+        existing.rendering.as_str()
     );
     false
 }
@@ -88,22 +112,6 @@ fn check_egui_mesh_api_version(plugin_id: &str, decl: &SurfaceKindDecl, api_vers
         HOST_API_VERSION
     );
     false
-}
-
-fn registry_already_has_egui_mesh_kind(
-    registry: &SurfaceKindRegistry,
-    plugin_id: &str,
-    decl: &SurfaceKindDecl,
-) -> bool {
-    if !registry.contains(&decl.kind) {
-        return false;
-    }
-    tracing::debug!(
-        "egui-mesh kind '{}' from plugin '{}' already registered",
-        decl.kind,
-        plugin_id
-    );
-    true
 }
 
 fn log_egui_mesh_kind_registered(kind_static: &str, plugin_id: &str) {
@@ -203,34 +211,122 @@ mod tests {
     }
 
     #[test]
-    fn markdown_is_no_longer_egui_mesh_allowed() {
-        assert!(!is_egui_mesh_allowed("markdown", "com.tasty.markdown"));
-    }
-
-    #[test]
-    fn image_allowed_for_image_plugin() {
-        assert!(is_egui_mesh_allowed("image", "com.tasty.image"));
-        assert!(!is_egui_mesh_allowed("image", "com.example.evil"));
-        assert!(!is_egui_mesh_allowed("mesh_demo", "com.tasty.image"));
-    }
-
-    #[test]
-    fn mesh_demo_allowed_for_demo_plugin() {
-        assert!(is_egui_mesh_allowed("mesh_demo", "com.tasty.mesh-demo"));
-        assert!(!is_egui_mesh_allowed("mesh_demo", "com.example.evil"));
-        assert!(!is_egui_mesh_allowed("image", "com.tasty.mesh-demo"));
-    }
-
-    #[test]
-    fn register_rejects_unauthorized_plugin() {
+    fn register_accepts_custom_plugin_id() {
         let reg = SurfaceKindRegistry::new();
-        assert!(!register_egui_mesh_kind(
+        assert!(register_egui_mesh_kind(
             &reg,
-            "com.example.evil",
+            "com.example.widget",
+            &decl("widget"),
+            HOST_API_VERSION
+        ));
+        let def = reg.get_live("widget").unwrap();
+        assert_eq!(def.rendering, RegisteredRendering::EguiMesh);
+        assert_eq!(def.source.plugin_id(), Some("com.example.widget"));
+        let s = (def.create)(3, None, &json!({}))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        assert_eq!(s.kind(), "widget");
+        assert_eq!(s.attach_mesh_info(), Some(("widget", "com.example.widget")));
+        assert!(is_registered_egui_mesh_kind(
+            &reg,
+            "widget",
+            "com.example.widget"
+        ));
+    }
+
+    #[test]
+    fn bundled_kinds_still_register() {
+        let reg = SurfaceKindRegistry::new();
+        assert!(register_egui_mesh_kind(
+            &reg,
+            "com.tasty.image",
+            &decl("image"),
+            HOST_API_VERSION
+        ));
+        assert!(register_egui_mesh_kind(
+            &reg,
+            "com.tasty.mesh-demo",
             &decl("mesh_demo"),
             HOST_API_VERSION
         ));
-        assert!(!reg.contains("mesh_demo"));
+        assert!(is_registered_egui_mesh_kind(
+            &reg,
+            "image",
+            "com.tasty.image"
+        ));
+        assert!(is_registered_egui_mesh_kind(
+            &reg,
+            "mesh_demo",
+            "com.tasty.mesh-demo"
+        ));
+    }
+
+    #[test]
+    fn register_keeps_first_owner_of_a_kind_name() {
+        let reg = SurfaceKindRegistry::new();
+        assert!(register_egui_mesh_kind(
+            &reg,
+            "com.example.first",
+            &decl("widget"),
+            HOST_API_VERSION
+        ));
+        assert!(!register_egui_mesh_kind(
+            &reg,
+            "com.example.second",
+            &decl("widget"),
+            HOST_API_VERSION
+        ));
+        let def = reg.get_live("widget").unwrap();
+        assert_eq!(def.source.plugin_id(), Some("com.example.first"));
+        assert!(!is_registered_egui_mesh_kind(
+            &reg,
+            "widget",
+            "com.example.second"
+        ));
+    }
+
+    #[test]
+    fn register_takes_over_a_withdrawn_kind_name() {
+        let reg = SurfaceKindRegistry::new();
+        assert!(register_egui_mesh_kind(
+            &reg,
+            "com.example.first",
+            &decl("widget"),
+            HOST_API_VERSION
+        ));
+        reg.withdraw_plugin("com.example.first");
+        assert!(register_egui_mesh_kind(
+            &reg,
+            "com.example.second",
+            &decl("widget"),
+            HOST_API_VERSION
+        ));
+        let def = reg.get_live("widget").unwrap();
+        assert_eq!(def.source.plugin_id(), Some("com.example.second"));
+    }
+
+    #[test]
+    fn register_rejects_host_builtin_kind() {
+        let reg = SurfaceKindRegistry::new();
+        assert!(!register_egui_mesh_kind(
+            &reg,
+            "com.example.widget",
+            &decl("terminal"),
+            HOST_API_VERSION
+        ));
+        assert!(!reg.contains("terminal"));
+    }
+
+    #[test]
+    fn registered_check_requires_egui_mesh_rendering() {
+        let reg = SurfaceKindRegistry::new();
+        assert!(!is_registered_egui_mesh_kind(
+            &reg,
+            "widget",
+            "com.example.widget"
+        ));
+        crate::runtime::surface_registry::builtins::register_builtin_kinds(&reg);
+        assert!(!is_registered_egui_mesh_kind(&reg, "terminal", ""));
     }
 
     #[test]
