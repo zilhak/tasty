@@ -63,6 +63,8 @@ pub struct PlatformWebView {
     applied_shape: RefCell<Option<NativeShape>>,
     /// XFixes 없이 그림 구멍을 요청받아 경고를 남겼는지. 프레임마다 부르므로 한 번만 남긴다.
     clip_unavailable_reported: Cell<bool>,
+    /// 저장이 멈춘 뒤 켠다. 켜지면 이 페이지에 오는 키·포인터 이벤트를 GTK 신호 단계에서 버린다.
+    input_held: Rc<Cell<bool>>,
 }
 
 /// GObject가 아닌 ref-counted filter의 소유권. 안전 바인딩이 없어 Drop에서 직접 unref한다.
@@ -534,6 +536,14 @@ impl PlatformWebView {
                 gtk::glib::Propagation::Proceed
             });
         }
+        // 키는 toplevel의 event 신호를 먼저 지나고 포인터는 WebView의 event 신호를 먼저 지난다.
+        let input_held = Rc::new(Cell::new(false));
+        {
+            let held = input_held.clone();
+            gtk_window.connect_event(move |_w, ev| held_input(&held, ev));
+            let held = input_held.clone();
+            webview.connect_event(move |_wv, ev| held_input(&held, ev));
+        }
 
         // 필터는 비동기로 붙는다. 그전에 온 원격 요청까지 막는다고 보장하지 않는다.
         let ucm = WebViewExt::user_content_manager(&webview);
@@ -565,6 +575,7 @@ impl PlatformWebView {
             xfixes,
             applied_shape: RefCell::new(None),
             clip_unavailable_reported: Cell::new(false),
+            input_held,
         })
     }
 
@@ -675,6 +686,23 @@ impl PlatformWebView {
             (self.xlib.XFlush)(dpy);
         }
         *self.applied_shape.borrow_mut() = Some((size, input.to_vec(), clip.to_vec()));
+    }
+
+    /// 저장이 멈춘 뒤 이 페이지의 키·포인터 입력을 버린다. 되돌리지 않는다.
+    pub fn hold_input_for_halt(&self) {
+        self.input_held.set(true);
+    }
+
+    /// 저장이 멈춘 동안 바뀐 shape를 GDK가 받게 한다. 이 창의 X 요청을 서버가 처리하게 한 뒤 GDK 연결을
+    /// 왕복시켜 노출 이벤트를 GDK 대기열에 넣는다. GTK 대기열은 여기서 비우지 않는다. 다른 창의 페이지
+    /// 입력까지 모두 막은 뒤 halt 중 GTK 처리 주기(`App::halted_webview_paint_deadline`)가 비운다.
+    pub fn sync_halted_shape(&self) {
+        self.assert_origin_thread();
+        // SAFETY: self가 살아 있으면 display는 유효하고 origin thread다(위 assert).
+        unsafe {
+            (self.xlib.XSync)(self.x11_display as _, 0 /* discard = False */);
+        }
+        self.gdk_window.display().sync();
     }
 
     pub fn set_visible(&self, visible: bool) {
@@ -1062,6 +1090,35 @@ fn defer_response(
             }
         }
     });
+}
+
+/// 입력을 멈춘 페이지에 온 키·포인터·터치 이벤트면 Stop을 돌려 WebKit과 host 키 처리에 보내지 않는다.
+fn held_input(held: &Cell<bool>, ev: &gtk::gdk::Event) -> gtk::glib::Propagation {
+    use gtk::gdk::EventType as E;
+    let input = matches!(
+        ev.event_type(),
+        E::KeyPress
+            | E::KeyRelease
+            | E::ButtonPress
+            | E::DoubleButtonPress
+            | E::TripleButtonPress
+            | E::ButtonRelease
+            | E::MotionNotify
+            | E::Scroll
+            | E::EnterNotify
+            | E::LeaveNotify
+            | E::TouchBegin
+            | E::TouchUpdate
+            | E::TouchEnd
+            | E::TouchCancel
+            | E::TouchpadSwipe
+            | E::TouchpadPinch
+    );
+    if held.get() && input {
+        gtk::glib::Propagation::Stop
+    } else {
+        gtk::glib::Propagation::Proceed
+    }
 }
 
 fn pump_gtk() {

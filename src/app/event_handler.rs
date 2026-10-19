@@ -388,16 +388,10 @@ impl ApplicationHandler<AppEvent> for App {
             self.surface_halt_notice();
             self.ipc_pacer.loop_reached_about_to_wait();
             self.process_ipc();
-            event_loop.set_control_flow(
-                min_deadline(
-                    self.engine_release_poll_deadline(),
-                    self.runner_stop_poll_deadline(),
-                )
-                .map_or(
-                    winit::event_loop::ControlFlow::Wait,
-                    winit::event_loop::ControlFlow::WaitUntil,
-                ),
-            );
+            event_loop.set_control_flow(self.halted_wake_deadline().map_or(
+                winit::event_loop::ControlFlow::Wait,
+                winit::event_loop::ControlFlow::WaitUntil,
+            ));
             return;
         }
 
@@ -407,16 +401,10 @@ impl ApplicationHandler<AppEvent> for App {
         }
         if self.journal.is_halted() {
             self.surface_halt_notice();
-            event_loop.set_control_flow(
-                min_deadline(
-                    self.engine_release_poll_deadline(),
-                    self.runner_stop_poll_deadline(),
-                )
-                .map_or(
-                    winit::event_loop::ControlFlow::Wait,
-                    winit::event_loop::ControlFlow::WaitUntil,
-                ),
-            );
+            event_loop.set_control_flow(self.halted_wake_deadline().map_or(
+                winit::event_loop::ControlFlow::Wait,
+                winit::event_loop::ControlFlow::WaitUntil,
+            ));
             return;
         }
 

@@ -38,6 +38,44 @@ impl App {
         }
     }
 
+    /// halt 중 이벤트 루프를 깨울 가장 이른 시각. engine 해제·runner 정지 확인과 native 페이지 그림 반영을 합친다.
+    pub(crate) fn halted_wake_deadline(&mut self) -> Option<std::time::Instant> {
+        use crate::app::timers::min_deadline;
+        let paint = self.halted_webview_paint_deadline();
+        min_deadline(
+            min_deadline(
+                self.engine_release_poll_deadline(),
+                self.runner_stop_poll_deadline(),
+            ),
+            paint,
+        )
+    }
+
+    /// halt 중에도 보이는 native 페이지의 그림이 반영되도록 일반 webview 폴링과 같은 간격으로 GTK
+    /// 대기열만 비운다. 먼저 모든 페이지의 입력을 막으므로 키·포인터는 페이지와 host 어느 쪽에도
+    /// 전달되지 않는다. 키·포커스 전달, 탐색 결정 반영, 설정 적용은 하지 않는다. 다음 마감을 돌려준다.
+    pub(crate) fn halted_webview_paint_deadline(&mut self) -> Option<std::time::Instant> {
+        if !cfg!(target_os = "linux") {
+            return None;
+        }
+        let mut visible = false;
+        for view in self.view.views.values() {
+            let Some(main) = view.as_main() else {
+                continue;
+            };
+            for wv in main.webviews.values() {
+                wv.hold_input_for_halt();
+            }
+            visible |= main.webview_any_visible;
+        }
+        if !visible {
+            return None;
+        }
+        #[cfg(target_os = "linux")]
+        crate::system_tray::pump_gtk_events();
+        Some(std::time::Instant::now() + crate::app::timers::WEBVIEW_KEY_POLL_INTERVAL)
+    }
+
     /// halt 중 창 닫기. 종료 확인 창은 halt 중 입력을 받지 못하므로 마지막 창이면 확인 없이 종료한다.
     /// 창이 여럿이면 그 창만 닫는다.
     pub(crate) fn request_halted_close(&mut self, id: WindowId, event_loop: &ActiveEventLoop) {

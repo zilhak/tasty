@@ -336,7 +336,7 @@ source pin 해제 실패는 보수적으로 참조를 남기고 다음 같은 �
 - 입력: 나타날 때 포커스를 가져가지 않고 scrim도 없다. 바깥의 키(Enter·Esc 포함)·선택·스크롤은 터미널로 그대로 간다. 안내 상자만 포인터를 받는다. 안내 상자 위의 누름은 그 아래 surface·pane을 활성화하거나 선택·분할선 드래그를 시작하지 않으며, 판정은 직전 프레임에 그린 카드 사각형과 현재 포인터 좌표로 한다. 안내 안쪽을 누르면 누른 컨트롤(컨트롤이 아닌 자리면 Continue)이 키보드 포커스를 받고, 그동안에만 키(Esc·Tab·Enter 등)가 안내로 간다. 안내 바깥을 누르면 안쪽 포커스를 내려놓고 키는 다시 터미널로 간다.
 - 응답: ×, Continue, 안내 안쪽 컨트롤(×·경로·복사·Continue)에 포커스가 있을 때의 Esc는 같은 응답이다. 안내를 지우고 그대로 계속한다. 원본은 바꾸지 않으며 오류 항목은 알림에 남는다. 경로 복사 버튼은 원본 경로를 클립보드에 넣는다.
 - 안내를 받을 엔진이 아직 창에 붙기 전이면 창이 생길 때까지 알림과 안내를 미룬다.
-- native WebView(HTML·Markdown surface)가 안내와 겹치면 WebView의 bounds·표시·키보드 포커스는 그대로 두고, 안내 카드와 겹친 부분만 그 native 창의 그림과 포인터 입력에서 뺀다(`state::webview_edges::notice_clip_holes`, `PlatformWebView::set_native_holes`). 좁은 pane 전체가 안내 아래에 있어도 카드가 덮는 부분만 가려지고 안내가 보이며 닫을 수 있다. 카드 밖의 페이지는 계속 보이고 입력·스크롤을 받는다. 카드 사이 간격은 빼지 않는다. 카드 경계는 바깥쪽 정수 물리 px로 넓힌다. 안내를 닫으면 다음 프레임에 원래 사각형으로 돌아가고 페이지 폭은 바뀌지 않는다. Linux(X11)는 XFixes `ShapeBounding`·`ShapeInput`으로, Windows는 child HWND의 `CombineRgn(RGN_DIFF)`+`SetWindowRgn`으로, macOS는 `KeyWebView` layer의 even-odd `CAShapeLayer` mask와 `hitTest:` 제외로 뺀다. Linux는 격리 debug 인스턴스에서 측정했다. Windows GNU 검사는 별도 기존 오류로 끝까지 통과하지 못했고 macOS는 컴파일하지 못했다. 두 OS의 실제 동작도 미측정이다. 적용에 실패하면 warn을 남기며 그 경우 페이지가 안내를 덮을 수 있다.
+- native WebView(HTML·Markdown surface)가 안내와 겹치면 WebView의 bounds·표시·키보드 포커스는 그대로 두고, 안내 카드와 겹친 부분만 그 native 창의 그림과 포인터 입력에서 뺀다(`state::webview_edges::notice_clip_holes`, `PlatformWebView::set_native_holes`). 좁은 pane 전체가 안내 아래에 있어도 카드가 덮는 부분만 가려지고 안내가 보이며 닫을 수 있다. 카드 밖의 페이지는 계속 보이고 입력·스크롤을 받는다. 카드 사이 간격은 빼지 않는다. 카드 경계는 바깥쪽 정수 물리 px로 넓힌다. 안내를 닫으면 다음 프레임에 원래 사각형으로 돌아가고 페이지 폭은 바뀌지 않는다. Linux(X11)는 XFixes `ShapeBounding`·`ShapeInput`으로, Windows는 child HWND의 `CombineRgn(RGN_DIFF)`+`SetWindowRgn`으로, macOS는 `KeyWebView` layer의 even-odd `CAShapeLayer` mask와 `hitTest:` 제외로 뺀다. Linux는 격리 debug 인스턴스에서 측정했다. Windows는 Windows GNU 대상 lib check로 컴파일만 확인했고, macOS는 컴파일하지 못했다. 두 OS의 실제 동작은 측정하지 않았다. 적용에 실패하면 warn을 남기며 그 경우 페이지가 안내를 덮을 수 있다.
 
 ### 실행 중 halt 안내
 
@@ -345,7 +345,7 @@ source pin 해제 실패는 보수적으로 참조를 남기고 다음 같은 �
 - 내용: 제목은 재시작이 필요하다는 문구, 원인은 저장 실패로 변경 적용을 멈췄다는 문구, 경로는 이 실행의 `structure/journal.db`, 본문은 이 안내와 창 닫기 버튼 말고는 입력과 클릭에 반응하지 않으며 Tasty를 종료하고 다시 시작해야 한다는 문구이고, 그 아래에 halt 사유를 그대로 붙인다. 알림 본문과 오류 로그에도 같은 사유가 남는다.
 - 한 번만: halt 하나에 알림과 안내를 한 번만 남긴다. halt 중 요청이 더 거절돼도 다시 알리지 않는다. 종료 대기 시간 초과로 생긴 halt는 사용자가 이미 종료를 골랐으므로 알리지 않는다.
 - 전달: 알림은 dispatch를 거치지 않고 알림 저장소에 바로 넣으므로 halt가 dispatch를 멈춰도 사라지지 않는다. halt 중에는 알림 영역을 열 수 없고 `tasty list notifications` 같은 IPC 조회도 거절되므로, 사유는 안내 본문에서 읽는다.
-- 그리기: halt 중 창은 엔진을 읽기만 하는 프레임으로 다시 그린다. 이 프레임이 만든 요청은 적용하지 않고 버린다. 프레임마다 활성 native WebView의 bounds는 유지하고 안내 카드와 겹치는 그림·입력 영역만 다시 맞추며, WebView 생성·주소 갱신·이동·설정 적용은 하지 않는다.
+- 그리기: halt 중 창은 엔진을 읽기만 하는 프레임으로 다시 그린다. 이 프레임이 만든 요청은 적용하지 않고 버린다. 프레임마다 활성 native WebView의 bounds는 유지하고 안내 카드와 겹치는 그림·입력 영역만 다시 맞추며, WebView 생성·주소 갱신·이동·설정 적용은 하지 않는다. Linux는 native 페이지가 보이면 halt 중에도 일반 webview 폴링과 같은 16ms 간격으로 GTK 대기열을 비워, 안내를 닫은 자리를 페이지가 다시 그리게 한다. 그 전에 모든 페이지의 키·포인터·터치 이벤트를 GTK 신호 단계에서 버리므로 페이지와 host 어느 쪽에도 입력이 가지 않는다. 키·포커스 전달, 탐색 요청, 설정 적용은 이 처리에서 하지 않는다. 페이지가 스스로 시작한 탐색은 halt 중에도 WebKit 기본 결정으로 진행될 수 있다. Linux 격리 debug 인스턴스에서 측정했고, Windows·macOS에서는 이 처리를 하지 않는다.
 - 입력: 포인터는 안내 상자와 타이틀바 닫기 버튼 위에 있을 때만 받는다. 키 입력은 받지 않으므로 포커스는 halt 전 위치에 남는다. 안내의 ×·Continue는 안내만 지운다.
 - 창 닫기: 타이틀바 닫기 버튼과 OS 닫기 요청은 창을 닫는다. 종료 확인 창은 halt 중 입력을 받지 못하므로, 마지막 창이면 확인 없이 종료한다. 창이 여럿이면 그 창만 닫는다.
 

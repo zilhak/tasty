@@ -45,6 +45,8 @@ pub(crate) fn synchronize(
 
 /// 저장이 멈춘 동안 활성 native 페이지의 bounds는 유지하고 안내 카드의 그림·입력 구멍만 갱신한다.
 /// 생성·주소 갱신·이동·설정·요청 처리는 하지 않는다.
+/// 구멍을 바꾼 뒤 이 창 페이지의 입력을 막고 바뀐 shape를 GDK에 전달한다. GTK 대기열은 모든 창의
+/// 페이지를 막은 뒤 `App::halted_webview_paint_deadline`에서만 비운다(Linux).
 pub(crate) fn sync_halted_clipping(view: &mut MainView, engine: &EngineRef<'_>) {
     let scale_factor = view.base.gpu.scale_factor() as f64;
     let HtmlSurfaces {
@@ -63,6 +65,10 @@ pub(crate) fn sync_halted_clipping(view: &mut MainView, engine: &EngineRef<'_>) 
                 scale_factor,
             );
         }
+    }
+    for wv in view.webviews.values() {
+        wv.hold_input_for_halt();
+        wv.sync_halted_shape();
     }
 }
 

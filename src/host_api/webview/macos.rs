@@ -753,6 +753,12 @@ impl PlatformWebView {
     /// 포인터에서 뺀다. 그림은 layer mask(전체 사각형과 구멍의 even-odd 경로)로, 포인터는 `hitTest:`로
     /// 뺀다. frame·표시·first responder는 바꾸지 않는다. 비면 mask와 구멍을 지워 원래대로 돌아간다.
     /// host 입력 영역(`_input`)을 빼는 방법은 아직 없어 `webview_edge_inset` 여백으로 피한다.
+    /// Linux 전용 처리다. macOS의 layer mask 변경은 AppKit이 다시 그린다.
+    pub fn sync_halted_shape(&self) {}
+
+    /// Linux 전용 처리다. 이 백엔드는 halt 중 별도 이벤트 처리를 돌리지 않는다.
+    pub fn hold_input_for_halt(&self) {}
+
     pub fn set_native_holes(&self, _input: &[[i32; 4]], clip: &[[i32; 4]], scale_factor: f64) {
         let view_bounds = self.webview.bounds();
         let key = (
