@@ -463,7 +463,8 @@ impl RequestContext {
     pub(crate) fn keyboard_overlay_open(&self) -> bool {
         #[cfg(feature = "gui")]
         let host_popup_focused = self.popups.has_focused()
-            || (self.tutorial.active.is_some() && self.tutorial.keyboard_focus);
+            || (self.tutorial.active.is_some() && self.tutorial.keyboard_focus)
+            || self.restore_notices.has_keyboard_focus();
         #[cfg(not(feature = "gui"))]
         let host_popup_focused = false;
         keyboard_overlay_open(

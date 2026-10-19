@@ -31,6 +31,8 @@ pub(crate) struct RestoreNotices {
     acknowledged: Vec<u64>,
     /// 직전 프레임에 그린 안내 전체 사각형(논리 좌표). native WebView bounds 축소에 쓴다.
     occupied: Option<egui::Rect>,
+    /// 직전 프레임에 안내 안쪽 컨트롤이 키보드 포커스를 가졌는지. 이때만 키를 egui로 보낸다.
+    keyboard_inside: bool,
 }
 
 impl RestoreNotices {
@@ -50,6 +52,11 @@ impl RestoreNotices {
     /// 직전 프레임에 그린 안내 영역. 안내가 없으면 `None`이다.
     pub(crate) fn occupied(&self) -> Option<egui::Rect> {
         self.occupied
+    }
+
+    /// 안내 안쪽 컨트롤이 키보드 포커스를 가졌는지. 안내가 나타나는 것만으로는 true가 되지 않는다.
+    pub(crate) fn has_keyboard_focus(&self) -> bool {
+        self.keyboard_inside
     }
 
     fn dismiss(&mut self, id: u64) {
@@ -76,6 +83,7 @@ pub(crate) fn draw_notice_column(
     let mut next_top = column.top();
     let mut occupied: Option<egui::Rect> = None;
     let mut dismissed = Vec::new();
+    let mut keyboard_inside = false;
     for entry in &notices.entries {
         let view = tasty_ui_widgets::RestoreNoticeView {
             id_salt: egui::Id::new("restore_notice").with(entry.id),
@@ -106,6 +114,8 @@ pub(crate) fn draw_notice_column(
         }
         if output.dismissed {
             dismissed.push(entry.id);
+        } else {
+            keyboard_inside |= output.focused_inside;
         }
         occupied = Some(occupied.map_or(output.rect, |rect| rect.union(output.rect)));
         next_top = output.rect.bottom() + gap;
@@ -117,6 +127,7 @@ pub(crate) fn draw_notice_column(
         occupied = None;
     }
     notices.occupied = occupied;
+    notices.keyboard_inside = keyboard_inside;
     occupied
 }
 

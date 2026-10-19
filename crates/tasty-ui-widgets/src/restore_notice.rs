@@ -46,6 +46,8 @@ pub struct RestoreNoticeOutput {
     pub rect: egui::Rect,
     /// 글리프를 읽지 못했으면 그 오류. 기록은 호출부가 한다.
     pub glyph_error: Option<egui::load::LoadError>,
+    /// 이번 프레임에 안쪽 컨트롤이 키보드 포커스를 가졌다. 호출부는 이때만 키 입력을 egui로 보낸다.
+    pub focused_inside: bool,
 }
 
 /// 안내 열의 위치. 작업 영역 오른쪽 위에서 `notice-column-inset`만큼 들어간 지점에 오른쪽 끝을 맞춘다.
@@ -146,6 +148,7 @@ pub fn restore_notice(
         copy_path,
         rect,
         glyph_error: glyph_error.into_inner(),
+        focused_inside,
     }
 }
 
@@ -383,12 +386,15 @@ mod tests {
     fn esc_continues_only_while_a_control_inside_has_focus() {
         let theme = theme();
         let ctx = egui::Context::default();
-        frame(&ctx, &theme, Vec::new());
+        assert!(
+            !frame(&ctx, &theme, Vec::new()).focused_inside,
+            "appearing does not take focus"
+        );
         assert!(
             !frame(&ctx, &theme, vec![key(egui::Key::Escape)]).dismissed,
             "Esc outside the notice is left alone"
         );
-        frame(&ctx, &theme, vec![key(egui::Key::Tab)]);
+        assert!(frame(&ctx, &theme, vec![key(egui::Key::Tab)]).focused_inside);
         assert!(
             ctx.memory(|m| m.focused().is_some()),
             "Tab reached a control"
