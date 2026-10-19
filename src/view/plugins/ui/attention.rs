@@ -475,6 +475,7 @@ fn draw_action_bar(
             AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {
                 PluginsAction::RegisterUnverified {
                     id: entry.id.clone(),
+                    manifest_sha256: entry.manifest_sha256.clone(),
                 }
             }
             AttentionKind::HealthError => PluginsAction::OpenSettings,

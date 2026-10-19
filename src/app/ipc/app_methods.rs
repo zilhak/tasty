@@ -481,7 +481,7 @@ impl App {
                 } else {
                     crate::app::plugin_glue::install_trust::InstallChoice::VerifiedOnly
                 };
-                match self.plugin_install(path, &choice) {
+                match self.plugin_install(path, &choice, None) {
                     Ok(events) => {
                         let installed_id = events
                             .iter()

@@ -17,6 +17,7 @@ fn entry(kind: AttentionKind) -> AttentionEntry {
         health_detail: None,
         cause: None,
         unverified: None,
+        manifest_sha256: String::new(),
     }
 }
 

@@ -92,6 +92,7 @@ impl App {
                     health_detail: None,
                     cause: r.cause.clone(),
                     unverified: r.unverified,
+                    manifest_sha256: r.manifest_sha256.clone(),
                 }
             })
             .collect();
@@ -116,6 +117,7 @@ impl App {
                 health_detail: Some(mgr.log_path(id).to_string_lossy().into_owned()),
                 cause: None,
                 unverified: None,
+                manifest_sha256: String::new(),
             })
         }));
 

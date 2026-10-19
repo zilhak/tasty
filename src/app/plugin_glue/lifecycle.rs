@@ -209,11 +209,29 @@ fn register_installed(
 }
 
 /// [`App::plugin_install`] 의 본체. 매니저만 쓰므로 시험이 App 없이 부를 수 있다.
+fn manifest_digest(dir: &std::path::Path) -> anyhow::Result<String> {
+    tasty_host_plugin::trust_verdict::manifest_sha256(dir).map_err(|e| {
+        anyhow::anyhow!("invalid plugin at source: cannot read tasty-plugin.toml: {e}")
+    })
+}
+
+/// `reviewed` 는 화면이 보인 매니페스트의 SHA-256 이다. 있으면 지금 내용과 같아야 설치한다.
 pub(crate) fn install_into(
     mgr: &mut PluginManager,
     src_path: &std::path::Path,
     choice: &super::install_trust::InstallChoice,
+    reviewed: Option<&str>,
 ) -> anyhow::Result<Vec<CoreEvent>> {
+    // 판정·선택·권한 승인은 이 내용에 대한 것이다. 화면에서 본 내용과 다르면 설치하지 않는다.
+    let judged = manifest_digest(src_path)?;
+    if let Some(reviewed) = reviewed
+        && reviewed != judged
+    {
+        anyhow::bail!(
+            "the manifest in {} changed after it was reviewed; verify the folder again. Nothing was installed",
+            src_path.display()
+        );
+    }
     let manifest = Manifest::load(src_path)
         .and_then(|m| {
             crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
@@ -237,6 +255,15 @@ pub(crate) fn install_into(
         super::install_trust::undo(undo, &manifest.id);
         return Err(e);
     }
+    // 판정한 뒤 복사하는 사이에 원본이 바뀌었으면 판정하지 않은 내용이 설치된 것이다.
+    if manifest_digest(&dest).ok().as_deref() != Some(judged.as_str()) {
+        remove_partial_install(&dest);
+        super::install_trust::undo(undo, &manifest.id);
+        anyhow::bail!(
+            "the manifest in {} changed while it was being installed; verify the folder again. Nothing was installed",
+            src_path.display()
+        );
+    }
 
     mgr.refresh_packages();
     if !mgr.packages().iter().any(|p| p.manifest.id == manifest.id) {
@@ -257,11 +284,12 @@ impl App {
         &mut self,
         src_path: std::path::PathBuf,
         choice: &super::install_trust::InstallChoice,
+        reviewed: Option<&str>,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         let Some(mgr) = self.plugin_manager.as_mut() else {
             anyhow::bail!("plugin manager not initialized (no main window yet)");
         };
-        install_into(mgr, &src_path, choice)
+        install_into(mgr, &src_path, choice, reviewed)
     }
 
     /// 확인 필요 탭의 "그래도 등록". 플러그인 폴더에서 거부된 미인증 플러그인을 쓰기로 한 선택을
@@ -269,6 +297,7 @@ impl App {
     pub(crate) fn plugin_register_unverified(
         &mut self,
         plugin_id: &str,
+        reviewed: &str,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         let Some(mgr) = self.plugin_manager.as_mut() else {
             anyhow::bail!("plugin manager not initialized");
@@ -279,6 +308,12 @@ impl App {
             .find(|r| r.id == plugin_id)
             .map(|r| r.dir.clone())
             .ok_or_else(|| anyhow::anyhow!("plugin '{plugin_id}' is not waiting for a choice"))?;
+        // 확인 필요 탭이 보인 내용과 다르면 그 선택으로 등록하지 않는다.
+        if manifest_digest(&dir)? != reviewed {
+            anyhow::bail!(
+                "the manifest of '{plugin_id}' changed after it was shown; reopen the Plugins window and review it again"
+            );
+        }
         let manifest =
             Manifest::load(&dir).map_err(|e| anyhow::anyhow!("load manifest failed: {e}"))?;
         let undo = super::install_trust::authorize(

@@ -55,9 +55,11 @@ fn classify_discovery_entry(
     if !dir.is_dir() || !dir.join("tasty-plugin.toml").exists() {
         return;
     }
+    // 보일 내용을 읽기 전에 digest 를 잡는다. 확인 필요 탭의 선택은 이 내용에만 적용된다.
+    let manifest_sha256 = crate::trust_verdict::manifest_sha256(&dir).unwrap_or_default();
     // 여기서는 매니페스트 스키마를 확인한다. detector/handler 등록 검증은 호스트가 처리한다.
     match Manifest::load(&dir) {
-        Ok(manifest) => match trust_outcome(&dir, &manifest) {
+        Ok(manifest) => match trust_outcome(&dir, &manifest, manifest_sha256) {
             TrustOutcome::Trusted => packages.push(PluginPackage { dir, manifest }),
             TrustOutcome::Rejected(rej) => {
                 tracing::warn!("plugin '{}' not auto-loaded ({:?})", rej.id, rej.reason);
@@ -114,6 +116,8 @@ pub struct RejectedPlugin {
     pub cause: Option<String>,
     /// 서명 사유일 때 미인증 원인 이름(`UnverifiedCause::token`).
     pub unverified: Option<&'static str>,
+    /// 탐색 때 읽은 매니페스트의 SHA-256. 확인 필요 탭의 "그래도 등록"은 이 내용일 때만 등록한다.
+    pub manifest_sha256: String,
 }
 
 /// plugin 이 자동 로드에서 거부된 사유. `bundle_sig::TrustDecision` 을 UI 친화적
@@ -145,10 +149,14 @@ enum TrustOutcome {
 /// - `PermissionsChanged` → 재승인 사유로 Rejected
 /// - 모르는 키(공개 키 파일 유무 무관) → UnknownKey Rejected
 /// - 서명 없음·검증 오류·공개 키 불일치 → SignatureInvalid Rejected
-fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
+fn trust_outcome(
+    dir: &std::path::Path,
+    manifest: &Manifest,
+    manifest_sha256: String,
+) -> TrustOutcome {
     #[cfg(debug_assertions)]
     {
-        let _ = (dir, manifest); // debug 빌드 sig-skip — 인자는 release 분기 전용.
+        let _ = (dir, manifest, manifest_sha256); // debug 빌드 sig-skip — 인자는 release 분기 전용.
         TrustOutcome::Trusted
     }
     #[cfg(not(debug_assertions))]
@@ -175,6 +183,7 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                 permissions_removed: removed,
                 cause,
                 unverified,
+                manifest_sha256: manifest_sha256.clone(),
             }))
         };
         match judge(dir) {

@@ -74,8 +74,9 @@ impl App {
         &mut self,
         src_path: &str,
         choice: &super::install_trust::InstallChoice,
+        reviewed: &str,
     ) -> ((String, crate::adapters::ui::ToastKind), bool) {
-        match self.plugin_install(std::path::PathBuf::from(src_path), choice) {
+        match self.plugin_install(std::path::PathBuf::from(src_path), choice, Some(reviewed)) {
             Ok(events) => {
                 let installed = extract_installed_plugin_id(&events).unwrap_or_default();
                 self.cascade_plugin_events(events);
@@ -101,8 +102,12 @@ impl App {
     }
 
     /// 확인 필요 탭의 "그래도 등록" 결과 토스트. 실패 토스트는 실제 원인을 보인다.
-    fn handle_register_unverified(&mut self, id: &str) -> (String, crate::adapters::ui::ToastKind) {
-        match self.plugin_register_unverified(id) {
+    fn handle_register_unverified(
+        &mut self,
+        id: &str,
+        reviewed: &str,
+    ) -> (String, crate::adapters::ui::ToastKind) {
+        match self.plugin_register_unverified(id, reviewed) {
             Ok(events) => {
                 self.cascade_plugin_events(events);
                 (
@@ -209,32 +214,45 @@ impl App {
                 plugins_ui::PluginsAction::OpenHomepage { url } => {
                     pending_toasts.extend(self.handle_open_uri(&url, "toast.open_link_failed"));
                 }
-                plugins_ui::PluginsAction::Install { src_path } => {
+                plugins_ui::PluginsAction::Install {
+                    src_path,
+                    manifest_sha256,
+                } => {
                     let (toast, ok) = self.handle_install(
                         &src_path,
                         &super::install_trust::InstallChoice::VerifiedOnly,
+                        &manifest_sha256,
                     );
                     pending_toasts.push(toast);
                     add_result = Some(ok);
                 }
-                plugins_ui::PluginsAction::InstallUnverified { src_path } => {
+                plugins_ui::PluginsAction::InstallUnverified {
+                    src_path,
+                    manifest_sha256,
+                } => {
                     let (toast, ok) = self.handle_install(
                         &src_path,
                         &super::install_trust::InstallChoice::AllowUnverified,
+                        &manifest_sha256,
                     );
                     pending_toasts.push(toast);
                     add_result = Some(ok);
                 }
-                plugins_ui::PluginsAction::RegisterUnverified { id } => {
-                    pending_toasts.push(self.handle_register_unverified(&id));
+                plugins_ui::PluginsAction::RegisterUnverified {
+                    id,
+                    manifest_sha256,
+                } => {
+                    pending_toasts.push(self.handle_register_unverified(&id, &manifest_sha256));
                 }
                 plugins_ui::PluginsAction::TrustAndInstall {
                     src_path,
                     pubkey_b64,
+                    manifest_sha256,
                 } => {
                     let (toast, ok) = self.handle_install(
                         &src_path,
                         &super::install_trust::InstallChoice::TrustKey { pubkey_b64 },
+                        &manifest_sha256,
                     );
                     pending_toasts.push(toast);
                     add_result = Some(ok);

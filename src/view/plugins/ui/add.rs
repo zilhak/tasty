@@ -96,16 +96,24 @@ fn draw_add_form(
 /// 추가 버튼이 보낼 동작. 미인증은 사용자의 명시적 선택으로 보낸다.
 fn add_action(preview: &AddPreview) -> PluginsAction {
     let src_path = preview.src_path.clone();
+    let manifest_sha256 = preview.manifest_sha256.clone();
     match &preview.trust_state {
-        AddTrustState::Trusted => PluginsAction::Install { src_path },
+        AddTrustState::Trusted => PluginsAction::Install {
+            src_path,
+            manifest_sha256,
+        },
         AddTrustState::PermissionsChanged { pubkey_b64, .. }
         | AddTrustState::UnknownKey { pubkey_b64, .. } => PluginsAction::TrustAndInstall {
             src_path,
             pubkey_b64: pubkey_b64.clone(),
+            manifest_sha256,
         },
         AddTrustState::MissingPubkey { .. }
         | AddTrustState::Unsigned
-        | AddTrustState::SignatureError => PluginsAction::InstallUnverified { src_path },
+        | AddTrustState::SignatureError => PluginsAction::InstallUnverified {
+            src_path,
+            manifest_sha256,
+        },
     }
 }
 
@@ -321,6 +329,10 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
         return;
     }
     let path = std::path::PathBuf::from(&raw);
+    // 보일 내용을 읽기 전에 digest 를 잡는다. 그 사이 파일이 바뀌면 설치가 거절되고, 보이지 않은
+    // 내용이 이 digest 로 승인되는 일은 없다. 읽지 못하면 빈 값이라 설치가 거절된다.
+    let manifest_sha256 =
+        tasty_host_plugin::trust_verdict::manifest_sha256(&path).unwrap_or_default();
     // 읽기·파싱 실패와 선언 검사 실패는 상자 제목이 다르다.
     let checked = match crate::plugin::Manifest::read(&path) {
         Err(e) => Err(AddError::Read(e.to_string())),
@@ -352,6 +364,7 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
                 permissions: manifest.permissions,
                 already_installed: already,
                 trust_state,
+                manifest_sha256,
             });
         }
         Err(error) => {
@@ -420,6 +433,7 @@ mod tests {
             permissions: Vec::new(),
             already_installed,
             trust_state,
+            manifest_sha256: "digest".into(),
         }
     }
 
@@ -487,6 +501,28 @@ mod tests {
             PluginsAction::Install { .. }
         ));
         assert!(!AddTrustState::Trusted.is_unverified());
+    }
+
+    /// 추가 동작은 Verify 때 본 매니페스트의 digest 를 싣는다. 설치는 이 값과 지금 내용을 대조한다.
+    #[test]
+    fn every_add_action_carries_the_reviewed_manifest_digest() {
+        let mut states = unverified_states().to_vec();
+        states.push(AddTrustState::Trusted);
+        for state in states {
+            let digest = match add_action(&preview(state.clone(), false)) {
+                PluginsAction::Install {
+                    manifest_sha256, ..
+                }
+                | PluginsAction::InstallUnverified {
+                    manifest_sha256, ..
+                }
+                | PluginsAction::TrustAndInstall {
+                    manifest_sha256, ..
+                } => manifest_sha256,
+                other => panic!("{other:?}"),
+            };
+            assert_eq!(digest, "digest", "{state:?}");
+        }
     }
 
     fn run_frames(

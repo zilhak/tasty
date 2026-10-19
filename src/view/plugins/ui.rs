@@ -108,6 +108,8 @@ pub struct AttentionEntry {
     /// 서명 사유일 때 미인증 원인 이름(`unknown-key` · `missing-pubkey` · `unsigned` ·
     /// `signature-error`). 신뢰 상자의 원인 문장을 고른다.
     pub unverified: Option<&'static str>,
+    /// 탐색 때 읽은 매니페스트의 SHA-256. "그래도 등록"이 이 값을 실어 본 내용만 등록하게 한다.
+    pub manifest_sha256: String,
 }
 
 /// `PluginsView`가 메인 루프에 발행하는 동작.
@@ -141,14 +143,19 @@ pub enum PluginsAction {
     /// 외부 디렉터리를 데이터 루트의 plugins/<id>로 복사한다. 키로 확인된 플러그인만 설치한다.
     Install {
         src_path: String,
+        /// 화면이 보인 매니페스트의 SHA-256. 설치 시점의 내용이 다르면 설치하지 않는다.
+        manifest_sha256: String,
     },
     /// 미인증 경고를 보고 "그래도 추가"를 골랐다. 선택을 기록하고 설치한다.
     InstallUnverified {
         src_path: String,
+        manifest_sha256: String,
     },
     /// 확인 필요 탭의 "그래도 등록". 플러그인 폴더에 있는 미인증 플러그인을 등록한다.
     RegisterUnverified {
         id: String,
+        /// 확인 필요 탭이 보인 매니페스트의 SHA-256.
+        manifest_sha256: String,
     },
     /// 공개 키 파일의 키를 신뢰하고 설치한다. 호스트가 그 키로 서명이 검증되는지 다시 확인하고
     /// 현재 매니페스트의 권한과 함께 신뢰 DB에 기록한다.
@@ -156,6 +163,7 @@ pub enum PluginsAction {
         src_path: String,
         /// base64 (32-byte ed25519) — 화면이 보인 공개 키.
         pubkey_b64: String,
+        manifest_sha256: String,
     },
 }
 
@@ -184,6 +192,8 @@ pub struct AddPreview {
     pub already_installed: bool,
     /// 매니페스트 sig 검증으로 결정된 trust 상태. 신뢰 상자의 종류를 정한다.
     pub trust_state: AddTrustState,
+    /// Verify 때 읽은 매니페스트의 SHA-256. 추가 동작이 이 값을 실어 본 내용만 설치하게 한다.
+    pub manifest_sha256: String,
 }
 
 /// 매니페스트 신뢰 판정 — 신뢰 상자와 추가 버튼을 정한다. 사용자 선택 기록은 보지 않으므로
