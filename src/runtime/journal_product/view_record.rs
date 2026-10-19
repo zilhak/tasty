@@ -115,7 +115,8 @@ impl Unreadable {
         let directory = damaged_directory(home);
         std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
         let id = digest(&files);
-        // 이름이 같아도 내용이 다른 사본이 이미 있으면 다음 번호를 쓴다. 같은 내용이면 다시 쓰지 않는다.
+        // 이름이 같아도 내용이 다르거나 읽어 대조할 수 없는 사본이 이미 있으면 다음 번호를 쓴다.
+        // 읽어서 같은 내용임을 확인한 파일만 다시 쓰지 않는다.
         let stem = (1u64..)
             .map(|n| match n {
                 1 => format!("{name}-{id}"),
@@ -123,8 +124,7 @@ impl Unreadable {
             })
             .find(|stem| {
                 files.iter().all(|(extension, bytes)| {
-                    std::fs::read(directory.join(format!("{stem}{extension}")))
-                        .map_or(true, |existing| existing == *bytes)
+                    existing_copy(&directory.join(format!("{stem}{extension}")), bytes).is_some()
                 })
             })
             .ok_or("no free name for the preserved View copy")?;
@@ -134,7 +134,7 @@ impl Unreadable {
             .collect();
         for (file, bytes) in &files {
             let path = directory.join(file);
-            if path.exists() {
+            if existing_copy(&path, bytes) == Some(true) {
                 continue;
             }
             let mut temporary =
@@ -149,6 +149,16 @@ impl Unreadable {
                 .map_err(|error| error.to_string())?;
         }
         Ok(directory.join(&files[0].0).display().to_string())
+    }
+}
+
+/// 보존 후보 이름의 기존 파일. 같은 내용을 읽어 확인했으면 `Some(true)`, 파일이 없으면
+/// `Some(false)`, 내용이 다르거나 읽지 못했으면 그 이름을 쓸 수 없어 `None`이다.
+fn existing_copy(path: &Path, bytes: &[u8]) -> Option<bool> {
+    match std::fs::read(path) {
+        Ok(existing) => (existing == bytes).then_some(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some(false),
+        Err(_) => None,
     }
 }
 

@@ -409,3 +409,59 @@ fn different_damaged_snapshots_under_the_same_view_are_each_preserved() {
         ]
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn an_existing_copy_that_cannot_be_read_is_not_reused_as_the_preserved_copy() {
+    use std::os::unix::fs::PermissionsExt;
+    let (mut session, home, _) = saved_selection();
+    database(&home)
+        .execute(
+            "UPDATE payloads SET bytes = ?1 WHERE payload_id =
+             (SELECT s.payload_id FROM snapshots s JOIN restore_manifests m
+              ON m.snapshot_id = s.snapshot_id WHERE m.restore_key = 'view:slot-1')",
+            [b"damaged snapshot".as_slice()],
+        )
+        .unwrap();
+    let mut journal = open(&mut session);
+    assert_eq!(journal.take_notices().len(), 1);
+    drop(journal);
+    let directory = crate::runtime::journal_product::view_record::damaged_directory(&home);
+    let first: Vec<_> = std::fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "view"))
+        .collect();
+    assert_eq!(first.len(), 1, "{first:?}");
+    let view = std::fs::read(&first[0]).unwrap();
+    // A copy under the same name that differs and cannot be read must not stand in for the original.
+    std::fs::write(&first[0], b"something else").unwrap();
+    std::fs::set_permissions(&first[0], std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&first[0]).is_ok() {
+        // Running as root ignores file modes; the case cannot be produced here.
+        return;
+    }
+
+    journal = open(&mut session);
+    let notices = journal.take_notices();
+    drop(journal);
+    std::fs::set_permissions(&first[0], std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    let copies: Vec<_> = std::fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "view") && *path != first[0])
+        .collect();
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    assert_eq!(std::fs::read(&copies[0]).unwrap(), view);
+    assert!(
+        notices[0].body.contains(&copies[0].display().to_string()),
+        "{}",
+        notices[0].body
+    );
+    assert_eq!(
+        std::fs::read(&first[0]).unwrap(),
+        b"something else",
+        "the existing file is left as it was"
+    );
+}
