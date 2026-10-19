@@ -16,7 +16,13 @@
 
 ## Legacy 파일 형식과 이전 저장 흐름
 
-이 절의 슬롯 JSON writer·persist_id 덮어쓰기·파일 삭제 설명은 이전 바이너리의 동작이다. 현재 제품은 아래 Journal 절의 불변 payload와 참조 보존 계약을 따르며, 이 형식은 최초 이관 입력으로 읽는다.
+이 절의 슬롯 JSON writer, 슬롯 파일 삭제, persist_id별 scrollback 파일 쓰기·교체 설명은 이전 바이너리의 동작이다. 현재 제품은 아래 Journal 절의 불변 payload와 참조 보존 계약을 따르며, 이 형식은 최초 이관 입력으로 읽는다. 아래 [Surface 내용 복원](#surface-내용-복원-현재-터미널-scrollback) 절은 현재 동작을 적는다.
+
+현재 바이너리는 legacy `scrollback/*.bin`을 쓰지 않지만 다음 세 경로에서 지운다.
+
+- 부팅 GC: `restore_layout`이 켜져 있으면 engine 생성 전에 슬롯 JSON과 남은 옛 `layout.json`이 참조하지 않는 `.bin`을 지운다(GUI·headless 부팅 공통).
+- surface 자원 회수: 닫기·교체로 터미널 자원을 정리할 때 그 터미널이 이관 자료에서 받은 legacy 파일 참조의 `.bin`을 지운다.
+- 설정 끄기: 설정 화면에서 "재시작 시 서피스 내용 복원"을 on→off로 저장하면 `scrollback/*.bin` 전체를 지운다.
 
 ### 저장 대상 / 타이밍
 
@@ -139,19 +145,19 @@ Parked engine은 슬롯을 점유하지만 윈도우 ID가 없어 `window.list`�
 
 마지막 창을 닫아 engine 이 파킹되는 경우(그리고 macOS 최소화)는 engine 이 살아 있으므로 이 처리를 하지 않는다 — 슬롯 점유가 유지되고 다시 창을 열면 같은 슬롯을 이어쓴다.
 
-윈도우 정리에서 scrollback `.bin`을 따로 지우지는 않는다. 남아 있는 슬롯의 참조와 다음 부팅의 GC 결과에 따라 정리된다.
+윈도우 정리에서 legacy scrollback `.bin`을 따로 지우지는 않는다. 남아 있는 슬롯의 참조와 다음 부팅의 GC 결과에 따라 정리된다.
 
 ### Surface 내용 복원 (현재: 터미널 scrollback)
 
-`general.restore_surface_content`(기본 on)가 켜져 있으면 터미널의 scrollback과 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`에 저장한다. 파일 magic은 `TSSB`다. 복원 시 이전 scrollback과 화면 내용을 새 터미널의 출력 앞에 넣는다.
+`general.restore_surface_content`(기본 on)가 켜져 있으면 터미널 capture가 scrollback과 화면 라인을 journal의 불변 surface payload에 담는다. payload는 cwd·`restore.command`와 함께 직렬화한 scrollback 바이트(`TSSB` 형식)를 가지며, 저장할 때마다 새 payload를 만들고 기존 payload를 고쳐 쓰지 않는다. 복원 시 이전 scrollback과 화면 내용을 새 터미널의 출력 앞에 넣는다. legacy `~/.tasty/scrollback/<persist_id>.bin`은 최초 이관 때 슬롯 JSON의 `scrollback_ref`로 읽어 payload에 복사하는 입력이며, 현재 capture가 쓰는 곳이 아니다.
 
-`persist_id`는 당시 TerminalStore의 scrollback persist ID 목록에 보관하고 다음 저장에서 같은 파일을 교체한다. 옵션이 꺼져 있으면 새 capture에 scrollback을 담지 않는다. 복원할 때도 payload에 남아 있는 scrollback을 터미널에 넣지 않으며, 배치·cwd·`restore.command`는 그대로 복원한다. 닫은 항목 복원도 같은 기준을 따른다.
+옵션이 꺼져 있으면 새 capture에 scrollback을 담지 않는다. 복원할 때도 payload에 남아 있는 scrollback을 터미널에 넣지 않으며, 배치·cwd·`restore.command`는 그대로 복원한다. 닫은 항목 복원도 같은 기준을 따른다.
 
 설정을 on→off로 바꾸면(설정 화면이든 다른 설정 적용 경로든) 창과 parked engine 모두를 dirty로 표시한다. 그래서 구조가 바뀌지 않아도 다음 저장 주기와 종료 저장에서 새 capture가 생긴다. 이 capture는 live 터미널을 scrollback 없이 다시 기록한다. 아직 활성화하지 않은 지연 탭처럼 capture가 관측하지 못한 터미널은 기존 payload에서 scrollback과 legacy 파일 참조만 뺀 새 payload를 현재 activation에 기록한다. 이후 현재 surface가 가리키는 payload에는 이전 scrollback이 없다.
 
 이전 payload는 이때 지우지 않는다. 소비하지 않은 닫은 항목 기록이나 보존 중인 snapshot 같은 다른 holder가 잡고 있으면 남고, 아래 [Journal snapshot 보존](#journal-snapshot-보존)에 따라 모든 pin이 사라지면 지워진다. 남아 있는 동안에도 설정이 꺼져 있으면 그 scrollback을 복원에 쓰지 않는다. 설정을 다시 켜면 이후 capture부터 scrollback을 저장하고, 아직 남은 닫은 항목 기록을 복원하면 그 기록의 scrollback이 다시 쓰인다. 설정 화면에서 on→off로 저장하면 legacy `scrollback/*.bin`도 지운다.
 
-Surface 닫기에서는 해당 `.bin`을 삭제한다. 부팅 GC는 슬롯 파일들과 아직 남아 있는 옛 `layout.json`의 `scrollback_ref` 합집합을 구해 참조되지 않는 `.bin`을 지운다. 참조 집합을 확정하지 못하면 그 회차 GC를 건너뛰고 아무 파일도 지우지 않는다.
+legacy `.bin`의 정리는 위 [세 경로](#legacy-파일-형식과-이전-저장-흐름)를 따른다. 그중 부팅 GC는 슬롯 파일들과 아직 남아 있는 옛 `layout.json`의 `scrollback_ref` 합집합을 구해 참조되지 않는 `.bin`을 지운다. 참조 집합을 확정하지 못하면 그 회차 GC를 건너뛰고 아무 파일도 지우지 않는다.
 
 - `layouts/` 디렉터리가 있지만 목록을 읽지 못했거나 개별 항목을 읽지 못해 목록이 불완전할 수 있을 때
 - 열거한 슬롯 하나라도 로드하지 못했을 때(읽기 실패·해석 실패·더 높은 version·열거 뒤 사라짐)

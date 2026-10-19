@@ -186,7 +186,7 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 각 조�
   30탭에서는 화면 rows × cols 복제에 20ms가 걸렸다.
 - C5b에는 `Terminal`이 가진 스크롤백 메모리를 해제하는 비용도 포함된다.
   자식 종료 대기는 별도 스레드에서 처리하므로 이 값으로 자식 회수 완료를 판단하지 않는다.
-- C5a의 파일 삭제가 실패하면 다음 시작 때 `scrollback_store::gc_orphans`가 회수한다.
+- C5a의 legacy scrollback 파일 삭제가 실패하면 다음 시작의 부팅 GC가 회수한다. 부팅 GC는 `restore_layout`이 켜져 있고 슬롯 참조 집합을 확정한 회차에만 지운다([레이아웃 영속화](../features/layout-persistence/index.md#surface-내용-복원-현재-터미널-scrollback)).
 - C5c는 observer 워커를 join하지 않는다. 회수는 종료 단계 S3b에서 진행한다.
 - C5d는 memory.db 크기의 영향을 받는다. 위 표는 새 `TASTY_HOME`에서 측정했으므로
   큰 DB의 비용과 같다고 볼 수 없다.
