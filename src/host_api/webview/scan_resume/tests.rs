@@ -661,3 +661,73 @@ fn a_failed_stop_drops_the_restart_and_keeps_the_request_until_another_commit() 
     assert!(!stop);
     assert_eq!(release, vec![8]);
 }
+
+/// 지문이 달라 멈춘 뒤로·앞으로 탐색은 같은 방향으로 다시 시작하고, 그 시작 신호는 방향을 알아
+/// 다시 취소·스캔된다. 방향을 잃으면 스캔 없이 지문 없는 문서(`Js(false)`)가 된다.
+#[test]
+fn a_stopped_history_navigation_restarts_in_the_same_direction_and_is_scanned_again() {
+    for (step, replay) in [
+        (HistoryStep::Back, Replay::Back),
+        (HistoryStep::Forward, Replay::Forward),
+    ] {
+        let doc = allowed_doc("verify-history");
+        let mut resume = ScanResume::<Token>::new(1);
+        resume.host_request(Some(step));
+        assert_eq!(
+            resume.start(
+                &doc.gate,
+                &doc.url,
+                Some(10),
+                StartKind::BackOrForward,
+                true
+            ),
+            Start::Cancel
+        );
+        assert!(resume.completed(Some(10)).internal);
+        assert_eq!(wait(|| resume.poll()), (replay, doc.url.clone()));
+        rewrite_keeping_stamp(&doc.dir.join("doc.html"), "<script>b()</script>");
+        assert_eq!(
+            resume.start(
+                &doc.gate,
+                &doc.url,
+                Some(11),
+                StartKind::BackOrForward,
+                true
+            ),
+            Start::Resumed(true)
+        );
+        assert_eq!(
+            resume.document_request(&doc.gate, &doc.url, || Some(7)),
+            RequestAction::Held
+        );
+        wait(|| resume.poll_verify().stop.then_some(()));
+        let ended = resume.completed(Some(11));
+        assert!(ended.internal);
+        assert_eq!(ended.restart, Some((replay, doc.url.clone())), "{step:?}");
+        // 재시작한 탐색은 방향을 알아 다시 취소되고, 같은 방향으로 재개된다.
+        assert_eq!(
+            resume.start(
+                &doc.gate,
+                &doc.url,
+                Some(12),
+                StartKind::BackOrForward,
+                true
+            ),
+            Start::Cancel,
+            "{step:?}"
+        );
+        assert!(resume.completed(Some(12)).internal);
+        assert_eq!(wait(|| resume.poll()), (replay, doc.url.clone()));
+        assert_eq!(
+            resume.start(
+                &doc.gate,
+                &doc.url,
+                Some(13),
+                StartKind::BackOrForward,
+                true
+            ),
+            Start::Resumed(false),
+            "바뀐 내용은 자기 스캔을 받고 허용을 이어받지 않는다"
+        );
+    }
+}

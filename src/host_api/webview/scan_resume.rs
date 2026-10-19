@@ -348,6 +348,15 @@ impl<D> ScanResume<D> {
         if self.verify.as_ref().is_some_and(|v| v.nav_id == nav_id) {
             self.verify = None;
         }
+        // 뒤로·앞으로 재시작은 다음 시작 신호가 방향을 알아야 다시 취소·스캔할 수 있다. 호스트 요청과
+        // 같이 방향을 남긴다. 남기지 않으면 그 탐색이 스캔 없이 지문 없는 문서가 된다.
+        if let Some((replay, _)) = &restart {
+            self.host_step = match replay {
+                Replay::Back => Some(HistoryStep::Back),
+                Replay::Forward => Some(HistoryStep::Forward),
+                Replay::Reload | Replay::Navigate => None,
+            };
+        }
         Ended {
             internal,
             release: self.release_ended(|n| n == nav_id || nav_id.is_none()),
