@@ -42,9 +42,10 @@ pub(crate) struct RemoteState {
     /// client가 조립한 mesh frame을 로컬 surface ID로 보관한다. 서버 구독 상태와는 별개다.
     #[cfg(feature = "gui")]
     pub(crate) attach_mesh_frames: crate::remote::mesh_frames::AttachMeshFrameStore,
-    /// IPC가 요청한 GUI attach 대기열. 처리 후 사용자의 선택을 옮기지 않는다.
+    /// IPC가 요청한 GUI attach 대기열(포트, 원격 workspace, 결과를 받을 run).
+    /// 처리 후 사용자의 선택을 옮기지 않는다.
     #[cfg(feature = "gui")]
-    pub(crate) pending_gui_attach: Vec<(u16, u32)>,
+    pub(crate) pending_gui_attach: Vec<(u16, u32, u64)>,
     /// 캡처 시점에 정한 mirror workspace. None이면 로컬 클립보드에 기록한다.
     /// 캡처 도중 포커스가 바뀌어도 업로드 대상은 바뀌지 않는다.
     #[cfg(feature = "gui")]

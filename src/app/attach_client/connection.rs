@@ -77,21 +77,38 @@ impl App {
                     .map(|request| (session.id, request)),
             );
         }
-        for (engine, (port, workspace)) in requests {
-            self.try_dispatch_one_gui_attach_ipc(engine, port, workspace);
+        for (engine, (port, workspace, run)) in requests {
+            self.try_dispatch_one_gui_attach_ipc(engine, port, workspace, run);
         }
     }
 
-    fn try_dispatch_one_gui_attach_ipc(&mut self, engine: EngineId, port: u16, workspace: u32) {
+    fn try_dispatch_one_gui_attach_ipc(
+        &mut self,
+        engine: EngineId,
+        port: u16,
+        workspace: u32,
+        run: u64,
+    ) {
         let own_port = self.services.own_ipc_port();
-        if let Outcome::Connected(Err(e)) =
-            dispatch_attach(own_port, port, workspace, AttachSource::Ipc, || {
-                let target = self.mirror_install_target(Some(engine), None, None, false)?;
-                self.queue_mirror_connection(target, port, workspace, None)
-            })
-        {
-            tracing::warn!("gui attach failed (port={port}, ws={workspace}): {e}");
-        }
+        let failure = match dispatch_attach(own_port, port, workspace, AttachSource::Ipc, || {
+            let target = self
+                .mirror_install_target(Some(engine), None, None, false)?
+                .with_run(Some(run));
+            self.queue_mirror_connection(target, port, workspace, None)
+        }) {
+            Outcome::Connected(Ok(())) => return,
+            Outcome::Connected(Err(e)) => {
+                tracing::warn!("gui attach failed (port={port}, ws={workspace}): {e}");
+                e.to_string()
+            }
+            Outcome::RejectedSelf => format!("attach target port {port} is this instance"),
+        };
+        crate::request_runs::finish(
+            run,
+            crate::request_runs::RunState::Failed,
+            failure,
+            serde_json::Value::Null,
+        );
     }
 
     pub(super) fn install_new_mirror(

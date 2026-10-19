@@ -1811,6 +1811,8 @@ mirror_pill_label = "원격"
 tab_title_fallback = "셸"
 
 [attach.toast]
+# 원격 연결 팝업의 Connect가 접수된 뒤 연결·설치에 실패했다. 괄호 안에 사유가 붙는다.
+mirror_connect_failed = "원격 워크스페이스에 연결하지 못했습니다."
 mirror_structural_blocked = "미러링된 원격 워크스페이스에서는 아직 구조를 변경할 수 없습니다."
 mirror_structural_forward_failed = "원격 워크스페이스가 그 변경을 적용하지 못했습니다."
 # 복원할 항목이 없는 정상 응답이다. 오류처럼 번역하지 않는다.

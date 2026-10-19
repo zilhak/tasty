@@ -5,6 +5,7 @@ use super::wire::mirror_event_from_control;
 use crate::AppEvent;
 use crate::app::App;
 use crate::runtime::engine_session::EngineId;
+use crate::view::ui::View as _;
 use std::sync::Arc;
 use tasty_remote::pending_connection::{ConnectionTarget, ConnectionTicket};
 use winit::event_loop::EventLoopProxy;
@@ -21,7 +22,52 @@ pub(crate) struct PendingMirrorInstall {
     pub mapping_token: Option<std::sync::Weak<()>>,
     pub reconnect: Option<(u32, tasty_remote::connection::ConnectionEpoch)>,
     pub resync: bool,
+    /// 최종 결과를 받을 요청의 run. 결과 없이 모든 사본이 사라지면 `cancelled`로 끝난다.
+    pub run: Option<crate::request_runs::RunGuard>,
+    /// 사용자가 원격 연결 팝업에서 시작했다. 실패하면 시작한 창에 토스트를 띄운다.
+    pub user: bool,
 }
+
+impl PendingMirrorInstall {
+    /// 이 시도를 기다리는 요청에 최종 결과를 남긴다. 처음 기록한 결과만 남는다.
+    pub(crate) fn finish_run(
+        &self,
+        state: crate::request_runs::RunState,
+        result: impl Into<String>,
+        extra: serde_json::Value,
+    ) {
+        if let Some(run) = &self.run {
+            crate::request_runs::finish(run.id(), state, result, extra);
+        }
+    }
+
+    pub(crate) fn fail_run(&self, reason: impl Into<String>) {
+        self.finish_run(
+            crate::request_runs::RunState::Failed,
+            reason,
+            serde_json::Value::Null,
+        );
+    }
+
+    pub(crate) fn cancel_run(&self, reason: &str) {
+        self.finish_run(
+            crate::request_runs::RunState::Cancelled,
+            reason,
+            serde_json::Value::Null,
+        );
+    }
+
+    /// 요청의 run을 붙인다. 정해진 결과 없이 사라지면 그 이유가 남는다.
+    pub(crate) fn with_run(mut self, run: Option<u64>) -> Self {
+        self.run = run.map(|run| {
+            crate::request_runs::RunGuard::new(run, "the attach attempt ended without a result")
+        });
+        self
+    }
+}
+
+/// 시작한 창이나 engine이 사라져 시도를 버릴 때의 결과.
+pub(crate) const TARGET_DISCARDED: &str = "the window or engine that started the attach is gone";
 impl App {
     pub(crate) fn mirror_install_target(
         &self,
@@ -99,6 +145,8 @@ impl App {
             activate,
             anchor,
             reconnect: old,
+            run: None,
+            user: false,
         })
     }
     pub(crate) fn mirror_install_target_is_current(&self, target: &PendingMirrorInstall) -> bool {
@@ -181,6 +229,7 @@ impl App {
         let pending = self.state.mirror_attempts.connection_snapshot();
         for (ticket, target) in pending {
             if !self.mirror_install_target_is_current(&target) {
+                target.cancel_run(TARGET_DISCARDED);
                 self.state
                     .mirror_attempts
                     .cancel_connection(ticket, &mut self.remote);
@@ -240,6 +289,11 @@ impl App {
             };
             match installed {
                 Ok(workspace) => {
+                    target.finish_run(
+                        crate::request_runs::RunState::Succeeded,
+                        format!("attached as workspace {workspace}"),
+                        serde_json::json!({ "workspace_id": workspace }),
+                    );
                     if target.activate
                         && let Some(window) = target.window
                         && let Some((main, engine)) = self.engines().window_pair(window)
@@ -273,6 +327,10 @@ impl App {
             .mirror_attempts
             .cancel_connection(ticket, &mut self.remote);
         tracing::warn!(engine=?target.engine,"mirror connection could not be installed: {error}");
+        target.fail_run(format!("the mirror could not be installed: {error}"));
+        if target.user {
+            self.toast_attach_failure(target, &error);
+        }
         if target.resync
             && let Some((workspace, epoch)) = &target.reconnect
             && let Some(index) = self.remote.sessions.iter().position(|session| {
@@ -301,6 +359,33 @@ impl App {
                 );
             }
         }
+    }
+}
+
+impl App {
+    /// 팝업에서 시작한 시도가 실패하면 그 창에만 알린다. 창이 바뀌었으면 띄우지 않는다.
+    pub(crate) fn toast_attach_failure(&mut self, target: &PendingMirrorInstall, error: &str) {
+        let Some(window) = target.window else {
+            return;
+        };
+        let Some((main, _)) = self.engines_mut().window_pair(window) else {
+            return;
+        };
+        if !target
+            .view
+            .as_ref()
+            .is_some_and(|view| main.base.state.matches_identity(view))
+        {
+            return;
+        }
+        let base = crate::i18n::t("attach.toast.mirror_connect_failed");
+        let message = crate::i18n::fit_fragment(error, |fragment| format!("{base} ({fragment})"));
+        main.state.toasts.push(
+            message,
+            crate::adapters::ui::ToastKind::Error,
+            crate::adapters::ui::ToastScope::Window,
+        );
+        main.mark_dirty();
     }
 }
 

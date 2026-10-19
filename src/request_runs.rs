@@ -173,6 +173,10 @@ impl RunGuard {
         }))
     }
 
+    pub(crate) fn id(&self) -> u64 {
+        self.0.id
+    }
+
     /// 감시를 끝내고 run을 돌려준다. 그 뒤의 최종 결과는 받은 쪽이 기록한다.
     pub(crate) fn take(&self) -> u64 {
         self.0.armed.store(false, Ordering::Relaxed);

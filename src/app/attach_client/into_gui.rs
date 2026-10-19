@@ -28,6 +28,8 @@ pub(crate) struct IntoGuiCheck {
     port: u16,
     workspace: u32,
     verdict: Verdict,
+    /// 결과 조회를 허용할 호출자([`crate::request_runs::reader_of`]).
+    owner: Option<String>,
 }
 
 /// 워커의 판정 결과.
@@ -97,11 +99,15 @@ impl App {
     /// 상대를 확인한 뒤 응답한다.
     pub(in crate::app) fn ipc_dispatch_attach_into_gui(&mut self, cmd: &IpcCommand) {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let owner = crate::ipc::caller::resolve_caller_from_envelope(&self.services, &cmd.request)
+            .ok()
+            .and_then(|caller| crate::request_runs::reader_of(&caller));
         self.start_into_gui_check(
             Reply::Ipc(cmd.response_tx.clone()),
             rpc_id,
             &cmd.request.method,
             &cmd.request.params,
+            owner,
         );
     }
 
@@ -115,6 +121,7 @@ impl App {
             serde_json::Value::from(call.call_id),
             &call.method,
             &call.params,
+            Some(call.plugin_id.clone()),
         );
     }
 
@@ -124,6 +131,7 @@ impl App {
         rpc_id: serde_json::Value,
         method: &str,
         params: &serde_json::Value,
+        owner: Option<String>,
     ) {
         let (port, workspace) =
             match attach::into_gui_target(self.services.own_ipc_port(), &rpc_id, params) {
@@ -153,6 +161,7 @@ impl App {
                     port,
                     workspace,
                     verdict: judge(move || reaches_this_instance(port)),
+                    owner,
                 };
                 if tx.send(check).is_err() {
                     tracing::debug!("attach.into_gui check finished after the main loop ended");
@@ -205,8 +214,13 @@ impl App {
                 this_instance_refused(check.rpc_id, check.port)
             } else if check.verdict == Verdict::Panicked {
                 JsonRpcResponse::internal_error(check.rpc_id, "attach.into_gui self check panicked")
-            } else if self.queue_into_gui(&check) {
-                attach::into_gui_queued(check.rpc_id, check.port, check.workspace)
+            } else if let Some(run) = self.queue_into_gui(&check) {
+                let mut response =
+                    attach::into_gui_queued(check.rpc_id, check.port, check.workspace);
+                if let Some(result) = response.result.as_mut() {
+                    result["run"] = serde_json::json!(run);
+                }
+                response
             } else {
                 crate::app::services::no_application_state(check.rpc_id)
             };
@@ -215,24 +229,31 @@ impl App {
     }
 
     /// engine 처리기가 하던 것처럼 요청을 받은 창, 없으면 첫 parked engine의 큐에 넣는다.
-    fn queue_into_gui(&mut self, check: &IntoGuiCheck) -> bool {
+    /// 넣었으면 결과를 조회할 run을 돌려준다.
+    fn queue_into_gui(&mut self, check: &IntoGuiCheck) -> Option<u64> {
         let target = self
             .find_request_owner(&check.method, &check.params)
             .ok()
             .flatten()
             .or(self.view.focused_view_id);
-        let request = (check.port, check.workspace);
+        let run = crate::request_runs::begin(
+            "attach.into_gui",
+            check.owner.clone(),
+            serde_json::json!({ "port": check.port, "remote_workspace": check.workspace }),
+        );
+        let request = (check.port, check.workspace, run);
         if let Some(id) = target
             && let Some((_, engine)) = self.engines_mut().window_pair(id)
         {
             engine.remote.pending_gui_attach.push(request);
-            return true;
+            return Some(run);
         }
         if let Some((_, engine)) = self.engines_mut().first_parked_session() {
             engine.remote.pending_gui_attach.push(request);
-            return true;
+            return Some(run);
         }
-        false
+        crate::request_runs::forget(run);
+        None
     }
 }
 

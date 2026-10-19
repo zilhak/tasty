@@ -93,9 +93,10 @@ impl App {
                     self.state.remote_browsers.remove(&id);
                     return Ok(());
                 }
-                let target = self
+                let mut target = self
                     .mirror_install_target(Some(engine), None, None, true)
                     .map_err(|error| error.to_string())?;
+                target.user = true;
                 let (port, tunnel) = self.remote.take_browser_connection(id)?;
                 self.state.remote_browsers.remove(&id);
                 self.queue_browser_mirror(target, port, workspace, tunnel)

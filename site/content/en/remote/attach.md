@@ -1,4 +1,4 @@
-<!-- source-hash: e9d2a03ddd40 -->
+<!-- source-hash: ab9efc516671 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -86,7 +86,7 @@ Connection attempts do not wait forever — 10 seconds for the SSH connection, 2
 3. Pick a Workspace and **Connect**. One that someone else is already attached to is shown as **in use** and cannot be picked.
    - Picking the first row, **New workspace**, creates a Workspace on the remote with a default name and then attaches to it (**Create & connect**). A Workspace created this way stays on the remote.
    - Once the list appears, move between rows with `↑` / `↓` and press `Enter` to connect.
-4. A mirror Workspace with the **REMOTE** tag appears in the sidebar and focus moves to it.
+4. A mirror Workspace with the **REMOTE** tag appears in the sidebar and focus moves to it. If connecting or preparing the mirror fails, a failure toast with the reason appears in that window. Nothing is shown if you have closed the window.
 
 ## 4. Attach from the CLI
 

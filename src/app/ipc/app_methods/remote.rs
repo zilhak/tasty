@@ -93,9 +93,22 @@ impl App {
                 return;
             }
         };
+        // 기존 workspace 연결은 접수 응답 뒤에 끝나므로 결과를 run으로 남긴다. 새 workspace는
+        // 생성 결과를 지연 회신하므로 run을 만들지 않는다.
+        let run = match &target {
+            RemoteAttachTarget::Existing(remote_ws) => Some(crate::request_runs::begin(
+                "remote.attach",
+                crate::ipc::caller::resolve_caller_from_envelope(&self.services, &cmd.request)
+                    .ok()
+                    .and_then(|caller| crate::request_runs::reader_of(&caller)),
+                serde_json::json!({ "remote_workspace": remote_ws, "attempt": attempt.id() }),
+            )),
+            RemoteAttachTarget::Create { .. } => None,
+        };
         let target_binding = match self.mirror_install_target(None, None, None, false) {
-            Ok(target) => target,
+            Ok(target) => target.with_run(run),
             Err(error) => {
+                run.into_iter().for_each(crate::request_runs::forget);
                 self.remote.finish_attempt(&attempt);
                 send_response(
                     &cmd.response_tx,
@@ -116,6 +129,7 @@ impl App {
                     let result = resolve_existing_endpoint(&attempt, || conn.resolve_endpoint());
                     send_attach_outcome(&tx, &proxy, attempt, remote_ws, result);
                 }) {
+                    run.into_iter().for_each(crate::request_runs::forget);
                     send_response(
                         &cmd.response_tx,
                         host_ipc::protocol::JsonRpcResponse::internal_error(rpc_id, error),
@@ -130,6 +144,7 @@ impl App {
                             "attaching": true,
                             "remote_workspace": remote_ws,
                             "attempt": attempt_id,
+                            "run": run,
                         }),
                     ),
                 );

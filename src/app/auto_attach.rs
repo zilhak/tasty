@@ -373,6 +373,7 @@ impl App {
             return None;
         };
         if !self.mirror_install_target_is_current(&target) {
+            target.cancel_run(crate::app::attach_client::pending::TARGET_DISCARDED);
             if let Some(retired) = self.remote.finish_attempt(&outcome.attempt)
                 && let Some(anchor) = retired.anchor
             {
@@ -415,13 +416,16 @@ impl App {
         let target = self.take_current_endpoint_target(outcome)?;
         let Some(accepted) = self.remote.finish_attempt(&outcome.attempt) else {
             tracing::debug!("discarding result from retired remote connection attempt");
+            target.cancel_run("the attempt was replaced or cancelled");
             return None;
         };
         if accepted.anchor != outcome.anchor_ws_id {
             tracing::error!("remote outcome belongs to another anchor");
+            target.fail_run("the attach result belongs to another workspace");
             return None;
         }
         if !self.accepted_mapping_is_current(&accepted) {
+            target.cancel_run("the attach mapping changed");
             return None;
         }
         Some((target, accepted))
@@ -452,6 +456,7 @@ impl App {
                 );
             }
             Err(e) => {
+                target.fail_run(format!("the attach endpoint could not be resolved: {e:#}"));
                 if let Some(this) = e.downcast_ref::<tasty_remote::self_instance::ThisInstance>() {
                     tracing::warn!(
                         "SSH attach 대상이 이 인스턴스 자신이라 거절했다 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect})"
@@ -492,9 +497,11 @@ impl App {
     ) {
         // accept_auto_attach_outcome가 결과의 anchor와 같음을 확인했다.
         let anchor_ws_id = accepted.anchor;
+        let run = target.clone();
         // 자기 포트는 debug·release 모두 연결을 시도하기 전에 거절한다.
         let Some(attach_result) = self.queue_endpoint_mirror(target, port, remote_ws, tunnel)
         else {
+            run.fail_run(format!("attach target port {port} is this instance"));
             self.record_self_refusal(accepted, remote_ws, is_reconnect, port, false);
             return;
         };
@@ -502,6 +509,7 @@ impl App {
             // 접수는 성공 설치가 아니다. 실패 이력은 pending 설치 성공 때만 해제한다.
             Ok(()) => {}
             Err(e) => {
+                run.fail_run(format!("the mirror connection could not start: {e}"));
                 tracing::warn!(
                     "attach mirror 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect}): {e}"
                 );

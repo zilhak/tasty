@@ -45,6 +45,7 @@ impl MirrorAttempts {
                     == target.reconnect.as_ref().map(|(id, _)| *id)
                 && pending.anchor == target.anchor;
             if replaced {
+                pending.cancel_run("replaced by a newer attach to the same target");
                 remote.cancel_connection(*ticket);
             }
             !replaced
@@ -99,7 +100,48 @@ mod tests {
             mapping_token: None,
             reconnect: None,
             resync: false,
+            run: None,
+            user: false,
         }
+    }
+
+    #[test]
+    fn a_replaced_or_dropped_attempt_ends_its_own_run_only() {
+        use crate::request_runs::{begin, lookup};
+        let (_, engine) = crate::state::tests::test_state();
+        let mut remote = Remote::new();
+        let mut pending = MirrorAttempts::default();
+        let first = begin("remote.attach", None, serde_json::Value::Null);
+        let second = begin("remote.attach", None, serde_json::Value::Null);
+        pending.register_connection(
+            ConnectionTicket(1),
+            target(engine.id, Some(10)).with_run(Some(first)),
+        );
+        let replacement = target(engine.id, Some(10)).with_run(Some(second));
+        pending.supersede_connections(&replacement, &mut remote);
+        pending.register_connection(ConnectionTicket(3), replacement);
+        let replaced = lookup(first, None).unwrap();
+        assert_eq!(replaced["state"], "cancelled");
+        assert_eq!(
+            replaced["result"],
+            "replaced by a newer attach to the same target"
+        );
+        // 대체한 시도의 run은 아직 진행 중이고, 늦게 온 결과도 이미 끝난 run을 바꾸지 못한다.
+        assert_eq!(lookup(second, None).unwrap()["state"], "running");
+        target(engine.id, Some(10))
+            .with_run(Some(first))
+            .fail_run("late failure");
+        assert_eq!(lookup(first, None).unwrap()["state"], "cancelled");
+
+        let dropped = begin("attach.into_gui", None, serde_json::Value::Null);
+        pending.register_connection(
+            ConnectionTicket(2),
+            target(engine.id, None).with_run(Some(dropped)),
+        );
+        pending.cancel_connection(ConnectionTicket(2), &mut remote);
+        let ended = lookup(dropped, None).unwrap();
+        assert_eq!(ended["state"], "cancelled");
+        assert_eq!(ended["result"], "the attach attempt ended without a result");
     }
 
     #[test]
