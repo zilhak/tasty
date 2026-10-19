@@ -51,6 +51,7 @@ mod meta;
 pub(crate) mod notification;
 pub(crate) mod notification_channel;
 // 창별 목록을 호스트에서 합산할 수 있도록 공개한다.
+pub(crate) mod keybinding;
 pub(crate) mod output;
 pub(crate) mod pane;
 pub(crate) mod params;
@@ -735,6 +736,8 @@ fn route_engine_handler(
         ),
         // WebView는 surface.set_context를 받지 않아 이 조회로 Theme를 읽는다.
         "theme.query" => theme::handle_query(&engine.read(), id),
+        // WebView 페이지가 직접 처리하는 동작(find 등)의 조합을 문서에 넣을 때 읽는다.
+        "settings.get_keybinding" => keybinding::handle_query(&engine.read(), id, &request.params),
         "tree" => handle_tree(window, &engine.read(), id),
         "message.send" => message::handle_message_send(core, engine, id, &request.params),
         "message.read" => message::handle_message_read(core, engine, id, &request.params),

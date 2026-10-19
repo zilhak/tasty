@@ -52,6 +52,10 @@ const LARGE_FILE_EVENT_KEY: &str = "com.tasty.markdown.large_file_confirm";
 /// `surface.set_context` 를 받지 않아 Theme 변경이 자동으로 밀리지 않으므로, 이 이벤트를
 /// 받을 때마다 살아있는 모든 문서를 재생성한다.
 const THEME_CHANGED_EVENT: &str = "theme.changed";
+/// host 동작의 단축키가 바뀌면 발행된다. 문서에 넣은 검색 조합을 다시 만든다.
+const HOST_SHORTCUT_CHANGED_EVENT: &str = "command.host_shortcut_changed";
+/// 문서 내 검색 바를 여는 host 단축키 동작.
+const FIND_ACTION: &str = "find";
 
 /// attach mirror 문서의 원문 조회를 host 에 거는 메서드. host 는 `request_id` 만 즉시
 /// 돌려주고 원문은 [`MIRROR_CONTENT_RESULT_EVENT`] 로 나중에 온다
@@ -415,8 +419,10 @@ impl Plugin for MarkdownPlugin {
 
     fn on_start(&mut self, host: HostHandle, bus: BusHandle) {
         // large-file 확인 이벤트 발행 + `theme.changed` 구독에 Event Bus 핸들이 필요하다.
-        if let Err(e) = bus.subscribe(THEME_CHANGED_EVENT) {
-            tracing::warn!("markdown: theme.changed subscribe failed: {e}");
+        for key in [THEME_CHANGED_EVENT, HOST_SHORTCUT_CHANGED_EVENT] {
+            if let Err(e) = bus.subscribe(key) {
+                tracing::warn!("markdown: {key} subscribe failed: {e}");
+            }
         }
         self.bus = Some(bus);
         // HostHandle이 없는 콜백에서도 사용할 수 있도록 보관한다.
@@ -585,6 +591,9 @@ impl Plugin for MarkdownPlugin {
             }
             // WebView에는 surface.set_context가 오지 않으므로 테마 변경 시 문서를 다시 만든다.
             THEME_CHANGED_EVENT => self.reload_all_webviews(),
+            HOST_SHORTCUT_CHANGED_EVENT if shortcut_change_touches_find(&ctx.envelope.payload) => {
+                self.reload_all_webviews()
+            }
             MIRROR_CONTENT_RESULT_EVENT => self.on_mirror_content_result(ctx.envelope.payload),
             MIRROR_CHANGED_EVENT => self.on_mirror_changed(&ctx.envelope.payload),
             _ => {}
@@ -900,8 +909,10 @@ impl MarkdownPlugin {
             return;
         };
         let recent = fetch_recent(host);
+        let find_bindings = fetch_find_bindings(host);
         let file_path = doc.file_path.as_deref().unwrap_or_default();
         let html = render::render_document(render::DocumentInput {
+            find_bindings: &find_bindings,
             theme: &theme,
             tr: &self.tr,
             file_path,
@@ -1014,6 +1025,36 @@ fn fetch_theme(host: &HostHandle, surface_id: u32) -> Option<Theme> {
             None
         }
     }
+}
+
+/// 단축키 설정 `find` 의 바인딩을 조회한다. 조회하지 못하면 기본 프리셋 값으로 문서 내
+/// 검색을 계속 열 수 있게 한다. 사용자 설정과 다를 수 있어 경고를 남긴다.
+fn fetch_find_bindings(host: &HostHandle) -> Vec<String> {
+    let fallback = || vec!["ctrl+f".to_string(), "alt+f".to_string()];
+    match host.call("settings.get_keybinding", json!({ "action": FIND_ACTION })) {
+        Ok(v) => match v.get("bindings").and_then(|b| b.as_array()) {
+            Some(arr) => arr
+                .iter()
+                .filter_map(|b| b.as_str().map(str::to_string))
+                .collect(),
+            None => {
+                tracing::warn!("settings.get_keybinding returned no bindings array: {v}");
+                fallback()
+            }
+        },
+        Err(e) => {
+            tracing::warn!("settings.get_keybinding failed: {e} — using the default find keys");
+            fallback()
+        }
+    }
+}
+
+/// `command.host_shortcut_changed` 가 검색 동작의 변경을 포함하는지.
+fn shortcut_change_touches_find(payload: &Value) -> bool {
+    payload
+        .get("action_ids")
+        .and_then(|a| a.as_array())
+        .is_some_and(|ids| ids.iter().any(|id| id.as_str() == Some(FIND_ACTION)))
 }
 
 /// 호스트의 recent.query에서 최신 경로를 최대 10개 조회한다.

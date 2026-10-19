@@ -420,6 +420,11 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "설정 사본은 모든 창에 같은 값으로 동기화한다.",
     ),
     (
+        "settings.get_keybinding",
+        NotWindowOwned,
+        "단축키 설정은 모든 창에 같은 값으로 동기화한 engine.settings에서 읽는다.",
+    ),
+    (
         "theme.query",
         NotWindowOwned,
         "테마는 프로세스 전역이고 ui_zoom은 모든 창에 동기화된 engine.settings에서 읽는다.",

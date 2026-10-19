@@ -591,6 +591,7 @@ impl App {
         let content_restore_turned_off = prev_settings
             .is_some_and(|s| s.general.restore_surface_content)
             && !new_settings.general.restore_surface_content;
+        let prev_keybindings = prev_settings.map(|s| s.keybindings.clone());
 
         for session in self.engines.all_sessions_mut() {
             session.runtime.settings = new_settings.clone();
@@ -611,7 +612,12 @@ impl App {
         let appearance_changed =
             theme_order::appearance_changed(prev_appearance.as_ref(), &new_settings.appearance);
         theme_order::install_theme_then(&new_settings, || {
-            self.announce_settings_change(&new_settings, appearance_changed, prev_language)
+            self.announce_settings_change(
+                &new_settings,
+                appearance_changed,
+                prev_language,
+                prev_keybindings,
+            )
         });
 
         // 바뀐 단축키가 macOS 메뉴 표시에도 반영되도록 재구성한다.
@@ -626,6 +632,7 @@ impl App {
         new_settings: &Settings,
         appearance_changed: bool,
         prev_language: Option<String>,
+        prev_keybindings: Option<crate::settings::KeybindingSettings>,
     ) {
         if appearance_changed {
             for view in self.view.views.values_mut() {
@@ -655,6 +662,23 @@ impl App {
                     &LanguageChanged {
                         language_code: new_settings.general.language.clone(),
                     },
+                    EventScope::System,
+                );
+            }
+            // webview 페이지에 넣은 조합은 plugin이 문서를 다시 만들어야 바뀐다.
+            let changed = prev_keybindings
+                .as_ref()
+                .map(|prev| {
+                    crate::adapters::ipc::handler::keybinding::changed_actions(
+                        prev,
+                        &new_settings.keybindings,
+                    )
+                })
+                .unwrap_or_default();
+            if !changed.is_empty() {
+                mgr.emit_host_event(
+                    "command.host_shortcut_changed",
+                    &serde_json::json!({ "action_ids": changed }),
                     EventScope::System,
                 );
             }

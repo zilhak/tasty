@@ -160,6 +160,7 @@ agent
 |----|------|---------|
 | `command.invoked` | **owner unicast**(broadcast 아님) | `plugin_id, command_id, scope, source_surface_id?, trigger(shortcut/menu/ipc)` |
 | `command.shortcut_changed` | broadcast | `plugin_id, command_id, shortcut?, prev_shortcut?` |
+| `command.host_shortcut_changed` | broadcast | `action_ids` — 설정 저장으로 바인딩이 달라진 host 단축키 동작 ID 목록. webview 페이지에 조합을 넣은 plugin 이 문서를 다시 만든다 |
 
 scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 허용.
 

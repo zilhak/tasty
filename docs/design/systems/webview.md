@@ -150,6 +150,8 @@ HostShortcutPolicy는 ShortcutSources의 host·page_reserved·plugin 목록을 �
 
 modifier 없는 키와 Shift 전용 키는 페이지 입력에 남긴다.
 find·copy·cut·paste·select_all은 host 액션 field에서 제외하고 이 예약 조합과 동등한 plugin 조합도 제외한다.
+예약 조합은 사용자의 현재 바인딩이다. markdown 페이지는 `find` 바인딩을 `settings.get_keybinding`으로 읽어 문서에 넣고
+`command.host_shortcut_changed`를 받으면 문서를 다시 만든다. html 표면의 사용자 페이지는 이 정보를 받지 않는다.
 대소문자와 modifier 순서는 실제 binding parser로 비교한다.
 다른 host 액션에 사용자가 같은 조합을 준 경우까지 추가 제외하지는 않는다.
 plugin scope는 bridge에서 미리 거르지 않으므로 소비된 뒤 현재 host focus 규칙에 따라 실행되지 않는 키가 있을 수 있다.

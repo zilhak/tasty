@@ -1,4 +1,4 @@
-<!-- source-hash: 7f79267e305e -->
+<!-- source-hash: cdb99edaeb5d -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -67,7 +67,7 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 |---------|-----------------|-------|
 | Copy | `Ctrl+C` · `Alt+C` · `Ctrl+Shift+C` | `Ctrl+C` · `Cmd+C` · `Ctrl+Shift+C` |
 | Paste | `Ctrl+V` · `Alt+V` · `Ctrl+Shift+V` | `Ctrl+V` · `Cmd+V` · `Ctrl+Shift+V` |
-| Search | `Ctrl+F` · `Alt+F` | `Ctrl+F` · `Cmd+F` |
+| Search (terminal · Markdown document) | `Ctrl+F` · `Alt+F` | `Ctrl+F` · `Cmd+F` |
 | vi copy mode | `Ctrl+Shift+Space` | `Ctrl+Shift+Space` |
 | Screenshot to clipboard | `Ctrl+Alt+S` | `Ctrl+Cmd+S` |
 | Copy path (explorer) | `Alt+Shift+C` | `Cmd+Shift+C` |

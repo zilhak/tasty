@@ -66,7 +66,7 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 |---------|-----------------|-------|
 | 복사 | `Ctrl+C` · `Alt+C` · `Ctrl+Shift+C` | `Ctrl+C` · `Cmd+C` · `Ctrl+Shift+C` |
 | 붙여넣기 | `Ctrl+V` · `Alt+V` · `Ctrl+Shift+V` | `Ctrl+V` · `Cmd+V` · `Ctrl+Shift+V` |
-| 검색 | `Ctrl+F` · `Alt+F` | `Ctrl+F` · `Cmd+F` |
+| 검색 (터미널 · 마크다운 문서) | `Ctrl+F` · `Alt+F` | `Ctrl+F` · `Cmd+F` |
 | vi 복사 모드 | `Ctrl+Shift+Space` | `Ctrl+Shift+Space` |
 | 스크린샷을 클립보드로 | `Ctrl+Alt+S` | `Ctrl+Cmd+S` |
 | 경로 복사 (탐색기) | `Alt+Shift+C` | `Cmd+Shift+C` |

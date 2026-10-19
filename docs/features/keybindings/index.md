@@ -207,7 +207,11 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 - **페이지에 남기는 것** 세 가지: ① `ctrl`/`alt`/`option` 중 하나도 없는 콤보(무수식·shift
   전용) — 문서 안 타이핑·IME 조합·폼 내비게이션·페이지의 Esc 를 건드리지 않기 위함.
   ② 페이지 예약 액션 `find`·`copy`·`cut`·`paste`·`select_all` — 페이지가 자체로 같은 의미를
-  구현한다(markdown 의 문서 내 검색 등).
+  구현한다(markdown 의 문서 내 검색 등). markdown 문서 내 검색은 사용자의 `find` 바인딩을
+  `settings.get_keybinding` 으로 읽어 문서 스크립트에 넣으므로 단축키 탭에서 바꾼 조합을 따른다
+  ([markdown 문서 내 검색](../../surfaces/markdown/screens/viewer.md#문서-내-검색find-in-page)).
+  `find` 에서 뺀 조합을 다른 host 동작에 주면 ①·③에 들지 않는 한 host 가 가져간다. 두 동작이
+  같은 조합을 갖는 상태는 단축키 탭의 충돌 확인(`find_conflict`)을 거쳐야 저장된다.
   ③ explorer 전용 액션 `explorer_undo`·`explorer_redo`·`explorer_back`·`explorer_forward`·`explorer_focus_address`·`explorer_new_folder`·`explorer_new_file` — explorer 에 포커스가 있을 때만 동작해
   webview 위에서는 할 일이 없다. 기본값 `Ctrl+Z`·`Ctrl+Shift+Z` 는 페이지의 undo/redo 키이고 `Alt+←`·`Alt+→` 는 페이지의 뒤로·앞으로 키다.
 - **key-up 은 어느 백엔드도 올리지 않는다**(press 만). host 는 실려온 modifier 값만

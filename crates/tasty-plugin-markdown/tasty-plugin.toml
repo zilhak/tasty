@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.394"
+version = "0.1.395"
 description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
@@ -16,8 +16,8 @@ permissions = [
 ]
 # 플러그인이 로컬 파일의 크기를 확인한 뒤 확인 팝업 이벤트를 보낸다.
 event_publish = ["com.tasty.markdown.large_file_confirm"]
-# WebView에는 set_context가 오지 않으므로 테마 변경 이벤트로 문서를 다시 만든다.
-event_subscribe = ["theme.changed"]
+# WebView에는 set_context가 오지 않으므로 테마·단축키 변경 이벤트로 문서를 다시 만든다.
+event_subscribe = ["theme.changed", "command.host_shortcut_changed"]
 lang_dir = "lang"
 
 [entry]

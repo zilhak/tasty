@@ -22,6 +22,7 @@ use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
 
 mod callout;
+mod find_keys;
 #[cfg(all(test, target_os = "linux"))]
 mod webview_layout_tests;
 use callout::{CALLOUT_KINDS, alert_css, alert_icon_data_uri, find_callout_kind};
@@ -87,6 +88,8 @@ pub struct DocumentInput<'a> {
     pub remote: Option<RemoteView>,
     /// 대용량 확인을 기다리거나 취소해 파일을 읽지 않은 문서다. 빈 파일과 구분해 표시한다.
     pub large_deferred: bool,
+    /// 단축키 설정 `find` 의 바인딩. 페이지는 host 설정을 받지 않으므로 검색 바를 여는 조합을 문서에 넣는다.
+    pub find_bindings: &'a [String],
 }
 
 /// attach mirror 문서의 표시 상태.
@@ -113,6 +116,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         recent,
         remote,
         large_deferred,
+        find_bindings,
     } = input;
 
     let (body_html, headings) = if remote.is_some_and(|r| r.disconnected) {
@@ -219,7 +223,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         toc_html = toc_html,
         body_html = body_html,
         script = nav_script(file_path),
-        find_script = find_in_page_script(tr),
+        find_script = find_in_page_script(tr, find_bindings),
         highlight = highlight,
         mermaid = mermaid,
         copy_buttons = copy_buttons,
@@ -1774,7 +1778,7 @@ fn find_bar_html(tr: &Translator) -> String {
 /// 텍스트 노드를 탐색하며 pre/code 안의 텍스트는 제외한다. 검색어를 정규식
 /// 리터럴로 escape해 대소문자 구분 없이 찾는다. 검색 UI 자체는 본문 밖에 있다.
 /// IME 조합 중에는 새 검색 예약을 생략하고 compositionend에서 다시 예약한다.
-fn find_in_page_script(tr: &Translator) -> String {
+fn find_in_page_script(tr: &Translator, find_bindings: &[String]) -> String {
     let json_or_empty = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
     format!(
         r#"(function(){{
@@ -1787,6 +1791,12 @@ var closeBtn=document.getElementById('tasty-find-close');
 var body=document.getElementById('tasty-md-body');
 if(!bar||!input||!countEl||!prevBtn||!nextBtn||!closeBtn||!body)return;
 var MATCH_COUNT={match_count};
+var FIND_KEYS={find_keys};
+function isFindKey(e){{
+return FIND_KEYS.some(function(k){{
+return e.ctrlKey===k.ctrl&&e.altKey===k.alt&&e.metaKey===k.meta&&e.shiftKey===k.shift&&e.code===k.code;
+}});
+}}
 var matches=[];
 var current=-1;
 var composing=false;
@@ -1897,7 +1907,7 @@ prevBtn.addEventListener('click',prev);
 nextBtn.addEventListener('click',next);
 closeBtn.addEventListener('click',closeBar);
 document.addEventListener('keydown',function(e){{
-if((e.ctrlKey||e.metaKey)&&!e.altKey&&(e.key==='f'||e.key==='F')){{
+if(isFindKey(e)){{
 e.preventDefault();
 openBar();
 }}else if(e.key==='Escape'&&!bar.hidden){{
@@ -1906,6 +1916,7 @@ closeBar();
 }});
 }})();"#,
         match_count = json_or_empty(tr.t("markdown.find.match_count")),
+        find_keys = find_keys::dom_matchers_json(find_bindings),
     )
 }
 
@@ -3036,6 +3047,7 @@ mod tests {
         let tr = Translator::default();
         let recent: Vec<String> = Vec::new();
         render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/current.md",
@@ -3245,6 +3257,7 @@ mod tests {
         let tr = Translator::default();
         let recent = vec!["/a/one.md".to_string(), "/b/two.md".to_string()];
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/current.md",
@@ -3267,6 +3280,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/remote/notes.md",
@@ -3431,6 +3445,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/missing.md",
@@ -3449,6 +3464,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let with_mermaid = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/diagram.md",
@@ -3466,6 +3482,7 @@ mod tests {
         assert!(with_mermaid.contains("suppressErrors:true"));
 
         let without_mermaid = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -3535,6 +3552,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let with_code = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/snippet.md",
@@ -3550,6 +3568,7 @@ mod tests {
         assert!(with_code.contains("hljs.highlightElement"));
 
         let without_code = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -3617,6 +3636,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/xss.md",
@@ -3662,6 +3682,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let with_code = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/snippet.md",
@@ -3678,6 +3699,7 @@ mod tests {
         assert!(with_code.contains("#tasty-md-body pre > code"));
 
         let without_code = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -3700,6 +3722,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/unlabeled.md",
@@ -3720,6 +3743,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/broken.md",
@@ -3811,6 +3835,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let with_image = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/pic.md",
@@ -3825,6 +3850,7 @@ mod tests {
         assert!(with_image.contains("#tasty-md-body img"));
 
         let without_image = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -3845,6 +3871,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/broken.md",
@@ -3929,6 +3956,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let with_math = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/math.md",
@@ -3944,6 +3972,7 @@ mod tests {
         assert!(with_math.contains("katex.render"));
 
         let without_math = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -3965,6 +3994,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/math.md",
@@ -3983,6 +4013,7 @@ mod tests {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/broken.md",
@@ -4445,6 +4476,7 @@ Outro\n";
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -4466,6 +4498,7 @@ Outro\n";
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4495,6 +4528,7 @@ Outro\n";
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4517,6 +4551,7 @@ Outro\n";
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4550,6 +4585,7 @@ Outro\n";
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4589,6 +4625,7 @@ Outro\n";
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4622,6 +4659,7 @@ Outro\n";
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
+            find_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4669,7 +4707,7 @@ Outro\n";
 
     #[test]
     fn find_script_excludes_code_blocks_from_the_tree_walker_scan() {
-        let script = find_in_page_script(&Translator::default());
+        let script = find_in_page_script(&Translator::default(), &[]);
         assert!(
             script.contains("tagName==='PRE'||el.tagName==='CODE'"),
             "got: {script}"
@@ -4678,7 +4716,7 @@ Outro\n";
 
     #[test]
     fn find_script_restores_dom_before_every_search_not_only_on_close() {
-        let script = find_in_page_script(&Translator::default());
+        let script = find_in_page_script(&Translator::default(), &[]);
         assert!(
             script.contains("function clearHighlights()"),
             "got: {script}"
@@ -4693,7 +4731,7 @@ Outro\n";
 
     #[test]
     fn find_script_skips_search_while_ime_composing() {
-        let script = find_in_page_script(&Translator::default());
+        let script = find_in_page_script(&Translator::default(), &[]);
         assert!(script.contains("compositionstart"), "got: {script}");
         assert!(script.contains("compositionend"), "got: {script}");
         assert!(script.contains("if(composing)return;"), "got: {script}");
@@ -4701,7 +4739,7 @@ Outro\n";
 
     #[test]
     fn find_script_handles_escape_enter_and_shift_enter_on_the_input() {
-        let script = find_in_page_script(&Translator::default());
+        let script = find_in_page_script(&Translator::default(), &[]);
         assert!(script.contains("e.key==='Escape'"), "got: {script}");
         assert!(script.contains("e.key==='Enter'"), "got: {script}");
         assert!(
@@ -4712,7 +4750,7 @@ Outro\n";
 
     #[test]
     fn find_script_debounces_input_before_searching() {
-        let script = find_in_page_script(&Translator::default());
+        let script = find_in_page_script(&Translator::default(), &[]);
         assert!(
             script.contains("setTimeout(runSearch,150)"),
             "got: {script}"
@@ -4720,23 +4758,62 @@ Outro\n";
     }
 
     #[test]
-    fn find_script_opens_on_ctrl_or_meta_f_and_prevents_default() {
-        let script = find_in_page_script(&Translator::default());
+    fn find_script_opens_on_the_find_binding_and_prevents_default() {
+        let bindings = ["ctrl+f".to_string(), "alt+f".to_string()];
+        let script = find_in_page_script(&Translator::default(), &bindings);
         assert!(
-            script.contains("(e.ctrlKey||e.metaKey)&&!e.altKey&&(e.key==='f'||e.key==='F')"),
+            script.contains(&format!(
+                "var FIND_KEYS={};",
+                find_keys::dom_matchers_json(&bindings)
+            )),
             "got: {script}"
         );
+        assert!(script.contains("if(isFindKey(e)){"), "got: {script}");
         assert!(
             script.contains("e.preventDefault();\nopenBar();"),
             "got: {script}"
         );
+        // 판정은 설정에서 온 목록만 본다. 고정된 F 키 조건이 남으면 바꾼 설정이 무시된다.
+        assert!(!script.contains("e.key==='f'"), "got: {script}");
+    }
+
+    #[test]
+    fn find_script_follows_a_rebound_find_binding() {
+        let script = find_in_page_script(&Translator::default(), &["ctrl+shift+g".to_string()]);
+        assert!(
+            script.contains(
+                r#"var FIND_KEYS=[{"code":"KeyG","ctrl":true,"alt":false,"meta":false,"shift":true}];"#
+            ),
+            "got: {script}"
+        );
+        assert!(!script.contains("KeyF"), "got: {script}");
+    }
+
+    #[test]
+    fn rendered_document_carries_the_find_binding_into_the_page() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let bindings = ["ctrl+shift+g".to_string()];
+        let html = render_document(DocumentInput {
+            find_bindings: &bindings,
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/doc.md",
+            source: "# hi",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+            remote: None,
+            large_deferred: false,
+        });
+        assert!(html.contains(r#""code":"KeyG""#), "got: {html}");
     }
 
     #[test]
     fn find_script_escapes_query_as_a_regex_literal() {
         // Query is only ever used as a case-insensitive literal substring match — RegExp is
         // reused as the multi-match engine, not exposed as a user-facing regex feature.
-        let script = find_in_page_script(&Translator::default());
+        let script = find_in_page_script(&Translator::default(), &[]);
         assert!(script.contains("function escapeRegExp(s)"), "got: {script}");
         assert!(
             script.contains("new RegExp(escapeRegExp(query),'gi')"),

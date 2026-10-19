@@ -823,6 +823,7 @@ fn deferred_state_document(source: &str, load_error: Option<&str>, large_deferre
     let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
     let tr = Translator::default();
     render::render_document(render::DocumentInput {
+        find_bindings: &[],
         theme: &theme,
         tr: &tr,
         file_path: "/a/big.md",

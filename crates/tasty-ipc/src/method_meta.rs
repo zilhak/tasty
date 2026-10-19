@@ -266,6 +266,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("webview.set_url", plugin(Idempotent, &[SurfaceWrite])),
         // webview 플러그인은 문서를 만들 때 전역 테마를 조회한다. surface별 정보가 아니므로 추가 토큰은 없다.
         ("theme.query", plugin(Read, &[])),
+        // webview 플러그인이 페이지가 처리할 동작의 단축키를 문서에 넣을 때 조회한다. 전역 설정이다.
+        ("settings.get_keybinding", plugin(Read, &[])),
         ("surface.set_cwd", plugin(Idempotent, &[SurfaceWrite])),
         ("surface.meta.get", plugin(Read, &[SurfaceRead])),
         ("surface.meta.list", plugin(Read, &[SurfaceRead])),

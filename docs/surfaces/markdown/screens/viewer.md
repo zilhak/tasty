@@ -510,9 +510,16 @@ macOS·Windows의 실제 실행 결과는 확인되지 않았다.
 
 ## 문서 내 검색(find-in-page)
 
-문서(webview 콘텐츠)에 실제 키보드 포커스가 있는 상태에서 `Ctrl+F`/`Cmd+F` 를 누르면 문서 내
-텍스트 검색 바가 열린다(`render.rs::find_bar_html`/`find_in_page_script`) — host API 확장 없이
-markdown plugin 문서 자체에 내장된 신뢰 스크립트만으로 동작한다(네이티브 find API
+문서(webview 콘텐츠)에 실제 키보드 포커스가 있는 상태에서 단축키 설정 `find` 의 조합(기본
+프리셋 `Ctrl+F`·`Alt+F`, macOS 에서는 Control+F·Cmd+F)을 누르면 문서 내 텍스트 검색 바가 열린다
+(`render.rs::find_bar_html`/`find_in_page_script`). 페이지는 host 설정을 받지 않으므로 plugin 이
+문서를 만들 때마다 `settings.get_keybinding {action:"find"}` 로 바인딩을 읽어
+`KeyboardEvent` 판정 값(`render/find_keys.rs` — US 물리 키 `code` 와 정확한 modifier, macOS 는
+`alt`→Command·`option`→Option)으로 바꿔 스크립트에 넣는다. `ctrl`·`alt`·`option` 이 없는 바인딩은
+페이지 입력과 겹치므로 넣지 않는다. 조회에 실패하면 경고를 남기고 기본 프리셋 값(`ctrl+f`·`alt+f`)을
+쓴다. 사용자가 설정을 저장해 `find` 가 바뀌면 host 가 `command.host_shortcut_changed`
+(`action_ids` 에 `find`)를 발행하고 plugin 은 열린 문서를 모두 다시 만든다. 검색 자체는
+markdown plugin 문서에 내장된 신뢰 스크립트만으로 동작한다(네이티브 find API
 (`WebKitFindController`/`WKWebView.find`/WebView2 `Find`)는 세 엔진이 정규식/전체단어 지원이
 서로 달라 채택하지 않았고, 매치 카운트를 host 로 되돌려받으려면 백엔드별 비동기 신호 처리가
 추가로 필요해 이 markdown-plugin-local 기능치고는 host API 확장 비용이 과했다).
@@ -537,8 +544,10 @@ debounce, `compositionend` 시 즉시)마다 이전 `<mark>` 를 먼저 원문�
 ([WebView 호스트 계약](../../../design/systems/webview.md),
 [features/keybindings](../../../features/keybindings/index.md)). 그 포워딩은 **`find` 를
 포함한 페이지 예약 액션(`find`·`copy`·`cut`·`paste`·`select_all`)을 애초에 가져가지
-않으므로**, `Ctrl+F` 는 위 kind 게이트 이전에 이미 페이지로 간다 — 이 절의 문서-내 검색과
-포워딩 경로는 서로를 가로채지 않는다. 검색 바 입력창에 커서가 있을 때의 타이핑도
+않으므로**, 사용자의 `find` 조합은 위 kind 게이트 이전에 이미 페이지로 간다. 페이지 스크립트도
+같은 `find` 바인딩을 판정하므로 둘은 같은 조합을 본다. `find` 에서 뺀 조합(예: `ctrl+f`)을 다른 host
+동작에 주면 host 가 그 조합을 가져가고 페이지는 더 이상 그 조합으로 검색 바를 열지 않는다. 한 조합을
+두 동작이 갖는 상태는 단축키 탭의 충돌 확인을 거쳐야 저장되므로 조용히 겹치지 않는다. 검색 바 입력창에 커서가 있을 때의 타이핑도
 안전하다: 포워딩 대상은 `ctrl`/`alt`/`option` 을 가진 콤보뿐이라 문자키·`shift+문자`·
 `Esc`/`Enter`/`Shift+Enter` 는 전부 페이지가 그대로 받는다.
 

@@ -285,8 +285,9 @@ image 요청은 host arm까지 전달되지만 헤드리스 구현이 없어 거
 | 메서드 | 읽는 것 |
 |--------|---------|
 | `theme.query` | 전역 Theme + `EngineRuntime.settings` 뿐이다. 창도 surface 도 렌더러도 안 본다 |
+| `settings.get_keybinding` | `EngineRuntime.settings.keybindings` 의 한 동작 바인딩뿐이다 |
 
-`theme.query`는 `src/adapters/ipc/handler/theme.rs`에서 두 빌드가 같은 함수를 사용한다.
+`theme.query`는 `src/adapters/ipc/handler/theme.rs`, `settings.get_keybinding`은 `src/adapters/ipc/handler/keybinding.rs`에서 두 빌드가 같은 함수를 사용한다.
 전역 Theme와 설정만 읽으므로 창이 필요하지 않다.
 
 ### 아직 없다 — `App` 이분이 선행이다 (그 밖 1)
