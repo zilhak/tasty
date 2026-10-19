@@ -32,7 +32,7 @@ IPC 메서드 이름과 CLI 이름이 다를 수 있다. 예: `pty.wait`는 즉�
 `agent.task_await`는 실제로 기다리며, 결과의 `outcome`(`terminal`·`timed_out`·`not_found`)이 모두 성공 응답이므로
 CLI 종료 코드 0이 작업 성공을 뜻하지 않는다.
 
-namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요). 제거·이름 변경은 0.x 에서 유예 없이 `(BREAK)` 로 내고([안정성 정책](#안정성-정책)), 같은 커밋에서 이 기록과 0.7.0 기준 목록(`crates/tasty-ipc/fixtures/method_baseline_0_7.txt`, 절차는 그 파일 머리 주석)을 고친다. 메서드 수는 테스트의 snapshot에서 관리하며 이 문서에 중복 기록하지 않는다.
+namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요). 제거·이름 변경을 낼지는 버전 단계와 관계없이 개발자가 판단한다([안정성 정책](#안정성-정책)). 낼 때는 `(BREAK)` 로 적고 같은 커밋에서 이 기록과 0.7.0 기준 목록(`crates/tasty-ipc/fixtures/method_baseline_0_7.txt`, 절차는 그 파일 머리 주석)을 고친다. 메서드 수는 테스트의 snapshot에서 관리하며 이 문서에 중복 기록하지 않는다.
 
 ## verb 화이트리스트
 
