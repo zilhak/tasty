@@ -61,16 +61,11 @@ impl App {
             // 자기 namespace 요청은 호스트 구현으로 위임할 수 있어 다른 플러그인 요청만 forward한다.
             // 호스트 변환 메서드는 소유 플러그인을 거치지 않고 아래 journal 접수로 간다.
             if let Some(mgr) = self.plugin_manager.as_mut()
-                && mgr.namespace_belongs_to_other(&call.method, &call.plugin_id)
-                && !crate::app::journal::commands::host_converts(&call.method)
+                && mgr.forward_plugin_call_to_other_namespace(
+                    &call,
+                    crate::app::journal::commands::host_converts(&call.method),
+                )
             {
-                mgr.forward_namespace_call_from_plugin(
-                    &call.method,
-                    call.params.clone(),
-                    &call.plugin_id,
-                    call.call_id,
-                    &call.binding,
-                );
                 continue;
             }
             if self.defer_plugin_preset_capture(&call) {
@@ -382,20 +377,18 @@ mod tests {
     }
 
     /// 다른 플러그인의 호스트 변환 요청이 소유 플러그인으로 전달되지 않는지 원문으로 확인한다.
-    /// GUI App 을 시험에서 만들 수 없어 전달 조건의 형태만 검사한다.
+    /// GUI App 을 시험에서 만들 수 없어 공용 전달 호출에 넘기는 인자의 형태만 검사한다.
+    /// 전달 판정 자체는 매니저 시험과 헤드리스 dispatch 시험이 실제 호출로 잰다.
     #[test]
     fn a_host_conversion_skips_the_cross_plugin_forward() {
         let src = source();
-        let (condition, _) = src
-            .split_once("mgr.forward_namespace_call_from_plugin(")
+        let (_, args) = src
+            .split_once("mgr.forward_plugin_call_to_other_namespace(")
             .expect("플러그인 간 전달을 못 찾았다");
-        let condition = condition
-            .rsplit_once("if let Some(mgr)")
-            .map(|(_, tail)| tail)
-            .expect("전달 조건을 못 찾았다");
+        let (args, _) = args.split_once(')').expect("전달 인자를 못 찾았다");
         assert!(
-            condition.contains("!crate::app::journal::commands::host_converts(&call.method)"),
-            "호스트 변환이 소유 플러그인으로 전달된다: {condition}"
+            args.contains("crate::app::journal::commands::host_converts(&call.method"),
+            "호스트 변환이 소유 플러그인으로 전달된다: {args}"
         );
     }
 

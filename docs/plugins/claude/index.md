@@ -32,7 +32,7 @@
 Codex 대화에서 실행한 `spawn`·`tell`·`children`·`broadcast`·`kill`·`respawn`은 부모를 자동으로 정하고, 자식의 확정된 턴 결과를 그 대화로 돌려보낸다. 코드는 `codex_return.rs`에 있다.
 
 - **호출자 판별**: 요청의 `_tasty_context`가 `provider: "codex"`이고 `thread_id`가 UUID이면 Codex 호출이다. `provider`가 codex인데 thread id가 잘못됐으면 다른 부모로 대신하지 않고 `-32602`로 거절한다. 이 키가 없는 일반 호출은 기존 `surface`(기본값 `TASTY_SURFACE_ID`)·오류·응답을 그대로 쓴다.
-- **부모 해석**: Codex 호출은 자기 surface id 인자 없이 `codex.parent({_tasty_context})`를 부른다. 응답의 `receiver_id`는 32자리 16진수, `terminal_parent`는 `{parent: u32}`와 `{parent_external: string}` 중 정확히 하나여야 한다. 호출이 실패하면(Codex 플러그인 없음·비활성 등) 그 오류 코드를 그대로 돌려주고 다른 부모로 대신하지 않는다. 명시한 `--surface`가 해석한 물리 부모와 다르면 거절한다.
+- **부모 해석**: Codex 호출은 자기 surface id 인자 없이 `codex.parent({_tasty_context})`를 부른다. 호스트는 GUI와 헤드리스 모두 이 호출을 Codex 플러그인에 전달한다([헤드리스 IPC 표면](../../dev-guide/headless-ipc-surface.md)). 응답의 `receiver_id`는 32자리 16진수, `terminal_parent`는 `{parent: u32}`와 `{parent_external: string}` 중 정확히 하나여야 한다. 호출이 실패하면(Codex 플러그인 없음·비활성 등) 그 오류 코드를 그대로 돌려주고 다른 부모로 대신하지 않는다. 명시한 `--surface`가 해석한 물리 부모와 다르면 거절한다.
 - **호스트 요청**: 물리 부모는 기존 키(`terminal.spawn`은 `parent`, `children`·`kill`·`broadcast`·`respawn`은 `surface`)로, 외부 부모는 `parent_external`로 싣는다. 자식 목록·index·상태는 호스트 child registry가 소유한다.
 - **외부 부모의 workspace**: 외부 부모의 요청에 싣는 workspace는 이 순서로 정한다. 자식의 workspace는 저장하지 않는다. 호스트가 모든 창의 surface를 모아 돌려주는 `surface.list`에서 그 자식 surface id를 찾아, 지금 속한 `workspace_id`를 고른다. 복원으로 다른 workspace의 새 surface로 옮겨 간 자식도 지금 위치로 찾는다. 사용자 포커스나 마지막으로 쓴 workspace로는 정하지 않는다.
   1. 명시한 `--workspace`

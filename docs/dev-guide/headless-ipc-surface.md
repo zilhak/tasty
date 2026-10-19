@@ -85,6 +85,15 @@ markdown 활성화 뒤 다섯, 번들 9개가 실행된 뒤 여덟(`html`·`imag
 namespace forward도 소유 plugin만 준비하되, 매칭 IPC hook이 있으면 해당 active
 extension을 함께 준비한다([플러그인 제작 가이드](plugin-development.md)).
 
+plugin이 host call로 다른 plugin의 namespace 메서드를 부르면(예: 한 plugin이 다른 plugin의
+수신처 조회를 요청) 헤드리스도 GUI와 같은 규칙으로 소유자에게 전달한다. 두 런타임 모두
+공통 게이트를 통과한 뒤 매니저의 `forward_plugin_call_to_other_namespace`를 부르고,
+자기 namespace·소유자 없는 메서드·호스트가 직접 처리하는 메서드(GUI의 `image.open` 변환)는
+호스트 처리기로 넘긴다. 전달할 때 소유자의 실행 준비와 `ipc.invoke:<prefix>` 권한 확인을 거친다.
+params는 바꾸지 않고, 소유자의 답은 호출자에게 같은 call id의 `ipc.result`로 돌아간다.
+이 전달이 없으면 호출이 호스트 처리기로 가서 `-32601`로 끝난다. 시험은 매니저의 전달 판정과
+헤드리스 dispatch의 왕복을 stub plugin으로 잰다.
+
 ## `plugin.*` — 19 개 메서드의 판정
 
 ### 답한다 — 읽기 (7)

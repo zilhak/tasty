@@ -152,6 +152,28 @@ impl PluginManager {
         );
     }
 
+    /// 공통 게이트를 통과한 plugin 호출이 다른 plugin의 namespace 메서드면 소유자에게 전달하고
+    /// `true`를 돌려준다. GUI와 헤드리스 런타임이 같은 규칙으로 부른다.
+    /// 자기 namespace·소유자 없는 메서드·호스트가 직접 처리하는 메서드(`host_handles`)는
+    /// 호스트 처리기로 가도록 `false`다.
+    pub fn forward_plugin_call_to_other_namespace(
+        &mut self,
+        call: &PendingPluginCall,
+        host_handles: bool,
+    ) -> bool {
+        if host_handles || !self.namespace_belongs_to_other(&call.method, &call.plugin_id) {
+            return false;
+        }
+        self.forward_namespace_call_from_plugin(
+            &call.method,
+            call.params.clone(),
+            &call.plugin_id,
+            call.call_id,
+            &call.binding,
+        );
+        true
+    }
+
     /// plugin이 보낸 IpcCall이 namespace 메서드인 경우의 forward.
     /// 응답은 caller plugin에 `ipc.result`로 회신한다 (`process_plugin_ipc_calls`와
     /// 같은 방식).

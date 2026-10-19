@@ -405,9 +405,6 @@ fn gates_before_intercept<'a>(
     crate::ipc::handler::check_request(&mut app.services, window, engine, request, caller)
 }
 
-/// shared_buffer.create는 직접 처리하고 나머지는 공용 handler에 전달한다.
-/// GUI popup·banner 처리는 없으며, 플러그인 사이 namespace 전달도 아직 구현하지 않았다.
-/// 후자는 창이 없어서 불가능한 기능과는 구분한다.
 fn defer_plugin_preset_capture_headless(
     app: &mut App,
     state: &RequestContext,
@@ -460,6 +457,8 @@ fn defer_plugin_preset_capture_headless(
     true
 }
 
+/// shared_buffer.create는 직접 처리하고 다른 플러그인의 namespace 호출은 소유자에게 전달한다.
+/// 나머지는 공용 handler에 넘긴다. 창이 필요한 GUI popup·banner 처리는 없다.
 fn dispatch_plugin_ipc_calls_headless(
     app: &mut App,
     state: &mut RequestContext,
@@ -521,6 +520,15 @@ fn dispatch_plugin_ipc_calls_headless(
             }
             continue;
         }
+        // GUI와 같은 규칙으로 다른 플러그인의 namespace 호출을 소유자에게 전달한다.
+        if let Some(mgr) = app.plugin_manager.as_mut()
+            && mgr.forward_plugin_call_to_other_namespace(
+                &call,
+                crate::app::journal::commands::host_converts(&call.method),
+            )
+        {
+            continue;
+        }
         if defer_plugin_preset_capture_headless(app, state, engine, &call) {
             continue;
         }
@@ -569,6 +577,9 @@ fn dispatch_plugin_ipc_calls_headless(
         }
     }
 }
+
+#[cfg(test)]
+mod cross_plugin_tests;
 
 #[cfg(test)]
 mod tests {
