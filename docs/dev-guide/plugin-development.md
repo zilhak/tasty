@@ -13,6 +13,7 @@
 | **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
+| **Tasty bash·zsh 셸에 넣는 셸 함수** | [codex](../plugins/codex/index.md)(`install`이 쓰는 `codex` 함수) | ★ |
 | **Tasty 자식에서 지울 상속 환경변수** | [claude](../plugins/claude/index.md#tasty-자식에서-지우는-세션-변수) · [codex](../plugins/codex/index.md#tasty-자식에서-지우는-세션-변수) (매니페스트만) | ★ |
 | **wasm 플러그인** (frozen POC) | `crates/tasty-plugin-sdk-wasm`(workspace-exclude harness) — [플러그인 권한 모델](plugin-permissions.md) | ★★ |
 
@@ -147,6 +148,19 @@ values = [{ name = "AI_AGENT", prefixes = ["vendor_", "vendor/"] }]  # 이름이
 - `TASTY_`로 시작하는 이름·접두사는 매니페스트 검증에서 거부한다. 바깥 Tasty 인스턴스 신원(`OUTER_IDENTITY_ENV`) 제거와 셸의 자기 신원 재주입은 본체가 정한다. `CMUX_*`도 본체가 지운다.
 - 이름은 영문자·숫자·밑줄이며 숫자로 시작하지 않는다(1..=128자). `values`의 값 접두사는 비어 있을 수 없다.
 - 예: [Claude 플러그인](../plugins/claude/index.md#tasty-자식에서-지우는-세션-변수), [Codex 플러그인](../plugins/codex/index.md#tasty-자식에서-지우는-세션-변수).
+
+### 셸 통합 확장 스크립트
+
+Tasty가 주입하는 bash·zsh 프롬프트 함수는 OSC 133 D·A를 보낸 뒤 `$TASTY_PARENT_HOME/shell-integrations/`의 `*.sh`를 읽는다. 플러그인은 이 디렉터리에 스크립트를 써서 Tasty 터미널에만 셸 함수 같은 통합을 넣는다. 매니페스트 선언은 없다.
+
+- 위치: 플러그인 프로세스의 `tasty_utils::path::tasty_home()` 아래 `shell-integrations/`. 셸은 자기를 띄운 인스턴스의 데이터 홈(`TASTY_PARENT_HOME`)을 읽으므로 debug·release 인스턴스의 스크립트가 섞이지 않는다.
+- 파일 이름: `<플러그인 ID>.sh`(예: `com.tasty.codex.sh`). 다른 플러그인과 겹치지 않게 하며, 여러 개가 필요하면 `<플러그인 ID>.<이름>.sh`를 쓴다.
+- 읽는 순서와 시점: 일반 파일만 C 로캘 바이트 순서로, 매 프롬프트마다 읽는다. 이미 열린 셸도 다음 프롬프트부터 새 파일을 읽으므로 스크립트는 여러 번 읽혀도 같은 결과가 나와야 한다(예: `if ! typeset -f name`).
+- 오류: 한 스크립트가 0이 아닌 값으로 끝나거나 문법 오류가 나도 다음 스크립트와 프롬프트는 계속된다. D는 스크립트를 읽기 전에 직전 명령의 종료 코드를 보낸다. 셸을 끝내는 `exit`은 막지 않는다.
+- 사용자 설정을 덮어쓰지 않는다. 같은 이름의 사용자 함수·별칭이 있으면 정의하지 않는다.
+- 설치·제거는 플러그인 명령이 맡는다. 호스트는 비활성화된 플러그인의 스크립트를 걸러내지 않으므로 스크립트가 실행하는 도구가 없을 때 원래 명령으로 넘어가게 작성한다.
+- 매니페스트 선언 대신 파일 규칙을 쓰는 이유: 스크립트 내용이 설치 시점의 실행 파일 경로에 따라 달라지고, 셸 프롬프트가 호스트에 묻지 않고 바로 읽을 수 있어야 하기 때문이다.
+- 예: [Codex 플러그인](../plugins/codex/index.md)의 `tasty codex install`.
 
 ### 도구 메뉴 항목 + popup
 

@@ -97,6 +97,14 @@ stderr에 쓴 뒤 종료 코드 1로 끝난다. 새 인자가 없는 기존 호�
 | zsh | 관리 `.zshenv`를 `ZDOTDIR`로 지정하고 `add-zsh-hook precmd/preexec` 등록 | 사용자가 훅 배열을 통째로 덮거나 동명 함수를 재정의하면 tasty 훅이 사라질 수 있음 |
 | fish/nu/pwsh(비-Windows) 등 | 자동 주입 미지원 | 사용자가 셸 통합을 설치해야 명령 인덱스가 생김 |
 
+bash·zsh 프롬프트 함수는 D·A를 보낸 뒤 데이터 홈(`TASTY_PARENT_HOME`)의 `shell-integrations/`에 있는
+`*.sh` 일반 파일을 C 로캘 바이트 순서로 매 프롬프트마다 `source`한다. 플러그인이 셸 함수 같은 통합을 넣는 확장점이며,
+규칙은 [플러그인 개발 가이드](../../dev-guide/plugin-development.md#셸-통합-확장-스크립트)에 있다.
+
+- Given 직전 명령이 23으로 끝났고 한 확장이 `return 7`로 끝날 때, When 프롬프트를 준비하면, Then D는 23을 보내고 나머지 확장과 프롬프트가 계속 동작한다.
+- Given 확장 디렉터리가 없거나 비어 있을 때, When 프롬프트를 준비하면, Then A·D만 보내며 bash의 `nullglob`·`failglob`과 zsh 옵션은 사용자 값 그대로다.
+- 확장 안의 `exit`처럼 셸 자체를 끝내는 동작은 막지 않는다.
+
 bash 훅 스크립트는 플랫폼 간에 공유한다(`crates/tasty-settings/src/general.rs`의
 `BUILTIN_BASHRC_*`). Windows는 `--rcfile <path>`, 비-Windows는 `--rcfile <path> -i`로
 실행한다. 로그인 셸에서는 `--rcfile`이 무시되므로 비-Windows에서는 명시적인 대화형 셸을

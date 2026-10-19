@@ -207,8 +207,10 @@ SessionStart에서 현재 surface에 세션 ID와 `restore.command`를 저장한
 제출 문자는 넣지 않는다. 호스트는 이 명령을 복원한 터미널의 셸에서 실행하므로 cwd는 복원된
 터미널의 것을 쓰고, 새 surface ID는 그 PTY의 환경에서 받는다.
 
-`tasty codex install`은 Tasty 데이터 홈의 `shell-integrations/codex.sh`도 설치한다.
-Tasty의 Bash·zsh 통합은 프롬프트 준비 때 이 파일을 읽는다. 사용자 전역 rc나 기존 `codex` 셸 함수는 덮어쓰지 않는다.
+`tasty codex install`은 Tasty 데이터 홈의 셸 통합 디렉터리에 `shell-integrations/com.tasty.codex.sh`도 설치한다.
+Tasty의 Bash·zsh 통합은 프롬프트 준비 때 이 디렉터리의 스크립트를 읽는다([셸 통합 확장](../../dev-guide/plugin-development.md#셸-통합-확장-스크립트)).
+사용자 전역 rc나 기존 `codex` 셸 함수는 덮어쓰지 않는다. 이전 이름 `codex.sh`가 남아 있으면
+install과 uninstall이 지워 같은 스크립트를 두 번 읽지 않게 한다.
 대화형 터미널에서 입력한 `codex`·`codex resume`은 플러그인의 `terminal` 모드로 연결된다.
 Codex 도구 안의 실행, 비대화형 stdin, `command codex`, 유틸리티 명령과 명시적 `--remote`는
 원래 CLI로 실행한다. uninstall은 통합 파일도 제거한다.
