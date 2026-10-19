@@ -37,6 +37,7 @@ impl App {
     /// 대상이 없으면 버퍼를 유지한다. 고아 판정·정리도 같은 engine 범위를 확인해야 한다.
     pub(crate) fn apply_attach_client_output(&mut self) {
         self.poll_pending_mirror_installs();
+        super::op_runs::end_closed_connections();
         if self.remote.sessions.is_empty() {
             return;
         }
@@ -493,6 +494,7 @@ fn apply_one_mirror_event(
             }
         }
         MirrorEvent::StructuralFailed(op_id, reason) => {
+            super::op_runs::failed(&sess.transport.frame_tx.epoch(), op_id, reason.as_deref());
             host.state
                 .attach_pending
                 .result(&sess.transport.frame_tx.epoch(), op_id, None, false);
@@ -504,6 +506,12 @@ fn apply_one_mirror_event(
             );
         }
         MirrorEvent::StructuralSucceeded(op_id, created) => {
+            super::op_runs::succeeded(
+                &sess.transport.frame_tx.epoch(),
+                op_id,
+                created,
+                &sess.state.remote_to_local,
+            );
             host.state.attach_pending.result(
                 &sess.transport.frame_tx.epoch(),
                 op_id,
@@ -558,6 +566,10 @@ fn apply_one_mirror_event(
             );
             match removed_markdown {
                 Ok(removed) => {
+                    super::op_runs::mapped(
+                        &sess.transport.frame_tx.epoch(),
+                        &sess.state.remote_to_local,
+                    );
                     let focus = host.state.attach_pending.applied(
                         host.engine.core,
                         &host.state.navigation,

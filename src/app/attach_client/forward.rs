@@ -558,6 +558,7 @@ impl App {
             payload,
             focus,
             silent_failure: !user,
+            completion: None,
         })
     }
 }

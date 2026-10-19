@@ -244,8 +244,17 @@ impl JournalApplication {
                     let mut forward_start = None;
                     #[cfg(feature = "gui")]
                     if !pending.replay
-                        && let Some(draft) = pending.forward.take()
+                        && let Some(mut draft) = pending.forward.take()
                     {
+                        // 접수 응답(`forwarded`)은 원격 결과가 아니므로 run은 forward가 넘겨받는다.
+                        if let Reply::Intent { completion, .. } = &mut pending.reply {
+                            draft.completion = completion.take().map(|run| {
+                                crate::request_runs::RunGuard::new(
+                                    run,
+                                    crate::app::journal::forward::FORWARD_ENDED,
+                                )
+                            });
+                        }
                         let progress: crate::runtime::journal_product::ResponseProgress =
                             serde_json::from_slice(
                                 executed

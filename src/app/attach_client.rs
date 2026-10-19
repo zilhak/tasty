@@ -8,6 +8,7 @@ mod forward;
 mod home_probe;
 pub(crate) mod into_gui;
 mod navigation;
+pub(crate) mod op_runs;
 mod output;
 pub(crate) mod pending;
 mod projection;

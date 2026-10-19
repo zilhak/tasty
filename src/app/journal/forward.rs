@@ -14,7 +14,14 @@ pub(crate) struct Draft {
     pub payload: Vec<u8>,
     pub focus: Option<tasty_remote::client_session::PendingOpFocus>,
     pub silent_failure: bool,
+    /// 원격 결과를 기다리는 intent 요청의 run. 보내지 못하거나 결과 없이 사라지면 여기서 끝난다.
+    #[cfg(feature = "gui")]
+    pub completion: Option<crate::request_runs::RunGuard>,
 }
+
+/// 원격으로 보내기 전에 forward가 결과 없이 사라졌을 때.
+#[cfg(feature = "gui")]
+pub(crate) const FORWARD_ENDED: &str = "the remote change ended before it was sent";
 impl Draft {
     pub fn weight(&self) -> usize {
         serde_json::to_vec(&self.response).map_or(0, |bytes| bytes.len())
@@ -146,7 +153,8 @@ impl JournalApplication {
 
 impl crate::app::App {
     pub(crate) fn execute_journal_forwards(&mut self) {
-        for (ticket, draft, payload) in self.journal.take_ready_forwards() {
+        for (ticket, mut draft, payload) in self.journal.take_ready_forwards() {
+            let completion = draft.completion.take();
             let current = self.remote_target_is_current(&draft.target)
                 && self
                     .remote
@@ -191,6 +199,13 @@ impl crate::app::App {
                                 .agent_requests
                                 .note_structural(draft.silent_failure, draft.op_id);
                         }
+                        if let Some(run) = completion.clone() {
+                            crate::app::attach_client::op_runs::watch(
+                                draft.target.sender.epoch(),
+                                draft.op_id,
+                                run,
+                            );
+                        }
                         OperationOutcome::Succeeded
                     }
                     Err(_) => OperationOutcome::Failed {
@@ -198,6 +213,20 @@ impl crate::app::App {
                     },
                 }
             };
+            if let Some(run) =
+                completion.filter(|_| !matches!(outcome, OperationOutcome::Succeeded))
+            {
+                let (state, reason) = match &outcome {
+                    OperationOutcome::Cancelled { reason } => {
+                        (crate::request_runs::RunState::Cancelled, reason.clone())
+                    }
+                    OperationOutcome::Failed { reason } => {
+                        (crate::request_runs::RunState::Failed, reason.clone())
+                    }
+                    other => (crate::request_runs::RunState::Failed, format!("{other:?}")),
+                };
+                crate::request_runs::finish(run.take(), state, reason, serde_json::Value::Null);
+            }
             self.journal.forward_dispatched(ticket, outcome);
         }
     }
