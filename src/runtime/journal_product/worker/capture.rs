@@ -289,6 +289,12 @@ pub(super) fn checkpoint(
     executor: &Executor<StructureDecider>,
     readers: &crate::runtime::journal_payload::PayloadReaders,
 ) -> Result<(), String> {
+    // 손상 범위가 있는 동안에는 snapshot·압축·GC·manifest 삭제를 하지 않는다. 새 snapshot은 빠진
+    // stream을 담지 못하고, 압축은 읽지 못한 원본 행을 지울 수 있다.
+    if !executor.decider().report().is_clean() {
+        tracing::debug!("structure checkpoint skipped while damaged journal records are kept");
+        return Ok(());
+    }
     let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
     let Some(batch_id) = inner.state.batch else {
         return Ok(());

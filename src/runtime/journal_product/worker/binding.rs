@@ -15,6 +15,21 @@ pub(super) fn open(
     executor
         .with_state(|_| ())
         .map_err(|error| error.to_string())?;
+    let target = match &selection {
+        EngineSelection::Slot { slot, .. } => Some(*slot),
+        EngineSelection::ImportedSlot { source } => Some(source.destination_slot),
+        EngineSelection::FreshHeadless => None,
+    };
+    if let Some(slot) = target
+        && let Some(cause) = executor
+            .decider()
+            .report()
+            .damaged
+            .get(&format!("structure:slot-{slot}"))
+    {
+        // 이어 쓰면 읽지 못한 원본 기록 위에 새 기록이 쌓인다. 앱은 이 슬롯을 고르지 않는다.
+        return Err(format!("layout slot {slot} has damaged records: {cause}"));
+    }
     let digest = serde_json::to_vec(&(&selection, &normal_category_name, surface_floor))
         .map_err(|error| error.to_string())?;
     let (key, stream, previous, reset) = {

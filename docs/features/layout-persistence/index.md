@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[복구 원칙](../../principles/feedback-and-recovery.md)은 일부 손실 시 가능한 부분 복원, 전체 읽기 불가 시 오류 알림·앱 우측 상단 비포커스 팝업 후 초기 상태에서 계속 작업을 요구한다. 현재 journal 실패가 부팅 오류와 종료로 이어지는 경로는 이 기준을 충족하지 못한다. 읽지 못한 원본을 보존하며 복원 중단과 새 작업의 실행을 분리해야 한다.
+[복구 원칙](../../principles/feedback-and-recovery.md)은 일부 손실 시 가능한 부분 복원, 전체 읽기 불가 시 오류 알림·앱 우측 상단 비포커스 팝업 후 초기 상태에서 계속 작업을 요구한다. surface 하나의 복원 자료나 레이아웃 stream 하나의 기록을 읽지 못하면 그 범위만 경고와 함께 잃고 나머지를 복원한다. 저장소 전체를 읽지 못하는 journal 실패가 부팅 오류와 종료로 이어지는 경로는 이 기준을 충족하지 못한다. 읽지 못한 원본을 보존하며 복원 중단과 새 작업의 실행을 분리해야 한다.
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (설정 토글)
@@ -245,9 +245,22 @@ Admission·import·View holder는 이 정리에서 해제하지 않으며, event
 이전의 이벤트 본문을 지우는 transaction에서만 해제한다. 모든 pin이 사라진 payload만 지운다. 원 요청 키, 최초 최종 응답 및 effect 시도 기록은 삭제하지 않는다. 이벤트 본문은 두 번째 유효 snapshot cut까지의 연속 prefix만 정리한다.
 Batch 식별과 stream revision 헤더는 유지한다. 오래된 cursor 읽기는 빈 성공 대신
 `ResyncRequired`를 반환하며, projection은 snapshot의 전체 출력과 cursor를 함께 교체해
-재동기화한다. anchor snapshot과 이후 tail이 모두 손상되면 부분 모델로 열지 않는다.
+재동기화한다. 적재가 손상을 만나면 손상 범위만 빼고 연다. 자세한 동작은 아래 "손상된 journal 기록의 적재"에 있다.
 App의 읽기 lease에 잡힌 payload는 Busy 대기와 늦은 완료 동안 snapshot pin에 포함한다.
 공통 worker는 capture·retirement의 전체 publication ACK 뒤와 정상 종료에 checkpoint를 실행한다. halted projection이나 공개되지 않은 cut은 checkpoint하지 않는다.
+
+### 손상된 journal 기록의 적재
+
+구조 journal은 모든 엔진 stream을 한 번에 적재한다. checksum은 맞지만 해석하거나 적용할 수 없는 기록을 만나면 그 범위만 빼고 나머지를 연다. 원본 행은 지우거나 고치지 않는다.
+
+- 한 stream만 담은 batch가 손상된 경우: 그 stream을 손상으로 표시하고 모델에서 뺀다. 다른 stream은 그대로 적재한다.
+- 여러 stream을 함께 바꾸는 batch가 손상된 경우: batch는 원자 단위이므로 일부 stream에만 적용하지 않는다. 그 batch가 담은 모든 구조 stream을 손상으로 표시한다. 손상 batch 직전 상태로 열면 이후 새 기록이 읽지 못한 원본 기록 위에 이어지므로 그렇게 열지 않는다.
+- 손상된 stream을 다시 바꾸는 뒤 batch도 적용하지 않고, 그 batch의 다른 stream도 손상으로 표시한다. 건너뛴 batch도 batch 위치는 지나가므로 남은 stream의 적용 위치는 정상으로 이어진다.
+- 최신 snapshot을 해석할 수 없거나 snapshot의 cut이 모델과 다르면 그 snapshot을 건너뛰고 더 이전 snapshot이나 로그 처음부터 다시 만든다. 그 뒤 기록을 모두 다시 적용하므로 잃는 변경은 없다. 보존 경계 위에 기반이 남지 않으면 저장소 전체를 읽을 수 없는 경우로 시작에 실패한다.
+- 손상된 stream마다 경고 알림 하나(레이아웃 슬롯 번호와 원인), snapshot을 건너뛰었으면 경고 하나를 남기고 같은 내용을 warn 로그로 남긴다.
+- 손상된 슬롯 번호는 이번 실행에서 고르지 않는다. 그 슬롯을 복원하려던 윈도우는 어떤 기록에도 쓰이지 않은 새 슬롯 번호로 새 레이아웃을 시작한다. 새 윈도우의 슬롯 배정도 손상된 번호를 점유로 센다. worker도 손상된 슬롯의 엔진 열기를 거절한다.
+- 손상 범위가 있는 동안 checkpoint(snapshot 저장·로그 압축·payload GC·manifest 정리)를 하지 않는다. 새 snapshot은 빠진 stream을 담지 못하고 압축은 읽지 못한 원본을 지울 수 있기 때문이다. 다음 실행도 같은 손상을 다시 발견하므로 원본은 계속 남는다.
+- headless는 과거 stream을 복원하지 않으므로 손상과 관계없이 새 stream으로 시작한다.
 
 View checkpoint는 journal의 restore manifest가 별도 원본으로 보관한다. domain snapshot,
 View 바이트, slot binding 및 payload pin은 한 transaction으로 저장한다. incarnation·runtime

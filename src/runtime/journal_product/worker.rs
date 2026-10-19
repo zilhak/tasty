@@ -857,7 +857,7 @@ fn open_published_executor(
     send: &impl Fn(Completion) -> bool,
 ) -> Option<(Executor<StructureDecider>, Option<u64>)> {
     let opened = identity::open(home, writer_lock).and_then(|store| {
-        Executor::open(StructureDecider, store).map_err(|error| match &error {
+        Executor::open(StructureDecider::default(), store).map_err(|error| match &error {
             crate::runtime::command_executor::ExecError::Store(store_error)
                 if matches!(**store_error, tasty_event_store::StoreError::WriterLocked) =>
             {
@@ -894,6 +894,7 @@ fn open_published_executor(
             runtime_epoch: inner.epoch.0,
             cut,
             bootstrap: inner.state.clone(),
+            damage: executor.decider().report(),
         }) {
             return None;
         }

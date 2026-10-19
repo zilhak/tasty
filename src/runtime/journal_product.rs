@@ -238,6 +238,8 @@ pub(crate) enum Completion {
         runtime_epoch: u64,
         cut: Option<u64>,
         bootstrap: StructureModels,
+        /// 적재하지 못해 `bootstrap`에서 빠진 stream과 건너뛴 snapshot.
+        damage: crate::runtime::journal::LoadReport,
     },
     StartupFailed(StartupFailure),
     /// Canonical/publication cut is no longer available. Every App reader and writer must halt.

@@ -24,8 +24,16 @@ impl JournalApplication {
                     cut,
                     bootstrap,
                     runtime_epoch,
+                    damage,
                     ..
                 } => {
+                    self.damaged_slots
+                        .extend(damage.damaged.keys().filter_map(|stream| {
+                            stream
+                                .strip_prefix("structure:slot-")
+                                .and_then(|slot| slot.parse::<u32>().ok())
+                        }));
+                    self.report_load_damage(&damage);
                     self.accept_bootstrap(cut, bootstrap, runtime_epoch, sessions)?;
                 }
                 Completion::StartupFailed(failure) => {
@@ -179,6 +187,23 @@ impl JournalApplication {
             {
                 *slot = *available;
                 session.persistence.slot = Some(*available);
+            }
+            if let EngineSelection::Slot { slot, .. } = &mut opening.selection
+                && self.damaged_slots.contains(slot)
+            {
+                // 손상된 슬롯 대신 어떤 기록에도 쓰이지 않은 번호로 새로 시작한다.
+                let fresh = self
+                    .known_slots
+                    .keys()
+                    .chain(&self.damaged_slots)
+                    .copied()
+                    .chain(occupied.iter().filter_map(|(_, used)| *used))
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
+                tracing::warn!(damaged = *slot, fresh, "starting a new layout slot instead");
+                *slot = fresh;
+                session.persistence.slot = Some(fresh);
             }
             let model = match opening.selection {
                 EngineSelection::Slot { slot, resume: true } => bootstrap

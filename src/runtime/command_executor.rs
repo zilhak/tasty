@@ -179,6 +179,10 @@ impl<D: JournalDecider> Executor<D> {
         })
     }
 
+    pub(crate) fn decider(&self) -> &D {
+        &self.decider
+    }
+
     /// 현재 메모리 상태를 읽는다.
     pub(crate) fn with_state<T>(
         &self,

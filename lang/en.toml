@@ -6903,3 +6903,7 @@ auto_disabled_body = "It failed to start {} times in a row, so Tasty stopped sta
 multiple_title = "Some saved data could not be restored"
 surface_payload_title = "A tab could not be restored"
 surface_payload_body = "In workspace \"{}\", surface {} started empty because its saved contents could not be read. The saved data is kept. Cause: {}"
+damaged_stream_title = "Part of the saved layout could not be restored"
+damaged_stream_body = "Window layout {} could not be read and was not restored. Its saved records are kept unchanged, and this window uses a new layout. Cause: {}"
+snapshot_fallback_title = "Restored from an earlier save point"
+snapshot_fallback_body = "The latest save point could not be read, so Tasty rebuilt the layout from an earlier save point and the records after it. Cause: {}"

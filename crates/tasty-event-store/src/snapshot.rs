@@ -119,8 +119,19 @@ impl EventStore {
 
     /// 가장 최근의 검증된 snapshot과 그 뒤 batch 전체를 한 read transaction에서 읽는다.
     pub fn snapshot_and_tail(&self, model_version: u32) -> StoreResult<Replay> {
+        self.snapshot_and_tail_excluding(model_version, &[])
+    }
+
+    /// [`EventStore::snapshot_and_tail`]과 같되 `excluded`의 snapshot은 건너뛴다. checksum은 맞지만
+    /// 호출자가 내용을 해석하지 못한 snapshot 대신 그보다 이전 기반으로 다시 읽을 때 쓴다. 보존 경계
+    /// 위에 남은 기반이 없으면 [`StoreError::ResyncRequired`]다.
+    pub fn snapshot_and_tail_excluding(
+        &self,
+        model_version: u32,
+        excluded: &[SnapshotId],
+    ) -> StoreResult<Replay> {
         let tx = self.conn.unchecked_transaction()?;
-        let (snapshot, rejected) = latest_valid(&tx, model_version)?;
+        let (snapshot, rejected) = latest_valid(&tx, model_version, excluded)?;
         let after = snapshot.as_ref().and_then(|s| s.cut.last_batch);
         let tail = batches_after(&tx, after, usize::MAX)?;
         Ok(Replay {
@@ -256,6 +267,7 @@ pub fn snapshot_holder(id: SnapshotId) -> String {
 fn latest_valid(
     conn: &Connection,
     model_version: u32,
+    excluded: &[SnapshotId],
 ) -> StoreResult<(Option<DomainSnapshot>, Vec<RejectedSnapshot>)> {
     let mut stmt = conn.prepare(
         "SELECT snapshot_id, batch_id, payload_id FROM snapshots
@@ -273,7 +285,9 @@ fn latest_valid(
     for row in rows {
         let (id, batch, body) = row?;
         let snapshot_id = to_u64(id)?;
-        if floor.is_some_and(|floor| to_u64(batch).is_ok_and(|batch| batch < floor)) {
+        if excluded.contains(&snapshot_id)
+            || floor.is_some_and(|floor| to_u64(batch).is_ok_and(|batch| batch < floor))
+        {
             continue;
         }
         match verify_snapshot(conn, snapshot_id, PayloadRef(to_u64(body)?)) {

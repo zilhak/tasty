@@ -71,6 +71,8 @@ pub(crate) struct JournalApplication {
     #[cfg(feature = "gui")]
     retirements: retirement::Retirements,
     known_slots: std::collections::BTreeMap<u32, bool>,
+    /// 기록을 읽지 못한 슬롯. 원본 위에 이어 쓰지 않도록 이번 실행에서는 고르지 않는다.
+    damaged_slots: std::collections::BTreeSet<u32>,
     started: bool,
     /// 저널을 열지 못한 이유. 부팅 오류 화면이 문구를 고를 때 읽는다.
     #[cfg(feature = "gui")]
@@ -188,6 +190,7 @@ impl JournalApplication {
             #[cfg(feature = "gui")]
             retirements: Default::default(),
             known_slots: Default::default(),
+            damaged_slots: Default::default(),
             started: false,
             #[cfg(feature = "gui")]
             startup_failure: None,
@@ -298,6 +301,32 @@ impl JournalApplication {
                 ),
             ));
         }
+    }
+
+    /// 적재하지 못한 범위를 경고로 남긴다. 손상된 stream마다, 건너뛴 snapshot은 한 번.
+    fn report_load_damage(&mut self, damage: &crate::runtime::journal::LoadReport) {
+        for (stream, cause) in &damage.damaged {
+            let name = stream
+                .strip_prefix("structure:slot-")
+                .unwrap_or(stream.as_str());
+            self.notices.push(notices::RecoveryNotice::warning(
+                None,
+                crate::i18n::t("recovery.damaged_stream_title").to_owned(),
+                crate::i18n::t_args("recovery.damaged_stream_body", &[name, cause]),
+            ));
+        }
+        if let Some((_, cause)) = damage.skipped_snapshots.first() {
+            self.notices.push(notices::RecoveryNotice::warning(
+                None,
+                crate::i18n::t("recovery.snapshot_fallback_title").to_owned(),
+                crate::i18n::t_args("recovery.snapshot_fallback_body", &[cause]),
+            ));
+        }
+    }
+
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn damaged_layout_slots(&self) -> impl Iterator<Item = u32> + '_ {
+        self.damaged_slots.iter().copied()
     }
 
     #[cfg(feature = "gui")]
@@ -671,6 +700,8 @@ impl JournalApplication {
 mod bulk_restore_tests;
 #[cfg(all(test, unix, feature = "gui"))]
 mod content_off_tests;
+#[cfg(all(test, unix))]
+mod damaged_stream_tests;
 #[cfg(all(test, unix))]
 mod payload_failure_tests;
 #[cfg(test)]

@@ -3,5 +3,6 @@
 mod common;
 
 mod executor;
+mod partial_load;
 mod replay;
 mod shadow_digest;

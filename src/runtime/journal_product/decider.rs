@@ -40,7 +40,20 @@ pub(crate) struct StreamEvent {
     pub(crate) event: DomainEvent,
 }
 
-pub(crate) struct StructureDecider;
+/// 마지막 적재에서 손상으로 빠진 범위를 함께 기억한다. 적재는 저장소가 같으면 같은 결과를 낸다.
+#[derive(Default)]
+pub(crate) struct StructureDecider {
+    report: std::sync::Mutex<journal::LoadReport>,
+}
+
+impl StructureDecider {
+    pub(crate) fn report(&self) -> journal::LoadReport {
+        self.report
+            .lock()
+            .map(|report| report.clone())
+            .unwrap_or_default()
+    }
+}
 
 impl Decider for StructureDecider {
     type State = StructureModels;
@@ -298,11 +311,31 @@ impl JournalDecider for StructureDecider {
     }
 
     fn apply(&self, state: &mut StructureModels, batch: &StoredBatch) -> Result<(), String> {
+        let report = self.report();
+        if let Some(event) = batch
+            .events
+            .iter()
+            .find(|event| report.damaged.contains_key(event.stream_id.as_str()))
+        {
+            return Err(format!(
+                "batch {} writes the damaged stream {}",
+                batch.cut.batch_id,
+                event.stream_id.as_str()
+            ));
+        }
         journal::apply_all(state, batch).map_err(|e| e.to_string())
     }
 
     fn load(&self, store: &EventStore) -> Result<StructureModels, String> {
-        journal::load_all(store).map_err(|e| e.to_string())
+        let (models, report) = journal::load_recoverable(store).map_err(|e| e.to_string())?;
+        for (stream, cause) in &report.damaged {
+            tracing::warn!(stream, "structure stream left unloaded: {cause}");
+        }
+        for (snapshot, cause) in &report.skipped_snapshots {
+            tracing::warn!(snapshot, "structure snapshot skipped: {cause}");
+        }
+        *self.report.lock().map_err(|e| e.to_string())? = report;
+        Ok(models)
     }
 }
 

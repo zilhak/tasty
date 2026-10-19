@@ -162,6 +162,105 @@ pub(crate) fn load_all(store: &EventStore) -> Result<StructureModels, JournalErr
     Ok(models)
 }
 
+/// 복원 가능한 범위만 적재했을 때 빠진 것. 비어 있으면 저장소 전체를 그대로 적재했다.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct LoadReport {
+    /// 적재하지 못한 구조 stream과 원인. 이 stream의 원본 행은 그대로 남는다.
+    pub(crate) damaged: std::collections::BTreeMap<String, String>,
+    /// checksum은 맞지만 해석하지 못해 건너뛴 snapshot과 원인.
+    pub(crate) skipped_snapshots: Vec<(SnapshotId, String)>,
+}
+
+impl LoadReport {
+    pub(crate) fn is_clean(&self) -> bool {
+        self.damaged.is_empty() && self.skipped_snapshots.is_empty()
+    }
+}
+
+/// [`load_all`]과 같되 손상을 그 범위로 한정한다.
+///
+/// - 해석하지 못한 snapshot은 건너뛰고 더 이전 snapshot이나 로그 처음부터 다시 읽는다. 보존 경계
+///   위에 기반이 남지 않으면 오류다.
+/// - 해석·적용하지 못한 batch는 적용하지 않고, 그 batch가 담은 모든 구조 stream을 손상으로 표시한다.
+///   batch는 원자 단위이므로 일부 stream에만 적용하지 않는다.
+/// - 손상된 stream을 함께 바꾸는 이후 batch도 같은 이유로 적용하지 않고 그 stream들을 손상으로 표시한다.
+/// - 손상된 stream은 결과 모델에서 빠진다. 나머지 stream과 batch 위치는 정상으로 이어진다.
+pub(crate) fn load_recoverable(
+    store: &EventStore,
+) -> Result<(StructureModels, LoadReport), JournalError> {
+    let mut report = LoadReport::default();
+    let (mut models, tail) = loop {
+        let excluded: Vec<_> = report.skipped_snapshots.iter().map(|(id, _)| *id).collect();
+        let replay = store.snapshot_and_tail_excluding(MODEL_VERSION, &excluded)?;
+        let Some(snapshot) = replay.snapshot else {
+            break (StructureModels::default(), replay.tail);
+        };
+        match decode_snapshot(snapshot.model_version, &snapshot.bytes) {
+            Ok(models) if models.batch == snapshot.cut.last_batch => break (models, replay.tail),
+            Ok(models) => report.skipped_snapshots.push((
+                snapshot.snapshot_id,
+                JournalError::SnapshotCutMismatch {
+                    snapshot_id: snapshot.snapshot_id,
+                    stored: snapshot.cut.last_batch,
+                    model: models.batch,
+                }
+                .to_string(),
+            )),
+            Err(error) => report
+                .skipped_snapshots
+                .push((snapshot.snapshot_id, error.to_string())),
+        }
+    };
+    for batch in &tail {
+        apply_recoverable(&mut models, batch, &mut report.damaged)?;
+    }
+    Ok((models, report))
+}
+
+fn apply_recoverable(
+    models: &mut StructureModels,
+    batch: &StoredBatch,
+    damaged: &mut std::collections::BTreeMap<String, String>,
+) -> Result<(), JournalError> {
+    let streams: std::collections::BTreeSet<String> = batch
+        .events
+        .iter()
+        .map(|event| event.stream_id.as_str())
+        .filter(|stream| is_structure_stream(stream))
+        .map(str::to_owned)
+        .collect();
+    let id = batch.cut.batch_id;
+    let failure = if let Some(stream) = streams.iter().find(|stream| damaged.contains_key(*stream))
+    {
+        Some(format!(
+            "batch {id} also changes the damaged stream {stream}"
+        ))
+    } else {
+        match stream_batch(batch) {
+            Err(error) => Some(format!("batch {id}: {error}")),
+            Ok(decoded) => evolve_streams(models, &decoded)
+                .err()
+                .map(|error| format!("batch {id}: {error}")),
+        }
+    };
+    let Some(cause) = failure else {
+        return Ok(());
+    };
+    for stream in streams {
+        models.streams.remove(&stream);
+        damaged.entry(stream).or_insert_with(|| cause.clone());
+    }
+    // 건너뛴 batch도 위치는 지나간다. 남은 stream의 적용 위치를 같이 옮긴다.
+    evolve_streams(
+        models,
+        &StreamBatch {
+            batch_id: id,
+            streams: Default::default(),
+        },
+    )?;
+    Ok(())
+}
+
 /// 엔진 stream 하나의 모델. 이벤트가 아직 없는 엔진이면 빈 모델이다.
 pub(crate) fn load(store: &EventStore, stream: &StreamId) -> Result<JournalModel, JournalError> {
     Ok(load_all(store)?.stream(stream.as_str()))

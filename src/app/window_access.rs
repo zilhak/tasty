@@ -425,9 +425,11 @@ impl App {
 
     /// 점유를 별도로 관리하지 않고 살아 있는 engine의 슬롯을 모은다.
     /// 창에 등록되기 전 임시 engine도 포함해야 중복 배정을 피할 수 있다.
+    /// 기록을 읽지 못한 슬롯도 점유로 세어 그 원본 위에 새 engine을 열지 않는다.
     pub(crate) fn occupied_layout_slots(&self) -> HashSet<LayoutSlotId> {
         let mut occupied = occupied_slots(self.engines());
         occupied.extend(self.engines.retiring_slots());
+        occupied.extend(self.journal.damaged_layout_slots());
         occupied
     }
 
