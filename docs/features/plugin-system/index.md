@@ -38,6 +38,8 @@
 
 `list` / `show <id>` / `install <path>` / `remove <id>` / `enable <id>` / `disable <id>` 등. CLI install 은 사용자 의도적 명령이라 매니페스트 권한을 자동 grant.
 
+설치(GUI Add 탭·`plugin.install`)는 폴더를 복사하기 전에 신뢰 판정을 한다. 판정은 debug·release 모두 같은 함수(`trust_verdict::judge`)이고, 키로 출처를 확인하지 못한 미인증 플러그인은 호출자가 명시적으로 고른 경우에만 설치한다. 판정에서 거부되면 플러그인 폴더·명령·번역·권한 grant·신뢰 DB를 하나도 쓰지 않고, 실패 응답에 실제 원인(서명 없음·모르는 키·공개 키 파일 없음·공개 키 불일치·검증 오류)을 담는다. 미인증이라 거부한 `plugin.install` 오류(`-32000`)는 `data`에 `{"unverified": "<원인>", "plugin_id": "<id>"}`를 싣는다. 원인 이름은 `unknown-key` · `missing-pubkey` · `unsigned` · `signature-error`다. 복사한 뒤 패키지 목록에 들어가지 않으면 복사한 폴더와 이번 시도가 바꾼 신뢰 DB 항목을 되돌리고, 그 거부 사유로 실패한다. 같은 ID에 이미 있던 신뢰 기록·grant·비활성 표시와 다른 플러그인의 기록은 그대로 남는다. 그래서 비활성 표시가 있어도 등록되지 않은 설치를 성공으로 알리지 않고, 실패 뒤 고친 플러그인을 다시 설치하면 `already installed`로 막히지 않는다. 공개 키를 신뢰하고 설치할 때는 그 키로 서명이 검증되는지 먼저 확인하고, 다르면 신뢰 DB에 쓰지 않고 실패한다.
+
 `enable <id>` / `disable <id>` 는 발견된 설치 패키지가 있는 ID만 받는다. 미설치 ID는
 GUI·headless 모두 실패하며, 설정 파일과 메모리의 활성/비활성 상태를 바꾸거나 성공 이벤트를
 발행하지 않는다. 토글 실패 응답은 기존 `-32000`과 `enable failed:` / `disable failed:`
@@ -76,6 +78,8 @@ kind 대기 placeholder 로 두었다가 다시 켜면 채운다.
 - Given 창 최소 폭 720 또는 기본 폭 880 과 열 폭보다 긴 설치 경로, When 그 플러그인을 고르면, Then `Open folder` 와 설치 경로·로그 경로 전체가 창 안에 보인다.
 - Install 탭에서 디렉터리 설치 시 매니페스트·권한 미리보기와 신뢰 검증을 거친다.
 - `tasty plugin list/install/remove/enable/disable` CLI 가 동일 동작을 수행한다.
+- Given 신뢰 판정에서 거부되는 플러그인과 같은 ID의 비활성 표시·grant, When 설치하면, Then 실제 원인이 담긴 오류로 끝나고 플러그인 폴더·`plugins.toml`·신뢰 DB가 설치 전과 같다.
+- Given 서명하지 않은 키의 공개 키 파일, When 그 키를 신뢰하고 설치하면, Then 공개 키 불일치 오류로 끝나고 신뢰 DB에 항목이 남지 않는다.
 - 미설치 ID의 enable/disable은 GUI·headless 모두 실패하고, 기존 설정 파일은 바이트 단위로 유지되며 없던 설정 파일을 만들지 않는다.
 - 설치된 plugin은 disable 후 enable로 다시 실행할 수 있다.
 - Given surface kind 를 등록한 plugin 이 켜져 있고 When 그 plugin 을 disable 하거나 remove 하면 Then 그 kind 로 새 surface 를 만드는 요청은 "제공 plugin 이 꺼졌거나 아직 다시 연결되지 않았다" 는 사유로 거절되고 `surface.kinds` 에서 빠지며, 이미 열린 그 kind 의 surface 는 그대로 남는다.

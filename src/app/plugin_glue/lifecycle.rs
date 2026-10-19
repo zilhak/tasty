@@ -129,66 +129,139 @@ fn stop_before_remove(mgr: &mut PluginManager, plugin_id: &str) {
     }
 }
 
+fn copy_into_plugins(
+    src: &std::path::Path,
+    dest_root: &std::path::Path,
+    dest: &std::path::Path,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(dest_root).map_err(|e| anyhow::anyhow!("create dir failed: {e}"))?;
+    copy_dir_recursive(src, dest).map_err(|e| anyhow::anyhow!("copy failed: {e}"))
+}
+
+/// 이번 설치가 만든 폴더를 지운다. 설치 전 `dest` 가 없었음을 호출자가 확인했다.
+fn remove_partial_install(dest: &std::path::Path) {
+    if dest.exists()
+        && let Err(e) = std::fs::remove_dir_all(dest)
+    {
+        tracing::error!(
+            "removing a failed plugin install at {} failed: {e}",
+            dest.display()
+        );
+    }
+}
+
+/// 복사한 플러그인이 패키지 목록에 없는 이유. 신뢰 판정의 거부 사유가 있으면 그것을 쓴다.
+fn not_registered_reason(mgr: &PluginManager, plugin_id: &str) -> String {
+    use tasty_host_plugin::discovery::RejectionReason;
+    match mgr.rejected.iter().find(|r| r.id == plugin_id) {
+        Some(r) => match r.reason {
+            RejectionReason::UnknownKey => {
+                "it is signed by a key that is not in the trust store".to_string()
+            }
+            // 거부 기록의 원인은 판정의 설명 문장 그대로다.
+            RejectionReason::SignatureInvalid => match &r.cause {
+                Some(cause) => cause.clone(),
+                None => "the signature could not be verified".to_string(),
+            },
+            RejectionReason::PermissionsChanged => {
+                "its permissions changed since its key was trusted".to_string()
+            }
+        },
+        None => "plugin discovery did not load it (see the log for details)".to_string(),
+    }
+}
+
+/// 패키지 목록에 들어간 플러그인의 명령·번역·권한을 등록하고 비활성 설정이 없으면 실행한다.
+fn register_installed(
+    mgr: &mut PluginManager,
+    manifest: &Manifest,
+    dir: &std::path::Path,
+) -> anyhow::Result<Vec<CoreEvent>> {
+    mgr.command_registry.register_plugin(manifest);
+    let lang_dir = dir.join(&manifest.lang_dir);
+    crate::i18n::register_namespace(&manifest.id, &lang_dir);
+    mgr.config
+        .set_granted(&manifest.id, manifest.permissions.clone());
+    if let Err(e) = mgr.config.save() {
+        tracing::warn!("plugins.toml save failed: {e}");
+    }
+    // 확장자는 packages와 권한 설정에 의존하므로 마지막 설정 변경 뒤 다시 계산한다.
+    // 아래 enable은 생략될 수 있어 그 호출의 재계산에만 의존할 수 없다.
+    mgr.recompute_extensions();
+    mgr.debug_assert_extensions_fresh();
+
+    let mut events = vec![CoreEvent::PluginRegistryChanged {
+        plugin_id: manifest.id.clone(),
+        change: PluginRegistryChange::Installed {
+            version: manifest.version.clone(),
+        },
+    }];
+
+    if !mgr.config.is_disabled(&manifest.id) {
+        mgr.enable(&manifest.id)
+            .map_err(|e| anyhow::anyhow!("enable after install failed: {e}"))?;
+        events.push(CoreEvent::PluginEnableToggled {
+            plugin_id: manifest.id.clone(),
+            enabled: true,
+        });
+    }
+    Ok(events)
+}
+
+/// [`App::plugin_install`] 의 본체. 매니저만 쓰므로 시험이 App 없이 부를 수 있다.
+pub(crate) fn install_into(
+    mgr: &mut PluginManager,
+    src_path: &std::path::Path,
+    choice: &super::install_trust::InstallChoice,
+) -> anyhow::Result<Vec<CoreEvent>> {
+    let manifest = Manifest::load(src_path)
+        .and_then(|m| {
+            crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
+            Ok(m)
+        })
+        .map_err(|e| anyhow::anyhow!("invalid plugin at source: {e}"))?;
+    let dest_root = crate::plugin::plugin_root()
+        .ok_or_else(|| anyhow::anyhow!("could not resolve plugins directory"))?;
+    let dest = dest_root.join(&manifest.id);
+    if dest.exists() {
+        anyhow::bail!(
+            "plugin '{}' already installed at {}",
+            manifest.id,
+            dest.display()
+        );
+    }
+    let undo =
+        super::install_trust::authorize(src_path, &manifest.id, &manifest.permissions, choice)?;
+    if let Err(e) = copy_into_plugins(src_path, &dest_root, &dest) {
+        remove_partial_install(&dest);
+        super::install_trust::undo(undo, &manifest.id);
+        return Err(e);
+    }
+
+    mgr.refresh_packages();
+    if !mgr.packages().iter().any(|p| p.manifest.id == manifest.id) {
+        let reason = not_registered_reason(mgr, &manifest.id);
+        remove_partial_install(&dest);
+        super::install_trust::undo(undo, &manifest.id);
+        mgr.refresh_packages();
+        anyhow::bail!("plugin '{}' was not registered: {reason}", manifest.id);
+    }
+    register_installed(mgr, &manifest, &dest)
+}
+
 impl App {
-    /// 설치 후 권한을 허용하며 비활성 설정이 없으면 실행한다. JSON-RPC 응답 코드는 호출자가 정한다.
+    /// 신뢰 판정과 `choice` 를 확인한 뒤 설치하고 권한을 허용하며, 비활성 설정이 없으면 실행한다.
+    /// 판정에서 거부되거나 복사·등록에 실패하면 이번 시도가 만든 폴더와 신뢰 기록을 되돌린다.
+    /// JSON-RPC 응답 코드는 호출자가 정한다.
     pub(crate) fn plugin_install(
         &mut self,
         src_path: std::path::PathBuf,
+        choice: &super::install_trust::InstallChoice,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         let Some(mgr) = self.plugin_manager.as_mut() else {
             anyhow::bail!("plugin manager not initialized (no main window yet)");
         };
-        let manifest = Manifest::load(&src_path)
-            .and_then(|m| {
-                crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
-                Ok(m)
-            })
-            .map_err(|e| anyhow::anyhow!("invalid plugin at source: {e}"))?;
-        let dest_root = crate::plugin::plugin_root()
-            .ok_or_else(|| anyhow::anyhow!("could not resolve plugins directory"))?;
-        let dest = dest_root.join(&manifest.id);
-        if dest.exists() {
-            anyhow::bail!(
-                "plugin '{}' already installed at {}",
-                manifest.id,
-                dest.display()
-            );
-        }
-        std::fs::create_dir_all(&dest_root)
-            .map_err(|e| anyhow::anyhow!("create dir failed: {e}"))?;
-        copy_dir_recursive(&src_path, &dest).map_err(|e| anyhow::anyhow!("copy failed: {e}"))?;
-
-        mgr.refresh_packages();
-        mgr.command_registry.register_plugin(&manifest);
-        let lang_dir = dest.join(&manifest.lang_dir);
-        crate::i18n::register_namespace(&manifest.id, &lang_dir);
-        let tokens: Vec<String> = manifest.permissions.clone();
-        mgr.config.set_granted(&manifest.id, tokens);
-        if let Err(e) = mgr.config.save() {
-            tracing::warn!("plugins.toml save failed: {e}");
-        }
-        // 확장자는 packages와 권한 설정에 의존하므로 마지막 설정 변경 뒤 다시 계산한다.
-        // 아래 enable은 생략될 수 있어 그 호출의 재계산에만 의존할 수 없다.
-        mgr.recompute_extensions();
-        mgr.debug_assert_extensions_fresh();
-
-        let mut events = vec![CoreEvent::PluginRegistryChanged {
-            plugin_id: manifest.id.clone(),
-            change: PluginRegistryChange::Installed {
-                version: manifest.version.clone(),
-            },
-        }];
-
-        if !mgr.config.is_disabled(&manifest.id) {
-            mgr.enable(&manifest.id)
-                .map_err(|e| anyhow::anyhow!("enable after install failed: {e}"))?;
-            events.push(CoreEvent::PluginEnableToggled {
-                plugin_id: manifest.id.clone(),
-                enabled: true,
-            });
-        }
-
-        Ok(events)
+        install_into(mgr, &src_path, choice)
     }
 
     pub(crate) fn plugin_remove(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
@@ -211,6 +284,10 @@ impl App {
         // 번들 플러그인이 다음 부팅에 자동 재설치되지 않도록 제거 의사를 기록한다.
         // GUI와 IPC가 공유하는 이 경로에 두며 upgrade_builtins의 restore_removed로 되돌린다.
         crate::plugin::mark_builtin_removed(mgr, &plugin_id);
+        // 다시 설치하면 미인증 경고를 다시 보이도록 선택 기록을 지운다.
+        if let Err(e) = tasty_host_plugin::trust_verdict::forget_unverified_choice(&plugin_id) {
+            tracing::warn!("known-plugins.toml update failed after removing '{plugin_id}': {e}");
+        }
         // 제거 후 재설치할 때 과거 비활성 설정을 물려받지 않게 지운다.
         if mgr.config.enable(&plugin_id)
             && let Err(e) = mgr.config.save()
@@ -470,3 +547,7 @@ rendering = "egui-mesh"
         assert_eq!(def.source.plugin_id(), Some("com.example.first"));
     }
 }
+
+#[cfg(test)]
+#[path = "lifecycle_install_tests.rs"]
+mod install_tests;

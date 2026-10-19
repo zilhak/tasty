@@ -139,17 +139,12 @@ pub enum PluginsAction {
     Install {
         src_path: String,
     },
-    /// 출처 미상 플러그인을 사용자가 승인하면 키와 권한 목록을 저장한 뒤 설치한다.
+    /// 공개 키 파일의 키를 신뢰하고 설치한다. 호스트가 그 키로 서명이 검증되는지 다시 확인하고
+    /// 현재 매니페스트의 권한과 함께 신뢰 DB에 기록한다.
     TrustAndInstall {
         src_path: String,
-        plugin_id: String,
-        /// base64 (32-byte ed25519) — `.pub` sidecar 에서 추출.
+        /// base64 (32-byte ed25519) — 화면이 보인 공개 키.
         pubkey_b64: String,
-        /// 사용자가 trust 한 시점의 매니페스트 권한 목록 (변경 감지용 스냅샷).
-        permissions: Vec<String>,
-        /// 표시용 fingerprint — `KnownPluginEntry::publisher_fingerprint` 에
-        /// 그대로 기록.
-        publisher_fingerprint: String,
     },
 }
 
@@ -227,9 +222,21 @@ pub struct PluginsUiState {
     pub add_preview: Option<AddPreview>,
     /// 매니페스트를 읽지 못했거나 검사에 실패한 이유. 있으면 안내 상자 자리에 오류 상자를 둔다.
     pub add_error: Option<AddError>,
+    /// 추가 요청을 보냈고 App의 결과를 기다린다. 그동안 두 버튼을 끈다.
+    pub add_in_flight: bool,
 }
 
 impl PluginsUiState {
+    /// Add 탭의 추가가 끝났다. 성공하면 입력 화면으로 되돌리고, 실패하면 판정을 남긴다.
+    pub fn finish_add(&mut self, installed: bool) {
+        self.add_in_flight = false;
+        if installed {
+            self.add_preview = None;
+            self.add_error = None;
+            self.add_path_input.clear();
+        }
+    }
+
     /// 제거 확인을 닫는다. 아직 옮기지 않은 포커스 요청도 버린다.
     pub fn cancel_uninstall_confirm(&mut self) {
         self.confirm_uninstall_id = None;

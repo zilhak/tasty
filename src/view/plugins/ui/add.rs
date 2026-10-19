@@ -79,17 +79,12 @@ fn draw_add_form(
             AddTrustState::Trusted => PluginsAction::Install {
                 src_path: preview.src_path.clone(),
             },
-            AddTrustState::UntrustedWithPubkey {
-                fingerprint,
-                pubkey_b64,
-                ..
-            } => PluginsAction::TrustAndInstall {
-                src_path: preview.src_path.clone(),
-                plugin_id: preview.id.clone(),
-                pubkey_b64: pubkey_b64.clone(),
-                permissions: preview.permissions.clone(),
-                publisher_fingerprint: fingerprint.clone(),
-            },
+            AddTrustState::UntrustedWithPubkey { pubkey_b64, .. } => {
+                PluginsAction::TrustAndInstall {
+                    src_path: preview.src_path.clone(),
+                    pubkey_b64: pubkey_b64.clone(),
+                }
+            }
             // 이 상태는 blocked_key가 있어 버튼이 disabled라 도달하지 않는다. 안전망으로 일반 Install.
             AddTrustState::UntrustedNoPubkey { .. } | AddTrustState::SigError => {
                 PluginsAction::Install {
@@ -98,7 +93,7 @@ fn draw_add_form(
             }
         };
         actions.push(action);
-        reset_add_state(ui_state);
+        ui_state.add_in_flight = true;
     }
     if footer.cancel {
         reset_add_state(ui_state);

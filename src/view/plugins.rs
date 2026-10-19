@@ -46,6 +46,13 @@ impl PluginsView {
         self.mark_dirty();
     }
 
+    /// App이 Add 탭의 추가 요청을 처리했다. 성공하면 입력 화면으로 돌아가고, 실패하면 확인한
+    /// 판정과 버튼을 그대로 둔다. 실패 원인은 함께 띄우는 토스트가 알린다.
+    pub fn finish_add(&mut self, installed: bool) {
+        self.ui_state.finish_add(installed);
+        self.mark_dirty();
+    }
+
     /// 모달 윈도우 영역에 toast를 띄운다. `Add` 탭에서 설치 성공/실패 알림 등에 사용.
     pub fn push_toast(&mut self, message: impl Into<String>, kind: crate::adapters::ui::ToastKind) {
         self.toasts

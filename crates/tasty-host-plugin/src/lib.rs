@@ -27,6 +27,7 @@ mod test_fake_plugin;
 #[cfg(test)]
 mod test_support;
 pub mod tool_registry;
+pub mod trust_verdict;
 // wasm-poc feature에서만 사용하는 실험 코드.
 pub mod wasm_poc;
 

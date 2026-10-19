@@ -3,32 +3,6 @@
 use crate::app::App;
 use crate::{plugin, plugins_ui, window};
 
-/// 신뢰 정보 저장이 실패하면 설치하지 않는다. 신뢰 기록 없이 플러그인 파일만 남지 않게 한다.
-fn record_trust_then_install(
-    app: &mut App,
-    src_path: &str,
-    plugin_id: &str,
-    pubkey_b64: &str,
-    permissions: &[String],
-    publisher_fingerprint: &str,
-) -> anyhow::Result<Vec<crate::app::command::CoreEvent>> {
-    use tasty_host_plugin::known_plugins::{KnownPluginEntry, KnownPlugins};
-
-    let mut db =
-        KnownPlugins::load().map_err(|e| anyhow::anyhow!("load known-plugins.toml failed: {e}"))?;
-    let entry = KnownPluginEntry {
-        pubkey: pubkey_b64.to_string(),
-        permissions: permissions.to_vec(),
-        trusted_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        publisher_fingerprint: publisher_fingerprint.to_string(),
-    };
-    db.add(plugin_id.to_string(), entry);
-    db.save()
-        .map_err(|e| anyhow::anyhow!("save known-plugins.toml failed: {e}"))?;
-
-    app.plugin_install(std::path::PathBuf::from(src_path))
-}
-
 fn extract_installed_plugin_id(events: &[crate::app::command::CoreEvent]) -> Option<String> {
     events.iter().find_map(|ev| match ev {
         crate::app::command::CoreEvent::PluginRegistryChanged { plugin_id, .. } => {
@@ -95,53 +69,34 @@ impl App {
             .map(|message| (message, crate::adapters::ui::ToastKind::Error))
     }
 
-    fn handle_install(&mut self, src_path: &str) -> (String, crate::adapters::ui::ToastKind) {
-        match self.plugin_install(std::path::PathBuf::from(src_path)) {
+    /// 설치 결과 토스트와 성공 여부. 실패 토스트는 실제 원인을 그대로 보인다.
+    fn handle_install(
+        &mut self,
+        src_path: &str,
+        choice: &super::install_trust::InstallChoice,
+    ) -> ((String, crate::adapters::ui::ToastKind), bool) {
+        match self.plugin_install(std::path::PathBuf::from(src_path), choice) {
             Ok(events) => {
                 let installed = extract_installed_plugin_id(&events).unwrap_or_default();
                 self.cascade_plugin_events(events);
                 (
-                    crate::i18n::t_fmt("plugins.add_installed", &installed),
-                    crate::adapters::ui::ToastKind::Success,
+                    (
+                        crate::i18n::t_fmt("plugins.add_installed", &installed),
+                        crate::adapters::ui::ToastKind::Success,
+                    ),
+                    true,
                 )
             }
-            Err(e) => (
-                crate::i18n::t_fmt("plugins.add_install_failed", &e.to_string()),
-                crate::adapters::ui::ToastKind::Error,
-            ),
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn handle_trust_and_install(
-        &mut self,
-        src_path: &str,
-        plugin_id: &str,
-        pubkey_b64: &str,
-        permissions: &[String],
-        publisher_fingerprint: &str,
-    ) -> (String, crate::adapters::ui::ToastKind) {
-        match record_trust_then_install(
-            self,
-            src_path,
-            plugin_id,
-            pubkey_b64,
-            permissions,
-            publisher_fingerprint,
-        ) {
-            Ok(events) => {
-                let installed =
-                    extract_installed_plugin_id(&events).unwrap_or_else(|| plugin_id.to_string());
-                self.cascade_plugin_events(events);
+            Err(e) => {
+                tracing::warn!("plugins modal: install({src_path}) failed: {e}");
                 (
-                    crate::i18n::t_fmt("plugins.add_installed", &installed),
-                    crate::adapters::ui::ToastKind::Success,
+                    (
+                        crate::i18n::t_fmt("plugins.add_install_failed", &e.to_string()),
+                        crate::adapters::ui::ToastKind::Error,
+                    ),
+                    false,
                 )
             }
-            Err(e) => (
-                crate::i18n::t_fmt("plugins.add_install_failed", &e.to_string()),
-                crate::adapters::ui::ToastKind::Error,
-            ),
         }
     }
 
@@ -207,6 +162,8 @@ impl App {
         let mut pending_toasts: Vec<(String, crate::adapters::ui::ToastKind)> = Vec::new();
         let mut close_modal = false;
         let mut open_settings_plugin_tab = false;
+        // Add 탭의 추가가 끝났는지. 성공하면 입력 화면으로, 실패하면 판정을 남긴 채 돌아간다.
+        let mut add_result: Option<bool> = None;
 
         for action in actions {
             match action {
@@ -233,22 +190,23 @@ impl App {
                     pending_toasts.extend(self.handle_open_uri(&url, "toast.open_link_failed"));
                 }
                 plugins_ui::PluginsAction::Install { src_path } => {
-                    pending_toasts.push(self.handle_install(&src_path));
+                    let (toast, ok) = self.handle_install(
+                        &src_path,
+                        &super::install_trust::InstallChoice::VerifiedOnly,
+                    );
+                    pending_toasts.push(toast);
+                    add_result = Some(ok);
                 }
                 plugins_ui::PluginsAction::TrustAndInstall {
                     src_path,
-                    plugin_id,
                     pubkey_b64,
-                    permissions,
-                    publisher_fingerprint,
                 } => {
-                    pending_toasts.push(self.handle_trust_and_install(
+                    let (toast, ok) = self.handle_install(
                         &src_path,
-                        &plugin_id,
-                        &pubkey_b64,
-                        &permissions,
-                        &publisher_fingerprint,
-                    ));
+                        &super::install_trust::InstallChoice::TrustKey { pubkey_b64 },
+                    );
+                    pending_toasts.push(toast);
+                    add_result = Some(ok);
                 }
             }
         }
@@ -271,6 +229,9 @@ impl App {
             && let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsView>()
         {
             plugins_window.refresh_snapshot(snapshot);
+            if let Some(ok) = add_result {
+                plugins_window.finish_add(ok);
+            }
             for (msg, kind) in pending_toasts {
                 plugins_window.push_toast(msg, kind);
             }

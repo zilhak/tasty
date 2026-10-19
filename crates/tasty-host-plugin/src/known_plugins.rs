@@ -9,7 +9,15 @@
 //! permissions = ["filesystem.read", "network"]
 //! trusted_at = "2026-06-09T09:50:00Z"
 //! publisher_fingerprint = "ab:cd:ef:..."
+//!
+//! [unverified."com.example.unsigned"]
+//! manifest_sha256 = "9f2c..."
+//! cause = "unsigned"
+//! accepted_at = "2026-10-19T09:50:00Z"
 //! ```
+//!
+//! `unverified` 는 키를 신뢰할 수 없는 플러그인을 사용자가 경고를 보고 쓰기로 고른 기록이다.
+//! 매니페스트 내용이 바뀌면 기록과 맞지 않아 다시 묻는다.
 //!
 //! 파일 갱신은 read → 변경 → write이며 동시 쓰기를 직렬화하지 않는다.
 //! 따라서 여러 쓰기가 겹치면 변경을 잃을 수 있다.
@@ -27,6 +35,20 @@ pub struct KnownPlugins {
     /// plugin_id → entry. `BTreeMap` 으로 toml dump 시 순서 안정.
     #[serde(default)]
     plugins: BTreeMap<String, KnownPluginEntry>,
+    /// plugin_id → 미인증 플러그인을 쓰기로 고른 기록.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    unverified: BTreeMap<String, UnverifiedChoice>,
+}
+
+/// 키로 신뢰할 수 없는 플러그인을 사용자가 경고를 보고 쓰기로 고른 기록.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct UnverifiedChoice {
+    /// 고를 때 본 `tasty-plugin.toml` 의 SHA-256 (hex). 내용이 다르면 기록을 쓰지 않는다.
+    pub manifest_sha256: String,
+    /// 고를 때의 미인증 원인 (`unknown-key` · `missing-pubkey` · `unsigned` · `signature-error`).
+    pub cause: String,
+    /// RFC3339 timestamp.
+    pub accepted_at: String,
 }
 
 /// 단일 plugin 의 trust 항목.
@@ -122,6 +144,26 @@ impl KnownPlugins {
     /// 신규 trust 항목 추가 / 기존 항목 덮어쓰기. `save` 는 호출처가 별도로.
     pub fn add(&mut self, plugin_id: String, entry: KnownPluginEntry) {
         self.plugins.insert(plugin_id, entry);
+    }
+
+    /// 키 신뢰 항목을 지우고 지운 값을 돌려준다.
+    pub fn remove(&mut self, plugin_id: &str) -> Option<KnownPluginEntry> {
+        self.plugins.remove(plugin_id)
+    }
+
+    /// 미인증 플러그인을 쓰기로 고른 기록.
+    pub fn unverified_choice(&self, plugin_id: &str) -> Option<&UnverifiedChoice> {
+        self.unverified.get(plugin_id)
+    }
+
+    /// 미인증 선택을 기록한다. 같은 ID의 이전 기록은 덮어쓴다. `save` 는 호출처가 별도로.
+    pub fn accept_unverified(&mut self, plugin_id: String, choice: UnverifiedChoice) {
+        self.unverified.insert(plugin_id, choice);
+    }
+
+    /// 미인증 선택 기록을 지우고 지운 값을 돌려준다.
+    pub fn forget_unverified(&mut self, plugin_id: &str) -> Option<UnverifiedChoice> {
+        self.unverified.remove(plugin_id)
     }
 
     /// 테스트 / 진단용 — 전체 plugin_id 목록.

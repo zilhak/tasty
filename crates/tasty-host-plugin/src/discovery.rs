@@ -1,5 +1,5 @@
 //! 데이터 루트의 plugins 디렉터리에서 매니페스트를 읽는다.
-//! release는 임베드 키 또는 사용자 신뢰 목록 검증을 통과한 plugin만 등록한다.
+//! release는 키로 검증했거나 사용자가 미인증 경고를 보고 고른 plugin만 등록한다.
 //! debug는 서명·신뢰 검사를 우회하지만 매니페스트 파싱은 수행한다.
 
 use std::path::PathBuf;
@@ -92,6 +92,8 @@ fn dedup_packages_by_id(packages: &mut Vec<PluginPackage>) {
 #[derive(Debug, Clone)]
 pub struct RejectedPlugin {
     pub id: String,
+    /// 플러그인 폴더. 폴더 이름이 ID와 다를 수 있어 확인 필요 탭의 등록이 이 경로를 쓴다.
+    pub dir: PathBuf,
     pub name: String,
     pub version: String,
     pub authors: Vec<String>,
@@ -108,7 +110,7 @@ pub struct RejectedPlugin {
     pub permissions_added: Vec<String>,
     /// PermissionsChanged 일 때 더 이상 쓰지 않는 권한.
     pub permissions_removed: Vec<String>,
-    /// SignatureInvalid 일 때 서명 검증이 실패한 원인(`SigVerifyError` 의 표시 문자열).
+    /// SignatureInvalid 일 때 서명 검증이 실패한 원인(`UnverifiedCause::describe`).
     pub cause: Option<String>,
 }
 
@@ -116,9 +118,9 @@ pub struct RejectedPlugin {
 /// 으로 단순화한 것.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RejectionReason {
-    /// 신뢰 목록에 없는 키로 서명됨 → 등록 거부.
+    /// 신뢰 목록에 없는 키로 서명됨. 사용자가 고르기 전까지 등록하지 않는다.
     UnknownKey,
-    /// 서명 누락/손상/검증 실패 → 등록 거부.
+    /// 서명 누락/손상/검증 실패. 사용자가 고르기 전까지 등록하지 않는다.
     SignatureInvalid,
     /// 한 번 신뢰했으나 매니페스트 권한이 바뀜 → 재승인 필요.
     PermissionsChanged,
@@ -132,13 +134,15 @@ enum TrustOutcome {
     Rejected(Box<RejectedPlugin>),
 }
 
-/// 매니페스트 sig + trust DB 로 *이 디렉토리 plugin 이 자동 로드해도 되는지* 판정.
-/// debug 빌드는 항상 Trusted (dev workspace bundle 미서명).
+/// [`crate::trust_verdict::judge`] 로 이 디렉토리 plugin 을 자동 로드해도 되는지 정한다.
+/// debug 빌드는 항상 Trusted다. 작업 공간의 번들 plugin 이 서명 없이 빌드되기 때문이다.
+/// 설치·등록 경로는 debug 에서도 같은 판정을 쓴다.
 ///
 /// release 빌드:
-/// - `verify_bundle_signature` → `Trusted` 면 통과
-/// - `Untrusted` (UnknownKey / PermissionsChanged) → 사유와 함께 Rejected
-/// - `Err` (sidecar missing / read error / invalid length) → SignatureInvalid Rejected
+/// - `Trusted`, 사용자가 고른 `AcceptedUnverified` → 통과
+/// - `PermissionsChanged` → 재승인 사유로 Rejected
+/// - 모르는 키(공개 키 파일 유무 무관) → UnknownKey Rejected
+/// - 서명 없음·검증 오류·공개 키 불일치 → SignatureInvalid Rejected
 fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
     #[cfg(debug_assertions)]
     {
@@ -147,10 +151,11 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
     }
     #[cfg(not(debug_assertions))]
     {
-        use crate::bundle_sig::{TrustDecision, UntrustedReason, verify_bundle_signature};
+        use crate::trust_verdict::{TrustVerdict, UnverifiedCause, judge};
         let mk = |reason, fingerprint, added: Vec<String>, removed: Vec<String>, cause| {
             TrustOutcome::Rejected(Box::new(RejectedPlugin {
                 id: manifest.id.clone(),
+                dir: dir.to_path_buf(),
                 name: manifest.name.clone(),
                 version: manifest.version.clone(),
                 authors: manifest.authors.clone(),
@@ -164,40 +169,43 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                 cause,
             }))
         };
-        match verify_bundle_signature(dir) {
-            Ok(TrustDecision::Trusted) => TrustOutcome::Trusted,
-            Ok(TrustDecision::Untrusted {
+        match judge(dir) {
+            TrustVerdict::Trusted | TrustVerdict::AcceptedUnverified => TrustOutcome::Trusted,
+            TrustVerdict::PermissionsChanged {
                 fingerprint,
                 manifest_permissions,
-                reason,
-                ..
-            }) => match reason {
-                UntrustedReason::PermissionsChanged => {
-                    let (added, removed) = perm_diff(&manifest.id, &manifest_permissions);
-                    mk(
-                        RejectionReason::PermissionsChanged,
-                        Some(fingerprint),
-                        added,
-                        removed,
-                        None,
-                    )
-                }
-                UntrustedReason::UnknownKey => mk(
-                    RejectionReason::UnknownKey,
+            } => {
+                let (added, removed) = perm_diff(&manifest.id, &manifest_permissions);
+                mk(
+                    RejectionReason::PermissionsChanged,
                     Some(fingerprint),
-                    vec![],
-                    vec![],
+                    added,
+                    removed,
                     None,
-                ),
-            },
-            Err(e) => {
-                tracing::warn!("plugin '{}' signature check failed: {e}", manifest.id);
+                )
+            }
+            TrustVerdict::Unverified(
+                UnverifiedCause::UnknownKey { fingerprint, .. }
+                | UnverifiedCause::MissingPubkey { fingerprint },
+            ) => mk(
+                RejectionReason::UnknownKey,
+                Some(fingerprint),
+                vec![],
+                vec![],
+                None,
+            ),
+            TrustVerdict::Unverified(cause) => {
+                tracing::warn!(
+                    "plugin '{}' signature check failed: {}",
+                    manifest.id,
+                    cause.describe()
+                );
                 mk(
                     RejectionReason::SignatureInvalid,
                     None,
                     vec![],
                     vec![],
-                    Some(e.to_string()),
+                    Some(cause.describe()),
                 )
             }
         }

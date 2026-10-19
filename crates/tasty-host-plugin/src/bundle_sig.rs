@@ -103,7 +103,7 @@ fn read_digest_and_sig(dir: &Path) -> Result<([u8; 32], [u8; 64]), SigVerifyErro
 ///
 /// 매니페스트 파싱이 실패해도 trust 판단 자체는 진행 가능해야 하므로 panic 하지
 /// 않고 fallback 값을 반환한다. plugin_id 가 비면 디렉토리 basename 으로.
-fn parse_manifest_basics(dir: &Path) -> (String, Vec<String>) {
+pub(crate) fn parse_manifest_basics(dir: &Path) -> (String, Vec<String>) {
     let manifest_path = dir.join("tasty-plugin.toml");
     let text = std::fs::read_to_string(&manifest_path).unwrap_or_default();
     let value: toml::Value = match toml::from_str(&text) {
@@ -162,6 +162,18 @@ pub fn read_pubkey_sidecar(dir: &Path) -> Option<[u8; 32]> {
     let mut out = [0u8; 32];
     out.copy_from_slice(&bytes);
     Some(out)
+}
+
+/// 매니페스트 서명이 `pk` 로 검증되는지. 공개 키 파일의 키가 실제 서명 키인지 대조할 때 쓴다.
+/// 서명 파일을 읽지 못하면 `Err`, 키 형식이 틀리거나 검증에 실패하면 `Ok(false)`.
+pub fn signature_verifies_with(dir: &Path, pk: &[u8; 32]) -> Result<bool, SigVerifyError> {
+    let (digest, sig_array) = read_digest_and_sig(dir)?;
+    let Ok(vk) = VerifyingKey::from_bytes(pk) else {
+        return Ok(false);
+    };
+    Ok(vk
+        .verify(&digest, &Signature::from_bytes(&sig_array))
+        .is_ok())
 }
 
 /// 32 byte ed25519 pubkey 의 SHA-256 fingerprint (hex, 콜론 구분).

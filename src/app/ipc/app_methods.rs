@@ -469,7 +469,19 @@ impl App {
                         return IpcStep::Handled;
                     }
                 };
-                match self.plugin_install(path) {
+                // 미인증 플러그인은 호출자가 allow_unverified 로 명시적으로 고른 경우에만 설치한다.
+                let choice = if cmd
+                    .request
+                    .params
+                    .get("allow_unverified")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    crate::app::plugin_glue::install_trust::InstallChoice::AllowUnverified
+                } else {
+                    crate::app::plugin_glue::install_trust::InstallChoice::VerifiedOnly
+                };
+                match self.plugin_install(path, &choice) {
                     Ok(events) => {
                         let installed_id = events
                             .iter()
@@ -487,7 +499,9 @@ impl App {
                             serde_json::json!({ "installed": installed_id }),
                         )
                     }
-                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
+                    Err(e) => {
+                        crate::app::plugin_glue::install_trust::install_error_response(id, &e)
+                    }
                 }
             }
             "plugin.remove" => {
