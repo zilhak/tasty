@@ -214,6 +214,9 @@ fn run_gui(
         }
     };
 
+    // 비정상 종료한 프로세스가 남긴 디스크 스크롤백을 설정과 관계없이 백그라운드에서 회수한다.
+    tasty_terminal::disk_scrollback::spawn_orphan_reclaim();
+
     let (event_loop, proxy) = event_loop::build()?;
     // run_app consumes the event loop; shared GPU teardown can outlive every Window.
     // Declare this before App so errors and unwinding also drop GPU owners first.
@@ -860,6 +863,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     };
 
     let memory_arc = boot_memory(&boot_settings);
+    // 비정상 종료한 프로세스가 남긴 디스크 스크롤백을 설정과 관계없이 백그라운드에서 회수한다.
+    tasty_terminal::disk_scrollback::spawn_orphan_reclaim();
 
     let mut app = App::new_headless(waker.journal_waker(), cli.port_file, memory_arc)?;
     app.hub.webhook = Some(webhook);

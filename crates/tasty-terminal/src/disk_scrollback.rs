@@ -84,14 +84,22 @@ pub struct DiskScrollback {
 /// batch does not hold its whole serialized form in memory.
 pub(crate) const WRITE_CHUNK: usize = 1 << 20;
 
+mod reclaim;
+pub use reclaim::{
+    Liveness, ReclaimReport, process_liveness, reclaim_in, reclaim_orphans, spawn_orphan_reclaim,
+};
+
+/// Swap folders under the temp directory: debug builds first, then release builds.
+const SUBDIRS: [&str; 2] = ["tasty-scrollback-debug", "tasty-scrollback"];
+
 impl DiskScrollback {
     pub fn new(surface_id: u32) -> std::io::Result<Self> {
         // A replacement may be prepared while the previous instance with the same SID is alive.
         // Each owner therefore gets its own file; create_new also protects files from an older PID.
         let subdir = if cfg!(debug_assertions) {
-            "tasty-scrollback-debug"
+            SUBDIRS[0]
         } else {
-            "tasty-scrollback"
+            SUBDIRS[1]
         };
         // reason: shared directory only; create_instance_file uses a unique create_new path per owner.
         let dir = std::env::temp_dir().join(subdir);
