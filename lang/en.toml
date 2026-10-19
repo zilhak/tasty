@@ -2099,6 +2099,10 @@ reserved_param = "'{}' is reserved for the tasty CLI and cannot be passed as an 
 
 # 매니페스트 필드명과 action kind, detector는 실제 키·값이므로 번역하지 않는다.
 [cli.plugin]
+enable_waiting = "plugin '{}' is still starting (start generation {}); waiting up to {}s. Check progress with tasty plugin show {}"
+enable_failed = "plugin '{}' did not start ({}): {}. See tasty plugin logs {} for details."
+enable_cancelled = "plugin '{}' was turned off or restarted before it connected"
+enable_still_starting = "plugin '{}' is still starting after {}s; check tasty plugin show {}"
 unverified_refused = "Warning: plugin '{}' is unverified — {} Tasty can't confirm who made it or that its files are unchanged. A plugin runs as a program with your account's access: it can read and change your files, use the network, and start other programs. Its permissions only limit what it can ask Tasty to do. Nothing was installed.\nIf you trust where it came from, install it anyway with:\n  tasty plugin install --allow-unverified {}"
 unverified_cause_unknown_key = "it is signed by a key that isn't in your trust store."
 unverified_cause_missing_pubkey = "it is signed, but the publisher's public key file (tasty-plugin.toml.pub) is missing or unreadable."
@@ -4496,6 +4500,7 @@ help = "Restart running builtin processes whose binary is replaced — graceful 
 
 [cli.help._root.plugin.enable]
 about = "Enable a disabled plugin and start it"
+long = "Enable a disabled plugin and start it.\n\nWaits until the plugin connects, fails to start or is cancelled, then exits with a non-zero status unless it connected. The reply carries the start generation and its final state."
 
 [cli.help._root.plugin.enable.arg.id]
 help = "Plugin id"
@@ -6844,3 +6849,10 @@ many = "Waiting for {} responses"
 seconds = "{}s"
 minutes = "{}m"
 hours = "{}h"
+
+[plugin_notice]
+start_failed_title = "Plugin '{}' did not start"
+spawn_failed_body = "Tasty could not run the plugin program: {}. See tasty plugin logs {} for details."
+connect_failed_body = "The plugin program exited or did not connect in time: {}. See tasty plugin logs {} for details."
+auto_disabled_title = "Plugin '{}' was turned off"
+auto_disabled_body = "It failed to start {} times in a row, so Tasty stopped starting it until you turn it on again. Last error: {}. See tasty plugin logs {} for details."

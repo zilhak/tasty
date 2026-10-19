@@ -466,7 +466,13 @@ Local 이외 호출자도 기존 생성 권한을 만족하면 같은 시작 정
 `plugin.error`의 spawn_failed를 알린다. namespace 대기는 오류로 끝낸다.
 연결되지 않은 extension에 보낸 hook은 실행되지 않은 것으로 건너뛰고 원래 흐름을 이어가며 hook 실패 횟수는 올리지 않는다.
 pre-hook 우회 뒤에도 caller plugin ID를 target에 전달한다. 연결 스레드 생성 실패는 동기 대기로 돌아간다.
-enable·swap 응답은 자식을 만들었다는 뜻이며 연결 완료를 보장하지 않는다.
+enable·swap 응답은 자식을 만들었다는 뜻이며 연결 완료를 보장하지 않는다. 대신 기동마다 세대(`start.generation`)를 붙여 결과를 그 세대에 귀속한다(`manager/start_status.rs`).
+
+- `plugin.enable` 응답은 `start: {generation, state, failure}`를 싣는다. `state`는 `starting`·`connected`·`failed`·`cancelled`이고, 호출자는 같은 세대가 `starting`을 벗어날 때까지 `plugin.show`의 `start`를 읽는다. CLI `tasty plugin enable`은 이 대기를 15 초까지 하고, 연결하지 못하면 원인과 함께 0 이 아닌 상태로 끝난다. 3 초가 지나도 `starting`이면 기동 세대와 `tasty plugin show <id>` 확인 방법을 담은 진행 줄을 표준 오류에 한 번 쓴다. 표준 출력에는 최종 응답 JSON 하나만 쓴다. IPC 를 직접 쓰는 에이전트는 응답을 바로 받고 `plugin.show`로 진행을 본다. 이미 연결을 기다리는 프로세스가 있으면 새로 띄우지 않고 그 세대를 돌려준다. 회수를 기다리느라 아직 띄우지 않은 기동은 나중에 같은 세대로 띄운다.
+- 연결 결과는 그 프로세스를 띄운 세대에만 기록한다. 앞 기동의 늦은 실패는 뒤 기동의 결과를 바꾸지 않는다.
+- 결과가 나기 전에 disable·remove(disable 을 거친다)·swap 이 겹치면 그 세대는 `cancelled`로 끝난다. 대기 상태로 남지 않는다.
+- `plugin.list`·`plugin.show`는 `auto_disabled`(자동 비활성화 여부), `last_failure: {kind, message, generation}`(마지막 기동 실패, 이후 연결해도 남는다), `start`(가장 최근 기동)를 함께 싣는다. `kind`는 `spawn_failed`(프로세스를 띄우지 못함)·`connect_failed`(핸드셰이크 전에 끝났거나 시간 안에 연결하지 않음)다. 기존 `enabled`·`running`의 뜻은 그대로다.
+- 매니저는 실패를 호스트 알림 보고로 쌓고 GUI·헤드리스 pump 가 꺼내 `NotificationStore`에 남긴다(`plugin_glue/failure_notice.rs`, `source: "plugin"`). 서로 다른 사건이라 `NotificationStore::add_separate`로 넣어 병합 창 안에 이어 나와도 합치지 않는다. `notification.create`·OSC 알림의 병합(`add_with_level`)은 그대로다. 한 번의 실패는 경고, 자동 비활성화는 오류다. 같은 plugin 의 실패는 실패 창(10 초) 안에서 첫 실패 한 건만 경고로 남기고, 자동 비활성화는 따로 한 건 남긴다. 연결에 성공하거나 사용자가 다시 켜면 묶음이 끝난다. 알림을 남길 workspace 가 없으면 꺼내지 않으므로 부팅 중 실패는 첫 workspace 가 생긴 뒤 남는다. 사용자가 끈 plugin 은 기동하지 않아 보고가 없다. 알림은 plugin 을 ID 로 가리키고 매니페스트 문구를 싣지 않는다. Event Bus 의 `plugin.error`와 Plugins 창의 실행 오류 항목은 그대로다.
 
 #### 무응답과 늦은 응답
 

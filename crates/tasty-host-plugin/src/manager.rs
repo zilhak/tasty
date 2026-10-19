@@ -362,6 +362,8 @@ pub struct PluginManager {
     pub(super) spawn_failures: HashMap<String, Vec<Instant>>,
     /// 자동 disable되어 사용자가 수동 enable하기 전까지 더 이상 spawn 시도 안 함.
     pub(super) auto_disabled: std::collections::HashSet<String>,
+    /// 기동 요청별 결과와 마지막 실패, 호스트 알림으로 넘길 실패 보고.
+    pub(super) start_tracker: start_status::StartTracker,
     /// H — auto-reload: plugin id → 마지막 관측한 entry binary mtime.
     pub(super) plugin_binary_mtimes: HashMap<String, SystemTime>,
     /// H — auto-reload: plugin id → 마지막 관측한 manifest version.
@@ -569,6 +571,8 @@ mod queries;
 mod reattach;
 mod response;
 mod retire;
+mod start_status;
+pub use start_status::{FailureKind, FailureReport, PluginFailure, StartState, StartStatus};
 #[cfg(any(test, feature = "test-support"))]
 mod test_support;
 #[cfg(any(test, feature = "test-support"))]

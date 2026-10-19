@@ -144,6 +144,7 @@ impl PluginManager {
             timers: Self::initial_timers(Instant::now()),
             spawn_failures: HashMap::new(),
             auto_disabled: std::collections::HashSet::new(),
+            start_tracker: Default::default(),
             plugin_binary_mtimes: HashMap::new(),
             plugin_manifest_versions: HashMap::new(),
             auto_reload_enabled: false,
@@ -437,6 +438,8 @@ impl PluginManager {
         if self.auto_disabled.contains(&pkg.manifest.id) {
             return;
         }
+        // 회수를 기다리는 기동은 같은 세대로 나중에 띄운다.
+        let generation = self.start_tracker.begin(&pkg.manifest.id);
         // 이전 프로세스의 회수가 끝난 뒤에만 다시 실행한다(manager::retire).
         if self.defer_start_until_retired(&pkg.manifest.id) {
             return;
@@ -445,6 +448,13 @@ impl PluginManager {
             Some(l) => l,
             None => {
                 tracing::warn!("plugin '{}' start skipped — no listener", pkg.manifest.id);
+                self.start_tracker.failed(
+                    &pkg.manifest.id,
+                    super::FailureKind::SpawnFailed,
+                    "the plugin host listener is not available".to_string(),
+                    None,
+                    Instant::now(),
+                );
                 return;
             }
         };
@@ -457,8 +467,13 @@ impl PluginManager {
             &self.plugin_reaper,
             &self.channel_ledger,
         ) {
-            Ok(p) => self.on_plugin_spawn_success(pkg, p),
-            Err(e) => self.on_plugin_spawn_failure(&pkg.manifest.id, e),
+            Ok(p) => {
+                self.start_tracker.spawned(&pkg.manifest.id, generation);
+                self.on_plugin_spawn_success(pkg, p)
+            }
+            Err(e) => {
+                self.on_plugin_spawn_failure(&pkg.manifest.id, super::FailureKind::SpawnFailed, e)
+            }
         }
     }
 
@@ -473,7 +488,12 @@ impl PluginManager {
         // plugin.loaded는 hello 이후 호스트가 알린다. namespace 소유자는 설치 스캔에서 등록한다.
     }
 
-    pub(super) fn on_plugin_spawn_failure(&mut self, plugin_id: &str, e: anyhow::Error) {
+    pub(super) fn on_plugin_spawn_failure(
+        &mut self,
+        plugin_id: &str,
+        kind: super::FailureKind,
+        e: anyhow::Error,
+    ) {
         tracing::error!("plugin '{}' spawn failed: {}", plugin_id, e);
         {
             use tasty_plugin_protocol::EventScope;
@@ -485,10 +505,18 @@ impl PluginManager {
             };
             self.emit_host_event("plugin.error", &payload, EventScope::System);
         }
-        self.record_spawn_failure(plugin_id);
+        let auto_disabled = self.record_spawn_failure(plugin_id);
+        self.start_tracker.failed(
+            plugin_id,
+            kind,
+            e.to_string(),
+            auto_disabled,
+            Instant::now(),
+        );
     }
 
-    fn record_spawn_failure(&mut self, plugin_id: &str) {
+    /// 실패를 세고, 이 실패로 자동 비활성화했으면 누적 실패 수를 돌려준다.
+    fn record_spawn_failure(&mut self, plugin_id: &str) -> Option<usize> {
         let now = Instant::now();
         let entry = self
             .spawn_failures
@@ -502,9 +530,12 @@ impl PluginManager {
                 entry.len(),
                 RESTART_FAILURE_WINDOW.as_secs()
             );
+            let failures = entry.len();
             self.auto_disabled.insert(plugin_id.to_string());
             self.spawn_failures.remove(plugin_id);
+            return Some(failures);
         }
+        None
     }
 
     /// 모든 플러그인에 종료를 요청한 뒤 공유 deadline으로 대기하고 자식을 회수한다.
@@ -580,6 +611,7 @@ impl PluginManager {
         self.config.enable(plugin_id);
         self.config.save()?;
         self.auto_disabled.remove(plugin_id);
+        self.start_tracker.reset_reporting(plugin_id);
         self.recompute_extensions();
         // file_format / file_handler 두 registry 에 plugin 의 contribute 등록.
         // plugin process spawn 과 별개로 정적 contribute 는 즉시 활성화한다.
@@ -626,6 +658,8 @@ impl PluginManager {
         self.config.save()?;
         self.recompute_extensions();
         let was_running = self.processes.contains_key(plugin_id);
+        // 결과가 나기 전의 기동은 취소로 끝낸다.
+        self.start_tracker.cancelled(plugin_id);
         // 회수는 별도 스레드에서 진행하며 기존 재시작 예약은 취소한다.
         if let Some(proc) = self.processes.remove(plugin_id) {
             self.retire_process(plugin_id, proc, false);
@@ -684,6 +718,7 @@ impl PluginManager {
                 "swap took over a pending restart — swap_respawn_internal starts it"
             );
         }
+        self.start_tracker.cancelled(plugin_id);
         if let Some(proc) = self.processes.remove(plugin_id) {
             let generation = proc.reply_binding();
             proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);

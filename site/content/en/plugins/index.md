@@ -1,4 +1,4 @@
-<!-- source-hash: 61e6770f630e -->
+<!-- source-hash: 5fd27faf5a2b -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -119,11 +119,11 @@ Use it from a terminal while Tasty is running. The output is JSON.
 
 | Command | What it does |
 |------|---------|
-| `tasty plugin list` | The id · version · enabled · running state of installed plugins |
+| `tasty plugin list` | The id · version · enabled · running state of installed plugins, whether one was turned off automatically, and its last start failure |
 | `tasty plugin show <id>` | The full manifest · permissions · commands · running state |
 | `tasty plugin install <folder> [--allow-unverified]` | Installs from a folder containing `tasty-plugin.toml`. Grants the manifest permissions as they are. An unverified plugin is installed only with `--allow-unverified` |
 | `tasty plugin remove <id>` | Removes it |
-| `tasty plugin enable <id>` · `disable <id>` | Enables · disables it |
+| `tasty plugin enable <id>` · `disable <id>` | Enables · disables it. `enable` waits until the plugin connects (up to 15 seconds) and fails with the cause if it does not start. If it is still starting after 3 seconds, it shows a progress line once |
 | `tasty plugin logs <id> [--follow]` | Prints the log. `--follow` keeps showing new lines (stop with `Ctrl+C`) |
 | `tasty plugin permissions <id>` | The permissions the manifest requires and those actually granted |
 | `tasty plugin grant <id> <permission>` · `revoke <id> <permission>` | Grants · revokes one permission. Only permissions declared in the manifest can be granted |
@@ -136,6 +136,8 @@ Use it from a terminal while Tasty is running. The output is JSON.
 | `tasty plugin audit-query` · `audit-summary` · `audit-follow` · `audit-clear` | Queries · summarizes · follows live · deletes the allow/deny records of requests Tasty received (CLI, plugins, agents) |
 
 `install` checks the signature before copying the folder. For an unverified plugin it warns about the cause and the risk, installs nothing, and shows the `tasty plugin install --allow-unverified <folder>` command to use if you trust the source. When the signature check refuses the install, it tells you the actual reason (no signature, a key you have not trusted, a public key file that is missing or does not match, and so on) and leaves nothing behind in the plugins folder, the permissions or the trust list. Fix the problem and run the same command again to install. If the plugin is registered but then fails to start, the installed folder stays; check `tasty plugin logs <id>` for the cause.
+
+When a plugin does not start, a warning is left in the notification list. If it fails several times in a short time and Tasty turns it off automatically, a separate error notification is left and the plugin is not started until you turn it on again. Repeated failures of the same plugin are grouped into one. The notification body and `tasty plugin logs <id>` show the cause.
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 

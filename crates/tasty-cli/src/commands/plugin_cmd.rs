@@ -71,6 +71,10 @@ pub enum PluginCommands {
         restart_running: bool,
     },
     /// Enable a disabled plugin and start it.
+    ///
+    /// Waits until the plugin connects, fails to start or is cancelled, then
+    /// exits with a non-zero status unless it connected. The reply carries the
+    /// start generation and its final state.
     Enable {
         /// Plugin id.
         id: String,

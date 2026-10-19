@@ -22,12 +22,39 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcResponse {
                 "description": p.manifest.description,
                 "enabled": !mgr.config.is_disabled(&p.manifest.id),
                 "running": mgr.is_running(&p.manifest.id),
+                "auto_disabled": mgr.is_auto_disabled(&p.manifest.id),
+                "last_failure": failure_json(mgr.last_failure(&p.manifest.id)),
+                "start": start_json(mgr.start_status(&p.manifest.id)),
                 "surface_kinds": p.manifest.surface_kinds.iter().map(|k| &k.kind).collect::<Vec<_>>(),
                 "log_path": mgr.log_path(&p.manifest.id).to_string_lossy(),
             })
         })
         .collect();
     JsonRpcResponse::success(id, json!({ "plugins": arr }))
+}
+
+/// 기동 실패 한 건. `generation` 은 그 실패가 속한 기동 세대다.
+fn failure_json(failure: Option<&tasty_host_plugin::manager::PluginFailure>) -> Value {
+    match failure {
+        Some(f) => json!({
+            "kind": f.kind.as_str(),
+            "message": f.message,
+            "generation": f.generation,
+        }),
+        None => Value::Null,
+    }
+}
+
+/// 가장 최근 기동 요청의 세대와 상태(`starting`·`connected`·`failed`·`cancelled`).
+fn start_json(status: Option<&tasty_host_plugin::manager::StartStatus>) -> Value {
+    match status {
+        Some(s) => json!({
+            "generation": s.generation,
+            "state": s.state.as_str(),
+            "failure": failure_json(s.failure.as_ref()),
+        }),
+        None => Value::Null,
+    }
 }
 
 /// 매니페스트의 선언과 실제 등록 결과를 구분한다.
@@ -230,6 +257,9 @@ pub fn handle_show(
             "dir": pkg.dir.to_string_lossy(),
             "enabled": !mgr.config.is_disabled(&plugin_id),
             "running": mgr.is_running(&plugin_id),
+            "auto_disabled": mgr.is_auto_disabled(&plugin_id),
+            "last_failure": failure_json(mgr.last_failure(&plugin_id)),
+            "start": start_json(mgr.start_status(&plugin_id)),
             "log_path": mgr.log_path(&plugin_id).to_string_lossy(),
             "permissions": {
                 "manifest": manifest.permissions,
@@ -459,13 +489,20 @@ pub fn dispatch_lifecycle_toggle(
             ));
         }
     };
-    let result = crate::app::plugin_lifecycle::toggle(mgr, registry, toggle, plugin_id);
+    let mut mgr = mgr;
+    let result =
+        crate::app::plugin_lifecycle::toggle(mgr.as_deref_mut(), registry, toggle, plugin_id);
     let response = match result {
         Ok(events) => {
-            return Some((
-                JsonRpcResponse::success(id, json!({ key: pid_for_response })),
-                events,
-            ));
+            // enable 은 연결을 기다리지 않는다. 호출자는 이 세대로 `plugin.show` 의 `start` 를 본다.
+            let mut body = json!({ key: pid_for_response });
+            if method == "plugin.enable" {
+                body["start"] = start_json(
+                    mgr.as_deref()
+                        .and_then(|m| m.start_status(&pid_for_response)),
+                );
+            }
+            return Some((JsonRpcResponse::success(id, body), events));
         }
         Err(e) => JsonRpcResponse::error(id, -32000, format!("{verb} failed: {e}")),
     };

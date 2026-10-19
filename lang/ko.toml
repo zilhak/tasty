@@ -2041,6 +2041,10 @@ reserved_param = "'{}'은(는) tasty CLI가 쓰는 예약 이름이라 인자로
 
 # 매니페스트 필드명과 action kind, detector는 실제 키·값이므로 번역하지 않는다.
 [cli.plugin]
+enable_waiting = "플러그인 '{}'이(가) 아직 시작 중입니다(기동 세대 {}). 최대 {}초까지 기다립니다. 진행 상태는 tasty plugin show {}로 확인할 수 있습니다"
+enable_failed = "플러그인 '{}'을(를) 시작하지 못했습니다 ({}): {}. 자세한 내용은 tasty plugin logs {}로 확인하세요."
+enable_cancelled = "플러그인 '{}'이(가) 연결되기 전에 꺼지거나 다시 시작됐습니다"
+enable_still_starting = "플러그인 '{}'이(가) {}초가 지나도 시작 중입니다. tasty plugin show {}로 확인하세요"
 unverified_refused = "경고: 플러그인 '{}'은(는) 검증되지 않았습니다 — {} Tasty는 이 플러그인을 누가 만들었는지, 파일이 바뀌지 않았는지 확인할 수 없습니다. 플러그인은 내 계정 권한으로 실행되는 프로그램이라 파일을 읽고 바꾸거나, 네트워크를 쓰거나, 다른 프로그램을 실행할 수 있습니다. 권한 목록은 플러그인이 Tasty에 요청할 수 있는 범위만 제한합니다. 아무것도 설치하지 않았습니다.\n출처를 신뢰한다면 다음 명령으로 그래도 설치할 수 있습니다:\n  tasty plugin install --allow-unverified {}"
 unverified_cause_unknown_key = "신뢰 목록에 없는 키로 서명되었습니다."
 unverified_cause_missing_pubkey = "서명은 있지만 배포자의 공개 키 파일(tasty-plugin.toml.pub)이 없거나 읽을 수 없습니다."
@@ -4428,6 +4432,7 @@ help = "실행 파일이 바뀌는 기본 제공 플러그인을 재시작합니
 
 [cli.help._root.plugin.enable]
 about = "비활성화된 plugin 을 활성화하고 기동한다"
+long = "비활성화된 플러그인을 활성화하고 시작합니다.\n\n플러그인이 연결되거나, 시작에 실패하거나, 취소될 때까지 기다립니다. 연결되지 않았으면 0이 아닌 상태로 끝납니다. 응답에는 기동 세대와 최종 상태가 실립니다."
 
 [cli.help._root.plugin.enable.arg.id]
 help = "플러그인 ID"
@@ -6776,3 +6781,10 @@ many = "응답 {}건 대기 중"
 seconds = "{}초"
 minutes = "{}분"
 hours = "{}시간"
+
+[plugin_notice]
+start_failed_title = "플러그인 '{}'을(를) 시작하지 못했습니다"
+spawn_failed_body = "Tasty가 플러그인 프로그램을 실행하지 못했습니다: {}. 자세한 내용은 tasty plugin logs {}로 확인하세요."
+connect_failed_body = "플러그인 프로그램이 종료됐거나 제시간에 연결하지 않았습니다: {}. 자세한 내용은 tasty plugin logs {}로 확인하세요."
+auto_disabled_title = "플러그인 '{}'을(를) 껐습니다"
+auto_disabled_body = "연속 {}번 시작하지 못해, 다시 켤 때까지 Tasty가 이 플러그인을 시작하지 않습니다. 마지막 오류: {}. 자세한 내용은 tasty plugin logs {}로 확인하세요."

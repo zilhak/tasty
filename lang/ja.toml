@@ -2041,6 +2041,10 @@ reserved_param = "'{}' は tasty CLI の予約名のため、引数として渡�
 
 # 매니페스트 필드명과 action kind, detector는 실제 키·값이므로 번역하지 않는다.
 [cli.plugin]
+enable_waiting = "プラグイン '{}' はまだ起動中です (起動の世代 {})。最大 {} 秒待ちます。進行状況は tasty plugin show {} で確認できます"
+enable_failed = "プラグイン '{}' を起動できませんでした ({}): {}。詳細は tasty plugin logs {} で確認してください。"
+enable_cancelled = "プラグイン '{}' は接続する前にオフまたは再起動されました"
+enable_still_starting = "プラグイン '{}' は {} 秒経っても起動中です。tasty plugin show {} で確認してください"
 unverified_refused = "警告: プラグイン '{}' は未検証です — {} Tasty はこのプラグインの作成者も、ファイルが改変されていないことも確認できません。プラグインはあなたのアカウントの権限で動くプログラムで、ファイルの読み書き、ネットワークの使用、他のプログラムの起動ができます。権限一覧は、プラグインが Tasty に要求できる範囲を制限するだけです。何もインストールしていません。\n入手元を信頼できる場合は、次のコマンドでそれでもインストールできます:\n  tasty plugin install --allow-unverified {}"
 unverified_cause_unknown_key = "信頼済みでない鍵で署名されています。"
 unverified_cause_missing_pubkey = "署名はありますが、発行者の公開鍵ファイル (tasty-plugin.toml.pub) がないか読み取れません。"
@@ -4428,6 +4432,7 @@ help = "実行ファイルを置き換える組み込みプラグインを再起
 
 [cli.help._root.plugin.enable]
 about = "無効化された plugin を有効にして起動する"
+long = "無効化されたプラグインを有効にして起動します。\n\nプラグインが接続する、起動に失敗する、または取り消されるまで待ちます。接続しなかった場合は 0 以外の状態で終了します。応答には起動の世代と最終状態が入ります。"
 
 [cli.help._root.plugin.enable.arg.id]
 help = "プラグイン ID"
@@ -6776,3 +6781,10 @@ many = "{}件の応答待ち"
 seconds = "{}秒"
 minutes = "{}分"
 hours = "{}時間"
+
+[plugin_notice]
+start_failed_title = "プラグイン '{}' を起動できませんでした"
+spawn_failed_body = "Tasty はプラグインのプログラムを実行できませんでした: {}。詳細は tasty plugin logs {} で確認してください。"
+connect_failed_body = "プラグインのプログラムが終了したか、時間内に接続しませんでした: {}。詳細は tasty plugin logs {} で確認してください。"
+auto_disabled_title = "プラグイン '{}' をオフにしました"
+auto_disabled_body = "{} 回続けて起動できなかったため、再びオンにするまで Tasty はこのプラグインを起動しません。最後のエラー: {}。詳細は tasty plugin logs {} で確認してください。"

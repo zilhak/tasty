@@ -362,6 +362,17 @@ mod level_tests {
     use super::*;
 
     #[test]
+    fn separate_notices_do_not_merge_inside_the_coalesce_window() {
+        let mut store = NotificationStore::with_coalesce_ms(60_000);
+        let level = NotificationLevel::Warning;
+        let a = store.add_separate(1, 0, "A".into(), "a".into(), level);
+        let b = store.add_separate(1, 0, "B".into(), "b".into(), level);
+        assert_ne!(a, b);
+        let titles: Vec<_> = store.all().map(|n| n.title.as_str()).collect();
+        assert_eq!(titles, ["A", "B"]);
+    }
+
+    #[test]
     fn levels_coalesce_independently_and_new_content_reopens_read_item() {
         let mut store = NotificationStore::with_coalesce_ms(60_000);
         let error = store

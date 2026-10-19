@@ -40,6 +40,12 @@
 
 설치(GUI Add 탭·`plugin.install`)는 폴더를 복사하기 전에 신뢰 판정을 한다. 판정은 debug·release 모두 같은 함수(`trust_verdict::judge`)이고, 키로 출처를 확인하지 못한 미인증 플러그인은 호출자가 명시적으로 고른 경우에만 설치한다. 판정에서 거부되면 플러그인 폴더·명령·번역·권한 grant·신뢰 DB를 하나도 쓰지 않고, 실패 응답에 실제 원인(서명 없음·모르는 키·공개 키 파일 없음·공개 키 불일치·검증 오류)을 담는다. 미인증이라 거부한 `plugin.install` 오류(`-32000`)는 `data`에 `{"unverified": "<원인>", "plugin_id": "<id>"}`를 싣는다. 원인 이름은 `unknown-key` · `missing-pubkey` · `unsigned` · `signature-error`다. 복사한 뒤 패키지 목록에 들어가지 않으면 복사한 폴더와 이번 시도가 바꾼 신뢰 DB 항목을 되돌리고, 그 거부 사유로 실패한다. 같은 ID에 이미 있던 신뢰 기록·grant·비활성 표시와 다른 플러그인의 기록은 그대로 남는다. 그래서 비활성 표시가 있어도 등록되지 않은 설치를 성공으로 알리지 않고, 신뢰 판정에서 거부된 뒤 고친 플러그인을 다시 설치하면 `already installed`로 막히지 않는다. 되돌림 범위는 신뢰 판정·등록 거부까지다. 등록한 뒤 활성화(`enable after install failed`)가 실패하면 설치 폴더와 grant는 남고 오류만 돌려준다. 공개 키를 신뢰하고 설치할 때는 그 키로 서명이 검증되는지 먼저 확인하고, 다르면 신뢰 DB에 쓰지 않고 실패한다.
 
+플러그인을 띄우지 못하거나 연결하지 못하면 알림 목록에 경고가 남고, 실패가 쌓여 자동으로 끄면 오류가 남는다. 같은 플러그인의 이어지는 실패는 10 초 창 안에서 한 건으로 묶는다. 에이전트는 `plugin.enable` 응답의 기동 세대로 `plugin.show`의 `start`를 읽어 그 요청의 연결 성공·실패·취소를 확인하고, `plugin.list`·`plugin.show`의 `auto_disabled`·`last_failure`로 상태를 본다. 계약은 [플러그인 개발](../../dev-guide/plugin-development.md)의 "기동과 연결"에 있다.
+
+- Given 실행 비트가 없는 진입점, When `tasty plugin enable <id>`, Then 명령은 `spawn_failed` 또는 `connect_failed` 원인과 함께 실패로 끝나고 알림 목록에 경고 한 건이 생긴다.
+- Given 기동 중인 플러그인, When 연결 전에 disable 하면, Then 그 기동 세대는 `cancelled`이고 실패 알림은 없다.
+- Given 10 초 안에 세 번 연결하지 못한 플러그인, When 상태를 보면, Then `auto_disabled`가 true 이고 알림은 경고 한 건과 자동 비활성화 오류 한 건이다.
+
 미인증 선택은 `known-plugins.toml`의 `[unverified."<id>"]` 표에 매니페스트 SHA-256, 원인 이름, 선택 시각으로 남는다. 매니페스트가 바뀌면 기록이 맞지 않아 다시 묻고, 플러그인을 제거하면 기록을 지운다. 선택한 뒤에는 목록의 미인증 표시 외에 실행 제한을 두지 않는다. 인증은 출처와 변조 여부를 확인할 뿐 실행 중 악성 행위를 막지 않으며, 플러그인의 행위 책임은 플러그인과 그것을 고른 사용자에게 있다. 본체는 이 선택을 근거로 외부 권한이나 설정을 스스로 바꾸지 않는다. CLI `tasty plugin install`은 `--allow-unverified`(IPC `allow_unverified: true`)가 없으면 미인증 플러그인을 거부하고, 오류 `data.unverified`로 원인을 알아 현재 언어의 경고와 그 플래그를 쓰는 명령을 표준 오류에 보인다. release 부팅 탐색은 신뢰했거나 사용자가 고른 플러그인만 등록하고, debug 부팅 탐색은 작업 공간의 번들 plugin 이 서명 없이 빌드되기 때문에 서명을 건너뛴다.
 
 `enable <id>` / `disable <id>` 는 발견된 설치 패키지가 있는 ID만 받는다. 미설치 ID는

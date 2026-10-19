@@ -34,6 +34,7 @@ impl PluginManager {
                         proc.mark_connected(at);
                     }
                     self.spawn_failures.remove(&id);
+                    self.start_tracker.connected(&id);
                 }
                 ConnectOutcome::Failed(reason) => self.on_connect_failure(&id, reason),
             }
@@ -52,7 +53,11 @@ impl PluginManager {
         }
         self.bypass_hooks_sent_to(plugin_id);
         self.forget_plugin_runtime(plugin_id, "plugin did not connect");
-        self.on_plugin_spawn_failure(plugin_id, anyhow::anyhow!(reason));
+        self.on_plugin_spawn_failure(
+            plugin_id,
+            super::FailureKind::ConnectFailed,
+            anyhow::anyhow!(reason),
+        );
     }
 
     /// 같은 deadline으로 모든 진행 중 연결의 결과를 기다린 뒤 처리한다.

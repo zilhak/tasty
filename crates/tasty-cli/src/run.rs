@@ -472,8 +472,14 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
 
     match result {
         Ok(mut value) => {
+            let failure =
+                crate::plugin_enable_wait::settle(&command, &request, &mut conn, &mut value);
             merge_cli_warnings(&mut value, cli_warnings);
             format_output(&command, &value)?;
+            if let Some(failure) = failure {
+                crate::out::errln!("{failure}");
+                std::process::exit(1);
+            }
         }
         // JSON-RPC 오류가 아니면 그 포트의 상대가 Tasty가 아닐 수 있다. 파일은 고치지 않고 직접 고치는 방법을 알린다.
         Err(e)

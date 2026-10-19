@@ -503,6 +503,7 @@ impl ApplicationHandler<AppEvent> for App {
             Vec::new()
         };
         self.finalize_plugin_hello(hello_pairs);
+        self.report_plugin_failures();
         self.record_plugin_rss_samples_if_present();
         self.forward_mesh_frames_for_parked();
         self.mark_plugin_surfaces_dirty();

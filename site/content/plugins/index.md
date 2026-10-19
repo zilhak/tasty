@@ -118,11 +118,11 @@ Tasty 가 실행 중일 때 터미널에서 씁니다. 출력은 JSON 입니다.
 
 | 명령 | 하는 일 |
 |------|---------|
-| `tasty plugin list` | 설치된 플러그인의 id · 버전 · 활성 · 실행 여부 |
+| `tasty plugin list` | 설치된 플러그인의 id · 버전 · 활성 · 실행 여부, 자동으로 꺼졌는지와 마지막 시작 실패 |
 | `tasty plugin show <id>` | 매니페스트 · 권한 · 명령 · 실행 상태 전체 |
 | `tasty plugin install <폴더> [--allow-unverified]` | `tasty-plugin.toml` 이 있는 폴더에서 설치. 매니페스트 권한을 그대로 허용합니다. 검증되지 않은 플러그인은 `--allow-unverified` 를 줄 때만 설치합니다 |
 | `tasty plugin remove <id>` | 제거 |
-| `tasty plugin enable <id>` · `disable <id>` | 켜기 · 끄기 |
+| `tasty plugin enable <id>` · `disable <id>` | 켜기 · 끄기. `enable`은 플러그인이 연결될 때까지(최대 15초) 기다리고, 시작하지 못하면 원인과 함께 실패로 끝납니다. 3초가 지나도 시작 중이면 진행 중이라는 안내를 한 번 보입니다 |
 | `tasty plugin logs <id> [--follow]` | 로그 출력. `--follow` 는 새 줄을 계속 보여줍니다 (`Ctrl+C` 로 중단) |
 | `tasty plugin permissions <id>` | 매니페스트가 요구하는 권한과 실제로 허용된 권한 |
 | `tasty plugin grant <id> <권한>` · `revoke <id> <권한>` | 권한 하나 허용 · 회수. 매니페스트에 선언된 권한만 허용할 수 있습니다 |
@@ -135,6 +135,8 @@ Tasty 가 실행 중일 때 터미널에서 씁니다. 출력은 JSON 입니다.
 | `tasty plugin audit-query` · `audit-summary` · `audit-follow` · `audit-clear` | Tasty 가 받은 요청(CLI·플러그인·에이전트)의 허용·거부 기록을 조회 · 집계 · 실시간 확인 · 삭제합니다 |
 
 `install`은 폴더를 복사하기 전에 서명을 확인합니다. 검증되지 않은 플러그인이면 원인과 위험을 경고하고 설치하지 않으며, 출처를 신뢰할 때 쓸 `tasty plugin install --allow-unverified <폴더>` 명령을 알려 줍니다. 서명 확인에서 설치를 거부하면 실제 이유(서명 없음, 신뢰하지 않은 키, 공개 키 파일 없음 또는 불일치 등)를 알리고, 플러그인 폴더·권한·신뢰 목록에 아무것도 남기지 않습니다. 문제를 고친 뒤 같은 명령으로 다시 설치할 수 있습니다. 등록까지 끝난 뒤 플러그인을 실행하지 못한 경우에는 설치한 폴더가 남습니다. 이때는 `tasty plugin logs <id>`로 원인을 확인하세요.
+
+플러그인을 시작하지 못하면 알림 목록에 경고가 남습니다. 짧은 시간에 여러 번 실패해 Tasty가 플러그인을 자동으로 끄면 오류 알림이 따로 남고, 다시 켤 때까지 시작하지 않습니다. 같은 플러그인의 이어지는 실패는 한 건으로 묶습니다. 원인은 알림 본문과 `tasty plugin logs <id>`에서 확인할 수 있습니다.
 
 `enable`과 `disable`은 설치된 플러그인의 ID만 받습니다. 설치되지 않은 ID를 지정하면 오류로 끝나고 설정은 바뀌지 않습니다. ID는 `tasty plugin list`에서 확인할 수 있습니다.
 

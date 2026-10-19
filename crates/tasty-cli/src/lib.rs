@@ -22,6 +22,7 @@ mod install_warning;
 pub mod local;
 pub mod out;
 pub mod plugin;
+mod plugin_enable_wait;
 pub mod port_file;
 pub mod request;
 mod rpc_error;

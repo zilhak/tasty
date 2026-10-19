@@ -220,3 +220,109 @@ fn discover_and_start_settles_connections_before_it_returns() {
         m.retiring_count() == 0
     });
 }
+
+/// 연결하지 못한 기동은 그 세대의 실패로 남고, 실패 창 안의 실패는 보고 한 건으로 묶이며
+/// 자동 비활성화는 따로 한 건 보고된다.
+#[test]
+fn connect_failures_are_kept_per_start_and_reported_once_then_auto_disable() {
+    use super::{FailureKind, FailureReport, StartState};
+    let home = HomeEnvGuard::tasty_home();
+    let pkg = write_plugin(&home.path().join("plugin"), SILENT);
+    let mut mgr = manager(&pkg, Duration::from_millis(200));
+
+    for attempt in 1..=RESTART_FAILURE_LIMIT {
+        mgr.start_plugin_internal(&pkg);
+        let generation = mgr.start_status(ID).expect("start recorded").generation;
+        assert_eq!(
+            mgr.start_status(ID).map(|s| s.state),
+            Some(StartState::Starting)
+        );
+        pump_until(&mut mgr, "연결 실패로 내려간다", |m| {
+            !m.is_running(ID)
+        });
+        pump_until(&mut mgr, "버린 프로세스가 회수된다", |m| {
+            m.retiring_count() == 0
+        });
+        let status = mgr.start_status(ID).expect("start recorded");
+        assert_eq!(status.generation, generation, "{attempt}");
+        assert_eq!(status.state, StartState::Failed);
+        let failure = status.failure.as_ref().expect("failure kept");
+        assert_eq!(failure.kind, FailureKind::ConnectFailed);
+        assert!(!failure.message.is_empty());
+    }
+    let reports = mgr.take_failure_reports();
+    assert_eq!(reports.len(), 2, "{reports:?}");
+    assert!(matches!(&reports[0], FailureReport::Failed { plugin_id, .. } if plugin_id == ID));
+    assert!(matches!(
+        &reports[1],
+        FailureReport::AutoDisabled { failures, .. } if *failures == RESTART_FAILURE_LIMIT
+    ));
+    assert!(mgr.is_auto_disabled(ID));
+    assert!(mgr.last_failure(ID).is_some());
+}
+
+/// 실행할 수 없는 진입점은 띄우기 실패로 그 기동에 남고 보고된다.
+#[test]
+fn an_entry_that_cannot_run_is_a_spawn_failure_of_that_start() {
+    use super::{FailureKind, FailureReport, StartState};
+    use std::os::unix::fs::PermissionsExt;
+    let home = HomeEnvGuard::tasty_home();
+    let dir = home.path().join("plugin");
+    let pkg = write_plugin(&dir, SILENT);
+    std::fs::set_permissions(dir.join("entry.sh"), std::fs::Permissions::from_mode(0o644))
+        .expect("drop the execute bit");
+    let mut mgr = manager(&pkg, Duration::from_millis(200));
+
+    mgr.start_plugin_internal(&pkg);
+    pump_until(&mut mgr, "실패 결과가 난다", |m| {
+        m.start_status(ID)
+            .is_some_and(|s| s.state == StartState::Failed)
+    });
+    let status = mgr.start_status(ID).expect("start recorded").clone();
+    let failure = status.failure.as_ref().expect("failure kept");
+    // 실행 비트가 없으면 spawn 자체가 실패하거나, 셸이 진입점을 못 열어 연결 전에 끝난다.
+    assert!(
+        matches!(
+            failure.kind,
+            FailureKind::SpawnFailed | FailureKind::ConnectFailed
+        ),
+        "{failure:?}"
+    );
+    let reports = mgr.take_failure_reports();
+    assert!(
+        matches!(reports.as_slice(), [FailureReport::Failed { failure: f, .. }] if f.generation == status.generation),
+        "{reports:?}"
+    );
+}
+
+/// 연결에 성공한 기동은 성공으로 남고 보고가 없다. 결과 전에 끄면 취소로 끝난다.
+#[test]
+fn a_connected_start_reports_nothing_and_a_disable_while_starting_cancels() {
+    use super::StartState;
+    let home = HomeEnvGuard::tasty_home();
+    let dir = home.path().join("plugin");
+    let pkg = write_plugin(&dir, GATED);
+    let mut mgr = manager(&pkg, Duration::from_secs(3));
+
+    mgr.start_plugin_internal(&pkg);
+    let first = mgr.start_status(ID).expect("start").generation;
+    mgr.disable(ID).expect("disable while starting");
+    assert_eq!(
+        mgr.start_status(ID).map(|s| s.state),
+        Some(StartState::Cancelled)
+    );
+    pump_until(&mut mgr, "끈 프로세스가 회수된다", |m| {
+        m.retiring_count() == 0
+    });
+
+    std::fs::write(dir.join("go"), "").expect("let the plugin connect at once");
+    mgr.enable(ID).expect("enable");
+    let second = mgr.start_status(ID).expect("start").generation;
+    assert_ne!(first, second);
+    pump_until(&mut mgr, "연결한다", |m| {
+        m.start_status(ID)
+            .is_some_and(|s| s.state == StartState::Connected)
+    });
+    assert!(mgr.take_failure_reports().is_empty());
+    shut_down(&mut mgr);
+}
