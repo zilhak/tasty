@@ -131,8 +131,11 @@ pub(crate) fn draw_notice_column(
     occupied
 }
 
-/// 안내와 겹치는 native WebView의 bounds를 안내 열 왼쪽 경계(열 x − inset)까지 줄인다.
-/// WebView를 숨기지 않고 포커스·입력 대상도 바꾸지 않는다. 겹치지 않으면 그대로 돌려준다.
+/// 안내와 겹치는 native WebView의 bounds를 안내 옆으로 줄인다. WebView를 숨기지 않고 포커스·입력
+/// 대상도 바꾸지 않는다. 기본은 안내 열 왼쪽 경계(열 x − inset)까지 폭을 줄이는 것이다. pane이 좁아
+/// 그 왼쪽에 남는 면적이 안내 아래(안내 bottom + inset부터)에 남는 면적보다 작으면 위쪽을 안내
+/// 아래로 내린다. 어느 쪽에도 남는 면적이 없으면(pane 전체가 안내 안) 페이지를 계속 보이고 쓸 수
+/// 있도록 bounds를 그대로 둔다. 겹치지 않으면 그대로 돌려준다.
 pub(crate) fn shrink_beside_notices(
     bounds: crate::webview::WebViewBounds,
     occupied: Option<egui::Rect>,
@@ -141,17 +144,32 @@ pub(crate) fn shrink_beside_notices(
     let Some(notice) = occupied else {
         return bounds;
     };
-    let left = f64::from(notice.left() - inset);
     let overlaps = bounds.x < f64::from(notice.right())
-        && bounds.x + bounds.width > left
+        && bounds.x + bounds.width > f64::from(notice.left())
         && bounds.y < f64::from(notice.bottom())
         && bounds.y + bounds.height > f64::from(notice.top());
     if !overlaps {
         return bounds;
     }
-    crate::webview::WebViewBounds {
-        width: (left - bounds.x).max(0.0),
-        ..bounds
+    let left_width = (f64::from(notice.left() - inset) - bounds.x).max(0.0);
+    let below_top = f64::from(notice.bottom() + inset);
+    let below_height = (bounds.y + bounds.height - below_top).max(0.0);
+    let left_area = left_width * bounds.height;
+    let below_area = below_height * bounds.width;
+    if left_area <= 0.0 && below_area <= 0.0 {
+        return bounds;
+    }
+    if left_area >= below_area {
+        crate::webview::WebViewBounds {
+            width: left_width,
+            ..bounds
+        }
+    } else {
+        crate::webview::WebViewBounds {
+            y: below_top,
+            height: below_height,
+            ..bounds
+        }
     }
 }
 
@@ -197,6 +215,25 @@ mod tests {
         assert_eq!(shrunk.width, 592.0);
         assert_eq!(shrunk.x, 0.0);
         assert_eq!(shrunk.height, 400.0);
+    }
+
+    #[test]
+    fn a_narrow_pane_under_the_notice_moves_below_it_instead_of_vanishing() {
+        let notice = egui::Rect::from_min_max(egui::pos2(600.0, 40.0), egui::pos2(960.0, 240.0));
+        let shrunk = shrink_beside_notices(bounds(700.0, 268.0), Some(notice), 8.0);
+        assert_eq!(shrunk.x, 700.0);
+        assert_eq!(shrunk.width, 268.0);
+        assert_eq!(shrunk.y, 248.0);
+        assert_eq!(shrunk.height, 152.0);
+    }
+
+    #[test]
+    fn a_pane_entirely_inside_the_notice_keeps_its_bounds() {
+        let notice = egui::Rect::from_min_max(egui::pos2(600.0, 0.0), egui::pos2(960.0, 500.0));
+        assert_eq!(
+            shrink_beside_notices(bounds(700.0, 200.0), Some(notice), 8.0),
+            bounds(700.0, 200.0)
+        );
     }
 
     #[test]
