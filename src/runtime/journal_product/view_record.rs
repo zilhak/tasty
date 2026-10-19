@@ -62,8 +62,12 @@ struct Unreadable {
 }
 
 enum UnreadableSource {
-    /// DB restore manifest. 다음 저장이 같은 key를 바꾸므로 바이트를 따로 보존한다.
-    Manifest { view: Vec<u8>, snapshot: Vec<u8> },
+    /// DB restore manifest. 다음 저장이 같은 key를 바꾸므로 바이트를 따로 보존한다. 행이 없는
+    /// 본문은 `None`이다.
+    Manifest {
+        view: Option<Vec<u8>>,
+        snapshot: Option<Vec<u8>>,
+    },
     /// legacy sidecar. 저장은 이 파일을 바꾸지 않는다. 읽은 바이트가 있으면 사본도 남긴다.
     Legacy {
         path: PathBuf,
@@ -76,8 +80,8 @@ impl Unreadable {
         Self {
             cause: cause.into(),
             source: UnreadableSource::Manifest {
-                view: manifest.view.clone(),
-                snapshot: manifest.snapshot.bytes.clone(),
+                view: Some(manifest.view.clone()),
+                snapshot: Some(manifest.snapshot.bytes.clone()),
             },
         }
     }
@@ -97,13 +101,19 @@ impl Unreadable {
                 bytes: Some(bytes), ..
             } => vec![(format!("{name}-{}.legacy.json", digest(bytes)), bytes)],
             UnreadableSource::Manifest { view, snapshot } => {
-                let id = digest(view);
-                vec![
-                    (format!("{name}-{id}.view"), view),
-                    (format!("{name}-{id}.snapshot"), snapshot),
-                ]
+                let id = digest(view.as_deref().unwrap_or_default());
+                [(".view", view), (".snapshot", snapshot)]
+                    .into_iter()
+                    .filter_map(|(extension, bytes)| {
+                        Some((format!("{name}-{id}{extension}"), bytes.as_deref()?))
+                    })
+                    .collect()
             }
         };
+        if files.is_empty() {
+            // 복사할 본문 행이 없다. 남은 기록은 저장소에 그대로 있다.
+            return Ok(home.join("structure/journal.db").display().to_string());
+        }
         let directory = damaged_directory(home);
         std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
         for (file, bytes) in &files {
@@ -160,7 +170,8 @@ fn load_checked(
             // 이 manifest의 본문만 읽지 못한 것이다. 저장소의 다른 오류는 그대로 올린다.
             Err(
                 error @ (tasty_event_store::StoreError::PayloadCorrupt(_)
-                | tasty_event_store::StoreError::PayloadMissing(_)),
+                | tasty_event_store::StoreError::PayloadMissing(_)
+                | tasty_event_store::StoreError::RestoreSnapshotMissing(_)),
             ) => {
                 let raw = store
                     .restore_manifest_raw(&key)
@@ -169,8 +180,8 @@ fn load_checked(
                 return Ok(Err(Unreadable {
                     cause: error.to_string(),
                     source: UnreadableSource::Manifest {
-                        view: raw.view.unwrap_or_default(),
-                        snapshot: raw.snapshot.unwrap_or_default(),
+                        view: raw.view,
+                        snapshot: raw.snapshot,
                     },
                 }));
             }

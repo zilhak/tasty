@@ -280,7 +280,7 @@ fn snapshot_row(conn: &rusqlite::Connection, id: SnapshotId) -> StoreResult<(i64
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )
     .optional()?
-    .ok_or_else(|| StoreError::Corrupt(format!("restore snapshot {id} is missing")))
+    .ok_or(StoreError::RestoreSnapshotMissing(id))
 }
 
 pub(crate) fn save_in(

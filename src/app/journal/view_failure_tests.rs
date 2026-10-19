@@ -352,3 +352,18 @@ fn a_rejected_sidecar_of_another_version_does_not_block_later_saves() {
         "the sidecar is unchanged"
     );
 }
+
+#[test]
+fn a_view_manifest_without_its_snapshot_row_falls_back_to_the_default_selection() {
+    recovers_from(|home| {
+        let connection = database(home);
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = OFF;
+                 DELETE FROM snapshots WHERE snapshot_id =
+                 (SELECT snapshot_id FROM restore_manifests WHERE restore_key = 'view:slot-1');",
+            )
+            .unwrap();
+        current_view(home)
+    });
+}

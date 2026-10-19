@@ -214,6 +214,10 @@ pub enum StoreError {
     #[error("restore manifest {0} would replace a newer saved View")]
     ManifestRegression(String),
 
+    /// restore manifest가 가리키는 snapshot 행이 없다. 그 manifest 하나의 손상이다.
+    #[error("restore snapshot {0} is missing")]
+    RestoreSnapshotMissing(u64),
+
     #[error("stored value is out of range: {0}")]
     Corrupt(String),
 }

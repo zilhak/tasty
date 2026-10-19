@@ -43,7 +43,7 @@ View 및 읽기 lease의 payload pin도 남는다. snapshot 두 개의 본문과
 보존 경계 이전 cursor는 명시적 재동기화 오류다. snapshot이 손상돼도 보존 로그 없이 처음부터
 재생하는 성공 fallback을 만들지 않는다. `snapshot_and_tail_excluding`은 호출자가 해석하지 못한
 snapshot을 건너뛰고 더 이전 snapshot이나 로그 처음을 기반으로 돌려준다. 보존 경계 위에 남은 기반이
-없으면 이 함수도 `ResyncRequired`다. `restore_manifest_raw`는 manifest가 가리키는 View·snapshot 본문을 checksum 검증 없이 읽으며, 검증에 실패한 원본을 보존할 때만 쓴다. 헤더까지 제거하는 안은 역사 cut과 effect 외래 키를
+없으면 이 함수도 `ResyncRequired`다. `restore_manifest_raw`는 manifest가 가리키는 View·snapshot 본문을 checksum 검증 없이 읽으며, 검증에 실패한 원본을 보존할 때만 쓴다. manifest가 가리키는 snapshot 행이 없으면 `restore_manifest`는 그 manifest 하나의 손상으로 `RestoreSnapshotMissing`을 돌려준다. 헤더까지 제거하는 안은 역사 cut과 effect 외래 키를
 다시 쓰게 하므로 채택하지 않았다. 이 방식은 이벤트 본문과 고아 payload 공간을 회수하지만
 batch/revision/명령/effect 헤더의 크기까지 제한하지 않는다.
 
