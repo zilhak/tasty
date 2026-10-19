@@ -286,6 +286,8 @@ accent 채움과 테두리를 함께 쓰는 표현은 `tint_fill_alpha()` 0.12�
 
 `notify-warning-fill`과 `notify-warning-fg`는 미확인 개수 배지 전용 역할이다. Mocha는 기존 yellow와 text-on-accent를 사용한다. Latte는 yellow 50%와 white를 sRGB로 혼합한 채움에 neutral-1100 글자를 올린다. 숫자와 글리프가 같은 전경을 쓰며 기본 팔레트의 대비는 약 5.01:1이다. `notification_ink.rs`의 Theme 접근자가 갤러리와 본체의 공용 배지 위젯에 같은 색을 전달한다. 상세 목록의 warning 글리프와 다른 강조색의 전경 역할은 별개다.
 
+`accent-warning-glyph`는 밝은 배경 위 경고 글리프 역할이다. Mocha는 yellow를 그대로 쓰고, Latte는 yellow 50%와 neutral-1100을 sRGB로 혼합한다. Plugins 창 신뢰 상자의 권한 변경 글리프(`plugin-trust-glyph-warning`)가 이 역할을 참조한다. 접근자는 `notification_ink.rs`에 수기로 두며 생성기는 component 토큰 접근자만 만든다.
+
 ### 애니메이션과 스크롤
 
 터미널 셀·스크롤에 추가 transition을 두지 않는다. UI 위젯의 입력 직후 피드백은 짧은 모션을 사용한다. 시간 단위와 모션 감소 설정은 아래 [모션 설정](#모션-설정과-시간-단위)을 따른다.

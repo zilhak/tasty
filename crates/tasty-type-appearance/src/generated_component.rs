@@ -3586,6 +3586,12 @@ impl crate::theme::Theme {
         self.accent_success()
     }
 
+    /// `component.plugin-trust-glyph-warning` → `{semantic.accent-warning-glyph}`
+    #[inline]
+    pub fn plugin_trust_glyph_warning(&self) -> HexColor {
+        self.accent_warning_glyph()
+    }
+
     /// `component.plugin-trust-title-fg` → `{semantic.text-primary}`
     #[inline]
     pub fn plugin_trust_title_fg(&self) -> HexColor {
