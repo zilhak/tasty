@@ -40,6 +40,10 @@ pub(super) fn handle_ui_state(
     let host_popup_focused = state.popups.has_focused();
     #[cfg(not(feature = "gui"))]
     let host_popup_focused = false;
+    #[cfg(feature = "gui")]
+    let restore_notice_focused = state.restore_notices.has_keyboard_focus();
+    #[cfg(not(feature = "gui"))]
+    let restore_notice_focused = false;
 
     #[cfg(feature = "gui")]
     let tutorial = json!({
@@ -77,6 +81,7 @@ pub(super) fn handle_ui_state(
             "gate_settings_open_requested": state.has_settings_open_request(),
             "gate_input_dialog_open": state.has_input_dialog_open(),
             "gate_host_popup_focused": host_popup_focused,
+            "gate_restore_notice_focused": restore_notice_focused,
             "gate_plugin_popup_open": state.has_plugin_popup(),
             // 모달은 GUI App의 ViewRegistry가 소유한다. 여기서는 모달이 없는 값을 내고,
             // GUI App이 응답을 보내기 전에 활성 모달로 덮어쓴다(App::project_active_modal).

@@ -112,6 +112,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `settings_open_requested` | 설정 열기 요청이 있는지 나타낸다. 모달이 실제로 표시됐다는 뜻은 아니다 |
 | `modal_open`, `active_modal_kind` | 모달 표시 여부와 종류. 설정 창을 기다리는 검증은 plugins·quit 창과 구분하도록 종류도 확인한다 |
 | `gate_host_popup_focused`, `gate_plugin_popup_open`, `notification_panel_open` | 호스트 팝업 포커스, 플러그인 팝업 표시, 알림 패널 표시 여부 |
+| `gate_restore_notice_focused` | 오른쪽 위 복원 안내 안쪽 컨트롤이 직전 프레임에 키보드 포커스를 가졌는지. 참이면 키가 egui(안내)로 간다 |
 | `active_workspace`, `workspace_count` | 활성 워크스페이스 인덱스와 워크스페이스 수 |
 | `pane_count`, `tab_count` | 활성 워크스페이스의 pane 수와 포커스된 pane의 탭 수 |
 | `active_tab` | 포커스된 pane의 활성 탭 인덱스. 탭 수가 그대로여도 전환 여부를 확인할 수 있다 |

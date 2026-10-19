@@ -83,6 +83,8 @@ pub fn restore_notice(
     let mut copy_path = false;
     // 안쪽 컨트롤(×·경로·복사·Continue)에 포커스가 있을 때의 Esc만 Continue로 받는다.
     let mut focused_inside = false;
+    // 안쪽 컨트롤과 그 영역. Continue는 마지막이다. 안쪽을 누르면 포커스를 그 컨트롤로 옮긴다.
+    let mut controls: Vec<(egui::Id, egui::Rect)> = Vec::new();
     let glyph_error = std::cell::RefCell::new(None);
 
     ui.allocate_ui_with_layout(
@@ -93,7 +95,7 @@ pub fn restore_notice(
             ui.set_width(width);
             let close = title_bar(ui, theme, view, width, &glyph_error);
             dismissed |= close.clicked();
-            focused_inside |= close.has_focus();
+            controls.push((close.id, close.rect));
             let padding = theme.restore_notice_padding().value();
             egui::Frame::NONE.inner_margin(padding).show(ui, |ui| {
                 ui.set_width(width - 2.0 * padding);
@@ -101,7 +103,8 @@ pub fn restore_notice(
                 cause_row(ui, theme, view.cause, &glyph_error);
                 let (path, copy) = path_block(ui, theme, view, &glyph_error);
                 copy_path = copy.clicked();
-                focused_inside |= path.has_focus() || copy.has_focus();
+                controls.push((path.id, path.rect));
+                controls.push((copy.id, copy.rect));
                 ui.label(
                     egui::RichText::new(view.body)
                         .size(theme.font_size_term_sm.value())
@@ -113,8 +116,13 @@ pub fn restore_notice(
                         .size(ControlSize::Sm)
                         .show(ui, theme);
                     dismissed |= response.clicked();
-                    focused_inside |= response.has_focus();
+                    controls.push((response.id, response.rect));
                 });
+            });
+            // 창 자체의 OS 포커스는 따지지 않는다. 키가 들어온다면 창은 이미 포커스 상태다.
+            focused_inside = ui.memory(|m| {
+                m.focused()
+                    .is_some_and(|id| controls.iter().any(|(control, _)| *control == id))
             });
             // egui는 Esc가 눌린 프레임을 시작할 때 포커스를 먼저 푼다. 직전 프레임의 포커스로 판정한다.
             let memory = view.id_salt.with("focused_inside");
@@ -129,6 +137,36 @@ pub fn restore_notice(
         top_left,
         egui::pos2(top_left.x + width, ui.min_rect().max.y),
     );
+    // egui는 버튼을 눌러도 키보드 포커스를 주지 않는다. 디자인은 안쪽을 누른 뒤 컨트롤이 키를 받게
+    // 하므로, 안쪽을 누르면 누른 컨트롤(없으면 Continue)에 포커스를 주고 바깥을 누르면 내려놓는다.
+    // 나타나는 것만으로는 포커스를 주지 않는다.
+    if let Some(pos) = ui.input(|i| {
+        i.pointer
+            .any_pressed()
+            .then(|| i.pointer.interact_pos())
+            .flatten()
+    }) {
+        if rect.contains(pos) {
+            if !dismissed
+                && let Some((id, _)) = controls
+                    .iter()
+                    .find(|(_, rect)| rect.contains(pos))
+                    .or(controls.last())
+            {
+                ui.memory_mut(|m| m.request_focus(*id));
+                focused_inside = true;
+            }
+        } else if focused_inside {
+            ui.memory_mut(|m| {
+                if let Some(id) = m.focused()
+                    && controls.iter().any(|(control, _)| *control == id)
+                {
+                    m.surrender_focus(id);
+                }
+            });
+            focused_inside = false;
+        }
+    }
     ui.painter().set(
         shadow,
         theme.shadow_popover().to_egui().as_shape(rect, radius),
@@ -399,6 +437,48 @@ mod tests {
             ctx.memory(|m| m.focused().is_some()),
             "Tab reached a control"
         );
+        assert!(frame(&ctx, &theme, vec![key(egui::Key::Escape)]).dismissed);
+    }
+
+    fn press(pos: egui::Pos2) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    }
+
+    fn release(pos: egui::Pos2) -> Vec<egui::Event> {
+        vec![egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    }
+
+    #[test]
+    fn a_click_inside_hands_keys_to_the_notice_and_a_click_outside_takes_them_back() {
+        let theme = theme();
+        let ctx = egui::Context::default();
+        let rect = frame(&ctx, &theme, Vec::new()).rect;
+        // The cause row holds no control, so the press lands on the notice body itself.
+        let inside = egui::pos2(rect.center().x, rect.top() + 40.0);
+        assert!(frame(&ctx, &theme, press(inside)).focused_inside);
+        assert!(frame(&ctx, &theme, release(inside)).focused_inside);
+        let outside = egui::pos2(rect.left() - 100.0, rect.bottom() + 100.0);
+        assert!(!frame(&ctx, &theme, press(outside)).focused_inside);
+        assert!(!frame(&ctx, &theme, release(outside)).focused_inside);
+        assert!(
+            !frame(&ctx, &theme, vec![key(egui::Key::Escape)]).dismissed,
+            "keys are back outside the notice"
+        );
+        frame(&ctx, &theme, press(inside));
+        frame(&ctx, &theme, release(inside));
         assert!(frame(&ctx, &theme, vec![key(egui::Key::Escape)]).dismissed);
     }
 
