@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[플랫폼 원칙](../principles/platform-and-compatibility.md)은 Windows ARM을 1급 지원·릴리스 대상으로 포함한다. 릴리스 워크플로는 Windows x64와 ARM64 산출물을 함께 만들어 올리도록 구성돼 있으며, 빌드 방법과 확인 범위는 아래 [Windows ARM64](#windows-arm64)에 있다. Windows x64 개발 환경에서 두 아키텍처의 배포물 생성·검사를 확인했고, ARM64 교차 빌드 경로는 CI에서도 확인했다. Windows ARM 기기의 설치·실행은 미측정이며, 태그 없는 빌드 검증은 실제 Release 게시와 구분한다. 0.12.2 이하 릴리스에는 Windows ARM64 자산이 없다.
+[플랫폼 원칙](../principles/platform-and-compatibility.md)은 Windows ARM을 1급 지원·릴리스 대상으로 포함한다. 릴리스 워크플로는 Windows x64와 ARM64 산출물을 함께 만들어 올리도록 구성돼 있으며, 빌드 방법과 확인 범위는 아래 [Windows ARM64](#windows-arm64)에 있다. Windows x64 개발 환경과 태그 없는 CI에서 두 아키텍처의 배포물 생성·검사를 확인했다. Windows ARM 기기의 설치·실행은 미측정이며, 태그 없는 빌드 검증은 실제 Release 게시와 구분한다. 0.12.2 이하 릴리스에는 Windows ARM64 자산이 없다.
 
 릴리스는 **Git 태그 push** 로 트리거된다(`.github/workflows/release.yml`). 버전 형식은 `MAJOR.MINOR.PATCH`. 버전 정책은 [`../../CLAUDE.md`](../../CLAUDE.md) "버전 정책" — 이 문서는 절차다.
 
@@ -115,7 +115,9 @@ GitHub Release 에 올리는 파일은 아래 표가 전부다. 사용자가 받
 - 고지 파일(`LICENSE`, `THIRD_PARTY_LICENSES.md`, `LICENSES/`)은 자산으로 따로 올리지 않는다. 라이선스가 요구하는 고지 전달은 모든 배포물 안에 넣는 것으로 충족하고([배포물의 고지 파일](#배포물의-고지-파일)), 저장소에서도 공개돼 있다.
 - 문서·설정 예시 같은 부속 파일도 올리지 않는다. 사용자에게 필요한 내용은 사용자 가이드나 배포물 안에 둔다.
 - 자산을 추가·삭제하려면 이 표, `.github/workflows/release.yml` 의 업로드 줄, 해당 빌드 스크립트, 사용자 가이드의 설치 파일 표를 같은 커밋에서 고친다.
-- `crates/tasty-doc-guards/tests/release_assets_match_the_guide.rs` 가 이 표와 `release.yml` 의 모든 `gh release upload` 대상을 이름과 잡 단위로 양방향 대조한다. glob·셸 변수처럼 이름을 펼칠 수 없는 업로드 대상도 표에 없는 자산으로 실패시킨다. 빌드 스크립트가 실제로 그 이름의 파일을 만드는지는 이 검사가 보지 않는다. Windows 빌드 스크립트는 태그 없는 `workflow_dispatch`에서도 cleanup 전에 PE·고지·체크섬·산출물 명부를 확인한다. 실제 Release 자산 업로드는 태그를 발행하는 릴리스 단계에서 별도로 확인한다.
+- `crates/tasty-doc-guards/tests/release_assets_match_the_guide.rs` 가 이 표와 `release.yml` 의 모든 `gh release upload` 대상을 이름과 잡 단위로 양방향 대조한다. glob·셸 변수처럼 이름을 펼칠 수 없는 업로드 대상도 표에 없는 자산으로 실패시킨다. 빌드 스크립트가 실제로 그 이름의 파일을 만드는지는 이 검사가 보지 않는다.
+
+Windows 빌드 스크립트는 태그 없는 `workflow_dispatch`에서도 cleanup 전에 PE·고지·체크섬·산출물 명부를 확인한다. 실제 Release 자산 업로드는 태그를 발행하는 릴리스 단계에서 별도로 확인한다.
 
 ## 러너
 
@@ -177,7 +179,7 @@ Windows ARM64 산출물은 기존 x64 Windows 러너에서 `build-windows.ps1 -A
   - `tasty.exe --version` 실행과 MSI 관리 설치(`msiexec /a`)는 호스트와 같은 아키텍처일 때만 한다. x64 러너의 ARM64 빌드는 실행 검사를 건너뛴다는 줄을 남기고 PE 검사로 아키텍처를 확인한다. MSI 안의 파일은 WiX `dark.exe -x`로 꺼내 `main.wxs`의 File Id·Source 짝으로 원래 경로에 놓은 뒤 고지 세트 대조와 PE 검사를 한다.
   - 체크섬 파일을 다시 읽어 그 아키텍처의 배포물 전부를 담는지와 각 해시가 맞는지 확인하고, 산출물 명부(이름과 크기)를 출력한다. staging 디렉터리는 `dist\tasty-windows-<arch>`처럼 아키텍처별이라 같은 dist에서 두 아키텍처를 만들어도 서로 덮지 않는다.
 - CI는 `crossplatform-check.yml`의 `check-windows-arm64`가 main push마다 ARM64 타깃 `cargo check`를 실행한다([ci-gates](ci-gates.md)). 테스트 실행과 링크는 포함하지 않는다.
-- 확인 범위: Windows x64 개발 환경에서 두 아키텍처의 GUI ZIP·MSI·헤드리스 ZIP 생성, 본체·번들 plugin의 PE, 고지 세트와 체크섬을 확인했다. 같은 dist에 양쪽 배포물과 두 체크섬 명부가 함께 유지되는 것도 확인했다. ARM64 교차 컴파일·링크, cargo-wix의 MSI 생성과 `dark.exe` 추출·검사는 CI의 태그 없는 실행에서도 확인했다.
+- 확인 범위: Windows x64 개발 환경에서 두 아키텍처의 GUI ZIP·MSI·헤드리스 ZIP 생성, 본체·번들 plugin의 PE, 고지 세트와 체크섬을 확인했다. 같은 dist에 양쪽 배포물과 두 체크섬 명부가 함께 유지되는 것도 확인했다. 두 아키텍처의 패키징·산출물 검사는 CI의 태그 없는 실행에서도 확인했으며, ARM64 교차 컴파일·링크와 cargo-wix의 MSI 생성·`dark.exe` 추출을 포함한다.
 - 미측정: Windows ARM 기기에서 설치·실행·제거는 확인하지 않았다. MSI 파일 추출·내용 검사는 실기기의 설치와 custom action 실행 검증을 대신하지 않는다. 실제 Release 자산 업로드도 별도 릴리스 단계의 확인 대상이다. 검증 환경이 없다는 이유로 ARM64 산출물을 제외하지 않는다.
 - 실제 릴리스 뒤에는 받은 산출물의 PE 머신 타입을 `dumpbin /headers` 등으로 다시 확인한다. ARM64 Windows 기기를 쓸 수 있으면 설치·실행·제거를 확인하고, 없으면 미측정으로 기록한다.
 
