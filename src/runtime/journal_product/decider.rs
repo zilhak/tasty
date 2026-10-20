@@ -1,6 +1,8 @@
 //! Typed structural commands are decided without access to the store or live resources.
 
 mod completion;
+#[cfg(test)]
+mod poison_tests;
 
 use serde::{Deserialize, Serialize};
 use tasty_core::{
@@ -44,35 +46,47 @@ pub(crate) struct StreamEvent {
 #[derive(Default)]
 pub(crate) struct StructureDecider {
     report: std::sync::Mutex<journal::LoadReport>,
+    report_poisoned: std::sync::atomic::AtomicBool,
     /// 보존 pin을 아직 걸지 못한 복원 실패 원본. 남아 있는 동안 checkpoint가 GC하지 않는다.
     unpreserved: std::sync::Mutex<std::collections::BTreeSet<u64>>,
+    unpreserved_poisoned: std::sync::atomic::AtomicBool,
 }
 
 impl StructureDecider {
+    // u64 집합의 단일 insert/remove/clone만 수행한다. 사용자 비교·Drop·콜백이 없으므로
+    // poison 뒤에도 남은 ID를 보존해야 원본 보호를 빈 집합으로 오인하지 않는다.
+    fn unpreserved_guard(&self) -> std::sync::MutexGuard<'_, std::collections::BTreeSet<u64>> {
+        tasty_utils::poison::recover_mutex(
+            self.unpreserved.lock(),
+            "journal unpreserved payloads",
+            &self.unpreserved_poisoned,
+        )
+    }
+
+    // 보고서는 락 밖에서 완성한 String/Vec/Map 값의 전체 교체·clone만 한다.
+    // 손상 stream 기록을 빈 보고서로 바꾸면 그 stream에 다시 쓰는 것을 허용하므로 보존한다.
+    fn report_guard(&self) -> std::sync::MutexGuard<'_, journal::LoadReport> {
+        tasty_utils::poison::recover_mutex(
+            self.report.lock(),
+            "journal load report",
+            &self.report_poisoned,
+        )
+    }
+
     pub(crate) fn remember_unpreserved(&self, payload: u64) {
-        if let Ok(mut set) = self.unpreserved.lock() {
-            set.insert(payload);
-        }
+        self.unpreserved_guard().insert(payload);
     }
 
     pub(crate) fn unpreserved(&self) -> std::collections::BTreeSet<u64> {
-        self.unpreserved
-            .lock()
-            .map(|set| set.clone())
-            .unwrap_or_default()
+        self.unpreserved_guard().clone()
     }
 
     pub(crate) fn forget_unpreserved(&self, payload: u64) {
-        if let Ok(mut set) = self.unpreserved.lock() {
-            set.remove(&payload);
-        }
+        self.unpreserved_guard().remove(&payload);
     }
 
     pub(crate) fn report(&self) -> journal::LoadReport {
-        self.report
-            .lock()
-            .map(|report| report.clone())
-            .unwrap_or_default()
+        self.report_guard().clone()
     }
 }
 
@@ -355,7 +369,7 @@ impl JournalDecider for StructureDecider {
         for (snapshot, cause) in &report.skipped_snapshots {
             tracing::warn!(snapshot, "structure snapshot skipped: {cause}");
         }
-        *self.report.lock().map_err(|e| e.to_string())? = report;
+        *self.report_guard() = report;
         Ok(models)
     }
 }
