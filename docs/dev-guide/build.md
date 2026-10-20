@@ -370,7 +370,11 @@ cargo install cargo-wix; winget install WiXToolset.WiXToolset   # 1회
 .\scripts\build-windows.ps1 -SkipMsi     # ZIP 만
 ```
 
-산출물: `tasty-{v}-windows-{x64|arm64}.{zip,msi}` · 헤드리스 `tasty-headless-{v}-windows-{x64|arm64}.zip` + `SHA256SUMS-windows.txt`(x64) / `SHA256SUMS-windows-arm64.txt`(ARM64). 모든 `.exe` 의 PE 머신 타입이 대상 아키텍처인지 확인하고, 호스트에서 실행할 수 없는 아키텍처는 `--version` 실행과 `msiexec /a` 대신 PE 검사와 `dark.exe` 추출로 확인한다. 헤드리스 ZIP 도 같은 방식(`tasty.exe --version`, `plugins/`, 고지 세트)으로 확인하며 Windows 빌더에서 돈 적이 없다(미측정). `build-windows.ps1` 이 MSI 단계에서 `$env:WIX\bin` 을 자동 PATH prepend. 자동 sanity check(ZIP 풀어 `tasty.exe --version`, MSI 존재). 고지 세트는 ZIP 최상단과 MSI 설치 디렉토리에 들어가고, 스크립트가 ZIP 을 푼 트리와 MSI 를 관리 설치(`msiexec /a`)로 푼 트리에서 저장소 사본과 바이트 대조한다. `wix/main.wxs` 는 파일마다 이름을 적어야 해서, MSI 빌드 전에 `LICENSES/` 의 파일마다 대응 `Source` 가 있는지 먼저 본다. 이 확인 코드들은 구현돼 있지만 Windows 빌더에서 돈 적은 아직 없다(미측정). 검증 포인트: MSI UpgradeCode 유지(`wix/main.wxs`), 설치→시작메뉴→제거.
+산출물: `tasty-{v}-windows-{x64|arm64}.{zip,msi}` · 헤드리스 `tasty-headless-{v}-windows-{x64|arm64}.zip` + `SHA256SUMS-windows.txt`(x64) / `SHA256SUMS-windows-arm64.txt`(ARM64). Windows x64 개발 환경에서 두 아키텍처의 생성·패키지 추출·PE·고지·체크섬 검사를 확인했고, ARM64 경로는 CI에서도 확인했다.
+
+패키지 안의 본체·번들 plugin `.exe`의 PE 머신 타입을 검사한다. 호스트와 같은 아키텍처는 `tasty.exe --version`을 실행하고 MSI를 `msiexec /a`로 풀며, 다른 아키텍처는 실행 검사 대신 PE 검사와 `dark.exe` 추출을 사용한다. GUI ZIP·MSI·헤드리스 ZIP의 고지 세트는 저장소 사본과 바이트 대조한다. 관리 추출은 실제 설치가 아니며 Windows ARM 기기의 설치·실행·제거는 미측정이다. 태그 없는 패키징 검증을 실제 Release 게시로 보지 않는다.
+
+`build-windows.ps1`은 MSI 단계에서 `$env:WIX\bin`을 PATH 앞에 붙인다. `wix/main.wxs`는 파일마다 이름을 적어야 하므로, MSI 빌드 전에 `LICENSES/`의 각 파일에 대응하는 `Source`가 있는지 검사한다. 검증 포인트: MSI UpgradeCode 유지(`wix/main.wxs`), 설치→시작 메뉴→제거.
 
 #### Linux
 
