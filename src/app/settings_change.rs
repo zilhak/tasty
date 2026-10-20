@@ -26,6 +26,7 @@ pub(crate) enum SettingsChange {
     },
     WebhookAllowExternal(bool),
     /// debug 전용 전체 교체. 호출자가 이미 합친 설정이다.
+    #[cfg(debug_assertions)]
     Replace(Box<Settings>),
 }
 
@@ -69,6 +70,7 @@ impl SettingsChange {
                 settings.webhook.allow_external = *allow;
                 Ok(true)
             }
+            #[cfg(debug_assertions)]
             Self::Replace(new) => {
                 *settings = (**new).clone();
                 Ok(true)

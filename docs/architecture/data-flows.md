@@ -141,6 +141,8 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
 
 `settings.set_remote_transfer`, `settings.set_input_rule`·`remove_input_rule`·`initialize_input_rule`, `webhook.config`의 `allow_external`, debug 전용 `debug.settings.apply`는 세 단계를 구분한다.
 
+`debug.settings.apply`가 쓰는 `SettingsChange::Replace`와 전체 교체 처리 분기는 핸들러와 같은 `cfg(debug_assertions)` 조건으로 빌드한다.
+
 - 접수: 핸들러가 인자를 검사하고 바꿀 값만 담은 `DomainIntent::ChangeSettings`를 요청 큐에 넣는다. 인자 오류는 큐에 넣지 않고 바로 `-32602`로 응답한다(`debug.settings.apply`의 `task_pipeline` 검사 포함).
 - 메모리 적용: 큐 처리에서 `AppServices::apply_live`가 실행 시점의 최신 설정 사본에 그 값만 적용하고 `task_pipeline.validate()`를 실행한다. 핸들러와 실행 사이에 바뀐 다른 필드는 덮지 않는다. `debug.settings.apply`만 핸들러가 합친 전체 설정으로 바꾼다.
 - 저장: 적용 단계가 주입된 `SettingsStorage`로 `config.toml`에 쓴다.
