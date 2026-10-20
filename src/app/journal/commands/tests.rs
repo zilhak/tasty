@@ -418,7 +418,8 @@ fn a_runtime_halt_is_reported_once_as_an_error_notice() {
         "{}",
         halt.body
     );
-    assert!(halt.body.contains("structure/journal.db"), "{}", halt.body);
+    let database_path = journal.database.display().to_string();
+    assert!(halt.body.contains(&database_path), "{}", halt.body);
     assert!(journal.poll_bootstrap(&mut [&mut session], None).is_err());
     assert!(
         journal.take_notices().is_empty(),
