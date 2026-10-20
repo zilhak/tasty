@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn two_clean_taps_fire() {
-        let mut d = DoubleTapDetector::new();
+        let mut d = DoubleTapDetector::with_mapping(false);
         d.on_key_event(&alt(), true);
         d.on_key_event(&alt(), false);
         d.on_key_event(&alt(), true);
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn focus_change_reset_prevents_stale_first_tap() {
-        let mut d = DoubleTapDetector::new();
+        let mut d = DoubleTapDetector::with_mapping(false);
         d.on_key_event(&alt(), true);
         d.reset();
 
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn reset_discards_recorded_first_tap() {
-        let mut d = DoubleTapDetector::new();
+        let mut d = DoubleTapDetector::with_mapping(false);
         d.on_key_event(&alt(), true);
         d.on_key_event(&alt(), false);
         d.reset();
