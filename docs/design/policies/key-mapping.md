@@ -132,6 +132,8 @@ macOS NSMenu 는 binding 의 첫 항목을 `tasty_platform::menu_key_equivalent`
 
 파싱할 수 없거나 위 이름 집합 밖인 키(`f25`, 오타 등)는 메뉴로 나타낼 수 없어 수식키까지 비운다. 변환표는 OS 호출이 없는 순수 함수라 모든 OS 에서 시험하고, NSMenu 호출부만 macOS 로 컴파일한다. macOS 시험은 표의 값을 `objc2_app_kit` 상수와 대조한다.
 
+표준 selector 메뉴 항목(`make_keybound_std_item`)은 action 을 먼저 지정하고 key equivalent·수식키를 그 뒤에 넣는다. macOS 27.0.1 의 AppKit 은 `performMiniaturize:` 를 지정하는 순간 key 와 수식키를 ⌘M 으로 덮어쓴다. 순서가 반대면 `alt+shift+m` 이 ⌘M 이 된다. 그런데 `performMiniaturize:` 는 action 뒤에 빈 key·빈 수식키를 넣어도 ⌘M 이 남는다. 그래서 Window 메뉴의 최소화는 NSWindow 의 `miniaturize:` 를 target=nil 로 보낸다. `miniaturize:` 와 `performZoom:`·`performClose:` 는 빈 값과 설정값을 그대로 둔다. `miniaturize:` 는 winit 이 두 번째 이후 조합을 실행할 때 부르는 메서드와 같다. 이 값들은 메뉴 항목의 속성만 읽은 AppKit 프로브로 확인했다. 메뉴 추가와 `setMainMenu` 뒤에도 같았다. 실제 키 입력과 메뉴 실행으로는 확인하지 않았다.
+
 NSMenuItem 은 key equivalent 를 하나만 가진다. 그래서 Window 메뉴의 최소화·확대·창 닫기(`minimize_window`·`maximize_window`·`close_window`)는 첫 조합만 메뉴가 실행하고, 두 번째 이후 조합은 단축키 경로(`shortcuts::window_control`)가 실행한다. 키 경로는 메뉴가 맡은 첫 조합을 건너뛰어 같은 키가 두 번 실행되지 않게 한다. 첫 조합을 메뉴 key equivalent 로 나타낼 수 없으면 메뉴 항목에 단축키가 없으므로 첫 조합도 키 경로가 실행한다. WebView 포커스 중 host 가 가져간 두 번째 이후 조합도 같은 단축키 경로로 실행된다. Windows·Linux 는 메뉴가 없어 모든 조합을 키 경로가 실행한다. `quit`·`new_window` 는 모든 조합을 키 경로에서도 검사한다. macOS 에서 메뉴가 처리한 키가 winit 에 다시 오지 않는다는 전제는 실 기기에서 측정하지 않았다.
 
 메뉴에 묶은 이름 키는 NSMenu 가 먼저 받는다. 수식키 없는 `escape`·`tab`·`enter` 를 메뉴 항목에 묶으면 그 키는 터미널이나 입력칸에 가지 않고 메뉴 항목을 실행한다. 같은 키를 winit 단축키로 묶었을 때도 단축키가 먼저 가로채므로 결과는 같다.

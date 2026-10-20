@@ -1,4 +1,4 @@
-<!-- source-hash: 1ef322e907f6 -->
+<!-- source-hash: 5c00f0fc68b0 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -119,7 +119,7 @@ The following have no default combination, either to prevent accidents or becaus
 - **Open Markdown** · **Open Explorer** · **Convert to Markdown** · **Convert to Explorer**
 - The Explorer's **Preview panel** toggle · **Properties**
 - **Apply workspace · tab · pane preset**, **Collapse/expand all categories**
-- **Minimize window** · **Maximize/Zoom window** · **Close window**
+- **Minimize window** · **Maximize/Zoom window** · **Close window** — on macOS, the items in the menu bar's **Window** menu show the first combination of each action and run on it. If you leave an action empty, its menu item has no shortcut either.
 - The entries in the sidebar **Tools** menu — **Open port scanner** · **Open remote tools** · **Open preset window** · **Open tutorial** · **Open file picker**
 - Open Git Viewer (plugin)
 

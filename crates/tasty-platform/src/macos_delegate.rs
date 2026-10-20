@@ -293,6 +293,8 @@ fn setup_main_menu(
     // ── Window Menu ────────────────────────────────────────────────
     // CSD 신호등(minimize/zoom/close) 과 일관된 표준 selector. key equivalent 는
     // KeybindingSettings 에서 (없으면 빈 값).
+    // 최소화는 `performMiniaturize:` 대신 `miniaturize:` 를 쓴다. AppKit 이 `performMiniaturize:`
+    // 항목에는 빈 key 를 넣어도 ⌘M 을 채운다. `miniaturize:` 는 winit 의 최소화 경로와 같은 메서드다.
     let window_menu_item = NSMenuItem::new(mtm);
     let window_menu = NSMenu::new(mtm);
     window_menu.setTitle(&NSString::from_str(t("menu.macos.window")));
@@ -300,7 +302,7 @@ fn setup_main_menu(
     window_menu.addItem(&make_keybound_std_item(
         mtm,
         t("menu.macos.minimize"),
-        sel!(performMiniaturize:),
+        sel!(miniaturize:),
         keybindings.minimize_window.first().map(|s| s.as_str()),
     ));
     window_menu.addItem(&make_keybound_std_item(
@@ -348,21 +350,14 @@ pub(crate) fn binding_to_nsmenu_key(
 /// 단축키 없는 표준 NSResponder 메뉴 항목. target=nil로 responder chain에 전달한다.
 /// title은 호출자가 번역해 전달한다. 단축키가 필요하면 설정 바인딩을 받는 별도 함수를 쓴다.
 fn make_std_item(mtm: MainThreadMarker, title: &str, selector: Sel) -> Retained<NSMenuItem> {
-    let item = NSMenuItem::new(mtm);
-    item.setTitle(&NSString::from_str(title));
-    item.setKeyEquivalent(&NSString::from_str(""));
-    // SAFETY: main thread (mtm). setKeyEquivalentModifierMask / setAction 은 AppKit main-thread-only.
-    // target 미설정 = nil = first responder chain (표준 selector 용).
-    #[allow(clippy::multiple_unsafe_ops_per_block)]
-    unsafe {
-        item.setKeyEquivalentModifierMask(objc2_app_kit::NSEventModifierFlags::empty());
-        item.setAction(Some(selector));
-    }
-    item
+    make_keybound_std_item(mtm, title, selector, None)
 }
 
 /// 설정 바인딩의 첫 단축키를 쓰는 표준 NSResponder 메뉴 항목.
 /// target=nil이며 바인딩이 없거나 비었으면 단축키도 비운다.
+///
+/// action을 key equivalent보다 먼저 지정한다. AppKit은 `performMiniaturize:`처럼 기본 단축키가 있는
+/// selector를 지정하는 순간 key와 수식키를 그 기본값으로 덮어쓴다.
 fn make_keybound_std_item(
     mtm: MainThreadMarker,
     title: &str,
@@ -372,17 +367,14 @@ fn make_keybound_std_item(
     use objc2_app_kit::NSEventModifierFlags;
     let item = NSMenuItem::new(mtm);
     item.setTitle(&NSString::from_str(title));
+    // SAFETY: main thread (mtm). setAction 은 AppKit main-thread-only.
+    // target 미설정 = nil = first responder chain (표준 selector 용).
+    unsafe { item.setAction(Some(selector)) };
     let (key, mods) = binding
         .map(binding_to_nsmenu_key)
         .unwrap_or_else(|| (NSString::from_str(""), NSEventModifierFlags::empty()));
     item.setKeyEquivalent(&key);
-    // SAFETY: main thread (mtm). setKeyEquivalentModifierMask / setAction 은 AppKit
-    // main-thread-only. target 미설정 = nil = first responder chain (표준 selector 용).
-    #[allow(clippy::multiple_unsafe_ops_per_block)]
-    unsafe {
-        item.setKeyEquivalentModifierMask(mods);
-        item.setAction(Some(selector));
-    }
+    item.setKeyEquivalentModifierMask(mods);
     item
 }
 
