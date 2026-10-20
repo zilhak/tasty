@@ -18,7 +18,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("git_viewer", 1),
     ("global_hook", 3),
     ("hook", 3),
-    ("hook_handler", 6),
+    ("hook_handler", 7),
     ("host", 1), // host.shared_buffer.create — plugin 보조 채널 전용, CLI 진입점 없음
     ("image", 8),
     ("markdown", 1),
@@ -34,6 +34,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("pty", 7),
     ("recent", 1),
     ("remote", 14),
+    ("run", 1),
     ("session", 3),
     ("settings", 8),
     // 입력 재현 메서드는 release에서 제외된 debug 표에 있어 이 개수에 포함되지 않는다(docs/dev-guide/plugin-permissions.md).
