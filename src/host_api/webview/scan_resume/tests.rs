@@ -348,7 +348,12 @@ fn a_file_rewritten_before_the_replay_starts_is_scanned_again() {
         Start::Cancel
     );
     assert_eq!(wait(|| resume.poll()).0, Replay::Reload);
-    std::fs::write(doc.dir.join("doc.html"), "<script>b()</script>").expect("rewrite");
+    let path = doc.dir.join("doc.html");
+    let before = FileStamp::of_path(&path).expect("original stamp");
+    // mtime 해상도에 기대지 않고 길이를 바꿔 take_resume의 파일 판 차이를 확정한다.
+    // 같은 stamp의 내용 변경은 a_same_stamp_rewrite_is_caught_at_the_document_request가 검사한다.
+    std::fs::write(&path, "<script>changed_body()</script>").expect("rewrite");
+    assert_ne!(FileStamp::of_path(&path), Some(before));
     assert_eq!(
         resume.start(&doc.gate, &doc.url, Some(11), StartKind::Reload, true),
         Start::Cancel,
