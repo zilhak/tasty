@@ -291,8 +291,8 @@ struct Comparison<'a> {
     is_prefix: bool,
 }
 
-/// == 비교와 starts_with·strip_prefix 의 문자열을 메서드 후보로 읽는다. match 팔은 읽지 않는다.
-/// 수신자 타입이나 실제 라우팅 동작까지 분석하지는 않는다.
+/// method 변수·필드의 == 비교와 starts_with·strip_prefix 문자열을 읽는다. match 팔은 읽지 않는다.
+/// 수신자의 마지막 식별자를 확인하며 타입이나 별칭의 데이터 흐름까지 분석하지는 않는다.
 fn comparison_methods(line: &str) -> Vec<Comparison<'_>> {
     let mut out = Vec::new();
     let mut from = 0;
@@ -304,14 +304,24 @@ fn comparison_methods(line: &str) -> Vec<Comparison<'_>> {
         let close = open + 1 + close_rel;
         let name = &line[open + 1..close];
         let before = line[..open].trim_end();
-        let is_eq = before.ends_with("==");
-        let is_prefix = before.ends_with("starts_with(") || before.ends_with("strip_prefix(");
+        let is_eq = before.strip_suffix("==").is_some_and(method_receiver);
+        let is_prefix = [".starts_with(", ".strip_prefix("]
+            .iter()
+            .any(|suffix| before.strip_suffix(suffix).is_some_and(method_receiver));
         if method_shaped(name) && (is_eq || is_prefix) {
             out.push(Comparison { name, is_prefix });
         }
         from = close + 1;
     }
     out
+}
+
+fn method_receiver(before: &str) -> bool {
+    before
+        .trim_end()
+        .rsplit(|c: char| !c.is_alphanumeric() && c != '_')
+        .next()
+        == Some("method")
 }
 
 /// 앞의 연속 속성·주석·빈 줄에서 debug_assertions 문자열을 찾는다. 이 보조 검사는 조건식의 not·any 의미를 평가하지 않는다.
@@ -528,6 +538,33 @@ let x = run();
 if method == \"kept.eq\" { run(); }
 ";
         assert_eq!(scan(src).len(), 1);
+    }
+
+    #[test]
+    fn caller_identifiers_are_not_methods_but_unregistered_method_comparisons_are() {
+        let arms = scan(
+            r#"
+if plugin_id == "com.tasty.markdown" { run(); }
+if caller.plugin_id.starts_with("com.tasty.") { run(); }
+if other_method == "not.a_method" { run(); }
+if method == "leaked.direct" { run(); }
+if cmd.request.method == "leaked.field" { run(); }
+if method.starts_with("leaked.prefix.") { run(); }
+if cmd.request.method.strip_prefix("leaked.stripped.").is_some() { run(); }
+"#,
+        );
+        assert_eq!(arms.len(), 4, "호출자 식별자를 메서드로 읽으면 안 된다");
+        for (name, prefix) in [
+            ("leaked.direct", false),
+            ("leaked.field", false),
+            ("leaked.prefix.", true),
+            ("leaked.stripped.", true),
+        ] {
+            let arm = find(&arms, name);
+            assert_eq!(arm.is_prefix, prefix);
+            assert!(!arm.gated);
+            assert!(!registered_in_release_table(&arm.name, arm.is_prefix));
+        }
     }
 
     /// 한 줄에 두 팔이면 둘 다 읽는다(줄 단위 판독은 둘째를 줄의 나머지로 읽었다).
