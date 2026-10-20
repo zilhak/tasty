@@ -494,7 +494,9 @@ define_class!(
         #[unsafe(method(hitTest:))]
         fn hit_test(&self, point: NSPoint) -> *mut NSView {
             // point는 superview 좌표다. 구멍은 이 뷰 좌표로 저장한다.
-            let local = match self.superview() {
+            // SAFETY: MainThreadOnly 뷰의 AppKit hitTest 콜백 동안 self와 연결된 부모는 살아 있다.
+            // 조회 전에 재진입하거나 계층을 바꾸지 않으며, 반환된 Retained가 부모 수명을 유지한다.
+            let local = match unsafe { self.superview() } {
                 Some(parent) => self.convertPoint_fromView(point, Some(&parent)),
                 None => point,
             };
