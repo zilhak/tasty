@@ -1,5 +1,6 @@
 //! Shared attach loading parts from the design loading gallery.
 use crate::catalog::spec::{StageVariant, stage};
+use crate::i18n::{t, t_fmt};
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{LoadingPlacement, PendingIndicator, paint_loading_overlay};
@@ -29,33 +30,43 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
         }
         PendingIndicator {
-            label: "Waiting for response",
+            label: t("attach.pending.one"),
             time: "0s",
             compact: false,
-            details: "Close tab · 0s",
+            details: &format!("{} · 0s", t("attach.pending.close_tab")),
         }
         .show(ui, theme);
         PendingIndicator {
-            label: "Waiting for 3 responses",
+            label: &t_fmt("attach.pending.many", "3"),
             time: "1m 04s",
             compact: false,
-            details: "Close tab · 1m 04s\nMove tab · 12s\nInput · 3s",
+            details: &format!(
+                "{} · 1m 04s\n{} · 12s\n{} · 3s",
+                t("attach.pending.close_tab"),
+                t("attach.pending.move_tab"),
+                t("attach.pending.input"),
+            ),
         }
         .show(ui, theme);
         PendingIndicator {
-            label: "Waiting for 3 responses",
+            label: &t_fmt("attach.pending.many", "3"),
             time: "1m 04s",
             compact: true,
-            details: "Close tab · 1m 04s\nMove tab · 12s\nInput · 3s",
+            details: &format!(
+                "{} · 1m 04s\n{} · 12s\n{} · 3s",
+                t("attach.pending.close_tab"),
+                t("attach.pending.move_tab"),
+                t("attach.pending.input"),
+            ),
         }
         .show(ui, theme);
         let mut still = theme.clone();
         still.reduced_motion = true;
         PendingIndicator {
-            label: "Waiting for response",
+            label: t("attach.pending.one"),
             time: "1h 02m",
             compact: false,
-            details: "Close tab · 1h 02m",
+            details: &format!("{} · 1h 02m", t("attach.pending.close_tab")),
         }
         .show(ui, &still);
     });
@@ -170,7 +181,11 @@ fn preview_tabs(
             header.center().y,
         ),
         egui::Align2::LEFT_CENTER,
-        if new { "New tab" } else { "server" },
+        if new {
+            t("attach.pending.new_tab")
+        } else {
+            "server"
+        },
         egui::FontId::proportional(theme.tab_bar_label_font_size.value()),
         theme.text_primary().to_egui(),
     );
