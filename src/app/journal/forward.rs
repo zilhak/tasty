@@ -174,7 +174,7 @@ impl JournalApplication {
     }
 }
 
-#[cfg(all(test, feature = "gui"))]
+#[cfg(all(test, unix, feature = "gui"))]
 impl Forward {
     /// 원격 큐 확보를 기다리는 forward. 실제 확보 작업을 worker에 낸다.
     pub(super) fn claiming(
