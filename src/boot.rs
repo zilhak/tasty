@@ -856,6 +856,19 @@ fn ipc_commands_left(core: &crate::app::services::AppServices) -> bool {
         .is_some_and(|ledger| ledger.snapshot().queued_commands > 0)
 }
 
+/// 자동실행 결과를 알림 대기열에 넣어 같은 회차에 저장한다. headless에는 단축키 실행이 없다.
+#[cfg(not(feature = "gui"))]
+fn settle_headless_lua_outcomes(app: &mut crate::app::App) {
+    if let Some(lua) = app.lua_engine.as_ref() {
+        let outcomes = lua.drain_run_outcomes();
+        if !outcomes.is_empty() {
+            for notice in app.lua_runs.settle(outcomes).notices {
+                crate::system_notice::post(notice);
+            }
+        }
+    }
+}
+
 /// gui feature 없는 빌드의 호스트 루프. IPC·PTY·플러그인 이벤트와 타이머를 처리한다.
 #[cfg(not(feature = "gui"))]
 fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
@@ -928,15 +941,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
             // The service applies/logs results; headless has no popup to receive display updates.
             let _ = app.services.profile_detections.poll();
             engine.poll_attach_subscriptions();
-            // 자동실행 결과를 알림 대기열에 넣어 같은 회차에 저장한다. headless에는 단축키 실행이 없다.
-            if let Some(lua) = app.lua_engine.as_ref() {
-                let outcomes = lua.drain_run_outcomes();
-                if !outcomes.is_empty() {
-                    for notice in app.lua_runs.settle(outcomes).notices {
-                        crate::system_notice::post(notice);
-                    }
-                }
-            }
+            settle_headless_lua_outcomes(&mut app);
             crate::intent::headless::queue_system_notices(&mut state, &engine);
             crate::intent::headless::drain_pending_intents_in_app(
                 &mut app.services,
