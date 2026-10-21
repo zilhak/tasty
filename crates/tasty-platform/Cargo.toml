@@ -50,6 +50,8 @@ gtk = { version = "0.18", optional = true }
 gdkx11 = { version = "0.18", optional = true }
 # 에이전트 창의 X11 포커스·쌓임 요청(`window_stacking`). 본체가 이미 같은 버전을 쓴다.
 x11-dl = { version = "2.21", optional = true }
+# GTK 메뉴 행의 아이콘–라벨 간격을 Theme 원본 간격 토큰에서 읽는다(`native_menu/linux_icon.rs`).
+tasty-type-appearance = { path = "../tasty-type-appearance", optional = true }
 
 [dev-dependencies]
 tasty-icons = { path = "../tasty-icons" }
@@ -73,6 +75,7 @@ gui = [
     "dep:objc2-app-kit",
     "dep:gtk",
     "dep:gdkx11",
+    "dep:tasty-type-appearance",
     "dep:x11-dl",
 ]
 

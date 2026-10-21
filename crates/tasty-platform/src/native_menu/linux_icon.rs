@@ -1,16 +1,14 @@
 //! GTK 메뉴 행 안의 단색 글리프. 색과 배율은 그리는 시점의 native 상태를 읽는다.
 
 use gtk::prelude::*;
-use tasty_type_geometry::length::LogicalPx;
+use tasty_type_appearance::theme::SIZING;
 
 pub(super) fn widget(icon: crate::native_menu::MenuIcon, item: &gtk::MenuItem) -> gtk::DrawingArea {
     let area = gtk::DrawingArea::new();
     let side = icon.size.value().ceil() as i32;
     area.set_size_request(side, side);
     area.set_valign(gtk::Align::Center);
-    // 메뉴 테마가 정한 간격을 쓰며 앱의 별도 시각 값을 도입하지 않는다.
-    let padding = LogicalPx(item.style_context().padding(item.state_flags()).left as f32);
-    area.set_margin_end(padding.value() as i32);
+    area.set_margin_end(label_gap());
     let item = item.downgrade();
     area.connect_draw(move |area, cr| {
         let Some(item) = item.upgrade() else {
@@ -41,4 +39,11 @@ pub(super) fn widget(icon: crate::native_menu::MenuIcon, item: &gtk::MenuItem) -
         gtk::glib::Propagation::Proceed
     });
     area
+}
+
+/// 글리프와 라벨 사이 간격. 시안 MenuItem 의 icon–label gap(`space-sm`)이다.
+/// 행이 메뉴에 붙기 전에는 GTK style 의 padding 이 0 이라 테마 값으로 대신할 수 없다.
+/// GTK 여백은 논리 px 이고 메뉴 창 배율은 GTK 가 적용하므로 앱 zoom 전 원본 값을 쓴다.
+pub(super) fn label_gap() -> i32 {
+    SIZING.spacing_sm.value().round() as i32
 }

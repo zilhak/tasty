@@ -427,6 +427,61 @@ mod tests {
         }
     }
 
+    /// 행 안의 첫 widget(아이콘)과 그 뒤 라벨 사이 간격.
+    fn icon_gap(row: &gtk::Widget) -> i32 {
+        let item = row.clone().downcast::<gtk::MenuItem>().unwrap();
+        let cells = item
+            .child()
+            .unwrap()
+            .downcast::<gtk::Box>()
+            .unwrap()
+            .children();
+        assert!(cells[0].is::<gtk::DrawingArea>(), "icon first");
+        cells[0].margin_end()
+    }
+
+    /// 아이콘 행 둘(단축키 있음·비활성), 구분선, 아이콘 없는 행.
+    fn assert_icon_rows(rows: &[gtk::Widget]) {
+        let first = rows[0].clone().downcast::<gtk::MenuItem>().unwrap();
+        let first_row = first.child().unwrap().downcast::<gtk::Box>().unwrap();
+        assert_eq!(first_row.children().len(), 3, "icon + label + accelerator");
+        assert_eq!(icon_gap(&rows[0]), super::icon::label_gap());
+        assert_eq!(icon_gap(&rows[1]), super::icon::label_gap());
+        assert!(!rows[1].is_sensitive());
+        assert_eq!(rows[1].tooltip_text().as_deref(), Some("Unavailable"));
+        assert!(
+            rows[3]
+                .clone()
+                .downcast::<gtk::MenuItem>()
+                .unwrap()
+                .child()
+                .unwrap()
+                .is::<gtk::Label>()
+        );
+    }
+
+    /// 아이콘과 라벨 사이는 시안 space-sm 이고, 행을 메뉴에 붙인 뒤에도 그대로다.
+    /// 붙기 전 GTK style padding 은 0 이라 그 값을 읽으면 간격이 사라진다.
+    /// 실행: cargo test -p tasty-platform --lib --features gui -- --ignored --test-threads=1 native_menu::linux
+    #[test]
+    #[ignore]
+    fn icon_keeps_the_design_gap_before_its_label() {
+        use crate::native_menu::MenuIcon;
+        use tasty_type_appearance::theme::SIZING;
+        assert!(ensure_gtk(), "이 테스트는 X11 디스플레이가 있어야 한다");
+        assert_eq!(super::icon::label_gap(), SIZING.spacing_sm.value() as i32);
+        let row = menu_item(
+            &MenuItem::new(1, "Open in system").with_icon(MenuIcon::from_svg(
+                tasty_icons::EXTERNAL.svg,
+                SIZING.icon_glyph_size_md,
+            )),
+        );
+        let menu = gtk::Menu::new();
+        menu.append(&row);
+        menu.show_all();
+        assert_eq!(icon_gap(row.upcast_ref()), SIZING.spacing_sm.value() as i32);
+    }
+
     /// 실제 메뉴 선택은 격리 X11 하네스의 pointer 입력으로 한다. 제품 IPC를 추가하지 않는다.
     #[test]
     #[ignore]
@@ -474,22 +529,7 @@ mod tests {
         let super::super::HandleImpl::Gtk(gtk_handle) = &handle.0 else {
             panic!("GTK handle");
         };
-        let rows = gtk_handle.menu.children();
-        let first = rows[0].clone().downcast::<gtk::MenuItem>().unwrap();
-        let first_row = first.child().unwrap().downcast::<gtk::Box>().unwrap();
-        assert_eq!(first_row.children().len(), 3, "icon + label + accelerator");
-        assert!(first_row.children()[0].is::<gtk::DrawingArea>());
-        assert!(!rows[1].is_sensitive());
-        assert_eq!(rows[1].tooltip_text().as_deref(), Some("Unavailable"));
-        assert!(
-            rows[3]
-                .clone()
-                .downcast::<gtk::MenuItem>()
-                .unwrap()
-                .child()
-                .unwrap()
-                .is::<gtk::Label>()
-        );
+        assert_icon_rows(&gtk_handle.menu.children());
         let menu_weak = gtk_handle.menu.downgrade();
         let menu_window = gtk_handle.menu.window().unwrap();
         let (_, x, y) = menu_window.origin();
