@@ -238,6 +238,26 @@ pub(super) fn structural_failed(
     pending.result(epoch, op, None, false);
 }
 
+/// 결과 정산 전 안내 대상을 찾는다. 정산된 요청은 중복 회신이나 실패 뒤의 늦은 성공으로
+/// 다시 안내하지 않으며, 사라진 View의 요청도 다른 View로 넘기지 않는다.
+pub(super) fn unanswered_request_view(
+    pending: &crate::state::attach_pending::AttachPending,
+    epoch: &ConnectionEpoch,
+    op: u64,
+) -> Option<std::sync::Weak<()>> {
+    pending
+        .entries
+        .iter()
+        .find(|entry| {
+            entry.epoch.same(epoch)
+                && entry.receipt.op() == Some(op)
+                && !entry.receipt.has_result()
+                && !entry.receipt.finished()
+                && entry.view.strong_count() > 0
+        })
+        .map(|entry| entry.view.clone())
+}
+
 /// 원격 구조 요청의 성공을 그 run과 사용자 대기에 알린다. 결과보다 먼저 적용된 생성을 사용자가
 /// 선택해 두었으면 포커스할 local surface를 돌려준다.
 pub(super) fn structural_succeeded(

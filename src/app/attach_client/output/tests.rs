@@ -128,46 +128,6 @@ fn a_structural_failure_reason_reaches_the_toast_verbatim() {
     );
 }
 
-/// 원격 사용자 닫기 회신의 history 생략 수는 요청한 창에 경고 한 번으로 이어진다.
-#[test]
-fn a_remote_close_without_history_warns_the_requesting_window_once() {
-    crate::i18n::init("en");
-    let toasts_for = |history_omitted: Option<u32>| {
-        let payload = serde_json::to_vec(&StreamControl::StructuralResult {
-            created_surface_id: None,
-            op_id: 3,
-            ok: true,
-            reason: None,
-            history_omitted,
-        })
-        .unwrap();
-        let ev = mirror_event_from_control(&payload).expect("성공 회신은 이벤트가 된다");
-        let mut sess = test_session(9_000, HashMap::new());
-        let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        supply_ids(&engine);
-        {
-            let mut host = MirrorHost::windowed(&mut state, &mut engine);
-            apply_mirror_events(&mut sess, &mut host, &mut plugin_manager, vec![ev]);
-        }
-        state
-            .toasts
-            .messages()
-            .into_iter()
-            .map(str::to_string)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        toasts_for(Some(1)),
-        vec![crate::app::journal::notices::close_history_omitted_body(1)]
-    );
-    assert!(
-        toasts_for(None).is_empty(),
-        "생략이 없거나 옛 서버의 회신은 경고하지 않는다"
-    );
-}
-
 #[test]
 fn a_desync_detaches_once_renews_the_stream_and_sums_later_notices() {
     use tasty_terminal::{OUTPUT_RETENTION_MAX_BYTES, OutputCursor, OutputReadRequest};

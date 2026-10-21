@@ -3,6 +3,8 @@
 #[cfg(test)]
 mod capture_tests;
 #[cfg(test)]
+mod close_history_tests;
+#[cfg(test)]
 mod home_probe_tests;
 mod list_dir;
 mod remote_entry;
@@ -505,9 +507,16 @@ fn apply_one_mirror_event(
             );
         }
         MirrorEvent::StructuralSucceeded(op_id, created, history_omitted) => {
-            // 서버는 원격 사용자 닫기에서만 이 수를 보낸다. 요청한 사용자에게 한 번 알린다.
-            if history_omitted > 0 {
-                host.toast(
+            // 결과 정산이 receipt를 바꾸기 전에 원 요청 View를 확인한다.
+            if history_omitted > 0
+                && let Some(view) = user_waits::unanswered_request_view(
+                    &host.state.attach_pending,
+                    &sess.transport.frame_tx.epoch(),
+                    op_id,
+                )
+            {
+                host.toast_for(
+                    &view,
                     crate::app::journal::notices::close_history_omitted_body(history_omitted),
                     crate::adapters::ui::ToastKind::Warning,
                 );
