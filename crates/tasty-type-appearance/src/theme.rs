@@ -1781,11 +1781,6 @@ impl Theme {
     pub fn plugins_side_panel_width(&self) -> LogicalPx {
         LogicalPx((240.0 * self.ui_zoom).round())
     }
-    /// 설정 > 모양의 폰트 패밀리 리스트 최대 높이 (250px).
-    #[inline]
-    pub fn font_family_menu_max_height(&self) -> LogicalPx {
-        LogicalPx((250.0 * self.ui_zoom).round())
-    }
     /// 파일 선택 팝업의 설명문 최대 폭 (340px) — 이 폭에서 줄바꿈한다.
     #[inline]
     pub fn file_picker_note_max_width(&self) -> LogicalPx {
@@ -2381,11 +2376,6 @@ mod tests {
                 "plugins_side_panel_width",
             ),
             (
-                Theme::font_family_menu_max_height,
-                250.0,
-                "font_family_menu_max_height",
-            ),
-            (
                 Theme::file_picker_note_max_width,
                 340.0,
                 "file_picker_note_max_width",
@@ -2625,7 +2615,6 @@ mod tests {
         assert_eq!(t.tutorial_topic_body_max_height().value(), 200.0);
         assert_eq!(t.plugins_header_height().value(), 48.0);
         assert_eq!(t.plugins_side_panel_width().value(), 240.0);
-        assert_eq!(t.font_family_menu_max_height().value(), 250.0);
         assert_eq!(t.file_picker_note_max_width().value(), 340.0);
         assert_eq!(t.button_gap().value(), t.spacing_sm.value()); // button gap
         assert_eq!(t.button_radius().value(), t.corner_radius.value());
