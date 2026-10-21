@@ -78,6 +78,8 @@ pub(crate) mod fake {
         pub applied: RefCell<Vec<AppliedRequest>>,
         pub scale_factors: RefCell<Vec<f64>>,
         pub cleared: RefCell<usize>,
+        /// 마지막으로 성공한 적용이 host 포인터를 가져갔고 아직 `clear_overlay` 로 풀지 않았다.
+        pub pointer_held: RefCell<bool>,
     }
 
     impl WebViewOverlayBackend for FakeOverlayBackend {
@@ -99,11 +101,13 @@ pub(crate) mod fake {
                     .collect(),
                 request.host_takes_pointer,
             ));
+            *self.pointer_held.borrow_mut() = request.host_takes_pointer;
             Ok(())
         }
 
         fn clear_overlay(&self) {
             *self.cleared.borrow_mut() += 1;
+            *self.pointer_held.borrow_mut() = false;
         }
     }
 }

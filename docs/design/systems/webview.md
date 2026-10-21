@@ -242,7 +242,7 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 - 활성 WebView마다 `overlay_support()`를 묻고 가장 낮은 값을 쓴다. 하나라도 지원하지 않으면 숨김이다.
 - 전체화면 무대나 튜토리얼이 보이면 숨김이다. 창 전체를 덮는 층이라 페이지를 보일 이유가 없다.
 - 숨김이 아니면 활성 WebView마다 `apply_overlay`를 부른다. 하나라도 실패하면 그 프레임부터 숨김이고 `tracing::warn!`을 남긴다. 실패는 대상 팝업이 모두 닫힐 때까지 유지한다. 그동안 다시 시도하지 않고 경고도 한 번만 남긴다. 오버레이 창의 surface를 잃고 다시 설정해도 얻지 못한 경우도 같은 실패로 다룬다.
-- 숨김으로 돌아가거나 팝업이 닫히면 적용했던 WebView에 `clear_overlay`를 부른다.
+- 숨김으로 돌아가거나 팝업이 닫히면 적용했던 WebView에 `clear_overlay`를 부른다. 한 프레임에서 앞의 WebView 적용이 성공하고 뒤의 WebView가 실패하면, 첫 적용이어도 그 프레임에 모든 WebView에 `clear_overlay`를 불러 앞의 입력 차단·그림 영역을 되돌린다.
 - 매 프레임 다시 정하므로 환경이 바뀌면(예: Linux 컴포지팅 매니저 종료) backend가 낮춘 보고를 다음 프레임부터 따른다.
 - 표시 판정은 `reveal_wanted(mode, overlay_open, active, under_toast)`다. 숨김이 아니면 대상 팝업이 떠 있어도 활성 WebView를 보인다. 비활성 탭과 토스트·passive 팝업 규칙은 모드와 관계없이 그대로다.
 

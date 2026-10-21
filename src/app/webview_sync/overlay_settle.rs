@@ -30,6 +30,8 @@ pub(super) fn settle_overlay<B: crate::webview::overlay::WebViewOverlayBackend>(
             failed: frame.health.failed(),
         });
     }
+    // 이번 프레임에 적용을 시도한 backend 가 있다. 뒤 WebView 가 실패하면 앞에서 성공한 적용도 되돌린다.
+    let mut attempted = false;
     if mode != OverlayMode::Hide {
         for (wv, rect) in &active {
             // native 창은 반올림한 정수 사각형에 놓인다(`set_bounds`). 영역도 같은 기준으로 자른다.
@@ -50,6 +52,7 @@ pub(super) fn settle_overlay<B: crate::webview::overlay::WebViewOverlayBackend>(
                 ),
                 scale_factor,
             };
+            attempted = true;
             if let Err(e) = wv.apply_overlay(&request) {
                 if frame.health.record_failure() {
                     tracing::warn!(
@@ -61,7 +64,7 @@ pub(super) fn settle_overlay<B: crate::webview::overlay::WebViewOverlayBackend>(
             }
         }
     }
-    if mode == OverlayMode::Hide && frame.applied {
+    if mode == OverlayMode::Hide && (frame.applied || attempted) {
         for (wv, _) in views {
             wv.clear_overlay();
         }
@@ -237,6 +240,35 @@ mod tests {
         );
         assert_eq!(*wv.cleared.borrow(), 1);
         assert!(!frame.applied);
+    }
+
+    /// 첫 적용에서 앞 WebView 가 성공한 뒤 다음 WebView 가 실패하면 앞의 적용도 그 프레임에 되돌린다.
+    #[test]
+    fn a_partial_first_apply_is_cleared_when_a_later_webview_fails() {
+        let ok = FakeOverlayBackend {
+            support: OverlayMode::Opaque,
+            ..FakeOverlayBackend::default()
+        };
+        let bad = FakeOverlayBackend {
+            support: OverlayMode::Opaque,
+            fail: true,
+            ..FakeOverlayBackend::default()
+        };
+        let mut frame = frame_with(&[(TargetKind::HostPopup, er(0.0, 0.0, 10.0, 10.0))]);
+        let views = [
+            (&ok, Some(rect(0.0, 0.0, 100.0, 100.0))),
+            (&bad, Some(rect(100.0, 0.0, 100.0, 100.0))),
+        ];
+        assert_eq!(
+            settle_overlay(&mut frame, true, false, &views, 1.0),
+            OverlayMode::Hide
+        );
+        assert_eq!(ok.applied.borrow().len(), 1);
+        assert!(*ok.cleared.borrow() >= 1);
+        assert!(!*ok.pointer_held.borrow());
+        assert!(!frame.applied);
+        settle_overlay(&mut frame, false, false, &views, 1.0);
+        assert!(!*ok.pointer_held.borrow());
     }
 
     /// 활성 WebView 하나라도 지원하지 않으면 모두 숨긴다(지금 동작).
