@@ -182,12 +182,10 @@ pub(super) fn drag_flip(ui: &mut egui::Ui, theme: &Theme, col: LogicalPx, row: S
 fn switch_modifier_section(ui: &mut egui::Ui, theme: &Theme) {
     let axis = SwitchAxis::Workspace;
     let label = t(axis.modifier_label_key());
-    let slot = format!(
-        "{}:",
-        t_fmt("settings.keybindings.workspace_switch_slot_label", "1")
-    );
-    let next = format!("{}:", t("settings.keybindings.workspace_switch_next_label"));
-    let measured = [label, slot.as_str(), next.as_str()].map(SettingsRow::new);
+    // 번역 문구에 이미 콜론이 있다.
+    let slot = t_fmt("settings.keybindings.workspace_switch_slot_label", "1");
+    let next = t("settings.keybindings.workspace_switch_next_label");
+    let measured = [label, slot.as_str(), next].map(SettingsRow::new);
     let col = settings_label_column(ui, theme, &measured);
     let defaults = KeybindingSettings::default();
     let current = defaults.workspace_switch_modifier.clone();
@@ -230,9 +228,7 @@ fn switch_modifier_section(ui: &mut egui::Ui, theme: &Theme) {
     ui.push_id("slot", |ui| {
         row(ui, theme, col, &slot, None, &[&slot_combo])
     });
-    ui.push_id("next", |ui| {
-        row(ui, theme, col, &next, None, &[&next_combo])
-    });
+    ui.push_id("next", |ui| row(ui, theme, col, next, None, &[&next_combo]));
 }
 
 pub(super) fn row(
