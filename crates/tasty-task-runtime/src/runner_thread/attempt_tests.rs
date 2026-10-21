@@ -17,7 +17,7 @@ fn ctx() -> (tempfile::TempDir, RunnerContext) {
     let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
     let ctx = RunnerContext {
         scope_stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        memory: Arc::new(Mutex::new(mem)),
+        memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(Mutex::new(mem))),
         agent_seq: Arc::new(AtomicU64::new(0)),
         host_ipc: Arc::new(OnceLock::new()),
         task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
@@ -30,7 +30,7 @@ fn ctx() -> (tempfile::TempDir, RunnerContext) {
 }
 
 fn with_store<R>(ctx: &RunnerContext, f: impl FnOnce(&mut TaskStore) -> R) -> R {
-    ctx.with_memory(|mem| f(&mut TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())))
+    ctx.with_store(|mem| f(&mut TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())))
 }
 
 fn state_of(ctx: &RunnerContext, id: &str) -> TaskState {
@@ -142,7 +142,7 @@ fn put_dead_handle(ctx: &RunnerContext, attempt: &str) {
 }
 
 fn put(ctx: &RunnerContext, key: &str, v: serde_json::Value) {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         mem.put(
             HOST_OWNER,
             &Scope::Workspace(1),
@@ -155,7 +155,7 @@ fn put(ctx: &RunnerContext, key: &str, v: serde_json::Value) {
 }
 
 fn handle_left(ctx: &RunnerContext) -> bool {
-    ctx.with_memory(|mem| mem.get(&Scope::Workspace(1), &handle_key("p")).unwrap())
+    ctx.with_store(|mem| mem.get(&Scope::Workspace(1), &handle_key("p")).unwrap())
         .is_some()
 }
 

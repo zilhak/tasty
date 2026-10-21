@@ -333,7 +333,7 @@ mod through_the_runner {
     use super::super::super::*;
 
     fn store_op<R>(ctx: &RunnerContext, f: impl FnOnce(&mut TaskStore) -> R) -> R {
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             f(&mut store)
@@ -460,7 +460,7 @@ mod through_the_runner {
     }
 
     fn holders(ctx: &RunnerContext) -> Vec<String> {
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             SemaphoreStore::new(mem, HOST_OWNER)
                 .get(1, "gpu")
                 .unwrap()
@@ -472,7 +472,7 @@ mod through_the_runner {
     #[test]
     fn the_permit_is_held_until_the_postprocess_finishes() {
         let (td, ctx) = fresh_ctx();
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             SemaphoreStore::new(mem, HOST_OWNER)
                 .create(1, "gpu", 1, 0)
                 .unwrap()
@@ -509,7 +509,7 @@ mod through_the_runner {
     #[test]
     fn cancelling_kills_the_postprocess_before_the_permit_is_released() {
         let (td, ctx) = fresh_ctx();
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             SemaphoreStore::new(mem, HOST_OWNER)
                 .create(1, "gpu", 1, 0)
                 .unwrap()

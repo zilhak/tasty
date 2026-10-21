@@ -137,7 +137,7 @@ impl AppServicesBuilder {
         };
         let host_ipc_injector = Arc::new(OnceLock::new());
         let tasks = tasty_task_runtime::TaskService::new(
-            memory.clone(),
+            memory_access.clone(),
             Arc::clone(&host_ipc_injector),
             Arc::new(crate::app::task_completion::AppCompletionResolver),
         )

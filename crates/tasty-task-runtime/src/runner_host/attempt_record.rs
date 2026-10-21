@@ -21,11 +21,12 @@ impl RunnerContext {
         completion: Completion,
         now_ms: u64,
     ) -> Result<CompletionReceipt, AgentError> {
-        let receipt = self.with_memory(|mem| {
-            TaskStore::new(mem, HOST_OWNER, self.agent_seq.as_ref()).complete(
+        let (seq, id) = (self.agent_seq.clone(), task_id.clone());
+        let receipt = self.with_memory(move |mem| {
+            TaskStore::new(mem, HOST_OWNER, seq.as_ref()).complete(
                 workspace_id,
-                task_id,
-                completion,
+                &id,
+                completion.clone(),
                 now_ms,
             )
         })?;

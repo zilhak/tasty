@@ -26,7 +26,7 @@ fn ctx() -> (tempfile::TempDir, RunnerContext) {
     let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
     let ctx = RunnerContext {
         scope_stopping: Arc::new(AtomicBool::new(false)),
-        memory: Arc::new(Mutex::new(mem)),
+        memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(Mutex::new(mem))),
         agent_seq: Arc::new(AtomicU64::new(0)),
         host_ipc: Arc::new(OnceLock::new()),
         task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
@@ -46,7 +46,7 @@ fn sleeper(ctx: &RunnerContext) -> tasty_agent::Task {
 }
 
 fn sleeper_with(ctx: &RunnerContext, metadata: serde_json::Value) -> tasty_agent::Task {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .create(TaskCreateOpts {
                 workspace_id: 1,
@@ -79,7 +79,7 @@ fn executor(ctx: &RunnerContext) -> (HostExecutor, Arc<AtomicU64>) {
 }
 
 fn other_gets_db(ctx: &RunnerContext, at: u64) -> bool {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         LeaseStore::new(mem, HOST_OWNER)
             .acquire(1, DB, "other", None, LeaseMode::Block, at)
             .unwrap()
@@ -88,7 +88,7 @@ fn other_gets_db(ctx: &RunnerContext, at: u64) -> bool {
 }
 
 fn db_holder(ctx: &RunnerContext) -> Option<String> {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         LeaseStore::new(mem, HOST_OWNER)
             .get(1, DB)
             .unwrap()
@@ -114,7 +114,7 @@ fn keep_ticking(
 
 /// 이 시각에 lease 가 만료됐는지. 갱신이 늦으면 다음 tick 전에 만료된다.
 fn db_expired(ctx: &RunnerContext, at: u64) -> bool {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         LeaseStore::new(mem, HOST_OWNER)
             .get(1, DB)
             .unwrap()
@@ -142,7 +142,7 @@ fn a_running_task_keeps_its_ttl_lease_while_the_runner_watches_it() {
         "살아 있는 task 의 lease 를 TTL 뒤 다른 holder 가 가져갔다"
     );
     assert_eq!(db_holder(&ctx), Some(task.id.clone()));
-    let acquired_at = ctx.with_memory(|mem| {
+    let acquired_at = ctx.with_store(|mem| {
         LeaseStore::new(mem, HOST_OWNER)
             .get(1, DB)
             .unwrap()
@@ -172,7 +172,7 @@ fn a_restored_run_keeps_its_ttl_lease_after_a_restart() {
     let task = sleeper(&ctx);
     let id = task.id.clone();
     // 이전 호스트가 쥔 lease. 만료 시각은 이미 지났다.
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .set_state(1, &id, TaskState::Running, 1100)
             .unwrap();
@@ -219,7 +219,7 @@ fn a_restored_run_keeps_its_ttl_lease_after_a_restart() {
 }
 
 fn gpu_task(ctx: &RunnerContext) -> tasty_agent::Task {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         SemaphoreStore::new(mem, HOST_OWNER)
             .create(1, "gpu", 1, 1000)
             .unwrap()
@@ -231,7 +231,7 @@ fn gpu_task(ctx: &RunnerContext) -> tasty_agent::Task {
 }
 
 fn other_gets_gpu(ctx: &RunnerContext, at: u64) -> bool {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         SemaphoreStore::new(mem, HOST_OWNER)
             .acquire(1, "gpu", "other", None, at)
             .unwrap()
@@ -241,7 +241,7 @@ fn other_gets_gpu(ctx: &RunnerContext, at: u64) -> bool {
 
 /// 이 시각에 permit 이 만료됐는지.
 fn gpu_expired(ctx: &RunnerContext, at: u64) -> bool {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         SemaphoreStore::new(mem, HOST_OWNER)
             .get(1, "gpu")
             .unwrap()
@@ -253,7 +253,7 @@ fn gpu_expired(ctx: &RunnerContext, at: u64) -> bool {
 }
 
 fn gpu_holder(ctx: &RunnerContext) -> Vec<(String, Option<u64>)> {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         SemaphoreStore::new(mem, HOST_OWNER)
             .get(1, "gpu")
             .unwrap()
@@ -306,7 +306,7 @@ fn a_restored_run_keeps_its_ttl_permit_after_a_restart() {
     let (_td, ctx) = ctx();
     let task = gpu_task(&ctx);
     let id = task.id.clone();
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .set_state(1, &id, TaskState::Running, 1100)
             .unwrap();
@@ -470,7 +470,7 @@ fn holding_warnings_show_only_the_current_attempts_records() {
         "tasks": [{"id": id, "command": {"kind": "run", "workspace_id": 1, "command": ["true"]}}]}))
     .unwrap();
     let running = |now| {
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
                 .set_state(1, &id, TaskState::Running, now)
                 .unwrap()
@@ -480,7 +480,7 @@ fn holding_warnings_show_only_the_current_attempts_records() {
                 .id
         })
     };
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .submit_graph(1, spec, 0)
             .unwrap();
@@ -499,7 +499,7 @@ fn holding_warnings_show_only_the_current_attempts_records() {
     assert_eq!(shown.len(), 1);
     assert_eq!(shown[0]["attempt_id"], first.as_str());
 
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let mut store = TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref());
         store
             .set_state(1, &id, TaskState::Failed { error: "x".into() }, 20)

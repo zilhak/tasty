@@ -121,7 +121,7 @@ fn create_in(
 ) -> Task {
     tasty_test_support::namespace_owners::publish_fixture();
     let seq = ctx.agent_seq.clone();
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, seq.as_ref())
             .create_typed(
                 TaskCreateOpts {
@@ -151,7 +151,7 @@ fn dispatch(exec: &mut HostExecutor, ctx: &RunnerContext, task: &Task) -> Dispat
         panic!("dispatch did not start");
     };
     let seq = ctx.agent_seq.clone();
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, seq.as_ref())
             .set_state(task.workspace_id, &task.id, TaskState::Running, 1)
             .expect("running")
@@ -286,7 +286,7 @@ fn needs_input_is_recorded_as_awaiting_input_and_does_not_finish() {
     fake.set("needs_input");
     assert!(matches!(exec.poll(&h), PollOutcome::Active));
     let seq = ctx.agent_seq.clone();
-    let stored = ctx.with_memory(|mem| {
+    let stored = ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, seq.as_ref())
             .get(1, &task.id)
             .unwrap()
@@ -355,7 +355,7 @@ fn a_structured_output_needs_a_submission_and_the_new_session_is_told_how() {
     assert!(prompt.contains(&format!("--token '{token}'")), "{prompt}");
     assert!(!token.contains(&task.id), "{token}");
     // report 는 사용법을 읽는 명령 한 줄과 이 회차의 주소만 싣는다.
-    let stored = ctx.with_memory(|mem| {
+    let stored = ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .get(1, &task.id)
             .unwrap()
@@ -403,7 +403,7 @@ fn the_same_task_name_in_two_workspaces_keeps_its_own_turn() {
         timeout_ms: None,
     };
     let seq = ctx.agent_seq.clone();
-    ctx.with_memory(|mem| TaskStore::new(mem, HOST_OWNER, seq.as_ref()).put(&t2))
+    ctx.with_store(|mem| TaskStore::new(mem, HOST_OWNER, seq.as_ref()).put(&t2))
         .expect("put");
     assert_eq!(t1.id, t2.id);
     let h1 = dispatch(&mut exec1, &ctx, &t1);
@@ -464,7 +464,7 @@ fn a_session_in_another_workspace_submits_to_the_task_workspace() {
     assert!(matches!(exec.poll(&h), PollOutcome::Active));
     let seq = ctx.agent_seq.clone();
     let stored = ctx
-        .with_memory(|mem| TaskStore::new(mem, HOST_OWNER, seq.as_ref()).get(1, &task.id))
+        .with_store(|mem| TaskStore::new(mem, HOST_OWNER, seq.as_ref()).get(1, &task.id))
         .expect("get")
         .expect("task");
     let link = stored.attempt.and_then(|a| a.agent).expect("session link");

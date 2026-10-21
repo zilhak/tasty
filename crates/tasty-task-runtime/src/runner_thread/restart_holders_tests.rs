@@ -21,7 +21,7 @@ fn ctx() -> (tempfile::TempDir, RunnerContext) {
     let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
     let ctx = RunnerContext {
         scope_stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        memory: Arc::new(Mutex::new(mem)),
+        memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(Mutex::new(mem))),
         agent_seq: Arc::new(AtomicU64::new(0)),
         host_ipc: Arc::new(OnceLock::new()),
         task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
@@ -35,7 +35,7 @@ fn ctx() -> (tempfile::TempDir, RunnerContext) {
 
 /// Running run task 하나. `metadata` 로 점유를 정하고 그 점유를 실제로 얻어 둔다.
 fn running_holder(ctx: &RunnerContext, metadata: serde_json::Value) -> String {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let mut store = TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref());
         let t = store
             .create(TaskCreateOpts {
@@ -58,7 +58,7 @@ fn running_holder(ctx: &RunnerContext, metadata: serde_json::Value) -> String {
 }
 
 fn put(ctx: &RunnerContext, key: &str, v: serde_json::Value) {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         mem.put(
             HOST_OWNER,
             &Scope::Workspace(1),
@@ -79,7 +79,7 @@ fn put_run_handle(ctx: &RunnerContext, task_id: &str, pid: u32) {
 }
 
 fn state_of(ctx: &RunnerContext, id: &str) -> TaskState {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .get(1, &id.to_string())
             .unwrap()
@@ -89,7 +89,7 @@ fn state_of(ctx: &RunnerContext, id: &str) -> TaskState {
 }
 
 fn gpu_with_one_permit(ctx: &RunnerContext, holder: &str) {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let mut sem = SemaphoreStore::new(mem, HOST_OWNER);
         sem.create(1, "gpu", 1, 1000).unwrap();
         assert!(sem.acquire(1, "gpu", holder, None, 1000).unwrap().acquired);
@@ -97,7 +97,7 @@ fn gpu_with_one_permit(ctx: &RunnerContext, holder: &str) {
 }
 
 fn gpu_holders(ctx: &RunnerContext) -> Vec<String> {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         SemaphoreStore::new(mem, HOST_OWNER)
             .get(1, "gpu")
             .unwrap()
@@ -110,7 +110,7 @@ fn gpu_holders(ctx: &RunnerContext) -> Vec<String> {
 }
 
 fn another_task_gets_gpu(ctx: &RunnerContext) -> bool {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         SemaphoreStore::new(mem, HOST_OWNER)
             .acquire(1, "gpu", "sem2", None, 2000)
             .unwrap()
@@ -189,14 +189,14 @@ fn a_restored_run_returns_only_a_lease_it_still_holds() {
         serde_json::json!({"lease": {"resource": "db", "ttl_ms": 1}}),
     );
     let lease_holder = |ctx: &RunnerContext| {
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             LeaseStore::new(mem, HOST_OWNER)
                 .get(1, "db")
                 .unwrap()
                 .map(|l| l.holder)
         })
     };
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let acquired = LeaseStore::new(mem, HOST_OWNER)
             .acquire(1, "db", &id, None, LeaseMode::Fail, 1000)
             .unwrap()
@@ -209,7 +209,7 @@ fn a_restored_run_returns_only_a_lease_it_still_holds() {
     assert_eq!(lease_holder(&ctx), Some(id.clone()));
 
     // TTL 이 지나 다른 holder 가 얻은 경우(자원의 TTL 은 재시작과 무관하게 적용된다).
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let mut leases = LeaseStore::new(mem, HOST_OWNER);
         leases.release(1, "db", &id).unwrap();
         let acquired = leases
@@ -230,7 +230,7 @@ fn the_runner_returns_the_permit_of_a_run_it_adopted() {
     let (_td, ctx) = ctx();
     let id = running_holder(&ctx, serde_json::json!({"semaphore": {"name": "gpu"}}));
     gpu_with_one_permit(&ctx, &id);
-    let task = ctx.with_memory(|mem| {
+    let task = ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .get(1, &id)
             .unwrap()
@@ -243,7 +243,7 @@ fn the_runner_returns_the_permit_of_a_run_it_adopted() {
 }
 
 fn cancel(ctx: &RunnerContext, id: &str) {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .set_state(1, &id.to_string(), TaskState::Cancelled, 3000)
             .unwrap();
@@ -257,7 +257,7 @@ fn running_run_with_holdings(ctx: &RunnerContext) -> String {
         serde_json::json!({"semaphore": {"name": "gpu"}, "lease": {"resource": "db"}}),
     );
     gpu_with_one_permit(ctx, &id);
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let acquired = LeaseStore::new(mem, HOST_OWNER)
             .acquire(1, "db", &id, None, LeaseMode::Fail, 1000)
             .unwrap()
@@ -269,7 +269,7 @@ fn running_run_with_holdings(ctx: &RunnerContext) -> String {
 }
 
 fn lease_holder(ctx: &RunnerContext) -> Option<String> {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         LeaseStore::new(mem, HOST_OWNER)
             .get(1, "db")
             .unwrap()
@@ -278,7 +278,7 @@ fn lease_holder(ctx: &RunnerContext) -> Option<String> {
 }
 
 fn handle_left(ctx: &RunnerContext, id: &str) -> bool {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         mem.get(&Scope::Workspace(1), &handle_key(id))
             .unwrap()
             .is_some()

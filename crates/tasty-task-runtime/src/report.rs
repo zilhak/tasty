@@ -1,12 +1,11 @@
 //! DAG report 조회와 custom 기록. 저장 규칙은 [`tasty_agent::task::report`] 에 있다.
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use tasty_agent::task::attempt::attempt_id;
-use tasty_agent::task::report::{AppendOutcome, ReportAddress, ReportLimits, project_task};
+use tasty_agent::task::report::{AppendOutcome, ReportAddress, ReportLimits};
 
 use crate::agent_task::Submitter;
-use tasty_agent::{AgentError, TaskStore};
-use tasty_memory::HOST_OWNER;
+use tasty_agent::AgentError;
 
 use crate::{TaskScope, TaskService};
 
@@ -26,25 +25,8 @@ impl TaskService {
         text: &str,
         writer: Submitter,
     ) -> Result<AppendOutcome, AgentError> {
-        let bound_here = || match writer {
-            Submitter::Trusted => true,
-            Submitter::Session(surface) => self
-                .agent_turns()
-                .find(addr.workspace_id, &addr.task_id)
-                .is_some_and(|(s, b)| {
-                    s == surface && b.attempt == attempt_id(&addr.task_id, addr.attempt)
-                }),
-        };
-        crate::runner_host::report_append(
-            self.memory(),
-            scope.agent_seq(),
-            self.report_limits().get(),
-            addr,
-            text,
-            0,
-            bound_here,
-        )
-        .map(|(outcome, _)| outcome)
+        let (scope, addr, text) = (scope.clone(), addr.clone(), text.to_string());
+        self.transact(move |tx| tx.report_append(&scope, &addr, &text, writer))
     }
 
     /// DAG 하나의 report. `task` 를 주면 그 task 만, `attempt` 는 그 task 의 회차 하나만 싣는다.
@@ -58,43 +40,31 @@ impl TaskService {
         attempt: Option<u32>,
         include_raw: bool,
     ) -> Result<Option<Value>, AgentError> {
-        let Some((dag, tasks)) = self.dag_get(scope, workspace_ids, dag_id)? else {
-            return Ok(None);
-        };
-        let selected: Vec<_> = match task {
-            None => dag
-                .task_ids
-                .iter()
-                .filter_map(|id| tasks.iter().find(|t| &t.id == id))
-                .collect(),
-            Some(id) => {
-                let t = tasks.iter().find(|t| t.id == id).ok_or_else(|| {
-                    AgentError::InvalidArgument(format!("task {id} is not in dag {dag_id}"))
-                })?;
-                vec![t]
-            }
-        };
-        let seq = scope.agent_seq().clone();
-        let entries = self.with_memory(|mem| {
-            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            selected
-                .iter()
-                .map(|t| {
-                    Ok(project_task(
-                        t,
-                        &store.report_blocks(t)?,
-                        &store.sealed_autos(t)?,
-                        attempt,
-                        include_raw,
-                    ))
-                })
-                .collect::<Result<Vec<_>, AgentError>>()
-        })?;
-        Ok(Some(json!({
-            "dag": dag.id,
-            "workspace_id": dag.workspace_id,
-            "name": dag.name,
-            "tasks": entries,
-        })))
+        let (scope, workspace_ids, dag_id) =
+            (scope.clone(), workspace_ids.to_vec(), dag_id.to_string());
+        let task = task.map(str::to_string);
+        self.transact(move |tx| {
+            tx.dag_report(
+                &scope,
+                &workspace_ids,
+                &dag_id,
+                task.as_deref(),
+                attempt,
+                include_raw,
+            )
+        })
+    }
+}
+
+/// 세션 토큰으로 부른 쓰기가 이 회차에 쓸 수 있는가. 사용자 CLI·플러그인은 주소의 토큰만 본다.
+pub(crate) fn bound_here(svc: &TaskService, addr: &ReportAddress, writer: Submitter) -> bool {
+    match writer {
+        Submitter::Trusted => true,
+        Submitter::Session(surface) => svc
+            .agent_turns()
+            .find(addr.workspace_id, &addr.task_id)
+            .is_some_and(|(s, b)| {
+                s == surface && b.attempt == attempt_id(&addr.task_id, addr.attempt)
+            }),
     }
 }

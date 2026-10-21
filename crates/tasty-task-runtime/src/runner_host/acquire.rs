@@ -2,6 +2,7 @@
 
 use tasty_agent::{AgentError, ElasticSpec, LeaseMode, LeaseStore, SemaphoreStore, Task, TaskId};
 use tasty_memory::HOST_OWNER;
+use tasty_memory::writer::Blocked;
 
 use super::{HostExecutor, ttl_renewal};
 
@@ -25,14 +26,28 @@ impl HostExecutor {
         let holder = holder.to_string();
         let ws = task.workspace_id;
         let now = self.holding_clock.now_ms();
-        let result: Result<bool, String> = self.ctx.with_memory(|mem| {
+        let (n, h) = (name.clone(), holder.clone());
+        let result = self.ctx.store(move |mem| {
             let mut store = SemaphoreStore::new(mem, HOST_OWNER);
             store
-                .acquire(ws, &name, &holder, ttl_ms, now)
+                .acquire(ws, &n, &h, ttl_ms, now)
                 .map(|o| o.acquired)
                 .map_err(|e| e.to_string())
         });
-        let acquired = result?;
+        let acquired = match result {
+            Ok(acquired) => acquired?,
+            // 접수되지 않았거나 확정되지 않았다. 저장 오류와 같이 다룬다.
+            // writer 가 접수하지 않았다(종료 중). 바뀐 것이 없어 다음 tick 으로 미룬다.
+            Err(Blocked::Refused(_)) => return Ok(Some(false)),
+            // 확정되지 않았다. 저장 오류와 같이 다룬다.
+            Err(blocked @ Blocked::Storage(_)) => return Err(blocked.to_string()),
+            // 얻었는지 모른다. 같은 holder 로 다시 얻으면 갱신이라 돌려준 뒤 다음 tick 에 다시 얻는다.
+            // 확정되지 않은 점유로 회차를 시작하지 않는다.
+            Err(Blocked::Unknown(_)) => {
+                self.release_unknown(ws, Holding::Permit, &name, &holder, &task.id);
+                return Ok(Some(false));
+            }
+        };
         if acquired {
             self.held_permits
                 .insert(task.id.clone(), (ws, name, holder));
@@ -119,17 +134,10 @@ impl HostExecutor {
         let holder = holder.to_string();
         let ws = task.workspace_id;
         let now = self.holding_clock.now_ms();
-        let result: Result<(bool, Option<String>), String> = self.ctx.with_memory(|mem| {
+        let (pool, h) = (candidates.clone(), holder.clone());
+        let result = self.ctx.store(move |mem| {
             let mut store = LeaseStore::new(mem, HOST_OWNER);
-            match store.acquire_any(
-                ws,
-                &candidates,
-                &holder,
-                ttl_ms,
-                mode,
-                elastic.as_ref(),
-                now,
-            ) {
+            match store.acquire_any(ws, &pool, &h, ttl_ms, mode, elastic.as_ref(), now) {
                 Ok(o) => Ok((o.acquired, o.resource)),
                 Err(AgentError::LeaseConflict { resource, holder }) => {
                     Err(format!("lease conflict: '{resource}' held by '{holder}'"))
@@ -140,7 +148,20 @@ impl HostExecutor {
                 Err(e) => Err(e.to_string()),
             }
         });
-        let (acquired, resource) = result?;
+        let (acquired, resource) = match result {
+            Ok(acquired) => acquired?,
+            // writer 가 접수하지 않았다(종료 중). 바뀐 것이 없어 다음 tick 으로 미룬다.
+            Err(Blocked::Refused(_)) => return Ok(Some(false)),
+            // 확정되지 않았다. 저장 오류와 같이 다룬다.
+            Err(blocked @ Blocked::Storage(_)) => return Err(blocked.to_string()),
+            // 어느 후보를 얻었는지 모른다. 후보마다 같은 holder 의 점유를 돌려준 뒤 다음 tick 에 다시 얻는다.
+            Err(Blocked::Unknown(_)) => {
+                for resource in &candidates {
+                    self.release_unknown(ws, Holding::Lease, resource, &holder, &task.id);
+                }
+                return Ok(Some(false));
+            }
+        };
         if acquired {
             let resource = resource.expect("acquire_any: acquired=true implies resource");
             self.held_leases
@@ -158,10 +179,11 @@ impl HostExecutor {
         let Some((ws, resource, holder)) = self.held_leases.remove(task_id) else {
             return;
         };
-        let res: Result<(), String> = self.ctx.with_memory(|mem| {
+        let (r, h) = (resource.clone(), holder.clone());
+        let res: Result<(), String> = self.ctx.with_memory(move |mem| {
             let mut store = LeaseStore::new(mem, HOST_OWNER);
             store
-                .release(ws, &resource, &holder)
+                .release(ws, &r, &h)
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
@@ -176,10 +198,11 @@ impl HostExecutor {
         self.late.forget(task_id);
         self.forget_renewals(task_id);
         if let Some((ws, name, holder)) = self.held_permits.remove(task_id) {
-            let res: Result<(), String> = self.ctx.with_memory(|mem| {
+            let (n, h) = (name.clone(), holder.clone());
+            let res: Result<(), String> = self.ctx.with_memory(move |mem| {
                 let mut store = SemaphoreStore::new(mem, HOST_OWNER);
                 store
-                    .release(ws, &name, &holder)
+                    .release(ws, &n, &h)
                     .map(|_| ())
                     .map_err(|e| e.to_string())
             });
@@ -194,5 +217,37 @@ impl HostExecutor {
             self.ctx.agent_turns.release(ws, task_id);
         }
         self.evict_handle(task_id);
+    }
+}
+
+/// 얻었는지 모르는 점유의 종류.
+#[derive(Clone, Copy)]
+enum Holding {
+    Permit,
+    Lease,
+}
+
+impl HostExecutor {
+    /// 결과 불명으로 끝난 획득을 되돌린다. 같은 holder 의 점유만 돌려주므로 얻지 못했으면 바뀌는 것이
+    /// 없다. 돌려주지 못하면 로그를 남긴다. 다음 획득이 같은 holder 로 갱신하고 회차가 끝날 때 돌려준다.
+    fn release_unknown(&self, ws: u32, kind: Holding, name: &str, holder: &str, task_id: &TaskId) {
+        let (n, h) = (name.to_string(), holder.to_string());
+        let released = self.ctx.with_memory(move |mem| -> Result<(), String> {
+            match kind {
+                Holding::Permit => SemaphoreStore::new(mem, HOST_OWNER)
+                    .release(ws, &n, &h)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+                Holding::Lease => LeaseStore::new(mem, HOST_OWNER)
+                    .release(ws, &n, &h)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+            }
+        });
+        if let Err(e) = released {
+            tracing::warn!(
+                "agent task {task_id}: holding '{name}' with an unknown acquire not released: {e}"
+            );
+        }
     }
 }

@@ -193,6 +193,8 @@ impl AppServices {
     /// 끝난 writer 결과로 응답한다. IPC 응답은 보내고 plugin 응답은 `plugins`로 보낸다. 메인 루프가
     /// `poll_memory_writer` 뒤에 부른다. plugin 매니저가 없으면 plugin 응답은 버린다.
     pub(crate) fn poll_memory_replies(&self, plugins: Option<&mut crate::plugin::PluginManager>) {
+        // writer 결과를 거두는 스레드다. 이 스레드가 writer 결과를 기다리면 debug 빌드에서 멈춘다.
+        tasty_memory::writer::mark_result_reaping_thread();
         let replies = crate::ipc::handler::deferred::MemoryReplies::poll(self);
         if replies.is_empty() {
             return;

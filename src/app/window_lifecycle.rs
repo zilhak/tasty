@@ -787,7 +787,7 @@ mod tests {
             std::sync::Mutex::new(tasty_memory::MemoryStore::open_in_memory().expect("memory")),
         );
         let tasks = TaskService::new(
-            memory,
+            tasty_memory::writer::MemoryAccess::inline(memory),
             Arc::new(std::sync::OnceLock::new()),
             Arc::new(crate::app::task_completion::AppCompletionResolver),
         );

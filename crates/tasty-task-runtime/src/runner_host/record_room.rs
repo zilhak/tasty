@@ -9,9 +9,13 @@ use super::HostExecutor;
 impl HostExecutor {
     /// 레코드가 memory 값 상한에 맞춘 결과 전 상한 안인가. 넘으면 사유를 돌려준다.
     pub(super) fn record_fits(&self, task: &Task, what: &str) -> Result<(), String> {
+        // 설정값만 읽는다. writer 가 답하지 않으면(종료 중) 기본 상한으로 판정한다.
         let limit = self
             .ctx
-            .with_memory(|mem| record_limit::limit_for(mem.config().entry_max_bytes));
+            .store(|mem| record_limit::limit_for(mem.config().entry_max_bytes))
+            .unwrap_or_else(|_| {
+                record_limit::limit_for(tasty_memory::MemoryConfig::default().entry_max_bytes)
+            });
         record_limit::check(task, what, limit)
     }
 

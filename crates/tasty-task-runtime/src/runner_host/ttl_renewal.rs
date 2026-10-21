@@ -116,12 +116,11 @@ impl HostExecutor {
                 self.ttl_renewals.remove(&key);
                 continue;
             };
-            let renewed = self.ctx.with_memory(|mem| match kind {
-                Holding::Lease => {
-                    LeaseStore::new(mem, HOST_OWNER).renew(ws, &name, &holder, r.ttl_ms, now)
-                }
+            let (which, n, h, ttl_ms) = (*kind, name.clone(), holder.clone(), r.ttl_ms);
+            let renewed = self.ctx.with_memory(move |mem| match which {
+                Holding::Lease => LeaseStore::new(mem, HOST_OWNER).renew(ws, &n, &h, ttl_ms, now),
                 Holding::Permit => {
-                    SemaphoreStore::new(mem, HOST_OWNER).renew(ws, &name, &holder, r.ttl_ms, now)
+                    SemaphoreStore::new(mem, HOST_OWNER).renew(ws, &n, &h, ttl_ms, now)
                 }
             });
             match renewed {

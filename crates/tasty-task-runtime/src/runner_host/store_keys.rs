@@ -30,14 +30,25 @@ pub(crate) fn load_dispatch_handle(
     workspace_id: u32,
     task_id: &str,
 ) -> Option<DispatchHandle> {
-    let scope = Scope::Workspace(workspace_id);
-    ctx.with_memory(|mem| {
-        let entry = mem.get(&scope, &handle_key(task_id)).ok().flatten()?;
-        match entry.value {
-            MemoryValue::Json(v) => serde_json::from_value(v).ok(),
-            _ => None,
-        }
-    })
+    let id = task_id.to_string();
+    ctx.store(move |mem| load_dispatch_handle_in(mem, workspace_id, &id))
+        .ok()
+        .flatten()
+}
+
+pub(crate) fn load_dispatch_handle_in(
+    mem: &dyn MemoryStorage,
+    workspace_id: u32,
+    task_id: &str,
+) -> Option<DispatchHandle> {
+    let entry = mem
+        .get(&Scope::Workspace(workspace_id), &handle_key(task_id))
+        .ok()
+        .flatten()?;
+    match entry.value {
+        MemoryValue::Json(v) => serde_json::from_value(v).ok(),
+        _ => None,
+    }
 }
 
 /// 자식 종료와 출력 수집 뒤 기록하는 결과 키. 기록 전에 호스트가 종료되거나 저장이 실패하면 남지 않을 수 있다.

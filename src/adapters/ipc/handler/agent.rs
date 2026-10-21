@@ -156,30 +156,35 @@ pub(super) fn reply_agent<T: Send + 'static>(
     )
 }
 
-/// task 연산을 memory writer의 호환 구간([`tasty_memory::writer::MemoryRequest::section`])으로 넣고
-/// 그 결과 뒤에 응답한다. `TaskService` 코드는 공유 잠금을 직접 잡고, 구간이 writer 순서를 정한다.
-/// 대기자 깨우기·runner 정리 시작처럼 연산이 내는 효과는 구간 안에서 각 commit 뒤에 일어난다.
+/// task 연산 하나를 memory writer 요청([`tasty_task_runtime::TaskTx`])으로 넣고 그 결과 뒤에
+/// 응답한다. 판단과 쓰기가 한 요청 안에서 끝나므로 같은 묶음의 앞 요청 반영을 본다. 연산이 거절돼도
+/// 그 전에 쓴 내용은 남는다. 대기자 깨우기·runner 정리 시작처럼 연산이 내는 효과는 commit을 확인한
+/// 뒤 메인 루프에서 실행한다. writer는 본문을 다시 실행할 수 있으므로 본문은 효과를 직접 내지 않는다.
 pub(super) fn reply_task<T: Send + 'static>(
     core: &crate::app::services::AppServices,
     id: Value,
     params: &Value,
-    body: impl FnOnce(&tasty_task_runtime::TaskService) -> Result<T, AgentError> + Send + 'static,
+    body: impl FnMut(&mut tasty_task_runtime::TaskTx<'_>) -> Result<T, AgentError> + Send + 'static,
     respond: impl FnOnce(&crate::app::services::AppServices, Value, T) -> JsonRpcResponse
     + Send
     + 'static,
 ) -> JsonRpcResponse {
-    let tasks = core.tasks.clone();
     let reply_id = id.clone();
     core.reply_with_memory(
         id,
-        tasty_memory::writer::MemoryRequest::section(
-            super::deferred::params_bytes(params),
-            move || body(&tasks),
-        ),
+        core.tasks
+            .unit_request(super::deferred::params_bytes(params), body),
         move |core, completion| match tasty_memory::writer::settle(completion) {
-            Ok(output) => match output.into_value::<Result<T, AgentError>>() {
-                Some(Ok(value)) => respond(core, reply_id, value),
-                Some(Err(error)) => agent_err_to_response(reply_id, error),
+            Ok(output) => match output
+                .into_value::<(Result<T, AgentError>, tasty_task_runtime::TaskEffects)>()
+            {
+                Some((result, effects)) => {
+                    effects.apply();
+                    match result {
+                        Ok(value) => respond(core, reply_id, value),
+                        Err(error) => agent_err_to_response(reply_id, error),
+                    }
+                }
                 None => JsonRpcResponse::internal_error(reply_id, "unexpected memory output"),
             },
             Err(failure) => super::deferred::unsettled_response(

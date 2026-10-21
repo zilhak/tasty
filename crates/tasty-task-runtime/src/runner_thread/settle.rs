@@ -87,13 +87,13 @@ pub(crate) fn settle_unwatched_handles(
     workspace_id: u32,
     watched: impl Fn(&TaskId) -> bool,
 ) {
-    let scope = Scope::Workspace(workspace_id);
-    let entries = ctx.with_memory(|mem| {
+    let entries = ctx.with_memory(move |mem| {
         let opts = ListOpts {
             prefix: Some(HANDLE_KEY_PREFIX.to_string()),
             ..Default::default()
         };
-        mem.list(&scope, &opts).unwrap_or_default()
+        mem.list(&Scope::Workspace(workspace_id), &opts)
+            .unwrap_or_default()
     });
     for e in entries {
         let Some(task_id) = e.key.strip_prefix(HANDLE_KEY_PREFIX).map(str::to_string) else {
@@ -102,13 +102,20 @@ pub(crate) fn settle_unwatched_handles(
         if watched(&task_id) {
             continue;
         }
-        let running = ctx.with_memory(|mem| {
-            TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
-                .get(workspace_id, &task_id)
-                .ok()
-                .flatten()
-                .is_some_and(|t| matches!(t.state, TaskState::Running))
-        });
+        let (seq, id) = (ctx.agent_seq.clone(), task_id.clone());
+        // 읽지 못하면 읽기 실패와 같이 Running 이 아닌 것으로 본다.
+        let running = ctx
+            .store(move |mem| {
+                TaskStore::new(mem, HOST_OWNER, seq.as_ref())
+                    .get(workspace_id, &id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|t| matches!(t.state, TaskState::Running))
+            })
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "agent task {task_id}: state read not answered");
+                false
+            });
         // Running 인데 러너가 모르는 handle 은 reload 가 정한다(여기서 끝내지 않는다).
         if running {
             continue;
@@ -172,9 +179,10 @@ fn record_attempt(value: &Value) -> Option<String> {
 }
 
 fn read_stored(ctx: &RunnerContext, workspace_id: u32, task_id: &str) -> Option<Stored> {
-    ctx.with_memory(|mem| {
+    let key = handle_key(task_id);
+    ctx.with_memory(move |mem| {
         let entry = mem
-            .get(&Scope::Workspace(workspace_id), &handle_key(task_id))
+            .get(&Scope::Workspace(workspace_id), &key)
             .ok()
             .flatten()?;
         Some(match entry.value {
@@ -195,7 +203,8 @@ fn read_stored(ctx: &RunnerContext, workspace_id: u32, task_id: &str) -> Option<
 pub(crate) fn finalize(ctx: &RunnerContext, workspace_id: u32, task_id: &str, expected: &Stored) {
     let scope = Scope::Workspace(workspace_id);
     let key = handle_key(task_id);
-    ctx.with_memory(|mem| {
+    let (seq, task_id, expected) = (ctx.agent_seq.clone(), task_id.to_string(), expected.clone());
+    ctx.with_memory(move |mem| {
         let current = match mem.get(&scope, &key) {
             Ok(Some(entry)) => match entry.value {
                 MemoryValue::Json(v) => Stored::of(&v),
@@ -210,15 +219,15 @@ pub(crate) fn finalize(ctx: &RunnerContext, workspace_id: u32, task_id: &str, ex
                 return;
             }
         };
-        if &current != expected {
+        if current != expected {
             return;
         }
         if let Err(error) = mem.delete(HOST_OWNER, &scope, &key, None) {
             tracing::warn!(%error, "failed to evict an ended task handle; the runner retries");
             return;
         }
-        let task = TaskStore::new(&mut *mem, HOST_OWNER, ctx.agent_seq.as_ref())
-            .get(workspace_id, &task_id.to_string())
+        let task = TaskStore::new(&mut *mem, HOST_OWNER, seq.as_ref())
+            .get(workspace_id, &task_id)
             .ok()
             .flatten();
         if let Some(task) = task

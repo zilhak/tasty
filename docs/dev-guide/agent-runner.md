@@ -22,7 +22,7 @@ runner의 성공 판정과 부모 대기열 수락은 서로 다른 증거다.
 | `crates/tasty-task-runtime/src/runner_host.rs` | `HostExecutor` — `TaskExecutor` host 구현 + `RunnerContext`(memory + agent_seq + host_ipc injector). 점유 획득·반환은 `runner_host/acquire.rs`, command 종류별 dispatch 는 `runner_host/dispatch.rs`, handle 완료 확인은 `runner_host/poll.rs` |
 | `crates/tasty-task-runtime/src/runner_thread.rs` | `RunnerRegistry` — workspace 별 thread start/stop/status + 재시작 후 정리 |
 | `crates/tasty-task-runtime/src/service.rs` | `TaskService` — `AppServices.tasks` 로 조립되는 작업 실행 서비스. `RunnerRegistry`·`HookTaskWaits` 를 소유하고 `RunnerContext` 를 만든다. engine별 자원(task ID 순번·완료 대기 허브·사건 큐)은 `EngineSession.task_scope` 의 `TaskScope` 로 받는다. `TaskAwaiter` 는 대기자 등록 → 저장소 조회 → 대기 순서의 완료 대기 계약이다 |
-| `crates/tasty-task-runtime/src/task.rs` | `TaskService` 의 작업 API(생성·조회·취소·재시도·상태/결과 기록·reducer 입력 수집·삭제·정리, DAG 목록·조회, 훅 완료 반영 `resolve_hook_task_wait`). 서비스를 받지 않는 DAG 화면용 목록 함수 `task_list_from_state`·`dag_list_from_state` 도 서비스와 같은 구현이다 |
+| `crates/tasty-task-runtime/src/task.rs` | `TaskService` 의 작업 API(생성·조회·취소·재시도·상태/결과 기록·reducer 입력 수집·삭제·정리, DAG 목록·조회, 훅 완료 반영 `resolve_hook_task_wait`). 서비스를 받지 않는 DAG 화면용 목록 함수 `task_list_in`·`dag_list_in` 은 writer 요청 본문 안에서 저장소를 받아 서비스와 같은 구현으로 읽는다. 연산 본문은 `task_tx.rs` 의 `TaskTx` 가 writer 복합 연산 하나 안에서 실행하고, 대기자 깨우기·정리 시작 같은 효과는 `TaskEffects` 로 모아 commit된 결과를 받은 쪽이 실행한다 |
 | `crates/tasty-ipc/src/host_call.rs` | `HostIpcInjector` — runner thread 가 plugin IPC 를 동기 호출하는 통로 |
 | `src/adapters/ipc/handler/agent/` | `task`/`barrier`/`semaphore`/`lease`/`ratelimit` IPC 핸들러 |
 
@@ -273,7 +273,7 @@ IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tast
 - engine 생성(`src/boot.rs`, `src/app/window_lifecycle.rs`): `TaskScope` 생성자는 registry `Arc` 를 필수 인자로 받는다. 첫 창·추가 창·headless engine 모두 `TaskService::runner_registry` 의 같은 `Arc` 를 넘긴다.
 - workspace 삭제와 Engine 해제: `TaskScope::request_stop_workspace` 또는 `TaskService::request_stop_scope`로 원 범위의 runner에 중지만 요청한다. `RunnerStopReceipt`와 `poll_runner_stops`는 끝난 worker만 join하며 UI에서 blocking stop을 호출하지 않는다.
 - 호스트 이벤트 소비(`src/app/dispatch/host_events.rs`, `src/intent/headless.rs`): `resolve_hook_task_wait`.
-- DAG 화면: 서비스를 받지 않으므로 runner 상태는 `TaskScope::runner_liveness`, 목록은 engine 의 memory 와 범위로 `task_list_from_state`·`dag_list_from_state` 를 읽는다.
+- DAG 화면: 서비스를 받지 않으므로 runner 상태는 `TaskScope::runner_liveness`, 목록은 `dag-read` worker 가 writer 요청 하나 안에서 `task_list_in`·`dag_list_in` 으로 읽는다.
 
 ## RunnerRegistry
 
@@ -536,7 +536,7 @@ elastic은 store에서 새 자원 이름을 배정한다. 실제 워크트리나
 다만 호출자가 그 이름을 받아 자원을 생성하면 추가 비용이 생기므로 자동 증설은 명시적으로
 선택해야 한다. 기본 fixed 모드는 선언한 후보 안에서만 배정한다.
 
-**원자성**: 새 candidate 이름 합성은 `LeaseStore::acquire_any` 한 호출 안에서(카운터 읽기 → 스캔 → 필요시 카운터 +1 → 새 이름으로 acquire) 순차 수행된다. 이 호출 전체가 `RunnerContext::with_memory` 클로저 하나 안에서 실행되므로(기존 `try_acquire_lease` 관례와 동일), 그 클로저가 프로세스 전역 `Mutex`(`Core::memory`)를 처음부터 끝까지 쥔 채 진행된다 — 워크스페이스마다 runner thread 가 정확히 하나뿐이라 워크스페이스 내부 경쟁이 없고, 워크스페이스 간 경쟁은 그 전역 락 하나로 직렬화된다. 별도 CAS/락 primitive 를 새로 만들지 않는다.
+**원자성**: 새 candidate 이름 합성은 `LeaseStore::acquire_any` 한 호출 안에서(카운터 읽기 → 스캔 → 필요시 카운터 +1 → 새 이름으로 acquire) 순차 수행된다. 이 호출 전체가 `RunnerContext::store` 의 writer 복합 연산 하나 안에서 실행되므로(기존 `try_acquire_lease` 관례와 동일), 판단과 쓰기가 같은 transaction 안에서 끝난다 — 워크스페이스마다 runner thread 가 정확히 하나뿐이라 워크스페이스 내부 경쟁이 없고, 워크스페이스 간 경쟁은 memory writer 의 직렬 실행으로 정리된다. 결과를 모르면(`Unknown`) 같은 holder 의 점유를 돌려주고 다음 tick 으로 미룬다. 별도 CAS/락 primitive 를 새로 만들지 않는다.
 
 **합성된 candidate 의 재사용**: 카운터는 "지금까지 합성된 개수의 상한"일 뿐 현재 점유 개수가 아니다. 매 `acquire_any` 호출이 `candidates ++ (합성된 이름 전체)`를 다시 스캔하므로, 합성됐다가 release 된 이름은 다음 배정에서 빈 자리로 재발견돼 재사용된다 — 카운터가 오르는 건 그 스캔에서도 빈 자리가 전혀 없었을 때뿐이다.
 

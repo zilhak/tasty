@@ -12,7 +12,7 @@ use super::tests::fresh_ctx;
 use super::*;
 
 fn store_op<R>(ctx: &RunnerContext, f: impl FnOnce(&mut TaskStore) -> R) -> R {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         f(&mut store)

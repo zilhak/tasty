@@ -2,7 +2,7 @@
 //! 작업 정의·상태·결과의 원본은 memory의 TaskStore이며 이 서비스는 두 번째 사본을 만들지 않는다.
 
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use tasty_ipc::host_call::HostIpcInjector;
 use tasty_memory::MemoryStorage;
@@ -82,7 +82,7 @@ impl TaskScope {
 /// 복제본은 같은 저장소와 등록부를 가리킨다. memory writer의 호환 구간에 넘길 때 쓴다.
 #[derive(Clone)]
 pub struct TaskService {
-    memory: Arc<Mutex<dyn MemoryStorage>>,
+    memory: tasty_memory::writer::MemoryAccess,
     /// App과 같은 Arc다. IPC 서버 시작 뒤 주입된 값을 러너 스레드가 읽는다.
     host_ipc: Arc<OnceLock<HostIpcInjector>>,
     runner_registry: Arc<RunnerRegistry>,
@@ -97,7 +97,7 @@ pub struct TaskService {
 
 impl TaskService {
     pub fn new(
-        memory: Arc<Mutex<dyn MemoryStorage>>,
+        memory: tasty_memory::writer::MemoryAccess,
         host_ipc: Arc<OnceLock<HostIpcInjector>>,
         completion: Arc<dyn crate::completion::CompletionResolver>,
     ) -> Self {
@@ -132,17 +132,17 @@ impl TaskService {
         self.store_fallback.as_deref()
     }
 
-    /// 공용 poison 복구 정책으로 저장소 락을 얻는다. 콜백이 끝날 때까지 락을 유지한다.
-    pub fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
-        let mut guard = tasty_utils::poison::recover_mutex(
-            self.memory.lock(),
-            tasty_memory::STORE_LOCK_WHAT,
-            &tasty_memory::STORE_LOCK_POISONED,
-        );
-        f(&mut *guard)
+    /// 본문을 memory writer 순서 안에서 실행하고 결과를 기다린다. 메인 루프는 부르지 않는다
+    /// (writer 요청과 continuation을 쓴다). 확정하지 못하면 결과형의 저장소 오류다.
+    pub(crate) fn with_memory<R: crate::store_call::FromBlocked + Send + 'static>(
+        &self,
+        f: impl Fn(&mut dyn MemoryStorage) -> R + Send + Sync + 'static,
+    ) -> R {
+        crate::store_call::blocking(&self.memory, f)
     }
 
-    pub fn memory(&self) -> &Mutex<dyn MemoryStorage> {
+    /// 이 서비스가 쓰는 memory writer 핸들.
+    pub fn memory_access(&self) -> &tasty_memory::writer::MemoryAccess {
         &self.memory
     }
 
@@ -161,9 +161,26 @@ impl TaskService {
     }
 
     /// 받은 workspace에 남은 runner 상태를 정리한다. runner 스레드를 자동 시작하지는 않는다.
+    /// 부팅 단계가 첫 창을 띄우기 전에 부른다. 정리는 저장소를 여러 번 읽고 쓰므로 별도 스레드에서
+    /// writer 요청을 하나씩 기다리며 하고, 부팅 단계는 그 스레드가 끝나기를 기다린다. 이전 실행의
+    /// 점유·handle 정리가 부팅 뒤 처리하는 IPC 요청보다 먼저 확정되게 하려는 것이다.
     pub fn purge_stale_agent_state_on_boot(&self, scope: &TaskScope, workspace_ids: &[u32]) {
         let ctx = self.runner_context(scope);
-        crate::runner_thread::purge_stale_agent_state_on_boot(&ctx, workspace_ids);
+        std::thread::scope(|s| {
+            let spawned = std::thread::Builder::new()
+                .name("agent-boot-purge".into())
+                .spawn_scoped(s, || {
+                    crate::runner_thread::purge_stale_agent_state_on_boot(&ctx, workspace_ids)
+                });
+            match spawned {
+                Ok(handle) => {
+                    if handle.join().is_err() {
+                        tracing::error!("agent boot purge panicked");
+                    }
+                }
+                Err(error) => tracing::error!(%error, "agent boot purge thread not started"),
+            }
+        });
     }
 
     pub fn agent_turns(&self) -> &crate::agent_turns::AgentTurns {
@@ -238,7 +255,7 @@ impl TaskService {
 /// 한 engine 범위의 task 종결 대기. 허브에 대기자를 먼저 등록한 뒤 저장소를 읽어
 /// 조회와 등록 사이에 지나간 완료를 놓치지 않는다.
 pub struct TaskAwaiter {
-    memory: Arc<Mutex<dyn MemoryStorage>>,
+    memory: tasty_memory::writer::MemoryAccess,
     agent_seq: Arc<AtomicU64>,
     waker_hub: Arc<TaskWakerHub>,
 }
@@ -251,20 +268,16 @@ impl TaskAwaiter {
         task_id: &tasty_agent::TaskId,
         timeout_ms: Option<u64>,
     ) -> AwaitOutcome {
+        // 대기 worker 스레드에서 부른다. 조회는 writer 순서 안에서 앞서 접수된 쓰기를 본다.
         let load_current = || -> Option<TerminalSnapshot> {
-            let mut guard = tasty_utils::poison::recover_mutex(
-                self.memory.lock(),
-                tasty_memory::STORE_LOCK_WHAT,
-                &tasty_memory::STORE_LOCK_POISONED,
-            );
-            let store = tasty_agent::TaskStore::new(
-                &mut *guard,
-                tasty_memory::HOST_OWNER,
-                self.agent_seq.as_ref(),
-            );
-            let found = store.get(workspace_id, task_id).and_then(|t| match t {
-                Some(t) => Ok(Some((t, store.revision(workspace_id, task_id)?))),
-                None => Ok(None),
+            let seq = self.agent_seq.clone();
+            let id = task_id.clone();
+            let found = crate::store_call::blocking(&self.memory, move |mem| {
+                let store = tasty_agent::TaskStore::new(mem, tasty_memory::HOST_OWNER, &seq);
+                store.get(workspace_id, &id).and_then(|t| match t {
+                    Some(t) => Ok(Some((t, store.revision(workspace_id, &id)?))),
+                    None => Ok(None),
+                })
             });
             match found {
                 Ok(Some((t, revision))) => Some(TerminalSnapshot::of(&t, revision)),

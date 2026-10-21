@@ -38,13 +38,27 @@ impl TaskService {
         output: &Value,
         submitter: Submitter,
     ) -> Result<SubmitOutcome, AgentError> {
-        let attempt_id = attempt.id;
         let seq = scope.agent_seq().clone();
-        let task = self
-            .with_memory(|mem| {
-                TaskStore::new(mem, HOST_OWNER, seq.as_ref()).get(workspace_id, task_id)
-            })?
-            .ok_or_else(|| AgentError::TaskNotFound(task_id.clone()))?;
+        let id = task_id.clone();
+        let task = self.with_memory(move |mem| {
+            TaskStore::new(mem, HOST_OWNER, seq.as_ref()).get(workspace_id, &id)
+        })?;
+        self.agent_submit_checked(task, workspace_id, task_id, attempt, output, submitter)
+    }
+
+    /// 저장소에서 읽은 task 로 제출을 판정하고 턴에 넣는다. 저장소는 읽지 않는다. IPC 는 task 를
+    /// writer 요청으로 읽은 뒤 메인 루프에서 이 함수를 부른다.
+    pub fn agent_submit_checked(
+        &self,
+        task: Option<tasty_agent::Task>,
+        workspace_id: u32,
+        task_id: &TaskId,
+        attempt: AttemptRef<'_>,
+        output: &Value,
+        submitter: Submitter,
+    ) -> Result<SubmitOutcome, AgentError> {
+        let attempt_id = attempt.id;
+        let task = task.ok_or_else(|| AgentError::TaskNotFound(task_id.clone()))?;
         let current = task.attempt.as_ref().map(|a| a.id.clone());
         let reject = |reason, current_attempt_id: Option<String>| AgentError::SubmissionRejected {
             task_id: task_id.clone(),

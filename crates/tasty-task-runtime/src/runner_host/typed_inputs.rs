@@ -28,15 +28,16 @@ impl HostExecutor {
         };
         let seq = self.ctx.agent_seq.clone();
         let ws = task.workspace_id;
-        let snapshot = self.ctx.with_memory(|mem| {
+        let (subject, now) = (task.clone(), now_ms());
+        let snapshot = self.ctx.with_memory(move |mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let snapshot = {
                 let lookup = |id: &String| store.get(ws, id).ok().flatten();
-                resolve_inputs(task, &contract, base_params.as_ref(), now_ms(), &lookup)
+                resolve_inputs(&subject, &contract, base_params.as_ref(), now, &lookup)
             };
             // 저장소가 크기 상한으로 snapshot 을 입력 실패로 바꿀 수 있어 저장한 것을 쓴다.
             store
-                .set_input_snapshot(ws, &task.id, snapshot.clone())
+                .set_input_snapshot(ws, &subject.id, snapshot.clone())
                 .map(|t| t.input_snapshot.unwrap_or(snapshot))
                 .map_err(|e| format!("input snapshot could not be stored: {e}"))
         })?;
@@ -55,12 +56,9 @@ impl HostExecutor {
         }
         let accepted = AcceptedResponse::capture(value);
         let seq = self.ctx.agent_seq.clone();
-        let res = self.ctx.with_memory(|mem| {
-            TaskStore::new(mem, HOST_OWNER, seq.as_ref()).set_accepted(
-                task.workspace_id,
-                &task.id,
-                accepted,
-            )
+        let (ws, id) = (task.workspace_id, task.id.clone());
+        let res = self.ctx.with_memory(move |mem| {
+            TaskStore::new(mem, HOST_OWNER, seq.as_ref()).set_accepted(ws, &id, accepted.clone())
         });
         if let Err(e) = res {
             tracing::warn!("agent task {}: accepted response not stored: {e}", task.id);

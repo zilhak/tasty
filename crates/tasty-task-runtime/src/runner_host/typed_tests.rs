@@ -50,7 +50,7 @@ fn v2_run_accepts_declared_exit_codes_and_reports_the_code_as_output() {
     let mut exec = HostExecutor::new(ctx.clone());
     let allowed = contract(json!({"contract_version": 2, "allowed_exit_codes": [0, 7]}));
     let strict = contract(json!({"contract_version": 2}));
-    let (seven_ok, seven_strict) = ctx.with_memory(|mem| {
+    let (seven_ok, seven_strict) = ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         let a = store
@@ -76,7 +76,7 @@ fn v2_run_accepts_declared_exit_codes_and_reports_the_code_as_output() {
         panic!("exit 7 outside the declared list fails: {strict_outcome:?}");
     };
     // 실패한 회차도 종료 코드와 출력 꼬리를 결과와 report 의 auto 에 남긴다.
-    let report = ctx.with_memory(|mem| {
+    let report = ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         store
@@ -109,7 +109,7 @@ fn v2_run_accepts_declared_exit_codes_and_reports_the_code_as_output() {
             .starts_with("Run exited with code 7\n")
     );
 
-    let finished = ctx.with_memory(|mem| {
+    let finished = ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         store
@@ -147,7 +147,7 @@ fn a_failed_run_with_full_escape_heavy_tails_still_settles() {
     for (name, generator) in cases {
         let gen_cmd = format!("{generator} | head -c 200000");
         let script = format!("{gen_cmd}; {gen_cmd} >&2; exit 3");
-        let task = ctx.with_memory(|mem| {
+        let task = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let cmd = TaskCommand::Run {
@@ -180,7 +180,7 @@ fn a_failed_run_with_full_escape_heavy_tails_still_settles() {
         );
         // 재시작용 셀이 저장된다.
         persist_run_result(&ctx.memory, 1, &task.id, &outcome);
-        let stored = ctx.with_memory(|mem| {
+        let stored = ctx.with_store(|mem| {
             mem.get(
                 &tasty_memory::Scope::Workspace(1),
                 &run_result_key(&task.id),
@@ -188,7 +188,7 @@ fn a_failed_run_with_full_escape_heavy_tails_still_settles() {
             .unwrap()
         });
         assert!(stored.is_some(), "{name}: run_result cell stored");
-        let settled = ctx.with_memory(|mem| {
+        let settled = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.set_state(1, &task.id, TaskState::Running, 1).unwrap();
@@ -212,7 +212,7 @@ fn a_failed_run_with_full_escape_heavy_tails_still_settles() {
 fn v1_run_keeps_treating_nonzero_exit_as_failure() {
     let (_td, ctx) = fresh_ctx();
     let mut exec = HostExecutor::new(ctx.clone());
-    let task = ctx.with_memory(|mem| {
+    let task = ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         store.create(opts("v1", exit_seven())).unwrap()
@@ -257,7 +257,7 @@ fn v2_reduce_dispatch_uses_typed_inputs_and_v1_reduce_is_unchanged() {
     let (_td, ctx) = fresh_ctx();
     let mut exec = HostExecutor::new(ctx.clone());
     let text = contract(json!({"contract_version": 2, "output_schema": {"type": "string"}}));
-    let (typed_all, typed_concat, legacy_all) = ctx.with_memory(|mem| {
+    let (typed_all, typed_concat, legacy_all) = ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         let a = finished_custom(&mut store, "a", Some(text.clone()), json!("x"));
@@ -320,7 +320,7 @@ fn ref_to(id: &str) -> TaskCommand {
 fn output_placeholders_cannot_read_typed_results() {
     let (_td, ctx) = fresh_ctx();
     let mut exec = HostExecutor::new(ctx.clone());
-    let (typed, legacy, stored_ref) = ctx.with_memory(|mem| {
+    let (typed, legacy, stored_ref) = ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         let v2 = contract(json!({"contract_version": 2}));
@@ -334,7 +334,7 @@ fn output_placeholders_cannot_read_typed_results() {
     });
 
     let err = ctx
-        .with_memory(|mem| {
+        .with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             crate::task::reject_v1_reads_of_typed(&store, 1, &ref_to(&typed.id), &OnFailure::Abort)
@@ -344,7 +344,7 @@ fn output_placeholders_cannot_read_typed_results() {
         panic!("expected a type contract error");
     };
     assert_eq!(f.task_id.as_deref(), Some(typed.id.as_str()));
-    let ok = ctx.with_memory(|mem| {
+    let ok = ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         crate::task::reject_v1_reads_of_typed(&store, 1, &ref_to(&legacy.id), &OnFailure::Abort)
@@ -361,7 +361,7 @@ fn output_placeholders_cannot_read_typed_results() {
 fn v1_reduce_cannot_take_typed_inputs() {
     let (_td, ctx) = fresh_ctx();
     let mut exec = HostExecutor::new(ctx.clone());
-    let (typed, legacy, stored_reduce) = ctx.with_memory(|mem| {
+    let (typed, legacy, stored_reduce) = ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         let v2 = contract(json!({"contract_version": 2}));
@@ -376,7 +376,7 @@ fn v1_reduce_cannot_take_typed_inputs() {
         (typed, legacy, stored_reduce)
     });
     let check = |inputs: Vec<String>| {
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             crate::task::reject_v1_reads_of_typed(
@@ -449,14 +449,14 @@ fn an_async_custom_keeps_its_accepted_response_apart_from_the_final_one() {
         {"id": "now", "command": {"kind": "custom", "ipc_method": "system.ping"}}
     ]});
     let spec: TaskGraphSpec = serde_json::from_value(graph).expect("graph spec");
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         TaskStore::new(mem, HOST_OWNER, seq.as_ref())
             .submit_graph(1, spec, 0)
             .unwrap();
     });
     let get = |id: &str| {
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             TaskStore::new(mem, HOST_OWNER, seq.as_ref())
                 .get(1, &id.to_string())
@@ -466,7 +466,7 @@ fn an_async_custom_keeps_its_accepted_response_apart_from_the_final_one() {
     };
     let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
     for n in 0..200 {
-        let snapshot = ctx.with_memory(|mem| {
+        let snapshot = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             TaskStore::new(mem, HOST_OWNER, seq.as_ref())
                 .list(1)
@@ -478,7 +478,7 @@ fn an_async_custom_keeps_its_accepted_response_apart_from_the_final_one() {
             10 + n,
             &snapshot,
             move |ws, id, st, now| {
-                set_ctx.with_memory(|mem| {
+                set_ctx.with_store(|mem| {
                     let seq = set_ctx.agent_seq.clone();
                     TaskStore::new(mem, HOST_OWNER, seq.as_ref())
                         .set_state(ws, id, st, now)
@@ -486,7 +486,7 @@ fn an_async_custom_keeps_its_accepted_response_apart_from_the_final_one() {
                 })
             },
             move |ws, id, c, now| {
-                res_ctx.with_memory(|mem| {
+                res_ctx.with_store(|mem| {
                     let seq = res_ctx.agent_seq.clone();
                     TaskStore::new(mem, HOST_OWNER, seq.as_ref())
                         .complete(ws, id, c, now)

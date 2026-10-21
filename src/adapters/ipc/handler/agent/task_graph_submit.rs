@@ -81,7 +81,7 @@ fn submit(
         core,
         id,
         params,
-        move |tasks| tasks.task_graph_submit(&scope, workspace_id, spec, dry_run, now_ms()),
+        move |tx| tx.task_graph_submit(&scope, workspace_id, spec.clone(), dry_run, now_ms()),
         move |core, id, outcome| match serde_json::to_value(&outcome.tasks) {
             Ok(tasks) => respond(
                 core,

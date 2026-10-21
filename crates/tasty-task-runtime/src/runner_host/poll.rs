@@ -113,9 +113,10 @@ impl HostExecutor {
             } => self.poll_late_answer(*workspace_id, task_id, ipc_method),
             DispatchHandle::BarrierPoll { workspace_id, name } => {
                 let now = now_ms();
-                let res = self.ctx.with_memory(|mem| {
+                let (ws, barrier) = (*workspace_id, name.clone());
+                let res = self.ctx.with_memory(move |mem| {
                     let mut store = BarrierStore::new(mem, HOST_OWNER);
-                    store.state(*workspace_id, name, now)
+                    store.state(ws, &barrier, now)
                 });
                 match res {
                     Ok(b) => match b.state {

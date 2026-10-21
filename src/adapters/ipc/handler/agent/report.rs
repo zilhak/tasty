@@ -48,7 +48,7 @@ pub fn handle_report_append(
         core,
         id,
         params,
-        move |tasks| tasks.report_append(&scope, &addr, &text, writer),
+        move |tx| tx.report_append(&scope, &addr, &text, writer),
         |core, id, outcome| mark_durability(core, JsonRpcResponse::success(id, json!(outcome))),
     )
 }
@@ -91,9 +91,9 @@ pub fn handle_dag_report(
         core,
         id,
         params,
-        move |tasks| {
+        move |tx| {
             Ok(
-                match tasks.dag_report(
+                match tx.dag_report(
                     &scope,
                     &workspaces,
                     &dag_id,
@@ -102,7 +102,7 @@ pub fn handle_dag_report(
                     include_raw,
                 )? {
                     Some(report) => Ok(report),
-                    None => Err(dag_id),
+                    None => Err(dag_id.clone()),
                 },
             )
         },

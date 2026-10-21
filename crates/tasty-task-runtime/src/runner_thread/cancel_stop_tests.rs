@@ -25,7 +25,7 @@ fn memory(dir: &Path) -> Arc<Mutex<dyn MemoryStorage>> {
 fn ctx_on(memory: Arc<Mutex<dyn MemoryStorage>>) -> RunnerContext {
     RunnerContext {
         scope_stopping: Arc::new(AtomicBool::new(false)),
-        memory,
+        memory: tasty_memory::writer::MemoryAccess::inline(memory),
         agent_seq: Arc::new(AtomicU64::new(0)),
         host_ipc: Arc::new(OnceLock::new()),
         task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
@@ -177,7 +177,7 @@ fn a_watched_run_is_killed_with_its_children_before_its_permit_returns() {
         panic!("{handle:?}");
     };
     assert!(matches!(exec.poll(&handle), PollOutcome::Active));
-    let stored = ctx.with_memory(|mem| crate::runner_host::stored_process(mem, 1, &task.id));
+    let stored = ctx.with_store(|mem| crate::runner_host::stored_process(mem, 1, &task.id));
     assert_eq!(stored.map(|p| p.pid), Some(pid));
     assert!(stored.unwrap().started_at.is_some(), "시작 시각을 저장한다");
 
@@ -207,7 +207,7 @@ fn cancelling_with_no_runner_kills_the_run_then_returns_its_permit() {
     let td = tempfile::tempdir().unwrap();
     let mem = memory(td.path());
     let svc = TaskService::new(
-        mem.clone(),
+        tasty_memory::writer::MemoryAccess::inline(mem.clone()),
         Arc::new(OnceLock::new()),
         Arc::new(crate::completion::fixture::Resolver::default()),
     );
@@ -274,7 +274,7 @@ fn a_reused_pid_is_neither_killed_nor_taken_for_the_run() {
     let running = run_task(&mem, &ctx.agent_seq, &pid_file);
     hold(&mem, &ctx.agent_seq, &running.id, me, reused);
     assert!(super::purge_and_reload_on_restart(&ctx, 1).is_empty());
-    let state = ctx.with_memory(|mem| {
+    let state = ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .get(1, &running.id)
             .unwrap()
@@ -312,7 +312,7 @@ fn a_reused_pid_is_neither_killed_nor_taken_for_the_run() {
             .cancel(1, &other, 4000)
             .unwrap();
     }
-    let ended = ctx.with_memory(|mem| {
+    let ended = ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .get(1, &other)
             .unwrap()
@@ -388,7 +388,7 @@ fn cancelling_with_no_runner_kills_the_members_left_after_the_leader() {
     let td = tempfile::tempdir().unwrap();
     let mem = memory(td.path());
     let svc = TaskService::new(
-        mem.clone(),
+        tasty_memory::writer::MemoryAccess::inline(mem.clone()),
         Arc::new(OnceLock::new()),
         Arc::new(crate::completion::fixture::Resolver::default()),
     );
@@ -484,7 +484,7 @@ fn cancel_with_no_runner_answers_before_the_exit_is_confirmed() {
     let td = tempfile::tempdir().unwrap();
     let mem = memory(td.path());
     let svc = TaskService::new(
-        mem.clone(),
+        tasty_memory::writer::MemoryAccess::inline(mem.clone()),
         Arc::new(OnceLock::new()),
         Arc::new(crate::completion::fixture::Resolver::default()),
     );
@@ -599,7 +599,7 @@ fn a_retry_waits_until_the_cancelled_attempts_group_is_confirmed_empty() {
     let td = tempfile::tempdir().unwrap();
     let mem = memory(td.path());
     let svc = TaskService::new(
-        mem.clone(),
+        tasty_memory::writer::MemoryAccess::inline(mem.clone()),
         Arc::new(OnceLock::new()),
         Arc::new(crate::completion::fixture::Resolver::default()),
     );
@@ -720,7 +720,7 @@ fn a_handle_the_reload_could_not_settle_is_settled_by_the_running_runner() {
     let td = tempfile::tempdir().unwrap();
     let mem = memory(td.path());
     let svc = TaskService::new(
-        mem.clone(),
+        tasty_memory::writer::MemoryAccess::inline(mem.clone()),
         Arc::new(OnceLock::new()),
         Arc::new(crate::completion::fixture::Resolver::default()),
     );
@@ -780,7 +780,7 @@ fn a_task_still_confirming_its_exit_is_kept_from_delete_and_purge() {
     let td = tempfile::tempdir().unwrap();
     let mem = memory(td.path());
     let svc = TaskService::new(
-        mem.clone(),
+        tasty_memory::writer::MemoryAccess::inline(mem.clone()),
         Arc::new(OnceLock::new()),
         Arc::new(crate::completion::fixture::Resolver::default()),
     );
@@ -876,7 +876,7 @@ fn a_cascade_delete_is_refused_when_a_referencer_is_still_confirming_its_exit() 
     let td = tempfile::tempdir().unwrap();
     let mem = memory(td.path());
     let svc = TaskService::new(
-        mem.clone(),
+        tasty_memory::writer::MemoryAccess::inline(mem.clone()),
         Arc::new(OnceLock::new()),
         Arc::new(crate::completion::fixture::Resolver::default()),
     );

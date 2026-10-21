@@ -27,6 +27,7 @@ pub struct TaskStore<'a> {
 }
 
 /// TaskStore::create의 인자.
+#[derive(Clone)]
 pub struct TaskCreateOpts {
     pub workspace_id: WorkspaceId,
     pub name: String,

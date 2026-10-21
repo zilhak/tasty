@@ -356,13 +356,27 @@ impl RunnerRegistry {
             })
     }
     pub(crate) fn status(&self, ctx: &RunnerContext, workspace: u32) -> RunnerStatus {
-        let (running, crashed) = self.scoped_liveness(&ctx.task_waker_hub, workspace);
+        self.status_with(
+            &ctx.task_waker_hub,
+            workspace,
+            count_ready_running(ctx, workspace),
+        )
+    }
+
+    /// 저장소에서 센 Ready·Running 수에 러너 실행 여부를 더한다.
+    pub(crate) fn status_with(
+        &self,
+        hub: &Arc<crate::task_waker::TaskWakerHub>,
+        workspace: u32,
+        counts: Result<(u32, u32), String>,
+    ) -> RunnerStatus {
+        let (running, crashed) = self.scoped_liveness(hub, workspace);
         let list_failures = self
             .lock_recovering()
             .get(&workspace)
-            .filter(|control| control.owner.ptr_eq(&Arc::downgrade(&ctx.task_waker_hub)))
+            .filter(|control| control.owner.ptr_eq(&Arc::downgrade(hub)))
             .map_or(0, |control| control.list_failures.load(Ordering::Relaxed));
-        match count_ready_running(ctx, workspace) {
+        match counts {
             Ok((ready, running_count)) => RunnerStatus {
                 running,
                 crashed,
@@ -427,9 +441,17 @@ impl Drop for RunnerRegistry {
 
 /// 조회 실패를 task가 없는 것으로 표시하지 않도록 오류를 그대로 반환한다.
 fn count_ready_running(ctx: &RunnerContext, workspace_id: u32) -> Result<(u32, u32), String> {
-    ctx.with_memory(|mem| {
-        let seq = ctx.agent_seq.clone();
-        let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+    let seq = ctx.agent_seq.clone();
+    ctx.with_memory(move |mem| count_ready_running_in(mem, &seq, workspace_id))
+}
+
+pub(crate) fn count_ready_running_in(
+    mem: &mut dyn tasty_memory::MemoryStorage,
+    seq: &std::sync::atomic::AtomicU64,
+    workspace_id: u32,
+) -> Result<(u32, u32), String> {
+    {
+        let store = TaskStore::new(mem, HOST_OWNER, seq);
         let tasks = store.list(workspace_id).map_err(|e| e.to_string())?;
         let r = tasks
             .iter()
@@ -440,7 +462,7 @@ fn count_ready_running(ctx: &RunnerContext, workspace_id: u32) -> Result<(u32, u
             .filter(|t| matches!(t.state, TaskState::Running))
             .count() as u32;
         Ok((r, g))
-    })
+    }
 }
 
 fn now_ms() -> u64 {
@@ -460,12 +482,13 @@ fn reload_persistent_handles(
 ) -> Vec<(TaskId, DispatchHandle)> {
     let now = now_ms();
     let scope = Scope::Workspace(workspace_id);
-    let entries = ctx.with_memory(|mem| {
+    let listed = scope.clone();
+    let entries = ctx.with_memory(move |mem| {
         let opts = ListOpts {
             prefix: Some(HANDLE_KEY_PREFIX.to_string()),
             ..Default::default()
         };
-        mem.list(&scope, &opts).unwrap_or_default()
+        mem.list(&listed, &opts).unwrap_or_default()
     });
     let mut alive: Vec<(TaskId, DispatchHandle)> = Vec::new();
     let mut dead: Vec<(TaskId, Option<String>, String)> = Vec::new();
@@ -557,10 +580,10 @@ fn classify_persisted_handle(
     };
 
     // task 가 없으면(조회 오류 포함) handle 만 지운다. Running 이 아니면 쥔 점유도 반환한다.
-    let task_opt = ctx.with_memory(|mem| {
-        let seq = ctx.agent_seq.clone();
+    let (seq, id) = (ctx.agent_seq.clone(), task_id.clone());
+    let task_opt = ctx.with_memory(move |mem| {
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-        store.get(workspace_id, &task_id).ok().flatten()
+        store.get(workspace_id, &id).ok().flatten()
     });
     let Some(task) = task_opt else {
         return HandleClassification::Stale(task_id);
@@ -651,9 +674,10 @@ fn evict_stale_handles(ctx: &RunnerContext, scope: &Scope, stale: &[TaskId]) {
     if stale.is_empty() {
         return;
     }
-    ctx.with_memory(|mem| {
-        for tid in stale {
-            mem.delete(HOST_OWNER, scope, &handle_key(tid), None).unwrap_or_else(|error| {
+    let (scope, stale) = (scope.clone(), stale.to_vec());
+    ctx.with_memory(move |mem| {
+        for tid in &stale {
+            mem.delete(HOST_OWNER, &scope, &handle_key(tid), None).unwrap_or_else(|error| {
                 tracing::warn!(%error, "failed to evict a stale task handle; reload will retry");
             });
         }
@@ -708,8 +732,9 @@ fn reload_completion_unrecorded(task_id: &TaskId, e: &tasty_agent::AgentError) -
 }
 
 fn evict_handle(ctx: &RunnerContext, scope: &Scope, task_id: &TaskId) {
-    ctx.with_memory(|mem| {
-        mem.delete(HOST_OWNER, scope, &handle_key(task_id), None)
+    let (scope, key) = (scope.clone(), handle_key(task_id));
+    ctx.with_memory(move |mem| {
+        mem.delete(HOST_OWNER, &scope, &key, None)
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "failed to evict a finished task handle; reload will retry");
             });
@@ -741,7 +766,7 @@ fn finalize_precise_tasks(
         let held = load_task(ctx, workspace_id, task_id);
         if record_reload_completion(ctx, workspace_id, task_id, completion, now) {
             if let Some(task) = held {
-                ctx.with_memory(|mem| release_own_holdings(mem, workspace_id, &task));
+                ctx.with_memory(move |mem| release_own_holdings(mem, workspace_id, &task));
             }
             evict_handle(ctx, scope, task_id);
             evict_run_result(ctx, workspace_id, task_id);
@@ -749,10 +774,21 @@ fn finalize_precise_tasks(
     }
 }
 
+/// 복원한 Run·후처리가 부팅 정리가 남긴 점유를 이어받는가. 읽지 못하면 이어받지 않는다.
+fn resumes(ctx: &RunnerContext, workspace_id: u32, task: &tasty_agent::Task) -> bool {
+    let task = task.clone();
+    ctx.store(move |mem| resumes_after_restart(mem, workspace_id, &task))
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, workspace_id, "restored holdings not checked");
+            false
+        })
+}
+
 fn load_task(ctx: &RunnerContext, workspace_id: u32, task_id: &str) -> Option<tasty_agent::Task> {
-    ctx.with_memory(|mem| {
-        TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
-            .get(workspace_id, &task_id.to_string())
+    let (seq, id) = (ctx.agent_seq.clone(), task_id.to_string());
+    ctx.with_memory(move |mem| {
+        TaskStore::new(mem, HOST_OWNER, seq.as_ref())
+            .get(workspace_id, &id)
             .ok()
             .flatten()
     })
@@ -853,9 +889,10 @@ fn purge_and_reload_on_restart(
 /// 완료 쓰기 뒤 하류 반영 전에 멈춘 task 를 마무리한다. 복원한 handle 의 보고를 먼저 기록한 뒤
 /// 평가해야 그 보고로 풀리는 하류도 같은 번에 맞춰진다.
 fn resettle_waiting_tasks(ctx: &RunnerContext, workspace_id: u32) {
-    let changed = ctx.with_memory(|mem| {
-        TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
-            .resettle_waiting(workspace_id, now_ms())
+    let seq = ctx.agent_seq.clone();
+    let now = now_ms();
+    let changed = ctx.with_memory(move |mem| {
+        TaskStore::new(mem, HOST_OWNER, seq.as_ref()).resettle_waiting(workspace_id, now)
     });
     match changed {
         Ok(tasks) => ctx.fire_terminal_tasks(workspace_id, tasks),
@@ -909,7 +946,7 @@ fn gc_plan_sweep(
     let seq = ctx.agent_seq.clone();
     // 이전 회차의 종료를 확인하는 중인 task 는 지우지 않는다. 지우면 handle 이 사라져 점유를 반환할
     // 정리가 없어진다.
-    let plan = ctx.with_memory(|mem| {
+    let plan = ctx.with_memory(move |mem| {
         let keep = stored_handle_ids(&*mem, workspace_id);
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         store.plan_sweep(workspace_id, &filter, &keep)
@@ -928,10 +965,10 @@ fn gc_apply_sweep_plan(
     workspace_id: u32,
     plan: &tasty_agent::task::TaskSweepPlan,
 ) -> bool {
-    let seq = ctx.agent_seq.clone();
-    let res = ctx.with_memory(|mem| {
+    let (seq, plan) = (ctx.agent_seq.clone(), plan.clone());
+    let res = ctx.with_memory(move |mem| {
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-        store.apply_sweep_plan(workspace_id, plan)
+        store.apply_sweep_plan(workspace_id, &plan)
     });
     match res {
         Ok(()) => true,
@@ -949,8 +986,8 @@ fn tick_snapshot(
     workspace_id: u32,
     store_list_failures: &AtomicU32,
 ) -> Vec<tasty_agent::Task> {
-    let listed = ctx.with_memory(|mem| {
-        let seq = ctx.agent_seq.clone();
+    let seq = ctx.agent_seq.clone();
+    let listed = ctx.with_memory(move |mem| {
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         store.list(workspace_id)
     });
@@ -1006,7 +1043,7 @@ fn run_loop(
     for (task_id, handle) in reloaded {
         // 복원한 Run·후처리는 부팅 정리가 남겨 둔 점유를 쥐고 있다. 끝날 때 반환하도록 넘겨받는다.
         if let Some(task) = load_task(&ctx, workspace_id, &task_id)
-            && ctx.with_memory(|mem| resumes_after_restart(mem, workspace_id, &task))
+            && resumes(&ctx, workspace_id, &task)
         {
             runner.executor.adopt_restored_run(workspace_id, &task);
         }
@@ -1034,17 +1071,24 @@ fn run_loop(
             now,
             &snapshot,
             move |ws, id, st, n| {
-                let (res, fire_target) = ctx_for_set.with_memory(|mem| {
-                    let seq = ctx_for_set.agent_seq.clone();
-                    let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-                    match store.set_state(ws, id, st, n) {
-                        Ok((task, downstream)) => (
-                            Ok(()),
-                            std::iter::once(task).chain(downstream).collect::<Vec<_>>(),
-                        ),
-                        Err(e) => (Err(e), Vec::new()),
-                    }
-                });
+                let (seq, task_id) = (ctx_for_set.agent_seq.clone(), id.clone());
+                let (res, fire_target) = ctx_for_set
+                    .store(move |mem| {
+                        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+                        match store.set_state(ws, &task_id, st.clone(), n) {
+                            Ok((task, downstream)) => (
+                                Ok(()),
+                                std::iter::once(task).chain(downstream).collect::<Vec<_>>(),
+                            ),
+                            Err(e) => (Err(e), Vec::new()),
+                        }
+                    })
+                    .unwrap_or_else(|blocked| {
+                        (
+                            Err(tasty_agent::AgentError::Memory(blocked.to_memory_error())),
+                            Vec::new(),
+                        )
+                    });
                 ctx_for_set.fire_terminal_tasks(ws, fire_target);
                 res
             },
@@ -1104,7 +1148,7 @@ mod tests {
         let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
         let ctx = RunnerContext {
             scope_stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            memory: Arc::new(Mutex::new(mem)),
+            memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(Mutex::new(mem))),
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
             task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
@@ -1117,7 +1161,7 @@ mod tests {
     }
 
     fn put_handle(ctx: &RunnerContext, ws: u32, task_id: &str, handle: &DispatchHandle) {
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let value = MemoryValue::Json(serde_json::to_value(handle).unwrap());
             mem.put(
                 HOST_OWNER,
@@ -1134,7 +1178,7 @@ mod tests {
     #[test]
     fn tick_snapshot_counts_consecutive_failures_and_resets_on_recovery() {
         let (_td, ctx) = fresh_ctx();
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store
@@ -1159,7 +1203,7 @@ mod tests {
         assert_eq!(failures.load(Ordering::Relaxed), 0);
 
         // 키 형식을 복제하지 않고 실제 저장된 task 키의 값만 손상시킨다.
-        let corrupt_key = ctx.with_memory(|mem| {
+        let corrupt_key = ctx.with_store(|mem| {
             let entries = mem
                 .list(&Scope::Workspace(1), &ListOpts::default())
                 .expect("list");
@@ -1191,7 +1235,7 @@ mod tests {
             );
         }
 
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             mem.delete(HOST_OWNER, &Scope::Workspace(1), &corrupt_key, None)
                 .expect("delete");
         });
@@ -1206,7 +1250,7 @@ mod tests {
     #[test]
     fn status_reports_unknown_counts_when_the_task_store_is_unreadable() {
         let (_td, ctx) = fresh_ctx();
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store
@@ -1230,7 +1274,7 @@ mod tests {
         assert_eq!(healthy.ready_count, Some(1));
         assert!(healthy.store_error.is_none());
 
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let entries = mem
                 .list(&Scope::Workspace(1), &ListOpts::default())
                 .expect("list");
@@ -1262,7 +1306,7 @@ mod tests {
     #[test]
     fn status_reports_the_running_runner_consecutive_list_failures() {
         let (_td, ctx) = fresh_ctx();
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store
@@ -1282,7 +1326,7 @@ mod tests {
                 .unwrap();
         });
         // 실제 task 키의 값을 역직렬화할 수 없는 데이터로 바꾼다.
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let entries = mem
                 .list(&Scope::Workspace(1), &ListOpts::default())
                 .expect("list");
@@ -1333,7 +1377,7 @@ mod tests {
     #[test]
     fn reload_persistent_handles_restores_alive_shell_process() {
         let (_td, ctx) = fresh_ctx();
-        let task_id = ctx.with_memory(|mem| {
+        let task_id = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let t = store
@@ -1366,7 +1410,7 @@ mod tests {
     #[test]
     fn reload_persistent_handles_marks_dead_pid_as_unknown() {
         let (_td, ctx) = fresh_ctx();
-        let task_id = ctx.with_memory(|mem| {
+        let task_id = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let t = store
@@ -1399,7 +1443,7 @@ mod tests {
         let alive = reload_persistent_handles(&ctx, 1);
         assert!(alive.is_empty(), "dead pid should not restore");
 
-        let final_state: TaskState = ctx.with_memory(|mem| {
+        let final_state: TaskState = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap().state
@@ -1415,7 +1459,7 @@ mod tests {
             other => panic!("expected Unknown, got {other:?}"),
         }
 
-        let still_there: bool = ctx.with_memory(|mem| {
+        let still_there: bool = ctx.with_store(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key(&task_id))
                 .map(|v| v.is_some())
                 .unwrap_or(false)
@@ -1424,7 +1468,7 @@ mod tests {
     }
 
     fn put_run_result(ctx: &RunnerContext, ws: u32, task_id: &str, value: serde_json::Value) {
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             mem.put(
                 HOST_OWNER,
                 &Scope::Workspace(ws),
@@ -1437,7 +1481,7 @@ mod tests {
     }
 
     fn make_running_run_task(ctx: &RunnerContext, ws: u32) -> TaskId {
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let t = store
@@ -1488,7 +1532,7 @@ mod tests {
         let alive = reload_persistent_handles(&ctx, 1);
         assert!(alive.is_empty(), "precise should not restore to alive");
 
-        let task = ctx.with_memory(|mem| {
+        let task = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap()
@@ -1501,13 +1545,13 @@ mod tests {
         let result = task.result.expect("result present");
         assert_eq!(result.exit_code, Some(0));
 
-        let handle_present: bool = ctx.with_memory(|mem| {
+        let handle_present: bool = ctx.with_store(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key(&task_id))
                 .map(|v| v.is_some())
                 .unwrap_or(false)
         });
         assert!(!handle_present, "handle evicted after precise");
-        let result_present: bool = ctx.with_memory(|mem| {
+        let result_present: bool = ctx.with_store(|mem| {
             mem.get(&Scope::Workspace(1), &run_result_key(&task_id))
                 .map(|v| v.is_some())
                 .unwrap_or(false)
@@ -1539,7 +1583,7 @@ mod tests {
         let alive = reload_persistent_handles(&ctx, 1);
         assert!(alive.is_empty());
 
-        let task = ctx.with_memory(|mem| {
+        let task = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap()
@@ -1581,7 +1625,7 @@ mod tests {
         );
 
         assert!(reload_persistent_handles(&ctx, 1).is_empty());
-        let task = ctx.with_memory(|mem| {
+        let task = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap()
@@ -1610,7 +1654,7 @@ mod tests {
         let alive = reload_persistent_handles(&ctx, 1);
         assert!(alive.is_empty());
 
-        let task = ctx.with_memory(|mem| {
+        let task = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap()
@@ -1622,7 +1666,7 @@ mod tests {
             } => assert!(reason.starts_with(RUN_RESULT_LOST), "got {reason}"),
             other => panic!("expected Unknown, got {other:?}"),
         }
-        let handle_left = ctx.with_memory(|mem| {
+        let handle_left = ctx.with_store(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key(&task_id))
                 .unwrap()
                 .is_some()
@@ -1636,7 +1680,7 @@ mod tests {
     #[test]
     fn reload_persistent_handles_evicts_stale_when_task_not_running() {
         let (_td, ctx) = fresh_ctx();
-        let task_id = ctx.with_memory(|mem| {
+        let task_id = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store
@@ -1664,14 +1708,14 @@ mod tests {
         let alive = reload_persistent_handles(&ctx, 1);
         assert!(alive.is_empty(), "non-Running task handle is stale");
 
-        let still_there: bool = ctx.with_memory(|mem| {
+        let still_there: bool = ctx.with_store(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key(&task_id))
                 .map(|v| v.is_some())
                 .unwrap_or(false)
         });
         assert!(!still_there, "stale handle should be evicted");
 
-        let state: TaskState = ctx.with_memory(|mem| {
+        let state: TaskState = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap().state
@@ -1683,7 +1727,7 @@ mod tests {
     #[test]
     fn reload_persistent_handles_fails_await_external_past_deadline() {
         let (_td, ctx) = fresh_ctx();
-        let task_id = ctx.with_memory(|mem| {
+        let task_id = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let t = store
@@ -1720,7 +1764,7 @@ mod tests {
             "past-deadline AwaitExternal must not restore alive"
         );
 
-        let task = ctx.with_memory(|mem| {
+        let task = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap()
@@ -1733,7 +1777,7 @@ mod tests {
             other => panic!("expected Failed, got {other:?}"),
         }
 
-        let still_there: bool = ctx.with_memory(|mem| {
+        let still_there: bool = ctx.with_store(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key(&task_id))
                 .map(|v| v.is_some())
                 .unwrap_or(false)
@@ -1745,7 +1789,7 @@ mod tests {
     #[test]
     fn reload_persistent_handles_restores_await_external_before_deadline() {
         let (_td, ctx) = fresh_ctx();
-        let task_id = ctx.with_memory(|mem| {
+        let task_id = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let t = store
@@ -1784,7 +1828,7 @@ mod tests {
         );
         assert_eq!(alive[0].0, task_id);
 
-        let state: TaskState = ctx.with_memory(|mem| {
+        let state: TaskState = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap().state
@@ -1796,7 +1840,7 @@ mod tests {
     #[test]
     fn reload_persistent_handles_marks_an_awaited_dispatch_answer_unknown() {
         let (_td, ctx) = fresh_ctx();
-        let task_id = ctx.with_memory(|mem| {
+        let task_id = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let t = store
@@ -1834,7 +1878,7 @@ mod tests {
             "the answer channel does not survive a restart"
         );
 
-        let state: TaskState = ctx.with_memory(|mem| {
+        let state: TaskState = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap().state
@@ -1853,7 +1897,7 @@ mod tests {
     #[test]
     fn expire_overdue_hook_waits_fails_the_task_and_removes_the_entry() {
         let (_td, ctx) = fresh_ctx();
-        let task_id = ctx.with_memory(|mem| {
+        let task_id = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let t = store
@@ -1880,7 +1924,7 @@ mod tests {
 
         assert_eq!(ctx.hook_task_waits.resolve(1), None);
 
-        let task = ctx.with_memory(|mem| {
+        let task = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap()
@@ -1906,7 +1950,7 @@ mod tests {
         let sweeping_feed = Arc::new(AgentEventQueue::new());
         sweeping.task_waker_hub = Arc::new(TaskWakerHub::with_feed(sweeping_feed.clone()));
         sweeping.agent_seq = Arc::new(AtomicU64::new(500));
-        let (parent, child) = origin.with_memory(|mem| {
+        let (parent, child) = origin.with_store(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, origin.agent_seq.as_ref());
             let opts = |name: &str, depends_on| TaskCreateOpts {
                 workspace_id: 7,
@@ -1962,7 +2006,7 @@ mod tests {
     #[test]
     fn expire_overdue_hook_waits_leaves_fresh_entries_alone() {
         let (_td, ctx) = fresh_ctx();
-        let task_id = ctx.with_memory(|mem| {
+        let task_id = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let t = store
@@ -1989,7 +2033,7 @@ mod tests {
 
         assert_eq!(ctx.hook_task_waits.resolve(2), Some((1, task_id.clone())));
 
-        let task = ctx.with_memory(|mem| {
+        let task = ctx.with_store(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap()

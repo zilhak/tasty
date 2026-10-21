@@ -22,7 +22,7 @@ fn ctx_with(
     let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
     let ctx = RunnerContext {
         scope_stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        memory: Arc::new(Mutex::new(mem)),
+        memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(Mutex::new(mem))),
         agent_seq: Arc::new(AtomicU64::new(0)),
         host_ipc: Arc::new(OnceLock::new()),
         task_waker_hub: Arc::new(TaskWakerHub::new()),
@@ -39,7 +39,7 @@ fn ctx() -> (tempfile::TempDir, RunnerContext) {
 }
 
 fn task(ctx: &RunnerContext, id: &str) -> Task {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
             .get(1, &id.to_string())
             .unwrap()
@@ -49,7 +49,7 @@ fn task(ctx: &RunnerContext, id: &str) -> Task {
 
 /// 실행 중인 push 대기 task와 재시작 전에 저장된 handle. 반환값은 (task id, 기한).
 fn running_push_wait(ctx: &RunnerContext) -> (String, u64) {
-    let id = ctx.with_memory(|mem| {
+    let id = ctx.with_store(|mem| {
         let mut store = TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref());
         let t = store
             .create(TaskCreateOpts {
@@ -76,7 +76,7 @@ fn running_push_wait(ctx: &RunnerContext) -> (String, u64) {
         deadline_ms: deadline,
     };
     let value = handle_value(serde_json::to_value(&handle).unwrap(), attempt.as_deref());
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         mem.put(
             HOST_OWNER,
             &Scope::Workspace(1),
@@ -149,14 +149,14 @@ fn two_runners_sharing_the_waits_finish_a_restored_wait_once() {
     expire_overdue_hook_waits(&b, deadline);
     let first = task(&a, &id);
     failed_error(&first);
-    let revision = a.with_memory(|mem| {
+    let revision = a.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, a.agent_seq.as_ref())
             .revision(1, &id)
             .unwrap()
     });
 
     expire_overdue_hook_waits(&a, deadline + 1);
-    let after = a.with_memory(|mem| {
+    let after = a.with_store(|mem| {
         TaskStore::new(mem, HOST_OWNER, a.agent_seq.as_ref())
             .revision(1, &id)
             .unwrap()

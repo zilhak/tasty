@@ -54,11 +54,11 @@ impl HostExecutor {
         }
         let ws = task.workspace_id;
         let seq = self.ctx.agent_seq.clone();
-        self.ctx.with_memory(|mem| {
+        self.ctx.with_memory(move |mem| {
             use tasty_agent::TaskStore;
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let mut out = HashMap::with_capacity(ids.len());
-            for tid in ids {
+            for tid in ids.iter().cloned() {
                 let t = store
                     .get(ws, &tid)
                     .map_err(|e| e.to_string())?
@@ -82,13 +82,14 @@ impl HostExecutor {
     /// 조회에도 실제 실행할 치환값이 보이도록 command를 저장한다. 저장 실패는 경고하고 실행은 계속한다.
     pub(super) fn persist_substituted_command(&mut self, ws: u32, task: &Task) {
         let seq = self.ctx.agent_seq.clone();
-        let res: Result<(), String> = self.ctx.with_memory(|mem| {
+        let (id, command) = (task.id.clone(), task.command.clone());
+        let res: Result<(), String> = self.ctx.with_memory(move |mem| {
             use tasty_agent::TaskStore;
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            let Some(mut stored) = store.get(ws, &task.id).map_err(|e| e.to_string())? else {
+            let Some(mut stored) = store.get(ws, &id).map_err(|e| e.to_string())? else {
                 return Ok(());
             };
-            stored.command = task.command.clone();
+            stored.command = command.clone();
             store.put(&stored).map_err(|e| e.to_string())
         });
         if let Err(e) = res {
@@ -102,15 +103,18 @@ impl HostExecutor {
     ) -> Result<DispatchHandle, DispatchFailure> {
         match &task.command {
             TaskCommand::Reduce { inputs, strategy } if task.is_typed() => {
+                let (seq, ws, ids) = (
+                    self.ctx.agent_seq.clone(),
+                    task.workspace_id,
+                    inputs.clone(),
+                );
                 let collected: Result<Vec<TypedReducerInput>, String> =
-                    self.ctx.with_memory(|mem| {
-                        let seq = self.ctx.agent_seq.clone();
+                    self.ctx.with_memory(move |mem| {
                         let store = tasty_agent::TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-                        inputs
-                            .iter()
+                        ids.iter()
                             .map(|tid| {
                                 store
-                                    .get(task.workspace_id, tid)
+                                    .get(ws, tid)
                                     .map_err(|e| e.to_string())?
                                     .map(|t| TypedReducerInput::from_task(&t))
                                     .ok_or_else(|| format!("input task not found: {tid}"))
@@ -135,14 +139,18 @@ impl HostExecutor {
                 }))
             }
             TaskCommand::Reduce { inputs, strategy } => {
-                let collected: Result<Vec<ReducerInput>, String> = self.ctx.with_memory(|mem| {
+                let (seq, ws, ids) = (
+                    self.ctx.agent_seq.clone(),
+                    task.workspace_id,
+                    inputs.clone(),
+                );
+                let collected: Result<Vec<ReducerInput>, String> = self.ctx.with_memory(move |mem| {
                     use tasty_agent::{TaskState, TaskStore};
-                    let seq = self.ctx.agent_seq.clone();
                     let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-                    let mut out: Vec<ReducerInput> = Vec::with_capacity(inputs.len());
-                    for tid in inputs {
+                    let mut out: Vec<ReducerInput> = Vec::with_capacity(ids.len());
+                    for tid in &ids {
                         let t = store
-                            .get(task.workspace_id, tid)
+                            .get(ws, tid)
                             .map_err(|e| e.to_string())?
                             .ok_or_else(|| format!("input task not found: {tid}"))?;
                         // 생성 단계에서 막지만, 저장된 v1 reduce 가 v2 를 가리키면 실행하지 않는다.

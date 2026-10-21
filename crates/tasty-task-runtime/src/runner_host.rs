@@ -27,8 +27,8 @@ use run_result::{
     CAPTURE_TAIL_CAP, POLL_FAILURE_SUMMARY_CAP, run_outcome_from_value, run_outcome_to_value,
 };
 pub(crate) use run_result::{
-    RUN_RESULT_LOST, evict_run_result, evict_task_side_keys, load_run_result, persist_run_result,
-    shell_outcome_from_status,
+    RUN_RESULT_LOST, evict_run_result, evict_task_side_keys, evict_task_side_keys_in,
+    load_run_result, persist_run_result, shell_outcome_from_status,
 };
 use run_result::{drain_capped, drain_capped_observed, summarize_poll_response};
 
@@ -61,7 +61,8 @@ use tasty_agent::{Task, TaskCommand, TaskId, TaskResult};
 use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
 
 pub(crate) use store_keys::{
-    HANDLE_KEY_PREFIX, handle_key, has_stored_handle, load_dispatch_handle, run_result_key,
+    HANDLE_KEY_PREFIX, handle_key, has_stored_handle, load_dispatch_handle,
+    load_dispatch_handle_in, run_result_key,
 };
 
 use tasty_ipc::host_call::{HostIpcInjector, InjectError, LateAnswer, LateDispatch};
@@ -78,7 +79,7 @@ pub(crate) const INJECTOR_GRACE_MS: u64 = 30_000;
 #[derive(Clone)]
 pub(crate) struct RunnerContext {
     pub(crate) scope_stopping: Arc<std::sync::atomic::AtomicBool>,
-    pub(crate) memory: Arc<Mutex<dyn MemoryStorage>>,
+    pub(crate) memory: tasty_memory::writer::MemoryAccess,
     pub(crate) agent_seq: Arc<AtomicU64>,
     pub(crate) host_ipc: Arc<OnceLock<HostIpcInjector>>,
     /// Core를 거치지 않는 러너의 종료 처리도 대기자를 깨울 수 있도록 같은 hub를 공유한다.
@@ -90,9 +91,6 @@ pub(crate) struct RunnerContext {
     /// 설정이 정하는 report 상한.
     pub(crate) report_limits: Arc<SharedReportLimits>,
 }
-
-static MEMORY_POISON_REPORTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
 
 static RUN_RESULT_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -119,10 +117,11 @@ impl RunnerContext {
 
     /// 사건에 실을 레코드 revision. 읽지 못하면 로그를 남기고 revision 없이 알린다.
     fn task_revision(&self, workspace_id: u32, task_id: &tasty_agent::TaskId) -> Option<u64> {
-        let seq = std::sync::atomic::AtomicU64::new(0);
-        self.with_memory(|mem| {
+        let id = task_id.clone();
+        self.with_memory(move |mem| {
+            let seq = std::sync::atomic::AtomicU64::new(0);
             tasty_agent::TaskStore::new(mem, tasty_memory::HOST_OWNER, &seq)
-                .revision(workspace_id, task_id)
+                .revision(workspace_id, &id)
         })
         .unwrap_or_else(|error| {
             tracing::warn!(%error, workspace_id, %task_id, "task revision lookup failed");
@@ -130,14 +129,31 @@ impl RunnerContext {
         })
     }
 
-    /// poison은 로그로 알리고 남은 저장소를 계속 사용한다. 임의 MemoryStorage 호출의 중간 실패를 복구하는 것은 아니다.
-    pub(crate) fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
-        let mut guard = tasty_utils::poison::recover_mutex(
-            self.memory.lock(),
-            "agent runner memory",
-            &MEMORY_POISON_REPORTED,
-        );
+    /// 본문을 memory writer 순서 안에서 실행하고 결과를 기다린다. 러너 스레드와 그 worker만 부른다.
+    /// 확정하지 못하면 결과형의 저장소 오류다([`crate::store_call`]).
+    pub(crate) fn with_memory<R: crate::store_call::FromBlocked + Send + 'static>(
+        &self,
+        f: impl Fn(&mut dyn MemoryStorage) -> R + Send + Sync + 'static,
+    ) -> R {
+        crate::store_call::blocking(&self.memory, f)
+    }
+
+    /// 시험 전용. writer 없는 구성의 저장소를 바로 잠그고 값을 빌리는 본문을 실행한다.
+    #[cfg(test)]
+    pub(crate) fn with_store<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
+        let mut guard = self
+            .memory
+            .lock_inline_for_tests()
+            .expect("test runner context uses an inline memory route");
         f(&mut *guard)
+    }
+
+    /// 결과형이 저장소 오류를 담지 못하는 본문. 확정하지 못하면 [`tasty_memory::writer::Blocked`]다.
+    pub(crate) fn store<R: Send + 'static>(
+        &self,
+        f: impl Fn(&mut dyn MemoryStorage) -> R + Send + Sync + 'static,
+    ) -> Result<R, tasty_memory::writer::Blocked> {
+        self.memory.run_blocking(0, f)
     }
 
     /// 큐 입장 거절을 여기서 재시도하면 적체를 늘리므로 오류를 그대로 전달한다.
@@ -294,11 +310,12 @@ impl HostExecutor {
                 return;
             }
         };
-        let res = self.ctx.with_memory(|mem| {
+        let key = handle_key(task_id);
+        let res = self.ctx.with_memory(move |mem| {
             mem.put(
                 HOST_OWNER,
                 &Scope::Workspace(ws),
-                &handle_key(task_id),
+                &key,
                 &value,
                 &PutOpts::default(),
             )
@@ -319,14 +336,10 @@ impl HostExecutor {
         let Some(ws) = self.held_handles.remove(task_id) else {
             return;
         };
-        let res = self.ctx.with_memory(|mem| {
-            mem.delete(
-                HOST_OWNER,
-                &Scope::Workspace(ws),
-                &handle_key(task_id),
-                None,
-            )
-        });
+        let key = handle_key(task_id);
+        let res = self
+            .ctx
+            .with_memory(move |mem| mem.delete(HOST_OWNER, &Scope::Workspace(ws), &key, None));
         if let Err(e) = res {
             tracing::warn!("evict handle {task_id}: {e}");
         }
@@ -368,9 +381,15 @@ impl TaskExecutor for HostExecutor {
     fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
         // 이전 회차의 handle 이 남았으면 그 프로세스가 끝난 것을 아직 확인하지 못했다. 같은 holder id 로
         // 점유를 다시 얻으면 옛 프로세스와 새 회차가 자원을 함께 쓰므로, 정리될 때까지 Ready 로 둔다.
+        let (ws, id) = (task.workspace_id, task.id.clone());
+        // 읽지 못하면 읽기 실패와 같이 남지 않은 것으로 본다(has_stored_handle).
         if self
             .ctx
-            .with_memory(|mem| has_stored_handle(&*mem, task.workspace_id, &task.id))
+            .store(move |mem| has_stored_handle(&*mem, ws, &id))
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "agent task {}: handle read not answered", task.id);
+                false
+            })
         {
             tracing::debug!(
                 "agent task {}: an earlier attempt's handle is still being settled; deferring",
@@ -484,7 +503,7 @@ mod tests {
         let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
         let ctx = RunnerContext {
             scope_stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            memory: Arc::new(Mutex::new(mem)),
+            memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(Mutex::new(mem))),
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
             task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
@@ -503,7 +522,7 @@ mod tests {
         let handle = DispatchHandle::ShellProcess { pid: 4242 };
         exec.persist_handle(1, &"t-test".to_string(), &handle, None);
 
-        let loaded: Option<DispatchHandle> = ctx.with_memory(|mem| {
+        let loaded: Option<DispatchHandle> = ctx.with_store(|mem| {
             let entry = mem
                 .get(&Scope::Workspace(1), &handle_key("t-test"))
                 .ok()??;
@@ -527,7 +546,7 @@ mod tests {
         let handle = DispatchHandle::ShellProcess { pid: 4242 };
         exec.persist_handle(1, &"t-test".to_string(), &handle, Some("t-test#3"));
 
-        let raw = ctx.with_memory(|mem| {
+        let raw = ctx.with_store(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key("t-test"))
                 .unwrap()
                 .unwrap()
@@ -563,7 +582,7 @@ mod tests {
         for (i, h) in immediates.into_iter().enumerate() {
             let id = format!("t-im-{i}");
             exec.persist_handle(1, &id, &h, None);
-            let present: bool = ctx.with_memory(|mem| {
+            let present: bool = ctx.with_store(|mem| {
                 mem.get(&Scope::Workspace(1), &handle_key(&id))
                     .map(|v| v.is_some())
                     .unwrap_or(false)
@@ -1773,7 +1792,7 @@ mod tests {
         let task_id = "t-evict".to_string();
         let handle = mk_polled("fake.poll");
         exec.persist_handle(1, &task_id, &handle, None);
-        let present_before: bool = ctx.with_memory(|mem| {
+        let present_before: bool = ctx.with_store(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key(&task_id))
                 .map(|v| v.is_some())
                 .unwrap_or(false)
@@ -1781,7 +1800,7 @@ mod tests {
         assert!(present_before, "persist should write entry");
 
         exec.evict_handle(&task_id);
-        let present_after: bool = ctx.with_memory(|mem| {
+        let present_after: bool = ctx.with_store(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key(&task_id))
                 .map(|v| v.is_some())
                 .unwrap_or(false)
@@ -1920,7 +1939,7 @@ mod tests {
 
         let mut task = mk_run_task("t-persist-cwd", vec!["pwd"]);
         task.metadata = json!({ "lease": { "resource": dir_path } });
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref());
             store.put(&task).unwrap();
         });
@@ -1930,7 +1949,7 @@ mod tests {
             other => panic!("expected Started, got {other:?}"),
         };
 
-        let stored = ctx.with_memory(|mem| {
+        let stored = ctx.with_store(|mem| {
             let store = TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref());
             store.get(1, &task.id).unwrap().unwrap()
         });
@@ -2096,7 +2115,7 @@ mod tests {
         let seq = ctx.agent_seq.clone();
         let mut upstream = mk_run_task("t-up", vec!["true"]);
         upstream.result = None;
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.put(&upstream).unwrap();
         });
@@ -2146,7 +2165,7 @@ mod tests {
             vec!["echo", "${task.t-up.output/child_surface_id}"],
         );
         downstream.depends_on = vec!["t-up".to_string()];
-        ctx.with_memory(|mem| {
+        ctx.with_store(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.put(&upstream).unwrap();
             store.put(&downstream).unwrap();
@@ -2158,7 +2177,7 @@ mod tests {
             other => panic!("expected Started, got {other:?}"),
         }
 
-        let stored = ctx.with_memory(|mem| {
+        let stored = ctx.with_store(|mem| {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &"t-down".to_string()).unwrap().unwrap()
         });

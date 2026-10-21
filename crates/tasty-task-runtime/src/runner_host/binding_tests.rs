@@ -14,7 +14,7 @@ fn spec(v: Value) -> TaskGraphSpec {
 }
 
 fn store_op<R>(ctx: &RunnerContext, f: impl FnOnce(&mut TaskStore) -> R) -> R {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         f(&mut store)
@@ -218,7 +218,7 @@ fn a_wait_barrier_waits_on_the_barrier_named_by_its_input() {
          "input_mapping": {"barrier": "/gate"}}
     ]});
     store_op(&ctx, |s| s.submit_graph(1, spec(graph), 0).unwrap());
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let mut b = BarrierStore::new(mem, HOST_OWNER);
         b.create(1, "gate.a", 1, None, 0).unwrap();
         b.create(1, "gate.b", 1, None, 0).unwrap();
@@ -231,13 +231,13 @@ fn a_wait_barrier_waits_on_the_barrier_named_by_its_input() {
     assert_eq!(w.state, TaskState::Running);
     assert_eq!(w.barrier_name(), Some("gate.b"));
     // 다른 barrier 가 닫혀도 끝나지 않는다.
-    ctx.with_memory(|mem| BarrierStore::new(mem, HOST_OWNER).signal(1, "gate.a", 20))
+    ctx.with_store(|mem| BarrierStore::new(mem, HOST_OWNER).signal(1, "gate.a", 20))
         .unwrap();
     for n in 0..5 {
         tick(&ctx, &mut runner, 30 + n);
     }
     assert_eq!(get(&ctx, "w").state, TaskState::Running);
-    ctx.with_memory(|mem| BarrierStore::new(mem, HOST_OWNER).signal(1, "gate.b", 40))
+    ctx.with_store(|mem| BarrierStore::new(mem, HOST_OWNER).signal(1, "gate.b", 40))
         .unwrap();
     tick_until_terminal(&ctx, &mut runner, "w");
     let w = get(&ctx, "w");

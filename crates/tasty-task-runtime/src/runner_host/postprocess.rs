@@ -166,15 +166,16 @@ impl HostExecutor {
     ) -> DispatchHandle {
         let ws = task.workspace_id;
         let resolved = |report: PostprocessReport| DispatchHandle::PostprocessResolved(report);
-        let begun = self.ctx.with_memory(|mem| {
-            let seq = self.ctx.agent_seq.clone();
-            tasty_agent::TaskStore::new(mem, HOST_OWNER, seq.as_ref()).begin_postprocess_run(
-                ws,
-                &task.id,
-                attempt_id,
-                run,
-                now_ms(),
-            )
+        let (seq, id, attempt) = (
+            self.ctx.agent_seq.clone(),
+            task.id.clone(),
+            attempt_id.to_string(),
+        );
+        let started_at = now_ms();
+        // 시작 기록이 확정되지 않으면(결과 불명 포함) 프로세스를 띄우지 않는다.
+        let begun = self.ctx.with_memory(move |mem| {
+            tasty_agent::TaskStore::new(mem, HOST_OWNER, seq.as_ref())
+                .begin_postprocess_run(ws, &id, &attempt, run, started_at)
         });
         let (current, spec, execution) = match begun {
             Ok(v) => v,
@@ -296,7 +297,7 @@ impl HostExecutor {
 
 /// 실행 결과를 회차·실행 번호와 함께 저장한다. 실패하면 경고만 한다(재시작 뒤에는 결과 불명이 된다).
 fn persist_report(
-    memory: &Arc<Mutex<dyn MemoryStorage>>,
+    memory: &tasty_memory::writer::MemoryAccess,
     workspace_id: u32,
     task_id: &str,
     attempt_id: &str,
@@ -306,20 +307,16 @@ fn persist_report(
         "attempt_id": attempt_id,
         "report": report,
     }));
-    let res = {
-        let mut guard = tasty_utils::poison::recover_mutex(
-            memory.lock(),
-            "agent runner memory",
-            &MEMORY_POISON_REPORTED,
-        );
-        guard.put(
+    let key = postprocess_result_key(task_id);
+    let res = crate::store_call::blocking(memory, move |mem| {
+        mem.put(
             HOST_OWNER,
             &Scope::Workspace(workspace_id),
-            &postprocess_result_key(task_id),
+            &key,
             &value,
             &PutOpts::default(),
         )
-    };
+    });
     if let Err(e) = res {
         tracing::warn!("persist postprocess result {task_id}: {e}");
     }
@@ -332,14 +329,12 @@ fn load_report(
     attempt_id: &str,
     run: u32,
 ) -> Option<PostprocessReport> {
-    let value = ctx.with_memory(|mem| {
-        mem.get(
-            &Scope::Workspace(workspace_id),
-            &postprocess_result_key(task_id),
-        )
-        .ok()
-        .flatten()
-        .map(|e| e.value)
+    let key = postprocess_result_key(task_id);
+    let value = ctx.with_memory(move |mem| {
+        mem.get(&Scope::Workspace(workspace_id), &key)
+            .ok()
+            .flatten()
+            .map(|e| e.value)
     })?;
     let MemoryValue::Json(v) = value else {
         return None;
@@ -352,13 +347,9 @@ fn load_report(
 }
 
 pub(crate) fn evict_postprocess_result(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
-    let res = ctx.with_memory(|mem| {
-        mem.delete(
-            HOST_OWNER,
-            &Scope::Workspace(workspace_id),
-            &postprocess_result_key(task_id),
-            None,
-        )
+    let key = postprocess_result_key(task_id);
+    let res = ctx.with_memory(move |mem| {
+        mem.delete(HOST_OWNER, &Scope::Workspace(workspace_id), &key, None)
     });
     if let Err(e) = res {
         tracing::warn!("evict postprocess result {task_id}: {e}");

@@ -15,7 +15,7 @@ const HOLDING_WARNING_KEY_PREFIX: &str = "tasty.agent.holding_warning.";
 /// 점유 종류 수만큼 생긴다. 재시도가 거듭돼도 끝없이 늘지 않게 오래된 것부터 버린다.
 const MAX_HOLDING_WARNINGS: usize = 16;
 
-fn holding_warning_key(task_id: &str) -> String {
+pub(crate) fn holding_warning_key(task_id: &str) -> String {
     format!("{HOLDING_WARNING_KEY_PREFIX}{task_id}")
 }
 
@@ -71,23 +71,25 @@ pub(crate) fn record_holding_warning(
     ctx: &RunnerContext,
     workspace_id: u32,
     task_id: &str,
-    mut warning: Value,
+    warning: Value,
 ) {
-    let res = ctx.with_memory(|mem| {
+    let (seq, id) = (ctx.agent_seq.clone(), task_id.to_string());
+    let res = ctx.with_memory(move |mem| {
+        let mut warning = warning.clone();
         if let (Some(attempt), Some(obj)) = (
-            current_attempt(&mut *mem, ctx.agent_seq.as_ref(), workspace_id, task_id),
+            current_attempt(&mut *mem, seq.as_ref(), workspace_id, &id),
             warning.as_object_mut(),
         ) {
             obj.insert("attempt_id".into(), attempt.into());
         }
-        let mut items = holding_warnings(&*mem, workspace_id, task_id);
+        let mut items = holding_warnings(&*mem, workspace_id, &id);
         items.push(warning);
         let excess = items.len().saturating_sub(MAX_HOLDING_WARNINGS);
         items.drain(..excess);
         mem.put(
             HOST_OWNER,
             &Scope::Workspace(workspace_id),
-            &holding_warning_key(task_id),
+            &holding_warning_key(&id),
             &MemoryValue::Json(Value::Array(items)),
             &PutOpts::default(),
         )
@@ -98,13 +100,9 @@ pub(crate) fn record_holding_warning(
 }
 
 pub(crate) fn evict_holding_warnings(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
-    let res = ctx.with_memory(|mem| {
-        mem.delete(
-            HOST_OWNER,
-            &Scope::Workspace(workspace_id),
-            &holding_warning_key(task_id),
-            None,
-        )
+    let key = holding_warning_key(task_id);
+    let res = ctx.with_memory(move |mem| {
+        mem.delete(HOST_OWNER, &Scope::Workspace(workspace_id), &key, None)
     });
     if let Err(e) = res {
         tracing::warn!("evict holding warning {task_id}: {e}");

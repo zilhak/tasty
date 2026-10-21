@@ -18,7 +18,7 @@ fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
     let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
     let ctx = RunnerContext {
         scope_stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        memory: Arc::new(Mutex::new(mem)),
+        memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(Mutex::new(mem))),
         agent_seq: Arc::new(AtomicU64::new(0)),
         host_ipc: Arc::new(OnceLock::new()),
         task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
@@ -33,7 +33,7 @@ fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
 const JUDGE: &str = "judge";
 
 fn store_op<R>(ctx: &RunnerContext, f: impl FnOnce(&mut TaskStore) -> R) -> R {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         f(&mut store)
@@ -92,7 +92,7 @@ fn after_main(ctx: &RunnerContext, log: &std::path::Path, retry: Value) -> Strin
 }
 
 fn put(ctx: &RunnerContext, key: &str, value: Value) {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         mem.put(
             HOST_OWNER,
             &Scope::Workspace(1),
@@ -270,7 +270,7 @@ fn dropping_the_registry_waits_until_the_postprocess_is_stopped_and_recorded() {
         gone(child),
         "postprocess grandchild {child} survived the shutdown"
     );
-    let stored = ctx.with_memory(|mem| {
+    let stored = ctx.with_store(|mem| {
         mem.get(&Scope::Workspace(1), &postprocess_result_key(JUDGE))
             .unwrap()
             .map(|e| e.value)
@@ -319,7 +319,7 @@ fn holding_judge_in_postprocess(ctx: &RunnerContext, pid: u32, started_at: u64) 
         .unwrap()
     });
     begin(ctx, &attempt, 1);
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let mut sem = tasty_agent::SemaphoreStore::new(mem, HOST_OWNER);
         sem.create(1, "gpu", 1, 1).unwrap();
         assert!(sem.acquire(1, "gpu", JUDGE, None, 1).unwrap().acquired);
@@ -336,7 +336,7 @@ fn holding_judge_in_postprocess(ctx: &RunnerContext, pid: u32, started_at: u64) 
 }
 
 fn gpu_holders(ctx: &RunnerContext) -> Vec<String> {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         tasty_agent::SemaphoreStore::new(mem, HOST_OWNER)
             .get(1, "gpu")
             .unwrap()
@@ -373,7 +373,7 @@ fn restarted_runner(ctx: &RunnerContext) -> RunnerLoop<HostExecutor> {
     let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
     for (task_id, handle) in purge_and_reload_on_restart(ctx, 1) {
         if let Some(task) = load_task(ctx, 1, &task_id)
-            && ctx.with_memory(|mem| resumes_after_restart(mem, 1, &task))
+            && ctx.with_store(|mem| resumes_after_restart(mem, 1, &task))
         {
             runner.executor.adopt_restored_run(1, &task);
         }
@@ -579,7 +579,7 @@ fn holding_judge_pending(ctx: &RunnerContext, log: &std::path::Path, retry_wait:
         )
         .unwrap()
     });
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let mut sem = tasty_agent::SemaphoreStore::new(mem, HOST_OWNER);
         sem.create(1, "gpu", 1, 1).unwrap();
         assert!(sem.acquire(1, "gpu", JUDGE, None, 1).unwrap().acquired);

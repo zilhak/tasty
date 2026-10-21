@@ -85,7 +85,7 @@ pub fn handle_task_create(
         core,
         id,
         params,
-        move |tasks| tasks.task_create(&scope, opts, reserved_for_fallback),
+        move |tx| tx.task_create(&scope, opts.clone(), reserved_for_fallback),
         |core, id, task| {
             mark_durability(
                 core,
@@ -245,10 +245,10 @@ pub fn handle_task_list(
         core,
         id,
         params,
-        move |tasks| {
-            let list = tasks.task_list(&scope, workspace_id)?;
-            let handles = tasks.stored_handle_ids(workspace_id);
-            let runner = tasks.runner_status(&scope, workspace_id);
+        move |tx| {
+            let list = tx.task_list(&scope, workspace_id)?;
+            let handles = tx.stored_handle_ids(workspace_id);
+            let runner = tx.runner_status(&scope, workspace_id);
             Ok((list, handles, runner))
         },
         move |_, id, (mut tasks, handles, runner)| {
@@ -323,17 +323,18 @@ pub fn handle_task_get(
         core,
         id,
         params,
-        move |tasks| {
-            let Some((t, revision)) =
-                tasks.task_get_with_revision(&scope, workspace_id, &task_id)?
+        move |tx| {
+            let Some((t, revision)) = tx.task_get_with_revision(&scope, workspace_id, &task_id)?
             else {
-                return Ok(Err(task_id));
+                return Ok(Err(task_id.clone()));
             };
-            let has_handle = tasks.has_stored_handle(workspace_id, &task_id);
-            let holding_warnings = tasks.task_holding_warnings(&scope, workspace_id, &task_id);
-            let handle = matches!(t.state, TaskState::Running)
-                .then(|| tasks.dispatch_handle(&scope, workspace_id, &task_id))
-                .flatten();
+            let has_handle = tx.has_stored_handle(workspace_id, &task_id);
+            let holding_warnings = tx.task_holding_warnings(&scope, workspace_id, &task_id);
+            let handle = if matches!(t.state, TaskState::Running) {
+                tx.dispatch_handle(workspace_id, &task_id)
+            } else {
+                None
+            };
             Ok(Ok(StoredTask {
                 task: t,
                 revision,
@@ -417,7 +418,7 @@ pub fn handle_task_cancel(
         core,
         id,
         params,
-        move |tasks| tasks.task_cancel(&scope, workspace_id, &task_id, now_ms()),
+        move |tx| tx.task_cancel(&scope, workspace_id, &task_id, now_ms()),
         |core, id, (task, cascaded)| {
             mark_durability(
                 core,
@@ -457,7 +458,7 @@ pub fn handle_task_retry(
         core,
         id,
         params,
-        move |tasks| tasks.task_retry(&scope, workspace_id, &task_id, reset_downstream, now_ms()),
+        move |tx| tx.task_retry(&scope, workspace_id, &task_id, reset_downstream, now_ms()),
         |core, id, task| {
             mark_durability(
                 core,
@@ -575,9 +576,9 @@ pub fn handle_task_graph(
         core,
         id,
         params,
-        move |tasks| {
-            let list = tasks.task_list(&scope, workspace_id)?;
-            Ok((list, tasks.runner_status(&scope, workspace_id)))
+        move |tx| {
+            let list = tx.task_list(&scope, workspace_id)?;
+            Ok((list, tx.runner_status(&scope, workspace_id)))
         },
         move |_, id, (tasks, runner)| {
             graph_response(id, &format, &tasks, runner_status_value(&runner))
@@ -618,7 +619,7 @@ pub fn handle_dag_list(
         core,
         id,
         params,
-        move |tasks| tasks.dag_list(&scope, &workspaces),
+        move |tx| tx.dag_list(&scope, &workspaces),
         move |_, id, dags: Vec<tasty_agent::DagSummary>| {
             let rendered: Vec<Value> = dags
                 .iter()
@@ -670,13 +671,13 @@ pub fn handle_dag_get(
         core,
         id,
         params,
-        move |tasks| {
-            Ok(match tasks.dag_get(&scope, &workspaces, &dag_id)? {
+        move |tx| {
+            Ok(match tx.dag_get(&scope, &workspaces, &dag_id)? {
                 Some((dag, list)) => {
-                    let runner = tasks.runner_status(&scope, dag.workspace_id);
+                    let runner = tx.runner_status(&scope, dag.workspace_id);
                     Ok((dag, list, runner))
                 }
-                None => Err(dag_id),
+                None => Err(dag_id.clone()),
             })
         },
         move |_, id, found| match found {
@@ -731,7 +732,7 @@ pub fn handle_task_reduce(
         core,
         id,
         params,
-        move |tasks| tasks.task_reduce_collect(&scope, workspace_id, &inputs),
+        move |tx| tx.task_reduce_collect(&scope, workspace_id, &inputs),
         move |_, id, collected| {
             // 경로가 없는 입력도 버리지 않고 null과 경고로 남긴 뒤 나머지를 합친다.
             let (collected, warnings) = extract_paths(&collected, extract_path.as_deref());
@@ -786,7 +787,7 @@ pub fn handle_task_run(
         core,
         id,
         params,
-        move |tasks| Ok(tasks.runner_status(&scope, workspace_id)),
+        move |tx| Ok(tx.runner_status(&scope, workspace_id)),
         |_, id, status| JsonRpcResponse::success(id, runner_status_value(&status)),
     )
 }
@@ -861,7 +862,7 @@ pub fn handle_task_set_result(
         core,
         id,
         params,
-        move |tasks| tasks.task_complete(&scope, workspace_id, &task_id, completion, now_ms()),
+        move |tx| tx.task_complete(&scope, workspace_id, &task_id, completion.clone(), now_ms()),
         |core, id, receipt| {
             mark_durability(
                 core,
@@ -908,8 +909,8 @@ pub fn handle_task_delete(
         core,
         id,
         params,
-        move |tasks| {
-            tasks.task_delete(
+        move |tx| {
+            tx.task_delete(
                 &scope,
                 workspace_id,
                 &task_id,
@@ -961,7 +962,7 @@ pub fn handle_task_purge(
         core,
         id,
         params,
-        move |tasks| tasks.task_purge(&scope, workspace_id, filter, dry_run),
+        move |tx| tx.task_purge(&scope, workspace_id, filter.clone(), dry_run),
         move |core, id, plan| {
             mark_durability(
                 core,

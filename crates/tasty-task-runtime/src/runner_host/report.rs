@@ -9,6 +9,7 @@ use tasty_agent::task::report::{
     STDERR_MARKER,
 };
 use tasty_agent::{AgentError, Task, TaskStore};
+use tasty_memory::writer::MemoryAccess;
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
 use super::{HostExecutor, now_ms};
@@ -53,11 +54,12 @@ impl HostExecutor {
             token: new_report_token(),
         };
         let seq = self.ctx.agent_seq.clone();
-        let res = self.ctx.with_memory(|mem| {
+        let (ws, id, issued) = (task.workspace_id, task.id.clone(), token.clone());
+        let res = self.ctx.with_memory(move |mem| {
             TaskStore::new(mem, HOST_OWNER, seq.as_ref()).issue_report_token(
-                task.workspace_id,
-                &task.id,
-                token.clone(),
+                ws,
+                &id,
+                issued.clone(),
             )
         });
         match res {
@@ -87,9 +89,9 @@ pub(crate) fn report_env(task: &Task, source: ReportSource) -> Vec<(OsString, Os
 }
 
 /// custom 기록 한 줄을 저장한다. 러너의 stderr 표지 줄과 IPC 가 같이 쓴다. `writer_may` 는
-/// 저장소 잠금 안에서 토큰·닫힘 검사 뒤에 부른다.
+/// 같은 writer 요청 안에서 토큰·닫힘 검사 뒤에 부른다.
 pub(crate) fn append(
-    memory: &Mutex<dyn MemoryStorage>,
+    mem: &mut dyn MemoryStorage,
     seq: &std::sync::atomic::AtomicU64,
     limits: ReportLimits,
     addr: &ReportAddress,
@@ -97,12 +99,7 @@ pub(crate) fn append(
     cut_before: u64,
     writer_may: impl FnOnce() -> bool,
 ) -> Result<(AppendOutcome, u64), AgentError> {
-    let mut guard = tasty_utils::poison::recover_mutex(
-        memory.lock(),
-        tasty_memory::STORE_LOCK_WHAT,
-        &tasty_memory::STORE_LOCK_POISONED,
-    );
-    TaskStore::new(&mut *guard, HOST_OWNER, seq).append_report_by(
+    TaskStore::new(mem, HOST_OWNER, seq).append_report_by(
         addr,
         text,
         cut_before,
@@ -168,17 +165,15 @@ impl MarkerScanner {
 
 /// 저장소를 거치지 않고 건너뛴 append 수를 블록에 한 번에 더한다.
 pub(crate) fn count_omitted(
-    memory: &Mutex<dyn MemoryStorage>,
-    seq: &std::sync::atomic::AtomicU64,
+    memory: &MemoryAccess,
+    seq: &Arc<std::sync::atomic::AtomicU64>,
     addr: &ReportAddress,
     count: u64,
 ) -> Result<(), AgentError> {
-    let mut guard = tasty_utils::poison::recover_mutex(
-        memory.lock(),
-        tasty_memory::STORE_LOCK_WHAT,
-        &tasty_memory::STORE_LOCK_POISONED,
-    );
-    TaskStore::new(&mut *guard, HOST_OWNER, seq).count_report_omissions(addr, count)
+    let (seq, addr) = (seq.clone(), addr.clone());
+    crate::store_call::blocking(memory, move |mem| {
+        TaskStore::new(mem, HOST_OWNER, seq.as_ref()).count_report_omissions(&addr, count)
+    })
 }
 
 /// run stderr 를 읽는 스레드가 표지 줄을 이 회차 블록에 append 한다. 실패해도 실행은 그대로다.
@@ -186,7 +181,7 @@ pub(crate) fn count_omitted(
 /// (회차가 닫히기 전) 그 수를 `omitted_appends` 에 한 번에 더한다. 그 사이 설정에서 블록 상한을
 /// 올려도 이 회차의 나머지 줄은 세기만 한다.
 pub(crate) struct MarkerSink {
-    memory: Arc<Mutex<dyn MemoryStorage>>,
+    memory: MemoryAccess,
     seq: Arc<std::sync::atomic::AtomicU64>,
     limits: Arc<SharedReportLimits>,
     addr: ReportAddress,
@@ -197,7 +192,7 @@ pub(crate) struct MarkerSink {
 
 impl MarkerSink {
     pub(crate) fn new(
-        memory: Arc<Mutex<dyn MemoryStorage>>,
+        memory: MemoryAccess,
         seq: Arc<std::sync::atomic::AtomicU64>,
         limits: Arc<SharedReportLimits>,
         addr: ReportAddress,
@@ -240,15 +235,11 @@ impl MarkerSink {
             return;
         }
         let limits = self.limits.get();
-        match append(
-            &self.memory,
-            &self.seq,
-            limits,
-            &self.addr,
-            text,
-            cut_before,
-            || true,
-        ) {
+        let (seq, addr, text) = (self.seq.clone(), self.addr.clone(), text.to_string());
+        let stored = crate::store_call::blocking(&self.memory, move |mem| {
+            append(mem, seq.as_ref(), limits, &addr, &text, cut_before, || true)
+        });
+        match stored {
             Ok((_, room)) => self.full = room == 0,
             Err(e) => tracing::warn!(
                 "agent task {}: stderr report line not stored: {e}",

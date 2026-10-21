@@ -4,7 +4,7 @@ use crate::runtime::dag_query::{
 };
 use crate::runtime::engine_session::EngineId;
 use std::sync::{
-    Arc, Mutex, TryLockError,
+    Arc,
     atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc,
 };
@@ -88,7 +88,7 @@ impl DagReads {
         &mut self,
         engine: EngineId,
         request: PendingRead,
-        memory: Arc<Mutex<dyn tasty_memory::MemoryStorage>>,
+        memory: tasty_memory::writer::MemoryAccess,
         sequence: Arc<AtomicU64>,
         targets: Vec<Target>,
     ) {
@@ -104,13 +104,7 @@ impl DagReads {
         match std::thread::Builder::new()
             .name("dag-read".into())
             .spawn(move || {
-                let result = read(
-                    &ticket,
-                    &workspaces,
-                    memory.as_ref(),
-                    sequence.as_ref(),
-                    stopping.as_ref(),
-                );
+                let result = read(&ticket, &workspaces, &memory, &sequence, stopping.as_ref());
                 if sender.send(result).is_err() {
                     tracing::debug!("DAG read owner closed before completion");
                 }
@@ -162,61 +156,68 @@ impl Drop for DagReads {
         }
     }
 }
+/// 화면 DAG 목록을 writer 요청 하나로 읽는다. 결과는 짧게 나눠 기다리며, 종료하거나 요청이 버려지면
+/// 기다림을 그만둔다. 요청은 읽기만 하므로 결과를 버려도 남는 것이 없다. writer 가 멈춰 있어도
+/// worker 는 종료 요청을 보고 끝난다.
 fn read(
     ticket: &ReadTicket,
     workspaces: &[u32],
-    memory: &Mutex<dyn tasty_memory::MemoryStorage>,
-    sequence: &AtomicU64,
+    memory: &tasty_memory::writer::MemoryAccess,
+    sequence: &Arc<AtomicU64>,
     stopping: &AtomicBool,
 ) -> Option<ReadResult> {
-    let mut snapshots = Vec::new();
-    for workspace in workspaces {
-        let tasks = match read_tasks(ticket, memory, sequence, stopping, *workspace)? {
-            Ok(tasks) => tasks,
-            Err(error) => return Some(Err(error.into())),
-        };
-        let dags = tasty_agent::group_tasks_into_dags(&tasks);
-        snapshots.push(WorkspaceSnapshot {
-            id: *workspace,
-            tasks,
-            dags,
-            runner: (false, false),
-        });
+    let live = || !stopping.load(Ordering::Acquire) && ticket.is_live();
+    if !live() {
+        return None;
     }
-    (!stopping.load(Ordering::Acquire)).then_some(Ok(snapshots))
-}
-fn read_tasks(
-    ticket: &ReadTicket,
-    memory: &Mutex<dyn tasty_memory::MemoryStorage>,
-    sequence: &AtomicU64,
-    stopping: &AtomicBool,
-    workspace: u32,
-) -> Option<Result<Vec<tasty_agent::Task>, String>> {
-    let mut store = loop {
-        if stopping.load(Ordering::Acquire) || !ticket.is_live() {
+    let (ids, seq) = (workspaces.to_vec(), sequence.clone());
+    let request = tasty_memory::writer::MemoryRequest::unit(0, move |mem| {
+        Ok(ids
+            .iter()
+            .map(|workspace| {
+                tasty_agent::TaskStore::new(&mut *mem, tasty_memory::HOST_OWNER, seq.as_ref())
+                    .list(*workspace)
+                    .map(|tasks| (*workspace, tasks))
+                    .map_err(|error| error.to_string())
+            })
+            .collect::<Result<Vec<_>, String>>())
+    });
+    let mut pending = match memory.submit(request) {
+        Ok(pending) => pending,
+        Err(error) => return Some(Err(error.to_string().into())),
+    };
+    let completion = loop {
+        if let Some(completion) = pending.wait_timeout(Duration::from_millis(10)) {
+            break completion;
+        }
+        #[cfg(test)]
+        ticket.waiting.store(true, Ordering::Release);
+        if !live() {
             return None;
         }
-        match memory.try_lock() {
-            Ok(guard) => break guard,
-            Err(TryLockError::Poisoned(poison)) => {
-                break tasty_utils::poison::recover_poisoned(
-                    poison,
-                    tasty_memory::STORE_LOCK_WHAT,
-                    &tasty_memory::STORE_LOCK_POISONED,
-                );
-            }
-            Err(TryLockError::WouldBlock) => {
-                #[cfg(test)]
-                ticket.waiting.store(true, Ordering::Release);
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        }
     };
-    let tasks = tasty_agent::TaskStore::new(&mut *store, tasty_memory::HOST_OWNER, sequence)
-        .list(workspace)
-        .map_err(|error| error.to_string());
-    drop(store);
-    Some(tasks)
+    let listed = match tasty_memory::writer::settle(completion) {
+        Ok(output) => output
+            .into_value::<Result<Vec<(u32, Vec<tasty_agent::Task>)>, String>>()
+            .unwrap_or_else(|| Err("unexpected memory output".into())),
+        Err(failure) => Err(format!("{failure:?}")),
+    };
+    let snapshots = match listed {
+        Ok(listed) => listed
+            .into_iter()
+            .map(|(id, tasks)| {
+                let dags = tasty_agent::group_tasks_into_dags(&tasks);
+                WorkspaceSnapshot {
+                    id,
+                    tasks,
+                    dags,
+                    runner: (false, false),
+                }
+            })
+            .collect(),
+        Err(error) => return Some(Err(error.into())),
+    };
+    live().then_some(Ok(snapshots))
 }
 impl super::App {
     pub(crate) fn poll_dag_reads(&mut self) {
@@ -260,7 +261,7 @@ impl super::App {
                     self.dag_reads.start(
                         session.id,
                         request,
-                        self.services.memory_arc(),
+                        self.services.memory_access().clone(),
                         session.task_scope.agent_seq().clone(),
                         targets,
                     );
@@ -275,10 +276,31 @@ impl super::App {
 mod tests {
     use super::*;
     use crate::runtime::dag_query::DagReadQueue;
-    fn memory() -> Arc<Mutex<dyn tasty_memory::MemoryStorage>> {
+    use std::sync::Mutex;
+    type Store = Arc<Mutex<dyn tasty_memory::MemoryStorage>>;
+    fn memory() -> Store {
         Arc::new(Mutex::new(
             tasty_memory::MemoryStore::open_in_memory().unwrap(),
         ))
+    }
+    /// 저장소 잠금을 잡으면 묶음을 실행하지 못하는 writer. 시험이 잠금을 잡아 writer 를 멈춘다.
+    fn queued(
+        store: &Store,
+    ) -> (
+        crate::app::services::HostMemoryWriter,
+        tasty_memory::writer::MemoryAccess,
+    ) {
+        let changes = Arc::new(tasty_memory::writer::ChangeFeed::default());
+        let writer = tasty_memory::writer::spawn(
+            tasty_memory::writer::SharedStore(store.clone()),
+            changes.clone(),
+            tasty_utils::batch_writer::Limits::default(),
+            Arc::new(tasty_utils::batch_writer::SystemClock),
+            Arc::new(|| {}),
+        )
+        .expect("memory writer");
+        let access = tasty_memory::writer::MemoryAccess::writer(writer.handle(), changes);
+        (writer, access)
     }
     fn await_busy(waiting: &AtomicBool) {
         let deadline = std::time::Instant::now() + Duration::from_secs(3);
@@ -303,8 +325,9 @@ mod tests {
     #[test]
     fn a_locked_store_leaves_display_polling_free_and_shutdown_joins_without_unlocking_it() {
         let (_, engine) = crate::state::tests::test_state();
-        let memory = memory();
-        let held = memory.lock().unwrap();
+        let store = memory();
+        let (writer, memory) = queued(&store);
+        let held = store.lock().unwrap();
         let queue = DagReadQueue::default();
         let source = queue.source(None);
         let mut query = source.request(vec![1]);
@@ -324,12 +347,14 @@ mod tests {
         join(&mut owner);
         assert!(query.poll(source).unwrap().is_err());
         drop(held);
+        drop(writer);
     }
     #[test]
     fn dropping_the_receipt_cancels_a_waiting_read_without_stopping_the_service() {
         let (_, engine) = crate::state::tests::test_state();
-        let memory = memory();
-        let held = memory.lock().unwrap();
+        let store = memory();
+        let (writer, memory) = queued(&store);
+        let held = store.lock().unwrap();
         let queue = DagReadQueue::default();
         let query = queue.source(None).request(vec![1]);
         let mut owner = DagReads::new(Arc::new(|| {}));
@@ -370,11 +395,13 @@ mod tests {
         };
         assert_eq!(result[0].id, 2);
         join(&mut owner);
+        drop(writer);
     }
     #[test]
     fn admission_never_spawns_more_than_four_workers() {
-        let memory = memory();
-        let held = memory.lock().unwrap();
+        let store = memory();
+        let (writer, memory) = queued(&store);
+        let held = store.lock().unwrap();
         let mut owner = DagReads::new(Arc::new(|| {}));
         let queue = DagReadQueue::default();
         let mut queries = Vec::new();
@@ -400,6 +427,7 @@ mod tests {
         );
         join(&mut owner);
         drop(held);
+        drop(writer);
     }
     #[test]
     fn dag_results_use_the_actual_owner_and_reject_retired_target_generations() {
@@ -419,7 +447,7 @@ mod tests {
             owner.start(
                 origin.id,
                 queue.take(None).unwrap(),
-                memory(),
+                tasty_memory::writer::MemoryAccess::inline(memory()),
                 Arc::new(AtomicU64::new(0)),
                 vec![destination_target.clone()],
             );

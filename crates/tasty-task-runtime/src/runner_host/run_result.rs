@@ -148,26 +148,22 @@ fn exit_summary(code: Option<i32>) -> String {
 
 /// 자식 종료와 출력 수집 뒤 결과를 저장한다. 실패하면 경고하지만 cell에는 결과를 계속 전달한다.
 pub(crate) fn persist_run_result(
-    memory: &Arc<Mutex<dyn MemoryStorage>>,
+    memory: &tasty_memory::writer::MemoryAccess,
     workspace_id: u32,
     task_id: &str,
     outcome: &PollOutcome,
 ) {
     let value = MemoryValue::Json(run_outcome_to_value(outcome));
-    let res = {
-        let mut guard = tasty_utils::poison::recover_mutex(
-            memory.lock(),
-            "agent runner memory",
-            &MEMORY_POISON_REPORTED,
-        );
-        guard.put(
+    let key = run_result_key(task_id);
+    let res = crate::store_call::blocking(memory, move |mem| {
+        mem.put(
             HOST_OWNER,
             &Scope::Workspace(workspace_id),
-            &run_result_key(task_id),
+            &key,
             &value,
             &PutOpts::default(),
         )
-    };
+    });
     if let Err(e) = res {
         tracing::warn!("persist run_result {task_id}: {e}");
     }
@@ -178,10 +174,9 @@ pub(crate) fn load_run_result(
     workspace_id: u32,
     task_id: &str,
 ) -> Option<PollOutcome> {
-    ctx.with_memory(|mem| {
-        let entry = mem
-            .get(&Scope::Workspace(workspace_id), &run_result_key(task_id))
-            .ok()??;
+    let key = run_result_key(task_id);
+    ctx.with_memory(move |mem| {
+        let entry = mem.get(&Scope::Workspace(workspace_id), &key).ok()??;
         match entry.value {
             MemoryValue::Json(v) => run_outcome_from_value(&v),
             _ => None,
@@ -192,13 +187,9 @@ pub(crate) fn load_run_result(
 /// 실행 결과와 함께 후처리 결과도 지운다.
 pub(crate) fn evict_run_result(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
     super::postprocess::evict_postprocess_result(ctx, workspace_id, task_id);
-    let res = ctx.with_memory(|mem| {
-        mem.delete(
-            HOST_OWNER,
-            &Scope::Workspace(workspace_id),
-            &run_result_key(task_id),
-            None,
-        )
+    let key = run_result_key(task_id);
+    let res = ctx.with_memory(move |mem| {
+        mem.delete(HOST_OWNER, &Scope::Workspace(workspace_id), &key, None)
     });
     if let Err(e) = res {
         tracing::warn!("evict run_result {task_id}: {e}");
@@ -207,13 +198,9 @@ pub(crate) fn evict_run_result(ctx: &RunnerContext, workspace_id: u32, task_id: 
 
 /// executor 밖의 삭제·GC도 정리할 수 있도록 task와 workspace ID로 handle을 지운다.
 pub(crate) fn evict_handle_key(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
-    let res = ctx.with_memory(|mem| {
-        mem.delete(
-            HOST_OWNER,
-            &Scope::Workspace(workspace_id),
-            &handle_key(task_id),
-            None,
-        )
+    let key = handle_key(task_id);
+    let res = ctx.with_memory(move |mem| {
+        mem.delete(HOST_OWNER, &Scope::Workspace(workspace_id), &key, None)
     });
     if let Err(e) = res {
         tracing::warn!("evict handle {task_id}: {e}");
@@ -225,6 +212,25 @@ pub(crate) fn evict_task_side_keys(ctx: &RunnerContext, workspace_id: u32, task_
     evict_handle_key(ctx, workspace_id, task_id);
     evict_run_result(ctx, workspace_id, task_id);
     super::holding_warning::evict_holding_warnings(ctx, workspace_id, task_id);
+}
+
+/// [`evict_task_side_keys`]를 받은 저장소에서 한다. 키마다 실패를 로그로 남기고 다음 키로 간다.
+pub(crate) fn evict_task_side_keys_in(
+    mem: &mut dyn MemoryStorage,
+    workspace_id: u32,
+    task_id: &str,
+) {
+    let scope = Scope::Workspace(workspace_id);
+    for key in [
+        handle_key(task_id),
+        run_result_key(task_id),
+        super::postprocess::postprocess_result_key(task_id),
+        super::holding_warning::holding_warning_key(task_id),
+    ] {
+        if let Err(e) = mem.delete(HOST_OWNER, &scope, &key, None) {
+            tracing::warn!("evict {key}: {e}");
+        }
+    }
 }
 
 /// 재시작 뒤 Run 의 종료 결과를 회수할 수 없을 때 Unknown 사유의 머리말.

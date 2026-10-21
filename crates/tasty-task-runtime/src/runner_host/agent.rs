@@ -402,12 +402,13 @@ impl HostExecutor {
             awaiting_input_since,
         };
         let seq = self.ctx.agent_seq.clone();
-        let res = self.ctx.with_memory(|mem| {
+        let (id, attempt) = (task_id.clone(), attempt_id.to_string());
+        let res = self.ctx.with_memory(move |mem| {
             TaskStore::new(mem, HOST_OWNER, seq.as_ref()).set_agent_link(
                 workspace_id,
-                task_id,
-                attempt_id,
-                link,
+                &id,
+                &attempt,
+                link.clone(),
             )
         });
         if let Err(e) = res {

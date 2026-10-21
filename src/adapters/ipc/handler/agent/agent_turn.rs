@@ -91,32 +91,33 @@ pub fn task_submit(
     };
     let scope = engine.task_scope.clone();
     let output = output.clone();
+    let task_id_for_check = task_id.clone();
     reply_task(
         core,
         id,
         params,
-        move |tasks| {
-            tasks.agent_submit_result(
-                &scope,
-                workspace_id,
-                &task_id,
-                AttemptRef {
-                    id: &attempt_id,
-                    token: &token,
-                },
-                &output,
-                submitter,
-            )
-        },
-        |_, id, outcome| {
-            JsonRpcResponse::success(
+        move |tx| tx.task_get(&scope, workspace_id, &task_id),
+        // 턴 상태는 메모리에 있어 메인 루프에서 판정한다. 읽은 task 는 writer 순서 안의 값이다.
+        move |core, id, task| match core.tasks.agent_submit_checked(
+            task,
+            workspace_id,
+            &task_id_for_check,
+            AttemptRef {
+                id: &attempt_id,
+                token: &token,
+            },
+            &output,
+            submitter,
+        ) {
+            Ok(outcome) => JsonRpcResponse::success(
                 id,
                 json!({
                     "accepted": true,
                     "duplicate": outcome == SubmitOutcome::Duplicate,
                     "final": false,
                 }),
-            )
+            ),
+            Err(error) => super::agent_err_to_response(id, error),
         },
     )
 }

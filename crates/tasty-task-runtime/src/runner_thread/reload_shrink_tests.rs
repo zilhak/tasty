@@ -15,7 +15,7 @@ fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
     let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
     let ctx = RunnerContext {
         scope_stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        memory: Arc::new(Mutex::new(mem)),
+        memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(Mutex::new(mem))),
         agent_seq: Arc::new(AtomicU64::new(0)),
         host_ipc: Arc::new(OnceLock::new()),
         task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
@@ -28,7 +28,7 @@ fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
 }
 
 fn store_op<R>(ctx: &RunnerContext, f: impl FnOnce(&mut TaskStore) -> R) -> R {
-    ctx.with_memory(|mem| {
+    ctx.with_store(|mem| {
         let seq = ctx.agent_seq.clone();
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         f(&mut store)
