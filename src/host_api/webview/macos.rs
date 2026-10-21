@@ -818,16 +818,11 @@ impl PlatformWebView {
         let layer_bounds = layer.bounds();
         mask.setFrame(layer_bounds);
         let path = objc2_core_graphics::CGMutablePath::new();
-        // SAFETY: 변환 행렬은 null(항등)이다. path는 이 함수 동안 살아 있다.
-        unsafe {
-            objc2_core_graphics::CGMutablePath::add_rect(
-                Some(&path),
-                std::ptr::null(),
-                layer_bounds,
-            );
-            for r in &rects {
-                objc2_core_graphics::CGMutablePath::add_rect(Some(&path), std::ptr::null(), *r);
-            }
+        for r in std::iter::once(layer_bounds).chain(rects.iter().copied()) {
+            // SAFETY: 변환 행렬은 null(항등)이다. path는 이 함수 동안 살아 있다.
+            unsafe {
+                objc2_core_graphics::CGMutablePath::add_rect(Some(&path), std::ptr::null(), r)
+            };
         }
         let shape: &objc2_core_graphics::CGPath = &path;
         mask.setPath(Some(shape));
