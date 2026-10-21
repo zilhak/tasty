@@ -904,15 +904,23 @@ fn a_commit_that_hits_a_real_write_error_publishes_nothing() {
     assert!(keeper.checkpoint_truncate().unwrap());
 
     // SIGXFSZ를 무시해야 write가 EFBIG로 돌아온다. 무시 상태는 exec 뒤에도 유지된다.
-    let status = std::process::Command::new("sh")
+    // 상한은 자식이 쓰는 모든 일반 파일에 걸린다. 부모의 stdout·stderr를 물려주면 이미 상한을 넘은
+    // 로그 파일에서 자식의 첫 출력부터 실패하므로 파이프로 받는다.
+    let output = std::process::Command::new("sh")
         .arg("-c")
         .arg("trap '' XFSZ; ulimit -f 64 && exec \"$0\" \"$@\"")
         .arg(std::env::current_exe().unwrap())
         .args([NAME, "--exact", "--test-threads=1", "--nocapture"])
         .env(CHILD_DIR, tmp.path())
-        .status()
+        .output()
         .unwrap();
-    assert!(status.success(), "자식 시험이 실패했다: {status}");
+    assert!(
+        output.status.success(),
+        "자식 시험이 실패했다: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     assert!(keeper.get(&Scope::Global, "big0").unwrap().is_none());
     drop(keeper);

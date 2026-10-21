@@ -117,6 +117,10 @@ TASTY_AGENT_ID를 보호하는 ENV_LOCK이나 cwd를 보호하는 CWD_LOCK은 �
   stdout·stderr 를 보내고, 실패 메시지에 그 내용을 싣는다(`crates/tasty-event-store/tests/crash.rs`,
   `crates/tasty-reaper/tests/bound_spawn.rs`).
 - 출력이 필요 없으면 `Stdio::null()` 로 버린다.
+- 자식에 `ulimit -f` 같은 파일 크기 상한을 걸면 그 상한은 물려받은 stdout·stderr 에도 적용된다. 부모 출력이
+  이미 상한을 넘은 로그 파일이면 자식의 첫 출력부터 EFBIG 로 실패하고 오류 본문도 남지 않는다. 이 경우 출력은
+  파이프(`output()`)로 받고 임시 경로의 파일로 보내지 않는다. 그 파일에도 같은 상한이 걸린다
+  (`crates/tasty-memory/src/batch/batch_tests.rs` 의 `a_commit_that_hits_a_real_write_error_publishes_nothing`).
 
 실패 경로에서는 자식의 `test result: FAILED` 줄이 부모의 실패 메시지 안에 그대로 나온다. 이때 부모 실행도
 실패이므로 판정은 바뀌지 않는다.
