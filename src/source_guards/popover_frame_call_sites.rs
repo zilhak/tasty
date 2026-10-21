@@ -27,7 +27,7 @@ const WRAPPERS: &[&str] = &[
     "with_select_combo_frame(",
 ];
 const GUARD_DIR: &str = "src/source_guards/";
-/// 현재 감싼 호출부는 25곳이다. 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
+/// 현재 감싼 호출부는 22곳이다. 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
 const MIN_SITES: usize = 20;
 
 /// `at`의 진입 호출이 래퍼 호출의 클로저 본문 첫 식인지 본다.
@@ -160,7 +160,7 @@ fn every_open_combo_box_list_draws_shared_option_rows() {
         seen += n;
         offenders.extend(lines.into_iter().map(|l| format!("{rel}:{l}")));
     }
-    // 현재 ComboBox 는 15곳이다(시험 하네스 1곳 포함). 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
+    // 현재 ComboBox 는 13곳이다(시험 하네스 1곳 포함). 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
     assert!(
         seen >= 12,
         "ComboBox 를 {seen}곳만 찾았다(하한 12). 순회 범위와 진입 문자열을 확인한다."

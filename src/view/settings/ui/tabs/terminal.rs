@@ -1,5 +1,6 @@
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input};
 
+use super::choice::{Choice, choice_select};
 use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::settings::Settings;
@@ -55,30 +56,23 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     // 비-Windows 에서는 의미가 없어 UI 에서도 노출하지 않는다.
     #[cfg(windows)]
     shell_mode.show(ui, &th, col, |ui| {
-        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
-            egui::ComboBox::from_id_salt("shell_mode")
-                .selected_text(match settings.general.shell_mode.as_str() {
-                    "tasty" => t("settings.terminal.shell_mode_tasty"),
-                    _ => t("settings.terminal.shell_mode_default"),
-                })
-                .show_ui(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    tasty_ui_widgets::menu_option_value(
-                        ui,
-                        &th,
-                        &mut settings.general.shell_mode,
-                        "default".to_string(),
-                        t("settings.terminal.shell_mode_default"),
-                    );
-                    tasty_ui_widgets::menu_option_value(
-                        ui,
-                        &th,
-                        &mut settings.general.shell_mode,
-                        "tasty".to_string(),
-                        t("settings.terminal.shell_mode_tasty"),
-                    );
-                })
-        });
+        choice_select(
+            ui,
+            &th,
+            "shell_mode",
+            &mut settings.general.shell_mode,
+            &[
+                Choice {
+                    value: "default",
+                    label: t("settings.terminal.shell_mode_default"),
+                },
+                Choice {
+                    value: "tasty",
+                    label: t("settings.terminal.shell_mode_tasty"),
+                },
+            ],
+            th.field_width_lg.value(),
+        );
     });
 
     startup.show(ui, &th, col, |ui| {
@@ -131,38 +125,27 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     });
 
     link_modifier.show(ui, &th, col, |ui| {
-        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
-            egui::ComboBox::from_id_salt("link_modifier")
-                .selected_text(match settings.general.link_click_modifier.as_str() {
-                    "alt" => t("settings.terminal.link_modifier_alt"),
-                    "none" => t("settings.terminal.link_modifier_none"),
-                    _ => t("settings.terminal.link_modifier_ctrl"),
-                })
-                .show_ui(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    tasty_ui_widgets::menu_option_value(
-                        ui,
-                        &th,
-                        &mut settings.general.link_click_modifier,
-                        "ctrl".to_string(),
-                        t("settings.terminal.link_modifier_ctrl"),
-                    );
-                    tasty_ui_widgets::menu_option_value(
-                        ui,
-                        &th,
-                        &mut settings.general.link_click_modifier,
-                        "alt".to_string(),
-                        t("settings.terminal.link_modifier_alt"),
-                    );
-                    tasty_ui_widgets::menu_option_value(
-                        ui,
-                        &th,
-                        &mut settings.general.link_click_modifier,
-                        "none".to_string(),
-                        t("settings.terminal.link_modifier_none"),
-                    );
-                })
-        });
+        choice_select(
+            ui,
+            &th,
+            "link_modifier",
+            &mut settings.general.link_click_modifier,
+            &[
+                Choice {
+                    value: "ctrl",
+                    label: t("settings.terminal.link_modifier_ctrl"),
+                },
+                Choice {
+                    value: "alt",
+                    label: t("settings.terminal.link_modifier_alt"),
+                },
+                Choice {
+                    value: "none",
+                    label: t("settings.terminal.link_modifier_none"),
+                },
+            ],
+            th.field_width_md.value(),
+        );
     });
 
     // Option as Meta 는 macOS 전용 — 다른 OS 에는 Option 키가 없어 노출하지 않는다.
@@ -444,5 +427,78 @@ mod tests {
     fn the_shell_notice_mentions_git_bash_only_on_windows() {
         let notice = shell_not_found_notice();
         assert_eq!(notice.contains("Git Bash"), cfg!(windows), "{notice}");
+    }
+
+    use super::super::choice::probe;
+
+    fn draw(settings: &mut Settings) -> impl FnMut(&mut egui::Ui) + '_ {
+        move |ui| draw_terminal_tab(ui, settings)
+    }
+
+    /// 링크 수식키 트리거는 Select 상자(높이 select-height, 폭 field-width-md)다.
+    #[test]
+    fn link_modifier_trigger_is_a_medium_select() {
+        let th = crate::theme::theme();
+        let ctx = egui::Context::default();
+        let mut settings = Settings::default();
+        let out = probe::frame(&ctx, &mut draw(&mut settings));
+        let link = probe::trigger_around(&out, t("settings.terminal.link_modifier_ctrl"))
+            .expect("link modifier is drawn as a Select trigger");
+        assert_eq!(link.height(), th.select_height().value());
+        assert_eq!(link.width(), th.field_width_md.value());
+    }
+
+    /// 고른 옵션은 기존과 같은 문자열로 저장되고, 목록 밖 값은 0번 옵션으로 바로잡을 수 있다.
+    #[test]
+    fn picking_link_modifier_stores_the_same_strings() {
+        let ctx = egui::Context::default();
+        let mut settings = Settings::default();
+        settings.general.link_click_modifier = "meta".into();
+        let missing = format!("meta {}", t("settings.choice_missing_suffix"));
+        let out = probe::frame(&ctx, &mut draw(&mut settings));
+        assert!(probe::trigger_around(&out, &missing).is_some());
+        assert_eq!(settings.general.link_click_modifier, "meta");
+        for (from, to, stored) in [
+            (
+                missing.as_str(),
+                "settings.terminal.link_modifier_ctrl",
+                "ctrl",
+            ),
+            (
+                t("settings.terminal.link_modifier_ctrl"),
+                "settings.terminal.link_modifier_alt",
+                "alt",
+            ),
+            (
+                t("settings.terminal.link_modifier_alt"),
+                "settings.terminal.link_modifier_none",
+                "none",
+            ),
+        ] {
+            probe::pick(&ctx, &mut draw(&mut settings), from, t(to));
+            assert_eq!(settings.general.link_click_modifier, stored);
+        }
+    }
+
+    /// Windows 셸 모드 트리거는 Select 상자(폭 field-width-lg)이고 기존 문자열로 저장한다.
+    #[cfg(windows)]
+    #[test]
+    fn shell_mode_trigger_is_a_large_select() {
+        let th = crate::theme::theme();
+        let ctx = egui::Context::default();
+        let mut settings = Settings::default();
+        settings.general.shell_mode = "default".into();
+        let out = probe::frame(&ctx, &mut draw(&mut settings));
+        let mode = probe::trigger_around(&out, t("settings.terminal.shell_mode_default"))
+            .expect("shell mode is drawn as a Select trigger");
+        assert_eq!(mode.height(), th.select_height().value());
+        assert_eq!(mode.width(), th.field_width_lg.value());
+        probe::pick(
+            &ctx,
+            &mut draw(&mut settings),
+            t("settings.terminal.shell_mode_default"),
+            t("settings.terminal.shell_mode_tasty"),
+        );
+        assert_eq!(settings.general.shell_mode, "tasty");
     }
 }

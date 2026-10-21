@@ -167,6 +167,7 @@ filter_placeholder = "インストール済みを絞り込み…"
 no_matches = "一致なし"
 
 [settings]
+choice_missing_suffix = "(不明)"
 [settings.window]
 title = "設定"
 

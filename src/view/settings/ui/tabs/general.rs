@@ -1,3 +1,4 @@
+use super::choice::{Choice, choice_select};
 use crate::i18n::{LanguageEntry, t};
 use crate::settings::Settings;
 use tasty_type_geometry::length::LogicalPx;
@@ -98,38 +99,27 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
     });
 
     close_behavior.show(ui, &th, col, |ui| {
-        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
-            egui::ComboBox::from_id_salt("close_behavior")
-                .selected_text(match settings.general.close_behavior.as_str() {
-                    "quit" => t("settings.general.close_behavior_quit"),
-                    "minimize" => t("settings.general.close_behavior_minimize"),
-                    _ => t("settings.general.close_behavior_ask"),
-                })
-                .show_ui(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    tasty_ui_widgets::menu_option_value(
-                        ui,
-                        &th,
-                        &mut settings.general.close_behavior,
-                        "ask".to_string(),
-                        t("settings.general.close_behavior_ask"),
-                    );
-                    tasty_ui_widgets::menu_option_value(
-                        ui,
-                        &th,
-                        &mut settings.general.close_behavior,
-                        "minimize".to_string(),
-                        t("settings.general.close_behavior_minimize"),
-                    );
-                    tasty_ui_widgets::menu_option_value(
-                        ui,
-                        &th,
-                        &mut settings.general.close_behavior,
-                        "quit".to_string(),
-                        t("settings.general.close_behavior_quit"),
-                    );
-                })
-        });
+        choice_select(
+            ui,
+            &th,
+            "close_behavior",
+            &mut settings.general.close_behavior,
+            &[
+                Choice {
+                    value: "ask",
+                    label: t("settings.general.close_behavior_ask"),
+                },
+                Choice {
+                    value: "minimize",
+                    label: t("settings.general.close_behavior_minimize"),
+                },
+                Choice {
+                    value: "quit",
+                    label: t("settings.general.close_behavior_quit"),
+                },
+            ],
+            th.field_width_lg.value(),
+        );
     });
 
     language.show(ui, &th, col, |ui| {
@@ -160,4 +150,83 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
     webhook.show(ui, &th, col, |ui| {
         tasty_ui_widgets::switch(ui, &th, &mut settings.webhook.allow_external, None, true);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::choice::probe;
+    use super::*;
+
+    fn draw(settings: &mut Settings) -> impl FnMut(&mut egui::Ui) + '_ {
+        move |ui| draw_general_tab(ui, settings, &[])
+    }
+
+    /// 종료 동작 트리거는 바로 아래 언어 트리거와 같은 Select 상자(높이 select-height, 폭 field-width-lg)다.
+    #[test]
+    fn close_behavior_trigger_matches_the_language_trigger() {
+        let th = crate::theme::theme();
+        let ctx = egui::Context::default();
+        let mut settings = Settings::default();
+        let out = probe::frame(&ctx, &mut draw(&mut settings));
+        let close = probe::trigger_around(&out, t("settings.general.close_behavior_ask"))
+            .expect("close behavior is drawn as a Select trigger");
+        // 빈 언어 목록이라 현재 코드는 목록 밖 행으로 보인다.
+        let lang_text = format!(
+            "{} {}",
+            settings.general.language,
+            t("settings.general.language_missing_suffix")
+        );
+        let lang =
+            probe::trigger_around(&out, &lang_text).expect("language is drawn as a Select trigger");
+        assert_eq!(close.height(), th.select_height().value());
+        assert_eq!(close.height(), lang.height());
+        assert_eq!(close.width(), th.field_width_lg.value());
+        assert_eq!(close.width(), lang.width());
+    }
+
+    /// 고른 옵션은 기존과 같은 문자열로 저장된다.
+    #[test]
+    fn picking_close_behavior_stores_the_same_strings() {
+        let ctx = egui::Context::default();
+        let mut settings = Settings::default();
+        for (from, to, stored) in [
+            (
+                "settings.general.close_behavior_ask",
+                "settings.general.close_behavior_quit",
+                "quit",
+            ),
+            (
+                "settings.general.close_behavior_quit",
+                "settings.general.close_behavior_minimize",
+                "minimize",
+            ),
+            (
+                "settings.general.close_behavior_minimize",
+                "settings.general.close_behavior_ask",
+                "ask",
+            ),
+        ] {
+            probe::pick(&ctx, &mut draw(&mut settings), t(from), t(to));
+            assert_eq!(settings.general.close_behavior, stored);
+        }
+    }
+
+    /// 설정 파일의 목록 밖 값은 그대로 보존되고 0번 옵션으로 바로잡을 수 있다.
+    #[test]
+    fn an_unknown_close_behavior_is_kept_until_a_listed_one_is_picked() {
+        let ctx = egui::Context::default();
+        let mut settings = Settings::default();
+        settings.general.close_behavior = "bogus".into();
+        let missing = format!("bogus {}", t("settings.choice_missing_suffix"));
+        let out = probe::frame(&ctx, &mut draw(&mut settings));
+        assert!(probe::trigger_around(&out, &missing).is_some());
+        assert_eq!(settings.general.close_behavior, "bogus");
+        probe::pick(
+            &ctx,
+            &mut draw(&mut settings),
+            &missing,
+            t("settings.general.close_behavior_ask"),
+        );
+        assert_eq!(settings.general.close_behavior, "ask");
+    }
 }

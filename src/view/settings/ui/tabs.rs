@@ -3,6 +3,7 @@
 
 mod accessibility;
 mod appearance;
+mod choice;
 mod general;
 #[cfg(target_os = "macos")]
 mod general_display;

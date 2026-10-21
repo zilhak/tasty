@@ -168,6 +168,7 @@ filter_placeholder = "Filter installed…"
 no_matches = "No matches"
 
 [settings]
+choice_missing_suffix = "(unknown)"
 [settings.window]
 title = "Settings"
 

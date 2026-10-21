@@ -167,6 +167,7 @@ filter_placeholder = "설치된 플러그인 필터…"
 no_matches = "일치 항목 없음"
 
 [settings]
+choice_missing_suffix = "(알 수 없음)"
 [settings.window]
 title = "설정"
 
