@@ -1170,8 +1170,7 @@ mod journal_event_tests {
             tasty_memory::MemoryStore::open_in_memory().unwrap(),
         ));
         let mut app =
-            crate::app::App::new_headless(waker.journal_waker(), None, Some(memory.clone()))
-                .unwrap();
+            crate::app::App::new_headless(waker.journal_waker(), None, Some(memory)).unwrap();
         let mut settings = crate::settings::Settings::default();
         settings.general.shell = "/bin/sh".into();
         settings.general.startup_command = "exec sleep 60".into();
@@ -1182,7 +1181,7 @@ mod journal_event_tests {
                 waker: waker.waker_factory().make_default_waker(),
                 shared_ids: None,
                 layout_slot: None,
-                memory: tasty_memory::writer::MemoryAccess::inline(memory),
+                memory: app.services.memory_access().clone(),
                 runner_registry: Arc::clone(app.services.tasks.runner_registry()),
             },
             settings,

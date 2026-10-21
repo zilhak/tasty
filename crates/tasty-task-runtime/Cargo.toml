@@ -32,6 +32,8 @@ tempfile = "3"
 tasty-latency-control = { path = "../tasty-latency-control" }
 tasty-plugin-agent-common = { path = "../tasty-plugin-agent-common" }
 tasty-test-support = { path = "../tasty-test-support" }
+# writer 없이 바로 실행하는 핸들을 시험 구성에서 쓴다.
+tasty-memory = { path = "../tasty-memory", features = ["test-support"] }
 
 [lints]
 workspace = true

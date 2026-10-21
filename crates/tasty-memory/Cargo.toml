@@ -13,6 +13,15 @@ tracing = "0.1"
 thiserror = "2"
 tasty-utils = { path = "../tasty-utils" }
 
+[features]
+# writer 없이 호출 스레드에서 실행하는 핸들과 시험이 직접 잠그는 공유 저장소. 다른 크레이트의 시험이
+# dev-dependency로 켠다. 제품 빌드에는 없다.
+test-support = []
+
+[[example]]
+name = "commit_baseline"
+required-features = ["test-support"]
+
 [dev-dependencies]
 tempfile = "3"
 # 실패 경고를 실제 로그로 확인하는 시험에 사용한다.

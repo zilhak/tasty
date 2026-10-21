@@ -8,6 +8,7 @@ use crate::ports::{
 };
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::sync::{Arc, Mutex, OnceLock};
+#[cfg(test)]
 use tasty_memory::MemoryStorage;
 use tasty_presets::{PresetStorage, PresetStore};
 use tasty_settings::SettingsStorage;
@@ -45,8 +46,9 @@ pub(crate) struct AppServices {
     home: Arc<dyn HomeDirectory>,
     sound_player: Arc<dyn NotificationSoundPlayer>,
 
-    /// MemoryStorage는 Sync를 요구하지 않아 Mutex로 보호한다.
-    memory: Arc<Mutex<dyn MemoryStorage>>,
+    /// 시험 구성이 저장소를 직접 준비·확인하는 공유 잠금. 제품 구성에는 없고 writer가 저장소를 소유한다.
+    #[cfg(test)]
+    memory: Option<Arc<Mutex<dyn MemoryStorage>>>,
     themes: Arc<dyn ThemeStorage>,
     /// 변경 메서드 때문에 Mutex가 필요하다. preset_store와 같은 Arc다.
     presets: Arc<Mutex<dyn PresetStorage>>,
@@ -90,8 +92,8 @@ pub(crate) struct AppServices {
     /// 초기화 실패 뒤 대체 저장소를 쓴 사유. None만으로 실제 쓰기 내구성을 검증할 수는 없다.
     memory_init_fallback: Option<tasty_memory::InitFallback>,
 
-    /// memory.db 전담 writer. 부팅 구성에서만 만들며 시험 구성에는 없다. 이행 중에는 `memory`와
-    /// 같은 잠금을 묶음마다 잡는다(docs/design/systems/storage-contract.md의 "저장 실행기" 절).
+    /// memory.db 전담 writer. 제품 구성에서는 저장소를 소유한다(docs/design/systems/storage-contract.md의
+    /// "저장 실행기" 절). writer 없는 시험 구성에는 없다.
     memory_writer: Option<MemoryWriterParts>,
     /// memory.db 요청 핸들. writer가 있으면 그 큐로, 없으면(시험 구성) 호출 스레드에서 바로 실행한다.
     memory_access: tasty_memory::writer::MemoryAccess,
@@ -103,9 +105,9 @@ pub(crate) struct AppServices {
     memory_writer_end_reported: bool,
 }
 
-/// 호스트의 memory.db writer. 이행 중에는 공유 저장소 잠금으로 저장소에 닿는다.
+/// 호스트의 memory.db writer.
 pub(crate) type HostMemoryWriter =
-    tasty_memory::writer::MemoryWriter<tasty_memory::writer::SharedStore>;
+    tasty_memory::writer::MemoryWriter<tasty_memory::writer::WriterStore>;
 
 /// writer와 함께 만든 변경 버퍼와 깨우기.
 pub(crate) struct MemoryWriterParts {
@@ -231,24 +233,8 @@ impl AppServices {
     }
 
     /// commit된 regular 변경을 commit 순서대로 꺼낸다. 저장소 잠금을 기다리지 않는다.
-    ///
-    /// 잠금을 바로 얻으면 writer가 묶음 중이 아니므로 writer가 옮긴 변경 뒤에 아직 직접 잠금
-    /// 소비자가 남긴 변경을 붙인다. 잠금이 바쁘면 writer가 옮긴 변경만 꺼낸다. 남은 변경은 writer가
-    /// 다음 묶음 끝에 같은 순서로 옮기거나 다음 회차가 꺼낸다.
     pub(crate) fn take_memory_changes(&self) -> Vec<tasty_memory::MemoryChange> {
-        let guard =
-            match self.memory.try_lock() {
-                Ok(guard) => Some(guard),
-                Err(std::sync::TryLockError::WouldBlock) => None,
-                Err(std::sync::TryLockError::Poisoned(poisoned)) => Some(
-                    crate::poison::recover_mutex(Err(poisoned), MEMORY_WHAT, &MEMORY_POISONED),
-                ),
-            };
-        let mut changes = self.memory_access.changes().take();
-        if let Some(mut guard) = guard {
-            changes.extend(guard.take_pending_changes());
-        }
-        changes
+        self.memory_access.changes().take()
     }
 
     /// writer 계측. writer가 없는 구성이면 None이다.
@@ -473,15 +459,23 @@ impl AppServices {
         self.host_ipc_injector.clone()
     }
 
-    /// 공용 poison 복구 헬퍼로 저장소 락을 얻고 콜백을 실행한다. 콜백이 끝날 때까지 락을 유지한다.
+    /// 시험 전용. 저장소 잠금을 잡고 콜백을 실행한다. 콜백이 남긴 변경은 writer가 옮긴 변경 뒤에
+    /// 붙인다.
     #[cfg(test)]
     pub(crate) fn with_memory<R>(
         &self,
         f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,
     ) -> R {
-        let mut guard =
-            crate::poison::recover_mutex(self.memory.lock(), MEMORY_WHAT, &MEMORY_POISONED);
-        f(&mut *guard)
+        let memory = self
+            .memory
+            .as_ref()
+            .expect("this test core was built without a shared store");
+        let mut guard = crate::poison::recover_mutex(memory.lock(), MEMORY_WHAT, &MEMORY_POISONED);
+        let result = f(&mut *guard);
+        self.memory_access
+            .changes()
+            .extend_for_tests(guard.take_pending_changes());
+        result
     }
 
     #[cfg(feature = "gui")]

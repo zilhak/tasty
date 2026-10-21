@@ -693,6 +693,8 @@ mod repo_relative_paths;
 mod home_env_has_one_door;
 #[cfg(test)]
 mod icon_texture_loader_installed;
+/// 제품 코드에서 memory.db 저장소를 memory writer만 소유하는지 확인한다.
+mod memory_store_has_one_owner;
 
 mod headless_app_layer_coverage;
 mod key_contract_by_layer;

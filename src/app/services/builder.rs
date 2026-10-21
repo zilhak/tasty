@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
+#[cfg(test)]
 use tasty_memory::MemoryStorage;
 use tasty_presets::{PresetStorage, PresetStore};
 use tasty_settings::SettingsStorage;
@@ -19,6 +20,7 @@ pub(crate) struct AppServicesBuilder {
     clipboard: Option<Arc<dyn ClipboardSystem>>,
     home: Option<Arc<dyn HomeDirectory>>,
     sound_player: Option<Arc<dyn NotificationSoundPlayer>>,
+    #[cfg(test)]
     memory: Option<Arc<Mutex<dyn MemoryStorage>>>,
     themes: Option<Arc<dyn ThemeStorage>>,
     preset_store: Option<Arc<Mutex<PresetStore>>>,
@@ -37,6 +39,7 @@ impl AppServicesBuilder {
             clipboard: None,
             home: None,
             sound_player: None,
+            #[cfg(test)]
             memory: None,
             themes: None,
             preset_store: None,
@@ -67,6 +70,8 @@ impl AppServicesBuilder {
         self.sound_player = Some(sound_player);
         self
     }
+    /// 시험 전용. writer를 함께 주지 않으면 이 저장소에서 바로 실행하는 구성이다.
+    #[cfg(test)]
     pub(crate) fn with_memory(mut self, memory: Arc<Mutex<dyn MemoryStorage>>) -> Self {
         self.memory = Some(memory);
         self
@@ -125,15 +130,25 @@ impl AppServicesBuilder {
             .preset_store
             .ok_or_else(|| anyhow::anyhow!("PresetStore missing"))?;
         let presets: Arc<Mutex<dyn PresetStorage>> = preset_store.clone();
-        let memory = self
-            .memory
-            .ok_or_else(|| anyhow::anyhow!("MemoryStorage missing"))?;
+        // 제품 구성은 writer만 준다. 시험 구성은 writer 대신, 또는 writer와 같은 저장소를 직접 확인하려고
+        // 공유 잠금을 준다.
+        #[cfg(test)]
+        let memory = self.memory;
+        #[cfg(test)]
+        if memory.is_none() && self.memory_writer.is_none() {
+            anyhow::bail!("MemoryStorage missing");
+        }
         let memory_access = match &self.memory_writer {
             Some(parts) => tasty_memory::writer::MemoryAccess::writer(
                 parts.writer.handle(),
                 parts.changes.clone(),
             ),
-            None => tasty_memory::writer::MemoryAccess::inline(memory.clone()),
+            #[cfg(test)]
+            None => {
+                tasty_memory::writer::MemoryAccess::inline(memory.clone().expect("checked above"))
+            }
+            #[cfg(not(test))]
+            None => anyhow::bail!("memory writer missing"),
         };
         let host_ipc_injector = Arc::new(OnceLock::new());
         let tasks = tasty_task_runtime::TaskService::new(
@@ -174,6 +189,7 @@ impl AppServicesBuilder {
             sound_player: self
                 .sound_player
                 .ok_or_else(|| anyhow::anyhow!("NotificationSoundPlayer missing"))?,
+            #[cfg(test)]
             memory,
             themes: self
                 .themes

@@ -291,7 +291,7 @@ mod tests {
         ));
         let changes = Arc::new(tasty_memory::writer::ChangeFeed::default());
         let writer = tasty_memory::writer::spawn(
-            tasty_memory::writer::SharedStore(memory),
+            tasty_memory::writer::WriterStore::shared(memory),
             changes.clone(),
             tasty_utils::batch_writer::Limits::default(),
             Arc::new(tasty_utils::batch_writer::SystemClock),

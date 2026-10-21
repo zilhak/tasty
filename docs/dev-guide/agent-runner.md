@@ -1020,7 +1020,7 @@ task 레코드는 memory 값 하나라 직렬화가 memory 값 상한(기본 1 M
 
 - task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`, `postprocess`, `transitions`. 모르는 키는 거절한다. `command`·`on_failure` 안(`poll`·inline fallback 포함)의 모르는 키도 거절한다. 이 둘의 타입은 v1 `task_create` 와 저장된 기록도 읽으므로 타입 자체는 모르는 키를 무시한다. 그래프 제출만 값을 표지 값으로 바꿔 다시 읽어 보고 결과가 같은 키를 모르는 키로 본다(`params`·`metadata` 같은 JSON 값 필드 안의 키는 결과가 달라지므로 받는다). `types` 는 모든 task 가 함께 쓴다.
 - 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 전이(아래 절), 위 조합 규칙, 순환(전이 간선 포함). 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
-- 그래프 하나의 현재 상한은 1000개(MAX_GRAPH_TASKS)이며 초과하면 location: /tasks로 거절한다. 제출은 reply_task가 memory writer의 Section에 접수하고 완료 후 응답한다. 메인 루프에서 전체 그래프를 직접 실행하는 계약이 아니다. 남은 직접 잠금 경계는 [저장 계약](../design/systems/storage-contract.md)을 따른다.
+- 그래프 하나의 현재 상한은 1000개(MAX_GRAPH_TASKS)이며 초과하면 location: /tasks로 거절한다. 제출은 reply_task가 memory writer에 실행 단위 하나로 접수하고 완료 후 응답한다. 메인 루프는 writer 결과를 기다리지 않는다([저장 계약](../design/systems/storage-contract.md)).
 - 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다. JSON 형식 오류(모르는 키, 필수 필드 누락, 타입이 다른 값)도 같다(`TaskGraphSpec::from_json`, `store/graph_parse.rs`). 형식 오류의 위치는 다음과 같다.
   - 모르는 키는 그 키다(`/tasks/0/bogus`, `/tasks/0/command/session/bogus`). 한 object 에 둘 이상이면 메시지가 말하는 키다.
   - 타입이나 값이 틀린 필드는 그 필드다(`/tasks/0/command/workspace_id`, `/tasks/0/on_failure/task`). 태그 enum(`kind`) 안의 오류도 `kind` 가 아니라 틀린 필드를 가리킨다. 틀린 것이 `kind` 값이면 `kind` 다.

@@ -2,7 +2,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use tasty_memory::MemoryStorage;
 use tasty_presets::PresetStore;
 use tasty_settings::{FileSettingsStorage, SettingsStorage};
 use tasty_themes::{ThemeStorage, ThemeStore};
@@ -15,7 +14,7 @@ use crate::adapters::production::{directories_home::DirectoriesHome, std_clock::
 use crate::app::services::AppServices;
 use crate::app::services::builder::AppServicesBuilder;
 
-/// 부팅에서 연 저장소 Arc를 Core와 하위 사용자가 공유한다. 없으면 메모리 대체 저장소를 시도한다.
+/// 부팅에서 연 저장소를 memory writer에 넘긴다. 없으면 메모리 대체 저장소를 시도한다.
 #[cfg(feature = "gui")]
 pub(crate) fn build_production_core(
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
@@ -64,13 +63,16 @@ fn build_production_core_inner(
     let db_latency = db_latency_of(&store);
     let memory_pragmas = memory_pragmas_of(&store);
     let memory_init_fallback = memory_init_fallback_of(&store);
-    let memory: Arc<Mutex<dyn MemoryStorage>> = store;
-    // 다른 소비자가 같은 잠금을 직접 잡는 동안 writer도 그 잠금으로 저장소에 닿는다.
+    // writer가 저장소를 소유한다. 다른 소비자는 writer 요청으로만 닿는다.
+    let store = Arc::try_unwrap(store)
+        .map_err(|_| anyhow::anyhow!("the memory store is still shared when the writer starts"))?
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let memory_changes = Arc::new(tasty_memory::writer::ChangeFeed::default());
     // 메인 루프가 결과를 거두기 전에 끝난 묶음의 알림은 이미 보낸 깨우기 하나에 합친다.
     let memory_wake = tasty_utils::batch_writer::WakeLatch::new(memory_wake);
     let memory_writer = tasty_memory::writer::spawn(
-        tasty_memory::writer::SharedStore(memory.clone()),
+        tasty_memory::writer::WriterStore::owned(store),
         memory_changes.clone(),
         tasty_utils::batch_writer::Limits::default(),
         Arc::new(tasty_utils::batch_writer::SystemClock),
@@ -86,7 +88,6 @@ fn build_production_core_inner(
         .with_clipboard(clipboard)
         .with_home(home)
         .with_sound_player(sound_player)
-        .with_memory(memory)
         .with_db_latency(db_latency)
         .with_memory_pragmas(memory_pragmas)
         .with_memory_init_fallback(memory_init_fallback)

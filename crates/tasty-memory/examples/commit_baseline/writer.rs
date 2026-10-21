@@ -1,6 +1,6 @@
 //! 같은 쓰기를 memory writer에 넣어 직접 잠금 시나리오와 비교한다.
 //!
-//! writer는 호스트처럼 `SharedStore`로 저장소에 닿고, 메인 루프 대리 스레드는 같은 잠금을 직접
+//! writer는 시험 구성(`WriterStore::shared`)으로 저장소에 닿고, 메인 루프 대리 스레드는 같은 잠금을 직접
 //! 잡는다. 호출 스레드가 기다리는 시간(`submit`)과 결과가 준비되기까지의 시간(`completion`)을
 //! 따로 잰다. 느린 저장 대조군은 묶음(= commit)마다 잠금을 잡은 채 지연을 더한다.
 
@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tasty_memory::writer::{MemoryRequest, SharedStore, StoreAccess, spawn};
+use tasty_memory::writer::{MemoryRequest, StoreAccess, WriterStore, spawn};
 use tasty_memory::{MemoryStorage, PutOpts, Scope, WriteOp};
 use tasty_utils::batch_writer::{
     BATCH_SIZE_BUCKETS, Completion, Handle, Limits, Receipt, SystemClock, WakeLatch,
@@ -87,7 +87,7 @@ impl WakeProbe {
 /// 묶음마다 잠금을 잡은 채 지연을 더하는 접근. 직접 잠금 대조군의 쓰기마다 지연과 같은
 /// commit마다 지연이다.
 pub struct SlowAccess {
-    pub inner: SharedStore,
+    pub inner: WriterStore,
     pub delay: Option<Duration>,
 }
 
@@ -140,7 +140,7 @@ pub fn run(
         ..Limits::default()
     };
     let access = SlowAccess {
-        inner: SharedStore(store.clone()),
+        inner: WriterStore::shared(store.clone()),
         delay: slow,
     };
     let probe = WakeProbe::start();

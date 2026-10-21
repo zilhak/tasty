@@ -99,7 +99,7 @@ struct WriterEngine {
     session: crate::runtime::engine_session::EngineSession,
     store: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     access: tasty_memory::writer::MemoryAccess,
-    writer: tasty_memory::writer::MemoryWriter<tasty_memory::writer::SharedStore>,
+    writer: tasty_memory::writer::MemoryWriter<tasty_memory::writer::WriterStore>,
 }
 
 impl WriterEngine {
@@ -112,7 +112,7 @@ impl WriterEngine {
         let changes = std::sync::Arc::new(tasty_memory::writer::ChangeFeed::default());
         let wake = tasty_utils::batch_writer::WakeLatch::new(std::sync::Arc::new(|| {}));
         let writer = tasty_memory::writer::spawn(
-            tasty_memory::writer::SharedStore(store.clone()),
+            tasty_memory::writer::WriterStore::shared(store.clone()),
             changes.clone(),
             tasty_utils::batch_writer::Limits {
                 max_delay: std::time::Duration::from_millis(200),

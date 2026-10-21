@@ -11,9 +11,6 @@
 //!   접수하지 않는다. 본문은 `'static` 값만 잡으므로 호출 스레드의 빌린 상태나 잠금 guard를 실을 수
 //!   없다. busy 재시도나 다른 요청의 panic 뒤 다시 실행될 수 있으므로 저장소 밖의 효과를 내지 않는다.
 //! - 강한 읽기(`Read`)는 barrier다. 앞선 요청이 확정된 뒤 혼자 실행하고 transaction을 열지 않는다.
-//! - 호환 구간(`Section`)도 barrier다. 공유 잠금을 직접 잡는 기존 코드를 writer 순서 안에서 한 번
-//!   실행한다. worker는 이 구간 동안 저장소 잠금을 잡지 않으며, 구간 안의 연산은 각자 commit한다.
-//!   다시 실행하지 않고, panic하면 결과 불명(`Unknown`)이다. [`SharedStore`] 구성에서만 뜻이 있다.
 //! - busy는 단위 전체가 되돌려진 뒤라 다시 실행한다. 원인 요청이 있는 저장 실패는 확정하지 않은
 //!   것(`Failed`)이고, commit 단계처럼 원인 요청을 특정할 수 없는 저장 실패는 결과 불명(`Unknown`)으로
 //!   다룬다. 요청 본문의 panic은 단위를 되돌린 뒤 그 요청만 실패시키고 나머지를 다시 실행한다.
@@ -23,7 +20,7 @@
 
 use std::any::Any;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use tasty_utils::batch_writer::{self, Clock, Execution, Executor, Limits};
 
@@ -36,7 +33,6 @@ use crate::{
 pub type Value = Box<dyn Any + Send>;
 type UnitBody = dyn FnMut(&mut dyn MemoryStorage) -> Result<Value> + Send;
 type ReadBody = dyn FnMut(&dyn MemoryStorage) -> Result<Value> + Send;
-type SectionBody = dyn FnOnce() -> Value + Send;
 
 /// writer에 넣는 요청.
 pub enum MemoryRequest {
@@ -48,12 +44,6 @@ pub enum MemoryRequest {
     Unit { body: Box<UnitBody>, bytes: usize },
     /// 앞선 요청이 확정된 뒤 혼자 실행하는 읽기. `bytes`는 예산에 셀 결과 크기다.
     Read { body: Box<ReadBody>, bytes: usize },
-    /// 앞선 요청이 확정된 뒤 저장소 잠금 없이 혼자 실행하는 호환 구간. 본문은 공유 잠금을 직접
-    /// 잡는다. 실행한 뒤에는 `None`이다.
-    Section {
-        body: Option<Box<SectionBody>>,
-        bytes: usize,
-    },
 }
 
 impl MemoryRequest {
@@ -71,18 +61,6 @@ impl MemoryRequest {
     ) -> Self {
         Self::Unit {
             body: Box::new(move |s| body(s).map(|v| Box::new(v) as Value)),
-            bytes,
-        }
-    }
-
-    /// 공유 잠금을 직접 잡는 기존 코드를 writer 순서 안에서 실행한다. 본문이 돌려준 값은
-    /// [`MemoryOutput::into_value`]로 꺼낸다. 본문은 worker 스레드에서 한 번만 실행한다.
-    pub fn section<T: Send + 'static>(
-        bytes: usize,
-        body: impl FnOnce() -> T + Send + 'static,
-    ) -> Self {
-        Self::Section {
-            body: Some(Box::new(move || Box::new(body()) as Value)),
             bytes,
         }
     }
@@ -110,7 +88,6 @@ impl std::fmt::Debug for MemoryRequest {
                 .finish(),
             Self::Unit { bytes, .. } => f.debug_struct("Unit").field("bytes", bytes).finish(),
             Self::Read { bytes, .. } => f.debug_struct("Read").field("bytes", bytes).finish(),
-            Self::Section { bytes, .. } => f.debug_struct("Section").field("bytes", bytes).finish(),
         }
     }
 }
@@ -162,14 +139,12 @@ impl batch_writer::Request for MemoryRequest {
         match self {
             Self::Write(op) => op_bytes(op),
             Self::Batch { ops, .. } => ops.iter().map(op_bytes).sum(),
-            Self::Unit { bytes, .. } | Self::Read { bytes, .. } | Self::Section { bytes, .. } => {
-                *bytes
-            }
+            Self::Unit { bytes, .. } | Self::Read { bytes, .. } => *bytes,
         }
     }
 
     fn barrier(&self) -> bool {
-        matches!(self, Self::Read { .. } | Self::Section { .. })
+        matches!(self, Self::Read { .. })
     }
 }
 
@@ -244,7 +219,7 @@ impl WriterError {
 /// 요청 하나의 결과.
 pub type MemoryCompletion = batch_writer::Completion<MemoryOutput, WriterError>;
 
-/// worker가 저장소에 닿는 방법. 저장소를 소유하거나(최종 형태) 이행 중에는 공유 잠금을 잡는다.
+/// worker가 저장소에 닿는 방법.
 pub trait StoreAccess: Send + 'static {
     fn with_store<R>(&mut self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R;
 }
@@ -255,18 +230,44 @@ impl StoreAccess for MemoryStore {
     }
 }
 
-/// 다른 소비자가 아직 같은 `Arc<Mutex<dyn MemoryStorage>>`를 직접 잠그는 이행 기간의 호환 경계.
-/// worker도 묶음마다 같은 잠금을 잡으므로 직접 잠그는 소비자와 직렬화된다.
-pub struct SharedStore(pub Arc<Mutex<dyn MemoryStorage>>);
+/// [`MemoryAccess`]가 보내는 writer의 저장소. 제품 구성에서는 writer가 저장소를 소유하고 다른 소비자는
+/// 저장소에 닿지 않는다.
+pub struct WriterStore(StoreKind);
 
-impl StoreAccess for SharedStore {
+enum StoreKind {
+    Owned(Box<dyn MemoryStorage>),
+    /// 시험이 같은 저장소를 직접 준비·확인하는 구성. 묶음마다 같은 잠금을 잡는다.
+    #[cfg(any(test, feature = "test-support"))]
+    Shared(Arc<std::sync::Mutex<dyn MemoryStorage>>),
+}
+
+impl WriterStore {
+    /// writer가 저장소를 소유한다. writer가 끝나면 저장소도 닫힌다.
+    pub fn owned(store: impl MemoryStorage + 'static) -> Self {
+        Self(StoreKind::Owned(Box::new(store)))
+    }
+
+    /// 시험 전용. 시험이 잠금으로 직접 닿는 저장소를 writer도 묶음마다 잠가 쓴다.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn shared(store: Arc<std::sync::Mutex<dyn MemoryStorage>>) -> Self {
+        Self(StoreKind::Shared(store))
+    }
+}
+
+impl StoreAccess for WriterStore {
     fn with_store<R>(&mut self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
-        let mut guard = tasty_utils::poison::recover_mutex(
-            self.0.lock(),
-            crate::STORE_LOCK_WHAT,
-            &crate::STORE_LOCK_POISONED,
-        );
-        f(&mut *guard)
+        match &mut self.0 {
+            StoreKind::Owned(store) => f(&mut **store),
+            #[cfg(any(test, feature = "test-support"))]
+            StoreKind::Shared(store) => {
+                let mut guard = tasty_utils::poison::recover_mutex(
+                    store.lock(),
+                    crate::STORE_LOCK_WHAT,
+                    &crate::STORE_LOCK_POISONED,
+                );
+                f(&mut *guard)
+            }
+        }
     }
 }
 
@@ -289,12 +290,6 @@ impl<A: StoreAccess> Executor for MemoryExecutor<A> {
 
     fn execute(&mut self, batch: &mut [MemoryRequest]) -> Execution<MemoryOutput, WriterError> {
         let changes = &self.changes;
-        if let [MemoryRequest::Section { body, bytes }] = batch {
-            let execution = run_section(body, *bytes);
-            self.access
-                .with_store(|store| changes.extend(store.take_pending_changes()));
-            return execution;
-        }
         self.access.with_store(|store| {
             let execution = execute_on(store, batch);
             changes.extend(store.take_pending_changes());
@@ -308,20 +303,6 @@ impl<A: StoreAccess> Executor for MemoryExecutor<A> {
             MemoryOutput::Batch(v) => v.len() * std::mem::size_of::<Result<WriteOutput>>(),
             MemoryOutput::Value { bytes, .. } => *bytes,
         }
-    }
-}
-
-/// 호환 구간을 저장소 잠금 없이 한 번 실행한다. 구간 안의 연산은 이미 commit했으므로 다시 실행하지 않는다.
-fn run_section(
-    body: &mut Option<Box<SectionBody>>,
-    bytes: usize,
-) -> Execution<MemoryOutput, WriterError> {
-    let Some(body) = body.take() else {
-        return Execution::Unknown(WriterError::Panicked);
-    };
-    match catch_unwind(AssertUnwindSafe(body)) {
-        Ok(value) => Execution::Committed(vec![Ok(MemoryOutput::Value { value, bytes })]),
-        Err(_) => Execution::Unknown(WriterError::Panicked),
     }
 }
 
@@ -410,8 +391,6 @@ fn run_one(
                 .map(|value| MemoryOutput::Value { value, bytes })
                 .map_err(WriterError::of)
         }
-        // barrier라 단독으로 실행되며 execute가 먼저 받는다.
-        MemoryRequest::Section { .. } => Err(WriterError::Panicked),
     }
 }
 

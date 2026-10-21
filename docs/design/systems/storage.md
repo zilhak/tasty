@@ -205,10 +205,10 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
 
 ### 엔진 harness
 
-`crates/tasty-memory/examples/commit_baseline.rs`는 실제 파일 `memory.db`를 열고 호스트처럼 `Arc<Mutex<MemoryStore>>`를 공유한 채 시나리오를 실행한다. 결과는 시나리오마다 JSON 한 줄로 인자로 받은 결과 파일에 쓴다. 표준 출력에는 쓰지 않는다.
+`crates/tasty-memory/examples/commit_baseline.rs`는 실제 파일 `memory.db`를 열고 직접 잠금 대조군과 writer가 `Arc<Mutex<MemoryStore>>`를 공유한 채 시나리오를 실행한다. 공유 구성은 `test-support` 기능이 있어야 컴파일된다. 결과는 시나리오마다 JSON 한 줄로 인자로 받은 결과 파일에 쓴다. 표준 출력에는 쓰지 않는다.
 
 ```bash
-cargo build --release -p tasty-memory --example commit_baseline
+cargo build --release -p tasty-memory --example commit_baseline --features test-support
 target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
 ```
 
@@ -285,11 +285,11 @@ memory writer를 도입한 뒤 2026-10-12 같은 컴퓨터(20코어, 1분 부하
 - 호출 스레드는 접수에서 수십 µs 안에 돌아온다(p99 최댓값 703µs, 단일 최댓값 3.3ms). 느린 저장에서도 같다. 직접 잠금의 느린 저장 inflow는 쓰기마다 호출자가 5.3ms를 기다려 3초에 380~406건만 썼고, writer는 같은 시간에 1310~1437건을 접수했다.
 - 동시 burst100은 commit 100회가 1회가 되고 완료 p99가 직접 잠금의 요청 p99(7.4~9.7ms)보다 짧거나 비슷하다. 느린 저장에서는 직접 잠금 요청 p50 270~295ms가 완료 p99 8~14ms로 줄었다.
 - 2ms 간격 유입에서 commit은 수집 창 1ms에서 거의 줄지 않고 2ms에서 25~30%, 5ms에서 65~67% 줄었다(1ms는 0.4~4.9%). 완료 p50은 대략 수집 창 길이만큼 늘어난다. 느린 저장 유입은 묶음 실행이 밀려 수집 창과 관계없이 61~67% 줄었다.
-- 느린 저장에서 수집 창이 1·2ms이면 같은 잠금을 직접 잡는 대리 루프의 get이 크게 늦었다(p99 최대 376ms, 최댓값 565ms). 묶음 실행이 밀려 worker가 잠금을 풀자마자 다시 잡는 것으로 추정하며 원인은 확인하지 않았다. 직접 잠금 소비자가 남아 있는 이행 기간의 `SharedStore` 구성에서 나타난다. 소비자를 옮긴 뒤 다시 잰 값은 아래 [남은 직접 잠금 읽기](#남은-직접-잠금-읽기)에 있다.
+- 느린 저장에서 수집 창이 1·2ms이면 같은 잠금을 직접 잡는 대리 루프의 get이 크게 늦었다(p99 최대 376ms, 최댓값 565ms). 묶음 실행이 밀려 worker가 잠금을 풀자마자 다시 잡는 것으로 추정하며 원인은 확인하지 않았다. writer와 직접 잠금 소비자가 같은 잠금을 나누던 구성에서 나타났다. 제품 구성은 이제 writer가 저장소를 소유하며, harness는 그 비교를 위해 시험 구성(`WriterStore::shared`)으로 같은 잠금을 나눈다. 소비자를 옮긴 뒤 다시 잰 값은 아래 [직접 잠금 읽기 측정](#직접-잠금-읽기-측정)에 있다.
 - 측정 중 예산 거절과 busy 재시도는 0건이었다. 최대 잡힌 양은 100건·25,500바이트로 기본 예산(4096건·16MiB)과 묶음 한도(256건·1MiB)에 닿지 않았다. 이 한도들은 측정으로 고른 값이 아니라 상한이다.
 - 종료(`begin_shutdown`부터 join까지)는 36회 중 35회가 1.1~3.3ms였고, 느린 저장 inflow(1ms) 1회는 63µs였다(harness의 1ms 확인 간격 포함).
 
-#### 남은 직접 잠금 읽기
+#### 직접 잠금 읽기 측정
 
 IPC 응답 경로를 writer로 옮긴 뒤에도 메인 루프에 공유 잠금을 직접 잡는 읽기가 남아 있던 때(요청 게이트의 세션·cap·rate limit 판정, nickname 대상 찾기) 2026-10-12 같은 harness를 3회 실행해(실행 직후 1분 부하 평균 2.96~3.21) writer가 쓰는 동안 대리 루프의 직접 get과 writer 요청의 완료 시간을 비교했다. 값은 3회의 범위다.
 

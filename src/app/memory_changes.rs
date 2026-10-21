@@ -52,9 +52,10 @@ mod tests {
         }
     }
 
-    /// writer 경로가 옮긴 변경을 먼저, 직접 잠금 소비자가 저장소에 남긴 변경을 뒤에 꺼낸다.
+    /// 변경은 commit 순서대로 버퍼에서 꺼내며 저장소 잠금을 잡지 않는다. 잠금이 잡혀 있어도 기다리지
+    /// 않는다.
     #[test]
-    fn changes_moved_by_the_writer_precede_changes_left_in_the_store() {
+    fn committed_changes_come_out_in_order_without_the_store_lock() {
         let store: Arc<Mutex<dyn MemoryStorage>> = Arc::new(Mutex::new(
             tasty_memory::MemoryStore::open_in_memory().unwrap(),
         ));
@@ -62,22 +63,14 @@ mod tests {
             .with_memory(store.clone())
             .build()
             .unwrap();
-        let mut ticket = core
-            .memory_access()
-            .submit(MemoryRequest::Write(put("a")))
-            .unwrap();
-        assert!(ticket.try_take().is_some());
-        store
-            .lock()
-            .unwrap()
-            .put(
-                HOST_OWNER,
-                &Scope::Global,
-                "b",
-                &MemoryValue::Text("v".into()),
-                &PutOpts::default(),
-            )
-            .unwrap();
+        for key in ["a", "b"] {
+            let mut ticket = core
+                .memory_access()
+                .submit(MemoryRequest::Write(put(key)))
+                .unwrap();
+            assert!(ticket.try_take().is_some());
+        }
+        let guard = store.lock().unwrap();
         let keys: Vec<String> = core
             .take_memory_changes()
             .into_iter()
@@ -85,46 +78,6 @@ mod tests {
             .collect();
         assert_eq!(keys, ["a", "b"]);
         assert!(core.take_memory_changes().is_empty());
-    }
-
-    /// 다른 소비자가 저장소 잠금을 잡고 있으면 기다리지 않고 writer가 옮긴 변경만 꺼낸다. 남은
-    /// 변경은 잠금이 풀린 뒤 다음 회차에 같은 순서로 나온다.
-    #[test]
-    fn a_held_store_lock_does_not_block_and_keeps_the_rest_for_later() {
-        let store: Arc<Mutex<dyn MemoryStorage>> = Arc::new(Mutex::new(
-            tasty_memory::MemoryStore::open_in_memory().unwrap(),
-        ));
-        let core = crate::ipc::handler::cli_entry_tests::test_core_builder()
-            .with_memory(store.clone())
-            .build()
-            .unwrap();
-        let mut ticket = core
-            .memory_access()
-            .submit(MemoryRequest::Write(put("a")))
-            .unwrap();
-        assert!(ticket.try_take().is_some());
-        let mut guard = store.lock().unwrap();
-        guard
-            .put(
-                HOST_OWNER,
-                &Scope::Global,
-                "b",
-                &MemoryValue::Text("v".into()),
-                &PutOpts::default(),
-            )
-            .unwrap();
-        let keys: Vec<String> = core
-            .take_memory_changes()
-            .into_iter()
-            .map(|c| c.key)
-            .collect();
-        assert_eq!(keys, ["a"]);
         drop(guard);
-        let keys: Vec<String> = core
-            .take_memory_changes()
-            .into_iter()
-            .map(|c| c.key)
-            .collect();
-        assert_eq!(keys, ["b"]);
     }
 }

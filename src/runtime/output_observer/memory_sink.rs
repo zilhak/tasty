@@ -291,7 +291,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
     use std::sync::mpsc::sync_channel;
-    use tasty_memory::writer::{ChangeFeed, MemoryWriter, SharedStore};
+    use tasty_memory::writer::{ChangeFeed, MemoryWriter, WriterStore};
     use tasty_utils::batch_writer::{Limits, SystemClock};
 
     fn item(n: u64) -> ParsedItem {
@@ -313,11 +313,11 @@ mod tests {
     fn writer(
         store: &Arc<Mutex<tasty_memory::MemoryStore>>,
         limits: Limits,
-    ) -> (MemoryWriter<SharedStore>, MemoryAccess) {
+    ) -> (MemoryWriter<WriterStore>, MemoryAccess) {
         let shared: Arc<Mutex<dyn tasty_memory::MemoryStorage>> = store.clone();
         let changes = Arc::new(ChangeFeed::default());
         let writer = tasty_memory::writer::spawn(
-            SharedStore(shared),
+            WriterStore::shared(shared),
             changes.clone(),
             limits,
             Arc::new(SystemClock),

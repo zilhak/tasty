@@ -572,7 +572,7 @@ pub(crate) mod tests {
         let changes = Arc::new(tasty_memory::writer::ChangeFeed::default());
         let wake = tasty_utils::batch_writer::WakeLatch::new(Arc::new(|| {}));
         let writer = tasty_memory::writer::spawn(
-            tasty_memory::writer::SharedStore(memory.clone()),
+            tasty_memory::writer::WriterStore::shared(memory.clone()),
             changes.clone(),
             tasty_utils::batch_writer::Limits {
                 max_delay: Duration::from_millis(50),
@@ -608,13 +608,15 @@ pub(crate) mod tests {
                 return None;
             }
             let (release, held) = mpsc::sync_channel::<()>(1);
-            let gate = tasty_memory::writer::MemoryRequest::section(0, move || {
+            // 강한 읽기는 앞선 요청이 확정된 뒤 혼자 실행되므로 뒤 요청은 이 읽기가 끝날 때까지 기다린다.
+            let gate = tasty_memory::writer::MemoryRequest::read(0, move |_| {
                 // 송신 쪽을 버리면(`release`, panic 으로 풀린 시험 포함) Disconnected 로 끝난다.
                 if let Err(mpsc::RecvTimeoutError::Timeout) =
                     held.recv_timeout(Duration::from_secs(30))
                 {
                     panic!("the test writer gate was never released");
                 }
+                Ok(())
             });
             // 닫히거나 가득 찬 writer 는 뒤 요청도 접수하지 않아 경합이 없다. 그 거절 응답은 시험이 본다.
             match core.memory_access().submit(gate) {

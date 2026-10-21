@@ -30,7 +30,7 @@ fn put(owner: &str, key: &str, value: &str, cas: Option<u64>) -> WriteOp {
 
 /// 묶음 실행 전에 멈출 수 있는 공유 저장소 접근. 운영 경로와 같은 공유 잠금을 쓴다.
 struct Gated {
-    shared: SharedStore,
+    shared: WriterStore,
     open: Arc<(Mutex<bool>, Condvar)>,
 }
 
@@ -85,7 +85,7 @@ fn rig_with(store: MemoryStore, limits: Limits, open: bool) -> Rig {
     let changes = Arc::new(ChangeFeed::default());
     let writer = spawn(
         Gated {
-            shared: SharedStore(dyn_store),
+            shared: WriterStore::shared(dyn_store),
             open: gate.clone(),
         },
         changes.clone(),
@@ -449,7 +449,7 @@ fn busy_is_retried_until_the_lock_frees_and_then_commits_once() {
     let store = Arc::new(Mutex::new(store));
     let dyn_store: Arc<Mutex<dyn MemoryStorage>> = store.clone();
     let writer = spawn(
-        SharedStore(dyn_store),
+        WriterStore::shared(dyn_store),
         Arc::default(),
         Limits {
             retry_for: Duration::from_secs(5),
@@ -542,7 +542,7 @@ fn the_production_access_serializes_with_direct_lock_holders() {
     let store: Arc<Mutex<dyn MemoryStorage>> =
         Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
     let writer = spawn(
-        SharedStore(store.clone()),
+        WriterStore::shared(store.clone()),
         Arc::default(),
         Limits::default(),
         Arc::new(SystemClock),
@@ -575,7 +575,7 @@ fn both_routes_settle_the_same_way_and_feed_committed_changes() {
         Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
     let changes = Arc::new(ChangeFeed::default());
     let mut writer = spawn(
-        SharedStore(queued_store),
+        WriterStore::shared(queued_store),
         changes.clone(),
         Limits::default(),
         Arc::new(SystemClock),
@@ -633,74 +633,49 @@ fn both_routes_settle_the_same_way_and_feed_committed_changes() {
     }
 }
 
-/// 호환 구간은 앞서 접수한 요청이 commit된 뒤 잠금 없이 실행되어 공유 잠금을 직접 잡을 수 있고,
-/// 그 안에서 commit한 변경도 버퍼로 옮긴다. panic하면 다시 실행하지 않고 결과 불명이다.
+/// writer가 소유한 저장소는 writer와 함께 닫힌다. 다른 소비자 없이 접수한 쓰기가 남고, worker가
+/// 끝나면 연결을 닫아 WAL 파일이 정리된다.
 #[test]
-fn a_section_runs_in_writer_order_and_takes_the_shared_lock_itself() {
-    let store: Arc<Mutex<dyn MemoryStorage>> =
-        Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+fn an_owned_store_closes_with_its_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("memory.db");
+    let store = MemoryStore::open(&path).unwrap();
     let changes = Arc::new(ChangeFeed::default());
     let mut writer = spawn(
-        SharedStore(store.clone()),
+        WriterStore::owned(store),
         changes.clone(),
         Limits::default(),
         Arc::new(SystemClock),
         Arc::new(|| {}),
     )
     .unwrap();
-    let queued = MemoryAccess::writer(writer.handle(), changes);
-    let inline = MemoryAccess::inline(store.clone());
-    for (access, key) in [(&queued, "q"), (&inline, "i")] {
-        let mut first = access
-            .submit(MemoryRequest::Write(put(HOST_OWNER, key, "1", None)))
-            .unwrap();
-        let shared = store.clone();
-        let key_owned = key.to_string();
-        let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counted = runs.clone();
-        let section = MemoryRequest::section(0, move || {
-            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let mut guard = shared.lock().unwrap();
-            let seen = guard
-                .get(&crate::Scope::Global, &key_owned)
-                .unwrap()
-                .map(|e| e.version);
-            guard
-                .put(
-                    HOST_OWNER,
-                    &crate::Scope::Global,
-                    &key_owned,
-                    &text("2"),
-                    &crate::PutOpts::default(),
-                )
-                .unwrap();
-            seen
-        });
-        let output = access.run_and_wait(section, WAIT).expect("section");
-        assert_eq!(output.into_value::<Option<u64>>(), Some(Some(1)));
-        assert_eq!(version(first.wait_timeout(WAIT).unwrap()), 1);
-        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert_eq!(access.changes().take().len(), 2, "both commits are fed");
-        match access.run_and_wait(MemoryRequest::section(0, || -> u8 { panic!("boom") }), WAIT) {
-            Err(crate::writer::Waited::Failed(Failure::Unknown(_))) => {}
-            other => panic!("{other:?}"),
-        }
-    }
+    let access = MemoryAccess::writer(writer.handle(), changes);
+    let mut first = access
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "owned", "1", None)))
+        .unwrap();
+    assert_eq!(version(first.wait_timeout(WAIT).unwrap()), 1);
+    let wal = dir.path().join("memory.db-wal");
+    assert!(wal.exists(), "the open connection keeps its WAL");
     writer.begin_shutdown();
     let deadline = Instant::now() + WAIT;
     while writer.poll_shutdown() != 0 {
         assert!(Instant::now() < deadline, "writer did not join");
         std::thread::sleep(Duration::from_millis(1));
     }
+    drop(writer);
+    assert!(!wal.exists(), "the store closed with its writer");
+    let reopened = MemoryStore::open(&path).unwrap();
+    let entry = reopened.get(&Scope::Global, "owned").unwrap().unwrap();
+    assert_eq!(entry.version, 1);
 }
 
 fn queued_access(
     store: Arc<Mutex<dyn MemoryStorage>>,
     limits: Limits,
-) -> (MemoryWriter<SharedStore>, MemoryAccess) {
+) -> (MemoryWriter<WriterStore>, MemoryAccess) {
     let changes = Arc::new(ChangeFeed::default());
     let writer = spawn(
-        SharedStore(store),
+        WriterStore::shared(store),
         changes.clone(),
         limits,
         Arc::new(SystemClock),

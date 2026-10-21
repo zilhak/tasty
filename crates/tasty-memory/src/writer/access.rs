@@ -2,7 +2,7 @@
 //!
 //! - writer가 있는 구성(제품 부팅)은 요청을 writer 큐에 넣고 바로 돌아온다. 결과는 ticket으로 받는다.
 //! - writer가 없는 구성(시험)은 같은 실행 규칙(`execute_on`)으로 호출 스레드에서 바로 실행하고
-//!   ticket에 결과를 담아 돌려준다. 제품 부팅은 writer 없이 시작하지 않으므로 이 경로는 시험용이다.
+//!   ticket에 결과를 담아 돌려준다. 이 경로는 `test-support` 기능(또는 이 크레이트의 시험)에서만 있다.
 //!
 //! 두 경로 모두 실행 단위가 끝나면 저장소의 변경 버퍼를 [`ChangeFeed`]로 옮긴다. 메인 루프는
 //! 저장소 잠금 없이 이 버퍼에서 `memory.changed` 원본을 꺼낸다.
@@ -12,9 +12,10 @@ use std::time::Duration;
 
 use tasty_utils::batch_writer::{self, SubmitError};
 
+#[cfg(any(test, feature = "test-support"))]
+use super::execute_on;
 use super::{
-    MemoryCompletion, MemoryExecutor, MemoryOutput, MemoryRequest, SharedStore, WriterError,
-    execute_on,
+    MemoryCompletion, MemoryExecutor, MemoryOutput, MemoryRequest, WriterError, WriterStore,
 };
 use crate::{MemoryChange, MemoryError, MemoryStorage};
 
@@ -35,6 +36,12 @@ impl ChangeFeed {
         }
     }
 
+    /// 시험 전용. 시험이 저장소를 직접 잠가 남긴 변경을 writer가 옮긴 변경 뒤에 붙인다.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn extend_for_tests(&self, changes: Vec<MemoryChange>) {
+        self.extend(changes);
+    }
+
     /// 쌓인 변경을 접수 순서대로 꺼낸다. 저장소 잠금을 잡지 않는다.
     pub fn take(&self) -> Vec<MemoryChange> {
         std::mem::take(&mut *self.lock())
@@ -45,7 +52,8 @@ impl ChangeFeed {
 pub struct MemoryTicket(Ticket);
 
 enum Ticket {
-    Queued(batch_writer::RequestReceipt<MemoryExecutor<SharedStore>>),
+    Queued(batch_writer::RequestReceipt<MemoryExecutor<WriterStore>>),
+    #[cfg(any(test, feature = "test-support"))]
     Ready(Option<MemoryCompletion>),
 }
 
@@ -54,6 +62,7 @@ impl MemoryTicket {
     pub fn try_take(&mut self) -> Option<MemoryCompletion> {
         match &mut self.0 {
             Ticket::Queued(receipt) => receipt.try_take(),
+            #[cfg(any(test, feature = "test-support"))]
             Ticket::Ready(slot) => slot.take(),
         }
     }
@@ -62,6 +71,7 @@ impl MemoryTicket {
     pub fn wait_timeout(&mut self, timeout: Duration) -> Option<MemoryCompletion> {
         match &mut self.0 {
             Ticket::Queued(receipt) => receipt.wait_timeout(timeout),
+            #[cfg(any(test, feature = "test-support"))]
             Ticket::Ready(slot) => slot.take(),
         }
     }
@@ -71,6 +81,7 @@ impl std::fmt::Debug for MemoryTicket {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.0 {
             Ticket::Queued(receipt) => f.debug_tuple("Queued").field(&receipt.seq()).finish(),
+            #[cfg(any(test, feature = "test-support"))]
             Ticket::Ready(slot) => f.debug_tuple("Ready").field(&slot.is_some()).finish(),
         }
     }
@@ -78,7 +89,8 @@ impl std::fmt::Debug for MemoryTicket {
 
 #[derive(Clone)]
 enum Route {
-    Writer(batch_writer::Handle<MemoryExecutor<SharedStore>>),
+    Writer(batch_writer::Handle<MemoryExecutor<WriterStore>>),
+    #[cfg(any(test, feature = "test-support"))]
     Inline(Arc<Mutex<dyn MemoryStorage>>),
 }
 
@@ -129,7 +141,7 @@ fn finish_detached(what: &'static str, done: Option<Done>, completion: MemoryCom
 impl MemoryAccess {
     /// writer 큐로 보내는 핸들. `changes`는 writer를 만들 때 넘긴 버퍼와 같아야 한다.
     pub fn writer(
-        handle: batch_writer::Handle<MemoryExecutor<SharedStore>>,
+        handle: batch_writer::Handle<MemoryExecutor<WriterStore>>,
         changes: Arc<ChangeFeed>,
     ) -> Self {
         Self {
@@ -140,6 +152,7 @@ impl MemoryAccess {
     }
 
     /// writer 없는 구성(시험). 요청을 호출 스레드에서 바로 실행한다.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn inline(store: Arc<Mutex<dyn MemoryStorage>>) -> Self {
         Self {
             route: Route::Inline(store),
@@ -150,7 +163,7 @@ impl MemoryAccess {
 
     /// 시험 전용. writer 없는 구성의 저장소를 바로 잠근다. 시험이 준비·확인 단계에서 값을 빌리는
     /// 본문을 쓸 때 부르고, 운영 코드는 부르지 않는다(writer 구성이면 `None`).
-    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn lock_inline_for_tests(
         &self,
     ) -> Option<std::sync::MutexGuard<'_, dyn MemoryStorage + 'static>> {
@@ -175,6 +188,7 @@ impl MemoryAccess {
             Route::Writer(handle) => handle
                 .submit(request)
                 .map(|r| MemoryTicket(Ticket::Queued(r))),
+            #[cfg(any(test, feature = "test-support"))]
             Route::Inline(store) => Ok(MemoryTicket(Ticket::Ready(Some(run_inline(
                 store,
                 &self.changes,
@@ -301,6 +315,7 @@ impl MemoryAccess {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 fn run_inline(
     store: &Arc<Mutex<dyn MemoryStorage>>,
     changes: &ChangeFeed,
@@ -308,24 +323,6 @@ fn run_inline(
 ) -> MemoryCompletion {
     use batch_writer::{Completion, Execution};
     let mut batch = [request];
-    if let [MemoryRequest::Section { body, bytes }] = &mut batch {
-        let execution = super::run_section(body, *bytes);
-        let mut guard = tasty_utils::poison::recover_mutex(
-            store.lock(),
-            crate::STORE_LOCK_WHAT,
-            &crate::STORE_LOCK_POISONED,
-        );
-        changes.extend(guard.take_pending_changes());
-        return match execution {
-            Execution::Committed(mut results) => {
-                results.pop().map_or(Completion::Lost, Completion::Done)
-            }
-            Execution::Unknown(error) => Completion::Unknown(error),
-            Execution::Busy(error)
-            | Execution::Failed(error)
-            | Execution::Poisoned { error, .. } => Completion::Failed(error),
-        };
-    }
     let mut guard = tasty_utils::poison::recover_mutex(
         store.lock(),
         crate::STORE_LOCK_WHAT,
