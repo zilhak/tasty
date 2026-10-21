@@ -115,8 +115,8 @@ pub fn draw_find_bar(ui: &mut egui::Ui, theme: &Theme) {
                 th,
                 "re",
                 Some(false),
-                ExplorerFindStatus::Text(&t_fmt2("explorer.find.count", "2", "5")),
-                &t_fmt2("explorer.find.status", "2", "5"),
+                ExplorerFindStatus::Text(&t_fmt2("explorer.find.count", "4", "7")),
+                &t_fmt2("explorer.find.status", "4", "7"),
                 |ui| {
                     let rows = [
                         (
@@ -127,6 +127,20 @@ pub fn draw_find_bar(ui: &mut egui::Ui, theme: &Theme) {
                             "PDF document",
                         ),
                         (icons::FOLDER, "mockup-exports", "—", "2026-06-20 14:30", ""),
+                        (
+                            icons::FILE,
+                            "cafe\u{301}-report.txt",
+                            "1 KB",
+                            "2026-06-24 09:12",
+                            "Text file",
+                        ),
+                        (
+                            icons::FILE,
+                            "\u{1100}\u{1161}\u{1102}\u{1161}-report.txt",
+                            "1 KB",
+                            "2026-06-24 09:12",
+                            "Text file",
+                        ),
                     ];
                     detail_columns_table(ui, th, &rows, "gallery_exp_find", |ui, th, r, col| {
                         if col == 0 {
@@ -139,6 +153,10 @@ pub fn draw_find_bar(ui: &mut egui::Ui, theme: &Theme) {
             );
         });
     });
+    let unicode_note = format!(
+        "NFC display ({}), raw substring matching; composed clusters keep their highlight together",
+        tasty_ui_widgets::display_nfc("cafe\u{301}")
+    );
     meta(
         ui,
         theme,
@@ -155,6 +173,7 @@ pub fn draw_find_bar(ui: &mut egui::Ui, theme: &Theme) {
                 "match",
                 "substring, case-insensitive · matched part in explorer-match-fg",
             ),
+            ("Unicode", unicode_note.as_str()),
             ("count", "mono caption · “{shown} of {total}”"),
             (
                 "type-ahead",

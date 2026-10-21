@@ -80,6 +80,7 @@ pub struct PathField<'a> {
     focus: bool,
     /// 확정한 입력의 결과를 기다린다.
     pending: Option<PathFieldPending<'a>>,
+    display_nfc: bool,
 }
 
 impl<'a> PathField<'a> {
@@ -98,12 +99,20 @@ impl<'a> PathField<'a> {
             go_tooltip: None,
             focus: false,
             pending: None,
+            display_nfc: false,
         }
     }
 
     /// 이번 프레임에 입력칸에 포커스를 주고 글자 전체를 고른다. 바로 고쳐 쓰거나 지울 수 있다.
     pub fn focus(mut self, focus: bool) -> Self {
         self.focus = focus;
+        self
+    }
+
+    /// 비편집 주소만 NFC로 그린다. 원문 버퍼·후보·확정값은 유지하고 합성 표시에서 편집 진입 시 원문 전체를 고른다.
+    /// 기본은 false로, 다른 소비자의 표시·클릭 동작은 바꾸지 않는다.
+    pub fn display_nfc(mut self, enabled: bool) -> Self {
+        self.display_nfc = enabled;
         self
     }
 
@@ -196,6 +205,14 @@ impl<'a> PathField<'a> {
 
         let leading = self.leading_icon;
         let row = self.row_icon.or(self.leading_icon);
+        let idle_text = if self.display_nfc && !*editing && !self.focus {
+            match crate::display_nfc(buffer) {
+                std::borrow::Cow::Owned(text) => Some(text),
+                std::borrow::Cow::Borrowed(_) => None,
+            }
+        } else {
+            None
+        };
 
         let mut outcome = PathFieldOutcome::None;
         let tooltip = self.pending.map_or("", |p| p.tooltip);
@@ -215,6 +232,7 @@ impl<'a> PathField<'a> {
             ui.spacing_mut().item_spacing.x = gap;
 
             let mut ac = crate::AutoComplete::new(self.id_salt)
+                .idle_text(idle_text.as_deref())
                 .mono(true)
                 .match_mode(self.match_mode)
                 .highlight(self.highlight)
@@ -240,7 +258,7 @@ impl<'a> PathField<'a> {
                 }
             }
             let out = ac.show(ui, theme, buffer, candidates, active);
-            if self.focus {
+            if self.focus || (idle_text.is_some() && out.response.gained_focus()) {
                 focus_all(ui.ctx(), &out.response, buffer);
             }
 

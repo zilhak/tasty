@@ -2,6 +2,7 @@
 //! 포커스와 잘못된 값의 테두리는 애니메이션 없이 바로 표시한다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::icon_button::IconPainter;
 
@@ -28,6 +29,8 @@ pub struct Input<'a> {
     focus_look: bool,
     /// 입력 뒤 정사각 칸과 그 변 길이. 칸을 그리는 painter 는 input-icon-fg 색으로 불린다.
     trailing: Option<(IconPainter<'a>, f32)>,
+    /// 비편집 표시만 대체한다. TextEdit에는 언제나 원문 버퍼를 전달한다.
+    idle_text: Option<&'a str>,
 }
 
 impl Default for Input<'_> {
@@ -52,11 +55,17 @@ impl<'a> Input<'a> {
             id: None,
             focus_look: false,
             trailing: None,
+            idle_text: None,
         }
     }
 
     pub fn id(mut self, id: egui::Id) -> Self {
         self.id = Some(id);
+        self
+    }
+
+    pub(crate) fn idle_text(mut self, text: Option<&'a str>) -> Self {
+        self.idle_text = text;
         self
     }
 
@@ -226,15 +235,21 @@ impl<'a> Input<'a> {
                 .frame(false)
                 .desired_width(te_w)
                 .hint_text(hint)
-                .font(font)
+                .font(font.clone())
                 .horizontal_align(self.align)
-                .text_color(text_color)
+                // 원문은 입력·복사·커서용으로 남기고 표시 글자만 아래에서 덧그린다.
+                .text_color(
+                    self.idle_text
+                        .map_or(text_color, |_| egui::Color32::TRANSPARENT),
+                )
                 .interactive(self.enabled);
             let te = match self.id {
                 Some(id) => te.id(id),
                 None => te,
             };
-            let r = ui.add(te);
+            let out = te.show(ui);
+            paint_idle_text(ui, &out, self.idle_text, font, text_color);
+            let r = out.response;
             if let Some(g) = addon_galley {
                 let (arect, _) = ui.allocate_exact_size(g.rect.size(), egui::Sense::hover());
                 ui.painter().galley(arect.min, g, muted);
@@ -288,6 +303,26 @@ impl<'a> Input<'a> {
         let mut resp = resp;
         resp.rect = outer;
         resp
+    }
+}
+
+/// 표시 문자열만 덧그리며 TextEdit의 원문·응답·커서 상태는 그대로 둔다.
+fn paint_idle_text(
+    ui: &egui::Ui,
+    out: &egui::text_edit::TextEditOutput,
+    display: Option<&str>,
+    font: egui::FontId,
+    text_color: egui::Color32,
+) {
+    let Some(display) = display else { return };
+    let painter = ui.painter().with_clip_rect(out.text_clip_rect);
+    if ui.ctx().memory(|m| m.has_focus(out.response.id)) {
+        painter.galley_with_override_text_color(out.galley_pos, out.galley.clone(), text_color);
+    } else {
+        let galley = painter.layout_no_wrap(display.to_owned(), font, text_color);
+        let overflow = LogicalPx((galley.size().x - out.text_clip_rect.width()).max(0.0));
+        let x = LogicalPx(out.text_clip_rect.left()) - overflow;
+        painter.galley(egui::pos2(x.value(), out.galley_pos.y), galley, text_color);
     }
 }
 

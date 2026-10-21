@@ -12,8 +12,8 @@ tasty-ui-widgets     layout / 위젯 primitive (본 문서)
    tasty (본체)    tasty-gallery
 ```
 
-- 의존: `egui`, `egui_extras`, `tasty-icons`, `tasty-egui-theme`, `tasty-type-appearance`(Theme schema), `tasty-type-geometry`(`LogicalPx`/`PhysicalPx`).
-- **본체(`tasty`) 미의존** — widgets crate 는 본체 state·plugin·전역 `theme()` 를 모른다. 모든 함수는 `&Theme` 을 **명시적 인자**로 받는다.
+- 의존: `egui`, `egui_extras`, `tasty-icons`, `tasty-egui-theme`, `tasty-type-appearance`(Theme schema), `tasty-type-geometry`(`LogicalPx`/`PhysicalPx`), `icu_normalizer`·`unicode-segmentation`(표시용 NFC와 원문 강조 범위 대응).
+- **본체(`tasty`) 미의존** — widgets crate 는 본체 state·plugin·전역 `theme()` 를 모른다. 그리기 함수는 `&Theme` 을 **명시적 인자**로 받는다.
 - 갤러리는 본체 빌드와 분리 — `cargo build` 기본 타깃이 `tasty-gallery` 를 의존하지 않는다. `cargo run -p tasty-gallery` 로만 실행되는 standalone 데모.
 
 ## 레이아웃 idiom 카탈로그
@@ -63,6 +63,12 @@ tasty-ui-widgets     layout / 위젯 primitive (본 문서)
   않는지, 그리고 zoom 을 안 타는 대가를 doc 주석에 남긴다. 대가의 크기는 축마다
   다르다 — 반경 토큰은 zoom 을 타므로 실재하고, `border_width` 처럼 애초에 zoom 을
   안 타는 축은 대가가 없다.
+
+## 원문을 보존하는 이름·경로 표시
+
+`display_nfc`는 읽은 값을 바꾸지 않는 표시 변환이며 이미 NFC면 빌린다. `explorer_match_job`은 원문 일치 범위를 합성된 표시 범위로 옮긴다. 합성으로 바뀐 grapheme의 일부 일치는 그 묶음 전체를 강조하고, 변하지 않은 묶음은 원래 구간을 유지한다. 검색 비교에는 NFC를 적용하지 않는다.
+
+`PathField::display_nfc(true)`는 비편집 글자만 NFC로 덧그린다. 내부 Input의 TextEdit에는 항상 원문 버퍼가 들어가며, 합성 표시에서 편집 포커스를 얻으면 원문 전체를 선택한다. Go·Enter·자동완성 확정과 Copy는 원문 값이다. 입력의 폭·색·폰트·테두리는 기존 Theme를 그대로 쓴다. 기본은 false여서 다른 소비자의 표시·클릭 동작을 바꾸지 않는다.
 
 ## 호출 idiom — borrow snapshot
 

@@ -28,6 +28,7 @@ mod control;
 pub mod crumb_alloc;
 mod dag_empty;
 mod dashed_edge;
+mod display_text;
 mod drilldown;
 mod explorer_columns;
 mod explorer_commands;
@@ -134,6 +135,7 @@ pub use compact_state::{CompactStateGlyph, CompactStateRow, compact_state_row};
 pub use control::ControlSize;
 pub use dag_empty::{DAG_EMPTY_ICON_SIZE, DagEmptyView, paint_dag_empty};
 pub use dashed_edge::paint_dashed_outline;
+pub use display_text::nfc as display_nfc;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use explorer_columns::{
     ExplorerDetailHeads, explorer_detail_columns, explorer_detail_tail_width,

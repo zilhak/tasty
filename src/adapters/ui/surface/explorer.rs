@@ -255,6 +255,7 @@ fn tab_strip(
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| tab.cwd.to_string_lossy().to_string());
+        let label = display_text::nfc(&label).into_owned();
         let galley =
             ui.fonts(|f| f.layout_no_wrap(label.clone(), font.clone(), egui::Color32::WHITE));
         let tab_w = pad_x + icon_xs + gap + galley.size().x + gap + icon_xs + pad_x;
@@ -915,6 +916,7 @@ fn status_line(ui: &mut egui::Ui, theme: &Theme, view: &ExplorerView) {
         egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
     );
     let text = view.status_text();
+    let text = display_text::nfc(&text);
     ui.painter().text(
         egui::pos2(rect.left() + theme.spacing_md.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
@@ -1481,8 +1483,9 @@ fn detail_view(
                     _ => (!blank).then(|| kind_word(row)),
                 };
                 // Type 열만 본문 글꼴 크기로, 나머지 값은 고정폭으로 쓴다.
-                let text = egui::RichText::new(text.unwrap_or_default())
-                    .color(dim(th.text_muted().to_egui()));
+                let text =
+                    egui::RichText::new(display_text::nfc(&text.unwrap_or_default()).into_owned())
+                        .color(dim(th.text_muted().to_egui()));
                 let size = th.font_size_caption.value();
                 // Type 열은 좁아 낱말을 말줄임하고, 줄였으면 호버에 전체 낱말이 보인다.
                 if col == 3 {

@@ -3,16 +3,12 @@
 //! 합치지 않는다. 그리기 직전에 NFC로 합성해 미리 합성된 글자로 보이게 한다. 경로·복사·검색은
 //! 원래 문자열을 그대로 쓴다. 합성형이 없는 결합 순서는 여전히 따로 그려진다.
 
-use std::borrow::Cow;
-
-/// 표시용 NFC 문자열. 이미 NFC면 빌려 온 그대로 돌려준다.
-pub(crate) fn nfc(text: &str) -> Cow<'_, str> {
-    icu_normalizer::ComposingNormalizerBorrowed::new_nfc().normalize(text)
-}
+pub(crate) use tasty_ui_widgets::display_nfc as nfc;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
 
     #[test]
     fn decomposed_latin_and_hangul_are_composed() {

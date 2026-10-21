@@ -85,3 +85,81 @@ fn a_tree_row_paints_the_matching_part_of_its_label() {
     assert_eq!(painted("PO"), [(0..2, false), (2..4, true), (4..10, false)]);
     assert_eq!(painted(""), [(0..10, false)]);
 }
+
+#[test]
+fn nfd_display_maps_raw_highlights_without_splitting_utf8_or_composed_letters() {
+    let theme = tasty_themes::mocha_fallback();
+    let ink = theme.text_primary().to_egui();
+    let marked = theme.explorer_match_fg().to_egui();
+    for (raw, query, display, highlighted) in [
+        ("cafe\u{301}.txt", "e", "café.txt", "é"),
+        ("cafe\u{301}.txt", "\u{301}", "café.txt", "é"),
+        ("cafe\u{301}.txt", ".txt", "café.txt", ".txt"),
+        (
+            "\u{1100}\u{1161}\u{1102}\u{1161}.txt",
+            "\u{1100}",
+            "가나.txt",
+            "가",
+        ),
+        (
+            "\u{1100}\u{1161}\u{1102}\u{1161}.txt",
+            "\u{1161}\u{1102}",
+            "가나.txt",
+            "가나",
+        ),
+        (
+            "\u{30ab}\u{3099}.txt",
+            "\u{3099}",
+            "\u{30ac}.txt",
+            "\u{30ac}",
+        ),
+        ("a\u{315}\u{300}x", "\u{315}", "à\u{315}x", "à\u{315}"),
+        (
+            "e\u{301}\u{1f469}\u{200d}\u{1f4bb}.txt",
+            "\u{1f4bb}",
+            "é\u{1f469}\u{200d}\u{1f4bb}.txt",
+            "\u{1f4bb}",
+        ),
+        ("q\u{301}.txt", "\u{301}", "q\u{301}.txt", "\u{301}"),
+        ("한글é.txt", "글", "한글é.txt", "글"),
+    ] {
+        let job = explorer_match_job(
+            &theme,
+            raw,
+            query,
+            egui::FontId::monospace(theme.font_size_caption.value()),
+            ink,
+        );
+        assert_eq!(job.text, display, "{raw:?}");
+        let mut selected = String::new();
+        for section in &job.sections {
+            let span = section.byte_range.clone();
+            assert!(job.text.is_char_boundary(span.start) && job.text.is_char_boundary(span.end));
+            if section.format.color == marked {
+                selected.push_str(&job.text[span]);
+            }
+        }
+        assert_eq!(selected, highlighted, "{raw:?} / {query:?}");
+    }
+}
+
+#[test]
+fn composing_display_does_not_normalize_name_matching() {
+    let theme = tasty_themes::mocha_fallback();
+    let raw = "cafe\u{301}.rs";
+    assert_eq!(match_range(raw, "café"), None);
+    let job = explorer_match_job(
+        &theme,
+        raw,
+        "café",
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        theme.text_primary().to_egui(),
+    );
+    assert_eq!(job.text, "café.rs");
+    assert!(
+        job.sections
+            .iter()
+            .all(|s| s.format.color != theme.explorer_match_fg().to_egui())
+    );
+    assert_eq!(raw.as_bytes(), b"cafe\xcc\x81.rs");
+}

@@ -501,7 +501,9 @@ impl ExplorerView {
     /// List · Grid 의 하위 폴더 검색 결과는 든 폴더를 툴팁으로 보인다.
     pub(super) fn hit_tooltip(&self, entry: &DirEntryInfo, resp: egui::Response) -> egui::Response {
         match self.search_root() {
-            Some(root) => resp.on_hover_text(hit_folder(root, &entry.path)),
+            Some(root) => resp.on_hover_text(
+                super::display_text::nfc(&hit_folder(root, &entry.path)).into_owned(),
+            ),
             None => resp,
         }
     }

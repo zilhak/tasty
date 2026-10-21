@@ -176,11 +176,12 @@ pub fn explorer_match_job(
     font: egui::FontId,
     color: egui::Color32,
 ) -> egui::text::LayoutJob {
+    let (name, range) = crate::display_text::highlighted(name, match_range(name, query));
     let mut job = egui::text::LayoutJob::default();
     let plain = |job: &mut egui::text::LayoutJob, s: &str, c: egui::Color32| {
         job.append(s, 0.0, egui::TextFormat::simple(font.clone(), c));
     };
-    match match_range(name, query) {
+    match range {
         Some(range) => {
             plain(&mut job, &name[..range.start], color);
             plain(
@@ -190,7 +191,7 @@ pub fn explorer_match_job(
             );
             plain(&mut job, &name[range.end..], color);
         }
-        None => plain(&mut job, name, color),
+        None => plain(&mut job, &name, color),
     }
     job
 }

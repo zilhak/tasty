@@ -325,7 +325,18 @@ pub fn draw_pane_tab_bars(
                 tab_names: pane
                     .tabs
                     .iter()
-                    .map(|t| engine.tab_display_name(t, state.navigation.surface_id(t)))
+                    .map(|t| {
+                        let sid = state.navigation.surface_id(t);
+                        let name = engine.tab_display_name(t, sid);
+                        if engine
+                            .find_surface_by_id(sid.unwrap_or(0))
+                            .is_some_and(|s| s.kind() == "explorer")
+                        {
+                            crate::explorer_ui::display_text::nfc(&name).into_owned()
+                        } else {
+                            name
+                        }
+                    })
                     .collect(),
                 tab_icons: pane
                     .tabs

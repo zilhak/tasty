@@ -52,6 +52,7 @@ pub(in super::super) fn address_bar(
     }
     let salt = format!("explorer_addr_{id_suffix}_{tab_index}");
     let outcome = PathField::new(&salt)
+        .display_nfc(true)
         .placeholder(t("explorer.address.placeholder"))
         .empty_label(t("explorer.address.empty"))
         .leading_icon(&folder_icon)

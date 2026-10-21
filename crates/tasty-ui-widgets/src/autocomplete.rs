@@ -68,6 +68,7 @@ pub struct AutoComplete<'a> {
     focus_look: bool,
     /// 트리거 뒤 칸(`Input::trailing`).
     trailing: Option<(IconPainter<'a>, f32)>,
+    idle_text: Option<&'a str>,
 }
 
 impl<'a> AutoComplete<'a> {
@@ -87,11 +88,17 @@ impl<'a> AutoComplete<'a> {
             max_dropdown_height: None,
             focus_look: false,
             trailing: None,
+            idle_text: None,
         }
     }
 
     pub fn placeholder(mut self, placeholder: &'a str) -> Self {
         self.placeholder = placeholder;
+        self
+    }
+
+    pub(crate) fn idle_text(mut self, text: Option<&'a str>) -> Self {
+        self.idle_text = text;
         self
     }
 
@@ -179,6 +186,7 @@ impl<'a> AutoComplete<'a> {
         let width = self.width.unwrap_or_else(|| ui.available_width());
 
         let mut trigger = crate::Input::new()
+            .idle_text(self.idle_text)
             .placeholder(self.placeholder)
             .mono(self.mono)
             .enabled(self.enabled)
