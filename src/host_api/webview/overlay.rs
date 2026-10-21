@@ -17,7 +17,7 @@ pub struct OverlayRequest<'a> {
     /// `Opaque` 또는 `Transparent`. `Hide` 는 요청하지 않고 [`WebViewOverlayBackend::clear_overlay`] 를 부른다.
     pub mode: OverlayMode,
     /// host 가 칠할 영역. WebView 창(반올림한 `set_bounds` 사각형) 기준 물리 정수 픽셀이다.
-    /// 불투명 모드는 팝업·드롭다운 상자, 투명 모드는 그림자·scrim 범위까지 들어 있다.
+    /// 불투명 모드는 팝업·드롭다운 상자와 바깥 1px 테두리, 투명 모드는 그림자·scrim 범위까지 들어 있다.
     pub regions: &'a [PhysicalRect],
     /// 참이면 WebView 영역 전체의 포인터(클릭·휠)를 host 가 받는다. 페이지에는 가지 않는다.
     pub host_takes_pointer: bool,

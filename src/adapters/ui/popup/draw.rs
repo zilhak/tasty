@@ -470,6 +470,11 @@ impl PopupManager {
                     kind: crate::state::webview_overlay::TargetKind::HostPopup,
                     layer: layer_id,
                     rect: popup_rect,
+                    opaque_rect: crate::state::webview_overlay::outlined_box(
+                        popup_rect,
+                        th.border_width.value(),
+                        scope_clip,
+                    ),
                     paint_rect: shadow
                         .map_or(popup_rect, |s| popup_rect + s.to_egui().margin())
                         .intersect(scope_clip),

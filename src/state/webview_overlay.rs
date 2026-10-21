@@ -38,8 +38,10 @@ pub enum TargetKind {
 pub struct OverlayTarget {
     pub kind: TargetKind,
     pub layer: egui::LayerId,
-    /// 상자 사각형. 불투명 모드에서 host 가 칠하는 영역이다.
+    /// 상자 사각형. 입력 판정과 가장자리(각진 모서리) 판정의 기준이다.
     pub rect: egui::Rect,
+    /// 불투명 모드에서 host 가 칠하는 영역. 상자 바깥에 그리는 테두리까지 넣는다([`outlined_box`]).
+    pub opaque_rect: egui::Rect,
     /// 상자 바깥으로 번지는 그림(그림자)까지 넣은 사각형. 투명 모드의 합성 영역이다.
     pub paint_rect: egui::Rect,
     /// 이 대상이 그린 scrim 범위. 불투명 모드에서는 scrim 을 그리지 않으므로 쓰지 않는다.
@@ -99,6 +101,11 @@ pub fn reveal_wanted(
     active && !under_toast && (!overlay_open || mode != OverlayMode::Hide)
 }
 
+/// 상자 바깥(`StrokeKind::Outside`)에 그리는 테두리까지 넣은 그림 영역. 소속 범위 밖은 자른다.
+pub fn outlined_box(rect: egui::Rect, outside_stroke: f32, scope: egui::Rect) -> egui::Rect {
+    rect.expand(outside_stroke).intersect(scope)
+}
+
 /// 불투명 모드에서 상자 가장자리를 정할 페이지 영역(egui 논리 좌표). 다른 모드에서는 비운다.
 pub fn opaque_pages(mode: OverlayMode, revealed: &[LogicalRect]) -> Vec<egui::Rect> {
     if mode != OverlayMode::Opaque {
@@ -107,7 +114,7 @@ pub fn opaque_pages(mode: OverlayMode, revealed: &[LogicalRect]) -> Vec<egui::Re
     revealed.iter().map(|r| to_egui(*r)).collect()
 }
 
-/// backend 에 넘길 대상 영역(WebView 창 기준 물리 정수 사각형). 불투명 모드는 상자만, 투명 모드는
+/// backend 에 넘길 대상 영역(WebView 창 기준 물리 정수 사각형). 불투명 모드는 상자와 바깥 테두리만, 투명 모드는
 /// 그림자와 scrim 범위까지 넣는다. `webview` 는 `set_bounds` 와 같이 반올림한 창 사각형이다.
 pub fn webview_regions(
     mode: OverlayMode,
@@ -117,7 +124,7 @@ pub fn webview_regions(
 ) -> Vec<PhysicalRect> {
     let logical: Vec<egui::Rect> = match mode {
         OverlayMode::Hide => return Vec::new(),
-        OverlayMode::Opaque => targets.iter().map(|t| t.rect).collect(),
+        OverlayMode::Opaque => targets.iter().map(|t| t.opaque_rect).collect(),
         OverlayMode::Transparent => targets
             .iter()
             .flat_map(|t| std::iter::once(t.paint_rect).chain(t.scrim))
@@ -199,6 +206,7 @@ pub fn end_frame(ctx: &egui::Context, frame: &mut OverlayFrame) {
             kind: TargetKind::Dropdown,
             layer,
             rect,
+            opaque_rect: rect,
             paint_rect: rect + shadow.margin(),
             scrim: None,
         });
@@ -251,9 +259,32 @@ mod tests {
             kind: TargetKind::HostPopup,
             layer: egui::LayerId::new(egui::Order::Foreground, egui::Id::new("t")),
             rect,
+            opaque_rect: rect,
             paint_rect: paint,
             scrim,
         }
+    }
+
+    /// 바깥 1px 테두리가 불투명 영역 안에 들어간다. 입력 판정 상자(`rect`)는 그대로다.
+    #[test]
+    fn the_opaque_region_keeps_the_outside_border() {
+        let popup = er(100.0, 100.0, 100.0, 100.0);
+        let scope = er(0.0, 0.0, 400.0, 300.0);
+        let t = OverlayTarget {
+            opaque_rect: outlined_box(popup, 1.0, scope),
+            ..target(popup, popup.expand(8.0), None)
+        };
+        let webview = pr(0.0, 0.0, 400.0, 300.0);
+        let at1 = webview_regions(OverlayMode::Opaque, webview, &[t], 1.0);
+        assert_eq!(values(&at1), vec![[99.0, 99.0, 102.0, 102.0]]);
+        let at2 = webview_regions(OverlayMode::Opaque, pr(0.0, 0.0, 800.0, 600.0), &[t], 2.0);
+        assert_eq!(values(&at2), vec![[198.0, 198.0, 204.0, 204.0]]);
+        assert_eq!(t.rect, popup);
+        // 소속 범위 끝에 붙은 상자는 범위 밖 테두리를 칠하지 않는다.
+        assert_eq!(
+            outlined_box(er(0.0, 0.0, 50.0, 50.0), 1.0, scope),
+            er(0.0, 0.0, 51.0, 51.0)
+        );
     }
 
     #[test]

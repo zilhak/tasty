@@ -124,6 +124,7 @@ mod tests {
                         egui::Id::new(r.min.x as i32),
                     ),
                     rect: *r,
+                    opaque_rect: *r,
                     paint_rect: *r,
                     scrim: None,
                 })

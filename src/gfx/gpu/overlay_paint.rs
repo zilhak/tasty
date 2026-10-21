@@ -213,6 +213,7 @@ mod tests {
             kind,
             layer,
             rect: er(0.0, 0.0, 10.0, 10.0),
+            opaque_rect: er(0.0, 0.0, 10.0, 10.0),
             paint_rect: er(0.0, 0.0, 10.0, 10.0),
             scrim: None,
         }

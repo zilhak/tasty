@@ -170,6 +170,11 @@ pub fn draw_plugin_popups(
                 kind: crate::state::webview_overlay::TargetKind::PluginPopup,
                 layer: layer_id,
                 rect: target_rect,
+                opaque_rect: crate::state::webview_overlay::outlined_box(
+                    target_rect,
+                    th.border_width.value(),
+                    scope_rect,
+                ),
                 paint_rect: (target_rect + shadow.margin()).intersect(scope_rect),
                 scrim,
             });
