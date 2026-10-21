@@ -72,7 +72,6 @@ mod script_trigger;
 mod searchable_select;
 mod segmented;
 mod select;
-mod select_combo;
 mod sequence_editor;
 mod settings_row;
 mod settings_row_stack;
@@ -265,7 +264,6 @@ pub use searchable_select::{
 };
 pub use segmented::segmented;
 pub use select::{select, select_or_placeholder};
-pub use select_combo::with_select_combo_frame;
 pub use sequence_editor::{
     SequenceEditorAction, SequenceEditorError, SequenceEditorView, sequence_editor,
 };

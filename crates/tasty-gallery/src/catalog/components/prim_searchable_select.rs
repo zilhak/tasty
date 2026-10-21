@@ -8,10 +8,9 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     MultiSelectLabels, SearchableSelect, SearchableSelectLabels, SearchableSelectOption,
-    SearchableSelectSpecimen, menu_option, multi_select, select, with_select_combo_frame,
+    SearchableSelectSpecimen, multi_select, select,
 };
 
-use crate::catalog::modifier_label;
 use crate::catalog::spec::{self, StageVariant, TokenChip, wrap_item};
 
 // 시안 무대·그리드의 전시 치수. 대응 토큰이 없다.
@@ -93,8 +92,6 @@ struct LiveState {
     pair_ms: [[bool; 3]; 2],
     pair_ss: [Option<String>; 2],
     live: [Option<String>; 2],
-    /// 본체에 남은 글꼴 콤보 견본의 선택과 검색어.
-    legacy: usize,
 }
 
 thread_local! {
@@ -104,7 +101,6 @@ thread_local! {
         pair_ms: [[true, false, false]; 2],
         pair_ss: [Some("JetBrains Mono".into()), Some("JetBrains Mono".into())],
         live: [Some("Fira Code".into()), Some("Fira Code".into())],
-        legacy: 0,
     });
 }
 
@@ -147,16 +143,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 }
             });
         }
-        spec::stage(ui, theme, StageVariant::Column, |ui| {
-            spec::cluster(
-                ui,
-                theme,
-                "Switch modifier combo (until the quick switch rows adopt Select)",
-                |ui| {
-                    legacy_modifier_combo(ui, theme, &mut st);
-                },
-            );
-        });
     });
 
     spec::meta(
@@ -673,30 +659,5 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
                 false,
             );
         });
-    });
-}
-
-/// 본체 Tab·Workspace·Category switch modifier 행이 아직 쓰는 egui ComboBox 를 Select 테두리로 감싼
-/// 콤보. 본체에 남아 있는 동안 갤러리에도 둔다(갤러리 완전성).
-fn legacy_modifier_combo(ui: &mut egui::Ui, theme: &Theme, st: &mut LiveState) {
-    // 본체처럼 수식키 조합은 설정 UI 표기, 개별 지정은 번역 문구로 보인다.
-    let names = [
-        modifier_label("ctrl"),
-        modifier_label("alt"),
-        modifier_label("ctrl+alt"),
-        crate::i18n::t("settings.keybindings.quick_switch_individual_label").to_owned(),
-    ];
-    let legacy = &mut st.legacy;
-    with_select_combo_frame(ui, theme, |ui| {
-        egui::ComboBox::from_id_salt("gallery_legacy_modifier_combo")
-            .selected_text(&names[*legacy])
-            .show_ui(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                for (i, name) in names.iter().enumerate() {
-                    if menu_option(ui, theme, name, *legacy == i).clicked() {
-                        *legacy = i;
-                    }
-                }
-            });
     });
 }

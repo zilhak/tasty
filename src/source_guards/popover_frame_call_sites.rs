@@ -1,6 +1,5 @@
 //! 버튼에 붙는 egui 팝오버는 `tasty_egui_theme::with_popover_frame`(또는 안쪽 둘레를 받는
-//! `with_popover_frame_ring`, ComboBox 트리거를 Select 테두리로도 그리는
-//! `tasty_ui_widgets::with_select_combo_frame`) 클로저 안에서 열어야 메뉴 틀
+//! `with_popover_frame_ring`) 클로저 안에서 열어야 메뉴 틀
 //! (menu-bg · menu-border · menu-radius)로 그려진다. 전역 스타일은 tooltip 토큰을 담으므로 감싸지 않은
 //! 팝오버는 tooltip 틀로 그려진다(docs/design/systems/theme.md).
 //!
@@ -19,16 +18,11 @@ const ENTRIES: &[&str] = &[
     "egui::popup::popup_above_or_below_widget(",
     "egui::ComboBox::from_id_salt(",
 ];
-/// 기본 둘레 래퍼, 둘레를 받는 래퍼, 안에서 기본 둘레 래퍼를 부르는 Select 테두리 래퍼.
-/// 어느 쪽이든 메뉴 틀을 정한다.
-const WRAPPERS: &[&str] = &[
-    "with_popover_frame(",
-    "with_popover_frame_ring(",
-    "with_select_combo_frame(",
-];
+/// 기본 둘레 래퍼와 둘레를 받는 래퍼. 어느 쪽이든 메뉴 틀을 정한다.
+const WRAPPERS: &[&str] = &["with_popover_frame(", "with_popover_frame_ring("];
 const GUARD_DIR: &str = "src/source_guards/";
-/// 현재 감싼 호출부는 22곳이다. 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
-const MIN_SITES: usize = 20;
+/// 현재 감싼 호출부는 19곳이다. 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
+const MIN_SITES: usize = 17;
 
 /// `at`의 진입 호출이 래퍼 호출의 클로저 본문 첫 식인지 본다.
 fn opened_inside_the_wrapper(code: &str, at: usize) -> bool {
@@ -160,10 +154,10 @@ fn every_open_combo_box_list_draws_shared_option_rows() {
         seen += n;
         offenders.extend(lines.into_iter().map(|l| format!("{rel}:{l}")));
     }
-    // 현재 ComboBox 는 12곳이다(시험 하네스 1곳 포함). 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
+    // 현재 ComboBox 는 9곳이다(시험 하네스 1곳 포함). 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
     assert!(
-        seen >= 12,
-        "ComboBox 를 {seen}곳만 찾았다(하한 12). 순회 범위와 진입 문자열을 확인한다."
+        seen >= 9,
+        "ComboBox 를 {seen}곳만 찾았다(하한 9). 순회 범위와 진입 문자열을 확인한다."
     );
     assert!(
         offenders.is_empty(),
