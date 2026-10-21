@@ -45,7 +45,7 @@ pub(crate) struct DirEntryInfo {
 /// ctime 은 내용을 쓰거나 이름을 바꾸면 OS 가 현재 시각으로 올리며 `touch -r`·`cp -p` 로 되돌릴 수 없다.
 /// Windows 는 std 가 변경 시각과 파일 ID 를 안정 API 로 주지 않아(파일을 따로 열어야 한다) 담지 않는다.
 #[cfg(feature = "gui")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ChangeStamp {
     ino: u64,
     ctime: i64,
@@ -73,7 +73,7 @@ impl ChangeStamp {
 /// 썸네일·미리보기 캐시가 같은 내용으로 보는 값: 수정 시각 · 크기 · (Unix) inode·ctime.
 /// 이것이 모두 같은 교체는 구분하지 못한다(Windows 에서 크기도 시각도 같은 교체 등).
 #[cfg(feature = "gui")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ContentKey {
     modified: Option<SystemTime>,
     size: u64,

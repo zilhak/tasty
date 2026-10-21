@@ -205,6 +205,7 @@ pub fn draw_egui_panels(
                 ),
                 explorer_now,
             );
+            view.set_file_details_check(engine.settings.general.explorer_refresh_file_details);
             view.ops.drag.flip = tasty_settings::keybindings::parse::Combo::parse_modifiers(
                 &engine.settings.keybindings.explorer_drag_flip_modifier,
             );

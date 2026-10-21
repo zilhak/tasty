@@ -176,10 +176,15 @@ impl ExplorerView {
             self.local_query = None;
             if self.mirror_ws_id.is_none() {
                 match result {
-                    Ok(StampedListing { stamp, mut entries }) => {
+                    Ok(StampedListing {
+                        stamp,
+                        mut entries,
+                        entries_key,
+                    }) => {
                         if let Some((root, col, dir)) = &self.loaded {
                             sort_entries(&mut entries, *col, *dir);
                             self.poll.note_read(root, stamp);
+                            self.poll.note_entries(root, entries_key);
                             // 트리가 이 폴더의 하위 목록을 캐시해 두었으면 같은 결과로 바꾼다.
                             if let Some(children) = self.tree_children.get_mut(root) {
                                 *children = tree_dirs(entries.iter().filter(|e| e.is_dir).cloned());
@@ -226,7 +231,7 @@ impl ExplorerView {
         for (path, result) in ready {
             self.tree_queries.remove(&path);
             match result {
-                Ok(StampedListing { stamp, entries }) => {
+                Ok(StampedListing { stamp, entries, .. }) => {
                     self.poll.note_read(&path, stamp);
                     let children = tree_dirs(entries.into_iter().filter(|entry| entry.is_dir));
                     self.tree_children.insert(path, children);

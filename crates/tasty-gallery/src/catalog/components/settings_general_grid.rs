@@ -1,5 +1,5 @@
 //! General › General 의 행 격자 예제. 라벨 열은 가장 긴 라벨을 150 … 240 으로 clamp 한 폭이고,
-//! 휠 거리·언어 행은 자기 행 아래 caption 을, 웹훅 외부 수신 행은 경고 callout 을 가진다.
+//! 탐색기 파일 정보·휠 거리·언어 행은 자기 행 아래 caption 을, 웹훅 외부 수신 행은 경고 callout 을 가진다.
 //! 실제 설정 저장은 하지 않는다.
 
 use std::cell::RefCell;
@@ -19,6 +19,9 @@ const WIDTH: LogicalPx = LogicalPx(640.0);
 fn wheel_caption() -> &'static str {
     crate::i18n::t("settings.general.wheel_line_scroll_desc")
 }
+fn explorer_details_caption() -> &'static str {
+    crate::i18n::t("settings.general.explorer_refresh_file_details_desc")
+}
 fn language_caption() -> &'static str {
     crate::i18n::t("settings.general.language_restart_notice")
 }
@@ -29,6 +32,7 @@ fn notice() -> &'static str {
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State {
         restore: true,
+        explorer_details: false,
         close: 0,
         wheel: "50".to_owned(),
         language: 0,
@@ -38,6 +42,7 @@ thread_local! {
 
 struct State {
     restore: bool,
+    explorer_details: bool,
     close: usize,
     wheel: String,
     language: usize,
@@ -56,6 +61,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 };
                 let rows = [
                     SettingsRow::new("Restore layout:"),
+                    SettingsRow::new(crate::i18n::t(
+                        "settings.general.explorer_refresh_file_details_label",
+                    ))
+                    .caption(explorer_details_caption()),
                     SettingsRow::new("Close behavior:"),
                     SettingsRow::new(crate::i18n::t("settings.general.wheel_line_scroll_label"))
                         .caption(wheel_caption()),
@@ -66,11 +75,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .warning(notice(), &alert),
                 ];
                 let col = settings_label_column(ui, theme, &rows);
-                let [restore, close, wheel, language, webhook] = rows;
+                let [restore, explorer_details, close, wheel, language, webhook] = rows;
                 STATE.with(|s| {
                     let st = &mut *s.borrow_mut();
                     restore.show(ui, theme, col, |ui| {
                         switch(ui, theme, &mut st.restore, None, true);
+                    });
+                    explorer_details.show(ui, theme, col, |ui| {
+                        switch(ui, theme, &mut st.explorer_details, None, true);
                     });
                     close.show(ui, theme, col, |ui| {
                         select(
@@ -137,6 +149,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "same slot as a caption · warning · alertTriangle 16 · always visible · measure-md",
             ),
             ("placement", "webhook row last (after Language)"),
+            (
+                "explorer file details",
+                "[general] explorer_refresh_file_details · switch + caption (cost trade-off) · default off",
+            ),
             (
                 "setting",
                 "[webhook] allow_external · default off · Save / Cancel · from next start",

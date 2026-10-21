@@ -17,7 +17,7 @@ pub(crate) use file_info::{
     PREVIEW_MAX_BYTES, PreviewData, PropertiesFacts, TooLarge, decodable_image_ext,
 };
 mod dir_stamp;
-pub(crate) use dir_stamp::{DirStamp, StampedListing};
+pub(crate) use dir_stamp::{DirStamp, StampCheck, StampedListing};
 mod search;
 pub(crate) use search::{SEARCH_MAX_HITS, SearchEvent, SearchQuery, relative_folder, search};
 
@@ -70,7 +70,11 @@ impl ReadRequests {
 enum Request {
     Directory(PathBuf, mpsc::SyncSender<io::Result<Vec<DirEntryInfo>>>),
     StampedDirectory(PathBuf, mpsc::SyncSender<io::Result<StampedListing>>),
-    DirStamps(Vec<PathBuf>, mpsc::SyncSender<io::Result<DirStamps>>),
+    DirStamps(
+        Vec<PathBuf>,
+        Option<PathBuf>,
+        mpsc::SyncSender<io::Result<StampCheck>>,
+    ),
     Git(PathBuf, mpsc::SyncSender<io::Result<Option<HeadState>>>),
     Script(PathBuf, mpsc::SyncSender<io::Result<ScriptSource>>),
     Preview(PathBuf, u32, mpsc::SyncSender<io::Result<PreviewData>>),
@@ -104,7 +108,11 @@ impl Request {
                     crate::core::fs_list::read_dir_entries(dir).map_err(|e| missing(dir, e))
                 }))
                 .is_ok(),
-            Self::DirStamps(dirs, sender) => sender.send(Ok(dir_stamp::read_stamps(dirs))).is_ok(),
+            Self::DirStamps(dirs, entries_of, sender) => sender
+                .send(Ok(dir_stamp::read_check(dirs, entries_of, |dir| {
+                    crate::core::fs_list::read_dir_entries(dir)
+                })))
+                .is_ok(),
             Self::Git(path, sender) => sender.send(Ok(git_branch(&path))).is_ok(),
             Self::Preview(path, fit_width, sender) => sender
                 .send(file_info::read_preview(&path, fit_width))
@@ -176,11 +184,21 @@ pub(crate) fn directory(path: PathBuf) -> Query<Vec<DirEntryInfo>> {
 pub(crate) fn stamped_directory(path: PathBuf) -> Query<StampedListing> {
     Query::new(|sender| Request::StampedDirectory(path, sender))
 }
-/// 폴더 표지만 읽는다. 항목은 읽지 않는다.
-pub(crate) fn dir_stamps(dirs: Vec<PathBuf>) -> Query<DirStamps> {
-    Query::new(|sender| Request::DirStamps(dirs, sender))
+/// 폴더 표지를 읽는다. `entries_of` 가 있으면 그 폴더의 항목 서명도 읽는다(파일 정보 확인).
+pub(crate) fn dir_stamps(dirs: Vec<PathBuf>, entries_of: Option<PathBuf>) -> Query<StampCheck> {
+    Query::new(|sender| Request::DirStamps(dirs, entries_of, sender))
 }
 pub(crate) type DirStamps = Vec<(PathBuf, Option<DirStamp>)>;
+#[cfg(test)]
+impl Query<StampCheck> {
+    /// worker 에 넘기기 전의 확인 대상 폴더.
+    pub(crate) fn dirs_for_test(&self) -> Vec<PathBuf> {
+        match &self.request {
+            Some(Request::DirStamps(dirs, _, _)) => dirs.clone(),
+            _ => panic!("not a pending folder check"),
+        }
+    }
+}
 pub(crate) fn writable(path: PathBuf) -> Query<bool> {
     Query::new(|sender| Request::Writable(path, sender))
 }

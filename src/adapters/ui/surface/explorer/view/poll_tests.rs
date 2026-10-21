@@ -1,6 +1,6 @@
 use super::*;
 use crate::app::local_reads::LocalReads;
-use tasty_model::ExplorerPanel;
+use tasty_model::{ExplorerPanel, SortColumn, SortDir};
 
 /// `done` 이 참이 될 때까지 worker 를 돌린다. 끝난 job 을 거둬 동시 실행 상한에 막히지 않게 한다.
 fn run_until(
@@ -385,4 +385,220 @@ fn tree_names(view: &ExplorerView, dir: &Path) -> Vec<String> {
         .iter()
         .map(|e| e.name.clone())
         .collect()
+}
+
+/// 현재 폴더와 `n` 개의 펼친 트리 폴더(하위 목록을 읽어 둔 상태)를 가진 칸. 파일시스템은 읽지 않는다.
+fn view_with_tree(n: usize) -> (ExplorerView, PathBuf, Vec<PathBuf>) {
+    let root = PathBuf::from("/tmp/tasty-poll-cap");
+    let mut view = ExplorerView::new();
+    view.loaded = Some((root.clone(), SortColumn::Name, SortDir::Asc));
+    let dirs: Vec<PathBuf> = (0..n).map(|i| root.join(format!("d{i:03}"))).collect();
+    for dir in &dirs {
+        view.expanded.insert(dir.clone());
+        view.tree_children.insert(dir.clone(), Vec::new());
+    }
+    (view, root, dirs)
+}
+
+/// 시작한 확인의 대상 목록을 꺼내고 확인을 비운다.
+fn take_targets(view: &mut ExplorerView) -> Vec<PathBuf> {
+    let query = view.poll.check.take().expect("a check started");
+    query.dirs_for_test()
+}
+
+#[test]
+fn a_round_reads_at_most_the_cap_with_the_current_folder_first() {
+    let (mut view, root, dirs) = view_with_tree(MAX_POLL_TARGETS * 3);
+    let t0 = Instant::now();
+    view.poll.focused = true;
+    assert!(view.start_check(t0));
+    let first = take_targets(&mut view);
+    assert_eq!(
+        first.len(),
+        MAX_POLL_TARGETS,
+        "한 회차의 표지 읽기 수는 상한을 넘지 않는다"
+    );
+    assert_eq!(first[0], root, "현재 폴더를 먼저 넣는다");
+    assert_eq!(
+        first[1..],
+        dirs[..MAX_POLL_TARGETS - 1],
+        "처음에는 경로 순이다"
+    );
+}
+
+/// 트리 폴더 `n` 개를 여러 바퀴 돌린다. 매 회차 현재 폴더가 먼저이고, ⌈n / 31⌉ 회차 안에 모두 한 번씩
+/// 확인되며, 어느 회차가 끝나도 폴더별 확인 횟수의 차이가 한 번을 넘지 않는다.
+fn assert_fair_rotation(n: usize) {
+    let (mut view, root, dirs) = view_with_tree(n);
+    let per_round = MAX_POLL_TARGETS - 1;
+    let rounds = n.div_ceil(per_round);
+    let mut seen: std::collections::HashMap<PathBuf, usize> =
+        dirs.iter().map(|d| (d.clone(), 0)).collect();
+    let t0 = Instant::now();
+    for round in 0..rounds * 4 {
+        assert!(view.start_check(t0 + EXTERNAL_POLL_INTERVAL * round as u32));
+        let targets = take_targets(&mut view);
+        assert!(targets.len() <= MAX_POLL_TARGETS);
+        assert_eq!(targets[0], root, "현재 폴더는 매 회차 확인한다");
+        for dir in &targets[1..] {
+            *seen.get_mut(dir).expect("a tree folder") += 1;
+        }
+        if round + 1 == rounds {
+            assert!(
+                seen.values().all(|&c| c >= 1),
+                "n={n}: {rounds} 회차 안에 모든 트리 폴더를 한 번씩 확인한다"
+            );
+        }
+        let max = seen.values().max().unwrap();
+        let min = seen.values().min().unwrap();
+        if round + 1 >= rounds {
+            assert!(
+                max - min <= 1,
+                "n={n} round={round}: 경로가 앞선 폴더만 자주 확인하지 않는다 ({min}..{max})"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_expanded_folder_is_checked_within_a_bounded_number_of_rounds() {
+    // 상한을 조금 넘는 수(실제 실행과 같은 40), 상한의 배수 근처, 큰 수.
+    for n in [
+        MAX_POLL_TARGETS,
+        40,
+        MAX_POLL_TARGETS * 2,
+        MAX_POLL_TARGETS * 3 + 5,
+        300,
+    ] {
+        assert_fair_rotation(n);
+    }
+}
+
+#[test]
+fn a_folder_read_just_now_goes_to_the_back_and_new_folders_join_the_rotation() {
+    let (mut view, _root, dirs) = view_with_tree(MAX_POLL_TARGETS * 2);
+    let t0 = Instant::now();
+    assert!(view.start_check(t0));
+    take_targets(&mut view);
+    // 아직 확인하지 않은 폴더 하나를 방금 읽었다(트리 읽기 결과). 순서의 뒤로 간다.
+    let fresh = dirs[MAX_POLL_TARGETS].clone();
+    view.poll.note_read(&fresh, None);
+    // 새로 펼친 폴더는 확인한 적이 없으므로 먼저 들어간다.
+    let added = PathBuf::from("/tmp/tasty-poll-cap/a-new");
+    view.expanded.insert(added.clone());
+    view.tree_children.insert(added.clone(), Vec::new());
+    assert!(view.start_check(t0 + EXTERNAL_POLL_INTERVAL));
+    let second = take_targets(&mut view);
+    assert_eq!(second[1], added);
+    assert!(
+        !second.contains(&fresh),
+        "방금 읽은 폴더는 이번 회차에 다시 넣지 않는다"
+    );
+    assert!(second.contains(&dirs[MAX_POLL_TARGETS + 1]));
+}
+
+#[test]
+fn folders_left_out_of_a_round_keep_their_baseline_so_a_later_round_still_sees_the_change() {
+    let (mut view, _root, dirs) = view_with_tree(MAX_POLL_TARGETS * 2);
+    let late = dirs.last().expect("dir").clone();
+    view.poll.note_read(&late, None);
+    assert!(view.start_check(Instant::now()));
+    let targets = take_targets(&mut view);
+    assert!(!targets.contains(&late));
+    assert!(
+        view.poll.baseline.contains_key(&late),
+        "이번 회차에 넣지 않은 폴더의 기준 표지도 남긴다"
+    );
+    view.expanded.remove(&late);
+    view.poll.check = None;
+    assert!(view.start_check(Instant::now()));
+    assert!(
+        !view.poll.baseline.contains_key(&late) && !view.poll.checked_seq.contains_key(&late),
+        "접은 폴더의 기록은 지운다"
+    );
+}
+
+/// 확인이 도는 동안 포커스를 잃거나 칸이 닫혀도 worker 가 남지 않고, 결과는 다음 확인을 막지 않는다.
+#[test]
+fn a_check_in_flight_survives_a_tab_switch_and_a_closed_view_leaks_no_worker() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let panel = ExplorerPanel::new(1, dir.path().into());
+    let mut store = ExplorerViewStore::default();
+    let mut owner = LocalReads::default();
+    let t0 = Instant::now();
+    frame(&mut store, &panel, false, t0);
+    settle(store.get_mut(1).expect("view"), &panel, &mut owner);
+    frame(&mut store, &panel, true, t0);
+    assert!(store.get(1).expect("view").poll.check.is_some());
+    // 다른 탭으로 옮겨도 걸린 확인은 끝까지 거둔다.
+    frame(&mut store, &panel, false, t0);
+    finish_check(store.get_mut(1).expect("view"), &mut owner);
+    frame(&mut store, &panel, true, t0 + EXTERNAL_POLL_INTERVAL);
+    assert!(
+        store.get(1).expect("view").poll.check.is_some(),
+        "늦게 온 결과가 다음 확인을 막지 않는다"
+    );
+    // 확인을 worker 에 넘긴 뒤 칸을 닫는다. 결과를 받을 쪽이 사라져도 job 은 끝나고 거둬진다.
+    owner.drive(|requests| {
+        store.get_mut(1).expect("view").poll_local_reads(requests);
+        true
+    });
+    store.views.remove(&1);
+    let started = Instant::now();
+    while owner.poll_shutdown() != 0 {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "worker 가 남았다"
+        );
+        std::thread::yield_now();
+    }
+}
+
+/// 설정을 끄면 파일 내용만 바뀐 변경은 다시 읽지 않고, 켜면 다음 회차에 보이던 목록을 둔 채 다시 읽어
+/// 크기·수정 시각과 content key 가 새 값이 된다. 선택은 그대로다.
+#[test]
+fn file_details_are_compared_only_when_the_setting_is_on() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let file = dir.path().join("note.txt");
+    std::fs::write(&file, b"x").expect("write");
+    let panel = ExplorerPanel::new(1, dir.path().into());
+    let mut view = ExplorerView::new();
+    let mut owner = LocalReads::default();
+    settle(&mut view, &panel, &mut owner);
+    view.select_only(&file);
+    let before = view.entries[0].content_key();
+
+    std::thread::sleep(Duration::from_millis(20));
+    std::fs::write(&file, b"longer text").expect("rewrite");
+    view.poll_external(true, Instant::now());
+    finish_check(&mut view, &mut owner);
+    assert!(
+        view.local_query.is_none(),
+        "꺼져 있으면 폴더 표지만 비교한다"
+    );
+    assert_eq!(view.entries[0].size, 1);
+
+    view.set_file_details_check(true);
+    view.poll.check = None;
+    assert!(view.start_check(Instant::now()));
+    finish_check(&mut view, &mut owner);
+    assert!(
+        view.local_query.is_some(),
+        "켜면 바뀐 파일 정보로 다시 읽는다"
+    );
+    settle(&mut view, &panel, &mut owner);
+    assert_eq!(view.entries[0].size, 11);
+    assert_ne!(
+        view.entries[0].content_key(),
+        before,
+        "미리보기·썸네일 캐시 키가 바뀐다"
+    );
+    assert!(view.selected.contains(&file), "선택은 그대로다");
+
+    // 다시 읽은 목록이 새 기준이므로 그대로면 다시 읽지 않는다.
+    view.poll.check = None;
+    assert!(view.start_check(Instant::now()));
+    finish_check(&mut view, &mut owner);
+    assert!(view.local_query.is_none());
+    shutdown(owner);
 }

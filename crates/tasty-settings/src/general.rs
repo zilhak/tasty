@@ -185,6 +185,10 @@ pub struct GeneralSettings {
     /// surface·내부 탭의 기본 표시 형태로 쓰인다. 알 수 없는 값은
     /// `ExplorerViewMode::from_str` 이 detail 로 fallback (normalize 도 detail 로 교정).
     pub explorer_view_mode: String,
+    /// Explorer 의 외부 변경 확인이 현재 폴더 항목의 metadata(내용·크기·수정 시각)까지 비교한다.
+    /// 켜면 확인할 때마다 현재 폴더 항목 수만큼 metadata 를 읽는다. 기본값은 꺼짐이며, 꺼도 폴더 목록
+    /// 변화(항목 생성·삭제·이름 변경) 확인은 그대로다.
+    pub explorer_refresh_file_details: bool,
     /// macOS Option+문자를 특수문자 대신 ESC와 기본 문자로 보내 Meta 키로 사용한다. 기본값은 꺼짐이다.
     #[cfg(target_os = "macos")]
     pub option_as_meta: bool,
@@ -255,6 +259,7 @@ impl Default for GeneralSettings {
             workspace_categories_enabled: false,
             workspace_switch_crosses_category: false,
             explorer_view_mode: "detail".to_string(),
+            explorer_refresh_file_details: false,
             #[cfg(target_os = "macos")]
             option_as_meta: false,
             alt_display_style: "alt".to_string(),
@@ -991,6 +996,17 @@ mod tests {
         let out = toml::to_string(&g).unwrap();
         let g2: GeneralSettings = toml::from_str(&out).unwrap();
         assert!(!g2.bell_notification);
+    }
+
+    #[test]
+    fn explorer_refresh_file_details_defaults_off_and_round_trips() {
+        assert!(!GeneralSettings::default().explorer_refresh_file_details);
+        let g: GeneralSettings = toml::from_str("").unwrap();
+        assert!(!g.explorer_refresh_file_details, "키가 없으면 꺼짐");
+        let g: GeneralSettings = toml::from_str("explorer_refresh_file_details = true").unwrap();
+        assert!(g.explorer_refresh_file_details);
+        let g2: GeneralSettings = toml::from_str(&toml::to_string(&g).unwrap()).unwrap();
+        assert!(g2.explorer_refresh_file_details);
     }
 
     #[test]

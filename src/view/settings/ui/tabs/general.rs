@@ -27,6 +27,8 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
         SettingsRow::new(t(
             "settings.general.workspace_switch_crosses_category_label",
         )),
+        SettingsRow::new(t("settings.general.explorer_refresh_file_details_label"))
+            .caption(t("settings.general.explorer_refresh_file_details_desc")),
         SettingsRow::new(t("settings.general.wheel_line_scroll_label"))
             .caption(t("settings.general.wheel_line_scroll_desc")),
         SettingsRow::new(t("settings.general.close_behavior_label")),
@@ -41,6 +43,7 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
         restore_content,
         categories,
         crosses_category,
+        explorer_details,
         wheel_row,
         close_behavior,
         language,
@@ -74,6 +77,15 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
             ui,
             &th,
             &mut settings.general.workspace_switch_crosses_category,
+            None,
+            true,
+        );
+    });
+    explorer_details.show(ui, &th, col, |ui| {
+        tasty_ui_widgets::switch(
+            ui,
+            &th,
+            &mut settings.general.explorer_refresh_file_details,
             None,
             true,
         );
@@ -228,5 +240,49 @@ mod tests {
             t("settings.general.close_behavior_ask"),
         );
         assert_eq!(settings.general.close_behavior, "ask");
+    }
+
+    /// 탐색기 파일 정보 자동 갱신은 기본 꺼짐이고, 행의 스위치로 켜고 끈다. caption 이 비용을 설명한다.
+    #[test]
+    fn the_explorer_file_details_switch_is_off_by_default_and_toggles() {
+        let ctx = egui::Context::default();
+        let mut settings = Settings::default();
+        assert!(!settings.general.explorer_refresh_file_details);
+        let out = probe::frame(&ctx, &mut draw(&mut settings));
+        let label = *probe::text_rects(
+            &out,
+            t("settings.general.explorer_refresh_file_details_label"),
+        )
+        .first()
+        .expect("label drawn");
+        // 스위치는 같은 행 오른쪽, 라벨 열 뒤에 있다. 행 높이 가운데를 오른쪽으로 훑어 누른다.
+        let mut x = label.right();
+        while !settings.general.explorer_refresh_file_details && x < probe::SCREEN.right() {
+            probe::click(
+                &ctx,
+                egui::pos2(x, label.center().y),
+                &mut draw(&mut settings),
+            );
+            x += 4.0;
+        }
+        assert!(
+            settings.general.explorer_refresh_file_details,
+            "스위치로 켠다"
+        );
+        probe::click(
+            &ctx,
+            egui::pos2(x - 4.0, label.center().y),
+            &mut draw(&mut settings),
+        );
+        assert!(
+            !settings.general.explorer_refresh_file_details,
+            "다시 누르면 끈다"
+        );
+        assert!(
+            settings.general.workspace_switch_crosses_category
+                == Settings::default()
+                    .general
+                    .workspace_switch_crosses_category
+        );
     }
 }
