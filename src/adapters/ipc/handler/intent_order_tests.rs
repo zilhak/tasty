@@ -277,6 +277,8 @@ fn a_notify_cap_precedes_the_approval_popup_fired_by_a_telemetry_record() {
         &CallerContext::local(),
     );
     assert!(resp.error.is_none(), "{:?}", resp.error);
+    // 기록 응답 뒤 cap 액션은 메인 루프가 회차마다 실행하는 후속 처리다.
+    super::telemetry_follow_up::run(&mut core, &mut state, &mut engine);
 
     #[cfg(feature = "gui")]
     let expected = [
@@ -329,6 +331,7 @@ fn intents_in_one_outbox_arrive_in_the_order_they_were_pushed() {
         &CallerContext::local(),
     );
     assert!(resp.error.is_none(), "{:?}", resp.error);
+    super::telemetry_follow_up::run(&mut core, &mut state, &mut engine);
 
     let titles: Vec<&str> = state
         .pending_intents

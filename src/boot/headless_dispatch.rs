@@ -4,7 +4,7 @@
 #![cfg(not(feature = "gui"))]
 
 use crate::app::App;
-use crate::ipc::caller::resolve_caller_from_envelope;
+use crate::ipc::handler::gate::{self, GateProgress, Step};
 use crate::ipc::server::send_response;
 use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
@@ -15,13 +15,27 @@ pub(crate) fn pump_ipc(
     state: &mut RequestContext,
     session: &mut crate::runtime::engine_session::EngineSession,
 ) -> std::ops::ControlFlow<()> {
+    if advance_request_gates(app, state, session).is_break() {
+        return std::ops::ControlFlow::Break(());
+    }
     let mut round = crate::app::ipc_round::IpcRound::begin();
     while let Some(cmd) = round.next(app.hub.ipc_server.as_deref()) {
+        // 게이트 결과를 기다리는 요청이 있으면 접수 순서를 지키도록 그 뒤에 선다.
+        if !app.gate_queue.is_empty() {
+            app.gate_queue.park(
+                crate::app::request_gate::Gated::Ipc {
+                    cmd,
+                    progress: Default::default(),
+                },
+                false,
+            );
+            continue;
+        }
         // Closes admitted on any path so far must not be republished by a plugin start here.
         sync_closing_surfaces(app, session);
         let observed =
             crate::app::ipc_round::CommandObservation::begin(app.services.pressure(), &cmd);
-        let flow = dispatch_command(app, state, session, cmd);
+        let flow = dispatch_command(app, state, session, cmd, Default::default(), false);
         app.services.expect_no_parked_reply();
         observed.finish(app.services.slow_requests());
         if flow.is_break() {
@@ -31,6 +45,40 @@ pub(crate) fn pump_ipc(
     }
     // 남은 명령을 보고 다시 깨우는 일은 호출자가 맡는다.
     round.finish(app.services.pressure(), app.services.dispatch());
+    std::ops::ControlFlow::Continue(())
+}
+
+/// 맨 앞 요청부터 게이트 결과가 나온 요청을 진행한다. 다시 기다리게 되면 멈춘다.
+pub(crate) fn advance_request_gates(
+    app: &mut App,
+    state: &mut RequestContext,
+    session: &mut crate::runtime::engine_session::EngineSession,
+) -> std::ops::ControlFlow<()> {
+    while let Some(gated) = app.gate_queue.pop_ready(&app.services) {
+        match gated {
+            crate::app::request_gate::Gated::Ipc { cmd, progress } => {
+                sync_closing_surfaces(app, session);
+                let flow = dispatch_command(app, state, session, cmd, progress, true);
+                app.services.expect_no_parked_reply();
+                if flow.is_break() {
+                    return std::ops::ControlFlow::Break(());
+                }
+            }
+            crate::app::request_gate::Gated::Plugin {
+                call,
+                request,
+                progress,
+            } => super::headless_plugins::dispatch_plugin_call(
+                app,
+                state,
+                &mut session.borrow_mut(),
+                call,
+                request,
+                progress,
+                true,
+            ),
+        }
+    }
     std::ops::ControlFlow::Continue(())
 }
 
@@ -48,36 +96,46 @@ fn dispatch_command(
     app: &mut App,
     state: &mut RequestContext,
     session: &mut crate::runtime::engine_session::EngineSession,
-    cmd: crate::ipc::server::IpcCommand,
+    mut cmd: crate::ipc::server::IpcCommand,
+    mut progress: GateProgress,
+    resumed: bool,
 ) -> std::ops::ControlFlow<()> {
     // 큐 대기는 이미 계측했다. 실행 기한이 지났으면 권한·rate limit을 소비하기 전에 응답한다.
-    if !crate::app::ipc_round::claim_or_answer(&cmd, app.services.dispatch()) {
+    if progress.claim_once()
+        && !crate::app::ipc_round::claim_or_answer(&cmd, app.services.dispatch())
+    {
         return std::ops::ControlFlow::Continue(());
     }
-    let caller = match resolve_caller_from_envelope(&app.services, &cmd.request) {
-        Ok(c) => c,
-        Err(resp) => {
+    let caller = match gate::resolve_caller(&app.services, &cmd.request, &mut progress) {
+        Step::Ready(Ok(c)) => c,
+        Step::Ready(Err(resp)) => {
             send_response(&cmd.response_tx, resp);
             return std::ops::ControlFlow::Continue(());
         }
+        Step::Pending => return park(app, cmd, progress, resumed),
     };
     if let Some(response) = app.journal.reject_halted_request(&cmd.request) {
         send_response(&cmd.response_tx, response);
         return std::ops::ControlFlow::Continue(());
     }
+    if let Step::Pending = gate::prepare(&app.services, &mut cmd.request, &caller, &mut progress) {
+        return park(app, cmd, progress, resumed);
+    }
     // App 전용 응답도 공용 검사 뒤에 처리한다. checked 요청은 다시 검사하지 않는다.
-    let checked = match crate::ipc::handler::check_request(
+    let checked = match gate::decide(
         &mut app.services,
         state,
         &mut session.borrow_mut(),
         &cmd.request,
         &caller,
+        &mut progress,
     ) {
-        Ok(checked) => checked,
-        Err(response) => {
+        Step::Ready(Ok(checked)) => checked,
+        Step::Ready(Err(response)) => {
             send_response(&cmd.response_tx, response);
             return std::ops::ControlFlow::Continue(());
         }
+        Step::Pending => return park(app, cmd, progress, resumed),
     };
     if app.preset_capture_on_session(&cmd, &checked, session, &state.navigation) {
         return std::ops::ControlFlow::Continue(());
@@ -143,6 +201,19 @@ fn dispatch_command(
             crate::ipc::handler::ReplyTo::Ipc(cmd.response_tx.clone()),
         ),
     }
+    std::ops::ControlFlow::Continue(())
+}
+
+fn park(
+    app: &mut App,
+    cmd: crate::ipc::server::IpcCommand,
+    progress: GateProgress,
+    resumed: bool,
+) -> std::ops::ControlFlow<()> {
+    app.gate_queue.park(
+        crate::app::request_gate::Gated::Ipc { cmd, progress },
+        resumed,
+    );
     std::ops::ControlFlow::Continue(())
 }
 
@@ -488,7 +559,14 @@ mod namespace_forward_tests {
 
         let (cmd, rx) = command(method, key);
         let seq = cmd.request_seq();
-        let flow = dispatch_command(&mut app, &mut state, &mut session, cmd);
+        let flow = dispatch_command(
+            &mut app,
+            &mut state,
+            &mut session,
+            cmd,
+            Default::default(),
+            false,
+        );
         assert!(flow.is_continue());
         let sent = stub.drain_invokes();
         assert_eq!(
@@ -587,6 +665,8 @@ mod app_layer_reply_tests {
                 &mut state,
                 &mut session,
                 IpcCommand::new(request, tx),
+                Default::default(),
+                false,
             );
             assert!(flow.is_continue());
             app.services.expect_no_parked_reply();

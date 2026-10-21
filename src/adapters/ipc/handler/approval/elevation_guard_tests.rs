@@ -8,7 +8,6 @@ use serde_json::{Value, json};
 use tasty_approval::{ApprovalId, Requester, Severity};
 use tasty_ipc::caller::SessionToken;
 use tasty_ipc::session::SessionStore;
-use tasty_ipc::{IpcHostFacade, SessionResolution};
 use tasty_memory::{MemoryConfig, MemoryStore};
 
 use crate::adapters::ipc::handler::approval::publish_capability_elevation_at;
@@ -47,10 +46,10 @@ fn issue_session(core: &AppServices) -> SessionToken {
 }
 
 fn has_permission(core: &AppServices, token: &SessionToken) -> bool {
-    match IpcHostFacade::session_resolve(core, &token.to_string(), now_ms()) {
-        SessionResolution::Agent { permissions, .. } => permissions.iter().any(|p| p == PERMISSION),
-        _ => panic!("session must resolve to the agent"),
-    }
+    crate::ipc::handler::gate::session_permissions_waiting(core, &token.to_string())
+        .expect("session must resolve to the agent")
+        .iter()
+        .any(|p| p == PERMISSION)
 }
 
 /// 공개 `approval.request`가 그대로 실었을 위조 metadata.

@@ -69,7 +69,7 @@
 //!
 //! ## 진입 검사 거절
 //!
-//! gate_refusals는 check_request에서 판정한 모든 요청을 judged로 센다. Local과 큐를
+//! gate_refusals는 요청 게이트(`gate.rs`)가 판정한 모든 요청을 judged로 센다. Local과 큐를
 //! 거치지 않는 host-call도 포함한다. permission_denied(-32001), cap_blocked(-32007),
 //! throttled(-32010) 순서로 검사하고 첫 거절에서 끝나므로 한 요청이 중복 집계되지 않는다.
 //! permission_denied에는 플러그인·에이전트의 없는 메서드와 허용되지 않은 메서드도 포함한다.

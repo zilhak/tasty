@@ -6,13 +6,10 @@ type Receiver = std::sync::mpsc::Receiver<JsonRpcResponse>;
 
 fn turn(journal: &mut JournalApplication, session: &mut EngineSession) {
     journal.poll_bootstrap(&mut [&mut *session], None).unwrap();
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
     for (ticket, request) in journal.requests_needing_resolution() {
         match request.method.as_str() {
             "workspace.create" => journal.resolve_workspace_creation(ticket, session, None),
-            "surface.respawn_terminal" => {
-                journal.resolve_public_creation(ticket, session, &services)
-            }
+            "surface.respawn_terminal" => journal.resolve_public_creation(ticket, session),
             _ => journal.resolve_ipc_for_engine(ticket, session),
         }
     }

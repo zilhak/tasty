@@ -320,16 +320,33 @@ impl App {
 
     /// 권한·telemetry cap·rate limit을 검사한다. 엔진 선택은 감사 저장소용이며 요청 대상은 바꾸지 않는다.
     /// 통과 객체를 같은 요청의 하위 라우팅에 전달해 검사를 다시 소비하지 않는다.
+    /// writer 결과를 기다리면 `Pending`이며 호출자가 요청과 `progress`를 보관했다가 다시 부른다.
     pub(crate) fn gates_before_routing<'a>(
         &mut self,
         request: &'a ipc::protocol::JsonRpcRequest,
         caller: &'a ipc::caller::CallerContext,
-    ) -> Result<ipc::handler::CheckedRequest<'a>, ipc::protocol::JsonRpcResponse> {
+        progress: &mut ipc::handler::gate::GateProgress,
+    ) -> ipc::handler::gate::Step<
+        Result<ipc::handler::CheckedRequest<'a>, ipc::protocol::JsonRpcResponse>,
+    > {
         let core = &mut self.services;
         if let Some((state, mut engine)) = engines_mut!(self).sessions().next() {
-            return ipc::handler::check_request(core, state, &mut engine, request, caller);
+            return ipc::handler::gate::decide(core, state, &mut engine, request, caller, progress);
         }
-        ipc::handler::check_without_engine(request, caller)
+        ipc::handler::gate::Step::Ready(ipc::handler::check_without_engine(request, caller))
+    }
+
+    /// commit된 telemetry 기록 뒤의 cap 액션·RSS 탐지를 첫 engine 문맥으로 실행한다.
+    pub(crate) fn run_telemetry_follow_ups(&mut self) {
+        if self.services.telemetry_follow_ups().is_empty() {
+            return;
+        }
+        let core = &mut self.services;
+        if let Some((state, mut engine)) = engines_mut!(self).sessions().next() {
+            ipc::handler::telemetry_follow_up::run(core, state, &mut engine);
+            return;
+        }
+        ipc::handler::telemetry_follow_up::discard(core);
     }
 
     /// 대상을 지정했으면 소유 창·parked engine을 찾고 없으면 오류를 반환한다.

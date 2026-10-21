@@ -13,13 +13,13 @@
 | `crates/tasty-plugin-manifest/src/types.rs::Permission` | 권한 enum + 토큰 매핑(`from_token`/`as_token`). 새 토큰은 여기 |
 | `crates/tasty-ipc/src/method_meta.rs::method_meta` | IPC 메서드 → 필요 권한 / plugin 호출 가능 여부 (기준 표) |
 | `crates/tasty-ipc/src/caller.rs::CallerContext` | 호출자 종류 (Local / Internal / Plugin / Agent) + `ensure_allowed` |
-| `src/adapters/ipc/handler/checked.rs::check_request` | 라우터 진입에서 `ensure_allowed` + capability elevation 자동 발행 + audit |
+| `src/adapters/ipc/handler/gate.rs::decide` | 라우터 진입에서 `ensure_allowed` + capability elevation 자동 발행 + audit |
 | `crates/tasty-host-plugin/src/manager.rs::plugin_permissions` | plugin id → `Arc<HashSet<Permission>>` 캐시 |
 | `crates/tasty-host-plugin/src/registry_state.rs` | `plugins.toml` 의 grant 영속화 |
 
 ## 요청 진입 검사
 
-GUI·헤드리스의 외부 IPC와 plugin host-call은 check_request에서 권한→cap→rate-limit을 한 번 검사한다.
+GUI·헤드리스의 외부 IPC와 plugin host-call은 요청 게이트(`handler/gate.rs`)에서 권한→cap→rate-limit을 한 번 검사한다.
 통과한 요청의 telemetry와 Allow audit 호출도 한 번 수행하되 Allow는 보존 정책상 디스크에 남지 않는다.
 private CheckedRequest가 요청·caller와 함께 검사 완료를 전달하고 wire checked 플래그나 Local 변환으로 우회하지 않는다.
 alias는 canonical 이름으로 판정·집계한다.

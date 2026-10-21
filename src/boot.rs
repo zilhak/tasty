@@ -937,7 +937,20 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
         app.services.poll_memory_writer();
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());
+        if !app.journal.pauses_observation() && !app.gate_queue.is_empty() {
+            // 게이트 결과를 기다리던 요청을 이어 간다. 정지된 journal은 진입 경로가 거절한다.
+            let flow = headless_dispatch::advance_request_gates(&mut app, &mut state, &mut session);
+            engine = session.borrow_mut();
+            if flow.is_break() {
+                break;
+            }
+        }
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
+            crate::ipc::handler::telemetry_follow_up::run(
+                &mut app.services,
+                &mut state,
+                &mut engine,
+            );
             // The service applies/logs results; headless has no popup to receive display updates.
             let _ = app.services.profile_detections.poll();
             engine.poll_attach_subscriptions();
@@ -1054,6 +1067,8 @@ fn finish_headless_shutdown(
     app: &mut crate::app::App,
     session: &mut crate::runtime::engine_session::EngineSession,
 ) {
+    // 게이트 결과를 기다리던 요청은 실행하지 않고 종료 오류로 답한다.
+    app.gate_queue.reject_all(app.plugin_manager.as_mut());
     drain_headless_publication(app, session);
     app.journal.begin_process_shutdown();
     // Begin stop now; the loop below observes this same retained receipt until its deadline.

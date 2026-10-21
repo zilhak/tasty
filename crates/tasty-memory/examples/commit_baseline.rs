@@ -3,7 +3,8 @@
 //! 호스트처럼 `Arc<Mutex<MemoryStore>>`를 공유하고 같은 payload로 단일 요청, 100개 burst,
 //! 연속 유입, 느린 저장 대조군, 100건을 transaction 하나로 묶는 batch·실행 단위를 실행한다.
 //! 같은 burst·유입·느린 저장 대조군을 memory writer에 넣는 시나리오도 수집 창(`max_delay`)별로
-//! 실행한다. 결과는 시나리오마다 JSON 한 줄로 출력 파일에 쓴다.
+//! 실행한다. 요청 게이트처럼 결과를 기다리지 않고 회차마다 확인하는 대리 루프(`gate_inflow`)도
+//! 같은 유입에서 잰다. 결과는 시나리오마다 JSON 한 줄로 출력 파일에 쓴다.
 //! 실행법과 결과 해석은 docs/design/systems/storage.md의 "저장 기준선" 절에 있다.
 //!
 //! 사용: `cargo run --release -p tasty-memory --example commit_baseline -- <빈 디렉터리> <결과.jsonl>`
@@ -500,9 +501,10 @@ fn writer_scenarios(dir: &Path, out: &mut Out) {
         };
         for delay in WRITER_DELAYS {
             let ms = delay.as_millis();
-            for name in ["burst100_concurrent", "inflow"] {
+            for name in ["burst100_concurrent", "inflow", "gate_inflow"] {
                 let body = |h: &_, s: &_| match name {
                     "inflow" => writer::inflow(h, s, &format!("winflow{ms}")),
+                    "gate_inflow" => writer::gate_inflow(h, &format!("wgate{ms}")),
                     _ => writer::burst_concurrent(h, &format!("wburst{ms}")),
                 };
                 let c0 = lat.snapshot();

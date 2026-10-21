@@ -6,34 +6,70 @@ use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::{build_event, evaluate_caps_after_record, now_ms, persist_event, record_rss_sample};
+use super::{TriggeredCap, build_event, now_ms, put_event, reserve_event_key, trigger_caps_in};
+use crate::adapters::ipc::handler::telemetry_follow_up::{FollowUp, RssSample};
 
-/// Agent가 보고한 RSS 이벤트를 이상 탐지에 전달한다. Plugin의 RSS는 호스트가 직접 측정한다.
-fn detect_rss_self_report(
+/// Agent가 보고한 RSS 이벤트는 이상 탐지에 넘긴다. Plugin의 RSS는 호스트가 직접 측정한다.
+fn rss_self_report(ev: &tasty_telemetry::TelemetryEvent) -> Option<RssSample> {
+    (ev.metric == tasty_telemetry::RSS_METRIC_NAME).then(|| RssSample {
+        agent: ev.agent.clone(),
+        bytes: ev.value.max(0.0) as u64,
+        ts: ev.ts,
+    })
+}
+
+/// 이벤트를 저장하고 상한을 재평가한다. 저장소 오류가 아닌 기록 거절은 그 이벤트에서 멈추고, 앞서
+/// 저장한 이벤트는 남는다(하나씩 저장하던 때와 같다). cap 액션과 RSS 탐지는 commit 뒤 메인 루프가
+/// 실행한다.
+fn store_events(
     core: &AppServices,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
-    out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    ev: &tasty_telemetry::TelemetryEvent,
-) {
-    if ev.metric != tasty_telemetry::RSS_METRIC_NAME {
-        return;
-    }
-    record_rss_sample(
-        core,
-        window,
-        out,
-        engine,
-        &ev.agent,
-        ev.value.max(0.0) as u64,
-        ev.ts,
-    );
+    id: Value,
+    events: Vec<(tasty_telemetry::TelemetryEvent, String)>,
+    respond: impl FnOnce(&AppServices, Value, Vec<String>) -> JsonRpcResponse + Send + 'static,
+) -> JsonRpcResponse {
+    let bytes = events
+        .iter()
+        .map(|(ev, key)| key.len() + ev.metric.len() + ev.agent.len())
+        .sum();
+    let rss: Vec<Option<RssSample>> = events.iter().map(|(ev, _)| rss_self_report(ev)).collect();
+    core.reply_unit(
+        id,
+        bytes,
+        move |s| {
+            let mut keys = Vec::with_capacity(events.len());
+            let mut triggered: Vec<Vec<TriggeredCap>> = Vec::with_capacity(events.len());
+            let mut warnings = Vec::new();
+            for (ev, key) in &events {
+                if let Err(e) = put_event(s, ev, key) {
+                    return Ok(Err(e));
+                }
+                keys.push(key.clone());
+            }
+            for (ev, _) in &events {
+                triggered.push(trigger_caps_in(s, ev, &mut warnings));
+            }
+            Ok(Ok((keys, triggered, warnings)))
+        },
+        move |core, id, result| match result {
+            Ok(Ok((keys, triggered, warnings))) => {
+                for warning in warnings {
+                    tracing::warn!("{warning}");
+                }
+                for (triggered, rss) in triggered.into_iter().zip(rss) {
+                    core.telemetry_follow_ups()
+                        .push(FollowUp { triggered, rss });
+                }
+                respond(core, id, keys)
+            }
+            Ok(Err(e)) => JsonRpcResponse::error(id, -32603, e),
+            Err(e) => crate::adapters::ipc::handler::memory::map_error_ref(id, e),
+        },
+    )
 }
 
 pub fn handle_record(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     caller: &CallerContext,
     id: Value,
@@ -48,22 +84,16 @@ pub fn handle_record(
         Ok(ev) => ev,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    let response = match persist_event(core, &ev) {
-        Ok(key) => crate::adapters::ipc::handler::memory::written(
-            core,
-            id,
-            json!({
-                "key": key,
-                "ts": ev.ts,
-                "agent": ev.agent,
-                "metric": ev.metric,
-            }),
-        ),
-        Err(e) => return JsonRpcResponse::error(id, -32603, e),
-    };
-    evaluate_caps_after_record(core, window, out, engine, &ev);
-    detect_rss_self_report(core, window, out, engine, &ev);
-    response
+    let key = reserve_event_key(core, &ev);
+    let body = json!({
+        "key": key,
+        "ts": ev.ts,
+        "agent": ev.agent,
+        "metric": ev.metric,
+    });
+    store_events(core, id, vec![(ev, key)], move |core, id, _keys| {
+        crate::adapters::ipc::handler::memory::written(core, id, body)
+    })
 }
 
 /// `telemetry.record_batch` — 여러 이벤트를 한 번에 기록.
@@ -73,7 +103,6 @@ pub fn handle_record(
 pub fn handle_record_batch(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     caller: &CallerContext,
     id: Value,
@@ -100,23 +129,21 @@ pub fn handle_record_batch(
             }
         }
     }
-    let mut keys = Vec::with_capacity(events.len());
-    for ev in &events {
-        match persist_event(core, ev) {
-            Ok(k) => keys.push(k),
-            Err(e) => return JsonRpcResponse::error(id, -32603, e),
-        }
-    }
-    for ev in &events {
-        evaluate_caps_after_record(core, window, out, engine, ev);
-        detect_rss_self_report(core, window, out, engine, ev);
-    }
-    crate::adapters::ipc::handler::memory::written(
-        core,
-        id,
-        json!({
-            "recorded": keys.len(),
-            "keys": keys,
-        }),
-    )
+    let events = events
+        .into_iter()
+        .map(|ev| {
+            let key = reserve_event_key(core, &ev);
+            (ev, key)
+        })
+        .collect();
+    store_events(core, id, events, |core, id, keys| {
+        crate::adapters::ipc::handler::memory::written(
+            core,
+            id,
+            json!({
+                "recorded": keys.len(),
+                "keys": keys,
+            }),
+        )
+    })
 }

@@ -261,51 +261,60 @@ fn check_permissions(
     Ok(())
 }
 
+/// 봉투가 정한 호출자. 세션 토큰이 있으면 세션 저장소에서 판정해야 한다.
+pub enum EnvelopeCaller<'r> {
+    /// 토큰이 없다. 봉투의 `caller_agent_id`는 표시용으로만 쓴다.
+    Local(CallerContext),
+    /// 형식이 맞는 토큰. [`caller_from_session`]에 판정 결과를 넘긴다.
+    Session(&'r str),
+}
+
 /// envelope 의 `session_token` 필드를 보고 caller 를 결정한다.
 ///
 /// - `session_token` 가 None → `CallerContext::Local`
 /// - 형식이 잘못된 토큰(64-char hex 아님) → `Err(deny)`
-/// - 유효 형식이지만 store 에 없음/만료/revoked → `Err(deny)` (Local fallback 금지)
-/// - 유효 → `CallerContext::Agent { ... }`
-///
-/// memory store 가 초기화되지 않은 경우: 토큰이 있어도 검증 불가이므로
-/// `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
-pub fn resolve_caller_from_envelope(
-    host: &dyn crate::IpcHostFacade,
+/// - 유효 형식 → 세션 판정이 필요하다. 저장소 판정은 호출자가 하고 결과를 [`caller_from_session`]에 넘긴다.
+pub fn envelope_caller(
     request: &crate::protocol::JsonRpcRequest,
-) -> Result<CallerContext, crate::protocol::JsonRpcResponse> {
-    use std::collections::HashSet;
-    use std::sync::Arc;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use crate::SessionResolution;
-
-    let token_str = match request.session_token.as_deref() {
-        None => {
-            return Ok(CallerContext::local_claiming(
-                request.caller_agent_id.as_deref(),
-            ));
-        }
-        Some(s) => s,
-    };
-    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-    let deny = |msg: &str| {
-        crate::protocol::JsonRpcResponse::error(
-            id.clone(),
-            -32001,
-            format!("permission_denied: {msg}"),
-        )
+) -> Result<EnvelopeCaller<'_>, crate::protocol::JsonRpcResponse> {
+    let Some(token_str) = request.session_token.as_deref() else {
+        return Ok(EnvelopeCaller::Local(CallerContext::local_claiming(
+            request.caller_agent_id.as_deref(),
+        )));
     };
     // 형식 위반 검증을 먼저 (trait 의 NotFound 와 invalid_format 구분 보존).
     if token_str.parse::<SessionToken>().is_err() {
-        return Err(deny("invalid session_token format (expect 64 hex chars)"));
+        return Err(session_deny(
+            request,
+            "invalid session_token format (expect 64 hex chars)",
+        ));
     }
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    match host.session_resolve(token_str, now_ms) {
-        SessionResolution::NotFound => Err(deny("session_token unknown/expired/revoked")),
+    Ok(EnvelopeCaller::Session(token_str))
+}
+
+fn session_deny(
+    request: &crate::protocol::JsonRpcRequest,
+    msg: &str,
+) -> crate::protocol::JsonRpcResponse {
+    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+    crate::protocol::JsonRpcResponse::error(id, -32001, format!("permission_denied: {msg}"))
+}
+
+/// 세션 판정 결과로 호출자를 정한다. 없음/만료/철회는 `Err(deny)` 이며 Local 로 대신하지 않는다.
+pub fn caller_from_session(
+    request: &crate::protocol::JsonRpcRequest,
+    resolution: crate::SessionResolution,
+) -> Result<CallerContext, crate::protocol::JsonRpcResponse> {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+
+    use crate::SessionResolution;
+
+    match resolution {
+        SessionResolution::NotFound => Err(session_deny(
+            request,
+            "session_token unknown/expired/revoked",
+        )),
         SessionResolution::Agent {
             agent_id,
             permissions,
@@ -335,6 +344,25 @@ pub fn resolve_caller_from_envelope(
             })
         }
     }
+}
+
+/// [`envelope_caller`]와 [`caller_from_session`]을 이어 동기 판정한다. 세션 판정을 기다려도 되는
+/// 호출자만 쓴다. 호스트의 요청 게이트는 판정을 writer에 넣고 결과를 거둔 뒤 이어간다.
+pub fn resolve_caller_from_envelope(
+    host: &dyn crate::IpcHostFacade,
+    request: &crate::protocol::JsonRpcRequest,
+) -> Result<CallerContext, crate::protocol::JsonRpcResponse> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let token_str = match envelope_caller(request)? {
+        EnvelopeCaller::Local(caller) => return Ok(caller),
+        EnvelopeCaller::Session(token) => token,
+    };
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    caller_from_session(request, host.session_resolve(token_str, now_ms))
 }
 
 #[cfg(test)]

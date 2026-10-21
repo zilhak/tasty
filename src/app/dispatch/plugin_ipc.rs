@@ -25,66 +25,125 @@ impl App {
             }
             let caller = Self::plugin_caller(&call);
             let request = Self::plugin_call_request(&call);
-            let checked = match self.gates_before_routing(&request, &caller) {
-                Ok(checked) => checked,
-                Err(resp) => {
-                    let (msg, code) = match resp.error {
-                        Some(e) => (Some(e.message), Some(e.code)),
-                        None => (None, None),
-                    };
-                    if let Some(mgr) = self.plugin_manager.as_mut() {
-                        mgr.send_plugin_call_result(&call, None, msg, code);
-                    }
-                    continue;
-                }
-            };
-            if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
-                self.handle_ipc_shared_buffer_create(&call);
+            // 게이트 결과를 기다리는 요청이 있으면 접수 순서를 지키도록 그 뒤에 선다.
+            if !self.gate_queue.is_empty() {
+                self.gate_queue.park(
+                    crate::app::request_gate::Gated::Plugin {
+                        call,
+                        request,
+                        progress: Default::default(),
+                    },
+                    false,
+                );
                 continue;
             }
-            if call.method == "popup.close" {
-                self.handle_ipc_popup_close(&call);
-                continue;
-            }
-            if call.method == "banner.open" {
-                self.handle_ipc_banner_open(&call);
-                continue;
-            }
-            if call.method == "banner.close" {
-                self.handle_ipc_banner_close(&call);
-                continue;
-            }
-            if call.method == "webview.open_external" {
-                self.handle_ipc_webview_open_external(&call);
-                continue;
-            }
-            // 자기 namespace 요청은 호스트 구현으로 위임할 수 있어 다른 플러그인 요청만 forward한다.
-            // 호스트 변환 메서드는 소유 플러그인을 거치지 않고 아래 journal 접수로 간다.
-            if let Some(mgr) = self.plugin_manager.as_mut()
-                && mgr.forward_plugin_call_to_other_namespace(
-                    &call,
-                    crate::app::journal::commands::host_converts(&call.method),
-                )
-            {
-                continue;
-            }
-            if self.defer_plugin_preset_capture(&call) {
-                continue;
-            }
-            if self.defer_plugin_attach_into_gui(&call) {
-                continue;
-            }
-            if self
-                .journal
-                .admit_plugin(&request, &caller, &call, self.plugin_manager.as_ref())
-            {
-                continue;
-            }
-            if self.defer_live_plugin(&checked, &call) {
-                continue;
-            }
-            self.handle_ipc_default_dispatch(&call, &checked);
+            self.dispatch_plugin_call(call, caller, request, Default::default(), false);
         }
+    }
+
+    /// 게이트를 통과한 호출을 실행 분기로 보낸다. 게이트가 writer 결과를 기다리면 호출을 보관하고,
+    /// 결과가 나오면 같은 함수로 다시 들어온다.
+    pub(crate) fn dispatch_plugin_call(
+        &mut self,
+        call: PendingPluginCall,
+        caller: ipc::caller::CallerContext,
+        mut request: ipc::protocol::JsonRpcRequest,
+        mut progress: ipc::handler::gate::GateProgress,
+        resumed: bool,
+    ) {
+        use ipc::handler::gate::Step;
+        // 기다리는 동안 plugin process가 바뀌었으면 원 호출에 답할 곳이 없다.
+        if resumed
+            && !self
+                .plugin_manager
+                .as_ref()
+                .is_some_and(|manager| manager.plugin_call_is_current(&call))
+        {
+            return;
+        }
+        if let Step::Pending =
+            ipc::handler::gate::prepare(&self.services, &mut request, &caller, &mut progress)
+        {
+            self.gate_queue.park(
+                crate::app::request_gate::Gated::Plugin {
+                    call,
+                    request,
+                    progress,
+                },
+                resumed,
+            );
+            return;
+        }
+        let checked = match self.gates_before_routing(&request, &caller, &mut progress) {
+            Step::Ready(Ok(checked)) => checked,
+            Step::Ready(Err(resp)) => {
+                let (msg, code) = match resp.error {
+                    Some(e) => (Some(e.message), Some(e.code)),
+                    None => (None, None),
+                };
+                if let Some(mgr) = self.plugin_manager.as_mut() {
+                    mgr.send_plugin_call_result(&call, None, msg, code);
+                }
+                return;
+            }
+            Step::Pending => {
+                self.gate_queue.park(
+                    crate::app::request_gate::Gated::Plugin {
+                        call,
+                        request,
+                        progress,
+                    },
+                    resumed,
+                );
+                return;
+            }
+        };
+        if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
+            self.handle_ipc_shared_buffer_create(&call);
+            return;
+        }
+        if call.method == "popup.close" {
+            self.handle_ipc_popup_close(&call);
+            return;
+        }
+        if call.method == "banner.open" {
+            self.handle_ipc_banner_open(&call);
+            return;
+        }
+        if call.method == "banner.close" {
+            self.handle_ipc_banner_close(&call);
+            return;
+        }
+        if call.method == "webview.open_external" {
+            self.handle_ipc_webview_open_external(&call);
+            return;
+        }
+        // 자기 namespace 요청은 호스트 구현으로 위임할 수 있어 다른 플러그인 요청만 forward한다.
+        // 호스트 변환 메서드는 소유 플러그인을 거치지 않고 아래 journal 접수로 간다.
+        if let Some(mgr) = self.plugin_manager.as_mut()
+            && mgr.forward_plugin_call_to_other_namespace(
+                &call,
+                crate::app::journal::commands::host_converts(&call.method),
+            )
+        {
+            return;
+        }
+        if self.defer_plugin_preset_capture(&call) {
+            return;
+        }
+        if self.defer_plugin_attach_into_gui(&call) {
+            return;
+        }
+        if self
+            .journal
+            .admit_plugin(&request, &caller, &call, self.plugin_manager.as_ref())
+        {
+            return;
+        }
+        if self.defer_live_plugin(&checked, &call) {
+            return;
+        }
+        self.handle_ipc_default_dispatch(&call, &checked);
     }
 
     /// 외부 IPC와 같은 메서드다. 메인 루프가 답하는 system.info로 대상 포트의 상대를 확인하므로
@@ -304,7 +363,7 @@ impl App {
     }
 
     /// 사전 검사와 실제 라우팅에서 같은 caller를 사용한다.
-    fn plugin_caller(call: &PendingPluginCall) -> ipc::caller::CallerContext {
+    pub(crate) fn plugin_caller(call: &PendingPluginCall) -> ipc::caller::CallerContext {
         ipc::caller::CallerContext::Plugin {
             plugin_id: call.plugin_id.clone(),
             permissions: call.permissions.clone(),

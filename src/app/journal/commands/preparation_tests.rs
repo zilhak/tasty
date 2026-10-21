@@ -8,7 +8,6 @@ type Receiver = std::sync::mpsc::Receiver<JsonRpcResponse>;
 /// Requests naming a workspace go to the engine that owns it; others go to the first engine.
 fn turn(journal: &mut JournalApplication, sessions: &mut [&mut EngineSession]) {
     journal.poll_bootstrap(sessions, None).unwrap();
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
     for (ticket, request) in journal.requests_needing_resolution() {
         let index = sessions
             .iter()
@@ -22,9 +21,7 @@ fn turn(journal: &mut JournalApplication, sessions: &mut [&mut EngineSession]) {
             .unwrap_or(0);
         let session = &mut *sessions[index];
         match request.method.as_str() {
-            "surface.respawn_terminal" => {
-                journal.resolve_public_creation(ticket, session, &services)
-            }
+            "surface.respawn_terminal" => journal.resolve_public_creation(ticket, session),
             "workspace.create" => journal.resolve_workspace_creation(ticket, session, None),
             _ => journal.resolve_ipc_for_engine(ticket, session),
         }

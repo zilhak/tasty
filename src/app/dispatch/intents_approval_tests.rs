@@ -4,7 +4,6 @@
 use tasty_approval::ApprovalId;
 use tasty_ipc::caller::SessionToken;
 use tasty_ipc::session::SessionStore;
-use tasty_ipc::{IpcHostFacade, SessionResolution};
 
 use crate::adapters::ipc::handler::approval::publish_capability_elevation_at;
 use crate::adapters::ipc::handler::cli_entry_tests::test_core;
@@ -41,10 +40,8 @@ fn elevation_pending(core: &mut AppServices) -> (SessionToken, ApprovalId) {
 
 /// 재호출 때 요청 게이트가 보는 것과 같은 세션 조회 결과의 권한 목록.
 fn caller_permissions(core: &AppServices, token: &SessionToken) -> Vec<String> {
-    match IpcHostFacade::session_resolve(core, &token.to_string(), now_ms()) {
-        SessionResolution::Agent { permissions, .. } => permissions,
-        _ => panic!("session must resolve to the agent"),
-    }
+    crate::ipc::handler::gate::session_permissions_waiting(core, &token.to_string())
+        .expect("session must resolve to the agent")
 }
 
 fn respond_from_popup(core: &mut AppServices, id: &ApprovalId, choice: &str) {

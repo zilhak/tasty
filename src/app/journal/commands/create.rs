@@ -531,12 +531,7 @@ impl Request {
 }
 
 impl JournalApplication {
-    pub(crate) fn resolve_public_creation(
-        &mut self,
-        ticket: u64,
-        session: &mut EngineSession,
-        services: &crate::app::services::AppServices,
-    ) {
+    pub(crate) fn resolve_public_creation(&mut self, ticket: u64, session: &mut EngineSession) {
         if !self.bind_command_engine(ticket, session.id) {
             return;
         }
@@ -547,7 +542,6 @@ impl JournalApplication {
             pending.close_cause,
             super::close::Cause::RemoteHolder { .. }
         ) && let Some(response) = crate::ipc::handler::hard_occupied_structural_guard(
-            services,
             &session.as_ref(),
             0,
             &pending.request.method,
@@ -567,22 +561,17 @@ impl JournalApplication {
         } else if pending.request.method == "terminal.respawn" {
             super::child::resolve_respawn(&pending.request, session)
         } else {
-            super::create_spec::Spec::from_public(
-                &pending.request,
-                &session.as_ref(),
-                &view,
-                services,
-            )
-            .and_then(|spec| Request::from_spec(spec, session))
-            .and_then(|request| {
-                hold_explorer_floor(
-                    request,
-                    session,
-                    self.split_geometries
-                        .get(&session.id)
-                        .map_or(&[], Vec::as_slice),
-                )
-            })
+            super::create_spec::Spec::from_public(&pending.request, &session.as_ref(), &view)
+                .and_then(|spec| Request::from_spec(spec, session))
+                .and_then(|request| {
+                    hold_explorer_floor(
+                        request,
+                        session,
+                        self.split_geometries
+                            .get(&session.id)
+                            .map_or(&[], Vec::as_slice),
+                    )
+                })
         };
         match resolved {
             Ok(mut resource) => {

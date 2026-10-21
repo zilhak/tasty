@@ -42,12 +42,8 @@ impl crate::app::App {
         });
         if let Some(session) = self.engines.session_mut(id) {
             if let Some(missing_anchor) = missing_anchor {
-                self.journal.resolve_remote_request(
-                    ticket,
-                    session,
-                    &self.services,
-                    missing_anchor,
-                );
+                self.journal
+                    .resolve_remote_request(ticket, session, missing_anchor);
             } else if request.method == "intent.preset-apply" {
                 self.journal
                     .resolve_preset(ticket, session, &self.services, None);
@@ -172,8 +168,7 @@ impl crate::app::App {
                 | "surface.respawn_terminal"
                 | "image.open"
         ) {
-            self.journal
-                .resolve_public_creation(ticket, session, &self.services);
+            self.journal.resolve_public_creation(ticket, session);
             return;
         }
         if request.method == "preset.apply" {

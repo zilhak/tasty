@@ -2,6 +2,8 @@
 //! 조회는 메타데이터만, kind 요청은 소유자만, attach는 전체 활성 플러그인을 준비한다.
 //! 입력은 TerminalOutput(None)으로 깨우며 플러그인 타이머와 Busy 주기에서도 pump한다.
 
+use tasty_host_plugin::manager::PendingPluginCall;
+
 use crate::app::App;
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::state::RequestContext;
@@ -395,15 +397,18 @@ fn register_one_surface_kind(
     }
 }
 
-/// GUI와 같은 공용 검사를 인터셉트 전에 실행한다.
+/// GUI와 같은 공용 검사를 인터셉트 전에 실행한다. writer 결과를 기다리면 `Pending`이다.
 fn gates_before_intercept<'a>(
     app: &mut App,
     window: &mut crate::state::CommandContext,
     engine: &mut EngineMut<'_>,
     request: &'a crate::ipc::protocol::JsonRpcRequest,
     caller: &'a crate::ipc::caller::CallerContext,
-) -> Result<crate::ipc::handler::CheckedRequest<'a>, crate::ipc::protocol::JsonRpcResponse> {
-    crate::ipc::handler::check_request(&mut app.services, window, engine, request, caller)
+    progress: &mut crate::ipc::handler::gate::GateProgress,
+) -> crate::ipc::handler::gate::Step<
+    Result<crate::ipc::handler::CheckedRequest<'a>, crate::ipc::protocol::JsonRpcResponse>,
+> {
+    crate::ipc::handler::gate::decide(&mut app.services, window, engine, request, caller, progress)
 }
 
 fn defer_plugin_preset_capture_headless(
@@ -477,105 +482,170 @@ fn dispatch_plugin_ipc_calls_headless(
         {
             continue;
         }
-        let caller = crate::ipc::caller::CallerContext::Plugin {
-            plugin_id: call.plugin_id.clone(),
-            permissions: call.permissions.clone(),
-        };
-        let request = crate::ipc::protocol::JsonRpcRequest {
-            caller_agent_id: None,
-            response_timeout_ms: None,
-            idempotency_key: None,
-            jsonrpc: "2.0".to_string(),
-            id: Some(serde_json::Value::from(call.call_id)),
-            method: call.method.clone(),
-            params: call.params.clone(),
-            session_token: None,
-        };
-        // 직접 응답하는 shared_buffer 경로도 권한·cap·rate·audit 검사를 거쳐야 한다.
-        let checked = match gates_before_intercept(app, state, engine, &request, &caller) {
-            Ok(checked) => checked,
-            Err(resp) => {
-                let (msg, code) = match resp.error {
-                    Some(e) => (Some(e.message), Some(e.code)),
-                    None => (None, None),
-                };
-                if let Some(mgr) = app.plugin_manager.as_mut() {
-                    mgr.send_plugin_call_result(&call, None, msg, code);
-                }
-                continue;
-            }
-        };
-        if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
-            let size = call
-                .params
-                .get("size")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            if let Some(mgr) = app.plugin_manager.as_mut() {
-                let (result, error) =
-                    match mgr.create_shared_buffer_for(&call.plugin_id, call.call_id, size) {
-                        Ok(r) => (serde_json::to_value(&r).ok(), None),
-                        Err(e) => (None, Some(e)),
-                    };
-                mgr.send_plugin_call_result(&call, result, error, None);
-            }
+        let request = plugin_call_request(&call);
+        // 게이트 결과를 기다리는 요청이 있으면 접수 순서를 지키도록 그 뒤에 선다.
+        if !app.gate_queue.is_empty() {
+            app.gate_queue.park(
+                crate::app::request_gate::Gated::Plugin {
+                    call,
+                    request,
+                    progress: Default::default(),
+                },
+                false,
+            );
             continue;
         }
-        // GUI와 같은 규칙으로 다른 플러그인의 namespace 호출을 소유자에게 전달한다.
-        if let Some(mgr) = app.plugin_manager.as_mut()
-            && mgr.forward_plugin_call_to_other_namespace(
-                &call,
-                crate::app::journal::commands::host_converts(&call.method),
-            )
-        {
-            continue;
-        }
-        if defer_plugin_preset_capture_headless(app, state, engine, &call) {
-            continue;
-        }
-        if app
-            .journal
-            .admit_plugin(&request, &caller, &call, app.plugin_manager.as_ref())
-        {
-            continue;
-        }
-        if let Some(id) = state.engine_id
-            && app.journal.defer_plugin_input(
-                &checked,
-                id,
-                &engine.as_ref(),
-                &call,
-                app.plugin_manager.as_ref(),
-            )
-        {
-            continue;
-        }
-        let handled =
-            crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
-        // 결과를 보내기 전에 요청의 Intent와 후속 이벤트를 적용한다.
-        crate::intent::headless::drain_pending_intents_in_app(
-            &mut app.services,
-            state,
-            engine,
-            &mut app.journal,
+        dispatch_plugin_call(app, state, engine, call, request, Default::default(), false);
+    }
+}
+
+fn plugin_caller(call: &PendingPluginCall) -> crate::ipc::caller::CallerContext {
+    crate::ipc::caller::CallerContext::Plugin {
+        plugin_id: call.plugin_id.clone(),
+        permissions: call.permissions.clone(),
+    }
+}
+
+fn plugin_call_request(call: &PendingPluginCall) -> crate::ipc::protocol::JsonRpcRequest {
+    crate::ipc::protocol::JsonRpcRequest {
+        caller_agent_id: None,
+        response_timeout_ms: None,
+        idempotency_key: None,
+        jsonrpc: "2.0".to_string(),
+        id: Some(serde_json::Value::from(call.call_id)),
+        method: call.method.clone(),
+        params: call.params.clone(),
+        session_token: None,
+    }
+}
+
+/// 게이트를 통과한 호출을 실행 분기로 보낸다. 게이트가 writer 결과를 기다리면 호출을 보관하고,
+/// 결과가 나오면 같은 함수로 다시 들어온다.
+pub(crate) fn dispatch_plugin_call(
+    app: &mut App,
+    state: &mut RequestContext,
+    engine: &mut EngineMut<'_>,
+    call: PendingPluginCall,
+    mut request: crate::ipc::protocol::JsonRpcRequest,
+    mut progress: crate::ipc::handler::gate::GateProgress,
+    resumed: bool,
+) {
+    use crate::ipc::handler::gate::Step;
+    // 기다리는 동안 plugin process가 바뀌었으면 원 호출에 답할 곳이 없다.
+    if resumed
+        && !app
+            .plugin_manager
+            .as_ref()
+            .is_some_and(|manager| manager.plugin_call_is_current(&call))
+    {
+        return;
+    }
+    let caller = plugin_caller(&call);
+    let park = |app: &mut App, call, request, progress| {
+        app.gate_queue.park(
+            crate::app::request_gate::Gated::Plugin {
+                call,
+                request,
+                progress,
+            },
+            resumed,
         );
-        crate::intent::headless::drain_pending_host_events(&app.services, engine);
-        let response = match handled {
-            crate::ipc::handler::Handled::Now(response) => response,
-            crate::ipc::handler::Handled::Later(deferred) => {
-                app.services
-                    .defer_reply(deferred, crate::ipc::handler::ReplyTo::plugin(&call));
-                continue;
+    };
+    if let Step::Pending =
+        crate::ipc::handler::gate::prepare(&app.services, &mut request, &caller, &mut progress)
+    {
+        park(app, call, request, progress);
+        return;
+    }
+    // 직접 응답하는 shared_buffer 경로도 권한·cap·rate·audit 검사를 거쳐야 한다.
+    let checked = match gates_before_intercept(app, state, engine, &request, &caller, &mut progress)
+    {
+        Step::Ready(Ok(checked)) => checked,
+        Step::Ready(Err(resp)) => {
+            let (msg, code) = match resp.error {
+                Some(e) => (Some(e.message), Some(e.code)),
+                None => (None, None),
+            };
+            if let Some(mgr) = app.plugin_manager.as_mut() {
+                mgr.send_plugin_call_result(&call, None, msg, code);
             }
-        };
-        // 오류 코드도 함께 전달해 플러그인이 원래 실패 종류를 알 수 있게 한다.
-        let (result, error, code) = match response.error {
-            Some(err) => (None, Some(err.message), Some(err.code)),
-            None => (response.result, None, None),
-        };
-        if let Some(mgr) = app.plugin_manager.as_mut() {
-            mgr.send_plugin_call_result(&call, result, error, code);
+            return;
         }
+        Step::Pending => {
+            park(app, call, request, progress);
+            return;
+        }
+    };
+    if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
+        let size = call
+            .params
+            .get("size")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        if let Some(mgr) = app.plugin_manager.as_mut() {
+            let (result, error) =
+                match mgr.create_shared_buffer_for(&call.plugin_id, call.call_id, size) {
+                    Ok(r) => (serde_json::to_value(&r).ok(), None),
+                    Err(e) => (None, Some(e)),
+                };
+            mgr.send_plugin_call_result(&call, result, error, None);
+        }
+        return;
+    }
+    // GUI와 같은 규칙으로 다른 플러그인의 namespace 호출을 소유자에게 전달한다.
+    if let Some(mgr) = app.plugin_manager.as_mut()
+        && mgr.forward_plugin_call_to_other_namespace(
+            &call,
+            crate::app::journal::commands::host_converts(&call.method),
+        )
+    {
+        return;
+    }
+    if defer_plugin_preset_capture_headless(app, state, engine, &call) {
+        return;
+    }
+    if app
+        .journal
+        .admit_plugin(&request, &caller, &call, app.plugin_manager.as_ref())
+    {
+        return;
+    }
+    if let Some(id) = state.engine_id
+        && app.journal.defer_plugin_input(
+            &checked,
+            id,
+            &engine.as_ref(),
+            &call,
+            app.plugin_manager.as_ref(),
+        )
+    {
+        return;
+    }
+    let handled =
+        crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
+    // 결과를 보내기 전에 요청의 Intent와 후속 이벤트를 적용한다.
+    crate::intent::headless::drain_pending_intents_in_app(
+        &mut app.services,
+        state,
+        engine,
+        &mut app.journal,
+    );
+    crate::intent::headless::drain_pending_host_events(&app.services, engine);
+    let response = match handled {
+        crate::ipc::handler::Handled::Now(response) => response,
+        crate::ipc::handler::Handled::Later(deferred) => {
+            app.services
+                .defer_reply(deferred, crate::ipc::handler::ReplyTo::plugin(&call));
+            return;
+        }
+    };
+    // 오류 코드도 함께 전달해 플러그인이 원래 실패 종류를 알 수 있게 한다.
+    let (result, error, code) = match response.error {
+        Some(err) => (None, Some(err.message), Some(err.code)),
+        None => (response.result, None, None),
+    };
+    if let Some(mgr) = app.plugin_manager.as_mut() {
+        mgr.send_plugin_call_result(&call, result, error, code);
     }
 }
 

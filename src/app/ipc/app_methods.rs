@@ -95,11 +95,11 @@ impl App {
             return IpcStep::Handled;
         }
         if cmd.request.method == "remote.attach" {
-            self.ipc_dispatch_remote_attach(cmd);
+            self.ipc_dispatch_remote_attach(cmd, caller);
             return IpcStep::Handled;
         }
         if cmd.request.method == "attach.into_gui" {
-            self.ipc_dispatch_attach_into_gui(cmd);
+            self.ipc_dispatch_attach_into_gui(cmd, caller);
             return IpcStep::Handled;
         }
         if cmd.request.method == "remote.refusals" {

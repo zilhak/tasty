@@ -1,5 +1,6 @@
 //! memory.db의 audit·telemetry event·telemetry anomaly 보존 정책.
-//! 부팅 시 ALL을 순회하며, 실행 중에는 기록 추가와 Tick::LogPrune에서 maybe_prune을 부른다.
+//! 부팅 시 ALL을 순회한다. 실행 중에는 기록을 넣은 경로와 Tick::LogPrune이 `claim_prune`으로 주기를 가져간 뒤
+//! `prune_all`을 기다리지 않는 writer 요청으로 넣는다.
 //!
 //! 개수와 보존 기간을 기준으로 삭제를 시도한다. 주기 사이에는 keep을 초과할 수 있고,
 //! 스케줄 지연이나 저장소 오류가 있으면 정리가 더 늦어진다. 엄격한 메모리·디스크 상한은 아니다.
@@ -74,14 +75,6 @@ pub const PRUNE_INTERVAL_MS: u64 = 60 * 60 * 1_000;
 
 /// 마지막 정리 시도 시각. 프로세스 전체가 공유한다.
 static LAST_PRUNE_MS: AtomicU64 = AtomicU64::new(0);
-
-/// 기록 추가와 타이머가 공유하는 정리 진입점.
-/// 마지막 시도 후 간격이 지났으면 ALL을 실행한다. 삭제 실패도 이번 시도로 센다.
-pub fn maybe_prune(mem: &mut dyn MemoryStorage, now_ms: u64) {
-    if claim_prune(now_ms) {
-        prune_all(mem, now_ms);
-    }
-}
 
 /// 이번 주기의 정리를 가져온다. 간격이 지나지 않았거나 다른 호출자가 가져갔으면 false다.
 pub fn claim_prune(now_ms: u64) -> bool {

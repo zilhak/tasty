@@ -47,7 +47,6 @@ fn turn(
     journal: &mut JournalApplication,
     session: &mut EngineSession,
     plugins: Option<&mut crate::plugin::PluginManager>,
-    services: &crate::app::services::AppServices,
 ) {
     journal
         .poll_bootstrap(&mut [&mut *session], plugins)
@@ -55,7 +54,7 @@ fn turn(
     for (ticket, request) in journal.requests_needing_resolution() {
         match request.method.as_str() {
             "surface.respawn_terminal" | "pty.attach_surface" => {
-                journal.resolve_public_creation(ticket, session, services)
+                journal.resolve_public_creation(ticket, session)
             }
             "workspace.create" => journal.resolve_workspace_creation(ticket, session, None),
             _ => journal.resolve_ipc_for_engine(ticket, session),
@@ -69,10 +68,9 @@ fn reply(
     rx: &Receiver,
     mut observe: impl FnMut(&JournalApplication, &EngineSession),
 ) -> JsonRpcResponse {
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
     let mut stall = StallBudget::new(journal);
     loop {
-        turn(journal, session, None, &services);
+        turn(journal, session, None);
         observe(journal, session);
         if let Ok(response) = rx.try_recv() {
             return response;
@@ -238,10 +236,9 @@ fn a_failed_installation_without_a_receipt_answers_recovery_required_and_stops_p
     let mut plugins = unacknowledging_remote(&mut session, surface, "failed_install");
     inject(InstallFault::AfterSwap);
     let rx = respawn(&mut journal, surface, 706);
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
     let mut stall = StallBudget::new(&journal);
     let response = loop {
-        turn(&mut journal, &mut session, Some(&mut plugins), &services);
+        turn(&mut journal, &mut session, Some(&mut plugins));
         assert!(!journal.pauses_observation());
         if let Ok(response) = rx.try_recv() {
             break response;
@@ -279,11 +276,10 @@ fn an_unacknowledged_plugin_destroy_neither_pauses_observation_nor_reports_succe
     let before = activation(&session, surface);
 
     let rx = respawn(&mut journal, surface, 705);
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
     let mut stall = StallBudget::new(&journal);
     let mut published_while_retiring = false;
     let response = loop {
-        turn(&mut journal, &mut session, Some(&mut plugins), &services);
+        turn(&mut journal, &mut session, Some(&mut plugins));
         if activation(&session, surface) != before {
             // The new activation is published while the old destroy is still unanswered.
             assert!(!journal.pauses_observation());
@@ -413,15 +409,10 @@ fn a_failed_adoption_returns_the_standalone_process_alive() {
 /// Runs the adoption until its installation is about to run, then lets another owner take the
 /// standalone ID so the withdrawal or discard cannot return the process.
 #[cfg(unix)]
-fn occupy_after_claim(
-    journal: &mut JournalApplication,
-    session: &mut EngineSession,
-    pty_id: u32,
-    services: &crate::app::services::AppServices,
-) {
+fn occupy_after_claim(journal: &mut JournalApplication, session: &mut EngineSession, pty_id: u32) {
     let mut stall = StallBudget::new(journal);
     loop {
-        turn(journal, session, None, services);
+        turn(journal, session, None);
         if !session.runtime.terminals.contains(pty_id) {
             assert!(
                 injected().is_some(),
@@ -503,10 +494,9 @@ fn a_halt_keeps_a_pending_adoption_candidate_alive() {
     terminal_workspace(&mut journal, &mut session);
     let (pty_id, pid) = standalone_pty(&mut session);
     let _rx = adopt(&mut journal, &session, pty_id, 711);
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
     let mut stall = StallBudget::new(&journal);
     while session.pending_materializations.is_empty() {
-        turn(&mut journal, &mut session, None, &services);
+        turn(&mut journal, &mut session, None);
         stall.nap("adoption claims the standalone owner");
     }
     assert!(!session.runtime.terminals.contains(pty_id));
@@ -526,8 +516,7 @@ fn a_rejected_adoption_that_cannot_return_does_not_block_the_engine_release() {
     let (pty_id, pid) = standalone_pty(&mut session);
     inject(InstallFault::BeforeChange);
     let rx = adopt(&mut journal, &session, pty_id, 709);
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
-    occupy_after_claim(&mut journal, &mut session, pty_id, &services);
+    occupy_after_claim(&mut journal, &mut session, pty_id);
     let response = reply(&mut journal, &mut session, &rx, |_, _| {});
     assert_eq!(injected(), None, "the installation reached the fault");
     let error = response
@@ -554,8 +543,7 @@ fn a_failed_adoption_that_cannot_return_does_not_block_the_engine_release() {
     let (pty_id, pid) = standalone_pty(&mut session);
     inject(InstallFault::AfterSwap);
     let rx = adopt(&mut journal, &session, pty_id, 710);
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
-    occupy_after_claim(&mut journal, &mut session, pty_id, &services);
+    occupy_after_claim(&mut journal, &mut session, pty_id);
     let response = reply(&mut journal, &mut session, &rx, |_, _| {});
     assert_eq!(injected(), None, "the installation reached the fault");
     let error = response

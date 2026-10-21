@@ -97,11 +97,13 @@ fn this_instance_refused(id: serde_json::Value, port: u16) -> JsonRpcResponse {
 impl App {
     /// 외부 IPC의 `attach.into_gui`. 인자와 자기 포트는 바로 판정하고, 다른 포트는 워커에서
     /// 상대를 확인한 뒤 응답한다.
-    pub(in crate::app) fn ipc_dispatch_attach_into_gui(&mut self, cmd: &IpcCommand) {
+    pub(in crate::app) fn ipc_dispatch_attach_into_gui(
+        &mut self,
+        cmd: &IpcCommand,
+        caller: &crate::ipc::caller::CallerContext,
+    ) {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        let owner = crate::ipc::caller::resolve_caller_from_envelope(&self.services, &cmd.request)
-            .ok()
-            .and_then(|caller| crate::request_runs::reader_of(&caller));
+        let owner = crate::request_runs::reader_of(caller);
         self.start_into_gui_check(
             Reply::Ipc(cmd.response_tx.clone()),
             rpc_id,

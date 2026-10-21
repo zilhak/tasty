@@ -5,7 +5,6 @@ use tasty_ipc::stream::{SplitAxis, StructuralOp};
 fn local_op(
     request: &JsonRpcRequest,
     session: &crate::runtime::engine_access::EngineRef<'_>,
-    services: &crate::app::services::AppServices,
     view: &crate::runtime::journal_product::CompletionView,
 ) -> Option<StructuralOp> {
     let core = session.core;
@@ -77,7 +76,7 @@ fn local_op(
             let spec = if request.method == "intent.create" {
                 serde_json::from_value::<super::create_spec::Spec>(request.params.clone()).ok()?
             } else {
-                super::create_spec::Spec::from_public(request, session, view, services).ok()?
+                super::create_spec::Spec::from_public(request, session, view).ok()?
             };
             let axis = |direction| match direction {
                 crate::model::SplitDirection::Horizontal => SplitAxis::Horizontal,
@@ -188,7 +187,7 @@ impl crate::app::App {
             .get(&engine)
             .cloned()
             .unwrap_or_default();
-        let Some(op) = local_op(request, &session, &self.services, &view) else {
+        let Some(op) = local_op(request, &session, &view) else {
             return false;
         };
         let mirrored = session

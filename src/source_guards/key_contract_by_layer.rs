@@ -538,7 +538,7 @@ fn journal_key_declarations_match_the_connected_structural_resolver() {
         (
             HEADLESS_DISPATCH,
             "fn dispatch_command",
-            "check_request(",
+            "gate::decide(",
             "request_resource_id(",
         ),
     ] {

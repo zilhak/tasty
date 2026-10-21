@@ -24,7 +24,10 @@
 | `agent.task_*`·`agent.task_graph_*`·`agent.dag_*`·`agent.report_append`·`agent.task_submit` IPC | `memory.*`와 같다. 연산의 판단과 쓰기가 writer 복합 연산 하나다(`TaskTx`) | `memory.*`와 같다. 연산이 거절돼도 그 전에 쓴 내용은 남는다 | `memory.*`와 같다 | `memory.*`와 같다. 그래프 활성화·취소·완료 보고의 대기자 깨우기, 지켜보는 runner가 없는 취소의 정리 시작, 삭제한 task의 부속 키 정리 제출은 메인 루프가 commit된 결과를 거둔 뒤 응답 전에 한다. `agent.task_submit`의 턴 판정은 writer가 읽은 task로 그때 한다. `agent.task_reduce`의 reducer 실행은 writer 밖(응답을 만들 때)이다 |
 | telemetry 조회·cap 관리(`telemetry.summary`·`timeseries`·`top`·`session_summary`·`anomaly.list`·`cap.*`)와 감사 조회(`plugin.audit_query`·`audit_summary`, GUI 감사 화면의 follow·clear) IPC | `memory.*`와 같다. 조회와 cap 판정 읽기는 writer 요청 하나 안에서 한다 | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다 |
 | 세션 IPC(`session.issue`·`revoke`·`list`, `plugin.grant_agent_permission`·`revoke_agent_permission`·`list_agent_permissions`)와 명령 기록 조회(`surface.commands`·`last_command`·`command_at`) | `memory.*`와 같다. 세션의 찾기·변경은 writer 요청 하나 안에서 한다 | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다 |
-| 그 밖의 memory.db IPC 쓰기(요청 게이트의 세션 판정·telemetry·audit·anomaly 기록과 cap 판정, `telemetry.record`, `approval.respond`의 승인 권한 부여) | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | `memory.*`와 같다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
+| 요청 게이트(세션 판정, plugin cap·`split` nickname 대상 조회, rate limit 소비·ipc_calls 기록·cap 재평가) | 진입 경로가 단계마다 writer 요청을 넣고 요청을 게이트 대기열에 보관한 뒤 다음 회차로 넘어간다([요청 게이트](#요청-게이트)) | writer가 commit한다 | `memory.*`와 같다 | 단계 결과가 모두 나온 뒤 같은 진입 함수로 다시 들어와 라우팅한다. 기록 단계의 cap 액션·이상 탐지는 결과를 거둔 회차에 실행한다 |
+| `telemetry.record`·`record_batch` | `memory.*`와 같다. 기록과 cap 재평가가 writer 실행 단위 하나다 | `memory.*`와 같다 | `memory.*`와 같다 | `memory.*`와 같다. 발동한 cap의 액션과 RSS 보고의 이상 탐지는 응답 continuation이 후속 처리 대기열에 넣고 메인 루프가 다음 회차에 첫 engine 문맥으로 실행한다 |
+| 감사(audit)·anomaly 기록 | 기다리지 않는 writer 요청. 기록 시점 로그 정리는 `claim_prune`으로 주기를 가져간 경우에만 별도 요청으로 넣는다 | writer가 commit한다 | `memory.*`와 같다 | 해당 없음. 실패는 경고만 남긴다 |
+| 그 밖의 memory.db IPC 쓰기(`approval.respond`의 승인 권한 부여) | 별도 접수 없음. 핸들러가 메인 루프에서 `with_memory` 잠금을 잡고 실행한다 | 핸들러 안에서 끝난다 | `memory.*`와 같다 | IPC 응답은 핸들러가 돌아온 직후 같은 루프 회차에 보낸다. 응답 시점에는 commit이 끝나 있다 |
 | observer memory sink | sink 스레드가 채널에 쌓인 항목을 memory writer에 묶음 하나로 넣고 바로 다음 항목을 받는다 | writer가 묶음 하나를 commit 한 번으로 끝낸다 | commit과 같다 | 해당 없음 |
 | `approval.await` 결과 기록 | 대기 워커가 memory writer에 넣고 그 결과를 기다린다 | writer가 commit한다 | commit과 같다 | 기록 결과를 받은 뒤 응답한다. 실패는 경고만 남긴다 |
 | memory.db background writer(runner 결과·보고) | 각 스레드가 memory writer에 복합 연산을 넣고 결과를 기다린다(`MemoryAccess::run_blocking`) | writer가 commit한다 | commit과 같다 | 해당 없음 |
@@ -143,11 +146,11 @@
 
 | 분류 | 소비자 | 스레드 | 한 잠금 안에서 하는 일 |
 |---|---|---|---|
-| 단순 쓰기 | `memory.put`·`memory.delete`·secret·approval 기록·surface meta·effect 설치 metadata(writer 요청. 설치 metadata는 기다리지 않는 독립 묶음), telemetry·audit 기록 | 메인 루프(IPC) | 한 연산. 기록 시점 로그 정리가 붙는 경로는 prune 후 put |
-| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal·`memory.import`·command index·barrier·semaphore·lease·ratelimit IPC(각각 writer 요청 하나), session, 요청 게이트의 ratelimit 소비 | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. writer 요청은 그 판단 전체가 한 요청이라 같은 묶음의 앞 요청 반영을 본다. command index는 한도 판정을 writer 요청 안에서 하고 행 수 캐시는 결과를 거둘 때 고치며, 한도 알림은 다음 PTY 출력 처리 회차에 결과를 거둘 때 낸다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
+| 단순 쓰기 | `memory.put`·`memory.delete`·secret·approval 기록·surface meta·effect 설치 metadata(writer 요청. 설치 metadata는 기다리지 않는 독립 묶음), audit·anomaly 기록(기다리지 않는 writer 요청) | 메인 루프(IPC) | 한 연산. 기록 시점 로그 정리가 붙는 경로는 prune 후 put |
+| 복합 읽기-판단-쓰기 | blackboard·plan·cache·goal·`memory.import`·command index·barrier·semaphore·lease·ratelimit IPC(각각 writer 요청 하나), session, 요청 게이트의 세션 판정과 기록 단계(rate limit 소비·ipc_calls 기록·cap 재평가), `telemetry.record`(기록·cap 재평가) | 메인 루프(IPC·PTY 출력 처리) | 읽고 판단한 뒤 여러 번 쓴다. writer 요청은 그 판단 전체가 한 요청이라 같은 묶음의 앞 요청 반영을 본다. command index는 한도 판정을 writer 요청 안에서 하고 행 수 캐시는 결과를 거둘 때 고치며, 한도 알림은 다음 PTY 출력 처리 회차에 결과를 거둘 때 낸다. semaphore·lease의 저장은 CAS 없이 이 잠금의 직렬화에 의존한다. 여러 항목을 지우거나 되돌리는 연산은 원자적이지 않다 |
 | task | `TaskService`(생성·graph submit·삭제·purge. IPC는 writer 요청을 넣고 결과를 거둔 뒤 응답한다), 훅 완료 보고(기다리지 않는 writer 요청), runner tick | memory writer, `agent-runner-ws{N}`·부팅 정리 스레드(결과를 기다린다) | graph submit은 plan·stage·activate를 한 요청에서 한다. purge는 계획과 적용을 한 요청에서 한다. runner는 snapshot·점유 획득·상태 전이·완료를 각각 별도 요청으로 한다. 대기자 깨우기·정리 시작 같은 효과는 요청 본문이 모으고 commit된 결과를 받은 쪽이 실행한다. 본문은 다시 실행될 수 있어 효과를 직접 내지 않는다 |
 | background 쓰기 | observer memory sink·`approval.await` 결과·Run 결과·후처리·보고(writer 요청) | 각 전용 스레드 | observer는 채널에 쌓인 기록과 넘친 옛 키의 보존 삭제를 독립 요청 묶음 하나로 writer에 넣는다. 보존 삭제는 저장이 확정된 키만 센다 |
-| 읽기 | `memory.get`·`list`·`count`·`approval.history`·`approval.summary.get`·`surface.meta.get`·`list`, telemetry·감사·세션·명령 기록 조회(writer 요청), surface capture의 `restore.command`(journal worker가 writer 요청을 넣고 기다린다), 요청 게이트의 세션·cap·rate limit 판정, nickname 대상 찾기, DAG 화면, task 대기 | memory writer, 메인 루프(게이트·nickname), `dag-read`, task 대기 worker | writer 요청 하나 안의 조회는 한 시점을 본다. 메인 루프의 직접 읽기는 느린 저장에서 writer와 잠금을 다퉈 수백 ms를 기다릴 수 있다([남은 직접 잠금 읽기](storage.md#남은-직접-잠금-읽기)). DAG 화면은 모든 대상 workspace의 목록을 writer 요청 하나로 읽고 10ms씩 나눠 기다리며, 종료하거나 요청이 버려지면 기다림을 그만둔다(읽기만 하므로 결과를 버려도 남는 것이 없다). task 대기는 대기자를 먼저 등록한 뒤 writer 요청으로 읽는다 |
+| 읽기 | `memory.get`·`list`·`count`·`approval.history`·`approval.summary.get`·`surface.meta.get`·`list`, telemetry·감사·세션·명령 기록 조회(writer 요청), surface capture의 `restore.command`(journal worker가 writer 요청을 넣고 기다린다), 요청 게이트의 cap·nickname 대상 조회(강한 읽기 하나), DAG 화면, task 대기 | memory writer, `dag-read`, task 대기 worker | writer 요청 하나 안의 조회는 한 시점을 본다. 메인 루프는 writer 결과를 기다리지 않고 회차마다 확인한다. 직접 잠금 읽기가 느린 저장에서 수백 ms를 기다리던 측정은 [남은 직접 잠금 읽기](storage.md#남은-직접-잠금-읽기)에 있다. DAG 화면은 모든 대상 workspace의 목록을 writer 요청 하나로 읽고 10ms씩 나눠 기다리며, 종료하거나 요청이 버려지면 기다림을 그만둔다(읽기만 하므로 결과를 버려도 남는 것이 없다). task 대기는 대기자를 먼저 등록한 뒤 writer 요청으로 읽는다 |
 | 변경 구독 | `memory.changed` 발행 | GUI 이벤트 루프, headless 루프 | 두 루프가 회차마다 writer가 commit 뒤 옮겨 둔 변경 버퍼(`ChangeFeed`)를 꺼내 plugin에 발행한다. 저장소 잠금을 바로 얻을 때만 그 잠금 안에서 버퍼를 꺼내고 직접 잠금 소비자가 저장소 버퍼에 남긴 변경을 뒤에 붙인다. 잠금이 바쁘면 기다리지 않고 writer가 옮긴 변경만 꺼내며, 남은 변경은 writer의 다음 묶음 끝이나 다음 회차에 같은 순서로 나온다. plugin 매니저가 없으면 꺼낸 변경을 버려 버퍼가 쌓이지 않는다 |
 | 삭제 cleanup | surface·workspace 은퇴의 `purge_scope`(writer 요청 하나), 부팅 legacy 범위 밖 surface meta 정리(기다리지 않는 writer 요청), 범위 밖 surface meta 정리 | 메인 루프 | 대상이 다시 살아 있으면 정리를 넣지 않는다. 은퇴 정리는 결과를 다음 폴링 회차에 거두며, 같은 ID의 새 소유자가 쓰는 metadata는 정리 뒤에 접수되므로 지워지지 않는다 |
 | TTL 정리 | `Tick::LogPrune` 마다 `purge_expired`를 기다리지 않는 writer 요청 하나로 넣는다. `memory.gc`(Local 전용)도 같은 함수를 writer 요청으로 부른다 | 메인 루프(GUI·headless 같은 틱) | 판정은 만료 행을 이미 없는 것으로 보므로 정리는 디스크·quota 카운터 회수와 `expired` 발행이다. 로그 보존 정리와 별도 `Unit`으로 제출해도 writer 수집 묶음에 합쳐지면 transaction을 공유하고 저장 실패 시 함께 롤백될 수 있다. TTL 청소는 한 시간 claim과 관계없이 다음 `LogPrune` 틱에 다시 제출한다 |
@@ -171,6 +174,26 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | worker 소실로 결과 불명 | `-32603` | `memory writer ended before the request finished; it may have been stored` | `{"storage_failure":"other","outcome":"unknown"}` |
 | 요청 본문 panic | `-32603` | `memory request panicked` | `{"storage_failure":"other"}` |
 | 저장 실패·busy 재시도 시한 초과·요청 거절 | 기존 매핑 그대로 | 기존 매핑 그대로 | 저장 실패만 `storage_failure` |
+
+### 요청 게이트
+
+외부 IPC와 plugin host-call은 라우팅 전에 요청 게이트(`src/adapters/ipc/handler/gate.rs`)를 지난다. 저장이 필요한 단계는 writer에 요청을 넣고, 진입 경로는 요청과 진행 상태를 게이트 대기열(`src/app/request_gate.rs`)에 보관한다. 메인 루프는 결과를 기다리지 않고 회차마다 맨 앞 요청의 결과만 확인한다. 결과가 나오면 같은 진입 함수로 다시 들어와 남은 단계부터 진행한다.
+
+- 접수 순서: 대기열에 요청이 있으면 새 IPC 명령과 plugin 호출은 저장소가 필요 없어도 그 뒤에 선다. 맨 앞 요청이 끝나기 전에는 뒤 요청을 시작하지 않는다. 앞 요청이 바꾼 상태(세션 철회 등)를 뒤 요청의 게이트가 본다.
+- 종료: 종료가 시작되면 대기열의 요청은 실행하지 않고 `-32000 host is shutting down`으로 답한다. 이미 넣은 게이트 요청(세션 정리·rate limit 소비)은 확정될 수 있다.
+- 토큰 없는 Local 요청은 세션 판정을 하지 않는다. cap 차단은 plugin 호출자만 대상이고(Local alias·Agent는 차단하지 않는다), 기록 단계의 cap 재평가는 `_host`가 아닌 모든 agent ID에 적용한다.
+- `split`의 문자열 `target_surface`는 접수할 때 nickname으로 찾아 surface ID로 바꾼다. 이후 소유 창 찾기·journal 해석은 저장소를 읽지 않는다.
+
+단계별 실패 경계는 다음과 같다. 선택 조회와 기록의 실패는 새 거절을 만들지 않는다.
+
+| 단계 | writer 요청 | 확정하지 않음(저장 실패·같은 묶음의 이웃 실패) | 결과 불명 | 접수 거절 |
+|---|---|---|---|---|
+| 세션 판정(토큰이 있을 때) | 실행 단위. 만료 세션 삭제·만료 grant 정리를 함께 한다 | 같은 판정을 새 요청으로 다시 넣는다(판정은 다시 실행해도 같다). 세 번 모두 확정하지 않으면 쓰기 없는 강한 읽기로 판정한다. 만료 grant를 지워야 하는 세션은 그때 거절한다 | 같은 판정을 다시 넣는다 | `Closed` → `-32000 host is shutting down`, `Saturated` → `-32000 host is busy: …`(`data`: `{"storage_failure":"busy","writer":"saturated"}`) |
+| 쓰기 없는 판정 | 강한 읽기(단독 실행) | `-32001` 거절(직접 읽기의 조회 실패와 같다) | 해당 없음 | 위와 같다 |
+| cap·nickname 조회 | 강한 읽기 하나 | cap을 차단에 쓰지 않는다(fail-open). nickname은 찾지 못한 대상이 된다 | 해당 없음 | 조회 없이 진행한다 |
+| 기록(rate limit 소비·ipc_calls 기록·cap 재평가) | 실행 단위 하나 | 요청을 허용한다. 소비·기록은 남지 않는다 | 요청을 허용한다 | 요청을 허용한다 |
+
+세션 판정 본문 안의 형식 오류처럼 다시 해도 같은 조회 오류는 확정된 판정(세션 없음)으로 바꾸고 경고를 남긴다. 저장 실패만 writer 요청의 실패로 돌려 다시 넣는다. 감사·anomaly 기록과 로그 정리는 기다리지 않는 별도 요청이라 게이트 결과에 영향이 없다. 실패 경계는 실제 SQLite 저장소에 실패를 넣는 시험(`gate_tests.rs`)이 고정한다.
 
 ### 보존할 실행 계약
 

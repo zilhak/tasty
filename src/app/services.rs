@@ -97,6 +97,8 @@ pub(crate) struct AppServices {
     memory_access: tasty_memory::writer::MemoryAccess,
     /// writer 결과를 기다려 응답할 요청.
     memory_replies: crate::ipc::handler::deferred::MemoryReplies,
+    /// commit된 telemetry 기록 뒤 창 문맥이 있어야 실행할 cap 액션·RSS 탐지. 메인 루프가 회차마다 비운다.
+    telemetry_follow_ups: crate::ipc::handler::telemetry_follow_up::FollowUps,
     /// 예상하지 못한 writer 종료를 한 번만 알린다.
     memory_writer_end_reported: bool,
 }
@@ -122,6 +124,12 @@ pub(crate) struct PluginGauges {
 impl AppServices {
     pub(crate) fn now_instant(&self) -> std::time::Instant {
         self.clock.now_instant()
+    }
+
+    pub(crate) fn telemetry_follow_ups(
+        &self,
+    ) -> &crate::ipc::handler::telemetry_follow_up::FollowUps {
+        &self.telemetry_follow_ups
     }
 
     pub(crate) fn pressure(&self) -> &tasty_telemetry::PressureStats {

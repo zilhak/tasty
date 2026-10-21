@@ -29,13 +29,9 @@ pub fn handle_pane_list(
     JsonRpcResponse::success(id, json!(panes))
 }
 
-/// 숫자 ID나 별칭으로 surface를 찾는다. 점유 검사도 같은 해석을 사용한다.
-pub(crate) fn resolve_surface_target(
-    core: &crate::app::services::AppServices,
-    params: &serde_json::Value,
-) -> Option<u32> {
-    let val = params.get("target_surface");
-    let val = val?;
+/// 숫자 ID로 surface를 찾는다. 별칭은 게이트가 ID로 바꿔 둔다. 점유 검사도 같은 해석을 사용한다.
+pub(crate) fn resolve_surface_target(params: &serde_json::Value) -> Option<u32> {
+    let val = params.get("target_surface")?;
     if val.is_null() {
         return None;
     }
@@ -49,12 +45,8 @@ pub(crate) fn resolve_surface_target(
         if s.is_empty() {
             return None;
         }
-        if let Ok(n) = s.parse::<u32>() {
-            return Some(n);
-        }
-        return core.with_memory(|m| {
-            crate::surface_meta::SurfaceMetaStore::find_by_value(m, "nickname", s)
-        });
+        // nickname은 요청 게이트가 접수할 때 찾아 surface ID로 바꿔 둔다. 남은 문자열은 찾지 못한 대상이다.
+        return s.parse::<u32>().ok();
     }
     None
 }

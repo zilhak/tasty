@@ -225,6 +225,7 @@ target/release/examples/commit_baseline <빈 디렉터리> <결과.jsonl>
 | `batch100_independent`·`batch100_atomic`·`unit100` | 같은 파일을 다시 열어 100건을 `write_batch`(독립·원자) 또는 `run_unit` 하나로 쓰는 회차를 20번 반복한다 |
 | `close_reopened` | 같은 파일을 다시 열어 batch·실행 단위와 `maintenance_paths`를 실행한 연결을 drop하는 시간 |
 | `writer_burst100_concurrent`·`writer_inflow` | 따로 연 `writer.db`에서 burst100 동시와 inflow의 쓰기를 memory writer에 접수한다. 수집 창(`max_delay`) 1·2·5ms마다 실행한다. 대리 메인 루프는 같은 저장소 잠금을 직접 잡는다 |
+| `writer_gate_inflow` | `writer_inflow`와 같은 쓰기 유입 중에 대리 메인 루프가 1ms마다 결과를 기다리지 않고 확인만 한다. 진행 중인 게이트가 없으면 세션 판정 대리(읽기 실행 단위)를 넣고, 끝나면 기록 대리(읽기와 쓰기 실행 단위)를 넣는다 |
 | `writer_slow_*` | 같은 부하를 `writer_slow.db`에서 묶음(commit)마다 잠금을 쥔 채 5ms를 더해 실행한다 |
 
 2026-10-12 Linux(ext4, NVMe, 다른 빌드가 함께 도는 공유 컴퓨터)에서 3회 실행한 값이다. close 행은 같은 날 별도로 3회 실행한 값이다. 되읽은 설정은 WAL·NORMAL·foreign_keys ON·journal_size_limit 4096000이고 degraded가 아니었다. payload는 236바이트 JSON, owner는 `_host`, scope는 global이다.
@@ -290,7 +291,7 @@ memory writer를 도입한 뒤 2026-10-12 같은 컴퓨터(20코어, 1분 부하
 
 #### 남은 직접 잠금 읽기
 
-IPC 응답 경로를 writer로 옮긴 뒤에도 메인 루프에는 공유 잠금을 직접 잡는 읽기가 남는다(요청 게이트의 세션·cap·rate limit 판정, nickname 대상 찾기, GUI DAG 화면, 훅 완료 보고. 목록은 [저장 계약](storage-contract.md)). 2026-10-12 같은 harness를 3회 실행해(실행 직후 1분 부하 평균 2.96~3.21) writer가 쓰는 동안 대리 루프의 직접 get과 writer 요청의 완료 시간을 비교했다. 값은 3회의 범위다.
+IPC 응답 경로를 writer로 옮긴 뒤에도 메인 루프에 공유 잠금을 직접 잡는 읽기가 남아 있던 때(요청 게이트의 세션·cap·rate limit 판정, nickname 대상 찾기) 2026-10-12 같은 harness를 3회 실행해(실행 직후 1분 부하 평균 2.96~3.21) writer가 쓰는 동안 대리 루프의 직접 get과 writer 요청의 완료 시간을 비교했다. 값은 3회의 범위다.
 
 | 시나리오(수집 창) | 대리 루프 직접 get p50 · p95 · p99 · 최댓값 | writer completion p50 · p99 |
 |---|---|---|
@@ -301,6 +302,21 @@ IPC 응답 경로를 writer로 옮긴 뒤에도 메인 루프에는 공유 잠�
 
 - 느린 저장에서 수집 창이 1·2ms이면 직접 잠금 읽기가 수백 ms를 기다린다. 같은 부하에서 writer에 넣은 요청의 완료 p99는 20.2~23.6ms였다. 직접 읽기를 남기면 writer 도입 전보다 메인 루프 대기가 길어질 수 있다.
 - 빠른 저장에서는 직접 읽기 p99가 0.3ms 미만이다.
+
+요청 게이트는 이제 writer 결과를 기다리지 않고 회차마다 확인한다([요청 게이트](storage-contract.md#요청-게이트)). harness의 `gate_inflow`는 같은 유입 중에 대리 루프가 1ms마다 접수·확인만 하고, 세션 판정 대리(G: 읽기 실행 단위)가 끝나면 기록 대리(R: 읽기와 쓰기 실행 단위)를 넣는다. 2026-10-21 같은 컴퓨터에서 3회 실행했다(1분 부하 평균 0.80~1.19). 같은 실행의 직접 get을 함께 적는다. 값은 3회의 범위다.
+
+| 시나리오(수집 창) | 직접 get p99 | 게이트 대리 루프 회차 p99 · 최댓값 | G 완료 p50 · p99 | G+R 완료 p50 · p99 |
+|---|---|---|---|---|
+| inflow(1ms) | 92~179µs | 4~5µs · 10~13µs | 1.0ms · 2.0~2.1ms | 3.0ms · 7.0ms |
+| inflow(2ms) | 88~176µs | 3~6µs · 10~17µs | 1.0ms · 3.0ms | 3.0ms · 7.0ms |
+| inflow(5ms) | 124~131µs | 5µs · 10µs | 5.0ms · 6.1~8.0ms | 11.0ms · 12.0~13.0ms |
+| 느린 저장 inflow(1ms) | 1.05~2.06s | 3~4µs · 8~11µs | 9.0~10.0ms · 11~18ms | 20.0ms · 26~28ms |
+| 느린 저장 inflow(2ms) | 99~906ms | 1~3µs · 6~8µs | 10.0ms · 11~15ms | 20.0~21.0ms · 25~26ms |
+| 느린 저장 inflow(5ms) | 5.8~11.2ms | 4~7µs · 7~12µs | 11.0ms · 11.0~15.0ms | 18.0ms · 24~27ms |
+
+- 메인 루프 대리는 느린 저장에서도 회차마다 7µs 이하를 쓴다. 직접 get은 같은 부하에서 최대 2초를 기다렸다.
+- 대신 세션 토큰 요청 하나가 writer 왕복 두 번을 기다린다. 빠른 저장의 기본 수집 창에서 p99 7ms, 느린 저장에서 25~28ms다. 직접 읽기는 빠른 저장에서 0.2ms 미만이었으므로 요청 하나의 지연은 늘었다.
+- 완료 시간은 대리 루프의 1ms 확인 간격으로 잰 값이다. 호스트는 writer가 묶음을 끝낼 때 메인 루프를 깨운다([깨우기 묶음](#깨우기-묶음)).
 
 #### 깨우기 묶음
 

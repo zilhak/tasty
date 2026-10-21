@@ -9,27 +9,13 @@ use crate::store::audit::{AuditCallerKind, AuditDecision, AuditRecord, AuditStor
 use tasty_ipc::caller::SessionToken;
 
 impl IpcHostFacade for AppServices {
+    /// 결과를 기다리는 판정이다. 요청 게이트는 이 경로를 쓰지 않고 writer 결과를 거둔다.
     fn session_resolve(&self, token: &str, now_ms: u64) -> SessionResolution {
         let Ok(parsed) = token.parse::<SessionToken>() else {
             // 형식 오류와 미등록 token을 여기서는 구별하지 않는다. caller의 형식 검사는 별도다.
             return SessionResolution::NotFound;
         };
-        let resolved = match AppServices::session_resolve(self, &parsed, now_ms) {
-            Ok(Some(s)) => s,
-            Ok(None) => return SessionResolution::NotFound,
-            Err(e) => {
-                tracing::warn!("session_resolve lookup failed: {e}");
-                return SessionResolution::NotFound;
-            }
-        };
-        let mut perms: Vec<String> = resolved.permissions.to_vec();
-        for g in &resolved.temp_grants {
-            perms.push(g.permission.clone());
-        }
-        SessionResolution::Agent {
-            agent_id: resolved.agent_id,
-            permissions: perms,
-        }
+        self.session_resolve_blocking(parsed, now_ms)
     }
 
     fn record_audit(
@@ -63,15 +49,20 @@ impl IpcHostFacade for AppServices {
             reason: reason.map(|s| s.to_string()),
             workspace_id,
         };
-        let result = self.with_memory(|mem| {
-            // 조회가 없어도 보관 기간 정리가 실행되도록 기록을 추가할 때도 호출한다.
-            crate::store::log_retention::maybe_prune(mem, ts_ms);
-            let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
-            store.append(&record)?;
-            Ok::<(), crate::store::audit::AuditError>(())
-        });
-        if let Err(e) = result {
-            tracing::warn!("audit: append failed: {e}");
-        }
+        // 감사 기록은 응답을 막지 않는다. 기다리지 않는 writer 요청이며 실패는 경고만 남긴다.
+        let bytes = record.method.len() + record.reason.as_ref().map_or(0, String::len);
+        self.memory_access().submit_detached(
+            tasty_memory::writer::MemoryRequest::unit(bytes, move |mem| {
+                let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
+                Ok(store.append(&record).map_err(|e| e.to_string()))
+            }),
+            "audit append",
+            Some(Box::new(|output| {
+                if let Some(Err(e)) = output.into_value::<Result<(), String>>() {
+                    tracing::warn!("audit: append failed: {e}");
+                }
+            })),
+        );
+        self.submit_log_prune_if_due(ts_ms);
     }
 }

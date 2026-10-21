@@ -220,10 +220,10 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "워크스페이스 목록에서 어느 것이 활성인지를 플래그로 알린다",
     ),
     (
-        "src/adapters/ipc/handler/checked.rs",
+        "src/adapters/ipc/handler/gate.rs",
         PolicyScope,
-        1,
-        "permission·cap 게이트에 넘길 workspace_id — 요청 대상을 고르는 값이 아니라 정책을 귀속시킬 스코프다",
+        2,
+        "판정 단계(permission·cap)와 기록 결과 반영(throttle·Allow audit)에 넘길 workspace_id — 요청 대상을 고르는 값이 아니라 정책·감사를 귀속시킬 스코프다",
     ),
     (
         "src/adapters/ipc/handler.rs",

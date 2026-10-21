@@ -599,7 +599,7 @@ tasty agent lease-list --workspace 1  # 3개 원본 + wt-3-overflow-1/-2 총 5�
 `src/adapters/ipc/handler.rs` 의 미들웨어 체인:
 
 ```text
-ensure_allowed → check_cap_block → rate_limit_try_consume → record_ipc_call → audit Allow → route
+세션 판정 → ensure_allowed → check_cap_block → rate limit 소비·ipc_calls 기록(writer 실행 단위 하나) → audit Allow → route
 ```
 
 차단 시 `-32010 throttled: tokens_left=N` + audit Deny. **면제**(`should_rate_limit`): `Local`(사용자 직접) · host 자기 호출(`_host`) · `telemetry.*`(재귀 폭주 방지) · `agent.rate_limit_*`(자가 회복 경로 — 막히면 영구 차단) · `system.info`. 미등록 `(agent, metric)` 은 면제(opt-in 모델). store 접근 실패는 fail-open(warn 후 통과 — 인프라 고장으로 전 IPC 차단은 과도).

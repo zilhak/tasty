@@ -20,26 +20,18 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 /// Pause/RequireApproval cap이 발동한 플러그인의 모든 IPC를 차단한다.
-/// Local은 이 검사 대상이 아니므로 cap.reset으로 해제할 수 있다.
+/// Local은 이 검사 대상이 아니므로 cap.reset으로 해제할 수 있다. `caps`는 요청 게이트가 writer에서
+/// 읽은 cap 목록이며, 읽지 못했으면 None이라 차단하지 않는다(fail-open).
 pub(crate) fn check_cap_block(
-    core: &AppServices,
     caller: &CallerContext,
-    _method: &str,
+    caps: Option<&[tasty_telemetry::CostCap]>,
 ) -> Option<String> {
     if !caller.is_plugin() {
         return None;
     }
     let agent_id = caller.agent_id();
     let agent = agent_id.as_str();
-    // 요청 게이트는 아직 직접 잠금으로 판정한다.
-    let caps = match core.with_memory(load_all_caps) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!("cap block check: load failed: {e}");
-            return None;
-        }
-    };
-    for cap in &caps {
+    for cap in caps? {
         if cap.agent != agent {
             continue;
         }
@@ -57,43 +49,108 @@ pub(crate) fn check_cap_block(
     None
 }
 
-/// IPC 호출을 ipc_calls로 기록하고 메서드는 태그에 담는다.
-/// _host와 telemetry.*는 자기 집계를 피하려고 제외하며 기록 실패가 원래 호출을 막지는 않는다.
-pub(crate) fn record_ipc_call(
-    core: &mut AppServices,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
-    out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+/// 요청 게이트가 기록할 ipc_calls 이벤트. 메서드는 태그에 담는다.
+/// _host와 telemetry.*는 자기 집계를 피하려고 기록하지 않는다.
+pub(crate) fn ipc_call_event(
     caller: &CallerContext,
     method: &str,
-    params: &Value,
-) {
+    workspace_id: Option<u32>,
+    ts: u64,
+) -> Option<TelemetryEvent> {
     if method.starts_with("telemetry.") {
-        return;
+        return None;
     }
     let agent = caller.agent_id();
     if agent.is_host() {
-        return;
+        return None;
     }
-    let ws = engine.workspace_at(0).map(|w| w.id);
-    let ts = now_ms();
     let ev = match TelemetryEvent::new(agent.as_str(), "ipc_calls", 1.0, Op::Inc, ts) {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!("telemetry middleware: build event failed: {e}");
-            return;
+            return None;
         }
     };
-    let mut ev = ev.with_tag("method", method);
-    if let Some(w) = ws {
-        ev = ev.with_workspace(w);
+    let ev = ev.with_tag("method", method);
+    Some(match workspace_id {
+        Some(w) => ev.with_workspace(w),
+        None => ev,
+    })
+}
+
+/// 기록 후 상한에 닿은 cap. triggered는 이미 저장됐다.
+pub(crate) struct TriggeredCap {
+    pub(crate) cap: tasty_telemetry::CostCap,
+    pub(crate) current: f64,
+}
+
+/// 저장된 이벤트 뒤 상한을 검사해 triggered를 저장한다. writer 요청 본문 안에서 부르며 액션은
+/// 실행하지 않는다. 저장 실패가 아닌 오류는 `warnings`에 남기고 그 cap만 건너뛴다.
+pub(crate) fn trigger_caps_in(
+    s: &mut dyn tasty_memory::MemoryStorage,
+    ev: &TelemetryEvent,
+    warnings: &mut Vec<String>,
+) -> Vec<TriggeredCap> {
+    let caps = match load_all_caps(s) {
+        Ok(c) => c,
+        Err(e) => {
+            warnings.push(format!("cap eval: load failed: {e}"));
+            return Vec::new();
+        }
+    };
+    let mut triggered = Vec::new();
+    for mut cap in caps {
+        if !cap_matches_untriggered(&cap, ev) {
+            continue;
+        }
+        let current = match compute_current_value(s, &cap) {
+            Ok(v) => v,
+            Err(e) => {
+                warnings.push(format!("cap eval: compute failed for {}: {e}", cap.id));
+                continue;
+            }
+        };
+        if current < cap.threshold {
+            continue;
+        }
+        cap.triggered = Some(tasty_telemetry::CapTriggered {
+            at: now_ms(),
+            value: current,
+        });
+        if let Err(e) = save_cap(s, &cap) {
+            warnings.push(format!("cap eval: save failed for {}: {e}", cap.id));
+            continue;
+        }
+        triggered.push(TriggeredCap { cap, current });
     }
-    if let Err(e) = persist_event(core, &ev) {
-        tracing::warn!("telemetry middleware: record failed: {e}");
-        return;
+    triggered
+}
+
+/// 확정된 triggered cap의 액션을 실행한다. Notify는 알림, RequireApproval은 승인 요청, Pause는 알림이다.
+pub(crate) fn fire_triggered_caps(
+    core: &mut AppServices,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
+    out: &mut crate::ipc::window_port::IntentOutbox,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    triggered: &[TriggeredCap],
+) {
+    for t in triggered {
+        fire_cap_action(core, window, out, engine, &t.cap, t.current);
     }
-    evaluate_caps_after_record(core, window, out, engine, &ev);
-    for anomaly in detect_anomalies_after_ipc(core, agent.as_str(), method, params, ts) {
+}
+
+/// 게이트가 기록한 ipc_calls 뒤의 이상 탐지와 알림. 탐지기는 메모리 상태라 writer 결과를 거둔 뒤
+/// 한 번만 부른다.
+pub(crate) fn observe_ipc_call(
+    core: &AppServices,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
+    out: &mut crate::ipc::window_port::IntentOutbox,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    ev: &TelemetryEvent,
+    method: &str,
+    params: &Value,
+) {
+    for anomaly in detect_anomalies_after_ipc(core, &ev.agent, method, params, ev.ts) {
         fire_anomaly_notification(window, out, engine, &anomaly);
     }
 }
@@ -110,9 +167,7 @@ fn detect_anomalies_after_ipc(
     let detector = core.anomaly_detector.clone();
     let anomalies = detector.record_call(agent, method, params, ts, seq);
     for anomaly in &anomalies {
-        if let Err(e) = persist_anomaly(core, anomaly) {
-            tracing::warn!("anomaly persist failed: {e}");
-        }
+        persist_anomaly(core, anomaly);
     }
     anomalies
 }
@@ -194,23 +249,26 @@ fn build_event(
     Ok(ev)
 }
 
-/// 같은 밀리초에 들어온 이벤트는 새 seq로 키 충돌을 피한다.
-fn persist_event(core: &AppServices, ev: &TelemetryEvent) -> std::result::Result<String, String> {
-    let seq = core.telemetry_seq.next();
-    let key = event_key(ev.ts, seq);
+/// 이벤트 키를 접수 전에 정한다. 같은 밀리초 이벤트는 seq로 구별하고, 본문이 다시 실행돼도 같은 키다.
+pub(crate) fn reserve_event_key(core: &AppServices, ev: &TelemetryEvent) -> String {
+    event_key(ev.ts, core.telemetry_seq.next())
+}
+
+/// writer 요청 본문 안에서 이벤트 하나를 저장한다. 로그 보존 정리는 결과를 거둔 쪽이 따로 넣는다.
+pub(crate) fn put_event(
+    s: &mut dyn tasty_memory::MemoryStorage,
+    ev: &TelemetryEvent,
+    key: &str,
+) -> std::result::Result<(), String> {
     let scope = scope_for(ev.workspace_id);
     let value = MemoryValue::Json(serde_json::to_value(ev).map_err(|e| e.to_string())?);
     let opts = PutOpts {
         expires_at: None,
         cas: None,
     };
-    core.with_memory(|s| {
-        // 기록 유입 시 관측 로그를 정리한다. 공용 게이트로 최대 시간당 한 번 수행한다.
-        crate::store::log_retention::maybe_prune(s, ev.ts);
-        s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts)
-    })
-    .map_err(|e| format!("memory put failed: {e}"))?;
-    Ok(key)
+    s.put(tasty_memory::HOST_OWNER, &scope, key, &value, &opts)
+        .map(|_| ())
+        .map_err(|e| format!("memory put failed: {e}"))
 }
 
 pub mod anomaly;
@@ -231,4 +289,5 @@ pub use session::handle_session_summary;
 
 pub(super) use anomaly::fire_anomaly_notification;
 use anomaly::persist_anomaly;
-use cap::{evaluate_caps_after_record, load_all_caps};
+pub(crate) use cap::load_all_caps;
+use cap::{cap_matches_untriggered, compute_current_value, fire_cap_action, save_cap};

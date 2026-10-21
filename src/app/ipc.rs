@@ -21,6 +21,33 @@ pub(crate) use debug_settings::warn_unknown_debug_tabs;
 
 use crate::app::App;
 
+/// 한 회차에서 처리한 명령의 결과를 모은다.
+#[derive(Default)]
+pub(crate) struct StepTally {
+    processed: bool,
+    tool_registry_dirty: bool,
+}
+
+impl StepTally {
+    /// debug 종료 요청이면 true다.
+    fn note(&mut self, step: IpcStep) -> bool {
+        match step {
+            #[cfg(debug_assertions)]
+            IpcStep::Shutdown => {
+                self.processed = true;
+                return true;
+            }
+            IpcStep::HandledDirty => {
+                self.tool_registry_dirty = true;
+                self.processed = true;
+            }
+            IpcStep::Handled => self.processed = true,
+            IpcStep::NotHandled => {}
+        }
+        false
+    }
+}
+
 pub(crate) enum IpcStep {
     NotHandled,
     Handled,
@@ -80,62 +107,118 @@ impl IpcPacer {
 
 impl App {
     /// 공용 ipc_round의 수·시간 예산으로 처리한다. 한 명령 이상 처리했으면 true다.
+    /// 게이트 결과를 기다리던 요청을 먼저 진행한다. 기다리는 요청이 남아 있으면 새 명령은 그 뒤에 선다.
     pub(crate) fn process_ipc(&mut self) -> bool {
         let mut round = crate::app::ipc_round::IpcRound::begin();
-        let mut processed = false;
-        let mut tool_registry_dirty = false;
+        let mut tally = StepTally::default();
+        if self.advance_request_gates(&mut tally) {
+            return true;
+        }
         while let Some(cmd) = round.next(self.hub.ipc_server.as_deref()) {
+            if !self.gate_queue.is_empty() {
+                self.gate_queue.park(
+                    crate::app::request_gate::Gated::Ipc {
+                        cmd,
+                        progress: Default::default(),
+                    },
+                    false,
+                );
+                tally.processed = true;
+                continue;
+            }
             // Closes admitted on any path so far must not be republished by a plugin start here.
             self.sync_closing_surfaces();
             let observed =
                 crate::app::ipc_round::CommandObservation::begin(self.services.pressure(), &cmd);
-            let step = self.ipc_dispatch_command(cmd);
+            let step = self.ipc_dispatch_command(cmd, Default::default(), false);
             self.services.expect_no_parked_reply();
             observed.finish(self.services.slow_requests());
-            match step {
-                #[cfg(debug_assertions)]
-                IpcStep::Shutdown => {
-                    let end = round.finish(self.services.pressure(), self.services.dispatch());
-                    self.ipc_pacer.round_ended(std::time::Instant::now(), end);
-                    return true;
-                }
-                IpcStep::HandledDirty => {
-                    tool_registry_dirty = true;
-                    processed = true;
-                }
-                IpcStep::Handled => processed = true,
-                IpcStep::NotHandled => {}
+            if tally.note(step) {
+                let end = round.finish(self.services.pressure(), self.services.dispatch());
+                self.ipc_pacer.round_ended(std::time::Instant::now(), end);
+                return true;
             }
         }
         let end = round.finish(self.services.pressure(), self.services.dispatch());
         self.ipc_pacer.round_ended(std::time::Instant::now(), end);
-        if tool_registry_dirty {
+        self.finish_tally(tally)
+    }
+
+    fn finish_tally(&mut self, tally: StepTally) -> bool {
+        if tally.tool_registry_dirty {
             self.refresh_tool_registry();
             self.refresh_palette_plugin_commands();
         }
-        processed
+        tally.processed
+    }
+
+    /// 맨 앞 요청부터 결과가 나온 요청을 진행한다. 다시 기다리게 되면 멈춘다. debug 종료 요청을 만나면 true다.
+    pub(crate) fn advance_request_gates(&mut self, tally: &mut StepTally) -> bool {
+        while let Some(gated) = self.gate_queue.pop_ready(&self.services) {
+            match gated {
+                crate::app::request_gate::Gated::Ipc { cmd, progress } => {
+                    self.sync_closing_surfaces();
+                    let step = self.ipc_dispatch_command(cmd, progress, true);
+                    self.services.expect_no_parked_reply();
+                    if tally.note(step) {
+                        let tally = std::mem::take(tally);
+                        self.finish_tally(tally);
+                        return true;
+                    }
+                }
+                crate::app::request_gate::Gated::Plugin {
+                    call,
+                    request,
+                    progress,
+                } => {
+                    tally.processed = true;
+                    let caller = Self::plugin_caller(&call);
+                    self.dispatch_plugin_call(call, caller, request, progress, true);
+                }
+            }
+        }
+        false
     }
 
     /// 명령을 각 단계에 전달하고 처리·재집계·종료 여부를 반환한다. 일부 응답은 비동기로 이어진다.
-    fn ipc_dispatch_command(&mut self, cmd: crate::ipc::server::IpcCommand) -> IpcStep {
+    /// 게이트가 writer 결과를 기다리면 명령을 보관하고, 결과가 나오면 같은 함수로 다시 들어온다.
+    fn ipc_dispatch_command(
+        &mut self,
+        mut cmd: crate::ipc::server::IpcCommand,
+        mut progress: crate::ipc::handler::gate::GateProgress,
+        resumed: bool,
+    ) -> IpcStep {
+        use crate::ipc::handler::gate::Step;
         // 큐 대기와 handler 시간을 따로 기록한다. 대기 중 기한이 지났으면 게이트 전에 거절한다.
-        if !crate::app::ipc_round::claim_or_answer(&cmd, self.services.dispatch()) {
+        if progress.claim_once()
+            && !crate::app::ipc_round::claim_or_answer(&cmd, self.services.dispatch())
+        {
             return IpcStep::Handled;
         }
-        let caller = match self.ipc_resolve_caller(&cmd) {
-            Some(c) => c,
-            None => return IpcStep::Handled,
+        let caller = match self.ipc_resolve_caller(&cmd, &mut progress) {
+            Step::Ready(Some(c)) => c,
+            Step::Ready(None) => return IpcStep::Handled,
+            Step::Pending => return self.park_ipc(cmd, progress, resumed),
         };
         if let Some(response) = self.journal.reject_halted_request(&cmd.request) {
             crate::ipc::server::send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        let checked = match self.gates_before_routing(&cmd.request, &caller) {
-            Ok(checked) => checked,
-            Err(response) => {
+        if let Step::Pending = crate::ipc::handler::gate::prepare(
+            &self.services,
+            &mut cmd.request,
+            &caller,
+            &mut progress,
+        ) {
+            return self.park_ipc(cmd, progress, resumed);
+        }
+        let checked = match self.gates_before_routing(&cmd.request, &caller, &mut progress) {
+            Step::Ready(Ok(checked)) => checked,
+            Step::Ready(Err(response)) => {
                 crate::ipc::server::send_response(&cmd.response_tx, response);
                 return IpcStep::Handled;
             }
+            Step::Pending => return self.park_ipc(cmd, progress, resumed),
         };
         if self.journal.admit_ipc(&cmd, &caller) {
             return IpcStep::Handled;
@@ -157,6 +240,19 @@ impl App {
             return IpcStep::Handled;
         }
         IpcStep::NotHandled
+    }
+
+    fn park_ipc(
+        &mut self,
+        cmd: crate::ipc::server::IpcCommand,
+        progress: crate::ipc::handler::gate::GateProgress,
+        resumed: bool,
+    ) -> IpcStep {
+        self.gate_queue.park(
+            crate::app::request_gate::Gated::Ipc { cmd, progress },
+            resumed,
+        );
+        IpcStep::Handled
     }
 
     /// debug와 창 필요 단계를 같은 멱등 키 처리로 묶어 보존소를 한 번만 확인한다.

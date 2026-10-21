@@ -22,8 +22,8 @@ pub(super) fn generate_cap_id(core: &AppServices) -> String {
 }
 
 /// 모든 cap 을 memory 에서 읽어온다. cap 은 global scope 에만 저장.
-pub(super) fn load_all_caps(
-    store: &mut dyn tasty_memory::MemoryStorage,
+pub(crate) fn load_all_caps(
+    store: &dyn tasty_memory::MemoryStorage,
 ) -> std::result::Result<Vec<CostCap>, String> {
     let list_opts = ListOpts {
         prefix: Some(CAP_KEY_PREFIX.to_string()),
@@ -165,7 +165,7 @@ pub fn handle_cap_list(
     core.reply_store(
         id,
         params_bytes(params),
-        load_all_caps,
+        |s| load_all_caps(s),
         move |_, id, caps| {
             let mut caps = match caps {
                 Ok(c) => c,
@@ -213,7 +213,7 @@ pub fn handle_cap_remove(
 
 /// agent/metric/window의 이벤트를 집계한다. Set은 값을 교체하고 Inc/Dec는 더하거나 뺀다.
 pub(super) fn compute_current_value(
-    store: &mut dyn tasty_memory::MemoryStorage,
+    store: &dyn tasty_memory::MemoryStorage,
     cap: &CostCap,
 ) -> std::result::Result<f64, String> {
     let now = now_ms();
@@ -353,61 +353,8 @@ pub fn handle_cap_reset(
     )
 }
 
-/// 기록 후 상한을 검사해 triggered를 저장하고 액션을 실행한다. 실패는 경고로 남긴다.
-/// 실제 IPC 차단은 호출 전 check_cap_block에서 수행한다.
-pub(super) fn evaluate_caps_after_record(
-    core: &mut AppServices,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
-    out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    ev: &TelemetryEvent,
-) {
-    // 기록 경로는 요청 게이트와 함께 아직 직접 잠금을 쓴다.
-    let caps = match core.with_memory(load_all_caps) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!("cap eval: load failed: {e}");
-            return;
-        }
-    };
-    for mut cap in caps {
-        if !cap_matches_untriggered(&cap, ev) {
-            continue;
-        }
-        try_trigger_cap(core, window, out, engine, &mut cap);
-    }
-}
-
-fn cap_matches_untriggered(cap: &CostCap, ev: &TelemetryEvent) -> bool {
+pub(super) fn cap_matches_untriggered(cap: &CostCap, ev: &TelemetryEvent) -> bool {
     cap.agent == ev.agent && cap.metric == ev.metric && cap.triggered.is_none()
-}
-
-fn try_trigger_cap(
-    core: &mut AppServices,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
-    out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    cap: &mut CostCap,
-) {
-    let current = match core.with_memory(|s| compute_current_value(s, cap)) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("cap eval: compute failed for {}: {e}", cap.id);
-            return;
-        }
-    };
-    if current < cap.threshold {
-        return;
-    }
-    cap.triggered = Some(tasty_telemetry::CapTriggered {
-        at: now_ms(),
-        value: current,
-    });
-    if let Err(e) = core.with_memory(|s| save_cap(s, cap)) {
-        tracing::warn!("cap eval: save failed for {}: {e}", cap.id);
-        return;
-    }
-    fire_cap_action(core, window, out, engine, cap, current);
 }
 
 /// Notify는 알림, RequireApproval은 승인 요청, Pause는 알림을 만든다.

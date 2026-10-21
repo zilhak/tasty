@@ -57,7 +57,7 @@ impl JournalApplication {
             }
             if request.method == "remote.structural" {
                 let missing = self.unresolved_remote_anchor(ticket, [session.as_ref()]);
-                self.resolve_remote_request(ticket, session, services, missing);
+                self.resolve_remote_request(ticket, session, missing);
                 continue;
             }
             if matches!(
@@ -70,7 +70,7 @@ impl JournalApplication {
                     | "surface.respawn_terminal"
                     | "image.open"
             ) {
-                self.resolve_public_creation(ticket, session, services);
+                self.resolve_public_creation(ticket, session);
                 continue;
             }
             if matches!(

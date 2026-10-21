@@ -303,7 +303,7 @@ CLI capability 확인과 본 요청은 하나의 응답 대기 예산을 나눠 
 client는 부수효과 전에 capability를 확인한다.
 요청 비교용 digest는 전체 params 저장 비용을 줄이는 대신 충돌 가능성을 수용한다.
 
-키 길이 검사는 공통 check_request와 창 없는 Local check_without_engine에서 수행한다. 권한·cap·rate 검사와 허용된 요청의 사용량 집계 뒤, CheckedRequest를 만들기 전에 검사하여 기존 거절 순서를 유지한다. 목적지가 engine·App·plugin인지와 관계없이 잘못된 키는 -32602로 거절한다. 저장소 begin에서 같은 검사를 중복하지 않는다.
+키 길이 검사는 공통 요청 게이트(`handler/gate.rs`)와 창 없는 Local check_without_engine에서 수행한다. 권한·cap·rate 검사와 허용된 요청의 사용량 집계 뒤, CheckedRequest를 만들기 전에 검사하여 기존 거절 순서를 유지한다. 목적지가 engine·App·plugin인지와 관계없이 잘못된 키는 -32602로 거절한다. 저장소 begin에서 같은 검사를 중복하지 않는다.
 
 #### 어느 경로에 걸리나 — 호스트가 아는 이름은 전부 안, plugin 고유 이름만 밖
 

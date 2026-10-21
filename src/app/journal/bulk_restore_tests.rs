@@ -544,7 +544,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     );
     assert_eq!(
         crate::surface_meta::SurfaceMetaStore::get(
-            &mut *session.runtime.memory.lock().unwrap(),
+            &*session.runtime.memory.lock().unwrap(),
             ids[0],
             "restore.command"
         )

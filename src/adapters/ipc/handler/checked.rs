@@ -1,7 +1,5 @@
 //! 호출 경로에 필요한 진입 검사를 마친 요청. 외부 입력을 역직렬화해 만들 수 없다.
-use super::{CallerContext, JsonRpcRequest, JsonRpcResponse};
-use crate::app::services::AppServices;
-use crate::runtime::engine_access::EngineMut;
+use super::{CallerContext, JsonRpcRequest};
 
 /// 진입 검사를 통과한 요청. engine이 없는 GUI 부팅·종료 구간의 Local 호출은
 /// 멱등성 봉투만 검사하며 권한·cap·호출 빈도 검사와 집계는 생략한다.
@@ -69,64 +67,15 @@ impl CheckedRequest<'_> {
     }
 }
 
-/// engine이 있는 진입점의 권한·사용량 제한·호출 빈도를 검사하고 결과를 한 번 기록한다.
-fn check_scope_request<'a>(
-    core: &mut AppServices,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut EngineMut<'_>,
-    request: &'a JsonRpcRequest,
-    caller: &'a CallerContext,
-) -> Result<CheckedRequest<'a>, JsonRpcResponse> {
-    let canonical = crate::ipc::alias::canonicalize(&request.method);
-    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-    let ws = engine
-        .workspace_at(window.active_workspace_index(engine))
-        .map(|w| w.id);
-    // 거부 사유별 대응이 달라 따로 센다(docs/architecture/ipc-server.md). 첫 거부에서 반환하므로 중복 집계하지 않는다.
-    use tasty_telemetry::GateRefusal;
-    core.gate().record_judged();
-    let refused = super::check_permission_gate(core, window, engine, caller, canonical, ws, &id)
-        .map(|r| (GateRefusal::Permission, r))
-        .or_else(|| {
-            super::check_cap_gate(core, caller, canonical, ws, &id).map(|r| (GateRefusal::Cap, r))
-        })
-        .or_else(|| {
-            super::check_rate_limit_gate(core, caller, canonical, ws, &id)
-                .map(|r| (GateRefusal::Throttle, r))
-        });
-    if let Some((by, response)) = refused {
-        core.gate().record_refusal(by);
-        return Err(response);
+impl<'a> CheckedRequest<'a> {
+    /// 요청 게이트([`super::gate`])가 모든 단계를 통과시킨 요청.
+    pub(super) fn admitted(request: &'a JsonRpcRequest, caller: &'a CallerContext) -> Self {
+        Self {
+            request,
+            caller,
+            open_surfaces: None,
+        }
     }
-    super::record_telemetry_and_audit(core, window, engine, caller, canonical, &request.params, ws);
-    // 멱등성 키는 모든 라우터에 앞서 검사한다. 권한 검사를 먼저 거쳐
-    // 권한 없는 호출에는 `-32001`을 반환하고, 허용된 호출은 한 번 집계한다(docs/dev-guide/api-conventions.md).
-    super::idempotency::check_envelope(request, &id)?;
-    Ok(CheckedRequest {
-        request,
-        caller,
-        open_surfaces: None,
-    })
-}
-
-/// App constructs a detached scope before admission; a refused gate still returns its display outputs.
-pub(crate) fn check_request<'a>(
-    core: &mut AppServices,
-    state: &mut crate::state::RequestContext,
-    engine: &mut EngineMut<'_>,
-    request: &'a JsonRpcRequest,
-    caller: &'a CallerContext,
-) -> Result<CheckedRequest<'a>, JsonRpcResponse> {
-    let mut scope = crate::ipc::request_scope::RequestScope::capture(
-        state,
-        engine.core,
-        #[cfg(feature = "gui")]
-        None,
-    );
-    let result = check_scope_request(core, &mut scope, engine, request, caller);
-    let outputs = scope.finish();
-    outputs.apply(state, engine.core);
-    result
 }
 
 /// 창/parked engine이 전혀 없는 GUI 부팅·종료 구간에는 Local만 진입 가능하다.
@@ -135,7 +84,7 @@ pub(crate) fn check_request<'a>(
 pub(crate) fn check_without_engine<'a>(
     request: &'a JsonRpcRequest,
     caller: &'a CallerContext,
-) -> Result<CheckedRequest<'a>, JsonRpcResponse> {
+) -> Result<CheckedRequest<'a>, super::JsonRpcResponse> {
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
     if matches!(caller, CallerContext::Local { .. }) {
         super::idempotency::check_envelope(request, &id)?;
@@ -145,7 +94,7 @@ pub(crate) fn check_without_engine<'a>(
             open_surfaces: None,
         });
     }
-    Err(JsonRpcResponse::error(
+    Err(super::JsonRpcResponse::error(
         id,
         -32000,
         "no application state available for IPC admission",
@@ -154,7 +103,9 @@ pub(crate) fn check_without_engine<'a>(
 
 #[cfg(test)]
 mod tests {
+    use super::super::check_request;
     use super::*;
+    use crate::app::services::AppServices;
     use crate::state::RequestContext;
     use serde_json::json;
     use std::sync::Arc;

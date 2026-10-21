@@ -118,6 +118,43 @@ impl From<serde_json::Error> for SessionError {
 
 pub type Result<T> = std::result::Result<T, SessionError>;
 
+/// 쓰기 없이 본 세션 상태.
+#[derive(Debug)]
+pub enum SessionPeek {
+    /// 없음·철회·만료. [`SessionStore::resolve`]도 None을 돌려준다.
+    Missing,
+    /// 바로 쓸 수 있는 세션.
+    Valid(AgentSession),
+    /// 만료 grant를 지우는 쓰기가 있어야 판정이 끝난다.
+    NeedsWrite,
+}
+
+/// [`SessionStore::resolve`]와 같은 판정을 쓰기 없이 한다. 만료 세션은 지우지 않고 없는 것으로 본다.
+pub fn peek_session(
+    mem: &dyn MemoryStorage,
+    token: &SessionToken,
+    now_ms: u64,
+) -> Result<SessionPeek> {
+    let session = match mem.get(&Scope::Global, &session_key(token))? {
+        Some(entry) => match entry.value {
+            MemoryValue::Json(v) => serde_json::from_value::<AgentSession>(v)?,
+            _ => {
+                return Err(SessionError::InvalidArgument(
+                    "session entry is not json".into(),
+                ));
+            }
+        },
+        None => return Ok(SessionPeek::Missing),
+    };
+    if session.revoked || session.is_expired(now_ms) {
+        return Ok(SessionPeek::Missing);
+    }
+    if session.temp_grants.iter().any(|g| g.is_expired(now_ms)) {
+        return Ok(SessionPeek::NeedsWrite);
+    }
+    Ok(SessionPeek::Valid(session))
+}
+
 pub struct SessionStore<'a> {
     mem: &'a mut dyn MemoryStorage,
     owner: String,
@@ -188,6 +225,7 @@ impl<'a> SessionStore<'a> {
     }
 
     /// 만료·철회 세션은 None이다. 만료 세션은 삭제하고 만료 grant를 제거한 세션은 다시 저장한다.
+    /// 쓰기 없이 같은 판정을 하려면 [`peek_session`]을 쓴다.
     pub fn resolve(&mut self, token: &SessionToken, now_ms: u64) -> Result<Option<AgentSession>> {
         let mut session = match self.get_raw(token)? {
             Some(s) => s,

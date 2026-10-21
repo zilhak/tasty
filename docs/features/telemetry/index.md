@@ -66,7 +66,7 @@ Local 분기에서 `owner()` 는 항상 `_host` 이고 `agent_id()` 는 호출�
 
 토큰 없는 Local 호출의 agent ID 는 호출자가 적어 보낸 값이다 — 다른 agent·plugin 의 ID 를 적으면 그 이름의 텔레메트리가 늘고 그 이름에 걸린 cap 이 발동할 수 있다. `telemetry record --agent` 로도 같은 일을 할 수 있다. 이 모델은 **악의보다 버그** 영역으로 처리한다 — *정직한 agent 의 폭주를 막는 안전망*. 적대적 agent 방어는 OS 권한·plugin 매니페스트가 우선.
 
-검증 가능한 신원: claude plugin 은 child 기동 때 `issue_session_token`(`crates/tasty-plugin-claude/src/handlers.rs`)으로 `session.issue` 토큰을 받아 `TASTY_SESSION_TOKEN` 으로 싣고, CLI 가 그 env 를 envelope 에 실으면 `resolve_caller_from_envelope`(`crates/tasty-ipc/src/caller.rs`)가 `CallerContext::Agent` 로 해석한다. 토큰이 잘못됐거나 만료면 Local 로 떨어지지 않고 거부된다.
+검증 가능한 신원: claude plugin 은 child 기동 때 `issue_session_token`(`crates/tasty-plugin-claude/src/handlers.rs`)으로 `session.issue` 토큰을 받아 `TASTY_SESSION_TOKEN` 으로 싣고, CLI 가 그 env 를 envelope 에 실으면 요청 게이트의 세션 판정(`src/adapters/ipc/handler/gate.rs` 의 `resolve_caller`, 판정 결과 해석은 `crates/tasty-ipc/src/caller.rs` 의 `caller_from_session`)이 `CallerContext::Agent` 로 해석한다. 토큰이 잘못됐거나 만료면 Local 로 떨어지지 않고 거부된다.
 
 #### 테스트
 
@@ -145,7 +145,7 @@ DB 설정과 느린 요청 기록은 아래 표처럼 별도 항목이다.
 | `keyed_requests` | 멱등 보존소의 판정 (`idempotency::Store::decide`) | **멱등 키를 실은** 요청만 — 한 요청은 자기를 맡은 층의 판정으로 한 번 |
 | `slow_requests` | 명령을 꺼낸 직후·다 다룬 직후 (`app::ipc_round::CommandObservation`, gui · headless 같은 자리) + plugin 대기 표의 응답·만료·취소 (`PluginManager::record_origin_hop`) | 호스트 IPC 큐를 지난 요청 중 **합이 문턱(100 ms) 이상인 것만** — `system.pressure` 자신은 안 넣는다 |
 | `memory_writer` | memory.db 전담 writer의 접수와 묶음 실행 (`tasty_utils::batch_writer`) | writer에 **접수된** 요청과 거절, 실행한 묶음 크기 분포(`batch_sizes`), busy 재실행, flush, 지금·최대 잡힌 항목 수와 바이트. writer가 없는 시험 구성이면 `null` |
-| `gate_refusals` | 공통 진입 게이트 (`handler/checked.rs` 의 `check_request`) | 게이트에 **든** 요청 전부(`judged`) — Local 도, 큐를 안 지나는 plugin host-call 도 센다. 거절은 게이트마다 한 칸 |
+| `gate_refusals` | 공통 진입 게이트 (`handler/gate.rs` 의 판정 단계) | 게이트에 **든** 요청 전부(`judged`) — Local 도, 큐를 안 지나는 plugin host-call 도 센다. 거절은 게이트마다 한 칸 |
 
 `queue_before_gate` 안에서 명령을 세는 수가 둘이다. `waits` 는 대기를 기록한 명령 수로, 명령을 **꺼내는 순간** 대기 합·최댓값·분포와 함께 오른다 — `wait_us_mean` 의 분모이고 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 **끝날 때** 그 회차가 꺼낸 수만큼 오르고 `depth_mean`(= `commands / drains`)의 분자다. 조회는 늘 자기 회차 안에서 답하므로 한 답 안에서 `commands` 는 아직 도는 회차(조회 자신 포함)만큼 `waits` 보다 작다 — 평균을 `commands` 로 나누면 최댓값을 넘는 값이 나왔다([IPC 서버](../../architecture/ipc-server.md)).
 
@@ -316,7 +316,7 @@ cap 을 푼다 · 기다린다). 단 `permission_denied` 는 **권한 게이트�
 Local 호출자는 이 게이트에서 돌려보내지지 않으므로 없는 메서드를 불러도 이 칸에 안 든다. 응답
 메시지(`permission_denied: unknown ipc method …` 등)가 셋을 가른다. `-32001` 인데 이 칸에 안 드는 것이 두
 부류다 — ⒜ **봉투 토큰 거절**: `session_token` 의 형식 오류 · unknown/expired/revoked 는
-`resolve_caller_from_envelope`(`crates/tasty-ipc/src/caller.rs`)가 게이트 **앞**에서 답하므로 `judged` 에도 안
+세션 판정 단계(`handler/gate.rs` 의 `resolve_caller`)가 판정 단계 **앞**에서 답하므로 `judged` 에도 안
 든다(낡은 `TASTY_SESSION_TOKEN` 을 든 CLI 가 이 경로다). ⒝ **게이트를 지난 뒤 핸들러가 내는 `-32001`**: 입력
 시뮬레이션 미허용(debug) · macOS 손쉬운 사용 미승인 `surface.raw_key`(debug, macOS) · 세션 발급의 격상 거절 · plugin manager
 쪽 거절(자기 namespace 호출 · `ipc.invoke` 부족 · extension filter 차단)은 게이트를 지났으므로 통과 쪽에 든다.

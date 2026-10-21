@@ -145,7 +145,6 @@ impl Spec {
         request: &crate::ipc::protocol::JsonRpcRequest,
         engine: &crate::runtime::engine_access::EngineRef<'_>,
         view: &crate::runtime::journal_product::CompletionView,
-        services: &crate::app::services::AppServices,
     ) -> Result<Self, crate::ipc::protocol::JsonRpcResponse> {
         use crate::ipc::{handler::params, protocol::JsonRpcResponse};
         let id = serde_json::Value::Null;
@@ -247,7 +246,7 @@ impl Spec {
                 )
             }
             "split" => {
-                let surface = crate::ipc::handler::pane::resolve_surface_target(services, &input);
+                let surface = crate::ipc::handler::pane::resolve_surface_target(&input);
                 let pane = params::optional_u32(&input, "target_pane", &id)?;
                 if surface.is_none() && pane.is_none() {
                     return Err(bad("Missing target. Use 'target_surface' (surface ID or nickname) and/or 'target_pane' (pane ID)".into()));

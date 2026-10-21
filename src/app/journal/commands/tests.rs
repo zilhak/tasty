@@ -1225,7 +1225,6 @@ fn an_explicit_cwd_opens_an_explorer_there_from_every_creation_method() {
     let pane = session.core_state.find_pane_for_surface(ws_sid).unwrap();
 
     // tab.create·split 은 창의 완료 단계와 같은 resolve_public_creation 으로 해소한다.
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
     let public = |journal: &mut JournalApplication,
                   session: &mut EngineSession,
                   rx: &std::sync::mpsc::Receiver<JsonRpcResponse>| {
@@ -1233,7 +1232,7 @@ fn an_explicit_cwd_opens_an_explorer_there_from_every_creation_method() {
         loop {
             journal.poll_bootstrap(&mut [&mut *session], None).unwrap();
             for (ticket, _) in journal.requests_needing_resolution() {
-                journal.resolve_public_creation(ticket, session, &services);
+                journal.resolve_public_creation(ticket, session);
             }
             if let Ok(response) = rx.try_recv() {
                 return response;

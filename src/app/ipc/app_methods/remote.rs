@@ -48,7 +48,11 @@ impl App {
     /// 자기 자신이 대상이면 loopback 표기는 여기서 동기 오류로 끝난다. SSH 경로는 터널 너머
     /// `system.info` 왕복이 필요해, 새 workspace는 생성 전 같은 오류로 응답하고 기존 workspace는
     /// 즉시 응답한 뒤 비동기로 거절해 `remote.refusals`에 남긴다.
-    pub(super) fn ipc_dispatch_remote_attach(&mut self, cmd: &IpcCommand) {
+    pub(super) fn ipc_dispatch_remote_attach(
+        &mut self,
+        cmd: &IpcCommand,
+        caller: &host_ipc::caller::CallerContext,
+    ) {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let conn = match RemoteConnParams::parse(&cmd.request.params) {
             Ok(c) => c,
@@ -98,9 +102,7 @@ impl App {
         let run = match &target {
             RemoteAttachTarget::Existing(remote_ws) => Some(crate::request_runs::begin(
                 "remote.attach",
-                crate::ipc::caller::resolve_caller_from_envelope(&self.services, &cmd.request)
-                    .ok()
-                    .and_then(|caller| crate::request_runs::reader_of(&caller)),
+                crate::request_runs::reader_of(caller),
                 serde_json::json!({ "remote_workspace": remote_ws, "attempt": attempt.id() }),
             )),
             RemoteAttachTarget::Create { .. } => None,

@@ -65,7 +65,6 @@ fn public(
         &crate::ipc::server::IpcCommand::new(request, tx),
         &crate::ipc::caller::CallerContext::local()
     ));
-    let services = crate::ipc::handler::cli_entry_tests::test_core();
     let mut stall = StallBudget::new(journal);
     loop {
         journal.poll_bootstrap(&mut [&mut *session], None).unwrap();
@@ -73,7 +72,7 @@ fn public(
             if pending.method == "workspace.create" {
                 journal.resolve_workspace_creation(ticket, session, None);
             } else {
-                journal.resolve_public_creation(ticket, session, &services);
+                journal.resolve_public_creation(ticket, session);
             }
         }
         if let Ok(response) = rx.try_recv() {

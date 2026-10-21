@@ -377,6 +377,12 @@ impl AppServices {
             "expired memory purge",
             None,
         );
+        self.submit_log_prune_if_due(now_ms);
+    }
+
+    /// 한 시간 간격이 돌아왔으면 관측 로그 보존 정리를 기다리지 않는 writer 요청으로 넣는다.
+    /// 기록을 넣은 경로가 함께 부르므로 조회가 없어도 보존 정리가 실행된다.
+    pub(crate) fn submit_log_prune_if_due(&self, now_ms: u64) {
         if crate::store::log_retention::claim_prune(now_ms) {
             self.memory_access().submit_detached(
                 tasty_memory::writer::MemoryRequest::unit(0, move |memory| {

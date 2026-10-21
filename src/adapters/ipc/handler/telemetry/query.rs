@@ -81,7 +81,7 @@ impl QueryFilter {
 }
 
 pub(super) fn collect_events(
-    store: &mut dyn tasty_memory::MemoryStorage,
+    store: &dyn tasty_memory::MemoryStorage,
     filter: &QueryFilter,
 ) -> std::result::Result<Vec<TelemetryEvent>, String> {
     let scopes: Vec<Scope> = if let Some(w) = filter.workspace_id {

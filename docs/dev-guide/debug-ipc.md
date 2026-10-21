@@ -14,7 +14,7 @@
 
 ## 라우팅
 
-JSON-RPC 라우터는 공통 `check_request`의 권한·cap·rate 검사와 사용량 집계를 마친 요청만 `src/adapters/ipc/handler.rs::handle_checked_request`에 넘기고, 핸들러 탐색은 그 안의 `dispatch_routed` 가 한다:
+JSON-RPC 라우터는 공통 요청 게이트(`src/adapters/ipc/handler/gate.rs`)의 권한·cap·rate 검사와 사용량 집계를 마친 요청만 `src/adapters/ipc/handler.rs::handle_checked_request`에 넘기고, 핸들러 탐색은 그 안의 `dispatch_routed` 가 한다:
 
 `dispatch_routed`는 `RequestScope`와 `IntentOutbox`로 요청별 결과를 모아 적용하고,
 공통 엔진 핸들러가 처리하지 않은 요청을 GUI의 `route_window_handler`, debug의

@@ -204,7 +204,7 @@ const DELEGATED_ROUTERS: &[(&str, &str)] = &[
         "dispatch_lifecycle_toggle",
     ),
     ("src/adapters/ipc/handler/plugin.rs", "dispatch_readonly"),
-    ("src/adapters/ipc/handler/telemetry.rs", "record_ipc_call"),
+    ("src/adapters/ipc/handler/telemetry.rs", "ipc_call_event"),
     (
         "src/adapters/ipc/handler/terminal_input.rs",
         "handle_input_rule_update",
@@ -346,7 +346,7 @@ fn no_delegated_router_escapes_the_roster() {
 }
 
 /// 호출 인자에 request.method가 직접 나타나는지 확인한다. 모든 호출자의 값을 입증하는 검사는 아니다.
-/// 지역 변수의 정의를 추적하지 않아 canonical을 받는 should_rate_limit·record_ipc_call과
+/// 지역 변수의 정의를 추적하지 않아 canonical을 받는 should_rate_limit·ipc_call_event와
 /// 리터럴을 받는 method_scoped_resource_id는 직접 연결되지 않는다.
 /// 직접 연결 수가 0이 아닌지, 연결되지 않은 항목 수가 위 세 항목의 상한 3을 넘지 않는지 확인한다.
 #[test]

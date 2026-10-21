@@ -91,7 +91,7 @@ slack이 지난 뒤에야 후보로 추가되거나 Strict로 바뀌는 것은 �
 `TerminalStore` 제거 + waker 게이트 해제 + 회수 기록 + 알림을 한 묶음으로 해야 하는데
 (하나라도 빠지면 누수나 결과 전달 누락), 경로마다 따로 쓰면 언젠가 어긋난다. 그래서 후처리를
 `EngineMut::reclaim_standalone_ptys` 한 곳으로 묶고 lazy·GUI 주기·headless 주기 경로가 그것만 부르게 했다. 로그 prune
-도 같은 이유로 진입점(`log_retention::maybe_prune`)과 게이트(`LAST_PRUNE_MS`)를
+도 같은 이유로 주기 판정(`log_retention::claim_prune`)과 게이트(`LAST_PRUNE_MS`)를
 공유한다 — 새 게이트를 만들면 두 드라이버가 각자 주기를 세게 된다.
 
 <a id="every-는-바닥치기arm_derived-대상이-아니다"></a>

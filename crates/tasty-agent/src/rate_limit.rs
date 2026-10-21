@@ -9,8 +9,8 @@
 //!
 //! 영속: `tasty.agent.rate_limit.<id>` (Global scope — agent/workspace 무관).
 //!
-//! CRUD + `try_consume` 을 제공하며, IPC dispatcher 미들웨어(`handler.rs` 의
-//! `should_rate_limit` + `rate_limit_try_consume`)가 매 호출마다 자동 평가한다.
+//! CRUD + `try_consume` 을 제공하며, 호스트 요청 게이트(`should_rate_limit` 으로 대상을 고르고
+//! writer 실행 단위 안에서 `try_consume`)가 매 호출마다 자동 평가한다.
 //! 호출자가 직접 `try_consume` 으로 토큰 소비를 검사할 수도 있다.
 //!
 //! 토큰 버킷:

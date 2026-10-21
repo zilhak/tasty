@@ -144,7 +144,7 @@ GUI 단위 시험은 namespace 단계 함수(`forward_owned_namespace`) 안의 �
 
 ## 진입 검사 거절 집계
 
-gate_refusals는 check_request에 들어온 judged와 permission_denied·cap_blocked·throttled를 프로세스 누계로 제공한다.
+gate_refusals는 요청 게이트의 판정 단계(`handler/gate.rs`)에 들어온 judged와 permission_denied·cap_blocked·throttled를 프로세스 누계로 제공한다.
 앞 검사에서 거절되면 뒤 검사는 실행하지 않아 요청당 거절은 최대 하나다.
 permission_denied에는 UnknownMethod·NotPluginCallable도 포함돼 모두 권한 요청으로 해결되지는 않는다.
 토큰 해석 실패·엔진 없는 경로·키 길이 검사·handler 내부 오류는 이 세 거절 수와 다르다.

@@ -425,6 +425,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.services.poll_memory_writer();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
+        self.run_telemetry_follow_ups();
         self.poll_local_reads();
         self.poll_dag_reads();
         self.poll_profile_detections();

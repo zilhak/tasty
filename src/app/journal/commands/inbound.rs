@@ -108,7 +108,6 @@ impl JournalApplication {
         &mut self,
         ticket: u64,
         session: &mut EngineSession,
-        services: &crate::app::services::AppServices,
         unresolved_anchor: String,
     ) {
         if !self.bind_command_engine(ticket, session.id) {
@@ -299,7 +298,7 @@ impl JournalApplication {
         // The original request/digest was already admitted. Only the execution target is normalized.
         pending.request = normalized;
         if matches!(method.as_str(), "tab.create" | "split") {
-            self.resolve_public_creation(ticket, session, services);
+            self.resolve_public_creation(ticket, session);
         } else {
             self.resolve_ipc_for_engine(ticket, session);
         }

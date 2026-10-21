@@ -130,7 +130,7 @@ impl AnomalyDetector {
     /// IPC 호출 1회 기록 + CallBurst/SlowLoop 검출. 한 호출에서 두 종류가
     /// 동시에 발화할 수 있으므로 `Vec` 을 반환한다 (보통은 비어있음).
     ///
-    /// 호스트 dispatcher 의 `record_ipc_call` 직후에서 호출되도록 설계.
+    /// 호스트 요청 게이트가 ipc_calls 기록을 확정한 직후에 호출되도록 설계.
     /// `agent` 가 `_host` 이거나 method 가 `telemetry.` 로 시작하면 호출하지 않는다
     /// (호스트 측이 책임). `id_seq` 는 anomaly id 의 단조 증가 컴포넌트 — 두
     /// anomaly 가 같은 tick 에서 함께 발화해도 id 가 겹치지 않도록 SlowLoop 쪽은

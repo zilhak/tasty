@@ -27,6 +27,9 @@ pub(crate) mod deferred;
 mod file_handler;
 #[cfg(feature = "gui")]
 pub(crate) mod file_picker;
+pub(crate) mod gate;
+#[cfg(test)]
+mod gate_faults;
 #[cfg(feature = "gui")]
 mod git_viewer;
 mod hook_handler;
@@ -71,6 +74,7 @@ mod settings;
 pub(crate) mod surface;
 pub(crate) mod tab;
 mod telemetry;
+pub(crate) mod telemetry_follow_up;
 pub(crate) mod terminal;
 mod terminal_input;
 pub(crate) mod theme;
@@ -97,8 +101,10 @@ pub mod session;
 
 #[cfg(feature = "gui")]
 pub(crate) use checked::check_without_engine;
-pub(crate) use checked::{CheckedRequest, OwnedCheckedRequest, check_request};
+pub(crate) use checked::{CheckedRequest, OwnedCheckedRequest};
 pub(crate) use deferred::{Handled, ReplyTo};
+#[cfg(test)]
+pub(crate) use gate::check_request;
 
 use crate::runtime::engine_access::EngineMut;
 use std::borrow::Cow;
@@ -319,15 +325,16 @@ pub(crate) fn check_permission_gate(
 }
 
 /// Pause·RequireApproval cap이 적용된 agent를 차단한다.
-/// Local은 제외하므로 telemetry.cap.reset으로 해제할 수 있다.
+/// Local은 제외하므로 telemetry.cap.reset으로 해제할 수 있다. `caps`는 게이트가 읽은 cap 목록이다.
 pub(crate) fn check_cap_gate(
     core: &mut crate::app::services::AppServices,
     caller: &CallerContext,
     canonical: &str,
     workspace_id: Option<u32>,
     id: &serde_json::Value,
+    caps: Option<&[tasty_telemetry::CostCap]>,
 ) -> Option<JsonRpcResponse> {
-    if let Some(reason) = telemetry::check_cap_block(core, caller, canonical) {
+    if let Some(reason) = telemetry::check_cap_block(caller, caps) {
         tracing::warn!("ipc cap blocked: {reason}");
         let seq = core.telemetry_seq.next();
         crate::ipc::audit::record(
@@ -346,73 +353,6 @@ pub(crate) fn check_cap_gate(
         ));
     }
     None
-}
-
-/// ipc_calls 한도 초과를 -32010과 Deny로 반환한다. 복구 메서드는 제외한다.
-/// 거절된 호출은 ipc_calls 대신 RateLimit.throttled_count에 집계한다.
-pub(crate) fn check_rate_limit_gate(
-    core: &mut crate::app::services::AppServices,
-    caller: &CallerContext,
-    canonical: &str,
-    workspace_id: Option<u32>,
-    id: &serde_json::Value,
-) -> Option<JsonRpcResponse> {
-    if !should_rate_limit(caller, canonical) {
-        return None;
-    }
-    let agent_id = caller.agent_id();
-    let agent = agent_id.as_str();
-    match core.rate_limit_try_consume(agent, "ipc_calls", 1, telemetry::now_ms()) {
-        Ok(outcome) if !outcome.allowed => {
-            let reason = format!("throttled: tokens_left={:.2}", outcome.tokens_left);
-            tracing::warn!("ipc rate_limited: {reason}");
-            let seq = core.telemetry_seq.next();
-            crate::ipc::audit::record(
-                core,
-                caller,
-                canonical,
-                crate::store::audit::AuditDecision::Deny,
-                Some(&reason),
-                workspace_id,
-                seq,
-            );
-            Some(JsonRpcResponse::error(id.clone(), -32010, reason))
-        }
-        Ok(_) => None,
-        Err(e) => {
-            // fail-open: rate_limit 인프라 자체 실패는 전체 IPC 차단보다 통과 + warn.
-            tracing::warn!("rate_limit middleware error: {e}");
-            None
-        }
-    }
-}
-
-/// 허용된 비-host 호출을 집계한다. telemetry 자체 호출은 재귀 집계를 막기 위해 제외한다.
-/// Allow 감사 기록의 보존 여부는 audit 모듈이 결정한다(docs/design/systems/storage.md).
-fn record_telemetry_and_audit(
-    core: &mut crate::app::services::AppServices,
-    window: &mut dyn IpcWindow,
-    engine: &mut EngineMut<'_>,
-    caller: &CallerContext,
-    canonical: &str,
-    params: &serde_json::Value,
-    workspace_id: Option<u32>,
-) {
-    // 게이트에서 만든 intent가 같은 요청의 handler intent보다 먼저 큐에 들어간다.
-    let mut out = crate::ipc::window_port::IntentOutbox::default();
-    telemetry::record_ipc_call(core, window, &mut out, engine, caller, canonical, params);
-    window.enqueue_intents(out);
-
-    let seq = core.telemetry_seq.next();
-    crate::ipc::audit::record(
-        core,
-        caller,
-        canonical,
-        crate::store::audit::AuditDecision::Allow,
-        None,
-        workspace_id,
-        seq,
-    );
 }
 
 /// Local과 호스트 호출은 제한하지 않는다.
@@ -463,7 +403,6 @@ pub(crate) fn display_plugin_rss_anomalies(
 /// 대상이 없거나 파라미터가 잘못되면 실제 핸들러가 오류를 반환하도록 넘긴다.
 /// 대상을 생략한 preset.apply는 적용 코드와 같게 이 창의 활성 workspace를 대상으로 본다.
 pub(crate) fn hard_occupied_structural_guard(
-    core: &crate::app::services::AppServices,
     engine: &crate::runtime::engine_access::EngineRef<'_>,
     active_ws_idx: usize,
     method: &str,
@@ -477,7 +416,7 @@ pub(crate) fn hard_occupied_structural_guard(
             let target_pane = params::read_int::<u32>(params, "target_pane")
                 .ok()
                 .flatten();
-            let target_surface = pane::resolve_surface_target(core, params);
+            let target_surface = pane::resolve_surface_target(params);
             target_pane
                 .and_then(|pid| engine.find_workspace_index_for_pane(pid))
                 .or_else(|| {
@@ -602,7 +541,6 @@ fn route_engine_handler(
         ));
     }
     if let Some(resp) = hard_occupied_structural_guard(
-        core,
         &engine.as_ref(),
         window.active_workspace_index(engine),
         &request.method,
@@ -954,10 +892,10 @@ fn route_engine_handler(
             approval::handle_summary_get(core, engine, caller, id, &request.params)
         }
         "telemetry.record" => {
-            telemetry::handle_record(core, window, out, engine, caller, id, &request.params)
+            telemetry::handle_record(core, window, engine, caller, id, &request.params)
         }
         "telemetry.record_batch" => {
-            telemetry::handle_record_batch(core, window, out, engine, caller, id, &request.params)
+            telemetry::handle_record_batch(core, window, engine, caller, id, &request.params)
         }
         "telemetry.summary" => telemetry::handle_summary(core, engine, caller, id, &request.params),
         "telemetry.timeseries" => {

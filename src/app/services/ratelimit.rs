@@ -47,9 +47,8 @@ pub(crate) fn try_consume(
 
 use crate::app::services::AppServices;
 
-/// 요청 게이트가 쓴다. 게이트는 메인 루프에서 저장소를 직접 잠근다.
 impl AppServices {
-    /// 시험이 게이트 한도를 미리 채울 때 쓴다.
+    /// 시험이 게이트 한도를 미리 채울 때 쓴다. 결과를 기다리므로 메인 루프는 쓰지 않는다.
     #[cfg(test)]
     pub(crate) fn rate_limit_set(
         &self,
@@ -60,16 +59,18 @@ impl AppServices {
         burst: Option<u32>,
         now_ms: u64,
     ) -> Result<RateLimit, AgentError> {
-        self.with_memory(|mem| set(mem, agent, metric, limit, per_ms, burst, now_ms))
-    }
-
-    pub(crate) fn rate_limit_try_consume(
-        &self,
-        agent: &str,
-        metric: &str,
-        cost: u32,
-        now_ms: u64,
-    ) -> Result<ConsumeOutcome, AgentError> {
-        self.with_memory(|mem| try_consume(mem, agent, metric, cost, now_ms))
+        self.memory_access()
+            .run_blocking(0, move |mem| {
+                set(
+                    mem,
+                    agent.clone(),
+                    metric.clone(),
+                    limit,
+                    per_ms,
+                    burst,
+                    now_ms,
+                )
+            })
+            .map_err(|blocked| AgentError::from(blocked.to_memory_error()))?
     }
 }

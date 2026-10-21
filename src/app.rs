@@ -68,6 +68,7 @@ pub(crate) mod process_exit;
 pub(crate) mod publication_input;
 #[cfg(feature = "gui")]
 mod recovery_notices;
+pub(crate) mod request_gate;
 #[cfg(feature = "gui")]
 pub(crate) mod request_owner;
 #[cfg(feature = "gui")]
@@ -157,6 +158,8 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) next_restore_notice_id: u64,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
+    /// 요청 게이트의 저장 결과를 기다리는 IPC 명령·plugin 호출. 접수 순서대로 하나씩 진행한다.
+    pub(crate) gate_queue: request_gate::GateQueue,
     pub(crate) services: AppServices,
     pub(crate) state: state::AppState,
     pub(crate) hub: Hub,
@@ -337,6 +340,7 @@ impl App {
                 })
             }),
             publication_inputs: Default::default(),
+            gate_queue: Default::default(),
             services: crate::boot::wiring::build_production_core(memory, {
                 let proxy = proxy.clone();
                 Arc::new(move || {
@@ -419,6 +423,7 @@ impl App {
             journal: journal::JournalApplication::new(journal_wake.clone())?,
             pending_server_attaches: Vec::new(),
             publication_inputs: Default::default(),
+            gate_queue: Default::default(),
             services: crate::boot::wiring::build_production_core_headless(memory, journal_wake)?,
             state: state::AppState::default(),
             hub: Hub::new(port_file),

@@ -37,7 +37,7 @@ gui 는 5-step 라우터(`src/app/ipc.rs`)를 쓴다. 헤드리스 pump(`src/boo
 
 ### 권한 경계는 가로채기보다 **앞**이다
 
-caller 인증 뒤 공통 `check_request`가 권한·cap·rate-limit을 검사하고 허용된 요청의 사용량을
+caller 인증 뒤 공통 요청 게이트(`handler/gate.rs`)가 권한·cap·rate-limit을 검사하고 허용된 요청의 사용량을
 한 번 집계한다. App 인터셉트·plugin namespace·일반 handler 모두 그 뒤에 온다.
 통과한 `CheckedRequest`를 일반 handler에 전달하므로 예산을 이중으로 차감하거나 사용량을 중복 집계하지 않는다.
 GUI 외부 IPC와 plugin host-call도 같은 경계를 사용한다.

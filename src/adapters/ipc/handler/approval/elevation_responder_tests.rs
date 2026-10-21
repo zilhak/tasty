@@ -9,7 +9,6 @@ use tasty_approval::{ApprovalId, ApprovalState, Requester, Severity};
 use tasty_ipc::caller::{CallerContext, SessionToken};
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_ipc::session::SessionStore;
-use tasty_ipc::{IpcHostFacade, SessionResolution};
 use tasty_memory::{MemoryConfig, MemoryStore};
 
 use crate::adapters::ipc::handler::approval::publish_capability_elevation_at;
@@ -54,10 +53,10 @@ fn issue_session(core: &AppServices, agent_id: &str) -> SessionToken {
 }
 
 fn has_permission(core: &AppServices, token: &SessionToken) -> bool {
-    match IpcHostFacade::session_resolve(core, &token.to_string(), now_ms()) {
-        SessionResolution::Agent { permissions, .. } => permissions.iter().any(|p| p == PERMISSION),
-        _ => panic!("session must resolve to the agent"),
-    }
+    crate::ipc::handler::gate::session_permissions_waiting(core, &token.to_string())
+        .expect("session must resolve to the agent")
+        .iter()
+        .any(|p| p == PERMISSION)
 }
 
 fn approval_holder() -> HashSet<Permission> {

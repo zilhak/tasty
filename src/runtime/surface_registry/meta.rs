@@ -47,7 +47,7 @@ impl SurfaceMetaStore {
     }
 
     /// Text와 문자열로 변환한 JSON을 반환한다. 없음·만료·조회 실패·Binary는 None이다.
-    pub fn get(mem: &mut dyn MemoryStorage, surface_id: u32, key: &str) -> Option<String> {
+    pub fn get(mem: &dyn MemoryStorage, surface_id: u32, key: &str) -> Option<String> {
         let entry = mem.get(&Scope::Surface(surface_id), key).ok().flatten()?;
         match entry.value {
             MemoryValue::Text(s) => Some(s),
@@ -197,7 +197,7 @@ impl SurfaceMetaStore {
     }
 
     /// scope 열거 순서의 첫 key=value surface를 찾는다. 정렬하지 않으며 조회 실패는 None이다.
-    pub fn find_by_value(mem: &mut dyn MemoryStorage, key: &str, value: &str) -> Option<u32> {
+    pub fn find_by_value(mem: &dyn MemoryStorage, key: &str, value: &str) -> Option<u32> {
         let scopes = mem.scopes().ok()?;
         for token in scopes {
             let Ok(Scope::Surface(sid)) = Scope::parse(&token) else {
@@ -269,15 +269,15 @@ mod tests {
 
         assert_eq!(purged, 2);
         assert_eq!(
-            SurfaceMetaStore::get(&mut mem, 3, "restore.command").as_deref(),
+            SurfaceMetaStore::get(&mem, 3, "restore.command").as_deref(),
             Some("keep")
         );
         assert_eq!(
-            SurfaceMetaStore::get(&mut mem, PTY_ID_BASE, "restore.command"),
+            SurfaceMetaStore::get(&mem, PTY_ID_BASE, "restore.command"),
             None
         );
         assert_eq!(
-            SurfaceMetaStore::get(&mut mem, PTY_ID_BASE + 499, "claude-session-id"),
+            SurfaceMetaStore::get(&mem, PTY_ID_BASE + 499, "claude-session-id"),
             None
         );
     }
@@ -298,14 +298,14 @@ mod tests {
             "surface:4 와 surface:6 두 scope 가 purge 돼야 한다"
         );
         assert_eq!(
-            SurfaceMetaStore::get(&mut mem, 2, "restore.command").as_deref(),
+            SurfaceMetaStore::get(&mem, 2, "restore.command").as_deref(),
             Some("claude -r a")
         );
         assert_eq!(
-            SurfaceMetaStore::get(&mut mem, 17, "claude-session-id").as_deref(),
+            SurfaceMetaStore::get(&mem, 17, "claude-session-id").as_deref(),
             Some("live")
         );
-        assert_eq!(SurfaceMetaStore::get(&mut mem, 4, "restore.command"), None);
-        assert_eq!(SurfaceMetaStore::get(&mut mem, 6, "restore.command"), None);
+        assert_eq!(SurfaceMetaStore::get(&mem, 4, "restore.command"), None);
+        assert_eq!(SurfaceMetaStore::get(&mem, 6, "restore.command"), None);
     }
 }

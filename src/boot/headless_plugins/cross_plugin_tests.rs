@@ -76,12 +76,27 @@ fn fixture((owner, prefix): (&'static str, &str)) -> Fixture {
 }
 
 impl Fixture {
+    /// 호스트 루프처럼 호출을 받은 뒤 게이트 결과를 기다리는 호출을 끝까지 진행한다.
     fn dispatch(&mut self) {
         dispatch_plugin_ipc_calls_headless(
             &mut self.app,
             &mut self.state,
             &mut self.session.borrow_mut(),
         );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !self.app.gate_queue.is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a gated plugin call never finished"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            let flow = crate::boot::headless_dispatch::advance_request_gates(
+                &mut self.app,
+                &mut self.state,
+                &mut self.session,
+            );
+            assert!(flow.is_continue());
+        }
     }
 
     fn manager(&mut self) -> &mut crate::plugin::PluginManager {
