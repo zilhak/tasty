@@ -56,14 +56,15 @@ pub(crate) fn next_markdown_content_request_id() -> u64 {
     NEXT_MARKDOWN_CONTENT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-/// file_picker.trigger 왕복의 ID. popup 내부에서 디렉터리를 조회하는 list_dir 요청 ID와 별개다.
+/// 파일 피커 요청의 ID. 플러그인 요청이면 file_picker.trigger 왕복의 request_id로도 쓴다.
+/// popup 내부에서 디렉터리를 조회하는 list_dir 요청 ID와 별개다.
 #[cfg(feature = "gui")]
-static NEXT_FILE_PICKER_TRIGGER_REQUEST_ID: std::sync::atomic::AtomicU64 =
+static NEXT_FILE_PICKER_REQUEST_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
 #[cfg(feature = "gui")]
-pub(crate) fn next_file_picker_trigger_request_id() -> u64 {
-    NEXT_FILE_PICKER_TRIGGER_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+pub(crate) fn next_file_picker_request_id() -> u64 {
+    NEXT_FILE_PICKER_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// memory port와 같은 poison 보고 플래그를 공유해 같은 락의 오류를 여러 번 기록하지 않는다.

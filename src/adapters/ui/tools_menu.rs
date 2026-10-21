@@ -101,11 +101,7 @@ pub fn draw_tools_menu(
         }
     }
     if open_file_picker {
-        let start = popup::file_picker::FilePickerStart::from_surface(
-            &engine.as_ref(),
-            state.focused_surface_id(engine),
-        );
-        popup::file_picker::open(state, engine, None, Vec::new(), start);
+        crate::adapters::ui::file_open_tool::open(state, engine);
         return PopupAction::Close;
     }
     if let Some(popup_id) = open_workspace_popup {

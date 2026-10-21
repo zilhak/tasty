@@ -142,6 +142,12 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "원 RequestContext navigation을 읽기 전용 presentation으로 빌려 응답과 capture가 소비한다",
     ),
     (
+        "src/adapters/ipc/handler/file_picker.rs",
+        CompatibilityDefault,
+        1,
+        "file_picker.trigger가 origin_surface_id를 생략하거나 찾지 못할 때 둘러볼 위치의 workspace를 고르는 기존 호환값이다. plugin 호출자 전용이며 명시 surface가 있으면 그 소속을 쓴다",
+    ),
+    (
         "src/adapters/ipc/request_scope.rs",
         CompatibilityDefault,
         3,

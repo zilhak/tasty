@@ -157,6 +157,8 @@ pub struct DialogState {
     pub(crate) file_handler_picker: Option<FileHandlerPickerData>,
     /// 파일 피커의 탐색·조회·선택 상태. None이면 요청이 없다.
     pub(crate) file_picker: Option<FilePickerData>,
+    /// 피커를 연 본체 호출자가 보관하는 요청 정보. 결과의 의미는 각 호출자가 정한다.
+    pub(crate) file_picker_callers: FilePickerCallers,
     /// DAG 목록 팝업의 검색·필터·보기 상태. 닫을 때 초기화하며 영속화하지 않는다.
     pub(crate) dag_list: crate::adapters::ui::popup::dag_list::DagListState,
     /// 프리셋 창 열기 요청. App이 처리한 뒤 지운다.
@@ -239,6 +241,7 @@ impl DialogState {
             approval_comment_buffer: String::new(),
             file_handler_picker: None,
             file_picker: None,
+            file_picker_callers: FilePickerCallers::default(),
             dag_list: Default::default(),
             pending_preset_window_selection: None,
             pending_open_preset_window: false,
@@ -342,6 +345,31 @@ pub(crate) enum FpLoadState {
     ErrorConn(String),
 }
 
+/// 파일 피커 요청 하나의 식별자. 열 때마다 새 값이며 플러그인 요청이면 wire의 request_id와 같다.
+/// 호출자는 보관한 값과 같은 결과만 적용한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct FilePickerRequestId(pub(crate) u64);
+
+impl FilePickerRequestId {
+    pub(crate) fn next() -> Self {
+        Self(crate::core::next_file_picker_request_id())
+    }
+}
+
+/// 피커가 둘러볼 위치. 호출자가 열기 전에 정해 넘기고 결과를 해석할 때 다시 쓴다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FilePickerLocation {
+    /// 로컬 디스크. `dir`이 절대 디렉터리가 아니면 홈에서 출발한다.
+    Local { dir: Option<String> },
+    /// mirror workspace가 보여 주는 원격 목록. `surface_id`는 그 workspace의 surface이며
+    /// 결과로 원격 파일을 열 때 출발 surface로 쓴다. `dir`이 없으면 서버가 홈으로 해석한다.
+    Remote {
+        mirror_ws_id: u32,
+        surface_id: Option<u32>,
+        dir: Option<String>,
+    },
+}
+
 /// 결과 이벤트를 요청한 플러그인에만 보낼 때 사용하는 정보.
 #[derive(Debug, Clone)]
 pub(crate) struct FilePickerRequester {
@@ -352,8 +380,10 @@ pub(crate) struct FilePickerRequester {
     pub(crate) owner_popup_instance: Option<u64>,
 }
 
-/// 파일 피커의 선택 결과를 App이 프레임 끝에 처리한다.
+/// 파일 피커의 탐색·선택 상태. 피커는 경로를 고르는 데서 끝나며 결과로 무엇을 할지 모른다.
 pub(crate) struct FilePickerData {
+    /// 이 요청의 식별자. 결과와 함께 호출자에게 간다.
+    pub(crate) request_id: FilePickerRequestId,
     /// 원격 탐색 대상인 로컬 mirror workspace ID. None이면 로컬 탐색이다.
     pub(crate) mirror_ws_id: Option<u32>,
     /// 헤더 host 배지 문자열(`mirror_ws_id.is_some()` 일 때만 유효).
@@ -367,39 +397,74 @@ pub(crate) struct FilePickerData {
     pub(crate) entries: Vec<crate::core::fs_list::DirEntryInfo>,
     /// 현재 디렉터리에서 선택한 이름. Select는 단일 선택으로 교체한다.
     pub(crate) selected: Vec<String>,
-    /// Confirm/Cancel 결과. host 본체 layer 가 frame 끝에서 소비.
+    /// Confirm/Cancel 결과. App이 프레임 끝에서 꺼내 호출자에게 넘긴다.
     pub(crate) result: Option<FilePickerResult>,
     /// `Some` 이면 `file_picker.trigger` IPC 로 이 popup 을 연 plugin.
-    /// Tools 메뉴 트리거는 `None`.
+    /// 결과 전달 대상이면서 부모 popup 범위·숨김 판정에도 쓴다. 본체 호출자는 `None`.
     pub(crate) requester: Option<FilePickerRequester>,
     /// 점 없는 확장자 필터. 비어 있으면 제한하지 않으며 디렉터리는 항상 표시한다.
     pub(crate) filters: Vec<String>,
-    /// 확정한 경로로 할 일. 도구 메뉴·단축키·플러그인 요청은 `OpenFile`이다.
-    pub(crate) on_confirm: FilePickerOnConfirm,
 }
 
-/// 파일 피커에서 확정한 경로로 할 일.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) enum FilePickerOnConfirm {
-    /// 로컬 파일은 파일 핸들러로 열고 원격 경로는 클립보드에 복사한다.
-    #[default]
-    OpenFile,
-    /// 메뉴를 연 pane에 `kind` 탭을 만들고 경로를 `param_key` 파라미터로 넘긴다.
-    /// pane은 ID로 고정하므로 피커가 열린 동안 활성 pane이 바뀌어도 대상은 그대로다.
-    NewTab {
-        pane_id: u32,
-        kind: String,
-        param_key: String,
-    },
-}
-
-/// 네이티브 파일 피커의 닫기 사유.
-#[derive(Debug, Clone)]
+/// 파일 피커가 남기는 결과. 경로 문자열만 담는다.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FilePickerResult {
-    /// 취소 또는 ESC — dispatch 없음.
+    /// 취소, ESC, 결과 없이 닫힘.
     Cancelled,
-    /// 사용자가 [열기] — 선택된 절대/원격 경로들과 원격 여부.
-    Confirmed { paths: Vec<String>, is_remote: bool },
+    /// 사용자가 [열기]로 고른 절대 경로(로컬) 또는 원격 경로 문자열.
+    Confirmed { paths: Vec<String> },
+}
+
+/// 호출자에게 넘기는 결과. 취소면 `paths`가 비고 `cancelled`가 참이다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FilePickerOutcome {
+    pub(crate) request_id: FilePickerRequestId,
+    pub(crate) paths: Vec<String>,
+    pub(crate) cancelled: bool,
+}
+
+impl FilePickerOutcome {
+    pub(crate) fn new(request_id: FilePickerRequestId, result: FilePickerResult) -> Self {
+        match result {
+            FilePickerResult::Cancelled => Self {
+                request_id,
+                paths: Vec::new(),
+                cancelled: true,
+            },
+            FilePickerResult::Confirmed { paths } => Self {
+                request_id,
+                paths,
+                cancelled: false,
+            },
+        }
+    }
+}
+
+/// 본체 호출자별로 기다리는 요청. 호출자는 열 때 자기 칸을 채우고, 같은 식별자의 결과를 받으면 비운다.
+/// 플러그인 요청은 [`FilePickerData::requester`]가 대신한다.
+#[derive(Debug, Default)]
+pub(crate) struct FilePickerCallers {
+    /// Tools 메뉴·단축키의 파일 열기.
+    pub(crate) open_file: Option<OpenFilePickerRequest>,
+    /// 탭 스트립 메뉴의 "새 HTML..." 같은 탭 생성.
+    pub(crate) new_tab: Option<NewTabPickerRequest>,
+}
+
+/// Tools 메뉴·단축키가 연 피커. 둘러보게 한 위치로 로컬 열기와 원격 열기를 고른다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OpenFilePickerRequest {
+    pub(crate) request_id: FilePickerRequestId,
+    pub(crate) location: FilePickerLocation,
+}
+
+/// 고른 파일로 `pane_id` pane에 `kind` 탭을 만들고 경로를 `param_key` 파라미터로 넘긴다.
+/// pane은 ID로 고정하므로 피커가 열린 동안 활성 pane이 바뀌어도 대상은 그대로다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NewTabPickerRequest {
+    pub(crate) request_id: FilePickerRequestId,
+    pub(crate) pane_id: u32,
+    pub(crate) kind: String,
+    pub(crate) param_key: String,
 }
 
 /// workspace·탭 대상은 ID로 고정한다. 팝업이 열린 동안 에이전트가 닫기·이동으로

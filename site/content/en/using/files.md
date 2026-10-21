@@ -1,4 +1,4 @@
-<!-- source-hash: fba2791cb51a -->
+<!-- source-hash: b8d5decf9df3 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -7,7 +7,7 @@ Read a README or check an image beside your terminal. Tasty can open an Explorer
 
 | Where | How |
 |--------|--------|
-| Sidebar **Tools** > **Open File…** | Tasty's own file chooser. It opens in the folder of the terminal or Explorer you are looking at, and in a remote Workspace it shows remote files |
+| Sidebar **Tools** > **Open File…** | Tasty's own file chooser. It opens in the folder of the terminal or Explorer you are looking at, and in a remote Workspace it shows remote files; a remote file you pick opens in that remote Workspace |
 | Drag a file onto the window | Drop when **Drop to open** appears. Dropped on an Explorer cell, the file is copied into that folder instead of opened ([Drag and drop](#drag-and-drop)) |
 | Explorer Surface | Double-click a file |
 | Terminal | `Ctrl+click`, or select a path and right-click > **Open File** ([Working with the terminal](terminal.md#opening-links-and-paths)) |

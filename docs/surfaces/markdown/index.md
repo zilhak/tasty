@@ -56,7 +56,7 @@
   | `convert_input_popup = "file-open"` | host가 convert 팝업, `open_markdown`·`convert_to_markdown` 단축키, context menu에서 `open_popup_instance`로 연다. |
   | `com.tasty.markdown.file_open` | event trigger로 연다. |
 
-  **찾아보기**는 `file_picker.trigger {filters,owner_popup_instance?,start_dir?,origin_surface_id?} → {request_id}`로 host의 파일 피커를 연다. `fs.read` 권한이 필요하며 선택 결과는 `file_picker.result` 이벤트로 비동기 도착한다.
+  **찾아보기**는 `file_picker.trigger {filters,owner_popup_instance?,start_dir?,origin_surface_id?} → {request_id}`로 host의 파일 피커를 연다. `fs.read` 권한이 필요하며 선택 결과는 `file_picker.result` 이벤트로 비동기 도착한다. host는 고른 경로로 파일을 열거나 클립보드에 쓰지 않는다. markdown이 받은 경로를 경로 입력칸에 채우고, 열기는 사용자가 팝업에서 확정할 때 한다.
 
   시작 폴더는 open context의 로컬 `observed_cwd`, mirror이면 `remote_cwd`를 `start_dir`에 담는다. `origin_surface_id`도 그대로 전달한다. `inherit_cwd` 설정의 영향을 받는 `cwd` 키와는 다르다([파일 피커의 시작 위치](../../features/native-file-picker/index.md)).
 

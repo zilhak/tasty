@@ -907,16 +907,19 @@ fn settings_escape_owner(popups: &PopupManager) -> Option<&'static str> {
         .map(|(_, id)| id)
 }
 
-/// 닫힌 파일 선택의 결과를 그것을 연 화면 상태로 돌려준다.
+/// 닫힌 파일 선택의 결과를 그것을 연 화면 상태로 돌려준다. 경로의 쓰임은 화면마다 다르다.
 fn apply_file_chooser_outcomes(ui_state: &mut SettingsUiState) {
-    if let Some(file_chooser::FileChooserOutcome::Confirmed(path)) = ui_state
+    if let Some(path) = ui_state
         .file_chooser
         .take_outcome(ScriptsUiState::BROWSE_CONSUMER)
+        .and_then(file_chooser::FileChooserOutcome::into_first_path)
     {
         ui_state.scripts.apply_browsed_file(&path);
     }
-    if let Some(file_chooser::FileChooserOutcome::Confirmed(path)) =
-        ui_state.file_chooser.take_outcome(EXPORT_CONSUMER)
+    if let Some(path) = ui_state
+        .file_chooser
+        .take_outcome(EXPORT_CONSUMER)
+        .and_then(file_chooser::FileChooserOutcome::into_first_path)
     {
         match ui_state.draft.as_ref() {
             Some(draft) => ui_state.import_export.export_to(
@@ -928,8 +931,10 @@ fn apply_file_chooser_outcomes(ui_state: &mut SettingsUiState) {
             None => tracing::warn!("keybinding export: no settings draft to export"),
         }
     }
-    if let Some(file_chooser::FileChooserOutcome::Confirmed(path)) =
-        ui_state.file_chooser.take_outcome(IMPORT_CONSUMER)
+    if let Some(path) = ui_state
+        .file_chooser
+        .take_outcome(IMPORT_CONSUMER)
+        .and_then(file_chooser::FileChooserOutcome::into_first_path)
     {
         match ui_state.draft.as_ref() {
             Some(draft) => {

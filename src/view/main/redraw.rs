@@ -838,7 +838,7 @@ impl MainView {
                     .from_user_context_menu(),
                 );
             }
-            Some(4) => crate::adapters::ui::popup::file_picker::open_for_new_tab(
+            Some(4) => crate::adapters::ui::new_tab_picker::open(
                 &mut self.state,
                 engine,
                 pane_id,

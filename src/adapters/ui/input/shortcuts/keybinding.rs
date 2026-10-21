@@ -802,12 +802,7 @@ impl MainView {
         state: &mut crate::state::MainViewState,
         engine: &EngineRead<'_>,
     ) {
-        use crate::adapters::ui::popup::file_picker;
-        let start = file_picker::FilePickerStart::from_surface(
-            &engine.as_ref(),
-            state.focused_surface_id(engine),
-        );
-        file_picker::open(state, engine, None, Vec::new(), start);
+        crate::adapters::ui::file_open_tool::open(state, engine);
     }
 
     /// 탐색기는 파일 선택 팝업 없이 새 탭을 연다. 경로가 없으면 홈을 사용한다.

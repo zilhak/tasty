@@ -1,14 +1,11 @@
-//! 파일 선택 결과를 처리한다. 기본 동작은 로컬 파일을 열고 원격 경로를 클립보드에 복사한다.
-//! 탭 생성 동작이면 지정한 pane에 탭을 만든다. 요청한 플러그인이 있으면 확정·취소 결과도 전달한다.
+//! 파일 피커가 남긴 결과를 꺼내 피커를 연 호출자에게 넘긴다. 피커와 이 전달 경로는
+//! 파일을 열거나 탭을 만들거나 클립보드에 쓰지 않는다. 결과로 무엇을 할지는 각 호출자가 정한다.
 
 use crate::app::App;
-use crate::app::command::DomainIntent;
 use crate::app::window_access::engines_mut;
-use crate::state::{FilePickerOnConfirm, FilePickerRequester, FilePickerResult, MainViewState};
+use crate::core::CoreState;
+use crate::state::{FilePickerOutcome, FilePickerRequester, MainViewState};
 use crate::view::ui::View;
-
-/// 확정과 취소 모두 request_id·paths·cancelled를 포함한다.
-const FILE_PICKER_RESULT_EVENT: &str = "file_picker.result";
 
 impl App {
     /// 현재 MainView의 결과만 처리하며 parked 상태는 순회하지 않는다.
@@ -24,150 +21,51 @@ impl App {
             })
             .collect();
         for id in pending {
-            let core = &mut self.services;
             let plugin_manager = self.plugin_manager.as_mut();
             let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
                 continue;
             };
-            let Some(data) = main.state.dialogs.file_picker.as_mut() else {
+            let Some((outcome, requester)) = take_outcome(&mut main.state) else {
                 continue;
             };
-            let Some(result) = data.result.take() else {
-                continue;
-            };
-            let requester = data.requester.clone();
-            let on_confirm = data.on_confirm.clone();
-            main.state.dialogs.file_picker = None;
-            let copy_remote =
-                dispatch_picker_result(&mut main.state, &on_confirm, &result, |pane_id| {
-                    engine.has_pane(pane_id)
-                });
-            let (paths, cancelled) = match result {
-                FilePickerResult::Cancelled => (Vec::new(), true),
-                FilePickerResult::Confirmed { paths, .. } => (paths, false),
-            };
-            if copy_remote {
-                apply_remote_confirm(core, &mut main.state, &paths);
-            }
-            if let Some(req) = requester {
-                emit_file_picker_result(plugin_manager, &req, paths, cancelled);
-            }
+            deliver_outcome(
+                &mut main.state,
+                &engine,
+                plugin_manager,
+                requester.as_ref(),
+                &outcome,
+            );
             main.mark_dirty();
         }
     }
 }
 
-/// 피커 결과를 처리할 intent를 넣는다. 원격 경로를 클립보드에 복사해야 하면 true를 돌려준다.
-/// 취소는 아무것도 넣지 않는다. `has_pane`은 탭을 만들 pane이 아직 있는지 확인한다.
-pub(crate) fn dispatch_picker_result(
+/// 닫힌 피커의 결과를 한 번 꺼내고 피커 상태를 지운다. 결과가 없으면 피커를 그대로 둔다.
+pub(crate) fn take_outcome(
     state: &mut MainViewState,
-    on_confirm: &FilePickerOnConfirm,
-    result: &FilePickerResult,
-    has_pane: impl Fn(u32) -> bool,
-) -> bool {
-    let FilePickerResult::Confirmed { paths, is_remote } = result else {
-        return false;
-    };
-    match on_confirm {
-        FilePickerOnConfirm::OpenFile => {
-            if *is_remote {
-                return true;
-            }
-            for path in paths {
-                state.dispatch_intent(
-                    DomainIntent::DispatchFile {
-                        target: crate::file::format::FileTarget::new(path.clone()),
-                        depth: crate::file::format::DetectDepth::Deep,
-                        origin_surface_id: None,
-                        dispatch_origin: crate::file::dispatch::FileDispatchOrigin::User,
-                        ignore_size_limit: false,
-                        run: None,
-                    }
-                    .from_user_menu("file_picker_confirm"),
-                );
-            }
-        }
-        FilePickerOnConfirm::NewTab {
-            pane_id,
-            kind,
-            param_key,
-        } => {
-            // mirror pane에서는 피커를 열지 않으므로 원격 경로는 여기 오지 않는다.
-            if *is_remote {
-                tracing::warn!("file_picker: new {kind} tab ignores remote paths");
-                return false;
-            }
-            // 피커가 열린 동안 pane이 닫혔을 수 있다.
-            if !has_pane(*pane_id) {
-                return false;
-            }
-            for path in paths {
-                state.dispatch_intent(
-                    DomainIntent::CreateTab {
-                        pane_id: *pane_id,
-                        cwd: None,
-                        kind: kind.clone(),
-                        name: None,
-                        surface_params: serde_json::json!({ param_key.as_str(): path }),
-                        activate: true,
-                    }
-                    .from_user_context_menu(),
-                );
-            }
-        }
-    }
-    false
+) -> Option<(FilePickerOutcome, Option<FilePickerRequester>)> {
+    let result = state.dialogs.file_picker.as_mut()?.result.take()?;
+    let data = state.dialogs.file_picker.take()?;
+    Some((
+        FilePickerOutcome::new(data.request_id, result),
+        data.requester,
+    ))
 }
 
-/// 소유 popup이 사라져도 요청한 플러그인에 결과를 보낸다.
-/// 플러그인이 popup 밖에서 요청 상태를 관리할 수도 있기 때문이다.
-fn emit_file_picker_result(
+/// 결과를 호출자에게 넘긴다. 본체 호출자는 자기가 보관한 식별자와 같을 때만 적용하고,
+/// 플러그인 요청이면 그 플러그인에 `file_picker.result`를 보낸다.
+pub(crate) fn deliver_outcome(
+    state: &mut MainViewState,
+    engine: &CoreState,
     plugin_manager: Option<&mut crate::plugin::PluginManager>,
-    requester: &FilePickerRequester,
-    paths: Vec<String>,
-    cancelled: bool,
+    requester: Option<&FilePickerRequester>,
+    outcome: &FilePickerOutcome,
 ) {
-    let Some(mgr) = plugin_manager else {
-        return;
-    };
-    if let Some(owner) = requester.owner_popup_instance
-        && !mgr.popup_instances().any(|(id, _)| id == owner)
-    {
-        tracing::warn!(
-            "file_picker request {} completed after owner popup {} closed; plugin {} may ignore the result",
-            requester.request_id,
-            owner,
-            requester.plugin_id
-        );
+    crate::adapters::ui::file_open_tool::apply_outcome(state, engine, outcome);
+    crate::adapters::ui::new_tab_picker::apply_outcome(state, engine, outcome);
+    if let Some(req) = requester {
+        crate::adapters::ipc::handler::file_picker::deliver_result(plugin_manager, req, outcome);
     }
-    mgr.emit_host_event_to_plugin(
-        &requester.plugin_id,
-        FILE_PICKER_RESULT_EVENT,
-        &serde_json::json!({
-            "request_id": requester.request_id,
-            "paths": paths,
-            "cancelled": cancelled,
-        }),
-        tasty_plugin_protocol::EventScope::System,
-    );
-}
-
-/// 원격 파일을 내려받지 않고 선택한 경로만 복사한다.
-fn apply_remote_confirm(
-    core: &crate::app::services::AppServices,
-    state: &mut crate::state::MainViewState,
-    paths: &[String],
-) {
-    let joined = paths.join("\n");
-    let message = if let Err(e) = core.clipboard_arc().write_text(&joined) {
-        tracing::warn!("file_picker 원격 경로 클립보드 복사 실패: {e}");
-        crate::i18n::t("filepicker.remote_confirm_clipboard_failed").to_string()
-    } else {
-        crate::i18n::t("filepicker.remote_confirm_copied").to_string()
-    };
-    state
-        .toasts
-        .push_info(message, crate::model::toast_kind::ToastScope::Window);
 }
 
 #[cfg(test)]

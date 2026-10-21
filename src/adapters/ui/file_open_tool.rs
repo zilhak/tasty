@@ -1,0 +1,105 @@
+//! Tools 메뉴와 단축키의 "파일 열기". 파일 피커를 열고, 돌려받은 경로를 파일 핸들러로 연다.
+//! 원격 목록에서 고른 경로는 원격 탐색기에서 연 것처럼 그 mirror workspace의 surface를 출발점으로 연다.
+
+use crate::adapters::ui::popup::file_picker;
+use crate::app::command::DomainIntent;
+use crate::core::CoreState;
+use crate::runtime::engine_read::EngineRead;
+use crate::state::{
+    FilePickerLocation, FilePickerOutcome, FilePickerRequestId, MainViewState,
+    OpenFilePickerRequest,
+};
+
+/// 포커스 surface의 소속, 없으면 활성 workspace를 둘러보는 피커를 연다. 위치는 결과를 해석하려고 보관한다.
+pub(crate) fn open(state: &mut MainViewState, engine: &EngineRead<'_>) {
+    let location = file_picker::locate(
+        state,
+        engine,
+        state.focused_surface_id(engine),
+        state.active_workspace_index(engine),
+        None,
+    );
+    let request_id = FilePickerRequestId::next();
+    state.dialogs.file_picker_callers.open_file = Some(OpenFilePickerRequest {
+        request_id,
+        location: location.clone(),
+    });
+    file_picker::open(
+        state,
+        engine,
+        request_id,
+        location,
+        Vec::new(),
+        file_picker::FilePickerOpenedBy::ToolsMenu,
+    );
+}
+
+/// 보관한 요청과 같은 식별자의 결과만 한 번 적용한다. 취소면 아무것도 열지 않는다.
+pub(crate) fn apply_outcome(
+    state: &mut MainViewState,
+    engine: &CoreState,
+    outcome: &FilePickerOutcome,
+) {
+    let callers = &mut state.dialogs.file_picker_callers;
+    if callers.open_file.as_ref().map(|r| r.request_id) != Some(outcome.request_id) {
+        return;
+    }
+    let Some(request) = callers.open_file.take() else {
+        return;
+    };
+    if outcome.cancelled {
+        return;
+    }
+    let origin_surface_id = match request.location {
+        FilePickerLocation::Local { .. } => None,
+        FilePickerLocation::Remote {
+            mirror_ws_id,
+            surface_id,
+            ..
+        } => match remote_origin(engine, mirror_ws_id, surface_id) {
+            Some(sid) => Some(sid),
+            None => {
+                tracing::warn!(
+                    mirror_ws_id,
+                    "file_picker: mirror workspace closed before the picked remote file opened; ignored"
+                );
+                return;
+            }
+        },
+    };
+    for path in &outcome.paths {
+        state.dispatch_intent(
+            DomainIntent::DispatchFile {
+                target: crate::file::format::FileTarget::new(path.clone()),
+                depth: crate::file::format::DetectDepth::Deep,
+                origin_surface_id,
+                dispatch_origin: crate::file::dispatch::FileDispatchOrigin::User,
+                ignore_size_limit: false,
+                run: None,
+            }
+            .from_user_menu("file_picker_confirm"),
+        );
+    }
+}
+
+/// 원격 파일을 열 출발 surface. 보관한 surface가 피커가 열린 동안 닫혔으면 같은 mirror workspace의
+/// 다른 surface를 쓴다. workspace가 사라졌으면 None이다.
+fn remote_origin(engine: &CoreState, mirror_ws_id: u32, surface_id: Option<u32>) -> Option<u32> {
+    let in_workspace = |sid: u32| {
+        engine
+            .find_workspace_index_for_surface(sid)
+            .and_then(|(idx, _)| engine.workspace_at(idx))
+            .is_some_and(|ws| ws.id == mirror_ws_id && ws.mirror)
+    };
+    if let Some(sid) = surface_id.filter(|sid| in_workspace(*sid)) {
+        return Some(sid);
+    }
+    let ws = engine.workspace_at(engine.find_workspace_index_for_id(mirror_ws_id)?)?;
+    ws.all_surface_ids()
+        .into_iter()
+        .find(|sid| in_workspace(*sid))
+}
+
+#[cfg(test)]
+#[path = "file_open_tool_tests.rs"]
+mod tests;

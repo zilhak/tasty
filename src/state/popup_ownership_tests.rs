@@ -19,6 +19,7 @@ fn state_with_picker(owner: Option<u64>) -> RequestContext {
     let (mut state, mut _engine_session) = test_state();
     let _engine = _engine_session.borrow_mut();
     state.dialogs.file_picker = Some(FilePickerData {
+        request_id: crate::state::FilePickerRequestId(1),
         mirror_ws_id: None,
         remote_host: None,
         current_dir: "/tmp".to_string(),
@@ -33,7 +34,6 @@ fn state_with_picker(owner: Option<u64>) -> RequestContext {
             owner_popup_instance: Some(iid),
         }),
         filters: Vec::new(),
-        on_confirm: Default::default(),
     });
     state
 }
@@ -99,7 +99,6 @@ fn cascade_cleanup_does_not_overwrite_a_settled_result() {
     let mut state = state_with_picker(Some(OWNER_IID));
     state.dialogs.file_picker.as_mut().unwrap().result = Some(FilePickerResult::Confirmed {
         paths: vec!["/tmp/a.md".to_string()],
-        is_remote: false,
     });
     cancel_child_file_picker(&mut state, &[(OWNER_IID, PopupCloseReason::Escape)]);
     assert!(matches!(
@@ -132,7 +131,6 @@ fn a_settled_result_keeps_the_owner_link_for_the_loss_warning() {
     let mut state = state_with_picker(Some(OWNER_IID));
     state.dialogs.file_picker.as_mut().unwrap().result = Some(FilePickerResult::Confirmed {
         paths: vec!["/tmp/a.md".to_string()],
-        is_remote: false,
     });
     cancel_child_file_picker(&mut state, &[(OWNER_IID, PopupCloseReason::PluginRequest)]);
     assert_eq!(

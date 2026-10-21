@@ -24,7 +24,7 @@ mod debug_terminal;
 pub(crate) mod deferred;
 mod file_handler;
 #[cfg(feature = "gui")]
-mod file_picker;
+pub(crate) mod file_picker;
 #[cfg(feature = "gui")]
 mod git_viewer;
 mod hook_handler;

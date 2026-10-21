@@ -1,5 +1,6 @@
 //! 플러그인이 호스트 파일 피커를 연다. request_id를 즉시 반환하고
 //! 선택·취소 결과는 file_picker.result 이벤트로 나중에 보낸다(docs/design/systems/popup.md).
+//! 호스트는 고른 경로로 파일을 열거나 복사하지 않는다. 경로의 쓰임은 플러그인이 정한다.
 //! 이미 열린 피커는 대체하지 않고 두 번째 요청을 거절한다.
 //! 대체하면 기존 요청자에게 취소를 통지할 수 없어 결과를 기다리는 요청이 남기 때문이다.
 
@@ -28,8 +29,8 @@ struct FilePickerTriggerReq {
     /// surface 의 cwd, 그것도 없으면 홈.
     #[serde(default)]
     start_dir: Option<String>,
-    /// 피커를 띄운 **로컬** surface id. 로컬/원격 판정을 이 surface 의 workspace 로 한다
-    /// (생략하면 활성 workspace).
+    /// 피커를 띄운 surface id. 로컬/원격 판정을 이 surface 의 workspace 로 한다
+    /// (생략하거나 찾지 못하면 활성 workspace).
     #[serde(default)]
     origin_surface_id: Option<u32>,
 }
@@ -68,30 +69,74 @@ pub fn handle_trigger(
         Err(e) => return JsonRpcResponse::error(id, -32602, format!("invalid params: {e}")),
     };
 
-    let request_id = crate::core::next_file_picker_trigger_request_id();
-    let requester = Some(FilePickerRequester {
+    let request_id = crate::state::FilePickerRequestId::next();
+    let requester = FilePickerRequester {
         plugin_id: requester_plugin,
-        request_id,
+        request_id: request_id.0,
         owner_popup_instance: req.owner_popup_instance,
-    });
-
-    use crate::adapters::ui::popup::file_picker::FilePickerStart;
-    let start = match req.start_dir {
-        Some(dir) => FilePickerStart {
-            dir: Some(dir),
-            origin_surface_id: req.origin_surface_id,
-        },
-        None => FilePickerStart::from_surface(&engine.read(), req.origin_surface_id),
     };
-    crate::adapters::ui::popup::file_picker::open(
+
+    use crate::adapters::ui::popup::file_picker;
+    let engine = engine.read();
+    let location = file_picker::locate(
         state,
-        &engine.read(),
-        requester,
+        &engine,
+        req.origin_surface_id,
+        state.active_workspace_index(&engine),
+        req.start_dir,
+    );
+    file_picker::open(
+        state,
+        &engine,
+        request_id,
+        location,
         req.filters,
-        start,
+        file_picker::FilePickerOpenedBy::Plugin(requester),
     );
 
-    JsonRpcResponse::success(id, json!({ "request_id": request_id }))
+    JsonRpcResponse::success(id, json!({ "request_id": request_id.0 }))
+}
+
+/// 확정과 취소 모두 request_id·paths·cancelled를 포함한다.
+const FILE_PICKER_RESULT_EVENT: &str = "file_picker.result";
+
+/// 플러그인이 연 피커의 결과를 그 플러그인에만 보낸다. 소유 popup이 사라져도 보낸다.
+/// 플러그인이 popup 밖에서 요청 상태를 관리할 수도 있기 때문이다.
+pub(crate) fn deliver_result(
+    plugin_manager: Option<&mut crate::plugin::PluginManager>,
+    requester: &FilePickerRequester,
+    outcome: &crate::state::FilePickerOutcome,
+) {
+    let Some(mgr) = plugin_manager else {
+        return;
+    };
+    if let Some(owner) = requester.owner_popup_instance
+        && !mgr.popup_instances().any(|(id, _)| id == owner)
+    {
+        tracing::warn!(
+            "file_picker request {} completed after owner popup {} closed; plugin {} may ignore the result",
+            requester.request_id,
+            owner,
+            requester.plugin_id
+        );
+    }
+    mgr.emit_host_event_to_plugin(
+        &requester.plugin_id,
+        FILE_PICKER_RESULT_EVENT,
+        &result_payload(requester, outcome),
+        tasty_plugin_protocol::EventScope::System,
+    );
+}
+
+pub(crate) fn result_payload(
+    requester: &FilePickerRequester,
+    outcome: &crate::state::FilePickerOutcome,
+) -> serde_json::Value {
+    json!({
+        "request_id": requester.request_id,
+        "paths": outcome.paths,
+        "cancelled": outcome.cancelled,
+    })
 }
 
 #[cfg(test)]

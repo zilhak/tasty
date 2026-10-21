@@ -1677,8 +1677,6 @@ empty = "このフォルダは空です。"
 loading = "読み込み中…"
 loading_body_local = "ローカルディレクトリを読み込んでいます。"
 loading_body_remote = "リモートディレクトリの一覧を待っています。"
-remote_confirm_copied = "リモートパスをクリップボードにコピーしました。"
-remote_confirm_clipboard_failed = "リモートパスをクリップボードにコピーできませんでした。"
 remote_listing_truncated = "リモートフォルダーの項目が多すぎるため、一覧の一部だけを表示しています。"
 
 [filepicker.error_perm]

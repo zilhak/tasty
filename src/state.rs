@@ -70,7 +70,8 @@ pub use dialogs::{
 };
 #[cfg(feature = "gui")]
 pub(crate) use dialogs::{
-    FilePickerData, FilePickerOnConfirm, FilePickerRequester, FilePickerResult, FpLoadState,
+    FilePickerData, FilePickerLocation, FilePickerOutcome, FilePickerRequestId,
+    FilePickerRequester, FilePickerResult, FpLoadState, NewTabPickerRequest, OpenFilePickerRequest,
 };
 #[cfg(feature = "gui")]
 pub use events::FocusedSurfaceType;

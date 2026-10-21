@@ -31,11 +31,27 @@ pub(crate) enum FileChooserMode {
     Save { default_name: String },
 }
 
-/// 선택 결과. 호출처가 자기 `consumer` 키로 [`SettingsFileChooser::take_outcome`] 한다.
+/// 선택 결과. 메인 파일 피커처럼 경로 문자열 배열만 담는다. 경로의 쓰임은 호출처가 정한다.
+/// 호출처가 자기 `consumer` 키로 [`SettingsFileChooser::take_outcome`] 한다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FileChooserOutcome {
-    Confirmed(PathBuf),
+    Confirmed(Vec<String>),
     Cancelled,
+}
+
+impl FileChooserOutcome {
+    /// 이 선택 화면은 단일 선택이라 확정 경로는 하나다.
+    fn confirmed(path: PathBuf) -> Self {
+        Self::Confirmed(vec![path.to_string_lossy().into_owned()])
+    }
+
+    /// 확정한 첫 경로. 취소면 None이다.
+    pub(crate) fn into_first_path(self) -> Option<PathBuf> {
+        match self {
+            Self::Confirmed(paths) => paths.into_iter().next().map(PathBuf::from),
+            Self::Cancelled => None,
+        }
+    }
 }
 
 /// 열려 있는 선택 화면 하나의 상태.
@@ -325,7 +341,7 @@ impl ChooserSession {
                 }
                 // view 의 활성 조건을 우회해도 디렉토리를 파일로 확정하지 않는다.
                 self.is_file_entry(&name)
-                    .then(|| FileChooserOutcome::Confirmed(self.current_dir.join(&name)))
+                    .then(|| FileChooserOutcome::confirmed(self.current_dir.join(&name)))
             }
             // 저장 모드의 파일 행 더블클릭은 고르기와 같다 — 덮어쓰기 경고를 보지 않고 기존
             // 파일을 확정하는 길을 만들지 않는다.
@@ -334,7 +350,7 @@ impl ChooserSession {
             }
             FilePickerAction::ConfirmEntry(name) => self
                 .is_file_entry(&name)
-                .then(|| FileChooserOutcome::Confirmed(self.current_dir.join(name))),
+                .then(|| FileChooserOutcome::confirmed(self.current_dir.join(name))),
         }
     }
 
@@ -347,7 +363,7 @@ impl ChooserSession {
         let name = self.save_name.trim();
         let is_listed_dir = self.entries.iter().any(|e| e.is_dir && e.name == name);
         (is_plain_file_name(name) && !is_listed_dir)
-            .then(|| FileChooserOutcome::Confirmed(self.current_dir.join(name)))
+            .then(|| FileChooserOutcome::confirmed(self.current_dir.join(name)))
     }
 }
 
@@ -502,7 +518,7 @@ mod tests {
         assert_eq!(ch.take_outcome("someone_else"), None);
         assert_eq!(
             ch.take_outcome(C),
-            Some(FileChooserOutcome::Confirmed(dir.join("a.lua")))
+            Some(FileChooserOutcome::confirmed(dir.join("a.lua")))
         );
         assert_eq!(ch.take_outcome(C), None, "결과는 한 번만 가져간다");
         std::fs::remove_dir_all(&dir).ok();
@@ -560,7 +576,7 @@ mod tests {
         s.apply(FilePickerAction::Select("b.txt".into()));
         assert_eq!(
             s.apply(FilePickerAction::ConfirmEntry("b.txt".into())),
-            Some(FileChooserOutcome::Confirmed(dir.join("b.txt"))),
+            Some(FileChooserOutcome::confirmed(dir.join("b.txt"))),
             "열기 모드 파일 더블클릭이 확정이 아니다"
         );
 
@@ -651,7 +667,7 @@ mod tests {
         assert!(s.is_save());
         assert_eq!(
             s.confirm_save(),
-            Some(FileChooserOutcome::Confirmed(dir.join("keys.toml")))
+            Some(FileChooserOutcome::confirmed(dir.join("keys.toml")))
         );
         for bad in [
             "",
@@ -717,7 +733,7 @@ mod tests {
         // 확정은 이름 칸을 읽는다 — 앞서 고른 파일이 아니다.
         assert_eq!(
             s.apply(FilePickerAction::Confirm),
-            Some(FileChooserOutcome::Confirmed(dir.join("a2.lua")))
+            Some(FileChooserOutcome::confirmed(dir.join("a2.lua")))
         );
         std::fs::remove_dir_all(&dir).ok();
     }

@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 탭 스트립 메뉴 "새 HTML..." 트리거 · 설정 창 안의 파일 선택) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
 - **설계**: [원격 attach (Remote attach)](../remote-attach/index.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [내부 팝업 시스템](../../design/systems/popup.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [파일 핸들러 (File handler)](../file-handler/index.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
-- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/app/local_reads.rs`(`directory` 로컬 읽기 요청 · `poll_file_picker_reads` 결과 반영), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/view/main/redraw.rs`의 `apply_pane_menu_selection`(탭 스트립 메뉴 "새 HTML..." 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
+- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/app/local_reads.rs`(`directory` 로컬 읽기 요청 · `poll_file_picker_reads` 결과 반영), `src/adapters/ui/file_open_tool.rs`(Tools 메뉴·단축키 호출자 — 열기와 결과 적용), `src/adapters/ui/new_tab_picker.rs`(탭 스트립 메뉴 "새 HTML..." 호출자 — 열기와 결과 적용, 진입은 `src/view/main/redraw.rs`의 `apply_pane_menu_selection`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 호출자, `"file_picker.result"` push), `src/app/dispatch/file_picker.rs`(결과를 꺼내 호출자에게 넘기는 drain), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
 ## 목적
@@ -14,20 +14,39 @@ Tasty 안에서 파일을 선택하는 창이다. 로컬 파일시스템과 atta
 
 ## 내부 동작 (headless-valid)
 
+### 피커와 호출자의 책임
+
+피커는 호출하면 경로 문자열 배열을 돌려주는 함수처럼 동작한다. 피커 자신은 고른 경로로 파일을 열거나
+탭을 만들거나 클립보드에 쓰지 않으며 intent·toast 도 만들지 않는다. 결과의 의미는 피커를 연 호출자가 정한다.
+
+- **피커**: 호출자가 넘긴 위치(로컬 폴더, 또는 mirror workspace 와 원격 폴더)를 둘러본다. 확정하면 경로
+  배열, 취소하면 빈 배열과 취소 표시를 `FilePickerData.result` 에 남긴다. 원격 목록은 읽기 전용 나열이다.
+- **호출자**: 열기 전에 둘러볼 위치(`FilePickerLocation`)를 정해 피커에 넘기고, 요청 식별자
+  (`FilePickerRequestId`)와 함께 자기 요청 정보로 보관한다. 결과로 하는 일과 실패 안내도 호출자가 정한다.
+- **요청 식별**: 피커를 열 때마다 새 식별자를 쓴다. 결과는 그 식별자와 함께 호출자에게 가고, 호출자는
+  보관한 값과 같은 결과만 한 번 적용한 뒤 보관한 요청을 비운다. 같은 호출자가 다시 열었다면 이전 요청의
+  결과는 적용하지 않는다. 취소도 호출자에게 전달된다.
+- **결과 전달**: App 루프의 `dispatch_pending_file_picker_results` 가 매 반복 닫힌 피커의 결과를 한 번
+  꺼내(`take_outcome`) 피커 상태를 지우고 `deliver_outcome` 으로 호출자들에게 넘긴다. Tools 메뉴처럼
+  피커를 연 직후 닫히는 메뉴도 결과는 이 drain 지점에서 처리된다.
+
 ### 로컬/원격 판별
 
-Tools 메뉴에서 파일 피커 항목을 클릭하면(`src/adapters/ui/tools_menu.rs::open` 경유,
-`popup::file_picker::open`, 출발 surface = focus surface), 출발 surface 가 속한 workspace(없으면 활성
-workspace)의 `Workspace.mirror` 플래그를 1 회 확인해 로컬/원격을 고정한다. `FilePickerData.mirror_ws_id: Option<u32>` 가 `Some`
-이면 원격, `None` 이면 로컬이다.
+어디를 둘러볼지는 피커의 입력이다. 호출자는 `popup::file_picker::locate` 로 출발 surface 가 속한
+workspace, 찾지 못하면 호출자가 고른 workspace 의 `Workspace.mirror` 플래그를 1 회 확인해 로컬/원격을
+고정한다. 원격이면 결과를 열 때 출발점으로 쓸 그 mirror workspace 의 surface 도 이때 정한다. 출발
+surface 가 없으면 그 workspace 에서 이 창이 선택한 surface(없으면 첫 surface)다. 피커는 받은 위치를
+`FilePickerData.mirror_ws_id: Option<u32>`(`Some` 이면 원격)로만 쓴다.
 
-탭 스트립 빈 곳 메뉴의 **새 HTML...** 은 `popup::file_picker::open_for_new_tab` 으로 피커를 연다.
-출발 surface 는 메뉴를 연 pane 의 선택 탭 surface 이고, 필터는 `html`·`htm`·`svg` 이며, 확정 동작
-`FilePickerData.on_confirm` 은 `NewTab { pane_id, kind: "html", param_key: "url" }` 이다. 피커를 여는
-`OpenPopup` 의 출처는 사용자 컨텍스트 메뉴다. 메뉴를 연 pane 이 mirror workspace 에 속하면 피커를
-열지 않고 `explorer.state.remote_open_unsupported` 토스트만 띄운다. html 은 mirror 에서 내용이
-보이지 않아(원격 파일 열기가 같은 kind 의 핸들러를 거절하는 [원격 attach (Remote attach)](../remote-attach/index.md)와 같은 이유) 원격에 탭을 만들어도
-사용자가 볼 수 없기 때문이다.
+- **Tools 메뉴·단축키**(`src/adapters/ui/file_open_tool.rs::open`): 출발 surface 는 focus surface,
+  없으면 활성 workspace 다.
+- **탭 스트립 빈 곳 메뉴의 새 HTML...**(`src/adapters/ui/new_tab_picker.rs::open`): 메뉴를 연 pane 의
+  선택 탭 cwd 에서 로컬로 출발하고, 필터는 `html`·`htm`·`svg` 다. 메뉴를 연 pane 이 mirror workspace 에
+  속하면 피커를 열지 않고 `explorer.state.remote_open_unsupported` 토스트만 띄운다. html 은 mirror 에서
+  내용이 보이지 않아(원격 파일 열기가 같은 kind 의 핸들러를 거절하는 [원격 attach (Remote attach)](../remote-attach/index.md)와
+  같은 이유) 원격에 탭을 만들어도 사용자가 볼 수 없기 때문이다.
+- **plugin `file_picker.trigger`**: 아래 "시작 위치" 절의 `origin_surface_id`, 없거나 찾지 못하면 활성
+  workspace 다.
 
 ### 로컬 브라우징
 
@@ -87,20 +106,20 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 
 ### 확정(Confirm)
 
-확정 동작은 `FilePickerData.on_confirm` 이 정한다. Tools 메뉴·단축키·플러그인 `file_picker.trigger` 는
-기본값 `OpenFile`(아래 로컬·원격 두 항목)이다. 판정은 `src/app/dispatch/file_picker.rs::dispatch_picker_result` 한
-함수에 있다.
+피커의 확정은 고른 경로를 결과로 남기는 데서 끝난다. 원격 목록에서 확정해도 원격 파일 **내용**을 이
+세션으로 가져오는 fetch 는 없다. 확정 뒤의 동작은 호출자별로 다르다.
 
-- **탭 생성(`NewTab`)**: 로컬 경로마다 `DomainIntent::CreateTab { pane_id, kind, surface_params: {<param_key>: 경로}, activate: true }`
-  를 사용자 컨텍스트 메뉴 출처로 보낸다. `DispatchFile` 과 클립보드 복사는 하지 않는다. pane 은 ID 로
-  고정하므로 피커가 열린 동안 활성 pane·탭·workspace 가 바뀌어도 메뉴를 연 pane 에 만든다. 그 pane 이
-  닫혔으면 아무것도 만들지 않는다. 취소하면 탭을 만들지 않는다. 원격 경로는 받지 않는다(mirror pane 은
-  피커를 열지 않는다).
-- **로컬**: 선택 경로로 `DomainIntent::DispatchFile { depth: Deep, .. }` 를 발생시켜 기존 파일 핸들러
-  디스패치 경로(explorer/markdown 오픈과 동일)로 넘긴다.
-- **원격**: **디렉토리 목록만** 조회하며 원격 파일 **내용**을 이 세션으로 가져오는
-  fetch 는 하지 않는다. 선택 경로를 클립보드에 복사하고 결과 toast 를 띄운다
-  (`src/app/dispatch/file_picker.rs::apply_remote_confirm`).
+| 호출자 | 결과 처리 | 위치 |
+|---|---|---|
+| Tools 메뉴·단축키 | 로컬 경로마다 `DomainIntent::DispatchFile { depth: Deep, origin_surface_id: None, dispatch_origin: User }` 를 `from_user_menu("file_picker_confirm")` 로 보내 파일 핸들러로 연다. 원격 경로는 위치 확정 때 정한 mirror surface 를 `origin_surface_id` 로 실은 같은 `DispatchFile` 로 원격 파일을 연다(원격 탐색기 더블클릭과 같은 경로). 원격에 열 수 있는 핸들러가 없으면 기존 안내가 뜬다. 클립보드는 바꾸지 않는다. | `src/adapters/ui/file_open_tool.rs::apply_outcome` |
+| 탭 스트립 "새 HTML..." | 경로마다 `DomainIntent::CreateTab { pane_id, kind: "html", surface_params: {"url": 경로}, activate: true }` 를 사용자 컨텍스트 메뉴 출처로 보낸다. pane 은 ID 로 고정하므로 피커가 열린 동안 활성 pane·탭·workspace 가 바뀌어도 메뉴를 연 pane 에 만든다. 그 pane 이 닫혔으면 아무것도 만들지 않는다. | `src/adapters/ui/new_tab_picker.rs::apply_outcome` |
+| plugin `file_picker.trigger` | 요청한 plugin 에 `"file_picker.result"` 만 보낸다. 호스트는 경로로 아무것도 열지 않는다. | `src/adapters/ipc/handler/file_picker.rs::deliver_result` |
+| 설정 창 파일 선택 | 연 화면(`consumer`)이 경로를 받아 입력칸 채우기·내보내기·가져오기에 쓴다. | `src/view/settings/ui.rs::apply_file_chooser_outcomes` |
+
+취소하면 어느 호출자도 동작하지 않는다. Tools 원격 열기에서 보관한 surface 가 피커가 열린 동안
+닫혔으면 같은 mirror workspace 의 다른 surface 를 출발점으로 쓴다. 그 workspace 까지 사라졌으면
+원격 경로를 로컬로 오해해 열지 않도록 warn 로그만 남기고 무시한다.
+
 - **디렉토리는 파일로 확정되지 않는다**: [열기] 가 폴더 하나를 골랐을 때 하는 일은 **그 폴더로
   들어가는 것**이다 — 더블클릭 말고 키보드로 내려가는 길이 그것이다. 그 밖에는 선택된 엔트리가
   전부 파일일 때만 활성화되고(`draw_file_picker_view` 의 `can_confirm`), wrapper 의
@@ -204,13 +223,13 @@ markdown의 Browse처럼 plugin이 호스트의 파일 선택 창을 열어야 �
    곳이 없고 popup 이 사용자 입력 포커스를 가져가기 때문이다([파일 핸들러 (File handler)](../file-handler/index.md)). host 는 popup 확정을 **기다리지 않고** `{ request_id }` 만 즉시
    회신한다(`src/adapters/ipc/handler/file_picker.rs::handle_trigger`).
 2. host 는 `(plugin_id, request_id)` 를 `FilePickerData.requester`(`FilePickerRequester`)
-   에 기록하고 popup 을 연다 — 이후 로컬/원격 판별·엔트리 로드는 위 기존 경로(Tools 메뉴
-   트리거와 동일)를 그대로 탄다.
-3. 사용자가 확정/취소하면(`dispatch_pending_file_picker_results`/`apply_remote_confirm`),
-   기존 동작(로컬 `DomainIntent::DispatchFile`, 원격 클립보드 복사+toast)에 **더해**
+   에 기록하고 popup 을 연다. `request_id` 는 피커 요청 식별자와 같은 값이다. 이후 로컬/원격
+   판별·엔트리 로드는 위 경로(Tools 메뉴 트리거와 동일)를 그대로 탄다.
+3. 사용자가 확정/취소하면 drain(`dispatch_pending_file_picker_results`)이 결과를 꺼내
    `PluginManager::emit_host_event_to_plugin` 으로 `"file_picker.result"` 이벤트를 그
    plugin 에만 unicast 한다: `{ request_id, paths, cancelled }`(확정도 취소도 항상 이 세
-   필드를 전부 채운다 — 취소는 `paths: []`/`cancelled: true`).
+   필드를 전부 채운다 — 취소는 `paths: []`/`cancelled: true`). 호스트는 그 경로로 파일을 열거나
+   클립보드에 쓰지 않는다.
 4. plugin 은 `on_event` 에서 이 key 를 받아 자기 `request_id` pending-map 으로 상관관계를
    맞춘다(신규 SDK 콜백 불필요 — 기존 `EventDispatchCtx` 재사용).
 
@@ -226,7 +245,7 @@ mono caption 이며, 칩은 내용 폭이다. `fp-filter-max-width` 를 넘으�
 메인 피커와 설정 창의 파일 선택, 열기·저장 모드 모두 같다. 저장 모드에서 이름에 확장자를 덧붙이지 않는다.
 
 **시작 위치 — `start_dir?: string` · `origin_surface_id?: u32`**: 피커는 그것을 띄운 surface 의
-폴더에서 출발한다(`FilePickerStart`, `src/adapters/ui/popup/file_picker.rs`). 두 필드 모두
+폴더에서 출발한다(`popup::file_picker::locate`). 두 필드 모두
 옵셔널이라 기존 호출자는 그대로 동작한다.
 
 - **로컬/원격 판정은 출발 surface 의 workspace 로 한다** — `origin_surface_id` 가 있고 찾아지면
@@ -251,7 +270,7 @@ Surface 부모가 보이지 않으면 자식도 paint/hit/Esc/키 게이트에�
 부모·자식 draft, 선택, 요청 ID를 보존한다. 돌아오면 같은 작업을 계속한다. Window 부모와
 owner 없는 단독 피커는 창 범위다. surface가 작으면 기존 clamp가 피커 크기를 제한한다.
 부모 close는 기존 cancel/settled 규약을 따른다. 확정 이벤트를 받은 markdown은 경로 입력만
-채우며, 부모 Open에서 최초 context의 대상을 실행한다. host의 별도 로컬 DispatchFile은 유지한다.
+채우며, 부모 Open에서 최초 context의 대상을 실행한다. 호스트는 확정한 경로로 파일을 따로 열지 않는다.
 
 **동시 요청**: 파일 피커는 한 번에 하나만 열린다. 이미 열려 있으면 두 번째 요청을
 즉시 `-32000`으로 거절한다. 첫 요청을 대체하면 기존 plugin에 취소를 통지해야 하지만
@@ -259,8 +278,8 @@ owner 없는 단독 피커는 창 범위다. surface가 작으면 기존 clamp�
 대신 새 요청을 거절한다. 호출자는 그 오류를 받고 재시도 여부를 정할 수 있다.
 
 **요청 주체 기록**: 피커를 여는 `OpenPopup`은 plugin 요청이면 `Intent::from_agent_plugin(plugin_id)`로,
-탭 스트립 메뉴 "새 HTML..."(확정 동작 `NewTab`)이면 `from_user_context_menu`로, 그 밖(Tools 메뉴·단축키)은
-`from_user_menu("tools_menu")`로 기록한다(`popup::file_picker::open_with`). IPC 요청을 사용자 메뉴 조작으로 기록하지 않는다.
+탭 스트립 메뉴 "새 HTML..."이면 `from_user_context_menu`로, Tools 메뉴·단축키는
+`from_user_menu("tools_menu")`로 기록한다. 호출자가 넘긴 `FilePickerOpenedBy` 로 정한다(`popup::file_picker::open`). IPC 요청을 사용자 메뉴 조작으로 기록하지 않는다.
 
 ### 설정 창에서의 로컬 전용 재사용
 
@@ -305,7 +324,8 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - **제목**: 기본은 모드의 제목이고, 여는 쪽이 `set_title` 로 덮어쓸 수 있다(가져오기/내보내기가 자기 제목을 쓴다).
 - **확장자 필터**: 메인 피커와 같은 `matches_filters` — 디렉토리는 거르지 않는다.
 - **결과 전달**: 여는 쪽이 `consumer` 키(`&'static str`)를 주고, 닫힌 뒤 같은 키로
-  `take_outcome` 해 `Confirmed(PathBuf)` 또는 `Cancelled` 를 1 회 가져간다. 헤더 ✕ · Cancel · Esc 로
+  `take_outcome` 해 메인 피커와 같은 경로 문자열 배열 `Confirmed(Vec<String>)` 또는 `Cancelled` 를 1 회
+  가져간다. 단일 선택이라 확정 배열은 경로 하나다. 헤더 ✕ · Cancel · Esc 로
   닫히면 취소로 남는다.
 - **Esc**: 설정 창 popup 중 열려 있는 것의 z 순서가 가장 높은 하나만 받는다
   (`settings_escape_owner`). 파일 선택이 충돌 확인 popup 위에 떠 있으면 충돌 popup 의 키 처리
@@ -334,9 +354,9 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 
 ## 비-목표 (Out of scope)
 
-- **원격 파일 내용 fetch** — 디렉토리 나열만. 확정 시 클립보드 복사 + toast 로 그친다. 이건
-  `file_picker.trigger` 로 열린 경우도 동일 — 확정 결과는 plugin 에 `paths` 로만 전달되고,
-  그 경로의 내용을 이 세션으로 가져오는 fetch 는 없다.
+- **원격 파일 내용 fetch** — 피커는 디렉토리 나열만 한다. 확정 결과는 경로 문자열이며,
+  `file_picker.trigger` 로 열린 경우 plugin 에 `paths` 로만 전달된다. 그 경로의 내용을 이 세션으로
+  가져오는 fetch 는 피커에 없다. Tools 메뉴의 원격 확정은 원격 파일 열기 경로로 넘긴다.
 - **멀티 셀렉트 / 메인 피커의 파일명 직접 입력** — 현재는 단일 선택만 지원(`FilePickerData::selected`
   는 매번 교체). 메인 피커는 열기 전용이라 footer 이름 칸이 읽기 전용이다 — 편집 가능한 이름 칸은
   설정 창의 저장 모드에만 있다.
@@ -373,10 +393,21 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   매달린다. 창 배경은 bg-panel 이라 버튼 채움·테두리가 창과 구분된다.
 - Given attach 점유가 없는 client 가 `list_dir_request` 를 보냄 Then 서버가 거부 회신한다
   (`ok: false`).
-- Given 로컬 파일을 확정 Then `DomainIntent::DispatchFile` 이 발생해 기존 오픈 경로로
-  이어진다.
-- Given 원격 파일을 확정 Then 선택 경로가 로컬 클립보드에 복사되고 toast 가 뜬다(원격 콘텐츠
-  fetch 는 일어나지 않는다).
+- Given 어느 호출자(Tools 메뉴·"새 HTML..."·plugin)로 연 피커든 When 파일을 확정 Then 피커와 결과
+  drain 은 intent·클립보드·toast 를 만들지 않고, 호출자가 가져갈 결과는 경로 배열과 요청 식별자뿐이다.
+- Given Tools 메뉴로 연 로컬 피커에서 파일을 확정 Then `DomainIntent::DispatchFile` 이 발생해 기존
+  오픈 경로로 이어진다.
+- Given Tools 메뉴로 연 원격 피커에서 파일을 확정 Then 출발 mirror surface 를 `origin_surface_id` 로 실은
+  `DomainIntent::DispatchFile` 이 하나 발생해 그 파일이 원격 workspace 에 열리고, 클립보드는 바뀌지 않는다.
+- Given 출발 surface 없이 Tools 메뉴 피커가 mirror workspace 를 둘러봄 Then 위치를 정할 때 그 workspace 의
+  surface 를 함께 정하고, 확정하면 그 surface 를 출발점으로 연다.
+- Given Tools 메뉴 원격 피커가 열린 동안 보관한 surface 가 닫힘 When 확정 Then 같은 mirror workspace 의
+  다른 surface 로 열고, workspace 까지 사라졌으면 아무것도 열지 않는다.
+- Given 탭 스트립 "새 HTML..." 피커가 열린 동안 메뉴를 연 pane 이 닫힘 When 확정 Then 탭이 생기지 않는다.
+- Given 같은 호출자가 피커를 다시 열었음 When 이전 요청 식별자의 결과가 도착 Then 그 결과는 적용되지
+  않고, 결과는 한 번만 적용된다.
+- Given markdown 파일 열기 팝업의 찾아보기로 연 피커에서 확정 Then 호스트는 탭을 만들거나 클립보드를
+  바꾸지 않고, markdown 이 받은 경로를 입력칸에 채운다.
 - Given X 버튼/ESC 로 popup 이 닫힘 Then 결과가 `Cancelled` 로 명시되어 dialog
   상태가 정리된다(다음 오픈에 이전 상태가 새지 않음).
 - Given 열기 모드에서 디렉토리 엔트리가 선택됨(더블클릭 아님) Then [열기] 가 활성이고 누르면
@@ -456,15 +487,18 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `format_modified`) — `src/adapters/ui/surface/explorer/view.rs`(Explorer surface)와 공유.
 - 로컬 읽기: `src/app/local_reads.rs`(`directory` 요청 생성 · worker 실행 · `poll_file_picker_reads` 결과 반영).
   설정 창은 `src/view/settings/ui/file_chooser.rs`(`reload`/`accept_read`)가 같은 요청을 쓴다.
-- 트리거: `src/adapters/ui/tools_menu.rs`(`BuiltinAction::OpenFilePicker`, `popup::file_picker::open`,
-  `requester: None`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin
-  트리거, docs/design/systems/popup.md), `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` →
-  `FsRead`).
+- 피커 열기: `src/adapters/ui/popup/file_picker.rs`(`open`, `FilePickerOpenedBy`), 위치 결정은
+  `file_picker/location.rs`(`locate`).
+- 호출자: `src/adapters/ui/file_open_tool.rs`(Tools 메뉴 `BuiltinAction::FilePicker` 와 단축키
+  `open_file_picker_tool` 이 함께 쓰는 `open`/`apply_outcome`), `src/adapters/ui/new_tab_picker.rs`
+  ("새 HTML..." 의 `open`/`apply_outcome`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` —
+  plugin 트리거, `deliver_result` 로 `"file_picker.result"` unicast, docs/design/systems/popup.md),
+  `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` → `FsRead`).
 - Result drain: `src/app/dispatch/file_picker.rs`(`dispatch_pending_file_picker_results`,
-  `apply_remote_confirm`, `emit_file_picker_result` — `requester` 가 `Some` 이면
-  `"file_picker.result"` unicast), `src/app/event_handler.rs`(`about_to_wait` 호출).
-- plugin 요청자 상태: `src/state/dialogs.rs`(`FilePickerRequester`, `FilePickerData.requester`/
-  `filters`), `src/core/mod.rs`(`next_file_picker_trigger_request_id` — `FpLoadState::Loading`
+  `take_outcome`, `deliver_outcome`), `src/app/event_handler.rs`(`about_to_wait` 호출).
+- 요청 상태: `src/state/dialogs.rs`(`FilePickerRequestId`, `FilePickerLocation`, `FilePickerOutcome`,
+  호출자별 보관 칸 `FilePickerCallers`/`OpenFilePickerRequest`/`NewTabPickerRequest`, `FilePickerRequester`,
+  `FilePickerData.requester`/`filters`), `src/core/mod.rs`(`next_file_picker_request_id` — `FpLoadState::Loading`
   의 내부 `request_id` 와 별개 네임스페이스), `src/intent.rs`(`Intent`/`UiIntent::
   from_agent_plugin`).
 - plugin caller: `crates/tasty-plugin-markdown/src/popup.rs`(`trigger_file_picker`,
@@ -478,7 +512,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `list_dir_entries_wire_capped`, 항목 하나는 `content_queries/list_dir_wire.rs` 의 `list_dir_entry_wire`/`LIST_DIR_ENTRIES_BYTE_BUDGET`). GUI
   (`src/app/event_handler.rs::apply_list_dir_request_msg`)와 headless(`src/boot/headless_stream.rs`) 양쪽
   진입점에서 동일 서버 로직을 호출.
-- Popup 상태: `src/state/dialogs.rs`(`FilePickerData`, `FpLoadState`, `FilePickerResult`).
+- Popup 상태: `src/state/dialogs.rs`(`FilePickerData`, `FpLoadState`, `FilePickerResult` — 경로 배열 또는 취소).
 - 설정 창 재사용: `src/view/settings/ui/file_chooser.rs`(`SettingsFileChooser`/`FileChooserMode`/
   `FileChooserOutcome`, 저장 모드 이름 칸·덮어쓰기 판정), `src/view/settings/ui.rs`(`PopupManager` 등록 ·
   `open_file_chooser` · `settings_escape_owner` · `apply_file_chooser_outcomes`),
@@ -489,7 +523,11 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `src/core/fs_list.rs`(`human_size_units`/`sort_dirs_first`/`read_dir_entries_lists_files_and_dirs`),
   `src/remote/server/content_queries.rs`(`list_dir_entries_wire_capped_tests` — byte-budget truncation),
   `src/adapters/ui/popup/file_picker.rs`(`path_helper_tests` — POSIX/Windows 원격 경로 처리 +
-  `matches_filters_*` 확장자 필터), `src/adapters/ipc/handler/file_picker.rs`(`tests` —
+  `matches_filters_*` 확장자 필터), `src/adapters/ui/popup/file_picker/pure_return_tests.rs`(호출자별 확정이
+  경로 배열과 식별자만 남김 · 취소 · popup 출처 · 위치 결정), `src/adapters/ui/file_open_tool_tests.rs`(로컬·원격
+  열기 · surface 대체 · workspace 소멸 · 취소 · 늦은 결과), `src/adapters/ui/new_tab_picker_tests.rs`(pane 고정 ·
+  pane 닫힘 · 경로별 탭 · 늦은 결과 · mirror pane 거절), `src/app/dispatch/file_picker_tests.rs`(plugin 결과
+  payload · 한 번만 꺼냄), `src/adapters/ipc/handler/file_picker.rs`(`tests` —
   trigger 성공/requester 기록/busy 거부/filters 전달, 실제 `MainViewState`/`CoreState` fixture),
   `crates/tasty-ipc/src/method_meta_tests.rs`(`file_picker_trigger_requires_fs_read`),
   `tests/attach_list_dir_loopback.rs`(실제 서버 인스턴스 상대 loopback 왕복 3 종 — 성공/디렉토리
