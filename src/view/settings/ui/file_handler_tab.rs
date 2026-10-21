@@ -187,6 +187,8 @@ impl RowLabels {
 }
 
 mod detectors;
+#[cfg(test)]
+mod draw_tests;
 mod extension_mapping;
 mod handlers;
 mod hook_handlers;
