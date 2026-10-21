@@ -134,6 +134,7 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
     옮긴다. macOS·Linux 는 이름을 보지 않으므로 fish 같은 셸도 확정할 수 있다.
   - 이 화면은 설정 셸을 쓸 수 없고 대체할 셸도 없을 때, 그리고 macOS·Linux 에서 설정 셸이
     디렉터리이거나 실행 권한 없는 파일일 때(대체하지 않는 판정) 열린다([터미널 surface "실행할 셸"](../surfaces/terminal/index.md)).
+    입력란은 설정한 셸 경로로 채워 열리므로 판정 줄이 곧바로 원인을 보인다. 빈 설정이면 빈 칸이다.
   - 버튼은 공용 `Button` Secondary "Quit"(앱 종료)과 Primary "Use this shell"(md)이다.
     판정이 유효할 때만 확인이 활성이며 Enter 확인도 같은 조건을 따른다. disabled 모양은
     공용 규칙(중립 상자와 disabled ink)을 따른다.

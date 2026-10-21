@@ -696,7 +696,8 @@ impl App {
         if boot_shell_usable(settings) {
             return Some((window, gpu));
         }
-        self.enter_shell_setup_mode(window, gpu);
+        // 설정한 경로를 입력란에 그대로 넣어 판정 줄이 원인(경로 없음·폴더·실행 권한 없음)을 바로 보인다.
+        self.enter_shell_setup_mode(window, gpu, settings.general.shell.clone());
         None
     }
 
@@ -705,10 +706,14 @@ impl App {
         &mut self,
         window: std::sync::Arc<winit::window::Window>,
         mut gpu: crate::gpu::GpuState,
+        initial_path: String,
     ) {
-        tracing::warn!("bash not found; entering shell setup mode");
+        tracing::warn!(
+            shell = %initial_path,
+            "configured shell is not usable and no substitute applies; entering shell setup mode"
+        );
         self.state.shell_setup_mode = true;
-        self.state.shell_setup_path = String::new();
+        self.state.shell_setup_path = initial_path;
         if let Err(e) = gpu.render_shell_setup(&window, &mut self.state.shell_setup_path) {
             tracing::warn!("shell setup first frame render failed: {e} — showing window anyway");
         }
