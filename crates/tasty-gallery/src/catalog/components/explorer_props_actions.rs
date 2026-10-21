@@ -207,7 +207,7 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
             ui,
             "editing",
             (icons::FILE, "deploy.env"),
-            0o640,
+            0o644,
             false,
             false,
             BoxState::Editing,
