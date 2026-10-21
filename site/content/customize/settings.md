@@ -54,7 +54,7 @@
 | **입력** <!-- en: Input --> | 터미널 앱별 **Shift+Enter로 줄바꿈 문자 보내기** <!-- en: Send a newline with Shift+Enter --> 규칙 — 실행 파일 이름(예: `claude`)을 추가하고 켜면 그 앱이 입력을 받는 동안 `Shift+Enter` 가 줄바꿈 문자(LF)를 보냅니다. 끄거나 규칙이 없으면 플랫폼 기본 방식으로 보냅니다 |
 | **마우스 캡처** <!-- en: Mouse Capture --> | **마우스 캡처 안내 표시** <!-- en: Show mouse-capture hint --> · **다음 프로그램에서 마우스 캡처 비활성화** <!-- en: Disable mouse capture for these programs --> · **다음 프로그램에서 캡처 안내 배너만 억제** <!-- en: Suppress the capture hint banner for these programs --> — 프로세스 이름 또는 `ht*` 같은 패턴 |
 | **TUI** | **클립보드 읽기 허용 (OSC 52)** <!-- en: Allow clipboard read (OSC 52) --> — 기본 꺼짐. 켜면 터미널 안 프로그램이 클립보드를 읽을 수 있습니다 |
-| **성능** <!-- en: Performance --> | **선택적 PTY 폴링** <!-- en: Targeted PTY polling --> · **스크롤백 디스크 스왑** <!-- en: Scrollback disk swap --> (스크롤백 줄 수를 넘은 줄을 디스크로 옮김) · **디스크 보관 줄 수** <!-- en: Lines kept on disk --> (기본 10000, -1 은 무제한 — 스크롤백 줄 수와 별도이며 넘으면 오래된 줄부터 버림) — 모두 재시작 후 적용 |
+| **성능** <!-- en: Performance --> | **선택적 PTY 폴링** <!-- en: Targeted PTY polling --> · **스크롤백 디스크 스왑** <!-- en: Scrollback disk swap --> (스크롤백 줄 수를 넘은 줄을 디스크로 옮김) · **디스크 보관 줄 수** <!-- en: Lines kept on disk --> (기본 10000, -1 은 무제한 — 스크롤백 줄 수와 별도이며 넘으면 오래된 줄부터 버림). 선택적 PTY 폴링은 재시작 후 적용되고, 디스크 스왑과 디스크 보관 줄 수는 새로 여는 터미널부터 적용됩니다(이미 열린 터미널은 그대로) |
 
 **링크 클릭 수식키**를 **좌클릭 열기 끄기** <!-- en: Disable left-click opening --> 로 두면 좌클릭으로 링크를 열지 않습니다. 수식키 없이 링크에 마우스를 올려 표시할 수 있고 링크 위 우클릭 메뉴는 계속 사용할 수 있습니다. 팝업이나 배너 위에서는 링크 표시가 차단될 수 있습니다. 마우스 캡처 항목의 의미는 [터미널 다루기](../using/terminal.md).
 

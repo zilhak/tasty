@@ -9,7 +9,7 @@ pub struct PerformanceSettings {
     /// Requires restart to apply.
     pub targeted_pty_polling: bool,
     /// When enabled, swap old scrollback lines to disk to reduce memory usage.
-    /// Requires restart to apply.
+    /// Applies to new terminals; running terminals keep the value they started with.
     pub scrollback_disk_swap: bool,
     /// Most lines disk swap keeps per terminal, on top of `general.scrollback_lines` in
     /// memory. The oldest lines past it are dropped. `-1` keeps every line; other negative
