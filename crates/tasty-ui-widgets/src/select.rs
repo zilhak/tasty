@@ -125,7 +125,7 @@ fn select_impl(
     paint_trigger_box(ui.painter(), theme, rect, border, enabled);
     // 문구가 테두리와 화살표를 넘지 않도록 줄인다.
     let (label, label_fg) = match (selected, placeholder) {
-        (None, Some(p)) => (p, theme.text_placeholder()),
+        (None, Some(p)) => (p, theme.select_placeholder()),
         (s, _) => (
             s.and_then(|i| options.get(i)).copied().unwrap_or(""),
             theme.select_fg(),

@@ -1707,14 +1707,18 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "settings-file-detectors",
                             "Handler › File Detectors",
-                            Some("Detection passes — name + desc rows · Switch"),
-                            components::settings_handler::draw_detectors,
+                            Some(
+                                "two-line rows · origin Tag per source · user-only Remove · add card with patch / validation · Save-pending Undo",
+                            ),
+                            components::settings_file_handlers::draw_detectors,
                         ),
                         spec(
                             "settings-file-handlers",
                             "Handler › File Handlers",
-                            Some("name · kind Tag · Switch rows"),
-                            components::settings_handler::draw_file_handlers,
+                            Some(
+                                "two-line rows · prio · <detector> → <action> · add card with action kinds · Save-pending Undo",
+                            ),
+                            components::settings_file_handlers::draw_file_handlers,
                         ),
                         spec(
                             "settings-hook-handlers",

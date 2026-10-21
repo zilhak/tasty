@@ -1,9 +1,7 @@
 //! Shared registry queries for editors. No mutators or file execution are exposed.
 #![cfg(feature = "gui")]
 use std::sync::Arc;
-use tasty_file_format::{
-    DetectorId, DetectorInfo, FileFormatDetector, FileFormatRegistry, RuleOrigin,
-};
+use tasty_file_format::{DetectorId, DetectorInfo, DetectorSnapshot, FileFormatRegistry};
 use tasty_file_handler::{FileHandler, FileHandlerRegistry, HandlerId};
 #[derive(Clone)]
 pub(crate) struct FormatCatalog(Arc<FileFormatRegistry>);
@@ -11,17 +9,12 @@ impl FormatCatalog {
     pub(crate) fn new(registry: Arc<FileFormatRegistry>) -> Self {
         Self(registry)
     }
-    pub(crate) fn detector(&self, id: &DetectorId) -> Option<FileFormatDetector> {
-        self.0.detector(id)
-    }
     pub(crate) fn list_detectors(&self) -> Vec<DetectorId> {
         self.0.list_detectors()
     }
-    pub(crate) fn rule_origins(&self, id: &DetectorId) -> Vec<RuleOrigin> {
-        self.0.rule_origins(id)
-    }
-    pub(crate) fn has_user_contribution(&self, id: &DetectorId) -> bool {
-        self.0.has_user_contribution(id)
+    /// 병합된 detector와 출처별 기여를 id 순으로 돌려준다. 설정 목록의 출처별 요약이 쓴다.
+    pub(crate) fn detector_snapshots(&self) -> Vec<DetectorSnapshot> {
+        self.0.detector_snapshots()
     }
     pub(crate) fn extension_priority_order(&self, extension: &str) -> Option<Vec<DetectorId>> {
         self.0.extension_priority_order(extension)

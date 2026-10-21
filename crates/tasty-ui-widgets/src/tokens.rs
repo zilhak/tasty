@@ -156,3 +156,8 @@ pub const FH_TARGET_ELIDE_FALLBACK: usize = 65;
 /// Recent 그룹 행 글리프의 흐리기. 디자인 `opacity: dim && !plugin ? 0.8 : 1` — plugin
 /// 행은 mauve 가 출처 표시라 흐리지 않는다.
 pub const FH_RECENT_DIM_OPACITY: f32 = 0.8;
+
+/// File Detectors·Handlers 머리 설명 열이 Add 버튼 옆에 남는 최소 폭 = DTCG `primitive.size-240`
+/// (시안 `flex: 1 1 var(--tasty-size-240)`). 이보다 좁으면 버튼이 설명 아래로 내려간다.
+/// 역할 토큰이 없는 배치 경계라 여기 두고, 그리는 쪽이 UI 배율을 곱한다.
+pub const FH_INTRO_TEXT_MIN: LogicalPx = LogicalPx(240.0);

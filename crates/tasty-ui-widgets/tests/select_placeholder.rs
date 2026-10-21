@@ -57,14 +57,14 @@ fn text_colors(theme: &Theme, selected: Option<usize>) -> Vec<egui::Color32> {
 fn an_unchosen_select_paints_the_placeholder_tone() {
     let th = theme();
     assert_ne!(
-        th.text_placeholder(),
+        th.select_placeholder(),
         th.select_fg(),
         "두 색이 같으면 이 테스트는 아무것도 가르지 못한다"
     );
     let colors = text_colors(&th, None);
     assert_eq!(
         colors,
-        vec![th.text_placeholder().to_egui()],
+        vec![th.select_placeholder().to_egui()],
         "안 고른 트리거가 placeholder 색이 아니다 — placeholder 가 값처럼 읽힌다"
     );
 }
@@ -194,7 +194,7 @@ fn an_unchosen_open_list_holds_only_real_options_none_checked() {
     let shapes = open_frame(&th, None);
     assert_eq!(
         label_color(&shapes, "Pick one"),
-        vec![th.text_placeholder().to_egui()],
+        vec![th.select_placeholder().to_egui()],
         "the placeholder is drawn as a list row, not only on the trigger"
     );
     for option in ["Ask", "Quit"] {

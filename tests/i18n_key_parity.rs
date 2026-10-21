@@ -78,17 +78,6 @@ const SAME_AS_ENGLISH_ALLOWLIST: &[(&str, &[&str], &str)] = &[
         &["ko"],
         "ko 는 attach 를 제품 용어로 유지(remote_attach.* ko 가 'Attach 프로필' 로 부른다)",
     ),
-    // 같은 탭의 도움말도 영어 용어를 쓰므로 헤더만 바꿔 용어를 섞지 않는다.
-    (
-        "settings.file_handler.handlers.col_priority",
-        &["ko", "ja"],
-        "file handler 탭 용어 통일",
-    ),
-    (
-        "settings.file_handler.handlers.col_action",
-        &["ko", "ja"],
-        "file handler 탭 용어 통일",
-    ),
     (
         "settings.file_handler.handlers.field_action_kind",
         &["ko", "ja"],

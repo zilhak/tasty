@@ -39,11 +39,20 @@ pub(crate) struct FileHandlerEditDraft {
 }
 
 impl FileHandlerEditDraft {
+    /// 추가·교체를 먼저, 켜기 상태를 다음에, 삭제를 마지막에 적용한다. 추가는 같은 출처의
+    /// 기여를 통째로 교체하므로 먼저 해야 같은 초안의 켜기 변경이 남는다. 삭제는 사용자 기여
+    /// 전체를 지우므로 마지막이다.
     pub(crate) fn into_edits(self) -> Vec<crate::app::settings_edit::RegistryEdit> {
         use crate::app::settings_edit::RegistryEdit as E;
-        self.detector_enabled
+        self.add_detector
             .into_iter()
-            .map(|(id, value)| E::DetectorEnabled(id, value))
+            .map(E::AddDetector)
+            .chain(self.add_handler.into_iter().map(E::AddHandler))
+            .chain(
+                self.detector_enabled
+                    .into_iter()
+                    .map(|(id, value)| E::DetectorEnabled(id, value)),
+            )
             .chain(
                 self.handler_enabled
                     .into_iter()
@@ -51,13 +60,11 @@ impl FileHandlerEditDraft {
             )
             .chain(self.remove_detector.into_iter().map(E::RemoveDetector))
             .chain(self.remove_handler.into_iter().map(E::RemoveHandler))
-            .chain(self.add_detector.into_iter().map(E::AddDetector))
-            .chain(self.add_handler.into_iter().map(E::AddHandler))
             .collect()
     }
 }
 
-/// "+ Add user detector" inline form 의 입력 상태.
+/// detector 추가 카드의 입력 상태.
 #[derive(Debug, Clone, Default)]
 struct AddDetectorForm {
     open: bool,
@@ -66,21 +73,23 @@ struct AddDetectorForm {
     extensions_input: String,
     /// 단일 path-glob 패턴 (옵션).
     path_glob_input: String,
-    error: Option<String>,
+    /// Add를 한 번 눌렀는지. 형식 오류는 그 뒤부터 보인다.
+    tried: bool,
 }
 
-/// "+ Add user handler" inline form 의 입력 상태.
+/// handler 추가 카드의 입력 상태.
 #[derive(Debug, Clone, Default)]
 struct AddHandlerForm {
     open: bool,
     short_name_input: String,
-    detector_id_input: String,
+    /// 고른 detector id. 목록에서 사라지면 비운다.
+    detector: Option<String>,
     priority_input: String, // 비우면 default 100
     action_kind: AddHandlerActionKind,
     action_surface_kind: String,
     action_param_key: String,
     action_ipc_method: String,
-    error: Option<String>,
+    tried: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -89,6 +98,18 @@ enum AddHandlerActionKind {
     OpenSurface,
     Ipc,
     System,
+}
+
+impl AddHandlerActionKind {
+    const ALL: [Self; 3] = [Self::OpenSurface, Self::Ipc, Self::System];
+
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::OpenSurface => "settings.file_handler.handlers.action_open_surface",
+            Self::Ipc => "settings.file_handler.handlers.action_ipc",
+            Self::System => "settings.file_handler.handlers.action_system",
+        }
+    }
 }
 
 /// FileHandler 탭 콘텐츠. L2 사이드바(섹션 목록·필터·선택)는 settings 셸이
@@ -127,6 +148,42 @@ pub(super) fn draw_intro_block(ui: &mut egui::Ui, body_key: &str, bullet_keys: &
         ui.add(egui::Label::new(format!("• {}", t(key))).wrap());
     }
     vspace(ui, th.spacing_sm);
+}
+
+/// 서브탭 머리 — 설명과 출처 불릿 세 줄, 오른쪽 Add 버튼. 눌렸으면 true.
+pub(super) fn draw_fh_intro(
+    ui: &mut egui::Ui,
+    body_key: &str,
+    add_key: &str,
+    adding: bool,
+) -> bool {
+    let th = crate::theme::theme();
+    let host = t("settings.file_handler.common.origin_host");
+    let plugin = t("settings.file_handler.common.origin_plugin");
+    let user = t("settings.file_handler.common.origin_user");
+    tasty_ui_widgets::fh_intro(
+        ui,
+        &th,
+        t(body_key),
+        &[("host", host), ("plugin:<id>", plugin), ("user", user)],
+        t(add_key),
+        adding,
+    )
+}
+
+/// 행이 공유하는 고정 문구.
+pub(super) struct RowLabels {
+    undo: &'static str,
+    remove: &'static str,
+}
+
+impl RowLabels {
+    pub(super) fn get() -> Self {
+        Self {
+            undo: t("settings.file_handler.common.undo"),
+            remove: t("settings.file_handler.common.remove"),
+        }
+    }
 }
 
 mod detectors;

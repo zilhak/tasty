@@ -1,347 +1,39 @@
+//! File Handlers 서브탭 — 등록 목록(두 줄 행)과 user 추가 카드.
+//!
+//! handler는 출처가 하나다. user가 만든 handler(`user/<short>`)만 Remove를 갖고 host·plugin
+//! handler는 자물쇠다. 같은 short name으로 다시 추가하면 앞선 user handler를 바꾼다.
+
 use crate::file::handler::{
-    HandlerAction, HandlerOwner, UserHandlerActionDecl, UserHandlerUpsertDecl,
+    HandlerAction, HandlerId, HandlerOwner, UserHandlerActionDecl, UserHandlerUpsertDecl,
 };
-use crate::i18n::t;
+use crate::i18n::{t, t_fmt};
 use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
+use tasty_ui_widgets::{
+    FhCardLabels, FhLine, FhOrigin, FhRowView, FhSummarySeg, FhTrailing, Input,
+};
 
-use super::{AddHandlerActionKind, AddHandlerForm, FileHandlerEditDraft, draw_intro_block};
-use tasty_ui_widgets::vspace;
+use super::{AddHandlerActionKind, AddHandlerForm, FileHandlerEditDraft, RowLabels, draw_fh_intro};
 
-/// Handlers sub-tab — Enabled 토글, user-origin 삭제, user 추가 form.
-pub(super) fn draw_handlers(
-    ui: &mut egui::Ui,
-    fh: &mut FileHandlerEditDraft,
-    file_format: &FileFormatRegistry,
-    file_handler: &FileHandlerRegistry,
-) {
-    draw_intro_block(
-        ui,
-        "settings.file_handler.handlers.description",
-        &[
-            "settings.file_handler.handlers.bullet_what",
-            "settings.file_handler.handlers.bullet_priority",
-            "settings.file_handler.handlers.bullet_owner",
-            "settings.file_handler.handlers.bullet_action_surface",
-            "settings.file_handler.handlers.bullet_action_ipc",
-            "settings.file_handler.handlers.bullet_action_system",
-        ],
-    );
-
-    let th = crate::theme::theme();
-    let ids = file_handler.list_handlers();
-    if ids.is_empty() {
-        ui.label(
-            egui::RichText::new(t("settings.file_handler.handlers.empty"))
-                .size(th.font_size_caption.value())
-                .color(th.text_muted()),
-        );
-    } else {
-        let mut rows: Vec<crate::file::handler::FileHandler> = ids
-            .iter()
-            .filter_map(|id| file_handler.handler(id))
-            .collect();
-        rows.sort_by(|a, b| {
-            a.priority
-                .cmp(&b.priority)
-                .then_with(|| a.id.as_str().cmp(b.id.as_str()))
-        });
-
-        egui::Grid::new("file_handler_handlers_grid")
-            .num_columns(7)
-            .striped(true)
-            .spacing(egui::vec2(th.spacing_md.value(), th.spacing_xs.value()))
-            .show(ui, |ui| {
-                ui.strong(t("settings.file_handler.handlers.col_status"));
-                ui.strong(t("settings.file_handler.handlers.col_priority"));
-                ui.strong(t("settings.file_handler.handlers.col_id"));
-                ui.strong(t("settings.file_handler.handlers.col_owner"));
-                ui.strong(t("settings.file_handler.handlers.col_detector"));
-                ui.strong(t("settings.file_handler.handlers.col_action"));
-                ui.strong("");
-                ui.end_row();
-
-                for h in &rows {
-                    let want_enabled = fh
-                        .handler_enabled
-                        .get(&h.id)
-                        .copied()
-                        .unwrap_or(!h.disabled);
-                    let mut checked = want_enabled;
-                    if tasty_ui_widgets::switch(ui, &th, &mut checked, None, true).changed() {
-                        fh.handler_enabled.insert(h.id.clone(), checked);
-                    }
-                    ui.label(h.priority.to_string());
-                    ui.label(h.id.as_str());
-                    ui.label(handler_owner_label(&h.owner));
-                    ui.label(h.detector.as_str());
-                    ui.label(handler_action_summary(&h.action));
-                    if matches!(h.owner, HandlerOwner::User) {
-                        let pending = fh.remove_handler.contains(&h.id);
-                        ui.horizontal(|ui| {
-                            if pending {
-                                ui.weak(t("settings.file_handler.common.pending_remove"));
-                                if ui.small_button(t("button.cancel")).clicked() {
-                                    fh.remove_handler.remove(&h.id);
-                                }
-                            } else if ui
-                                .small_button(t("settings.file_handler.handlers.remove_user"))
-                                .clicked()
-                            {
-                                fh.remove_handler.insert(h.id.clone());
-                            }
-                        });
-                    } else {
-                        ui.label("");
-                    }
-                    ui.end_row();
-                }
-            });
-    }
-
-    vspace(ui, th.spacing_md);
-    ui.separator();
-    vspace(ui, th.spacing_xs);
-
-    draw_add_handler_form(ui, fh, file_format);
+/// 저장 전 행의 상태.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HdlPending {
+    Add,
+    Replace,
+    Remove,
 }
 
-fn draw_add_handler_form(
-    ui: &mut egui::Ui,
-    fh: &mut FileHandlerEditDraft,
-    file_format: &FileFormatRegistry,
-) {
-    let th = crate::theme::theme();
-    let toggle_label = if fh.add_handler_form.open {
-        t("settings.file_handler.handlers.add_close")
-    } else {
-        t("settings.file_handler.handlers.add_open")
-    };
-    if ui.button(toggle_label).clicked() {
-        fh.add_handler_form.open = !fh.add_handler_form.open;
-        fh.add_handler_form.error = None;
-    }
-    if !fh.add_handler_form.open {
-        for decl in &fh.add_handler {
-            ui.weak(format!(
-                "{} user/{}",
-                t("settings.file_handler.handlers.pending_add"),
-                decl.id.strip_prefix("user/").unwrap_or(&decl.id)
-            ));
-        }
-        return;
-    }
-    let detector_ids = file_format.list_detectors();
-    egui::Frame::new()
-        .inner_margin(egui::vec2(th.spacing_sm.value(), th.spacing_xs.value()))
-        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
-        .show(ui, |ui| {
-            egui::Grid::new("file_handler_handlers_add_grid")
-                .num_columns(2)
-                .spacing(egui::vec2(th.spacing_sm.value(), th.spacing_xs.value()))
-                .show(ui, |ui| {
-                    ui.label(t("settings.file_handler.handlers.field_short_name"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut fh.add_handler_form.short_name_input)
-                            .hint_text("my-viewer")
-                            .desired_width(th.field_width_lg.value()),
-                    );
-                    ui.end_row();
-
-                    ui.label(t("settings.file_handler.handlers.field_detector"));
-                    tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
-                        egui::ComboBox::from_id_salt("file_handler_handlers_add_detector")
-                            .selected_text(if fh.add_handler_form.detector_id_input.is_empty() {
-                                t("settings.file_handler.handlers.field_detector_select")
-                                    .to_string()
-                            } else {
-                                fh.add_handler_form.detector_id_input.clone()
-                            })
-                            .show_ui(ui, |ui| {
-                                ui.spacing_mut().item_spacing.y = 0.0;
-                                for id in &detector_ids {
-                                    tasty_ui_widgets::menu_option_value(
-                                        ui,
-                                        &th,
-                                        &mut fh.add_handler_form.detector_id_input,
-                                        id.as_str().to_string(),
-                                        id.as_str(),
-                                    );
-                                }
-                            })
-                    });
-                    ui.end_row();
-
-                    ui.label(t("settings.file_handler.handlers.field_priority"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut fh.add_handler_form.priority_input)
-                            .hint_text("100")
-                            .desired_width(80.0),
-                    );
-                    ui.end_row();
-
-                    ui.label(t("settings.file_handler.handlers.field_action_kind"));
-                    tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
-                        egui::ComboBox::from_id_salt("file_handler_handlers_add_action_kind")
-                            .selected_text(match fh.add_handler_form.action_kind {
-                                AddHandlerActionKind::OpenSurface => {
-                                    t("settings.file_handler.handlers.action_open_surface")
-                                        .to_string()
-                                }
-                                AddHandlerActionKind::Ipc => {
-                                    t("settings.file_handler.handlers.action_ipc").to_string()
-                                }
-                                AddHandlerActionKind::System => {
-                                    t("settings.file_handler.handlers.action_system").to_string()
-                                }
-                            })
-                            .show_ui(ui, |ui| {
-                                ui.spacing_mut().item_spacing.y = 0.0;
-                                tasty_ui_widgets::menu_option_value(
-                                    ui,
-                                    &th,
-                                    &mut fh.add_handler_form.action_kind,
-                                    AddHandlerActionKind::OpenSurface,
-                                    t("settings.file_handler.handlers.action_open_surface"),
-                                );
-                                tasty_ui_widgets::menu_option_value(
-                                    ui,
-                                    &th,
-                                    &mut fh.add_handler_form.action_kind,
-                                    AddHandlerActionKind::Ipc,
-                                    t("settings.file_handler.handlers.action_ipc"),
-                                );
-                                tasty_ui_widgets::menu_option_value(
-                                    ui,
-                                    &th,
-                                    &mut fh.add_handler_form.action_kind,
-                                    AddHandlerActionKind::System,
-                                    t("settings.file_handler.handlers.action_system"),
-                                );
-                            })
-                    });
-                    ui.end_row();
-
-                    match fh.add_handler_form.action_kind {
-                        AddHandlerActionKind::OpenSurface => {
-                            ui.label(t("settings.file_handler.handlers.field_surface_kind"));
-                            ui.add(
-                                egui::TextEdit::singleline(
-                                    &mut fh.add_handler_form.action_surface_kind,
-                                )
-                                .hint_text("markdown_view")
-                                .desired_width(th.field_width_lg.value()),
-                            );
-                            ui.end_row();
-                            ui.label(t("settings.file_handler.handlers.field_param_key"));
-                            ui.add(
-                                egui::TextEdit::singleline(
-                                    &mut fh.add_handler_form.action_param_key,
-                                )
-                                .hint_text("file")
-                                .desired_width(120.0),
-                            );
-                            ui.end_row();
-                        }
-                        AddHandlerActionKind::Ipc => {
-                            ui.label(t("settings.file_handler.handlers.field_ipc_method"));
-                            ui.add(
-                                egui::TextEdit::singleline(
-                                    &mut fh.add_handler_form.action_ipc_method,
-                                )
-                                .hint_text("com.example.foo.open")
-                                .desired_width(240.0),
-                            );
-                            ui.end_row();
-                        }
-                        AddHandlerActionKind::System => {}
-                    }
-                });
-            if let Some(err) = &fh.add_handler_form.error {
-                ui.colored_label(crate::theme::theme().red, err);
-            }
-            ui.horizontal(|ui| {
-                if ui.button(t("button.add")).clicked() {
-                    match build_add_handler_decl(&fh.add_handler_form) {
-                        Ok(decl) => {
-                            fh.add_handler.push(decl);
-                            fh.add_handler_form = AddHandlerForm::default();
-                        }
-                        Err(e) => fh.add_handler_form.error = Some(e),
-                    }
-                }
-                if ui.button(t("button.cancel")).clicked() {
-                    fh.add_handler_form = AddHandlerForm::default();
-                }
-            });
-        });
-    for decl in &fh.add_handler {
-        ui.weak(format!(
-            "{} {}",
-            t("settings.file_handler.handlers.pending_add"),
-            decl.id
-        ));
-    }
-}
-
-fn build_add_handler_decl(form: &AddHandlerForm) -> Result<UserHandlerUpsertDecl, String> {
-    let short = form.short_name_input.trim();
-    if short.is_empty() {
-        return Err(t("settings.file_handler.handlers.err_short_name_empty").to_string());
-    }
-    if !crate::file::handler::is_valid_handler_short_name(short) {
-        return Err(t("settings.file_handler.handlers.err_short_name_invalid").to_string());
-    }
-    let detector = form.detector_id_input.trim();
-    if detector.is_empty() {
-        return Err(t("settings.file_handler.handlers.err_detector_missing").to_string());
-    }
-    if !crate::file::format::is_valid_detector_id(detector) {
-        return Err(t("settings.file_handler.handlers.err_detector_invalid").to_string());
-    }
-    let priority_str = form.priority_input.trim();
-    let priority = if priority_str.is_empty() {
-        100
-    } else {
-        priority_str
-            .parse::<i32>()
-            .map_err(|_| t("settings.file_handler.handlers.err_priority_invalid").to_string())?
-    };
-    let action = match form.action_kind {
-        AddHandlerActionKind::OpenSurface => {
-            let sk = form.action_surface_kind.trim();
-            if sk.is_empty() {
-                return Err(t("settings.file_handler.handlers.err_surface_kind_empty").to_string());
-            }
-            let pk = form.action_param_key.trim();
-            UserHandlerActionDecl::OpenSurface {
-                surface_kind: sk.to_string(),
-                param_key: if pk.is_empty() {
-                    "file".to_string()
-                } else {
-                    pk.to_string()
-                },
-            }
-        }
-        AddHandlerActionKind::Ipc => {
-            let m = form.action_ipc_method.trim();
-            if m.is_empty() {
-                return Err(t("settings.file_handler.handlers.err_ipc_method_empty").to_string());
-            }
-            UserHandlerActionDecl::Ipc {
-                method: m.to_string(),
-            }
-        }
-        AddHandlerActionKind::System => UserHandlerActionDecl::System,
-    };
-    Ok(UserHandlerUpsertDecl {
-        id: format!("user/{}", short),
-        detector: Some(detector.to_string()),
-        priority: Some(priority),
-        display_name_i18n_key: None,
-        disabled: None,
-        action: Some(action),
-    })
+/// 목록 한 행의 자료.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HdlRow {
+    id: HandlerId,
+    owner: String,
+    user: bool,
+    priority: i32,
+    detector: String,
+    action: String,
+    want_on: bool,
+    pending: Option<HdlPending>,
 }
 
 fn handler_owner_label(owner: &HandlerOwner) -> String {
@@ -359,3 +51,504 @@ fn handler_action_summary(action: &HandlerAction) -> String {
         HandlerAction::System => "system".into(),
     }
 }
+
+fn decl_action_summary(action: Option<&UserHandlerActionDecl>) -> String {
+    match action {
+        Some(UserHandlerActionDecl::OpenSurface { surface_kind, .. }) => {
+            format!("surface:{}", surface_kind)
+        }
+        Some(UserHandlerActionDecl::Ipc { method }) => format!("ipc:{}", method),
+        Some(UserHandlerActionDecl::System) => "system".into(),
+        None => String::new(),
+    }
+}
+
+/// 등록 handler와 초안을 합쳐 priority → id 순으로 정렬한 행을 만든다.
+fn handler_rows(file_handler: &FileHandlerRegistry, fh: &FileHandlerEditDraft) -> Vec<HdlRow> {
+    let mut rows: Vec<HdlRow> = file_handler
+        .list_handlers()
+        .iter()
+        .filter_map(|id| file_handler.handler(id))
+        .map(|h| HdlRow {
+            want_on: fh
+                .handler_enabled
+                .get(&h.id)
+                .copied()
+                .unwrap_or(!h.disabled),
+            pending: fh
+                .remove_handler
+                .contains(&h.id)
+                .then_some(HdlPending::Remove),
+            owner: handler_owner_label(&h.owner),
+            user: matches!(h.owner, HandlerOwner::User),
+            priority: h.priority,
+            detector: h.detector.as_str().to_string(),
+            action: handler_action_summary(&h.action),
+            id: h.id,
+        })
+        .collect();
+    for decl in &fh.add_handler {
+        let id = HandlerId(decl.id.clone());
+        let next = HdlRow {
+            want_on: fh
+                .handler_enabled
+                .get(&id)
+                .copied()
+                .unwrap_or(decl.disabled != Some(true)),
+            owner: "user".into(),
+            user: true,
+            priority: decl.priority.unwrap_or(100),
+            detector: decl.detector.clone().unwrap_or_default(),
+            action: decl_action_summary(decl.action.as_ref()),
+            pending: Some(HdlPending::Add),
+            id,
+        };
+        match rows.iter_mut().find(|r| r.id == next.id) {
+            Some(r) => {
+                *r = HdlRow {
+                    pending: Some(HdlPending::Replace),
+                    ..next
+                }
+            }
+            None => rows.push(next),
+        }
+    }
+    rows.sort_by(|a, b| {
+        a.priority
+            .cmp(&b.priority)
+            .then_with(|| a.id.as_str().cmp(b.id.as_str()))
+    });
+    rows
+}
+
+/// Handlers sub-tab — 머리, 추가 카드, 등록 목록.
+pub(super) fn draw_handlers(
+    ui: &mut egui::Ui,
+    fh: &mut FileHandlerEditDraft,
+    file_format: &FileFormatRegistry,
+    file_handler: &FileHandlerRegistry,
+) {
+    let th = crate::theme::theme();
+    ui.spacing_mut().item_spacing.y = th.spacing_md.value();
+    if draw_fh_intro(
+        ui,
+        "settings.file_handler.handlers.description",
+        "settings.file_handler.handlers.add",
+        fh.add_handler_form.open,
+    ) {
+        fh.add_handler_form = AddHandlerForm {
+            open: true,
+            ..AddHandlerForm::default()
+        };
+    }
+    let rows = handler_rows(file_handler, fh);
+    if fh.add_handler_form.open {
+        let detectors = detector_options(file_format, fh);
+        draw_add_handler_card(ui, fh, &rows, &detectors);
+    }
+    tasty_ui_widgets::fh_list_head(
+        ui,
+        &th,
+        &t_fmt(
+            "settings.file_handler.handlers.registered",
+            &rows.len().to_string(),
+        ),
+    );
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        if rows.is_empty() {
+            tasty_ui_widgets::fh_empty(ui, &th, t("settings.file_handler.handlers.empty"));
+        }
+        let labels = RowLabels::get();
+        for row in &rows {
+            let remove = row.pending == Some(HdlPending::Remove);
+            let locked = t_fmt("settings.file_handler.common.locked", &row.owner);
+            let view = FhRowView {
+                id: row.id.as_str(),
+                origins: vec![FhOrigin {
+                    label: row.owner.clone(),
+                    plugin: row.owner.starts_with("plugin:"),
+                    struck: false,
+                }],
+                prio: Some(row.priority),
+                pending: row.pending.map(|p| match p {
+                    HdlPending::Add => t("settings.file_handler.common.pending_added"),
+                    HdlPending::Replace => t("settings.file_handler.common.pending_replaced"),
+                    HdlPending::Remove => t("settings.file_handler.common.pending_removed"),
+                }),
+                strike_id: remove,
+                on: row.want_on && !remove,
+                switch_on: row.want_on,
+                switch_disabled: remove,
+                trailing: row_trailing(row),
+                locked_tooltip: &locked,
+                summary: vec![FhSummarySeg {
+                    text: format!("{}  →  {}", row.detector, row.action),
+                    struck: false,
+                }],
+                undo_label: labels.undo,
+                remove_label: labels.remove,
+                sources_label: "",
+            };
+            let ev = ui
+                .push_id(("fh_handler_row", row.id.as_str()), |ui| {
+                    tasty_ui_widgets::fh_row(ui, &th, &view)
+                })
+                .inner;
+            if let Some(on) = ev.toggled {
+                fh.handler_enabled.insert(row.id.clone(), on);
+            }
+            if ev.remove {
+                fh.remove_handler.insert(row.id.clone());
+            }
+            if ev.undo {
+                undo_handler(fh, row);
+            }
+        }
+    });
+}
+
+fn row_trailing(row: &HdlRow) -> FhTrailing {
+    if !row.user {
+        FhTrailing::Lock
+    } else if row.pending.is_some() {
+        FhTrailing::Undo
+    } else {
+        FhTrailing::Remove
+    }
+}
+
+fn undo_handler(fh: &mut FileHandlerEditDraft, row: &HdlRow) {
+    match row.pending {
+        Some(HdlPending::Add) => {
+            fh.add_handler.retain(|d| d.id != row.id.as_str());
+            fh.handler_enabled.remove(&row.id);
+        }
+        Some(HdlPending::Replace) => fh.add_handler.retain(|d| d.id != row.id.as_str()),
+        Some(HdlPending::Remove) => {
+            fh.remove_handler.remove(&row.id);
+        }
+        None => {}
+    }
+}
+
+/// Detector Select의 항목 — 등록 detector와 같은 초안에서 추가한 detector.
+fn detector_options(file_format: &FileFormatRegistry, fh: &FileHandlerEditDraft) -> Vec<String> {
+    let mut ids: Vec<String> = file_format
+        .list_detectors()
+        .iter()
+        .map(|id| id.as_str().to_string())
+        .collect();
+    for decl in &fh.add_detector {
+        if !ids.contains(&decl.id) {
+            ids.push(decl.id.clone());
+        }
+    }
+    ids
+}
+
+/// 카드가 열린 동안 고른 detector가 목록에서 사라지면 값을 비운다. 트리거는 placeholder로
+/// 돌아가고 Add는 다시 고를 때까지 눌리지 않는다.
+fn forget_vanished_detector(form: &mut AddHandlerForm, options: &[String]) {
+    if form.detector.as_ref().is_some_and(|d| !options.contains(d)) {
+        form.detector = None;
+    }
+}
+
+/// `com.example.foo.open`처럼 점으로 이은 이름인지. 조각은 영숫자 · `_` · `-`다.
+fn is_dotted_method(m: &str) -> bool {
+    let parts: Vec<&str> = m.split('.').collect();
+    parts.len() >= 2
+        && parts.iter().all(|p| {
+            !p.is_empty()
+                && p.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        })
+}
+
+/// 카드의 검증 결과.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HandlerCheck {
+    full_id: String,
+    exists: bool,
+    err_short: Option<&'static str>,
+    err_priority: Option<&'static str>,
+    err_method: Option<&'static str>,
+    can_add: bool,
+}
+
+fn check_handler_form(form: &AddHandlerForm, rows: &[HdlRow]) -> HandlerCheck {
+    let short = form.short_name_input.trim();
+    let full_id = format!("user/{short}");
+    let exists = !short.is_empty() && rows.iter().any(|r| r.id.as_str() == full_id);
+    let err_short = (!short.is_empty()
+        && !crate::file::handler::is_valid_handler_short_name(short))
+    .then(|| t("settings.file_handler.handlers.err_short_chars"));
+    let prio = form.priority_input.trim();
+    let err_priority = (!prio.is_empty() && prio.parse::<i32>().is_err())
+        .then(|| t("settings.file_handler.handlers.err_priority_int"));
+    let method = form.action_ipc_method.trim();
+    let err_method = (form.action_kind == AddHandlerActionKind::Ipc
+        && !method.is_empty()
+        && !is_dotted_method(method))
+    .then(|| t("settings.file_handler.handlers.err_method"));
+    let kind_ready = match form.action_kind {
+        AddHandlerActionKind::OpenSurface => !form.action_surface_kind.trim().is_empty(),
+        AddHandlerActionKind::Ipc => !method.is_empty(),
+        AddHandlerActionKind::System => true,
+    };
+    HandlerCheck {
+        full_id,
+        exists,
+        err_short,
+        err_priority,
+        err_method,
+        can_add: !short.is_empty() && form.detector.is_some() && kind_ready,
+    }
+}
+
+fn draw_add_handler_card(
+    ui: &mut egui::Ui,
+    fh: &mut FileHandlerEditDraft,
+    rows: &[HdlRow],
+    detectors: &[String],
+) {
+    let th = crate::theme::theme();
+    forget_vanished_detector(&mut fh.add_handler_form, detectors);
+    let check = check_handler_form(&fh.add_handler_form, rows);
+    let tried = fh.add_handler_form.tried;
+    let shown = |e: Option<&'static str>| if tried { e } else { None };
+    let add_label = if check.exists && check.err_short.is_none() {
+        t("settings.file_handler.handlers.update")
+    } else {
+        t("settings.file_handler.handlers.add")
+    };
+    let saved_as = if fh.add_handler_form.short_name_input.trim().is_empty() {
+        t_fmt("settings.file_handler.handlers.saved_as", "user/…")
+    } else {
+        t_fmt("settings.file_handler.handlers.saved_as", &check.full_id)
+    };
+    let info = (check.exists && check.err_short.is_none()).then(|| {
+        t_fmt(
+            "settings.file_handler.handlers.info_replace",
+            &check.full_id,
+        )
+    });
+    let labels = FhCardLabels {
+        title: t("settings.file_handler.handlers.card_title"),
+        cancel: t("button.cancel"),
+        add: add_label,
+    };
+    let form = &mut fh.add_handler_form;
+    let ev = tasty_ui_widgets::fh_card(ui, &th, labels, None, check.can_add, |ui| {
+        tasty_ui_widgets::fh_field(
+            ui,
+            &th,
+            t("settings.file_handler.handlers.field_short_name"),
+            FhLine::pick(shown(check.err_short), info.as_deref(), Some(&saved_as)),
+            |ui| {
+                Input::new()
+                    .mono(true)
+                    .placeholder("my-viewer")
+                    .invalid(shown(check.err_short).is_some())
+                    .show(ui, &th, &mut form.short_name_input);
+            },
+        );
+        tasty_ui_widgets::fh_field(
+            ui,
+            &th,
+            t("settings.file_handler.handlers.field_detector"),
+            FhLine::None,
+            |ui| {
+                let names: Vec<&str> = detectors.iter().map(String::as_str).collect();
+                let mut selected = form
+                    .detector
+                    .as_ref()
+                    .and_then(|d| detectors.iter().position(|x| x == d));
+                let width = th
+                    .file_handler_select_width()
+                    .value()
+                    .min(ui.available_width());
+                if tasty_ui_widgets::select_or_placeholder(
+                    ui,
+                    &th,
+                    "file_handler_add_detector",
+                    &mut selected,
+                    &names,
+                    t("settings.file_handler.handlers.field_detector_select"),
+                    width,
+                    true,
+                ) {
+                    form.detector = selected.and_then(|i| detectors.get(i).cloned());
+                }
+            },
+        );
+        tasty_ui_widgets::fh_field(
+            ui,
+            &th,
+            t("settings.file_handler.handlers.field_priority"),
+            FhLine::pick(
+                shown(check.err_priority),
+                None,
+                Some(t("settings.file_handler.handlers.prio_hint")),
+            ),
+            |ui| {
+                Input::new()
+                    .mono(true)
+                    .placeholder("100")
+                    .invalid(shown(check.err_priority).is_some())
+                    .width(th.file_handler_priority_width().value())
+                    .show(ui, &th, &mut form.priority_input);
+            },
+        );
+        tasty_ui_widgets::fh_field(
+            ui,
+            &th,
+            t("settings.file_handler.handlers.field_action_kind"),
+            if form.action_kind == AddHandlerActionKind::System {
+                FhLine::Caption(t("settings.file_handler.handlers.system_hint"))
+            } else {
+                FhLine::None
+            },
+            |ui| {
+                let names: Vec<&str> = AddHandlerActionKind::ALL
+                    .iter()
+                    .map(|k| t(k.label_key()))
+                    .collect();
+                let mut idx = AddHandlerActionKind::ALL
+                    .iter()
+                    .position(|k| *k == form.action_kind)
+                    .unwrap_or(0);
+                let width = th
+                    .file_handler_kind_width()
+                    .value()
+                    .min(ui.available_width());
+                if tasty_ui_widgets::select(
+                    ui,
+                    &th,
+                    "file_handler_add_action_kind",
+                    &mut idx,
+                    &names,
+                    width,
+                    true,
+                ) && let Some(k) = AddHandlerActionKind::ALL.get(idx)
+                {
+                    form.action_kind = *k;
+                }
+            },
+        );
+        match form.action_kind {
+            AddHandlerActionKind::OpenSurface => {
+                tasty_ui_widgets::fh_field(
+                    ui,
+                    &th,
+                    t("settings.file_handler.handlers.field_surface_kind"),
+                    FhLine::None,
+                    |ui| {
+                        Input::new().mono(true).placeholder("markdown_view").show(
+                            ui,
+                            &th,
+                            &mut form.action_surface_kind,
+                        );
+                    },
+                );
+                tasty_ui_widgets::fh_field(
+                    ui,
+                    &th,
+                    t("settings.file_handler.handlers.field_param_key"),
+                    FhLine::Caption(t("settings.file_handler.handlers.param_hint")),
+                    |ui| {
+                        Input::new().mono(true).placeholder("file").show(
+                            ui,
+                            &th,
+                            &mut form.action_param_key,
+                        );
+                    },
+                );
+            }
+            AddHandlerActionKind::Ipc => {
+                tasty_ui_widgets::fh_field(
+                    ui,
+                    &th,
+                    t("settings.file_handler.handlers.field_ipc_method"),
+                    FhLine::pick(shown(check.err_method), None, None),
+                    |ui| {
+                        Input::new()
+                            .mono(true)
+                            .placeholder("com.example.foo.open")
+                            .invalid(shown(check.err_method).is_some())
+                            .show(ui, &th, &mut form.action_ipc_method);
+                    },
+                );
+            }
+            AddHandlerActionKind::System => {}
+        }
+    });
+    if ev.cancel {
+        fh.add_handler_form = AddHandlerForm::default();
+    } else if ev.add {
+        commit_handler(fh, rows);
+    }
+}
+
+/// Add를 누른다. 오류가 있으면 표시만 켜고, 없으면 초안에 넣고 카드를 닫는다.
+fn commit_handler(fh: &mut FileHandlerEditDraft, rows: &[HdlRow]) {
+    fh.add_handler_form.tried = true;
+    let check = check_handler_form(&fh.add_handler_form, rows);
+    if !check.can_add
+        || check.err_short.is_some()
+        || check.err_priority.is_some()
+        || check.err_method.is_some()
+    {
+        return;
+    }
+    let Some(decl) = build_add_handler_decl(&fh.add_handler_form) else {
+        return;
+    };
+    let id = HandlerId(decl.id.clone());
+    fh.remove_handler.remove(&id);
+    fh.add_handler.retain(|d| d.id != decl.id);
+    fh.add_handler.push(decl);
+    fh.add_handler_form = AddHandlerForm::default();
+}
+
+/// 검증을 통과한 카드 입력을 저장할 선언으로 바꾼다. priority는 비우면 100, param key는
+/// 비우면 `file`이다. 저장 id는 `user/<short>`다.
+fn build_add_handler_decl(form: &AddHandlerForm) -> Option<UserHandlerUpsertDecl> {
+    let short = form.short_name_input.trim();
+    let detector = form.detector.clone()?;
+    let prio = form.priority_input.trim();
+    let priority = if prio.is_empty() {
+        100
+    } else {
+        prio.parse::<i32>().ok()?
+    };
+    let action = match form.action_kind {
+        AddHandlerActionKind::OpenSurface => {
+            let pk = form.action_param_key.trim();
+            UserHandlerActionDecl::OpenSurface {
+                surface_kind: form.action_surface_kind.trim().to_string(),
+                param_key: if pk.is_empty() {
+                    "file".to_string()
+                } else {
+                    pk.to_string()
+                },
+            }
+        }
+        AddHandlerActionKind::Ipc => UserHandlerActionDecl::Ipc {
+            method: form.action_ipc_method.trim().to_string(),
+        },
+        AddHandlerActionKind::System => UserHandlerActionDecl::System,
+    };
+    Some(UserHandlerUpsertDecl {
+        id: format!("user/{short}"),
+        detector: Some(detector),
+        priority: Some(priority),
+        display_name_i18n_key: None,
+        disabled: None,
+        action: Some(action),
+    })
+}
+
+#[cfg(test)]
+mod tests;

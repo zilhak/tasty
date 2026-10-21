@@ -86,6 +86,7 @@ pub mod segmented;
 pub mod settings;
 pub mod settings_appearance_colors;
 pub mod settings_control_metrics;
+pub mod settings_file_handlers;
 pub mod settings_font_override;
 pub mod settings_general_grid;
 pub mod settings_handler;

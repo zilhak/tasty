@@ -271,7 +271,7 @@ src/catalog/components/plugins_window/add.rs	No permissions	plugins.add_grants_n
 src/catalog/components/plugins_window/add.rs	None	plugins.add_none,settings.keybindings.hint_none,settings.keybindings.plugins.mode_none
 src/catalog/components/plugins_window/add.rs	Permissions	explorer.properties.permissions,plugins.permissions,settings.tab.macos_permissions
 src/catalog/components/plugins_window/add.rs	Plugin folder	plugins.add_path_label
-src/catalog/components/plugins_window/add.rs	Source	plugins.add_source_path,settings.file_handler.detectors.col_origin
+src/catalog/components/plugins_window/add.rs	Source	plugins.add_source_path
 src/catalog/components/plugins_window/add.rs	Surface kinds	plugins.surface_kinds
 src/catalog/components/plugins_window/add.rs	Verify	plugins.add_confirm_path
 src/catalog/components/plugins_window/add.rs	~/dev/my-plugin	plugins.add_path_placeholder
@@ -360,7 +360,7 @@ src/catalog/components/prim_chips.rs	99+	badge.overflow
 src/catalog/components/prim_chips.rs	default	file_handler.picker.default_tag
 src/catalog/components/prim_chips.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/prim_chips.rs	plugin	file_handler.picker.origin_plugin
-src/catalog/components/prim_drilldown.rs	Action	settings.file_handler.handlers.col_action,settings.file_handler.handlers.field_action_kind,settings.keybindings.preset_col_action
+src/catalog/components/prim_drilldown.rs	Action	settings.file_handler.handlers.field_action_kind,settings.keybindings.preset_col_action
 src/catalog/components/prim_drilldown.rs	Active	settings.keybindings.preset_active_tag
 src/catalog/components/prim_drilldown.rs	Applied	settings.keybindings.preset_applied_button
 src/catalog/components/prim_drilldown.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
@@ -546,6 +546,11 @@ src/catalog/components/settings.rs	Theme	settings.appearance.subtab.theme
 src/catalog/components/settings_appearance_colors.rs	Default	settings.appearance.colors.default
 src/catalog/components/settings_appearance_colors.rs	Reset all	settings.appearance.colors.reset_all
 src/catalog/components/settings_appearance_colors.rs	disabled	settings.file_handler.common.disabled
+src/catalog/components/settings_file_handlers/copy.rs	IPC	settings.file_handler.handlers.action_ipc
+src/catalog/components/settings_file_handlers/copy.rs	Id	settings.file_handler.detectors.field_id
+src/catalog/components/settings_file_handlers/copy.rs	System	settings.file_handler.handlers.action_system
+src/catalog/components/settings_file_handlers/copy.rs	{}	remote.size_sync.names
+src/catalog/components/settings_file_handlers/panes.rs	, 	explorer.properties.list_separator
 src/catalog/components/settings_font_override.rs	Custom font file	settings.appearance.font.override_custom_font_label
 src/catalog/components/settings_font_override.rs	Focused	settings.appearance.colors.focused_heading,settings.appearance.preview_focused
 src/catalog/components/settings_font_override.rs	Font DPI scaling	settings.appearance.font.override_scale_mode_label
@@ -562,29 +567,29 @@ src/catalog/components/settings_general_grid.rs	Quit	button.quit,quit_modal.quit
 src/catalog/components/settings_general_grid.rs	pt	settings.number.unit_pt
 src/catalog/components/settings_handler.rs	Action:	settings.file_handler.hook_handlers.action_label
 src/catalog/components/settings_handler.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
-src/catalog/components/settings_handler.rs	Add handler	settings.file_handler.hook_handlers.add_button
+src/catalog/components/settings_handler.rs	Add handler	settings.file_handler.handlers.add,settings.file_handler.hook_handlers.add_button
 src/catalog/components/settings_handler.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/settings_handler.rs	Copy edit command	settings.file_handler.hook_handlers.seq_copy_cli
 src/catalog/components/settings_handler.rs	Edit	image_viewer.edit,preset.toolbar.edit,remote_tool.edit,settings.file_handler.hook_handlers.seq_edit
 src/catalog/components/settings_handler.rs	Edit with CLI	settings.file_handler.hook_handlers.seq_edit_with_cli
 src/catalog/components/settings_handler.rs	Event id:	settings.file_handler.hook_handlers.field_event_id
 src/catalog/components/settings_handler.rs	New hook handler	settings.file_handler.hook_handlers.new_head
-src/catalog/components/settings_handler.rs	Remove	settings.file_handler.detectors.remove_user,settings.file_handler.extension_mapping.clear,settings.file_handler.handlers.remove_user,settings.scripts.remove
+src/catalog/components/settings_handler.rs	Remove	settings.file_handler.common.remove,settings.file_handler.extension_mapping.clear,settings.scripts.remove
 src/catalog/components/settings_handler.rs	Reset	remote_tool.filter_reset,settings.appearance.colors.reset,settings.file_handler.extension_mapping.reset,settings.keybindings.plugins.reset_button
 src/catalog/components/settings_handler.rs	Shell cmd:	settings.file_handler.hook_handlers.shell_cmd_label
 src/catalog/components/settings_handler.rs	Shell command:	settings.file_handler.hook_handlers.field_shell_command
-src/catalog/components/settings_handler.rs	Undo	explorer.menu.undo_none,explorer.result.undo,image_viewer.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
+src/catalog/components/settings_handler.rs	Undo	explorer.menu.undo_none,explorer.result.undo,image_viewer.undo,settings.file_handler.common.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
 src/catalog/components/settings_handler.rs	disabled	settings.file_handler.common.disabled
-src/catalog/components/settings_handler.rs	fallback	dag.rel.fallback
 src/catalog/components/settings_handler.rs	not installed	settings.file_handler.extension_mapping.unregistered
 src/catalog/components/settings_handler.rs	off	settings.file_handler.extension_mapping.off
 src/catalog/components/settings_handler.rs	prio {}	settings.file_handler.hook_handlers.prio
-src/catalog/components/settings_handler.rs	removed on save	settings.file_handler.extension_mapping.removed_on_save
+src/catalog/components/settings_handler.rs	removed on save	settings.file_handler.common.pending_removed,settings.file_handler.extension_mapping.removed_on_save
 src/catalog/components/settings_handler.rs	reset on save	settings.file_handler.extension_mapping.reset_on_save
 src/catalog/components/settings_handler.rs	you	file_handler.picker.origin_user
 src/catalog/components/settings_hook_override.rs	Edit	image_viewer.edit,preset.toolbar.edit,remote_tool.edit,settings.file_handler.hook_handlers.seq_edit
+src/catalog/components/settings_hook_override.rs	Provided by {} — can't be removed	settings.file_handler.common.locked
 src/catalog/components/settings_hook_override.rs	Revert	settings.file_handler.hook_handlers.revert
-src/catalog/components/settings_hook_override.rs	Undo	explorer.menu.undo_none,explorer.result.undo,image_viewer.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
+src/catalog/components/settings_hook_override.rs	Undo	explorer.menu.undo_none,explorer.result.undo,image_viewer.undo,settings.file_handler.common.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
 src/catalog/components/settings_hook_override.rs	edited	settings.file_handler.hook_handlers.edited
 src/catalog/components/settings_hook_override.rs	reverts on save	settings.file_handler.hook_handlers.reverts_on_save
 src/catalog/components/settings_hook_seq.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button

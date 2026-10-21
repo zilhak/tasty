@@ -66,23 +66,7 @@ const LENGTH_SETTER_PREFIXES: &[&str] = &[
 /// 대응 field_width 토큰이 없는 기존 리터럴의 한시 목록.
 /// 값을 기존 토큰에 맞출지 새 토큰을 만들지는 디자인 판단이므로 검사에서 임의로 바꾸지 않는다.
 /// 리터럴이 제거되면 항목도 제거한다. 범위 예외인 ALLOWLIST_PREFIXES와 구분한다.
-const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
-    (
-        "src/view/settings/ui/file_handler_tab/handlers.rs",
-        "desired_width(",
-        "80.0",
-    ),
-    (
-        "src/view/settings/ui/file_handler_tab/handlers.rs",
-        "desired_width(",
-        "120.0",
-    ),
-    (
-        "src/view/settings/ui/file_handler_tab/handlers.rs",
-        "desired_width(",
-        "240.0",
-    ),
-];
+const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[];
 
 /// 2026-09-07 실측 186파일에 하한 150을 뒀다. 여유 36보다 작은 누락은 잡지 못한다.
 /// length_setter_literals_under는 각 루트가 비었는지도 별도로 확인한다.

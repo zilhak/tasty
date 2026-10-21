@@ -38,6 +38,7 @@ mod explorer_ops;
 mod explorer_select;
 mod file_drop_overlay;
 pub mod file_handler;
+mod file_handler_form;
 mod filter_readout;
 mod help_hint;
 mod horizontal_tab_bar;
@@ -160,6 +161,11 @@ pub use explorer_ops::{
 };
 pub use explorer_select::{paint_cursor_ring, paint_marquee};
 pub use file_drop_overlay::file_drop_overlay;
+pub use file_handler_form::{
+    FH_SUMMARY_SEP, FhCardEvents, FhCardLabels, FhLine, FhOrigin, FhRowEvents, FhRowView,
+    FhSummarySeg, FhTrailing, fh_card, fh_empty, fh_field, fh_intro, fh_line, fh_list_head,
+    fh_origins_collapse, fh_row, fh_summary_text,
+};
 pub use filter_readout::{filter_readout, filter_readout_label, filter_readout_width};
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::{

@@ -72,7 +72,7 @@ impl super::App {
     }
 }
 
-fn apply_registry_edit(
+pub(crate) fn apply_registry_edit(
     format: &crate::file::format::FileFormatRegistry,
     handler: &crate::file::handler::FileHandlerRegistry,
     hook: &crate::hook_handler::registry::HookHandlerRegistry,

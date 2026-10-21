@@ -194,7 +194,8 @@ const AREAS: &[(&str, Option<usize>, &str)] = &[
         // 스크립트 변경 확인의 좌우 여백 14는 시안 `Padding 12/14` 이며 본체 popup 과 갤러리가 함께 쓴다. 역할 토큰이 없다.
         // 탐색기 상세 표 열의 이름 열 하한 140·크기 열 하한 64는 본체와 갤러리가 함께 쓰는 explorer_columns 의 값이다.
         // DAG 빈 상태 글리프 24는 본체와 갤러리가 함께 쓰는 dag_empty 의 값이며 24px 아이콘 토큰이 없다.
-        Some(30),
+        // File Detectors·Handlers 머리 설명 열 최소 폭 240은 시안 `flex: 1 1 var(--tasty-size-240)` 이며 역할 토큰이 없다.
+        Some(31),
         "공용 위젯",
     ),
     (
