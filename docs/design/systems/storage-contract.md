@@ -197,7 +197,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 
 - `agent.task_graph_submit`은 저장소가 in-memory 대체 상태이고 요청 durability가 required이면 잠금을 잡기 전에 `StoreNotDurable`(-32602, `/durability`)로 거절한다. dry-run도 같다.
 - runner는 lease·semaphore 획득 결과로 dispatch 여부를 정한다. 획득은 읽기-판단-쓰기를 writer 요청 하나 안에서 하므로 두 runner가 같은 이전 상태를 보고 같은 permit을 얻지 않는다. 이 판단을 읽기와 쓰기로 나누면 이 보장이 사라진다.
-- runner는 획득이 확정된 결과로만 프로세스를 시작한다. 접수 거절(종료 중)은 바뀐 것이 없어 다음 tick으로 미루고, 확정되지 않은 저장 실패는 기존 저장 오류와 같이 다룬다. 결과 불명이면 같은 holder의 점유를 돌려준 뒤 다음 tick에 처음부터 얻는다(같은 holder의 재획득은 갱신이라 얻지 못했던 경우에도 무해하다). 후처리 실행은 시작 기록이 확정된 뒤에만 띄운다.
+- runner는 획득이 확정된 결과로만 프로세스를 시작한다. 접수 거절(종료 중)은 바뀐 것이 없어 다음 tick으로 미루고, 확정되지 않은 저장 실패는 기존 저장 오류와 같이 다룬다. 결과 불명이면 같은 holder의 점유를 돌려준 뒤 다음 tick에 처음부터 얻는다(같은 holder의 재획득은 갱신이라 얻지 못했던 경우에도 무해하다). 후처리 실행은 시작 기록이 확정된 뒤에만 띄운다. permit 획득 단위가 결과 불명으로 끝나도록 저장 실패를 주입한 시험이 그 회차에 프로세스가 없고 점유가 돌아가며 다음 회차에 한 번만 실행됨을 확인한다(`tasty_memory::testing::faults`, `test-support` 기능).
 - graph submit의 stage 실패는 롤백하고, activate 뒤 단계 실패는 `GraphPartiallyActivated`로 알린다.
 - in-memory 대체 상태의 쓰기 성공 응답은 `durable:false`를 더한다(이 문서).
 

@@ -492,6 +492,10 @@ mod binding_tests;
 mod record_limit_tests;
 
 #[cfg(test)]
+#[path = "runner_host/acquire_unknown_tests.rs"]
+mod acquire_unknown_tests;
+
+#[cfg(test)]
 // 이유: 시험의 반환값 무시는 허용하되 제품 코드의 검사는 유지한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {

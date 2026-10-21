@@ -43,12 +43,12 @@ use std::sync::{Arc, Mutex, mpsc};
 use tasty_memory::{HOST_OWNER, MemoryValue, PutOpts, Scope};
 use tasty_plugin_manifest::Permission;
 
-use super::super::gate_faults::{Faults, FaultyStore};
+use super::super::gate_faults::{Faults, FaultyStore, gate_faults};
 
 const AGENT: &str = "child:gate";
 
 fn rig() -> (AppServices, Arc<Faults>) {
-    let faults = Arc::new(Faults::default());
+    let faults = gate_faults();
     let store = Arc::new(Mutex::new(FaultyStore::new(faults.clone())));
     let core = super::super::deferred::tests::writer_core_with(store, usize::MAX);
     (core, faults)
@@ -157,18 +157,18 @@ fn gate(core: &mut AppServices, request: &JsonRpcRequest, caller: &CallerContext
 fn a_session_storage_failure_is_submitted_again_until_it_settles() {
     let (core, faults) = rig();
     let token = issue(&core);
-    Faults::arm(&faults.session_reads, SESSION_ATTEMPTS as u32 - 1);
+    Faults::arm(&faults.key_reads, SESSION_ATTEMPTS as u32 - 1);
     let caller = resolve_caller_waiting(&core, &with_token("surface.list", &token))
         .unwrap_or_else(|r| panic!("a retried session judgement denied the caller: {r:?}"));
     assert_eq!(caller.agent_id().as_str(), AGENT);
-    assert_eq!(faults.session_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(faults.key_reads.load(Ordering::SeqCst), 0);
 }
 
 #[test]
 fn every_failed_judgement_falls_back_to_a_read_without_writes() {
     let (core, faults) = rig();
     let token = issue(&core);
-    Faults::arm(&faults.session_reads, SESSION_ATTEMPTS as u32);
+    Faults::arm(&faults.key_reads, SESSION_ATTEMPTS as u32);
     let caller = resolve_caller_waiting(&core, &with_token("surface.list", &token))
         .unwrap_or_else(|r| panic!("the read fallback denied the caller: {r:?}"));
     assert_eq!(caller.agent_id().as_str(), AGENT);
@@ -178,7 +178,7 @@ fn every_failed_judgement_falls_back_to_a_read_without_writes() {
 fn a_session_that_cannot_be_read_at_all_is_denied_as_before() {
     let (core, faults) = rig();
     let token = issue(&core);
-    Faults::arm(&faults.session_reads, SESSION_ATTEMPTS as u32 + 1);
+    Faults::arm(&faults.key_reads, SESSION_ATTEMPTS as u32 + 1);
     let denied = resolve_caller_waiting(&core, &with_token("surface.list", &token))
         .expect_err("an unreadable session must not resolve");
     assert_eq!(code(&denied), -32001);
@@ -288,13 +288,13 @@ fn a_cap_read_failure_keeps_the_plugin_call_open() {
     request.method = "surface.list".into();
     request.params = json!({});
     assert_eq!(gate(&mut core, &request, &plugin), Some(-32007));
-    Faults::arm(&faults.cap_lists, 1);
+    Faults::arm(&faults.prefix_lists, 1);
     assert_eq!(
         gate(&mut core, &request, &plugin),
         None,
         "a cap read failure must not block the call"
     );
-    assert_eq!(faults.cap_lists.load(Ordering::SeqCst), 0);
+    assert_eq!(faults.prefix_lists.load(Ordering::SeqCst), 0);
     assert_eq!(gate(&mut core, &request, &plugin), Some(-32007));
 }
 
