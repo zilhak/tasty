@@ -225,10 +225,25 @@ fn switch_modifier_section(ui: &mut egui::Ui, theme: &Theme) {
             true,
         );
     });
-    ui.push_id("slot", |ui| {
-        row(ui, theme, col, &slot, None, &[&slot_combo])
-    });
-    ui.push_id("next", |ui| row(ui, theme, col, next, None, &[&next_combo]));
+    for (label, combo) in [(slot.as_str(), &slot_combo), (next, &next_combo)] {
+        let frame = StackRow {
+            id: ui.id().with(("gallery_kb_switch_slot", label)),
+            label_col: col,
+            row_h: theme.kb_record_height(),
+            label,
+            hint: None,
+            align_top: true,
+        };
+        settings_stack_row(ui, theme, frame, |ui| {
+            kb_record_slot(
+                ui,
+                theme,
+                KbRecordSlot::Binding(combo),
+                theme.kb_record_width(),
+                true,
+            );
+        });
+    }
 }
 
 pub(super) fn row(
