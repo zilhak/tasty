@@ -5,7 +5,7 @@
 use serde_json::{Value, json};
 use tasty_plugin_sdk::HostHandle;
 
-use crate::{MdDoc, render};
+use crate::{MarkdownPlugin, MdDoc, RemoteRequester, render};
 
 /// 원격 주소창 이동의 최종 결과를 워커에 돌려주는 자기 호출 메서드. 외부 호출자는 쓸 수 없다.
 pub(crate) const ADDR_RESULT_METHOD: &str = "markdown.address_result";
@@ -105,7 +105,14 @@ pub(crate) fn nav_action(intent: render::NavIntent, doc: Option<&MdDoc>) -> NavA
 
 /// 원격 주소창 이동의 `run.result` 를 기다려 결과를 워커에 자기 호출로 돌려준다. 상한까지 끝나지 않으면
 /// 원격이 아직 처리 중일 수 있으므로 실패로 바꾸지 않고 기록만 남긴다.
-pub(crate) fn spawn_addr_watch(host: HostHandle, sid: u32, ticket: u64, typed: String, run: u64) {
+pub(crate) fn spawn_addr_watch(
+    host: HostHandle,
+    sid: u32,
+    ticket: u64,
+    typed: String,
+    run: u64,
+    browse: bool,
+) {
     let spawned = std::thread::Builder::new()
         .name("markdown-addr-result".to_string())
         .spawn(move || {
@@ -117,6 +124,7 @@ pub(crate) fn spawn_addr_watch(host: HostHandle, sid: u32, ticket: u64, typed: S
                 "ticket": ticket,
                 "path": typed,
                 "outcome": outcome.as_wire(),
+                "browse": browse,
             });
             if let Err(e) = host.self_invoke(ADDR_RESULT_METHOD, params) {
                 tracing::warn!(
@@ -151,5 +159,53 @@ fn wait_navigate_run(host: &HostHandle, sid: u32, run: u64) -> Option<AddrOutcom
             return None;
         }
         std::thread::sleep(ADDR_RESULT_POLL);
+    }
+}
+
+impl MarkdownPlugin {
+    /// [`ADDR_RESULT_METHOD`] 자기 호출. 닫혔거나 바뀐 문서, 더 새 이동이 있는 문서면 버린다.
+    pub(crate) fn on_addr_result(&mut self, params: &Value) {
+        let parsed = (
+            params.get("surface_id").and_then(Value::as_u64),
+            params.get("ticket").and_then(Value::as_u64),
+            params.get("path").and_then(Value::as_str),
+            params
+                .get("outcome")
+                .and_then(Value::as_str)
+                .and_then(AddrOutcome::from_wire),
+        );
+        let (Some(sid), Some(ticket), Some(path), Some(outcome)) = parsed else {
+            tracing::warn!("markdown: malformed {ADDR_RESULT_METHOD} params: {params}");
+            return;
+        };
+        let browse = params.get("browse").and_then(Value::as_bool) == Some(true);
+        self.apply_addr_outcome(sid as u32, ticket, path.to_string(), outcome, browse);
+    }
+
+    /// 원격 이동 결과를 반영한다. 성공하면 원격이 바꾼 문서의 원문과 경로를 다시 받는다.
+    /// 폴더 버튼(`browse`)의 실패는 host 가 사용자 toast 로 알리므로 주소창 오류로 만들지 않는다.
+    pub(crate) fn apply_addr_outcome(
+        &mut self,
+        sid: u32,
+        ticket: u64,
+        typed: String,
+        outcome: AddrOutcome,
+        browse: bool,
+    ) {
+        let Some(doc) = self.docs.get_mut(&sid) else {
+            return;
+        };
+        if doc.remote.as_ref().map(|r| r.addr_ticket) != Some(ticket) {
+            return;
+        }
+        let redraw = match (browse, outcome) {
+            (true, AddrOutcome::Failed(_)) => false,
+            _ => doc.apply_addr_outcome(ticket, typed, outcome),
+        };
+        if outcome == AddrOutcome::Succeeded {
+            self.request_remote_content(sid, RemoteRequester::User);
+        } else if redraw {
+            self.reload_webview(sid);
+        }
     }
 }

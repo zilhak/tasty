@@ -97,6 +97,36 @@ pub(crate) fn navigate_params(sid: u32, path: &str, request_id: u64) -> Value {
 }
 
 impl MarkdownPlugin {
+    /// 고른 경로로 같은 surface 를 바꾼다. mirror 문서면 `run.result` 를 기다려 성공 시 원격이 바꾼
+    /// 문서의 원문과 경로를 다시 받는다. 실패는 host 가 사용자 toast 로 알린다.
+    pub(crate) fn navigate_picked(&mut self, sid: u32, path: &str, request_id: u64) {
+        let Some(host) = self.host.clone() else {
+            return;
+        };
+        let resp = host.call("markdown.navigate", navigate_params(sid, path, request_id));
+        let run = match resp {
+            Ok(v) => v.get("run").and_then(Value::as_u64),
+            Err(e) => {
+                tracing::warn!("markdown surface {sid}: picked file navigate failed: {e}");
+                return;
+            }
+        };
+        let Some(remote) = self.docs.get_mut(&sid).and_then(|d| d.remote.as_mut()) else {
+            return;
+        };
+        remote.addr_ticket += 1;
+        if let Some(run) = run {
+            crate::addr_nav::spawn_addr_watch(
+                host,
+                sid,
+                remote.addr_ticket,
+                path.to_string(),
+                run,
+                true,
+            );
+        }
+    }
+
     /// 주소창 폴더 버튼의 피커 요청을 기록한다. 같은 surface 의 이전 요청 결과는 버린다.
     pub(crate) fn track_surface_picker(&mut self, sid: u32, request_id: u64) {
         self.pending_file_picker

@@ -71,7 +71,7 @@ const MIRROR_CONTENT_REQUEST_METHOD: &str = "markdown_mirror.content_request";
 /// 원문 요청의 출처. 에이전트 요청에는 원문 잘림 토스트를 띄우지 않는다.
 /// docs/design/systems/toast.md#origin이-적용되는-경로.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RemoteRequester {
+pub(crate) enum RemoteRequester {
     /// 최초 열기 · 원격 변경 신호 재조회 · 새로고침 버튼 — 이 plugin 이 스스로 또는 사용자
     /// 클릭으로 건 요청.
     Plugin,
@@ -204,6 +204,9 @@ struct MirrorContentResultWire {
     surface_id: u32,
     request_id: u64,
     ok: bool,
+    /// 원격 surface 가 지금 보여 주는 파일. 원격이 같은 surface 를 다른 파일로 바꾸면 이 값이 바뀐다.
+    #[serde(default)]
+    file: Option<String>,
     #[serde(default)]
     source: Option<String>,
     #[serde(default)]
@@ -272,6 +275,10 @@ impl MdDoc {
         }
         remote.pending = None;
         if reply.ok {
+            // 원격에서 이동한 문서는 surface 가 그대로라 새 파일 경로를 이 회신으로만 안다.
+            if let Some(file) = reply.file.filter(|f| !f.is_empty()) {
+                self.file_path = Some(file);
+            }
             self.content = reply.source.unwrap_or_default();
             self.load_error = None;
             remote.loaded = true;
@@ -618,14 +625,8 @@ impl Plugin for MarkdownPlugin {
                     tracing::warn!("markdown: malformed file_picker.result event");
                     return;
                 };
-                if let Some((sid, path, request_id)) = self.take_picker_result(reply)
-                    && let Some(host) = &self.host
-                    && let Err(e) = host.call(
-                        "markdown.navigate",
-                        browse::navigate_params(sid, &path, request_id),
-                    )
-                {
-                    tracing::warn!("markdown surface {sid}: picked file navigate failed: {e}");
+                if let Some((sid, path, request_id)) = self.take_picker_result(reply) {
+                    self.navigate_picked(sid, &path, request_id);
                 }
             }
             // WebView에는 surface.set_context가 오지 않으므로 테마 변경 시 문서를 다시 만든다.
@@ -716,7 +717,7 @@ impl MarkdownPlugin {
         let typed = path.trim().to_string();
         match host.call("markdown.navigate", params) {
             Ok(v) => match v.get("run").and_then(Value::as_u64) {
-                Some(run) => spawn_addr_watch(host.clone(), sid, ticket, typed, run),
+                Some(run) => spawn_addr_watch(host.clone(), sid, ticket, typed, run, false),
                 None => tracing::warn!(
                     "markdown surface {sid}: markdown.navigate gave no run — the result cannot be shown"
                 ),
@@ -728,36 +729,9 @@ impl MarkdownPlugin {
                     ticket,
                     typed,
                     AddrOutcome::Failed(render::AddrFailureKind::Other),
+                    false,
                 );
             }
-        }
-    }
-
-    /// [`ADDR_RESULT_METHOD`] 자기 호출. 닫혔거나 바뀐 문서, 더 새 이동이 있는 문서면 버린다.
-    fn on_addr_result(&mut self, params: &Value) {
-        let parsed = (
-            params.get("surface_id").and_then(Value::as_u64),
-            params.get("ticket").and_then(Value::as_u64),
-            params.get("path").and_then(Value::as_str),
-            params
-                .get("outcome")
-                .and_then(Value::as_str)
-                .and_then(AddrOutcome::from_wire),
-        );
-        let (Some(sid), Some(ticket), Some(path), Some(outcome)) = parsed else {
-            tracing::warn!("markdown: malformed {ADDR_RESULT_METHOD} params: {params}");
-            return;
-        };
-        self.apply_addr_outcome(sid as u32, ticket, path.to_string(), outcome);
-    }
-
-    fn apply_addr_outcome(&mut self, sid: u32, ticket: u64, typed: String, outcome: AddrOutcome) {
-        let changed = self
-            .docs
-            .get_mut(&sid)
-            .is_some_and(|doc| doc.apply_addr_outcome(ticket, typed, outcome));
-        if changed {
-            self.reload_webview(sid);
         }
     }
 
@@ -888,7 +862,7 @@ impl MarkdownPlugin {
 
     /// mirror 문서의 원문을 host 에 요청하고 다시 그린다. 호출이 실패하면 그 사유를 문서의
     /// 실패 상태로 둔다 — 회신이 올 길이 없으므로 로딩 상태로 남기지 않는다.
-    fn request_remote_content(&mut self, surface_id: u32, requester: RemoteRequester) {
+    pub(crate) fn request_remote_content(&mut self, surface_id: u32, requester: RemoteRequester) {
         let Some(host) = self.host.clone() else {
             tracing::warn!(
                 "markdown surface {surface_id}: no host handle yet — cannot request remote content"
@@ -989,7 +963,7 @@ impl MarkdownPlugin {
     /// [`render::render_document`] 로 sanitize 된 HTML 문서를 만들어 `webview.set_url` 로
     /// 전달한다. host 의 `sync_webviews` 가 scheme 없는 문자열을 raw HTML 로 인식해
     /// `PlatformWebView::load_html` 을 호출한다(`src/app/webview_sync.rs`).
-    fn reload_webview(&self, surface_id: u32) {
+    pub(crate) fn reload_webview(&self, surface_id: u32) {
         let Some(host) = &self.host else {
             tracing::warn!(
                 "markdown surface {surface_id}: no host handle yet (on_start not called?) — cannot load webview"

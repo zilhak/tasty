@@ -254,6 +254,7 @@ fn content_result(
         surface_id,
         request_id,
         ok,
+        file: None,
         source: ok.then(|| source.to_string()),
         reason: (!ok).then(|| source.to_string()),
     }
@@ -1200,4 +1201,45 @@ fn a_popup_picker_result_never_navigates() {
         p.take_picker_result(picker_reply(20, &["/tmp/md/b.md"], false)),
         None
     );
+}
+
+/// 원격이 같은 surface 를 다른 파일로 바꾸면 원문 회신의 `file` 로 주소창 경로도 바뀐다.
+#[test]
+fn a_remote_content_result_carries_the_file_the_remote_now_shows() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    mirror_create(&mut p, 1, "/srv/docs/a.md");
+    let doc = p.docs.get_mut(&1).unwrap();
+    doc.remote.as_mut().unwrap().pending = Some(5);
+    let mut reply = content_result(1, 5, true, "# Bravo");
+    reply.file = Some("/srv/docs/b.md".into());
+    assert!(doc.apply_remote_result(reply));
+    assert_eq!(doc.file_path.as_deref(), Some("/srv/docs/b.md"));
+
+    // 파일을 싣지 않은 회신은 경로를 지우지 않는다.
+    doc.remote.as_mut().unwrap().pending = Some(6);
+    assert!(doc.apply_remote_result(content_result(1, 6, true, "# Bravo")));
+    assert_eq!(doc.file_path.as_deref(), Some("/srv/docs/b.md"));
+}
+
+/// 폴더 버튼으로 시작한 원격 이동의 실패는 주소창 오류가 아니라 host toast 다.
+#[test]
+fn a_failed_folder_button_navigate_leaves_the_address_bar_alone() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    mirror_create(&mut p, 1, "/srv/docs/a.md");
+    p.docs
+        .get_mut(&1)
+        .unwrap()
+        .remote
+        .as_mut()
+        .unwrap()
+        .addr_ticket = 3;
+    p.on_addr_result(&json!({
+        "surface_id": 1, "ticket": 3, "path": "/srv/docs/gone.md",
+        "outcome": "not_found", "browse": true,
+    }));
+    assert_eq!(p.docs[&1].remote.as_ref().unwrap().addr_failure, None);
+    p.on_addr_result(&json!({
+        "surface_id": 1, "ticket": 3, "path": "/srv/docs/gone.md", "outcome": "not_found",
+    }));
+    assert!(p.docs[&1].remote.as_ref().unwrap().addr_failure.is_some());
 }
