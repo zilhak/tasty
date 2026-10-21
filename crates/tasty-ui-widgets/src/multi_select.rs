@@ -231,7 +231,7 @@ fn all_toggle_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
 }
 
 /// 일괄 토글 아래의 구분선. 행 사이 간격이 0이므로 위아래 `space-xs` 여백을 직접 둔다.
-fn all_toggle_separator(ui: &mut egui::Ui, theme: &Theme) {
+pub(crate) fn all_toggle_separator(ui: &mut egui::Ui, theme: &Theme) {
     let bw = theme.border_width.value();
     let margin = theme.spacing_xs.value();
     ui.add_space(margin);

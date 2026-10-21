@@ -421,6 +421,11 @@ src/catalog/components/prim_nav.rs	Split pane	attach.pending.split_pane
 src/catalog/components/prim_nav.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/prim_path_field.rs	Go	explorer.address.go
 src/catalog/components/prim_path_field.rs	No matching path	explorer.address.empty
+src/catalog/components/prim_searchable_select.rs	Ready	dag.tooltip.ready
+src/catalog/components/prim_searchable_select.rs	Running	dag.tooltip.running,plugins.running
+src/catalog/components/prim_searchable_select.rs	Select	terminal_context_menu.link_select
+src/catalog/components/prim_searchable_select.rs	Waiting	dag.tooltip.waiting
+src/catalog/components/prim_searchable_select.rs	{} selected	explorer.status.selected
 src/catalog/components/prim_spinner.rs	Collecting…	port_scanner.loading
 src/catalog/components/prim_tab.rs	close	command_palette.hint_close
 src/catalog/components/prim_table.rs	Address	port_scanner.column_address

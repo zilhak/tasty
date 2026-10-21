@@ -69,6 +69,7 @@ mod resize_grip;
 mod restore_notice;
 mod script_confirm;
 mod script_trigger;
+mod searchable_select;
 mod segmented;
 mod select;
 mod select_combo;
@@ -256,6 +257,10 @@ pub use script_confirm::{
 };
 pub use script_trigger::{
     script_trigger_add_control, script_trigger_menu, script_trigger_menu_frame,
+};
+pub use searchable_select::{
+    SearchableSelect, SearchableSelectLabels, SearchableSelectOption, SearchableSelectSpecimen,
+    searchable_select_filter, searchable_select_popup_id, searchable_select_search_id,
 };
 pub use segmented::segmented;
 pub use select::{select, select_or_placeholder};

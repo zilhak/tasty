@@ -174,8 +174,33 @@ pub fn menu_option_icon(
     )
 }
 
+/// 폭을 호출자가 정하는 목록(SearchableSelect)의 옵션 행. [`menu_option`] 과 같은 모습에 키보드
+/// 활성(`active`), 행 비활성(`enabled`), 강제 호버(`hovered`)를 더하고 목록의 최소 폭은 넓히지 않는다.
+pub(crate) fn menu_option_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    selected: bool,
+    active: bool,
+    enabled: bool,
+    hovered: bool,
+) -> egui::Response {
+    menu_item_inner(
+        ui,
+        theme,
+        None,
+        label,
+        None,
+        MenuItemVariant::Normal,
+        active,
+        enabled,
+        hovered,
+        Some(selected),
+    )
+}
+
 /// 옵션 행을 줄이지 않고 그리는 폭 — 행 패딩 양쪽 + (아이콘 + 간격) + 라벨 + 간격 + 체크.
-fn menu_option_natural_width(
+pub(crate) fn menu_option_natural_width(
     ctx: &egui::Context,
     theme: &Theme,
     has_icon: bool,

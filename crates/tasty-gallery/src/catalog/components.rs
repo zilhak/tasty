@@ -65,6 +65,7 @@ pub mod prim_listctrl;
 pub mod prim_multiselect;
 pub mod prim_nav;
 pub mod prim_path_field;
+pub mod prim_searchable_select;
 pub mod prim_spinner;
 pub mod prim_status_dot;
 pub mod prim_status_resolution;

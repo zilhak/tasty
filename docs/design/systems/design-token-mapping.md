@@ -430,6 +430,23 @@ component 접근자(`tab_fg_*()`·`surface_highlight_*_border()`·`status_dot_*(
 max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행 라벨이 남는 폭을 넘으면
 `checkbox` 가 말줄임한다(디자인 `.tasty-check__label { flex:1; min-width:0; ellipsis }`).
 
+## SearchableSelect (forms/SearchableSelect)
+
+디자인 `tokens/components.css` 의 `--tasty-select-search-*` 블록. 모두 기존 semantic·component 종착의 별칭이며 생성된 접근자 `select_search_*()` 로 읽는다. `--tasty-font-combo-list-max-height`·`--tasty-font-combo-search-inset` 은 이 블록의 `list-max-height`·`inset` 별칭이다(`font_combo_*()` 가 `select_search_*()` 를 돌려준다). 트리거 치수·테두리는 `select_*` 토큰을, 옵션 행은 `menu_item_*` 토큰을 그대로 쓴다.
+
+| 디자인 토큰 | 디자인 체인 | Theme 접근자 | 쓰는 곳 |
+|---|---|---|---|
+| `--tasty-select-search-trigger-border-hover` | → `border-strong` | `select_search_trigger_border_hover()` | 호버한 트리거 테두리 |
+| `--tasty-select-search-value-placeholder` | → `text-placeholder` | `select_search_value_placeholder()` | 값이 없을 때 트리거 문구 |
+| `--tasty-select-search-menu-gap` | → `space-xs` (4) | `select_search_menu_gap()` | 트리거와 팝업 사이 |
+| `--tasty-select-search-menu-max-width` | → `size-320` | `select_search_menu_max_width()` | 팝업 상자 전체 폭 상한(하한은 트리거 폭) |
+| `--tasty-select-search-list-max-height` | → `size-300` | `select_search_list_max_height()` | 팝업 상자 전체 높이 상한. 옵션 목록만 남는 높이로 스크롤한다 |
+| `--tasty-select-search-inset` | → `space-xs` (4) | `select_search_inset()` | 팝업 안쪽 여백(`with_popover_frame_ring` 둘레) |
+| `--tasty-select-search-field-height`·`-padding-x`·`-gap` | → `input-height` 28 · `space-sm` 8 · `input-gap` 8 | `select_search_field_height()`·`_padding_x()`·`_gap()` | 검색칸 높이 · 좌우 여백 · 아이콘(14, `icon_glyph_size_sm`)과 글자 사이 |
+| `--tasty-select-search-field-bg`·`-border`·`-border-focus`·`-fg` | → `input-raised-*` · `input-border-focus` · `input-fg` | `select_search_field_bg()`·`_border()`·`_border_focus()`·`_fg()` | 검색칸 상자. 포커스는 테두리 색만 바꾸고 ring 은 없다 |
+| `--tasty-select-search-placeholder`·`-icon-fg` | → `input-placeholder` · `input-icon-fg` | `select_search_placeholder()`·`select_search_icon_fg()` | 검색칸 안내 문구 · 돋보기 |
+| `--tasty-select-search-status-fg` | → `text-secondary-raised` | `select_search_status_fg()` | 결과 없음·로딩 상태 행 |
+
 ## File handler picker (overlays-dialogs §filehandler)
 
 디자인 canonical `gallery/overlays-shared.jsx` 의 `FileHandlerFrame` / `FhRow` / `FhGroup` /

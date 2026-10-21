@@ -450,6 +450,14 @@ pub fn pages() -> Vec<Page> {
                             components::prim_multiselect::draw,
                         ),
                         spec(
+                            "searchable-select",
+                            "SearchableSelect — Select with a search field in its open list",
+                            Some(
+                                "Select variant for one value out of a long list — closed it is a Select, open a menu popover with a search field, pinned rows, filtered MenuItem rows and no-match / loading status rows",
+                            ),
+                            components::prim_searchable_select::draw,
+                        ),
+                        spec(
                             "autocomplete",
                             "AutoComplete",
                             Some(
