@@ -43,6 +43,7 @@ mod filter_readout;
 mod folder_picker;
 mod help_hint;
 mod horizontal_tab_bar;
+mod html_address_bar;
 mod html_script_banner;
 mod icon_button;
 mod info_modal;
@@ -172,6 +173,10 @@ pub use folder_picker::FolderPickerFooter;
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::{
     TabScrollArrowInk, TabScrollArrowSide, horizontal_tab_bar_with_arrows, paint_tab_scroll_arrow,
+};
+pub use html_address_bar::{
+    HtmlAddressAction, HtmlAddressKind, HtmlAddressLabels, HtmlAddressOutput, HtmlAddressState,
+    HtmlAddressView, html_address_bar, html_address_content_inset, html_address_height,
 };
 pub use html_script_banner::{
     HtmlScriptBannerOutput, HtmlScriptBannerState, HtmlScriptBannerView, HtmlScriptMarkerKind,

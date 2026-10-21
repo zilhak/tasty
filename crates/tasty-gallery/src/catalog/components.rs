@@ -32,6 +32,7 @@ pub mod file_picker;
 pub mod fullscreen_stage;
 pub mod git_viewer;
 pub mod glyph;
+pub mod html_address;
 pub mod html_chrome;
 pub mod image_viewer;
 pub mod info_modal;

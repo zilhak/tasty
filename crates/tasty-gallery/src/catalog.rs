@@ -2432,6 +2432,11 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 components::image_viewer::section(),
+                section("html-address", "HTML address band", vec![
+                    spec("html-address-states", "Address band — states", Some("Shared host chrome; no document DOM injection"), components::html_address::draw_states),
+                    spec("html-address-placement", "Address band — placement", Some("Narrow / mirror / size and script banner insets"), components::html_address::draw_placement),
+                    spec("html-address-live", "Address band — live input", Some("Draft / Enter / Esc and pure URL resolution"), components::html_address::draw_live),
+                ]),
                 single(
                     "html-chrome",
                     "HTML (webview) chrome",

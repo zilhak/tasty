@@ -8,6 +8,7 @@ description = "Cross-cutting utility helpers for Tasty — path resolution, etc.
 [dependencies]
 directories = "6"
 tracing = "0.1"
+url = "2"
 
 [features]
 # 소비 크레이트의 dev-dependency에서만 켜는 스레드 로컬 홈 경로 override.

@@ -171,3 +171,43 @@ Table 빌더의 길이 setter(`header_pad_x`·`header_pad_right`·`header_height
 호출자가 번역한 라벨·안내·버튼 문구와 선택 경로를 전달한다. 경로는 readonly 토큰으로 앞 말줄임하며,
 전체 경로를 툴팁에 남긴다. 안내의 폴더 이름만 고정폭으로 그리며 좁은 폭에서는 안내를 줄바꿈한다.
 `height`와 `show`가 같은 안내 galley를 계산해 마지막 버튼 행의 자리를 보존한다. 파일이나 설정은 변경하지 않는다.
+
+## HTML address band primitive
+
+`html_address_bar` is a host-chrome view shared with the gallery. It composes IconButton,
+Spinner and the Input box underlying PathField, without the PathField completion list or Go
+slot. The current PathField composite always reserves the Go width and has no invalid or
+read-only variant; its implementation is unchanged. Input has opt-in LogicalPx font/icon
+size overrides and an inner editor margin override, so this field uses input-font-size
+(13), icon-size-sm (14) and only the Input box padding, while
+existing Input and PathField defaults stay unchanged. The HTML field accepts injected labels
+and emits Back, Forward, Reload, Open and Revert actions without doing I/O or navigation.
+The view is available to callers; the HTML product surface does not yet call it.
+
+All lengths use LogicalPx and existing HTML address/input/banner Theme tokens. The band
+is 40 logical pixels high, with a 24-pixel error row when needed and an inside separator.
+Forward is omitted below the 440-pixel breakpoint; the field retains its 96-pixel minimum.
+Loading replaces Reload with a noninteractive Spinner. Tooltips open above the buttons.
+A mirror field is read-only with Reload alone; a mirror placeholder allocates no band.
+`html_address_content_inset` combines measured banner heights in size-before-script order:
+first top margin, then each banner and its following gap. With no banners it returns only
+the band height. Hosts must use the same measured lengths for native WebView placement.
+
+HtmlAddressState keeps an editing/rejected draft across external address updates. Enter
+emits an Open action without discarding the draft; the caller accepts or rejects the result.
+Typing, Esc and accepted navigation clear an input error. Esc restores the latest address
+supplied by the caller. Native keyboard focus, committed versus attempted address selection,
+asynchronous lookup generations and settings-driven shortcuts remain host responsibilities.
+
+`tasty_utils::html_address::resolve_html_address` is a pure resolver: explicit file/HTTP(S)
+URLs and absolute OS paths take precedence; relative input uses the current local document
+folder or web URL, then surface cwd only for an empty tab. Without a base it fails. Home is
+an explicit parameter. Whitespace is trimmed only at the ends; local filename characters are
+URL-encoded, and unsupported schemes are rejected. AddressTarget keeps the normalized URL
+and decoded local lookup path separate. validate_local requires a caller-supplied successful
+file lookup before local navigation; it rejects missing files, directories and lookup errors.
+This preflight does not guarantee that subsequent loading succeeds. Web targets do not use
+local lookup. Display shortens a home component prefix to ~ and retains URL fragments.
+
+The gallery contains eight address states, script/size banner placement mocks, narrow and
+mirror variants, and a live HTTP(S) input example. It opens neither local files nor WebViews.

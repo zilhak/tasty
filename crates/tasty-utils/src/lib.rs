@@ -7,6 +7,7 @@
 
 pub mod batch_writer;
 pub mod execution;
+pub mod html_address;
 pub mod id;
 pub mod notify;
 pub mod path;

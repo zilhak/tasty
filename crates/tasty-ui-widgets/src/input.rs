@@ -11,6 +11,9 @@ use crate::icon_button::IconPainter;
 pub struct Input<'a> {
     placeholder: &'a str,
     mono: bool,
+    font_size: Option<LogicalPx>,
+    icon_size: Option<LogicalPx>,
+    text_margin: Option<LogicalPx>,
     invalid: bool,
     enabled: bool,
     /// 지금은 고칠 수 없지만 읽는 값(시안 `readOnly`). disabled와 함께면 무시한다.
@@ -71,6 +74,9 @@ impl<'a> Input<'a> {
         Self {
             placeholder: "",
             mono: false,
+            font_size: None,
+            icon_size: None,
+            text_margin: None,
             invalid: false,
             enabled: true,
             read_only: false,
@@ -110,6 +116,25 @@ impl<'a> Input<'a> {
 
     pub fn mono(mut self, mono: bool) -> Self {
         self.mono = mono;
+        self
+    }
+
+    /// Override the text size with a Theme length; existing mono inputs retain caption size.
+    pub fn font_size(mut self, size: LogicalPx) -> Self {
+        self.font_size = Some(size);
+        self
+    }
+
+    /// Override the leading icon slot with a Theme length; existing inputs retain md size.
+    pub fn icon_size(mut self, size: LogicalPx) -> Self {
+        self.icon_size = Some(size);
+        self
+    }
+
+    /// Optional inner editor margin, in addition to the Input box padding. Unset keeps
+    /// egui's default. A caller whose box already owns all padding can request zero.
+    pub fn text_margin(mut self, margin: LogicalPx) -> Self {
+        self.text_margin = Some(margin);
         self
     }
 
@@ -195,7 +220,7 @@ impl<'a> Input<'a> {
         let inner = outer.shrink2(egui::vec2(pad_x, 0.0));
         let inner_w = inner.width();
 
-        let icon_glyph = theme.icon_glyph_size_md.value();
+        let icon_glyph = self.icon_size.unwrap_or(theme.icon_glyph_size_md).value();
         let icon_w = if self.icon.is_some() {
             icon_glyph + gap
         } else {
@@ -237,9 +262,9 @@ impl<'a> Input<'a> {
                 paint(ui, irect, muted);
             }
             let font = if self.mono {
-                egui::FontId::monospace(caption)
+                egui::FontId::monospace(self.font_size.map_or(caption, LogicalPx::value))
             } else {
-                egui::FontId::proportional(body)
+                egui::FontId::proportional(self.font_size.map_or(body, LogicalPx::value))
             };
             let (hint, text_color) = if read_only {
                 (
@@ -279,6 +304,11 @@ impl<'a> Input<'a> {
                         .map_or(text_color, |_| egui::Color32::TRANSPARENT),
                 )
                 .interactive(self.enabled);
+            let te = if let Some(margin) = self.text_margin {
+                te.margin(egui::vec2(margin.value(), margin.value()))
+            } else {
+                te
+            };
             let te = match self.id {
                 Some(id) => te.id(id),
                 None => te,

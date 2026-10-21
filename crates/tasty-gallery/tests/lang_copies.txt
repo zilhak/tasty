@@ -201,7 +201,7 @@ src/catalog/components/info_modal.rs	OK	button.ok
 src/catalog/components/info_modal.rs	Quit	button.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
 src/catalog/components/info_modal.rs	Theme not found	theme_error.title
 src/catalog/components/kb_import_export.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
-src/catalog/components/kb_import_export.rs	Back	explorer.nav.back,settings.keybindings.preset_back,tutorial.btn_back
+src/catalog/components/kb_import_export.rs	Back	explorer.nav.back,html_address.back,settings.keybindings.preset_back,tutorial.btn_back
 src/catalog/components/kb_import_export.rs	Changed only	settings.keybindings.ie_changed_only
 src/catalog/components/kb_import_export.rs	Command palette	command_palette.heading
 src/catalog/components/kb_import_export.rs	Copy	dag.detail.copy,explorer.context_menu.copy_files,explorer.properties.copy,terminal_context_menu.copy,terminal_context_menu.link_copy
@@ -367,7 +367,7 @@ src/catalog/components/prim_drilldown.rs	Action	settings.file_handler.handlers.f
 src/catalog/components/prim_drilldown.rs	Active	settings.keybindings.preset_active_tag
 src/catalog/components/prim_drilldown.rs	Applied	settings.keybindings.preset_applied_button
 src/catalog/components/prim_drilldown.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
-src/catalog/components/prim_drilldown.rs	Back	explorer.nav.back,settings.keybindings.preset_back,tutorial.btn_back
+src/catalog/components/prim_drilldown.rs	Back	explorer.nav.back,html_address.back,settings.keybindings.preset_back,tutorial.btn_back
 src/catalog/components/prim_drilldown.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/prim_drilldown.rs	Copy	dag.detail.copy,explorer.context_menu.copy_files,explorer.properties.copy,terminal_context_menu.copy,terminal_context_menu.link_copy
 src/catalog/components/prim_drilldown.rs	Current	settings.keybindings.preset_col_before
@@ -708,7 +708,7 @@ src/catalog/widgets/toast.rs	Copied (OSC 52)	toast.copied_osc52
 src/catalog/widgets/toast.rs	Ctrl	settings.terminal.link_modifier_ctrl
 src/catalog/widgets/toast.rs	Path copied	toast.copied_path
 src/catalog/widgets/toast.rs	Shift	settings.general.shift_display_style_shift
-src/catalog/widgets/tutorial.rs	Back	explorer.nav.back,settings.keybindings.preset_back,tutorial.btn_back
+src/catalog/widgets/tutorial.rs	Back	explorer.nav.back,html_address.back,settings.keybindings.preset_back,tutorial.btn_back
 src/catalog/widgets/tutorial.rs	Next	tutorial.btn_next
 src/catalog/widgets/tutorial.rs	Skip	explorer.conflict.skip
 src/host_shell.rs	Theme	settings.appearance.subtab.theme
