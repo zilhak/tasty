@@ -322,7 +322,12 @@ fn a_refused_step_goes_back_to_the_history() {
     let e = h.take_undo().unwrap();
     h.record(Recorded::Undo(e), &undone());
     for _ in 0..crate::app::explorer_files::MAX_PENDING_PER_VIEW {
-        state.request_explorer_file(&engine.read(), sid, Operation::Open("p".into()), user());
+        state.request_explorer_file(
+            &engine.read(),
+            sid,
+            Operation::Open(vec!["p".into()]),
+            user(),
+        );
     }
     state.explorer_history_step(&engine.read(), sid, false, user(), false);
     state.explorer_history_step(&engine.read(), sid, true, user(), false);

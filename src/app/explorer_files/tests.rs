@@ -217,20 +217,25 @@ fn admission_is_bounded_and_rejects_mirror_and_non_user_requests() {
     let (mut state, engine) = crate::state::tests::test_state();
     let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
     for _ in 0..MAX_PENDING_PER_VIEW + 1 {
-        state.request_explorer_file(&engine.read(), sid, Operation::Open("path".into()), user());
+        state.request_explorer_file(
+            &engine.read(),
+            sid,
+            Operation::Open(vec!["path".into()]),
+            user(),
+        );
     }
     assert_eq!(state.explorer_file_requests.0.len(), MAX_PENDING_PER_VIEW);
     state.explorer_file_requests.0.clear();
     state.request_explorer_file(
         &engine.read(),
         sid,
-        Operation::Open("x".repeat(MAX_REQUEST_BYTES + 1).into()),
+        Operation::Open(vec!["x".repeat(MAX_REQUEST_BYTES + 1).into()]),
         user(),
     );
     state.request_explorer_file(
         &engine.read(),
         sid,
-        Operation::Open("path".into()),
+        Operation::Open(vec!["path".into()]),
         IntentOrigin::System,
     );
     assert!(state.explorer_file_requests.0.is_empty());
@@ -251,10 +256,20 @@ fn a_refused_user_request_tells_the_cell_why() {
     let (mut state, engine) = crate::state::tests::test_state();
     let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
     for _ in 0..MAX_PENDING_PER_VIEW {
-        state.request_explorer_file(&engine.read(), sid, Operation::Open("path".into()), user());
+        state.request_explorer_file(
+            &engine.read(),
+            sid,
+            Operation::Open(vec!["path".into()]),
+            user(),
+        );
     }
     assert!(state.toasts.messages().is_empty());
-    state.request_explorer_file(&engine.read(), sid, Operation::Open("path".into()), user());
+    state.request_explorer_file(
+        &engine.read(),
+        sid,
+        Operation::Open(vec!["path".into()]),
+        user(),
+    );
     assert_eq!(
         state.toasts.messages(),
         vec![crate::i18n::t("explorer.request.queue_full")]
@@ -281,7 +296,12 @@ fn a_refused_request_from_an_explorer_becomes_a_card_in_that_cell() {
     let panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
     state.explorer_views.get_or_init(&panel, None);
     for _ in 0..MAX_PENDING_PER_VIEW + 2 {
-        state.request_explorer_file(&engine.read(), sid, Operation::Open("path".into()), user());
+        state.request_explorer_file(
+            &engine.read(),
+            sid,
+            Operation::Open(vec!["path".into()]),
+            user(),
+        );
     }
     let many = vec![PathBuf::from("x".repeat(4096)); MAX_REQUEST_BYTES / 4096 + 1];
     state.explorer_file_requests.0.clear();
@@ -352,7 +372,7 @@ fn shutdown_reports_a_running_worker_until_its_actual_join() {
     state.request_explorer_file(
         &engine.read(),
         sid,
-        Operation::Open("unused".into()),
+        Operation::Open(vec!["unused".into()]),
         user(),
     );
     let target = state.explorer_file_requests.0.pop_front().unwrap().target;
@@ -398,7 +418,7 @@ fn a_worker_left_behind_after_the_shutdown_deadline_still_cleans_its_staging() {
     state.request_explorer_file(
         &engine.read(),
         sid,
-        Operation::Open("unused".into()),
+        Operation::Open(vec!["unused".into()]),
         user(),
     );
     let target = state.explorer_file_requests.0.pop_front().unwrap().target;
@@ -533,7 +553,7 @@ fn each_operation_names_the_folders_it_can_change_and_the_paths_it_can_remove() 
             removed: vec![a],
         }
     );
-    assert_eq!(Operation::Open(b).affected(), Affected::default());
+    assert_eq!(Operation::Open(vec![b]).affected(), Affected::default());
 }
 
 #[test]
@@ -737,7 +757,12 @@ fn queued_requests_are_listed_per_surface_and_removable() {
         },
         user(),
     );
-    state.request_explorer_file(&engine.read(), sid, Operation::Open("x".into()), user());
+    state.request_explorer_file(
+        &engine.read(),
+        sid,
+        Operation::Open(vec!["x".into()]),
+        user(),
+    );
     state.request_explorer_file_direct(
         &engine.read(),
         sid,
@@ -776,7 +801,7 @@ fn undo_remembers_whether_it_puts_back_a_move() {
     assert_eq!(moved.kind(), Some(OpKind::Undo));
     let copied = Operation::Undo(vec![UndoStep::Created("/a".into(), None)]);
     assert_eq!(copied.undo_of(), Some(UndoOf::Copy));
-    assert_eq!(Operation::Open("x".into()).kind(), None);
+    assert_eq!(Operation::Open(vec!["x".into()]).kind(), None);
 }
 
 /// 원본이 남은 이동의 Retry 는 그 항목을 다시 옮기지 않고 원본 삭제만 따로 요청한다.

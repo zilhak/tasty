@@ -366,7 +366,7 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                     mono("explorer.props.target_modified", "2026-06-27 11:40", false),
                     mono("explorer.props.path", "/home/demo/bin/current", true),
                 ],
-                None,
+                Some(t("explorer.props.link_note")),
             )
         });
         cluster(ui, theme, "folder — partial size", |ui| {
@@ -414,7 +414,7 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                         true,
                     ),
                 ],
-                None,
+                Some(t("explorer.props.link_note")),
             )
         });
         cluster(ui, theme, "several items", |ui| {
@@ -517,7 +517,7 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "symlink",
-                "Link target · Target kind / size / modified · own Path + Copy; broken target warning",
+                "Link target · Target kind / size / modified · own Path + Copy; broken target warning · muted note: deleting or renaming the link leaves the target",
             ),
             (
                 "several",

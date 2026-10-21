@@ -8,6 +8,7 @@ mod divider_drag;
 mod egui_mesh;
 mod explorer_create;
 mod explorer_history;
+mod explorer_os_items;
 mod explorer_show_in_folder;
 mod file_drag;
 mod file_drop;

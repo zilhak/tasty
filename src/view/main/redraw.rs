@@ -1337,7 +1337,7 @@ impl MainView {
                         this.state.request_explorer_file(
                             engine,
                             surface_id,
-                            crate::app::explorer_files::Operation::Open(target.clone()),
+                            crate::app::explorer_files::Operation::Open(vec![target.clone()]),
                             crate::intent::IntentOrigin::User {
                                 source: crate::intent::UserSource::ContextMenu,
                             },
@@ -1478,6 +1478,7 @@ impl MainView {
                 ),
                 Some(30) => this.explorer_menu_trash(engine, surface_id, &paths),
                 Some(20) => this.explorer_menu_open_in_system(engine, surface_id, &paths, &cwd),
+                Some(21) => this.explorer_menu_reveal(engine, surface_id, &paths),
                 Some(40) => {
                     if let Some(binding) = binding {
                         this.explorer_menu_rename(engine, surface_id, &paths, binding)
@@ -1581,12 +1582,9 @@ impl MainView {
             // 휴지통으로 이동 (파일/폴더/다중 공통).
             items.push(MenuItem::separator());
             items.push(write_row(30, "explorer.context_menu.delete"));
-            // "Open in system" 은 단일 폴더 + mirror 가 아닐 때만 (design §3.3) — 메뉴 끝.
-            if is_folder && !is_mirror {
-                items.push(MenuItem::new(
-                    20,
-                    crate::i18n::t("explorer.context_menu.open_in_system"),
-                ));
+            // OS 연계 행은 로컬 칸에서만 메뉴 끝에 둔다.
+            if !is_mirror {
+                Self::push_explorer_os_items(&mut items, multi);
             }
         }
         // 모든 모양의 메뉴는 Properties 로 끝난다. 빈 영역이면 현재 폴더가 대상이다.
@@ -1719,11 +1717,15 @@ impl MainView {
             self.toast_remote_write_unsupported();
             return;
         }
-        let target = paths.first().cloned().unwrap_or_else(|| cwd.to_path_buf());
+        let targets = if paths.is_empty() {
+            vec![cwd.to_path_buf()]
+        } else {
+            paths.to_vec()
+        };
         self.state.request_explorer_file(
             engine,
             surface_id,
-            crate::app::explorer_files::Operation::Open(target),
+            crate::app::explorer_files::Operation::Open(targets),
             crate::intent::IntentOrigin::User {
                 source: crate::intent::UserSource::ContextMenu,
             },
@@ -2258,7 +2260,7 @@ mod tests {
 
     // build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip, is_mirror) 의
     // 위치별 메뉴 구성을 id·separator 위치로 고정한다. id: 1=copy_path, 10=copy_files,
-    // 11=cut, 12=paste/paste_into, 20=open_in_system, 30=delete, 40=rename,
+    // 11=cut, 12=paste/paste_into, 20=open_in_system, 21=reveal, 30=delete, 40=rename,
     // 50=add_to_favorites, 60=open_in_new_tab, 61=set_as_root, 70=properties, 80=new_folder,
     // 81=new_file. None=separator.
     // 모든 모양이 구분선과 Properties 로 끝나는지 여기서 확인하고, 아래 기대값은 그 앞부분만 적는다.
@@ -2309,22 +2311,27 @@ mod tests {
 
     #[test]
     fn explorer_menu_single_file() {
-        // 단일 파일(클립보드 무관): 경로복사 · 복사 · 잘라내기 · 이름변경 · ─ · 휴지통.
-        assert_eq!(
-            explorer_menu_shape(false, false, false, false),
-            vec![Some(1), Some(10), Some(11), Some(40), None, Some(30)]
-        );
+        // 단일 파일(클립보드 무관): 경로복사 · 복사 · 잘라내기 · 이름변경 · ─ · 휴지통 ·
+        // 시스템열기 · 파일 관리자에서 보기.
+        let shape = vec![
+            Some(1),
+            Some(10),
+            Some(11),
+            Some(40),
+            None,
+            Some(30),
+            Some(20),
+            Some(21),
+        ];
+        assert_eq!(explorer_menu_shape(false, false, false, false), shape);
         // has_clip 은 단일 파일 shape 에 영향 없음.
-        assert_eq!(
-            explorer_menu_shape(false, false, false, true),
-            vec![Some(1), Some(10), Some(11), Some(40), None, Some(30)]
-        );
+        assert_eq!(explorer_menu_shape(false, false, false, true), shape);
     }
 
     #[test]
     fn explorer_menu_single_folder_no_clip() {
         // 단일 폴더, 클립보드 없음: 경로복사 · 즐겨찾기 · 새탭 · 루트설정 · 복사 ·
-        // 잘라내기 · ─ · 새 폴더 · 새 파일 · 이름변경 · ─ · 휴지통 · 시스템열기.
+        // 잘라내기 · ─ · 새 폴더 · 새 파일 · 이름변경 · ─ · 휴지통 · 시스템열기 · 파일 관리자에서 보기.
         assert_eq!(
             explorer_menu_shape(false, false, true, false),
             vec![
@@ -2340,7 +2347,8 @@ mod tests {
                 Some(40),
                 None,
                 Some(30),
-                Some(20)
+                Some(20),
+                Some(21)
             ]
         );
     }
@@ -2364,21 +2372,23 @@ mod tests {
                 Some(40),
                 None,
                 Some(30),
-                Some(20)
+                Some(20),
+                Some(21)
             ]
         );
     }
 
     #[test]
     fn explorer_menu_multi() {
-        // 다중 선택(클립보드 무관): 경로복사 · 복사 · 잘라내기 · ─ · 휴지통.
+        // 다중 선택(클립보드 무관): 경로복사 · 복사 · 잘라내기 · ─ · 휴지통 · 시스템열기(모두 연다).
+        // 파일 관리자에서 보기는 한 항목만 고르므로 없다.
         assert_eq!(
             explorer_menu_shape(true, false, false, false),
-            vec![Some(1), Some(10), Some(11), None, Some(30)]
+            vec![Some(1), Some(10), Some(11), None, Some(30), Some(20)]
         );
         assert_eq!(
             explorer_menu_shape(true, false, false, true),
-            vec![Some(1), Some(10), Some(11), None, Some(30)]
+            vec![Some(1), Some(10), Some(11), None, Some(30), Some(20)]
         );
     }
 
@@ -2436,7 +2446,8 @@ mod tests {
 
     #[test]
     fn explorer_menu_mirror_single_folder_disables_write_ops() {
-        // 단일 폴더 + 클립보드 있음 + mirror: 새탭(60)/시스템열기(20)는 사라지고, 쓰기 행은 꺼진다.
+        // 단일 폴더 + 클립보드 있음 + mirror: 새탭(60)/시스템열기(20)/파일 관리자에서 보기(21)는
+        // 사라지고, 쓰기 행은 꺼진다.
         assert_eq!(
             explorer_menu_shape_mirror(false, false, true, true, true),
             vec![

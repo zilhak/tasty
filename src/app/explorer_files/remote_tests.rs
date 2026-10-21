@@ -98,7 +98,7 @@ fn a_writable_mirror_cell_queues_requests_without_history() {
     state.request_explorer_file(
         &engine.read(),
         sid,
-        Operation::Open("/srv/a".into()),
+        Operation::Open(vec!["/srv/a".into()]),
         user(),
     );
     assert!(state.explorer_file_requests.0.is_empty());

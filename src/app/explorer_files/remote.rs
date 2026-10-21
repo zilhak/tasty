@@ -69,7 +69,10 @@ fn lost_verb(operation: &Operation) -> Option<&'static str> {
         Operation::Rename { .. } => "explorer.menu.op_rename",
         Operation::Create { folder: true, .. } => "explorer.menu.op_new_folder",
         Operation::Create { folder: false, .. } => "explorer.menu.op_new_file",
-        Operation::Undo(_) | Operation::RemoveLeftovers { .. } | Operation::Open(_) => return None,
+        Operation::Undo(_)
+        | Operation::RemoveLeftovers { .. }
+        | Operation::Open(_)
+        | Operation::Reveal(_) => return None,
     })
 }
 
@@ -120,7 +123,7 @@ fn remote_op(operation: Operation) -> Option<RemoteOp> {
         Operation::RemoveLeftovers { dest, leftovers } => {
             RemoteOp::RemoveLeftovers { dest, leftovers }
         }
-        Operation::Open(_) => return None,
+        Operation::Open(_) | Operation::Reveal(_) => return None,
     })
 }
 

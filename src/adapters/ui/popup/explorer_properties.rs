@@ -667,7 +667,9 @@ fn single_content(
             ));
         }
         fields.push(path_row());
-        return (icons::LINK, name, fields, None);
+        // 링크를 지우거나 이름을 바꾸는 작업은 링크 자신에게만 일어난다는 안내.
+        let note = Some(t("explorer.props.link_note"));
+        return (icons::LINK, name, fields, note);
     }
     let folder = matches!(item.kind, ItemKind::Folder);
     let ext = extension(path);
@@ -883,7 +885,8 @@ mod tests {
             },
         };
         item.size = 999;
-        let (_, _, fields, _) = single_content(&item.path, &item, false, false, 0, 0);
+        let (_, _, fields, note) = single_content(&item.path, &item, false, false, 0, 0);
+        assert_eq!(note, Some(t("explorer.props.link_note")));
         assert_eq!(
             fields.iter().map(|f| f.label).collect::<Vec<_>>(),
             vec![
@@ -902,8 +905,13 @@ mod tests {
             target: PathBuf::from("missing"),
             state: LinkTarget::Missing,
         };
-        let (_, _, fields, _) = single_content(&item.path, &item, false, false, 0, 0);
+        let (_, _, fields, note) = single_content(&item.path, &item, false, false, 0, 0);
         assert_eq!(fields.len(), 3);
+        assert_eq!(
+            note,
+            Some(t("explorer.props.link_note")),
+            "a broken link has the note too"
+        );
         assert_eq!(fields[0].value, t("explorer.kind.broken_link"));
         assert_eq!(fields[1].warning, Some("explorer.props.target_missing"));
     }

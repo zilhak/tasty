@@ -42,6 +42,8 @@ fn file_menu() -> Vec<Mi> {
         Mi::Sep,
         Mi::Item(Some(TRASH), "Delete", true),
         Mi::Item(Some(EDIT), "Rename", false),
+        Mi::Item(None, t("explorer.context_menu.open_in_system"), false),
+        Mi::Item(None, t("explorer.context_menu.reveal_files"), false),
     ]
 }
 
@@ -57,7 +59,8 @@ fn folder_menu() -> Vec<Mi> {
         Mi::Item(Some(FILE_PLUS), t("explorer.command.new_file"), false),
         Mi::Item(Some(TRASH), "Delete", true),
         Mi::Item(Some(EDIT), "Rename", false),
-        Mi::Item(None, "Open in system", false),
+        Mi::Item(None, t("explorer.context_menu.open_in_system"), false),
+        Mi::Item(None, t("explorer.context_menu.reveal_files"), false),
     ]
 }
 
@@ -68,6 +71,7 @@ fn multi_menu() -> Vec<Mi> {
         Mi::Item(None, "Cut", false),
         Mi::Sep,
         Mi::Item(Some(TRASH), "Delete", true),
+        Mi::Item(None, t("explorer.context_menu.open_in_system"), false),
     ]
 }
 
@@ -121,6 +125,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("separator", "menu_separator (1px)"),
             ("danger", "Delete = accent-danger label"),
             ("targets", "empty · file · folder · multi · search result"),
+            (
+                "open in system · show in file manager",
+                "local only, after Delete · Open in system opens every chosen item · Show in Finder / File Explorer / file manager selects one item in its folder",
+            ),
             (
                 "show in folder",
                 "search results and links · opens the real parent · selects + current item · scrolls into view · no flash",

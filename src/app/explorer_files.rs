@@ -37,7 +37,10 @@ pub(crate) enum Operation {
         path: PathBuf,
         name: String,
     },
-    Open(PathBuf),
+    /// OS 기본 앱(폴더는 파일 관리자)으로 연다. 여러 항목이면 하나씩 연다.
+    Open(Vec<PathBuf>),
+    /// 담은 폴더를 OS 파일 관리자로 열고 그 항목을 고른다.
+    Reveal(PathBuf),
     /// 새 폴더나 빈 파일. 같은 이름이 있으면 덮어쓰지 않고 실패한다.
     Create {
         dir: PathBuf,
@@ -101,7 +104,7 @@ impl Operation {
             Self::RemoveLeftovers { .. } => Some(OpKind::RemoveOriginals),
             Self::Trash(_) => Some(OpKind::Trash),
             Self::Undo(_) => Some(OpKind::Undo),
-            Self::Rename { .. } | Self::Open(_) | Self::Create { .. } => None,
+            Self::Rename { .. } | Self::Open(_) | Self::Reveal(_) | Self::Create { .. } => None,
         }
     }
     /// 진행 표시에 쓰는 목적지 폴더와 항목 수.
@@ -113,7 +116,9 @@ impl Operation {
             Self::Trash(paths) => (None, paths.len()),
             Self::Undo(steps) => (None, steps.len()),
             Self::RemoveLeftovers { dest, leftovers } => (dest.clone(), leftovers.len()),
-            Self::Rename { .. } | Self::Open(_) | Self::Create { .. } => (None, 1),
+            Self::Rename { .. } | Self::Open(_) | Self::Reveal(_) | Self::Create { .. } => {
+                (None, 1)
+            }
         }
     }
     /// 되돌리기라면 되돌리는 작업의 종류. 옮긴 항목이 하나라도 있으면 이동이다. 이력의 단계를
@@ -156,7 +161,8 @@ impl Operation {
                         .sum::<usize>()
             }
             Self::Rename { path, name } => path.as_os_str().len() + name.len(),
-            Self::Open(path) => path.as_os_str().len(),
+            Self::Open(paths) => paths.iter().map(|p| p.as_os_str().len()).sum(),
+            Self::Reveal(path) => path.as_os_str().len(),
             Self::Create { dir, name, .. } => dir.as_os_str().len() + name.len(),
             Self::Undo(steps) => steps
                 .iter()
@@ -206,7 +212,7 @@ impl Operation {
                 changed: parents(std::slice::from_ref(path)),
                 removed: vec![path.clone()],
             },
-            Self::Open(_) => Affected::default(),
+            Self::Open(_) | Self::Reveal(_) => Affected::default(),
             Self::Create { dir, .. } => Affected {
                 changed: vec![dir.clone()],
                 removed: Vec::new(),
@@ -243,11 +249,29 @@ impl Operation {
                 job::leftover::run_remove_leftovers(shared, dest, &leftovers),
             ),
             Self::Rename { path, name } => Done::Step(named::rename(&path, &name)),
-            Self::Open(path) => {
-                Done::Simple(crate::platform::reveal::open_path(&path).map_err(|e| e.to_string()))
+            Self::Open(paths) => Done::Simple(open_each(&paths)),
+            Self::Reveal(path) => {
+                Done::Simple(crate::platform::reveal::reveal_path(&path).map_err(|e| e.to_string()))
             }
             Self::Create { dir, name, folder } => Done::Step(named::create(&dir, &name, folder)),
         }
+    }
+}
+
+/// 하나를 못 열어도 나머지는 연다. 실패한 항목은 경로와 이유를 줄마다 모아 돌려준다.
+fn open_each(paths: &[PathBuf]) -> Result<(), String> {
+    let failed: Vec<String> = paths
+        .iter()
+        .filter_map(|path| {
+            crate::platform::reveal::open_path(path)
+                .err()
+                .map(|e| format!("{}: {e}", path.display()))
+        })
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join("\n"))
     }
 }
 
@@ -404,7 +428,7 @@ impl crate::state::MainViewState {
         let remote = engine.mirror_workspace_of(surface).is_some();
         if !matches!(origin, crate::intent::IntentOrigin::User { .. })
             || engine.blocks_explorer_write(surface)
-            || (remote && matches!(operation, Operation::Open(_)))
+            || (remote && matches!(operation, Operation::Open(_) | Operation::Reveal(_)))
         {
             return None;
         }
@@ -457,7 +481,7 @@ impl crate::state::MainViewState {
                 .get(surface)
                 .map(|v| v.selection_identity()),
             clear_selection: matches!(operation, Operation::Trash(_) | Operation::Rename { .. }),
-            reload: !matches!(operation, Operation::Open(_)),
+            reload: !matches!(operation, Operation::Open(_) | Operation::Reveal(_)),
             created: match &operation {
                 Operation::Create { dir, name, .. } => Some(dir.join(name)),
                 _ => None,
