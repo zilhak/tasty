@@ -15,6 +15,7 @@ use tasty_ui_widgets::{
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::adapters::ui::popup::PopupAction;
+use crate::adapters::ui::surface::explorer::display_text::nfc;
 use crate::adapters::ui::surface::explorer::view::ExplorerView;
 use crate::app::local_reads::{
     self, FolderCount, ItemFacts, ItemKind, LinkTarget, PropertiesFacts, Query,
@@ -410,7 +411,7 @@ fn header(ui: &mut egui::Ui, th: &Theme, glyph: Icon, name: &str, broken: bool) 
         let name_w = (ui.available_width() - close_w - th.spacing_sm.value()).max(0.0);
         let (name_rect, _) = ui.allocate_exact_size(egui::vec2(name_w, g), egui::Sense::hover());
         let mut job = egui::text::LayoutJob::simple_singleline(
-            name.to_owned(),
+            nfc(name).into_owned(),
             egui::FontId::proportional(th.font_size_max.value()),
             th.text_primary().to_egui(),
         );
@@ -495,8 +496,12 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field) {
                     };
                     let color = th.text_secondary().to_egui();
                     let text_w = (ui.available_width() - copy_w).max(0.0);
-                    let mut job =
-                        egui::text::LayoutJob::simple(f.value.clone(), font, color, text_w);
+                    let mut job = egui::text::LayoutJob::simple(
+                        nfc(&f.value).into_owned(),
+                        font,
+                        color,
+                        text_w,
+                    );
                     job.wrap.break_anywhere = true;
                     let galley = ui.fonts(|fonts| fonts.layout_job(job));
                     // 첫 줄을 줄 높이 가운데에 두고, 줄을 바꾼 값은 글자 줄 높이만큼만 늘린다.

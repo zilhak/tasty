@@ -237,6 +237,8 @@ egui-wgpu = { version = "0.31", optional = true }
 egui-winit = { version = "0.31", optional = true }
 # SVG 아이콘을 읽고 현재 글자색으로 그리는 데 사용한다.
 egui_extras = { version = "0.31", features = ["svg", "image"], optional = true }
+# egui는 결합 문자를 앞 글자에 합치지 않아 표시용 문자열만 NFC로 합성한다.
+icu_normalizer = { version = "2.1", default-features = false, features = ["compiled_data"], optional = true }
 
 termwiz = "0.22"
 
@@ -369,6 +371,7 @@ gui = [
     "dep:egui-wgpu",
     "dep:egui-winit",
     "dep:egui_extras",
+    "dep:icu_normalizer",
     "tasty-plugin-protocol/egui-mesh",
     # 이 feature가 선택 의존성인 tasty-key-match도 활성화한다.
     "tasty-key-match/egui-input",

@@ -303,7 +303,7 @@ fn item_header(pane: &PreviewPane, e: &DirEntryInfo) -> (String, String) {
     if !e.is_dir {
         facts = format!("{facts} · {}", human_size(false, e.size));
     }
-    (e.name.clone(), facts)
+    (super::display_text::nfc(&e.name).into_owned(), facts)
 }
 
 /// 여러 개를 골랐을 때의 머리 두 줄: "N items" 와 "2 files, 1 folder".
@@ -378,7 +378,7 @@ fn draw_panel(
     match &mut pane.body {
         Body::Text(text) => {
             let g = ui.painter().layout_no_wrap(
-                text.clone(),
+                super::display_text::nfc(text).into_owned(),
                 egui::FontId::monospace(theme.font_size_caption.value()),
                 theme.text_secondary().to_egui(),
             );
@@ -787,6 +787,35 @@ mod tests {
         let texts = frame(&mut view);
         assert!(matches!(view.preview.body, Body::Unsupported));
         assert!(!texts.iter().any(|t| t == "local"), "{texts:?}");
+        shutdown(owner);
+    }
+
+    #[test]
+    fn decomposed_text_and_name_are_drawn_composed_but_kept_as_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = "cafe\u{301} \u{1100}\u{1161}.txt";
+        let body = "e\u{301} \u{1100}\u{1161}";
+        let entry = write_text(&dir.path().join(name), body, 1_000_000);
+        let mut owner = LocalReads::default();
+        let mut view = ExplorerView::new();
+        view.entries = vec![entry.clone()];
+        view.select_only(&entry.path);
+        view.preview.open = true;
+        frame(&mut view);
+        settle(&mut view.preview, &mut owner);
+        let texts = frame(&mut view);
+        assert!(texts.iter().any(|t| t == "\u{e9} \u{ac00}"), "{texts:?}");
+        assert!(
+            texts.iter().any(|t| t == "caf\u{e9} \u{ac00}.txt"),
+            "{texts:?}"
+        );
+        assert_eq!(
+            text_of(&view.preview),
+            Some(body),
+            "the read text is unchanged"
+        );
+        assert_eq!(view.entries[0].name, name, "the entry keeps its name");
+        assert_eq!(std::fs::read_to_string(&entry.path).unwrap(), body);
         shutdown(owner);
     }
 

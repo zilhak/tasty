@@ -4,6 +4,7 @@
 pub mod address;
 mod commands;
 pub(crate) mod create;
+pub(crate) mod display_text;
 mod enclosing;
 mod entry_style;
 mod find;
