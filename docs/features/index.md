@@ -39,7 +39,7 @@ Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces
 | [notifications](notifications/index.md) — 알림 (3레벨·전역 IPC 집계/읽음·창별 LNB 요약·패널) | 로컬 사용자 · AI Agent | sidebar · popup/fullscreen |
 | [surface-highlight](surface-highlight/index.md) — Surface 주의 환기 (공유 상태·3채널·completion) | AI Agent · 로컬 사용자 | 없음 (테두리/탭/배지) |
 | [file-handler](file-handler/index.md) — 파일 핸들러 (식별→디스패치, origin 소유권·탭 선택 보존) | 로컬 사용자 · AI Agent · plugin | [설정 탭](settings/screens/settings.md) · picker |
-| [native-file-picker](native-file-picker/index.md) — 네이티브 파일 피커 (로컬+원격 겸용, Tools 메뉴 · 탭 스트립 메뉴 "새 HTML..." · plugin 트리거 · 설정 창 안의 로컬 전용 재사용 · 긴 파일명 말줄임 · 부모 범위 상속과 숨김 보존) | 로컬 사용자 · plugin | popup (갤러리 specimen) |
+| [native-file-picker](native-file-picker/index.md) — 네이티브 파일 피커 (로컬+원격 겸용, Tools 메뉴 · 탭 스트립 메뉴 "새 HTML..." · plugin 트리거 · 이미지 저장 경로 · 설정 창과 공용 저장 판정 · 긴 파일명 말줄임 · 부모 범위 상속과 숨김 보존) | 로컬 사용자 · plugin | popup (갤러리 specimen) |
 | [themes](themes/index.md) — 테마 추가/관리 (TOML) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [language-packs](language-packs/index.md) — 사용자 언어팩 발견·선택, host/plugin CLI 도움말 및 번역 오버라이드 | 로컬 사용자 | [설정 탭](settings/screens/settings.md) General › Language · 부팅 경고 토스트 |
 | [lua-hooks](lua-hooks/index.md) — Lua 스크립트(등록 + 단축키/이벤트 자동실행 트리거, host API) | 로컬 사용자 | [훅 (Surface / Global hooks)](hooks/index.md) |

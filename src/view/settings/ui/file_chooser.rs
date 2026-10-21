@@ -6,7 +6,10 @@
 //! 저장 모드는 파일을 골라도 이름만 채우고 하단 버튼으로 확정한다.
 //! 기능 문서: docs/features/native-file-picker/index.md.
 
-use std::path::{Path, PathBuf};
+use crate::adapters::ui::popup::file_picker::save;
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 
 use tasty_type_appearance::theme::Theme;
 
@@ -278,7 +281,7 @@ impl ChooserSession {
     /// 저장 모드: 입력한 이름이 지금 나열된 폴더에 파일로 이미 있다(덮어쓰기 상태).
     /// 판정은 나열된 목록만 본다 — 나열되지 않은 경로를 stat 하지 않는다.
     fn overwrites(&self) -> bool {
-        self.is_save() && self.is_file_entry(self.save_name.trim())
+        self.is_save() && save::overwrites(&self.save_name, &self.entries, &self.filters)
     }
 
     /// view 의 의도를 상태 변경으로 환원한다. 선택이 끝났으면 결과를 낸다.
@@ -357,24 +360,14 @@ impl ChooserSession {
     /// 저장 모드 이름 칸의 확정 — 현재 디렉토리가 읽혔고 파일명이 한 경로 성분이며, 나열된
     /// 폴더 이름과 겹치지 않을 때만(폴더 자리에 파일을 쓸 수 없다).
     fn confirm_save(&self) -> Option<FileChooserOutcome> {
-        if !matches!(self.load, FpViewState::Loaded | FpViewState::Empty) {
-            return None;
-        }
-        let name = self.save_name.trim();
-        let is_listed_dir = self.entries.iter().any(|e| e.is_dir && e.name == name);
-        (is_plain_file_name(name) && !is_listed_dir)
-            .then(|| FileChooserOutcome::confirmed(self.current_dir.join(name)))
+        save::confirmed_path(
+            &self.current_dir,
+            &self.save_name,
+            matches!(self.load, FpViewState::Loaded | FpViewState::Empty),
+            &self.entries,
+        )
+        .map(|path| FileChooserOutcome::Confirmed(vec![path]))
     }
-}
-
-/// 디렉토리 구분자·`.`·`..` 가 없는 한 성분짜리 이름인가. 이름 칸이 다른 디렉토리를
-/// 가리키게 두지 않는다 — 디렉토리 이동은 목록이 한다.
-fn is_plain_file_name(name: &str) -> bool {
-    let mut comps = Path::new(name).components();
-    matches!(
-        (comps.next(), comps.next()),
-        (Some(std::path::Component::Normal(_)), None)
-    ) && !name.contains(['/', '\\'])
 }
 
 fn draw_view(

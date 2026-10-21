@@ -19,6 +19,7 @@ fn state_with_picker(owner: Option<u64>) -> RequestContext {
     let (mut state, mut _engine_session) = test_state();
     let _engine = _engine_session.borrow_mut();
     state.dialogs.file_picker = Some(FilePickerData {
+        save_name: None,
         request_id: crate::state::FilePickerRequestId(1),
         mirror_ws_id: None,
         remote_host: None,

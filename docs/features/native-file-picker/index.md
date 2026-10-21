@@ -1,9 +1,9 @@
 # 네이티브 파일 피커 (로컬+원격 겸용)
 
 - **Status**: Implemented
-- **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 탭 스트립 메뉴 "새 HTML..." 트리거 · 설정 창 안의 파일 선택) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
+- **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 탭 스트립 메뉴 "새 HTML..." 트리거 · 설정 창 안의 파일 선택 · 이미지 다른 이름으로 저장) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
 - **설계**: [원격 attach (Remote attach)](../remote-attach/index.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [내부 팝업 시스템](../../design/systems/popup.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [파일 핸들러 (File handler)](../file-handler/index.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
-- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/app/local_reads.rs`(`directory` 로컬 읽기 요청 · `poll_file_picker_reads` 결과 반영), `src/adapters/ui/file_open_tool.rs`(Tools 메뉴·단축키 호출자 — 열기와 결과 적용), `src/adapters/ui/new_tab_picker.rs`(탭 스트립 메뉴 "새 HTML..." 호출자 — 열기와 결과 적용, 진입은 `src/view/main/redraw.rs`의 `apply_pane_menu_selection`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 호출자, `"file_picker.result"` push), `src/app/dispatch/file_picker.rs`(결과를 꺼내 호출자에게 넘기는 drain), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
+- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/app/local_reads.rs`(`directory` 로컬 읽기 요청 · `poll_file_picker_reads` 결과 반영), `src/adapters/ui/file_open_tool.rs`(Tools 메뉴·단축키 호출자 — 열기와 결과 적용), `src/adapters/ui/new_tab_picker.rs`(탭 스트립 메뉴 "새 HTML..." 호출자 — 열기와 결과 적용, 진입은 `src/view/main/redraw.rs`의 `apply_pane_menu_selection`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 호출자, `"file_picker.result"` push), `src/app/dispatch/file_picker.rs`(결과를 꺼내 호출자에게 넘기는 drain), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `crates/tasty-plugin-image/src/picker.rs`(이미지 저장 경로 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
 ## 목적
@@ -214,7 +214,7 @@ CallerContext::Plugin 검사는 이미 열린 popup(-32000)이나 잘못된 인�
 이 메서드는 window router의 외부 arm을 사용하므로 method table의 plugin_only 표식을 붙이지 않는다.
 그 표식은 별도 host-call interception 경로를 뜻한다. 에이전트는 파일 경로를 직접 지정한다.
 
-markdown의 Browse처럼 plugin이 호스트의 파일 선택 창을 열어야 할 때 사용한다.
+markdown의 Browse나 이미지 다른 이름으로 저장의 찾아보기처럼 plugin이 호스트의 파일 선택 창을 열어야 할 때 사용한다.
 사용자 응답까지 `host.call`을 잡아 두면 plugin의 렌더·입력 루프가 멈추고 60초
 `HostCallTimeout`이 생길 수 있으므로 요청을 즉시 접수하고 결과는 나중에 이벤트로 보낸다.
 
@@ -232,6 +232,21 @@ markdown의 Browse처럼 plugin이 호스트의 파일 선택 창을 열어야 �
    클립보드에 쓰지 않는다.
 4. plugin 은 `on_event` 에서 이 key 를 받아 자기 `request_id` pending-map 으로 상관관계를
    맞춘다(신규 SDK 콜백 불필요 — 기존 `EventDispatchCtx` 재사용).
+
+**저장 모드**: `mode?: "open" | "save"`(기본 `open`), `default_name?: string`(기본 빈 이름)을
+받는다. `location: "local"`은 활성 workspace와 무관하게 로컬을 지정한다. 생략하면 기존 출발 surface
+판정을 유지하되 저장 모드에서 원격 위치는 `-32602`로 거절한다. 이미지 호출은 `mode: "save"`,
+`location: "local"`, `filters: ["png"]`, 현재 버퍼의 파일명(없으면 `image.png`), surface ID와
+로컬 시작 폴더를 보낸다. 절대 경로 버퍼의 부모, 원본 이미지의 절대 부모, 플러그인 작업 폴더 순이다.
+
+메인 popup과 Settings chooser는 `file_picker::save`의 이름·덮어쓰기 판정을 공유한다.
+`Loaded`/`Empty`에서 한 경로 성분인 이름만 확정하며 나열된 폴더 이름은 거절한다. 파일 행 클릭과
+더블클릭은 이름만 채우므로 덮어쓰기 경고를 건너뛰지 않는다. 확정 결과는 경로 하나의 배열이며
+호스트는 파일을 만들거나 쓰지 않는다. `FsRead` 권한은 그대로다. 실제 PNG 저장과 확장자 보충은
+이미지 플러그인의 [저장]이 담당한다. 피커가 이미 열렸으면 `-32000`으로 거절하고 이미지 쪽은
+경고 로그를 남기며 입력칸을 보존한다. 취소·저장 카드 닫힘·surface 재생성·새 요청 뒤의 이전 결과는
+버리고 일치하는 request ID와 카드 세대의 결과만 한 번 받는다. 이미지 카드는 host popup이 아니므로
+`owner_popup_instance`를 보내지 않으며 피커는 창 범위로 열린다.
 
 **`filters`**: 확장자 목록(점 없이, 예: `["md", "markdown"]`) — `draw_file_picker` 가 렌더
 직전 `matches_filters` 로 파일 엔트리만 걸러낸다(디렉토리는 필터와 무관하게 항상 표시 —
@@ -362,9 +377,8 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - **원격 파일 내용 fetch** — 피커는 디렉토리 나열만 한다. 확정 결과는 경로 문자열이며,
   `file_picker.trigger` 로 열린 경우 plugin 에 `paths` 로만 전달된다. 그 경로의 내용을 이 세션으로
   가져오는 fetch 는 피커에 없다. Tools 메뉴의 원격 확정은 원격 파일 열기 경로로 넘긴다.
-- **멀티 셀렉트 / 메인 피커의 파일명 직접 입력** — 현재는 단일 선택만 지원(`FilePickerData::selected`
-  는 매번 교체). 메인 피커는 열기 전용이라 footer 이름 칸이 읽기 전용이다 — 편집 가능한 이름 칸은
-  설정 창의 저장 모드에만 있다.
+- **멀티 셀렉트 / 열기 모드의 파일명 직접 입력** — 현재는 단일 선택만 지원(`FilePickerData::selected`
+  는 매번 교체). 열기 모드 이름 칸은 읽기 전용이며 메인 popup과 설정 창 모두 저장 모드에서만 편집한다.
 - **필터 선택** — 사용자가 필터를 바꾸는 선택기는 없다. 필터는 호출처가 정하는 `filters` 뿐이고
   footer 칩은 그것을 보여 주기만 한다.
 - **`StreamControl` enum 확장** — capture 패턴과 동일하게 그 enum 을 건드리지 않고 별도 `event`
@@ -545,3 +559,10 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   버튼 무잘림 · 깊은 경로 가운데 생략 · 짧은 경로 비생략 · 모든 조상이 칠해지거나 `…` 뒤에 있음).
 
 로컬 목록은 App read worker에 제출하고 현재 파일 선택 세션의 receipt로 결과를 받는다. 이동·닫기·재개방으로 receipt가 교체되면 이전 결과를 버린다. 로딩 중에도 메인 이벤트 루프는 파일시스템 읽기를 기다리지 않는다. 원격 연결의 8초 soft timeout은 로컬 읽기에 적용하지 않는다.
+
+### 이미지 저장 경로 완료 조건
+
+- Given 이미지 저장 카드가 열림 When 찾아보기를 누르면 Then 로컬 Tasty 저장 피커가 PNG 필터와 현재 파일명으로 열리고 렌더 루프는 사용자 응답을 기다리지 않는다.
+- Given 저장 피커에서 경로를 확정 When 결과를 받으면 Then 그 카드의 경로 입력만 바뀌고 파일은 아직 쓰이지 않는다.
+- Given 취소하거나 카드·surface가 닫힘 또는 새 요청을 보냄 When 이전 결과가 도착하면 Then 버퍼는 바뀌지 않는다.
+- Given 기존 파일명을 선택 When 저장 피커를 보면 Then 덮어쓰기 경고가 보이며 더블클릭만으로 확정되지 않는다.

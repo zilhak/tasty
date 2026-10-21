@@ -703,12 +703,7 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
                     )
                     .clicked()
                     {
-                        let dialog = rfd::FileDialog::new()
-                            .add_filter("PNG", &["png"])
-                            .set_file_name("image.png");
-                        if let Some(path) = dialog.save_file() {
-                            doc.save_path_buffer = path.to_string_lossy().to_string();
-                        }
+                        doc.browse.queue();
                     }
                     let resp = Input::new()
                         .placeholder(tr.t("image_viewer.save_path_placeholder"))

@@ -208,6 +208,7 @@ pub struct ImageDoc {
     pub new_image_height: String,
 
     pub save_path_popup: bool,
+    pub(crate) browse: crate::picker::BrowseState,
     pub save_path_buffer: String,
     /// 같은 이름의 `.png` 가 있어 Save As 를 열었으면 그 파일 이름. 입력칸 위 안내에 쓴다.
     pub save_path_clash: Option<String>,
@@ -258,6 +259,7 @@ impl ImageDoc {
             new_image_width: DEFAULT_BLANK_CANVAS_WIDTH.to_string(),
             new_image_height: DEFAULT_BLANK_CANVAS_HEIGHT.to_string(),
             save_path_popup: false,
+            browse: Default::default(),
             save_path_buffer: String::new(),
             save_path_clash: None,
             save_path_select_stem: false,
@@ -450,6 +452,7 @@ impl ImageDoc {
 
     /// 경로를 묻는 Save As 를 연다.
     pub fn open_save_as(&mut self) {
+        self.browse.invalidate();
         self.save_path_popup = true;
         self.save_path_clash = None;
         self.save_path_select_stem = false;
@@ -458,6 +461,7 @@ impl ImageDoc {
     /// 같은 이름의 `.png` 가 있어 Save As 를 연다. 입력칸에는 다음 빈 이름(`이름-1.png`)을 넣고
     /// stem 을 선택해 둔다.
     pub fn open_save_as_for_clash(&mut self, taken: &str) {
+        self.browse.invalidate();
         self.save_path_popup = true;
         self.save_path_clash = Some(
             Path::new(taken)
@@ -470,6 +474,7 @@ impl ImageDoc {
 
     /// Save As 를 닫는다.
     pub fn close_save_as(&mut self) {
+        self.browse.invalidate();
         self.save_path_popup = false;
         self.save_path_clash = None;
         self.save_path_select_stem = false;

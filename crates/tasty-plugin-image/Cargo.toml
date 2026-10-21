@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-image"
-version = "0.1.282"
+version = "0.1.283"
 edition = "2024"
 license = "MIT"
 description = "Image surface viewer / paint canvas plugin (egui-mesh + bitmap texture)"
@@ -22,8 +22,6 @@ tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "ico", "tiff"] }
 # 붙여넣을 클립보드 이미지를 읽는다.
 arboard = "3"
-# 새 이미지의 저장 경로를 고른다.
-rfd = "0.15"
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

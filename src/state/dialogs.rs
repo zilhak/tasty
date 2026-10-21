@@ -382,6 +382,8 @@ pub(crate) struct FilePickerRequester {
 
 /// 파일 피커의 탐색·선택 상태. 피커는 경로를 고르는 데서 끝나며 결과로 무엇을 할지 모른다.
 pub(crate) struct FilePickerData {
+    /// None opens existing files; Some edits a single save name without writing.
+    pub(crate) save_name: Option<String>,
     /// 이 요청의 식별자. 결과와 함께 호출자에게 간다.
     pub(crate) request_id: FilePickerRequestId,
     /// 원격 탐색 대상인 로컬 mirror workspace ID. None이면 로컬 탐색이다.

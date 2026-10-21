@@ -3,8 +3,8 @@
 - **Status**: Implemented (bundled plugin)
 - **주체**: 로컬 사용자 (GUI surface) · AI Agent (`tasty image` CLI)
 - **배포/통합**: bundled · surface_kind(egui-mesh) · 파일 핸들러 — [plugins 개념](../../concepts/plugins.md)
-- **코드**: `crates/tasty-plugin-image/`(`main.rs`/`doc.rs`/`render.rs`), 등록 `src/runtime/surface_registry/egui_mesh.rs`(API 버전·이름 충돌 검사)
-- **권한**: 매니페스트 `permissions`
+- **코드**: `crates/tasty-plugin-image/`(`main.rs`/`doc.rs`/`render.rs`/`picker.rs`), 등록 `src/runtime/surface_registry/egui_mesh.rs`(API 버전·이름 충돌 검사)
+- **권한**: 매니페스트 `permissions`; 저장 경로 선택도 기존 `fs.read`로 호스트 목록만 읽으며 호스트에 쓰기 권한을 추가하지 않는다.
 - **결정**: [egui-mesh 렌더링](../../dev-guide/egui-mesh-channel.md) — 이미지 렌더링과 공통 메시 전송 방식
 - **화면**: [아래 절](#화면)
 
@@ -58,6 +58,19 @@
 - Given 이미지 surface 가 열려 있을 때 When 그 파일의 내용은 그대로인데 mtime 만 바뀐다(`touch`) Then 내용 해시를 확인하되 다시 디코딩하거나 재로드하지 않는다.
 - Given 편집 세션이 활성일 때 When 그 파일이 밖에서 바뀐다 Then 편집 중에는 반영하지 않고, 편집을 끝낼 때 반영한다.
 - Given 저장하지 않은 편집이 있는 image surface When preset·layout 으로 복원한다 Then 디스크의 원본을 다시 읽어 표시하고, 미저장 편집은 복원하지 않으며 그 사실을 알리지도 않는다.
+
+### 다른 이름으로 저장의 찾아보기
+
+폴더 버튼은 OS 대화상자 대신 Tasty 파일 선택 창의 저장 모드를 연다. PNG 필터와 현재 입력의 파일명
+(없으면 `image.png`)을 사용하고, 입력 경로·원본 이미지의 절대 부모 폴더 순서로 출발한다. 둘 다 절대 부모가
+없으면 플러그인 작업 폴더를 사용한다. 확정은 입력칸만 바꾸며 실제 쓰기는 카드의 [저장]이 한다.
+기존 `.png` 보충과 명시 경로 덮어쓰기 규칙은 유지한다. 피커에서 기존 파일을 고르면 덮어쓰기 경고를
+보지만, 이후 카드 입력을 다른 기존 파일로 바꾸는 동작에 별도 경고를 추가하지는 않는다.
+
+요청은 즉시 접수되고 결과는 이벤트로 오므로 사용자 응답 동안 렌더·입력 스레드를 붙잡지 않는다.
+취소는 입력을 보존하고 닫힌 카드·surface, 이전 요청이나 중복 결과는 적용하지 않는다. 이미 피커가
+열렸으면 경고 로그를 남기고 버퍼를 유지한다. host popup의 자식이 아닌 창 범위 피커이며 자세한 계약은
+[파일 선택 창](../../features/native-file-picker/index.md#플러그인의-피커-요청--즉시-접수하고-결과는-이벤트로-전달)에 있다.
 
 ## 화면
 

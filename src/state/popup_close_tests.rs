@@ -1020,6 +1020,7 @@ fn file_handler_picker_close_intent_now_marks_cancelled() {
 
 fn mk_file_picker_data() -> FilePickerData {
     FilePickerData {
+        save_name: None,
         request_id: crate::state::FilePickerRequestId(1),
         mirror_ws_id: None,
         remote_host: None,

@@ -15,9 +15,15 @@ use crate::adapters::ui::popup::file_picker;
 use crate::state::{FilePickerRequester, RequestContext};
 
 /// `file_picker.trigger { filters?: string[], owner_popup_instance?: u64, start_dir?: string,
-/// origin_surface_id?: u32 }` 요청.
+/// origin_surface_id?: u32, mode?: "open" | "save", default_name?: string, location?: "local" }` 요청.
 #[derive(Deserialize)]
 struct FilePickerTriggerReq {
+    #[serde(default)]
+    mode: PickerMode,
+    #[serde(default)]
+    default_name: String,
+    /// Explicit local browsing; omission retains origin-surface routing for open mode.
+    location: Option<PickerLocation>,
     /// 확장자 필터(점 없이, 예: `["md", "markdown"]`). 비면 필터 없음.
     #[serde(default)]
     filters: Vec<String>,
@@ -34,6 +40,20 @@ struct FilePickerTriggerReq {
     /// (생략하거나 찾지 못하면 활성 workspace).
     #[serde(default)]
     origin_surface_id: Option<u32>,
+}
+
+#[derive(Default, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum PickerMode {
+    #[default]
+    Open,
+    Save,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PickerLocation {
+    Local,
 }
 
 pub fn handle_trigger(
@@ -74,13 +94,22 @@ pub fn handle_trigger(
     };
 
     let engine = engine.read();
-    let location = file_picker::locate(
-        state,
-        &engine,
-        req.origin_surface_id,
-        state.active_workspace_index(&engine),
-        req.start_dir,
-    );
+    let location = if matches!(req.location, Some(PickerLocation::Local)) {
+        crate::state::FilePickerLocation::Local { dir: req.start_dir }
+    } else {
+        file_picker::locate(
+            state,
+            &engine,
+            req.origin_surface_id,
+            state.active_workspace_index(&engine),
+            req.start_dir,
+        )
+    };
+    if req.mode == PickerMode::Save
+        && matches!(location, crate::state::FilePickerLocation::Remote { .. })
+    {
+        return JsonRpcResponse::error(id, -32602, "save mode requires a local location");
+    }
     if file_picker::open(
         state,
         &engine,
@@ -94,6 +123,14 @@ pub fn handle_trigger(
         return busy_response(id);
     }
 
+    if req.mode == PickerMode::Save {
+        state
+            .dialogs
+            .file_picker
+            .as_mut()
+            .expect("opened picker")
+            .save_name = Some(req.default_name);
+    }
     JsonRpcResponse::success(id, json!({ "request_id": request_id.0 }))
 }
 

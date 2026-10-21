@@ -18,6 +18,10 @@ mod path_bar;
 mod pure_return_tests;
 
 mod paths;
+pub(crate) mod save;
+#[cfg(test)]
+mod save_tests;
+
 pub(crate) use location::locate;
 pub(crate) use paths::{crumb_label, join_dir, matches_filters, path_ancestors};
 
@@ -739,7 +743,15 @@ pub fn draw_file_picker(
         .cloned()
         .collect::<Vec<_>>()
         .join(", ");
-    let title_label = t("filepicker.title");
+    let overwrite = data
+        .save_name
+        .as_ref()
+        .is_some_and(|name| save::overwrites(name, &data.entries, &data.filters));
+    let title_label = t(if data.save_name.is_some() {
+        "filepicker.save.title"
+    } else {
+        "filepicker.title"
+    });
     let name_field_label = t("filepicker.name_field_label");
     let cancel_label = t("button.cancel");
     let empty_label = t("filepicker.empty");
@@ -758,15 +770,38 @@ pub fn draw_file_picker(
         state: view_state,
         entries: &view_entries,
         selected: &data.selected,
-        mode: FilePickerMode::Open {
-            selection_text: &selection_text,
+        mode: match &data.save_name {
+            Some(name) => FilePickerMode::Save {
+                name,
+                overwrite,
+                can_confirm: save::confirmed_path(
+                    std::path::Path::new(&data.current_dir),
+                    name,
+                    matches!(data.load, FpLoadState::Loaded | FpLoadState::Empty),
+                    &data.entries,
+                )
+                .is_some(),
+            },
+            None => FilePickerMode::Open {
+                selection_text: &selection_text,
+            },
         },
         owns_escape,
         title_label,
         name_field_label,
-        name_placeholder: t("filepicker.no_file_selected"),
+        name_placeholder: t(if data.save_name.is_some() {
+            "filepicker.save.name_placeholder"
+        } else {
+            "filepicker.no_file_selected"
+        }),
         cancel_label,
-        confirm_label: t("filepicker.open_button"),
+        confirm_label: t(if overwrite {
+            "filepicker.save.overwrite_button"
+        } else if data.save_name.is_some() {
+            "filepicker.save.save_button"
+        } else {
+            "filepicker.open_button"
+        }),
         overwrite_warning: t("filepicker.save.overwrite_warning"),
         folder_not_save_target: t("filepicker.folder_not_save_target"),
         folder_open_enters: t("filepicker.folder_open_enters"),
@@ -806,10 +841,26 @@ fn apply_action(
             }
             PopupAction::Close
         }
-        // 메인 피커는 열기 전용이라 이름 칸이 편집되지 않는다.
-        FilePickerAction::EditName(_) => PopupAction::None,
+        FilePickerAction::EditName(name) => {
+            if let Some(d) = state.dialogs.file_picker.as_mut()
+                && d.save_name.is_some()
+            {
+                if d.selected.first() != Some(&name) {
+                    d.selected.clear();
+                }
+                d.save_name = Some(name);
+            }
+            PopupAction::None
+        }
         FilePickerAction::Select(name) => {
             if let Some(d) = state.dialogs.file_picker.as_mut() {
+                if d.save_name.is_some()
+                    && d.entries.iter().any(|e| {
+                        e.name == name && !e.is_dir && matches_filters(&d.filters, &e.name)
+                    })
+                {
+                    d.save_name = Some(name.clone());
+                }
                 d.selected = vec![name];
             }
             PopupAction::None
@@ -846,6 +897,20 @@ fn apply_action(
             PopupAction::None
         }
         FilePickerAction::Confirm => {
+            if let Some(d) = state.dialogs.file_picker.as_mut()
+                && let Some(name) = &d.save_name
+            {
+                if let Some(path) = save::confirmed_path(
+                    std::path::Path::new(&d.current_dir),
+                    name,
+                    matches!(d.load, FpLoadState::Loaded | FpLoadState::Empty),
+                    &d.entries,
+                ) {
+                    d.result = Some(FilePickerResult::Confirmed { paths: vec![path] });
+                    return PopupAction::Close;
+                }
+                return PopupAction::None;
+            }
             let folder = state.dialogs.file_picker.as_ref().and_then(|d| {
                 let [name] = d.selected.as_slice() else {
                     return None;
@@ -884,6 +949,14 @@ fn apply_action(
             PopupAction::None
         }
         FilePickerAction::ConfirmEntry(name) => {
+            if state
+                .dialogs
+                .file_picker
+                .as_ref()
+                .is_some_and(|d| d.save_name.is_some())
+            {
+                return apply_action(state, engine, FilePickerAction::Select(name));
+            }
             if let Some(d) = state.dialogs.file_picker.as_mut() {
                 let is_remote = d.mirror_ws_id.is_some();
                 let path = join_dir(is_remote, &d.current_dir, &name);
@@ -963,6 +1036,7 @@ pub(crate) fn open(
     };
 
     state.dialogs.file_picker = Some(crate::state::FilePickerData {
+        save_name: None,
         request_id,
         mirror_ws_id,
         remote_host: None,

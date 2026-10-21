@@ -7,6 +7,7 @@
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod doc;
+mod picker;
 #[cfg(any(unix, windows))]
 mod render;
 mod tiled;
@@ -79,6 +80,14 @@ impl Plugin for ImagePlugin {
             .spawn(move || file_watch::run::<StatGatedDigest>(host, rx, "image.reload"))
         {
             tracing::warn!("image watch worker spawn failed — idle auto-reload disabled: {e}");
+        }
+    }
+
+    fn on_event(&mut self, ctx: tasty_plugin_sdk::EventDispatchCtx) {
+        if ctx.envelope.key == "file_picker.result" {
+            for doc in self.docs.values_mut() {
+                picker::receive(doc, &ctx.envelope.payload);
+            }
         }
     }
 
@@ -314,6 +323,9 @@ impl ImagePlugin {
         if let Err(e) = result {
             tracing::warn!("image surface {sid} paint failed: {e}");
         }
+        picker::dispatch(doc, sid, |method, params| {
+            ctx.host.call(method, params).map_err(|e| e.to_string())
+        });
         if let Some(path) = doc.take_path_for_host() {
             announce_surface_path(&ctx.host, sid, path);
         }
