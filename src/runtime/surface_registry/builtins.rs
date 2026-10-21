@@ -592,6 +592,26 @@ mod tests {
     }
 
     #[test]
+    fn old_explorer_json_without_hidden_keeps_the_off_default() {
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").unwrap();
+        let root = abs_path("tmp/legacy-explorer");
+        let legacy: Value =
+            serde_json::from_str(&json!({"tabs": [{"root": root}], "active": 0}).to_string())
+                .unwrap();
+        assert!(legacy.get("show_hidden").is_none());
+        let restored = (def.restore)(9, &legacy).unwrap().publish().unwrap();
+        let panel = restored.as_any().downcast_ref::<ExplorerPanel>().unwrap();
+        assert!(!panel.show_hidden);
+        assert!(
+            (def.snapshot)(restored.as_ref())
+                .unwrap()
+                .get("show_hidden")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn a_captured_explorer_preset_reopens_its_inner_tabs() {
         let reg = registry_with_builtins();
         let def = reg.get("explorer").expect("explorer kind");

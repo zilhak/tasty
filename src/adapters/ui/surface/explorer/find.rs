@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
     ExplorerFindBar, ExplorerFindEvents, ExplorerFindLabels, ExplorerFindStatus, explorer_find_bar,
-    explorer_match_job, match_range,
+    explorer_match_job,
 };
 
 use super::DirEntryInfo;
@@ -15,6 +15,7 @@ use super::view::ExplorerView;
 use crate::app::local_reads::{SEARCH_MAX_HITS, SearchEvent, SearchQuery};
 use std::cmp::Ordering;
 
+use crate::core::fs_list::find_query::FindQuery;
 use crate::core::fs_list::{compare_entries, sort_entries};
 use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 use tasty_model::{SortColumn, SortDir};
@@ -23,6 +24,8 @@ use tasty_model::{SortColumn, SortDir};
 pub(crate) struct FindState {
     root: PathBuf,
     query: String,
+    matcher: FindQuery,
+    show_hidden: bool,
     deep: bool,
     /// 다음 프레임에 입력에 포커스를 준다.
     focus: bool,
@@ -84,6 +87,8 @@ impl ExplorerView {
                 self.find = Some(FindState {
                     root,
                     query: String::new(),
+                    matcher: FindQuery::default(),
+                    show_hidden: self.hidden.show,
                     deep: false,
                     focus: true,
                     field_focused: false,
@@ -124,18 +129,18 @@ impl ExplorerView {
         if let Some(hits) = self.filtered() {
             return Box::new(hits.iter().map(|&i| &self.entries[i]));
         }
-        let (list, query): (&[DirEntryInfo], &str) = match &self.find {
+        let (list, query): (&[DirEntryInfo], Option<&FindQuery>) = match &self.find {
             Some(FindState {
                 search: Some(search),
                 query,
                 ..
-            }) if !query.is_empty() => (&search.hits, ""),
-            Some(find) if !find.deep => (&self.entries, &find.query),
-            _ => (&self.entries, ""),
+            }) if !query.is_empty() => (&search.hits, None),
+            Some(find) if !find.deep => (&self.entries, Some(&find.matcher)),
+            _ => (&self.entries, None),
         };
         Box::new(
             list.iter()
-                .filter(move |e| query.is_empty() || match_range(&e.name, query).is_some()),
+                .filter(move |e| query.is_none_or(|q| q.matches(e))),
         )
     }
 
@@ -180,7 +185,7 @@ impl ExplorerView {
             return;
         }
         let hits = (self.entries.iter().enumerate())
-            .filter(|(_, e)| match_range(&e.name, &find.query).is_some())
+            .filter(|(_, e)| find.matcher.matches(e))
             .map(|(i, _)| i)
             .collect();
         find.filtered = Some(Filtered {
@@ -251,7 +256,7 @@ impl ExplorerView {
 
     /// 이름에서 칠할 검색어. 거르거나 찾는 중이 아니면 빈 문자열이다.
     pub(super) fn find_query(&self) -> &str {
-        self.find.as_ref().map_or("", |f| f.query.as_str())
+        self.find.as_ref().map_or("", |f| f.matcher.text())
     }
 
     /// 하위 폴더 검색 결과를 보이는 중이면 시작 폴더.
@@ -388,6 +393,14 @@ impl ExplorerView {
         under
     }
 
+    /// 숨김 정책이 바뀌면 기존 영수증을 버려 취소하고, 그 채널의 늦은 결과도 차단한다.
+    pub(super) fn refind_for_hidden(&mut self, show: bool) {
+        if let Some(find) = &mut self.find {
+            find.show_hidden = show;
+            find.restart();
+        }
+    }
+
     /// 시험: Find 바를 열고 하위 폴더 검색을 시작한다.
     #[cfg(test)]
     pub(crate) fn search_subfolders(&mut self, query: &str) {
@@ -411,10 +424,12 @@ impl ExplorerView {
 impl FindState {
     /// 하위 폴더 검색이 켜져 있고 검색어가 있으면 처음부터 다시 찾는다. 아니면 검색을 버린다.
     fn restart(&mut self) {
+        self.matcher = FindQuery::parse(&self.query);
         self.search = (self.deep && !self.query.is_empty()).then(|| Search {
             receipt: Some(crate::app::local_reads::search(
                 self.root.clone(),
                 self.query.clone(),
+                self.show_hidden,
             )),
             hits: Vec::new(),
             skipped: Vec::new(),
@@ -557,6 +572,7 @@ impl ExplorerView {
         if events.escape {
             // 첫 Esc 는 글자만 지우고 입력을 계속 쓸 수 있게 둔다.
             find.query.clear();
+            find.matcher = FindQuery::default();
             find.focus = true;
             find.search = None;
             return;
@@ -569,45 +585,23 @@ impl ExplorerView {
         if events.subfolders_toggled || events.changed {
             find.deep = deep;
             find.restart();
+            self.refresh_filter();
             self.retain_shown_selection();
         }
     }
 
-    /// 보이지 않게 된 항목을 선택에서 뺀다. 숨은 항목에 명령이 닿지 않게 하기 위해서다.
-    /// 선택된 항목만 본다. 선택은 읽은 목록과 하위 폴더 검색 결과 안에만 있으므로
-    /// (`retain_listed_selection`), 지금 폴더 항목은 부모 폴더와 이름을 검색어에 대 보고
-    /// 하위 폴더 검색 결과는 그 결과 목록(상한 `SEARCH_MAX_HITS`)에서 찾는다.
+    /// 실제 보이는 결과에서 선택을 남긴다. 확장자 조건으로 빠진 폴더에도 명령이 닿지 않는다.
     fn retain_shown_selection(&mut self) {
-        let Some(find) = &self.find else {
+        if self.selected.is_empty() && self.anchor.is_none() {
             return;
-        };
-        let hits: Option<std::collections::HashSet<&Path>> = match &find.search {
-            Some(search) if !find.query.is_empty() => {
-                Some(search.hits.iter().map(|e| e.path.as_path()).collect())
-            }
-            _ => None,
-        };
-        let query = if find.deep { "" } else { find.query.as_str() };
-        let shown = |p: &Path| match &hits {
-            Some(hits) => hits.contains(p),
-            None => {
-                p.parent() == Some(find.root.as_path())
-                    && (query.is_empty()
-                        || p.file_name()
-                            .is_some_and(|n| match_range(&n.to_string_lossy(), query).is_some()))
-            }
-        };
-        let hidden: Vec<PathBuf> = self
-            .selected
-            .iter()
-            .filter(|p| !shown(p))
-            .cloned()
-            .collect();
-        let anchor_hidden = self.anchor.as_deref().is_some_and(|a| !shown(a));
-        for p in &hidden {
-            self.selected.remove(p);
         }
-        if anchor_hidden {
+        let shown: std::collections::HashSet<PathBuf> = self
+            .shown()
+            .filter(|e| self.selected.contains(&e.path) || self.anchor.as_ref() == Some(&e.path))
+            .map(|e| e.path.clone())
+            .collect();
+        self.selected.retain(|p| shown.contains(p));
+        if self.anchor.as_ref().is_some_and(|p| !shown.contains(p)) {
             self.anchor = None;
         }
     }

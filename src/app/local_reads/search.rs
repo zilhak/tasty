@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
+use crate::core::fs_list::find_query::FindQuery;
 use crate::core::fs_list::{DirEntryInfo, EntryLink, read_dir_entries};
 
 /// 결과를 모아 보내는 간격. 폴더마다 깨우면 화면을 너무 자주 다시 그린다.
@@ -31,6 +32,7 @@ pub(crate) enum SearchEvent {
 pub(crate) struct SearchSpec {
     pub(super) root: PathBuf,
     pub(super) query: String,
+    pub(super) show_hidden: bool,
     pub(super) stop: Arc<AtomicBool>,
 }
 
@@ -41,7 +43,7 @@ pub(crate) struct SearchQuery {
     stop: Arc<AtomicBool>,
 }
 
-pub(crate) fn search(root: PathBuf, query: String) -> SearchQuery {
+pub(crate) fn search(root: PathBuf, query: String, show_hidden: bool) -> SearchQuery {
     let (sender, receiver) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     SearchQuery {
@@ -49,6 +51,7 @@ pub(crate) fn search(root: PathBuf, query: String) -> SearchQuery {
             SearchSpec {
                 root,
                 query,
+                show_hidden,
                 stop: Arc::clone(&stop),
             },
             sender,
@@ -59,6 +62,22 @@ pub(crate) fn search(root: PathBuf, query: String) -> SearchQuery {
 }
 
 impl SearchQuery {
+    /// 실제 영수증 교체·취소를 worker 실행 순서와 관계없이 확인하는 시험 채널.
+    #[cfg(test)]
+    pub(crate) fn test_channel() -> (Self, mpsc::Sender<SearchEvent>, Arc<AtomicBool>) {
+        let (sender, receiver) = mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        (
+            Self {
+                request: None,
+                receiver,
+                stop: Arc::clone(&stop),
+            },
+            sender,
+            stop,
+        )
+    }
+
     /// 아직 시작하지 않았으면 worker 에 넘기고, 그사이 온 사건을 모두 꺼낸다.
     pub(crate) fn poll(&mut self, requests: &mut super::ReadRequests) -> Vec<SearchEvent> {
         if let Some(request) = self.request.take()
@@ -82,6 +101,7 @@ impl Drop for SearchQuery {
 /// worker 에서 실행한다. 보낼 곳이 닫혔으면 바로 멈춘다.
 pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dyn Fn()) {
     let stopped = || spec.stop.load(Ordering::Acquire);
+    let query = FindQuery::parse(&spec.query);
     let mut queue = VecDeque::from([spec.root.clone()]);
     let mut batch = Vec::new();
     let mut last_flush = Instant::now();
@@ -115,11 +135,15 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
                 continue;
             }
         };
-        for entry in entries {
+        for entry in entries
+            .into_iter()
+            .take_while(|_| !stopped())
+            .filter(|entry| spec.show_hidden || !entry.is_hidden())
+        {
             if entry.is_dir && entry.link == EntryLink::NotALink {
                 queue.push_back(entry.path.clone());
             }
-            if matches(&entry.name, &spec.query) {
+            if query.matches(&entry) {
                 hits.take(entry, &mut batch);
             }
         }
@@ -165,10 +189,6 @@ impl Hits {
             batch.push(entry);
         }
     }
-}
-
-fn matches(name: &str, query: &str) -> bool {
-    tasty_ui_widgets::match_range(name, query).is_some()
 }
 
 /// 결과가 든 폴더를 시작 폴더 기준 상대 경로로. 시작 폴더 자신은 ".".

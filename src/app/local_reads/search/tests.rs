@@ -1,10 +1,15 @@
 use super::*;
 
 fn collect(root: &Path, query: &str, stop: bool) -> Vec<SearchEvent> {
+    collect_hidden(root, query, stop, false)
+}
+
+fn collect_hidden(root: &Path, query: &str, stop: bool, show_hidden: bool) -> Vec<SearchEvent> {
     let (sender, receiver) = mpsc::channel();
     let spec = SearchSpec {
         root: root.into(),
         query: query.into(),
+        show_hidden,
         stop: Arc::new(AtomicBool::new(stop)),
     };
     run(spec, sender, &|| {});
@@ -118,4 +123,40 @@ fn a_search_stops_at_the_hit_cap_and_keeps_what_it_found() {
             capped: true
         })
     ));
+}
+
+#[test]
+fn hidden_folders_are_pruned_before_descent_and_extensions_filter_only_hits() {
+    let dir = tempfile::tempdir().unwrap();
+    for folder in [".hidden", "visible", "visible/.nested", "folder.rs"] {
+        std::fs::create_dir_all(dir.path().join(folder)).unwrap();
+    }
+    for file in [
+        ".secret.rs",
+        ".hidden/note.rs",
+        "visible/.nested/deep.rs",
+        "visible/note.RS",
+        "visible/note.md",
+        "visible/other.txt",
+        "folder.rs/child.rs",
+    ] {
+        std::fs::write(dir.path().join(file), b"").unwrap();
+    }
+    assert_eq!(
+        hits(&collect_hidden(dir.path(), "ext:rs", false, false)),
+        ["child.rs", "note.RS"]
+    );
+    assert_eq!(
+        hits(&collect_hidden(dir.path(), "ext:rs", false, true)),
+        [".secret.rs", "child.rs", "deep.rs", "note.RS", "note.rs"]
+    );
+    assert_eq!(
+        hits(&collect_hidden(
+            dir.path(),
+            "NOTE ext:rs ext:md",
+            false,
+            false
+        )),
+        ["note.RS", "note.md"]
+    );
 }

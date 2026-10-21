@@ -1,6 +1,7 @@
 use super::*;
 use crate::app::local_reads::LocalReads;
 use tasty_model::ExplorerPanel;
+use tasty_ui_widgets::match_range;
 
 fn names(entries: &[DirEntryInfo]) -> Vec<&str> {
     entries.iter().map(|e| e.name.as_str()).collect()
@@ -278,6 +279,8 @@ fn batches_inserted_in_order_match_a_full_sort() {
 /// 검색 결과를 손으로 채운 Find 상태.
 fn searched(outcome: Outcome, skipped: usize) -> FindState {
     FindState {
+        matcher: FindQuery::default(),
+        show_hidden: false,
         root: PathBuf::from("/srv"),
         query: "rs".into(),
         deep: true,
@@ -547,4 +550,95 @@ fn a_broken_link_among_subfolder_hits_is_reported_as_broken() {
     let (_panel, view, _owner) = showing_hit(root, &hit);
     assert!(view.is_broken_link(&hit.path));
     assert!(!view.is_broken_link(&root.join("alpha1.txt")));
+}
+
+#[test]
+fn extension_filter_matches_recursive_search_and_removes_excluded_selection() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["note.rs", "NOTE.md", "other.rs", "note.txt"] {
+        std::fs::write(dir.path().join(name), b"").unwrap();
+    }
+    std::fs::create_dir(dir.path().join("note.rs-dir")).unwrap();
+    let (_panel, mut view, mut owner) = loaded(dir.path());
+    view.select_only(&dir.path().join("note.txt"));
+    view.open_find();
+    set_query(&mut view, "note ext:rs EXT:.md", false);
+    view.refresh_filter();
+    assert_eq!(names(&view.shown_entries()), ["NOTE.md", "note.rs"]);
+    assert!(view.selected.is_empty());
+    assert_eq!(
+        view.find_query(),
+        "note",
+        "only the name clause is highlighted"
+    );
+    set_query(&mut view, "note ext:rs EXT:.md", true);
+    owner.drive(|requests| {
+        view.poll_local_reads(requests);
+        !view.search_running()
+    });
+    assert_eq!(names(&view.shown_entries()), ["NOTE.md", "note.rs"]);
+    finish(&mut owner);
+}
+
+#[test]
+fn changing_hidden_cancels_the_receipt_discards_queued_hits_and_searches_again() {
+    use std::sync::atomic::Ordering;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join(".private")).unwrap();
+    std::fs::write(dir.path().join(".private/note.rs"), b"").unwrap();
+    std::fs::write(dir.path().join("note.rs"), b"").unwrap();
+    let (_panel, mut view, mut owner) = loaded(dir.path());
+    view.open_find();
+    set_query(&mut view, "ext:rs", true);
+    let (receipt, sender, stopped) = SearchQuery::test_channel();
+    view.find.as_mut().unwrap().search.as_mut().unwrap().receipt = Some(receipt);
+    let stale = DirEntryInfo {
+        name: "stale.rs".into(),
+        path: dir.path().join("stale.rs"),
+        ..Default::default()
+    };
+    assert!(sender.send(SearchEvent::Hits(vec![stale])).is_ok());
+    view.toggle_hidden();
+    assert!(stopped.load(Ordering::Acquire));
+    assert!(
+        sender
+            .send(SearchEvent::Done {
+                stopped: false,
+                capped: false
+            })
+            .is_err(),
+        "old receiver was dropped"
+    );
+    owner.drive(|requests| {
+        view.poll_local_reads(requests);
+        !view.search_running()
+    });
+    assert_eq!(view.shown_count(), 2);
+    assert!(
+        view.shown().all(|e| e.name == "note.rs"),
+        "queued stale hit must not leak"
+    );
+    view.select_only(&dir.path().join(".private/note.rs"));
+    view.toggle_hidden();
+    assert!(
+        view.search_running(),
+        "completed search also restarts on a toggle"
+    );
+    assert!(
+        view.shown_entries().is_empty(),
+        "old hits are removed immediately"
+    );
+    assert!(view.selected.is_empty());
+    owner.drive(|requests| {
+        view.poll_local_reads(requests);
+        !view.search_running()
+    });
+    assert_eq!(
+        view.shown_entries()
+            .iter()
+            .map(|e| &e.path)
+            .collect::<Vec<_>>(),
+        [&dir.path().join("note.rs")]
+    );
+    finish(&mut owner);
 }

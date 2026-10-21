@@ -1,4 +1,4 @@
-<!-- source-hash: 7089c0842cb9 -->
+<!-- source-hash: 8d36432b79da -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -87,6 +87,8 @@ The **Find** toggle on the toolbar (the **More** menu in a narrow cell), or `Ctr
 - Turn on **Subfolders** to search everything under the current folder. Results fill in as they are found, and **Stop** halts the search while keeping what was found. The Detail view shows a **Folder** column with each result's location relative to the current folder instead of the type; in the List and Grid views, hover an item to see it. Selecting a result also shows its location on the status line. Folders that can't be read are skipped and reported as, for example, "1 folder skipped"; hover it to see which. A search stops once it reaches 5,000 results and shows "5,000+ found · stopped". The results stay; type more to narrow the search. Folder links are not followed. When you rename, move or delete a result, from this Explorer or another, the search runs again so the results stay current.
 - In the find field, `Esc` once clears the text and once more closes the bar. ×, or moving to another folder (Back, Up, the address bar, opening a folder), closes it too.
 - While you type in the find field, type to find and the Explorer shortcuts are off.
+- Enter `ext:rs` in the same field to search by extension. `ext:rs ext:md` finds rs or md files; `note ext:rs` also requires note in the name. Folders are excluded, and only the last extension counts. Case is ignored, and `EXT:.RS` works too. Use letters, digits, underscores or hyphens for an extension. Empty `ext:` and malformed forms such as `ext:*` or `ext:rs,md` are searched as literal name text; there is no wildcard or quoting syntax. With valid extension conditions, the remaining name words are joined with single spaces and matched as one substring. Only the name condition is highlighted.
+- While viewing search results, New folder, New file and ordinary Paste from the toolbar or empty-area menu use the folder where the search started. Matching new items reappear in the results. A folder-specific menu or **Paste into** still uses the folder you explicitly chose.
 - Explorers in remote workspaces filter the current folder only; they don't search subfolders.
 
 ### Preview panel
@@ -95,7 +97,7 @@ Press the **Preview panel** button in the toolbar to open a panel to the right o
 
 ### Hidden files
 
-Files and folders whose names start with a dot (`.`), along with items marked hidden on Windows (the Hidden attribute) or on macOS (`chflags hidden`), are left out of the list at first, and the status line below says how many, such as **2 hidden**. Press `Ctrl+Shift+.` (`Cmd+Shift+.` on macOS) or choose **Show hidden files** in the **More** menu to show them; hidden items then show their name and icon in a dimmer text color. Do the same to hide them again. Each Explorer remembers the setting across restarts and in presets you save. The folder tree on the left follows the same setting. Subfolder search results always include hidden items. An Explorer in a remote workspace also follows the remote computer's hidden attribute or flag. If the remote computer runs an older Tasty, only the leading dot counts.
+Files and folders whose names start with a dot (`.`), along with items marked hidden on Windows (the Hidden attribute) or on macOS (`chflags hidden`), are left out of the list at first, and the status line below says how many, such as **2 hidden**. Press `Ctrl+Shift+.` (`Cmd+Shift+.` on macOS) or choose **Show hidden files** in the **More** menu to show them; hidden items then show their name and icon in a dimmer text color. Do the same to hide them again. Each Explorer remembers the setting across restarts and in presets you save. The folder tree on the left follows the same setting. Subfolder searches follow this setting too. With hidden items off, hidden folders are not entered. Changing the setting restarts the same search. An Explorer in a remote workspace also follows the remote computer's hidden attribute or flag. If the remote computer runs an older Tasty, only the leading dot counts.
 
 ### Properties
 

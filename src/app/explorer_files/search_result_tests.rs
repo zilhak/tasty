@@ -60,6 +60,10 @@ fn run(
     operation: Operation,
 ) -> bool {
     state.request_explorer_file(&engine.read(), sid, operation, user());
+    finish_requested(state)
+}
+
+fn finish_requested(state: &mut crate::state::MainViewState) -> bool {
     let Request {
         target, operation, ..
     } = state.explorer_file_requests.0.pop_front().unwrap();
@@ -208,5 +212,89 @@ fn another_explorer_showing_results_of_an_ancestor_folder_finds_again() {
         shown(&state.explorer_views, searching.id),
         [root.join("alpha-top.txt"), docs.join("alpha-2.txt")]
     );
+    shutdown(owner);
+}
+
+#[test]
+fn creating_and_pasting_while_searching_use_the_start_folder_and_reappear() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let dir = tree();
+    let root = dir.path();
+    let searching = ExplorerPanel::new(sid, root.into());
+    let panels = [&searching];
+    let mut owner = LocalReads::default();
+    settle(&mut state.explorer_views, &mut owner, &panels);
+    state
+        .explorer_views
+        .get_mut(sid)
+        .unwrap()
+        .search_subfolders("alpha");
+    settle(&mut state.explorer_views, &mut owner, &panels);
+    state
+        .explorer_views
+        .get_mut(sid)
+        .unwrap()
+        .select_only(&root.join("docs/alpha.txt"));
+    for (folder, name) in [(true, "alpha-new-folder"), (false, "alpha-new-file.rs")] {
+        state.start_explorer_create(&engine.read(), sid, None, folder);
+        let edit = state
+            .explorer_views
+            .get_mut(sid)
+            .unwrap()
+            .create
+            .take()
+            .unwrap();
+        assert_eq!(
+            edit.dir, root,
+            "the selected hit's parent is not the destination"
+        );
+        assert_eq!(edit.folder, folder);
+        run(
+            &mut state,
+            &engine,
+            sid,
+            Operation::Create {
+                dir: edit.dir,
+                name: name.into(),
+                folder,
+            },
+        );
+        settle(&mut state.explorer_views, &mut owner, &panels);
+        assert!(root.join(name).exists());
+        assert!(!root.join("docs").join(name).exists());
+        assert!(shown(&state.explorer_views, sid).contains(&root.join(name)));
+    }
+
+    let source = tempfile::tempdir().unwrap();
+    let file = source.path().join("alpha-pasted.rs");
+    std::fs::write(&file, b"pasted bytes").unwrap();
+    state
+        .explorer_clipboard
+        .set(Some(crate::state::ExplorerClipboard {
+            identity: Default::default(),
+            paths: vec![file.clone()],
+            cut: false,
+            source: crate::state::ExplorerPathSource::Local,
+            os_seen: Some(crate::clipboard::files::OsClip::Other),
+        }));
+    let destination = state
+        .explorer_views
+        .get(sid)
+        .unwrap()
+        .shown_dir()
+        .unwrap()
+        .to_path_buf();
+    assert_eq!(destination, root);
+    state.explorer_paste(&engine.read(), sid, destination, user());
+    finish_requested(&mut state);
+    settle(&mut state.explorer_views, &mut owner, &panels);
+    assert_eq!(
+        std::fs::read(root.join("alpha-pasted.rs")).unwrap(),
+        b"pasted bytes"
+    );
+    assert!(file.exists(), "copy keeps the source");
+    assert!(!root.join("docs/alpha-pasted.rs").exists());
+    assert!(shown(&state.explorer_views, sid).contains(&root.join("alpha-pasted.rs")));
     shutdown(owner);
 }

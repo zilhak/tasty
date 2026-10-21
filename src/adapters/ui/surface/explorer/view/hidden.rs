@@ -12,7 +12,7 @@ use super::ExplorerView;
 /// 숨김 파일인가. 이름이 점으로 시작하거나(`..` 행 제외) OS 가 숨김으로 표시했다
 /// (Windows 숨김 속성·macOS `UF_HIDDEN`, `DirEntryInfo::os_hidden`).
 pub(crate) fn is_hidden(entry: &DirEntryInfo) -> bool {
-    entry.os_hidden || (entry.name.starts_with('.') && entry.name != "..")
+    entry.is_hidden()
 }
 
 /// 숨김 파일 표시 상태.
@@ -120,6 +120,7 @@ impl ExplorerView {
             return;
         }
         self.hidden.show = show;
+        self.refind_for_hidden(show);
         let mut all = std::mem::take(&mut self.entries);
         all.append(&mut self.hidden.stash);
         if let Some((_, col, dir)) = &self.loaded {

@@ -1,6 +1,8 @@
 //! Explorer와 로컬·원격 파일 선택기가 공유하는 디렉터리 조회·정렬·표시 함수.
 
 #[cfg(feature = "gui")]
+pub(crate) mod find_query;
+#[cfg(feature = "gui")]
 mod os_hidden;
 
 use std::path::Path;
@@ -80,6 +82,11 @@ pub(crate) struct ContentKey {
 
 #[cfg(feature = "gui")]
 impl DirEntryInfo {
+    /// 목록과 하위 검색이 공유하는 숨김 판정. 링크는 항목 자신의 OS 표시를 쓴다.
+    pub(crate) fn is_hidden(&self) -> bool {
+        self.os_hidden || (self.name.starts_with('.') && self.name != "..")
+    }
+
     pub(crate) fn content_key(&self) -> ContentKey {
         ContentKey {
             modified: self.modified,
