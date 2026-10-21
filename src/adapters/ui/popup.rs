@@ -83,6 +83,8 @@ pub struct PopupDrawResult {
     /// 실제 그린 팝업의 영역과 z_seq. plugin 팝업이 위에 덮인 host 팝업을 판별할 때 쓴다.
     /// 숨겨진 팝업은 마우스 입력을 가로채지 않도록 제외한다.
     pub hit_rects: Vec<occlusion::Occluder>,
+    /// native WebView 위에 합성할 대상(non-passive 팝업). passive 팝업은 들어 있지 않다.
+    pub overlay_targets: Vec<crate::state::webview_overlay::OverlayTarget>,
 }
 
 /// 등록 속성과 매 프레임 그리기 함수를 담은 팝업 정의.

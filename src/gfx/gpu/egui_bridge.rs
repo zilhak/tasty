@@ -98,8 +98,12 @@ impl GpuState {
         });
         let scale_factor = self.scale_factor;
         let proxy = &self.proxy;
+        // 오버레이 창이 있고 직전 동기화가 페이지를 보인 채 두었을 때만 대상 그림을 복제한다.
+        let want_overlay_shapes = self.overlay_surface.is_some()
+            && state.webview_overlay.mode != crate::state::webview_overlay::OverlayMode::Hide;
 
         self.egui_ctx.run(raw_input, |ctx| {
+            crate::state::webview_overlay::begin_frame(ctx, &mut state.webview_overlay);
             // 타이틀바를 먼저 등록해 사이드바가 그 아래에서 시작하게 한다.
             ui::titlebar::draw_titlebar(ctx, state, window, proxy);
             let plugin_alert = plugin_manager.map_or(0, |m| m.attention_count());
@@ -186,6 +190,26 @@ impl GpuState {
                 notice_column_occupied,
             );
 
+            crate::state::webview_overlay::end_frame(ctx, &mut state.webview_overlay);
+            if want_overlay_shapes {
+                let pages: Vec<egui::Rect> = state
+                    .native_content_rects
+                    .iter()
+                    .map(|r| {
+                        let l = r.to_logical(scale_factor);
+                        egui::Rect::from_min_size(
+                            egui::pos2(l.x.value(), l.y.value()),
+                            egui::vec2(l.width.value(), l.height.value()),
+                        )
+                    })
+                    .collect();
+                state.webview_overlay.paint_shapes = super::overlay_paint::overlay_shapes(
+                    ctx,
+                    &state.webview_overlay.targets,
+                    host_popup_on_top,
+                    &pages,
+                );
+            }
             // egui가 프레임마다 커서를 갱신하므로 저장된 창 리사이즈 방향도 여기서 반영한다.
             if let Some(dir) = state.pending_resize_cursor {
                 ctx.set_cursor_icon(ui::titlebar::resize_cursor(dir));

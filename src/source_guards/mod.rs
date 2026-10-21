@@ -731,6 +731,9 @@ mod floor_arguments_are_not_discarded;
 mod frame_draw_order;
 
 #[cfg(test)]
+mod webview_overlay_targets;
+
+#[cfg(test)]
 mod frame_clock_arming;
 
 #[cfg(test)]

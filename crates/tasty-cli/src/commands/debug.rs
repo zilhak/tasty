@@ -297,6 +297,15 @@ pub enum DebugCommands {
         #[arg(long, required_if_eq("action", "open"))]
         url: Option<String>,
     },
+    /// Show the native WebView overlay mode of the last frame and the popup
+    /// boxes it covers, or force the backend support report (off restores it).
+    /// Debug builds only — forcing a mode the backend lacks reproduces the
+    /// fallback to hiding pages.
+    WebviewOverlay {
+        /// One of off, hide, opaque, transparent. Omit to only read the state.
+        #[arg(long, value_parser = ["off", "hide", "opaque", "transparent"])]
+        force: Option<String>,
+    },
     /// Open a streaming channel and verify the server→client push path: send N
     /// data frames and expect each one echoed back (debug builds only).
     StreamEcho {

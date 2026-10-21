@@ -34,6 +34,19 @@ mirror 비율은 서버 구조를 바꾸지 않는 로컬 표시 override다. �
 2. **Terminal pass** — 아래 4단계 accumulator 로 모든 터미널을 한 번에
 3. **egui-mesh pass** — plugin 이 자기 프로세스에서 tessellate 한 mesh 를 surface 영역에 합성 (host chrome 아래 layer). 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md)
 4. **egui pass** — 사이드바·탭바·팝업 등 UI 오버레이
+5. **WebView 오버레이 pass** — 오버레이 창이 있을 때만 돈다(아래 절)
+6. **텍스처 해제** — 이번 프레임에 풀 egui 텍스처는 4·5가 모두 끝난 뒤 해제한다(`free_egui_textures`)
+
+## WebView 오버레이 pass
+
+native WebView 위에 egui 대상 팝업을 합성할 때의 두 번째 pass다. 모드·대상·backend 계약은 [WebView §egui 오버레이와 native WebView](../design/systems/webview.md#egui-오버레이와-native-webview)에 있다.
+
+- **복제 시점**: `run_egui_frame`의 closure 끝(`end_pass` 전)에 대상 레이어의 shape를 복제한다(`gpu/overlay_paint.rs`). `end_pass`가 레이어를 비우기 때문이다. 주 표면에는 원래대로 모두 그리므로 `ui.screenshot` 결과는 바뀌지 않는다.
+- **순서**: egui 레이어 순서(뒤→앞)를 따르되 host·plugin 팝업은 그룹 단위로 `host_popup_should_render_on_top`에 맞춘다. 드롭다운은 맨 위다. plugin mesh 팝업은 `render_egui_pass_and_mesh_popups`를 오버레이 창 view로 다시 불러 같은 그룹 규칙으로 합성한다.
+- **출력 영역**: shape마다 clip을 드러난 페이지 사각형과 교차한다. 페이지 밖의 scrim·그림자는 주 표면에만 그려져 같은 픽셀이 scrim과 두 번 합성되지 않는다.
+- **텍스처**: 오버레이 pass는 텍스처를 갱신하지 않고 주 pass가 올린 것을 쓴다. 해제는 두 pass 뒤다.
+- **실패**: 오버레이 surface를 잃으면 한 번 다시 설정한다. 그래도 얻지 못하면 창을 버리고 오버레이 실패로 기록한다. 같은 프레임의 WebView 동기화가 그 기록을 읽어 숨김으로 돌아간다.
+- **조건**: 오버레이 창(`GpuState::overlay_surface`)은 플랫폼 backend가 만든다. 지금은 만드는 backend가 없어 복제와 이 pass 모두 실행되지 않는다. 창의 텍스처 형식은 주 surface와 같아야 한다. 같은 egui renderer로 그리기 때문이다.
 
 ## 렌더는 이벤트 루프 스레드에서 돈다 (제약)
 

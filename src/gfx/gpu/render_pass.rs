@@ -238,7 +238,11 @@ impl GpuState {
         }
 
         self.queue.submit(std::iter::once(egui_encoder.finish()));
+    }
 
+    /// 이번 프레임에 해제할 egui 텍스처를 푼다. 메인 pass 와 WebView 오버레이 pass 가 모두 끝난 뒤
+    /// 부른다. 오버레이 pass 가 같은 텍스처를 쓰기 때문이다.
+    pub(super) fn free_egui_textures(&mut self, textures_delta: &egui::TexturesDelta) {
         for id in &textures_delta.free {
             self.egui_renderer.free_texture(id);
         }

@@ -142,6 +142,11 @@ pub(crate) fn draw_popup_layer(
     // egui_bridge가 최종 레이어 순서를 정할 때 사용한다.
     state.popup_layers = draw_result.layers;
     state.host_popup_hittest = draw_result.hit_rects;
+    // 대상 목록은 host 팝업이 먼저 채우고 plugin 팝업·드롭다운이 뒤에 더한다.
+    state
+        .webview_overlay
+        .targets
+        .extend(draw_result.overlay_targets);
 
     state.popups = popups;
 

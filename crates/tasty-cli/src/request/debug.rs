@@ -172,6 +172,10 @@ pub(super) fn debug_command_to_method_params(
                 "url": url,
             }),
         ),
+        DebugCommands::WebviewOverlay { force } => (
+            "debug.webview.overlay",
+            serde_json::json!({ "force": force }),
+        ),
         DebugCommands::StreamEcho { .. } => {
             unreachable!("debug stream-echo is dispatched before request mapping")
         }

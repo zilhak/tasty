@@ -12,6 +12,9 @@ use crate::view::main::redraw::{
 use crate::view::ui::View;
 use tasty_model::html_script::BannerPhase;
 
+mod overlay_settle;
+use overlay_settle::{publish_opaque_pages, settle_overlay};
+
 pub(crate) fn synchronize(
     view: &mut MainView,
     engine: &mut EngineMut<'_>,
@@ -822,6 +825,26 @@ fn sync_webviews(
     }
     view.webview_prev_active = now_active;
 
+    // 대상 팝업이 떠 있으면 backend 가 낼 수 있는 모드를 정하고 적용한다. 지원하지 않거나 실패하면
+    // `Hide` 이고 아래 표시 판정이 지금처럼 모든 WebView 를 숨긴다.
+    let blocked = view.state.fullscreen_stage_active() || view.state.tutorial.active.is_some();
+    let overlay_views: Vec<(
+        &crate::webview::PlatformWebView,
+        Option<crate::model::PhysicalRect>,
+    )> = view
+        .webviews
+        .iter()
+        .map(|(sid, wv)| (wv, active_physical.get(sid).copied()))
+        .collect();
+    let overlay_mode = settle_overlay(
+        &mut view.state.webview_overlay,
+        overlay_open,
+        blocked,
+        &overlay_views,
+        scale_factor,
+    );
+    drop(overlay_views);
+
     // 토스트 카드와 passive popup은 egui가 그리므로 native 페이지가 덮는다. 겹치는 WebView만
     // 떠 있는 동안 숨긴다. 키보드 포커스를 가진 WebView는 숨기지 않는다.
     // 숨기면 사용자가 치던 키가 페이지에도 터미널에도 가지 않고 사라진다.
@@ -871,7 +894,12 @@ fn sync_webviews(
         let under_toast = hidden_under_toast(active_physical.get(sid), &cover_rects, || {
             wv.receives_keyboard_input()
         });
-        let wants_reveal = reveal_wanted(overlay_open, active_html.contains_key(sid), under_toast);
+        let wants_reveal = crate::state::webview_overlay::reveal_wanted(
+            overlay_mode,
+            overlay_open,
+            active_html.contains_key(sid),
+            under_toast,
+        );
         let reveal = wants_reveal && nav == crate::webview::NavState::Done;
         if wants_reveal && !reveal {
             reveal_pending.push((*sid, nav));
@@ -880,6 +908,13 @@ fn sync_webviews(
         any_visible |= reveal;
         revealed.extend(reveal.then_some(*sid));
     }
+    publish_opaque_pages(
+        view,
+        overlay_mode,
+        &active_physical,
+        &revealed,
+        scale_factor,
+    );
     publish_native_content_rects(view, &active_physical, revealed);
     note_reveal_pending(view, &reveal_pending);
     // 키 폴링 tick 의 게이트(`app::webview_keys`) — 드러난 webview 가 없으면
@@ -1095,11 +1130,6 @@ fn update_html_script_banner(
     Some(phase)
 }
 
-/// 드러나야 할 자리(활성 탭)에 있고 overlay도, 이 WebView를 숨기는 토스트도 없을 때 참이다.
-fn reveal_wanted(overlay_open: bool, active: bool, under_toast: bool) -> bool {
-    !overlay_open && active && !under_toast
-}
-
 /// 토스트 카드나 passive popup 때문에 이 WebView를 숨길지. 겹치고 키보드 포커스가 없을 때만 참이다.
 /// 포커스 조회는 OS 호출이므로 겹칠 때만 한다.
 fn hidden_under_toast(
@@ -1125,8 +1155,18 @@ fn covered_by_any(
 
 #[cfg(test)]
 mod toast_cover_tests {
-    use super::{covered_by_any, hidden_under_toast, reveal_wanted};
+    use super::{covered_by_any, hidden_under_toast};
     use crate::model::{PhysicalPx, PhysicalRect};
+    use crate::state::webview_overlay::OverlayMode;
+
+    fn reveal_wanted(overlay_open: bool, active: bool, under_toast: bool) -> bool {
+        crate::state::webview_overlay::reveal_wanted(
+            OverlayMode::Hide,
+            overlay_open,
+            active,
+            under_toast,
+        )
+    }
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> PhysicalRect {
         PhysicalRect {
@@ -1206,6 +1246,19 @@ mod toast_cover_tests {
         assert!(!reveal_wanted(false, true, true));
         assert!(!reveal_wanted(true, true, false));
         assert!(!reveal_wanted(false, false, false));
+    }
+
+    /// 오버레이를 지원하는 모드에서도 토스트·passive 팝업 아래 WebView 는 숨긴다.
+    #[test]
+    fn the_toast_rule_holds_in_every_overlay_mode() {
+        for mode in [OverlayMode::Opaque, OverlayMode::Transparent] {
+            assert!(!crate::state::webview_overlay::reveal_wanted(
+                mode, true, true, true
+            ));
+            assert!(!crate::state::webview_overlay::reveal_wanted(
+                mode, false, true, true
+            ));
+        }
     }
 
     #[test]

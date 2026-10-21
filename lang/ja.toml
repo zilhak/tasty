@@ -4190,6 +4190,12 @@ help = "open、back、forward、reload、stop のいずれか"
 [cli.help._root.debug.webview-history.arg.url]
 help = "open で開くアドレス（file://、http://、https://）"
 
+[cli.help._root.debug.webview-overlay]
+about = "直前のフレームの native WebView オーバーレイモードと覆っているポップアップの領域を表示するか、backend のサポート報告を上書きします (off で解除)。debug ビルド専用で、backend が対応しないモードを強制するとページを隠す代替動作を再現します。"
+
+[cli.help._root.debug.webview-overlay.arg.force]
+help = "off、hide、opaque、transparent のいずれか。省略すると状態の読み取りのみ"
+
 [cli.help._root.debug.stream-echo]
 about = "ストリーミングチャネルを開きサーバー→クライアントのpush経路を検証：N個のデータフレームを送り、それぞれのエコー応答を確認（debugビルド専用）"
 

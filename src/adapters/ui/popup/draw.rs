@@ -156,6 +156,7 @@ impl PopupManager {
         let mut bring_front: Option<PopupId> = None;
         let mut fullscreen_requested: Option<crate::adapters::ui::fullscreen::StageId> = None;
         let mut layers: Vec<egui::LayerId> = Vec::new();
+        let mut overlay_targets: Vec<crate::state::webview_overlay::OverlayTarget> = Vec::new();
 
         let pointer_pos = ctx.input(|i| i.pointer.interact_pos());
         let primary_pressed = ctx.input(|i| i.pointer.primary_pressed());
@@ -411,6 +412,8 @@ impl PopupManager {
             .filter_map(|(paints, entry)| paints.then_some(entry))
             .collect();
 
+        // 불투명 모드 WebView 페이지(직전 동기화 값). 비어 있으면 모든 팝업이 원래 모양이다.
+        let pages = tasty_egui_theme::overlay_edge::opaque_pages(ctx);
         for (z_idx, &popup_idx) in open_indices.iter().enumerate() {
             let popup = &mut self.popups[popup_idx];
             if closed.contains(&popup.id) {
@@ -436,24 +439,47 @@ impl PopupManager {
             // 그림자가 이웃 영역까지 어둡게 하지 않도록 팝업 소속 범위로 자른다.
             let painter = ctx.layer_painter(layer_id).with_clip_rect(scope_clip);
 
-            // scrim은 해당 팝업의 소속 범위에만, 셸보다 먼저 그린다.
-            if let Some((_, scrim_rect)) = scrims.iter().find(|(i, _)| *i == popup_idx) {
-                painter.rect_filled(*scrim_rect, 0.0, th.scrim().to_egui());
+            // 페이지와 겹친 상자는 전체가 각진 모서리·그림자 없음이다. passive 팝업은 페이지를 숨기는
+            // 기존 규칙을 따르므로 겹칠 페이지가 없다.
+            let edge = if popup.passive {
+                tasty_egui_theme::overlay_edge::BoxEdge::NORMAL
+            } else {
+                tasty_egui_theme::overlay_edge::edge_for(popup_rect, false, &pages)
+            };
+            let radius = edge.radius(&th, th.corner_radius).value();
+
+            // scrim은 해당 팝업의 소속 범위에만, 셸보다 먼저 그린다. 범위 안에 불투명 모드 페이지가
+            // 보이면 페이지만 밝게 남는 얼룩을 피하려고 그리지 않는다.
+            let scrim = scrims
+                .iter()
+                .find(|(i, _)| *i == popup_idx)
+                .map(|(_, r)| *r)
+                .filter(|r| !tasty_egui_theme::overlay_edge::scrim_skipped(*r, &pages));
+            if let Some(scrim_rect) = scrim {
+                painter.rect_filled(scrim_rect, 0.0, th.scrim().to_egui());
             }
 
             let bg_fill: egui::Color32 = popup_bg_fill(popup_id, &th);
             // 그림자는 scrim 위, 셸 아래에 그린다.
-            if let Some(shadow) = popup_shadow(popup_id) {
-                painter.add(
-                    shadow
-                        .to_egui()
-                        .as_shape(popup_rect, th.corner_radius.value()),
-                );
+            let shadow = popup_shadow(popup_id).map(|s| edge.shadow(&th, s));
+            if let Some(shadow) = shadow {
+                painter.add(shadow.to_egui().as_shape(popup_rect, radius));
             }
-            painter.rect_filled(popup_rect, th.corner_radius.value(), bg_fill);
+            if !popup.passive {
+                overlay_targets.push(crate::state::webview_overlay::OverlayTarget {
+                    kind: crate::state::webview_overlay::TargetKind::HostPopup,
+                    layer: layer_id,
+                    rect: popup_rect,
+                    paint_rect: shadow
+                        .map_or(popup_rect, |s| popup_rect + s.to_egui().margin())
+                        .intersect(scope_clip),
+                    scrim,
+                });
+            }
+            painter.rect_filled(popup_rect, radius, bg_fill);
             painter.rect_stroke(
                 popup_rect,
-                th.corner_radius.value(),
+                radius,
                 egui::Stroke::new(th.border_width.value(), popup_border(popup_id, &th)),
                 egui::StrokeKind::Outside,
             );
@@ -463,7 +489,7 @@ impl PopupManager {
                 let close_btn_rect = popup.close_btn_rect();
                 let fullscreen_btn_rect = popup.fullscreen_btn_rect();
 
-                let cr = th.corner_radius.value() as u8;
+                let cr = radius as u8;
                 painter.rect_filled(
                     title_rect,
                     egui::CornerRadius {
@@ -568,7 +594,12 @@ impl PopupManager {
                         ui.set_max_size(content_rect.size());
                         // 콘텐츠가 팝업 밖으로 넘치지 않게 자른다.
                         ui.set_clip_rect(content_rect);
-                        content_fn(popup_id, ui);
+                        // 이 팝업 안에서 연 드롭다운은 셸이 불투명이면 함께 불투명이다.
+                        tasty_egui_theme::overlay_edge::with_opaque_parent(
+                            ctx,
+                            edge.opaque,
+                            || content_fn(popup_id, ui),
+                        );
                     });
             }
         }
@@ -605,6 +636,7 @@ impl PopupManager {
             layers,
             fullscreen_requested,
             hit_rects,
+            overlay_targets,
         }
     }
 

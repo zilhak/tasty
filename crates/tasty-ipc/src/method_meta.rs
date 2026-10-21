@@ -883,6 +883,8 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ),
     // html 문서의 사용자 탐색(주소 입력·뒤로·앞으로·재로드·중지) 재현. release 미노출.
     ("debug.webview.history", local_only(MethodEffect::Mutate)),
+    // native WebView 오버레이 모드 조회와 backend 지원 모드 강제. release 미노출.
+    ("debug.webview.overlay", local_only(MethodEffect::Mutate)),
     (
         "debug.event_bus.list_subscribers",
         local_only(MethodEffect::Read),

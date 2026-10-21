@@ -44,6 +44,7 @@ pub fn draw_plugin_popups(
     state.plugin_popup_ime_cursor_area = None;
 
     let Some(mgr) = plugin_manager else {
+        state.webview_overlay.prev_plugin_rects.clear();
         state.plugin_mesh_popup_forward.clear();
         state.plugin_popup_user_activated.clear();
         return;
@@ -75,8 +76,12 @@ pub fn draw_plugin_popups(
     );
 
     if placed.is_empty() {
+        state.webview_overlay.prev_plugin_rects.clear();
         return;
     }
+    // 불투명 모드 WebView 페이지(직전 동기화 값). 비어 있으면 모든 셸이 원래 모양이다.
+    let pages = tasty_egui_theme::overlay_edge::opaque_pages(ctx);
+    let prev_plugin_rects = std::mem::take(&mut state.webview_overlay.prev_plugin_rects);
 
     // host/plugin은 같은 z_seq를 사용한다. 호스트 rect는 현재 프레임의 값이며,
     // 반대로 호스트가 읽는 플러그인 rect는 이전 프레임의 값이다.
@@ -143,25 +148,45 @@ pub fn draw_plugin_popups(
         // surface 범위를 벗어난 팝업 배경·테두리가 이웃 영역에 보이지 않도록 자른다.
         let painter = ctx.layer_painter(layer_id).with_clip_rect(scope_rect);
         let th = crate::theme::theme();
-        if scrim_paints[idx] {
-            painter.rect_filled(scope_rect, 0.0, th.scrim().to_egui());
+        // 페이지와 겹친 셸은 전체가 각진 모서리·그림자 없음이고, 범위에 페이지가 보이면 scrim 을
+        // 그리지 않는다(docs/design/systems/webview.md).
+        let edge = tasty_egui_theme::overlay_edge::edge_for(rect, false, &pages);
+        let radius = edge.radius(&th, th.corner_radius).value();
+        let scrim = (scrim_paints[idx]
+            && !tasty_egui_theme::overlay_edge::scrim_skipped(scope_rect, &pages))
+        .then_some(scope_rect);
+        if let Some(scrim_rect) = scrim {
+            painter.rect_filled(scrim_rect, 0.0, th.scrim().to_egui());
         }
         // 어두운 배경에서도 경계가 보이도록 팝업 배경보다 먼저 그림자를 그린다.
-        painter.add(
-            th.shadow_modal()
-                .to_egui()
-                .as_shape(rect, th.corner_radius.value()),
-        );
+        let shadow = edge.shadow(&th, th.shadow_modal()).to_egui();
+        painter.add(shadow.as_shape(rect, radius));
+        let target_rect =
+            crate::state::webview_overlay::plugin_box(layer_id, rect, &prev_plugin_rects);
+        state
+            .webview_overlay
+            .targets
+            .push(crate::state::webview_overlay::OverlayTarget {
+                kind: crate::state::webview_overlay::TargetKind::PluginPopup,
+                layer: layer_id,
+                rect: target_rect,
+                paint_rect: (target_rect + shadow.margin()).intersect(scope_rect),
+                scrim,
+            });
+        state
+            .webview_overlay
+            .prev_plugin_rects
+            .push((layer_id, rect));
         paint_shell_background_excluding_content(
             &painter,
             rect,
             content_rect,
-            th.corner_radius.value(),
+            radius,
             th.bg_panel().to_egui(),
         );
         painter.rect_stroke(
             rect,
-            th.corner_radius.value(),
+            radius,
             Stroke::new(th.border_width.value(), th.border_default().to_egui()),
             egui::StrokeKind::Outside,
         );

@@ -4190,6 +4190,12 @@ help = "open, back, forward, reload, stop 중 하나"
 [cli.help._root.debug.webview-history.arg.url]
 help = "open에서 열 주소(file://, http://, https://)"
 
+[cli.help._root.debug.webview-overlay]
+about = "마지막 프레임의 native WebView 오버레이 모드와 덮는 팝업 상자를 보여 주거나, backend의 지원 보고를 덮어씁니다(off로 해제). debug 빌드 전용이며, backend가 지원하지 않는 모드를 강제하면 페이지를 숨기는 대체 동작을 재현합니다."
+
+[cli.help._root.debug.webview-overlay.arg.force]
+help = "off, hide, opaque, transparent 중 하나. 생략하면 상태만 읽습니다"
+
 [cli.help._root.debug.stream-echo]
 about = "스트리밍 채널을 열어 서버→클라이언트 push 경로 검증: 데이터 프레임 N개를 보내 각각의 에코 응답 확인(debug 빌드 전용)"
 

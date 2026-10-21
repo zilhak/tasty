@@ -47,6 +47,8 @@ mod tab;
 pub(crate) mod tests;
 #[cfg(feature = "gui")]
 pub(crate) mod webview_edges;
+#[cfg(feature = "gui")]
+pub(crate) mod webview_overlay;
 mod workspace;
 
 // 팔레트 매칭은 헤드리스 시험에서도 검사한다.
@@ -222,6 +224,8 @@ impl RequestContext {
             popup_layers: Vec::new(),
             #[cfg(feature = "gui")]
             plugin_popup_layers: Vec::new(),
+            #[cfg(feature = "gui")]
+            webview_overlay: Default::default(),
             #[cfg(feature = "gui")]
             host_popup_hittest: Vec::new(),
             #[cfg(feature = "gui")]

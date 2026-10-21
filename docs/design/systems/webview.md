@@ -9,8 +9,12 @@ WebView는 winit 창 안에 놓이는 별도의 OS 자식 창이나 뷰다. Linu
 ## 공통 API와 플랫폼별 구현
 
 PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출부가 쓰는 메서드와 시그니처는
-해당 OS 컴파일이 검사한다. 같은 빌드에서 런타임 다형성을 쓰지 않으므로 별도 backend trait은 두지 않는다.
-선택 근거는 Webview 통합 ADR에 있다.
+해당 OS 컴파일이 검사한다. 같은 빌드에서 런타임 다형성을 쓰지 않으므로 아래 표의 연산은 trait 없이
+같은 이름의 메서드로 맞춘다.
+
+예외는 오버레이 합성 확장(`WebViewOverlayBackend`)이다. 이 trait은 "지원 안 함" 기본 구현을 가진다.
+구현하지 않은 OS도 그대로 컴파일되고, WebView 동기화는 시험용 backend로 같은 경로를 검사한다.
+호출은 정적 디스패치이며 `dyn`을 쓰지 않는다. 계약은 아래 "egui 오버레이와 native WebView" 절에 있다.
 
 컴파일 성공은 실제 크기·focus·navigation·종료 행동이 같다는 증거가 아니다.
 백엔드 변경 때는 아래 계약으로 세 구현을 비교하고 해당 OS에서 동작을 확인한다.
@@ -215,51 +219,96 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 
 ## egui 오버레이와 native WebView
 
-### 현재 동작 — 숨김
+### 모드와 현재 상태
 
-같은 창 안에 egui 오버레이가 보이면 모든 native WebView를 숨긴다. 판정은 `MainViewState::has_egui_overlay_open`이고 대상은 텍스트 입력 다이얼로그, plugin 팝업, 보이는 host 팝업(passive 제외), 전체화면 무대, 튜토리얼이다. 숨긴 자리에는 html surface의 boundary 타일이 보인다([html surface](../../surfaces/html/index.md)). 모달은 별도 OS 창이라 이 판정에 들지 않는다. 토스트 카드와 passive 팝업은 겹치는 WebView만 숨긴다(위 "포커스" 절, [토스트](toast.md#native-webview-위의-토스트)).
-
-숨기는 이유는 z-order다. WebView는 OS 자식 창(Linux X 창, Windows child HWND, macOS subview)이라 wgpu 주 표면보다 항상 위에 있고, egui는 주 표면 하나에만 그린다. 숨기지 않으려면 WebView에서 팝업 영역을 잘라 내거나(clip) 팝업을 별도 OS 층에 다시 그려야 한다.
-
-복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. 일반 팝업은 이 경로를 쓰지 않는다. Linux는 격리 debug 인스턴스에서 안내 clip의 동작을 확인했고, macOS·Windows는 컴파일만 확인했으며 실제 GUI 동작은 측정하지 않았다.
-
-### 정한 표현 계약 — 아직 구현되지 않음
-
-팝업이 열린 동안에도 WebView 본문을 보이고 팝업을 그 위에 보이도록 표현을 정했다. 현재 구현은 위의 숨김만 제공하며, 아래 계약의 어느 모드도 아직 동작하지 않는다.
-
-표현은 환경마다 세 모드 중 하나다.
+대상 팝업이 보이는 동안 native WebView를 다루는 방식은 세 모드 중 하나다. 모드는 사용자 설정이 아니라 환경이 정한다.
 
 | 모드 | 조건 | 보이는 것 |
 |---|---|---|
-| 투명 | 해당 OS·환경에서 투명 합성이 측정으로 확인됨 | 본문 위에 팝업 셸·scrim·그림자·둥근 모서리가 지금 디자인 그대로 합성된다 |
-| 불투명 | 투명 합성을 쓸 수 없고, 팝업 영역을 본문에서 불투명하게 대신 보일 수단은 있음 | 팝업 상자와 자식 드롭다운 상자의 사각형 안만 호스트 그림이다. 그 밖의 본문은 바뀌지 않아 본문 위 scrim과 상자 밖 그림자는 보이지 않는다 |
-| 숨김 | 두 수단 모두 쓸 수 없거나 적용에 실패함 | 현재 동작 그대로다 |
+| 투명 | backend가 투명 합성을 보고함 | 페이지 위에 팝업 셸·scrim·그림자·둥근 모서리가 지금 디자인 그대로 합성된다 |
+| 불투명 | backend가 팝업 영역을 불투명하게 대신 보일 수단만 보고함 | 팝업 상자와 드롭다운 상자의 사각형 안만 호스트 그림이다. 그 밖의 페이지는 바뀌지 않는다 |
+| 숨김 | backend가 지원하지 않음, 적용 실패, 전체화면 무대·튜토리얼 | 모든 native WebView를 숨기고 그 자리에 html surface의 boundary 타일이 보인다([html surface](../../surfaces/html/index.md)) |
 
-- 모드는 사용자 설정이 아니라 환경이 정한다. 같은 실행 중에도 조건이 바뀌면(예: Linux 컴포지팅 매니저 종료) 다음 프레임부터 낮은 모드로 내려간다. 적용에 실패하면 그 프레임부터 숨김으로 돌아가고 `tracing::warn!`을 남긴다.
-- 불투명 모드의 가장자리(모서리·그림자 대체)와 scrim 처리는 디자인 요청으로 받는다. 받은 디자인을 반영하기 전에는 사용자 실행에서 불투명 모드를 켜지 않고 숨김을 유지한다.
-- 구현 수단(오버레이 창, clip 확장, 합성 API)은 OS별 측정으로 고른다. 수단이 OS마다 달라도 아래 입력·키보드·캡처 계약은 같다.
+공통 판정·영역 계산·표현·GPU 분리는 구현돼 있다. 세 OS의 `PlatformWebView`는 아직 오버레이를 지원하지 않는다. `WebViewOverlayBackend` 기본 구현이 숨김을 보고하므로 실제 실행 동작은 숨김 그대로다. 플랫폼별 수단(오버레이 창, 입력 shape, 합성)은 각 OS 구현이 아래 backend 계약에 맞춰 더한다.
 
-대상 층은 다음과 같다.
+숨김이 필요한 이유는 z-order다. WebView는 OS 자식 창(Linux X 창, Windows child HWND, macOS subview)이라 wgpu 주 표면보다 항상 위에 있고, egui는 주 표면 하나에만 그린다. 숨기지 않으려면 WebView에서 팝업 영역을 잘라 내거나(clip) 팝업을 별도 OS 층에 다시 그려야 한다.
+
+복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. 일반 팝업은 이 경로를 쓰지 않는다. Linux는 격리 debug 인스턴스에서 안내 clip의 동작을 확인했고, macOS·Windows는 컴파일만 확인했으며 실제 GUI 동작은 측정하지 않았다.
+
+### 모드 결정
+
+`has_egui_overlay_open`의 의미와 소비자는 바꾸지 않는다. 그 값이 참이면 WebView 동기화(`settle_overlay`)가 별도로 모드를 정한다.
+
+- 활성 WebView마다 `overlay_support()`를 묻고 가장 낮은 값을 쓴다. 하나라도 지원하지 않으면 숨김이다.
+- 전체화면 무대나 튜토리얼이 보이면 숨김이다. 창 전체를 덮는 층이라 페이지를 보일 이유가 없다.
+- 숨김이 아니면 활성 WebView마다 `apply_overlay`를 부른다. 하나라도 실패하면 그 프레임부터 숨김이고 `tracing::warn!`을 남긴다. 실패는 대상 팝업이 모두 닫힐 때까지 유지한다. 그동안 다시 시도하지 않고 경고도 한 번만 남긴다. 오버레이 창의 surface를 잃고 다시 설정해도 얻지 못한 경우도 같은 실패로 다룬다.
+- 숨김으로 돌아가거나 팝업이 닫히면 적용했던 WebView에 `clear_overlay`를 부른다.
+- 매 프레임 다시 정하므로 환경이 바뀌면(예: Linux 컴포지팅 매니저 종료) backend가 낮춘 보고를 다음 프레임부터 따른다.
+- 표시 판정은 `reveal_wanted(mode, overlay_open, active, under_toast)`다. 숨김이 아니면 대상 팝업이 떠 있어도 활성 WebView를 보인다. 비활성 탭과 토스트·passive 팝업 규칙은 모드와 관계없이 그대로다.
+
+### 대상 층
+
+대상 종류는 `TargetKind` 하나에 정의한다. 대상은 egui 프레임이 그리면서 `OverlayFrame::targets`에 기록한다. 종류와 기록 위치의 일치는 `source_guards::webview_overlay_targets`가 검사한다.
+
+| 종류 | 기록 위치 | 상자 |
+|---|---|---|
+| `HostPopup` | `PopupManager::draw` | 보이는 non-passive host 팝업. 텍스트 입력 다이얼로그(이름 바꾸기)도 host 팝업이다 |
+| `PluginPopup` | `draw_plugin_popups` | plugin 팝업 셸. 호스트가 직전 프레임 영역으로 입력을 판정하므로 같은 레이어의 직전·현재 영역을 합친다 |
+| `Dropdown` | 프레임 끝 `webview_overlay::end_frame` | 열린 egui 팝업 레이어(`popup_below_widget`·`ComboBox` 등)다. 팝오버 래퍼(`with_popover_frame`)가 연 드롭다운은 부모 레이어와 가장자리를 함께 기록한다 |
 
 | 층 | 모드 적용 |
 |---|---|
-| 보이는 host 팝업(passive 제외)과 그 자식 드롭다운(`report_child_overlay_rect`) | 적용 |
-| plugin 팝업 셸과 mesh 팝업(`plugin_popup_hittest`) | 적용 |
-| 텍스트 입력 다이얼로그 | 적용 |
-| 전체화면 무대, 튜토리얼 | 적용하지 않고 숨김 유지. 창 전체를 덮는 층이라 본문을 보일 이유가 없다 |
-| 토스트 카드, passive 팝업 | 이 계약의 범위 밖이다. 지금의 겹친 WebView만 숨기는 규칙을 유지한다 |
+| 위 세 종류와 plugin mesh 팝업 콘텐츠 | 적용 |
+| 전체화면 무대, 튜토리얼 | 적용하지 않고 숨김 |
+| 토스트 카드, passive 팝업 | 범위 밖이다. 겹친 WebView만 숨기는 규칙을 그대로 쓴다. 이 둘은 포커스를 받지 않는 층이라 페이지 입력을 가로채지 않는다 |
 
-대상 층과 무대·튜토리얼이 함께 보이면 숨김이다. 토스트·passive 팝업에 같은 수단을 쓰려면 별도로 정한다. 그 경우에도 그림 영역만 바꾸고 입력 경로는 바꾸지 않는다. 이 둘은 포커스를 받지 않는 층이라 본문 입력을 가로채면 안 된다.
+### 불투명 모드 표현
+
+디자인 결정은 2026-10-21에 받았다. 사용자 설정·표시기·새 문자열은 없다. 갤러리 Overlays의 "Over a web page — opaque mode" 예제가 같은 판정 함수로 그린다.
+
+- 모서리는 각지게 한다(`webview-opaque-radius` → radius-none → 0). 그림자는 없다(`webview-opaque-shadow` → shadow-none). 기존 1px 테두리는 유지한다.
+- 판정은 상자 단위다. 상자 사각형이 보이는 불투명 모드 페이지와 면적을 공유하면 상자 전체에 적용한다. 변이 맞닿기만 하면 겹침이 아니다. 사이드바와 페이지에 걸친 메뉴도 상자 전체가 각진다.
+- 드롭다운은 자기 사각형이 페이지와 겹치거나 부모 셸이 불투명이면 불투명이다. host 팝업은 콘텐츠를 그리는 동안 `with_opaque_parent`로 자기 판정을 알린다.
+- scrim은 범위(surface 또는 창) 안에 불투명 모드 페이지가 하나라도 보이면 그리지 않는다. 페이지 밖만 어두워지는 얼룩을 피하기 위해서다. 페이지가 없거나 투명 모드면 지금처럼 그린다.
+- 판정 기준인 페이지 영역은 직전 동기화가 드러낸 WebView 사각형(`OverlayFrame::pages`)이다. 대상이 처음 뜬 프레임의 페이지는 그 직전 프레임에 드러난 페이지와 같다.
+
+### 영역과 backend 계약
+
+`WebViewOverlayBackend`(`src/host_api/webview/overlay.rs`)의 세 메서드다. 기본 구현은 지원 안 함이다.
+
+| 메서드 | 계약 |
+|---|---|
+| `overlay_support() -> OverlayMode` | 지금 낼 수 있는 가장 좋은 모드. 매 프레임 묻는다. 실제로 측정해 확인한 모드만 보고한다 |
+| `apply_overlay(&OverlayRequest) -> Result<(), OverlayApplyError>` | 대상 팝업이 보이는 프레임마다 부른다. 실패하면 `Unsupported` 또는 `Failed(이유)`를 돌려준다 |
+| `clear_overlay()` | 오버레이를 끄고 페이지의 입력과 그림을 원래대로 돌린다. `set_native_holes`의 분할선·안내 카드 구멍은 이 호출과 별개로 유지한다 |
+
+`OverlayRequest`:
+
+- `mode`: 불투명 또는 투명이다. 숨김은 요청하지 않는다.
+- `regions`: 호스트가 칠할 영역이다. WebView 창(`set_bounds`와 같이 반올림한 정수 사각형) 기준 물리 픽셀이고, 바깥쪽 정수 픽셀로 넓힌 뒤 창 밖은 자른다. 불투명 모드는 팝업·드롭다운 상자만 넣는다. 투명 모드는 그림자까지 넓힌 상자와 scrim 범위를 넣는다. 매 프레임 현재 배율로 다시 계산한다.
+- `host_takes_pointer`: 참이면 WebView 영역 전체의 클릭·휠을 호스트가 받아야 한다. 대상 팝업이 보이는 동안 늘 참이다.
+- `scale_factor`: 그 프레임의 배율이다.
 
 입력·키보드·포커스·캡처 계약:
 
-- **판정 이름**: `has_egui_overlay_open`의 의미와 소비자는 바꾸지 않는다. 숨김 대신 다른 모드를 쓸지는 별도 판정으로 둔다.
-- **영역**: 대상 층의 사각형을 매 프레임 물리 좌표(`PhysicalRect`)로 모으고 `set_bounds`와 같은 정수 사각형 기준으로 WebView 좌표로 바꾼다. 배율이 바뀐 프레임에 다시 계산한다. 이전 프레임 값을 출처로 쓰는 층(plugin 팝업)도 그 프레임에 그린 영역을 빠짐없이 덮어야 한다.
-- **포인터**: 대상 층이 보이는 동안 WebView 영역 전체의 클릭·휠은 호스트로 온다. 입력 의미는 지금 숨긴 상태와 같다. 본문 클릭은 egui의 바깥 클릭으로 도착하고, 그 처리는 팝업 정의를 그대로 따른다. `close_on_outside_click`(plugin은 `dismiss_on_outside_click`)이 참이면 닫고, 거짓이면 닫지 않고 언포커스만 하며, `sticky_focus`면 키보드 포커스를 유지한다([팝업 §포커스](popup.md#포커스)). 어느 경우에도 그 클릭은 페이지로 가지 않는다. 대상 층이 사라지면 다음 프레임부터 포인터가 페이지로 간다.
-- **키보드·IME**: 대상 층이 보이는 동안 키와 IME는 페이지로 가지 않는다. 키는 지금처럼 포커스된 팝업이 받고, 포커스된 팝업이 없으면 호스트의 기존 규칙(터미널 등)을 따른다. 열 때의 포커스 회수(위 "포커스" 절)를 유지한다. Linux에서 포인터가 본문 위에 있으면 X 서버가 키를 WebView로 보내므로, 위의 포인터 경로를 호스트로 돌리는 처리로 이 라우팅도 막는다. 오버레이 중 WebView가 전달한 키는 지금처럼 `webview_keys`에서 버린다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
+- **포인터**: 대상 층이 보이는 동안 WebView 영역 전체의 클릭·휠은 호스트로 온다(`host_takes_pointer`). 입력 의미는 숨긴 상태와 같다. 페이지 클릭은 egui의 바깥 클릭으로 도착하고, 그 처리는 팝업 정의를 그대로 따른다. `close_on_outside_click`(plugin은 `dismiss_on_outside_click`)이 참이면 닫고, 거짓이면 닫지 않고 언포커스만 하며, `sticky_focus`면 키보드 포커스를 유지한다([팝업 §포커스](popup.md#포커스)). 어느 경우에도 그 클릭은 페이지로 가지 않는다. 대상 층이 사라지면 다음 프레임부터 포인터가 페이지로 간다.
+- **키보드·IME**: 대상 층이 보이는 동안 키와 IME는 페이지로 가지 않는다. 키는 지금처럼 포커스된 팝업이 받고, 포커스된 팝업이 없으면 호스트의 기존 규칙(터미널 등)을 따른다. 열 때의 포커스 회수(위 "포커스" 절)는 모드와 관계없이 유지한다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. 오버레이 중 WebView가 전달한 키는 지금처럼 `webview_keys`에서 버린다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
 - **포커스**: 새 OS 층(오버레이 창 등)은 OS 포커스나 창 활성화를 가져가지 않는다. 창이 비활성일 때 first responder·포커스를 바꾸지 않는 판정(`host_window_has_os_focus`)을 그대로 따른다.
-- **그리기**: 팝업은 주 표면에도 계속 그린다. 투명 모드에서 같은 scrim을 두 표면에 그리면 WebView 밖이 두 번 어두워지므로 한 픽셀은 scrim과 정확히 한 번 합성되어야 한다.
-- **캡처**: `ui.screenshot`은 주 표면을 읽으므로 팝업은 지금처럼 캡처에 남고 WebView 픽셀은 지금처럼 없다. 본문과 팝업이 함께 보이는지는 OS 화면 캡처로 확인한다. 원격 attach mesh 중계는 host 팝업 픽셀을 보내지 않아 영향이 없다.
+- **그리기**: 팝업은 주 표면에도 계속 그린다. 오버레이 창은 페이지 위 영역만 칠하므로 한 픽셀은 scrim과 정확히 한 번 합성된다(아래 GPU 분리).
+- **캡처**: `ui.screenshot`은 주 표면을 읽으므로 팝업은 지금처럼 캡처에 남고 WebView 픽셀은 지금처럼 없다. 페이지와 팝업이 함께 보이는지는 OS 화면 캡처로 확인한다. 원격 attach mesh 중계는 host 팝업 픽셀을 보내지 않아 영향이 없다.
+
+### GPU 분리 — 오버레이 paint job
+
+오버레이 창이 있고 직전 동기화가 페이지를 보인 채 두었으면, 프레임 끝(`end_pass` 전)에 대상 레이어의 shape를 복제해 오버레이 paint job을 만든다([GPU 렌더링 §WebView 오버레이 pass](../../dev-guide/gpu-rendering.md#webview-오버레이-pass)). 주 표면에는 원래대로 모두 그린다.
+
+- host·plugin 팝업 그룹 순서는 주 pass와 같은 `host_popup_should_render_on_top` 결정을 쓰고, 드롭다운은 맨 위다. plugin mesh 팝업 콘텐츠도 같은 그룹 규칙으로 오버레이 창에 합성한다.
+- 각 shape의 clip을 드러난 페이지 사각형과 교차한다. 페이지 밖의 scrim·그림자는 주 표면에만 있어 두 번 합성되지 않는다.
+- egui 텍스처 해제는 주 pass와 오버레이 pass가 모두 끝난 뒤에 한다.
+- 오버레이 창을 만드는 backend는 아직 없다. 창이 없으면 복제도 오버레이 pass도 하지 않는다.
+
+### debug 재현
+
+debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--force off|hide|opaque|transparent]`)는 마지막 동기화의 모드·대상·페이지를 돌려준다. `--force`는 backend의 지원 보고를 덮어쓴다. 지원하지 않는 backend에 `opaque`를 강제하면 적용이 `Unsupported`로 실패하고 숨김과 경고 경로를 그대로 지난다([debug IPC](../../dev-guide/debug-ipc.md)).
 
 ### 기각한 대안
 

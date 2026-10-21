@@ -4,6 +4,7 @@ mod egui_bridge;
 mod egui_mesh_prepare;
 mod fonts;
 pub(crate) mod loading;
+mod overlay_paint;
 mod render_pass;
 mod screenshot;
 mod shell_setup;
@@ -62,6 +63,8 @@ pub struct GpuState {
     pub(crate) egui_ctx: egui::Context,
     pub(super) egui_state: egui_winit::State,
     pub(super) egui_renderer: egui_wgpu::Renderer,
+    /// native WebView 위 오버레이 창. 만드는 backend 가 없으면 `None` 이다.
+    pub(super) overlay_surface: Option<overlay_paint::OverlaySurface>,
     pub(super) scale_factor: f32,
     /// 마지막으로 적용한 터미널 폰트 설정. 달라졌을 때만 update_font를 호출한다.
     pub(super) last_term_font_sig: String,
@@ -263,6 +266,7 @@ impl GpuState {
             egui_ctx,
             egui_state,
             egui_renderer,
+            overlay_surface: None,
             scale_factor,
             last_term_font_sig,
             surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState::default(),
@@ -532,6 +536,14 @@ impl GpuState {
         );
         let egui_pass_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
+        self.paint_webview_overlay(
+            state,
+            full_output.pixels_per_point,
+            plugin_manager,
+            host_popup_on_top,
+        );
+        self.free_egui_textures(&full_output.textures_delta);
+
         // 배너 셸 위에 콘텐츠를 합성한다. 빈 regions로도 호출해 닫힌 배너의 Renderer를 정리한다.
         if let Some(mgr) = plugin_manager {
             let regions = state.plugin_mesh_banner_regions.clone();
@@ -670,6 +682,7 @@ impl GpuState {
             .create_view(&wgpu::TextureViewDescriptor::default());
         self.render_clear_pass(&view, state, engine);
         self.render_egui_pass(&view, &textures_delta, &paint_jobs, &screen_descriptor);
+        self.free_egui_textures(&textures_delta);
 
         if let Some(path) = self.pending_screenshot.take() {
             self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);

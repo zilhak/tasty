@@ -142,6 +142,9 @@ pub struct MainViewState {
     /// egui_bridge가 host/plugin 간 순서를 set_sublayer로 명시한다.
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_layers: Vec<egui::LayerId>,
+    /// native WebView 위에 뜬 egui 대상 팝업의 영역과 모드. docs/design/systems/webview.md.
+    #[cfg(feature = "gui")]
+    pub(crate) webview_overlay: crate::state::webview_overlay::OverlayFrame,
     /// 현재 프레임 호스트 팝업의 rect와 z_seq. 뒤에 그리는 플러그인 팝업이 입력 가림을 판정한다.
     #[cfg(feature = "gui")]
     pub(crate) host_popup_hittest: Vec<crate::adapters::ui::popup::occlusion::Occluder>,

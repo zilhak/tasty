@@ -4258,6 +4258,12 @@ help = "One of open, back, forward, reload, stop"
 [cli.help._root.debug.webview-history.arg.url]
 help = "Address for open (file://, http:// or https://)"
 
+[cli.help._root.debug.webview-overlay]
+about = "Show the native WebView overlay mode of the last frame and the popup boxes it covers, or force the backend support report (off restores it). Debug builds only — forcing a mode the backend lacks reproduces the fallback to hiding pages"
+
+[cli.help._root.debug.webview-overlay.arg.force]
+help = "One of off, hide, opaque, transparent. Omit to only read the state"
+
 [cli.help._root.debug.stream-echo]
 about = "Open a streaming channel and verify the server→client push path: send N data frames and expect each one echoed back (debug builds only)"
 

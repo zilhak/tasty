@@ -570,6 +570,11 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "사용자 조작 재현용 debug 기능으로 포커스 독립 규칙의 적용 대상이 아니다.",
     ),
     (
+        "debug.webview.overlay",
+        DebugOnly,
+        "WebView 오버레이 지원 보고를 덮어쓰는 debug 재현 기능으로 포커스 독립 규칙의 적용 대상이 아니다.",
+    ),
+    (
         "debug.modifier_hint.hold",
         DebugOnly,
         "사용자 조작 재현용 debug 기능으로 포커스 독립 규칙의 적용 대상이 아니다.",

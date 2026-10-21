@@ -1178,6 +1178,10 @@ unsafe fn set_clip_region(hwnd: HWND, (w, h): (i32, i32), clip: &[[i32; 4]]) -> 
     }
 }
 
+/// 오버레이 합성은 아직 지원하지 않는다. 기본 구현이 `Hide` 를 보고해 대상 팝업이 뜨면 숨긴다.
+/// 계약: docs/design/systems/webview.md 의 "egui 오버레이와 native WebView" 절.
+impl super::overlay::WebViewOverlayBackend for PlatformWebView {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

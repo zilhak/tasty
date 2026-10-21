@@ -21,6 +21,8 @@ pub(crate) mod debug_plugin;
 mod debug_state;
 #[cfg(debug_assertions)]
 mod debug_terminal;
+#[cfg(all(debug_assertions, feature = "gui"))]
+mod debug_webview_overlay;
 pub(crate) mod deferred;
 mod file_handler;
 #[cfg(feature = "gui")]
@@ -1211,6 +1213,11 @@ fn route_debug_handler(
         #[cfg(feature = "gui")]
         "debug.webview.history" => {
             debug_html_script::handle_history(state, &engine.as_ref(), id, &request.params)
+        }
+        // native WebView 오버레이 모드 조회·지원 모드 강제(docs/design/systems/webview.md).
+        #[cfg(feature = "gui")]
+        "debug.webview.overlay" => {
+            debug_webview_overlay::handle_overlay(state, id, &request.params)
         }
         _ => return None,
     })
