@@ -7,8 +7,8 @@ use egui::{Event, Key, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    SearchableSelect, SearchableSelectLabels, SearchableSelectOption, searchable_select_filter,
-    searchable_select_popup_id, searchable_select_search_id,
+    SearchableSelect, SearchableSelectLabels, SearchableSelectOption, SearchableSelectSpecimen,
+    searchable_select_filter, searchable_select_popup_id, searchable_select_search_id,
 };
 
 const SALT: &str = "t_search_select";
@@ -455,4 +455,94 @@ fn a_disabled_select_leaves_another_open_popup_alone() {
         );
     }
     assert!(b_open, "비활성 위젯이 다른 위젯의 목록을 닫았다");
+}
+
+/// 그린 도형에서 트리거 상자(select-bg 채움, 폭 WIDTH)와 팝업 첫 줄인 검색칸의 rect 를 찾는다. 팝업 틀 자체는 egui 가 Area 의 첫 프레임에 그리지 않을 수 있어 그 안의
+/// 검색칸으로 위치를 잰다.
+fn trigger_and_search_field(th: &Theme, out: &egui::FullOutput) -> (Rect, Rect) {
+    // egui Frame 은 그림자와 상자를 Shape::Vec 하나로 묶을 수 있으므로 펼쳐서 본다.
+    fn collect(shape: &egui::Shape, out: &mut Vec<(Rect, egui::Color32)>) {
+        match shape {
+            egui::Shape::Rect(r) => out.push((r.rect, r.fill)),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| collect(s, out)),
+            _ => {}
+        }
+    }
+    let mut rects = Vec::new();
+    out.shapes
+        .iter()
+        .for_each(|s| collect(&s.shape, &mut rects));
+    let select_bg: egui::Color32 = th.select_bg().to_egui();
+    // 팝업 Area 는 열릴 때 서서히 나타나 채움색이 불투명도에 곱해진다. 색 대신 크기로 찾는다:
+    // 높이 select-search-field-height, 폭 = 팝업 안쪽 폭(트리거 − 틀 테두리·안쪽 여백 양쪽).
+    let chrome = (th.select_search_inset() + th.border_width) * 2.0;
+    let field_w = WIDTH - chrome.value();
+    let field_h = th.select_search_field_height().value();
+    let trigger = rects
+        .iter()
+        .find(|(r, f)| *f == select_bg && r.width() == WIDTH)
+        .map(|(r, _)| *r)
+        .expect("트리거 상자를 찾지 못했다");
+    let field = rects
+        .iter()
+        .find(|(r, _)| r.width() == field_w && r.height() == field_h && r.top() > trigger.top())
+        .map(|(r, _)| *r)
+        .expect("검색칸을 찾지 못했다");
+    (trigger, field)
+}
+
+/// 정적 견본의 팝업은 실제 위젯과 같은 자리(트리거 아래 select-search-menu-gap)에 놓인다.
+/// 부모 Ui 의 세로 item_spacing 이 그 간격에 더해지면 안 된다.
+#[test]
+fn the_specimen_popup_sits_where_the_live_popup_does() {
+    let th = theme();
+    // 갤러리 칸처럼 세로 간격이 있는 부모.
+    const PARENT_SPACING: f32 = 8.0;
+    let run = |ctx: &egui::Context, events: Vec<Event>, specimen: bool| {
+        ctx.run(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 600.0))),
+                focused: true,
+                events,
+                ..Default::default()
+            },
+            |c| {
+                egui::CentralPanel::default().show(c, |ui| {
+                    ui.spacing_mut().item_spacing.y = PARENT_SPACING;
+                    let w = SearchableSelect::new("gap", &OPTIONS, LABELS).width(LogicalPx(WIDTH));
+                    if specimen {
+                        let spec = SearchableSelectSpecimen {
+                            open: true,
+                            ..Default::default()
+                        };
+                        w.show_specimen(ui, &th, Some("Menlo"), &spec);
+                    } else {
+                        let mut v = Some("Menlo".to_owned());
+                        w.show(ui, &th, &mut v);
+                    }
+                });
+            },
+        )
+    };
+
+    let live_ctx = egui::Context::default();
+    run(&live_ctx, vec![], false);
+    run(&live_ctx, click(pos2(60.0, 20.0)), false);
+    let live = run(&live_ctx, vec![Event::PointerMoved(AWAY)], false);
+    let (lt, lp) = trigger_and_search_field(&th, &live);
+
+    let spec_ctx = egui::Context::default();
+    run(&spec_ctx, vec![], true);
+    let spec = run(&spec_ctx, vec![], true);
+    let (st, sp) = trigger_and_search_field(&th, &spec);
+
+    let live_gap = lp.top() - lt.bottom();
+    let spec_gap = sp.top() - st.bottom();
+    assert_eq!(
+        spec_gap, live_gap,
+        "견본 팝업 간격 {spec_gap} 이 실제 팝업 간격 {live_gap} 과 다르다"
+    );
+    // 트리거 → 팝업 틀(select-search-menu-gap) → 틀 테두리 → 안쪽 여백(select-search-inset) → 검색칸.
+    let expected = th.select_search_menu_gap() + th.border_width + th.select_search_inset();
+    assert_eq!(live_gap, expected.value());
 }

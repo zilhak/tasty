@@ -849,48 +849,53 @@ impl<'a> SearchableSelect<'a> {
         let width = self
             .width
             .unwrap_or_else(|| LogicalPx(ui.available_width()));
-        let (rect, _) = ui.allocate_exact_size(
-            egui::vec2(width.value(), theme.select_height().value()),
-            egui::Sense::hover(),
-        );
-        let (label, is_placeholder) =
-            trigger_label(self.pinned, self.options, value, self.labels.placeholder);
-        let open = self.enabled && spec.open;
-        paint_trigger(
-            ui,
-            theme,
-            rect,
-            label,
-            is_placeholder,
-            self.enabled,
-            TriggerLook {
-                open,
-                focus: false,
-                hover: spec.hover_trigger,
-            },
-        );
-        if !open {
-            return;
-        }
-        let menu = self.menu(ui.ctx(), theme, width, value);
-        let mut active = spec.active;
-        ui.add_space(theme.select_search_menu_gap().value());
-        tasty_egui_theme::with_popover_frame_ring(ui, theme, menu_margin(theme), |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
-                menu_body(
-                    ui,
-                    theme,
-                    &menu,
-                    Field::Static {
-                        text: spec.query,
-                        focus: spec.focus_search,
-                    },
-                    false,
-                    &mut active,
-                    spec.hover,
-                    false,
-                );
-            })
+        // 실제 팝업처럼 트리거 아래 select-search-menu-gap 만큼만 띄운다. 부모의 세로 item_spacing 이
+        // 트리거와 목록 사이에 끼지 않도록 둘을 간격 0 인 범위 안에 쌓는다. 범위 뒤의 간격은 부모 그대로다.
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let (rect, _) = ui.allocate_exact_size(
+                egui::vec2(width.value(), theme.select_height().value()),
+                egui::Sense::hover(),
+            );
+            let (label, is_placeholder) =
+                trigger_label(self.pinned, self.options, value, self.labels.placeholder);
+            let open = self.enabled && spec.open;
+            paint_trigger(
+                ui,
+                theme,
+                rect,
+                label,
+                is_placeholder,
+                self.enabled,
+                TriggerLook {
+                    open,
+                    focus: false,
+                    hover: spec.hover_trigger,
+                },
+            );
+            if !open {
+                return;
+            }
+            let menu = self.menu(ui.ctx(), theme, width, value);
+            let mut active = spec.active;
+            ui.add_space(theme.select_search_menu_gap().value());
+            tasty_egui_theme::with_popover_frame_ring(ui, theme, menu_margin(theme), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    menu_body(
+                        ui,
+                        theme,
+                        &menu,
+                        Field::Static {
+                            text: spec.query,
+                            focus: spec.focus_search,
+                        },
+                        false,
+                        &mut active,
+                        spec.hover,
+                        false,
+                    );
+                })
+            });
         });
     }
 }

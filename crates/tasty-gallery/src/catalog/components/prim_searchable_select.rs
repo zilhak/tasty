@@ -304,7 +304,7 @@ fn caption_label(ui: &mut egui::Ui, th: &Theme, text: &str) {
 
 /// 시안 짝 비교: Select · 값 없는 SearchableSelect · MultiSelect · SearchableSelect 가 같은 높이다.
 fn pairs(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) {
-    let w = th.field_width_lg.value();
+    let w = th.field_width_lg;
     ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
     let row = |ui: &mut egui::Ui, name: &str, add: &mut dyn FnMut(&mut egui::Ui)| {
         ui.horizontal(|ui| {
@@ -332,7 +332,7 @@ fn pairs(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) {
             &format!("g_ss_pair_select_{ti}"),
             &mut st.pair_select[ti],
             &["Catppuccin Mocha", "Catppuccin Latte"],
-            w,
+            w.value(),
             true,
         );
     });
@@ -351,7 +351,7 @@ fn pairs(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) {
             None,
             &MS_LABELS,
             None,
-            w,
+            w.value(),
             true,
         );
     });
