@@ -668,66 +668,24 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
     });
 
     if st.adding {
-        egui::Frame::new()
-            .fill(theme.surface_raised().to_egui())
-            .stroke(egui::Stroke::new(
-                theme.border_width.value(),
-                theme.border_default().to_egui(),
-            ))
-            .corner_radius(theme.corner_radius.value())
-            .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                mono_head(ui, theme, "New hook handler");
-                hook_field_row(
-                    ui,
-                    theme,
-                    "Event id:",
-                    "e.g. pipeline.done",
-                    &mut st.draft_id,
-                );
-                hook_field_row(
-                    ui,
-                    theme,
-                    "Shell command:",
-                    crate::i18n::t("settings.file_handler.hook_handlers.placeholder_shell_command"),
-                    &mut st.draft_cmd,
-                );
-                // 가운데 정렬이 남은 높이를 모두 차지하지 않도록 위쪽에 맞춘다.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    let can_add = !st.draft_id.trim().is_empty();
-                    if Button::new("Add handler")
-                        .variant(ButtonVariant::Primary)
-                        .size(ControlSize::Sm)
-                        .enabled(can_add)
-                        .show(ui, theme)
-                        .clicked()
-                    {
-                        let max_prio = st.hooks.iter().map(|h| h.prio).max().unwrap_or(0);
-                        st.hooks.push(HookSeed {
-                            id: st.draft_id.trim().to_string(),
-                            origin: "you",
-                            user: true,
-                            prio: max_prio + 10,
-                            cmd: st.draft_cmd.trim().to_string(),
-                            seq: false,
-                            cli: false,
-                            on: true,
-                        });
-                        st.adding = false;
-                    }
-                    if Button::new("Cancel")
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
-                        .ground(Ground::Raised)
-                        .show(ui, theme)
-                        .clicked()
-                    {
-                        st.adding = false;
-                    }
+        match hook_add_card(ui, theme, &mut st.draft_id, &mut st.draft_cmd) {
+            Some(HookCardAction::Add) => {
+                let max_prio = st.hooks.iter().map(|h| h.prio).max().unwrap_or(0);
+                st.hooks.push(HookSeed {
+                    id: st.draft_id.trim().to_string(),
+                    origin: "you",
+                    user: true,
+                    prio: max_prio + 10,
+                    cmd: st.draft_cmd.trim().to_string(),
+                    seq: false,
+                    cli: false,
+                    on: true,
                 });
-            });
+                st.adding = false;
+            }
+            Some(HookCardAction::Cancel) => st.adding = false,
+            None => {}
+        }
     }
 
     mono_head(
@@ -884,6 +842,127 @@ fn draw_hook_row(
             });
     });
     row_separator(ui, theme, resp.response.rect);
+}
+
+enum HookCardAction {
+    Add,
+    Cancel,
+}
+
+/// Hook Handlers add 카드. 카드는 surface-raised이고 라벨·Input·Cancel은 raised 바탕 규칙을 따른다.
+fn hook_add_card(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    draft_id: &mut String,
+    draft_cmd: &mut String,
+) -> Option<HookCardAction> {
+    let mut action = None;
+    egui::Frame::new()
+        .fill(theme.surface_raised().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            mono_head(ui, theme, "New hook handler");
+            hook_field_row(ui, theme, "Event id:", "e.g. pipeline.done", draft_id);
+            hook_field_row(
+                ui,
+                theme,
+                "Shell command:",
+                crate::i18n::t("settings.file_handler.hook_handlers.placeholder_shell_command"),
+                draft_cmd,
+            );
+            // 가운데 정렬이 남은 높이를 모두 차지하지 않도록 위쪽에 맞춘다.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                if Button::new("Add handler")
+                    .variant(ButtonVariant::Primary)
+                    .size(ControlSize::Sm)
+                    .enabled(!draft_id.trim().is_empty())
+                    .show(ui, theme)
+                    .clicked()
+                {
+                    action = Some(HookCardAction::Add);
+                }
+                if Button::new("Cancel")
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .ground(Ground::Raised)
+                    .show(ui, theme)
+                    .clicked()
+                {
+                    action = Some(HookCardAction::Cancel);
+                }
+            });
+        });
+    action
+}
+
+/// 열린 add 카드를 Mocha·Latte로 고정해 보인다. raised 라벨·Input·Cancel을 클릭 없이 확인한다.
+pub fn draw_hook_add_card_raised(ui: &mut egui::Ui, theme: &Theme) {
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let themes = [
+        with_zoom(tasty_themes::mocha_fallback()),
+        with_zoom(crate::host_shell::latte_theme()),
+    ];
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        for th in &themes {
+            kit::frame_card_flat(ui, th, WIDTH, kit::panel_fill(th), |ui| {
+                kit::region_sym(ui, th.spacing_md, th.spacing_sm, |ui| {
+                    let mut id = "pipeline.done".to_string();
+                    let mut cmd = String::new();
+                    // 고정 예제라 버튼 결과를 쓰지 않는다.
+                    let _action = hook_add_card(ui, th, &mut id, &mut cmd);
+                });
+            });
+        }
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "card",
+                "surface-raised + border-default + radius · caps head",
+            ),
+            ("labels", "text-secondary-raised"),
+            (
+                "inputs",
+                "Input ground=\"raised\" → input-raised-bg / input-raised-border",
+            ),
+            (
+                "Cancel",
+                "Button ground=\"raised\" → button-ghost-raised-fg",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "text-secondary-raised",
+                "field labels",
+                theme.text_secondary_raised().to_egui(),
+            ),
+            TokenChip::new(
+                "input-raised-bg",
+                "→ bg-panel",
+                theme.input_raised_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "input-raised-border",
+                "→ border-strong",
+                theme.input_raised_border().to_egui(),
+            ),
+            TokenChip::new(
+                "button-ghost-raised-fg",
+                "→ text-secondary-raised",
+                theme.button_ghost_raised_fg().to_egui(),
+            ),
+        ],
+    );
 }
 
 /// add 카드의 라벨(100px) + mono Input 행. 카드가 surface-raised라 라벨은 text-secondary-raised,

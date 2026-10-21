@@ -1729,6 +1729,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_handler::draw_hook_handlers,
                         ),
                         spec(
+                            "settings-hook-add-card-raised",
+                            "Hook Handlers — add card on a raised ground",
+                            Some(
+                                "labels text-secondary-raised · Inputs and Cancel on the raised ground (Mocha + Latte)",
+                            ),
+                            components::settings_handler::draw_hook_add_card_raised,
+                        ),
+                        spec(
                             "settings-hook-edited-default",
                             "Hook Handlers — edited default: mark + Revert",
                             Some(
