@@ -121,7 +121,9 @@ fn raised_card_states(ui: &mut egui::Ui, theme: &Theme) {
                     tasty_ui_widgets::fh_line(
                         ui,
                         th,
-                        FhLine::Error("Use lowercase letters, digits and - only, up to 64."),
+                        FhLine::Error(crate::i18n::t(
+                            "settings.file_handler.detectors.err_id_chars",
+                        )),
                     );
                 });
         }
@@ -172,7 +174,7 @@ fn raised_cells(ui: &mut egui::Ui, th: &Theme) {
             th,
             Ground::Raised,
             value,
-            "Select a detector…",
+            crate::i18n::t("settings.file_handler.handlers.field_detector_select"),
             w,
             tasty_ui_widgets::SelectLook::Normal,
             enabled,
@@ -188,7 +190,7 @@ fn raised_cells(ui: &mut egui::Ui, th: &Theme) {
         pinned(ui, Some("markdown"), false)
     });
     cell(ui, "Ghost sm · raised", &mut |ui| {
-        tasty_ui_widgets::Button::new("Cancel")
+        tasty_ui_widgets::Button::new(crate::i18n::t("button.cancel"))
             .variant(tasty_ui_widgets::ButtonVariant::Ghost)
             .size(tasty_ui_widgets::ControlSize::Sm)
             .ground(Ground::Raised)

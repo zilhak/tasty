@@ -381,6 +381,7 @@ src/catalog/components/prim_forms.rs	Custom	dag.kind.custom,settings.keybindings
 src/catalog/components/prim_forms.rs	Default (full rc)	settings.terminal.shell_mode_default
 src/catalog/components/prim_forms.rs	Reduced motion	settings.accessibility.reduced_motion
 src/catalog/components/prim_forms.rs	Select	terminal_context_menu.link_select
+src/catalog/components/prim_forms.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/prim_help_hint.rs	copy	explorer.remote.op_copy
 src/catalog/components/prim_input.rs	Disabled	plugins.disabled
 src/catalog/components/prim_input.rs	Filter…	port_scanner.search_placeholder
@@ -546,6 +547,7 @@ src/catalog/components/settings.rs	Theme	settings.appearance.subtab.theme
 src/catalog/components/settings_appearance_colors.rs	Default	settings.appearance.colors.default
 src/catalog/components/settings_appearance_colors.rs	Reset all	settings.appearance.colors.reset_all
 src/catalog/components/settings_appearance_colors.rs	disabled	settings.file_handler.common.disabled
+src/catalog/components/settings_file_handlers.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/settings_file_handlers/copy.rs	IPC	settings.file_handler.handlers.action_ipc
 src/catalog/components/settings_file_handlers/copy.rs	Id	settings.file_handler.detectors.field_id
 src/catalog/components/settings_file_handlers/copy.rs	System	settings.file_handler.handlers.action_system
