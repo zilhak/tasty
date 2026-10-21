@@ -8,6 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::SystemTime;
 
+use crate::app::file_jobs::ops::drop_nested;
+
 /// 미리보기·썸네일이 내용을 읽는 파일 크기 상한. 넘으면 "Too large" 상태와 글리프만 보인다.
 pub(crate) const PREVIEW_MAX_BYTES: u64 = 1024 * 1024;
 /// 텍스트 미리보기가 보이는 앞부분의 크기.
@@ -228,12 +230,44 @@ pub(crate) struct ItemFacts {
     /// Unix 의 `rwxr-xr-x` 형태. 다른 OS 에서는 없다.
     pub(crate) mode: Option<String>,
     pub(crate) read_only: bool,
+    /// 하드링크가 둘 이상인 일반 파일의 식별 값. 합계에서 같은 파일을 한 번만 센다.
+    pub(crate) hardlink: Option<FileId>,
 }
 
-/// Properties 가 연 항목들의 정보. 여러 개면 파일·폴더 수와 파일 크기 합을 함께 준다.
+/// Properties 가 연 항목들의 정보. 읽지 못한 항목은 `failed` 에 남기고 읽은 항목만 `items` 에 둔다.
 #[derive(Clone, Debug)]
 pub(crate) struct PropertiesFacts {
     pub(crate) items: Vec<ItemFacts>,
+    /// 고른 파일의 크기 합. 고른 폴더 안에 든 항목과 이미 센 하드링크는 빼고 센다.
+    pub(crate) file_bytes: u64,
+    /// metadata 를 읽지 못한 고른 항목과 그 원인. 폴더 집계 중 하위 항목을 건너뛴 것(`FolderCount::partial`)과 다르다.
+    pub(crate) failed: Vec<(PathBuf, io::ErrorKind)>,
+}
+
+/// Unix 의 (장치, inode). 목록·집계가 이미 읽은 `symlink_metadata` 에서 나온다.
+/// Windows 는 std 가 링크 수와 파일 ID 를 안정 API 로 주지 않아(파일을 따로 열어야 한다) 하드링크를 가르지 않는다.
+pub(crate) type FileId = (u64, u64);
+
+#[cfg(unix)]
+fn hardlink_id(meta: &std::fs::Metadata) -> Option<FileId> {
+    use std::os::unix::fs::MetadataExt;
+    (meta.is_file() && meta.nlink() > 1).then(|| (meta.dev(), meta.ino()))
+}
+
+#[cfg(not(unix))]
+fn hardlink_id(_meta: &std::fs::Metadata) -> Option<FileId> {
+    None
+}
+
+/// 이미 크기를 더한 하드링크 파일. 링크가 하나뿐인 파일은 담지 않는다.
+#[derive(Default)]
+struct CountedLinks(std::collections::HashSet<FileId>);
+
+impl CountedLinks {
+    /// 처음 보는 파일이면 `true`.
+    fn first(&mut self, id: Option<FileId>) -> bool {
+        id.is_none_or(|id| self.0.insert(id))
+    }
 }
 
 /// 폴더 크기의 배경 계산 진행. 폴더가 없으면 시작하자마자 끝난다.
@@ -252,24 +286,55 @@ pub(super) fn read_properties(
     cancel: &AtomicBool,
     deliver: impl FnOnce(io::Result<PropertiesFacts>) -> bool,
 ) -> bool {
-    let facts: io::Result<Vec<ItemFacts>> = paths.iter().map(|p| item_facts(p)).collect();
-    let folders: Vec<PathBuf> = match &facts {
-        Ok(items) => paths
-            .iter()
-            .zip(items)
-            .filter(|(_, f)| matches!(f.kind, ItemKind::Folder))
-            .map(|(p, _)| p.clone())
-            .collect(),
-        Err(_) => Vec::new(),
-    };
-    let delivered = deliver(facts.map(|items| PropertiesFacts { items }));
+    let (facts, folders, mut links) = gather(paths);
+    let delivered = deliver(facts);
     if delivered {
         for folder in folders {
-            count_folder(&folder, count, cancel);
+            count_folder(&folder, count, cancel, &mut links);
         }
     }
     count.done.store(true, Ordering::Release);
     delivered
+}
+
+/// 항목마다 읽고, 하나라도 읽으면 읽은 것만 돌려준다. 모두 못 읽으면 첫 오류다.
+/// 크기 합과 셀 폴더는 파일 작업과 같은 기준([`drop_nested`])으로 겹친 선택을 뺀 항목에서 정한다.
+fn gather(paths: &[PathBuf]) -> (io::Result<PropertiesFacts>, Vec<PathBuf>, CountedLinks) {
+    let kept: std::collections::HashSet<PathBuf> = drop_nested(paths).into_iter().collect();
+    let mut links = CountedLinks::default();
+    let mut items = Vec::new();
+    let mut failed = Vec::new();
+    let mut first_error = None;
+    let mut file_bytes = 0u64;
+    let mut folders = Vec::new();
+    for path in paths {
+        let item = match item_facts(path) {
+            Ok(item) => item,
+            Err(error) => {
+                tracing::warn!(path = %path.display(), kind = ?error.kind(), %error, "properties: item unreadable");
+                failed.push((path.clone(), error.kind()));
+                first_error.get_or_insert(error);
+                continue;
+            }
+        };
+        if kept.contains(path) {
+            match item.kind {
+                ItemKind::Folder => folders.push(path.clone()),
+                ItemKind::File if links.first(item.hardlink) => file_bytes += item.size,
+                _ => {}
+            }
+        }
+        items.push(item);
+    }
+    let facts = match first_error {
+        Some(error) if items.is_empty() => Err(error),
+        _ => Ok(PropertiesFacts {
+            items,
+            file_bytes,
+            failed,
+        }),
+    };
+    (facts, folders, links)
 }
 
 fn item_facts(path: &Path) -> io::Result<ItemFacts> {
@@ -303,6 +368,7 @@ fn item_facts(path: &Path) -> io::Result<ItemFacts> {
         created: (!link).then(|| own.created().ok()).flatten(),
         mode: (!link).then(|| mode_string(&own)).flatten(),
         read_only: own.permissions().readonly(),
+        hardlink: hardlink_id(&own),
     })
 }
 
@@ -334,10 +400,11 @@ fn mode_string(_meta: &std::fs::Metadata) -> Option<String> {
 }
 
 /// 링크는 따라가지 않는다. 읽지 못한 하위 폴더는 건너뛰고 센 만큼만 보인다.
-fn count_folder(root: &Path, count: &FolderCount, cancel: &AtomicBool) {
+/// 항목 수는 이름마다 세고, 크기는 같은 하드링크 파일을 한 번만 더한다.
+fn count_folder(root: &Path, count: &FolderCount, cancel: &AtomicBool, links: &mut CountedLinks) {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        if cancel.load(Ordering::Relaxed) || !count_dir(&dir, count, cancel, &mut stack) {
+        if cancel.load(Ordering::Relaxed) || !count_dir(&dir, count, cancel, &mut stack, links) {
             return;
         }
     }
@@ -349,6 +416,7 @@ fn count_dir(
     count: &FolderCount,
     cancel: &AtomicBool,
     stack: &mut Vec<PathBuf>,
+    links: &mut CountedLinks,
 ) -> bool {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -376,7 +444,7 @@ fn count_dir(
         count.items.fetch_add(1, Ordering::Relaxed);
         if meta.is_dir() {
             stack.push(path);
-        } else if !meta.file_type().is_symlink() {
+        } else if !meta.file_type().is_symlink() && links.first(hardlink_id(&meta)) {
             count.bytes.fetch_add(meta.len(), Ordering::Relaxed);
         }
     }
@@ -459,13 +527,23 @@ mod tests {
         std::fs::write(private.join("hidden"), "not counted").unwrap();
         std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o0)).unwrap();
         let count = FolderCount::default();
-        count_folder(dir.path(), &count, &AtomicBool::new(false));
+        count_folder(
+            dir.path(),
+            &count,
+            &AtomicBool::new(false),
+            &mut CountedLinks::default(),
+        );
         std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(count.bytes.load(Ordering::Relaxed), 2);
         assert_eq!(count.items.load(Ordering::Relaxed), 3);
         assert!(count.partial.load(Ordering::Acquire));
         let cancelled = FolderCount::default();
-        count_folder(dir.path(), &cancelled, &AtomicBool::new(true));
+        count_folder(
+            dir.path(),
+            &cancelled,
+            &AtomicBool::new(true),
+            &mut CountedLinks::default(),
+        );
         assert_eq!(cancelled.items.load(Ordering::Relaxed), 0);
         assert!(!cancelled.partial.load(Ordering::Acquire));
         let dropped = Arc::new(FolderCount::default());
@@ -650,5 +728,112 @@ mod tests {
         );
         assert_eq!(cancelled.items.load(Ordering::Relaxed), 0);
         assert!(cancelled.done.load(Ordering::Relaxed));
+    }
+
+    /// `read_properties` 를 돌려 받은 정보와 폴더 집계를 돌려준다.
+    fn read_all(paths: &[PathBuf]) -> (io::Result<PropertiesFacts>, Arc<FolderCount>) {
+        let count = Arc::new(FolderCount::default());
+        let mut got = None;
+        read_properties(paths, &count, &AtomicBool::new(false), |facts| {
+            got = Some(facts);
+            true
+        });
+        (got.expect("delivered"), count)
+    }
+
+    #[test]
+    fn a_vanished_item_among_readable_ones_keeps_their_values_and_records_why() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("a.txt");
+        std::fs::write(&file, "abcd").expect("write");
+        let gone = dir.path().join("gone.txt");
+        let (facts, _) = read_all(&[file.clone(), gone.clone()]);
+        let facts = facts.expect("one item is readable");
+        assert_eq!(facts.items.len(), 1);
+        assert_eq!(facts.file_bytes, 4);
+        assert_eq!(facts.failed, [(gone.clone(), io::ErrorKind::NotFound)]);
+
+        let (facts, _) = read_all(&[gone.clone(), dir.path().join("also-gone")]);
+        assert_eq!(
+            facts.expect_err("nothing is readable").kind(),
+            io::ErrorKind::NotFound
+        );
+    }
+
+    /// 부모 폴더의 검색 권한을 없애 `symlink_metadata` 자체를 실패시킨다. 권한 검사를 받지 않는
+    /// 실행(root 등)이면 실패가 일어나지 않으므로 건너뛴다.
+    #[cfg(unix)]
+    #[test]
+    fn an_item_behind_a_folder_without_search_permission_is_reported_as_denied() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("ok.txt");
+        std::fs::write(&file, "xy").expect("write");
+        let locked = dir.path().join("d");
+        std::fs::create_dir(&locked).expect("mkdir");
+        let hidden = locked.join("x");
+        std::fs::write(&hidden, "secret").expect("write");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+        let denied = std::fs::symlink_metadata(&hidden).is_err();
+        let (facts, count) = read_all(&[file, hidden.clone()]);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700))
+            .expect("chmod back");
+        if !denied {
+            return;
+        }
+        let facts = facts.expect("the readable file is kept");
+        assert_eq!(facts.file_bytes, 2);
+        assert_eq!(facts.failed, [(hidden, io::ErrorKind::PermissionDenied)]);
+        assert!(
+            !count.partial.load(Ordering::Acquire),
+            "an unreadable chosen item is not the folder count's partial state"
+        );
+    }
+
+    #[test]
+    fn a_folder_and_a_file_inside_it_count_the_file_once_like_file_jobs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let folder = dir.path().join("a");
+        std::fs::create_dir(&folder).expect("mkdir");
+        let inner = folder.join("f");
+        std::fs::write(&inner, vec![0u8; 1024]).expect("write");
+        let chosen = [folder.clone(), inner.clone()];
+        assert_eq!(
+            drop_nested(&chosen),
+            std::slice::from_ref(&folder),
+            "file jobs keep the folder only"
+        );
+        let (facts, count) = read_all(&chosen);
+        let facts = facts.expect("readable");
+        assert_eq!(facts.items.len(), 2, "both chosen items are still listed");
+        assert_eq!(
+            facts.file_bytes, 0,
+            "the inner file is carried by the folder"
+        );
+        assert_eq!(count.bytes.load(Ordering::Relaxed), 1024);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hard_links_add_their_size_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let a = dir.path().join("a.bin");
+        std::fs::write(&a, vec![0u8; 1000]).expect("write");
+        let b = dir.path().join("b.bin");
+        std::fs::hard_link(&a, &b).expect("link");
+        let (facts, _) = read_all(&[a.clone(), b.clone()]);
+        assert_eq!(facts.expect("readable").file_bytes, 1000);
+
+        // 폴더 안의 두 이름도, 고른 파일과 폴더 안의 이름도 한 번만 더한다. 항목 수는 이름마다 센다.
+        let folder = dir.path().join("sub");
+        std::fs::create_dir(&folder).expect("mkdir");
+        std::fs::hard_link(&a, folder.join("c.bin")).expect("link");
+        std::fs::hard_link(&a, folder.join("d.bin")).expect("link");
+        let (_, count) = read_all(std::slice::from_ref(&folder));
+        assert_eq!(count.items.load(Ordering::Relaxed), 2);
+        assert_eq!(count.bytes.load(Ordering::Relaxed), 1000);
+        let (facts, count) = read_all(&[a, folder]);
+        assert_eq!(facts.expect("readable").file_bytes, 1000);
+        assert_eq!(count.bytes.load(Ordering::Relaxed), 0);
     }
 }

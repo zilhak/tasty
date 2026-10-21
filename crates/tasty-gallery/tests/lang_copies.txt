@@ -98,6 +98,7 @@ src/catalog/components/explorer_context_menu.rs	copy	explorer.remote.op_copy
 src/catalog/components/explorer_favorite_popup.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
 src/catalog/components/explorer_favorite_popup.rs	Add to favorites	explorer.popup.add_favorite.title
 src/catalog/components/explorer_favorite_popup.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
+src/catalog/components/explorer_file_info.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/explorer_jobs.rs	Archive	explorer.kind.archive
 src/catalog/components/explorer_jobs/remote.rs	{}	remote.size_sync.names
 src/catalog/components/explorer_ops.rs	Markdown	explorer.kind.markdown

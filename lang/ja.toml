@@ -6778,6 +6778,7 @@ target_size = "リンク先のサイズ"
 target_modified = "リンク先の更新日時"
 target_missing = "リンク先が見つかりません"
 partial = "一部のフォルダーを読み取れませんでした"
+unreadable_items = "一部の項目を読み取れませんでした"
 
 [cli.help._root.notify.arg.level]
 help = "通知レベル"

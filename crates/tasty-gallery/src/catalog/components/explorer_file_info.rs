@@ -431,6 +431,37 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                 None,
             )
         });
+        cluster(ui, theme, "several items — some unreadable", |ui| {
+            props_card(
+                ui,
+                theme,
+                icons::LAYERS,
+                &t_fmt("explorer.properties.items", "3"),
+                &[
+                    warn(
+                        field("explorer.properties.kinds", "1 file, 1 folder"),
+                        "explorer.props.unreadable_items",
+                    ),
+                    field("explorer.properties.total_size", "12.4 MB"),
+                    mono("explorer.properties.location", "~/Downloads", true),
+                ],
+                None,
+            )
+        });
+        cluster(ui, theme, "remote several — folder sizes unknown", |ui| {
+            props_card(
+                ui,
+                theme,
+                icons::LAYERS,
+                &t_fmt("explorer.properties.items", "3"),
+                &[
+                    field("explorer.properties.kinds", "1 file, 2 folders"),
+                    field("explorer.properties.total_size", "—"),
+                    mono("explorer.properties.location", "/srv/logs", true),
+                ],
+                Some(t("explorer.properties.remote_note")),
+            )
+        });
         cluster(ui, theme, "can't read", |ui| {
             props_card_with(
                 ui,
@@ -490,7 +521,7 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "several",
-                "“{n} items” · Kinds · Total size · Location (common parent)",
+                "“{n} items” · Kinds (warns when some chosen items can't be read; counts only the read ones) · Total size (a folder inside another chosen folder and a hard link count once; remote folders make it —) · Location (common parent)",
             ),
             ("remote", "Kind · Size · Modified · Path · muted note"),
             ("selection change", "popup keeps its item"),

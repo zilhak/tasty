@@ -84,7 +84,7 @@ pub fn create_entry(dir: &Path, name: &str, folder: bool) -> io::Result<()> {
 /// A descendant is dropped only when every folder between it and the ancestor is a real folder,
 /// because jobs never follow links: copying or trashing a link does not carry what lies behind it.
 /// Paths with `..` are compared as given and never dropped. The first occurrence keeps its position.
-pub(super) fn drop_nested(paths: &[PathBuf]) -> Vec<PathBuf> {
+pub(crate) fn drop_nested(paths: &[PathBuf]) -> Vec<PathBuf> {
     use std::collections::HashSet;
     let plain = |p: &Path| !p.components().any(|c| c == std::path::Component::ParentDir);
     let folders: HashSet<&Path> = paths

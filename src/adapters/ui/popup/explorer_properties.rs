@@ -571,7 +571,7 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
         }
         Some(Ok(facts)) => facts,
     };
-    if let [item] = facts.items.as_slice() {
+    if let ([_], [item]) = (props.paths.as_slice(), facts.items.as_slice()) {
         return single_content(
             &props.paths[0],
             item,
@@ -587,10 +587,13 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
         .filter(|f| matches!(f.kind, ItemKind::Folder))
         .count();
     let files = facts.items.len() - folders;
-    let file_bytes: u64 = facts.items.iter().map(|f| f.size).sum();
-    let total = human_size(false, file_bytes + counted_bytes);
+    let total = human_size(false, facts.file_bytes + counted_bytes);
     let fields = vec![
-        field("explorer.properties.kinds", kinds_text(files, folders)),
+        // 고른 항목 중 metadata 를 못 읽은 것이 있으면 읽은 것만 세고 여기서 알린다.
+        Field {
+            warning: (!facts.failed.is_empty()).then_some("explorer.props.unreadable_items"),
+            ..field("explorer.properties.kinds", kinds_text(files, folders))
+        },
         Field {
             counting: counting && folders > 0,
             warning: partial.then_some("explorer.props.partial"),
@@ -598,7 +601,7 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
         },
         mono("explorer.properties.location", location, true),
     ];
-    let n = facts.items.len();
+    let n = props.paths.len();
     let title = t_count("explorer.properties.items", n as u64, &[&n.to_string()]);
     (icons::LAYERS, title, fields, None)
 }
@@ -764,10 +767,14 @@ fn remote_content(
     }
     let folders = entries.iter().filter(|e| e.is_dir).count();
     let files = entries.len() - folders;
+    // 원격 목록에는 폴더 크기가 없다. 폴더가 섞이면 합을 모르므로 단일 폴더와 같은 알 수 없음 표시를 쓴다.
     let bytes: u64 = entries.iter().filter(|e| !e.is_dir).map(|e| e.size).sum();
     let fields = vec![
         field("explorer.properties.kinds", kinds_text(files, folders)),
-        field("explorer.properties.total_size", human_size(false, bytes)),
+        field(
+            "explorer.properties.total_size",
+            human_size(folders > 0, bytes),
+        ),
         mono("explorer.properties.location", location, true),
     ];
     let n = entries.len();
@@ -849,6 +856,7 @@ mod tests {
             created: None,
             mode: Some("rwxr-x---".into()),
             read_only: false,
+            hardlink: None,
         };
         let (_, _, fields, _) = single_content(&item.path, &item, true, false, 3, 2);
         assert_eq!(
@@ -1183,6 +1191,84 @@ mod tests {
             !fields.iter().any(|f| f.value.starts_with('0')),
             "{:?}",
             fields.iter().map(|f| &f.value).collect::<Vec<_>>()
+        );
+    }
+
+    fn file_item(path: &str, size: u64) -> ItemFacts {
+        ItemFacts {
+            path: PathBuf::from(path),
+            kind: ItemKind::File,
+            size,
+            modified: None,
+            created: None,
+            mode: None,
+            read_only: false,
+            hardlink: None,
+        }
+    }
+
+    fn local_props(paths: &[&str], facts: PropertiesFacts) -> ExplorerProperties {
+        let count = FolderCount::default();
+        count.done.store(true, Ordering::Release);
+        ExplorerProperties {
+            surface_id: 1,
+            paths: paths.iter().map(PathBuf::from).collect(),
+            remote: None,
+            query: None,
+            facts: Some(Ok(facts)),
+            count: Arc::new(count),
+            cancel: Arc::new(AtomicBool::new(false)),
+            content_h: None,
+        }
+    }
+
+    #[test]
+    fn some_unreadable_items_keep_the_read_values_and_warn_on_kinds() {
+        crate::i18n::init("en");
+        let facts = PropertiesFacts {
+            items: vec![file_item("/w/a.txt", 2048)],
+            file_bytes: 2048,
+            failed: vec![(
+                PathBuf::from("/w/d/x"),
+                std::io::ErrorKind::PermissionDenied,
+            )],
+        };
+        let (glyph, title, fields, _) = content(&local_props(&["/w/a.txt", "/w/d/x"], facts));
+        assert_eq!(
+            glyph.svg,
+            icons::LAYERS.svg,
+            "two chosen items stay a several-items view"
+        );
+        assert_eq!(title, t_count("explorer.properties.items", 2, &["2"]));
+        assert_eq!(fields[0].label, "explorer.properties.kinds");
+        assert_eq!(fields[0].warning, Some("explorer.props.unreadable_items"));
+        assert_eq!(fields[1].value, human_size(false, 2048));
+        assert_eq!(fields[1].warning, None, "the folder count was not partial");
+    }
+
+    #[test]
+    fn several_remote_items_with_a_folder_show_an_unknown_total_instead_of_zero() {
+        crate::i18n::init("en");
+        let entry = |name: &str, is_dir: bool, size: u64| DirEntryInfo {
+            path: PathBuf::from("/srv").join(name),
+            name: name.into(),
+            is_dir,
+            size,
+            ..Default::default()
+        };
+        let total = |entries: &[DirEntryInfo]| {
+            let (_, _, fields, _) = remote_content(entries, "/srv".into());
+            fields
+                .into_iter()
+                .find(|f| f.label == "explorer.properties.total_size")
+                .unwrap()
+                .value
+        };
+        assert_eq!(total(&[entry("a", true, 0), entry("b", true, 4096)]), "—");
+        assert_eq!(total(&[entry("a", true, 0), entry("f", false, 10)]), "—");
+        assert_eq!(
+            total(&[entry("f", false, 10), entry("g", false, 20)]),
+            human_size(false, 30)
         );
     }
 }

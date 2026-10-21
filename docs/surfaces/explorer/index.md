@@ -219,13 +219,16 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
   - 표에 없는 그림 확장자(`is_image_ext`)는 `explorer.kind.image`("PNG image"), 그 밖은 `explorer.kind.ext_file`("RS file"), 확장자가 없으면 "File", 폴더는 "Folder".
   - 링크는 Type 열과 미리보기 머리에서 `explorer.kind.link_to`("Link to Markdown")이고 크기는 대상의 크기다. 링크의 종류는 링크 이름의 확장자와 대상이 폴더인지로 정한다. 대상이 없는 링크는 `explorer.kind.broken_link`("Broken link")다. Properties 의 Kind 는 "Symbolic link" 또는 "Broken link" 다. Target kind 는 실제 링크 체인을 푼 대상의 종류를 쓴다.
   - Type 열은 좁아 낱말이 넘치면 말줄임하고 호버에 전체 낱말을 보인다. Type 열 정렬(`core/fs_list.rs` 의 `type_key`)은 보이는 낱말과 같은 묶음이 붙어 있도록 링크 여부(링크 아님 · 링크 · 끊긴 링크), `FileKind` 선언 순서, 확장자, 이름 순으로 비교한다. 번역문을 비교하지 않으므로 언어와 무관하다(예: gz 와 zip 은 Archive 로 붙는다).
-- **파일·폴더 필드 순서**: Kind · Size(사람이 읽는 크기와 바이트 수 또는 폴더 집계) · Modified · Created · Path(항목 자신의 절대 경로, mono, Copy) · Permissions(Unix 는 `rwxr-xr-x` 와 read-only, 그 밖은 read-only 만). 없는 시각은 대시다.
+- **파일·폴더 필드 순서**: Kind · Size(사람이 읽는 크기와 바이트 수 또는 폴더 집계) · Modified · Created · Path(항목 자신의 절대 경로, mono, Copy) · Permissions(Unix 는 `rwxr-xr-x` 와 read-only, 그 밖은 read-only 만). 없는 시각은 대시다. 시각은 로컬 시간 `YYYY-MM-DD HH:MM`(`time_text`)이며 초와 시간대는 보이지 않는다.
 - **링크**: 제목 글리프 link · Kind "Symbolic link" · Link target(Copy) · Target kind · Target size · Target modified · Path(링크 자신의 절대 경로, Copy). 상대 경로와 링크 체인은 파일시스템에서 해석해 대상의 메타데이터를 읽으며 링크 자신의 lstat 크기·시각은 표시하지 않는다. 대상이 없으면 Kind "Broken link", 머리 link 글리프는 `explorer_link_broken_fg`, Link target 아래에는 `explorer.props.target_missing` 안내가 나온다. 권한 오류·링크 순환 등은 끊긴 링크로 분류하지 않고 기존 읽기 실패 화면과 Retry로 처리한다.
 - **폴더 집계**: Size 자리에 하위 항목 수와 크기를 read worker 가 배경에서 세며 Spinner 를 보인다. 링크는 항목 수에 포함하지만 따라가지 않고 크기도 더하지 않는다. 하위 폴더·항목 메타데이터를 읽지 못한 부분은 건너뛰고 부분 집계 상태를 남긴다. Size 바로 아래에 alertTriangle(`icon_glyph_size_xs`, 12)과 `explorer.props.partial`을 `explorer_props_partial_fg`로 표시한다. 여러 항목도 Total size 아래에 같은 경고를 보인다. popup 을 닫으면 세기를 멈추며 다시 열기·Retry는 새 집계 상태를 사용한다.
-- **여러 항목**: 머리 "N items", Kinds(파일·폴더 수) · Total size · 공통 Location.
+- **여러 항목**: 머리 "N items"(고른 수), Kinds(읽은 파일·폴더 수) · Total size · 공통 Location.
+  - **일부 항목을 못 읽음**: worker(`file_info.rs` 의 `read_properties`)는 항목마다 metadata 를 읽어 읽은 항목과 실패(`ItemFailure`: 경로와 `io::ErrorKind`, `tracing::warn!` 기록)를 함께 보낸다. 하나라도 읽으면 읽은 항목만 세고 Kinds 아래에 `explorer.props.unreadable_items`("Some items couldn't be read")를 `explorer_props_partial_fg` 경고로 보인다. 모두 못 읽으면 기존 읽기 실패 화면이다. 이 경고는 폴더 집계 중 하위 항목을 건너뛴 `explorer.props.partial`(Total size 아래)과 다른 상태다. 하나만 골랐으면 실패가 곧 전체 실패라 읽기 실패 화면이다.
+  - **겹친 선택**: 크기 합과 셀 폴더는 파일 작업과 같은 `drop_nested`(`file_jobs/ops.rs`)로 정한다. 고른 폴더 안에 든 고른 항목(링크를 거치지 않은 실제 폴더 안)은 목록·Kinds 에는 남고 크기는 그 폴더 집계로만 센다.
+  - **하드링크**: Unix 는 목록이 이미 읽은 `symlink_metadata` 의 (장치, inode)로 링크 수가 둘 이상인 일반 파일을 기억해 크기를 한 번만 더한다(고른 파일끼리, 폴더 안, 고른 파일과 폴더 안 사이 모두). 항목 수는 이름마다 센다. Windows 는 std 가 링크 수와 파일 ID 를 안정 API 로 주지 않고 파일마다 핸들을 열어야 해 가르지 않으며, 하드링크를 이름 수만큼 센다.
 - **읽기 실패**: 팝업 틀을 그대로 두고, 제목은 그 항목의 글리프(탐색기 목록에서 본 종류)와 이름이다. 본문은 alertTriangle 과 `explorer.properties.unreadable`("Can't read properties", explorer-error-fg), mono muted OS 이유, Retry(secondary sm, 같은 항목을 다시 읽는다)다.
 - **제목 굵기**: 제목은 14 regular 다. 테마에 semibold UI 글꼴이 없어 크기로 제목을 구분한다.
-- **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Path 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다.
+- **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Path 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다. 원격 목록에는 폴더 크기가 없어, 폴더 하나의 Size 와 폴더가 섞인 여러 항목의 Total size 는 0 B 가 아니라 알 수 없음 "—"(`human_size` 의 폴더 규칙)이다. 파일만 고르면 파일 크기 합이다.
 - **다시 열기**: 같은 surface 에서 다시 요청하면 popup 을 그대로 두고 대상만 바꾸며 이전 읽기·집계를 멈춘다. 다른 surface 에서 요청하면 열린 popup 을 닫고 요청한 surface 범위로 다시 열어, 내용과 범위가 늘 같은 surface 를 가리킨다. Esc 로 포커스만 풀어 popup 이 다른 탭에 남아 있어도 누른 탭에 새 대상의 popup 이 보인다.
 
 ### 새 폴더 · 새 파일

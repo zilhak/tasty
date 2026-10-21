@@ -6846,6 +6846,7 @@ target_size = "Target size"
 target_modified = "Target modified"
 target_missing = "Target not found"
 partial = "Some folders couldn't be read"
+unreadable_items = "Some items couldn't be read"
 
 [cli.help._root.notify.arg.level]
 help = "Notification level"

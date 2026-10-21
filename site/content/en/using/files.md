@@ -1,4 +1,4 @@
-<!-- source-hash: ee793a6580f3 -->
+<!-- source-hash: 2eb4252313d2 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -105,7 +105,7 @@ Choose **Properties** at the bottom of the right-click menu to open a popup insi
 
 A link shows its target, the target's kind, size and modified date, and the link's own path. The target also has a copy button. A missing target is shown as **Broken link**, with **Target not found** below the target. Other read errors, such as permission errors, show the reason and a **Retry** button.
 
-Several selected items show the count, kinds, total size and common location, and right-clicking an empty area shows the current folder. In a remote Explorer only the kind, size, modified date and path from the list are shown.
+Several selected items show the count, kinds, total size and common location, and right-clicking an empty area shows the current folder. If some of the chosen items cannot be read, only the readable ones are counted and **Some items couldn't be read** appears below the kinds; if none can be read, the Retry screen above appears. Choosing a folder together with items inside it counts those items once, and on Linux and macOS hard links to the same file add its size once. In a remote Explorer only the kind, size, modified date and path from the list are shown; the remote list has no folder sizes, so a total that includes a folder shows —.
 
 Every bound command in the context menu shows its first shortcut on the right, including **Undo** and **Redo**. Changing or clearing the bindings in Settings updates the menu too.
 
