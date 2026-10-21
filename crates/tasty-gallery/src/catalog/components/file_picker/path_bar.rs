@@ -9,6 +9,7 @@ use tasty_ui_widgets::{
 use super::{CRUMB_GLYPH, HOST, Variant, path_bar_height};
 use crate::catalog::icons;
 use crate::catalog::widgets::dialog as kit;
+use tasty_egui_theme::overlay_edge::BoxEdge;
 use tasty_type_appearance::theme::Theme;
 
 /// 경로 데이터의 종류 — 디자인 `FilePickerFrame` 의 `remote` · `deep` · `pathKind`.
@@ -313,7 +314,13 @@ fn menu_width(widest_label: f32, theme: &Theme) -> f32 {
 }
 
 /// 펼친 `…` 메뉴 — 디자인 `FpCrumbMenu`. 숨긴 조상을 경로 순서로 한 줄씩 놓고 첫 줄은 hover 상태로 보인다.
-pub(super) fn crumb_menu(ui: &mut egui::Ui, theme: &Theme, hidden: &HiddenCrumbs, bar_bottom: f32) {
+pub(super) fn crumb_menu(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    hidden: &HiddenCrumbs,
+    bar_bottom: f32,
+    edge: BoxEdge,
+) -> egui::Rect {
     let font = egui::FontId::proportional(theme.font_size_body.value());
     let widest = hidden
         .labels
@@ -336,8 +343,8 @@ pub(super) fn crumb_menu(ui: &mut egui::Ui, theme: &Theme, hidden: &HiddenCrumbs
             theme.border_width.value(),
             theme.menu_border().to_egui(),
         ))
-        .corner_radius(theme.menu_radius().value())
-        .shadow(theme.shadow_popover().to_egui())
+        .corner_radius(edge.radius(theme, theme.menu_radius()).value())
+        .shadow(edge.shadow(theme, theme.shadow_popover()).to_egui())
         .inner_margin(egui::Margin::same(
             theme.popup_content_margin().value() as i8
         ))
@@ -365,5 +372,7 @@ pub(super) fn crumb_menu(ui: &mut egui::Ui, theme: &Theme, hidden: &HiddenCrumbs
                     i == 0,
                 );
             }
-        });
+        })
+        .response
+        .rect
 }

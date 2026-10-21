@@ -12,5 +12,8 @@ tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-c
 tasty-type-geometry = { path = "../tasty-type-geometry" }
 tracing = "0.1"
 
+[dev-dependencies]
+tasty-themes = { path = "../tasty-themes" }
+
 [lints]
 workspace = true

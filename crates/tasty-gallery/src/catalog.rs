@@ -184,7 +184,7 @@ pub struct Page {
     pub sections: Vec<Section>,
 }
 
-fn spec(
+pub(crate) fn spec(
     id: &'static str,
     title: &'static str,
     when: Option<&'static str>,
@@ -198,7 +198,7 @@ fn spec(
     }
 }
 
-fn section(id: &'static str, title: &'static str, specs: Vec<Spec>) -> Section {
+pub(crate) fn section(id: &'static str, title: &'static str, specs: Vec<Spec>) -> Section {
     Section { id, title, specs }
 }
 
@@ -931,6 +931,7 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
+                components::webview_opaque::section(),
                 section(
                     "scrim-scope",
                     "Scrim scope — window vs surface",

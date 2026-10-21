@@ -115,3 +115,4 @@ pub mod tools_menu;
 pub mod transfer;
 
 pub mod attach_loading;
+pub mod webview_opaque;

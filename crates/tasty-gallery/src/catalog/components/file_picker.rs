@@ -16,6 +16,7 @@ pub use indicator::draw_remote_indicator;
 use path_bar::PathKind;
 pub use path_fit::draw_path_fit;
 
+use tasty_egui_theme::overlay_edge::BoxEdge;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{CenterState, ControlSize, IconButton, IconButtonVariant, checkbox};
@@ -588,6 +589,28 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
 
 /// 카드 한 장. 크기는 변형이 정한다(기본 640×480).
 fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
+    // 일반 예제는 메뉴 사각형을 쓰지 않는다.
+    let _menu = card_edge(ui, theme, v, BoxEdge::NORMAL);
+}
+
+/// 깊은 경로의 열기 카드에 `…` 메뉴를 펼친 한 장. WebView 페이지 위 예제가 쓴다.
+/// 펼친 메뉴 상자의 사각형을 돌려준다.
+pub fn deep_card_with_menu(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    w: LogicalPx,
+    h: LogicalPx,
+    edge: BoxEdge,
+) -> Option<egui::Rect> {
+    let v = Variant::open(FpState::Loaded, false, false)
+        .path(PathKind::Deep)
+        .crumb_menu_open()
+        .sized(w, h);
+    card_edge(ui, theme, v, edge)
+}
+
+fn card_edge(ui: &mut egui::Ui, theme: &Theme, v: Variant, edge: BoxEdge) -> Option<egui::Rect> {
+    let mut menu = None;
     egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
         .stroke(egui::Stroke::new(
@@ -598,8 +621,8 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
                 theme.border_strong().to_egui()
             },
         ))
-        .corner_radius(theme.corner_radius.value())
-        .shadow(theme.shadow_modal().to_egui())
+        .corner_radius(edge.radius(theme, theme.corner_radius).value())
+        .shadow(edge.shadow(theme, theme.shadow_modal()).to_egui())
         .show(ui, |ui| {
             ui.set_width(v.w.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
@@ -622,10 +645,11 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
                 footer::footer(ui, theme, v, footer_h);
                 // 메뉴는 본문 위에 떠야 하므로 본문·footer 다음에 그린다.
                 if let Some(hidden) = hidden.filter(|_| v.crumb_menu) {
-                    path_bar::crumb_menu(ui, theme, &hidden, bar_bottom);
+                    menu = Some(path_bar::crumb_menu(ui, theme, &hidden, bar_bottom, edge));
                 }
             });
         });
+    menu
 }
 
 fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {

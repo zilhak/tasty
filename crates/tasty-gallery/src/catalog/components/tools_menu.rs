@@ -1,6 +1,7 @@
 //! 사이드바 Tools 버튼에 붙는 팝오버 예제. 배경을 어둡게 하지 않는다.
 //! 항목은 본체 `tools_menu.rs` 의 내장 도구 순서와 번들 플러그인이 기여하는 도구(order_hint 순)다.
 
+use tasty_egui_theme::overlay_edge::BoxEdge;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, fit_menu_width, menu_item, menu_separator};
@@ -22,29 +23,8 @@ const BUILTIN: &[&str] = &[
 const PLUGIN: &[&str] = &["Clipboard Viewer", "Git"];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 본체 `tools_menu.rs` 와 같은 계산: 가장 넓은 행을 min..max(테두리 포함)로 제한하고,
-    // 셸 테두리는 바깥에 그리므로 테두리를 뺀 폭을 카드에 준다.
-    let outer = fit_menu_width(
-        ui.ctx(),
-        theme,
-        BUILTIN.iter().chain(PLUGIN).copied(),
-        theme.tools_menu_min_width().value(),
-        theme.tools_menu_max_width().value(),
-    );
-    let width = LogicalPx(outer - theme.border_width.value() * 2.0);
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card_menu(ui, theme, width, |ui| {
-            let ring = theme.popup_content_margin();
-            kit::region_sym(ui, ring, ring, |ui| {
-                for label in BUILTIN {
-                    row(ui, theme, label);
-                }
-                menu_separator(ui, theme);
-                for label in PLUGIN {
-                    row(ui, theme, label);
-                }
-            });
-        });
+        tools_card(ui, theme, BoxEdge::NORMAL);
     });
 
     spec::meta(
@@ -99,4 +79,30 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str) {
         false,
         true,
     );
+}
+
+/// Tools 메뉴 한 장. WebView 페이지 위 예제가 불투명 가장자리로 다시 쓴다.
+pub fn tools_card(ui: &mut egui::Ui, theme: &Theme, edge: BoxEdge) {
+    // 본체 `tools_menu.rs` 와 같은 계산: 가장 넓은 행을 min..max(테두리 포함)로 제한하고,
+    // 셸 테두리는 바깥에 그리므로 테두리를 뺀 폭을 카드에 준다.
+    let outer = fit_menu_width(
+        ui.ctx(),
+        theme,
+        BUILTIN.iter().chain(PLUGIN).copied(),
+        theme.tools_menu_min_width().value(),
+        theme.tools_menu_max_width().value(),
+    );
+    let width = LogicalPx(outer - theme.border_width.value() * 2.0);
+    kit::frame_card_menu_edge(ui, theme, width, edge, |ui| {
+        let ring = theme.popup_content_margin();
+        kit::region_sym(ui, ring, ring, |ui| {
+            for label in BUILTIN {
+                row(ui, theme, label);
+            }
+            menu_separator(ui, theme);
+            for label in PLUGIN {
+                row(ui, theme, label);
+            }
+        });
+    });
 }

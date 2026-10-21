@@ -1,5 +1,6 @@
 //! 명령 팔레트의 검색 필드, 명령 행, 키보드 안내 예제.
 
+use tasty_egui_theme::overlay_edge::BoxEdge;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{MenuItemVariant, menu_item_kbd};
 
@@ -9,70 +10,7 @@ use crate::catalog::widgets::dialog as kit;
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(
-            ui,
-            theme,
-            theme.palette_width(),
-            kit::raised_fill(theme),
-            |ui| {
-                kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-                    kit::field(
-                        ui,
-                        theme,
-                        None,
-                        crate::i18n::t("command_palette.placeholder"),
-                        true,
-                        false,
-                    );
-                });
-                kit::hsep(ui, theme);
-
-                kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
-                    row(
-                        ui,
-                        theme,
-                        icons::TERMINAL,
-                        "New Terminal",
-                        &["Ctrl", "T"],
-                        true,
-                    );
-                    row(
-                        ui,
-                        theme,
-                        icons::SPLIT,
-                        "Split Pane Vertical",
-                        &["Ctrl", "D"],
-                        false,
-                    );
-                    row(
-                        ui,
-                        theme,
-                        icons::PORT,
-                        "Toggle Theme (Mocha / Latte)",
-                        &[],
-                        false,
-                    );
-                    row(
-                        ui,
-                        theme,
-                        icons::SETTINGS,
-                        "Settings",
-                        &["Ctrl", ","],
-                        false,
-                    );
-                });
-                kit::hsep(ui, theme);
-
-                kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                        kit::caption(ui, theme, "↑↓ navigate", true);
-                        kit::caption(ui, theme, "↵ run", true);
-                        kit::caption(ui, theme, "esc close", true);
-                    });
-                });
-            },
-        );
+        palette_card(ui, theme, BoxEdge::NORMAL);
     });
 
     spec::meta(
@@ -140,5 +78,74 @@ fn row(
         MenuItemVariant::Normal,
         active,
         true,
+    );
+}
+
+/// 팔레트 카드 한 장. WebView 페이지 위 예제가 불투명 가장자리로 다시 쓴다.
+pub fn palette_card(ui: &mut egui::Ui, theme: &Theme, edge: BoxEdge) {
+    kit::frame_card_edge(
+        ui,
+        theme,
+        theme.palette_width(),
+        kit::raised_fill(theme),
+        edge,
+        |ui| {
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+                kit::field(
+                    ui,
+                    theme,
+                    None,
+                    crate::i18n::t("command_palette.placeholder"),
+                    true,
+                    false,
+                );
+            });
+            kit::hsep(ui, theme);
+
+            kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+                row(
+                    ui,
+                    theme,
+                    icons::TERMINAL,
+                    "New Terminal",
+                    &["Ctrl", "T"],
+                    true,
+                );
+                row(
+                    ui,
+                    theme,
+                    icons::SPLIT,
+                    "Split Pane Vertical",
+                    &["Ctrl", "D"],
+                    false,
+                );
+                row(
+                    ui,
+                    theme,
+                    icons::PORT,
+                    "Toggle Theme (Mocha / Latte)",
+                    &[],
+                    false,
+                );
+                row(
+                    ui,
+                    theme,
+                    icons::SETTINGS,
+                    "Settings",
+                    &["Ctrl", ","],
+                    false,
+                );
+            });
+            kit::hsep(ui, theme);
+
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                    kit::caption(ui, theme, "↑↓ navigate", true);
+                    kit::caption(ui, theme, "↵ run", true);
+                    kit::caption(ui, theme, "esc close", true);
+                });
+            });
+        },
     );
 }

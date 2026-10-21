@@ -2,6 +2,7 @@
 //! 호출자가 화면의 용도에 맞는 함수를 선택한다. 배경 어둡게 하기는 별도 헬퍼로 그린다.
 //! 두 배치 예제를 비교할 수 있도록 예제 영역과 카드의 크기는 공유 상수로 둔다.
 
+use tasty_egui_theme::overlay_edge::BoxEdge;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
@@ -23,15 +24,29 @@ pub fn frame_card(
     fill: egui::Color32,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    frame_card_with_shadow(
-        ui,
-        theme,
-        width,
-        fill,
-        strong_edge(theme),
-        Some(theme.shadow_modal()),
-        add,
-    );
+    frame_card_edge(ui, theme, width, fill, BoxEdge::NORMAL, add);
+}
+
+/// [`frame_card`] 에 상자 가장자리를 받는다. 불투명 모드 WebView 페이지 위에서는 각진 모서리·
+/// 그림자 없음이다.
+pub fn frame_card_edge(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: LogicalPx,
+    fill: egui::Color32,
+    edge: BoxEdge,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    let mut frame = egui::Frame::new()
+        .fill(fill)
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            strong_edge(theme),
+        ))
+        .corner_radius(edge.radius(theme, theme.corner_radius).value());
+    let shadow = edge.shadow(theme, theme.shadow_modal());
+    frame = frame.shadow(shadow.to_egui());
+    show_card(ui, frame, width, add);
 }
 
 /// 트리거 옆에 뜨는 팝오버 프레임. 배경을 어둡게 하지 않는다.
@@ -72,14 +87,25 @@ pub fn frame_card_menu(
     width: LogicalPx,
     add: impl FnOnce(&mut egui::Ui),
 ) {
+    frame_card_menu_edge(ui, theme, width, BoxEdge::NORMAL, add);
+}
+
+/// [`frame_card_menu`] 에 상자 가장자리를 받는다.
+pub fn frame_card_menu_edge(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: LogicalPx,
+    edge: BoxEdge,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     let frame = egui::Frame::new()
         .fill(theme.menu_bg().to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
             theme.menu_border().to_egui(),
         ))
-        .corner_radius(theme.menu_radius().value())
-        .shadow(theme.shadow_popover().to_egui());
+        .corner_radius(edge.radius(theme, theme.menu_radius()).value())
+        .shadow(edge.shadow(theme, theme.shadow_popover()).to_egui());
     show_card(ui, frame, width, add);
 }
 

@@ -4,6 +4,7 @@
 //! 있는 kind 마다 `MenuItem` 하나. 행 끝에는 단축키 글자를 `Kbd` 키캡으로 그린다(본체와 같은
 //! `menu_item_kbd`). 폭은 `convert-popup-width` 에 UI 배율을 곱한 값이다.
 
+use tasty_egui_theme::overlay_edge::BoxEdge;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item_kbd_with_hover};
@@ -88,10 +89,17 @@ fn scaled(theme: &Theme, zoom: f32) -> Theme {
 /// 본체 convert popup 한 장. 높이 = 타이틀바 + 콘텐츠 여백 × 2 + 행 수 × MenuItem 높이.
 /// `open_tip`이면 잘린 제목의 Tooltip을 호버 없이 띄운다(specimen).
 fn popup(ui: &mut egui::Ui, th: &Theme, title: &str, width: LogicalPx, open_tip: bool) {
-    popup_rows(ui, th, title, width, open_tip, KINDS, None);
+    popup_rows(ui, th, title, width, open_tip, KINDS, None, BoxEdge::NORMAL);
+}
+
+/// convert popup 한 장을 주어진 가장자리로 그린다. WebView 페이지 위 예제가 쓴다.
+pub fn card(ui: &mut egui::Ui, th: &Theme, title: &str, edge: BoxEdge) {
+    let width = th.convert_popup_width();
+    popup_rows(ui, th, title, width, false, KINDS, None, edge);
 }
 
 /// [`popup`] 에 행 목록과 호버 지정 행을 받는다. 선택(키보드) 행은 언제나 첫 행이다.
+#[allow(clippy::too_many_arguments)] // reason: specimen 이 행 목록·호버·가장자리를 모두 바꿔 그린다.
 fn popup_rows(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -100,6 +108,7 @@ fn popup_rows(
     open_tip: bool,
     kinds: &[Kind],
     hover: Option<usize>,
+    edge: BoxEdge,
 ) {
     let title_h = th.item_height_interactive;
     let margin = th.spacing_xs;
@@ -109,8 +118,12 @@ fn popup_rows(
         egui::Sense::hover(),
     );
     let painter = ui.painter_at(frame.expand(th.spacing_lg.value()));
-    let radius = th.corner_radius.value();
-    painter.add(th.shadow_modal().to_egui().as_shape(frame, radius));
+    let radius = edge.radius(th, th.corner_radius).value();
+    painter.add(
+        edge.shadow(th, th.shadow_modal())
+            .to_egui()
+            .as_shape(frame, radius),
+    );
     painter.rect_filled(frame, radius, th.bg_panel().to_egui());
     painter.rect_stroke(
         frame,
@@ -250,6 +263,7 @@ pub fn draw_shortcut(ui: &mut egui::Ui, theme: &Theme) {
                     false,
                     KINDS_STATES,
                     Some(1),
+                    BoxEdge::NORMAL,
                 );
             });
         }
@@ -262,6 +276,7 @@ pub fn draw_shortcut(ui: &mut egui::Ui, theme: &Theme) {
                 false,
                 KINDS_KO,
                 None,
+                BoxEdge::NORMAL,
             );
         });
         for (label, frame_th, th) in [
@@ -277,6 +292,7 @@ pub fn draw_shortcut(ui: &mut egui::Ui, theme: &Theme) {
                     false,
                     KINDS_JA,
                     None,
+                    BoxEdge::NORMAL,
                 );
             });
         }

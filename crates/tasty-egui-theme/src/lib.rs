@@ -5,6 +5,8 @@
 //! 본체와 갤러리에서 공유하는 Theme ↔ egui 어댑터.
 //! 테마의 밝기에 맞는 egui 기본값을 고른 뒤 위젯 색, 글꼴, 간격, 그림자를 적용한다.
 
+pub mod overlay_edge;
+
 use std::sync::Arc;
 
 use egui::emath::GuiRounding as _;
@@ -44,12 +46,40 @@ pub fn with_popover_frame_ring<R>(
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
     let prev = ui.style().clone();
+    // 이 호출이 그릴 수 있는 드롭다운은 지금 열린 egui 팝업이다. 직전 프레임 영역이 불투명
+    // 페이지와 겹치거나 부모 셸이 불투명이면 상자 전체를 각진 모서리·그림자 없음으로 그린다.
+    let ctx = ui.ctx().clone();
+    let open = overlay_edge::open_popup_layers(&ctx);
+    let pages = overlay_edge::opaque_pages(&ctx);
+    let parent_opaque = overlay_edge::opaque_parent(&ctx);
+    let edge = open
+        .iter()
+        .filter_map(|l| ctx.memory(|m| m.area_rect(l.id)))
+        .map(|r| overlay_edge::edge_for(r, parent_opaque, &pages))
+        .find(|e| e.opaque)
+        .unwrap_or(overlay_edge::BoxEdge {
+            opaque: parent_opaque,
+        });
     let visuals = &mut ui.style_mut().visuals;
     visuals.window_fill = theme.menu_bg().into();
     visuals.window_stroke = stroke1(theme, theme.menu_border());
-    visuals.menu_corner_radius = theme.menu_radius().value().into();
+    visuals.menu_corner_radius = edge.radius(theme, theme.menu_radius()).value().into();
+    if edge.opaque {
+        visuals.popup_shadow = theme.shadow_none().to_egui();
+    }
     ui.style_mut().spacing.menu_margin = ring;
+    let before = overlay_edge::paint_counts(&ctx, &open);
     let out = add(ui);
+    // 이 프레임에 처음 연 팝업은 호출 뒤에야 레이어 목록에 들어온다. 그 전 그림 수는 0이다.
+    let mut layers = open.clone();
+    let mut counts = before;
+    for l in overlay_edge::open_popup_layers(&ctx) {
+        if !layers.contains(&l) {
+            layers.push(l);
+            counts.push(0);
+        }
+    }
+    overlay_edge::record_drawn(&ctx, ui.layer_id(), edge, &layers, &counts);
     ui.set_style(prev);
     out
 }
