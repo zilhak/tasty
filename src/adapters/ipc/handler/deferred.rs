@@ -365,7 +365,9 @@ impl AppServices {
     }
 
     /// 로그 정리 틱마다 만료 행 청소를, 주기가 돌아왔으면 로그 보존 정리를 기다리지 않는 writer
-    /// 요청으로 넣는다. 두 정리는 서로의 저장 실패에 묶이지 않도록 요청을 나눈다.
+    /// 요청으로 넣는다. 별도 Unit도 writer 수집 묶음에서 transaction을 공유해 저장 실패 시 함께
+    /// 롤백될 수 있다. TTL 청소는 다음 LogPrune 틱에 다시 제출한다. 로그 정리는 제출 전 성공한
+    /// 1시간 claim의 시각을 접수 거절·저장 실패·롤백 뒤에도 되돌리지 않는다.
     pub(crate) fn submit_periodic_prune(&self, now_ms: u64) {
         self.memory_access().submit_detached(
             tasty_memory::writer::MemoryRequest::unit(0, |memory| {
