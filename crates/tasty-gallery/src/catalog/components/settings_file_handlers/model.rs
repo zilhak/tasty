@@ -137,7 +137,7 @@ impl Hdl {
 pub(super) fn hdl_seed() -> Vec<Hdl> {
     vec![
         Hdl::new(
-            "image-view",
+            "host/image-view",
             10,
             "host",
             "image",
@@ -145,14 +145,14 @@ pub(super) fn hdl_seed() -> Vec<Hdl> {
             true,
         ),
         Hdl::new(
-            "markdown-view",
+            "host/markdown-view",
             10,
             "host",
             "markdown",
             "surface:markdown_view",
             true,
         ),
-        Hdl::new("log-view", 20, "host", "log", "surface:log_view", true),
+        Hdl::new("host/log-view", 20, "host", "log", "surface:log_view", true),
         Hdl::new(
             "md-plus/notebook-open",
             50,
@@ -172,10 +172,48 @@ pub(super) fn hdl_seed() -> Vec<Hdl> {
     ]
 }
 
+/// 시안 `TIE_HDL` — `markdown` priority 10에 출처마다 handler 하나. host/markdown-view와 같은 자리다.
+fn tie_hdl() -> Vec<Hdl> {
+    vec![
+        Hdl::new(
+            "com.example.md/preview",
+            10,
+            "plugin:com.example.md",
+            "markdown",
+            "surface:md_preview",
+            true,
+        ),
+        Hdl::new("user/my-viewer", 10, "user", "markdown", "system", true),
+    ]
+}
+
+/// 시안 `OWNER_RANK` — 같은 priority에서 user > plugin > host.
+fn owner_rank(origin: &str) -> u8 {
+    if origin == "user" {
+        0
+    } else if origin.starts_with("plugin:") {
+        1
+    } else {
+        2
+    }
+}
+
+/// 시안 `sortHdl` — 목록 순서가 실행 순서다. priority ↑ → owner user > plugin > host → id.
+pub(super) fn run_order(xs: &[Hdl]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..xs.len()).collect();
+    order.sort_by(|&a, &b| {
+        let (x, y) = (&xs[a], &xs[b]);
+        (x.prio, owner_rank(&x.origin), &x.id).cmp(&(y.prio, owner_rank(&y.origin), &y.id))
+    });
+    order
+}
+
 /// 시안 Pane의 초기 상태 prop.
 #[derive(Clone, Copy, Default)]
 pub(super) struct Seed {
     pub(super) de: bool,
+    /// 같은 detector·priority에 출처별 handler를 더한다(시안 `tie`).
+    pub(super) tie: bool,
     pub(super) narrow: bool,
     pub(super) empty: bool,
     pub(super) pending: bool,
@@ -275,6 +313,9 @@ pub(super) fn det_state(seed: &Seed) -> DetState {
 
 pub(super) fn hdl_state(seed: &Seed) -> HdlState {
     let mut xs = if seed.empty { Vec::new() } else { hdl_seed() };
+    if seed.tie && !seed.empty {
+        xs.extend(tie_hdl());
+    }
     if seed.pending {
         for x in &mut xs {
             if x.origin == "user" {

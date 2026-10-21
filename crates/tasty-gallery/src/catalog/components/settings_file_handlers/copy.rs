@@ -136,7 +136,7 @@ pub(super) fn copy_en() -> FhCopy {
 pub(super) fn copy_de() -> FhCopy {
     FhCopy {
         det_intro: "Ein Detektor bestimmt, welche Art Datei ein Pfad ist. Aktive Detektoren werden der Reihe nach geprüft; der erste mit passenden Regeln gewinnt.",
-        hdl_intro: "Ein Handler öffnet eine Datei, die ein Detektor erkannt hat. Niedrigere Priorität läuft zuerst; bei Gleichstand nach Id.",
+        hdl_intro: "Ein Handler öffnet eine Datei, die ein Detektor erkannt hat. Niedrigere Priorität läuft zuerst. Bei Gleichstand laufen user-Handler vor plugin-Handlern und plugin-Handler vor host-Handlern. Die Liste steht in Ausführungsreihenfolge.",
         bullets: [
             ("host", "eingebaut"),
             ("plugin:<id>", "von einem Plugin"),

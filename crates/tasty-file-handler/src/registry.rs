@@ -538,11 +538,19 @@ impl tasty_plugin_protocol::host_port::FileHandlerRegistryPort for FileHandlerRe
 
 fn sort_handlers(v: &mut [FileHandler]) {
     v.sort_by(|a, b| {
-        a.priority
-            .cmp(&b.priority)
-            .then_with(|| owner_rank(&a.owner).cmp(&owner_rank(&b.owner)))
-            .then_with(|| a.id.cmp(&b.id))
+        run_order_key(a.priority, &a.owner, &a.id).cmp(&run_order_key(b.priority, &b.owner, &b.id))
     });
+}
+
+/// handler 실행 순서의 정렬 키. priority 오름차순 → owner `user > plugin > host` → id.
+/// [`FileHandlerRegistry::handlers_for`]와 설정의 등록 목록이 이 키 하나로 정렬해
+/// 한 detector의 행을 위에서부터 읽으면 실행 순서가 된다.
+pub fn run_order_key<'a>(
+    priority: i32,
+    owner: &HandlerOwner,
+    id: &'a HandlerId,
+) -> (i32, u8, &'a HandlerId) {
+    (priority, owner_rank(owner), id)
 }
 
 /// Host → Plugin → User 순으로 병합하고 같은 출처 안에서는 설치 순서를 유지한다.

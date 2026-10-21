@@ -271,7 +271,7 @@ err_reserved = "$ で始まる id は予約されています。既存のもの�
 err_no_rules = "拡張子かパス glob を 1 つ以上入力してください。"
 
 [settings.file_handler.handlers]
-description = "handler は detector が認識したファイルを開きます。priority が低いほど先に実行され、同じなら id 順です。"
+description = "handler は detector が認識したファイルを開きます。priority が低いほど先に実行されます。同じ場合は user handler が plugin handler より、plugin handler が host handler より先に実行されます。一覧は実行順です。"
 add = "handler を追加"
 update = "handler を更新"
 card_title = "新しい handler"

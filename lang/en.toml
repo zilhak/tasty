@@ -272,7 +272,7 @@ err_reserved = "Ids starting with $ are reserved. You can only change ones that 
 err_no_rules = "Add at least one extension or a path glob."
 
 [settings.file_handler.handlers]
-description = "A handler opens a file that a detector recognized. Lower priority runs first; equal priorities sort by id."
+description = "A handler opens a file that a detector recognized. Lower priority runs first. On a tie, user handlers run before plugin handlers, and plugin handlers before host ones. The list is in run order."
 add = "Add handler"
 update = "Update handler"
 card_title = "New handler"

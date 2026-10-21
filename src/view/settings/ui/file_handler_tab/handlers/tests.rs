@@ -180,3 +180,56 @@ fn errors_block_the_commit_and_keep_the_card_open() {
     assert!(fh.add_handler.is_empty());
     assert!(fh.add_handler_form.open && fh.add_handler_form.tried);
 }
+
+/// 같은 priority면 user > plugin > host 순이다. 저장 전 대기 행도 그 자리에 서고, 저장한 뒤
+/// `handlers_for`가 돌려주는 실행 순서와 목록 순서가 같다.
+#[test]
+fn rows_follow_the_run_order_and_match_handlers_for_after_save() {
+    use tasty_file_handler::config::{HandlerDecl, PluginHandlerActionDecl};
+    let (reg, catalog) = registry();
+    reg.install_plugin_handlers(
+        "com.example.md",
+        &[HandlerDecl::<PluginHandlerActionDecl> {
+            id: "preview".into(),
+            detector: "html".into(),
+            priority: 50,
+            display_name_i18n_key: None,
+            disabled: false,
+            action: PluginHandlerActionDecl::Ipc {
+                method: "com.example.md.open".into(),
+            },
+        }],
+    );
+    let mut fh = FileHandlerEditDraft {
+        add_handler_form: AddHandlerForm {
+            priority_input: "50".into(),
+            ..form("zz-viewer", Some("html"))
+        },
+        ..FileHandlerEditDraft::default()
+    };
+    commit(&mut fh, &catalog);
+    let html: Vec<String> = handler_rows(&catalog, &fh)
+        .iter()
+        .filter(|r| r.detector == "html")
+        .map(|r| r.id.as_str().to_string())
+        .collect();
+    let expected = [
+        "user/zz-viewer",
+        "com.example.md/preview",
+        "host/html-system",
+    ];
+    assert_eq!(html, expected, "대기 행도 실행 순서의 자리에 선다");
+    save(&reg, fh);
+    let run: Vec<String> = reg
+        .handlers_for(&tasty_file_format::DetectorId("html".into()))
+        .iter()
+        .map(|h| h.id.as_str().to_string())
+        .collect();
+    assert_eq!(run, expected);
+    let saved: Vec<String> = handler_rows(&catalog, &FileHandlerEditDraft::default())
+        .iter()
+        .filter(|r| r.detector == "html")
+        .map(|r| r.id.as_str().to_string())
+        .collect();
+    assert_eq!(saved, run, "저장 뒤 목록과 실행 순서가 같다");
+}

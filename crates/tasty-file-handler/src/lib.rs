@@ -12,6 +12,7 @@ pub mod types;
 pub use config::{HandlerDeclError, UserHandlerActionDecl};
 pub use registry::{
     FileHandlerRegistry, RejectedUserHandler, UserHandlerRejectReason, UserHandlerUpsertDecl,
+    run_order_key,
 };
 pub use types::{FileHandler, HandlerAction, HandlerId, HandlerOwner, is_valid_handler_short_name};
 

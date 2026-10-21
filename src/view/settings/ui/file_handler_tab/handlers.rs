@@ -5,6 +5,7 @@
 
 use crate::file::handler::{
     HandlerAction, HandlerId, HandlerOwner, UserHandlerActionDecl, UserHandlerUpsertDecl,
+    run_order_key,
 };
 use crate::i18n::{t, t_fmt};
 use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
@@ -28,8 +29,7 @@ enum HdlPending {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct HdlRow {
     id: HandlerId,
-    owner: String,
-    user: bool,
+    owner: HandlerOwner,
     priority: i32,
     detector: String,
     action: String,
@@ -64,7 +64,8 @@ fn decl_action_summary(action: Option<&UserHandlerActionDecl>) -> String {
     }
 }
 
-/// 등록 handler와 초안을 합쳐 priority → id 순으로 정렬한 행을 만든다.
+/// 등록 handler와 초안을 합쳐 실행 순서(priority → owner user > plugin > host → id)로 정렬한
+/// 행을 만든다. 대기 행도 저장 뒤 실행될 자리에 둔다.
 fn handler_rows(file_handler: &FileHandlerRegistry, fh: &FileHandlerEditDraft) -> Vec<HdlRow> {
     let mut rows: Vec<HdlRow> = file_handler
         .list_handlers()
@@ -80,8 +81,7 @@ fn handler_rows(file_handler: &FileHandlerRegistry, fh: &FileHandlerEditDraft) -
                 .remove_handler
                 .contains(&h.id)
                 .then_some(HdlPending::Remove),
-            owner: handler_owner_label(&h.owner),
-            user: matches!(h.owner, HandlerOwner::User),
+            owner: h.owner,
             priority: h.priority,
             detector: h.detector.as_str().to_string(),
             action: handler_action_summary(&h.action),
@@ -96,8 +96,7 @@ fn handler_rows(file_handler: &FileHandlerRegistry, fh: &FileHandlerEditDraft) -
                 .get(&id)
                 .copied()
                 .unwrap_or(decl.disabled != Some(true)),
-            owner: "user".into(),
-            user: true,
+            owner: HandlerOwner::User,
             priority: decl.priority.unwrap_or(100),
             detector: decl.detector.clone().unwrap_or_default(),
             action: decl_action_summary(decl.action.as_ref()),
@@ -115,9 +114,7 @@ fn handler_rows(file_handler: &FileHandlerRegistry, fh: &FileHandlerEditDraft) -
         }
     }
     rows.sort_by(|a, b| {
-        a.priority
-            .cmp(&b.priority)
-            .then_with(|| a.id.as_str().cmp(b.id.as_str()))
+        run_order_key(a.priority, &a.owner, &a.id).cmp(&run_order_key(b.priority, &b.owner, &b.id))
     });
     rows
 }
@@ -163,12 +160,13 @@ pub(super) fn draw_handlers(
         let labels = RowLabels::get();
         for row in &rows {
             let remove = row.pending == Some(HdlPending::Remove);
-            let locked = t_fmt("settings.file_handler.common.locked", &row.owner);
+            let owner = handler_owner_label(&row.owner);
+            let locked = t_fmt("settings.file_handler.common.locked", &owner);
             let view = FhRowView {
                 id: row.id.as_str(),
                 origins: vec![FhOrigin {
-                    label: row.owner.clone(),
-                    plugin: row.owner.starts_with("plugin:"),
+                    plugin: matches!(row.owner, HandlerOwner::Plugin(_)),
+                    label: owner.clone(),
                     struck: false,
                 }],
                 prio: Some(row.priority),
@@ -210,7 +208,7 @@ pub(super) fn draw_handlers(
 }
 
 fn row_trailing(row: &HdlRow) -> FhTrailing {
-    if !row.user {
+    if row.owner != HandlerOwner::User {
         FhTrailing::Lock
     } else if row.pending.is_some() {
         FhTrailing::Undo

@@ -144,7 +144,7 @@ const ROW_SPECS: &[(&str, &str)] = &[
     ),
     (
         "sort",
-        "detectors: registry order · handlers: priority ↑ then id",
+        "detectors: registry order · handlers: run order — priority ↑ → owner user > plugin > host → id",
     ),
 ];
 
@@ -483,11 +483,42 @@ pub fn draw_file_handlers(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Registered rows — two lines, no table",
         Some(
-            "Line 1: id · origin Tag · prio N · Switch · trailing slot. Line 2: <detector> → <action>. Rows sort by priority, then id.",
+            "Line 1: id · origin Tag · prio N · Switch · trailing slot. Line 2: <detector> → <action>. Rows are in run order.",
         ),
     );
     pane(ui, theme, "hdl-list", false, Seed::default());
     spec::meta(ui, theme, ROW_SPECS, &row_tokens(theme));
+
+    spec::spec(
+        ui,
+        theme,
+        "Handler run order — the list is the order handlers run",
+        Some(
+            "Priority ↑, then owner user > plugin > host, then id. Reading one detector's rows top to bottom is its run order; pending rows take the same slot. Scene: markdown at priority 10 with user/my-viewer · com.example.md/preview · host/markdown-view.",
+        ),
+    );
+    pane(
+        ui,
+        theme,
+        "hdl-tie",
+        false,
+        Seed {
+            tie: true,
+            ..Seed::default()
+        },
+    );
+    pane(
+        ui,
+        theme,
+        "hdl-tie-de-narrow",
+        false,
+        Seed {
+            tie: true,
+            de: true,
+            narrow: true,
+            ..Seed::default()
+        },
+    );
 
     spec::spec(
         ui,
@@ -725,5 +756,28 @@ mod tests {
             ..Seed::default()
         });
         assert_eq!(h.det, Some(5));
+    }
+
+    /// tie 장면의 markdown 행은 시안처럼 user → plugin → host 순이다.
+    #[test]
+    fn the_tie_scene_lists_one_detector_in_run_order() {
+        let st = hdl_state(&Seed {
+            tie: true,
+            ..Seed::default()
+        });
+        let ids: Vec<&str> = run_order(&st.xs)
+            .into_iter()
+            .map(|i| &st.xs[i])
+            .filter(|x| x.det == "markdown")
+            .map(|x| x.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                "user/my-viewer",
+                "com.example.md/preview",
+                "host/markdown-view"
+            ]
+        );
     }
 }

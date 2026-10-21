@@ -295,11 +295,7 @@ pub(super) fn handlers_pane(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut 
     if st.adding {
         hdl_card(ui, th, l, st);
     }
-    let mut order: Vec<usize> = (0..st.xs.len()).collect();
-    order.sort_by(|&a, &b| {
-        let (x, y) = (&st.xs[a], &st.xs[b]);
-        x.prio.cmp(&y.prio).then_with(|| x.id.cmp(&y.id))
-    });
+    let order = run_order(&st.xs);
     fh_list_head(ui, th, &fill(l.reg_hdl, &st.xs.len().to_string()));
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
