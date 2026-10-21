@@ -54,102 +54,123 @@ fn rejected_entries_preserve(first: Caller) {
                 paths: vec!["/x/kept.md".into()],
             }),
         ] {
-            let (mut state, mut session) = crate::state::tests::two_pane_fixture();
-            let mut engine = session.borrow_mut();
-            for def in defs::all_defs() {
-                state.popups.register_def(def, 1.0);
-            }
-            if let Some(reply) = enter(first, &mut state, &mut engine) {
-                assert!(reply.result.is_some());
-            }
-            for intent in state.take_pending_intents() {
-                crate::intent::popup::handle(&mut state, &mut engine, &intent);
-            }
-            // 부모에서 상속받은 범위와 사용자 입력 초안도 새 호출로 초기화되면 안 된다.
-            let scope = PopupScope::Surface(state.focused_surface_id(&engine).unwrap());
-            state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().scope = scope.clone();
-            let data = state.dialogs.file_picker.as_mut().unwrap();
-            data.current_dir = "/x".into();
-            data.selected = vec!["kept.md".into()];
-            data.result = settled.clone();
-            let id = data.request_id;
-            let filters = data.filters.clone();
-            let requester = data
-                .requester
-                .as_ref()
-                .map(|r| (r.plugin_id.clone(), r.request_id, r.owner_popup_instance));
-            let tools = state.dialogs.file_picker_callers.open_file.clone();
-            let new_tab = state.dialogs.file_picker_callers.new_tab.clone();
-            if settled.is_some() {
-                state.popups.close(FILE_PICKER_POPUP_ID);
-            }
-
-            let reply = enter(second, &mut state, &mut engine);
-            let data = state.dialogs.file_picker.as_ref().unwrap();
-            assert_eq!(
-                data.request_id, id,
-                "{first:?} -> {second:?}: replaced request"
-            );
-            assert_eq!(data.current_dir, "/x");
-            assert_eq!(data.selected, ["kept.md"]);
-            assert_eq!(data.filters, filters);
-            assert_eq!(data.result, settled);
-            assert_eq!(
-                data.requester
-                    .as_ref()
-                    .map(|r| { (r.plugin_id.clone(), r.request_id, r.owner_popup_instance) }),
-                requester
-            );
-            assert_eq!(state.dialogs.file_picker_callers.open_file, tools);
-            assert_eq!(state.dialogs.file_picker_callers.new_tab, new_tab);
-            assert_eq!(
-                state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().scope,
-                scope
-            );
-            assert!(
-                state.take_pending_intents().is_empty(),
-                "rejected entry queued an intent"
-            );
-            match reply {
-                Some(reply) => {
-                    assert_eq!(reply.error.unwrap().code, -32000);
-                    assert_eq!(state.toasts.len(), 0, "IPC busy must not notify the user");
-                }
-                None => assert_eq!(
-                    state.toasts.messages(),
-                    [crate::i18n::t("filepicker.already_open")],
-                    "a user entry needs visible feedback",
-                ),
-            }
-
-            let result = settled.unwrap_or(FilePickerResult::Cancelled);
-            state.dialogs.file_picker.as_mut().unwrap().result = Some(result.clone());
-            let (outcome, requester) = take_outcome(&mut state).unwrap();
-            assert_eq!(outcome, FilePickerOutcome::new(id, result));
-            assert!(take_outcome(&mut state).is_none());
-            if let Some(req) = &requester {
-                assert_eq!(
-                    result_payload(req, &outcome),
-                    serde_json::json!({
-                        "request_id": id.0, "paths": outcome.paths, "cancelled": outcome.cancelled,
-                    })
-                );
-            }
-            deliver_outcome(&mut state, &engine, None, requester.as_ref(), &outcome);
-            let delivered = state.take_pending_intents();
-            let expected = usize::from(!outcome.cancelled && !matches!(first, Caller::Plugin));
-            assert_eq!(
-                delivered.len(),
-                expected,
-                "original caller must receive its result"
-            );
-            deliver_outcome(&mut state, &engine, None, None, &outcome);
-            assert!(
-                state.take_pending_intents().is_empty(),
-                "host result applied twice"
-            );
+            rejected_entry_preserves(first, second, settled);
         }
     }
+}
+
+fn rejected_entry_preserves(first: Caller, second: Caller, settled: Option<FilePickerResult>) {
+    let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+    let mut engine = session.borrow_mut();
+    for def in defs::all_defs() {
+        state.popups.register_def(def, 1.0);
+    }
+    if let Some(reply) = enter(first, &mut state, &mut engine) {
+        assert!(reply.result.is_some());
+    }
+    for intent in state.take_pending_intents() {
+        crate::intent::popup::handle(&mut state, &mut engine, &intent);
+    }
+    // 부모에서 상속받은 범위와 사용자 입력 초안도 새 호출로 초기화되면 안 된다.
+    let scope = PopupScope::Surface(state.focused_surface_id(&engine).unwrap());
+    state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().scope = scope.clone();
+    let data = state.dialogs.file_picker.as_mut().unwrap();
+    data.current_dir = "/x".into();
+    data.selected = vec!["kept.md".into()];
+    data.result = settled.clone();
+    let id = data.request_id;
+    let filters = data.filters.clone();
+    let requester = data
+        .requester
+        .as_ref()
+        .map(|r| (r.plugin_id.clone(), r.request_id, r.owner_popup_instance));
+    let tools = state.dialogs.file_picker_callers.open_file.clone();
+    let new_tab = state.dialogs.file_picker_callers.new_tab.clone();
+    if settled.is_some() {
+        state.popups.close(FILE_PICKER_POPUP_ID);
+    }
+
+    let reply = enter(second, &mut state, &mut engine);
+    let data = state.dialogs.file_picker.as_ref().unwrap();
+    assert_eq!(
+        data.request_id, id,
+        "{first:?} -> {second:?}: replaced request"
+    );
+    assert_eq!(data.current_dir, "/x");
+    assert_eq!(data.selected, ["kept.md"]);
+    assert_eq!(data.filters, filters);
+    assert_eq!(data.result, settled);
+    assert_eq!(
+        data.requester
+            .as_ref()
+            .map(|r| { (r.plugin_id.clone(), r.request_id, r.owner_popup_instance) }),
+        requester
+    );
+    assert_eq!(state.dialogs.file_picker_callers.open_file, tools);
+    assert_eq!(state.dialogs.file_picker_callers.new_tab, new_tab);
+    assert_eq!(
+        state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().scope,
+        scope
+    );
+    assert!(
+        state.take_pending_intents().is_empty(),
+        "rejected entry queued an intent"
+    );
+    assert_busy_feedback(&state, reply);
+
+    assert_original_result_is_delivered_once(&mut state, &engine, first, id, settled);
+}
+
+fn assert_busy_feedback(
+    state: &RequestContext,
+    reply: Option<tasty_ipc::protocol::JsonRpcResponse>,
+) {
+    match reply {
+        Some(reply) => {
+            assert_eq!(reply.error.unwrap().code, -32000);
+            assert_eq!(state.toasts.len(), 0, "IPC busy must not notify the user");
+        }
+        None => assert_eq!(
+            state.toasts.messages(),
+            [crate::i18n::t("filepicker.already_open")],
+            "a user entry needs visible feedback",
+        ),
+    }
+}
+
+fn assert_original_result_is_delivered_once(
+    state: &mut RequestContext,
+    engine: &crate::core::CoreState,
+    first: Caller,
+    id: crate::state::FilePickerRequestId,
+    settled: Option<FilePickerResult>,
+) {
+    let result = settled.unwrap_or(FilePickerResult::Cancelled);
+    state.dialogs.file_picker.as_mut().unwrap().result = Some(result.clone());
+    let (outcome, requester) = take_outcome(state).unwrap();
+    assert_eq!(outcome, FilePickerOutcome::new(id, result));
+    assert!(take_outcome(state).is_none());
+    if let Some(req) = &requester {
+        assert_eq!(
+            result_payload(req, &outcome),
+            serde_json::json!({
+                "request_id": id.0, "paths": outcome.paths, "cancelled": outcome.cancelled,
+            })
+        );
+    }
+    deliver_outcome(state, engine, None, requester.as_ref(), &outcome);
+    let delivered = state.take_pending_intents();
+    let expected = usize::from(!outcome.cancelled && !matches!(first, Caller::Plugin));
+    assert_eq!(
+        delivered.len(),
+        expected,
+        "original caller must receive its result"
+    );
+    deliver_outcome(state, engine, None, None, &outcome);
+    assert!(
+        state.take_pending_intents().is_empty(),
+        "host result applied twice"
+    );
 }
 
 #[test]
