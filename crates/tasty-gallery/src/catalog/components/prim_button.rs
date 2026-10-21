@@ -1,7 +1,7 @@
 //! 공용 Button의 종류·크기·아이콘·비활성 상태 예제.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, checkbox, switch};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Ground, IconButton, checkbox, switch};
 
 use super::glyph;
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, dont, meta, stage};
@@ -55,6 +55,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 .enabled(false)
                 .show(ui, theme);
         });
+        ghost_on_raised(ui, theme);
     });
 
     meta(
@@ -86,6 +87,52 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("overlay-hover", "8% hover"),
             TokenChip::without_color("text-on-accent", "filled label"),
         ],
+    );
+}
+
+/// 시안 ghost ground="raised": surface-raised 위 Mocha·Latte 칸에 panel ghost와 raised ghost를 나란히 둔다.
+fn ghost_on_raised(ui: &mut egui::Ui, theme: &Theme) {
+    let themes = [
+        (
+            "Mocha",
+            palette(&tasty_themes::mocha_fallback(), theme.ui_zoom),
+        ),
+        (
+            "Latte",
+            palette(&crate::host_shell::latte_theme(), theme.ui_zoom),
+        ),
+    ];
+    cluster(
+        ui,
+        theme,
+        "ghost ground=\"raised\" — on surface-raised the label takes button-ghost-raised-fg → text-secondary-raised",
+        |ui| {
+            for (name, th) in &themes {
+                egui::Frame::new()
+                    .fill(th.surface_raised().to_egui())
+                    .corner_radius(th.corner_radius.value())
+                    .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                            ui.label(
+                                egui::RichText::new(*name)
+                                    .size(th.font_size_caption.value())
+                                    .color(th.text_secondary_raised().to_egui()),
+                            );
+                            Button::new("Cancel (panel)")
+                                .variant(ButtonVariant::Ghost)
+                                .size(ControlSize::Sm)
+                                .show(ui, th);
+                            Button::new("Cancel (raised)")
+                                .variant(ButtonVariant::Ghost)
+                                .size(ControlSize::Sm)
+                                .ground(Ground::Raised)
+                                .show(ui, th);
+                        });
+                    });
+            }
+        },
     );
 }
 

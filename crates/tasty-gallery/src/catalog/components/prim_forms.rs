@@ -5,8 +5,8 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    SearchableSelect, SearchableSelectLabels, SearchableSelectOption, SelectLook, checkbox, select,
-    select_or_placeholder, select_pinned, switch,
+    Ground, SearchableSelect, SearchableSelectLabels, SearchableSelectOption, SelectLook, checkbox,
+    select, select_or_placeholder, select_pinned, switch,
 };
 
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage, wrap_item};
@@ -125,7 +125,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
         });
     });
-    select_states(ui, theme);
+    select_states(ui, theme, false);
+    select_states(ui, theme, true);
 
     meta(
         ui,
@@ -162,7 +163,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 /// 시안 "Select states": Mocha·Latte 칸마다 여섯 상태를 field-width-lg 칸에 고정해 그린다.
 /// hover·open은 포인터로만 생기므로 본체 Select와 같은 칠을 쓰는 `select_pinned`로 고정한다.
-fn select_states(ui: &mut egui::Ui, theme: &Theme) {
+/// `raised`면 surface-raised 위 ground="raised" 줄이다 — value · focus/open · no value · disabled와
+/// 비교용 panel ground 칸.
+fn select_states(ui: &mut egui::Ui, theme: &Theme, raised: bool) {
     const VALUE: &str = "Tasty rc";
     const PLACEHOLDER: &str = "Select a profile…";
     let with_zoom =
@@ -171,50 +174,113 @@ fn select_states(ui: &mut egui::Ui, theme: &Theme) {
         ("Mocha", with_zoom(tasty_themes::mocha_fallback())),
         ("Latte", with_zoom(crate::host_shell::latte_theme())),
     ];
-    let cells: [(&str, Option<&str>, SelectLook, bool); 6] = [
-        ("value", Some(VALUE), SelectLook::Normal, true),
-        ("hover", Some(VALUE), SelectLook::Hover, true),
-        ("focus / open", Some(VALUE), SelectLook::Open, true),
+    let panel: [(&str, Option<&str>, SelectLook, bool, Ground); 6] = [
+        (
+            "value",
+            Some(VALUE),
+            SelectLook::Normal,
+            true,
+            Ground::Panel,
+        ),
+        ("hover", Some(VALUE), SelectLook::Hover, true, Ground::Panel),
+        (
+            "focus / open",
+            Some(VALUE),
+            SelectLook::Open,
+            true,
+            Ground::Panel,
+        ),
         (
             "no value → select-placeholder",
             None,
             SelectLook::Normal,
             true,
+            Ground::Panel,
         ),
         (
             "disabled + value → state-disabled-fg",
             Some(VALUE),
             SelectLook::Normal,
             false,
+            Ground::Panel,
         ),
         (
             "disabled + no value → state-disabled-fg",
             None,
             SelectLook::Normal,
             false,
+            Ground::Panel,
         ),
     ];
+    let on_raised: [(&str, Option<&str>, SelectLook, bool, Ground); 5] = [
+        (
+            "value",
+            Some(VALUE),
+            SelectLook::Normal,
+            true,
+            Ground::Raised,
+        ),
+        (
+            "focus / open",
+            Some(VALUE),
+            SelectLook::Open,
+            true,
+            Ground::Raised,
+        ),
+        ("no value", None, SelectLook::Normal, true, Ground::Raised),
+        (
+            "disabled",
+            Some(VALUE),
+            SelectLook::Normal,
+            false,
+            Ground::Raised,
+        ),
+        (
+            "panel ground (vanishes)",
+            Some(VALUE),
+            SelectLook::Normal,
+            true,
+            Ground::Panel,
+        ),
+    ];
+    let cells: &[(&str, Option<&str>, SelectLook, bool, Ground)] =
+        if raised { &on_raised } else { &panel };
     stage(ui, theme, StageVariant::Column, |ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
         for (label, th) in &themes {
+            let (fill, ink, head) = if raised {
+                (
+                    th.surface_raised(),
+                    th.text_secondary_raised(),
+                    format!(
+                        "{label} — Select ground=\"raised\": box bg-panel + border-strong in every state; ink and focus unchanged"
+                    ),
+                )
+            } else {
+                (
+                    th.bg_panel(),
+                    th.text_muted(),
+                    format!(
+                        "{label} — Select states: hover / focus are pinned with the same border values the widget applies"
+                    ),
+                )
+            };
             egui::Frame::new()
-                .fill(th.bg_panel().to_egui())
+                .fill(fill.to_egui())
                 .corner_radius(th.corner_radius.value())
                 .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
                 .show(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = th.spacing_md.value();
                         ui.label(
-                            egui::RichText::new(format!(
-                                "{label} — Select states: hover / focus are pinned with the same border values the widget applies"
-                            ))
-                            .size(th.font_size_caption.value())
-                            .color(th.text_muted().to_egui()),
+                            egui::RichText::new(head)
+                                .size(th.font_size_caption.value())
+                                .color(ink.to_egui()),
                         );
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing =
                                 egui::vec2(th.spacing_md.value(), th.spacing_md.value());
-                            for (cell, value, look, enabled) in cells {
+                            for &(cell, value, look, enabled, ground) in cells {
                                 // 칸의 크기를 미리 알아야 줄을 바꾼다 — 지난 프레임 크기를 쓰는 wrap_item.
                                 wrap_item(ui, |ui| {
                                     ui.set_width(th.field_width_lg.value());
@@ -222,11 +288,12 @@ fn select_states(ui: &mut egui::Ui, theme: &Theme) {
                                     ui.label(
                                         egui::RichText::new(cell)
                                             .size(th.font_size_micro.value())
-                                            .color(th.text_muted().to_egui()),
+                                            .color(ink.to_egui()),
                                     );
                                     select_pinned(
                                         ui,
                                         th,
+                                        ground,
                                         value,
                                         PLACEHOLDER,
                                         th.field_width_lg,

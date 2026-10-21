@@ -333,7 +333,14 @@ pub fn multi_select(
     } else {
         theme.select_border()
     };
-    paint_trigger_box(ui.painter(), theme, rect, border, enabled);
+    paint_trigger_box(
+        ui.painter(),
+        theme,
+        crate::Ground::Panel,
+        rect,
+        border,
+        enabled,
+    );
 
     // 요약이 테두리나 화살표를 넘지 않게 줄이며 선택이 없으면 placeholder 색을 쓴다.
     let summary = multi_select_summary(labels, selected);

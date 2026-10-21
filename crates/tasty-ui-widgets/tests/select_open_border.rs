@@ -145,6 +145,7 @@ fn a_pinned_trigger_paints_the_same_borders_as_the_live_select() {
                     rect = select_pinned(
                         ui,
                         &th,
+                        tasty_ui_widgets::Ground::Panel,
                         Some("Tasty rc"),
                         "Select a profile…",
                         LogicalPx(WIDTH),

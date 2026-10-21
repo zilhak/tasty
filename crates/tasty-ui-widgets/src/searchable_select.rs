@@ -226,7 +226,14 @@ fn paint_trigger(
     } else {
         theme.select_border()
     };
-    paint_trigger_box(ui.painter(), theme, rect, border, enabled);
+    paint_trigger_box(
+        ui.painter(),
+        theme,
+        crate::Ground::Panel,
+        rect,
+        border,
+        enabled,
+    );
     // 열림·포커스는 테두리 바깥 1px ring을 더한다(시안 box-shadow 0 0 0 1px).
     if focused {
         ui.painter().rect_stroke(

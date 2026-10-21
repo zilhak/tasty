@@ -1,6 +1,7 @@
 //! 아이콘·접미 라벨을 붙일 수 있는 한 줄 입력 필드.
 //! 포커스와 잘못된 값의 테두리는 애니메이션 없이 바로 표시한다.
 
+use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
@@ -31,6 +32,32 @@ pub struct Input<'a> {
     trailing: Option<(IconPainter<'a>, f32)>,
     /// 비편집 표시만 대체한다. TextEdit에는 언제나 원문 버퍼를 전달한다.
     idle_text: Option<&'a str>,
+    /// 놓인 바탕. raised면 상자·쉬는 테두리·disabled·readonly 상자가 raised 토큰이다.
+    ground: crate::Ground,
+}
+
+/// 상자 채움. disabled > readonly > 기본 순이며 raised 바탕이면 raised 토큰이다.
+fn box_fill(theme: &Theme, enabled: bool, read_only: bool, raised: bool) -> HexColor {
+    match (!enabled, read_only, raised) {
+        (true, _, false) => theme.state_disabled_fill(),
+        (true, _, true) => theme.state_disabled_fill_raised(),
+        (false, true, false) => theme.input_readonly_bg(),
+        (false, true, true) => theme.input_readonly_raised_bg(),
+        (false, false, false) => theme.input_bg(),
+        (false, false, true) => theme.input_raised_bg(),
+    }
+}
+
+/// 포커스·invalid가 아닐 때의 테두리. raised 바탕이면 raised 토큰이다.
+fn box_rest_border(theme: &Theme, enabled: bool, read_only: bool, raised: bool) -> HexColor {
+    match (!enabled, read_only, raised) {
+        (true, _, false) => theme.state_disabled_border(),
+        (true, _, true) => theme.state_disabled_border_raised(),
+        (false, true, false) => theme.input_readonly_border(),
+        (false, true, true) => theme.input_readonly_raised_border(),
+        (false, false, false) => theme.input_border(),
+        (false, false, true) => theme.input_raised_border(),
+    }
 }
 
 impl Default for Input<'_> {
@@ -56,7 +83,14 @@ impl<'a> Input<'a> {
             focus_look: false,
             trailing: None,
             idle_text: None,
+            ground: crate::Ground::Panel,
         }
+    }
+
+    /// 놓인 바탕(시안 `ground`). surface-raised 위에서는 `Ground::Raised`.
+    pub fn ground(mut self, ground: crate::Ground) -> Self {
+        self.ground = ground;
+        self
     }
 
     pub fn id(mut self, id: egui::Id) -> Self {
@@ -154,13 +188,8 @@ impl<'a> Input<'a> {
 
         // disabled는 opacity 없이 disabled 상자 role과 disabled ink를 쓴다.
         let read_only = self.enabled && self.read_only;
-        let bg = if !self.enabled {
-            theme.state_disabled_fill()
-        } else if read_only {
-            theme.input_readonly_bg()
-        } else {
-            theme.input_bg()
-        };
+        let raised = self.ground == crate::Ground::Raised;
+        let bg = box_fill(theme, self.enabled, read_only, raised);
         ui.painter().rect_filled(outer, radius, bg.to_egui());
 
         let inner = outer.shrink2(egui::vec2(pad_x, 0.0));
@@ -263,20 +292,16 @@ impl<'a> Input<'a> {
         };
         let focused = resp.has_focus() || (self.focus_look && self.enabled);
 
-        let border = if !self.enabled {
-            theme.state_disabled_border().to_egui()
+        let border = if !self.enabled || (read_only && !resp.has_focus()) {
+            box_rest_border(theme, self.enabled, read_only, raised).to_egui()
         } else if read_only {
-            if resp.has_focus() {
-                theme.input_border_focus().to_egui()
-            } else {
-                theme.input_readonly_border().to_egui()
-            }
+            theme.input_border_focus().to_egui()
         } else if self.invalid {
             theme.input_border_invalid().to_egui()
         } else if focused {
             theme.input_border_focus().to_egui()
         } else {
-            theme.input_border().to_egui()
+            box_rest_border(theme, true, false, raised).to_egui()
         };
         ui.painter().rect_stroke(
             outer,

@@ -4,6 +4,8 @@ use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
+use crate::Ground;
+
 /// 드롭다운. `selected` 는 `options` 인덱스. 선택이 바뀌면 `true`.
 pub fn select(
     ui: &mut egui::Ui,
@@ -15,6 +17,40 @@ pub fn select(
     enabled: bool,
 ) -> bool {
     select_rect(ui, theme, id_salt, selected, options, width, enabled).0
+}
+
+/// [`select`]를 `ground` 바탕 위에 그린다. surface-raised 카드 위에서는 `Ground::Raised`로
+/// 상자·쉬는 테두리·disabled 상자가 select-raised 토큰이다.
+// reason: `select` 인자에 바탕 하나를 더한 것이다 — 묶으면 두 드롭다운의 호출 모양이 갈린다.
+#[allow(clippy::too_many_arguments)]
+pub fn select_on(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    ground: Ground,
+    id_salt: &str,
+    selected: &mut usize,
+    options: &[&str],
+    width: f32,
+    enabled: bool,
+) -> bool {
+    let (picked, _) = select_impl(
+        ui,
+        theme,
+        ground,
+        id_salt,
+        Some(*selected),
+        options,
+        None,
+        width,
+        enabled,
+    );
+    match picked {
+        Some(i) => {
+            *selected = i;
+            true
+        }
+        None => false,
+    }
 }
 
 /// [`select`] 와 같고 트리거가 차지한 rect 도 돌려준다. 행 안 컨트롤의 높이·위치를 맞추는 view 가 쓴다.
@@ -30,6 +66,7 @@ pub(crate) fn select_rect(
     let (picked, rect) = select_impl(
         ui,
         theme,
+        Ground::Panel,
         id_salt,
         Some(*selected),
         options,
@@ -62,9 +99,37 @@ pub fn select_or_placeholder(
     width: f32,
     enabled: bool,
 ) -> bool {
+    select_or_placeholder_on(
+        ui,
+        theme,
+        Ground::Panel,
+        id_salt,
+        selected,
+        options,
+        placeholder,
+        width,
+        enabled,
+    )
+}
+
+/// [`select_or_placeholder`]를 `ground` 바탕 위에 그린다.
+// reason: `select_or_placeholder` 인자에 바탕 하나를 더한 것이다.
+#[allow(clippy::too_many_arguments)]
+pub fn select_or_placeholder_on(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    ground: Ground,
+    id_salt: &str,
+    selected: &mut Option<usize>,
+    options: &[&str],
+    placeholder: &str,
+    width: f32,
+    enabled: bool,
+) -> bool {
     match select_impl(
         ui,
         theme,
+        ground,
         id_salt,
         *selected,
         options,
@@ -88,6 +153,7 @@ pub fn select_or_placeholder(
 fn select_impl(
     ui: &mut egui::Ui,
     theme: &Theme,
+    ground: Ground,
     id_salt: &str,
     selected: Option<usize>,
     options: &[&str],
@@ -114,7 +180,7 @@ fn select_impl(
         (None, Some(p)) => TriggerLabel::Placeholder(p),
         (s, _) => TriggerLabel::Value(s.and_then(|i| options.get(i)).copied().unwrap_or("")),
     };
-    paint_trigger(ui, theme, rect, look, enabled, label);
+    paint_trigger(ui, theme, ground, rect, look, enabled, label);
 
     let mut picked = None;
     tasty_egui_theme::with_popover_frame(ui, theme, |ui| {
@@ -158,9 +224,12 @@ enum TriggerLabel<'a> {
 
 /// 상호작용 없이 트리거 하나를 정해진 모양으로 그린다. [`select`]와 같은 칠을 쓰므로 갤러리가
 /// hover·open처럼 포인터로만 생기는 상태를 고정해 보일 때 쓴다. `value`가 없으면 `placeholder`를 그린다.
+// reason: 상태 견본은 실제 트리거의 모든 입력(바탕·값·모양·활성)을 그대로 받는다.
+#[allow(clippy::too_many_arguments)]
 pub fn select_pinned(
     ui: &mut egui::Ui,
     theme: &Theme,
+    ground: Ground,
     value: Option<&str>,
     placeholder: &str,
     width: LogicalPx,
@@ -172,7 +241,7 @@ pub fn select_pinned(
         egui::Sense::hover(),
     );
     let label = value.map_or(TriggerLabel::Placeholder(placeholder), TriggerLabel::Value);
-    paint_trigger(ui, theme, rect, look, enabled, label);
+    paint_trigger(ui, theme, ground, rect, look, enabled, label);
     rect
 }
 
@@ -180,6 +249,7 @@ pub fn select_pinned(
 fn paint_trigger(
     ui: &egui::Ui,
     theme: &Theme,
+    ground: Ground,
     rect: egui::Rect,
     look: SelectLook,
     enabled: bool,
@@ -188,12 +258,13 @@ fn paint_trigger(
     let pad_x = theme.select_padding_x().value();
     let body = theme.select_font_size().value();
     let chevron_room = theme.select_chevron_room().value();
-    let border = match look {
-        SelectLook::Open => theme.select_border_focus(),
-        SelectLook::Hover => theme.border_strong(),
-        SelectLook::Normal => theme.select_border(),
+    let border = match (look, ground) {
+        (SelectLook::Open, _) => theme.select_border_focus(),
+        (SelectLook::Hover, _) => theme.border_strong(),
+        (SelectLook::Normal, Ground::Panel) => theme.select_border(),
+        (SelectLook::Normal, Ground::Raised) => theme.select_raised_border(),
     };
-    paint_trigger_box(ui.painter(), theme, rect, border, enabled);
+    paint_trigger_box(ui.painter(), theme, ground, rect, border, enabled);
     if enabled && look == SelectLook::Open {
         let bw = theme.border_width.value();
         ui.painter().rect_stroke(
@@ -253,15 +324,20 @@ pub(crate) fn alloc_trigger(
 pub(crate) fn paint_trigger_box(
     painter: &egui::Painter,
     theme: &Theme,
+    ground: Ground,
     rect: egui::Rect,
     border: HexColor,
     enabled: bool,
 ) {
     // disabled 트리거는 상태별 테두리 대신 disabled 상자 role을 쓴다.
-    let (fill, edge) = if enabled {
-        (theme.select_bg(), border)
-    } else {
-        (theme.state_disabled_fill(), theme.state_disabled_border())
+    let (fill, edge) = match (enabled, ground) {
+        (true, Ground::Panel) => (theme.select_bg(), border),
+        (true, Ground::Raised) => (theme.select_raised_bg(), border),
+        (false, Ground::Panel) => (theme.state_disabled_fill(), theme.state_disabled_border()),
+        (false, Ground::Raised) => (
+            theme.select_raised_disabled_bg(),
+            theme.select_raised_disabled_border(),
+        ),
     };
     painter.rect(
         rect,

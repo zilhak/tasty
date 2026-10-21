@@ -73,6 +73,8 @@ pub struct Button<'a> {
     trailing_icon: Option<IconPainter<'a>>,
     /// 활성 상태의 글자·아이콘을 accent-danger 로 그린다(디자인 secondary 버튼의 `color: accent-danger`).
     danger_ink: bool,
+    /// 놓인 바탕. raised 위 ghost는 글자가 button-ghost-raised-fg다. 다른 variant는 같다.
+    ground: crate::Ground,
 }
 
 impl<'a> Button<'a> {
@@ -87,7 +89,14 @@ impl<'a> Button<'a> {
             leading_icon_size: None,
             trailing_icon: None,
             danger_ink: false,
+            ground: crate::Ground::Panel,
         }
+    }
+
+    /// 놓인 바탕(시안 `ground`). surface-raised 카드 위 ghost는 `Ground::Raised`.
+    pub fn ground(mut self, ground: crate::Ground) -> Self {
+        self.ground = ground;
+        self
     }
 
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
@@ -229,10 +238,12 @@ impl<'a> Button<'a> {
                     )
                 }
                 ButtonVariant::Ghost => {
-                    let f = if resp.hovered() {
-                        theme.button_ghost_fg_hover()
-                    } else {
-                        theme.button_ghost_fg()
+                    let raised = self.ground == crate::Ground::Raised;
+                    let f = match (resp.hovered(), raised) {
+                        (true, false) => theme.button_ghost_fg_hover(),
+                        (false, false) => theme.button_ghost_fg(),
+                        (true, true) => theme.button_ghost_raised_fg_hover(),
+                        (false, true) => theme.button_ghost_raised_fg(),
                     };
                     (None, None, f.to_egui())
                 }

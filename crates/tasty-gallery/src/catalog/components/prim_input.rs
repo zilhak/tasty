@@ -4,14 +4,14 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::Input;
+use tasty_ui_widgets::{Ground, Input};
 
 use super::glyph;
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 thread_local! {
     // 예제 초깃값이 입력 중인 내용을 덮지 않도록 한 번만 초기화한다.
-    static BUFS: RefCell<Option<[String; 8]>> = const { RefCell::new(None) };
+    static BUFS: RefCell<Option<[String; 11]>> = const { RefCell::new(None) };
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -30,6 +30,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "14".to_string(),
                 "s_01HXK9".to_string(),
                 "bad value".to_string(),
+                String::new(),
+                "#89b4fa".to_string(),
+                "#89b4fa".to_string(),
                 String::new(),
                 "#89b4fa".to_string(),
                 "#89b4fa".to_string(),
@@ -91,6 +94,40 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .enabled(false)
                         .width(xs)
                         .show(ui, theme, &mut bufs[7]);
+                },
+            );
+            // 시안 ground="raised": surface-raised 위에서는 상자가 bg-panel + border-strong으로 내려선다.
+            cluster(
+                ui,
+                theme,
+                "ground=\"raised\" — on surface-raised, box steps down to bg-panel + border-strong",
+                |ui| {
+                    egui::Frame::new()
+                        .fill(theme.surface_raised().to_egui())
+                        .corner_radius(theme.corner_radius.value())
+                        .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                                Input::new()
+                                    .ground(Ground::Raised)
+                                    .placeholder("Editable")
+                                    .width(md)
+                                    .show(ui, theme, &mut bufs[8]);
+                                Input::new()
+                                    .ground(Ground::Raised)
+                                    .mono(true)
+                                    .read_only(true)
+                                    .width(xs)
+                                    .show(ui, theme, &mut bufs[9]);
+                                Input::new()
+                                    .ground(Ground::Raised)
+                                    .mono(true)
+                                    .enabled(false)
+                                    .width(xs)
+                                    .show(ui, theme, &mut bufs[10]);
+                            });
+                        });
                 },
             );
         });

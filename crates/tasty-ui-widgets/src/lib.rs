@@ -133,7 +133,7 @@ pub use clipboard_viewer::{
 };
 pub use code_area::{CodeArea, CodeAreaKeys, CodeAreaOutput};
 pub use compact_state::{CompactStateGlyph, CompactStateRow, compact_state_row};
-pub use control::ControlSize;
+pub use control::{ControlSize, Ground};
 pub use dag_empty::{DAG_EMPTY_ICON_SIZE, DagEmptyView, paint_dag_empty};
 pub use dashed_edge::paint_dashed_outline;
 pub use display_text::nfc as display_nfc;
@@ -271,7 +271,9 @@ pub use searchable_select::{
     searchable_select_search_id,
 };
 pub use segmented::segmented;
-pub use select::{SelectLook, select, select_or_placeholder, select_pinned};
+pub use select::{
+    SelectLook, select, select_on, select_or_placeholder, select_or_placeholder_on, select_pinned,
+};
 pub use sequence_editor::{
     SequenceEditorAction, SequenceEditorError, SequenceEditorView, sequence_editor,
 };
