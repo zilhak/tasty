@@ -218,6 +218,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - **읽기 실패**: 팝업 틀을 그대로 두고, 제목은 그 항목의 글리프(탐색기 목록에서 본 종류)와 이름이다. 본문은 alertTriangle 과 `explorer.properties.unreadable`("Can't read properties", explorer-error-fg), mono muted OS 이유, Retry(secondary sm, 같은 항목을 다시 읽는다)다.
 - **제목 굵기**: 제목은 14 regular 다. 테마에 semibold UI 글꼴이 없어 크기로 제목을 구분한다.
 - **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Path 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다.
+- **다시 열기**: 같은 surface 에서 다시 요청하면 popup 을 그대로 두고 대상만 바꾸며 이전 읽기·집계를 멈춘다. 다른 surface 에서 요청하면 열린 popup 을 닫고 요청한 surface 범위로 다시 열어, 내용과 범위가 늘 같은 surface 를 가리킨다. Esc 로 포커스만 풀어 popup 이 다른 탭에 남아 있어도 누른 탭에 새 대상의 popup 이 보인다.
 
 ### 새 폴더 · 새 파일
 
