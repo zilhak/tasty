@@ -575,14 +575,11 @@ pub(super) fn omitted_history_notice(
     engine: EngineId,
     terminals: usize,
 ) -> crate::app::journal::notices::RecoveryNotice {
-    let limit = tasty_ipc::admission::QUEUED_BYTES_LIMIT / (1024 * 1024);
     crate::app::journal::notices::RecoveryNotice::warning(
         Some(engine),
         crate::i18n::t("recovery.close_history_omitted_title").to_owned(),
-        crate::i18n::t_count(
-            "recovery.close_history_omitted_body",
-            terminals as u64,
-            &[&terminals.to_string(), &limit.to_string()],
+        crate::app::journal::notices::close_history_omitted_body(
+            u32::try_from(terminals).unwrap_or(u32::MAX),
         ),
     )
 }

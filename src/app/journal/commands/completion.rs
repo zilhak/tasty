@@ -417,6 +417,8 @@ impl JournalApplication {
                 .result
                 .as_ref()
                 .is_some_and(|result| result["closed"] == true)
+            // 원격 사용자 닫기는 요청한 클라이언트가 회신의 생략 수로 경고한다.
+            && !matches!(pending.reply, Reply::Remote(_))
             && let Some((engine, omitted)) = pending
                 .closing
                 .as_ref()

@@ -504,7 +504,14 @@ fn apply_one_mirror_event(
                 reason,
             );
         }
-        MirrorEvent::StructuralSucceeded(op_id, created) => {
+        MirrorEvent::StructuralSucceeded(op_id, created, history_omitted) => {
+            // 서버는 원격 사용자 닫기에서만 이 수를 보낸다. 요청한 사용자에게 한 번 알린다.
+            if history_omitted > 0 {
+                host.toast(
+                    crate::app::journal::notices::close_history_omitted_body(history_omitted),
+                    crate::adapters::ui::ToastKind::Warning,
+                );
+            }
             let focus = user_waits::structural_succeeded(
                 host.state,
                 &sess.transport.frame_tx.epoch(),

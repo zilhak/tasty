@@ -312,7 +312,7 @@ pub(crate) fn reply(
     ok: bool,
     reason: Option<String>,
 ) -> bool {
-    reply_with_created(hub, client, op_id, ok, reason, None)
+    reply_with_created(hub, client, op_id, ok, reason, None, None)
 }
 
 fn reply_with_created(
@@ -322,12 +322,14 @@ fn reply_with_created(
     ok: bool,
     reason: Option<String>,
     created_surface_id: Option<u32>,
+    history_omitted: Option<u32>,
 ) -> bool {
     let result = StreamControl::StructuralResult {
         op_id,
         ok,
         reason,
         created_surface_id,
+        history_omitted,
     };
     match serde_json::to_vec(&result) {
         Ok(payload) => {
@@ -339,6 +341,19 @@ fn reply_with_created(
             false
         }
     }
+}
+
+/// 이 회신으로 처음 확정된 닫기가 내용 없이 기록한 terminal 수. replay 회신은 이미 알린 결과라 싣지 않는다.
+pub(super) fn history_omitted(response: &JsonRpcResponse) -> Option<u32> {
+    if response.idempotent_replay {
+        return None;
+    }
+    let omitted = response
+        .result
+        .as_ref()?
+        .get("history_omitted")?
+        .as_array()?;
+    u32::try_from(omitted.len()).ok().filter(|count| *count > 0)
 }
 
 pub(crate) fn deliver_result(
@@ -380,7 +395,15 @@ pub(crate) fn deliver_result(
             .and_then(|value| value.as_u64())
             .and_then(|id| u32::try_from(id).ok())
     });
-    if !reply_with_created(hub, remote.client, remote.op_id, true, None, created) {
+    if !reply_with_created(
+        hub,
+        remote.client,
+        remote.op_id,
+        true,
+        None,
+        created,
+        history_omitted(&response),
+    ) {
         hub.unregister(remote.client);
         return;
     }

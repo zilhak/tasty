@@ -163,6 +163,11 @@ PendingId로 식별하며 CoreState·journal·surface 저장소에 임시 도메
 실제로 겹칠 수 있는 송신된 임시 영역만 접는다. 어느 요청의 생성인지 모호하면 확정 구조를
 보이고 요청 확인은 남기며 임의의 surface를 선택하거나 완료로 처리하지 않는다. 원 View·선택·epoch가 바뀐 결과는
 다른 View나 새 연결의 선택을 바꾸지 않는다.
+
+`StructuralResult.history_omitted`는 성공한 원격 사용자 닫기가 닫은 항목 기록에 내용 없이 남긴
+terminal 수다([닫힌 항목 복원](../features/closed-tab-restore/index.md#내부-동작)). 서버는 처음 확정한
+회신에만 싣고 idempotent replay 회신과 옛 서버는 생략한다. client는 그 수가 있으면 창의 경고 toast로
+한 번 알리고, parked engine이면 로그만 남긴다. 이 필드를 모르는 옛 client는 무시한다.
 `output.rs`는 결과와 Delta를 받은 순서대로 `user_waits.rs`의 정산을 호출하고, 정산이 돌려준
 local surface만 포커스한다. 클라이언트의 사용자 입력 확인은 입력이 실제로 surface에
 전달됐을 때만 시작한다.

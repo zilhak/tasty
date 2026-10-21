@@ -102,6 +102,17 @@ impl RecoveryNotice {
     }
 }
 
+/// 닫기는 확정됐지만 terminal `terminals`개의 내용을 닫은 항목 기록에 담지 못했다는 본문. 로컬 알림과
+/// 원격 사용자 닫기의 attach 경고가 같은 문구를 쓴다.
+pub(crate) fn close_history_omitted_body(terminals: u32) -> String {
+    let limit = tasty_ipc::admission::QUEUED_BYTES_LIMIT / (1024 * 1024);
+    crate::i18n::t_count(
+        "recovery.close_history_omitted_body",
+        u64::from(terminals),
+        &[&terminals.to_string(), &limit.to_string()],
+    )
+}
+
 /// 한 번에 전달하는 같은 엔진·같은 레벨의 알림을 하나로 묶는다. 알림 저장소가 짧은 간격의 같은
 /// 레벨 항목을 합치며 제목을 덮어쓰므로, 묶을 때는 각 제목을 본문 줄에 남긴다.
 pub(crate) fn merge_same_level(notices: Vec<RecoveryNotice>) -> Vec<RecoveryNotice> {

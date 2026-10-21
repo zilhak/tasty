@@ -31,7 +31,8 @@ pub enum MirrorEvent {
     /// 구조 변경 실패. 에이전트 요청은 로그, 사용자 요청은 toast로 알린다.
     StructuralFailed(u64, Option<String>),
     /// 사용자 요청의 포커스 의도를 뒤따르는 StructuralDelta에 전달할 op_id.
-    StructuralSucceeded(u64, Option<u32>),
+    /// 셋째 값은 닫은 항목 기록에 내용 없이 남긴 terminal 수다.
+    StructuralSucceeded(u64, Option<u32>, u32),
     /// 원격의 전체 구조. 기존 surface의 로컬 ID·터미널은 가능한 한 재사용한다.
     StructuralDelta {
         workspace_id: u32,

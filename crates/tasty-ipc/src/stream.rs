@@ -255,6 +255,10 @@ pub enum StreamControl {
         ok: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        /// 성공한 원격 사용자 닫기에서 큐 예산을 넘어 닫은 항목 기록에 내용 없이 남긴 terminal 수.
+        /// 요청한 사용자가 경고를 받는다. idempotent replay 회신과 옛 서버는 보내지 않는다.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        history_omitted: Option<u32>,
     },
     /// 서버→클라이언트: 구조 변경 후 workspace 전체 트리와 surface descriptor.
     /// handshake와 같은 형식이며, 클라이언트는 살아남은 터미널의 로컬 ID·스크롤백을 유지한다.
@@ -1223,6 +1227,7 @@ mod tests {
             op_id: 9,
             ok: true,
             reason: None,
+            history_omitted: None,
         };
         let s = serde_json::to_string(&ok).unwrap();
         assert!(s.contains(r#""event":"structural_result""#));
@@ -1234,10 +1239,32 @@ mod tests {
             op_id: 9,
             ok: false,
             reason: Some("unsupported kind: markdown".to_string()),
+            history_omitted: None,
         };
         let s = serde_json::to_string(&fail).unwrap();
         assert!(s.contains("unsupported kind"));
         assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), fail);
+
+        // An older client ignores the count; an older server never sends it.
+        let omitted = StreamControl::StructuralResult {
+            created_surface_id: None,
+            op_id: 9,
+            ok: true,
+            reason: None,
+            history_omitted: Some(2),
+        };
+        let s = serde_json::to_string(&omitted).unwrap();
+        assert!(s.contains(r#""history_omitted":2"#), "{s}");
+        assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), omitted);
+        let older: StreamControl =
+            serde_json::from_str(r#"{"event":"structural_result","op_id":9,"ok":true}"#).unwrap();
+        assert!(matches!(
+            older,
+            StreamControl::StructuralResult {
+                history_omitted: None,
+                ..
+            }
+        ));
     }
 
     #[test]

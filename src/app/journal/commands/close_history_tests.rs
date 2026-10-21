@@ -225,7 +225,7 @@ fn total_pending_bytes(journal: &JournalApplication) -> usize {
         .sum()
 }
 
-fn finish(journal: &mut JournalApplication, session: &mut EngineSession) -> JsonRpcResponse {
+fn drain(journal: &mut JournalApplication, session: &mut EngineSession) {
     let mut stall = StallBudget::new(journal);
     while !journal.commands.pending.is_empty() {
         journal.poll_bootstrap(&mut [&mut *session], None).unwrap();
@@ -234,6 +234,10 @@ fn finish(journal: &mut JournalApplication, session: &mut EngineSession) -> Json
         }
         stall.nap("close completion");
     }
+}
+
+fn finish(journal: &mut JournalApplication, session: &mut EngineSession) -> JsonRpcResponse {
+    drain(journal, session);
     journal
         .commands
         .completed_intents
@@ -443,4 +447,67 @@ fn a_close_that_fits_keeps_every_history_and_does_not_warn() {
     assert_eq!(result["closed"], true);
     assert!(result.get("history_omitted").is_none(), "{result}");
     assert!(journal.take_notices().is_empty());
+}
+
+#[test]
+fn a_remote_user_close_takes_the_same_history_budget() {
+    for user in [true, false] {
+        let (mut session, mut journal) = boot();
+        let (workspace, terminals) = workspace_with_terminals(&mut journal, &mut session, 1);
+        let (large, small) = (terminals[0], terminals[1]);
+        inject(&mut session, large, rows(2, 600));
+        inject(&mut session, small, small_history());
+        let ticket = journal.next_ticket;
+        user_close_workspace(&mut journal, &session, workspace);
+        // Only the reply decides whether a remote close records the closed item.
+        journal.commands.pending.get_mut(&ticket).unwrap().reply =
+            Reply::Remote(inbound::RemoteReply {
+                engine: session.id,
+                ticket,
+                client: 1,
+                op_id: 1,
+                workspace,
+                binding: std::sync::Weak::new(),
+                user,
+                restore: false,
+                converted: None,
+            });
+        assert_eq!(resolve(&mut journal, &mut session), ticket);
+        let pending = &journal.commands.pending[&ticket];
+        if user {
+            assert_eq!(
+                captured_history(&journal, ticket),
+                vec![(large, None), (small, Some(true))]
+            );
+            assert_eq!(
+                pending.closing.as_ref().unwrap().omitted_history,
+                Some((session.id, vec![large]))
+            );
+            assert!(total_pending_bytes(&journal) <= LIMIT);
+            drain(&mut journal, &mut session);
+            let (_, response) = journal
+                .take_remote_results()
+                .into_iter()
+                .next()
+                .expect("remote close reply");
+            assert_eq!(response.result.as_ref().unwrap()["closed"], true);
+            assert_eq!(inbound::history_omitted(&response), Some(1));
+            assert!(
+                journal.take_notices().is_empty(),
+                "the requesting client warns; the server window does not"
+            );
+            let mut replay = response;
+            replay.idempotent_replay = true;
+            assert_eq!(
+                inbound::history_omitted(&replay),
+                None,
+                "a replay does not warn again"
+            );
+        } else {
+            assert!(
+                matches!(pending.queued, Some(Work::PutPayload(_))),
+                "a remote agent close records no closed item"
+            );
+        }
+    }
 }

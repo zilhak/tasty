@@ -1,4 +1,4 @@
-<!-- source-hash: 8cda4874623a -->
+<!-- source-hash: a270028f48cb -->
 # Workspaces
 
 Give each project or task its own workspace. Keep its terminals and layout together, then use names and categories to find it easily. If the window structure is new to you, start with [A first look](../getting-started/first-look.md).
@@ -77,7 +77,7 @@ goes through a confirmation first.
 
 Closed Workspaces · Panes · Tabs · Surfaces are restored with `Ctrl+Shift+T` (**Restore closed**), most recently closed first. A terminal's scrollback comes back with it. The shell is started fresh, though, so a program that was running does not come back. This list lives only in memory and is gone when Tasty exits.
 
-A terminal whose scrollback is very large (beyond about 64 MiB across everything being closed) is kept in the list without its scrollback, and the close goes ahead. A warning is left in the notification panel. Restoring it opens that terminal in the same directory with an empty scrollback, while the other terminals closed with it get their scrollback back.
+A terminal whose scrollback is very large (beyond about 64 MiB across everything being closed) is kept in the list without its scrollback, and the close goes ahead. A warning is left in the notification panel. If you closed it in a Workspace opened over remote attach, a warning notice appears once in the window you closed it from. Restoring it opens that terminal in the same directory with an empty scrollback, while the other terminals closed with it get their scrollback back.
 
 ## Grouping into categories (folders)
 
