@@ -693,3 +693,185 @@ fn a_section_runs_in_writer_order_and_takes_the_shared_lock_itself() {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
+
+fn queued_access(
+    store: Arc<Mutex<dyn MemoryStorage>>,
+    limits: Limits,
+) -> (MemoryWriter<SharedStore>, MemoryAccess) {
+    let changes = Arc::new(ChangeFeed::default());
+    let writer = spawn(
+        SharedStore(store),
+        changes.clone(),
+        limits,
+        Arc::new(SystemClock),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let access = MemoryAccess::writer(writer.handle(), changes);
+    (writer, access)
+}
+
+/// 본문은 writer 순서 안에서 실행되고, 호출은 writer가 본문을 실행할 때까지 돌아오지 않는다.
+#[test]
+fn a_blocking_body_runs_on_the_writer_and_the_call_waits_for_it() {
+    let store: Arc<Mutex<dyn MemoryStorage>> =
+        Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+    let (writer, access) = queued_access(store.clone(), Limits::default());
+    let guard = store.lock().unwrap();
+    let returned = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = returned.clone();
+    let caller = std::thread::spawn(move || {
+        let key = String::from("borrowed");
+        let value = access
+            .run_blocking(0, move |s| {
+                s.put(
+                    HOST_OWNER,
+                    &Scope::Global,
+                    &key,
+                    &text("v"),
+                    &PutOpts::default(),
+                )
+                .map(|v| (key.len(), v))
+            })
+            .unwrap();
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        value
+    });
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(
+        !returned.load(std::sync::atomic::Ordering::SeqCst),
+        "the call waits while the writer cannot run the body"
+    );
+    drop(guard);
+    assert_eq!(caller.join().unwrap().unwrap(), (8, 1));
+    assert!(
+        store
+            .lock()
+            .unwrap()
+            .get(&Scope::Global, "borrowed")
+            .unwrap()
+            .is_some()
+    );
+    drop(writer);
+}
+
+/// 다른 요청의 저장 실패로 묶음이 되돌려지면 본문을 새 요청으로 다시 넣어 혼자 확정한다.
+#[test]
+fn a_body_failed_by_a_neighbour_is_submitted_again_and_commits_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = file_store(tmp.path());
+    let pages: i64 = file
+        .conn
+        .query_row("PRAGMA page_count", [], |r| r.get(0))
+        .unwrap();
+    file.conn
+        .query_row(&format!("PRAGMA max_page_count={}", pages + 2), [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap();
+    let store: Arc<Mutex<dyn MemoryStorage>> = Arc::new(Mutex::new(file));
+    let limits = Limits {
+        max_delay: Duration::from_millis(300),
+        ..Limits::default()
+    };
+    let (writer, access) = queued_access(store.clone(), limits);
+    let big = "x".repeat(64 * 1024);
+    let mut huge = access
+        .submit(MemoryRequest::Write(put(HOST_OWNER, "big", &big, None)))
+        .unwrap();
+    let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = runs.clone();
+    let stored = access.run_blocking(0, move |s| {
+        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        s.put(
+            HOST_OWNER,
+            &Scope::Global,
+            "small",
+            &text("1"),
+            &PutOpts::default(),
+        )
+    });
+    assert!(matches!(
+        settle(huge.wait_timeout(WAIT).unwrap()),
+        Err(Failure::Storage(_))
+    ));
+    assert_eq!(stored.unwrap().unwrap(), 1);
+    assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 2);
+    drop(writer);
+}
+
+/// 결과 불명은 다시 넣지 않는다. 확정됐을 수 있는 판단을 두 번 확정하지 않기 위해서다.
+#[test]
+fn an_unknown_outcome_is_returned_without_running_the_body_again() {
+    let store = MemoryStore::open_in_memory().unwrap();
+    crate::batch::plant_unreadable_row_for_tests(&store);
+    let store: Arc<Mutex<dyn MemoryStorage>> = Arc::new(Mutex::new(store));
+    let (writer, access) = queued_access(store.clone(), Limits::default());
+    let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = runs.clone();
+    let outcome = access.run_blocking(0, move |s| {
+        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        s.put(
+            HOST_OWNER,
+            &Scope::Global,
+            "a",
+            &text("1"),
+            &PutOpts::default(),
+        )
+        .unwrap();
+        s.get(&Scope::Global, "unreadable").is_err()
+    });
+    assert!(
+        matches!(outcome, Err(Blocked::Unknown(Some(_)))),
+        "{outcome:?}"
+    );
+    assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+    drop(writer);
+}
+
+/// 접수를 멈춘 writer는 본문을 실행하지 않고 거절을 돌려준다.
+#[test]
+fn a_closed_writer_refuses_a_blocking_body_without_running_it() {
+    let store: Arc<Mutex<dyn MemoryStorage>> =
+        Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+    let (mut writer, access) = queued_access(store, Limits::default());
+    writer.begin_shutdown();
+    let deadline = Instant::now() + WAIT;
+    while writer.poll_shutdown() != 0 {
+        assert!(Instant::now() < deadline, "writer did not join");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = ran.clone();
+    let outcome = access.run_blocking(0, move |_| {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst)
+    });
+    assert!(
+        matches!(outcome, Err(Blocked::Refused(SubmitError::Closed))),
+        "{outcome:?}"
+    );
+    assert!(!ran.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+/// 결과를 거두는 스레드로 표시한 스레드는 writer 결과를 기다리지 못한다.
+#[test]
+fn a_result_reaping_thread_may_not_wait_for_the_writer() {
+    let store: Arc<Mutex<dyn MemoryStorage>> =
+        Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+    let access = MemoryAccess::inline(store);
+    let blocking = access.clone();
+    let waited = std::thread::spawn(move || {
+        mark_result_reaping_thread();
+        blocking.run_blocking(0, |_| ())
+    })
+    .join();
+    let unit = std::thread::spawn(move || {
+        mark_result_reaping_thread();
+        access.run_and_wait(MemoryRequest::unit(0, |_| Ok(())), WAIT)
+    })
+    .join();
+    if cfg!(debug_assertions) {
+        assert!(waited.is_err() && unit.is_err());
+    }
+    assert!(!is_result_reaping_thread());
+}

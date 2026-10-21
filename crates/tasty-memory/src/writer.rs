@@ -455,7 +455,10 @@ fn apply(s: &mut dyn MemoryStorage, op: &WriteOp) -> Result<WriteOutput> {
 }
 
 mod access;
-pub use access::{ChangeFeed, Failure, MemoryAccess, MemoryTicket, Waited, settle};
+pub use access::{
+    BLOCKING_ATTEMPTS, Blocked, ChangeFeed, Failure, MemoryAccess, MemoryTicket, Waited,
+    is_result_reaping_thread, mark_result_reaping_thread, settle,
+};
 
 pub type MemoryWriter<A> = batch_writer::Writer<MemoryExecutor<A>>;
 pub type MemoryHandle<A> = batch_writer::Handle<MemoryExecutor<A>>;
