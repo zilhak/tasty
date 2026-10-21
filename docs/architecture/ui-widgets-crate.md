@@ -160,3 +160,7 @@ Table 빌더의 길이 setter(`header_pad_x`·`header_pad_right`·`header_height
 `TableColumnWidth::Flex { min_width }`는 시안 Table 열 옵션 `minWidth`에 대응한다. 열은 남는 폭을 받지만 `min_width` 아래로 줄지 않는다. 시안처럼 고정 열(`Exact`)은 그 폭이 곧 하한이다. 가로 스크롤 표(`horizontal_scroll(true)`)에서는 그리기 전에 `resolve_scroll_widths`가 Flex 열의 폭을 정한다. 열 하한과 열 사이 간격의 합(`fixed_total_width`)이 표 폭보다 작으면 남는 폭을 Flex 열에 똑같이 나누고, 크거나 같으면 Flex 열도 하한을 유지해 본문이 스크롤한다. 표 폭에서는 본문의 세로 스크롤바 폭을 미리 뺀다. 고정 폭 열 위에 바가 겹쳐 그려지기 때문이며 이 문서의 폭 예약 예외에 해당한다. Flex 열이 없는 표는 열 폭을 바꾸지 않는다. 가로 스크롤을 쓰지 않는 표에서 Flex 열은 egui_extras remainder 열(최소 폭·clip)이 된다. 긴 셀 내용의 말줄임은 셀을 그리는 쪽이 맡는다. 회귀 검사는 `table.rs`의 `flex_keeps_its_floor_when_the_table_is_narrower_than_the_floors`, `spare_width_is_shared_equally_by_flex_columns_only`, `tables_without_flex_columns_keep_their_widths`다.
 
 포트 스캐너 표의 열 정의는 `ports_table.rs`의 `PortsColumn`이다. 열별 하한·가변 여부·정렬, 표 꾸밈(`ports_table`: 행 선택·가로 스크롤·헤더 배경·헤더 왼쪽 여백), Process 셀(`ports_process_cell`: 이름만 말줄임하고 PID Tag 는 유지)을 본체 popup 과 갤러리 예제가 함께 쓴다.
+
+## 자동완성 후보의 포인터 확정
+
+`AutoComplete`는 자기 드롭다운 안의 주 버튼 누름에서만 입력 포커스를 유지한다. 후보를 떼기 전에 TextEdit의 blur가 호출자에게 원복으로 전달되지 않게 하며, 행 안에서 버튼을 떼면 원문 후보를 `Pick`으로 반환하고 입력 포커스를 해제한다. 후보 밖에서 떼면 선택하지 않는다. 다른 영역을 누르는 blur와 Enter·Esc는 이 포커스 유지에서 제외한다. `PathField`는 기존 우선순위인 취소 → 후보/버퍼 확정 → Go → 확정 없는 blur 원복을 적용한다. 공개 API와 일반 `Input`의 포커스 동작은 같고, 단독 AutoComplete의 버퍼 갱신은 호출자 책임이다.

@@ -209,7 +209,6 @@ impl<'a> AutoComplete<'a> {
             AutoCompleteAction::None
         };
 
-        let focused = self.enabled && resp.has_focus();
         // Enter/Esc가 포커스를 해제하는 프레임에도 확정·취소를 처리해야 한다.
         let engaged = self.enabled && (resp.has_focus() || resp.lost_focus());
         if !engaged {
@@ -219,6 +218,9 @@ impl<'a> AutoComplete<'a> {
             };
         }
 
+        let area_id = ui.make_persistent_id(("tasty_autocomplete", self.id_salt));
+        retain_focus_for_dropdown_press(&resp, area_id);
+        let focused = resp.has_focus();
         let query = buf.clone();
         let filtered = filter_entries(entries, &query, self.match_mode);
 
@@ -250,7 +252,6 @@ impl<'a> AutoComplete<'a> {
         }
 
         let clicked = if focused {
-            let area_id = ui.make_persistent_id(("tasty_autocomplete", self.id_salt));
             let origin = resp.rect.left_bottom() + egui::vec2(0.0, theme.spacing_xs.value());
             let max_height = self
                 .max_dropdown_height
@@ -290,11 +291,28 @@ impl<'a> AutoComplete<'a> {
                 .unwrap_or(AutoCompleteAction::Submit);
         } else if let Some(s) = clicked.and_then(|i| filtered.get(i)) {
             action = AutoCompleteAction::Pick((*s).to_string());
+            resp.surrender_focus();
         }
         AutoCompleteResponse {
             action,
             response: resp,
         }
+    }
+}
+
+/// egui는 입력 밖의 pointer-down에서 먼저 blur한다. 자기 후보 영역의 누름만
+/// 입력 포커스로 되돌려 호출자의 원복과 팝오버 소실을 막는다. 외부 누름·Enter·Esc는 제외한다.
+fn retain_focus_for_dropdown_press(response: &egui::Response, area_id: egui::Id) {
+    let at = response.ctx.input(|i| {
+        (i.pointer.primary_pressed()
+            && !i.key_pressed(egui::Key::Enter)
+            && !i.key_pressed(egui::Key::Escape))
+        .then(|| i.pointer.interact_pos())
+        .flatten()
+    });
+    let layer = egui::LayerId::new(egui::Order::Foreground, area_id);
+    if at.is_some_and(|p| response.ctx.layer_id_at(p) == Some(layer)) {
+        response.request_focus();
     }
 }
 
