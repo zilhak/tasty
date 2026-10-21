@@ -1445,6 +1445,14 @@ pub fn pages() -> Vec<Page> {
                             components::convert::draw,
                         ),
                         spec(
+                            "convert-shortcut",
+                            "Shortcut chip — each row's letter as a trailing keycap",
+                            Some(
+                                "Kbd in the MenuItem slot · rest = hover = active · collision drops the chip · en · ko · ja",
+                            ),
+                            components::convert::draw_shortcut,
+                        ),
+                        spec(
                             "convert-narrow",
                             "Narrow popup, long title — width scales",
                             Some(

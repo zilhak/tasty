@@ -1,24 +1,79 @@
 //! 서피스 타입 전환 팝업의 정적 예제.
 //!
 //! 본체 `popup/convert.rs` 와 같은 작은 목록 popup 이다 — 공용 타이틀바(× 만) 아래에 바꿀 수
-//! 있는 kind 마다 `MenuItem` 하나. 폭은 `convert-popup-width` 에 UI 배율을 곱한 값이다.
+//! 있는 kind 마다 `MenuItem` 하나. 행 끝에는 단축키 글자를 `Kbd` 키캡으로 그린다(본체와 같은
+//! `menu_item_kbd`). 폭은 `convert-popup-width` 에 UI 배율을 곱한 값이다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{MenuItemVariant, menu_item};
+use tasty_ui_widgets::{MenuItemVariant, menu_item_kbd_with_hover};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::popup_frame::{self, TitleButtons};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// 본체가 터미널 서피스에서 여는 목록 — (아이콘, 라벨). 현재 kind 는 빠진다. 첫 글자 단축키는
-/// 동작만 하고 행에 글자를 표시하지 않는다.
-const KINDS: &[(MockGlyph, &str)] = &[
-    (icons::MARKDOWN, "Markdown"),
-    (icons::HTML, "HTML"),
-    (icons::FOLDER, "Explorer"),
-    (icons::IMAGE, "Image"),
+/// 행 하나 — (아이콘, 라벨, 단축키 글자). 글자는 kind id 첫 영문 글자의 대문자라 locale 과 무관하다.
+/// 글자가 없으면 앞 행과 첫 글자가 겹친 행이며 키캡도 그 자리도 없다.
+type Kind = (MockGlyph, Label, Option<&'static str>);
+
+/// 행 라벨. 본체 번역표에 있는 kind 표시 이름은 본체와 같은 키로 읽는다.
+#[derive(Clone, Copy)]
+enum Label {
+    Lit(&'static str),
+    Key(&'static str),
+}
+
+impl Label {
+    fn text(self) -> &'static str {
+        match self {
+            Label::Lit(s) => s,
+            Label::Key(k) => crate::i18n::t(k),
+        }
+    }
+}
+
+const DAG: Label = Label::Key("surface.kind.dag_graph");
+
+/// 본체가 터미널 서피스에서 여는 목록. 현재 kind 는 빠진다.
+const KINDS: &[Kind] = &[
+    (icons::MARKDOWN, Label::Lit("Markdown"), Some("M")),
+    (icons::IMAGE, Label::Lit("Image"), Some("I")),
+    (icons::GIT_TREE, DAG, Some("D")),
+    (icons::HTML, Label::Lit("HTML"), Some("H")),
+    (icons::FOLDER, Label::Lit("Explorer"), Some("E")),
 ];
+
+/// 상태 견본 — 첫 글자 충돌 행(키캡 없음, 라벨이 행 끝까지)과 말줄임되는 긴 라벨.
+const KINDS_STATES: &[Kind] = &[
+    (icons::MARKDOWN, Label::Lit("Markdown"), Some("M")),
+    (icons::IMAGE, Label::Lit("Image"), Some("I")),
+    (icons::HTML, Label::Lit("HTML"), Some("H")),
+    (icons::FILE, Label::Lit("Mermaid (plugin)"), None),
+    (
+        icons::FILE,
+        Label::Lit("Notebook viewer with outputs (plugin)"),
+        Some("N"),
+    ),
+];
+
+/// 마크다운 서피스에서 연 ko 목록 — 터미널 행이 `T` 를 받는다.
+const KINDS_KO: &[Kind] = &[
+    (icons::TERMINAL, Label::Lit("터미널"), Some("T")),
+    (icons::IMAGE, Label::Lit("이미지"), Some("I")),
+    (icons::GIT_TREE, DAG, Some("D")),
+    (icons::HTML, Label::Lit("HTML"), Some("H")),
+    (icons::FOLDER, Label::Lit("탐색기"), Some("E")),
+];
+
+const KINDS_JA: &[Kind] = &[
+    (icons::TERMINAL, Label::Lit("ターミナル"), Some("T")),
+    (icons::MARKDOWN, Label::Lit("マークダウン"), Some("M")),
+    (icons::IMAGE, Label::Lit("画像"), Some("I")),
+    (icons::HTML, Label::Lit("HTML"), Some("H")),
+    (icons::FOLDER, Label::Lit("エクスプローラー"), Some("E")),
+];
+
+const KO_TITLE: &str = "서피스 타입 전환";
 
 /// 배율을 따르지 않던 옛 convert popup 폭. 1.2 배 전후 비교 specimen 의 '전' 쪽에서만 쓴다.
 const LITERAL_WIDTH_BEFORE: LogicalPx = LogicalPx(200.0);
@@ -33,9 +88,22 @@ fn scaled(theme: &Theme, zoom: f32) -> Theme {
 /// 본체 convert popup 한 장. 높이 = 타이틀바 + 콘텐츠 여백 × 2 + 행 수 × MenuItem 높이.
 /// `open_tip`이면 잘린 제목의 Tooltip을 호버 없이 띄운다(specimen).
 fn popup(ui: &mut egui::Ui, th: &Theme, title: &str, width: LogicalPx, open_tip: bool) {
+    popup_rows(ui, th, title, width, open_tip, KINDS, None);
+}
+
+/// [`popup`] 에 행 목록과 호버 지정 행을 받는다. 선택(키보드) 행은 언제나 첫 행이다.
+fn popup_rows(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    title: &str,
+    width: LogicalPx,
+    open_tip: bool,
+    kinds: &[Kind],
+    hover: Option<usize>,
+) {
     let title_h = th.item_height_interactive;
     let margin = th.spacing_xs;
-    let rows = th.menu_item_height().scaled(KINDS.len() as f32);
+    let rows = th.menu_item_height().scaled(kinds.len() as f32);
     let (frame, _) = ui.allocate_exact_size(
         egui::vec2(width.value(), (title_h + margin.scaled(2.0) + rows).value()),
         egui::Sense::hover(),
@@ -86,19 +154,21 @@ fn popup(ui: &mut egui::Ui, th: &Theme, title: &str, width: LogicalPx, open_tip:
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     child.spacing_mut().item_spacing.y = 0.0;
-    for (i, (glyph, label)) in KINDS.iter().enumerate() {
+    for (i, (glyph, label, key)) in kinds.iter().enumerate() {
         let glyph = *glyph;
-        menu_item(
+        let keys: Vec<&str> = key.iter().copied().collect();
+        menu_item_kbd_with_hover(
             &mut child,
             th,
             Some(&|ui: &mut egui::Ui, r: egui::Rect, c: egui::Color32| {
                 glyph.image(r.height(), c).paint_at(ui, r);
             }),
-            label,
-            None,
+            label.text(),
+            &keys,
             MenuItemVariant::Normal,
             i == 0,
             true,
+            hover == Some(i),
         );
     }
 }
@@ -131,11 +201,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "rows",
-                "MenuItem 28 · icon + kind label · one per kind the surface can become",
+                "MenuItem 28 · icon + kind label + Kbd letter · one per kind the surface can become",
             ),
             (
                 "actions",
-                "click / Enter converts · first letter converts · × / Esc close",
+                "click / Enter converts · the row's letter converts · × / Esc close",
             ),
         ],
         &[
@@ -155,6 +225,113 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Only the renderer changes — the running process keeps its scrollback. The current kind is \
          not listed. The earlier 400-wide From / To dialog is retired.",
+    );
+}
+
+/// 행 끝 단축키 키캡 — 행 상태와 무관하게 같은 키캡, 충돌 행은 키캡 없음, 긴 라벨만 말줄임.
+pub fn draw_shortcut(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    let mocha_12 = scaled(theme, 1.2);
+    let latte_12 = scaled(&latte, 1.2);
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        for (label, th) in [
+            (
+                "Mocha · en · 1.0 — active (Markdown) · hover (Image) · collision · long",
+                theme,
+            ),
+            ("Latte · en · 1.0 — same states", &latte),
+        ] {
+            spec::cluster(ui, th, label, |ui| {
+                popup_rows(
+                    ui,
+                    th,
+                    "Surface Type",
+                    th.convert_popup_width(),
+                    false,
+                    KINDS_STATES,
+                    Some(1),
+                );
+            });
+        }
+        spec::cluster(ui, theme, "Mocha · ko · 1.0", |ui| {
+            popup_rows(
+                ui,
+                theme,
+                KO_TITLE,
+                theme.convert_popup_width(),
+                false,
+                KINDS_KO,
+                None,
+            );
+        });
+        for (label, frame_th, th) in [
+            ("Mocha · ja · 1.2 (240 × 1.2)", theme, &mocha_12),
+            ("Latte · ja · 1.2 (240 × 1.2)", &latte, &latte_12),
+        ] {
+            spec::cluster(ui, frame_th, label, |ui| {
+                popup_rows(
+                    ui,
+                    th,
+                    JA_TITLE,
+                    th.convert_popup_width(),
+                    false,
+                    KINDS_JA,
+                    None,
+                );
+            });
+        }
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "chip",
+                "Kbd keycap in the MenuItem shortcut slot · one latin capital",
+            ),
+            (
+                "letter",
+                "kind id first letter, upper-case · never the label",
+            ),
+            ("states", "rest = hover = active · keycap unchanged"),
+            (
+                "no shortcut",
+                "collision → no chip, no reserved slot, label to row end",
+            ),
+            ("overflow", "label ellipsis · chip never shrinks"),
+            ("width", "240 × ui_scale — unchanged"),
+            (
+                "input",
+                "display only · click / ↑↓ Enter / letter / Esc unchanged",
+            ),
+        ],
+        &[
+            TokenChip::without_color("kbd-size", "keycap height / min width"),
+            TokenChip::without_color("kbd-font-size", "letter"),
+            TokenChip::new(
+                "surface-raised",
+                "keycap fill",
+                theme.surface_raised().to_egui(),
+            ),
+            TokenChip::new(
+                "border-strong",
+                "keycap edge",
+                theme.border_strong().to_egui(),
+            ),
+            TokenChip::new(
+                "text-secondary",
+                "letter ink",
+                theme.text_secondary().to_egui(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "The letter follows the kind id, not the translated label, so the row shows it. Same keycap \
+         as the command palette; no new tokens.",
     );
 }
 

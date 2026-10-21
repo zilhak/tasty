@@ -104,6 +104,33 @@ pub fn menu_item_kbd(
     )
 }
 
+/// [`menu_item_kbd`] 에 호버 상태를 직접 지정한다. 호버 견본에서 쓰며 키캡 모양은 바뀌지 않는다.
+#[allow(clippy::too_many_arguments)] // reason: [`menu_item_kbd`] 와 같은 스펙에 호버 상태 하나를 더한다
+pub fn menu_item_kbd_with_hover(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: Option<IconPainter<'_>>,
+    label: &str,
+    keys: &[&str],
+    variant: MenuItemVariant,
+    active: bool,
+    enabled: bool,
+    hovered: bool,
+) -> egui::Response {
+    menu_item_inner(
+        ui,
+        theme,
+        icon,
+        label,
+        (!keys.is_empty()).then_some(Shortcut::Keys(keys)),
+        variant,
+        active,
+        enabled,
+        hovered,
+        None,
+    )
+}
+
 /// 선택 목록(Select · egui ComboBox 열린 목록)의 옵션 행. `selected` 면 현재 값이다 —
 /// 글자는 `menu-item-selected-fg`, 오른쪽 끝에 `menu-item-check-fg` 체크를 그리고 채움은 없다.
 /// 채움은 호버(`menu-item-bg-hover`)에만 쓴다.

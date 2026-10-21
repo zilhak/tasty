@@ -257,12 +257,14 @@ pub enum ConvertResult {
 }
 
 /// 앱 상태 없이 그릴 수 있는 메뉴 항목. 현재 kind 는 이미 빠져 있다.
-/// 첫 글자 단축키는 동작만 하고 행에 글자를 표시하지 않는다(디자인 kit 과 같다).
 #[derive(Debug, Clone)]
 pub struct ConvertItemView {
     pub kind: String,
     pub label: String,
     pub icon: icons::Icon,
+    /// 행 끝 키캡으로 보이는 단축키 글자. 라벨은 번역되므로 화면에 글자를 보여야 고를 수 있다.
+    /// 첫 글자가 겹쳐 단축키가 없으면 None 이고 키캡과 그 자리를 모두 그리지 않는다.
+    pub shortcut: Option<char>,
 }
 
 /// Props 일체. 호출처가 MainViewState/CoreState 에서 추출해서 전달.
@@ -296,14 +298,17 @@ pub fn draw_convert_view(
 
     for (idx, item) in props.items.iter().enumerate() {
         let icon = item.icon;
-        let resp = tasty_ui_widgets::menu_item(
+        // 키캡은 표시 전용이다. 글자 입력은 draw_convert_content 가 처리한다.
+        let letter = item.shortcut.map(String::from);
+        let keys: Vec<&str> = letter.as_deref().into_iter().collect();
+        let resp = tasty_ui_widgets::menu_item_kbd(
             ui,
             theme,
             Some(&|ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
                 icon.image(rect.height(), c).paint_at(ui, rect);
             }),
             &item.label,
-            None,
+            &keys,
             tasty_ui_widgets::MenuItemVariant::Normal,
             props.selected_index == Some(idx),
             true,
@@ -403,6 +408,7 @@ fn props_from_items(items: &[ConvertItem], selected_index: Option<usize>) -> Con
             kind: it.kind.to_string(),
             label: it.label.clone(),
             icon: it.icon,
+            shortcut: it.shortcut,
         })
         .collect();
     ConvertProps {
@@ -556,6 +562,14 @@ mod props_tests {
         let kinds: Vec<&str> = props.items.iter().map(|it| it.kind.as_str()).collect();
         assert_eq!(kinds, ["markdown", "image"]);
         assert_eq!(props.items[1].label, "image");
+    }
+
+    #[test]
+    fn shortcuts_reach_the_view_props() {
+        let items = vec![mk("markdown", Some('M')), mk("mermaid", None)];
+        let props = props_from_items(&items, None);
+        assert_eq!(props.items[0].shortcut, Some('M'));
+        assert_eq!(props.items[1].shortcut, None);
     }
 
     #[test]
