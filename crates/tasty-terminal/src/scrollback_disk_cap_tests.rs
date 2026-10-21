@@ -84,8 +84,12 @@ fn assert_bounded(history: &Scrollback, cap: usize, max_record: u64) {
         disk.offsets_capacity(),
         2 * bound
     );
-    assert!(file_len(history) <= HEADER_LEN + bound as u64 * max_record);
-    assert_eq!(file_len(history), disk.file_size());
+    // An unlinked file has no path to measure, so the bound is checked on the tracked length,
+    // which equals the file length whenever the path exists.
+    assert!(disk.file_size() <= HEADER_LEN + bound as u64 * max_record);
+    if disk.backing_file().exists() {
+        assert_eq!(file_len(history), disk.file_size());
+    }
 }
 
 fn record_len() -> u64 {
@@ -204,23 +208,88 @@ fn erasing_scrollback_after_drops_starts_a_new_timeline() {
     assert_retained(&history, 90, 110);
 }
 
-#[test]
-fn a_failed_compaction_keeps_reading_the_retained_rows() {
-    let mut history = disk_state(u32::MAX - 848, 10, Some(100));
-    history.disk.as_mut().unwrap().fail_compaction(true);
-    history.push_lines((0..300).map(row));
-    for start in (300..10_000).step_by(100) {
-        history.push_lines((start..start + 100).map(row));
+/// Counts WARN events on the current thread, so a test can pin how often a failure is reported.
+struct WarnCounter(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl tracing::Subscriber for WarnCounter {
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        true
     }
-    let disk = history.disk.as_ref().unwrap();
-    assert!(disk.physical_records() > 100 + MIN_COMPACTION_RECORDS);
-    let stuck = file_len(&history);
-    assert_retained(&history, 10_000 - 110, 110);
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+    fn event(&self, event: &tracing::Event<'_>) {
+        if *event.metadata().level() == tracing::Level::WARN {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    fn enter(&self, _: &tracing::span::Id) {}
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
+/// Push `count` rows one at a time from `start`, the way a terminal scrolls them off, checking
+/// the bound as it goes. Returns the WARN events reported meanwhile.
+fn push_one_by_one(history: &mut Scrollback, start: usize, count: usize, cap: usize) -> usize {
+    let warns = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    tracing::subscriber::with_default(WarnCounter(warns.clone()), || {
+        for i in start..start + count {
+            history.push_lines(std::iter::once(row(i)));
+            if i % 997 == 0 {
+                assert_bounded(history, cap, record_len());
+            }
+        }
+    });
+    warns.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[test]
+fn a_compaction_that_keeps_failing_drops_the_disk_rows_and_stays_bounded() {
+    let mut history = disk_state(u32::MAX - 848, 10, Some(100));
+    history.push_lines((0..300).map(row));
+    let epoch = history.epoch;
+    history.disk.as_mut().unwrap().fail_compaction(true);
+    let copies = history.disk.as_ref().unwrap().compaction_copies();
+    let warns = push_one_by_one(&mut history, 300, 20_000, 100);
+    assert_eq!(warns, 1, "the loss is reported once, not per row");
+    let tried = history.disk.as_ref().unwrap().compaction_copies() - copies;
+    assert!(
+        tried <= 20_000 / MIN_COMPACTION_RECORDS + 1,
+        "{tried} compaction files created for 20000 rows"
+    );
+    assert_bounded(&history, 100, record_len());
+    assert_eq!(
+        history.epoch, epoch,
+        "dropping the oldest rows keeps the timeline"
+    );
+    assert!(
+        history.memory_len() == 10,
+        "memory rows are never dropped by the disk path"
+    );
+    let total = history.total_len();
+    assert_retained(&history, 20_300 - total, total);
+    // Once compaction works again the cap holds exactly as before.
     history.disk.as_mut().unwrap().fail_compaction(false);
-    history.push_lines((10_000..10_100).map(row));
-    assert_eq!(history.disk.as_ref().unwrap().physical_records(), 100);
-    assert!(file_len(&history) < stuck);
-    assert_retained(&history, 10_100 - 110, 110);
+    history.push_lines((20_300..30_000).map(row));
+    assert_retained(&history, 30_000 - 110, 110);
+}
+
+#[test]
+fn an_externally_deleted_file_is_replaced_and_later_rows_read_back() {
+    let mut history = disk_state(u32::MAX - 851, 10, Some(100));
+    history.push_lines((0..300).map(row));
+    let deleted = history.disk.as_ref().unwrap().backing_file().to_path_buf();
+    std::fs::remove_file(&deleted).unwrap();
+    let epoch = history.epoch;
+    let warns = push_one_by_one(&mut history, 300, 20_000, 100);
+    assert_eq!(warns, 1, "the loss is reported once, not per row");
+    assert_bounded(&history, 100, record_len());
+    assert_eq!(history.epoch, epoch);
+    let backing = history.disk.as_ref().unwrap().backing_file().to_path_buf();
+    assert_ne!(backing, deleted, "a fresh instance file took over");
+    assert!(backing.exists());
+    assert_retained(&history, 20_300 - 110, 110);
 }
 
 #[test]

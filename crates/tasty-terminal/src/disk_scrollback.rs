@@ -70,16 +70,22 @@ pub struct DiskScrollback {
     writer: Option<File>,
     /// False after a failed append, when the handle position may be past `file_size`.
     position_known: bool,
+    /// Set once a failed compaction dropped retained rows and reported it; cleared when a
+    /// compaction succeeds, so a lasting fault is reported once rather than per row.
+    loss_reported: bool,
     /// Read-side opens of the backing file, for tests that pin the per-call open count.
     #[cfg(test)]
     read_opens: std::sync::atomic::AtomicUsize,
+    /// Compaction copies started, each creating an instance file, for tests that pin their rate.
+    #[cfg(test)]
+    compaction_copies: std::sync::atomic::AtomicUsize,
     /// `push_lines` calls that wrote at least one line, for tests that pin batching.
     #[cfg(test)]
     push_batches: usize,
     /// Fail the append that would write past this many more bytes, for rollback tests.
     #[cfg(test)]
     fail_append_after: Option<usize>,
-    /// Fail every compaction, for tests that pin the state a failed compaction leaves.
+    /// Fail every compaction like a full disk, for tests that pin how a lasting fault is handled.
     #[cfg(test)]
     fail_compaction: bool,
 }
@@ -116,8 +122,11 @@ impl DiskScrollback {
             file_size: HEADER_LEN,
             writer: None,
             position_known: true,
+            loss_reported: false,
             #[cfg(test)]
             read_opens: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            compaction_copies: std::sync::atomic::AtomicUsize::new(0),
             #[cfg(test)]
             push_batches: 0,
             #[cfg(test)]
@@ -287,35 +296,119 @@ impl DiskScrollback {
         self.line_offsets.len() - self.head
     }
 
-    /// Drop the `count` oldest retained lines (clamped to the stored count). Returns how many
-    /// were dropped. Their bytes stay in the file until enough accumulate for one compaction,
-    /// so the file holds at most `cap` plus the compaction threshold records.
+    /// Drop the `count` oldest retained lines (clamped to the stored count). Their bytes stay
+    /// in the file until enough accumulate for one compaction, so the file holds at most `cap`
+    /// plus the compaction threshold records. Returns how many lines were dropped, which is
+    /// every retained line when that compaction failed.
     pub fn drop_front(&mut self, count: usize, cap: usize) -> usize {
         let dropped = count.min(self.line_count());
         self.head += dropped;
         if self.head >= compaction_threshold(cap) || self.line_count() == 0 {
-            self.compact();
+            return dropped + self.compact();
         }
         dropped
     }
 
     /// Move the retained records to a fresh instance file and release the dropped prefix and
-    /// its offsets. On failure the current file and counters stay valid, so reads keep
-    /// returning the same rows and the next drop tries again.
-    fn compact(&mut self) {
+    /// its offsets. Returns how many retained lines were given up because that failed.
+    fn compact(&mut self) -> usize {
         if self.head == 0 {
-            return;
+            return 0;
         }
         if self.line_count() == 0 {
             if let Err(e) = self.clear() {
-                tracing::warn!("disk scrollback compaction failed: {e}");
+                self.restart_after_failure(0, &e);
             }
-            return;
+            return 0;
         }
         match self.copy_retained() {
-            Ok((path, writer, base)) => self.adopt_copy(path, writer, base),
-            Err(e) => tracing::warn!("disk scrollback compaction failed: {e}"),
+            Ok((path, writer, base)) => {
+                self.adopt_copy(path, writer, base);
+                self.loss_reported = false;
+                0
+            }
+            Err(e) => {
+                let lost = self.line_count();
+                self.restart_after_failure(lost, &e);
+                lost
+            }
         }
+    }
+
+    /// Give up every record after a compaction failed, so a lasting fault (an unlinked file, a
+    /// full disk) cannot grow the file or the offset table past the cap. A missing backing file
+    /// is replaced by a fresh instance file so later rows read back again; otherwise the file is
+    /// cut to its header through the held handle. If neither works, the counters still restart
+    /// and the next append overwrites from the header.
+    fn restart_after_failure(&mut self, lost: usize, error: &std::io::Error) {
+        let missing = matches!(
+            std::fs::metadata(&self.file_path),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound
+        );
+        let restarted = if missing {
+            self.replace_with_fresh_file().or_else(|_| self.clear())
+        } else {
+            self.clear()
+        };
+        if let Err(e) = restarted {
+            tracing::debug!("disk scrollback restart after a failed compaction failed: {e}");
+            self.reset_to_header(false);
+        }
+        if self.loss_reported {
+            tracing::debug!(
+                "disk scrollback compaction failed again: {error}; dropped {lost} rows"
+            );
+        } else {
+            self.loss_reported = true;
+            tracing::warn!(
+                "disk scrollback compaction failed: {error}; dropped the {lost} oldest disk rows"
+            );
+        }
+    }
+
+    /// Start over in a new, empty instance file next to the current path, recreating the folder
+    /// if it was removed.
+    fn replace_with_fresh_file(&mut self) -> std::io::Result<()> {
+        let directory = self
+            .file_path
+            .parent()
+            .ok_or_else(|| std::io::Error::other("scrollback file has no directory"))?
+            .to_path_buf();
+        std::fs::create_dir_all(&directory)?;
+        let (path, mut file) =
+            create_instance_file(&directory, instance_surface_id(&self.file_path))?;
+        let header = file
+            .write_all(FILE_MAGIC)
+            .and_then(|()| file.write_all(&FORMAT_VERSION.to_le_bytes()))
+            .and_then(|()| file.flush());
+        if let Err(e) = header {
+            drop(file);
+            if let Err(remove) = std::fs::remove_file(&path) {
+                tracing::debug!(
+                    "partial scrollback file {} removal failed: {remove}",
+                    path.display()
+                );
+            }
+            return Err(e);
+        }
+        drop(self.writer.replace(file));
+        let old = std::mem::replace(&mut self.file_path, path);
+        if let Err(e) = std::fs::remove_file(&old)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::debug!("old scrollback file {} removal failed: {e}", old.display());
+        }
+        self.reset_to_header(true);
+        Ok(())
+    }
+
+    /// Forget every record. `position_known` says whether the handle already sits at the header.
+    fn reset_to_header(&mut self, position_known: bool) {
+        self.head = 0;
+        self.line_offsets.clear();
+        self.line_offsets.shrink_to_fit();
+        self.file_size = HEADER_LEN;
+        self.position_known = position_known;
     }
 
     /// Switch to the compacted copy whose first record was at `base` in the old file.
@@ -345,12 +438,18 @@ impl DiskScrollback {
             .parent()
             .ok_or_else(|| std::io::Error::other("scrollback file has no directory"))?;
         let surface_id = instance_surface_id(&self.file_path);
+        #[cfg(test)]
+        self.compaction_copies
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (path, mut file) = create_instance_file(directory, surface_id)?;
         let base = self.start_offset();
         let copied = (|| {
             #[cfg(test)]
             if self.fail_compaction {
-                return Err(std::io::Error::other("injected compaction failure"));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::StorageFull,
+                    "injected compaction failure",
+                ));
             }
             file.write_all(FILE_MAGIC)?;
             file.write_all(&FORMAT_VERSION.to_le_bytes())?;
@@ -387,11 +486,7 @@ impl DiskScrollback {
             .ok_or_else(|| std::io::Error::other("disk scrollback writer is closed"))?;
         // The header stays; the next append seeks to its end.
         file.set_len(HEADER_LEN)?;
-        self.position_known = false;
-        self.head = 0;
-        self.line_offsets.clear();
-        self.line_offsets.shrink_to_fit();
-        self.file_size = HEADER_LEN;
+        self.reset_to_header(false);
         Ok(())
     }
 }
@@ -660,6 +755,11 @@ fn deserialize_color(data: &[u8]) -> (ColorAttribute, usize) {
 impl DiskScrollback {
     pub(crate) fn backing_file(&self) -> &std::path::Path {
         &self.file_path
+    }
+
+    pub(crate) fn compaction_copies(&self) -> usize {
+        self.compaction_copies
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub(crate) fn read_opens(&self) -> usize {
