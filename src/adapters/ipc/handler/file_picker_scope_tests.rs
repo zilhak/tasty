@@ -125,16 +125,20 @@ fn ownerless_and_foreign_owner_cannot_inherit_another_plugins_scope() {
     }
 }
 
-fn assert_visible_gates(state: &RequestContext) {
-    assert!(state.popups.has_focused());
-    assert!(RequestContext::keyboard_overlay_open(state));
-    assert!(state.has_egui_overlay_open());
+fn assert_visible_gates(state: &RequestContext, user_focused: bool) {
+    assert_eq!(state.popups.has_focused(), user_focused);
+    assert_eq!(RequestContext::keyboard_overlay_open(state), user_focused);
+    assert_eq!(state.has_egui_overlay_open(), user_focused);
+    assert_eq!(state.popups.is_passive(FILE_PICKER_POPUP_ID), !user_focused);
 }
 
 /// 숨겨져도 포커스 의도는 남지만 입력 차단은 해제되어야 한다.
-fn assert_hidden_gates(state: &mut RequestContext) {
+fn assert_hidden_gates(state: &mut RequestContext, user_focused: bool) {
     assert!(state.popups.is_open(FILE_PICKER_POPUP_ID));
-    assert!(state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().focused);
+    assert_eq!(
+        state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().focused,
+        user_focused
+    );
     assert!(!state.popups.has_focused());
     assert!(!state.popups.is_focused(FILE_PICKER_POPUP_ID));
     assert!(state.popups.focused_dismissal_target().is_none());
@@ -167,6 +171,15 @@ fn assert_work_preserved(state: &RequestContext, dir: &str, request: u64) {
 
 #[test]
 fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate() {
+    assert_hidden_child_round_trip(true);
+}
+
+#[test]
+fn passive_hidden_child_stays_nonfocusing_when_restored() {
+    assert_hidden_child_round_trip(false);
+}
+
+fn assert_hidden_child_round_trip(user_focused: bool) {
     let (mut state, mut engine_session) = trigger(Some(7));
     let engine = engine_session.borrow_mut();
     // 범위 대상이 사라진 팝업은 그리기 전에 닫히므로 엔진에 있는 surface를 쓴다.
@@ -205,7 +218,26 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
         }));
     };
     draw(&mut state, &layout, vec![]);
-    assert_visible_gates(&state);
+    // Plugin 출처는 자동 포커스를 갖지 않는다. 포커스 보존 시나리오는 실제 클릭부터 시작한다.
+    assert_visible_gates(&state, false);
+    if user_focused {
+        for pressed in [true, false] {
+            draw(
+                &mut state,
+                &layout,
+                vec![
+                    egui::Event::PointerMoved(rect.center()),
+                    egui::Event::PointerButton {
+                        pos: rect.center(),
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+            );
+        }
+    }
+    assert_visible_gates(&state, user_focused);
     let popup = state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap();
     // surface 범위 팝업은 테두리에서 spacing_sm만큼 안쪽을 경계로 쓴다.
     let inset = crate::theme::theme().spacing_sm.value();
@@ -237,13 +269,12 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
             },
         ],
     );
-    assert_hidden_gates(&mut state);
+    assert_hidden_gates(&mut state, user_focused);
     assert_work_preserved(&state, &dir, request);
     layout.surface_rects.push((sid, rect));
     layout.active_workspace = 0;
     draw(&mut state, &layout, vec![]);
-    assert!(state.popups.has_focused());
-    assert!(RequestContext::keyboard_overlay_open(&state));
+    assert_visible_gates(&state, user_focused);
     assert_eq!(state.host_popup_hittest[0].z_seq, z);
     assert_eq!(
         state.dialogs.file_picker.as_ref().unwrap().selected,

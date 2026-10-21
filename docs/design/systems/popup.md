@@ -81,6 +81,11 @@ origin 이 사용자가 아닌 `UiIntent::OpenPopup`·`TogglePopup` 은 `OpenPop
 - 비포커스 상태의 별도 시각 표현은 없다. 포커스가 없는 다른 팝업(알림 패널 등)과 같은 모양이다.
 - 팝업 내용이 자기 포커스를 확인할 때는 `MainViewState.popup_keyboard_focus` 를 읽는다. draw 동안에는 매니저를 빌릴 수 없어 그리기 직전에 복사한다.
 
+파일 피커의 범위 회귀시험(`src/adapters/ipc/handler/file_picker_scope_tests.rs`)은 plugin이 연 직후의
+passive 상태와 실제 포인터 클릭으로 포커스를 받은 상태를 각각 숨겼다가 복원한다. 두 경우 모두
+선택·요청·z 순서를 보존하고 숨은 동안 paint/hit/Esc/키 게이트에 참여하지 않는다. 복원은 포커스를
+새로 주지 않으며, 클릭한 경우에만 기존 포커스 의도를 되살린다.
+
 **타입 차원 강제**: Core/Domain 핸들러는 `UiIntent`(`OpenPopup`/`ClosePopup`/`TogglePopup`)를 요청하는 메서드를 갖지 않는다 — GUI adapter(단축키 핸들러·메뉴 콜백·popup draw)에서만 요청할 수 있다. `state.popups.open*` 직접 호출도 금지(Intent 경유). 디스패치 상세는 [`design/flows/action-dispatch.md`](../flows/action-dispatch.md).
 
 ## 포커스
