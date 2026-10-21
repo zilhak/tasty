@@ -533,6 +533,7 @@ impl GpuState {
             state.plugin_mesh_popup_regions.as_slice(),
             plugin_manager,
             host_popup_on_top,
+            None,
         );
         let egui_pass_ms = t0.elapsed().as_secs_f64() * 1000.0;
 

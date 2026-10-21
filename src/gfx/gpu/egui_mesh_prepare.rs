@@ -225,6 +225,26 @@ fn offset_and_clip(
         .collect()
 }
 
+/// WebView 오버레이 pass 에서 mesh 를 드러난 페이지 합집합으로 자른다. 페이지 여러 개와 겹치는
+/// primitive 는 페이지마다 한 번씩 남고 겹치지 않으면 버린다. 좌표·메인 pass 캐시는 그대로다.
+pub(super) fn clip_primitives_to_pages(
+    prims: &[ClippedPrimitive],
+    pages: &[egui::Rect],
+) -> Vec<ClippedPrimitive> {
+    prims
+        .iter()
+        .flat_map(|p| {
+            pages.iter().filter_map(move |page| {
+                let clip_rect = p.clip_rect.intersect(*page);
+                clip_rect.is_positive().then(|| ClippedPrimitive {
+                    clip_rect,
+                    primitive: p.primitive.clone(),
+                })
+            })
+        })
+        .collect()
+}
+
 /// 공유 버퍼를 디코드한다. footer·버퍼 길이·ppp 검사에 실패하면 캐시를 유지한다.
 /// 도형과 텍스처 채택 규칙은 classify_decode를 따른다. 도형만 채택하면 last_seq는 유지한다.
 #[allow(clippy::too_many_arguments)] // reason: frame 디코드 컨텍스트 전체
@@ -382,6 +402,7 @@ fn composite_mesh_target(
     view: &wgpu::TextureView,
     rect: PhysicalRect,
     size_in_pixels: [u32; 2],
+    page_clip: Option<&[egui::Rect]>,
 ) {
     if !target.has_content {
         return;
@@ -408,7 +429,15 @@ fn composite_mesh_target(
         target.translated = offset_and_clip(&target.primitives, offset, bounds);
         target.translated_key = Some(key);
     }
-    if target.translated.is_empty() {
+    let clipped;
+    let prims: &[ClippedPrimitive] = match page_clip {
+        Some(pages) => {
+            clipped = clip_primitives_to_pages(&target.translated, pages);
+            &clipped
+        }
+        None => &target.translated,
+    };
+    if prims.is_empty() {
         return;
     }
 
@@ -420,13 +449,9 @@ fn composite_mesh_target(
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("egui_mesh_encoder"),
     });
-    target.renderer.update_buffers(
-        device,
-        queue,
-        &mut encoder,
-        &target.translated,
-        &screen_descriptor,
-    );
+    target
+        .renderer
+        .update_buffers(device, queue, &mut encoder, prims, &screen_descriptor);
     {
         let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("egui_mesh_pass"),
@@ -445,7 +470,7 @@ fn composite_mesh_target(
         let mut render_pass = render_pass.forget_lifetime();
         target
             .renderer
-            .render(&mut render_pass, &target.translated, &screen_descriptor);
+            .render(&mut render_pass, prims, &screen_descriptor);
     }
     queue.submit(std::iter::once(encoder.finish()));
 }
@@ -612,7 +637,15 @@ impl GpuState {
         let size_in_pixels = [self.size.width, self.size.height];
         for (sid, _plugin_id, rect) in targets {
             if let Some(t) = self.egui_mesh_targets.get_mut(sid) {
-                composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
+                composite_mesh_target(
+                    &self.device,
+                    &self.queue,
+                    t,
+                    view,
+                    *rect,
+                    size_in_pixels,
+                    None,
+                );
             }
         }
     }
@@ -694,24 +727,35 @@ impl GpuState {
         let size_in_pixels = [self.size.width, self.size.height];
         for (sid, rect) in targets {
             if let Some(t) = self.attach_mesh_targets.get_mut(sid) {
-                composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
+                composite_mesh_target(
+                    &self.device,
+                    &self.queue,
+                    t,
+                    view,
+                    *rect,
+                    size_in_pixels,
+                    None,
+                );
             }
         }
     }
 
     /// 팝업의 최대 z_seq를 비교한 결과에 따라 host pass 앞이나 뒤에 합성한다.
     /// 콘텐츠는 content_rect 안으로 자르고 host 셸은 그 영역을 비워 어느 순서든 콘텐츠를 가리지 않는다.
+    /// `size_in_pixels` 는 그리는 surface 의 크기다. `page_clip` 이 있으면(WebView 오버레이 pass)
+    /// 콘텐츠를 그 페이지 합집합 안으로 더 자른다.
     pub(super) fn render_egui_mesh_popups(
         &mut self,
         view: &wgpu::TextureView,
         regions: &[(u64, PhysicalRect)],
         plugin_manager: PluginDisplay<'_>,
+        size_in_pixels: [u32; 2],
+        page_clip: Option<&[egui::Rect]>,
     ) {
         if !prune_mesh_targets(&mut self.egui_mesh_popup_targets, regions) {
             return;
         }
 
-        let size_in_pixels = [self.size.width, self.size.height];
         for (iid, rect) in regions {
             let Some(frame) = plugin_manager.popup_mesh_frame(*iid) else {
                 continue;
@@ -775,7 +819,15 @@ impl GpuState {
             }
 
             if let Some(t) = self.egui_mesh_popup_targets.get_mut(iid) {
-                composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
+                composite_mesh_target(
+                    &self.device,
+                    &self.queue,
+                    t,
+                    view,
+                    *rect,
+                    size_in_pixels,
+                    page_clip,
+                );
             }
         }
     }
@@ -855,7 +907,15 @@ impl GpuState {
             }
 
             if let Some(t) = self.egui_mesh_banner_targets.get_mut(iid) {
-                composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
+                composite_mesh_target(
+                    &self.device,
+                    &self.queue,
+                    t,
+                    view,
+                    *rect,
+                    size_in_pixels,
+                    None,
+                );
             }
         }
     }
@@ -953,6 +1013,46 @@ mod tests {
         assert_eq!(m.vertices[0].pos, Pos2::new(50.0, 40.0));
         assert_eq!(m.vertices[1].pos, Pos2::new(60.0, 40.0));
         assert_eq!(m.vertices[2].pos, Pos2::new(50.0, 50.0));
+    }
+
+    /// 오버레이 pass 의 mesh 는 페이지 밖을 칠하지 않는다. 페이지가 x<300 이고 콘텐츠가 x=250..350 이면
+    /// x=250..300 만 남는다. 좌표는 옮기지 않고, 겹치지 않는 primitive 는 버린다.
+    #[test]
+    fn overlay_mesh_is_clipped_to_the_page_union() {
+        let content = Rect::from_min_max(Pos2::new(250.0, 100.0), Pos2::new(350.0, 200.0));
+        let away = Rect::from_min_max(Pos2::new(400.0, 0.0), Pos2::new(450.0, 50.0));
+        let prims = vec![
+            mesh_prim(
+                content,
+                vec![vtx(250.0, 100.0), vtx(350.0, 100.0), vtx(250.0, 200.0)],
+            ),
+            mesh_prim(away, vec![vtx(400.0, 0.0)]),
+        ];
+        let left = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(300.0, 600.0));
+        let out = clip_primitives_to_pages(&prims, &[left]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].clip_rect,
+            Rect::from_min_max(Pos2::new(250.0, 100.0), Pos2::new(300.0, 200.0))
+        );
+        let Primitive::Mesh(m) = &out[0].primitive else {
+            panic!("expected mesh");
+        };
+        assert_eq!(m.vertices[1].pos, Pos2::new(350.0, 100.0));
+        // 두 페이지에 걸치면 페이지마다 한 번씩 남는다.
+        let right = Rect::from_min_max(Pos2::new(320.0, 0.0), Pos2::new(600.0, 600.0));
+        let both: Vec<Rect> = clip_primitives_to_pages(&prims, &[left, right])
+            .iter()
+            .map(|p| p.clip_rect)
+            .collect();
+        assert_eq!(
+            both,
+            vec![
+                Rect::from_min_max(Pos2::new(250.0, 100.0), Pos2::new(300.0, 200.0)),
+                Rect::from_min_max(Pos2::new(320.0, 100.0), Pos2::new(350.0, 200.0)),
+                away,
+            ]
+        );
     }
 
     /// clip 이 surface 경계를 넘어가면 bounds 로 잘린다(영역 한정).

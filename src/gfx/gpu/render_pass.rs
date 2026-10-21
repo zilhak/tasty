@@ -250,6 +250,7 @@ impl GpuState {
 
     /// 팝업 z_seq 판정에 따라 host UI와 plugin 콘텐츠 합성 순서를 정한다.
     /// plugin 셸은 content_rect를 비워 어느 순서든 자기 콘텐츠를 가리지 않는다.
+    /// mesh 도 `screen_descriptor` 의 surface 크기로 그리고, `page_clip` 이 있으면 그 페이지 안만 칠한다.
     #[allow(clippy::too_many_arguments)] // reason: 두 pass 호출에 필요한 인자 그대로 전달
     pub(super) fn render_egui_pass_and_mesh_popups(
         &mut self,
@@ -260,10 +261,18 @@ impl GpuState {
         mesh_popup_regions: &[(u64, PhysicalRect)],
         plugin_manager: Option<PluginDisplay<'_>>,
         host_popup_on_top: bool,
+        page_clip: Option<&[egui::Rect]>,
     ) {
+        let size_in_pixels = screen_descriptor.size_in_pixels;
         let render_mesh_popups = |this: &mut Self| {
             if let Some(mgr) = plugin_manager {
-                this.render_egui_mesh_popups(view, mesh_popup_regions, mgr);
+                this.render_egui_mesh_popups(
+                    view,
+                    mesh_popup_regions,
+                    mgr,
+                    size_in_pixels,
+                    page_clip,
+                );
             }
         };
         let render_egui = |this: &mut Self| {

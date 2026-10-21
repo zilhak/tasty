@@ -5,8 +5,8 @@
 //! - 대상 레이어(`OverlayFrame::targets`)의 shape 를 `end_pass` 전에 복제한다. 메인 surface 에는 원래대로
 //!   모두 그리므로 화면 캡처 결과는 바뀌지 않는다.
 //! - host·plugin 팝업 그룹 순서는 메인 pass 와 같은 `host_popup_should_render_on_top` 결정을 쓴다.
-//! - 각 shape 의 clip 을 드러낼 WebView 영역과 교차해 오버레이 창은 페이지 위만 칠한다. 페이지 밖의
-//!   scrim·그림자는 메인 surface 에만 있어 두 번 합성되지 않는다.
+//! - 각 shape 와 plugin mesh 의 clip 을 드러낼 WebView 영역과 교차해 오버레이 창은 페이지 위만 칠한다.
+//!   페이지 밖의 scrim·그림자·mesh 는 메인 surface 에만 있어 두 번 합성되지 않는다.
 //! - present 한 그림의 모드·페이지를 남긴다. WebView 동기화는 그것이 맞을 때만 페이지를 드러낸다.
 
 use egui::epaint::ClippedShape;
@@ -89,11 +89,18 @@ pub(super) fn overlay_shapes(
 }
 
 /// native WebView 위 오버레이 창의 wgpu surface. 플랫폼 backend 가 투명·불투명 합성을 지원하는 창을
-/// 만들면 채운다. 형식은 메인 surface 와 같아야 한다(같은 egui renderer 로 그린다). 지금은 이 창을
-/// 만드는 backend 가 없어 언제나 `None` 이고 오버레이 pass 는 실행되지 않는다.
+/// 만들면 채운다. 형식은 메인 surface 와 같아야 한다(같은 egui renderer 로 그린다). 창은 메인 창
+/// 클라이언트 영역과 원점·물리 크기가 같아야 하며([`overlay_matches_main`]) 메인 pass 와 같은 좌표로
+/// 그린다. 지금은 이 창을 만드는 backend 가 없어 언제나 `None` 이고 오버레이 pass 는 실행되지 않는다.
 pub(crate) struct OverlaySurface {
     pub(crate) surface: wgpu::Surface<'static>,
     pub(crate) config: wgpu::SurfaceConfiguration,
+}
+
+/// 오버레이 surface 가 메인 surface 와 같은 물리 크기인지. 다르면 같은 좌표로 그릴 수 없으므로 그 프레임은
+/// 실패로 돌려 `Hide` 로 돌아간다(크기를 맞춰 다시 만드는 일은 backend 몫이다).
+pub(super) fn overlay_matches_main(main: [u32; 2], overlay: [u32; 2]) -> bool {
+    main == overlay
 }
 
 impl super::GpuState {
@@ -112,6 +119,7 @@ impl super::GpuState {
         };
         match self.render_webview_overlay(
             job.shapes,
+            &job.pages,
             pixels_per_point,
             state.plugin_mesh_popup_regions.as_slice(),
             plugin_manager,
@@ -136,13 +144,14 @@ impl super::GpuState {
     }
 
     /// 오버레이 창을 투명으로 지우고 오버레이 paint job 과 plugin mesh 팝업을 그린다. 메인 pass 와 같은
-    /// 그룹 순서를 쓴다. shape 가 없어도 지운 프레임을 올린다(유효한 빈 그림).
+    /// 그룹 순서를 쓰고 mesh 도 `pages` 안만 칠한다. shape 가 없어도 지운 프레임을 올린다(유효한 빈 그림).
     /// 창이 없으면 `Ok(false)`. surface 를 잃었고 다시 설정해도 얻지 못하면 창을 버리고 `Err` 를
     /// 돌려준다. 호출자는 그 프레임부터 `Hide` 로 돌아간다.
     #[allow(clippy::too_many_arguments)] // reason: 오버레이 pass 한 번에 필요한 프레임 입력 그대로
     pub(super) fn render_webview_overlay(
         &mut self,
         shapes: Vec<ClippedShape>,
+        pages: &[egui::Rect],
         pixels_per_point: f32,
         mesh_popup_regions: &[(u64, crate::model::PhysicalRect)],
         plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
@@ -151,6 +160,13 @@ impl super::GpuState {
         let Some(overlay) = self.overlay_surface.as_ref() else {
             return Ok(false);
         };
+        let size = [overlay.config.width, overlay.config.height];
+        if !overlay_matches_main([self.size.width, self.size.height], size) {
+            return Err(format!(
+                "overlay surface {size:?} differs from the window {:?}",
+                [self.size.width, self.size.height]
+            ));
+        }
         let output = match overlay.surface.get_current_texture() {
             Ok(o) => o,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -168,7 +184,6 @@ impl super::GpuState {
                 return Err(format!("overlay surface failed: {e}"));
             }
         };
-        let size = [overlay.config.width, overlay.config.height];
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -209,6 +224,7 @@ impl super::GpuState {
             mesh_popup_regions,
             plugin_manager,
             host_on_top,
+            Some(pages),
         );
         output.present();
         Ok(true)
@@ -257,6 +273,14 @@ mod tests {
             ordered_layers(&targets, &order, false),
             vec![host, plugin, drop]
         );
+    }
+
+    /// 오버레이 창은 메인 창과 같은 물리 크기일 때만 같은 좌표로 그린다.
+    #[test]
+    fn the_overlay_surface_must_match_the_window_size() {
+        assert!(overlay_matches_main([1280, 800], [1280, 800]));
+        assert!(!overlay_matches_main([1280, 800], [1280, 799]));
+        assert!(!overlay_matches_main([1280, 800], [640, 400]));
     }
 
     #[test]
