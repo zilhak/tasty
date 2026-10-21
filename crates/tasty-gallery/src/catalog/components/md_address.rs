@@ -1,5 +1,5 @@
 //! Markdown 주소 띠 예제. 본체는 플러그인이 WebView HTML로 그리고, 여기서는 같은 토큰으로 egui 근사를 그린다.
-//! 시안 `gallery/plugins-md-address.jsx`의 세 Spec(띠 상태 · 폴더 버튼 · 좁은 폭)을 옮긴다.
+//! 시안 `gallery/plugins-md-address.jsx`의 네 Spec(띠 상태 · 폴더 버튼 · 실패 종류와 대기 · 좁은 폭)을 옮긴다.
 //!
 //! 띠: [Folder] (원격은 [Folder · Reload]) · 필드(kind 글리프 + mono 경로) · [Go]. 모든 버튼은 IconButton
 //! ghost sm 이다. 필드가 `md-address-go-hide-below` 보다 좁아지면 Go 를 먼저 숨기고 Enter 는 그대로다.
@@ -7,7 +7,8 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    ControlSize, IconButton, IconButtonState, Input, autocomplete_dropdown, paint_icon_button_state,
+    ControlSize, IconButton, IconButtonState, Input, Spinner, autocomplete_dropdown,
+    paint_icon_button_state,
 };
 
 use crate::catalog::icons;
@@ -20,7 +21,20 @@ pub(crate) enum BarState {
     Editing,
     Stale,
     Disconnected,
-    Error,
+    Error(Fail),
+    /// 결과 없이 30초가 지나 대기 행을 보인다. 필드는 편집 모양이다.
+    Waiting,
+}
+
+/// 원격 직접 이동의 실패 종류. 시안 `fail` 값과 같고 종류마다 문장이 다르다.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Fail {
+    NotFound,
+    /// 원격이 보낸 영어 사유 원문. 번역하지 않는다.
+    Rejected(&'static str),
+    Lost,
+    Cancelled,
+    Internal,
 }
 
 /// 플러그인 문구(`crates/tasty-plugin-markdown/lang/*.toml` 의 `markdown.address.*`). 갤러리는 본체
@@ -34,6 +48,12 @@ struct Copy {
     disconnected: &'static str,
     /// `{path}` 자리에 경로가 들어간다.
     not_found: &'static str,
+    /// `{path}` · `{reason}` 자리에 경로와 원격 사유 원문이 들어간다.
+    rejected: &'static str,
+    connection_lost: &'static str,
+    cancelled: &'static str,
+    internal: &'static str,
+    waiting: &'static str,
 }
 
 const EN: Copy = Copy {
@@ -44,6 +64,11 @@ const EN: Copy = Copy {
     stale: "The remote file changed — reload",
     disconnected: "Disconnected from the remote",
     not_found: "Can't open {path} on the remote: file not found.",
+    rejected: "Can't open {path} on the remote: {reason}",
+    connection_lost: "Connection lost before the remote answered. Reconnect and try again.",
+    cancelled: "Didn't open {path}: the remote connection changed. Try again.",
+    internal: "Couldn't send the request to open {path}. Try again.",
+    waiting: "Still waiting for the remote…",
 };
 const KO: Copy = Copy {
     open: "파일 열기…",
@@ -53,6 +78,11 @@ const KO: Copy = Copy {
     stale: "원격 파일이 바뀌었습니다 — 새로 고침",
     disconnected: "원격 연결이 끊겼습니다",
     not_found: "원격에서 {path} 파일을 열 수 없습니다: 파일이 없습니다.",
+    rejected: "원격에서 {path} 파일을 열 수 없습니다: {reason}",
+    connection_lost: "원격이 응답하기 전에 연결이 끊겼습니다. 다시 연결한 뒤 시도하세요.",
+    cancelled: "원격 연결이 바뀌어 {path} 파일을 열지 않았습니다. 다시 시도하세요.",
+    internal: "{path} 파일을 여는 요청을 보내지 못했습니다. 다시 시도하세요.",
+    waiting: "원격의 응답을 기다리는 중…",
 };
 const JA: Copy = Copy {
     open: "ファイルを開く…",
@@ -62,6 +92,11 @@ const JA: Copy = Copy {
     stale: "リモートのファイルが変更されました — 再読み込み",
     disconnected: "リモートから切断されました",
     not_found: "リモートで {path} を開けません: ファイルが見つかりません。",
+    rejected: "リモートで {path} を開けません: {reason}",
+    connection_lost: "リモートの応答前に接続が切れました。再接続してからもう一度お試しください。",
+    cancelled: "リモート接続が変わったため {path} を開きませんでした。もう一度お試しください。",
+    internal: "{path} を開く要求を送信できませんでした。もう一度お試しください。",
+    waiting: "リモートの応答を待っています…",
 };
 
 const LOCAL_PATH: &str = "~/work/tasty/docs/architecture.md";
@@ -151,13 +186,16 @@ pub(crate) fn bar(ui: &mut egui::Ui, theme: &Theme, width: f32, lang: &str, bar:
                     },
                 );
             });
-        if bar.state == BarState::Error {
-            error_row(
+        match bar.state {
+            BarState::Error(fail) => error_row(
                 ui,
                 theme,
                 width,
-                &copy.not_found.replace("{path}", bar.path),
-            );
+                &failure_text(copy, fail, bar.path),
+                bar.path,
+            ),
+            BarState::Waiting => waiting_row(ui, theme, width, copy.waiting),
+            _ => {}
         }
         let (edge, _) = ui.allocate_exact_size(
             egui::vec2(width, theme.border_width.value()),
@@ -215,13 +253,14 @@ fn field(ui: &mut egui::Ui, theme: &Theme, width: f32, bar: &Bar<'_>) {
         glyph.image(rect.height(), c).paint_at(ui, rect);
     };
     let off = bar.state == BarState::Disconnected;
-    let editing = matches!(bar.state, BarState::Editing | BarState::Error);
+    let error = matches!(bar.state, BarState::Error(_));
+    let editing = error || matches!(bar.state, BarState::Editing | BarState::Waiting);
     let mut input = Input::new()
         .id(ui.id().with(("md_address_field", bar.path, bar.remote)))
         .mono(true)
         .width(width)
         .icon(&paint)
-        .invalid(bar.state == BarState::Error)
+        .invalid(error)
         .read_only(off)
         .focus_look(editing);
     input = if off {
@@ -229,13 +268,83 @@ fn field(ui: &mut egui::Ui, theme: &Theme, width: f32, bar: &Bar<'_>) {
     } else if editing {
         input
     } else {
-        input.text_color(theme.text_secondary().to_egui())
+        input.text_color(theme.md_address_value_fg().to_egui())
     };
     input.show(ui, theme, &mut buf);
 }
 
+/// 실패 종류의 문장. 파일 없음 문장을 다른 종류에 빌려 쓰지 않는다. 사유가 빈 거절은 내부 실패 문장이다.
+fn failure_text(copy: &Copy, fail: Fail, path: &str) -> String {
+    let template = match fail {
+        Fail::NotFound => copy.not_found,
+        Fail::Rejected(reason) if !reason.is_empty() => {
+            return copy
+                .rejected
+                .replace("{path}", path)
+                .replace("{reason}", reason);
+        }
+        Fail::Rejected(_) | Fail::Internal => copy.internal,
+        Fail::Lost => copy.connection_lost,
+        Fail::Cancelled => copy.cancelled,
+    };
+    template.replace("{path}", path)
+}
+
+/// 대기 행 — 오류 행과 같은 자리·높이, Spinner(icon-size-sm) + caption `md-address-pending-fg`. 오류가 아니다.
+fn waiting_row(ui: &mut egui::Ui, theme: &Theme, width: f32, text: &str) {
+    let pad = theme.md_address_bar_padding_x().value();
+    egui::Frame::new()
+        .fill(theme.md_address_bar_bg().to_egui())
+        .inner_margin(egui::Margin::symmetric(pad as i8, 0))
+        .show(ui, |ui| {
+            let size = egui::vec2(width - pad * 2.0, theme.md_address_error_height().value());
+            ui.allocate_ui_with_layout(
+                size,
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_min_size(size);
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    Spinner::new()
+                        .size(theme.icon_glyph_size_sm.value())
+                        .show(ui, theme);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(text)
+                                .size(theme.font_size_caption.value())
+                                .color(theme.md_address_pending_fg().to_egui()),
+                        )
+                        .truncate(),
+                    );
+                },
+            );
+        });
+}
+
+/// 문장 속 경로만 mono 로 둔 한 줄. 끝은 말줄임한다.
+fn sentence_job(theme: &Theme, text: &str, path: &str, width: f32) -> egui::text::LayoutJob {
+    let size = theme.font_size_caption.value();
+    let color = theme.text_primary().to_egui();
+    let mut job = egui::text::LayoutJob::default();
+    let (before, path_part, rest) = match text.split_once(path) {
+        Some((before, rest)) => (before, path, rest),
+        None => (text, "", ""),
+    };
+    for (part, font) in [
+        (before, egui::FontId::proportional(size)),
+        (path_part, egui::FontId::monospace(size)),
+        (rest, egui::FontId::proportional(size)),
+    ] {
+        if !part.is_empty() {
+            job.append(part, 0.0, egui::TextFormat::simple(font, color));
+        }
+    }
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width);
+    job
+}
+
 /// 이동 실패 행 — 띠 아래, 높이 `md-address-error-height`, alertCircle(`md-address-error-glyph`) + caption.
-fn error_row(ui: &mut egui::Ui, theme: &Theme, width: f32, text: &str) {
+/// 경로는 문장 안에서 mono 다. 전체 문장은 tooltip 에 있다.
+fn error_row(ui: &mut egui::Ui, theme: &Theme, width: f32, text: &str, path: &str) {
     let pad = theme.md_address_bar_padding_x().value();
     egui::Frame::new()
         .fill(theme.md_address_bar_bg().to_egui())
@@ -254,15 +363,14 @@ fn error_row(ui: &mut egui::Ui, theme: &Theme, width: f32, text: &str) {
                     icons::ALERT_CIRCLE
                         .image(side, theme.md_address_error_glyph().to_egui())
                         .paint_at(ui, rect);
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(text)
-                                .size(theme.font_size_caption.value())
-                                .color(theme.text_primary().to_egui()),
-                        )
-                        .truncate(),
-                    )
-                    .on_hover_text(text);
+                    let job =
+                        sentence_job(theme, text, path, size.x - side - theme.spacing_sm.value());
+                    let galley = ui.fonts(|f| f.layout_job(job));
+                    let (rect, response) =
+                        ui.allocate_exact_size(galley.size(), egui::Sense::hover());
+                    ui.painter()
+                        .galley(rect.min, galley, theme.text_primary().to_egui());
+                    response.on_hover_text(text);
                 },
             );
         });
@@ -357,7 +465,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             (
                                 "remote · navigate failed",
                                 true,
-                                BarState::Error,
+                                BarState::Error(Fail::NotFound),
                                 "/home/deploy/agents-prod/RUNBOK.md",
                             ),
                         ];
@@ -518,6 +626,160 @@ fn pinned_button(ui: &mut egui::Ui, theme: &Theme, hovered: bool, pressed: bool,
     icons::FOLDER_OPEN.image(glyph, fg).paint_at(ui, inner);
 }
 
+/// 원격 직접 이동 실패의 종류별 문장과 30초 대기 행. 행 모양은 하나이고 문장만 다르다.
+pub fn draw_failures(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    let w = CASE_W.value();
+    let oncall = "/home/deploy/agents-prod/ONCALL.md";
+    let secrets = "/root/secrets/NOTES.md";
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        for (label, th) in [("Mocha", theme), ("Latte", &latte)] {
+            spec::cluster(ui, th, label, |ui| {
+                ui.push_id(label, |ui| {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = th.spacing_md.value();
+                        let cases = [
+                            (
+                                "not found (unchanged)",
+                                BarState::Error(Fail::NotFound),
+                                "/home/deploy/agents-prod/RUNBOK.md",
+                            ),
+                            (
+                                "remote refused — reason as sent",
+                                BarState::Error(Fail::Rejected("permission denied")),
+                                secrets,
+                            ),
+                            (
+                                "remote refused — long reason ellipsises, tooltip has all",
+                                BarState::Error(Fail::Rejected(
+                                    "not a markdown file (detected: application/octet-stream)",
+                                )),
+                                "/home/deploy/agents-prod/build/artifact.md",
+                            ),
+                            (
+                                "connection lost before the answer",
+                                BarState::Error(Fail::Lost),
+                                oncall,
+                            ),
+                            (
+                                "cancelled — connection changed before sending",
+                                BarState::Error(Fail::Cancelled),
+                                oncall,
+                            ),
+                            (
+                                "internal — host didn't get the request",
+                                BarState::Error(Fail::Internal),
+                                oncall,
+                            ),
+                            (
+                                "no result after 30 s — status row",
+                                BarState::Waiting,
+                                oncall,
+                            ),
+                        ];
+                        for (name, state, path) in cases {
+                            case(ui, th, name, |ui| {
+                                bar(
+                                    ui,
+                                    th,
+                                    w,
+                                    "en",
+                                    &Bar {
+                                        remote: true,
+                                        state,
+                                        path,
+                                        no_go: false,
+                                    },
+                                )
+                            });
+                        }
+                    })
+                });
+            });
+        }
+    });
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        for (label, th) in [("Mocha", theme), ("Latte", &latte)] {
+            spec::cluster(ui, th, label, |ui| {
+                ui.push_id(("langs", label), |ui| {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = th.spacing_md.value();
+                        for lang in ["ko", "ja"] {
+                            let cases = [
+                                (
+                                    "refused",
+                                    BarState::Error(Fail::Rejected("permission denied")),
+                                    secrets,
+                                ),
+                                ("lost", BarState::Error(Fail::Lost), REMOTE_PATH),
+                                ("cancelled", BarState::Error(Fail::Cancelled), REMOTE_PATH),
+                                ("internal", BarState::Error(Fail::Internal), REMOTE_PATH),
+                                ("still waiting", BarState::Waiting, REMOTE_PATH),
+                            ];
+                            for (name, state, path) in cases {
+                                case(ui, th, &format!("{lang} · {name}"), |ui| {
+                                    bar(
+                                        ui,
+                                        th,
+                                        w,
+                                        lang,
+                                        &Bar {
+                                            remote: true,
+                                            state,
+                                            path,
+                                            no_go: false,
+                                        },
+                                    )
+                                });
+                            }
+                        }
+                    })
+                });
+            });
+        }
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "row",
+                "unchanged error row — md-address-error-height 24 · alertCircle icon-size-sm md-address-error-glyph · caption text-primary · ellipsis at the end, full sentence as tooltip",
+            ),
+            ("path", "mono inside the sentence, as the not-found row"),
+            (
+                "reason",
+                "rejected only · the remote's line verbatim after “: ” · not translated (lang=en) · empty reason → internal sentence",
+            ),
+            (
+                "waiting row",
+                "same 24 row, role=status · Spinner icon-size-sm · caption md-address-pending-fg (text-secondary on bg-sidebar) · starts at 30 s, no countdown",
+            ),
+            (
+                "clears",
+                "error and waiting rows: next keystroke · Esc · successful open (unchanged rule)",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "md-address-pending-fg",
+                "new · → text-secondary",
+                theme.md_address_pending_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "md-address-error-glyph",
+                "unchanged",
+                theme.md_address_error_glyph().to_egui(),
+            ),
+        ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "Kind → key: NotFound → error.not_found · Rejected(reason) → error.rejected · Disconnected → error.connection_lost · Cancelled → error.cancelled · Internal → error.internal · 30 s without a result → markdown.address.waiting. No kind reuses “file not found”; a late result still applies.",
+    );
+}
+
 /// 좁은 폭과 긴 경로. Go 를 먼저 숨기고 필드는 96 하한까지 줄어든다.
 pub fn draw_narrow(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
@@ -554,7 +816,7 @@ pub fn draw_narrow(ui: &mut egui::Ui, theme: &Theme) {
                 320.0,
                 "ja",
                 true,
-                BarState::Error,
+                BarState::Error(Fail::NotFound),
                 "/home/deploy/agents-prod/RUNBOK.md",
                 true,
             ),

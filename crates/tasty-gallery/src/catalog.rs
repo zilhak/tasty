@@ -2415,6 +2415,12 @@ pub fn pages() -> Vec<Page> {
                             components::md_address::draw_folder_button,
                         ),
                         spec(
+                            "markdown-address-failures",
+                            "Markdown — remote navigate failed by kind · still waiting",
+                            Some("one error row, a sentence per kind · remote reason verbatim · status row after 30 s"),
+                            components::md_address::draw_failures,
+                        ),
+                        spec(
                             "markdown-address-narrow",
                             "Markdown — address band at narrow widths",
                             Some("Go hides when the field would drop below 160 · field floor 96"),
