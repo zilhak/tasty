@@ -53,7 +53,7 @@ fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, det: bool, seed: Seed) {
             ui.spacing_mut().item_spacing =
                 egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
             for (label, th) in &themes {
-                let cell = PAIR_WIDTH.value() * theme.ui_zoom;
+                let cell = PAIR_WIDTH * theme.ui_zoom;
                 // 시안 `flex: 1 1 560` + wrap: 두 칸이 문서 칸을 넘으면 Latte 칸이 아래 줄로 간다.
                 spec::wrap_item(ui, |ui| {
                     egui::Frame::new()
@@ -61,7 +61,7 @@ fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, det: bool, seed: Seed) {
                         .corner_radius(th.corner_radius.value())
                         .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
                         .show(ui, |ui| {
-                            ui.set_width(cell);
+                            ui.set_width(cell.value());
                             ui.vertical(|ui| {
                                 ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
                                 ui.label(
@@ -70,7 +70,7 @@ fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, det: bool, seed: Seed) {
                                         .color(th.text_muted().to_egui()),
                                 );
                                 let panel_w = if seed.narrow {
-                                    NARROW_WIDTH.value() * theme.ui_zoom
+                                    NARROW_WIDTH * theme.ui_zoom
                                 } else {
                                     cell
                                 };
@@ -101,7 +101,7 @@ fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, det: bool, seed: Seed) {
 }
 
 /// 설정 콘텐츠 컬럼 — bg-panel · 1px border-frame · radius · padding space-lg.
-fn panel(ui: &mut egui::Ui, th: &Theme, width: f32, add: impl FnOnce(&mut egui::Ui)) {
+fn panel(ui: &mut egui::Ui, th: &Theme, width: LogicalPx, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
         .fill(th.bg_panel().to_egui())
         .stroke(egui::Stroke::new(
@@ -111,8 +111,8 @@ fn panel(ui: &mut egui::Ui, th: &Theme, width: f32, add: impl FnOnce(&mut egui::
         .corner_radius(th.corner_radius.value())
         .inner_margin(egui::Margin::same(th.spacing_lg.value() as i8))
         .show(ui, |ui| {
-            let inner = (width - 2.0 * (th.spacing_lg.value() + th.border_width.value())).max(0.0);
-            ui.set_width(inner);
+            let inner = (width - (th.spacing_lg + th.border_width) * 2.0).max(LogicalPx(0.0));
+            ui.set_width(inner.value());
             ui.vertical(add);
         });
 }

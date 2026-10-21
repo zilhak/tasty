@@ -6,6 +6,7 @@
 //! 상태 판단(대기·검증)은 호출자가 하고 여기서는 받은 값을 그린다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::{
     Button, ButtonVariant, ControlSize, TagVariant, Tooltip, tag, tag_disabled, tag_width,
@@ -81,7 +82,11 @@ pub fn fh_summary_text(segs: &[FhSummarySeg]) -> String {
 
 /// 출처 Tag들을 하나로 접을지. 여러 출처가 id를 말줄임시키면 접는다.
 /// 같은 폭에서는 언제나 같은 답이라 프레임마다 흔들리지 않는다.
-pub fn fh_origins_collapse(id_width: f32, id_room_with_all_tags: f32, origins: usize) -> bool {
+pub fn fh_origins_collapse(
+    id_width: LogicalPx,
+    id_room_with_all_tags: LogicalPx,
+    origins: usize,
+) -> bool {
     origins > 1 && id_width > id_room_with_all_tags
 }
 
@@ -98,18 +103,20 @@ pub fn fh_list_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 
 /// 빈 목록 한 줄 — settings-row-min-height, caption, empty-fg, 아래 구분선.
 pub fn fh_empty(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    let w = ui.available_width();
-    let h = theme.settings_row_min_height().value();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let w = LogicalPx(ui.available_width());
+    let h = theme.settings_row_min_height();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w.value(), h.value()), egui::Sense::hover());
+    let text_w = (w - theme.spacing_xs * 2.0).max(LogicalPx(0.0));
     let galley = ui.painter().layout(
         text.to_owned(),
         egui::FontId::proportional(theme.font_size_caption.value()),
         theme.file_handler_empty_fg().to_egui(),
-        (w - 2.0 * theme.spacing_xs.value()).max(0.0),
+        text_w.value(),
     );
+    let text_h = LogicalPx(galley.rect.height());
     let pos = egui::pos2(
         rect.left() + theme.spacing_xs.value(),
-        rect.center().y - galley.rect.height() * 0.5,
+        rect.center().y - (text_h * 0.5).value(),
     );
     ui.painter()
         .galley(pos, galley, theme.file_handler_empty_fg().to_egui());
@@ -137,7 +144,7 @@ pub fn fh_intro(
     add_label: &str,
     adding: bool,
 ) -> bool {
-    let gap = theme.spacing_md.value();
+    let gap = theme.spacing_md;
     let plus = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
         tasty_icons::PLUS.image(rect.height(), c).paint_at(ui, rect);
     };
@@ -147,22 +154,22 @@ pub fn fh_intro(
         .leading_icon(&plus)
         .enabled(!adding);
     let button_w = add_button_width(ui, theme, add_label);
-    let total = ui.available_width();
+    let total = LogicalPx(ui.available_width());
     // 시안 flex 1 1 240: 설명 열이 240보다 좁아지면 버튼이 아래로 내려간다.
-    let min_text = crate::tokens::FH_INTRO_TEXT_MIN.value() * theme.ui_zoom;
+    let min_text = crate::tokens::FH_INTRO_TEXT_MIN * theme.ui_zoom;
     let side = total >= min_text + gap + button_w;
     let text_w = if side {
-        (total - gap - button_w).min(theme.measure_md.value())
+        (total - gap - button_w).min(theme.measure_md)
     } else {
-        total.min(theme.measure_md.value())
+        total.min(theme.measure_md)
     };
     let mut clicked = false;
     let draw_text = |ui: &mut egui::Ui| {
         ui.allocate_ui_with_layout(
-            egui::vec2(text_w, 0.0),
+            egui::vec2(text_w.value(), 0.0),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
-                ui.set_width(text_w);
+                ui.set_width(text_w.value());
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
                 intro_paragraph(ui, theme, text);
                 for (key, desc) in bullets {
@@ -173,7 +180,7 @@ pub fn fh_intro(
     };
     if side {
         ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
+            ui.spacing_mut().item_spacing.x = gap.value();
             draw_text(ui);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 clicked = button.show(ui, theme).clicked();
@@ -181,7 +188,7 @@ pub fn fh_intro(
         });
     } else {
         ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = gap;
+            ui.spacing_mut().item_spacing.y = gap.value();
             draw_text(ui);
             clicked = button.show(ui, theme).clicked();
         });
@@ -190,17 +197,17 @@ pub fn fh_intro(
 }
 
 /// Add 버튼의 그려질 폭 — 라벨 폭 + plus 글리프 + gap + 좌우 여백.
-fn add_button_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
+fn add_button_width(ui: &egui::Ui, theme: &Theme, label: &str) -> LogicalPx {
     let size = ControlSize::Sm;
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::FontId::proportional(size.font_size(theme)),
         egui::Color32::PLACEHOLDER,
     );
-    galley.rect.width()
-        + theme.icon_glyph_size_md.value()
-        + theme.button_gap().value()
-        + 2.0 * size.pad_x(theme)
+    LogicalPx(galley.rect.width())
+        + theme.icon_glyph_size_md
+        + theme.button_gap()
+        + LogicalPx(size.pad_x(theme)) * 2.0
 }
 
 fn intro_paragraph(ui: &mut egui::Ui, theme: &Theme, text: &str) {
@@ -272,16 +279,16 @@ pub fn fh_field(
     line: FhLine<'_>,
     control: impl FnOnce(&mut egui::Ui),
 ) {
-    let label_w = theme.settings_label_width().value();
-    let gap = theme.settings_label_gap().value();
-    let total = ui.available_width();
-    let side = total >= label_w + gap + theme.field_width_lg.value();
-    let draw_label = |ui: &mut egui::Ui, w: f32| {
+    let label_w = theme.settings_label_width();
+    let gap = theme.settings_label_gap();
+    let total = LogicalPx(ui.available_width());
+    let side = total >= label_w + gap + theme.field_width_lg;
+    let draw_label = |ui: &mut egui::Ui, w: LogicalPx| {
         ui.allocate_ui_with_layout(
-            egui::vec2(w, theme.input_height().value()),
+            egui::vec2(w.value(), theme.input_height().value()),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
-                ui.set_width(w);
+                ui.set_width(w.value());
                 ui.set_min_height(theme.input_height().value());
                 ui.add(
                     egui::Label::new(
@@ -294,12 +301,12 @@ pub fn fh_field(
             },
         );
     };
-    let draw_control = |ui: &mut egui::Ui, w: f32| {
+    let draw_control = |ui: &mut egui::Ui, w: LogicalPx| {
         ui.allocate_ui_with_layout(
-            egui::vec2(w, 0.0),
+            egui::vec2(w.value(), 0.0),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
-                ui.set_width(w);
+                ui.set_width(w.value());
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
                 control(ui);
                 fh_line(ui, theme, line);
@@ -308,9 +315,9 @@ pub fn fh_field(
     };
     if side {
         ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
+            ui.spacing_mut().item_spacing.x = gap.value();
             draw_label(ui, label_w);
-            draw_control(ui, (total - label_w - gap).max(0.0));
+            draw_control(ui, (total - label_w - gap).max(LogicalPx(0.0)));
         });
     } else {
         ui.vertical(|ui| {
@@ -344,26 +351,29 @@ pub fn fh_line(ui: &mut egui::Ui, theme: &Theme, line: FhLine<'_>) {
         ui.add(egui::Label::new(egui::RichText::new(text).size(size).color(color)).wrap());
         return;
     };
-    let icon = theme.icon_glyph_size_sm.value();
-    let gap = theme.spacing_xs.value();
-    let w = ui.available_width();
+    let icon = theme.icon_glyph_size_sm;
+    let gap = theme.spacing_xs;
+    let w = LogicalPx(ui.available_width());
     let galley = ui.painter().layout(
         text.to_owned(),
         egui::FontId::proportional(size),
         color,
-        (w - icon - gap).max(0.0),
+        (w - icon - gap).max(LogicalPx(0.0)).value(),
     );
-    let row_h = ui.fonts(|f| f.row_height(&egui::FontId::proportional(size)));
-    let h = galley.rect.height().max(icon);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let row_h = LogicalPx(ui.fonts(|f| f.row_height(&egui::FontId::proportional(size))));
+    let h = LogicalPx(galley.rect.height()).max(icon);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w.value(), h.value()), egui::Sense::hover());
     // 글리프는 첫 줄 가운데에 둔다.
     let glyph_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.left() + icon * 0.5, rect.top() + row_h * 0.5),
-        egui::vec2(icon, icon),
+        egui::pos2(
+            rect.left() + (icon * 0.5).value(),
+            rect.top() + (row_h * 0.5).value(),
+        ),
+        egui::vec2(icon.value(), icon.value()),
     );
-    glyph.image(icon, color).paint_at(ui, glyph_rect);
+    glyph.image(icon.value(), color).paint_at(ui, glyph_rect);
     ui.painter().galley(
-        egui::pos2(rect.left() + icon + gap, rect.top()),
+        egui::pos2(rect.left() + (icon + gap).value(), rect.top()),
         galley,
         color,
     );
@@ -444,24 +454,24 @@ pub fn fh_card(
 /// 목록 행. 위아래 space-sm, 좌우 space-xs, 두 줄 사이 space-xs, 아래 1px 구분선.
 pub fn fh_row(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>) -> FhRowEvents {
     let mut ev = FhRowEvents::default();
-    let pad_x = theme.spacing_xs.value();
-    let pad_y = theme.spacing_sm.value();
-    let gap = theme.spacing_sm.value();
-    let full_w = ui.available_width();
-    let inner_w = (full_w - 2.0 * pad_x).max(0.0);
+    let pad_x = theme.spacing_xs;
+    let pad_y = theme.spacing_sm;
+    let gap = theme.spacing_sm;
+    let full_w = LogicalPx(ui.available_width());
+    let inner_w = (full_w - pad_x * 2.0).max(LogicalPx(0.0));
     let top = ui.cursor().top();
-    ui.add_space(pad_y);
+    ui.add_space(pad_y.value());
     let dim = !view.on || view.strike_id;
 
     // 1줄: 오른쪽 묶음(끝 칸 · Switch)을 먼저 오른쪽부터 놓고 남은 폭에 id와 Tag를 둔다.
-    let line_h = theme.button_height_sm().value();
+    let line_h = theme.button_height_sm();
     ui.allocate_ui_with_layout(
-        egui::vec2(full_w, line_h),
+        egui::vec2(full_w.value(), line_h.value()),
         egui::Layout::right_to_left(egui::Align::Center),
         |ui| {
-            ui.set_min_height(line_h);
-            ui.add_space(pad_x);
-            ui.spacing_mut().item_spacing.x = gap;
+            ui.set_min_height(line_h.value());
+            ui.add_space(pad_x.value());
+            ui.spacing_mut().item_spacing.x = gap.value();
             match view.trailing {
                 FhTrailing::Lock => lock_slot(ui, theme, view.locked_tooltip),
                 FhTrailing::Undo => {
@@ -478,8 +488,8 @@ pub fn fh_row(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>) -> FhRowEv
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 // 좁은 열에서 Tag가 남은 폭을 넘으면 Switch와 끝 칸을 덮는다. 왼쪽 묶음은 남은 폭에서 자른다.
                 ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
-                ui.add_space(pad_x);
-                ui.spacing_mut().item_spacing.x = gap;
+                ui.add_space(pad_x.value());
+                ui.spacing_mut().item_spacing.x = gap.value();
                 row_left(ui, theme, view, dim);
             });
         },
@@ -488,13 +498,13 @@ pub fn fh_row(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>) -> FhRowEv
     // 2줄: 요약 한 줄 말줄임, 전체 값은 툴팁.
     ui.add_space(theme.spacing_xs.value());
     ui.horizontal(|ui| {
-        ui.add_space(pad_x);
+        ui.add_space(pad_x.value());
         summary_line(ui, theme, view, dim, inner_w);
     });
-    ui.add_space(pad_y);
+    ui.add_space(pad_y.value());
     let rect = egui::Rect::from_min_max(
         egui::pos2(ui.min_rect().left(), top),
-        egui::pos2(ui.min_rect().left() + full_w, ui.cursor().top()),
+        egui::pos2(ui.min_rect().left() + full_w.value(), ui.cursor().top()),
     );
     separator_under(ui, theme, rect);
     ev
@@ -510,10 +520,11 @@ fn ghost_sm(ui: &mut egui::Ui, theme: &Theme, label: &str) -> bool {
 
 /// 자물쇠 — icon-size-sm, glyph-dim. 누르는 것이 아니라 읽는 표시이며 툴팁에 출처를 적는다.
 fn lock_slot(ui: &mut egui::Ui, theme: &Theme, tooltip: &str) {
-    let s = theme.icon_glyph_size_sm.value();
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
+    let s = theme.icon_glyph_size_sm;
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(s.value(), s.value()), egui::Sense::hover());
     tasty_icons::LOCK
-        .image(s, theme.glyph_dim().to_egui())
+        .image(s.value(), theme.glyph_dim().to_egui())
         .paint_at(ui, rect);
     if crate::tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
         Tooltip::new(tooltip).show(ui, theme, rect);
@@ -522,45 +533,49 @@ fn lock_slot(ui: &mut egui::Ui, theme: &Theme, tooltip: &str) {
 
 /// id · 출처 Tag(들) · prio · 대기 Tag. id는 남은 폭에서 말줄임한다.
 fn row_left(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>, dim: bool) {
-    let gap = theme.spacing_sm.value();
-    let avail = ui.available_width();
+    let gap = theme.spacing_sm;
+    let zero = LogicalPx(0.0);
+    let avail = LogicalPx(ui.available_width());
     let id_font = egui::FontId::monospace(theme.font_size_body.value());
-    let id_natural = ui
-        .painter()
-        .layout_no_wrap(
-            view.id.to_owned(),
-            id_font.clone(),
-            egui::Color32::PLACEHOLDER,
-        )
-        .rect
-        .width();
+    let id_natural = LogicalPx(
+        ui.painter()
+            .layout_no_wrap(
+                view.id.to_owned(),
+                id_font.clone(),
+                egui::Color32::PLACEHOLDER,
+            )
+            .rect
+            .width(),
+    );
     let prio_text = view.prio.map(|p| format!("prio {p}"));
     let prio_font = egui::FontId::monospace(theme.font_size_micro.value());
-    let prio_w = prio_text.as_ref().map_or(0.0, |t| {
-        ui.painter()
-            .layout_no_wrap(t.clone(), prio_font.clone(), egui::Color32::PLACEHOLDER)
-            .rect
-            .width()
-            + gap
+    let prio_w = prio_text.as_ref().map_or(zero, |t| {
+        LogicalPx(
+            ui.painter()
+                .layout_no_wrap(t.clone(), prio_font.clone(), egui::Color32::PLACEHOLDER)
+                .rect
+                .width(),
+        ) + gap
     });
-    let pending_w = view.pending.map_or(0.0, |p| tag_width(ui, theme, p) + gap);
-    let all_tags_w: f32 = view
+    // tag_width는 f32를 돌려주는 기존 helper라 받은 자리에서 감싼다.
+    let tag_w = |label: &str| LogicalPx(tag_width(ui, theme, label)) + gap;
+    let pending_w = view.pending.map_or(zero, &tag_w);
+    let all_tags_w = view
         .origins
         .iter()
-        .map(|o| tag_width(ui, theme, &o.label) + gap)
-        .sum();
+        .fold(zero, |sum, o| sum + tag_w(&o.label));
     let fixed = prio_w + pending_w;
     let collapse = fh_origins_collapse(
         id_natural,
-        (avail - fixed - all_tags_w).max(0.0),
+        (avail - fixed - all_tags_w).max(zero),
         view.origins.len(),
     );
     let tags_w = if collapse {
-        tag_width(ui, theme, view.sources_label) + gap
+        tag_w(view.sources_label)
     } else {
         all_tags_w
     };
-    let id_max = (avail - fixed - tags_w).max(0.0);
+    let id_max = (avail - fixed - tags_w).max(zero);
 
     let id_color = if dim {
         theme.text_secondary()
@@ -583,13 +598,13 @@ fn row_left(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>, dim: bool) {
             ..Default::default()
         },
     );
-    job.wrap = egui::text::TextWrapping::truncate_at_width(id_max);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(id_max.value());
     let galley = ui.painter().layout_job(job);
     let id_resp = ui.add(egui::Label::new(galley.clone()).selectable(false));
     // 시안은 bold(semibold) id를 쓰지만 egui mono 스택에는 굵은 면이 없다. 같은 자리에
     // 한 번 더 겹쳐 굵기를 낸다.
     ui.painter().galley(
-        id_resp.rect.min + egui::vec2(theme.border_width.value() * 0.5, 0.0),
+        id_resp.rect.min + egui::vec2((theme.border_width * 0.5).value(), 0.0),
         galley,
         id_color,
     );
@@ -637,10 +652,10 @@ fn row_left(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>, dim: bool) {
 /// 저장하면 사라질 출처 — disabled Tag 위에 라벨 폭만큼 취소선을 긋는다.
 fn struck_tag(ui: &mut egui::Ui, theme: &Theme, label: &str) {
     let r = tag_disabled(ui, theme, label, false);
-    let pad = theme.tag_padding_x().value();
+    let pad = theme.tag_padding_x();
     let y = r.rect.center().y;
     ui.painter().hline(
-        (r.rect.left() + pad)..=(r.rect.right() - pad),
+        (r.rect.left() + pad.value())..=(r.rect.right() - pad.value()),
         y,
         egui::Stroke::new(
             theme.border_width.value(),
@@ -649,7 +664,13 @@ fn struck_tag(ui: &mut egui::Ui, theme: &Theme, label: &str) {
     );
 }
 
-fn summary_line(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>, dim: bool, max_w: f32) {
+fn summary_line(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    view: &FhRowView<'_>,
+    dim: bool,
+    max_w: LogicalPx,
+) {
     let font = egui::FontId::monospace(theme.font_size_term_sm.value());
     let base = if dim {
         theme.text_muted()
@@ -679,7 +700,7 @@ fn summary_line(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>, dim: boo
         };
         job.append(&seg.text, 0.0, fmt);
     }
-    job.wrap = egui::text::TextWrapping::truncate_at_width(max_w);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(max_w.value());
     // Label에 job을 넘기면 가로 레이아웃의 Extend 모드가 말줄임을 덮어쓴다. galley로 먼저 잰다.
     let galley = ui.painter().layout_job(job);
     let resp = ui.add(egui::Label::new(galley).selectable(false));
@@ -705,9 +726,9 @@ mod tests {
 
     #[test]
     fn one_origin_never_collapses_and_several_collapse_only_when_the_id_would_ellipsize() {
-        assert!(!fh_origins_collapse(500.0, 10.0, 1));
-        assert!(!fh_origins_collapse(80.0, 120.0, 3));
-        assert!(fh_origins_collapse(130.0, 120.0, 3));
+        assert!(!fh_origins_collapse(LogicalPx(500.0), LogicalPx(10.0), 1));
+        assert!(!fh_origins_collapse(LogicalPx(80.0), LogicalPx(120.0), 3));
+        assert!(fh_origins_collapse(LogicalPx(130.0), LogicalPx(120.0), 3));
     }
 
     #[test]

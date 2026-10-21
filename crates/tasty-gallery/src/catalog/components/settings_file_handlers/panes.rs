@@ -429,8 +429,8 @@ pub(super) fn hdl_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut HdlSt
             let names: Vec<&str> = dets.iter().map(String::as_str).collect();
             let w = th
                 .file_handler_select_width()
-                .value()
-                .min(ui.available_width());
+                .min(LogicalPx(ui.available_width()))
+                .value();
             tasty_ui_widgets::select_or_placeholder(
                 ui,
                 th,
@@ -464,8 +464,8 @@ pub(super) fn hdl_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut HdlSt
         fh_field(ui, th, l.action, caption, |ui| {
             let w = th
                 .file_handler_kind_width()
-                .value()
-                .min(ui.available_width());
+                .min(LogicalPx(ui.available_width()))
+                .value();
             tasty_ui_widgets::select(ui, th, "gallery_fh_kind", &mut st.kind, &l.kinds, w, true);
         });
         match st.kind {

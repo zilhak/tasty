@@ -9,6 +9,7 @@ use crate::file::handler::{
 use crate::i18n::{t, t_fmt};
 use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     FhCardLabels, FhLine, FhOrigin, FhRowView, FhSummarySeg, FhTrailing, Input,
 };
@@ -367,8 +368,8 @@ fn draw_add_handler_card(
                     .and_then(|d| detectors.iter().position(|x| x == d));
                 let width = th
                     .file_handler_select_width()
-                    .value()
-                    .min(ui.available_width());
+                    .min(LogicalPx(ui.available_width()))
+                    .value();
                 if tasty_ui_widgets::select_or_placeholder(
                     ui,
                     &th,
@@ -421,8 +422,8 @@ fn draw_add_handler_card(
                     .unwrap_or(0);
                 let width = th
                     .file_handler_kind_width()
-                    .value()
-                    .min(ui.available_width());
+                    .min(LogicalPx(ui.available_width()))
+                    .value();
                 if tasty_ui_widgets::select(
                     ui,
                     &th,
