@@ -67,6 +67,11 @@ pub(super) fn handle_overlay(
                 "scrim": t.scrim.map(rect),
             })).collect::<Vec<_>>(),
             "pages": ov.pages.iter().map(|r| rect(*r)).collect::<Vec<_>>(),
+            "planned_pages": ov.planned_pages.iter().map(|r| rect(*r)).collect::<Vec<_>>(),
+            "painted": ov.painted.as_ref().map(|p| json!({
+                "mode": mode_name(p.mode),
+                "pages": p.pages.iter().map(|r| rect(*r)).collect::<Vec<_>>(),
+            })),
         }),
     )
 }

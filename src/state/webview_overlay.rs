@@ -49,25 +49,47 @@ pub struct OverlayTarget {
 }
 
 /// 창 하나의 오버레이 상태. egui 프레임이 대상을 모으고, WebView 동기화가 모드와 페이지를 정한다.
-/// 상자 가장자리는 다음 프레임 그리기가 `pages` 로 정한다. 대상이 처음 뜬 프레임의 페이지는 직전
-/// 프레임에 드러난 페이지와 같으므로 실제로는 지연이 보이지 않는다.
+/// 상자 가장자리와 오버레이 그림은 다음 프레임이 `pages`·`planned_pages` 로 정한다. 그래서 대상이
+/// 처음 뜬 프레임에는 그림이 아직 없고, 동기화는 [`overlay_reveal_ready`] 가 참이 될 때까지 페이지를
+/// 숨긴 채 다시 그리기를 요청한다.
 #[derive(Debug, Default)]
 pub struct OverlayFrame {
     /// 이번 프레임에 그린 대상.
     pub targets: Vec<OverlayTarget>,
     /// 마지막 동기화가 정한 모드.
     pub mode: OverlayMode,
-    /// 불투명 모드에서 드러난 페이지(egui 논리 좌표). 다른 모드에서는 비어 있다.
+    /// 불투명 모드에서 드러낼 페이지(egui 논리 좌표). 다른 모드에서는 비어 있다.
     pub pages: Vec<egui::Rect>,
+    /// 마지막 동기화가 이 모드로 드러내려는 페이지(egui 논리 좌표, surface id 순). 오버레이 그림을
+    /// 이 영역으로 자른다. `Hide` 이거나 대상 팝업이 없으면 비어 있다.
+    pub planned_pages: Vec<egui::Rect>,
     /// 직전 프레임 plugin 팝업 셸 레이어와 영역.
     pub prev_plugin_rects: Vec<(egui::LayerId, egui::Rect)>,
     pub health: OverlayHealth,
     /// backend 에 오버레이를 적용한 상태다. `Hide` 로 돌아가면 `clear_overlay` 를 부른다.
     pub applied: bool,
-    /// 오버레이 창에 그릴 shape. 오버레이 창이 있을 때만 프레임 끝에 채우고 렌더가 가져간다.
-    pub paint_shapes: Vec<egui::epaint::ClippedShape>,
+    /// 이번 프레임 오버레이 창에 그릴 그림. 오버레이 창이 있고 모드가 `Hide` 가 아닐 때만 프레임 끝에
+    /// 채우고 렌더가 가져간다. `None` 은 준비하지 않은 것이고 빈 `shapes` 는 유효한 빈 그림이다.
+    pub paint_job: Option<OverlayPaintJob>,
+    /// 이번 프레임에 오버레이 창에 실제로 올린 그림. 프레임 시작에 비우고 렌더가 present 뒤에 채운다.
+    pub painted: Option<PaintedOverlay>,
     /// debug 빌드에서 backend 지원 모드를 덮어쓴다.
     pub forced: Option<OverlayMode>,
+}
+
+/// 오버레이 창 한 프레임의 그림. 어떤 모드·페이지를 기준으로 만들었는지 함께 든다.
+#[derive(Debug, Default)]
+pub struct OverlayPaintJob {
+    pub mode: OverlayMode,
+    pub pages: Vec<egui::Rect>,
+    pub shapes: Vec<egui::epaint::ClippedShape>,
+}
+
+/// 오버레이 창에 present 한 그림의 기준.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaintedOverlay {
+    pub mode: OverlayMode,
+    pub pages: Vec<egui::Rect>,
 }
 
 /// 모드를 정하는 입력. 매 프레임 새로 만든다.
@@ -99,6 +121,20 @@ pub fn reveal_wanted(
     under_toast: bool,
 ) -> bool {
     active && !under_toast && (!overlay_open || mode != OverlayMode::Hide)
+}
+
+/// 대상 팝업이 떠 있는 동안 `mode` 로 페이지를 드러내도 되는지. 같은 프레임에 오버레이 창이 같은 모드와
+/// 같은 페이지로 그림을 올렸을 때만 참이다. 팝업이 없거나 `Hide` 면 이 판정과 무관하다.
+pub fn overlay_reveal_ready(
+    mode: OverlayMode,
+    overlay_open: bool,
+    painted: Option<&PaintedOverlay>,
+    planned_pages: &[egui::Rect],
+) -> bool {
+    if !overlay_open || mode == OverlayMode::Hide {
+        return true;
+    }
+    painted.is_some_and(|p| p.mode == mode && p.pages == planned_pages)
 }
 
 /// 상자 바깥(`StrokeKind::Outside`)에 그리는 테두리까지 넣은 그림 영역. 소속 범위 밖은 자른다.
@@ -178,9 +214,11 @@ pub fn plugin_box(
         .fold(current, |acc, (_, r)| acc.union(*r))
 }
 
-/// 프레임 시작에 부른다. 지난 프레임 대상과 드롭다운 기록을 지우고 이번 프레임 그리기가 쓸 페이지를 넣는다.
+/// 프레임 시작에 부른다. 지난 프레임 대상·그림 기록과 드롭다운 기록을 지우고 이번 프레임 그리기가 쓸 페이지를 넣는다.
 pub fn begin_frame(ctx: &egui::Context, frame: &mut OverlayFrame) {
     frame.targets.clear();
+    frame.paint_job = None;
+    frame.painted = None;
     tasty_egui_theme::overlay_edge::clear_frame_popovers(ctx);
     tasty_egui_theme::overlay_edge::set_opaque_pages(ctx, frame.pages.clone());
 }
@@ -285,6 +323,55 @@ mod tests {
             outlined_box(er(0.0, 0.0, 50.0, 50.0), 1.0, scope),
             er(0.0, 0.0, 51.0, 51.0)
         );
+    }
+
+    /// 대상 팝업이 처음 뜬 프레임에는 오버레이 그림이 없으므로 페이지를 드러내지 않는다. 같은 모드·페이지로
+    /// 그린 뒤에만 드러낸다. 빈 그림도 그 모드로 올렸다면 준비된 것이다.
+    #[test]
+    fn pages_wait_for_an_overlay_frame_painted_for_the_same_mode_and_pages() {
+        let page = er(0.0, 0.0, 300.0, 200.0);
+        let painted = |mode, pages: &[egui::Rect]| PaintedOverlay {
+            mode,
+            pages: pages.to_vec(),
+        };
+        assert!(!overlay_reveal_ready(
+            OverlayMode::Opaque,
+            true,
+            None,
+            &[page]
+        ));
+        assert!(!overlay_reveal_ready(
+            OverlayMode::Transparent,
+            true,
+            Some(&painted(OverlayMode::Opaque, &[page])),
+            &[page]
+        ));
+        assert!(!overlay_reveal_ready(
+            OverlayMode::Opaque,
+            true,
+            Some(&painted(OverlayMode::Opaque, &[er(0.0, 0.0, 100.0, 100.0)])),
+            &[page]
+        ));
+        assert!(overlay_reveal_ready(
+            OverlayMode::Opaque,
+            true,
+            Some(&painted(OverlayMode::Opaque, &[page])),
+            &[page]
+        ));
+        assert!(overlay_reveal_ready(
+            OverlayMode::Transparent,
+            true,
+            Some(&painted(OverlayMode::Transparent, &[])),
+            &[]
+        ));
+        // 팝업이 없거나 숨김 모드면 기존 표시 판정 그대로다.
+        assert!(overlay_reveal_ready(
+            OverlayMode::Opaque,
+            false,
+            None,
+            &[page]
+        ));
+        assert!(overlay_reveal_ready(OverlayMode::Hide, true, None, &[page]));
     }
 
     #[test]

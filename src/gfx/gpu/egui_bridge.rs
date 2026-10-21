@@ -98,8 +98,9 @@ impl GpuState {
         });
         let scale_factor = self.scale_factor;
         let proxy = &self.proxy;
-        // 오버레이 창이 있고 직전 동기화가 페이지를 보인 채 두었을 때만 대상 그림을 복제한다.
-        let want_overlay_shapes = self.overlay_surface.is_some()
+        // 오버레이 창이 있고 직전 동기화가 지원 모드를 골랐을 때만 그 모드·페이지로 그림을 준비한다.
+        // 동기화는 이 그림이 올라간 프레임에만 페이지를 드러낸다.
+        let want_overlay_job = self.overlay_surface.is_some()
             && state.webview_overlay.mode != crate::state::webview_overlay::OverlayMode::Hide;
 
         self.egui_ctx.run(raw_input, |ctx| {
@@ -191,24 +192,20 @@ impl GpuState {
             );
 
             crate::state::webview_overlay::end_frame(ctx, &mut state.webview_overlay);
-            if want_overlay_shapes {
-                let pages: Vec<egui::Rect> = state
-                    .native_content_rects
-                    .iter()
-                    .map(|r| {
-                        let l = r.to_logical(scale_factor);
-                        egui::Rect::from_min_size(
-                            egui::pos2(l.x.value(), l.y.value()),
-                            egui::vec2(l.width.value(), l.height.value()),
-                        )
-                    })
-                    .collect();
-                state.webview_overlay.paint_shapes = super::overlay_paint::overlay_shapes(
+            if want_overlay_job {
+                let overlay = &mut state.webview_overlay;
+                let pages = overlay.planned_pages.clone();
+                let shapes = super::overlay_paint::overlay_shapes(
                     ctx,
-                    &state.webview_overlay.targets,
+                    &overlay.targets,
                     host_popup_on_top,
                     &pages,
                 );
+                overlay.paint_job = Some(crate::state::webview_overlay::OverlayPaintJob {
+                    mode: overlay.mode,
+                    pages,
+                    shapes,
+                });
             }
             // egui가 프레임마다 커서를 갱신하므로 저장된 창 리사이즈 방향도 여기서 반영한다.
             if let Some(dir) = state.pending_resize_cursor {

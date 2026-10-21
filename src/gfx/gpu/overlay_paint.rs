@@ -5,8 +5,9 @@
 //! - 대상 레이어(`OverlayFrame::targets`)의 shape 를 `end_pass` 전에 복제한다. 메인 surface 에는 원래대로
 //!   모두 그리므로 화면 캡처 결과는 바뀌지 않는다.
 //! - host·plugin 팝업 그룹 순서는 메인 pass 와 같은 `host_popup_should_render_on_top` 결정을 쓴다.
-//! - 각 shape 의 clip 을 드러난 WebView 영역과 교차해 오버레이 창은 페이지 위만 칠한다. 페이지 밖의
+//! - 각 shape 의 clip 을 드러낼 WebView 영역과 교차해 오버레이 창은 페이지 위만 칠한다. 페이지 밖의
 //!   scrim·그림자는 메인 surface 에만 있어 두 번 합성되지 않는다.
+//! - present 한 그림의 모드·페이지를 남긴다. WebView 동기화는 그것이 맞을 때만 페이지를 드러낸다.
 
 use egui::epaint::ClippedShape;
 
@@ -96,9 +97,9 @@ pub(crate) struct OverlaySurface {
 }
 
 impl super::GpuState {
-    /// 대상 팝업이 페이지 위에 있으면 오버레이 창에 같은 그림을 한 번 더 그린다. 메인 surface 는
-    /// 이미 모두 그렸으므로 캡처는 바뀌지 않는다. 실패는 같은 프레임의 WebView 동기화가 읽어
-    /// 모든 페이지를 숨긴다.
+    /// 이번 프레임 오버레이 그림이 준비됐으면 오버레이 창에 그린다. 메인 surface 는 이미 모두 그렸으므로
+    /// 캡처는 바뀌지 않는다. present 까지 끝나면 그 모드·페이지를 `painted` 로 남기고, 같은 프레임의
+    /// WebView 동기화가 그것을 보고 페이지를 드러낸다. 실패는 동기화가 읽어 모든 페이지를 숨긴다.
     pub(super) fn paint_webview_overlay(
         &mut self,
         state: &mut crate::state::MainViewState,
@@ -106,25 +107,39 @@ impl super::GpuState {
         plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
         host_on_top: bool,
     ) {
-        let shapes = std::mem::take(&mut state.webview_overlay.paint_shapes);
-        if shapes.is_empty() {
+        let Some(job) = state.webview_overlay.paint_job.take() else {
             return;
-        }
-        if let Err(e) = self.render_webview_overlay(
-            shapes,
+        };
+        match self.render_webview_overlay(
+            job.shapes,
             pixels_per_point,
             state.plugin_mesh_popup_regions.as_slice(),
             plugin_manager,
             host_on_top,
-        ) && state.webview_overlay.health.record_failure()
-        {
-            tracing::warn!("WebView overlay surface failed, hiding pages under popups: {e}");
+        ) {
+            Ok(true) => {
+                state.webview_overlay.painted =
+                    Some(crate::state::webview_overlay::PaintedOverlay {
+                        mode: job.mode,
+                        pages: job.pages,
+                    });
+            }
+            Ok(false) => {}
+            Err(e) => {
+                if state.webview_overlay.health.record_failure() {
+                    tracing::warn!(
+                        "WebView overlay surface failed, hiding pages under popups: {e}"
+                    );
+                }
+            }
         }
     }
 
-    /// 오버레이 창에 오버레이 paint job 과 plugin mesh 팝업을 그린다. 메인 pass 와 같은 그룹 순서를
-    /// 쓴다. surface 를 잃었고 다시 설정해도 얻지 못하면 창을 버리고 `Err` 를 돌려준다. 호출자는 그
-    /// 프레임부터 `Hide` 로 돌아간다.
+    /// 오버레이 창을 투명으로 지우고 오버레이 paint job 과 plugin mesh 팝업을 그린다. 메인 pass 와 같은
+    /// 그룹 순서를 쓴다. shape 가 없어도 지운 프레임을 올린다(유효한 빈 그림).
+    /// 창이 없으면 `Ok(false)`. surface 를 잃었고 다시 설정해도 얻지 못하면 창을 버리고 `Err` 를
+    /// 돌려준다. 호출자는 그 프레임부터 `Hide` 로 돌아간다.
+    #[allow(clippy::too_many_arguments)] // reason: 오버레이 pass 한 번에 필요한 프레임 입력 그대로
     pub(super) fn render_webview_overlay(
         &mut self,
         shapes: Vec<ClippedShape>,
@@ -132,9 +147,9 @@ impl super::GpuState {
         mesh_popup_regions: &[(u64, crate::model::PhysicalRect)],
         plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
         host_on_top: bool,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let Some(overlay) = self.overlay_surface.as_ref() else {
-            return Ok(());
+            return Ok(false);
         };
         let output = match overlay.surface.get_current_texture() {
             Ok(o) => o,
@@ -153,10 +168,10 @@ impl super::GpuState {
                 return Err(format!("overlay surface failed: {e}"));
             }
         };
+        let size = [overlay.config.width, overlay.config.height];
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let size = [overlay.config.width, overlay.config.height];
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -196,7 +211,7 @@ impl super::GpuState {
             host_on_top,
         );
         output.present();
-        Ok(())
+        Ok(true)
     }
 }
 

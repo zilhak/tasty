@@ -77,8 +77,47 @@ pub(super) fn settle_overlay<B: crate::webview::overlay::WebViewOverlayBackend>(
     mode
 }
 
-/// 불투명 모드에서 드러난 페이지를 다음 프레임 그리기에 넘긴다. 바뀌면 상자 가장자리를 다시 그린다.
-pub(super) fn publish_opaque_pages(
+/// 드러낼 후보(`planned`)의 표시를 적용하고 실제로 드러낸 surface id 를 돌려준다. 대상 팝업이 떠 있고
+/// 모드가 `Hide` 가 아니면 같은 프레임에 오버레이 창이 같은 모드·페이지로 그림을 올렸을 때만
+/// 드러낸다. 아니면 모두 숨긴 채 그 모드·페이지를 다음 프레임 그리기에 넘기고 다시 그리기를 요청한다.
+pub(super) fn apply_reveal(
+    view: &mut crate::view::MainView,
+    mode: crate::state::webview_overlay::OverlayMode,
+    overlay_open: bool,
+    active: &std::collections::HashMap<u32, crate::model::PhysicalRect>,
+    mut planned: Vec<u32>,
+    scale_factor: f64,
+) -> Vec<u32> {
+    use crate::state::webview_overlay::{OverlayMode, overlay_reveal_ready};
+    planned.sort_unstable();
+    let pages: Vec<egui::Rect> = planned
+        .iter()
+        .filter_map(|sid| active.get(sid))
+        .map(|r| {
+            let l = r.to_logical(scale_factor as f32);
+            egui::Rect::from_min_size(
+                egui::pos2(l.x.value(), l.y.value()),
+                egui::vec2(l.width.value(), l.height.value()),
+            )
+        })
+        .collect();
+    let overlay = &mut view.state.webview_overlay;
+    let ready = overlay_reveal_ready(mode, overlay_open, overlay.painted.as_ref(), &pages);
+    let gated = overlay_open && mode != OverlayMode::Hide;
+    overlay.planned_pages = if gated { pages } else { Vec::new() };
+    let revealed = if ready { planned.clone() } else { Vec::new() };
+    for (sid, wv) in &view.webviews {
+        wv.set_visible(revealed.contains(sid));
+    }
+    publish_opaque_pages(view, mode, active, &planned, scale_factor);
+    if !ready {
+        crate::view::ui::View::mark_dirty(view);
+    }
+    revealed
+}
+
+/// 불투명 모드에서 드러낼 페이지를 다음 프레임 그리기에 넘긴다. 바뀌면 상자 가장자리를 다시 그린다.
+fn publish_opaque_pages(
     view: &mut crate::view::MainView,
     mode: crate::state::webview_overlay::OverlayMode,
     active: &std::collections::HashMap<u32, crate::model::PhysicalRect>,

@@ -13,7 +13,7 @@ use crate::view::ui::View;
 use tasty_model::html_script::BannerPhase;
 
 mod overlay_settle;
-use overlay_settle::{publish_opaque_pages, settle_overlay};
+use overlay_settle::{apply_reveal, settle_overlay};
 
 pub(crate) fn synchronize(
     view: &mut MainView,
@@ -871,8 +871,7 @@ fn sync_webviews(
 
     // navigation이 Done일 때만 native 페이지를 표시한다. 그 전에는 egui의
     // 로딩·오류 표시가 native 페이지에 가려지지 않도록 숨긴다.
-    let mut any_visible = false;
-    let mut revealed = Vec::new();
+    let mut planned = Vec::new();
     let mut reveal_pending: Vec<(u32, crate::webview::NavState)> = Vec::new();
     for (sid, wv) in &view.webviews {
         // active 면 bounds 는 숨겨져 있어도 갱신(다음 reveal 대비).
@@ -904,17 +903,18 @@ fn sync_webviews(
         if wants_reveal && !reveal {
             reveal_pending.push((*sid, nav));
         }
-        wv.set_visible(reveal);
-        any_visible |= reveal;
-        revealed.extend(reveal.then_some(*sid));
+        planned.extend(reveal.then_some(*sid));
     }
-    publish_opaque_pages(
+    // 대상 팝업 아래 페이지는 오버레이 창에 같은 모드·페이지의 그림이 올라간 프레임에만 드러난다.
+    let revealed = apply_reveal(
         view,
         overlay_mode,
+        overlay_open,
         &active_physical,
-        &revealed,
+        planned,
         scale_factor,
     );
+    let any_visible = !revealed.is_empty();
     publish_native_content_rects(view, &active_physical, revealed);
     note_reveal_pending(view, &reveal_pending);
     // 키 폴링 tick 의 게이트(`app::webview_keys`) — 드러난 webview 가 없으면
