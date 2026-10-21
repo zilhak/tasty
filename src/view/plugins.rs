@@ -62,6 +62,12 @@ impl PluginsView {
 }
 
 impl View for PluginsView {
+    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::ReadRequests) {
+        if self.ui_state.folder_chooser.poll(owner) {
+            self.mark_dirty();
+        }
+    }
+
     fn base(&self) -> &ViewBase {
         &self.base
     }

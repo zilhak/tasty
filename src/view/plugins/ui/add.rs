@@ -83,9 +83,10 @@ fn draw_add_form(
         ui_state.add_in_flight = true;
     }
     // 미인증 판정에서는 Esc 가 Cancel 과 같다. 아무것도 설치하지 않고 경로 입력으로 돌아간다.
-    let esc_cancels = preview
-        .as_ref()
-        .is_some_and(|p| p.trust_state.is_unverified())
+    let esc_cancels = !ui_state.folder_chooser.is_open()
+        && preview
+            .as_ref()
+            .is_some_and(|p| p.trust_state.is_unverified())
         && !ui_state.add_in_flight
         && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
     if (footer.cancel || esc_cancels) && !ui_state.add_in_flight {
@@ -142,12 +143,13 @@ fn draw_path_picker(
         ui_state.add_error = None;
     }
     if picker.find {
-        let dialog = rfd::FileDialog::new();
-        if let Some(path) = crate::stall_watchdog::without_stall_watch(|| dialog.pick_folder()) {
-            ui_state.add_path_input = path.to_string_lossy().to_string();
-            try_validate_path(ui_state, snapshot);
-        }
+        ui_state.folder_chooser.open(
+            "plugins.add",
+            crate::view::file_chooser::FileChooserMode::Folder,
+            &ui_state.add_path_input,
+        );
     }
+
     if picker.verify {
         try_validate_path(ui_state, snapshot);
     }
@@ -617,6 +619,61 @@ mod tests {
         }
     }
 
+    #[test]
+    fn folder_chooser_escape_preserves_an_unverified_preview() {
+        crate::i18n::init("en");
+        let directory = tempfile::tempdir().unwrap();
+        let mut state = PluginsUiState {
+            active_tab: super::super::PluginsTab::Add,
+            add_preview: Some(preview(AddTrustState::Unsigned, false)),
+            add_path_input: "/tmp/p".into(),
+            add_focus_pending: true,
+            ..Default::default()
+        };
+        state.folder_chooser.open(
+            "plugins.add",
+            crate::view::file_chooser::FileChooserMode::Folder,
+            directory.path().to_str().unwrap(),
+        );
+        let ctx = egui::Context::default();
+        let mut actions = Vec::new();
+        let mut frame = |state: &mut PluginsUiState, events| {
+            drop(ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(880.0, 760.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    super::super::draw_plugins_panel(
+                        ctx,
+                        &PluginsSnapshot::default(),
+                        state,
+                        &mut actions,
+                    )
+                },
+            ));
+        };
+        frame(&mut state, vec![]);
+        frame(&mut state, key(egui::Key::Escape));
+        assert_eq!(
+            state.add_path_input, "/tmp/p",
+            "chooser Esc must preserve the underlying input"
+        );
+        assert!(state.add_preview.is_some());
+        assert!(!state.folder_chooser.is_open());
+        frame(&mut state, key(egui::Key::Escape));
+        assert!(
+            state.add_preview.is_none(),
+            "a later Esc keeps the existing unverified-cancel contract"
+        );
+        assert!(state.add_path_input.is_empty());
+        assert!(actions.is_empty());
+    }
+
     /// 추가 요청을 보낸 뒤 결과가 오기 전에는 두 번째 요청을 보내지 않는다. 실패하면 판정이 남고,
     /// 성공하면 입력 화면으로 돌아간다.
     #[test]
@@ -698,3 +755,24 @@ mod tests {
         assert!(ui_state.add_preview.is_none());
     }
 }
+
+/// Picking only supplies the path; existing manifest/trust validation remains the caller's job.
+pub(super) fn apply_folder_result(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) {
+    if let Some(outcome) = ui_state.folder_chooser.take_outcome("plugins.add") {
+        apply_folder_outcome(ui_state, snapshot, outcome);
+    }
+}
+
+fn apply_folder_outcome(
+    ui_state: &mut PluginsUiState,
+    snapshot: &PluginsSnapshot,
+    outcome: crate::view::file_chooser::FileChooserOutcome,
+) {
+    if let Some(path) = outcome.into_first_path() {
+        ui_state.add_path_input = path.to_string_lossy().into_owned();
+        try_validate_path(ui_state, snapshot);
+    }
+}
+
+#[cfg(test)]
+mod folder_tests;

@@ -882,3 +882,40 @@ fn a_long_filter_list_is_capped_at_the_max_width() {
         chips[0].1.width()
     );
 }
+
+#[test]
+fn folder_footer_keeps_all_three_rows_and_buttons_inside_each_received_size() {
+    let path = format!("/home/{}/selected-folder", "long-parent-".repeat(12));
+    for size in [
+        egui::vec2(640.0, 480.0),
+        egui::vec2(480.0, 360.0),
+        egui::vec2(320.0, 420.0),
+    ] {
+        let (content, texts) = painted(
+            size,
+            &deep_crumbs(8, "long-parent"),
+            FilePickerMode::Folder {
+                path: &path,
+                hint: "Double-click {name} to open it.",
+                file_tooltip: "Only folders can be selected.",
+            },
+        );
+        for label in [CONFIRM, CANCEL] {
+            let (_, rect, clip) = texts
+                .iter()
+                .find(|(text, _, _)| text == label)
+                .expect("footer button painted");
+            assert!(
+                content.contains_rect(*rect),
+                "{label}: {rect:?} outside {content:?}"
+            );
+            assert!(clip.contains_rect(*rect), "{label} clipped");
+        }
+        assert!(
+            texts
+                .iter()
+                .any(|(text, _, _)| text.starts_with('…') && text.ends_with("selected-folder")),
+            "readout keeps tail"
+        );
+    }
+}

@@ -1,9 +1,9 @@
 # 네이티브 파일 피커 (로컬+원격 겸용)
 
 - **Status**: Implemented
-- **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 탭 스트립 메뉴 "새 HTML..." 트리거 · 설정 창 안의 파일 선택 · 이미지 다른 이름으로 저장) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
+- **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 탭 스트립 메뉴 "새 HTML..." 트리거 · 설정·플러그인·프리셋의 로컬 파일/폴더 선택 · 이미지 다른 이름으로 저장) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
 - **설계**: [원격 attach (Remote attach)](../remote-attach/index.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [내부 팝업 시스템](../../design/systems/popup.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [파일 핸들러 (File handler)](../file-handler/index.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
-- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/app/local_reads.rs`(`directory` 로컬 읽기 요청 · `poll_file_picker_reads` 결과 반영), `src/adapters/ui/file_open_tool.rs`(Tools 메뉴·단축키 호출자 — 열기와 결과 적용), `src/adapters/ui/new_tab_picker.rs`(탭 스트립 메뉴 "새 HTML..." 호출자 — 열기와 결과 적용, 진입은 `src/view/main/redraw.rs`의 `apply_pane_menu_selection`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 호출자, `"file_picker.result"` push), `src/app/dispatch/file_picker.rs`(결과를 꺼내 호출자에게 넘기는 drain), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `crates/tasty-plugin-image/src/picker.rs`(이미지 저장 경로 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
+- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/app/local_reads.rs`(`directory` 로컬 읽기 요청 · `poll_file_picker_reads` 결과 반영), `src/adapters/ui/file_open_tool.rs`(Tools 메뉴·단축키 호출자 — 열기와 결과 적용), `src/adapters/ui/new_tab_picker.rs`(탭 스트립 메뉴 "새 HTML..." 호출자 — 열기와 결과 적용, 진입은 `src/view/main/redraw.rs`의 `apply_pane_menu_selection`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 호출자, `"file_picker.result"` push), `src/app/dispatch/file_picker.rs`(결과를 꺼내 호출자에게 넘기는 drain), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `crates/tasty-plugin-image/src/picker.rs`(이미지 저장 경로 caller), `src/view/file_chooser.rs`(Settings·Plugins·Preset의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
 ## 목적
@@ -307,11 +307,11 @@ owner 없는 단독 피커는 창 범위다. surface가 작으면 기존 clamp�
 에 상태를 둔 이 피커를 그대로 열 수 없다. 대신 **순수 view(`draw_file_picker_view`)만 재사용**한다 —
 view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상태를 어디에 두든 그릴 수 있다.
 
-- **상태**: 설정 창의 `SettingsUiState.file_chooser`(`SettingsFileChooser`) 가 갖는다. 메인 창의
-  `FilePickerData` 와 별개이며 메인 창 상태 모듈(`src/state/dialogs.rs`)을 거치지 않는다. 한 번에 하나만 열리고, 새로 열면
-  열려 있던 선택은 취소로 끝난다.
-- **popup**: 설정 창 자체 `PopupManager` 에 `settings_file_chooser` 로 등록된다(단축키 충돌 확인
-  popup 과 같은 매니저). 크기는 두 모드 모두 메인 피커와 같은 상수(640×480)다.
+- **상태**: 설정 창의 `SettingsUiState.file_chooser`(`LocalFileChooser`) 가 갖는다. 메인 창의
+  `FilePickerData` 와 별개이며 메인 창 상태 모듈(`src/state/dialogs.rs`)을 거치지 않는다. 한 번에 하나만 열리며, 열린 요청이나 미소비 결과가 있으면
+  새 요청을 거절해 기존 결과를 보존한다.
+- **popup**: 설정 창 자체 `PopupManager` 에 `local_file_chooser` PopupDef로 등록된다(단축키 충돌 확인
+  popup 과 같은 매니저). Open/Save는 메인 피커와 같은640×480, Folder는480×360이다.
 - **로컬 전용**: 원격(mirror) 조회 경로(`pending_list_dir_forward` → attach client)는 메인 창 App
   루프가 소유하므로 설정 창에는 없다. 설정은 이 인스턴스 자신의 구성이라 로컬 파일시스템만 본다.
   목록은 위 "로컬 브라우징" 과 같은 `local_reads::directory` worker 요청으로 채운다. `reload` 가
@@ -508,7 +508,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - 공유 나열: `src/core/fs_list.rs`(`DirEntryInfo`/`read_dir_entries`/`sort_entries`/`human_size`/
   `format_modified`) — `src/adapters/ui/surface/explorer/view.rs`(Explorer surface)와 공유.
 - 로컬 읽기: `src/app/local_reads.rs`(`directory` 요청 생성 · worker 실행 · `poll_file_picker_reads` 결과 반영).
-  설정 창은 `src/view/settings/ui/file_chooser.rs`(`reload`/`accept_read`)가 같은 요청을 쓴다.
+  설정 창은 `src/view/file_chooser.rs`(`reload`/`accept_read`)가 같은 요청을 쓴다.
 - 피커 열기: `src/adapters/ui/popup/file_picker.rs`(`open`, `FilePickerOpenedBy`), 위치 결정은
   `file_picker/location.rs`(`locate`). `ensure_available`이 열린 요청과 미전달 결과를 보호하며 `open`도 같은 검사를 수행한다.
 - 호출자: `src/adapters/ui/file_open_tool.rs`(Tools 메뉴 `BuiltinAction::FilePicker` 와 단축키
@@ -535,12 +535,12 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   (`src/app/event_handler.rs::apply_list_dir_request_msg`)와 headless(`src/boot/headless_stream.rs`) 양쪽
   진입점에서 동일 서버 로직을 호출.
 - Popup 상태: `src/state/dialogs.rs`(`FilePickerData`, `FpLoadState`, `FilePickerResult` — 경로 배열 또는 취소).
-- 설정 창 재사용: `src/view/settings/ui/file_chooser.rs`(`SettingsFileChooser`/`FileChooserMode`/
+- 설정 창 재사용: `src/view/file_chooser.rs`(`LocalFileChooser`/`FileChooserMode`/
   `FileChooserOutcome`, 저장 모드 이름 칸·덮어쓰기 판정), `src/view/settings/ui.rs`(`PopupManager` 등록 ·
   `open_file_chooser` · `settings_escape_owner` · `apply_file_chooser_outcomes`),
   `src/view/settings/ui/tabs/misc.rs`(`ScriptsUiState::BROWSE_CONSUMER`/`apply_browsed_file`).
-- i18n: `lang/{en,ko,ja}.toml` `[filepicker]`/`[filepicker.error_perm]`/`[filepicker.error_conn]`/`[filepicker.save]`.
-- 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/file_picker.rs`(`draw` · `draw_states` · `draw_save_mode`) + `file_picker/{path_bar,footer}.rs`.
+- i18n: `lang/{en,ko,ja}.toml` `[filepicker]`/`[filepicker.error_perm]`/`[filepicker.error_conn]`/`[filepicker.save]`/`[picker.folder]`.
+- 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/file_picker.rs`(`draw` · `draw_states` · `draw_save_mode` · `draw_folder_mode`) + `file_picker/{path_bar,footer,folder}.rs`.
 - 테스트: `crates/tasty-ipc/src/stream_hub.rs`(`pump_inbound_classifies_list_dir_request`),
   `src/core/fs_list.rs`(`human_size_units`/`sort_dirs_first`/`read_dir_entries_lists_files_and_dirs`),
   `src/remote/server/content_queries.rs`(`list_dir_entries_wire_capped_tests` — byte-budget truncation),
@@ -553,7 +553,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   trigger 성공/requester 기록/busy 거부/filters 전달, 실제 `MainViewState`/`CoreState` fixture),
   `crates/tasty-ipc/src/method_meta_tests.rs`(`file_picker_trigger_requires_fs_read`),
   `tests/attach_list_dir_loopback.rs`(실제 서버 인스턴스 상대 loopback 왕복 3 종 — 성공/디렉토리
-  없음 에러/attach 점유 없는 client 거부), `src/view/settings/ui/file_chooser.rs`(`tests` — 설정 창
+  없음 에러/attach 점유 없는 client 거부), `src/view/file_chooser.rs`(`tests` — 설정 창
   재사용의 확정·필터·이동·읽기 실패·저장 이름 검증·외부 닫힘 · 저장 모드의 단일 확정 대상·선택 해제·
   덮어쓰기 판정·더블클릭), `src/adapters/ui/popup/file_picker/layout_tests.rs`(헤드리스 렌더로 footer
   버튼 무잘림 · 깊은 경로 가운데 생략 · 짧은 경로 비생략 · 모든 조상이 칠해지거나 `…` 뒤에 있음).
@@ -566,3 +566,37 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - Given 저장 피커에서 경로를 확정 When 결과를 받으면 Then 그 카드의 경로 입력만 바뀌고 파일은 아직 쓰이지 않는다.
 - Given 취소하거나 카드·surface가 닫힘 또는 새 요청을 보냄 When 이전 결과가 도착하면 Then 버퍼는 바뀌지 않는다.
 - Given 기존 파일명을 선택 When 저장 피커를 보면 Then 덮어쓰기 경고가 보이며 더블클릭만으로 확정되지 않는다.
+
+### 독립 View의 폴더 선택
+
+`src/view/file_chooser.rs`의 LocalFileChooser는 Settings, Plugins, Preset이 공유하는 로컬 상태이며
+`file_chooser/window.rs`는 기존 file_picker PopupDef의 표시 계약을 재사용한 local_file_chooser 정의를 각 View의 PopupManager에 등록한다.
+메인 엔진의 file_picker 상태와 섞이지 않는다. 원격 전송 Browse는 설정 draft의 dir, Plugins의
+Find folder는 add_path_input을 채운 뒤 기존 매니페스트 검증, Preset의 dir/file_path는 각각 Folder/Open
+모드로 해당 필드 draft만 바꾼다. 실제 설정 저장·설치·프리셋 저장은 각 화면의 기존 확정 동작이다.
+
+Folder는 선택된 폴더가 있으면 그 경로, 없으면 현재 폴더를 한 원소 배열로 반환한다. 파일은 모두
+나열하되 비활성 잉크로 표시하며 클릭·키 이동에서 제외한다. Enter는 확정, 더블클릭/오른쪽 화살표는
+진입, 폴더 재클릭/빈 곳 클릭은 선택 해제다. 로딩·오류에는 확정할 수 없고 빈 폴더는 확정할 수 있다.
+필터 칩은 숨기며 footer는 readonly 경로·안내·버튼의 3행이다. 로컬 Folder popup은480×360이고
+Open/Save는 기존640×480을 유지한다. 최소폭320과 3언어 안내 줄바꿈은 갤러리와 공용 footer로 검사한다.
+
+시작 위치는 현재 값이 가리키는 로컬 디렉터리, 그렇지 않으면 존재하는 부모, 둘 다 없으면 홈이다. `~`/`~/`를 홈으로
+풀며 목록은 비동기 read receipt로 받는다. 취소는 호출자의 값을 바꾸지 않고, 미소비 결과가 있으면
+다음 요청으로 덮어쓰지 않는다. chooser가 열린 동안 Esc는 chooser만 닫으며 플러그인 제거 확인·미인증 미리보기 취소나
+프리셋 surface 설정 취소로 전달하지 않는다. 프리셋 결과는 preset key·leaf·필드 ID/target/input·kind와
+편집 세대가 모두 맞아야 적용한다. 이름 변경, 다른 leaf/편집 세션, kind 변경, 새 요청은 이전 응답을
+무효화하며 소유 설정 화면이 사라지면 picker도 취소한다. 기존 스크립트 Browse·Import·Export와
+이미지 Save 모드는 같은 파일/저장 판정과 반환 계약을 유지한다.
+
+- Given Folder 모드에서 하위 폴더를 선택 When Enter Then 그 폴더 경로를 반환하고 진입하지 않는다.
+- Given Folder 모드에서 하위 폴더를 선택 When 오른쪽 화살표나 더블클릭 Then 진입하며 선택을 비운다.
+- Given 프리셋 필드 picker가 열림 When kind/이름/편집 대상이 바뀌고 이전 결과 도착 Then draft를 바꾸지 않는다.
+- Given 프리셋 설정 또는 플러그인 제거 확인 뒤에 chooser가 열림 When Esc Then chooser만 취소한다.
+
+폴더 모드 회귀는 `src/view/file_chooser/folder_tests.rs`(현재/선택 폴더, 키 이동, 취소·한 번 소비),
+`src/view/settings/ui/file_chooser_popup_tests.rs`(크기·Esc·draft 보존),
+`src/view/plugins/ui/add/folder_tests.rs`(기존 검증 연결), `src/view/plugins/ui/add.rs`(미인증 미리보기의 Esc 보존)와 `src/view/plugins/ui/tests.rs`(제거 확인 Esc 순서),
+`src/adapters/ui/preset/surface_settings/browse_tests.rs`(필드/세대/rename/kind/leaf)를 검사한다.
+공용 footer의 3언어·너비·비활성 잉크는 `crates/tasty-ui-widgets/src/folder_picker/tests.rs`,
+갤러리 ID 정합은 `crates/tasty-gallery/tests/specimen_smoke.rs`에서 검사한다.

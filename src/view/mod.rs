@@ -2,6 +2,7 @@
 //! View trait은 src/view/ui.rs에 있다.
 
 pub(crate) mod base;
+pub(crate) mod file_chooser;
 pub(crate) mod main;
 pub(crate) mod modal;
 pub(crate) mod plugins;

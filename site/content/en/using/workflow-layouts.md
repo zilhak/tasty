@@ -1,4 +1,4 @@
-<!-- source-hash: 02520e4e159c -->
+<!-- source-hash: 41d9efa1c7cd -->
 # Build and reuse a working layout
 
 Keep implementation and tests side by side. Save a layout as a preset so you can use it again for your next task.
@@ -31,6 +31,8 @@ You can also inspect images and HTML output with the viewers described in [openi
 4. Choose **Edit** to check each area's kind, working directory, and startup command. Structure changes save automatically; area settings save only when you press **OK** ([Editing](panes-tabs-splits.md#editing)).
 
 Startup commands run when new terminals open. Leave them empty where you do not need automatic execution. Adjust paths and commands before using a layout for another project.
+
+**Browse…** beside a directory or file field opens the Tasty picker inside the preset editor. For directories, confirm a selected subfolder or the current folder; for files, choose a listed file. The result fills only that field. Press **OK** to save the settings. Esc in the picker closes only the picker, leaving your settings draft open.
 
 ## 4. Reuse it for a new task
 

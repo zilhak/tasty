@@ -22,6 +22,15 @@ fn warning_line_height(ui: &egui::Ui, th: &Theme) -> LogicalPx {
 pub(super) fn footer_height(ui: &egui::Ui, props: &FilePickerProps<'_>) -> LogicalPx {
     let th = props.theme;
     let pad = th.fp_footer_pad_y();
+    if let Some(folder) = super::folder::footer(props) {
+        return pad
+            + folder.height(
+                ui,
+                th,
+                LogicalPx(ui.available_width()) - th.fp_inset_start() - th.fp_inset_end(),
+            )
+            + pad;
+    }
     let gap = th.fp_section_gap();
     let mut h = pad + th.input_height() + gap + th.button_height() + pad;
     let extra = usize::from(selected_folder(props).is_some())
@@ -46,6 +55,17 @@ pub(super) fn draw_footer(
     action: &mut FilePickerAction,
 ) {
     let th = props.theme;
+    if let Some(folder) = super::folder::footer(props) {
+        let (confirm, cancel) = folder.show(ui, th, &|ui, rect, color| {
+            icons::FOLDER.image(rect.width(), color).paint_at(ui, rect)
+        });
+        if cancel {
+            *action = FilePickerAction::Cancel;
+        } else if confirm {
+            *action = FilePickerAction::Confirm;
+        }
+        return;
+    }
     let area = ui.max_rect();
     let w = area.width();
     let gap = th.fp_section_gap().value();
@@ -87,6 +107,7 @@ pub(super) fn draw_footer(
         .unwrap_or(0.0);
     let field_w = (row.available_width() - chip_w).max(0.0);
     match props.mode {
+        FilePickerMode::Folder { .. } => unreachable!(),
         FilePickerMode::Open { selection_text } => {
             read_only_field(
                 &mut row,
@@ -149,6 +170,7 @@ pub(super) fn draw_footer(
     );
     buttons.spacing_mut().item_spacing.x = th.spacing_sm.value();
     let can_confirm = match props.mode {
+        FilePickerMode::Folder { .. } => unreachable!(),
         // 폴더 하나면 그 안으로 이동하고, 그 외에는 선택한 항목이 모두 파일이어야 한다.
         FilePickerMode::Open { .. } => {
             matches!(props.state, FpViewState::Loaded)
@@ -237,6 +259,7 @@ fn folder_line(
     let mono = egui::TextFormat::simple(egui::FontId::monospace(size), muted);
     let mut job = egui::text::LayoutJob::default();
     match props.mode {
+        FilePickerMode::Folder { .. } => unreachable!(),
         FilePickerMode::Save { .. } => {
             let (before, after) = props
                 .folder_not_save_target

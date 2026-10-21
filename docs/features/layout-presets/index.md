@@ -111,3 +111,5 @@ Kind Select는 현재 키보드로 열 수 없어 진입할 때 autofocus하지 
 ## 관련
 
 - [closed-tab-restore](../closed-tab-restore/index.md) · [layout-persistence](../layout-persistence/index.md) · [work-area](../work-area/index.md)
+
+Surface 설정의 dir/file_path 찾아보기는 같은 View의 Tasty 폴더/파일 피커다. 확정 경로는 그 필드 draft에만 들어가며 설정 화면의 확인이 저장한다. 취소는 값을 보존하고 피커가 열린 동안 Esc는 피커만 닫는다. 요청의 preset key·leaf·field·kind·편집 세대를 대조하므로 이름 변경, 다른 leaf 재열기나 kind 변경 뒤의 늦은 결과를 적용하지 않는다.

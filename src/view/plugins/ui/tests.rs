@@ -110,3 +110,27 @@ fn escape_is_left_alone_without_a_confirm() {
         assert!(left, "{tab:?}: Esc was consumed without a confirm");
     }
 }
+
+#[test]
+fn folder_chooser_owns_escape_before_the_uninstall_confirm() {
+    crate::i18n::init("en");
+    let (snapshot, mut state) = confirming(PluginsTab::List);
+    let ctx = egui::Context::default();
+    let mut actions = Vec::new();
+    assert!(state.folder_chooser.open(
+        "plugins.add",
+        crate::view::file_chooser::FileChooserMode::Folder,
+        ""
+    ));
+    run_window(&ctx, &snapshot, &mut state, &mut actions, Vec::new());
+    let left = run_window(&ctx, &snapshot, &mut state, &mut actions, vec![escape()]);
+    assert!(!left);
+    assert!(!state.folder_chooser.is_open());
+    assert_eq!(
+        state.confirm_uninstall_id.as_deref(),
+        Some("com.example.first")
+    );
+    assert!(actions.is_empty());
+    run_window(&ctx, &snapshot, &mut state, &mut actions, vec![escape()]);
+    assert!(state.confirm_uninstall_id.is_none());
+}

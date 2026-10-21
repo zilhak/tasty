@@ -236,6 +236,7 @@ impl AddTrustState {
 /// 모달 자체 상태 (탭, 선택, 검색 입력 등).
 #[derive(Debug, Default)]
 pub struct PluginsUiState {
+    pub(crate) folder_chooser: crate::view::file_chooser::WindowFileChooser,
     pub active_tab: PluginsTab,
     pub selected_id: Option<String>,
     /// `Attention` 탭의 선택 항목 — `selected_id`(Installed) 와 독립.
@@ -313,7 +314,8 @@ pub fn draw_plugins_panel(
 
     // 제거 확인이 열린 동안에는 탭과 관계없이 창 어디서든 Esc 가 확인을 닫는다. 다른 탭에 가려진
     // 확인도 닫혀, Installed 로 돌아와도 다시 보이지 않는다. 확인이 없으면 Esc 를 소비하지 않는다.
-    if ui_state.confirm_uninstall_id.is_some()
+    if !ui_state.folder_chooser.is_open()
+        && ui_state.confirm_uninstall_id.is_some()
         && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {
         ui_state.cancel_uninstall_confirm();
@@ -405,6 +407,8 @@ pub fn draw_plugins_panel(
         PluginsTab::Attention => draw_attention_tab(ctx, snapshot, ui_state, actions),
         PluginsTab::Add => draw_add_tab(ctx, snapshot, ui_state, actions),
     }
+    ui_state.folder_chooser.draw(ctx);
+    add::apply_folder_result(ui_state, snapshot);
 }
 
 /// 헤더의 타이틀 ↔ 세그먼트 사이 세로 구분선 (1px × 20px).

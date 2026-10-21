@@ -2,6 +2,11 @@
 //! 값은 LeafDraft에만 기록하고 저장·복귀는 호출부에서 처리한다.
 //! 변경이 없으면 확인을 막는다. Escape 취소와 한 줄 입력의 Enter 확인은 고정 대화상자 키다.
 
+mod browse;
+#[cfg(test)]
+mod browse_tests;
+pub(crate) use browse::FieldBrowseRequest;
+
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::tokens::STRUCT_GAP_3;
 use tasty_ui_widgets::{Button, ButtonVariant, Input, select};
@@ -15,6 +20,8 @@ use super::demo_layout::{KindCatalog, LeafDraft, LeafLocation, kind_accent};
 /// 대상 leaf, 초안과 변경 비교 기준. 다른 프리셋으로 바뀌면 적용하지 않고 버린다.
 #[derive(Clone, Debug)]
 pub struct SurfaceCfg {
+    generation: u64,
+    browse_request: Option<FieldBrowseRequest>,
     preset_key: String,
     leaf_id: usize,
     draft: LeafDraft,
@@ -25,6 +32,8 @@ impl SurfaceCfg {
     pub(crate) fn remap_preset(&mut self, kind: tasty_presets::PresetKind, from: &str, to: &str) {
         if self.preset_key == format!("{}:{from}", kind.as_str()) {
             self.preset_key = format!("{}:{to}", kind.as_str());
+            self.generation = browse::next_generation();
+            self.browse_request = None;
         }
     }
     pub(crate) fn belongs_to(&self, kind: tasty_presets::PresetKind, name: &str) -> bool {
@@ -33,6 +42,8 @@ impl SurfaceCfg {
 
     pub(super) fn open(preset_key: String, leaf_id: usize, orig: LeafDraft) -> Self {
         Self {
+            generation: browse::next_generation(),
+            browse_request: None,
             preset_key,
             leaf_id,
             draft: orig.clone(),
@@ -87,10 +98,11 @@ pub(super) fn draw_surface_settings(
 ) -> CfgOutcome {
     // 키는 위젯보다 먼저 읽는다 — Kind 드롭다운이 열려 있을 때의 Esc 는 드롭다운을
     // 닫는 키이지 화면을 닫는 키가 아니고, 그 popup 은 이번 프레임 안에서 닫힌다.
+    let chooser_open = crate::view::file_chooser::owns_input(ui.ctx());
     let (esc, enter) = ui.input(|i| {
         (
-            i.key_pressed(egui::Key::Escape),
-            i.key_pressed(egui::Key::Enter),
+            !chooser_open && i.key_pressed(egui::Key::Escape),
+            !chooser_open && i.key_pressed(egui::Key::Enter),
         )
     });
     let popup_open = ui.memory(|m| m.any_popup_open());
@@ -262,7 +274,7 @@ fn draw_form(
         .position(|k| k == cfg.draft.kind())
         .unwrap_or(0);
     if select(ui, theme, "preset_cfg_kind", &mut idx, &label_refs, w, true) {
-        cfg.draft.switch_kind(&candidates[idx], catalog);
+        cfg.switch_kind(&candidates[idx], catalog);
     }
 
     for field in catalog.fields(cfg.draft.kind()) {
@@ -298,7 +310,7 @@ fn draw_form(
                             .width(ui.available_width())
                             .placeholder(placeholder)
                             .show(ui, theme, &mut buf);
-                        (resp, clicked.then(|| pick_path(field.input)).flatten())
+                        (resp, clicked)
                     },
                 )
                 .inner
@@ -308,13 +320,13 @@ fn draw_form(
                     .width(w)
                     .placeholder(placeholder)
                     .show(ui, theme, &mut buf);
-                (resp, None)
+                (resp, false)
             };
             if resp.changed() {
                 cfg.draft.set_value(&field.target, buf);
             }
-            if let Some(p) = picked {
-                cfg.draft.set_value(&field.target, p);
+            if picked {
+                cfg.request_browse(&field);
             }
             if resp.lost_focus() && enter {
                 *enter_in_input = true;
@@ -366,14 +378,4 @@ fn field_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
             .color(theme.text_muted().to_egui()),
     );
     ui.add_space(STRUCT_GAP_3.value());
-}
-
-/// file_path → 파일 선택, dir → 폴더 선택 다이얼로그. 취소/기타면 None.
-fn pick_path(input: PresetFieldInput) -> Option<String> {
-    let picked = crate::stall_watchdog::without_stall_watch(|| match input {
-        PresetFieldInput::Dir => rfd::FileDialog::new().pick_folder(),
-        PresetFieldInput::FilePath => rfd::FileDialog::new().pick_file(),
-        _ => None,
-    })?;
-    Some(picked.to_string_lossy().into_owned())
 }

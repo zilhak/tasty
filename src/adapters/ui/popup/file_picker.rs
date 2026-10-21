@@ -9,6 +9,7 @@
 
 #[cfg(test)]
 mod admission_tests;
+mod folder;
 mod footer;
 #[cfg(test)]
 mod layout_tests;
@@ -16,6 +17,7 @@ mod location;
 mod path_bar;
 #[cfg(test)]
 mod pure_return_tests;
+mod rows;
 
 mod paths;
 pub(crate) mod save;
@@ -90,6 +92,12 @@ pub struct CrumbView {
 /// 피커가 무엇을 하는가 — footer 이름 칸의 성질이 여기서 갈린다.
 #[derive(Clone, Copy)]
 pub enum FilePickerMode<'a> {
+    /// A single local folder: selected row or the current directory.
+    Folder {
+        path: &'a str,
+        hint: &'a str,
+        file_tooltip: &'a str,
+    },
     /// 기존 파일을 고른다. 이름 칸은 읽기 전용으로 현재 선택을 보여준다.
     Open { selection_text: &'a str },
     /// 경로를 만든다. 이름 칸이 **유일한 확정 대상**이고 편집 가능하다.
@@ -173,6 +181,7 @@ pub(super) fn selected_folder<'a>(props: &'a FilePickerProps<'a>) -> Option<&'a 
 /// View 가 발생시킨 사용자 의도. Wrapper 가 mutation 으로 변환.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FilePickerAction {
+    ClearSelection,
     None,
     /// ESC 또는 헤더 ✕/[취소] — popup 닫기 + result=Cancelled.
     Cancel,
@@ -206,7 +215,11 @@ pub struct FilePickerViewOut {
 /// 긴 경로는 breadcrumb 안에서 줄여 푸터 버튼 영역을 보존한다.
 pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> FilePickerViewOut {
     let ctx = ui.ctx().clone();
-    if props.owns_escape && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    let nested_popup_open = ctx.memory(|m| m.any_popup_open());
+    if props.owns_escape
+        && !nested_popup_open
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
         return FilePickerViewOut {
             action: FilePickerAction::Cancel,
             header_rect: egui::Rect::NOTHING,
@@ -216,7 +229,10 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
     // 콘텐츠 영역은 창 가장자리까지 온다. 구역마다 배경·구분선은 전폭으로 두고
     // 내용은 `fp-*` 인셋 안에 그린다.
     let outer = ui.available_rect_before_wrap();
-    let out = draw_view_sections(ui, props, outer);
+    let mut out = draw_view_sections(ui, props, outer);
+    if !nested_popup_open && let Some(action) = folder::keyboard(ui, props) {
+        out.action = action;
+    }
     ui.advance_cursor_after_rect(outer);
     out
 }
@@ -271,7 +287,14 @@ fn draw_view_sections(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     header.spacing_mut().item_spacing.x = th.fp_section_gap().value();
-    header.add(icons::FILE.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
+    header.add(
+        (if matches!(props.mode, FilePickerMode::Folder { .. }) {
+            icons::FOLDER
+        } else {
+            icons::FILE
+        })
+        .image(th.icon_glyph_size_md.value(), th.text_muted().into()),
+    );
     header.label(
         egui::RichText::new(props.title_label)
             .size(th.font_size_max.value())
@@ -368,12 +391,15 @@ fn draw_body(
     action: &mut FilePickerAction,
 ) {
     let th = props.theme;
+    let mut body_rect = ui.available_rect_before_wrap();
+    let mut row_hit = false;
     match &props.state {
         FpViewState::Loaded => {
             // 머리와 목록은 붙어 있다.
             ui.spacing_mut().item_spacing.y = 0.0;
             // 목록은 머리를 그리고 남은 높이 안에서 스크롤한다. egui 가 남은 높이로 제한한다.
             list_head(ui, props);
+            body_rect.min.y = ui.next_widget_position().y;
             egui::ScrollArea::vertical()
                 .id_salt("file_picker_list")
                 .max_height(body_height.value())
@@ -383,7 +409,13 @@ fn draw_body(
                     // 행은 붙어 있고 높이는 `row_height`가 모두 정한다.
                     ui.spacing_mut().item_spacing.y = 0.0;
                     for entry in props.entries {
-                        if let Some(a) = entry_row(ui, props, entry)
+                        let hit = egui::Rect::from_min_size(
+                            ui.next_widget_position(),
+                            egui::vec2(ui.available_width(), row_height(th).value()),
+                        );
+                        row_hit |=
+                            ui.input(|i| i.pointer.interact_pos().is_some_and(|p| hit.contains(p)));
+                        if let Some(a) = rows::entry_row(ui, props, entry)
                             && (matches!(action, FilePickerAction::None)
                                 || !matches!(a, FilePickerAction::Select(_)))
                         {
@@ -427,6 +459,14 @@ fn draw_body(
                 *action = FilePickerAction::Refresh;
             }
         }
+    }
+    if matches!(props.mode, FilePickerMode::Folder { .. })
+        && matches!(action, FilePickerAction::None)
+        && !row_hit
+        && ui.rect_contains_pointer(body_rect)
+        && ui.input(|i| i.pointer.primary_clicked())
+    {
+        *action = FilePickerAction::ClearSelection;
     }
 }
 
@@ -499,103 +539,6 @@ pub(super) fn row_height(th: &Theme) -> LogicalPx {
     let pad = th.fp_row_pad_y();
     let name = th.font_size_body.scaled(th.line_height_ui);
     pad + name.max(th.icon_glyph_size_md) + pad
-}
-
-/// 목록 한 행. 클릭 의도가 있으면 돌려준다.
-fn entry_row(
-    ui: &mut egui::Ui,
-    props: &FilePickerProps<'_>,
-    entry: &FilePickerEntryView,
-) -> Option<FilePickerAction> {
-    let th = props.theme;
-    let selected = props.selected.iter().any(|s| s == &entry.name);
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), row_height(th).value()),
-        egui::Sense::click(),
-    );
-    if selected {
-        ui.painter()
-            .rect_filled(rect, 0.0, th.surface_active().to_egui());
-        // 한쪽 선택 bar — kit FpRow `inset selection-edge-width 0 0 accent-primary`.
-        let bar = egui::Rect::from_min_size(
-            rect.min,
-            egui::vec2(th.selection_edge_width.value(), rect.height()),
-        );
-        ui.painter()
-            .rect_filled(bar, 0.0, th.accent_primary().to_egui());
-    } else if resp.hovered() {
-        ui.painter()
-            .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
-    }
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    let (glyph, glyph_color) = if entry.is_dir {
-        (icons::FOLDER, th.accent_primary())
-    } else {
-        (icons::FILE, th.text_muted())
-    };
-    let c = cols(rect, th);
-    let glyph_size = th.icon_glyph_size_md.value();
-    let icon_rect = egui::Rect::from_min_size(
-        egui::pos2(c.icon_left.value(), rect.center().y - glyph_size * 0.5),
-        egui::vec2(glyph_size, glyph_size),
-    );
-    glyph
-        .image(glyph_size, glyph_color.into())
-        .paint_at(ui, icon_rect);
-    let Cols {
-        name_left,
-        name_right,
-        size_right,
-        modified_right,
-        ..
-    } = c;
-    let name_color = if selected {
-        th.text_primary().to_egui()
-    } else {
-        th.text_secondary().to_egui()
-    };
-    let mut job = egui::text::LayoutJob::simple_singleline(
-        entry.name.clone(),
-        egui::FontId::proportional(th.font_size_body.value()),
-        name_color,
-    );
-    job.wrap = egui::text::TextWrapping::truncate_at_width(
-        (name_right - name_left).max(LogicalPx(0.0)).value(),
-    );
-    let galley = ui.fonts(|f| f.layout_job(job));
-    ui.painter().galley(
-        egui::pos2(name_left.value(), rect.center().y - galley.size().y * 0.5),
-        galley,
-        name_color,
-    );
-    let mono = egui::FontId::monospace(th.font_size_caption.value());
-    ui.painter().text(
-        egui::pos2(size_right.value(), rect.center().y),
-        egui::Align2::RIGHT_CENTER,
-        &entry.size_display,
-        mono.clone(),
-        th.text_muted().into(),
-    );
-    ui.painter().text(
-        egui::pos2(modified_right.value(), rect.center().y),
-        egui::Align2::RIGHT_CENTER,
-        &entry.modified_display,
-        mono,
-        th.text_muted().into(),
-    );
-    if resp.double_clicked() {
-        Some(if entry.is_dir {
-            FilePickerAction::NavigateInto(entry.name.clone())
-        } else {
-            FilePickerAction::ConfirmEntry(entry.name.clone())
-        })
-    } else if resp.clicked() {
-        Some(FilePickerAction::Select(entry.name.clone()))
-    } else {
-        None
-    }
 }
 
 /// 원격 호스트를 user@host 형태로 표시하는 배지.
@@ -835,6 +778,12 @@ fn apply_action(
 ) -> PopupAction {
     match action {
         FilePickerAction::None => PopupAction::None,
+        FilePickerAction::ClearSelection => {
+            if let Some(d) = state.dialogs.file_picker.as_mut() {
+                d.selected.clear();
+            }
+            PopupAction::None
+        }
         FilePickerAction::Cancel => {
             if let Some(d) = state.dialogs.file_picker.as_mut() {
                 d.result = Some(FilePickerResult::Cancelled);

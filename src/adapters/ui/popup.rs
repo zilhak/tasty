@@ -420,7 +420,7 @@ impl PopupState {
                 | transfer::TRANSFER_ERROR_POPUP_ID
                 | crate::adapters::ui::info_modal::INFO_MODAL_ID
                 | file_picker::FILE_PICKER_POPUP_ID
-                | crate::view::settings::ui::file_chooser::FILE_CHOOSER_POPUP_ID
+                | crate::view::file_chooser::FILE_CHOOSER_POPUP_ID
                 | explorer_conflict::EXPLORER_CONFLICT_POPUP_ID
         ) {
             LogicalPx(0.0)

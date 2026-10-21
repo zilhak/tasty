@@ -44,7 +44,7 @@ fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) ->
         | super::transfer::TRANSFER_ERROR_POPUP_ID
         | super::file_handler_picker::PICKER_POPUP_ID
         | super::file_picker::FILE_PICKER_POPUP_ID
-        | crate::view::settings::ui::file_chooser::FILE_CHOOSER_POPUP_ID
+        | crate::view::file_chooser::FILE_CHOOSER_POPUP_ID
         | super::explorer_properties::EXPLORER_PROPERTIES_POPUP_ID
         | crate::adapters::ui::info_modal::INFO_MODAL_ID => th.bg_panel().into(),
         _ => th.surface_raised().into(),

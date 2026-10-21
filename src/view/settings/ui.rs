@@ -1,11 +1,12 @@
 #[cfg(debug_assertions)]
 mod debug_tabs;
-pub(crate) mod file_chooser;
 mod file_handler_tab;
 mod keybindings_tab;
 #[cfg(test)]
 mod select_probe;
 mod tabs;
+
+pub(crate) use crate::view::file_chooser;
 
 use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 
@@ -22,7 +23,7 @@ pub(crate) use debug_tabs::DebugTabsApplied;
 pub(crate) use keybindings_tab::PluginBundleContext;
 pub use keybindings_tab::{KeyCapture, capture_bare_key, capture_winit_key_combo};
 
-use crate::adapters::ui::popup::{DragHandle, PopupManager, PopupState};
+use crate::adapters::ui::popup::{PopupManager, PopupState};
 use crate::file::format::DetectorId;
 use crate::i18n::t;
 use crate::plugin::manifest::BindingMode;
@@ -213,7 +214,7 @@ pub struct SettingsUiState {
     /// Popup manager for settings-window popups (e.g. keybinding conflict).
     popups: PopupManager,
     /// 설정 창 안의 로컬 파일 선택(`file_chooser`). popup 은 위 `popups` 에 등록된다.
-    file_chooser: file_chooser::SettingsFileChooser,
+    file_chooser: file_chooser::LocalFileChooser,
     /// 충돌 팝업에서 수락/거부 결과를 전달하는 플래그.
     conflict_accepted: bool,
     conflict_cancelled: bool,
@@ -420,20 +421,7 @@ impl SettingsUiState {
             )
             .with_close_on_outside_click(false),
         );
-        // 타이틀은 열 때 모드에 맞춰 다시 정한다(`open_file_chooser`).
-        // 메인 파일 선택기처럼 셸 타이틀바 없이 뷰의 헤더 한 줄을 이동 손잡이로 쓴다.
-        popups.register(
-            PopupState::new(
-                file_chooser::FILE_CHOOSER_POPUP_ID,
-                file_chooser::chooser_title(false),
-                file_chooser::chooser_size(),
-            )
-            .with_close_on_outside_click(false)
-            .with_headless(true)
-            .with_drag_handle(DragHandle::Region(
-                crate::adapters::ui::popup::defs::panel_header_drag_strip,
-            )),
-        );
+        file_chooser::register(&mut popups);
         Self {
             active_tab: SettingsTab::General,
             draft: None,
@@ -456,7 +444,7 @@ impl SettingsUiState {
             selected_preset: None,
             pending_binding: None,
             popups,
-            file_chooser: file_chooser::SettingsFileChooser::default(),
+            file_chooser: file_chooser::LocalFileChooser::default(),
             conflict_accepted: false,
             conflict_cancelled: false,
             font_families: None,
@@ -483,14 +471,35 @@ impl SettingsUiState {
         filters: Vec<String>,
         title: Option<&'static str>,
     ) {
-        self.file_chooser.cancel();
-        self.file_chooser.begin(consumer, mode, filters);
+        self.open_file_chooser_at(consumer, mode, filters, title, None);
+    }
+
+    fn open_file_chooser_at(
+        &mut self,
+        consumer: &'static str,
+        mode: file_chooser::FileChooserMode,
+        filters: Vec<String>,
+        title: Option<&'static str>,
+        start: Option<std::path::PathBuf>,
+    ) {
+        if self.file_chooser.is_pending() {
+            return;
+        }
+        if let Some(start) = start {
+            self.file_chooser.begin_at(consumer, mode, filters, start);
+        } else {
+            self.file_chooser.begin(consumer, mode, filters);
+        }
         if let Some(title) = title {
             self.file_chooser.set_title(title);
         }
         let title = self.file_chooser.title();
         if let Some(p) = self.popups.get_mut(file_chooser::FILE_CHOOSER_POPUP_ID) {
-            p.size = file_chooser::chooser_size();
+            p.size = if self.file_chooser.is_folder() {
+                file_chooser::folder_size()
+            } else {
+                file_chooser::chooser_size()
+            };
             p.title = title.to_string();
         }
         // intent-exempt: 설정 창 내부 PopupManager 의 sub-popup open(충돌 팝업과 같은 경로).
@@ -892,7 +901,10 @@ fn settle_file_chooser(
         // intent-exempt: 설정 창 내부 sub-popup close.
         ui_state.popups.close(file_chooser::FILE_CHOOSER_POPUP_ID);
     }
-    if closed.contains(&file_chooser::FILE_CHOOSER_POPUP_ID) {
+    let queued = ui_state.popups.take_closed_queue();
+    if closed.contains(&file_chooser::FILE_CHOOSER_POPUP_ID)
+        || queued.contains(&file_chooser::FILE_CHOOSER_POPUP_ID)
+    {
         ui_state.file_chooser.cancel();
     }
 }
@@ -908,6 +920,22 @@ fn settings_escape_owner(popups: &PopupManager) -> Option<&'static str> {
 
 /// 닫힌 파일 선택의 결과를 그것을 연 화면 상태로 돌려준다. 경로의 쓰임은 화면마다 다르다.
 fn apply_file_chooser_outcomes(ui_state: &mut SettingsUiState) {
+    apply_remote_folder_outcome(ui_state);
+    apply_file_chooser_file_outcomes(ui_state);
+}
+
+fn apply_remote_folder_outcome(ui_state: &mut SettingsUiState) {
+    if let Some(path) = ui_state
+        .file_chooser
+        .take_outcome("remote_transfer.folder")
+        .and_then(file_chooser::FileChooserOutcome::into_first_path)
+        && let Some(draft) = ui_state.draft.as_mut()
+    {
+        draft.remote_transfer.dir = path.to_string_lossy().into_owned();
+    }
+}
+
+fn apply_file_chooser_file_outcomes(ui_state: &mut SettingsUiState) {
     if let Some(path) = ui_state
         .file_chooser
         .take_outcome(ScriptsUiState::BROWSE_CONSUMER)
@@ -1670,7 +1698,17 @@ fn draw_active_content(
             GeneralSubTab::Notifications => draw_notifications_tab(ui, draft),
             GeneralSubTab::Accessibility => draw_accessibility_tab(ui, draft),
             GeneralSubTab::Overlay => draw_overlay_tab(ui, draft),
-            GeneralSubTab::RemoteTransfer => draw_remote_transfer_tab(ui, draft),
+            GeneralSubTab::RemoteTransfer => {
+                if draw_remote_transfer_tab(ui, draft) {
+                    ui_state.open_file_chooser_at(
+                        "remote_transfer.folder",
+                        file_chooser::FileChooserMode::Folder,
+                        Vec::new(),
+                        None,
+                        Some(file_chooser::start_directory(&draft.remote_transfer.dir)),
+                    );
+                }
+            }
             #[cfg(target_os = "macos")]
             GeneralSubTab::Display => draw_general_display_tab(ui, draft),
             #[cfg(target_os = "macos")]

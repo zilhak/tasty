@@ -8,7 +8,8 @@ use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::settings::Settings;
 
-pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
+pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) -> bool {
+    let mut browse = false;
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
     // 헤딩·행·구분선 사이가 모두 settings-row-gap 이다(디자인의 세로 flex gap).
@@ -45,12 +46,10 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                 })
                 .show(ui, &th)
                 .clicked()
-                && let Some(path) = crate::stall_watchdog::without_stall_watch(|| {
-                    rfd::FileDialog::new().pick_folder()
-                })
             {
-                settings.remote_transfer.dir = path.to_string_lossy().into_owned();
+                browse = true;
             }
+
             Input::new()
                 .mono(true)
                 .placeholder(t("settings.remote_transfer.dir_placeholder"))
@@ -85,6 +84,7 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     if committed {
         settings.remote_transfer.max_mb = max_mb as u64;
     }
+    browse
 }
 
 /// 행 사이 1px separator(디자인 `borderTop: 1px solid separator`). base bg 위이므로

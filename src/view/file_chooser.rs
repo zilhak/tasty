@@ -1,10 +1,15 @@
-//! 설정 창의 로컬 파일 선택. 메인 파일 피커의 draw_file_picker_view를 재사용한다.
+//! 독립 View가 공유하는 로컬 파일·폴더 선택. 메인 파일 피커의 draw_file_picker_view를 재사용한다.
 //! 별도 winit 창이므로 상태와 PopupManager는 설정 창이 소유한다.
 //!
 //! 원격 조회 없이 로컬 파일시스템만 읽으며 native 포털에 의존하지 않는다.
 //! 디렉터리 조회는 App worker에 요청하고 현재 선택 세션의 receipt로만 결과를 받는다.
 //! 저장 모드는 파일을 골라도 이름만 채우고 하단 버튼으로 확정한다.
 //! 기능 문서: docs/features/native-file-picker/index.md.
+
+#[cfg(test)]
+mod folder_tests;
+mod window;
+pub(crate) use window::{WindowFileChooser, folder_size, owns_input, register, start_directory};
 
 use crate::adapters::ui::popup::file_picker::save;
 #[cfg(test)]
@@ -22,20 +27,23 @@ use crate::core::fs_list::DirEntryInfo;
 use crate::i18n::{t, t_count_template};
 
 /// 설정 창 `PopupManager` 에 등록되는 id.
-pub(crate) const FILE_CHOOSER_POPUP_ID: &str = "settings_file_chooser";
+pub(crate) const FILE_CHOOSER_POPUP_ID: &str = "local_file_chooser";
 
 /// 무엇을 고르는가.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FileChooserMode {
+    Folder,
     /// 기존 파일 하나를 고른다.
     Open,
     /// 디렉토리를 고르고 파일명을 입력해 저장 경로를 정한다. `default_name` 은 이름 칸의
     /// 초깃값이다.
-    Save { default_name: String },
+    Save {
+        default_name: String,
+    },
 }
 
 /// 선택 결과. 메인 파일 피커처럼 경로 문자열 배열만 담는다. 경로의 쓰임은 호출처가 정한다.
-/// 호출처가 자기 `consumer` 키로 [`SettingsFileChooser::take_outcome`] 한다.
+/// 호출처가 자기 `consumer` 키로 [`LocalFileChooser::take_outcome`] 한다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FileChooserOutcome {
     Confirmed(Vec<String>),
@@ -75,15 +83,22 @@ struct ChooserSession {
     title: Option<&'static str>,
 }
 
-/// `SettingsUiState` 가 갖는 파일 선택 상태. 한 번에 하나만 열린다.
+/// 독립 View가 소유하는 파일 선택 상태. 한 번에 하나만 열린다.
 #[derive(Default)]
-pub(crate) struct SettingsFileChooser {
+pub(crate) struct LocalFileChooser {
     session: Option<ChooserSession>,
     /// 닫힌 선택의 결과. 호출처가 가져갈 때까지 남는다.
     outcome: Option<(&'static str, FileChooserOutcome)>,
 }
 
-impl SettingsFileChooser {
+impl LocalFileChooser {
+    pub(crate) fn is_pending(&self) -> bool {
+        self.session.is_some() || self.outcome.is_some()
+    }
+    pub(crate) fn is_folder(&self) -> bool {
+        self.session.as_ref().is_some_and(ChooserSession::is_folder)
+    }
+
     pub(crate) fn poll_local_reads(
         &mut self,
         owner: &mut crate::app::local_reads::ReadRequests,
@@ -99,7 +114,7 @@ impl SettingsFileChooser {
         false
     }
 
-    /// 선택 화면 상태를 만들고 홈 디렉토리를 동기로 읽는다. popup 을 여는 것은 호출처
+    /// 선택 상태를 만들고 홈 디렉터리 읽기를 worker에 예약한다. popup을 여는 것은 호출처
     /// (`SettingsUiState::open_file_chooser`)다 — 이 타입은 popup 매니저를 모른다.
     pub(crate) fn begin(
         &mut self,
@@ -113,7 +128,7 @@ impl SettingsFileChooser {
         self.begin_at(consumer, mode, filters, start);
     }
 
-    fn begin_at(
+    pub(crate) fn begin_at(
         &mut self,
         consumer: &'static str,
         mode: FileChooserMode,
@@ -122,7 +137,7 @@ impl SettingsFileChooser {
     ) {
         let save_name = match &mode {
             FileChooserMode::Save { default_name } => default_name.clone(),
-            FileChooserMode::Open => String::new(),
+            FileChooserMode::Open | FileChooserMode::Folder => String::new(),
         };
         let mut session = ChooserSession {
             consumer,
@@ -211,6 +226,9 @@ pub(crate) fn chooser_title(save_mode: bool) -> &'static str {
 
 impl ChooserSession {
     fn title(&self) -> &'static str {
+        if self.is_folder() {
+            return t("picker.folder.title");
+        }
         self.title
             .unwrap_or_else(|| chooser_title(matches!(self.mode, FileChooserMode::Save { .. })))
     }
@@ -260,7 +278,7 @@ impl ChooserSession {
     }
 
     fn visible(&self, e: &DirEntryInfo) -> bool {
-        e.is_dir || matches_filters(&self.filters, &e.name)
+        self.is_folder() || e.is_dir || matches_filters(&self.filters, &e.name)
     }
 
     fn is_file_entry(&self, name: &str) -> bool {
@@ -272,6 +290,20 @@ impl ChooserSession {
     /// 그 이름이 지금 나열된 **폴더** 행인가. 폴더는 필터와 무관하게 늘 보인다.
     fn is_dir_entry(&self, name: &str) -> bool {
         self.entries.iter().any(|e| e.name == name && e.is_dir)
+    }
+
+    fn is_folder(&self) -> bool {
+        matches!(self.mode, FileChooserMode::Folder)
+    }
+
+    fn folder_target(&self) -> PathBuf {
+        self.selected
+            .first()
+            .filter(|name| self.is_dir_entry(name))
+            .map_or_else(
+                || self.current_dir.clone(),
+                |name| self.current_dir.join(name),
+            )
     }
 
     fn is_save(&self) -> bool {
@@ -288,9 +320,22 @@ impl ChooserSession {
     fn apply(&mut self, action: FilePickerAction) -> Option<FileChooserOutcome> {
         match action {
             FilePickerAction::None => None,
+            FilePickerAction::ClearSelection => {
+                self.selected.clear();
+                None
+            }
             FilePickerAction::Cancel => Some(FileChooserOutcome::Cancelled),
             // 단일 클릭은 선택만 한다. 저장 모드의 이름 칸은 파일을 골랐을 때만 바꾼다.
             FilePickerAction::Select(name) => {
+                if self.is_folder() {
+                    if !self.is_dir_entry(&name) {
+                        return None;
+                    }
+                    if self.selected.first() == Some(&name) {
+                        self.selected.clear();
+                        return None;
+                    }
+                }
                 if self.is_save() && self.is_file_entry(&name) {
                     self.save_name = name.clone();
                 }
@@ -330,6 +375,10 @@ impl ChooserSession {
                 None
             }
             // 저장 모드의 확정 대상은 이름 칸 하나다.
+            FilePickerAction::Confirm if self.is_folder() => {
+                matches!(self.load, FpViewState::Loaded | FpViewState::Empty)
+                    .then(|| FileChooserOutcome::confirmed(self.folder_target()))
+            }
             FilePickerAction::Confirm if self.is_save() => self.confirm_save(),
             FilePickerAction::Confirm => {
                 let [name] = self.selected.as_slice() else {
@@ -348,6 +397,7 @@ impl ChooserSession {
             }
             // 저장 모드의 파일 행 더블클릭은 고르기와 같다 — 덮어쓰기 경고를 보지 않고 기존
             // 파일을 확정하는 길을 만들지 않는다.
+            FilePickerAction::ConfirmEntry(_) if self.is_folder() => None,
             FilePickerAction::ConfirmEntry(name) if self.is_save() => {
                 self.apply(FilePickerAction::Select(name))
             }
@@ -396,7 +446,22 @@ fn draw_view(
         .collect();
     let selection_text = s.selected.join(", ");
     let overwrite = s.overwrites();
-    let (mode, name_placeholder, confirm_label) = if s.is_save() {
+    let target = s.folder_target().to_string_lossy().into_owned();
+    let (mode, name_placeholder, confirm_label) = if s.is_folder() {
+        (
+            FilePickerMode::Folder {
+                path: &target,
+                hint: t(if s.selected.is_empty() {
+                    "picker.folder.hint.current"
+                } else {
+                    "picker.folder.hint.selected"
+                }),
+                file_tooltip: t("picker.folder.file.tooltip"),
+            },
+            "",
+            t("picker.folder.confirm"),
+        )
+    } else if s.is_save() {
         (
             FilePickerMode::Save {
                 name: &s.save_name,
@@ -429,7 +494,11 @@ fn draw_view(
         mode,
         owns_escape,
         title_label: s.title(),
-        name_field_label: t("filepicker.name_field_label"),
+        name_field_label: t(if s.is_folder() {
+            "picker.folder.label"
+        } else {
+            "filepicker.name_field_label"
+        }),
         name_placeholder,
         cancel_label: t("button.cancel"),
         confirm_label,
@@ -438,7 +507,11 @@ fn draw_view(
         folder_open_enters: t("filepicker.folder_open_enters"),
         hidden_folders_one: t_count_template("filepicker.hidden_folders", 1),
         hidden_folders_many: t("filepicker.hidden_folders"),
-        empty_label: t("filepicker.empty"),
+        empty_label: t(if s.is_folder() {
+            "picker.folder.empty"
+        } else {
+            "filepicker.empty"
+        }),
         loading_label: t("filepicker.loading"),
         loading_body_local: t("filepicker.loading_body_local"),
         loading_body_remote: t("filepicker.loading_body_remote"),
@@ -490,7 +563,7 @@ mod tests {
             }
         }
     }
-    fn session(chooser: &mut SettingsFileChooser) -> &mut ChooserSession {
+    fn session(chooser: &mut LocalFileChooser) -> &mut ChooserSession {
         let session = chooser.session.as_mut().expect("open session");
         settle(session);
         session
@@ -499,7 +572,7 @@ mod tests {
     #[test]
     fn open_mode_confirms_existing_file_and_hands_path_to_consumer() {
         let dir = tempdir();
-        let mut ch = SettingsFileChooser::default();
+        let mut ch = LocalFileChooser::default();
         ch.begin_at(C, FileChooserMode::Open, Vec::new(), dir.clone());
         assert!(session(&mut ch).load == FpViewState::Loaded);
 
@@ -521,7 +594,7 @@ mod tests {
     #[test]
     fn directories_and_filtered_out_files_are_not_confirmable() {
         let dir = tempdir();
-        let mut ch = SettingsFileChooser::default();
+        let mut ch = LocalFileChooser::default();
         ch.begin_at(C, FileChooserMode::Open, vec!["lua".into()], dir.clone());
         let s = session(&mut ch);
         assert_eq!(s.apply(FilePickerAction::ConfirmEntry("sub".into())), None);
@@ -545,7 +618,7 @@ mod tests {
         let dir = tempdir();
 
         // ── 열기 모드 ────────────────────────────────────────────────
-        let mut ch = SettingsFileChooser::default();
+        let mut ch = LocalFileChooser::default();
         ch.begin_at(C, FileChooserMode::Open, Vec::new(), dir.clone());
         let s = session(&mut ch);
         s.apply(FilePickerAction::Select("sub".into()));
@@ -613,7 +686,7 @@ mod tests {
     #[test]
     fn navigation_moves_into_and_back_up() {
         let dir = tempdir();
-        let mut ch = SettingsFileChooser::default();
+        let mut ch = LocalFileChooser::default();
         ch.begin_at(C, FileChooserMode::Open, Vec::new(), dir.clone());
         let s = session(&mut ch);
         s.apply(FilePickerAction::NavigateInto("sub".into()));
@@ -632,7 +705,7 @@ mod tests {
     #[test]
     fn unreadable_directory_is_an_error_state_not_a_hang() {
         let dir = tempdir();
-        let mut ch = SettingsFileChooser::default();
+        let mut ch = LocalFileChooser::default();
         ch.begin_at(
             C,
             FileChooserMode::Open,
@@ -647,7 +720,7 @@ mod tests {
     #[test]
     fn save_mode_joins_typed_name_and_rejects_path_like_names() {
         let dir = tempdir();
-        let mut ch = SettingsFileChooser::default();
+        let mut ch = LocalFileChooser::default();
         ch.begin_at(
             C,
             FileChooserMode::Save {
@@ -685,8 +758,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    fn save_session(dir: &Path) -> SettingsFileChooser {
-        let mut ch = SettingsFileChooser::default();
+    fn save_session(dir: &Path) -> LocalFileChooser {
+        let mut ch = LocalFileChooser::default();
         ch.begin_at(
             C,
             FileChooserMode::Save {
@@ -773,7 +846,7 @@ mod tests {
     #[test]
     fn external_close_leaves_a_cancel_outcome() {
         let dir = tempdir();
-        let mut ch = SettingsFileChooser::default();
+        let mut ch = LocalFileChooser::default();
         ch.begin_at(C, FileChooserMode::Open, Vec::new(), dir.clone());
         ch.cancel();
         assert_eq!(ch.take_outcome(C), Some(FileChooserOutcome::Cancelled));

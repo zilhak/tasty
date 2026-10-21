@@ -45,6 +45,8 @@ pub struct PresetView {
     selected_node: Option<usize>,
     /// 열려 있는 surface 설정 화면(대상 leaf + draft). `None` 이면 미리보기가 보인다.
     surface_cfg: Option<SurfaceCfg>,
+    file_chooser: crate::view::file_chooser::WindowFileChooser,
+    pending_browse: Option<crate::adapters::ui::preset::surface_settings::FieldBrowseRequest>,
     pub(crate) toasts: ToastManager,
     pending_presentation: Option<PendingPresentation>,
     shown: bool,
@@ -80,6 +82,8 @@ impl PresetView {
             editing: false,
             selected_node: None,
             surface_cfg: None,
+            file_chooser: Default::default(),
+            pending_browse: None,
             toasts: ToastManager::new(),
             pending_presentation: None,
             shown: false,
@@ -184,6 +188,12 @@ impl PresetView {
 }
 
 impl View for PresetView {
+    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::ReadRequests) {
+        if self.file_chooser.poll(owner) {
+            self.mark_dirty();
+        }
+    }
+
     fn base(&self) -> &ViewBase {
         &self.base
     }
@@ -262,10 +272,14 @@ impl View for PresetView {
         let editing = &mut self.editing;
         let selected_node = &mut self.selected_node;
         let surface_cfg = &mut self.surface_cfg;
+        let chooser = &mut self.file_chooser;
+        let pending_browse = &mut self.pending_browse;
         let toasts = &mut self.toasts;
         let keybindings = &self.keybindings;
 
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
+            reconcile_browse(surface_cfg, chooser, pending_browse, &catalog);
+            chooser.mark_input_owner(ctx);
             crate::preset_ui::draw_preset_panel(
                 ctx,
                 drafts,
@@ -280,6 +294,23 @@ impl View for PresetView {
                 &catalog,
                 keybindings,
             );
+            if let Some(request) = surface_cfg
+                .as_mut()
+                .and_then(SurfaceCfg::take_browse_request)
+                && chooser.open("preset.field", request.mode.clone(), &request.start)
+            {
+                *pending_browse = Some(request);
+            }
+            chooser.draw(ctx);
+            if let Some(outcome) = chooser.take_outcome("preset.field")
+                && let (Some(request), Some(cfg), Some(path)) = (
+                    pending_browse.take(),
+                    surface_cfg.as_mut(),
+                    outcome.into_first_path(),
+                )
+            {
+                cfg.apply_browse(&request, path.to_string_lossy().into_owned(), &catalog);
+            }
 
             let empty_layout = LayoutContext {
                 active_workspace: 0,
@@ -327,3 +358,19 @@ impl View for PresetView {
 }
 
 impl sealed::Sealed for PresetView {}
+
+fn reconcile_browse(
+    cfg: &Option<SurfaceCfg>,
+    chooser: &mut crate::view::file_chooser::WindowFileChooser,
+    pending: &mut Option<crate::adapters::ui::preset::surface_settings::FieldBrowseRequest>,
+    catalog: &KindCatalog,
+) {
+    if pending.as_ref().is_some_and(|request| {
+        !cfg.as_ref()
+            .is_some_and(|cfg| cfg.accepts_browse(request, catalog))
+    }) {
+        chooser.cancel();
+        chooser.take_outcome("preset.field");
+        *pending = None;
+    }
+}

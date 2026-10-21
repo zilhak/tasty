@@ -152,3 +152,7 @@ kind 대기 placeholder 로 두었다가 다시 켜면 채운다.
 ### 시각 소스
 
 `site/vendor/ui_kits/terminal/overlays/plugins_window.jsx` — 창 치수·탭·목록·설치 폼 배치의 단일 출처. 스크린샷: `site/vendor/screens/plugins_window-installed.png`, `plugins_window-install.png`, `plugins_window-modal.png`.
+
+Find folder…는 같은 플러그인 View의 Tasty 폴더 피커를 연다. 선택/현재 폴더를 확정하면 경로 입력을 채우고 기존 매니페스트·서명 검증을 실행한다. 취소는 입력을 보존하며 피커의 Esc는 제거 확인으로 전달하지 않는다.
+
+미인증 미리보기 위에서 폴더 피커를 열었을 때도 첫 Esc는 피커만 취소하고 입력 경로와 미리보기를 보존한다. 피커가 닫힌 뒤의 Esc는 기존 미인증 취소 동작을 유지한다.

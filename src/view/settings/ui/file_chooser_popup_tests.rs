@@ -174,3 +174,27 @@ fn the_settings_chooser_header_drag_moves_the_popup() {
     );
     assert_eq!(st.file_chooser.take_outcome(CONSUMER), None);
 }
+
+#[test]
+fn remote_transfer_folder_size_and_cancel_preserve_the_draft() {
+    let mut st = SettingsUiState::new();
+    st.draft = Some(Settings::default());
+    st.draft.as_mut().unwrap().remote_transfer.dir = "/original".into();
+    st.open_file_chooser_at(
+        "remote_transfer.folder",
+        file_chooser::FileChooserMode::Folder,
+        Vec::new(),
+        None,
+        Some(std::path::PathBuf::from("/")),
+    );
+    assert_eq!(
+        st.popups
+            .get_mut(file_chooser::FILE_CHOOSER_POPUP_ID)
+            .unwrap()
+            .size,
+        file_chooser::folder_size()
+    );
+    st.file_chooser.cancel();
+    apply_file_chooser_outcomes(&mut st);
+    assert_eq!(st.draft.as_ref().unwrap().remote_transfer.dir, "/original");
+}
