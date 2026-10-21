@@ -1072,6 +1072,17 @@ Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 
 - 값은 그룹 구분 없는 원시 바이트이며 KiB 로 바꾸지 않는다.
 - 범위 줄의 자리: 모든 숫자 칸이 공유하는 `number_field` 구조대로 입력칸 아래(컨트롤 칸 안, 라벨 열 + 라벨 간격만큼 들어간 자리), 설명 caption 위다. 시안 Task pipeline·Numbers in settings 예제도 같은 자리다. 갤러리 Numbers in settings·토스트 표시 시간 예제(`settings_number.rs` `range_line`)는 입력칸 왼쪽 끝에서 시작한다.
 
+## Settings › Misc › Performance
+
+성능 탭의 세 행이다. 디자인 카탈로그에 전용 프레임은 없고, 새 시각 값 없이 기존 스위치 행과 숫자 행
+(`SettingsRow` + `number_field`)을 그대로 쓴다(갤러리 spec id `settings-performance`, Task pipeline 뒤).
+
+| 구성 | 본체 함수 | 갤러리 항목 |
+|---|---|---|
+| 스위치 두 행(PTY 선택 폴링 · 스크롤백 디스크 스왑) | `src/view/settings/ui/tabs/performance.rs::draw_performance_tab` — `SettingsRow::hint` + `tasty_ui_widgets::switch` | `components/settings_performance.rs::draw` — 디스크 스왑 켬(Mocha) · 끔(Latte) 두 짝 |
+| 디스크 보관 줄 수(mono Input `field-width-xs` 오른쪽 정렬, 단위 없음) | `number::number_field`(`NumberSpec::int(-1, 100000000)`, 디스크 스왑이 꺼져 있으면 `enabled(false)`) | `lines_control`(같은 범위, 같은 비활성 조건) |
+| 범위 줄(범위 밖일 때만, `accent-danger`, caption) | `number_field` 의 범위 줄 | `lines_control` 의 범위 줄 |
+
 ## 파일 피커 (Overlays)
 
 디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpCrumbMenu`/`FpHostBadge`

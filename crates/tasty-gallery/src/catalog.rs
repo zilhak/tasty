@@ -1796,6 +1796,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::settings_task_pipeline::draw,
                         ),
+                        spec(
+                            "settings-performance",
+                            "Misc › Performance",
+                            Some(
+                                "two switch rows · Lines kept on disk (numeric, -1 = unlimited) · disabled while disk swap is off",
+                            ),
+                            components::settings_performance::draw,
+                        ),
                     ],
                 ),
                 single(

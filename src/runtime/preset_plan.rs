@@ -104,6 +104,12 @@ impl Builder<'_, '_> {
                             .settings
                             .performance
                             .scrollback_disk_swap,
+                        disk_scrollback_lines: self
+                            .engine
+                            .runtime
+                            .settings
+                            .performance
+                            .scrollback_disk_cap(),
                         startup_command: initial,
                         restore_command: None,
                     })

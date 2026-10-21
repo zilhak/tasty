@@ -41,8 +41,9 @@ pub use task_pipeline::{
     REPORT_BLOCK_BYTES_RANGE, TaskPipelineSettings,
 };
 pub use types::{
-    AccessibilitySettings, MemorySettings, ModifierHintSettings, NotificationSettings,
-    OverlaySettings, PerformanceSettings, RemoteTransferSettings, WebhookSettings,
+    AccessibilitySettings, DEFAULT_SCROLLBACK_DISK_LINES, MemorySettings, ModifierHintSettings,
+    NotificationSettings, OverlaySettings, PerformanceSettings, RemoteTransferSettings,
+    UNLIMITED_SCROLLBACK_DISK_LINES, WebhookSettings, disk_scrollback_cap,
 };
 
 /// 로드 출처에 따른 저장 정책. 파싱 실패로 기본값을 쓸 때 원본을 바로 덮어쓰지 않는다.
@@ -454,6 +455,7 @@ impl Settings {
             &mut report.changed,
         );
 
+        self.performance.normalize(&mut report.changed);
         self.task_pipeline.normalize(&mut report.changed);
 
         report
@@ -744,6 +746,26 @@ ui_scale = "large"
             Some("alt+n")
         );
         assert_eq!(settings.keybindings.get_field("new_tab"), Some("alt+t"));
+    }
+
+    #[test]
+    fn scrollback_disk_lines_keeps_minus_one_and_resets_other_negatives() {
+        let parse =
+            |line: &str| -> Settings { toml::from_str(&format!("[performance]\n{line}")).unwrap() };
+        assert_eq!(
+            Settings::default().performance.scrollback_disk_cap(),
+            Some(10_000)
+        );
+        let mut unlimited = parse("scrollback_disk_lines = -1");
+        assert!(!unlimited.normalize().changed);
+        assert_eq!(unlimited.performance.scrollback_disk_cap(), None);
+        let mut zero = parse("scrollback_disk_lines = 0");
+        assert!(!zero.normalize().changed);
+        assert_eq!(zero.performance.scrollback_disk_cap(), Some(0));
+        let mut invalid = parse("scrollback_disk_lines = -5");
+        assert!(invalid.normalize().changed);
+        assert_eq!(invalid.performance.scrollback_disk_lines, 10_000);
+        assert_eq!(disk_scrollback_cap(-5), Some(10_000));
     }
 
     #[test]

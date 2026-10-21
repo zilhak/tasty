@@ -41,6 +41,7 @@ impl JournalApplication {
                 rows: session.runtime.default_rows,
                 scrollback_lines: settings.general.scrollback_lines,
                 disk_scrollback: settings.performance.scrollback_disk_swap,
+                disk_scrollback_lines: settings.performance.scrollback_disk_cap(),
                 startup_command: settings.general.startup_command.clone(),
                 restore_command: None,
             },

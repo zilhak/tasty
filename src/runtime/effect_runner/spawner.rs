@@ -31,6 +31,7 @@ pub(crate) struct TerminalJob {
     pub(super) palette: ColorPalette,
     pub(super) scrollback_lines: usize,
     pub(super) disk_scrollback: bool,
+    pub(super) disk_scrollback_lines: Option<usize>,
     pub(super) capture: Option<SurfaceData>,
     pub(super) startup_command: String,
 }
@@ -302,6 +303,7 @@ impl Worker {
         terminal.set_color_palette(job.palette);
         terminal.set_scrollback_limit(job.scrollback_lines);
         if job.disk_scrollback {
+            terminal.set_disk_scrollback_limit(job.disk_scrollback_lines);
             terminal.enable_disk_scrollback(job.surface_id);
         }
         let mut scrollback_persist_id = None;
@@ -359,6 +361,7 @@ pub(crate) fn test_job(lease: EffectLease) -> TerminalJob {
         palette: crate::runtime::terminal_store::current_terminal_palette(),
         scrollback_lines: 100,
         disk_scrollback: false,
+        disk_scrollback_lines: None,
         capture: None,
         startup_command: String::new(),
     }

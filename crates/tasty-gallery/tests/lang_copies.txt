@@ -606,6 +606,7 @@ src/catalog/components/settings_number.rs	Toast duration	settings.overlay.toast_
 src/catalog/components/settings_number.rs	default	file_handler.picker.default_tag
 src/catalog/components/settings_number.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/settings_number.rs	s	settings.number.unit_s
+src/catalog/components/settings_performance.rs	{}	remote.size_sync.names
 src/catalog/components/settings_remote_transfer.rs	Browse…	preset.field.browse,settings.remote_transfer.browse,settings.scripts.browse
 src/catalog/components/settings_remote_transfer.rs	Maximum size	settings.remote_transfer.max_capacity
 src/catalog/components/settings_remote_transfer.rs	Received files	settings.remote_transfer.section

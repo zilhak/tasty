@@ -95,6 +95,7 @@ pub mod settings_keybinding_rows;
 pub mod settings_macos_permissions;
 pub mod settings_narrow_rows;
 pub mod settings_number;
+pub mod settings_performance;
 pub mod settings_remote_transfer;
 pub mod settings_task_pipeline;
 pub mod sidebar;

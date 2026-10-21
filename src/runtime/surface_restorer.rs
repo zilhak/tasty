@@ -97,6 +97,11 @@ pub(crate) fn describe(engine: &crate::runtime::engine_access::EngineRef<'_>) ->
                         rows: engine.runtime.default_rows,
                         scrollback_lines: engine.runtime.settings.general.scrollback_lines,
                         disk_scrollback: engine.runtime.settings.performance.scrollback_disk_swap,
+                        disk_scrollback_lines: engine
+                            .runtime
+                            .settings
+                            .performance
+                            .scrollback_disk_cap(),
                         startup_command: engine.runtime.settings.general.startup_command.clone(),
                         restore_command: None,
                     }),
@@ -307,6 +312,7 @@ mod tests {
                 rows: 24,
                 scrollback_lines: 100,
                 disk_scrollback: false,
+                disk_scrollback_lines: None,
                 startup_command: String::new(),
                 restore_command: Some("old".into()),
             },

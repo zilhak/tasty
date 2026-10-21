@@ -28,8 +28,16 @@ pub(crate) struct ShellRecipe {
     pub(crate) rows: usize,
     pub(crate) scrollback_lines: usize,
     pub(crate) disk_scrollback: bool,
+    /// Disk line cap (`None` = unlimited). Records written before the cap existed get the
+    /// default cap.
+    #[serde(default = "default_disk_scrollback_lines")]
+    pub(crate) disk_scrollback_lines: Option<usize>,
     pub(crate) startup_command: String,
     pub(crate) restore_command: Option<String>,
+}
+
+fn default_disk_scrollback_lines() -> Option<usize> {
+    tasty_settings::disk_scrollback_cap(tasty_settings::DEFAULT_SCROLLBACK_DISK_LINES)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,4 +96,31 @@ pub(crate) struct ChildRecipe {
     pub has_command: bool,
     #[serde(default)]
     pub replacing: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ShellRecipe;
+
+    fn recipe(extra: &str) -> ShellRecipe {
+        serde_json::from_str(&format!(
+            r#"{{"executable":"","arguments":[],"environment":[],"cols":80,"rows":24,
+                "scrollback_lines":100,"disk_scrollback":true,"startup_command":"",
+                "restore_command":null{extra}}}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn recipes_without_a_disk_cap_get_the_default_and_null_stays_unlimited() {
+        assert_eq!(recipe("").disk_scrollback_lines, Some(10_000));
+        assert_eq!(
+            recipe(r#","disk_scrollback_lines":null"#).disk_scrollback_lines,
+            None
+        );
+        assert_eq!(
+            recipe(r#","disk_scrollback_lines":5"#).disk_scrollback_lines,
+            Some(5)
+        );
+    }
 }

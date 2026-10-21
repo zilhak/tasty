@@ -11,6 +11,45 @@ pub struct PerformanceSettings {
     /// When enabled, swap old scrollback lines to disk to reduce memory usage.
     /// Requires restart to apply.
     pub scrollback_disk_swap: bool,
+    /// Most lines disk swap keeps per terminal, on top of `general.scrollback_lines` in
+    /// memory. The oldest lines past it are dropped. `-1` keeps every line; other negative
+    /// values are invalid and normalized to the default. Applies to new terminals.
+    pub scrollback_disk_lines: i64,
+}
+
+/// Default of [`PerformanceSettings::scrollback_disk_lines`].
+pub const DEFAULT_SCROLLBACK_DISK_LINES: i64 = 10_000;
+/// [`PerformanceSettings::scrollback_disk_lines`] value that keeps every line.
+pub const UNLIMITED_SCROLLBACK_DISK_LINES: i64 = -1;
+
+impl PerformanceSettings {
+    /// Disk line cap for a terminal: `None` keeps every line. An invalid negative value
+    /// counts as the default, the value normalization stores.
+    pub fn scrollback_disk_cap(&self) -> Option<usize> {
+        disk_scrollback_cap(self.scrollback_disk_lines)
+    }
+
+    /// `-1` means unlimited; any other negative value is invalid and becomes the default.
+    pub(crate) fn normalize(&mut self, changed: &mut bool) {
+        if self.scrollback_disk_lines < UNLIMITED_SCROLLBACK_DISK_LINES {
+            tracing::warn!(
+                "invalid performance.scrollback_disk_lines {}; using {}",
+                self.scrollback_disk_lines,
+                DEFAULT_SCROLLBACK_DISK_LINES
+            );
+            self.scrollback_disk_lines = DEFAULT_SCROLLBACK_DISK_LINES;
+            *changed = true;
+        }
+    }
+}
+
+/// Map a `scrollback_disk_lines` value to a line cap (`None` = unlimited).
+pub fn disk_scrollback_cap(lines: i64) -> Option<usize> {
+    match lines {
+        UNLIMITED_SCROLLBACK_DISK_LINES => None,
+        n if n < 0 => usize::try_from(DEFAULT_SCROLLBACK_DISK_LINES).ok(),
+        n => Some(usize::try_from(n).unwrap_or(usize::MAX)),
+    }
 }
 
 impl Default for PerformanceSettings {
@@ -18,6 +57,7 @@ impl Default for PerformanceSettings {
         Self {
             targeted_pty_polling: true,
             scrollback_disk_swap: false,
+            scrollback_disk_lines: DEFAULT_SCROLLBACK_DISK_LINES,
         }
     }
 }

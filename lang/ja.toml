@@ -752,7 +752,9 @@ restart_notice = "変更は再起動後に適用されます。"
 targeted_pty_polling = "選択的PTYポーリング"
 targeted_pty_polling_desc = "すべてのターミナルではなく、新しい出力があるターミナルのみを処理します。サーフェスが多い場合にCPU使用量を削減します。"
 scrollback_disk_swap = "スクロールバックディスクスワップ"
-scrollback_disk_swap_desc = "古いスクロールバック行をディスクにスワップしてメモリ使用量を削減します。"
+scrollback_disk_swap_desc = "メモリ行数を超えたスクロールバック行をディスクに移してメモリ使用量を削減します。"
+scrollback_disk_lines = "ディスク保持行数"
+scrollback_disk_lines_desc = "ディスクに残す行数です。メモリ行数とは別で、超えると古い行から破棄します。-1 は無制限です。"
 
 [quit_modal]
 title = "Tasty を閉じる"

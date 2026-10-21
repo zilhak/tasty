@@ -399,6 +399,7 @@ fn prepare_workspace(
                 rows: 24,
                 scrollback_lines: 100,
                 disk_scrollback: false,
+                disk_scrollback_lines: None,
                 startup_command: String::new(),
                 restore_command: None,
             }),

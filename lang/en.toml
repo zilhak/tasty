@@ -759,7 +759,9 @@ restart_notice = "Changes require restart to take effect."
 targeted_pty_polling = "Targeted PTY polling"
 targeted_pty_polling_desc = "Only process terminals with new output instead of polling all. Reduces CPU with many surfaces."
 scrollback_disk_swap = "Scrollback disk swap"
-scrollback_disk_swap_desc = "Swap old scrollback lines to disk to reduce memory usage."
+scrollback_disk_swap_desc = "Move scrollback lines past the memory line count to disk to reduce memory usage."
+scrollback_disk_lines = "Lines kept on disk"
+scrollback_disk_lines_desc = "How many lines disk swap keeps, separate from the memory line count. The oldest lines past it are dropped. -1 keeps every line."
 
 [quit_modal]
 title = "Close Tasty"

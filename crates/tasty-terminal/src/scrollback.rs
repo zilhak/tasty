@@ -189,6 +189,9 @@ pub(crate) struct Scrollback {
     pub(crate) epoch: crate::ContentEpoch,
     pub(crate) first_row: usize,
     disk: Option<disk_scrollback::DiskScrollback>,
+    /// Most rows the disk keeps; `None` keeps every spilled row. Rows past it are dropped
+    /// oldest first, like the memory limit without disk swap.
+    disk_limit: Option<usize>,
 }
 
 impl Scrollback {
@@ -199,6 +202,25 @@ impl Scrollback {
             epoch: crate::ContentEpoch::fresh(),
             first_row: 0,
             disk: None,
+            disk_limit: None,
+        }
+    }
+
+    /// Set the most rows the disk keeps (`None` = unlimited) and drop the oldest rows past it.
+    pub fn set_disk_limit(&mut self, limit: Option<usize>) {
+        self.disk_limit = limit;
+        self.trim_disk();
+    }
+
+    /// Drop the oldest disk rows past the disk limit. Retained rows keep their row IDs.
+    fn trim_disk(&mut self) {
+        let (Some(cap), Some(ds)) = (self.disk_limit, &mut self.disk) else {
+            return;
+        };
+        let excess = ds.line_count().saturating_sub(cap);
+        if excess > 0 {
+            let dropped = ds.drop_front(excess, cap);
+            self.first_row = self.first_row.saturating_add(dropped);
         }
     }
 
@@ -357,14 +379,30 @@ impl Scrollback {
             self.first_row = self.first_row.saturating_add(excess);
             return;
         };
-        let spilled: Vec<ScrollbackLine> = self.lines.drain(..excess).collect();
+        let mut spilled: Vec<ScrollbackLine> = self.lines.drain(..excess).collect();
+        if let Some(cap) = self.disk_limit {
+            // Rows the cap would drop right after writing are dropped before it, so one large
+            // batch never grows the file or the offset table past the cap.
+            let unwritten = spilled.len().saturating_sub(cap);
+            if unwritten > 0 {
+                spilled.drain(..unwritten);
+                let disk_rows = ds.line_count();
+                let dropped = ds.drop_front(disk_rows, cap);
+                self.first_row = self
+                    .first_row
+                    .saturating_add(dropped)
+                    .saturating_add(unwritten);
+            }
+        }
         if let Err(e) = ds.push_lines(&spilled) {
             // The whole batch is lost between the retained disk and memory ranges; the disk
             // keeps its earlier rows. A new content epoch prevents anchors aliasing rows.
             self.epoch = crate::ContentEpoch::fresh();
             self.first_row = 0;
             tracing::warn!("disk scrollback push of {excess} rows failed: {e}");
+            return;
         }
+        self.trim_disk();
     }
 }
 
@@ -378,6 +416,13 @@ impl TerminalState {
     /// Enable disk-backed scrollback swap for this terminal.
     pub fn enable_disk_scrollback(&mut self, surface_id: u32) {
         self.scrollback.enable_disk(surface_id);
+    }
+
+    /// Set the most rows disk swap keeps (`None` = unlimited). Rows past it are dropped oldest
+    /// first and the retained rows keep their row IDs.
+    pub fn set_disk_scrollback_limit(&mut self, limit: Option<usize>) {
+        self.scrollback.set_disk_limit(limit);
+        self.content_revision = self.content_revision.wrapping_add(1);
     }
 
     /// Number of lines in the scrollback buffer (memory + disk).
@@ -795,6 +840,10 @@ mod disk_write_tests;
 #[cfg(test)]
 #[path = "scrollback_disk_read_tests.rs"]
 mod disk_read_tests;
+
+#[cfg(test)]
+#[path = "scrollback_disk_cap_tests.rs"]
+mod disk_cap_tests;
 
 #[cfg(test)]
 mod viewport_tests {

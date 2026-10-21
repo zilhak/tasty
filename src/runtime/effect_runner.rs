@@ -326,6 +326,7 @@ fn prepare_inner(
             palette: crate::runtime::terminal_store::current_terminal_palette(),
             scrollback_lines: shell.scrollback_lines,
             disk_scrollback: shell.disk_scrollback,
+            disk_scrollback_lines: shell.disk_scrollback_lines,
             capture: decoded_capture,
             startup_command: shell.startup_command,
         };

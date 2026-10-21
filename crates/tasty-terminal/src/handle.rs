@@ -122,6 +122,11 @@ impl Terminal {
         self.lock_state().enable_disk_scrollback(surface_id);
     }
 
+    /// Most rows disk swap keeps (`None` = unlimited); the oldest rows past it are dropped.
+    pub fn set_disk_scrollback_limit(&mut self, limit: Option<usize>) {
+        self.lock_state().set_disk_scrollback_limit(limit);
+    }
+
     pub fn scrollback_len(&self) -> usize {
         self.lock_state().scrollback_len()
     }
