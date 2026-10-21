@@ -106,6 +106,10 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
 
 `~/.tasty/config.toml` `[memory]` 의 `entry_max_mb`/`secret_quota_mb_per_plugin`/`regular_quota_mb_total` 로 재정의. 초과하면 기존 데이터를 자동 삭제하지 않고 오류를 반환한다. `_host` 도 quota 를 받는다(root 는 owner check 에만 적용, 비대 방지는 동일).
 
+## 만료(TTL)
+
+`expires_at <= now` 인 항목은 조회·목록·개수와 쓰기 판정 모두에서 없는 것으로 본다. 정리되지 않은 만료 행 위의 put 은 신규 생성이다 — 다른 owner 도 쓸 수 있고 version 은 1 부터, cas 는 actual 0 으로 판정한다. regular 전체 quota 와 secret owner 별 quota 는 만료 행 크기를 세지 않는다. 디스크의 만료 행은 로그 정리 틱(10분)마다 기다리지 않는 writer 요청이 지우고, `memory.gc` 로 바로 지울 수도 있다. 만료 행을 덮어쓴 put 은 regular 에서 `memory.changed` 를 `expired`·`created` 순서로 낸다. 판정과 이벤트 순서의 계약은 [저장 계약](storage-contract.md)에 있다.
+
 ## 파일 위생 — WAL 크기와 부팅 정리
 
 `memory.db` 는 WAL 모드라 `memory.db-wal`(로그) · `memory.db-shm`(WAL-index) 을 함께 갖는다. SQLite는 체크포인트 뒤에도 재사용을 위해 WAL 파일 크기를 유지하므로 체크포인트 성공이 곧 파일 축소를 뜻하지는 않는다.

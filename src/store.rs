@@ -2,6 +2,7 @@
 //! GUI 전용 API의 cfg 범위는 docs/dev-guide/headless-build-boundaries.md를 따른다.
 
 pub mod audit;
+pub mod expired_rows;
 pub mod log_retention;
 pub mod notification;
 pub mod recent_files;

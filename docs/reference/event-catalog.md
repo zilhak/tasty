@@ -165,7 +165,7 @@ agent
 scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 허용.
 
 ### Memory (scope=system, Stable)
-`memory.changed`: regular entry 의 put/delete/expire/cleanup 이 commit 된 뒤 — `scope, key, kind∈{created,updated,deleted,expired}, version?`. **secret 영역은 발행하지 않음**(owner/key 노출 방지). 1 변경 = 1 envelope. 구독 권한 `memory.read`. GUI 와 headless 모두 메인 루프가 회차마다 발행한다.
+`memory.changed`: regular entry 의 put/delete/expire/cleanup 이 commit 된 뒤 — `scope, key, kind∈{created,updated,deleted,expired}, version?`. **secret 영역은 발행하지 않음**(owner/key 노출 방지). 1 변경 = 1 envelope. 정리되지 않은 만료 행을 덮어쓴 put 은 `expired`(version 없음) 다음 `created`(version 1)를 같은 commit 순서로 낸다 — 주기 정리가 먼저 지운 경우와 구독자가 보는 순서가 같다. 구독 권한 `memory.read`. GUI 와 headless 모두 메인 루프가 회차마다 발행한다.
 
 ### Agent (scope=system, Experimental)
 

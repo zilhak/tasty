@@ -14,6 +14,8 @@ use crate::{
 impl MemoryStore {
     /// 값을 저장(upsert). 신규면 version=1 / owner=caller, 갱신이면 +1.
     /// 갱신 시 기존 owner 가 caller 와 다르면 `OwnedByOther` (caller 가 `_host` 면 root 통과).
+    /// 정리되지 않은 만료 행은 조회와 같이 없는 것으로 판정한다. 그 위의 put은 같은 transaction에서
+    /// 만료 행을 지우고 신규로 만들며 변경 이벤트는 `Expired`, `Created` 순서다.
     pub fn put(
         &mut self,
         owner: &str,
@@ -109,10 +111,9 @@ impl MemoryStore {
     // ============================================================
 
     /// 만료된 entry (regular + secret) 일괄 DELETE. 반환: 삭제된 row 수.
-    /// read 경로는 항상 `expires_at` 필터를 적용하므로 만료 entry 가 노출되진
-    /// 않지만, 디스크에 row 가 남아 quota 와 파일 크기를 부풀린다. 호스트는
-    /// 주기적으로 또는 `memory.gc` 명령으로 이 함수를 호출해 청소한다.
-    /// 조회와 두 DELETE를 transaction 하나로 확정한다.
+    /// 조회와 쓰기 판정은 만료 행을 없는 것으로 보지만 행은 디스크와 quota 카운터에 남는다.
+    /// 호스트는 로그 정리 주기마다 기다리지 않는 writer 요청으로, 또는 `memory.gc` 명령으로
+    /// 이 함수를 호출해 청소한다. 조회와 두 DELETE를 transaction 하나로 확정한다.
     pub fn purge_expired(&mut self) -> Result<PurgeStats> {
         self.maintenance_step(purge_expired_rows)
     }
@@ -196,31 +197,51 @@ fn put_regular_rows(
     opts: &PutOpts,
 ) -> Result<(u64, Effect)> {
     let now = unix_ms_now();
-    let existing: Option<(u64, String, i64)> = conn
+    let row: Option<(u64, String, i64, Option<i64>)> = conn
         .query_row(
-            "SELECT version, owner, LENGTH(value) FROM memory WHERE scope=?1 AND key=?2",
+            "SELECT version, owner, LENGTH(value), expires_at FROM memory
+             WHERE scope=?1 AND key=?2",
             params![&scope_token, key],
             |r| {
                 Ok((
                     r.get::<_, i64>(0)? as u64,
                     r.get::<_, String>(1)?,
                     r.get::<_, i64>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
                 ))
             },
         )
         .optional()?;
+    // 크기는 행이 만료됐어도 이 쓰기로 디스크에서 빠지므로 카운터에서 뺀다.
+    let replaced_size = row.as_ref().map(|(_, _, sz, _)| *sz).unwrap_or(0);
+    let (existing, expired) = match row {
+        Some((_, _, _, Some(exp))) if is_expired(exp, now) => (None, true),
+        Some((version, owner, size, _)) => (Some((version, owner, size)), false),
+        None => (None, false),
+    };
 
-    // 기존 값의 크기를 빼고 새 값의 크기를 더해 전체 스캔 없이 quota를 검사한다.
-    let existing_size = existing.as_ref().map(|(_, _, sz)| *sz).unwrap_or(0);
-    let projected = used_before - existing_size + bytes.len() as i64;
+    // 카운터는 디스크 바이트 합이다. 기존 값의 크기를 빼고 새 값의 크기를 더해 전체 스캔 없이
+    // 검사하고, 한도를 넘을 때만 다른 키의 정리되지 않은 만료 행 크기를 세어 판정에서 뺀다.
+    let projected = used_before - replaced_size + bytes.len() as i64;
     if (projected as u64) > quota {
-        return Err(MemoryError::QuotaExceeded {
-            area: MemoryArea::Regular,
-            used: projected.max(0) as u64,
-            limit: quota,
-        });
+        let expired_elsewhere: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory
+             WHERE expires_at IS NOT NULL AND expires_at <= ?1
+               AND NOT (scope=?2 AND key=?3)",
+            params![now, &scope_token, key],
+            |r| r.get(0),
+        )?;
+        let live = projected - expired_elsewhere;
+        if (live as u64) > quota {
+            return Err(MemoryError::QuotaExceeded {
+                area: MemoryArea::Regular,
+                used: live.max(0) as u64,
+                limit: quota,
+            });
+        }
     }
 
+    let mut changes = Vec::with_capacity(2);
     let (new_version, change_kind) = match (existing, opts.cas) {
         (None, Some(expected)) => {
             return Err(MemoryError::CasConflict {
@@ -255,6 +276,18 @@ fn put_regular_rows(
             (new_v, MemoryChangeKind::Updated)
         }
         (None, _) => {
+            if expired {
+                conn.execute(
+                    "DELETE FROM memory WHERE scope=?1 AND key=?2",
+                    params![&scope_token, key],
+                )?;
+                changes.push(MemoryChange {
+                    scope: scope_token.clone(),
+                    key: key.to_string(),
+                    kind: MemoryChangeKind::Expired,
+                    version: None,
+                });
+            }
             conn.execute(
                 "INSERT INTO memory
                    (scope, key, value, content_type, created_at, updated_at, expires_at,
@@ -274,19 +307,25 @@ fn put_regular_rows(
         }
     };
 
+    changes.push(MemoryChange {
+        scope: scope_token,
+        key: key.to_string(),
+        kind: change_kind,
+        version: Some(new_version),
+    });
     Ok((
         new_version,
         Effect {
             regular_used: Some(projected),
-            changes: vec![MemoryChange {
-                scope: scope_token,
-                key: key.to_string(),
-                kind: change_kind,
-                version: Some(new_version),
-            }],
+            changes,
             wrote: true,
         },
     ))
+}
+
+/// 조회 경로(`expires_at <= now`면 없음)와 같은 경계다.
+fn is_expired(expires_at: i64, now: i64) -> bool {
+    expires_at <= now
 }
 
 fn delete_regular_rows(
@@ -364,20 +403,33 @@ fn put_secret_rows(
     opts: &PutOpts,
 ) -> Result<(u64, Effect)> {
     let now = unix_ms_now();
-    let existing: Option<(u64, i64)> = conn
+    let row: Option<(u64, i64, Option<i64>)> = conn
         .query_row(
-            "SELECT version, LENGTH(value) FROM memory_secret
+            "SELECT version, LENGTH(value), expires_at FROM memory_secret
              WHERE owner=?1 AND scope=?2 AND key=?3",
             params![owner, scope_token, key],
-            |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)?)),
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)? as u64,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, Option<i64>>(2)?,
+                ))
+            },
         )
         .optional()?;
+    let (existing, expired) = match row {
+        Some((_, _, Some(exp))) if is_expired(exp, now) => (None, true),
+        Some((version, size, _)) => (Some((version, size)), false),
+        None => (None, false),
+    };
 
     // Quota: per-owner secret 한도. 평문 byte 기준. 같은 transaction의 앞선 쓰기도 합산된다.
+    // 정리되지 않은 만료 행은 조회와 같이 세지 않는다.
     let existing_size = existing.as_ref().map(|(_, sz)| *sz).unwrap_or(0);
     let current_used: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory_secret WHERE owner=?1",
-        params![owner],
+        "SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory_secret
+         WHERE owner=?1 AND (expires_at IS NULL OR expires_at > ?2)",
+        params![owner, now],
         |r| r.get(0),
     )?;
     let projected = current_used - existing_size + bytes.len() as i64;
@@ -419,6 +471,12 @@ fn put_secret_rows(
             new_v
         }
         (None, _) => {
+            if expired {
+                conn.execute(
+                    "DELETE FROM memory_secret WHERE owner=?1 AND scope=?2 AND key=?3",
+                    params![owner, scope_token, key],
+                )?;
+            }
             conn.execute(
                 "INSERT INTO memory_secret
                    (owner, scope, key, value, content_type, created_at, updated_at,

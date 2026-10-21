@@ -364,8 +364,17 @@ impl AppServices {
         )
     }
 
-    /// 주기가 돌아왔으면 로그 보존 정리를 기다리지 않는 writer 요청으로 넣는다.
-    pub(crate) fn submit_log_prune(&self, now_ms: u64) {
+    /// 로그 정리 틱마다 만료 행 청소를, 주기가 돌아왔으면 로그 보존 정리를 기다리지 않는 writer
+    /// 요청으로 넣는다. 두 정리는 서로의 저장 실패에 묶이지 않도록 요청을 나눈다.
+    pub(crate) fn submit_periodic_prune(&self, now_ms: u64) {
+        self.memory_access().submit_detached(
+            tasty_memory::writer::MemoryRequest::unit(0, |memory| {
+                crate::store::expired_rows::purge(memory);
+                Ok(())
+            }),
+            "expired memory purge",
+            None,
+        );
         if crate::store::log_retention::claim_prune(now_ms) {
             self.memory_access().submit_detached(
                 tasty_memory::writer::MemoryRequest::unit(0, move |memory| {

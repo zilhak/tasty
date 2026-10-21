@@ -50,7 +50,8 @@ pub(crate) enum Tick {
     PtySweep,
     /// 다음 청크가 오지 않아도 만료한 업로드를 정리한다.
     CaptureSweep,
-    /// 로그 추가가 없어도 보존 정책을 확인한다. 실제 실행 간격은 log_retention이 따로 제한한다.
+    /// 로그 추가가 없어도 보존 정책을 확인하고 memory 만료 행을 청소한다. 로그 정리의 실제 실행
+    /// 간격은 log_retention이 따로 제한하고, 만료 행 청소는 틱마다 한다.
     LogPrune,
 }
 

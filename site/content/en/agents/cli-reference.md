@@ -1,4 +1,4 @@
-<!-- source-hash: 2fcf00a069f2 -->
+<!-- source-hash: 08a5820f00c5 -->
 # CLI command reference
 
 How to use the `tasty` commands the [introduction](cli.md) does not cover: reading `read since-mark` from a saved position, looking into a surface, permission tokens, notifications, metadata, queues between Surfaces, running several terminals, headless PTYs, shared memory, observers, usage records, and other queries and settings, organised by purpose. Check every argument a command takes with `tasty help <command>`.
@@ -156,6 +156,8 @@ tasty memory delete --workspace 7 --key build.status
 ```
 
 Switch scope with `--global` · `--surface 3` · `--window 42` · `--account me`. A value that parses as JSON is stored as JSON, otherwise as a string.
+
+A key whose `--ttl` has passed is the same as a missing key. Any agent may store a new value under it, and its version starts again at 1. Expired values do not count toward the size limits, and Tasty removes them from disk every 10 minutes.
 
 Storing in a `--surface` scope works only for an open Surface. A closed Surface ID is rejected with an error. `tasty memory import` follows the same rule: if the file has even one entry in the scope of a closed Surface, nothing is imported and the command fails with an error. Closing a Surface removes the values in its scope as well. Values left in the scope of a Surface closed earlier can be found with `tasty memory list --surface <ID>` and removed with `tasty memory delete`.
 

@@ -304,9 +304,10 @@ fn secret_requests_in_a_batch_stay_per_owner_and_count_toward_each_owner_quota()
     );
 }
 
-/// 정리되지 않은 만료 행은 단독 put과 같이 묶음 안에서도 owner·version 판정에 남는다.
+/// 정리되지 않은 만료 행은 단독 put과 같이 묶음 안에서도 없는 것으로 판정한다. 뒤 요청은 앞 요청이
+/// 새로 만든 행을 본다.
 #[test]
-fn an_expired_row_that_was_not_purged_still_takes_part_in_the_judgement() {
+fn an_unpurged_expired_row_is_judged_as_missing_inside_a_batch() {
     let mut s = MemoryStore::open_in_memory().unwrap();
     let past = unix_ms_now() - 1_000;
     s.put(
@@ -321,6 +322,7 @@ fn an_expired_row_that_was_not_purged_still_takes_part_in_the_judgement() {
     )
     .unwrap();
     assert!(s.get(&Scope::Global, "ttl").unwrap().is_none());
+    s.take_pending_changes();
 
     let results = s
         .write_batch(
@@ -333,8 +335,16 @@ fn an_expired_row_that_was_not_purged_still_takes_part_in_the_judgement() {
         .unwrap();
     assert_eq!(
         shape(&results),
-        vec![Err("owned"), Ok(WriteOutput::Version(2))]
+        vec![Ok(WriteOutput::Version(1)), Err("owned")]
     );
+    assert_eq!(
+        kinds(&s.take_pending_changes()),
+        vec![
+            ("ttl".into(), MemoryChangeKind::Expired, None),
+            ("ttl".into(), MemoryChangeKind::Created, Some(1)),
+        ]
+    );
+    s.delete(PLUGIN_B, &Scope::Global, "ttl", None).unwrap();
 
     // 같은 단위에서 정리한 뒤에는 새 키처럼 판정한다.
     s.put(

@@ -402,7 +402,7 @@ fn run_due_timers(
             }
             crate::app::timers::Tick::LogPrune => {
                 let now_ms = u64::try_from(app.services.now_unix_millis()).unwrap_or(0);
-                app.services.submit_log_prune(now_ms);
+                app.services.submit_periodic_prune(now_ms);
             }
         }
     }

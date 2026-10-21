@@ -42,11 +42,11 @@
 
 | 연산 | 성공 | 거절·오류 | 부분 반영 | owner·CAS·TTL |
 |---|---|---|---|---|
-| `put` | 새 version(신규 1, 갱신 +1) | NotFound는 없음. CasConflict(행이 없는데 cas가 있으면 actual 0), OwnedByOther, QuotaExceeded, Invalid*, ValueTooLarge, Db | 한 transaction이다. 거절과 commit 실패는 롤백되고 quota 카운터·변경 버퍼를 바꾸지 않는다 | `_host`는 모든 owner의 항목을 바꾼다. 기존 행 조회는 `expires_at`을 거르지 않아 아직 정리되지 않은 만료 행도 owner·CAS·quota 판단에 들어간다 |
+| `put` | 새 version(신규 1, 갱신 +1) | NotFound는 없음. CasConflict(행이 없는데 cas가 있으면 actual 0), OwnedByOther, QuotaExceeded, Invalid*, ValueTooLarge, Db | 한 transaction이다. 거절과 commit 실패는 롤백되고 quota 카운터·변경 버퍼를 바꾸지 않는다 | `_host`는 모든 owner의 항목을 바꾼다. 아직 정리되지 않은 만료 행(`expires_at <= now`)은 조회와 같이 없는 것으로 판정한다. 그 위의 put은 신규 생성(version 1, owner = 호출자)이며 같은 transaction에서 만료 행을 지우고, 변경 이벤트는 `Expired`·`Created` 순서다. cas가 있으면 actual 0의 CasConflict다. regular quota 판정은 만료 행 크기를 빼지만 quota 카운터는 정리 전까지 디스크 바이트 합으로 남는다 |
 | `delete` | `()` | NotFound, CasConflict, OwnedByOther, Db | 한 transaction이다 | put과 같은 owner 규칙. 만료 행도 지울 수 있다 |
 | 조회(`get`·`list`·`count`·`query`·`export_regular`) | 값 | Db | 해당 없음 | 만료 행을 제외한다. `scopes`는 만료 행을 포함한다 |
 | `import_regular` | applied·skipped 수 | put의 오류 | 항목마다 `put`을 따로 commit한다. 중간 오류가 나면 앞 항목은 반영된 채 오류를 돌려준다 | 항목의 `expires_at`을 그대로 쓰고 cas는 쓰지 않는다. `memory.import` 핸들러는 이 함수를 부르기 전에 모든 항목의 scope를 put과 같은 조건(PTY id 공간, 열린 surface)으로 검사하고, 하나라도 걸리면 아무 항목도 넣지 않고 거절한다 |
-| secret 계열 | put·delete와 같다 | 같다 | 같다 | owner가 키의 일부이고 owner별 quota다. 변경 이벤트를 만들지 않는다 |
+| secret 계열 | put·delete와 같다 | 같다 | 같다 | owner가 키의 일부이고 owner별 quota다. 만료 행은 put의 version·CAS 판정과 owner 합계 quota에서 없는 것으로 본다. 변경 이벤트를 만들지 않는다 |
 | `purge_scope` | 영역별 삭제 수 | Db | 이벤트 대상 SELECT와 regular·secret DELETE 두 문장이 한 transaction이다. 어느 문장이든 실패하면 전부 롤백되고 quota 카운터·변경 버퍼를 바꾸지 않는다. commit이 성공한 뒤에만 지운 regular 키마다 변경 이벤트를 쌓고 카운터를 다시 센다 | owner를 보지 않는다. 삭제 전 SELECT로 이벤트 대상 키를 모은다 |
 | `purge_expired` | 영역별 삭제 수 | Db | `purge_scope`와 같은 구조다 | `expires_at <= now`인 행 |
 | `prune_prefix_keep_recent`·`prune_prefix_older_than` | 삭제 수 | Db | 한 문장을 transaction 하나로 commit한다. 행을 지웠을 때만 카운터를 다시 센다 | owner·scope를 보지 않고 변경 이벤트를 만들지 않는다 |
@@ -62,11 +62,11 @@
 
 - 실행 단위(`run_unit`, 값을 돌려받는 `with_unit`): 본문을 transaction 하나에서 실행하고 끝난 뒤 한 번 commit한다. 직렬화·commit의 단위이며 rollback의 단위가 아니다. 본문 안의 각 쓰기는 savepoint로 감싸 거절된 쓰기만 되돌린다. 본문이 오류를 돌려줘도 그전까지 반영된 쓰기는 commit되므로, 여러 번 쓰는 복합 연산(blackboard 삭제, `import_regular` 등)의 부분 반영 의미가 단독 실행과 같다. 본문 안의 읽기는 앞선 쓰기를 본다. 이미 열린 단위 안에서 다시 부르면 그 단위에 합류한다.
 - 쓰기 묶음(`write_batch`): put·delete·secret put·secret delete 요청 목록을 transaction 하나로 실행한다. 원자 묶음(`Atomic`)은 요청 하나라도 거절되면 전체를 되돌리고 거절된 요청의 위치를 알린다. 독립 요청 묶음(`Independent`)은 요청마다 판정해 거절된 요청만 오류 결과를 받는다. 열린 단위 안의 원자 묶음은 묶음만 되돌린다.
-- 판정 순서: 요청은 목록 순서대로 앞 요청의 반영을 본 상태에서 판정한다. version 증가, CAS, delete 뒤 재생성(version 1, 새 owner), owner, regular 전체 quota, secret owner별 quota, 정리되지 않은 만료 행을 포함하는 put의 기존 행 조회가 단독 연산과 같다. 같은 단위 안의 `purge_expired`·`purge_scope`·`prune_*`도 단위의 transaction에 들어가 뒤 요청이 정리 결과를 본다. 단위 밖의 이 정리 연산은 위 표처럼 각 호출이 자기 transaction 하나로 commit한다.
+- 판정 순서: 요청은 목록 순서대로 앞 요청의 반영을 본 상태에서 판정한다. version 증가, CAS, delete 뒤 재생성(version 1, 새 owner), owner, regular 전체 quota, secret owner별 quota, 정리되지 않은 만료 행을 없는 것으로 보는 put의 기존 행 판정(그 위의 재생성과 `Expired`·`Created` 이벤트)이 단독 연산과 같다. 같은 단위 안의 `purge_expired`·`purge_scope`·`prune_*`도 단위의 transaction에 들어가 뒤 요청이 정리 결과를 본다. 단위 밖의 이 정리 연산은 위 표처럼 각 호출이 자기 transaction 하나로 commit한다.
 - 저장 실패: 단위 안의 쓰기·읽기(`get`·`list`·`count`·`scopes`·`stats`·`query`·`export_regular`·secret 조회)에서 `MemoryError::Db`가 나면 단위 전체를 되돌린다. SQLite가 아닌 행 변환 오류도 같다. SQLite는 일부 오류에서 transaction을 스스로 되돌리므로 같은 단위의 이후 쓰기는 실행하지 않고 같은 분류의 저장 실패를 돌려준다. 단위가 열려 있는데 연결이 autocommit 상태가 된 것(SQLite가 transaction을 끝냄)도 저장 실패로 보고 이후 쓰기와 commit을 실행하지 않는다. 본문이 이 오류를 무시해도 단위의 결과는 저장 실패다. 단위 밖 단독 호출의 실패는 그 호출만의 결과다. 묶음에서는 독립 요청 묶음이라도 묶음 전체의 `BatchFailure`이며 index가 원인 요청을 가리킨다. transaction 시작·commit 실패의 index는 없다. commit이 실패하면 열린 transaction을 되돌리고 확정하지 않는다.
 - bookkeeping 공개: regular quota 카운터와 변경 버퍼(`memory.changed` 원본)는 단위가 쌓아 두었다가 commit이 성공한 뒤에만 저장소에 반영한다. 되돌린 요청·묶음·단위는 아무것도 남기지 않는다. 본문이 panic하면 단위를 되돌리고 panic을 다시 전파한다.
 - commit 계측: `DbLatencyStats.commits`는 물리 commit 수다. 단위·묶음 하나는 쓰기가 하나 이상 확정됐을 때 commit 1회로 센다. 요청 수는 세지 않고, commit 하나에 확정된 쓰기 수를 `writes_per_commit` 분포에 넣는다. 쓰기가 없는 단위와 되돌린 단위는 세지 않는다. 단위 안의 정리 연산은 그 단위의 commit에 포함되어 세어진다. 단위 밖의 정리 연산은 행을 하나 이상 지웠을 때 commit 1회로 세고, 지운 행이 없으면 세지 않는다.
-- 시험용 저장소(`InMemoryStorage`): regular put·delete가 CAS·owner·NotFound를 운영 저장소와 같이 판정하고, 쓰기 묶음은 원자 묶음의 되돌림과 독립 묶음의 요청별 판정을, 실행 단위는 부분 반영을 따른다. `purge_scope`는 regular 행을 한 번에 지워 전부 지우거나 아무것도 지우지 않는다. quota·TTL·secret·변경 이벤트·저장 실패·commit은 흉내 내지 않는다. 대조 시험이 같은 요청 순서의 결과를 운영 저장소와 비교한다.
+- 시험용 저장소(`InMemoryStorage`): regular put·delete가 CAS·owner·NotFound를 운영 저장소와 같이 판정하고, 쓰기 묶음은 원자 묶음의 되돌림과 독립 묶음의 요청별 판정을, 실행 단위는 부분 반영을 따른다. `purge_scope`는 regular 행을 한 번에 지워 전부 지우거나 아무것도 지우지 않는다. quota·TTL·secret·변경 이벤트·저장 실패·commit은 흉내 내지 않는다. `expires_at`을 저장하지 않고 `purge_expired`는 아무것도 지우지 않으므로, 만료 행 위의 재생성과 만료 크기를 뺀 quota는 운영 저장소 시험으로만 확인한다. 대조 시험이 같은 요청 순서의 결과를 운영 저장소와 비교한다.
 
 ### 저장 실행기
 
@@ -149,7 +149,7 @@
 | 읽기 | `memory.get`·`list`·`count`·`approval.history`·`approval.summary.get`·`surface.meta.get`·`list`, telemetry·감사·세션·명령 기록 조회(writer 요청), surface capture의 `restore.command`(journal worker가 writer 요청을 넣고 기다린다), 요청 게이트의 세션·cap·rate limit 판정, nickname 대상 찾기, DAG 화면, task 대기 | memory writer, 메인 루프(게이트·nickname), `dag-read`, task 대기 worker | writer 요청 하나 안의 조회는 한 시점을 본다. 메인 루프의 직접 읽기는 느린 저장에서 writer와 잠금을 다퉈 수백 ms를 기다릴 수 있다([남은 직접 잠금 읽기](storage.md#남은-직접-잠금-읽기)). DAG 화면은 `try_lock`으로 폴링한다 |
 | 변경 구독 | `memory.changed` 발행 | GUI 이벤트 루프, headless 루프 | 두 루프가 회차마다 writer가 commit 뒤 옮겨 둔 변경 버퍼(`ChangeFeed`)를 꺼내 plugin에 발행한다. 저장소 잠금을 바로 얻을 때만 그 잠금 안에서 버퍼를 꺼내고 직접 잠금 소비자가 저장소 버퍼에 남긴 변경을 뒤에 붙인다. 잠금이 바쁘면 기다리지 않고 writer가 옮긴 변경만 꺼내며, 남은 변경은 writer의 다음 묶음 끝이나 다음 회차에 같은 순서로 나온다. plugin 매니저가 없으면 꺼낸 변경을 버려 버퍼가 쌓이지 않는다 |
 | 삭제 cleanup | surface·workspace 은퇴의 `purge_scope`(writer 요청 하나), 부팅 legacy 범위 밖 surface meta 정리(기다리지 않는 writer 요청), 범위 밖 surface meta 정리 | 메인 루프 | 대상이 다시 살아 있으면 정리를 넣지 않는다. 은퇴 정리는 결과를 다음 폴링 회차에 거두며, 같은 ID의 새 소유자가 쓰는 metadata는 정리 뒤에 접수되므로 지워지지 않는다 |
-| TTL 정리 | `memory.gc`(Local 전용)의 `purge_expired`(writer 요청) | 메인 루프(IPC) | 주기 타이머는 없다 |
+| TTL 정리 | `Tick::LogPrune` 마다 `purge_expired`를 기다리지 않는 writer 요청 하나로 넣는다. `memory.gc`(Local 전용)도 같은 함수를 writer 요청으로 부른다 | 메인 루프(GUI·headless 같은 틱) | 판정은 만료 행을 이미 없는 것으로 보므로 정리는 디스크·quota 카운터 회수와 `expired` 발행이다. 로그 보존 정리와 요청을 나눠 한쪽의 저장 실패가 다른 쪽을 막지 않는다. 한 시간 간격 제한은 로그 정리에만 걸린다 |
 | 로그 prune | 관측 로그 보존(부팅·기록 시점·`Tick::LogPrune`). `Tick::LogPrune`은 기다리지 않는 writer 요청이다 | 메인 루프 | 시간 기준 후 개수 기준. 한 시간 간격 제한은 요청을 넣기 전에 판정한다 |
 | 정비 | 부팅의 prune·VACUUM·WAL truncate | 부팅 메인 | port로 감싸기 전 구체 `MemoryStore`에서 실행 |
 

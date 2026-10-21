@@ -1,5 +1,7 @@
 //! 메모리 저장소의 권한·quota·만료·SQL 설정 시험.
 
+mod expired_rows;
+
 use super::*;
 
 fn store() -> MemoryStore {
