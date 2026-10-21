@@ -1798,7 +1798,7 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "settings-performance",
-                            "Misc › Performance",
+                            "Terminal › Performance",
                             Some(
                                 "two switch rows · Lines kept on disk (numeric, -1 = unlimited) · disabled while disk swap is off",
                             ),

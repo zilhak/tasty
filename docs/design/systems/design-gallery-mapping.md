@@ -1072,7 +1072,7 @@ Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 
 - 값은 그룹 구분 없는 원시 바이트이며 KiB 로 바꾸지 않는다.
 - 범위 줄의 자리: 모든 숫자 칸이 공유하는 `number_field` 구조대로 입력칸 아래(컨트롤 칸 안, 라벨 열 + 라벨 간격만큼 들어간 자리), 설명 caption 위다. 시안 Task pipeline·Numbers in settings 예제도 같은 자리다. 갤러리 Numbers in settings·토스트 표시 시간 예제(`settings_number.rs` `range_line`)는 입력칸 왼쪽 끝에서 시작한다.
 
-## Settings › Misc › Performance
+## Settings › Terminal › Performance
 
 성능 탭의 세 행이다. 디자인 카탈로그에 전용 프레임은 없고, 새 시각 값 없이 기존 스위치 행과 숫자 행
 (`SettingsRow` + `number_field`)을 그대로 쓴다(갤러리 spec id `settings-performance`, Task pipeline 뒤).
