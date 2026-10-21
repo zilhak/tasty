@@ -1782,7 +1782,8 @@
     },
     "input-readonly-fg": {
       "$type": "color",
-      "$value": "{semantic.text-secondary}"
+      "$value": "{semantic.text-secondary-raised}",
+      "$description": "2026-10-21 read-only real value ink (was text-secondary; Latte 4.05 → 5.17)"
     },
     "input-raised-bg": {
       "$type": "color",
@@ -5081,6 +5082,9 @@
     "md-address-go-hide-below": { "$type": "dimension", "$value": "{semantic.field-width-md}", "$description": "Go hides below 160 field width" },
     "md-address-error-height": { "$type": "dimension", "$value": "{component.html-address-error-height}", "$description": "error row 24" },
     "md-address-error-glyph": { "$type": "color", "$value": "{component.html-address-error-glyph}", "$description": "error glyph" },
+    "html-address-value-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "idle real address ink on input-bg" },
+    "md-address-value-fg": { "$type": "color", "$value": "{component.html-address-value-fg}", "$description": "idle real path ink" },
+    "md-address-pending-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "still-waiting row text on bg-sidebar" },
     "md-address-stale-bg": { "$type": "color", "$value": "{semantic.accent-primary}", "$description": "stale Reload fill" },
     "md-address-stale-fg": { "$type": "color", "$value": "{semantic.text-on-accent}", "$description": "stale Reload glyph" },
     "fp-folder-file-fg": { "$type": "color", "$value": "{semantic.state-disabled-fg}", "$description": "file picker folder mode — inert file row ink" },
@@ -5102,6 +5106,9 @@
     "explorer-props-perm-cell-width": { "$type": "dimension", "$value": "{primitive.size-56}", "$description": "permission editor role column + r/w/x columns" },
     "explorer-props-perm-error-fg": { "$type": "color", "$value": "{semantic.accent-danger}", "$description": "permission apply failed line" },
     "explorer-props-perm-locked-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "permission cannot be changed line" },
-    "explorer-props-value-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "Properties field value ink" }
+    "explorer-props-value-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "Properties field value ink" },
+    "settings-apply-note-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "Performance apply-timing note text" },
+    "settings-apply-note-glyph": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "Performance apply-timing note info glyph" },
+    "settings-apply-note-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "glyph → text" }
   }
 }

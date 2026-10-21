@@ -136,7 +136,9 @@
      Same neutral box as disabled; the value keeps a readable ink. Selectable + copyable, focusable. (2026-09-29) */
   --tasty-input-readonly-bg:       var(--tasty-state-disabled-fill);
   --tasty-input-readonly-border:   var(--tasty-state-disabled-border);
-  --tasty-input-readonly-fg:       var(--tasty-text-secondary);
+  /* 2026-10-21 (html-address-idle-contrast): was text-secondary — Latte n1000 on the read-only box (surface0) = 4.05:1.
+     → text-secondary-raised: Mocha unchanged (text-secondary 7.10) · Latte n1100 5.17. Read-only stays ≠ disabled. */
+  --tasty-input-readonly-fg:       var(--tasty-text-secondary-raised);
   /* 2026-10-14 — Input on a RAISED ground (Input ground="raised"): every state steps the box down
      one ramp step + strong edge so it never merges with surface-raised. Ink is unchanged per state. */
   --tasty-input-raised-bg:              var(--tasty-bg-panel);
@@ -436,6 +438,7 @@
   --tasty-html-address-field-min-width: var(--tasty-size-96);         /* field floor before the band drops Forward */
   --tasty-html-address-error-height:  var(--tasty-size-24);           /* inline error row under the band (part of the band) */
   --tasty-html-address-error-glyph:   var(--tasty-accent-danger);
+  --tasty-html-address-value-fg:      var(--tasty-text-secondary-raised); /* 2026-10-21 idle real address on input-bg (surface0) — Mocha 7.10 · Latte 5.17 (was text-secondary 4.05) */
   /* Markdown surface — address bar band (2026-10-21, folder button + editable mirror). Same box as the HTML band. */
   --tasty-md-address-bar-height:      var(--tasty-html-address-bar-height);    /* 40 */
   --tasty-md-address-bar-bg:          var(--tasty-html-address-bar-bg);        /* bg-sidebar */
@@ -447,6 +450,8 @@
   --tasty-md-address-go-hide-below:   var(--tasty-field-width-md);             /* 160 — Go hides when the field would be narrower */
   --tasty-md-address-error-height:    var(--tasty-html-address-error-height);  /* 24 error row (part of the band) */
   --tasty-md-address-error-glyph:     var(--tasty-html-address-error-glyph);   /* accent-danger */
+  --tasty-md-address-value-fg:        var(--tasty-html-address-value-fg);      /* 2026-10-21 idle real path — same box, same fix as HTML */
+  --tasty-md-address-pending-fg:      var(--tasty-text-secondary);             /* 2026-10-21 “Still waiting for the remote…” row on bg-sidebar */
   --tasty-md-address-stale-bg:        var(--tasty-accent-primary);             /* stale Reload fill (mirror doc changed) */
   --tasty-md-address-stale-fg:        var(--tasty-text-on-accent);             /* stale Reload glyph */
   /* HTML mirror — remote size banners + receiving state (2026-10-12) */
@@ -1478,10 +1483,14 @@
   /* 2026-10-21 — Explorer Properties: Open footer · permission editor · time format */
   --tasty-explorer-props-footer-border: var(--tasty-separator); /* rule above the Open footer */
   --tasty-explorer-props-perm-border: var(--tasty-border-strong); /* permission editor box edge on bg-panel */
-  --tasty-explorer-props-perm-cell-width: var(--tasty-size-56); /* role label column + each r / w / x column */
+  --tasty-explorer-props-perm-cell-width: var(--tasty-size-56); /* role label column + each r / w / x column — 2026-10-21: box spans the CONTENT width (label column included), 4 × 56 + 2 × 8 + 2 × 1 = 242 ≤ 330 */
   --tasty-explorer-props-perm-error-fg: var(--tasty-accent-danger); /* apply failed line on bg-panel — Mocha 7.08 · Latte 4.80 */
   --tasty-explorer-props-perm-locked-fg: var(--tasty-text-muted); /* "Only the owner can change permissions" under the value */
   --tasty-explorer-props-value-fg: var(--tasty-text-secondary); /* field value ink (names the literal the rows already used) */
+  /* 2026-10-21 — Settings › Terminal › Performance: when saved values apply (replaces the warning-yellow restart notice) */
+  --tasty-settings-apply-note-fg: var(--tasty-text-secondary); /* on bg-panel — Mocha ≈ 8.0 · Latte ≈ 5.1 */
+  --tasty-settings-apply-note-glyph: var(--tasty-text-muted); /* info glyph (non-text, ≥ 3:1) */
+  --tasty-settings-apply-note-gap: var(--tasty-space-sm); /* glyph → text */
 }
 
 

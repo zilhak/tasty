@@ -47,8 +47,8 @@ page commits only a few demos at a time.
 Each page loads `../styles.css` + `../_ds_bundle.js`, then `shell.jsx` (shared
 chrome + specimen primitives, exposed on `window.Gallery`) and one content
 script (`foundations.jsx` / `icons.jsx` / `components.jsx` / `layouts.jsx` /
-`dag.jsx` / `loading.jsx` / `plugins.jsx` (+ `plugins-md-address.jsx`, the Markdown address bar, 2026-10-21) — `explorer-ops` loads `plugins.jsx` + `explorer-ops-parts.jsx` + `explorer-ops-b11.jsx` + `explorer-ops-b12.jsx` + `explorer-delete-frame.jsx` + `explorer-ops-remote.jsx` + `explorer-ops-delete.jsx` + `explorer-ops-staging.jsx` + `explorer-ops.jsx` —, or an `overlays-*.jsx` page preceded by
-`overlays-shared.jsx`; `overlays-windows` additionally loads `preset_editor.jsx`, `overlays-windows-b12.jsx` and `notifications.jsx` (+ kit `overlays/info_modal.jsx`, `overlays/notifications.jsx`); `layouts` also loads `notifications.jsx` + kit `notification_summary.jsx` (narrow settings rows · Plugins record slots · Win / Super as option)).
+`dag.jsx` / `loading.jsx` / `plugins.jsx` (+ `plugins-md-address.jsx`, the Markdown address bar, and `plugins-html-address-contrast.jsx`, HTML address field ink, 2026-10-21) — `explorer-ops` loads `plugins.jsx` + `explorer-ops-parts.jsx` + `explorer-ops-b11.jsx` + `explorer-ops-b12.jsx` + `explorer-delete-frame.jsx` + `explorer-ops-remote.jsx` + `explorer-ops-delete.jsx` + `explorer-ops-staging.jsx` + `explorer-ops.jsx` —, or an `overlays-*.jsx` page preceded by
+`overlays-shared.jsx`; `overlays-windows` additionally loads `preset_editor.jsx`, `overlays-windows-perf.jsx` (Performance apply note, 2026-10-21), `overlays-windows-b12.jsx` and `notifications.jsx` (+ kit `overlays/info_modal.jsx`, `overlays/notifications.jsx`); `layouts` also loads `notifications.jsx` + kit `notification_summary.jsx` (narrow settings rows · Plugins record slots · Win / Super as option)).
 No tokens or component visuals are redefined here — specimens reference the
 design system only.
 

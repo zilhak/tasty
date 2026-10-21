@@ -1416,6 +1416,9 @@ pub mod select {
 pub mod settings {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.settings-apply-note-gap` → `{semantic.space-sm}` = 8px
+    pub const APPLY_NOTE_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
     /// `component.settings-content-max-width` → `{primitive.size-620}` = 620px
     pub const CONTENT_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_620;
 

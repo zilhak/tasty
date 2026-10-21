@@ -234,6 +234,7 @@ const NAV = [
   { id: "settings", label: "Settings window" },
   { id: "settingsnarrow", label: "Settings rows — narrow (b12)" },
   { id: "filehandlers", label: "Handler › File Detectors · Handlers" },
+  { id: "perfapply", label: "Terminal › Performance — apply note" },
   { id: "permissions", label: "General › Permissions (macOS)" },
   { id: "kbimportexport", label: "Keybindings · Import / Export" },
   { id: "optionkey", label: "Win · Super as option (b12)" },
@@ -1341,8 +1342,8 @@ function Page() {
             ))}
           </Stage>
           <Meta
-            specs={[["Default hex", "Input readOnly"], ["box", "state-disabled fill + border (same as disabled)"], ["value ink", "text-secondary"], ["select · copy", "allowed; focusable"], ["override", "normal Input"], ["disabled", "reserved for an unavailable control"]]}
-            tokens={[{ tok: "--tasty-input-readonly-bg", use: "→ state-disabled-fill", color: "var(--tasty-input-readonly-bg)" }, { tok: "--tasty-input-readonly-border", use: "→ state-disabled-border", color: "var(--tasty-input-readonly-border)" }, { tok: "--tasty-input-readonly-fg", use: "→ text-secondary", color: "var(--tasty-input-readonly-fg)" }]} />
+            specs={[["Default hex", "Input readOnly"], ["box", "state-disabled fill + border (same as disabled)"], ["value ink", "input-readonly-fg → text-secondary-raised (2026-10-21; Latte 5.17)"], ["select · copy", "allowed; focusable"], ["override", "normal Input"], ["disabled", "reserved for an unavailable control"]]}
+            tokens={[{ tok: "--tasty-input-readonly-bg", use: "→ state-disabled-fill", color: "var(--tasty-input-readonly-bg)" }, { tok: "--tasty-input-readonly-border", use: "→ state-disabled-border", color: "var(--tasty-input-readonly-border)" }, { tok: "--tasty-input-readonly-fg", use: "→ text-secondary-raised", color: "var(--tasty-input-readonly-fg)" }]} />
         </Spec>
         <Spec title="Appearance › Colors › Terminal-specific — 5 rows, active match ink after its fill (2026-10-12)"
           when={<>The theme key <code>search_match_active_fg</code> gets a row like every other palette field, so it can be changed without editing TOML. It goes <b>right after</b> <code>search_match_active_bg</code>: the ink sits on that fill, and reading the pair together is how a user judges it. The swatch stays the <b>same plain swatch</b> as every row. A text-on-fill sample would be the only row of its kind and would need the other row's value to draw; the live terminal is the real preview. <b>Reset all</b> clears it like any other override. The list is now 6 groups / <b>47 rows</b>; Terminal-specific has <b>5</b>.</>}>
@@ -1399,6 +1400,7 @@ function Page() {
 
       {window.OverlaysWindowsB12 && <window.OverlaysWindowsB12.SettingsNarrowSection />}
       {window.OverlaysWindowsFileHandlers && <window.OverlaysWindowsFileHandlers.FileHandlerSection />}
+      {window.OverlaysWindowsPerf && <window.OverlaysWindowsPerf.PerfSection />}
       <Section id="permissions" title="Settings › General › Permissions (macOS) — 2026-09-28">
         <Spec title="Status table, one action per row, one request button"
           when={<>macOS builds only, the last L2 under General. A three-column table: <b>permission</b> · <b>status</b> · <b>row action</b>. The four states are told apart by <b>glyph + word</b>, with colour as a third channel: <b>Granted</b> check / success, <b>Not granted</b> alertCircle / warning, <b>Unknown</b> helpCircle / muted, <b>Cannot check automatically</b> eyeOff / muted. Unknown (inference failed) and Cannot check (deliberately not looked at) share the muted ink but never the glyph, and neither can be misread as granted. The Full Disk Access shortcut moves <b>into its own row</b> as Secondary / Sm <b>[Open System Settings]</b>. What needs explaining per row now lives in HelpHints, so the two notes under the table are short. <b>[Request all permissions]</b> stays Primary / Md under the table. While requesting it is disabled and the line below becomes a spinner + <i>requesting</i> copy; the button carries no spinner. The debug-only Accessibility row carries a <b>debug</b> Tag.</>}>

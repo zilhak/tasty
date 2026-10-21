@@ -124,7 +124,7 @@ impl<'a> Input<'a> {
     }
 
     /// 읽기 전용. disabled와 같은 중립 상자(input-readonly-bg·border)에 값은
-    /// input-readonly-fg(text-secondary)로 그린다. 편집은 막고 포커스·선택·복사는 허용하며,
+    /// input-readonly-fg(text-secondary-raised)로 그린다. 편집은 막고 포커스·선택·복사는 허용하며,
     /// 포커스는 1px focus 테두리만 두고 ring은 그리지 않는다. `enabled(false)`면 무시한다.
     pub fn read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;

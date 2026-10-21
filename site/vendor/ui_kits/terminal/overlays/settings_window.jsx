@@ -947,9 +947,14 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
         return (
           <>
             <Mono>Performance — all terminal subsystems</Mono>
-            <Row label="PTY polling (ms):" hint="How often the PTY read loop is polled. Lower = snappier output at higher CPU cost. Default 8ms."><Input mono defaultValue="8" style={{ width: "var(--tasty-field-width-xs)" }} /></Row>
-            <Row label="Scrollback disk swap:" hint="Spill scrollback past the in-memory limit to a temp file instead of dropping the oldest lines."><Switch defaultChecked /></Row>
-            <Row label="Lazy PTY init:" hint="Defer spawning a pane's shell until it is first focused. Speeds up restoring large layouts."><Switch /></Row>
+            {/* 2026-10-21 (performance-settings-apply-timing): neutral apply note replaces the warning-yellow restart line; the three product rows */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-settings-apply-note-gap)", maxWidth: "var(--tasty-measure-md)" }}>
+              <span style={{ display: "inline-flex", flex: "none", height: "calc(var(--tasty-font-size-caption) * var(--tasty-line-height-ui))", alignItems: "center", color: "var(--tasty-settings-apply-note-glyph)" }}><Icon name="info" size={14} /></span>
+              <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-settings-apply-note-fg)" }}>Saved changes apply to terminals you open afterward. Terminals that are already open don't change right away.</p>
+            </div>
+            <Row label="Targeted PTY polling:" hint="Checks a terminal for output only when it signals new output, instead of checking every terminal."><Switch defaultChecked /></Row>
+            <Row label="Scrollback disk swap:" hint="Keeps scrollback past the in-memory limit in a temporary file instead of dropping the oldest lines."><Switch defaultChecked /></Row>
+            <Row label="Disk scrollback lines:" hint="Lines kept on disk per terminal while disk swap is on. -1 keeps every line. Separate from Scrollback lines."><Input mono defaultValue="10000" addon="lines" style={{ width: "var(--tasty-field-width-color)" }} /></Row>
           </>
         );
       // Terminal › Mouse Capture — hint banner toggle + per-program capture opt-out

@@ -12,7 +12,7 @@
 //             banner-inset-gap (8) below the last one. Order: size banner (remote, blocks rendering) → script banner.
 //   PAGE      native WebView — or a host state painted in its place (empty · loading · failed · receiving · notice).
 //
-// Field states: idle (address, text-secondary) · editing (focus edge + caret, text-primary) · placeholder (empty tab)
+// Field states: idle (address, html-address-value-fg → text-secondary-raised; 2026-10-21 Latte 4.05 → 5.17) · editing (focus edge + caret, text-primary) · placeholder (empty tab)
 //   · loading (Reload slot shows a Spinner, not clickable; field shows the target address) · error (danger edge,
 //   still editing, error row below). Error clears on the next keystroke, on Esc (reverts to the current address)
 //   and on a successful open — never on a timer.
@@ -76,7 +76,7 @@ function HtmlAddressField({ kind = "local", address = "", state = "idle", skippe
       boxShadow: editing ? "0 0 0 var(--tasty-focus-ring-width) color-mix(in srgb, " + (state === "error" ? "var(--tasty-input-border-invalid)" : "var(--tasty-border-focus)") + " 35%, transparent)" : "none" }}>
       <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-input-icon-fg)" }}><HaIcon name={glyph} size="var(--tasty-icon-size-sm)" /></span>
       <span style={{ flex: 1, minWidth: 0, fontFamily: empty ? "var(--tasty-font-ui)" : "var(--tasty-font-mono)", fontSize: "var(--tasty-input-font-size)",
-        color: empty ? "var(--tasty-input-placeholder)" : editing ? "var(--tasty-input-fg)" : readOnly ? "var(--tasty-input-readonly-fg)" : "var(--tasty-text-secondary)",
+        color: empty ? "var(--tasty-input-placeholder)" : editing ? "var(--tasty-input-fg)" : readOnly ? "var(--tasty-input-readonly-fg)" : "var(--tasty-html-address-value-fg)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: empty ? "ltr" : "rtl", textAlign: "left" }}>
         <bdi>{empty ? HA_COPY.placeholder : address}</bdi>
         {editing && <span style={{ display: "inline-block", width: "var(--tasty-border-width)", height: "var(--tasty-size-14)", background: "var(--tasty-accent-primary)", marginLeft: "var(--tasty-border-width)", verticalAlign: "text-bottom" }} />}

@@ -17,7 +17,7 @@ export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   /** Unavailable control — neutral box + disabled ink (text-disabled), no pointer, not selectable. */
   disabled?: boolean;
   /** Not editable now, value still read (2026-09-29). Neutral box like disabled, value in
-   *  --tasty-input-readonly-fg (text-secondary). Focusable, selectable, copyable. Ignored when disabled. */
+   *  --tasty-input-readonly-fg (text-secondary-raised). Focusable, selectable, copyable. Ignored when disabled. */
   readOnly?: boolean;
   /** Ground the field sits on (2026-10-14). "panel" (default) = bg-panel or lower (dialogs, panels).
    *  "raised" = surface-raised (menus, banners, popovers): box → input-raised-* / state-disabled-*-raised

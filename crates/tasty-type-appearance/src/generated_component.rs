@@ -2068,6 +2068,12 @@ impl crate::theme::Theme {
         LogicalPx((96.0 * self.ui_zoom).round())
     }
 
+    /// `component.html-address-value-fg` → `{semantic.text-secondary-raised}`
+    #[inline]
+    pub fn html_address_value_fg(&self) -> HexColor {
+        self.text_secondary_raised()
+    }
+
     /// `component.html-limit-banner-glyph` → `{semantic.accent-warning}`
     #[inline]
     pub fn html_limit_banner_glyph(&self) -> HexColor {
@@ -2380,10 +2386,10 @@ impl crate::theme::Theme {
         self.state_disabled_border()
     }
 
-    /// `component.input-readonly-fg` → `{semantic.text-secondary}`
+    /// `component.input-readonly-fg` → `{semantic.text-secondary-raised}`
     #[inline]
     pub fn input_readonly_fg(&self) -> HexColor {
-        self.text_secondary()
+        self.text_secondary_raised()
     }
 
     /// `component.input-readonly-raised-bg` → `{semantic.state-disabled-fill-raised}`
@@ -2872,6 +2878,12 @@ impl crate::theme::Theme {
         self.field_width_md
     }
 
+    /// `component.md-address-pending-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn md_address_pending_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
     /// `component.md-address-stale-bg` → `{semantic.accent-primary}`
     #[inline]
     pub fn md_address_stale_bg(&self) -> HexColor {
@@ -2882,6 +2894,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn md_address_stale_fg(&self) -> HexColor {
         self.text_on_accent()
+    }
+
+    /// `component.md-address-value-fg` → `{component.html-address-value-fg}`
+    #[inline]
+    pub fn md_address_value_fg(&self) -> HexColor {
+        self.html_address_value_fg()
     }
 
     /// `component.md-callout-icon-gap` → `{semantic.space-xs}` = 4px
@@ -4352,6 +4370,24 @@ impl crate::theme::Theme {
     #[inline]
     pub fn select_search_value_placeholder(&self) -> HexColor {
         self.text_placeholder()
+    }
+
+    /// `component.settings-apply-note-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn settings_apply_note_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.settings-apply-note-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn settings_apply_note_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.settings-apply-note-glyph` → `{semantic.text-muted}`
+    #[inline]
+    pub fn settings_apply_note_glyph(&self) -> HexColor {
+        self.text_muted()
     }
 
     /// `component.settings-content-max-width` → `{primitive.size-620}` = 620px

@@ -7,7 +7,7 @@ import React from "react";
  * disabled — the control is unavailable: neutral box + disabled ink, no pointer.
  * readOnly — not editable NOW, but the value is information (2026-09-29, e.g. an
  *   Appearance colour row at Default showing the base hex). Same neutral box as
- *   disabled, the value keeps --tasty-input-readonly-fg (text-secondary). It stays
+ *   disabled, the value keeps --tasty-input-readonly-fg (text-secondary-raised). It stays
  *   focusable, selectable and copyable; focus shows the 1px focus edge, no ring.
  * ground="raised" — the field sits on surface-raised (menu, banner, popover). The box
  *   steps down to bg-panel + border-strong in every state (2026-10-14); ink is unchanged.

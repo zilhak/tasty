@@ -48,7 +48,7 @@ function PProps({ glyph = K.ic.file, glyphColor, name, children, note, footer, w
     </div>
   );
 }
-function PField({ k, v, mono, copy, warn, action, under, time }) {
+function PField({ k, v, mono, copy, warn, action, under, below, time }) {
   // time values wrap only between date · time · offset (each part is one unbreakable unit)
   const val = time ? v.split(" ").map((p, i) => <React.Fragment key={i}>{i > 0 && " "}<span style={{ whiteSpace: "nowrap" }}>{p}</span></React.Fragment>) : v;
   return (
@@ -63,13 +63,16 @@ function PField({ k, v, mono, copy, warn, action, under, time }) {
         {warn && <span style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-xs)", fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-explorer-props-row-line)", color: warn[1] }}><Icon name="alertTriangle" size="var(--tasty-icon-size-xs)" />{warn[0]}</span>}
         {under}
       </span>
+      {below && <div style={{ gridColumn: "1 / -1", minWidth: 0 }}>{below}</div>}
     </div>
   );
 }
 const openBtn = (L, p = {}) => <Button variant="secondary" size="sm" {...p}>{L.open}</Button>;
 const editBtn = (L) => <Button variant="ghost" size="sm">{L.edit}</Button>;
 
-// permission editor — opens under the Permissions row, full content width
+// permission editor — opens under the Permissions row and spans the CONTENT width (label column included; 2026-10-21):
+// 360 − 2 × 14 − 2 × 1 = 330 ≥ 4 × 56 + 2 × 8 + 2 × 1 = 242.
+// Column heads and role names wrap inside their 56 cell (never ellipsised, never squeezed).
 const BITS = { "rw-r--r--": [[1, 1, 0], [1, 0, 0], [1, 0, 0]], "rw-r-----": [[1, 1, 0], [1, 0, 0], [0, 0, 0]], "rwxr-xr-x": [[1, 1, 1], [1, 0, 1], [1, 0, 1]], "rwxrwxr-x": [[1, 1, 1], [1, 1, 1], [1, 0, 1]] };
 const octal = (b) => b.map((r) => r[0] * 4 + r[1] * 2 + r[2]).join("");
 function PermEditor({ L, mode, from, folder, state = "editing", special, reason }) {
@@ -99,15 +102,15 @@ function PermEditor({ L, mode, from, folder, state = "editing", special, reason 
     );
   }
   const target = state === "failed" ? BITS[from] : BITS[from].map((r, i) => (i === 2 ? [0, 0, 0] : r));
-  const cell = { width: "var(--tasty-explorer-props-perm-cell-width)", display: "flex", justifyContent: "center" };
-  const head = { ...cell, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" };
+  const cell = { width: "var(--tasty-explorer-props-perm-cell-width)", flex: "none", display: "flex", justifyContent: "center" };
+  const head = { ...cell, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", textAlign: "center", lineHeight: "var(--tasty-line-height-ui)", overflowWrap: "anywhere" };
   return (
     <div style={box}>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
-        <div style={{ display: "flex" }}><span style={{ width: "var(--tasty-explorer-props-perm-cell-width)" }}></span><span style={head}>{L.read}</span><span style={head}>{L.write}</span><span style={head}>{L.exec}</span></div>
+        <div style={{ display: "flex", alignItems: "flex-end" }}><span style={{ width: "var(--tasty-explorer-props-perm-cell-width)", flex: "none" }}></span><span style={head}>{L.read}</span><span style={head}>{L.write}</span><span style={head}>{L.exec}</span></div>
         {[L.owner, L.group, L.others].map((role, r) => (
           <div key={role} style={{ display: "flex", alignItems: "center", minHeight: "var(--tasty-explorer-props-row-min-height)" }}>
-            <span style={{ width: "var(--tasty-explorer-props-perm-cell-width)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-explorer-props-value-fg)" }}>{role}</span>
+            <span style={{ width: "var(--tasty-explorer-props-perm-cell-width)", flex: "none", fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-explorer-props-value-fg)", overflowWrap: "anywhere" }}>{role}</span>
             {[0, 1, 2].map((c) => <span key={c} style={cell}><Checkbox aria-label={role + " " + [L.read, L.write, L.exec][c]} checked={!!target[r][c]} disabled={busy} onChange={() => {}} /></span>)}
           </div>
         ))}
@@ -246,25 +249,25 @@ function PropsActionsSection() {
       </Spec>
 
       <Spec title="Permissions — Edit opens an editor under the row, Apply writes"
-        when={<>The Permissions row keeps its text value and gets an <b>Edit</b> button (ghost sm) at its end. Edit opens a box <b>under the row</b> (full content width) with a <b>3 × 3 checkbox grid</b> — Owner · Group · Others × Read · Write · Execute — and the resulting mode as text + octal, so the change is readable before it runs. Nothing is written until <b>Apply</b> (primary sm, disabled while nothing changed); Cancel closes the box. Apply goes through the file-operation queue: the box shows <b>Applying…</b> with a Spinner and locks its controls; on success it closes and the row shows the new value; on failure it stays open with the reason (OS error) and the grid <b>re-reads the real mode</b>. Esc closes the popup and never undoes an applied change. Folders say the change is <b>not recursive</b>; setuid / setgid / sticky are kept and said so when present. When the user is neither the owner nor root, Edit is not drawn and a muted line says <b>only the owner can change permissions</b>. No Edit on links, several items, remote items or can't read.</>}>
+        when={<>The Permissions row keeps its text value and gets an <b>Edit</b> button (ghost sm) at its end. Edit opens a box <b>under the row, spanning the content width</b> — from the label column's left edge to the right inset (330 at the 360 popup), not inside the 226 value column, which is narrower than the 242 the grid needs — with a <b>3 × 3 checkbox grid</b> — Owner · Group · Others × Read · Write · Execute — and the resulting mode as text + octal, so the change is readable before it runs. Nothing is written until <b>Apply</b> (primary sm, disabled while nothing changed); Cancel closes the box. Apply goes through the file-operation queue: the box shows <b>Applying…</b> with a Spinner and locks its controls; on success it closes and the row shows the new value; on failure it stays open with the reason (OS error) and the grid <b>re-reads the real mode</b>. Esc closes the popup and never undoes an applied change. Folders say the change is <b>not recursive</b>; setuid / setgid / sticky are kept and said so when present. When the user is neither the owner nor root, Edit is not drawn and a muted line says <b>only the owner can change permissions</b>. No Edit on links, several items, remote items or can't read.</>}>
         <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
           <XThemes render={() => (
             <PProps glyph={K.ic.file} name="deploy.env" footer={openBtn(L)}>
               <PField k="Kind" v="File" />
               <PField k="Path" v="~/work/tasty/deploy.env" mono copy />
-              <PField k="Permissions" v="rw-r--r-- · read-only: no" mono under={<PermEditor L={L} mode="unix" from="rw-r--r--" />} />
+              <PField k="Permissions" v="rw-r--r-- · read-only: no" mono below={<PermEditor L={L} mode="unix" from="rw-r--r--" />} />
             </PProps>
           )} />
           <XCol label="folder — applying" w={360}>
             <PProps glyph={K.ic.folder} name="shared" footer={openBtn(L)}>
               <PField k="Kind" v="Folder" />
-              <PField k="Permissions" v="rwxrwxr-x · read-only: no" mono under={<PermEditor L={L} mode="unix" from="rwxrwxr-x" folder special state="applying" />} />
+              <PField k="Permissions" v="rwxrwxr-x · read-only: no" mono below={<PermEditor L={L} mode="unix" from="rwxrwxr-x" folder special state="applying" />} />
             </PProps>
           </XCol>
           <XCol label="failed — real mode re-read" w={360}>
             <PProps glyph={K.ic.file} name="mounted.iso" footer={openBtn(L)}>
               <PField k="Kind" v="Disk image" />
-              <PField k="Permissions" v="rw-r--r-- · read-only: no" mono under={<PermEditor L={L} mode="unix" from="rw-r--r--" state="failed" reason="Read-only file system (os error 30)" />} />
+              <PField k="Permissions" v="rw-r--r-- · read-only: no" mono below={<PermEditor L={L} mode="unix" from="rw-r--r--" state="failed" reason="Read-only file system (os error 30)" />} />
             </PProps>
           </XCol>
           <XCol label="not the owner — no Edit" w={360}>
@@ -277,27 +280,27 @@ function PropsActionsSection() {
           <XCol label="Windows — read-only attribute only" w={360}>
             <PProps glyph={K.ic.file} name="report.docx" footer={openBtn(L)}>
               <PField k="Kind" v="Word document" />
-              <PField k="Permissions" v="read-only: yes" mono under={<PermEditor L={L} mode="win" />} />
+              <PField k="Permissions" v="read-only: yes" mono below={<PermEditor L={L} mode="win" />} />
             </PProps>
           </XCol>
           <XCol label="Windows — failed" w={360}>
             <PProps glyph={K.ic.file} name="report.docx" footer={openBtn(L)}>
-              <PField k="Permissions" v="read-only: no" mono under={<PermEditor L={L} mode="win" state="failed" reason="Access is denied. (os error 5)" />} />
+              <PField k="Permissions" v="read-only: no" mono below={<PermEditor L={L} mode="win" state="failed" reason="Access is denied. (os error 5)" />} />
             </PProps>
           </XCol>
           <XCol label="ko — editor" w={360}>
             <PProps glyph={K.ic.file} name="배포.env" footer={openBtn(PA.ko)}>
-              <PField k={PA.ko.perms} v="rw-r--r-- · read-only: no" mono under={<PermEditor L={PA.ko} mode="unix" from="rw-r--r--" />} />
+              <PField k={PA.ko.perms} v="rw-r--r-- · read-only: no" mono below={<PermEditor L={PA.ko} mode="unix" from="rw-r--r--" />} />
             </PProps>
           </XCol>
           <XCol label="ja — editor" w={360}>
             <PProps glyph={K.ic.folder} name="共有" footer={openBtn(PA.ja)}>
-              <PField k={PA.ja.perms} v="rwxr-xr-x · read-only: no" mono under={<PermEditor L={PA.ja} mode="unix" from="rwxr-xr-x" folder />} />
+              <PField k={PA.ja.perms} v="rwxr-xr-x · read-only: no" mono below={<PermEditor L={PA.ja} mode="unix" from="rwxr-xr-x" folder />} />
             </PProps>
           </XCol>
         </Stage>
         <Meta
-          specs={[["entry", "Edit ghost sm at the end of the Permissions value line · hidden when the box is open"], ["box", "under the row, full value-column width · 1px explorer-props-perm-border · radius · padding space-sm · gap space-sm · bg stays bg-panel"], ["grid", "role column + 3 columns explorer-props-perm-cell-width 56 · rows row-min-height 24 · Checkbox per bit"], ["readout", "mode text + octal, mono caption, text-secondary — updates as boxes change"], ["Apply", "primary sm, disabled until the mode differs · applying: Spinner + “Applying…”, grid + buttons disabled"], ["success", "box closes, row value = new mode (re-read)"], ["failure", "alertCircle + “Couldn't change permissions” explorer-props-perm-error-fg + OS error mono muted · grid re-read · box stays · queue result shows as today"], ["locked", "euid ≠ owner and ≠ root → no Edit, muted line under the value"], ["Windows", "one Checkbox “Read-only” + caption · same Apply / Cancel · never called ACL"], ["not editable", "links · several · remote · can't read → no Edit, no line"], ["kept", "setuid / setgid / sticky preserved, line shown only when present · never recursive"]]}
+          specs={[["entry", "Edit ghost sm at the end of the Permissions value line · hidden when the box is open"], ["box", "2026-10-21: under the row, spans the CONTENT width (grid-column 1 / -1 of the field row — label column included; 330 at popup 360) · grid left-aligned in the box · Unix and Windows boxes alike · 1px explorer-props-perm-border · radius · padding space-sm · gap space-sm · bg stays bg-panel"], ["grid", "role column + 3 columns explorer-props-perm-cell-width 56 (unchanged) = 224 + padding 2 × 8 + border 2 = 242 ≤ 330 · rows row-min-height 24 · Checkbox per bit"], ["long words", "column heads centred and role names left-aligned inside their 56 cell; they wrap to a second line rather than ellipsise (ja 書き込み / 読み取り / グループ ≈ 48 fit on one line at caption size) · heads bottom-aligned so a wrapped head grows upward"], ["value line", "text value, Edit and the locked line stay in the value column; only the editor box spans"], ["readout", "mode text + octal, mono caption, text-secondary — updates as boxes change"], ["Apply", "primary sm, disabled until the mode differs · applying: Spinner + “Applying…”, grid + buttons disabled"], ["success", "box closes, row value = new mode (re-read)"], ["failure", "alertCircle + “Couldn't change permissions” explorer-props-perm-error-fg + OS error mono muted · grid re-read · box stays · queue result shows as today"], ["locked", "euid ≠ owner and ≠ root → no Edit, muted line under the value"], ["Windows", "one Checkbox “Read-only” + caption · same Apply / Cancel · never called ACL"], ["not editable", "links · several · remote · can't read → no Edit, no line"], ["kept", "setuid / setgid / sticky preserved, line shown only when present · never recursive"]]}
           tokens={[{ tok: "--tasty-explorer-props-perm-border", use: "new · → border-strong", color: "var(--tasty-explorer-props-perm-border)" }, { tok: "--tasty-explorer-props-perm-cell-width", use: "new · → size-56" }, { tok: "--tasty-explorer-props-perm-error-fg", use: "new · → accent-danger (bg-panel: Mocha 7.08 · Latte 4.80)", color: "var(--tasty-explorer-props-perm-error-fg)" }, { tok: "--tasty-explorer-props-perm-locked-fg", use: "new · → text-muted", color: "var(--tasty-explorer-props-perm-locked-fg)" }]} />
         <Note>i18n (new): <code>explorer.props.perm.edit</code> “Edit” / “편집” / “編集” · <code>.perm.read</code> / <code>.write</code> / <code>.execute</code> · <code>.perm.owner</code> / <code>.group</code> / <code>.others</code> · <code>.perm.apply</code> “Apply” / “적용” / “適用” · <code>.perm.applying</code> “Applying…” / “적용 중…” / “適用中…” · <code>.perm.folder_only</code> “Changes this folder only, not the items in it.” · <code>.perm.special_kept</code> “Special bits (setuid, setgid, sticky) are kept.” · <code>.perm.locked</code> “Only the owner can change permissions.” · <code>.perm.failed</code> “Couldn't change permissions” · <code>.perm.read_only</code> “Read-only” · <code>.perm.windows_hint</code> “Windows file attribute. Other access rules aren't changed here.” — ko / ja as in the PA table in <code>gallery/explorer-ops-props-actions.jsx</code>. Cancel reuses <code>common.cancel</code>.</Note>
       </Spec>

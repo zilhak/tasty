@@ -10,16 +10,31 @@
 // Narrow: Go hides first when the field would drop below md-address-go-hide-below (160) — Enter still navigates.
 //   Then the field shrinks to md-address-field-min-width (96) and ellipsises from the LEFT. Folder / Reload never hide.
 (() => {
-const { IconButton, AutoComplete, Tooltip } = window.TastyDesignSystem_41fd3f;
+const { IconButton, AutoComplete, Tooltip, Spinner } = window.TastyDesignSystem_41fd3f;
 const MIcon = window.TastyDesignSystem_41fd3f.Icon;
 
 const MA_COPY = {
   en: { open: "Open a file…", openRemote: "Open a remote file…", go: "Go", reload: "Reload", stale: "The remote file changed — reload",
-    disconnected: "Disconnected from the remote", err: (p) => <>Can't open <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> on the remote: file not found.</> },
+    disconnected: "Disconnected from the remote", err: (p) => <>Can't open <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> on the remote: file not found.</>,
+    rejected: (p, r) => <>Can't open <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> on the remote: {r}</>,
+    lost: () => <>Connection lost before the remote answered. Reconnect and try again.</>,
+    cancelled: (p) => <>Didn't open <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span>: the remote connection changed. Try again.</>,
+    internal: (p) => <>Couldn't send the request to open <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span>. Try again.</>,
+    waiting: "Still waiting for the remote…" },
   ko: { open: "파일 열기…", openRemote: "원격 파일 열기…", go: "이동", reload: "새로 고침", stale: "원격 파일이 바뀌었습니다 — 새로 고침",
-    disconnected: "원격 연결이 끊겼습니다", err: (p) => <>원격에서 <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> 파일을 열 수 없습니다: 파일이 없습니다.</> },
+    disconnected: "원격 연결이 끊겼습니다", err: (p) => <>원격에서 <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> 파일을 열 수 없습니다: 파일이 없습니다.</>,
+    rejected: (p, r) => <>원격에서 <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> 파일을 열 수 없습니다: {r}</>,
+    lost: () => <>원격이 응답하기 전에 연결이 끊겼습니다. 다시 연결한 뒤 시도하세요.</>,
+    cancelled: (p) => <>원격 연결이 바뀌어 <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> 파일을 열지 않았습니다. 다시 시도하세요.</>,
+    internal: (p) => <><span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> 파일을 여는 요청을 보내지 못했습니다. 다시 시도하세요.</>,
+    waiting: "원격의 응답을 기다리는 중…" },
   ja: { open: "ファイルを開く…", openRemote: "リモートのファイルを開く…", go: "移動", reload: "再読み込み", stale: "リモートのファイルが変更されました — 再読み込み",
-    disconnected: "リモートから切断されました", err: (p) => <>リモートで <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> を開けません: ファイルが見つかりません。</> },
+    disconnected: "リモートから切断されました", err: (p) => <>リモートで <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> を開けません: ファイルが見つかりません。</>,
+    rejected: (p, r) => <>リモートで <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> を開けません: {r}</>,
+    lost: () => <>リモートの応答前に接続が切れました。再接続してからもう一度お試しください。</>,
+    cancelled: (p) => <>リモート接続が変わったため <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> を開きませんでした。もう一度お試しください。</>,
+    internal: (p) => <><span style={{ fontFamily: "var(--tasty-font-mono)" }}>{p}</span> を開く要求を送信できませんでした。もう一度お試しください。</>,
+    waiting: "リモートの応答を待っています…" },
 };
 const MD_RECENT = ["~/work/tasty/README.md", "~/work/tasty/docs/architecture.md", "~/work/tasty/docs/design/systems/theme.md", "~/work/tasty/CHANGELOG.md"];
 
@@ -45,7 +60,7 @@ function MdField({ remote, path, editing, error, off }) {
       boxShadow: ring ? "0 0 0 var(--tasty-focus-ring-width) color-mix(in srgb, " + (error ? "var(--tasty-input-border-invalid)" : "var(--tasty-border-focus)") + " 35%, transparent)" : "none" }}>
       <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-input-icon-fg)" }}><MIcon name={remote ? "remote" : "file"} size="var(--tasty-icon-size-sm)" /></span>
       <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-input-font-size)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left",
-        color: off ? "var(--tasty-state-disabled-fg)" : editing || error ? "var(--tasty-input-fg)" : "var(--tasty-text-secondary)" }}>
+        color: off ? "var(--tasty-state-disabled-fg)" : editing || error ? "var(--tasty-input-fg)" : "var(--tasty-md-address-value-fg)" }}>
         <bdi>{path}</bdi>
         {(editing || error) && <span style={{ display: "inline-block", width: "var(--tasty-border-width)", height: "var(--tasty-size-14)", background: "var(--tasty-accent-primary)", marginLeft: "var(--tasty-border-width)", verticalAlign: "text-bottom" }} />}
       </span>
@@ -53,12 +68,16 @@ function MdField({ remote, path, editing, error, off }) {
   );
 }
 
-// state: idle | editing | stale | disconnected | error · noGo = narrow (Go hidden) · suggest = local editing with recent files
-function MdAddressBar({ remote = false, state = "idle", path, lang = "en", noGo = false, suggest = false }) {
+// state: idle | editing | stale | disconnected | error | waiting · noGo = narrow (Go hidden) · suggest = local editing with recent files
+// fail (state error): err (file not found) | rejected (+ reason, the remote's English line) | lost | cancelled | internal
+function MdAddressBar({ remote = false, state = "idle", path, lang = "en", noGo = false, suggest = false, fail = "err", reason = "" }) {
   const L = MA_COPY[lang] || MA_COPY.en;
   const p = path || (remote ? "/home/deploy/agents-prod/RUNBOOK.md" : "~/work/tasty/docs/architecture.md");
   const off = state === "disconnected";
-  const editing = state === "editing";
+  const editing = state === "editing" || state === "waiting";
+  const kind = fail === "rejected" && !reason ? "internal" : fail;
+  const msg = kind === "rejected" ? L.rejected(p, <span lang="en">{reason}</span>) : (L[kind] || L.err)(p);
+  const full = kind === "rejected" ? p + ": " + reason : null;
   return (
     <div style={{ flex: "none", display: "flex", flexDirection: "column", background: "var(--tasty-md-address-bar-bg)", borderBottom: "var(--tasty-border-width) solid var(--tasty-md-address-bar-border)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-md-address-bar-gap)", height: "var(--tasty-md-address-bar-height)", padding: "0 var(--tasty-md-address-bar-padding-x)", position: "relative" }}>
@@ -75,7 +94,13 @@ function MdAddressBar({ remote = false, state = "idle", path, lang = "en", noGo 
       {state === "error" && (
         <div role="alert" style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", height: "var(--tasty-md-address-error-height)", padding: "0 var(--tasty-md-address-bar-padding-x)", marginTop: "calc(-1 * var(--tasty-space-xs))" }}>
           <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-md-address-error-glyph)" }}><MIcon name="alertCircle" size="var(--tasty-icon-size-sm)" /></span>
-          <span style={{ flex: 1, minWidth: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{L.err(p)}</span>
+          <span title={full || undefined} style={{ flex: 1, minWidth: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{msg}</span>
+        </div>
+      )}
+      {state === "waiting" && (
+        <div role="status" style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", height: "var(--tasty-md-address-error-height)", padding: "0 var(--tasty-md-address-bar-padding-x)", marginTop: "calc(-1 * var(--tasty-space-xs))" }}>
+          <span style={{ display: "inline-flex", flex: "none" }}><Spinner size="var(--tasty-icon-size-sm)" /></span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-md-address-pending-fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{L.waiting}</span>
         </div>
       )}
     </div>
@@ -161,6 +186,37 @@ function MdAddressSpecs() {
           </MaPair>
         </Stage>
         <Note>Strings (tooltip = aria-label without the ellipsis) — <code>markdown.address.open</code>: Open a file… · 파일 열기… · ファイルを開く… — <code>.open_remote</code>: Open a remote file… · 원격 파일 열기… · リモートのファイルを開く… — <code>.go</code>: Go · 이동 · 移動 — <code>.reload</code>: Reload · 새로 고침 · 再読み込み — <code>.stale</code>: The remote file changed — reload · 원격 파일이 바뀌었습니다 — 새로 고침 · リモートのファイルが変更されました — 再読み込み — <code>.disconnected</code>: Disconnected from the remote · 원격 연결이 끊겼습니다 · リモートから切断されました — <code>.error.not_found</code>: Can't open {"{path}"} on the remote: file not found. · 원격에서 {"{path}"} 파일을 열 수 없습니다: 파일이 없습니다. · リモートで {"{path}"} を開けません: ファイルが見つかりません。 Tooltips wrap at the tooltip max-width (size-240); the ja stale string takes two lines, the rest one.</Note>
+      </Spec>
+
+      <Spec title="Remote navigate failed — by kind · still waiting (2026-10-21)"
+        when={<>The error row is one shape for every failure (alertCircle, caption <code>text-primary</code>, 24 row, field keeps the typed path with the invalid edge); only the sentence changes. Each kind the host can tell apart gets its own sentence, because the right next step differs: <b>file not found</b> (unchanged) · <b>remote refused</b> — the remote's own one-line reason is shown after the colon <b>as sent</b> (English, not translated; it is the only detail the user can act on) · <b>connection lost before the answer</b> — whether it applied is unknown, so the row says reconnect and try again and claims nothing about the document · <b>cancelled because the connection / mapping changed</b> before sending · <b>internal</b> (the host never got the request). No kind reuses “file not found”. After <b>30 s</b> without a result the band shows a <b>status row</b> (Spinner + “Still waiting for the remote…”, <code>md-address-pending-fg</code>) in the error row's place — it is not an error, the remote may still answer; the field keeps the typed path in the editing look. The row goes away when the result arrives (success replaces the document; failure swaps in the error row) and on the same triggers that clear an error (next keystroke, Esc). A late result still applies as today.</>}>
+        <Stage variant="solo" style={st}>
+          <MaPair>
+            <MaCase label="not found (unchanged)"><MdAddressBar remote state="error" path="/home/deploy/agents-prod/RUNBOK.md" /></MaCase>
+            <MaCase label="remote refused — reason as sent"><MdAddressBar remote state="error" fail="rejected" reason="permission denied" path="/root/secrets/NOTES.md" /></MaCase>
+            <MaCase label="remote refused — long reason ellipsises, tooltip has all"><MdAddressBar remote state="error" fail="rejected" reason="not a markdown file (detected: application/octet-stream)" path="/home/deploy/agents-prod/build/artifact.md" /></MaCase>
+            <MaCase label="connection lost before the answer"><MdAddressBar remote state="error" fail="lost" path="/home/deploy/agents-prod/ONCALL.md" /></MaCase>
+            <MaCase label="cancelled — connection changed before sending"><MdAddressBar remote state="error" fail="cancelled" path="/home/deploy/agents-prod/ONCALL.md" /></MaCase>
+            <MaCase label="internal — host didn't get the request"><MdAddressBar remote state="error" fail="internal" path="/home/deploy/agents-prod/ONCALL.md" /></MaCase>
+            <MaCase label="no result after 30 s — status row"><MdAddressBar remote state="waiting" path="/home/deploy/agents-prod/ONCALL.md" /></MaCase>
+          </MaPair>
+        </Stage>
+        <Stage variant="solo" style={st}>
+          <MaPair>
+            {["ko", "ja"].map((l) => (
+              <React.Fragment key={l}>
+                <MaCase label={l + " · refused"}><MdAddressBar lang={l} remote state="error" fail="rejected" reason="permission denied" path="/root/secrets/NOTES.md" /></MaCase>
+                <MaCase label={l + " · lost"}><MdAddressBar lang={l} remote state="error" fail="lost" /></MaCase>
+                <MaCase label={l + " · cancelled"}><MdAddressBar lang={l} remote state="error" fail="cancelled" /></MaCase>
+                <MaCase label={l + " · internal"}><MdAddressBar lang={l} remote state="error" fail="internal" /></MaCase>
+                <MaCase label={l + " · still waiting"}><MdAddressBar lang={l} remote state="waiting" /></MaCase>
+              </React.Fragment>
+            ))}
+          </MaPair>
+        </Stage>
+        <Meta specs={[["row", "unchanged error row — md-address-error-height 24 · alertCircle icon-size-sm md-address-error-glyph · caption text-primary · ellipsis at the end, full sentence as tooltip"], ["path", "mono inside the sentence, as the not-found row"], ["reason", "rejected only · the remote's line verbatim after “: ” · not translated (lang=en) · empty reason → internal sentence"], ["waiting row", "same 24 row, role=status · Spinner icon-size-sm · caption md-address-pending-fg (text-secondary on bg-sidebar) · starts at 30 s, no countdown"], ["clears", "error and waiting rows: next keystroke · Esc · successful open (unchanged rule)"]]}
+          tokens={[{ tok: "--tasty-md-address-pending-fg", use: "new · → text-secondary", color: "var(--tasty-md-address-pending-fg)" }, { tok: "--tasty-md-address-error-glyph", use: "unchanged", color: "var(--tasty-md-address-error-glyph)" }]} />
+        <Note>i18n (new, <code>markdown.address.error.*</code>) — <code>.rejected</code>: Can't open {"{path}"} on the remote: {"{reason}"} · 원격에서 {"{path}"} 파일을 열 수 없습니다: {"{reason}"} · リモートで {"{path}"} を開けません: {"{reason}"} — <code>.connection_lost</code>: Connection lost before the remote answered. Reconnect and try again. · 원격이 응답하기 전에 연결이 끊겼습니다. 다시 연결한 뒤 시도하세요. · リモートの応答前に接続が切れました。再接続してからもう一度お試しください。 — <code>.cancelled</code>: Didn't open {"{path}"}: the remote connection changed. Try again. · 원격 연결이 바뀌어 {"{path}"} 파일을 열지 않았습니다. 다시 시도하세요. · リモート接続が変わったため {"{path}"} を開きませんでした。もう一度お試しください。 — <code>.internal</code>: Couldn't send the request to open {"{path}"}. Try again. · {"{path}"} 파일을 여는 요청을 보내지 못했습니다. 다시 시도하세요. · {"{path}"} を開く要求を送信できませんでした。もう一度お試しください。 — <code>markdown.address.waiting</code>: Still waiting for the remote… · 원격의 응답을 기다리는 중… · リモートの応答を待っています… — existing <code>.error.not_found</code> unchanged. Kind → key: NotFound → not_found · Rejected(reason) → rejected · Disconnected → connection_lost · Cancelled → cancelled · Internal → internal.</Note>
       </Spec>
 
       <Spec title="Narrow surface · long paths"

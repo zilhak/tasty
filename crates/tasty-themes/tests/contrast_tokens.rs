@@ -104,3 +104,47 @@ fn mocha_file_and_fallback_agree_on_the_active_match_ink() {
         Some(tasty_themes::mocha_fallback_colors().search_match_active_fg)
     );
 }
+
+/// 읽기 전용 실제 값과 HTML·Markdown 주소의 idle 값은 같은 상자(surface-raised) 위 일반 글자다.
+/// Latte 의 text-secondary 는 그 바탕에서 4.05:1 이라 디자인이 text-secondary-raised 로 올렸다.
+#[test]
+fn read_only_and_idle_address_values_meet_the_body_text_contrast() {
+    let mocha = tasty_themes::mocha_fallback();
+    let latte = latte();
+    for (theme, design) in [(&mocha, 7.10), (&latte, 5.17)] {
+        let ground = rgb(theme.input_readonly_bg());
+        for (name, ink) in [
+            ("input_readonly_fg", theme.input_readonly_fg()),
+            ("fp_folder_path_fg", theme.fp_folder_path_fg()),
+            ("html_address_value_fg", theme.html_address_value_fg()),
+            ("md_address_value_fg", theme.md_address_value_fg()),
+        ] {
+            let measured = contrast(ink, ground);
+            assert!(
+                (measured - design).abs() < 0.01,
+                "{name} {measured:.2} ≠ {design}"
+            );
+        }
+        assert_eq!(theme.input_readonly_bg(), theme.input_bg());
+    }
+}
+
+/// 성능 탭의 적용 시점 안내는 bg-panel 위 일반 글자(4.5:1 이상), info 글리프는 비텍스트(3:1 이상)다.
+#[test]
+fn performance_apply_note_meets_text_and_glyph_contrast() {
+    let mocha = tasty_themes::mocha_fallback();
+    let latte = latte();
+    for (theme, text, glyph) in [(&mocha, 9.26, 7.37), (&latte, 5.53, 4.99)] {
+        let ground = rgb(theme.bg_panel());
+        let measured = contrast(theme.settings_apply_note_fg(), ground);
+        assert!(
+            (measured - text).abs() < 0.01,
+            "note {measured:.2} ≠ {text}"
+        );
+        let measured = contrast(theme.settings_apply_note_glyph(), ground);
+        assert!(
+            (measured - glyph).abs() < 0.01,
+            "glyph {measured:.2} ≠ {glyph}"
+        );
+    }
+}
