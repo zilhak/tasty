@@ -1,4 +1,4 @@
-<!-- source-hash: 8b1dff5d2594 -->
+<!-- source-hash: 3daf30ac2353 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -68,6 +68,18 @@ You can see the current state in the same tab (only shown on macOS). Full Disk A
 - **The Full Disk Access status shows "Unknown"** — macOS offers no API to ask whether an app has this permission, so the status is an estimate. When the file used for the estimate does not exist on your macOS version, there is nothing to judge from, so it reads Unknown and this permission alone does not raise the startup notice (a missing screen recording permission still does). No feature is blocked by this value.
 - **"Tasty would like to access data from other apps" keeps appearing for every app folder** — paths like `~/Library/Application Support/<app>` are asked per app, so **Request all permissions** cannot cover them up front. Granting Full Disk Access as above makes them go away.
 - **"wants to control another app" appears when you use `osascript`** — the Automation permission must be approved per target app, and Full Disk Access does not cover it. There is nothing Tasty can do in advance.
+
+## Korean input stops after restarting the input method on Linux X11
+
+When Tasty detects that the XIM input method server has exited or been replaced, it stops sending
+requests to the old server and reconnects to the new one. Local input may be used until the connection
+recovers, so Korean composition may be temporarily unavailable. Check that ibus is running again and
+that its Korean engine is selected.
+
+This does not prevent every freeze: the server may exit during connection negotiation or just after
+a liveness check, or remain alive without answering. If the whole window stays frozen, preserve the
+hang report described below when reporting the problem. This applies to X11, not the input paths on
+Wayland, macOS or Windows.
 
 ## The window freezes or crashes
 
