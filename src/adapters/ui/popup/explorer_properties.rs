@@ -366,6 +366,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, engine: &EngineRead<'_
         .filter(|_| perm_click == PermClick::Apply)
         .map(|p| (p.path.clone(), p.draft));
     if let Some(props) = state.dialogs.explorer_properties.as_mut() {
+        // 높이는 다음 프레임에 sizer 가 쓴다. 비동기 결과로 내용이 줄거나 늘면 입력이 없어도 그 프레임을
+        // 그려야 팝업이 내용에 맞는다.
+        if props.content_h != Some(measured) {
+            ui.ctx().request_repaint();
+        }
         props.content_h = Some(measured);
         // 그리는 동안 바꾼 칸을 돌려 놓는다. 그 사이 끝난 결과는 그대로 둔다.
         if let (Some(old), Some(new)) = (props.perm.as_mut(), perm)
@@ -522,7 +527,7 @@ struct RowClicks {
 
 /// 라벨(96, caption muted) · 값(body 또는 mono caption, 어디서나 줄바꿈. 시각은 부분 사이에서만) ·
 /// 선택 Copy · 권한 행의 Edit(상자가 열려 있으면 숨김) 또는 소유자 아님 안내. 열린 권한 편집 상자는
-/// 시안처럼 값 열 아래에 값 열 폭으로 그린다.
+/// 행 아래에 내용 폭으로 그린다.
 fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field, perm: Option<&mut PermEdit>) -> RowClicks {
     let mut clicks = RowClicks {
         edit: false,
@@ -621,11 +626,6 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field, perm: Option<&mut PermEdi
                         clicks.edit = true;
                     }
                 });
-                if f.perm == PermAccess::Editable
-                    && let Some(edit) = perm
-                {
-                    clicks.perm = perm_edit::draw(ui, th, edit);
-                }
                 if f.perm == PermAccess::Locked {
                     ui.add(
                         egui::Label::new(
@@ -659,6 +659,13 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field, perm: Option<&mut PermEdi
             });
         },
     );
+    // 시안은 상자를 값 열 아래(`under`)에 두지만 3×3 격자(칸 4 × 56 + 안쪽 여백 + 테두리)가 360 폭의
+    // 값 열보다 넓어 넘친다. 시안 설명의 "full content width" 를 따라 내용 폭 전체에 둔다.
+    if f.perm == PermAccess::Editable
+        && let Some(edit) = perm
+    {
+        clicks.perm = perm_edit::draw(ui, th, edit);
+    }
     clicks
 }
 

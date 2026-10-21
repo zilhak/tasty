@@ -126,7 +126,7 @@ pub(crate) fn readout(bits: u32) -> String {
     format!("{text} · {:03o}", bits & 0o777)
 }
 
-/// 상자를 그린다. 값 열 폭을 모두 쓴다.
+/// 상자를 그린다. 내용 폭을 모두 쓴다.
 pub(crate) fn draw(ui: &mut egui::Ui, th: &Theme, edit: &mut PermEdit) -> PermClick {
     let busy = edit.busy();
     let gap = th.spacing_sm.value();
@@ -193,7 +193,7 @@ fn grid(ui: &mut egui::Ui, th: &Theme, bits: &mut u32, busy: bool) {
     };
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(0.0, th.spacing_xs.value());
-        ui.horizontal(|ui| {
+        ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.add_space(cell);
             for key in [
@@ -201,7 +201,7 @@ fn grid(ui: &mut egui::Ui, th: &Theme, bits: &mut u32, busy: bool) {
                 "explorer.props.perm.write",
                 "explorer.props.perm.execute",
             ] {
-                centered(ui, cell, row_h, |ui| {
+                centered(ui, (cell, 0.0), 0.0, |ui| {
                     ui.label(caption(t(key), th.text_muted().to_egui()));
                 });
             }
@@ -229,7 +229,7 @@ fn grid(ui: &mut egui::Ui, th: &Theme, bits: &mut u32, busy: bool) {
                 );
                 for bit in [4u32, 2, 1] {
                     let mask = bit << shift;
-                    centered(ui, cell, row_h, |ui| {
+                    centered(ui, (cell, row_h), th.checkbox_size().value(), |ui| {
                         let mut on = *bits & mask != 0;
                         if tasty_ui_widgets::checkbox(ui, th, &mut on, "", !busy).changed() {
                             *bits = if on { *bits | mask } else { *bits & !mask };
@@ -241,13 +241,20 @@ fn grid(ui: &mut egui::Ui, th: &Theme, bits: &mut u32, busy: bool) {
     });
 }
 
-fn centered(ui: &mut egui::Ui, w: f32, h: f32, add: impl FnOnce(&mut egui::Ui)) {
+/// 폭 `w` · 높이 `h` 칸의 가운데에 높이 `content_h` 인 것 하나를 둔다. 머리 글자는 `h` 0 으로 글자 높이만 쓴다.
+fn centered(
+    ui: &mut egui::Ui,
+    (w, h): (f32, f32),
+    content_h: f32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     ui.allocate_ui_with_layout(
         egui::vec2(w, h),
-        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+        egui::Layout::top_down(egui::Align::Center),
         |ui| {
             ui.set_min_size(egui::vec2(w, h));
-            ui.vertical_centered(add);
+            ui.add_space(((h - content_h) / 2.0).max(0.0));
+            add(ui);
         },
     );
 }
@@ -294,40 +301,45 @@ fn failure(ui: &mut egui::Ui, th: &Theme, reason: &str) {
 /// 오른쪽 정렬 Cancel(ghost sm) · Apply(primary sm). 적용 중이면 둘 다 잠그고 Apply 에 Spinner 를 단다.
 fn buttons(ui: &mut egui::Ui, th: &Theme, busy: bool, changed: bool) -> PermClick {
     let mut click = PermClick::None;
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-        let spinner_size = th.icon_glyph_size_sm;
-        let spinner = |ui: &mut egui::Ui, rect: egui::Rect, _: egui::Color32| {
-            Spinner::new()
-                .size(spinner_size.value())
-                .color(th.spinner_indicator().to_egui())
-                .paint_in(ui, th, rect);
-        };
-        let label = if busy {
-            t("explorer.props.perm.applying")
-        } else {
-            t("explorer.props.perm.apply")
-        };
-        let mut apply = Button::new(label)
-            .variant(ButtonVariant::Primary)
-            .size(ControlSize::Sm)
-            .enabled(!busy && changed);
-        if busy {
-            apply = apply.leading_icon(&spinner).leading_icon_size(spinner_size);
-        }
-        if apply.show(ui, th).clicked() {
-            click = PermClick::Apply;
-        }
-        if Button::new(t("button.cancel"))
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
-            .enabled(!busy)
-            .show(ui, th)
-            .clicked()
-        {
-            click = PermClick::Cancel;
-        }
-    });
+    // 남은 높이를 차지하지 않도록 버튼 한 줄 높이로 묶는다. 차지하면 팝업 높이 측정이 계속 커진다.
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), ControlSize::Sm.height(th)),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+            let spinner_size = th.icon_glyph_size_sm;
+            let spinner = |ui: &mut egui::Ui, rect: egui::Rect, _: egui::Color32| {
+                Spinner::new()
+                    .size(spinner_size.value())
+                    .color(th.spinner_indicator().to_egui())
+                    .paint_in(ui, th, rect);
+            };
+            let label = if busy {
+                t("explorer.props.perm.applying")
+            } else {
+                t("explorer.props.perm.apply")
+            };
+            let mut apply = Button::new(label)
+                .variant(ButtonVariant::Primary)
+                .size(ControlSize::Sm)
+                .enabled(!busy && changed);
+            if busy {
+                apply = apply.leading_icon(&spinner).leading_icon_size(spinner_size);
+            }
+            if apply.show(ui, th).clicked() {
+                click = PermClick::Apply;
+            }
+            if Button::new(t("button.cancel"))
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .enabled(!busy)
+                .show(ui, th)
+                .clicked()
+            {
+                click = PermClick::Cancel;
+            }
+        },
+    );
     click
 }
 

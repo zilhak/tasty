@@ -360,17 +360,20 @@ fn open_footer(ui: &mut egui::Ui, theme: &Theme, enabled: bool) {
             bottom: theme.spacing_sm.value() as i8,
         },
         |ui| {
-            ui.set_width(ui.available_width());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let resp = tasty_ui_widgets::Button::new(t("explorer.props.open"))
-                    .variant(ButtonVariant::Secondary)
-                    .size(ControlSize::Sm)
-                    .enabled(enabled)
-                    .show(ui, theme);
-                if !enabled {
-                    resp.on_hover_text(t("explorer.props.target_missing"));
-                }
-            });
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), ControlSize::Sm.height(theme)),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    let resp = tasty_ui_widgets::Button::new(t("explorer.props.open"))
+                        .variant(ButtonVariant::Secondary)
+                        .size(ControlSize::Sm)
+                        .enabled(enabled)
+                        .show(ui, theme);
+                    if !enabled {
+                        resp.on_hover_text(t("explorer.props.target_missing"));
+                    }
+                },
+            );
         },
     );
 }

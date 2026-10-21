@@ -340,12 +340,13 @@ pub(super) fn resume_unanswered_permissions(state: &mut MainViewState, running: 
     true
 }
 
-/// 권한 변경이 끝났으면 그 요청을 기다리던 Properties 편집 상자에 결과를 알린다.
+/// 권한 변경이 끝났으면 그 요청을 기다리던 Properties 편집 상자에 결과를 알린다. 받은 상자가 있으면 true.
 pub(super) fn settle_permissions(
     registry: &mut crate::view::ViewRegistry,
     request: u64,
     result: Result<(), String>,
-) {
+) -> bool {
+    let mut settled = false;
     for view in registry.views.values_mut() {
         let Some(view) = view.as_main_mut() else {
             continue;
@@ -355,8 +356,10 @@ pub(super) fn settle_permissions(
         {
             props.settle_perm(request, Some(result.clone()));
             view.mark_dirty();
+            settled = true;
         }
     }
+    settled
 }
 
 /// 원격이 이름 변경에 성공했으면 그 요청을 기다리던 팝업을 닫게 한다.

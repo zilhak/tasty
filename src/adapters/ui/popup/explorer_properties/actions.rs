@@ -126,21 +126,25 @@ pub(super) fn footer_row(ui: &mut egui::Ui, th: &Theme, footer: &Footer) -> bool
             bottom: th.spacing_sm.value() as i8,
         })
         .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let enabled = matches!(footer, Footer::Open(_));
-                let resp = Button::new(t("explorer.props.open"))
-                    .variant(ButtonVariant::Secondary)
-                    .size(ControlSize::Sm)
-                    .enabled(enabled)
-                    .show(ui, th);
-                let resp = if enabled {
-                    resp
-                } else {
-                    resp.on_hover_text(t("explorer.props.target_missing"))
-                };
-                clicked = enabled && resp.clicked();
-            });
+            // 팝업 높이가 아직 이전 내용 높이면 남는 높이가 생기므로 버튼 한 줄 높이로 묶는다.
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), ControlSize::Sm.height(th)),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    let enabled = matches!(footer, Footer::Open(_));
+                    let resp = Button::new(t("explorer.props.open"))
+                        .variant(ButtonVariant::Secondary)
+                        .size(ControlSize::Sm)
+                        .enabled(enabled)
+                        .show(ui, th);
+                    let resp = if enabled {
+                        resp
+                    } else {
+                        resp.on_hover_text(t("explorer.props.target_missing"))
+                    };
+                    clicked = enabled && resp.clicked();
+                },
+            );
         });
     clicked
 }

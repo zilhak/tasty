@@ -290,7 +290,7 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "box",
-                "under the row in the value column · 1px explorer-props-perm-border · radius · padding space-sm · gap space-sm",
+                "under the row, full content width (the 3 × 56 grid is wider than the value column) · 1px explorer-props-perm-border · radius · padding space-sm · gap space-sm",
             ),
             (
                 "grid",
@@ -441,33 +441,37 @@ fn perm_box(
                     );
                 });
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = gap;
-                let size = theme.icon_glyph_size_sm;
-                let spinner = |ui: &mut egui::Ui, rect: egui::Rect, _: egui::Color32| {
-                    Spinner::new()
-                        .size(size.value())
-                        .color(theme.spinner_indicator().to_egui())
-                        .paint_in(ui, theme, rect);
-                };
-                let mut apply = Button::new(if busy {
-                    t("explorer.props.perm.applying")
-                } else {
-                    t("explorer.props.perm.apply")
-                })
-                .variant(ButtonVariant::Primary)
-                .size(ControlSize::Sm)
-                .enabled(!busy && !failed);
-                if busy {
-                    apply = apply.leading_icon(&spinner).leading_icon_size(size);
-                }
-                apply.show(ui, theme);
-                Button::new(t("button.cancel"))
-                    .variant(ButtonVariant::Ghost)
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), ControlSize::Sm.height(theme)),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    let size = theme.icon_glyph_size_sm;
+                    let spinner = |ui: &mut egui::Ui, rect: egui::Rect, _: egui::Color32| {
+                        Spinner::new()
+                            .size(size.value())
+                            .color(theme.spinner_indicator().to_egui())
+                            .paint_in(ui, theme, rect);
+                    };
+                    let mut apply = Button::new(if busy {
+                        t("explorer.props.perm.applying")
+                    } else {
+                        t("explorer.props.perm.apply")
+                    })
+                    .variant(ButtonVariant::Primary)
                     .size(ControlSize::Sm)
-                    .enabled(!busy)
-                    .show(ui, theme);
-            });
+                    .enabled(!busy && !failed);
+                    if busy {
+                        apply = apply.leading_icon(&spinner).leading_icon_size(size);
+                    }
+                    apply.show(ui, theme);
+                    Button::new(t("button.cancel"))
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .enabled(!busy)
+                        .show(ui, theme);
+                },
+            );
         });
     ui.add_space(theme.spacing_xs.value());
 }
@@ -476,26 +480,28 @@ fn grid(ui: &mut egui::Ui, theme: &Theme, bits: u32, busy: bool) {
     let cell = theme.explorer_props_perm_cell_width().value();
     let row_h = theme.explorer_props_row_min_height().value();
     let caption = theme.font_size_caption.value();
-    let slot = |ui: &mut egui::Ui, add: &mut dyn FnMut(&mut egui::Ui)| {
+    // 본체 `perm_edit::centered` 와 같다. 머리 글자는 높이 0, 체크박스는 행 높이 가운데.
+    let slot = |ui: &mut egui::Ui, h: f32, content_h: f32, add: &mut dyn FnMut(&mut egui::Ui)| {
         ui.allocate_ui_with_layout(
-            egui::vec2(cell, row_h),
-            egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+            egui::vec2(cell, h),
+            egui::Layout::top_down(egui::Align::Center),
             |ui| {
-                ui.set_min_size(egui::vec2(cell, row_h));
-                ui.vertical_centered(|ui| add(ui));
+                ui.set_min_size(egui::vec2(cell, h));
+                ui.add_space(((h - content_h) / 2.0).max(0.0));
+                add(ui);
             },
         );
     };
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(0.0, theme.spacing_xs.value());
-        ui.horizontal(|ui| {
+        ui.horizontal_top(|ui| {
             ui.add_space(cell);
             for key in [
                 "explorer.props.perm.read",
                 "explorer.props.perm.write",
                 "explorer.props.perm.execute",
             ] {
-                slot(ui, &mut |ui| {
+                slot(ui, 0.0, 0.0, &mut |ui| {
                     ui.label(
                         egui::RichText::new(t(key))
                             .size(caption)
@@ -527,7 +533,7 @@ fn grid(ui: &mut egui::Ui, theme: &Theme, bits: u32, busy: bool) {
                 );
                 for bit in [4u32, 2, 1] {
                     let mut on = bits & (bit << shift) != 0;
-                    slot(ui, &mut |ui| {
+                    slot(ui, row_h, theme.checkbox_size().value(), &mut |ui| {
                         tasty_ui_widgets::checkbox(ui, theme, &mut on, "", !busy);
                     });
                 }

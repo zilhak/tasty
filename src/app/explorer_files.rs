@@ -756,8 +756,9 @@ impl super::App {
             }
             ui_sync::close_renamed(&mut self.view, target.request);
         }
-        // 권한 편집 상자는 칸·바인딩이 바뀌었어도 결과를 알아야 다시 편집할 수 있다.
-        ui_sync::settle_permissions(
+        // 권한 편집 상자는 칸·바인딩이 바뀌었어도 결과를 알아야 다시 편집할 수 있다. 상자가 실패를
+        // 직접 보이면 같은 실패를 토스트로 또 알리지 않는다.
+        let shown_in_popup = ui_sync::settle_permissions(
             &mut self.view,
             target.request,
             if success {
@@ -813,6 +814,7 @@ impl super::App {
                 ui_sync::push_failure(&mut view.state, target.surface, target.press, failure);
             }
             Done::Simple(_) => {
+                let failure = failure.filter(|_| !shown_in_popup);
                 ui_sync::push_failure(&mut view.state, target.surface, target.press, failure);
             }
             Done::Lost(lost) => {
