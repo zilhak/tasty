@@ -48,6 +48,8 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     "tests/gui_tests.rs",
     "tests/hook_env_integration.rs",
     "tests/hooks_detection_e2e.rs",
+    // 공유 인스턴스의 워크스페이스로 격리해 알림 재시도 계약을 GUI 라우터와 헤드리스 처리기에서 각각 검사한다.
+    "tests/notification_retry.rs",
     // 플러그인 활성 상태는 프로세스 전역이라 다른 Markdown 시험과 같은 바이너리에 넣지 않는다.
     "tests/plugin_disable_withdraws_surface_kinds.rs",
     "tests/shared_instance_harness.rs",
@@ -292,10 +294,16 @@ fn daemon_kind_roster_matches_instance_test_roster() {
 
     // 테스트 코드뿐 아니라 검증 대상 서버 경로가 빌드 조합에 따라 달라도 같은 조합의 서버가 필요하다.
     // attach 구조 변경은 GUI와 헤드리스에서 서로 다른 호출 경로를 거친다.
-    let same_combo: BTreeSet<String> = ["e2e_tests", "gui_tests", "attach_structure_sync_loopback"]
-        .iter()
-        .map(|s| (*s).to_string())
-        .collect();
+    // notification_retry는 GUI 빌드에서 GUI 라우터를, 헤드리스 빌드에서 헤드리스 처리기를 검사한다.
+    let same_combo: BTreeSet<String> = [
+        "e2e_tests",
+        "gui_tests",
+        "attach_structure_sync_loopback",
+        "notification_retry",
+    ]
+    .iter()
+    .map(|s| (*s).to_string())
+    .collect();
 
     let instance_suites: BTreeSet<String> = EXPECTED_INSTANCE_TESTS
         .iter()
