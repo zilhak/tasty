@@ -684,7 +684,14 @@ impl<'a> SearchableSelect<'a> {
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme, value: &mut Option<String>) -> bool {
         let popup_id = searchable_select_popup_id(ui, self.id_salt);
         let sid = state_id(popup_id);
-        let mut open = self.enabled && ui.memory(|m| m.is_popup_open(popup_id));
+        // 위젯 자체나 감싼 Ui 가 비활성이면 열려 있던 자기 목록을 닫는다. egui 팝업은 기억된 열림
+        // 상태만 보고 독립 Area 로 그려지므로 닫지 않으면 비활성인 동안에도 옵션을 고를 수 있다.
+        // 다른 위젯의 팝업은 건드리지 않는다.
+        let enabled = self.enabled && ui.is_enabled();
+        if !enabled && ui.memory(|m| m.is_popup_open(popup_id)) {
+            ui.memory_mut(|m| m.close_popup());
+        }
+        let mut open = enabled && ui.memory(|m| m.is_popup_open(popup_id));
         if !open {
             // 바깥 클릭·다른 팝업 열기처럼 위젯 밖에서 닫혀도 다음에 열 때 검색어가 비어 있다.
             ui.data_mut(|d| d.remove::<OpenState>(sid));
@@ -727,12 +734,12 @@ impl<'a> SearchableSelect<'a> {
         let width = self
             .width
             .unwrap_or_else(|| LogicalPx(ui.available_width()));
-        let (rect, resp) = alloc_trigger(ui, theme, width.value(), self.enabled);
-        let open_by_key = self.enabled
+        let (rect, resp) = alloc_trigger(ui, theme, width.value(), enabled);
+        let open_by_key = enabled
             && !open
             && resp.has_focus()
             && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown));
-        if (self.enabled && resp.clicked()) || open_by_key {
+        if (enabled && resp.clicked()) || open_by_key {
             ui.memory_mut(|m| m.toggle_popup(popup_id));
             open = ui.memory(|m| m.is_popup_open(popup_id));
             st = OpenState::default();
@@ -771,7 +778,7 @@ impl<'a> SearchableSelect<'a> {
             rect,
             label,
             is_placeholder,
-            self.enabled,
+            enabled,
             TriggerLook {
                 open,
                 focus: resp.has_focus(),

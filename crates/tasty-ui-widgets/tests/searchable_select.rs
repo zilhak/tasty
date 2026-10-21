@@ -101,6 +101,8 @@ struct Rig {
     theme: Theme,
     value: Option<String>,
     enabled: bool,
+    /// 위젯을 감싼 `add_enabled_ui` 의 값. 부모 Ui 가 비활성인 경우를 흉내 낸다.
+    outer_enabled: bool,
 }
 
 impl Rig {
@@ -111,6 +113,7 @@ impl Rig {
             theme: theme(),
             value: value.map(str::to_owned),
             enabled: true,
+            outer_enabled: true,
         };
         // 첫 프레임은 폰트 준비용이다.
         rig.frame(vec![]);
@@ -122,7 +125,12 @@ impl Rig {
         let mut open = false;
         let mut search_focused = false;
         let mut trigger = Rect::NOTHING;
-        let (theme, value, enabled) = (&self.theme, &mut self.value, self.enabled);
+        let (theme, value, enabled, outer) = (
+            &self.theme,
+            &mut self.value,
+            self.enabled,
+            self.outer_enabled,
+        );
         let out = self.ctx.run(
             RawInput {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 600.0))),
@@ -132,17 +140,21 @@ impl Rig {
             },
             |c| {
                 egui::CentralPanel::default().show(c, |ui| {
-                    let origin = ui.cursor().min;
-                    changed = SearchableSelect::new(SALT, &OPTIONS, LABELS)
-                        .pinned(&PINNED)
-                        .width(LogicalPx(WIDTH))
-                        .enabled(enabled)
-                        .show(ui, theme, value);
-                    trigger =
-                        Rect::from_min_size(origin, vec2(WIDTH, theme.select_height().value()));
-                    let id = searchable_select_popup_id(ui, SALT);
-                    open = ui.memory(|m| m.is_popup_open(id));
-                    search_focused = ui.memory(|m| m.has_focus(searchable_select_search_id(id)));
+                    // 감싸는 Ui 는 늘 같은 자리에 두어 위젯 ID 가 outer 값과 무관하게 같다.
+                    ui.add_enabled_ui(outer, |ui| {
+                        let origin = ui.cursor().min;
+                        changed = SearchableSelect::new(SALT, &OPTIONS, LABELS)
+                            .pinned(&PINNED)
+                            .width(LogicalPx(WIDTH))
+                            .enabled(enabled)
+                            .show(ui, theme, value);
+                        trigger =
+                            Rect::from_min_size(origin, vec2(WIDTH, theme.select_height().value()));
+                        let id = searchable_select_popup_id(ui, SALT);
+                        open = ui.memory(|m| m.is_popup_open(id));
+                        search_focused =
+                            ui.memory(|m| m.has_focus(searchable_select_search_id(id)));
+                    });
                 });
             },
         );
@@ -371,4 +383,76 @@ fn the_filter_trims_and_ignores_case() {
     assert_eq!(searchable_select_filter(&OPTIONS, "  MONO "), vec![0, 3]);
     assert_eq!(searchable_select_filter(&OPTIONS, ""), vec![0, 1, 2, 3, 4]);
     assert!(searchable_select_filter(&OPTIONS, "zzz").is_empty());
+}
+
+/// 열린 채로 비활성이 되면 목록이 닫히고, 비활성인 동안 옵션 클릭·키로 값이 바뀌지 않는다.
+fn disabling_an_open_select_closes_it_and_blocks_input(disable: impl Fn(&mut Rig)) {
+    let mut rig = Rig::new(Some("Fira Code"));
+    let f = rig.open();
+    // 열린 목록에서 누를 옵션의 자리를 미리 잰다.
+    let menlo = f.at("Menlo");
+    disable(&mut rig);
+    let settled = rig.frame(vec![Event::PointerMoved(AWAY)]);
+    let clicked = rig.frame(click(menlo));
+    let down = rig.frame(key(Key::ArrowDown));
+    let enter = rig.frame(key(Key::Enter));
+    assert_eq!(
+        rig.value.as_deref(),
+        Some("Fira Code"),
+        "비활성인 동안 옵션 클릭·키로 값이 바뀌었다"
+    );
+    assert!(!clicked.changed && !down.changed && !enter.changed);
+    assert!(!settled.open, "비활성이 된 위젯의 목록이 열려 있다");
+    assert!(
+        !settled.has("Search fonts"),
+        "비활성이 된 위젯의 목록을 아직 그린다"
+    );
+    assert!(!enter.open);
+}
+
+#[test]
+fn disabling_the_widget_while_open_closes_the_list() {
+    disabling_an_open_select_closes_it_and_blocks_input(|rig| rig.enabled = false);
+}
+
+#[test]
+fn a_disabled_parent_ui_closes_the_open_list() {
+    disabling_an_open_select_closes_it_and_blocks_input(|rig| rig.outer_enabled = false);
+}
+
+/// 비활성 위젯은 자기 목록만 닫는다. 같은 화면의 다른 위젯 목록은 열린 채로 둔다.
+#[test]
+fn a_disabled_select_leaves_another_open_popup_alone() {
+    let ctx = egui::Context::default();
+    let th = theme();
+    let mut a = Some("Fira Code".to_owned());
+    let mut b = Some("Menlo".to_owned());
+    let mut b_open = false;
+    let b_click = pos2(60.0, 80.0);
+    for events in [vec![], click(b_click), vec![Event::PointerMoved(AWAY)]] {
+        // 프레임 출력은 쓰지 않고 b 의 열림 상태만 읽는다.
+        let _ = ctx.run(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 600.0))),
+                focused: true,
+                events,
+                ..Default::default()
+            },
+            |c| {
+                egui::CentralPanel::default().show(c, |ui| {
+                    SearchableSelect::new("a", &OPTIONS, LABELS)
+                        .width(LogicalPx(WIDTH))
+                        .enabled(false)
+                        .show(ui, &th, &mut a);
+                    ui.add_space(30.0);
+                    SearchableSelect::new("b", &OPTIONS, LABELS)
+                        .width(LogicalPx(WIDTH))
+                        .show(ui, &th, &mut b);
+                    let id = searchable_select_popup_id(ui, "b");
+                    b_open = ui.memory(|m| m.is_popup_open(id));
+                });
+            },
+        );
+    }
+    assert!(b_open, "비활성 위젯이 다른 위젯의 목록을 닫았다");
 }
