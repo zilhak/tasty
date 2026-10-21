@@ -184,3 +184,48 @@ fn handler_card_shows_the_ipc_method_row_only_for_ipc() {
     assert_eq!(fh.add_handler.len(), 1);
     assert!(!fh.add_handler_form.open);
 }
+
+/// 추가 카드는 surface-raised다. 카드 안 Input·Select는 raised 상자(bg-panel)로 그린다.
+/// panel 상자 색은 카드 배경과 같아 "쓰지 않음"은 채움만으로 구분할 수 없어 단언하지 않는다.
+#[test]
+fn card_fields_use_the_raised_box() {
+    let format = format_catalog();
+    let handlers = handler_catalog();
+    let th = crate::theme::theme();
+    let mut fh = FileHandlerEditDraft {
+        add_handler_form: AddHandlerForm {
+            open: true,
+            ..AddHandlerForm::default()
+        },
+        ..FileHandlerEditDraft::default()
+    };
+    let h = Harness::new();
+    let out = h.ctx.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
+            ..Default::default()
+        },
+        |ctx| {
+            egui::CentralPanel::default()
+                .show(ctx, |ui| draw_handlers(ui, &mut fh, &format, &handlers));
+        },
+    );
+    let mut fills = Vec::new();
+    let mut stack: Vec<egui::Shape> = out.shapes.into_iter().map(|c| c.shape).collect();
+    while let Some(s) = stack.pop() {
+        match s {
+            egui::Shape::Vec(v) => stack.extend(v),
+            egui::Shape::Rect(r) => fills.push(r.fill),
+            _ => {}
+        }
+    }
+    let raised_input = th.input_raised_bg().to_egui();
+    let raised_select = th.select_raised_bg().to_egui();
+    assert!(fills.contains(&raised_input), "Input raised 상자");
+    assert!(fills.contains(&raised_select), "Select raised 상자");
+    let panel = th.input_bg().to_egui();
+    assert_ne!(
+        panel, raised_input,
+        "두 상자가 같으면 이 시험은 구분하지 못한다"
+    );
+}

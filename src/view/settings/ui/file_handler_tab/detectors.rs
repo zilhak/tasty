@@ -11,7 +11,7 @@ use crate::file::format::{
 };
 use crate::i18n::{t, t_fmt};
 use tasty_ui_widgets::{
-    FhCardLabels, FhLine, FhOrigin, FhRowView, FhSummarySeg, FhTrailing, Input,
+    FhCardLabels, FhLine, FhOrigin, FhRowView, FhSummarySeg, FhTrailing, Ground, Input,
 };
 
 use super::{AddDetectorForm, FileHandlerEditDraft, RowLabels, draw_fh_intro};
@@ -473,6 +473,7 @@ fn draw_add_detector_card(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft, rows
                 ),
                 |ui| {
                     Input::new()
+                        .ground(Ground::Raised)
                         .mono(true)
                         .placeholder("my-detector")
                         .invalid(tried && check.err_id.is_some())
@@ -486,6 +487,7 @@ fn draw_add_detector_card(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft, rows
                 FhLine::Caption(t("settings.file_handler.detectors.ext_hint")),
                 |ui| {
                     Input::new()
+                        .ground(Ground::Raised)
                         .mono(true)
                         .placeholder("md, mdx")
                         .invalid(rules_invalid)
@@ -499,6 +501,7 @@ fn draw_add_detector_card(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft, rows
                 FhLine::None,
                 |ui| {
                     Input::new()
+                        .ground(Ground::Raised)
                         .mono(true)
                         .placeholder("Dockerfile")
                         .invalid(rules_invalid)

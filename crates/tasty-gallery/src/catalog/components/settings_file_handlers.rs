@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    FhCardLabels, FhLine, FhOrigin, FhRowView, FhSummarySeg, FhTrailing, Input, fh_card, fh_empty,
-    fh_field, fh_intro, fh_list_head, fh_row,
+    FhCardLabels, FhLine, FhOrigin, FhRowView, FhSummarySeg, FhTrailing, Ground, Input, fh_card,
+    fh_empty, fh_field, fh_intro, fh_list_head, fh_row,
 };
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -19,6 +19,170 @@ use crate::i18n::t;
 const PAIR_WIDTH: LogicalPx = LogicalPx(560.0);
 /// 시안 좁은 패널 `--tasty-size-360`.
 const NARROW_WIDTH: LogicalPx = LogicalPx(360.0);
+
+/// 시안 raised 카드 Spec 표.
+const RAISED_SPECS: &[(&str, &str)] = &[
+    (
+        "error line",
+        "file-handler-form-error-fg → accent-danger-raised · glyph takes the same ink",
+    ),
+    (
+        "Cancel",
+        "Button ground=\"raised\" → button-ghost-raised-fg → text-secondary-raised · hover button-ghost-raised-fg-hover → text-primary",
+    ),
+    (
+        "Input / Select box",
+        "ground=\"raised\" in every card field: bg → bg-panel, edge → border-strong (input-raised-* · select-raised-*). Focus: border-focus. Invalid: accent-danger edge. Disabled: state-disabled-fill-raised + state-disabled-border-raised",
+    ),
+    (
+        "scope",
+        "same fix on the Hook Handlers add card (labels text-secondary-raised, Inputs raised, Cancel raised) · card background unchanged (surface-raised)",
+    ),
+];
+
+fn raised_tokens(th: &Theme) -> Vec<TokenChip> {
+    vec![
+        TokenChip::new(
+            "accent-danger-raised",
+            "error ink on the card",
+            th.accent_danger_raised().to_egui(),
+        ),
+        TokenChip::new(
+            "button-ghost-raised-fg",
+            "→ text-secondary-raised",
+            th.button_ghost_raised_fg().to_egui(),
+        ),
+        TokenChip::new(
+            "select-raised-bg",
+            "→ bg-panel",
+            th.select_raised_bg().to_egui(),
+        ),
+        TokenChip::new(
+            "select-raised-border",
+            "→ border-strong",
+            th.select_raised_border().to_egui(),
+        ),
+        TokenChip::new(
+            "select-raised-disabled-bg",
+            "→ state-disabled-fill-raised",
+            th.select_raised_disabled_bg().to_egui(),
+        ),
+        TokenChip::new(
+            "select-raised-disabled-border",
+            "→ state-disabled-border-raised",
+            th.select_raised_disabled_border().to_egui(),
+        ),
+    ]
+}
+
+/// 시안 raised 카드 상태 칸: Mocha·Latte마다 surface-raised 위에 Input 넷 · Select 셋 · ghost Cancel.
+fn raised_card_states(ui: &mut egui::Ui, theme: &Theme) {
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let themes = [
+        ("Mocha", with_zoom(tasty_themes::mocha_fallback())),
+        ("Latte", with_zoom(crate::host_shell::latte_theme())),
+    ];
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+        for (name, th) in &themes {
+            egui::Frame::new()
+                .fill(th.file_handler_form_bg().to_egui())
+                .stroke(egui::Stroke::new(
+                    th.border_width.value(),
+                    th.file_handler_form_border().to_egui(),
+                ))
+                .corner_radius(th.corner_radius.value())
+                .inner_margin(tasty_ui_widgets::margin_all(th.file_handler_form_padding()))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+                    ui.label(
+                        egui::RichText::new(*name)
+                            .size(th.font_size_caption.value())
+                            .color(th.file_handler_form_label_fg().to_egui()),
+                    );
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing =
+                            egui::vec2(th.spacing_md.value(), th.spacing_md.value());
+                        raised_cells(ui, th);
+                    });
+                    tasty_ui_widgets::fh_line(
+                        ui,
+                        th,
+                        FhLine::Error("Use lowercase letters, digits and - only, up to 64."),
+                    );
+                });
+        }
+    });
+}
+
+fn raised_cells(ui: &mut egui::Ui, th: &Theme) {
+    let w = th.field_width_lg;
+    let cell = |ui: &mut egui::Ui, label: &str, draw: &mut dyn FnMut(&mut egui::Ui)| {
+        spec::wrap_item(ui, |ui| {
+            ui.set_width(w.value());
+            ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+            ui.label(
+                egui::RichText::new(label)
+                    .size(th.font_size_micro.value())
+                    .color(th.file_handler_form_label_fg().to_egui()),
+            );
+            draw(ui);
+        });
+    };
+    let input =
+        |ui: &mut egui::Ui, value: &str, placeholder: &str, invalid: bool, enabled: bool| {
+            let mut buf = value.to_string();
+            Input::new()
+                .ground(Ground::Raised)
+                .mono(true)
+                .placeholder(placeholder)
+                .invalid(invalid)
+                .enabled(enabled)
+                .width(w.value())
+                .show(ui, th, &mut buf);
+        };
+    cell(ui, "Input · normal", &mut |ui| {
+        input(ui, "", "my-detector", false, true)
+    });
+    cell(ui, "Input · value", &mut |ui| {
+        input(ui, "dockerfile", "", false, true)
+    });
+    cell(ui, "Input · invalid", &mut |ui| {
+        input(ui, "Docker_File", "", true, true)
+    });
+    cell(ui, "Input · disabled", &mut |ui| {
+        input(ui, "dockerfile", "", false, false)
+    });
+    let pinned = |ui: &mut egui::Ui, value: Option<&str>, enabled: bool| {
+        tasty_ui_widgets::select_pinned(
+            ui,
+            th,
+            Ground::Raised,
+            value,
+            "Select a detector…",
+            w,
+            tasty_ui_widgets::SelectLook::Normal,
+            enabled,
+        );
+    };
+    cell(ui, "Select · placeholder", &mut |ui| {
+        pinned(ui, None, true)
+    });
+    cell(ui, "Select · value", &mut |ui| {
+        pinned(ui, Some("markdown"), true)
+    });
+    cell(ui, "Select · disabled", &mut |ui| {
+        pinned(ui, Some("markdown"), false)
+    });
+    cell(ui, "Ghost sm · raised", &mut |ui| {
+        tasty_ui_widgets::Button::new("Cancel")
+            .variant(tasty_ui_widgets::ButtonVariant::Ghost)
+            .size(tasty_ui_widgets::ControlSize::Sm)
+            .ground(Ground::Raised)
+            .show(ui, th);
+    });
+}
 
 mod copy;
 mod model;
@@ -566,6 +730,17 @@ pub fn draw_file_handlers(ui: &mut egui::Ui, theme: &Theme) {
             ..Seed::default()
         },
     );
+
+    spec::spec(
+        ui,
+        theme,
+        "Add card on a raised ground — error ink · Cancel · field edges",
+        Some(
+            "The card is surface-raised. Error lines and glyphs take accent-danger-raised, the Cancel ghost takes the raised ghost label, and every Input and Select in the card uses ground=\"raised\" (bg-panel + border-strong). Invalid edges stay accent-danger; the card background is unchanged.",
+        ),
+    );
+    raised_card_states(ui, theme);
+    spec::meta(ui, theme, RAISED_SPECS, &raised_tokens(theme));
 
     spec::spec(
         ui,

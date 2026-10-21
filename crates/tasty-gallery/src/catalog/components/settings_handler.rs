@@ -6,8 +6,8 @@ use tasty_type_geometry::length::LogicalPx;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, TagVariant, switch,
-    tag, tag_disabled,
+    Button, ButtonVariant, ControlSize, Ground, IconButton, IconButtonVariant, Input, TagVariant,
+    switch, tag, tag_disabled,
 };
 
 use crate::catalog::icons;
@@ -720,6 +720,7 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
                     if Button::new("Cancel")
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
+                        .ground(Ground::Raised)
                         .show(ui, theme)
                         .clicked()
                     {
@@ -885,7 +886,8 @@ fn draw_hook_row(
     row_separator(ui, theme, resp.response.rect);
 }
 
-/// add 카드의 라벨(100px) + mono Input 행.
+/// add 카드의 라벨(100px) + mono Input 행. 카드가 surface-raised라 라벨은 text-secondary-raised,
+/// Input은 raised 바탕이다.
 fn hook_field_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -905,11 +907,12 @@ fn hook_field_row(
                 ui.label(
                     egui::RichText::new(label)
                         .size(theme.font_size_body.value())
-                        .color(theme.text_secondary().to_egui()),
+                        .color(theme.text_secondary_raised().to_egui()),
                 );
             },
         );
         Input::new()
+            .ground(Ground::Raised)
             .mono(true)
             .placeholder(placeholder)
             .show(ui, theme, buf);

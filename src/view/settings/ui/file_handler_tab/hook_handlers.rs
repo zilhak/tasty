@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, CodeAreaKeys, ControlSize, IconButton, IconButtonVariant, Input,
+    Button, ButtonVariant, CodeAreaKeys, ControlSize, Ground, IconButton, IconButtonVariant, Input,
     SequenceEditorAction, SequenceEditorError, SequenceEditorView, TagVariant, sequence_editor,
     switch, tag, tag_disabled, vspace,
 };
@@ -916,9 +916,11 @@ fn draw_add_card(
                 {
                     commit_add(hh, handlers);
                 }
+                // 카드는 surface-raised다. ghost 글자도 raised 바탕의 색을 쓴다.
                 if Button::new(t("button.cancel"))
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
+                    .ground(Ground::Raised)
                     .show(ui, th)
                     .clicked()
                 {
@@ -929,6 +931,7 @@ fn draw_add_card(
 }
 
 /// add 카드의 라벨(100px) + mono Input 행 (jsx `minHeight settings-row-min-height`).
+/// 카드가 surface-raised라 라벨은 text-secondary-raised, Input은 raised 바탕이다.
 fn add_field_row(
     ui: &mut egui::Ui,
     th: &tasty_type_appearance::theme::Theme,
@@ -948,11 +951,12 @@ fn add_field_row(
                 ui.label(
                     egui::RichText::new(label)
                         .size(th.font_size_body.value())
-                        .color(th.text_secondary()),
+                        .color(th.text_secondary_raised()),
                 );
             },
         );
         Input::new()
+            .ground(Ground::Raised)
             .mono(true)
             .placeholder(placeholder)
             .show(ui, th, buf);

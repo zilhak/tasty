@@ -12,7 +12,7 @@ use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    FhCardLabels, FhLine, FhOrigin, FhRowView, FhSummarySeg, FhTrailing, Input,
+    FhCardLabels, FhLine, FhOrigin, FhRowView, FhSummarySeg, FhTrailing, Ground, Input,
 };
 
 use super::{AddHandlerActionKind, AddHandlerForm, FileHandlerEditDraft, RowLabels, draw_fh_intro};
@@ -347,6 +347,7 @@ fn draw_add_handler_card(
             FhLine::pick(shown(check.err_short), info.as_deref(), Some(&saved_as)),
             |ui| {
                 Input::new()
+                    .ground(Ground::Raised)
                     .mono(true)
                     .placeholder("my-viewer")
                     .invalid(shown(check.err_short).is_some())
@@ -368,9 +369,10 @@ fn draw_add_handler_card(
                     .file_handler_select_width()
                     .min(LogicalPx(ui.available_width()))
                     .value();
-                if tasty_ui_widgets::select_or_placeholder(
+                if tasty_ui_widgets::select_or_placeholder_on(
                     ui,
                     &th,
+                    Ground::Raised,
                     "file_handler_add_detector",
                     &mut selected,
                     &names,
@@ -393,6 +395,7 @@ fn draw_add_handler_card(
             ),
             |ui| {
                 Input::new()
+                    .ground(Ground::Raised)
                     .mono(true)
                     .placeholder("100")
                     .invalid(shown(check.err_priority).is_some())
@@ -422,9 +425,10 @@ fn draw_add_handler_card(
                     .file_handler_kind_width()
                     .min(LogicalPx(ui.available_width()))
                     .value();
-                if tasty_ui_widgets::select(
+                if tasty_ui_widgets::select_on(
                     ui,
                     &th,
+                    Ground::Raised,
                     "file_handler_add_action_kind",
                     &mut idx,
                     &names,
@@ -444,11 +448,11 @@ fn draw_add_handler_card(
                     t("settings.file_handler.handlers.field_surface_kind"),
                     FhLine::None,
                     |ui| {
-                        Input::new().mono(true).placeholder("markdown_view").show(
-                            ui,
-                            &th,
-                            &mut form.action_surface_kind,
-                        );
+                        Input::new()
+                            .ground(Ground::Raised)
+                            .mono(true)
+                            .placeholder("markdown_view")
+                            .show(ui, &th, &mut form.action_surface_kind);
                     },
                 );
                 tasty_ui_widgets::fh_field(
@@ -457,11 +461,11 @@ fn draw_add_handler_card(
                     t("settings.file_handler.handlers.field_param_key"),
                     FhLine::Caption(t("settings.file_handler.handlers.param_hint")),
                     |ui| {
-                        Input::new().mono(true).placeholder("file").show(
-                            ui,
-                            &th,
-                            &mut form.action_param_key,
-                        );
+                        Input::new()
+                            .ground(Ground::Raised)
+                            .mono(true)
+                            .placeholder("file")
+                            .show(ui, &th, &mut form.action_param_key);
                     },
                 );
             }
@@ -473,6 +477,7 @@ fn draw_add_handler_card(
                     FhLine::pick(shown(check.err_method), None, None),
                     |ui| {
                         Input::new()
+                            .ground(Ground::Raised)
                             .mono(true)
                             .placeholder("com.example.foo.open")
                             .invalid(shown(check.err_method).is_some())

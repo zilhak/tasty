@@ -209,6 +209,7 @@ pub(super) fn det_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut DetSt
                 ),
                 |ui| {
                     Input::new()
+                        .ground(Ground::Raised)
                         .mono(true)
                         .placeholder("my-detector")
                         .invalid(tried && err_id.is_some())
@@ -217,6 +218,7 @@ pub(super) fn det_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut DetSt
             );
             fh_field(ui, th, l.ext, FhLine::Caption(l.ext_hint), |ui| {
                 Input::new()
+                    .ground(Ground::Raised)
                     .mono(true)
                     .placeholder("md, mdx")
                     .invalid(tried && err_rules.is_some())
@@ -224,6 +226,7 @@ pub(super) fn det_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut DetSt
             });
             fh_field(ui, th, l.glob, FhLine::None, |ui| {
                 Input::new()
+                    .ground(Ground::Raised)
                     .mono(true)
                     .placeholder("Dockerfile")
                     .invalid(tried && err_rules.is_some())
@@ -415,6 +418,7 @@ pub(super) fn hdl_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut HdlSt
             FhLine::pick(shown(err_short), info.as_deref(), Some(&saved)),
             |ui| {
                 Input::new()
+                    .ground(Ground::Raised)
                     .mono(true)
                     .placeholder("my-viewer")
                     .invalid(shown(err_short).is_some())
@@ -427,9 +431,10 @@ pub(super) fn hdl_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut HdlSt
                 .file_handler_select_width()
                 .min(LogicalPx(ui.available_width()))
                 .value();
-            tasty_ui_widgets::select_or_placeholder(
+            tasty_ui_widgets::select_or_placeholder_on(
                 ui,
                 th,
+                Ground::Raised,
                 "gallery_fh_detector",
                 &mut st.det,
                 &names,
@@ -445,6 +450,7 @@ pub(super) fn hdl_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut HdlSt
             FhLine::pick(shown(err_prio), None, Some(l.prio_hint)),
             |ui| {
                 Input::new()
+                    .ground(Ground::Raised)
                     .mono(true)
                     .placeholder("100")
                     .invalid(shown(err_prio).is_some())
@@ -462,19 +468,29 @@ pub(super) fn hdl_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut HdlSt
                 .file_handler_kind_width()
                 .min(LogicalPx(ui.available_width()))
                 .value();
-            tasty_ui_widgets::select(ui, th, "gallery_fh_kind", &mut st.kind, &l.kinds, w, true);
+            tasty_ui_widgets::select_on(
+                ui,
+                th,
+                Ground::Raised,
+                "gallery_fh_kind",
+                &mut st.kind,
+                &l.kinds,
+                w,
+                true,
+            );
         });
         match st.kind {
             0 => {
                 fh_field(ui, th, l.surface, FhLine::None, |ui| {
-                    Input::new().mono(true).placeholder("markdown_view").show(
-                        ui,
-                        th,
-                        &mut st.surface,
-                    );
+                    Input::new()
+                        .ground(Ground::Raised)
+                        .mono(true)
+                        .placeholder("markdown_view")
+                        .show(ui, th, &mut st.surface);
                 });
                 fh_field(ui, th, l.param, FhLine::Caption(l.param_hint), |ui| {
                     Input::new()
+                        .ground(Ground::Raised)
                         .mono(true)
                         .placeholder("file")
                         .show(ui, th, &mut st.param);
@@ -488,6 +504,7 @@ pub(super) fn hdl_card(ui: &mut egui::Ui, th: &Theme, l: &FhCopy, st: &mut HdlSt
                     FhLine::pick(shown(err_method), None, None),
                     |ui| {
                         Input::new()
+                            .ground(Ground::Raised)
                             .mono(true)
                             .placeholder("com.example.foo.open")
                             .invalid(shown(err_method).is_some())
