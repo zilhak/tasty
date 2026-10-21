@@ -174,6 +174,11 @@ Codex 셸 실행 시험·유효 폰트 시험·파일 선택기 테스트 helper
 prompt cleanup은 처음 받은 temp root를 재사용해 생성과 회수의 경로 규칙을 유지한다.
 
 
+이미지 worker 시험(`src/app/image_jobs/tests.rs`)의 완료 통지는 `mpsc::Sender<()>`를
+깨우기 콜백에 직접 캡처한다. Sender는 Send + Sync이며 `ImageWorker::new`의 콜백도
+그 두 경계를 요구한다. 송신 전용 값에 별도 Mutex를 두지 않아 락 poison으로 완료 통지를
+건너뛰는 경로가 없다. 받는 쪽은 기존 `recv_timeout`으로 실제 통지를 확인한다.
+
 ## 5. 확인 방법
 
 사용자 실제 홈으로 테스트를 실행해 격리를 확인하지 않는다. 테스트가 그 홈에 쓴 파일이

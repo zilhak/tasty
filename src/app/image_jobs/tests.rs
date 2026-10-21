@@ -6,11 +6,8 @@ use std::time::{Duration, Instant};
 
 fn worker<T: Send + 'static>() -> (ImageWorker<T>, mpsc::Receiver<()>) {
     let (wake_tx, wake_rx) = mpsc::channel();
-    let wake_tx = std::sync::Mutex::new(wake_tx);
     let worker = ImageWorker::new(Arc::new(move || {
-        if let Ok(tx) = wake_tx.lock()
-            && tx.send(()).is_err()
-        {
+        if wake_tx.send(()).is_err() {
             tracing::debug!("test wake receiver closed");
         }
     }));
