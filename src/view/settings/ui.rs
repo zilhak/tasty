@@ -3,6 +3,8 @@ mod debug_tabs;
 pub(crate) mod file_chooser;
 mod file_handler_tab;
 mod keybindings_tab;
+#[cfg(test)]
+mod select_probe;
 mod tabs;
 
 use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;

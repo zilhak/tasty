@@ -6,12 +6,14 @@
 //! 공통 모드에서 개별 지정으로 바꾸면 현재 조합을 저장한다. 반대 방향은 해당 종류의
 //! 기본 슬롯 키로 복원한다. 공통 수식키끼리 바꾸면 저장된 단일 키는 유지한다.
 
-use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
 use crate::i18n::{t, t_fmt};
 use crate::settings::{KeybindingSettings, SwitchStep};
 
 use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot, RowLayout};
-use tasty_ui_widgets::{KbRecordSlot, StackRow, kb_record_slot, settings_stack_row, vspace};
+use tasty_settings::keybindings::quick_switch_modifier_options;
+use tasty_ui_widgets::{
+    KbRecordSlot, StackRow, kb_record_slot, select, settings_stack_row, vspace,
+};
 
 /// 설정의 SwitchAxis를 화면의 녹화 대상과 연결한다.
 pub(super) use tasty_settings::SwitchAxis as QuickSwitchKind;
@@ -246,32 +248,33 @@ pub(super) fn draw_quick_switch_section(
             QuickSwitchKind::Workspace => &mut keybindings.workspace_switch_modifier,
             QuickSwitchKind::Category => &mut keybindings.category_switch_modifier,
         };
-        let is_individual = modifier.as_str() == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER;
-        let selected_text = if is_individual {
-            t("settings.keybindings.quick_switch_individual_label").to_string()
-        } else {
-            KeybindingSettings::format_display(modifier, general)
-        };
-        // 플랫폼에서 허용하는 수식키 조합을 나열하고 개별 지정 항목을 별도로 추가한다.
-        tasty_ui_widgets::with_select_combo_frame(ui, &th, |ui| {
-            egui::ComboBox::from_id_salt(kind.modifier_field_id())
-                .selected_text(selected_text)
-                .show_ui(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    for combo in all_modifier_combos() {
-                        let name = combo.name();
-                        let display = KeybindingSettings::format_display(&name, general);
-                        tasty_ui_widgets::menu_option_value(ui, &th, modifier, name, &display);
-                    }
-                    tasty_ui_widgets::menu_option_value(
-                        ui,
-                        &th,
-                        modifier,
-                        KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.to_string(),
-                        t("settings.keybindings.quick_switch_individual_label"),
-                    );
-                })
-        });
+        // 플랫폼에서 허용하는 수식키 조합, 설정 파일에만 있는 값, 개별 지정 항목 순이다.
+        let names = quick_switch_modifier_options(modifier);
+        let labels: Vec<String> = names
+            .iter()
+            .map(|n| {
+                if n == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER {
+                    t("settings.keybindings.quick_switch_individual_label").to_string()
+                } else {
+                    KeybindingSettings::format_display(n, general)
+                }
+            })
+            .collect();
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+        // 현재 값은 목록에 항상 있다(목록 밖 값은 덧붙인다). 그래서 0번 옵션을 골라도 선택이 바뀐다.
+        let mut selected = names.iter().position(|n| n == modifier).unwrap_or(0);
+        if select(
+            ui,
+            &th,
+            kind.modifier_field_id(),
+            &mut selected,
+            &labels,
+            th.field_width_md.value(),
+            true,
+        ) && let Some(name) = names.get(selected)
+        {
+            modifier.clone_from(name);
+        }
     });
 
     // modifier 가 실제로 바뀌었으면 슬롯 값을 이관(규칙→개별)하거나 복원(개별→규칙)한다.
@@ -712,5 +715,129 @@ mod tests {
         );
         assert_eq!(axis_of(BareTarget::CategoryNext), QuickSwitchKind::Category);
         assert_eq!(axis_of(BareTarget::CategoryPrev), QuickSwitchKind::Category);
+    }
+
+    mod select_row {
+        use super::*;
+        use crate::settings::GeneralSettings;
+        use crate::view::settings::ui::select_probe as probe;
+
+        fn draw<'a>(
+            kb: &'a mut KeybindingSettings,
+            with_drag_flip: bool,
+        ) -> impl FnMut(&mut egui::Ui) + 'a {
+            move |ui| {
+                let th = crate::theme::theme();
+                let general = GeneralSettings::default();
+                let layout = RowLayout {
+                    general: &general,
+                    label_col: th.settings_label_width(),
+                };
+                draw_quick_switch_section(
+                    ui,
+                    kb,
+                    layout,
+                    &mut None,
+                    &mut None,
+                    &KeyCapture::None,
+                    QuickSwitchKind::Tab,
+                );
+                if with_drag_flip {
+                    super::super::super::drag_flip::draw(ui, &th, kb, &general, layout.label_col);
+                }
+            }
+        }
+
+        fn shown(name: &str) -> String {
+            KeybindingSettings::format_display(name, &GeneralSettings::default())
+        }
+
+        /// 수식키 트리거는 드래그 반전 행과 같은 Select 상자(높이 select-height, 폭 field-width-md)다.
+        #[test]
+        fn the_modifier_trigger_matches_the_drag_flip_select() {
+            let th = crate::theme::theme();
+            let ctx = egui::Context::default();
+            let mut kb = KeybindingSettings::preset_tasty();
+            kb.tab_switch_modifier = "alt".into();
+            kb.explorer_drag_flip_modifier = "shift".into();
+            probe::frame(&ctx, &mut draw(&mut kb, true));
+            let out = probe::frame(&ctx, &mut draw(&mut kb, true));
+            let modifier = probe::trigger_around(&out, &shown("alt"))
+                .expect("the switch modifier is drawn as a Select trigger");
+            let flip = probe::trigger_around(&out, &shown("shift"))
+                .expect("the drag flip modifier is drawn as a Select trigger");
+            assert_eq!(modifier.height(), th.select_height().value());
+            assert_eq!(modifier.width(), th.field_width_md.value());
+            assert_eq!(modifier.size(), flip.size());
+        }
+
+        /// 수식키 행에는 캡션이 없다 — 트리거 아래 첫 글자는 첫 슬롯 행의 라벨이다.
+        #[test]
+        fn the_modifier_row_has_no_caption() {
+            let ctx = egui::Context::default();
+            let mut kb = KeybindingSettings::preset_tasty();
+            probe::frame(&ctx, &mut draw(&mut kb, false));
+            let out = probe::frame(&ctx, &mut draw(&mut kb, false));
+            let trigger = probe::trigger_around(&out, &shown("ctrl")).expect("trigger");
+            let first_slot = format!("{}:", bare_display_label(BareTarget::TabSlot(0)));
+            let slot_label = probe::text_rects(&out, &first_slot)[0];
+            let between: Vec<_> =
+                crate::view::plugins::ui::text_probe::visible_text_rects(&out, probe::SCREEN)
+                    .into_iter()
+                    .filter(|(_, r)| r.top() >= trigger.bottom() && r.bottom() <= slot_label.top())
+                    .collect();
+            assert!(between.is_empty(), "text between the rows: {between:?}");
+        }
+
+        /// 설정 파일의 목록 밖 조합은 트리거에 그대로 보이고 그리기만으로 바뀌지 않는다. 첫 옵션을
+        /// 고르면 그 값이 되고(규칙 사이 전환이라 슬롯 키는 그대로), 첫 옵션 함정에 걸리지 않는다.
+        #[test]
+        fn an_unlisted_combo_is_kept_and_the_first_option_replaces_it() {
+            let ctx = egui::Context::default();
+            let mut kb = KeybindingSettings::preset_tasty();
+            kb.tab_switch_modifier = "shift+alt".into();
+            kb.set_tab_slot_key(0, "q");
+            let first = quick_switch_modifier_options("")[0].clone();
+            probe::frame(&ctx, &mut draw(&mut kb, false));
+            let out = probe::frame(&ctx, &mut draw(&mut kb, false));
+            assert!(probe::trigger_around(&out, &shown("shift+alt")).is_some());
+            assert_eq!(kb.tab_switch_modifier, "shift+alt");
+            probe::pick(
+                &ctx,
+                &mut draw(&mut kb, false),
+                &shown("shift+alt"),
+                &shown(&first),
+            );
+            assert_eq!(kb.tab_switch_modifier, first);
+            assert_eq!(kb.tab_slot_key(0), Some("q"));
+        }
+
+        /// 개별 지정으로 고르면 슬롯이 조합으로 이관되고, 규칙으로 돌아오면 기본 슬롯으로 복원된다.
+        #[test]
+        fn picking_individual_migrates_slots_and_picking_a_rule_restores_them() {
+            let ctx = egui::Context::default();
+            let mut kb = KeybindingSettings::preset_tasty(); // tab modifier = "ctrl", slot0 = "1"
+            let individual = t("settings.keybindings.quick_switch_individual_label");
+            probe::pick(&ctx, &mut draw(&mut kb, false), &shown("ctrl"), individual);
+            assert_eq!(kb.tab_switch_modifier, INDIVIDUAL);
+            assert_eq!(kb.tab_slot_key(0), Some("ctrl+1"));
+            kb.set_tab_slot_key(0, "ctrl+alt+q");
+            probe::pick(&ctx, &mut draw(&mut kb, false), individual, &shown("alt"));
+            assert_eq!(kb.tab_switch_modifier, "alt");
+            assert_eq!(kb.tab_slot_key(0), Some("1"));
+        }
+
+        /// 같은 값을 다시 고르면 슬롯을 건드리지 않는다.
+        #[test]
+        fn picking_the_current_value_leaves_slots_alone() {
+            let ctx = egui::Context::default();
+            let mut kb = KeybindingSettings::preset_tasty();
+            kb.tab_switch_modifier = INDIVIDUAL.into();
+            kb.set_tab_slot_key(0, "ctrl+alt+q");
+            let individual = t("settings.keybindings.quick_switch_individual_label");
+            probe::pick(&ctx, &mut draw(&mut kb, false), individual, individual);
+            assert_eq!(kb.tab_switch_modifier, INDIVIDUAL);
+            assert_eq!(kb.tab_slot_key(0), Some("ctrl+alt+q"));
+        }
     }
 }

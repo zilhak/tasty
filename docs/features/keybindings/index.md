@@ -77,7 +77,7 @@ modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_sw
 
 Tab 서브탭(탭 축)과 Workspace 서브탭(워크스페이스 축 + 카테고리 축)의 일반 콤보 목록 아래에 **quick-switch 섹션**이 있다(`keybindings_tab/quick_switch.rs`). 구성:
 
-1. **modifier 드롭다운** — 해당 축 modifier 를 **OS-aware 허용 조합 리스트**(`tasty_settings::keybindings::parse::all_modifier_combos`, option 축을 포함한 15개 — option 은 macOS Option · Windows Win · Linux Super)와 **"개별 지정" sentinel 옵션** 중에서 고른다. 규칙 기반 값은 열거된 유효 조합만 노출해 잘못된 조합의 저장을 막고(표시는 `format_display`, `"ctrl+shift"` → `Ctrl+Shift`), "개별 지정"은 별도 번역 라벨로 표시된다.
+1. **modifier 드롭다운** — 공용 Select(트리거 `select-height` 28, 폭 `field-width-md`, caption 없음 — 드래그 반전 행과 같은 모양)로 해당 축 modifier 를 고른다. 선택지는 `tasty_settings::keybindings::quick_switch_modifier_options` 가 만든다: **OS-aware 허용 조합 리스트**(`parse::all_modifier_combos`, option 축을 포함한 15개 — option 은 macOS Option · Windows Win · Linux Super), 설정 파일에만 있는 목록 밖 값(있으면 그대로 덧붙여 보이고 다른 항목을 고르기 전까지 유지), 마지막에 **"개별 지정" sentinel 옵션**. 표시는 `format_display`(`"ctrl+shift"` → `Ctrl+Shift`), "개별 지정"은 별도 번역 라벨이다. 현재 값은 항상 목록에 있으므로 첫 옵션을 골라도 선택이 바뀐다. 값이 실제로 바뀐 경우에만 슬롯을 이관·복원하며(규칙 → 개별 지정은 합성 조합 저장, 개별 지정 → 규칙은 그 축 기본 슬롯 복원, 규칙끼리는 raw 키 유지), 같은 값을 다시 고르면 슬롯을 건드리지 않는다. 시험: `quick_switch.rs` 의 `select_row` 시험(헤드리스 egui 클릭).
 2. **슬롯 1~N 버튼** — 탭 1~10번 / 워크스페이스 1~9번 / 카테고리 1~10번. 규칙 기반 축은 저장된 raw 키를 현재 modifier 조합과 **표시 시점에 합성**한 `"{Modifier}+{Key}"`(예: `Ctrl+Shift+1`) 라벨을 보여주고, 개별 지정 축은 슬롯 필드에 이미 저장된 **완전 콤보**를 그대로 표시한다.
 3. **다음/이전 버튼 2개** — `*_next_key`/`*_prev_key`(세 축 모두).
 

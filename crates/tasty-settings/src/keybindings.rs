@@ -330,6 +330,23 @@ pub fn explorer_drag_flip_modifier_options(current: &str) -> Vec<String> {
     out
 }
 
+/// 설정 화면의 탭·워크스페이스·카테고리 전환 수식키 선택지(저장 토큰). 조합 정렬 순서의 수식키
+/// 조합, 설정 파일에만 있는 목록 밖 값(있으면), 마지막에 개별 지정 순이다. 목록 밖 값을 덧붙여야
+/// 그 값이 보이고 다른 항목을 고르기 전까지 유지된다.
+pub fn quick_switch_modifier_options(current: &str) -> Vec<String> {
+    let mut out: Vec<String> = parse::all_modifier_combos()
+        .into_iter()
+        .map(|c| c.name())
+        .collect();
+    if current != KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
+        && !out.iter().any(|name| name == current)
+    {
+        out.push(current.to_string());
+    }
+    out.push(KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.to_string());
+    out
+}
+
 /// 누락된 화면 캡처 바인딩의 기본값. 네 프리셋이 같은 조합을 사용한다.
 fn default_screenshot_to_clipboard() -> Vec<String> {
     vec!["ctrl+alt+s".to_string()]

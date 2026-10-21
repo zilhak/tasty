@@ -15,7 +15,7 @@ use tasty_settings::KeybindingSettings;
 
 use tasty_key_match::parse_binding;
 
-pub use tasty_settings::keybindings::parse::{Combo, all_modifier_combos, combos_containing_all};
+pub use tasty_settings::keybindings::parse::{Combo, combos_containing_all};
 
 /// 헤더에 수식키가 있으므로 행에는 나머지 키만 표시한다. 원본 binding은 유지한다.
 /// 표기 순서에 영향을 받지 않도록 파싱하며 실패하면 원문을 반환한다.

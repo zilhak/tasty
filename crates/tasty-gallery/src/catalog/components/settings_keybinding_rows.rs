@@ -5,7 +5,10 @@
 //! 안에서 줄을 바꾸고, 도움말 아이콘은 마지막 단어 뒤에 붙는다. 첫 버튼이 라벨 옆에 들어가지 않는
 //! 좁은 폭에서는 행이 쌓인다(본체와 같은 `settings_stack_row`).
 
-use tasty_settings::keybindings::explorer_drag_flip_modifier_options;
+use tasty_settings::SwitchAxis;
+use tasty_settings::keybindings::{
+    KeybindingSettings, explorer_drag_flip_modifier_options, quick_switch_modifier_options,
+};
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
@@ -16,7 +19,7 @@ use tasty_ui_widgets::{
 use crate::catalog::modifier_label;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
-use crate::i18n::t;
+use crate::i18n::{t, t_fmt};
 
 /// 예제 프레임 폭 — 설정 콘텐츠 컬럼 상한(620)을 넘지 않는다.
 const WIDTH: LogicalPx = LogicalPx(600.0);
@@ -73,6 +76,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+            kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.kb_row_gap().value();
+                switch_modifier_section(ui, theme);
+            });
+        });
+    });
+
     spec::meta(
         ui,
         theme,
@@ -101,6 +113,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             (
                 "drag flip row",
                 "General · after the entries · modifier Select field-width-md · caption · default first",
+            ),
+            (
+                "switch modifier row",
+                "Tab / Workspace / Category subtab · first row · plain Select field-width-md · no caption · modifier combos, a config value not in the list, then Individual",
             ),
         ],
         &[
@@ -159,6 +175,63 @@ pub(super) fn drag_flip(ui: &mut egui::Ui, theme: &Theme, col: LogicalPx, row: S
             theme.field_width_md.value(),
             true,
         );
+    });
+}
+
+/// Workspace 서브탭의 전환 수식키 행과 그 아래 슬롯 행 둘. 수식키 행은 캡션 없는 Select다.
+fn switch_modifier_section(ui: &mut egui::Ui, theme: &Theme) {
+    let axis = SwitchAxis::Workspace;
+    let label = t(axis.modifier_label_key());
+    let slot = format!(
+        "{}:",
+        t_fmt("settings.keybindings.workspace_switch_slot_label", "1")
+    );
+    let next = format!("{}:", t("settings.keybindings.workspace_switch_next_label"));
+    let measured = [label, slot.as_str(), next.as_str()].map(SettingsRow::new);
+    let col = settings_label_column(ui, theme, &measured);
+    let defaults = KeybindingSettings::default();
+    let current = defaults.workspace_switch_modifier.clone();
+    // 슬롯 행은 본체처럼 수식키와 단일 키를 합친 조합을 보인다.
+    let composed = |key: &str| modifier_label(&format!("{current}+{key}"));
+    let slot_combo = composed(defaults.workspace_slot_key(0).unwrap_or_default());
+    let next_combo = composed(defaults.workspace_next_key());
+    let names = quick_switch_modifier_options(&current);
+    let labels: Vec<String> = names
+        .iter()
+        .map(|n| {
+            if n == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER {
+                t("settings.keybindings.quick_switch_individual_label").to_string()
+            } else {
+                modifier_label(n)
+            }
+        })
+        .collect();
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let mut selected = names.iter().position(|n| *n == current).unwrap_or(0);
+    let frame = StackRow {
+        id: ui.id().with("gallery_kb_switch_modifier"),
+        label_col: col,
+        row_h: theme.kb_record_height(),
+        label,
+        hint: None,
+        align_top: false,
+    };
+    settings_stack_row(ui, theme, frame, |ui| {
+        select(
+            ui,
+            theme,
+            "gallery_kb_switch_modifier",
+            &mut selected,
+            &labels,
+            theme.field_width_md.value(),
+            true,
+        );
+    });
+    ui.push_id("slot", |ui| {
+        row(ui, theme, col, &slot, None, &[&slot_combo])
+    });
+    ui.push_id("next", |ui| {
+        row(ui, theme, col, &next, None, &[&next_combo])
     });
 }
 

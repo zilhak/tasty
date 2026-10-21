@@ -429,7 +429,7 @@ mod tests {
         assert_eq!(notice.contains("Git Bash"), cfg!(windows), "{notice}");
     }
 
-    use super::super::choice::probe;
+    use crate::view::settings::ui::select_probe as probe;
 
     fn draw(settings: &mut Settings) -> impl FnMut(&mut egui::Ui) + '_ {
         move |ui| draw_terminal_tab(ui, settings)

@@ -154,8 +154,8 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
 
 #[cfg(test)]
 mod tests {
-    use super::super::choice::probe;
     use super::*;
+    use crate::view::settings::ui::select_probe as probe;
 
     fn draw(settings: &mut Settings) -> impl FnMut(&mut egui::Ui) + '_ {
         move |ui| draw_general_tab(ui, settings, &[])

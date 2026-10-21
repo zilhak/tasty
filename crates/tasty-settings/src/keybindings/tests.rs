@@ -1103,3 +1103,34 @@ fn drag_flip_options_keep_a_combo_from_the_config_file() {
         explorer_drag_flip_modifier_options("")
     );
 }
+
+#[test]
+fn quick_switch_options_list_every_combo_then_individual() {
+    let options = quick_switch_modifier_options("ctrl");
+    let combos: Vec<String> = parse::all_modifier_combos()
+        .into_iter()
+        .map(|c| c.name())
+        .collect();
+    assert_eq!(options.len(), combos.len() + 1);
+    assert_eq!(options[..combos.len()], combos[..]);
+    assert_eq!(
+        options.last().map(String::as_str),
+        Some(KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER)
+    );
+    assert_eq!(
+        quick_switch_modifier_options(KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER),
+        options
+    );
+}
+
+#[test]
+fn quick_switch_options_keep_a_value_from_the_config_file_before_individual() {
+    let options = quick_switch_modifier_options("hyper");
+    let n = options.len();
+    assert_eq!(options[n - 2], "hyper");
+    assert_eq!(
+        options[n - 1],
+        KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
+    );
+    assert_eq!(n, quick_switch_modifier_options("ctrl").len() + 1);
+}
