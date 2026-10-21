@@ -118,7 +118,7 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
                     label: t("settings.general.close_behavior_quit"),
                 },
             ],
-            th.field_width_lg.value(),
+            th.field_width_lg,
         );
     });
 

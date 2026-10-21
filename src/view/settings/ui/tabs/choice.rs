@@ -4,6 +4,7 @@
 
 use crate::i18n::t;
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::select;
 
 /// 선택지 하나. `value` 는 설정에 저장하는 문자열, `label` 은 표시 문구.
@@ -19,11 +20,11 @@ pub(super) fn choice_select(
     id_salt: &str,
     value: &mut String,
     choices: &[Choice<'_>],
-    width: f32,
+    width: LogicalPx,
 ) -> bool {
     let (rows, mut idx) = resolve_rows(choices, value, t("settings.choice_missing_suffix"));
     let refs: Vec<&str> = rows.iter().map(String::as_str).collect();
-    if !select(ui, th, id_salt, &mut idx, &refs, width, true) {
+    if !select(ui, th, id_salt, &mut idx, &refs, width.value(), true) {
         return false;
     }
     match choices.get(idx) {
@@ -184,7 +185,7 @@ mod tests {
     fn draw(value: &mut String) -> impl FnMut(&mut egui::Ui) + '_ {
         move |ui| {
             let th = crate::theme::theme();
-            choice_select(ui, &th, "probe", value, CHOICES, th.field_width_lg.value());
+            choice_select(ui, &th, "probe", value, CHOICES, th.field_width_lg);
         }
     }
 

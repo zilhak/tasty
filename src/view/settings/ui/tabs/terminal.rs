@@ -71,7 +71,7 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                     label: t("settings.terminal.shell_mode_tasty"),
                 },
             ],
-            th.field_width_lg.value(),
+            th.field_width_lg,
         );
     });
 
@@ -144,7 +144,7 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                     label: t("settings.terminal.link_modifier_none"),
                 },
             ],
-            th.field_width_md.value(),
+            th.field_width_md,
         );
     });
 
