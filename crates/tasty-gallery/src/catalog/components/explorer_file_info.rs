@@ -65,7 +65,7 @@ pub(super) fn time(label: &'static str, value: &str) -> Field {
 
 /// 시안 `YField`/`PField`: 라벨(96, caption muted) · 값(body 또는 mono caption, 어디서나 줄바꿈. 시각은
 /// 부분 사이에서만) · 선택 Copy 또는 Edit · 소유자 아님 안내.
-fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
+fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field, lang: Option<&str>) {
     let label_w = theme.explorer_props_label_width().value();
     let gap = theme.spacing_sm.value();
     let line_h = theme.explorer_props_row_line().value();
@@ -87,7 +87,7 @@ fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
                     |ui| {
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new(t(f.label))
+                                egui::RichText::new(tr(lang, f.label))
                                     .size(theme.font_size_caption.value())
                                     .color(theme.text_muted().to_egui()),
                             )
@@ -110,7 +110,7 @@ fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
                             ));
                         Spinner::new().size(s).show(&mut slot, theme);
                     }
-                    let edit_label = t("explorer.props.perm.edit");
+                    let edit_label = tr(lang, "explorer.props.perm.edit");
                     let copy_w = if f.copy {
                         ControlSize::Sm.height(theme) + theme.spacing_xs.value()
                     } else if f.edit {
@@ -147,7 +147,7 @@ fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
                 });
                 if f.locked {
                     ui.label(
-                        egui::RichText::new(t("explorer.props.perm.locked"))
+                        egui::RichText::new(tr(lang, "explorer.props.perm.locked"))
                             .size(theme.font_size_caption.value())
                             .color(theme.explorer_props_perm_locked_fg().to_egui()),
                     );
@@ -163,7 +163,7 @@ fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
                         .to_egui();
                         kit::icon(ui, icons::ALERT_TRIANGLE, theme.icon_glyph_size_xs, color);
                         ui.label(
-                            egui::RichText::new(t(key))
+                            egui::RichText::new(tr(lang, key))
                                 .size(theme.font_size_caption.value())
                                 .color(color),
                         );
@@ -238,6 +238,16 @@ fn props_card_with(
 pub(super) struct Extras<'a> {
     pub(super) under: Option<&'a dyn Fn(&mut egui::Ui)>,
     pub(super) footer: Option<bool>,
+    /// 라벨·버튼 문구의 언어(ko·ja). None 이면 영어다.
+    pub(super) lang: Option<&'static str>,
+}
+
+/// `lang` 이 있으면 그 언어, 없으면 영어 문자열.
+pub(super) fn tr(lang: Option<&str>, key: &'static str) -> &'static str {
+    match lang {
+        Some(code) => crate::i18n::t_lang(code, key),
+        None => t(key),
+    }
 }
 
 /// 시안 `PProps`: `YProps` + 권한 편집 상자 자리 + Open footer.
@@ -313,7 +323,7 @@ pub(super) fn props_card_full(
                     unreadable_body(ui, theme, reason);
                 }
                 for f in fields {
-                    field_row(ui, theme, f);
+                    field_row(ui, theme, f, extras.lang);
                     if f.label == "explorer.properties.permissions"
                         && let Some(under) = extras.under
                     {
@@ -331,14 +341,14 @@ pub(super) fn props_card_full(
             },
         );
         if let Some(enabled) = extras.footer {
-            open_footer(ui, theme, enabled);
+            open_footer(ui, theme, enabled, extras.lang);
         }
     });
 }
 
 /// 본체 `footer_row`: 위 1px `explorer-props-footer-border` · padding space-sm × padding-x · 오른쪽 정렬
 /// secondary sm "Open". 끊긴 링크는 끈 채 "Target not found" 툴팁을 단다.
-fn open_footer(ui: &mut egui::Ui, theme: &Theme, enabled: bool) {
+fn open_footer(ui: &mut egui::Ui, theme: &Theme, enabled: bool, lang: Option<&str>) {
     let rule = ui.cursor().top();
     let left = ui.min_rect().left();
     let right = left + theme.explorer_props_width().value();
@@ -364,13 +374,13 @@ fn open_footer(ui: &mut egui::Ui, theme: &Theme, enabled: bool) {
                 egui::vec2(ui.available_width(), ControlSize::Sm.height(theme)),
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
-                    let resp = tasty_ui_widgets::Button::new(t("explorer.props.open"))
+                    let resp = tasty_ui_widgets::Button::new(tr(lang, "explorer.props.open"))
                         .variant(ButtonVariant::Secondary)
                         .size(ControlSize::Sm)
                         .enabled(enabled)
                         .show(ui, theme);
                     if !enabled {
-                        resp.on_hover_text(t("explorer.props.target_missing"));
+                        resp.on_hover_text(tr(lang, "explorer.props.target_missing"));
                     }
                 },
             );

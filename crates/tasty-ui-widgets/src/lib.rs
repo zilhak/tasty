@@ -35,6 +35,7 @@ mod explorer_commands;
 mod explorer_find_bar;
 mod explorer_name_edit;
 mod explorer_ops;
+mod explorer_perm_box;
 mod explorer_select;
 mod file_drop_overlay;
 pub mod file_handler;
@@ -160,6 +161,9 @@ pub use explorer_ops::{
     QueueHeader, QueueRowProps, ResultAction, ResultCardProps, ResultCardResponse, ResultLine,
     conflict_card, drag_chip, host_mark, op_queue_frame, op_queue_popover, op_queue_rows,
     op_queue_width, op_status_line, paint_drop_target, result_card,
+};
+pub use explorer_perm_box::{
+    PermBoxClick, PermBoxProps, PermBoxText, PermBoxValue, perm_box, perm_readout,
 };
 pub use explorer_select::{paint_cursor_ring, paint_marquee};
 pub use file_drop_overlay::file_drop_overlay;

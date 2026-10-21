@@ -3,9 +3,9 @@
 //! 본체는 `explorer_properties` popup 과 그 `perm_edit` 하위 모듈이 같은 배치를 그린다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Spinner};
+use tasty_ui_widgets::{PermBoxProps, PermBoxText, PermBoxValue};
 
-use super::explorer_file_info::{Extras, field, mono, props_card_full, time, warn};
+use super::explorer_file_info::{Extras, field, mono, props_card_full, time, tr, warn};
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 use crate::i18n::t;
@@ -168,13 +168,15 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Wrap, |ui| {
         let unix = |ui: &mut egui::Ui,
                     label: &str,
+                    lang: Option<&'static str>,
                     glyph: (MockGlyph, &str),
                     bits: u32,
                     folder: bool,
                     special: bool,
                     state: BoxState| {
-            let edit =
-                move |ui: &mut egui::Ui| perm_box(ui, theme, Some(bits), folder, special, state);
+            let edit = move |ui: &mut egui::Ui| {
+                perm_box(ui, theme, lang, Some(bits), folder, special, state)
+            };
             cluster(ui, theme, label, |ui| {
                 card(
                     ui,
@@ -183,11 +185,14 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
                     &[
                         field(
                             "explorer.properties.kind",
-                            t(if folder {
-                                "explorer.type.folder"
-                            } else {
-                                "explorer.type.file"
-                            }),
+                            tr(
+                                lang,
+                                if folder {
+                                    "explorer.type.folder"
+                                } else {
+                                    "explorer.type.file"
+                                },
+                            ),
                         ),
                         mono(
                             "explorer.properties.permissions",
@@ -199,6 +204,7 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
                     Extras {
                         under: Some(&edit),
                         footer: Some(true),
+                        lang,
                     },
                 );
             });
@@ -206,6 +212,7 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
         unix(
             ui,
             "editing",
+            None,
             (icons::FILE, "deploy.env"),
             0o644,
             false,
@@ -215,6 +222,7 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
         unix(
             ui,
             "folder — applying",
+            None,
             (icons::FOLDER, "shared"),
             0o775,
             true,
@@ -224,6 +232,7 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
         unix(
             ui,
             "failed — real mode re-read",
+            None,
             (icons::FILE, "mounted.iso"),
             0o644,
             false,
@@ -253,32 +262,56 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
                 },
             );
         });
-        for (label, state) in [
-            ("Windows — read-only attribute", BoxState::Editing),
+        for (label, value, state) in [
+            (
+                "Windows — read-only attribute",
+                "read-only: yes",
+                BoxState::Editing,
+            ),
             (
                 "Windows — failed",
+                "read-only: no",
                 BoxState::Failed("Access is denied. (os error 5)"),
             ),
         ] {
-            let edit = move |ui: &mut egui::Ui| perm_box(ui, theme, None, false, false, state);
+            let edit =
+                move |ui: &mut egui::Ui| perm_box(ui, theme, None, None, false, false, state);
             cluster(ui, theme, label, |ui| {
                 card(
                     ui,
                     theme,
                     (icons::FILE, "report.docx"),
-                    &[mono(
-                        "explorer.properties.permissions",
-                        "read-only: no",
-                        false,
-                    )],
+                    &[mono("explorer.properties.permissions", value, false)],
                     None,
                     Extras {
                         under: Some(&edit),
                         footer: Some(true),
+                        lang: None,
                     },
                 );
             });
         }
+        // 긴 열 머리·역할명은 칸 안에서 줄바꿈한다(시안 "ko — editor" · "ja — editor").
+        unix(
+            ui,
+            "ko — editor",
+            Some("ko"),
+            (icons::FILE, "배포.env"),
+            0o644,
+            false,
+            false,
+            BoxState::Editing,
+        );
+        unix(
+            ui,
+            "ja — editor",
+            Some("ja"),
+            (icons::FOLDER, "共有"),
+            0o755,
+            true,
+            false,
+            BoxState::Editing,
+        );
     });
     meta(
         ui,
@@ -290,11 +323,15 @@ fn permissions(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "box",
-                "under the row, full content width (the 3 × 56 grid is wider than the value column) · 1px explorer-props-perm-border · radius · padding space-sm · gap space-sm",
+                "under the row, spans the content width with the label column (330 at the 360 popup) · Unix and Windows alike · 1px explorer-props-perm-border · radius · padding space-sm · gap space-sm",
             ),
             (
                 "grid",
-                "role column + Read · Write · Execute · cell explorer-props-perm-cell-width · rows row-min-height",
+                "role column + Read · Write · Execute · cell explorer-props-perm-cell-width 56 (4 × 56 + padding + border = 242 ≤ 330) · rows row-min-height · grid left-aligned",
+            ),
+            (
+                "long words",
+                "heads centred and bottom-aligned, role names left-aligned · both wrap inside the 56 cell, never ellipsised",
             ),
             (
                 "apply",
@@ -360,195 +397,66 @@ fn rwx(bits: u32) -> String {
         .collect()
 }
 
-/// 본체 `perm_edit::draw` 의 배치. `bits` 가 None 이면 Windows 읽기 전용 상자다.
+/// 본체 `perm_edit::draw` 와 같은 공용 `perm_box`. `bits` 가 None 이면 Windows 읽기 전용 상자다.
 /// 편집 예제는 기타의 비트를 끈 상태(바뀜)로, 실패 예제는 다시 읽은 원래 값으로 보인다.
 fn perm_box(
     ui: &mut egui::Ui,
     theme: &Theme,
+    lang: Option<&'static str>,
     bits: Option<u32>,
     folder: bool,
     special: bool,
     state: BoxState,
 ) {
-    let busy = state == BoxState::Applying;
+    let tl = |key| tr(lang, key);
     let failed = matches!(state, BoxState::Failed(_));
-    let gap = theme.spacing_sm.value();
-    ui.add_space(theme.spacing_xs.value());
-    egui::Frame::new()
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            theme.explorer_props_perm_border().to_egui(),
-        ))
-        .corner_radius(theme.corner_radius.value())
-        .inner_margin(gap as i8)
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
-            let caption = theme.font_size_caption.value();
-            match bits {
-                Some(from) => {
-                    let shown = if failed { from } else { from & !0o7 };
-                    grid(ui, theme, shown, busy);
-                    ui.label(
-                        egui::RichText::new(format!("{} · {:03o}", rwx(shown), shown))
-                            .monospace()
-                            .size(caption)
-                            .color(theme.text_secondary().to_egui()),
-                    );
-                    let mut lines = Vec::new();
-                    if folder {
-                        lines.push(t("explorer.props.perm.folder_only"));
-                    }
-                    if special {
-                        lines.push(t("explorer.props.perm.special_kept"));
-                    }
-                    if !lines.is_empty() {
-                        muted(ui, theme, &lines.join(" "));
-                    }
-                }
-                None => {
-                    let mut on = !failed;
-                    tasty_ui_widgets::checkbox(
-                        ui,
-                        theme,
-                        &mut on,
-                        t("explorer.props.perm.read_only"),
-                        !busy,
-                    );
-                    muted(ui, theme, t("explorer.props.perm.windows_hint"));
-                }
-            }
-            if let BoxState::Failed(reason) = state {
-                let error = theme.explorer_props_perm_error_fg().to_egui();
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-                        let g = theme.icon_glyph_size_sm.value();
-                        let (r, _) = ui.allocate_exact_size(egui::vec2(g, g), egui::Sense::hover());
-                        icons::ALERT_CIRCLE.image(g, error).paint_at(ui, r);
-                        ui.label(
-                            egui::RichText::new(t("explorer.props.perm.failed"))
-                                .size(caption)
-                                .color(error),
-                        );
-                    });
-                    ui.label(
-                        egui::RichText::new(reason)
-                            .monospace()
-                            .size(caption)
-                            .color(theme.text_muted().to_egui()),
-                    );
-                });
-            }
-            ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width(), ControlSize::Sm.height(theme)),
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = gap;
-                    let size = theme.icon_glyph_size_sm;
-                    let spinner = |ui: &mut egui::Ui, rect: egui::Rect, _: egui::Color32| {
-                        Spinner::new()
-                            .size(size.value())
-                            .color(theme.spinner_indicator().to_egui())
-                            .paint_in(ui, theme, rect);
-                    };
-                    let mut apply = Button::new(if busy {
-                        t("explorer.props.perm.applying")
-                    } else {
-                        t("explorer.props.perm.apply")
-                    })
-                    .variant(ButtonVariant::Primary)
-                    .size(ControlSize::Sm)
-                    .enabled(!busy && !failed);
-                    if busy {
-                        apply = apply.leading_icon(&spinner).leading_icon_size(size);
-                    }
-                    apply.show(ui, theme);
-                    Button::new(t("button.cancel"))
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
-                        .enabled(!busy)
-                        .show(ui, theme);
-                },
-            );
-        });
-    ui.add_space(theme.spacing_xs.value());
-}
-
-fn grid(ui: &mut egui::Ui, theme: &Theme, bits: u32, busy: bool) {
-    let cell = theme.explorer_props_perm_cell_width().value();
-    let row_h = theme.explorer_props_row_min_height().value();
-    let caption = theme.font_size_caption.value();
-    // 본체 `perm_edit::centered` 와 같다. 머리 글자는 높이 0, 체크박스는 행 높이 가운데.
-    let slot = |ui: &mut egui::Ui, h: f32, content_h: f32, add: &mut dyn FnMut(&mut egui::Ui)| {
-        ui.allocate_ui_with_layout(
-            egui::vec2(cell, h),
-            egui::Layout::top_down(egui::Align::Center),
-            |ui| {
-                ui.set_min_size(egui::vec2(cell, h));
-                ui.add_space(((h - content_h) / 2.0).max(0.0));
-                add(ui);
-            },
-        );
+    let mut notes = Vec::new();
+    if folder {
+        notes.push(tl("explorer.props.perm.folder_only"));
+    }
+    if special {
+        notes.push(tl("explorer.props.perm.special_kept"));
+    }
+    let note = notes.join(" ");
+    let mut shown = bits.map_or(0, |from| if failed { from } else { from & !0o7 });
+    let mut read_only = !failed;
+    let value = if bits.is_some() {
+        PermBoxValue::Mode(&mut shown)
+    } else {
+        PermBoxValue::ReadOnly(&mut read_only)
     };
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(0.0, theme.spacing_xs.value());
-        ui.horizontal_top(|ui| {
-            ui.add_space(cell);
-            for key in [
-                "explorer.props.perm.read",
-                "explorer.props.perm.write",
-                "explorer.props.perm.execute",
-            ] {
-                slot(ui, 0.0, 0.0, &mut |ui| {
-                    ui.label(
-                        egui::RichText::new(t(key))
-                            .size(caption)
-                            .color(theme.text_muted().to_egui()),
-                    );
-                });
-            }
-        });
-        for (role, shift) in [
-            ("explorer.props.perm.owner", 6u32),
-            ("explorer.props.perm.group", 3),
-            ("explorer.props.perm.others", 0),
-        ] {
-            ui.horizontal(|ui| {
-                ui.allocate_ui_with_layout(
-                    egui::vec2(cell, row_h),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        ui.set_min_size(egui::vec2(cell, row_h));
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(t(role))
-                                    .size(caption)
-                                    .color(theme.explorer_props_value_fg().to_egui()),
-                            )
-                            .truncate(),
-                        );
-                    },
-                );
-                for bit in [4u32, 2, 1] {
-                    let mut on = bits & (bit << shift) != 0;
-                    slot(ui, row_h, theme.checkbox_size().value(), &mut |ui| {
-                        tasty_ui_widgets::checkbox(ui, theme, &mut on, "", !busy);
-                    });
-                }
-            });
-        }
-    });
-}
-
-fn muted(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(text)
-                .size(theme.font_size_caption.value())
-                .color(theme.text_muted().to_egui()),
-        )
-        .wrap(),
+    let text = PermBoxText {
+        heads: [
+            tl("explorer.props.perm.read"),
+            tl("explorer.props.perm.write"),
+            tl("explorer.props.perm.execute"),
+        ],
+        roles: [
+            tl("explorer.props.perm.owner"),
+            tl("explorer.props.perm.group"),
+            tl("explorer.props.perm.others"),
+        ],
+        read_only: tl("explorer.props.perm.read_only"),
+        windows_hint: tl("explorer.props.perm.windows_hint"),
+        failed: tl("explorer.props.perm.failed"),
+        apply: tl("explorer.props.perm.apply"),
+        applying: tl("explorer.props.perm.applying"),
+        cancel: tl("button.cancel"),
+    };
+    // 예제는 상태를 고정해 그리므로 누른 버튼은 쓰지 않는다.
+    tasty_ui_widgets::perm_box(
+        ui,
+        theme,
+        PermBoxProps {
+            text,
+            value,
+            note: (!note.is_empty()).then_some(note.as_str()),
+            failure: match state {
+                BoxState::Failed(reason) => Some(reason),
+                _ => None,
+            },
+            busy: state == BoxState::Applying,
+            changed: !failed,
+        },
     );
 }
