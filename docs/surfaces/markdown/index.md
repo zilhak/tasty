@@ -106,7 +106,7 @@
   재연결 뒤 변경 신호를 받으면 원문을 다시 요청한다.
   - **새로고침**: 필드 왼쪽의 Reload(`#tasty-refresh`)는 `#tasty-nav:refresh:<nonce>` 로 nav-fragment 채널을 타고, plugin 은 그것을 원문 재요청으로 옮긴다(nonce 는 같은 hash 재대입이 navigation 을 안 일으켜 두 번째 클릭이 사라지는 것을 막는다). `markdown.reload` 도 mirror 문서에는 같은 재요청이다.
   - **주소창 이동**: 필드는 편집할 수 있고 Enter·Go 가 같은 surface 를 그 원격 경로의 문서로 바꾼다. plugin 은 `markdown.navigate {surface_id, path}` 를 보내고 host 는 로컬 존재 확인 없이 원격에 변환을 전달한다. 원격이 그 경로에 파일이 없으면 변환하지 않고 거절한다(아래 실패 표시). Esc 는 입력을 지금 원격 경로로 되돌린다. 입력은 그대로 보내며 상대경로는 원격 쪽 해석에 맡긴다.
-  - **주소창 이동 실패**: 이 요청에는 사용자 출처 증명을 싣지 않아 host 는 실패 toast 를 띄우지 않는다. 대신 plugin 이 접수 응답의 `run` 을 별도 스레드에서 `run.result` 로 200ms 간격, 최대 30초 기다렸다가 `markdown.address_result` 자기 호출로 결과를 워커에 돌려준다(외부 호출자는 이 메서드를 쓸 수 없다). 결과는 같은 surface 의 마지막 이동일 때만 반영한다.
+  - **주소창 이동 실패**: 이 요청에는 사용자 출처 증명을 싣지 않아 host 는 실패 toast 를 띄우지 않는다. 대신 plugin 이 접수 응답의 `run` 을 별도 스레드에서 `run.result` 로 최대 30초 기다렸다가(간격은 200ms 에서 두 배씩 늘려 3초에서 멈춘다. host 의 slow_loop 탐지가 같은 run 을 5분에 20번 물으면 사용자에게 경고하므로 상한까지 기다려도 그 수에 닿지 않게 한다) `markdown.address_result` 자기 호출로 결과를 워커에 돌려준다(외부 호출자는 이 메서드를 쓸 수 없다). 결과는 같은 surface 의 마지막 이동일 때만 반영한다.
     - 원격이 파일 없음으로 거절하면(`run.result` 의 `reason_code: "not_found"`) 입력한 경로를 필드에 남기고 오류 테두리와 띠 아래 오류 행(`role="alert"`, `markdown.address.error.not_found`)을 그린다. 오류 행만큼 `--md-addr-bar-h` 도 늘려 검색 바와 앵커 여백이 따라간다.
     - 그 밖의 실패(연결 종료, 원격 거절 등)는 없는 파일 문구로 바꾸지 않는다. 입력값과 오류 테두리만 남고 오류 행은 없다. 이 경우의 문구는 디자인이 정하지 않았다.
     - 오류 상태는 다음 입력·Esc 에서 페이지가 지우고 `#tasty-nav:addr-dismiss:<nonce>` 로 plugin 에 알려 보관한 실패도 버린다. 이동에 성공하면 보관한 실패를 지우고 원문을 다시 요청해, 회신의 `file` 과 원문으로 새 문서를 그린다. 30초 안에 끝나지 않으면 원격이 아직 처리 중일 수 있어 실패로 바꾸지 않는다.

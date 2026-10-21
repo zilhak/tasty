@@ -10,9 +10,27 @@ use crate::{MarkdownPlugin, MdDoc, RemoteRequester, render};
 /// 원격 주소창 이동의 최종 결과를 워커에 돌려주는 자기 호출 메서드. 외부 호출자는 쓸 수 없다.
 pub(crate) const ADDR_RESULT_METHOD: &str = "markdown.address_result";
 
-/// 원격 주소창 이동의 `run.result` 를 묻는 간격과 상한. CLI 의 `file-handler dispatch` 대기와 같은 값이다.
+/// 원격 주소창 이동의 `run.result` 를 묻는 첫 간격·최대 간격·상한. 간격은 두 배씩 늘린다.
+/// host 의 slow_loop 탐지는 같은 run 을 5분에 20번 물으면 사용자에게 경고하므로, 상한까지 기다려도
+/// 그 수에 닿지 않게 한다([`poll_delays`] 시험).
 const ADDR_RESULT_POLL: std::time::Duration = std::time::Duration::from_millis(200);
+const ADDR_RESULT_POLL_MAX: std::time::Duration = std::time::Duration::from_secs(3);
 const ADDR_RESULT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// `run.result` 를 다시 묻기 전 기다릴 간격들. 합이 상한을 넘기 전까지다.
+pub(crate) fn poll_delays() -> impl Iterator<Item = std::time::Duration> {
+    let mut next = ADDR_RESULT_POLL;
+    let mut total = std::time::Duration::ZERO;
+    std::iter::from_fn(move || {
+        if total >= ADDR_RESULT_DEADLINE {
+            return None;
+        }
+        let d = next;
+        total += d;
+        next = (next * 2).min(ADDR_RESULT_POLL_MAX);
+        Some(d)
+    })
+}
 
 /// 원격 주소창 이동의 최종 결과(`run.result`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,7 +157,7 @@ pub(crate) fn spawn_addr_watch(
 
 /// `run.result` 를 끝날 때까지 묻는다. 조회가 실패하면 Other 실패, 상한을 넘기면 None이다.
 fn wait_navigate_run(host: &HostHandle, sid: u32, run: u64) -> Option<AddrOutcome> {
-    let deadline = std::time::Instant::now() + ADDR_RESULT_DEADLINE;
+    let mut delays = poll_delays();
     loop {
         match host.call("run.result", json!({ "run": run })) {
             Ok(v) => {
@@ -152,13 +170,13 @@ fn wait_navigate_run(host: &HostHandle, sid: u32, run: u64) -> Option<AddrOutcom
                 return Some(AddrOutcome::Failed(render::AddrFailureKind::Other));
             }
         }
-        if std::time::Instant::now() >= deadline {
+        let Some(delay) = delays.next() else {
             tracing::warn!(
                 "markdown surface {sid}: remote navigate run {run} did not finish within {ADDR_RESULT_DEADLINE:?}"
             );
             return None;
-        }
-        std::thread::sleep(ADDR_RESULT_POLL);
+        };
+        std::thread::sleep(delay);
     }
 }
 

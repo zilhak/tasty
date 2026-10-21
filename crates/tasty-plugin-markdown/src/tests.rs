@@ -1248,3 +1248,19 @@ fn a_failed_folder_button_navigate_leaves_the_address_bar_alone() {
     }));
     assert!(p.docs[&1].remote.as_ref().unwrap().addr_failure.is_some());
 }
+
+/// 원격 이동 결과를 상한까지 기다려도 같은 run 을 host slow_loop 경고 수(5분에 20번)만큼 묻지 않는다.
+#[test]
+fn waiting_for_a_remote_navigate_stays_under_the_slow_loop_warning() {
+    let delays: Vec<_> = addr_nav::poll_delays().collect();
+    let total: std::time::Duration = delays.iter().sum();
+    // 첫 조회 1번 + 간격마다 1번.
+    assert!(delays.len() + 1 < 20, "{} queries", delays.len() + 1);
+    assert!(total >= std::time::Duration::from_secs(30), "{total:?}");
+    assert_eq!(delays[0], std::time::Duration::from_millis(200));
+    assert!(
+        delays
+            .iter()
+            .all(|d| *d <= std::time::Duration::from_secs(3))
+    );
+}
