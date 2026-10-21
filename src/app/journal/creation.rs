@@ -139,6 +139,27 @@ impl Stage {
             other => other,
         };
     }
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Admit => "Admit",
+            Self::Reserve => "Reserve",
+            Self::Input(_) => "Input",
+            Self::Commit => "Commit",
+            Self::Claim => "Claim",
+            Self::Preparing(_) => "Preparing",
+            Self::Prepared { .. } => "Prepared",
+            Self::Installing { .. } => "Installing",
+            Self::Uncertain(_) => "Uncertain",
+            Self::Finish { .. } => "Finish",
+            Self::AwaitPublication(_) => "AwaitPublication",
+            Self::Published(_) => "Published",
+            Self::Settling { .. } => "Settling",
+            Self::Settled { .. } => "Settled",
+            Self::Rejected { .. } => "Rejected",
+            Self::Failed(_) => "Failed",
+            Self::Transition => "Transition",
+        }
+    }
 }
 
 impl Creation {
@@ -547,7 +568,13 @@ impl Creation {
                 return Ok(true);
             }
             (Stage::Failed(reason), _) => return Err(reason),
-            _ => return Err("materialization completion arrived outside its request phase".into()),
+            (stage, value) => {
+                return Err(format!(
+                    "materialization completion arrived outside its request phase (stage={}, result={}, in_flight={in_flight:?})",
+                    stage.kind(),
+                    value.kind()
+                ));
+            }
         };
         Ok(false)
     }
