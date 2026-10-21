@@ -203,7 +203,8 @@ impl crate::app::App {
                 continue;
             };
             let resumed = resume_unanswered_creates(&mut view.state, &running)
-                | resume_unanswered_rename(&mut view.state, &running_requests);
+                | resume_unanswered_rename(&mut view.state, &running_requests)
+                | resume_unanswered_permissions(&mut view.state, &running_requests);
             if sync_queues(&mut view.state) || resumed {
                 view.mark_dirty();
             }
@@ -321,6 +322,41 @@ pub(super) fn resume_unanswered_rename(state: &mut MainViewState, running: &[u64
     }
     state.dialogs.rename_waiting = None;
     true
+}
+
+/// Properties 권한 편집이 기다리는 요청이 대기열에도 `running` 에도 없으면 시작되지 않고 버려졌다.
+/// 편집 상태로 돌려 다시 Apply 할 수 있게 한다. 끝난 요청은 [`settle_permissions`] 가 먼저 풀어 둔다.
+pub(super) fn resume_unanswered_permissions(state: &mut MainViewState, running: &[u64]) -> bool {
+    let Some(props) = state.dialogs.explorer_properties.as_mut() else {
+        return false;
+    };
+    let Some(id) = props.perm_request() else {
+        return false;
+    };
+    if running.contains(&id) || state.explorer_file_requests.0.iter().any(|r| r.id == id) {
+        return false;
+    }
+    props.settle_perm(id, None);
+    true
+}
+
+/// 권한 변경이 끝났으면 그 요청을 기다리던 Properties 편집 상자에 결과를 알린다.
+pub(super) fn settle_permissions(
+    registry: &mut crate::view::ViewRegistry,
+    request: u64,
+    result: Result<(), String>,
+) {
+    for view in registry.views.values_mut() {
+        let Some(view) = view.as_main_mut() else {
+            continue;
+        };
+        if let Some(props) = view.state.dialogs.explorer_properties.as_mut()
+            && props.perm_request() == Some(request)
+        {
+            props.settle_perm(request, Some(result.clone()));
+            view.mark_dirty();
+        }
+    }
 }
 
 /// 원격이 이름 변경에 성공했으면 그 요청을 기다리던 팝업을 닫게 한다.

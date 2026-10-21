@@ -231,6 +231,11 @@ pub(crate) struct ItemFacts {
     /// Unix 의 `rwxr-xr-x` 형태. 다른 OS 에서는 없다.
     pub(crate) mode: Option<String>,
     pub(crate) read_only: bool,
+    /// Unix 권한 비트(setuid·setgid·sticky 포함, `0o7777` 안). 링크·다른 OS 에서는 없다.
+    pub(crate) mode_bits: Option<u32>,
+    /// 이 프로세스가 권한을 바꿀 수 있는가. Unix 는 소유자이거나 root 일 때다. 다른 OS 는 OS 가
+    /// 거절할 때까지 바꿀 수 있다고 본다.
+    pub(crate) can_change_mode: bool,
     /// 하드링크가 둘 이상인 일반 파일의 식별 값. 합계에서 같은 파일을 한 번만 센다.
     pub(crate) hardlink: Option<FileId>,
 }
@@ -380,6 +385,8 @@ fn item_facts_with_meta(path: &Path) -> io::Result<(ItemFacts, std::fs::Metadata
         created: (!link).then(|| own.created().ok()).flatten(),
         mode: (!link).then(|| mode_string(&own)).flatten(),
         read_only: own.permissions().readonly(),
+        mode_bits: (!link).then(|| mode_bits(&own)).flatten(),
+        can_change_mode: can_change_mode(&own),
         hardlink: None,
     };
     Ok((item, own))
@@ -410,6 +417,31 @@ fn mode_string(meta: &std::fs::Metadata) -> Option<String> {
 #[cfg(not(unix))]
 fn mode_string(_meta: &std::fs::Metadata) -> Option<String> {
     None
+}
+
+#[cfg(unix)]
+fn mode_bits(meta: &std::fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    Some(meta.permissions().mode() & 0o7777)
+}
+
+#[cfg(not(unix))]
+fn mode_bits(_meta: &std::fs::Metadata) -> Option<u32> {
+    None
+}
+
+/// 소유자이거나 root 면 chmod 할 수 있다.
+#[cfg(unix)]
+fn can_change_mode(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    // SAFETY: geteuid 는 인자가 없고 실패하지 않는다.
+    let euid = unsafe { libc::geteuid() };
+    euid == 0 || euid == meta.uid()
+}
+
+#[cfg(not(unix))]
+fn can_change_mode(_meta: &std::fs::Metadata) -> bool {
+    true
 }
 
 /// 링크는 따라가지 않는다. 읽지 못한 하위 폴더는 건너뛰고 센 만큼만 보인다.

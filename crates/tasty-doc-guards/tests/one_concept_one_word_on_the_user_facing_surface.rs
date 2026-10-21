@@ -194,6 +194,24 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
         count: 1,
         evidence: "host PopupDef의 notifications 알림 목록을 가리킨다. 같은 줄의 Tasty 윈도우 및 윈도우 크기는 OS 창을 뜻한다.",
     },
+    NotAWindow {
+        path: "lang/ko.toml",
+        phrase: "속성 창",
+        count: 2,
+        evidence: "설정 props_time_format 의 라벨·caption 이 탐색기 Properties popup 을 가리킨다. host PopupDef id explorer_properties(EXPLORER_PROPERTIES_POPUP_ID)이며 문구는 수령한 디자인의 ko 원문이다.",
+    },
+    NotAWindow {
+        path: "site/content/customize/settings.md",
+        phrase: "속성 창",
+        count: 4,
+        evidence: "일반 탭 표의 속성 창 시각 형식 설명과 settings.toml 예시 주석이다. 모두 탐색기 Properties popup(host PopupDef id explorer_properties)을 가리킨다.",
+    },
+    NotAWindow {
+        path: "site/content/using/files.md",
+        phrase: "속성 창 시각 형식",
+        count: 1,
+        evidence: "속성 절에서 설정 항목 이름을 인용한다. 그 설정이 바꾸는 것은 탐색기 Properties popup(host PopupDef id explorer_properties)의 시각이다.",
+    },
 ];
 
 fn repo_root() -> PathBuf {

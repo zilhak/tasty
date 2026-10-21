@@ -72,7 +72,8 @@ fn lost_verb(operation: &Operation) -> Option<&'static str> {
         Operation::Undo(_)
         | Operation::RemoveLeftovers { .. }
         | Operation::Open(_)
-        | Operation::Reveal(_) => return None,
+        | Operation::Reveal(_)
+        | Operation::SetPermissions { .. } => return None,
     })
 }
 
@@ -123,7 +124,9 @@ fn remote_op(operation: Operation) -> Option<RemoteOp> {
         Operation::RemoveLeftovers { dest, leftovers } => {
             RemoteOp::RemoveLeftovers { dest, leftovers }
         }
-        Operation::Open(_) | Operation::Reveal(_) => return None,
+        Operation::Open(_) | Operation::Reveal(_) | Operation::SetPermissions { .. } => {
+            return None;
+        }
     })
 }
 

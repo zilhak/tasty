@@ -3,4 +3,5 @@
 pub(crate) mod job;
 pub(crate) mod named;
 pub(crate) mod ops;
+pub(crate) mod permissions;
 pub(crate) mod remote;

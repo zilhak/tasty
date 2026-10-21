@@ -189,6 +189,10 @@ pub struct GeneralSettings {
     /// 켜면 확인할 때마다 현재 폴더 항목 수만큼 metadata 를 읽는다. 기본값은 꺼짐이며, 꺼도 폴더 목록
     /// 변화(항목 생성·삭제·이름 변경) 확인은 그대로다.
     pub explorer_refresh_file_details: bool,
+    /// Explorer Properties 의 수정·만든·대상 수정 시각 형식: "minutes" | "seconds" | "seconds_offset".
+    /// 모두 이 컴퓨터의 시간대로 보이며 seconds_offset 은 숫자 UTC 오프셋을 붙인다. 알 수 없는 값은
+    /// 그대로 두고 minutes 로 보인다. 열린 Properties 팝업은 다음 그리기부터 이 값을 따른다.
+    pub explorer_props_time_format: String,
     /// macOS Option+문자를 특수문자 대신 ESC와 기본 문자로 보내 Meta 키로 사용한다. 기본값은 꺼짐이다.
     #[cfg(target_os = "macos")]
     pub option_as_meta: bool,
@@ -260,6 +264,7 @@ impl Default for GeneralSettings {
             workspace_switch_crosses_category: false,
             explorer_view_mode: "detail".to_string(),
             explorer_refresh_file_details: false,
+            explorer_props_time_format: "minutes".to_string(),
             #[cfg(target_os = "macos")]
             option_as_meta: false,
             alt_display_style: "alt".to_string(),
@@ -996,6 +1001,23 @@ mod tests {
         let out = toml::to_string(&g).unwrap();
         let g2: GeneralSettings = toml::from_str(&out).unwrap();
         assert!(!g2.bell_notification);
+    }
+
+    #[test]
+    fn explorer_props_time_format_defaults_to_minutes_and_round_trips() {
+        assert_eq!(
+            GeneralSettings::default().explorer_props_time_format,
+            "minutes"
+        );
+        let g: GeneralSettings = toml::from_str("").unwrap();
+        assert_eq!(
+            g.explorer_props_time_format, "minutes",
+            "키가 없으면 minutes"
+        );
+        let g: GeneralSettings =
+            toml::from_str("explorer_props_time_format = \"seconds_offset\"").unwrap();
+        let g2: GeneralSettings = toml::from_str(&toml::to_string(&g).unwrap()).unwrap();
+        assert_eq!(g2.explorer_props_time_format, "seconds_offset");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-<!-- source-hash: 9db9754a6832 -->
+<!-- source-hash: 14fb1f458e7e -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -37,7 +37,7 @@ Press the same shortcut again to close the settings window.
 
 | Section | Entries |
 |------|------|
-| **General** | **Restore layout on startup** · **Restore surface content on restart** (terminal scrollback) · **Workspace categories (folders)** · **Next/prev workspace crosses categories** · **Explorer: refresh file details** (off by default — when on, size and modified-time changes of files in the open folder show up within a few seconds too, but every check reads all items of that folder; see [Files](../using/files.md)) · **Close behavior** (Ask / Minimize to background / Quit) · **Wheel scroll distance** (10-200pt, default 50) - how far one wheel notch scrolls, applied the same everywhere in the window · **Language** (English / 한국어 / 日本語 plus any [language pack](#adding-a-language-language-packs) you install) · **Accept webhook calls from other computers** (off by default, applies from the next start — [webhooks](../agents/hooks-notifications.md)) |
+| **General** | **Restore layout on startup** · **Restore surface content on restart** (terminal scrollback) · **Workspace categories (folders)** · **Next/prev workspace crosses categories** · **Explorer: refresh file details** (off by default — when on, size and modified-time changes of files in the open folder show up within a few seconds too, but every check reads all items of that folder; see [Files](../using/files.md)) · **Close behavior** (Ask / Minimize to background / Quit) · **Wheel scroll distance** (10-200pt, default 50) - how far one wheel notch scrolls, applied the same everywhere in the window · **Language** (English / 한국어 / 日本語 plus any [language pack](#adding-a-language-language-packs) you install) · **Time format in Properties** (Minutes / Seconds / Seconds and UTC offset, default Minutes — used for Modified, Created and Target modified in Explorer Properties, in this computer's time zone; an open Properties popup follows right away) · **Accept webhook calls from other computers** (off by default, applies from the next start — [webhooks](../agents/hooks-notifications.md)) |
 | **Notifications** | **Notifications enabled** · **Sound** · **Coalesce interval (ms)** |
 | **Accessibility** | **Reduced motion** (turns off toast and overlay fades, the loading spinner's rotation, and the modal shake) · **Show modifier key hints** |
 | **Overlay** | **Toast duration** (1~10 seconds) |
@@ -250,6 +250,7 @@ allow_clipboard_read = false
 bell_notification = true
 workspace_categories_enabled = false
 explorer_refresh_file_details = false  # Explorer also picks up size/modified-time changes in the open folder
+explorer_props_time_format = "minutes"  # "minutes" | "seconds" | "seconds_offset" — time format in Explorer Properties
 mouse_capture_blacklist = ["htop"]
 shell = ""                       # empty = auto-detect
 startup_command = ""

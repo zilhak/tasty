@@ -17,17 +17,23 @@ use crate::i18n::{t, t_fmt, t_fmt2};
 const PANEL_STAGE_H: LogicalPx = LogicalPx(230.0);
 
 /// Properties 필드 한 줄의 값.
-struct Field {
+pub(super) struct Field {
     /// 라벨의 번역 키. 본체와 같은 문구를 쓴다.
-    label: &'static str,
-    value: String,
-    mono: bool,
-    copy: bool,
-    counting: bool,
-    warning: Option<&'static str>,
+    pub(super) label: &'static str,
+    pub(super) value: String,
+    pub(super) mono: bool,
+    pub(super) copy: bool,
+    pub(super) counting: bool,
+    pub(super) warning: Option<&'static str>,
+    /// 시각 값. 날짜·시각·오프셋 사이에서만 줄을 바꾼다.
+    pub(super) time: bool,
+    /// 권한 행 끝의 Edit(ghost sm).
+    pub(super) edit: bool,
+    /// 권한 행 아래 "Only the owner can change permissions."
+    pub(super) locked: bool,
 }
 
-fn field(label: &'static str, value: &str) -> Field {
+pub(super) fn field(label: &'static str, value: &str) -> Field {
     Field {
         label,
         value: value.to_owned(),
@@ -35,21 +41,30 @@ fn field(label: &'static str, value: &str) -> Field {
         copy: false,
         counting: false,
         warning: None,
+        time: false,
+        edit: false,
+        locked: false,
     }
 }
 
-fn mono(label: &'static str, value: &str, copy: bool) -> Field {
+pub(super) fn mono(label: &'static str, value: &str, copy: bool) -> Field {
     Field {
-        label,
-        value: value.to_owned(),
         mono: true,
         copy,
-        counting: false,
-        warning: None,
+        ..field(label, value)
     }
 }
 
-/// 시안 `YField`: 라벨(96, caption muted) · 값(body 또는 mono caption, 어디서나 줄바꿈) · 선택 Copy.
+/// 시안 `PField time`: mono caption 시각 값.
+pub(super) fn time(label: &'static str, value: &str) -> Field {
+    Field {
+        time: true,
+        ..mono(label, value, false)
+    }
+}
+
+/// 시안 `YField`/`PField`: 라벨(96, caption muted) · 값(body 또는 mono caption, 어디서나 줄바꿈. 시각은
+/// 부분 사이에서만) · 선택 Copy 또는 Edit · 소유자 아님 안내.
 fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
     let label_w = theme.explorer_props_label_width().value();
     let gap = theme.spacing_sm.value();
@@ -95,8 +110,11 @@ fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
                             ));
                         Spinner::new().size(s).show(&mut slot, theme);
                     }
+                    let edit_label = t("explorer.props.perm.edit");
                     let copy_w = if f.copy {
                         ControlSize::Sm.height(theme) + theme.spacing_xs.value()
+                    } else if f.edit {
+                        sm_button_width(ui, theme, edit_label) + theme.spacing_xs.value()
                     } else {
                         0.0
                     };
@@ -106,13 +124,9 @@ fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
                         egui::FontId::proportional(theme.font_size_body.value())
                     };
                     let text_w = (ui.available_width() - copy_w).max(0.0);
-                    let mut job = egui::text::LayoutJob::simple(
-                        f.value.clone(),
-                        font,
-                        theme.text_secondary().to_egui(),
-                        text_w,
-                    );
-                    job.wrap.break_anywhere = true;
+                    let ink = theme.explorer_props_value_fg().to_egui();
+                    let mut job = egui::text::LayoutJob::simple(f.value.clone(), font, ink, text_w);
+                    job.wrap.break_anywhere = !f.time;
                     let galley = ui.fonts(|fonts| fonts.layout_job(job));
                     // 첫 줄을 줄 높이 가운데에 두고, 줄을 바꾼 값은 글자 줄 높이만큼만 늘린다.
                     let first_h = galley.rows.first().map_or(line_h, |r| r.height());
@@ -120,15 +134,24 @@ fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
                     let (r, _) =
                         ui.allocate_exact_size(egui::vec2(text_w, text_h), egui::Sense::hover());
                     let y = r.top() + (line_h - first_h) / 2.0;
-                    ui.painter().galley(
-                        egui::pos2(r.left(), y),
-                        galley,
-                        theme.text_secondary().to_egui(),
-                    );
+                    ui.painter().galley(egui::pos2(r.left(), y), galley, ink);
                     if f.copy {
                         icon_button(ui, theme, icons::COPY);
                     }
+                    if f.edit {
+                        tasty_ui_widgets::Button::new(edit_label)
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .show(ui, theme);
+                    }
                 });
+                if f.locked {
+                    ui.label(
+                        egui::RichText::new(t("explorer.props.perm.locked"))
+                            .size(theme.font_size_caption.value())
+                            .color(theme.explorer_props_perm_locked_fg().to_egui()),
+                    );
+                }
                 if let Some(key) = f.warning {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
@@ -151,7 +174,18 @@ fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
     );
 }
 
-fn warn(mut field: Field, key: &'static str) -> Field {
+/// 본체 `sm_button_width` 와 같은 계산.
+fn sm_button_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
+    let size = ControlSize::Sm;
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(size.font_size(theme)),
+        egui::Color32::PLACEHOLDER,
+    );
+    galley.rect.width() + 2.0 * size.pad_x(theme)
+}
+
+pub(super) fn warn(mut field: Field, key: &'static str) -> Field {
     field.warning = Some(key);
     field
 }
@@ -186,6 +220,35 @@ fn props_card_with(
     fields: &[Field],
     note_text: Option<&str>,
     failure: Option<&str>,
+) {
+    props_card_full(
+        ui,
+        theme,
+        (glyph, name),
+        fields,
+        note_text,
+        failure,
+        Extras::default(),
+    );
+}
+
+/// 카드에 덧붙이는 것. `under` 는 권한 행(Edit·locked 행이 아닌 Permissions 라벨 행) 아래 내용,
+/// `footer` 는 구분선 위 오른쪽 "Open"(값은 켜짐 여부)이다.
+#[derive(Default)]
+pub(super) struct Extras<'a> {
+    pub(super) under: Option<&'a dyn Fn(&mut egui::Ui)>,
+    pub(super) footer: Option<bool>,
+}
+
+/// 시안 `PProps`: `YProps` + 권한 편집 상자 자리 + Open footer.
+pub(super) fn props_card_full(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    (glyph, name): (MockGlyph, &str),
+    fields: &[Field],
+    note_text: Option<&str>,
+    failure: Option<&str>,
+    extras: Extras<'_>,
 ) {
     let pad_x = theme.explorer_props_padding_x().value();
     let width = theme.explorer_props_width();
@@ -251,6 +314,11 @@ fn props_card_with(
                 }
                 for f in fields {
                     field_row(ui, theme, f);
+                    if f.label == "explorer.properties.permissions"
+                        && let Some(under) = extras.under
+                    {
+                        under(ui);
+                    }
                 }
                 if let Some(text) = note_text {
                     ui.add_space(theme.spacing_sm.value());
@@ -262,7 +330,49 @@ fn props_card_with(
                 }
             },
         );
+        if let Some(enabled) = extras.footer {
+            open_footer(ui, theme, enabled);
+        }
     });
+}
+
+/// 본체 `footer_row`: 위 1px `explorer-props-footer-border` · padding space-sm × padding-x · 오른쪽 정렬
+/// secondary sm "Open". 끊긴 링크는 끈 채 "Target not found" 툴팁을 단다.
+fn open_footer(ui: &mut egui::Ui, theme: &Theme, enabled: bool) {
+    let rule = ui.cursor().top();
+    let left = ui.min_rect().left();
+    let right = left + theme.explorer_props_width().value();
+    ui.painter().hline(
+        left..=right,
+        rule + theme.border_width.value() / 2.0,
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.explorer_props_footer_border().to_egui_premultiplied(),
+        ),
+    );
+    let pad_x = theme.explorer_props_padding_x().value();
+    kit::region(
+        ui,
+        egui::Margin {
+            left: pad_x as i8,
+            right: pad_x as i8,
+            top: (theme.spacing_sm.value() + theme.border_width.value()) as i8,
+            bottom: theme.spacing_sm.value() as i8,
+        },
+        |ui| {
+            ui.set_width(ui.available_width());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let resp = tasty_ui_widgets::Button::new(t("explorer.props.open"))
+                    .variant(ButtonVariant::Secondary)
+                    .size(ControlSize::Sm)
+                    .enabled(enabled)
+                    .show(ui, theme);
+                if !enabled {
+                    resp.on_hover_text(t("explorer.props.target_missing"));
+                }
+            });
+        },
+    );
 }
 
 /// 본체 `unreadable_body` 와 같은 배치.

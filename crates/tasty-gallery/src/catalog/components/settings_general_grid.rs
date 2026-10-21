@@ -1,5 +1,6 @@
 //! General › General 의 행 격자 예제. 라벨 열은 가장 긴 라벨을 150 … 240 으로 clamp 한 폭이고,
-//! 탐색기 파일 정보·휠 거리·언어 행은 자기 행 아래 caption 을, 웹훅 외부 수신 행은 경고 callout 을 가진다.
+//! 탐색기 파일 정보·휠 거리·언어·Properties 시각 형식 행은 자기 행 아래 caption 을, 웹훅 외부 수신 행은
+//! 경고 callout 을 가진다. 시각 형식 caption 은 고른 형식의 예시를 mono 로 붙인다.
 //! 실제 설정 저장은 하지 않는다.
 
 use std::cell::RefCell;
@@ -36,6 +37,7 @@ thread_local! {
         close: 0,
         wheel: "50".to_owned(),
         language: 0,
+        time_format: 0,
         external: false,
     });
 }
@@ -46,7 +48,43 @@ struct State {
     close: usize,
     wheel: String,
     language: usize,
+    time_format: usize,
     external: bool,
+}
+
+/// 시각 형식 선택지마다 caption 에 붙이는 예시(시안 `TF`). 오프셋은 시안의 고정 예시다.
+const TIME_EXAMPLES: [&str; 3] = [
+    "2026-10-21 12:12",
+    "2026-10-21 12:12:05",
+    "2026-10-21 12:12:05 +09:00",
+];
+
+/// 본체 `props_time_caption` 과 같은 배치: muted caption + mono text-secondary 예시, measure-md 에서 줄바꿈.
+fn time_caption(ui: &mut egui::Ui, theme: &Theme, pick: usize) {
+    let size = theme.font_size_caption.value();
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &format!(
+            "{} {} ",
+            crate::i18n::t("settings.general.props_time_format_caption"),
+            crate::i18n::t("settings.general.props_time_format_example")
+        ),
+        0.0,
+        egui::TextFormat::simple(
+            egui::FontId::proportional(size),
+            theme.text_muted().to_egui(),
+        ),
+    );
+    job.append(
+        TIME_EXAMPLES[pick.min(TIME_EXAMPLES.len() - 1)],
+        0.0,
+        egui::TextFormat::simple(
+            egui::FontId::monospace(size),
+            theme.text_secondary().to_egui(),
+        ),
+    );
+    job.wrap.max_width = theme.measure_md.value().min(ui.available_width());
+    ui.add(egui::Label::new(job).wrap());
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -69,13 +107,22 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     SettingsRow::new(crate::i18n::t("settings.general.wheel_line_scroll_label"))
                         .caption(wheel_caption()),
                     SettingsRow::new("Language:").caption(language_caption()),
+                    SettingsRow::new(crate::i18n::t("settings.general.props_time_format_label")),
                     SettingsRow::new(crate::i18n::t(
                         "settings.general.webhook_allow_external_label",
                     ))
                     .warning(notice(), &alert),
                 ];
                 let col = settings_label_column(ui, theme, &rows);
-                let [restore, explorer_details, close, wheel, language, webhook] = rows;
+                let [
+                    restore,
+                    explorer_details,
+                    close,
+                    wheel,
+                    language,
+                    time_format,
+                    webhook,
+                ] = rows;
                 STATE.with(|s| {
                     let st = &mut *s.borrow_mut();
                     restore.show(ui, theme, col, |ui| {
@@ -122,6 +169,27 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             true,
                         );
                     });
+                    ui.scope(|ui| {
+                        ui.spacing_mut().item_spacing.y = theme.settings_row_caption_gap().value();
+                        time_format.show(ui, theme, col, |ui| {
+                            select(
+                                ui,
+                                theme,
+                                "gallery_general_time_format",
+                                &mut st.time_format,
+                                &[
+                                    crate::i18n::t("settings.general.props_time_format_minutes"),
+                                    crate::i18n::t("settings.general.props_time_format_seconds"),
+                                    crate::i18n::t(
+                                        "settings.general.props_time_format_seconds_offset",
+                                    ),
+                                ],
+                                theme.field_width_lg.value(),
+                                true,
+                            );
+                        });
+                        time_caption(ui, theme, st.time_format);
+                    });
                     webhook.show(ui, theme, col, |ui| {
                         switch(ui, theme, &mut st.external, None, true);
                     });
@@ -148,7 +216,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "callout",
                 "same slot as a caption · warning · alertTriangle 16 · always visible · measure-md",
             ),
-            ("placement", "webhook row last (after Language)"),
+            (
+                "placement",
+                "webhook row last (after Language and Time format in Properties)",
+            ),
+            (
+                "time format",
+                "[general] explorer_props_time_format · minutes (default) | seconds | seconds_offset · caption + mono example in the chosen format · open Properties follow on next draw",
+            ),
             (
                 "explorer file details",
                 "[general] explorer_refresh_file_details · switch + caption (cost trade-off) · default off",

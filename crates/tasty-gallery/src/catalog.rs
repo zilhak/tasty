@@ -761,6 +761,14 @@ pub fn pages() -> Vec<Page> {
                             components::explorer_file_info::draw_properties,
                         ),
                         spec(
+                            "explorer-properties-actions",
+                            "Properties actions — time format · Open · permissions",
+                            Some(
+                                "time fields per format · Open footer as Enter · permission editor under the row",
+                            ),
+                            components::explorer_props_actions::draw,
+                        ),
+                        spec(
                             "explorer-preview",
                             "Preview panel — text · image · other · loading · too large · unreadable",
                             Some("toggle · right side 288 (splitter 200 … 460) · 40 header"),

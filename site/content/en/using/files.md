@@ -1,4 +1,4 @@
-<!-- source-hash: dd35862ecaaa -->
+<!-- source-hash: 9c7457856ab2 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -103,7 +103,11 @@ Files and folders whose names start with a dot (`.`), along with items marked hi
 
 ### Properties
 
-Choose **Properties** at the bottom of the right-click menu to open a popup inside the Explorer cell. Files and folders show kind, size, modified and created dates, path and permissions. **Path** is the item's own absolute path; use the button beside it to copy it. For a folder, a spinner turns while the items and size are counted in the background. If part of the count cannot be read, **Some folders couldn't be read** appears below the size. Closing the popup stops the count.
+Choose **Properties** at the bottom of the right-click menu to open a popup inside the Explorer cell. Files and folders show kind, size, modified and created dates, path and permissions. **Path** is the item's own absolute path; use the button beside it to copy it. For a folder, a spinner turns while the items and size are counted in the background. If part of the count cannot be read, **Some folders couldn't be read** appears below the size. Closing the popup stops the count. Times are in this computer's time zone; choose Minutes, Seconds or Seconds and UTC offset under **Time format in Properties** in **Settings** > **General**.
+
+When the popup shows one item, the **Open** button at the bottom opens it the way Enter does in the list: a file follows your handler settings and a folder opens in that Explorer. The popup stays open. For a broken link the button is greyed out.
+
+For one file or folder on this computer, **Edit** next to **Permissions** changes its permissions. On macOS and Linux, tick read, write and execute for the owner, group and others; on Windows only the **Read-only** attribute changes. Nothing changes until you press **Apply**, which changes that item only, not the items inside a folder, and keeps special bits such as setuid, setgid and sticky. If the change fails, the box shows why and the real permissions are read again. If you don't own the item (and Tasty isn't running as an administrator), a note says only the owner can change permissions instead of the Edit button. Links, several items and remote items can't have their permissions changed here.
 
 A link shows its target, the target's kind, size and modified date, and the link's own path. The target also has a copy button. A missing target is shown as **Broken link**, with **Target not found** below the target. A note below the fields says that deleting or renaming the link doesn't change its target. Other read errors, such as permission errors, show the reason and a **Retry** button.
 

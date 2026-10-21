@@ -1,4 +1,5 @@
 use super::choice::{Choice, choice_select};
+use crate::adapters::ui::surface::explorer::props_time;
 use crate::i18n::{LanguageEntry, t};
 use crate::settings::Settings;
 use tasty_type_geometry::length::LogicalPx;
@@ -34,6 +35,8 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
         SettingsRow::new(t("settings.general.close_behavior_label")),
         SettingsRow::new(t("settings.general.language_label"))
             .caption(t("settings.general.language_restart_notice")),
+        // caption 에 고른 형식의 예시를 mono 로 붙이므로 아래에서 직접 그린다.
+        SettingsRow::new(t("settings.general.props_time_format_label")),
         SettingsRow::new(t("settings.general.webhook_allow_external_label"))
             .warning(t("settings.general.webhook_allow_external_notice"), &alert),
     ];
@@ -47,6 +50,7 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
         wheel_row,
         close_behavior,
         language,
+        props_time,
         webhook,
     ] = rows;
 
@@ -158,10 +162,60 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
         );
     });
 
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = th.settings_row_caption_gap().value();
+        props_time.show(ui, &th, col, |ui| {
+            let labels = [
+                t("settings.general.props_time_format_minutes"),
+                t("settings.general.props_time_format_seconds"),
+                t("settings.general.props_time_format_seconds_offset"),
+            ];
+            let choices: Vec<Choice<'_>> = props_time::FORMATS
+                .iter()
+                .zip(labels)
+                .map(|(&(value, _), label)| Choice { value, label })
+                .collect();
+            choice_select(
+                ui,
+                &th,
+                "explorer_props_time_format",
+                &mut settings.general.explorer_props_time_format,
+                &choices,
+                th.field_width_lg,
+            );
+        });
+        props_time_caption(ui, &th, &settings.general.explorer_props_time_format);
+    });
+
     // 경고 callout 은 스위치 상태와 관계없이 항상 그린다.
     webhook.show(ui, &th, col, |ui| {
         tasty_ui_widgets::switch(ui, &th, &mut settings.webhook.allow_external, None, true);
     });
+}
+
+/// 시각 형식 행의 caption. 바뀌는 필드를 말하고 고른 형식의 고정 예시를 mono 로 붙인다.
+/// 다른 행의 caption 과 같은 폭(`measure-md`, 남은 폭이 더 좁으면 그 폭)에서 줄을 바꾼다.
+fn props_time_caption(ui: &mut egui::Ui, th: &crate::theme::Theme, setting: &str) {
+    let size = th.font_size_caption.value();
+    let mut job = egui::text::LayoutJob::default();
+    let muted =
+        egui::TextFormat::simple(egui::FontId::proportional(size), th.text_muted().to_egui());
+    job.append(
+        &format!(
+            "{} {} ",
+            t("settings.general.props_time_format_caption"),
+            t("settings.general.props_time_format_example")
+        ),
+        0.0,
+        muted,
+    );
+    job.append(
+        &props_time::example(setting),
+        0.0,
+        egui::TextFormat::simple(egui::FontId::monospace(size), th.text_secondary().to_egui()),
+    );
+    job.wrap.max_width = th.measure_md.value().min(ui.available_width());
+    ui.add(egui::Label::new(job).wrap());
 }
 
 #[cfg(test)]

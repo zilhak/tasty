@@ -3,6 +3,11 @@
 //! 연 순간의 항목을 끝까지 보이며 이후 선택 변경을 따라가지 않는다. 폴더 크기는 read worker 가
 //! 배경에서 세는 동안 Spinner 와 지금까지 센 값을 보이고, 팝업을 닫으면 세기를 멈춘다.
 //! 원격 항목은 목록이 준 값(종류·크기·수정 시각·위치)만 보이고 그렇다고 알린다.
+//! 한 항목이면 아래 Open 이 목록의 Enter 와 같은 동작을 하고 팝업은 남는다. 시각은 설정의 형식을 쓴다.
+//! 로컬 한 항목의 권한은 Permissions 행의 Edit 로 바꾼다([`perm_edit`]).
+
+mod actions;
+mod perm_edit;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,6 +21,7 @@ use tasty_ui_widgets::{
 use crate::adapters::ui::icons::{self, Icon};
 use crate::adapters::ui::popup::PopupAction;
 use crate::adapters::ui::surface::explorer::display_text::nfc;
+use crate::adapters::ui::surface::explorer::props_time;
 use crate::adapters::ui::surface::explorer::view::ExplorerView;
 use crate::app::local_reads::{
     self, FolderCount, ItemFacts, ItemKind, LinkTarget, PropertiesFacts, Query,
@@ -25,6 +31,8 @@ use crate::i18n::{t, t_count, t_fmt};
 use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme::{self, Theme};
+use actions::{Footer, apply_perm, footer, footer_row};
+use perm_edit::{PermAccess, PermClick, PermEdit};
 
 pub const EXPLORER_PROPERTIES_POPUP_ID: &str = "explorer_properties";
 
@@ -40,6 +48,8 @@ pub struct ExplorerProperties {
     cancel: Arc<AtomicBool>,
     /// 직전 프레임에 잰 내용 높이. sizer 가 팝업 높이로 쓴다.
     content_h: Option<f32>,
+    /// 열린 권한 편집 상자.
+    perm: Option<PermEdit>,
 }
 
 /// 팝업을 연다. `remote` 는 원격 탐색기의 목록 항목이다. 이미 열려 있으면 새 항목으로 바꾼다.
@@ -77,6 +87,7 @@ pub(crate) fn open(
         count,
         cancel,
         content_h: None,
+        perm: None,
     });
     let dispatch = |state: &mut MainViewState, intent: crate::intent::UiIntent| {
         state.dispatch_intent(if from_shortcut {
@@ -181,6 +192,15 @@ pub(crate) fn poll(
     };
     props.query = None;
     props.facts = Some(result.map_err(|e| e.to_string()));
+    // 권한을 적용한 뒤 다시 읽은 값으로 편집 상자를 맞춘다. 항목을 못 읽게 됐으면 상자를 닫는다.
+    match &props.facts {
+        Some(Ok(facts)) => {
+            if let (Some(edit), [item]) = (props.perm.as_mut(), facts.items.as_slice()) {
+                edit.reread(item);
+            }
+        }
+        _ => props.perm = None,
+    }
     true
 }
 
@@ -222,6 +242,10 @@ struct Field {
     copy: bool,
     counting: bool,
     warning: Option<&'static str>,
+    /// 시각 값. 날짜·시각·오프셋 사이에서만 줄을 바꾼다.
+    time: bool,
+    /// 권한 행. 바꿀 수 있으면 Edit, 소유자가 아니면 안내 줄을 단다.
+    perm: PermAccess,
 }
 
 fn field(label: &'static str, value: String) -> Field {
@@ -232,30 +256,37 @@ fn field(label: &'static str, value: String) -> Field {
         copy: false,
         counting: false,
         warning: None,
+        time: false,
+        perm: PermAccess::None,
     }
 }
 
 fn mono(label: &'static str, value: String, copy: bool) -> Field {
     Field {
-        label,
-        value,
         mono: true,
         copy,
-        counting: false,
-        warning: None,
+        ..field(label, value)
     }
 }
 
-pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'_>) -> PopupAction {
+fn time_field(label: &'static str, t: Option<SystemTime>, format: &str) -> Field {
+    Field {
+        time: true,
+        ..mono(label, props_time::time_text(t, format), false)
+    }
+}
+
+pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, engine: &EngineRead<'_>) -> PopupAction {
     let th = theme::theme();
     let Some(props) = state.dialogs.explorer_properties.as_ref() else {
         return PopupAction::Close;
     };
     // 탐색기 칸이 닫히면 팝업도 닫는다.
-    if state.explorer_views.get(props.surface_id).is_none() {
+    let Some(view) = state.explorer_views.get(props.surface_id) else {
         return PopupAction::Close;
-    }
-    let (mut glyph, name, fields, note) = content(props);
+    };
+    let format = engine.settings.general.explorer_props_time_format.clone();
+    let (mut glyph, name, fields, note) = content(props, &format);
     let failure = match &props.facts {
         Some(Err(reason)) => {
             glyph = item_glyph(state, props.surface_id, &props.paths[0]);
@@ -263,11 +294,18 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
         }
         _ => None,
     };
+    let footer = footer(props, view);
+    let surface_id = props.surface_id;
+    let mut perm = props.perm.clone();
     let mut retry = false;
+    let mut edit = false;
+    let mut perm_click = PermClick::None;
+    let mut open = false;
     let pad_x = th.explorer_props_padding_x().value();
     let mut close = false;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     let top = ui.cursor().top();
+    let mut close_rect = egui::Rect::NOTHING;
     ui.vertical(|ui| {
         ui.set_width(th.explorer_props_width().value());
         egui::Frame::new()
@@ -281,7 +319,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
                 let broken = fields
                     .iter()
                     .any(|f| f.warning == Some("explorer.props.target_missing"));
-                close = header(ui, &th, glyph, &name, broken);
+                close_rect = header(ui, &th, glyph, &name, broken);
             });
         egui::Frame::new()
             .inner_margin(egui::Margin {
@@ -296,7 +334,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
                     retry = unreadable_body(ui, &th, reason);
                 }
                 for f in &fields {
-                    field_row(ui, &th, f);
+                    let row = field_row(ui, &th, f, perm.as_mut());
+                    edit |= row.edit;
+                    if row.perm != PermClick::None {
+                        perm_click = row.perm;
+                    }
                 }
                 if let Some(text) = note {
                     ui.add_space(th.spacing_sm.value());
@@ -307,13 +349,45 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
                     );
                 }
             });
+        if !matches!(footer, Footer::None) {
+            open = footer_row(ui, &th, &footer);
+        }
     });
+    // 닫기는 Tab 순서가 필드 버튼·Open 뒤에 오도록 마지막에 만든다. 자리는 머리가 잡아 두었다.
+    if close_rect.is_positive() {
+        let mut slot = ui.new_child(egui::UiBuilder::new().max_rect(close_rect));
+        close = icon_button(&mut slot, &th, icons::CLOSE)
+            .on_hover_text(t("explorer.properties.close"))
+            .clicked();
+    }
     let measured = ui.cursor().top() - top;
+    let apply = perm
+        .as_ref()
+        .filter(|_| perm_click == PermClick::Apply)
+        .map(|p| (p.path.clone(), p.draft));
     if let Some(props) = state.dialogs.explorer_properties.as_mut() {
         props.content_h = Some(measured);
+        // 그리는 동안 바꾼 칸을 돌려 놓는다. 그 사이 끝난 결과는 그대로 둔다.
+        if let (Some(old), Some(new)) = (props.perm.as_mut(), perm)
+            && old.phase == new.phase
+        {
+            old.draft = new.draft;
+        }
+        if edit {
+            props.open_perm();
+        }
+        if perm_click == PermClick::Cancel {
+            props.perm = None;
+        }
         if retry {
             props.retry();
         }
+    }
+    if let Some((path, change)) = apply {
+        apply_perm(state, engine, surface_id, path, change);
+    }
+    if open && let Footer::Open(action) = footer {
+        crate::adapters::ui::apply_explorer_action(state, engine, surface_id, action);
     }
     if close {
         PopupAction::Close
@@ -394,10 +468,10 @@ fn unreadable_body(ui: &mut egui::Ui, th: &Theme, reason: &str) -> bool {
         .clicked()
 }
 
-/// 머리: 글리프 · 이름(14, regular, 말줄임) · 닫기. 닫기를 누르면 true.
-/// 제목은 regular 다. 테마에 semibold UI 글꼴이 없어 크기로 제목을 구분한다.
-fn header(ui: &mut egui::Ui, th: &Theme, glyph: Icon, name: &str, broken: bool) -> bool {
-    let mut close = false;
+/// 머리: 글리프 · 이름(14, regular, 말줄임) · 닫기 자리. 닫기 버튼은 Tab 순서 때문에 `draw` 가 마지막에
+/// 그 자리에 만든다. 제목은 regular 다. 테마에 semibold UI 글꼴이 없어 크기로 제목을 구분한다.
+fn header(ui: &mut egui::Ui, th: &Theme, glyph: Icon, name: &str, broken: bool) -> egui::Rect {
+    let mut close = egui::Rect::NOTHING;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         let g = th.icon_glyph_size_md.value();
@@ -424,9 +498,9 @@ fn header(ui: &mut egui::Ui, th: &Theme, glyph: Icon, name: &str, broken: bool) 
             galley,
             th.text_primary().to_egui(),
         );
-        close = icon_button(ui, th, icons::CLOSE)
-            .on_hover_text(t("explorer.properties.close"))
-            .clicked();
+        close = ui
+            .allocate_exact_size(egui::vec2(close_w, close_w), egui::Sense::hover())
+            .0;
     });
     close
 }
@@ -440,8 +514,21 @@ fn icon_button(ui: &mut egui::Ui, th: &Theme, g: Icon) -> egui::Response {
         })
 }
 
-/// 라벨(96, caption muted) · 값(body 또는 mono caption, 어디서나 줄바꿈) · 선택 Copy.
-fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field) {
+/// 행에서 누른 것.
+struct RowClicks {
+    edit: bool,
+    perm: PermClick,
+}
+
+/// 라벨(96, caption muted) · 값(body 또는 mono caption, 어디서나 줄바꿈. 시각은 부분 사이에서만) ·
+/// 선택 Copy · 권한 행의 Edit(상자가 열려 있으면 숨김) 또는 소유자 아님 안내. 열린 권한 편집 상자는
+/// 시안처럼 값 열 아래에 값 열 폭으로 그린다.
+fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field, perm: Option<&mut PermEdit>) -> RowClicks {
+    let mut clicks = RowClicks {
+        edit: false,
+        perm: PermClick::None,
+    };
+    let perm_open = perm.is_some();
     let label_w = th.explorer_props_label_width().value();
     let line_h = th.explorer_props_row_line().value();
     let min_h = th.explorer_props_row_min_height().value();
@@ -485,8 +572,12 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field) {
                             ));
                         Spinner::new().size(s).show(&mut slot, th);
                     }
+                    let edit_label = t("explorer.props.perm.edit");
+                    let show_edit = f.perm == PermAccess::Editable && !perm_open;
                     let copy_w = if f.copy {
                         ControlSize::Sm.height(th) + th.spacing_xs.value()
+                    } else if show_edit {
+                        sm_button_width(ui, th, edit_label) + th.spacing_xs.value()
                     } else {
                         0.0
                     };
@@ -495,7 +586,7 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field) {
                     } else {
                         egui::FontId::proportional(th.font_size_body.value())
                     };
-                    let color = th.text_secondary().to_egui();
+                    let color = th.explorer_props_value_fg().to_egui();
                     let text_w = (ui.available_width() - copy_w).max(0.0);
                     let mut job = egui::text::LayoutJob::simple(
                         nfc(&f.value).into_owned(),
@@ -503,7 +594,8 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field) {
                         color,
                         text_w,
                     );
-                    job.wrap.break_anywhere = true;
+                    // 시각은 날짜·시각·오프셋을 한 덩어리씩 두고 그 사이에서만 줄을 바꾼다.
+                    job.wrap.break_anywhere = !f.time;
                     let galley = ui.fonts(|fonts| fonts.layout_job(job));
                     // 첫 줄을 줄 높이 가운데에 두고, 줄을 바꾼 값은 글자 줄 높이만큼만 늘린다.
                     let first_h = galley.rows.first().map_or(line_h, |r| r.height());
@@ -519,7 +611,31 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field) {
                     {
                         ui.ctx().copy_text(f.value.clone());
                     }
+                    if show_edit
+                        && Button::new(edit_label)
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .show(ui, th)
+                            .clicked()
+                    {
+                        clicks.edit = true;
+                    }
                 });
+                if f.perm == PermAccess::Editable
+                    && let Some(edit) = perm
+                {
+                    clicks.perm = perm_edit::draw(ui, th, edit);
+                }
+                if f.perm == PermAccess::Locked {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(t("explorer.props.perm.locked"))
+                                .size(th.font_size_caption.value())
+                                .color(th.explorer_props_perm_locked_fg().to_egui()),
+                        )
+                        .wrap(),
+                    );
+                }
                 if let Some(key) = f.warning {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
@@ -543,13 +659,28 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field) {
             });
         },
     );
+    clicks
+}
+
+/// sm 버튼 하나의 폭. 값 글자가 버튼 자리를 침범하지 않도록 먼저 잰다.
+fn sm_button_width(ui: &egui::Ui, th: &Theme, label: &str) -> f32 {
+    let size = ControlSize::Sm;
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(size.font_size(th)),
+        egui::Color32::PLACEHOLDER,
+    );
+    galley.rect.width() + 2.0 * size.pad_x(th)
 }
 
 /// (글리프, 제목, 필드, 안내 문구).
-fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'static str>) {
+fn content(
+    props: &ExplorerProperties,
+    format: &str,
+) -> (Icon, String, Vec<Field>, Option<&'static str>) {
     let location = common_parent(&props.paths);
     if let Some(entries) = &props.remote {
-        return remote_content(entries, location);
+        return remote_content(entries, location, format);
     }
     let counting = !props.count.done.load(Ordering::Acquire);
     let partial = props.count.partial.load(Ordering::Acquire);
@@ -575,10 +706,8 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
         return single_content(
             &props.paths[0],
             item,
-            partial,
-            counting,
-            counted_items,
-            counted_bytes,
+            (partial, counting, counted_items, counted_bytes),
+            format,
         );
     }
     let folders = facts
@@ -606,14 +735,14 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
     (icons::LAYERS, title, fields, None)
 }
 
+/// `count` 는 (부분 집계, 세는 중, 센 항목 수, 센 바이트)다.
 fn single_content(
     path: &Path,
     item: &ItemFacts,
-    partial: bool,
-    counting: bool,
-    counted_items: u64,
-    counted_bytes: u64,
+    count: (bool, bool, u64, u64),
+    format: &str,
 ) -> (Icon, String, Vec<Field>, Option<&'static str>) {
+    let (partial, counting, counted_items, counted_bytes) = count;
     let name = file_name(path);
     let path_row = || mono("explorer.props.path", item.path.display().to_string(), true);
     if let ItemKind::Link { target, state } = &item.kind {
@@ -660,10 +789,10 @@ fn single_content(
                     size_bytes(*size)
                 },
             ));
-            fields.push(mono(
+            fields.push(time_field(
                 "explorer.props.target_modified",
-                time_text(*modified),
-                false,
+                *modified,
+                format,
             ));
         }
         fields.push(path_row());
@@ -707,22 +836,17 @@ fn single_content(
             warning: (folder && partial).then_some("explorer.props.partial"),
             ..field("explorer.properties.size", size)
         },
-        mono(
-            "explorer.properties.modified",
-            time_text(item.modified),
-            false,
-        ),
-        mono(
-            "explorer.properties.created",
-            time_text(item.created),
-            false,
-        ),
+        time_field("explorer.properties.modified", item.modified, format),
+        time_field("explorer.properties.created", item.created, format),
         path_row(),
-        mono(
-            "explorer.properties.permissions",
-            permissions_text(item),
-            false,
-        ),
+        Field {
+            perm: perm_edit::access(item),
+            ..mono(
+                "explorer.properties.permissions",
+                permissions_text(item),
+                false,
+            )
+        },
     ];
     let glyph = if folder {
         icons::FOLDER
@@ -752,6 +876,7 @@ fn size_bytes(size: u64) -> String {
 fn remote_content(
     entries: &[DirEntryInfo],
     location: String,
+    format: &str,
 ) -> (Icon, String, Vec<Field>, Option<&'static str>) {
     let note = Some(t("explorer.properties.remote_note"));
     if let [e] = entries {
@@ -762,7 +887,7 @@ fn remote_content(
                 crate::adapters::ui::surface::explorer::kind_word(e),
             ),
             field("explorer.properties.size", human_size(e.is_dir, e.size)),
-            mono("explorer.properties.modified", time_text(e.modified), false),
+            time_field("explorer.properties.modified", e.modified, format),
             mono("explorer.props.path", e.path.display().to_string(), true),
         ];
         return (glyph, e.name.clone(), fields, note);
@@ -833,16 +958,6 @@ fn permissions_text(item: &ItemFacts) -> String {
     }
 }
 
-/// 로컬 시각 `YYYY-MM-DD HH:MM`. 값이 없으면 대시다.
-fn time_text(t: Option<SystemTime>) -> String {
-    match t {
-        Some(t) => chrono::DateTime::<chrono::Local>::from(t)
-            .format("%Y-%m-%d %H:%M")
-            .to_string(),
-        None => "—".to_owned(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -858,9 +973,11 @@ mod tests {
             created: None,
             mode: Some("rwxr-x---".into()),
             read_only: false,
+            mode_bits: Some(0o750),
+            can_change_mode: true,
             hardlink: None,
         };
-        let (_, _, fields, _) = single_content(&item.path, &item, true, false, 3, 2);
+        let (_, _, fields, _) = single_content(&item.path, &item, (true, false, 3, 2), "minutes");
         assert_eq!(
             fields.iter().map(|f| f.label).collect::<Vec<_>>(),
             vec![
@@ -885,7 +1002,8 @@ mod tests {
             },
         };
         item.size = 999;
-        let (_, _, fields, note) = single_content(&item.path, &item, false, false, 0, 0);
+        let (_, _, fields, note) =
+            single_content(&item.path, &item, (false, false, 0, 0), "minutes");
         assert_eq!(note, Some(t("explorer.props.link_note")));
         assert_eq!(
             fields.iter().map(|f| f.label).collect::<Vec<_>>(),
@@ -905,7 +1023,8 @@ mod tests {
             target: PathBuf::from("missing"),
             state: LinkTarget::Missing,
         };
-        let (_, _, fields, note) = single_content(&item.path, &item, false, false, 0, 0);
+        let (_, _, fields, note) =
+            single_content(&item.path, &item, (false, false, 0, 0), "minutes");
         assert_eq!(fields.len(), 3);
         assert_eq!(
             note,
@@ -927,6 +1046,7 @@ mod tests {
             count: Arc::new(FolderCount::default()),
             cancel: Arc::new(AtomicBool::new(false)),
             content_h: None,
+            perm: None,
         };
         let mut local = failed(None);
         local.retry();
@@ -1162,7 +1282,7 @@ mod tests {
             p.count.done.load(Ordering::Acquire),
             "nothing is left counting"
         );
-        let (_, title, fields, _) = content(p);
+        let (_, title, fields, _) = content(p, "minutes");
         assert_eq!(title, "gone.txt");
         assert!(fields.is_empty(), "no made-up values beside the error");
 
@@ -1181,7 +1301,7 @@ mod tests {
         open_from_menu(&mut state, true, 1, &[], &cwd);
         let p = props(&state);
         assert!(p.query.is_none(), "a remote item is never read locally");
-        let (glyph, title, fields, note) = content(p);
+        let (glyph, title, fields, note) = content(p, "minutes");
         assert_eq!(glyph.uri, icons::FOLDER.uri);
         assert_eq!(title, "project");
         assert_eq!(note, Some(t("explorer.properties.remote_note")));
@@ -1211,6 +1331,8 @@ mod tests {
             created: None,
             mode: None,
             read_only: false,
+            mode_bits: None,
+            can_change_mode: true,
             hardlink: None,
         }
     }
@@ -1227,6 +1349,7 @@ mod tests {
             count: Arc::new(count),
             cancel: Arc::new(AtomicBool::new(false)),
             content_h: None,
+            perm: None,
         }
     }
 
@@ -1241,7 +1364,8 @@ mod tests {
                 std::io::ErrorKind::PermissionDenied,
             )],
         };
-        let (glyph, title, fields, _) = content(&local_props(&["/w/a.txt", "/w/d/x"], facts));
+        let (glyph, title, fields, _) =
+            content(&local_props(&["/w/a.txt", "/w/d/x"], facts), "minutes");
         assert_eq!(
             glyph.svg,
             icons::LAYERS.svg,
@@ -1265,7 +1389,7 @@ mod tests {
             ..Default::default()
         };
         let total = |entries: &[DirEntryInfo]| {
-            let (_, _, fields, _) = remote_content(entries, "/srv".into());
+            let (_, _, fields, _) = remote_content(entries, "/srv".into(), "minutes");
             fields
                 .into_iter()
                 .find(|f| f.label == "explorer.properties.total_size")
@@ -1278,5 +1402,51 @@ mod tests {
             total(&[entry("f", false, 10), entry("g", false, 20)]),
             human_size(false, 30)
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_permission_result_settles_only_its_request_and_rereads_the_item() {
+        use super::perm_edit::Phase;
+        use crate::app::file_jobs::permissions::PermChange;
+        let mut item = file_item("/w/a.txt", 1);
+        item.mode_bits = Some(0o644);
+        let facts = |item: &ItemFacts| PropertiesFacts {
+            items: vec![item.clone()],
+            file_bytes: 1,
+            failed: Vec::new(),
+        };
+        let mut p = local_props(&["/w/a.txt"], facts(&item));
+        p.open_perm();
+        let edit = p
+            .perm
+            .as_mut()
+            .expect("a local owned file opens the editor");
+        edit.draft = PermChange::Mode(0o600);
+        edit.phase = Phase::Applying(9);
+        assert_eq!(p.perm_request(), Some(9));
+
+        // 다른 요청의 결과는 상자를 건드리지 않는다.
+        p.settle_perm(8, Some(Ok(())));
+        assert_eq!(p.perm_request(), Some(9));
+
+        p.settle_perm(9, Some(Err("Operation not permitted (os error 1)".into())));
+        let edit = p.perm.as_ref().unwrap();
+        assert_eq!(
+            edit.phase,
+            Phase::Failed("Operation not permitted (os error 1)".into())
+        );
+        assert!(p.query.is_some(), "the real mode is read again");
+        assert!(p.facts.is_some(), "the old values stay while reading");
+
+        p.perm.as_mut().unwrap().phase = Phase::Applying(10);
+        p.settle_perm(10, Some(Ok(())));
+        assert!(p.perm.is_none(), "success closes the editor");
+
+        // 링크·원격·소유자 아님은 상자를 열지 않는다.
+        item.can_change_mode = false;
+        let mut locked = local_props(&["/w/a.txt"], facts(&item));
+        locked.open_perm();
+        assert!(locked.perm.is_none());
     }
 }

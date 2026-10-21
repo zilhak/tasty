@@ -47,6 +47,11 @@ pub(crate) enum Operation {
         name: String,
         folder: bool,
     },
+    /// Properties 권한 편집. 한 항목에만 적용하고 폴더 안으로 내려가지 않는다. 로컬 칸에서만 쓴다.
+    SetPermissions {
+        path: PathBuf,
+        change: super::file_jobs::permissions::PermChange,
+    },
     /// 끝난 복사·이동을 되돌린다.
     Undo(Vec<UndoStep>),
     /// 원본이 남은 이동 항목의 원본만 다시 지운다. `dest` 는 처음 이동의 목적지 폴더다.
@@ -104,7 +109,11 @@ impl Operation {
             Self::RemoveLeftovers { .. } => Some(OpKind::RemoveOriginals),
             Self::Trash(_) => Some(OpKind::Trash),
             Self::Undo(_) => Some(OpKind::Undo),
-            Self::Rename { .. } | Self::Open(_) | Self::Reveal(_) | Self::Create { .. } => None,
+            Self::Rename { .. }
+            | Self::Open(_)
+            | Self::Reveal(_)
+            | Self::Create { .. }
+            | Self::SetPermissions { .. } => None,
         }
     }
     /// 진행 표시에 쓰는 목적지 폴더와 항목 수.
@@ -116,9 +125,11 @@ impl Operation {
             Self::Trash(paths) => (None, paths.len()),
             Self::Undo(steps) => (None, steps.len()),
             Self::RemoveLeftovers { dest, leftovers } => (dest.clone(), leftovers.len()),
-            Self::Rename { .. } | Self::Open(_) | Self::Reveal(_) | Self::Create { .. } => {
-                (None, 1)
-            }
+            Self::Rename { .. }
+            | Self::Open(_)
+            | Self::Reveal(_)
+            | Self::Create { .. }
+            | Self::SetPermissions { .. } => (None, 1),
         }
     }
     /// 되돌리기라면 되돌리는 작업의 종류. 옮긴 항목이 하나라도 있으면 이동이다. 이력의 단계를
@@ -162,7 +173,7 @@ impl Operation {
             }
             Self::Rename { path, name } => path.as_os_str().len() + name.len(),
             Self::Open(paths) => paths.iter().map(|p| p.as_os_str().len()).sum(),
-            Self::Reveal(path) => path.as_os_str().len(),
+            Self::Reveal(path) | Self::SetPermissions { path, .. } => path.as_os_str().len(),
             Self::Create { dir, name, .. } => dir.as_os_str().len() + name.len(),
             Self::Undo(steps) => steps
                 .iter()
@@ -213,6 +224,11 @@ impl Operation {
                 removed: vec![path.clone()],
             },
             Self::Open(_) | Self::Reveal(_) => Affected::default(),
+            // 목록의 항목 집합은 그대로지만 같은 폴더를 보는 칸이 바뀐 metadata 를 다시 읽는다.
+            Self::SetPermissions { path, .. } => Affected {
+                changed: parents(std::slice::from_ref(path)),
+                removed: Vec::new(),
+            },
             Self::Create { dir, .. } => Affected {
                 changed: vec![dir.clone()],
                 removed: Vec::new(),
@@ -254,6 +270,9 @@ impl Operation {
                 Done::Simple(crate::platform::reveal::reveal_path(&path).map_err(|e| e.to_string()))
             }
             Self::Create { dir, name, folder } => Done::Step(named::create(&dir, &name, folder)),
+            Self::SetPermissions { path, change } => {
+                Done::Simple(super::file_jobs::permissions::apply(&path, change))
+            }
         }
     }
 }
@@ -428,7 +447,11 @@ impl crate::state::MainViewState {
         let remote = engine.mirror_workspace_of(surface).is_some();
         if !matches!(origin, crate::intent::IntentOrigin::User { .. })
             || engine.blocks_explorer_write(surface)
-            || (remote && matches!(operation, Operation::Open(_) | Operation::Reveal(_)))
+            || (remote
+                && matches!(
+                    operation,
+                    Operation::Open(_) | Operation::Reveal(_) | Operation::SetPermissions { .. }
+                ))
         {
             return None;
         }
@@ -733,6 +756,16 @@ impl super::App {
             }
             ui_sync::close_renamed(&mut self.view, target.request);
         }
+        // 권한 편집 상자는 칸·바인딩이 바뀌었어도 결과를 알아야 다시 편집할 수 있다.
+        ui_sync::settle_permissions(
+            &mut self.view,
+            target.request,
+            if success {
+                Ok(())
+            } else {
+                Err(failure.clone().unwrap_or_default())
+            },
+        );
         if self.engines.of_window(window) != Some(engine) {
             return;
         }

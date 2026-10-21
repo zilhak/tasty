@@ -11,6 +11,7 @@ mod find;
 mod kind;
 mod link;
 mod preview;
+pub(crate) mod props_time;
 mod state_screen;
 mod thumbs;
 pub mod type_ahead;
