@@ -1092,6 +1092,7 @@ fn dotdot_entry(parent: PathBuf) -> DirEntryInfo {
         ext: String::new(),
         link: Default::default(),
         os_hidden: false,
+        change: None,
     }
 }
 

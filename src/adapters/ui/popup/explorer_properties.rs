@@ -162,6 +162,7 @@ fn remote_entries(state: &MainViewState, surface_id: u32, paths: &[PathBuf]) -> 
                     ext: String::new(),
                     link: Default::default(),
                     os_hidden: false,
+                    change: None,
                 })
         })
         .collect()

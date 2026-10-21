@@ -1,18 +1,19 @@
 //! Grid 보기의 썸네일. 시안 "Grid thumbnails"를 따른다.
 //! 모든 Grid 셀은 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유무와 관계없이 행 높이가 같다.
-//! 로컬 그림 파일만 화면에 보인 셀부터 read worker 에서 만들고, 경로와 수정 시각으로 캐시한다.
+//! 로컬 그림 파일만 화면에 보인 셀부터 read worker 에서 만들고, 경로와 내용 키(수정 시각·크기·Unix 의
+//! inode·ctime, `DirEntryInfo::content_key`)로 캐시한다.
 //! 캐시가 차면 이번 프레임에 보이지 않은 항목 중 가장 오래 쓰지 않은 것부터 버린다.
 //! 만드는 동안이나 앱 크기 상한을 넘으면 16 글리프(accent-info)를 그대로 둔다. 원격 탐색기는 글리프만 쓴다.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::SystemTime;
 
 use tasty_type_appearance::theme::Theme;
 
 use super::view::DirEntryInfo;
 use crate::adapters::ui::icons::Icon;
 use crate::app::local_reads::{self, PREVIEW_MAX_BYTES, Query, ReadRequests};
+use crate::core::fs_list::ContentKey;
 
 /// 캐시에 두는 썸네일 수. 넘으면 화면에 보이지 않는 항목을 오래 쓰지 않은 순서로 버린다.
 const MAX_SLOTS: usize = 512;
@@ -25,7 +26,7 @@ enum State {
 }
 
 struct Slot {
-    modified: Option<SystemTime>,
+    key: ContentKey,
     state: State,
     /// 마지막으로 화면에 보인 프레임 번호.
     used: u64,
@@ -72,7 +73,7 @@ impl Thumbs {
             return None;
         }
         let slot = self.slots.get_mut(&e.path)?;
-        if slot.modified != e.modified {
+        if slot.key != e.content_key() {
             return None;
         }
         if let State::Decoded(_) = slot.state {
@@ -99,7 +100,7 @@ impl Thumbs {
         }
         let frame = self.frame;
         if let Some(slot) = self.slots.get_mut(&e.path)
-            && slot.modified == e.modified
+            && slot.key == e.content_key()
         {
             slot.used = frame;
             return;
@@ -110,7 +111,7 @@ impl Thumbs {
         self.slots.insert(
             e.path.clone(),
             Slot {
-                modified: e.modified,
+                key: e.content_key(),
                 state: State::Pending(local_reads::thumbnail(e.path.clone())),
                 used: frame,
             },
@@ -192,6 +193,7 @@ pub(super) fn native_size(ui: &egui::Ui, px: [usize; 2]) -> egui::Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::SystemTime;
 
     fn image_entry(i: usize) -> DirEntryInfo {
         DirEntryInfo {
@@ -305,6 +307,48 @@ mod tests {
         shutdown(owner);
     }
 
+    /// `cp -p`·`touch -r` 처럼 수정 시각을 되돌린 교체. OS 값(`change`)을 지워 Windows 처럼 크기만으로
+    /// 가르는지 본다.
+    #[test]
+    fn a_replacement_that_keeps_the_modified_time_but_not_the_size_reads_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.png");
+        let mut owner = LocalReads::default();
+        let mut thumbs = Thumbs::default();
+        let mut old = write_image(&path, 2, 2, 1_000_000);
+        old.change = None;
+        thumbs.want(&old, false);
+        settle(&mut thumbs, &mut owner, &path);
+
+        let mut new = write_image(&path, 30, 30, 1_000_000);
+        new.change = None;
+        assert_eq!(old.modified, new.modified);
+        assert_ne!(old.size, new.size);
+        let ctx = egui::Context::default();
+        assert!(thumbs.texture(&ctx, &new, false).is_none());
+        thumbs.want(&new, false);
+        settle(&mut thumbs, &mut owner, &path);
+        assert_eq!(decoded_size(&thumbs, &path), [30, 30]);
+        shutdown(owner);
+    }
+
+    #[test]
+    fn an_untouched_cell_shown_again_keeps_its_thumbnail() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.png");
+        let mut owner = LocalReads::default();
+        let mut thumbs = Thumbs::default();
+        let entry = write_image(&path, 2, 2, 1_000_000);
+        thumbs.want(&entry, false);
+        settle(&mut thumbs, &mut owner, &path);
+        let relisted = crate::core::fs_list::read_dir_entries(dir.path())
+            .unwrap()
+            .remove(0);
+        thumbs.want(&relisted, false);
+        assert!(matches!(thumbs.slots[&path].state, State::Decoded(_)));
+        shutdown(owner);
+    }
+
     #[test]
     fn a_late_result_for_the_old_file_does_not_land_on_the_new_one() {
         let dir = tempfile::tempdir().unwrap();
@@ -324,7 +368,7 @@ mod tests {
         thumbs.want(&new, false);
         settle(&mut thumbs, &mut owner, &path);
         assert_eq!(decoded_size(&thumbs, &path), [3, 3]);
-        assert_eq!(thumbs.slots[&path].modified, new.modified);
+        assert_eq!(thumbs.slots[&path].key, new.content_key());
         shutdown(owner);
     }
 

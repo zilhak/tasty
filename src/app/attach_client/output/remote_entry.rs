@@ -5,7 +5,7 @@ use tasty_remote::client_session::RemoteDirEntry;
 use crate::core::fs_list::DirEntryInfo;
 
 /// `dir` 은 원격이 실제로 읽은 폴더다. 없으면 이름만으로 경로를 만든다. 원격 응답에는 링크 상태가
-/// 없어 기본값이다. OS 숨김 표시는 server 가 실은 값이고 옛 server 면 거짓이다. 필드를 모두 적어
+/// 없어 기본값이고 OS 변경 값(`change`)도 없다. OS 숨김 표시는 server 가 실은 값이고 옛 server 면 거짓이다. 필드를 모두 적어
 /// 새 필드가 생기면 여기서 컴파일러가 알린다.
 pub(super) fn from_remote(dir: Option<&str>, entry: RemoteDirEntry) -> DirEntryInfo {
     DirEntryInfo {
@@ -19,5 +19,6 @@ pub(super) fn from_remote(dir: Option<&str>, entry: RemoteDirEntry) -> DirEntryI
         ext: entry.ext,
         link: Default::default(),
         os_hidden: entry.os_hidden,
+        change: None,
     }
 }

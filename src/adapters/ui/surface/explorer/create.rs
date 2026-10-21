@@ -473,6 +473,7 @@ pub(super) fn placeholder_row(dir: &Path) -> super::DirEntryInfo {
         ext: String::new(),
         link: crate::core::fs_list::EntryLink::NotALink,
         os_hidden: false,
+        change: None,
     }
 }
 

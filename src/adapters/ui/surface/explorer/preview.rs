@@ -6,7 +6,6 @@
 //! 지원하지 않는 형식 상태를 보인다.
 
 use std::path::PathBuf;
-use std::time::SystemTime;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -18,6 +17,7 @@ use crate::app::local_reads::{
     self, MAX_DECODE_ALLOC, MAX_IMAGE_SIDE, PREVIEW_MAX_BYTES, PreviewData, Query, ReadRequests,
     TooLarge,
 };
+use crate::core::fs_list::ContentKey;
 use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 use crate::model::ExplorerPreview;
 
@@ -43,9 +43,10 @@ pub struct PreviewPane {
     pub open: bool,
     /// 사용자가 끌어 정한 폭을 UI 배율로 나눈 값. `None` 이면 토큰 기본값을 쓴다.
     width: Option<f32>,
-    /// 지금 보이는 항목, 그 수정 시각, 그림을 맞춘 최대 표시 폭(물리 px), 원격 여부. 파일이 바뀌거나 배율이
-    /// 바뀌어 최대 표시 폭이 달라지면 다시 읽는다. 원격 여부가 바뀌면 같은 경로라도 다른 파일이다.
-    shown: Option<(PathBuf, Option<SystemTime>, u32, bool)>,
+    /// 지금 보이는 항목, 그 내용 키(수정 시각·크기·Unix 의 inode·ctime), 그림을 맞춘 최대 표시 폭(물리 px),
+    /// 원격 여부. 파일이 바뀌거나 배율이 바뀌어 최대 표시 폭이 달라지면 다시 읽는다. 원격 여부가 바뀌면
+    /// 같은 경로라도 다른 파일이다.
+    shown: Option<(PathBuf, ContentKey, u32, bool)>,
     query: Option<Query<PreviewData>>,
     body: Body,
     /// view 와 model 이 마지막으로 같았던 값. 받아 오거나 model 에 남기면 갱신한다.
@@ -133,7 +134,7 @@ impl PreviewPane {
 
     /// 보일 항목이 바뀌었으면 이전 내용을 지우고 새로 읽는다.
     fn retarget(&mut self, target: Option<&DirEntryInfo>, remote: bool, fit_width: u32) {
-        let key = target.map(|e| (e.path.clone(), e.modified, fit_width, remote));
+        let key = target.map(|e| (e.path.clone(), e.content_key(), fit_width, remote));
         if key == self.shown {
             return;
         }
@@ -497,6 +498,7 @@ fn pixel_size_text([w, h]: [u32; 2]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::SystemTime;
 
     #[test]
     fn low_panel_hides_every_body_and_separator_at_the_exact_threshold() {
@@ -760,6 +762,56 @@ mod tests {
         );
         settle(&mut pane, &mut owner);
         assert_eq!(text_of(&pane), Some("second"));
+        shutdown(owner);
+    }
+
+    /// 수정 시각을 되돌린 크기가 다른 교체. OS 값을 지워 크기만으로 가르는지 본다.
+    #[test]
+    fn a_replacement_with_the_same_modified_time_and_another_size_reads_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        let mut owner = LocalReads::default();
+        let mut pane = PreviewPane::default();
+        let mut old = write_text(&path, "first", 1_000_000);
+        old.change = None;
+        pane.retarget(Some(&old), false, FIT);
+        settle(&mut pane, &mut owner);
+
+        let mut new = write_text(&path, "replaced", 1_000_000);
+        new.change = None;
+        assert_eq!(old.modified, new.modified);
+        pane.retarget(Some(&new), false, FIT);
+        assert!(
+            matches!(pane.body, Body::Loading),
+            "the old text is cleared"
+        );
+        settle(&mut pane, &mut owner);
+        assert_eq!(text_of(&pane), Some("replaced"));
+        shutdown(owner);
+    }
+
+    /// 크기도 수정 시각도 같은 교체는 Unix 에서 ctime 으로 가른다(같은 틱을 피해 잠깐 기다린다).
+    #[cfg(unix)]
+    #[test]
+    fn a_replacement_with_the_same_size_and_modified_time_reads_again_on_unix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        let mut owner = LocalReads::default();
+        let mut pane = PreviewPane::default();
+        let old = write_text(&path, "first", 1_000_000);
+        pane.retarget(Some(&old), false, FIT);
+        settle(&mut pane, &mut owner);
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let new = write_text(&path, "other", 1_000_000);
+        assert_eq!((old.size, old.modified), (new.size, new.modified));
+        pane.retarget(Some(&new), false, FIT);
+        settle(&mut pane, &mut owner);
+        assert_eq!(text_of(&pane), Some("other"));
+
+        let again = listed(&path);
+        pane.retarget(Some(&again), false, FIT);
+        assert!(pane.query.is_none(), "an untouched file is not read again");
         shutdown(owner);
     }
 

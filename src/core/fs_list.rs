@@ -34,6 +34,59 @@ pub(crate) struct DirEntryInfo {
     /// `link` 처럼 GUI 에서만 둔다.
     #[cfg(feature = "gui")]
     pub(crate) os_hidden: bool,
+    /// 수정 시각을 유지한 교체를 가르는 OS 값. 로컬 Unix 만 채우고 Windows·원격·`..` 행은 `None` 이다.
+    #[cfg(feature = "gui")]
+    pub(crate) change: Option<ChangeStamp>,
+}
+
+/// Unix 의 inode 와 상태 변경 시각(ctime). 목록이 이미 읽은 metadata 에 들어 있어 추가 조회가 없다.
+/// ctime 은 내용을 쓰거나 이름을 바꾸면 OS 가 현재 시각으로 올리며 `touch -r`·`cp -p` 로 되돌릴 수 없다.
+/// Windows 는 std 가 변경 시각과 파일 ID 를 안정 API 로 주지 않아(파일을 따로 열어야 한다) 담지 않는다.
+#[cfg(feature = "gui")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ChangeStamp {
+    ino: u64,
+    ctime: i64,
+    ctime_nsec: i64,
+}
+
+#[cfg(feature = "gui")]
+impl ChangeStamp {
+    #[cfg(unix)]
+    fn of(meta: &std::fs::Metadata) -> Option<Self> {
+        use std::os::unix::fs::MetadataExt;
+        Some(Self {
+            ino: meta.ino(),
+            ctime: meta.ctime(),
+            ctime_nsec: meta.ctime_nsec(),
+        })
+    }
+
+    #[cfg(not(unix))]
+    fn of(_meta: &std::fs::Metadata) -> Option<Self> {
+        None
+    }
+}
+
+/// 썸네일·미리보기 캐시가 같은 내용으로 보는 값: 수정 시각 · 크기 · (Unix) inode·ctime.
+/// 이것이 모두 같은 교체는 구분하지 못한다(Windows 에서 크기도 시각도 같은 교체 등).
+#[cfg(feature = "gui")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ContentKey {
+    modified: Option<SystemTime>,
+    size: u64,
+    change: Option<ChangeStamp>,
+}
+
+#[cfg(feature = "gui")]
+impl DirEntryInfo {
+    pub(crate) fn content_key(&self) -> ContentKey {
+        ContentKey {
+            modified: self.modified,
+            size: self.size,
+            change: self.change,
+        }
+    }
 }
 
 /// 목록 항목의 링크 상태. 링크는 `path`(링크 자신의 경로)로 탐색하고 조작한다.
@@ -75,6 +128,8 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
         let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
         let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
         let modified = meta.as_ref().and_then(|m| m.modified().ok());
+        #[cfg(feature = "gui")]
+        let change = meta.as_ref().and_then(ChangeStamp::of);
         let ext = if is_dir {
             String::new()
         } else {
@@ -99,6 +154,8 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
             link,
             #[cfg(feature = "gui")]
             os_hidden,
+            #[cfg(feature = "gui")]
+            change,
         });
     }
     Ok(out)
@@ -336,5 +393,63 @@ mod tests {
         assert!(find("real").is_dir);
         #[cfg(feature = "gui")]
         assert_eq!(find("real").link, EntryLink::NotALink);
+    }
+
+    /// `body` 를 쓰고 수정 시각을 `at` 초(UNIX)로 되돌린 뒤 목록이 읽은 항목을 돌려준다.
+    #[cfg(feature = "gui")]
+    fn write_at(path: &Path, body: &[u8], at: u64) -> DirEntryInfo {
+        std::fs::write(path, body).unwrap();
+        let file = std::fs::File::options().write(true).open(path).unwrap();
+        file.set_modified(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(at))
+            .unwrap();
+        drop(file);
+        read_dir_entries(path.parent().unwrap())
+            .unwrap()
+            .into_iter()
+            .find(|e| e.path == path)
+            .unwrap()
+    }
+
+    #[cfg(feature = "gui")]
+    #[test]
+    fn the_content_key_tells_a_new_size_at_the_same_modified_time() {
+        let at = Some(SystemTime::UNIX_EPOCH);
+        let old = DirEntryInfo {
+            size: 10,
+            modified: at,
+            ..Default::default()
+        };
+        let new = DirEntryInfo {
+            size: 11,
+            modified: at,
+            ..Default::default()
+        };
+        assert_ne!(old.content_key(), new.content_key());
+        assert_eq!(old.content_key(), old.clone().content_key());
+    }
+
+    #[cfg(feature = "gui")]
+    #[test]
+    fn listing_an_untouched_file_again_keeps_its_content_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        let first = write_at(&path, b"same", 1_000_000);
+        let again = read_dir_entries(dir.path()).unwrap().remove(0);
+        assert_eq!(first.content_key(), again.content_key());
+    }
+
+    /// 크기와 수정 시각을 되돌린 다시 쓰기도 ctime 이 올라 다른 내용으로 본다. ctime 은 커널의 거친
+    /// 시계로 매겨지므로 같은 틱 안의 두 쓰기를 피하려고 잠깐 기다린다.
+    #[cfg(all(feature = "gui", unix))]
+    #[test]
+    fn a_rewrite_with_the_same_size_and_modified_time_gets_a_new_key_on_unix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        let old = write_at(&path, b"aaaa", 1_000_000);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let new = write_at(&path, b"bbbb", 1_000_000);
+        assert_eq!((old.size, old.modified), (new.size, new.modified));
+        assert!(old.change.is_some());
+        assert_ne!(old.content_key(), new.content_key());
     }
 }
