@@ -1,4 +1,4 @@
-<!-- source-hash: 5618f3523b84 -->
+<!-- source-hash: a27ecc99773e -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -123,6 +123,7 @@ Common options:
 - In the explorer, double-clicking a markdown file opens a markdown tab for it on the remote computer, and the tab appears in this window too; a file at the same path on this computer is not read. If the type's default handler can't be used remotely, only the handlers that can are offered; a type with no such handler only shows a notice.
 - Markdown Surfaces show the remote document in this computer's theme, and the **Reload** button left of the address bar fetches the latest content again. When the document changes on the remote, the content isn't replaced on its own — the Reload button fills with the accent color instead (if the remote Tasty is a headless build, the color doesn't change, so press it yourself to check). While the connection is lost and waiting to reconnect, the document shows a notice that the connection was lost instead of the old content, the address bar and its buttons are all disabled, and the buttons say **Disconnected from the remote**. Once it reconnects it fetches the latest content on its own. Relative image paths and file links inside a remote document don't open.
 - Type a path on the remote computer into a remote Markdown address bar and press `Enter` or **Go** to switch the same Surface to that remote file. This computer's recent files don't appear in the autocompletion. `Esc` puts the current document's remote path back. If the file doesn't exist on the remote, the path you typed stays and **Can't open … on the remote: file not found.** appears under the address bar. If it can't be opened for another reason, only the address bar's border turns to the error color. Typing again or pressing `Esc` clears it.
+- The folder button left of a remote Markdown address bar (**Open a remote file…**) opens the file chooser in the remote document's folder on the remote computer. The remote file you pick opens in the same Surface, and if the remote can't open it, a toast tells you.
 - While you're viewing a mirror, when the **Open Markdown File** popup converts a Surface to markdown or opens a new tab, the path you type in the popup or pick with **Browse…** opens as a file on the remote computer. A relative path is taken from the remote terminal's current folder. A file opened this way is not added to this computer's recent files list.
 - HTML Surfaces appear as empty areas; their content is not shown yet.
 - `--raw` works only at the Surface level.

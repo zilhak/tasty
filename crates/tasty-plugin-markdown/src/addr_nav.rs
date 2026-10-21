@@ -73,6 +73,8 @@ pub(crate) enum NavAction {
     NavigateLocal(String),
     /// 주소창 오류 행이 지워졌다.
     DismissAddr,
+    /// 주소창 폴더 버튼. 이 폴더(없으면 host 기본 위치)에서 파일 피커를 연다.
+    Browse(Option<String>),
 }
 
 /// 이동 요청을 문서 종류에 맞는 동작으로 바꾼다. mirror 문서의 파일 링크는 원격 호스트의 경로라
@@ -93,6 +95,11 @@ pub(crate) fn nav_action(intent: render::NavIntent, doc: Option<&MdDoc>) -> NavA
         (render::NavIntent::Addr(path), Some(_)) => NavAction::NavigateRemote(path),
         (render::NavIntent::Addr(path), None) => NavAction::NavigateLocal(path),
         (render::NavIntent::AddrDismiss, _) => NavAction::DismissAddr,
+        (render::NavIntent::Browse, Some(r)) if r.disconnected => NavAction::Ignore,
+        (render::NavIntent::Browse, _) => match doc {
+            Some(d) => NavAction::Browse(crate::browse::start_dir(d)),
+            None => NavAction::Ignore,
+        },
     }
 }
 

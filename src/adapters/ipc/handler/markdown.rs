@@ -17,6 +17,9 @@ struct NavigateReq {
     /// 요청을 확정한 file-open 팝업. 호출 플러그인 소유이고 사용자 입력을 받았으면 사용자 요청이다.
     #[serde(default)]
     owner_popup_instance: Option<u64>,
+    /// 경로를 고른 파일 피커 요청. 호출 플러그인이 연 피커에서 사용자가 이 경로를 확정했으면 사용자 요청이다.
+    #[serde(default)]
+    picker_request_id: Option<u64>,
 }
 
 pub fn handle_navigate(
@@ -37,14 +40,21 @@ pub fn handle_navigate(
     }
 
     // 원격 변환 실패를 toast로 알릴지도 이 출처로 정한다.
-    let origin = super::file_handler::dispatch_origin_of(
+    let origin = match super::file_handler::dispatch_origin_of(
         window,
         engine,
         caller,
         req.owner_popup_instance,
         None,
         None,
-    );
+    ) {
+        crate::file::dispatch::FileDispatchOrigin::PluginUnverified
+            if picked_by_user(caller, req.picker_request_id, &req.path) =>
+        {
+            crate::file::dispatch::FileDispatchOrigin::User
+        }
+        origin => origin,
+    };
     let intent = crate::intent::Intent::ConvertSurface {
         surface_id: req.surface_id,
         target: crate::intent::ConvertTarget::Kind {
@@ -71,6 +81,20 @@ pub fn handle_navigate(
         .with_completion(Some(run)),
     );
     JsonRpcResponse::success(id, json!({ "accepted": true, "run": run }))
+}
+
+/// 호출 플러그인이 연 피커 `picker_request_id`에서 사용자가 `path`를 확정했는지 본다. 증명은 한 번 쓴다.
+fn picked_by_user(
+    caller: &tasty_ipc::caller::CallerContext,
+    picker_request_id: Option<u64>,
+    path: &str,
+) -> bool {
+    let (tasty_ipc::caller::CallerContext::Plugin { plugin_id, .. }, Some(request_id)) =
+        (caller, picker_request_id)
+    else {
+        return false;
+    };
+    super::picker_proofs::take(plugin_id, request_id, path)
 }
 
 #[cfg(test)]
@@ -197,6 +221,76 @@ mod tests {
             &plugin_caller(PLUGIN),
             Some((PLUGIN, POPUP)),
             json!({}),
+        ));
+    }
+
+    /// 피커 증명 시험의 request_id. 실제 값은 프로세스 전역 증가값이라 겹치지 않는 큰 값을 쓴다.
+    const PICK: u64 = 0x6000_0000_0000;
+
+    /// 주소창 폴더 버튼: 사용자가 이 플러그인의 피커에서 고른 경로로 보낸 이동은 사용자 요청이다.
+    /// 증명은 한 번만 쓰이고, 다른 경로·외부 호출자·다른 플러그인에는 통하지 않는다.
+    #[test]
+    fn navigate_with_a_confirmed_picker_selection_is_user_origin_once() {
+        let pick = json!({ "picker_request_id": PICK + 1 });
+        super::super::picker_proofs::record(PLUGIN, PICK + 1, &[MISSING.to_string()]);
+        assert!(!navigate_is_user(
+            &CallerContext::local(),
+            None,
+            pick.clone()
+        ));
+        assert!(!navigate_is_user(
+            &plugin_caller("com.example.other"),
+            None,
+            pick.clone()
+        ));
+        assert!(navigate_is_user(&plugin_caller(PLUGIN), None, pick.clone()));
+        assert!(
+            !navigate_is_user(&plugin_caller(PLUGIN), None, pick),
+            "한 번 쓴 피커 증명이 다시 통했다"
+        );
+
+        super::super::picker_proofs::record(PLUGIN, PICK + 2, &["/elsewhere.md".to_string()]);
+        assert!(!navigate_is_user(
+            &plugin_caller(PLUGIN),
+            None,
+            json!({ "picker_request_id": PICK + 2 }),
+        ));
+    }
+
+    /// 피커가 플러그인에 결과를 보낼 때 확정만 증명으로 남긴다. 취소는 남기지 않는다.
+    #[test]
+    fn delivering_a_confirmed_plugin_pick_leaves_a_proof() {
+        use crate::state::{
+            FilePickerOutcome, FilePickerRequestId, FilePickerRequester, FilePickerResult,
+        };
+        let requester = |request_id| FilePickerRequester {
+            plugin_id: PLUGIN.to_string(),
+            request_id,
+            owner_popup_instance: None,
+        };
+        let deliver = |request_id, result| {
+            super::super::file_picker::deliver_result(
+                None,
+                &requester(request_id),
+                &FilePickerOutcome::new(FilePickerRequestId(request_id), result),
+            )
+        };
+        deliver(PICK + 3, FilePickerResult::Cancelled);
+        assert!(!navigate_is_user(
+            &plugin_caller(PLUGIN),
+            None,
+            json!({ "picker_request_id": PICK + 3 }),
+        ));
+        deliver(
+            PICK + 4,
+            FilePickerResult::Confirmed {
+                paths: vec![MISSING.to_string()],
+            },
+        );
+        assert!(navigate_is_user(
+            &plugin_caller(PLUGIN),
+            None,
+            json!({ "picker_request_id": PICK + 4 }),
         ));
     }
 

@@ -49,6 +49,8 @@ no_recent = "No recent files"
 # 주소 띠 버튼 tooltip·aria-label 과 원격 직접 이동 실패 행. 디자인 갤러리 Markdown 주소 띠의 문구다.
 [markdown.address]
 go = "Go"
+open = "Open a file…"
+open_remote = "Open a remote file…"
 reload = "Reload"
 stale = "The remote file changed — reload"
 disconnected = "Disconnected from the remote"

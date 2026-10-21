@@ -233,8 +233,9 @@ fn remote_address_band_layout() {
         "띠 높이(40 + 경계선 1)"
     );
 
-    // 원격 Go 경계 폭 = 8 + 24 + 8 + 160 + 8 + 24 + 8 = 240. 그보다 좁은 폭.
-    let narrow = Page::load_sized(&remote_document(None), 236);
+    // 원격 Go 경계 폭(padding·Folder·Reload·간격·필드 하한 160·Go)보다 4px 좁은 폭.
+    let narrow_w = super::address::go_hide_width_px(&theme, true) as i32 - 4;
+    let narrow = Page::load_sized(&remote_document(None), narrow_w);
     assert_eq!(narrow.number(GO_SHOWN), 0.0, "좁은 폭에서 Go 가 남았다");
     assert!(
         narrow.number(FIELD_W) >= f64::from(theme.md_address_field_min_width().value()),

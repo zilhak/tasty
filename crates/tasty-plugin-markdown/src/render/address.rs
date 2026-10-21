@@ -48,12 +48,18 @@ pub(super) fn bar_height_px(theme: &Theme, with_error_row: bool) -> f32 {
 }
 
 /// 페이지 폭이 이 값보다 좁으면 필드가 `md-address-go-hide-below` 아래로 줄어든다. 그 폭에서 Go 를 숨긴다.
-fn go_hide_width_px(theme: &Theme, remote: bool) -> f32 {
+pub(super) fn go_hide_width_px(theme: &Theme, remote: bool) -> f32 {
     let btn = theme.icon_button_size_sm().value();
     let gap = theme.md_address_bar_gap().value();
-    let nav = if remote { btn + gap } else { 0.0 };
+    // 로컬은 Folder, 원격은 Folder·Reload 다.
+    let nav = if remote {
+        btn * 2.0 + theme.md_address_bar_nav_gap().value()
+    } else {
+        btn
+    };
     theme.md_address_bar_padding_x().value() * 2.0
         + nav
+        + gap
         + theme.md_address_go_hide_below().value()
         + gap
         + btn
@@ -80,6 +86,7 @@ pub(super) fn addr_css(theme: &Theme) -> String {
 .tasty-addr-btn:disabled{{color:{disabled_fg};cursor:default;}}
 #tasty-refresh[data-stale="true"]:not(:disabled){{background:{stale_bg};color:{stale_fg};}}
 .tasty-addr-glyph{{display:block;width:{glyph}px;height:{glyph}px;background-color:currentColor;-webkit-mask:var(--g) center/{glyph}px {glyph}px no-repeat;mask:var(--g) center/{glyph}px {glyph}px no-repeat;}}
+.tasty-addr-g-folder{{--g:url("{g_folder}");}}
 .tasty-addr-g-refresh{{--g:url("{g_refresh}");}}
 .tasty-addr-g-go{{--g:url("{g_go}");}}
 #tasty-addr-field{{flex:1;min-width:{field_min}px;display:flex;align-items:center;gap:{in_gap}px;height:{in_h}px;box-sizing:border-box;padding:0 {space_sm}px;border-radius:{in_r}px;background:{in_bg};border:{bw}px solid {in_border};}}
@@ -122,6 +129,7 @@ pub(super) fn addr_css(theme: &Theme) -> String {
         stale_bg = theme.md_address_stale_bg().to_hex(),
         stale_fg = theme.md_address_stale_fg().to_hex(),
         glyph = theme.icon_glyph_size_md.value(),
+        g_folder = mask_uri(&tasty_icons::FOLDER_OPEN),
         g_refresh = mask_uri(&tasty_icons::REFRESH),
         g_go = mask_uri(&tasty_icons::ARROW_RIGHT),
         field_min = theme.md_address_field_min_width().value(),
@@ -187,7 +195,12 @@ pub(super) fn addr_bar_html(
         }
     };
 
-    let mut nav = String::new();
+    let open = if remote.is_some() {
+        tr.t("markdown.address.open_remote")
+    } else {
+        tr.t("markdown.address.open")
+    };
+    let mut nav = button("tasty-browse", "folder", open, &tip(open), off, "");
     if let Some(view) = remote {
         let (label, hint) = if view.stale {
             (
@@ -209,11 +222,7 @@ pub(super) fn addr_bar_html(
             &format!(r#" data-stale="{}""#, view.stale),
         ));
     }
-    let nav = if nav.is_empty() {
-        String::new()
-    } else {
-        format!(r#"<div class="tasty-addr-nav">{nav}</div>"#)
-    };
+    let nav = format!(r#"<div class="tasty-addr-nav">{nav}</div>"#);
 
     let field_class = match (off, failure.is_some()) {
         (true, _) => " class=\"tasty-addr-off\"",

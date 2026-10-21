@@ -192,7 +192,8 @@ impl MarkdownPlugin {
                     .map(|st| st.picker_start.clone())
                     .unwrap_or_default();
                 if let Some(request_id) = trigger_file_picker(&ctx.host, iid, &start) {
-                    self.pending_file_picker.insert(request_id, iid);
+                    self.pending_file_picker
+                        .insert(request_id, crate::browse::PickerOwner::Popup(iid));
                 }
             }
             FileOpenAction::Open => {

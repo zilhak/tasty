@@ -9,6 +9,7 @@
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod addr_nav;
+mod browse;
 mod popup;
 mod render;
 
@@ -34,6 +35,7 @@ use tasty_type_appearance::theme::Theme;
 #[cfg(test)]
 use addr_nav::classify_navigate_run;
 use addr_nav::{ADDR_RESULT_METHOD, AddrOutcome, NavAction, nav_action, spawn_addr_watch};
+use browse::PickerOwner;
 use popup::{
     FILE_PICKER_RESULT_EVENT, FileOpenState, FilePickerResultWire, LargeFileConfirm, PickerStart,
     basename, format_size,
@@ -406,9 +408,9 @@ struct MarkdownPlugin {
     /// popup instance_id → 파일열기 팝업 상태(경로 입력 버퍼).
     file_open: HashMap<u64, FileOpenState>,
     /// `file_picker.trigger`(docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때) 로 보낸 요청의 `request_id` → 그
-    /// 요청을 낸 파일열기 팝업 instance_id. `"file_picker.result"` 이벤트 수신 시
-    /// 이 맵으로 상관관계를 맞춰 `path_input` 을 채운다.
-    pending_file_picker: HashMap<u64, u64>,
+    /// 요청을 낸 쪽(파일열기 팝업 또는 주소창 폴더 버튼의 surface). `"file_picker.result"` 이벤트 수신 시
+    /// 이 맵으로 상관관계를 맞춘다. 낸 쪽이 닫히거나 같은 쪽이 새 요청을 내면 항목을 버린다.
+    pending_file_picker: HashMap<u64, PickerOwner>,
     /// Popup 인스턴스별 egui-mesh 렌더 상태(폰트 atlas와 공유 버퍼).
     #[cfg(any(unix, windows))]
     popups: HashMap<u64, EguiMeshPopup>,
@@ -504,6 +506,8 @@ impl Plugin for MarkdownPlugin {
 
     fn destroy_surface(&mut self, surface_id: u32) {
         self.docs.remove(&surface_id);
+        self.pending_file_picker
+            .retain(|_, owner| *owner != PickerOwner::Surface(surface_id));
         self.watch_unregister(surface_id);
     }
 
@@ -600,7 +604,8 @@ impl Plugin for MarkdownPlugin {
         self.file_open.remove(&iid);
         // 이 팝업이 낸 file_picker.trigger 요청이 아직 응답 전이면 상관관계 항목을
         // 같이 정리한다 — 늦게 도착한 결과는 (그때 iid 를 못 찾으므로) 조용히 무시된다.
-        self.pending_file_picker.retain(|_, v| *v != iid);
+        self.pending_file_picker
+            .retain(|_, owner| *owner != PickerOwner::Popup(iid));
     }
 
     /// 파일 피커 결과, 테마 변경과 미러 문서 이벤트를 처리한다.
@@ -613,16 +618,14 @@ impl Plugin for MarkdownPlugin {
                     tracing::warn!("markdown: malformed file_picker.result event");
                     return;
                 };
-                let Some(iid) = self.pending_file_picker.remove(&reply.request_id) else {
-                    return;
-                };
-                if reply.cancelled {
-                    return;
-                }
-                if let (Some(path), Some(st)) =
-                    (reply.paths.into_iter().next(), self.file_open.get_mut(&iid))
+                if let Some((sid, path, request_id)) = self.take_picker_result(reply)
+                    && let Some(host) = &self.host
+                    && let Err(e) = host.call(
+                        "markdown.navigate",
+                        browse::navigate_params(sid, &path, request_id),
+                    )
                 {
-                    st.path_input = path;
+                    tracing::warn!("markdown surface {sid}: picked file navigate failed: {e}");
                 }
             }
             // WebView에는 surface.set_context가 오지 않으므로 테마 변경 시 문서를 다시 만든다.
@@ -663,6 +666,15 @@ impl Plugin for MarkdownPlugin {
             }
             NavAction::NavigateRemote(path) => self.navigate_remote_addr(&host, sid, &path),
             NavAction::NavigateLocal(path) => navigate(&host, sid, &path, None),
+            NavAction::Browse(start_dir) => {
+                let resp = host.call(
+                    "file_picker.trigger",
+                    browse::trigger_params(sid, start_dir),
+                );
+                if let Some(request_id) = browse::request_id_of(sid, resp) {
+                    self.track_surface_picker(sid, request_id);
+                }
+            }
             NavAction::DismissAddr => {
                 if let Some(remote) = self.docs.get_mut(&sid).and_then(|d| d.remote.as_mut()) {
                     remote.addr_failure = None;
@@ -1244,11 +1256,20 @@ fn navigate_params(sid: u32, path: &str, owner_popup_instance: Option<u64>) -> O
     Some(params)
 }
 
-/// 외부 `markdown.navigate` 를 host 로 다시 보낼 때는 `owner_popup_instance` 를 뺀다.
+/// 외부 `markdown.navigate` 를 host 로 다시 보낼 때 빼는 사용자 출처 증명 필드.
 /// host 는 이 플러그인을 호출자로 보므로, 남기면 외부 요청이 사용자 요청으로 판정될 수 있다(docs/features/file-handler/index.md).
+const USER_PROOF_FIELDS: [&str; 4] = [
+    "owner_popup_instance",
+    "picker_request_id",
+    "user_navigation_url",
+    "origin_surface_id",
+];
+
 fn forwarded_navigate_params(mut params: Value) -> Value {
     if let Some(map) = params.as_object_mut() {
-        map.remove("owner_popup_instance");
+        for field in USER_PROOF_FIELDS {
+            map.remove(field);
+        }
     }
     params
 }

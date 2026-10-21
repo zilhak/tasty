@@ -35,6 +35,8 @@ pub const NAV_FRAGMENT_MARKER: &str = "tasty-nav:";
 const NAV_REFRESH_PREFIX: &str = "refresh:";
 /// 주소창 오류 행을 지웠다는 신호. 같은 hash 재대입을 피하려고 nonce 를 붙인다.
 const NAV_ADDR_DISMISS_PREFIX: &str = "addr-dismiss:";
+/// 주소창 폴더 버튼. 두 번째 클릭도 신호가 되도록 nonce 를 붙인다.
+const NAV_BROWSE_PREFIX: &str = "browse:";
 
 /// 호스트에 요청할 링크 대상. File은 기준 폴더에서 해석한 경로이고,
 /// External은 OS의 기본 앱으로 열 URL이다.
@@ -56,6 +58,8 @@ pub enum NavIntent {
     /// attach mirror 문서의 새로고침 버튼이나 대용량 대기 상태의 "Open file…" 버튼이 눌렸다.
     /// mirror 는 원격 원문을 다시 요청하고, 로컬 대기 문서는 대용량 확인을 다시 띄운다.
     Refresh,
+    /// 주소창 폴더 버튼이 눌렸다. 플러그인은 문서 폴더에서 host 파일 피커를 연다.
+    Browse,
 }
 
 /// 본문과 사전 탐색에 함께 사용하는 파서 옵션.
@@ -267,6 +271,9 @@ pub(crate) fn parse_nav_fragment(url: &str) -> Option<NavIntent> {
     }
     if payload.starts_with(NAV_REFRESH_PREFIX) {
         return Some(NavIntent::Refresh);
+    }
+    if payload.starts_with(NAV_BROWSE_PREFIX) {
+        return Some(NavIntent::Browse);
     }
     None
 }
@@ -1716,6 +1723,8 @@ if(!v)return;
 location.hash='tasty-nav:addr:'+nonce()+':'+encodeURIComponent(v);
 }}
 if(g)g.addEventListener('click',go);
+var f=document.getElementById('tasty-browse');
+if(f)f.addEventListener('click',function(){{location.hash='tasty-nav:browse:'+nonce();}});
 var r=document.getElementById('tasty-refresh');
 if(r)r.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+nonce();}});
 var o=document.querySelector('.tasty-state-action');
@@ -2480,6 +2489,10 @@ mod tests {
             parse_nav_fragment("about:blank#tasty-nav:addr-dismiss:1757750000000"),
             Some(NavIntent::AddrDismiss)
         );
+        assert_eq!(
+            parse_nav_fragment("about:blank#tasty-nav:browse:123"),
+            Some(NavIntent::Browse)
+        );
     }
 
     /// 같은 경로를 다시 보내도 hash 가 바뀌도록 주소 이동에 nonce 를 붙이고, 원격 Esc 는 지금 경로로 되돌린다.
@@ -2491,6 +2504,7 @@ mod tests {
         assert!(js.contains("e.key==='Escape'&&remote&&!i.readOnly){i.value=current;"));
         assert!(js.contains("location.hash='tasty-nav:addr-dismiss:'+nonce();"));
         assert!(js.contains("setProperty('--md-addr-bar-h','41px')"));
+        assert!(js.contains("location.hash='tasty-nav:browse:'+nonce();"));
     }
 
     #[test]
@@ -3363,6 +3377,12 @@ mod tests {
         assert!(!fresh.contains("<base href="));
         assert!(fresh.contains("markdown.address.reload"));
         assert!(!fresh.contains(r#"id="tasty-addr-error""#));
+        // 원격은 [Folder · Reload] · field · Go 순서다.
+        let at = |id: &str| fresh.find(&format!(r#"id="{id}""#)).expect(id);
+        assert!(at("tasty-browse") < at("tasty-refresh"));
+        assert!(at("tasty-refresh") < at("tasty-addr-input"));
+        assert!(at("tasty-addr-input") < at("tasty-addr-go"));
+        assert!(fresh.contains(r#"title="markdown.address.open_remote""#));
 
         let stale = remote_document(
             "# Remote",
@@ -3401,6 +3421,11 @@ mod tests {
         assert!(html.contains(r#"id="tasty-addr-go""#));
         assert!(html.contains("tasty-addr-g-file"));
         assert!(!html.contains(r#"id="tasty-refresh""#));
+        // 로컬은 [Folder] · field · Go 순서다.
+        let browse = html.find(r#"id="tasty-browse""#).expect("folder button");
+        assert!(browse < html.find(r#"id="tasty-addr-input""#).expect("field"));
+        assert!(html.contains(r#"title="markdown.address.open""#));
+        assert!(html.contains("tasty-addr-g-folder"));
     }
 
     /// 원격에 파일이 없어 실패하면 입력값을 남기고 오류 행에 not_found 문구를 낸다. 띠 높이도 늘린다.
@@ -3464,7 +3489,7 @@ mod tests {
         );
         assert!(addr_input_tag(&html).contains("readonly"));
         assert!(html.contains(r#"<div id="tasty-addr-field" class="tasty-addr-off">"#));
-        for id in ["tasty-refresh", "tasty-addr-go"] {
+        for id in ["tasty-browse", "tasty-refresh", "tasty-addr-go"] {
             let tip = html
                 .split(&format!(r#"<span class="tasty-addr-tip" id="{id}-tip""#))
                 .nth(1)
@@ -3487,8 +3512,10 @@ mod tests {
         let gap = theme.md_address_bar_gap().value();
         let btn = theme.icon_button_size_sm().value();
         let hide = theme.md_address_go_hide_below().value();
-        let local = pad * 2.0 + hide + gap + btn - 0.02;
-        let remote = pad * 2.0 + btn + gap + hide + gap + btn - 0.02;
+        let nav_gap = theme.md_address_bar_nav_gap().value();
+        // 로컬 [Folder] · field · Go, 원격 [Folder · Reload] · field · Go.
+        let local = pad * 2.0 + btn + gap + hide + gap + btn - 0.02;
+        let remote = pad * 2.0 + btn + nav_gap + btn + gap + hide + gap + btn - 0.02;
         assert!(css.contains(&format!(
             r#"@media (max-width:{local}px){{#tasty-addr-bar[data-kind="local"] #tasty-addr-go-tip{{display:none;}}}}"#
         )));

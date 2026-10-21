@@ -594,12 +594,17 @@ fn navigate_params_carry_the_owner_popup_only_from_the_popup() {
     assert!(navigate_params(3, "  ", Some(42)).is_none());
 }
 
-/// 외부 호출자가 `owner_popup_instance` 를 넣어도 host 로 다시 보낼 때는 빠진다.
+/// 외부 호출자가 사용자 출처 증명 필드를 넣어도 host 로 다시 보낼 때는 모두 빠진다.
 #[test]
-fn a_forwarded_external_navigate_drops_the_owner_popup() {
-    let forwarded = forwarded_navigate_params(
-        json!({ "surface_id": 3, "path": "/work/a.md", "owner_popup_instance": 42 }),
-    );
+fn a_forwarded_external_navigate_drops_every_user_proof_field() {
+    let forwarded = forwarded_navigate_params(json!({
+        "surface_id": 3,
+        "path": "/work/a.md",
+        "owner_popup_instance": 42,
+        "picker_request_id": 9,
+        "user_navigation_url": "about:blank#tasty-nav:browse:1",
+        "origin_surface_id": 3,
+    }));
     assert_eq!(forwarded, json!({ "surface_id": 3, "path": "/work/a.md" }));
 }
 
@@ -1060,4 +1065,139 @@ fn the_deferred_state_is_shown_only_without_previous_content() {
     assert!(doc.shows_large_deferred());
     doc.pending_large = false;
     assert!(!doc.shows_large_deferred());
+}
+
+/// 주소창 폴더 버튼은 문서 폴더에서 팝업 없이 피커를 연다. 끊긴 mirror 문서는 열지 않는다.
+#[test]
+fn the_folder_button_opens_the_picker_in_the_document_folder() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs.insert(1, MdDoc::new(Some("/tmp/md/a.md".into())));
+    assert_eq!(
+        nav_action(render::NavIntent::Browse, p.docs.get(&1)),
+        NavAction::Browse(Some("/tmp/md".into()))
+    );
+    assert_eq!(
+        browse::trigger_params(1, Some("/tmp/md".into())),
+        json!({ "filters": ["md", "markdown"], "start_dir": "/tmp/md", "origin_surface_id": 1 })
+    );
+
+    mirror_create(&mut p, 2, "/srv/docs/a.md");
+    assert_eq!(
+        nav_action(render::NavIntent::Browse, p.docs.get(&2)),
+        NavAction::Browse(Some("/srv/docs".into()))
+    );
+    p.docs
+        .get_mut(&2)
+        .unwrap()
+        .remote
+        .as_mut()
+        .unwrap()
+        .disconnected = true;
+    assert_eq!(
+        nav_action(render::NavIntent::Browse, p.docs.get(&2)),
+        NavAction::Ignore
+    );
+    assert_eq!(
+        nav_action(render::NavIntent::Browse, None),
+        NavAction::Ignore
+    );
+}
+
+/// 원격 경로의 부모는 원격 OS 의 구분자로 나눈다.
+#[test]
+fn remote_document_folders_follow_the_remote_path_shape() {
+    assert_eq!(
+        browse::remote_parent("/srv/docs/a.md").as_deref(),
+        Some("/srv/docs")
+    );
+    assert_eq!(browse::remote_parent("/a.md").as_deref(), Some("/"));
+    assert_eq!(
+        browse::remote_parent("C:\\docs\\a.md").as_deref(),
+        Some("C:\\docs")
+    );
+    assert_eq!(browse::remote_parent("C:\\a.md").as_deref(), Some("C:\\"));
+    assert_eq!(
+        browse::remote_parent("\\\\srv\\share\\a.md").as_deref(),
+        Some("\\\\srv\\share")
+    );
+    assert_eq!(browse::remote_parent("a.md"), None);
+}
+
+/// 피커가 이미 열려 있으면(-32000) 두 번째 피커를 열지 않고 요청도 기록하지 않는다.
+#[test]
+fn a_busy_picker_is_left_alone() {
+    let busy = tasty_plugin_sdk::PluginError::HostCall {
+        method: "file_picker.trigger".into(),
+        message: "file_picker popup is already open".into(),
+        code: Some(-32000),
+    };
+    assert_eq!(browse::request_id_of(1, Err(busy)), None);
+    assert_eq!(
+        browse::request_id_of(1, Ok(json!({ "request_id": 7 }))),
+        Some(7)
+    );
+}
+
+fn picker_reply(request_id: u64, paths: &[&str], cancelled: bool) -> FilePickerResultWire {
+    FilePickerResultWire {
+        request_id,
+        paths: paths.iter().map(|p| p.to_string()).collect(),
+        cancelled,
+    }
+}
+
+/// 폴더 버튼의 결과는 같은 surface 의 마지막 요청일 때만 이동으로 이어진다. 취소·늦은 결과·닫힌
+/// surface 는 아무것도 하지 않는다. 이동 요청은 피커 요청 번호를 싣고 경로를 바꾸지 않는다.
+#[test]
+fn folder_button_results_navigate_only_the_latest_request_of_a_live_surface() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs.insert(1, MdDoc::new(Some("/tmp/md/a.md".into())));
+
+    p.track_surface_picker(1, 10);
+    assert_eq!(p.take_picker_result(picker_reply(10, &[], true)), None);
+    assert!(p.pending_file_picker.is_empty(), "취소한 요청이 남았다");
+
+    p.track_surface_picker(1, 11);
+    p.track_surface_picker(1, 12);
+    assert_eq!(
+        p.take_picker_result(picker_reply(11, &["/tmp/md/old.md"], false)),
+        None,
+        "새 요청이 대체한 결과"
+    );
+    assert_eq!(
+        p.take_picker_result(picker_reply(12, &["/tmp/md/b.md "], false)),
+        Some((1, "/tmp/md/b.md ".to_string(), 12))
+    );
+    assert_eq!(
+        browse::navigate_params(1, "/tmp/md/b.md ", 12),
+        json!({ "surface_id": 1, "path": "/tmp/md/b.md ", "picker_request_id": 12 })
+    );
+    assert_eq!(
+        p.take_picker_result(picker_reply(12, &["/tmp/md/b.md"], false)),
+        None,
+        "같은 결과를 두 번 쓰지 않는다"
+    );
+
+    p.track_surface_picker(1, 13);
+    p.destroy_surface(1);
+    assert!(
+        p.pending_file_picker.is_empty(),
+        "닫힌 surface 의 요청이 남았다"
+    );
+    assert_eq!(
+        p.take_picker_result(picker_reply(13, &["/tmp/md/c.md"], false)),
+        None
+    );
+}
+
+/// 파일 열기 팝업의 찾아보기 결과는 입력칸만 채우고 이동하지 않는다.
+#[test]
+fn a_popup_picker_result_never_navigates() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs.insert(1, MdDoc::new(Some("/tmp/md/a.md".into())));
+    p.pending_file_picker.insert(20, PickerOwner::Popup(5));
+    assert_eq!(
+        p.take_picker_result(picker_reply(20, &["/tmp/md/b.md"], false)),
+        None
+    );
 }

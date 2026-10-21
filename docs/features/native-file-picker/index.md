@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 탭 스트립 메뉴 "새 HTML..." 트리거 · 설정·플러그인·프리셋의 로컬 파일/폴더 선택 · 이미지 다른 이름으로 저장) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
 - **설계**: [원격 attach (Remote attach)](../remote-attach/index.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [내부 팝업 시스템](../../design/systems/popup.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [파일 핸들러 (File handler)](../file-handler/index.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
-- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/app/local_reads.rs`(`directory` 로컬 읽기 요청 · `poll_file_picker_reads` 결과 반영), `src/adapters/ui/file_open_tool.rs`(Tools 메뉴·단축키 호출자 — 열기와 결과 적용), `src/adapters/ui/new_tab_picker.rs`(탭 스트립 메뉴 "새 HTML..." 호출자 — 열기와 결과 적용, 진입은 `src/view/main/redraw.rs`의 `apply_pane_menu_selection`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 호출자, `"file_picker.result"` push), `src/app/dispatch/file_picker.rs`(결과를 꺼내 호출자에게 넘기는 drain), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `crates/tasty-plugin-image/src/picker.rs`(이미지 저장 경로 caller), `src/view/file_chooser.rs`(Settings·Plugins·Preset의 로컬 전용 재사용)
+- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/app/local_reads.rs`(`directory` 로컬 읽기 요청 · `poll_file_picker_reads` 결과 반영), `src/adapters/ui/file_open_tool.rs`(Tools 메뉴·단축키 호출자 — 열기와 결과 적용), `src/adapters/ui/new_tab_picker.rs`(탭 스트립 메뉴 "새 HTML..." 호출자 — 열기와 결과 적용, 진입은 `src/view/main/redraw.rs`의 `apply_pane_menu_selection`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 호출자, `"file_picker.result"` push), `src/app/dispatch/file_picker.rs`(결과를 꺼내 호출자에게 넘기는 drain), `src/remote/server/content_queries.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client/wire.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(파일 열기 팝업 Browse caller), `crates/tasty-plugin-markdown/src/browse.rs`(주소창 폴더 버튼 caller), `crates/tasty-plugin-image/src/picker.rs`(이미지 저장 경로 caller), `src/adapters/ipc/handler/picker_proofs.rs`(확정 선택의 사용자 출처 증명), `src/view/file_chooser.rs`(Settings·Plugins·Preset의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
 ## 목적
@@ -214,7 +214,7 @@ CallerContext::Plugin 검사는 이미 열린 popup(-32000)이나 잘못된 인�
 이 메서드는 window router의 외부 arm을 사용하므로 method table의 plugin_only 표식을 붙이지 않는다.
 그 표식은 별도 host-call interception 경로를 뜻한다. 에이전트는 파일 경로를 직접 지정한다.
 
-markdown의 Browse나 이미지 다른 이름으로 저장의 찾아보기처럼 plugin이 호스트의 파일 선택 창을 열어야 할 때 사용한다.
+markdown의 Browse와 주소창 폴더 버튼, 이미지 다른 이름으로 저장의 찾아보기처럼 plugin이 호스트의 파일 선택 창을 열어야 할 때 사용한다.
 사용자 응답까지 `host.call`을 잡아 두면 plugin의 렌더·입력 루프가 멈추고 60초
 `HostCallTimeout`이 생길 수 있으므로 요청을 즉시 접수하고 결과는 나중에 이벤트로 보낸다.
 
@@ -232,6 +232,11 @@ markdown의 Browse나 이미지 다른 이름으로 저장의 찾아보기처럼
    클립보드에 쓰지 않는다.
 4. plugin 은 `on_event` 에서 이 key 를 받아 자기 `request_id` pending-map 으로 상관관계를
    맞춘다(신규 SDK 콜백 불필요 — 기존 `EventDispatchCtx` 재사용).
+5. 확정 결과(`cancelled: false`)를 보낼 때 host 는 `(plugin_id, request_id, paths)` 를 사용자 출처
+   증명으로 남긴다(`picker_proofs`, 최근 32건). 확정은 사용자가 피커에서 직접 한 입력이기 때문이다.
+   그 plugin 이 이 선택으로 `markdown.navigate {…, picker_request_id}` 를 보내면 host 는 plugin·요청 번호·
+   경로가 모두 맞을 때 증명을 한 번 소비하고 사용자 요청으로 판정한다. 외부 호출자나 다른 plugin,
+   고르지 않은 경로, 이미 쓴 증명은 통하지 않는다. 피커는 여전히 경로만 돌려주며 이 증명은 출처 판정에만 쓴다.
 
 **저장 모드**: `mode?: "open" | "save"`(기본 `open`), `default_name?: string`(기본 빈 이름)을
 받는다. `location: "local"`은 활성 workspace와 무관하게 로컬을 지정한다. 생략하면 기존 출발 surface
@@ -365,8 +370,8 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   편집이 더해진다.
 - **AI Agent (IPC/CLI)**: 없음 — popup 조작(선택/확정/취소) 자체는 순수 로컬 사용자 입력
   UI 다(release 의 사용자 입력 재현 금지 원칙). 단, **popup 을 여는 트리거**는
-  `file_picker.trigger` IPC 로 plugin 에 열려 있다(docs/design/systems/popup.md) — markdown Browse
-  버튼이 실사용처. 이건 "에이전트가 사용자 대신 파일을 고른다"가 아니라 "plugin 이 host 소유
+  `file_picker.trigger` IPC 로 plugin 에 열려 있다(docs/design/systems/popup.md) — markdown 파일 열기
+  팝업의 Browse 와 주소창 폴더 버튼이 실사용처. 이건 "에이전트가 사용자 대신 파일을 고른다"가 아니라 "plugin 이 host 소유
   UI 를 사용자에게 대신 띄워준다" 는 위임이라 원칙과 상충하지 않는다(뒤이은 선택/확정은
   여전히 사용자 몫).
 - **원격 / 점유**: 원격 디렉토리 요청은 그 attach 세션이 대상 workspace 를 이미 점유하고 있어야
@@ -451,6 +456,9 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - Given `filters: ["md"]` 로 트리거됨 Then 렌더된 엔트리 목록에서 `.md` 가 아닌 파일은
   제외되고(디렉토리는 필터와 무관하게 항상 표시), 확정/취소 시 `"file_picker.result"` 가
   그 요청을 낸 plugin 에만(unicast) push 된다.
+- Given plugin 이 연 피커에서 사용자가 경로를 확정함 When 그 plugin 이 같은 경로와 `picker_request_id` 로
+  `markdown.navigate` 를 보냄 Then host 는 사용자 요청으로 판정한다(원격 실패는 toast). 같은 증명을 다시
+  쓰거나 외부 호출자가 같은 번호를 실으면 에이전트 요청으로 남는다. 취소는 증명을 남기지 않는다.
 - Given Tools 메뉴로 연 기존 흐름(`requester: None`) Then `file_picker.trigger` 도입 후에도
   동일하게 동작하고 결과 이벤트가 발생하지 않는다(회귀 없음).
 - Given 본체 file picker 를 연다 When 첫 프레임이 그려진다 Then 제목과 닫기 ✕ 는 헤더에 한 번씩만
@@ -524,8 +532,11 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   의 내부 `request_id` 와 별개 네임스페이스), `src/intent.rs`(`Intent`/`UiIntent::
   from_agent_plugin`).
 - plugin caller: `crates/tasty-plugin-markdown/src/popup.rs`(`trigger_file_picker`,
-  `FILE_PICKER_RESULT_EVENT`), `crates/tasty-plugin-markdown/src/main.rs`(`pending_file_picker`,
-  `on_event` 의 `"file_picker.result"` 수신).
+  `FILE_PICKER_RESULT_EVENT`), `crates/tasty-plugin-markdown/src/browse.rs`(주소창 폴더 버튼 —
+  `trigger_params`·`request_id_of`·`navigate_params`), `crates/tasty-plugin-markdown/src/main.rs`(`pending_file_picker`
+  의 팝업·surface 출처 구분, `take_picker_result`, `on_event` 의 `"file_picker.result"` 수신).
+- 사용자 출처 증명: `src/adapters/ipc/handler/picker_proofs.rs`(`record`·`take`), 기록은
+  `deliver_result`, 소비는 `src/adapters/ipc/handler/markdown.rs`(`picked_by_user`).
 - 원격 요청: `src/core/mod.rs`의 요청 값 `PendingListDirForward`/`next_list_dir_request_id`,
   `src/app/engine_action.rs`의 원 projection에 묶인 `ListDirectory` → `src/remote/state.rs`의 pending list 큐.
 - 원격 전송(client): `src/app/attach_client/forward.rs`(조회 전달), `src/app/attach_client/wire/list_dir.rs`(`parse_list_dir_result`), `src/app/attach_client/output.rs`(`MirrorEvent::ListDirResult` 적용, 항목 변환은 `output/remote_entry.rs`).

@@ -88,14 +88,20 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
         path: "site/content/using/files.md",
         phrase: "주소창",
-        count: 11,
+        count: 12,
         evidence: "낱말이 다르다 — 탐색기와 마크다운 문서의 address bar 다. Window 를 가리키지 않는다",
     },
     NotAWindow {
         path: "site/content/remote/attach.md",
         phrase: "주소창",
-        count: 5,
+        count: 6,
         evidence: "낱말이 다르다 — 원격 마크다운 문서 맨 위의 address bar 다. Window 를 가리키지 않는다",
+    },
+    NotAWindow {
+        path: "site/content/remote/attach.md",
+        phrase: "파일 선택 창",
+        count: 1,
+        evidence: "원격 마크다운 주소창 폴더 버튼이 여는 파일 선택 팝업이다. host PopupDef id file_picker 다.",
     },
     NotAWindow {
         path: "site/content/customize/keybindings.md",
@@ -112,8 +118,8 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
         path: "site/content/using/files.md",
         phrase: "파일 선택 창",
-        count: 8,
-        evidence: "파일 선택 팝업이다. 별도 OS View가 아니다. 열기 표, 중복 요청 시 기존 선택을 마치거나 취소하는 안내, 헤더를 끌어 옮기고 닫는 설명, 긴 파일명 설명, 부모 팝업과 함께 숨고 복원되는 설명, HTML 절의 새 HTML... 이 여는 피커와 원격에서 열리지 않는다는 설명, 이미지 다른 이름으로 저장의 찾아보기 안내를 합친 여덟 문구다.",
+        count: 10,
+        evidence: "파일 선택 팝업이다. 별도 OS View가 아니다. 열기 표, 중복 요청 시 기존 선택을 마치거나 취소하는 안내, 헤더를 끌어 옮기고 닫는 설명, 긴 파일명 설명, 부모 팝업과 함께 숨고 복원되는 설명, HTML 절의 새 HTML... 이 여는 피커와 원격에서 열리지 않는다는 설명, 마크다운 주소창 폴더 버튼이 여는 피커와 이미 떠 있을 때의 안내, 이미지 다른 이름으로 저장의 찾아보기 안내를 합친 열 문구다.",
     },
     NotAWindow {
         path: "site/content/getting-started/first-look.md",

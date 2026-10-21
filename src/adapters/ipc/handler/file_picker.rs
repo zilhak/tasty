@@ -152,6 +152,10 @@ pub(crate) fn deliver_result(
     requester: &FilePickerRequester,
     outcome: &crate::state::FilePickerOutcome,
 ) {
+    // 확정은 사용자 입력이다. 플러그인이 이 선택으로 낸 요청을 host가 사용자 요청으로 판정한다.
+    if !outcome.cancelled {
+        super::picker_proofs::record(&requester.plugin_id, requester.request_id, &outcome.paths);
+    }
     let Some(mgr) = plugin_manager else {
         return;
     };

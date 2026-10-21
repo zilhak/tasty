@@ -56,7 +56,7 @@
   | `convert_input_popup = "file-open"` | host가 convert 팝업, `open_markdown`·`convert_to_markdown` 단축키, context menu에서 `open_popup_instance`로 연다. |
   | `com.tasty.markdown.file_open` | event trigger로 연다. |
 
-  **찾아보기**는 `file_picker.trigger {filters,owner_popup_instance?,start_dir?,origin_surface_id?} → {request_id}`로 host의 파일 피커를 연다. `fs.read` 권한이 필요하며 선택 결과는 `file_picker.result` 이벤트로 비동기 도착한다. host는 고른 경로로 파일을 열거나 클립보드에 쓰지 않는다. markdown이 받은 경로를 경로 입력칸에 채우고, 열기는 사용자가 팝업에서 확정할 때 한다.
+  **찾아보기**는 `file_picker.trigger {filters,owner_popup_instance?,start_dir?,origin_surface_id?} → {request_id}`로 host의 파일 피커를 연다. `fs.read` 권한이 필요하며 선택 결과는 `file_picker.result` 이벤트로 비동기 도착한다. host는 고른 경로로 파일을 열거나 클립보드에 쓰지 않는다. markdown이 받은 경로를 경로 입력칸에 채우고, 열기는 사용자가 팝업에서 확정할 때 한다. 주소창 폴더 버튼은 같은 피커를 팝업 없이 열고 고른 파일로 지금 surface 를 바로 바꾼다(아래 주소창 절).
 
   시작 폴더는 open context의 로컬 `observed_cwd`, mirror이면 `remote_cwd`를 `start_dir`에 담는다. `origin_surface_id`도 그대로 전달한다. `inherit_cwd` 설정의 영향을 받는 `cwd` 키와는 다르다([파일 피커의 시작 위치](../../features/native-file-picker/index.md)).
 
@@ -78,7 +78,7 @@
 
   두 확정 요청의 `owner_popup_instance`도 file-open 자신의 인스턴스다. host는 `file_handler.dispatch`와 같은 규칙으로 사용자가 조작한 팝업의 요청임을 확인한다. 사용자 요청이면 새 탭을 선택하고, mirror 제자리 변환의 원격 실패를 toast로 알린다. 빠지면 제스처를 증명하지 못한 plugin 요청(PluginUnverified)으로 처리한다. 새 탭을 선택하지 않고 원격 실패도 warn 로그로만 남기지만, 새 탭 요청에 매칭 핸들러가 없으면 fallback picker 를 연다([파일 핸들러 (File handler)](../../features/file-handler/index.md)).
 
-  주소창 이동은 팝업이 없으므로 `markdown.navigate`에 `owner_popup_instance`를 싣지 않는다. 외부 CLI·IPC의 `markdown.navigate`는 plugin이 host로 다시 보내는데, 이때 `owner_popup_instance`를 제거한다. host는 이 요청의 호출자를 plugin으로 보므로, 필드를 남기면 외부 요청이 사용자 요청으로 판정될 수 있다.
+  주소창 이동은 팝업이 없으므로 `markdown.navigate`에 `owner_popup_instance`를 싣지 않는다. 주소창 폴더 버튼은 대신 피커 요청 번호(`picker_request_id`)를 싣는다. 외부 CLI·IPC의 `markdown.navigate`는 plugin이 host로 다시 보내는데, 이때 사용자 출처 증명 필드(`owner_popup_instance`·`picker_request_id`·`user_navigation_url`·`origin_surface_id`)를 모두 제거한다. host는 이 요청의 호출자를 plugin으로 보므로, 필드를 남기면 외부 요청이 사용자 요청으로 판정될 수 있다.
 
 - **링크 클릭 라우팅** — 문서 안의 모든 non-anchor 링크 destination 은 HTML 생성 시점에 내부 nav-fragment 스킴(`#tasty-nav:link:<percent-encoded-dest>`)으로 rewrite 된다(`render::rewrite_link_dest`) — 실제 `href` 를 그대로 두면 native WebView 가 진짜 파일/미지 스킴으로 navigate 해버려(host 는 *원격* http(s) 만 차단) 렌더된 문서가 그 자리에서 깨진다.
   fragment 만 바뀌는 same-document navigation 은 (a) WebKitGTK 의 `decide-policy` 로는 여전히 캡처되지만(→ host 가 `webview.navigation_attempt` 이벤트로 forward) (b) 실제 페이지 리로드는 일으키지 않는다(실측 검증됨) — 이 성질로 "클릭을 가로채되 화면은 안 깨지는" 신호 채널을 만든다.
@@ -86,10 +86,15 @@
   - **상대 경로**(`docs/index.md`, `../sibling.md`)는 **현재 마크다운 파일의 폴더(base_dir) 기준**으로 절대화(프로세스 cwd 아님). 절대 경로는 그대로. `javascript:` 는 무조건 무시(sanitize 와 별개의 2차 방어).
   - **외부 URL**(`http(s)://`·`mailto:`·`data:`)은 host `webview.open_external {surface_id,url}` 로 보내고, host 가 OS 기본 핸들러로 연다. **이 plugin 은 OS 열기를 직접 하지 않는다**(OS 열기 크레이트를 링크하지 않는다) — host 한 자리로 모아야 debug 스위치(`TASTY_DEBUG_OS_OPEN_LOG`, [유닛 테스트 격리 — 사용자 환경을 읽지 않는다](../../dev-guide/unit-test-isolation.md))가 이 열기도 기록한다. host 는 호출 plugin 이 `surface_id` 의 소유자이고 URL 에 스킴이 있으며 `javascript:` 가 아닐 때만 연다. 클릭하면 확인 없이 기본 브라우저가 열리는 사용자 동작은 그대로다(아래 기능 계약).
   - 파일 링크는 host `file_handler.dispatch` 로 보낸다(Explorer "파일 열기" 와 동일한 `DispatchFile` 경로 — 그 surface 가 속한 **Pane 의 새 탭**). 통지받은 navigation 의 URL 을 `user_navigation_url` 로 그대로 되대고(`file_link_params`), host 가 직접 본 두 사실(엔진의 사용자 제스처 보고 · 그 문서 페이지를 이 plugin 이 썼다)로 그 호출을 사용자 행동으로 판정하면 새 탭이 선택된다 — Linux 는 실측, Windows 는 컴파일만 재어졌다(재는 법: Windows 에서 문서 안의 파일 링크를 누르고 새 탭이 선택되는지 `tab.list` 로 본다). macOS 는 엔진이 그 값을 주지 않아 새 탭이 뒤에 붙기만 한다. plugin 은 판정하지 않는다([파일 핸들러 (File handler)](../../features/file-handler/index.md)).
-- **주소창** — 문서 안의 HTML 띠로 만든다(`render/address.rs`, 디자인 갤러리 `markdown-address-bar`·`markdown-address-narrow`). 로컬 문서는 [필드 · Go], mirror 문서는 [Reload · 필드 · Go]다.
+- **주소창** — 문서 안의 HTML 띠로 만든다(`render/address.rs`, 디자인 갤러리 `markdown-address-bar`·`markdown-address-folder`·`markdown-address-narrow`). 로컬 문서는 [Folder · 필드 · Go], mirror 문서는 [Folder · Reload · 필드 · Go]다.
   - 버튼은 IconButton ghost sm 과 같은 상자(`icon-button-size-sm`, 글리프 `icon-size-md`)이고 글리프는 CSS mask 라 hover·disabled 글자색을 따른다. 필드는 PathField 상자(`input-height`)에 kind 글리프(로컬 file, 원격 remote)와 고정폭 경로를 둔다. 포커스가 없을 때는 경로를 앞쪽부터 말줄임해 파일 이름이 보인다. 치수·색은 모두 `md-address-*`·`input-*`·`icon-button-*` 토큰에서 읽는다.
   - 로컬 필드에만 이 머신의 최근 경로를 native `<datalist>`(`tasty-addr-recent`)로 붙인다. 원격 경로 칸에 로컬 경로를 제안하면 안 되므로 mirror 문서에는 내지 않는다.
-  - 페이지 폭에서 필드가 `md-address-go-hide-below` 아래로 줄어들 때 Go 만 숨긴다(media query, 경계 폭은 토큰으로 계산). Enter 는 그대로 이동하고 Reload 는 숨지 않는다. 필드는 `md-address-field-min-width` 아래로 줄지 않으며 더 좁으면 띠 끝이 잘린다.
+  - 페이지 폭에서 필드가 `md-address-go-hide-below` 아래로 줄어들 때 Go 만 숨긴다(media query, 경계 폭은 토큰으로 계산). Enter 는 그대로 이동하고 Folder·Reload 는 숨지 않는다. 필드는 `md-address-field-min-width` 아래로 줄지 않으며 더 좁으면 띠 끝이 잘린다.
+  - **폴더 버튼**(`#tasty-browse`, 글리프 folderOpen, 툴팁 `markdown.address.open` / 원격 `markdown.address.open_remote`)은 `#tasty-nav:browse:<nonce>` 를 보낸다. plugin 은 팝업 없이 `file_picker.trigger {filters:["md","markdown"], start_dir, origin_surface_id}` 로 host 피커를 연다(`browse.rs`).
+    - 시작 폴더는 문서 폴더다. 로컬은 열린 파일의 부모 폴더, mirror 는 원격 경로의 부모(드라이브 문자나 `\\` 로 시작하면 `\`, 그 밖은 `/` 로 나눔)다. host 의 surface cwd 대신 명시하는 이유는 mirror surface 의 cwd 가 서버가 push 한 셸 cwd 일 수 있어 문서 폴더와 다를 수 있기 때문이다. 원격 폴더 목록과 존재 판정은 원격이 한다.
+    - 요청 번호는 그 surface 에 묶어 둔다. 같은 surface 에서 새로 누르면 이전 요청의 결과는 버리고, surface 가 닫히면 대기 요청도 버린다. 취소·늦은 결과·모르는 번호는 아무것도 하지 않는다. 피커가 이미 열려 있으면(`-32000`) 두 번째 피커를 열지 않고 warn 로그만 남긴다. 열린 피커를 마치거나 취소한 뒤 다시 누르면 된다.
+    - 확정 결과가 오면 고른 경로 그대로 `markdown.navigate {surface_id, path, picker_request_id}` 를 보내 같은 surface 를 바꾼다. 새 탭을 만들지 않고 클립보드도 쓰지 않는다. host 는 그 경로를 이 plugin 의 피커에서 사용자가 확정했는지 확인해 사용자 요청으로 판정하므로([네이티브 파일 피커](../../features/native-file-picker/index.md)) mirror 변환이 원격에서 실패하면 toast 로 알린다. 주소창 직접 이동의 오류 행과 섞지 않는다. 로컬 파일이 그사이 사라졌으면 host 가 `-32602` 로 거절하고 plugin 은 warn 로그만 남긴다.
+    - 연결이 끊긴 mirror 문서에서는 다른 버튼처럼 disabled 이고 늦게 온 신호도 무시한다.
   - 툴팁은 버튼을 감싼 요소의 `title`이다. disabled 버튼은 마우스 이벤트를 받지 않아 자기 `title`을 보이지 않기 때문이다. native 툴팁이라 위치는 OS가 정한다.
   - 문서 생성 시점의 *현재* 경로/최근목록으로 만들어지며, webview 에는 JS↔plugin 실시간 메시지 브리지가 없어(module doc 참고) 포커스 시 다시 fetch 하는 반응형 동작은 없다. Go 클릭/Enter 는 신뢰된 인라인 `<script>`(`render::nav_script`)가 `location.hash = 'tasty-nav:addr:<nonce>:' + encodeURIComponent(v)` 로 위 nav-fragment 채널에 태워 보낸다. nonce 가 있어 같은 경로를 다시 보내도 hash 가 바뀐다. `encodeURIComponent` 는 `:` 를 남기지 않으므로 plugin 은 첫 `:` 앞의 숫자를 nonce 로 떼어 낸다.
 - **attach mirror 문서** — 원격 tasty 의 워크스페이스를 attach 하면 그 안의 markdown surface 는 이 plugin 이 **원격에서 가져온 원문**으로 다시 그린다([원격 attach (Remote attach)](../../features/remote-attach/index.md)).
@@ -105,7 +110,7 @@
     - 그 밖의 실패(연결 종료, 원격 거절 등)는 없는 파일 문구로 바꾸지 않는다. 입력값과 오류 테두리만 남고 오류 행은 없다. 이 경우의 문구는 디자인이 정하지 않았다.
     - 오류 상태는 다음 입력·Esc 에서 페이지가 지우고 `#tasty-nav:addr-dismiss:<nonce>` 로 plugin 에 알려 보관한 실패도 버린다. 이동에 성공하면 host 가 surface 를 새 파일로 바꾸므로 함께 사라진다. 30초 안에 끝나지 않으면 원격이 아직 처리 중일 수 있어 실패로 바꾸지 않는다.
   - **링크**: 파일 링크는 원격 호스트의 경로라 이 머신에서 열지 않고, 외부 URL 만 연다.
-  - **연결 끊김**: host 가 끊김을 알리면(`request_id: 0`) 필드는 읽기 전용 상자(`input-readonly-*`, 경로 `state-disabled-fg`)가 되고 Reload·Go 는 모두 disabled, 각 툴팁은 `markdown.address.disconnected` 다. 재연결 뒤 원문을 다시 받으면 풀린다.
+  - **연결 끊김**: host 가 끊김을 알리면(`request_id: 0`) 필드는 읽기 전용 상자(`input-readonly-*`, 경로 `state-disabled-fg`)가 되고 Folder·Reload·Go 는 모두 disabled, 각 툴팁은 `markdown.address.disconnected` 다. 재연결 뒤 원문을 다시 받으면 풀린다.
   - **변경 신호**: `markdown_mirror.changed {surface_id}` 이벤트를 받으면 원문을 다시 받지 않고 Reload 의 `data-stale` 만 `true` 로 바꿔 `md-address-stale-bg`·`md-address-stale-fg` 로 채운다(띠에서 유일하게 채운 요소, 툴팁 `markdown.address.stale`). 최신 원문을 받으면 풀린다. 이미 stale 이면 문서를 다시 싣지 않는다.
   - **테마 변경**은 받아 둔 원문으로 다시 그릴 뿐 요청하지 않는다. mirror 문서는 host 의 파일 핸들러를 거치지 않으므로 최근목록에도 기록되지 않는다.
 - **최근목록 조회** — host 의 generic **`recent.query {kind}`** IPC 가 그 kind 의 최근 연 파일을 **최신순 최대 10개** 반환한다(`{recent:[{path,file_name}]}`). markdown plugin 은 `kind:"markdown"` 을 채워 호출해 위 주소창 `<datalist>` 를 채운다. **읽기 전용** — host의 모든 창이 공유하는 `MainViewState.recent_files` 캐시를 필터 없이 조회할 뿐 사용자 상태를 바꾸지 않는다([포커스 정책](../../design/policies/focus.md)). **`surface.read`** 권한. recent 기록 대상 여부는 매니페스트 `records_recent` capability 로 판정. mirror surface 를 변환하거나 mirror pane 에 새 탭을 열 때는 경로가 원격 파일이라 기록하지 않는다. 새 탭은 탭이 만들어질 pane 이 mirror workspace 에 속하는지로 판정하며, 구조 변경을 원격에 forward 하는 판정과 같은 기준이다.
