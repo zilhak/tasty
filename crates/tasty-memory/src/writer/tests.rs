@@ -858,7 +858,8 @@ fn a_closed_writer_refuses_a_blocking_body_without_running_it() {
 fn a_result_reaping_thread_may_not_wait_for_the_writer() {
     let store: Arc<Mutex<dyn MemoryStorage>> =
         Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
-    let access = MemoryAccess::inline(store);
+    let (writer, access) = queued_access(store.clone(), Limits::default());
+    let inline = MemoryAccess::inline(store);
     let blocking = access.clone();
     let waited = std::thread::spawn(move || {
         mark_result_reaping_thread();
@@ -873,5 +874,13 @@ fn a_result_reaping_thread_may_not_wait_for_the_writer() {
     if cfg!(debug_assertions) {
         assert!(waited.is_err() && unit.is_err());
     }
+    // 바로 실행하는 구성은 다른 스레드를 기다리지 않아 검사하지 않는다.
+    let inline_ok = std::thread::spawn(move || {
+        mark_result_reaping_thread();
+        inline.run_blocking(0, |_| 7)
+    })
+    .join();
+    assert_eq!(inline_ok.unwrap().unwrap(), 7);
     assert!(!is_result_reaping_thread());
+    drop(writer);
 }

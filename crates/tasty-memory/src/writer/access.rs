@@ -238,7 +238,7 @@ impl MemoryAccess {
         request: MemoryRequest,
         timeout: std::time::Duration,
     ) -> std::result::Result<MemoryOutput, Waited> {
-        assert_may_wait("run_and_wait");
+        self.assert_may_wait("run_and_wait");
         let mut ticket = self.submit(request).map_err(Waited::Refused)?;
         let completion = ticket.wait_timeout(timeout).ok_or(Waited::TimedOut)?;
         settle(completion).map_err(Waited::Failed)
@@ -257,7 +257,7 @@ impl MemoryAccess {
         R: Send + 'static,
         F: Fn(&mut dyn MemoryStorage) -> R + Send + Sync + 'static,
     {
-        assert_may_wait("run_blocking");
+        self.assert_may_wait("run_blocking");
         let body = Arc::new(body);
         let mut last = None;
         for _ in 0..BLOCKING_ATTEMPTS {
@@ -397,6 +397,16 @@ pub fn mark_result_reaping_thread() {
 /// 이 스레드가 writer 결과를 거두는 스레드로 표시됐는가.
 pub fn is_result_reaping_thread() -> bool {
     REAPS_RESULTS.with(|flag| flag.get())
+}
+
+impl MemoryAccess {
+    /// writer 큐를 기다리는 호출이 결과를 거두는 스레드에서 일어나지 않게 한다. 바로 실행하는
+    /// 구성(시험)은 다른 스레드를 기다리지 않으므로 검사하지 않는다.
+    fn assert_may_wait(&self, what: &'static str) {
+        if self.is_queued() {
+            assert_may_wait(what);
+        }
+    }
 }
 
 fn assert_may_wait(what: &'static str) {
