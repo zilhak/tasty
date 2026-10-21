@@ -51,7 +51,7 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             "performance_scrollback_disk_lines",
             &super::number::NumberSpec::int(
                 crate::settings::UNLIMITED_SCROLLBACK_DISK_LINES as f64,
-                SCROLLBACK_DISK_LINES_MAX,
+                SCROLLBACK_DISK_LINES_MAX as f64,
             )
             .enabled(settings.performance.scrollback_disk_swap),
             &mut lines,
@@ -62,4 +62,4 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 }
 
 /// Largest value the field accepts; a larger value in the settings file is kept as written.
-const SCROLLBACK_DISK_LINES_MAX: f64 = 100_000_000.0;
+const SCROLLBACK_DISK_LINES_MAX: i64 = 100_000_000;
