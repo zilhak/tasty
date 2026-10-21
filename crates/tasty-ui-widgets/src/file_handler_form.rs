@@ -476,6 +476,8 @@ pub fn fh_row(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>) -> FhRowEv
                 ev.toggled = Some(on);
             }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                // 좁은 열에서 Tag가 남은 폭을 넘으면 Switch와 끝 칸을 덮는다. 왼쪽 묶음은 남은 폭에서 자른다.
+                ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
                 ui.add_space(pad_x);
                 ui.spacing_mut().item_spacing.x = gap;
                 row_left(ui, theme, view, dim);
@@ -678,7 +680,9 @@ fn summary_line(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>, dim: boo
         job.append(&seg.text, 0.0, fmt);
     }
     job.wrap = egui::text::TextWrapping::truncate_at_width(max_w);
-    let resp = ui.add(egui::Label::new(job).selectable(false));
+    // Label에 job을 넘기면 가로 레이아웃의 Extend 모드가 말줄임을 덮어쓴다. galley로 먼저 잰다.
+    let galley = ui.painter().layout_job(job);
+    let resp = ui.add(egui::Label::new(galley).selectable(false));
     if crate::tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
         Tooltip::new(&fh_summary_text(&view.summary)).show(ui, theme, resp.rect);
     }
