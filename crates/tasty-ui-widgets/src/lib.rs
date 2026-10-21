@@ -271,7 +271,7 @@ pub use searchable_select::{
     searchable_select_search_id,
 };
 pub use segmented::segmented;
-pub use select::{select, select_or_placeholder};
+pub use select::{SelectLook, select, select_or_placeholder, select_pinned};
 pub use sequence_editor::{
     SequenceEditorAction, SequenceEditorError, SequenceEditorView, sequence_editor,
 };

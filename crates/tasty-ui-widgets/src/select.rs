@@ -2,6 +2,7 @@
 
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 드롭다운. `selected` 는 `options` 인덱스. 선택이 바뀌면 `true`.
 pub fn select(
@@ -94,60 +95,26 @@ fn select_impl(
     width: f32,
     enabled: bool,
 ) -> (Option<usize>, egui::Rect) {
-    let pad_x = theme.select_padding_x().value();
-    let body = theme.select_font_size().value();
-    let chevron_room = theme.select_chevron_room().value();
-
     let (rect, resp) = alloc_trigger(ui, theme, width, enabled);
-    // disabled 글자·글리프는 opacity 없이 disabled ink를 쓴다.
-    let dim = |c: egui::Color32| {
-        if enabled {
-            c
-        } else {
-            theme.state_disabled_fg().to_egui()
-        }
-    };
-
     let popup_id = ui.make_persistent_id(("tasty_select", id_salt));
     if enabled && resp.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
-    // 목록이 열려 있으면 MultiSelect 처럼 포커스 테두리를 쓴다. 직접 키를 처리하지 않으므로
-    // 키보드 포커스만으로는 포커스 테두리를 그리지 않는다.
+    // 목록이 열려 있으면 포커스 테두리와 ring을 그린다. 직접 키를 처리하지 않으므로
+    // 키보드 포커스만으로는 포커스 모양을 그리지 않는다.
     let open = ui.memory(|m| m.is_popup_open(popup_id));
-    let border = if enabled && open {
-        theme.select_border_focus()
-    } else if enabled && resp.hovered() {
-        theme.border_strong()
+    let look = if open {
+        SelectLook::Open
+    } else if resp.hovered() {
+        SelectLook::Hover
     } else {
-        theme.select_border()
+        SelectLook::Normal
     };
-    paint_trigger_box(ui.painter(), theme, rect, border, enabled);
-    // 문구가 테두리와 화살표를 넘지 않도록 줄인다.
-    let (label, label_fg) = match (selected, placeholder) {
-        (None, Some(p)) => (p, theme.select_placeholder()),
-        (s, _) => (
-            s.and_then(|i| options.get(i)).copied().unwrap_or(""),
-            theme.select_fg(),
-        ),
+    let label = match (selected, placeholder) {
+        (None, Some(p)) => TriggerLabel::Placeholder(p),
+        (s, _) => TriggerLabel::Value(s.and_then(|i| options.get(i)).copied().unwrap_or("")),
     };
-    let text_max_width = (rect.right() - chevron_room - (rect.left() + pad_x)).max(0.0);
-    let mut job = egui::text::LayoutJob::simple_singleline(
-        label.to_owned(),
-        egui::FontId::proportional(body),
-        egui::Color32::PLACEHOLDER,
-    );
-    job.wrap = egui::text::TextWrapping::truncate_at_width(text_max_width);
-    let galley = ui.fonts(|f| f.layout_job(job));
-    let text_pos = egui::pos2(
-        rect.left() + pad_x,
-        rect.center().y - galley.rect.height() * 0.5,
-    );
-    ui.painter()
-        .galley(text_pos, galley, dim(label_fg.to_egui()));
-    let cx = rect.right() - chevron_room * 0.5;
-    let ch = dim(theme.select_chevron_fg().to_egui());
-    paint_chevron(ui.painter(), egui::pos2(cx, rect.center().y), ch, false);
+    paint_trigger(ui, theme, rect, look, enabled, label);
 
     let mut picked = None;
     tasty_egui_theme::with_popover_frame(ui, theme, |ui| {
@@ -172,6 +139,99 @@ fn select_impl(
         )
     });
     (picked, rect)
+}
+
+/// 트리거의 상호작용 모양. disabled이면 무시한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectLook {
+    Normal,
+    /// 포인터가 올라간 트리거 — border-strong 테두리.
+    Hover,
+    /// 목록이 열린 트리거 — select-border-focus 테두리와 같은 색 ring.
+    Open,
+}
+
+enum TriggerLabel<'a> {
+    Value(&'a str),
+    Placeholder(&'a str),
+}
+
+/// 상호작용 없이 트리거 하나를 정해진 모양으로 그린다. [`select`]와 같은 칠을 쓰므로 갤러리가
+/// hover·open처럼 포인터로만 생기는 상태를 고정해 보일 때 쓴다. `value`가 없으면 `placeholder`를 그린다.
+pub fn select_pinned(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    value: Option<&str>,
+    placeholder: &str,
+    width: LogicalPx,
+    look: SelectLook,
+    enabled: bool,
+) -> egui::Rect {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(width.value(), theme.select_height().value()),
+        egui::Sense::hover(),
+    );
+    let label = value.map_or(TriggerLabel::Placeholder(placeholder), TriggerLabel::Value);
+    paint_trigger(ui, theme, rect, look, enabled, label);
+    rect
+}
+
+/// 트리거 상자·글자·chevron을 그린다. disabled 글자·글리프는 opacity 없이 disabled ink를 쓴다.
+fn paint_trigger(
+    ui: &egui::Ui,
+    theme: &Theme,
+    rect: egui::Rect,
+    look: SelectLook,
+    enabled: bool,
+    label: TriggerLabel<'_>,
+) {
+    let pad_x = theme.select_padding_x().value();
+    let body = theme.select_font_size().value();
+    let chevron_room = theme.select_chevron_room().value();
+    let border = match look {
+        SelectLook::Open => theme.select_border_focus(),
+        SelectLook::Hover => theme.border_strong(),
+        SelectLook::Normal => theme.select_border(),
+    };
+    paint_trigger_box(ui.painter(), theme, rect, border, enabled);
+    if enabled && look == SelectLook::Open {
+        let bw = theme.border_width.value();
+        ui.painter().rect_stroke(
+            rect.expand(bw),
+            theme.select_radius().value(),
+            egui::Stroke::new(bw, theme.select_border_focus().to_egui()),
+            // 시안 box-shadow 0 0 0 1px처럼 테두리 바로 바깥 한 줄에 붙인다.
+            egui::StrokeKind::Inside,
+        );
+    }
+    let dim = |c: egui::Color32| {
+        if enabled {
+            c
+        } else {
+            theme.state_disabled_fg().to_egui()
+        }
+    };
+    let (text, fg) = match label {
+        TriggerLabel::Value(v) => (v, theme.select_fg()),
+        TriggerLabel::Placeholder(p) => (p, theme.select_placeholder()),
+    };
+    // 문구가 테두리와 화살표를 넘지 않도록 줄인다.
+    let text_max_width = (rect.right() - chevron_room - (rect.left() + pad_x)).max(0.0);
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        text.to_owned(),
+        egui::FontId::proportional(body),
+        egui::Color32::PLACEHOLDER,
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(text_max_width);
+    let galley = ui.fonts(|f| f.layout_job(job));
+    let text_pos = egui::pos2(
+        rect.left() + pad_x,
+        rect.center().y - galley.rect.height() * 0.5,
+    );
+    ui.painter().galley(text_pos, galley, dim(fg.to_egui()));
+    let cx = rect.right() - chevron_room * 0.5;
+    let ch = dim(theme.select_chevron_fg().to_egui());
+    paint_chevron(ui.painter(), egui::pos2(cx, rect.center().y), ch, false);
 }
 
 /// 단일·다중 선택 필드가 같은 높이와 입력 영역 계산을 사용한다.

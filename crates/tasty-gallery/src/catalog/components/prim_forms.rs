@@ -5,11 +5,11 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    SearchableSelect, SearchableSelectLabels, SearchableSelectOption, checkbox, select,
-    select_or_placeholder, switch,
+    SearchableSelect, SearchableSelectLabels, SearchableSelectOption, SelectLook, checkbox, select,
+    select_or_placeholder, select_pinned, switch,
 };
 
-use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage, wrap_item};
 
 const FONTS: [SearchableSelectOption<'static>; 4] = [
     SearchableSelectOption::new("D2Coding"),
@@ -125,6 +125,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
         });
     });
+    select_states(ui, theme);
 
     meta(
         ui,
@@ -134,6 +135,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("checkbox", "16px square"),
             ("switch", "28×16 track"),
             ("accent", "primary"),
+            (
+                "Select ink",
+                "value = text-primary · no value = select-placeholder · disabled (value or not) = state-disabled-fg, chevron state-disabled-fg (else text-muted) · open list options always text-primary · no hover/active overlay when disabled",
+            ),
             (
                 "searchable select",
                 "same 28 trigger and chevron as Select; open list has a search field (see SearchableSelect)",
@@ -153,4 +158,86 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("border-default", "outline"),
         ],
     );
+}
+
+/// 시안 "Select states": Mocha·Latte 칸마다 여섯 상태를 field-width-lg 칸에 고정해 그린다.
+/// hover·open은 포인터로만 생기므로 본체 Select와 같은 칠을 쓰는 `select_pinned`로 고정한다.
+fn select_states(ui: &mut egui::Ui, theme: &Theme) {
+    const VALUE: &str = "Tasty rc";
+    const PLACEHOLDER: &str = "Select a profile…";
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let themes = [
+        ("Mocha", with_zoom(tasty_themes::mocha_fallback())),
+        ("Latte", with_zoom(crate::host_shell::latte_theme())),
+    ];
+    let cells: [(&str, Option<&str>, SelectLook, bool); 6] = [
+        ("value", Some(VALUE), SelectLook::Normal, true),
+        ("hover", Some(VALUE), SelectLook::Hover, true),
+        ("focus / open", Some(VALUE), SelectLook::Open, true),
+        (
+            "no value → select-placeholder",
+            None,
+            SelectLook::Normal,
+            true,
+        ),
+        (
+            "disabled + value → state-disabled-fg",
+            Some(VALUE),
+            SelectLook::Normal,
+            false,
+        ),
+        (
+            "disabled + no value → state-disabled-fg",
+            None,
+            SelectLook::Normal,
+            false,
+        ),
+    ];
+    stage(ui, theme, StageVariant::Column, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+        for (label, th) in &themes {
+            egui::Frame::new()
+                .fill(th.bg_panel().to_egui())
+                .corner_radius(th.corner_radius.value())
+                .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = th.spacing_md.value();
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{label} — Select states: hover / focus are pinned with the same border values the widget applies"
+                            ))
+                            .size(th.font_size_caption.value())
+                            .color(th.text_muted().to_egui()),
+                        );
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing =
+                                egui::vec2(th.spacing_md.value(), th.spacing_md.value());
+                            for (cell, value, look, enabled) in cells {
+                                // 칸의 크기를 미리 알아야 줄을 바꾼다 — 지난 프레임 크기를 쓰는 wrap_item.
+                                wrap_item(ui, |ui| {
+                                    ui.set_width(th.field_width_lg.value());
+                                    ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+                                    ui.label(
+                                        egui::RichText::new(cell)
+                                            .size(th.font_size_micro.value())
+                                            .color(th.text_muted().to_egui()),
+                                    );
+                                    select_pinned(
+                                        ui,
+                                        th,
+                                        value,
+                                        PLACEHOLDER,
+                                        th.field_width_lg,
+                                        look,
+                                        enabled,
+                                    );
+                                });
+                            }
+                        });
+                    });
+                });
+        }
+    });
 }
