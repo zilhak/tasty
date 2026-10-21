@@ -481,6 +481,7 @@ impl AppServices {
     }
 
     /// 공용 poison 복구 헬퍼로 저장소 락을 얻고 콜백을 실행한다. 콜백이 끝날 때까지 락을 유지한다.
+    #[cfg(test)]
     pub(crate) fn with_memory<R>(
         &self,
         f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,

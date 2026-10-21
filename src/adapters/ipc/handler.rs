@@ -29,7 +29,7 @@ mod file_handler;
 pub(crate) mod file_picker;
 pub(crate) mod gate;
 #[cfg(test)]
-mod gate_faults;
+pub(crate) mod gate_faults;
 #[cfg(feature = "gui")]
 mod git_viewer;
 mod hook_handler;

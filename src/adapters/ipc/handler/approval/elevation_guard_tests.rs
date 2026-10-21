@@ -148,3 +148,36 @@ fn ipc_approval_of_a_host_elevation_grants_the_permission() {
 
     assert!(has_permission(&core, &token));
 }
+
+/// 권한 부여 요청이 저장에 실패해도 승인 응답은 그대로이고 권한은 붙지 않는다. 같은 묶음의 기록과
+/// 함께 되돌려질 수 있다.
+#[test]
+fn a_grant_that_fails_to_store_keeps_the_answer_and_grants_nothing() {
+    use crate::adapters::ipc::handler::gate_faults::{Faults, FaultyStore};
+    let _home = crate::test_support::TastyHomeGuard::new();
+    let faults = Arc::new(Faults::default());
+    let mut core = writer_core_with(
+        Arc::new(Mutex::new(FaultyStore::new(faults.clone()))),
+        usize::MAX,
+    );
+    let token = issue_session(&core);
+    let record =
+        publish_capability_elevation_at(&mut core, None, AGENT, "file.write", PERMISSION, None)
+            .expect("elevation request");
+    // 요청 기록이 먼저 끝나야 주입한 실패가 권한 부여 묶음에 닿는다.
+    core.memory_access()
+        .run_blocking(0, |_| ())
+        .expect("earlier writes settled");
+    Faults::arm(&faults.units_before_body, 1);
+
+    respond_over_ipc(&mut core, &record.request.id);
+
+    assert_eq!(
+        faults
+            .units_before_body
+            .load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "the injected failure was not reached"
+    );
+    assert!(!has_permission(&core, &token));
+}
