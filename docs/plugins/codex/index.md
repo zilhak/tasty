@@ -222,6 +222,11 @@ Codex 도구 안의 실행, 비대화형 stdin, `command codex`, 유틸리티 �
 자동 복원은 등록하지 않는다. Bash·zsh 외의 셸에서는 `tasty codex launch`를 사용한다.
 
 native TUI는 세대별 전용 서버 앞의 loopback relay에 임의 capability token으로 연결한다.
+relay 종료는 등록된 소켓 목록의 락이 poison돼도 남은 소켓을 shutdown하고 연결 스레드를 회수한다.
+목록은 Weak 참조만 보관하므로 공용 poison 복구로 읽고 최초 한 번 진단한다. Drop이 panic을
+풀어내는 중에도 poison 자체를 새 panic으로 바꾸지 않는다. 프레임 writer는 별개이며 poison 뒤
+이어 쓰지 않고 오류를 전파한다. 인증값 슬롯도 완성된 String의 단일 대입이므로 복구해 TUI의
+인증 환경변수에 전달한다. 토큰 값은 진단 로그에 쓰지 않는다.
 relay는 thread/start·resume·fork 요청에 실행 때 명시한 정책·모델을 넣고, 응답이 그 값을 적용했는지 확인한다.
 native TUI에는 새 대화든 재개든 승인·sandbox 옵션을 넘기지 않는다. Codex 0.154 TUI는 이 옵션을 받으면
 시작 때의 원격 재개뿐 아니라 TUI 안의 `/resume`도 "Permission overrides are not supported when resuming a

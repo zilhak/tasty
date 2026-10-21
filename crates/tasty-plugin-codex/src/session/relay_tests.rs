@@ -379,3 +379,57 @@ fn ephemeral_helper_threads_keep_their_policy_and_are_not_registered() {
     assert_eq!(seen[1], helper);
     assert_eq!(bound, vec!["\"t\"".to_string()]);
 }
+
+type SocketRegistry = Arc<Mutex<Vec<Weak<Stream>>>>;
+
+fn poisoned_socket_registry() -> (Arc<Stream>, TcpStream, SocketRegistry) {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+    let socket = Arc::new(Stream::Tcp(listener.accept().unwrap().0));
+    let sockets = Arc::new(Mutex::new(vec![Arc::downgrade(&socket)]));
+    let poisoned = std::panic::catch_unwind(|| {
+        let _held = sockets.lock().unwrap();
+        panic!("poison socket registry");
+    });
+    assert!(poisoned.is_err());
+    assert!(sockets.is_poisoned());
+    (socket, peer, sockets)
+}
+
+#[test]
+fn poisoned_registry_still_closes_registered_sockets() {
+    let (_live_socket, mut peer, sockets) = poisoned_socket_registry();
+    close_streams(&sockets);
+    assert_eq!(
+        peer.read(&mut [0]).expect("shutdown releases the reader"),
+        0
+    );
+}
+
+#[test]
+fn poisoned_registry_is_closed_and_joined_during_unwind() {
+    let (_live_socket, mut peer, streams) = poisoned_socket_registry();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let task = std::thread::spawn(move || {
+        tx.send(peer.read(&mut [0])).unwrap();
+    });
+    let stop = Arc::new(AtomicBool::new(false));
+    let relay = Relay {
+        url: String::new(),
+        token: String::new(),
+        stop: stop.clone(),
+        streams,
+        task: Some(task),
+    };
+    let original_panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _relay = relay;
+        panic!("unwind while owning relay");
+    }));
+    assert!(original_panic.is_err());
+    assert!(stop.load(Ordering::Acquire));
+    assert!(
+        matches!(rx.recv_timeout(Duration::from_secs(1)).unwrap(), Ok(0)),
+        "Drop must shut down the socket before joining its reader"
+    );
+}

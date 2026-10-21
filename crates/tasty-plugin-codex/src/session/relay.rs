@@ -271,13 +271,20 @@ fn join_all(connections: Vec<JoinHandle<()>>) {
     }
 }
 
+static SOCKETS_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
 /// 열린 연결을 모두 닫는다.
 fn close_streams(sockets: &Mutex<Vec<Weak<Stream>>>) {
-    if let Ok(sockets) = sockets.lock() {
-        for socket in sockets.iter() {
-            if let Some(socket) = socket.upgrade() {
-                socket.close();
-            }
+    // 레지스트리는 Weak 목록만 retain/push한다. 프레임 writer를 복구하는 것이 아니라
+    // 남아 있는 소켓의 shutdown 의무를 이행하므로 poison 뒤에도 목록을 읽을 수 있다.
+    let sockets = tasty_utils::poison::recover_mutex(
+        sockets.lock(),
+        "codex relay socket registry",
+        &SOCKETS_POISON_REPORTED,
+    );
+    for socket in sockets.iter() {
+        if let Some(socket) = socket.upgrade() {
+            socket.close();
         }
     }
 }
@@ -285,13 +292,7 @@ fn close_streams(sockets: &Mutex<Vec<Weak<Stream>>>) {
 impl Drop for Relay {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        if let Ok(sockets) = self.streams.lock() {
-            for socket in sockets.iter() {
-                if let Some(socket) = socket.upgrade() {
-                    socket.close();
-                }
-            }
-        }
+        close_streams(&self.streams);
         if let Some(task) = self.task.take()
             && task.join().is_err()
         {

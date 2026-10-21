@@ -603,11 +603,7 @@ fn entry(raw: &[String], native: bool) -> i32 {
             if let Some(native) = &args.native {
                 let mut cmd = execution.command();
                 cmd.args(["--remote", url, "--remote-auth-token-env", REMOTE_TOKEN_ENV]);
-                if let Ok(token) = relay_token.lock()
-                    && let Some(token) = token.as_ref()
-                {
-                    cmd.env(REMOTE_TOKEN_ENV, token);
-                }
+                set_relay_auth(&mut cmd, &relay_token);
                 cmd.args(&native.tui);
                 return cmd;
             }
@@ -621,6 +617,22 @@ fn entry(raw: &[String], native: bool) -> i32 {
         },
     );
     exit_code(result, &report)
+}
+
+static RELAY_TOKEN_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn set_relay_auth(cmd: &mut Command, relay_token: &std::sync::Mutex<Option<String>>) {
+    // prepare는 완성한 String을 Some으로 한 번 대입한다. 부분 토큰이나 여러 필드의
+    // 중간 상태가 없으므로 저장된 값을 복구해 전달한다. 진단에는 토큰 값을 넣지 않는다.
+    let token = tasty_utils::poison::recover_mutex(
+        relay_token.lock(),
+        "codex relay auth slot",
+        &RELAY_TOKEN_POISON_REPORTED,
+    );
+    if let Some(token) = token.as_ref() {
+        cmd.env(REMOTE_TOKEN_ENV, token);
+    }
 }
 
 /// 진입점의 인자. 실행을 끝내야 하면 종료 코드를 돌려준다. 해석할 수 없는 native 인자는 Tasty
@@ -797,6 +809,21 @@ fn register_native_thread(surface: u32, generation: &str, reply: &Value) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn poisoned_relay_token_still_reaches_the_native_tui_environment() {
+        let relay_token = std::sync::Mutex::new(Some("fixture-capability".to_owned()));
+        let poisoned = std::panic::catch_unwind(|| {
+            let _held = relay_token.lock().unwrap();
+            panic!("poison auth slot");
+        });
+        assert!(poisoned.is_err());
+        assert!(relay_token.is_poisoned());
+        let mut cmd = Command::new("unused-test-command");
+        set_relay_auth(&mut cmd, &relay_token);
+        assert!(cmd.get_envs().any(|(k, v)| k == REMOTE_TOKEN_ENV
+            && v.is_some_and(|v| v == "fixture-capability")), "auth environment must survive poison");
+    }
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
