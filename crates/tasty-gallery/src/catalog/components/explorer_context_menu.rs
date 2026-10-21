@@ -1,5 +1,6 @@
 //! 공용 메뉴 항목을 조합한 탐색기 우클릭 메뉴 예제.
-//! 빈 영역·파일·폴더·다중 선택에 따른 네 가지 구성을 보여준다.
+//! 빈 영역·파일·폴더·다중 선택·원격 칸에 따른 구성을 보여준다. OS 연계 행(시스템에서 열기·파일 관리자에서
+//! 보기)은 로컬 칸에서만 자기 묶음으로 오고, 모든 메뉴는 구분선 뒤 Properties 로 끝난다.
 
 mod history;
 
@@ -8,7 +9,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
 use crate::catalog::icons::{
-    COPY, EDIT, FILE_PLUS, FOLDER_OPEN, FOLDER_PLUS, MockGlyph, STAR, TRASH,
+    COPY, EDIT, FILE_PLUS, FOLDER_OPEN, FOLDER_PLUS, INFO, MockGlyph, STAR, TRASH,
 };
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
 use crate::i18n::t;
@@ -31,7 +32,13 @@ fn empty_menu() -> Vec<Mi> {
         Mi::Item(Some(STAR), "Add to favorites", false),
         Mi::Sep,
         Mi::Item(None, "Paste", false),
+        Mi::Sep,
+        properties(),
     ]
+}
+
+fn properties() -> Mi {
+    Mi::Item(Some(INFO), t("explorer.context_menu.properties"), false)
 }
 
 fn file_menu() -> Vec<Mi> {
@@ -42,8 +49,11 @@ fn file_menu() -> Vec<Mi> {
         Mi::Sep,
         Mi::Item(Some(TRASH), "Delete", true),
         Mi::Item(Some(EDIT), "Rename", false),
+        Mi::Sep,
         Mi::Item(None, t("explorer.context_menu.open_in_system"), false),
         Mi::Item(None, t("explorer.context_menu.reveal_files"), false),
+        Mi::Sep,
+        properties(),
     ]
 }
 
@@ -59,8 +69,11 @@ fn folder_menu() -> Vec<Mi> {
         Mi::Item(Some(FILE_PLUS), t("explorer.command.new_file"), false),
         Mi::Item(Some(TRASH), "Delete", true),
         Mi::Item(Some(EDIT), "Rename", false),
+        Mi::Sep,
         Mi::Item(None, t("explorer.context_menu.open_in_system"), false),
         Mi::Item(None, t("explorer.context_menu.reveal_files"), false),
+        Mi::Sep,
+        properties(),
     ]
 }
 
@@ -71,7 +84,24 @@ fn multi_menu() -> Vec<Mi> {
         Mi::Item(None, "Cut", false),
         Mi::Sep,
         Mi::Item(Some(TRASH), "Delete", true),
+        Mi::Sep,
         Mi::Item(None, t("explorer.context_menu.open_in_system"), false),
+        Mi::Sep,
+        properties(),
+    ]
+}
+
+/// 원격 칸의 파일 하나. OS 연계 행과 그 구분선이 함께 빠진다.
+fn remote_menu() -> Vec<Mi> {
+    vec![
+        Mi::Item(Some(COPY), "Copy path", false),
+        Mi::Item(Some(COPY), "Copy", false),
+        Mi::Item(None, "Cut", false),
+        Mi::Sep,
+        Mi::Item(Some(TRASH), "Delete", true),
+        Mi::Item(Some(EDIT), "Rename", false),
+        Mi::Sep,
+        properties(),
     ]
 }
 
@@ -110,8 +140,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             menu_column(ui, theme, menu_w, caption, &build());
         }
     });
-    // 검색 결과 메뉴는 대상 넷과 따로 한 줄에 둔다. 같은 줄에 두면 좁은 창에서 줄이 넘친다.
+    // 원격 칸 메뉴와 검색 결과 메뉴는 대상 넷과 따로 한 줄에 둔다. 같은 줄에 두면 좁은 창에서 줄이 넘친다.
     stage(ui, theme, StageVariant::Wrap, |ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(MENU_GAP.value(), theme.spacing_lg.value());
+        menu_column(ui, theme, menu_w, "remote cell · file", &remote_menu());
         menu_column(ui, theme, menu_w, "search result", &search_result_menu());
     });
     history::draw(ui, theme);
@@ -124,10 +156,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("item", "menu_item (28 control-height)"),
             ("separator", "menu_separator (1px)"),
             ("danger", "Delete = accent-danger label"),
-            ("targets", "empty · file · folder · multi · search result"),
+            (
+                "targets",
+                "empty · file · folder · multi · remote cell · search result",
+            ),
             (
                 "open in system · show in file manager",
-                "local only, after Delete · Open in system opens every chosen item · Show in Finder / File Explorer / file manager selects one item in its folder",
+                "local only, own group after Delete · Open in system opens every chosen item · Show in Finder / File Explorer / file manager selects one item in its folder · remote hides both rows and their separator · row icons wait for native menu icon support",
             ),
             (
                 "show in folder",

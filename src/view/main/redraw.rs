@@ -1582,8 +1582,9 @@ impl MainView {
             // 휴지통으로 이동 (파일/폴더/다중 공통).
             items.push(MenuItem::separator());
             items.push(write_row(30, "explorer.context_menu.delete"));
-            // OS 연계 행은 로컬 칸에서만 메뉴 끝에 둔다.
+            // OS 연계 행은 로컬 칸에서만 자기 묶음으로 둔다. 원격 칸은 두 행과 구분선을 함께 숨긴다.
             if !is_mirror {
+                items.push(MenuItem::separator());
                 Self::push_explorer_os_items(&mut items, multi);
             }
         }
@@ -2311,7 +2312,7 @@ mod tests {
 
     #[test]
     fn explorer_menu_single_file() {
-        // 단일 파일(클립보드 무관): 경로복사 · 복사 · 잘라내기 · 이름변경 · ─ · 휴지통 ·
+        // 단일 파일(클립보드 무관): 경로복사 · 복사 · 잘라내기 · 이름변경 · ─ · 휴지통 · ─ ·
         // 시스템열기 · 파일 관리자에서 보기.
         let shape = vec![
             Some(1),
@@ -2320,6 +2321,7 @@ mod tests {
             Some(40),
             None,
             Some(30),
+            None,
             Some(20),
             Some(21),
         ];
@@ -2331,7 +2333,7 @@ mod tests {
     #[test]
     fn explorer_menu_single_folder_no_clip() {
         // 단일 폴더, 클립보드 없음: 경로복사 · 즐겨찾기 · 새탭 · 루트설정 · 복사 ·
-        // 잘라내기 · ─ · 새 폴더 · 새 파일 · 이름변경 · ─ · 휴지통 · 시스템열기 · 파일 관리자에서 보기.
+        // 잘라내기 · ─ · 새 폴더 · 새 파일 · 이름변경 · ─ · 휴지통 · ─ · 시스템열기 · 파일 관리자에서 보기.
         assert_eq!(
             explorer_menu_shape(false, false, true, false),
             vec![
@@ -2347,6 +2349,7 @@ mod tests {
                 Some(40),
                 None,
                 Some(30),
+                None,
                 Some(20),
                 Some(21)
             ]
@@ -2372,6 +2375,7 @@ mod tests {
                 Some(40),
                 None,
                 Some(30),
+                None,
                 Some(20),
                 Some(21)
             ]
@@ -2380,15 +2384,15 @@ mod tests {
 
     #[test]
     fn explorer_menu_multi() {
-        // 다중 선택(클립보드 무관): 경로복사 · 복사 · 잘라내기 · ─ · 휴지통 · 시스템열기(모두 연다).
+        // 다중 선택(클립보드 무관): 경로복사 · 복사 · 잘라내기 · ─ · 휴지통 · ─ · 시스템열기(모두 연다).
         // 파일 관리자에서 보기는 한 항목만 고르므로 없다.
         assert_eq!(
             explorer_menu_shape(true, false, false, false),
-            vec![Some(1), Some(10), Some(11), None, Some(30), Some(20)]
+            vec![Some(1), Some(10), Some(11), None, Some(30), None, Some(20)]
         );
         assert_eq!(
             explorer_menu_shape(true, false, false, true),
-            vec![Some(1), Some(10), Some(11), None, Some(30), Some(20)]
+            vec![Some(1), Some(10), Some(11), None, Some(30), None, Some(20)]
         );
     }
 

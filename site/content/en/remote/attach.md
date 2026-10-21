@@ -1,4 +1,4 @@
-<!-- source-hash: 836a83a3e144 -->
+<!-- source-hash: 3d0527d588ed -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -117,7 +117,7 @@ Common options:
   - Remote operations are not added to the undo history. To revert one, use **Undo** on its result card.
   - Pasting and drag-and-drop between local and remote, or between two different remotes, are refused.
   - If the remote Tasty is an older version, the menu items and toolbar buttons that change files are greyed out, and their tooltip (or a notice, for a shortcut) asks you to update Tasty on that computer.
-  - **Open in System**, Show in file manager, **Add to Favorites** and **Open in New Tab** aren't available in a remote explorer.
+  - **Open in system**, Show in file manager, **Add to Favorites** and **Open in New Tab** aren't available in a remote explorer.
   - When you create a new folder or file or rename an item on the remote, the name you typed stays in place, greyed, with a spinner next to it until the remote answers. You can't edit or cancel it meanwhile. On success the new item is selected or the rename popup closes; on failure you can edit the same name again.
   - If the connection drops during an operation, the remote stops at the item it was on. The explorer on this side keeps a warning card saying the result is unknown until you close it, and reads the folder again once the connection is back. The card has no Retry or Undo button.
 - In the explorer, double-clicking a markdown file opens a markdown tab for it on the remote computer, and the tab appears in this window too; a file at the same path on this computer is not read. If the type's default handler can't be used remotely, only the handlers that can are offered; a type with no such handler only shows a notice.
