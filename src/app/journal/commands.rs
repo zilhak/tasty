@@ -1030,6 +1030,8 @@ fn reply_weight(_reply: &Reply) -> usize {
 }
 
 #[cfg(test)]
+mod close_history_tests;
+#[cfg(test)]
 mod close_pause_tests;
 #[cfg(test)]
 mod tests;

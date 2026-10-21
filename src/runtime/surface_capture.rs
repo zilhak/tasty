@@ -95,7 +95,13 @@ impl CapturedSurface {
 /// numbers in accepted submission order, independently of activation and physical Pty generations.
 /// A placeholder contributes no new capture: its canonical immutable data/seed stays pinned.
 pub(crate) fn capture(session: &EngineSession) -> Result<Vec<CapturedSurface>, String> {
-    capture_selected(session, None)
+    let include_content = session
+        .as_ref()
+        .runtime
+        .settings
+        .general
+        .restore_surface_content;
+    capture_selected(session, None, include_content)
 }
 /// Serialized terminal history the next [`capture`] would copy, summed without reading disk rows.
 /// Each surface's encoded bytes contain its whole history, so the request is at least this large.
@@ -124,9 +130,9 @@ pub(crate) fn content_lower_bound(session: &EngineSession) -> u64 {
 pub(crate) fn capture_selected(
     session: &EngineSession,
     selected: Option<&std::collections::HashSet<u32>>,
+    include_content: bool,
 ) -> Result<Vec<CapturedSurface>, String> {
     let engine = session.as_ref();
-    let include_content = engine.runtime.settings.general.restore_surface_content;
     let mut result = Vec::new();
     for workspace in engine.core.local_workspaces() {
         for id in workspace.all_surface_ids() {
@@ -201,6 +207,57 @@ pub(crate) fn capture_selected(
         }
     }
     Ok(result)
+}
+
+/// 내용 없이 capture한 terminal에 history와 화면 줄을 `budget` bytes 안에서만 담는다. 직렬화
+/// 하한이 남은 예산보다 큰 terminal은 디스크 줄을 읽지 않고 건너뛴다. 하한이 작은 terminal부터
+/// 담아 내용을 지키는 terminal 수를 늘린다. 담지 못한 terminal은 내용 없이 남기고 그 ID를
+/// 오름차순으로 돌려준다. 내용을 일부만 잘라 담지는 않는다.
+pub(crate) fn add_history_within(
+    session: &EngineSession,
+    surfaces: &mut [CapturedSurface],
+    budget: usize,
+) -> Result<Vec<u32>, String> {
+    let terminals = &session.as_ref().runtime.terminals;
+    let mut candidates: Vec<(u64, usize)> = surfaces
+        .iter()
+        .enumerate()
+        .filter(|(_, surface)| surface.kind == "terminal")
+        .filter_map(|(index, surface)| {
+            terminals
+                .get(surface.surface)
+                .map(|terminal| (terminal.scrollback_serialized_len(), index))
+        })
+        .collect();
+    candidates.sort_unstable();
+    let mut remaining = budget;
+    let mut omitted = Vec::new();
+    for (lower_bound, index) in candidates {
+        let surface = &mut surfaces[index];
+        let Some(terminal) = terminals.get(surface.surface) else {
+            continue;
+        };
+        if lower_bound > remaining as u64 {
+            omitted.push(surface.surface);
+            continue;
+        }
+        let mut data = SurfaceData::decode(&surface.bytes).map_err(|e| e.to_string())?;
+        if let SurfaceData::Terminal { scrollback, .. } = &mut data {
+            *scrollback = Some(tasty_terminal::disk_scrollback::serialize_lines(
+                &terminal.capture_history_and_screen(),
+            ));
+        }
+        let bytes = data.encode().map_err(|e| e.to_string())?;
+        let grown = bytes.len().saturating_sub(surface.bytes.len());
+        if grown > remaining {
+            omitted.push(surface.surface);
+            continue;
+        }
+        remaining -= grown;
+        surface.bytes = bytes;
+    }
+    omitted.sort_unstable();
+    Ok(omitted)
 }
 
 #[cfg(test)]

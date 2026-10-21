@@ -413,6 +413,20 @@ impl JournalApplication {
         }
         if completed.error.is_none()
             && !completed.idempotent_replay
+            && completed
+                .result
+                .as_ref()
+                .is_some_and(|result| result["closed"] == true)
+            && let Some((engine, omitted)) = pending
+                .closing
+                .as_ref()
+                .and_then(|closing| closing.omitted_history.as_ref())
+        {
+            self.notices
+                .push(close::omitted_history_notice(*engine, omitted.len()));
+        }
+        if completed.error.is_none()
+            && !completed.idempotent_replay
             && let Some(created) = pending.created
         {
             #[cfg(feature = "gui")]

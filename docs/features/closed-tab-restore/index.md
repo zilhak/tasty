@@ -15,8 +15,13 @@
 - 트리거: `restore_closed` 단축키([keybindings](../keybindings/index.md), 4 프리셋 공통 `Ctrl+Shift+T`).
 - 스택 top 의 항목 복원. Surface/Tab 은 호출 시점 focused pane 에. Pane 은 닫기 시점 split geometry(방향/비율/형제 pane)를 최대한 재현해 현재 워크스페이스 트리에 재삽입하고, 그 형제 pane 이 그새 사라졌으면 호출 시점 focused pane 기준으로 대체 분할한다. workspace 가 0개일 때 Surface/Tab/Pane 복원은 default workspace 를 먼저 만든 뒤.
 - 닫기 capture는 live 터미널의 scrollback을 `general.restore_surface_content`가 켜져 있을 때만 불변 payload에 담는다. 아직 활성화하지 않은 지연 탭은 기존 payload 참조를 그대로 옮긴다. 저장 실패를 별도 scrollback 파일이나 메모리 사본으로 성공 처리하지 않는다.
+- 닫기 capture의 terminal 내용은 worker 큐 상한(`tasty_ipc::admission::QUEUED_BYTES_LIMIT`, 64 MiB)에서 다른 대기 요청과 이 닫기의 내용 없는 크기를 뺀 예산 안에서만 담는다. terminal마다 디스크를 읽지 않는 scrollback 직렬화 하한으로 먼저 판정하고, 하한이 작은 terminal부터 담아 내용을 지키는 terminal 수를 늘린다. 하한이 남은 예산보다 크면 그 history를 읽지 않는다. 읽은 뒤 실제 증가분이 남은 예산을 넘어도 그 terminal은 내용 없이 둔다.
+- 예산을 넘는 terminal은 scrollback 없이(cwd와 `restore.command`만) 기록하고 닫기를 진행한다. 내용을 잘라 일부만 담지 않는다. 같은 대상의 다른 surface는 예산 안이면 내용과 함께 기록한다. 다른 대기 요청이 예산을 점유해 생긴 부족도 기다리지 않고 같은 방식으로 처리한다. 닫기는 사용자가 기다리는 즉시 조작이고, 기다리는 사이 구조가 바뀔 수 있기 때문이다.
+- 내용을 뺀 닫기가 확정되면 그 엔진 창에 경고 알림 하나를 남기고(`recovery.close_history_omitted_*`) 같은 사실을 warn 로그로 남긴다. 닫기 응답에는 내용을 뺀 surface ID 목록 `history_omitted`가 붙는다. 원격 사용자의 닫기(`remote.user`)도 같은 경로이며 경고는 서버 엔진 창에 남는다.
+- 이 완화는 history 내용 때문에 생긴 예산 부족에만 적용한다. 내용 없는 닫기 요청 자체가 예산을 넘거나 구조 journal 확정이 실패하면 닫기는 실패로 끝나고 기존 실패 피드백을 따른다.
 - 복원할 때 이 설정이 꺼져 있으면 기록에 scrollback이 있어도 터미널에 넣지 않는다. 기록 자체는 지우지 않으므로 설정을 다시 켠 뒤 복원하면 그 scrollback이 쓰인다([layout-persistence](../layout-persistence/index.md#surface-내용-복원-현재-터미널-scrollback)).
 - 닫기 시점 surface 메타 `restore.command`(예: claude plugin 의 `claude -r <id>`)가 있었으면 셸 시작 직후 자동 실행 → TUI 세션 재개([layout-persistence](../layout-persistence/index.md) 의 동일 메커니즘).
+- 내용 없이 기록한 terminal은 복원하면 빈 scrollback으로 같은 cwd에서 새 셸을 열고 `restore.command`가 있으면 실행한다. 함께 기록한 다른 terminal의 scrollback은 그대로 복원한다.
 - 복원할 항목 없으면 no-op (토스트/알림 없음).
 
 ## 저장과 수명

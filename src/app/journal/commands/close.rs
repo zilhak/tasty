@@ -24,6 +24,8 @@ pub(super) struct Request {
     pub undo: Option<tasty_core::UndoCapture>,
     pub expected: Vec<tasty_core::RetiredSurface>,
     pub capture_undo: bool,
+    /// 예산 안에 담지 못해 닫은 항목 기록에 내용 없이 남긴 terminal과 그 엔진.
+    pub omitted_history: Option<(EngineId, Vec<u32>)>,
 }
 impl Request {
     pub fn resolve(
@@ -253,6 +255,7 @@ impl Request {
                 .filter_map(|id| core_expected(session, id))
                 .collect(),
             capture_undo: false,
+            omitted_history: None,
         })
     }
     pub fn workspace(
@@ -328,6 +331,7 @@ impl Request {
                 .filter_map(|id| core_expected(session, id))
                 .collect(),
             capture_undo: false,
+            omitted_history: None,
         })
     }
     pub fn input(
@@ -401,7 +405,11 @@ impl Request {
             binding: self.binding.clone(),
             target: self.target,
             display_name,
-            surfaces: crate::runtime::surface_capture::capture_selected(session, Some(&selected))?,
+            surfaces: crate::runtime::surface_capture::capture_selected(
+                session,
+                Some(&selected),
+                false,
+            )?,
             restore: crate::runtime::surface_capture::RestoreLookup::of(session),
         })
     }
@@ -490,12 +498,93 @@ impl JournalApplication {
                 pending.request.params = serde_json::Value::Null;
                 pending.queued = Some(work);
                 pending.closing = Some(request);
+                if let Err(error) = self.add_closed_history(ticket, session) {
+                    self.reject_resolved_request(
+                        ticket,
+                        JsonRpcResponse::internal_error(serde_json::Value::Null, error),
+                    );
+                    return;
+                }
                 self.refresh_command_weight(ticket);
             }
             Err(response) => self.reject_resolved_request(ticket, response),
         }
         (self.wake)();
     }
+}
+
+impl JournalApplication {
+    /// 닫은 항목 기록에 terminal 내용을 남은 큐 예산 안에서만 담는다. 예산은 상한에서 다른 대기 요청과
+    /// 이 요청의 내용 없는 크기를 뺀 값이다. 담지 못한 내용은 기다리지 않고 빼며 닫기를 진행한다.
+    /// 내용 없는 요청 자체가 상한을 넘으면 `refresh_command_weight`가 기존처럼 거절한다.
+    fn add_closed_history(&mut self, ticket: u64, session: &EngineSession) -> Result<(), String> {
+        if !session.runtime.settings.general.restore_surface_content {
+            return Ok(());
+        }
+        let held = self
+            .commands
+            .pending
+            .iter()
+            .filter(|(other, _)| **other != ticket)
+            .map(|(_, pending)| pending.bytes)
+            .fold(0usize, usize::saturating_add)
+            .saturating_add(
+                self.commands
+                    .completed_live
+                    .iter()
+                    .map(|(resume, _)| resume.weight())
+                    .fold(0usize, usize::saturating_add),
+            );
+        let pending = self
+            .commands
+            .pending
+            .get_mut(&ticket)
+            .ok_or("close request disappeared")?;
+        let base = super::pending_weight(pending);
+        let Some(Work::CaptureClosed { surfaces, .. }) = pending.queued.as_mut() else {
+            return Ok(());
+        };
+        // 응답에 덧붙일 생략 목록의 자리도 남긴다.
+        let budget = tasty_ipc::admission::QUEUED_BYTES_LIMIT
+            .saturating_sub(held)
+            .saturating_sub(base)
+            .saturating_sub(32 + 12 * surfaces.len());
+        let omitted =
+            crate::runtime::surface_capture::add_history_within(session, surfaces, budget)?;
+        if omitted.is_empty() {
+            return Ok(());
+        }
+        let limit = tasty_ipc::admission::QUEUED_BYTES_LIMIT;
+        tracing::warn!(
+            "closed item record keeps no terminal history for surfaces {omitted:?}: it does not fit the {limit} byte queue budget"
+        );
+        let closing = pending
+            .closing
+            .as_mut()
+            .ok_or("close request disappeared")?;
+        if let Some(result) = closing.response.result.as_mut() {
+            result["history_omitted"] = serde_json::json!(omitted);
+        }
+        closing.omitted_history = Some((session.id, omitted));
+        Ok(())
+    }
+}
+
+/// 닫기는 확정됐지만 일부 terminal의 내용을 닫은 항목 기록에 담지 못했다는 경고.
+pub(super) fn omitted_history_notice(
+    engine: EngineId,
+    terminals: usize,
+) -> crate::app::journal::notices::RecoveryNotice {
+    let limit = tasty_ipc::admission::QUEUED_BYTES_LIMIT / (1024 * 1024);
+    crate::app::journal::notices::RecoveryNotice::warning(
+        Some(engine),
+        crate::i18n::t("recovery.close_history_omitted_title").to_owned(),
+        crate::i18n::t_count(
+            "recovery.close_history_omitted_body",
+            terminals as u64,
+            &[&terminals.to_string(), &limit.to_string()],
+        ),
+    )
 }
 
 pub(super) fn is_close_method(method: &str) -> bool {
