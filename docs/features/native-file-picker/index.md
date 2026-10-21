@@ -272,10 +272,15 @@ owner 없는 단독 피커는 창 범위다. surface가 작으면 기존 clamp�
 부모 close는 기존 cancel/settled 규약을 따른다. 확정 이벤트를 받은 markdown은 경로 입력만
 채우며, 부모 Open에서 최초 context의 대상을 실행한다. 호스트는 확정한 경로로 파일을 따로 열지 않는다.
 
-**동시 요청**: 파일 피커는 한 번에 하나만 열린다. 이미 열려 있으면 두 번째 요청을
-즉시 `-32000`으로 거절한다. 첫 요청을 대체하면 기존 plugin에 취소를 통지해야 하지만
-이 핸들러는 `PluginManager`에 접근할 수 없다. 기존 요청의 결과를 유실시키지 않도록
-대신 새 요청을 거절한다. 호출자는 그 오류를 받고 재시도 여부를 정할 수 있다.
+**동시 요청**: 메인 창의 파일 피커는 한 번에 요청 하나만 받는다. Tools 메뉴·단축키·새 HTML·plugin
+모두 `file_picker::open`의 공통 진입 검사를 거친다. 기존 피커가 열려 있거나 닫힌 결과를 아직
+`take_outcome`으로 꺼내지 않았다면 새 요청을 거절한다. 기존 요청의 ID·caller 정보·requester·부모 범위·
+선택·확정 또는 취소 결과는 그대로 둔다. 본체 caller는 열기가 성공한 뒤에만 자기 요청 정보를 저장한다.
+
+사용자의 메뉴·단축키 재진입에는 기존 선택을 마치거나 취소하라는 안내 토스트를 보여 준다. plugin의
+중복 요청은 종전처럼 `-32000` busy 응답으로 돌려주고 사용자 토스트나 새 popup intent를 만들지 않는다.
+기존 요청의 결과는 원래 호출자가 한 번만 받는다. 그 결과를 꺼낸 뒤 새로 연 요청은 다른 ID를 쓰므로
+이전 결과가 늦게 와도 새 요청에 적용하지 않는다. 숨은 plugin 자식 피커도 같은 규칙으로 보호한다.
 
 **요청 주체 기록**: 피커를 여는 `OpenPopup`은 plugin 요청이면 `Intent::from_agent_plugin(plugin_id)`로,
 탭 스트립 메뉴 "새 HTML..."이면 `from_user_context_menu`로, Tools 메뉴·단축키는
@@ -404,8 +409,11 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - Given Tools 메뉴 원격 피커가 열린 동안 보관한 surface 가 닫힘 When 확정 Then 같은 mirror workspace 의
   다른 surface 로 열고, workspace 까지 사라졌으면 아무것도 열지 않는다.
 - Given 탭 스트립 "새 HTML..." 피커가 열린 동안 메뉴를 연 pane 이 닫힘 When 확정 Then 탭이 생기지 않는다.
-- Given 같은 호출자가 피커를 다시 열었음 When 이전 요청 식별자의 결과가 도착 Then 그 결과는 적용되지
-  않고, 결과는 한 번만 적용된다.
+- Given 기존 피커가 열려 있거나 확정·취소 결과가 아직 전달되지 않음 When 어느 호출자가 다시 열기를
+  요청해도 Then 기존 요청과 부모 관계·결과를 보존하고 새 요청을 거절한다. 사용자 조작은 안내 토스트,
+  plugin은 `-32000` 응답만 받으며 새 popup이나 후속 동작은 생기지 않는다.
+- Given 기존 요청의 결과를 꺼낸 뒤 같은 호출자가 피커를 다시 열었음 When 이전 요청 식별자의 결과가 도착
+  Then 그 결과는 적용되지 않고, 현재 결과는 한 번만 적용된다.
 - Given markdown 파일 열기 팝업의 찾아보기로 연 피커에서 확정 Then 호스트는 탭을 만들거나 클립보드를
   바꾸지 않고, markdown 이 받은 경로를 입력칸에 채운다.
 - Given X 버튼/ESC 로 popup 이 닫힘 Then 결과가 `Cancelled` 로 명시되어 dialog
@@ -488,7 +496,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - 로컬 읽기: `src/app/local_reads.rs`(`directory` 요청 생성 · worker 실행 · `poll_file_picker_reads` 결과 반영).
   설정 창은 `src/view/settings/ui/file_chooser.rs`(`reload`/`accept_read`)가 같은 요청을 쓴다.
 - 피커 열기: `src/adapters/ui/popup/file_picker.rs`(`open`, `FilePickerOpenedBy`), 위치 결정은
-  `file_picker/location.rs`(`locate`).
+  `file_picker/location.rs`(`locate`). `ensure_available`이 열린 요청과 미전달 결과를 보호하며 `open`도 같은 검사를 수행한다.
 - 호출자: `src/adapters/ui/file_open_tool.rs`(Tools 메뉴 `BuiltinAction::FilePicker` 와 단축키
   `open_file_picker_tool` 이 함께 쓰는 `open`/`apply_outcome`), `src/adapters/ui/new_tab_picker.rs`
   ("새 HTML..." 의 `open`/`apply_outcome`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` —
@@ -523,7 +531,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `src/core/fs_list.rs`(`human_size_units`/`sort_dirs_first`/`read_dir_entries_lists_files_and_dirs`),
   `src/remote/server/content_queries.rs`(`list_dir_entries_wire_capped_tests` — byte-budget truncation),
   `src/adapters/ui/popup/file_picker.rs`(`path_helper_tests` — POSIX/Windows 원격 경로 처리 +
-  `matches_filters_*` 확장자 필터), `src/adapters/ui/popup/file_picker/pure_return_tests.rs`(호출자별 확정이
+  `matches_filters_*` 확장자 필터), `src/adapters/ui/popup/file_picker/admission_tests.rs`(세 호출자 사이 재진입 · 미전달 확정/취소 · requester/범위 · 원래 결과의 한 번 소비), `src/adapters/ui/popup/file_picker/pure_return_tests.rs`(호출자별 확정이
   경로 배열과 식별자만 남김 · 취소 · popup 출처 · 위치 결정), `src/adapters/ui/file_open_tool_tests.rs`(로컬·원격
   열기 · surface 대체 · workspace 소멸 · 취소 · 늦은 결과), `src/adapters/ui/new_tab_picker_tests.rs`(pane 고정 ·
   pane 닫힘 · 경로별 탭 · 늦은 결과 · mirror pane 거절), `src/app/dispatch/file_picker_tests.rs`(plugin 결과

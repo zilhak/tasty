@@ -20,17 +20,30 @@ pub(crate) fn open(state: &mut MainViewState, engine: &EngineRead<'_>) {
         None,
     );
     let request_id = FilePickerRequestId::next();
-    state.dialogs.file_picker_callers.open_file = Some(OpenFilePickerRequest {
-        request_id,
-        location: location.clone(),
-    });
-    file_picker::open(
+    if file_picker::open(
         state,
         engine,
         request_id,
-        location,
+        location.clone(),
         Vec::new(),
         file_picker::FilePickerOpenedBy::ToolsMenu,
+    )
+    .is_err()
+    {
+        report_picker_busy(state);
+        return;
+    }
+    state.dialogs.file_picker_callers.open_file = Some(OpenFilePickerRequest {
+        request_id,
+        location,
+    });
+}
+
+/// 본체 사용자 조작에만 중복 거절을 알린다. IPC는 busy 응답으로 호출자에게 돌려준다.
+pub(super) fn report_picker_busy(state: &mut MainViewState) {
+    state.toasts.push_info(
+        crate::i18n::t("filepicker.already_open"),
+        crate::adapters::ui::ToastScope::Window,
     );
 }
 

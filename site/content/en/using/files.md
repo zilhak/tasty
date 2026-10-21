@@ -1,4 +1,4 @@
-<!-- source-hash: b8d5decf9df3 -->
+<!-- source-hash: 7089c0842cb9 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -36,6 +36,8 @@ In the list, a single click selects the row, file or folder; a double click ente
 A file you open yourself, by any of the ways above, opens in a new tab and **switches to it.** When an AI agent opens one for you, the tab is added and the tab you were on stays selected, so the screen you are working on does not change under you.
 
 When an opening request specifies its source surface, switching windows while it is pending keeps the result in a new tab in that surface’s pane. Opening a file from the Explorer while you are looking at another pane still puts it in the Explorer’s pane. Closing the source does not open the file in another window.
+
+If a file selection is already in progress, another request is declined with a notice. Finish or cancel the existing selection before opening another chooser.
 
 ## Explorer
 

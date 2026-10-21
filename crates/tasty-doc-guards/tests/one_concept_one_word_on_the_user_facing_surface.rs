@@ -100,8 +100,8 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
         path: "site/content/using/files.md",
         phrase: "파일 선택 창",
-        count: 6,
-        evidence: "파일 선택 팝업이다. 별도 OS View가 아니다. 열기 표, 헤더를 끌어 옮기고 닫는 설명, 긴 파일명 설명, 부모 팝업과 함께 숨고 복원되는 설명, HTML 절의 새 HTML... 이 여는 피커와 원격에서 열리지 않는다는 설명의 여섯 문구다.",
+        count: 7,
+        evidence: "파일 선택 팝업이다. 별도 OS View가 아니다. 열기 표, 중복 요청 시 기존 선택을 마치거나 취소하는 안내, 헤더를 끌어 옮기고 닫는 설명, 긴 파일명 설명, 부모 팝업과 함께 숨고 복원되는 설명, HTML 절의 새 HTML... 이 여는 피커와 원격에서 열리지 않는다는 설명의 일곱 문구다.",
     },
     NotAWindow {
         path: "site/content/getting-started/first-look.md",

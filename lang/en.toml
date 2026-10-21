@@ -1713,6 +1713,7 @@ empty_hint = "Register one in Settings › Handlers to open this file."
 open_settings_button = "Register a handler in Settings"
 
 [filepicker]
+already_open = "A file selection is already in progress. Finish or cancel it first."
 title = "Open File"
 tools_menu_item = "Open File…"
 name_field_label = "File name"

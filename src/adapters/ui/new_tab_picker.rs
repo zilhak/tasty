@@ -42,20 +42,25 @@ pub(crate) fn open(
             crate::core::state::SurfaceCwd::Remote(_) => None,
         });
     let request_id = FilePickerRequestId::next();
-    state.dialogs.file_picker_callers.new_tab = Some(NewTabPickerRequest {
-        request_id,
-        pane_id,
-        kind: kind.to_string(),
-        param_key: param_key.to_string(),
-    });
-    file_picker::open(
+    if file_picker::open(
         state,
         engine,
         request_id,
         FilePickerLocation::Local { dir },
         extensions.iter().map(|e| e.to_string()).collect(),
         file_picker::FilePickerOpenedBy::ContextMenu,
-    );
+    )
+    .is_err()
+    {
+        super::file_open_tool::report_picker_busy(state);
+        return;
+    }
+    state.dialogs.file_picker_callers.new_tab = Some(NewTabPickerRequest {
+        request_id,
+        pane_id,
+        kind: kind.to_string(),
+        param_key: param_key.to_string(),
+    });
 }
 
 /// 보관한 요청과 같은 식별자의 결과만 한 번 적용한다. 경로마다 탭을 하나씩 만든다.

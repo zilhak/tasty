@@ -226,6 +226,10 @@ fn outcome_of_another_request_is_ignored() {
         HTML_EXTENSIONS,
     );
     let first = stored_request(&state).request_id;
+    state.dialogs.file_picker.as_mut().unwrap().result =
+        Some(crate::state::FilePickerResult::Cancelled);
+    let (cancelled, _) = crate::app::dispatch::file_picker::take_outcome(&mut state).unwrap();
+    apply_outcome(&mut state, &engine, &cancelled);
     open(
         &mut state,
         &engine.read(),

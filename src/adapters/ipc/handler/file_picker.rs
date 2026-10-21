@@ -11,6 +11,7 @@ use serde_json::json;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
+use crate::adapters::ui::popup::file_picker;
 use crate::state::{FilePickerRequester, RequestContext};
 
 /// `file_picker.trigger { filters?: string[], owner_popup_instance?: u64, start_dir?: string,
@@ -56,12 +57,8 @@ pub fn handle_trigger(
         }
     };
 
-    if state.dialogs.file_picker.is_some() {
-        return JsonRpcResponse::error(
-            id,
-            -32000,
-            "file_picker popup is already open — retry after it closes",
-        );
+    if file_picker::ensure_available(state).is_err() {
+        return busy_response(id);
     }
 
     let req: FilePickerTriggerReq = match serde_json::from_value(params.clone()) {
@@ -76,7 +73,6 @@ pub fn handle_trigger(
         owner_popup_instance: req.owner_popup_instance,
     };
 
-    use crate::adapters::ui::popup::file_picker;
     let engine = engine.read();
     let location = file_picker::locate(
         state,
@@ -85,16 +81,28 @@ pub fn handle_trigger(
         state.active_workspace_index(&engine),
         req.start_dir,
     );
-    file_picker::open(
+    if file_picker::open(
         state,
         &engine,
         request_id,
         location,
         req.filters,
         file_picker::FilePickerOpenedBy::Plugin(requester),
-    );
+    )
+    .is_err()
+    {
+        return busy_response(id);
+    }
 
     JsonRpcResponse::success(id, json!({ "request_id": request_id.0 }))
+}
+
+fn busy_response(id: serde_json::Value) -> JsonRpcResponse {
+    JsonRpcResponse::error(
+        id,
+        -32000,
+        "file_picker popup is already open — retry after it closes",
+    )
 }
 
 /// 확정과 취소 모두 request_id·paths·cancelled를 포함한다.

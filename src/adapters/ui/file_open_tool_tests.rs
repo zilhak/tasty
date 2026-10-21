@@ -192,6 +192,10 @@ fn late_outcome_of_a_previous_request_is_ignored() {
     let engine = engine_session.borrow_mut();
     open(&mut state, &engine.read());
     let first = stored(&state).request_id;
+    state.dialogs.file_picker.as_mut().unwrap().result =
+        Some(crate::state::FilePickerResult::Cancelled);
+    let (cancelled, _) = crate::app::dispatch::file_picker::take_outcome(&mut state).unwrap();
+    apply_outcome(&mut state, &engine, &cancelled);
     open(&mut state, &engine.read());
     let second = stored(&state).request_id;
     assert_ne!(first, second);
@@ -215,16 +219,20 @@ fn late_outcome_of_a_previous_request_is_ignored() {
 fn outcome_for_another_caller_leaves_the_tools_request() {
     let (mut state, mut engine_session) = crate::state::tests::two_pane_fixture();
     let engine = engine_session.borrow_mut();
-    open(&mut state, &engine.read());
-    let tools = stored(&state).request_id;
     crate::adapters::ui::new_tab_picker::open(&mut state, &engine.read(), 20, "html", "url", &[]);
     let new_tab = state
         .dialogs
         .file_picker_callers
         .new_tab
         .as_ref()
-        .expect("new tab request")
+        .unwrap()
         .request_id;
+    state.dialogs.file_picker.as_mut().unwrap().result =
+        Some(crate::state::FilePickerResult::Cancelled);
+    let (cancelled, _) = crate::app::dispatch::file_picker::take_outcome(&mut state).unwrap();
+    crate::adapters::ui::new_tab_picker::apply_outcome(&mut state, &engine, &cancelled);
+    open(&mut state, &engine.read());
+    let tools = stored(&state).request_id;
     state.take_pending_intents();
 
     crate::app::dispatch::file_picker::deliver_outcome(
@@ -235,10 +243,9 @@ fn outcome_for_another_caller_leaves_the_tools_request() {
         &confirmed(new_tab, &["/a.html"]),
     );
     let intents = state.take_pending_intents();
-    assert_eq!(intents.len(), 1);
-    assert!(matches!(
-        intents[0].body,
-        Intent::Domain(DomainIntent::CreateTab { pane_id: 20, .. })
-    ));
+    assert!(
+        intents.is_empty(),
+        "취소된 다른 호출자의 늦은 결과는 실행하지 않는다"
+    );
     assert_eq!(stored(&state).request_id, tools);
 }

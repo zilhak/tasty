@@ -7,6 +7,8 @@
 //! 원격 목록은 pending_list_dir_forward에 넣고 attach 응답으로 갱신한다.
 //! 응답 제한은 매 프레임 sent_at의 경과 시간으로 확인하며 로컬 읽기에는 적용하지 않는다.
 
+#[cfg(test)]
+mod admission_tests;
 mod footer;
 #[cfg(test)]
 mod layout_tests;
@@ -922,10 +924,23 @@ pub(crate) enum FilePickerOpenedBy {
     Plugin(crate::state::FilePickerRequester),
 }
 
+/// 기존 요청은 결과를 호출자가 가져갈 때까지 새 요청으로 대체하지 않는다.
+#[derive(Debug)]
+pub(crate) struct FilePickerBusy;
+
+/// 열린 피커뿐 아니라 닫혔지만 아직 전달되지 않은 확정·취소 결과도 보호한다.
+pub(crate) fn ensure_available(state: &MainViewState) -> Result<(), FilePickerBusy> {
+    if state.dialogs.file_picker.is_some() {
+        Err(FilePickerBusy)
+    } else {
+        Ok(())
+    }
+}
+
 /// 호출자가 정한 위치를 둘러보는 피커를 연다. 피커는 경로를 고르는 데서 끝나며,
 /// 결과는 `request_id`와 함께 `FilePickerData::result`에 남아 App이 호출자에게 넘긴다.
 /// 로컬은 navigate에서 동기로 읽기 시작하고 원격은 요청을 큐에 넣는다.
-/// filters가 비면 확장자를 제한하지 않는다.
+/// filters가 비면 확장자를 제한하지 않는다. Busy면 기존 상태와 pending intent를 그대로 둔다.
 pub(crate) fn open(
     state: &mut MainViewState,
     engine: &EngineRead<'_>,
@@ -933,7 +948,8 @@ pub(crate) fn open(
     location: crate::state::FilePickerLocation,
     filters: Vec<String>,
     opened_by: FilePickerOpenedBy,
-) {
+) -> Result<(), FilePickerBusy> {
+    ensure_available(state)?;
     let (mirror_ws_id, dir) = match location {
         crate::state::FilePickerLocation::Local { dir } => (None, dir),
         crate::state::FilePickerLocation::Remote {
@@ -972,6 +988,7 @@ pub(crate) fn open(
         FilePickerOpenedBy::ToolsMenu => open_popup.from_user_menu("tools_menu"),
     };
     state.dispatch_intent(dispatched);
+    Ok(())
 }
 
 /// 새 대상 디렉토리로 내비게이트: 선택 초기화 + 로컬은 즉시 동기 로드, 원격은
