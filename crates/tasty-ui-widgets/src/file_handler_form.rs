@@ -1,7 +1,7 @@
 //! 설정 Handler › File Detectors·File Handlers 서브탭의 부품. 본체와 갤러리가 함께 그린다.
 //!
 //! 목록 행은 두 줄이다. 첫 줄은 id · 출처 Tag · `prio N` · 대기 Tag · Switch · 끝 칸이고,
-//! 둘째 줄은 규칙 또는 동작 요약 한 줄이다. 추가 카드는 라벨 열과 컨트롤 열로 된 필드 행을
+//! 둘째 줄은 규칙 또는 동작 요약 한 줄이다. 첫 줄이 좁으면 [`FhFit`] 순서로 줄인다. 추가 카드는 라벨 열과 컨트롤 열로 된 필드 행을
 //! 쌓고, 컨트롤 아래에는 오류 · 안내 · caption 가운데 하나만 둔다.
 //! 상태 판단(대기·검증)은 호출자가 하고 여기서는 받은 값을 그린다.
 
@@ -9,7 +9,8 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::{
-    Button, ButtonVariant, ControlSize, TagVariant, Tooltip, tag, tag_disabled, tag_width,
+    Button, ButtonVariant, ControlSize, Ground, TagVariant, Tooltip, tag, tag_disabled,
+    tag_disabled_truncated, tag_width,
 };
 
 /// 행의 출처 Tag 하나.
@@ -80,14 +81,79 @@ pub fn fh_summary_text(segs: &[FhSummarySeg]) -> String {
         .join(FH_SUMMARY_SEP)
 }
 
-/// 출처 Tag들을 하나로 접을지. 여러 출처가 id를 말줄임시키면 접는다.
-/// 같은 폭에서는 언제나 같은 답이라 프레임마다 흔들리지 않는다.
-pub fn fh_origins_collapse(
-    id_width: LogicalPx,
-    id_room_with_all_tags: LogicalPx,
-    origins: usize,
-) -> bool {
-    origins > 1 && id_width > id_room_with_all_tags
+/// 행 첫 줄의 맞춤 단계(시안 `useFit`). 0은 모두 한 줄, 1은 여러 출처 Tag를 "N sources" Tag
+/// 하나로 접은 상태, 2는 대기 Tag가 첫 줄 아래 자기 줄로 내려간 상태다(출처가 여럿이면 접힌 채).
+/// 각 단계는 id가 말줄임될 때만 밟고, 그 뒤에야 id가 하한 min(file-handler-id-min-width, id 폭)까지
+/// 말줄임한다. 단계를 밟을 때의 줄 폭을 기억했다가 줄이 그 폭으로 돌아와야 되돌린다.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FhFit {
+    stage: u8,
+    /// 단계별로 그 단계를 밟기 직전의 자연 폭 — 되돌릴 수 있는 폭이다.
+    need: [LogicalPx; 3],
+}
+
+impl Default for FhFit {
+    fn default() -> Self {
+        Self {
+            stage: 0,
+            need: [LogicalPx(0.0); 3],
+        }
+    }
+}
+
+impl FhFit {
+    pub fn stage(self) -> u8 {
+        self.stage
+    }
+
+    /// 출처 Tag를 하나로 접었는지.
+    pub fn collapsed(self, multi: bool) -> bool {
+        multi && self.stage >= 1
+    }
+
+    /// 대기 Tag가 자기 줄로 내려갔는지.
+    pub fn dropped(self) -> bool {
+        self.stage == 2
+    }
+}
+
+/// 지난 상태 `prev`에서 이번 폭의 단계를 정한다. `natural[s]`는 단계 s에서 왼쪽 묶음(id·Tag·prio·
+/// 대기 Tag)이 말줄임 없이 차지할 폭, `avail`은 Switch와 끝 칸을 뺀 폭이다. 넘치면 가능한 만큼
+/// 올라가고, 올라가지 않은 프레임에서만 한 단계 내려간다. 출처가 하나면 1단계를 건너뛴다.
+pub fn fh_fit_step(
+    prev: FhFit,
+    multi: bool,
+    pending: bool,
+    avail: LogicalPx,
+    natural: [LogicalPx; 3],
+) -> FhFit {
+    let max = if pending {
+        2
+    } else if multi {
+        1
+    } else {
+        0
+    };
+    let up = |s: u8| if s == 0 && !multi { 2 } else { s + 1 };
+    let down = |s: u8| if s == 2 && !multi { 0 } else { s - 1 };
+    let mut fit = FhFit {
+        stage: prev.stage.min(max),
+        ..prev
+    };
+    let mut stepped = false;
+    while natural[fit.stage as usize] > avail {
+        let next = up(fit.stage);
+        if next > max {
+            break;
+        }
+        fit.need[next as usize] = natural[fit.stage as usize];
+        fit.stage = next;
+        stepped = true;
+    }
+    if !stepped && fit.stage > 0 && avail >= fit.need[fit.stage as usize] {
+        fit.stage = down(fit.stage);
+    }
+    fit
 }
 
 /// 목록 머리글 — mono micro caps, text-muted. 예 "Registered detectors (6)".
@@ -440,9 +506,11 @@ pub fn fh_card(
                         .enabled(can_add)
                         .show(ui, theme)
                         .clicked();
+                    // 카드는 surface-raised다. ghost 글자도 raised 바탕의 색을 쓴다.
                     ev.cancel = Button::new(labels.cancel)
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
+                        .ground(Ground::Raised)
                         .show(ui, theme)
                         .clicked();
                 },
@@ -465,6 +533,8 @@ pub fn fh_row(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>) -> FhRowEv
 
     // 1줄: 오른쪽 묶음(끝 칸 · Switch)을 먼저 오른쪽부터 놓고 남은 폭에 id와 Tag를 둔다.
     let line_h = theme.button_height_sm();
+    let fit_id = ui.make_persistent_id("fh_row_fit");
+    let mut dropped = false;
     ui.allocate_ui_with_layout(
         egui::vec2(full_w.value(), line_h.value()),
         egui::Layout::right_to_left(egui::Align::Center),
@@ -490,10 +560,22 @@ pub fn fh_row(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>) -> FhRowEv
                 ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
                 ui.add_space(pad_x.value());
                 ui.spacing_mut().item_spacing.x = gap.value();
-                row_left(ui, theme, view, dim);
+                dropped = row_left(ui, theme, view, dim, fit_id);
             });
         },
     );
+
+    // 내려간 대기 Tag — 1줄과 요약 사이 자기 줄, 폭을 넘으면 말줄임하고 툴팁에 전체 문구.
+    if let (true, Some(p)) = (dropped, view.pending) {
+        ui.add_space(theme.spacing_xs.value());
+        ui.horizontal(|ui| {
+            ui.add_space(pad_x.value());
+            let r = tag_disabled_truncated(ui, theme, p, inner_w);
+            if crate::tooltip_hover_delay_elapsed(ui.ctx(), theme, r.id, r.hovered()) {
+                Tooltip::new(p).show(ui, theme, r.rect);
+            }
+        });
+    }
 
     // 2줄: 요약 한 줄 말줄임, 전체 값은 툴팁.
     ui.add_space(theme.spacing_xs.value());
@@ -531,8 +613,15 @@ fn lock_slot(ui: &mut egui::Ui, theme: &Theme, tooltip: &str) {
     }
 }
 
-/// id · 출처 Tag(들) · prio · 대기 Tag. id는 남은 폭에서 말줄임한다.
-fn row_left(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>, dim: bool) {
+/// id · 출처 Tag(들) · prio · 대기 Tag. 넘치면 [`fh_fit_step`] 순서로 줄이고 남은 폭에서 id를
+/// 말줄임한다. 대기 Tag를 자기 줄로 내렸으면 true다.
+fn row_left(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    view: &FhRowView<'_>,
+    dim: bool,
+    fit_id: egui::Id,
+) -> bool {
     let gap = theme.spacing_sm;
     let zero = LogicalPx(0.0);
     let avail = LogicalPx(ui.available_width());
@@ -564,18 +653,40 @@ fn row_left(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>, dim: bool) {
         .origins
         .iter()
         .fold(zero, |sum, o| sum + tag_w(&o.label));
-    let fixed = prio_w + pending_w;
-    let collapse = fh_origins_collapse(
-        id_natural,
-        (avail - fixed - all_tags_w).max(zero),
-        view.origins.len(),
-    );
-    let tags_w = if collapse {
-        tag_w(view.sources_label)
-    } else {
-        all_tags_w
+    let multi = view.origins.len() > 1;
+    let sources_w = tag_w(view.sources_label);
+    let natural = |collapse: bool, pending: bool| {
+        id_natural
+            + if collapse { sources_w } else { all_tags_w }
+            + prio_w
+            + if pending { pending_w } else { zero }
     };
-    let id_max = (avail - fixed - tags_w).max(zero);
+    let prev: FhFit = ui.data(|d| d.get_temp(fit_id)).unwrap_or_default();
+    let fit = fh_fit_step(
+        prev,
+        multi,
+        view.pending.is_some(),
+        avail,
+        [
+            natural(false, true),
+            natural(multi, true),
+            natural(multi, false),
+        ],
+    );
+    if fit != prev {
+        ui.data_mut(|d| d.insert_temp(fit_id, fit));
+    }
+    let collapse = fit.collapsed(multi);
+    let dropped = fit.dropped();
+    let tags_w = if collapse { sources_w } else { all_tags_w };
+    let fixed = prio_w + if dropped { zero } else { pending_w };
+    // 대기 Tag까지 내린 뒤에만 id가 줄며, 하한은 min(file-handler-id-min-width, id 폭)이다.
+    let id_floor = if dropped {
+        theme.file_handler_id_min_width().min(id_natural)
+    } else {
+        zero
+    };
+    let id_max = (avail - fixed - tags_w).max(id_floor);
 
     let id_color = if dim {
         theme.text_secondary()
@@ -644,9 +755,10 @@ fn row_left(ui: &mut egui::Ui, theme: &Theme, view: &FhRowView<'_>, dim: bool) {
                 .color(theme.file_handler_prio_fg().to_egui()),
         );
     }
-    if let Some(p) = view.pending {
+    if let (false, Some(p)) = (dropped, view.pending) {
         tag_disabled(ui, theme, p, false);
     }
+    dropped
 }
 
 /// 저장하면 사라질 출처 — disabled Tag 위에 라벨 폭만큼 취소선을 긋는다.
@@ -724,11 +836,169 @@ mod tests {
         assert_eq!(FhLine::pick(None, None, None), FhLine::None);
     }
 
+    const W: fn(f32) -> LogicalPx = LogicalPx;
+
+    /// 단계별 자연 폭: 0 = 모두 · 1 = 출처 접음 · 2 = 대기 Tag도 내림.
+    const NATURAL: [f32; 3] = [400.0, 320.0, 220.0];
+
+    fn step(prev: FhFit, multi: bool, pending: bool, avail: f32) -> FhFit {
+        fh_fit_step(prev, multi, pending, W(avail), NATURAL.map(W))
+    }
+
     #[test]
-    fn one_origin_never_collapses_and_several_collapse_only_when_the_id_would_ellipsize() {
-        assert!(!fh_origins_collapse(LogicalPx(500.0), LogicalPx(10.0), 1));
-        assert!(!fh_origins_collapse(LogicalPx(80.0), LogicalPx(120.0), 3));
-        assert!(fh_origins_collapse(LogicalPx(130.0), LogicalPx(120.0), 3));
+    fn the_fit_steps_collapse_first_then_drop_the_pending_tag() {
+        let fit = step(FhFit::default(), true, true, 500.0);
+        assert_eq!(fit.stage(), 0, "넉넉하면 그대로");
+        let fit = step(fit, true, true, 350.0);
+        assert!(fit.collapsed(true) && !fit.dropped(), "먼저 출처를 접는다");
+        let fit = step(fit, true, true, 250.0);
+        assert!(
+            fit.collapsed(true) && fit.dropped(),
+            "그래도 넘치면 대기 Tag를 내린다"
+        );
+        let fit = step(FhFit::default(), true, true, 200.0);
+        assert_eq!(fit.stage(), 2, "한 프레임에 필요한 만큼 올라간다");
+    }
+
+    #[test]
+    fn one_origin_skips_the_collapse_step_and_no_pending_stops_at_collapse() {
+        let fit = step(FhFit::default(), false, true, 350.0);
+        assert!(fit.dropped() && !fit.collapsed(false));
+        let fit = step(FhFit::default(), true, false, 100.0);
+        assert_eq!(fit.stage(), 1, "대기 Tag가 없으면 접기까지만");
+        let fit = step(FhFit::default(), false, false, 100.0);
+        assert_eq!(fit.stage(), 0, "줄일 것이 없으면 id만 말줄임한다");
+    }
+
+    #[test]
+    fn each_step_undoes_only_once_the_line_is_as_wide_as_when_it_was_taken() {
+        let fit = step(FhFit::default(), true, true, 250.0);
+        assert_eq!(fit.stage(), 2);
+        // 2단계를 밟을 때 자연 폭은 320이었다 — 그 폭보다 좁으면 그대로다.
+        let fit = step(fit, true, true, 319.0);
+        assert_eq!(fit.stage(), 2);
+        let fit = step(fit, true, true, 320.0);
+        assert_eq!(fit.stage(), 1, "한 프레임에 한 단계만 되돌린다");
+        let fit = step(fit, true, true, 399.0);
+        assert_eq!(fit.stage(), 1);
+        let fit = step(fit, true, true, 400.0);
+        assert_eq!(fit.stage(), 0);
+    }
+
+    fn row_view<'a>(pending: Option<&'a str>, origins: usize) -> FhRowView<'a> {
+        FhRowView {
+            id: "a-rather-long-detector-id",
+            origins: (0..origins)
+                .map(|i| FhOrigin {
+                    label: format!("plugin:source-{i}"),
+                    plugin: true,
+                    struck: false,
+                })
+                .collect(),
+            prio: None,
+            pending,
+            strike_id: false,
+            on: true,
+            switch_on: true,
+            switch_disabled: false,
+            trailing: FhTrailing::Undo,
+            locked_tooltip: "",
+            summary: vec![FhSummarySeg {
+                text: "ext md".into(),
+                struck: false,
+            }],
+            undo_label: "Undo",
+            remove_label: "Remove",
+            sources_label: "3 sources",
+        }
+    }
+
+    /// 행을 `width` 폭으로 두 프레임 그려 글자와 그 사각형을 모은다. 맞춤 단계는 첫 프레임에 정한다.
+    fn draw_row(
+        ctx: &egui::Context,
+        width: f32,
+        view: &FhRowView<'_>,
+    ) -> Vec<(String, egui::Rect)> {
+        let th = tasty_themes::mocha_fallback();
+        let mut shapes = Vec::new();
+        for _ in 0..2 {
+            let out = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width, 400.0),
+                    )),
+                    ..Default::default()
+                },
+                |c| {
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE)
+                        .show(c, |ui| {
+                            fh_row(ui, &th, view);
+                        });
+                },
+            );
+            shapes = out.shapes;
+        }
+        let mut texts = Vec::new();
+        let mut stack: Vec<egui::Shape> = shapes.into_iter().map(|c| c.shape).collect();
+        while let Some(s) = stack.pop() {
+            match s {
+                egui::Shape::Vec(v) => stack.extend(v),
+                egui::Shape::Text(t) => texts.push((
+                    t.galley.text().to_string(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                )),
+                _ => {}
+            }
+        }
+        texts
+    }
+
+    fn rect_of(texts: &[(String, egui::Rect)], prefix: &str) -> egui::Rect {
+        texts
+            .iter()
+            .find(|(t, _)| t.starts_with(prefix))
+            .map(|(_, r)| *r)
+            .unwrap_or_else(|| panic!("{prefix} 글자가 없다: {texts:?}"))
+    }
+
+    /// 좁은 열에서는 출처를 접고 대기 Tag를 1줄 아래로 내린다. id는 하한 폭 이상 남고 Undo는 보인다.
+    /// 넓은 열에서는 모두 한 줄이다.
+    #[test]
+    fn a_narrow_row_drops_the_pending_tag_below_line_one_and_keeps_the_id_floor() {
+        let th = tasty_themes::mocha_fallback();
+        let pending = "your rules removed on save";
+        let view = row_view(Some(pending), 3);
+
+        let wide = draw_row(&egui::Context::default(), 1200.0, &view);
+        let id = rect_of(&wide, "a-rather-long-detector-id");
+        let tag = rect_of(&wide, pending);
+        assert!((tag.center().y - id.center().y).abs() < 1.0, "넓으면 한 줄");
+        assert!(
+            wide.iter().any(|(t, _)| t == "plugin:source-2"),
+            "넓으면 출처를 다 그린다"
+        );
+
+        let narrow = draw_row(&egui::Context::default(), 360.0, &view);
+        let id = rect_of(&narrow, "a-rather");
+        let tag = rect_of(&narrow, "your rules");
+        assert!(
+            tag.top() > id.bottom(),
+            "대기 Tag가 1줄 아래로 내려간다: {narrow:?}"
+        );
+        assert!(
+            narrow.iter().any(|(t, _)| t == "3 sources"),
+            "출처는 접힌다"
+        );
+        assert!(
+            id.width() + 1.0 >= th.file_handler_id_min_width().value(),
+            "id 하한 {}: {}",
+            th.file_handler_id_min_width().value(),
+            id.width()
+        );
+        let undo = rect_of(&narrow, "Undo");
+        assert!(undo.right() <= 360.0 + 0.5, "Undo가 행 안에 있다");
     }
 
     #[test]

@@ -214,6 +214,8 @@ pub(super) struct Seed {
     pub(super) de: bool,
     /// 같은 detector·priority에 출처별 handler를 더한다(시안 `tie`).
     pub(super) tie: bool,
+    /// 좁은 열의 대기 행 셋 — markdown·notebook 사용자 기여 삭제, log 사용자 규칙 추가(시안 `narrowSet`).
+    pub(super) narrow_set: bool,
     pub(super) narrow: bool,
     pub(super) empty: bool,
     pub(super) pending: bool,
@@ -279,6 +281,20 @@ pub(super) fn det_state(seed: &Seed) -> DetState {
         for x in &mut xs {
             if x.has_user() && !x.others().is_empty() {
                 x.pending = Some(DetPending::Unpatch);
+            }
+        }
+    }
+    if seed.narrow_set {
+        for x in &mut xs {
+            match x.id.as_str() {
+                "markdown" | "notebook" => x.pending = Some(DetPending::Unpatch),
+                "log" => {
+                    let mut prev = x.clone();
+                    prev.rules.retain(|r| r.src != "user");
+                    x.pending = Some(DetPending::Patch);
+                    x.prev = Some(Box::new(prev));
+                }
+                _ => {}
             }
         }
     }

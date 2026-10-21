@@ -20,6 +20,18 @@ const PAIR_WIDTH: LogicalPx = LogicalPx(560.0);
 /// 시안 좁은 패널 `--tasty-size-360`.
 const NARROW_WIDTH: LogicalPx = LogicalPx(360.0);
 
+/// 시안 `NARROW_SPECS` — 좁은 열에서 1줄을 줄이는 순서.
+const NARROW_SPECS: &[(&str, &str)] = &[
+    (
+        "line 1 fit order",
+        "1 origin Tags collapse → “N sources” · 2 pending Tag leaves line 1 · 3 id ellipsizes — each step only while the id would ellipsize; undone once the line is back to the width it had when the step was taken",
+    ),
+    (
+        "id floor",
+        "min(file-handler-id-min-width 96, full id width) once the pending Tag has dropped · tooltip = full id",
+    ),
+];
+
 /// 시안 raised 카드 Spec 표.
 const RAISED_SPECS: &[(&str, &str)] = &[
     (
@@ -632,6 +644,38 @@ pub fn draw_detectors(ui: &mut egui::Ui, theme: &Theme) {
             unpatch: true,
             ..Seed::default()
         },
+    );
+
+    spec::spec(
+        ui,
+        theme,
+        "Narrow column · long labels — pending rows keep the id",
+        Some(
+            "Line 1 gives room up in a fixed order: the origin Tags collapse first; if the id would still ellipsize, the pending Tag moves to its own line under line 1 (ellipsis + tooltip if even that line is short); only then does the id ellipsize, never below 96 px (or its full width if shorter). Switch and the trailing slot never shrink. Wide columns keep the one-line layout.",
+        ),
+    );
+    for (key, narrow) in [("det-narrow-set", true), ("det-narrow-set-wide", false)] {
+        pane(
+            ui,
+            theme,
+            key,
+            true,
+            Seed {
+                de: true,
+                narrow,
+                narrow_set: true,
+                ..Seed::default()
+            },
+        );
+    }
+    spec::meta(
+        ui,
+        theme,
+        NARROW_SPECS,
+        &[TokenChip::without_color(
+            "file-handler-id-min-width",
+            "→ size-96",
+        )],
     );
     spec::do_(
         ui,

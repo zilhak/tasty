@@ -67,7 +67,7 @@ pub fn in_disabled_chip_scope(ui: &egui::Ui) -> bool {
 /// 상태 점 없는 태그의 폭을 계산한다. 그리기 전 가용 폭과 비교할 때 사용한다.
 pub fn tag_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
     let pad_x = theme.tag_padding_x().value();
-    let galley = tag_galley(ui, theme, label, None);
+    let galley = tag_galley(ui, theme, label, None, None);
     galley.rect.width() + 2.0 * pad_x
 }
 
@@ -77,6 +77,7 @@ fn tag_galley(
     theme: &Theme,
     label: &str,
     tracking: Option<LogicalPx>,
+    max_text_w: Option<f32>,
 ) -> std::sync::Arc<egui::Galley> {
     let mut job = egui::text::LayoutJob::default();
     job.append(
@@ -89,6 +90,9 @@ fn tag_galley(
             ..Default::default()
         },
     );
+    if let Some(w) = max_text_w {
+        job.wrap = egui::text::TextWrapping::truncate_at_width(w.max(0.0));
+    }
     ui.painter().layout_job(job)
 }
 
@@ -106,7 +110,7 @@ pub fn tag(
     } else {
         tag_colors(theme, variant)
     };
-    paint_tag(ui, theme, label, dot, colors, None)
+    paint_tag(ui, theme, label, dot, colors, None, None)
 }
 
 /// 대문자 Tag(디자인 `Tag caps`) — 라벨을 대문자로 바꾸고 `letter-spacing-caps` 자간으로 그린다.
@@ -131,13 +135,42 @@ pub fn tag_caps(
         dot,
         colors,
         Some(tracking),
+        None,
     )
 }
 
 /// disabled Tag — 모든 variant가 중립 상자(tag-disabled-bg·border)와 disabled ink를 쓴다.
 /// accent 채움과 tint 테두리는 빠지고 상태 점도 같은 ink다. opacity는 쓰지 않는다.
 pub fn tag_disabled(ui: &mut egui::Ui, theme: &Theme, label: &str, dot: bool) -> egui::Response {
-    paint_tag(ui, theme, label, dot, tag_disabled_colors(theme), None)
+    paint_tag(
+        ui,
+        theme,
+        label,
+        dot,
+        tag_disabled_colors(theme),
+        None,
+        None,
+    )
+}
+
+/// [`tag_disabled`]를 `max_w`(Tag 전체 폭) 안에 그린다. 라벨이 넘치면 말줄임한다(시안
+/// `maxWidth: 100%` + ellipsis). 전체 라벨 툴팁은 호출자가 붙인다.
+pub fn tag_disabled_truncated(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    max_w: LogicalPx,
+) -> egui::Response {
+    let text_w = max_w.value() - 2.0 * theme.tag_padding_x().value();
+    paint_tag(
+        ui,
+        theme,
+        label,
+        false,
+        tag_disabled_colors(theme),
+        None,
+        Some(text_w),
+    )
 }
 
 /// Tag 채움·테두리·글자색.
@@ -234,6 +267,7 @@ fn paint_tag(
     dot: bool,
     (fill, border, fg): TagColors,
     tracking: Option<LogicalPx>,
+    max_text_w: Option<f32>,
 ) -> egui::Response {
     let radius = theme.tag_radius().value();
     let bw = theme.border_width.value();
@@ -241,7 +275,7 @@ fn paint_tag(
     let gap = theme.tag_gap().value();
     let dot_sz = theme.tag_dot_size().value();
     let tag_h = theme.tag_size().value();
-    let galley = tag_galley(ui, theme, label, tracking);
+    let galley = tag_galley(ui, theme, label, tracking, max_text_w);
     let dot_w = if dot { dot_sz + gap } else { 0.0 };
     let w = galley.rect.width() + dot_w + 2.0 * pad_x;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, tag_h), egui::Sense::hover());

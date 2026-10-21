@@ -125,7 +125,7 @@ pub use chip::{
     BadgeVariant, KbdKey, TagVariant, badge, badge_disabled, badge_dot, disabled_chip_scope,
     in_disabled_chip_scope, kbd, kbd_parts, kbd_parts_at, kbd_parts_width, kbd_text_parts_painted,
     kbd_width, num_keycap, paint_badge_dot, paint_num_keycap, tag, tag_caps, tag_disabled,
-    tag_width,
+    tag_disabled_truncated, tag_width,
 };
 pub use chrome_slot::top_right_inset_square;
 pub use clipboard_viewer::{
@@ -162,9 +162,9 @@ pub use explorer_ops::{
 pub use explorer_select::{paint_cursor_ring, paint_marquee};
 pub use file_drop_overlay::file_drop_overlay;
 pub use file_handler_form::{
-    FH_SUMMARY_SEP, FhCardEvents, FhCardLabels, FhLine, FhOrigin, FhRowEvents, FhRowView,
-    FhSummarySeg, FhTrailing, fh_card, fh_empty, fh_field, fh_intro, fh_line, fh_list_head,
-    fh_origins_collapse, fh_row, fh_summary_text,
+    FH_SUMMARY_SEP, FhCardEvents, FhCardLabels, FhFit, FhLine, FhOrigin, FhRowEvents, FhRowView,
+    FhSummarySeg, FhTrailing, fh_card, fh_empty, fh_field, fh_fit_step, fh_intro, fh_line,
+    fh_list_head, fh_row, fh_summary_text,
 };
 pub use filter_readout::{filter_readout, filter_readout_label, filter_readout_width};
 pub use help_hint::HelpHint;
