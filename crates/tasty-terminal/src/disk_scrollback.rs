@@ -341,6 +341,13 @@ impl DiskScrollback {
     /// cut to its header through the held handle. If neither works, the counters still restart
     /// and the next append overwrites from the header.
     fn restart_after_failure(&mut self, lost: usize, error: &std::io::Error) {
+        self.restart_storage();
+        self.report_compaction_loss(lost, error);
+    }
+
+    /// Empty the backing storage after a failed compaction: replace a missing file, otherwise
+    /// cut it to its header, and restart the counters when neither works.
+    fn restart_storage(&mut self) {
         let missing = matches!(
             std::fs::metadata(&self.file_path),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound
@@ -354,6 +361,10 @@ impl DiskScrollback {
             tracing::debug!("disk scrollback restart after a failed compaction failed: {e}");
             self.reset_to_header(false);
         }
+    }
+
+    /// Warn once per failure streak; later failures in the same streak only log at debug.
+    fn report_compaction_loss(&mut self, lost: usize, error: &std::io::Error) {
         if self.loss_reported {
             tracing::debug!(
                 "disk scrollback compaction failed again: {error}; dropped {lost} rows"
