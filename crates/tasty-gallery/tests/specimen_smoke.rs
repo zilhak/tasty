@@ -287,3 +287,11 @@ fn 시안에서_옮긴_결정_specimen_은_id_충돌_없이_렌더된다() {
         assert_no_id_clash(label, |ui| draw(ui, &theme));
     }
 }
+
+#[test]
+fn folder_picker_specimens_have_no_duplicate_ids() {
+    let theme = tasty_themes::mocha_fallback();
+    assert_no_id_clash("filepicker-folder-mode", |ui| {
+        tasty_gallery::catalog::components::file_picker::draw_folder_mode(ui, &theme)
+    });
+}

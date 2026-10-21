@@ -164,3 +164,10 @@ Table 빌더의 길이 setter(`header_pad_x`·`header_pad_right`·`header_height
 ## 자동완성 후보의 포인터 확정
 
 `AutoComplete`는 자기 드롭다운 안의 주 버튼 누름에서만 입력 포커스를 유지한다. 후보를 떼기 전에 TextEdit의 blur가 호출자에게 원복으로 전달되지 않게 하며, 행 안에서 버튼을 떼면 원문 후보를 `Pick`으로 반환하고 입력 포커스를 해제한다. 후보 밖에서 떼면 선택하지 않는다. 다른 영역을 누르는 blur와 Enter·Esc는 이 포커스 유지에서 제외한다. `PathField`는 기존 우선순위인 취소 → 후보/버퍼 확정 → Go → 확정 없는 blur 원복을 적용한다. 공개 API와 일반 `Input`의 포커스 동작은 같고, 단독 AutoComplete의 버퍼 갱신은 호출자 책임이다.
+
+## 폴더 선택 footer
+
+`folder_picker::FolderPickerFooter`는 갤러리와 호스트 파일 선택기가 함께 쓰는 3행 footer다.
+호출자가 번역한 라벨·안내·버튼 문구와 선택 경로를 전달한다. 경로는 readonly 토큰으로 앞 말줄임하며,
+전체 경로를 툴팁에 남긴다. 안내의 폴더 이름만 고정폭으로 그리며 좁은 폭에서는 안내를 줄바꿈한다.
+`height`와 `show`가 같은 안내 galley를 계산해 마지막 버튼 행의 자리를 보존한다. 파일이나 설정은 변경하지 않는다.

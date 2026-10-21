@@ -1019,7 +1019,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 | `SettingsRemoteTransferFrame`(콘텐츠 컬럼) | `src/view/settings/ui/tabs/remote_transfer.rs::draw_remote_transfer_tab` | `components/settings_remote_transfer.rs::draw` (`settings` 섹션 `settings-remote-transfer` spec) |
 | `Mono`("Received files") | `mono` 헤딩(micro uppercase muted) | `mono_head` |
 | `Row`(Save folder) | `SettingsRow` + right_to_left(Browse→Input) | `SettingsRow` |
-| `Input block mono` + `Button secondary sm folder`(Browse…) | `Input::mono` + `Button::Secondary/Sm/FOLDER` + `rfd::FileDialog::pick_folder` | 동(rfd 없이 시각만) |
+| `Input block mono` + `Button secondary sm folder`(Browse…) | `Input::mono` + `Button::Secondary/Sm/FOLDER` + View-local Tasty Folder chooser | 동(선택 화면은 filepicker-folder-mode 견본) |
 | `Row`(Maximum size) + `Input mono width90` + 정적 `MiB` | `SettingsRow` + `number::number_field`(`NumberSpec{suffix: Some("MiB")}`). 입력 칸과 단위는 감싸는 가로 줄이라, 남은 폭에 단위가 들어가지 않으면 단위가 입력 칸 아래 줄로 내려간다(모든 `number_field` 공통) | `SettingsRow` + 동 |
 | `Note`(행별 muted 설명) | `SettingsRow::caption` | `SettingsRow::caption` |
 | 행 사이 `borderTop separator` | `row_separator`(`th.separator` hline) | `separator_line` |
@@ -1036,8 +1036,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
   `separator`/`text_muted`/`font_size_micro`/`font_size_caption`)·기존 위젯(`Input`/`Button`).
   i18n 8키(`settings.tab.remote_transfer` + `settings.remote_transfer.{section,dir,dir_placeholder,dir_desc,browse,max_capacity,max_capacity_desc}`).
 - 갤러리는 본체 미의존이라 host `draw_remote_transfer_tab`(Settings 저장소 의존)을 직접
-  못 부르고 같은 위젯·토큰으로 미러(settings_handler 서브탭 specimen 전례). rfd 폴더 피커는
-  specimen 에서 no-op.
+  못 부르고 같은 위젯·토큰으로 미러(settings_handler 서브탭 specimen 전례). 찾아보기의 폴더 선택 화면은 공용 footer를 쓰는 filepicker-folder-mode specimen으로 대조한다.
 
 ## 포트 스캐너 (Overlays) — Table 열 정의 공유
 
@@ -1402,3 +1401,16 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
 | `feedback/NotificationItem`, `terminal/overlays/notifications` | `tasty_ui_widgets::notification_panel`, notifications popup/fullscreen | Overlays notification panel 및 fullscreen stage |
 
 배지는 error→warning→info 순서이고 0을 숨기며 `99+`로 제한한다. 요약의 최신 미확인 제목은 full에서만 표시한다. popup은 352×400, toolbar는 28이며 본문은 popup 2줄/fullscreen 3줄을 넘길 때 더 보기를 제공한다. 크기·색은 notification component 토큰을 사용한다. 정보 배지의 semantic 색은 completion attention과 같다. 알림 수와 surface attention 수는 합치지 않는다. 본체와 갤러리는 같은 위젯으로 행 펼치기·읽음·닫힌 출처를 표시하며 host가 읽음과 Jump를 도메인 동작으로 연결한다.
+
+### 폴더 선택 모드
+
+`gallery/overlays-shared.jsx`의 `FilePickerFrame mode="folder"`는 기존 open/save의 `folderSel`과 별개다.
+갤러리 `filepicker-folder-mode`(`components/file_picker/folder.rs`)는 현재 폴더·선택 폴더·비활성 파일·
+빈 폴더·읽기 오류·로딩·Latte와 en/ko/ja의 긴 경로를 표시한다. 기본640×480, 설정 견본480×360,
+최소폭320(일본어 견본 높이420)을 유지한다. `folder_picker::FolderPickerFooter`를 실제 view와 공유한다.
+
+읽기 전용 경로·안내·버튼의 3행이며 필터 칩은 없다. 경로는 앞 말줄임/전체 경로 툴팁이다.
+경로/안내/파일 잉크는 각각 `fp-folder-path-fg`/`fp-folder-hint-fg`/`fp-folder-file-fg`이며 opacity를
+낮추지 않는다. 로딩·오류에는 안내를 숨기고 확정을 막으며 경로는 `state-disabled-fg`로 그린다.
+파일 행은 hover/선택 없이 툴팁만 제공한다. 확정 대상은 선택 폴더, 선택이 없으면 현재 폴더다.
+Enter는 확정, 더블클릭/오른쪽 화살표는 진입, 재클릭/빈 곳 클릭은 선택 해제다.

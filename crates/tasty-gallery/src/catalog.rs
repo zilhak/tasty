@@ -1260,66 +1260,7 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
-                    "filepicker",
-                    "File picker",
-                    vec![
-                        spec(
-                            "filepicker",
-                            "Native file picker — local & remote, one component",
-                            Some(
-                                "640×480 · PopupDef · differs only in header host badge + breadcrumb root",
-                            ),
-                            components::file_picker::draw,
-                        ),
-                        spec(
-                            "filepicker-remote-indicator",
-                            "Remote indicator — three candidates",
-                            Some(
-                                "§6.1 · badge (recommended) · glyph + host · frame border — one accent-info axis",
-                            ),
-                            components::file_picker::draw_remote_indicator,
-                        ),
-                        spec(
-                            "filepicker-states",
-                            "States — loading · empty · permission · connection lost · multi-select",
-                            Some("body swaps list ↔ status without changing the frame"),
-                            components::file_picker::draw_states,
-                        ),
-                        spec(
-                            "filepicker-save-mode",
-                            "Save mode — one confirm, in the footer",
-                            Some(
-                                "list pick fills the name · Overwrite inline · deep paths elide in the middle",
-                            ),
-                            components::file_picker::draw_save_mode,
-                        ),
-                        spec(
-                            "filepicker-gesture-table",
-                            "The gesture table — a folder selected in either mode",
-                            Some(
-                                "single click selects · double click descends · a folder is never a save target · Open enters it",
-                            ),
-                            components::file_picker::draw_gesture_table,
-                        ),
-                        spec(
-                            "filepicker-path-bar",
-                            "Path bar — what gives way when the folded path still doesn't fit",
-                            Some(
-                                "current folder → parent → root → the … menu · five steps, each at its floor",
-                            ),
-                            components::file_picker::draw_path_fit,
-                        ),
-                        spec(
-                            "filepicker-filter-chip",
-                            "File-type filter chip — a read-only readout",
-                            Some(
-                                "caller's extensions in mono · hidden without a filter · capped at fp-filter-max-width, then ellipsis + tooltip",
-                            ),
-                            components::file_picker::draw_filter_chip,
-                        ),
-                    ],
-                ),
+                section("filepicker", "File picker", file_picker_specs()),
                 section(
                     "transfer",
                     "Remote file transfer",
@@ -2551,4 +2492,62 @@ pub fn pages() -> Vec<Page> {
             ],
         },
     ]
+}
+
+fn file_picker_specs() -> Vec<Spec> {
+    use components::file_picker as picker;
+    let entries = [
+        (
+            "filepicker",
+            "Native file picker — local & remote, one component",
+            "640×480 · PopupDef · differs only in header host badge + breadcrumb root",
+            picker::draw as fn(&mut egui::Ui, &Theme),
+        ),
+        (
+            "filepicker-remote-indicator",
+            "Remote indicator — three candidates",
+            "§6.1 · badge (recommended) · glyph + host · frame border — one accent-info axis",
+            picker::draw_remote_indicator,
+        ),
+        (
+            "filepicker-states",
+            "States — loading · empty · permission · connection lost · multi-select",
+            "body swaps list ↔ status without changing the frame",
+            picker::draw_states,
+        ),
+        (
+            "filepicker-folder-mode",
+            "Folder mode — current or selected folder",
+            "shared footer · inert files · 640 / 480×360 / 320 · en / ko / ja",
+            picker::draw_folder_mode,
+        ),
+        (
+            "filepicker-save-mode",
+            "Save mode — one confirm, in the footer",
+            "list pick fills the name · Overwrite inline · deep paths elide in the middle",
+            picker::draw_save_mode,
+        ),
+        (
+            "filepicker-gesture-table",
+            "The gesture table — a folder selected in either mode",
+            "single click selects · double click descends · a folder is never a save target · Open enters it",
+            picker::draw_gesture_table,
+        ),
+        (
+            "filepicker-path-bar",
+            "Path bar — what gives way when the folded path still doesn't fit",
+            "current folder → parent → root → the … menu · five steps, each at its floor",
+            picker::draw_path_fit,
+        ),
+        (
+            "filepicker-filter-chip",
+            "File-type filter chip — a read-only readout",
+            "caller's extensions in mono · hidden without a filter · capped at fp-filter-max-width, then ellipsis + tooltip",
+            picker::draw_filter_chip,
+        ),
+    ];
+    entries
+        .into_iter()
+        .map(|(id, title, when, draw)| spec(id, title, Some(when), draw))
+        .collect()
 }

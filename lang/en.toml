@@ -6954,3 +6954,12 @@ close_history_omitted_title = "Closed without some terminal contents"
 close_history_omitted_body_one = "The close finished, but the history of {} terminal was too large to keep in the closed items list within the {} MiB limit. If you restore it later, it opens in the same folder with an empty history."
 close_history_omitted_body = "The close finished, but the history of {} terminals was too large to keep in the closed items list within the {} MiB limit. If you restore them later, they open in the same folder with an empty history."
 view_save_failing_body = "Saving the selected workspaces and tabs of {} failed {} times in a row. Tasty keeps retrying, but the selection will not be restored at the next start until a save succeeds. Cause: {}"
+
+[picker.folder]
+title = "Select folder"
+label = "Folder"
+confirm = "Select folder"
+"hint.current" = "Using the current folder. Select a subfolder to use it instead."
+"hint.selected" = "Double-click {name} to open it."
+"file.tooltip" = "Only folders can be selected."
+empty = "No subfolders here"

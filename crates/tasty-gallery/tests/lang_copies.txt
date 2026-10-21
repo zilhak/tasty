@@ -134,13 +134,13 @@ src/catalog/components/explorer_states/popups.rs	Name	explorer.column.name,filep
 src/catalog/components/explorer_states/popups.rs	Path	explorer.props.path
 src/catalog/components/explorer_states/popups.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
 src/catalog/components/explorer_surface.rs	Archive	explorer.kind.archive
-src/catalog/components/explorer_surface.rs	Folder	explorer.type.folder
+src/catalog/components/explorer_surface.rs	Folder	explorer.type.folder,picker.folder.label
 src/catalog/components/explorer_surface.rs	Markdown	explorer.kind.markdown
 src/catalog/components/explorer_surface.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_surface.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/explorer_tab_bar.rs	close	command_palette.hint_close
 src/catalog/components/explorer_view_cells.rs	Date modified	explorer.column.modified
-src/catalog/components/explorer_view_cells.rs	Folder	explorer.type.folder
+src/catalog/components/explorer_view_cells.rs	Folder	explorer.type.folder,picker.folder.label
 src/catalog/components/explorer_view_cells.rs	Name	explorer.column.name,filepicker.column.name,remote_tool.field_name
 src/catalog/components/explorer_view_cells.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_view_cells.rs	Size	explorer.column.size,explorer.properties.size,filepicker.column.size

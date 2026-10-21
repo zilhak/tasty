@@ -40,6 +40,7 @@ mod file_drop_overlay;
 pub mod file_handler;
 mod file_handler_form;
 mod filter_readout;
+pub mod folder_picker;
 mod help_hint;
 mod horizontal_tab_bar;
 mod html_script_banner;

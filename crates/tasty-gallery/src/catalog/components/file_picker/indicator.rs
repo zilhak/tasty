@@ -96,6 +96,9 @@ pub(super) fn top_strip(ui: &mut egui::Ui, theme: &Theme, v: Variant) -> Logical
 
 /// 헤더 글리프와 색. 원격 B·C안은 remote 글리프, B안만 info 색이다.
 pub(super) fn header_glyph(theme: &Theme, v: Variant) -> (MockGlyph, egui::Color32) {
+    if matches!(v.mode, super::Mode::Folder { .. }) {
+        return (icons::FOLDER, theme.text_muted().to_egui());
+    }
     match (v.remote, v.indicator) {
         (true, Indicator::Glyph) => (icons::REMOTE, theme.accent_info().to_egui()),
         (true, Indicator::Border) => (icons::REMOTE, theme.text_muted().to_egui()),

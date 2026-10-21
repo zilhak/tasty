@@ -21,6 +21,15 @@ fn warning_line_height(ui: &egui::Ui, theme: &Theme) -> LogicalPx {
 /// 그 줄과 그 위 간격만큼 커진다.
 pub(super) fn footer_height(ui: &egui::Ui, theme: &Theme, v: Variant) -> LogicalPx {
     let pad = theme.fp_footer_pad_y();
+    if matches!(v.mode, Mode::Folder { .. }) {
+        return pad
+            + super::folder::props(v).height(
+                ui,
+                theme,
+                v.w - theme.fp_inset_start() - theme.fp_inset_end(),
+            )
+            + pad;
+    }
     let gap = theme.fp_section_gap();
     let mut h = pad + theme.input_height() + gap + theme.button_height() + pad;
     for _ in 0..usize::from(v.overwrite()) + usize::from(v.folder_sel) {
@@ -59,6 +68,12 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
     );
     col.spacing_mut().item_spacing.y = theme.fp_section_gap().value();
 
+    if matches!(v.mode, Mode::Folder { .. }) {
+        super::folder::props(v).show(&mut col, theme, &|ui, rect, color| {
+            icons::FOLDER.image(rect.width(), color).paint_at(ui, rect)
+        });
+        return;
+    }
     let multi = v.multi;
     // 열기 모드에서 고른 것이 폴더면 이름 칸은 비어 있다 — 확정 버튼이 읽는 값은 파일 이름이고,
     // 폴더는 그 값이 될 수 없다. 저장 모드는 이름 칸이 목록과 독립이라 그대로 둔다.
@@ -72,6 +87,7 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
     let placeholder_text = match v.mode {
         Mode::Open => "No file selected",
         Mode::Save(_) => "Type a file name",
+        Mode::Folder { .. } => unreachable!(),
     };
     col.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.fp_section_gap().value();
@@ -132,6 +148,7 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
                 Mode::Open => ("Open", v.state == FpState::Loaded),
                 Mode::Save(_) if v.overwrite() => ("Overwrite", !name_text.is_empty()),
                 Mode::Save(_) => ("Save", !name_text.is_empty()),
+                Mode::Folder { .. } => unreachable!(),
             };
             Button::new(label)
                 .variant(ButtonVariant::Primary)
@@ -155,6 +172,7 @@ fn folder_line(ui: &mut egui::Ui, theme: &Theme, mode: Mode) {
         kit::icon(ui, icons::FOLDER, CRUMB_GLYPH, muted);
         let mut job = egui::text::LayoutJob::default();
         match mode {
+            Mode::Folder { .. } => unreachable!(),
             Mode::Save(_) => {
                 job.append(
                     "Folders aren't save targets — double-click ",

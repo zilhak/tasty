@@ -2,10 +2,13 @@
 //! 원격 대상은 호스트 배지로 구분한다. 선택·저장 상태와 긴 경로 표시를 비교한다.
 
 mod filter_chip;
+mod folder;
 mod footer;
 mod indicator;
 mod path_bar;
 mod path_fit;
+
+pub use folder::draw_folder_mode;
 
 pub use filter_chip::draw_filter_chip;
 use indicator::Indicator;
@@ -142,6 +145,11 @@ const MULTI_PICKED: &[&str] = &["README.md", "package.json", "pipeline.yaml"];
 enum Mode {
     Open,
     Save(SaveState),
+    Folder {
+        selected: bool,
+        lang: folder::Language,
+        long: bool,
+    },
 }
 
 /// 저장 모드의 이름 칸 상태 — 디자인 `save="new"|"picked"|"edited"`.
@@ -657,6 +665,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
         match v.mode {
             Mode::Open => "Open file",
             Mode::Save(_) => "Save file",
+            Mode::Folder { .. } => folder::props(v).confirm,
         },
     );
     indicator::after_title(&mut child, theme, v);
@@ -809,18 +818,29 @@ fn list_header(ui: &mut egui::Ui, theme: &Theme, w: LogicalPx, multi: bool) {
     );
 }
 
-fn row(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    r: &Row,
+struct RowState {
     multi: bool,
     checked: bool,
     selected: bool,
     focus: bool,
-) {
+    inert: bool,
+    file_tooltip: &'static str,
+}
+fn row(ui: &mut egui::Ui, theme: &Theme, r: &Row, state: RowState) {
+    let RowState {
+        multi,
+        checked,
+        selected,
+        focus,
+        inert,
+        file_tooltip,
+    } = state;
     let w = ui.available_width();
     let h = row_height(theme);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h.value()), egui::Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(w, h.value()), egui::Sense::hover());
+    if inert {
+        response.on_hover_text(file_tooltip);
+    }
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
@@ -854,14 +874,24 @@ fn row(
     let (icon_glyph, icon_color): (MockGlyph, egui::Color32) = if r.folder {
         (icons::FOLDER, theme.accent_primary().to_egui())
     } else {
-        (icons::FILE, theme.text_muted().to_egui())
+        (
+            icons::FILE,
+            if inert {
+                theme.fp_folder_file_fg()
+            } else {
+                theme.text_muted()
+            }
+            .to_egui(),
+        )
     };
     let ir = egui::Rect::from_min_size(
         egui::pos2(c.icon_x.value(), rect.center().y - glyph_size * 0.5),
         egui::vec2(glyph_size, glyph_size),
     );
     icon_glyph.image(glyph_size, icon_color).paint_at(ui, ir);
-    let name_color = if selected {
+    let name_color = if inert {
+        theme.fp_folder_file_fg()
+    } else if selected {
         theme.text_primary()
     } else {
         theme.text_secondary()
@@ -876,7 +906,12 @@ fn row(
         name_color.to_egui(),
     );
     let mono_caption = egui::FontId::monospace(theme.font_size_caption.value());
-    let muted = theme.text_muted().to_egui();
+    let muted = if inert {
+        theme.fp_folder_file_fg()
+    } else {
+        theme.text_muted()
+    }
+    .to_egui();
     ui.painter().text(
         egui::pos2(c.size_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
@@ -918,6 +953,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
                 } else {
                     match v.mode {
                         Mode::Save(save) => (save.selected() == Some(f.name), false),
+                        Mode::Folder {selected, ..} => (selected && f.name == FOLDER_SEL, false),
                         Mode::Open => (
                             !multi && f.name == "README.md",
                             !multi && f.name == "pipeline.yaml",
@@ -925,7 +961,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
                     }
                 };
                 let checked = multi && MULTI_PICKED.contains(&f.name);
-                row(&mut col, theme, f, multi, checked, selected, focus);
+                row(&mut col, theme, f, RowState {multi, checked, selected, focus, inert: matches!(v.mode, Mode::Folder {..}) && !f.folder, file_tooltip: folder::file_tooltip(v)});
             }
         }
         FpState::Loading => center(
@@ -933,14 +969,14 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
             theme,
             v.w,
             body_h,
-            CenterState::loading("Loading folder…").sub_line(Some("Reading the directory over SSH.")),
+            CenterState::loading("Loading folder…").sub_line(Some(if matches!(v.mode, Mode::Folder { .. }) { crate::i18n::t("filepicker.loading_body_local") } else { "Reading the directory over SSH." })),
         ),
         FpState::Empty => center(
             ui,
             theme,
             v.w,
             body_h,
-            CenterState::empty(icons::FOLDER_OPEN, crate::i18n::t("explorer.state.empty")),
+            CenterState::empty(icons::FOLDER_OPEN, if matches!(v.mode, Mode::Folder {..}) {folder::empty(v)} else {crate::i18n::t("explorer.state.empty")}),
         ),
         FpState::ErrorPerm => center(
             ui,
