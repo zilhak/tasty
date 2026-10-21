@@ -113,10 +113,15 @@ fn decl_contribution(decl: &DetectorDecl) -> Contribution {
     }
 }
 
-/// 등록 detector와 초안을 합쳐 목록 행을 만든다. 등록 순서(id 순) 뒤에 새 id 추가를 붙인다.
+/// 등록 detector와 초안을 합쳐 목록 행을 만든다. 판정과 같은 설치 순서(같으면 id 순) 뒤에
+/// 새 id 추가를 붙인다.
 fn detector_rows(snapshots: &[DetectorSnapshot], fh: &FileHandlerEditDraft) -> Vec<DetRow> {
+    let mut ordered: Vec<&DetectorSnapshot> = snapshots.iter().collect();
+    ordered.sort_by(|a, b| {
+        (a.detector.install_order, &a.detector.id).cmp(&(b.detector.install_order, &b.detector.id))
+    });
     let mut rows: Vec<DetRow> = Vec::new();
-    for snap in snapshots {
+    for snap in ordered {
         let id = snap.detector.id.clone();
         let mut contribs: Vec<&crate::file::format::ContributionSnapshot> =
             snap.contributions.iter().collect();
@@ -124,6 +129,7 @@ fn detector_rows(snapshots: &[DetectorSnapshot], fh: &FileHandlerEditDraft) -> V
         let has_user_now = contribs
             .iter()
             .any(|c| matches!(c.origin, RuleOrigin::User));
+        // host·plugin 기여는 설치 때 끄기(Some(true))만 남으므로 하나라도 끄면 기본은 꺼짐이다.
         let base_on = !contribs
             .iter()
             .any(|c| !matches!(c.origin, RuleOrigin::User) && c.disabled == Some(true));
@@ -138,7 +144,7 @@ fn detector_rows(snapshots: &[DetectorSnapshot], fh: &FileHandlerEditDraft) -> V
         let (pending, has_user, registry_on) = if let Some(decl) = added {
             contributions.retain(|c| !matches!(c.origin, RuleOrigin::User));
             contributions.push(decl_contribution(decl));
-            let on = base_on && decl.disabled != Some(true);
+            let on = decl.disabled.map_or(base_on, |disabled| !disabled);
             (
                 Some(DetPending::Patch {
                     replaces_user: has_user_now,
@@ -519,9 +525,11 @@ fn commit_detector(fh: &mut FileHandlerEditDraft, rows: &[DetRow]) {
     let Ok(mut decl) = build_add_detector_decl(&fh.add_detector_form) else {
         return;
     };
-    // 사용자 기여를 통째로 바꾸므로 지금 꺼져 보이는 detector는 꺼진 채로 둔다.
-    if rows.iter().any(|r| r.id.as_str() == decl.id && !r.want_on) {
-        decl.disabled = Some(true);
+    // 사용자 기여를 통째로 바꾸므로 지금 보이는 켜짐 상태가 기본과 다르면 새 기여에 적는다.
+    if let Some(row) = rows.iter().find(|r| r.id.as_str() == decl.id)
+        && row.want_on != row.base_on
+    {
+        decl.disabled = Some(!row.want_on);
     }
     let id = DetectorId(decl.id.clone());
     fh.remove_detector.remove(&id);

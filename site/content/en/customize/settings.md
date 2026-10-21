@@ -1,4 +1,4 @@
-<!-- source-hash: ff30096832bc -->
+<!-- source-hash: 56097528da00 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -85,7 +85,7 @@ Covered in [Keybindings](keybindings.md).
 The tables that decide how to "identify what kind of file it is" when opening a file, and "what to open it with". Markdown · images · HTML open on their own with the defaults, so you rarely need to touch this.
 
 - **File Extension Mapping** — Priority when several detectors claim the same extension.
-- **File Detectors** — Rules that identify a file's type by extension · path pattern. You can add your own rules; adding with an id that already exists adds your rules to that detector. Remove deletes only what you added, and built-in · plugin rules stay. Changes apply on Save, and until then Undo on each row cancels them.
+- **File Detectors** — Rules that identify a file's type by extension · path pattern. The list shows detectors in the order they are tried. You can add your own rules; adding with an id that already exists adds your rules to that detector. Remove deletes only what you added, and built-in · plugin rules stay. Changes apply on Save, and until then Undo on each row cancels them.
 - **File Handlers** — Which Surface opens an identified type, or whether to hand it to the OS default app.
 - **Hook Handlers** — Shell commands and internal action lists to run when a hook · webhook event arrives. [Hooks · notifications · webhooks](../agents/hooks-notifications.md).
 

@@ -330,3 +330,84 @@ fn a_host_only_detector_is_locked() {
     );
     assert_eq!(tasty_ui_widgets::fh_summary_text(&d.summary), "dir");
 }
+
+fn disabled_decl(id: &str, ext: &str, disabled: bool) -> DetectorDecl {
+    DetectorDecl {
+        disabled: Some(disabled),
+        ..ext_decl(id, ext)
+    }
+}
+
+/// 목록은 판정 순서와 같은 설치 순서다. id 순이면 나중에 설치한 `aaa`가 `markdown` 앞에 온다.
+#[test]
+fn detector_rows_follow_install_order_not_id_order() {
+    let (reg, catalog) = registry();
+    reg.install_plugin_detectors("com.example.late", &[ext_decl("aaa", "aaa")]);
+    let mut fh = FileHandlerEditDraft {
+        add_detector_form: form("my-doc", "doc", ""),
+        ..FileHandlerEditDraft::default()
+    };
+    commit(&mut fh, &catalog);
+    let r = rows(&catalog, &fh);
+    let ids: Vec<&str> = r.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["$directory", "markdown", "aaa", "my-doc"]);
+}
+
+/// plugin이 꺼 둔 detector를 사용자가 켜 둔 뒤 규칙을 더해도 켜진 채다.
+/// 새 사용자 기여에 켜짐을 적지 않으면 병합이 plugin의 꺼짐으로 돌아간다.
+#[test]
+fn patching_a_user_enabled_detector_over_a_disabled_plugin_keeps_it_on() {
+    let (reg, catalog) = registry();
+    reg.install_plugin_detectors(
+        "com.example.nb",
+        &[disabled_decl("notebook", "ipynb", true)],
+    );
+    let id = DetectorId("notebook".into());
+    reg.set_user_detector_disabled(&id, false);
+    assert!(!reg.detector(&id).expect("notebook").disabled);
+    let mut fh = FileHandlerEditDraft {
+        add_detector_form: form("notebook", "nb", ""),
+        ..FileHandlerEditDraft::default()
+    };
+    commit(&mut fh, &catalog);
+    let r = rows(&catalog, &fh);
+    assert!(row(&r, "notebook").want_on, "대기 행도 켜져 보인다");
+    save(&reg, fh);
+    assert!(!reg.detector(&id).expect("notebook").disabled);
+}
+
+/// host·plugin의 켜기는 다른 출처의 끄기를 취소하지 않는다. 먼저 설치한 plugin이 끄고 나중 plugin이
+/// 켜도 기본은 꺼짐이고, Unpatch 행 Switch도 사용자 기여를 지운 뒤 돌아갈 꺼짐을 보인다.
+#[test]
+fn a_plugin_enable_does_not_cancel_another_plugins_disable() {
+    let (reg, catalog) = registry();
+    reg.install_plugin_detectors("com.example.a", &[disabled_decl("log", "log", true)]);
+    reg.install_plugin_detectors("com.example.b", &[disabled_decl("log", "txt", false)]);
+    let id = DetectorId("log".into());
+    assert!(reg.detector(&id).expect("log").disabled);
+    reg.set_user_detector_disabled(&id, false);
+    let mut fh = FileHandlerEditDraft::default();
+    fh.remove_detector.insert(id.clone());
+    let r = rows(&catalog, &fh);
+    let log = row(&r, "log");
+    assert_eq!(log.pending, Some(DetPending::Unpatch));
+    assert!(!log.base_on);
+    assert!(!det_row_display(log).switch_on);
+    save(&reg, fh);
+    assert!(reg.detector(&id).expect("log").disabled);
+}
+
+/// 거꾸로 먼저 켜고 나중에 끄면 기본은 꺼짐이다.
+#[test]
+fn a_later_disabling_contribution_wins_the_base_state() {
+    let (reg, catalog) = registry();
+    reg.install_plugin_detectors("com.example.a", &[disabled_decl("log", "log", false)]);
+    reg.install_plugin_detectors("com.example.b", &[disabled_decl("log", "txt", true)]);
+    let r = rows(&catalog, &FileHandlerEditDraft::default());
+    assert!(!row(&r, "log").base_on);
+    assert!(
+        reg.detector(&DetectorId("log".into()))
+            .expect("log")
+            .disabled
+    );
+}
