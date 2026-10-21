@@ -3,7 +3,7 @@
 //! 생성 행처럼 메뉴 구성(`redraw.rs`)과 따로 둔다. 두 행 모두 로컬 칸에서만 쓴다.
 
 use super::MainView;
-use crate::platform::native_menu::MenuItem;
+use crate::platform::native_menu::{MenuIcon, MenuItem};
 use crate::runtime::engine_read::EngineRead;
 
 const OPEN_IN_SYSTEM: u32 = 20;
@@ -20,15 +20,26 @@ fn reveal_label_key() -> &'static str {
     }
 }
 
+/// OS 메뉴는 크기를 스스로 정하므로 앱 zoom 을 적용하지 않은 원본 크기를 넘긴다.
+fn menu_icon(svg: &'static str) -> MenuIcon {
+    MenuIcon::from_svg(svg, tasty_type_appearance::theme::SIZING.icon_glyph_size_md)
+}
+
 impl MainView {
     /// 휴지통 뒤에 붙는 OS 연계 행. 파일 관리자에서 보기는 한 항목일 때만 둔다.
     pub(super) fn push_explorer_os_items(items: &mut Vec<MenuItem>, multi: bool) {
-        items.push(MenuItem::new(
-            OPEN_IN_SYSTEM,
-            crate::i18n::t("explorer.context_menu.open_in_system"),
-        ));
+        items.push(
+            MenuItem::new(
+                OPEN_IN_SYSTEM,
+                crate::i18n::t("explorer.context_menu.open_in_system"),
+            )
+            .with_icon(menu_icon(tasty_icons::EXTERNAL.svg)),
+        );
         if !multi {
-            items.push(MenuItem::new(REVEAL, crate::i18n::t(reveal_label_key())));
+            items.push(
+                MenuItem::new(REVEAL, crate::i18n::t(reveal_label_key()))
+                    .with_icon(menu_icon(tasty_icons::FOLDER_OPEN.svg)),
+            );
         }
     }
 
