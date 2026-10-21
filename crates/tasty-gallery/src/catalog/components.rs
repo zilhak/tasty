@@ -39,6 +39,7 @@ pub mod kb_import_export;
 pub mod kb_plugins;
 pub mod markdown_open;
 pub mod markdown_viewer;
+pub mod md_address;
 pub mod md_large_file;
 pub mod modifier_hint;
 pub mod move_source;

@@ -14,7 +14,6 @@ pub use callout_kinds::spec as callout_kinds_spec;
 pub use css_path::{content_colour_spec, heading_hierarchy_spec};
 use document::document;
 
-use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 문서 카드 폭(전시 박스).
@@ -23,7 +22,7 @@ const DOC_W: LogicalPx = LogicalPx(560.0);
 const TILE_W: LogicalPx = LogicalPx(200.0);
 const TILE_H: LogicalPx = LogicalPx(132.0);
 
-/// 주소창 바 폭(HTML chrome 정적 근사 — `render.rs::addr_bar_html` 의 디자인 폭).
+/// 주소 띠 견본 폭.
 const ADDR_BAR_W: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -280,50 +279,20 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-/// 문서 안 HTML 주소창을 정적으로 그린다. 경로 편집은 지원하지 않는다.
+/// 문서 안 HTML 주소 띠(로컬 idle). 상태별 견본은 `md_address` 의 Spec 에 있다.
 fn address_bar(ui: &mut egui::Ui, theme: &Theme) {
-    egui::Frame::new()
-        .fill(theme.bg_sidebar().to_egui())
-        .inner_margin(egui::Margin::symmetric(theme.spacing_sm.value() as i8, 0))
-        .show(ui, |ui| {
-            ui.set_width(ADDR_BAR_W.value());
-            ui.horizontal_centered(|ui| {
-                egui::Frame::new()
-                    .fill(theme.surface_raised().to_egui())
-                    .stroke(egui::Stroke::new(
-                        theme.border_width.value(),
-                        theme.border_default().to_egui(),
-                    ))
-                    .corner_radius(theme.corner_radius.value())
-                    .inner_margin(egui::Margin::symmetric(
-                        theme.spacing_sm.value() as i8,
-                        theme.spacing_xs.value() as i8,
-                    ))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            let sz = theme.font_size_caption.value();
-                            let (rect, _) =
-                                ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                            icons::FILE
-                                .image(sz, theme.text_muted().to_egui())
-                                .paint_at(ui, rect);
-                            ui.add_space(theme.spacing_xs.value());
-                            ui.label(rich(
-                                theme,
-                                "/docs/readme.md",
-                                sz,
-                                theme.text_secondary().to_egui(),
-                            ));
-                        });
-                    });
-                ui.add_space(theme.spacing_xs.value());
-                let sz = theme.font_size_caption.value();
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                icons::ARROW_RIGHT
-                    .image(sz, theme.text_muted().to_egui())
-                    .paint_at(ui, rect);
-            });
-        });
+    super::md_address::bar(
+        ui,
+        theme,
+        ADDR_BAR_W.value(),
+        "en",
+        &super::md_address::Bar {
+            remote: false,
+            state: super::md_address::BarState::Idle,
+            path: "/docs/readme.md",
+            no_go: false,
+        },
+    );
 }
 
 /// 문서 목차를 항상 펼친 상태로 그린다. 클릭 이동·접기 동작은 구현하지 않는다.

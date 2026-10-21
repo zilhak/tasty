@@ -3,10 +3,8 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{ControlSize, IconButton, Input};
 
-use crate::catalog::components::md_large_file;
-use crate::catalog::icons;
+use crate::catalog::components::{md_address, md_large_file};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 
 /// 바탕 후보 견본 한 장의 크기.
@@ -139,47 +137,25 @@ pub fn draw_doc_background(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 주소 표시줄 한 줄. 편집 중이면 포커스 링을 함께 그린다(입력 포커스는 옮기지 않는다).
+/// 로컬 주소 띠 하나. 띠 모양은 `md_address` 의 본 견본과 같다.
 fn address_bar(ui: &mut egui::Ui, theme: &Theme, path: &str, editing: bool) {
-    let gap = theme.spacing_sm.value();
-    let go_side = ControlSize::Sm.height(theme);
-    let field_w = (ADDRESS_W.value() - go_side - gap * 3.0).max(0.0);
-    egui::Frame::new()
-        .fill(ec(theme.bg_sidebar()))
-        .inner_margin(egui::Margin::same(theme.spacing_sm.value() as i8))
-        .show(ui, |ui| {
-            ui.set_width(ADDRESS_W.value() - gap * 2.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = gap;
-                let mut buf = path.to_string();
-                let file = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
-                    icons::FILE.image(rect.height(), c).paint_at(ui, rect);
-                };
-                let mut field = Input::new().mono(true).width(field_w).icon(&file);
-                if !editing {
-                    field = field.text_color(ec(theme.text_secondary()));
-                }
-                let resp = field.show(ui, theme, &mut buf);
-                if editing {
-                    ui.painter().rect_stroke(
-                        resp.rect,
-                        theme.corner_radius.value(),
-                        egui::Stroke::new(
-                            theme.focus_ring_width.value(),
-                            ec(theme.input_border_focus()),
-                        ),
-                        egui::StrokeKind::Outside,
-                    );
-                }
-                IconButton::new()
-                    .size(ControlSize::Sm)
-                    .show(ui, theme, &|ui, rect, c| {
-                        icons::ARROW_RIGHT
-                            .image(rect.height(), c)
-                            .paint_at(ui, rect)
-                    });
-            });
-        });
+    let state = if editing {
+        md_address::BarState::Editing
+    } else {
+        md_address::BarState::Idle
+    };
+    md_address::bar(
+        ui,
+        theme,
+        ADDRESS_W.value(),
+        "en",
+        &md_address::Bar {
+            remote: false,
+            state,
+            path,
+            no_go: false,
+        },
+    );
 }
 
 /// Plugins › Markdown — 주소 표시줄의 두 상태와 타일에 묶인 대용량 확인.
