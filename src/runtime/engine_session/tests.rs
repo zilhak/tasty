@@ -65,7 +65,7 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
         .workspace_at(0)
         .expect("workspace index is valid")
         .all_surface_ids()[0];
-    let memory = Arc::clone(&owner.runtime.memory);
+    let memory = owner.runtime.memory_access.clone();
     let hub = Arc::clone(owner.task_scope.waker_hub());
     let feed = Arc::clone(owner.task_scope.event_queue());
     let observer = owner
@@ -77,7 +77,7 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
                 kinds: None,
                 sink: SinkSpec::Memory { max_records: 0 },
             },
-            tasty_memory::writer::MemoryAccess::inline(Arc::clone(&memory)),
+            memory.clone(),
         )
         .expect("observer worker");
     owner
@@ -86,7 +86,7 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
     // No sleep or explicit join: the owning Session must finish the observer's accepted work.
     drop(owner);
     let records = memory
-        .lock()
+        .lock_inline_for_tests()
         .unwrap()
         .list(
             &tasty_memory::Scope::Global,

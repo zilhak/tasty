@@ -28,7 +28,7 @@ fn stored_retirement_does_not_delete_a_reused_slots_new_export() {
             resume: true,
         },
         normal_category_name: "Normal".into(),
-        surface_floor: 0,
+        surface_floor: crate::runtime::journal_product::SurfaceFloor::Fixed(0),
     };
     submit(&worker, 1, open());
     let ResultValue::Bound(first) = published_result(&worker, 1) else {

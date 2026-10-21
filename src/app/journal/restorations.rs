@@ -115,7 +115,6 @@ impl Restorations {
             state.phase = RestorePhase::Retiring;
         }
     }
-    #[cfg(feature = "gui")]
     pub(super) fn forget(&mut self, engine: EngineId) {
         self.queue.retain(|(id, _)| *id != engine);
         self.engines.remove(&engine);

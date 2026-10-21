@@ -5,7 +5,31 @@ use crate::runtime::journal_product::{
 use tasty_core::{StructuralCommand, StructureModels};
 use tasty_event_store::{CommandKey, CommandLookup};
 
-pub(super) fn open(
+/// surface ID 하한을 읽은 뒤 연다. 읽지 못하면 아무것도 기록하지 않고 이 opening만 거절한다.
+pub(super) fn open_after_floor(
+    executor: &Executor<StructureDecider>,
+    home: &std::path::Path,
+    ticket: u64,
+    selection: EngineSelection,
+    normal_category_name: String,
+    surface_floor: &crate::runtime::journal_product::SurfaceFloor,
+    outstanding_credits: u64,
+) -> Result<ResultValue, String> {
+    match surface_floor.read() {
+        Ok(floor) => open(
+            executor,
+            home,
+            ticket,
+            selection,
+            normal_category_name,
+            floor,
+            outstanding_credits,
+        ),
+        Err(reason) => Ok(ResultValue::OpeningRefused(reason)),
+    }
+}
+
+fn open(
     executor: &Executor<StructureDecider>,
     home: &std::path::Path,
     ticket: u64,

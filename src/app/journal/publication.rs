@@ -617,8 +617,15 @@ impl JournalApplication {
             .iter_mut()
             .find(|session| session.id == id)
             .ok_or("opening engine disappeared")?;
-        let ResultValue::Bound(bound) = result? else {
-            return Err("bootstrap did not return an engine binding".into());
+        let bound = match result? {
+            ResultValue::Bound(bound) => bound,
+            // 기록을 남기기 전에 멈췄으므로 다른 engine의 journal은 계속 쓴다.
+            ResultValue::OpeningRefused(reason) => {
+                self.restorations.forget(id);
+                self.refused_openings.insert(id, reason);
+                return Ok(());
+            }
+            _ => return Err("bootstrap did not return an engine binding".into()),
         };
         for issue in &bound.issues {
             self.report_binding_issue(id, issue);

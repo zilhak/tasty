@@ -48,10 +48,7 @@ pub(crate) struct EngineRuntime {
     #[cfg(feature = "gui")]
     pub(crate) port_favorites:
         crate::core::shared_list::Replica<crate::core::port_favorites::PortFavorites>,
-    /// Core와 공유하는 저장소. engine 내부에서 직접 메타데이터를 기록할 때 쓴다.
-    pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    /// memory.db 요청 핸들. 제품 부팅은 생성 직후 memory writer 핸들로 바꾼다
-    /// ([`EngineRuntime::use_memory_writer`]). 그 전(시험 구성)에는 `memory`에서 바로 실행한다.
+    /// memory.db 요청 핸들. 제품은 호스트의 memory writer로 보내고 시험 구성은 바로 실행한다.
     pub(crate) memory_access: tasty_memory::writer::MemoryAccess,
 
     /// Sole owner of materialized/deferred kind instances. CoreState leaves contain descriptors only.
@@ -77,7 +74,8 @@ impl EngineRuntime {
             || !self.pending_plugin_retirements.is_empty()
     }
 
-    /// memory.db 요청을 호스트의 memory writer로 보낸다. `access`는 `memory`와 같은 저장소의 핸들이어야 한다.
+    /// 시험 전용. 생성 뒤 다른 핸들(writer 경유 등)로 바꾼다.
+    #[cfg(test)]
     pub(crate) fn use_memory_writer(&mut self, access: tasty_memory::writer::MemoryAccess) {
         self.memory_access = access;
     }
@@ -86,7 +84,7 @@ impl EngineRuntime {
     pub(crate) fn new(
         counters: super::counters::RuntimeCounters,
         waker: Waker,
-        memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+        memory_access: tasty_memory::writer::MemoryAccess,
         settings: crate::settings::Settings,
         cols: usize,
         rows: usize,
@@ -121,8 +119,7 @@ impl EngineRuntime {
             ),
             #[cfg(feature = "gui")]
             port_favorites: crate::core::shared_list::Replica::new(registries.port_favorites),
-            memory_access: tasty_memory::writer::MemoryAccess::inline(memory.clone()),
-            memory,
+            memory_access,
 
             surfaces: Default::default(),
             pending_submits: Vec::new(),

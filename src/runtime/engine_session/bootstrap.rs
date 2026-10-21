@@ -12,7 +12,8 @@ pub(crate) struct EngineSessionSpec {
     pub(crate) waker: Waker,
     pub(crate) shared_ids: Option<RuntimeCounters>,
     pub(crate) layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
-    pub(crate) memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    /// memory.db 요청 핸들. 제품은 호스트의 memory writer 핸들, 시험은 바로 실행하는 핸들을 넘긴다.
+    pub(crate) memory: tasty_memory::writer::MemoryAccess,
     pub(crate) runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
 }
 
@@ -33,7 +34,7 @@ impl EngineSession {
                 waker,
                 shared_ids: None,
                 layout_slot: None,
-                memory,
+                memory: tasty_memory::writer::MemoryAccess::inline(memory),
                 runner_registry,
             },
             Settings::default(),

@@ -418,13 +418,13 @@ fn handle_work(
             selection,
             normal_category_name,
             surface_floor,
-        } => binding::open(
+        } => binding::open_after_floor(
             executor,
             home,
             ticket,
             selection,
             normal_category_name,
-            surface_floor,
+            &surface_floor,
             pending.values().map(|entry| entry.disk_credit).sum(),
         ),
         Work::Admit(_) => unreachable!("admission is handled at the typed boundary"),

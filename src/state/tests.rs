@@ -92,7 +92,7 @@ fn state_fixture(
             waker,
             shared_ids: None,
             layout_slot: None,
-            memory,
+            memory: tasty_memory::writer::MemoryAccess::inline(memory),
             runner_registry: std::sync::Arc::new(tasty_task_runtime::RunnerRegistry::new()),
         },
         crate::settings::Settings::default(),

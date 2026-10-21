@@ -580,14 +580,11 @@ fn bootstrap_engine(
             waker: base_waker,
             shared_ids: None,
             layout_slot: None,
-            memory: app.services.memory_arc(),
+            memory: app.services.memory_access().clone(),
             runner_registry: std::sync::Arc::clone(app.services.tasks.runner_registry()),
         },
         app.services.registries.clone(),
     )?;
-    engine
-        .runtime
-        .use_memory_writer(app.services.memory_access().clone());
     engine.runtime.waker_factory = Some(factory);
     app.journal
         .begin_engine(
@@ -1185,7 +1182,7 @@ mod journal_event_tests {
                 waker: waker.waker_factory().make_default_waker(),
                 shared_ids: None,
                 layout_slot: None,
-                memory,
+                memory: tasty_memory::writer::MemoryAccess::inline(memory),
                 runner_registry: Arc::clone(app.services.tasks.runner_registry()),
             },
             settings,

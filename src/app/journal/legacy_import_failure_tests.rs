@@ -15,9 +15,9 @@ fn new_session() -> EngineSession {
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory: Arc::new(std::sync::Mutex::new(
+            memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(std::sync::Mutex::new(
                 tasty_memory::MemoryStore::open_in_memory().unwrap(),
-            )),
+            ))),
             runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
         },
         settings,

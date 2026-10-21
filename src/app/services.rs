@@ -441,13 +441,6 @@ impl AppServices {
         Ok(approval_records::submit(self.memory_access(), change))
     }
 
-    /// Core를 직접 받지 않는 뷰·정리 코드에도 같은 저장소를 주입하기 위한 Arc 사본.
-    pub(crate) fn memory_arc(
-        &self,
-    ) -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
-        self.memory.clone()
-    }
-
     /// 캡처 worker와 원격 클립보드 처리에도 같은 구현을 주입한다.
     pub(crate) fn clipboard_arc(&self) -> Arc<dyn ClipboardSystem> {
         self.clipboard.clone()

@@ -272,30 +272,40 @@ impl App {
         }
     }
 
+    /// 결속 전에 실패한 대기 창을 닫는다. engine은 발행한 자원이 없으므로 바로 놓는다.
+    fn fail_unbound_pending_window(&mut self, error: String) {
+        let Some(mut pending) = self.pending_window.take() else {
+            return;
+        };
+        let id = pending.engine;
+        if let Some(completion) = pending.completion.take() {
+            completion.reply_window_create(Err(error.clone()));
+        }
+        self.notify_window_creation_failed(
+            WindowCreationTarget::NewWindow,
+            pending.origin,
+            "journal engine initialization failed",
+            error,
+        );
+        drop(pending);
+        if self.engines.begin_retiring_pending(id) {
+            self.engines.mark_retiring_release(id);
+        }
+    }
+
     pub(crate) fn poll_pending_window(&mut self) {
         if let Some(error) = self.journal.halt_reason().map(str::to_owned) {
-            if let Some(mut pending) = self.pending_window.take() {
-                let id = pending.engine;
-                if let Some(completion) = pending.completion.take() {
-                    completion.reply_window_create(Err(error.clone()));
-                }
-                self.notify_window_creation_failed(
-                    WindowCreationTarget::NewWindow,
-                    pending.origin,
-                    "journal engine initialization failed",
-                    error,
-                );
-                drop(pending);
-                if self.engines.begin_retiring_pending(id) {
-                    self.engines.mark_retiring_release(id);
-                }
-            }
+            self.fail_unbound_pending_window(error);
             return;
         }
         let Some(pending) = self.pending_window.as_mut() else {
             return;
         };
         let id = pending.engine;
+        if let Some(error) = self.journal.take_refused_opening(id) {
+            self.fail_unbound_pending_window(error);
+            return;
+        }
         if self.engines.journal_binding(id).is_none() {
             return;
         }

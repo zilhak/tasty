@@ -21,7 +21,7 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory,
+            memory: tasty_memory::writer::MemoryAccess::inline(memory),
             runner_registry: runners,
         },
         crate::settings::Settings::default(),
@@ -196,7 +196,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory,
+            memory: tasty_memory::writer::MemoryAccess::inline(memory),
             runner_registry: runners,
         },
         settings,
@@ -319,7 +319,7 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory,
+            memory: tasty_memory::writer::MemoryAccess::inline(memory),
             runner_registry: runners,
         },
         crate::settings::Settings::default(),
@@ -451,7 +451,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory,
+            memory: tasty_memory::writer::MemoryAccess::inline(memory),
             runner_registry: runners,
         },
         crate::settings::Settings::default(),
@@ -506,7 +506,11 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
         _ => panic!("JSON null was treated as create rather than a restore snapshot"),
     }
     crate::surface_meta::SurfaceMetaStore::set(
-        &mut *session.runtime.memory.lock().unwrap(),
+        &mut *session
+            .runtime
+            .memory_access
+            .lock_inline_for_tests()
+            .unwrap(),
         ids[0],
         "restore.command",
         "keep live metadata",
@@ -544,7 +548,11 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     );
     assert_eq!(
         crate::surface_meta::SurfaceMetaStore::get(
-            &*session.runtime.memory.lock().unwrap(),
+            &*session
+                .runtime
+                .memory_access
+                .lock_inline_for_tests()
+                .unwrap(),
             ids[0],
             "restore.command"
         )
@@ -589,7 +597,7 @@ fn a_selected_restore_whose_shell_cannot_start_records_its_failure_on_the_placeh
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory,
+            memory: tasty_memory::writer::MemoryAccess::inline(memory),
             runner_registry: runners,
         },
         settings,

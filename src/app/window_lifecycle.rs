@@ -59,7 +59,6 @@ pub(super) struct FirstBootEngine {
     pub(super) rows: usize,
     pub(super) factory: crate::waker::SharedWakerFactory,
     pub(super) proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
-    pub(super) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     pub(super) memory_access: tasty_memory::writer::MemoryAccess,
     pub(super) runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
     pub(super) layout_slot: crate::core::layout_persistence::LayoutSlotId,
@@ -104,7 +103,6 @@ fn build_core_state_first_boot(
         rows,
         factory,
         proxy,
-        memory,
         runner_registry,
         layout_slot,
         registries,
@@ -121,12 +119,11 @@ fn build_core_state_first_boot(
             waker,
             shared_ids: None,
             layout_slot: Some(layout_slot),
-            memory,
+            memory: memory_access,
             runner_registry,
         },
         registries,
     )?;
-    engine.runtime.use_memory_writer(memory_access);
     engine.runtime.waker_factory = Some(factory);
     engine.runtime.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
         engine.runtime.file_format.clone(),
@@ -263,14 +260,11 @@ impl App {
                         waker,
                         shared_ids: Some(next_ids),
                         layout_slot: Some(layout_slot),
-                        memory: self.services.memory_arc(),
+                        memory: self.services.memory_access().clone(),
                         runner_registry: Arc::clone(self.services.tasks.runner_registry()),
                     },
                     self.services.registries.clone(),
                 )?;
-                engine
-                    .runtime
-                    .use_memory_writer(self.services.memory_access().clone());
                 engine.runtime.waker_factory = Some(factory.clone());
                 engine.runtime.identify_worker = identify_worker;
                 engine.task_scope = task_scope;
@@ -290,7 +284,6 @@ impl App {
                     rows,
                     factory: factory.clone(),
                     proxy: self.view.proxy.clone(),
-                    memory: self.services.memory_arc(),
                     memory_access: self.services.memory_access().clone(),
                     runner_registry: Arc::clone(self.services.tasks.runner_registry()),
                     layout_slot,

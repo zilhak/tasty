@@ -56,6 +56,7 @@ impl ResultValue {
             #[cfg(feature = "gui")]
             Self::ViewDeferred => "ViewDeferred",
             Self::Bound(_) => "Bound",
+            Self::OpeningRefused(_) => "OpeningRefused",
             Self::NeedsResolution => "NeedsResolution",
             Self::JoinedAdmission { .. } => "JoinedAdmission",
             Self::Stored(_) => "Stored",

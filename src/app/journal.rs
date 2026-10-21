@@ -36,7 +36,7 @@ struct Opening {
     selection: EngineSelection,
     ticket: Option<u64>,
     projected: bool,
-    surface_floor: u32,
+    surface_floor: crate::runtime::journal_product::SurfaceFloor,
     select_available_slot: bool,
 }
 
@@ -69,6 +69,9 @@ pub(crate) struct JournalApplication {
     /// Why an engine's first workspace ended unpublished, for the View that cannot open it.
     #[cfg(feature = "gui")]
     first_workspace_failures: HashMap<EngineId, String>,
+    /// 결속 전에 거절된 opening의 사유. 대기하던 호출자가 [`Self::poll_restore_bootstrap`]이나
+    /// [`Self::take_refused_opening`]으로 받는다.
+    refused_openings: HashMap<EngineId, String>,
     #[cfg(feature = "gui")]
     view_writes: view_writes::ViewWrites,
     #[cfg(feature = "gui")]
@@ -231,6 +234,7 @@ impl JournalApplication {
             restored_views: Default::default(),
             #[cfg(feature = "gui")]
             first_workspace_failures: Default::default(),
+            refused_openings: Default::default(),
             #[cfg(feature = "gui")]
             view_writes: Default::default(),
             #[cfg(feature = "gui")]
@@ -309,25 +313,7 @@ impl JournalApplication {
         {
             return Err("import destination must be claimed by the opening engine".into());
         }
-        let scopes = session
-            .runtime
-            .memory
-            .lock()
-            .map_err(|error| error.to_string())?
-            .scopes()
-            .map_err(|error| format!("cannot establish existing surface ID floor: {error}"))?;
-        let surface_floor = scopes
-            .iter()
-            .filter_map(|scope| match tasty_memory::Scope::parse(scope) {
-                Ok(tasty_memory::Scope::Surface(id))
-                    if crate::runtime::terminal_store::is_surface_id_space(id) =>
-                {
-                    Some(id)
-                }
-                _ => None,
-            })
-            .max()
-            .unwrap_or(0);
+        let surface_floor = crate::runtime::journal_product::SurfaceFloor::of(session);
         self.restorations.register(session.id);
         self.opening.insert(
             session.id,
@@ -632,6 +618,9 @@ impl JournalApplication {
     /// Stage selected startup resources while leaving inactive terminals and missing kinds pending.
     pub(crate) fn poll_restore_bootstrap(&mut self, session: &EngineSession) -> Result<(), String> {
         let id = session.id;
+        if let Some(reason) = self.refused_openings.remove(&id) {
+            return Err(reason);
+        }
         #[cfg(feature = "gui")]
         if self.retirements.pending.contains_key(&id) {
             return Ok(());
@@ -677,6 +666,12 @@ impl JournalApplication {
         id: EngineId,
     ) -> Option<crate::model::RestoredPresentation> {
         self.restored_views.remove(&id)
+    }
+
+    /// 결속 전에 거절된 opening의 사유를 꺼낸다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn take_refused_opening(&mut self, id: EngineId) -> Option<String> {
+        self.refused_openings.remove(&id)
     }
 
     /// The reason an engine became ready without a workspace, when its first creation failed.
@@ -864,7 +859,7 @@ impl JournalApplication {
                     work: Work::OpenEngine {
                         selection: opening.selection.clone(),
                         normal_category_name: "normal".into(),
-                        surface_floor: opening.surface_floor,
+                        surface_floor: opening.surface_floor.clone(),
                     },
                 })
                 .map_err(|error| format!("engine bootstrap submission: {error:?}"))?;

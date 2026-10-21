@@ -31,7 +31,7 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory,
+            memory: tasty_memory::writer::MemoryAccess::inline(memory),
             runner_registry: runners,
         },
         settings,
@@ -101,7 +101,7 @@ fn failed_metadata_scope_read_rejects_bootstrap_instead_of_reserving_from_zero()
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory,
+            memory: tasty_memory::writer::MemoryAccess::inline(memory),
             runner_registry: runners,
         },
         crate::settings::Settings::default(),
@@ -109,8 +109,9 @@ fn failed_metadata_scope_read_rejects_bootstrap_instead_of_reserving_from_zero()
     .unwrap();
     let connection = rusqlite::Connection::open(path).unwrap();
     connection.execute("DROP TABLE memory", []).unwrap();
+    let mut session = session;
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
-    let error = journal
+    journal
         .begin_engine(
             &session,
             EngineSelection::Slot {
@@ -118,9 +119,23 @@ fn failed_metadata_scope_read_rejects_bootstrap_instead_of_reserving_from_zero()
                 resume: false,
             },
         )
-        .unwrap_err();
-    assert!(error.contains("cannot establish existing surface ID floor"));
+        .unwrap();
+    let mut stall = StallBudget::new(&journal);
+    let error = loop {
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+        if let Err(error) = journal.poll_restore_bootstrap(&session) {
+            break error;
+        }
+        stall.nap("refused opening");
+    };
+    assert!(
+        error.contains("cannot establish existing surface ID floor"),
+        "{error}"
+    );
+    // 이 engine만 거절되고 journal은 다른 engine을 위해 계속 동작한다.
+    assert!(!journal.is_halted());
     assert!(journal.opening.is_empty());
+    assert!(session.journal_binding.is_none());
     assert!(session.core_state.local_workspaces().is_empty());
     assert_eq!(session.runtime.terminals.iter().count(), 0);
 }
@@ -137,9 +152,9 @@ fn resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen() {
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory: Arc::new(std::sync::Mutex::new(
+            memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(std::sync::Mutex::new(
                 tasty_memory::testing::InMemoryStorage::new(),
-            )),
+            ))),
             runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
         },
         crate::settings::Settings::default(),

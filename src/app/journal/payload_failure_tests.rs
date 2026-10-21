@@ -139,9 +139,9 @@ fn boot() -> (JournalApplication, EngineSession, StallBudget) {
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: Some(1),
-            memory: Arc::new(std::sync::Mutex::new(
+            memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(std::sync::Mutex::new(
                 tasty_memory::testing::InMemoryStorage::new(),
-            )),
+            ))),
             runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
         },
         settings,

@@ -53,6 +53,57 @@ pub(crate) struct Admission {
     pub(crate) causation_id: Option<String>,
 }
 
+/// engine을 열 때 memory.db에 남은 surface scope의 가장 큰 ID. 새 surface ID가 남은 metadata와
+/// 겹치지 않게 그 위에서 시작한다. journal worker가 memory writer 순서로 읽으므로 메인 루프는
+/// 저장소를 기다리지 않는다.
+#[derive(Clone)]
+pub(crate) enum SurfaceFloor {
+    Lookup(tasty_memory::writer::MemoryAccess),
+    #[cfg(test)]
+    Fixed(u32),
+}
+
+impl std::fmt::Debug for SurfaceFloor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SurfaceFloor").finish()
+    }
+}
+
+impl SurfaceFloor {
+    pub(crate) fn of(session: &crate::runtime::engine_session::EngineSession) -> Self {
+        Self::Lookup(session.runtime.memory_access.clone())
+    }
+
+    /// worker 스레드에서 writer 결과를 기다려 읽는다. 읽지 못하면 engine을 열지 않는다.
+    pub(crate) fn read(&self) -> Result<u32, String> {
+        let access = match self {
+            Self::Lookup(access) => access,
+            #[cfg(test)]
+            Self::Fixed(floor) => return Ok(*floor),
+        };
+        let scopes = access
+            .run_and_wait(
+                tasty_memory::writer::MemoryRequest::read(0, |memory| memory.scopes()),
+                std::time::Duration::from_secs(30),
+            )
+            .map_err(|why| format!("cannot establish existing surface ID floor: {why:?}"))?
+            .into_value::<Vec<String>>()
+            .ok_or("surface ID floor lookup returned another value")?;
+        Ok(scopes
+            .iter()
+            .filter_map(|scope| match tasty_memory::Scope::parse(scope) {
+                Ok(tasty_memory::Scope::Surface(id))
+                    if crate::runtime::terminal_store::is_surface_id_space(id) =>
+                {
+                    Some(id)
+                }
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0))
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum Work {
     ReconcilePreparation {
@@ -113,7 +164,7 @@ pub(crate) enum Work {
     OpenEngine {
         selection: EngineSelection,
         normal_category_name: String,
-        surface_floor: u32,
+        surface_floor: SurfaceFloor,
     },
     /// Current permissions are checked by App before this lookup. Targets are not resolved yet.
     Admit(Admission),
@@ -197,6 +248,8 @@ pub(crate) enum ResultValue {
     #[cfg(feature = "gui")]
     ViewDeferred,
     Bound(BoundEngine),
+    /// engine을 열기 전 확인에 실패해 아무것도 기록하지 않았다.
+    OpeningRefused(String),
     NeedsResolution,
     JoinedAdmission {
         #[cfg(test)]
@@ -620,9 +673,9 @@ pub(crate) fn request_size(work: &Work) -> usize {
         Work::OpenEngine {
             selection,
             normal_category_name,
-            surface_floor,
+            surface_floor: _,
         } => {
-            let serialized = json_len(&(selection, normal_category_name, surface_floor));
+            let serialized = json_len(&(selection, normal_category_name)).saturating_add(16);
             match selection {
                 EngineSelection::ImportedSlot { source } => serialized.max(
                     source

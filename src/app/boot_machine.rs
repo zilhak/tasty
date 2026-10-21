@@ -345,7 +345,6 @@ impl App {
             crate::waker_factory_winit::WinitWakerFactory::new(self.view.proxy.clone()),
         );
         let proxy = self.view.proxy.clone();
-        let memory = self.services.memory_arc();
         let memory_access = self.services.memory_access().clone();
         let runner_registry = Arc::clone(self.services.tasks.runner_registry());
         let gauges = self.services.plugin_gauges();
@@ -366,7 +365,6 @@ impl App {
                         rows,
                         factory,
                         proxy,
-                        memory,
                         memory_access,
                         runner_registry,
                         layout_slot,

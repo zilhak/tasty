@@ -111,9 +111,9 @@ fn session(slot: Option<u32>) -> EngineSession {
             waker: Arc::new(|| {}),
             shared_ids: None,
             layout_slot: slot,
-            memory: Arc::new(std::sync::Mutex::new(
+            memory: tasty_memory::writer::MemoryAccess::inline(Arc::new(std::sync::Mutex::new(
                 tasty_memory::testing::InMemoryStorage::new(),
-            )),
+            ))),
             runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
         },
         settings,
@@ -223,7 +223,7 @@ fn the_worker_refuses_to_open_a_damaged_slot() {
                     resume: true,
                 },
                 normal_category_name: String::new(),
-                surface_floor: 0,
+                surface_floor: crate::runtime::journal_product::SurfaceFloor::Fixed(0),
             },
         })
         .unwrap();
