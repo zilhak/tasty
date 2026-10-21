@@ -138,6 +138,9 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   - 버튼은 공용 `Button` Secondary "Quit"(앱 종료)과 Primary "Use this shell"(md)이다.
     판정이 유효할 때만 확인이 활성이며 Enter 확인도 같은 조건을 따른다. disabled 모양은
     공용 규칙(중립 상자와 disabled ink)을 따른다.
+  - 경로 판정 시험은 플랫폼별로 나뉜다. `src/gfx/gpu/shell_setup.rs`의 시험 모듈은 Unix
+    실행 권한 fixture를 쓰므로 Windows 빌드에서 제외한다. Windows의 bash·zsh 이름 조건은
+    `tasty-settings`의 `shell_path` 시험으로 확인하며, 이 시험들은 실제 화면 입력 검증을 대신하지 않는다.
 - **부팅 오류 화면** — `render_boot_error` 는 공용 view `tasty_ui_widgets::boot_error_screen` 을
   부르고 갤러리도 같은 함수를 그린다. 로딩·셸 설정 화면과 같은 구조로 `bg-app` 채움 위에 락업 →
   `spacing_xl` → `boot-form-width`(360) 폼을 세로 가운데에 쌓는다. 카드와 그림자는 없다. 폼은

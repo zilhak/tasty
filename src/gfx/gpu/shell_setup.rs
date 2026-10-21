@@ -151,12 +151,11 @@ impl GpuState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use super::*;
 
     /// 첫 실행 화면은 설정 판정과 같은 결론을 낸다. macOS·Linux는 bash·zsh가 아닌 셸도 확정할 수 있다.
-    #[cfg(not(windows))]
     #[test]
     fn the_setup_check_follows_the_settings_judgement() {
         use std::os::unix::fs::PermissionsExt;
