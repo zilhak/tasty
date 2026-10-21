@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::SystemTime;
 
+use crate::app::file_jobs::job::leftover::FileId;
 use crate::app::file_jobs::ops::drop_nested;
 
 /// 미리보기·썸네일이 내용을 읽는 파일 크기 상한. 넘으면 "Too large" 상태와 글리프만 보인다.
@@ -244,19 +245,21 @@ pub(crate) struct PropertiesFacts {
     pub(crate) failed: Vec<(PathBuf, io::ErrorKind)>,
 }
 
-/// Unix 의 (장치, inode). 목록·집계가 이미 읽은 `symlink_metadata` 에서 나온다.
-/// Windows 는 std 가 링크 수와 파일 ID 를 안정 API 로 주지 않아(파일을 따로 열어야 한다) 하드링크를 가르지 않는다.
-pub(crate) type FileId = (u64, u64);
-
-#[cfg(unix)]
-fn hardlink_id(meta: &std::fs::Metadata) -> Option<FileId> {
-    use std::os::unix::fs::MetadataExt;
-    (meta.is_file() && meta.nlink() > 1).then(|| (meta.dev(), meta.ino()))
+/// 링크 수가 둘 이상인 일반 파일의 식별자. 파일 작업이 같은 파일을 가리는 [`FileId`] 를 쓴다.
+/// Unix 는 이미 읽은 `meta` 의 (장치, inode)·링크 수라 조회가 늘지 않는다. Windows 는 파일마다 한 번 열어
+/// 볼륨 일련번호·파일 인덱스·링크 수를 읽는다(내용 읽기 권한 불요, 권한 상승 없음).
+#[cfg(any(unix, windows))]
+fn hardlink_id(path: &Path, meta: &std::fs::Metadata) -> io::Result<Option<FileId>> {
+    if !meta.is_file() {
+        return Ok(None);
+    }
+    let (id, links) = FileId::read_links(path, meta)?;
+    Ok((links > 1).then_some(id))
 }
 
-#[cfg(not(unix))]
-fn hardlink_id(_meta: &std::fs::Metadata) -> Option<FileId> {
-    None
+#[cfg(not(any(unix, windows)))]
+fn hardlink_id(_path: &Path, _meta: &std::fs::Metadata) -> io::Result<Option<FileId>> {
+    Ok(None)
 }
 
 /// 이미 크기를 더한 하드링크 파일. 링크가 하나뿐인 파일은 담지 않는다.
@@ -299,6 +302,8 @@ pub(super) fn read_properties(
 
 /// 항목마다 읽고, 하나라도 읽으면 읽은 것만 돌려준다. 모두 못 읽으면 첫 오류다.
 /// 크기 합과 셀 폴더는 파일 작업과 같은 기준([`drop_nested`])으로 겹친 선택을 뺀 항목에서 정한다.
+/// 여러 항목이면 하드링크를 가리려고 파일 식별자도 읽는다. 식별자를 못 읽은 항목은 같은 파일인지
+/// 알 수 없어 읽지 못한 항목으로 다룬다.
 fn gather(paths: &[PathBuf]) -> (io::Result<PropertiesFacts>, Vec<PathBuf>, CountedLinks) {
     let kept: std::collections::HashSet<PathBuf> = drop_nested(paths).into_iter().collect();
     let mut links = CountedLinks::default();
@@ -308,7 +313,13 @@ fn gather(paths: &[PathBuf]) -> (io::Result<PropertiesFacts>, Vec<PathBuf>, Coun
     let mut file_bytes = 0u64;
     let mut folders = Vec::new();
     for path in paths {
-        let item = match item_facts(path) {
+        let read = item_facts_with_meta(path).and_then(|(mut item, meta)| {
+            if paths.len() > 1 {
+                item.hardlink = hardlink_id(path, &meta)?;
+            }
+            Ok(item)
+        });
+        let item = match read {
             Ok(item) => item,
             Err(error) => {
                 tracing::warn!(path = %path.display(), kind = ?error.kind(), %error, "properties: item unreadable");
@@ -337,7 +348,8 @@ fn gather(paths: &[PathBuf]) -> (io::Result<PropertiesFacts>, Vec<PathBuf>, Coun
     (facts, folders, links)
 }
 
-fn item_facts(path: &Path) -> io::Result<ItemFacts> {
+/// 항목 정보와 그때 읽은 자기 metadata(링크는 링크 자신).
+fn item_facts_with_meta(path: &Path) -> io::Result<(ItemFacts, std::fs::Metadata)> {
     let own = std::fs::symlink_metadata(path)?;
     let link = own.file_type().is_symlink();
     let kind = if link {
@@ -360,7 +372,7 @@ fn item_facts(path: &Path) -> io::Result<ItemFacts> {
     } else {
         ItemKind::File
     };
-    Ok(ItemFacts {
+    let item = ItemFacts {
         path: std::path::absolute(path)?,
         size: if own.is_dir() || link { 0 } else { own.len() },
         kind,
@@ -368,8 +380,9 @@ fn item_facts(path: &Path) -> io::Result<ItemFacts> {
         created: (!link).then(|| own.created().ok()).flatten(),
         mode: (!link).then(|| mode_string(&own)).flatten(),
         read_only: own.permissions().readonly(),
-        hardlink: hardlink_id(&own),
-    })
+        hardlink: None,
+    };
+    Ok((item, own))
 }
 
 #[cfg(unix)]
@@ -400,7 +413,8 @@ fn mode_string(_meta: &std::fs::Metadata) -> Option<String> {
 }
 
 /// 링크는 따라가지 않는다. 읽지 못한 하위 폴더는 건너뛰고 센 만큼만 보인다.
-/// 항목 수는 이름마다 세고, 크기는 같은 하드링크 파일을 한 번만 더한다.
+/// 항목 수는 이름마다 세고, 크기는 같은 하드링크 파일을 한 번만 더한다. 식별자를 못 읽은 파일은
+/// 같은 파일인지 알 수 없어 크기를 더하지 않고 부분 집계로 남긴다.
 fn count_folder(root: &Path, count: &FolderCount, cancel: &AtomicBool, links: &mut CountedLinks) {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -444,16 +458,41 @@ fn count_dir(
         count.items.fetch_add(1, Ordering::Relaxed);
         if meta.is_dir() {
             stack.push(path);
-        } else if !meta.file_type().is_symlink() && links.first(hardlink_id(&meta)) {
-            count.bytes.fetch_add(meta.len(), Ordering::Relaxed);
+        } else if !meta.file_type().is_symlink() {
+            add_file_size(&path, &meta, count, links);
         }
     }
     true
 }
 
+/// 처음 보는 파일이면 크기를 더한다. 식별자를 못 읽으면 더하지 않고 부분 집계로 남긴다.
+fn add_file_size(
+    path: &Path,
+    meta: &std::fs::Metadata,
+    count: &FolderCount,
+    links: &mut CountedLinks,
+) {
+    match hardlink_id(path, meta) {
+        Ok(id) if links.first(id) => {
+            count.bytes.fetch_add(meta.len(), Ordering::Relaxed);
+        }
+        Ok(_) => {}
+        Err(error) => {
+            count.partial.store(true, Ordering::Release);
+            tracing::debug!(%error, path = %path.display(), "properties: unreadable file id");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 아래 링크·권한 시험은 Unix 에서만 만들 수 있다.
+    #[cfg(unix)]
+    fn item_facts(path: &Path) -> io::Result<ItemFacts> {
+        item_facts_with_meta(path).map(|(item, _)| item)
+    }
 
     #[cfg(unix)]
     #[test]
@@ -813,7 +852,7 @@ mod tests {
         assert_eq!(count.bytes.load(Ordering::Relaxed), 1024);
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn hard_links_add_their_size_once() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -835,5 +874,66 @@ mod tests {
         let (facts, count) = read_all(&[a, folder]);
         assert_eq!(facts.expect("readable").file_bytes, 1000);
         assert_eq!(count.bytes.load(Ordering::Relaxed), 0);
+    }
+
+    /// 폴더 집계 시간을 하드링크 식별 없이 걸은 시간과 비교해 `TASTY_PROPS_COST_OUT` 파일에 줄마다 적는다.
+    /// Windows 는 파일마다 식별자를 읽으려고 한 번 열어 그 비용이 여기서 드러난다. 파일 수는
+    /// `TASTY_PROPS_COST_FILES`(기본 20000).
+    /// `TASTY_PROPS_COST_OUT=<파일> cargo test -p tasty --lib --locked -- --ignored properties_count_cost`
+    #[test]
+    #[ignore = "measurement only; writes timings to TASTY_PROPS_COST_OUT"]
+    fn properties_count_cost() {
+        use std::io::Write;
+        let out = std::env::var_os("TASTY_PROPS_COST_OUT").expect("set TASTY_PROPS_COST_OUT");
+        let mut out = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(out)
+            .expect("open TASTY_PROPS_COST_OUT");
+        let files: usize = std::env::var("TASTY_PROPS_COST_FILES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20_000);
+        let dir = tempfile::tempdir().expect("tempdir");
+        for i in 0..files {
+            let sub = dir.path().join(format!("d{}", i % 100));
+            std::fs::create_dir_all(&sub).expect("mkdir");
+            std::fs::write(sub.join(format!("f{i}")), b"x").expect("write");
+        }
+        let walk_without_ids = || {
+            let mut stack = vec![dir.path().to_path_buf()];
+            let mut bytes = 0u64;
+            while let Some(d) = stack.pop() {
+                for entry in std::fs::read_dir(&d).expect("read_dir").flatten() {
+                    let meta = std::fs::symlink_metadata(entry.path()).expect("meta");
+                    if meta.is_dir() {
+                        stack.push(entry.path());
+                    } else {
+                        bytes += meta.len();
+                    }
+                }
+            }
+            bytes
+        };
+        for round in 0..3 {
+            let started = std::time::Instant::now();
+            let plain = walk_without_ids();
+            let plain_time = started.elapsed();
+            let count = FolderCount::default();
+            let started = std::time::Instant::now();
+            count_folder(
+                dir.path(),
+                &count,
+                &AtomicBool::new(false),
+                &mut CountedLinks::default(),
+            );
+            let counted_time = started.elapsed();
+            assert_eq!(count.bytes.load(Ordering::Relaxed), plain);
+            writeln!(
+                out,
+                "round {round}: {files} files · without ids {plain_time:?} · count_folder {counted_time:?}"
+            )
+            .expect("write timings");
+        }
     }
 }

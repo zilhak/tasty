@@ -57,27 +57,35 @@ impl FileStamp {
 }
 
 /// 파일 식별자. 같은 값이면 경로가 달라도 같은 파일이다.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct FileId {
+/// Properties 집계도 하드링크를 한 번만 세려고 이 식별자를 쓴다(`local_reads::file_info`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct FileId {
     volume: u64,
     index: u64,
 }
 
 impl FileId {
     /// 맨 끝 링크는 따라가지 않고 링크 자체의 식별자를 읽는다.
-    #[cfg(unix)]
-    fn read(_path: &Path, meta: &std::fs::Metadata) -> io::Result<Self> {
-        use std::os::unix::fs::MetadataExt;
-        Ok(Self {
-            volume: meta.dev(),
-            index: meta.ino(),
-        })
+    fn read(path: &Path, meta: &std::fs::Metadata) -> io::Result<Self> {
+        Self::read_links(path, meta).map(|(id, _)| id)
     }
 
-    /// std 의 `MetadataExt::file_index` 는 stable 이 아니라 Win32 를 직접 부른다.
+    /// 식별자와 하드링크 수. Unix 는 이미 읽은 `meta` 에서 꺼내므로 추가 조회가 없다.
+    #[cfg(unix)]
+    pub(crate) fn read_links(_path: &Path, meta: &std::fs::Metadata) -> io::Result<(Self, u64)> {
+        use std::os::unix::fs::MetadataExt;
+        let id = Self {
+            volume: meta.dev(),
+            index: meta.ino(),
+        };
+        Ok((id, meta.nlink()))
+    }
+
+    /// std 의 `MetadataExt::file_index`·`number_of_links` 는 stable 이 아니라 Win32 를 직접 부른다.
+    /// 항목을 한 번 열어야 하지만 내용 읽기 권한은 요구하지 않는다.
     #[cfg(windows)]
     #[allow(unsafe_code)] // 이유: std 에 stable 식별자 API 가 없어 이 함수만 Win32 FFI 를 쓴다.
-    fn read(path: &Path, _meta: &std::fs::Metadata) -> io::Result<Self> {
+    pub(crate) fn read_links(path: &Path, _meta: &std::fs::Metadata) -> io::Result<(Self, u64)> {
         use std::os::windows::fs::OpenOptionsExt;
         use std::os::windows::io::AsRawHandle;
         use windows::Win32::Foundation::HANDLE;
@@ -94,15 +102,16 @@ impl FileId {
         // SAFETY: `file` 이 살아 있는 동안 그 핸들을 넘기고, 출력 버퍼는 위에서 초기화한 구조체 하나다.
         unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }
             .map_err(io::Error::other)?;
-        Ok(Self {
+        let id = Self {
             volume: u64::from(info.dwVolumeSerialNumber),
             index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
-        })
+        };
+        Ok((id, u64::from(info.nNumberOfLinks)))
     }
 
     /// 식별자를 알 수 없으면 같은 파일이 아니라고 보장할 수 없어 지우지 않는다.
     #[cfg(not(any(unix, windows)))]
-    fn read(_path: &Path, _meta: &std::fs::Metadata) -> io::Result<Self> {
+    pub(crate) fn read_links(_path: &Path, _meta: &std::fs::Metadata) -> io::Result<(Self, u64)> {
         Err(io::ErrorKind::Unsupported.into())
     }
 }
