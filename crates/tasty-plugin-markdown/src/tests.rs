@@ -1078,8 +1078,13 @@ fn the_folder_button_opens_the_picker_in_the_document_folder() {
         NavAction::Browse(Some("/tmp/md".into()))
     );
     assert_eq!(
-        browse::trigger_params(1, Some("/tmp/md".into())),
-        json!({ "filters": ["md", "markdown"], "start_dir": "/tmp/md", "origin_surface_id": 1 })
+        browse::trigger_params(1, Some("/tmp/md".into()), "about:blank#tasty-nav:browse:7"),
+        json!({
+            "filters": ["md", "markdown"],
+            "start_dir": "/tmp/md",
+            "origin_surface_id": 1,
+            "user_navigation_url": "about:blank#tasty-nav:browse:7",
+        })
     );
 
     mirror_create(&mut p, 2, "/srv/docs/a.md");

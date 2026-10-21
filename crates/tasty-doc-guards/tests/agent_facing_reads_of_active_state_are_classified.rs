@@ -132,8 +132,8 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/adapters/ipc/handler.rs",
         NavigationProof,
-        1,
-        "원 HTML 문서 권한 증거 handle을 RequestScope로 전달하며 navigation 선택을 읽거나 바꾸지 않는다",
+        2,
+        "원 HTML 문서 권한 증거 handle을 RequestScope와 file_picker.trigger로 전달하며 navigation 선택을 읽거나 바꾸지 않는다",
     ),
     (
         "src/adapters/ipc/request_scope.rs",

@@ -15,7 +15,8 @@ use crate::adapters::ui::popup::file_picker;
 use crate::state::{FilePickerRequester, RequestContext};
 
 /// `file_picker.trigger { filters?: string[], owner_popup_instance?: u64, start_dir?: string,
-/// origin_surface_id?: u32, mode?: "open" | "save", default_name?: string, location?: "local" }` 요청.
+/// origin_surface_id?: u32, mode?: "open" | "save", default_name?: string, location?: "local",
+/// user_navigation_url?: string }` 요청.
 #[derive(Deserialize)]
 struct FilePickerTriggerReq {
     #[serde(default)]
@@ -40,6 +41,10 @@ struct FilePickerTriggerReq {
     /// (생략하거나 찾지 못하면 활성 workspace).
     #[serde(default)]
     origin_surface_id: Option<u32>,
+    /// 플러그인 페이지에서 사용자가 눌러 생긴 navigation URL. `origin_surface_id` 의 WebView 에서
+    /// 확인되면 사용자 요청으로 연다. `file_handler.dispatch` 의 같은 필드와 같은 규칙이다.
+    #[serde(default)]
+    user_navigation_url: Option<String>,
 }
 
 #[derive(Default, Deserialize, PartialEq)]
@@ -56,12 +61,25 @@ enum PickerLocation {
     Local,
 }
 
+#[cfg(test)]
 pub fn handle_trigger(
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     id: serde_json::Value,
     params: &serde_json::Value,
+) -> JsonRpcResponse {
+    handle_trigger_with_proofs(state, engine, caller, id, params, None)
+}
+
+/// `navigation_proofs` 는 플러그인 페이지의 사용자 navigation 기록이다. 없으면 사용자 요청으로 열지 않는다.
+pub fn handle_trigger_with_proofs(
+    state: &mut RequestContext,
+    engine: &mut EngineMut<'_>,
+    caller: &CallerContext,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+    navigation_proofs: Option<&crate::app::html_runtime::NavigationProofs>,
 ) -> JsonRpcResponse {
     // 결과는 플러그인에게만 전달된다. 외부 호출은 결과 없이 사용자 포커스만 바꾸므로 거절한다.
     let requester_plugin = match caller {
@@ -93,6 +111,28 @@ pub fn handle_trigger(
         owner_popup_instance: req.owner_popup_instance,
     };
 
+    // 확인하지 못하면 포커스 없는 passive 피커가 되고, 키를 받는 WebView 가 피커를 덮는다
+    // (docs/design/systems/popup.md#passive-팝업).
+    let by_user = match (
+        navigation_proofs,
+        req.user_navigation_url.as_deref(),
+        req.origin_surface_id,
+    ) {
+        (Some(proofs), Some(url), Some(sid)) => proofs.take(
+            &state.webview_identity,
+            &engine.as_ref(),
+            &requester.plugin_id,
+            sid,
+            url,
+        ),
+        _ => false,
+    };
+    let opened_by = if by_user {
+        file_picker::FilePickerOpenedBy::PluginForUser(requester)
+    } else {
+        file_picker::FilePickerOpenedBy::Plugin(requester)
+    };
+
     let engine = engine.read();
     let location = if matches!(req.location, Some(PickerLocation::Local)) {
         crate::state::FilePickerLocation::Local { dir: req.start_dir }
@@ -110,16 +150,7 @@ pub fn handle_trigger(
     {
         return JsonRpcResponse::error(id, -32602, "save mode requires a local location");
     }
-    if file_picker::open(
-        state,
-        &engine,
-        request_id,
-        location,
-        req.filters,
-        file_picker::FilePickerOpenedBy::Plugin(requester),
-    )
-    .is_err()
-    {
+    if file_picker::open(state, &engine, request_id, location, req.filters, opened_by).is_err() {
         return busy_response(id);
     }
 

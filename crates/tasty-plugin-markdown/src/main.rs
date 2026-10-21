@@ -670,7 +670,7 @@ impl Plugin for MarkdownPlugin {
             NavAction::Browse(start_dir) => {
                 let resp = host.call(
                     "file_picker.trigger",
-                    browse::trigger_params(sid, start_dir),
+                    browse::trigger_params(sid, start_dir, &ctx.url),
                 );
                 if let Some(request_id) = browse::request_id_of(sid, resp) {
                     self.track_surface_picker(sid, request_id);

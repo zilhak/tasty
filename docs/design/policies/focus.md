@@ -207,7 +207,7 @@ Core의 결과 ID를 App의 공통 구조 adapter가 받아 navigation을 보정
 `FileDispatchOrigin`은 결과 탭 선택 여부와 후속 Intent의 출처를 정한다. 비동기 파일 식별이 끝날 때까지 이 값을 전달한다. plugin이 사용자 클릭을 IPC로 중계할 수 있으므로 IPC를 사용했다는 사실만으로 에이전트 요청이라고 판단하지 않는다.
 
 - plugin이 `owner_popup_instance`를 보내면 호스트는 그 plugin이 팝업 소유자인지, 팝업이 포인터 버튼이나 키 누름으로 확정 입력을 받았는지 확인한다. 외부 IPC 호출자는 같은 값을 보내도 에이전트 요청이다.
-- WebView 링크는 plugin이 통지받은 URL을 `user_navigation_url`로 보낸다. 호스트가 확인한 사용자 제스처이며, 현재 페이지를 소유 plugin이 작성했고, 그 plugin에 알린 마지막 탐색 시도일 때만 한 번 사용자 요청으로 인정한다.
+- WebView 링크는 plugin이 통지받은 URL을 `user_navigation_url`로 보낸다. 호스트가 확인한 사용자 제스처이며, 현재 페이지를 소유 plugin이 작성했고, 그 plugin에 알린 마지막 탐색 시도일 때만 한 번 사용자 요청으로 인정한다. `file_picker.trigger`도 같은 필드와 규칙으로 피커를 사용자 요청으로 연다.
 - `webview.set_url`은 에이전트도 호출할 수 있다. 에이전트가 작성한 페이지의 클릭은 사용자 요청으로 인정할 근거가 아니다. 페이지 작성자가 바뀐 뒤 늦게 도착한 탐색 이벤트의 구분은 아직 완전히 검증되지 않았다.
 - 근거가 없는 plugin 중계 요청은 `PluginUnverified`다. macOS 엔진은 같은 제스처 정보를 제공하지 않아 plugin webview 링크가 항상 여기에 해당한다. 결과 탭 선택은 에이전트 요청처럼 유지하고, 매칭 핸들러가 없을 때의 picker는 사용자 클릭일 수 있어 연다. 외부 IPC 요청(`Agent`)은 picker를 열지 않는다.
 

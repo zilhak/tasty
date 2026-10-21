@@ -58,11 +58,14 @@ pub(crate) fn remote_parent(path: &str) -> Option<String> {
 }
 
 /// `file_picker.trigger` 파라미터. 팝업 밖에서 열므로 `owner_popup_instance` 는 없다.
-pub(crate) fn trigger_params(sid: u32, start_dir: Option<String>) -> Value {
+/// 버튼 클릭이 낸 navigation URL 을 돌려주면 host 가 사용자 조작을 확인하고 피커를 사용자 요청으로
+/// 연다. 확인하지 못하면 포커스 없는 피커가 되고 키를 받는 이 페이지가 피커를 덮는다.
+pub(crate) fn trigger_params(sid: u32, start_dir: Option<String>, nav_url: &str) -> Value {
     json!({
         "filters": FILTERS,
         "start_dir": start_dir,
         "origin_surface_id": sid,
+        "user_navigation_url": nav_url,
     })
 }
 

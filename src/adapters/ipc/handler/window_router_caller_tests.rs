@@ -190,6 +190,7 @@ fn a_plugin_only_window_arm_refuses_cli_and_agent_without_touching_the_window() 
             let mut engine = engine_session.borrow_mut();
             let active_before = state.active_workspace_index(&engine);
             let resp = super::route_window_handler(
+                &Default::default(),
                 &mut state,
                 &mut engine,
                 &caller,

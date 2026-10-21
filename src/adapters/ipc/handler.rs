@@ -217,7 +217,14 @@ fn dispatch_routed(
     }
 
     #[cfg(feature = "gui")]
-    if let Some(resp) = route_window_handler(state, engine, checked.caller(), request, id.clone()) {
+    if let Some(resp) = route_window_handler(
+        &core.navigation_proofs,
+        state,
+        engine,
+        checked.caller(),
+        request,
+        id.clone(),
+    ) {
         return resp;
     }
 
@@ -1085,6 +1092,7 @@ fn route_engine_handler(
 /// match 밖의 분기는 검사에서 빠질 수 있으므로 새 진입점의 호출자 제한도 직접 확인한다.
 #[cfg(feature = "gui")]
 fn route_window_handler(
+    navigation_proofs: &crate::app::html_runtime::NavigationProofs,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     caller: &CallerContext,
@@ -1092,9 +1100,14 @@ fn route_window_handler(
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
     Some(match request.method.as_str() {
-        "file_picker.trigger" => {
-            file_picker::handle_trigger(state, engine, caller, id, &request.params)
-        }
+        "file_picker.trigger" => file_picker::handle_trigger_with_proofs(
+            state,
+            engine,
+            caller,
+            id,
+            &request.params,
+            Some(navigation_proofs),
+        ),
         _ => return None,
     })
 }

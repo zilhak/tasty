@@ -218,7 +218,7 @@ markdown의 Browse와 주소창 폴더 버튼, 이미지 다른 이름으로 저
 사용자 응답까지 `host.call`을 잡아 두면 plugin의 렌더·입력 루프가 멈추고 60초
 `HostCallTimeout`이 생길 수 있으므로 요청을 즉시 접수하고 결과는 나중에 이벤트로 보낸다.
 
-1. plugin 이 `file_picker.trigger { filters?: string[] }` 를 호출한다(`FsRead` 권한,
+1. plugin 이 `file_picker.trigger { filters?: string[], user_navigation_url?: string }` 를 호출한다(`FsRead` 권한,
    `gui` feature 전용). CLI·agent 호출자는 popup 을 열지 않고 `-32016` 을 받는다 — 결과를 받을
    곳이 없고 popup 이 사용자 입력 포커스를 가져가기 때문이다([파일 핸들러 (File handler)](../file-handler/index.md)). host 는 popup 확정을 **기다리지 않고** `{ request_id }` 만 즉시
    회신한다(`src/adapters/ipc/handler/file_picker.rs::handle_trigger`).
@@ -456,6 +456,9 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - Given `filters: ["md"]` 로 트리거됨 Then 렌더된 엔트리 목록에서 `.md` 가 아닌 파일은
   제외되고(디렉토리는 필터와 무관하게 항상 표시), 확정/취소 시 `"file_picker.result"` 가
   그 요청을 낸 plugin 에만(unicast) push 된다.
+- Given plugin 이 자기 페이지에서 사용자가 누른 navigation URL 을 `user_navigation_url` 과 `origin_surface_id` 로 실음
+  When host 가 그 surface 의 사용자 navigation 기록으로 확인함 Then 피커는 사용자 요청으로 열려 키보드 포커스를 받고
+  WebView 를 숨긴다. 기록이 없거나 한 번 쓴 기록이면 포커스 없는 passive 피커가 된다(`file_handler.dispatch` 의 같은 필드와 같은 규칙).
 - Given plugin 이 연 피커에서 사용자가 경로를 확정함 When 그 plugin 이 같은 경로와 `picker_request_id` 로
   `markdown.navigate` 를 보냄 Then host 는 사용자 요청으로 판정한다(원격 실패는 toast). 같은 증명을 다시
   쓰거나 외부 호출자가 같은 번호를 실으면 에이전트 요청으로 남는다. 취소는 증명을 남기지 않는다.

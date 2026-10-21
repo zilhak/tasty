@@ -944,6 +944,8 @@ pub(crate) enum FilePickerOpenedBy {
     ContextMenu,
     /// `file_picker.trigger`를 보낸 플러그인.
     Plugin(crate::state::FilePickerRequester),
+    /// 플러그인 페이지에서 사용자가 누른 navigation을 host가 확인한 `file_picker.trigger`.
+    PluginForUser(crate::state::FilePickerRequester),
 }
 
 /// 기존 요청은 결과를 호출자가 가져갈 때까지 새 요청으로 대체하지 않는다.
@@ -980,7 +982,9 @@ pub(crate) fn open(
     };
     let initial_dir = initial_dir(mirror_ws_id.is_some(), dir);
     let requester = match &opened_by {
-        FilePickerOpenedBy::Plugin(req) => Some(req.clone()),
+        FilePickerOpenedBy::Plugin(req) | FilePickerOpenedBy::PluginForUser(req) => {
+            Some(req.clone())
+        }
         FilePickerOpenedBy::ToolsMenu | FilePickerOpenedBy::ContextMenu => None,
     };
 
@@ -1007,6 +1011,7 @@ pub(crate) fn open(
     };
     let dispatched = match opened_by {
         FilePickerOpenedBy::Plugin(req) => open_popup.from_agent_plugin(req.plugin_id),
+        FilePickerOpenedBy::PluginForUser(_) => open_popup.from_user_menu("plugin_page"),
         FilePickerOpenedBy::ContextMenu => open_popup.from_user_context_menu(),
         FilePickerOpenedBy::ToolsMenu => open_popup.from_user_menu("tools_menu"),
     };

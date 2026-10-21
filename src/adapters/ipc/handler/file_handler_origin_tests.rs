@@ -617,3 +617,64 @@ fn a_mirror_origin_dispatch_echoes_the_requested_depth() {
         assert_eq!(result["depth"], expected, "mirror={mirror}");
     }
 }
+
+/// 플러그인 페이지의 사용자 navigation 으로 연 피커는 사용자 요청이라 포커스를 받고 WebView 를 숨긴다.
+/// 확인하지 못한 요청과 한 번 쓴 증명은 passive 피커가 된다(docs/design/systems/popup.md#passive-팝업).
+#[test]
+fn a_picker_opened_from_a_user_navigation_on_the_plugin_page_is_a_user_popup() {
+    let opened_by_user = |navigated: Option<Attempt>, reuse: bool| -> bool {
+        let (mut state, mut engine_session) = source_fixture();
+        let mut engine = engine_session.borrow_mut();
+        let view = Arc::new(());
+        state.webview_identity = Arc::downgrade(&view);
+        let proofs = crate::app::html_runtime::NavigationProofs::default();
+        let sid = engine.workspace_at(0).unwrap().all_surface_ids()[0];
+        install_source(&mut engine, sid);
+        if let Some(attempt) = navigated {
+            attempt.record(&proofs, &state, &engine, sid);
+        }
+        let caller = CallerContext::Plugin {
+            plugin_id: PLUGIN.into(),
+            permissions: Arc::new(HashSet::new()),
+        };
+        let params = json!({ "origin_surface_id": sid, "user_navigation_url": NAV_URL });
+        if reuse {
+            assert!(proofs.take(
+                &state.webview_identity,
+                &engine.as_ref(),
+                PLUGIN,
+                sid,
+                NAV_URL
+            ));
+        }
+        let resp = crate::adapters::ipc::handler::file_picker::handle_trigger_with_proofs(
+            &mut state,
+            &mut engine,
+            &caller,
+            json!(1),
+            &params,
+            Some(&proofs),
+        );
+        assert!(resp.error.is_none(), "picker must open: {resp:?}");
+        let opens: Vec<bool> = state
+            .take_pending_intents()
+            .into_iter()
+            .filter(|i| {
+                matches!(
+                    i.body,
+                    Intent::Ui(crate::intent::UiIntent::OpenPopup { .. })
+                )
+            })
+            .map(|i| i.origin.is_user())
+            .collect();
+        assert_eq!(opens.len(), 1);
+        opens[0]
+    };
+    assert!(opened_by_user(Some(gesture(true)), false));
+    assert!(!opened_by_user(Some(gesture(true)), true), "한 번 쓴 증명");
+    assert!(
+        !opened_by_user(Some(gesture(false)), false),
+        "엔진이 사용자 조작으로 보지 않은 시도"
+    );
+    assert!(!opened_by_user(None, false));
+}
