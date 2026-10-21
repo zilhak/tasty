@@ -321,16 +321,21 @@ enum SetupOs {
     Mac,
 }
 
-/// 디자인 `ShellSetupFrame`의 판정별 입력값.
+/// 디자인 `ShellSetupFrame`의 판정별 입력값. Windows는 이름 조건(`NotShell`), macOS·Linux는 실행 가능 여부
+/// (`Directory`·`NotExecutable`)로 막는다. macOS는 fish처럼 bash·zsh가 아닌 셸도 쓸 수 있다.
 fn setup_value(os: SetupOs, check: ShellSetupCheck) -> &'static str {
     match (os, check) {
         (_, ShellSetupCheck::Empty) => "",
         (SetupOs::Win, ShellSetupCheck::Missing) => "C:/Program Files/Git/bin/bash.exe",
         (SetupOs::Mac, ShellSetupCheck::Missing) => "/usr/local/bin/zsh",
         (SetupOs::Win, ShellSetupCheck::NotShell) => "C:/Windows/System32/cmd.exe",
-        (SetupOs::Mac, ShellSetupCheck::NotShell) => "/usr/bin/fish",
+        (SetupOs::Mac, ShellSetupCheck::Directory) => "/opt/homebrew/bin",
+        (SetupOs::Mac, ShellSetupCheck::NotExecutable) => "/Users/me/bin/fish",
         (SetupOs::Win, ShellSetupCheck::Valid) => "D:/Tools/Git/bin/bash.exe",
-        (SetupOs::Mac, ShellSetupCheck::Valid) => "/bin/zsh",
+        (SetupOs::Mac, ShellSetupCheck::Valid) => "/opt/homebrew/bin/fish",
+        // 그 OS에서 나오지 않는 판정이다. 예제 목록에 넣지 않는다.
+        (SetupOs::Mac, ShellSetupCheck::NotShell)
+        | (SetupOs::Win, ShellSetupCheck::Directory | ShellSetupCheck::NotExecutable) => "",
     }
 }
 
@@ -362,6 +367,8 @@ fn draw_shell_setup_frame(
         },
         missing: crate::i18n::t("boot.shell_setup.check_missing"),
         not_shell: crate::i18n::t("boot.shell_setup.check_not_shell"),
+        directory: crate::i18n::t("boot.shell_setup.check_directory"),
+        not_executable: crate::i18n::t("boot.shell_setup.check_not_executable"),
         valid: "Shell found",
         quit: "Quit",
         confirm: "Use this shell",
@@ -377,7 +384,7 @@ fn draw_shell_setup_frame(
     let _output = shell_setup_screen(&mut frame, theme, &view, &mut path);
 }
 
-/// 디자인 Stage의 8장: Windows 4판정, macOS 2판정, Latte 2장.
+/// Windows 4판정, macOS 3판정(디렉터리 · 실행 권한 없음 · fish 확정), Latte 2장.
 pub fn draw_shell_setup(ui: &mut egui::Ui, theme: &Theme) {
     let latte = crate::host_shell::latte_theme();
     let frames = [
@@ -385,7 +392,8 @@ pub fn draw_shell_setup(ui: &mut egui::Ui, theme: &Theme) {
         (theme, SetupOs::Win, ShellSetupCheck::Missing),
         (theme, SetupOs::Win, ShellSetupCheck::NotShell),
         (theme, SetupOs::Win, ShellSetupCheck::Valid),
-        (theme, SetupOs::Mac, ShellSetupCheck::NotShell),
+        (theme, SetupOs::Mac, ShellSetupCheck::Directory),
+        (theme, SetupOs::Mac, ShellSetupCheck::NotExecutable),
         (theme, SetupOs::Mac, ShellSetupCheck::Valid),
         (&latte, SetupOs::Win, ShellSetupCheck::Missing),
         (&latte, SetupOs::Mac, ShellSetupCheck::Valid),
@@ -409,7 +417,7 @@ pub fn draw_shell_setup(ui: &mut egui::Ui, theme: &Theme) {
             ("title", "14 / 600 · text-primary"),
             (
                 "validation (2026-10-06)",
-                "empty → blank line, height reserved · No file at this path · Not a bash or zsh executable (danger) · Shell found (success)",
+                "empty → blank line, height reserved · No file at this path · Windows: Not a bash or zsh executable · macOS/Linux: folder · no permission to run (danger, any shell name such as fish is fine) · Shell found (success)",
             ),
             (
                 "Git Bash notice",

@@ -1,3 +1,4 @@
+use crate::shell_path::ShellPathStatus;
 use serde::{Deserialize, Serialize};
 
 /// 휠 한 칸의 기본 스크롤 거리(논리 px). 호스트와 플러그인이 같은 값을 사용한다.
@@ -335,12 +336,19 @@ impl GeneralSettings {
         matches_blacklist(&self.mouse_capture_banner_blacklist, fg_name)
     }
 
-    /// 새 터미널에 실행할 셸. 설정값을 쓸 수 없으면 탐지한 셸로 대신하며 설정값은 바꾸지 않는다.
+    /// 새 터미널에 실행할 셸. 값이 비었거나 경로가 없거나(Windows는 bash·zsh 이름이 아니거나) 하면
+    /// 탐지한 셸로 대신하며 설정값은 바꾸지 않는다. 경로가 디렉터리이거나 실행 권한이 없으면 대신하지
+    /// 않고 설정값을 그대로 돌려줘 실행이 원인과 함께 실패하게 한다([`ShellPathStatus::falls_back`]).
     pub fn runtime_shell(&self) -> String {
-        if self.is_shell_valid() {
+        if !self.shell_path_status().falls_back() {
             return self.shell.clone();
         }
         Self::detect_bash().unwrap_or_else(|| self.shell.clone())
+    }
+
+    /// 설정한 셸 경로의 판정. [`ShellPathStatus`]의 OS별 기준을 따른다.
+    pub fn shell_path_status(&self) -> ShellPathStatus {
+        ShellPathStatus::of(&self.shell)
     }
 
     /// 사용할 셸 경로를 찾고 없으면 빈 문자열을 반환한다.
@@ -410,29 +418,9 @@ impl GeneralSettings {
         None
     }
 
-    /// 경로가 존재하는지 확인한다. Windows에서는 파일명에 bash 또는 zsh가 포함돼야 한다.
-    /// 실행 가능 여부나 실제 셸 호환성까지 검사하지는 않는다.
+    /// 설정한 셸을 그대로 쓸 수 있는지([`ShellPathStatus::Usable`]). 실제 셸 호환성까지 검사하지는 않는다.
     pub fn is_shell_valid(&self) -> bool {
-        if self.shell.is_empty() {
-            return false;
-        }
-        let path = std::path::Path::new(&self.shell);
-        if !path.exists() {
-            return false;
-        }
-        #[cfg(windows)]
-        {
-            let filename = path
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            filename.contains("bash") || filename.contains("zsh")
-        }
-        #[cfg(not(windows))]
-        {
-            true
-        }
+        self.shell_path_status() == ShellPathStatus::Usable
     }
 
     /// `shell` 을 실행할 때의 bash 통합 --rcfile 인자. [`Self::runtime_shell`] 의 결과를 넘긴다.
@@ -1054,6 +1042,17 @@ mod tests {
         if let Some(valid) = GeneralSettings::detect_bash() {
             assert_eq!(settings_with_shell(&valid).runtime_shell(), valid);
         }
+    }
+
+    /// 실행할 수 없는 경로(디렉터리)는 다른 셸로 대신하지 않고 설정값으로 실행해 원인과 함께 실패한다.
+    #[cfg(not(windows))]
+    #[test]
+    fn runtime_shell_keeps_a_directory_so_the_spawn_reports_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let configured = dir.path().to_string_lossy().into_owned();
+        let s = settings_with_shell(&configured);
+        assert!(!s.is_shell_valid());
+        assert_eq!(s.runtime_shell(), configured);
     }
 
     // 대부분의 시험은 홈을 직접 주입해 환경변수를 바꾸지 않는다.

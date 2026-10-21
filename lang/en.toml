@@ -64,6 +64,8 @@ subtitle = "New terminals start this shell. You can change it later in Settings.
 git_bash_missing = "Git Bash was not found. Install Git for Windows, or enter the path to bash.exe."
 check_missing = "No file at this path"
 check_not_shell = "Not a bash or zsh executable"
+check_directory = "This path is a folder, not a program"
+check_not_executable = "This file has no permission to run"
 check_valid = "Shell found"
 
 [window_error.new_window]
@@ -389,6 +391,8 @@ heading = "Terminal"
 shell_label = "Shell:"
 shell_not_found_windows = "⚠ Git Bash not found. Please install Git for Windows or set the path to bash manually."
 shell_not_found_unix = "⚠ No shell found at the configured path. Until you set the path to an existing shell, new terminals open with another shell Tasty finds."
+shell_is_directory = "⚠ The configured shell path is a folder. New terminals cannot start until you set the path to a shell program."
+shell_not_executable = "⚠ The configured shell file has no permission to run. New terminals cannot start until you make it executable (chmod +x) or choose another shell."
 shell_confirm = "Use this shell"
 shell_mode_label = "Shell mode:"
 shell_mode_default = "Default (full rc)"

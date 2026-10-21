@@ -215,6 +215,14 @@ impl Pty {
             Some(s) if !s.is_empty() => s.to_string(),
             _ => default_shell(),
         };
+        // 디렉터리는 portable-pty의 실행 파일 확인(access X_OK)을 통과해 fork 뒤 exec에서 조용히 실패한다.
+        // 그 전에 원인과 함께 거절한다.
+        #[cfg(unix)]
+        if std::path::Path::new(&shell).is_dir() {
+            return Err(SpawnError::before_child(anyhow::anyhow!(
+                "Unable to spawn {shell} because it is a directory, not an executable"
+            )));
+        }
         let cmd = build_shell_command(
             &shell,
             config.args,
@@ -941,12 +949,29 @@ mod tests {
         assert!(error.to_string().contains("tasty-test-shell"), "{error}");
     }
 
-    /// A directory passes the executable check, so exec fails after fork. portable-pty's pre_exec
-    /// closes every descriptor above stderr, including the pipe std uses to report an exec
-    /// error, so the spawn succeeds and the child exits on its own.
+    /// A directory would pass the executable check and fail exec silently after fork, so it is
+    /// refused before any child with the cause in the message.
+    #[test]
+    fn a_directory_shell_fails_before_any_child_with_the_cause() {
+        let error = spawn_shell("/").err().expect("a directory cannot start");
+        assert_eq!(error.stage(), crate::SpawnStage::BeforeChild);
+        assert!(error.to_string().contains("is a directory"), "{error}");
+    }
+
+    /// An exec failure after fork is not reported: portable-pty's pre_exec closes every descriptor
+    /// above stderr, including the pipe std uses to report an exec error, so the spawn succeeds and
+    /// the child exits on its own. An executable script whose interpreter does not exist fails
+    /// exactly there.
     #[test]
     fn an_exec_failure_after_fork_is_a_started_child_that_exits() {
-        let (mut pty, _reader, _sink) = spawn_shell("/").expect("the exec error is not reported");
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let script = dir.path().join("broken-shell");
+        std::fs::write(&script, "#!/nonexistent/tasty-interpreter\n").expect("write script");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod script");
+        let spawned = spawn_shell(&script.to_string_lossy());
+        let (mut pty, _reader, _sink) = spawned.expect("the exec error is not reported");
         wait_until("child that failed exec exits", || !pty.check_alive());
         let exit = pty.state.exit().expect("observed exit");
         assert!(!exit.success, "{exit:?}");

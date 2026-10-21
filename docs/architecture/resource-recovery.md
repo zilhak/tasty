@@ -108,14 +108,16 @@ operation·stream·attempt·generation·단계·원인을 경고 로그로 한 �
 child를 남기지 않으므로 알려진 준비 실패로 응답하고 불명 기록을 남기지 않는다. 같은 키의 재요청은
 기록된 실패를 돌려주고, 설정을 고친 뒤 새 키로 요청하면 다시 실행한다. 설정한 셸 경로에 파일이 없으면 실행 시 탐지한 셸로
 대신하므로(`GeneralSettings::runtime_shell`) spawn 오류가 되지 않는다. 대신할 셸도 없을 때만 실행 파일 확인에서
-실패한다. child가 생긴 뒤 입출력 준비·
+실패한다. macOS·Linux 에서 설정 셸이 디렉터리이거나 실행 권한 없는 파일이면 대신하지 않고 아래 확인에서
+원인과 함께 실패한다. child가 생긴 뒤 입출력 준비·
 reader/writer worker 시작·capture 주입이 실패하면 불명이다.
 
-- Unix: `openpty`와 실행 파일 검색(`access(X_OK)`)은 fork 전에 실패한다. fork 뒤 pre_exec의
-  `setsid`·`TIOCSCTTY` 실패는 std `Command::spawn`이 오류 파이프로 받아 그 child를 회수한 뒤 돌려준다.
-  exec 실패는 오류로 돌아오지 않는다. portable-pty의 pre_exec가 stderr 위 descriptor를 모두 닫아 std의
-  오류 파이프도 닫히기 때문이다. 이 경우 생성은 성공하고 child가 곧바로 종료된다(디렉터리를 셸로
-  지정한 경우 등).
+- Unix: `openpty`와 실행 파일 검색(`access(X_OK)`)은 fork 전에 실패한다. 디렉터리는 `access(X_OK)`를
+  통과하므로 `tasty-terminal`이 그 전에 디렉터리인지 확인해 "is a directory" 원인과 함께 거절한다. fork 뒤
+  pre_exec의 `setsid`·`TIOCSCTTY` 실패는 std `Command::spawn`이 오류 파이프로 받아 그 child를 회수한 뒤
+  돌려준다. exec 실패는 오류로 돌아오지 않는다. portable-pty의 pre_exec가 stderr 위 descriptor를 모두
+  닫아 std의 오류 파이프도 닫히기 때문이다. 이 경우 생성은 성공하고 child가 곧바로 종료된다(실행 비트가
+  있지만 해석기가 없는 스크립트 등).
 - Windows: `CreatePseudoConsole`과 `CreateProcessW` 전 준비가 실패하거나 `CreateProcessW`가 실패하면
   프로세스가 만들어지지 않는다.
 

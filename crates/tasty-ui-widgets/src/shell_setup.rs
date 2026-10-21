@@ -25,8 +25,12 @@ pub enum ShellSetupCheck {
     Empty,
     /// 경로에 파일이 없다.
     Missing,
-    /// 파일은 있지만 이름에 bash·zsh가 없다.
+    /// Windows 전용. 파일은 있지만 이름에 bash·zsh가 없다.
     NotShell,
+    /// macOS·Linux 전용. 경로가 디렉터리다.
+    Directory,
+    /// macOS·Linux 전용. 파일에 실행 권한이 없다.
+    NotExecutable,
     /// 쓸 수 있는 셸이다.
     Valid,
 }
@@ -40,6 +44,8 @@ pub struct ShellSetupView<'a> {
     pub placeholder: &'a str,
     pub missing: &'a str,
     pub not_shell: &'a str,
+    pub directory: &'a str,
+    pub not_executable: &'a str,
     pub valid: &'a str,
     pub quit: &'a str,
     pub confirm: &'a str,
@@ -213,6 +219,16 @@ fn check_line(ui: &mut egui::Ui, theme: &Theme, view: &ShellSetupView<'_>) {
             tasty_icons::ALERT_CIRCLE,
             theme.accent_danger(),
             view.not_shell,
+        )),
+        ShellSetupCheck::Directory => Some((
+            tasty_icons::ALERT_CIRCLE,
+            theme.accent_danger(),
+            view.directory,
+        )),
+        ShellSetupCheck::NotExecutable => Some((
+            tasty_icons::ALERT_CIRCLE,
+            theme.accent_danger(),
+            view.not_executable,
         )),
         ShellSetupCheck::Valid => Some((tasty_icons::CHECK, theme.accent_success(), view.valid)),
     };

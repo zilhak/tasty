@@ -117,7 +117,7 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   [shutdown-sequence "종료 화면"](shutdown-sequence.md) · [종료 시퀀스 — 종료 cascade + Drop tail](shutdown-sequence.md).
 - 갤러리 specimen: `crates/tasty-gallery/src/catalog/chrome_loading.rs`
   (Chrome 카테고리) — 부팅 5종(기본/최소창/phase 문구 3종/문구 없음/Latte) +
-  종료 2종(기본/phase 문구 4종) + 첫 실행 셸 설정 화면 8장(Windows 판정 4종, macOS 2종, Latte 2장)
+  종료 2종(기본/phase 문구 4종) + 첫 실행 셸 설정 화면 9장(Windows 판정 4종, macOS 3종 — 디렉터리·실행 권한 없음·fish 확정, Latte 2장)
   + 부팅 오류 화면 4장(엔진 오류, 데이터 폴더 사용 중, 웹훅 포트, Latte 데이터 폴더 사용 중).
   웹훅 포트 장은 디자인 시안 순서를 지키는 긴 CLI 안내 문구 예시이며, 본체는 이 경우 화면을 띄우지 않는다.
 - **첫 실행 셸 설정 화면** — `render_shell_setup` 은 공용 view
@@ -127,9 +127,13 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   경고색 caption, `alertTriangle`), mono 경로 `Input`, 검증 줄, 오른쪽 정렬 버튼 줄이며
   간격은 `spacing_sm` 이고 버튼 줄 위에 `spacing_sm` 을 한 번 더 둔다.
   - 검증 줄은 호스트 판정마다 한 문구다. 빈 경로는 문구 없이 caption 한 줄 높이만 잡고,
-    파일이 없으면 "No file at this path", 파일은 있지만 이름에 bash·zsh가 없으면
-    "Not a bash or zsh executable"(둘 다 `alertCircle`·accent-danger), 쓸 수 있으면
-    "Shell found"(`check`·accent-success)다. 판정은 모든 OS에서 같다.
+    파일이 없으면 "No file at this path", Windows 에서 파일은 있지만 이름에 bash·zsh가 없으면
+    "Not a bash or zsh executable", macOS·Linux 에서 디렉터리면 "This path is a folder, not a
+    program", 실행 권한이 없으면 "This file has no permission to run"(모두 `alertCircle`·accent-danger),
+    쓸 수 있으면 "Shell found"(`check`·accent-success)다. 판정은 설정의 `ShellPathStatus` 를 그대로
+    옮긴다. macOS·Linux 는 이름을 보지 않으므로 fish 같은 셸도 확정할 수 있다.
+  - 이 화면은 설정 셸을 쓸 수 없고 대체할 셸도 없을 때, 그리고 macOS·Linux 에서 설정 셸이
+    디렉터리이거나 실행 권한 없는 파일일 때(대체하지 않는 판정) 열린다([터미널 surface "실행할 셸"](../surfaces/terminal/index.md)).
   - 버튼은 공용 `Button` Secondary "Quit"(앱 종료)과 Primary "Use this shell"(md)이다.
     판정이 유효할 때만 확인이 활성이며 Enter 확인도 같은 조건을 따른다. disabled 모양은
     공용 규칙(중립 상자와 disabled ink)을 따른다.

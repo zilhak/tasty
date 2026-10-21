@@ -1,28 +1,21 @@
 use winit::window::Window;
 
 use crate::i18n::t;
+use tasty_settings::ShellPathStatus;
 use tasty_ui_widgets::{ShellSetupCheck, ShellSetupView, shell_setup_screen};
 
 use super::{GpuState, ShellSetupAction};
 
-/// 경로를 판정한다. 파일이 있고 이름에 bash 또는 zsh가 들어 있어야 쓸 수 있는 셸이다.
+/// 경로를 판정한다. 설정의 셸 판정([`ShellPathStatus`])과 같은 기준이라 런타임·부팅 판정·설정 창 경고와
+/// 결론이 같다. 쓸 수 있는 셸만 확정할 수 있다.
 fn shell_check(path: &str) -> ShellSetupCheck {
-    if path.is_empty() {
-        return ShellSetupCheck::Empty;
-    }
-    let path_obj = std::path::Path::new(path);
-    if !path_obj.exists() {
-        return ShellSetupCheck::Missing;
-    }
-    let file_name = path_obj
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if file_name.contains("bash") || file_name.contains("zsh") {
-        ShellSetupCheck::Valid
-    } else {
-        ShellSetupCheck::NotShell
+    match ShellPathStatus::of(path) {
+        ShellPathStatus::Empty => ShellSetupCheck::Empty,
+        ShellPathStatus::Missing => ShellSetupCheck::Missing,
+        ShellPathStatus::NotShell => ShellSetupCheck::NotShell,
+        ShellPathStatus::Directory => ShellSetupCheck::Directory,
+        ShellPathStatus::NotExecutable => ShellSetupCheck::NotExecutable,
+        ShellPathStatus::Usable => ShellSetupCheck::Valid,
     }
 }
 
@@ -48,6 +41,8 @@ impl GpuState {
         let git_bash_notice = cfg!(windows).then(|| t("boot.shell_setup.git_bash_missing"));
         let missing = t("boot.shell_setup.check_missing");
         let not_shell = t("boot.shell_setup.check_not_shell");
+        let directory = t("boot.shell_setup.check_directory");
+        let not_executable = t("boot.shell_setup.check_not_executable");
         let valid = t("boot.shell_setup.check_valid");
         let quit = t("button.quit");
         let confirm = t("settings.terminal.shell_confirm");
@@ -66,6 +61,8 @@ impl GpuState {
                 placeholder,
                 missing,
                 not_shell,
+                directory,
+                not_executable,
                 valid,
                 quit,
                 confirm,
@@ -151,5 +148,33 @@ impl GpuState {
         }
 
         Ok(action)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 첫 실행 화면은 설정 판정과 같은 결론을 낸다. macOS·Linux는 bash·zsh가 아닌 셸도 확정할 수 있다.
+    #[cfg(not(windows))]
+    #[test]
+    fn the_setup_check_follows_the_settings_judgement() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let fish = dir.path().join("fish");
+        std::fs::write(&fish, "#!/bin/sh\n").expect("write fixture");
+        std::fs::set_permissions(&fish, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let plain = dir.path().join("bash");
+        std::fs::write(&plain, "").expect("write fixture");
+        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+        let s = |p: &std::path::Path| p.to_string_lossy().into_owned();
+        assert_eq!(shell_check(""), ShellSetupCheck::Empty);
+        assert_eq!(
+            shell_check("/nonexistent/tasty-setup/zsh"),
+            ShellSetupCheck::Missing
+        );
+        assert_eq!(shell_check(&s(&fish)), ShellSetupCheck::Valid);
+        assert_eq!(shell_check(&s(dir.path())), ShellSetupCheck::Directory);
+        assert_eq!(shell_check(&s(&plain)), ShellSetupCheck::NotExecutable);
     }
 }

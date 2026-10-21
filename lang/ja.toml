@@ -64,6 +64,8 @@ subtitle = "新しいターミナルはこのシェルで起動します。あ�
 git_bash_missing = "Git Bashが見つかりません。Git for Windowsをインストールするか、bash.exeのパスを入力してください。"
 check_missing = "このパスにファイルがありません"
 check_not_shell = "bashまたはzshの実行ファイルではありません"
+check_directory = "このパスはフォルダーで、実行ファイルではありません"
+check_not_executable = "このファイルには実行権限がありません"
 check_valid = "シェルが見つかりました"
 
 [window_error.new_window]
@@ -388,6 +390,8 @@ heading = "ターミナル"
 shell_label = "シェル:"
 shell_not_found_windows = "⚠ Git Bashが見つかりません。Git for Windowsをインストールするか、bashのパスを手動で設定してください。"
 shell_not_found_unix = "⚠ 設定したパスにシェルが見つかりません。存在するシェルのパスを設定するまで、新しいターミナルはTastyが見つけた別のシェルで開きます。"
+shell_is_directory = "⚠ 設定したシェルのパスはフォルダーです。シェルの実行ファイルのパスに直すまで、新しいターミナルを開けません。"
+shell_not_executable = "⚠ 設定したシェルのファイルに実行権限がありません。実行権限を付ける(chmod +x)か別のシェルを選ぶまで、新しいターミナルを開けません。"
 shell_confirm = "このシェルを使用"
 shell_mode_label = "シェルモード:"
 shell_mode_default = "デフォルト (フルrc)"

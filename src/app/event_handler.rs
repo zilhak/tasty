@@ -2197,6 +2197,8 @@ impl App {
 }
 
 /// 사용자가 정한 셸은 경로가 없어도 저장하지 않는다. 대체 셸은 실행할 때 `ShellConfig` 가 고른다.
+/// 디렉터리·실행 권한 없는 파일은 대체하지 않으므로(`ShellPathStatus::falls_back`) 첫 실행 셸 설정 화면에서
+/// 원인을 보여 준다.
 fn boot_shell_usable(settings: &crate::settings::Settings) -> bool {
     let general = &settings.general;
     if general.is_shell_valid() {
@@ -2239,6 +2241,21 @@ mod tests {
         assert_eq!(settings.general.shell, configured);
         let shell = crate::core::state::ShellConfig::from_settings(&settings);
         assert_eq!(shell.shell, detected);
+    }
+
+    /// 실행할 수 없는 경로(디렉터리)는 대체 셸로 넘기지 않는다. 부팅은 원인을 보여 주는 첫 실행 셸 설정
+    /// 화면으로 가고 설정값은 그대로다.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_shell_opens_the_setup_screen_instead_of_a_fallback() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let configured = dir.path().to_string_lossy().into_owned();
+        let mut settings = crate::settings::Settings::default();
+        settings.general.shell = configured.clone();
+        assert!(!super::boot_shell_usable(&settings));
+        assert_eq!(settings.general.shell, configured);
+        let shell = crate::core::state::ShellConfig::from_settings(&settings);
+        assert_eq!(shell.shell, configured);
     }
 
     #[test]

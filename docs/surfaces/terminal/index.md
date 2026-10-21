@@ -16,10 +16,19 @@
 
 ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`).
 
-**실행할 셸**: `general.shell` 을 쓸 수 없으면(빈 값, 경로 없음, Windows 에서 파일명에 bash·zsh 없음) 새 터미널을 만들 때마다 탐지한 셸(`GeneralSettings::detect_bash`)로 대신 실행한다. 이 대체는 실행 시점에만 적용하며 설정값과 `config.toml` 은 바꾸지 않는다. 모든 셸 실행 경로가 `ShellConfig::from_settings` 에서 `GeneralSettings::runtime_shell` 을 읽는다. GUI 부팅은 대체 셸이 있으면 `warn` 로그(설정값·대체 셸)를 남기고 그대로 부팅하며, 대체 셸도 없을 때만 [첫 실행 셸 설정 화면](../../architecture/boot-sequence.md)을 연다. 설정 창 터미널 탭의 셸 입력란도 쓸 수 없는 값을 그대로 보여 주고 경고 줄을 표시한다. 저장은 사용자가 셸 설정 화면이나 설정 창에서 확정할 때만 일어난다.
+**실행할 셸**: 설정 셸의 판정은 `tasty_settings::ShellPathStatus` 하나다. 런타임 대체(`GeneralSettings::runtime_shell`), 부팅 판정, 설정 창 터미널 탭 경고, 첫 실행 셸 설정 화면이 모두 이 판정을 쓰므로 같은 경로에 같은 결론을 낸다.
+
+- macOS·Linux 는 셸 이름을 보지 않는다. 실행할 수 있는 파일이면 fish·dash 처럼 bash·zsh 가 아닌 셸도 쓴다. 실행 가능 여부는 portable-pty 가 실행 전에 쓰는 것과 같은 `access(X_OK)` 로 본다.
+- Windows 는 파일이 있고 파일명에 bash·zsh 가 있어야 쓴다(실행 비트가 없다).
+- 값이 비었거나 경로에 아무것도 없거나 Windows 에서 이름 조건을 못 맞추면, 새 터미널을 만들 때마다 탐지한 셸(`GeneralSettings::detect_bash`)로 대신 실행한다. 빈 값은 자동 탐지에 맡긴다는 뜻이고, 없는 경로는 설치를 지웠거나 옮긴 경우라 기존처럼 대신한다. 이 대체는 실행 시점에만 적용하며 설정값과 `config.toml` 은 바꾸지 않는다. 설정 창은 경고 색 줄로 대체 중임을 알린다.
+- macOS·Linux 에서 경로가 디렉터리이거나 실행 권한 없는 파일이면 대신하지 않는다. 사용자가 고른 경로가 왜 실패하는지 보여 주고 고치게 하려는 것이다. 설정 창은 원인별 오류 색 줄을 보이고, 새 터미널은 원인을 담은 생성 실패가 된다. 실행 권한이 없으면 portable-pty 의 실행 파일 확인이, 디렉터리이면 `tasty-terminal` 의 spawn 전 확인이 child 를 만들기 전에 거절한다([자원 회수](../../architecture/resource-recovery.md)).
+
+모든 셸 실행 경로가 `ShellConfig::from_settings` 에서 `GeneralSettings::runtime_shell` 을 읽는다. GUI 부팅은 설정 셸을 쓸 수 있으면 그대로, 대체 셸로 열 수 있으면 `warn` 로그(설정값·대체 셸)를 남기고 부팅한다. 대체할 셸이 없거나 대체하지 않는 판정(디렉터리·실행 권한 없음)이면 [첫 실행 셸 설정 화면](../../architecture/boot-sequence.md)을 열어 판정 줄로 원인을 보인다. 설정 창 터미널 탭의 셸 입력란은 쓸 수 없는 값을 그대로 보여 준다. 저장은 사용자가 셸 설정 화면이나 설정 창에서 확정할 때만 일어난다.
 
 - Given `general.shell` 이 존재하지 않는 경로이고 탐지한 셸이 있다 When GUI 를 시작한다 Then 설정 화면 없이 부팅하고 새 터미널은 탐지한 셸로 실행되며 `config.toml` 의 값은 그대로다.
 - Given 같은 상태 When 설정 창을 열고 다른 항목만 바꿔 저장한다 Then 셸 값은 사용자가 적은 경로로 남는다.
+- Given macOS·Linux 에서 `general.shell` 이 실행할 수 있는 fish(또는 dash) 경로다 When GUI 를 시작하거나 새 터미널을 연다 Then 그 셸로 실행되고 경고가 없다.
+- Given macOS·Linux 에서 `general.shell` 이 디렉터리나 실행 권한 없는 파일이다 When GUI 를 시작한다 Then 첫 실행 셸 설정 화면이 그 원인을 판정 줄에 보이고 확정 버튼은 꺼져 있다. 실행 중에 설정을 그렇게 바꾸면 설정 창에 원인별 오류 줄이 뜨고 새 터미널은 원인과 함께 생성에 실패한다.
 
 **자식 셸 환경변수**: Tasty 가 `TERM`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 넣고 `PATH` 앞에 자기 실행 파일 디렉터리를 붙인다. Tasty 프로세스에서 상속한 환경변수 중 다음은 지운다.
 

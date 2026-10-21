@@ -4,14 +4,21 @@ use super::choice::{Choice, choice_select};
 use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::settings::Settings;
+use tasty_settings::ShellPathStatus;
 use tasty_ui_widgets::{SettingsRow, settings_label_column, vspace};
 
 pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
 
-    if !settings.general.is_shell_valid() {
-        ui.label(egui::RichText::new(shell_not_found_notice()).color(th.accent_warning()));
+    if let Some((notice, fails)) = shell_notice(settings.general.shell_path_status()) {
+        // 대체 셸로 열리는 경우는 경고, 새 터미널이 실패하는 경우는 오류 색이다.
+        let color = if fails {
+            th.accent_danger()
+        } else {
+            th.accent_warning()
+        };
+        ui.label(egui::RichText::new(notice).color(color));
         vspace(ui, th.spacing_xs);
     }
 
@@ -410,6 +417,18 @@ pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Setting
 }
 
 /// 설정한 셸을 쓸 수 없을 때의 안내. Windows 는 Git Bash 를, 다른 OS 는 로그인 셸 등을 대신 쓴다.
+/// 셸 경로 판정에 맞는 안내와, 새 터미널이 실패하는 판정인지. 쓸 수 있는 셸이면 `None`.
+fn shell_notice(status: ShellPathStatus) -> Option<(&'static str, bool)> {
+    match status {
+        ShellPathStatus::Usable => None,
+        ShellPathStatus::Directory => Some((t("settings.terminal.shell_is_directory"), true)),
+        ShellPathStatus::NotExecutable => Some((t("settings.terminal.shell_not_executable"), true)),
+        ShellPathStatus::Empty | ShellPathStatus::Missing | ShellPathStatus::NotShell => {
+            Some((shell_not_found_notice(), false))
+        }
+    }
+}
+
 fn shell_not_found_notice() -> &'static str {
     if cfg!(windows) {
         t("settings.terminal.shell_not_found_windows")
@@ -427,6 +446,30 @@ mod tests {
     fn the_shell_notice_mentions_git_bash_only_on_windows() {
         let notice = shell_not_found_notice();
         assert_eq!(notice.contains("Git Bash"), cfg!(windows), "{notice}");
+    }
+
+    /// 대체 셸로 열리는 판정은 경고, 실행할 수 없는 경로는 원인별 실패 안내다.
+    #[test]
+    fn the_shell_notice_tells_a_fallback_from_a_failure() {
+        assert_eq!(shell_notice(ShellPathStatus::Usable), None);
+        for status in [
+            ShellPathStatus::Empty,
+            ShellPathStatus::Missing,
+            ShellPathStatus::NotShell,
+        ] {
+            assert_eq!(
+                shell_notice(status),
+                Some((shell_not_found_notice(), false))
+            );
+        }
+        assert_eq!(
+            shell_notice(ShellPathStatus::Directory),
+            Some((t("settings.terminal.shell_is_directory"), true))
+        );
+        assert_eq!(
+            shell_notice(ShellPathStatus::NotExecutable),
+            Some((t("settings.terminal.shell_not_executable"), true))
+        );
     }
 
     use crate::view::settings::ui::select_probe as probe;
