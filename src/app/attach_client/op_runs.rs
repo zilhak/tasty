@@ -79,7 +79,8 @@ pub(crate) fn succeeded(
     }
 }
 
-/// 원격 실패. 원격이 준 사유를 그대로 남긴다.
+/// 원격 실패. 원격이 준 사유를 그대로 남긴다. 원격에 파일이 없다는 거절이면 호출자가 문구 없이
+/// 구분할 수 있도록 `reason_code: "not_found"` 를 함께 남긴다.
 pub(crate) fn failed(epoch: &ConnectionEpoch, op: u64, reason: Option<&str>) {
     let mut watches = watches();
     if let Some(index) = watches
@@ -94,8 +95,19 @@ pub(crate) fn failed(epoch: &ConnectionEpoch, op: u64, reason: Option<&str>) {
                 Some(reason) => format!("the remote could not apply the change: {reason}"),
                 None => "the remote could not apply the change".to_string(),
             },
-            Value::Null,
+            failure_extra(reason),
         );
+    }
+}
+
+fn failure_extra(reason: Option<&str>) -> Value {
+    match reason {
+        Some(reason)
+            if reason.starts_with(tasty_ipc::stream::STRUCTURAL_REASON_PATH_NOT_FOUND_PREFIX) =>
+        {
+            json!({ "reason_code": "not_found" })
+        }
+        _ => Value::Null,
     }
 }
 
@@ -189,5 +201,27 @@ mod tests {
         let ended = lookup(id, None).unwrap();
         assert_eq!(ended["state"], "unknown");
         assert_eq!(ended["result"], CONNECTION_ENDED);
+    }
+
+    /// 원격이 파일 없음으로 거절한 실패만 reason_code 로 구분된다. 다른 거절은 문구만 남는다.
+    #[test]
+    fn only_a_remote_missing_file_refusal_carries_the_not_found_code() {
+        let live = epoch();
+        let (missing_id, missing) = run();
+        let (other_id, other) = run();
+        watch(live.clone(), 1, missing);
+        watch(live.clone(), 2, other);
+        failed(&live, 1, Some("path not found: /srv/a.md"));
+        failed(&live, 2, Some("remote tab missing"));
+        let missing = lookup(missing_id, None).unwrap();
+        assert_eq!(missing["state"], "failed");
+        assert_eq!(missing["reason_code"], "not_found");
+        assert_eq!(
+            missing["result"],
+            "the remote could not apply the change: path not found: /srv/a.md"
+        );
+        let other = lookup(other_id, None).unwrap();
+        assert_eq!(other["state"], "failed");
+        assert!(other.get("reason_code").is_none(), "{other}");
     }
 }

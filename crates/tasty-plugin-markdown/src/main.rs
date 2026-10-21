@@ -8,6 +8,7 @@
 // 이유: 테스트의 let _ = 사용은 제품 코드의 오류 무시 목록에서 제외한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
+mod addr_nav;
 mod popup;
 mod render;
 
@@ -30,6 +31,9 @@ use tasty_plugin_sdk::{
 };
 use tasty_type_appearance::theme::Theme;
 
+#[cfg(test)]
+use addr_nav::classify_navigate_run;
+use addr_nav::{ADDR_RESULT_METHOD, AddrOutcome, NavAction, nav_action, spawn_addr_watch};
 use popup::{
     FILE_PICKER_RESULT_EVENT, FileOpenState, FilePickerResultWire, LargeFileConfirm, PickerStart,
     basename, format_size,
@@ -175,6 +179,10 @@ struct RemoteDoc {
     /// 연결 종료 통지 후 아직 원문을 다시 받지 못했는가.
     /// 기존 원문은 보관하되 화면에는 연결이 끊겼음을 표시한다.
     disconnected: bool,
+    /// 주소창 직접 이동의 순번. 결과는 마지막 이동의 순번과 같을 때만 반영한다.
+    addr_ticket: u64,
+    /// 마지막 직접 이동이 실패했다. 입력값을 다시 보이며 다음 입력·Esc·성공에서 지운다.
+    addr_failure: Option<render::AddrFailure>,
 }
 
 /// [`MdDoc::on_remote_changed`] 의 결정 — 변경 신호 하나에 plugin 이 할 일.
@@ -273,6 +281,26 @@ impl MdDoc {
         true
     }
 
+    /// 원격 주소창 이동의 결과를 반영한다. 다시 그려야 하면 true.
+    /// 마지막 이동이 아닌 결과는 버린다. 성공하면 보관한 실패를 지운다(문서는 host 가 바꾼다).
+    fn apply_addr_outcome(&mut self, ticket: u64, typed: String, outcome: AddrOutcome) -> bool {
+        let Some(remote) = self.remote.as_mut() else {
+            return false;
+        };
+        if remote.addr_ticket != ticket {
+            return false;
+        }
+        let next = match outcome {
+            AddrOutcome::Succeeded => None,
+            AddrOutcome::Failed(kind) => Some(render::AddrFailure { typed, kind }),
+        };
+        if remote.addr_failure == next {
+            return false;
+        }
+        remote.addr_failure = next;
+        true
+    }
+
     /// 원격 파일 변경에 반응한다. 읽던 위치를 보호하기 위해 정상 문서는 stale 표시만 켠다.
     /// 이미 stale이면 다시 그리지 않는다. 끊김·실패 상태는 원문을 다시 요청하고,
     /// 요청 중이면 기존 응답을 기다린다.
@@ -300,6 +328,7 @@ impl MdDoc {
             loading: !r.loaded,
             stale: r.stale,
             disconnected: r.disconnected,
+            addr_failure: r.addr_failure.clone(),
         })
     }
 
@@ -486,6 +515,10 @@ impl Plugin for MarkdownPlugin {
                 self.watch_reload(&ctx.params)
             }
             "markdown.reload" => self.markdown_reload(&ctx.params),
+            ADDR_RESULT_METHOD if ctx.caller_plugin_id.as_deref() == Some(PLUGIN_ID) => {
+                self.on_addr_result(&ctx.params);
+                Ok(json!({ "ok": true }))
+            }
             // 이 네임스페이스의 외부 요청은 플러그인에 먼저 오므로 호스트 구현에 다시 전달한다.
             "markdown.navigate" => Ok(ctx
                 .host
@@ -616,35 +649,25 @@ impl Plugin for MarkdownPlugin {
             );
             return;
         };
-        let is_remote = self
-            .docs
-            .get(&ctx.surface_id)
-            .is_some_and(|d| d.remote.is_some());
-        match intent {
-            render::NavIntent::Refresh if is_remote => {
-                self.request_remote_content(ctx.surface_id, RemoteRequester::User)
-            }
-            // 로컬 문서에서는 대용량 대기 상태의 "Open file…" 버튼만 이 요청을 낸다. 명시적
-            // reload 와 같은 경로로 대용량 확인을 다시 띄운다. 그 밖의 로컬 문서에 온 것은 무시한다.
-            render::NavIntent::Refresh => self.open_deferred_local(ctx.surface_id),
-            // mirror 문서의 파일 링크와 주소창 경로는 원격 호스트의 것이라 이 머신에서 열 수
-            // 없다. 외부 URL 만 연다.
-            render::NavIntent::Link(dest) if is_remote => {
-                if let Some(render::LinkClick::External(url)) = render::classify_link(&dest, None) {
-                    dispatch_external_link(&host, ctx.surface_id, &url);
-                }
-            }
-            render::NavIntent::Addr(_) if is_remote => {}
-            render::NavIntent::Link(dest) => {
-                let base_dir = self
-                    .docs
-                    .get(&ctx.surface_id)
-                    .and_then(|d| d.base_dir.clone());
+        let sid = ctx.surface_id;
+        match nav_action(intent, self.docs.get(&sid)) {
+            NavAction::Ignore => {}
+            NavAction::RefetchRemote => self.request_remote_content(sid, RemoteRequester::User),
+            NavAction::OpenDeferred => self.open_deferred_local(sid),
+            NavAction::External(url) => dispatch_external_link(&host, sid, &url),
+            NavAction::Link(dest) => {
+                let base_dir = self.docs.get(&sid).and_then(|d| d.base_dir.clone());
                 if let Some(click) = render::classify_link(&dest, base_dir.as_deref()) {
-                    dispatch_link(&host, ctx.surface_id, &ctx.url, click);
+                    dispatch_link(&host, sid, &ctx.url, click);
                 }
             }
-            render::NavIntent::Addr(path) => navigate(&host, ctx.surface_id, &path, None),
+            NavAction::NavigateRemote(path) => self.navigate_remote_addr(&host, sid, &path),
+            NavAction::NavigateLocal(path) => navigate(&host, sid, &path, None),
+            NavAction::DismissAddr => {
+                if let Some(remote) = self.docs.get_mut(&sid).and_then(|d| d.remote.as_mut()) {
+                    remote.addr_failure = None;
+                }
+            }
         }
     }
 }
@@ -663,6 +686,66 @@ impl MarkdownPlugin {
             .is_some_and(|doc| doc.apply_remote_result(reply))
         {
             self.reload_webview(surface_id);
+        }
+    }
+
+    /// mirror 문서 주소창의 직접 이동. 접수되면 `run.result` 를 별도 스레드에서 기다렸다가
+    /// [`ADDR_RESULT_METHOD`] 자기 호출로 결과를 돌려받는다. 사용자 출처 증명을 싣지 않으므로 host 는
+    /// 실패 toast 를 띄우지 않고, 실패는 주소창 오류 상태로 보인다.
+    fn navigate_remote_addr(&mut self, host: &HostHandle, sid: u32, path: &str) {
+        let Some(params) = navigate_params(sid, path, None) else {
+            return;
+        };
+        let Some(remote) = self.docs.get_mut(&sid).and_then(|d| d.remote.as_mut()) else {
+            return;
+        };
+        remote.addr_ticket += 1;
+        let ticket = remote.addr_ticket;
+        let typed = path.trim().to_string();
+        match host.call("markdown.navigate", params) {
+            Ok(v) => match v.get("run").and_then(Value::as_u64) {
+                Some(run) => spawn_addr_watch(host.clone(), sid, ticket, typed, run),
+                None => tracing::warn!(
+                    "markdown surface {sid}: markdown.navigate gave no run — the result cannot be shown"
+                ),
+            },
+            Err(e) => {
+                tracing::warn!("markdown surface {sid}: remote navigate was refused: {e}");
+                self.apply_addr_outcome(
+                    sid,
+                    ticket,
+                    typed,
+                    AddrOutcome::Failed(render::AddrFailureKind::Other),
+                );
+            }
+        }
+    }
+
+    /// [`ADDR_RESULT_METHOD`] 자기 호출. 닫혔거나 바뀐 문서, 더 새 이동이 있는 문서면 버린다.
+    fn on_addr_result(&mut self, params: &Value) {
+        let parsed = (
+            params.get("surface_id").and_then(Value::as_u64),
+            params.get("ticket").and_then(Value::as_u64),
+            params.get("path").and_then(Value::as_str),
+            params
+                .get("outcome")
+                .and_then(Value::as_str)
+                .and_then(AddrOutcome::from_wire),
+        );
+        let (Some(sid), Some(ticket), Some(path), Some(outcome)) = parsed else {
+            tracing::warn!("markdown: malformed {ADDR_RESULT_METHOD} params: {params}");
+            return;
+        };
+        self.apply_addr_outcome(sid as u32, ticket, path.to_string(), outcome);
+    }
+
+    fn apply_addr_outcome(&mut self, sid: u32, ticket: u64, typed: String, outcome: AddrOutcome) {
+        let changed = self
+            .docs
+            .get_mut(&sid)
+            .is_some_and(|doc| doc.apply_addr_outcome(ticket, typed, outcome));
+        if changed {
+            self.reload_webview(sid);
         }
     }
 

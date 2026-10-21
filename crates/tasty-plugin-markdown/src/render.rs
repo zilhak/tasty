@@ -21,6 +21,7 @@ use pulldown_cmark::{
 use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
 
+mod address;
 mod callout;
 mod find_keys;
 #[cfg(all(test, target_os = "linux"))]
@@ -32,6 +33,8 @@ pub const NAV_FRAGMENT_MARKER: &str = "tasty-nav:";
 
 /// 새로고침 마커. 같은 hash를 다시 지정해도 이동 이벤트가 생기지 않아 nonce를 붙인다.
 const NAV_REFRESH_PREFIX: &str = "refresh:";
+/// 주소창 오류 행을 지웠다는 신호. 같은 hash 재대입을 피하려고 nonce 를 붙인다.
+const NAV_ADDR_DISMISS_PREFIX: &str = "addr-dismiss:";
 
 /// 호스트에 요청할 링크 대상. File은 기준 폴더에서 해석한 경로이고,
 /// External은 OS의 기본 앱으로 열 URL이다.
@@ -48,6 +51,8 @@ pub enum NavIntent {
     Link(String),
     /// The address bar's Go action (click or Enter) fired — `path` is the input's raw value.
     Addr(String),
+    /// 주소창 오류 행을 사용자가 지웠다(다음 입력·Esc). 플러그인은 보관한 실패를 버린다.
+    AddrDismiss,
     /// attach mirror 문서의 새로고침 버튼이나 대용량 대기 상태의 "Open file…" 버튼이 눌렸다.
     /// mirror 는 원격 원문을 다시 요청하고, 로컬 대기 문서는 대용량 확인을 다시 띄운다.
     Refresh,
@@ -92,8 +97,10 @@ pub struct DocumentInput<'a> {
     pub find_bindings: &'a [String],
 }
 
+pub use address::{AddrFailure, AddrFailureKind};
+
 /// attach mirror 문서의 표시 상태.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RemoteView {
     /// 원문을 아직 한 번도 받지 못했다 — 본문 자리에 로딩 상태를 그린다.
     pub loading: bool,
@@ -102,6 +109,8 @@ pub struct RemoteView {
     /// attach 연결이 끊겼다 — 본문 자리에 끊김을 그린다. 로딩·실패·원문보다 앞선다:
     /// 끊긴 뒤의 원문은 연결이 살아 있는 화면과 구분되지 않는다.
     pub disconnected: bool,
+    /// 주소창에서 원격 경로로 직접 이동하다 실패했다. 입력값을 다시 보이고 띠를 오류 상태로 그린다.
+    pub addr_failure: Option<AddrFailure>,
 }
 
 /// Build the complete, self-contained HTML5 document for the markdown webview surface.
@@ -119,7 +128,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         find_bindings,
     } = input;
 
-    let (body_html, headings) = if remote.is_some_and(|r| r.disconnected) {
+    let (body_html, headings) = if remote.as_ref().is_some_and(|r| r.disconnected) {
         (
             format!(
                 r#"<div class="tasty-state tasty-state-error"><div class="tasty-state-title">{}</div></div>"#,
@@ -127,7 +136,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
             ),
             Vec::new(),
         )
-    } else if remote.is_some_and(|r| r.loading) && load_error.is_none() {
+    } else if remote.as_ref().is_some_and(|r| r.loading) && load_error.is_none() {
         (
             format!(
                 r#"<div class="tasty-state">{}</div>"#,
@@ -216,13 +225,14 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
     };
 
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><style>{css}</style></head><body>{addr_bar}{find_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script><script>{find_script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}{math}</body></html>"#,
+        r#"<!doctype html><html{html_style}><head><meta charset="utf-8"><style>{css}</style></head><body>{addr_bar}{find_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script><script>{find_script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}{math}</body></html>"#,
+        html_style = address::html_style_attr(theme, remote.as_ref()),
         css = theme_css(theme),
-        addr_bar = addr_bar_html(tr, file_path, recent, remote),
+        addr_bar = address::addr_bar_html(tr, file_path, recent, remote.as_ref()),
         find_bar = find_bar_html(tr),
         toc_html = toc_html,
         body_html = body_html,
-        script = nav_script(file_path),
+        script = nav_script(file_path, address::bar_height_px(theme, false)),
         find_script = find_in_page_script(tr, find_bindings),
         highlight = highlight,
         mermaid = mermaid,
@@ -239,7 +249,20 @@ pub(crate) fn parse_nav_fragment(url: &str) -> Option<NavIntent> {
     if let Some(enc) = payload.strip_prefix("link:") {
         return Some(NavIntent::Link(percent_decode(enc)));
     }
-    if let Some(enc) = payload.strip_prefix("addr:") {
+    if payload.starts_with(NAV_ADDR_DISMISS_PREFIX) {
+        return Some(NavIntent::AddrDismiss);
+    }
+    if let Some(rest) = payload.strip_prefix("addr:") {
+        // 같은 경로를 다시 보내도 hash 가 바뀌도록 스크립트는 `addr:<nonce>:<경로>` 를 쓴다.
+        // encodeURIComponent 는 `:` 를 남기지 않으므로 첫 `:` 앞이 숫자면 nonce 다.
+        let enc = match rest.split_once(':') {
+            Some((nonce, enc))
+                if !nonce.is_empty() && nonce.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                enc
+            }
+            _ => rest,
+        };
         return Some(NavIntent::Addr(percent_decode(enc)));
     }
     if payload.starts_with(NAV_REFRESH_PREFIX) {
@@ -1456,19 +1479,13 @@ fn theme_css(theme: &Theme) -> String {
 --md-callout-icon:{callout_icon}px;
 --md-callout-icon-gap:{callout_icon_gap}px;
 --md-callout-marker:{callout_marker}px;
---md-addr-bar-h:40px;
+--md-addr-bar-h:{addr_bar_h}px;
 --md-font-body:{body}px;
 --md-h1:{h1}px;--md-h2:{h2}px;--md-h3:{h3}px;--md-h4:{h4}px;--md-h5:{h5}px;--md-h6:{h6}px;
 }}
 html{{height:100%;margin:0;padding:0;}}
 body{{min-height:100%;margin:0;padding:0;background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:var(--md-font-body);line-height:1.6;}}
-#tasty-addr-bar{{position:sticky;top:0;display:flex;align-items:center;gap:var(--md-space-sm);height:var(--md-addr-bar-h);padding:0 var(--md-space-sm);box-sizing:border-box;background:{bg_sidebar};border-bottom:var(--md-border-w) solid {separator};}}
-#tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-input-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
-#tasty-addr-go{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
-#tasty-addr-input[readonly]{{color:{muted};}}
-#tasty-refresh{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
-#tasty-refresh[data-stale="true"]{{background:{accent};border-color:{accent};color:{on_accent};}}
-#tasty-find-bar{{position:fixed;top:calc(var(--md-addr-bar-h) + var(--md-space-xs));right:var(--md-space-sm);z-index:20;display:flex;align-items:center;gap:var(--md-space-xs);height:28px;padding:0 var(--md-space-xs);background:{bg_sidebar};border:var(--md-border-w) solid {separator};border-radius:var(--md-radius);box-shadow:0 2px 8px rgba(0,0,0,0.25);}}
+{addr_css}#tasty-find-bar{{position:fixed;top:calc(var(--md-addr-bar-h) + var(--md-space-xs));right:var(--md-space-sm);z-index:20;display:flex;align-items:center;gap:var(--md-space-xs);height:28px;padding:0 var(--md-space-xs);background:{bg_sidebar};border:var(--md-border-w) solid {separator};border-radius:var(--md-radius);box-shadow:0 2px 8px rgba(0,0,0,0.25);}}
 #tasty-find-bar[hidden]{{display:none;}}
 #tasty-find-input{{width:140px;height:22px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-control-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-find-count{{min-width:40px;text-align:center;font-size:calc(var(--md-font-body) * 0.85);color:{muted};}}
@@ -1569,6 +1586,8 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         h6 = h6,
         bg_sidebar = theme.bg_sidebar().to_hex(),
         separator = theme.separator.unpremultiplied().to_hex(),
+        addr_bar_h = address::bar_height_px(theme, false),
+        addr_css = address::addr_css(theme),
         muted = theme.text_muted().to_hex(),
         danger = theme.accent_danger().to_hex(),
         success = theme.accent_success().to_hex(),
@@ -1598,8 +1617,6 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         btn_overlay_hover = theme.button_overlay_hover().unpremultiplied().to_hex(),
         btn_overlay_active = theme.button_overlay_active().unpremultiplied().to_hex(),
         find_current_fg = theme.text_on_accent().to_hex(),
-        accent = theme.accent_primary().to_hex(),
-        on_accent = theme.text_on_accent().to_hex(),
     )
 }
 
@@ -1661,63 +1678,56 @@ fn heading_sizes_px(theme: &Theme) -> [f32; 6] {
 
 // ── address bar (HTML/CSS/minimal trusted JS — design decision: Option 1) ────
 
-/// 경로 입력, 최근 경로와 원격 문서 새로고침 버튼을 포함한 주소창.
-fn addr_bar_html(
-    tr: &Translator,
-    file_path: &str,
-    recent: &[String],
-    remote: Option<RemoteView>,
-) -> String {
-    if let Some(view) = remote {
-        let tooltip = if view.stale {
-            tr.t("markdown.remote.refresh_stale")
-        } else {
-            tr.t("markdown.remote.refresh")
-        };
-        return format!(
-            r#"<div id="tasty-addr-bar"><input id="tasty-addr-input" value="{value}" readonly><button id="tasty-refresh" type="button" data-stale="{stale}" title="{tooltip}" aria-label="{tooltip}">&#8635;</button></div>"#,
-            value = attr_escape(file_path),
-            stale = view.stale,
-            tooltip = attr_escape(tooltip),
-        );
-    }
-    let options: String = recent
-        .iter()
-        .map(|p| format!(r#"<option value="{}"></option>"#, attr_escape(p)))
-        .collect();
-    format!(
-        r#"<div id="tasty-addr-bar"><input id="tasty-addr-input" list="tasty-addr-recent" value="{value}" placeholder="{placeholder}"><datalist id="tasty-addr-recent">{options}</datalist><button id="tasty-addr-go" title="{go_tooltip}">&#8594;</button></div>"#,
-        value = attr_escape(file_path),
-        placeholder = attr_escape(tr.t("markdown.addr.placeholder")),
-        options = options,
-        go_tooltip = attr_escape(tr.t("markdown.addr.go")),
-    )
-}
-
 /// 플러그인이 본문 정리 후 추가하는 이동 스크립트.
-/// 주소 입력과 새로고침은 #tasty-nav 마커로 호스트에 알린다.
+/// 주소 입력과 새로고침은 #tasty-nav 마커로 호스트에 알린다. 주소 이동에는 nonce 를 붙여 같은 경로를
+/// 다시 보내도 hash 가 바뀌게 한다. 원격 문서의 Esc 는 입력을 지금 원격 경로로 되돌린다.
+/// 오류 행은 다음 입력이나 Esc 에서 지우고 플러그인에 알려 보관한 실패도 버리게 한다.
 /// 문서 안 링크는 기본 이동을 취소하고 해당 ID로 스크롤한다. 같은 링크를 다시
 /// 클릭해도 동작하며, ID는 원문과 percent-decoding한 값을 차례로 찾는다.
 ///
 /// 파일 경로별 스크롤 위치를 sessionStorage에 저장하고 복원을 시도한다.
 /// load_html 이후 저장소가 유지되는지는 세 WebView 백엔드 모두에서 검증하지 않았다.
 /// 저장소를 사용할 수 없으면 복원하지 않는다.
-fn nav_script(file_path: &str) -> String {
+fn nav_script(file_path: &str, bar_h: f32) -> String {
     format!(
         r#"(function(){{
+var bar=document.getElementById('tasty-addr-bar');
+var field=document.getElementById('tasty-addr-field');
 var i=document.getElementById('tasty-addr-input');
 var g=document.getElementById('tasty-addr-go');
+var shown=document.querySelector('.tasty-addr-display bdi');
+var remote=!!bar&&bar.getAttribute('data-kind')==='remote';
+var current={file_path_json};
+function nonce(){{return String(Date.now());}}
+function sync(){{if(shown&&i)shown.textContent=i.value;}}
+function dismiss(){{
+var row=document.getElementById('tasty-addr-error');
+if(!row&&!(field&&field.classList.contains('tasty-addr-invalid')))return;
+if(row)row.parentNode.removeChild(row);
+if(field)field.classList.remove('tasty-addr-invalid');
+if(i)i.removeAttribute('aria-invalid');
+document.documentElement.style.setProperty('--md-addr-bar-h','{bar_h}px');
+location.hash='tasty-nav:addr-dismiss:'+nonce();
+}}
 function go(){{
+if(!i||i.readOnly)return;
 var v=i.value.trim();
 if(!v)return;
-location.hash='tasty-nav:addr:'+encodeURIComponent(v);
+location.hash='tasty-nav:addr:'+nonce()+':'+encodeURIComponent(v);
 }}
 if(g)g.addEventListener('click',go);
 var r=document.getElementById('tasty-refresh');
-if(r)r.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+Date.now();}});
+if(r)r.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+nonce();}});
 var o=document.querySelector('.tasty-state-action');
-if(o)o.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+Date.now();}});
-if(i)i.addEventListener('keydown',function(e){{if(e.key==='Enter')go();}});
+if(o)o.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+nonce();}});
+if(i){{
+i.addEventListener('input',function(){{sync();dismiss();}});
+i.addEventListener('keydown',function(e){{
+if(e.isComposing)return;
+if(e.key==='Enter'){{go();return;}}
+if(e.key==='Escape'&&remote&&!i.readOnly){{i.value=current;sync();dismiss();i.blur();}}
+}});
+}}
 var toc=document.getElementById('tasty-toc');
 var tocToggle=document.getElementById('tasty-toc-toggle');
 if(toc&&tocToggle){{
@@ -1758,6 +1768,7 @@ try{{sessionStorage.setItem(scrollKey,String(window.scrollY));}}catch(e){{}}
         marker_json = serde_json::to_string(NAV_FRAGMENT_MARKER)
             .unwrap_or_else(|_| format!("\"{NAV_FRAGMENT_MARKER}\"")),
         file_path_json = serde_json::to_string(file_path).unwrap_or_else(|_| "\"\"".to_string()),
+        bar_h = bar_h,
     )
 }
 
@@ -2460,6 +2471,26 @@ mod tests {
             parse_nav_fragment(addr_url),
             Some(NavIntent::Addr("/home/u/notes.md".to_string()))
         );
+        // 스크립트가 붙이는 nonce 는 경로에 들어가지 않는다. 경로의 `:` 는 percent-encoding 돼 있다.
+        assert_eq!(
+            parse_nav_fragment("about:blank#tasty-nav:addr:1757750000000:%2Fsrv%2Fa%3Ab.md"),
+            Some(NavIntent::Addr("/srv/a:b.md".to_string()))
+        );
+        assert_eq!(
+            parse_nav_fragment("about:blank#tasty-nav:addr-dismiss:1757750000000"),
+            Some(NavIntent::AddrDismiss)
+        );
+    }
+
+    /// 같은 경로를 다시 보내도 hash 가 바뀌도록 주소 이동에 nonce 를 붙이고, 원격 Esc 는 지금 경로로 되돌린다.
+    #[test]
+    fn address_script_adds_a_nonce_and_reverts_on_escape() {
+        let js = nav_script("/remote/notes.md", 41.0);
+        assert!(js.contains("location.hash='tasty-nav:addr:'+nonce()+':'+encodeURIComponent(v);"));
+        assert!(js.contains("var current=\"/remote/notes.md\";"));
+        assert!(js.contains("e.key==='Escape'&&remote&&!i.readOnly){i.value=current;"));
+        assert!(js.contains("location.hash='tasty-nav:addr-dismiss:'+nonce();"));
+        assert!(js.contains("setProperty('--md-addr-bar-h','41px')"));
     }
 
     #[test]
@@ -3243,7 +3274,7 @@ mod tests {
     }
 
     #[test]
-    fn bar_height_is_declared_once_and_read_by_four_rules() {
+    fn bar_height_is_declared_once_and_read_by_three_rules() {
         let css = stylesheet_of_a_rendered_document();
         assert_eq!(
             css.matches("--md-addr-bar-h:").count(),
@@ -3252,8 +3283,8 @@ mod tests {
         );
         assert_eq!(
             css.matches("var(--md-addr-bar-h)").count(),
-            4,
-            "주소창 높이, 검색창 위치, 제목과 각주 여백이 같은 CSS 변수를 사용해야 한다"
+            3,
+            "검색창 위치, 제목과 각주 여백이 주소 띠 높이와 같은 CSS 변수를 사용해야 한다"
         );
     }
 
@@ -3299,8 +3330,17 @@ mod tests {
         })
     }
 
+    /// `<input id="tasty-addr-input" …>` 요소만 자른다. 전체 문자열 검색은 CSS 선택자에도 걸린다.
+    fn addr_input_tag(html: &str) -> &str {
+        html.split(r#"<input id="tasty-addr-input""#)
+            .nth(1)
+            .and_then(|s| s.split('>').next())
+            .expect("addr input")
+    }
+
+    /// 원격 주소창도 편집할 수 있고 Go 가 있다. 이 머신의 최근 목록은 내지 않는다.
     #[test]
-    fn remote_document_swaps_go_for_a_refresh_button_that_carries_the_stale_flag() {
+    fn remote_document_address_bar_is_editable_and_hides_local_recent() {
         let fresh = remote_document(
             "# Remote",
             None,
@@ -3310,14 +3350,19 @@ mod tests {
                 ..RemoteView::default()
             },
         );
+        let input = addr_input_tag(&fresh);
+        assert!(!input.contains("readonly"), "{input}");
+        assert!(!input.contains("list="), "{input}");
+        assert!(fresh.contains(r#"data-kind="remote""#));
         assert!(fresh.contains(r#"id="tasty-refresh""#));
         assert!(fresh.contains(r#"data-stale="false""#));
-        assert!(fresh.contains("readonly"));
-        // 경로는 원격 호스트의 것이라 여기서 열 수 없다 — Go 와 이 머신의 최근목록을 내지 않는다.
-        assert!(!fresh.contains(r#"id="tasty-addr-go""#));
+        assert!(fresh.contains(r#"id="tasty-addr-go""#));
+        assert!(fresh.contains("tasty-addr-g-remote"));
         assert!(!fresh.contains("/local/recent.md"));
+        assert!(!fresh.contains("tasty-addr-recent"));
         assert!(!fresh.contains("<base href="));
-        assert!(fresh.contains("markdown.remote.refresh"));
+        assert!(fresh.contains("markdown.address.reload"));
+        assert!(!fresh.contains(r#"id="tasty-addr-error""#));
 
         let stale = remote_document(
             "# Remote",
@@ -3329,7 +3374,132 @@ mod tests {
             },
         );
         assert!(stale.contains(r#"data-stale="true""#));
-        assert!(stale.contains("markdown.remote.refresh_stale"));
+        assert!(stale.contains("markdown.address.stale"));
+    }
+
+    /// 로컬 주소창은 최근 목록과 Go 를 그대로 갖고, 띠는 로컬 kind 글리프를 쓴다.
+    #[test]
+    fn local_document_address_bar_keeps_recent_files_and_go() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            find_bindings: &[],
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/doc.md",
+            source: "# Local",
+            load_error: None,
+            base_dir: Some(Path::new("/a")),
+            recent: &["/a/recent.md".to_string()],
+            remote: None,
+            large_deferred: false,
+        });
+        let input = addr_input_tag(&html);
+        assert!(input.contains(r#"list="tasty-addr-recent""#), "{input}");
+        assert!(html.contains(r#"<option value="/a/recent.md">"#));
+        assert!(html.contains(r#"data-kind="local""#));
+        assert!(html.contains(r#"id="tasty-addr-go""#));
+        assert!(html.contains("tasty-addr-g-file"));
+        assert!(!html.contains(r#"id="tasty-refresh""#));
+    }
+
+    /// 원격에 파일이 없어 실패하면 입력값을 남기고 오류 행에 not_found 문구를 낸다. 띠 높이도 늘린다.
+    #[test]
+    fn a_missing_remote_file_keeps_the_typed_path_and_shows_the_error_row() {
+        let html = remote_document(
+            "# Remote",
+            None,
+            RemoteView {
+                addr_failure: Some(AddrFailure {
+                    typed: "/remote/typo.md".into(),
+                    kind: AddrFailureKind::NotFound,
+                }),
+                ..RemoteView::default()
+            },
+        );
+        let input = addr_input_tag(&html);
+        assert!(input.contains(r#"value="/remote/typo.md""#), "{input}");
+        assert!(input.contains(r#"aria-invalid="true""#), "{input}");
+        assert!(html.contains(r#"<div id="tasty-addr-field" class="tasty-addr-invalid">"#));
+        assert!(html.contains(r#"<div id="tasty-addr-error" role="alert">"#));
+        assert!(html.contains("markdown.address.error.not_found"));
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        assert!(html.starts_with(&format!(
+            r#"<!doctype html><html style="--md-addr-bar-h:{}px">"#,
+            address::bar_height_px(&theme, true)
+        )));
+    }
+
+    /// not_found 가 아닌 실패는 없는 파일 문구로 바꾸지 않는다. 입력값과 오류 테두리만 남는다.
+    #[test]
+    fn other_remote_failures_never_claim_the_file_is_missing() {
+        let html = remote_document(
+            "# Remote",
+            None,
+            RemoteView {
+                addr_failure: Some(AddrFailure {
+                    typed: "/remote/b.md".into(),
+                    kind: AddrFailureKind::Other,
+                }),
+                ..RemoteView::default()
+            },
+        );
+        assert!(addr_input_tag(&html).contains(r#"value="/remote/b.md""#));
+        assert!(html.contains(r#"class="tasty-addr-invalid""#));
+        assert!(!html.contains("markdown.address.error.not_found"));
+        assert!(!html.contains(r#"id="tasty-addr-error""#));
+        assert!(html.starts_with("<!doctype html><html><head>"));
+    }
+
+    /// 연결이 끊긴 문서는 필드를 읽기 전용으로, 버튼을 모두 비활성으로 두고 각 tooltip 을 끊김 문구로 바꾼다.
+    #[test]
+    fn disconnected_remote_address_bar_disables_every_control() {
+        let html = remote_document(
+            "# Remote",
+            None,
+            RemoteView {
+                disconnected: true,
+                ..RemoteView::default()
+            },
+        );
+        assert!(addr_input_tag(&html).contains("readonly"));
+        assert!(html.contains(r#"<div id="tasty-addr-field" class="tasty-addr-off">"#));
+        for id in ["tasty-refresh", "tasty-addr-go"] {
+            let tip = html
+                .split(&format!(r#"<span class="tasty-addr-tip" id="{id}-tip""#))
+                .nth(1)
+                .and_then(|s| s.split("</span></button>").next())
+                .unwrap_or_else(|| panic!("{id} control"));
+            assert!(
+                tip.contains(r#"title="markdown.address.disconnected""#),
+                "{tip}"
+            );
+            assert!(tip.contains(" disabled>"), "{tip}");
+        }
+    }
+
+    /// 좁은 폭에서 숨기는 것은 Go 하나다. 경계 폭은 토큰으로 계산한다.
+    #[test]
+    fn narrow_pages_hide_only_go_at_the_token_threshold() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let css = theme_css(&theme);
+        let pad = theme.md_address_bar_padding_x().value();
+        let gap = theme.md_address_bar_gap().value();
+        let btn = theme.icon_button_size_sm().value();
+        let hide = theme.md_address_go_hide_below().value();
+        let local = pad * 2.0 + hide + gap + btn - 0.02;
+        let remote = pad * 2.0 + btn + gap + hide + gap + btn - 0.02;
+        assert!(css.contains(&format!(
+            r#"@media (max-width:{local}px){{#tasty-addr-bar[data-kind="local"] #tasty-addr-go-tip{{display:none;}}}}"#
+        )));
+        assert!(css.contains(&format!(
+            r#"@media (max-width:{remote}px){{#tasty-addr-bar[data-kind="remote"] #tasty-addr-go-tip{{display:none;}}}}"#
+        )));
+        assert_eq!(css.matches("{display:none;}}").count(), 2, "{css}");
+        assert!(css.contains(&format!(
+            "min-width:{}px",
+            theme.md_address_field_min_width().value()
+        )));
     }
 
     #[test]
@@ -3340,8 +3510,14 @@ mod tests {
             .lines()
             .find(|l| l.starts_with(r#"#tasty-refresh[data-stale="true"]"#))
             .expect("stale rule");
-        assert!(rule.contains(&theme.accent_primary().to_hex()), "{rule}");
-        assert!(rule.contains(&theme.text_on_accent().to_hex()), "{rule}");
+        assert!(
+            rule.contains(&theme.md_address_stale_bg().to_hex()),
+            "{rule}"
+        );
+        assert!(
+            rule.contains(&theme.md_address_stale_fg().to_hex()),
+            "{rule}"
+        );
     }
 
     #[test]
@@ -3380,12 +3556,12 @@ mod tests {
             disconnected: true,
             ..RemoteView::default()
         };
-        let html = remote_document("# Old heading", None, disconnected);
+        let html = remote_document("# Old heading", None, disconnected.clone());
         assert!(html.contains("markdown.remote.disconnected"));
         assert!(!html.contains("Old heading"));
         assert!(
             html.contains(r#"id="tasty-refresh""#),
-            "새로고침은 그대로 누를 수 있다"
+            "새로고침 자리는 남는다(비활성)"
         );
 
         let while_loading = remote_document(
@@ -3393,7 +3569,7 @@ mod tests {
             Some("boom"),
             RemoteView {
                 loading: true,
-                ..disconnected
+                ..disconnected.clone()
             },
         );
         assert!(while_loading.contains("markdown.remote.disconnected"));
@@ -3421,8 +3597,9 @@ mod tests {
 
     #[test]
     fn refresh_script_uses_a_nonce_so_repeat_clicks_still_navigate() {
-        let script = nav_script("/remote/notes.md");
-        assert!(script.contains("tasty-nav:refresh:'+Date.now()"));
+        let script = nav_script("/remote/notes.md", 41.0);
+        assert!(script.contains("tasty-nav:refresh:'+nonce()"));
+        assert!(script.contains("return String(Date.now());"));
     }
 
     #[test]
@@ -3436,7 +3613,7 @@ mod tests {
 
     #[test]
     fn nav_script_keys_scroll_restore_by_file_path_and_json_escapes_it() {
-        let script = nav_script("/a/weird \"path\".md");
+        let script = nav_script("/a/weird \"path\".md", 41.0);
         assert!(script.contains("sessionStorage"));
         assert!(script.contains("tasty-md-scroll:"));
         assert!(script.contains("scrollTo"));
@@ -4612,7 +4789,7 @@ Outro\n";
     /// (`#tasty-nav:`)은 건드리지 않는다.
     #[test]
     fn nav_script_scrolls_anchors_and_leaves_the_host_signal_channel_alone() {
-        let js = nav_script("/a/doc.md");
+        let js = nav_script("/a/doc.md", 41.0);
         assert!(js.contains("scrollIntoView"), "got: {js}");
         assert!(js.contains("preventDefault"), "got: {js}");
         assert!(
@@ -5128,9 +5305,12 @@ Outro\n";
         );
         let addr = css
             .lines()
-            .find(|l| l.starts_with("#tasty-addr-input{"))
-            .expect("address input rule");
-        assert!(addr.contains("background:var(--md-input-bg)"), "{addr}");
+            .find(|l| l.starts_with("#tasty-addr-field{"))
+            .expect("address field rule");
+        assert!(
+            addr.contains(&format!("background:{};", theme.input_bg().to_hex())),
+            "{addr}"
+        );
     }
 
     #[test]

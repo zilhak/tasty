@@ -17,7 +17,7 @@ use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
 use webkit2gtk::{LoadEvent, WebView, WebViewExt as _};
 
-use super::{DocumentInput, render_document};
+use super::{AddrFailure, AddrFailureKind, DocumentInput, RemoteView, render_document};
 
 /// 측정 뷰포트. 회귀를 처음 잰 값과 같게 둔다.
 const VIEW_W: i32 = 1000;
@@ -72,8 +72,12 @@ struct Page {
 
 impl Page {
     fn load(html: &str) -> Self {
+        Self::load_sized(html, VIEW_W)
+    }
+
+    fn load_sized(html: &str, width: i32) -> Self {
         let window = gtk::OffscreenWindow::new();
-        window.set_default_size(VIEW_W, VIEW_H);
+        window.set_default_size(width, VIEW_H);
         let view = WebView::new();
         window.add(&view);
         window.show_all();
@@ -183,5 +187,81 @@ fn address_bar_stays_on_top_in_webkitgtk() {
         short.number("return document.body.getBoundingClientRect().height;"),
         f64::from(VIEW_H),
         "짧은 문서의 body 가 뷰포트 높이를 채우지 않는다"
+    );
+
+    remote_address_band_layout();
+}
+
+fn remote_document(failure: Option<AddrFailure>) -> String {
+    let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+    let tr = Translator::default();
+    render_document(DocumentInput {
+        find_bindings: &[],
+        theme: &theme,
+        tr: &tr,
+        file_path: "/home/deploy/agents-prod/docs/very/long/folder/names/RUNBOOK.md",
+        source: "# Remote\n\nBody.",
+        load_error: None,
+        base_dir: None,
+        recent: &[],
+        remote: Some(RemoteView {
+            addr_failure: failure,
+            ..RemoteView::default()
+        }),
+        large_deferred: false,
+    })
+}
+
+const GO_SHOWN: &str = "return getComputedStyle(document.getElementById('tasty-addr-go-tip')).display === 'none' ? 0 : 1;";
+const FIELD_W: &str =
+    "return document.getElementById('tasty-addr-field').getBoundingClientRect().width;";
+const BAR_H: &str =
+    "return document.getElementById('tasty-addr-bar').getBoundingClientRect().height;";
+
+/// 원격 주소 띠: 넓은 폭에서는 Go 가 보이고, 필드가 160 아래로 줄어들 폭에서는 Go 만 숨는다.
+/// 필드는 하한 96 을 지킨다. 오류 행이 있으면 띠 높이가 `--md-addr-bar-h` 재정의와 같다.
+/// 지목 실행이 한 이름만 고르므로 위 시험이 이어서 부른다.
+fn remote_address_band_layout() {
+    let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+
+    let wide = Page::load(&remote_document(None));
+    assert_eq!(wide.number(GO_SHOWN), 1.0, "넓은 폭에서 Go 가 숨었다");
+    assert!(wide.number(FIELD_W) >= f64::from(theme.md_address_go_hide_below().value()));
+    assert_eq!(
+        wide.number(BAR_H),
+        f64::from(super::address::bar_height_px(&theme, false)),
+        "띠 높이(40 + 경계선 1)"
+    );
+
+    // 원격 Go 경계 폭 = 8 + 24 + 8 + 160 + 8 + 24 + 8 = 240. 그보다 좁은 폭.
+    let narrow = Page::load_sized(&remote_document(None), 236);
+    assert_eq!(narrow.number(GO_SHOWN), 0.0, "좁은 폭에서 Go 가 남았다");
+    assert!(
+        narrow.number(FIELD_W) >= f64::from(theme.md_address_field_min_width().value()),
+        "필드가 하한보다 줄었다"
+    );
+    assert_eq!(
+        narrow.number(
+            "return document.getElementById('tasty-refresh').getBoundingClientRect().width;"
+        ),
+        f64::from(theme.icon_button_size_sm().value()),
+        "Reload 는 줄거나 숨지 않는다"
+    );
+
+    let failed = Page::load(&remote_document(Some(AddrFailure {
+        typed: "/home/deploy/agents-prod/RUNBOK.md".into(),
+        kind: AddrFailureKind::NotFound,
+    })));
+    assert_eq!(
+        failed.number(BAR_H),
+        f64::from(super::address::bar_height_px(&theme, true)),
+        "오류 행을 더한 띠 높이"
+    );
+    assert_eq!(
+        failed.number(
+            "return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--md-addr-bar-h'));"
+        ),
+        f64::from(super::address::bar_height_px(&theme, true)),
+        "검색 바와 앵커 여백이 읽는 높이"
     );
 }

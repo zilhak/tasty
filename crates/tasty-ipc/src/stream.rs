@@ -480,6 +480,10 @@ impl ForwardOrigin {
 /// 원격 복원 스택이 비었음을 구분하는 프로토콜 값. 사용자 문구가 아니므로 번역하지 않는다.
 pub const STRUCTURAL_REASON_RESTORE_EMPTY: &str = "restore_empty";
 
+/// 원격에 없는 파일로 markdown surface 를 바꾸려 할 때 거절 사유의 앞부분. 뒤에 원격 경로가 붙는다.
+/// 로컬 `markdown.navigate` 의 거절 문구와 같고, client 는 이 앞부분으로 "파일 없음" 실패를 구분한다.
+pub const STRUCTURAL_REASON_PATH_NOT_FOUND_PREFIX: &str = "path not found: ";
+
 impl StructuralOp {
     /// The remote surface id this op is anchored on. The server uses it to locate
     /// the enclosing workspace and verify the requesting client is its attach

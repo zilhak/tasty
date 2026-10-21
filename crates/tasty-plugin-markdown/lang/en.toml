@@ -40,14 +40,21 @@ cancel = "Cancel"
 
 [markdown.remote]
 loading = "Loading the remote document…"
-refresh = "Refresh from the remote host"
-refresh_stale = "The remote file has changed — refresh to see it"
 disconnected = "The connection to the remote host was lost — this document is no longer up to date"
 
 [markdown.addr]
 placeholder = "Path to markdown file"
-go = "Open (Enter)"
 no_recent = "No recent files"
+
+# 주소 띠 버튼 tooltip·aria-label 과 원격 직접 이동 실패 행. 디자인 갤러리 Markdown 주소 띠의 문구다.
+[markdown.address]
+go = "Go"
+reload = "Reload"
+stale = "The remote file changed — reload"
+disconnected = "Disconnected from the remote"
+
+[markdown.address.error]
+not_found = "Can't open {path} on the remote: file not found."
 
 [markdown.find]
 placeholder = "Find in document"

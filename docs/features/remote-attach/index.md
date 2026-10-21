@@ -99,7 +99,7 @@ native WebView는 대기 표시를 위해 숨기거나 크기를 줄이지 않�
 |---|---|---|
 | terminal | 화면 스냅샷과 이후 출력 전달 | 입력은 점유 client만 보낸다 |
 | egui-mesh(번들 image/mesh_demo와 커스텀 plugin의 egui-mesh kind) | mesh 프레임 전달 | 입력 역방향 전달은 headless 서버에서만 지원한다. GUI 서버에서는 콘텐츠만 보인다 |
-| markdown | 원문을 받아 client의 markdown plugin이 자체 테마·설정으로 렌더 | 원격 상대경로 이미지·링크는 client에 파일이 없어 깨질 수 있다. 주소창으로 다른 파일을 열 수 없다 |
+| markdown | 원문을 받아 client의 markdown plugin이 자체 테마·설정으로 렌더 | 원격 상대경로 이미지·링크는 client에 파일이 없어 깨질 수 있다. 주소창에 원격 경로를 넣으면 같은 surface가 그 원격 파일로 바뀌며, 원격에 파일이 없으면 원격이 거절하고 주소창에 실패가 보인다. 최근 목록은 로컬 문서에만 있다 |
 | explorer | `list_dir_request` / `list_dir_result`로 디렉토리 탐색. 파일 더블클릭은 원격에 새 탭으로 연다 | 원격에서 콘텐츠를 mirror하는 kind(markdown 등)만 열 수 있다. 파일 변경(새 폴더·새 파일·이름 변경·휴지통·같은 연결 안의 붙여넣기·끌기)은 server 가 원격 쓰기 capability 를 알린 연결에서만 server 가 실행한다. 시스템에서 열기·새 탭·즐겨찾기 추가는 막는다 |
 | 나머지(예: html) | placeholder | 콘텐츠 mirror 미지원 |
 
@@ -229,7 +229,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
   - hard-occupied workspace 에 새로 생긴 surface 는(차단을 통과한, 즉 holder 본인의 forward 경로로 생긴 surface 는) 위와 동일하게 `OccupancyRegistry::add_workspace_member` + `tap_surface_for_stream` 이 실행돼야 한다 — 실행되지 않으면 PTY/화면버퍼는 정상인데 attach client 로의 스트리밍만 시작되지 않아 그 tab 이 검정 화면으로만 보인다(스트림 tap 이 아예 안 걸린 상태).
     journal publication이 새 멤버의 원 generation을 pending tap으로 기록하고 `src/remote/structure_sync.rs`가 Result/Delta 이후 전송 성공 분기에서 구독을 연다. notifier와 pending reply/tap은 `RemoteState`가 소유한다.
 - **실패 회신**: 원격이 op 를 실패 처리(대표적으로 **원격에 등록되지 않은 plugin surface kind** — 원격의 kind 레지스트리가 그 호스트에서 생성 가능한 kind 의 authority)하면 `ok:false`+`reason` 을 회신하고, client 가 실패 toast(`attach.toast.mirror_structural_forward_failed`)를 띄운다.
-  단 에이전트가 건 op — IPC 구조 요청(split · tab.create/close/move · pane.close · surface.close · `image.open`)과 에이전트 origin intent(`markdown.navigate`(주소창 이동·외부 요청) · `file_handler.dispatch`(`origin_surface_id` 없이)의 새 탭) — 의 실패는 toast 없이 warn 로그로만 남는다([내부 팝업 시스템](../../design/systems/popup.md)).
+  단 에이전트가 건 op — IPC 구조 요청(split · tab.create/close/move · pane.close · surface.close · `image.open`)과 에이전트 origin intent(`markdown.navigate`(주소창 이동·외부 요청) · `file_handler.dispatch`(`origin_surface_id` 없이)의 새 탭) — 의 실패는 toast 없이 warn 로그로만 남는다([내부 팝업 시스템](../../design/systems/popup.md)). markdown 주소창 이동의 원격 실패는 toast 대신 plugin 이 `run.result` 로 읽어 주소창에 표시한다([Markdown surface](../../surfaces/markdown/index.md)).
   사용자가 만진 plugin popup 에서 온 `file_handler.dispatch`·`markdown.navigate`(markdown 파일열기 팝업의 새 탭 열기·제자리 변환)는 사용자 origin 이라 그 실패는 toast 가 된다([파일 핸들러 (File handler)](../file-handler/index.md)).
   요청/응답이라 실패 시 로컬·원격 어느 쪽도 구조가 바뀌지 않는다.
   - **`reason` 은 원격에서 실패를 낸 자리의 문구 그대로다** — split · 새 탭 · convert 모두 같다(예: convert 대상 kind 가 원격에 없으면 `unknown surface kind: <kind>`). client 는 그것을 고치지 않고 toast 끝 괄호 안에 싣는다. 사유가 없을 때의 폴백은 두 층이다: 원격 convert 가 사유 없이 실패하면 `surface <id> was not converted` 를 싣고(원인을 짐작한 "not found" 류 문구를 쓰지 않는다 — 원인이 다를 때 실제 사유를 가린다, [Attach 메커니즘](../../dev-guide/attach-behavior.md)), wire 에 `reason` 이 아예 없으면 client 는 괄호 없는 기본 문구만 띄운다.

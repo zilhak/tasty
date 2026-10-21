@@ -225,6 +225,9 @@ impl JournalApplication {
                     params,
                     cwd,
                 } => {
+                    if let Some(reason) = missing_markdown_file(&surface_kind, &params) {
+                        return Err(reason);
+                    }
                     let cwd = cwd
                         .filter(|value| !value.trim().is_empty())
                         .map(std::path::PathBuf::from)
@@ -305,6 +308,18 @@ impl JournalApplication {
         std::mem::take(&mut self.commands.completed_remote)
     }
 }
+/// 원격 경로의 존재는 원격이 판정한다. 로컬 `markdown.navigate` 처럼 없는 파일로는 markdown surface 를
+/// 바꾸지 않고 거절 사유를 돌려준다. 바꾸면 보던 문서가 불러오지 못한 문서로 대체된다.
+fn missing_markdown_file(surface_kind: &str, params: &serde_json::Value) -> Option<String> {
+    let file = params.get("file")?.as_str()?;
+    (surface_kind == "markdown" && !std::path::Path::new(file).exists()).then(|| {
+        format!(
+            "{}{file}",
+            tasty_ipc::stream::STRUCTURAL_REASON_PATH_NOT_FOUND_PREFIX
+        )
+    })
+}
+
 pub(crate) fn reply(
     hub: &StreamHub,
     client: u32,
@@ -523,5 +538,27 @@ mod correlation_tests {
         assert!(request.idempotency_key.is_none());
         let successor = remote_request(3, u64::MAX, u128::MAX - 1, 1, op, ForwardOrigin::User);
         assert_ne!(request_digest(&request), request_digest(&successor));
+    }
+
+    /// 원격에 없는 파일로 바꾸는 markdown 변환만 거절한다. 있는 파일, 파일 없는 변환, 다른 kind 는 통과한다.
+    #[test]
+    fn markdown_conversion_to_a_missing_remote_file_is_refused() {
+        let missing = "/definitely/not/on/this/server.md";
+        let reason = missing_markdown_file("markdown", &serde_json::json!({ "file": missing }))
+            .expect("missing markdown file must be refused");
+        assert_eq!(reason, format!("path not found: {missing}"));
+        let here = env!("CARGO_MANIFEST_DIR");
+        assert_eq!(
+            missing_markdown_file("markdown", &serde_json::json!({ "file": here })),
+            None
+        );
+        assert_eq!(
+            missing_markdown_file("markdown", &serde_json::json!({})),
+            None
+        );
+        assert_eq!(
+            missing_markdown_file("image", &serde_json::json!({ "file": missing })),
+            None
+        );
     }
 }

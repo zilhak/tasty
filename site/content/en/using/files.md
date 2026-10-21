@@ -1,4 +1,4 @@
-<!-- source-hash: ea0b1772c16f -->
+<!-- source-hash: 51f8cf40da28 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -210,7 +210,7 @@ Renders `.md` files. When the file changes, it redraws automatically within 1 se
 - If there are headings, a collapsible **Table of contents** is attached above the body. Clicking an entry moves down to that heading within the document you are already reading — and clicking the same entry again moves there again.
 - Hover a code block for the **Copy code** button.
 - The **Find** key from the [Keyboard shortcuts](../customize/keybindings.md) settings (default `Ctrl+F` · `Alt+F`, macOS `Ctrl+F` · `Cmd+F`) while the document has focus — **Find in document**. Changing the Find key applies to open documents right away.
-- Type another file path in the address bar at the top to move to it. Recently opened files appear as autocompletion. Files opened in other windows of the same Tasty instance are included, with up to 10 entries in most recently opened order.
+- Type another file path in the address bar at the top and press `Enter` or **Go** to move to it. Recently opened files appear as autocompletion. Files opened in other windows of the same Tasty instance are included, with up to 10 entries in most recently opened order. When the Surface is narrow the Go button hides, but `Enter` still moves. The address bar of a Markdown document in a remote Workspace is described in [Working remotely](../remote/attach.md).
 - Links in the document — other Markdown · files open in a new Tab in the same Pane, and on Linux Tasty switches to it (on macOS the new Tab is only added behind the current one), and `http(s)://` goes to the browser. Relative paths are relative to the folder the document is in. If no handler can open a linked file, the **Open file with…** window appears so you can choose (in a remote Workspace it lists only handlers that can open the file on the remote, and a notice appears when there are none). Links that point inside the same document, such as `#heading`, and footnote numbers and their back arrows only move to that spot.
 - Files over 1 MiB are asked about once with **Open large file?**. The prompt appears in the middle of that Markdown surface, or in the middle of the window when the surface is narrower than the prompt. A file that was small when opened is asked about the same way before it is re-read once it grows past 1 MiB, and its previous content stays visible until you answer. If you cancel, the document area shows **This file is larger than 1 MiB and has not been loaded**, with an **Open file…** button below it that asks again. A file you cancelled is not re-read automatically when it changes; `tasty markdown reload --surface <ID>` also asks again. Once you choose **Open**, that file is not asked about again.
 

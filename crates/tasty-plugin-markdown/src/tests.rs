@@ -354,6 +354,7 @@ fn remote_result_applies_only_to_the_pending_request() {
             loading: false,
             stale: false,
             disconnected: false,
+            addr_failure: None,
         })
     );
 }
@@ -600,6 +601,154 @@ fn a_forwarded_external_navigate_drops_the_owner_popup() {
         json!({ "surface_id": 3, "path": "/work/a.md", "owner_popup_instance": 42 }),
     );
     assert_eq!(forwarded, json!({ "surface_id": 3, "path": "/work/a.md" }));
+}
+
+/// mirror 문서의 주소창 이동은 버리지 않고 같은 surface 의 원격 이동으로 보낸다. 로컬은 로컬 이동이다.
+#[test]
+fn a_mirror_address_entry_navigates_the_same_surface_on_the_remote() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    mirror_create(&mut p, 1, "/remote/a.md");
+    let intent = render::parse_nav_fragment("about:blank#tasty-nav:addr:17:%2Fremote%2Fb.md")
+        .expect("addr intent");
+    assert_eq!(
+        nav_action(intent.clone(), p.docs.get(&1)),
+        NavAction::NavigateRemote("/remote/b.md".into())
+    );
+    assert_eq!(
+        navigate_params(1, "/remote/b.md", None),
+        Some(json!({ "surface_id": 1, "path": "/remote/b.md" }))
+    );
+    p.docs.insert(2, MdDoc::new(None));
+    assert_eq!(
+        nav_action(intent.clone(), p.docs.get(&2)),
+        NavAction::NavigateLocal("/remote/b.md".into())
+    );
+    // 연결이 끊긴 문서는 주소창이 읽기 전용이다. 늦게 온 신호도 보내지 않는다.
+    p.docs
+        .get_mut(&1)
+        .unwrap()
+        .remote
+        .as_mut()
+        .unwrap()
+        .disconnected = true;
+    assert_eq!(nav_action(intent, p.docs.get(&1)), NavAction::Ignore);
+    // mirror 문서의 파일 링크는 원격 경로라 열지 않는다.
+    assert_eq!(
+        nav_action(render::NavIntent::Link("b.md".into()), p.docs.get(&1)),
+        NavAction::Ignore
+    );
+}
+
+/// `run.result` 의 실패는 reason_code 가 not_found 일 때만 파일 없음이다. 진행 중이면 결과가 아니다.
+#[test]
+fn navigate_run_results_are_classified_without_guessing_not_found() {
+    use render::AddrFailureKind::{NotFound, Other};
+    assert_eq!(
+        classify_navigate_run(&json!({ "done": false, "state": "running" })),
+        None
+    );
+    assert_eq!(
+        classify_navigate_run(&json!({ "done": true, "state": "succeeded" })),
+        Some(AddrOutcome::Succeeded)
+    );
+    assert_eq!(
+        classify_navigate_run(
+            &json!({ "done": true, "state": "failed", "reason_code": "not_found",
+                     "result": "the remote could not apply the change: path not found: /x" })
+        ),
+        Some(AddrOutcome::Failed(NotFound))
+    );
+    // 문구에 "not found" 가 있어도 코드가 없으면 파일 없음으로 단정하지 않는다.
+    assert_eq!(
+        classify_navigate_run(
+            &json!({ "done": true, "state": "failed", "result": "remote tab not found" })
+        ),
+        Some(AddrOutcome::Failed(Other))
+    );
+    assert_eq!(
+        classify_navigate_run(&json!({ "done": true, "state": "cancelled" })),
+        Some(AddrOutcome::Failed(Other))
+    );
+    assert_eq!(
+        classify_navigate_run(&json!({ "done": true, "state": "unknown" })),
+        Some(AddrOutcome::Failed(Other))
+    );
+    for outcome in [
+        AddrOutcome::Succeeded,
+        AddrOutcome::Failed(NotFound),
+        AddrOutcome::Failed(Other),
+    ] {
+        assert_eq!(AddrOutcome::from_wire(outcome.as_wire()), Some(outcome));
+    }
+}
+
+/// 실패는 입력값과 함께 보관하고, 더 새 이동이 있으면 옛 결과를 버린다. 성공과 dismiss 는 실패를 지운다.
+#[test]
+fn address_failures_follow_the_latest_entry_only() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    mirror_create(&mut p, 1, "/remote/a.md");
+    let doc = p.docs.get_mut(&1).unwrap();
+    doc.remote.as_mut().unwrap().addr_ticket = 2;
+    let not_found = AddrOutcome::Failed(render::AddrFailureKind::NotFound);
+    assert!(!doc.apply_addr_outcome(1, "/remote/old.md".into(), not_found));
+    assert!(doc.apply_addr_outcome(2, "/remote/typo.md".into(), not_found));
+    assert_eq!(
+        doc.remote_view().unwrap().addr_failure,
+        Some(render::AddrFailure {
+            typed: "/remote/typo.md".into(),
+            kind: render::AddrFailureKind::NotFound,
+        })
+    );
+    assert!(!doc.apply_addr_outcome(2, "/remote/typo.md".into(), not_found));
+    assert!(doc.apply_addr_outcome(2, "/remote/typo.md".into(), AddrOutcome::Succeeded));
+    assert_eq!(doc.remote_view().unwrap().addr_failure, None);
+
+    assert!(doc.apply_addr_outcome(2, "/remote/typo.md".into(), not_found));
+    assert_eq!(
+        nav_action(render::NavIntent::AddrDismiss, p.docs.get(&1)),
+        NavAction::DismissAddr
+    );
+    // 로컬 문서에는 실패 상태가 없다.
+    let mut local = MdDoc::new(None);
+    assert!(!local.apply_addr_outcome(0, "/x.md".into(), not_found));
+}
+
+/// 결과 회신 자기 호출이 그 surface 의 마지막 이동을 실패로 표시한다.
+#[test]
+fn an_address_result_self_call_marks_the_latest_entry_failed() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    mirror_create(&mut p, 1, "/remote/a.md");
+    p.docs
+        .get_mut(&1)
+        .unwrap()
+        .remote
+        .as_mut()
+        .unwrap()
+        .addr_ticket = 1;
+    let params =
+        json!({ "surface_id": 1, "ticket": 1, "path": "/remote/x.md", "outcome": "not_found" });
+    assert!(
+        p.docs
+            .get(&1)
+            .unwrap()
+            .remote
+            .as_ref()
+            .unwrap()
+            .addr_failure
+            .is_none(),
+        "precondition"
+    );
+    p.on_addr_result(&params);
+    assert!(
+        p.docs
+            .get(&1)
+            .unwrap()
+            .remote
+            .as_ref()
+            .unwrap()
+            .addr_failure
+            .is_some()
+    );
 }
 
 /// 링크 열기 요청에 호스트가 보낸 URL과 원래 surface를 전달한다.
