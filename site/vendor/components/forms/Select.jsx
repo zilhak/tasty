@@ -26,11 +26,16 @@ const CSS = `
 .tasty-select select:hover { border-color: var(--tasty-border-strong); }
 .tasty-select select:focus { outline: 0; border-color: var(--tasty-border-focus); box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-border-focus); }
 .tasty-select select:disabled { color: var(--tasty-state-disabled-fg); background: var(--tasty-state-disabled-fill); border-color: var(--tasty-state-disabled-border); cursor: default; }
-.tasty-select:has(select:disabled) .tasty-select__chevron { color: var(--tasty-state-disabled-fg); }
+/* 2026-10-21 — no value: trigger ink = select-placeholder; disabled (with or without a value) = state-disabled-fg.
+   .tasty-select--empty sits on the wrapper, so it is a compound with .tasty-select, never a descendant. */
+.tasty-select--empty select { color: var(--tasty-select-placeholder); }
+.tasty-select--empty select:disabled { color: var(--tasty-state-disabled-fg); }
+.tasty-select select option { color: var(--tasty-text-primary); }
 .tasty-select__chevron {
   position: absolute; right: var(--tasty-select-chevron-offset); top: 50%; transform: translateY(-50%);
   pointer-events: none; color: var(--tasty-text-muted);
 }
+.tasty-select:has(select:disabled) .tasty-select__chevron { color: var(--tasty-state-disabled-fg); }
 .tasty-select__chevron svg { width: var(--tasty-icon-size-sm); height: var(--tasty-icon-size-sm); display: block; }
 `;
 
@@ -44,12 +49,21 @@ function ensureCss() {
   injected = true;
 }
 
-export function Select({ options = [], block = false, className = "", children, ...rest }) {
+export function Select({ options = [], block = false, placeholder, className = "", children, onChange, ...rest }) {
   ensureCss();
-  const cls = ["tasty-select", block ? "tasty-select--block" : "", className].filter(Boolean).join(" ");
+  // 2026-10-19 — placeholder: a hidden, disabled "" option. The trigger shows it in placeholder ink while the
+  // value is ""; it is never a row in the open list (MenuItem no-value rule, 2026-10-09).
+  const controlled = rest.value !== undefined;
+  const [inner, setInner] = React.useState(rest.defaultValue !== undefined ? rest.defaultValue : "");
+  const cur = controlled ? rest.value : inner;
+  const empty = placeholder != null && (cur === "" || cur == null);
+  const props = { ...rest };
+  if (placeholder != null && !controlled && props.defaultValue === undefined) props.defaultValue = "";
+  const cls = ["tasty-select", block ? "tasty-select--block" : "", empty ? "tasty-select--empty" : "", className].filter(Boolean).join(" ");
   return (
     <div className={cls}>
-      <select {...rest}>
+      <select {...props} onChange={(e) => { if (!controlled) setInner(e.target.value); if (onChange) onChange(e); }}>
+        {placeholder != null && <option value="" disabled hidden>{placeholder}</option>}
         {children ||
           options.map((o) => {
             const opt = typeof o === "string" ? { value: o, label: o } : o;

@@ -138,7 +138,7 @@ stroke_icon!(
 stroke_icon!(
     ARROW_RIGHT,
     "arrow_right",
-    r#"<path d="M5 12h14M13 6l6 6-6 6"/>"#
+    r#"<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>"#
 );
 // DAG 뷰 방향 토글(아래 방향) — ARROW_RIGHT 의 세로 대응.
 stroke_icon!(

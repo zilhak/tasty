@@ -270,6 +270,8 @@ const GALLERY_MODULE = {
   GalleryNotifications: "./notifications.jsx",
   GalleryLoadingParts: "./layouts-loading.jsx",
   OverlaysWindowsPluginTrust: "./overlays-windows-plugin-trust.jsx",
+  OverlaysWindowsFileHandlers: "./overlays-windows-file-handlers.jsx",
+  PluginsMdAddress: "./plugins-md-address.jsx",
   OverlaysShared: "./overlays-shared.jsx",
   PresetEditor: "./preset_editor.jsx",
   ExplorerKit: "./plugins.jsx",
@@ -402,6 +404,9 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
     addKit(sym, `${sym} as Kit_${sym}`) ? `Kit_${sym}` : all);
   src = src.replace(/(<\/?)window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, lt, sym) =>
     addKit(sym, sym) ? `${lt}${sym}` : all);
+  // `cond ? window.TastyKit.A : window.TastyKit.B` — a kit member read outside a tag name.
+  src = src.replace(/window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, sym) =>
+    addKit(sym, `${sym} as Kit_${sym}`) ? `Kit_${sym}` : all);
 
   // `const XK = window.ExplorerKit;` — the whole global under a local name.
   src = src.replace(

@@ -1684,6 +1684,96 @@ impl crate::theme::Theme {
         self.accent_primary()
     }
 
+    /// `component.file-handler-empty-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn file_handler_empty_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.file-handler-form-bg` → `{semantic.surface-raised}`
+    #[inline]
+    pub fn file_handler_form_bg(&self) -> HexColor {
+        self.surface_raised()
+    }
+
+    /// `component.file-handler-form-border` → `{semantic.border-default}`
+    #[inline]
+    pub fn file_handler_form_border(&self) -> HexColor {
+        self.border_default()
+    }
+
+    /// `component.file-handler-form-caption-fg` → `{semantic.text-secondary-raised}`
+    #[inline]
+    pub fn file_handler_form_caption_fg(&self) -> HexColor {
+        self.text_secondary_raised()
+    }
+
+    /// `component.file-handler-form-error-fg` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn file_handler_form_error_fg(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.file-handler-form-info-fg` → `{semantic.text-secondary-raised}`
+    #[inline]
+    pub fn file_handler_form_info_fg(&self) -> HexColor {
+        self.text_secondary_raised()
+    }
+
+    /// `component.file-handler-form-label-fg` → `{semantic.text-secondary-raised}`
+    #[inline]
+    pub fn file_handler_form_label_fg(&self) -> HexColor {
+        self.text_secondary_raised()
+    }
+
+    /// `component.file-handler-form-padding` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn file_handler_form_padding(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
+    /// `component.file-handler-form-row-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn file_handler_form_row_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.file-handler-kind-width` → `{semantic.field-width-md}` = 160px
+    #[inline]
+    pub fn file_handler_kind_width(&self) -> LogicalPx {
+        self.field_width_md
+    }
+
+    /// `component.file-handler-prio-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn file_handler_prio_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.file-handler-priority-width` → `{semantic.field-width-xs}` = 90px
+    #[inline]
+    pub fn file_handler_priority_width(&self) -> LogicalPx {
+        self.field_width_xs
+    }
+
+    /// `component.file-handler-select-width` → `{semantic.field-width-lg}` = 200px
+    #[inline]
+    pub fn file_handler_select_width(&self) -> LogicalPx {
+        self.field_width_lg
+    }
+
+    /// `component.file-handler-summary-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn file_handler_summary_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.file-handler-summary-removed-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn file_handler_summary_removed_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
     /// `component.font-combo-list-max-height` → `{component.select-search-list-max-height}` = 300px
     #[inline]
     pub fn font_combo_list_max_height(&self) -> LogicalPx {
@@ -1760,6 +1850,24 @@ impl crate::theme::Theme {
     #[inline]
     pub fn fp_filter_max_width(&self) -> LogicalPx {
         self.field_width_md
+    }
+
+    /// `component.fp-folder-file-fg` → `{semantic.state-disabled-fg}`
+    #[inline]
+    pub fn fp_folder_file_fg(&self) -> HexColor {
+        self.state_disabled_fg()
+    }
+
+    /// `component.fp-folder-hint-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn fp_folder_hint_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.fp-folder-path-fg` → `{component.input-readonly-fg}`
+    #[inline]
+    pub fn fp_folder_path_fg(&self) -> HexColor {
+        self.input_readonly_fg()
     }
 
     /// `component.fp-footer-label-width` → `{primitive.size-64}` = 64px
@@ -2636,6 +2744,78 @@ impl crate::theme::Theme {
     #[inline]
     pub fn loading_overlay_tab_size(&self) -> LogicalPx {
         self.tab_icon_size()
+    }
+
+    /// `component.md-address-bar-bg` → `{component.html-address-bar-bg}`
+    #[inline]
+    pub fn md_address_bar_bg(&self) -> HexColor {
+        self.html_address_bar_bg()
+    }
+
+    /// `component.md-address-bar-border` → `{component.html-address-bar-border}`
+    #[inline]
+    pub fn md_address_bar_border(&self) -> PremulColor {
+        self.html_address_bar_border()
+    }
+
+    /// `component.md-address-bar-gap` → `{component.html-address-bar-gap}` = 8px
+    #[inline]
+    pub fn md_address_bar_gap(&self) -> LogicalPx {
+        self.html_address_bar_gap()
+    }
+
+    /// `component.md-address-bar-height` → `{component.html-address-bar-height}` = 40px
+    #[inline]
+    pub fn md_address_bar_height(&self) -> LogicalPx {
+        self.html_address_bar_height()
+    }
+
+    /// `component.md-address-bar-nav-gap` → `{component.html-address-bar-nav-gap}` = 4px
+    #[inline]
+    pub fn md_address_bar_nav_gap(&self) -> LogicalPx {
+        self.html_address_bar_nav_gap()
+    }
+
+    /// `component.md-address-bar-padding-x` → `{component.html-address-bar-padding-x}` = 8px
+    #[inline]
+    pub fn md_address_bar_padding_x(&self) -> LogicalPx {
+        self.html_address_bar_padding_x()
+    }
+
+    /// `component.md-address-error-glyph` → `{component.html-address-error-glyph}`
+    #[inline]
+    pub fn md_address_error_glyph(&self) -> HexColor {
+        self.html_address_error_glyph()
+    }
+
+    /// `component.md-address-error-height` → `{component.html-address-error-height}` = 24px
+    #[inline]
+    pub fn md_address_error_height(&self) -> LogicalPx {
+        self.html_address_error_height()
+    }
+
+    /// `component.md-address-field-min-width` → `{component.html-address-field-min-width}` = 96px
+    #[inline]
+    pub fn md_address_field_min_width(&self) -> LogicalPx {
+        self.html_address_field_min_width()
+    }
+
+    /// `component.md-address-go-hide-below` → `{semantic.field-width-md}` = 160px
+    #[inline]
+    pub fn md_address_go_hide_below(&self) -> LogicalPx {
+        self.field_width_md
+    }
+
+    /// `component.md-address-stale-bg` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn md_address_stale_bg(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.md-address-stale-fg` → `{semantic.text-on-accent}`
+    #[inline]
+    pub fn md_address_stale_fg(&self) -> HexColor {
+        self.text_on_accent()
     }
 
     /// `component.md-callout-icon-gap` → `{semantic.space-xs}` = 4px
@@ -3974,6 +4154,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn select_padding_x(&self) -> LogicalPx {
         self.spacing_md
+    }
+
+    /// `component.select-placeholder` → `{component.input-placeholder}`
+    #[inline]
+    pub fn select_placeholder(&self) -> HexColor {
+        self.input_placeholder()
     }
 
     /// `component.select-radius` → `{semantic.radius}` = 4px

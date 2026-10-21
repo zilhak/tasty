@@ -505,6 +505,25 @@ pub mod fh {
     pub const WHEN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_56;
 }
 
+pub mod file {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.file-handler-form-padding` → `{semantic.space-md}` = 12px
+    pub const HANDLER_FORM_PADDING: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.file-handler-form-row-gap` → `{semantic.space-sm}` = 8px
+    pub const HANDLER_FORM_ROW_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.file-handler-kind-width` → `{semantic.field-width-md}` = 160px
+    pub const HANDLER_KIND_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_MD;
+
+    /// `component.file-handler-priority-width` → `{semantic.field-width-xs}` = 90px
+    pub const HANDLER_PRIORITY_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_XS;
+
+    /// `component.file-handler-select-width` → `{semantic.field-width-lg}` = 200px
+    pub const HANDLER_SELECT_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_LG;
+}
+
 pub mod font {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -871,6 +890,27 @@ pub mod loading {
 
 pub mod md {
     use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.md-address-bar-gap` → `{component.html-address-bar-gap}` = 8px
+    pub const ADDRESS_BAR_GAP: LogicalPx = super::html::ADDRESS_BAR_GAP;
+
+    /// `component.md-address-bar-height` → `{component.html-address-bar-height}` = 40px
+    pub const ADDRESS_BAR_HEIGHT: LogicalPx = super::html::ADDRESS_BAR_HEIGHT;
+
+    /// `component.md-address-bar-nav-gap` → `{component.html-address-bar-nav-gap}` = 4px
+    pub const ADDRESS_BAR_NAV_GAP: LogicalPx = super::html::ADDRESS_BAR_NAV_GAP;
+
+    /// `component.md-address-bar-padding-x` → `{component.html-address-bar-padding-x}` = 8px
+    pub const ADDRESS_BAR_PADDING_X: LogicalPx = super::html::ADDRESS_BAR_PADDING_X;
+
+    /// `component.md-address-error-height` → `{component.html-address-error-height}` = 24px
+    pub const ADDRESS_ERROR_HEIGHT: LogicalPx = super::html::ADDRESS_ERROR_HEIGHT;
+
+    /// `component.md-address-field-min-width` → `{component.html-address-field-min-width}` = 96px
+    pub const ADDRESS_FIELD_MIN_WIDTH: LogicalPx = super::html::ADDRESS_FIELD_MIN_WIDTH;
+
+    /// `component.md-address-go-hide-below` → `{semantic.field-width-md}` = 160px
+    pub const ADDRESS_GO_HIDE_BELOW: LogicalPx = crate::generated::semantic::FIELD_WIDTH_MD;
 
     /// `component.md-callout-icon-gap` → `{semantic.space-xs}` = 4px
     pub const CALLOUT_ICON_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;

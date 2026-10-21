@@ -43,6 +43,7 @@ const GROUPS = [
     when: <>Movement and open/closed state. Single chevrons are <b>tree-row disclosure</b> and menu affordances; the doubled chevrons <b>collapse / expand the sidebar rail</b>.</>,
     icons: [
       { name: "chevronRight", role: "collapsed row · forward" },
+      { name: "arrowRight", role: "Go — navigate to the typed address (Markdown address bar)" },
       { name: "chevronDown", role: "expanded row" },
       { name: "chevronUp", role: "collapsed row · previous / up" },
       { name: "chevronLeft", role: "back" },

@@ -310,8 +310,25 @@ function Components() {
               </div>
             </Cluster>
           </Stage>
+          <Stage variant="column" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-md)" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, t]) => (
+              <div key={label} {...(t ? { "data-theme": t } : {})} style={{ display: "flex", flexWrap: "wrap", gap: "var(--tasty-space-md)", alignItems: "flex-end", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ width: "100%", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} — Select states (2026-10-21): hover / focus are pinned with the same border values the CSS applies</span>
+                {[["value", { defaultValue: "Tasty rc" }], ["hover", { defaultValue: "Tasty rc", style: { borderColor: "var(--tasty-border-strong)" } }],
+                  ["focus / open", { defaultValue: "Tasty rc", style: { borderColor: "var(--tasty-border-focus)", boxShadow: "0 0 0 var(--tasty-border-width) var(--tasty-border-focus)" } }],
+                  ["no value → select-placeholder", { placeholder: "Select a profile…" }], ["disabled + value → state-disabled-fg", { disabled: true, defaultValue: "Tasty rc" }],
+                  ["disabled + no value → state-disabled-fg", { disabled: true, placeholder: "Select a profile…" }]].map(([k, p]) => (
+                  <div key={k} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", width: "var(--tasty-field-width-lg)" }}>
+                    <span style={{ fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>{k}</span>
+                    <Select block options={["Default (full rc)", "Tasty rc", "Custom"]} {...p} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
           <Meta
-            specs={[["control height", "28px"], ["checkbox", "16px square"], ["accent", <span className="tok">--tasty-accent-primary</span>]]}
+            specs={[["control height", "28px"], ["checkbox", "16px square"], ["accent", <span className="tok">--tasty-accent-primary</span>],
+              ["Select ink (2026-10-21)", "value = text-primary · no value = select-placeholder · disabled (value or not) = state-disabled-fg, chevron state-disabled-fg (else text-muted) · open list options always text-primary · no hover/active overlay when disabled"]]}
             tokens={[{ tok: "--tasty-accent-primary", use: "checked / on", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-surface-raised", use: "track / box", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-border-default", use: "outline" }]} />
         </Spec>
 

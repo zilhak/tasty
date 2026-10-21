@@ -233,6 +233,7 @@ const NAV = [
   { id: "preseteditor", label: "Preset editor" },
   { id: "settings", label: "Settings window" },
   { id: "settingsnarrow", label: "Settings rows — narrow (b12)" },
+  { id: "filehandlers", label: "Handler › File Detectors · Handlers" },
   { id: "permissions", label: "General › Permissions (macOS)" },
   { id: "kbimportexport", label: "Keybindings · Import / Export" },
   { id: "optionkey", label: "Win · Super as option (b12)" },
@@ -1051,6 +1052,33 @@ function Page() {
             tokens={[{ tok: "--tasty-fp-filter-height", use: "28 — matches the Input" }, { tok: "--tasty-fp-filter-max-width", use: "160 cap (new)" }, { tok: "--tasty-separator", use: "chip edge", color: "var(--tasty-separator)" }, { tok: "--tasty-text-muted", use: "list", color: "var(--tasty-text-muted)" }]} />
           <Dont><b>Don't</b> draw it with a chevron or a hover fill while nothing opens — the earlier static "All files ▾" chip promised a menu that does not exist.</Dont>
         </Spec>
+
+        <Spec title={'Folder mode — mode="folder" returns a folder (2026-10-21)'}
+          when={<>The third mode of the same frame, for the three callers that used the OS folder dialog (Settings › Remote transfer › Save folder, Plugins › Add › Find folder…, Preset editor <code>dir</code>). Local only. The <b>target</b> is the selected folder row, or the <b>current folder</b> when nothing is selected, so <b>Select folder</b> is enabled whenever the folder reads (also when it is empty) and disabled while loading or on an error. The footer swaps the File name input for a <b>read-only Folder readout</b> of the full target path (front ellipsis, tooltip = full path) and one muted hint line. <b>Files stay listed</b> so the folder is recognisable, but they are <b>inert</b>: disabled ink, no hover, skipped by ↑↓, tooltip "Only folders can be selected." The filter chip is hidden: filters don't apply to folders. Not the same thing as <code>folderSel</code> above, which is a folder row in open / save mode.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>no row selected — target = current folder</div><FilePickerFrame mode="folder" /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>subfolder selected — target = configs</div><FilePickerFrame mode="folder" folderPick="row" /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>pointer on a file — inert, tooltip only</div><FilePickerFrame mode="folder" folderPick="row" fileHover /></div>
+          </Stage>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>Settings chooser size 480×360 · empty folder — still selectable</div><FilePickerFrame mode="folder" state="empty" w={480} h={360} /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>480×360 · read error — Select folder disabled, path in disabled ink</div><FilePickerFrame mode="folder" state="error-perm" w={480} h={360} /></div>
+            <div data-theme="latte" style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>Latte · 480×360 · subfolder selected</div><FilePickerFrame mode="folder" folderPick="row" w={480} h={360} /></div>
+          </Stage>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>en · 640 · long folder names</div><FilePickerFrame mode="folder" pathKind="longtwo" folderPick="row" /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>ko · 480×360 · long names</div><FilePickerFrame mode="folder" lang="ko" pathKind="longtwo" w={480} h={360} /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>ja · 320 floor · long names, selected</div><FilePickerFrame mode="folder" lang="ja" pathKind="longtwo" folderPick="row" single w={320} h={420} /></div>
+          </Stage>
+          <Meta
+            specs={[["target", "selected folder row, else current folder — one path returned, picker closes"], ["header", "folder glyph + “Select folder” (14 semibold) — same header box"], ["footer row 1", "label fp-footer-label-width 64 (caption, ellipsis) · gap fp-section-gap 8 · readout flex 1, control-height 28, pad-x space-md, input-readonly-bg / -border, mono caption, fp-folder-path-fg, FRONT ellipsis, tooltip full path, not editable"],
+              ["footer row 2", "hint: folder glyph icon-size-sm + micro, fp-folder-hint-fg, wraps; hidden on loading / error"], ["footer row 3", "spacer · Cancel ghost · Select folder primary, gap space-sm; never shrinks — rows 1–2 give way"],
+              ["Select folder", "enabled: loaded or empty · disabled: loading, error (path readout in state-disabled-fg)"], ["file rows", "inert: glyph + name + size + date in fp-folder-file-fg, no hover / selection overlay, ↑↓ skip, tooltip"], ["filter chip", "hidden — the caller's filter is ignored in this mode"],
+              ["single click folder", "selects (target = that folder)"], ["click selected row again / empty area", "clears → target = current folder"], ["double click folder · →", "enters it (selection cleared)"], ["Enter", "Select folder — confirms the target"], ["Up · Alt+↑ · breadcrumb", "unchanged"]]}
+            tokens={[{ tok: "--tasty-fp-folder-file-fg", use: "new · → state-disabled-fg", color: "var(--tasty-fp-folder-file-fg)" }, { tok: "--tasty-fp-folder-path-fg", use: "new · → input-readonly-fg", color: "var(--tasty-fp-folder-path-fg)" }, { tok: "--tasty-fp-folder-hint-fg", use: "new · → text-muted", color: "var(--tasty-fp-folder-hint-fg)" }, { tok: "--tasty-input-readonly-bg", use: "readout box", color: "var(--tasty-input-readonly-bg)" }, { tok: "--tasty-fp-footer-label-width", use: "64 label column" }]} />
+          <Note>Strings (<code>picker.folder.*</code>) — <b>title / confirm</b>: Select folder · 폴더 선택 · フォルダーを選択 — <b>label</b>: Folder · 폴더 · フォルダー — <b>hint.current</b>: Using the current folder. Select a subfolder to use it instead. · 현재 폴더를 사용합니다. 하위 폴더를 고르면 그 폴더를 사용합니다. · 現在のフォルダーを使用します。サブフォルダーを選ぶとそのフォルダーを使用します。 — <b>hint.selected</b>: Double-click {"{name}"} to open it. · {"{name}"} 폴더를 열려면 더블클릭하세요. · {"{name}"} を開くにはダブルクリックします。 — <b>file.tooltip</b>: Only folders can be selected. · 폴더만 선택할 수 있습니다. · 選択できるのはフォルダーだけです。 — <b>empty</b>: No subfolders here · 하위 폴더가 없습니다 · サブフォルダーはありません. Width check: the longest label (フォルダー) fits 64 at caption; the longest button (フォルダーを選択) fits beside Cancel at the 320 floor; hints wrap to two lines at 320, never clip.</Note>
+          <Dont><b>Don't</b> make Enter descend in this mode: Enter presses the primary button in every mode (in open mode Open happens to descend into a selected folder); here the primary button is Select folder, so Enter confirms. Descending is double-click or →.</Dont>
+        </Spec>
       </Section>
       {window.PresetEditor && <window.PresetEditor.Section />}
 
@@ -1370,6 +1398,7 @@ function Page() {
       </Section>
 
       {window.OverlaysWindowsB12 && <window.OverlaysWindowsB12.SettingsNarrowSection />}
+      {window.OverlaysWindowsFileHandlers && <window.OverlaysWindowsFileHandlers.FileHandlerSection />}
       <Section id="permissions" title="Settings › General › Permissions (macOS) — 2026-09-28">
         <Spec title="Status table, one action per row, one request button"
           when={<>macOS builds only, the last L2 under General. A three-column table: <b>permission</b> · <b>status</b> · <b>row action</b>. The four states are told apart by <b>glyph + word</b>, with colour as a third channel: <b>Granted</b> check / success, <b>Not granted</b> alertCircle / warning, <b>Unknown</b> helpCircle / muted, <b>Cannot check automatically</b> eyeOff / muted. Unknown (inference failed) and Cannot check (deliberately not looked at) share the muted ink but never the glyph, and neither can be misread as granted. The Full Disk Access shortcut moves <b>into its own row</b> as Secondary / Sm <b>[Open System Settings]</b>. What needs explaining per row now lives in HelpHints, so the two notes under the table are short. <b>[Request all permissions]</b> stays Primary / Md under the table. While requesting it is disabled and the line below becomes a spinner + <i>requesting</i> copy; the button carries no spinner. The debug-only Accessibility row carries a <b>debug</b> Tag.</>}>

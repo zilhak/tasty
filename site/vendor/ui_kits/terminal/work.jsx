@@ -86,22 +86,31 @@ function TerminalPane({ session, focused, searchOpen, onSearchClose }) {
   );
 }
 
-function MarkdownSurface({ focused, path = "~/work/tasty/README.md", children }) {
+// 2026-10-21 — address band = gallery Plugins › Markdown:
+// [Folder (· Reload when remote)] gap 8 [field: kind glyph + path] gap 8 [Go]. remote = editable mirror field.
+function MarkdownSurface({ focused, path = "~/work/tasty/README.md", remote = false, stale = false, children }) {
+  const MdI = window.TastyDesignSystem_41fd3f.Icon;
   return (
     <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
       background: focused ? "var(--tasty-surface-markdown-focused-bg)" : "var(--tasty-surface-markdown-unfocused-bg)",
       color: focused ? "var(--tasty-surface-markdown-focused-fg)" : "var(--tasty-text-primary)",
       border: "var(--tasty-border-width) solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
-      {/* address-bar chrome — path display/edit + Go (mirrors gallery markdown_viewer) */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", height: "var(--tasty-size-36)", flex: "none",
-        padding: "0 var(--tasty-space-sm)", background: "var(--tasty-bg-sidebar)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "var(--tasty-space-xs)", height: "var(--tasty-size-28)", padding: "0 var(--tasty-space-sm)",
-          background: "var(--tasty-input-bg)", border: "var(--tasty-border-width) solid var(--tasty-input-border)", borderRadius: "var(--tasty-radius)" }}>
-          <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-input-icon-fg)" }}>{ic.file}</span>
-          <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term-sm)", color: "var(--tasty-text-secondary)",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{path}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-md-address-bar-gap)", height: "var(--tasty-md-address-bar-height)", flex: "none",
+        padding: "0 var(--tasty-md-address-bar-padding-x)", background: "var(--tasty-md-address-bar-bg)", borderBottom: "var(--tasty-border-width) solid var(--tasty-md-address-bar-border)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-md-address-bar-nav-gap)", flex: "none" }}>
+          <IconButton size="sm" aria-label={remote ? "Open a remote file" : "Open a file"} title={remote ? "Open a remote file…" : "Open a file…"}><MdI name="folderOpen" /></IconButton>
+          {remote && (stale
+            ? <button aria-label="The remote file changed — reload" title="The remote file changed — reload" style={{ width: "var(--tasty-icon-button-size-sm)", height: "var(--tasty-icon-button-size-sm)", display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0, border: 0,
+                borderRadius: "var(--tasty-icon-button-radius)", background: "var(--tasty-md-address-stale-bg)", color: "var(--tasty-md-address-stale-fg)", cursor: "pointer" }}><MdI name="refresh" /></button>
+            : <IconButton size="sm" aria-label="Reload" title="Reload"><MdI name="refresh" /></IconButton>)}
         </div>
-        <IconButton size="sm" aria-label="Go"><KIcon d={<path d="M5 12h14M13 6l6 6-6 6" />} /></IconButton>
+        <div style={{ flex: 1, minWidth: "var(--tasty-md-address-field-min-width)", display: "flex", alignItems: "center", gap: "var(--tasty-input-gap)", height: "var(--tasty-input-height)", boxSizing: "border-box", padding: "0 var(--tasty-space-sm)",
+          background: "var(--tasty-input-bg)", border: "var(--tasty-border-width) solid var(--tasty-input-border)", borderRadius: "var(--tasty-input-radius)" }}>
+          <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-input-icon-fg)" }}><MdI name={remote ? "remote" : "file"} size="var(--tasty-icon-size-sm)" /></span>
+          <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-input-font-size)", color: "var(--tasty-text-secondary)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left" }}><bdi>{path}</bdi></span>
+        </div>
+        <IconButton size="sm" aria-label="Go" title="Go"><MdI name="arrowRight" /></IconButton>
       </div>
       <div className="tasty-scroll" style={{ padding: "var(--tasty-space-lg) var(--tasty-space-xl)", overflow: "auto", lineHeight: 1.6, maxWidth: 620 }}>
         {children || <>

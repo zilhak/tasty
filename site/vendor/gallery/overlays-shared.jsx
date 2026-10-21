@@ -2642,7 +2642,9 @@ function RemoteAttachFrame({ state = "loaded", newPhase = "rest", newSelected, e
 // a remote attach host — differing only in the header host indicator and
 // the breadcrumb root. Popup language: Scrim · content-drawn header ·
 // --tasty-bg-panel frame, same as remote_tool / Add remote workspace.
-function FpRow({ kind, name, size, mod, selected, focus, multi, checked, dim }) {
+// inert (2026-10-21, folder mode): a file row that is listed for orientation but can't be selected —
+// ink state-disabled-fg (never opacity), no hover overlay, skipped by ↑↓, tooltip "Only folders can be selected."
+function FpRow({ kind, name, size, mod, selected, focus, multi, checked, dim, inert, tip }) {
   const isFolder = kind === "folder";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-fp-row-pad-y) var(--tasty-fp-inset-start)", position: "relative", cursor: "default",
@@ -2651,13 +2653,18 @@ function FpRow({ kind, name, size, mod, selected, focus, multi, checked, dim }) 
       outline: focus ? "1px solid var(--tasty-accent-primary)" : "none", outlineOffset: -1,
       opacity: dim ? 0.5 : 1 }}>
       {multi && <span style={{ display: "inline-flex", flex: "none" }}><Checkbox checked={!!checked} /></span>}
-      <span style={{ flex: "none", display: "inline-flex", color: isFolder ? "var(--tasty-accent-primary)" : "var(--tasty-text-muted)" }}>
+      <span style={{ flex: "none", display: "inline-flex", color: inert ? "var(--tasty-fp-folder-file-fg)" : isFolder ? "var(--tasty-accent-primary)" : "var(--tasty-text-muted)" }}>
         <Icon name={isFolder ? "folder" : "file"} size={16} />
       </span>
       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        fontSize: 13, fontWeight: isFolder ? 500 : 400, color: selected ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{name}</span>
-      <span style={{ flex: "none", width: 68, textAlign: "right", fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{size}</span>
-      <span style={{ flex: "none", width: 108, textAlign: "right", fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{mod}</span>
+        fontSize: 13, fontWeight: isFolder ? 500 : 400, color: inert ? "var(--tasty-fp-folder-file-fg)" : selected ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{name}</span>
+      <span style={{ flex: "none", width: 68, textAlign: "right", fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: inert ? "var(--tasty-fp-folder-file-fg)" : "var(--tasty-text-muted)" }}>{size}</span>
+      <span style={{ flex: "none", width: 108, textAlign: "right", fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: inert ? "var(--tasty-fp-folder-file-fg)" : "var(--tasty-text-muted)" }}>{mod}</span>
+      {tip && (
+        <span role="tooltip" style={{ position: "absolute", left: "calc(var(--tasty-fp-inset-start) + var(--tasty-size-96))", top: "100%", marginTop: "var(--tasty-space-xs)", zIndex: 4, whiteSpace: "nowrap",
+          padding: "var(--tasty-tooltip-padding-y) var(--tasty-tooltip-padding-x)", background: "var(--tasty-tooltip-bg)", border: "var(--tasty-border-width) solid var(--tasty-tooltip-border)",
+          borderRadius: "var(--tasty-tooltip-radius)", boxShadow: "var(--tasty-tooltip-shadow)", color: "var(--tasty-tooltip-fg)", fontSize: "var(--tasty-tooltip-font-size)", lineHeight: "var(--tasty-tooltip-line-height)" }}>{tip}</span>
+      )}
     </div>
   );
 }
@@ -2733,9 +2740,24 @@ function FpHostBadge({ host }) {
     </span>
   );
 }
-function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge", multi = false, filters = [], mode = "open", save = "new", deep = false, crumbMenu = false, folderSel = false, w = 640, h = 480, pathKind, single = false, elideStage }) {
+// 2026-10-21 — folder mode: mode="folder" returns a FOLDER path.
+// Target = the selected folder row, else the current folder. Files are listed but inert. Filter chip hidden.
+// Enter = Select folder (confirms the target) · double-click / → = enter the folder · Alt+↑ / Up = parent.
+// Copy keys picker.folder.* (en / ko / ja); the gallery passes lang to check widths.
+const FP_FOLDER_COPY = {
+  en: { title: "Select folder", label: "Folder", confirm: "Select folder", cancel: "Cancel", hintCur: "Using the current folder. Select a subfolder to use it instead.",
+    hintSel: (n) => <>Double-click <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{n}</span> to open it.</>, fileTip: "Only folders can be selected.", empty: "No subfolders here" },
+  ko: { title: "폴더 선택", label: "폴더", confirm: "폴더 선택", cancel: "취소", hintCur: "현재 폴더를 사용합니다. 하위 폴더를 고르면 그 폴더를 사용합니다.",
+    hintSel: (n) => <><span style={{ fontFamily: "var(--tasty-font-mono)" }}>{n}</span> 폴더를 열려면 더블클릭하세요.</>, fileTip: "폴더만 선택할 수 있습니다.", empty: "하위 폴더가 없습니다" },
+  ja: { title: "フォルダーを選択", label: "フォルダー", confirm: "フォルダーを選択", cancel: "キャンセル", hintCur: "現在のフォルダーを使用します。サブフォルダーを選ぶとそのフォルダーを使用します。",
+    hintSel: (n) => <><span style={{ fontFamily: "var(--tasty-font-mono)" }}>{n}</span> を開くにはダブルクリックします。</>, fileTip: "選択できるのはフォルダーだけです。", empty: "サブフォルダーはありません" },
+};
+function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge", multi = false, filters = [], mode = "open", save = "new", deep = false, crumbMenu = false, folderSel = false, w = 640, h = 480, pathKind, single = false, elideStage,
+  folderPick = "none", fileHover = false, lang = "en" }) {
   const host = "deploy@10.0.4.12";
   const saving = mode === "save";
+  const folderMode = mode === "folder";
+  const FC = FP_FOLDER_COPY[lang] || FP_FOLDER_COPY.en;
   const deepTail = [{ label: "tasty" }, { label: "config" }, { label: "keybindings" }, { label: "exports" }, { label: "2026-09", current: true }];
   const LONG_PARENT = "long-folder-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   const LONG_CURRENT = "current-folder-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -2784,9 +2806,9 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
       {/* section insets (2026-09-29): every section starts on fp-inset-start (12) — header glyph, first crumb, Name, row icon and footer label share one column */}
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-fp-section-gap)", padding: "var(--tasty-fp-header-pad-y) var(--tasty-fp-inset-end) var(--tasty-fp-header-pad-y) var(--tasty-fp-inset-start)", flex: "none", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ display: "inline-flex", color: remote && indicator === "glyph" ? "var(--tasty-accent-info)" : "var(--tasty-text-muted)" }}>
-          {remote && (indicator === "glyph" || indicator === "border") ? <Icon name="remote" /> : <Icon name="file" />}
+          {remote && (indicator === "glyph" || indicator === "border") ? <Icon name="remote" /> : <Icon name={folderMode ? "folder" : "file"} />}
         </span>
-        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--tasty-text-primary)" }}>{saving ? "Save file" : "Open file"}</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--tasty-text-primary)" }}>{folderMode ? FC.title : saving ? "Save file" : "Open file"}</span>
         {remote && indicator === "badge" && <FpHostBadge host={host} />}
         {remote && indicator === "glyph" && <span style={{ fontSize: 12, fontFamily: "var(--tasty-font-mono)", color: "var(--tasty-accent-info)" }}>{host}</span>}
         <div style={{ flex: 1 }} />
@@ -2815,21 +2837,47 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
           <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
             {files.map((f, i) => (
               <FpRow key={f.name} {...f}
+                inert={folderMode && f.kind === "file"}
+                tip={folderMode && fileHover && f.name === "README.md" ? FC.fileTip : null}
                 multi={multi}
                 checked={multi && f.pick && ["README.md", "package.json", "pipeline.yaml"].includes(f.name)}
-                selected={folderSel ? f.name === "configs" : saving ? f.name === saveSelected : !multi && f.name === "README.md"}
-                focus={!saving && !multi && !folderSel && f.name === "pipeline.yaml"} />
+                selected={folderMode ? folderPick === "row" && f.name === "configs" : folderSel ? f.name === "configs" : saving ? f.name === saveSelected : !multi && f.name === "README.md"}
+                focus={!folderMode && !saving && !multi && !folderSel && f.name === "pipeline.yaml"} />
             ))}
           </div>
         )}
         {state === "loading" && <CenterState variant="loading" title="Loading folder…" sub={remote ? <>Reading <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{host}</span> over SSH.</> : "Reading the directory contents."} />}
         {(state === "error-perm" || state === "error-conn") && <CenterState variant="error" title={errText.title} sub={errText.body}
           action={<Button variant="secondary" size="sm" leadingIcon={<Icon name="refresh" size="var(--tasty-icon-size-sm)" />}>{state === "error-conn" ? "Reconnect" : "Retry"}</Button>} />}
-        {state === "empty" && <CenterState variant="empty" glyph="folderOpen" title="This folder is empty" />}
+        {state === "empty" && <CenterState variant="empty" glyph="folderOpen" title={folderMode ? FC.empty : "This folder is empty"} />}
       </div>
       {/* footer */}
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-fp-section-gap)", flex: "none", padding: "var(--tasty-fp-footer-pad-y) var(--tasty-fp-inset-start)", borderTop: "1px solid var(--tasty-separator)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-fp-section-gap)" }}>
+        {folderMode && (() => {
+          const cur = "/" + crumbs.slice(1).map((c) => c.label).join("/");
+          const target = folderPick === "row" ? cur + "/configs" : cur;
+          const live = state === "loaded" || state === "empty";
+          return (<>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-fp-section-gap)" }}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", flex: "none", width: "var(--tasty-fp-footer-label-width)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{FC.label}</span>
+              {/* read-only path readout: Input readonly box, mono, FRONT ellipsis (the tail names the folder), full path as tooltip */}
+              <span title={target} style={{ flex: 1, minWidth: 0, height: "var(--tasty-control-height)", display: "flex", alignItems: "center", boxSizing: "border-box", padding: "0 var(--tasty-space-md)",
+                background: "var(--tasty-input-readonly-bg)", border: "var(--tasty-border-width) solid var(--tasty-input-readonly-border)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left",
+                  fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: live ? "var(--tasty-fp-folder-path-fg)" : "var(--tasty-state-disabled-fg)" }}>
+                  <span style={{ direction: "ltr", unicodeBidi: "isolate" }}>{target}</span>
+                </span>
+              </span>
+            </div>
+            {live && (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-xs)", fontSize: "var(--tasty-font-size-micro)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-fp-folder-hint-fg)" }}>
+                <span style={{ display: "inline-flex", flex: "none", height: "calc(var(--tasty-font-size-micro) * var(--tasty-line-height-ui))", alignItems: "center" }}><Icon name="folder" size="var(--tasty-icon-size-sm)" /></span>
+                <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{folderPick === "row" ? FC.hintSel("configs") : FC.hintCur}</span>
+              </div>
+            )}
+          </>);
+        })()}
+        {!folderMode && <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-fp-section-gap)" }}>
           <span style={{ fontSize: 12, color: "var(--tasty-text-muted)", flex: "none", width: "var(--tasty-fp-footer-label-width)" }}>File name</span>
           <span style={{ flex: 1, minWidth: 0, display: "flex" }}>
             <Input block defaultValue={saving ? saveName : folderSel ? "" : state === "loaded" ? fileName : ""} placeholder={saving ? "Type a file name" : "No file selected"} />
@@ -2846,7 +2894,7 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
               </span>
             );
           })()}
-        </div>
+        </div>}
         {folderSel && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, lineHeight: 1.5, color: "var(--tasty-text-muted)" }}>
             <span style={{ display: "inline-flex", flex: "none", marginTop: 1 }}><Icon name="folder" size={13} /></span>
@@ -2864,9 +2912,9 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {multi && <span style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>3 selected</span>}
           <div style={{ flex: 1, minWidth: 0 }} />
-          <span style={{ flex: "none", display: "flex" }}><Button variant="ghost">Cancel</Button></span>
+          <span style={{ flex: "none", display: "flex" }}><Button variant="ghost">{folderMode ? FC.cancel : "Cancel"}</Button></span>
           <span style={{ flex: "none", display: "flex" }}>
-            <Button variant="primary" disabled={!saving && !canOpen}>{saving ? (overwrite ? "Overwrite" : "Save") : "Open"}</Button>
+            <Button variant="primary" disabled={folderMode ? !(state === "loaded" || state === "empty") : !saving && !canOpen}>{folderMode ? FC.confirm : saving ? (overwrite ? "Overwrite" : "Save") : "Open"}</Button>
           </span>
         </div>
       </div>

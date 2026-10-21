@@ -547,13 +547,10 @@ function TypeScaleSheet() {
 
 // Markdown surface chrome — browser-style address bar (path display/edit) + Go
 // button, above the body. `editing` = clicked-into edit mode (focus ring + caret).
-function MdAddressBar({ editing = false, path = "~/work/tasty/docs/architecture.md" }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, height: 40, flex: "none", padding: "0 8px",
-      background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid var(--tasty-separator)" }}>
-      <PathField icon={ic.file} path={path} editing={editing} />
-    </div>
-  );
+// 2026-10-21 — delegates to gallery/plugins-md-address.jsx (folder button + editable mirror bar).
+function MdAddressBar({ editing = false, path = "~/work/tasty/docs/architecture.md", ...rest }) {
+  const B = window.PluginsMdAddress.MdAddressBar;
+  return <B state={editing ? "editing" : "idle"} path={path} {...rest} />;
 }
 
 // Large-file (>1MB) confirm — surface-scoped popup, same 360px shell as markdown_open.
@@ -1155,6 +1152,7 @@ function Page() {
             tokens={[{ tok: "--tasty-button-secondary-bg", use: "button fill", color: "var(--tasty-button-secondary-bg)" }, { tok: "--tasty-text-muted", use: "state line", color: "var(--tasty-text-muted)" }, { tok: "--tasty-space-sm", use: "line → button" }]} />
           <Note>WebView: render the button as a <code>&lt;button class="tasty-state-action"&gt;</code> styled from the injected Button variables; it posts the same IPC as the reload path. i18n: <code>markdown.state.large_deferred</code> (line) · <code>markdown.state.large_deferred_open</code> “Open file…”.</Note>
         </Spec>
+        {window.PluginsMdAddress && <window.PluginsMdAddress.MdAddressSpecs />}
       </Section>
 
       <Section id="html" title="HTML viewer">

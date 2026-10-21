@@ -155,6 +155,7 @@
   --tasty-select-chevron-fg:       var(--tasty-text-muted);
   --tasty-select-chevron-room:     var(--tasty-size-28); /* right padding reserved for the chevron */
   --tasty-select-chevron-offset:   var(--tasty-space-sm);
+  --tasty-select-placeholder:      var(--tasty-input-placeholder); /* 2026-10-19 — Select(placeholder): trigger ink while no value is chosen → text-placeholder */
 
   /* MultiSelect — the Select sibling that holds many values. The closed
      trigger deliberately aliases the Select tokens (one family in a form);
@@ -426,6 +427,19 @@
   --tasty-html-address-field-min-width: var(--tasty-size-96);         /* field floor before the band drops Forward */
   --tasty-html-address-error-height:  var(--tasty-size-24);           /* inline error row under the band (part of the band) */
   --tasty-html-address-error-glyph:   var(--tasty-accent-danger);
+  /* Markdown surface — address bar band (2026-10-21, folder button + editable mirror). Same box as the HTML band. */
+  --tasty-md-address-bar-height:      var(--tasty-html-address-bar-height);    /* 40 */
+  --tasty-md-address-bar-bg:          var(--tasty-html-address-bar-bg);        /* bg-sidebar */
+  --tasty-md-address-bar-border:      var(--tasty-html-address-bar-border);    /* 1px separator below */
+  --tasty-md-address-bar-padding-x:   var(--tasty-html-address-bar-padding-x); /* 8 */
+  --tasty-md-address-bar-gap:         var(--tasty-html-address-bar-gap);       /* 8 — cluster ↔ field ↔ Go */
+  --tasty-md-address-bar-nav-gap:     var(--tasty-html-address-bar-nav-gap);   /* 4 — Folder · Reload */
+  --tasty-md-address-field-min-width: var(--tasty-html-address-field-min-width); /* 96 field floor */
+  --tasty-md-address-go-hide-below:   var(--tasty-field-width-md);             /* 160 — Go hides when the field would be narrower */
+  --tasty-md-address-error-height:    var(--tasty-html-address-error-height);  /* 24 error row (part of the band) */
+  --tasty-md-address-error-glyph:     var(--tasty-html-address-error-glyph);   /* accent-danger */
+  --tasty-md-address-stale-bg:        var(--tasty-accent-primary);             /* stale Reload fill (mirror doc changed) */
+  --tasty-md-address-stale-fg:        var(--tasty-text-on-accent);             /* stale Reload glyph */
   /* HTML mirror — remote size banners + receiving state (2026-10-12) */
   --tasty-html-size-banner-glyph:     var(--tasty-accent-info);       /* large-file ask — a question, not a warning */
   --tasty-html-limit-banner-glyph:    var(--tasty-accent-warning);    /* cumulative limit reached — auto receive paused */
@@ -852,6 +866,9 @@
   --tasty-fp-footer-pad-y:            var(--tasty-space-sm);  /* 8 — footer x inset = fp-inset-start on both sides */
   --tasty-fp-footer-label-width:      var(--tasty-size-64);   /* "File name" label column */
   --tasty-fp-filter-height:           var(--tasty-control-height); /* 28 — the file-type filter chip matches the Input beside it (was 30) */
+  --tasty-fp-folder-file-fg:          var(--tasty-state-disabled-fg); /* 2026-10-21 folder mode — inert file row ink (glyph, name, size, date); no opacity */
+  --tasty-fp-folder-path-fg:          var(--tasty-input-readonly-fg); /* folder mode — target path readout ink (text-secondary) in the read-only box */
+  --tasty-fp-folder-hint-fg:          var(--tasty-text-muted);        /* folder mode — footer hint line under the Folder row */
   --tasty-fp-filter-max-width:        var(--tasty-field-width-md); /* 160 — READ-ONLY filter chip: content width up to this, then front-kept ellipsis + tooltip with the full list (2026-10-06) */
 
   /* Shared popup title bar — right-hand buttons (× , and fullscreen when the popup declares a stage) (2026-09-29).
@@ -1422,5 +1439,23 @@
   --tasty-pending-indicator-spinner-size: var(--tasty-icon-size-sm); /* chip spinner 14 */
   --tasty-pending-indicator-compact-below: var(--tasty-size-200); /* notice column narrower than this → spinner + time only */
   --tasty-pending-indicator-delay: var(--tasty-loading-overlay-delay); /* show only if still pending after 200ms (same as LoadingOverlay) */
+  /* 2026-10-19 — Settings › Handler › File Detectors / File Handlers: registered rows + user add card */
+  --tasty-file-handler-form-bg: var(--tasty-surface-raised); /* add card fill (= Hook Handlers add card) */
+  --tasty-file-handler-form-border: var(--tasty-border-default); /* add card 1px edge */
+  --tasty-file-handler-form-padding: var(--tasty-space-md); /* add card inset 12 */
+  --tasty-file-handler-form-row-gap: var(--tasty-space-sm); /* 8 between card rows */
+  --tasty-file-handler-form-label-fg: var(--tasty-text-secondary-raised); /* field labels + card title on surface-raised (Latte → n1100, ≈5.2:1) */
+  --tasty-file-handler-form-caption-fg: var(--tasty-text-secondary-raised); /* "Saved as user/…" + defaults captions on surface-raised */
+  --tasty-file-handler-form-error-fg: var(--tasty-accent-danger); /* field error glyph + line (Mocha 5.4 · Latte 5.0 on surface-raised) */
+  --tasty-file-handler-priority-width: var(--tasty-field-width-xs); /* 90 — priority number field (was 80 hard-coded) */
+  --tasty-file-handler-select-width: var(--tasty-field-width-lg); /* 200 — Detector Select */
+  --tasty-file-handler-kind-width: var(--tasty-field-width-md); /* 160 — Action Select */
+  --tasty-file-handler-prio-fg: var(--tasty-text-muted); /* "prio N" on row line 1 */
+  --tasty-file-handler-summary-fg: var(--tasty-text-secondary); /* row line 2: rules / detector → action, mono term-sm */
+  --tasty-file-handler-empty-fg: var(--tasty-text-muted); /* empty-list line */
+  /* 2026-10-21 — follow-up: existing-id info line + removed user rules in the summary */
+  --tasty-file-handler-form-info-fg: var(--tasty-text-secondary-raised); /* "{id} exists — your rules are added" info line (info glyph + caption) */
+  --tasty-file-handler-summary-removed-fg: var(--tasty-text-muted); /* user rule pieces struck through while "your rules removed on save" */
 }
+
 

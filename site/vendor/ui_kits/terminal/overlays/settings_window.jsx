@@ -1016,42 +1016,16 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
             <ExtensionMapping />
           </>
         );
-      if (l2 === "File Detectors")
-        return (
-          <>
-            <Mono>Detection passes (priority order)</Mono>
-            {[["Extension match", "Match the file extension against the mapping table.", true],
-              ["Path exists", "Only treat a token as a file when the path resolves on disk.", true],
-              ["Content sniff", "Inspect magic bytes for files with no extension.", false],
-              ["MIME type", "Fall back to the OS MIME database.", false]].map(([name, desc, on]) => (
-              <div key={name} style={{ display: "flex", alignItems: "flex-start", gap: 16, minHeight: "var(--tasty-settings-row-min-height)",
-                borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)", paddingBottom: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: "var(--tasty-text-secondary)" }}>{name}</div>
-                  <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", marginTop: 2, lineHeight: 1.4 }}>{desc}</div>
-                </div>
-                <Switch defaultChecked={on} />
-              </div>
-            ))}
-          </>
-        );
+      // 2026-10-20 (file-handler-forms) — registered list + user add card + Save-pending add/remove: file_handlers.jsx
+      if (l2 === "File Detectors") {
+        const FileDetectorsPane = window.TastyKit.FileDetectorsPane;
+        return <FileDetectorsPane />;
+      }
       if (l2 === "Hook Handlers")
         return <HookHandlers />;
       // File Handlers
-      return (
-        <>
-          <Mono>Registered file handlers</Mono>
-          {[["Image viewer", "image", true], ["Log viewer", "text", true],
-            ["Hex viewer", "binary", false], ["External app", "fallback", false]].map(([name, kind, on], i, a) => (
-            <div key={name} style={{ display: "flex", alignItems: "center", gap: 12, minHeight: "var(--tasty-settings-row-min-height)",
-              borderBottom: i === a.length - 1 ? "none" : "var(--tasty-border-width) solid var(--tasty-separator)" }}>
-              <span style={{ fontSize: 13, color: "var(--tasty-text-secondary)" }}>{name}</span>
-              <Tag>{kind}</Tag>
-              <span style={{ marginLeft: "auto" }}><Switch defaultChecked={on} /></span>
-            </div>
-          ))}
-        </>
-      );
+      const FileHandlersPane = window.TastyKit.FileHandlersPane;
+      return <FileHandlersPane />;
     }
 
     // ── Misc (Scripts everywhere; Tastyrc is Windows-only) ──
