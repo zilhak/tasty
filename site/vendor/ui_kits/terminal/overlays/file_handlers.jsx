@@ -1,5 +1,7 @@
 // Tasty UI kit — Settings › Handler › File Detectors · File Handlers (2026-10-20;
 // 2026-10-21 follow-up: unprefixed detector ids, char rules,
+// 2026-10-21 contract + contrast: run-order sort, raised-ground
+// controls in the add card, line-1 fit order for narrow pending rows.
 // several sources per detector, existing id = patch / replace, Remove drops only the user contribution).
 // Registered list (2-line rows) + user add card + Save-pending states with Undo (File Extension Mapping idiom).
 // Initial-state props exist only so the gallery can pin each state; the live kit passes none.
@@ -10,7 +12,7 @@ const FhIcon = window.TastyDesignSystem_41fd3f.Icon;
 const FH_COPY = {
   en: {
     detIntro: "A detector decides what kind of file a path is. Enabled detectors are tried in order; the first whose rules match wins.",
-    hdlIntro: "A handler opens a file that a detector recognized. Lower priority runs first; equal priorities sort by id.",
+    hdlIntro: "A handler opens a file that a detector recognized. Lower priority runs first. On a tie, user handlers run before plugin handlers, and plugin handlers before host ones. The list is in run order.",
     bullets: [["host", "built in"], ["plugin:<id>", "added by a plugin"], ["user", "yours — only these can be removed"]],
     addDet: "Add detector", addHdl: "Add handler", updDet: "Update detector", updHdl: "Update handler", newDet: "New detector", newHdl: "New handler",
     regDet: "Registered detectors", regHdl: "Registered handlers",
@@ -38,7 +40,7 @@ const FH_COPY = {
   },
   de: {
     detIntro: "Ein Detektor bestimmt, welche Art Datei ein Pfad ist. Aktive Detektoren werden der Reihe nach geprüft; der erste mit passenden Regeln gewinnt.",
-    hdlIntro: "Ein Handler öffnet eine Datei, die ein Detektor erkannt hat. Niedrigere Priorität läuft zuerst; bei Gleichstand nach Id.",
+    hdlIntro: "Ein Handler öffnet eine Datei, die ein Detektor erkannt hat. Niedrigere Priorität läuft zuerst. Bei Gleichstand laufen user-Handler vor plugin-Handlern und plugin-Handler vor host-Handlern. Die Liste steht in Ausführungsreihenfolge.",
     bullets: [["host", "eingebaut"], ["plugin:<id>", "von einem Plugin"], ["user", "eigene — nur diese lassen sich entfernen"]],
     addDet: "Detektor hinzufügen", addHdl: "Handler hinzufügen", updDet: "Detektor aktualisieren", updHdl: "Handler aktualisieren", newDet: "Neuer Detektor", newHdl: "Neuer Handler",
     regDet: "Registrierte Detektoren", regHdl: "Registrierte Handler",
@@ -76,16 +78,25 @@ const DET_SEED = [
   { id: "notebook", rules: [{ src: "plugin:md-plus", ext: ["ipynb"] }], on: false, baseOn: true, userMeta: true },
   { id: "dockerfile", rules: [{ src: "user", glob: "Dockerfile" }], on: true },
 ];
+// 2026-10-21 — real HandlerIds carry the owner prefix: host/<name> · <plugin_id>/<name> · user/<name>
 const HDL_SEED = [
-  { id: "image-view", prio: 10, origin: "host", det: "image", act: "surface:image_view", on: true },
-  { id: "markdown-view", prio: 10, origin: "host", det: "markdown", act: "surface:markdown_view", on: true },
-  { id: "log-view", prio: 20, origin: "host", det: "log", act: "surface:log_view", on: true },
+  { id: "host/image-view", prio: 10, origin: "host", det: "image", act: "surface:image_view", on: true },
+  { id: "host/markdown-view", prio: 10, origin: "host", det: "markdown", act: "surface:markdown_view", on: true },
+  { id: "host/log-view", prio: 20, origin: "host", det: "log", act: "surface:log_view", on: true },
   { id: "md-plus/notebook-open", prio: 50, origin: "plugin:md-plus", det: "notebook", act: "ipc:com.mdplus.notebook.open_in_preview_surface", on: false },
   { id: "user/dockerfile-system", prio: 100, origin: "user", det: "dockerfile", act: "system", on: true },
 ];
 const PENDING_DET = [{ id: "notes", rules: [{ src: "user", ext: ["note", "notes"] }], on: true, pending: "add" }];
 const PENDING_HDL = [{ id: "user/notes-view", prio: 30, origin: "user", det: "notes", act: "surface:markdown_view", on: true, pending: "add" }];
-const sortHdl = (xs) => xs.slice().sort((a, b) => a.prio - b.prio || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+// same detector + same priority: one handler per owner (gallery "tie" scene)
+const TIE_HDL = [
+  { id: "com.example.md/preview", prio: 10, origin: "plugin:com.example.md", det: "markdown", act: "surface:md_preview", on: true },
+  { id: "user/my-viewer", prio: 10, origin: "user", det: "markdown", act: "system", on: true },
+];
+// 2026-10-21 — list order = run order (product contract): priority ↑ → owner user > plugin > host → id.
+// Plain id order would read plugin (com.…/) → host → user at a tie, the reverse of what runs.
+const OWNER_RANK = (o) => (o === "user" ? 0 : o.startsWith("plugin:") ? 1 : 2);
+const sortHdl = (xs) => xs.slice().sort((a, b) => a.prio - b.prio || OWNER_RANK(a.origin) - OWNER_RANK(b.origin) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 const DET_RE = /^[a-z0-9-]{1,64}$/, DET_RES_RE = /^\$[a-z0-9-]{1,64}$/, HDL_RE = /^[a-z0-9-]{1,32}$/;
 
 const userRules = (d) => d.rules.filter((r) => r.src === "user");
@@ -148,48 +159,51 @@ function FhCard({ title, children, error, onCancel, onAdd, addLabel, canAdd, L }
       {children}
       {error && <FhError>{error}</FhError>}
       <div style={{ display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: "var(--tasty-space-sm)" }}>
-        <Button variant="ghost" size="sm" onClick={onCancel}>{L.cancel}</Button>
+        <Button variant="ghost" size="sm" ground="raised" onClick={onCancel}>{L.cancel}</Button>
         <Button variant="primary" size="sm" disabled={!canAdd} onClick={onAdd}>{addLabel}</Button>
       </div>
     </div>
   );
 }
 
-// Several origin Tags collapse into ONE "N sources" Tag (tooltip = full list) as soon as they would push the id
-// into an ellipsis; they expand again once the line is wide enough for id + all Tags.
-function useCollapse(multi) {
+// 2026-10-21 — line 1 fit order when it runs out of room (each step only while the id would ellipsize):
+//   1. several origin Tags collapse into ONE "N sources" Tag (tooltip = full list)
+//   2. the pending Tag leaves line 1 for its own line under it (ellipsis + tooltip there)
+//   3. only then the id ellipsizes, never below min(file-handler-id-min-width 96, its full width)
+// Switch + trailing slot never shrink. Each step undoes once the line is as wide as it was when the step was taken.
+function useFit(multi, pend) {
   const lineRef = React.useRef(null), idRef = React.useRef(null);
-  const [collapsed, setCollapsed] = React.useState(false);
-  const need = React.useRef(0);
+  const [stage, setStage] = React.useState(0);
+  const need = React.useRef([0, 0, 0]), idFull = React.useRef(0);
+  const max = pend ? 2 : multi ? 1 : 0;
+  const up = (s) => (s + 1 === 1 && !multi ? 2 : s + 1), down = (s) => (s - 1 === 1 && !multi ? 0 : s - 1);
+  const check = React.useCallback(() => {
+    const line = lineRef.current, id = idRef.current;
+    if (!line || !id) return;
+    setStage((s0) => {
+      const s = Math.min(s0, max);
+      const over = (id.scrollWidth - id.clientWidth) + (line.scrollWidth - line.clientWidth);
+      if (over > 0) { const n = up(s); if (n <= max) { need.current[n] = line.clientWidth + over; idFull.current = id.scrollWidth; return n; } return s; }
+      if (s > 0 && line.clientWidth >= need.current[s]) return down(s);
+      return s;
+    });
+  }, [max, multi]);
   React.useLayoutEffect(() => {
-    if (!multi || !lineRef.current || typeof ResizeObserver === "undefined") return;
-    const check = () => {
-      const line = lineRef.current, id = idRef.current;
-      if (!line || !id) return;
-      setCollapsed((c) => {
-        if (!c && id.scrollWidth > id.clientWidth) { need.current = line.clientWidth + (id.scrollWidth - id.clientWidth); return true; }
-        if (c && line.clientWidth >= need.current) return false;
-        return c;
-      });
-    };
-    check();
+    if (!lineRef.current || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(check);
     ro.observe(lineRef.current);
     return () => ro.disconnect();
-  }, [multi]);
-  React.useLayoutEffect(() => {
-    if (collapsed || !multi) return;
-    const line = lineRef.current, id = idRef.current;
-    if (line && id && id.scrollWidth > id.clientWidth) { need.current = line.clientWidth + (id.scrollWidth - id.clientWidth); setCollapsed(true); }
-  });
-  return [lineRef, idRef, collapsed && multi];
+  }, [check]);
+  React.useLayoutEffect(() => { check(); });
+  const eff = Math.min(stage, max);
+  return [lineRef, idRef, eff >= 1 && multi, eff === 2, idFull.current];
 }
 
 // registered row — line 1: id · origin Tag(s) · [prio] · [pending Tag] · spacer · Switch · trailing slot
 //                  line 2: summary (mono term-sm, one line, ellipsis + full value as tooltip)
 // origins: [{ label, plugin, struck }] · trailing: "lock" | "remove" | "undo"
 function FhRow({ L, id, origins, prio, pendingLabel, strikeId, on, switchOn, switchDisabled, trailing, lockedBy, summary, summaryTitle, onToggle, onRemove, onUndo }) {
-  const [lineRef, idRef, collapsed] = useCollapse(origins.length > 1);
+  const [lineRef, idRef, collapsed, dropped, idFull] = useFit(origins.length > 1, !!pendingLabel);
   const dim = !on || strikeId;
   const tags = collapsed
     ? [<span key="n" title={origins.map((o) => o.label).join(", ")} style={{ flex: "none", display: "inline-flex" }}><Tag>{L.sources(origins.length)}</Tag></span>]
@@ -202,11 +216,11 @@ function FhRow({ L, id, origins, prio, pendingLabel, strikeId, on, switchOn, swi
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-sm) var(--tasty-space-xs)",
       borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
       <div ref={lineRef} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minWidth: 0, minHeight: "var(--tasty-button-height-sm)" }}>
-        <span ref={idRef} title={id} style={{ flex: "0 1 auto", minWidth: 0, ...fhEll, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-body)", fontWeight: "var(--tasty-font-weight-semibold)",
+        <span ref={idRef} title={id} style={{ flex: "0 1 auto", minWidth: dropped ? "min(var(--tasty-file-handler-id-min-width), " + idFull + "px)" : 0, ...fhEll, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-body)", fontWeight: "var(--tasty-font-weight-semibold)",
           color: dim ? "var(--tasty-text-secondary)" : "var(--tasty-text-primary)", textDecoration: strikeId ? "line-through" : undefined }}>{id}</span>
         {tags}
         {prio != null && <span style={{ flex: "none", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-file-handler-prio-fg)" }}>prio {prio}</span>}
-        {pendingLabel && <span style={{ flex: "none", display: "inline-flex" }}><Tag disabled>{pendingLabel}</Tag></span>}
+        {pendingLabel && !dropped && <span style={{ flex: "none", display: "inline-flex" }}><Tag disabled>{pendingLabel}</Tag></span>}
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", flex: "none" }}>
           <Switch checked={switchOn} disabled={switchDisabled} onChange={onToggle} aria-label={"Enable " + id} />
           {trailing === "lock"
@@ -215,6 +229,11 @@ function FhRow({ L, id, origins, prio, pendingLabel, strikeId, on, switchOn, swi
             : <Button variant="ghost" size="sm" onClick={onRemove}>{L.remove}</Button>}
         </span>
       </div>
+      {pendingLabel && dropped && (
+        <span style={{ display: "flex", minWidth: 0 }}>
+          <Tag disabled title={pendingLabel} style={{ maxWidth: "100%", minWidth: 0 }}><span style={{ ...fhEll, minWidth: 0 }}>{pendingLabel}</span></Tag>
+        </span>
+      )}
       <span title={summaryTitle} style={{ ...fhEll, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term-sm)",
         color: dim ? "var(--tasty-text-muted)" : "var(--tasty-file-handler-summary-fg)" }}>{summary}</span>
     </div>
@@ -254,7 +273,7 @@ function detRowProps(L, x) {
   };
 }
 
-function FileDetectorsPane({ lang = "en", empty = false, pending = false, unpatch = false, patched = false, adding: adding0 = false, draft: draft0, attempted = false }) {
+function FileDetectorsPane({ lang = "en", empty = false, pending = false, unpatch = false, patched = false, narrowSet = false, adding: adding0 = false, draft: draft0, attempted = false }) {
   const L = FH_COPY[lang] || FH_COPY.en;
   const init = () => {
     let a = empty ? [] : DET_SEED.map((x) => ({ ...x }));
@@ -262,6 +281,9 @@ function FileDetectorsPane({ lang = "en", empty = false, pending = false, unpatc
     if (unpatch) a = a.map((x) => (hasUser(x) && otherSrcs(x).length ? { ...x, pending: "unpatch" } : x));
     if (patched) a = a.map((x) => (x.id === "image" ? { ...x, rules: [...x.rules, { src: "user", ext: ["heic"] }], pending: "patch", prev: x }
       : x.id === "markdown" ? { ...x, rules: [x.rules[0], { src: "user", ext: ["mdx", "mdown"] }], pending: "patch", prev: x } : x));
+    // 2026-10-21 — the three narrow pending rows: markdown (user rules removed) · notebook (override removed) · log (user rules added)
+    if (narrowSet) a = a.map((x) => (x.id === "markdown" || x.id === "notebook" ? { ...x, pending: "unpatch" }
+      : x.id === "log" ? { ...x, pending: "patch", prev: { ...x, rules: x.rules.filter((r) => r.src !== "user") } } : x));
     return a;
   };
   const [xs, setXs] = React.useState(init);
@@ -300,13 +322,13 @@ function FileDetectorsPane({ lang = "en", empty = false, pending = false, unpatc
       {adding && (
         <FhCard L={L} title={L.newDet} addLabel={exists && !errId ? L.updDet : L.addDet} canAdd={!!id} onCancel={close} onAdd={commit} error={tried ? errRules : null}>
           <FhField label={L.id} caption={L.detIdHint} info={info} error={tried ? errId : null}>
-            <Input block mono placeholder="my-detector" value={d.id} invalid={!!(tried && errId)} onChange={set("id")} />
+            <Input block mono ground="raised" placeholder="my-detector" value={d.id} invalid={!!(tried && errId)} onChange={set("id")} />
           </FhField>
           <FhField label={L.ext} caption={L.extHint}>
-            <Input block mono placeholder="md, mdx" value={d.ext} invalid={!!(tried && errRules)} onChange={set("ext")} />
+            <Input block mono ground="raised" placeholder="md, mdx" value={d.ext} invalid={!!(tried && errRules)} onChange={set("ext")} />
           </FhField>
           <FhField label={L.glob}>
-            <Input block mono placeholder="Dockerfile" value={d.glob} invalid={!!(tried && errRules)} onChange={set("glob")} />
+            <Input block mono ground="raised" placeholder="Dockerfile" value={d.glob} invalid={!!(tried && errRules)} onChange={set("glob")} />
           </FhField>
         </FhCard>
       )}
@@ -320,10 +342,10 @@ function FileDetectorsPane({ lang = "en", empty = false, pending = false, unpatc
   );
 }
 
-function FileHandlersPane({ lang = "en", empty = false, pending = false, adding: adding0 = false, draft: draft0, attempted = false }) {
+function FileHandlersPane({ lang = "en", empty = false, pending = false, tie = false, adding: adding0 = false, draft: draft0, attempted = false }) {
   const L = FH_COPY[lang] || FH_COPY.en;
   const [xs, setXs] = React.useState(() => {
-    const base = empty ? [] : HDL_SEED;
+    const base = empty ? [] : tie ? [...HDL_SEED, ...TIE_HDL] : HDL_SEED;
     return pending ? [...base.map((x) => (x.origin === "user" ? { ...x, pending: "remove" } : x)), ...PENDING_HDL] : base;
   });
   const blank = { short: "", det: "", prio: "", kind: "surface", surface: "", param: "", method: "" };
@@ -360,36 +382,36 @@ function FileHandlersPane({ lang = "en", empty = false, pending = false, adding:
       {adding && (
         <FhCard L={L} title={L.newHdl} addLabel={exists && !errShort ? L.updHdl : L.addHdl} canAdd={canAdd} onCancel={close} onAdd={commit}>
           <FhField label={L.short} caption={L.savedAs + " " + (short ? full : "user/…")} info={exists && !errShort ? L.infoReplaceHdl(full) : null} error={tried ? errShort : null}>
-            <Input block mono placeholder="my-viewer" value={d.short} invalid={!!(tried && errShort)} onChange={set("short")} />
+            <Input block mono ground="raised" placeholder="my-viewer" value={d.short} invalid={!!(tried && errShort)} onChange={set("short")} />
           </FhField>
           <FhField label={L.detector}>
             <span style={{ display: "flex", width: "var(--tasty-file-handler-select-width)", maxWidth: "100%" }}>
-              <Select block placeholder={L.pickDet} options={detOpts} value={d.det} onChange={set("det")} />
+              <Select block ground="raised" placeholder={L.pickDet} options={detOpts} value={d.det} onChange={set("det")} />
             </span>
           </FhField>
           <FhField label={L.priority} caption={L.prioHint} error={tried ? errPrio : null}>
             <span style={{ display: "flex", width: "var(--tasty-file-handler-priority-width)" }}>
-              <Input block mono placeholder="100" value={d.prio} invalid={!!(tried && errPrio)} onChange={set("prio")} />
+              <Input block mono ground="raised" placeholder="100" value={d.prio} invalid={!!(tried && errPrio)} onChange={set("prio")} />
             </span>
           </FhField>
           <FhField label={L.action} caption={d.kind === "system" ? L.systemHint : null}>
             <span style={{ display: "flex", width: "var(--tasty-file-handler-kind-width)", maxWidth: "100%" }}>
-              <Select block options={[{ value: "surface", label: L.kinds.surface }, { value: "ipc", label: L.kinds.ipc }, { value: "system", label: L.kinds.system }]} value={d.kind} onChange={set("kind")} />
+              <Select block ground="raised" options={[{ value: "surface", label: L.kinds.surface }, { value: "ipc", label: L.kinds.ipc }, { value: "system", label: L.kinds.system }]} value={d.kind} onChange={set("kind")} />
             </span>
           </FhField>
           {d.kind === "surface" && (
             <>
               <FhField label={L.surface}>
-                <Input block mono placeholder="markdown_view" value={d.surface} onChange={set("surface")} />
+                <Input block mono ground="raised" placeholder="markdown_view" value={d.surface} onChange={set("surface")} />
               </FhField>
               <FhField label={L.param} caption={L.paramHint}>
-                <Input block mono placeholder="file" value={d.param} onChange={set("param")} />
+                <Input block mono ground="raised" placeholder="file" value={d.param} onChange={set("param")} />
               </FhField>
             </>
           )}
           {d.kind === "ipc" && (
             <FhField label={L.method} error={tried ? errMethod : null}>
-              <Input block mono placeholder="com.example.foo.open" value={d.method} invalid={!!(tried && errMethod)} onChange={set("method")} />
+              <Input block mono ground="raised" placeholder="com.example.foo.open" value={d.method} invalid={!!(tried && errMethod)} onChange={set("method")} />
             </FhField>
           )}
         </FhCard>

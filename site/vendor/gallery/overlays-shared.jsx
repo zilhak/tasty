@@ -80,7 +80,8 @@ function Backdrop({ height = 360, blur = false, children }) {
   );
 }
 
-function PaletteFrame() {
+// opaque: popup over an opaque-mode WebView page (2026-10-21) — square corner, no shadow, border kept
+function PaletteFrame({ opaque = false } = {}) {
   const items = [
     { label: "New Terminal", sc: "Ctrl+T", icon: ic.term, active: true },
     { label: "Split Pane Vertical", sc: "Ctrl+D", icon: ic.split },
@@ -89,7 +90,7 @@ function PaletteFrame() {
   ];
   return (
     <div align="top" style={{ width: 480, background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
+      borderRadius: opaque ? "var(--tasty-webview-opaque-radius)" : "var(--tasty-radius)", overflow: "hidden", boxShadow: opaque ? "var(--tasty-webview-opaque-shadow)" : "var(--tasty-shadow-modal)" }}>
       <div style={{ padding: 10, borderBottom: "1px solid var(--tasty-separator)" }}>
         <Input block icon={ic.search} placeholder="Type to search commands…" defaultValue="" />
       </div>
@@ -2714,12 +2715,12 @@ function FpCrumbs({ items, elide = false, single = false }) {
 // The … menu: the hidden ancestors, in path order, one row each. Width is
 // content-measured inside a band (min = one crumb's measure, max = the popover
 // ceiling) so a short path doesn't get a wide menu and a long one truncates.
-function FpCrumbMenu({ items }) {
+function FpCrumbMenu({ items, opaque = false, style }) {
   return (
     <div style={{ position: "absolute", top: "100%", left: 44, marginTop: 4, zIndex: 5,
       minWidth: "var(--tasty-fp-crumb-menu-min-width)", maxWidth: "var(--tasty-fp-crumb-menu-max-width)",
       boxSizing: "border-box", padding: "var(--tasty-popup-content-margin)", background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)",
-      borderRadius: "var(--tasty-menu-radius)", boxShadow: "var(--tasty-shadow-popover)" }}>
+      borderRadius: opaque ? "var(--tasty-webview-opaque-radius)" : "var(--tasty-menu-radius)", boxShadow: opaque ? "var(--tasty-webview-opaque-shadow)" : "var(--tasty-shadow-popover)", ...style }}>
       {items.map((l, i) => (
         <div key={l} style={{ display: "flex", alignItems: "center", gap: 8, height: "var(--tasty-menu-item-height)", padding: "0 var(--tasty-menu-item-padding-x)", borderRadius: "var(--tasty-menu-item-radius)",
           fontSize: "var(--tasty-font-size-body)", background: i === 0 ? "var(--tasty-menu-item-bg-hover)" : "transparent", color: i === 0 ? "var(--tasty-menu-item-fg-hover)" : "var(--tasty-menu-item-fg)" }}>
@@ -2753,7 +2754,7 @@ const FP_FOLDER_COPY = {
     hintSel: (n) => <><span style={{ fontFamily: "var(--tasty-font-mono)" }}>{n}</span> を開くにはダブルクリックします。</>, fileTip: "選択できるのはフォルダーだけです。", empty: "サブフォルダーはありません" },
 };
 function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge", multi = false, filters = [], mode = "open", save = "new", deep = false, crumbMenu = false, folderSel = false, w = 640, h = 480, pathKind, single = false, elideStage,
-  folderPick = "none", fileHover = false, lang = "en" }) {
+  folderPick = "none", fileHover = false, lang = "en", opaque = false }) {
   const host = "deploy@10.0.4.12";
   const saving = mode === "save";
   const folderMode = mode === "folder";
@@ -2800,7 +2801,7 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
   return (
     <div style={{ width: w, height: h, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
       border: borderMode ? "1px solid var(--tasty-accent-info)" : "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
+      borderRadius: opaque ? "var(--tasty-webview-opaque-radius)" : "var(--tasty-radius)", overflow: "hidden", boxShadow: opaque ? "var(--tasty-webview-opaque-shadow)" : "var(--tasty-shadow-modal)" }}>
       {borderMode && <div style={{ height: 2, flex: "none", background: "var(--tasty-accent-info)" }} />}
       {/* header */}
       {/* section insets (2026-09-29): every section starts on fp-inset-start (12) — header glyph, first crumb, Name, row icon and footer label share one column */}
@@ -2933,7 +2934,7 @@ window.OverlaysShared = {
   BannerMoreMenuG, BannerMoreDemoG, MoreLabel,
   GitViewerFrame, ClipboardFrame, RemoteFormFrame, ScriptManagerFrame, ShellMock,
   RemoteAttachFrame, RaNewRow, RaWsPeek,
-  FilePickerFrame,
+  FilePickerFrame, FpCrumbMenu,
   ModifierHintPanelG,
   MH_CAT_SECTIONS,
   MH_MIXED_SECTIONS,

@@ -123,6 +123,15 @@ function Components() {
               <Button variant="primary" trailingIcon={ic.search}>Search</Button>
               <Button variant="secondary" disabled>Disabled</Button>
             </Cluster>
+            <Cluster label={'ghost ground="raised" — on surface-raised the label takes button-ghost-raised-fg → text-secondary-raised (Latte 5.17:1, was 4.05) (2026-10-21)'}>
+              {[["Mocha", null], ["Latte", "latte"]].map(([label, t]) => (
+                <div key={label} {...(t ? { "data-theme": t } : {})} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-surface-raised)", borderRadius: "var(--tasty-radius)" }}>
+                  <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary-raised)" }}>{label}</span>
+                  <Button variant="ghost" size="sm">Cancel (panel)</Button>
+                  <Button variant="ghost" size="sm" ground="raised">Cancel (raised)</Button>
+                </div>
+              ))}
+            </Cluster>
           </Stage>
           <Meta
             specs={[["height", "28 / 24 / 32px"], ["padding", <>0 <span className="tok">--tasty-space-md</span></>], ["radius", <>4px <span className="tok">--tasty-radius</span></>], ["hover / active", "8% / 12% overlay"], ["focus", "2px accent ring"]]}
@@ -321,6 +330,20 @@ function Components() {
                   <div key={k} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", width: "var(--tasty-field-width-lg)" }}>
                     <span style={{ fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>{k}</span>
                     <Select block options={["Default (full rc)", "Tasty rc", "Custom"]} {...p} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Stage variant="column" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-md)" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, t]) => (
+              <div key={label} {...(t ? { "data-theme": t } : {})} style={{ display: "flex", flexWrap: "wrap", gap: "var(--tasty-space-md)", alignItems: "flex-end", padding: "var(--tasty-space-md)", background: "var(--tasty-surface-raised)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ width: "100%", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary-raised)" }}>{label} — Select ground="raised" (2026-10-21): box bg-panel + border-strong in every state; ink and focus unchanged</span>
+                {[["value", { defaultValue: "Tasty rc" }], ["focus / open", { defaultValue: "Tasty rc", style: { borderColor: "var(--tasty-border-focus)", boxShadow: "0 0 0 var(--tasty-border-width) var(--tasty-border-focus)" } }],
+                  ["no value", { placeholder: "Select a profile…" }], ["disabled", { disabled: true, defaultValue: "Tasty rc" }], ["panel ground (vanishes)", { defaultValue: "Tasty rc", ground: "panel" }]].map(([k, p]) => (
+                  <div key={k} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", width: "var(--tasty-field-width-lg)" }}>
+                    <span style={{ fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-secondary-raised)" }}>{k}</span>
+                    <Select block ground="raised" options={["Default (full rc)", "Tasty rc", "Custom"]} {...p} />
                   </div>
                 ))}
               </div>

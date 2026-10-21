@@ -31,6 +31,10 @@ const CSS = `
 .tasty-select--empty select { color: var(--tasty-select-placeholder); }
 .tasty-select--empty select:disabled { color: var(--tasty-state-disabled-fg); }
 .tasty-select select option { color: var(--tasty-text-primary); }
+/* 2026-10-21 — ground="raised": border-default = surface-raised, so the normal box vanished on a raised card */
+.tasty-select--raised select { background: var(--tasty-select-raised-bg); border-color: var(--tasty-select-raised-border); }
+.tasty-select--raised select:focus { border-color: var(--tasty-border-focus); }
+.tasty-select--raised select:disabled { background: var(--tasty-select-raised-disabled-bg); border-color: var(--tasty-select-raised-disabled-border); }
 .tasty-select__chevron {
   position: absolute; right: var(--tasty-select-chevron-offset); top: 50%; transform: translateY(-50%);
   pointer-events: none; color: var(--tasty-text-muted);
@@ -49,7 +53,7 @@ function ensureCss() {
   injected = true;
 }
 
-export function Select({ options = [], block = false, placeholder, className = "", children, onChange, ...rest }) {
+export function Select({ options = [], block = false, placeholder, ground = "panel", className = "", children, onChange, ...rest }) {
   ensureCss();
   // 2026-10-19 — placeholder: a hidden, disabled "" option. The trigger shows it in placeholder ink while the
   // value is ""; it is never a row in the open list (MenuItem no-value rule, 2026-10-09).
@@ -59,7 +63,7 @@ export function Select({ options = [], block = false, placeholder, className = "
   const empty = placeholder != null && (cur === "" || cur == null);
   const props = { ...rest };
   if (placeholder != null && !controlled && props.defaultValue === undefined) props.defaultValue = "";
-  const cls = ["tasty-select", block ? "tasty-select--block" : "", empty ? "tasty-select--empty" : "", className].filter(Boolean).join(" ");
+  const cls = ["tasty-select", block ? "tasty-select--block" : "", empty ? "tasty-select--empty" : "", ground === "raised" ? "tasty-select--raised" : "", className].filter(Boolean).join(" ");
   return (
     <div className={cls}>
       <select {...props} onChange={(e) => { if (!controlled) setInner(e.target.value); if (onChange) onChange(e); }}>

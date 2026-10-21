@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 const SCAN_FILE_FLOOR: usize = 800;
 
 /// 기하 재대입을 추적할 접근자 목록. 실제 Theme 접근자와도 대조한다.
-const SHADOW_ACCESSORS: &[&str] = &["shadow_popover", "shadow_modal"];
+const SHADOW_ACCESSORS: &[&str] = &["shadow_popover", "shadow_modal", "shadow_none"];
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

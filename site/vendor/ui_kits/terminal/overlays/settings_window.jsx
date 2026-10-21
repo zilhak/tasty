@@ -521,17 +521,18 @@ function HookHandlers() {
       {adding && (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)",
           border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", background: "var(--tasty-surface-raised)" }}>
+          {/* 2026-10-21 — raised card: labels text-secondary-raised, Inputs ground="raised", Cancel ghost ground="raised" (same fix as the File Handlers add card) */}
           <span style={headStyle}>New hook handler</span>
           <div style={{ display: "flex", alignItems: "center", gap: 16, minHeight: "var(--tasty-settings-row-min-height)" }}>
-            <span style={{ width: 100, flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)" }}>Event id:</span>
-            <Input block mono placeholder="e.g. pipeline-done" value={draftId} onChange={(e) => setDraftId(e.target.value)} />
+            <span style={{ width: 100, flex: "none", fontSize: 13, color: "var(--tasty-text-secondary-raised)" }}>Event id:</span>
+            <Input block mono ground="raised" placeholder="e.g. pipeline-done" value={draftId} onChange={(e) => setDraftId(e.target.value)} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 16, minHeight: "var(--tasty-settings-row-min-height)" }}>
-            <span style={{ width: 100, flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)" }}>Shell command:</span>
-            <Input block mono placeholder='tasty notify "$TASTY_HOOK_*"' value={draftCmd} onChange={(e) => setDraftCmd(e.target.value)} />
+            <span style={{ width: 100, flex: "none", fontSize: 13, color: "var(--tasty-text-secondary-raised)" }}>Shell command:</span>
+            <Input block mono ground="raised" placeholder='tasty notify "$TASTY_HOOK_*"' value={draftCmd} onChange={(e) => setDraftCmd(e.target.value)} />
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>Cancel</Button>
+            <Button variant="ghost" size="sm" ground="raised" onClick={() => setAdding(false)}>Cancel</Button>
             <Button variant="primary" size="sm" disabled={!draftId.trim()} onClick={commitAdd}>Add handler</Button>
           </div>
         </div>
@@ -1114,6 +1115,10 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
           <Input mono defaultValue="3" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>lines</span>
         </Row>
         <Row label="Language:" caption={<RowCaption>Changing the language takes effect after Tasty restarts.</RowCaption>}><Select options={["English", "한국어", "日本語"]} style={{ width: "var(--tasty-field-width-md)" }} /></Row>
+        {/* 2026-10-21 — explorer Properties time format. Applies on Save. */}
+        <Row label="Time format in Properties:" caption={<RowCaption>Used for Modified, Created and Target modified in Explorer Properties, in this computer's time zone. Example: <span style={{ fontFamily: "var(--tasty-font-mono)", color: "var(--tasty-text-secondary)" }}>2026-10-21 12:12</span></RowCaption>}>
+          <Select options={[{ value: "minutes", label: "Minutes" }, { value: "seconds", label: "Seconds" }, { value: "seconds_offset", label: "Seconds and UTC offset" }]} defaultValue="minutes" style={{ width: "var(--tasty-field-width-lg)" }} />
+        </Row>
         {/* 2026-10-07 — [webhook] allow_external. On the row grid; the warning callout is the row's own and is ALWAYS shown. Save/Cancel flow. */}
         <Row label="Accept webhook calls from other computers:" caption={<WarnCallout>When on, the webhook listener takes every network interface, so anyone who can reach its port can call your registered webhooks. When off, only programs on this computer can. Applies from the next start.</WarnCallout>}><Switch /></Row>
       </>

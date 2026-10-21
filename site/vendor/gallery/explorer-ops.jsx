@@ -20,6 +20,7 @@ const NAV = [
   { id: "remotewrite", label: "Remote write" },
   { id: "permdelete", label: "Delete permanently" },
   { id: "stagingleft", label: "Temporary folder left" },
+  { id: "propsactions", label: "Properties actions" },
 ];
 
 // ── Progress ──────────────────────────────────────────────
@@ -484,6 +485,7 @@ function Page() {
       <window.ExplorerOpsRemote.RemoteWriteSection />
       <window.ExplorerOpsDelete.PermanentDeleteSection />
       <window.ExplorerOpsStaging.StagingLeftSection />
+      <window.ExplorerOpsPropsActions.PropsActionsSection />
     </>
   );
 }

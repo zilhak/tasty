@@ -282,6 +282,7 @@ const GALLERY_MODULE = {
   ExplorerOpsRemote: "./explorer-ops-remote.jsx",
   ExplorerOpsStaging: "./explorer-ops-staging.jsx",
   ExplorerOpsDelete: "./explorer-ops-delete.jsx",
+  ExplorerOpsPropsActions: "./explorer-ops-props-actions.jsx",
   ExplorerDeleteFrame: "./explorer-delete-frame.jsx",
   ExplorerOpsY: "./explorer-ops.jsx",
   TastyDesignSystem_41fd3f: "../ds/index.js",
@@ -402,8 +403,13 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
   // `window.TastyKit && window.TastyKit.X` — a load-order guard; the import resolves it.
   src = src.replace(/window\.TastyKit\s*&&\s*window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, sym) =>
     addKit(sym, `${sym} as Kit_${sym}`) ? `Kit_${sym}` : all);
-  src = src.replace(/(<\/?)window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, lt, sym) =>
-    addKit(sym, sym) ? `${lt}${sym}` : all);
+  // `const X = (p) => <window.TastyKit.X {...p} />;` declares the kit name locally, so
+  // the tag takes an alias instead of redeclaring it.
+  src = src.replace(/(<\/?)window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, lt, sym) => {
+    const declared = new RegExp(String.raw`(?:^|[^\w$.])(?:const|let|var|function|class)\s+${sym}\b`).test(src);
+    if (!declared) return addKit(sym, sym) ? `${lt}${sym}` : all;
+    return addKit(sym, `${sym} as Kit_${sym}`) ? `${lt}Kit_${sym}` : all;
+  });
   // `cond ? window.TastyKit.A : window.TastyKit.B` — a kit member read outside a tag name.
   src = src.replace(/window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, sym) =>
     addKit(sym, `${sym} as Kit_${sym}`) ? `Kit_${sym}` : all);

@@ -187,6 +187,16 @@ pub const SHADOW_MODAL: ShadowToken = ShadowToken {
     alpha: 140,
 };
 
+/// 그림자 없음. design `--tasty-shadow-none`(`none`). 불투명 모드 WebView 페이지와 겹친 상자는 자기
+/// 사각형 밖을 그릴 수 없어 그림자를 반만 보이게 되므로 `--tasty-webview-opaque-shadow`가 이 값을 가리킨다.
+pub const SHADOW_NONE: ShadowToken = ShadowToken {
+    offset_x: 0.0,
+    offset_y: 0.0,
+    blur: 0.0,
+    spread: 0.0,
+    alpha: 0,
+};
+
 /// design `--tasty-scrim-bg` — 모달/팝업 뒤 무대를 어둡게 덮는 scrim 알파. black 50%
 /// straight (테마 무관 고정 검정). `Theme::scrim()` 이 이 값으로 색을 만든다.
 pub const SCRIM_ALPHA: u8 = 128;
@@ -1392,6 +1402,18 @@ impl Theme {
         self.border_default()
     }
 
+    /// raised 바탕 위 disabled 컨트롤의 채움. `semantic.state-disabled-fill-raised` → bg-panel.
+    #[inline]
+    pub fn state_disabled_fill_raised(&self) -> HexColor {
+        self.bg_panel()
+    }
+
+    /// raised 바탕 위 disabled 컨트롤의 테두리. `semantic.state-disabled-border-raised` → border-strong.
+    #[inline]
+    pub fn state_disabled_border_raised(&self) -> HexColor {
+        self.border_strong()
+    }
+
     // ── 오버레이 (overlay-*) — is_light 에서 도출된 필드를 semantic 이름으로 ──
     #[inline]
     pub fn overlay_hover(&self) -> PremulColor {
@@ -1624,6 +1646,12 @@ impl Theme {
     #[inline]
     pub fn shadow_modal(&self) -> ShadowToken {
         SHADOW_MODAL
+    }
+    /// 그림자 없음. `--tasty-webview-opaque-shadow` → `--tasty-shadow-none`. 불투명 모드 WebView
+    /// 페이지와 겹친 팝업·드롭다운 상자가 쓴다.
+    #[inline]
+    pub fn shadow_none(&self) -> ShadowToken {
+        SHADOW_NONE
     }
 
     // ── 모션 (modifier-hint) ──
@@ -2675,6 +2703,7 @@ mod tests {
     const SHIPPED_SHADOW_TOKENS: &[(&str, ShadowToken, f32)] = &[
         ("SHADOW_POPOVER", SHADOW_POPOVER, 0.4),
         ("SHADOW_MODAL", SHADOW_MODAL, 0.55),
+        ("SHADOW_NONE", SHADOW_NONE, 0.0),
     ];
 
     /// ShadowToken 상수와 검사 목록을 이름으로 대조해 빠진 토큰을 찾는다.

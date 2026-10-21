@@ -39,6 +39,10 @@
   --tasty-button-secondary-border-hover: var(--tasty-border-strong);
   --tasty-button-ghost-fg:         var(--tasty-text-secondary);
   --tasty-button-ghost-fg-hover:   var(--tasty-text-primary);
+  /* 2026-10-21 — ghost on a RAISED ground (Button ground="raised": add cards, menus' inline buttons). Latte text-secondary
+     on surface0 = 4.05:1; the raised role = 5.17:1 (Mocha 7.10). Hover ink unchanged. */
+  --tasty-button-ghost-raised-fg:       var(--tasty-text-secondary-raised);
+  --tasty-button-ghost-raised-fg-hover: var(--tasty-text-primary);
   /* disabled — every variant draws the same neutral box (2026-09-29); ghost keeps no fill/edge */
   --tasty-button-disabled-bg:      var(--tasty-state-disabled-fill);
   --tasty-button-disabled-border:  var(--tasty-state-disabled-border);
@@ -154,6 +158,11 @@
   --tasty-select-border-focus:     var(--tasty-border-focus);
   --tasty-select-chevron-fg:       var(--tasty-text-muted);
   --tasty-select-chevron-room:     var(--tasty-size-28); /* right padding reserved for the chevron */
+  /* 2026-10-21 — Select on a RAISED ground (Select ground="raised"), same step-down as Input raised. */
+  --tasty-select-raised-bg:              var(--tasty-bg-panel);
+  --tasty-select-raised-border:          var(--tasty-border-strong);
+  --tasty-select-raised-disabled-bg:     var(--tasty-state-disabled-fill-raised);
+  --tasty-select-raised-disabled-border: var(--tasty-state-disabled-border-raised);
   --tasty-select-chevron-offset:   var(--tasty-space-sm);
   --tasty-select-placeholder:      var(--tasty-input-placeholder); /* 2026-10-19 — Select(placeholder): trigger ink while no value is chosen → text-placeholder */
 
@@ -871,6 +880,14 @@
   --tasty-fp-folder-hint-fg:          var(--tasty-text-muted);        /* folder mode — footer hint line under the Folder row */
   --tasty-fp-filter-max-width:        var(--tasty-field-width-md); /* 160 — READ-ONLY filter chip: content width up to this, then front-kept ellipsis + tooltip with the full list (2026-10-06) */
 
+  /* Popup over a WebView page in OPAQUE mode (2026-10-21).
+     The host can paint only inside the popup rect and each dropdown rect; those pixels are fully opaque.
+     A box whose rect (or whose parent shell's rect) intersects a visible opaque-mode page takes BOTH, on the
+     WHOLE box (never per edge). Its existing 1px border (border-frame / border-strong / menu-border) stays and
+     is the only silhouette — no extra edge. Scrim rule lives in the contract, not a token: no scrim at all. */
+  --tasty-webview-opaque-radius: var(--tasty-radius-none);  /* replaces radius / menu-radius on the box */
+  --tasty-webview-opaque-shadow: var(--tasty-shadow-none);  /* replaces shadow-popover / shadow-modal on the box */
+
   /* Shared popup title bar — right-hand buttons (× , and fullscreen when the popup declares a stage) (2026-09-29).
      The title is centred on the STRIP: both sides reserve the same width,
      reserve(N) = edge-inset + N × btn-size + (N − 1) × btn-gap + text-gap  → N=1: 32 · N=2: 60. */
@@ -1446,7 +1463,7 @@
   --tasty-file-handler-form-row-gap: var(--tasty-space-sm); /* 8 between card rows */
   --tasty-file-handler-form-label-fg: var(--tasty-text-secondary-raised); /* field labels + card title on surface-raised (Latte → n1100, ≈5.2:1) */
   --tasty-file-handler-form-caption-fg: var(--tasty-text-secondary-raised); /* "Saved as user/…" + defaults captions on surface-raised */
-  --tasty-file-handler-form-error-fg: var(--tasty-accent-danger); /* field error glyph + line (Mocha 5.4 · Latte 5.0 on surface-raised) */
+  --tasty-file-handler-form-error-fg: var(--tasty-accent-danger-raised); /* field / cross-field error glyph + line on surface-raised — 2026-10-21 was accent-danger (Latte 3.52); now Mocha 5.43 · Latte 4.79 */
   --tasty-file-handler-priority-width: var(--tasty-field-width-xs); /* 90 — priority number field (was 80 hard-coded) */
   --tasty-file-handler-select-width: var(--tasty-field-width-lg); /* 200 — Detector Select */
   --tasty-file-handler-kind-width: var(--tasty-field-width-md); /* 160 — Action Select */
@@ -1456,6 +1473,15 @@
   /* 2026-10-21 — follow-up: existing-id info line + removed user rules in the summary */
   --tasty-file-handler-form-info-fg: var(--tasty-text-secondary-raised); /* "{id} exists — your rules are added" info line (info glyph + caption) */
   --tasty-file-handler-summary-removed-fg: var(--tasty-text-muted); /* user rule pieces struck through while "your rules removed on save" */
+  /* 2026-10-21 — narrow pending rows: the id never shrinks below this; past it the pending Tag drops to its own line */
+  --tasty-file-handler-id-min-width: var(--tasty-size-96);
+  /* 2026-10-21 — Explorer Properties: Open footer · permission editor · time format */
+  --tasty-explorer-props-footer-border: var(--tasty-separator); /* rule above the Open footer */
+  --tasty-explorer-props-perm-border: var(--tasty-border-strong); /* permission editor box edge on bg-panel */
+  --tasty-explorer-props-perm-cell-width: var(--tasty-size-56); /* role label column + each r / w / x column */
+  --tasty-explorer-props-perm-error-fg: var(--tasty-accent-danger); /* apply failed line on bg-panel — Mocha 7.08 · Latte 4.80 */
+  --tasty-explorer-props-perm-locked-fg: var(--tasty-text-muted); /* "Only the owner can change permissions" under the value */
+  --tasty-explorer-props-value-fg: var(--tasty-text-secondary); /* field value ink (names the literal the rows already used) */
 }
 
 

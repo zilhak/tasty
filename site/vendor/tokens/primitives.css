@@ -140,6 +140,7 @@
   --tasty-size-1100: 1100px; /* settings window width (2026-10-06) */
 
   /* ── Radius scale ─────────────────────────────────────────── */
+  --tasty-radius-0:    0px;  /* 2026-10-21 — square corner (popup over an opaque-mode WebView page) */
   --tasty-radius-2:    2px;
   --tasty-radius-4:    4px;
   --tasty-radius-8:    8px;  /* Wayland CSD window top-corner radius */

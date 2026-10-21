@@ -106,6 +106,9 @@ pub(crate) const OPACITY_TINT_BORDER: f32 = 0.36;
 /// `primitive.opacity-tint-fill` = 0.12
 pub(crate) const OPACITY_TINT_FILL: f32 = 0.12;
 
+/// `primitive.radius-0` = 0px
+pub(crate) const RADIUS_0: LogicalPx = LogicalPx(0.0);
+
 /// `primitive.radius-2` = 2px
 pub(crate) const RADIUS_2: LogicalPx = LogicalPx(2.0);
 

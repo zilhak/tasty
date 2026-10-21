@@ -288,6 +288,8 @@ accent 채움과 테두리를 함께 쓰는 표현은 `tint_fill_alpha()` 0.12�
 
 `accent-warning-glyph`는 밝은 배경 위 경고 글리프 역할이다. Mocha는 yellow를 그대로 쓰고, Latte는 yellow 50%와 neutral-1100을 sRGB로 혼합한다. Plugins 창 신뢰 상자의 권한 변경 글리프(`plugin-trust-glyph-warning`)가 이 역할을 참조한다. 접근자는 `notification_ink.rs`에 수기로 두며 생성기는 component 토큰 접근자만 만든다.
 
+`accent-danger-raised`는 raised 바탕(surface-raised 카드) 위 위험 글자와 그 글리프 역할이다. Mocha는 accent-danger를 그대로 쓰고(surface0 위 5.43:1), Latte는 red 60%와 neutral-1100을 sRGB로 혼합한다(surface0 위 4.79:1). Latte의 accent-danger는 surface0 위 3.52:1이라 글자 기준에 못 미친다. 채움과 invalid 테두리는 비텍스트라 accent-danger를 유지한다. File Detectors·File Handlers 추가 카드의 오류 줄(`file-handler-form-error-fg`)이 이 역할을 참조한다. 접근자는 `accent-warning-glyph`와 같이 `notification_ink.rs`에 수기로 둔다.
+
 ### 애니메이션과 스크롤
 
 터미널 셀·스크롤에 추가 transition을 두지 않는다. UI 위젯의 입력 직후 피드백은 짧은 모션을 사용한다. 시간 단위와 모션 감소 설정은 아래 [모션 설정](#모션-설정과-시간-단위)을 따른다.
@@ -384,6 +386,7 @@ disabled 컨트롤은 opacity로 흐리게 그리지 않는다. 변형과 관계
 | 콘텐츠 위에 붙는 anchored·scrim 없는 표면 | `shadow_popover()` | 배너, tooltip, 자동완성·Select 메뉴, modifier hint, tutorial callout, tools menu·rail category·배너 더보기·search bar |
 | 화면 중앙을 차지하는 표면 | `shadow_modal()` | host·plugin popup 셸, 부팅 셸 설정, 부팅 오류 카드 |
 | 위 둘에 속하지 않음 | 없음 | 사용자가 옮기는 창 형태의 알림 패널 |
+| 불투명 모드 WebView 페이지와 겹친 팝업·드롭다운 상자 | `shadow_none()` | [WebView 위 팝업](webview.md#egui-오버레이와-native-webview)의 불투명 모드. 모서리도 `webview_opaque_radius()`(0)로 바꾸고 1px 테두리만 남긴다 |
 
 search bar는 범위 상단 중앙에 있어도 scrim 없이 콘텐츠 위에 놓이므로 popover에 속한다. 좌표를 계산한 방식만으로 종류를 정하지 않는다. 갤러리 공용 셸도 `frame_card`·`frame_card_popover`·`frame_card_flat`으로 같은 구분을 사용한다. Settings 창 셸, image surface의 pane 콘텐츠, 다른 표면 안의 섹션은 flat이다.
 
@@ -395,7 +398,7 @@ search bar는 범위 상단 중앙에 있어도 scrim 없이 콘텐츠 위에 �
 
 `ShadowToken.spread`는 음수를 표현하지만 egui의 u8 spread로 재현할 수 없다. 음수를 0으로 근사하지 않으며 해당 표면은 미구현으로 둔다. `to_egui()`는 debug에서 음수 spread를 단언으로 거부한다.
 
-검사는 역할이 다르다. `shadow_policy_guard.rs`는 인식하는 리터럴 생성 위치, 같은 줄의 변수 선언에서 찾은 기하 재대입, 접근자 목록을 확인한다. 데이터 흐름 전체·egui 기본 매핑·표면별 선택은 확인하지 않는다. `shadow_parity.rs`는 수기로 옮긴 두 토큰의 값과 vendor JSON, raw·alias 목록, 그림자가 아닌 kbd-shadow-depth 구분을 대조한다. 음수 spread 사용 검사도 토큰 목록 완전성 검사와 함께 유지한다. 실행 범위는 [CI 가이드](../../dev-guide/ci-gates.md)를 따른다.
+검사는 역할이 다르다. `shadow_policy_guard.rs`는 인식하는 리터럴 생성 위치, 같은 줄의 변수 선언에서 찾은 기하 재대입, 접근자 목록을 확인한다. 데이터 흐름 전체·egui 기본 매핑·표면별 선택은 확인하지 않는다. `shadow_parity.rs`는 수기로 옮긴 세 토큰(popover·modal·none)의 값과 vendor JSON, raw·alias 목록, 그림자가 아닌 kbd-shadow-depth 구분을 대조한다. 음수 spread 사용 검사도 토큰 목록 완전성 검사와 함께 유지한다. 실행 범위는 [CI 가이드](../../dev-guide/ci-gates.md)를 따른다.
 
 ## 스크롤 여지를 보여 주는 방법
 

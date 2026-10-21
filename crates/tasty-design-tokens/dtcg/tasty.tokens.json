@@ -473,6 +473,10 @@
       "$type": "dimension",
       "$value": "620px"
     },
+    "radius-0": {
+      "$type": "dimension",
+      "$value": "0px"
+    },
     "radius-2": {
       "$type": "dimension",
       "$value": "2px"
@@ -844,6 +848,7 @@
       "$value": "{semantic.text-on-accent}"
     },
     "accent-warning-glyph": { "$type": "color", "$value": "{semantic.accent-warning}", "$extensions": { "com.tasty.mode": { "latte": "color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-neutral-1100))" } } },
+    "accent-danger-raised": { "$type": "color", "$value": "{semantic.accent-danger}", "$description": "danger ink (error text + glyph) on surface-raised", "$extensions": { "com.tasty.mode": { "latte": "color-mix(in srgb, var(--tasty-color-red) 60%, var(--tasty-color-neutral-1100))" } } },
     "notify-error": { "$type": "color", "$value": "{semantic.accent-danger}" },
     "notify-warning": { "$type": "color", "$value": "{semantic.accent-warning}" },
     "notify-info": { "$type": "color", "$value": "{semantic.attention-completion}" },
@@ -926,6 +931,11 @@
     "shadow-modal": {
       "$type": "shadow",
       "$value": "0 20px 60px rgba(0, 0, 0, 0.55)"
+    },
+    "shadow-none": {
+      "$type": "shadow",
+      "$value": "none",
+      "$description": "no lift — box over an opaque-mode WebView page"
     },
     "scrim-bg": {
       "$type": "color",
@@ -1010,6 +1020,10 @@
     "radius-pill": {
       "$type": "dimension",
       "$value": "{primitive.radius-full}"
+    },
+    "radius-none": {
+      "$type": "dimension",
+      "$value": "{primitive.radius-0}"
     },
     "control-height-tree": {
       "$type": "dimension",
@@ -5050,7 +5064,7 @@
     "file-handler-form-row-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "8 between card rows" },
     "file-handler-form-label-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "field labels + card title on surface-raised" },
     "file-handler-form-caption-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "Saved as / default captions on surface-raised" },
-    "file-handler-form-error-fg": { "$type": "color", "$value": "{semantic.accent-danger}", "$description": "field error glyph + line" },
+    "file-handler-form-error-fg": { "$type": "color", "$value": "{semantic.accent-danger-raised}", "$description": "field error glyph + line" },
     "file-handler-priority-width": { "$type": "dimension", "$value": "{semantic.field-width-xs}", "$description": "90 priority number field" },
     "file-handler-select-width": { "$type": "dimension", "$value": "{semantic.field-width-lg}", "$description": "200 Detector Select" },
     "file-handler-kind-width": { "$type": "dimension", "$value": "{semantic.field-width-md}", "$description": "160 Action Select" },
@@ -5073,6 +5087,21 @@
     "fp-folder-path-fg": { "$type": "color", "$value": "{component.input-readonly-fg}", "$description": "folder mode — target path readout" },
     "fp-folder-hint-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "folder mode — footer hint line" },
     "file-handler-form-info-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "existing-id info line in the add card" },
-    "file-handler-summary-removed-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "struck user rule pieces while removal is pending" }
+    "file-handler-summary-removed-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "struck user rule pieces while removal is pending" },
+    "webview-opaque-radius": { "$type": "dimension", "$value": "{semantic.radius-none}", "$description": "popup / dropdown box corner over an opaque-mode WebView page" },
+    "webview-opaque-shadow": { "$type": "shadow", "$value": "{semantic.shadow-none}", "$description": "popup / dropdown box lift over an opaque-mode WebView page (none)" },
+    "button-ghost-raised-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "ghost Button label on a raised ground" },
+    "button-ghost-raised-fg-hover": { "$type": "color", "$value": "{semantic.text-primary}", "$description": "ghost Button label on a raised ground, hover" },
+    "select-raised-bg": { "$type": "color", "$value": "{semantic.bg-panel}", "$description": "Select box on a raised ground" },
+    "select-raised-border": { "$type": "color", "$value": "{semantic.border-strong}", "$description": "Select edge on a raised ground" },
+    "select-raised-disabled-bg": { "$type": "color", "$value": "{semantic.state-disabled-fill-raised}", "$description": "disabled Select box on a raised ground" },
+    "select-raised-disabled-border": { "$type": "color", "$value": "{semantic.state-disabled-border-raised}", "$description": "disabled Select edge on a raised ground" },
+    "file-handler-id-min-width": { "$type": "dimension", "$value": "{primitive.size-96}", "$description": "row id floor; past it the pending Tag drops to its own line" },
+    "explorer-props-footer-border": { "$type": "color", "$value": "{semantic.separator}", "$description": "Properties Open footer top rule" },
+    "explorer-props-perm-border": { "$type": "color", "$value": "{semantic.border-strong}", "$description": "Properties permission editor box edge" },
+    "explorer-props-perm-cell-width": { "$type": "dimension", "$value": "{primitive.size-56}", "$description": "permission editor role column + r/w/x columns" },
+    "explorer-props-perm-error-fg": { "$type": "color", "$value": "{semantic.accent-danger}", "$description": "permission apply failed line" },
+    "explorer-props-perm-locked-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "permission cannot be changed line" },
+    "explorer-props-value-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "Properties field value ink" }
   }
 }

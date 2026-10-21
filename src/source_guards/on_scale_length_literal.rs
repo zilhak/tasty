@@ -62,7 +62,7 @@ const EGUI_LENGTH_HEADS: &[&str] = &[
 const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     (
         "crates/tasty-design-tokens/src/generated/",
-        64,
+        65,
         "스케일 자신 — 이 파일이 곧 size-* 의 정본이다",
     ),
     (

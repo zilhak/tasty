@@ -157,6 +157,9 @@ pub const OVERLAY_TOP_OFFSET: LogicalPx = super::primitive::SIZE_88;
 /// `semantic.radius` → `{primitive.radius-4}` = 4px
 pub const RADIUS: LogicalPx = super::primitive::RADIUS_4;
 
+/// `semantic.radius-none` → `{primitive.radius-0}` = 0px
+pub const RADIUS_NONE: LogicalPx = super::primitive::RADIUS_0;
+
 /// `semantic.radius-pill` → `{primitive.radius-full}` = 9999px (sentinel — 완전 원형용 상한값)
 pub const RADIUS_PILL: LogicalPx = super::primitive::RADIUS_FULL;
 

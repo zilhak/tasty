@@ -13,6 +13,7 @@ const NAV = [
   { id: "modhint", label: "Modifier hints" },
   { id: "categories", label: "Workspace categories" },
   { id: "notices", label: "Notice column · restore notice" },
+  { id: "webview", label: "Over a web page (opaque)" },
 ];
 
 // Interactive hold-to-reveal demo: press & hold the button; after a 500ms dwell
@@ -266,6 +267,9 @@ function Page() {
       </Section>
       <Section id="notices" title="Notice column — restore failure · save halt · response wait (2026-10-19)">
         {window.GalleryNoticeColumn ? <window.GalleryNoticeColumn /> : null}
+      </Section>
+      <Section id="webview" title="Over a web page — opaque mode (2026-10-21)">
+        {window.GalleryWebviewOpaque ? <window.GalleryWebviewOpaque /> : null}
       </Section>
     </>
   );

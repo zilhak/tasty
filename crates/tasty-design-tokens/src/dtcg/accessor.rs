@@ -119,6 +119,7 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-attached", "border_attached()"),
     ("semantic.accent-attention", "accent_attention()"),
     ("semantic.accent-danger", "accent_danger()"),
+    ("semantic.accent-danger-raised", "accent_danger_raised()"),
     ("semantic.accent-data", "accent_data()"),
     ("semantic.accent-decorative", "accent_decorative()"),
     ("semantic.accent-info", "accent_info()"),
@@ -167,6 +168,14 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.state-disabled-border", "state_disabled_border()"),
     ("semantic.state-disabled-fg", "state_disabled_fg()"),
     ("semantic.state-disabled-fill", "state_disabled_fill()"),
+    (
+        "semantic.state-disabled-fill-raised",
+        "state_disabled_fill_raised()",
+    ),
+    (
+        "semantic.state-disabled-border-raised",
+        "state_disabled_border_raised()",
+    ),
     ("semantic.status-idle", "status_idle()"),
     ("semantic.surface-active", "surface_active()"),
     ("semantic.surface-hover", "surface_hover()"),
@@ -263,6 +272,10 @@ const SEMANTIC_COLOR_HAND_WRITTEN: &[(&str, &str)] = &[
     (
         "semantic.accent-warning-glyph",
         "Latte yellow 50% + neutral-1100 합성색",
+    ),
+    (
+        "semantic.accent-danger-raised",
+        "Latte red 60% + neutral-1100 합성색",
     ),
     (
         "semantic.notify-warning-fill",

@@ -467,6 +467,9 @@ pub mod explorer {
     /// `component.explorer-props-padding-x` → `{primitive.size-14}` = 14px
     pub const PROPS_PADDING_X: LogicalPx = crate::generated::primitive::SIZE_14;
 
+    /// `component.explorer-props-perm-cell-width` → `{primitive.size-56}` = 56px
+    pub const PROPS_PERM_CELL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_56;
+
     /// `component.explorer-props-row-line` → `{primitive.size-20}` = 20px
     pub const PROPS_ROW_LINE: LogicalPx = crate::generated::primitive::SIZE_20;
 
@@ -513,6 +516,9 @@ pub mod file {
 
     /// `component.file-handler-form-row-gap` → `{semantic.space-sm}` = 8px
     pub const HANDLER_FORM_ROW_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.file-handler-id-min-width` → `{primitive.size-96}` = 96px
+    pub const HANDLER_ID_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_96;
 
     /// `component.file-handler-kind-width` → `{semantic.field-width-md}` = 160px
     pub const HANDLER_KIND_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_MD;
@@ -1835,6 +1841,13 @@ pub mod ui {
 
     /// `component.ui-code-radius` → `{semantic.radius-sm}` = 2px
     pub const CODE_RADIUS: LogicalPx = crate::generated::semantic::RADIUS_SM;
+}
+
+pub mod webview {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.webview-opaque-radius` → `{semantic.radius-none}` = 0px
+    pub const OPAQUE_RADIUS: LogicalPx = crate::generated::semantic::RADIUS_NONE;
 }
 
 pub mod workspace {

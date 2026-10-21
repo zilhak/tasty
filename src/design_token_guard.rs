@@ -582,6 +582,11 @@ const PATHLESS_LENGTH_TOKENS: &[(&str, &str)] = &[
          `letter_spacing_ui(font_size)` 로 읽는다",
     ),
     (
+        "semantic.radius-none",
+        "component `webview-opaque-radius` 의 alias 로만 쓰인다 — 그 접근자는 역할 이름이라 이 \
+         토큰의 경로가 아니다",
+    ),
+    (
         "semantic.radius-pill",
         "component `switch-radius` 의 alias 로만 쓰인다 — 그 접근자는 역할 이름이라 이 \
          토큰의 경로가 아니다",

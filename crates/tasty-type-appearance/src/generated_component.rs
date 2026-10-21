@@ -502,6 +502,18 @@ impl crate::theme::Theme {
         self.text_primary()
     }
 
+    /// `component.button-ghost-raised-fg` → `{semantic.text-secondary-raised}`
+    #[inline]
+    pub fn button_ghost_raised_fg(&self) -> HexColor {
+        self.text_secondary_raised()
+    }
+
+    /// `component.button-ghost-raised-fg-hover` → `{semantic.text-primary}`
+    #[inline]
+    pub fn button_ghost_raised_fg_hover(&self) -> HexColor {
+        self.text_primary()
+    }
+
     /// `component.button-height` → `{semantic.control-height}` = 28px
     #[inline]
     pub fn button_height(&self) -> LogicalPx {
@@ -1588,6 +1600,12 @@ impl crate::theme::Theme {
         self.surface_raised()
     }
 
+    /// `component.explorer-props-footer-border` → `{semantic.separator}`
+    #[inline]
+    pub fn explorer_props_footer_border(&self) -> PremulColor {
+        self.separator
+    }
+
     /// `component.explorer-props-label-width` → `{primitive.size-96}` = 96px
     #[inline]
     pub fn explorer_props_label_width(&self) -> LogicalPx {
@@ -1606,6 +1624,30 @@ impl crate::theme::Theme {
         self.accent_warning()
     }
 
+    /// `component.explorer-props-perm-border` → `{semantic.border-strong}`
+    #[inline]
+    pub fn explorer_props_perm_border(&self) -> HexColor {
+        self.border_strong()
+    }
+
+    /// `component.explorer-props-perm-cell-width` → `{primitive.size-56}` = 56px
+    #[inline]
+    pub fn explorer_props_perm_cell_width(&self) -> LogicalPx {
+        LogicalPx((56.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-props-perm-error-fg` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn explorer_props_perm_error_fg(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.explorer-props-perm-locked-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn explorer_props_perm_locked_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
     /// `component.explorer-props-row-line` → `{primitive.size-20}` = 20px
     #[inline]
     pub fn explorer_props_row_line(&self) -> LogicalPx {
@@ -1622,6 +1664,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn explorer_props_row_pad_top(&self) -> LogicalPx {
         LogicalPx((2.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-props-value-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn explorer_props_value_fg(&self) -> HexColor {
+        self.text_secondary()
     }
 
     /// `component.explorer-props-width` → `{primitive.size-360}` = 360px
@@ -1708,10 +1756,10 @@ impl crate::theme::Theme {
         self.text_secondary_raised()
     }
 
-    /// `component.file-handler-form-error-fg` → `{semantic.accent-danger}`
+    /// `component.file-handler-form-error-fg` → `{semantic.accent-danger-raised}`
     #[inline]
     pub fn file_handler_form_error_fg(&self) -> HexColor {
-        self.accent_danger()
+        self.accent_danger_raised()
     }
 
     /// `component.file-handler-form-info-fg` → `{semantic.text-secondary-raised}`
@@ -1736,6 +1784,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn file_handler_form_row_gap(&self) -> LogicalPx {
         self.spacing_sm
+    }
+
+    /// `component.file-handler-id-min-width` → `{primitive.size-96}` = 96px
+    #[inline]
+    pub fn file_handler_id_min_width(&self) -> LogicalPx {
+        LogicalPx((96.0 * self.ui_zoom).round())
     }
 
     /// `component.file-handler-kind-width` → `{semantic.field-width-md}` = 160px
@@ -2330,6 +2384,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn input_readonly_fg(&self) -> HexColor {
         self.text_secondary()
+    }
+
+    /// `component.input-readonly-raised-bg` → `{semantic.state-disabled-fill-raised}`
+    #[inline]
+    pub fn input_readonly_raised_bg(&self) -> HexColor {
+        self.state_disabled_fill_raised()
+    }
+
+    /// `component.input-readonly-raised-border` → `{semantic.state-disabled-border-raised}`
+    #[inline]
+    pub fn input_readonly_raised_border(&self) -> HexColor {
+        self.state_disabled_border_raised()
     }
 
     /// `component.kb-ie-action-column-width` → `{primitive.size-288}` = 288px
@@ -4168,6 +4234,30 @@ impl crate::theme::Theme {
         self.corner_radius
     }
 
+    /// `component.select-raised-bg` → `{semantic.bg-panel}`
+    #[inline]
+    pub fn select_raised_bg(&self) -> HexColor {
+        self.bg_panel()
+    }
+
+    /// `component.select-raised-border` → `{semantic.border-strong}`
+    #[inline]
+    pub fn select_raised_border(&self) -> HexColor {
+        self.border_strong()
+    }
+
+    /// `component.select-raised-disabled-bg` → `{semantic.state-disabled-fill-raised}`
+    #[inline]
+    pub fn select_raised_disabled_bg(&self) -> HexColor {
+        self.state_disabled_fill_raised()
+    }
+
+    /// `component.select-raised-disabled-border` → `{semantic.state-disabled-border-raised}`
+    #[inline]
+    pub fn select_raised_disabled_border(&self) -> HexColor {
+        self.state_disabled_border_raised()
+    }
+
     /// `component.select-search-field-bg` → `{component.input-raised-bg}`
     #[inline]
     pub fn select_search_field_bg(&self) -> HexColor {
@@ -5432,6 +5522,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn ui_code_radius(&self) -> LogicalPx {
         self.corner_radius_sm
+    }
+
+    /// `component.webview-opaque-radius` → `{semantic.radius-none}` = 0px
+    #[inline]
+    pub fn webview_opaque_radius(&self) -> LogicalPx {
+        LogicalPx((0.0 * self.ui_zoom).round())
     }
 
     /// `component.workspace-dot-gap` → `{semantic.space-xs}` = 4px

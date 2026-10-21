@@ -5,13 +5,14 @@
 
 use tasty_design_tokens::DTCG_JSON;
 use tasty_design_tokens::dtcg::{self, ThemeMode, Tier};
-use tasty_type_appearance::theme::{SHADOW_MODAL, SHADOW_POPOVER, ShadowToken};
+use tasty_type_appearance::theme::{SHADOW_MODAL, SHADOW_NONE, SHADOW_POPOVER, ShadowToken};
 
 /// 별칭이 아닌 원본 그림자 값과 Rust 상수의 대응표.
 /// None은 구현하지 않은 항목이며 그 이유를 함께 기록한다.
 const RAW_SHADOW_TOKENS: &[(&str, Option<ShadowToken>, &str)] = &[
     ("semantic.shadow-popover", Some(SHADOW_POPOVER), ""),
     ("semantic.shadow-modal", Some(SHADOW_MODAL), ""),
+    ("semantic.shadow-none", Some(SHADOW_NONE), ""),
     (
         "component.titlebar-csd-shadow",
         None,
@@ -23,7 +24,17 @@ const RAW_SHADOW_TOKENS: &[(&str, Option<ShadowToken>, &str)] = &[
 
 /// `0 6px 18px rgba(0, 0, 0, 0.4)` · `0 18px 50px -8px rgba(0,0,0,.5)` 를 뜯는다.
 /// 길이는 2~4 개(offset-x, offset-y, [blur], [spread]), 마지막이 `rgba(...)`.
+/// CSS `none`은 모든 기하와 알파가 0인 그림자로 읽는다.
 fn parse_css_shadow(raw: &str) -> ParsedShadow {
+    if raw.trim() == "none" {
+        return ParsedShadow {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur: 0.0,
+            spread: 0.0,
+            alpha: 0.0,
+        };
+    }
     let (lengths, rgba) = raw
         .split_once("rgba(")
         .unwrap_or_else(|| panic!("rgba(...)가 없는 그림자 값: {raw}"));
@@ -144,8 +155,8 @@ fn alias_shadow_tokens_land_on_a_listed_raw_value() {
         let target = dtcg::alias_target(&token.value).expect("filtered");
         assert!(
             listed.contains(&target),
-            "{} 가 명부 밖 raw 값 `{target}` 을 가리킨다 — 그림자 값은 둘뿐이고, \
-             세 번째가 필요하면 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자) 재검토가 먼저다",
+            "{} 가 명부 밖 raw 값 `{target}` 을 가리킨다 — 그림자 값은 popover·modal·none 셋이고, \
+             네 번째가 필요하면 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자) 재검토가 먼저다",
             token.path()
         );
     }

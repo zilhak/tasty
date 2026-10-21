@@ -50,6 +50,9 @@
   --tasty-accent-warning: var(--tasty-color-yellow);
   /* 2026-10-19: a warning GLYPH that must clear 3:1 on light grounds. Mocha = accent-warning; Latte remaps (yellow #df8e1d is 2.3:1 on base). */
   --tasty-accent-warning-glyph: var(--tasty-accent-warning);
+  /* 2026-10-21: danger INK (error text + its glyph) on a RAISED ground (surface-raised cards). Mocha = accent-danger
+     (5.43:1 on surface0); Latte remaps (red #d20f39 on surface0 = 3.52:1). Fills / invalid edges keep accent-danger. */
+  --tasty-accent-danger-raised: var(--tasty-accent-danger);
   /* attention: a SECOND, deliberately non-yellow "notice" tone for states that
      want a heads-up without the transient/validation reading of warning-yellow.
      Used for plugin needs-attention (rejected / failing). Peach re-points per
@@ -190,6 +193,9 @@
      command palette · ports · remote · settings · plugins · preset editor ·
      git viewer · clipboard viewer · DAG popup · every centered confirm/edit dialog */
   --tasty-shadow-modal:   0 20px 60px rgba(0, 0, 0, 0.55);
+  /* shadow-none — 2026-10-21. The explicit "no lift" value: a floating surface whose rect sits on an
+     opaque-mode WebView page cannot paint outside its own rect, so a shadow there would be cut to half. */
+  --tasty-shadow-none:    none;
 
   /* ── Scrim — dim layer behind centered modals/palette ─────── */
   --tasty-scrim-bg:          var(--tasty-alpha-black-50);
@@ -221,6 +227,7 @@
   --tasty-radius:           var(--tasty-radius-4); /* default corner */
   --tasty-radius-sm:        var(--tasty-radius-2); /* tight inner elements */
   --tasty-radius-pill:      var(--tasty-radius-full);
+  --tasty-radius-none:      var(--tasty-radius-0); /* 2026-10-21 — square corner; opaque WebView overlay edge */
 
   /* ── Fixed interactive heights ────────────────────────────── */
   --tasty-control-height-tree: var(--tasty-size-22); /* file-tree / sidebar rows */
@@ -373,6 +380,8 @@
   --tasty-notify-warning-fg:   var(--tasty-color-neutral-1100);
   /* warning glyph (2026-10-19): yellow 50% toward text n1100 ≈ #967043 — 4.54:1 on white, ≈3.6:1 on a warning tint box (≥ 3 icon floor). */
   --tasty-accent-warning-glyph: color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-neutral-1100));
+  /* danger ink on raised (2026-10-21): red 60% toward text n1100 ≈ #a4224a — 4.79:1 on surface0, 6.54:1 on base. Same move as accent-warning-glyph. */
+  --tasty-accent-danger-raised: color-mix(in srgb, var(--tasty-color-red) 60%, var(--tasty-color-neutral-1100));
 
   /* disabled ink — Latte's light end of the ramp is compressed (neutral-600..800
      sit within 1.2:1 of each other), so the same ramp step reads fainter than in
