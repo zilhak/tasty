@@ -92,7 +92,8 @@ const PAIRS: &[(&str, &str)] = &[
 ];
 
 /// 앱에만 있는 아이콘. 사이트 사본에도 추가되면 PAIRS로 옮긴다.
-const APP_ONLY: &[&str] = &["arrow_down", "minus", "redo", "undo"];
+// external은 공용 site Icon registry 대신 Explorer kit의 GIcon 원형을 쓴다. 아래에서 별도 대조한다.
+const APP_ONLY: &[&str] = &["arrow_down", "external", "minus", "redo", "undo"];
 
 /// 채운 글리프 — 사이트 `FILL_GLYPHS` 와 앱 `fill_icon!` 이 같은 집합을 가리켜야 한다.
 /// 사이트 이름으로 적는다.
@@ -792,4 +793,35 @@ fn every_site_glyph_is_paired_with_the_app() {
         unpaired.is_empty(),
         "사이트 사본에만 있는 아이콘이 있다: {unpaired:?}. 앱에 전사하고 PAIRS에 추가한다. 앱의 같은 이름 아이콘이 APP_ONLY에 있으면 그 항목도 옮긴다."
     );
+}
+
+#[test]
+fn external_matches_the_explorer_kit_glyph() {
+    let kit = read("site/vendor/gallery/plugins.jsx");
+    let row = kit
+        .lines()
+        .find(|line| line.trim_start().starts_with("external:"))
+        .unwrap();
+    let begin = row.find("<path ").unwrap();
+    let end = row[begin..].find("/>").unwrap() + begin + 2;
+    let icons = app_icons(&read(APP_ICONS));
+    let (body, filled) = &icons["external"];
+    // JSX의 자기닫기 태그 앞 공백은 도형 차이가 아니다.
+    assert_eq!(
+        normalize(body).replace(" />", "/>"),
+        normalize(&row[begin..end]).replace(" />", "/>")
+    );
+    assert!(!filled);
+    let shell = read("site/vendor/gallery/shell.jsx");
+    let gicon = shell
+        .split("function GIcon(")
+        .nth(1)
+        .unwrap()
+        .split("\n}")
+        .next()
+        .unwrap();
+    assert!(gicon.contains("strokeWidth=\"2\""));
+    assert!(gicon.contains("viewBox=\"0 0 24 24\""));
+    assert!(gicon.contains("strokeLinecap=\"round\""));
+    assert!(gicon.contains("strokeLinejoin=\"round\""));
 }

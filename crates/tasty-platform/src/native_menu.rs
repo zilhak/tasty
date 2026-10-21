@@ -11,12 +11,16 @@
 //! so it answers `Pending` and the caller pumps the returned handle once per
 //! frame. Rationale: `docs/dev-guide/context-menu.md#네이티브-메뉴-api-cratestasty-platformsrcnative_menu`.
 
+mod icon;
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(windows)]
 mod windows;
+
+pub use icon::MenuIcon;
 
 #[cfg(target_os = "linux")]
 pub use linux::show_context_menu;
@@ -139,6 +143,8 @@ pub struct MenuItem {
     pub tooltip: Option<String>,
     /// 같은 동작의 단축키. 메뉴는 표시만 하고 실행은 단축키 경로가 맡는다.
     pub shortcut: Option<MenuShortcut>,
+    /// 단색 SVG 글리프. None이면 기존 텍스트 메뉴 표현을 유지한다.
+    pub icon: Option<MenuIcon>,
 }
 
 /// 메뉴 항목 옆에 보일 단축키. macOS 는 `binding` 을 key equivalent 로 바꿔 AppKit 이 그리고,
@@ -157,6 +163,7 @@ impl MenuItem {
             enabled: true,
             shortcut: None,
             tooltip: None,
+            icon: None,
         }
     }
 
@@ -167,6 +174,7 @@ impl MenuItem {
             enabled: false,
             shortcut: None,
             tooltip: None,
+            icon: None,
         }
     }
 
@@ -177,6 +185,7 @@ impl MenuItem {
             enabled: false,
             shortcut: None,
             tooltip: None,
+            icon: None,
         }
     }
 
@@ -188,6 +197,12 @@ impl MenuItem {
     /// 단축키 표시를 붙인다.
     pub fn with_shortcut(mut self, shortcut: Option<MenuShortcut>) -> Self {
         self.shortcut = shortcut;
+        self
+    }
+
+    /// 기존 label·enabled·tooltip·shortcut을 유지하며 아이콘을 붙인다.
+    pub fn with_icon(mut self, icon: MenuIcon) -> Self {
+        self.icon = Some(icon);
         self
     }
 

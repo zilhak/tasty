@@ -4,6 +4,9 @@
 // 안전한 래퍼로 나누면 파일 단위 lint 면제를 다시 검토한다.
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 
+#[path = "windows_icon.rs"]
+mod icon;
+
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, DestroyMenu, MF_ENABLED, MF_GRAYED, MF_SEPARATOR, MF_STRING,
@@ -49,6 +52,7 @@ fn show_context_menu_sync(
     unsafe {
         let hmenu = CreatePopupMenu().ok()?;
 
+        let mut bitmaps = Vec::new();
         let mut label_bufs: Vec<Vec<u16>> = Vec::new();
         for item in items {
             if item.is_separator() {
@@ -67,6 +71,15 @@ fn show_context_menu_sync(
                 let wide_ptr = label_bufs.last().unwrap().as_ptr();
                 if let Err(e) = AppendMenuW(hmenu, flags, item.id as usize, PCWSTR(wide_ptr)) {
                     tracing::warn!("AppendMenuW item '{}' failed: {e}", item.label);
+                    continue;
+                }
+                if let Some(glyph) = item.icon {
+                    match icon::MenuBitmap::new(glyph, hwnd, item.enabled)
+                        .and_then(|bitmap| bitmap.attach(hmenu, item.id))
+                    {
+                        Ok(bitmap) => bitmaps.push(bitmap),
+                        Err(e) => tracing::warn!("native menu icon: {e}"),
+                    }
                 }
             }
         }
@@ -92,6 +105,8 @@ fn show_context_menu_sync(
 
         if let Err(e) = DestroyMenu(hmenu) {
             tracing::warn!("DestroyMenu failed: {e}");
+            // 파괴에 실패한 메뉴가 빌린 bitmap을 계속 가리킬 수 있어 조기 해제를 피한다.
+            std::mem::forget(bitmaps);
         }
 
         let id = selected.0 as u32;

@@ -11,6 +11,9 @@ repository = "https://github.com/zilhak/tasty"
 tasty-i18n = { path = "../tasty-i18n" }
 tasty-settings = { path = "../tasty-settings" }
 tasty-utils = { path = "../tasty-utils" }
+tasty-type-geometry = { path = "../tasty-type-geometry" }
+# 기존 아이콘 로더와 같은 SVG 래스터 엔진. 텍스트/시스템 폰트 기능은 쓰지 않는다.
+resvg = { version = "0.37", default-features = false, optional = true }
 
 anyhow = "1"
 tracing = "0.1"
@@ -35,6 +38,7 @@ windows = { version = "0.61", features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",
+    "Win32_UI_HiDpi",
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
     "Win32_UI_Shell_PropertiesSystem",
@@ -48,6 +52,8 @@ gdkx11 = { version = "0.18", optional = true }
 x11-dl = { version = "2.21", optional = true }
 
 [dev-dependencies]
+tasty-icons = { path = "../tasty-icons" }
+tasty-type-appearance = { path = "../tasty-type-appearance" }
 # 시험에서 환경변수와 격리 홈을 원상 복구한다.
 tasty-test-support = { path = "../tasty-test-support" }
 # 메뉴 key equivalent 표가 키 매칭 규칙과 같은 이름 집합을 다루는지 시험에서 대조한다.
@@ -58,6 +64,7 @@ tempfile = "3"
 default = []
 gui = [
     "dep:winit",
+    "dep:resvg",
     "dep:directories",
     "dep:png",
     "dep:tray-icon",

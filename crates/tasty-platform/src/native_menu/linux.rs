@@ -2,6 +2,9 @@
 //! 호출자는 매 프레임 poll로 GTK 이벤트를 처리한다. winit 창의 XID를 GdkWindow로 감싸
 //! popup_at_rect의 위치·grab 기준 창으로 사용한다.
 
+#[path = "linux_icon.rs"]
+mod icon;
+
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Mutex;
@@ -381,18 +384,24 @@ pub fn show_context_menu(
 /// 항목 하나. 단축키가 있으면 GTK 가속키 표시와 같은 모양으로 이름 오른쪽에 붙인다.
 /// `AccelLabel` 은 키 이름을 GTK 가 정하므로 다른 OS 와 같은 표시 문자열을 직접 쓴다.
 fn menu_item(item: &MenuItem) -> gtk::MenuItem {
-    let Some(shortcut) = &item.shortcut else {
+    if item.shortcut.is_none() && item.icon.is_none() {
         return gtk::MenuItem::with_label(&item.label);
-    };
+    }
     let mi = gtk::MenuItem::new();
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     let label = gtk::Label::new(Some(&item.label));
     label.set_xalign(0.0);
     label.set_hexpand(true);
-    let accel = gtk::Label::new(Some(&shortcut.display));
-    accel.style_context().add_class("accelerator");
+    if let Some(glyph) = item.icon {
+        let image = icon::widget(glyph, &mi);
+        row.pack_start(&image, false, false, 0);
+    }
     row.pack_start(&label, true, true, 0);
-    row.pack_end(&accel, false, false, 0);
+    if let Some(shortcut) = &item.shortcut {
+        let accel = gtk::Label::new(Some(&shortcut.display));
+        accel.style_context().add_class("accelerator");
+        row.pack_end(&accel, false, false, 0);
+    }
     mi.add(&row);
     mi
 }
@@ -416,6 +425,103 @@ mod tests {
                 winit::raw_window_handle::WindowHandle::borrow_raw(RawWindowHandle::Xlib(h))
             })
         }
+    }
+
+    /// 실제 메뉴 선택은 격리 X11 하네스의 pointer 입력으로 한다. 제품 IPC를 추가하지 않는다.
+    #[test]
+    #[ignore]
+    fn icon_menu_keeps_async_selection_and_disabled_rows() {
+        use crate::native_menu::{MenuIcon, MenuShortcut};
+        use tasty_type_appearance::theme::SIZING;
+        assert!(ensure_gtk());
+        let win = gtk::Window::new(gtk::WindowType::Toplevel);
+        win.set_title("Native menu icon verification");
+        win.set_default_size(400, 240);
+        win.show_all();
+        while gtk::events_pending() {
+            gtk::main_iteration_do(false);
+        }
+        let xid = win
+            .window()
+            .unwrap()
+            .downcast::<gdkx11::X11Window>()
+            .unwrap()
+            .xid();
+        let items = [
+            MenuItem::new(7, "Open in system")
+                .with_icon(MenuIcon::from_svg(
+                    tasty_icons::EXTERNAL.svg,
+                    SIZING.icon_glyph_size_md,
+                ))
+                .with_shortcut(Some(MenuShortcut {
+                    binding: "ctrl+o".into(),
+                    display: "Ctrl+O".into(),
+                })),
+            MenuItem::disabled(8, "Show in File Manager")
+                .with_tooltip("Unavailable")
+                .with_icon(MenuIcon::from_svg(
+                    tasty_icons::FOLDER_OPEN.svg,
+                    SIZING.icon_glyph_size_md,
+                )),
+            MenuItem::separator(),
+            MenuItem::new(9, "Without icon"),
+        ];
+        let MenuOutcome::Pending(mut handle) =
+            show_context_menu(&XlibWindow(xid), 30.0, 30.0, &items)
+        else {
+            panic!("GTK must return Pending");
+        };
+        let super::super::HandleImpl::Gtk(gtk_handle) = &handle.0 else {
+            panic!("GTK handle");
+        };
+        let rows = gtk_handle.menu.children();
+        let first = rows[0].clone().downcast::<gtk::MenuItem>().unwrap();
+        let first_row = first.child().unwrap().downcast::<gtk::Box>().unwrap();
+        assert_eq!(first_row.children().len(), 3, "icon + label + accelerator");
+        assert!(first_row.children()[0].is::<gtk::DrawingArea>());
+        assert!(!rows[1].is_sensitive());
+        assert_eq!(rows[1].tooltip_text().as_deref(), Some("Unavailable"));
+        assert!(
+            rows[3]
+                .clone()
+                .downcast::<gtk::MenuItem>()
+                .unwrap()
+                .child()
+                .unwrap()
+                .is::<gtk::Label>()
+        );
+        let menu_weak = gtk_handle.menu.downgrade();
+        let menu_window = gtk_handle.menu.window().unwrap();
+        let (_, x, y) = menu_window.origin();
+        let _trace = tracing::subscriber::set_default(
+            tracing_subscriber::fmt()
+                .with_test_writer()
+                .with_ansi(false)
+                .without_time()
+                .finish(),
+        );
+        tracing::info!(
+            "NATIVE_MENU_READY xid={xid} x={x} y={y} scale={} rows=4",
+            gtk_handle.menu.scale_factor()
+        );
+        assert!(handle.poll().is_none());
+        let deadline = std::time::Instant::now() + Duration::from_secs(45);
+        loop {
+            if let Some(result) = handle.poll() {
+                assert_eq!(result, Some(7), "pointer must select enabled icon row");
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no isolated pointer selection"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        drop(handle);
+        if let Some(menu) = menu_weak.upgrade() {
+            assert!(!menu.is_visible(), "selection must close the native menu");
+        }
+        win.close();
     }
 
     /// X11의 실제 GTK 메뉴로 강제 grab 실패 뒤 반환·poll·watchdog 처리를 확인한다.

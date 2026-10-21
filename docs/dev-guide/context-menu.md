@@ -97,6 +97,40 @@ PendingNativeMenu::MyMenu { data, x, y } => {
 
 `macos.rs` / `windows.rs` / `linux.rs` 가 플랫폼 구현.
 
+
+### 선택적 단색 아이콘
+
+`MenuItem::with_icon(MenuIcon::from_svg(svg, size))`로 아이콘을 전달한다. 기본값은
+`None`이며 기존 label·enabled·tooltip·shortcut·구분선과 선택 결과는 그대로다.
+`svg`는 `tasty_icons::EXTERNAL.svg`나 `FOLDER_OPEN.svg` 같은 기존 정본 도형이고,
+`size`는 `tasty_type_geometry::length::LogicalPx`다. 메뉴 아이콘의 디자인 크기는
+`SIZING.icon_glyph_size_md`를 사용한다. OS 메뉴는 앱의 egui zoom 대상이 아니므로
+zoom 전 토큰을 전달하고 어댑터가 표시 시점의 native backing scale을 적용한다.
+GPU texture나 egui Image를 OS에 넘기지 않는다.
+
+SVG는 공용 아이콘 로더와 같은 resvg로 원하는 물리 크기에 래스터한다. 도형의 알파만
+사용하고 잉크·배경·선택·비활성 표현은 native 메뉴에 맞춘다. 잘못된 SVG/크기는
+경고 로그를 남기며 아이콘만 생략한다. 아이콘 실패가 메뉴 동작을 막지 않는다.
+
+- macOS: 현재 NSView 윈도우의 backingScaleFactor로 PNG를 만들고 NSImage의 논리 크기를
+  지정한다. template 이미지이므로 AppKit이 밝기·선택·disabled 잉크를 정한다.
+  NSMenuItem이 이미지를 retain하므로 임시 PNG/로컬 참조가 사라져도 메뉴 수명 동안 유효하다.
+- Windows: 현재 HWND의 DPI/96으로 top-down 32-bit premultiplied BGRA DIB를 만든다.
+  MIIM_BITMAP으로 native 메뉴에 연결하고 TrackPopupMenu 종료·DestroyMenu 뒤 DeleteObject로
+  해제한다. 항목이 비활성이면 COLOR_GRAYTEXT, 아니면 COLOR_MENUTEXT를 메뉴 생성 시 읽는다.
+  텍스트·선택 배경은 OS가 그리며 bitmap 잉크는 메뉴가 열린 동안 고정된다. owner-draw 메뉴나
+  앱 popup으로 바꾸지 않는다. DestroyMenu 실패 때는 빌린 bitmap의 조기 해제를 피하고 경고한다.
+- Linux: 기존 GTK MenuItem의 행 안에 DrawingArea를 붙인다. GTK의 현재 backing scale에서
+  래스터하고 메뉴 항목의 상태별 style color를 알파 mask에 적용해 disabled/선택 잉크를 따른다.
+  간격도 GTK 메뉴 테마에서 읽는다. widget은 메뉴가 소유하고 draw closure는 메뉴 항목을
+  weak 참조해 순환 소유를 만들지 않는다. Pending/poll/dismiss 계약은 변하지 않는다.
+
+아이콘 유닛 검사는 알파·배율·잘못된 입력·기존 builder 계약을 검사한다. Windows의
+bitmap 검사는 숨긴 소유 윈도우로 backing 크기와 해제를 확인한다. Linux의 ignored
+`icon_menu_keeps_async_selection_and_disabled_rows`는 전용 X11에서 실제 포인터로
+첫 행을 선택해야 끝난다. 이 검사는 제품 입력 API를 추가하지 않는다. 테스트 존재나
+컴파일 통과를 해당 OS의 화면 실측으로 보고하지 않는다.
+
 <a id="해소-타이밍은-플랫폼별로-다르다-docs/dev-guide/agent-runner.md"></a>
 
 ### 메뉴 선택을 처리하는 시점은 플랫폼별로 다르다

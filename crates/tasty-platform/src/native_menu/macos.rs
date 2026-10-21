@@ -1,8 +1,8 @@
 //! macOS native context menu using NSMenu.
 
-use objc2::MainThreadMarker;
-use objc2_app_kit::{NSMenu, NSMenuItem, NSView};
-use objc2_foundation::NSString;
+use objc2::{AnyThread, MainThreadMarker};
+use objc2_app_kit::{NSImage, NSMenu, NSMenuItem, NSView};
+use objc2_foundation::{NSData, NSSize, NSString};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::{MenuItem, MenuOutcome};
@@ -60,6 +60,13 @@ fn show_context_menu_sync(
             if let Some(tooltip) = &item.tooltip {
                 ns_item.setToolTip(Some(&NSString::from_str(tooltip)));
             }
+            if let Some(icon) = item.icon {
+                let scale = ns_view.window().map_or(1.0, |w| w.backingScaleFactor()) as f32;
+                match menu_image(icon, scale) {
+                    Ok(image) => ns_item.setImage(Some(&image)),
+                    Err(e) => tracing::warn!("native menu icon: {e}"),
+                }
+            }
             menu.addItem(&ns_item);
         }
     }
@@ -79,4 +86,33 @@ fn show_context_menu_sync(
     } else {
         None
     }
+}
+
+// NSMenuItem은 이미지를 retain한다. PNG 데이터는 initWithData에서 읽고 소유한다.
+fn menu_image(icon: super::MenuIcon, scale: f32) -> anyhow::Result<objc2::rc::Retained<NSImage>> {
+    let raster = icon.rasterize(scale)?;
+    let side = raster.physical.value() as u32;
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, side, side);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header()?;
+        let rgba: Vec<u8> = raster
+            .alpha
+            .iter()
+            .flat_map(|a| [255, 255, 255, *a])
+            .collect();
+        writer.write_image_data(&rgba)?;
+    }
+    let data = NSData::from_vec(bytes);
+    let image = NSImage::initWithData(NSImage::alloc(), &data)
+        .ok_or_else(|| anyhow::anyhow!("NSImage rejected menu icon PNG"))?;
+    image.setSize(NSSize::new(
+        f64::from(icon.size.value()),
+        f64::from(icon.size.value()),
+    ));
+    // template은 AppKit의 밝기·선택·disabled 상태 잉크를 따른다.
+    image.setTemplate(true);
+    Ok(image)
 }
