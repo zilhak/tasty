@@ -497,7 +497,7 @@ pub fn draw_general(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "font family",
-                "SearchableSelect · field-width-lg 200 (or the remaining width) · trigger select-height 28 = the DPI Select · Default (monospace) pinned",
+                "SearchableSelect · field-width-lg 200 (or the remaining width) · trigger select-height 28 = the DPI Select · the monospace default row pinned on top",
             ),
             ("between rows", "settings-row-gap 12"),
             (
