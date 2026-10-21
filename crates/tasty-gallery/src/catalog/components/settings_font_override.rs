@@ -7,11 +7,12 @@ use std::cell::RefCell;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Input, OverrideCell, SettingsRow, checkbox, override_row, select, settings_label_column,
+    Input, OverrideCell, SearchableSelect, SearchableSelectLabels, SearchableSelectOption,
+    SettingsRow, checkbox, override_row, select, settings_label_column,
 };
 
-use crate::catalog::icons::SEARCH;
 use crate::catalog::spec::{StageVariant, TokenChip, meta, stage, wrap_item};
+use crate::i18n::t;
 
 /// 시안 좁은 짝의 폭 `--tasty-size-360`. 공개 역할 토큰이 없어 갤러리 무대 치수로 둔다.
 const NARROW_WIDTH: LogicalPx = LogicalPx(360.0);
@@ -27,10 +28,10 @@ const ROWS: [(&str, bool); 5] = [
 
 /// 본체 settings.appearance.*_tooltip 의 영어 문구.
 fn line_height_hint() -> &'static str {
-    crate::i18n::t("settings.appearance.line_height_tooltip")
+    t("settings.appearance.line_height_tooltip")
 }
 fn scale_mode_hint() -> &'static str {
-    crate::i18n::t("settings.appearance.font_scale_mode_tooltip")
+    t("settings.appearance.font_scale_mode_tooltip")
 }
 
 thread_local! {
@@ -48,15 +49,42 @@ fn seed_value(row: usize) -> String {
     .to_string()
 }
 
+/// 갤러리 글꼴 목록 표본.
+const FAMILIES: [SearchableSelectOption<'static>; 6] = [
+    SearchableSelectOption::new("D2Coding"),
+    SearchableSelectOption::new("Fira Code"),
+    SearchableSelectOption::new("JetBrains Mono"),
+    SearchableSelectOption::new("Menlo"),
+    SearchableSelectOption::new("SF Mono"),
+    SearchableSelectOption::new("Ubuntu Mono"),
+];
+
+/// 본체 `font_family_picker` 와 같은 글꼴 콤보 — 기본값(monospace) 고정 행 · 검색 · 결과 없음 ·
+/// 로딩 문구는 본체 번역 키. `buf` 가 비어 있으면 기본값이다.
+fn font_family(ui: &mut egui::Ui, th: &Theme, buf: &mut String, enabled: bool) {
+    let pinned = [SearchableSelectOption::with_value(
+        "",
+        t("settings.appearance.font_family_default"),
+    )];
+    let labels = SearchableSelectLabels {
+        placeholder: t("settings.appearance.font_family_default"),
+        search_placeholder: t("settings.appearance.font_search_placeholder"),
+        empty: t("settings.appearance.font_no_match"),
+        loading: t("settings.appearance.font_loading"),
+    };
+    let width = th.field_width_lg.min(LogicalPx(ui.available_width()));
+    let mut value = Some(std::mem::take(buf));
+    SearchableSelect::new("gallery_font_family", &FAMILIES, labels)
+        .pinned(&pinned)
+        .width(width)
+        .enabled(enabled)
+        .show(ui, th, &mut value);
+    *buf = value.unwrap_or_default();
+}
+
 fn control(ui: &mut egui::Ui, th: &Theme, row: usize, buf: &mut String, enabled: bool) {
     match row {
-        0 => {
-            Input::new()
-                .enabled(enabled)
-                .width(th.field_width_lg.value())
-                .icon(&|ui, rect, c| SEARCH.image(rect.height(), c).paint_at(ui, rect))
-                .show(ui, th, buf);
-        }
+        0 => font_family(ui, th, buf, enabled),
         1 => {
             Input::new()
                 .mono(true)
@@ -300,7 +328,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("label", "settings-label-width · body · text-secondary"),
             (
                 "control",
-                "family · file → field-width-lg · size · line height → field-width-xs · DPI → field-width-md",
+                "family SearchableSelect · file → field-width-lg · size · line height → field-width-xs · DPI → field-width-md",
+            ),
+            (
+                "family off",
+                "Use default checked → the family SearchableSelect is disabled with the Select disabled tokens",
             ),
             (
                 "Use default",
@@ -377,7 +409,6 @@ pub fn draw_general(ui: &mut egui::Ui, theme: &Theme) {
             kit::panel_fill(theme),
             |ui| {
                 kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
-                    let t = crate::i18n::t;
                     let font_rows = [
                         SettingsRow::new(t("settings.appearance.font_family_label")),
                         SettingsRow::new(t("settings.appearance.custom_font_label")),
@@ -402,16 +433,7 @@ pub fn draw_general(ui: &mut egui::Ui, theme: &Theme) {
                             for (i, row) in font_rows.into_iter().enumerate() {
                                 ui.push_id(("general_font", i), |ui| {
                                     row.show(ui, theme, col, |ui| match i {
-                                        0 => {
-                                            Input::new()
-                                                .width(theme.field_width_lg.value())
-                                                .icon(&|ui, rect, c| {
-                                                    SEARCH
-                                                        .image(rect.height(), c)
-                                                        .paint_at(ui, rect)
-                                                })
-                                                .show(ui, theme, &mut bufs[0]);
-                                        }
+                                        0 => font_family(ui, theme, &mut bufs[0], true),
                                         1 => {
                                             // 본체처럼 남은 폭을 채운다.
                                             Input::new().show(ui, theme, &mut bufs[1]);
@@ -473,7 +495,10 @@ pub fn draw_general(ui: &mut egui::Ui, theme: &Theme) {
                 "label column",
                 "same settings row grid (150 … 240) — no exception",
             ),
-            ("font family", "searchable combo · field-width-lg 200"),
+            (
+                "font family",
+                "SearchableSelect · field-width-lg 200 (or the remaining width) · trigger select-height 28 = the DPI Select · Default (monospace) pinned",
+            ),
             ("between rows", "settings-row-gap 12"),
             (
                 "preview",
@@ -482,7 +507,7 @@ pub fn draw_general(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::without_color("settings-row-gap", "between rows 12"),
-            TokenChip::without_color("field-width-lg", "font family combo"),
+            TokenChip::without_color("field-width-lg", "font family SearchableSelect"),
             TokenChip::without_color(
                 "font-preview-min-width",
                 "→ field-width-lg 200 · stack below",

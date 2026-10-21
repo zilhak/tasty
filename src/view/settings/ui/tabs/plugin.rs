@@ -14,7 +14,6 @@ pub fn draw_plugin_tab(
     settings: &mut Settings,
     sub_tab: Option<&crate::settings_ui::PluginSubTab>,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
     settings_pages: &[SettingsPageEntry],
 ) {
@@ -26,7 +25,6 @@ pub fn draw_plugin_tab(
                     ui,
                     settings,
                     font_families,
-                    font_filter,
                     preview_font_loaded,
                     plugin_id,
                     &entry.page,

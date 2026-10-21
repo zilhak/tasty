@@ -69,7 +69,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "font combo",
-                "list max font-combo-list-max-height 300 · search field = list − 2 × font-combo-search-inset 4 · borders = Select: closed select-border, open select-border-focus · switch modifier combos are a plain Select",
+                "SearchableSelect · list max font-combo-list-max-height 300 · search field = list − 2 × font-combo-search-inset 4 · font-combo-* alias select-search-* · trigger = Select: select-height 28, closed select-border, open select-border-focus · switch modifier combos are a plain Select",
             ),
             (
                 "captions",
@@ -97,8 +97,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.kb_record_empty_fg().to_egui(),
             ),
             TokenChip::without_color("kb-row-gap", "→ space-sm 8"),
-            TokenChip::without_color("font-combo-list-max-height", "→ size-300"),
-            TokenChip::without_color("font-combo-search-inset", "→ space-xs 4"),
+            TokenChip::without_color(
+                "font-combo-list-max-height",
+                "→ select-search-list-max-height 300",
+            ),
+            TokenChip::without_color("font-combo-search-inset", "→ select-search-inset 4"),
             TokenChip::new(
                 "select-border-focus",
                 "open Select",

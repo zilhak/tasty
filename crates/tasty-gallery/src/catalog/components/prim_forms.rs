@@ -21,12 +21,15 @@ const PIN: [SearchableSelectOption<'static>; 1] = [SearchableSelectOption::with_
     "",
     "Default (monospace)",
 )];
-const FONT_LABELS: SearchableSelectLabels<'static> = SearchableSelectLabels {
-    placeholder: "Choose a font",
-    search_placeholder: "Search fonts",
-    empty: "No matching fonts",
-    loading: "Loading fonts…",
-};
+/// 검색 안내 · 결과 없음 · 로딩은 본체 글꼴 행과 같은 번역 키(갤러리 손 사본을 두지 않는다).
+fn font_labels() -> SearchableSelectLabels<'static> {
+    SearchableSelectLabels {
+        placeholder: "Choose a font",
+        search_placeholder: crate::i18n::t("settings.appearance.font_search_placeholder"),
+        empty: crate::i18n::t("settings.appearance.font_no_match"),
+        loading: crate::i18n::t("settings.appearance.font_loading"),
+    }
+}
 
 thread_local! {
     static STATE: RefCell<FormState> = const {
@@ -107,7 +110,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
             });
             cluster(ui, theme, "Searchable Select", |ui| {
-                SearchableSelect::new("gallery_searchable_select", &FONTS, FONT_LABELS)
+                SearchableSelect::new("gallery_searchable_select", &FONTS, font_labels())
                     .pinned(&PIN)
                     .width(theme.field_width_md)
                     .show(ui, theme, &mut st.font);

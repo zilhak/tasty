@@ -1,4 +1,4 @@
-<!-- source-hash: 0d573f5f4b83 -->
+<!-- source-hash: 33558f42c6b0 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -73,6 +73,8 @@ Set **Link click modifier** to **Disable left-click opening** to prevent left-cl
 | **Markdown** · **HTML** | Pages added by plugins — the Markdown font override and **Allow remote content**, and the HTML viewer's **Default zoom** · **Color scheme** · **Allow remote content** · **Sandbox scripts** |
 
 For fonts, the defaults under **General** apply to terminal · Markdown · explorer all at once, and turning off **Use default** in a section lets only that type use different values. With **Font DPI scaling** set to **Auto**, the physical size of the text stays the same across monitors; with **Fixed**, the pixel size stays the same, so text gets smaller on high-resolution monitors.
+
+Open the **Font family** list and type part of a name in the search field at the top to filter it; the search text clears when the list closes. **monospace (default)** always stays at the top whatever you type, so you can return to the default font at any time. If the settings file names a font that isn't installed on this computer, that name is shown as is and left unchanged.
 
 ### Keybindings
 

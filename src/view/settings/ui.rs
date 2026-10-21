@@ -219,8 +219,6 @@ pub struct SettingsUiState {
     conflict_cancelled: bool,
     /// Cached system font family list.
     pub font_families: Option<Vec<String>>,
-    /// Font family filter text for search (per font picker, keyed by slot id).
-    pub font_filter: std::collections::HashMap<String, String>,
     /// Family currently loaded into each preview slot ("preview_default", etc.).
     /// A `\0:<family>` value records a previous load failure to avoid retry loops.
     pub preview_font_loaded: std::collections::HashMap<String, String>,
@@ -462,7 +460,6 @@ impl SettingsUiState {
             conflict_accepted: false,
             conflict_cancelled: false,
             font_families: None,
-            font_filter: std::collections::HashMap::new(),
             preview_font_loaded: std::collections::HashMap::new(),
             bashrc_user_draft: None,
             captured_winit_combo: None,
@@ -1703,7 +1700,6 @@ fn draw_active_content(
             draft,
             &ui_state.appearance_sub_tab,
             &mut ui_state.font_families,
-            &mut ui_state.font_filter,
             &mut ui_state.preview_font_loaded,
             &ui_state.settings_pages,
         ),
@@ -1763,7 +1759,6 @@ fn draw_active_content(
             draft,
             ui_state.plugin_sub_tab.as_ref(),
             &mut ui_state.font_families,
-            &mut ui_state.font_filter,
             &mut ui_state.preview_font_loaded,
             &ui_state.settings_pages,
         ),

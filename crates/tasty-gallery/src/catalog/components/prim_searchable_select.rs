@@ -11,6 +11,7 @@ use tasty_ui_widgets::{
     SearchableSelectSpecimen, menu_option, multi_select, select, with_select_combo_frame,
 };
 
+use crate::catalog::modifier_label;
 use crate::catalog::spec::{self, StageVariant, TokenChip, wrap_item};
 
 // 시안 무대·그리드의 전시 치수. 대응 토큰이 없다.
@@ -57,16 +58,21 @@ const PIN_DE: [SearchableSelectOption<'static>; 1] = [SearchableSelectOption::wi
 )];
 
 /// 시안 기본 문구 + 글꼴 문구. 위젯은 문구를 소유하지 않는다.
-const FONT_LABELS: SearchableSelectLabels<'static> = SearchableSelectLabels {
-    placeholder: "Choose a font",
-    search_placeholder: "Search fonts",
-    empty: "No matching fonts",
-    loading: "Loading fonts…",
-};
-const GENERIC_LABELS: SearchableSelectLabels<'static> = SearchableSelectLabels {
-    search_placeholder: "Search",
-    ..FONT_LABELS
-};
+/// 검색 안내 · 결과 없음 · 로딩은 본체 글꼴 행과 같은 번역 키(갤러리 손 사본을 두지 않는다).
+fn font_labels() -> SearchableSelectLabels<'static> {
+    SearchableSelectLabels {
+        placeholder: "Choose a font",
+        search_placeholder: crate::i18n::t("settings.appearance.font_search_placeholder"),
+        empty: crate::i18n::t("settings.appearance.font_no_match"),
+        loading: crate::i18n::t("settings.appearance.font_loading"),
+    }
+}
+fn generic_labels() -> SearchableSelectLabels<'static> {
+    SearchableSelectLabels {
+        search_placeholder: "Search",
+        ..font_labels()
+    }
+}
 const DE_LABELS: SearchableSelectLabels<'static> = SearchableSelectLabels {
     placeholder: "Schriftart wählen",
     search_placeholder: "Schriftarten durchsuchen",
@@ -89,7 +95,6 @@ struct LiveState {
     live: [Option<String>; 2],
     /// 본체에 남은 글꼴 콤보 견본의 선택과 검색어.
     legacy: usize,
-    legacy_filter: String,
 }
 
 thread_local! {
@@ -100,7 +105,6 @@ thread_local! {
         pair_ss: [Some("JetBrains Mono".into()), Some("JetBrains Mono".into())],
         live: [Some("Fira Code".into()), Some("Fira Code".into())],
         legacy: 0,
-        legacy_filter: String::new(),
     });
 }
 
@@ -147,9 +151,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             spec::cluster(
                 ui,
                 theme,
-                "Body font combo (until the font rows adopt SearchableSelect)",
+                "Switch modifier combo (until the quick switch rows adopt Select)",
                 |ui| {
-                    legacy_font_combo(ui, theme, &mut st);
+                    legacy_modifier_combo(ui, theme, &mut st);
                 },
             );
         });
@@ -337,7 +341,7 @@ fn pairs(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) {
         );
     });
     row(ui, "Searchable · no value", &mut |ui| {
-        SearchableSelect::new(&format!("g_ss_pair_none_{ti}"), &FONTS, FONT_LABELS)
+        SearchableSelect::new(&format!("g_ss_pair_none_{ti}"), &FONTS, font_labels())
             .width(th.field_width_lg)
             .show(ui, th, &mut st.pair_none[ti]);
     });
@@ -356,7 +360,7 @@ fn pairs(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) {
         );
     });
     row(ui, "SearchableSelect", &mut |ui| {
-        SearchableSelect::new(&format!("g_ss_pair_ss_{ti}"), &FONTS, FONT_LABELS)
+        SearchableSelect::new(&format!("g_ss_pair_ss_{ti}"), &FONTS, font_labels())
             .pinned(&PIN)
             .width(th.field_width_lg)
             .show(ui, th, &mut st.pair_ss[ti]);
@@ -424,7 +428,7 @@ fn trigger_states(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) 
                 th,
                 &FONTS,
                 &[],
-                FONT_LABELS,
+                font_labels(),
                 Some("JetBrains Mono"),
                 closed,
                 true,
@@ -441,7 +445,7 @@ fn trigger_states(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) 
                 th,
                 &FONTS,
                 &[],
-                FONT_LABELS,
+                font_labels(),
                 Some("JetBrains Mono"),
                 hover,
                 true,
@@ -454,7 +458,7 @@ fn trigger_states(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) 
                 th,
                 &FONTS,
                 &[],
-                FONT_LABELS,
+                font_labels(),
                 Some("JetBrains Mono"),
                 closed,
                 false,
@@ -464,7 +468,17 @@ fn trigger_states(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) 
     });
     grid_row(ui, gap_x, |ui| {
         cell(ui, th, "placeholder — no value", h, |ui| {
-            specimen(ui, th, &FONTS, &[], FONT_LABELS, None, closed, true, false);
+            specimen(
+                ui,
+                th,
+                &FONTS,
+                &[],
+                font_labels(),
+                None,
+                closed,
+                true,
+                false,
+            );
         });
         cell(ui, th, "long value — end ellipsis", h, |ui| {
             specimen(
@@ -472,7 +486,7 @@ fn trigger_states(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) 
                 th,
                 &LONG,
                 &[],
-                FONT_LABELS,
+                font_labels(),
                 Some(LONG_NAME),
                 closed,
                 true,
@@ -480,7 +494,7 @@ fn trigger_states(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) 
             );
         });
         cell(ui, th, "live — click, type, ↑↓ Enter", h, |ui| {
-            SearchableSelect::new(&format!("g_ss_live_{ti}"), &FONTS, FONT_LABELS)
+            SearchableSelect::new(&format!("g_ss_live_{ti}"), &FONTS, font_labels())
                 .pinned(&PIN)
                 .width(CELL_W)
                 .show(ui, th, &mut st.live[ti]);
@@ -512,7 +526,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
                     th,
                     &FONTS,
                     &PIN,
-                    FONT_LABELS,
+                    font_labels(),
                     Some("JetBrains Mono"),
                     open("", Some(1)),
                     true,
@@ -531,7 +545,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
                     th,
                     &FONTS,
                     &PIN,
-                    FONT_LABELS,
+                    font_labels(),
                     Some("JetBrains Mono"),
                     open("co", Some(1)),
                     true,
@@ -545,7 +559,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
                 th,
                 &FONTS,
                 &PIN,
-                FONT_LABELS,
+                font_labels(),
                 Some("JetBrains Mono"),
                 open("zzz", Some(0)),
                 true,
@@ -561,7 +575,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
                 th,
                 &[],
                 &PIN,
-                FONT_LABELS,
+                font_labels(),
                 Some(""),
                 open("", Some(0)),
                 true,
@@ -574,7 +588,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
                 th,
                 &FONTS[..3],
                 &[],
-                FONT_LABELS,
+                font_labels(),
                 Some("Fira Code"),
                 open("", None),
                 true,
@@ -592,7 +606,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
                     th,
                     &FONTS,
                     &[],
-                    FONT_LABELS,
+                    font_labels(),
                     Some("Fira Code"),
                     open("mono", Some(0)),
                     true,
@@ -620,7 +634,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
                     th,
                     &FONTS[..5],
                     &[],
-                    FONT_LABELS,
+                    font_labels(),
                     Some("JetBrains Mono"),
                     spec,
                     true,
@@ -639,7 +653,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
                 th,
                 &FONTS[..5],
                 &[],
-                GENERIC_LABELS,
+                generic_labels(),
                 Some("JetBrains Mono"),
                 spec,
                 true,
@@ -662,27 +676,24 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
     });
 }
 
-/// 본체 글꼴 행이 아직 쓰는 egui ComboBox 를 Select 테두리로 감싼 콤보. 본체에 남아 있는 동안
-/// 갤러리에도 둔다(갤러리 완전성).
-fn legacy_font_combo(ui: &mut egui::Ui, theme: &Theme, st: &mut LiveState) {
-    let LiveState {
-        legacy,
-        legacy_filter,
-        ..
-    } = st;
-    let names: Vec<&str> = FONTS.iter().take(4).map(|o| o.label).collect();
+/// 본체 Tab·Workspace·Category switch modifier 행이 아직 쓰는 egui ComboBox 를 Select 테두리로 감싼
+/// 콤보. 본체에 남아 있는 동안 갤러리에도 둔다(갤러리 완전성).
+fn legacy_modifier_combo(ui: &mut egui::Ui, theme: &Theme, st: &mut LiveState) {
+    // 본체처럼 수식키 조합은 설정 UI 표기, 개별 지정은 번역 문구로 보인다.
+    let names = [
+        modifier_label("ctrl"),
+        modifier_label("alt"),
+        modifier_label("ctrl+alt"),
+        crate::i18n::t("settings.keybindings.quick_switch_individual_label").to_owned(),
+    ];
+    let legacy = &mut st.legacy;
     with_select_combo_frame(ui, theme, |ui| {
-        egui::ComboBox::from_id_salt("gallery_legacy_font_combo")
-            .selected_text(names[*legacy])
-            .width(theme.field_width_md.value())
+        egui::ComboBox::from_id_salt("gallery_legacy_modifier_combo")
+            .selected_text(&names[*legacy])
             .show_ui(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                ui.text_edit_singleline(legacy_filter);
-                let needle = legacy_filter.to_lowercase();
                 for (i, name) in names.iter().enumerate() {
-                    if name.to_lowercase().contains(&needle)
-                        && menu_option(ui, theme, name, *legacy == i).clicked()
-                    {
+                    if menu_option(ui, theme, name, *legacy == i).clicked() {
                         *legacy = i;
                     }
                 }

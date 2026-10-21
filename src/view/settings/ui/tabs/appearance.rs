@@ -11,7 +11,8 @@ use tasty_type_appearance::theme::{
 };
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, Input, OverrideCell, SettingsRow, override_row,
+    Button, ButtonVariant, ControlSize, Input, OverrideCell, SearchableSelect,
+    SearchableSelectLabels, SearchableSelectOption, SettingsRow, override_row,
     settings_label_column, vspace,
 };
 
@@ -32,7 +33,6 @@ pub fn draw_appearance_tab(
     settings: &mut Settings,
     sub_tab: &crate::settings_ui::AppearanceSubTab,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
     settings_pages: &[SettingsPageEntry],
 ) {
@@ -45,13 +45,7 @@ pub fn draw_appearance_tab(
             draw_appearance_colors(ui, settings);
         }
         AppearanceSubTab::General => {
-            draw_appearance_general(
-                ui,
-                settings,
-                font_families,
-                font_filter,
-                preview_font_loaded,
-            );
+            draw_appearance_general(ui, settings, font_families, preview_font_loaded);
         }
         AppearanceSubTab::Display => {
             draw_appearance_display(ui, settings);
@@ -60,22 +54,10 @@ pub fn draw_appearance_tab(
             draw_appearance_tasty(ui, settings);
         }
         AppearanceSubTab::Terminal => {
-            draw_appearance_terminal(
-                ui,
-                settings,
-                font_families,
-                font_filter,
-                preview_font_loaded,
-            );
+            draw_appearance_terminal(ui, settings, font_families, preview_font_loaded);
         }
         AppearanceSubTab::Explorer => {
-            draw_appearance_explorer(
-                ui,
-                settings,
-                font_families,
-                font_filter,
-                preview_font_loaded,
-            );
+            draw_appearance_explorer(ui, settings, font_families, preview_font_loaded);
         }
         AppearanceSubTab::Plugin { plugin_id, page_id } => {
             if let Some(entry) = find_plugin_settings_entry(settings_pages, plugin_id, page_id) {
@@ -83,7 +65,6 @@ pub fn draw_appearance_tab(
                     ui,
                     settings,
                     font_families,
-                    font_filter,
                     preview_font_loaded,
                     plugin_id,
                     &entry.page,
@@ -249,7 +230,6 @@ fn draw_appearance_general(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
 ) {
     let th = crate::theme::theme();
@@ -279,7 +259,6 @@ fn draw_appearance_general(
         col,
         settings,
         font_families,
-        font_filter,
         preview_font_loaded,
     );
 
@@ -643,14 +622,12 @@ fn draw_appearance_terminal(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
 ) {
     draw_surface_font_section(
         ui,
         settings,
         font_families,
-        font_filter,
         preview_font_loaded,
         SurfaceFontTarget::Terminal,
     );
@@ -665,14 +642,12 @@ fn draw_appearance_explorer(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
 ) {
     draw_surface_font_section(
         ui,
         settings,
         font_families,
-        font_filter,
         preview_font_loaded,
         SurfaceFontTarget::Plugin {
             storage_key: "explorer",
@@ -953,7 +928,6 @@ fn draw_surface_font_section(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
     target: SurfaceFontTarget<'_>,
 ) {
@@ -979,7 +953,6 @@ fn draw_surface_font_section(
         target.override_mut(&mut settings.appearance),
         &default_font,
         font_families,
-        font_filter,
         target.salt(),
     );
     vspace(ui, th.spacing_lg);
@@ -1361,7 +1334,6 @@ pub(super) fn draw_plugin_settings_page(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
     plugin_id: &str,
     page: &SettingsPageContribute,
@@ -1389,7 +1361,6 @@ pub(super) fn draw_plugin_settings_page(
                     ui,
                     settings,
                     font_families,
-                    font_filter,
                     preview_font_loaded,
                     SurfaceFontTarget::Plugin {
                         storage_key: storage_key.as_str(),
@@ -1597,116 +1568,45 @@ fn draw_plugin_number(
     }
 }
 
-/// Searchable font family combo. `value` is the family name in the underlying
-/// data (`""` means "monospace default"). `salt` uniquifies the combo id and
-/// the per-combo filter cache key.
+/// 글꼴 패밀리 SearchableSelect. `value` 는 설정의 패밀리 이름이고 `""` 는 monospace 기본값이며,
+/// 기본값은 검색어와 관계없이 맨 위에 고정된 행이다. 목록에 없는 이름(미설치·로딩 중)도 트리거에
+/// 그대로 보이고 값이 바뀌지 않는다. `salt` 로 같은 화면의 여러 행을 구분한다. 트리거 응답을 돌려준다.
 fn font_family_picker(
     ui: &mut egui::Ui,
     value: &mut String,
     font_families: &Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     salt: &str,
     enabled: bool,
 ) -> egui::Response {
     let th = crate::theme::theme();
-    let display_name = if value.is_empty() {
-        t("settings.appearance.font_family_default").to_string()
-    } else {
-        value.clone()
+    let pinned = [SearchableSelectOption::with_value(
+        "",
+        t("settings.appearance.font_family_default"),
+    )];
+    let options: Vec<SearchableSelectOption<'_>> = font_families
+        .iter()
+        .flatten()
+        .map(|family| SearchableSelectOption::new(family))
+        .collect();
+    let labels = SearchableSelectLabels {
+        placeholder: t("settings.appearance.font_family_default"),
+        search_placeholder: t("settings.appearance.font_search_placeholder"),
+        empty: t("settings.appearance.font_no_match"),
+        loading: t("settings.appearance.font_loading"),
     };
-    let combo_id = format!("font_family_combo_{}", salt);
-    let filter = font_filter.entry(salt.to_string()).or_default();
-
-    // 공용 Select 에는 검색 필터가 없어 egui ComboBox 를 유지한다. 그래서 disabled 모양은
-    // 아직 egui fade 를 따른다.
-    ui.add_enabled_ui(enabled, |ui| {
-        // 좁은 설정 창에서 콤보가 남은 폭을 넘으면 오른쪽 끝(▼)이 행 밖으로 나가 다른 위젯에
-        // 가려질 수 있다. 남은 폭 안에 묶고, 선택된 이름이 그보다 길면 콤보를 늘리지 않고
-        // 이름을 자른다(egui 기본은 글자 폭만큼 늘어난다).
-        let combo_w = th.field_width_lg.value().min(ui.available_width());
-        tasty_ui_widgets::with_select_combo_frame(ui, &th, |ui| {
-            egui::ComboBox::from_id_salt(combo_id)
-                .selected_text(&display_name)
-                .width(combo_w)
-                .truncate()
-                .height(th.font_combo_list_max_height().value())
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .show_ui(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    font_search_field(ui, &th, filter);
-                    ui.separator();
-
-                    let filter_lower = filter.to_lowercase();
-                    if (filter_lower.is_empty() || "monospace".contains(&filter_lower))
-                        && tasty_ui_widgets::menu_option(
-                            ui,
-                            &th,
-                            t("settings.appearance.font_family_default"),
-                            value.is_empty(),
-                        )
-                        .clicked()
-                    {
-                        value.clear();
-                    }
-
-                    if let Some(families) = font_families {
-                        egui::ScrollArea::vertical()
-                            .max_height(th.font_family_menu_max_height().value())
-                            .drag_to_scroll(false)
-                            .show(ui, |ui| {
-                                for family in families {
-                                    if !filter_lower.is_empty()
-                                        && !family.to_lowercase().contains(&filter_lower)
-                                    {
-                                        continue;
-                                    }
-                                    let selected = value == family;
-                                    if tasty_ui_widgets::menu_option(ui, &th, family, selected)
-                                        .clicked()
-                                    {
-                                        *value = family.clone();
-                                    }
-                                }
-                            });
-                    } else {
-                        ui.label(
-                            egui::RichText::new(t("settings.appearance.loading_fonts"))
-                                .color(th.text_muted()),
-                        );
-                    }
-                })
-                .response
-        })
-    })
-    .inner
-}
-
-/// 글꼴 목록 맨 위 검색 입력칸. 목록 폭에서 양쪽 `font-combo-search-inset` 만큼 들어간 폭이다.
-/// 입력칸의 테두리 상자가 차지할 자리와 입력칸 응답(글자 영역)을 돌려준다. egui 의 `desired_width` 는
-/// 안쪽 글자 폭이라 테두리 상자 폭을 정하려고 자리를 먼저 잡고 입력칸이 그 폭을 채우게 한다.
-fn font_search_field(
-    ui: &mut egui::Ui,
-    th: &tasty_type_appearance::theme::Theme,
-    filter: &mut String,
-) -> (egui::Rect, egui::Response) {
-    let inset = th.font_combo_search_inset().value();
-    let width = (ui.available_width() - 2.0 * inset).max(0.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.add_space(inset);
-        let slot = ui.allocate_ui(egui::vec2(width, 0.0), |ui| {
-            ui.add(
-                egui::TextEdit::singleline(filter)
-                    .hint_text(tasty_egui_theme::hint_text(
-                        th,
-                        t("settings.appearance.search_hint"),
-                    ))
-                    .desired_width(f32::INFINITY),
-            )
-        });
-        (slot.response.rect, slot.inner)
-    })
-    .inner
+    let id_salt = format!("font_family_combo_{salt}");
+    // 좁은 설정 창에서 트리거가 남은 폭을 넘으면 오른쪽 끝(chevron)이 행 밖으로 나가 다른 위젯에
+    // 가려질 수 있다. 남은 폭 안에 묶고, 긴 이름은 트리거를 늘리지 않고 말줄임한다.
+    let width = th.field_width_lg.min(LogicalPx(ui.available_width()));
+    let mut selected = Some(std::mem::take(value));
+    let out = SearchableSelect::new(&id_salt, &options, labels)
+        .pinned(&pinned)
+        .loading(font_families.is_none())
+        .width(width)
+        .enabled(enabled)
+        .show_response(ui, &th, &mut selected);
+    *value = selected.unwrap_or_default();
+    out.response
 }
 
 /// 기본 글꼴 격자를 그리고 미리보기를 그 아래 콘텐츠 전폭에 둔다(글꼴 override 와 같은 배치).
@@ -1718,7 +1618,6 @@ fn default_font_section(
     col: LogicalPx,
     settings: &mut Settings,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
 ) -> (egui::Response, egui::Response, f32) {
     let th = crate::theme::theme();
@@ -1728,7 +1627,6 @@ fn default_font_section(
         col,
         &mut settings.appearance.default_font,
         font_families,
-        font_filter,
         "default",
     );
     vspace(ui, th.spacing_lg);
@@ -1766,7 +1664,6 @@ fn font_settings_grid(
     col: LogicalPx,
     font: &mut FontSettings,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     salt: &str,
 ) -> (egui::Response, egui::Response) {
     let th = crate::theme::theme();
@@ -1778,7 +1675,6 @@ fn font_settings_grid(
             ui,
             &mut font.font_family,
             font_families,
-            font_filter,
             salt,
             true,
         ));
@@ -1824,7 +1720,6 @@ fn font_override_grid(
     ov: &mut FontOverride,
     default: &FontSettings,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
     salt: &str,
 ) {
     let th = crate::theme::theme();
@@ -1864,7 +1759,6 @@ fn font_override_grid(
                         ui,
                         &mut family_value,
                         font_families,
-                        font_filter,
                         salt,
                         ov.font_family.is_some(),
                     );
@@ -2582,28 +2476,53 @@ mod default_hex_field_tests {
 mod default_font_section_tests {
     use std::collections::HashMap;
 
-    use super::{default_font_section, font_setting_rows};
-    use crate::settings::Settings;
+    use super::{default_font_section, font_override_grid, font_setting_rows};
+    use crate::i18n::t;
+    use crate::settings::{FontOverride, FontSettings, Settings};
     use tasty_type_geometry::length::LogicalPx;
 
+    /// 한 프레임에서 읽은 것 — 글꼴 콤보·커스텀 글꼴 입력칸 응답, 미리보기 위쪽 경계, 그린 글자.
+    struct Seen {
+        family: egui::Response,
+        custom: egui::Response,
+        preview_top: f32,
+        texts: Vec<String>,
+    }
+
+    impl Seen {
+        fn has(&self, text: &str) -> bool {
+            self.texts.iter().any(|t| t == text)
+        }
+    }
+
+    fn texts(out: &egui::FullOutput) -> Vec<String> {
+        out.shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_owned()),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// 설정 창 콘텐츠 컬럼 상한(620)과 같은 폭에 기본 글꼴 격자와 미리보기를 한 프레임 그린다.
-    fn frame(
+    fn frame_with(
         ctx: &egui::Context,
         col: LogicalPx,
         settings: &mut Settings,
+        families: &mut Option<Vec<String>>,
         events: Vec<egui::Event>,
-    ) -> (egui::Response, egui::Response, f32) {
+    ) -> Seen {
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(620.0, 500.0));
         let raw = egui::RawInput {
             screen_rect: Some(screen),
+            focused: true,
             events,
             ..Default::default()
         };
-        let mut families = None;
-        let mut filter = HashMap::new();
         let mut loaded = HashMap::new();
         let mut seen = None;
-        drop(ctx.run(raw, |ctx| {
+        let out = ctx.run(raw, |ctx| {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
@@ -2612,34 +2531,90 @@ mod default_font_section_tests {
                         font_setting_rows(),
                         col,
                         settings,
-                        &mut families,
-                        &mut filter,
+                        families,
                         &mut loaded,
                     ));
                 });
-        }));
-        seen.expect("frame ran")
+        });
+        let (family, custom, preview_top) = seen.expect("frame ran");
+        Seen {
+            family,
+            custom,
+            preview_top,
+            texts: texts(&out),
+        }
     }
 
-    fn click(ctx: &egui::Context, col: LogicalPx, settings: &mut Settings, pos: egui::Pos2) {
-        let press = |pressed| egui::Event::PointerButton {
+    fn frame(
+        ctx: &egui::Context,
+        col: LogicalPx,
+        settings: &mut Settings,
+        events: Vec<egui::Event>,
+    ) -> Seen {
+        frame_with(ctx, col, settings, &mut None, events)
+    }
+
+    fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
             pos,
             button: egui::PointerButton::Primary,
             pressed,
             modifiers: egui::Modifiers::NONE,
-        };
-        frame(
+        }
+    }
+
+    fn click_with(
+        ctx: &egui::Context,
+        col: LogicalPx,
+        settings: &mut Settings,
+        families: &mut Option<Vec<String>>,
+        pos: egui::Pos2,
+    ) -> Seen {
+        frame_with(
             ctx,
             col,
             settings,
-            vec![egui::Event::PointerMoved(pos), press(true)],
+            families,
+            vec![egui::Event::PointerMoved(pos), press(pos, true)],
         );
-        frame(ctx, col, settings, vec![press(false)]);
-        frame(ctx, col, settings, Vec::new());
+        frame_with(ctx, col, settings, families, vec![press(pos, false)]);
+        frame_with(ctx, col, settings, families, Vec::new())
+    }
+
+    fn click(ctx: &egui::Context, col: LogicalPx, settings: &mut Settings, pos: egui::Pos2) {
+        click_with(ctx, col, settings, &mut None, pos);
+    }
+
+    fn key(k: egui::Key) -> Vec<egui::Event> {
+        vec![
+            egui::Event::Key {
+                key: k,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::Key {
+                key: k,
+                physical_key: None,
+                pressed: false,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    }
+
+    fn families() -> Option<Vec<String>> {
+        Some(
+            ["Fira Code", "JetBrains Mono", "Menlo"]
+                .map(str::to_owned)
+                .to_vec(),
+        )
     }
 
     /// 라벨 열이 하한(150)이든 상한(240)이든 미리보기는 설정 행 아래에 있다. 글꼴 콤보와 커스텀
-    /// 글꼴 입력칸은 미리보기 위에서 끝나고, 콤보는 `field-width-lg` 폭을 유지한다.
+    /// 글꼴 입력칸은 미리보기 위에서 끝나고, 콤보 응답은 실제 트리거 상자 — `field-width-lg` 폭,
+    /// 다른 Select 와 같은 `select-height` 높이 — 다.
     #[test]
     fn the_preview_sits_below_the_font_rows() {
         let th = crate::theme::theme();
@@ -2647,7 +2622,12 @@ mod default_font_section_tests {
             let ctx = egui::Context::default();
             let mut settings = Settings::default();
             frame(&ctx, col, &mut settings, Vec::new());
-            let (family, custom, preview_top) = frame(&ctx, col, &mut settings, Vec::new());
+            let Seen {
+                family,
+                custom,
+                preview_top,
+                ..
+            } = frame(&ctx, col, &mut settings, Vec::new());
             assert!(
                 family.rect.bottom() <= preview_top,
                 "label column {}: font combo ends at {} below the preview top {}",
@@ -2668,58 +2648,16 @@ mod default_font_section_tests {
                 col.value(),
                 family.rect.width()
             );
+            assert_eq!(
+                family.rect.height(),
+                th.select_height().value(),
+                "label column {}: font combo is not as tall as a Select",
+                col.value()
+            );
         }
     }
 
-    /// 글꼴 목록의 검색칸은 목록 폭에서 양쪽 `font-combo-search-inset` 만큼 들어간다.
-    #[test]
-    fn the_font_search_field_is_inset_on_both_sides() {
-        let th = crate::theme::theme();
-        let ctx = egui::Context::default();
-        tasty_egui_theme::apply_theme_to_egui(&th, &ctx);
-        let mut seen = None;
-        let raw = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(th.field_width_lg.value(), 100.0),
-            )),
-            ..Default::default()
-        };
-        drop(ctx.run(raw, |ctx| {
-            egui::CentralPanel::default()
-                .frame(egui::Frame::NONE)
-                .show(ctx, |ui| {
-                    let list = ui.max_rect();
-                    let mut filter = String::new();
-                    let (slot, field) = super::font_search_field(ui, &th, &mut filter);
-                    seen = Some((list, slot, field.rect));
-                });
-        }));
-        let (list, slot, text) = seen.expect("frame ran");
-        let inset = th.font_combo_search_inset().value();
-        assert_eq!(
-            slot.left() - list.left(),
-            inset,
-            "왼쪽 여백: {slot:?} in {list:?}"
-        );
-        assert_eq!(
-            list.right() - slot.right(),
-            inset,
-            "오른쪽 여백: {slot:?} in {list:?}"
-        );
-        // 입력칸이 자리를 채운다 — 글자 영역은 자리 안에서 좌우 같은 여백만 남긴다.
-        assert!(
-            slot.contains_rect(text),
-            "글자 영역 {text:?} 이 자리 {slot:?} 밖이다"
-        );
-        assert_eq!(
-            text.left() - slot.left(),
-            slot.right() - text.right(),
-            "입력칸이 자리 폭을 채우지 않는다: {text:?} in {slot:?}"
-        );
-    }
-
-    /// 콤보 오른쪽 끝(▼ 자리)을 누르면 목록이 열린다. 미리보기 제목이 그 자리를 덮으면
+    /// 콤보 오른쪽 끝(chevron 자리)을 누르면 목록이 열린다. 미리보기 제목이 그 자리를 덮으면
     /// 클릭이 제목으로 가서 열리지 않는다.
     #[test]
     fn clicking_the_combo_arrow_opens_the_font_list() {
@@ -2728,7 +2666,7 @@ mod default_font_section_tests {
             let ctx = egui::Context::default();
             let mut settings = Settings::default();
             frame(&ctx, col, &mut settings, Vec::new());
-            let (family, _, _) = frame(&ctx, col, &mut settings, Vec::new());
+            let family = frame(&ctx, col, &mut settings, Vec::new()).family;
             let arrow = family.rect.right_center() - egui::vec2(8.0, 0.0);
             click(&ctx, col, &mut settings, arrow);
             assert!(
@@ -2737,5 +2675,155 @@ mod default_font_section_tests {
                 col.value()
             );
         }
+    }
+
+    /// 저장된 이름이 목록에 없을 때 — 목록을 받는 중이거나 설치되지 않은 글꼴 — 트리거는 그 이름을
+    /// 그대로 보이고, 목록을 열고 닫아도 값이 바뀌지 않는다.
+    #[test]
+    fn a_saved_family_missing_from_the_list_is_kept() {
+        let th = crate::theme::theme();
+        let col = th.settings_label_width();
+        for (case, mut list) in [("loading", None), ("not installed", families())] {
+            let ctx = egui::Context::default();
+            let mut settings = Settings::default();
+            settings.appearance.default_font.font_family = "Not Installed Mono".to_owned();
+            frame_with(&ctx, col, &mut settings, &mut list, Vec::new());
+            let seen = frame_with(&ctx, col, &mut settings, &mut list, Vec::new());
+            assert!(
+                seen.has("Not Installed Mono"),
+                "{case}: trigger lost the saved name"
+            );
+            let opened = click_with(
+                &ctx,
+                col,
+                &mut settings,
+                &mut list,
+                seen.family.rect.center(),
+            );
+            assert!(
+                ctx.memory(|m| m.any_popup_open()),
+                "{case}: the list did not open"
+            );
+            if list.is_none() {
+                assert!(
+                    opened.has(t("settings.appearance.font_loading")),
+                    "{case}: no loading row"
+                );
+            }
+            let closed = frame_with(&ctx, col, &mut settings, &mut list, key(egui::Key::Escape));
+            assert!(
+                !ctx.memory(|m| m.any_popup_open()),
+                "{case}: Escape did not close"
+            );
+            assert!(
+                closed.has("Not Installed Mono"),
+                "{case}: trigger lost the saved name"
+            );
+            assert_eq!(
+                settings.appearance.default_font.font_family, "Not Installed Mono",
+                "{case}: the saved name changed"
+            );
+        }
+    }
+
+    /// 검색으로 현재 값이 목록에서 숨어도 트리거는 그 값을 보이고 값은 그대로다. 기본값(monospace)
+    /// 행은 일치가 없을 때도 맨 위에 남고, 누르면 값을 비운다.
+    #[test]
+    fn a_filtered_out_value_stays_and_the_default_row_is_pinned() {
+        let th = crate::theme::theme();
+        let col = th.settings_label_width();
+        let ctx = egui::Context::default();
+        let mut list = families();
+        let mut settings = Settings::default();
+        settings.appearance.default_font.font_family = "Menlo".to_owned();
+        frame_with(&ctx, col, &mut settings, &mut list, Vec::new());
+        let seen = frame_with(&ctx, col, &mut settings, &mut list, Vec::new());
+        click_with(
+            &ctx,
+            col,
+            &mut settings,
+            &mut list,
+            seen.family.rect.center(),
+        );
+        let typed = frame_with(
+            &ctx,
+            col,
+            &mut settings,
+            &mut list,
+            vec![egui::Event::Text("zzz".into())],
+        );
+        let typed = if typed.has(t("settings.appearance.font_no_match")) {
+            typed
+        } else {
+            frame_with(&ctx, col, &mut settings, &mut list, Vec::new())
+        };
+        assert!(
+            typed.has(t("settings.appearance.font_no_match")),
+            "no empty row"
+        );
+        assert!(
+            typed.has(t("settings.appearance.font_family_default")),
+            "default row hidden"
+        );
+        assert!(
+            !typed.has("Fira Code"),
+            "the filter did not hide other families"
+        );
+        assert!(typed.has("Menlo"), "trigger lost the filtered-out value");
+        assert_eq!(settings.appearance.default_font.font_family, "Menlo");
+
+        // 일치가 없으면 활성 행은 고정 행이다. Enter 로 골라 기본값으로 돌아간다.
+        frame_with(&ctx, col, &mut settings, &mut list, key(egui::Key::Enter));
+        assert_eq!(
+            settings.appearance.default_font.font_family, "",
+            "choosing the pinned default row did not clear the family"
+        );
+    }
+
+    /// 꺼진 글꼴 override 의 글꼴 콤보는 egui fade 가 아니라 Select disabled 토큰으로 그린다.
+    #[test]
+    fn a_disabled_override_family_uses_the_select_disabled_tokens() {
+        let th = crate::theme::theme();
+        let ctx = egui::Context::default();
+        let mut ov = FontOverride::default();
+        let default = FontSettings::default();
+        let raw = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(620.0, 500.0),
+            )),
+            ..Default::default()
+        };
+        let mut run = || {
+            ctx.run(raw(), |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        font_override_grid(ui, &mut ov, &default, &mut None, "t");
+                    });
+            })
+        };
+        drop(run());
+        let out = run();
+        let label = t("settings.appearance.font_family_default");
+        let ink = out
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.text() == label => Some(t.fallback_color),
+                _ => None,
+            })
+            .expect("the disabled family trigger shows the default label");
+        assert_eq!(ink, th.state_disabled_fg().to_egui());
+        let fill = th.state_disabled_fill().to_egui();
+        assert!(
+            out.shapes.iter().any(|s| matches!(
+                &s.shape,
+                egui::Shape::Rect(r) if r.fill == fill
+                    && r.rect.width() == th.field_width_lg.value()
+                    && r.rect.height() == th.select_height().value()
+            )),
+            "no disabled Select box for the family trigger"
+        );
     }
 }

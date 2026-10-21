@@ -601,6 +601,14 @@ fn menu_body(
     out
 }
 
+/// [`SearchableSelect::show_response`] 의 결과.
+pub struct SearchableSelectResponse {
+    /// 트리거 상자의 응답. 행 배치처럼 트리거 자리가 필요한 호출자가 읽는다.
+    pub response: egui::Response,
+    /// 이번 프레임에 값이 바뀌었다.
+    pub changed: bool,
+}
+
 /// SearchableSelect 빌더. 값은 `show` 인자로 받는다.
 pub struct SearchableSelect<'a> {
     id_salt: &'a str,
@@ -682,6 +690,17 @@ impl<'a> SearchableSelect<'a> {
     /// 그리고 값이 바뀌면 `true` 를 반환한다. `value` 가 `None` 이면 트리거는 placeholder 다.
     /// 목록에 없는 값이나 검색으로 숨은 값도 트리거에 그대로 보이며 위젯이 바꾸지 않는다.
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme, value: &mut Option<String>) -> bool {
+        self.show_response(ui, theme, value).changed
+    }
+
+    /// [`show`](Self::show) 와 같고 트리거의 [`egui::Response`] 도 돌려준다. 응답의 rect 는 트리거
+    /// 상자이며 팝업은 포함하지 않는다. 값이 바뀐 프레임에는 응답에 `changed` 가 표시된다.
+    pub fn show_response(
+        self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        value: &mut Option<String>,
+    ) -> SearchableSelectResponse {
         let popup_id = searchable_select_popup_id(ui, self.id_salt);
         let sid = state_id(popup_id);
         // 위젯 자체나 감싼 Ui 가 비활성이면 열려 있던 자기 목록을 닫는다. egui 팝업은 기억된 열림
@@ -734,7 +753,7 @@ impl<'a> SearchableSelect<'a> {
         let width = self
             .width
             .unwrap_or_else(|| LogicalPx(ui.available_width()));
-        let (rect, resp) = alloc_trigger(ui, theme, width.value(), enabled);
+        let (rect, mut resp) = alloc_trigger(ui, theme, width.value(), enabled);
         let open_by_key = enabled
             && !open
             && resp.has_focus()
@@ -834,7 +853,13 @@ impl<'a> SearchableSelect<'a> {
         } else {
             ui.data_mut(|d| d.remove::<OpenState>(sid));
         }
-        changed
+        if changed {
+            resp.mark_changed();
+        }
+        SearchableSelectResponse {
+            response: resp,
+            changed,
+        }
     }
 
     /// 상호작용 없이 `spec` 상태를 그린다. 열린 상태면 목록을 팝업 대신 트리거 아래 자리에 그대로 둔다.

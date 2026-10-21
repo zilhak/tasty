@@ -546,3 +546,49 @@ fn the_specimen_popup_sits_where_the_live_popup_does() {
     let expected = th.select_search_menu_gap() + th.border_width + th.select_search_inset();
     assert_eq!(live_gap, expected.value());
 }
+
+/// `show_response` 는 트리거 상자의 응답을 돌려준다. 열린 팝업은 rect 에 들어가지 않고, 값이 바뀐
+/// 프레임에는 `changed` 와 응답의 changed 가 함께 선다.
+#[test]
+fn show_response_returns_the_trigger_response() {
+    let ctx = egui::Context::default();
+    let th = theme();
+    let mut value = Some("Fira Code".to_owned());
+    let mut last = None;
+    let mut run = |events: Vec<Event>, value: &mut Option<String>| {
+        // 프레임 출력은 쓰지 않고 위젯 결과만 읽는다.
+        let _ = ctx.run(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 600.0))),
+                focused: true,
+                events,
+                ..Default::default()
+            },
+            |c| {
+                egui::CentralPanel::default().show(c, |ui| {
+                    let origin = ui.cursor().min;
+                    let out = SearchableSelect::new(SALT, &OPTIONS, LABELS)
+                        .width(LogicalPx(WIDTH))
+                        .show_response(ui, &th, value);
+                    last = Some((
+                        origin,
+                        out.response.rect,
+                        out.changed,
+                        out.response.changed(),
+                    ));
+                });
+            },
+        );
+        last.expect("위젯을 그렸다")
+    };
+    run(vec![], &mut value);
+    run(click(pos2(60.0, 20.0)), &mut value);
+    let (origin, rect, changed, resp_changed) = run(vec![Event::PointerMoved(AWAY)], &mut value);
+    let expected = Rect::from_min_size(origin, vec2(WIDTH, th.select_height().value()));
+    assert_eq!(rect, expected, "열린 동안에도 응답 rect 는 트리거 상자다");
+    assert!(!changed && !resp_changed);
+    run(key(Key::ArrowDown), &mut value);
+    let (_, _, changed, resp_changed) = run(key(Key::Enter), &mut value);
+    assert_eq!(value.as_deref(), Some("D2Coding"));
+    assert!(changed && resp_changed);
+}

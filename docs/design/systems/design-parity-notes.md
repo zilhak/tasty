@@ -257,17 +257,17 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
 - **근거**: `settings_row.rs::below_width`, `src/view/settings/ui/tabs/number.rs`. 시험
   `a_caption_and_a_callout_wrap_inside_a_narrow_area`, `the_suffix_wraps_under_the_field_in_a_narrow_row`.
 
-## 좁은 칸의 콤보 — egui ComboBox 는 선택된 글자 폭만큼 늘어난다
+## 좁은 칸의 글꼴 콤보 — 트리거를 남은 폭 안에 묶는다
 
-- **증상**: egui `ComboBox::width` 는 최소 폭일 뿐이고 기본 줄바꿈 방식에서는 선택된 이름 폭만큼 늘어난다.
-  Appearance › General 의 글꼴 콤보 칸이 `field_width_lg` 보다 좁아지면(좁은 설정 창) 오른쪽 끝(▼)이 행
-  밖으로 나가고, 그 자리를 다른 위젯이 덮으면 클릭이 그쪽으로 가 목록이 열리지 않는다.
-- **처방**: 콤보 폭을 `field_width_lg` 와 남은 폭 중 작은 값으로 정하고 `.truncate()` 로 긴 이름을 자른다.
-  egui `TextEdit` 은 원래 남은 폭을 넘지 않아 같은 줄의 입력칸은 손대지 않는다. 미리보기는 옆 열이 아니라
-  글꼴 행 아래에 있다.
+- **증상**: Appearance › General 의 글꼴 콤보 칸이 `field_width_lg` 보다 좁아지면(좁은 설정 창) 트리거
+  오른쪽 끝(chevron)이 행 밖으로 나가고, 그 자리를 다른 위젯이 덮으면 클릭이 그쪽으로 가 목록이 열리지
+  않는다. 예전 egui `ComboBox::width` 는 최소 폭일 뿐이라 선택된 이름 폭만큼 늘어났다.
+- **처방**: 트리거 폭을 `field_width_lg` 와 남은 폭 중 작은 값으로 정한다. `SearchableSelect` 트리거는 긴
+  이름을 말줄임하고 늘어나지 않는다. egui `TextEdit` 은 원래 남은 폭을 넘지 않아 같은 줄의 입력칸은 손대지
+  않는다. 미리보기는 옆 열이 아니라 글꼴 행 아래에 있다.
 - **근거**: `src/view/settings/ui/tabs/appearance.rs` 의 `font_family_picker`, 시험 모듈
-  `default_font_section_tests`(콤보·입력칸이 미리보기 위에서 끝나고 콤보가 `field_width_lg` 인지, ▼ 자리를
-  누르면 목록이 열리는지).
+  `default_font_section_tests`(트리거·입력칸이 미리보기 위에서 끝나고 트리거가 `field_width_lg` ×
+  `select_height` 인지, chevron 자리를 누르면 목록이 열리는지).
 
 ## footer 우측정렬 — flex `justify-end` 흉내
 
