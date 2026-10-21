@@ -109,7 +109,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             cluster(ui, theme, "Searchable Select", |ui| {
                 SearchableSelect::new("gallery_searchable_select", &FONTS, FONT_LABELS)
                     .pinned(&PIN)
-                    .width(field_md)
+                    .width(theme.field_width_md)
                     .show(ui, theme, &mut st.font);
             });
             cluster(ui, theme, "Checkbox", |ui| {

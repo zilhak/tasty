@@ -5,6 +5,7 @@
 #![allow(clippy::let_underscore_must_use)]
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     SearchableSelect, SearchableSelectLabels, SearchableSelectOption, searchable_select_filter,
     searchable_select_popup_id, searchable_select_search_id,
@@ -134,7 +135,7 @@ impl Rig {
                     let origin = ui.cursor().min;
                     changed = SearchableSelect::new(SALT, &OPTIONS, LABELS)
                         .pinned(&PINNED)
-                        .width(WIDTH)
+                        .width(LogicalPx(WIDTH))
                         .enabled(enabled)
                         .show(ui, theme, value);
                     trigger =
@@ -186,7 +187,7 @@ fn the_trigger_is_select_height_and_caller_width() {
             rect = ui
                 .scope(|ui| {
                     SearchableSelect::new("h", &OPTIONS, LABELS)
-                        .width(WIDTH)
+                        .width(LogicalPx(WIDTH))
                         .show(ui, &th, &mut v)
                 })
                 .response

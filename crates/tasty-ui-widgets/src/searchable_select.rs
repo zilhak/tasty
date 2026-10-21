@@ -8,6 +8,7 @@
 //! 위젯은 번역 문구를 소유하지 않으며 [`SearchableSelectLabels`] 로 받는다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::menu_item::{menu_option_natural_width, menu_option_row};
 use crate::select::{alloc_trigger, paint_chevron, paint_trigger_box};
@@ -215,9 +216,8 @@ fn paint_trigger(
     enabled: bool,
     look: TriggerLook,
 ) {
-    let pad_x = theme.select_padding_x().value();
-    let chevron_room = theme.select_chevron_room().value();
-    let bw = theme.border_width.value();
+    let pad_x = theme.select_padding_x();
+    let chevron_room = theme.select_chevron_room();
     let focused = enabled && (look.open || look.focus);
     let border = if focused {
         theme.select_border_focus()
@@ -232,7 +232,10 @@ fn paint_trigger(
         ui.painter().rect_stroke(
             rect,
             theme.select_radius().value(),
-            egui::Stroke::new(bw, theme.select_border_focus().to_egui()),
+            egui::Stroke::new(
+                theme.border_width.value(),
+                theme.select_border_focus().to_egui(),
+            ),
             egui::StrokeKind::Outside,
         );
     }
@@ -249,20 +252,20 @@ fn paint_trigger(
         theme.select_fg()
     };
     // 긴 값은 끝을 줄이고 트리거는 커지지 않는다.
-    let text_max_width = (rect.right() - chevron_room - (rect.left() + pad_x)).max(0.0);
+    let text_max_width = (LogicalPx(rect.width()) - chevron_room - pad_x).max(LogicalPx(0.0));
     let mut job = egui::text::LayoutJob::simple_singleline(
         label.to_owned(),
         egui::FontId::proportional(theme.select_font_size().value()),
         egui::Color32::PLACEHOLDER,
     );
-    job.wrap = egui::text::TextWrapping::truncate_at_width(text_max_width);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(text_max_width.value());
     let galley = ui.fonts(|f| f.layout_job(job));
     let pos = egui::pos2(
-        rect.left() + pad_x,
+        rect.left() + pad_x.value(),
         rect.center().y - galley.rect.height() * 0.5,
     );
     ui.painter().galley(pos, galley, ink(fg.to_egui()));
-    let cx = rect.right() - chevron_room * 0.5;
+    let cx = rect.right() - (chevron_room * 0.5).value();
     paint_chevron(
         ui.painter(),
         egui::pos2(cx, rect.center().y),
@@ -294,28 +297,30 @@ fn search_field(
     field: &mut Field<'_>,
     focus_now: bool,
 ) -> bool {
-    let height = theme.select_search_field_height().value();
-    let pad_x = theme.select_search_field_padding_x().value();
-    let gap = theme.select_search_field_gap().value();
-    let icon = theme.icon_glyph_size_sm.value();
-    let bw = theme.border_width.value();
+    let height = theme.select_search_field_height();
+    let pad_x = theme.select_search_field_padding_x();
+    let gap = theme.select_search_field_gap();
+    let icon = theme.icon_glyph_size_sm;
     let radius = theme.corner_radius.value();
     let font = egui::FontId::proportional(theme.select_font_size().value());
     let width = ui.available_width();
-    let (outer, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let (outer, _) =
+        ui.allocate_exact_size(egui::vec2(width, height.value()), egui::Sense::hover());
     ui.painter()
         .rect_filled(outer, radius, theme.select_search_field_bg().to_egui());
 
-    let inner = outer.shrink2(egui::vec2(pad_x, 0.0));
+    let inner = outer.shrink2(egui::vec2(pad_x.value(), 0.0));
     let irect = egui::Rect::from_center_size(
-        egui::pos2(inner.left() + icon * 0.5, inner.center().y),
-        egui::vec2(icon, icon),
+        egui::pos2(inner.left() + (icon * 0.5).value(), inner.center().y),
+        egui::vec2(icon.value(), icon.value()),
     );
     tasty_icons::SEARCH
-        .image(icon, theme.select_search_icon_fg().to_egui())
+        .image(icon.value(), theme.select_search_icon_fg().to_egui())
         .paint_at(ui, irect);
-    let text_rect =
-        egui::Rect::from_min_max(egui::pos2(irect.right() + gap, inner.top()), inner.max);
+    let text_rect = egui::Rect::from_min_max(
+        egui::pos2(irect.right() + gap.value(), inner.top()),
+        inner.max,
+    );
 
     let (changed, focused) = match field {
         Field::Live { buf, id } => {
@@ -371,7 +376,7 @@ fn search_field(
     ui.painter().rect_stroke(
         outer,
         radius,
-        egui::Stroke::new(bw, edge.to_egui()),
+        egui::Stroke::new(theme.border_width.value(), edge.to_egui()),
         egui::StrokeKind::Inside,
     );
     changed
@@ -379,31 +384,39 @@ fn search_field(
 
 /// 결과 없음·로딩 상태 행. 누를 수 없다. 로딩은 Spinner + 간격 + 문구다.
 fn status_row(ui: &mut egui::Ui, theme: &Theme, label: &str, loading: bool) {
-    let height = theme.menu_item_height().value();
-    let pad = theme.menu_item_padding_x().value();
-    let gap = theme.spacing_sm.value();
-    let spinner = theme.icon_glyph_size_sm.value();
+    let height = theme.menu_item_height();
+    let pad = theme.menu_item_padding_x();
+    let gap = theme.spacing_sm;
+    let spinner = theme.icon_glyph_size_sm;
     let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
-    let mut x = rect.left() + pad;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height.value()), egui::Sense::hover());
+    // 행 왼쪽 끝에서 글자가 시작하는 자리까지.
+    let mut lead = pad;
     if loading {
         let srect = egui::Rect::from_min_size(
-            egui::pos2(x, rect.center().y - spinner * 0.5),
-            egui::vec2(spinner, spinner),
+            egui::pos2(
+                rect.left() + lead.value(),
+                rect.center().y - (spinner * 0.5).value(),
+            ),
+            egui::vec2(spinner.value(), spinner.value()),
         );
         crate::Spinner::new()
-            .size(spinner)
+            .size(spinner.value())
             .paint_in(ui, theme, srect);
-        x += spinner + gap;
+        lead += spinner + gap;
     }
+    let text_w = (LogicalPx(rect.width()) - lead - pad).max(LogicalPx(0.0));
     let mut job = egui::text::LayoutJob::simple_singleline(
         label.to_owned(),
         egui::FontId::proportional(theme.select_font_size().value()),
         egui::Color32::PLACEHOLDER,
     );
-    job.wrap = egui::text::TextWrapping::truncate_at_width((rect.right() - pad - x).max(0.0));
+    job.wrap = egui::text::TextWrapping::truncate_at_width(text_w.value());
     let g = ui.fonts(|f| f.layout_job(job));
-    let pos = egui::pos2(x, rect.center().y - g.rect.height() * 0.5);
+    let pos = egui::pos2(
+        rect.left() + lead.value(),
+        rect.center().y - g.rect.height() * 0.5,
+    );
     ui.painter()
         .galley(pos, g, theme.select_search_status_fg().to_egui());
 }
@@ -417,7 +430,7 @@ struct Menu<'a> {
     loading: bool,
     value: Option<&'a str>,
     /// 목록 안쪽 폭(팝업 − 안쪽 여백·테두리).
-    content_width: f32,
+    content_width: LogicalPx,
 }
 
 /// 목록 본문 한 번의 결과.
@@ -431,41 +444,43 @@ struct MenuOutput {
 fn content_width(
     ctx: &egui::Context,
     theme: &Theme,
-    width: f32,
+    width: LogicalPx,
     pinned: &[SearchableSelectOption<'_>],
     options: &[SearchableSelectOption<'_>],
     labels: &SearchableSelectLabels<'_>,
     loading: bool,
-) -> f32 {
+) -> LogicalPx {
     let chrome = menu_chrome(theme);
-    let min = (width - chrome).max(0.0);
-    let max = (theme.select_search_menu_max_width().value() - chrome).max(min);
+    let min = (width - chrome).max(LogicalPx(0.0));
+    let max = (theme.select_search_menu_max_width() - chrome).max(min);
     let font = egui::FontId::proportional(theme.select_font_size().value());
     let text_w = |s: &str| {
-        ctx.fonts(|f| {
-            f.layout_no_wrap(s.to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
-                .rect
-                .width()
-        })
-        .ceil()
+        LogicalPx(
+            ctx.fonts(|f| {
+                f.layout_no_wrap(s.to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
+                    .rect
+                    .width()
+            })
+            .ceil(),
+        )
     };
-    let pad2 = theme.menu_item_padding_x().value() * 2.0;
+    let pad2 = theme.menu_item_padding_x() * 2.0;
     let status = if loading {
-        text_w(labels.loading) + theme.icon_glyph_size_sm.value() + theme.spacing_sm.value()
+        text_w(labels.loading) + theme.icon_glyph_size_sm + theme.spacing_sm
     } else {
         text_w(labels.empty)
     } + pad2;
     pinned
         .iter()
         .chain(options)
-        .map(|o| menu_option_natural_width(ctx, theme, false, o.label))
-        .fold(status, f32::max)
+        .map(|o| LogicalPx(menu_option_natural_width(ctx, theme, false, o.label)))
+        .fold(status, LogicalPx::max)
         .clamp(min, max)
 }
 
 /// 팝업 틀이 가로·세로 각각 차지하는 폭: 안쪽 여백과 테두리 양쪽.
-fn menu_chrome(theme: &Theme) -> f32 {
-    (theme.select_search_inset().value() + theme.border_width.value()) * 2.0
+fn menu_chrome(theme: &Theme) -> LogicalPx {
+    (theme.select_search_inset() + theme.border_width) * 2.0
 }
 
 fn menu_margin(theme: &Theme) -> egui::Margin {
@@ -487,8 +502,8 @@ fn menu_body(
     scroll_to_active: bool,
 ) -> MenuOutput {
     let live = matches!(field, Field::Live { .. });
-    ui.set_min_width(menu.content_width);
-    ui.set_max_width(menu.content_width);
+    ui.set_min_width(menu.content_width.value());
+    ui.set_max_width(menu.content_width.value());
     ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
 
     let edited = search_field(
@@ -522,8 +537,8 @@ fn menu_body(
             hover == Some(i),
         );
         // 끝이 줄어든 문구는 호버하면 전체를 보여 준다.
-        let natural = menu_option_natural_width(ui.ctx(), theme, false, o.label);
-        let resp = if natural > resp.rect.width() {
+        let natural = LogicalPx(menu_option_natural_width(ui.ctx(), theme, false, o.label));
+        let resp = if natural > LogicalPx(resp.rect.width()) {
             resp.on_hover_text(o.label)
         } else {
             resp
@@ -550,25 +565,26 @@ fn menu_body(
     }
 
     // 팝업 전체가 select-search-list-max-height 를 넘지 않도록 옵션 목록 높이를 남은 만큼으로 제한한다.
-    let sep = theme.spacing_xs.value() * 2.0 + theme.border_width.value();
+    let sep = theme.spacing_xs * 2.0 + theme.border_width;
+    let row_h = theme.menu_item_height();
     let fixed = menu_chrome(theme)
-        + theme.select_search_field_height().value()
+        + theme.select_search_field_height()
         + sep
         + if pinned_len > 0 {
-            pinned_len as f32 * theme.menu_item_height().value() + sep
+            row_h * pinned_len as f32 + sep
         } else {
-            0.0
+            LogicalPx(0.0)
         };
-    let list_max = (theme.select_search_list_max_height().value() - fixed).max(0.0);
+    let list_max = (theme.select_search_list_max_height() - fixed).max(LogicalPx(0.0));
     // 스크롤 영역은 부모의 남은 높이에도 묶인다. 행 높이로 잰 목록 높이를 하한으로 주어 견본처럼
     // 높이가 정해진 자리에 놓여도 상한(list_max)까지는 펼쳐지게 한다.
     let status_rows = usize::from(menu.loading || rows.len() == pinned_len);
     let list_rows = rows.len() - pinned_len + status_rows;
-    let list_h = (list_rows as f32 * theme.menu_item_height().value()).min(list_max);
+    let list_h = (row_h * list_rows as f32).min(list_max);
     egui::ScrollArea::vertical()
         .id_salt(("tasty_searchable_select_list", menu.id_salt))
-        .max_height(list_max)
-        .min_scrolled_height(list_h)
+        .max_height(list_max.value())
+        .min_scrolled_height(list_h.value())
         .auto_shrink([false, true])
         .drag_to_scroll(false)
         .show(ui, |ui| {
@@ -592,7 +608,7 @@ pub struct SearchableSelect<'a> {
     pinned: &'a [SearchableSelectOption<'a>],
     labels: SearchableSelectLabels<'a>,
     /// 트리거 폭. `None` 이면 가용 폭(시안 `block`).
-    width: Option<f32>,
+    width: Option<LogicalPx>,
     enabled: bool,
     loading: bool,
 }
@@ -626,8 +642,8 @@ impl<'a> SearchableSelect<'a> {
         self
     }
 
-    /// 트리거 폭(px). 미지정이면 가용 폭을 채운다.
-    pub fn width(mut self, width: f32) -> Self {
+    /// 트리거 폭. 미지정이면 가용 폭을 채운다.
+    pub fn width(mut self, width: LogicalPx) -> Self {
         self.width = Some(width);
         self
     }
@@ -641,7 +657,7 @@ impl<'a> SearchableSelect<'a> {
         &'m self,
         ctx: &egui::Context,
         theme: &Theme,
-        width: f32,
+        width: LogicalPx,
         value: Option<&'m str>,
     ) -> Menu<'m> {
         Menu {
@@ -708,8 +724,10 @@ impl<'a> SearchableSelect<'a> {
             }
         }
 
-        let width = self.width.unwrap_or_else(|| ui.available_width());
-        let (rect, resp) = alloc_trigger(ui, theme, width, self.enabled);
+        let width = self
+            .width
+            .unwrap_or_else(|| LogicalPx(ui.available_width()));
+        let (rect, resp) = alloc_trigger(ui, theme, width.value(), self.enabled);
         let open_by_key = self.enabled
             && !open
             && resp.has_focus()
@@ -821,9 +839,11 @@ impl<'a> SearchableSelect<'a> {
         value: Option<&str>,
         spec: &SearchableSelectSpecimen<'_>,
     ) {
-        let width = self.width.unwrap_or_else(|| ui.available_width());
+        let width = self
+            .width
+            .unwrap_or_else(|| LogicalPx(ui.available_width()));
         let (rect, _) = ui.allocate_exact_size(
-            egui::vec2(width, theme.select_height().value()),
+            egui::vec2(width.value(), theme.select_height().value()),
             egui::Sense::hover(),
         );
         let (label, is_placeholder) =

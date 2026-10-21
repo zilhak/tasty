@@ -338,7 +338,7 @@ fn pairs(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) {
     });
     row(ui, "Searchable · no value", &mut |ui| {
         SearchableSelect::new(&format!("g_ss_pair_none_{ti}"), &FONTS, FONT_LABELS)
-            .width(w)
+            .width(th.field_width_lg)
             .show(ui, th, &mut st.pair_none[ti]);
     });
     row(ui, "MultiSelect", &mut |ui| {
@@ -358,18 +358,24 @@ fn pairs(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) {
     row(ui, "SearchableSelect", &mut |ui| {
         SearchableSelect::new(&format!("g_ss_pair_ss_{ti}"), &FONTS, FONT_LABELS)
             .pinned(&PIN)
-            .width(w)
+            .width(th.field_width_lg)
             .show(ui, th, &mut st.pair_ss[ti]);
     });
 }
 
 /// 칸 하나: 캡션 + 내용, 고정 폭과 최소 높이. 열린 목록이 최소 높이를 넘으면 칸이 늘어난다
 /// (시안은 팝업을 칸 밖으로 띄우지만 정적 견본은 자리를 차지한다).
-fn cell(ui: &mut egui::Ui, th: &Theme, label: &str, min_h: f32, add: impl FnOnce(&mut egui::Ui)) {
+fn cell(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    label: &str,
+    min_h: LogicalPx,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     ui.push_id(label, |ui| {
         ui.vertical(|ui| {
             ui.set_width(CELL_W.value());
-            ui.set_min_height(min_h);
+            ui.set_min_height(min_h.value());
             ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
             caption_label(ui, th, label);
             add(ui);
@@ -378,9 +384,9 @@ fn cell(ui: &mut egui::Ui, th: &Theme, label: &str, min_h: f32, add: impl FnOnce
 }
 
 /// 3열 그리드 한 줄.
-fn grid_row(ui: &mut egui::Ui, gap_x: f32, add: impl FnOnce(&mut egui::Ui)) {
+fn grid_row(ui: &mut egui::Ui, gap_x: LogicalPx, add: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = gap_x;
+        ui.spacing_mut().item_spacing.x = gap_x.value();
         add(ui);
     });
 }
@@ -401,16 +407,16 @@ fn specimen(
         .pinned(pinned)
         .enabled(enabled)
         .loading(loading)
-        .width(CELL_W.value())
+        .width(CELL_W)
         .show_specimen(ui, th, value, &spec);
 }
 
 /// 시안 트리거 상태 6칸.
 fn trigger_states(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) {
     let closed = SearchableSelectSpecimen::default();
-    let gap_x = th.spacing_lg.value();
+    let gap_x = th.spacing_lg;
     ui.spacing_mut().item_spacing.y = th.spacing_md.value();
-    let h = th.select_height().value();
+    let h = th.select_height();
     grid_row(ui, gap_x, |ui| {
         cell(ui, th, "closed", h, |ui| {
             specimen(
@@ -476,7 +482,7 @@ fn trigger_states(ui: &mut egui::Ui, th: &Theme, ti: usize, st: &mut LiveState) 
         cell(ui, th, "live — click, type, ↑↓ Enter", h, |ui| {
             SearchableSelect::new(&format!("g_ss_live_{ti}"), &FONTS, FONT_LABELS)
                 .pinned(&PIN)
-                .width(CELL_W.value())
+                .width(CELL_W)
                 .show(ui, th, &mut st.live[ti]);
         });
     });
@@ -491,9 +497,9 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
         active,
         ..Default::default()
     };
-    let gap = th.spacing_lg.value();
-    ui.spacing_mut().item_spacing.y = gap;
-    let tall = CELL_H_TALL.value();
+    let gap = th.spacing_lg;
+    ui.spacing_mut().item_spacing.y = gap.value();
+    let tall = CELL_H_TALL;
     grid_row(ui, gap, |ui| {
         cell(
             ui,
@@ -547,7 +553,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
             );
         });
     });
-    let short = CELL_H_SHORT.value();
+    let short = CELL_H_SHORT;
     grid_row(ui, gap, |ui| {
         cell(ui, th, "loading — list still empty", short, |ui| {
             specimen(
@@ -595,7 +601,7 @@ fn open_lists(ui: &mut egui::Ui, th: &Theme) {
             },
         );
     });
-    let mid = CELL_H_MID.value();
+    let mid = CELL_H_MID;
     grid_row(ui, gap, |ui| {
         cell(
             ui,
