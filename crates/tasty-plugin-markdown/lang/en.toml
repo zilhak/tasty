@@ -46,7 +46,8 @@ disconnected = "The connection to the remote host was lost — this document is 
 placeholder = "Path to markdown file"
 no_recent = "No recent files"
 
-# 주소 띠 버튼 tooltip·aria-label 과 원격 직접 이동 실패 행. 디자인 갤러리 Markdown 주소 띠의 문구다.
+# 주소 띠 버튼 tooltip·aria-label, 원격 직접 이동의 실패 종류별 행과 대기 행. 디자인 갤러리 Markdown 주소 띠의 문구다.
+# {reason} 은 원격이 보낸 영어 사유 원문이며 번역하지 않는다.
 [markdown.address]
 go = "Go"
 open = "Open a file…"
@@ -54,9 +55,14 @@ open_remote = "Open a remote file…"
 reload = "Reload"
 stale = "The remote file changed — reload"
 disconnected = "Disconnected from the remote"
+waiting = "Still waiting for the remote…"
 
 [markdown.address.error]
 not_found = "Can't open {path} on the remote: file not found."
+rejected = "Can't open {path} on the remote: {reason}"
+connection_lost = "Connection lost before the remote answered. Reconnect and try again."
+cancelled = "Didn't open {path}: the remote connection changed. Try again."
+internal = "Couldn't send the request to open {path}. Try again."
 
 [markdown.find]
 placeholder = "Find in document"

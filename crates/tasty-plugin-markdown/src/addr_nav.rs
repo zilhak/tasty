@@ -10,22 +10,27 @@ use crate::{MarkdownPlugin, MdDoc, RemoteRequester, render};
 /// 원격 주소창 이동의 최종 결과를 워커에 돌려주는 자기 호출 메서드. 외부 호출자는 쓸 수 없다.
 pub(crate) const ADDR_RESULT_METHOD: &str = "markdown.address_result";
 
-/// 원격 주소창 이동의 `run.result` 를 묻는 첫 간격·최대 간격·상한. 간격은 두 배씩 늘린다.
-/// host 의 slow_loop 탐지는 같은 run 을 5분에 20번 물으면 사용자에게 경고하므로, 상한까지 기다려도
-/// 그 수에 닿지 않게 한다([`poll_delays`] 시험).
+/// 원격 주소창 이동의 `run.result` 를 묻는 첫 간격·최대 간격과 대기 행을 보이기까지의 시간.
+/// 간격은 두 배씩 늘린다. host 의 slow_loop 탐지는 같은 run 을 5분에 20번 물으면 사용자에게 경고하므로,
+/// 어느 5분 구간에서도 그 수에 닿지 않게 한다([`poll_delays`] 시험).
 const ADDR_RESULT_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 const ADDR_RESULT_POLL_MAX: std::time::Duration = std::time::Duration::from_secs(3);
-const ADDR_RESULT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+pub(crate) const ADDR_WAITING_AFTER: std::time::Duration =
+    std::time::Duration::from_millis(render::ADDR_WAITING_AFTER_MS);
+/// 대기 행을 보인 뒤에도 늦은 결과를 반영하려고 이 간격으로 계속 묻는다. 시간 상한은 두지 않는다.
+/// run 이 끝나거나(연결이 끝나면 host 가 `unknown` 으로 끝낸다) host 가 그 run 을 더 모르면 그친다.
+const ADDR_RESULT_LATE_POLL: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// `run.result` 를 다시 묻기 전 기다릴 간격들. 합이 상한을 넘기 전까지다.
+/// `run.result` 를 다시 묻기 전 기다릴 간격들. 대기 행 시점까지는 짧게, 그 뒤로는 길게 묻는다. 끝이 없다.
 pub(crate) fn poll_delays() -> impl Iterator<Item = std::time::Duration> {
     let mut next = ADDR_RESULT_POLL;
     let mut total = std::time::Duration::ZERO;
     std::iter::from_fn(move || {
-        if total >= ADDR_RESULT_DEADLINE {
-            return None;
-        }
-        let d = next;
+        let d = if total >= ADDR_WAITING_AFTER {
+            ADDR_RESULT_LATE_POLL
+        } else {
+            next
+        };
         total += d;
         next = (next * 2).min(ADDR_RESULT_POLL_MAX);
         Some(d)
@@ -33,43 +38,59 @@ pub(crate) fn poll_delays() -> impl Iterator<Item = std::time::Duration> {
 }
 
 /// 원격 주소창 이동의 최종 결과(`run.result`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AddrOutcome {
     Succeeded,
     Failed(render::AddrFailureKind),
 }
 
 impl AddrOutcome {
-    pub(crate) fn as_wire(self) -> &'static str {
+    /// 자기 호출에 싣는 (결과, 원격 사유). 사유는 원격 거절에만 있다.
+    pub(crate) fn as_wire(&self) -> (&'static str, Option<&str>) {
+        use render::AddrFailureKind as K;
         match self {
-            AddrOutcome::Succeeded => "succeeded",
-            AddrOutcome::Failed(render::AddrFailureKind::NotFound) => "not_found",
-            AddrOutcome::Failed(render::AddrFailureKind::Other) => "failed",
+            AddrOutcome::Succeeded => ("succeeded", None),
+            AddrOutcome::Failed(K::NotFound) => ("not_found", None),
+            AddrOutcome::Failed(K::Rejected(reason)) => ("rejected", Some(reason)),
+            AddrOutcome::Failed(K::ConnectionLost) => ("connection_lost", None),
+            AddrOutcome::Failed(K::Cancelled) => ("cancelled", None),
+            AddrOutcome::Failed(K::Internal) => ("internal", None),
         }
     }
 
-    pub(crate) fn from_wire(s: &str) -> Option<Self> {
-        match s {
-            "succeeded" => Some(AddrOutcome::Succeeded),
-            "not_found" => Some(AddrOutcome::Failed(render::AddrFailureKind::NotFound)),
-            "failed" => Some(AddrOutcome::Failed(render::AddrFailureKind::Other)),
-            _ => None,
-        }
+    pub(crate) fn from_wire(s: &str, reason: Option<&str>) -> Option<Self> {
+        use render::AddrFailureKind as K;
+        Some(match s {
+            "succeeded" => AddrOutcome::Succeeded,
+            "not_found" => AddrOutcome::Failed(K::NotFound),
+            "rejected" => AddrOutcome::Failed(K::rejected(reason.unwrap_or_default())),
+            "connection_lost" => AddrOutcome::Failed(K::ConnectionLost),
+            "cancelled" => AddrOutcome::Failed(K::Cancelled),
+            "internal" => AddrOutcome::Failed(K::Internal),
+            _ => return None,
+        })
     }
 }
 
-/// `run.result` 응답을 분류한다. 끝나지 않았으면 None이다. 원격에 파일이 없다는 실패만 `reason_code`
-/// `not_found` 로 구분되고, 나머지 실패와 취소는 모두 Other다(문구가 정해진 것은 not_found 뿐이다).
+/// `run.result` 응답을 분류한다. 끝나지 않았으면 None이다. 파일 없음은 `reason_code` 로만 정하고
+/// 결과 문장을 해석하지 않는다. 원격이 사유를 주고 거절했으면 그 사유 원문(`remote_reason`)을,
+/// 결과 전에 연결이 끝났으면(`unknown`) 연결 끊김을, 보내기 전에 취소됐으면 취소를 고른다.
+/// 그 밖의 실패는 요청이 원격에 닿지 않은 내부 실패다.
 pub(crate) fn classify_navigate_run(v: &Value) -> Option<AddrOutcome> {
+    use render::AddrFailureKind as K;
     if v.get("done").and_then(Value::as_bool) != Some(true) {
         return None;
     }
+    let remote_reason = v.get("remote_reason").and_then(Value::as_str);
     Some(match v.get("state").and_then(Value::as_str) {
         Some("succeeded") => AddrOutcome::Succeeded,
         Some("failed") if v.get("reason_code").and_then(Value::as_str) == Some("not_found") => {
-            AddrOutcome::Failed(render::AddrFailureKind::NotFound)
+            AddrOutcome::Failed(K::NotFound)
         }
-        _ => AddrOutcome::Failed(render::AddrFailureKind::Other),
+        Some("failed") => AddrOutcome::Failed(K::rejected(remote_reason.unwrap_or_default())),
+        Some("unknown") => AddrOutcome::Failed(K::ConnectionLost),
+        Some("cancelled") => AddrOutcome::Failed(K::Cancelled),
+        _ => AddrOutcome::Failed(K::Internal),
     })
 }
 
@@ -121,8 +142,9 @@ pub(crate) fn nav_action(intent: render::NavIntent, doc: Option<&MdDoc>) -> NavA
     }
 }
 
-/// 원격 주소창 이동의 `run.result` 를 기다려 결과를 워커에 자기 호출로 돌려준다. 상한까지 끝나지 않으면
-/// 원격이 아직 처리 중일 수 있으므로 실패로 바꾸지 않고 기록만 남긴다.
+/// 원격 주소창 이동의 `run.result` 를 기다려 결과를 워커에 자기 호출로 돌려준다. 대기 행을 보인
+/// 뒤에도 늦은 결과를 반영하려고 run 이 끝날 때까지 묻는다. 결과를 알 수 없게 되면 실패로 바꾸지 않고
+/// 기록만 남긴다.
 pub(crate) fn spawn_addr_watch(
     host: HostHandle,
     sid: u32,
@@ -137,11 +159,13 @@ pub(crate) fn spawn_addr_watch(
             let Some(outcome) = wait_navigate_run(&host, sid, run) else {
                 return;
             };
+            let (wire, reason) = outcome.as_wire();
             let params = json!({
                 "surface_id": sid,
                 "ticket": ticket,
                 "path": typed,
-                "outcome": outcome.as_wire(),
+                "outcome": wire,
+                "reason": reason,
                 "browse": browse,
             });
             if let Err(e) = host.self_invoke(ADDR_RESULT_METHOD, params) {
@@ -155,27 +179,32 @@ pub(crate) fn spawn_addr_watch(
     }
 }
 
-/// `run.result` 를 끝날 때까지 묻는다. 조회가 실패하면 Other 실패, 상한을 넘기면 None이다.
+/// `run.result` 를 끝날 때까지 묻는다. 첫 조회가 실패하면 host 가 요청을 받지 못한 내부 실패다.
+/// 진행 중이라는 답을 받은 뒤의 조회 실패는 host 가 그 run 을 더 모르는 것이라(오래된 run 정리)
+/// 결과를 알 수 없어 None 이다.
 fn wait_navigate_run(host: &HostHandle, sid: u32, run: u64) -> Option<AddrOutcome> {
     let mut delays = poll_delays();
+    let mut seen = false;
     loop {
         match host.call("run.result", json!({ "run": run })) {
             Ok(v) => {
                 if let Some(outcome) = classify_navigate_run(&v) {
                     return Some(outcome);
                 }
+                seen = true;
+            }
+            Err(e) if seen => {
+                tracing::warn!(
+                    "markdown surface {sid}: run.result {run} is no longer known — the result cannot be shown: {e}"
+                );
+                return None;
             }
             Err(e) => {
                 tracing::warn!("markdown surface {sid}: run.result {run} failed: {e}");
-                return Some(AddrOutcome::Failed(render::AddrFailureKind::Other));
+                return Some(AddrOutcome::Failed(render::AddrFailureKind::Internal));
             }
         }
-        let Some(delay) = delays.next() else {
-            tracing::warn!(
-                "markdown surface {sid}: remote navigate run {run} did not finish within {ADDR_RESULT_DEADLINE:?}"
-            );
-            return None;
-        };
+        let delay = delays.next().unwrap_or(ADDR_RESULT_LATE_POLL);
         std::thread::sleep(delay);
     }
 }
@@ -183,6 +212,7 @@ fn wait_navigate_run(host: &HostHandle, sid: u32, run: u64) -> Option<AddrOutcom
 impl MarkdownPlugin {
     /// [`ADDR_RESULT_METHOD`] 자기 호출. 닫혔거나 바뀐 문서, 더 새 이동이 있는 문서면 버린다.
     pub(crate) fn on_addr_result(&mut self, params: &Value) {
+        let reason = params.get("reason").and_then(Value::as_str);
         let parsed = (
             params.get("surface_id").and_then(Value::as_u64),
             params.get("ticket").and_then(Value::as_u64),
@@ -190,7 +220,7 @@ impl MarkdownPlugin {
             params
                 .get("outcome")
                 .and_then(Value::as_str)
-                .and_then(AddrOutcome::from_wire),
+                .and_then(|o| AddrOutcome::from_wire(o, reason)),
         );
         let (Some(sid), Some(ticket), Some(path), Some(outcome)) = parsed else {
             tracing::warn!("markdown: malformed {ADDR_RESULT_METHOD} params: {params}");
@@ -216,14 +246,55 @@ impl MarkdownPlugin {
         if doc.remote.as_ref().map(|r| r.addr_ticket) != Some(ticket) {
             return;
         }
+        let succeeded = outcome == AddrOutcome::Succeeded;
         let redraw = match (browse, outcome) {
             (true, AddrOutcome::Failed(_)) => false,
-            _ => doc.apply_addr_outcome(ticket, typed, outcome),
+            (_, outcome) => doc.apply_addr_outcome(ticket, typed, outcome),
         };
-        if outcome == AddrOutcome::Succeeded {
+        if succeeded {
             self.request_remote_content(sid, RemoteRequester::User);
         } else if redraw {
             self.reload_webview(sid);
+        }
+    }
+
+    /// 원격 주소창 직접 이동을 보냈다. 결과가 오기 전에 문서를 다시 그려도 입력값과 대기 행을 잇는다.
+    pub(crate) fn begin_addr_waiting(&mut self, sid: u32, ticket: u64, typed: &str) {
+        if let Some(remote) = self.docs.get_mut(&sid).and_then(|d| d.remote.as_mut()) {
+            remote.addr_waiting = Some(AddrWaiting {
+                ticket,
+                typed: typed.to_string(),
+                since: std::time::Instant::now(),
+            });
+        }
+    }
+}
+
+impl crate::RemoteDoc {
+    /// 페이지가 오류 행이나 대기 행을 지웠다(다음 입력·Esc). 보관한 실패와 대기 상태를 버린다.
+    /// 순번은 그대로라 늦게 온 결과는 계속 반영한다.
+    pub(crate) fn dismiss_addr(&mut self) {
+        self.addr_failure = None;
+        self.addr_waiting = None;
+    }
+}
+
+/// 원격 주소창 직접 이동이 결과를 기다리는 중이다. 페이지가 [`ADDR_WAITING_AFTER`] 뒤 대기 행을 스스로
+/// 띄우므로, plugin 은 그사이 문서를 다시 그릴 때만 이 값으로 입력값과 남은 시간을 넘긴다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AddrWaiting {
+    pub(crate) ticket: u64,
+    pub(crate) typed: String,
+    pub(crate) since: std::time::Instant,
+}
+
+impl AddrWaiting {
+    /// 다시 그릴 문서에 실을 대기 상태. 대기 행까지 남은 시간이 0이면 행을 바로 그린다.
+    pub(crate) fn view(&self) -> render::AddrWaitingView {
+        let left = ADDR_WAITING_AFTER.saturating_sub(self.since.elapsed());
+        render::AddrWaitingView {
+            typed: self.typed.clone(),
+            after_ms: u64::try_from(left.as_millis()).unwrap_or(u64::MAX),
         }
     }
 }

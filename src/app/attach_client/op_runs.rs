@@ -79,8 +79,9 @@ pub(crate) fn succeeded(
     }
 }
 
-/// 원격 실패. 원격이 준 사유를 그대로 남긴다. 원격에 파일이 없다는 거절이면 호출자가 문구 없이
-/// 구분할 수 있도록 `reason_code: "not_found"` 를 함께 남긴다.
+/// 원격 실패. 원격이 준 사유를 결과 문장과 `remote_reason` 에 그대로 남긴다. 호출자는 결과 문장을
+/// 해석하지 않고 사유 원문을 보일 수 있다. 원격에 파일이 없다는 거절이면 문구 없이 구분할 수 있도록
+/// `reason_code: "not_found"` 를 함께 남긴다.
 pub(crate) fn failed(epoch: &ConnectionEpoch, op: u64, reason: Option<&str>) {
     let mut watches = watches();
     if let Some(index) = watches
@@ -101,13 +102,13 @@ pub(crate) fn failed(epoch: &ConnectionEpoch, op: u64, reason: Option<&str>) {
 }
 
 fn failure_extra(reason: Option<&str>) -> Value {
-    match reason {
-        Some(reason)
-            if reason.starts_with(tasty_ipc::stream::STRUCTURAL_REASON_PATH_NOT_FOUND_PREFIX) =>
-        {
-            json!({ "reason_code": "not_found" })
-        }
-        _ => Value::Null,
+    let Some(reason) = reason.filter(|r| !r.is_empty()) else {
+        return Value::Null;
+    };
+    if reason.starts_with(tasty_ipc::stream::STRUCTURAL_REASON_PATH_NOT_FOUND_PREFIX) {
+        json!({ "reason_code": "not_found", "remote_reason": reason })
+    } else {
+        json!({ "remote_reason": reason })
     }
 }
 
@@ -220,8 +221,27 @@ mod tests {
             missing["result"],
             "the remote could not apply the change: path not found: /srv/a.md"
         );
+        assert_eq!(missing["remote_reason"], "path not found: /srv/a.md");
         let other = lookup(other_id, None).unwrap();
         assert_eq!(other["state"], "failed");
         assert!(other.get("reason_code").is_none(), "{other}");
+        assert_eq!(other["remote_reason"], "remote tab missing");
+    }
+
+    /// 사유 없는 원격 실패는 `remote_reason` 을 싣지 않는다. 호출자는 이를 사유를 보일 수 없는 실패로 본다.
+    #[test]
+    fn a_remote_refusal_without_a_reason_carries_no_remote_reason() {
+        let live = epoch();
+        let (bare_id, bare) = run();
+        let (empty_id, empty) = run();
+        watch(live.clone(), 1, bare);
+        watch(live.clone(), 2, empty);
+        failed(&live, 1, None);
+        failed(&live, 2, Some(""));
+        for id in [bare_id, empty_id] {
+            let ended = lookup(id, None).unwrap();
+            assert_eq!(ended["state"], "failed");
+            assert!(ended.get("remote_reason").is_none(), "{ended}");
+        }
     }
 }

@@ -24,9 +24,11 @@ use tasty_type_appearance::theme::Theme;
 mod address;
 mod callout;
 mod find_keys;
+mod nav_script;
 #[cfg(all(test, target_os = "linux"))]
 mod webview_layout_tests;
 use callout::{CALLOUT_KINDS, alert_css, alert_icon_data_uri, find_callout_kind};
+use nav_script::nav_script;
 
 /// 내부 이동 URL의 마커. 생성 코드와 parse_nav_fragment에서 함께 사용한다.
 pub const NAV_FRAGMENT_MARKER: &str = "tasty-nav:";
@@ -101,7 +103,7 @@ pub struct DocumentInput<'a> {
     pub find_bindings: &'a [String],
 }
 
-pub use address::{AddrFailure, AddrFailureKind};
+pub use address::{ADDR_WAITING_AFTER_MS, AddrFailure, AddrFailureKind, AddrWaitingView};
 
 /// attach mirror 문서의 표시 상태.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -115,6 +117,8 @@ pub struct RemoteView {
     pub disconnected: bool,
     /// 주소창에서 원격 경로로 직접 이동하다 실패했다. 입력값을 다시 보이고 띠를 오류 상태로 그린다.
     pub addr_failure: Option<AddrFailure>,
+    /// 주소창 직접 이동이 결과를 기다린다. 입력값을 다시 보이고 때가 되면 대기 행을 그린다.
+    pub addr_waiting: Option<AddrWaitingView>,
 }
 
 /// Build the complete, self-contained HTML5 document for the markdown webview surface.
@@ -236,7 +240,11 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         find_bar = find_bar_html(tr),
         toc_html = toc_html,
         body_html = body_html,
-        script = nav_script(file_path, address::bar_height_px(theme, false)),
+        script = nav_script(
+            file_path,
+            address::bar_height_px(theme, false),
+            address::bar_height_px(theme, true),
+        ),
         find_script = find_in_page_script(tr, find_bindings),
         highlight = highlight,
         mermaid = mermaid,
@@ -1683,104 +1691,6 @@ fn heading_sizes_px(theme: &Theme) -> [f32; 6] {
     ]
 }
 
-// ── address bar (HTML/CSS/minimal trusted JS — design decision: Option 1) ────
-
-/// 플러그인이 본문 정리 후 추가하는 이동 스크립트.
-/// 주소 입력과 새로고침은 #tasty-nav 마커로 호스트에 알린다. 주소 이동에는 nonce 를 붙여 같은 경로를
-/// 다시 보내도 hash 가 바뀌게 한다. 원격 문서의 Esc 는 입력을 지금 원격 경로로 되돌린다.
-/// 오류 행은 다음 입력이나 Esc 에서 지우고 플러그인에 알려 보관한 실패도 버리게 한다.
-/// 문서 안 링크는 기본 이동을 취소하고 해당 ID로 스크롤한다. 같은 링크를 다시
-/// 클릭해도 동작하며, ID는 원문과 percent-decoding한 값을 차례로 찾는다.
-///
-/// 파일 경로별 스크롤 위치를 sessionStorage에 저장하고 복원을 시도한다.
-/// load_html 이후 저장소가 유지되는지는 세 WebView 백엔드 모두에서 검증하지 않았다.
-/// 저장소를 사용할 수 없으면 복원하지 않는다.
-fn nav_script(file_path: &str, bar_h: f32) -> String {
-    format!(
-        r#"(function(){{
-var bar=document.getElementById('tasty-addr-bar');
-var field=document.getElementById('tasty-addr-field');
-var i=document.getElementById('tasty-addr-input');
-var g=document.getElementById('tasty-addr-go');
-var shown=document.querySelector('.tasty-addr-display bdi');
-var remote=!!bar&&bar.getAttribute('data-kind')==='remote';
-var current={file_path_json};
-function nonce(){{return String(Date.now());}}
-function sync(){{if(shown&&i)shown.textContent=i.value;}}
-function dismiss(){{
-var row=document.getElementById('tasty-addr-error');
-if(!row&&!(field&&field.classList.contains('tasty-addr-invalid')))return;
-if(row)row.parentNode.removeChild(row);
-if(field)field.classList.remove('tasty-addr-invalid');
-if(i)i.removeAttribute('aria-invalid');
-document.documentElement.style.setProperty('--md-addr-bar-h','{bar_h}px');
-location.hash='tasty-nav:addr-dismiss:'+nonce();
-}}
-function go(){{
-if(!i||i.readOnly)return;
-var v=i.value.trim();
-if(!v)return;
-location.hash='tasty-nav:addr:'+nonce()+':'+encodeURIComponent(v);
-}}
-if(g)g.addEventListener('click',go);
-var f=document.getElementById('tasty-browse');
-if(f)f.addEventListener('click',function(){{location.hash='tasty-nav:browse:'+nonce();}});
-var r=document.getElementById('tasty-refresh');
-if(r)r.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+nonce();}});
-var o=document.querySelector('.tasty-state-action');
-if(o)o.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+nonce();}});
-if(i){{
-i.addEventListener('input',function(){{sync();dismiss();}});
-i.addEventListener('keydown',function(e){{
-if(e.isComposing)return;
-if(e.key==='Enter'){{go();return;}}
-if(e.key==='Escape'&&remote&&!i.readOnly){{i.value=current;sync();dismiss();i.blur();}}
-}});
-}}
-var toc=document.getElementById('tasty-toc');
-var tocToggle=document.getElementById('tasty-toc-toggle');
-if(toc&&tocToggle){{
-tocToggle.addEventListener('click',function(){{
-var collapsed=toc.classList.toggle('tasty-toc-collapsed');
-tocToggle.setAttribute('aria-expanded',collapsed?'false':'true');
-}});
-}}
-document.addEventListener('click',function(e){{
-var t=e.target;
-if(!t||!t.closest)return;
-var a=t.closest('a[href]');
-if(!a)return;
-var href=a.getAttribute('href')||'';
-if(href.charAt(0)!=='#')return;
-if(href.indexOf('#'+{marker_json})===0)return;
-e.preventDefault();
-var id=href.slice(1);
-if(!id){{window.scrollTo(0,0);return;}}
-var el=document.getElementById(id);
-if(!el){{try{{el=document.getElementById(decodeURIComponent(id));}}catch(err){{}}}}
-if(!el)return;
-el.scrollIntoView({{block:'start'}});
-}});
-var scrollKey='tasty-md-scroll:'+{file_path_json};
-try{{
-var saved=sessionStorage.getItem(scrollKey);
-if(saved)window.scrollTo(0,parseInt(saved,10)||0);
-}}catch(e){{}}
-var saveTimer=null;
-window.addEventListener('scroll',function(){{
-if(saveTimer)clearTimeout(saveTimer);
-saveTimer=setTimeout(function(){{
-try{{sessionStorage.setItem(scrollKey,String(window.scrollY));}}catch(e){{}}
-}},150);
-}});
-}})();"#,
-        marker_json = serde_json::to_string(NAV_FRAGMENT_MARKER)
-            .unwrap_or_else(|_| format!("\"{NAV_FRAGMENT_MARKER}\"")),
-        file_path_json = serde_json::to_string(file_path).unwrap_or_else(|_| "\"\"".to_string()),
-        bar_h = bar_h,
-    )
-}
-
 // ── find-in-page (trusted JS, TreeWalker-based text-node highlight) ─────────────
 
 /// 본문 검색 UI. 정규식 입력이 아닌 일반 텍스트 검색을 제공한다.
@@ -2498,13 +2408,40 @@ mod tests {
     /// 같은 경로를 다시 보내도 hash 가 바뀌도록 주소 이동에 nonce 를 붙이고, 원격 Esc 는 지금 경로로 되돌린다.
     #[test]
     fn address_script_adds_a_nonce_and_reverts_on_escape() {
-        let js = nav_script("/remote/notes.md", 41.0);
+        let js = nav_script("/remote/notes.md", 41.0, 61.0);
         assert!(js.contains("location.hash='tasty-nav:addr:'+nonce()+':'+encodeURIComponent(v);"));
         assert!(js.contains("var current=\"/remote/notes.md\";"));
         assert!(js.contains("e.key==='Escape'&&remote&&!i.readOnly){i.value=current;"));
         assert!(js.contains("location.hash='tasty-nav:addr-dismiss:'+nonce();"));
         assert!(js.contains("setProperty('--md-addr-bar-h','41px')"));
         assert!(js.contains("location.hash='tasty-nav:browse:'+nonce();"));
+    }
+
+    /// 원격 이동을 보낸 뒤 결과 없이 시간이 지나면 페이지가 대기 행을 보인다. 문서를 다시 싣지 않아 포커스를
+    /// 건드리지 않고, 다음 입력·Esc 는 대기 행과 타이머를 지우고 plugin 에 알린다.
+    #[test]
+    fn address_script_shows_the_waiting_row_in_place_and_clears_it_like_an_error() {
+        let js = nav_script("/remote/notes.md", 41.0, 61.0);
+        assert!(js.contains(&format!(
+            "if(remote&&waitRow)wait({ADDR_WAITING_AFTER_MS});"
+        )));
+        assert!(js.contains("waitRow.hidden=false;"));
+        assert!(js.contains("setProperty('--md-addr-bar-h','61px')"));
+        assert!(js.contains("if(wt){clearTimeout(wt);wt=0;}"));
+        assert!(js.contains("if(waitRow)waitRow.hidden=true;"));
+        assert!(js.contains("parseInt(bar.getAttribute('data-wait-ms')||'',10)"));
+        // 대기 행은 입력칸 포커스·IME 조합을 바꾸는 호출을 하지 않는다.
+        let waiting = js
+            .split("function waiting(){")
+            .nth(1)
+            .unwrap()
+            .split("}\nfunction wait(")
+            .next()
+            .unwrap();
+        for forbidden in ["focus(", "blur(", "location.", ".value="] {
+            assert!(!waiting.contains(forbidden), "{forbidden} in {waiting}");
+        }
+        assert_eq!(ADDR_WAITING_AFTER_MS, 30_000);
     }
 
     #[test]
@@ -3455,25 +3392,194 @@ mod tests {
         )));
     }
 
-    /// not_found 가 아닌 실패는 없는 파일 문구로 바꾸지 않는다. 입력값과 오류 테두리만 남는다.
+    /// 실제 영어 번역표로 원격 문서를 그린다. 실패 문장의 자리 값까지 본다.
+    fn remote_document_en(view: RemoteView) -> String {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("lang"), "en");
+        render_document(DocumentInput {
+            find_bindings: &[],
+            theme: &theme,
+            tr: &tr,
+            file_path: "/remote/notes.md",
+            large_deferred: false,
+            source: "# Remote",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+            remote: Some(view),
+        })
+    }
+
+    fn failed(kind: AddrFailureKind) -> RemoteView {
+        RemoteView {
+            addr_failure: Some(AddrFailure {
+                typed: "/remote/b.md".into(),
+                kind,
+            }),
+            ..RemoteView::default()
+        }
+    }
+
+    /// 오류 행 문장 텍스트(태그 제외)와 툴팁.
+    fn error_row(html: &str) -> (String, String) {
+        let row = html
+            .split(r#"<div id="tasty-addr-error" role="alert">"#)
+            .nth(1)
+            .and_then(|s| s.split("</div>").next())
+            .expect("error row");
+        let tip = row
+            .split(r#"title=""#)
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("tip")
+            .to_string();
+        let mut text = String::new();
+        // 자른 지점은 오류 문장 span 의 여는 태그 안이다.
+        let mut in_tag = true;
+        for c in row
+            .split_once(r#"class="tasty-addr-error-text""#)
+            .unwrap()
+            .1
+            .chars()
+        {
+            match c {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                c if !in_tag => text.push(c),
+                _ => {}
+            }
+        }
+        (text, tip)
+    }
+
+    /// 실패 종류마다 자기 문장을 쓴다. 어느 종류도 파일 없음 문장을 빌리지 않고, 입력값과 오류 테두리는 같다.
     #[test]
-    fn other_remote_failures_never_claim_the_file_is_missing() {
-        let html = remote_document(
-            "# Remote",
-            None,
-            RemoteView {
-                addr_failure: Some(AddrFailure {
-                    typed: "/remote/b.md".into(),
-                    kind: AddrFailureKind::Other,
-                }),
-                ..RemoteView::default()
-            },
-        );
-        assert!(addr_input_tag(&html).contains(r#"value="/remote/b.md""#));
-        assert!(html.contains(r#"class="tasty-addr-invalid""#));
-        assert!(!html.contains("markdown.address.error.not_found"));
-        assert!(!html.contains(r#"id="tasty-addr-error""#));
-        assert!(html.starts_with("<!doctype html><html><head>"));
+    fn each_remote_failure_kind_has_its_own_sentence() {
+        let cases = [
+            (
+                AddrFailureKind::Rejected("permission denied".into()),
+                "Can't open /remote/b.md on the remote: permission denied",
+            ),
+            (
+                AddrFailureKind::ConnectionLost,
+                "Connection lost before the remote answered. Reconnect and try again.",
+            ),
+            (
+                AddrFailureKind::Cancelled,
+                "Didn't open /remote/b.md: the remote connection changed. Try again.",
+            ),
+            (
+                AddrFailureKind::Internal,
+                "Couldn't send the request to open /remote/b.md. Try again.",
+            ),
+            (
+                AddrFailureKind::NotFound,
+                "Can't open /remote/b.md on the remote: file not found.",
+            ),
+        ];
+        for (kind, sentence) in cases {
+            let html = remote_document_en(failed(kind.clone()));
+            assert!(addr_input_tag(&html).contains(r#"value="/remote/b.md""#));
+            assert!(html.contains(r#"<div id="tasty-addr-field" class="tasty-addr-invalid">"#));
+            let (text, tip) = error_row(&html);
+            assert_eq!(text, sentence, "{kind:?}");
+            assert_eq!(
+                tip.replace("&#39;", "'"),
+                sentence,
+                "{kind:?}: the tooltip carries the full sentence"
+            );
+            if kind != AddrFailureKind::NotFound {
+                assert!(!text.contains("file not found"), "{kind:?}");
+            }
+            assert!(html.contains(r#"style="--md-addr-bar-h:"#), "{kind:?}");
+        }
+    }
+
+    /// 경로는 고정폭으로, 원격 사유는 번역하지 않은 영어 원문(lang=en)으로 문장에 넣는다.
+    #[test]
+    fn a_refusal_shows_the_remote_reason_verbatim_and_the_path_in_mono() {
+        let html = remote_document_en(failed(AddrFailureKind::Rejected(
+            "not a <markdown> file".into(),
+        )));
+        assert!(html.contains(r#"<span class="tasty-addr-path">/remote/b.md</span>"#));
+        assert!(html.contains(r#"<span lang="en">not a &lt;markdown&gt; file</span>"#));
+        assert!(html.contains(".tasty-addr-path{font-family:"));
+        // 빈 사유는 보일 것이 없어 내부 실패 문장이다.
+        assert_eq!(AddrFailureKind::rejected("  "), AddrFailureKind::Internal);
+    }
+
+    /// 대기 행은 숨겨 둔다. 결과를 기다리는 중에 다시 그리면 입력값을 잇고, 남은 시간을 페이지에 넘기거나
+    /// 시간이 지났으면 행을 바로 보인다. 대기 행은 오류가 아니다.
+    #[test]
+    fn a_pending_remote_entry_keeps_the_typed_path_and_the_waiting_row() {
+        let idle = remote_document_en(RemoteView::default());
+        assert!(idle.contains(r#"<div id="tasty-addr-waiting" role="status" hidden>"#));
+        assert!(idle.contains("Still waiting for the remote…"));
+        assert!(!idle.contains(r#"data-wait-ms=""#));
+
+        let soon = remote_document_en(RemoteView {
+            addr_waiting: Some(AddrWaitingView {
+                typed: "/remote/slow.md".into(),
+                after_ms: 12_000,
+            }),
+            ..RemoteView::default()
+        });
+        assert!(addr_input_tag(&soon).contains(r#"value="/remote/slow.md""#));
+        assert!(soon.contains(r#"data-wait-ms="12000""#));
+        assert!(soon.contains(r#"role="status" hidden>"#));
+        assert!(soon.starts_with("<!doctype html><html><head>"));
+
+        let late = remote_document_en(RemoteView {
+            addr_waiting: Some(AddrWaitingView {
+                typed: "/remote/slow.md".into(),
+                after_ms: 0,
+            }),
+            ..RemoteView::default()
+        });
+        assert!(late.contains(
+            r#"<div id="tasty-addr-waiting" role="status"><span class="tasty-addr-spinner">"#
+        ));
+        assert!(late.contains(r#"<div id="tasty-addr-field" class="tasty-addr-pending">"#));
+        assert!(!late.contains(r#"aria-invalid="true""#));
+        assert!(!late.contains(r#"role="alert""#));
+        assert!(late.contains(r#"style="--md-addr-bar-h:"#));
+
+        // 결과 전에 연결이 끊긴 실패는 끊긴 문서에도 오류 행과 그 높이를 남긴다.
+        let lost = remote_document_en(RemoteView {
+            disconnected: true,
+            ..failed(AddrFailureKind::ConnectionLost)
+        });
+        assert!(lost.contains(r#"<div id="tasty-addr-error" role="alert">"#));
+        assert!(lost.contains(r#"style="--md-addr-bar-h:"#));
+        // 로컬 문서와 끊긴 문서에는 대기 행이 없다.
+        let off = remote_document_en(RemoteView {
+            disconnected: true,
+            ..RemoteView::default()
+        });
+        assert!(!off.contains(r#"id="tasty-addr-waiting""#));
+    }
+
+    /// 대기 행 문구는 `md-address-pending-fg`, 쉬는 경로는 `md-address-value-fg` 로 칠한다.
+    #[test]
+    fn the_address_value_and_waiting_text_use_their_own_tokens() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let css = address::addr_css(&theme);
+        assert!(css.contains(&format!(
+            ".tasty-addr-waiting-text{{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:{}px;color:{};}}",
+            theme.font_size_caption.value(),
+            theme.md_address_pending_fg().to_hex()
+        )));
+        assert!(css.contains(&format!(
+            "pointer-events:none;color:{};",
+            theme.md_address_value_fg().to_hex()
+        )));
+        assert!(css.contains(&format!(
+            "animation:tasty-addr-spin {}ms linear infinite;",
+            theme.spinner_duration().0
+        )));
+        assert!(css.contains(
+            "@media (prefers-reduced-motion:reduce){.tasty-addr-spinner svg{display:none;}"
+        ));
     }
 
     /// 연결이 끊긴 문서는 필드를 읽기 전용으로, 버튼을 모두 비활성으로 두고 각 tooltip 을 끊김 문구로 바꾼다.
@@ -3624,7 +3730,7 @@ mod tests {
 
     #[test]
     fn refresh_script_uses_a_nonce_so_repeat_clicks_still_navigate() {
-        let script = nav_script("/remote/notes.md", 41.0);
+        let script = nav_script("/remote/notes.md", 41.0, 61.0);
         assert!(script.contains("tasty-nav:refresh:'+nonce()"));
         assert!(script.contains("return String(Date.now());"));
     }
@@ -3640,7 +3746,7 @@ mod tests {
 
     #[test]
     fn nav_script_keys_scroll_restore_by_file_path_and_json_escapes_it() {
-        let script = nav_script("/a/weird \"path\".md", 41.0);
+        let script = nav_script("/a/weird \"path\".md", 41.0, 61.0);
         assert!(script.contains("sessionStorage"));
         assert!(script.contains("tasty-md-scroll:"));
         assert!(script.contains("scrollTo"));
@@ -4816,7 +4922,7 @@ Outro\n";
     /// (`#tasty-nav:`)은 건드리지 않는다.
     #[test]
     fn nav_script_scrolls_anchors_and_leaves_the_host_signal_channel_alone() {
-        let js = nav_script("/a/doc.md", 41.0);
+        let js = nav_script("/a/doc.md", 41.0, 61.0);
         assert!(js.contains("scrollIntoView"), "got: {js}");
         assert!(js.contains("preventDefault"), "got: {js}");
         assert!(

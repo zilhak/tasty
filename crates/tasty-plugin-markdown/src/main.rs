@@ -185,6 +185,8 @@ struct RemoteDoc {
     addr_ticket: u64,
     /// 마지막 직접 이동이 실패했다. 입력값을 다시 보이며 다음 입력·Esc·성공에서 지운다.
     addr_failure: Option<render::AddrFailure>,
+    /// 마지막 직접 이동이 결과를 기다린다. 결과·다음 입력·Esc 에서 지운다.
+    addr_waiting: Option<addr_nav::AddrWaiting>,
 }
 
 /// [`MdDoc::on_remote_changed`] 의 결정 — 변경 신호 하나에 plugin 이 할 일.
@@ -292,6 +294,7 @@ impl MdDoc {
 
     /// 원격 주소창 이동의 결과를 반영한다. 다시 그려야 하면 true.
     /// 마지막 이동이 아닌 결과는 버린다. 성공하면 보관한 실패를 지운다(문서는 host 가 바꾼다).
+    /// 대기 중이던 이동이면 페이지의 대기 행 타이머를 끝내도록 항상 다시 그린다.
     fn apply_addr_outcome(&mut self, ticket: u64, typed: String, outcome: AddrOutcome) -> bool {
         let Some(remote) = self.remote.as_mut() else {
             return false;
@@ -299,12 +302,13 @@ impl MdDoc {
         if remote.addr_ticket != ticket {
             return false;
         }
+        let was_waiting = remote.addr_waiting.take().is_some();
         let next = match outcome {
             AddrOutcome::Succeeded => None,
             AddrOutcome::Failed(kind) => Some(render::AddrFailure { typed, kind }),
         };
         if remote.addr_failure == next {
-            return false;
+            return was_waiting;
         }
         remote.addr_failure = next;
         true
@@ -338,6 +342,7 @@ impl MdDoc {
             stale: r.stale,
             disconnected: r.disconnected,
             addr_failure: r.addr_failure.clone(),
+            addr_waiting: r.addr_waiting.as_ref().map(addr_nav::AddrWaiting::view),
         })
     }
 
@@ -678,7 +683,7 @@ impl Plugin for MarkdownPlugin {
             }
             NavAction::DismissAddr => {
                 if let Some(remote) = self.docs.get_mut(&sid).and_then(|d| d.remote.as_mut()) {
-                    remote.addr_failure = None;
+                    remote.dismiss_addr();
                 }
             }
         }
@@ -715,12 +720,22 @@ impl MarkdownPlugin {
         remote.addr_ticket += 1;
         let ticket = remote.addr_ticket;
         let typed = path.trim().to_string();
+        // 새 이동이 앞선 실패를 대신한다. 결과가 앞선 실패와 같아도 다시 그려 대기 행 타이머를 끝낸다.
+        remote.addr_failure = None;
+        remote.addr_waiting = None;
         match host.call("markdown.navigate", params) {
             Ok(v) => match v.get("run").and_then(Value::as_u64) {
-                Some(run) => spawn_addr_watch(host.clone(), sid, ticket, typed, run, false),
-                None => tracing::warn!(
-                    "markdown surface {sid}: markdown.navigate gave no run — the result cannot be shown"
-                ),
+                Some(run) => {
+                    self.begin_addr_waiting(sid, ticket, &typed);
+                    spawn_addr_watch(host.clone(), sid, ticket, typed, run, false);
+                }
+                None => {
+                    tracing::warn!(
+                        "markdown surface {sid}: markdown.navigate gave no run — the result cannot be shown"
+                    );
+                    // 페이지가 띄울 대기 행 타이머를 끝낸다. 결과를 알 수 없어 대기를 보이지 않는다.
+                    self.reload_webview(sid);
+                }
             },
             Err(e) => {
                 tracing::warn!("markdown surface {sid}: remote navigate was refused: {e}");
@@ -728,7 +743,7 @@ impl MarkdownPlugin {
                     sid,
                     ticket,
                     typed,
-                    AddrOutcome::Failed(render::AddrFailureKind::Other),
+                    AddrOutcome::Failed(render::AddrFailureKind::Internal),
                     false,
                 );
             }

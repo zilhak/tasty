@@ -118,6 +118,7 @@ impl MarkdownPlugin {
             return;
         };
         remote.addr_ticket += 1;
+        remote.addr_waiting = None;
         if let Some(run) = run {
             crate::addr_nav::spawn_addr_watch(
                 host,

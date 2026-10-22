@@ -356,6 +356,7 @@ fn remote_result_applies_only_to_the_pending_request() {
             stale: false,
             disconnected: false,
             addr_failure: None,
+            addr_waiting: None,
         })
     );
 }
@@ -645,10 +646,12 @@ fn a_mirror_address_entry_navigates_the_same_surface_on_the_remote() {
     );
 }
 
-/// `run.result` 의 실패는 reason_code 가 not_found 일 때만 파일 없음이다. 진행 중이면 결과가 아니다.
+/// `run.result` 의 실패 종류는 상태와 `reason_code`·`remote_reason` 필드로만 정한다. 결과 문장을 해석하지
+/// 않으므로 문장에 "not found" 가 있어도 파일 없음이 아니다. 진행 중이면 결과가 아니다.
 #[test]
 fn navigate_run_results_are_classified_without_guessing_not_found() {
-    use render::AddrFailureKind::{NotFound, Other};
+    use render::AddrFailureKind::{Cancelled, ConnectionLost, Internal, NotFound, Rejected};
+    let failed = |kind| Some(AddrOutcome::Failed(kind));
     assert_eq!(
         classify_navigate_run(&json!({ "done": false, "state": "running" })),
         None
@@ -660,32 +663,52 @@ fn navigate_run_results_are_classified_without_guessing_not_found() {
     assert_eq!(
         classify_navigate_run(
             &json!({ "done": true, "state": "failed", "reason_code": "not_found",
+                     "remote_reason": "path not found: /x",
                      "result": "the remote could not apply the change: path not found: /x" })
         ),
-        Some(AddrOutcome::Failed(NotFound))
+        failed(NotFound)
     );
-    // 문구에 "not found" 가 있어도 코드가 없으면 파일 없음으로 단정하지 않는다.
     assert_eq!(
         classify_navigate_run(
-            &json!({ "done": true, "state": "failed", "result": "remote tab not found" })
+            &json!({ "done": true, "state": "failed", "remote_reason": "remote tab not found",
+                     "result": "the remote could not apply the change: remote tab not found" })
         ),
-        Some(AddrOutcome::Failed(Other))
+        failed(Rejected("remote tab not found".into()))
     );
+    // 원격 사유가 없는 실패(보내기 전 host 실패 포함)는 내부 실패다.
     assert_eq!(
-        classify_navigate_run(&json!({ "done": true, "state": "cancelled" })),
-        Some(AddrOutcome::Failed(Other))
+        classify_navigate_run(&json!({ "done": true, "state": "failed",
+                     "result": "the remote change was not sent because the journal stopped: x" })),
+        failed(Internal)
     );
     assert_eq!(
         classify_navigate_run(&json!({ "done": true, "state": "unknown" })),
-        Some(AddrOutcome::Failed(Other))
+        failed(ConnectionLost)
+    );
+    assert_eq!(
+        classify_navigate_run(&json!({ "done": true, "state": "cancelled" })),
+        failed(Cancelled)
+    );
+    assert_eq!(
+        classify_navigate_run(&json!({ "done": true, "state": "partial" })),
+        failed(Internal)
     );
     for outcome in [
         AddrOutcome::Succeeded,
         AddrOutcome::Failed(NotFound),
-        AddrOutcome::Failed(Other),
+        AddrOutcome::Failed(Rejected("permission denied".into())),
+        AddrOutcome::Failed(ConnectionLost),
+        AddrOutcome::Failed(Cancelled),
+        AddrOutcome::Failed(Internal),
     ] {
-        assert_eq!(AddrOutcome::from_wire(outcome.as_wire()), Some(outcome));
+        let (wire, reason) = outcome.as_wire();
+        assert_eq!(AddrOutcome::from_wire(wire, reason), Some(outcome.clone()));
     }
+    // 사유 없이 온 거절은 내부 실패 문장이 된다.
+    assert_eq!(
+        AddrOutcome::from_wire("rejected", None),
+        Some(AddrOutcome::Failed(Internal))
+    );
 }
 
 /// 실패는 입력값과 함께 보관하고, 더 새 이동이 있으면 옛 결과를 버린다. 성공과 dismiss 는 실패를 지운다.
@@ -696,8 +719,8 @@ fn address_failures_follow_the_latest_entry_only() {
     let doc = p.docs.get_mut(&1).unwrap();
     doc.remote.as_mut().unwrap().addr_ticket = 2;
     let not_found = AddrOutcome::Failed(render::AddrFailureKind::NotFound);
-    assert!(!doc.apply_addr_outcome(1, "/remote/old.md".into(), not_found));
-    assert!(doc.apply_addr_outcome(2, "/remote/typo.md".into(), not_found));
+    assert!(!doc.apply_addr_outcome(1, "/remote/old.md".into(), not_found.clone()));
+    assert!(doc.apply_addr_outcome(2, "/remote/typo.md".into(), not_found.clone()));
     assert_eq!(
         doc.remote_view().unwrap().addr_failure,
         Some(render::AddrFailure {
@@ -705,11 +728,11 @@ fn address_failures_follow_the_latest_entry_only() {
             kind: render::AddrFailureKind::NotFound,
         })
     );
-    assert!(!doc.apply_addr_outcome(2, "/remote/typo.md".into(), not_found));
+    assert!(!doc.apply_addr_outcome(2, "/remote/typo.md".into(), not_found.clone()));
     assert!(doc.apply_addr_outcome(2, "/remote/typo.md".into(), AddrOutcome::Succeeded));
     assert_eq!(doc.remote_view().unwrap().addr_failure, None);
 
-    assert!(doc.apply_addr_outcome(2, "/remote/typo.md".into(), not_found));
+    assert!(doc.apply_addr_outcome(2, "/remote/typo.md".into(), not_found.clone()));
     assert_eq!(
         nav_action(render::NavIntent::AddrDismiss, p.docs.get(&1)),
         NavAction::DismissAddr
@@ -717,6 +740,45 @@ fn address_failures_follow_the_latest_entry_only() {
     // 로컬 문서에는 실패 상태가 없다.
     let mut local = MdDoc::new(None);
     assert!(!local.apply_addr_outcome(0, "/x.md".into(), not_found));
+}
+
+/// 결과를 기다리는 이동은 다시 그려도 입력값과 대기 상태를 잇는다. 결과가 오면 앞선 실패와 같아도 다시
+/// 그려 페이지의 대기 행 타이머를 끝내고, 다음 입력·Esc(dismiss)는 대기 상태를 버린다.
+#[test]
+fn a_waiting_remote_entry_survives_a_redraw_until_its_result() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    mirror_create(&mut p, 1, "/remote/a.md");
+    p.docs
+        .get_mut(&1)
+        .unwrap()
+        .remote
+        .as_mut()
+        .unwrap()
+        .addr_ticket = 4;
+    p.begin_addr_waiting(1, 4, "/remote/slow.md");
+    let view = p.docs[&1].remote_view().unwrap().addr_waiting.unwrap();
+    assert_eq!(view.typed, "/remote/slow.md");
+    assert!(view.after_ms > 0 && view.after_ms <= render::ADDR_WAITING_AFTER_MS);
+
+    let doc = p.docs.get_mut(&1).unwrap();
+    let lost = AddrOutcome::Failed(render::AddrFailureKind::ConnectionLost);
+    // 옛 이동의 결과는 대기 상태를 건드리지 않는다.
+    assert!(!doc.apply_addr_outcome(3, "/remote/old.md".into(), lost.clone()));
+    assert!(doc.remote.as_ref().unwrap().addr_waiting.is_some());
+    doc.remote.as_mut().unwrap().addr_failure = Some(render::AddrFailure {
+        typed: "/remote/slow.md".into(),
+        kind: render::AddrFailureKind::ConnectionLost,
+    });
+    assert!(doc.apply_addr_outcome(4, "/remote/slow.md".into(), lost));
+    assert_eq!(doc.remote_view().unwrap().addr_waiting, None);
+
+    p.begin_addr_waiting(1, 4, "/remote/slow.md");
+    let intent = render::NavIntent::AddrDismiss;
+    assert_eq!(nav_action(intent, p.docs.get(&1)), NavAction::DismissAddr);
+    let remote = p.docs.get_mut(&1).unwrap().remote.as_mut().unwrap();
+    remote.dismiss_addr();
+    assert_eq!(remote.addr_waiting, None);
+    assert_eq!(remote.addr_ticket, 4, "a late result still applies");
 }
 
 /// 결과 회신 자기 호출이 그 surface 의 마지막 이동을 실패로 표시한다.
@@ -1249,18 +1311,42 @@ fn a_failed_folder_button_navigate_leaves_the_address_bar_alone() {
     assert!(p.docs[&1].remote.as_ref().unwrap().addr_failure.is_some());
 }
 
-/// 원격 이동 결과를 상한까지 기다려도 같은 run 을 host slow_loop 경고 수(5분에 20번)만큼 묻지 않는다.
+/// 원격 이동 결과를 기다리는 동안 어느 5분 구간에서도 같은 run 을 host slow_loop 경고 수(20번)만큼
+/// 묻지 않는다. 대기 행 시점(30초)까지는 짧게 묻고, 그 뒤에도 늦은 결과를 받으려고 시간 상한 없이 묻는다.
 #[test]
 fn waiting_for_a_remote_navigate_stays_under_the_slow_loop_warning() {
-    let delays: Vec<_> = addr_nav::poll_delays().collect();
-    let total: std::time::Duration = delays.iter().sum();
-    // 첫 조회 1번 + 간격마다 1번.
-    assert!(delays.len() + 1 < 20, "{} queries", delays.len() + 1);
-    assert!(total >= std::time::Duration::from_secs(30), "{total:?}");
-    assert_eq!(delays[0], std::time::Duration::from_millis(200));
+    use std::time::Duration;
+    let hour = Duration::from_secs(3600);
+    // 첫 조회는 0초, 그 뒤 간격마다 1번. 한 시간 동안을 본다.
+    let mut at = vec![Duration::ZERO];
+    for d in addr_nav::poll_delays() {
+        let next = *at.last().unwrap() + d;
+        if next > hour {
+            break;
+        }
+        at.push(next);
+    }
+    let window = Duration::from_secs(300);
+    let busiest = at
+        .iter()
+        .map(|start| {
+            at.iter()
+                .filter(|t| **t >= *start && **t < *start + window)
+                .count()
+        })
+        .max()
+        .unwrap();
+    assert!(busiest < 20, "{busiest} queries in one 5 minute window");
+    assert_eq!(at[1], Duration::from_millis(200));
+    let waiting = Duration::from_millis(render::ADDR_WAITING_AFTER_MS);
+    for pair in at.windows(2) {
+        let limit = if pair[0] < waiting { 3 } else { 60 };
+        assert!(pair[1] - pair[0] <= Duration::from_secs(limit), "{pair:?}");
+    }
+    // 대기 행을 보인 뒤에도 끝까지 묻는다(늦은 결과 반영).
     assert!(
-        delays
-            .iter()
-            .all(|d| *d <= std::time::Duration::from_secs(3))
+        *at.last().unwrap() + Duration::from_secs(60) > hour,
+        "{:?}",
+        at.last()
     );
 }

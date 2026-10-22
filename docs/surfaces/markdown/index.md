@@ -86,8 +86,8 @@
   - **상대 경로**(`docs/index.md`, `../sibling.md`)는 **현재 마크다운 파일의 폴더(base_dir) 기준**으로 절대화(프로세스 cwd 아님). 절대 경로는 그대로. `javascript:` 는 무조건 무시(sanitize 와 별개의 2차 방어).
   - **외부 URL**(`http(s)://`·`mailto:`·`data:`)은 host `webview.open_external {surface_id,url}` 로 보내고, host 가 OS 기본 핸들러로 연다. **이 plugin 은 OS 열기를 직접 하지 않는다**(OS 열기 크레이트를 링크하지 않는다) — host 한 자리로 모아야 debug 스위치(`TASTY_DEBUG_OS_OPEN_LOG`, [유닛 테스트 격리 — 사용자 환경을 읽지 않는다](../../dev-guide/unit-test-isolation.md))가 이 열기도 기록한다. host 는 호출 plugin 이 `surface_id` 의 소유자이고 URL 에 스킴이 있으며 `javascript:` 가 아닐 때만 연다. 클릭하면 확인 없이 기본 브라우저가 열리는 사용자 동작은 그대로다(아래 기능 계약).
   - 파일 링크는 host `file_handler.dispatch` 로 보낸다(Explorer "파일 열기" 와 동일한 `DispatchFile` 경로 — 그 surface 가 속한 **Pane 의 새 탭**). 통지받은 navigation 의 URL 을 `user_navigation_url` 로 그대로 되대고(`file_link_params`), host 가 직접 본 두 사실(엔진의 사용자 제스처 보고 · 그 문서 페이지를 이 plugin 이 썼다)로 그 호출을 사용자 행동으로 판정하면 새 탭이 선택된다 — Linux 는 실측, Windows 는 컴파일만 재어졌다(재는 법: Windows 에서 문서 안의 파일 링크를 누르고 새 탭이 선택되는지 `tab.list` 로 본다). macOS 는 엔진이 그 값을 주지 않아 새 탭이 뒤에 붙기만 한다. plugin 은 판정하지 않는다([파일 핸들러 (File handler)](../../features/file-handler/index.md)).
-- **주소창** — 문서 안의 HTML 띠로 만든다(`render/address.rs`, 디자인 갤러리 `markdown-address-bar`·`markdown-address-folder`·`markdown-address-narrow`). 로컬 문서는 [Folder · 필드 · Go], mirror 문서는 [Folder · Reload · 필드 · Go]다.
-  - 버튼은 IconButton ghost sm 과 같은 상자(`icon-button-size-sm`, 글리프 `icon-size-md`)이고 글리프는 CSS mask 라 hover·disabled 글자색을 따른다. 필드는 PathField 상자(`input-height`)에 kind 글리프(로컬 file, 원격 remote)와 고정폭 경로를 둔다. 포커스가 없을 때는 경로를 앞쪽부터 말줄임해 파일 이름이 보인다. 치수·색은 모두 `md-address-*`·`input-*`·`icon-button-*` 토큰에서 읽는다.
+- **주소창** — 문서 안의 HTML 띠로 만든다(`render/address.rs`, 디자인 갤러리 `markdown-address-bar`·`markdown-address-folder`·`markdown-address-failures`·`markdown-address-narrow`). 로컬 문서는 [Folder · 필드 · Go], mirror 문서는 [Folder · Reload · 필드 · Go]다.
+  - 버튼은 IconButton ghost sm 과 같은 상자(`icon-button-size-sm`, 글리프 `icon-size-md`)이고 글리프는 CSS mask 라 hover·disabled 글자색을 따른다. 필드는 PathField 상자(`input-height`)에 kind 글리프(로컬 file, 원격 remote)와 고정폭 경로를 둔다. 포커스가 없을 때는 경로를 `md-address-value-fg` 로 그리고 앞쪽부터 말줄임해 파일 이름이 보인다. 치수·색은 모두 `md-address-*`·`input-*`·`icon-button-*` 토큰에서 읽는다.
   - 로컬 필드에만 이 머신의 최근 경로를 native `<datalist>`(`tasty-addr-recent`)로 붙인다. 원격 경로 칸에 로컬 경로를 제안하면 안 되므로 mirror 문서에는 내지 않는다.
   - 페이지 폭에서 필드가 `md-address-go-hide-below` 아래로 줄어들 때 Go 만 숨긴다(media query, 경계 폭은 토큰으로 계산). Enter 는 그대로 이동하고 Folder·Reload 는 숨지 않는다. 필드는 `md-address-field-min-width` 아래로 줄지 않으며 더 좁으면 띠 끝이 잘린다.
   - **폴더 버튼**(`#tasty-browse`, 글리프 folderOpen, 툴팁 `markdown.address.open` / 원격 `markdown.address.open_remote`)은 `#tasty-nav:browse:<nonce>` 를 보낸다. plugin 은 팝업 없이 `file_picker.trigger {filters:["md","markdown"], start_dir, origin_surface_id, user_navigation_url}` 로 host 피커를 연다(`browse.rs`).
@@ -106,12 +106,22 @@
   재연결 뒤 변경 신호를 받으면 원문을 다시 요청한다.
   - **새로고침**: 필드 왼쪽의 Reload(`#tasty-refresh`)는 `#tasty-nav:refresh:<nonce>` 로 nav-fragment 채널을 타고, plugin 은 그것을 원문 재요청으로 옮긴다(nonce 는 같은 hash 재대입이 navigation 을 안 일으켜 두 번째 클릭이 사라지는 것을 막는다). `markdown.reload` 도 mirror 문서에는 같은 재요청이다.
   - **주소창 이동**: 필드는 편집할 수 있고 Enter·Go 가 같은 surface 를 그 원격 경로의 문서로 바꾼다. plugin 은 `markdown.navigate {surface_id, path}` 를 보내고 host 는 로컬 존재 확인 없이 원격에 변환을 전달한다. 원격이 그 경로에 파일이 없으면 변환하지 않고 거절한다(아래 실패 표시). Esc 는 입력을 지금 원격 경로로 되돌린다. 입력은 그대로 보내며 상대경로는 원격 쪽 해석에 맡긴다.
-  - **주소창 이동 실패**: 이 요청에는 사용자 출처 증명을 싣지 않아 host 는 실패 toast 를 띄우지 않는다. 대신 plugin 이 접수 응답의 `run` 을 별도 스레드에서 `run.result` 로 최대 30초 기다렸다가(간격은 200ms 에서 두 배씩 늘려 3초에서 멈춘다. host 의 slow_loop 탐지가 같은 run 을 5분에 20번 물으면 사용자에게 경고하므로 상한까지 기다려도 그 수에 닿지 않게 한다) `markdown.address_result` 자기 호출로 결과를 워커에 돌려준다(외부 호출자는 이 메서드를 쓸 수 없다). 결과는 같은 surface 의 마지막 이동일 때만 반영한다.
-    - 원격이 파일 없음으로 거절하면(`run.result` 의 `reason_code: "not_found"`) 입력한 경로를 필드에 남기고 오류 테두리와 띠 아래 오류 행(`role="alert"`, `markdown.address.error.not_found`)을 그린다. 오류 행만큼 `--md-addr-bar-h` 도 늘려 검색 바와 앵커 여백이 따라간다.
-    - 그 밖의 실패(연결 종료, 원격 거절 등)는 없는 파일 문구로 바꾸지 않는다. 입력값과 오류 테두리만 남고 오류 행은 없다. 이 경우의 문구는 디자인이 정하지 않았다.
-    - 오류 상태는 다음 입력·Esc 에서 페이지가 지우고 `#tasty-nav:addr-dismiss:<nonce>` 로 plugin 에 알려 보관한 실패도 버린다. 이동에 성공하면 보관한 실패를 지우고 원문을 다시 요청해, 회신의 `file` 과 원문으로 새 문서를 그린다. 30초 안에 끝나지 않으면 원격이 아직 처리 중일 수 있어 실패로 바꾸지 않는다.
+  - **주소창 이동 실패**: 이 요청에는 사용자 출처 증명을 싣지 않아 host 는 실패 toast 를 띄우지 않는다. 대신 plugin 이 접수 응답의 `run` 을 별도 스레드에서 `run.result` 로 기다렸다가 `markdown.address_result` 자기 호출로 결과를 워커에 돌려준다(외부 호출자는 이 메서드를 쓸 수 없다). 묻는 간격은 200ms 에서 두 배씩 늘려 3초에서 멈추고, 30초가 지나면 늦은 결과를 받으려고 시간 상한 없이 60초마다 묻는다. run 이 끝나면(보낸 뒤 연결이 끝나면 host 가 `unknown` 으로 끝낸다) 그치고, 진행 중이라는 답을 받은 뒤 host 가 그 run 을 더 모르게 되면(오래된 run 정리) 결과를 알 수 없어 기록만 남기고 그친다. host 의 slow_loop 탐지가 같은 run 을 5분에 20번 물으면 사용자에게 경고하므로 어느 5분 구간에서도 그 수에 닿지 않게 한다. 결과는 같은 surface 의 마지막 이동일 때만 반영한다.
+    - 실패하면 입력한 경로를 필드에 남기고 오류 테두리와 띠 아래 오류 행(`role="alert"`)을 그린다. 행 모양은 하나이고 실패 종류마다 문장이 다르다. 문장 안의 경로는 고정폭이며, 행이 넘치면 끝을 줄이고 툴팁에 전체 문장을 둔다. 오류 행만큼 `--md-addr-bar-h` 도 늘려 검색 바와 앵커 여백이 따라간다.
+    - 종류는 `run.result` 의 상태와 필드로만 정하고 결과 문장을 해석하지 않는다.
+
+      | `run.result` | 종류 | 문구 키 |
+      |---|---|---|
+      | `failed` + `reason_code: "not_found"` | 원격에 파일 없음 | `markdown.address.error.not_found` |
+      | `failed` + `remote_reason` | 원격 거절. 사유 원문을 번역하지 않고 `lang="en"` 으로 붙인다 | `markdown.address.error.rejected` |
+      | `unknown` | 결과 전에 연결 끊김. 적용 여부를 말하지 않는다 | `markdown.address.error.connection_lost` |
+      | `cancelled` | 보내기 전에 연결·대응이 바뀌어 취소 | `markdown.address.error.cancelled` |
+      | 그 밖의 `failed`(사유 없음·보내기 전 host 실패), `run.result` 조회 실패, `markdown.navigate` 거절 | 요청이 원격에 닿지 않은 내부 실패 | `markdown.address.error.internal` |
+
+    - 30초 안에 결과로 문서가 다시 실리지 않으면 페이지가 숨겨 둔 대기 행(`role="status"`, 공용 Spinner 모양 + `markdown.address.waiting`, 글자 `md-address-pending-fg`)을 오류 행 자리에 보이고 필드를 편집 모양으로 둔다. 페이지 안에서 행을 보일 뿐 문서를 다시 싣지 않으므로 입력 포커스와 IME 조합을 건드리지 않는다. 대기 중에 다른 이유로 문서를 다시 그리면 plugin 이 입력값과 남은 시간(`data-wait-ms`)을 넘겨 대기를 잇는다. 대기 행은 오류가 아니며 원격이 늦게 답하면 그 결과를 그대로 반영한다.
+    - 오류 행과 대기 행은 다음 입력·Esc 에서 페이지가 지우고 `#tasty-nav:addr-dismiss:<nonce>` 로 plugin 에 알려 보관한 실패와 대기 상태도 버린다. 순번은 그대로라 그 뒤의 늦은 결과도 반영된다. 이동에 성공하면 보관한 실패를 지우고 원문을 다시 요청해, 회신의 `file` 과 원문으로 새 문서를 그린다. 새 이동은 앞선 실패를 대신하며 결과가 앞선 실패와 같아도 다시 그린다.
   - **링크**: 파일 링크는 원격 호스트의 경로라 이 머신에서 열지 않고, 외부 URL 만 연다.
-  - **연결 끊김**: host 가 끊김을 알리면(`request_id: 0`) 필드는 읽기 전용 상자(`input-readonly-*`, 경로 `state-disabled-fg`)가 되고 Folder·Reload·Go 는 모두 disabled, 각 툴팁은 `markdown.address.disconnected` 다. 재연결 뒤 원문을 다시 받으면 풀린다.
+  - **연결 끊김**: host 가 끊김을 알리면(`request_id: 0`) 필드는 읽기 전용 상자(`input-readonly-*`, 경로 `state-disabled-fg`)가 되고 Folder·Reload·Go 는 모두 disabled, 각 툴팁은 `markdown.address.disconnected` 다. 주소창 이동이 결과 전에 끊겨 실패했으면 그 오류 행(`error.connection_lost`)은 끊긴 동안에도 남고, 대기 행은 보이지 않는다. 재연결 뒤 원문을 다시 받으면 풀린다.
   - **변경 신호**: `markdown_mirror.changed {surface_id}` 이벤트를 받으면 원문을 다시 받지 않고 Reload 의 `data-stale` 만 `true` 로 바꿔 `md-address-stale-bg`·`md-address-stale-fg` 로 채운다(띠에서 유일하게 채운 요소, 툴팁 `markdown.address.stale`). 최신 원문을 받으면 풀린다. 이미 stale 이면 문서를 다시 싣지 않는다.
   - **테마 변경**은 받아 둔 원문으로 다시 그릴 뿐 요청하지 않는다. mirror 문서는 host 의 파일 핸들러를 거치지 않으므로 최근목록에도 기록되지 않는다.
 - **최근목록 조회** — host 의 generic **`recent.query {kind}`** IPC 가 그 kind 의 최근 연 파일을 **최신순 최대 10개** 반환한다(`{recent:[{path,file_name}]}`). markdown plugin 은 `kind:"markdown"` 을 채워 호출해 위 주소창 `<datalist>` 를 채운다. **읽기 전용** — host의 모든 창이 공유하는 `MainViewState.recent_files` 캐시를 필터 없이 조회할 뿐 사용자 상태를 바꾸지 않는다([포커스 정책](../../design/policies/focus.md)). **`surface.read`** 권한. recent 기록 대상 여부는 매니페스트 `records_recent` capability 로 판정. mirror surface 를 변환하거나 mirror pane 에 새 탭을 열 때는 경로가 원격 파일이라 기록하지 않는다. 새 탭은 탭이 만들어질 pane 이 mirror workspace 에 속하는지로 판정하며, 구조 변경을 원격에 forward 하는 판정과 같은 기준이다.
