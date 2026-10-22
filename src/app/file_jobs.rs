@@ -3,5 +3,7 @@
 pub(crate) mod job;
 pub(crate) mod named;
 pub(crate) mod ops;
+// Properties 권한 편집(GUI popup)만 쓴다. 원격 explorer 요청에는 권한 변경이 없어 헤드리스 빌드에서 뺀다.
+#[cfg(feature = "gui")]
 pub(crate) mod permissions;
 pub(crate) mod remote;
