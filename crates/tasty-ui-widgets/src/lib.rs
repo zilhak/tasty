@@ -163,7 +163,8 @@ pub use explorer_ops::{
     op_queue_width, op_status_line, paint_drop_target, result_card,
 };
 pub use explorer_perm_box::{
-    PermBoxClick, PermBoxProps, PermBoxText, PermBoxValue, perm_box, perm_readout,
+    PermBoxClick, PermBoxProps, PermBoxText, PermBoxValue, PermLayout, perm_box, perm_layout,
+    perm_readout,
 };
 pub use explorer_select::{paint_cursor_ring, paint_marquee};
 pub use file_drop_overlay::file_drop_overlay;
@@ -314,7 +315,7 @@ pub use toast::{
     fade_alpha as toast_fade_alpha, layout_card as toast_layout_card,
     stack_anchor as toast_stack_anchor,
 };
-pub use toggle::{checkbox, checkbox_width, switch, switch_with_label_color};
+pub use toggle::{checkbox, checkbox_width, checkbox_wrapping, switch, switch_with_label_color};
 pub use tooltip::{Tooltip, TooltipPlacement, tooltip_hover_delay_elapsed};
 pub use tree_row::{
     tree_row, tree_row_icon_center, tree_row_matching, tree_row_with_tail, tree_row_with_tail_fg,

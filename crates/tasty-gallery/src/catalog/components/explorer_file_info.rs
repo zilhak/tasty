@@ -240,6 +240,8 @@ pub(super) struct Extras<'a> {
     pub(super) footer: Option<bool>,
     /// 라벨·버튼 문구의 언어(ko·ja). None 이면 영어다.
     pub(super) lang: Option<&'static str>,
+    /// 카드 안쪽 폭. None 이면 `explorer-props-width` 다. 좁은 칸에 줄어든 팝업을 보일 때 쓴다.
+    pub(super) width: Option<LogicalPx>,
 }
 
 /// `lang` 이 있으면 그 언어, 없으면 영어 문자열.
@@ -261,7 +263,7 @@ pub(super) fn props_card_full(
     extras: Extras<'_>,
 ) {
     let pad_x = theme.explorer_props_padding_x().value();
-    let width = theme.explorer_props_width();
+    let width = extras.width.unwrap_or(theme.explorer_props_width());
     kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
         kit::region(
             ui,
@@ -341,17 +343,23 @@ pub(super) fn props_card_full(
             },
         );
         if let Some(enabled) = extras.footer {
-            open_footer(ui, theme, enabled, extras.lang);
+            open_footer(ui, theme, width, enabled, extras.lang);
         }
     });
 }
 
 /// 본체 `footer_row`: 위 1px `explorer-props-footer-border` · padding space-sm × padding-x · 오른쪽 정렬
 /// secondary sm "Open". 끊긴 링크는 끈 채 "Target not found" 툴팁을 단다.
-fn open_footer(ui: &mut egui::Ui, theme: &Theme, enabled: bool, lang: Option<&str>) {
+fn open_footer(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: LogicalPx,
+    enabled: bool,
+    lang: Option<&str>,
+) {
     let rule = ui.cursor().top();
     let left = ui.min_rect().left();
-    let right = left + theme.explorer_props_width().value();
+    let right = left + width.value();
     ui.painter().hline(
         left..=right,
         rule + theme.border_width.value() / 2.0,

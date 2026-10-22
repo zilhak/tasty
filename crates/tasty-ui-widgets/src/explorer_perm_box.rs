@@ -2,6 +2,8 @@
 //! 시안 `PermEditor`: Permissions 행 아래 내용 폭(라벨 열 포함) 전체를 쓰는 상자로, Unix 는
 //! 소유자·그룹·기타 × 읽기·쓰기·실행 3×3 체크박스와 바뀔 모드, Windows 는 "읽기 전용" 하나다.
 //! 열 머리와 역할명은 `explorer-props-perm-cell-width` 칸 안에서 줄바꿈하고 말줄임하지 않는다.
+//! 상자는 받은 폭을 넘지 않는다. 좁은 explorer 칸에서는 상자 자신의 폭으로 격자·쌓기·목록 배치를
+//! 고른다([`perm_layout`]). 세 배치의 Tab 순서는 같다(소유자 R W X → 그룹 → 기타 → Cancel → Apply).
 //! 문구는 호출자가 번역해 넘기고, 상태(적용 중·실패)와 값의 소유도 호출자에게 있다.
 
 use tasty_type_appearance::theme::Theme;
@@ -9,7 +11,7 @@ use tasty_type_appearance::theme::Theme;
 use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
 use crate::spinner::Spinner;
-use crate::toggle::checkbox;
+use crate::toggle::checkbox_wrapping;
 
 /// 상자 문구. 모두 번역된 값이다.
 #[derive(Clone, Copy)]
@@ -53,8 +55,42 @@ pub enum PermBoxClick {
     Apply,
 }
 
+/// Unix 상자의 배치. 상자 바깥 폭(테두리 포함)으로 정한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermLayout {
+    /// 역할 열 + 읽기·쓰기·실행 열.
+    Grid,
+    /// 역할 열 없이 열 머리 아래 칸 3개. 역할명은 자기 칸 줄 위의 한 줄이다.
+    Stack,
+    /// 열 머리 없이 역할명 아래 라벨 붙은 체크박스 세 줄. 폭 하한이 없다.
+    List,
+}
+
+/// 상자 폭 `box_width` 에 맞는 배치. 경계는 `explorer-props-perm-grid-min-width`·`-stack-min-width` 다.
+/// 칸(explorer surface) 폭이 아니라 상자 폭과 비교한다.
+pub fn perm_layout(theme: &Theme, box_width: f32) -> PermLayout {
+    if box_width >= theme.explorer_props_perm_grid_min_width().value() {
+        PermLayout::Grid
+    } else if box_width >= theme.explorer_props_perm_stack_min_width().value() {
+        PermLayout::Stack
+    } else {
+        PermLayout::List
+    }
+}
+
+/// 상자 체크박스들의 기준 id. 같은 부모에 상자를 여럿 그려도 겹치지 않는다.
+fn perm_box_id(ui: &egui::Ui) -> egui::Id {
+    ui.next_auto_id().with("perm_box")
+}
+
 /// `rw-r--r-- · 644` 형태의 읽기 표시.
 pub fn perm_readout(bits: u32) -> String {
+    let (mode, octal) = readout_parts(bits);
+    format!("{mode} {octal}")
+}
+
+/// 읽기 표시의 두 덩어리. 좁으면 그 사이에서만 줄바꿈한다.
+fn readout_parts(bits: u32) -> (String, String) {
     let mut text = String::with_capacity(9);
     for shift in [6u32, 3, 0] {
         let triad = (bits >> shift) & 0o7;
@@ -62,10 +98,10 @@ pub fn perm_readout(bits: u32) -> String {
         text.push(if triad & 2 != 0 { 'w' } else { '-' });
         text.push(if triad & 1 != 0 { 'x' } else { '-' });
     }
-    format!("{text} · {:03o}", bits & 0o777)
+    (text, format!("· {:03o}", bits & 0o777))
 }
 
-/// 상자를 그린다. 호출자가 준 폭(Permissions 행의 내용 폭)을 모두 쓴다.
+/// 상자를 그린다. 호출자가 준 폭(Permissions 행의 내용 폭)을 모두 쓰고 넘지 않는다.
 pub fn perm_box(ui: &mut egui::Ui, theme: &Theme, props: PermBoxProps<'_>) -> PermBoxClick {
     let PermBoxProps {
         text,
@@ -77,6 +113,11 @@ pub fn perm_box(ui: &mut egui::Ui, theme: &Theme, props: PermBoxProps<'_>) -> Pe
     } = props;
     let gap = theme.spacing_sm.value();
     let mut click = PermBoxClick::None;
+    // Frame 크기는 테두리를 포함하므로 지금 남은 폭이 상자의 바깥 폭이다.
+    let layout = perm_layout(theme, ui.available_width());
+    // 배치가 바뀌어도 체크박스 id 가 같아야 포커스가 남는다. 상자 안의 중첩과 무관한 기준 id 를 쓴다.
+    // 부모의 다음 자동 id 는 상자마다 다르고, 상자 앞의 위젯이 같으면 프레임이 바뀌어도 같다.
+    let ids = perm_box_id(ui);
     ui.add_space(theme.spacing_xs.value());
     egui::Frame::new()
         .stroke(egui::Stroke::new(
@@ -90,19 +131,31 @@ pub fn perm_box(ui: &mut egui::Ui, theme: &Theme, props: PermBoxProps<'_>) -> Pe
             ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
             match value {
                 PermBoxValue::Mode(bits) => {
-                    grid(ui, theme, &text, bits, busy);
-                    ui.label(
-                        egui::RichText::new(perm_readout(*bits))
-                            .monospace()
-                            .size(theme.font_size_caption.value())
-                            .color(theme.text_secondary().to_egui()),
-                    );
+                    let cells = Cells {
+                        theme,
+                        text: &text,
+                        ids,
+                        busy,
+                    };
+                    match layout {
+                        PermLayout::Grid => cells.grid(ui, bits),
+                        PermLayout::Stack => cells.stack(ui, bits),
+                        PermLayout::List => cells.list(ui, bits),
+                    }
+                    readout(ui, theme, *bits);
                     if let Some(note) = note {
                         muted_line(ui, theme, note);
                     }
                 }
                 PermBoxValue::ReadOnly(read_only) => {
-                    checkbox(ui, theme, read_only, text.read_only, !busy);
+                    checkbox_wrapping(
+                        ui,
+                        theme,
+                        ids.with("read_only"),
+                        read_only,
+                        text.read_only,
+                        !busy,
+                    );
                     muted_line(ui, theme, text.windows_hint);
                 }
             }
@@ -134,15 +187,87 @@ fn cell_text(
     ui.fonts(|f| f.layout_job(job))
 }
 
-/// 역할 열 + 읽기·쓰기·실행 열. 칸은 왼쪽부터 붙여 놓는다.
-fn grid(ui: &mut egui::Ui, theme: &Theme, text: &PermBoxText<'_>, bits: &mut u32, busy: bool) {
-    let cell = theme.explorer_props_perm_cell_width().value();
-    let row_min = theme.explorer_props_row_min_height().value();
-    let check = theme.checkbox_size().value();
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(0.0, theme.spacing_xs.value());
-        // 열 머리: 가운데 정렬, 줄바꿈한 머리는 위로 자라도록 아래를 맞춘다.
-        let heads = text.heads.map(|h| {
+/// 체크박스 9개를 그리는 데 필요한 것. 세 배치가 같은 순서로 같은 id 의 체크박스를 만든다.
+struct Cells<'a> {
+    theme: &'a Theme,
+    text: &'a PermBoxText<'a>,
+    ids: egui::Id,
+    busy: bool,
+}
+
+impl Cells<'_> {
+    /// 역할 열 + 읽기·쓰기·실행 열. 칸은 왼쪽부터 붙여 놓는다.
+    fn grid(&self, ui: &mut egui::Ui, bits: &mut u32) {
+        let theme = self.theme;
+        let cell = theme.explorer_props_perm_cell_width().value();
+        let row_min = theme.explorer_props_row_min_height().value();
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, theme.spacing_xs.value());
+            self.heads(ui, cell);
+            for (r, (role, shift)) in self.text.roles.iter().zip([6u32, 3, 0]).enumerate() {
+                let name = self.role_name(ui, role, cell);
+                let h = name.size().y.max(row_min);
+                let (row, _) =
+                    ui.allocate_exact_size(egui::vec2(cell * 4.0, h), egui::Sense::hover());
+                let name_y = row.center().y - name.size().y / 2.0;
+                ui.painter().galley(
+                    egui::pos2(row.left(), name_y),
+                    name,
+                    egui::Color32::PLACEHOLDER,
+                );
+                self.cell_row(ui, row, row.left() + cell, r, shift, bits);
+            }
+        });
+    }
+
+    /// 역할 열 없이 열 머리 아래 칸 3개. 역할명은 상자 폭에서 줄바꿈해 칸 줄 위에 둔다.
+    fn stack(&self, ui: &mut egui::Ui, bits: &mut u32) {
+        let theme = self.theme;
+        let cell = theme.explorer_props_perm_cell_width().value();
+        let row_min = theme.explorer_props_row_min_height().value();
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, theme.spacing_xs.value());
+            self.heads(ui, 0.0);
+            for (r, (role, shift)) in self.text.roles.iter().zip([6u32, 3, 0]).enumerate() {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.explorer_props_perm_role_gap().value();
+                    self.role_line(ui, role);
+                    let (row, _) = ui
+                        .allocate_exact_size(egui::vec2(cell * 3.0, row_min), egui::Sense::hover());
+                    self.cell_row(ui, row, row.left(), r, shift, bits);
+                });
+            }
+        });
+    }
+
+    /// 열 머리 없이 역할명 다음에 라벨 붙은 체크박스를 한 줄씩. 글자는 어디서나 줄바꿈한다.
+    fn list(&self, ui: &mut egui::Ui, bits: &mut u32) {
+        let theme = self.theme;
+        let row_min = theme.explorer_props_row_min_height().value();
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            for (r, (role, shift)) in self.text.roles.iter().zip([6u32, 3, 0]).enumerate() {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.explorer_props_perm_role_gap().value();
+                    self.role_line(ui, role);
+                    for (c, bit) in [4u32, 2, 1].into_iter().enumerate() {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), row_min),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| self.bit(ui, r, c, bit << shift, self.text.heads[c], bits),
+                        );
+                    }
+                });
+            }
+        });
+    }
+
+    /// 읽기 · 쓰기 · 실행 열 머리. `left` 는 첫 칸 앞에 비울 폭(격자의 역할 열)이다.
+    /// 가운데 정렬하고, 줄바꿈한 머리는 위로 자라도록 아래를 맞춘다.
+    fn heads(&self, ui: &mut egui::Ui, left: f32) {
+        let theme = self.theme;
+        let cell = theme.explorer_props_perm_cell_width().value();
+        let heads = self.text.heads.map(|h| {
             cell_text(
                 ui,
                 theme,
@@ -153,41 +278,90 @@ fn grid(ui: &mut egui::Ui, theme: &Theme, text: &PermBoxText<'_>, bits: &mut u32
             )
         });
         let head_h = heads.iter().map(|g| g.size().y).fold(0.0, f32::max);
-        let (row, _) = ui.allocate_exact_size(egui::vec2(cell * 4.0, head_h), egui::Sense::hover());
+        let (row, _) =
+            ui.allocate_exact_size(egui::vec2(left + cell * 3.0, head_h), egui::Sense::hover());
         for (i, galley) in heads.into_iter().enumerate() {
-            let left = row.left() + cell * (i as f32 + 1.0);
+            let x = row.left() + left + cell * i as f32;
             // 가운데 정렬 galley 는 원점이 칸 가운데다.
-            let origin = egui::pos2(left + cell / 2.0, row.bottom() - galley.size().y);
+            let origin = egui::pos2(x + cell / 2.0, row.bottom() - galley.size().y);
             ui.painter()
                 .galley(origin, galley, egui::Color32::PLACEHOLDER);
         }
-        for (role, shift) in text.roles.iter().zip([6u32, 3, 0]) {
-            let name = cell_text(
-                ui,
-                theme,
-                role,
-                theme.explorer_props_value_fg().to_egui(),
-                cell,
-                egui::Align::LEFT,
+    }
+
+    fn role_name(&self, ui: &egui::Ui, role: &str, width: f32) -> std::sync::Arc<egui::Galley> {
+        cell_text(
+            ui,
+            self.theme,
+            role,
+            self.theme.explorer_props_value_fg().to_egui(),
+            width,
+            egui::Align::LEFT,
+        )
+    }
+
+    /// 상자 폭에서 어디서나 줄바꿈한 역할명 한 줄.
+    fn role_line(&self, ui: &mut egui::Ui, role: &str) {
+        let galley = self.role_name(ui, role, ui.available_width());
+        let (rect, _) = ui.allocate_exact_size(galley.size(), egui::Sense::hover());
+        ui.painter()
+            .galley(rect.min, galley, egui::Color32::PLACEHOLDER);
+    }
+
+    /// `row` 안에 `first` 부터 칸 3개를 두고 각 칸 가운데에 체크박스를 그린다.
+    fn cell_row(
+        &self,
+        ui: &mut egui::Ui,
+        row: egui::Rect,
+        first: f32,
+        r: usize,
+        shift: u32,
+        bits: &mut u32,
+    ) {
+        let cell = self.theme.explorer_props_perm_cell_width().value();
+        let check = self.theme.checkbox_size().value();
+        for (c, bit) in [4u32, 2, 1].into_iter().enumerate() {
+            let center = egui::pos2(first + cell * (c as f32 + 0.5), row.center().y);
+            let rect = egui::Rect::from_center_size(center, egui::vec2(check, check));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+            self.bit(&mut child, r, c, bit << shift, "", bits);
+        }
+    }
+
+    /// 비트 하나의 체크박스. id 는 역할·열로 정해 배치와 무관하다.
+    fn bit(&self, ui: &mut egui::Ui, r: usize, c: usize, mask: u32, label: &str, bits: &mut u32) {
+        let mut on = *bits & mask != 0;
+        if checkbox_wrapping(
+            ui,
+            self.theme,
+            self.ids.with((r, c)),
+            &mut on,
+            label,
+            !self.busy,
+        )
+        .changed()
+        {
+            *bits = if on { *bits | mask } else { *bits & !mask };
+        }
+    }
+}
+
+/// 모드와 `· 8진수` 사이에서만 줄바꿈하는 읽기 표시. 두 덩어리 사이는 mono 반 글자다.
+fn readout(ui: &mut egui::Ui, theme: &Theme, bits: u32) {
+    let font = egui::FontId::monospace(theme.font_size_caption.value());
+    let half = ui.fonts(|f| f.glyph_width(&font, '0')) / 2.0;
+    let (mode, octal) = readout_parts(bits);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(half, 0.0);
+        for part in [mode, octal] {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(part)
+                        .font(font.clone())
+                        .color(theme.text_secondary().to_egui()),
+                )
+                .extend(),
             );
-            let h = name.size().y.max(row_min);
-            let (row, _) = ui.allocate_exact_size(egui::vec2(cell * 4.0, h), egui::Sense::hover());
-            let name_y = row.center().y - name.size().y / 2.0;
-            ui.painter().galley(
-                egui::pos2(row.left(), name_y),
-                name,
-                egui::Color32::PLACEHOLDER,
-            );
-            for (i, bit) in [4u32, 2, 1].into_iter().enumerate() {
-                let mask = bit << shift;
-                let center = egui::pos2(row.left() + cell * (i as f32 + 1.5), row.center().y);
-                let rect = egui::Rect::from_center_size(center, egui::vec2(check, check));
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-                let mut on = *bits & mask != 0;
-                if checkbox(&mut child, theme, &mut on, "", !busy).changed() {
-                    *bits = if on { *bits | mask } else { *bits & !mask };
-                }
-            }
         }
     });
 }
@@ -213,10 +387,13 @@ fn failure_line(ui: &mut egui::Ui, theme: &Theme, title: &str, reason: &str) {
             let g = theme.icon_glyph_size_sm.value();
             let (r, _) = ui.allocate_exact_size(egui::vec2(g, g), egui::Sense::hover());
             tasty_icons::ALERT_CIRCLE.image(g, error).paint_at(ui, r);
-            ui.label(
-                egui::RichText::new(title)
-                    .size(theme.font_size_caption.value())
-                    .color(error),
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(title)
+                        .size(theme.font_size_caption.value())
+                        .color(error),
+                )
+                .wrap(),
             );
         });
         ui.add(
@@ -231,7 +408,8 @@ fn failure_line(ui: &mut egui::Ui, theme: &Theme, title: &str, reason: &str) {
     });
 }
 
-/// 오른쪽 정렬 Cancel(ghost sm) · Apply(primary sm). 적용 중이면 둘 다 잠그고 Apply 에 Spinner 를 단다.
+/// 오른쪽 정렬 Cancel(ghost sm) · Apply(primary sm). 한 줄에 들어가지 않으면 Apply 가 다음 줄로 내려간다.
+/// Tab 순서가 Cancel → Apply 가 되도록 왼쪽부터 만든다. 적용 중이면 둘 다 잠그고 Apply 에 Spinner 를 단다.
 fn buttons(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -240,40 +418,61 @@ fn buttons(
     changed: bool,
 ) -> PermBoxClick {
     let mut click = PermBoxClick::None;
+    let gap = theme.spacing_sm.value();
+    let spinner_size = theme.icon_glyph_size_sm;
+    let spinner = |ui: &mut egui::Ui, rect: egui::Rect, _: egui::Color32| {
+        Spinner::new()
+            .size(spinner_size.value())
+            .color(theme.spinner_indicator().to_egui())
+            .paint_in(ui, theme, rect);
+    };
+    let cancel = Button::new(text.cancel)
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Sm)
+        .enabled(!busy);
+    let mut apply = Button::new(if busy { text.applying } else { text.apply })
+        .variant(ButtonVariant::Primary)
+        .size(ControlSize::Sm)
+        .enabled(!busy && changed);
+    if busy {
+        apply = apply.leading_icon(&spinner).leading_icon_size(spinner_size);
+    }
+    let widths = [
+        cancel.desired_width(ui, theme),
+        apply.desired_width(ui, theme),
+    ];
+    let avail = ui.available_width();
     // 남은 높이를 차지하지 않도록 버튼 한 줄 높이로 묶는다. 차지하면 팝업 높이 측정이 계속 커진다.
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), ControlSize::Sm.height(theme)),
-        egui::Layout::right_to_left(egui::Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-            let spinner_size = theme.icon_glyph_size_sm;
-            let spinner = |ui: &mut egui::Ui, rect: egui::Rect, _: egui::Color32| {
-                Spinner::new()
-                    .size(spinner_size.value())
-                    .color(theme.spinner_indicator().to_egui())
-                    .paint_in(ui, theme, rect);
-            };
-            let mut apply = Button::new(if busy { text.applying } else { text.apply })
-                .variant(ButtonVariant::Primary)
-                .size(ControlSize::Sm)
-                .enabled(!busy && changed);
-            if busy {
-                apply = apply.leading_icon(&spinner).leading_icon_size(spinner_size);
+    let size = egui::vec2(avail, ControlSize::Sm.height(theme));
+    let layout = egui::Layout::left_to_right(egui::Align::Center);
+    let start = |ui: &mut egui::Ui, used: f32| {
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.add_space((avail - used).max(0.0));
+    };
+    if widths[0] + gap + widths[1] <= avail {
+        ui.allocate_ui_with_layout(size, layout, |ui| {
+            start(ui, widths[0] + gap + widths[1]);
+            if cancel.show(ui, theme).clicked() {
+                click = PermBoxClick::Cancel;
             }
             if apply.show(ui, theme).clicked() {
                 click = PermBoxClick::Apply;
             }
-            if Button::new(text.cancel)
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
-                .enabled(!busy)
-                .show(ui, theme)
-                .clicked()
-            {
+        });
+    } else {
+        ui.allocate_ui_with_layout(size, layout, |ui| {
+            start(ui, widths[0]);
+            if cancel.show(ui, theme).clicked() {
                 click = PermBoxClick::Cancel;
             }
-        },
-    );
+        });
+        ui.allocate_ui_with_layout(size, layout, |ui| {
+            start(ui, widths[1]);
+            if apply.show(ui, theme).clicked() {
+                click = PermBoxClick::Apply;
+            }
+        });
+    }
     click
 }
 
@@ -290,6 +489,30 @@ mod tests {
         apply: "Apply",
         applying: "Applying…",
         cancel: "Cancel",
+    };
+
+    /// 앱 번역 파일의 ko 문구.
+    const KO: PermBoxText<'static> = PermBoxText {
+        heads: ["읽기", "쓰기", "실행"],
+        roles: ["소유자", "그룹", "기타"],
+        read_only: "읽기 전용",
+        windows_hint: "Windows 파일 특성입니다. 다른 접근 규칙은 여기서 바꾸지 않습니다.",
+        failed: "권한을 바꾸지 못했습니다",
+        apply: "적용",
+        applying: "적용 중…",
+        cancel: "취소",
+    };
+
+    /// 앱 번역 파일의 ja 문구.
+    const JA: PermBoxText<'static> = PermBoxText {
+        heads: ["読み取り", "書き込み", "実行"],
+        roles: ["所有者", "グループ", "その他"],
+        read_only: "読み取り専用",
+        windows_hint: "Windows のファイル属性です。ほかのアクセス規則はここでは変更しません。",
+        failed: "権限を変更できませんでした",
+        apply: "適用",
+        applying: "適用中…",
+        cancel: "キャンセル",
     };
 
     /// 고정 폭 영역에 상자를 그리고 그린 높이를 돌려준다.
@@ -338,6 +561,193 @@ mod tests {
         });
         // 줄바꿈한 머리와 역할명만큼 상자가 높아진다. 말줄임이면 높이가 같다.
         assert!(long > short, "long {long} short {short}");
+    }
+
+    fn theme() -> Theme {
+        Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0)
+    }
+
+    /// `width` 폭 영역에 상자를 한 프레임 그리고 상자가 차지한 크기를 돌려준다.
+    fn drawn_size(ctx: &egui::Context, width: f32, props: PermBoxProps<'_>) -> egui::Vec2 {
+        let theme = theme();
+        let mut drawn = egui::Vec2::ZERO;
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 800.0),
+            )),
+            ..Default::default()
+        };
+        let mut props = Some(props);
+        drop(ctx.run(input, |ctx| {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ctx, |ui| {
+                    let response = ui.scope(|ui| {
+                        if let Some(props) = props.take() {
+                            perm_box(ui, &theme, props);
+                        }
+                    });
+                    drawn = response.response.rect.size();
+                });
+        }));
+        drawn
+    }
+
+    #[test]
+    fn the_layout_follows_the_box_width_bounds() {
+        let theme = theme();
+        let grid = theme.explorer_props_perm_grid_min_width().value();
+        let stack = theme.explorer_props_perm_stack_min_width().value();
+        assert_eq!(perm_layout(&theme, 330.0), PermLayout::Grid);
+        assert_eq!(perm_layout(&theme, grid), PermLayout::Grid);
+        assert_eq!(perm_layout(&theme, grid - 0.5), PermLayout::Stack);
+        assert_eq!(perm_layout(&theme, stack), PermLayout::Stack);
+        assert_eq!(perm_layout(&theme, stack - 0.5), PermLayout::List);
+        assert_eq!(perm_layout(&theme, 0.0), PermLayout::List);
+    }
+
+    /// 경계 바로 아래·하한·더 좁은 폭에서도 상자가 받은 폭을 넘지 않는다(가로로 잘리지 않는다).
+    #[test]
+    fn the_box_never_grows_past_the_width_it_was_given() {
+        let theme = theme();
+        let grid = theme.explorer_props_perm_grid_min_width().value();
+        let stack = theme.explorer_props_perm_stack_min_width().value();
+        let long = PermBoxText {
+            heads: ["Read access", "Write access", "Execute access"],
+            roles: ["Owning user", "Group", "Everyone else"],
+            ..TEXT
+        };
+        let ctx = egui::Context::default();
+        for width in [
+            330.0,
+            grid,
+            grid - theme.spacing_xs.value(),
+            stack,
+            stack - theme.spacing_xl.value(),
+            120.0,
+        ] {
+            for text in [TEXT, long, KO, JA] {
+                for (busy, failure) in [
+                    (false, None),
+                    (true, None),
+                    (false, Some("Read-only file system (os error 30)")),
+                ] {
+                    let mut bits = 0o644;
+                    let props = PermBoxProps {
+                        text,
+                        value: PermBoxValue::Mode(&mut bits),
+                        note: Some("Changes this folder only, not the items in it."),
+                        failure,
+                        busy,
+                        changed: true,
+                    };
+                    let drawn = drawn_size(&ctx, width, props).x;
+                    assert!(drawn <= width + 0.01, "Unix 폭 {width}: 그린 폭 {drawn}");
+                    let mut read_only = true;
+                    let props = PermBoxProps {
+                        text,
+                        value: PermBoxValue::ReadOnly(&mut read_only),
+                        note: None,
+                        failure,
+                        busy,
+                        changed: true,
+                    };
+                    let drawn = drawn_size(&ctx, width, props).x;
+                    assert!(drawn <= width + 0.01, "Windows 폭 {width}: 그린 폭 {drawn}");
+                }
+            }
+        }
+    }
+
+    /// ko·ja Windows 안내는 좁은 상자에서 말줄임 없이 줄바꿈해 상자가 높아진다.
+    #[test]
+    fn the_windows_hint_wraps_in_korean_and_japanese() {
+        let theme = theme();
+        let ctx = egui::Context::default();
+        let narrow = theme.explorer_props_perm_stack_min_width().value() - theme.spacing_xl.value();
+        for text in [KO, JA] {
+            let size = |width: f32| {
+                let mut read_only = false;
+                drawn_size(
+                    &ctx,
+                    width,
+                    PermBoxProps {
+                        text,
+                        value: PermBoxValue::ReadOnly(&mut read_only),
+                        note: None,
+                        failure: None,
+                        busy: false,
+                        changed: false,
+                    },
+                )
+            };
+            let (wide, slim) = (size(600.0), size(narrow));
+            assert!(
+                slim.x <= narrow + 0.01,
+                "{}: 폭 {narrow}를 넘었다 ({})",
+                text.read_only,
+                slim.x
+            );
+            assert!(
+                slim.y > wide.y,
+                "{}: 좁은 상자의 안내가 줄바꿈하지 않았다",
+                text.read_only
+            );
+        }
+    }
+
+    /// 칸 폭이 바뀌어 배치가 격자 → 쌓기 → 목록으로 바뀌어도 포커스한 체크박스가 포커스를 잃지 않는다.
+    #[test]
+    fn focus_stays_on_the_same_checkbox_across_layouts() {
+        let theme = theme();
+        let ctx = egui::Context::default();
+        let mut focused = None;
+        let widths = [
+            330.0,
+            theme.explorer_props_perm_grid_min_width().value() - 1.0,
+            theme.explorer_props_perm_stack_min_width().value() - 1.0,
+            330.0,
+        ];
+        for (frame, width) in widths.into_iter().enumerate() {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(width, 800.0),
+                )),
+                ..Default::default()
+            };
+            let mut bits = 0o644;
+            drop(ctx.run(input, |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        // 그룹의 쓰기 칸.
+                        let id = perm_box_id(ui).with((1usize, 1usize));
+                        if frame == 0 {
+                            ctx.memory_mut(|m| m.request_focus(id));
+                        }
+                        focused = Some(id);
+                        perm_box(
+                            ui,
+                            &theme,
+                            PermBoxProps {
+                                text: TEXT,
+                                value: PermBoxValue::Mode(&mut bits),
+                                note: None,
+                                failure: None,
+                                busy: false,
+                                changed: false,
+                            },
+                        );
+                    });
+            }));
+            assert_eq!(
+                ctx.memory(|m| m.focused()),
+                focused,
+                "폭 {width}에서 포커스를 잃었다"
+            );
+        }
     }
 
     #[test]

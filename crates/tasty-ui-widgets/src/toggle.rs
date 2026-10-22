@@ -26,6 +26,31 @@ pub fn checkbox(
     label: &str,
     enabled: bool,
 ) -> egui::Response {
+    draw_checkbox(ui, theme, checked, label, enabled, None)
+}
+
+/// 라벨이 남은 폭을 넘으면 말줄임 대신 어디서나 줄바꿈하는 [`checkbox`]. 위젯 id 는 호출자가 정한다.
+/// 같은 체크박스를 다른 배치에 다시 그려도 id 가 같으므로 키보드 포커스가 남는다.
+pub fn checkbox_wrapping(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    id: egui::Id,
+    checked: &mut bool,
+    label: &str,
+    enabled: bool,
+) -> egui::Response {
+    draw_checkbox(ui, theme, checked, label, enabled, Some(id))
+}
+
+/// `id` 가 있으면 그 id 로 반응하고 라벨을 줄바꿈한다. 없으면 자동 id 와 한 줄 말줄임이다.
+fn draw_checkbox(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    checked: &mut bool,
+    label: &str,
+    enabled: bool,
+    id: Option<egui::Id>,
+) -> egui::Response {
     // gap(라벨)·body 는 대응 checkbox component 토큰 없음 → semantic.
     let gap = theme.spacing_sm.value();
     let body = theme.font_size_body.value();
@@ -33,23 +58,47 @@ pub fn checkbox(
     let bw = theme.border_width.value();
     let box_sz = theme.checkbox_size().value();
 
-    // 상자가 차지한 폭을 제외한 공간에 맞춰 라벨을 줄인다.
+    // 상자가 차지한 폭을 제외한 공간에 맞춰 라벨을 줄이거나 줄바꿈한다.
     let label_max = (ui.available_width() - box_sz - gap).max(0.0);
-    let mut job = egui::text::LayoutJob::simple_singleline(
-        label.to_owned(),
-        egui::FontId::proportional(body),
-        egui::Color32::PLACEHOLDER,
-    );
-    job.wrap = egui::text::TextWrapping::truncate_at_width(label_max);
+    let font = egui::FontId::proportional(body);
+    let job = if id.is_some() {
+        let mut job = egui::text::LayoutJob::simple(
+            label.to_owned(),
+            font,
+            egui::Color32::PLACEHOLDER,
+            label_max,
+        );
+        job.wrap.break_anywhere = true;
+        job
+    } else {
+        let mut job = egui::text::LayoutJob::simple_singleline(
+            label.to_owned(),
+            font,
+            egui::Color32::PLACEHOLDER,
+        );
+        job.wrap = egui::text::TextWrapping::truncate_at_width(label_max);
+        job
+    };
     let galley = ui.fonts(|f| f.layout_job(job));
     let h = box_sz.max(galley.rect.height());
-    let w = box_sz + gap + galley.rect.width();
+    // 빈 라벨은 상자만 차지한다(간격을 두지 않는다).
+    let w = if label.is_empty() && id.is_some() {
+        box_sz
+    } else {
+        box_sz + gap + galley.rect.width()
+    };
     let sense = if enabled {
         egui::Sense::click()
     } else {
         egui::Sense::hover()
     };
-    let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(w, h), sense);
+    let (rect, mut resp) = match id {
+        Some(id) => {
+            let (_, rect) = ui.allocate_space(egui::vec2(w, h));
+            (rect, ui.interact(rect, id, sense))
+        }
+        None => ui.allocate_exact_size(egui::vec2(w, h), sense),
+    };
     if resp.clicked() {
         *checked = !*checked;
         resp.mark_changed();

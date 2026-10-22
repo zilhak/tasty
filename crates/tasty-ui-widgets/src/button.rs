@@ -154,9 +154,35 @@ impl<'a> Button<'a> {
         }
     }
 
+    /// block 이 아닐 때 차지할 폭. 버튼을 줄바꿈할지 정하려고 그리기 전에 잰다.
+    pub fn desired_width(&self, ui: &egui::Ui, theme: &Theme) -> f32 {
+        let font_id = egui::FontId::proportional(self.size.font_size(theme));
+        let galley =
+            ui.painter()
+                .layout_no_wrap(self.label.to_owned(), font_id, egui::Color32::PLACEHOLDER);
+        self.content_width(theme, galley.rect.size().x)
+    }
+
+    fn content_width(&self, theme: &Theme, label_w: f32) -> f32 {
+        let icon_glyph = theme.icon_glyph_size_md.value();
+        let leading_glyph = self
+            .leading_icon_size
+            .map_or(icon_glyph, |size| size.value());
+        let gap = theme.button_gap().value();
+        let icons_w = (if self.leading_icon.is_some() {
+            leading_glyph + gap
+        } else {
+            0.0
+        }) + (if self.trailing_icon.is_some() {
+            icon_glyph + gap
+        } else {
+            0.0
+        });
+        label_w + icons_w + 2.0 * self.size.pad_x(theme)
+    }
+
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
         let height = self.size.height(theme);
-        let pad_x = self.size.pad_x(theme);
         let radius = theme.button_radius().value();
         let bw = theme.border_width.value();
         let icon_glyph = theme.icon_glyph_size_md.value();
@@ -173,12 +199,7 @@ impl<'a> Button<'a> {
             ui.painter()
                 .layout_no_wrap(self.label.to_owned(), font_id, egui::Color32::PLACEHOLDER);
 
-        let icons_w = (if has_leading {
-            leading_glyph + gap
-        } else {
-            0.0
-        }) + (if has_trailing { icon_glyph + gap } else { 0.0 });
-        let content_w = galley.rect.size().x + icons_w + 2.0 * pad_x;
+        let content_w = self.content_width(theme, galley.rect.size().x);
         let desired_w = if self.block {
             ui.available_width().max(content_w)
         } else {
