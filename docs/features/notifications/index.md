@@ -8,6 +8,8 @@
 
 LNB 요약 영역은 펼친 사이드바와 접힌 레일 모두에서 세 레벨의 미확인 개수를 표시한다. 사용자가 요약을 클릭하면 현재 윈도우의 상세 팝업을 연다. 알림 도착은 포커스를 옮기지 않으며, 팝업을 열거나 닫는 것만으로 읽음 처리하지 않는다. workspace attention 표시는 별도로 유지한다.
 
+[피드백 원칙](../../principles/feedback-and-recovery.md#알림에-남길-문제)에 따라 호스트가 스스로 남기는 오류·경고는 사용자가 직접 조치할 수 있는 문제로 한정한다. 조치할 수 없는 내부 문제는 로그에만 남긴다. 현재 `src/system_notice.rs`로 알림을 남기는 기존 경로는 이 기준으로 다시 분류하지 않았다. 로그는 release에서 `~/.tasty/debug.log`(warn 이상)에 남지만 host를 시작할 때마다 비우며, crash report 파일에는 담기지 않는다([크래시 진단](../../dev-guide/crash-diagnostics.md)).
+
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (에이전트도 `notification.create` 로 발행 가능)
 - **설계**: [국제화 (i18n)](../../dev-guide/i18n.md) (제목은 표시 전용 · `notification.create` 기본 제목은 UI 문구)
