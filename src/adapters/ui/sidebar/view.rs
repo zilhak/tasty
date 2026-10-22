@@ -1255,16 +1255,7 @@ fn draw_collapsed_avatar(
         ("ws_collapsed", global_idx),
         props.workspace_switch_held,
     );
-    if let Some(digit) = switch_digit {
-        crate::adapters::ui::switch_overlay::paint_keycap(
-            ui.painter(),
-            th,
-            rect.center(),
-            digit,
-            ws.is_active,
-            fade,
-        );
-    } else if !label.is_empty() {
+    if switch_digit.is_none() && !label.is_empty() {
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -1275,6 +1266,17 @@ fn draw_collapsed_avatar(
     }
     let loading =
         loading::paint_sidebar_loading(ui, th, ws.loading_since, rect, LoadingPlacement::Rail);
+    // 전환 키캡은 이니셜 둘레 스피너 위에 그린다.
+    if let Some(digit) = switch_digit {
+        crate::adapters::ui::switch_overlay::paint_keycap(
+            ui.painter(),
+            th,
+            rect.center(),
+            digit,
+            ws.is_active,
+            fade,
+        );
+    }
     // 사이드바 로딩은 attach 응답 대기에서만 켜진다.
     let loading_line = loading.then(|| crate::i18n::t("loading.remote_attach"));
     // 상태는 오른쪽 위 점, mirror는 오른쪽 아래 표시, 다른 클라이언트 점유는 둘레 링이다.
@@ -1366,17 +1368,7 @@ fn draw_workspace_card(
                 ui.fonts(|f| f.row_height(&egui::FontId::proportional(th.font_size_body.value())));
             let dot_slot = egui::vec2(th.workspace_dot_slot().value(), title_row_h);
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
-            if let Some(digit) = switch_digit {
-                // 같은 슬롯 가운데 키캡을 그려 이름 시작 위치를 유지한다.
-                crate::adapters::ui::switch_overlay::paint_keycap(
-                    ui.painter(),
-                    th,
-                    dot_rect.center(),
-                    digit,
-                    ws.is_active,
-                    switch_fade,
-                );
-            } else {
+            if switch_digit.is_none() {
                 let dot_color: egui::Color32 = if ws.busy_count > 0 {
                     th.accent_success().into()
                 } else {
@@ -1407,6 +1399,17 @@ fn draw_workspace_card(
                 dot_rect,
                 LoadingPlacement::Lnb,
             );
+            if let Some(digit) = switch_digit {
+                // 같은 슬롯 가운데 키캡을 스피너 위에 그려 이름 시작 위치를 유지한다.
+                crate::adapters::ui::switch_overlay::paint_keycap(
+                    ui.painter(),
+                    th,
+                    dot_rect.center(),
+                    digit,
+                    ws.is_active,
+                    switch_fade,
+                );
+            }
             let name_color = if ws.is_active {
                 th.text_primary()
             } else {
@@ -1660,6 +1663,75 @@ mod tests {
             });
         }));
         out
+    }
+
+    /// 로딩 중이고 전환 키가 눌린 비활성 워크스페이스 하나를 그린 출력. 모션 감소로 키캡 페이드를 건너뛴다.
+    fn loading_with_keycap(collapsed: bool) -> (egui::FullOutput, Theme) {
+        let ctx = egui::Context::default();
+        let mut theme = test_theme();
+        theme.reduced_motion = true;
+        let kb = crate::settings::KeybindingSettings::default();
+        let mut ws = mock_ws("build-farm", false);
+        ws.loading_since = Some(std::time::Instant::now() - std::time::Duration::from_secs(1));
+        let workspaces = vec![mock_ws("main", true), ws];
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::SidePanel::left("test_loading_keycap").show(ctx, |ui| {
+                if collapsed {
+                    let props = SidebarCollapsedProps {
+                        theme: &theme,
+                        kb: &kb,
+                        workspaces: &workspaces,
+                        categories: None,
+                        notifications: None,
+                        tools_hover: "Tools menu",
+                        plugin_alert: 0,
+                        workspace_switch_held: true,
+                        category_switch_held: false,
+                    };
+                    let _view = draw_collapsed_sidebar_view(ui, &props);
+                } else {
+                    let props = SidebarFullProps {
+                        theme: &theme,
+                        kb: &kb,
+                        workspaces: &workspaces,
+                        categories: None,
+                        drag: None,
+                        notifications: None,
+                        tools_label: "Tools",
+                        collapse_label: "Collapse",
+                        plugins_label: "Plugins",
+                        settings_label: "Settings",
+                        new_workspace_label: "New Workspace",
+                        workspaces_heading: "WORKSPACES",
+                        occupied_hover: "Held by another client",
+                        mirror_hover: "Mirror of a remote workspace",
+                        mirror_pill_label: "REMOTE",
+                        plugin_alert: 0,
+                        workspace_switch_held: true,
+                        category_switch_held: false,
+                    };
+                    let _view = draw_full_sidebar_view(ui, &props);
+                }
+            });
+        });
+        (output, theme)
+    }
+
+    /// 시안 우선순위: 전환 키캡은 같은 칸의 스피너 위에 그린다(카드 점 칸·레일 아바타).
+    #[test]
+    fn switch_keycap_paints_above_the_loading_spinner() {
+        for collapsed in [false, true] {
+            let (output, theme) = loading_with_keycap(collapsed);
+            let (spinner, keycap) =
+                crate::adapters::ui::attach_loading::paint_order::spinner_and_keycap(
+                    &output, &theme,
+                );
+            let (spinner, keycap) = (spinner.expect("spinner"), keycap.expect("keycap"));
+            assert!(
+                keycap > spinner,
+                "collapsed={collapsed} {keycap} <= {spinner}"
+            );
+        }
     }
 
     fn run_collapsed(

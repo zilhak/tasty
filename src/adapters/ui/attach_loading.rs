@@ -210,3 +210,75 @@ fn loading_visible(
         true
     }
 }
+
+/// 로딩 표시의 그리기 순서를 출력 도형으로 확인하는 시험 도구.
+#[cfg(test)]
+pub(crate) mod paint_order {
+    use egui::epaint::{ColorMode, Shape};
+
+    fn colors(shape: &Shape, out: &mut Vec<(egui::Color32, Option<egui::Rect>)>) {
+        match shape {
+            Shape::Vec(shapes) => {
+                for s in shapes {
+                    colors(s, out);
+                }
+                return;
+            }
+            Shape::Rect(r) => {
+                out.push((r.fill, Some(r.rect)));
+                return;
+            }
+            Shape::Circle(c) => out.push((c.fill, None)),
+            Shape::Path(p) => {
+                if let ColorMode::Solid(c) = p.stroke.color {
+                    out.push((c, None));
+                }
+                return;
+            }
+            Shape::LineSegment { stroke, .. } => out.push((stroke.color, None)),
+            _ => {}
+        }
+        out.push((egui::Color32::TRANSPARENT, None));
+    }
+
+    /// 불투명도를 곱한 premultiplied 색도 같은 잉크로 본다. 탭 줄은 상태에 따라 전체 불투명도를 낮춰 그린다.
+    fn same_ink(c: egui::Color32, target: egui::Color32) -> bool {
+        if c.a() == 0 {
+            return false;
+        }
+        let k = f32::from(c.a()) / f32::from(target.a());
+        let near = |x: u8, t: u8| (f32::from(x) - f32::from(t) * k).abs() <= 2.0;
+        near(c.r(), target.r()) && near(c.g(), target.g()) && near(c.b(), target.b())
+    }
+
+    /// 그리기 순서대로 펼친 (색, 사각형이면 그 rect) 목록이다.
+    pub(crate) fn flatten(output: &egui::FullOutput) -> Vec<(egui::Color32, Option<egui::Rect>)> {
+        let mut out = Vec::new();
+        for clipped in &output.shapes {
+            colors(&clipped.shape, &mut out);
+        }
+        out
+    }
+
+    /// 스피너 호(indicator 색)의 마지막 위치와 키캡 바탕(크기·색이 키캡과 같은 사각형)의 마지막 위치.
+    pub(crate) fn spinner_and_keycap(
+        output: &egui::FullOutput,
+        theme: &tasty_type_appearance::theme::Theme,
+    ) -> (Option<usize>, Option<usize>) {
+        let shapes = flatten(output);
+        let indicator = theme.loading_overlay_indicator().to_egui();
+        let side = theme.switch_overlay_size().value();
+        let keycap = [
+            theme.switch_overlay_bg().to_egui(),
+            theme.switch_overlay_active_bg().to_egui(),
+        ];
+        let spinner = shapes.iter().rposition(|(c, _)| same_ink(*c, indicator));
+        let cap = shapes.iter().rposition(|(c, rect)| {
+            keycap.iter().any(|k| same_ink(*c, *k))
+                && rect.is_some_and(|r| {
+                    (r.width() - side).abs() < 0.01 && (r.height() - side).abs() < 0.01
+                })
+        });
+        (spinner, cap)
+    }
+}

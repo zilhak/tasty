@@ -655,6 +655,40 @@ mod tests {
         out
     }
 
+    /// 시안 우선순위: Ctrl 전환 키캡은 같은 아이콘 칸의 스피너 위에 그린다.
+    #[test]
+    fn switch_keycap_paints_above_the_tab_loading_spinner() {
+        let mut theme = test_theme();
+        theme.reduced_motion = true;
+        let kb = crate::settings::KeybindingSettings::default();
+        let mut pane = mk_pane(3, &["server", "build-server"], 0, true);
+        pane.loading = vec![false, true];
+        let panes = vec![pane];
+        let ctx = egui::Context::default();
+        // 첫 프레임은 Area 크기 측정이라 도형을 내보내지 않을 수 있어 두 번째 프레임을 본다.
+        let frame = |ctx: &egui::Context| {
+            let props = PaneTabBarsProps {
+                theme: &theme,
+                kb: &kb,
+                panes: &panes,
+                scale_factor: 1.0,
+                tab_width: 160.0,
+                tab_font_size: 12.0,
+                active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
+                drag: None,
+                switch_overlay_pane: Some(3),
+                native_content: &[],
+            };
+            let _view = draw_pane_tab_bars_view(ctx, &props);
+        };
+        drop(ctx.run(egui::RawInput::default(), frame));
+        let output = ctx.run(egui::RawInput::default(), frame);
+        let (spinner, keycap) =
+            crate::adapters::ui::attach_loading::paint_order::spinner_and_keycap(&output, &theme);
+        let (spinner, keycap) = (spinner.expect("spinner"), keycap.expect("keycap"));
+        assert!(keycap > spinner, "{keycap} <= {spinner}");
+    }
+
     #[test]
     fn pending_pane_strip_has_no_widget_identity_collision_with_its_real_anchor() {
         let real = mk_pane_w(7, &["server"], 0, false, 400.0);

@@ -135,16 +135,7 @@ pub(super) fn draw_tab(
         info.pane_id,
         overlay_active,
     );
-    if let Some(digit) = switch_digit {
-        crate::adapters::ui::switch_overlay::paint_keycap(
-            painter,
-            th,
-            icon_rect.center(),
-            digit,
-            is_active,
-            fade,
-        );
-    } else {
+    if switch_digit.is_none() {
         let icon = info.tab_icons.get(i).copied().unwrap_or(icons::FILE);
         // 아이콘이 화살표·버튼 위로 넘치지 않게 그리는 동안 clip을 좁힌다.
         let prev_clip = ui.clip_rect();
@@ -166,6 +157,17 @@ pub(super) fn draw_tab(
             tab_bg.to_egui(),
         );
         ui.set_clip_rect(previous_clip);
+    }
+    // 전환 키캡은 같은 칸의 스피너 위에 그린다.
+    if let Some(digit) = switch_digit {
+        crate::adapters::ui::switch_overlay::paint_keycap(
+            painter,
+            th,
+            icon_rect.center(),
+            digit,
+            is_active,
+            fade,
+        );
     }
     let text_x = icon_rect.max.x + 6.0;
     if let Some(x) = cluster.move_glyph {
