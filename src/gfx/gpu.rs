@@ -11,6 +11,8 @@ mod screenshot;
 mod shell_setup;
 
 use crate::runtime::engine_read::EngineRead;
+#[cfg(test)]
+pub(crate) use egui_bridge::keep_screen_while_minimized;
 use std::sync::Arc;
 
 use anyhow::Result;

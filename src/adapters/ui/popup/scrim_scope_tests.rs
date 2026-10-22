@@ -1,4 +1,4 @@
-//! 프레임의 실제 도형에서 scrim 영역과 클립을 검사한다.
+//! 프레임의 실제 도형과 팝업 상태에서 scrim 영역·클립과 작은 범위의 처리를 검사한다.
 
 use crate::adapters::ui::LayoutContext;
 use crate::adapters::ui::popup::{PopupScope, defs, frame::draw_popup_layer};
@@ -230,4 +230,115 @@ fn nothing_a_surface_scoped_popup_paints_lands_outside_its_surface() {
             narrow_rect()
         );
     }
+}
+
+/// 같은 egui Context 로 한 프레임을 그린다. 실제 창처럼 프레임 사이 상태가 이어진다.
+fn frame_with(
+    ctx: &egui::Context,
+    raw: egui::RawInput,
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    layout: &LayoutContext,
+) {
+    drop(ctx.run(raw, |ctx| draw_popup_layer(ctx, state, engine, layout)));
+}
+
+fn screen_input(size: egui::Vec2) -> egui::RawInput {
+    egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+        ..Default::default()
+    }
+}
+
+/// Windows 의 장식 없는 창은 최소화 중 작업 표시줄 아이콘 크기(160x28)를 보고한다. 그 프레임에도
+/// 팝업은 열린 채 같은 자리·크기에 남고, 복원한 뒤에도 그대로다.
+#[test]
+fn a_minimized_frame_keeps_the_open_popup_where_it_was() {
+    let (mut state, mut engine_session, ids) = prepared();
+    let engine = engine_session.borrow_mut();
+    state.popups.open("convert_surface");
+    let ctx = egui::Context::default();
+    let layout = layout(ids);
+    frame_with(
+        &ctx,
+        screen_input(egui::vec2(1280.0, 720.0)),
+        &mut state,
+        &engine.read(),
+        &layout,
+    );
+    let before = state.popups.visible_rect("convert_surface");
+    assert!(before.is_some());
+
+    let mut minimized = screen_input(egui::vec2(160.0, 28.0));
+    crate::gfx::gpu::keep_screen_while_minimized(&mut minimized, true);
+    frame_with(&ctx, minimized, &mut state, &engine.read(), &layout);
+    assert!(state.popups.is_open("convert_surface"));
+    assert_eq!(state.popups.visible_rect("convert_surface"), before);
+
+    frame_with(
+        &ctx,
+        screen_input(egui::vec2(1280.0, 720.0)),
+        &mut state,
+        &engine.read(),
+        &layout,
+    );
+    assert_eq!(state.popups.visible_rect("convert_surface"), before);
+}
+
+/// 범위가 제목줄과 여백보다 낮으면 팝업은 범위 안으로 줄고 콘텐츠 자리는 빈 사각형이다.
+/// 팝업은 열린 채 범위를 유지하며, 범위가 다시 넓어지면 원래 크기로 그린다.
+#[test]
+fn a_scope_lower_than_the_title_bar_leaves_an_empty_content_area() {
+    let (mut state, mut engine_session, ids) = prepared();
+    let engine = engine_session.borrow_mut();
+    state.dialogs.convert_popup = Some(ids.surface);
+    state
+        .popups
+        .open_with_scope("convert_surface", PopupScope::Surface(ids.surface));
+    let ctx = egui::Context::default();
+    let wide = layout(ids);
+    frame_with(
+        &ctx,
+        screen_input(screen().size()),
+        &mut state,
+        &engine.read(),
+        &wide,
+    );
+    let before = state.popups.visible_rect("convert_surface").expect("open");
+
+    let low = egui::Rect::from_min_size(egui::pos2(100.0, 60.0), egui::vec2(300.0, 40.0));
+    let narrow = layout_of(vec![(ids.surface, low)]);
+    frame_with(
+        &ctx,
+        screen_input(screen().size()),
+        &mut state,
+        &engine.read(),
+        &narrow,
+    );
+    let popup = state
+        .popups
+        .popups
+        .iter()
+        .find(|p| p.id == "convert_surface")
+        .expect("registered");
+    assert!(popup.open);
+    assert_eq!(popup.scope, PopupScope::Surface(ids.surface));
+    assert!(low.contains_rect(popup.popup_rect()));
+    let content = popup.content_rect();
+    assert!(content.width() >= 0.0 && content.height() == 0.0);
+
+    frame_with(
+        &ctx,
+        screen_input(screen().size()),
+        &mut state,
+        &engine.read(),
+        &wide,
+    );
+    assert_eq!(
+        state
+            .popups
+            .visible_rect("convert_surface")
+            .map(|r| r.size()),
+        Some(before.size())
+    );
 }

@@ -17,6 +17,16 @@ pub(super) fn term_font_signature(font: &EffectiveFont, effective_size: f32) -> 
     )
 }
 
+/// 최소화된 창의 크기는 egui 화면으로 쓰지 않고 직전 화면을 유지한다. egui-winit 는 크기 0 만
+/// 최소화로 보는데, 장식 없는 창(CSD)은 Windows 에서 최소화 중에도 작업 표시줄 아이콘 크기의
+/// client 영역(측정 160x28)을 보고한다. 그 크기로 한 프레임을 그리면 팝업이 그 안으로 줄고 옮겨지며, 제목줄과
+/// 여백보다 낮은 콘텐츠 영역이 만들어진다. 복원하면 직전 화면 그대로 이어진다.
+pub(crate) fn keep_screen_while_minimized(raw_input: &mut egui::RawInput, minimized: bool) {
+    if minimized {
+        raw_input.screen_rect = None;
+    }
+}
+
 /// 같은 Foreground 안에서 배너 < 상태바·탭바, modifier-hint < 팝업 순서를 정한다.
 /// move_to_top만 반복하면 등록 순서가 남으므로 set_sublayer로 바로 위에 배치한다.
 /// 중첩은 한 단계만 지원해 두 그룹을 서로 연결하지 않는다. 배너와 modifier-hint 사이는
@@ -92,7 +102,12 @@ impl GpuState {
         plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
         host_popup_on_top: bool,
     ) -> egui::FullOutput {
-        let raw_input = self.egui_state.take_egui_input(window);
+        let mut raw_input = self.egui_state.take_egui_input(window);
+        // 최소화 중 크기를 잘못 보고하는 것은 Windows 의 장식 없는 창이다. 다른 OS 는 그대로 둔다.
+        keep_screen_while_minimized(
+            &mut raw_input,
+            cfg!(windows) && window.is_minimized() == Some(true),
+        );
         self.egui_ctx.options_mut(|o| {
             o.line_scroll_speed = engine.settings.general.wheel_line_scroll;
         });

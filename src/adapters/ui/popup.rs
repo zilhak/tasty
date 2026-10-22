@@ -434,13 +434,13 @@ impl PopupState {
         } else {
             title_bar_height() + margin
         };
-        egui::Rect::from_min_max(
-            egui::pos2(
-                popup.min.x + margin.value(),
-                popup.min.y + top_offset.value(),
-            ),
-            egui::pos2(popup.max.x - margin.value(), popup.max.y - margin.value()),
-        )
+        let min = egui::pos2(
+            popup.min.x + margin.value(),
+            popup.min.y + top_offset.value(),
+        );
+        // 범위가 제목줄과 여백보다 좁으면 콘텐츠 자리는 비어 있다. 뒤집힌 사각형을 만들지 않는다.
+        let max = egui::pos2(popup.max.x - margin.value(), popup.max.y - margin.value()).max(min);
+        egui::Rect::from_min_max(min, max)
     }
 
     fn close_btn_rect(&self) -> egui::Rect {
