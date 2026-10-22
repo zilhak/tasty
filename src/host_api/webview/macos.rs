@@ -22,8 +22,10 @@ use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
 use super::load_generation::{CancelledDecisions, is_current_load, nav_state_after_end};
+use super::overlay::{OverlayApplyError, OverlayRequest};
 use super::script_gate::{DeferredScan, ReadSlot, Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
+use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource};
 
 /// WebKit의 정책 결정 handler. 보류한 결정을 콜백 밖에서 끝내려고 복사해 둔다.
 type DecisionHandler = RcBlock<dyn Fn(WKNavigationActionPolicy, NonNull<WKWebpagePreferences>)>;
@@ -441,6 +443,8 @@ struct KeyWebViewIvars {
     key_bridge: Rc<dyn WebViewKeySink>,
     /// 위에 egui가 그리는 안내 카드 영역(이 뷰 좌표). 이 안의 포인터는 받지 않고 부모로 보낸다.
     clip_holes: RefCell<Vec<NSRect>>,
+    /// 대상 팝업이 보이는 동안 참이다. 그림은 그대로 두고 뷰 전체의 포인터를 부모(winit 뷰)로 보낸다.
+    host_pointer: Cell<bool>,
 }
 
 define_class!(
@@ -491,22 +495,10 @@ define_class!(
         }
 
         /// 안내 카드 아래의 포인터는 받지 않아 뒤의 host 뷰로 간다. layer mask는 그림만 가리므로 따로 뺀다.
+        /// 대상 팝업이 보이는 동안은 뷰 전체의 포인터를 host 로 보낸다.
         #[unsafe(method(hitTest:))]
         fn hit_test(&self, point: NSPoint) -> *mut NSView {
-            // point는 superview 좌표다. 구멍은 이 뷰 좌표로 저장한다.
-            // SAFETY: MainThreadOnly 뷰의 AppKit hitTest 콜백 동안 self와 연결된 부모는 살아 있다.
-            // 조회 전에 재진입하거나 계층을 바꾸지 않으며, 반환된 Retained가 부모 수명을 유지한다.
-            let local = match unsafe { self.superview() } {
-                Some(parent) => self.convertPoint_fromView(point, Some(&parent)),
-                None => point,
-            };
-            let in_hole = self.ivars().clip_holes.borrow().iter().any(|r| {
-                local.x >= r.origin.x
-                    && local.x < r.origin.x + r.size.width
-                    && local.y >= r.origin.y
-                    && local.y < r.origin.y + r.size.height
-            });
-            if in_hole {
+            if self.ivars().host_pointer.get() || self.in_clip_hole(point) {
                 std::ptr::null_mut()
             } else {
                 // SAFETY: main thread AppKit. super 구현에 위임.
@@ -537,9 +529,26 @@ impl KeyWebView {
             surface_id,
             key_bridge,
             clip_holes: RefCell::new(Vec::new()),
+            host_pointer: Cell::new(false),
         });
         // SAFETY: WKWebView 의 지정 초기화자를 super 로 호출.
         unsafe { msg_send![super(this), initWithFrame: frame, configuration: config] }
+    }
+
+    /// superview 좌표 `point` 가 안내 카드 구멍 안인지. 구멍은 이 뷰 좌표로 저장한다.
+    fn in_clip_hole(&self, point: NSPoint) -> bool {
+        // SAFETY: MainThreadOnly 뷰의 AppKit hitTest 콜백 동안 self와 연결된 부모는 살아 있다.
+        // 조회 전에 재진입하거나 계층을 바꾸지 않으며, 반환된 Retained가 부모 수명을 유지한다.
+        let local = match unsafe { self.superview() } {
+            Some(parent) => self.convertPoint_fromView(point, Some(&parent)),
+            None => point,
+        };
+        self.ivars().clip_holes.borrow().iter().any(|r| {
+            local.x >= r.origin.x
+                && local.x < r.origin.x + r.size.width
+                && local.y >= r.origin.y
+                && local.y < r.origin.y + r.size.height
+        })
     }
 
     fn forward_key_to_host(&self, event: &NSEvent) -> bool {
@@ -591,8 +600,18 @@ pub struct PlatformWebView {
     script_gate: Rc<RefCell<Option<ScriptGate>>>,
     /// WKWebView의 delegate 참조가 weak이므로 여기서 수명을 유지한다.
     _nav_delegate: Retained<NavDelegate>,
-    /// 마지막으로 적용한 안내 구멍과 그때의 뷰 크기. 같으면 mask를 다시 만들지 않는다.
-    applied_clip: RefCell<Option<(Vec<[i32; 4]>, f64, f64)>>,
+    /// 그림에서 뺄 안내 카드(`clip`)·불투명 오버레이 상자와 배율. 둘을 합쳐 한 layer mask 를 만든다.
+    mask: RefCell<MaskInput>,
+    /// 마지막으로 적용한 mask 입력과 그때의 뷰 크기. 같으면 mask를 다시 만들지 않는다.
+    applied_mask: RefCell<Option<(MaskInput, f64, f64)>>,
+}
+
+/// WebView 그림에서 뺄 구멍. WebView 왼쪽 위 기준 물리 px `[x, y, 너비, 높이]` 다.
+#[derive(Clone, Default, PartialEq)]
+struct MaskInput {
+    clip: Vec<[i32; 4]>,
+    overlay: Vec<[i32; 4]>,
+    scale_factor: f64,
 }
 
 /// 이 backend의 생성 실패는 Permanent로 분류해 같은 생성 요청을 재시도하지 않는다.
@@ -698,7 +717,8 @@ impl PlatformWebView {
                 pending_navigations,
                 script_gate,
                 _nav_delegate: nav_delegate,
-                applied_clip: RefCell::new(None),
+                mask: RefCell::new(MaskInput::default()),
+                applied_mask: RefCell::new(None),
             })
         }
     }
@@ -758,44 +778,55 @@ impl PlatformWebView {
     pub fn hold_input_for_halt(&self) {}
 
     /// 위에 egui가 그리는 안내 카드(`clip`, 이 뷰 왼쪽 위 기준 물리 px `[x, y, 너비, 높이]`)를 그림과
-    /// 포인터에서 뺀다. 그림은 layer mask(전체 사각형과 구멍의 even-odd 경로)로, 포인터는 `hitTest:`로
-    /// 뺀다. frame·표시·first responder는 바꾸지 않는다. 비면 mask와 구멍을 지워 원래대로 돌아간다.
+    /// 포인터에서 뺀다. 그림은 layer mask로, 포인터는 `hitTest:`로 뺀다. frame·표시·first responder는
+    /// 바꾸지 않는다. 비면 원래대로 돌아간다. 불투명 오버레이 상자가 있으면 같은 mask에 함께 넣는다.
     /// host 입력 영역(`_input`)을 빼는 방법은 아직 없어 `webview_edge_inset` 여백으로 피한다.
     pub fn set_native_holes(&self, _input: &[[i32; 4]], clip: &[[i32; 4]], scale_factor: f64) {
+        {
+            let mut mask = self.mask.borrow_mut();
+            mask.clip = clip.to_vec();
+            mask.scale_factor = scale_factor;
+        }
+        if !self.apply_mask() {
+            tracing::warn!("webview: no backing layer; the page may cover the notice");
+        }
+    }
+
+    /// 안내 카드와 불투명 오버레이 상자를 겹치지 않는 보이는 사각형의 layer mask로 그림에서 뺀다. 안내
+    /// 카드는 `hitTest:`에서도 뺀다. 같은 입력·크기면 다시 만들지 않는다. layer가 없으면 거짓이다.
+    fn apply_mask(&self) -> bool {
+        let input = self.mask.borrow().clone();
         let view_bounds = self.webview.bounds();
         let key = (
-            clip.to_vec(),
+            input.clone(),
             view_bounds.size.width,
             view_bounds.size.height,
         );
-        if self.applied_clip.borrow().as_ref() == Some(&key) {
-            return;
+        if self.applied_mask.borrow().as_ref() == Some(&key) {
+            return true;
         }
-        let scale = if scale_factor > 0.0 {
-            scale_factor
+        let scale = if input.scale_factor > 0.0 {
+            input.scale_factor
         } else {
             1.0
         };
         let flipped = self.webview.isFlipped();
-        let rects: Vec<NSRect> = clip
-            .iter()
-            .map(|&[x, y, w, h]| {
-                let (x, y, w, h) = (
-                    f64::from(x) / scale,
-                    f64::from(y) / scale,
-                    f64::from(w) / scale,
-                    f64::from(h) / scale,
-                );
-                let origin_y = if flipped {
-                    y
-                } else {
-                    view_bounds.size.height - y - h
-                };
-                NSRect::new(NSPoint::new(x, origin_y), NSSize::new(w, h))
-            })
-            .collect();
-        *self.webview.ivars().clip_holes.borrow_mut() = rects.clone();
-        if rects.is_empty() {
+        let to_points = |&[x, y, w, h]: &[i32; 4]| {
+            let (x, y, w, h) = (
+                f64::from(x) / scale,
+                f64::from(y) / scale,
+                f64::from(w) / scale,
+                f64::from(h) / scale,
+            );
+            let origin_y = if flipped {
+                y
+            } else {
+                view_bounds.size.height - y - h
+            };
+            NSRect::new(NSPoint::new(x, origin_y), NSSize::new(w, h))
+        };
+        *self.webview.ivars().clip_holes.borrow_mut() = input.clip.iter().map(to_points).collect();
+        if input.clip.is_empty() && input.overlay.is_empty() {
             // SAFETY: main thread AppKit. 이 뷰의 layer를 읽기만 한다.
             let layer: Option<Retained<objc2_quartz_core::CALayer>> =
                 unsafe { msg_send![&*self.webview, layer] };
@@ -803,34 +834,43 @@ impl PlatformWebView {
                 // SAFETY: main thread. mask를 지우면 layer 전체가 다시 보인다.
                 unsafe { layer.setMask(None) };
             }
-            *self.applied_clip.borrow_mut() = Some(key);
-            return;
+            *self.applied_mask.borrow_mut() = Some(key);
+            return true;
         }
         self.webview.setWantsLayer(true);
         // SAFETY: main thread AppKit. layer-backed 뷰의 layer를 읽는다.
         let layer: Option<Retained<objc2_quartz_core::CALayer>> =
             unsafe { msg_send![&*self.webview, layer] };
         let Some(layer) = layer else {
-            tracing::warn!("webview: no backing layer; the page may cover the notice");
-            return;
+            return false;
         };
+        let holes: Vec<[i32; 4]> = input.clip.iter().chain(&input.overlay).copied().collect();
+        // 뷰 크기를 물리 px 로 올림해 오른쪽·아래 끝까지 덮는다. layer 밖은 mask 와 관계없다.
+        let px = |points: f64| (points * scale).ceil() as i32;
+        let visible = super::page_mask::visible_rects(
+            px(view_bounds.size.width),
+            px(view_bounds.size.height),
+            &holes,
+        );
         let mask = objc2_quartz_core::CAShapeLayer::new();
-        let layer_bounds = layer.bounds();
-        mask.setFrame(layer_bounds);
+        mask.setFrame(layer.bounds());
         let path = objc2_core_graphics::CGMutablePath::new();
-        for r in std::iter::once(layer_bounds).chain(rects.iter().copied()) {
+        for r in &visible {
             // SAFETY: 변환 행렬은 null(항등)이다. path는 이 함수 동안 살아 있다.
             unsafe {
-                objc2_core_graphics::CGMutablePath::add_rect(Some(&path), std::ptr::null(), r)
+                objc2_core_graphics::CGMutablePath::add_rect(
+                    Some(&path),
+                    std::ptr::null(),
+                    to_points(r),
+                )
             };
         }
         let shape: &objc2_core_graphics::CGPath = &path;
         mask.setPath(Some(shape));
-        // SAFETY: QuartzCore가 내보내는 상수 문자열이다.
-        mask.setFillRule(unsafe { objc2_quartz_core::kCAFillRuleEvenOdd });
         // SAFETY: main thread. mask는 layer가 retain한다.
         unsafe { layer.setMask(Some(&mask)) };
-        *self.applied_clip.borrow_mut() = Some(key);
+        *self.applied_mask.borrow_mut() = Some(key);
+        true
     }
 
     /// delegate 콜백이 기록한 navigation 상태.
@@ -1152,9 +1192,55 @@ fn ns_chars_to_winit_key(chars: &str) -> Option<winit::keyboard::Key> {
     Some(Key::Named(named))
 }
 
-/// 오버레이 합성은 아직 지원하지 않는다. 기본 구현이 `Hide` 를 보고해 대상 팝업이 뜨면 숨긴다.
+/// 불투명 모드는 팝업 상자를 layer mask 구멍으로 빼 주 표면이 그린 팝업을 보인다(그림 위치 주 표면). 투명
+/// 모드는 창 단위 오버레이 host(형제 NSView)에 그린다. 두 모드 모두 대상 팝업이 보이는 동안 뷰 전체 포인터를
+/// host 로 보낸다. 지원 보고(`overlay_support`)는 실제 합성을 측정하기 전이라 기본값 `Hide` 다.
 /// 계약: docs/design/systems/webview.md 의 "egui 오버레이와 native WebView" 절.
-impl super::overlay::WebViewOverlayBackend for PlatformWebView {}
+impl super::overlay::WebViewOverlayBackend for PlatformWebView {
+    fn overlay_paint_source(&self, mode: OverlayMode) -> OverlayPaintSource {
+        if mode == OverlayMode::Opaque {
+            OverlayPaintSource::MainSurface
+        } else {
+            OverlayPaintSource::OverlaySurface
+        }
+    }
+
+    fn apply_overlay(&self, request: &OverlayRequest<'_>) -> Result<(), OverlayApplyError> {
+        let overlay = if request.mode == OverlayMode::Opaque {
+            request
+                .regions
+                .iter()
+                .map(|r| [r.x, r.y, r.width, r.height].map(|v| v.value().round() as i32))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        {
+            let mut mask = self.mask.borrow_mut();
+            mask.overlay = overlay;
+            mask.scale_factor = request.scale_factor;
+        }
+        self.webview
+            .ivars()
+            .host_pointer
+            .set(request.host_takes_pointer);
+        if self.apply_mask() {
+            Ok(())
+        } else {
+            Err(OverlayApplyError::Failed(
+                "the web view has no backing layer for the popup cutout".into(),
+            ))
+        }
+    }
+
+    fn clear_overlay(&self) {
+        self.webview.ivars().host_pointer.set(false);
+        self.mask.borrow_mut().overlay.clear();
+        if !self.apply_mask() {
+            tracing::warn!("webview: no backing layer while clearing the popup cutout");
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -6,6 +6,8 @@ pub mod keys;
 mod load_generation;
 pub mod overlay;
 pub(crate) mod overlay_host;
+#[cfg(any(target_os = "macos", test))]
+mod page_mask;
 #[cfg(any(windows, test))]
 mod scan_resume;
 pub mod script_gate;
