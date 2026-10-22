@@ -1461,7 +1461,7 @@ fn draw_workspace_card(
                     egui::TextFormat {
                         font_id: egui::FontId::proportional(size),
                         color: th.text_placeholder().into(),
-                        line_height: Some(size * 1.35),
+                        line_height: Some(size * th.line_height_ui),
                         ..Default::default()
                     },
                 );

@@ -407,11 +407,8 @@ pub(crate) fn ws_row_extra_h(theme: &Theme, row: &WsRowSpec) -> f32 {
 
 /// 설명 한 줄 높이. 본체 설명과 같은 글꼴·줄간격이다.
 fn description_line_h(theme: &Theme) -> f32 {
-    theme.font_size_caption.value() * DESCRIPTION_LINE_HEIGHT
+    theme.font_size_caption.value() * theme.line_height_ui
 }
-
-/// 본체 카드 설명의 줄간격 배수와 같다.
-const DESCRIPTION_LINE_HEIGHT: f32 = 1.35;
 
 /// 워크스페이스 행 1개 — 슬롯 가운데 점(+ attached ring), 이름, 배지, REMOTE 줄, 부제.
 /// `card`는 제목 줄과 추가 줄을 모두 포함하며 배경·hover·accent bar가 카드 전체를 덮는다.
