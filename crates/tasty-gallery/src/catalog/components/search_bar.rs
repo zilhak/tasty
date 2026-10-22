@@ -8,7 +8,7 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: LogicalPx = LogicalPx(360.0);
+pub(crate) const WIDTH: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
@@ -50,7 +50,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
+pub(crate) fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
     kit::frame_card_popover_edge(
         ui,
         theme,

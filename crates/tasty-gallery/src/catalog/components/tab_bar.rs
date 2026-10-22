@@ -10,6 +10,7 @@ use tasty_ui_widgets::{TabScrollArrowInk, TabScrollArrowSide, paint_tab_scroll_a
 use crate::catalog::icons::{PLUS, SEARCH, SPLIT};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
+pub(crate) use kit_strip::{CellCfg, caption, tab_cell, themed};
 pub use kit_strip::{draw_move_cue, draw_scroll_shape, draw_status_cluster};
 
 const TABS: &[(&str, bool)] = &[("README.md", false), ("build.rs", true), ("run.rs", false)];

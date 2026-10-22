@@ -1,34 +1,30 @@
 //! Shared attach loading parts from the design loading gallery.
-use crate::catalog::spec::{StageVariant, stage};
+
+mod matrix;
+mod surface;
+
+use crate::catalog::spec::{self, StageVariant, stage};
 use crate::i18n::{t, t_fmt};
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{LoadingPlacement, PendingIndicator, paint_loading_overlay};
 
+/// 시안 Loading overlay의 일곱 예제와 응답 대기 표시.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+    matrix::placements(ui, theme);
+    matrix::tabs(ui, theme);
+    matrix::lnb(ui, theme);
+    matrix::rail(ui, theme);
+    surface::surfaces(ui, theme);
+    surface::together(ui, theme);
+    matrix::labels(ui, theme);
+    pending(ui, theme);
+}
+
+/// 응답 대기 표시: 한 건·여러 건·좁은 폭·모션 감소.
+fn pending(ui: &mut egui::Ui, theme: &Theme) {
+    spec::spec(ui, theme, "Response wait indicator", None);
     stage(ui, theme, StageVariant::Column, |ui| {
-        for placement in [
-            LoadingPlacement::Surface,
-            LoadingPlacement::Tab,
-            LoadingPlacement::Lnb,
-            LoadingPlacement::Rail,
-        ] {
-            let size =
-                theme.loading_overlay_rail_size() + theme.loading_overlay_surface_inset() * 2.0;
-            ui.horizontal(|ui| {
-                // Toggle comparisons use the same allocated rectangle.
-                for visible in [false, true] {
-                    let (rect, _) = ui
-                        .allocate_exact_size(egui::Vec2::splat(size.value()), egui::Sense::hover());
-                    let bed = theme.surface_raised().to_egui();
-                    ui.painter()
-                        .rect_filled(rect, theme.corner_radius.value(), bed);
-                    if visible {
-                        paint_loading_overlay(ui, theme, rect, placement, bed);
-                    }
-                }
-            });
-        }
         PendingIndicator {
             label: t("attach.pending.one"),
             time: "0s",

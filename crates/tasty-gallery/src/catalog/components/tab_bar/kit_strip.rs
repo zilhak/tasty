@@ -5,8 +5,10 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    HtmlScriptMarkerKind, TabScrollArrowInk, TabScrollArrowSide as Side, move_source_glyph_size,
-    paint_move_source_glyph, paint_tab_scroll_arrow,
+    Attention, HtmlScriptMarkerKind, LoadingPlacement, TabScrollArrowInk,
+    TabScrollArrowSide as Side, move_source_glyph_size, paint_dashed_outline,
+    paint_loading_overlay, paint_move_source_glyph, paint_num_keycap, paint_tab_scroll_arrow,
+    tab_title_color,
 };
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -39,7 +41,7 @@ fn c(h: impl Into<egui::Color32>) -> egui::Color32 {
     h.into()
 }
 
-fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+pub(crate) fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
         egui::RichText::new(text)
             .monospace()
@@ -49,7 +51,12 @@ fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 }
 
 /// 시안 `Themed`: 테마 이름과 예제 줄을 담는 bg-app 카드.
-fn themed(ui: &mut egui::Ui, theme: &Theme, name: &str, add: impl FnOnce(&mut egui::Ui)) {
+pub(crate) fn themed(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    name: &str,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     egui::Frame::new()
         .fill(c(theme.bg_app()))
         .stroke(egui::Stroke::new(
@@ -88,20 +95,54 @@ fn arrow(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, side: Side, cfg: StripC
 }
 
 /// 시안 `TabCellS`의 상태. 스트립 예제는 `label`·`active`만 쓴다.
-#[derive(Clone, Copy, Default)]
-struct CellCfg {
-    label: &'static str,
-    active: bool,
-    hover: bool,
+#[derive(Clone, Copy)]
+pub(crate) struct CellCfg {
+    pub(crate) label: &'static str,
+    pub(crate) active: bool,
+    pub(crate) hover: bool,
     /// html 스크립트 표지 종류와 그 칸의 hover 여부.
-    marker: Option<(HtmlScriptMarkerKind, bool)>,
-    mv: bool,
-    busy: bool,
+    pub(crate) marker: Option<(HtmlScriptMarkerKind, bool)>,
+    pub(crate) mv: bool,
+    pub(crate) busy: bool,
+    /// 터미널 탭이면 터미널 아이콘, 아니면 html 아이콘을 그린다.
+    pub(crate) terminal: bool,
+    /// 제목 색을 정하는 attention. 본체 `tab_title_color`와 같은 순위다.
+    pub(crate) attention: Option<Attention>,
+    /// attach 응답 대기 스피너를 아이콘 칸에 겹친다.
+    pub(crate) loading: bool,
+    /// 전환 키캡 숫자. 있으면 아이콘 대신 키캡을 그리고 스피너보다 위에 둔다.
+    pub(crate) keycap: Option<&'static str>,
+    /// 오버레이 rect(아이콘 칸)를 점선으로 보인다. 시안 첫 예제의 상자다.
+    pub(crate) boxes: bool,
+}
+
+impl CellCfg {
+    /// 시안 로딩 예제의 기본 칸: 비활성 터미널 탭 "build-server".
+    pub(crate) const TERMINAL: Self = Self {
+        label: "build-server",
+        terminal: true,
+        ..Self::BASE
+    };
+
+    /// 모든 표시를 끈 html 탭 칸. 상수 예제의 나머지 필드를 채운다.
+    pub(crate) const BASE: Self = Self {
+        label: "",
+        active: false,
+        hover: false,
+        marker: None,
+        mv: false,
+        busy: false,
+        terminal: false,
+        attention: None,
+        loading: false,
+        keycap: None,
+        boxes: false,
+    };
 }
 
 /// 시안 `TabCellS`: [아이콘][제목…] · 오른쪽 고정 묶음 [표지][move][busy][close].
 /// 묶음은 줄지 않고 제목이 먼저 말줄임된다. close 칸은 활성·hover 전에도 자리를 지킨다.
-fn tab_cell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, cfg: CellCfg) {
+pub(crate) fn tab_cell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, cfg: CellCfg) {
     let p = ui.painter();
     let (bg, fg) = if cfg.active {
         (theme.tab_bg_active(), theme.tab_fg_active())
@@ -109,6 +150,11 @@ fn tab_cell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, cfg: CellCfg) {
         (theme.surface_hover(), theme.tab_fg_hover())
     } else {
         (theme.tab_bg(), theme.tab_fg())
+    };
+    let fg = if cfg.attention.is_some() {
+        tab_title_color(theme, cfg.attention, cfg.active)
+    } else {
+        fg
     };
     p.rect_filled(rect, 0.0, c(bg));
     let sep = theme.border_width.value();
@@ -133,7 +179,33 @@ fn tab_cell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, cfg: CellCfg) {
         ),
         egui::vec2(icon, icon),
     );
-    tasty_icons::HTML.image(icon, c(fg)).paint_at(ui, icon_rect);
+    // 우선순위: 전환 키캡 > 스피너 > 숨은 아이콘.
+    if let Some(digit) = cfg.keycap {
+        paint_num_keycap(p, theme, icon_rect.center(), digit, cfg.active, 1.0);
+    } else if cfg.loading {
+        // 칸 함수는 공유 `&Ui`만 받으므로 같은 layer에 오버레이용 Ui를 따로 만든다.
+        let mut overlay = egui::Ui::new(
+            ui.ctx().clone(),
+            ui.id()
+                .with(("tab_cell_loading", rect.min.x as i32, rect.min.y as i32)),
+            egui::UiBuilder::new()
+                .layer_id(ui.layer_id())
+                .max_rect(icon_rect),
+        );
+        overlay.set_clip_rect(rect.intersect(ui.clip_rect()));
+        paint_loading_overlay(&mut overlay, theme, icon_rect, LoadingPlacement::Tab, c(bg));
+    } else {
+        let glyph = if cfg.terminal {
+            tasty_icons::TERMINAL
+        } else {
+            tasty_icons::HTML
+        };
+        glyph.image(icon, c(fg)).paint_at(ui, icon_rect);
+    }
+    // 오버레이 bed가 칸을 덮으므로 점선은 그 뒤에 그린다.
+    if cfg.boxes {
+        paint_dashed_outline(p, theme, icon_rect, 0.0, c(theme.accent_move()));
+    }
 
     // 오른쪽 끝에서 왼쪽으로 close · busy · move · 표지 순서로 칸을 잡는다.
     let status_gap = theme.tab_status_gap().value();
@@ -242,7 +314,7 @@ fn strip(ui: &mut egui::Ui, theme: &Theme, cfg: StripCfg) {
             let cfg = CellCfg {
                 label,
                 active: i == 1,
-                ..CellCfg::default()
+                ..CellCfg::BASE
             };
             tab_cell(&tabs, theme, cell, cfg);
         }
@@ -450,6 +522,7 @@ const CLUSTER_ROWS: [(&str, CellCfg); 8] = [
             marker: BLOCKED,
             mv: false,
             busy: false,
+            ..CellCfg::BASE
         },
     ),
     (
@@ -461,6 +534,7 @@ const CLUSTER_ROWS: [(&str, CellCfg); 8] = [
             marker: BLOCKED,
             mv: false,
             busy: false,
+            ..CellCfg::BASE
         },
     ),
     (
@@ -472,6 +546,7 @@ const CLUSTER_ROWS: [(&str, CellCfg); 8] = [
             marker: Some((HtmlScriptMarkerKind::Allowed, false)),
             mv: false,
             busy: false,
+            ..CellCfg::BASE
         },
     ),
     (
@@ -483,6 +558,7 @@ const CLUSTER_ROWS: [(&str, CellCfg); 8] = [
             marker: BLOCKED,
             mv: false,
             busy: true,
+            ..CellCfg::BASE
         },
     ),
     (
@@ -494,6 +570,7 @@ const CLUSTER_ROWS: [(&str, CellCfg); 8] = [
             marker: BLOCKED,
             mv: true,
             busy: false,
+            ..CellCfg::BASE
         },
     ),
     (
@@ -505,6 +582,7 @@ const CLUSTER_ROWS: [(&str, CellCfg); 8] = [
             marker: BLOCKED,
             mv: true,
             busy: true,
+            ..CellCfg::BASE
         },
     ),
     (
@@ -516,6 +594,7 @@ const CLUSTER_ROWS: [(&str, CellCfg); 8] = [
             marker: Some((HtmlScriptMarkerKind::Blocked, true)),
             mv: false,
             busy: false,
+            ..CellCfg::BASE
         },
     ),
     (
@@ -527,6 +606,7 @@ const CLUSTER_ROWS: [(&str, CellCfg); 8] = [
             marker: BLOCKED,
             mv: true,
             busy: true,
+            ..CellCfg::BASE
         },
     ),
 ];

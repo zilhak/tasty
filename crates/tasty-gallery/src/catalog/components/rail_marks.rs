@@ -3,8 +3,9 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    RailDot, num_keycap, paint_rail_category_line, paint_rail_dot, paint_rail_flat_divider,
-    paint_workspace_mirror_chip, rail_flat_divider_size,
+    LoadingPlacement, RailDot, num_keycap, paint_attach_refusal_chip, paint_dashed_outline,
+    paint_loading_overlay, paint_move_source_chip, paint_num_keycap, paint_rail_category_line,
+    paint_rail_dot, paint_rail_flat_divider, paint_workspace_mirror_chip, rail_flat_divider_size,
 };
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -18,14 +19,24 @@ enum Bed {
 }
 
 /// 예제 아바타의 고정 상태.
-#[derive(Clone, Copy, Default)]
-struct Avatar {
-    letter: &'static str,
-    active: bool,
-    hover: bool,
-    notif: bool,
-    ring: bool,
-    mirror: bool,
+#[derive(Clone, Copy)]
+pub(crate) struct Avatar {
+    pub(crate) letter: &'static str,
+    pub(crate) active: bool,
+    pub(crate) hover: bool,
+    pub(crate) notif: bool,
+    pub(crate) ring: bool,
+    pub(crate) mirror: bool,
+    /// 왼쪽 아래 move 칩.
+    pub(crate) mv: bool,
+    /// 왼쪽 위 attach 거절 칩.
+    pub(crate) refused: bool,
+    /// 이니셜 둘레의 attach 응답 대기 링.
+    pub(crate) loading: bool,
+    /// 전환 키캡 숫자. 이니셜 대신 그리고 모든 표지 위에 둔다.
+    pub(crate) keycap: Option<&'static str>,
+    /// 오버레이 rect(아바타 36)를 점선으로 보인다.
+    pub(crate) boxes: bool,
 }
 
 /// 레일 한 줄에 놓이는 표지.
@@ -35,8 +46,25 @@ enum RailItem {
     Avatar(Avatar),
 }
 
+impl Avatar {
+    /// 표시를 모두 끈 아바타. 상수 예제의 나머지 필드를 채운다.
+    pub(crate) const NONE: Self = Self {
+        letter: "",
+        active: false,
+        hover: false,
+        notif: false,
+        ring: false,
+        mirror: false,
+        mv: false,
+        refused: false,
+        loading: false,
+        keycap: None,
+        boxes: false,
+    };
+}
+
 /// 아바타 크기. 본체 `collapsed_ws_size`와 같다.
-fn avatar_size(t: &Theme) -> egui::Vec2 {
+pub(crate) fn avatar_size(t: &Theme) -> egui::Vec2 {
     egui::vec2(
         t.sidebar_collapsed_slot_width.value(),
         t.sidebar_collapsed_workspace_height.value(),
@@ -83,7 +111,7 @@ fn paint_flat_divider(ui: &mut egui::Ui, t: &Theme, center: egui::Pos2) {
     paint_rail_flat_divider(ui.painter(), t, rect);
 }
 
-fn paint_avatar(ui: &mut egui::Ui, t: &Theme, rect: egui::Rect, a: Avatar) {
+pub(crate) fn paint_avatar(ui: &mut egui::Ui, t: &Theme, rect: egui::Rect, a: Avatar) {
     let radius = t.corner_radius.value();
     if a.active {
         ui.painter()
@@ -93,17 +121,38 @@ fn paint_avatar(ui: &mut egui::Ui, t: &Theme, rect: egui::Rect, a: Avatar) {
         ui.painter()
             .rect_filled(rect, radius, t.hover_overlay.to_egui_premultiplied());
     }
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        a.letter,
-        egui::FontId::monospace(t.font_size_body.value()),
-        egui::Color32::from(if a.active {
-            t.accent_primary()
-        } else {
-            t.text_muted()
-        }),
-    );
+    if a.keycap.is_none() {
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            a.letter,
+            egui::FontId::monospace(t.font_size_body.value()),
+            egui::Color32::from(if a.active {
+                t.accent_primary()
+            } else {
+                t.text_muted()
+            }),
+        );
+    }
+    // 순서: 이니셜 < 스피너 링 < 상태 점·attached ring·모서리 칩 < 전환 키캡.
+    if a.loading {
+        paint_loading_overlay(
+            ui,
+            t,
+            rect,
+            LoadingPlacement::Rail,
+            egui::Color32::TRANSPARENT,
+        );
+        if a.boxes {
+            paint_dashed_outline(
+                ui.painter(),
+                t,
+                rect,
+                0.0,
+                egui::Color32::from(t.accent_move()),
+            );
+        }
+    }
     if a.notif {
         paint_rail_dot(ui.painter(), t, rect, RailDot::Completion);
     }
@@ -118,8 +167,18 @@ fn paint_avatar(ui: &mut egui::Ui, t: &Theme, rect: egui::Rect, a: Avatar) {
             egui::StrokeKind::Inside,
         );
     }
+    let bed = egui::Color32::from(t.bg_sidebar());
+    if a.mv {
+        paint_move_source_chip(ui, t, rect, bed);
+    }
+    if a.refused {
+        paint_attach_refusal_chip(ui, t, rect, bed);
+    }
     if a.mirror {
         paint_workspace_mirror_chip(ui, t, rect);
+    }
+    if let Some(digit) = a.keycap {
+        paint_num_keycap(ui.painter(), t, rect.center(), digit, a.active, 1.0);
     }
 }
 
@@ -132,6 +191,7 @@ const RAIL: &[RailItem] = &[
         notif: false,
         ring: false,
         mirror: false,
+        ..Avatar::NONE
     }),
     RailItem::Avatar(Avatar {
         letter: "S",
@@ -140,6 +200,7 @@ const RAIL: &[RailItem] = &[
         notif: false,
         ring: false,
         mirror: false,
+        ..Avatar::NONE
     }),
     RailItem::Line(Bed::Hover),
     RailItem::Avatar(Avatar {
@@ -149,6 +210,7 @@ const RAIL: &[RailItem] = &[
         notif: false,
         ring: false,
         mirror: true,
+        ..Avatar::NONE
     }),
     RailItem::Avatar(Avatar {
         letter: "D",
@@ -157,6 +219,7 @@ const RAIL: &[RailItem] = &[
         notif: true,
         ring: false,
         mirror: false,
+        ..Avatar::NONE
     }),
     RailItem::Line(Bed::Idle),
     RailItem::Line(Bed::Idle),
@@ -291,7 +354,7 @@ fn board(ui: &mut egui::Ui, t: &Theme, name: &str) {
                         let base = Avatar {
                             letter: "E",
                             mirror: true,
-                            ..Avatar::default()
+                            ..Avatar::NONE
                         };
                         for (caption, a) in [
                             ("idle", base),

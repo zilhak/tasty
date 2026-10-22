@@ -2,8 +2,9 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    ControlSize, IconButton, TagVariant, brand, paint_rail_category_line,
-    paint_workspace_mirror_chip, tag_caps,
+    ControlSize, IconButton, LoadingPlacement, TagVariant, brand, paint_dashed_outline,
+    paint_loading_overlay, paint_num_keycap, paint_rail_category_line, paint_workspace_mirror_chip,
+    tag_caps,
 };
 
 use crate::catalog::icons::{
@@ -323,21 +324,30 @@ fn section_heading_galley(
 
 /// 행 배경 상태. hover는 비활성 행 위에 겹치는 overlay다.
 #[derive(Clone, Copy, PartialEq)]
-enum RowState {
+pub(crate) enum RowState {
     Active,
     Inactive,
     Hover,
 }
 
 /// 워크스페이스 행 1개의 표시 내용. 본체 `draw_workspace_card`의 축을 그대로 옮긴다.
-struct WsRowSpec<'a> {
-    name: &'a str,
-    badge: Option<&'a str>,
-    state: RowState,
-    busy: bool,
-    attached: bool,
-    mirror: bool,
-    subtitle: Option<&'a str>,
+#[derive(Clone, Copy)]
+pub(crate) struct WsRowSpec<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) badge: Option<&'a str>,
+    pub(crate) state: RowState,
+    pub(crate) busy: bool,
+    pub(crate) attached: bool,
+    pub(crate) mirror: bool,
+    pub(crate) subtitle: Option<&'a str>,
+    /// 부제 아래 설명. 본체처럼 최대 두 줄로 줄인다.
+    pub(crate) description: Option<&'a str>,
+    /// attach 응답 대기 스피너를 점 칸에 겹친다.
+    pub(crate) loading: bool,
+    /// 전환 키캡 숫자. 점 대신 그리고 스피너보다 위에 둔다.
+    pub(crate) keycap: Option<&'a str>,
+    /// 오버레이 rect(점 칸)를 점선으로 보인다.
+    pub(crate) boxes: bool,
 }
 
 impl<'a> WsRowSpec<'a> {
@@ -355,6 +365,10 @@ impl<'a> WsRowSpec<'a> {
             attached: false,
             mirror,
             subtitle: None,
+            description: None,
+            loading: false,
+            keycap: None,
+            boxes: false,
         }
     }
 }
@@ -377,7 +391,7 @@ fn subtitle_line_h(theme: &Theme) -> f32 {
 }
 
 /// 제목 줄 아래에 붙는 REMOTE 줄·부제 줄의 높이 합.
-fn ws_row_extra_h(theme: &Theme, row: &WsRowSpec) -> f32 {
+pub(crate) fn ws_row_extra_h(theme: &Theme, row: &WsRowSpec) -> f32 {
     let mut h = 0.0;
     if row.mirror {
         h += theme.spacing_xs.value() + mirror_pill_line_h(theme);
@@ -385,12 +399,23 @@ fn ws_row_extra_h(theme: &Theme, row: &WsRowSpec) -> f32 {
     if row.subtitle.is_some() {
         h += theme.spacing_xs.value() + subtitle_line_h(theme);
     }
+    if row.description.is_some() {
+        h += theme.spacing_xs.value() + description_line_h(theme) * 2.0;
+    }
     h
 }
 
+/// 설명 한 줄 높이. 본체 설명과 같은 글꼴·줄간격이다.
+fn description_line_h(theme: &Theme) -> f32 {
+    theme.font_size_caption.value() * DESCRIPTION_LINE_HEIGHT
+}
+
+/// 본체 카드 설명의 줄간격 배수와 같다.
+const DESCRIPTION_LINE_HEIGHT: f32 = 1.35;
+
 /// 워크스페이스 행 1개 — 슬롯 가운데 점(+ attached ring), 이름, 배지, REMOTE 줄, 부제.
 /// `card`는 제목 줄과 추가 줄을 모두 포함하며 배경·hover·accent bar가 카드 전체를 덮는다.
-fn paint_ws_row(ui: &mut egui::Ui, theme: &Theme, card: egui::Rect, row: &WsRowSpec) {
+pub(crate) fn paint_ws_row(ui: &mut egui::Ui, theme: &Theme, card: egui::Rect, row: &WsRowSpec) {
     let p = ui.painter_at(card);
     match row.state {
         RowState::Active => {
@@ -424,26 +449,10 @@ fn paint_ws_row(ui: &mut egui::Ui, theme: &Theme, card: egui::Rect, row: &WsRowS
     let (dot_x, name_x) = ws_row_columns(theme, card);
     let dc = egui::pos2(dot_x, title.center().y);
     let dot_r = theme.status_dot_size.value() * 0.5;
-    p.circle_filled(
-        dc,
-        dot_r,
-        egui::Color32::from(if row.busy {
-            theme.accent_success()
-        } else {
-            theme.status_dot_idle()
-        }),
-    );
-    // 링의 offset은 점의 바깥쪽에서 링 안쪽까지의 거리다(본체와 같은 식).
-    if row.attached {
-        let ring_w = theme.status_dot_attached_ring_width().value();
-        p.circle_stroke(
-            dc,
-            dot_r + theme.status_dot_attached_ring_offset().value() + ring_w * 0.5,
-            egui::Stroke::new(
-                ring_w,
-                egui::Color32::from(theme.status_dot_attached_ring()),
-            ),
-        );
+    if let Some(digit) = row.keycap {
+        paint_num_keycap(&p, theme, dc, digit, row.state == RowState::Active, 1.0);
+    } else {
+        paint_ws_dot(ui, theme, &p, row, dc, dot_r);
     }
     let active = row.state == RowState::Active;
     p.text(
@@ -474,6 +483,111 @@ fn paint_ws_row(ui: &mut egui::Ui, theme: &Theme, card: egui::Rect, row: &WsRowS
             sub,
             egui::FontId::proportional(theme.sidebar_button_label_font_size.value()),
             egui::Color32::from(theme.text_muted()),
+        );
+    }
+    if let Some(description) = row.description {
+        paint_ws_description(ui, theme, card, name_x, description);
+    }
+}
+
+/// 카드 맨 아래 두 줄 칸에 설명을 그린다. 본체처럼 placeholder 색, 최대 두 줄이다.
+fn paint_ws_description(
+    ui: &egui::Ui,
+    theme: &Theme,
+    card: egui::Rect,
+    name_x: f32,
+    description: &str,
+) {
+    let size = theme.font_size_caption.value();
+    let mut job = egui::text::LayoutJob {
+        wrap: egui::text::TextWrapping {
+            max_width: (card.right() - theme.spacing_sm.value() - name_x).max(0.0),
+            max_rows: 2,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    job.append(
+        description,
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(size),
+            color: egui::Color32::from(theme.text_placeholder()),
+            line_height: Some(description_line_h(theme)),
+            ..Default::default()
+        },
+    );
+    let galley = ui.fonts(|f| f.layout_job(job));
+    let top = card.bottom() - description_line_h(theme) * 2.0;
+    ui.painter_at(card)
+        .galley(egui::pos2(name_x, top), galley, egui::Color32::PLACEHOLDER);
+}
+
+/// 점과 attached ring. 로딩이면 그 위 점 칸(16 × 제목 줄)에 행 바탕을 다시 깔고 스피너를 그린다.
+fn paint_ws_dot(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    p: &egui::Painter,
+    row: &WsRowSpec,
+    dc: egui::Pos2,
+    dot_r: f32,
+) {
+    p.circle_filled(
+        dc,
+        dot_r,
+        egui::Color32::from(if row.busy {
+            theme.accent_success()
+        } else {
+            theme.status_dot_idle()
+        }),
+    );
+    // 링의 offset은 점의 바깥쪽에서 링 안쪽까지의 거리다(본체와 같은 식).
+    if row.attached {
+        let ring_w = theme.status_dot_attached_ring_width().value();
+        p.circle_stroke(
+            dc,
+            dot_r + theme.status_dot_attached_ring_offset().value() + ring_w * 0.5,
+            egui::Stroke::new(
+                ring_w,
+                egui::Color32::from(theme.status_dot_attached_ring()),
+            ),
+        );
+    }
+    if !row.loading {
+        return;
+    }
+    let slot = egui::Rect::from_center_size(
+        dc,
+        egui::vec2(
+            theme.workspace_dot_slot().value(),
+            theme.font_size_body.value() * theme.line_height_ui,
+        ),
+    );
+    // 시안 bed는 bg-sidebar 위에 행 채움을 겹친 색이다.
+    p.rect_filled(slot, 0.0, egui::Color32::from(theme.bg_sidebar()));
+    match row.state {
+        RowState::Active => {
+            p.rect_filled(slot, 0.0, egui::Color32::from(theme.surface_active()));
+        }
+        RowState::Hover => {
+            p.rect_filled(slot, 0.0, theme.hover_overlay.to_egui_premultiplied());
+        }
+        RowState::Inactive => {}
+    }
+    paint_loading_overlay(
+        ui,
+        theme,
+        slot,
+        LoadingPlacement::Lnb,
+        egui::Color32::TRANSPARENT,
+    );
+    if row.boxes {
+        paint_dashed_outline(
+            p,
+            theme,
+            slot,
+            0.0,
+            egui::Color32::from(theme.accent_move()),
         );
     }
 }
@@ -729,7 +843,7 @@ const ATTACHED_ROWS: &[(&str, bool, bool, Option<&str>)] = &[
 ];
 
 /// 행 여러 개를 사이드바 폭의 카드 열로 그린다.
-fn ws_column(ui: &mut egui::Ui, theme: &Theme, rows: &[WsRowSpec]) {
+pub(crate) fn ws_column(ui: &mut egui::Ui, theme: &Theme, rows: &[WsRowSpec]) {
     let w = theme.field_width_lg.value() + theme.spacing_md.value(); // 212
     let row_h = theme.item_height_interactive.value();
     let heights: Vec<f32> = rows
@@ -765,12 +879,16 @@ fn attached_rows(state: RowState) -> Vec<WsRowSpec<'static>> {
             attached: *attached,
             mirror: *mirror,
             subtitle: *subtitle,
+            description: None,
+            loading: false,
+            keycap: None,
+            boxes: false,
         })
         .collect()
 }
 
 /// 같은 팔레트를 다른 UI 배율로 다시 만든다. 토큰은 배율을 타므로 슬롯·inset·간격이 함께 변한다.
-fn with_zoom(base: &Theme, zoom: f32) -> Theme {
+pub(crate) fn with_zoom(base: &Theme, zoom: f32) -> Theme {
     Theme::with_colors_and_zoom(base.to_colors(), base.is_light, zoom)
 }
 

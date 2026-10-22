@@ -5,8 +5,8 @@ use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// surface 무대 1칸 — 본체의 pane 본문에 대응.
-fn surface_body(ui: &mut egui::Ui, theme: &Theme) {
+/// surface 무대 1칸 — 본체의 pane 본문에 대응. 그린 rect를 돌려준다.
+pub(crate) fn surface_body(ui: &mut egui::Ui, theme: &Theme) -> egui::Rect {
     let size = egui::vec2(theme.measure_md.value(), theme.measure_sm.value() * 0.6);
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
 
@@ -26,11 +26,14 @@ fn surface_body(ui: &mut egui::Ui, theme: &Theme) {
             .variant(ButtonVariant::Secondary)
             .show(ui, theme);
     });
+    rect
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        spec::cluster(ui, theme, "Empty surface", |ui| surface_body(ui, theme));
+        spec::cluster(ui, theme, "Empty surface", |ui| {
+            surface_body(ui, theme);
+        });
     });
 
     spec::meta(
