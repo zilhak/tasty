@@ -241,7 +241,7 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 
 숨김이 필요한 이유는 z-order다. WebView는 OS 자식 창(Linux X 창, Windows child HWND, macOS subview)이라 wgpu 주 표면보다 항상 위에 있고, egui는 주 표면 하나에만 그린다. 숨기지 않으려면 WebView에서 팝업 영역을 잘라 내거나(clip) 팝업을 별도 OS 층에 다시 그려야 한다.
 
-복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. Linux 불투명 모드는 같은 X 창 shape에, Windows 불투명 모드는 같은 child HWND 창 region에, macOS 불투명 모드는 같은 layer mask에 팝업 상자를 합쳐 뺀다(아래 플랫폼별 구현). Linux는 격리 debug 인스턴스에서 안내 clip의 동작을 확인했다. macOS는 같은 mask 계산을 입력 없는 소유 probe로, Windows는 팝업 region을 실제 실행으로 확인했다. macOS·Windows에서 Tasty 안내 clip 단독의 실제 GUI 동작은 측정하지 않았다.
+복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. Linux 불투명 모드는 같은 X 창 shape에, Windows 불투명 모드는 같은 child HWND 창 region에, macOS 불투명 모드는 같은 layer mask에 팝업 상자를 합쳐 뺀다(아래 플랫폼별 구현). Linux와 Windows는 격리 debug 인스턴스에서 안내 clip 단독의 동작을 확인했다. macOS는 같은 mask 계산을 입력 없는 소유 probe로 확인했으며, Tasty 안내 clip 단독의 실제 GUI 동작은 측정하지 않았다.
 
 ### 모드 결정
 
@@ -400,7 +400,7 @@ debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--forc
 - 불투명 영역을 egui 픽셀 경계에 맞춘 코드(위 불투명 영역 규칙, `painted_box`)로 명령 팔레트와 서피스 종류 전환 팝업을 배율 1·2·1.25에서 측정했다. 두 팝업 모두 상자의 y가 0.5 논리 px에 놓인 경우다. 테두리 바깥 1px 링의 네 변 픽셀은 열기 전 페이지와 모두 같았고, 테두리 맨 바깥 행·열에 주 표면 배경색은 없었다. X 창 shape의 구멍은 egui가 그린 테두리 바깥 끝과 같았다. 배율 1에서 상자 위 변이 150.5면 구멍은 테두리가 시작하는 150부터이고 그 위 149행은 페이지다. 배율 1.25의 테두리 바깥 계조 행은 테두리 색이 주 표면 배경 위에 섞인 색이다(위 비정수 배율 한계). egui 드롭다운·plugin 팝업과 배율 1.1·1.2·1.75는 실제 실행하지 않았고 epaint 테셀레이터와 대조하는 단위 시험만 있다.
 - 창 관리자가 있는 세션, IME, X 포커스가 WebView 자식 안에 있는 상태(이 Xvfb에서는 페이지를 눌러도 포커스가 부모 창에 남았다)는 이 실행에서 확인하지 않았다.
 
-Windows에서 투명 합성이 실제로 되는 수단은 아직 확인하지 않았다. Windows의 불투명 구현과 확인한 투명 후보의 제약, macOS에서 확인한 알파 합성과 표시 순서의 한계는 아래에 적는다.
+Windows는 지금의 그림 경로(wgpu surface)로 투명을 낼 수단을 찾지 못했다. Windows의 불투명 구현과 측정한 투명 후보의 제약, macOS에서 확인한 알파 합성과 표시 순서의 한계는 아래에 적는다.
 
 ### Windows 불투명 수단
 
@@ -409,9 +409,15 @@ Windows backend(`src/host_api/webview/windows.rs`)는 불투명 모드만 적용
 - 그림: 대상 팝업 영역을 WebView child HWND의 창 region에서 뺀다. 안내 카드 구멍(`set_native_holes`)과 같은 region 하나를 쓰므로 두 입력을 함께 보관해 전체 사각형에서 둘을 모두 뺀다(`window_region.rs`). 한쪽 갱신이 다른 쪽 구멍을 지우지 않는다. `clear_overlay`는 안내 카드 구멍만 남긴 region으로 돌리고, 구멍이 없으면 region을 지운다. HWND 크기나 배율이 바뀐 프레임에는 새 region을 적용하고, 같으면 다시 설정하지 않는다.
 - 포인터: 대상 팝업이 보이는 동안 `EnableWindow(false)`로 WebView child HWND를 끈다. 꺼진 창과 그 자식 WebView2 창은 포인터를 받지 않으므로 그 자리의 클릭·휠은 부모(winit)로 간다. 끈 뒤 `IsWindowEnabled`로 다시 읽어 바뀌지 않았으면 적용 실패다. `clear_overlay`가 다시 켠다. 포커스는 옮기지 않는다.
 - 실패: region이나 창 상태를 적용하지 못하면 `Failed`를 돌려주고, 공통 경로가 숨김으로 돌아가며 `clear_overlay`로 되돌린다.
-- 확인 범위: Windows 11 기기의 사용자 데스크톱 세션에서 격리 debug 인스턴스로 html 페이지 위에 host 팝업을 열어 확인했다. 창은 활성화하지 않았고 전면 창은 측정 내내 다른 앱 그대로였다. 팝업이 열린 동안 WebView child HWND는 꺼졌고, 창 region은 팝업 상자만 뺀 사각형이었다. 팝업 바깥 페이지 위 점과 팝업 안 점의 `WindowFromPoint`는 모두 winit 창이었다. 닫은 뒤에는 region이 지워지고 창이 다시 켜졌으며 같은 점이 WebView2 렌더 창으로 돌아왔다. 창 크기를 바꾸면 새 크기의 region이 적용됐고 이동만 하면 그대로였다. 화면 캡처에서 팝업 바깥은 페이지, 팝업 상자 안은 주 표면이 그린 팝업이었다.
-- 측정하지 않은 것: 실제 마우스 장치 입력(사용자 커서를 움직이지 않으려고 OS hit test와 debug 입력 주입으로 나누어 확인했다), 키보드·IME, 배율 변경, 안내 카드와 팝업 구멍이 동시에 있는 실제 화면, 팝업이 열린 채 최소화·복원.
-- 투명 모드는 `Unsupported`다. 측정한 Windows 기기(NVIDIA RTX 5090)에서 wgpu가 고른 adapter는 Vulkan이었고, wgpu 24의 DirectComposition 표면은 DX12 전용이며 DX12 swapchain은 알파 모드로 `Opaque`만 보고한다. Vulkan Win32 표면의 알파, layered 자식 창, CompositionController는 측정하지 않았다.
+- 확인 범위: Windows 11 기기의 사용자 데스크톱 세션에서 격리 debug 인스턴스로 html·markdown 페이지 위에 host 팝업을 열어 확인했다. 창은 활성화하지 않았고 전면 창은 측정 내내 다른 앱 그대로였다. 팝업이 열린 동안 WebView child HWND는 꺼졌고, 창 region은 팝업 상자만 뺀 사각형이었다. 팝업 바깥 페이지 위 점과 팝업 안 점의 `WindowFromPoint`는 모두 winit 창이었다. 닫은 뒤에는 region이 지워지고 창이 다시 켜졌으며 같은 점이 WebView2 렌더 창으로 돌아왔다. 창 크기를 바꾸면 새 크기의 region이 적용됐고 이동만 하면 그대로였다. 화면 캡처에서 팝업 바깥은 페이지, 팝업 상자 안은 주 표면이 그린 팝업이었다.
+- markdown 페이지 위 서피스 종류 전환 팝업: 첫 행(터미널)을 누르면(debug 입력 주입) 팝업이 닫히고 `tasty list surfaces`에서 그 surface가 Terminal로 바뀌었으며 WebView child HWND가 사라졌다.
+- 키 경로: 앱이 전면이 아니어서 실제 장치 키는 이 앱에 오지 않는다. 그래서 OS가 키를 보내는 자리인 GUI 스레드 포커스 창에 키 메시지를 직접 넣어 확인했다. 페이지 렌더 창에 클릭 메시지를 넣으면 포커스가 WebView2로 갔고 PageDown이 페이지를 움직였다. 팝업을 열자 포커스가 winit 창으로 돌아왔다. 그 상태의 PageDown은 페이지를 움직이지 않았고 Esc는 팝업을 닫았다. 닫은 뒤에도 포커스는 winit 창에 남았다(자동 복원 없음). 페이지를 다시 누르자 포커스가 WebView2로 돌아왔고 PageDown이 페이지를 움직였다.
+- 측정하지 않은 것: 실제 마우스·키보드 장치 입력(사용자 커서와 전면 창을 바꾸지 않으려고 OS hit test, 포커스 창 메시지, debug 입력 주입으로 나누어 확인했다), IME 조합(OS가 조합을 보내는 포커스 창이 팝업 동안 winit 창인 것만 확인했다), 배율 변경, 안내 카드와 팝업 구멍이 동시에 있는 실제 화면, 팝업이 열린 채 최소화·복원.
+- 투명 모드는 `Unsupported`다. 같은 기기(NVIDIA RTX 5090, 드라이버 616.56, WebView2 155)에서 WebView2 위에 빨간 불투명 상자·50% 검정 띠·완전 투명 영역을 그리는 측정 프로그램으로 두 후보를 쟀다.
+  - 후보 1(WebView2 형제 위 자식 창에 wgpu surface): Vulkan surface는 alpha 모드로 `PreMultiplied`를 보고하고 그 설정으로 그렸지만 화면에서는 투명 영역이 검정이었다. 이 경로에서는 surface caps의 알파 모드가 실제 합성을 뜻하지 않는다. DX12는 `Opaque`만 보고하고 검정이었다. `WS_EX_LAYERED`를 붙이거나 `LWA_ALPHA`를 걸어도 같았다. GL은 layered 자식 창에 그림이 보이지 않았다.
+  - 같은 그림을 wgpu로 그려 CPU로 읽고 `UpdateLayeredWindow`(픽셀 알파)로 layered 자식 창에 올리면 띠가 페이지와 반씩 섞이고 투명 영역에 페이지가 보였다. 다만 wgpu surface가 아니라 프레임마다 GPU에서 CPU로 읽는 별도 그림 경로다. layered 자식 창은 Windows 8 이상을 선언한 manifest가 있어야 만들어지고, manifest가 없는 실행 파일(지금 Tasty와 같다)에서는 창 생성이 `0x800700CB`로 실패했다. 또 `HTTRANSPARENT`로 통과한 hit test는 winit 부모가 아니라 형제 WebView2 렌더 창으로 갔다(같은 스레드 `WindowFromPoint`). 그래서 포인터를 호스트로 보내려면 지금처럼 WebView child HWND를 끄는 처리가 계속 필요하다.
+  - 후보 2(CompositionController): 이 기기에서 만들어졌다. 같은 DirectComposition 트리에 wgpu DX12 비주얼을 올리면 `Opaque`라 투명 영역이 검정이었다. 미리 곱한 알파의 D3D11 composition swapchain을 올리면 띠가 섞이고 투명 영역에 페이지가 보였다. 이 경우 WebView2는 HWND 없이 그려지므로 모든 포인터가 호스트 창으로 오고 페이지 입력은 호스트가 전달해야 한다.
+  - 두 후보 모두 투명을 내려면 wgpu surface가 아닌 새 그림 경로나 WebView2 호스팅 방식 변경이 필요하다. 그래서 Windows 기본은 불투명이다. 측정은 이 기기 한 대, 배율 1, 한 GPU 드라이버 조합이다.
 
 ### macOS 측정 사실과 범위
 
