@@ -175,9 +175,13 @@ fn box_text() -> PermBoxText<'static> {
 
 #[cfg(test)]
 mod tests {
+    // 권한 판정 시험은 unix 모드 비트를 쓰므로 그 시험만 쓰는 준비물도 unix 에서만 둔다.
+    #[cfg(unix)]
     use super::*;
+    #[cfg(unix)]
     use std::path::PathBuf;
 
+    #[cfg(unix)]
     fn item(kind: ItemKind, bits: Option<u32>, owner: bool) -> ItemFacts {
         ItemFacts {
             path: PathBuf::from("/w/deploy.env"),
