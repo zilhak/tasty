@@ -37,6 +37,8 @@ fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::Shado
 /// 묻히지 않도록 시안 창 배경 bg-panel 을 쓴다. 탐색기 Properties 도 시안 YProps 바탕이 bg-panel 이고
 /// 읽기 실패 화면의 Retry 가 같은 Secondary 버튼이다. rename 팝업(workspace·탭·카테고리·탐색기 항목·
 /// 즐겨찾기 추가)은 dialog 라 dialog-bg 이며, 그 위라야 읽기 전용 이름 칸의 상자가 보인다.
+/// DAG 목록 팝업은 시안 `DagWindow` 바탕이 bg-panel 이고 검색 칸은 기본 바탕 Input 이다. surface-raised
+/// 위에서는 input-bg·input-border 가 바탕과 같은 색이 되어 칸이 사라진다.
 fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
     match popup_id {
         "notifications" | "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach"
@@ -47,6 +49,7 @@ fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) ->
         | super::file_picker::FILE_PICKER_POPUP_ID
         | crate::view::file_chooser::FILE_CHOOSER_POPUP_ID
         | super::explorer_properties::EXPLORER_PROPERTIES_POPUP_ID
+        | super::dag_list::DAG_LIST_POPUP_ID
         | crate::adapters::ui::info_modal::INFO_MODAL_ID => th.bg_panel().into(),
         "rename" => th.dialog_bg().into(),
         _ => th.surface_raised().into(),
@@ -798,6 +801,28 @@ mod tests {
                     shell,
                     egui::Color32::from(fill),
                     "{what} 칸이 바탕과 같은 색이다"
+                );
+            }
+        }
+    }
+
+    /// DAG 목록 팝업의 검색 칸(기본 바탕 Input)은 bg-panel 셸 위에서 채움·테두리가 바탕과 구분된다. 두 테마 모두 본다.
+    #[test]
+    fn the_dag_list_shell_keeps_the_search_field_box_visible() {
+        for text in [tasty_themes::MOCHA_TOML_TEXT, tasty_themes::LATTE_TOML_TEXT] {
+            let file = tasty_themes::ThemeFile::parse(text).expect("built-in theme");
+            let (partial, is_light) = file.to_partial();
+            let mut colors = tasty_themes::mocha_fallback_colors();
+            colors.apply_partial(&partial);
+            let th =
+                tasty_type_appearance::theme::Theme::with_colors(colors, is_light.unwrap_or(false));
+            let shell = popup_bg_fill(super::super::dag_list::DAG_LIST_POPUP_ID, &th);
+            assert_eq!(shell, egui::Color32::from(th.bg_panel()));
+            for (what, color) in [("fill", th.input_bg()), ("border", th.input_border())] {
+                assert_ne!(
+                    shell,
+                    egui::Color32::from(color),
+                    "검색 칸 {what} 이 바탕과 같은 색이다"
                 );
             }
         }
