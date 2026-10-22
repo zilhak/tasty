@@ -379,6 +379,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
         &[
+            TokenChip::without_color("rail-category-line-length", "line 24"),
+            TokenChip::without_color("rail-flat-divider-length", "flat top divider 28"),
+            TokenChip::without_color("workspace-mirror-chip-size", "mirror chip 12"),
             TokenChip::new(
                 "rail-category-line",
                 "idle line · flat divider",

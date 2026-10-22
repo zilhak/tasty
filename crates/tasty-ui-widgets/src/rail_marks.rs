@@ -4,9 +4,9 @@
 
 use tasty_type_appearance::theme::Theme;
 
-/// 카테고리 선의 길이. 레일 슬롯 폭에서 spacing-sm을 뺀 값이다.
+/// 카테고리 선의 길이(`rail-category-line-length`).
 pub fn rail_category_line_length(theme: &Theme) -> f32 {
-    (theme.sidebar_collapsed_slot_width.value() - theme.spacing_sm.value()).max(0.0)
+    theme.rail_category_line_length().value()
 }
 
 /// `center`에 카테고리 선을 그린다. 모든 카테고리가 같은 색을 쓰고,
@@ -28,10 +28,10 @@ pub fn paint_rail_category_line(
     painter.rect_filled(rect, line_h * 0.5, color);
 }
 
-/// 카테고리를 끈 레일의 맨 위 구분선 크기. 길이는 시안의 28이며 아바타 높이 토큰 값을 쓴다.
+/// 카테고리를 끈 레일의 맨 위 구분선 크기. 길이는 `rail-flat-divider-length`, 굵기는 카테고리 선과 같다.
 pub fn rail_flat_divider_size(theme: &Theme) -> egui::Vec2 {
     egui::vec2(
-        theme.sidebar_collapsed_workspace_height().value(),
+        theme.rail_flat_divider_length().value(),
         theme.rail_category_line_width().value(),
     )
 }
@@ -45,10 +45,10 @@ pub fn paint_rail_flat_divider(painter: &egui::Painter, theme: &Theme, rect: egu
 /// 접힌 레일 아바타의 오른쪽 아래 모서리에 mirror 칩을 그린다.
 /// 배경색 halo로 다른 알림·점유 표시와 구분하고, 12 원 안쪽의 1px 테두리가
 /// 아바타의 idle·active·hover 바탕 어디서나 칩을 드러낸다.
-/// 12 원은 다른 모서리 칩(move·refusal)과 같은 크기 토큰을 쓴다.
+/// 원의 지름은 `workspace-mirror-chip-size` 다.
 pub fn paint_workspace_mirror_chip(ui: &egui::Ui, theme: &Theme, avatar: egui::Rect) {
     let halo_r = theme.spacing_sm.value();
-    let chip_r = theme.move_source_chip_size().value() * 0.5;
+    let chip_r = theme.workspace_mirror_chip_size().value() * 0.5;
     let border = theme.border_width.value();
     let glyph = theme.spacing_sm.value();
     let inset = theme.spacing_xs.value();
