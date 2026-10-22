@@ -235,8 +235,10 @@ src/catalog/components/markdown_viewer.rs	Loading…	explorer.state.loading,file
 src/catalog/components/markdown_viewer/document.rs	, 	explorer.properties.list_separator
 src/catalog/components/markdown_viewer/document.rs	Image	convert_popup.image
 src/catalog/components/markdown_viewer/document.rs	Kind	explorer.properties.kind,preset.edit.kind,remote_tool.field_kind
+src/catalog/components/md_address.rs	Disconnected from the remote	html_address.disconnected
 src/catalog/components/md_address.rs	Go	explorer.address.go
 src/catalog/components/md_address.rs	No matching path	explorer.address.empty
+src/catalog/components/md_address.rs	Reload	html_address.reload
 src/catalog/components/md_address.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/md_large_file.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/md_large_file.rs	Open	button.open,file_handler.picker.open_button,filepicker.open_button
