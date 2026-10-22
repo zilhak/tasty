@@ -1264,8 +1264,14 @@ fn draw_collapsed_avatar(
             text_color,
         );
     }
-    let loading =
-        loading::paint_sidebar_loading(ui, th, ws.loading_since, rect, LoadingPlacement::Rail);
+    let loading = loading::paint_sidebar_loading(
+        ui,
+        th,
+        ws.loading_since,
+        rect,
+        LoadingPlacement::Rail,
+        egui::Color32::TRANSPARENT,
+    );
     // 전환 키캡은 이니셜 둘레 스피너 위에 그린다.
     if let Some(digit) = switch_digit {
         crate::adapters::ui::switch_overlay::paint_keycap(
@@ -1398,6 +1404,7 @@ fn draw_workspace_card(
                 ws.loading_since,
                 dot_rect,
                 LoadingPlacement::Lnb,
+                bg,
             );
             if let Some(digit) = switch_digit {
                 // 같은 슬롯 가운데 키캡을 스피너 위에 그려 이름 시작 위치를 유지한다.
@@ -1665,15 +1672,19 @@ mod tests {
         out
     }
 
-    /// 로딩 중이고 전환 키가 눌린 비활성 워크스페이스 하나를 그린 출력. 모션 감소로 키캡 페이드를 건너뛴다.
-    fn loading_with_keycap(collapsed: bool) -> (egui::FullOutput, Theme) {
+    /// 로딩 중인 워크스페이스 "build-farm"을 둘째 행으로 그린 출력. 모션 감소로 키캡 페이드를 건너뛴다.
+    fn loading_sidebar(
+        collapsed: bool,
+        switch_held: bool,
+        active: bool,
+    ) -> (egui::FullOutput, Theme) {
         let ctx = egui::Context::default();
         let mut theme = test_theme();
         theme.reduced_motion = true;
         let kb = crate::settings::KeybindingSettings::default();
-        let mut ws = mock_ws("build-farm", false);
+        let mut ws = mock_ws("build-farm", active);
         ws.loading_since = Some(std::time::Instant::now() - std::time::Duration::from_secs(1));
-        let workspaces = vec![mock_ws("main", true), ws];
+        let workspaces = vec![mock_ws("main", !active), ws];
         let output = ctx.run(egui::RawInput::default(), |ctx| {
             egui::SidePanel::left("test_loading_keycap").show(ctx, |ui| {
                 if collapsed {
@@ -1685,7 +1696,7 @@ mod tests {
                         notifications: None,
                         tools_hover: "Tools menu",
                         plugin_alert: 0,
-                        workspace_switch_held: true,
+                        workspace_switch_held: switch_held,
                         category_switch_held: false,
                     };
                     let _view = draw_collapsed_sidebar_view(ui, &props);
@@ -1707,7 +1718,7 @@ mod tests {
                         mirror_hover: "Mirror of a remote workspace",
                         mirror_pill_label: "REMOTE",
                         plugin_alert: 0,
-                        workspace_switch_held: true,
+                        workspace_switch_held: switch_held,
                         category_switch_held: false,
                     };
                     let _view = draw_full_sidebar_view(ui, &props);
@@ -1721,7 +1732,7 @@ mod tests {
     #[test]
     fn switch_keycap_paints_above_the_loading_spinner() {
         for collapsed in [false, true] {
-            let (output, theme) = loading_with_keycap(collapsed);
+            let (output, theme) = loading_sidebar(collapsed, true, false);
             let (spinner, keycap) =
                 crate::adapters::ui::attach_loading::paint_order::spinner_and_keycap(
                     &output, &theme,
@@ -1731,6 +1742,34 @@ mod tests {
                 keycap > spinner,
                 "collapsed={collapsed} {keycap} <= {spinner}"
             );
+        }
+    }
+
+    /// 시안 LNB 받침은 bg-sidebar 위에 현재 행 채움을 겹친 색이다. 활성 카드의 점 칸은 사이드바 배경을
+    /// 깐 뒤 같은 칸을 surface-active로 다시 칠한다. 비활성 카드는 투명 채움이라 사이드바 배경만 남는다.
+    #[test]
+    fn lnb_loading_bed_layers_the_row_fill_over_the_sidebar_background() {
+        let slot = test_theme().workspace_dot_slot().value();
+        for active in [true, false] {
+            let (output, theme) = loading_sidebar(false, false, active);
+            let shapes = crate::adapters::ui::attach_loading::paint_order::flatten(&output);
+            let beds: Vec<egui::Color32> = shapes
+                .iter()
+                .filter(|(_, r)| r.is_some_and(|r| (r.width() - slot).abs() < 0.01))
+                .map(|(c, _)| *c)
+                .collect();
+            let sidebar = theme.bg_sidebar().to_egui();
+            let row = theme.surface_active().to_egui();
+            let at = beds
+                .iter()
+                .position(|c| *c == sidebar)
+                .expect("sidebar bed");
+            let next = beds.get(at + 1).copied();
+            if active {
+                assert_eq!(next, Some(row), "{beds:?}");
+            } else {
+                assert_eq!(next, Some(egui::Color32::TRANSPARENT), "{beds:?}");
+            }
         }
     }
 
