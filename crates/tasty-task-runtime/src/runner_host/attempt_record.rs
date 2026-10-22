@@ -21,6 +21,20 @@ impl RunnerContext {
         completion: Completion,
         now_ms: u64,
     ) -> Result<CompletionReceipt, AgentError> {
+        self.complete_task_again(workspace_id, task_id, completion, now_ms, false)
+    }
+
+    /// [`Self::complete_task`] 와 같다. `after_unanswered` 는 같은 보고를 앞서 냈지만 결과를 받지 못했다는
+    /// 뜻이다. 그 보고가 실제로 확정됐다면 이번 보고는 같은 보고(duplicate)로 받아들여지고, 앞 보고의
+    /// 종결 알림은 나가지 않았으므로 지금 낸다.
+    pub(crate) fn complete_task_again(
+        &self,
+        workspace_id: u32,
+        task_id: &TaskId,
+        completion: Completion,
+        now_ms: u64,
+        after_unanswered: bool,
+    ) -> Result<CompletionReceipt, AgentError> {
         let (seq, id) = (self.agent_seq.clone(), task_id.clone());
         let receipt = self.with_memory(move |mem| {
             TaskStore::new(mem, HOST_OWNER, seq.as_ref()).complete(
@@ -30,8 +44,8 @@ impl RunnerContext {
                 now_ms,
             )
         })?;
-        // 같은 보고의 재전송은 이미 알린 종결을 다시 알리지 않는다.
-        let own = (!receipt.duplicate).then(|| receipt.task.clone());
+        // 같은 보고의 재전송은 이미 알린 종결을 다시 알리지 않는다. 앞 보고가 답 없이 확정됐으면 알린 적이 없다.
+        let own = (!receipt.duplicate || after_unanswered).then(|| receipt.task.clone());
         self.fire_terminal_tasks(
             workspace_id,
             own.into_iter().chain(receipt.transitioned.iter().cloned()),
