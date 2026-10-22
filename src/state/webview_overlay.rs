@@ -229,8 +229,8 @@ pub fn overlay_reveal_ready(
 }
 
 /// 상자 바깥(`StrokeKind::Outside`)에 그리는 테두리까지 넣은 그림 영역. 소속 범위 밖은 자른다.
-pub fn outlined_box(rect: egui::Rect, outside_stroke: f32, scope: egui::Rect) -> egui::Rect {
-    rect.expand(outside_stroke).intersect(scope)
+pub fn outlined_box(rect: egui::Rect, outside_stroke: LogicalPx, scope: egui::Rect) -> egui::Rect {
+    rect.expand(outside_stroke.value()).intersect(scope)
 }
 
 /// 불투명 모드에서 상자 가장자리를 정할 페이지 영역(egui 논리 좌표). 다른 모드에서는 비운다.
@@ -400,7 +400,7 @@ mod tests {
         let popup = er(100.0, 100.0, 100.0, 100.0);
         let scope = er(0.0, 0.0, 400.0, 300.0);
         let t = OverlayTarget {
-            opaque_rect: outlined_box(popup, 1.0, scope),
+            opaque_rect: outlined_box(popup, LogicalPx(1.0), scope),
             ..target(popup, popup.expand(8.0), None)
         };
         let webview = pr(0.0, 0.0, 400.0, 300.0);
@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(t.rect, popup);
         // 소속 범위 끝에 붙은 상자는 범위 밖 테두리를 칠하지 않는다.
         assert_eq!(
-            outlined_box(er(0.0, 0.0, 50.0, 50.0), 1.0, scope),
+            outlined_box(er(0.0, 0.0, 50.0, 50.0), LogicalPx(1.0), scope),
             er(0.0, 0.0, 51.0, 51.0)
         );
     }

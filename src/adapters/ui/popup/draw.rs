@@ -472,7 +472,7 @@ impl PopupManager {
                     rect: popup_rect,
                     opaque_rect: crate::state::webview_overlay::outlined_box(
                         popup_rect,
-                        th.border_width.value(),
+                        th.border_width,
                         scope_clip,
                     ),
                     paint_rect: shadow

@@ -172,7 +172,7 @@ pub fn draw_plugin_popups(
                 rect: target_rect,
                 opaque_rect: crate::state::webview_overlay::outlined_box(
                     target_rect,
-                    th.border_width.value(),
+                    th.border_width,
                     scope_rect,
                 ),
                 paint_rect: (target_rect + shadow.margin()).intersect(scope_rect),
