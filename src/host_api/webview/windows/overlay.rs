@@ -90,7 +90,7 @@ unsafe fn set_clip_region(hwnd: HWND, (w, h): (i32, i32), clip: &[[i32; 4]]) -> 
 /// 계약: docs/design/systems/webview.md 의 "egui 오버레이와 native WebView" 절.
 impl WebViewOverlayBackend for PlatformWebView {
     fn overlay_support(&self) -> OverlayMode {
-        OverlayMode::Hide
+        OverlayMode::Opaque
     }
 
     fn overlay_paint_source(&self, mode: OverlayMode) -> OverlayPaintSource {

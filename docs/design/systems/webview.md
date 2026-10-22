@@ -235,7 +235,7 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 |---|---|---|
 | Linux(X11) | XFixes 2.0과 SHAPE 확장이 있으면 불투명, 없으면 숨김. 투명은 아직 보고하지 않는다 | WebView X 창 shape에 구멍을 내 주 표면을 보인다(아래 "Linux 불투명 구현") |
 | macOS | 숨김(`WebViewOverlayBackend` 기본 구현) | 없음 |
-| Windows | 숨김. 불투명 경로는 debug에서만 적용한다 | HWND region과 입력 차단(아래 "Windows 불투명 수단") |
+| Windows | 불투명 | HWND region과 입력 차단(아래 "Windows 불투명 수단") |
 
 투명 모드는 어느 OS에서도 아직 내지 않으며, 세 OS의 창 단위 host는 아직 만들지 않는다(`Unsupported`). 남은 수단(오버레이 창, 합성)은 각 OS 구현이 아래 backend 계약에 맞춰 더한다.
 
@@ -409,6 +409,8 @@ Windows backend(`src/host_api/webview/windows.rs`)는 불투명 모드만 적용
 - 그림: 대상 팝업 영역을 WebView child HWND의 창 region에서 뺀다. 안내 카드 구멍(`set_native_holes`)과 같은 region 하나를 쓰므로 두 입력을 함께 보관해 전체 사각형에서 둘을 모두 뺀다(`window_region.rs`). 한쪽 갱신이 다른 쪽 구멍을 지우지 않는다. `clear_overlay`는 안내 카드 구멍만 남긴 region으로 돌리고, 구멍이 없으면 region을 지운다. HWND 크기나 배율이 바뀐 프레임에는 새 region을 적용하고, 같으면 다시 설정하지 않는다.
 - 포인터: 대상 팝업이 보이는 동안 `EnableWindow(false)`로 WebView child HWND를 끈다. 꺼진 창과 그 자식 WebView2 창은 포인터를 받지 않으므로 그 자리의 클릭·휠은 부모(winit)로 간다. 끈 뒤 `IsWindowEnabled`로 다시 읽어 바뀌지 않았으면 적용 실패다. `clear_overlay`가 다시 켠다. 포커스는 옮기지 않는다.
 - 실패: region이나 창 상태를 적용하지 못하면 `Failed`를 돌려주고, 공통 경로가 숨김으로 돌아가며 `clear_overlay`로 되돌린다.
+- 확인 범위: Windows 11 기기의 사용자 데스크톱 세션에서 격리 debug 인스턴스로 html 페이지 위에 host 팝업을 열어 확인했다. 창은 활성화하지 않았고 전면 창은 측정 내내 다른 앱 그대로였다. 팝업이 열린 동안 WebView child HWND는 꺼졌고, 창 region은 팝업 상자만 뺀 사각형이었다. 팝업 바깥 페이지 위 점과 팝업 안 점의 `WindowFromPoint`는 모두 winit 창이었다. 닫은 뒤에는 region이 지워지고 창이 다시 켜졌으며 같은 점이 WebView2 렌더 창으로 돌아왔다. 창 크기를 바꾸면 새 크기의 region이 적용됐고 이동만 하면 그대로였다. 화면 캡처에서 팝업 바깥은 페이지, 팝업 상자 안은 주 표면이 그린 팝업이었다.
+- 측정하지 않은 것: 실제 마우스 장치 입력(사용자 커서를 움직이지 않으려고 OS hit test와 debug 입력 주입으로 나누어 확인했다), 키보드·IME, 배율 변경, 안내 카드와 팝업 구멍이 동시에 있는 실제 화면, 팝업이 열린 채 최소화·복원.
 - 투명 모드는 `Unsupported`다. 측정한 Windows 기기(NVIDIA RTX 5090)에서 wgpu가 고른 adapter는 Vulkan이었고, wgpu 24의 DirectComposition 표면은 DX12 전용이며 DX12 swapchain은 알파 모드로 `Opaque`만 보고한다. Vulkan Win32 표면의 알파, layered 자식 창, CompositionController는 측정하지 않았다.
 
 <a id="도메인-라이브러리로는-아무것도-새지-않는다"></a>

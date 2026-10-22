@@ -1,4 +1,4 @@
-<!-- source-hash: 140126e6b783 -->
+<!-- source-hash: 8758e4ec26a7 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -249,7 +249,7 @@ tasty image export --surface 5 out.png
 Shows a local HTML file or a URL in the OS web view. Right-click an empty area of the tab strip > **New HTML...** opens the file chooser in that Pane's current folder, showing only folders and `.html` · `.htm` · `.svg` files. Pick a file to open an HTML Tab in that Pane; cancel and no Tab is created. In a remote Workspace the file chooser does not open, and a notice says the file can't be opened yet.
 
 - While loading, **Loading…** is shown; on failure, **Failed to load** and the URL.
-- While a menu or popup is open, HTML and Markdown pages stay visible on Linux, and only the popup's own area is covered by a square-cornered box. Clicking or scrolling the page during that time counts as a click outside the popup and does not reach the page, and key presses don't go to the page either. On macOS and Windows, and on Linux when the X server lacks the window shape extensions (SHAPE and XFixes), the pages are hidden for a moment and only an empty panel shows while a popup is open. When a notice card appears, only the pages it overlaps are hidden until the card goes away; other pages stay visible. A page you are typing into is not hidden, so a notice card over it stays covered.
+- While a menu or popup is open, HTML and Markdown pages stay visible on Linux and Windows, and only the popup's own area is covered by a square-cornered box. Clicking or scrolling the page during that time counts as a click outside the popup and does not reach the page, and key presses don't go to the page either. On macOS, and on Linux when the X server lacks the window shape extensions (SHAPE and XFixes), the pages are hidden for a moment and only an empty panel shows while a popup is open. When a notice card appears, only the pages it overlaps are hidden until the card goes away; other pages stay visible. A page you are typing into is not hidden, so a notice card over it stays covered.
 - The **HTML** item under **Settings** > **Appearance** — **Default zoom** · **Color scheme** (**Follow theme** / light / dark) · **Allow remote content** · **Sandbox scripts**. Remote content and scripts are blocked by default. It is meant for viewing previews built locally, so to open external sites you need to turn **Allow remote content** on and **Sandbox scripts** off.
 
 ### Address bar
