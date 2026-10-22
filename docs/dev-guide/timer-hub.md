@@ -74,7 +74,7 @@ slack이 지난 뒤에야 후보로 추가되거나 Strict로 바뀌는 것은 �
 |---|---|---|---|
 | `PtySweep` | 보존 기간(5분)이 지난 끝난 headless PTY 항목과 호출자가 spawn 에서 고른 유휴 제한이 지난 실행 중 PTY(그 프로세스를 끝낸다). 유휴 제한이 없는 실행 중 PTY 는 대상이 아니다 | 30s / 60s | 에이전트가 `pty.spawn`/`pty.list` 를 다시 부르지 않음 |
 | `CaptureSweep` | 캡처 업로드 partial(TTL 5분) | 30s / 60s | 다음 청크가 안 옴(연결은 살아 있고 업로드만 중단) |
-| `LogPrune` | IPC 관측 로그 3종(집행 게이트 1시간) | 600s / 600s | 세 로그 모두 append 가 희소 + 재시작 없이 장수명 |
+| `LogPrune` | IPC 관측 로그 3종(집행 게이트 1시간)과 memory 만료 행(게이트 없이 매 틱). GUI·headless 모두 `submit_periodic_prune` 으로 기다리지 않는 writer 요청을 넣는다([메모리 만료](../design/systems/memory.md#만료ttl)) | 600s / 600s | 로그: 세 로그 모두 append 가 희소 + 재시작 없이 장수명. memory: 읽기·쓰기 판정은 만료 행을 이미 없는 것으로 보지만, 같은 키를 다시 쓰거나 지우지 않으면 행이 디스크에 남는다(`memory.gc` 는 Local 전용 수동 경로) |
 
 이 정리는 수십 초 늦어도 되므로 다른 작업 때문에 깨어난 루프에서 함께 실행한다.
 계속 유휴 상태라면 slack 경계에서 깨운다. 타이머가 정상적으로 처리될 때의 회수 지연은
