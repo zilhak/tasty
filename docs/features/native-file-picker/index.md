@@ -237,6 +237,8 @@ markdown의 Browse와 주소창 폴더 버튼, 이미지 다른 이름으로 저
    그 plugin 이 이 선택으로 `markdown.navigate {…, picker_request_id}` 를 보내면 host 는 plugin·요청 번호·
    경로가 모두 맞을 때 증명을 한 번 소비하고 사용자 요청으로 판정한다. 외부 호출자나 다른 plugin,
    고르지 않은 경로, 이미 쓴 증명은 통하지 않는다. 피커는 여전히 경로만 돌려주며 이 증명은 출처 판정에만 쓴다.
+   증명을 남기는 `file_picker` 와 소비하는 `markdown` handler 가 `gui` feature 전용이므로 증명 저장소도
+   `gui` 빌드에만 있다. headless 빌드에는 피커와 이 판정이 없다.
 
 **저장 모드**: `mode?: "open" | "save"`(기본 `open`), `default_name?: string`(기본 빈 이름)을
 받는다. `location: "local"`은 활성 workspace와 무관하게 로컬을 지정한다. 생략하면 기존 출발 surface

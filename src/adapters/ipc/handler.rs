@@ -50,6 +50,8 @@ mod message;
 mod meta;
 pub(crate) mod notification;
 pub(crate) mod notification_channel;
+// 증명을 남기는 file_picker 와 소비하는 markdown 이 GUI 전용이다.
+#[cfg(feature = "gui")]
 pub(crate) mod picker_proofs;
 mod run_result;
 // 창별 목록을 호스트에서 합산할 수 있도록 공개한다.
