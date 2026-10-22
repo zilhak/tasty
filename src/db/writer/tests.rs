@@ -108,13 +108,15 @@ fn shutdown(f: &mut Fixture) {
     }
 }
 
-/// 디스크의 행을 읽기 전용 연결로 최신순으로 읽는다. writer가 살아 있어도 된다.
+/// 디스크의 행을 저장한 목록 순서(순서 정보가 없으면 최신순)로 읽는다. writer가 살아 있어도 된다.
 fn disk(path: &Path, kind: &str) -> Vec<(String, i64)> {
     let conn = Connection::open(path).unwrap();
     let mut stmt = conn
         .prepare(
-            "SELECT path, opened_at FROM recent_files WHERE kind = ?1
-             ORDER BY opened_at DESC, rowid DESC",
+            "SELECT f.path, f.opened_at FROM recent_files f
+             LEFT JOIN recent_file_order o ON o.kind = f.kind AND o.path = f.path
+             WHERE f.kind = ?1
+             ORDER BY o.rank IS NULL, o.rank, f.opened_at DESC, f.rowid DESC",
         )
         .unwrap();
     stmt.query_map([kind], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -209,34 +211,212 @@ fn two_windows_share_one_list_and_the_disk_holds_the_last_committed_one() {
     assert_eq!(disk(&f.path, "markdown").len(), MAX_ENTRIES);
 }
 
-/// 같은 초에 연 항목도 다시 열 때 목록 순서가 같다. 이미 있던 경로를 맨 앞으로 옮긴 경우를 포함한다.
-#[test]
-fn entries_opened_in_the_same_second_reopen_in_list_order() {
-    let mut f = fixture();
-    let entry = |path: &str| Entry {
-        path: path.into(),
-        opened_at: 1_000,
-    };
-    for entries in [
-        vec![entry("/c"), entry("/b"), entry("/a")],
-        vec![entry("/a"), entry("/c"), entry("/b")],
-    ] {
-        let receipt = f
-            .shared
-            .queue
-            .submit(StateRequest::recent(RecentSnapshot {
-                kind: "markdown".into(),
-                revision: 1,
-                entries,
-            }))
-            .unwrap();
-        assert!(receipt.wait_timeout(WAIT).is_some_and(|c| c.took_effect()));
+fn wall_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+/// 이미 있는 파일을 다시 열어 writer를 시작한다. 시작이 부팅 읽기를 하므로 앱 재실행과 같다.
+fn reopen_writer(path: &Path) -> (StateWriterParts, SharedState) {
+    let db = crate::db::Db::open(path).unwrap();
+    start(
+        db,
+        Limits::default(),
+        Arc::new(SystemClock),
+        Arc::new(|| {}),
+    )
+    .unwrap()
+}
+
+fn save_list(queue: &StateQueue, kind: &str, entries: Vec<Entry>) -> StateCompletion {
+    queue
+        .submit(StateRequest::recent(RecentSnapshot {
+            kind: kind.into(),
+            revision: 1,
+            entries,
+        }))
+        .unwrap()
+        .wait_timeout(WAIT)
+        .expect("recent save completion")
+}
+
+fn entries(list: &[(&str, i64)]) -> Vec<Entry> {
+    list.iter()
+        .map(|(path, opened_at)| Entry {
+            path: (*path).into(),
+            opened_at: *opened_at,
+        })
+        .collect()
+}
+
+fn stop(mut parts: StateWriterParts) {
+    let deadline = Instant::now() + WAIT;
+    while parts.poll_shutdown() != 0 {
+        assert!(Instant::now() < deadline, "state writer did not join");
+        std::thread::sleep(Duration::from_millis(1));
     }
-    let rows = disk(&f.path, "markdown");
-    assert!(rows.windows(2).all(|w| w[0].1 > w[1].1), "{rows:?}");
-    assert!(rows.iter().all(|(_, ts)| *ts - 1_000 < MAX_ENTRIES as i64));
+}
+
+/// 같은 초에 연 항목을 저장·재실행·순서 변경·추가로 여러 번 돌려도 목록 순서가 그대로이다. 디스크에는
+/// 연 순간의 실제 시각이 남고, 다시 연 항목 말고는 앞서 기록한 값에서 바뀌지 않는다.
+#[test]
+fn reopening_many_times_keeps_the_order_and_the_open_times() {
+    let mut f = fixture();
+    let mut recent = f.shared.recent.clone();
+    let before = wall_secs();
+    for path in ["/c.md", "/b.md", "/a.md"] {
+        recent.add("markdown", path.into());
+    }
+    let after = wall_secs();
+    settle_to(&mut f, "markdown", 3);
+    let mut times: std::collections::HashMap<String, i64> =
+        disk(&f.path, "markdown").into_iter().collect();
+    assert!(
+        times.values().all(|t| (before..=after).contains(t)),
+        "stored open times {times:?} are not the real ones in {before}..={after}"
+    );
+    let mut expected = recent.get("markdown");
     shutdown(&mut f);
-    assert_eq!(reopened_paths(&f.path, "markdown"), vec!["/a", "/c", "/b"]);
+    let path = f.path.clone();
+    for round in 0..6 {
+        let (mut parts, shared) = reopen_writer(&path);
+        let mut recent = shared.recent.clone();
+        assert_eq!(recent.get("markdown"), expected, "round {round}");
+        let reopened = reopen(&path).remove("markdown").unwrap();
+        for entry in &reopened {
+            assert_eq!(
+                times[&entry.path], entry.opened_at,
+                "round {round}: {}",
+                entry.path
+            );
+        }
+        // 맨 뒤 항목을 다시 열어 맨 앞으로 옮기거나 새 항목을 연다.
+        let opened = if round % 2 == 0 {
+            expected.last().unwrap().clone()
+        } else {
+            format!("/n{round}.md")
+        };
+        let before = wall_secs();
+        recent.add("markdown", opened.clone());
+        let after = wall_secs();
+        let deadline = Instant::now() + WAIT;
+        while shared.recent.revisions("markdown").committed < 1 {
+            assert!(Instant::now() < deadline, "round {round} never committed");
+            parts.poll();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        expected = recent.get("markdown");
+        let on_disk: std::collections::HashMap<String, i64> =
+            disk(&path, "markdown").into_iter().collect();
+        assert!(
+            (before..=after).contains(&on_disk[&opened]),
+            "round {round}: {opened} stored {} outside {before}..={after}",
+            on_disk[&opened]
+        );
+        for (p, t) in &on_disk {
+            if p != &opened {
+                assert_eq!(times[p], *t, "round {round}: {p} was rewritten");
+            }
+        }
+        times = on_disk;
+        stop(parts);
+    }
+    assert_eq!(reopened_paths(&path, "markdown"), expected);
+}
+
+/// 시계가 거꾸로 간 목록과 i64 경계 시각도 그대로 저장되고 저장한 순서로 다시 읽힌다.
+#[test]
+fn clock_rollback_and_extreme_open_times_keep_the_list_order() {
+    let mut f = fixture();
+    let list = entries(&[
+        ("/new-but-earlier", 0),
+        ("/max", i64::MAX),
+        ("/same", 0),
+        ("/min", i64::MIN),
+    ]);
+    assert!(save_list(&f.shared.queue, "markdown", list.clone()).took_effect());
+    shutdown(&mut f);
+    for _ in 0..3 {
+        let reopened = reopen(&f.path).remove("markdown").unwrap();
+        assert_eq!(reopened, list);
+        let (parts, shared) = reopen_writer(&f.path);
+        assert!(save_list(&shared.queue, "markdown", reopened).took_effect());
+        stop(parts);
+    }
+}
+
+/// 순서 정보가 없는 기존 DB는 시각·rowid 최신순으로 읽고, 첫 저장부터 저장한 순서를 쓴다. 순서
+/// 정보와 맞지 않는 행(이 표를 모르는 이전 바이너리가 바꾼 행)이 있으면 시각 순서로 돌아간다. 다른
+/// 종류의 행과 meta는 그대로다.
+#[test]
+fn a_database_without_order_rows_reads_by_time_until_the_first_save() {
+    let mut f = fixture_with(
+        |conn| {
+            conn.execute_batch(
+                "INSERT INTO recent_files(kind, path, opened_at) VALUES
+                   ('markdown', '/old.md', 5), ('markdown', '/tie-first.md', 9),
+                   ('markdown', '/tie-second.md', 9), ('directory', '/dir', 1);
+                 INSERT INTO meta(key, value) VALUES('keep', 'yes');",
+            )
+            .unwrap();
+        },
+        Limits::default(),
+        Arc::new(SystemClock),
+    );
+    assert_eq!(
+        f.shared.recent.get("markdown"),
+        vec!["/tie-second.md", "/tie-first.md", "/old.md"]
+    );
+    let list = entries(&[("/old.md", 5), ("/tie-second.md", 9), ("/tie-first.md", 9)]);
+    assert!(save_list(&f.shared.queue, "markdown", list).took_effect());
+    shutdown(&mut f);
+    assert_eq!(
+        reopened_paths(&f.path, "markdown"),
+        vec!["/old.md", "/tie-second.md", "/tie-first.md"]
+    );
+    let conn = Connection::open(&f.path).unwrap();
+    // 이전 바이너리처럼 recent_files만 고친다.
+    conn.execute(
+        "UPDATE recent_files SET opened_at = 20 WHERE kind = 'markdown' AND path = '/tie-first.md'",
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        reopened_paths(&f.path, "markdown"),
+        vec!["/tie-first.md", "/tie-second.md", "/old.md"]
+    );
+    assert_eq!(reopened_paths(&f.path, "directory"), vec!["/dir"]);
+    let kept: String = conn
+        .query_row("SELECT value FROM meta WHERE key = 'keep'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(kept, "yes");
+}
+
+/// 순서 정보 저장이 실패하면 같은 묶음의 목록도 확정되지 않는다.
+#[test]
+fn a_failed_order_write_commits_neither_the_list_nor_the_order() {
+    let mut f = fixture_with(
+        |conn| {
+            conn.execute_batch(
+                "CREATE TRIGGER boom BEFORE INSERT ON recent_file_order WHEN NEW.path = '/boom'
+                 BEGIN SELECT RAISE(ABORT, 'injected order failure'); END;",
+            )
+            .unwrap();
+        },
+        Limits::default(),
+        Arc::new(SystemClock),
+    );
+    let first = entries(&[("/b", 1), ("/a", 1)]);
+    assert!(save_list(&f.shared.queue, "markdown", first).took_effect());
+    let failing = entries(&[("/boom", 2), ("/a", 1), ("/b", 1)]);
+    assert!(!save_list(&f.shared.queue, "markdown", failing).took_effect());
+    shutdown(&mut f);
+    assert_eq!(disk_paths(&f.path, "markdown").len(), 2);
+    assert_eq!(reopened_paths(&f.path, "markdown"), vec!["/b", "/a"]);
 }
 
 #[test]

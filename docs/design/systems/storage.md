@@ -38,7 +38,7 @@ App worker가 commit한 batch를 모든 대상 엔진에 공개하고 ACK를 받
   - `== SCHEMA_VERSION` → **additive ensure**. `CREATE TABLE IF NOT EXISTS` 만 다시 돌린다.
   - 그 외 → `SchemaMismatch{expected, found}` 에러. 호출자는 아래 초기화 실패 절처럼 경고를 남기고 DB 없이 계속한다.
 
-기존 버전의 DB에도 `CREATE TABLE IF NOT EXISTS`로 테이블을 추가할 수 있다. `tutorial_progress`가 이 방식을 사용한다(이 문서). 버전값만으로는 추가 여부를 알 수 없으므로 `an_existing_database_still_gets_the_tutorial_table`이 기존 DB에도 테이블이 생기는지 확인한다.
+기존 버전의 DB에도 `CREATE TABLE IF NOT EXISTS`로 테이블을 추가할 수 있다. `tutorial_progress`와 `recent_files`·`recent_file_order`가 이 방식을 사용한다(이 문서). 버전값만으로는 추가 여부를 알 수 없으므로 `an_existing_database_still_gets_the_tutorial_table`이 기존 DB에도 테이블이 생기는지 확인한다.
 
 컬럼 변경이나 데이터 이동을 이 경로에 넣지는 않는다. 그런 마이그레이션이 필요하면 SCHEMA_VERSION 변경과 새 DB 시작 정책을 함께 검토한다.
 
@@ -55,10 +55,18 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
     opened_at INTEGER NOT NULL,
     PRIMARY KEY(kind, path)
 );
+CREATE TABLE recent_file_order ( -- 종류별 목록 순서(rank 0이 최신)
+    kind TEXT NOT NULL,
+    path TEXT NOT NULL,
+    opened_at INTEGER NOT NULL,
+    rank INTEGER NOT NULL,
+    PRIMARY KEY(kind, path)
+);
 ```
 
 - `recent_files`에 현재 목록을 기록한다(`src/store/recent_files.rs`). `recent_markdown`은 레거시 호환 테이블이며 최초 로드 시 한 번만 이관한다.
 - 파일 종류는 `kind`로 구분한다. 탐색기의 최근 방문 폴더도 `directory` kind로 같은 테이블을 쓴다.
+- **목록 순서**: `opened_at`은 연 시각(초) 그대로다. 순서는 저장할 때 같은 transaction에서 `recent_file_order`에 rank로 기록한다. 부팅 읽기는 그 종류의 모든 행에 경로와 `opened_at`이 일치하는 rank가 있을 때만 rank 순서를 쓰고, 하나라도 없으면 `opened_at`·rowid 최신순으로 읽는다. 순서 정보가 없는 기존 DB와, 이 표를 모르는 이전 바이너리가 `recent_files`를 바꾼 경우가 뒤쪽에 해당한다. 이런 경우도 그 종류의 다음 저장이 rank를 새로 기록한다. 이 표는 additive ensure로 기존 DB에 추가되며 `user_version`은 바꾸지 않는다.
 - **경로 dedup**: 같은 파일의 다른 표기(구분자 `\`↔`/`, `\\?\` verbatim, `.`/`..`,
   Windows 대소문자 차)를 정규화 키(`strip_verbatim_prefix`+`lexically_normalize`+Windows
   case fold)로 접는다. PK 는 여전히 raw path(표시·열기용)이며 정규화 키는 비교 전용.

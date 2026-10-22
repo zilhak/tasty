@@ -1,5 +1,5 @@
 //! 새 DB에는 현재 스키마를 만들고 다른 user_version은 오류로 거부한다.
-//! 같은 버전도 recent_files·tutorial_progress 생성문을 다시 실행한다. 기존 테이블 구조 전체를 검사하거나 고치지는 않는다.
+//! 같은 버전도 recent_files·recent_file_order·tutorial_progress 생성문을 다시 실행한다. 기존 테이블 구조 전체를 검사하거나 고치지는 않는다.
 
 use rusqlite::Connection;
 
@@ -18,12 +18,23 @@ const SCHEMA_SQL: &str = r#"
 
 "#;
 
-/// 같은 버전의 기존 DB에도 없으면 만든다. 최근 파일 writer는 이 테이블이 있다고 본다.
+/// 같은 버전의 기존 DB에도 없으면 만든다. 최근 파일 writer는 이 테이블들이 있다고 본다.
+/// recent_file_order는 목록 순서(rank, 0이 최신)를 따로 둔다. 같은 초에 연 항목이나 시계가 거꾸로 간
+/// 경우에도 opened_at을 바꾸지 않고 순서를 지키기 위해서다. 이 표를 모르는 이전 바이너리는
+/// recent_files만 읽고 쓴다.
 const RECENT_FILES_SQL: &str = r#"
     CREATE TABLE IF NOT EXISTS recent_files (
         kind TEXT NOT NULL,
         path TEXT NOT NULL,
         opened_at INTEGER NOT NULL,
+        PRIMARY KEY(kind, path)
+    );
+
+    CREATE TABLE IF NOT EXISTS recent_file_order (
+        kind TEXT NOT NULL,
+        path TEXT NOT NULL,
+        opened_at INTEGER NOT NULL,
+        rank INTEGER NOT NULL,
         PRIMARY KEY(kind, path)
     );
 "#;
@@ -98,12 +109,12 @@ mod tests {
 
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','recent_markdown','recent_files')",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','recent_markdown','recent_files','recent_file_order')",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(count, 3);
+        assert_eq!(count, 4);
 
         let ver: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
@@ -157,16 +168,44 @@ mod tests {
         ensure_schema(&mut conn).unwrap();
         let tables: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='recent_files'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('recent_files','recent_file_order')",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(tables, 1);
+        assert_eq!(tables, 2);
         let kept: String = conn
             .query_row("SELECT value FROM meta WHERE key='keep'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(kept, "1");
+    }
+
+    /// 순서 표가 없던 같은 버전 DB에 표를 더해도 기존 recent_files 행과 user_version은 그대로다.
+    #[test]
+    fn adding_the_order_table_keeps_existing_recent_rows() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA_SQL).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE recent_files (kind TEXT NOT NULL, path TEXT NOT NULL,
+               opened_at INTEGER NOT NULL, PRIMARY KEY(kind, path));
+             INSERT INTO recent_files VALUES('markdown', '/a.md', 7), ('directory', '/d', 3);",
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)
+            .unwrap();
+        ensure_schema(&mut conn).unwrap();
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM recent_files", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 2);
+        let order: i64 = conn
+            .query_row("SELECT COUNT(*) FROM recent_file_order", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(order, 0);
+        let ver: u32 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(ver, SCHEMA_VERSION);
     }
 
     #[test]

@@ -263,12 +263,18 @@ pub(crate) fn load_at_boot(conn: &mut rusqlite::Connection) -> HashMap<String, V
     migrate_recent_markdown(&tx);
     let rows = query_kind_rows(
         &tx,
-        "SELECT kind, path, opened_at FROM recent_files ORDER BY opened_at DESC, rowid DESC",
+        "SELECT f.kind, f.path, f.opened_at, o.rank FROM recent_files f
+         LEFT JOIN recent_file_order o
+           ON o.kind = f.kind AND o.path = f.path AND o.opened_at = f.opened_at
+         ORDER BY f.opened_at DESC, f.rowid DESC",
     );
-    let mut grouped: HashMap<String, Vec<(String, i64)>> = HashMap::new();
-    for (kind, path, ts) in rows {
-        grouped.entry(kind).or_default().push((path, ts));
+    let mut grouped: HashMap<String, Vec<(String, i64, Option<i64>)>> = HashMap::new();
+    for (kind, path, ts, rank) in rows {
+        grouped.entry(kind).or_default().push((path, ts, rank));
     }
+    let grouped = grouped
+        .into_iter()
+        .map(|(kind, rows)| (kind, in_list_order(rows)));
     let mut by_kind: HashMap<String, Vec<Entry>> = HashMap::new();
     for (kind, kind_rows) in grouped {
         let (mut kept, stale) = dedup_rows(kind_rows);
@@ -280,6 +286,17 @@ pub(crate) fn load_at_boot(conn: &mut rusqlite::Connection) -> HashMap<String, V
         tracing::warn!("recent_files load cleanup commit failed: {e}");
     }
     by_kind
+}
+
+/// 그 종류의 모든 행에 경로·시각이 맞는 순서 정보가 있으면 저장한 목록 순서로, 하나라도 없으면
+/// 시각·rowid 최신순(호출자가 넘긴 순서)으로 둔다. 순서 정보가 없는 기존 DB나 이 표를 모르는 이전
+/// 바이너리가 행을 바꾼 경우가 뒤쪽이며, 다음 저장이 새 순서를 기록한다.
+#[cfg(any(feature = "gui", test))]
+fn in_list_order(mut rows: Vec<(String, i64, Option<i64>)>) -> Vec<(String, i64)> {
+    if rows.iter().all(|(_, _, rank)| rank.is_some()) {
+        rows.sort_by_key(|(_, _, rank)| *rank);
+    }
+    rows.into_iter().map(|(path, ts, _)| (path, ts)).collect()
 }
 
 /// recent_markdown을 이관하고 완료 플래그로 재실행을 막는다. 원래 테이블은 유지한다.
@@ -321,8 +338,12 @@ fn migrate_recent_markdown(conn: &rusqlite::Connection) {
     }
 }
 
+/// 최근 파일 행: kind, path, opened_at, 시각이 맞는 순서 정보의 rank.
 #[cfg(any(feature = "gui", test))]
-fn query_kind_rows(conn: &rusqlite::Connection, sql: &str) -> Vec<(String, String, i64)> {
+type RecentRow = (String, String, i64, Option<i64>);
+
+#[cfg(any(feature = "gui", test))]
+fn query_kind_rows(conn: &rusqlite::Connection, sql: &str) -> Vec<RecentRow> {
     let mut stmt = match conn.prepare(sql) {
         Ok(s) => s,
         Err(e) => {
@@ -330,13 +351,7 @@ fn query_kind_rows(conn: &rusqlite::Connection, sql: &str) -> Vec<(String, Strin
             return Vec::new();
         }
     };
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    });
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)));
     match rows {
         Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
         Err(e) => {
@@ -359,11 +374,10 @@ fn delete_paths(conn: &rusqlite::Connection, kind: &str, paths: &[String]) {
     }
 }
 
-/// snapshot 하나를 열린 transaction 안에서 저장한다. 그 종류의 행을 지우고 목록을 다시 넣으므로
-/// 같은 키의 다른 표기 정리와 최신 10개 밖 정리가 함께 끝나고, 디스크가 확정한 목록과 같아진다.
+/// snapshot 하나를 열린 transaction 안에서 저장한다. 그 종류의 행과 순서 정보를 지우고 목록을
+/// 다시 넣으므로 같은 키의 다른 표기 정리와 최신 10개 밖 정리가 함께 끝나고, 디스크가 확정한 목록과
+/// 같아진다. opened_at은 연 시각 그대로 두고 목록 순서는 recent_file_order의 rank로 남긴다.
 /// 어느 단계든 실패하면 오류를 돌려 호출자가 묶음 전체를 되돌리게 한다.
-/// 저장 시각은 목록 순서대로 엄격히 줄어들게 맞춘다. 같은 초에 연 항목도 다시 읽을 때 순서가
-/// 같고, 실제 시각보다 늦어지는 폭은 목록 길이(최대 9초)를 넘지 않는다.
 #[cfg(any(feature = "gui", test))]
 pub(crate) fn write_snapshot(
     conn: &rusqlite::Connection,
@@ -371,18 +385,15 @@ pub(crate) fn write_snapshot(
 ) -> rusqlite::Result<()> {
     let kind = snapshot.kind.as_str();
     conn.execute("DELETE FROM recent_files WHERE kind = ?1", [kind])?;
-    let mut stamps = vec![0i64; snapshot.entries.len()];
-    for i in (0..snapshot.entries.len()).rev() {
-        let actual = snapshot.entries[i].opened_at;
-        stamps[i] = match stamps.get(i + 1) {
-            Some(next) => actual.max(next + 1),
-            None => actual,
-        };
-    }
-    for (entry, stamp) in snapshot.entries.iter().zip(stamps) {
+    conn.execute("DELETE FROM recent_file_order WHERE kind = ?1", [kind])?;
+    for (rank, entry) in snapshot.entries.iter().enumerate() {
         conn.execute(
             "INSERT INTO recent_files(kind, path, opened_at) VALUES(?1, ?2, ?3)",
-            rusqlite::params![kind, entry.path, stamp],
+            rusqlite::params![kind, entry.path, entry.opened_at],
+        )?;
+        conn.execute(
+            "INSERT INTO recent_file_order(kind, path, opened_at, rank) VALUES(?1, ?2, ?3, ?4)",
+            rusqlite::params![kind, entry.path, entry.opened_at, rank as i64],
         )?;
     }
     Ok(())
