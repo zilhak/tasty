@@ -264,11 +264,11 @@ impl Settings {
     }
 
     /// 확정된 경로에 쓴다. 덮어쓰기 전에 [`Self::protect_existing_file`] 로 기존 파일을
-    /// 지킨다.
+    /// 지키고, 같은 디렉터리의 임시 파일을 대상 이름으로 바꿔 교체한다. 중간에 실패하면 원본이 남는다.
     fn save_to_path(&self, path: &std::path::Path) -> Result<()> {
         self.protect_existing_file(path)?;
         let contents = toml::to_string_pretty(self)?;
-        fs::write(path, contents)?;
+        tasty_utils::file_replace::replace(path, contents.as_bytes())?;
         tracing::info!("saved settings to {}", path.display());
         Ok(())
     }

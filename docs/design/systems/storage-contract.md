@@ -229,11 +229,11 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 
 ### 파일
 
-원자 교체는 임시 파일 작성 뒤 rename·persist를 뜻한다.
+원자 교체는 임시 파일 작성 뒤 rename·persist를 뜻한다. 공용 교체 함수(`tasty_utils::file_replace::replace`)는 같은 디렉터리에 고유 이름의 임시 파일을 만들어 쓰고 대상 이름으로 바꾼다. 실패하면 원본을 남기고 임시 파일을 지운다. 대상이 symlink면 링크를 따라가 실제 파일을 교체하고 링크는 그대로 두며, 링크가 가리키는 파일이 없으면 오류다. 기존 파일의 권한 비트는 새 파일로 옮기지만 소유자·ACL·확장 속성은 옮기지 않는다. 기본은 fsync를 하지 않으므로 전원 장애 내구성까지 보장하지 않는다. 같은 모듈의 `lock`은 `<파일>.lock` 옆 파일의 배타 잠금으로 Tasty writer끼리 읽기-변경-교체를 직렬화하고, `Fingerprint`는 길이와 내용 해시로 외부 변경을 확인한다. 잠금에 참여하지 않는 외부 편집기는 막지 못하고, 마지막 확인과 교체 사이의 변경도 막지 못한다.
 
 | 파일 | 쓰는 함수 | 스레드 | 원자 교체 | 다른 writer |
 |---|---|---|---|---|
-| `config.toml` | `Settings::save` | 메인 루프 | 아니요(직접 덮어씀). 해석하지 못한 원본만 저장 직전 백업 | 없음 |
+| `config.toml` | `Settings::save` | 메인 루프 | 예(공용 교체 함수, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 없음 |
 | `presets/**.toml` | `PresetStore`의 `atomic_write` | 메인 루프 | 예(fsync 없음) | 없음 |
 | `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 목록 잠금 안에서 저장 | 호출 스레드 | 아니요 | 없음 |
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
