@@ -46,3 +46,29 @@ pub fn t_args(key: &'static str, args: &[&str]) -> String {
     ensure_init();
     tasty_i18n::t_args(key, args)
 }
+
+/// `key`의 `code`(ko·ja) 문자열. 한 화면에 여러 언어의 예제를 나란히 보일 때 쓴다.
+/// 본체와 같은 `lang/{code}.toml`을 읽으며 키가 없으면 영어로 돌아간다.
+pub fn t_lang(code: &str, key: &'static str) -> &'static str {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    static KO: OnceLock<HashMap<String, String>> = OnceLock::new();
+    static JA: OnceLock<HashMap<String, String>> = OnceLock::new();
+    let (cell, text) = match code {
+        "ko" => (&KO, include_str!("../../../lang/ko.toml")),
+        "ja" => (&JA, include_str!("../../../lang/ja.toml")),
+        _ => return t(key),
+    };
+    let table = cell.get_or_init(|| {
+        let mut map = HashMap::new();
+        match toml::from_str::<toml::Value>(text) {
+            Ok(value) => tasty_i18n::flatten_catalog_toml("", &value, &mut map),
+            Err(e) => tracing::warn!("gallery lang/{code}.toml did not parse: {e}"),
+        }
+        map
+    });
+    match table.get(key) {
+        Some(value) => value.as_str(),
+        None => t(key),
+    }
+}
