@@ -109,6 +109,8 @@ impl super::GpuState {
             return;
         };
         let shapes = std::mem::take(&mut job.shapes);
+        // 숨긴 host 에 그린 그림은 화면에 없으므로 페이지가 아니라 host 를 보일 근거로만 남긴다.
+        let shown = self.overlay_shown();
         match self.render_webview_overlay(
             shapes,
             &job.pages,
@@ -119,7 +121,11 @@ impl super::GpuState {
         ) {
             Ok(true) => {
                 let size = [self.size.width, self.size.height];
-                state.webview_overlay.record_present(job, size);
+                if shown {
+                    state.webview_overlay.record_present(job, size);
+                } else {
+                    state.webview_overlay.record_prepared(job, size);
+                }
             }
             Ok(false) => {}
             Err(e) => {
@@ -134,7 +140,7 @@ impl super::GpuState {
 
     /// 오버레이 창을 투명으로 지우고 오버레이 paint job 과 plugin mesh 팝업을 그린다. 메인 pass 와 같은
     /// 그룹 순서를 쓰고 mesh 도 `pages` 안만 칠한다. shape 가 없어도 지운 프레임을 올린다(유효한 빈 그림).
-    /// 창이 없거나 host 가 숨김이면 `Ok(false)` 라 기록이 남지 않는다. surface 를 잃었고 다시 설정해도 얻지 못하면 창을 버리고 `Err` 를
+    /// 창이 없거나 host 를 숨겼고 준비 중도 아니면 `Ok(false)` 라 기록이 남지 않는다. surface 를 잃었고 다시 설정해도 얻지 못하면 창을 버리고 `Err` 를
     /// 돌려준다. 호출자는 그 프레임부터 `Hide` 로 돌아간다.
     #[allow(clippy::too_many_arguments)] // reason: 오버레이 pass 한 번에 필요한 프레임 입력 그대로
     pub(super) fn render_webview_overlay(

@@ -120,6 +120,9 @@ pub struct OverlayFrame {
     pub paint_job: Option<OverlayPaintJob>,
     /// 이번 프레임에 실제로 present 한 그림. 프레임 시작에 비우고 렌더가 present 뒤에 채운다.
     pub painted: Option<PaintedOverlay>,
+    /// 이번 프레임에 숨긴 채 준비 중인 host 에 present 한 그림. 화면에 보이지 않았으므로 페이지를 드러내는
+    /// 근거가 아니고, host 를 보여도 되는 근거다. `painted` 와 같이 프레임 시작에 비운다.
+    pub prepared: Option<PaintedOverlay>,
     /// debug 빌드에서 backend 지원 모드를 덮어쓴다.
     pub forced: Option<OverlayMode>,
     /// 창 단위 오버레이 host 상태.
@@ -150,6 +153,19 @@ impl OverlayFrame {
             return;
         }
         self.painted = Some(PaintedOverlay {
+            mode: job.mode,
+            source: job.source,
+            pages: job.pages,
+            surface_size,
+        });
+    }
+
+    /// `job` 을 숨긴 host 에 present 했다고 기록한다. 크기 규칙은 [`Self::record_present`] 와 같다.
+    pub fn record_prepared(&mut self, job: OverlayPaintJob, surface_size: [u32; 2]) {
+        if job.surface_size != surface_size {
+            return;
+        }
+        self.prepared = Some(PaintedOverlay {
             mode: job.mode,
             source: job.source,
             pages: job.pages,
@@ -392,6 +408,7 @@ pub fn begin_frame(ctx: &egui::Context, frame: &mut OverlayFrame) {
     frame.targets.clear();
     frame.paint_job = None;
     frame.painted = None;
+    frame.prepared = None;
     tasty_egui_theme::overlay_edge::clear_frame_popovers(ctx);
     tasty_egui_theme::overlay_edge::set_opaque_pages(ctx, frame.pages.clone());
 }

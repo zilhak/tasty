@@ -3,6 +3,8 @@
 //!
 //! 판단은 [`host_step`] 표가 한다. 그림 위치가 오버레이 창인 모드가 필요할 때만 만들고, 필요 없어지면
 //! 숨기며, 창의 WebView 가 모두 사라지면 버린다. 새로 드러난 페이지가 있으면 host 를 다시 올린다.
+//! 만들었거나 숨겨 둔 host 는 숨긴 채 현재 그림을 먼저 present 하고, 그 기록이 이번 모드와 맞을 때 보인다.
+//! 숨기기 전 그림이 OS 층에 남아 보이기 직후 드러나지 않게 하기 위해서다.
 //! 주 창 최소화·작업 공간·다른 앱과의 순서는 묻지 않는다. OS host 가 주 창에 묶여(Linux managed
 //! transient, macOS·Windows 자식) 함께 따라가는 것이 host 계약이다.
 
@@ -17,8 +19,10 @@ pub(super) enum HostStep {
     Nothing,
     /// host 를 버린다(native 창 파괴).
     Detach,
-    /// host 를 만들어 붙이고 보인다.
+    /// host 를 만들어 붙이고 숨긴 채 준비한다.
     Create,
+    /// 숨긴 채 위치·크기를 따라가고 다음 오버레이 pass 가 그리게 한다.
+    Prepare,
     /// 위치·크기를 따라간 뒤 보인다. `raise` 면 WebView 위로 다시 올린다.
     Show {
         raise: bool,
@@ -27,12 +31,15 @@ pub(super) enum HostStep {
 }
 
 /// host 상태 표. OS 를 묻지 않는 순수 판단이다. 돌려주는 상태는 이 단계를 하기 전의 것이며 만들기 결과는
-/// [`slot_after_create`] 가 정한다.
+/// [`slot_after_create`] 가 정한다. `prepared` 는 이번 프레임에 숨긴 host 에 이번 모드 그림을 present 했다는
+/// 뜻이다.
 pub(super) fn host_step(
     slot: OverlayHostSlot,
     has_webviews: bool,
     need: bool,
     surface_alive: bool,
+    shown: bool,
+    prepared: bool,
     newly_revealed: bool,
 ) -> (HostStep, OverlayHostSlot) {
     use OverlayHostSlot as S;
@@ -45,12 +52,14 @@ pub(super) fn host_step(
     match slot {
         // 그리다가 surface 를 잃었다. 그 실패는 오버레이 pass 가 이미 기록했다.
         S::Attached if !surface_alive => (HostStep::Nothing, S::FailedThisEpisode),
-        S::Attached if need => (
+        S::Attached if need && shown => (
             HostStep::Show {
                 raise: newly_revealed,
             },
             S::Attached,
         ),
+        S::Attached if need && prepared => (HostStep::Show { raise: true }, S::Attached),
+        S::Attached if need => (HostStep::Prepare, S::Attached),
         S::Attached => (HostStep::Hide, S::Attached),
         S::Absent if need => (HostStep::Create, S::Absent),
         other => (HostStep::Nothing, other),
@@ -69,14 +78,17 @@ pub(super) fn slot_after_create(result: &Result<(), OverlayHostError>) -> Overla
 /// host 를 붙일 GPU 쪽. 창의 `GpuState` 와 시험용 surface 가 구현한다.
 pub(super) trait HostSurface {
     fn attached(&self) -> bool;
+    fn shown(&self) -> bool;
     fn attach(&mut self, host: Box<dyn OverlayNativeHost>) -> Result<(), OverlayHostError>;
     fn detach(&mut self);
+    /// 숨긴 채 준비한다.
+    fn prepare(&mut self);
     /// 표시를 맞춘다. 올렸으면 참.
     fn show(&mut self, shown: bool, raise: bool) -> bool;
 }
 
-/// 한 번의 훅. 다시 그려야 하면 참이다. 만들었거나 올렸으면 다음 프레임이 그 surface 에 그리고, 만들지
-/// 못했으면 다음 동기화가 낮춘 모드로 다시 정한다.
+/// 한 번의 훅. 다시 그려야 하면 참이다. 만들었거나 준비 중이거나 올렸으면 다음 프레임이 그 surface 에
+/// 그리고, 만들지 못했으면 다음 동기화가 낮춘 모드로 다시 정한다.
 pub(super) fn drive_host(
     frame: &mut OverlayFrame,
     surface: &mut impl HostSurface,
@@ -85,11 +97,17 @@ pub(super) fn drive_host(
 ) -> bool {
     let need =
         frame.mode != OverlayMode::Hide && frame.paint_source == OverlayPaintSource::OverlaySurface;
+    let prepared = frame
+        .prepared
+        .as_ref()
+        .is_some_and(|p| p.mode == frame.mode && p.source == frame.paint_source);
     let (step, slot) = host_step(
         frame.host,
         has_webviews,
         need,
         surface.attached(),
+        surface.shown(),
+        prepared,
         frame.newly_revealed,
     );
     frame.host = slot;
@@ -100,14 +118,16 @@ pub(super) fn drive_host(
             false
         }
         HostStep::Hide => surface.show(false, false),
+        HostStep::Prepare => {
+            surface.prepare();
+            true
+        }
         HostStep::Show { raise } => surface.show(true, raise),
         HostStep::Create => {
             let result = create().and_then(|host| surface.attach(host));
             frame.host = slot_after_create(&result);
             match result {
-                Ok(()) => {
-                    surface.show(true, true);
-                }
+                Ok(()) => surface.prepare(),
                 Err(OverlayHostError::Unsupported) => tracing::info!(
                     "WebView overlay host is not available on this system; pages under popups use the main surface or hide"
                 ),
@@ -131,6 +151,9 @@ impl HostSurface for GpuHost<'_> {
     fn attached(&self) -> bool {
         self.gpu.overlay_attached()
     }
+    fn shown(&self) -> bool {
+        self.gpu.overlay_shown()
+    }
     fn attach(&mut self, host: Box<dyn OverlayNativeHost>) -> Result<(), OverlayHostError> {
         let adapter = self
             .adapter
@@ -141,13 +164,17 @@ impl HostSurface for GpuHost<'_> {
     fn detach(&mut self) {
         self.gpu.detach_overlay_surface();
     }
+    fn prepare(&mut self) {
+        self.gpu.prepare_overlay_host();
+    }
     fn show(&mut self, shown: bool, raise: bool) -> bool {
         self.gpu.show_overlay_host(shown, raise)
     }
 }
 
-/// WebView 동기화 바로 뒤에 부른다. 같은 프레임의 동기화가 정한 모드·그림 위치로 host 를 맞추므로 다음 프레임
-/// 렌더는 붙은 host 에 그리고, 그 그림이 present 된 동기화가 페이지를 드러낸다.
+/// WebView 동기화 바로 뒤에 부른다. 같은 프레임의 동기화가 정한 모드·그림 위치로 host 를 맞춘다. 다음 프레임
+/// 렌더가 숨긴 host 에 그리고 present 하면 그 훅이 host 를 보이고, 그다음 프레임 present 를 본 동기화가
+/// 페이지를 드러낸다.
 pub(crate) fn settle_overlay_host(
     view: &mut crate::view::MainView,
     instance: &wgpu::Instance,
@@ -188,65 +215,86 @@ mod tests {
         use HostStep as H;
         use OverlayHostSlot as S;
         let rows = [
-            // (slot, webviews, need, alive, newly) -> (step, slot)
+            // (slot, webviews, need, alive, shown, prepared, newly) -> (step, slot)
             (
-                (S::Attached, false, true, true, false),
+                (S::Attached, false, true, true, true, false, false),
                 (H::Detach, S::Absent),
             ),
             (
-                (S::Absent, false, true, false, false),
+                (S::Absent, false, true, false, false, false, false),
                 (H::Nothing, S::Absent),
             ),
             (
-                (S::FailedThisEpisode, false, true, false, false),
+                (
+                    S::FailedThisEpisode,
+                    false,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                ),
                 (H::Nothing, S::FailedThisEpisode),
             ),
             (
-                (S::Unavailable, false, true, false, false),
+                (S::Unavailable, false, true, false, false, false, false),
                 (H::Nothing, S::Unavailable),
             ),
             (
-                (S::Absent, true, false, false, false),
+                (S::Absent, true, false, false, false, false, false),
                 (H::Nothing, S::Absent),
             ),
             (
-                (S::Absent, true, true, false, false),
+                (S::Absent, true, true, false, false, false, false),
                 (H::Create, S::Absent),
             ),
             (
-                (S::Attached, true, true, true, false),
+                (S::Attached, true, true, true, true, false, false),
                 (H::Show { raise: false }, S::Attached),
             ),
             (
-                (S::Attached, true, true, true, true),
+                (S::Attached, true, true, true, true, false, true),
                 (H::Show { raise: true }, S::Attached),
             ),
             (
-                (S::Attached, true, false, true, true),
+                (S::Attached, true, false, true, true, false, true),
+                (H::Hide, S::Attached),
+            ),
+            // 숨긴 host 는 이번 모드 그림을 숨긴 채 present 한 뒤에만 보인다.
+            (
+                (S::Attached, true, true, true, false, false, false),
+                (H::Prepare, S::Attached),
+            ),
+            (
+                (S::Attached, true, true, true, false, true, false),
+                (H::Show { raise: true }, S::Attached),
+            ),
+            (
+                (S::Attached, true, false, true, false, true, false),
                 (H::Hide, S::Attached),
             ),
             (
-                (S::Attached, true, true, false, false),
+                (S::Attached, true, true, false, false, false, false),
                 (H::Nothing, S::FailedThisEpisode),
             ),
             (
-                (S::Attached, true, false, false, false),
+                (S::Attached, true, false, false, false, false, false),
                 (H::Nothing, S::FailedThisEpisode),
             ),
             (
-                (S::FailedThisEpisode, true, true, false, false),
+                (S::FailedThisEpisode, true, true, false, false, false, false),
                 (H::Nothing, S::FailedThisEpisode),
             ),
             (
-                (S::Unavailable, true, true, false, false),
+                (S::Unavailable, true, true, false, false, false, false),
                 (H::Nothing, S::Unavailable),
             ),
         ];
-        for ((slot, webviews, need, alive, newly), want) in rows {
-            let got = host_step(slot, webviews, need, alive, newly);
+        for ((slot, webviews, need, alive, shown, prepared, newly), want) in rows {
+            let got = host_step(slot, webviews, need, alive, shown, prepared, newly);
             assert_eq!(
                 got, want,
-                "{slot:?} webviews={webviews} need={need} alive={alive}"
+                "{slot:?} webviews={webviews} need={need} alive={alive} shown={shown} prepared={prepared}"
             );
         }
         assert_eq!(slot_after_create(&Ok(())), S::Attached);
@@ -260,7 +308,7 @@ mod tests {
         );
     }
 
-    /// 시험용 GPU. 실제 `OverlaySurfaceParts` 의 표시·drop 규칙을 쓴다.
+    /// 시험용 GPU. 실제 `OverlaySurfaceParts` 의 준비·표시·drop 규칙을 쓴다.
     struct FakeGpu {
         parts: Option<OverlaySurfaceParts<FakeSurface>>,
         log: Log,
@@ -271,12 +319,21 @@ mod tests {
         fn attached(&self) -> bool {
             self.parts.is_some()
         }
+        fn shown(&self) -> bool {
+            self.parts.as_ref().is_some_and(|p| p.shown)
+        }
+        fn prepare(&mut self) {
+            if let Some(p) = self.parts.as_mut() {
+                p.prepare();
+            }
+        }
         fn attach(&mut self, host: Box<dyn OverlayNativeHost>) -> Result<(), OverlayHostError> {
             self.parts = Some(OverlaySurfaceParts {
                 surface: FakeSurface(self.log.clone()),
                 config: config(self.alpha),
                 host,
                 shown: false,
+                preparing: false,
             });
             Ok(())
         }
@@ -296,8 +353,8 @@ mod tests {
         Unsupported,
     }
 
-    /// 창 하나의 프레임 순서. 렌더(job 준비 → 주 표면 job 기록 → 보이는 host 에만 오버레이 그림 기록) →
-    /// WebView 동기화(모드·드러내기) → host 훅.
+    /// 창 하나의 프레임 순서. 렌더(job 준비 → 주 표면 job 기록 → 그릴 수 있는 host 에 오버레이 그림을 그려
+    /// 보이면 present 기록, 숨긴 채 준비 중이면 준비 기록) → WebView 동기화(모드·드러내기) → host 훅.
     struct Window<'a> {
         ctx: egui::Context,
         frame: OverlayFrame,
@@ -350,10 +407,18 @@ mod tests {
             });
             let main = o::take_main_surface_job(&mut self.frame);
             let overlay = self.frame.paint_job.take();
-            if let Some(job) =
-                overlay.filter(|_| self.gpu.parts.as_ref().is_some_and(|p| p.paintable()))
-            {
-                self.frame.record_present(job, SIZE);
+            match self.gpu.parts.as_ref().filter(|p| p.paintable()) {
+                Some(p) if p.shown => {
+                    if let Some(job) = overlay {
+                        self.frame.record_present(job, SIZE);
+                    }
+                }
+                Some(_) => {
+                    if let Some(job) = overlay {
+                        self.frame.record_prepared(job, SIZE);
+                    }
+                }
+                None => {}
             }
             if let Some(job) = main {
                 self.frame.record_present(job, SIZE);
@@ -430,8 +495,9 @@ mod tests {
         }
     }
 
-    /// 처음 뜬 팝업: 첫 동기화는 host 가 없어 모드를 낮추지 않고 숨긴 채 host 를 만들어 보인다. 다음 프레임이
-    /// 그 host 에 그린 뒤 페이지를 드러내고 host 를 다시 올린다. 그 뒤로는 다시 그리기를 요청하지 않는다.
+    /// 처음 뜬 팝업: 첫 동기화는 host 가 없어 모드를 낮추지 않고 페이지를 숨긴 채 host 를 만들어 숨긴 채 준비한다.
+    /// 다음 프레임이 숨긴 host 에 그려 present 한 뒤에야 host 를 보이고 올린다. 그 present 는 화면에 없으므로
+    /// 페이지는 그다음 프레임 present 뒤에 드러내고 host 를 다시 올린다. 그 뒤로는 다시 그리기를 요청하지 않는다.
     #[test]
     fn a_popup_bootstraps_the_host_then_reveals_after_its_present() {
         let wv = transparent_backend(false);
@@ -443,6 +509,9 @@ mod tests {
         assert_eq!(win.frame(), (OverlayMode::Transparent, vec![], true));
         assert_eq!(win.made, 1);
         assert_eq!(win.frame.host, OverlayHostSlot::Attached);
+        assert_eq!(win.take_log(), ["follow"]);
+        assert_eq!(win.frame(), (OverlayMode::Transparent, vec![], true));
+        assert!(win.frame.prepared.is_some() && win.frame.painted.is_none());
         assert_eq!(win.take_log(), ["follow", "show", "raise"]);
         assert!(!wv.visible.get());
         assert_eq!(win.frame(), (OverlayMode::Transparent, vec![7], true));
@@ -454,8 +523,9 @@ mod tests {
         }
     }
 
-    /// 팝업이 닫히면 숨기기만 하고 다시 열면 같은 host 를 보인 뒤 그린 프레임에 드러낸다. 창의 마지막 WebView 가
-    /// 사라지면 surface 다음 host 를 버리고, 그 뒤로는 OS 를 부르지 않는다.
+    /// 팝업이 닫히면 숨기기만 한다. 다시 열면 같은 host 를 숨긴 채 준비해 현재 그림을 present 한 뒤 보이고, 그 뒤
+    /// 그린 프레임에 드러낸다. 숨기기 전 그림이 있는 host 를 먼저 보이지 않는다. 창의 마지막 WebView 가 사라지면
+    /// surface 다음 host 를 버리고, 그 뒤로는 OS 를 부르지 않는다.
     #[test]
     fn a_closed_popup_hides_the_host_and_the_last_webview_drops_it() {
         let wv = transparent_backend(false);
@@ -466,9 +536,12 @@ mod tests {
         assert_eq!(win.take_log(), ["hide"]);
         assert_eq!(win.frame(), (OverlayMode::Hide, vec![7], false));
         assert!(win.take_log().is_empty());
-        // 다시 열면 붙은 host 의 상한으로 바로 정하고, 보인 뒤 그린 프레임에 드러낸다.
+        // 다시 열면 붙은 host 의 상한으로 바로 정하고 숨긴 채 준비한다.
         win.open = true;
         assert_eq!(win.frame(), (OverlayMode::Transparent, vec![], true));
+        assert_eq!(win.take_log(), ["follow"]);
+        assert_eq!(win.frame(), (OverlayMode::Transparent, vec![], true));
+        assert!(win.frame.prepared.is_some());
         assert_eq!(win.take_log(), ["follow", "show", "raise"]);
         assert_eq!(win.frame(), (OverlayMode::Transparent, vec![7], true));
         assert_eq!(win.made, 1);
@@ -483,23 +556,31 @@ mod tests {
         assert!(win.take_log().is_empty());
     }
 
-    /// 상한이 낮은 host: 불투명 사각형만 내는 host 는 투명을 불투명으로 낮춰 같은 오버레이 창에 그린다.
-    /// 합성할 수 없는 host 는 host 를 숨기고, 구멍 방식 불투명이 있는 backend 는 주 표면으로 계속 드러낸다.
+    /// 상한이 낮은 host: 불투명 사각형만 내는 host 는 투명을 불투명으로 낮춰 같은 오버레이 창에 그린다. 낮추기 전
+    /// 모드로 준비한 그림으로는 보이지 않는다.
     #[test]
     fn a_lower_ceiling_downgrades_without_blocking_the_main_surface() {
         let wv = transparent_backend(false);
         let mut win = Window::new(&wv, HostComposite::OpaqueOnly, Make::Host);
         assert_eq!(win.frame().0, OverlayMode::Transparent);
         assert_eq!(win.frame(), (OverlayMode::Opaque, vec![], true));
+        assert_eq!(win.take_log(), ["follow", "follow"]);
+        assert_eq!(win.frame(), (OverlayMode::Opaque, vec![], true));
+        assert_eq!(win.take_log(), ["follow", "show", "raise"]);
         assert_eq!(win.frame(), (OverlayMode::Opaque, vec![7], true));
         assert_eq!(win.frame(), (OverlayMode::Opaque, vec![7], false));
+    }
 
+    /// 합성할 수 없는 host 는 보이지 않고, 구멍 방식 불투명이 있는 backend 는 주 표면으로 계속 드러낸다. 합성이
+    /// 돌아오면 숨긴 채 준비한 뒤 보인다.
+    #[test]
+    fn an_unavailable_host_stays_hidden_while_the_main_surface_reveals() {
         let cut = transparent_backend(true);
         let mut win = Window::new(&cut, HostComposite::Unavailable, Make::Host);
         assert_eq!(win.frame().0, OverlayMode::Transparent);
-        assert_eq!(win.take_log(), ["follow", "show", "raise"]);
+        assert_eq!(win.take_log(), ["follow"]);
         assert_eq!(win.frame(), (OverlayMode::Opaque, vec![], true));
-        assert_eq!(win.take_log(), ["hide"]);
+        assert!(win.take_log().is_empty());
         assert_eq!(win.frame(), (OverlayMode::Opaque, vec![7], false));
         assert!(cut.visible.get());
         assert_eq!(win.frame(), (OverlayMode::Opaque, vec![7], false));
@@ -507,6 +588,9 @@ mod tests {
         // 합성이 돌아오면 다시 투명으로 올라간다.
         win.composite.set(HostComposite::ExternalArgb);
         assert_eq!(win.frame(), (OverlayMode::Transparent, vec![], true));
+        assert_eq!(win.take_log(), ["follow"]);
+        assert_eq!(win.frame(), (OverlayMode::Transparent, vec![], true));
+        assert_eq!(win.take_log(), ["follow", "show", "raise"]);
         assert_eq!(win.frame(), (OverlayMode::Transparent, vec![7], true));
     }
 
@@ -545,19 +629,28 @@ mod tests {
         assert_eq!(win.made, 1);
     }
 
-    /// 숨긴 host 에는 그리지 않으므로 그 프레임 기록이 없고 페이지를 드러내지 않는다. 그리다 surface 를 잃으면
-    /// 그 구간에는 다시 만들지 않고, 구간이 끝나면 한 번 다시 시도한다.
+    /// 숨겨 둔 host 에는 그리지 않으므로 그 프레임 기록이 없고 페이지를 드러내지 않는다. 숨긴 채 준비한 present 는
+    /// host 를 보일 근거일 뿐 페이지를 드러내지 않는다. 그리다 surface 를 잃으면 그 구간에는 다시 만들지 않고,
+    /// 구간이 끝나면 한 번 다시 시도한다.
     #[test]
     fn a_hidden_host_is_not_painted_and_a_lost_surface_waits_for_the_next_episode() {
         let wv = transparent_backend(false);
         let mut win = Window::new(&wv, HostComposite::ExternalArgb, Make::Host);
         win.frame();
+        win.frame();
         assert_eq!(win.frame(), (OverlayMode::Transparent, vec![7], true));
         win.gpu.parts.as_mut().unwrap().shown = false;
         win.render();
-        assert!(win.frame.painted.is_none());
+        assert!(win.frame.painted.is_none() && win.frame.prepared.is_none());
+        win.take_log();
         assert_eq!(win.sync(), (OverlayMode::Transparent, vec![], true));
         assert!(!wv.visible.get());
+        assert_eq!(win.take_log(), ["follow"]);
+        win.render();
+        assert!(win.frame.painted.is_none() && win.frame.prepared.is_some());
+        assert_eq!(win.sync(), (OverlayMode::Transparent, vec![], true));
+        assert!(!wv.visible.get());
+        assert_eq!(win.take_log(), ["follow", "show", "raise"]);
         assert_eq!(win.frame(), (OverlayMode::Transparent, vec![7], true));
         win.take_log();
 

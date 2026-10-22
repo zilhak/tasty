@@ -321,13 +321,13 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 - 오버레이 창은 주 창 클라이언트 영역과 원점·물리 크기가 같아야 한다. 크기가 다르면 그 프레임을 그리지 않고 오버레이 실패로 다룬다.
 - shape가 없어도 오버레이 창을 투명으로 지운 프레임을 올린다. 이것도 그 모드·페이지로 준비된 그림이며, 지난 프레임 팝업이 오버레이 창에 남지 않는다.
 - egui 텍스처 해제는 주 pass와 오버레이 pass가 모두 끝난 뒤에 한다.
-- 오버레이 창은 아래 창 단위 host가 붙인다. 창이 없거나 host가 숨김이면 복제한 그림을 그리지 않고 기록도 남기지 않는다. 구멍 방식으로 주 표면을 보고하는 backend는 오버레이 창이 필요 없다.
+- 오버레이 창은 아래 창 단위 host가 붙인다. 창이 없거나 host를 숨겨 두었으면 복제한 그림을 그리지 않고 기록도 남기지 않는다. 숨긴 채 준비 중인 host에 그린 그림은 화면에 없으므로 페이지를 드러내는 기록이 아니라 host를 보일 기록(`OverlayFrame::prepared`)으로 남긴다. 구멍 방식으로 주 표면을 보고하는 backend는 오버레이 창이 필요 없다.
 
 ### 창 단위 오버레이 host
 
 페이지 단위 계약(`WebViewOverlayBackend`)과 나눈다. 오버레이 창은 주 창 클라이언트 영역과 같아야 하고 WebView는 창마다 여럿이라, 창 하나에 host 하나를 둔다. 둘은 `OverlayFrame`의 모드·그림 위치로만 만난다.
 
-- 계약(`src/host_api/webview/overlay_host.rs`의 `OverlayNativeHost`): `surface_target`(wgpu surface 대상, host 수명 동안 유효), `composite`(합성 계약), `follow`(보유한 부모 창의 현재 위치·크기에 맞춤, 같으면 OS 호출 없음), `set_shown`, `raise`(그 창의 WebView native 창 위로). 포커스·창 활성화·포인터를 받지 않고 이벤트 루프 스레드에서만 쓴다. 숨김 중이거나 보인 직후 첫 present 전에는 지난 그림이 보이지 않아야 한다. 주 창 최소화·작업 공간·다른 앱과의 순서는 host가 주 창에 묶여(managed transient 또는 같은 창 안 자식) OS가 함께 처리한다. 공통 훅은 이를 묻지 않는다.
+- 계약(`src/host_api/webview/overlay_host.rs`의 `OverlayNativeHost`): `surface_target`(wgpu surface 대상, host 수명 동안 유효), `composite`(합성 계약), `follow`(보유한 부모 창의 현재 위치·크기에 맞춤, 같으면 OS 호출 없음), `set_shown`, `raise`(그 창의 WebView native 창 위로). 포커스·창 활성화·포인터를 받지 않고 이벤트 루프 스레드에서만 쓴다. 숨김 중에는 그림이 보이지 않아야 하고, 숨긴 동안에도 surface에 present할 수 있어야 하며, 보일 때는 숨긴 동안 마지막으로 present한 그림을 보여야 한다. 공통 훅은 이번 구간 그림을 숨긴 채 present한 뒤에만 `set_shown(true)`를 부른다(아래 "순서"). 주 창 최소화·작업 공간·다른 앱과의 순서는 host가 주 창에 묶여(managed transient 또는 같은 창 안 자식) OS가 함께 처리한다. 공통 훅은 이를 묻지 않는다.
 - 만들기는 `create_overlay_host(&Arc<Window>)`다. OS별 구현은 `overlay_host/{linux,macos,windows}.rs`의 `create`다. macOS는 winit 뷰 안의 형제 NSView를 만들고(`SwapchainAlpha`), Linux·Windows는 `Unsupported`를 돌려준다.
 - 수명: host는 부모 창의 `Arc<Window>`를 보유한다. `OverlaySurfaceParts`는 surface를 host보다 먼저 선언해 먼저 drop한다. 그래서 unsafe로 만든 surface가 사는 동안 부모 창(과 그 display 연결)이 살아 있다.
 - 붙이기(`GpuState::attach_overlay_surface`): App의 Instance·Adapter와 창의 Device를 그대로 쓴다. 어댑터가 그 surface에 present할 수 없거나 surface 형식 목록에 주 surface 형식이 없으면 붙이지 않는다. 크기는 주 surface와 같고 present mode는 주 surface와 같은 규칙(Mailbox가 있으면 Mailbox, 없으면 Fifo)이다. alpha 설정은 caps에 있는 값 중 PreMultiplied, PostMultiplied, 첫 값 순서로 고른다. 이것은 그리는 규칙이며 합성 판정이 아니다.
@@ -346,14 +346,17 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 | 상태 | 조건 | 동작 |
 |---|---|---|
 | 아무 상태 | 창에 WebView가 없음 | 붙어 있으면 버리고 `Absent`. 그 밖에는 OS를 부르지 않는다 |
-| `Absent` | 필요함 | 만들어 붙이고 따라간 뒤 보이고 올린다. 성공이면 `Attached`, `Unsupported`면 `Unavailable`, 실패면 `FailedThisEpisode`와 경고 1회 |
-| `Attached` | 필요함 | 따라간 뒤 보인다. 새로 보였거나 직전에 보이지 않던 페이지를 드러냈으면 다시 올린다 |
-| `Attached` | 필요 없음 | 숨긴다. 버리지 않는다 |
+| `Absent` | 필요함 | 만들어 붙이고 숨긴 채 따라가며 준비한다. 성공이면 `Attached`, `Unsupported`면 `Unavailable`, 실패면 `FailedThisEpisode`와 경고 1회 |
+| `Attached`(보이는 중) | 필요함 | 따라간다. 직전에 보이지 않던 페이지를 드러냈으면 다시 올린다 |
+| `Attached`(숨김) | 필요함, 이번 프레임에 숨긴 채 지금 모드·그림 위치의 그림을 present함 | 따라간 뒤 보이고 올린다 |
+| `Attached`(숨김) | 필요함, 그 밖 | 숨긴 채 따라가며 준비한다. 다음 오버레이 pass가 이 host에 그린다 |
+| `Attached` | 필요 없음 | 숨기고 준비도 멈춘다. 버리지 않는다 |
 | `Attached` | surface를 잃음 | `FailedThisEpisode`. 그 실패는 오버레이 pass가 기록했다 |
 | `FailedThisEpisode` | 대상 팝업이 닫힘 | `Absent`. 다음 구간에 한 번 다시 시도한다 |
 | `Unavailable` | - | 창 수명 동안 다시 시도하지 않는다 |
 
-- 순서: 팝업이 처음 뜬 동기화는 host가 없어 모드를 낮추지 않고 페이지를 숨긴 채 다시 그리기를 요청한다. 같은 프레임 훅이 host를 만들어 보인다. 다음 프레임 렌더가 그 host에 그리고 present한 뒤 동기화가 페이지를 드러낸다. 그러므로 보이기 → 그리기 → 드러내기 순서이고 서로 기다리지 않는다. 만들지 못하면 다음 동기화가 상한 숨김으로 모드를 낮추고, 구멍 방식 불투명은 그대로 쓴다.
+- 순서: 팝업이 처음 뜬 동기화는 host가 없어 모드를 낮추지 않고 페이지를 숨긴 채 다시 그리기를 요청한다. 같은 프레임 훅이 host를 만들어 숨긴 채 준비한다. 다음 프레임 렌더가 숨긴 host에 지운 뒤 현재 그림을 그려 present하고, 그 훅이 기록의 모드·그림 위치가 지금과 같으면 host를 보이고 올린다. 그다음 프레임 렌더가 보이는 host에 present한 뒤 동기화가 페이지를 드러낸다. 그러므로 숨긴 채 그리기 → 보이기 → 그리기 → 드러내기 순서이고 GPU나 OS를 기다리지 않는다. 숨겨 두었던 host를 다시 쓸 때도 같은 순서다. 숨기기 전 그림이 OS 층에 남아 있어도 보이기 전에 이번 구간 그림이 그 위에 present된다. 모드가 바뀌어 기록이 맞지 않으면 보이지 않고 한 번 더 준비한다. 숨긴 채 그리다 실패하면 보이지 않고 오버레이 pass의 실패 기록으로 숨김에 내려간다. 만들지 못하면 다음 동기화가 상한 숨김으로 모드를 낮추고, 구멍 방식 불투명은 그대로 쓴다.
+- 숨긴 채 present한 그림이 보이기 전에 OS 합성에 반영되는지는 앱이 알 수 없다. present 반환은 GPU 제출이고 화면 반영 확인이 아니다. 숨긴 상태의 present 가능 여부와 보이기 직후 첫 화면은 OS host마다 측정해야 하며, 측정하지 않은 OS host는 투명 합성을 보고하지 않는다. 2026-10-22 macOS 실험(NSView + CAMetalLayer, 입력 없음)에서 숨겼다 다시 보인 layer는 다음 present 전에 숨기기 전 그림을 보였고, 숨길 때 layer contents를 비우면 그 뒤 present도 보이지 않았다. 숨긴 채 present한 뒤 보이는 순서는 아직 측정하지 않았다. 만들지 못하면 다음 동기화가 상한 숨김으로 모드를 낮추고, 구멍 방식 불투명은 그대로 쓴다.
 - 새로 드러낸 페이지 위로 host를 올리는 것은 Linux GTK `show_all`과 macOS 새 WKWebView가 위로 올라오기 때문이다. 올린 프레임에는 한 번 더 그린다.
 - 주 창 `Resized`·`ScaleFactorChanged`는 `GpuState::resize`가 오버레이 surface도 같은 크기로 다시 설정하고 host를 따라가게 한다. `Moved`는 붙은 host만 따라가게 한다. 종료 때 WebView를 숨기는 경로가 host도 버린다.
 - 비용: WebView가 없는 창은 OS 호출이 없다. 합성 계약은 대상 팝업이 WebView 위에 떠 있고 그림 위치가 오버레이 창일 때만 묻는다.

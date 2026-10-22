@@ -12,16 +12,25 @@ pub(crate) struct OverlaySurfaceParts<S> {
     pub(crate) surface: S,
     pub(crate) config: wgpu::SurfaceConfiguration,
     pub(crate) host: Box<dyn OverlayNativeHost>,
-    /// host 가 지금 보이는 중이다. 숨긴 host 에는 그리지 않는다.
+    /// host 가 지금 보이는 중이다.
     pub(crate) shown: bool,
+    /// 숨긴 채 이번 구간 그림을 준비 중이다. 보이기 전에 이 host 에 현재 그림을 먼저 present 한다.
+    pub(crate) preparing: bool,
 }
 
 pub(crate) type OverlaySurface = OverlaySurfaceParts<wgpu::Surface<'static>>;
 
 impl<S> OverlaySurfaceParts<S> {
-    /// 오버레이 pass 가 그릴 수 있다. 숨긴 host 에 그린 그림은 보이지 않으므로 준비 기록이 되면 안 된다.
+    /// 오버레이 pass 가 그릴 수 있다. 보이는 중이거나 보이기 전 준비 중일 때다. 숨겨 둔 host 에는 그리지
+    /// 않는다.
     pub(crate) fn paintable(&self) -> bool {
-        self.shown
+        self.shown || self.preparing
+    }
+
+    /// 숨긴 채 위치·크기를 따라가고 다음 오버레이 pass 가 이 host 에 그리게 한다.
+    pub(crate) fn prepare(&mut self) {
+        self.host.follow();
+        self.preparing = true;
     }
 
     /// 이 surface 로 낼 수 있는 최고 모드.
@@ -30,8 +39,10 @@ impl<S> OverlaySurfaceParts<S> {
     }
 
     /// 표시를 맞춘다. 보일 때는 위치·크기를 따라간 뒤 보이고, 새로 보였거나 `raise` 면 WebView 위로
-    /// 올린다. 올렸으면 참이다(호출자가 한 프레임 더 그린다).
+    /// 올린다. 올렸으면 참이다(호출자가 한 프레임 더 그린다). 숨기면 준비도 멈춘다. 보이기는 이 host 에
+    /// 이번 구간 그림을 present 한 뒤에만 부른다.
     pub(crate) fn show(&mut self, shown: bool, raise: bool) -> bool {
+        self.preparing = false;
         let became = shown && !self.shown;
         if shown {
             self.host.follow();
@@ -140,6 +151,7 @@ impl super::GpuState {
             config,
             host,
             shown: false,
+            preparing: false,
         });
         Ok(())
     }
@@ -151,6 +163,18 @@ impl super::GpuState {
 
     pub(crate) fn overlay_attached(&self) -> bool {
         self.overlay_surface.is_some()
+    }
+
+    /// 붙은 host 가 지금 보이는지. 붙지 않았으면 거짓.
+    pub(crate) fn overlay_shown(&self) -> bool {
+        self.overlay_surface.as_ref().is_some_and(|o| o.shown)
+    }
+
+    /// 붙은 host 를 숨긴 채 준비한다. 붙지 않았으면 아무것도 하지 않는다.
+    pub(crate) fn prepare_overlay_host(&mut self) {
+        if let Some(o) = self.overlay_surface.as_mut() {
+            o.prepare();
+        }
     }
 
     /// 붙은 surface 로 낼 수 있는 최고 모드. 붙지 않았으면 `None`.
@@ -260,6 +284,7 @@ pub(crate) mod fake {
                 log: log.clone(),
             }),
             shown: false,
+            preparing: false,
         }
     }
 }
@@ -360,18 +385,24 @@ mod tests {
         assert!(matches!(missing, Err(OverlayHostError::Failed(_))));
     }
 
-    /// 보일 때는 따라간 뒤 보이고 올린다. 계속 보이는 동안은 따라가기만 하고, 새로 드러난 페이지가 있을 때만
-    /// 다시 올린다. 숨김은 바뀔 때 한 번이다. 떼면 surface 가 host 보다 먼저 사라진다.
+    /// 숨긴 채 준비하면 따라가기만 하고 그릴 수 있게 된다. 보일 때는 따라간 뒤 보이고 올린다. 계속 보이는
+    /// 동안은 따라가기만 하고, 새로 드러난 페이지가 있을 때만 다시 올린다. 숨김은 바뀔 때 한 번이고 그 뒤로는
+    /// 그리지 않는다. 떼면 surface 가 host 보다 먼저 사라진다.
     #[test]
     fn the_host_shows_after_following_and_drops_after_its_surface() {
         let log: Log = Default::default();
         let composite = Rc::new(Cell::new(HostComposite::ExternalArgb));
         let mut p = parts(&composite, &log, A::Opaque);
         assert_eq!(p.ceiling(), OverlayMode::Transparent);
+        assert!(!p.paintable());
+        p.prepare();
+        assert!(p.paintable() && !p.shown);
         assert!(p.show(true, false));
+        assert!(p.paintable() && !p.preparing);
         assert!(!p.show(true, false));
         assert!(p.show(true, true));
         assert!(!p.show(false, true));
+        assert!(!p.paintable());
         assert!(!p.show(false, false));
         p.resized(300, 150);
         assert_eq!([p.config.width, p.config.height], [300, 150]);
@@ -381,6 +412,7 @@ mod tests {
         assert_eq!(
             *log.borrow(),
             [
+                "follow",
                 "follow",
                 "show",
                 "raise",
