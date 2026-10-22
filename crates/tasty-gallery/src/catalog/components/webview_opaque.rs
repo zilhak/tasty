@@ -110,8 +110,8 @@ fn zoomed(theme: &Theme) -> Theme {
     Theme::with_colors_and_zoom(theme.to_colors(), theme.is_light, ZOOM)
 }
 
-fn z(v: LogicalPx) -> f32 {
-    v.value() * ZOOM
+fn z(v: LogicalPx) -> LogicalPx {
+    v * ZOOM
 }
 
 /// 장면 틀 하나를 잡고 안쪽 child Ui 를 넘긴다. 틀 밖으로 그림이 새지 않도록 자른다.
@@ -121,7 +121,10 @@ fn frame(
     h: LogicalPx,
     paint: impl FnOnce(&mut egui::Ui, egui::Rect),
 ) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(z(FRAME_W), z(h)), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(z(FRAME_W).value(), z(h).value()),
+        egui::Sense::hover(),
+    );
     let p = ui.painter_at(rect);
     p.rect_filled(rect, th.corner_radius.value(), th.bg_app().to_egui());
     let mut child = ui.new_child(
@@ -155,37 +158,33 @@ fn ground(ui: &egui::Ui, th: &Theme, rect: egui::Rect, mode: Mode) {
     }
     let md = th.surface("markdown");
     p.rect_filled(rect, 0.0, md.focused_bg.to_egui());
-    let pad = egui::vec2(z(PAGE_PAD_X), z(PAGE_PAD_Y));
+    let pad = egui::vec2(z(PAGE_PAD_X).value(), z(PAGE_PAD_Y).value());
     let mut y = rect.top() + pad.y;
-    let lines: [(&str, f32, egui::Color32); 6] = [
+    let lines: [(&str, LogicalPx, egui::Color32); 6] = [
         (
             "Release notes — 0.14",
-            th.font_size_body.value(),
+            th.font_size_body,
             md.focused_fg.to_egui(),
         ),
         (
             "Surface conversion keeps the running process and its scrollback.",
-            th.font_size_caption.value(),
+            th.font_size_caption,
             th.text_secondary().to_egui(),
         ),
-        (
-            "Changes",
-            th.font_size_body.value(),
-            md.focused_fg.to_egui(),
-        ),
+        ("Changes", th.font_size_body, md.focused_fg.to_egui()),
         (
             "Explorer      Remote write queue",
-            th.font_size_caption.value(),
+            th.font_size_caption,
             th.text_secondary().to_egui(),
         ),
         (
             "Markdown      Address bar browse",
-            th.font_size_caption.value(),
+            th.font_size_caption,
             th.text_secondary().to_egui(),
         ),
         (
             "File picker   Folder mode",
-            th.font_size_caption.value(),
+            th.font_size_caption,
             th.text_secondary().to_egui(),
         ),
     ];
@@ -194,10 +193,10 @@ fn ground(ui: &egui::Ui, th: &Theme, rect: egui::Rect, mode: Mode) {
             egui::pos2(rect.left() + pad.x, y),
             egui::Align2::LEFT_TOP,
             text,
-            egui::FontId::proportional(size),
+            egui::FontId::proportional(size.value()),
             color,
         );
-        y += size + th.spacing_sm.value();
+        y += (size + th.spacing_sm).value();
     }
 }
 
@@ -220,7 +219,7 @@ fn terminal(ui: &egui::Ui, th: &Theme, rect: egui::Rect) {
             font.clone(),
             term.focused_fg.to_egui(),
         );
-        y += th.font_size_caption.value() + th.spacing_xs.value();
+        y += (th.font_size_caption + th.spacing_xs).value();
     }
 }
 
@@ -231,7 +230,7 @@ fn scrim(ui: &egui::Ui, th: &Theme, rect: egui::Rect) {
 
 /// host 가 칠할 수 있는 상자 표시 — 불투명 열에서만 그린다.
 fn host_outline(ui: &egui::Ui, th: &Theme, boxed: egui::Rect) {
-    let r = boxed.expand(z(HOST_OUTLINE_OFFSET) + th.border_width.value());
+    let r = boxed.expand((z(HOST_OUTLINE_OFFSET) + th.border_width).value());
     let stroke = egui::Stroke::new(th.border_width.value(), th.accent_warning().to_egui());
     let dash = th.spacing_xs.value();
     let p = ui.ctx().layer_painter(ui.layer_id());
@@ -264,7 +263,7 @@ fn place(ui: &mut egui::Ui, pos: egui::Pos2, add: impl FnOnce(&mut egui::Ui)) ->
 fn scene_a(ui: &mut egui::Ui, th: &Theme, mode: Mode) {
     frame(ui, th, FRAME_H, |ui, rect| {
         let bar_h = z(SCENE_A_BAR_H);
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), bar_h));
+        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), bar_h.value()));
         let p = ui.painter_at(rect);
         p.rect_filled(bar, 0.0, th.bg_sidebar().to_egui());
         p.text(
@@ -296,7 +295,7 @@ fn scene_a(ui: &mut egui::Ui, th: &Theme, mode: Mode) {
 /// B — 명령 팔레트(창 범위 scrim)가 markdown 페이지 | 터미널 분할을 가로지른다.
 fn scene_b(ui: &mut egui::Ui, th: &Theme, mode: Mode) {
     frame(ui, th, FRAME_H, |ui, rect| {
-        let split = rect.left() + z(SCENE_B_SPLIT_X);
+        let split = rect.left() + z(SCENE_B_SPLIT_X).value();
         let left = egui::Rect::from_min_max(rect.min, egui::pos2(split, rect.bottom()));
         let right = egui::Rect::from_min_max(
             egui::pos2(split + th.border_width.value(), rect.top()),
@@ -317,7 +316,7 @@ fn scene_b(ui: &mut egui::Ui, th: &Theme, mode: Mode) {
         let w = th.palette_width().value();
         let pos = egui::pos2(
             rect.center().x - w * 0.5,
-            rect.top() + z(SCENE_B_PALETTE_TOP),
+            rect.top() + z(SCENE_B_PALETTE_TOP).value(),
         );
         let boxed = place(ui, pos, |ui| {
             command_palette::palette_card(ui, th, mode.edge())
@@ -332,7 +331,7 @@ fn scene_b(ui: &mut egui::Ui, th: &Theme, mode: Mode) {
 fn scene_c(ui: &mut egui::Ui, th: &Theme, mode: Mode) {
     frame(ui, th, FRAME_H, |ui, rect| {
         let side_w = z(SCENE_C_SIDEBAR_W);
-        let side = egui::Rect::from_min_size(rect.min, egui::vec2(side_w, rect.height()));
+        let side = egui::Rect::from_min_size(rect.min, egui::vec2(side_w.value(), rect.height()));
         let page = egui::Rect::from_min_max(egui::pos2(side.right(), rect.top()), rect.max);
         ground(ui, th, page, mode);
         let p = ui.painter_at(rect);
@@ -364,7 +363,7 @@ fn scene_c(ui: &mut egui::Ui, th: &Theme, mode: Mode) {
         let id = ui.id().with("tools_h");
         let prev_h: f32 = ui.data(|d| d.get_temp(id)).unwrap_or(0.0);
         let pos = egui::pos2(
-            rect.left() + z(SCENE_C_MENU_LEFT),
+            rect.left() + z(SCENE_C_MENU_LEFT).value(),
             btn.top() - th.spacing_xs.value() - prev_h,
         );
         let boxed = place(ui, pos, |ui| tools_menu::tools_card(ui, th, mode.edge()));
@@ -382,14 +381,14 @@ fn scene_d(ui: &mut egui::Ui, th: &Theme, mode: Mode) {
         if mode != Mode::Opaque {
             scrim(ui, th, rect);
         }
-        let pos = rect.min + egui::vec2(z(SCENE_D_CARD_X), z(SCENE_D_CARD_Y));
+        let pos = rect.min + egui::vec2(z(SCENE_D_CARD_X).value(), z(SCENE_D_CARD_Y).value());
         let mut menu = None;
         let card = place(ui, pos, |ui| {
             menu = file_picker::deep_card_with_menu(
                 ui,
                 th,
-                LogicalPx(z(SCENE_D_CARD_W)),
-                LogicalPx(z(SCENE_D_CARD_H)),
+                z(SCENE_D_CARD_W),
+                z(SCENE_D_CARD_H),
                 mode.edge(),
             );
         });
