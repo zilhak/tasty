@@ -202,64 +202,7 @@ pub fn html_address_bar(
     ui.painter()
         .rect_filled(rect, 0.0, theme.html_address_bar_bg().to_egui());
     let row_height = theme.html_address_bar_height();
-    let side = LogicalPx(ControlSize::Sm.height(theme));
-    let mut x = LogicalPx(rect.left()) + theme.html_address_bar_padding_x();
-    let y = LogicalPx(rect.top()) + (row_height - side) / 2.0;
-    let buttons = [
-        (
-            tasty_icons::CHEVRON_LEFT,
-            !mirror,
-            view.can_back,
-            view.labels.back,
-            HtmlAddressAction::Back,
-        ),
-        (
-            tasty_icons::CHEVRON_RIGHT,
-            forward,
-            view.can_forward,
-            view.labels.forward,
-            HtmlAddressAction::Forward,
-        ),
-        (
-            tasty_icons::REFRESH,
-            true,
-            !view.disconnected,
-            if view.disconnected {
-                view.labels.disconnected
-            } else {
-                view.labels.reload
-            },
-            HtmlAddressAction::Reload,
-        ),
-    ];
-    for (icon, visible, enabled, label, action) in buttons {
-        if !visible {
-            continue;
-        }
-        let cell = egui::Rect::from_min_size(
-            egui::pos2(x.value(), y.value()),
-            egui::vec2(side.value(), side.value()),
-        );
-        let mut child = ui.new_child(egui::UiBuilder::new().id_salt((id, label)).max_rect(cell));
-        child.set_clip_rect(ui.clip_rect().intersect(rect));
-        if action == HtmlAddressAction::Forward {
-            out.forward_rect = Some(cell);
-        }
-        if action == HtmlAddressAction::Reload {
-            out.reload_rect = Some(cell);
-        }
-        if action == HtmlAddressAction::Reload && view.loading {
-            let spin = theme.icon_glyph_size_sm;
-            Spinner::new().paint_in(
-                &mut child,
-                theme,
-                egui::Rect::from_center_size(cell.center(), egui::vec2(spin.value(), spin.value())),
-            );
-        } else if nav(&mut child, theme, icon, enabled, label).clicked() {
-            out.action = action;
-        }
-        x += side + theme.html_address_bar_nav_gap();
-    }
+    let mut x = nav_buttons(ui, theme, id, rect, view, forward, &mut out);
     x += theme.html_address_bar_gap() - theme.html_address_bar_nav_gap();
     let field_width = (LogicalPx(rect.right()) - theme.html_address_bar_padding_x() - x)
         .max(theme.html_address_field_min_width());
@@ -341,14 +284,7 @@ pub fn html_address_bar(
         .show(&mut field, theme, &mut display);
     out.field_rect = Some(field_rect);
     if view.focus && !mirror && ui.is_enabled() {
-        if let Some(mut edit) = egui::TextEdit::load_state(ui.ctx(), field_id) {
-            edit.cursor
-                .set_char_range(Some(egui::text::CCursorRange::two(
-                    egui::text::CCursor::new(0),
-                    egui::text::CCursor::new(state.buffer.chars().count()),
-                )));
-            edit.store(ui.ctx(), field_id);
-        }
+        select_all(ui, field_id, state.buffer.chars().count());
     }
     if response.changed() && !mirror && !idle {
         state.buffer = display;
@@ -373,35 +309,7 @@ pub fn html_address_bar(
     out.has_keyboard_focus = ui.memory(|m| m.has_focus(field_id));
     ui.data_mut(|d| d.insert_temp(field_id.with("previous_focus"), out.has_keyboard_focus));
     if let Some(error) = &state.error {
-        let top = LogicalPx(rect.top()) + row_height;
-        let mut row = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(egui::Rect::from_min_max(
-                    egui::pos2(
-                        (LogicalPx(rect.left()) + theme.html_address_bar_padding_x()).value(),
-                        top.value(),
-                    ),
-                    egui::pos2(
-                        (LogicalPx(rect.right()) - theme.html_address_bar_padding_x()).value(),
-                        rect.bottom(),
-                    ),
-                ))
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        row.set_clip_rect(ui.clip_rect().intersect(rect));
-        row.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        row.add(tasty_icons::ALERT_CIRCLE.image(
-            theme.icon_glyph_size_sm.value(),
-            theme.html_address_error_glyph().to_egui(),
-        ));
-        row.add(
-            egui::Label::new(
-                egui::RichText::new(error)
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_primary().to_egui()),
-            )
-            .truncate(),
-        );
+        error_row(ui, theme, rect, error);
     }
     ui.painter().hline(
         rect.x_range(),
@@ -412,4 +320,124 @@ pub fn html_address_bar(
         ),
     );
     out
+}
+
+/// The error row under the field row: alert glyph and one truncated caption line.
+fn error_row(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, error: &str) {
+    let row_height = theme.html_address_bar_height();
+    let top = LogicalPx(rect.top()) + row_height;
+    let mut row = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_max(
+                egui::pos2(
+                    (LogicalPx(rect.left()) + theme.html_address_bar_padding_x()).value(),
+                    top.value(),
+                ),
+                egui::pos2(
+                    (LogicalPx(rect.right()) - theme.html_address_bar_padding_x()).value(),
+                    rect.bottom(),
+                ),
+            ))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    row.set_clip_rect(ui.clip_rect().intersect(rect));
+    row.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    row.add(tasty_icons::ALERT_CIRCLE.image(
+        theme.icon_glyph_size_sm.value(),
+        theme.html_address_error_glyph().to_egui(),
+    ));
+    row.add(
+        egui::Label::new(
+            egui::RichText::new(error)
+                .size(theme.font_size_caption.value())
+                .color(theme.text_primary().to_egui()),
+        )
+        .truncate(),
+    );
+}
+
+/// Selects the whole address when the band takes focus from a shortcut.
+fn select_all(ui: &egui::Ui, field_id: egui::Id, chars: usize) {
+    if let Some(mut edit) = egui::TextEdit::load_state(ui.ctx(), field_id) {
+        edit.cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(chars),
+            )));
+        edit.store(ui.ctx(), field_id);
+    }
+}
+
+/// Back, Forward and Reload cells from the left padding. Returns the x after the last cell
+/// and its nav gap. Loading shows a Spinner in the Reload cell instead of the button.
+fn nav_buttons(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    id: egui::Id,
+    rect: egui::Rect,
+    view: &HtmlAddressView<'_>,
+    forward: bool,
+    out: &mut HtmlAddressOutput,
+) -> LogicalPx {
+    let mirror = view.kind == HtmlAddressKind::Mirror;
+    let row_height = theme.html_address_bar_height();
+    let side = LogicalPx(ControlSize::Sm.height(theme));
+    let mut x = LogicalPx(rect.left()) + theme.html_address_bar_padding_x();
+    let y = LogicalPx(rect.top()) + (row_height - side) / 2.0;
+    let buttons = [
+        (
+            tasty_icons::CHEVRON_LEFT,
+            !mirror,
+            view.can_back,
+            view.labels.back,
+            HtmlAddressAction::Back,
+        ),
+        (
+            tasty_icons::CHEVRON_RIGHT,
+            forward,
+            view.can_forward,
+            view.labels.forward,
+            HtmlAddressAction::Forward,
+        ),
+        (
+            tasty_icons::REFRESH,
+            true,
+            !view.disconnected,
+            if view.disconnected {
+                view.labels.disconnected
+            } else {
+                view.labels.reload
+            },
+            HtmlAddressAction::Reload,
+        ),
+    ];
+    for (icon, visible, enabled, label, action) in buttons {
+        if !visible {
+            continue;
+        }
+        let cell = egui::Rect::from_min_size(
+            egui::pos2(x.value(), y.value()),
+            egui::vec2(side.value(), side.value()),
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().id_salt((id, label)).max_rect(cell));
+        child.set_clip_rect(ui.clip_rect().intersect(rect));
+        if action == HtmlAddressAction::Forward {
+            out.forward_rect = Some(cell);
+        }
+        if action == HtmlAddressAction::Reload {
+            out.reload_rect = Some(cell);
+        }
+        if action == HtmlAddressAction::Reload && view.loading {
+            let spin = theme.icon_glyph_size_sm;
+            Spinner::new().paint_in(
+                &mut child,
+                theme,
+                egui::Rect::from_center_size(cell.center(), egui::vec2(spin.value(), spin.value())),
+            );
+        } else if nav(&mut child, theme, icon, enabled, label).clicked() {
+            out.action = action;
+        }
+        x += side + theme.html_address_bar_nav_gap();
+    }
+    x
 }

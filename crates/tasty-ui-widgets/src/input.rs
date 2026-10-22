@@ -203,7 +203,6 @@ impl<'a> Input<'a> {
         let pad_x = theme.input_padding_x().value();
         let gap = theme.input_gap().value();
         let radius = theme.input_radius().value();
-        let bw = theme.border_width.value();
         let body = theme.input_font_size().value();
         // trailing addon 의 mono caption — 대응 input component 토큰 없음(semantic).
         let caption = theme.font_size_caption.value();
@@ -329,7 +328,29 @@ impl<'a> Input<'a> {
         };
         let focused = resp.has_focus() || (self.focus_look && self.enabled);
 
-        let border = if !self.enabled || (read_only && !resp.has_focus()) {
+        self.paint_edge(ui, theme, outer, read_only, resp.has_focus(), focused);
+
+        // 팝오버 앵커가 아이콘 폭만큼 밀리지 않도록 응답 영역은 필드 전체로 바꾼다.
+        // TextEdit의 ID와 포커스 상태는 유지한다.
+        let mut resp = resp;
+        resp.rect = outer;
+        resp
+    }
+
+    /// 상자 테두리와 포커스 링. 읽기 전용은 링 없이 포커스 테두리만 바꾼다.
+    fn paint_edge(
+        &self,
+        ui: &egui::Ui,
+        theme: &Theme,
+        outer: egui::Rect,
+        read_only: bool,
+        has_focus: bool,
+        focused: bool,
+    ) {
+        let radius = theme.input_radius().value();
+        let bw = theme.border_width.value();
+        let raised = self.ground == crate::Ground::Raised;
+        let border = if !self.enabled || (read_only && !has_focus) {
             box_rest_border(theme, self.enabled, read_only, raised).to_egui()
         } else if read_only {
             theme.input_border_focus().to_egui()
@@ -359,12 +380,6 @@ impl<'a> Input<'a> {
                 egui::StrokeKind::Outside,
             );
         }
-
-        // 팝오버 앵커가 아이콘 폭만큼 밀리지 않도록 응답 영역은 필드 전체로 바꾼다.
-        // TextEdit의 ID와 포커스 상태는 유지한다.
-        let mut resp = resp;
-        resp.rect = outer;
-        resp
     }
 }
 
