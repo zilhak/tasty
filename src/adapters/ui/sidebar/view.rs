@@ -1,8 +1,11 @@
 //! 앱 상태 없이 사이드바를 그려 사용자 동작을 반환한다. 호출부가 상태를 읽고 결과를 반영한다.
 
+mod card_status;
+
 use crate::adapters::ui::attach_loading as loading;
 use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
+use card_status::CardPaint;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::LoadingPlacement;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
@@ -1047,33 +1050,15 @@ fn draw_ws_row(
     }
     let card_response = ui.interact(card_rect, card_id, egui::Sense::click_and_drag());
     *resize_priority_hovered |= card_response.hovered();
-    // 카드 전체가 클릭 위젯이라 그보다 먼저 등록한 hover 영역은 hover 되지 않는다. 점유 점과 REMOTE 줄의
-    // 툴팁은 카드 응답 뒤에 등록한다.
-    let tip = |rect: Option<egui::Rect>, key: &str, text: &str| {
-        rect.is_some_and(|r| {
-            let zone = ui.interact(r, card_id.with(key), egui::Sense::hover());
-            zone.on_hover_text(text).hovered()
-        })
-    };
-    let on_occupied_dot = tip(card.occupied_dot, "occupied_dot", props.occupied_hover);
-    let on_remote_pill = tip(card.remote_line, "remote_line", props.mirror_hover);
-    // 카드 로딩은 attach 응답 대기에서만 켜진다. 오버레이 자체에는 툴팁이 없고 카드 툴팁에 둘째 줄을 둔다.
-    // 점유 점과 REMOTE 줄에서는 그 툴팁이 뜨므로 카드 툴팁을 겹쳐 띄우지 않는다.
-    if card.loading
-        && !on_occupied_dot
-        && !on_remote_pill
-        && tasty_ui_widgets::tooltip_hover_delay_elapsed(
-            ui.ctx(),
-            th,
-            card_response.id,
-            card_response.hovered(),
-        )
-    {
-        tasty_ui_widgets::Tooltip::new(&ws.name)
-            .second_line(crate::i18n::t("loading.remote_attach"))
-            .id_source(card_response.id)
-            .show(ui, th, card_rect);
-    }
+    card_status::show_card_tooltips(
+        ui,
+        th,
+        ws,
+        &card,
+        &card_response,
+        props.occupied_hover,
+        props.mirror_hover,
+    );
 
     if card_response.clicked() {
         actions.push(SidebarFullAction::WorkspaceClicked(global_idx));
@@ -1378,55 +1363,9 @@ fn draw_workspace_card(
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = th.workspace_dot_gap().value();
-            // 실행 상태는 점 색, 다른 클라이언트 점유는 링, mirror는 별도 줄로 표시한다.
-            // 슬롯은 attached ring 전체를 담는 폭으로 모든 행에서 예약해 이름 시작 위치를 고정한다.
-            // 높이는 제목 라벨이 실제로 차지하는 한 줄 높이다. 슬롯이 행을 키우지 않는다.
-            let title_row_h =
-                ui.fonts(|f| f.row_height(&egui::FontId::proportional(th.font_size_body.value())));
-            let dot_slot = egui::vec2(th.workspace_dot_slot().value(), title_row_h);
-            let (dot_rect, _) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
-            if switch_digit.is_none() {
-                let dot_color: egui::Color32 = if ws.busy_count > 0 {
-                    th.accent_success().into()
-                } else {
-                    th.status_dot_idle().into()
-                };
-                // 키캡과 배율을 맞추도록 토큰 지름을 쓴다. idle에 맞는 BadgeVariant가 없어 직접 그린다.
-                let dot_r = th.badge_dot_size().value() * 0.5;
-                ui.painter()
-                    .circle_filled(dot_rect.center(), dot_r, dot_color);
-                // 링의 offset은 점의 바깥쪽에서 링 안쪽까지의 거리다.
-                if ws.attached {
-                    let ring_w = th.status_dot_attached_ring_width().value();
-                    ui.painter().circle_stroke(
-                        dot_rect.center(),
-                        dot_r + th.status_dot_attached_ring_offset().value() + ring_w * 0.5,
-                        egui::Stroke::new(ring_w, th.border_attached()),
-                    );
-                }
-                if ws.attached && ws.busy_count == 0 {
-                    occupied_dot = Some(dot_rect);
-                }
-            }
-            loading_shown = loading::paint_sidebar_loading(
-                ui,
-                th,
-                ws.loading_since,
-                dot_rect,
-                LoadingPlacement::Lnb,
-                bg,
-            );
-            if let Some(digit) = switch_digit {
-                // 같은 슬롯 가운데 키캡을 스피너 위에 그려 이름 시작 위치를 유지한다.
-                crate::adapters::ui::switch_overlay::paint_keycap(
-                    ui.painter(),
-                    th,
-                    dot_rect.center(),
-                    digit,
-                    ws.is_active,
-                    switch_fade,
-                );
-            }
+            let slot = card_status::paint_dot_slot(ui, th, ws, bg, switch_digit, switch_fade);
+            loading_shown = slot.loading;
+            occupied_dot = slot.occupied_dot;
             let name_color = if ws.is_active {
                 th.text_primary()
             } else {
@@ -1552,14 +1491,6 @@ fn draw_workspace_card(
         occupied_dot,
         remote_line,
     }
-}
-
-/// 카드 한 장을 그린 결과. 카드 응답 뒤에 툴팁을 등록할 점유 점 칸과 REMOTE 줄 영역을 함께 돌려준다.
-struct CardPaint {
-    rect: egui::Rect,
-    loading: bool,
-    occupied_dot: Option<egui::Rect>,
-    remote_line: Option<egui::Rect>,
 }
 
 #[cfg(test)]
