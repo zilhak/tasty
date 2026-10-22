@@ -1,10 +1,14 @@
 //! Folder-mode specimens use the production footer and the received three-language copy.
-use super::{FpState, Mode, Variant, card};
+use super::{CRUMB_MENU_H, FRAME_H, FRAME_W, FpState, Mode, Variant, card};
 use crate::catalog::spec::{self, StageVariant};
 use crate::i18n::t;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::FolderPickerFooter;
+
+/// 상태 견본과 한국어·Latte 견본의 카드 크기 — 디자인 폴더 갈래의 480×360 칸. 대응 Theme 토큰이 없다.
+const SHORT_W: LogicalPx = LogicalPx(480.0);
+const SHORT_H: LogicalPx = LogicalPx(360.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Language {
@@ -75,8 +79,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
                 FpState::Loaded,
                 false,
                 Language::En,
-                LogicalPx(640.0),
-                LogicalPx(480.0),
+                FRAME_W,
+                FRAME_H,
                 false,
             ),
             (
@@ -84,8 +88,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
                 FpState::Loaded,
                 true,
                 Language::En,
-                LogicalPx(640.0),
-                LogicalPx(480.0),
+                FRAME_W,
+                FRAME_H,
                 false,
             ),
             (
@@ -93,8 +97,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
                 FpState::Loaded,
                 true,
                 Language::En,
-                LogicalPx(640.0),
-                LogicalPx(480.0),
+                FRAME_W,
+                FRAME_H,
                 false,
             ),
             (
@@ -102,8 +106,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
                 FpState::Loading,
                 false,
                 Language::En,
-                LogicalPx(480.0),
-                LogicalPx(360.0),
+                SHORT_W,
+                SHORT_H,
                 false,
             ),
             (
@@ -111,8 +115,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
                 FpState::Empty,
                 false,
                 Language::En,
-                LogicalPx(480.0),
-                LogicalPx(360.0),
+                SHORT_W,
+                SHORT_H,
                 false,
             ),
             (
@@ -120,8 +124,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
                 FpState::ErrorPerm,
                 false,
                 Language::En,
-                LogicalPx(480.0),
-                LogicalPx(360.0),
+                SHORT_W,
+                SHORT_H,
                 false,
             ),
             (
@@ -129,8 +133,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
                 FpState::Loaded,
                 true,
                 Language::En,
-                LogicalPx(640.0),
-                LogicalPx(480.0),
+                FRAME_W,
+                FRAME_H,
                 true,
             ),
             (
@@ -138,8 +142,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
                 FpState::Loaded,
                 false,
                 Language::Ko,
-                LogicalPx(480.0),
-                LogicalPx(360.0),
+                SHORT_W,
+                SHORT_H,
                 true,
             ),
             (
@@ -147,8 +151,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
                 FpState::Loaded,
                 true,
                 Language::Ja,
-                LogicalPx(320.0),
-                LogicalPx(420.0),
+                theme.fp_popup_min_width(),
+                CRUMB_MENU_H,
                 true,
             ),
         ] {
@@ -176,8 +180,8 @@ pub fn draw_folder_mode(ui: &mut egui::Ui, theme: &Theme) {
             lang: Language::En,
             long: false,
         };
-        v.w = LogicalPx(480.0);
-        v.h = LogicalPx(360.0);
+        v.w = SHORT_W;
+        v.h = SHORT_H;
         card(ui, &latte, v);
     });
     spec::note(
