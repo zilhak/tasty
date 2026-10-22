@@ -174,6 +174,7 @@ pub fn draw_plugin_popups(
                     target_rect,
                     th.border_width,
                     scope_rect,
+                    ppp,
                 ),
                 paint_rect: (target_rect + shadow.margin()).intersect(scope_rect),
                 scrim,

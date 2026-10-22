@@ -474,6 +474,7 @@ impl PopupManager {
                         popup_rect,
                         th.border_width,
                         scope_clip,
+                        ctx.pixels_per_point(),
                     ),
                     paint_rect: shadow
                         .map_or(popup_rect, |s| popup_rect + s.to_egui().margin())

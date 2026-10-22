@@ -7,7 +7,7 @@
 //!   팝업은 대상이 아니며 겹친 WebView 만 숨기는 기존 규칙을 따른다.
 //! - 대상 영역은 egui 논리 좌표로 모았다가 WebView 창 기준 물리 정수 사각형으로 바꿔 backend 에 넘긴다.
 
-use crate::model::{LogicalPx, LogicalRect, PhysicalRect};
+use crate::model::{LogicalPx, LogicalRect, PhysicalPx, PhysicalRect};
 
 /// 대상 팝업이 떠 있는 동안 native WebView 를 다루는 방식.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -267,9 +267,25 @@ pub fn overlay_reveal_ready(
     })
 }
 
-/// 상자 바깥(`StrokeKind::Outside`)에 그리는 테두리까지 넣은 그림 영역. 소속 범위 밖은 자른다.
-pub fn outlined_box(rect: egui::Rect, outside_stroke: LogicalPx, scope: egui::Rect) -> egui::Rect {
-    rect.expand(outside_stroke.value()).intersect(scope)
+/// egui 가 상자를 그릴 때 맞추는 픽셀 경계. 테셀레이터는 테두리 종류와 무관하게 상자 네 변을
+/// `round_to_pixels` 로 반올림하고(`TessellationOptions::round_rects_to_pixels`), egui-wgpu 는 clip 을 같은
+/// 반올림으로 scissor 로 바꾼다. 영역을 바깥으로 내림·올림하면 .5 이상인 변에서 그리지 않은 한 줄이 생긴다.
+pub fn painted_box(rect: egui::Rect, pixels_per_point: f32) -> egui::Rect {
+    use egui::emath::GuiRounding as _;
+    rect.round_to_pixels(pixels_per_point)
+}
+
+/// 상자 바깥(`StrokeKind::Outside`)에 그리는 테두리까지 넣은 그림 영역. 소속 범위 밖은 자른다. 상자와 범위는
+/// egui 가 그릴 때와 같은 픽셀 경계([`painted_box`])에 맞춘 뒤 테두리를 더한다.
+pub fn outlined_box(
+    rect: egui::Rect,
+    outside_stroke: LogicalPx,
+    scope: egui::Rect,
+    pixels_per_point: f32,
+) -> egui::Rect {
+    painted_box(rect, pixels_per_point)
+        .expand(outside_stroke.value())
+        .intersect(painted_box(scope, pixels_per_point))
 }
 
 /// 불투명 모드에서 상자 가장자리를 정할 페이지 영역(egui 논리 좌표). 다른 모드에서는 비운다.
@@ -299,8 +315,35 @@ pub fn webview_regions(
     let physical: Vec<PhysicalRect> = logical
         .into_iter()
         .map(|r| from_egui(r).to_physical(scale_factor))
+        .map(|r| match mode {
+            OverlayMode::Opaque => snap_float_noise(r),
+            _ => r,
+        })
         .collect();
     crate::state::webview_edges::notice_clip_holes(webview, &physical)
+}
+
+/// 픽셀 경계에 맞춘 불투명 영역은 물리로 되돌리면 정수여야 하지만 f32 곱셈 오차로 정수 바로 옆에 놓일 수
+/// 있다(배율 1.1·1.2·1.75 등). 그대로 바깥으로 넓히면 그리지 않은 한 줄이 생기므로 이 오차만 정수로 붙인다.
+/// 배율이 정수가 아니라 테두리 바깥 끝이 실제로 픽셀 중간에 오는 경우는 오차보다 훨씬 커서 그대로 남는다.
+fn snap_float_noise(r: PhysicalRect) -> PhysicalRect {
+    const NOISE: PhysicalPx = PhysicalPx(1.0 / 256.0);
+    let snap = |v: PhysicalPx| {
+        let nearest = PhysicalPx(v.value().round());
+        if (v - nearest).abs() <= NOISE {
+            nearest
+        } else {
+            v
+        }
+    };
+    let (x0, y0) = (snap(r.x), snap(r.y));
+    let (x1, y1) = (snap(r.x + r.width), snap(r.y + r.height));
+    PhysicalRect {
+        x: x0,
+        y: y0,
+        width: x1 - x0,
+        height: y1 - y0,
+    }
 }
 
 /// 대상 팝업이 떠 있는 동안 WebView 영역 위 클릭·휠은 host 가 받는다. 페이지에는 가지 않는다.
@@ -374,7 +417,8 @@ pub fn end_frame(ctx: &egui::Context, frame: &mut OverlayFrame) {
             kind: TargetKind::Dropdown,
             layer,
             rect,
-            opaque_rect: rect,
+            // egui 드롭다운 Frame 은 테두리를 상자 안쪽에 그린다.
+            opaque_rect: painted_box(rect, ctx.pixels_per_point()),
             paint_rect: rect + shadow.margin(),
             scrim: None,
         });
@@ -400,7 +444,6 @@ fn from_egui(r: egui::Rect) -> LogicalRect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::PhysicalPx;
 
     fn er(x: f32, y: f32, w: f32, h: f32) -> egui::Rect {
         egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h))
@@ -438,21 +481,173 @@ mod tests {
     fn the_opaque_region_keeps_the_outside_border() {
         let popup = er(100.0, 100.0, 100.0, 100.0);
         let scope = er(0.0, 0.0, 400.0, 300.0);
-        let t = OverlayTarget {
-            opaque_rect: outlined_box(popup, LogicalPx(1.0), scope),
+        let at = |ppp: f32| OverlayTarget {
+            opaque_rect: outlined_box(popup, LogicalPx(1.0), scope, ppp),
             ..target(popup, popup.expand(8.0), None)
         };
         let webview = pr(0.0, 0.0, 400.0, 300.0);
-        let at1 = webview_regions(OverlayMode::Opaque, webview, &[t], 1.0);
+        let at1 = webview_regions(OverlayMode::Opaque, webview, &[at(1.0)], 1.0);
         assert_eq!(values(&at1), vec![[99.0, 99.0, 102.0, 102.0]]);
-        let at2 = webview_regions(OverlayMode::Opaque, pr(0.0, 0.0, 800.0, 600.0), &[t], 2.0);
+        let at2 = webview_regions(
+            OverlayMode::Opaque,
+            pr(0.0, 0.0, 800.0, 600.0),
+            &[at(2.0)],
+            2.0,
+        );
         assert_eq!(values(&at2), vec![[198.0, 198.0, 204.0, 204.0]]);
-        assert_eq!(t.rect, popup);
+        assert_eq!(at(1.0).rect, popup);
         // 소속 범위 끝에 붙은 상자는 범위 밖 테두리를 칠하지 않는다.
         assert_eq!(
-            outlined_box(er(0.0, 0.0, 50.0, 50.0), LogicalPx(1.0), scope),
+            outlined_box(er(0.0, 0.0, 50.0, 50.0), LogicalPx(1.0), scope, 1.0),
             er(0.0, 0.0, 51.0, 51.0)
         );
+    }
+
+    /// egui 가 실제로 칠하는 픽셀 행·열 범위. 테셀레이터가 만든 mesh 에서 가장 바깥 정점은 계조(AA) 띠의 투명
+    /// 정점이고 칠한 경계보다 반 픽셀 바깥이다. 그 경계를 바깥 정수로 넓힌 범위가 한 번이라도 칠해지는 픽셀이다.
+    fn tessellated_pixels(rect: egui::Rect, stroke: egui::StrokeKind, ppp: f32) -> [f32; 4] {
+        use egui::epaint::{Mesh, RectShape, TessellationOptions, Tessellator};
+        let shape = RectShape::new(
+            rect,
+            0.0,
+            egui::Color32::WHITE,
+            egui::Stroke::new(1.0, egui::Color32::WHITE),
+            stroke,
+        );
+        let mut mesh = Mesh::default();
+        Tessellator::new(ppp, TessellationOptions::default(), [1, 1], Vec::new())
+            .tessellate_shape(shape.into(), &mut mesh);
+        let outer = mesh.vertices.iter().fold(egui::Rect::NOTHING, |r, v| {
+            r.union(egui::Rect::from_min_max(v.pos, v.pos))
+        });
+        assert!(
+            mesh.vertices
+                .iter()
+                .filter(|v| v.pos.y == outer.min.y)
+                .all(|v| v.color.a() == 0),
+            "가장 바깥 정점은 계조 띠의 투명 정점이어야 한다"
+        );
+        // 계조 띠는 1 물리 픽셀이다(`feathering_size_in_pixels` 기본값).
+        let painted = outer.shrink(PhysicalPx(0.5).to_logical(ppp).value());
+        let px = |v: f32| LogicalPx(v).to_physical(ppp);
+        let noise = PhysicalPx(1.0 / 256.0);
+        [
+            (px(painted.min.x) + noise).value().floor(),
+            (px(painted.min.y) + noise).value().floor(),
+            (px(painted.max.x) - noise).value().ceil(),
+            (px(painted.max.y) - noise).value().ceil(),
+        ]
+    }
+
+    fn region_edges(region: &[PhysicalRect]) -> [f32; 4] {
+        assert_eq!(region.len(), 1);
+        let r = region[0];
+        [
+            r.x.value(),
+            r.y.value(),
+            (r.x + r.width).value(),
+            (r.y + r.height).value(),
+        ]
+    }
+
+    /// 불투명 영역은 egui 가 칠하는 픽셀과 정확히 같다. 변마다 소수부(0, .3, .5, .7)와 배율(정수·비정수)을
+    /// 바꿔 host 팝업(바깥 테두리)과 드롭다운(안쪽 테두리)을 실제 테셀레이터 결과와 비교한다. 영역이 넓으면
+    /// 페이지와 팝업 사이에 host 배경 한 줄이 보이고, 좁으면 페이지가 테두리를 덮는다.
+    #[test]
+    fn the_opaque_region_matches_the_pixels_egui_paints() {
+        let scope = er(0.0, 0.0, 2000.0, 1500.0);
+        for ppp in [1.0_f32, 1.25, 1.5, 1.75, 2.0, 1.1, 1.2] {
+            let webview = pr(
+                0.0,
+                0.0,
+                LogicalPx(2000.0).to_physical(ppp).value(),
+                LogicalPx(1500.0).to_physical(ppp).value(),
+            );
+            for fx in [0.0_f32, 0.3, 0.5, 0.7] {
+                for fy in [0.0_f32, 0.3, 0.5, 0.7] {
+                    for (w, h) in [(540.0_f32, 419.0_f32), (240.3, 180.5), (75.7, 33.2)] {
+                        let popup = er(370.0 + fx, 150.0 + fy, w, h);
+                        let host = OverlayTarget {
+                            opaque_rect: outlined_box(popup, LogicalPx(1.0), scope, ppp),
+                            ..target(popup, popup, None)
+                        };
+                        assert_eq!(
+                            region_edges(&webview_regions(
+                                OverlayMode::Opaque,
+                                webview,
+                                &[host],
+                                ppp
+                            )),
+                            tessellated_pixels(popup, egui::StrokeKind::Outside, ppp),
+                            "host popup {popup:?} ppp {ppp}"
+                        );
+                        let dropdown = OverlayTarget {
+                            kind: TargetKind::Dropdown,
+                            opaque_rect: painted_box(popup, ppp),
+                            ..target(popup, popup, None)
+                        };
+                        assert_eq!(
+                            region_edges(&webview_regions(
+                                OverlayMode::Opaque,
+                                webview,
+                                &[dropdown],
+                                ppp
+                            )),
+                            tessellated_pixels(popup, egui::StrokeKind::Inside, ppp),
+                            "dropdown {popup:?} ppp {ppp}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// 감사에서 본 실제 경우: 배율 1, 위 변 150.5. 영역 위 끝은 egui 테두리가 시작하는 150 이다(149 가 아니다).
+    /// 범위(scope) 경계도 egui-wgpu scissor 와 같은 반올림으로 자른다.
+    #[test]
+    fn a_half_pixel_edge_does_not_expose_a_row_above_the_border() {
+        let scope = er(0.0, 0.0, 1280.0, 800.0);
+        let webview = pr(0.0, 0.0, 1280.0, 800.0);
+        let popup = er(370.0, 150.5, 540.0, 419.0);
+        let t = OverlayTarget {
+            opaque_rect: outlined_box(popup, LogicalPx(1.0), scope, 1.0),
+            ..target(popup, popup, None)
+        };
+        assert_eq!(
+            values(&webview_regions(OverlayMode::Opaque, webview, &[t], 1.0)),
+            vec![[369.0, 150.0, 542.0, 421.0]]
+        );
+        let clipped = outlined_box(
+            er(370.0, 90.0, 540.0, 419.0),
+            LogicalPx(1.0),
+            er(0.0, 100.5, 1280.0, 699.5),
+            1.0,
+        );
+        assert_eq!(clipped.min.y, 101.0);
+    }
+
+    /// 프레임 끝에 모은 egui 드롭다운의 불투명 영역도 egui 가 그릴 픽셀 경계에 맞춘다(위 변 20.5 → 21).
+    #[test]
+    fn an_open_dropdown_takes_the_painted_pixel_box() {
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("dropdown");
+        let mut frame = OverlayFrame::default();
+        let _output = ctx.run(egui::RawInput::default(), |ctx| {
+            ctx.memory_mut(|m| m.open_popup(id));
+            egui::Area::new(id)
+                .order(egui::Order::Foreground)
+                .fixed_pos(egui::pos2(10.0, 20.5))
+                .show(ctx, |ui| ui.allocate_space(egui::vec2(50.0, 30.0)));
+            end_frame(ctx, &mut frame);
+        });
+        let dropdown = frame
+            .targets
+            .iter()
+            .find(|t| t.kind == TargetKind::Dropdown)
+            .expect("open dropdown");
+        assert_eq!(dropdown.rect.min.y, 20.5);
+        assert_eq!(dropdown.opaque_rect, painted_box(dropdown.rect, 1.0));
+        assert_eq!(dropdown.opaque_rect.min.y, 21.0);
     }
 
     /// 대상 팝업이 처음 뜬 프레임에는 그림이 없으므로 페이지를 드러내지 않는다. 같은 모드·그림 위치·페이지로
