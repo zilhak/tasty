@@ -10,8 +10,8 @@ use crate::model::PhysicalRect;
 use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource};
 
 /// 대상 팝업이 떠 있는 프레임마다 WebView 하나에 보내는 요청.
-// 이유: macOS 기본 backend 는 요청을 읽지 않고 Linux backend 는 `scale_factor` 를 읽지 않는다.
-// Windows backend 는 아래 scale_factor 필드 외의 요청을 읽고 시험용 backend 는 모든 필드를 읽는다.
+// 이유: Linux backend 는 `scale_factor` 를 읽지 않는다. Windows backend 도 아래 scale_factor 필드 외의
+// 요청을 읽으며, macOS backend 와 시험용 backend 는 모든 필드를 읽는다.
 #[cfg_attr(not(any(test, windows)), allow(dead_code))]
 #[derive(Debug, Clone)]
 pub struct OverlayRequest<'a> {
@@ -22,7 +22,7 @@ pub struct OverlayRequest<'a> {
     pub regions: &'a [PhysicalRect],
     /// 참이면 WebView 영역 전체의 포인터(클릭·휠)를 host 가 받는다. 페이지에는 가지 않는다.
     pub host_takes_pointer: bool,
-    // 이유: Windows backend 는 이미 물리 정수 픽셀인 영역만 쓴다. 시험용 backend 가 읽는다.
+    // 이유: Linux·Windows backend 는 이미 물리 정수 픽셀인 영역만 쓴다. macOS·시험용 backend 가 읽는다.
     #[cfg_attr(not(test), allow(dead_code))]
     pub scale_factor: f64,
 }
@@ -32,7 +32,7 @@ pub enum OverlayApplyError {
     /// 이 backend 는 요청한 모드를 낼 수 없다.
     Unsupported,
     /// 지원하지만 이번 적용이 실패했다(창 생성·shape·surface 실패 등).
-    // 이유: Linux·macOS backend 는 이 실패를 내지 않는다. Windows backend 와 시험용 backend 가 만든다.
+    // 이유: Linux backend 는 이 실패를 내지 않는다. macOS·Windows backend 와 시험용 backend 가 만든다.
     #[cfg_attr(not(any(test, windows)), allow(dead_code))]
     Failed(String),
 }
