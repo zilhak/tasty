@@ -1409,7 +1409,7 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
 `gallery/overlays-shared.jsx`의 `FilePickerFrame mode="folder"`는 기존 open/save의 `folderSel`과 별개다.
 갤러리 `filepicker-folder-mode`(`components/file_picker/folder.rs`)는 현재 폴더·선택 폴더·비활성 파일·
 빈 폴더·읽기 오류·로딩·Latte와 en/ko/ja의 긴 경로를 표시한다. 기본640×480, 설정 견본480×360,
-최소폭320(일본어 견본 높이420)을 유지한다. `folder_picker::FolderPickerFooter`를 실제 view와 공유한다.
+최소폭320(일본어 견본 높이420)을 유지한다. `FolderPickerFooter`(`folder_picker` 모듈, crate 루트 재수출)를 실제 view와 공유한다.
 
 읽기 전용 경로·안내·버튼의 3행이며 필터 칩은 없다. 경로는 앞 말줄임/전체 경로 툴팁이다.
 경로/안내/파일 잉크는 각각 `fp-folder-path-fg`/`fp-folder-hint-fg`/`fp-folder-file-fg`이며 opacity를

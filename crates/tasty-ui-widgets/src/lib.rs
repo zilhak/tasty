@@ -40,7 +40,7 @@ mod file_drop_overlay;
 pub mod file_handler;
 mod file_handler_form;
 mod filter_readout;
-pub mod folder_picker;
+mod folder_picker;
 mod help_hint;
 mod horizontal_tab_bar;
 mod html_script_banner;
@@ -168,6 +168,7 @@ pub use file_handler_form::{
     fh_list_head, fh_row, fh_summary_text,
 };
 pub use filter_readout::{filter_readout, filter_readout_label, filter_readout_width};
+pub use folder_picker::FolderPickerFooter;
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::{
     TabScrollArrowInk, TabScrollArrowSide, horizontal_tab_bar_with_arrows, paint_tab_scroll_arrow,

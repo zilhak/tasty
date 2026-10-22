@@ -4,7 +4,7 @@ use crate::catalog::spec::{self, StageVariant};
 use crate::i18n::t;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::folder_picker::FolderPickerFooter;
+use tasty_ui_widgets::FolderPickerFooter;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Language {

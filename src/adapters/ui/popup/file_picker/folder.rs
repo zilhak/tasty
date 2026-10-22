@@ -1,6 +1,6 @@
 //! Folder-only keyboard actions and the footer shared with gallery specimens.
 use super::{FilePickerAction, FilePickerMode, FilePickerProps, FpViewState};
-use tasty_ui_widgets::folder_picker::FolderPickerFooter;
+use tasty_ui_widgets::FolderPickerFooter;
 
 pub(super) fn footer<'a>(p: &'a FilePickerProps<'a>) -> Option<FolderPickerFooter<'a>> {
     let FilePickerMode::Folder { path, hint, .. } = p.mode else {

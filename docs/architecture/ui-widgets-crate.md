@@ -167,7 +167,7 @@ Table 빌더의 길이 setter(`header_pad_x`·`header_pad_right`·`header_height
 
 ## 폴더 선택 footer
 
-`folder_picker::FolderPickerFooter`는 갤러리와 호스트 파일 선택기가 함께 쓰는 3행 footer다.
+`FolderPickerFooter`(`folder_picker` 모듈, crate 루트 재수출)는 갤러리와 호스트 파일 선택기가 함께 쓰는 3행 footer다.
 호출자가 번역한 라벨·안내·버튼 문구와 선택 경로를 전달한다. 경로는 readonly 토큰으로 앞 말줄임하며,
 전체 경로를 툴팁에 남긴다. 안내의 폴더 이름만 고정폭으로 그리며 좁은 폭에서는 안내를 줄바꿈한다.
 `height`와 `show`가 같은 안내 galley를 계산해 마지막 버튼 행의 자리를 보존한다. 파일이나 설정은 변경하지 않는다.
