@@ -307,7 +307,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, engine: &EngineRead<'_
     let top = ui.cursor().top();
     let mut close_rect = egui::Rect::NOTHING;
     ui.vertical(|ui| {
-        ui.set_width(th.explorer_props_width().value());
+        // 폭은 sizer 의 `explorer_props_width` 이고, 칸이 그보다 좁으면 팝업 관리자가 줄인 폭을 그대로 쓴다.
+        ui.set_width(ui.available_width().min(th.explorer_props_width().value()));
         egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: pad_x as i8,

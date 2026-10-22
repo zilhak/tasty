@@ -107,7 +107,7 @@ pub(super) fn footer(props: &ExplorerProperties, view: &ExplorerView) -> Footer 
 pub(super) fn footer_row(ui: &mut egui::Ui, th: &Theme, footer: &Footer) -> bool {
     let rule = ui.cursor().top();
     let left = ui.min_rect().left();
-    let right = left + th.explorer_props_width().value();
+    let right = left + ui.available_width();
     ui.painter().hline(
         left..=right,
         rule + th.border_width.value() / 2.0,
