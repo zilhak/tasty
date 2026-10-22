@@ -39,28 +39,31 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             true,
         );
     });
-    // -1 is the unlimited value, so the field accepts it as its minimum.
+    // -1 is the unlimited value, so the field accepts it as its minimum. The field shows the
+    // stored value as written, including a larger one from the settings file.
     disk_lines.show(ui, &th, col, |ui| {
-        let mut lines = settings.performance.scrollback_disk_lines as f64;
-        let unit = t("settings.number.unit_lines");
-        let no_limit = t("settings.performance.no_limit");
-        let unlimited = settings.performance.scrollback_disk_lines
-            == crate::settings::UNLIMITED_SCROLLBACK_DISK_LINES;
-        if super::number::number_field(
+        let mut lines = i128::from(settings.performance.scrollback_disk_lines);
+        let spec = super::number::NumberSpec::int(
+            crate::settings::UNLIMITED_SCROLLBACK_DISK_LINES as f64,
+            SCROLLBACK_DISK_LINES_MAX as f64,
+        )
+        .align(egui::Align::LEFT)
+        .unit(t("settings.number.unit_lines"))
+        .no_limit(
+            i128::from(crate::settings::UNLIMITED_SCROLLBACK_DISK_LINES),
+            t("settings.performance.no_limit"),
+        )
+        .range_note(t("settings.performance.disk_lines_range"))
+        .enabled(settings.performance.scrollback_disk_swap);
+        if super::number::integer_field(
             ui,
             &th,
             "performance_scrollback_disk_lines",
-            &super::number::NumberSpec::int(
-                crate::settings::UNLIMITED_SCROLLBACK_DISK_LINES as f64,
-                SCROLLBACK_DISK_LINES_MAX as f64,
-            )
-            .width(th.field_width_color)
-            .addon(unit)
-            .note(unlimited.then_some(no_limit))
-            .enabled(settings.performance.scrollback_disk_swap),
+            &spec,
             &mut lines,
         ) {
-            settings.performance.scrollback_disk_lines = lines as i64;
+            // The committed value is inside the field's range.
+            settings.performance.scrollback_disk_lines = i64::try_from(lines).unwrap_or(i64::MAX);
         }
     });
 }

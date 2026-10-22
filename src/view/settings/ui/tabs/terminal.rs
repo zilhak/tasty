@@ -87,15 +87,16 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     });
 
     scrollback_row.show(ui, &th, col, |ui| {
-        let mut scrollback = settings.general.scrollback_lines as f64;
-        if super::number::number_field(
+        let mut scrollback = settings.general.scrollback_lines as i128;
+        if super::number::integer_field(
             ui,
             &th,
             "terminal_scrollback_lines",
             &super::number::NumberSpec::int(0.0, 100_000.0),
             &mut scrollback,
         ) {
-            settings.general.scrollback_lines = scrollback as usize;
+            // 확정값은 범위 안이다.
+            settings.general.scrollback_lines = usize::try_from(scrollback).unwrap_or(usize::MAX);
         }
     });
 

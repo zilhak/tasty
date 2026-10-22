@@ -769,6 +769,7 @@ scrollback_disk_swap_desc = "Move scrollback lines past the memory line count to
 scrollback_disk_lines = "Lines kept on disk"
 scrollback_disk_lines_desc = "How many lines disk swap keeps, separate from the memory line count. The oldest lines past it are dropped. -1 keeps every line."
 no_limit = "no limit"
+disk_lines_range = "Use -1 or a number from 0 to 100000000."
 
 [quit_modal]
 title = "Close Tasty"

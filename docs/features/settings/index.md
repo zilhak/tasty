@@ -49,6 +49,15 @@ General 의 닫기 동작(`close_behavior`: ask · minimize · quit), Terminal �
 - 시작할 때 설정을 읽으면서 목록 밖 값을 기본값으로 정규화하므로 이 행은 정규화를 거치지 않은 값에서만 보인다.
 - 시험: `src/view/settings/ui/tabs/choice.rs`, 탭별 `general.rs`·`terminal.rs` 의 시험이 트리거 상자(높이·폭), 저장 문자열, 목록 밖 값 보존과 첫 옵션 교정을 헤드리스 egui 클릭으로 확인한다. 셸 모드 시험은 Windows 빌드에서만 돈다.
 
+### 숫자 칸
+
+설정의 숫자는 `src/view/settings/ui/tabs/number.rs` 의 공용 칸으로 입력한다. 입력 중에는 보정하지 않고, 포커스를 잃거나 `↵` 를 누를 때 눈금과 범위를 적용한다.
+
+- 소수 자리가 없는 칸은 값 전체를 담도록 폭이 자란다. 폭은 max(`number-field-min-width` 90, (글자 수 + 1) × 칸 mono 글꼴의 `0` 너비 + 상자 padding·테두리)이고 상한은 컨트롤 칸의 남은 폭이다. 편집 중에는 친 글자 수로 다시 재므로 안쪽 스크롤 없이 커서가 움직인다. 소수 칸은 `field-width-xs` 고정이다. File Handlers priority 칸은 이 공용 칸이 아니며 90 고정이다.
+- 정수로 저장하는 값(i64·u64·usize)은 `integer_field` 가 `i128` 로 다룬다. 설정 파일에서 읽은 값은 범위 밖이어도 보정하지 않고 그대로 보이며(예: 디스크 보관 줄 수의 9223372036854775807), 사용자가 확정할 때만 범위로 맞춘다.
+- 디스크 보관 줄 수는 단위를 칸 뒤에 두고, 칸의 값이 -1 이면 단위 대신 "no limit" 을 적는다. 범위 밖 값을 치면 칸이 invalid 테두리가 되고 칸 아래에 `settings.performance.disk_lines_range` 문장이 나온다. 다른 칸의 범위 줄은 범위와 확정될 값을 적는다.
+- 칸이 남은 폭 상한에 닿을 만큼 좁은 컨트롤 칸에서는 값 전체가 보인다고 보장하지 않는다. 지원하는 설정 창 폭에서 가장 긴 i64 값(20자)은 상한에 닿지 않는다.
+
 ### 플러그인 기여 설정 (generic 컨트롤)
 
 플러그인이 `[[contributes.settings_pages]]` 로 기여한 페이지를 host 가 `draw_plugin_settings_page` 로 렌더한다. manifest item `kind` 별로 generic 컨트롤을 그린다 — `toggle` → Switch, `select` → Select(드롭다운), `number` → text Input(mono, + `suffix_key` 단위), `font_override` → surface 폰트 섹션. `toggle`/`select`/`number` 값은 `plugin_settings.<plugin_id>.<storage_key>` 슬롯(`PluginSettingValue` = Bool/Number/Text)에 저장·영속되며(`font_override` 의 전역 `plugin_font_overrides` 와 별개 네임스페이스), 변경 즉시 write + persist 된다. 첫 소비자는 `com.tasty.html` — Appearance 에 HTML viewer 설정(zoom / color scheme / allow remote content / sandbox scripts)을 이 방식으로 노출한다.
@@ -116,6 +125,8 @@ General 의 닫기 동작(`close_behavior`: ask · minimize · quit), Terminal �
 - Given 창과 다른 경로가 같은 필드를 다른 값으로 바꿨다 When Save 한다 Then 창의 값이 남고 그 경로가 warn 로그에 남는다(`a_field_changed_on_both_sides_takes_the_windows_value_and_is_reported`).
 - Keybindings 에서 키 조합 녹화 시 충돌이 있으면 확인 팝업이 뜬다.
 - Given 설정 창이 좁아 한 행의 컨트롤이 라벨 옆에 들어가지 않는다 When 그 서브탭을 연다 Then 그 행만 라벨 아래 행 시작 x 로 컨트롤이 내려가고, 창을 넓혀 16 이상 여유가 생기면 다시 나란해진다(`crates/tasty-ui-widgets/tests/settings_row_stack.rs`, `entries_tests::a_narrow_subtab_stacks_rows_and_starts_buttons_at_the_row_start`).
+- Given 설정 파일의 디스크 보관 줄 수가 9223372036854775807 이다 When 성능 탭을 연다 Then 칸에 19자리가 그대로 보이고 칸 안에 모두 들어가며 값은 바뀌지 않는다(`number.rs` 시험).
+- Given 정수 칸을 편집한다 When 글자를 더 친다 Then 다음 프레임에 칸이 한 글자만큼 자라고 값 앞부분이 칸 밖으로 밀리지 않는다(`number.rs` 시험).
 - 플러그인이 설정 페이지를 contribute 하면 Plugins 탭/Appearance sub-tab 에 나타난다.
 
 > 모달 창이라 시각 검증은 스크린샷, draft/save·plugin page 등록은 시나리오로 검증.

@@ -59,12 +59,12 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) -> b
     row_separator(ui, &th);
 
     // 용량은 1MiB 이상이며 입력 상한은 두지 않는다. 단위는 입력 칸 밖에 표시한다.
-    let mut max_mb = settings.remote_transfer.max_mb as f64;
+    let mut max_mb = i128::from(settings.remote_transfer.max_mb);
     let mut committed = false;
     capacity_row.show(ui, &th, col, |ui| {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-            committed = super::number::number_field(
+            committed = super::number::integer_field(
                 ui,
                 &th,
                 "remote_transfer_max_mb",
@@ -75,9 +75,10 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) -> b
                     decimals: 0,
                     suffix: Some("MiB"),
                     suffix_mono: true,
-                    addon: None,
-                    width: None,
-                    note: None,
+                    unit: None,
+                    no_limit: None,
+                    range_note: None,
+                    align: egui::Align::RIGHT,
                     enabled: true,
                 },
                 &mut max_mb,
@@ -85,7 +86,8 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) -> b
         });
     });
     if committed {
-        settings.remote_transfer.max_mb = max_mb as u64;
+        // 상한이 없으므로 u64 를 넘게 친 값은 u64 끝으로 저장한다.
+        settings.remote_transfer.max_mb = u64::try_from(max_mb).unwrap_or(u64::MAX);
     }
     browse
 }

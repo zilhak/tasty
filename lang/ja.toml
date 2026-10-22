@@ -762,6 +762,7 @@ scrollback_disk_swap_desc = "メモリ行数を超えたスクロールバック
 scrollback_disk_lines = "ディスク保持行数"
 scrollback_disk_lines_desc = "ディスクに残す行数です。メモリ行数とは別で、超えると古い行から破棄します。-1 は無制限です。"
 no_limit = "無制限"
+disk_lines_range = "-1 または 0〜100000000 の数を入力してください。"
 
 [quit_modal]
 title = "Tasty を閉じる"

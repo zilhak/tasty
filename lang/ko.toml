@@ -762,6 +762,7 @@ scrollback_disk_swap_desc = "메모리 줄 수를 넘은 스크롤백 줄을 디
 scrollback_disk_lines = "디스크 보관 줄 수"
 scrollback_disk_lines_desc = "디스크에 남길 줄 수입니다. 메모리 줄 수와 별도이며, 넘으면 오래된 줄부터 버립니다. -1은 무제한입니다."
 no_limit = "무제한"
+disk_lines_range = "-1 또는 0부터 100000000까지의 수를 입력하세요."
 
 [quit_modal]
 title = "Tasty 종료"

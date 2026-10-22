@@ -1544,9 +1544,10 @@ fn draw_plugin_number(
         decimals: usize::from(cur.fract() != 0.0),
         suffix,
         suffix_mono: false,
-        addon: None,
-        width: None,
-        note: None,
+        unit: None,
+        no_limit: None,
+        range_note: None,
+        align: egui::Align::RIGHT,
         enabled: true,
     };
 

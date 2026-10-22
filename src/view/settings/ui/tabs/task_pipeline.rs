@@ -76,12 +76,12 @@ fn bytes_row(
     (min, max): (u64, u64),
     current: u64,
 ) -> Option<u64> {
-    let mut value = current as f64;
+    let mut value = i128::from(current);
     let mut committed = false;
     row.show(ui, th, col, |ui| {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-            committed = super::number::number_field(
+            committed = super::number::integer_field(
                 ui,
                 th,
                 id,
@@ -92,14 +92,16 @@ fn bytes_row(
                     decimals: 0,
                     suffix: Some("B"),
                     suffix_mono: true,
-                    addon: None,
-                    width: None,
-                    note: None,
+                    unit: None,
+                    no_limit: None,
+                    range_note: None,
+                    align: egui::Align::RIGHT,
                     enabled: true,
                 },
                 &mut value,
             );
         });
     });
-    committed.then_some(value as u64)
+    // 확정값은 범위 안이다.
+    committed.then(|| u64::try_from(value).unwrap_or(u64::MAX))
 }

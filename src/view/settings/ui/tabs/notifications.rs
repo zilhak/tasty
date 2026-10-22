@@ -22,15 +22,16 @@ pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         tasty_ui_widgets::switch(ui, &th, &mut settings.notification.sound, None, true);
     });
     coalesce_row.show(ui, &th, col, |ui| {
-        let mut coalesce = settings.notification.coalesce_ms as f64;
-        if super::number::number_field(
+        let mut coalesce = i128::from(settings.notification.coalesce_ms);
+        if super::number::integer_field(
             ui,
             &th,
             "notification_coalesce_ms",
             &super::number::NumberSpec::int(0.0, 5000.0),
             &mut coalesce,
         ) {
-            settings.notification.coalesce_ms = coalesce as u64;
+            // 확정값은 범위 안이다.
+            settings.notification.coalesce_ms = u64::try_from(coalesce).unwrap_or(u64::MAX);
         }
     });
 }

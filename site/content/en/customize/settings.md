@@ -1,4 +1,4 @@
-<!-- source-hash: e6cac0176a87 -->
+<!-- source-hash: 88361178fc9b -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -28,7 +28,8 @@ Press the same shortcut again to close the settings window.
 - Settings an agent changes by command while the settings window is open (input rules, remote transfer, accepting webhooks from other computers, and so on) stay as they are when you press **Save**. Saving only writes what you changed in this window. If both sides changed the same item, this window's value wins.
 - If saved settings cannot be applied, an error notice appears and the settings stay as they were. If they were applied on screen but could not be written to `config.toml`, a warning notice appears instead; those changes are lost when Tasty restarts.
 - Changes to **Language** take effect after you save and restart Tasty. Performance settings apply to terminals you open after saving; terminals that are already open don't change right away.
-- Numeric entries are **typed**, never dragged. Values are not adjusted while you type; they are brought into the allowed range when you leave the field or press `Enter`. Type something outside the range and the field turns red with one line under it naming the range and the value that will actually be saved.
+- Numeric entries are **typed**, never dragged. Values are not adjusted while you type; they are brought into the allowed range when you leave the field or press `Enter`. Type something outside the range and the field's border takes the warning colour, with one line under it naming the range and the value that will actually be saved.
+- Whole-number fields widen to show the entire value, and grow with each character as you type. The unit sits after the field. A value in the settings file that is larger than the range is shown as written; it is not changed when it is read.
 - If the settings window is so narrow that an entry's control no longer fits beside its name, that entry moves the control onto the line below the name. Widen the window and it moves back beside it.
 
 ## Entries by tab
@@ -57,7 +58,7 @@ Turn off **Restore surface content on restart** and earlier terminal content no 
 | **Input** | Per-app **Send a newline with Shift+Enter** rules — add an executable name (for example `claude`) and turn it on, and `Shift+Enter` sends a newline (LF) while that app takes the input. Turned off, or with no rule, it uses the platform's default encoding |
 | **Mouse Capture** | **Show mouse-capture hint** · **Disable mouse capture for these programs** · **Suppress the capture hint banner for these programs** — process names or patterns such as `ht*` |
 | **TUI** | **Allow clipboard read (OSC 52)** — off by default. When on, programs inside the terminal can read the clipboard |
-| **Performance** | **Targeted PTY polling** · **Scrollback disk swap** (moves lines past the scrollback line count to disk) · **Lines kept on disk** (default 10000, -1 = unlimited — separate from the scrollback line count; the oldest lines past it are dropped). At -1 the field shows **no limit** after it. As the note at the top of the tab says, all three apply to terminals you open after saving, and terminals that are already open don't change right away |
+| **Performance** | **Targeted PTY polling** · **Scrollback disk swap** (moves lines past the scrollback line count to disk) · **Lines kept on disk** (default 10000, -1 = unlimited — separate from the scrollback line count; the oldest lines past it are dropped). The unit **lines** follows the field, and at -1 **no limit** takes its place. Type a value outside the range and "Use -1 or a number from 0 to 100000000." appears under the field. As the note at the top of the tab says, all three apply to terminals you open after saving, and terminals that are already open don't change right away |
 
 Set **Link click modifier** to **Disable left-click opening** to prevent left-clicks from opening links. You can still hover a link without a modifier and use its right-click menu. Popups and banners can block link highlighting. The meaning of the mouse capture entries is in [Working in the terminal](../using/terminal.md).
 

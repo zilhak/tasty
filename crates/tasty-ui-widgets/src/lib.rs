@@ -59,6 +59,7 @@ mod menu_item;
 mod move_source;
 mod multi_select;
 mod notifications;
+mod number_field;
 mod override_row;
 mod path_field;
 mod plugin_add;
@@ -220,6 +221,7 @@ pub use multi_select::{
     MultiSelectAllToggle, MultiSelectLabels, multi_select, multi_select_popup_id,
     multi_select_summary, popup_chrome_width,
 };
+pub use number_field::{number_field_note, number_field_unit, number_field_width};
 pub use override_row::{OverrideCell, override_row, override_row_fits};
 pub use path_field::{PathField, PathFieldOutcome, PathFieldPending};
 pub use plugin_add::{
