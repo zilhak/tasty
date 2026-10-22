@@ -8,7 +8,7 @@ use super::resources::{
     MARKDOWN_MIRROR_KIND, create_mirror_markdown_surface, deferred_mirror_markdown_surface,
     make_mirror_surface, markdown_mirror_available,
 };
-use crate::model::{EmptySurface, ExplorerPanel, TerminalSurface};
+use crate::model::{EmptySurface, TerminalSurface};
 use crate::runtime::engine_access::EngineMut;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -136,6 +136,7 @@ pub(super) fn merge_survivor_mapping(
                     }
                     // cwd는 terminal뿐 아니라 explorer·markdown에도 있어 이전 kind와 함께 지운다.
                     engine.forget_mirror_surface_cwd(l);
+                    engine.remote.explorer_sources.remove(l);
                     // 새 frame이 올 때까지 이전 kind의 화면을 그리지 않게 한다.
                     engine.remote.attach_mesh_frames.remove(l);
                     if is_terminal {
@@ -246,15 +247,12 @@ pub(super) fn merge_survivor_mapping(
                 )),
             );
         } else if let Some(root) = explorer_locals.get(&local_id) {
-            let tab = engine
-                .find_surface_by_id(local_id)
-                .and_then(|surface| surface.as_any().downcast_ref::<ExplorerPanel>())
-                .filter(|panel| panel.current_root() == root)
-                .map(|panel| panel.active_tab().clone())
-                .unwrap_or_else(|| tasty_model::ExplorerTab::new(root.clone()));
-            engine.runtime.surfaces.insert(
+            engine.remote.explorer_sources.sync(
                 local_id,
-                Box::new(ExplorerPanel::from_tabs(local_id, vec![tab], 0)),
+                remote_id,
+                root,
+                frame_tx.epoch(),
+                &mut engine.runtime.surfaces,
             );
         } else if !markdown_locals.contains_key(&local_id) {
             engine
@@ -272,6 +270,7 @@ pub(super) fn merge_survivor_mapping(
             engine.forget_mirror_surface_busy(local_id);
             engine.forget_mirror_surface_attention(local_id);
             engine.forget_mirror_surface_cwd(local_id);
+            engine.remote.explorer_sources.remove(local_id);
             engine.remote.attach_mesh_frames.remove(local_id);
             // 원격이 닫은 surface도 로컬 닫기처럼 soft 점유 등 점유 기록을 남기지 않는다.
             engine.forget_closed_surface(local_id);

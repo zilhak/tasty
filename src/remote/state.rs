@@ -1,4 +1,7 @@
 //! Engine-scoped remote session resources. They are not local journal facts.
+#[cfg(feature = "gui")]
+mod explorer;
+
 use crate::core::attach::AttachClientId;
 use crate::core::state::AttentionKind;
 use crate::core::state::RemoteCwd;
@@ -75,6 +78,9 @@ pub(crate) struct RemoteState {
     /// mirror workspace(로컬 ID)마다 붙은 원격 Tasty. App 이 연결 상태에서 맞춘다.
     #[cfg(feature = "gui")]
     pub(crate) explorer_hosts: std::collections::HashMap<u32, ExplorerRemoteHost>,
+    /// 마지막 서버 descriptor와 연결. 클라이언트의 탐색 경로와 분리한다.
+    #[cfg(feature = "gui")]
+    pub(crate) explorer_sources: explorer::MirrorExplorers,
     /// 원격 Git 조회 요청. 응답은 MirrorEvent로 따로 들어온다.
     #[cfg(feature = "gui")]
     pub(crate) pending_git_query_forward: Vec<crate::core::PendingGitQueryForward>,
@@ -149,6 +155,8 @@ impl RemoteState {
             explorer_writable: std::collections::HashSet::new(),
             #[cfg(feature = "gui")]
             explorer_hosts: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
+            explorer_sources: Default::default(),
             #[cfg(feature = "gui")]
             pending_git_query_forward: Vec::new(),
             #[cfg(feature = "gui")]
@@ -279,6 +287,7 @@ impl RemoteState {
         self.pending_attention_clear_forward.remove(&id);
         #[cfg(feature = "gui")]
         {
+            self.explorer_sources.remove(id);
             self.pending_resize_forward.remove(&id);
             self.pending_mesh_context_forward.remove(&id);
             self.pending_mesh_input_forward.remove(&id);

@@ -1,4 +1,4 @@
-<!-- source-hash: babcc20e8e8c -->
+<!-- source-hash: ebbef51f8a7d -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -51,6 +51,8 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
 
 When you return to an internal tab, it keeps your selected items, list and Files tree scroll positions, and the Find query and subfolder search results. Two tabs showing the same folder remember these separately. Reads and searches that finish while you are in another tab update only the tab that started them. Closing a tab discards this state. After restarting the app, folders, views and sorting are restored, while selection and Find start empty.
+
+A remote Explorer also keeps its internal tabs and browsing locations when the Workspace updates on the same connection and the server folder is unchanged. If the server changes that folder or a new connection is established, Explorer starts with a fresh tab at the folder reported by the server.
 
 When you save a layout with an Explorer as a preset and apply it, each tab inside the Explorer opens the folder it was showing, with the same view and sort, and the Pane's tab is titled after the folder the active tab was opened on (its root). If you set a working directory for it in the preset editor, it opens that one folder instead of the saved tabs. If a saved folder no longer exists, that tab shows the read error message.
 

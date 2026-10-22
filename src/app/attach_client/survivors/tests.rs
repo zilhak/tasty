@@ -5,7 +5,7 @@ use crate::app::attach_client::tests::{
     MARKDOWN_PLUGIN_ID, created_surfaces, markdown_descriptor, register_markdown_kind,
     single_leaf_tree, supply_ids, test_ids,
 };
-use crate::model::EmptySurface;
+use crate::model::{EmptySurface, ExplorerPanel};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use tasty_remote::client_session::{MirrorStructureIds, SharedFrameSender};
@@ -572,35 +572,179 @@ fn reconnect_install_sizes_survivors_and_clears_the_resize_wait() {
     assert!(!sync.acks_expected(), "새 연결의 서버 기능을 따른다");
 }
 
-#[test]
-fn explorer_survivor_keeps_tab_identity_only_for_the_same_projection() {
+fn explorer_fixture(
+    engine: &mut EngineMut<'_>,
+) -> (
+    crate::runtime::id_reservations::ReservedIds,
+    SharedFrameSender,
+    Vec<Value>,
+    SurvivorMapping,
+    u32,
+) {
     let ids = test_ids();
-    let (_, mut session) = crate::state::tests::test_state();
-    let mut engine = session.borrow_mut();
-    supply_ids(&engine);
+    supply_ids(engine);
     let (tx, _rx) = tasty_remote::connection::channel();
     let descriptors =
         vec![serde_json::json!({"remote_id": 10, "role": "explorer", "root": "/remote/a"})];
-    let first =
-        merge_survivor_mapping(&HashMap::new(), &descriptors, &ids, &tx, &mut engine).unwrap();
+    let first = merge_survivor_mapping(&HashMap::new(), &descriptors, &ids, &tx, engine).unwrap();
     let local = first.remote_to_local[&10];
-    let tab = |engine: &EngineMut<'_>| {
-        engine
-            .runtime
-            .surfaces
-            .get(&local)
-            .unwrap()
-            .as_any()
-            .downcast_ref::<ExplorerPanel>()
-            .unwrap()
-            .active_tab()
-            .id()
-    };
-    let before = tab(&engine);
+    (ids, tx, descriptors, first, local)
+}
+
+fn explorer_mut<'a>(engine: &'a mut EngineMut<'_>, local: u32) -> &'a mut ExplorerPanel {
+    engine
+        .runtime
+        .surfaces
+        .get_mut(&local)
+        .unwrap()
+        .as_any_mut()
+        .downcast_mut::<ExplorerPanel>()
+        .unwrap()
+}
+
+#[test]
+fn explorer_survivor_preserves_all_tabs_and_view_state_after_client_navigation() {
+    use crate::adapters::ui::surface::explorer::view::{ExplorerViewStore, LoadState};
+    use tasty_model::{ExplorerViewMode, SortColumn, SortDir};
+    use tasty_type_geometry::length::LogicalPx;
+    let (_, mut session) = crate::state::tests::test_state();
+    let mut engine = session.borrow_mut();
+    let (ids, tx, descriptors, first, local) = explorer_fixture(&mut engine);
+    let panel = explorer_mut(&mut engine, local);
+    panel.add_tab();
+    panel.add_tab();
+    panel.active = 1;
+    panel
+        .active_tab_mut()
+        .navigate_to("/remote/client-choice".into());
+    panel.active_tab_mut().view_mode = ExplorerViewMode::Grid;
+    panel.active_tab_mut().sort_column = SortColumn::Size;
+    panel.active_tab_mut().sort_dir = SortDir::Desc;
+    panel.show_hidden = true;
+    panel.preview.open = true;
+    panel.preview.width = Some(LogicalPx(240.0));
+    let tab_ids: Vec<_> = panel.tabs.iter().map(|tab| tab.id()).collect();
+    let mut views = ExplorerViewStore::default();
+    for index in 0..3 {
+        panel.active = index;
+        let name = format!("tab{index}.txt");
+        let path = panel.current_root().join(&name);
+        let view = views.get_or_init(panel, Some(7));
+        let request = view.drain_outbox().pop().unwrap().request_id;
+        assert!(view.apply_remote_list_dir_result(
+            request,
+            panel,
+            Ok(vec![crate::core::fs_list::DirEntryInfo {
+                path: path.clone(),
+                name: name.clone(),
+                ..Default::default()
+            }])
+        ));
+        view.select_only(&path);
+        view.open_find();
+        view.find.as_mut().unwrap().set_query(&name);
+    }
+    panel.active = 1;
+    views.get_or_init(panel, Some(7));
+    // The server descriptor is unchanged, even though the client active path differs.
     merge_survivor_mapping(&first.remote_to_local, &descriptors, &ids, &tx, &mut engine).unwrap();
-    assert_eq!(tab(&engine), before);
-    let changed =
-        vec![serde_json::json!({"remote_id": 10, "role": "explorer", "root": "/remote/b"})];
+    let panel = explorer_mut(&mut engine, local);
+    assert_eq!(panel.tabs.len(), 3);
+    assert_eq!(panel.active, 1);
+    assert_eq!(
+        panel.tabs.iter().map(|tab| tab.id()).collect::<Vec<_>>(),
+        tab_ids
+    );
+    assert_eq!(
+        panel.current_root(),
+        std::path::Path::new("/remote/client-choice")
+    );
+    assert!(panel.active_tab().can_go_back());
+    assert_eq!(panel.active_tab().view_mode, ExplorerViewMode::Grid);
+    assert_eq!(panel.active_tab().sort_column, SortColumn::Size);
+    assert_eq!(panel.active_tab().sort_dir, SortDir::Desc);
+    assert!(panel.show_hidden && panel.preview.open);
+    assert_eq!(panel.preview.width, Some(LogicalPx(240.0)));
+    for index in 0..3 {
+        panel.active = index;
+        let name = format!("tab{index}.txt");
+        let path = panel.current_root().join(&name);
+        let view = views.get_or_init(panel, Some(7));
+        assert_eq!(view.state, LoadState::Ok);
+        assert!(view.drain_outbox().is_empty());
+        assert_eq!(view.selected.len(), 1);
+        assert!(view.selected.contains(&path));
+        assert_eq!(view.find.as_ref().unwrap().query(), name);
+    }
+    panel.active = 2;
+    merge_survivor_mapping(&first.remote_to_local, &descriptors, &ids, &tx, &mut engine).unwrap();
+    assert_eq!(explorer_mut(&mut engine, local).active, 2);
+}
+
+#[test]
+fn explorer_server_root_change_replaces_tabs_and_discards_old_view_receipts() {
+    use crate::adapters::ui::surface::explorer::view::ExplorerViewStore;
+    let (_, mut session) = crate::state::tests::test_state();
+    let mut engine = session.borrow_mut();
+    let (ids, tx, _descriptors, first, local) = explorer_fixture(&mut engine);
+    let panel = explorer_mut(&mut engine, local);
+    let old_id = panel.active_tab().id();
+    panel.add_tab();
+    panel
+        .active_tab_mut()
+        .navigate_to("/remote/new-server-root".into());
+    let mut views = ExplorerViewStore::default();
+    let view = views.get_or_init(panel, Some(7));
+    let pending = view.drain_outbox().pop().unwrap().request_id;
+    view.select_only(&panel.current_root().join("old"));
+    view.open_find();
+    // A client may already be looking at the new server root: compare server-to-server.
+    let changed = vec![
+        serde_json::json!({"remote_id": 10, "role": "explorer", "root": "/remote/new-server-root"}),
+    ];
     merge_survivor_mapping(&first.remote_to_local, &changed, &ids, &tx, &mut engine).unwrap();
-    assert_ne!(tab(&engine), before);
+    let panel = explorer_mut(&mut engine, local);
+    assert_eq!(panel.tabs.len(), 1);
+    assert_ne!(panel.active_tab().id(), old_id);
+    let view = views.get_or_init(panel, Some(7));
+    assert!(view.selected.is_empty() && view.find.is_none());
+    assert_eq!(view.parked_tab_count(), 0);
+    assert!(!view.apply_remote_list_dir_result(pending, panel, Ok(Vec::new())));
+    assert_ne!(view.drain_outbox().pop().unwrap().request_id, pending);
+}
+
+#[test]
+fn explorer_new_connection_epoch_replaces_same_root_tabs_and_old_requests() {
+    use crate::adapters::ui::surface::explorer::view::ExplorerViewStore;
+    let (_, mut session) = crate::state::tests::test_state();
+    let mut engine = session.borrow_mut();
+    let (ids, old_tx, descriptors, mut first, local) = explorer_fixture(&mut engine);
+    let panel = explorer_mut(&mut engine, local);
+    panel.add_tab();
+    let old_id = panel.active_tab().id();
+    let mut views = ExplorerViewStore::default();
+    let view = views.get_or_init(panel, Some(7));
+    let pending = view.drain_outbox().pop().unwrap().request_id;
+    view.select_only(&panel.current_root().join("old"));
+    view.open_find();
+    old_tx.retire();
+    let (new_tx, _rx) = tasty_remote::connection::channel();
+    let mut resize = tasty_remote::resize_sync::ResizeSync::for_connection(false);
+    install_reconnected_survivors(
+        &mut first.remote_to_local,
+        &mut resize,
+        false,
+        &descriptors,
+        &ids,
+        &new_tx,
+        &mut engine,
+    )
+    .unwrap();
+    let panel = explorer_mut(&mut engine, local);
+    assert_eq!(panel.tabs.len(), 1);
+    assert_ne!(panel.active_tab().id(), old_id);
+    let view = views.get_or_init(panel, Some(7));
+    assert!(view.selected.is_empty() && view.find.is_none());
+    assert_eq!(view.parked_tab_count(), 0);
+    assert!(!view.apply_remote_list_dir_result(pending, panel, Ok(Vec::new())));
 }
