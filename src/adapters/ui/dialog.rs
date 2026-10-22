@@ -188,8 +188,8 @@ pub fn draw_rename_popup_view(
         return RenamePopupAction::Cancel;
     }
 
-    // 기다리는 동안에는 보낸 이름을 Input readOnly 모양으로 보이고 고치지 못하게 한다.
-    // egui는 편집할 수 없는 TextEdit의 프레임을 그리지 않으므로 칸 크기는 그대로 두고 상자를 직접 그린다.
+    // 칸은 Input 상자 토큰으로 직접 그린다(egui 기본 프레임은 토큰 값이 아니다). 기다리는 동안에는 보낸
+    // 이름을 Input readOnly 모양으로 보이고 고치지 못하게 한다. 칸 높이는 평소 rename 입력 그대로다.
     let mut sent = props.buffer.as_str();
     let bed = ui.painter().add(egui::Shape::Noop);
     let field = if waiting {
@@ -198,6 +198,8 @@ pub fn draw_rename_popup_view(
             .text_color(props.theme.input_readonly_fg().to_egui())
     } else {
         egui::TextEdit::singleline(props.buffer)
+            .frame(false)
+            .text_color(props.theme.input_fg().to_egui())
     };
     let resp = ui.add_sized(
         [ui.available_width(), 22.0],
@@ -207,22 +209,18 @@ pub fn draw_rename_popup_view(
             .margin(margin_sym(STRUCT_GAP_4, STRUCT_GAP_2)),
     );
 
-    if waiting {
-        let radius = props.theme.input_radius().value();
-        ui.painter().set(
-            bed,
-            egui::Shape::rect_filled(resp.rect, radius, props.theme.input_readonly_bg().to_egui()),
-        );
-        ui.painter().rect_stroke(
-            resp.rect,
-            radius,
-            egui::Stroke::new(
-                props.theme.border_width.value(),
-                props.theme.input_readonly_border().to_egui(),
-            ),
-            egui::StrokeKind::Inside,
-        );
-    }
+    let (fill, border) = rename_field_box(props.theme, waiting, resp.has_focus());
+    let radius = props.theme.input_radius().value();
+    ui.painter().set(
+        bed,
+        egui::Shape::rect_filled(resp.rect, radius, fill.to_egui()),
+    );
+    ui.painter().rect_stroke(
+        resp.rect,
+        radius,
+        egui::Stroke::new(props.theme.border_width.value(), border.to_egui()),
+        egui::StrokeKind::Inside,
+    );
 
     if !resp.has_focus() {
         resp.request_focus();
@@ -294,6 +292,25 @@ pub fn draw_rename_popup_view(
         return RenamePopupAction::Cancel;
     }
     RenamePopupAction::None
+}
+
+/// rename 칸의 상자 칠과 테두리. 팝업 바탕(dialog-bg) 위의 기본 Input 토큰이다: 기다리는 동안
+/// input-readonly-*, 평소 input-bg 와 쉬는 input-border · 포커스 input-border-focus.
+fn rename_field_box(
+    theme: &Theme,
+    waiting: bool,
+    focused: bool,
+) -> (
+    tasty_type_appearance::color::HexColor,
+    tasty_type_appearance::color::HexColor,
+) {
+    if waiting {
+        (theme.input_readonly_bg(), theme.input_readonly_border())
+    } else if focused {
+        (theme.input_bg(), theme.input_border_focus())
+    } else {
+        (theme.input_bg(), theme.input_border())
+    }
 }
 
 /// 대기 줄: `icon-size-sm` Spinner 와 caption text-muted 문구를 `space-sm` 간격으로 둔다.
@@ -847,6 +864,44 @@ mod tests {
         let (content, wait_h) = heights[0];
         assert!(wait_h > 0.0);
         assert_eq!(content, plain + wait_h);
+    }
+
+    /// 고칠 수 있는 이름 칸도 egui 기본 프레임(crust) 대신 Input 상자 토큰으로 그린다. 포커스를 받은 칸이다.
+    #[test]
+    fn an_editable_rename_field_draws_the_input_box() {
+        let ctx = egui::Context::default();
+        let theme = test_theme();
+        let mut buffer = String::from("tasty-core");
+        let mut output = egui::FullOutput::default();
+        for _ in 0..2 {
+            output = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.set_width(200.0);
+                    let mut props = RenamePopupProps {
+                        theme: &theme,
+                        buffer: &mut buffer,
+                        save_label: "Save",
+                        cancel_label: "Cancel",
+                        body_font_size: 12.0,
+                        error: None,
+                        save_enabled: true,
+                        error_height: 0.0,
+                        waiting: None,
+                    };
+                    draw_rename_popup_view(ui, &mut props);
+                });
+            });
+        }
+        let (fills, strokes) = box_colors(&output, "tasty-core");
+        assert!(fills.contains(&theme.input_bg().to_egui()), "{fills:?}");
+        assert!(
+            !fills.contains(&ctx.style().visuals.extreme_bg_color),
+            "{fills:?}"
+        );
+        assert!(
+            strokes.contains(&theme.input_border_focus().to_egui()),
+            "{strokes:?}"
+        );
     }
 
     #[test]
