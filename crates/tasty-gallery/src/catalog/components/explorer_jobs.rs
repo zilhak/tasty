@@ -17,6 +17,7 @@ use crate::i18n::{t, t_args, t_count, t_fmt, t_fmt2};
 
 mod originals;
 mod remote;
+mod staging;
 
 /// 시안 탐색기 칸 폭(`XCell w={520}`). 전시 치수다.
 const CELL_W: LogicalPx = LogicalPx(520.0);
@@ -758,6 +759,12 @@ pub fn specs() -> Vec<crate::catalog::Spec> {
             title: "Results — originals left after a cross-disk move · Undo kept a changed copy",
             when: Some("warning · stays until dismissed · no Undo"),
             draw: draw_source_left,
+        },
+        Spec {
+            id: "explorer-ops-results-staging-left",
+            title: "Results — temporary folder left behind · done · cancelled · partial · undo",
+            when: Some("warning at least · folder line after the items · stays until dismissed"),
+            draw: staging::draw_staging_left,
         },
         Spec {
             id: "explorer-ops-drag",
