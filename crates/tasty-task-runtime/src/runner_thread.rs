@@ -4,8 +4,10 @@
 
 #[cfg(test)]
 mod attempt_tests;
+mod completion_reports;
 mod restart_holders;
 pub(crate) mod settle;
+use completion_reports::CompletionReports;
 use restart_holders::{purge_stale_lease_holders, purge_stale_semaphore_holders};
 pub(crate) use settle::{settle_ended_task, settle_ended_tasks_in_background, stored_handle_ids};
 
@@ -1023,36 +1025,6 @@ fn log_store_list_failure(workspace_id: u32, n: u32, e: &dyn std::fmt::Display) 
              — snapshot-based dispatch, polling, and permit release remain blocked"
         ),
         StoreListFailureLog::Silent => {}
-    }
-}
-
-/// 러너의 완료 보고. 결과를 받지 못한 보고를 기억했다가, 다시 낸 같은 보고가 앞 보고의 확정을 알려
-/// 주면 그때 빠진 종결 알림을 낸다([`RunnerContext::complete_task_again`]).
-#[derive(Default)]
-struct CompletionReports {
-    unanswered: std::collections::HashSet<TaskId>,
-}
-
-impl CompletionReports {
-    fn report(
-        &mut self,
-        ctx: &RunnerContext,
-        workspace_id: u32,
-        task_id: &TaskId,
-        completion: Completion,
-        now_ms: u64,
-    ) -> Result<(), tasty_agent::AgentError> {
-        let after_unanswered = self.unanswered.remove(task_id);
-        match ctx.complete_task_again(workspace_id, task_id, completion, now_ms, after_unanswered) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                // 러너가 같은 보고를 다시 내는 오류만 기억한다.
-                if completion_retryable(&e) {
-                    self.unanswered.insert(task_id.clone());
-                }
-                Err(e)
-            }
-        }
     }
 }
 
