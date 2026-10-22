@@ -282,7 +282,9 @@ impl HostExecutor {
     }
 
     /// Started를 반환하기 전에 실행 handle을 저장한다. workspace는 handle에 없을 수 있어 별도로 받는다.
-    /// 즉시 종료 handle은 저장하지 않으며 저장 실패는 로그를 남긴다.
+    /// 즉시 종료 handle은 저장하지 않는다. 저장이 확정되지 않아도 실행은 시작됐으므로 이 task 를 지켜본다.
+    /// 결과를 모르는 저장이 실제로 확정됐다면 남은 handle 정리가 실행 중인 회차를 끝내지 않아야 하고,
+    /// 확정되지 않았다면 정리 때의 delete 는 없는 키라 효과가 없다.
     /// `attempt` 는 이 dispatch 가 만들 v2 회차다. 재시작 복구가 이 회차로 보고해 다른 회차를 끝내지 않는다.
     fn persist_handle(
         &mut self,
@@ -322,7 +324,6 @@ impl HostExecutor {
         });
         if let Err(e) = res {
             tracing::warn!("persist handle {task_id}: {e}");
-            return;
         }
         self.held_handles.insert(task_id.clone(), ws);
     }

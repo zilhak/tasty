@@ -2161,3 +2161,7 @@ mod reload_shrink_tests;
 #[cfg(test)]
 #[path = "runner_thread/restored_await_external_tests.rs"]
 mod restored_await_external_tests;
+
+#[cfg(all(test, unix))]
+#[path = "runner_thread/post_spawn_tests.rs"]
+mod post_spawn_tests;

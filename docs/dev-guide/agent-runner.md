@@ -53,7 +53,7 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 | 회차가 다르거나 Waiting·Unknown | 이 실행은 저장소에서 시작한 적 없는 회차라 멈추고 점유를 돌려준다. 그 뒤 Ready 가 되면 새로 시작한다 |
 | snapshot 에 없음 | 목록을 읽지 못했을 수 있어 그대로 둔다 |
 
-v1 task 는 회차 id 가 없어 상태만 본다.
+v1 task 는 회차 id 가 없어 상태만 본다. 시작 뒤 handle 저장이 확정되지 않아도 executor 는 그 task 를 지켜보는 것으로 기록한다. 결과를 모르던 저장이 실제로 확정된 경우 남은 handle 정리(`settle_unwatched_handles`)가 실행 중인 프로세스를 끝내지 않게 하기 위해서다.
 
 2단계는 `Ready` 인지만 보고 그 task 가 "어떤 main 의 아직 만들어지지 않은 fallback 참조 대상" 인지는 알 방법이 없다 — `fallback{task}` 는 참조 대상(fallback)이 참조자(main)보다 먼저 존재해야 하는 2단계 `task_create` 흐름이라, 그 사이에 tick 이 끼면 아직 아무도 참조하지 않는 fallback 후보가 정상적으로 `Ready` 로 dispatch 돼버릴 수 있다(TOCTOU). `task_create(..., reserved_for_fallback: true)`(`TaskStore::create_reserved_for_fallback`)로 만든 task 는 `TaskGraph::dormant_as_pending_fallback` 이 이 필드를 최우선으로 존중해 `Ready` 로 노출하지 않으므로, 애초에 이 2단계 dispatch 루프의 대상이 되지 않는다 — 상세는 [features/agent-collaboration §Task DAG](../features/agent-collaboration/index.md).
 
