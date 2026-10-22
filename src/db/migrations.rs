@@ -1,5 +1,5 @@
 //! 새 DB에는 현재 스키마를 만들고 다른 user_version은 오류로 거부한다.
-//! 같은 버전도 tutorial_progress 생성문을 다시 실행한다. 기존 테이블 구조 전체를 검사하거나 고치지는 않는다.
+//! 같은 버전도 recent_files·tutorial_progress 생성문을 다시 실행한다. 기존 테이블 구조 전체를 검사하거나 고치지는 않는다.
 
 use rusqlite::Connection;
 
@@ -16,6 +16,10 @@ const SCHEMA_SQL: &str = r#"
         opened_at INTEGER NOT NULL
     );
 
+"#;
+
+/// 같은 버전의 기존 DB에도 없으면 만든다. 최근 파일 writer는 이 테이블이 있다고 본다.
+const RECENT_FILES_SQL: &str = r#"
     CREATE TABLE IF NOT EXISTS recent_files (
         kind TEXT NOT NULL,
         path TEXT NOT NULL,
@@ -63,6 +67,7 @@ pub fn ensure_schema(conn: &mut Connection) -> Result<(), DbSchemaError> {
     if current == 0 {
         let tx = conn.transaction()?;
         tx.execute_batch(SCHEMA_SQL)?;
+        tx.execute_batch(RECENT_FILES_SQL)?;
         tx.execute_batch(crate::store::tutorial_progress::SCHEMA)?;
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -71,6 +76,7 @@ pub fn ensure_schema(conn: &mut Connection) -> Result<(), DbSchemaError> {
     }
 
     if current == SCHEMA_VERSION {
+        conn.execute_batch(RECENT_FILES_SQL)?;
         conn.execute_batch(crate::store::tutorial_progress::SCHEMA)?;
         return Ok(());
     }
@@ -137,6 +143,30 @@ mod tests {
             found, 1,
             "additive ensure did not reach an existing database"
         );
+    }
+
+    /// recent_files가 없는 같은 버전 DB에도 테이블을 만들고 기존 행은 남긴다.
+    #[test]
+    fn an_existing_database_without_recent_files_gets_the_table() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA_SQL).unwrap();
+        conn.execute("INSERT INTO meta(key, value) VALUES('keep', '1')", [])
+            .unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)
+            .unwrap();
+        ensure_schema(&mut conn).unwrap();
+        let tables: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='recent_files'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tables, 1);
+        let kept: String = conn
+            .query_row("SELECT value FROM meta WHERE key='keep'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(kept, "1");
     }
 
     #[test]

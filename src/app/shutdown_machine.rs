@@ -59,9 +59,9 @@ pub(crate) struct ShutdownState {
     screenshot_deadline: Option<Instant>,
     explorer_files_deadline: Option<Instant>,
     runner_stop_deadline: Instant,
-    /// memory writer drain의 기한. 첫 대기에서 정하고, 기한을 넘기면 None으로 두고 진행한다.
-    memory_writer_deadline: Option<Instant>,
-    memory_writer_gave_up: bool,
+    /// memory·state writer drain의 기한. 각각 첫 대기에서 정하고 넘기면 미회수로 두고 진행한다.
+    memory_drain: crate::app::writer_drain::WriterDrain,
+    state_drain: crate::app::writer_drain::WriterDrain,
     /// One deadline for every journal wait of SavingLayout (publication, final View write, slot
     /// retirements). Fixed at the first of them; later polls never reset it.
     journal_deadline: Option<Instant>,
@@ -99,8 +99,8 @@ impl App {
             screenshot_deadline: Some(Instant::now() + Duration::from_secs(5)),
             explorer_files_deadline: Some(Instant::now() + Duration::from_secs(5)),
             runner_stop_deadline: Instant::now() + Duration::from_secs(5),
-            memory_writer_deadline: None,
-            memory_writer_gave_up: false,
+            memory_drain: Default::default(),
+            state_drain: Default::default(),
             journal_deadline: None,
         });
 
@@ -483,8 +483,7 @@ impl App {
         let remaining = self.explorer_files.poll_shutdown()
             + self.image_jobs.poll_shutdown()
             + self.local_reads.poll_shutdown()
-            + self.dag_reads.poll_shutdown()
-            + self.tutorial_progress.poll_shutdown();
+            + self.dag_reads.poll_shutdown();
         if remaining != 0
             && let Some(deadline) = self
                 .state
@@ -527,7 +526,13 @@ impl App {
             Some(mgr) => mgr.poll_shutdown_all(),
             None => true,
         };
-        if !done || self.wait_for_memory_writer_shutdown() {
+        if !done {
+            return StepOutcome::Waiting;
+        }
+        // 한 writer의 대기가 다른 writer의 종료 시작을 미루지 않도록 둘 다 진행한다.
+        let memory_waiting = self.wait_for_memory_writer_shutdown();
+        let state_waiting = self.wait_for_state_writer_shutdown();
+        if memory_waiting || state_waiting {
             return StepOutcome::Waiting;
         }
         self.set_shutdown_phase(ShutdownPhase::Done);
@@ -544,20 +549,25 @@ impl App {
         let Some(state) = self.state.shutdown.as_mut() else {
             return false;
         };
-        if remaining == 0 || state.memory_writer_gave_up {
+        state.memory_drain.keep_waiting(
+            remaining,
+            Instant::now(),
+            "memory writer shutdown timed out; requests it has not committed may be lost",
+        )
+    }
+
+    /// 최근 파일·튜토리얼 producer(메인 루프와 View)가 멈춘 뒤 state.db writer의 접수를 막고 마지막
+    /// flush와 join을 memory writer와 같은 기한으로 기다린다. 남은 최근 파일 결과도 여기서 거둔다.
+    fn wait_for_state_writer_shutdown(&mut self) -> bool {
+        let remaining = self.services.poll_state_writer_shutdown();
+        let Some(state) = self.state.shutdown.as_mut() else {
             return false;
-        }
-        let deadline = *state
-            .memory_writer_deadline
-            .get_or_insert_with(|| Instant::now() + Duration::from_secs(5));
-        if Instant::now() < deadline {
-            return true;
-        }
-        tracing::warn!(
-            "memory writer shutdown timed out; requests it has not committed may be lost"
-        );
-        state.memory_writer_gave_up = true;
-        false
+        };
+        state.state_drain.keep_waiting(
+            remaining,
+            Instant::now(),
+            "state writer shutdown timed out; requests it has not committed may be lost",
+        )
     }
 
     fn render_shutdown_frame(&mut self) {

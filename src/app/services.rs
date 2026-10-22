@@ -103,6 +103,9 @@ pub(crate) struct AppServices {
     telemetry_follow_ups: crate::ipc::handler::telemetry_follow_up::FollowUps,
     /// 예상하지 못한 writer 종료를 한 번만 알린다.
     memory_writer_end_reported: bool,
+    /// state.db 전담 writer. GUI 부팅이 DB를 연 뒤 설치한다. 헤드리스와 DB를 열지 못한 실행에는 없다.
+    #[cfg(any(feature = "gui", test))]
+    state_writer: Option<crate::db::writer::StateWriterParts>,
 }
 
 /// 호스트의 memory.db writer.
@@ -267,6 +270,66 @@ impl AppServices {
         self.memory_writer
             .as_mut()
             .map_or(0, |parts| parts.writer.poll_shutdown())
+    }
+
+    /// GUI 부팅이 state.db writer를 시작한 뒤 넘긴다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn install_state_writer(&mut self, parts: crate::db::writer::StateWriterParts) {
+        self.state_writer = Some(parts);
+    }
+
+    /// 메인 루프 회차마다 부른다. 깨우기를 확인하고 최근 파일 저장 결과를 거둔다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn poll_state_writer(&mut self) {
+        if let Some(parts) = self.state_writer.as_mut() {
+            parts.poll();
+        }
+    }
+
+    /// 접수를 멈추고 마지막 flush 뒤 worker를 끝내도록 하고 남은 worker 수를 돌려준다. 기다리지 않는다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn poll_state_writer_shutdown(&mut self) -> usize {
+        self.state_writer
+            .as_mut()
+            .map_or(0, crate::db::writer::StateWriterParts::poll_shutdown)
+    }
+
+    /// state.db writer 계측. writer가 없으면 None이다.
+    pub(crate) fn state_writer_stats(
+        &self,
+    ) -> Option<tasty_utils::batch_writer::WriterStatsSnapshot> {
+        #[cfg(any(feature = "gui", test))]
+        {
+            self.state_writer.as_ref().map(|w| w.writer.stats())
+        }
+        #[cfg(not(any(feature = "gui", test)))]
+        {
+            None
+        }
+    }
+
+    /// state.db를 열 때 확인한 pragma 사본. 연결에 닿지 않는다.
+    pub(crate) fn state_pragmas(&self) -> Option<&tasty_memory::pragma::AppliedPragmas> {
+        #[cfg(any(feature = "gui", test))]
+        {
+            self.state_writer.as_ref().map(|w| &w.pragmas)
+        }
+        #[cfg(not(any(feature = "gui", test)))]
+        {
+            None
+        }
+    }
+
+    /// state.db 쓰기 commit 계측. writer가 없으면 None이다.
+    pub(crate) fn state_db_latency(&self) -> Option<tasty_memory::DbLatencySnapshot> {
+        #[cfg(any(feature = "gui", test))]
+        {
+            self.state_writer.as_ref().map(|w| w.latency.snapshot())
+        }
+        #[cfg(not(any(feature = "gui", test)))]
+        {
+            None
+        }
     }
 
     pub(crate) fn connections(&self) -> &Arc<tasty_telemetry::ConnectionStats> {

@@ -98,7 +98,7 @@ impl App {
         window_hidden: bool,
     ) {
         let settings_origin = settings.origin;
-        let (db_init_error, invalid_theme_name) = Self::init_boot_db_and_theme(&mut settings);
+        let (db_init_error, invalid_theme_name) = self.init_boot_db_and_theme(&mut settings);
 
         // 엔진이 슬롯을 읽기 전에 레이아웃 마이그레이션과 전체 슬롯의 scrollback GC를 수행한다.
         crate::core::layout_persistence::migrate_and_gc_on_boot(settings.general.restore_layout);
@@ -126,10 +126,11 @@ impl App {
 
     /// 첫 로딩 프레임부터 사용자 테마를 쓰도록 적용한다. state.db도 엔진 생성 전에 준비한다.
     fn init_boot_db_and_theme(
+        &mut self,
         settings: &mut crate::settings::Settings,
     ) -> (Option<crate::db::DbInitError>, Option<String>) {
         let t_db_theme = Instant::now();
-        let db_init_error = crate::db::init();
+        let db_init_error = self.start_state_db();
         let invalid_theme_name = crate::app::window_lifecycle::boot_apply_theme(settings);
         if let Err(e) = settings.save() {
             tracing::warn!("failed to persist settings after theme apply: {e}");
@@ -140,6 +141,36 @@ impl App {
             "T2.5 db_theme (begin_boot enter -> first loading frame)"
         );
         (db_init_error, invalid_theme_name)
+    }
+
+    /// state.db를 실행당 한 번 열고 연결을 writer에 넘긴 뒤 공유 핸들을 공개한다. writer를 시작하지
+    /// 못한 것도 초기화 실패로 알리며 그때는 공유 핸들을 공개하지 않는다.
+    fn start_state_db(&mut self) -> Option<crate::db::DbInitError> {
+        let db = match crate::db::init() {
+            crate::db::InitOutcome::Opened(db) => db,
+            crate::db::InitOutcome::Failed(error) => return Some(error),
+            crate::db::InitOutcome::Repeated => return None,
+        };
+        match crate::db::writer::start(
+            db,
+            tasty_utils::batch_writer::Limits::default(),
+            Arc::new(tasty_utils::batch_writer::SystemClock),
+            self.state_db_wake.clone(),
+        ) {
+            Ok((parts, shared)) => {
+                self.services.install_state_writer(parts);
+                crate::db::publish(shared);
+                None
+            }
+            Err(error) => {
+                tracing::warn!(
+                    "state.db writer failed to start: {error} — continuing without recent files and tutorial progress"
+                );
+                Some(crate::db::DbInitError::Other(format!(
+                    "state writer could not start: {error}"
+                )))
+            }
+        }
     }
 
     /// hidden 창은 RedrawRequested를 못 받을 수 있어 즉시 그린다.

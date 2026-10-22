@@ -101,11 +101,10 @@ pub(super) fn handle_system_pressure(
         &core.db_latency().snapshot(),
         &core.connections().snapshot(),
     );
-    let state_db = crate::db::with_state_db(|db| db.applied_pragmas.clone());
     body["db_pragmas"] = db_pragmas_json(
         core.memory_pragmas(),
         core.memory_init_fallback(),
-        state_db.as_ref(),
+        core.state_pragmas(),
     );
     body["stream_push"] = stream_push_json(engine.remote.notifier().map(|hub| hub.loss()));
     // 큐 상태는 IPC 주입기가 가진 입장 기록에서 읽는다. 서버가 없으면 null이다.
@@ -120,13 +119,33 @@ pub(super) fn handle_system_pressure(
     body["keyed_requests"] = keyed_requests_json(&super::idempotency::retry_counts());
     body["slow_requests"] = slow_requests_json(&core.slow_requests().snapshot());
     body["gate_refusals"] = gate_refusals_json(&core.gate().snapshot());
-    body["memory_writer"] = memory_writer_json(core.memory_writer_stats());
+    body["memory_writer"] = writer_stats_json(core.memory_writer_stats());
+    body["state_writer"] = writer_stats_json(core.state_writer_stats());
+    body["state_db"] = state_db_json(core.state_db_latency().as_ref());
     JsonRpcResponse::success(id, body)
 }
 
-/// memory.db 전담 writer의 접수·묶음·예산 누계. writer가 없는 구성이면 null이다.
+/// state.db 쓰기 commit의 시간과 commit당 확정된 논리 쓰기 수. writer가 없으면 null이다.
+/// 부팅의 최근 목록 정리 commit과 읽기는 세지 않는다. checkpoint·VACUUM은 재지 않아 싣지 않는다.
+pub(super) fn state_db_json(d: Option<&tasty_memory::DbLatencySnapshot>) -> serde_json::Value {
+    let Some(d) = d else {
+        return serde_json::Value::Null;
+    };
+    json!({
+        "commits": d.commits,
+        "commit_us_sum": d.commit_us_sum,
+        "commit_us_max": d.commit_us_max,
+        "commit_us_mean": d.commit_us_mean(),
+        "writes_per_commit": {
+            "le": tasty_memory::WRITES_PER_COMMIT_BUCKETS,
+            "counts": d.writes_per_commit,
+        },
+    })
+}
+
+/// 저장 writer(memory.db·state.db)의 접수·묶음·예산 누계. writer가 없는 구성이면 null이다.
 /// 원본 구조체를 .. 없이 분해해 필드가 추가되면 응답 변환도 검토하게 한다.
-pub(super) fn memory_writer_json(
+pub(super) fn writer_stats_json(
     stats: Option<tasty_utils::batch_writer::WriterStatsSnapshot>,
 ) -> serde_json::Value {
     let Some(tasty_utils::batch_writer::WriterStatsSnapshot {
@@ -548,8 +567,8 @@ mod tests {
 
     #[test]
     fn the_memory_writer_block_is_null_without_a_writer_and_keeps_every_field() {
-        assert!(memory_writer_json(None).is_null());
-        let v = memory_writer_json(Some(tasty_utils::batch_writer::WriterStatsSnapshot {
+        assert!(writer_stats_json(None).is_null());
+        let v = writer_stats_json(Some(tasty_utils::batch_writer::WriterStatsSnapshot {
             admitted: 3,
             batches: 2,
             batch_sizes: [1, 1, 0, 0, 0, 0],

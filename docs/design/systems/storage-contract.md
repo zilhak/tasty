@@ -72,7 +72,7 @@
 
 ### 저장 실행기
 
-호출자가 저장 요청을 큐에 넘기고 바로 진행하며, 저장소를 소유한 전담 worker 한 개가 여러 요청을 묶어 실행하는 실행기다. 접수·수집·순서·결과·예산·재시도·종료 규칙은 저장소와 관계없는 공용 실행기(`tasty_utils::batch_writer`)가 정한다. 무엇을 어떻게 저장하는지는 저장소별 실행기가 정한다. memory.db 실행기는 `tasty_memory::writer`다. GUI·headless 부팅이 `AppServices`에 memory writer(`memory-writer` 스레드)를 만들고 메인 루프와 종료 단계에 연결한다. 호스트 소비자는 `tasty_memory::writer::MemoryAccess`로 요청을 넣는다. writer 없는 시험 구성의 `MemoryAccess`는 같은 실행 규칙으로 호출 스레드에서 바로 실행한다. 요청을 넣는 소비자는 "소비자 분류" 표에 적는다. 이 구조를 택한 근거와 대안은 이 문서에 있다.
+호출자가 저장 요청을 큐에 넘기고 바로 진행하며, 저장소를 소유한 전담 worker 한 개가 여러 요청을 묶어 실행하는 실행기다. 접수·수집·순서·결과·예산·재시도·종료 규칙은 저장소와 관계없는 공용 실행기(`tasty_utils::batch_writer`)가 정한다. 무엇을 어떻게 저장하는지는 저장소별 실행기가 정한다. memory.db 실행기는 `tasty_memory::writer`이고, state.db 실행기는 GUI의 `crate::db::writer`다(아래 [state.db 실행기](#statedb-실행기)). GUI·headless 부팅이 `AppServices`에 memory writer(`memory-writer` 스레드)를 만들고 메인 루프와 종료 단계에 연결한다. 호스트 소비자는 `tasty_memory::writer::MemoryAccess`로 요청을 넣는다. writer 없는 시험 구성의 `MemoryAccess`는 같은 실행 규칙으로 호출 스레드에서 바로 실행한다. 요청을 넣는 소비자는 "소비자 분류" 표에 적는다. 이 구조를 택한 근거와 대안은 이 문서에 있다.
 
 #### 접수와 결과
 
@@ -94,7 +94,7 @@
 
 - 수집 창은 큐가 비어 있다가 첫 요청이 들어온 시각에 열린다. 창 경과 `max_delay`, 요청 수 `max_items`, 요청 바이트 `max_bytes` 중 먼저 닿은 조건에서 묶음을 실행한다. 다른 요청이 없어도 단일 요청은 `max_delay` 뒤 혼자 실행된다. 한 요청이 `max_bytes`를 넘으면 그 요청만으로 묶음을 만든다.
 - barrier 요청(강한 읽기)이나 flush가 들어오면 창을 바로 닫고 그 앞까지만 묶는다. barrier 요청은 앞선 요청이 끝난 뒤 혼자 실행한다. 묶음은 barrier·flush를 넘지 않는다.
-- 요청은 접수 순서대로 실행하고 결과도 그 순서로 정해진다. 같은 snapshot 키의 요청은 한 묶음 안에서만 마지막 요청으로 합친다. 대체된 요청은 대체한 요청이 끝날 때 함께 끝나므로 번호에 구멍이 남지 않는다. memory 요청은 snapshot 키가 없어 합치지 않는다.
+- 요청은 접수 순서대로 실행하고 결과도 그 순서로 정해진다. 같은 snapshot 키의 요청은 한 묶음 안에서만 마지막 요청으로 합친다. 대체된 요청은 대체한 요청이 끝날 때 함께 끝나므로 번호에 구멍이 남지 않는다. memory 요청은 snapshot 키가 없어 합치지 않는다. state.db의 최근 목록 요청은 종류별 snapshot 키로 합친다.
 
 #### 예산
 
@@ -114,7 +114,7 @@
 - `flush(since)`는 지금까지 접수된 요청 뒤에 cut을 넣는다. cut 앞의 요청이 모두 끝나면 결과가 나온다. 결과는 `since` 뒤부터 cut까지의 요청이 모두 효과를 냈을 때만 `Ok(FlushPoint)`이고, 거절이나 실패가 있으면 그 수를 실은 `NotClean`이다. 다음 flush는 앞 결과의 `FlushPoint`를 `since`로 넘긴다. 다른 호출자의 요청도 구간에 들어간다.
 - `close`는 새 접수를 막는다. 이미 접수한 요청은 계속 실행하고 flush는 받는다.
 - `begin_shutdown`은 접수를 막고 마지막 flush cut을 넣은 뒤 worker가 남은 요청을 모두 실행하고 끝나게 한다. `poll_shutdown`은 기다리지 않고 남은 worker 수를 돌려주며, join이 끝나면 마지막 flush 결과를 로그에 남긴다. 효과가 없던 요청이 있으면 경고를 남긴다.
-- 호스트 연결: worker는 묶음·flush가 끝나면 GUI는 `TimerTick`, headless는 journal 깨우기 이벤트로 메인 루프를 깨운다. 알림은 `WakeLatch`로 묶는다. 메인 루프가 회차 첫머리에 확인(`acknowledge`)하기 전에 끝난 묶음의 알림은 이미 보낸 깨우기 하나에 합친다. 깨우기 수는 알림(묶음) 수를 넘지 않고, 메인 루프 회차 수보다 많아도 하나만 많다(확인과 결과 수거 사이에 끝난 묶음이 다음 회차를 위한 깨우기를 하나 남긴다). 확인 뒤 끝난 묶음은 다시 깨운다. 메인 루프는 회차마다 종료 요청 없이 worker가 끝났는지 확인해 한 번 오류 로그를 남긴다. 종료는 memory.db에 쓰는 producer를 모두 멈춘 뒤 접수 중단 → 마지막 flush → join 순서다. GUI는 `StoppingPlugins` 단계에서 plugin 정리가 끝난 뒤, headless는 runner·자원 회수 뒤에 진행하며 둘 다 5초 기한을 넘기면 경고를 남기고 계속 종료한다.
+- 호스트 연결: worker는 묶음·flush가 끝나면 GUI는 `TimerTick`, headless는 journal 깨우기 이벤트로 메인 루프를 깨운다. 알림은 `WakeLatch`로 묶는다. 메인 루프가 회차 첫머리에 확인(`acknowledge`)하기 전에 끝난 묶음의 알림은 이미 보낸 깨우기 하나에 합친다. 깨우기 수는 알림(묶음) 수를 넘지 않고, 메인 루프 회차 수보다 많아도 하나만 많다(확인과 결과 수거 사이에 끝난 묶음이 다음 회차를 위한 깨우기를 하나 남긴다). 확인 뒤 끝난 묶음은 다시 깨운다. 메인 루프는 회차마다 종료 요청 없이 worker가 끝났는지 확인해 한 번 오류 로그를 남긴다. 종료는 memory.db에 쓰는 producer를 모두 멈춘 뒤 접수 중단 → 마지막 flush → join 순서다. GUI는 `StoppingPlugins` 단계에서 plugin 정리가 끝난 뒤, headless는 runner·자원 회수 뒤에 진행하며 둘 다 5초 기한을 넘기면 경고를 남기고 계속 종료한다. GUI의 state.db writer도 같은 단계에서 같은 순서와 5초 기한·포기 경고로 종료한다. 두 writer는 각자 기한을 따로 재고, 한쪽이 남아 있어도 다른 쪽의 종료를 회차마다 함께 진행한다.
 - writer를 drop하면 종료를 시작하지만 기다리지 않는다. 끝나지 않은 worker가 있으면 경고를 남긴다. 프로세스가 그대로 끝나면 확정되지 않은 요청은 사라진다.
 
 #### 한도 기본값
@@ -139,6 +139,20 @@
 - 오류 분류: busy는 단위 전체가 되돌려진 뒤라 다시 실행한다. 원인 요청이 저장 실패를 받았거나 transaction 시작 전에 실패하면 `Failed`다. 모든 요청이 저장 실패 없이 끝났는데 단위가 실패하면 commit 단계일 수 있어 `Unknown`이다. 본문이 저장 실패를 삼킨 경우도 원인 요청을 알 수 없어 `Unknown`으로 보수적으로 다룬다. 요청 본문의 panic은 단위를 되돌린 뒤 그 요청만 실패시키며, 이 재실행은 저장소가 panic한 단위를 되돌린다는 전제다(`MemoryStore`가 그렇게 동작한다).
 - 저장소 접근: worker가 저장소를 소유한다(`WriterStore::owned`). writer가 종료되면 저장소도 닫힌다. 시험 구성은 저장소를 직접 준비·확인하려고 같은 잠금을 묶음마다 잡게 할 수 있다(`WriterStore::shared`, `test-support` 기능).
 - 예산 크기: 쓰기는 owner·key·값 길이(JSON은 직렬화 길이)를, 복합 연산과 강한 읽기는 요청할 때 정한 크기를 요청과 결과에 모두 쓴다.
+
+#### state.db 실행기
+
+GUI 부팅(`init_boot_db_and_theme`)이 state.db를 실행당 한 번 열고, 같은 자리에서 최근 목록을 한 번 읽은 뒤 연결을 `state-writer` 스레드에 넘긴다. 연결과 튜토리얼 버전 체인은 실행기(`StateExecutor`)만 가진다. writer와 그 계측은 `AppServices`가 소유하고, 창과 파일 열기 경로가 인자 없이 닿도록 최근 목록 캐시와 요청 큐만 담은 공유 핸들을 공개한다(`crate::db::shared_recent_files`, `shared_queue`). 연결·worker는 static에 두지 않는다. headless는 state.db를 열지 않는다.
+
+- 요청 종류: 종류별 최근 목록 전체(`Recent`, snapshot 키 `recent:<kind>`), 튜토리얼 읽기(`TutorialLoad`, barrier), 튜토리얼 재개 위치 저장(`TutorialSave`). 튜토리얼 요청은 View 식별자를 가지고 있어 View가 닫혀도 접수한 저장이 실행된다.
+- 묶음 하나는 SQLite transaction과 commit 하나다. 요청은 접수 순서대로 실행한다. 어느 요청이든 SQL 오류를 받으면 묶음 전체를 되돌린다. CAS가 맞지 않은 튜토리얼 저장은 오류가 아니라 `updated: false` 결과다. 같은 묶음 안에서 같은 종류의 최근 목록은 마지막 목록만 저장한다.
+- 오류 분류: busy는 되돌린 뒤 다시 실행한다. 나머지 SQL 오류와 transaction 시작 실패는 `Failed`, commit 단계의 오류는 `Unknown`이다. 요청 본문의 panic은 되돌린 뒤 그 요청만 실패시킨다.
+- 튜토리얼 버전 체인은 묶음마다 작업 사본에서 잇고 commit이 성공한 뒤에만 그 사본을 채택한다. busy·실패·결과 불명·panic이면 사본을 버려 다시 실행하거나 다음 저장이 확정되지 않은 버전을 쓰지 않는다. 읽기는 앞선 저장이 확정된 뒤 혼자 실행하고, 성공했을 때만 그 View의 체인을 비운다.
+- 최근 목록: 공유 캐시 잠금 안에서 중복 정리·맨 앞 추가·10개 상한·표시 revision 증가·저장 접수까지 하고 SQL과 결과 대기는 하지 않는다. 두 창의 캐시 순서와 접수 순서가 같다. 저장은 그 종류의 행을 지우고 목록을 다시 넣는 한 번의 쓰기라, 같은 키의 다른 표기 정리와 상한 밖 정리가 함께 확정되고 디스크가 확정한 목록과 같아진다. 저장 시각은 목록 순서대로 엄격히 줄어들게 맞춰 같은 초에 연 항목도 다시 읽을 때 순서가 같다. 실제 시각보다 늦어지는 폭은 목록 길이(최대 9초)를 넘지 않는다.
+- 표시 revision과 확정 revision을 종류별로 따로 센다. 메인 루프가 회차마다 결과를 거둬 `Done(Ok)`인 목록의 revision까지만 확정을 올린다. 접수 거절(`Saturated`·`Closed`)과 `Failed`·`Unknown`·`Lost`는 경고만 남기고 확정을 올리지 않으며 화면 목록은 그대로 둔다. 다시 접수하지 않는다. 뒤의 저장이 성공하면 목록 전체를 담으므로 앞서 저장하지 못한 변경도 함께 확정된다. 대체된 목록은 대체한 목록의 결과로 확정을 판단한다.
+- 결과 수거: 최근 목록 receipt는 메인 루프의 `poll_state_writer`와 종료 단계가 거둔다. 튜토리얼 receipt는 각 View가 거두고, 닫힌 View의 receipt는 버려져 결과가 나올 때 예산을 돌려준다.
+- 예산 크기: 최근 목록은 종류 이름과 경로 길이에 항목마다 8바이트를, 튜토리얼 요청은 주제·단계 이름 길이에 고정 크기를 더한다. 읽기 결과는 행 수와 재개 단계 길이로 센다.
+- 종료: GUI 종료가 시작되면 튜토리얼 입구가 새 튜토리얼 요청만 거절한다. 최근 목록 접수는 writer의 종료가 시작될 때까지 받는다. `StoppingPlugins`에서 writer가 접수를 막고 마지막 flush 뒤 join한다. join이 끝나면 남은 결과를 거두고, 화면에 보였지만 확정하지 못한 종류가 있으면 종류별로 경고한다.
 
 ### 소비자 분류
 
@@ -208,7 +222,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | DB | 소유자 | 쓰는 스레드 | PRAGMA | transaction | GUI 초기화 | headless 초기화 | 종료 |
 |---|---|---|---|---|---|---|---|
 | `memory.db` | memory writer(`AppServices`의 writer가 저장소를 소유한다) | `memory-writer`. 메인 루프·runner·결과·보고 스레드·journal worker는 요청만 넣는다 | WAL·NORMAL, 되읽어 degraded 표시 | put·delete·secret·purge·prune은 명시 transaction, VACUUM은 자동 commit. 실행 단위·쓰기 묶음은 transaction 하나(memory writer가 사용) | `run_gui`가 열고 부팅 정비 후 `App::new`에 주입. 실패 시 in-memory 대체하고 첫 창 부팅 완료 때 경고 알림을 남긴다. writer는 `AppServices` 구성 때 시작 | `boot_memory`가 같은 절차로 열고, 대체했으면 첫 engine 준비 직후 경고 알림을 남긴다 | writer는 producer 정리 뒤 drain·join하고, worker가 끝날 때 소유한 연결을 명시 close·checkpoint 없이 drop으로 닫는다 |
-| `state.db` | 전역 `OnceLock<Mutex<Db>>`, `with_state_db`로 접근 | 메인 루프(최근 파일), `tutorial-progress` worker | WAL·NORMAL | 튜토리얼 저장과 스키마 생성은 transaction. `RecentFiles::add`의 같은 키 정리·upsert·개수 정리는 각각 자동 commit | GUI 부팅의 `init_boot_db_and_theme`에서 실행당 한 번. 실패하면 경고 알림을 남기고 DB 없이 계속하며 새 창에서 다시 시도하지 않는다 | 열지 않는다. 최근 목록 쓰기를 건너뛴다 | static이라 프로세스 끝까지 닫지 않는다. 튜토리얼 worker는 종료 단계에서 stop·join한다 |
+| `state.db` | state writer(`AppServices`의 writer가 연결을 소유한다) | `state-writer`. 메인 루프(최근 파일)와 View(튜토리얼)는 요청만 넣는다 | WAL·NORMAL | 스키마 생성과 부팅의 최근 목록 정리는 각각 transaction. 평상시 묶음 하나가 transaction 하나(최근 목록 저장, 튜토리얼 저장) | GUI 부팅의 `init_boot_db_and_theme`에서 실행당 한 번 열고 최근 목록을 읽은 뒤 writer를 시작한다. 열기나 writer 시작에 실패하면 경고 알림을 남기고 DB 없이 계속하며 새 창에서 다시 시도하지 않는다 | 열지 않는다. 최근 목록 저장을 건너뛴다 | writer는 producer 정리 뒤 drain·join하고, worker가 끝날 때 소유한 연결을 drop으로 닫는다 |
 | `structure/journal.db` | `JournalWorker`(App의 첫 필드) | 전용 `structure-journal` 스레드 | WAL·FULL이 아니면 열지 않는다([이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md)) | 모든 쓰기가 즉시 잠금 transaction, writer 잠금과 세대 검사 | 부팅 첫머리에 writer 잠금을 선점하고 `App::new`에서 worker를 만든다 | 선점 없이 `App::new_headless`에서 만든다 | stop 후 Drop에서 join하며 worker가 마지막 checkpoint를 쓴다 |
 
 ### 파일
@@ -238,12 +252,12 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 - `PresetStorage`(`AppServices.presets`)도 읽는 곳이 없다. 저장·삭제·이름 변경은 구체 `PresetStore` 핸들로 한다.
 - 테마 초기화는 `ThemeStorage` port 대신 `tasty_themes`의 자유 함수를 직접 부른다.
 - memory.db의 부팅 정비는 port로 감싸기 전 구체 `MemoryStore`를 쓴다.
-- state.db에는 port가 없다. 최근 파일과 튜토리얼이 `with_state_db`를 직접 쓴다.
+- state.db에는 port가 없다. 최근 파일과 튜토리얼은 state writer의 요청 타입을 직접 쓴다.
 
 ### 종료 순서
 
-GUI는 종료 상태기계가 layout 저장(S1) → 부팅 worker 회수(S2) → surface 닫기와 observer sink join(S3) → 플러그인·보조 worker 정리와 튜토리얼 join, 그 뒤 memory writer drain·join(S4) 순으로 진행한 뒤 이벤트 루프를 끝낸다. 그다음 instance 파일을 지우고 App을 drop한다. App의 첫 필드인 journal worker가 먼저 join되고, `services`(memory 연결)와 IPC 서버(포트 파일 삭제)는 그 뒤에 drop된다.
+GUI는 종료 상태기계가 layout 저장(S1) → 부팅 worker 회수(S2) → surface 닫기와 observer sink join(S3) → 플러그인·보조 worker 정리, 그 뒤 memory writer와 state.db writer의 drain·join(S4) 순으로 진행한 뒤 이벤트 루프를 끝낸다. 그다음 instance 파일을 지우고 App을 drop한다. App의 첫 필드인 journal worker가 먼저 join되고, `services`(memory·state writer)와 IPC 서버(포트 파일 삭제)는 그 뒤에 drop된다.
 
-headless는 publication을 비운 뒤 journal worker를 stop하고(join은 App drop 때), runner·보조 worker를 회수한 뒤 memory writer를 drain·join한다. layout 저장·observer 일괄 join·튜토리얼 단계는 없다.
+headless는 publication을 비운 뒤 journal worker를 stop하고(join은 App drop 때), runner·보조 worker를 회수한 뒤 memory writer를 drain·join한다. layout 저장·observer 일괄 join·state.db writer 단계는 없다.
 
 memory.db 쓰기는 모두 memory writer를 지난다. writer는 종료 때 접수를 막고 마지막 flush cut까지 실행한 뒤 join하며, 소유한 저장소를 그때 닫는다. 종료 요청보다 늦게 도착한 요청 게이트 대기 요청은 `-32000`으로 거절한다([요청 게이트](#요청-게이트)).

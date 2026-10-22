@@ -1,26 +1,28 @@
 //! GUI의 state.db 연결. 헤드리스의 memory.db와는 수명·스키마가 다르다.
+//! 부팅이 연 연결은 state writer(`writer` 모듈)가 소유하며 다른 코드는 연결에 닿지 않는다.
 //! init 실패는 부팅 코드가 경고 알림으로 알리고, 앱은 이 DB 없이 계속 실행한다.
-//! with_state_db의 None은 미초기화만 나타내므로 헤드리스와 GUI 초기화 실패를 구별할 수 없다.
+//! 공유 핸들이 없다는 것만으로 헤드리스와 GUI 초기화 실패를 구별할 수 없다.
 //! 사용자 설정과 셸 스크립트는 이 DB에 저장하지 않는다.
 
 #[cfg(any(feature = "gui", test))]
 mod migrations;
+#[cfg(any(feature = "gui", test))]
+pub(crate) mod writer;
 
 #[cfg(any(feature = "gui", test))]
 use std::io;
 #[cfg(any(feature = "gui", test))]
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, OnceLock};
 
+#[cfg(any(feature = "gui", test))]
 use rusqlite::Connection;
 
 #[cfg(any(feature = "gui", test))]
 pub use migrations::DbSchemaError;
 
+#[cfg(any(feature = "gui", test))]
 pub struct Db {
     pub conn: Connection,
-    /// 여러 창이 같은 DB 수명의 최근 파일 캐시를 사용한다.
-    pub(crate) recent_files: Option<crate::recent_files::RecentFiles>,
     /// 연결을 열 때 기록한 pragma 요청값·확인값. 이후 변경을 실시간으로 조회하지는 않는다.
     pub(crate) applied_pragmas: tasty_memory::pragma::AppliedPragmas,
 }
@@ -47,7 +49,6 @@ impl Db {
         })?;
         Ok(Self {
             conn,
-            recent_files: None,
             applied_pragmas,
         })
     }
@@ -144,10 +145,9 @@ fn classify_sql(err: rusqlite::Error, path: &Path) -> DbInitError {
     }
 }
 
-static DB: OnceLock<Mutex<Db>> = OnceLock::new();
-
-static DB_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-const DB_WHAT: &str = "state.db connection";
+/// GUI 부팅이 writer를 시작한 뒤 한 번 공개하는 공유 핸들.
+#[cfg(feature = "gui")]
+static SHARED: std::sync::OnceLock<writer::SharedState> = std::sync::OnceLock::new();
 
 #[cfg(feature = "gui")]
 pub fn default_db_path() -> Option<PathBuf> {
@@ -158,12 +158,21 @@ pub fn default_db_path() -> Option<PathBuf> {
 #[cfg(feature = "gui")]
 static INIT_ATTEMPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// GUI 부팅에서 실행당 한 번 초기화한다. 처음 실패했을 때만 원인을 돌려주며 안내는 호출자가 맡는다.
-/// 실패한 뒤에는 같은 실행에서 다시 열지 않고, 소비자는 `with_state_db`의 None으로 기본값을 쓴다.
-/// 원본 파일은 열기만 시도하며 지우거나 새로 만들어 덮지 않는다.
+/// 실행당 한 번의 초기화 결과.
+#[cfg(any(feature = "gui", test))]
+pub(crate) enum InitOutcome {
+    Opened(Db),
+    /// 처음 실패했다. 안내는 호출자가 맡는다.
+    Failed(DbInitError),
+    /// 이미 시도했다. 다시 열지 않는다.
+    Repeated,
+}
+
+/// GUI 부팅에서 실행당 한 번 연다. 실패한 뒤에는 같은 실행에서 다시 열지 않고, 소비자는 공유
+/// 핸들이 없는 기본값을 쓴다. 원본 파일은 열기만 시도하며 지우거나 새로 만들어 덮지 않는다.
 #[cfg(feature = "gui")]
-pub fn init() -> Option<DbInitError> {
-    init_once(&INIT_ATTEMPTED, &DB, || {
+pub(crate) fn init() -> InitOutcome {
+    init_once(&INIT_ATTEMPTED, || {
         let path = default_db_path().ok_or(DbInitError::HomeDirMissing)?;
         Db::open(&path).map(|db| (path, db))
     })
@@ -172,35 +181,50 @@ pub fn init() -> Option<DbInitError> {
 #[cfg(any(feature = "gui", test))]
 fn init_once(
     attempted: &std::sync::atomic::AtomicBool,
-    slot: &OnceLock<Mutex<Db>>,
     open: impl FnOnce() -> Result<(PathBuf, Db), DbInitError>,
-) -> Option<DbInitError> {
+) -> InitOutcome {
     use std::sync::atomic::Ordering;
     if attempted.swap(true, Ordering::AcqRel) {
-        return None;
+        return InitOutcome::Repeated;
     }
     match open() {
         Ok((path, db)) => {
             tracing::info!("opened state.db at {}", path.display());
-            slot.get_or_init(|| Mutex::new(db));
-            None
+            InitOutcome::Opened(db)
         }
         Err(error) => {
             tracing::warn!(
                 "state.db init failed: {error} — continuing without recent files and tutorial progress"
             );
-            Some(error)
+            InitOutcome::Failed(error)
         }
     }
 }
 
-/// 초기화되지 않았으면 None이다. poison은 로그 후 기존 연결로 복구하며 None으로 숨기지 않는다.
-/// 이 접근자가 트랜잭션·캐시의 논리적 정합을 다시 검증하는 것은 아니다.
-pub fn with_state_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
-    let mutex = DB.get()?;
-    let mut guard: MutexGuard<'_, Db> =
-        crate::poison::recover_mutex(mutex.lock(), DB_WHAT, &DB_POISONED);
-    Some(f(&mut guard))
+/// writer를 시작한 부팅이 공유 핸들을 공개한다. 실행당 한 번이다.
+#[cfg(feature = "gui")]
+pub(crate) fn publish(shared: writer::SharedState) {
+    if SHARED.set(shared).is_err() {
+        tracing::error!("state.db shared handle was published twice; keeping the first");
+    }
+}
+
+/// 모든 창이 공유하는 최근 파일 캐시. state.db writer가 없으면 None이다.
+pub(crate) fn shared_recent_files() -> Option<crate::recent_files::RecentFiles> {
+    #[cfg(feature = "gui")]
+    {
+        SHARED.get().map(|s| s.recent.clone())
+    }
+    #[cfg(not(feature = "gui"))]
+    {
+        None
+    }
+}
+
+/// 튜토리얼 저장을 넣을 writer 큐. state.db writer가 없으면 None이다.
+#[cfg(feature = "gui")]
+pub(crate) fn shared_queue() -> Option<writer::StateQueue> {
+    SHARED.get().map(|s| s.queue.clone())
 }
 
 #[cfg(test)]
@@ -227,19 +251,41 @@ mod tests {
         let junk = b"not a sqlite database, just bytes".repeat(64);
         std::fs::write(&path, &junk).unwrap();
         let attempted = std::sync::atomic::AtomicBool::new(false);
-        let slot = OnceLock::new();
         let open = || Db::open(&path).map(|db| (path.clone(), db));
-        let first = init_once(&attempted, &slot, open);
-        assert!(matches!(first, Some(DbInitError::Corrupt(_))), "{first:?}");
+        let first = init_once(&attempted, open);
+        assert!(
+            matches!(first, InitOutcome::Failed(DbInitError::Corrupt(_))),
+            "a corrupt file must be reported"
+        );
         let mut calls = 0;
-        let second = init_once(&attempted, &slot, || {
+        let second = init_once(&attempted, || {
             calls += 1;
             Db::open(&path).map(|db| (path.clone(), db))
         });
-        assert!(second.is_none());
+        assert!(matches!(second, InitOutcome::Repeated));
         assert_eq!(calls, 0, "the same run must not reopen after a failure");
-        assert!(slot.get().is_none());
         assert_eq!(std::fs::read(&path).unwrap(), junk);
+    }
+
+    /// 처음 연 연결을 넘겨주고, 같은 실행의 다음 시도는 다시 열지 않는다.
+    #[test]
+    fn a_successful_open_hands_over_the_connection_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("state.db");
+        let attempted = std::sync::atomic::AtomicBool::new(false);
+        let opened = init_once(&attempted, || Db::open(&path).map(|db| (path.clone(), db)));
+        let InitOutcome::Opened(db) = opened else {
+            panic!("the first open must hand over the connection");
+        };
+        let version: u32 = db
+            .conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, migrations::SCHEMA_VERSION);
+        assert!(matches!(
+            init_once(&attempted, || unreachable!("must not reopen")),
+            InitOutcome::Repeated
+        ));
     }
 
     #[test]

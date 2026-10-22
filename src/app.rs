@@ -95,6 +95,8 @@ pub(crate) mod webview_keys;
 pub(crate) mod window_access;
 #[cfg(feature = "gui")]
 pub(crate) mod window_lifecycle;
+#[cfg(feature = "gui")]
+pub(crate) mod writer_drain;
 
 #[cfg(feature = "gui")]
 mod external_activation;
@@ -150,6 +152,9 @@ pub(crate) struct App {
     pub(crate) dag_reads: dag_reads::DagReads,
     #[cfg(feature = "gui")]
     pub(crate) tutorial_progress: tutorial_progress::TutorialProgress,
+    /// state.db writer가 결과를 냈을 때 메인 루프를 깨운다. 부팅이 writer를 시작할 때 넘긴다.
+    #[cfg(feature = "gui")]
+    pub(crate) state_db_wake: Arc<dyn Fn() + Send + Sync>,
     pub(crate) pending_server_attaches: Vec<attach_activation::PendingAttach>,
     /// 받을 workspace가 아직 없어 전달을 미룬 복원·저장 알림.
     #[cfg(feature = "gui")]
@@ -315,14 +320,15 @@ impl App {
             port_scans: Default::default(),
             #[cfg(feature = "gui")]
             explorer_files: Default::default(),
-            tutorial_progress: tutorial_progress::TutorialProgress::new({
+            tutorial_progress: Default::default(),
+            state_db_wake: {
                 let proxy = proxy.clone();
                 Arc::new(move || {
                     if proxy.send_event(AppEvent::TimerTick).is_err() {
-                        tracing::debug!("tutorial persistence wake after shutdown");
+                        tracing::debug!("state writer wake after shutdown");
                     }
                 })
-            })?,
+            },
             dag_reads: dag_reads::DagReads::new({
                 let proxy = proxy.clone();
                 Arc::new(move || {

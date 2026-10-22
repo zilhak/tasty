@@ -69,6 +69,8 @@ tasty --response-timeout-ms 5000 read screen --surface 42
 마치지 못한 횟수입니다. `writes_per_commit`은 commit 하나에 저장된 쓰기 수의 분포이고,
 commit 수에 들어가지 않는 데이터베이스 압축(VACUUM)은 `vacuums`로 따로 셉니다.
 `memory_writer`는 저장 요청을 모아 처리하는 대기열의 접수·거절·묶음 수입니다.
+`state_writer`와 `state_db`는 최근 파일과 튜토리얼 진행을 저장하는 대기열의 같은 수와 commit 시간입니다.
+헤드리스 실행이나 `state.db`를 열지 못한 실행에서는 `null`입니다.
 권한·한도·빈도 제한의 거절 수는 아래 `gate_refusals`에서 확인합니다.
 
 ### 연결 수와 한도 (`connections`)

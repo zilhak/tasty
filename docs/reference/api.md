@@ -168,7 +168,7 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 
 `system.info`는 시스템 정보를, `system.pressure`는 요청 압력을 반환한다. `system.pressure`는 local-only다.
 
-응답은 `queue_before_gate` · `handler_after_gate` · `plugin_round_trip` · `db` · `connections` · `db_pragmas` · `stream_push` · `queue_admission` · `queue_dispatch` · `keyed_requests` · `slow_requests` · `gate_refusals` 열두 항목이며 각각 세는 대상이 다르다.
+응답은 `queue_before_gate` · `handler_after_gate` · `plugin_round_trip` · `db` · `connections` · `db_pragmas` · `stream_push` · `queue_admission` · `queue_dispatch` · `keyed_requests` · `slow_requests` · `gate_refusals` · `memory_writer` · `state_writer` · `state_db` 열다섯 항목이며 각각 세는 대상이 다르다.
 
 - **큐 대기(`queue_before_gate`)**: 권한 검사 전에 기록하므로 뒤에 거부될 요청도 센다. `waits`는 대기를 기록한 명령 수로 `wait_us_mean` 의 분모이며 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 끝날 때 오르므로 조회 순간에는 아직 도는 회차만큼 `waits` 보다 작다 — [IPC 서버](../architecture/ipc-server.md).
 
@@ -182,6 +182,8 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
   이 항목의 유일한 시간 `accept_wait_bound_us_sum` · `_max` · `_mean`(기록 수 `accept_waits` = `accepted + refused_saturated`)은 연결이 OS 의 accept 큐에서 기다렸을 수 있는 시간의 **상한**이다 — accept 루프가 큐를 마지막으로 비어 있다고 본 뒤 지난 시간이고, 루프가 빈 큐에서 100 ms 자므로 호출마다 연결을 여는 client 에게는 그만큼까지가 되며 다른 어느 항목에도 안 잡힌다([IPC 서버](../architecture/ipc-server.md)).
 
 - **저장 실행기(`memory_writer`)**: memory.db 전담 writer 의 누계다 — `admitted` · `rejected_saturated` · `rejected_closed`, 묶음 수 `batches` 와 요청 합 `batch_requests` · `batch_size_max` · 분포 `batch_sizes`(`le` · `counts`), `superseded` · `retries` · `flushes`, 지금 잡힌 `held_items` · `held_bytes` 와 최댓값 `peak_items` · `peak_bytes`. writer 가 없는 구성이면 `null` 이다([저장 실행기](../design/systems/storage-contract.md#저장-실행기)).
+
+- **state.db 저장 실행기(`state_writer` · `state_db`)**: `state_writer` 는 GUI 의 state.db writer(최근 파일·튜토리얼 진행) 누계로 `memory_writer` 와 같은 필드를 싣는다. `state_db` 는 그 writer 가 성공한 commit 의 `commits` · `commit_us_sum` · `commit_us_max` · `commit_us_mean` 과 `writes_per_commit`(`le` · `counts`)이다. 부팅의 첫 읽기는 세지 않는다. 헤드리스와 state.db 를 열지 못한 실행은 둘 다 `null` 이다([state.db 실행기](../design/systems/storage-contract.md#statedb-실행기)).
 
 - **저장소 초기 설정(`db_pragmas`)**: **누계가 아니라 열 때 한 번 되읽은 설정**이다 — `memory_db` · `state_db` 마다 `in_memory` · `degraded` 와 pragma 별 `requested` · `effective` · `took` · `error` 를 싣고(열리지 않은 DB 는 `null`, 헤드리스의 `state_db` 는 늘 `null`), `degraded` 는 오류가 아니라 열린 채로 쓰이는 상태다([저장 계약과 writer 명부](../design/systems/storage-contract.md)). `memory_db` 에는 `init_failure`(파일을 못 열어 in-memory 대체로 떴으면 `{cause, error}`, 아니면 `null` — 대체면 `degraded` 도 `true`, [저장 계약과 writer 명부](../design/systems/storage-contract.md))가 더 있다.
 

@@ -214,6 +214,8 @@ impl AppServicesBuilder {
             memory_replies: Default::default(),
             telemetry_follow_ups: Default::default(),
             memory_writer_end_reported: false,
+            #[cfg(any(feature = "gui", test))]
+            state_writer: None,
             // IPC 서버는 AppServices 이후에 시작하므로 여기서 만든 계측기를 부팅 과정에서 서버에도 넘긴다.
             connections: std::sync::Arc::new(tasty_telemetry::ConnectionStats::default()),
             dispatch: std::sync::Arc::new(tasty_ipc::dispatch::DispatchStats::default()),

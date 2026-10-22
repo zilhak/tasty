@@ -56,14 +56,14 @@ mod tests {
 
     #[test]
     fn recent_query_agrees_across_states_after_either_window_records() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut db = crate::db::Db::open(&dir.path().join("state.db")).unwrap();
         let (mut first, mut _first_engine_session) = crate::state::tests::test_state();
         let _first_engine = _first_engine_session.borrow_mut();
         let (mut second, mut _second_engine_session) = crate::state::tests::test_state();
         let _second_engine = _second_engine_session.borrow_mut();
-        first.recent_files = crate::recent_files::RecentFiles::for_db(&mut db);
-        second.recent_files = crate::recent_files::RecentFiles::for_db(&mut db);
+        // 창마다 같은 공유 캐시 핸들을 받는다(`RecentFiles::load`).
+        let shared = crate::recent_files::RecentFiles::default();
+        first.recent_files = shared.clone();
+        second.recent_files = shared;
         first.recent_files.add("markdown", "/notes/one.md".into());
         second.recent_files.add("markdown", "/notes/two.md".into());
         let query = |state: &mut RequestContext, core: &crate::core::CoreState| {

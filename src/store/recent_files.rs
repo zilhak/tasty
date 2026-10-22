@@ -1,23 +1,81 @@
-//! 종류별 최근 파일 목록. 데이터 루트의 state.db에 저장하며 창들이 캐시를 공유한다.
+//! 종류별 최근 파일 목록. 창들이 한 캐시를 공유하고, GUI는 state.db writer로 저장한다.
 //! 매니페스트의 records_recent를 사용하는 파일 열기 경로와 directory 같은 내장 종류가 기록한다.
 //!
 //! 중복 비교는 정규화한 경로로 하고 표시·열기에는 원래 경로를 사용한다.
-//! 로드할 때 기존 중복 행을 정리하며, recent_markdown의 이전 데이터도 이관한다.
-//! DB 쓰기에 실패해도 메모리 캐시 변경은 유지된다.
+//! 캐시 변경은 바로 보이고(표시 revision) 저장은 writer가 끝낸 뒤 확정 revision으로 따로 센다.
+//! 저장 접수·실행이 실패해도 메모리 캐시 변경은 유지된다.
 
 use std::collections::HashMap;
+#[cfg(any(feature = "gui", test))]
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 파일 유형별 최대 보관 개수.
-const MAX_ENTRIES: usize = 10;
+pub(crate) const MAX_ENTRIES: usize = 10;
+
+/// 목록의 한 항목. `opened_at`은 실제로 연 시각(초)이다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Entry {
+    pub(crate) path: String,
+    pub(crate) opened_at: i64,
+}
+
+/// 한 종류의 전체 목록과 그 목록을 만든 표시 revision. 저장 요청 하나가 된다.
+#[cfg(any(feature = "gui", test))]
+#[derive(Debug, Clone)]
+pub(crate) struct RecentSnapshot {
+    pub(crate) kind: String,
+    pub(crate) revision: u64,
+    pub(crate) entries: Vec<Entry>,
+}
+
+/// 저장 요청 하나의 끝난 결과.
+#[cfg(any(feature = "gui", test))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RecentOutcome {
+    /// 이 snapshot이 확정됐다.
+    Committed,
+    /// 같은 묶음의 뒤 snapshot이 대신 저장됐다. 그 snapshot의 결과가 따로 온다.
+    Superseded,
+    /// 확정하지 않았거나 확정 여부를 모른다.
+    NotCommitted(String),
+}
+
+/// 저장소에 snapshot을 넘기는 쪽. 접수만 하고 기다리지 않는다.
+#[cfg(any(feature = "gui", test))]
+pub(crate) trait RecentSink: Send {
+    /// 접수한다. 거절이면 이유를 돌려준다.
+    fn submit(&mut self, snapshot: RecentSnapshot) -> Result<(), String>;
+    /// 끝난 결과를 꺼낸다. 기다리지 않는다.
+    fn reap(&mut self) -> Vec<(String, u64, RecentOutcome)>;
+    /// 결과를 아직 꺼내지 않은 접수 수.
+    #[cfg(test)]
+    fn pending(&self) -> usize;
+}
+
+/// 종류별 표시·확정 revision. 확정은 표시를 넘지 않는다.
+#[cfg(any(feature = "gui", test))]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Revisions {
+    pub(crate) visible: u64,
+    pub(crate) committed: u64,
+}
+
+#[derive(Default)]
+struct Inner {
+    /// 종류별 최신순 목록.
+    by_kind: HashMap<String, Vec<Entry>>,
+    #[cfg(any(feature = "gui", test))]
+    revisions: HashMap<String, Revisions>,
+    #[cfg(any(feature = "gui", test))]
+    sink: Option<Box<dyn RecentSink>>,
+}
 
 #[derive(Default, Clone)]
 pub struct RecentFiles {
-    /// 종류별 최신순 경로 목록.
-    by_kind: Arc<Mutex<HashMap<String, Vec<String>>>>,
+    inner: Arc<Mutex<Inner>>,
 }
 
 fn now_secs() -> i64 {
@@ -30,7 +88,7 @@ fn now_secs() -> i64 {
 /// 중복 비교용 경로 키. 파일시스템의 동일 파일 여부를 확인하지는 않는다.
 /// verbatim 접두사와 . / .. 표기를 정리하고 Windows에서는 소문자로 바꾼다.
 /// 표시·열기에는 원래 경로를 사용한다.
-fn dedup_key(path: &str) -> String {
+pub(crate) fn dedup_key(path: &str) -> String {
     let stripped = tasty_utils::path::strip_verbatim_prefix(path);
     let normalized = tasty_utils::path::lexically_normalize(Path::new(&stripped));
     let key = normalized.to_string_lossy();
@@ -45,13 +103,14 @@ fn dedup_key(path: &str) -> String {
 }
 
 /// 최신순 입력에서 같은 정규화 키의 첫 항목을 남기고 나머지를 삭제 대상으로 분류한다.
-fn dedup_rows(rows: Vec<(String, i64)>) -> (Vec<String>, Vec<String>) {
+#[cfg(any(feature = "gui", test))]
+fn dedup_rows(rows: Vec<(String, i64)>) -> (Vec<Entry>, Vec<String>) {
     let mut seen: HashSet<String> = HashSet::new();
     let mut kept = Vec::new();
     let mut stale = Vec::new();
-    for (path, _ts) in rows {
+    for (path, opened_at) in rows {
         if seen.insert(dedup_key(&path)) {
-            kept.push(path);
+            kept.push(Entry { path, opened_at });
         } else {
             stale.push(path);
         }
@@ -60,93 +119,172 @@ fn dedup_rows(rows: Vec<(String, i64)>) -> (Vec<String>, Vec<String>) {
 }
 
 impl RecentFiles {
-    /// 같은 DB의 창들이 캐시를 공유한다. 최초 로드에서 이전 테이블 이관과 중복 정리를 시도한다.
+    /// GUI의 state.db가 열려 있으면 모든 창이 공유하는 캐시를, 아니면 새 빈 캐시를 돌려준다.
     pub fn load() -> Self {
-        crate::db::with_state_db(Self::for_db).unwrap_or_default()
+        crate::db::shared_recent_files().unwrap_or_default()
     }
 
-    pub(crate) fn for_db(db: &mut crate::db::Db) -> Self {
-        if let Some(recent) = &db.recent_files {
-            return recent.clone();
-        }
-        let recent = Self::load_from_connection(&db.conn);
-        db.recent_files = Some(recent.clone());
-        recent
-    }
-
-    fn load_from_connection(conn: &rusqlite::Connection) -> Self {
-        ensure_recent_files_table(conn);
-        migrate_recent_markdown(conn);
-        let rows = query_kind_rows(
-            conn,
-            "SELECT kind, path, opened_at FROM recent_files ORDER BY opened_at DESC",
-        );
-        let mut grouped: HashMap<String, Vec<(String, i64)>> = HashMap::new();
-        for (kind, path, ts) in rows {
-            grouped.entry(kind).or_default().push((path, ts));
-        }
-        let mut by_kind: HashMap<String, Vec<String>> = HashMap::new();
-        for (kind, kind_rows) in grouped {
-            let (mut kept, stale) = dedup_rows(kind_rows);
-            delete_paths(conn, &kind, &stale);
-            kept.truncate(MAX_ENTRIES);
-            by_kind.insert(kind, kept);
-        }
+    /// 부팅에서 읽은 목록으로 시작하고 변경을 `sink`로 저장하는 캐시.
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn with_sink(
+        by_kind: HashMap<String, Vec<Entry>>,
+        sink: Box<dyn RecentSink>,
+    ) -> Self {
         Self {
-            by_kind: Arc::new(Mutex::new(by_kind)),
+            inner: Arc::new(Mutex::new(Inner {
+                by_kind,
+                revisions: HashMap::new(),
+                sink: Some(sink),
+            })),
         }
     }
 
     /// `kind` 의 최근 목록 스냅샷(최신순). 기록이 없으면 빈 배열.
     pub fn get(&self, kind: &str) -> Vec<String> {
-        self.lock().get(kind).cloned().unwrap_or_default()
+        self.lock()
+            .by_kind
+            .get(kind)
+            .map(|list| list.iter().map(|e| e.path.clone()).collect())
+            .unwrap_or_default()
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<String>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         static POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        crate::poison::recover_mutex(self.by_kind.lock(), "recent files cache", &POISONED)
+        crate::poison::recover_mutex(self.inner.lock(), "recent files cache", &POISONED)
     }
 
-    /// 종류별 최신 목록에 추가하고 중복·개수 상한을 정리한다.
+    /// 종류별 최신 목록에 추가하고 중복·개수 상한을 정리한다. 저장은 접수만 한다.
     pub fn add(&mut self, kind: &str, path: String) {
         let key = dedup_key(&path);
-        // 캐시 갱신과 DB 저장 순서가 뒤바뀌지 않도록 같은 락 안에서 처리한다.
-        let mut by_kind = self.lock();
-        let list = by_kind.entry(kind.to_string()).or_default();
-        list.retain(|p| dedup_key(p) != key);
-        list.insert(0, path.clone());
+        // 두 창의 캐시 순서와 저장 접수 순서가 뒤바뀌지 않도록 같은 잠금 안에서 접수한다.
+        // 이 잠금 안에서는 SQL·디스크·결과 대기를 하지 않는다.
+        let mut inner = self.lock();
+        let list = inner.by_kind.entry(kind.to_string()).or_default();
+        list.retain(|e| dedup_key(&e.path) != key);
+        list.insert(
+            0,
+            Entry {
+                path,
+                opened_at: now_secs(),
+            },
+        );
         list.truncate(MAX_ENTRIES);
-        let ts = now_secs();
-        if crate::db::with_state_db(|db| {
-            ensure_recent_files_table(&db.conn);
-            purge_same_key(&db.conn, kind, &key, &path);
-            upsert_recent(&db.conn, kind, &path, ts);
-        })
-        .is_none()
-        {
-            tracing::trace!("recent_files upsert skipped: storage unavailable");
+        #[cfg(any(feature = "gui", test))]
+        Self::persist(&mut inner, kind);
+    }
+
+    /// 표시 revision을 올리고 그 목록을 저장 접수한다.
+    #[cfg(any(feature = "gui", test))]
+    fn persist(inner: &mut Inner, kind: &str) {
+        let Inner {
+            by_kind,
+            revisions,
+            sink,
+        } = inner;
+        let list = by_kind.get(kind).cloned().unwrap_or_default();
+        let revision = revisions.entry(kind.to_string()).or_default();
+        revision.visible += 1;
+        let Some(sink) = sink else {
+            tracing::trace!("recent_files save skipped: storage unavailable");
+            return;
+        };
+        let snapshot = RecentSnapshot {
+            kind: kind.to_string(),
+            revision: revision.visible,
+            entries: list,
+        };
+        if let Err(error) = sink.submit(snapshot) {
+            tracing::warn!(kind, %error, "recent files change was not accepted for saving");
         }
-        prune_kind(kind);
+    }
+
+    /// 끝난 저장 결과를 거둬 확정 revision을 올린다. 기다리지 않는다.
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn settle(&self) {
+        let mut inner = self.lock();
+        let Inner {
+            revisions, sink, ..
+        } = &mut *inner;
+        let Some(sink) = sink else {
+            return;
+        };
+        for (kind, revision, outcome) in sink.reap() {
+            match outcome {
+                RecentOutcome::Committed => {
+                    let r = revisions.entry(kind).or_default();
+                    r.committed = r.committed.max(revision);
+                }
+                RecentOutcome::Superseded => {}
+                RecentOutcome::NotCommitted(error) => {
+                    tracing::warn!(kind, revision, %error, "recent files change was not saved");
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn revisions(&self, kind: &str) -> Revisions {
+        self.lock().revisions.get(kind).copied().unwrap_or_default()
+    }
+
+    /// 표시했지만 확정하지 못한 종류와 그 revision.
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn unsaved(&self) -> Vec<(String, Revisions)> {
+        let mut out: Vec<_> = self
+            .lock()
+            .revisions
+            .iter()
+            .filter(|(_, r)| r.committed < r.visible)
+            .map(|(k, r)| (k.clone(), *r))
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
+
+    /// 결과를 아직 거두지 않은 저장 접수 수.
+    #[cfg(test)]
+    pub(crate) fn pending(&self) -> usize {
+        self.lock().sink.as_ref().map_or(0, |s| s.pending())
     }
 }
 
-/// 이전 DB에도 테이블이 있도록 생성한다. 실패하면 경고를 남긴다.
-fn ensure_recent_files_table(conn: &rusqlite::Connection) {
-    if let Err(e) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS recent_files (
-            kind TEXT NOT NULL,
-            path TEXT NOT NULL,
-            opened_at INTEGER NOT NULL,
-            PRIMARY KEY(kind, path)
-        )",
-        [],
-    ) {
-        tracing::warn!("recent_files table ensure failed: {e}");
+/// 부팅 때 한 번 읽는다. 이전 테이블 이관과 기존 중복 행 정리를 한 transaction으로 하고 종류별
+/// 최신 10개를 돌려준다. 실패한 단계는 경고하고 읽은 만큼으로 시작한다.
+/// 같은 시각의 행은 나중에 넣은 행을 먼저 둔다.
+#[cfg(any(feature = "gui", test))]
+pub(crate) fn load_at_boot(conn: &mut rusqlite::Connection) -> HashMap<String, Vec<Entry>> {
+    let tx = match conn.transaction() {
+        Ok(tx) => tx,
+        Err(e) => {
+            tracing::warn!("recent_files load could not start a transaction: {e}");
+            return HashMap::new();
+        }
+    };
+    migrate_recent_markdown(&tx);
+    let rows = query_kind_rows(
+        &tx,
+        "SELECT kind, path, opened_at FROM recent_files ORDER BY opened_at DESC, rowid DESC",
+    );
+    let mut grouped: HashMap<String, Vec<(String, i64)>> = HashMap::new();
+    for (kind, path, ts) in rows {
+        grouped.entry(kind).or_default().push((path, ts));
     }
+    let mut by_kind: HashMap<String, Vec<Entry>> = HashMap::new();
+    for (kind, kind_rows) in grouped {
+        let (mut kept, stale) = dedup_rows(kind_rows);
+        delete_paths(&tx, &kind, &stale);
+        kept.truncate(MAX_ENTRIES);
+        by_kind.insert(kind, kept);
+    }
+    if let Err(e) = tx.commit() {
+        tracing::warn!("recent_files load cleanup commit failed: {e}");
+    }
+    by_kind
 }
 
 /// recent_markdown을 이관하고 완료 플래그로 재실행을 막는다. 원래 테이블은 유지한다.
 /// 복사나 플래그 기록에 실패하면 다음 로드에서 다시 시도할 수 있다.
+#[cfg(any(feature = "gui", test))]
 fn migrate_recent_markdown(conn: &rusqlite::Connection) {
     let migrated: bool = conn
         .query_row(
@@ -183,6 +321,7 @@ fn migrate_recent_markdown(conn: &rusqlite::Connection) {
     }
 }
 
+#[cfg(any(feature = "gui", test))]
 fn query_kind_rows(conn: &rusqlite::Connection, sql: &str) -> Vec<(String, String, i64)> {
     let mut stmt = match conn.prepare(sql) {
         Ok(s) => s,
@@ -208,6 +347,7 @@ fn query_kind_rows(conn: &rusqlite::Connection, sql: &str) -> Vec<(String, Strin
 }
 
 /// `paths` 의 행을 `recent_files` 에서 `kind` 별로 삭제. 빈 목록이면 no-op.
+#[cfg(any(feature = "gui", test))]
 fn delete_paths(conn: &rusqlite::Connection, kind: &str, paths: &[String]) {
     for path in paths {
         if let Err(e) = conn.execute(
@@ -219,80 +359,52 @@ fn delete_paths(conn: &rusqlite::Connection, kind: &str, paths: &[String]) {
     }
 }
 
-/// 정규화 키가 같고 원래 표기만 다른 경로를 종류별로 삭제한다.
-fn purge_same_key(conn: &rusqlite::Connection, kind: &str, key: &str, keep_path: &str) {
-    // query_kind_rows는 인자를 바인딩하지 않으므로 전체 조회 후 kind를 거른다.
-    let existing = query_kind_rows(conn, "SELECT kind, path, opened_at FROM recent_files");
-    let stale: Vec<String> = existing
-        .into_iter()
-        .filter(|(k, _, _)| k == kind)
-        .map(|(_, p, _)| p)
-        .filter(|p| p != keep_path && dedup_key(p) == key)
-        .collect();
-    delete_paths(conn, kind, &stale);
-}
-
-fn upsert_recent(conn: &rusqlite::Connection, kind: &str, path: &str, ts: i64) {
-    if let Err(e) = conn.execute(
-        "INSERT INTO recent_files(kind, path, opened_at) VALUES(?1, ?2, ?3)
-         ON CONFLICT(kind, path) DO UPDATE SET opened_at=excluded.opened_at",
-        rusqlite::params![kind, path, ts],
-    ) {
-        tracing::warn!("recent_files upsert failed: {e}");
+/// snapshot 하나를 열린 transaction 안에서 저장한다. 그 종류의 행을 지우고 목록을 다시 넣으므로
+/// 같은 키의 다른 표기 정리와 최신 10개 밖 정리가 함께 끝나고, 디스크가 확정한 목록과 같아진다.
+/// 어느 단계든 실패하면 오류를 돌려 호출자가 묶음 전체를 되돌리게 한다.
+/// 저장 시각은 목록 순서대로 엄격히 줄어들게 맞춘다. 같은 초에 연 항목도 다시 읽을 때 순서가
+/// 같고, 실제 시각보다 늦어지는 폭은 목록 길이(최대 9초)를 넘지 않는다.
+#[cfg(any(feature = "gui", test))]
+pub(crate) fn write_snapshot(
+    conn: &rusqlite::Connection,
+    snapshot: &RecentSnapshot,
+) -> rusqlite::Result<()> {
+    let kind = snapshot.kind.as_str();
+    conn.execute("DELETE FROM recent_files WHERE kind = ?1", [kind])?;
+    let mut stamps = vec![0i64; snapshot.entries.len()];
+    for i in (0..snapshot.entries.len()).rev() {
+        let actual = snapshot.entries[i].opened_at;
+        stamps[i] = match stamps.get(i + 1) {
+            Some(next) => actual.max(next + 1),
+            None => actual,
+        };
     }
-}
-
-/// `kind` 안에서 오래된 엔트리를 잘라 최신 MAX_ENTRIES개만 남긴다.
-fn prune_kind(kind: &str) {
-    if crate::db::with_state_db(|db| {
-        if let Err(e) = db.conn.execute(
-            "DELETE FROM recent_files WHERE kind = ?1 AND path NOT IN (
-                SELECT path FROM recent_files WHERE kind = ?1 ORDER BY opened_at DESC LIMIT ?2
-            )",
-            rusqlite::params![kind, MAX_ENTRIES as i64],
-        ) {
-            tracing::warn!("prune recent_files failed: {e}");
-        }
-    })
-    .is_none()
-    {
-        tracing::trace!("recent_files prune skipped: storage unavailable");
+    for (entry, stamp) in snapshot.entries.iter().zip(stamps) {
+        conn.execute(
+            "INSERT INTO recent_files(kind, path, opened_at) VALUES(?1, ?2, ?3)",
+            rusqlite::params![kind, entry.path, stamp],
+        )?;
     }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// 창마다 받은 핸들이 같은 캐시를 본다. 저장소가 없어도 캐시 변경은 남는다.
     #[test]
-    fn windows_using_the_same_database_share_recent_updates() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut db = crate::db::Db::open(&dir.path().join("state.db")).unwrap();
-        let mut first = RecentFiles::for_db(&mut db);
-        let mut second = RecentFiles::for_db(&mut db);
-        assert!(first.get("markdown").is_empty());
-        assert!(second.get("markdown").is_empty());
+    fn handles_cloned_for_windows_share_recent_updates() {
+        let mut first = RecentFiles::default();
+        let mut second = first.clone();
         first.add("markdown", "/notes/first.md".into());
         assert_eq!(second.get("markdown"), vec!["/notes/first.md"]);
         second.add("markdown", "/notes/second.md".into());
         first.add("markdown", "/notes/./first.md".into());
         assert_eq!(first.get("markdown"), second.get("markdown"));
         assert_eq!(second.get("markdown")[0], "/notes/./first.md");
-        for i in 0..12 {
-            second.add("markdown", format!("/notes/{i}.md"));
-        }
-        assert_eq!(first.get("markdown"), second.get("markdown"));
-        assert_eq!(first.get("markdown").len(), MAX_ENTRIES);
-        assert_eq!(first.get("markdown")[0], "/notes/11.md");
-        let later = RecentFiles::for_db(&mut db);
-        assert_eq!(later.get("markdown"), first.get("markdown"));
-        assert!(later.get("directory").is_empty());
-        let mut other_db = crate::db::Db::open(&dir.path().join("other.db")).unwrap();
-        assert!(
-            RecentFiles::for_db(&mut other_db)
-                .get("markdown")
-                .is_empty()
-        );
+        assert_eq!(first.revisions("markdown").visible, 3);
+        assert_eq!(first.revisions("markdown").committed, 0);
     }
 
     #[test]
@@ -330,6 +442,7 @@ mod tests {
             (raw_old.to_string(), 100),
         ];
         let (kept, stale) = dedup_rows(rows);
+        let kept: Vec<_> = kept.into_iter().map(|e| e.path).collect();
         assert_eq!(kept, vec![raw_new.to_string(), other.to_string()]);
         assert_eq!(stale, vec![raw_old.to_string()]);
     }
@@ -342,6 +455,7 @@ mod tests {
         let (a, b) = ("/a.md", "/b.md");
         let rows = vec![(a.to_string(), 2), (b.to_string(), 1)];
         let (kept, stale) = dedup_rows(rows);
+        let kept: Vec<_> = kept.into_iter().map(|e| e.path).collect();
         assert_eq!(kept, vec![a.to_string(), b.to_string()]);
         assert!(stale.is_empty());
     }

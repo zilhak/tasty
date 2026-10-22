@@ -36,7 +36,7 @@ App worker가 commit한 batch를 모든 대상 엔진에 공개하고 ACK를 받
 - `SCHEMA_VERSION` 상수 하나. `ensure_schema()` 가 `PRAGMA user_version` 을 보고 분기:
   - `0`(새 DB) → `SCHEMA_SQL` 1회 적용 + `user_version` 을 `SCHEMA_VERSION`으로 설정.
   - `== SCHEMA_VERSION` → **additive ensure**. `CREATE TABLE IF NOT EXISTS` 만 다시 돌린다.
-  - 그 외 → `SchemaMismatch{expected, found}` 에러 → 호출자가 사용자에게 안내 후 종료.
+  - 그 외 → `SchemaMismatch{expected, found}` 에러. 호출자는 아래 초기화 실패 절처럼 경고를 남기고 DB 없이 계속한다.
 
 기존 버전의 DB에도 `CREATE TABLE IF NOT EXISTS`로 테이블을 추가할 수 있다. `tutorial_progress`가 이 방식을 사용한다(이 문서). 버전값만으로는 추가 여부를 알 수 없으므로 `an_existing_database_still_gets_the_tutorial_table`이 기존 DB에도 테이블이 생기는지 확인한다.
 
@@ -62,23 +62,24 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 - **경로 dedup**: 같은 파일의 다른 표기(구분자 `\`↔`/`, `\\?\` verbatim, `.`/`..`,
   Windows 대소문자 차)를 정규화 키(`strip_verbatim_prefix`+`lexically_normalize`+Windows
   case fold)로 접는다. PK 는 여전히 raw path(표시·열기용)이며 정규화 키는 비교 전용.
-  `RecentFiles::add` 가 같은 키의 옛 행을 제거 후 저장하고, `load()` 는 마이그레이션 체인이
-  없는 fresh-start 정책이라 로드 시 1회 정규화 dedup 패스로 기존 중복을 접는다.
+  저장은 그 종류의 목록 전체를 다시 쓰므로 같은 키의 옛 행이 남지 않는다. 마이그레이션 체인이
+  없는 fresh-start 정책이라 GUI 부팅의 한 번 읽기가 같은 transaction 안에서 레거시 이관과
+  정규화 dedup으로 기존 중복을 접는다. 상한 밖의 옛 행은 그 종류의 첫 저장이 정리한다.
 - **기록 진입점**: markdown-open 이 수렴하는 인텐트 계층(`Intent::NewTab`/
   `ConvertSurface`, file-dispatch 직접 `CreateTab`)에서 `MainViewState::record_recent`
   로 1회 기록한다 — 파일-열기 팝업·주소창 navigate·링크 클릭이 모두 반영된다.
 
 ### 최근 목록의 창 간 일관성
 
-최근 파일 캐시는 Db가 소유하고 모든 창이 공유 핸들로 조회한다. 종류별 최신순·중복 제거·10개 상한을 유지한다. add는 같은 잠금 안에서 메모리 갱신과 DB 저장을 순서대로 수행해 같은 초의 순서와 저장 실패 때의 메모리 상태도 창마다 같게 한다. 조회는 최대 10개 경로 스냅샷을 반환하며 매번 DB를 다시 읽지 않는다. DB 없는 테스트 캐시는 독립적이다. 다른 프로세스의 변경 감지는 보장하지 않으며 그런 요구가 생기면 재검토한다.
+최근 파일 캐시는 GUI 부팅이 state.db에서 한 번 읽어 만들고 모든 창이 공유 핸들로 조회한다. 종류별 최신순·중복 제거·10개 상한을 유지한다. add는 같은 잠금 안에서 메모리를 갱신하고 그 종류의 목록 전체를 state.db writer에 접수만 하며 SQL과 결과를 기다리지 않는다. 그래서 창마다 캐시와 저장 접수 순서가 같고, 저장이 실패해도 화면 목록은 창마다 같다. 화면에 보인 목록(표시 revision)과 디스크가 확정한 목록(확정 revision)은 종류별로 따로 세며, 확정은 메인 루프가 결과를 거둘 때 commit 성공만 반영한다. 같은 초에 연 항목도 다시 켰을 때 목록 순서가 같다. 저장 규칙은 [저장 계약의 state.db 실행기](storage-contract.md#statedb-실행기)에 있다. 조회는 최대 10개 경로 스냅샷을 반환하며 매번 DB를 다시 읽지 않는다. DB 없는 테스트 캐시는 독립적이다. 다른 프로세스의 변경 감지는 보장하지 않으며 그런 요구가 생기면 재검토한다.
 
 ### 튜토리얼 진행
 
-튜토리얼 진행은 App 소유의 직렬 worker를 통해 state.db의 tutorial_progress에 주제·콘텐츠 개정 번호·완료 여부·재개 단계·행 버전을 저장한다. 스키마 검증을 통과한 DB에 중복 없이 테이블을 추가하고 버전 불일치 보호를 유지한다. 완료는 되돌리지 않고 재개 위치는 낙관적 버전 검사로 오래된 View의 덮어쓰기를 막는다. 런타임 객체 ID는 저장하지 않아 실습 재개 시 준비부터 시작한다. 설정·레이아웃과 진행 기록을 섞지 않는다. 외부 콘텐츠 기여·정식 migration·객체 복원 요구가 생기면 소유권과 revision을 검토한다.
+튜토리얼 진행은 state.db writer를 통해 state.db의 tutorial_progress에 주제·콘텐츠 개정 번호·완료 여부·재개 단계·행 버전을 저장한다. 스키마 검증을 통과한 DB에 중복 없이 테이블을 추가하고 버전 불일치 보호를 유지한다. 완료는 되돌리지 않고 재개 위치는 낙관적 버전 검사로 오래된 View의 덮어쓰기를 막는다. 런타임 객체 ID는 저장하지 않아 실습 재개 시 준비부터 시작한다. 설정·레이아웃과 진행 기록을 섞지 않는다. 외부 콘텐츠 기여·정식 migration·객체 복원 요구가 생기면 소유권과 revision을 검토한다.
 
 ### 접근 규칙
 
-state.db는 GUI 부팅만 열고 with_state_db로 접근한다. None은 현재 열려 있지 않다는 뜻이며 헤드리스인지 GUI 초기화 실패인지 원인을 구분하지 못한다. GUI 초기화가 실패해도 앱은 계속 실행되므로 빈 최근 목록만으로 실행 형태를 판단하지 않는다. storage 소비자는 기본값을 사용할 수 있고 state DB lock poison은 복구 경로다. DB가 없으면 `RecentFiles::load()`가 공유되지 않는 빈 캐시를 돌려주므로 recent.query는 빈 목록에서 시작하고, 이후에는 응답한 윈도우의 캐시에 이번 실행에서 들어간 항목을 돌려준다(아래 초기화 실패 절). state DB를 여는 범위나 초기화 오류 보존 방식이 바뀌면 이 의미를 다시 검토한다.
+state.db는 GUI 부팅만 열고, 연결은 state.db writer의 worker만 가진다. 다른 스레드는 공유 최근 목록 캐시(`db::shared_recent_files`)와 요청 큐(`db::shared_queue`)만 받는다. None은 현재 열려 있지 않다는 뜻이며 헤드리스인지 GUI 초기화 실패인지 원인을 구분하지 못한다. GUI 초기화가 실패해도 앱은 계속 실행되므로 빈 최근 목록만으로 실행 형태를 판단하지 않는다. DB가 없으면 `RecentFiles::load()`가 공유되지 않는 빈 캐시를 돌려주므로 recent.query는 빈 목록에서 시작하고, 이후에는 응답한 윈도우의 캐시에 이번 실행에서 들어간 항목을 돌려준다(아래 초기화 실패 절). state DB를 여는 범위나 초기화 오류 보존 방식이 바뀌면 이 의미를 다시 검토한다.
 
 CLI는 DB를 직접 열지 않고 IPC로 호스트에 요청한다. state.db와 memory.db의 연결·스키마·실패 정책은 서로 다르다.
 
@@ -153,11 +154,11 @@ Allow 미기록으로 정상 호출의 사후 행동 감사가 불가능한 대�
 
 `db::init()`은 GUI 부팅에서 실행당 한 번만 시도한다. 실패하면 `:memory:` 폴백 없이 DB를 열지 않은 상태로 계속한다. 같은 실행에서 새 창을 열어도 다시 시도하지 않으므로 이미 열린 창에 영향이 없고 안내도 쌓이지 않는다. 다시 열려면 원인을 해소하고 Tasty를 다시 실행한다. 원본 파일은 열기만 시도하며 지우거나 새 파일로 덮지 않는다.
 
-실패는 첫 engine의 알림 목록에 경고 하나(`storage_notice.state_db_title`·`storage_notice.state_db_body`)로 남고 같은 내용이 warn 로그(`state.db init failed: …`)에 남는다. 본문은 아래 원인 문구와 영향(이전에 저장한 최근 목록·튜토리얼 진행을 불러오지 못하고 이번 실행의 변경을 저장하지 않음)을 함께 싣는다. 이번 실행의 변경이 화면에 보이지 않는다고 단정하지 않는다. 이후 소비자는 `with_state_db`의 None을 받아 다음처럼 동작한다.
+실패는 첫 engine의 알림 목록에 경고 하나(`storage_notice.state_db_title`·`storage_notice.state_db_body`)로 남고 같은 내용이 warn 로그(`state.db init failed: …`)에 남는다. 본문은 아래 원인 문구와 영향(이전에 저장한 최근 목록·튜토리얼 진행을 불러오지 못하고 이번 실행의 변경을 저장하지 않음)을 함께 싣는다. 이번 실행의 변경이 화면에 보이지 않는다고 단정하지 않는다. writer를 시작하지 못한 경우도 같은 경고로 다룬다. 이후 소비자는 공유 핸들의 None을 받아 다음처럼 동작한다.
 
-- 최근 파일·Markdown 목록: 저장된 목록을 불러오지 못해 빈 목록으로 시작한다. DB가 없으면 `RecentFiles::load()`가 윈도우마다 공유되지 않는 빈 캐시를 만든다. `RecentFiles::add`는 저장 전에 캐시를 갱신하고 저장만 건너뛴다. 그래서 사용자가 Explorer로 이동한 폴더(`directory` 종류)는 그 윈도우의 Explorer 최근 폴더 목록과 그 윈도우가 응답한 `recent.query`에 실행 중 나타난다. `records_recent` 종류(Markdown 등)의 파일 열기는 그때 새로 만든 캐시에 기록하므로 어느 목록에도 나타나지 않는다. 어느 쪽도 다음 실행에는 남지 않는다.
+- 최근 파일·Markdown 목록: 저장된 목록을 불러오지 못해 빈 목록으로 시작한다. DB가 없으면 `RecentFiles::load()`가 윈도우마다 공유되지 않는 빈 캐시를 만든다. `RecentFiles::add`는 캐시를 갱신하고 저장 접수만 건너뛴다. 그래서 사용자가 Explorer로 이동한 폴더(`directory` 종류)는 그 윈도우의 Explorer 최근 폴더 목록과 그 윈도우가 응답한 `recent.query`에 실행 중 나타난다. `records_recent` 종류(Markdown 등)의 파일 열기는 그때 새로 만든 캐시에 기록하므로 어느 목록에도 나타나지 않는다. 어느 쪽도 다음 실행에는 남지 않는다.
 - 튜토리얼: 진행은 이번 실행의 메모리에만 있고, 목록에 기존 저장 실패 문구(`tutorial.save_error`)가 보인다.
-- `system.pressure.db_pragmas.state_db`: `null`.
+- `system.pressure.db_pragmas.state_db`·`system.pressure.state_writer`·`system.pressure.state_db`: `null`.
 
 원인 variant 별 i18n key 는 다음과 같다:
 
@@ -350,7 +351,8 @@ worker는 묶음·flush마다 메인 루프를 깨운다. 2ms 간격 유입이�
 
 ### 계측 범위
 
-- `system.pressure.db`와 `DbLatencyStats`는 memory.db만 센다. state.db와 journal.db의 commit은 이 값에 없다.
+- `system.pressure.db`는 memory.db, `system.pressure.state_db`는 state.db writer의 commit을 같은 `DbLatencyStats` 형식(commit 수·시간 합·최댓값·평균·`writes_per_commit`)으로 센다. journal.db의 commit은 이 값에 없다.
+- state.db의 commit 계측은 writer 묶음의 commit만 센다. 부팅의 한 번 읽기·스키마 생성과 transaction 없이 혼자 실행하는 튜토리얼 읽기는 세지 않는다. `writes_per_commit`은 대체된 목록을 뺀, 그 commit에서 실행한 요청 수다. 접수·묶음·대체·재시도·거절 수는 `system.pressure.state_writer`가 memory writer와 같은 형식으로 싣는다.
 - commit 계측은 `put`·`delete`·`put_secret`·`delete_secret`·`purge_expired`·`purge_scope`·`prune_prefix_keep_recent`·`prune_prefix_older_than`의 명시 transaction을 센다. `import_regular`는 항목마다 `put`을 거치므로 세어진다. 정리 연산은 행을 하나 이상 지웠을 때만 센다.
 - 실행 단위와 쓰기 묶음은 확정된 쓰기가 있으면 요청 수와 관계없이 commit 1회로 센다. 단위 안에서 실행한 정리 연산도 그 commit에 포함된다([저장 계약](storage-contract.md#실행-단위와-쓰기-묶음)).
 - `vacuum_if_fragmented`의 VACUUM은 commit 수에 넣지 않고 `vacuums`·`vacuum_us_sum`으로 따로 센다. harness의 `maintenance_paths`는 정리 호출마다 늘어난 commit 수를 기록한다. 2026-10-12 debug 빌드 1회 실행에서 `purge_expired` 1행, prune 190행, `purge_scope` 1행 삭제가 각각 commit 1회로 세어졌다.

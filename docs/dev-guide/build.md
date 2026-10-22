@@ -140,8 +140,8 @@ reason)`)와 그것을 재는 여덟 칸이 거기 있다. 아래 표는 이 빌
 
 | 정의 | 빌드 경계 | 공용으로 남는 부분 |
 |---|---|---|
-| `db::init`, `default_db_path` | GUI 부팅만 호출 | `Db`, `with_state_db`는 headless 최근 파일 조회에서도 사용 |
-| `Db::open`·스키마·초기화 오류 분류 | GUI 또는 단위 테스트 | headless의 미초기화 `with_state_db`는 기존대로 `None` 반환 |
+| `db::init`, `default_db_path`, `db::publish` | GUI 부팅만 호출 | `db::shared_recent_files`는 headless에서도 부르며 늘 `None`이라 최근 목록은 공유하지 않는 빈 캐시에서 시작한다 |
+| `Db`·`Db::open`·스키마·초기화 오류 분류·state writer(`db::writer`) | GUI 또는 단위 테스트 | headless는 state.db를 열지 않는다. 최근 목록의 저장 접수·revision 코드는 같은 경계로 headless에서 빠진다 |
 | `crash_report::write_hang_report` | winit watchdog을 가진 GUI | panic 리포터 설치와 host 파일 로그는 GUI/headless/CLI 역할별 공용 부팅에서 사용 |
 | `crash_report::error_loop`, `record_error` | GUI; detector는 debug, release는 no-op | headless panic/파일 로깅 경로를 함께 제거하지 않음 |
 

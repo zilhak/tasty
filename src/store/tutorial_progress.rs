@@ -22,15 +22,15 @@ pub(crate) fn load(conn: &Connection, topic: &str, revision: u32) -> rusqlite::R
 }
 
 /// Completion is monotonic; stale resume writes never overwrite another view.
+/// Runs inside the caller's transaction, which commits or rolls back the whole batch.
 pub(crate) fn save(
-    conn: &mut Connection,
+    tx: &Connection,
     topic: &str,
     revision: u32,
     step: &str,
     completed: bool,
     expected: i64,
 ) -> rusqlite::Result<(Record, bool)> {
-    let tx = conn.transaction()?;
     tx.execute(
         "INSERT OR IGNORE INTO tutorial_progress(topic_id, revision) VALUES(?1,?2)",
         params![topic, revision],
@@ -43,8 +43,7 @@ pub(crate) fn save(
             params![topic, revision],
         )?;
     }
-    let result = load(&tx, topic, revision)?;
-    tx.commit()?;
+    let result = load(tx, topic, revision)?;
     Ok((result, updated == 1))
 }
 
@@ -53,13 +52,13 @@ mod tests {
     use super::*;
     #[test]
     fn stale_resume_cannot_undo_completion_or_position() {
-        let mut db = Connection::open_in_memory().unwrap();
+        let db = Connection::open_in_memory().unwrap();
         db.execute_batch(SCHEMA).unwrap();
-        let a = save(&mut db, "basics", 1, "pane", false, 0).unwrap().0;
-        let done = save(&mut db, "basics", 1, "workspace", true, a.version)
+        let a = save(&db, "basics", 1, "pane", false, 0).unwrap().0;
+        let done = save(&db, "basics", 1, "workspace", true, a.version)
             .unwrap()
             .0;
-        let stale = save(&mut db, "basics", 1, "surface", false, a.version)
+        let stale = save(&db, "basics", 1, "surface", false, a.version)
             .unwrap()
             .0;
         assert_eq!(stale, done);

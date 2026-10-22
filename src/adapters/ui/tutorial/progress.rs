@@ -1,4 +1,4 @@
-//! View requests and receipts only; App owns the tutorial database writer.
+//! View requests and receipts only; the state.db writer owned by AppServices runs them.
 use super::{TutorialRuntime, all_topics};
 use crate::app::tutorial_progress::{Receipt, Reply, Save};
 
@@ -66,15 +66,15 @@ impl TutorialRuntime {
             }
         }
     }
+    #[cfg(test)]
+    pub(crate) fn pending_progress_is_empty(&self) -> bool {
+        self.pending_progress.is_empty()
+    }
     pub(crate) fn poll_progress(&mut self) -> bool {
         let mut changed = false;
         while let Some(pending) = self.pending_progress.front() {
-            let result = match pending.receipt.try_recv() {
-                Ok(result) => result,
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    Err("tutorial persistence disconnected".into())
-                }
+            let Some(result) = pending.receipt.try_take() else {
+                break;
             };
             let pending = self.pending_progress.pop_front().expect("progress receipt");
             match result {

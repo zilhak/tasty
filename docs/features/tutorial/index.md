@@ -39,13 +39,13 @@
 
 `state.db`의 `tutorial_progress`는 주제 ID·콘텐츠 revision·완료 여부·재개 step ID·row version을 저장한다. 레이아웃 복원 설정과 독립적이며 runtime 객체 ID는 저장하지 않는다. 같은 DB의 기존 사용자 상태는 보존한다.
 
-완료는 단조 갱신하며 다른 View의 오래된 재개 위치는 row version 검사로 덮어쓰지 않는다. 새 목록 세션에서 최신 기록을 읽는다. 저장 실패는 세션 진행을 유지하고 안내하며, 목록 재진입에서 재시도한다. 알 수 없는 단계는 해당 주제 처음으로 복구한다.
+완료는 단조 갱신하며 다른 View의 오래된 재개 위치는 row version 검사로 덮어쓰지 않는다. 저장은 state.db writer가 다른 저장과 묶어 commit하고, 접수한 저장은 요청한 View가 닫혀도 실행된다. 결과를 받지 않은 빠른 연속 저장은 같은 View가 성공한 버전만 따라 이어지며, 이 버전 체인은 commit이 성공한 뒤에만 앞으로 간다. 새 목록 세션에서 최신 기록을 읽는다. 저장 실패는 세션 진행을 유지하고 안내하며, 목록 재진입에서 재시도한다. 알 수 없는 단계는 해당 주제 처음으로 복구한다.
 
 ## 구현 경계
 
 - `catalog.rs`: 안정적인 ID·번역 키·단계 요구사항.
 - `runtime.rs`: 전이, 완료/중단, 실습 성공 판정.
-- `progress.rs`: View의 저장 요청·세대·결과 receipt. `src/app/tutorial_progress.rs`: App 소유의 직렬 DB worker. `src/store/tutorial_progress.rs`: SQL.
+- `progress.rs`: View의 저장 요청·세대·결과 receipt. `src/app/tutorial_progress.rs`: View 요청을 state.db writer(`src/db/writer.rs`)에 넣는 입구와 종료 때의 접수 게이트. writer가 View별 버전 체인과 저장 실행을 맡는다. `src/store/tutorial_progress.rs`: writer의 transaction 안에서 실행하는 SQL.
 - `mod.rs`: 현재 대상 확인과 렌더 진행 관리.
 - `callout.rs`, `marker.rs`, `topic_popup.rs`: 표시.
 - `src/intent/popup.rs`: 공용 목록 진입과 팔레트 관찰.

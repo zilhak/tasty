@@ -1,4 +1,4 @@
-<!-- source-hash: 1bfe9c16558c -->
+<!-- source-hash: 18e3c2795103 -->
 # CLI response delays and connection diagnostics
 
 Read this page when a `tasty` command replies slowly, cannot connect, or ends with an error such as `Error (-32061)`. It covers the difference between the reply wait bound and the task wait time, what to do for each error code, checking what this Tasty supports, and the connection counts, request queues and database state shown by `tasty list pressure`. If you are new to the CLI, start with [Driving terminals with the tasty CLI](../agents/cli.md).
@@ -70,7 +70,9 @@ handler time, so adding them double counts it. `checkpoints_busy` counts checkpo
 finish because another connection was using the database. `writes_per_commit` is the distribution of
 writes saved by each commit, and database compaction (VACUUM), which is not counted as a commit,
 is counted separately in `vacuums`. `memory_writer` counts admissions, refusals, and batches of the
-queue that groups save requests. Permission, usage-cap, and rate-limit
+queue that groups save requests. `state_writer` and `state_db` show the same counts and the commit
+times for the queue that saves recent files and tutorial progress. Both are `null` in headless runs
+and when `state.db` could not be opened. Permission, usage-cap, and rate-limit
 refusals are counted separately in `gate_refusals` below.
 
 ### Connection counts and limits (`connections`)
