@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 //! 다른 tasty 크레이트에 의존하지 않는 공용 경로·식별자·프로세스 유틸리티.
 //! notify는 완료 로그의 경로와 쓰기를, target은 호스트·plugin이 공유하는 프로토콜 문구를 제공한다.

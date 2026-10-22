@@ -135,3 +135,95 @@ fn a_fingerprint_sees_content_changes_and_a_missing_file() {
     fs::write(&path, b"b").unwrap();
     assert_ne!(Fingerprint::read(&path).unwrap(), first);
 }
+
+#[cfg(unix)]
+#[test]
+fn an_existing_secret_is_private_before_any_payload_is_written() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("secret");
+    fs::write(&path, b"old").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    replace_using(&path, Options::default(), |file| {
+        assert_eq!(file.metadata()?.permissions().mode() & 0o777, 0o600);
+        assert_eq!(file.metadata()?.len(), 0);
+        file.write_all(b"private new bytes")
+    })
+    .unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"private new bytes");
+}
+
+#[cfg(unix)]
+#[test]
+fn rename_does_not_bypass_existing_file_write_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("readonly");
+    fs::write(&path, b"original").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o400)).unwrap();
+    let direct = OpenOptions::new().write(true).open(&path);
+    // Privileged test runners can write read-only files; compare the actual prior access result.
+    if direct.is_err() {
+        assert_eq!(
+            replace(&path, b"new").unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"original");
+        assert!(leftovers(dir.path()).is_empty());
+    } else {
+        replace(&path, b"new").unwrap();
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn owner_group_extended_attributes_and_acl_survive_before_and_after_writing() {
+    use rustix::fs::{XattrFlags, fgetxattr, fsetxattr};
+    use std::os::unix::fs::MetadataExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("controlled");
+    fs::write(&path, b"old").unwrap();
+    let source = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .unwrap();
+    let before = source.metadata().unwrap();
+    fsetxattr(&source, "user.test", b"kept", XattrFlags::empty()).unwrap();
+    let mut acl = 2u32.to_le_bytes().to_vec();
+    for (tag, permissions, id) in [
+        (1u16, 6u16, u32::MAX),
+        (2, 0, before.uid() + 1),
+        (4, 0, u32::MAX),
+        (16, 0, u32::MAX),
+        (32, 0, u32::MAX),
+    ] {
+        acl.extend(tag.to_le_bytes());
+        acl.extend(permissions.to_le_bytes());
+        acl.extend(id.to_le_bytes());
+    }
+    fsetxattr(
+        &source,
+        "system.posix_acl_access",
+        &acl,
+        XattrFlags::empty(),
+    )
+    .unwrap();
+    let check = |file: &File| {
+        let meta = file.metadata().unwrap();
+        assert_eq!((meta.uid(), meta.gid()), (before.uid(), before.gid()));
+        let mut value = vec![0u8; acl.len()];
+        let len = fgetxattr(file, "system.posix_acl_access", value.as_mut_slice()).unwrap();
+        assert_eq!(&value[..len], acl.as_slice());
+        let len = fgetxattr(file, "user.test", value.as_mut_slice()).unwrap();
+        assert_eq!(&value[..len], b"kept");
+    };
+    replace_using(&path, Options::default(), |file| {
+        check(file);
+        assert_eq!(file.metadata()?.len(), 0);
+        file.write_all(b"new")
+    })
+    .unwrap();
+    check(&File::open(&path).unwrap());
+    assert_eq!(fs::read(&path).unwrap(), b"new");
+}

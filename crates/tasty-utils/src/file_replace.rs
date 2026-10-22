@@ -4,8 +4,10 @@
 //!   내용이나 새 내용 중 하나만 본다. 실패하면 원본은 그대로이고 임시 파일은 지운다.
 //!   교체 성공은 전원 장애에서의 내구성 보장이 아니다(`sync`를 켠 경우만 내용을 디스크에 내린다).
 //! - 대상이 symlink면 링크를 따라가 실제 파일을 교체한다. 링크는 남는다. 끊긴 링크는 오류다.
-//! - 기존 파일의 권한을 새 파일에 옮긴다. 소유자·ACL·확장 속성은 옮기지 않는다. 새 파일은
-//!   `new_mode`(Unix) 또는 기본 권한으로 만든다.
+//! - 기존 파일에 쓰기 권한이 있는지 먼저 확인하고, payload를 쓰기 전에 접근 권한을 옮긴다.
+//!   Unix는 owner/group과 mode를 보존하고 Linux는 xattr/ACL, macOS는 ACL/xattr를 옮긴다.
+//!   Windows는 원본 owner/group/DACL을 임시 파일 생성에 사용한다. 보존 실패면 원본을 교체하지 않는다.
+//!   새 파일은 `new_mode`(Unix) 또는 기본 권한으로 만든다.
 //! - [`lock`]: `<파일>.lock` 옆 파일에 배타 잠금을 잡는다. 교체되는 대상 inode가 아니라 고정된 잠금
 //!   파일을 쓰므로 교체 뒤에도 같은 잠금이다. 참여하지 않는 외부 편집기는 막지 못한다.
 //! - [`Fingerprint`]: 길이와 내용 해시. 읽은 뒤 교체 직전까지 외부 변경을 확인할 때 쓴다. 마지막
@@ -18,6 +20,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 /// symlink를 따라가는 최대 단계.
 const MAX_LINKS: usize = 40;
+
+#[cfg_attr(
+    any(windows, target_os = "macos"),
+    allow(
+        unsafe_code,
+        reason = "native access-control APIs preserve the original file security before replacement bytes are written"
+    )
+)]
+mod metadata;
 
 static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -38,25 +49,47 @@ pub fn replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
 
 /// `path`를 `bytes`로 원자적으로 교체한다.
 pub fn replace_with(path: &Path, bytes: &[u8], options: Options) -> io::Result<()> {
+    replace_using(path, options, |file| write_temp(file, bytes, options.sync))
+}
+
+fn replace_using(
+    path: &Path,
+    _options: Options,
+    write: impl FnOnce(&mut File) -> io::Result<()>,
+) -> io::Result<()> {
     let target = resolve_link(path)?;
     let existing = match fs::metadata(&target) {
-        Ok(meta) => Some(meta.permissions()),
+        Ok(meta) => {
+            // Rename permissions are directory permissions; preserve the old write access check.
+            let file = OpenOptions::new().write(true).open(&target)?;
+            Some((file, meta))
+        }
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,
         Err(e) => return Err(e),
     };
     let temp = temp_path(&target)?;
-    let mut file = create_temp(
-        &temp,
-        existing.is_none().then_some(options.new_mode).flatten(),
-    )?;
-    let written = write_temp(&mut file, bytes, options.sync).and_then(|()| {
-        drop(file);
-        match existing {
-            Some(permissions) => fs::set_permissions(&temp, permissions),
-            None => Ok(()),
+    #[cfg(unix)]
+    let mode = {
+        use std::os::unix::fs::PermissionsExt;
+        existing
+            .as_ref()
+            .map(|(_, meta)| meta.permissions().mode() & 0o600)
+            .or(_options.new_mode)
+    };
+    #[cfg(not(any(unix, windows)))]
+    let mode = _options.new_mode;
+    #[cfg(windows)]
+    let mut file = metadata::create(&temp, &target, existing.is_some())?;
+    #[cfg(not(windows))]
+    let mut file = create_temp(&temp, mode)?;
+    let result = (|| {
+        if let Some((source, meta)) = existing.as_ref() {
+            metadata::preserve(source, &file, meta)?;
         }
-    });
-    let result = written.and_then(|()| fs::rename(&temp, &target));
+        write(&mut file)?;
+        drop(file);
+        fs::rename(&temp, &target)
+    })();
     if result.is_err()
         && let Err(e) = fs::remove_file(&temp)
         && e.kind() != io::ErrorKind::NotFound
@@ -138,7 +171,7 @@ fn create_temp(path: &Path, mode: Option<u32>) -> io::Result<File> {
 }
 
 /// Windows에는 Unix 권한 비트가 없다. 새 파일은 상위 디렉터리의 ACL을 받는다.
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn create_temp(path: &Path, _mode: Option<u32>) -> io::Result<File> {
     OpenOptions::new().write(true).create_new(true).open(path)
 }
@@ -152,7 +185,17 @@ pub struct WriteLock {
 /// `path`의 쓰기 잠금을 잡는다. 다른 Tasty 프로세스가 쥐고 있으면 풀릴 때까지 기다린다.
 /// 메인 루프에서 부르지 않는다.
 pub fn lock(path: &Path) -> io::Result<WriteLock> {
-    let mut name = path.as_os_str().to_owned();
+    let target = resolve_link(path)?;
+    let parent = target
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let target = parent.canonicalize()?.join(
+        target
+            .file_name()
+            .ok_or_else(|| io::Error::other("file has no name"))?,
+    );
+    let mut name = target.as_os_str().to_owned();
     name.push(".lock");
     let file = OpenOptions::new()
         .read(true)
