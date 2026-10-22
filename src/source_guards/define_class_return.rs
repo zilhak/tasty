@@ -18,6 +18,7 @@ const EXPECTED_BLOCKS: &[(&str, &str)] = &[
     ("src/file/drag/desktop/macos.rs", "Source"),
     ("src/host_api/webview/macos.rs", "NavDelegate"),
     ("src/host_api/webview/macos.rs", "KeyWebView"),
+    ("src/host_api/webview/overlay_host/macos.rs", "OverlayView"),
 ];
 
 /// 이름을 읽지 못한 블록도 남겨 선언 누락과 구별한다.
