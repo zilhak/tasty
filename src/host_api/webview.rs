@@ -12,6 +12,8 @@ pub mod script_gate;
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod linux_shape;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(windows)]

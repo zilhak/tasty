@@ -225,7 +225,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 - **모델 포커스는 클릭에만 따라간다** — 백엔드가 native 클릭/포커스 획득을 통지하면 host 가
   `focused_pane`/`focused_surface` 를 맞춘다. 키 도착은 근거로 쓰지 않는다(X11 은 포인터가
   자식 창 위이기만 해도 키를 넣으므로, 키를 근거로 삼으면 focus-follows-mouse 가 된다).
-- **가림과 포커스 회수**: egui overlay 가 열려 webview 를 숨길 때, 그리고 탭·workspace 전환으로
+- **가림과 포커스 회수**: egui overlay 가 열릴 때(webview 를 숨기는 모드와 보인 채 두는 모드 모두), 그리고 탭·workspace 전환으로
   webview 가 활성 탭에서 빠질 때 키보드 포커스를 host 창으로 돌린다(숨김과 포커스 해제는
   세 OS 모두 별개). 다시 보일 때 자동 복원은 하지 않는다.
   회수는 **창이 활성(`base.focused` 이거나 webview 자식이 OS 포커스를 쥠)이고, 포커스가 실제로 그 webview 자식 안에 있을 때만**

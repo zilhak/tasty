@@ -19,17 +19,12 @@ use winit::raw_window_handle::{
 };
 
 use super::keys::WebViewKeySink;
+use super::linux_shape::{self, OverlayCut, ShapeState};
 use super::load_generation::SignalOrderLoads;
+use super::overlay::{OverlayApplyError, OverlayRequest};
 use super::script_gate::{DeferredScan, Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
-
-/// shape 를 정한 X 창 크기와 입력 구멍·그림 구멍(이 창 기준 물리 px `[x, y, 너비, 높이]`).
-type NativeShape = ((i32, i32), Vec<[i32; 4]>, Vec<[i32; 4]>);
-
-/// X SHAPE 확장의 그림 shape 종류(`ShapeBounding`). 이 밖은 그려지지도 입력을 받지도 않는다.
-const SHAPE_BOUNDING: std::os::raw::c_int = 0;
-/// X SHAPE 확장의 입력 shape 종류(`ShapeInput`).
-const SHAPE_INPUT: std::os::raw::c_int = 2;
+use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource};
 
 pub struct PlatformWebView {
     webview: WebView,
@@ -59,8 +54,8 @@ pub struct PlatformWebView {
     x11_size: Cell<(i32, i32)>,
     /// X 창 shape 를 물리 px 로 설정하는 XFixes. 열지 못하면 구멍을 두지 않는다.
     xfixes: Option<x11_dl::xfixes::Xlib>,
-    /// 마지막으로 적용한 shape(X 창 크기와 구멍). 같으면 X 요청을 다시 보내지 않는다.
-    applied_shape: RefCell<Option<NativeShape>>,
+    /// native 구멍·오버레이 구멍과 마지막으로 적용한 shape.
+    shape: RefCell<ShapeState>,
     /// XFixes 없이 그림 구멍을 요청받아 경고를 남겼는지. 프레임마다 부르므로 한 번만 남긴다.
     clip_unavailable_reported: Cell<bool>,
     /// 저장이 멈춘 뒤 켠다. 켜지면 이 페이지에 오는 키·포인터 이벤트를 GTK 신호 단계에서 버린다.
@@ -552,7 +547,10 @@ impl PlatformWebView {
 
         gtk_window.show_all();
 
-        let xfixes = open_xfixes(display as _);
+        // 창 shape 요청은 서버 SHAPE 확장에 기댄다. 없으면 XFixes 를 쓰지 않는다.
+        let xfixes = linux_shape::shape_extension_ready(&xlib, display as _)
+            .then(|| open_xfixes(display as _))
+            .flatten();
 
         Ok(Self {
             webview,
@@ -573,7 +571,7 @@ impl PlatformWebView {
             content_filter,
             x11_size: Cell::new((w.max(1) as i32, h.max(1) as i32)),
             xfixes,
-            applied_shape: RefCell::new(None),
+            shape: RefCell::default(),
             clip_unavailable_reported: Cell::new(false),
             input_held,
         })
@@ -635,57 +633,38 @@ impl PlatformWebView {
     /// X 창에 물리 px 그대로 설정한다.
     pub fn set_native_holes(&self, input: &[[i32; 4]], clip: &[[i32; 4]], _scale_factor: f64) {
         self.assert_origin_thread();
-        let Some(fixes) = &self.xfixes else {
+        if self.xfixes.is_none() {
             if !clip.is_empty() && !self.clip_unavailable_reported.replace(true) {
                 tracing::warn!(
                     "WebView clip unavailable without XFixes; the page stays drawn over the notice"
                 );
             }
             return;
-        };
-        let size = self.x11_size.get();
-        if self
-            .applied_shape
-            .borrow()
-            .as_ref()
-            .is_some_and(|(s, i, c)| *s == size && i.as_slice() == input && c.as_slice() == clip)
-        {
+        }
+        self.shape.borrow_mut().set_native_holes(input, clip);
+        self.refresh_shape();
+    }
+
+    /// native 구멍과 오버레이 구멍을 합쳐 X 창 shape 를 맞춘다. 두 입력 중 하나가 바뀔 때마다 부른다.
+    /// 오버레이 적용은 같은 프레임의 `set_bounds` 보다 먼저 올 수 있으므로 창 크기가 바뀐 프레임은 뒤의
+    /// `set_native_holes` 호출이 새 크기로 다시 맞춘다.
+    fn refresh_shape(&self) {
+        let Some(fixes) = &self.xfixes else {
             return;
-        }
-        let dpy = self.x11_display as *mut x11_dl::xlib::Display;
-        let xrect = |&[x, y, w, h]: &[i32; 4]| x11_dl::xlib::XRectangle {
-            x: x.clamp(i16::MIN.into(), i16::MAX.into()) as i16,
-            y: y.clamp(i16::MIN.into(), i16::MAX.into()) as i16,
-            width: w.clamp(0, u16::MAX.into()) as u16,
-            height: h.clamp(0, u16::MAX.into()) as u16,
         };
-        let whole = [0, 0, size.0, size.1];
-        // 입력에서는 두 구멍을 모두 뺀다. bounding shape 도 입력을 제한하지만 둘을 같은 기준으로 둔다.
-        let input_cut: Vec<[i32; 4]> = input.iter().chain(clip).copied().collect();
-        // SAFETY: self 가 살아 있으면 display·x11_window 는 유효하고 origin thread 다(위 assert).
-        // 사각형 배열은 호출 동안 살아 있다. 만든 region 은 shape 에 복사된 뒤 이 블록에서 지운다.
-        // region None(0)은 그 종류의 shape 를 지워 창 전체 사각형으로 되돌린다.
+        let Some(shape) = self.shape.borrow_mut().take_change(self.x11_size.get()) else {
+            return;
+        };
+        // SAFETY: self 가 살아 있으면 display·x11_window 는 유효하고 호출부가 origin thread 를 확인했다.
         unsafe {
-            let set = |kind: std::os::raw::c_int, cut: &[[i32; 4]]| {
-                if cut.is_empty() {
-                    (fixes.XFixesSetWindowShapeRegion)(dpy, self.x11_window, kind, 0, 0, 0);
-                    return;
-                }
-                let mut whole_rect = xrect(&whole);
-                let mut cut_rects: Vec<_> = cut.iter().map(xrect).collect();
-                let region = (fixes.XFixesCreateRegion)(dpy, &mut whole_rect, 1);
-                let holes_region =
-                    (fixes.XFixesCreateRegion)(dpy, cut_rects.as_mut_ptr(), cut_rects.len() as i32);
-                (fixes.XFixesSubtractRegion)(dpy, region, region, holes_region);
-                (fixes.XFixesSetWindowShapeRegion)(dpy, self.x11_window, kind, 0, 0, region);
-                (fixes.XFixesDestroyRegion)(dpy, holes_region);
-                (fixes.XFixesDestroyRegion)(dpy, region);
-            };
-            set(SHAPE_BOUNDING, clip);
-            set(SHAPE_INPUT, &input_cut);
-            (self.xlib.XFlush)(dpy);
+            linux_shape::apply(
+                fixes,
+                &self.xlib,
+                self.x11_display as _,
+                self.x11_window,
+                &shape,
+            );
         }
-        *self.applied_shape.borrow_mut() = Some((size, input.to_vec(), clip.to_vec()));
     }
 
     /// 저장이 멈춘 뒤 이 페이지의 키·포인터 입력을 버린다. 되돌리지 않는다.
@@ -758,10 +737,14 @@ impl PlatformWebView {
     /// WebView의 조상(또는 PointerRoot)이고 포인터가 WebView 위에 있으면 참이다. X 서버는
     /// 포커스 창의 자손 위에 포인터가 있으면 키를 그 자손에 보내므로, X 포커스가 메인 창에
     /// 있어도 키가 페이지로 갈 수 있다.
+    /// 오버레이가 입력 shape 를 비운 동안에는 포인터가 페이지 위에 있어도 X 가 키를 부모로 보내므로
+    /// 포커스만 본다.
     pub fn receives_keyboard_input(&self) -> bool {
         self.assert_origin_thread();
         self.x11_focus_is_inside()
-            || (self.x11_focus_routes_by_pointer() && self.x11_pointer_is_inside())
+            || (!self.shape.borrow().overlay_holds_pointer()
+                && self.x11_focus_routes_by_pointer()
+                && self.x11_pointer_is_inside())
     }
 
     /// 포커스 창이 PointerRoot이거나 이 WebView 창의 조상이면 참이다.
@@ -1215,9 +1198,44 @@ fn gdk_keyval_to_winit_key(keyval: gtk::gdk::keys::Key) -> Option<winit::keyboar
     Some(Key::Named(named))
 }
 
-/// 오버레이 합성은 아직 지원하지 않는다. 기본 구현이 `Hide` 를 보고해 대상 팝업이 뜨면 숨긴다.
+/// 불투명 모드만 낸다. 팝업 상자를 X 창 shape 에서 빼 아래 주 표면의 그림이 보이게 하고, 포인터는
+/// 입력 shape 를 비워 host 로 돌린다. 투명 모드는 별도 오버레이 창이 필요해 아직 내지 않는다.
 /// 계약: docs/design/systems/webview.md 의 "egui 오버레이와 native WebView" 절.
-impl super::overlay::WebViewOverlayBackend for PlatformWebView {}
+impl super::overlay::WebViewOverlayBackend for PlatformWebView {
+    fn overlay_support(&self) -> OverlayMode {
+        if self.xfixes.is_some() {
+            OverlayMode::Opaque
+        } else {
+            OverlayMode::Hide
+        }
+    }
+
+    fn overlay_paint_source(&self, mode: OverlayMode) -> OverlayPaintSource {
+        match mode {
+            OverlayMode::Opaque => OverlayPaintSource::MainSurface,
+            OverlayMode::Hide | OverlayMode::Transparent => OverlayPaintSource::OverlaySurface,
+        }
+    }
+
+    fn apply_overlay(&self, request: &OverlayRequest<'_>) -> Result<(), OverlayApplyError> {
+        self.assert_origin_thread();
+        if request.mode != OverlayMode::Opaque || self.xfixes.is_none() {
+            return Err(OverlayApplyError::Unsupported);
+        }
+        self.shape
+            .borrow_mut()
+            .set_overlay(Some(OverlayCut::from_request(request)));
+        self.refresh_shape();
+        Ok(())
+    }
+
+    fn clear_overlay(&self) {
+        self.assert_origin_thread();
+        if self.shape.borrow_mut().set_overlay(None) {
+            self.refresh_shape();
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

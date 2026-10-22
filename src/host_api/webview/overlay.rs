@@ -10,7 +10,8 @@ use crate::model::PhysicalRect;
 use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource};
 
 /// 대상 팝업이 떠 있는 프레임마다 WebView 하나에 보내는 요청.
-// 이유: 요청을 읽는 플랫폼 backend 가 아직 없다(모든 OS 가 지원 안 함 기본 구현). 시험용 backend 가 읽는다.
+// 이유: 시험이 아닌 빌드에서 모든 필드를 읽는 backend 가 없다. 기본 구현을 쓰는 OS 는 요청을 읽지 않고,
+// Linux backend 는 물리 px 영역만 쓰므로 `scale_factor` 를 읽지 않는다. 시험용 backend 가 모두 읽는다.
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone)]
 pub struct OverlayRequest<'a> {

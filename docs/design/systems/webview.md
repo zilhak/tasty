@@ -229,11 +229,18 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 | 불투명 | backend가 팝업 영역을 불투명하게 대신 보일 수단만 보고함 | 팝업 상자와 드롭다운 상자의 사각형 안만 호스트 그림이다. 그 밖의 페이지는 바뀌지 않는다 |
 | 숨김 | backend가 지원하지 않음, 적용 실패, 전체화면 무대·튜토리얼 | 모든 native WebView를 숨기고 그 자리에 html surface의 boundary 타일이 보인다([html surface](../../surfaces/html/index.md)) |
 
-공통 판정·영역 계산·표현·GPU 분리·창 단위 오버레이 host 연결은 구현돼 있다. 세 OS의 `PlatformWebView`는 아직 오버레이를 지원하지 않고, 세 OS의 창 단위 host는 아직 만들지 않는다(`Unsupported`). `WebViewOverlayBackend` 기본 구현이 숨김을 보고하므로 실제 실행 동작은 숨김 그대로다. 플랫폼별 수단(오버레이 창, 입력 shape, 합성)은 각 OS 구현이 아래 backend 계약에 맞춰 더한다.
+공통 판정·영역 계산·표현·GPU 분리·창 단위 오버레이 host 연결은 구현돼 있다. OS별 현재 상태는 다음과 같다.
+
+| OS | 보고하는 모드 | 수단 |
+|---|---|---|
+| Linux(X11) | XFixes 2.0과 SHAPE 확장이 있으면 불투명, 없으면 숨김. 투명은 아직 보고하지 않는다 | WebView X 창 shape에 구멍을 내 주 표면을 보인다(아래 "Linux 불투명 구현") |
+| macOS · Windows | 숨김(`WebViewOverlayBackend` 기본 구현) | 없음 |
+
+투명 모드는 어느 OS에서도 아직 내지 않으며, 세 OS의 창 단위 host는 아직 만들지 않는다(`Unsupported`). 남은 수단(오버레이 창, 합성)은 각 OS 구현이 아래 backend 계약에 맞춰 더한다.
 
 숨김이 필요한 이유는 z-order다. WebView는 OS 자식 창(Linux X 창, Windows child HWND, macOS subview)이라 wgpu 주 표면보다 항상 위에 있고, egui는 주 표면 하나에만 그린다. 숨기지 않으려면 WebView에서 팝업 영역을 잘라 내거나(clip) 팝업을 별도 OS 층에 다시 그려야 한다.
 
-복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. 일반 팝업은 이 경로를 쓰지 않는다. Linux는 격리 debug 인스턴스에서 안내 clip의 동작을 확인했고, macOS·Windows는 컴파일만 확인했으며 실제 GUI 동작은 측정하지 않았다.
+복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. Linux 불투명 모드는 같은 X 창 shape에 팝업 상자를 합쳐 뺀다. macOS·Windows의 일반 팝업은 이 경로를 쓰지 않는다. Linux는 격리 debug 인스턴스에서 안내 clip의 동작을 확인했고, macOS·Windows는 컴파일만 확인했으며 실제 GUI 동작은 측정하지 않았다.
 
 ### 모드 결정
 
@@ -363,12 +370,32 @@ debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--forc
 2026-10-16 측정이다. 환경은 xrdp 세션(GNOME Shell, 컴포지팅 매니저 있음)과 Xvfb(창 관리자·컴포지팅 매니저 없음), GPU는 NVIDIA Vulkan과 비교용 lavapipe·llvmpipe GL이다. 실험 프로그램은 Tasty와 같은 방식으로 WebView를 만들었고 제품 코드에서 측정한 값이 아니다.
 
 - 부모 창 아래의 ARGB 자식 창은 컴포지팅 매니저 유무와 관계없이 알파가 합성되지 않았다. GPU 없이 X 픽셀을 직접 넣어도 같아 원인은 X 서버 쪽이다. 자식 창 방식으로는 불투명 사각형만 된다.
-- 투명 합성은 최상위 override-redirect ARGB 창이고 컴포지팅 매니저(`_NET_WM_CM_S0` 소유자)가 있을 때만 됐다. 이 방식은 빈 입력 shape가 필수다. 다른 앱 창과의 순서, 부모 창 이동·최소화·작업 공간 추적은 측정하지 않았다.
+- 투명 합성은 최상위 override-redirect ARGB 창이고 컴포지팅 매니저(`_NET_WM_CM_S0` 소유자)가 있을 때만 됐다. 이 방식은 빈 입력 shape가 필수다. 2026-10-22 소유 Xvfb와 격리 GNOME Shell(mutter 46, llvmpipe 합성) 실험에서 override-redirect 창은 부모 창 이동을 따라가지 않았고, 부모 창 최소화·다른 작업 공간 전환·다른 앱 활성화 뒤에도 화면에 남았다. 부모 창을 `WM_TRANSIENT_FOR`로 둔 관리 창(utility·dialog 종류, 입력 힌트 거짓, 작업 표시줄·페이저 제외, 장식 없음)은 최소화·작업 공간·다른 앱과의 순서를 부모 창과 함께 따랐고 만들 때 활성 창을 바꾸지 않았다. 이동은 두 방식 모두 앱이 옮겨야 한다. 다른 창 관리자는 측정하지 않았다.
 - 오버레이 wgpu 표면은 주 표면과 같은 `Device`로 configure됐다. NVIDIA Vulkan과 GL은 `Opaque`만 보고했는데도 컴포지팅 매니저가 알파를 반영했다. 드라이버 동작에 기대는 결과다.
 - GTK `show_all`이 WebView X 창을 맨 위로 올린다. `set_visible(true)`가 `show_all`을 부르므로 WebView를 보일 때마다 오버레이를 다시 올리고 같은 프레임에 다시 그려야 한다. 오버레이 창 배경을 None으로 해야 리사이즈 중 검정 프레임이 나오지 않는다.
 - 입력: WebView에 팝업과 같은 사각형 input 구멍을 내면 그 클릭은 winit으로 온다. WebView 전체를 input 구멍으로 하면 본문 클릭·휠·키가 winit으로 와 바깥 클릭 dismiss가 가능하다. 구멍이 없으면 포인터가 본문 위일 때 키가 WebView로 간다. 키는 XTEST로만 넣었고 egui 텍스트 입력 경로는 확인하지 않았다.
 - 불투명 방식에서는 본문이 scrim으로 어두워지지 않아 WebView 밖만 어두운 얼룩이 생기고, 상자 밖 그림자와 둥근 모서리 바깥은 표현할 수 없었다. 투명 방식에서 두 표면에 같은 scrim을 그리면 WebView 밖 영역이 두 번 어두워졌다.
 - 이동 중 오버레이 가장자리 몇 px의 1프레임 잔상을 관측했다. tearing은 측정하지 않았다.
+
+### Linux 불투명 구현
+
+`src/host_api/webview/linux.rs`의 `WebViewOverlayBackend` 구현과 shape 합성(`src/host_api/webview/linux_shape.rs`)이다.
+
+- `overlay_support`: XFixes 2.0과 서버 SHAPE 확장을 생성 때 확인해 둘 다 있으면 불투명, 아니면 숨김이다. 둘 중 하나가 없으면 분할선·안내 카드 구멍도 두지 않는다. 투명은 보고하지 않는다.
+- `overlay_paint_source(불투명)`: 주 표면이다. 오버레이 창을 만들지 않는다.
+- `apply_overlay`: 불투명이 아니면 `Unsupported`다. 요청 영역과 `host_takes_pointer`를 저장하고 shape를 다시 맞춘다. `clear_overlay`는 저장을 지우고 다시 맞춘다.
+- shape 합성: X 창의 shape는 하나라서 `set_native_holes`의 입력 구멍·그림 구멍과 오버레이 영역을 한 함수(`linux_shape::compose`)로 합친다. 그림(`ShapeBounding`)에서는 안내 카드와 팝업 상자를 뺀다. 입력(`ShapeInput`)은 `host_takes_pointer`면 빈 region이고, 아니면 모든 구멍을 뺀다. 마지막 적용값과 같으면 X 요청을 보내지 않는다. 동기화는 `apply_overlay`를 `set_bounds`보다 먼저 부르므로 창 크기가 바뀐 프레임은 뒤의 `set_native_holes`가 새 크기로 다시 맞춘다. 오버레이를 지우면 native 구멍만 남은 shape로 돌아간다.
+- 키: 입력 shape가 비면 포인터가 페이지 위에 있어도 X 서버가 키를 부모 창으로 보낸다. 그래서 오버레이가 포인터를 가져간 동안 `receives_keyboard_input`은 X 포커스가 WebView 안에 있는지만 본다. 열 때의 포커스 회수와 닫을 때 복원하지 않는 규칙은 공통 동기화가 그대로 맡는다. 이 backend는 포커스를 옮기지 않는다.
+- 표시: GTK `show_all`이 매 프레임 불려도 X 창 shape는 유지됐다(아래 측정).
+
+2026-10-22 격리 debug 인스턴스(Xvfb, 창 관리자 없음, 배율 1과 `WINIT_X11_SCALE_FACTOR=2`·`GDK_SCALE=2`)에서 확인한 범위다.
+
+- 명령 팔레트·서피스 종류 전환 팝업·Tools 메뉴에서 모드는 불투명, 그림 위치는 주 표면이고 페이지가 보였다. 팝업 상자와 1px 테두리 밖의 페이지 픽셀은 열기 전과 같았다. 상자는 각지고 그림자가 없었다.
+- X 창 shape를 직접 읽어 확인했다. 그림 구멍은 요청 영역과 같았고 입력 shape는 비었다. 팝업이 닫히면 native 구멍만 남은 shape(분할선 입력 띠)로 돌아갔다.
+- 팝업이 떠 있는 동안 페이지 링크 클릭은 팝업을 닫기만 했고 페이지 탐색이 없었다. 휠과 `End` 키는 페이지를 움직이지 않았다. 포인터를 페이지 위에 둔 채 친 글자는 팔레트 입력란에 들어갔다. 같은 클릭·휠·키는 팝업이 없을 때 페이지에 갔다.
+- 창 크기 변경, 좌우로 나눈 두 WebView, 배율 2에서 구멍과 그림이 따라왔다. 다른 X 클라이언트가 포커스를 가진 동안 debug 경로로 팝업을 열고 닫아도 X 포커스는 그대로였다.
+- 배율 1에서 팝업 상자의 y가 0.5 논리 px에 놓이면 바깥쪽으로 넓힌 구멍의 맨 위 1행에 팝업 테두리가 그려지지 않아 주 표면 색이 보였다. 영역 계산과 egui 그림의 반올림 차이다. 배율 2와 다른 세 변에서는 보이지 않았다.
+- 창 관리자가 있는 세션, IME, X 포커스가 WebView 자식 안에 있는 상태(이 Xvfb에서는 페이지를 눌러도 포커스가 부모 창에 남았다)는 이 실행에서 확인하지 않았다.
 
 macOS·Windows의 투명 합성 가능 여부와 수단은 측정하지 않았다. 두 OS의 모드 결정과 근거는 해당 OS에서 측정한 뒤 이 절에 적는다.
 
