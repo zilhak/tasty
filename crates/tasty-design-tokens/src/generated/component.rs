@@ -470,6 +470,9 @@ pub mod explorer {
     /// `component.explorer-props-perm-cell-width` → `{primitive.size-56}` = 56px
     pub const PROPS_PERM_CELL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_56;
 
+    /// `component.explorer-props-perm-role-gap` → `{semantic.space-xs}` = 4px
+    pub const PROPS_PERM_ROLE_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
     /// `component.explorer-props-row-line` → `{primitive.size-20}` = 20px
     pub const PROPS_ROW_LINE: LogicalPx = crate::generated::primitive::SIZE_20;
 
@@ -1164,6 +1167,16 @@ pub mod notifications {
 
     /// `component.notifications-toolbar-height` → `{semantic.control-height}` = 28px
     pub const TOOLBAR_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT;
+}
+
+pub mod number {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.number-field-min-width` → `{semantic.field-width-xs}` = 90px
+    pub const FIELD_MIN_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_XS;
+
+    /// `component.number-field-unit-gap` → `{semantic.space-sm}` = 8px
+    pub const FIELD_UNIT_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
 }
 
 pub mod palette {

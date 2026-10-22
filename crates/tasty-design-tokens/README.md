@@ -32,9 +32,17 @@ Claude Design의 DTCG 토큰을 저장하고 Rust 상수와 Theme 접근자를 �
    요청 절차는 [디자인 변경 워크플로](../../docs/dev-guide/design-change-workflow.md)를 따른다.
 3. 생성기를 실행한다: `cargo run -p tasty-design-tokens --bin generate`
 4. `cargo test -p tasty-design-tokens`로 검증한다.
-   - 토큰 census(1334 = 139/174/1021)가 바뀌면 추가·삭제 항목을 확인하고
+   - 토큰 census(1341 = 139/174/1028)가 바뀌면 추가·삭제 항목을 확인하고
      `tests/freshness.rs`의 스냅샷도 갱신한다.
    - `sizing_parity`나 `color_drift`가 실패하면 디자인 변경 내용을 확인한다.
      검사를 통과시키려고 값을 임의로 맞추지 않는다.
 5. JSON, 재생성된 토큰 상수와 `tasty-type-appearance` 접근자, 필요한 시험 변경을
    같은 커밋으로 저장한다.
+
+## calc 토큰
+
+원격 CSS가 치수를 `calc(<수> * var(--tasty-이름) + …)`로 정의하면, 생성기는 상수를 만들지 않고
+Theme 접근자만 만든다. 접근자는 각 항 토큰의 접근자를 읽어 계수를 곱해 더한다. 항마다 배율과
+반올림이 이미 적용된 값을 더하므로, 그 부분들로 그린 실제 폭과 같다. 문서 주석에는 배율 1의 값을 적는다.
+뺄셈·백분율·다른 단위 등 이 형태를 벗어난 식은 생성하지 않고 스킵 사유로 남긴다
+(`tests/calc_accessor.rs`).

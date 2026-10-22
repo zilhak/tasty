@@ -2111,6 +2111,30 @@ mod tests {
         }
     }
 
+    /// 권한 상자 배치 경계는 디자인 `calc()`처럼 반올림된 칸·여백·테두리를 더한 값이다.
+    /// 배율 1에서 디자인의 242·186이고, 다른 배율에서도 그 부분들로 그린 상자 폭과 같다.
+    #[test]
+    fn perm_box_layout_bounds_are_the_sum_of_their_rounded_parts() {
+        for z in [0.85, 1.0, 1.25, 1.5] {
+            let t = Theme::with_colors_and_zoom(dummy_colors(), false, z);
+            let frame = 2.0 * (t.spacing_sm.value() + t.border_width.value());
+            let cell = t.explorer_props_perm_cell_width().value();
+            assert_eq!(
+                t.explorer_props_perm_grid_min_width(),
+                LogicalPx(4.0 * cell + frame),
+                "배율 {z}"
+            );
+            assert_eq!(
+                t.explorer_props_perm_stack_min_width(),
+                LogicalPx(3.0 * cell + frame),
+                "배율 {z}"
+            );
+        }
+        let t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.0);
+        assert_eq!(t.explorer_props_perm_grid_min_width(), LogicalPx(242.0));
+        assert_eq!(t.explorer_props_perm_stack_min_width(), LogicalPx(186.0));
+    }
+
     /// 레일 점 고리는 hairline이라 배율과 무관하게 1.5다. 배율 경로로 반올림하면 2가 된다.
     #[test]
     fn rail_dot_ring_stays_one_and_a_half_at_every_zoom() {

@@ -6,6 +6,7 @@
 //! 생성된 primitive 상수는 `pub(crate)`로 외부 접근을 막는다.
 
 mod accessor;
+mod calc;
 mod duration_accessor;
 mod tracking_accessor;
 
@@ -302,6 +303,8 @@ enum Skip {
     EmUnit(String),
     /// 별칭의 최종 값을 숫자로 해석할 수 없음.
     Unparsable(String),
+    /// `calc()` 식 — 배율마다 항을 반올림해 더해야 하므로 상수 없이 Theme 접근자로만 생성한다.
+    Calc,
 }
 
 /// component 토큰 이름 → 하위 모듈 그룹. 최장 일치 우선
@@ -370,6 +373,9 @@ fn classify(set: &TokenSet, token: &Token) -> Result<RustKind, Skip> {
         Ok(v) => v,
         Err(e) => return Err(Skip::Unparsable(e.to_string())),
     };
+    if token.value.trim().starts_with("calc(") {
+        return Err(Skip::Calc);
+    }
     match token.ty.as_str() {
         "color" => Err(Skip::Color),
         "dimension" => {
@@ -514,6 +520,11 @@ pub fn generate(set: &TokenSet) -> Generated {
             }
             Err(Skip::Unparsable(v)) => {
                 skips.push(format!("{path}: 최종 값 파싱 실패 ({v}) — 생성 스킵"));
+            }
+            Err(Skip::Calc) => {
+                skips.push(format!(
+                    "{path}: calc 식 — 상수 없이 Theme 접근자로만 생성(generated_component.rs)"
+                ));
             }
         }
     }

@@ -379,6 +379,10 @@ enum DimAccessor<'a> {
     /// alias 체인이 primitive 로 직접 닿거나 표에 없는 semantic 을 거침 — `ui_zoom` 을
     /// 곱해 직접 계산 (raw const 를 그대로 소비하는 zoom 우회를 막는다).
     RawZoom(f32),
+    /// `calc()` 식 — 각 항을 그 토큰의 접근자로 읽어 계수를 곱해 더한다. 항마다 반올림된 값을
+    /// 더하므로 실제로 그려지는 부분의 합과 같다. 계수는 개수라 접근자 값 뒤에 곱한다
+    /// (`LogicalPx(` 바로 뒤의 숫자는 배율 없는 길이로 읽힌다). 두 번째 값은 배율 1의 px(문서 주석용)이다.
+    Calc(Vec<(f32, String)>, f32),
 }
 
 /// 치수 component 토큰 하나의 접근자 형태를 결정. 실패하면 스킵 사유 문자열.
@@ -389,6 +393,16 @@ fn resolve_dim_accessor<'a>(set: &TokenSet, token: &'a Token) -> Result<DimAcces
         .find(|(p, _)| *p == own_path)
     {
         return Ok(DimAccessor::Field(field));
+    }
+    if let Some(terms) = super::calc::parse(set, &token.value) {
+        let skip = |e: String| format!("{own_path}: {e} — 생성 스킵");
+        let terms = terms.map_err(skip)?;
+        let px = super::calc::px_at_unit_zoom(set, &terms).map_err(skip)?;
+        let mut parts = Vec::with_capacity(terms.len());
+        for term in &terms {
+            parts.push((term.coef, term_expr(set, term.token).map_err(skip)?));
+        }
+        return Ok(DimAccessor::Calc(parts, px));
     }
     let target_path = match alias_target(&token.value) {
         Some(t) => t,
@@ -419,6 +433,30 @@ fn resolve_dim_accessor<'a>(set: &TokenSet, token: &'a Token) -> Result<DimAcces
             "{own_path}: alias 대상 없음 ({target_path}) — 생성 스킵"
         )),
     }
+}
+
+/// `calc()` 항 토큰을 읽는 `LogicalPx` 식. 그 토큰의 접근자가 읽는 방식을 그대로 쓴다.
+fn term_expr(set: &TokenSet, token: &Token) -> Result<String, String> {
+    if token.tier == Tier::Component {
+        return match resolve_dim_accessor(set, token)? {
+            DimAccessor::Calc(..) => Err(format!("calc 항이 다시 calc 토큰 ({})", token.path())),
+            _ => Ok(format!("self.{}()", accessor_fn_name(&token.name))),
+        };
+    }
+    let path = token.path();
+    if let Some((_, field)) = SEMANTIC_DIM_TO_THEME_FIELD.iter().find(|(p, _)| *p == path) {
+        return Ok(format!("self.{field}"));
+    }
+    let terminal = set
+        .resolve(&path, ThemeMode::Mocha)
+        .map_err(|e| e.to_string())?;
+    let v = terminal
+        .strip_suffix("px")
+        .unwrap_or(&terminal)
+        .trim()
+        .parse::<f32>()
+        .map_err(|_| format!("calc 항의 최종 값 파싱 실패 ({terminal})"))?;
+    Ok(format!("LogicalPx(({v:?} * self.ui_zoom).round())"))
 }
 
 /// premultiplied 바이트로 저장되는 semantic 색. 이 색에 닿는 접근자는 `PremulColor`를 반환해
@@ -490,9 +528,12 @@ fn resolve_color_accessor(set: &TokenSet, token: &Token) -> Result<ColorAccessor
 
 /// 치수 접근자 하나의 `impl Theme` 메서드 텍스트.
 fn emit_dim_accessor(set: &TokenSet, token: &Token, acc: &DimAccessor) -> String {
-    let terminal = set
-        .resolve(&token.path(), ThemeMode::Mocha)
-        .expect("resolve_dim_accessor 통과 토큰은 resolve 가능");
+    let terminal = match acc {
+        DimAccessor::Calc(_, px) => format!("{px}px"),
+        _ => set
+            .resolve(&token.path(), ThemeMode::Mocha)
+            .expect("resolve_dim_accessor 통과 토큰은 resolve 가능"),
+    };
     let sentinel = if terminal == "9999px" {
         " (sentinel — 완전 원형용 상한값)"
     } else {
@@ -508,6 +549,22 @@ fn emit_dim_accessor(set: &TokenSet, token: &Token, acc: &DimAccessor) -> String
             format!("LogicalPx((-({:?} * self.ui_zoom)).round())", -v)
         }
         DimAccessor::RawZoom(v) => format!("LogicalPx(({v:?} * self.ui_zoom).round())"),
+        DimAccessor::Calc(parts, _) => {
+            let sum: Vec<String> = parts
+                .iter()
+                .map(|(coef, expr)| format!("{expr}.value() * {coef:?}"))
+                .collect();
+            // 생성 파일도 rustfmt 대상이라 freshness 비교가 깨지지 않게 rustfmt 의 줄바꿈을 따른다.
+            let one_line = format!("LogicalPx({})", sum.join(" + "));
+            if 8 + one_line.len() <= 100 {
+                one_line
+            } else {
+                format!(
+                    "LogicalPx(\n            {},\n        )",
+                    sum.join("\n                + ")
+                )
+            }
+        }
     };
     format!(
         "\n    /// `{}` → `{}` = {terminal}{sentinel}\n    #[inline]\n    pub fn {fn_name}(&self) -> LogicalPx {{\n        {body}\n    }}\n",

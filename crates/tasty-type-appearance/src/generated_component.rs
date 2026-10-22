@@ -1642,10 +1642,36 @@ impl crate::theme::Theme {
         self.accent_danger()
     }
 
+    /// `component.explorer-props-perm-grid-min-width` → `calc(4 * var(--tasty-explorer-props-perm-cell-width) + 2 * var(--tasty-space-sm) + 2 * var(--tasty-border-width))` = 242px
+    #[inline]
+    pub fn explorer_props_perm_grid_min_width(&self) -> LogicalPx {
+        LogicalPx(
+            self.explorer_props_perm_cell_width().value() * 4.0
+                + self.spacing_sm.value() * 2.0
+                + self.border_width.value() * 2.0,
+        )
+    }
+
     /// `component.explorer-props-perm-locked-fg` → `{semantic.text-muted}`
     #[inline]
     pub fn explorer_props_perm_locked_fg(&self) -> HexColor {
         self.text_muted()
+    }
+
+    /// `component.explorer-props-perm-role-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn explorer_props_perm_role_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.explorer-props-perm-stack-min-width` → `calc(3 * var(--tasty-explorer-props-perm-cell-width) + 2 * var(--tasty-space-sm) + 2 * var(--tasty-border-width))` = 186px
+    #[inline]
+    pub fn explorer_props_perm_stack_min_width(&self) -> LogicalPx {
+        LogicalPx(
+            self.explorer_props_perm_cell_width().value() * 3.0
+                + self.spacing_sm.value() * 2.0
+                + self.border_width.value() * 2.0,
+        )
     }
 
     /// `component.explorer-props-row-line` → `{primitive.size-20}` = 20px
@@ -3668,6 +3694,30 @@ impl crate::theme::Theme {
     #[inline]
     pub fn notifications_toolbar_height(&self) -> LogicalPx {
         self.item_height_interactive
+    }
+
+    /// `component.number-field-min-width` → `{semantic.field-width-xs}` = 90px
+    #[inline]
+    pub fn number_field_min_width(&self) -> LogicalPx {
+        self.field_width_xs
+    }
+
+    /// `component.number-field-note-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn number_field_note_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.number-field-unit-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn number_field_unit_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
+    /// `component.number-field-unit-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn number_field_unit_gap(&self) -> LogicalPx {
+        self.spacing_sm
     }
 
     /// `component.palette-list-max-height` → `{primitive.size-320}` = 320px

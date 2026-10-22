@@ -847,16 +847,67 @@
       "$type": "color",
       "$value": "{semantic.text-on-accent}"
     },
-    "accent-warning-glyph": { "$type": "color", "$value": "{semantic.accent-warning}", "$extensions": { "com.tasty.mode": { "latte": "color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-neutral-1100))" } } },
-    "accent-danger-raised": { "$type": "color", "$value": "{semantic.accent-danger}", "$description": "danger ink (error text + glyph) on surface-raised", "$extensions": { "com.tasty.mode": { "latte": "color-mix(in srgb, var(--tasty-color-red) 60%, var(--tasty-color-neutral-1100))" } } },
-    "notify-error": { "$type": "color", "$value": "{semantic.accent-danger}" },
-    "notify-warning": { "$type": "color", "$value": "{semantic.accent-warning}" },
-    "notify-info": { "$type": "color", "$value": "{semantic.attention-completion}" },
-    "notify-error-fg": { "$type": "color", "$value": "{semantic.text-on-accent}" },
-    "notify-warning-fg": { "$type": "color", "$value": "{semantic.text-on-accent}", "$extensions": { "com.tasty.mode": { "latte": "{primitive.color-neutral-1100}" } } },
-    "notify-warning-fill": { "$type": "color", "$value": "{semantic.notify-warning}", "$extensions": { "com.tasty.mode": { "latte": "color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-white))" } } },
-    "notify-info-fg": { "$type": "color", "$value": "{semantic.text-on-accent}" },
-    "notify-unread": { "$type": "color", "$value": "{semantic.accent-primary}" },
+    "accent-warning-glyph": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning}",
+      "$extensions": {
+        "com.tasty.mode": {
+          "latte": "color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-neutral-1100))"
+        }
+      }
+    },
+    "accent-danger-raised": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}",
+      "$description": "danger ink (error text + glyph) on surface-raised",
+      "$extensions": {
+        "com.tasty.mode": {
+          "latte": "color-mix(in srgb, var(--tasty-color-red) 60%, var(--tasty-color-neutral-1100))"
+        }
+      }
+    },
+    "notify-error": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}"
+    },
+    "notify-warning": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning}"
+    },
+    "notify-info": {
+      "$type": "color",
+      "$value": "{semantic.attention-completion}"
+    },
+    "notify-error-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-on-accent}"
+    },
+    "notify-warning-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-on-accent}",
+      "$extensions": {
+        "com.tasty.mode": {
+          "latte": "{primitive.color-neutral-1100}"
+        }
+      }
+    },
+    "notify-warning-fill": {
+      "$type": "color",
+      "$value": "{semantic.notify-warning}",
+      "$extensions": {
+        "com.tasty.mode": {
+          "latte": "color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-white))"
+        }
+      }
+    },
+    "notify-info-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-on-accent}"
+    },
+    "notify-unread": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary}"
+    },
     "attention-rank-needs-input": {
       "$type": "number",
       "$value": "30"
@@ -1969,22 +2020,70 @@
       "$type": "color",
       "$value": "{semantic.separator}"
     },
-    "select-search-trigger-border-hover": { "$type": "color", "$value": "{semantic.border-strong}" },
-    "select-search-value-placeholder": { "$type": "color", "$value": "{semantic.text-placeholder}" },
-    "select-search-menu-gap": { "$type": "dimension", "$value": "{semantic.space-xs}" },
-    "select-search-menu-max-width": { "$type": "dimension", "$value": "{primitive.size-320}" },
-    "select-search-list-max-height": { "$type": "dimension", "$value": "{primitive.size-300}" },
-    "select-search-inset": { "$type": "dimension", "$value": "{semantic.space-xs}" },
-    "select-search-field-height": { "$type": "dimension", "$value": "{component.input-height}" },
-    "select-search-field-padding-x": { "$type": "dimension", "$value": "{semantic.space-sm}" },
-    "select-search-field-gap": { "$type": "dimension", "$value": "{component.input-gap}" },
-    "select-search-field-bg": { "$type": "color", "$value": "{component.input-raised-bg}" },
-    "select-search-field-border": { "$type": "color", "$value": "{component.input-raised-border}" },
-    "select-search-field-border-focus": { "$type": "color", "$value": "{component.input-border-focus}" },
-    "select-search-field-fg": { "$type": "color", "$value": "{component.input-fg}" },
-    "select-search-placeholder": { "$type": "color", "$value": "{component.input-placeholder}" },
-    "select-search-icon-fg": { "$type": "color", "$value": "{component.input-icon-fg}" },
-    "select-search-status-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}" },
+    "select-search-trigger-border-hover": {
+      "$type": "color",
+      "$value": "{semantic.border-strong}"
+    },
+    "select-search-value-placeholder": {
+      "$type": "color",
+      "$value": "{semantic.text-placeholder}"
+    },
+    "select-search-menu-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "select-search-menu-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-320}"
+    },
+    "select-search-list-max-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-300}"
+    },
+    "select-search-inset": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "select-search-field-height": {
+      "$type": "dimension",
+      "$value": "{component.input-height}"
+    },
+    "select-search-field-padding-x": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "select-search-field-gap": {
+      "$type": "dimension",
+      "$value": "{component.input-gap}"
+    },
+    "select-search-field-bg": {
+      "$type": "color",
+      "$value": "{component.input-raised-bg}"
+    },
+    "select-search-field-border": {
+      "$type": "color",
+      "$value": "{component.input-raised-border}"
+    },
+    "select-search-field-border-focus": {
+      "$type": "color",
+      "$value": "{component.input-border-focus}"
+    },
+    "select-search-field-fg": {
+      "$type": "color",
+      "$value": "{component.input-fg}"
+    },
+    "select-search-placeholder": {
+      "$type": "color",
+      "$value": "{component.input-placeholder}"
+    },
+    "select-search-icon-fg": {
+      "$type": "color",
+      "$value": "{component.input-icon-fg}"
+    },
+    "select-search-status-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary-raised}"
+    },
     "checkbox-size": {
       "$type": "dimension",
       "$value": "{primitive.size-16}"
@@ -2869,64 +2968,240 @@
       "$type": "duration",
       "$value": "{primitive.duration-900}"
     },
-    "loading-overlay-indicator": { "$type": "color", "$value": "{component.spinner-indicator}", "$description": "loading overlay arc ink (all placements)" },
-    "loading-overlay-delay": { "$type": "duration", "$value": "{semantic.motion-ui-fade}", "$description": "show only if still loading after 200ms; hide is immediate" },
-    "loading-overlay-surface-size": { "$type": "dimension", "$value": "{component.spinner-size}" },
-    "loading-overlay-surface-bed-size": { "$type": "dimension", "$value": "{primitive.size-24}" },
-    "loading-overlay-surface-bed-bg": { "$type": "color", "$value": "{semantic.surface-raised}" },
-    "loading-overlay-surface-bed-border": { "$type": "color", "$value": "{semantic.border-default}" },
-    "loading-overlay-surface-inset": { "$type": "dimension", "$value": "{semantic.space-sm}" },
-    "loading-overlay-tab-size": { "$type": "dimension", "$value": "{component.tab-icon-size}" },
-    "loading-overlay-lnb-size": { "$type": "dimension", "$value": "{semantic.icon-size-sm}" },
-    "loading-overlay-rail-size": { "$type": "dimension", "$value": "{primitive.size-28}" },
-    "notification-badge-error-bg": { "$type": "color", "$value": "{semantic.notify-error}" },
-    "notification-badge-error-fg": { "$type": "color", "$value": "{semantic.notify-error-fg}" },
-    "notification-badge-warning-bg": { "$type": "color", "$value": "{semantic.notify-warning-fill}" },
-    "notification-badge-warning-fg": { "$type": "color", "$value": "{semantic.notify-warning-fg}" },
-    "notification-badge-info-bg": { "$type": "color", "$value": "{semantic.notify-info}" },
-    "notification-badge-info-fg": { "$type": "color", "$value": "{semantic.notify-info-fg}" },
-    "notification-badge-glyph-size": { "$type": "dimension", "$value": "{primitive.size-10}" },
-    "notification-badge-glyph-gap": { "$type": "dimension", "$value": "{primitive.size-2}" },
-    "notification-badge-group-gap": { "$type": "dimension", "$value": "{semantic.space-xs}" },
-    "notification-badge-stack-gap": { "$type": "dimension", "$value": "{primitive.size-2}" },
-    "notification-badge-max": { "$type": "number", "$value": 99 },
-    "notification-summary-pad": { "$type": "dimension", "$value": "{semantic.space-sm}" },
-    "notification-summary-row-height": { "$type": "dimension", "$value": "{primitive.size-24}" },
-    "notification-summary-pad-x": { "$type": "dimension", "$value": "{semantic.space-sm}" },
-    "notification-summary-icon-gap": { "$type": "dimension", "$value": "{semantic.space-sm}" },
-    "notification-summary-label-fg": { "$type": "color", "$value": "{semantic.text-secondary}" },
-    "notification-summary-label-fg-empty": { "$type": "color", "$value": "{semantic.text-muted}" },
-    "notification-summary-preview-font-size": { "$type": "dimension", "$value": "{semantic.font-size-caption}" },
-    "notification-summary-preview-fg": { "$type": "color", "$value": "{semantic.text-secondary}" },
-    "notification-summary-meta-fg": { "$type": "color", "$value": "{semantic.text-muted}" },
-    "notification-summary-bg-hover": { "$type": "color", "$value": "{semantic.overlay-hover}" },
-    "notification-summary-bg-open": { "$type": "color", "$value": "{semantic.overlay-active}" },
-    "notification-rail-width": { "$type": "dimension", "$value": "{primitive.size-44}" },
-    "notification-item-pad-x": { "$type": "dimension", "$value": "{semantic.space-md}" },
-    "notification-item-pad-y": { "$type": "dimension", "$value": "{semantic.space-sm}" },
-    "notification-item-line-gap": { "$type": "dimension", "$value": "{primitive.size-2}" },
-    "notification-item-glyph-size": { "$type": "dimension", "$value": "{semantic.icon-size-sm}" },
-    "notification-item-glyph-gap": { "$type": "dimension", "$value": "{semantic.space-sm}" },
-    "notification-item-error-glyph": { "$type": "color", "$value": "{semantic.notify-error}" },
-    "notification-item-warning-glyph": { "$type": "color", "$value": "{semantic.notify-warning}" },
-    "notification-item-info-glyph": { "$type": "color", "$value": "{semantic.notify-info}" },
-    "notification-item-title-fg": { "$type": "color", "$value": "{semantic.text-primary}" },
-    "notification-item-title-fg-read": { "$type": "color", "$value": "{semantic.text-secondary}" },
-    "notification-item-title-weight": { "$type": "fontWeight", "$value": "{semantic.font-weight-semibold}" },
-    "notification-item-body-fg": { "$type": "color", "$value": "{semantic.text-secondary}" },
-    "notification-item-body-fg-read": { "$type": "color", "$value": "{semantic.text-muted}" },
-    "notification-item-meta-fg": { "$type": "color", "$value": "{semantic.text-muted}" },
-    "notification-item-closed-fg": { "$type": "color", "$value": "{semantic.text-placeholder}" },
-    "notification-item-more-fg": { "$type": "color", "$value": "{semantic.accent-primary}" },
-    "notification-item-unread-dot": { "$type": "color", "$value": "{semantic.notify-unread}" },
-    "notification-item-unread-dot-size": { "$type": "dimension", "$value": "{component.badge-dot-size}" },
-    "notification-item-body-lines": { "$type": "number", "$value": 2 },
-    "notification-item-body-lines-wide": { "$type": "number", "$value": 3 },
-    "notification-item-bg-hover": { "$type": "color", "$value": "{semantic.overlay-hover}" },
-    "notification-item-bg-selected": { "$type": "color", "$value": "{semantic.surface-active}" },
-    "notification-item-separator": { "$type": "color", "$value": "{semantic.separator}" },
-    "notifications-popup-height": { "$type": "dimension", "$value": "{primitive.size-400}" },
-    "notifications-toolbar-height": { "$type": "dimension", "$value": "{semantic.control-height}" },
+    "loading-overlay-indicator": {
+      "$type": "color",
+      "$value": "{component.spinner-indicator}",
+      "$description": "loading overlay arc ink (all placements)"
+    },
+    "loading-overlay-delay": {
+      "$type": "duration",
+      "$value": "{semantic.motion-ui-fade}",
+      "$description": "show only if still loading after 200ms; hide is immediate"
+    },
+    "loading-overlay-surface-size": {
+      "$type": "dimension",
+      "$value": "{component.spinner-size}"
+    },
+    "loading-overlay-surface-bed-size": {
+      "$type": "dimension",
+      "$value": "{primitive.size-24}"
+    },
+    "loading-overlay-surface-bed-bg": {
+      "$type": "color",
+      "$value": "{semantic.surface-raised}"
+    },
+    "loading-overlay-surface-bed-border": {
+      "$type": "color",
+      "$value": "{semantic.border-default}"
+    },
+    "loading-overlay-surface-inset": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "loading-overlay-tab-size": {
+      "$type": "dimension",
+      "$value": "{component.tab-icon-size}"
+    },
+    "loading-overlay-lnb-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-sm}"
+    },
+    "loading-overlay-rail-size": {
+      "$type": "dimension",
+      "$value": "{primitive.size-28}"
+    },
+    "notification-badge-error-bg": {
+      "$type": "color",
+      "$value": "{semantic.notify-error}"
+    },
+    "notification-badge-error-fg": {
+      "$type": "color",
+      "$value": "{semantic.notify-error-fg}"
+    },
+    "notification-badge-warning-bg": {
+      "$type": "color",
+      "$value": "{semantic.notify-warning-fill}"
+    },
+    "notification-badge-warning-fg": {
+      "$type": "color",
+      "$value": "{semantic.notify-warning-fg}"
+    },
+    "notification-badge-info-bg": {
+      "$type": "color",
+      "$value": "{semantic.notify-info}"
+    },
+    "notification-badge-info-fg": {
+      "$type": "color",
+      "$value": "{semantic.notify-info-fg}"
+    },
+    "notification-badge-glyph-size": {
+      "$type": "dimension",
+      "$value": "{primitive.size-10}"
+    },
+    "notification-badge-glyph-gap": {
+      "$type": "dimension",
+      "$value": "{primitive.size-2}"
+    },
+    "notification-badge-group-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "notification-badge-stack-gap": {
+      "$type": "dimension",
+      "$value": "{primitive.size-2}"
+    },
+    "notification-badge-max": {
+      "$type": "number",
+      "$value": 99
+    },
+    "notification-summary-pad": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "notification-summary-row-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-24}"
+    },
+    "notification-summary-pad-x": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "notification-summary-icon-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "notification-summary-label-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}"
+    },
+    "notification-summary-label-fg-empty": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "notification-summary-preview-font-size": {
+      "$type": "dimension",
+      "$value": "{semantic.font-size-caption}"
+    },
+    "notification-summary-preview-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}"
+    },
+    "notification-summary-meta-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "notification-summary-bg-hover": {
+      "$type": "color",
+      "$value": "{semantic.overlay-hover}"
+    },
+    "notification-summary-bg-open": {
+      "$type": "color",
+      "$value": "{semantic.overlay-active}"
+    },
+    "notification-rail-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-44}"
+    },
+    "notification-item-pad-x": {
+      "$type": "dimension",
+      "$value": "{semantic.space-md}"
+    },
+    "notification-item-pad-y": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "notification-item-line-gap": {
+      "$type": "dimension",
+      "$value": "{primitive.size-2}"
+    },
+    "notification-item-glyph-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-sm}"
+    },
+    "notification-item-glyph-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "notification-item-error-glyph": {
+      "$type": "color",
+      "$value": "{semantic.notify-error}"
+    },
+    "notification-item-warning-glyph": {
+      "$type": "color",
+      "$value": "{semantic.notify-warning}"
+    },
+    "notification-item-info-glyph": {
+      "$type": "color",
+      "$value": "{semantic.notify-info}"
+    },
+    "notification-item-title-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-primary}"
+    },
+    "notification-item-title-fg-read": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}"
+    },
+    "notification-item-title-weight": {
+      "$type": "fontWeight",
+      "$value": "{semantic.font-weight-semibold}"
+    },
+    "notification-item-body-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}"
+    },
+    "notification-item-body-fg-read": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "notification-item-meta-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "notification-item-closed-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-placeholder}"
+    },
+    "notification-item-more-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary}"
+    },
+    "notification-item-unread-dot": {
+      "$type": "color",
+      "$value": "{semantic.notify-unread}"
+    },
+    "notification-item-unread-dot-size": {
+      "$type": "dimension",
+      "$value": "{component.badge-dot-size}"
+    },
+    "notification-item-body-lines": {
+      "$type": "number",
+      "$value": 2
+    },
+    "notification-item-body-lines-wide": {
+      "$type": "number",
+      "$value": 3
+    },
+    "notification-item-bg-hover": {
+      "$type": "color",
+      "$value": "{semantic.overlay-hover}"
+    },
+    "notification-item-bg-selected": {
+      "$type": "color",
+      "$value": "{semantic.surface-active}"
+    },
+    "notification-item-separator": {
+      "$type": "color",
+      "$value": "{semantic.separator}"
+    },
+    "notifications-popup-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-400}"
+    },
+    "notifications-toolbar-height": {
+      "$type": "dimension",
+      "$value": "{semantic.control-height}"
+    },
     "surface-occupied-soft-border": {
       "$type": "color",
       "$value": "{semantic.accent-occupied-soft}"
@@ -5029,86 +5304,445 @@
       "$value": "{semantic.accent-warning}",
       "$description": "“may be taken by the OS” caption on a text-entered shortcut"
     },
-    "plugin-trust-title-fg": { "$type": "color", "$value": "{semantic.text-primary}", "$description": "trust box title ink (all kinds except trusted) — tone moves to the glyph only" },
-    "plugin-trust-body-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "trust box cause + risk paragraphs" },
-    "plugin-trust-glyph-danger": { "$type": "color", "$value": "{semantic.accent-danger}", "$description": "unverified (unknown key · missing .pub · unsigned · signature error) glyph" },
-    "plugin-trust-glyph-warning": { "$type": "color", "$value": "{semantic.accent-warning-glyph}", "$description": "permissions-changed glyph" },
-    "plugin-trust-glyph-success": { "$type": "color", "$value": "{semantic.accent-success}", "$description": "trusted glyph" },
-    "notice-column-inset": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "window top-right notice column: inset from the work area edge (under window banners / top-right search bar)" },
-    "notice-column-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "gap between stacked notices in the column" },
-    "notice-column-width": { "$type": "dimension", "$value": "{primitive.size-360}", "$description": "notice column width (= search bar width); max = work area − 2 × inset" },
-    "restore-notice-width": { "$type": "dimension", "$value": "{component.notice-column-width}", "$description": "restore-failure / save-halt non-focus notice width" },
-    "restore-notice-glyph": { "$type": "color", "$value": "{semantic.notify-error}", "$description": "leading alertCircle in the notice body (title stays text-primary)" },
-    "restore-notice-padding": { "$type": "dimension", "$value": "{semantic.space-md}", "$description": "notice body padding" },
-    "restore-notice-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "notice body row gap" },
-    "restore-notice-body-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "notice explanation ink" },
-    "restore-notice-label-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "“Saved layout” mono caption over the path" },
-    "restore-notice-path-bg": { "$type": "color", "$value": "{semantic.bg-sidebar}", "$description": "path box fill (selectable, wraps anywhere)" },
-    "restore-notice-path-border": { "$type": "color", "$value": "{semantic.border-default}", "$description": "path box 1px edge" },
-    "restore-notice-path-fg": { "$type": "color", "$value": "{semantic.text-primary}", "$description": "path text" },
-    "pending-indicator-height": { "$type": "dimension", "$value": "{primitive.size-24}", "$description": "response-wait chip height" },
-    "pending-indicator-padding-x": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "chip side padding" },
-    "pending-indicator-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "spinner · label · time gap" },
-    "pending-indicator-radius": { "$type": "dimension", "$value": "{semantic.radius}", "$description": "chip radius" },
-    "pending-indicator-bg": { "$type": "color", "$value": "{semantic.surface-raised}", "$description": "chip fill" },
-    "pending-indicator-border": { "$type": "color", "$value": "{semantic.border-strong}", "$description": "chip 1px edge (floating, like Toast / Banner)" },
-    "pending-indicator-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "label ink on surface-raised" },
-    "pending-indicator-time-fg": { "$type": "color", "$value": "{semantic.text-primary}", "$description": "elapsed time ink" },
-    "pending-indicator-sep-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "“·” separator" },
-    "pending-indicator-spinner-size": { "$type": "dimension", "$value": "{semantic.icon-size-sm}", "$description": "chip spinner 14" },
-    "pending-indicator-compact-below": { "$type": "dimension", "$value": "{primitive.size-200}", "$description": "notice column narrower than this → spinner + time only" },
-    "pending-indicator-delay": { "$type": "duration", "$value": "{component.loading-overlay-delay}", "$description": "show only if still pending after 200ms (same as LoadingOverlay)" },
-    "select-placeholder": { "$type": "color", "$value": "{component.input-placeholder}", "$description": "Select(placeholder) trigger ink while no value is chosen" },
-    "file-handler-form-bg": { "$type": "color", "$value": "{semantic.surface-raised}", "$description": "File Detectors / Handlers add card fill" },
-    "file-handler-form-border": { "$type": "color", "$value": "{semantic.border-default}", "$description": "add card 1px edge" },
-    "file-handler-form-padding": { "$type": "dimension", "$value": "{semantic.space-md}", "$description": "add card inset 12" },
-    "file-handler-form-row-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "8 between card rows" },
-    "file-handler-form-label-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "field labels + card title on surface-raised" },
-    "file-handler-form-caption-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "Saved as / default captions on surface-raised" },
-    "file-handler-form-error-fg": { "$type": "color", "$value": "{semantic.accent-danger-raised}", "$description": "field error glyph + line" },
-    "file-handler-priority-width": { "$type": "dimension", "$value": "{semantic.field-width-xs}", "$description": "90 priority number field" },
-    "file-handler-select-width": { "$type": "dimension", "$value": "{semantic.field-width-lg}", "$description": "200 Detector Select" },
-    "file-handler-kind-width": { "$type": "dimension", "$value": "{semantic.field-width-md}", "$description": "160 Action Select" },
-    "file-handler-prio-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "prio N on row line 1" },
-    "file-handler-summary-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "row line 2 summary" },
-    "file-handler-empty-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "empty-list line" },
-    "md-address-bar-height": { "$type": "dimension", "$value": "{component.html-address-bar-height}", "$description": "Markdown address band 40" },
-    "md-address-bar-bg": { "$type": "color", "$value": "{component.html-address-bar-bg}", "$description": "Markdown address band fill" },
-    "md-address-bar-border": { "$type": "color", "$value": "{component.html-address-bar-border}", "$description": "1px rule under the band" },
-    "md-address-bar-padding-x": { "$type": "dimension", "$value": "{component.html-address-bar-padding-x}", "$description": "band inset 8" },
-    "md-address-bar-gap": { "$type": "dimension", "$value": "{component.html-address-bar-gap}", "$description": "group gap 8" },
-    "md-address-bar-nav-gap": { "$type": "dimension", "$value": "{component.html-address-bar-nav-gap}", "$description": "Folder · Reload gap 4" },
-    "md-address-field-min-width": { "$type": "dimension", "$value": "{component.html-address-field-min-width}", "$description": "field floor 96" },
-    "md-address-go-hide-below": { "$type": "dimension", "$value": "{semantic.field-width-md}", "$description": "Go hides below 160 field width" },
-    "md-address-error-height": { "$type": "dimension", "$value": "{component.html-address-error-height}", "$description": "error row 24" },
-    "md-address-error-glyph": { "$type": "color", "$value": "{component.html-address-error-glyph}", "$description": "error glyph" },
-    "html-address-value-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "idle real address ink on input-bg" },
-    "md-address-value-fg": { "$type": "color", "$value": "{component.html-address-value-fg}", "$description": "idle real path ink" },
-    "md-address-pending-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "still-waiting row text on bg-sidebar" },
-    "md-address-stale-bg": { "$type": "color", "$value": "{semantic.accent-primary}", "$description": "stale Reload fill" },
-    "md-address-stale-fg": { "$type": "color", "$value": "{semantic.text-on-accent}", "$description": "stale Reload glyph" },
-    "fp-folder-file-fg": { "$type": "color", "$value": "{semantic.state-disabled-fg}", "$description": "file picker folder mode — inert file row ink" },
-    "fp-folder-path-fg": { "$type": "color", "$value": "{component.input-readonly-fg}", "$description": "folder mode — target path readout" },
-    "fp-folder-hint-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "folder mode — footer hint line" },
-    "file-handler-form-info-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "existing-id info line in the add card" },
-    "file-handler-summary-removed-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "struck user rule pieces while removal is pending" },
-    "webview-opaque-radius": { "$type": "dimension", "$value": "{semantic.radius-none}", "$description": "popup / dropdown box corner over an opaque-mode WebView page" },
-    "webview-opaque-shadow": { "$type": "shadow", "$value": "{semantic.shadow-none}", "$description": "popup / dropdown box lift over an opaque-mode WebView page (none)" },
-    "button-ghost-raised-fg": { "$type": "color", "$value": "{semantic.text-secondary-raised}", "$description": "ghost Button label on a raised ground" },
-    "button-ghost-raised-fg-hover": { "$type": "color", "$value": "{semantic.text-primary}", "$description": "ghost Button label on a raised ground, hover" },
-    "select-raised-bg": { "$type": "color", "$value": "{semantic.bg-panel}", "$description": "Select box on a raised ground" },
-    "select-raised-border": { "$type": "color", "$value": "{semantic.border-strong}", "$description": "Select edge on a raised ground" },
-    "select-raised-disabled-bg": { "$type": "color", "$value": "{semantic.state-disabled-fill-raised}", "$description": "disabled Select box on a raised ground" },
-    "select-raised-disabled-border": { "$type": "color", "$value": "{semantic.state-disabled-border-raised}", "$description": "disabled Select edge on a raised ground" },
-    "file-handler-id-min-width": { "$type": "dimension", "$value": "{primitive.size-96}", "$description": "row id floor; past it the pending Tag drops to its own line" },
-    "explorer-props-footer-border": { "$type": "color", "$value": "{semantic.separator}", "$description": "Properties Open footer top rule" },
-    "explorer-props-perm-border": { "$type": "color", "$value": "{semantic.border-strong}", "$description": "Properties permission editor box edge" },
-    "explorer-props-perm-cell-width": { "$type": "dimension", "$value": "{primitive.size-56}", "$description": "permission editor role column + r/w/x columns" },
-    "explorer-props-perm-error-fg": { "$type": "color", "$value": "{semantic.accent-danger}", "$description": "permission apply failed line" },
-    "explorer-props-perm-locked-fg": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "permission cannot be changed line" },
-    "explorer-props-value-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "Properties field value ink" },
-    "settings-apply-note-fg": { "$type": "color", "$value": "{semantic.text-secondary}", "$description": "Performance apply-timing note text" },
-    "settings-apply-note-glyph": { "$type": "color", "$value": "{semantic.text-muted}", "$description": "Performance apply-timing note info glyph" },
-    "settings-apply-note-gap": { "$type": "dimension", "$value": "{semantic.space-sm}", "$description": "glyph → text" }
+    "plugin-trust-title-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-primary}",
+      "$description": "trust box title ink (all kinds except trusted) — tone moves to the glyph only"
+    },
+    "plugin-trust-body-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}",
+      "$description": "trust box cause + risk paragraphs"
+    },
+    "plugin-trust-glyph-danger": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}",
+      "$description": "unverified (unknown key · missing .pub · unsigned · signature error) glyph"
+    },
+    "plugin-trust-glyph-warning": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning-glyph}",
+      "$description": "permissions-changed glyph"
+    },
+    "plugin-trust-glyph-success": {
+      "$type": "color",
+      "$value": "{semantic.accent-success}",
+      "$description": "trusted glyph"
+    },
+    "notice-column-inset": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}",
+      "$description": "window top-right notice column: inset from the work area edge (under window banners / top-right search bar)"
+    },
+    "notice-column-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}",
+      "$description": "gap between stacked notices in the column"
+    },
+    "notice-column-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-360}",
+      "$description": "notice column width (= search bar width); max = work area − 2 × inset"
+    },
+    "restore-notice-width": {
+      "$type": "dimension",
+      "$value": "{component.notice-column-width}",
+      "$description": "restore-failure / save-halt non-focus notice width"
+    },
+    "restore-notice-glyph": {
+      "$type": "color",
+      "$value": "{semantic.notify-error}",
+      "$description": "leading alertCircle in the notice body (title stays text-primary)"
+    },
+    "restore-notice-padding": {
+      "$type": "dimension",
+      "$value": "{semantic.space-md}",
+      "$description": "notice body padding"
+    },
+    "restore-notice-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}",
+      "$description": "notice body row gap"
+    },
+    "restore-notice-body-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}",
+      "$description": "notice explanation ink"
+    },
+    "restore-notice-label-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "“Saved layout” mono caption over the path"
+    },
+    "restore-notice-path-bg": {
+      "$type": "color",
+      "$value": "{semantic.bg-sidebar}",
+      "$description": "path box fill (selectable, wraps anywhere)"
+    },
+    "restore-notice-path-border": {
+      "$type": "color",
+      "$value": "{semantic.border-default}",
+      "$description": "path box 1px edge"
+    },
+    "restore-notice-path-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-primary}",
+      "$description": "path text"
+    },
+    "pending-indicator-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-24}",
+      "$description": "response-wait chip height"
+    },
+    "pending-indicator-padding-x": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}",
+      "$description": "chip side padding"
+    },
+    "pending-indicator-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}",
+      "$description": "spinner · label · time gap"
+    },
+    "pending-indicator-radius": {
+      "$type": "dimension",
+      "$value": "{semantic.radius}",
+      "$description": "chip radius"
+    },
+    "pending-indicator-bg": {
+      "$type": "color",
+      "$value": "{semantic.surface-raised}",
+      "$description": "chip fill"
+    },
+    "pending-indicator-border": {
+      "$type": "color",
+      "$value": "{semantic.border-strong}",
+      "$description": "chip 1px edge (floating, like Toast / Banner)"
+    },
+    "pending-indicator-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary-raised}",
+      "$description": "label ink on surface-raised"
+    },
+    "pending-indicator-time-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-primary}",
+      "$description": "elapsed time ink"
+    },
+    "pending-indicator-sep-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "“·” separator"
+    },
+    "pending-indicator-spinner-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-sm}",
+      "$description": "chip spinner 14"
+    },
+    "pending-indicator-compact-below": {
+      "$type": "dimension",
+      "$value": "{primitive.size-200}",
+      "$description": "notice column narrower than this → spinner + time only"
+    },
+    "pending-indicator-delay": {
+      "$type": "duration",
+      "$value": "{component.loading-overlay-delay}",
+      "$description": "show only if still pending after 200ms (same as LoadingOverlay)"
+    },
+    "select-placeholder": {
+      "$type": "color",
+      "$value": "{component.input-placeholder}",
+      "$description": "Select(placeholder) trigger ink while no value is chosen"
+    },
+    "file-handler-form-bg": {
+      "$type": "color",
+      "$value": "{semantic.surface-raised}",
+      "$description": "File Detectors / Handlers add card fill"
+    },
+    "file-handler-form-border": {
+      "$type": "color",
+      "$value": "{semantic.border-default}",
+      "$description": "add card 1px edge"
+    },
+    "file-handler-form-padding": {
+      "$type": "dimension",
+      "$value": "{semantic.space-md}",
+      "$description": "add card inset 12"
+    },
+    "file-handler-form-row-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}",
+      "$description": "8 between card rows"
+    },
+    "file-handler-form-label-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary-raised}",
+      "$description": "field labels + card title on surface-raised"
+    },
+    "file-handler-form-caption-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary-raised}",
+      "$description": "Saved as / default captions on surface-raised"
+    },
+    "file-handler-form-error-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger-raised}",
+      "$description": "field error glyph + line"
+    },
+    "file-handler-priority-width": {
+      "$type": "dimension",
+      "$value": "{semantic.field-width-xs}",
+      "$description": "90 priority number field"
+    },
+    "file-handler-select-width": {
+      "$type": "dimension",
+      "$value": "{semantic.field-width-lg}",
+      "$description": "200 Detector Select"
+    },
+    "file-handler-kind-width": {
+      "$type": "dimension",
+      "$value": "{semantic.field-width-md}",
+      "$description": "160 Action Select"
+    },
+    "file-handler-prio-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "prio N on row line 1"
+    },
+    "file-handler-summary-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}",
+      "$description": "row line 2 summary"
+    },
+    "file-handler-empty-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "empty-list line"
+    },
+    "md-address-bar-height": {
+      "$type": "dimension",
+      "$value": "{component.html-address-bar-height}",
+      "$description": "Markdown address band 40"
+    },
+    "md-address-bar-bg": {
+      "$type": "color",
+      "$value": "{component.html-address-bar-bg}",
+      "$description": "Markdown address band fill"
+    },
+    "md-address-bar-border": {
+      "$type": "color",
+      "$value": "{component.html-address-bar-border}",
+      "$description": "1px rule under the band"
+    },
+    "md-address-bar-padding-x": {
+      "$type": "dimension",
+      "$value": "{component.html-address-bar-padding-x}",
+      "$description": "band inset 8"
+    },
+    "md-address-bar-gap": {
+      "$type": "dimension",
+      "$value": "{component.html-address-bar-gap}",
+      "$description": "group gap 8"
+    },
+    "md-address-bar-nav-gap": {
+      "$type": "dimension",
+      "$value": "{component.html-address-bar-nav-gap}",
+      "$description": "Folder · Reload gap 4"
+    },
+    "md-address-field-min-width": {
+      "$type": "dimension",
+      "$value": "{component.html-address-field-min-width}",
+      "$description": "field floor 96"
+    },
+    "md-address-go-hide-below": {
+      "$type": "dimension",
+      "$value": "{semantic.field-width-md}",
+      "$description": "Go hides below 160 field width"
+    },
+    "md-address-error-height": {
+      "$type": "dimension",
+      "$value": "{component.html-address-error-height}",
+      "$description": "error row 24"
+    },
+    "md-address-error-glyph": {
+      "$type": "color",
+      "$value": "{component.html-address-error-glyph}",
+      "$description": "error glyph"
+    },
+    "html-address-value-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary-raised}",
+      "$description": "idle real address ink on input-bg"
+    },
+    "md-address-value-fg": {
+      "$type": "color",
+      "$value": "{component.html-address-value-fg}",
+      "$description": "idle real path ink"
+    },
+    "md-address-pending-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}",
+      "$description": "still-waiting row text on bg-sidebar"
+    },
+    "md-address-stale-bg": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary}",
+      "$description": "stale Reload fill"
+    },
+    "md-address-stale-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-on-accent}",
+      "$description": "stale Reload glyph"
+    },
+    "fp-folder-file-fg": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-fg}",
+      "$description": "file picker folder mode — inert file row ink"
+    },
+    "fp-folder-path-fg": {
+      "$type": "color",
+      "$value": "{component.input-readonly-fg}",
+      "$description": "folder mode — target path readout"
+    },
+    "fp-folder-hint-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "folder mode — footer hint line"
+    },
+    "file-handler-form-info-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary-raised}",
+      "$description": "existing-id info line in the add card"
+    },
+    "file-handler-summary-removed-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "struck user rule pieces while removal is pending"
+    },
+    "webview-opaque-radius": {
+      "$type": "dimension",
+      "$value": "{semantic.radius-none}",
+      "$description": "popup / dropdown box corner over an opaque-mode WebView page"
+    },
+    "webview-opaque-shadow": {
+      "$type": "shadow",
+      "$value": "{semantic.shadow-none}",
+      "$description": "popup / dropdown box lift over an opaque-mode WebView page (none)"
+    },
+    "button-ghost-raised-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary-raised}",
+      "$description": "ghost Button label on a raised ground"
+    },
+    "button-ghost-raised-fg-hover": {
+      "$type": "color",
+      "$value": "{semantic.text-primary}",
+      "$description": "ghost Button label on a raised ground, hover"
+    },
+    "select-raised-bg": {
+      "$type": "color",
+      "$value": "{semantic.bg-panel}",
+      "$description": "Select box on a raised ground"
+    },
+    "select-raised-border": {
+      "$type": "color",
+      "$value": "{semantic.border-strong}",
+      "$description": "Select edge on a raised ground"
+    },
+    "select-raised-disabled-bg": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-fill-raised}",
+      "$description": "disabled Select box on a raised ground"
+    },
+    "select-raised-disabled-border": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-border-raised}",
+      "$description": "disabled Select edge on a raised ground"
+    },
+    "file-handler-id-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-96}",
+      "$description": "row id floor; past it the pending Tag drops to its own line"
+    },
+    "explorer-props-footer-border": {
+      "$type": "color",
+      "$value": "{semantic.separator}",
+      "$description": "Properties Open footer top rule"
+    },
+    "explorer-props-perm-border": {
+      "$type": "color",
+      "$value": "{semantic.border-strong}",
+      "$description": "Properties permission editor box edge"
+    },
+    "explorer-props-perm-cell-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-56}",
+      "$description": "permission editor role column + r/w/x columns"
+    },
+    "explorer-props-perm-error-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}",
+      "$description": "permission apply failed line"
+    },
+    "explorer-props-perm-locked-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "permission cannot be changed line"
+    },
+    "explorer-props-value-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}",
+      "$description": "Properties field value ink"
+    },
+    "settings-apply-note-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}",
+      "$description": "Performance apply-timing note text"
+    },
+    "settings-apply-note-glyph": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "Performance apply-timing note info glyph"
+    },
+    "settings-apply-note-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}",
+      "$description": "glyph → text"
+    },
+    "explorer-props-perm-grid-min-width": {
+      "$type": "dimension",
+      "$value": "calc(4 * var(--tasty-explorer-props-perm-cell-width) + 2 * var(--tasty-space-sm) + 2 * var(--tasty-border-width))",
+      "$description": "242 — permission box ≥ this: role column + R W X grid"
+    },
+    "explorer-props-perm-stack-min-width": {
+      "$type": "dimension",
+      "$value": "calc(3 * var(--tasty-explorer-props-perm-cell-width) + 2 * var(--tasty-space-sm) + 2 * var(--tasty-border-width))",
+      "$description": "186 — box ≥ this: stack layout; below: labelled list"
+    },
+    "explorer-props-perm-role-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}",
+      "$description": "role name line → its checkboxes (stack / list)"
+    },
+    "number-field-min-width": {
+      "$type": "dimension",
+      "$value": "{semantic.field-width-xs}",
+      "$description": "settings number field floor 90; grows to value length + 1ch"
+    },
+    "number-field-unit-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}",
+      "$description": "field → unit word → no limit"
+    },
+    "number-field-unit-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}",
+      "$description": "unit word / no limit after the field"
+    },
+    "number-field-note-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}",
+      "$description": "range line under the field"
+    }
   }
 }
