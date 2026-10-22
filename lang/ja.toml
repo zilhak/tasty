@@ -208,6 +208,7 @@ range_at_least = "{} 以上です。保存する値: {}。"
 range_at_most = "{} 以下です。保存する値: {}。"
 range_snapped = "最も近い目盛りに合わせます。保存する値: {}。"
 unit_pt = "pt"
+unit_lines = "行"
 unit_s = "s"
 
 [settings.overlay]
@@ -753,13 +754,14 @@ reset_hint = "個別の設定を消去し、マニフェストの既定値を使
 
 [settings.performance]
 heading = "パフォーマンス"
-restart_notice = "変更は再起動後に適用されます。"
+apply_notice = "保存した値は、このあと新しく開くターミナルから適用されます。すでに開いているターミナルはすぐには変わりません。"
 targeted_pty_polling = "選択的PTYポーリング"
 targeted_pty_polling_desc = "すべてのターミナルではなく、新しい出力があるターミナルのみを処理します。サーフェスが多い場合にCPU使用量を削減します。"
 scrollback_disk_swap = "スクロールバックディスクスワップ"
 scrollback_disk_swap_desc = "メモリ行数を超えたスクロールバック行をディスクに移してメモリ使用量を削減します。"
 scrollback_disk_lines = "ディスク保持行数"
 scrollback_disk_lines_desc = "ディスクに残す行数です。メモリ行数とは別で、超えると古い行から破棄します。-1 は無制限です。"
+no_limit = "無制限"
 
 [quit_modal]
 title = "Tasty を閉じる"

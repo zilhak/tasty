@@ -39,6 +39,7 @@ src/catalog/components/clipboard_viewer.rs	Close	dag_list.close,explorer.find.cl
 src/catalog/components/clipboard_viewer.rs	Files	explorer.sidebar.tree
 src/catalog/components/clipboard_viewer.rs	Image	convert_popup.image
 src/catalog/components/clipboard_viewer.rs	Text	explorer.kind.text,settings.appearance.colors.group.text
+src/catalog/components/clipboard_viewer.rs	lines	settings.number.unit_lines
 src/catalog/components/command_palette.rs	Ctrl	settings.terminal.link_modifier_ctrl
 src/catalog/components/command_palette.rs	New Terminal	pane_context_menu.new_terminal
 src/catalog/components/command_palette.rs	Settings	button.settings,settings.window.title

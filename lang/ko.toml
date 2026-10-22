@@ -208,6 +208,7 @@ range_at_least = "{} 이상입니다. 저장할 값: {}."
 range_at_most = "{} 이하입니다. 저장할 값: {}."
 range_snapped = "가장 가까운 눈금에 맞춥니다. 저장할 값: {}."
 unit_pt = "pt"
+unit_lines = "줄"
 unit_s = "s"
 
 [settings.overlay]
@@ -753,13 +754,14 @@ reset_hint = "개별 설정을 지우고 매니페스트의 기본값을 사용�
 
 [settings.performance]
 heading = "성능"
-restart_notice = "변경사항은 재시작 후 적용됩니다."
+apply_notice = "저장한 값은 이후 새로 여는 터미널부터 적용됩니다. 이미 열린 터미널은 바로 바뀌지 않습니다."
 targeted_pty_polling = "선택적 PTY 폴링"
 targeted_pty_polling_desc = "모든 터미널 대신 새 출력이 있는 터미널만 처리합니다. 서피스가 많을 때 CPU 사용량을 줄입니다."
 scrollback_disk_swap = "스크롤백 디스크 스왑"
 scrollback_disk_swap_desc = "메모리 줄 수를 넘은 스크롤백 줄을 디스크로 옮겨 메모리 사용량을 줄입니다."
 scrollback_disk_lines = "디스크 보관 줄 수"
 scrollback_disk_lines_desc = "디스크에 남길 줄 수입니다. 메모리 줄 수와 별도이며, 넘으면 오래된 줄부터 버립니다. -1은 무제한입니다."
+no_limit = "무제한"
 
 [quit_modal]
 title = "Tasty 종료"

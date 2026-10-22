@@ -1544,6 +1544,9 @@ fn draw_plugin_number(
         decimals: usize::from(cur.fract() != 0.0),
         suffix,
         suffix_mono: false,
+        addon: None,
+        width: None,
+        note: None,
         enabled: true,
     };
 

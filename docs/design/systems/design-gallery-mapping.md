@@ -1077,14 +1077,19 @@ Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 
 
 ## Settings › Terminal › Performance
 
-성능 탭의 세 행이다. 디자인 카탈로그에 전용 프레임은 없고, 새 시각 값 없이 기존 스위치 행과 숫자 행
-(`SettingsRow` + `number_field`)을 그대로 쓴다(갤러리 spec id `settings-performance`, Task pipeline 뒤).
+성능 탭의 적용 시점 안내와 세 행이다. 디자인 시안은 `gallery/overlays-windows-perf.jsx`(`#perfapply`)와
+`ui_kits/terminal/overlays/settings_window.jsx` 의 Performance 본문이다. 갤러리 spec id 는 `settings-performance`(Task pipeline 뒤)다.
 
 | 구성 | 본체 함수 | 갤러리 항목 |
 |---|---|---|
-| 스위치 두 행(PTY 선택 폴링 · 스크롤백 디스크 스왑) | `src/view/settings/ui/tabs/performance.rs::draw_performance_tab` — `SettingsRow::hint` + `tasty_ui_widgets::switch` | `components/settings_performance.rs::draw` — 디스크 스왑 켬(Mocha) · 끔(Latte) 두 짝 |
-| 디스크 보관 줄 수(mono Input `field-width-xs` 오른쪽 정렬, 단위 없음) | `number::number_field`(`NumberSpec::int(-1, 100000000)`, 디스크 스왑이 꺼져 있으면 `enabled(false)`) | `lines_control`(같은 범위, 같은 비활성 조건) |
+| 적용 시점 안내(탭 맨 위 한 번, info 글리프 `icon-size-sm` `settings-apply-note-glyph` + caption `settings-apply-note-fg`, 간격 `settings-apply-note-gap` 8, `measure-md` 에서 줄바꿈·말줄임 없음) | `tasty_ui_widgets::settings_apply_note` | 같은 함수 |
+| 스위치 두 행(PTY 선택 폴링 · 스크롤백 디스크 스왑) | `src/view/settings/ui/tabs/performance.rs::draw_performance_tab` — `SettingsRow::hint` + `tasty_ui_widgets::switch` | `components/settings_performance.rs::draw` — 기본값 · 스왑 끔 · -1 · 큰 설정 값 · 좁은 폭 360, Mocha·Latte |
+| 디스크 보관 줄 수(mono Input `field-width-color` 110 오른쪽 정렬, 단위 addon `settings.number.unit_lines`, -1 이면 칸 뒤 caption `settings.performance.no_limit` — 켜짐 `text-secondary` · 꺼짐 `state-disabled-fg`) | `number::number_field`(`NumberSpec::int(-1, 100000000)` + `width` · `addon` · `note`, 디스크 스왑이 꺼져 있으면 `enabled(false)`) | `lines_control`(같은 범위·단위·비활성 조건) |
 | 범위 줄(범위 밖일 때만, `accent-danger`, caption) | `number_field` 의 범위 줄 | `lines_control` 의 범위 줄 |
+
+- 안내 → 첫 행, 행 → 행 간격은 모두 `settings-row-gap`(space-md 12)이다. 킷 Settings 본문과 같은 값이며, `#perfapply` 견본의 행 사이 space-sm 은 견본 카드 안의 축약이다.
+- 행 라벨과 도움말은 본체 문자열을 쓴다. 시안 견본의 라벨·도움말 문장은 견본 표현이며, 재시작이 필요하다는 표현만 쓰지 않는다는 지시다.
+- 숫자 칸 값 정렬은 모든 숫자 칸이 공유하는 `number_field` 의 오른쪽 정렬을 유지한다.
 
 ## 파일 피커 (Overlays)
 

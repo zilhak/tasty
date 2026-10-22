@@ -1761,7 +1761,7 @@ pub fn pages() -> Vec<Page> {
                             "settings-performance",
                             "Terminal › Performance",
                             Some(
-                                "two switch rows · Lines kept on disk (numeric, -1 = unlimited) · disabled while disk swap is off",
+                                "apply note on top · two switch rows · Lines kept on disk (numeric + unit, -1 = no limit) · disabled while disk swap is off",
                             ),
                             components::settings_performance::draw,
                         ),

@@ -209,6 +209,7 @@ range_at_least = "At least {}. Value to save: {}."
 range_at_most = "At most {}. Value to save: {}."
 range_snapped = "Rounds to the nearest step. Value to save: {}."
 unit_pt = "pt"
+unit_lines = "lines"
 unit_s = "s"
 
 [settings.overlay]
@@ -760,13 +761,14 @@ reset_hint = "Clear the override and use the manifest default."
 
 [settings.performance]
 heading = "Performance"
-restart_notice = "Changes require restart to take effect."
+apply_notice = "Saved changes apply to terminals you open afterward. Terminals that are already open don't change right away."
 targeted_pty_polling = "Targeted PTY polling"
 targeted_pty_polling_desc = "Only process terminals with new output instead of polling all. Reduces CPU with many surfaces."
 scrollback_disk_swap = "Scrollback disk swap"
 scrollback_disk_swap_desc = "Move scrollback lines past the memory line count to disk to reduce memory usage."
 scrollback_disk_lines = "Lines kept on disk"
 scrollback_disk_lines_desc = "How many lines disk swap keeps, separate from the memory line count. The oldest lines past it are dropped. -1 keeps every line."
+no_limit = "no limit"
 
 [quit_modal]
 title = "Close Tasty"

@@ -194,6 +194,40 @@ pub fn settings_row_caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     });
 }
 
+/// 서브탭 맨 위, 행들 위에 한 번 두는 중립 안내. info 글리프와 caption 본문이며 `measure-md`
+/// (남은 폭이 더 좁으면 그 폭)에서 줄을 바꾸고 말줄임하지 않는다. 경고가 아니라 사실 안내라
+/// 경고색·상자를 쓰지 않는다. 글리프는 본문 첫 줄 높이의 가운데에 둔다.
+pub fn settings_apply_note(ui: &mut egui::Ui, theme: &Theme, text: &str) -> egui::Response {
+    let glyph = theme.icon_glyph_size_sm.value();
+    let gap = theme.settings_apply_note_gap().value();
+    let caption = theme.font_size_caption.value();
+    let line_h = caption * theme.line_height_ui;
+    let text_w = (below_width(ui, theme) - glyph - gap).max(1.0);
+    let galley = ui.fonts(|f| {
+        let mut job = egui::text::LayoutJob::single_section(
+            text.to_owned(),
+            egui::TextFormat {
+                font_id: egui::FontId::proportional(caption),
+                color: theme.settings_apply_note_fg().to_egui(),
+                line_height: Some(line_h),
+                ..Default::default()
+            },
+        );
+        job.wrap.max_width = text_w;
+        f.layout_job(job)
+    });
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        let (slot, _) = ui.allocate_exact_size(egui::vec2(glyph, line_h), egui::Sense::hover());
+        let glyph_rect = egui::Rect::from_center_size(slot.center(), egui::vec2(glyph, glyph));
+        tasty_icons::INFO
+            .image(glyph, theme.settings_apply_note_glyph().to_egui())
+            .paint_at(ui, glyph_rect);
+        ui.add(egui::Label::new(galley));
+    })
+    .response
+}
+
 fn hint_width(theme: &Theme, has_hint: bool) -> LogicalPx {
     if has_hint {
         theme.help_hint_gap() + theme.icon_glyph_size_sm
@@ -220,4 +254,65 @@ fn label_galley(ui: &egui::Ui, theme: &Theme, text: &str, wrap_width: f32) -> Ar
     let font = egui::FontId::proportional(theme.font_size_body.value());
     let color = theme.text_secondary().to_egui();
     ui.fonts(|f| f.layout(text.to_owned(), font, color, wrap_width))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `width` 폭 영역에 안내 한 개를 그리고 차지한 영역과 글자 색을 돌려준다.
+    fn note_frame(width: f32, text: &str) -> (egui::Rect, Vec<egui::Color32>) {
+        let theme = tasty_themes::mocha_fallback();
+        let ctx = egui::Context::default();
+        let mut used = egui::Rect::NOTHING;
+        // 새 Area 는 첫 프레임에 크기만 재고 그리지 않으므로 두 번째 프레임의 출력을 읽는다.
+        let mut out = egui::FullOutput::default();
+        for _ in 0..2 {
+            out = ctx.run(Default::default(), |ctx| {
+                egui::Area::new(egui::Id::new("host"))
+                    .fixed_pos(egui::Pos2::ZERO)
+                    .show(ctx, |ui| {
+                        ui.set_width(width);
+                        ui.set_max_width(width);
+                        used = settings_apply_note(ui, &theme, text).rect;
+                    });
+            });
+        }
+        let inks = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                // 시험 컨텍스트에는 이미지 로더가 없어 글리프 자리에 egui 의 대체 글자가 그려진다.
+                egui::Shape::Text(t) if t.galley.text() == text => {
+                    t.galley.job.sections.first().map(|s| s.format.color)
+                }
+                _ => None,
+            })
+            .collect();
+        (used, inks)
+    }
+
+    /// 안내는 measure-md(또는 더 좁은 남은 폭) 안에서 줄을 바꾸고, 글자는 apply-note 잉크다.
+    #[test]
+    fn the_apply_note_wraps_inside_the_measure_and_uses_the_note_ink() {
+        let theme = tasty_themes::mocha_fallback();
+        let text = "Saved changes apply to terminals you open afterward. Terminals that are already open don't change right away.";
+        let measure = theme.measure_md.value();
+        let (wide, inks) = note_frame(measure * 2.0, text);
+        assert!(
+            wide.width() <= measure + 0.5,
+            "measure-md 를 넘었다: {wide:?}"
+        );
+        assert_eq!(inks, vec![theme.settings_apply_note_fg().to_egui()]);
+        let narrow_w = measure / 2.0;
+        let (narrow, _) = note_frame(narrow_w, text);
+        assert!(
+            narrow.width() <= narrow_w + 0.5,
+            "좁은 폭을 넘었다: {narrow:?}"
+        );
+        assert!(
+            narrow.height() > wide.height(),
+            "좁은 폭에서 줄을 바꾸지 않았다"
+        );
+    }
 }

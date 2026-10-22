@@ -4,6 +4,7 @@
 
 use crate::i18n::t_args;
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 호출자가 지정하는 숫자 범위·자릿수·단위.
 pub(super) struct NumberSpec<'a> {
@@ -17,6 +18,12 @@ pub(super) struct NumberSpec<'a> {
     pub suffix: Option<&'a str>,
     /// 단위를 고정폭 글꼴로 표시할지 여부.
     pub suffix_mono: bool,
+    /// 입력 상자 **안** 오른쪽에 붙는 단위(Input addon). `suffix` 와 함께 쓰지 않는다.
+    pub addon: Option<&'a str>,
+    /// 입력 상자 폭. `None` 이면 `field-width-xs`.
+    pub width: Option<LogicalPx>,
+    /// 입력 상자 뒤 같은 줄에 두는 값 설명(예: -1 의 "무제한"). 호출자가 값에 맞춰 넘긴다.
+    pub note: Option<&'a str>,
     pub enabled: bool,
 }
 
@@ -30,8 +37,26 @@ impl<'a> NumberSpec<'a> {
             decimals: 0,
             suffix: None,
             suffix_mono: false,
+            addon: None,
+            width: None,
+            note: None,
             enabled: true,
         }
+    }
+
+    pub fn addon(mut self, addon: &'a str) -> Self {
+        self.addon = Some(addon);
+        self
+    }
+
+    pub fn width(mut self, width: LogicalPx) -> Self {
+        self.width = Some(width);
+        self
+    }
+
+    pub fn note(mut self, note: Option<&'a str>) -> Self {
+        self.note = note;
+        self
     }
 
     pub fn suffix(mut self, suffix: &'a str) -> Self {
@@ -166,13 +191,16 @@ pub(super) fn number_field(
     ui.vertical(|ui| {
         // 남은 폭에 단위가 들어가지 않으면 단위를 입력 칸 아래 줄로 내린다(단축키 행의 버튼 줄과 같은 감싸기).
         ui.horizontal_wrapped(|ui| {
-            let resp = tasty_ui_widgets::Input::new()
+            let mut input = tasty_ui_widgets::Input::new()
                 .mono(true)
                 .align(egui::Align::RIGHT)
-                .width(theme.field_width_xs.value())
+                .width(spec.width.unwrap_or(theme.field_width_xs).value())
                 .enabled(spec.enabled)
-                .invalid(pending.is_some())
-                .show(ui, theme, &mut buf);
+                .invalid(pending.is_some());
+            if let Some(addon) = spec.addon {
+                input = input.addon(addon);
+            }
+            let resp = input.show(ui, theme, &mut buf);
 
             if resp.lost_focus() {
                 // 확정 — blur 와 `↵` 둘 다 여기로 온다.
@@ -205,6 +233,19 @@ pub(super) fn number_field(
                     text = text.monospace();
                 }
                 ui.label(text);
+            }
+
+            if let Some(note) = spec.note {
+                let ink = if spec.enabled {
+                    theme.text_secondary()
+                } else {
+                    theme.state_disabled_fg()
+                };
+                ui.label(
+                    egui::RichText::new(note)
+                        .size(theme.font_size_caption.value())
+                        .color(ink),
+                );
             }
         });
 
@@ -277,6 +318,9 @@ mod tests {
             decimals: 0,
             suffix: None,
             suffix_mono: false,
+            addon: None,
+            width: None,
+            note: None,
             enabled: true,
         };
         assert_eq!(commit("99999", &s), Commit::Value(99999.0));
