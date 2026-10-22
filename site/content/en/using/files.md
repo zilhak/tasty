@@ -1,4 +1,4 @@
-<!-- source-hash: 40ab25974295 -->
+<!-- source-hash: 3f46ee5fc866 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -247,6 +247,20 @@ Shows a local HTML file or a URL in the OS web view. Right-click an empty area o
 - While loading, **Loading…** is shown; on failure, **Failed to load** and the URL.
 - While a menu or popup is open, HTML and Markdown pages are hidden for a moment and only an empty panel shows. When a notice card appears, only the pages it overlaps are hidden until the card goes away; other pages stay visible. A page you are typing into is not hidden, so a notice card over it stays covered.
 - The **HTML** item under **Settings** > **Appearance** — **Default zoom** · **Color scheme** (**Follow theme** / light / dark) · **Allow remote content** · **Sandbox scripts**. Remote content and scripts are blocked by default. It is meant for viewing previews built locally, so to open external sites you need to turn **Allow remote content** on and **Sandbox scripts** off.
+
+### Address bar
+
+The top of an HTML view has an address bar: the **Back** · **Forward** · **Reload** buttons and the address field. A local file shows as its file path (your home folder as `~`), a web document as its URL.
+
+- Type a file path or a `file://` · `http://` · `https://` address in the field and press `Enter` to open it. There is no separate Go button.
+- A relative path is resolved against the current document: the folder of a local file, or the address of a web document. In an empty HTML tab it uses the tab's working folder; without any base, Tasty does not open it and tells you why.
+- A file that does not exist is not opened, and **File not found** appears under the field. The page you were viewing and what you typed stay; the notice goes away on your next keystroke or `Esc`.
+- `Esc` while editing cancels your input and returns to the current document's address.
+- `Alt+L` (macOS `Cmd+L`) goes to the address field of the HTML view that has the focus, with the whole address selected. It works even while you are typing inside the page. Change the key under **Settings** > **Keybindings** > **Surface** at **Focus the address bar**; the Explorer's address bar uses the same key.
+- While a page loads, a spinner takes the Reload button's place; if it fails to load, the field keeps the address you tried to open.
+- Back is dimmed at the start of the history and Forward at its end. When the HTML view is narrower than 440px, the Forward button is hidden.
+- An empty HTML tab shows a hint for the address field with its shortcut. After a restart, a document opened from the address bar returns to the address the tab was created with (an empty tab stays empty), as does an address an agent opened with `tasty html open`.
+- HTML tabs in a remote workspace have no address bar.
 
 ### Documents with blocked scripts
 

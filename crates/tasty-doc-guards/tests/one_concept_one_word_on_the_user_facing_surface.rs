@@ -88,8 +88,8 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
         path: "site/content/using/files.md",
         phrase: "주소창",
-        count: 12,
-        evidence: "낱말이 다르다 — 탐색기와 마크다운 문서의 address bar 다. Window 를 가리키지 않는다",
+        count: 14,
+        evidence: "낱말이 다르다 — 탐색기·마크다운·HTML 화면의 address bar 다. Window 를 가리키지 않는다",
     },
     NotAWindow {
         path: "site/content/remote/attach.md",

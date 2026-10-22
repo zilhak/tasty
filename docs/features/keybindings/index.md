@@ -212,8 +212,9 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   ([markdown 문서 내 검색](../../surfaces/markdown/screens/viewer.md#문서-내-검색find-in-page)).
   `find` 에서 뺀 조합을 다른 host 동작에 주면 ①·③에 들지 않는 한 host 가 가져간다. 두 동작이
   같은 조합을 갖는 상태는 단축키 탭의 충돌 확인(`find_conflict`)을 거쳐야 저장된다.
-  ③ explorer 전용 액션 `explorer_undo`·`explorer_redo`·`explorer_back`·`explorer_forward`·`explorer_focus_address`·`explorer_new_folder`·`explorer_new_file` — explorer 에 포커스가 있을 때만 동작해
+  ③ explorer 전용 액션 `explorer_undo`·`explorer_redo`·`explorer_back`·`explorer_forward`·`explorer_new_folder`·`explorer_new_file` — explorer 에 포커스가 있을 때만 동작해
   webview 위에서는 할 일이 없다. 기본값 `Ctrl+Z`·`Ctrl+Shift+Z` 는 페이지의 undo/redo 키이고 `Alt+←`·`Alt+→` 는 페이지의 뒤로·앞으로 키다.
+  주소창 포커스 `explorer_focus_address` 는 html surface 의 주소 띠에도 쓰이므로 ③에 넣지 않고 host 가 가져간다([html 주소 표시줄](../../surfaces/html/index.md#주소-표시줄)).
 - **key-up 은 어느 백엔드도 올리지 않는다**(press 만). host 는 실려온 modifier 값만
   읽고 자기 `base.modifiers` 를 갱신하지 않으므로 modifier stuck 이 생기지 않는다.
 - **auto-repeat 필터는 플랫폼이 갈린다** — macOS(`isARepeat`)·Windows(`WasKeyDown`)는 걸러

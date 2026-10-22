@@ -13,7 +13,7 @@ mod explorer_show_in_folder;
 mod file_drag;
 mod file_drop;
 mod fullscreen_window;
-mod html_script_banner;
+mod html_content;
 mod keyboard;
 mod link_menu;
 mod menu_target;

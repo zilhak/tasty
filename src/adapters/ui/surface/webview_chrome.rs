@@ -18,12 +18,14 @@ pub fn chrome_caption<'a>(url: Option<&'a str>, label: Option<&'a str>) -> Optio
 /// 글리프·라벨·URL을 그리지 않는다. Failed의 URL 줄은 [`chrome_caption`]이 고른 문자열을 보인다.
 /// 배경·테두리는 패널 전체에 그리고 아이콘·글자는 native WebView가 덮는 `content` 안으로 자른다.
 /// native 창이 비워 둔 분할선 여백으로 글자가 비치지 않게 하기 위해서다.
+/// `empty_hint`는 빈 안내 아래에 보일 caption이다(html surface의 주소창 안내).
 pub fn draw_webview_chrome(
     ui: &mut egui::Ui,
     content: egui::Rect,
     url: Option<&str>,
     page_label: Option<&str>,
     nav: NavState,
+    empty_hint: Option<&str>,
 ) {
     let caption = chrome_caption(url, page_label);
     let th = theme::theme();
@@ -38,7 +40,10 @@ pub fn draw_webview_chrome(
     );
 
     let glyph = th.icon_glyph_size_md.value();
-    let block_h = glyph + th.spacing_sm.value() + th.font_size_body.value() * 2.0;
+    let hint_h = empty_hint.map_or(0.0, |_| {
+        th.spacing_sm.value() + th.font_size_caption.value()
+    });
+    let block_h = glyph + th.spacing_sm.value() + th.font_size_body.value() * 2.0 + hint_h;
     let top_pad = ((panel_rect.height() - block_h) / 2.0).max(th.spacing_xl.value());
 
     // 시안 `HtmlTile`의 내용 padding 16(space-lg)을 좌우에 둬 긴 URL 줄이 가장자리에 닿지 않게 한다.
@@ -84,6 +89,17 @@ pub fn draw_webview_chrome(
                             crate::i18n::t("webview.no_page"),
                             th.text_muted().to_egui(),
                         );
+                        if let Some(hint) = empty_hint {
+                            ui.add_space(th.spacing_sm.value());
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(hint)
+                                        .size(th.font_size_caption.value())
+                                        .color(th.text_muted().to_egui()),
+                                )
+                                .truncate(),
+                            );
+                        }
                     }
                 }
             }

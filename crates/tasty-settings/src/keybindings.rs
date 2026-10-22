@@ -163,7 +163,8 @@ pub struct KeybindingSettings {
     pub explorer_back: Vec<String>,
     /// Go forward in the focused Explorer's navigation history.
     pub explorer_forward: Vec<String>,
-    /// Put the keyboard focus in the focused Explorer's address bar with its text selected.
+    /// Put the keyboard focus in the address bar of the focused Explorer or HTML viewer,
+    /// with its text selected. The id keeps its original Explorer name for stored settings.
     pub explorer_focus_address: Vec<String>,
     /// Show or hide the preview panel of the focused Explorer.
     pub explorer_toggle_preview: Vec<String>,

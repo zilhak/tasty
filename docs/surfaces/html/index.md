@@ -24,7 +24,7 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 - **cli** — `tasty html open …`. `html.*` IPC(URL 설정 등 — `webview.set_url`).
   - `url` 인자는 URL(`http://`·`https://`·`file://`) 또는 로컬 파일 경로다. CLI 매니페스트가 `path_kind = "url_or_file"`이라 상대 경로는 CLI를 호출한 디렉터리 기준 절대 경로로 바뀌고, 파일이 없으면 요청을 보내지 않고 실패한다.
   - `html.open`은 생성 경로와 같은 `local_path_to_file_uri`로 절대 경로를 `file://` URI로 바꿔 `webview.set_url`에 넘긴다. IPC로 직접 온 상대 경로는 기준 디렉터리가 없어 `invalid_params`로 거절한다.
-  - `html.open`으로 바꾼 URL은 스냅샷에 남지 않는다. 스냅샷은 생성·복원 때의 URL이며 호스트가 `surface.snapshot`을 다시 묻지 않으므로, 재시작하거나 플러그인 프로세스가 바뀌면 생성 URL로 돌아간다.
+  - `html.open`으로 바꾼 URL과 주소 표시줄로 연 주소는 스냅샷에 남지 않는다. 스냅샷은 생성·복원 때의 URL이며 호스트가 `surface.snapshot`을 다시 묻지 않으므로, 재시작하거나 플러그인 프로세스가 바뀌면 생성 URL로 돌아간다. 빈 탭으로 만든 surface는 빈 탭으로 복원된다. 두 경로를 같은 정책으로 두어 페이지 안 링크 이동과도 맞춘다.
 - **스크립트 감지와 문서 단위 허용** — 전역 설정 sandbox scripts가 켜져 있으면 host가 main frame 문서마다 JS를 끈다. `file://` 문서는 응답 단계에서 원본 파일을 읽어 스크립트를 감지하고 파일 전체 지문을 구한다. 허용은 URL(fragment 제외)과 지문에 묶이며 다른 문서가 commit되면 풀린다. 규칙은 아래 [스크립트 감지와 허용 규칙](#스크립트-감지와-허용-규칙) 절.
   - 스캔 상한: 감지는 파일 앞 4 MiB(`SCAN_LIMIT_BYTES`)까지만 읽는다. 지문은 상한과 관계없이 파일 전체를 해시한다.
   - 정규 파일만 스캔한다. FIFO·장치 같은 파일은 읽지 않고 지문 없음으로 두므로 그 문서는 허용할 수 없다.
@@ -59,7 +59,7 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
   - 남은 한계: 뒤로·앞으로가 같은 문서의 fragment 히스토리 항목으로 가는지는 미리 알 수 없어 표지를 세운다. 그 이동도 load 신호 없이 끝나므로 표지가 남고, 다음에 commit되는 문서를 사용자가 본 것으로 기록한다. 사용자가 그 surface를 조작한 뒤라 영향은 작다.
   - 주소 열기는 해석을 마친 주소만 받는다. 상대 경로 해석과 없는 파일 거절은 입력 쪽이 한다. 이 경로는 `webview_url`을 바꾸지 않으므로 페이지 안 링크 이동과 같이 snapshot에 남지 않는다.
   - 에이전트 경로는 이 큐를 쓰지 않는다. 에이전트가 주소를 바꾸는 방법은 `tasty html open`(호스트 로드)이고, 뒤로·앞으로·새로고침은 아래 [에이전트 히스토리 이동](#내부-동작)이다.
-  - 사용자 진입점(주소 표시줄과 버튼)은 아직 없다. debug 빌드의 `debug.webview.history`(CLI `tasty debug webview-history`)가 같은 큐로 사용자 조작을 재현한다([debug IPC](../../dev-guide/debug-ipc.md)).
+  - 사용자 진입점은 아래 [주소 표시줄](#주소-표시줄)이다. debug 빌드의 `debug.webview.history`(CLI `tasty debug webview-history`)가 같은 큐로 사용자 조작을 재현한다([debug IPC](../../dev-guide/debug-ipc.md)).
 - **에이전트 히스토리 이동** — `tasty surface html-back`·`html-forward`·`html-reload --surface <id>`(IPC `surface.html_back`·`surface.html_forward`·`surface.html_reload`, release). 대상은 surface ID로만 받고 포커스·선택·활성 탭을 바꾸지 않는다.
   - 핸들러는 요청을 대상 surface가 속한 창의 에이전트 히스토리 큐(`MainViewState::webview_agent_nav`, `WebViewHistoryStep`)에 넣고, WebView 동기화가 다음 redraw에서 꺼내 backend의 `go_back`·`go_forward`·`reload`를 부른다. 사용자 탐색 큐와 나뉜다.
   - 이 이동은 호스트 출처 로드다. 실행 전에 `HtmlScriptState::on_host_load_requested`를 세우므로, 사용자가 보던 surface라도 다음 문서는 그 열람을 이어받지 않고 스크립트 배너는 사용자가 그 surface를 선택할 때까지 `pending_view`로 보류된다.
@@ -76,6 +76,27 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
     - 히스토리 처음에서 뒤로 다음 앞으로: 뒤로는 버려지고 앞으로만 실행됐다(a → b, 2회).
     - 가운데에서 뒤로 다음 앞으로: 둘 다 실행했지만 결과는 이동 전 항목(b)에서 앞으로 한 단계였다(b → c, 3회).
     - 즉 측정한 경우에는 마지막으로 실행된 이동 하나만 결과에 남았다. 응답은 모두 `queued: true`이므로 결과는 `surface.html_nav`로 확인한다. macOS·Windows는 측정하지 않았다.
+
+## 주소 표시줄
+
+html surface 위쪽에 host가 주소 띠를 그린다. 띠는 공용 view `tasty_ui_widgets::html_address_bar`이고 갤러리와 같은 코드다([UI widgets](../../architecture/ui-widgets-crate.md#html-address-band-primitive)). 연결은 `src/adapters/ui/surface/html_address.rs`가 맡는다. 플러그인은 바뀌지 않고, 문서 DOM에 아무것도 넣지 않는다.
+
+- **구성** — 뒤로·앞으로·새로고침 버튼과 주소 입력란. Go 버튼은 없고 Enter로 연다. 버튼은 사용자 탐색 큐(`WebViewUserNav::Back`·`Forward`·`Reload`)에 넣고, 뒤로·앞으로의 비활성은 `can_go_back`·`can_go_forward`가 정한다. 로딩 중에는 새로고침 자리에 Spinner가 보이고 누를 수 없다. surface 폭이 `banner_narrow_below`(440) 미만이면 앞으로 버튼을 숨긴다.
+- **보이는 주소** — 로드가 끝난 상태(`Done`·`Idle`)에서는 commit 주소(`surface.html_nav`의 `url`)를 보인다. 로드 중(`Loading`)과 실패(`Failed`)에서는 시도 주소를 보인다. 시도 주소는 띠로 연 주소와, 호스트가 넣은 주소(`webview_url`, `tasty html open`)가 바뀌었을 때의 새 주소다. 시도 주소는 로드를 본 뒤 로드가 끝나거나 commit 주소가 그 주소가 되면 지운다. 실패하면 다음 시도까지 남으므로 chrome은 "Failed to load"를, 띠는 시도한 주소를 보이고 commit 주소는 이전 문서를 가리킨다. 페이지 안 링크로 시작한 로드가 실패하면 시도 주소를 알 수 없어 commit 주소를 보인다(남은 한계).
+- **표시 형식** — 로컬 문서는 파일 경로(홈 폴더는 `~`)와 query·fragment, 웹 문서는 URL 전체다. 앞 글리프는 로컬 file, 웹 link, 빈 탭 html이다. 입력란이 비어 있으면 placeholder "Enter a file path or URL"을 보인다. 넘치는 주소는 왼쪽부터 말줄임한다.
+- **입력 해석** — Enter로 확정한 입력을 `tasty_utils::html_address::resolve_html_address`가 해석한다. 절대 경로, `~` 경로, `file://`·`http(s)://` 주소를 받는다. 상대 입력은 현재 문서가 로컬 파일이면 그 폴더 기준, 웹 문서면 그 URL 기준, 문서가 없으면 surface cwd 기준이다. 기준이 없으면 요청을 보내지 않고 거절한다. 앞뒤 공백만 있는 입력은 아무것도 하지 않는다.
+- **로컬 파일 확인** — 로컬 대상은 열기 전에 작업 스레드가 파일인지 확인한다(`std::fs::metadata`). 결과를 기다리는 동안 띠는 50ms마다 다시 그려 결과를 본다. 결과가 오기 전에 입력이 바뀌거나 Esc로 취소하면 그 결과를 버린다. 없는 파일과 확인할 수 없는 경로는 "File not found", 폴더 같은 파일이 아닌 대상과 지원하지 않는 주소는 "Enter a valid file path or HTTP(S) URL", 기준 없는 상대 입력은 "Can't resolve a relative path"로 거절한다. 확인을 통과해도 실제 로드가 성공한다는 보장은 아니다. 실제 실패는 위 실패 상태로 보인다.
+- **오류 행** — 거절하면 입력란 테두리가 `input-border-invalid`가 되고 띠 아래에 24px 오류 행이 생긴다. 편집 중인 입력과 이전 문서·주소는 그대로다. 다음 키 입력, Esc, 성공한 열기에서 지운다. 타이머로 지우지 않는다.
+- **열기** — 확정한 주소만 `WebViewUserNav::Open`으로 사용자 탐색 큐에 넣는다. 사용자 출처 로드이므로 스크립트가 있는 문서는 commit 뒤 배너가 바로 뜬다. `allow_remote_content` 설정은 다른 로드와 같이 적용된다. 연 뒤에는 편집을 끝내 띠가 시도 주소와 commit 주소를 보인다.
+- **빈 탭** — 호스트 주소가 없는 html surface(`tasty new tab --type html`)는 처음에 native WebView가 없다. 띠로 주소를 열어 사용자 탐색 큐에 들어오면 그 redraw에서 WebView를 만들고 같은 큐로 첫 로드를 한다. 그 뒤로 WebView를 유지한다. 빈 상태 chrome은 html 글리프, "No page loaded", 그리고 "Type a path or URL in the address bar · <단축키>" 힌트를 보인다. 힌트의 단축키는 주소창 포커스 바인딩의 첫 값이며 바인딩이 없으면 힌트를 그리지 않는다.
+- **배치** — 쌓는 순서는 탭 스트립 → 띠(+오류 행) → 스크립트 배너 → 페이지다. 첫 배너 위는 `banner_margin`, 배너 아래는 `banner_inset_gap`이다. egui 패스가 띠와 배너의 높이 합을 `MainViewState::html_content_insets`에 남기고, WebView 동기화(`MainView::html_content_top`)가 같은 프레임에 물리 px로 바꿔 페이지를 그만큼 내린다. 배너가 사라지면 페이지는 띠 바로 아래로 돌아온다. 빈 상태·로딩·실패 chrome도 띠 아래에 그린다.
+- **포커스와 키** — 입력란을 누르거나 주소창 포커스 단축키를 누르면 egui 입력란이 키보드 포커스를 받는다. 띠가 포커스를 새로 얻으면 WebView 동기화가 그 surface의 native 페이지에서 OS 키보드 포커스를 회수하므로 입력과 IME가 페이지로 가지 않는다. 띠가 포커스를 가진 동안 페이지를 눌러 페이지가 포커스를 새로 얻으면 띠의 편집을 끝낸다. 회수 요청이 늦게 반영되는 동안 남은 페이지 포커스는 새로 얻은 것으로 보지 않는다. OS 포커스 조회는 띠가 포커스를 가진 동안에만 한다.
+- **주소창 포커스 단축키** — 설정 키 `explorer_focus_address`(라벨 "주소창으로 이동", 기본 `Alt+L`, macOS `⌘L`, 단축키 설정의 Surface 탭)를 탐색기와 함께 쓴다. 포커스된 surface가 html이면 그 surface의 띠에 포커스를 주고 주소 전체를 고른다. 다른 surface의 띠는 바꾸지 않는다. WebView가 키보드 포커스를 가진 상태에서도 host가 이 키를 가져간다([WebView 단축키](../../design/systems/webview.md)). 키를 바꾸면 새 키만 가져가고 이전 키는 페이지로 간다. 뒤로·앞으로에는 새 단축키를 두지 않는다. 페이지가 처리하는 `Alt+←`·`Alt+→`와 겹치지 않게 하기 위해서다.
+- **편집 중 에이전트 변경** — 사용자가 편집하는 동안 에이전트가 `tasty html open`으로 주소를 바꾸면 입력 텍스트와 포커스는 그대로이고 표지도 없다. Esc는 그때의 commit 주소로 되돌린다. 에이전트 경로는 띠에 포커스를 주지 않는다.
+- **Esc** — 편집을 취소하고 기다리던 파일 확인을 버린 뒤 commit 주소로 돌아간다. 실패한 시도 주소로 되돌리지 않는다.
+- **mirror** — mirror workspace의 html leaf는 콘텐츠 mirror가 없는 빈 surface라 띠를 그리지 않는다([원격 attach의 kind별 지원](../../features/remote-attach/index.md#surface-단위-vs-workspace-단위)). 원격 HTML mirror가 생기면 공용 view의 읽기 전용 입력란과 새로고침만 쓴다.
+- **같은 문서 판정** — 띠로 연 주소의 같은 문서 `#fragment` 판정도 위 "사용자 탐색"과 같은 문자열 비교다. 입력 해석은 파일 시스템 정규화를 하지 않으므로 표기가 다른 같은 파일은 새 로드가 된다.
+- **색** — 편집 중이 아닌 실제 주소는 `html-address-value-fg`(text-secondary-raised), 편집 중에는 `input-fg`, mirror의 읽기 전용 주소는 `input-readonly-fg`다. placeholder와 비활성은 기존 역할을 쓴다. 기하는 `html-address-*`·입력·배너 토큰이다.
 
 ## 스크립트 감지와 허용 규칙
 
@@ -269,6 +290,7 @@ OS별 구현은 다음과 같다.
 
 ## 인터페이스
 
+- **사용자**: html surface 위쪽 [주소 표시줄](#주소-표시줄)에서 경로·URL 입력, 뒤로·앞으로·새로고침, 주소창 포커스 단축키(`Alt+L`, macOS `⌘L`).
 - **사용자**: HTML·SVG 파일 열기 → html surface(WebView). 탭 스트립 빈 곳 메뉴의 **새 HTML...** 은 파일 피커(`html`·`htm`·`svg` 필터)를 열고, 고른 파일의 절대 경로를 `url` 파라미터로 넘겨 메뉴를 연 pane 에 html 탭을 만든다([파일 피커 확정](../../features/native-file-picker/index.md#확정confirm)). mirror workspace 의 pane 에서는 피커를 열지 않고 원격 열기 불가 토스트를 띄운다.
 - **AI Agent**: `tasty html …` CLI / `html.*` IPC. surface 생성은 [work-area](../../features/work-area/index.md) (`--type html --url …`).
 - **AI Agent**: 스크립트 감지·허용·배너 상태 조회는 `tasty surface html-script --surface <id>`(IPC `surface.html_script`), 현재 문서의 스크립트 허용은 `tasty surface html-script-allow --surface <id>`(IPC `surface.html_script_allow`).
@@ -311,6 +333,19 @@ OS별 구현은 다음과 같다.
 - Given 사용자가 보던 html surface When 에이전트가 `html-back`·`html-forward`·`html-reload`로 스크립트가 있는 문서를 연다 Then commit 뒤 `banner.phase`는 `hidden`, `banner.pending_view`는 `true`이고 사용자가 그 surface를 선택할 때 `blocked`가 된다.
 - Given 히스토리 처음에 있는 html surface When `html-back` Then 응답은 성공(`queued: true`)이고 다음 redraw에서 로드가 일어나지 않으며 배너 판정도 바뀌지 않는다. `html-forward`(끝)·문서 없는 `html-reload`도 같다.
 - Given 터미널·markdown surface, 없는 surface 또는 mirror workspace의 html leaf When `surface.html_back`·`surface.html_forward`·`surface.html_reload` Then invalid params로 거절하고 큐에 넣지 않는다.
+- Given 빈 html 탭(`tasty new tab --type html`) Then 위쪽에 placeholder가 있는 주소 띠가 보이고 아래는 html 글리프·"No page loaded"·주소창 힌트다.
+- Given 빈 html 탭 When 주소 띠에 `/tmp/x/index.html`을 입력하고 Enter Then 그 파일이 열리고 띠가 그 경로를 보인다.
+- Given `/tmp/x/index.html`이 열린 탭 When `b.html`을 입력 Then `/tmp/x/b.html`을 연다. Given 웹 문서 `https://example.com/a/` When `b.html` Then `https://example.com/a/b.html`을 연다. Given cwd가 `/tmp/y`인 빈 탭 When `c.html` Then `/tmp/y/c.html`을 연다.
+- Given cwd도 문서도 없는 빈 탭 When 상대 경로를 입력 Then 요청을 보내지 않고 오류 행이 보인다.
+- Given 없는 파일 경로 입력 Then 요청을 보내지 않고 오류 행이 보이며 이전 문서와 주소가 그대로다. When 다음 키를 입력하거나 Esc Then 오류가 사라진다.
+- Given 편집 중 When Esc Then 편집이 취소되고 commit 주소로 돌아간다.
+- Given WebView 페이지에 키보드 포커스 When 주소창 포커스 단축키 Then 그 surface의 주소창에 포커스가 가고 주소 전체가 선택되며 키가 페이지로 가지 않는다. When 설정에서 단축키를 바꾼다 Then 새 키로 동작하고 이전 키는 페이지로 간다.
+- Given 사전 확인을 통과한 주소의 실제 로드가 실패한다 Then chrome은 "Failed to load", 띠는 시도한 주소를 보이고 `surface.html_nav`의 `url`은 이전 문서다.
+- Given 띠로 스크립트가 있는 문서를 연다(sandbox 켜짐) Then commit 뒤 배너가 바로 뜨고 띠 → 배너 → 페이지 순서로 쌓이며 WebView는 둘의 높이만큼 내려간다. When 배너를 닫는다 Then WebView가 띠 바로 아래로 올라온다.
+- Given 띠에서 입력 중 When 에이전트가 `tasty html open <url>` Then 입력 텍스트와 포커스는 그대로다.
+- Given 히스토리 처음 Then 뒤로가, 끝이면 앞으로가 비활성이다. Given 폭 440 미만 Then 앞으로 버튼이 숨는다.
+- Given 띠로 연 문서 When 재시작 Then 생성 때의 URL(빈 탭이면 빈 탭)로 복원된다.
+- Given mirror workspace의 html leaf Then 주소 띠가 보이지 않는다.
 - Given 플러그인 disable When `.svg` 파일을 열기 Then `svg` detector 는 남고 핸들러가 없어 선택 창이 뜨며, 헤더 형식 표시는 `svg` 다.
 - Given 로컬 workspace 의 pane When 탭 스트립 빈 곳 메뉴에서 **새 HTML...** 을 고른다 Then 그 pane 의 선택 탭 cwd 에서 파일 피커가 열리고 디렉터리와 `.html`·`.htm`·`.svg` 파일만 보인다.
 - Given 그 피커 When 파일을 확정한다 Then 메뉴를 연 pane 에 html 탭이 하나 생겨 활성화되고, `url` 파라미터는 고른 절대 경로이며 WebView 는 `file://` URI 로 띄운다.
@@ -333,7 +368,8 @@ HTML·SVG 파일 열기, 탭 스트립 메뉴 **새 HTML...**(파일 피커), �
 
 ### UI 요소 인벤토리
 
-- **WebView 콘텐츠** — URL/파일의 웹 렌더. 타일 rect 에 오버레이로 정렬.
+- **주소 띠** — 높이 40(`html-address-bar-height`), `bg-sidebar`, 아래 1px separator. 뒤로·앞으로·새로고침(IconButton sm 24)과 주소 입력란(높이 28, 최소 96). 입력 오류 때 24px 오류 행이 더해진다. 동작은 [주소 표시줄](#주소-표시줄).
+- **WebView 콘텐츠** — URL/파일의 웹 렌더. 타일 rect 에서 주소 띠와 배너 아래에 오버레이로 정렬.
 - 탭 표시명은 파일명/URL.
 
 ### 상태별 시각
@@ -342,7 +378,7 @@ surface 는 트리에선 `RemoteSurface` marker. 네이티브 WebView 의 naviga
 (start/finish/fail)를 3 backend(WebView2 / WKNavigationDelegate / WebKitGTK)가 `NavState`
 (Idle/Loading/Done/Failed)로 host 에 전달하고, host 가 그 상태에 따라 chrome 을 그린다:
 
-- **Idle** — URL 미지정. placeholder(`GLOBE` · "No page loaded").
+- **Idle** — 문서 없음. placeholder(html 글리프 · "No page loaded"). html surface 는 그 아래에 주소창 힌트 caption(`text-muted`)을 더한다.
 - **Loading** — 탐색 중. WebView overlay 를 숨기고 `Spinner` + "Loading…" chrome.
 - **Done** — 성공. WebView overlay 가 페이지를 그린다. 메뉴/팝업으로 overlay 가 일시
   숨겨지거나, 토스트 카드가 이 surface 와 겹쳐 이 WebView 만 숨겨지면(지금 키를 받는 WebView 는 숨기지 않는다) 그 동안 boundary 타일이 보인다. boundary 는 `bg-panel` 배경과 1px `border-default`

@@ -85,6 +85,15 @@ struct HtmlSurfaces {
     all_ids: Vec<u32>,
 }
 
+/// native WebView를 둘 surface인지. 호스트 주소가 있는 surface와, 주소 띠로 문서를 연 빈 html
+/// surface다. 빈 html 탭은 사용자가 처음 주소를 열 때(사용자 탐색 큐에 들어올 때) 만들고 그 뒤로 둔다.
+fn hosts_webview(view: &MainView, surface: &dyn crate::model::Surface, sid: u32) -> bool {
+    surface.webview_url().is_some()
+        || (surface.kind() == "html"
+            && (view.webviews.contains_key(&sid)
+                || view.state.webview_user_nav.iter().any(|(s, _)| *s == sid)))
+}
+
 /// HTML surface 전체와 활성 surface의 영역을 수집한다. native 호출은 하지 않는다.
 /// 활성 surface의 영역은 플랫폼에 넘길 논리 좌표와 egui 툴팁 배치에 쓸 물리 사각형을 함께 돌려준다.
 fn collect_html_surfaces(
@@ -120,7 +129,7 @@ fn collect_html_surfaces(
         all_html_ids.extend(ws.all_surface_ids().into_iter().filter(|sid| {
             engine
                 .find_surface_by_id(*sid)
-                .is_some_and(|surface| surface.webview_url().is_some())
+                .is_some_and(|surface| hosts_webview(view, surface, *sid))
         }));
         let pane_rects = view
             .state
@@ -178,7 +187,7 @@ fn collect_html_surfaces(
                         let Some(surface) = engine.find_surface_by_id(region.id) else {
                             continue;
                         };
-                        if surface.webview_url().is_none() {
+                        if !hosts_webview(view, surface, sid) {
                             continue;
                         }
 
@@ -193,7 +202,7 @@ fn collect_html_surfaces(
                                 )
                                 .map(|v| v.value() as f64);
                             // 물리 사각형을 만든 뒤 플랫폼 API에 맞는 논리 좌표로 변환한다.
-                            let top = view.html_script_banner_top(sid, scale_factor);
+                            let top = view.html_content_top(sid, scale_factor);
                             let physical = crate::webview::PhysicalWebViewBounds {
                                 x: leaf_rect.x.value() as f64 + left,
                                 y: leaf_rect.y.value() as f64 + top,
@@ -554,10 +563,9 @@ fn load_initial_url(
     url: Option<&String>,
 ) {
     let Some(url) = url else {
-        // 수집 단계(`collect_html_surfaces`)가 URL 이 있는 surface 만 담으므로
-        // 여기까지 와서 None 이면 그 사이에 사라진 것이다. 로드가 없으니 nav 는
-        // Idle 에 머물고 화면은 비어 보인다.
-        tracing::warn!("WebView surface {sid}: created without a URL; nothing will be loaded");
+        // 주소 띠로 문서를 여는 빈 html 탭이다(`hosts_webview`). 첫 로드는 같은 redraw의
+        // 사용자 탐색 큐가 한다.
+        tracing::debug!("WebView surface {sid}: created without a host URL for a user navigation");
         return;
     };
     note_host_webview_load(view, engine, sid);
@@ -739,6 +747,18 @@ fn sync_webviews(
         }
     } else {
         view.webview_overlay_focus_released = false;
+    }
+
+    // 주소 띠가 키보드 포커스를 새로 얻으면 그 surface의 페이지에서 포커스를 회수해 키가 페이지로
+    // 가지 않게 한다. 띠가 포커스를 가진 동안에만 OS 포커스를 조회한다.
+    let webviews = &view.webviews;
+    if let Some(sid) = view.state.html_address.sync_page_focus(|sid| {
+        webviews
+            .get(&sid)
+            .is_some_and(|wv| wv.holds_keyboard_focus())
+    }) && let Some(wv) = view.webviews.get(&sid)
+    {
+        wv.release_keyboard_focus();
     }
 
     // 탭·workspace 전환으로 활성 탭에서 빠진 webview도 숨기기 전에 포커스를 회수한다.

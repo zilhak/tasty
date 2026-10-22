@@ -167,6 +167,7 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     ("convert_to_markdown", KeybindingsSubTab::Surface, None),
     ("convert_to_explorer", KeybindingsSubTab::Surface, None),
     ("find", KeybindingsSubTab::Surface, None),
+    ("explorer_focus_address", KeybindingsSubTab::Surface, None),
     ("close_surface", KeybindingsSubTab::Surface, None),
     // Clipboard
     ("copy", KeybindingsSubTab::Clipboard, None),
@@ -190,7 +191,6 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     ("explorer_go_up", KeybindingsSubTab::Explorer, None),
     ("explorer_back", KeybindingsSubTab::Explorer, None),
     ("explorer_forward", KeybindingsSubTab::Explorer, None),
-    ("explorer_focus_address", KeybindingsSubTab::Explorer, None),
     ("explorer_toggle_preview", KeybindingsSubTab::Explorer, None),
     ("explorer_toggle_hidden", KeybindingsSubTab::Explorer, None),
     ("explorer_properties", KeybindingsSubTab::Explorer, None),

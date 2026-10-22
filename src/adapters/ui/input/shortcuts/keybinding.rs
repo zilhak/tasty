@@ -633,6 +633,11 @@ impl MainView {
             }
             return true;
         }
+        if matches_any_binding(&kb.explorer_focus_address, key, mods)
+            && super::html_focus_address_shortcut(state, engine)
+        {
+            return true;
+        }
         for (binding, action) in [
             (&kb.explorer_back, "explorer_back"),
             (&kb.explorer_forward, "explorer_forward"),

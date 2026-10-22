@@ -176,7 +176,8 @@ pub use horizontal_tab_bar::{
 };
 pub use html_address_bar::{
     HtmlAddressAction, HtmlAddressKind, HtmlAddressLabels, HtmlAddressOutput, HtmlAddressState,
-    HtmlAddressView, html_address_bar, html_address_content_inset, html_address_height,
+    HtmlAddressView, html_address_bar, html_address_content_inset, html_address_field_id,
+    html_address_height,
 };
 pub use html_script_banner::{
     HtmlScriptBannerOutput, HtmlScriptBannerState, HtmlScriptBannerView, HtmlScriptMarkerKind,

@@ -108,6 +108,29 @@ fn explorer_nav_shortcut(
     crate::adapters::ui::egui_panels::apply_explorer_action(state, engine, sid, nav);
 }
 
+/// 주소창 포커스 단축키를 포커스된 html surface의 주소 띠에 준다. 처리했으면 참이다.
+/// 띠를 숨기는 mirror workspace의 html leaf는 처리하지 않는다. 포커스는 다음에 띠를 그릴 때 준다.
+fn html_focus_address_shortcut(
+    state: &mut crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> bool {
+    let Some(sid) = state.focused_pane(engine).and_then(|pane| {
+        let tab = pane.tabs.get(state.navigation.tab_index(pane))?;
+        state.navigation.surface_id(tab)
+    }) else {
+        return false;
+    };
+    let html = engine
+        .find_surface_by_id(sid)
+        .and_then(|s| s.remote_webview())
+        .is_some_and(|w| w.kind() == "html");
+    if !html || engine.is_mirror_surface(sid) {
+        return false;
+    }
+    state.html_address.request_focus(sid);
+    true
+}
+
 /// 되돌리기·다시 실행 단축키. 포커스된 탐색기의 이력만 쓴다. mirror explorer 는 파일 작업을
 /// 하지 않아 이력이 비어 있다.
 fn explorer_history_shortcut(

@@ -329,4 +329,8 @@ impl WebviewRead<'_> {
     pub(crate) fn nav_state(&self) -> crate::model::NavState {
         self.inner.nav_state()
     }
+    /// backend가 관측한 commit 주소와 히스토리 이동 가능 여부의 사본.
+    pub(crate) fn nav_info(&self) -> tasty_model::WebViewNavInfo {
+        self.inner.webview_nav()
+    }
 }

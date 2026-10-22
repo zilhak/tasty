@@ -166,7 +166,21 @@ pub fn draw_egui_panels(
         std::collections::HashSet::new()
     };
 
-    let mut html_script_insets = std::collections::HashMap::new();
+    let mut html_content_insets = std::collections::HashMap::new();
+    let mut html_bands = std::mem::take(&mut state.html_address);
+    let mut html_navs = Vec::new();
+    let home = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf());
+    let html_hint = engine
+        .settings
+        .keybindings
+        .explorer_focus_address
+        .first()
+        .map(|b| {
+            crate::i18n::t_fmt(
+                "html_address.empty_hint",
+                &tasty_settings::KeybindingSettings::format_display(b, &engine.settings.general),
+            )
+        });
     for info in &infos {
         let id_suffix = info
             .surface_id
@@ -300,7 +314,11 @@ pub fn draw_egui_panels(
                 let url = remote.url();
                 let chrome_label = remote.label();
                 let nav = remote.nav_state();
-                let banner_inset = draw_panel_frame(
+                let nav_info = remote.nav_info();
+                let html_sid = info.surface_id.filter(|_| remote.kind() == "html");
+                let cwd = html_sid.and_then(|sid| engine.local_surface_cwd(sid));
+                let mirror = html_sid.is_some_and(|sid| engine.is_mirror_surface(sid));
+                let content_inset = draw_panel_frame(
                     ctx,
                     &format!("webview_chrome_{}", id_suffix),
                     info,
@@ -308,38 +326,66 @@ pub fn draw_egui_panels(
                     None,
                     |ui| {
                         let panel = ui.max_rect();
+                        let th = theme::theme();
+                        // 시안 순서: 주소 띠 → 스크립트 배너 → 페이지. chrome과 배너는 띠 아래에 놓는다.
+                        let band = html_sid.map(|sid| {
+                            let source =
+                                crate::adapters::ui::surface::html_address::HtmlAddressSource {
+                                    nav,
+                                    info: &nav_info,
+                                    host_url: url.as_deref(),
+                                    cwd: cwd.as_deref(),
+                                    home: home.as_deref(),
+                                    mirror,
+                                };
+                            let frame = html_bands.draw(ui, &th, sid, panel, &source);
+                            if let Some(nav) = frame.nav {
+                                html_navs.push((sid, nav));
+                            }
+                            frame.height
+                        });
+                        let band_h = band.unwrap_or_default();
+                        let below = panel.with_min_y(panel.min.y + band_h.value());
                         let [left, right, bottom] = info.webview_inset;
                         let content = egui::Rect::from_min_max(
-                            egui::pos2(panel.min.x + left, panel.min.y),
-                            egui::pos2(panel.max.x - right, panel.max.y - bottom),
+                            egui::pos2(below.min.x + left, below.min.y),
+                            egui::pos2(below.max.x - right, below.max.y - bottom),
                         );
+                        let mut chrome_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
+                        chrome_ui.set_clip_rect(ui.clip_rect().intersect(below));
+                        // 띠로 연 빈 탭은 호스트 주소가 없으므로 commit 주소로 문서 유무를 정한다.
                         crate::webview_chrome_ui::draw_webview_chrome(
-                            ui,
+                            &mut chrome_ui,
                             content,
-                            url.as_deref(),
+                            url.as_deref().or(nav_info.url.as_deref()),
                             chrome_label.as_deref(),
                             nav,
+                            html_sid.filter(|_| !mirror).and(html_hint.as_deref()),
                         );
-                        let sid = info.surface_id?;
-                        if remote.kind() != "html" {
-                            return None;
-                        }
-                        crate::adapters::ui::surface::html_script_banner::draw(
-                            ui,
-                            &theme::theme(),
-                            &engine.html_script(sid)?,
-                            &mut html_actions,
-                            sid,
-                            panel,
-                        )
+                        let sid = html_sid?;
+                        let banner = engine.html_script(sid).and_then(|snapshot| {
+                            crate::adapters::ui::surface::html_script_banner::draw(
+                                ui,
+                                &th,
+                                &snapshot,
+                                &mut html_actions,
+                                sid,
+                                below,
+                            )
+                        });
+                        Some(band_h + banner.unwrap_or_default())
                     },
                 );
-                if let (Some(sid), Some(inset)) = (info.surface_id, banner_inset) {
-                    html_script_insets.insert(sid, inset);
+                if let (Some(sid), Some(inset)) = (info.surface_id, content_inset) {
+                    html_content_insets.insert(sid, inset);
                 }
             }
         }
     }
+
+    html_bands.retain(|sid| engine.find_surface_by_id(sid).is_some());
+    state.html_address = html_bands;
+    state.webview_user_nav.extend(html_navs);
 
     for action in html_actions {
         state.dispatch_intent(
@@ -362,7 +408,7 @@ pub fn draw_egui_panels(
 
     state.explorer_views = explorer_views;
     state.dag_graph_views = dag_views;
-    state.html_script_banner_insets = html_script_insets;
+    state.html_content_insets = html_content_insets;
 
     // engine의 하위 항목을 빌린 동안 모은 원격 목록 조회를 큐로 옮긴다.
     let requests = state.explorer_views.drain_outbox();

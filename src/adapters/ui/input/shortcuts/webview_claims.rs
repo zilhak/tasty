@@ -9,13 +9,13 @@ use crate::webview::{HostShortcutPolicy, ShortcutSources};
 const PAGE_RESERVED_FIELDS: &[&str] = &["find", "copy", "cut", "paste", "select_all"];
 /// explorer 에 포커스가 있을 때만 동작하는 액션. webview 위에서는 실행되지 않으므로 host 가
 /// 가져가지 않는다. 특히 실행 취소 키는 페이지의 undo/redo 와, 뒤로·앞으로 키(Alt+←·Alt+→)는
-/// 페이지의 뒤로·앞으로와 같다.
+/// 페이지의 뒤로·앞으로와 같다. 주소창 포커스(`explorer_focus_address`)는 html surface 의
+/// 주소 띠에도 쓰이므로 여기에 넣지 않고 host 가 가져간다.
 const EXPLORER_ONLY_FIELDS: &[&str] = &[
     "explorer_undo",
     "explorer_redo",
     "explorer_back",
     "explorer_forward",
-    "explorer_focus_address",
     "explorer_new_folder",
     "explorer_new_file",
 ];
@@ -211,6 +211,19 @@ mod tests {
                 "{combo} 를 host 가 가져간다"
             );
         }
+    }
+
+    /// 주소창 포커스는 html 페이지 위에서도 host가 가져간다. 키를 바꾸면 새 키만 가져가고
+    /// 이전 키는 페이지로 간다.
+    #[test]
+    fn the_address_focus_key_is_claimed_over_a_page_and_follows_a_rebind() {
+        let mut kb = kb();
+        let policy = webview_shortcut_policy(&kb, Vec::new());
+        assert!(policy.claims(&Key::Character("l".into()), alt_mod()));
+        assert!(kb.set_field("explorer_focus_address", "ctrl+alt+k"));
+        let policy = webview_shortcut_policy(&kb, Vec::new());
+        assert!(policy.combos().iter().any(|c| c == "ctrl+alt+k"));
+        assert!(!policy.claims(&Key::Character("l".into()), alt_mod()));
     }
 
     /// 페이지의 undo/redo 키를 host가 가로채지 않는다.

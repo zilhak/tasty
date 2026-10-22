@@ -182,7 +182,9 @@ size overrides and an inner editor margin override, so this field uses input-fon
 (13), icon-size-sm (14) and only the Input box padding, while
 existing Input and PathField defaults stay unchanged. The HTML field accepts injected labels
 and emits Back, Forward, Reload, Open and Revert actions without doing I/O or navigation.
-The view is available to callers; the HTML product surface does not yet call it.
+The host HTML surface calls it from `src/adapters/ui/surface/html_address.rs`.
+`html_address_field_id` names the field's egui id inside a band id, so the host can give up
+the field focus after an open or when the native page takes the keyboard.
 
 All lengths use LogicalPx and existing HTML address/input/banner Theme tokens. The band
 is 40 logical pixels high, with a 24-pixel error row when needed and an inside separator.

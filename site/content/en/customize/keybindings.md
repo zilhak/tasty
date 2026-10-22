@@ -1,4 +1,4 @@
-<!-- source-hash: 5c00f0fc68b0 -->
+<!-- source-hash: 4599645cce6f -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -75,7 +75,8 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 | Cut (explorer) | `Ctrl+X` · `Alt+X` | `Ctrl+X` · `Cmd+X` |
 | Select all (explorer) | `Ctrl+A` · `Alt+A` | `Ctrl+A` · `Cmd+A` |
 | Refresh · go to parent folder (explorer) | `F5` · `Alt+↑` | `F5` · `Cmd+↑` |
-| Back · forward · go to the address bar (explorer) | `Alt+←` · `Alt+→` · `Alt+L` | `Cmd+←` · `Cmd+→` · `Cmd+L` |
+| Back · forward (explorer) | `Alt+←` · `Alt+→` | `Cmd+←` · `Cmd+→` |
+| Go to the address bar (explorer · HTML) | `Alt+L` | `Cmd+L` |
 | Open the selected item · clear the selection (explorer) | `Enter` · `Esc` | `Enter` · `Esc` |
 | Move between items · extend the selection (explorer) | Arrow keys · `Home` · `End` · `PageUp` · `PageDown` · the same with `Shift` | Same |
 | New folder · new file (explorer) | `F7` · `Shift+F4` | `F7` · `Shift+F4` (hold `Fn` with them by default) |

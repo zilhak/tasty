@@ -170,6 +170,12 @@ fn left_ellipsis(ui: &egui::Ui, theme: &Theme, text: &str, width: LogicalPx) -> 
     format!("…{}", &text[boundaries[lo]..])
 }
 
+/// Egui id of the address field inside the band `id`. The host uses it to give up the
+/// field's keyboard focus when the page takes it or after an address is opened.
+pub fn html_address_field_id(id: egui::Id) -> egui::Id {
+    id.with("address")
+}
+
 /// Uses the same Input box as PathField, without its Go/completion composite. Explicit
 /// child rectangles keep nav cells fixed even below the minimum supported field width.
 pub fn html_address_bar(
@@ -215,7 +221,7 @@ pub fn html_address_bar(
     );
     let mut field = ui.new_child(egui::UiBuilder::new().id_salt(id).max_rect(field_rect));
     field.set_clip_rect(ui.clip_rect().intersect(rect));
-    let field_id = id.with("address");
+    let field_id = html_address_field_id(id);
     let had_focus = ui.memory(|m| m.has_focus(field_id));
     let was_focused = ui.data(|d| {
         d.get_temp::<bool>(field_id.with("previous_focus"))

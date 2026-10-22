@@ -365,7 +365,9 @@ impl MainView {
                 }
             }
             "explorer_back" | "explorer_forward" | "explorer_focus_address" => {
-                if state.focused_surface_type(engine).is_kind("explorer") {
+                let html = action_id == "explorer_focus_address"
+                    && super::html_focus_address_shortcut(state, engine);
+                if !html && state.focused_surface_type(engine).is_kind("explorer") {
                     super::explorer_nav_shortcut(state, engine, action_id);
                 }
             }

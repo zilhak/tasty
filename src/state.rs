@@ -341,7 +341,9 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             plugin_mesh_banner_pending_repaint: std::collections::HashSet::new(),
             #[cfg(feature = "gui")]
-            html_script_banner_insets: std::collections::HashMap::new(),
+            html_content_insets: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
+            html_address: Default::default(),
             pending_intents: Vec::new(),
         }
     }
