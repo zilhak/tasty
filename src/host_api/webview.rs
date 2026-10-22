@@ -9,6 +9,8 @@ pub(crate) mod overlay_host;
 #[cfg(any(windows, test))]
 mod scan_resume;
 pub mod script_gate;
+#[cfg(any(windows, test))]
+mod window_region;
 
 #[cfg(target_os = "linux")]
 mod linux;

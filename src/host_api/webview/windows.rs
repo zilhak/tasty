@@ -5,6 +5,8 @@
 // 이유: native 포인터·핸들 호출을 묶는 FFI 모듈이다. 파일 단위 면제는 새 코드에도 적용되므로 안전 래퍼로 옮기면 범위를 줄여야 한다.
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 
+mod overlay;
+
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::rc::Rc;
@@ -12,9 +14,6 @@ use std::sync::mpsc;
 
 use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
 use windows::Win32::Foundation::*;
-use windows::Win32::Graphics::Gdi::{
-    CombineRgn, CreateRectRgn, DeleteObject, HRGN, RGN_DIFF, RGN_ERROR, SetWindowRgn,
-};
 use windows::Win32::System::Com::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -25,10 +24,8 @@ use super::keys::WebViewKeySink;
 use super::load_generation::{is_current_load, nav_state_after_end};
 use super::scan_resume::{HistoryStep, Replay, RequestAction, ScanResume, Start, StartKind};
 use super::script_gate::ScriptGate;
+use super::window_region::{PointerGate, WindowRegion};
 use super::{NavState, PendingNavigation, WebViewBounds};
-
-/// 창 region을 정한 HWND 크기와 그림 구멍(물리 px `[x, y, 너비, 높이]`).
-type AppliedClip = ((i32, i32), Vec<[i32; 4]>);
 
 pub struct PlatformWebView {
     hwnd: HWND,
@@ -53,8 +50,10 @@ pub struct PlatformWebView {
     surface_id: u32,
     /// 마지막 `set_bounds`의 child HWND 크기(물리 px). 창 region의 전체 사각형이다.
     size: Cell<(i32, i32)>,
-    /// 마지막으로 적용한 창 region(크기와 그림 구멍). 같으면 다시 설정하지 않는다.
-    applied_clip: RefCell<Option<AppliedClip>>,
+    /// 안내 카드 구멍과 대상 팝업 영역을 합친 창 region. 같으면 다시 설정하지 않는다.
+    region: RefCell<WindowRegion>,
+    /// 대상 팝업이 보이는 동안 이 창을 꺼서 WebView 영역의 포인터를 부모(winit)로 보낸 상태.
+    pointer: RefCell<PointerGate>,
 }
 
 /// 스캔을 기다리려고 취소하거나 멈춘 탐색을 같은 종류로 다시 시작한다.
@@ -721,7 +720,8 @@ impl PlatformWebView {
                 nav_info_failed: Cell::new(false),
                 parent_hwnd: parent,
                 size: Cell::new((w, h)),
-                applied_clip: RefCell::new(None),
+                region: RefCell::new(WindowRegion::default()),
+                pointer: RefCell::new(PointerGate::default()),
             })
         }
     }
@@ -815,27 +815,10 @@ impl PlatformWebView {
     /// 뺀다. region 밖은 이 창과 자식(WebView2)이 그리지도 포인터를 받지도 않아 부모의 그림이 보인다.
     /// HWND 크기·표시·포커스와 controller는 바꾸지 않는다. 비면 region을 지워 원래 사각형으로 돌아간다.
     /// host 입력 영역(`_input`)을 빼는 방법은 아직 없어 `webview_edge_inset` 여백으로 피한다.
+    /// 대상 팝업 영역(`apply_overlay`)이 있으면 그 구멍도 함께 유지한다.
     pub fn set_native_holes(&self, _input: &[[i32; 4]], clip: &[[i32; 4]], _scale_factor: f64) {
-        let size = self.size.get();
-        if self
-            .applied_clip
-            .borrow()
-            .as_ref()
-            .is_some_and(|(s, c)| *s == size && c.as_slice() == clip)
-        {
-            return;
-        }
-        let applied = if clip.is_empty() {
-            // SAFETY: hwnd는 self가 살아 있는 동안 유효하다. main thread 호출. None은 region을 지운다.
-            unsafe { SetWindowRgn(self.hwnd, None, true) != 0 }
-        } else {
-            // SAFETY: 만든 region은 이 블록에서 지우거나, SetWindowRgn이 성공하면 시스템이 소유한다.
-            // hwnd는 self가 살아 있는 동안 유효하다. main thread 호출.
-            unsafe { set_clip_region(self.hwnd, size, clip) }
-        };
-        if applied {
-            *self.applied_clip.borrow_mut() = Some((size, clip.to_vec()));
-        } else {
+        self.region.borrow_mut().set_clip(clip);
+        if !self.refresh_region() {
             tracing::warn!("WebView2 window region update failed; the page may cover the notice");
         }
     }
@@ -1141,46 +1124,6 @@ fn vk_to_winit_key(vk: u32) -> Option<winit::keyboard::Key> {
     };
     Some(Key::Named(named))
 }
-
-/// 전체 사각형에서 구멍을 뺀 region을 `hwnd`에 설정한다. 성공하면 true다.
-///
-/// # Safety
-/// `hwnd`는 유효한 창이어야 하고 그 창의 스레드에서 불러야 한다.
-unsafe fn set_clip_region(hwnd: HWND, (w, h): (i32, i32), clip: &[[i32; 4]]) -> bool {
-    // SAFETY: GDI region 생성·결합·삭제는 호출자 스레드에서 안전하다. 실패 시 각 handle을 지운다.
-    unsafe {
-        let region: HRGN = CreateRectRgn(0, 0, w, h);
-        if region.is_invalid() {
-            return false;
-        }
-        for &[x, y, cw, ch] in clip {
-            let hole = CreateRectRgn(x, y, x + cw, y + ch);
-            let combined = !hole.is_invalid()
-                && CombineRgn(Some(region), Some(region), Some(hole), RGN_DIFF) != RGN_ERROR;
-            if !hole.is_invalid() && !DeleteObject(hole.into()).as_bool() {
-                tracing::warn!("DeleteObject failed for a WebView2 clip hole region");
-            }
-            if !combined {
-                if !DeleteObject(region.into()).as_bool() {
-                    tracing::warn!("DeleteObject failed for a WebView2 clip region");
-                }
-                return false;
-            }
-        }
-        // 성공하면 region은 시스템 소유가 되어 지우면 안 된다. 실패하면 직접 지운다.
-        if SetWindowRgn(hwnd, Some(region), true) == 0 {
-            if !DeleteObject(region.into()).as_bool() {
-                tracing::warn!("DeleteObject failed for a WebView2 clip region");
-            }
-            return false;
-        }
-        true
-    }
-}
-
-/// 오버레이 합성은 아직 지원하지 않는다. 기본 구현이 `Hide` 를 보고해 대상 팝업이 뜨면 숨긴다.
-/// 계약: docs/design/systems/webview.md 의 "egui 오버레이와 native WebView" 절.
-impl super::overlay::WebViewOverlayBackend for PlatformWebView {}
 
 #[cfg(test)]
 mod tests {
