@@ -229,7 +229,7 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 | 불투명 | backend가 팝업 영역을 불투명하게 대신 보일 수단만 보고함 | 팝업 상자와 드롭다운 상자의 사각형 안만 호스트 그림이다. 그 밖의 페이지는 바뀌지 않는다 |
 | 숨김 | backend가 지원하지 않음, 적용 실패, 전체화면 무대·튜토리얼 | 모든 native WebView를 숨기고 그 자리에 html surface의 boundary 타일이 보인다([html surface](../../surfaces/html/index.md)) |
 
-공통 판정·영역 계산·표현·GPU 분리는 구현돼 있다. 세 OS의 `PlatformWebView`는 아직 오버레이를 지원하지 않는다. `WebViewOverlayBackend` 기본 구현이 숨김을 보고하므로 실제 실행 동작은 숨김 그대로다. 플랫폼별 수단(오버레이 창, 입력 shape, 합성)은 각 OS 구현이 아래 backend 계약에 맞춰 더한다.
+공통 판정·영역 계산·표현·GPU 분리·창 단위 오버레이 host 연결은 구현돼 있다. 세 OS의 `PlatformWebView`는 아직 오버레이를 지원하지 않고, 세 OS의 창 단위 host는 아직 만들지 않는다(`Unsupported`). `WebViewOverlayBackend` 기본 구현이 숨김을 보고하므로 실제 실행 동작은 숨김 그대로다. 플랫폼별 수단(오버레이 창, 입력 shape, 합성)은 각 OS 구현이 아래 backend 계약에 맞춰 더한다.
 
 숨김이 필요한 이유는 z-order다. WebView는 OS 자식 창(Linux X 창, Windows child HWND, macOS subview)이라 wgpu 주 표면보다 항상 위에 있고, egui는 주 표면 하나에만 그린다. 숨기지 않으려면 WebView에서 팝업 영역을 잘라 내거나(clip) 팝업을 별도 OS 층에 다시 그려야 한다.
 
@@ -243,6 +243,7 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 - 전체화면 무대나 튜토리얼이 보이면 숨김이다. 창 전체를 덮는 층이라 페이지를 보일 이유가 없다.
 - 숨김이 아니면 활성 WebView마다 `apply_overlay`를 부른다. 하나라도 실패하면 그 프레임부터 숨김이고 `tracing::warn!`을 남긴다. 실패는 대상 팝업이 모두 닫힐 때까지 유지한다. 그동안 다시 시도하지 않고 경고도 한 번만 남긴다. 오버레이 창의 surface를 잃고 다시 설정해도 얻지 못한 경우도 같은 실패로 다룬다.
 - 숨김으로 돌아가거나 팝업이 닫히면 적용했던 WebView에 `clear_overlay`를 부른다. 한 프레임에서 앞의 WebView 적용이 성공하고 뒤의 WebView가 실패하면, 첫 적용이어도 그 프레임에 모든 WebView에 `clear_overlay`를 불러 앞의 입력 차단·그림 영역을 되돌린다.
+- 고른 모드의 그림 위치가 오버레이 창이면 창 단위 host가 낼 수 있는 상한(아래 "창 단위 오버레이 host")보다 높지 않게 한 단계씩 낮춘다(투명 → 불투명 → 숨김). 낮출 때마다 그 모드의 그림 위치를 다시 묻고, 주 표면이면 host와 관계없이 그 모드를 쓴다. host를 아직 만들지 않았으면 상한을 모르는 것이라 낮추지 않는다. 만들지 못했거나 이 OS가 만들지 않으면 상한은 숨김이다.
 - 매 프레임 다시 정하므로 환경이 바뀌면(예: Linux 컴포지팅 매니저 종료) backend가 낮춘 보고를 다음 프레임부터 따른다.
 - 표시 판정은 `reveal_wanted(mode, overlay_open, active, under_toast)`다. 숨김이 아니면 대상 팝업이 떠 있어도 활성 WebView를 보인다. 비활성 탭과 토스트·passive 팝업 규칙은 모드와 관계없이 그대로다.
 - 모드와 함께 그 모드의 그림 위치(`OverlayPaintSource`)를 정한다. 활성 WebView가 모두 `overlay_paint_source(mode)`로 주 표면을 보고하면 주 표면이고, 하나라도 오버레이 창이면 오버레이 창이다. 주 표면은 backend가 페이지의 대상 영역에 구멍을 내 주 pass가 그린 팝업을 보이는 방식이다. 오버레이 창은 주 pass 뒤 별도 창에 그리는 방식이다. 같은 모드도 backend에 따라 위치가 다를 수 있다.
@@ -310,13 +311,46 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 - 오버레이 창은 주 창 클라이언트 영역과 원점·물리 크기가 같아야 한다. 크기가 다르면 그 프레임을 그리지 않고 오버레이 실패로 다룬다.
 - shape가 없어도 오버레이 창을 투명으로 지운 프레임을 올린다. 이것도 그 모드·페이지로 준비된 그림이며, 지난 프레임 팝업이 오버레이 창에 남지 않는다.
 - egui 텍스처 해제는 주 pass와 오버레이 pass가 모두 끝난 뒤에 한다.
-- 오버레이 창을 만드는 backend는 아직 없다. 창이 없으면 복제도 오버레이 pass도 하지 않는다. 그림 위치로 오버레이 창을 보고하는 backend는 같은 때에 오버레이 창도 등록해야 한다. 등록하지 않으면 위 표시 판정 때문에 팝업이 떠 있는 동안 페이지가 숨김 그대로다. 구멍 방식으로 주 표면을 보고하는 backend는 오버레이 창이 필요 없다.
+- 오버레이 창은 아래 창 단위 host가 붙인다. 창이 없거나 host가 숨김이면 복제한 그림을 그리지 않고 기록도 남기지 않는다. 구멍 방식으로 주 표면을 보고하는 backend는 오버레이 창이 필요 없다.
+
+### 창 단위 오버레이 host
+
+페이지 단위 계약(`WebViewOverlayBackend`)과 나눈다. 오버레이 창은 주 창 클라이언트 영역과 같아야 하고 WebView는 창마다 여럿이라, 창 하나에 host 하나를 둔다. 둘은 `OverlayFrame`의 모드·그림 위치로만 만난다.
+
+- 계약(`src/host_api/webview/overlay_host.rs`의 `OverlayNativeHost`): `surface_target`(wgpu surface 대상, host 수명 동안 유효), `composite`(합성 계약), `follow`(보유한 부모 창의 현재 위치·크기에 맞춤, 같으면 OS 호출 없음), `set_shown`, `raise`(그 창의 WebView native 창 위로). 포커스·창 활성화·포인터를 받지 않고 이벤트 루프 스레드에서만 쓴다. 숨김 중이거나 보인 직후 첫 present 전에는 지난 그림이 보이지 않아야 한다. 주 창 최소화·작업 공간·다른 앱과의 순서는 host가 주 창에 묶여(managed transient 또는 같은 창 안 자식) OS가 함께 처리한다. 공통 훅은 이를 묻지 않는다.
+- 만들기는 `create_overlay_host(&Arc<Window>)`다. OS별 구현은 `overlay_host/{linux,macos,windows}.rs`의 `create`이며 지금은 모두 `Unsupported`를 돌려준다.
+- 수명: host는 부모 창의 `Arc<Window>`를 보유한다. `OverlaySurfaceParts`는 surface를 host보다 먼저 선언해 먼저 drop한다. 그래서 unsafe로 만든 surface가 사는 동안 부모 창(과 그 display 연결)이 살아 있다.
+- 붙이기(`GpuState::attach_overlay_surface`): App의 Instance·Adapter와 창의 Device를 그대로 쓴다. 어댑터가 그 surface에 present할 수 없거나 surface 형식 목록에 주 surface 형식이 없으면 붙이지 않는다. 크기는 주 surface와 같고 present mode는 주 surface와 같은 규칙(Mailbox가 있으면 Mailbox, 없으면 Fifo)이다. alpha 설정은 caps에 있는 값 중 PreMultiplied, PostMultiplied, 첫 값 순서로 고른다. 이것은 그리는 규칙이며 합성 판정이 아니다.
+- 상한(`overlay_surface_ceiling`)은 host 합성 계약과 alpha 설정으로 정한다.
+
+| `composite()` | alpha 설정 | 상한 |
+|---|---|---|
+| `ExternalArgb`(외부 합성기가 ARGB 알파 반영, 그 OS·조건에서 측정한 host만) | 무엇이든 | 투명 |
+| `SwapchainAlpha` | PreMultiplied·PostMultiplied | 투명 |
+| `SwapchainAlpha` | 그 밖 | 불투명 |
+| `OpaqueOnly` | 무엇이든 | 불투명 |
+| `Unavailable` | - | 숨김 |
+
+- 상태(`OverlayHostSlot`)와 훅: 같은 프레임의 WebView 동기화 바로 뒤에 `settle_overlay_host` 하나가 맞춘다. 필요하다는 것은 동기화한 모드가 숨김이 아니고 그림 위치가 오버레이 창인 것이다.
+
+| 상태 | 조건 | 동작 |
+|---|---|---|
+| 아무 상태 | 창에 WebView가 없음 | 붙어 있으면 버리고 `Absent`. 그 밖에는 OS를 부르지 않는다 |
+| `Absent` | 필요함 | 만들어 붙이고 따라간 뒤 보이고 올린다. 성공이면 `Attached`, `Unsupported`면 `Unavailable`, 실패면 `FailedThisEpisode`와 경고 1회 |
+| `Attached` | 필요함 | 따라간 뒤 보인다. 새로 보였거나 직전에 보이지 않던 페이지를 드러냈으면 다시 올린다 |
+| `Attached` | 필요 없음 | 숨긴다. 버리지 않는다 |
+| `Attached` | surface를 잃음 | `FailedThisEpisode`. 그 실패는 오버레이 pass가 기록했다 |
+| `FailedThisEpisode` | 대상 팝업이 닫힘 | `Absent`. 다음 구간에 한 번 다시 시도한다 |
+| `Unavailable` | - | 창 수명 동안 다시 시도하지 않는다 |
+
+- 순서: 팝업이 처음 뜬 동기화는 host가 없어 모드를 낮추지 않고 페이지를 숨긴 채 다시 그리기를 요청한다. 같은 프레임 훅이 host를 만들어 보인다. 다음 프레임 렌더가 그 host에 그리고 present한 뒤 동기화가 페이지를 드러낸다. 그러므로 보이기 → 그리기 → 드러내기 순서이고 서로 기다리지 않는다. 만들지 못하면 다음 동기화가 상한 숨김으로 모드를 낮추고, 구멍 방식 불투명은 그대로 쓴다.
+- 새로 드러낸 페이지 위로 host를 올리는 것은 Linux GTK `show_all`과 macOS 새 WKWebView가 위로 올라오기 때문이다. 올린 프레임에는 한 번 더 그린다.
+- 주 창 `Resized`·`ScaleFactorChanged`는 `GpuState::resize`가 오버레이 surface도 같은 크기로 다시 설정하고 host를 따라가게 한다. `Moved`는 붙은 host만 따라가게 한다. 종료 때 WebView를 숨기는 경로가 host도 버린다.
+- 비용: WebView가 없는 창은 OS 호출이 없다. 합성 계약은 대상 팝업이 WebView 위에 떠 있고 그림 위치가 오버레이 창일 때만 묻는다.
 
 ### debug 재현
 
-debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--force off|hide|opaque|transparent]`)는 마지막 동기화의 모드·그림 위치·대상·페이지와 present한 그림의 기준(모드·그림 위치·페이지·표면 크기)을 돌려준다. `--force`는 backend의 지원 보고를 덮어쓴다. 지원하지 않는 backend에 `opaque`를 강제하면 적용이 `Unsupported`로 실패하고 숨김과 경고 경로를 그대로 지난다([debug IPC](../../dev-guide/debug-ipc.md)).
-
-`Transparent`를 보고하는 플랫폼 backend는 아직 없다. release 빌드에서 이 모드를 만드는 곳이 없어 `OverlayMode::Transparent`에 release 전용 `expect(dead_code)`를 두었다. backend가 이 모드를 보고하기 시작하면 그 expect가 충족되지 않아 지울 때가 드러난다.
+debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--force off|hide|opaque|transparent]`)는 마지막 동기화의 모드·그림 위치·host 상태(`host`)·대상·페이지와 present한 그림의 기준(모드·그림 위치·페이지·표면 크기)을 돌려준다. `--force`는 backend의 지원 보고를 덮어쓴다. 지원하지 않는 backend에 `opaque`를 강제하면 적용이 `Unsupported`로 실패하고 숨김과 경고 경로를 그대로 지난다([debug IPC](../../dev-guide/debug-ipc.md)).
 
 ### 기각한 대안
 

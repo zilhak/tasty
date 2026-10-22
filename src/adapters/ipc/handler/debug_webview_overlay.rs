@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::RequestContext;
-use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource, TargetKind};
+use crate::state::webview_overlay::{OverlayHostSlot, OverlayMode, OverlayPaintSource, TargetKind};
 
 fn mode_name(mode: OverlayMode) -> &'static str {
     match mode {
@@ -22,6 +22,15 @@ fn source_name(source: OverlayPaintSource) -> &'static str {
     match source {
         OverlayPaintSource::MainSurface => "main_surface",
         OverlayPaintSource::OverlaySurface => "overlay_surface",
+    }
+}
+
+fn host_name(slot: OverlayHostSlot) -> &'static str {
+    match slot {
+        OverlayHostSlot::Absent => "absent",
+        OverlayHostSlot::Attached => "attached",
+        OverlayHostSlot::FailedThisEpisode => "failed_this_episode",
+        OverlayHostSlot::Unavailable => "unavailable",
     }
 }
 
@@ -69,6 +78,7 @@ pub(super) fn handle_overlay(
             "forced": ov.forced.map(mode_name),
             "applied": ov.applied,
             "failed": ov.health.failed(),
+            "host": host_name(ov.host),
             "targets": ov.targets.iter().map(|t| json!({
                 "kind": kind_name(t.kind),
                 "rect": rect(t.rect),

@@ -492,6 +492,8 @@ impl MainView {
             WindowEvent::Occluded(false) => {
                 self.mark_dirty();
             }
+            // 오버레이 host 가 별도 최상위 창인 OS 는 주 창 이동을 직접 따라가야 한다.
+            WindowEvent::Moved(_) => self.base.gpu.follow_overlay_host(),
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.base.state.modifiers = modifiers.state();
                 let mut dirty = self.update_hovered_link(engine);

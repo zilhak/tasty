@@ -82,6 +82,8 @@ pub(crate) mod fake {
     pub(crate) struct FakeOverlayBackend {
         pub support: OverlayMode,
         pub paint_source: OverlayPaintSource,
+        /// 참이면 `Opaque` 만 주 표면 구멍으로 그린다(나머지 모드는 `paint_source`).
+        pub opaque_on_main: bool,
         /// host 가 마지막으로 정한 페이지 표시 여부.
         pub visible: std::cell::Cell<bool>,
         pub fail: bool,
@@ -97,8 +99,12 @@ pub(crate) mod fake {
             self.support
         }
 
-        fn overlay_paint_source(&self, _mode: OverlayMode) -> OverlayPaintSource {
-            self.paint_source
+        fn overlay_paint_source(&self, mode: OverlayMode) -> OverlayPaintSource {
+            if self.opaque_on_main && mode == OverlayMode::Opaque {
+                OverlayPaintSource::MainSurface
+            } else {
+                self.paint_source
+            }
         }
 
         fn apply_overlay(&self, request: &OverlayRequest<'_>) -> Result<(), OverlayApplyError> {

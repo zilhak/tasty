@@ -89,6 +89,12 @@ impl App {
             self.plugin_manager.as_ref(),
             &self.services.navigation_proofs,
         );
+        // 같은 프레임 동기화가 정한 모드·그림 위치로 창 단위 오버레이 host 를 맞춘다.
+        super::webview_sync::settle_overlay_host(
+            view,
+            &self.gpu_instance,
+            self.gpu_adapter.as_deref(),
+        );
         self.process_remote_tool_requests(id);
         self.poll_port_scans();
         self.redraw_windows_for_shared_lists();

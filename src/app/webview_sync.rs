@@ -12,7 +12,9 @@ use crate::view::main::redraw::{
 use crate::view::ui::View;
 use tasty_model::html_script::BannerPhase;
 
+mod overlay_host_settle;
 mod overlay_settle;
+pub(crate) use overlay_host_settle::settle_overlay_host;
 use overlay_settle::{apply_reveal, settle_overlay};
 
 pub(crate) fn synchronize(
@@ -842,6 +844,7 @@ fn sync_webviews(
         blocked,
         &overlay_views,
         scale_factor,
+        || view.base.gpu.overlay_surface_ceiling(),
     );
     drop(overlay_views);
 

@@ -23,6 +23,7 @@ const STEPS: &[&str] = &[
     "FramePhase::Draw",
     "view.finish_redraw(",
     "webview_sync::synchronize(",
+    "webview_sync::settle_overlay_host(",
 ];
 
 fn frame_body() -> String {

@@ -5,6 +5,7 @@ mod egui_mesh_prepare;
 mod fonts;
 pub(crate) mod loading;
 mod overlay_paint;
+pub(crate) mod overlay_surface;
 mod render_pass;
 mod screenshot;
 mod shell_setup;
@@ -48,6 +49,15 @@ pub struct BootErrorInfo {
     pub hint: String,
 }
 
+/// Mailbox 가 있으면 Mailbox, 없으면 Fifo. 주 surface 와 오버레이 surface 가 같은 규칙을 쓴다.
+fn pick_present_mode(modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
+    if modes.contains(&wgpu::PresentMode::Mailbox) {
+        wgpu::PresentMode::Mailbox
+    } else {
+        wgpu::PresentMode::Fifo
+    }
+}
+
 /// configure 크기를 1..=어댑터 한계로 제한한다. 0인 최소화 이벤트는 호출 전에 건너뛴다.
 fn clamp_surface_dims(w: u32, h: u32, max: u32) -> (u32, u32) {
     (w.clamp(1, max), h.clamp(1, max))
@@ -63,8 +73,9 @@ pub struct GpuState {
     pub(crate) egui_ctx: egui::Context,
     pub(super) egui_state: egui_winit::State,
     pub(super) egui_renderer: egui_wgpu::Renderer,
-    /// native WebView 위 오버레이 창. 만드는 backend 가 없으면 `None` 이다.
-    pub(super) overlay_surface: Option<overlay_paint::OverlaySurface>,
+    /// native WebView 위 창 단위 오버레이 host 와 그 surface. 그림 위치가 오버레이 창인 모드가 필요할 때
+    /// WebView 동기화 뒤 훅이 붙인다. OS host 를 만들지 못하면 `None` 이다.
+    pub(super) overlay_surface: Option<overlay_surface::OverlaySurface>,
     pub(super) scale_factor: f32,
     /// 마지막으로 적용한 터미널 폰트 설정. 달라졌을 때만 update_font를 호출한다.
     pub(super) last_term_font_sig: String,
@@ -162,14 +173,7 @@ impl GpuState {
         let max_dim = device.limits().max_texture_dimension_2d;
         let (config_width, config_height) = clamp_surface_dims(size.width, size.height, max_dim);
         // 가상 디스플레이에서는 Fifo만으로 프레임 상한을 알 수 없어 실제 선택값을 기록한다.
-        let present_mode = if surface_caps
-            .present_modes
-            .contains(&wgpu::PresentMode::Mailbox)
-        {
-            wgpu::PresentMode::Mailbox
-        } else {
-            wgpu::PresentMode::Fifo
-        };
+        let present_mode = pick_present_mode(&surface_caps.present_modes);
         tracing::info!(
             "surface present_mode={present_mode:?} (available: {:?})",
             surface_caps.present_modes
@@ -306,6 +310,7 @@ impl GpuState {
         self.config.width = w;
         self.config.height = h;
         self.surface.configure(&self.device, &self.config);
+        self.resize_overlay_surface(w, h);
         self.renderer.resize(&self.queue, w, h);
     }
 

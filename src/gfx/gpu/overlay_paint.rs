@@ -88,15 +88,6 @@ pub(super) fn overlay_shapes(
     restrict_to_pages(clone_layers(ctx, &layers), pages)
 }
 
-/// native WebView 위 오버레이 창의 wgpu surface. 플랫폼 backend 가 투명·불투명 합성을 지원하는 창을
-/// 만들면 채운다. 형식은 메인 surface 와 같아야 한다(같은 egui renderer 로 그린다). 창은 메인 창
-/// 클라이언트 영역과 원점·물리 크기가 같아야 하며([`overlay_matches_main`]) 메인 pass 와 같은 좌표로
-/// 그린다. 지금은 이 창을 만드는 backend 가 없어 언제나 `None` 이고 오버레이 pass 는 실행되지 않는다.
-pub(crate) struct OverlaySurface {
-    pub(crate) surface: wgpu::Surface<'static>,
-    pub(crate) config: wgpu::SurfaceConfiguration,
-}
-
 /// 오버레이 surface 가 메인 surface 와 같은 물리 크기인지. 다르면 같은 좌표로 그릴 수 없으므로 그 프레임은
 /// 실패로 돌려 `Hide` 로 돌아간다(크기를 맞춰 다시 만드는 일은 backend 몫이다).
 pub(super) fn overlay_matches_main(main: [u32; 2], overlay: [u32; 2]) -> bool {
@@ -143,7 +134,7 @@ impl super::GpuState {
 
     /// 오버레이 창을 투명으로 지우고 오버레이 paint job 과 plugin mesh 팝업을 그린다. 메인 pass 와 같은
     /// 그룹 순서를 쓰고 mesh 도 `pages` 안만 칠한다. shape 가 없어도 지운 프레임을 올린다(유효한 빈 그림).
-    /// 창이 없으면 `Ok(false)`. surface 를 잃었고 다시 설정해도 얻지 못하면 창을 버리고 `Err` 를
+    /// 창이 없거나 host 가 숨김이면 `Ok(false)` 라 기록이 남지 않는다. surface 를 잃었고 다시 설정해도 얻지 못하면 창을 버리고 `Err` 를
     /// 돌려준다. 호출자는 그 프레임부터 `Hide` 로 돌아간다.
     #[allow(clippy::too_many_arguments)] // reason: 오버레이 pass 한 번에 필요한 프레임 입력 그대로
     pub(super) fn render_webview_overlay(
@@ -155,7 +146,7 @@ impl super::GpuState {
         plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
         host_on_top: bool,
     ) -> Result<bool, String> {
-        let Some(overlay) = self.overlay_surface.as_ref() else {
+        let Some(overlay) = self.overlay_surface.as_ref().filter(|o| o.paintable()) else {
             return Ok(false);
         };
         let size = [overlay.config.width, overlay.config.height];

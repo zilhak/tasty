@@ -5,6 +5,7 @@ mod file_stamp;
 pub mod keys;
 mod load_generation;
 pub mod overlay;
+pub(crate) mod overlay_host;
 #[cfg(any(windows, test))]
 mod scan_resume;
 pub mod script_gate;

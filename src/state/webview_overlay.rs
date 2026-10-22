@@ -18,15 +18,6 @@ pub enum OverlayMode {
     /// 페이지를 보인 채 host 가 팝업·드롭다운 상자 안만 불투명하게 칠한다.
     Opaque,
     /// 페이지를 보인 채 host 가 투명도를 섞어 그 위에 합성한다.
-    // 이유: 이 모드를 보고하는 플랫폼 backend 가 아직 없다. debug 의 `--force transparent` 와 시험만 만든다.
-    // backend 가 보고하기 시작하면 이 expect 가 충족되지 않아 지울 때를 알린다.
-    #[cfg_attr(
-        all(not(debug_assertions), not(test)),
-        expect(
-            dead_code,
-            reason = "no platform backend reports Transparent yet; only debug --force builds it"
-        )
-    )]
     Transparent,
 }
 
@@ -40,6 +31,39 @@ pub enum OverlayPaintSource {
     /// 별도 오버레이 창. 주 pass 뒤 오버레이 pass 가 그 창에 present 해야 준비된 것이다.
     #[default]
     OverlaySurface,
+}
+
+/// 창 단위 오버레이 host 의 상태. WebView 동기화 뒤 훅이 바꾼다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OverlayHostSlot {
+    /// 붙은 host 가 없다. 그림 위치가 오버레이 창인 모드가 필요해지면 만든다.
+    #[default]
+    Absent,
+    /// host 와 그 surface 가 붙어 있다.
+    Attached,
+    /// 이번 대상 팝업 구간에 만들거나 붙이지 못했다. 구간이 끝나면 `Absent` 로 돌아가 한 번 다시 시도한다.
+    FailedThisEpisode,
+    /// 이 OS·세션은 host 를 만들지 않는다. 창 수명 동안 다시 시도하지 않는다.
+    Unavailable,
+}
+
+impl OverlayHostSlot {
+    /// 그림 위치가 오버레이 창인 모드의 상한. 아직 만들지 않았으면 `None` 이라 낮추지 않는다. 붙어 있으면
+    /// `attached` 로 surface 의 상한을 묻고, 만들 수 없으면 `Hide` 다.
+    pub fn ceiling(self, attached: impl FnOnce() -> Option<OverlayMode>) -> Option<OverlayMode> {
+        match self {
+            Self::Absent => None,
+            Self::Attached => Some(attached().unwrap_or(OverlayMode::Hide)),
+            Self::FailedThisEpisode | Self::Unavailable => Some(OverlayMode::Hide),
+        }
+    }
+
+    /// 대상 팝업이 닫힌 프레임에 부른다.
+    pub fn end_episode(&mut self) {
+        if *self == Self::FailedThisEpisode {
+            *self = Self::Absent;
+        }
+    }
 }
 
 /// 대상 레이어의 종류. 오버레이 그림과 대상 영역은 이 목록의 레이어만 모은다. 대상 레이어 목록은
@@ -98,6 +122,12 @@ pub struct OverlayFrame {
     pub painted: Option<PaintedOverlay>,
     /// debug 빌드에서 backend 지원 모드를 덮어쓴다.
     pub forced: Option<OverlayMode>,
+    /// 창 단위 오버레이 host 상태.
+    pub host: OverlayHostSlot,
+    /// 마지막 동기화가 드러낸 surface id.
+    pub revealed: Vec<u32>,
+    /// 마지막 동기화가 직전에 보이지 않던 페이지를 드러냈다. 그 위로 host 를 다시 올린다.
+    pub newly_revealed: bool,
 }
 
 /// 한 프레임의 오버레이 그림. 어떤 모드·그림 위치·페이지·표면 크기를 기준으로 만들었는지 함께 든다.

@@ -4,12 +4,16 @@
 /// 대상 팝업 오버레이의 이번 프레임 모드를 정하고 활성 WebView 마다 적용한다. 모든 활성 WebView 가
 /// 같은 모드를 내야 하며 하나라도 낮으면 그 모드를 쓴다. 적용이 실패하면 그 프레임부터 구간이 끝날
 /// 때까지 `Hide` 이고 경고는 한 번 남긴다. `views` 의 사각형은 활성 WebView 의 물리 사각형이다.
+///
+/// 그림 위치가 오버레이 창인 모드는 창 단위 host 가 낼 수 있는 상한까지 한 단계씩 낮춘다. 붙은 host 의
+/// 상한은 `attached_ceiling` 으로 필요할 때만 묻는다. 주 표면에 그리는 모드는 host 와 관계없다.
 pub(super) fn settle_overlay<B: crate::webview::overlay::WebViewOverlayBackend>(
     frame: &mut crate::state::webview_overlay::OverlayFrame,
     overlay_open: bool,
     blocked: bool,
     views: &[(&B, Option<crate::model::PhysicalRect>)],
     scale_factor: f64,
+    attached_ceiling: impl FnOnce() -> Option<crate::state::webview_overlay::OverlayMode>,
 ) -> crate::state::webview_overlay::OverlayMode {
     use crate::state::webview_overlay::{ModeInputs, OverlayMode, select_mode, webview_regions};
     let active: Vec<(&B, crate::model::PhysicalRect)> = views
@@ -29,6 +33,12 @@ pub(super) fn settle_overlay<B: crate::webview::overlay::WebViewOverlayBackend>(
             blocked,
             failed: frame.health.failed(),
         });
+        let host = frame.host;
+        mode = lower_to_ceiling(
+            mode,
+            |m| paint_source(m, active.iter().map(|(wv, _)| *wv)),
+            || host.ceiling(attached_ceiling),
+        );
     }
     // 이번 프레임에 적용을 시도한 backend 가 있다. 뒤 WebView 가 실패하면 앞에서 성공한 적용도 되돌린다.
     let mut attempted = false;
@@ -71,10 +81,40 @@ pub(super) fn settle_overlay<B: crate::webview::overlay::WebViewOverlayBackend>(
     }
     if !overlay_open {
         frame.health.end_episode();
+        frame.host.end_episode();
     }
     frame.applied = mode != OverlayMode::Hide;
     frame.mode = mode;
     frame.paint_source = paint_source(mode, active.iter().map(|(wv, _)| *wv));
+    mode
+}
+
+/// 그림 위치가 오버레이 창인 동안 host 상한보다 높으면 한 단계 낮추고 그 모드의 그림 위치를 다시 본다.
+/// 상한은 처음 필요할 때 한 번만 묻는다. `None` 은 아직 모르는 것이라 낮추지 않는다.
+fn lower_to_ceiling(
+    mut mode: crate::state::webview_overlay::OverlayMode,
+    source_of: impl Fn(
+        crate::state::webview_overlay::OverlayMode,
+    ) -> crate::state::webview_overlay::OverlayPaintSource,
+    ceiling: impl FnOnce() -> Option<crate::state::webview_overlay::OverlayMode>,
+) -> crate::state::webview_overlay::OverlayMode {
+    use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource};
+    let mut ceiling = Some(ceiling);
+    let mut known = None;
+    while mode != OverlayMode::Hide && source_of(mode) == OverlayPaintSource::OverlaySurface {
+        if let Some(ask) = ceiling.take() {
+            known = ask();
+        }
+        match known {
+            Some(top) if mode > top => {
+                mode = match mode {
+                    OverlayMode::Transparent => OverlayMode::Opaque,
+                    _ => OverlayMode::Hide,
+                }
+            }
+            _ => break,
+        }
+    }
     mode
 }
 
@@ -130,6 +170,8 @@ pub(super) fn settle_reveal<'a, W: 'a>(
     } else {
         Vec::new()
     };
+    overlay.newly_revealed = revealed.iter().any(|id| !overlay.revealed.contains(id));
+    overlay.revealed.clone_from(&revealed);
     for (sid, wv) in webviews {
         set_visible(wv, revealed.contains(sid));
     }
@@ -248,6 +290,7 @@ mod tests {
             false,
             &[(&wv, Some(rect(0.0, 0.0, 100.0, 100.0)))],
             1.0,
+            || None,
         );
         assert_eq!(mode, OverlayMode::Hide);
         assert!(wv.applied.borrow().is_empty());
@@ -271,6 +314,7 @@ mod tests {
             false,
             &[(&wv, Some(rect(200.0, 100.0, 600.0, 400.0)))],
             1.0,
+            || None,
         );
         assert_eq!(mode, OverlayMode::Opaque);
         assert_eq!(
@@ -297,6 +341,7 @@ mod tests {
             true,
             &[(&wv, Some(rect(0.0, 0.0, 100.0, 100.0)))],
             1.0,
+            || None,
         );
         assert_eq!(mode, OverlayMode::Hide);
         assert!(wv.applied.borrow().is_empty());
@@ -313,16 +358,16 @@ mod tests {
         let mut frame = frame_with(&[(TargetKind::HostPopup, er(0.0, 0.0, 10.0, 10.0))]);
         let views = [(&wv, Some(rect(0.0, 0.0, 100.0, 100.0)))];
         assert_eq!(
-            settle_overlay(&mut frame, true, false, &views, 1.0),
+            settle_overlay(&mut frame, true, false, &views, 1.0, || None),
             OverlayMode::Hide
         );
         assert!(frame.health.failed());
         assert_eq!(
-            settle_overlay(&mut frame, true, false, &views, 1.0),
+            settle_overlay(&mut frame, true, false, &views, 1.0, || None),
             OverlayMode::Hide
         );
         // 팝업이 닫히면 구간이 끝나 다음에는 다시 시도한다.
-        settle_overlay(&mut frame, false, false, &views, 1.0);
+        settle_overlay(&mut frame, false, false, &views, 1.0, || None);
         assert!(!frame.health.failed());
     }
 
@@ -334,10 +379,10 @@ mod tests {
         };
         let mut frame = frame_with(&[(TargetKind::HostPopup, er(0.0, 0.0, 10.0, 10.0))]);
         let views = [(&wv, Some(rect(0.0, 0.0, 100.0, 100.0)))];
-        settle_overlay(&mut frame, true, false, &views, 1.0);
+        settle_overlay(&mut frame, true, false, &views, 1.0, || None);
         assert_eq!(*wv.cleared.borrow(), 0);
         assert_eq!(
-            settle_overlay(&mut frame, false, false, &views, 1.0),
+            settle_overlay(&mut frame, false, false, &views, 1.0, || None),
             OverlayMode::Hide
         );
         assert_eq!(*wv.cleared.borrow(), 1);
@@ -362,14 +407,14 @@ mod tests {
             (&bad, Some(rect(100.0, 0.0, 100.0, 100.0))),
         ];
         assert_eq!(
-            settle_overlay(&mut frame, true, false, &views, 1.0),
+            settle_overlay(&mut frame, true, false, &views, 1.0, || None),
             OverlayMode::Hide
         );
         assert_eq!(ok.applied.borrow().len(), 1);
         assert!(*ok.cleared.borrow() >= 1);
         assert!(!*ok.pointer_held.borrow());
         assert!(!frame.applied);
-        settle_overlay(&mut frame, false, false, &views, 1.0);
+        settle_overlay(&mut frame, false, false, &views, 1.0, || None);
         assert!(!*ok.pointer_held.borrow());
     }
 
@@ -409,7 +454,7 @@ mod tests {
         /// 동기화 한 번. 드러낸 surface 와 다시 그리기 요청 여부를 돌려준다.
         fn sync(&mut self) -> (Vec<u32>, bool) {
             let views = [(self.wv, Some(rect(0.0, 0.0, 200.0, 100.0)))];
-            let mode = settle_overlay(&mut self.frame, true, false, &views, 1.0);
+            let mode = settle_overlay(&mut self.frame, true, false, &views, 1.0, || None);
             let ids = [7u32];
             super::settle_reveal(
                 &mut self.frame,
@@ -527,6 +572,7 @@ mod tests {
                 (&none, Some(rect(100.0, 0.0, 100.0, 100.0))),
             ],
             1.0,
+            || None,
         );
         assert_eq!(mode, OverlayMode::Hide);
         assert!(good.applied.borrow().is_empty());
