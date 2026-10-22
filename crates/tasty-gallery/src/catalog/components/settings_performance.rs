@@ -174,6 +174,7 @@ fn lines_control(ui: &mut egui::Ui, theme: &Theme, buf: &mut String, enabled: bo
                 .invalid(settled.is_some())
                 .show(ui, theme, buf);
             if parsed == Some(UNLIMITED_SCROLLBACK_DISK_LINES) {
+                ui.add_space((theme.spacing_sm.value() - ui.spacing().item_spacing.x).max(0.0));
                 let ink = if enabled {
                     theme.text_secondary()
                 } else {

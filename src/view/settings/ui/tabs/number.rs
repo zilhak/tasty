@@ -236,6 +236,8 @@ pub(super) fn number_field(
             }
 
             if let Some(note) = spec.note {
+                // 칸과 값 설명 사이는 시안의 space-sm 이다.
+                ui.add_space((theme.spacing_sm.value() - ui.spacing().item_spacing.x).max(0.0));
                 let ink = if spec.enabled {
                     theme.text_secondary()
                 } else {
