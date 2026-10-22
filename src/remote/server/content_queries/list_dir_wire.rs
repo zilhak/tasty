@@ -84,7 +84,7 @@ pub(super) fn listing_volume(_dir: &str) -> Option<u64> {
     None
 }
 
-/// `os_hidden`·`link` 가 gui 조합에만 있으므로 시험도 그 조합에서만 돈다.
+/// 링크 시험은 GUI·headless 조합에서 모두 돌고, GUI 전용인 OS 숨김 표시 시험만 GUI 조합에서 돈다.
 #[cfg(test)]
 mod tests {
     use super::*;
