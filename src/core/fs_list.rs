@@ -28,12 +28,11 @@ pub(crate) struct DirEntryInfo {
     /// 소문자 확장자. 디렉터리이거나 확장자가 없으면 비어 있다.
     pub(crate) ext: String,
     /// 항목이 심볼릭 링크인가. 원격 항목은 server 가 `list_dir_result` 에 실은 값이고, 싣지 않는 옛 server 면 `NotALink`다.
-    /// 읽는 쪽이 GUI의 탐색기뿐이라 `path`처럼 GUI에서만 둔다.
-    #[cfg(feature = "gui")]
+    /// headless server 도 원격 client 에 보내야 하므로 GUI 조합에 두지 않는다.
     pub(crate) link: EntryLink,
     /// OS 가 숨김으로 표시했는가(Windows 숨김 속성, macOS `UF_HIDDEN`). 이름 앞 점 규칙은 담지 않는다.
     /// 원격 항목은 server 가 `list_dir_result` 에 실은 값이고, 싣지 않는 옛 server 면 거짓이다.
-    /// `link` 처럼 GUI 에서만 둔다.
+    /// 읽는 쪽이 GUI 의 탐색기뿐이라 `path` 처럼 GUI 에서만 둔다.
     #[cfg(feature = "gui")]
     pub(crate) os_hidden: bool,
     /// 수정 시각을 유지한 교체를 가르는 OS 값. 로컬 Unix 만 채우고 Windows·원격·`..` 행은 `None` 이다.
@@ -97,7 +96,6 @@ impl DirEntryInfo {
 }
 
 /// 목록 항목의 링크 상태. 링크는 `path`(링크 자신의 경로)로 탐색하고 조작한다.
-#[cfg(feature = "gui")]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum EntryLink {
     #[default]
@@ -122,7 +120,6 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
         let is_link = entry.file_type().is_ok_and(|t| t.is_symlink());
         // 링크면 대상의 metadata를 먼저 읽고, 대상이 없으면 링크 자신의 값을 쓴다.
         let target = is_link.then(|| std::fs::metadata(&path).ok());
-        #[cfg(feature = "gui")]
         let link = match &target {
             None => EntryLink::NotALink,
             Some(Some(_)) => EntryLink::Valid,
@@ -157,7 +154,6 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
             size,
             modified,
             ext,
-            #[cfg(feature = "gui")]
             link,
             #[cfg(feature = "gui")]
             os_hidden,
@@ -200,14 +196,11 @@ pub(crate) fn compare_entries(
 /// Type 정렬 키. Type 열에 보이는 낱말과 같은 묶음이 붙어 있도록 링크 여부, 종류, 확장자 순으로 묶는다.
 /// 번역문이 아니라 분류의 선언 순서라 언어와 무관하다.
 fn type_key(e: &DirEntryInfo) -> (u8, FileKind, &str) {
-    #[cfg(feature = "gui")]
     let link = match e.link {
         EntryLink::NotALink => 0,
         EntryLink::Valid => 1,
         EntryLink::Broken => 2,
     };
-    #[cfg(not(feature = "gui"))]
-    let link = 0;
     (link, file_kind(&e.ext), &e.ext)
 }
 
@@ -388,17 +381,13 @@ mod tests {
         let entries = read_dir_entries(d).unwrap();
         let find = |name: &str| entries.iter().find(|e| e.name == name).unwrap();
         assert!(find("dir_link").is_dir);
-        #[cfg(feature = "gui")]
         assert_eq!(find("dir_link").link, EntryLink::Valid);
         assert!(!find("file_link.md").is_dir);
         assert_eq!(find("file_link.md").size, 5);
-        #[cfg(feature = "gui")]
         assert_eq!(find("file_link.md").link, EntryLink::Valid);
         assert!(!find("broken").is_dir);
-        #[cfg(feature = "gui")]
         assert_eq!(find("broken").link, EntryLink::Broken);
         assert!(find("real").is_dir);
-        #[cfg(feature = "gui")]
         assert_eq!(find("real").link, EntryLink::NotALink);
     }
 
