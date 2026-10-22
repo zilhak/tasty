@@ -305,8 +305,9 @@ fn queue_header(ui: &mut egui::Ui, theme: &Theme, header: &QueueHeader<'_>) {
         ))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                // 문구 조각과 호스트 표시 사이는 space-sm 이다. 조각 끝의 공백은 이 간격이 대신한다.
-                ui.spacing_mut().item_spacing = egui::vec2(theme.spacing_sm.value(), 0.0);
+                // 문구 조각과 호스트 표시 사이는 낱말 공백 하나 폭이다. 조각 끝의 공백은 이 간격이 대신한다.
+                ui.spacing_mut().item_spacing =
+                    egui::vec2(theme.explorer_remote_queue_head_gap().value(), 0.0);
                 let muted = theme.text_muted().to_egui();
                 for (i, part) in [header.before, header.after].into_iter().enumerate() {
                     if i == 1 {
