@@ -43,7 +43,7 @@ pub(crate) trait OverlayNativeHost {
 /// host 의 합성 계약. wgpu surface 의 alpha 설정과 별개다. 투명 합성은 그 OS·조건에서 측정으로 확인한
 /// host 만 보고한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// 이유: 합성을 보고하는 OS host 가 아직 없다(모든 OS 가 Unsupported). 시험용 host 가 만든다.
+// 이유: macOS host 만 `SwapchainAlpha` 를 보고하고 나머지 OS 는 Unsupported 다. 나머지 값은 시험용 host 가 만든다.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum HostComposite {
     /// 불투명 사각형만 낸다. 알파는 무시된다.

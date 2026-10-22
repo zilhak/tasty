@@ -1194,9 +1194,13 @@ fn ns_chars_to_winit_key(chars: &str) -> Option<winit::keyboard::Key> {
 
 /// 불투명 모드는 팝업 상자를 layer mask 구멍으로 빼 주 표면이 그린 팝업을 보인다(그림 위치 주 표면). 투명
 /// 모드는 창 단위 오버레이 host(형제 NSView)에 그린다. 두 모드 모두 대상 팝업이 보이는 동안 뷰 전체 포인터를
-/// host 로 보낸다. 지원 보고(`overlay_support`)는 실제 합성을 측정하기 전이라 기본값 `Hide` 다.
+/// host 로 보낸다. host 가 다시 보일 때 지난 그림을 지우지 못해(측정) 투명 모드는 보고하지 않는다.
 /// 계약: docs/design/systems/webview.md 의 "egui 오버레이와 native WebView" 절.
 impl super::overlay::WebViewOverlayBackend for PlatformWebView {
+    fn overlay_support(&self) -> OverlayMode {
+        OverlayMode::Opaque
+    }
+
     fn overlay_paint_source(&self, mode: OverlayMode) -> OverlayPaintSource {
         if mode == OverlayMode::Opaque {
             OverlayPaintSource::MainSurface

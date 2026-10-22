@@ -234,14 +234,14 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 | OS | 보고하는 모드 | 수단 |
 |---|---|---|
 | Linux(X11) | XFixes 2.0과 SHAPE 확장이 있으면 불투명, 없으면 숨김. 투명은 아직 보고하지 않는다 | WebView X 창 shape에 구멍을 내 주 표면을 보인다(아래 "Linux 불투명 구현") |
-| macOS | 숨김(`WebViewOverlayBackend` 기본 구현) | 없음 |
+| macOS | 불투명 | WKWebView layer mask와 입력 제외(아래 "macOS 측정 사실과 범위") |
 | Windows | 불투명 | HWND region과 입력 차단(아래 "Windows 불투명 수단") |
 
-투명 모드는 어느 OS에서도 아직 내지 않으며, 세 OS의 창 단위 host는 아직 만들지 않는다(`Unsupported`). 남은 수단(오버레이 창, 합성)은 각 OS 구현이 아래 backend 계약에 맞춰 더한다.
+투명 모드는 어느 OS에서도 아직 보고하지 않는다. 창 단위 host는 macOS만 구현했고 Linux·Windows는 아직 `Unsupported`다. macOS도 불투명 모드는 주 표면에 그리므로 이 host를 쓰지 않는다. 투명 모드를 보고하지 않는 이유와 측정 범위는 아래에 적는다.
 
 숨김이 필요한 이유는 z-order다. WebView는 OS 자식 창(Linux X 창, Windows child HWND, macOS subview)이라 wgpu 주 표면보다 항상 위에 있고, egui는 주 표면 하나에만 그린다. 숨기지 않으려면 WebView에서 팝업 영역을 잘라 내거나(clip) 팝업을 별도 OS 층에 다시 그려야 한다.
 
-복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. Linux 불투명 모드는 같은 X 창 shape에, Windows 불투명 모드는 같은 child HWND 창 region에 팝업 상자를 합쳐 뺀다(아래 플랫폼별 불투명 구현). macOS의 일반 팝업은 이 경로를 쓰지 않는다. Linux는 격리 debug 인스턴스에서 안내 clip의 동작을 확인했고, macOS·Windows는 안내 clip 단독의 실제 GUI 동작을 측정하지 않았다(Windows는 팝업 region만 실제 실행으로 확인했다).
+복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. Linux 불투명 모드는 같은 X 창 shape에, Windows 불투명 모드는 같은 child HWND 창 region에, macOS 불투명 모드는 같은 layer mask에 팝업 상자를 합쳐 뺀다(아래 플랫폼별 구현). Linux는 격리 debug 인스턴스에서 안내 clip의 동작을 확인했다. macOS는 같은 mask 계산을 입력 없는 소유 probe로, Windows는 팝업 region을 실제 실행으로 확인했다. macOS·Windows에서 Tasty 안내 clip 단독의 실제 GUI 동작은 측정하지 않았다.
 
 ### 모드 결정
 
@@ -328,7 +328,7 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 페이지 단위 계약(`WebViewOverlayBackend`)과 나눈다. 오버레이 창은 주 창 클라이언트 영역과 같아야 하고 WebView는 창마다 여럿이라, 창 하나에 host 하나를 둔다. 둘은 `OverlayFrame`의 모드·그림 위치로만 만난다.
 
 - 계약(`src/host_api/webview/overlay_host.rs`의 `OverlayNativeHost`): `surface_target`(wgpu surface 대상, host 수명 동안 유효), `composite`(합성 계약), `follow`(보유한 부모 창의 현재 위치·크기에 맞춤, 같으면 OS 호출 없음), `set_shown`, `raise`(그 창의 WebView native 창 위로). 포커스·창 활성화·포인터를 받지 않고 이벤트 루프 스레드에서만 쓴다. 숨김 중이거나 보인 직후 첫 present 전에는 지난 그림이 보이지 않아야 한다. 주 창 최소화·작업 공간·다른 앱과의 순서는 host가 주 창에 묶여(managed transient 또는 같은 창 안 자식) OS가 함께 처리한다. 공통 훅은 이를 묻지 않는다.
-- 만들기는 `create_overlay_host(&Arc<Window>)`다. OS별 구현은 `overlay_host/{linux,macos,windows}.rs`의 `create`이며 지금은 모두 `Unsupported`를 돌려준다.
+- 만들기는 `create_overlay_host(&Arc<Window>)`다. OS별 구현은 `overlay_host/{linux,macos,windows}.rs`의 `create`다. macOS는 winit 뷰 안의 형제 NSView를 만들고(`SwapchainAlpha`), Linux·Windows는 `Unsupported`를 돌려준다.
 - 수명: host는 부모 창의 `Arc<Window>`를 보유한다. `OverlaySurfaceParts`는 surface를 host보다 먼저 선언해 먼저 drop한다. 그래서 unsafe로 만든 surface가 사는 동안 부모 창(과 그 display 연결)이 살아 있다.
 - 붙이기(`GpuState::attach_overlay_surface`): App의 Instance·Adapter와 창의 Device를 그대로 쓴다. 어댑터가 그 surface에 present할 수 없거나 surface 형식 목록에 주 surface 형식이 없으면 붙이지 않는다. 크기는 주 surface와 같고 present mode는 주 surface와 같은 규칙(Mailbox가 있으면 Mailbox, 없으면 Fifo)이다. alpha 설정은 caps에 있는 값 중 PreMultiplied, PostMultiplied, 첫 값 순서로 고른다. 이것은 그리는 규칙이며 합성 판정이 아니다.
 - 상한(`overlay_surface_ceiling`)은 host 합성 계약과 alpha 설정으로 정한다.
@@ -412,6 +412,22 @@ Windows backend(`src/host_api/webview/windows.rs`)는 불투명 모드만 적용
 - 확인 범위: Windows 11 기기의 사용자 데스크톱 세션에서 격리 debug 인스턴스로 html 페이지 위에 host 팝업을 열어 확인했다. 창은 활성화하지 않았고 전면 창은 측정 내내 다른 앱 그대로였다. 팝업이 열린 동안 WebView child HWND는 꺼졌고, 창 region은 팝업 상자만 뺀 사각형이었다. 팝업 바깥 페이지 위 점과 팝업 안 점의 `WindowFromPoint`는 모두 winit 창이었다. 닫은 뒤에는 region이 지워지고 창이 다시 켜졌으며 같은 점이 WebView2 렌더 창으로 돌아왔다. 창 크기를 바꾸면 새 크기의 region이 적용됐고 이동만 하면 그대로였다. 화면 캡처에서 팝업 바깥은 페이지, 팝업 상자 안은 주 표면이 그린 팝업이었다.
 - 측정하지 않은 것: 실제 마우스 장치 입력(사용자 커서를 움직이지 않으려고 OS hit test와 debug 입력 주입으로 나누어 확인했다), 키보드·IME, 배율 변경, 안내 카드와 팝업 구멍이 동시에 있는 실제 화면, 팝업이 열린 채 최소화·복원.
 - 투명 모드는 `Unsupported`다. 측정한 Windows 기기(NVIDIA RTX 5090)에서 wgpu가 고른 adapter는 Vulkan이었고, wgpu 24의 DirectComposition 표면은 DX12 전용이며 DX12 swapchain은 알파 모드로 `Opaque`만 보고한다. Vulkan Win32 표면의 알파, layered 자식 창, CompositionController는 측정하지 않았다.
+
+### macOS 측정 사실과 범위
+
+2026-10-22 측정이다. 환경은 Apple M2 Pro, macOS 27.0.1, 배율 2 디스플레이, wgpu Metal이다. 측정은 Tasty가 아니라 입력 없는 소유 probe가 했다. probe는 제품 host(`overlay_host/macos.rs`)와 mask 계산(`page_mask.rs`)을 그대로 가져다 쓰고, WKWebView는 Tasty와 같은 방식(winit 뷰에 `addSubview`)으로 붙였다. 앱은 Accessory 정책으로 띄웠고 activate하지 않았으며 창도 비활성으로 열었다. 받은 창 이벤트는 `Focused(false)`뿐이었다. 픽셀은 probe가 자기 창을 `CGWindowListCreateImage`로 읽었다. 화면 기록 권한이 없어 `screencapture`는 실패했고, 권한은 요청하지 않았다.
+
+- **불투명(구멍)**: WKWebView layer에 구멍을 뺀 겹치지 않는 사각형들로 `CAShapeLayer` mask를 걸면 구멍 안에 주 표면 픽셀이 보이고 나머지는 페이지다. mask는 `hitTest:`를 바꾸지 않는다. 그래서 포인터 제외는 따로 한다.
+- **포인터**: `hitTest:`가 nil인 위쪽 뷰는 건너뛰어지고 아래 형제나 winit 뷰가 결과가 된다. 판정은 `hitTest:` 조회로 확인했다. 이벤트를 만들지 않았으므로 실제 클릭·휠 전달은 측정하지 않았다. 대상 팝업이 보이는 동안 `KeyWebView`는 뷰 전체에 nil을 돌려준다.
+- **형제 host**: wgpu가 host 뷰에 `CAMetalLayer` 하위 layer를 만든다. caps alpha는 `Opaque`·`PostMultiplied`이고, `PostMultiplied`로 설정하면 layer가 opaque=false가 된다. alpha 0으로 지우면 아래가 그대로 보였다. 반투명 색은 premultiplied source-over로 디스플레이 색공간에서 합성됐다(빨강 α0.5·파랑 α0.25의 측정값이 premultiplied 계산과 맞고 straight 계산과 맞지 않았다).
+- **순서·크기**: host를 붙인 뒤 `addSubview`한 WKWebView는 host 위에 왔고, `raise` 뒤에는 다시 host가 위였다. 창 크기를 바꾸면 host 뷰와 Metal layer가 새 크기를 따라갔고 contentsScale은 2였다. 숨기면 합성에서 빠졌고, drop하면 superview에서 빠졌다.
+- **한계**: host를 숨겼다가 다시 보이면 첫 present 전까지 지난 present가 보였다. Metal layer의 contents를 비우면 그 뒤 present도 보이지 않았다. host만으로는 "보인 직후 첫 present 전에는 지난 그림이 보이지 않아야 한다"를 지킬 수 없으므로 macOS는 투명 모드를 보고하지 않는다. `--force transparent`로만 이 경로를 탄다.
+
+macOS가 보고하는 모드는 불투명이고 그림 위치는 주 표면이라 창 단위 host를 쓰지 않는다. 적용은 팝업 상자를 안내 카드 구멍과 합쳐 한 mask로 만든다. layer가 없어 적용하지 못하면 `Failed`를 돌려주고 공통 경로가 숨김과 경고로 처리한다. 측정하지 않은 항목은 다음과 같다.
+
+- Tasty 실행 상태의 동작(제품 경로 `debug webview-overlay`·팝업 열기). 기존 debug 기동은 시작 창을 활성으로 열고 winit 기본값이 앱을 activate해 포커스를 가져갈 수 있다. 활성화 없이 띄우는 기존 방법이 없어 자동 기동하지 않았다.
+- 실제 클릭·휠·키보드·IME, 팝업을 닫은 뒤 포인터 복귀.
+- 배율이 다른 디스플레이 사이 이동, 전체화면, 최소화.
 
 <a id="도메인-라이브러리로는-아무것도-새지-않는다"></a>
 
