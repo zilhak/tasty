@@ -193,18 +193,25 @@ impl crate::app::App {
             .map(|j| &j.target)
             .chain(files.remote.iter().map(|j| &j.target))
             .collect();
+        let placed_requests: Vec<(winit::window::WindowId, u64)> = files
+            .job
+            .iter()
+            .map(|j| (j.window, j.target.request))
+            .chain(files.remote.iter().map(|j| (j.window, j.target.request)))
+            .collect();
         let running: Vec<(u32, &std::path::Path)> = targets
             .iter()
             .filter_map(|t| Some((t.surface, t.created.as_deref()?)))
             .collect();
         let running_requests: Vec<u64> = targets.iter().map(|t| t.request).collect();
-        for view in self.view.views.values_mut() {
+        for (window, view) in self.view.views.iter_mut() {
             let Some(view) = view.as_main_mut() else {
                 continue;
             };
+            let running_here = requests_of(&placed_requests, *window);
             let resumed = resume_unanswered_creates(&mut view.state, &running)
                 | resume_unanswered_rename(&mut view.state, &running_requests)
-                | resume_unanswered_permissions(&mut view.state, &running_requests);
+                | resume_unanswered_permissions(&mut view.state, &running_here);
             if sync_queues(&mut view.state) || resumed {
                 view.mark_dirty();
             }
@@ -324,6 +331,18 @@ pub(super) fn resume_unanswered_rename(state: &mut MainViewState, running: &[u64
     true
 }
 
+/// 실행 중인 작업 가운데 `window` 가 넣은 요청 번호. 요청 번호는 창마다 따로 센다.
+fn requests_of(
+    placed: &[(winit::window::WindowId, u64)],
+    window: winit::window::WindowId,
+) -> Vec<u64> {
+    placed
+        .iter()
+        .filter(|(w, _)| *w == window)
+        .map(|(_, request)| *request)
+        .collect()
+}
+
 /// Properties 권한 편집이 기다리는 요청이 대기열에도 `running` 에도 없으면 시작되지 않고 버려졌다.
 /// 편집 상태로 돌려 다시 Apply 할 수 있게 한다. 끝난 요청은 [`settle_permissions`] 가 먼저 풀어 둔다.
 pub(super) fn resume_unanswered_permissions(state: &mut MainViewState, running: &[u64]) -> bool {
@@ -340,26 +359,40 @@ pub(super) fn resume_unanswered_permissions(state: &mut MainViewState, running: 
     true
 }
 
-/// 권한 변경이 끝났으면 그 요청을 기다리던 Properties 편집 상자에 결과를 알린다. 받은 상자가 있으면 true.
+/// 권한 변경이 끝났으면 그 요청을 넣은 창의 Properties 편집 상자에 결과를 알린다. 받은 상자가 있으면 true.
 pub(super) fn settle_permissions(
     registry: &mut crate::view::ViewRegistry,
+    window: winit::window::WindowId,
     request: u64,
     result: Result<(), String>,
 ) -> bool {
-    let mut settled = false;
-    for view in registry.views.values_mut() {
-        let Some(view) = view.as_main_mut() else {
-            continue;
-        };
-        if let Some(props) = view.state.dialogs.explorer_properties.as_mut()
-            && props.perm_request() == Some(request)
-        {
-            props.settle_perm(request, Some(result.clone()));
-            view.mark_dirty();
-            settled = true;
-        }
+    let views = registry
+        .views
+        .iter_mut()
+        .filter_map(|(id, view)| Some((id, view.as_main_mut()?)));
+    let Some(view) = settle_in_window(views, |v| &mut v.state, window, request, result) else {
+        return false;
+    };
+    view.mark_dirty();
+    true
+}
+
+/// `window` 의 상자가 `request` 를 기다리면 결과를 알리고 그 창을 돌려준다. 요청 번호는 창마다 따로
+/// 세므로 다른 창이 같은 번호를 기다려도 건드리지 않는다.
+fn settle_in_window<'a, V: 'a>(
+    views: impl IntoIterator<Item = (&'a winit::window::WindowId, &'a mut V)>,
+    state: impl Fn(&mut V) -> &mut MainViewState,
+    window: winit::window::WindowId,
+    request: u64,
+    result: Result<(), String>,
+) -> Option<&'a mut V> {
+    let view = views.into_iter().find(|(id, _)| **id == window)?.1;
+    let props = state(view).dialogs.explorer_properties.as_mut()?;
+    if props.perm_request() != Some(request) {
+        return None;
     }
-    settled
+    props.settle_perm(request, Some(result));
+    Some(view)
 }
 
 /// 원격이 이름 변경에 성공했으면 그 요청을 기다리던 팝업을 닫게 한다.
@@ -455,5 +488,135 @@ mod tests {
         assert!(seen.update(snap.clone(), false));
         assert!(!seen.update(snap.clone(), false));
         assert!(seen.update(snap, true));
+    }
+
+    use crate::adapters::ui::popup::explorer_properties::ExplorerProperties;
+    use std::collections::HashMap;
+    use winit::window::WindowId;
+
+    /// 두 창이 각자 센 같은 요청 번호 2 로 권한 적용을 기다린다.
+    fn two_windows_waiting() -> (
+        HashMap<WindowId, MainViewState>,
+        crate::runtime::engine_session::EngineSession,
+    ) {
+        let (mut first, engine) = crate::state::tests::test_state();
+        let store = Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
+        let mut second = MainViewState::for_window(
+            &engine.read(),
+            store,
+            first.explorer_clipboard.clone(),
+            first.file_clipboard.clone(),
+        );
+        first.dialogs.explorer_properties = Some(ExplorerProperties::applying_for_test(2));
+        second.dialogs.explorer_properties = Some(ExplorerProperties::applying_for_test(2));
+        let views = HashMap::from([(WindowId::from(1), first), (WindowId::from(2), second)]);
+        (views, engine)
+    }
+
+    fn props(views: &HashMap<WindowId, MainViewState>, window: u64) -> &ExplorerProperties {
+        views[&WindowId::from(window)]
+            .dialogs
+            .explorer_properties
+            .as_ref()
+            .expect("the popup stays open")
+    }
+
+    fn settle(
+        views: &mut HashMap<WindowId, MainViewState>,
+        window: u64,
+        request: u64,
+        result: Result<(), String>,
+    ) -> bool {
+        settle_in_window(
+            views.iter_mut(),
+            |s| s,
+            WindowId::from(window),
+            request,
+            result,
+        )
+        .is_some()
+    }
+
+    /// 같은 번호를 기다리는 다른 창의 상자는 이 창의 결과로 닫히거나 실패 이유를 받지 않는다.
+    #[test]
+    fn a_permission_result_reaches_only_the_window_that_sent_it() {
+        let (mut views, _engine) = two_windows_waiting();
+        assert!(settle(
+            &mut views,
+            1,
+            2,
+            Err("Operation not permitted (os error 1)".into())
+        ));
+        assert_eq!(
+            props(&views, 1).perm_failure_for_test(),
+            Some("Operation not permitted (os error 1)")
+        );
+        assert_eq!(props(&views, 2).perm_request(), Some(2), "still waiting");
+        assert_eq!(props(&views, 2).perm_failure_for_test(), None);
+
+        assert!(settle(&mut views, 2, 2, Ok(())));
+        assert!(
+            !props(&views, 2).perm_open_for_test(),
+            "its own success closes it"
+        );
+        assert!(
+            props(&views, 1).perm_open_for_test(),
+            "the first keeps its failure"
+        );
+    }
+
+    /// 닫힌 창, 닫힌 팝업, 이미 받은 결과, 새 요청으로 바뀐 상자는 결과를 받지 않는다.
+    #[test]
+    fn late_or_unmatched_permission_results_settle_nothing() {
+        let (mut views, _engine) = two_windows_waiting();
+        // 결과를 보낸 창이 닫혔다. 같은 번호를 기다리는 남은 창은 그대로다.
+        assert!(!settle(&mut views, 3, 2, Ok(())));
+        assert_eq!(props(&views, 1).perm_request(), Some(2));
+        assert_eq!(props(&views, 2).perm_request(), Some(2));
+
+        // 창 1 의 팝업이 닫혔다. 창 2 는 같은 번호라도 건드리지 않는다.
+        views
+            .get_mut(&WindowId::from(1))
+            .unwrap()
+            .dialogs
+            .explorer_properties = None;
+        assert!(!settle(&mut views, 1, 2, Ok(())));
+        assert_eq!(props(&views, 2).perm_request(), Some(2));
+
+        // 창 2 가 다시 Apply 해 요청 3 을 기다린다. 늦게 온 요청 2 의 결과는 무시한다.
+        views
+            .get_mut(&WindowId::from(2))
+            .unwrap()
+            .dialogs
+            .explorer_properties = Some(ExplorerProperties::applying_for_test(3));
+        assert!(!settle(&mut views, 2, 2, Err("late".into())));
+        assert_eq!(props(&views, 2).perm_request(), Some(3));
+        assert_eq!(props(&views, 2).perm_failure_for_test(), None);
+
+        // 받은 뒤 같은 결과가 또 와도 아무것도 하지 않는다.
+        assert!(settle(&mut views, 2, 3, Err("first".into())));
+        assert!(!settle(&mut views, 2, 3, Err("second".into())));
+        assert_eq!(props(&views, 2).perm_failure_for_test(), Some("first"));
+    }
+
+    /// 버려진 요청의 복귀도 그 창이 넣은 작업만 본다. 다른 창의 같은 번호가 실행 중이어도 편집으로 돌아간다.
+    #[test]
+    fn an_unanswered_permission_request_resumes_against_its_own_window_only() {
+        let (mut views, _engine) = two_windows_waiting();
+        // 창 2 가 넣은 요청 2 가 실행 중이다. 창 1 의 요청 2 는 시작되지 않고 버려졌다.
+        let placed = [(WindowId::from(2), 2)];
+        let first = views.get_mut(&WindowId::from(1)).unwrap();
+        assert!(resume_unanswered_permissions(
+            first,
+            &requests_of(&placed, WindowId::from(1))
+        ));
+        let second = views.get_mut(&WindowId::from(2)).unwrap();
+        assert!(!resume_unanswered_permissions(
+            second,
+            &requests_of(&placed, WindowId::from(2))
+        ));
+        assert_eq!(props(&views, 2).perm_request(), Some(2), "its own job runs");
+        assert_eq!(props(&views, 1).perm_request(), None);
+        assert!(props(&views, 1).perm_open_for_test(), "back to editing");
     }
 }

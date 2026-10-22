@@ -966,6 +966,47 @@ fn permissions_text(item: &ItemFacts) -> String {
     }
 }
 
+/// 다른 모듈의 결과 전달 시험이 쓰는 상태. 권한 편집 상자가 `request` 의 적용을 기다린다.
+#[cfg(test)]
+impl ExplorerProperties {
+    pub(crate) fn applying_for_test(request: u64) -> Self {
+        use crate::app::file_jobs::permissions::PermChange;
+        let count = FolderCount::default();
+        count.done.store(true, Ordering::Release);
+        let path = PathBuf::from("/w/a.txt");
+        Self {
+            surface_id: 1,
+            paths: vec![path.clone()],
+            remote: None,
+            query: None,
+            facts: None,
+            count: Arc::new(count),
+            cancel: Arc::new(AtomicBool::new(false)),
+            content_h: None,
+            perm: Some(PermEdit {
+                path,
+                current: PermChange::Mode(0o644),
+                draft: PermChange::Mode(0o600),
+                folder: false,
+                special: false,
+                phase: perm_edit::Phase::Applying(request),
+            }),
+        }
+    }
+
+    /// 상자가 보이는 실패 이유. 상자가 없거나 실패가 아니면 None.
+    pub(crate) fn perm_failure_for_test(&self) -> Option<&str> {
+        match &self.perm.as_ref()?.phase {
+            perm_edit::Phase::Failed(reason) => Some(reason),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn perm_open_for_test(&self) -> bool {
+        self.perm.is_some()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -760,6 +760,7 @@ impl super::App {
         // 직접 보이면 같은 실패를 토스트로 또 알리지 않는다.
         let shown_in_popup = ui_sync::settle_permissions(
             &mut self.view,
+            window,
             target.request,
             if success {
                 Ok(())
