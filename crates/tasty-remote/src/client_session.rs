@@ -15,6 +15,19 @@ pub struct RemoteDirEntry {
     pub ext: String,
     /// OS 가 숨김으로 표시했는가. 옛 server 는 싣지 않아 거짓이다.
     pub os_hidden: bool,
+    /// 링크 상태. 옛 server 는 싣지 않아 링크 아님이다.
+    pub link: RemoteLink,
+}
+
+/// 원격 목록 항목의 링크 상태. 링크 구분을 싣지 않는 옛 server 의 항목과 모르는 값은 `NotALink` 다.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RemoteLink {
+    #[default]
+    NotALink,
+    /// 대상이 있다. 종류·크기·수정 시각은 대상의 값이다.
+    Valid,
+    /// 대상이 없다. 크기·수정 시각은 링크 자신의 값이다.
+    Broken,
 }
 /// 출력과 resize를 같은 버퍼에 도착 순서대로 담아 올바른 크기의 그리드에 적용한다.
 pub enum MirrorEvent {

@@ -134,8 +134,9 @@ impl ExplorerView {
     }
 
     /// 원격 확인 요청의 응답이면 기록하고 true를 돌려준다. 같은 이름의 폴더가 아닌 항목이 있으면 파일이다.
-    /// 원격 목록은 링크 정보를 싣지 않으므로 대상이 없는 링크도 여기서 파일로 보인다. 로컬도 그런 링크를
-    /// 링크가 든 폴더에서 고르므로 결과는 같다.
+    /// server 가 링크 항목의 종류를 대상으로 정하므로 폴더 링크는 폴더, 파일 링크와 대상이 없는 링크는 파일이다.
+    /// 로컬과 같이 링크는 풀지 않고 링크가 든 폴더에서 고른다. 링크 구분을 싣지 않는 옛 server 도 종류는
+    /// 같은 규칙으로 실으므로 결과가 같다.
     pub(in super::super) fn answer_address_probe(
         &mut self,
         request_id: u64,
@@ -308,6 +309,40 @@ mod tests {
             nav(view.address_action(&egui::Context::default(), None, Path::new("/srv"), true)),
             navigate("/locked/x.md")
         );
+    }
+
+    /// 링크 상태를 실은 목록에서도 로컬과 같다. 대상이 없는 링크는 링크가 든 폴더에서 고르고 그 목록을 쓰므로
+    /// 옮긴 뒤 끊긴 링크로 보인다. 폴더 링크는 그 경로로 들어간다.
+    #[test]
+    fn a_remote_broken_link_is_picked_in_its_folder_and_a_folder_link_is_entered() {
+        use crate::core::fs_list::EntryLink;
+        let linked = |name: &str, is_dir, link| DirEntryInfo {
+            link,
+            ..entry("/srv/a", name, is_dir)
+        };
+        let (mut view, _, id) = remote_view_typed("a/gone.md");
+        let listed = vec![
+            linked("gone.md", false, EntryLink::Broken),
+            linked("docs", true, EntryLink::Valid),
+        ];
+        assert!(view.answer_address_probe(id.unwrap(), &Ok(listed)));
+        assert_eq!(
+            nav(view.address_action(&egui::Context::default(), None, Path::new("/srv"), true)),
+            navigate("/srv/a")
+        );
+        assert_eq!(view.reveal, Some(PathBuf::from("/srv/a/gone.md")));
+        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv/a"));
+        view.sync(&panel, Some(7));
+        assert!(view.is_broken_link(Path::new("/srv/a/gone.md")));
+
+        let (mut view, _, id) = remote_view_typed("a/docs");
+        let listed = vec![linked("docs", true, EntryLink::Valid)];
+        assert!(view.answer_address_probe(id.unwrap(), &Ok(listed)));
+        assert_eq!(
+            nav(view.address_action(&egui::Context::default(), None, Path::new("/srv"), true)),
+            navigate("/srv/a/docs")
+        );
+        assert_eq!(view.reveal, None);
     }
 
     #[test]

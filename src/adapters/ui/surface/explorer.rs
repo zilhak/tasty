@@ -1182,7 +1182,7 @@ fn grid_entry(
     let resp = ui
         .push_id(&e.path, |ui| grid_cell(ui, ctx, e, state, thumb.as_ref()))
         .inner;
-    let resp = link::broken_tooltip(e, view.hit_tooltip(e, resp));
+    let resp = link::broken_tooltip(e, view.is_remote(), view.hit_tooltip(e, resp));
     if ui.is_rect_visible(resp.rect) {
         view.thumbs.want(e, view.is_remote());
     }
@@ -1341,7 +1341,7 @@ fn list_view(
                 resp
             })
             .inner;
-        let resp = link::broken_tooltip(e, view.hit_tooltip(e, resp));
+        let resp = link::broken_tooltip(e, view.is_remote(), view.hit_tooltip(e, resp));
         if !handle_entry_context(view, e, &resp, root, action) {
             self::view::drag::note(ui, e, resp.rect);
             handle_entry_interaction(ui, view, e, (resp.clicked(), resp.double_clicked()), action);
@@ -1364,6 +1364,7 @@ fn detail_view(
     root: &Path,
     action: &mut Option<ExplorerAction>,
 ) {
+    let remote = view.is_remote();
     let tab = panel.active_tab();
     let columns = tasty_ui_widgets::explorer_detail_columns(
         theme,
@@ -1465,7 +1466,7 @@ fn detail_view(
                                     ui.add(egui::Label::new(job).truncate())
                                 })
                                 .inner;
-                            link::broken_tooltip(row, name);
+                            link::broken_tooltip(row, remote, name);
                             if link::has_tail(row) {
                                 link::add_tail(ui, th, dim);
                             }

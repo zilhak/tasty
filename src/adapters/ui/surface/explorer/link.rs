@@ -1,7 +1,7 @@
 //! 목록의 링크 표시. 대상이 있는 링크는 대상의 글리프를 쓰고 이름 뒤에 작은 link 글리프를 붙인다.
 //! 대상이 없는 링크는 빌릴 글리프가 없어 항목 자리에 link 글리프를 warning 색으로 그리고,
-//! 이름은 보통 색이다(지워진 것이 없으므로 취소선도 없다). 호버하면 없는 대상의 경로를 보인다.
-//! Detail · List · Grid 가 같은 표시를 쓴다.
+//! 이름은 보통 색이다(지워진 것이 없으므로 취소선도 없다). 로컬 항목은 호버하면 없는 대상의 경로를 보인다.
+//! Detail · List · Grid 가 같은 표시를 쓴다. 원격 항목도 server 가 실은 링크 상태로 같은 표시를 쓴다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -69,12 +69,26 @@ pub(super) fn add_tail(
         .paint_at(ui, rect);
 }
 
-/// 대상이 없는 링크면 호버에 "Target not found: {path}" 를 보인다. 경로는 호버할 때만 읽는다.
-pub(super) fn broken_tooltip(e: &DirEntryInfo, resp: egui::Response) -> egui::Response {
-    if e.link != EntryLink::Broken || !resp.hovered() {
+/// 대상이 없는 로컬 링크면 호버에 "Target not found: {path}" 를 보인다. 경로는 호버할 때만 읽는다.
+/// 원격 항목의 경로는 로컬 파일시스템의 경로가 아니므로 읽지 않고 글리프만 둔다. 원격 응답은 대상 경로를
+/// 싣지 않는다.
+pub(super) fn broken_tooltip(
+    e: &DirEntryInfo,
+    remote: bool,
+    resp: egui::Response,
+) -> egui::Response {
+    if !resp.hovered() {
         return resp;
     }
-    resp.on_hover_text(missing_target_text(e))
+    match hover_text(e, remote) {
+        Some(text) => resp.on_hover_text(text),
+        None => resp,
+    }
+}
+
+/// 호버 문구. 대상이 없는 로컬 링크만 있다.
+fn hover_text(e: &DirEntryInfo, remote: bool) -> Option<String> {
+    (!remote && e.link == EntryLink::Broken).then(|| missing_target_text(e))
 }
 
 /// 끊긴 링크 툴팁 문구. 링크가 가리키던 경로를 쓰고, 그것도 읽지 못하면 링크 자신의 경로다.
@@ -138,5 +152,22 @@ mod tests {
         let th = crate::theme::theme();
         assert_eq!(glyph_size(&th), th.explorer_link_glyph_size().value());
         assert_eq!(glyph_color(&th), th.explorer_link_glyph().to_egui());
+    }
+
+    /// 원격 항목의 경로는 원격 호스트의 경로다. 같은 경로에 로컬 링크가 있어도 읽지 않는다.
+    #[cfg(unix)]
+    #[test]
+    fn a_remote_broken_link_does_not_read_the_local_filesystem() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("gone");
+        std::os::unix::fs::symlink("/local/secret-target", &path).unwrap();
+        let e = DirEntryInfo {
+            path,
+            ..entry(EntryLink::Broken)
+        };
+        let local = hover_text(&e, false).expect("local broken link");
+        assert!(local.contains("/local/secret-target"));
+        assert_eq!(hover_text(&e, true), None);
+        assert_eq!(hover_text(&entry(EntryLink::Valid), false), None);
     }
 }

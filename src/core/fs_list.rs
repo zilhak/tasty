@@ -27,7 +27,7 @@ pub(crate) struct DirEntryInfo {
     pub(crate) modified: Option<SystemTime>,
     /// 소문자 확장자. 디렉터리이거나 확장자가 없으면 비어 있다.
     pub(crate) ext: String,
-    /// 항목이 심볼릭 링크인가. 원격 응답은 이 값을 싣지 않으므로 원격 항목은 `NotALink`다.
+    /// 항목이 심볼릭 링크인가. 원격 항목은 server 가 `list_dir_result` 에 실은 값이고, 싣지 않는 옛 server 면 `NotALink`다.
     /// 읽는 쪽이 GUI의 탐색기뿐이라 `path`처럼 GUI에서만 둔다.
     #[cfg(feature = "gui")]
     pub(crate) link: EntryLink,

@@ -3,6 +3,8 @@
 /// modified는 Unix epoch 초로 보낸다. 사람이 읽는 날짜 표기는 client가 만든다.
 /// `os_hidden` 은 OS 가 숨김으로 표시한 항목에만 싣는다. 이 필드를 모르는 옛 client 는 무시하고,
 /// 이 필드가 없는 옛 server 의 응답은 받는 쪽에서 거짓으로 읽는다.
+/// `link` 는 링크 항목에만 `"valid"`(대상 있음)·`"broken"`(대상 없음)으로 싣는다. 받는 규칙은 `os_hidden` 과 같고,
+/// 없으면 링크 아님이다.
 pub(super) fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> serde_json::Value {
     let modified_unix = e
         .modified
@@ -20,6 +22,14 @@ pub(super) fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> ser
         let mut wire = wire;
         if e.os_hidden {
             wire["os_hidden"] = serde_json::Value::Bool(true);
+        }
+        let link = match e.link {
+            crate::core::fs_list::EntryLink::NotALink => None,
+            crate::core::fs_list::EntryLink::Valid => Some("valid"),
+            crate::core::fs_list::EntryLink::Broken => Some("broken"),
+        };
+        if let Some(link) = link {
+            wire["link"] = link.into();
         }
         wire
     };
@@ -77,7 +87,7 @@ pub(super) fn listing_volume(_dir: &str) -> Option<u64> {
     None
 }
 
-/// `os_hidden` 이 gui 조합에만 있으므로 시험도 그 조합에서만 돈다.
+/// `os_hidden`·`link` 가 gui 조합에만 있으므로 시험도 그 조합에서만 돈다.
 #[cfg(all(test, feature = "gui"))]
 mod tests {
     use super::*;
@@ -105,6 +115,63 @@ mod tests {
         );
     }
 
+    #[test]
+    fn only_a_link_carries_its_state() {
+        use crate::core::fs_list::EntryLink;
+        let with = |link| DirEntryInfo { link, ..entry("a") };
+        assert_eq!(
+            list_dir_entry_wire(&with(EntryLink::Valid))["link"],
+            "valid"
+        );
+        assert_eq!(
+            list_dir_entry_wire(&with(EntryLink::Broken))["link"],
+            "broken"
+        );
+        assert!(
+            list_dir_entry_wire(&with(EntryLink::NotALink))
+                .get("link")
+                .is_none()
+        );
+    }
+
+    /// 원격 호스트의 실제 링크를 같은 목록 함수로 읽어 보낸다. 폴더 링크는 폴더, 파일 링크와 대상이 없는
+    /// 링크는 파일 종류로 가고 링크 상태가 함께 간다.
+    #[cfg(unix)]
+    #[test]
+    fn listed_links_go_out_with_their_kind_and_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        std::fs::create_dir(d.join("dir")).unwrap();
+        std::fs::write(d.join("file.txt"), b"x").unwrap();
+        std::os::unix::fs::symlink(d.join("dir"), d.join("dir-link")).unwrap();
+        std::os::unix::fs::symlink(d.join("file.txt"), d.join("file-link")).unwrap();
+        std::os::unix::fs::symlink(d.join("missing"), d.join("gone")).unwrap();
+        let mut entries = crate::core::fs_list::read_dir_entries(d).unwrap();
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        let wire: Vec<(String, bool, Option<String>)> = entries
+            .iter()
+            .map(list_dir_entry_wire)
+            .map(|w| {
+                (
+                    w["name"].as_str().unwrap().to_owned(),
+                    w["is_dir"].as_bool().unwrap(),
+                    w.get("link").and_then(|l| l.as_str()).map(str::to_owned),
+                )
+            })
+            .collect();
+        let s = |v: &str| Some(v.to_owned());
+        assert_eq!(
+            wire,
+            [
+                ("dir".into(), true, None),
+                ("dir-link".into(), true, s("valid")),
+                ("file-link".into(), false, s("valid")),
+                ("file.txt".into(), false, None),
+                ("gone".into(), false, s("broken")),
+            ]
+        );
+    }
+
     /// 새 server 응답을 이 필드를 모르는 옛 client 의 항목 형태로 읽어도 실패하지 않는다.
     #[test]
     fn an_old_client_reads_a_marked_entry_without_error() {
@@ -120,8 +187,10 @@ mod tests {
         }
         let marked = DirEntryInfo {
             os_hidden: true,
+            link: crate::core::fs_list::EntryLink::Broken,
             ..entry("desktop.ini")
         };
+        assert_eq!(list_dir_entry_wire(&marked)["link"], "broken");
         let old: OldClientEntry =
             serde_json::from_value(list_dir_entry_wire(&marked)).expect("old client parse");
         assert_eq!(old.name, "desktop.ini");
