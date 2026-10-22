@@ -6,7 +6,8 @@
 //! - 대상이 symlink면 링크를 따라가 실제 파일을 교체한다. 링크는 남는다. 끊긴 링크는 오류다.
 //! - 기존 파일에 쓰기 권한이 있는지 먼저 확인하고, payload를 쓰기 전에 접근 권한을 옮긴다.
 //!   Unix는 owner/group과 mode를 보존하고 Linux는 xattr/ACL, macOS는 ACL/xattr를 옮긴다.
-//!   Windows는 원본 owner/group/DACL을 임시 파일 생성에 사용한다. 보존 실패면 원본을 교체하지 않는다.
+//!   Windows는 원본 owner/group/DACL과 mandatory integrity label을 임시 파일 생성에 사용한다.
+//!   내용 쓰기 전에 실제 label도 비교하며, 보존 실패면 원본을 교체하지 않는다.
 //!   새 파일은 `new_mode`(Unix) 또는 기본 권한으로 만든다.
 //! - [`lock`]: `<파일>.lock` 옆 파일에 배타 잠금을 잡는다. 교체되는 대상 inode가 아니라 고정된 잠금
 //!   파일을 쓰므로 교체 뒤에도 같은 잠금이다. 참여하지 않는 외부 편집기는 막지 못한다.

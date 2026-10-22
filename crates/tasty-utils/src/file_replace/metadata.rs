@@ -87,7 +87,85 @@ fn copy_attributes(_source: &File, _target: &File) -> io::Result<()> {
 
 #[cfg(not(unix))]
 pub(super) fn preserve(_source: &File, target: &File, metadata: &Metadata) -> io::Result<()> {
+    #[cfg(windows)]
+    if mandatory_labels(_source)? != mandatory_labels(target)? {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "atomic replacement could not preserve the mandatory integrity label",
+        ));
+    }
     target.set_permissions(metadata.permissions())
+}
+
+#[cfg(windows)]
+fn mandatory_labels(file: &File) -> io::Result<Vec<Vec<u8>>> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Security::{
+        ACE_HEADER, GetAce, GetKernelObjectSecurity, GetSecurityDescriptorSacl,
+        LABEL_SECURITY_INFORMATION,
+    };
+    let mut length = 0;
+    // SAFETY: the file handle is live; a null buffer requests the required capacity.
+    unsafe {
+        GetKernelObjectSecurity(
+            file.as_raw_handle(),
+            LABEL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            0,
+            &mut length,
+        );
+    }
+    if length == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut descriptor = vec![0u8; length as usize];
+    // SAFETY: descriptor has length writable bytes and the owned file remains open.
+    if unsafe {
+        GetKernelObjectSecurity(
+            file.as_raw_handle(),
+            LABEL_SECURITY_INFORMATION,
+            descriptor.as_mut_ptr().cast(),
+            length,
+            &mut length,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let mut present = 0;
+    let mut defaulted = 0;
+    let mut acl = std::ptr::null_mut();
+    // SAFETY: the OS returned a valid descriptor; acl points into its live allocation.
+    if unsafe {
+        GetSecurityDescriptorSacl(
+            descriptor.as_mut_ptr().cast(),
+            &mut present,
+            &mut acl,
+            &mut defaulted,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    if present == 0 || acl.is_null() {
+        return Ok(Vec::new());
+    }
+    let mut labels = Vec::new();
+    // SAFETY: acl is a valid ACL inside the live OS-provided descriptor.
+    for index in 0..unsafe { (*acl).AceCount } {
+        let mut ace = std::ptr::null_mut();
+        // SAFETY: index is within AceCount; the descriptor and ACL remain live.
+        if unsafe { GetAce(acl, u32::from(index), &mut ace) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: GetAce returned a valid ACE whose header records its allocated size.
+        let size = unsafe { (*ace.cast::<ACE_HEADER>()).AceSize };
+        // SAFETY: the valid ACE occupies size bytes; copy before descriptor is dropped.
+        labels.push(
+            unsafe { std::slice::from_raw_parts(ace.cast::<u8>(), usize::from(size)) }.to_vec(),
+        );
+    }
+    Ok(labels)
 }
 
 #[cfg(windows)]
@@ -101,13 +179,16 @@ pub(super) fn create(
         Foundation::{GENERIC_WRITE, INVALID_HANDLE_VALUE},
         Security::{
             DACL_SECURITY_INFORMATION, GROUP_SECURITY_INFORMATION, GetFileSecurityW,
-            OWNER_SECURITY_INFORMATION, SECURITY_ATTRIBUTES,
+            LABEL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION, SECURITY_ATTRIBUTES,
         },
         Storage::FileSystem::{CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_NORMAL},
     };
     let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let flags = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
+    let flags = OWNER_SECURITY_INFORMATION
+        | GROUP_SECURITY_INFORMATION
+        | DACL_SECURITY_INFORMATION
+        | LABEL_SECURITY_INFORMATION;
     let mut length = 0;
     let mut descriptor = Vec::new();
     if existing {
@@ -167,15 +248,18 @@ mod tests {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Security::{
         DACL_SECURITY_INFORMATION, GROUP_SECURITY_INFORMATION, GetFileSecurityW,
-        OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SetFileSecurityW,
+        LABEL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+        PROTECTED_DACL_SECURITY_INFORMATION, SetFileSecurityW,
     };
     fn wide(path: &std::path::Path) -> Vec<u16> {
         path.as_os_str().encode_wide().chain(Some(0)).collect()
     }
     fn descriptor(path: &std::path::Path) -> Vec<u8> {
         let path = wide(path);
-        let flags =
-            OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
+        let flags = OWNER_SECURITY_INFORMATION
+            | GROUP_SECURITY_INFORMATION
+            | DACL_SECURITY_INFORMATION
+            | LABEL_SECURITY_INFORMATION;
         let mut size = 0;
         // SAFETY: NUL terminated path and a writable size output; the first call only sizes the buffer.
         unsafe {
@@ -183,8 +267,8 @@ mod tests {
         }
         assert!(size > 0, "{}", io::Error::last_os_error());
         let mut bytes = vec![0u8; size as usize];
-        // SAFETY: bytes has the requested capacity and all pointers remain live.
         assert_ne!(
+            // SAFETY: bytes has the requested capacity and all pointers remain live.
             unsafe {
                 GetFileSecurityW(
                     path.as_ptr(),
@@ -206,8 +290,8 @@ mod tests {
         std::fs::write(&path, b"old").unwrap();
         let mut initial = descriptor(&path);
         let name = wide(&path);
-        // SAFETY: descriptor is self-relative, obtained from GetFileSecurityW; only this test file changes.
         assert_ne!(
+            // SAFETY: descriptor is self-relative, obtained from GetFileSecurityW; only this test file changes.
             unsafe {
                 SetFileSecurityW(
                     name.as_ptr(),
@@ -229,5 +313,100 @@ mod tests {
         })
         .unwrap();
         assert_eq!(descriptor(&path), expected);
+    }
+
+    fn icacls(path: &std::path::Path) -> String {
+        let output = std::process::Command::new("icacls")
+            .arg(path)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "icacls: {output:?}");
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .replace(&*path.to_string_lossy(), "<owned-file>")
+            .lines()
+            .map(str::trim)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn integrity_label_survives_or_replacement_is_rejected(level: &str) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("controlled-label");
+        std::fs::write(&path, b"old").unwrap();
+        let output = std::process::Command::new("icacls")
+            .arg(&path)
+            .args(["/setintegritylevel", level])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "icacls: {output:?}");
+        let expected = icacls(&path);
+        let mut payload_called = false;
+        let result = super::super::replace_using(&path, super::super::Options::default(), |file| {
+            payload_called = true;
+            let temp = std::fs::read_dir(dir.path())?
+                .map(|entry| entry.unwrap().path())
+                .find(|path| path.extension().is_some_and(|extension| extension == "tmp"))
+                .unwrap();
+            assert_eq!(icacls(&temp), expected, "label must exist before payload");
+            assert_eq!(file.metadata()?.len(), 0);
+            std::io::Write::write_all(file, b"new")
+        });
+        assert_eq!(icacls(&path), expected, "original label must survive");
+        match result {
+            Ok(()) => {
+                assert!(payload_called);
+                assert_eq!(std::fs::read(&path).unwrap(), b"new");
+                tracing::info!(
+                    level,
+                    "integrity label preserved before payload and after replacement"
+                );
+            }
+            Err(error) => {
+                assert!(
+                    !payload_called,
+                    "security rejection must precede payload: {error}"
+                );
+                assert_eq!(std::fs::read(&path).unwrap(), b"old");
+                tracing::info!(level, %error, "integrity label safely rejected before payload");
+            }
+        }
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "no owned temp remains"
+        );
+    }
+
+    #[test]
+    fn changed_integrity_label_is_rejected_before_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source");
+        let temp = dir.path().join("target");
+        std::fs::write(&path, b"old").unwrap();
+        let output = std::process::Command::new("icacls")
+            .arg(&path)
+            .args(["/setintegritylevel", "L"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "icacls: {output:?}");
+        let source = File::open(&path).unwrap();
+        let target = create(&temp, &path, false).unwrap();
+        let expected = icacls(&path);
+        let result = preserve(&source, &target, &source.metadata().unwrap());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(target.metadata().unwrap().len(), 0);
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+        assert_eq!(icacls(&path), expected);
+    }
+
+    #[test]
+    fn low_integrity_label_is_preserved_before_payload_or_safely_rejected() {
+        integrity_label_survives_or_replacement_is_rejected("L");
+    }
+
+    #[test]
+    fn high_integrity_label_is_preserved_before_payload_or_safely_rejected() {
+        integrity_label_survives_or_replacement_is_rejected("H");
     }
 }

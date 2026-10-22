@@ -234,14 +234,13 @@ fn a_windows_readonly_target_is_not_replaced() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("readonly");
     fs::write(&path, b"original").unwrap();
-    let mut permission = fs::metadata(&path).unwrap().permissions();
+    let original_permission = fs::metadata(&path).unwrap().permissions();
+    let mut permission = original_permission.clone();
     permission.set_readonly(true);
     fs::set_permissions(&path, permission).unwrap();
     assert!(replace(&path, b"new").is_err());
     assert_eq!(fs::read(&path).unwrap(), b"original");
-    let mut permission = fs::metadata(&path).unwrap().permissions();
-    permission.set_readonly(false);
-    fs::set_permissions(&path, permission).unwrap();
+    fs::set_permissions(&path, original_permission).unwrap();
 }
 
 #[cfg(target_os = "macos")]
