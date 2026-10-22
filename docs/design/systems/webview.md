@@ -241,7 +241,7 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 
 숨김이 필요한 이유는 z-order다. WebView는 OS 자식 창(Linux X 창, Windows child HWND, macOS subview)이라 wgpu 주 표면보다 항상 위에 있고, egui는 주 표면 하나에만 그린다. 숨기지 않으려면 WebView에서 팝업 영역을 잘라 내거나(clip) 팝업을 별도 OS 층에 다시 그려야 한다.
 
-복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. Linux 불투명 모드는 같은 X 창 shape에 팝업 상자를 합쳐 뺀다. macOS·Windows의 일반 팝업은 이 경로를 쓰지 않는다. Linux는 격리 debug 인스턴스에서 안내 clip의 동작을 확인했고, macOS·Windows는 컴파일만 확인했으며 실제 GUI 동작은 측정하지 않았다.
+복원 안내 카드에는 잘라 내는 경로가 이미 있다. `set_native_holes`가 받은 영역을 WebView의 그림과 포인터에서 함께 뺀다. Linux는 XFixes `ShapeBounding`·`ShapeInput`, Windows는 child HWND 창 region, macOS는 `KeyWebView` layer mask와 `hitTest:` 제외다. Linux 불투명 모드는 같은 X 창 shape에, Windows 불투명 모드는 같은 child HWND 창 region에 팝업 상자를 합쳐 뺀다(아래 플랫폼별 불투명 구현). macOS의 일반 팝업은 이 경로를 쓰지 않는다. Linux는 격리 debug 인스턴스에서 안내 clip의 동작을 확인했고, macOS·Windows는 안내 clip 단독의 실제 GUI 동작을 측정하지 않았다(Windows는 팝업 region만 실제 실행으로 확인했다).
 
 ### 모드 결정
 
