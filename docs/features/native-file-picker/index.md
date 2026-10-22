@@ -460,7 +460,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   그 요청을 낸 plugin 에만(unicast) push 된다.
 - Given plugin 이 자기 페이지에서 사용자가 누른 navigation URL 을 `user_navigation_url` 과 `origin_surface_id` 로 실음
   When host 가 그 surface 의 사용자 navigation 기록으로 확인함 Then 피커는 사용자 요청으로 열려 키보드 포커스를 받고
-  WebView 는 일반 대상 팝업의 오버레이 모드를 따른다(불투명이면 피커 상자만 가리고, 숨김이면 페이지를 숨긴다). 기록이 없거나 한 번 쓴 기록이면 포커스 없는 passive 피커가 된다(`file_handler.dispatch` 의 같은 필드와 같은 규칙).
+  WebView 는 일반 대상 팝업의 오버레이 모드를 따른다(투명이면 피커를 페이지 위에 합성하고, 불투명이면 피커 상자만 가리고, 숨김이면 페이지를 숨긴다). 기록이 없거나 한 번 쓴 기록이면 포커스 없는 passive 피커가 된다(`file_handler.dispatch` 의 같은 필드와 같은 규칙).
 - Given plugin 이 연 피커에서 사용자가 경로를 확정함 When 그 plugin 이 같은 경로와 `picker_request_id` 로
   `markdown.navigate` 를 보냄 Then host 는 사용자 요청으로 판정한다(원격 실패는 toast). 같은 증명을 다시
   쓰거나 외부 호출자가 같은 번호를 실으면 에이전트 요청으로 남는다. 취소는 증명을 남기지 않는다.

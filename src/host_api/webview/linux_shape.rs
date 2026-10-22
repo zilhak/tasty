@@ -1,4 +1,4 @@
-//! Linux WebView X 창의 shape 합성. 분할선·안내 카드 구멍(`set_native_holes`)과 불투명 오버레이 구멍은
+//! Linux WebView X 창의 shape 합성. 분할선·안내 카드 구멍(`set_native_holes`)과 오버레이 구멍은
 //! 같은 X 창의 shape 하나를 나눠 쓰므로 한곳에서 합쳐 적용한다. 어느 쪽이 먼저 불려도 마지막 적용이
 //! 두 입력을 모두 담는다. 계약은 docs/design/systems/webview.md 의 "egui 오버레이와 native WebView" 절.
 
@@ -10,11 +10,13 @@ const SHAPE_BOUNDING: std::os::raw::c_int = 0;
 /// X SHAPE 확장의 입력 shape 종류(`ShapeInput`).
 const SHAPE_INPUT: std::os::raw::c_int = 2;
 
-/// 불투명 오버레이가 이 창에서 가져가는 부분. 팝업 상자는 그림·입력에서 빠지고, host 가 포인터를
-/// 가져가면 입력 shape 전체가 빈다.
+/// 오버레이가 이 창에서 가져가는 부분. 팝업 상자는 입력에서 빠지고, 불투명 모드면 그림에서도 빠진다.
+/// 투명 모드는 위 오버레이 창이 그리므로 페이지 그림을 남긴다. host 가 포인터를 가져가면 입력 shape
+/// 전체가 빈다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OverlayCut {
     pub regions: Vec<Rect>,
+    pub cuts_paint: bool,
     pub host_takes_pointer: bool,
 }
 
@@ -28,6 +30,7 @@ impl OverlayCut {
                 .iter()
                 .map(|r| [px(r.x), px(r.y), px(r.width), px(r.height)])
                 .collect(),
+            cuts_paint: request.mode == crate::state::webview_overlay::OverlayMode::Opaque,
             host_takes_pointer: request.host_takes_pointer,
         }
     }
@@ -38,7 +41,7 @@ impl OverlayCut {
 pub(super) struct ShapeState {
     input_holes: Vec<Rect>,
     clip: Vec<Rect>,
-    /// 대상 팝업이 떠 있는 동안 불투명 오버레이가 가져가는 부분.
+    /// 대상 팝업이 떠 있는 동안 오버레이가 가져가는 부분.
     overlay: Option<OverlayCut>,
     applied: Option<WindowShape>,
 }
@@ -88,8 +91,8 @@ pub(super) struct WindowShape {
     pub input: InputShape,
 }
 
-/// native 구멍과 오버레이 구멍을 합친다. 그림에서는 안내 카드와 팝업 상자를 빼고, 입력에서는 모든
-/// 구멍을 뺀다. 오버레이가 포인터를 가져가면 입력 shape 는 빈다.
+/// native 구멍과 오버레이 구멍을 합친다. 그림에서는 안내 카드와 불투명 팝업 상자를 빼고, 입력에서는
+/// 모든 구멍을 뺀다. 오버레이가 포인터를 가져가면 입력 shape 는 빈다.
 pub(super) fn compose(
     size: (i32, i32),
     input_holes: &[Rect],
@@ -97,7 +100,10 @@ pub(super) fn compose(
     overlay: Option<&OverlayCut>,
 ) -> WindowShape {
     let overlay_regions = overlay.map_or(&[][..], |o| o.regions.as_slice());
-    let bounding: Vec<Rect> = clip.iter().chain(overlay_regions).copied().collect();
+    let painted = overlay
+        .filter(|o| o.cuts_paint)
+        .map_or(&[][..], |o| o.regions.as_slice());
+    let bounding: Vec<Rect> = clip.iter().chain(painted).copied().collect();
     let input = if overlay.is_some_and(|o| o.host_takes_pointer) {
         InputShape::Empty
     } else {
@@ -215,8 +221,24 @@ mod tests {
     fn overlay(host_takes_pointer: bool) -> OverlayCut {
         OverlayCut {
             regions: vec![POPUP],
+            cuts_paint: true,
             host_takes_pointer,
         }
+    }
+
+    /// 투명 모드는 위 오버레이 창이 팝업을 그리므로 페이지 그림은 안내 카드만 빼고 남긴다. 입력은 불투명과
+    /// 같다.
+    #[test]
+    fn a_transparent_overlay_keeps_the_page_drawn_and_takes_the_input() {
+        let mut cut = overlay(true);
+        cut.cuts_paint = false;
+        let shape = compose(SIZE, &[DIVIDER], &[NOTICE], Some(&cut));
+        assert_eq!(shape.bounding, vec![NOTICE]);
+        assert_eq!(shape.input, InputShape::Empty);
+        cut.host_takes_pointer = false;
+        let shape = compose(SIZE, &[DIVIDER], &[], Some(&cut));
+        assert!(shape.bounding.is_empty());
+        assert_eq!(shape.input, InputShape::Cut(vec![DIVIDER, POPUP]));
     }
 
     #[test]

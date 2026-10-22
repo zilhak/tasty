@@ -19,12 +19,12 @@ use winit::raw_window_handle::{
 };
 
 use super::keys::WebViewKeySink;
-use super::linux_shape::{self, OverlayCut, ShapeState};
+use super::linux_shape::{self, ShapeState};
 use super::load_generation::SignalOrderLoads;
-use super::overlay::{OverlayApplyError, OverlayRequest};
 use super::script_gate::{DeferredScan, Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
-use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource};
+
+mod overlay_backend;
 
 pub struct PlatformWebView {
     webview: WebView,
@@ -1196,45 +1196,6 @@ fn gdk_keyval_to_winit_key(keyval: gtk::gdk::keys::Key) -> Option<winit::keyboar
         }
     };
     Some(Key::Named(named))
-}
-
-/// 불투명 모드만 낸다. 팝업 상자를 X 창 shape 에서 빼 아래 주 표면의 그림이 보이게 하고, 포인터는
-/// 입력 shape 를 비워 host 로 돌린다. 투명 모드는 별도 오버레이 창이 필요해 아직 내지 않는다.
-/// 계약: docs/design/systems/webview.md 의 "egui 오버레이와 native WebView" 절.
-impl super::overlay::WebViewOverlayBackend for PlatformWebView {
-    fn overlay_support(&self) -> OverlayMode {
-        if self.xfixes.is_some() {
-            OverlayMode::Opaque
-        } else {
-            OverlayMode::Hide
-        }
-    }
-
-    fn overlay_paint_source(&self, mode: OverlayMode) -> OverlayPaintSource {
-        match mode {
-            OverlayMode::Opaque => OverlayPaintSource::MainSurface,
-            OverlayMode::Hide | OverlayMode::Transparent => OverlayPaintSource::OverlaySurface,
-        }
-    }
-
-    fn apply_overlay(&self, request: &OverlayRequest<'_>) -> Result<(), OverlayApplyError> {
-        self.assert_origin_thread();
-        if request.mode != OverlayMode::Opaque || self.xfixes.is_none() {
-            return Err(OverlayApplyError::Unsupported);
-        }
-        self.shape
-            .borrow_mut()
-            .set_overlay(Some(OverlayCut::from_request(request)));
-        self.refresh_shape();
-        Ok(())
-    }
-
-    fn clear_overlay(&self) {
-        self.assert_origin_thread();
-        if self.shape.borrow_mut().set_overlay(None) {
-            self.refresh_shape();
-        }
-    }
 }
 
 #[cfg(test)]

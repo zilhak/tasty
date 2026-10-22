@@ -233,11 +233,11 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 
 | OS | 보고하는 모드 | 수단 |
 |---|---|---|
-| Linux(X11) | XFixes 2.0과 SHAPE 확장이 있으면 불투명, 없으면 숨김. 투명은 아직 보고하지 않는다 | WebView X 창 shape에 구멍을 내 주 표면을 보인다(아래 "Linux 불투명 구현") |
+| Linux(X11) | XFixes 2.0과 SHAPE 확장이 있으면 투명을 보고하고, 창 단위 host 상한으로 낮춘다. 합성 관리자가 있으면 투명, 없거나 창 관리자가 오버레이 창 위치를 바꾸면 불투명이다. XFixes·SHAPE가 없으면 숨김 | 투명은 창 단위 host(주 창의 transient인 ARGB 관리 창)가 페이지 위에 그린다(아래 "Linux 투명 구현"). 불투명은 WebView X 창 shape에 구멍을 내 주 표면을 보인다(아래 "Linux 불투명 구현") |
 | macOS | 불투명 | WKWebView layer mask와 입력 제외(아래 "macOS 측정 사실과 범위") |
 | Windows | 불투명 | HWND region과 입력 차단(아래 "Windows 불투명 수단") |
 
-투명 모드는 어느 OS에서도 아직 보고하지 않는다. 창 단위 host는 macOS만 구현했고 Linux·Windows는 아직 `Unsupported`다. macOS도 불투명 모드는 주 표면에 그리므로 이 host를 쓰지 않는다. 투명 모드를 보고하지 않는 이유와 측정 범위는 아래에 적는다.
+macOS·Windows는 투명 모드를 보고하지 않고 주 표면의 불투명 경로를 쓴다. 창 단위 host는 Linux와 macOS에 있으며, macOS는 debug의 강제 투명 모드에서만 쓴다. Windows host는 `Unsupported`다. 각 OS의 측정 범위와 제약은 아래에 적는다.
 
 숨김이 필요한 이유는 z-order다. WebView는 OS 자식 창(Linux X 창, Windows child HWND, macOS subview)이라 wgpu 주 표면보다 항상 위에 있고, egui는 주 표면 하나에만 그린다. 숨기지 않으려면 WebView에서 팝업 영역을 잘라 내거나(clip) 팝업을 별도 OS 층에 다시 그려야 한다.
 
@@ -328,7 +328,7 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 페이지 단위 계약(`WebViewOverlayBackend`)과 나눈다. 오버레이 창은 주 창 클라이언트 영역과 같아야 하고 WebView는 창마다 여럿이라, 창 하나에 host 하나를 둔다. 둘은 `OverlayFrame`의 모드·그림 위치로만 만난다.
 
 - 계약(`src/host_api/webview/overlay_host.rs`의 `OverlayNativeHost`): `surface_target`(wgpu surface 대상, host 수명 동안 유효), `composite`(합성 계약), `follow`(보유한 부모 창의 현재 위치·크기에 맞춤, 같으면 OS 호출 없음), `set_shown`, `raise`(그 창의 WebView native 창 위로). 포커스·창 활성화·포인터를 받지 않고 이벤트 루프 스레드에서만 쓴다. 숨김 중에는 그림이 보이지 않아야 하고, 숨긴 동안에도 surface에 present할 수 있어야 하며, 보일 때는 숨긴 동안 마지막으로 present한 그림을 보여야 한다. 공통 훅은 이번 구간 그림을 숨긴 채 present한 뒤에만 `set_shown(true)`를 부른다(아래 "순서"). 주 창 최소화·작업 공간·다른 앱과의 순서는 host가 주 창에 묶여(managed transient 또는 같은 창 안 자식) OS가 함께 처리한다. 공통 훅은 이를 묻지 않는다.
-- 만들기는 `create_overlay_host(&Arc<Window>)`다. OS별 구현은 `overlay_host/{linux,macos,windows}.rs`의 `create`다. macOS는 winit 뷰 안의 형제 NSView를 만들고(`SwapchainAlpha`), Linux·Windows는 `Unsupported`를 돌려준다.
+- 만들기는 `create_overlay_host(&Arc<Window>)`다. OS별 구현은 `overlay_host/{linux,macos,windows}.rs`의 `create`다. Linux는 ARGB 관리 창(아래 "Linux 투명 구현"), macOS는 winit 뷰 안의 형제 NSView(`SwapchainAlpha`)를 만들고 Windows는 `Unsupported`를 돌려준다.
 - 수명: host는 부모 창의 `Arc<Window>`를 보유한다. `OverlaySurfaceParts`는 surface를 host보다 먼저 선언해 먼저 drop한다. 그래서 unsafe로 만든 surface가 사는 동안 부모 창(과 그 display 연결)이 살아 있다.
 - 붙이기(`GpuState::attach_overlay_surface`): App의 Instance·Adapter와 창의 Device를 그대로 쓴다. 어댑터가 그 surface에 present할 수 없거나 surface 형식 목록에 주 surface 형식이 없으면 붙이지 않는다. 크기는 주 surface와 같고 present mode는 주 surface와 같은 규칙(Mailbox가 있으면 Mailbox, 없으면 Fifo)이다. alpha 설정은 caps에 있는 값 중 PreMultiplied, PostMultiplied, 첫 값 순서로 고른다. 이것은 그리는 규칙이며 합성 판정이 아니다.
 - 상한(`overlay_surface_ceiling`)은 host 합성 계약과 alpha 설정으로 정한다.
@@ -387,14 +387,14 @@ debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--forc
 
 `src/host_api/webview/linux.rs`의 `WebViewOverlayBackend` 구현과 shape 합성(`src/host_api/webview/linux_shape.rs`)이다.
 
-- `overlay_support`: XFixes 2.0과 서버 SHAPE 확장을 생성 때 확인해 둘 다 있으면 불투명, 아니면 숨김이다. 둘 중 하나가 없으면 분할선·안내 카드 구멍도 두지 않는다. 투명은 보고하지 않는다.
-- `overlay_paint_source(불투명)`: 주 표면이다. 오버레이 창을 만들지 않는다.
-- `apply_overlay`: 불투명이 아니면 `Unsupported`다. 요청 영역과 `host_takes_pointer`를 저장하고 shape를 다시 맞춘다. `clear_overlay`는 저장을 지우고 다시 맞춘다.
-- shape 합성: X 창의 shape는 하나라서 `set_native_holes`의 입력 구멍·그림 구멍과 오버레이 영역을 한 함수(`linux_shape::compose`)로 합친다. 그림(`ShapeBounding`)에서는 안내 카드와 팝업 상자를 뺀다. 입력(`ShapeInput`)은 `host_takes_pointer`면 빈 region이고, 아니면 모든 구멍을 뺀다. 마지막 적용값과 같으면 X 요청을 보내지 않는다. 동기화는 `apply_overlay`를 `set_bounds`보다 먼저 부르므로 창 크기가 바뀐 프레임은 뒤의 `set_native_holes`가 새 크기로 다시 맞춘다. 오버레이를 지우면 native 구멍만 남은 shape로 돌아간다.
+- `overlay_support`(`linux/overlay_backend.rs`): XFixes 2.0과 서버 SHAPE 확장을 생성 때 확인해 둘 다 있으면 투명, 아니면 숨김이다. 둘 중 하나가 없으면 분할선·안내 카드 구멍도 두지 않는다. 투명을 낼 수 있는지는 창 단위 host 상한이 정하고, 낼 수 없으면 공통 동기화가 불투명으로 낮춘다.
+- `overlay_paint_source`: 불투명은 주 표면이라 오버레이 창을 만들지 않는다. 투명은 오버레이 창이다.
+- `apply_overlay`: 숨김이면 `Unsupported`다. 요청 영역과 `host_takes_pointer`를 저장하고 shape를 다시 맞춘다. `clear_overlay`는 저장을 지우고 다시 맞춘다.
+- shape 합성: X 창의 shape는 하나라서 `set_native_holes`의 입력 구멍·그림 구멍과 오버레이 영역을 한 함수(`linux_shape::compose`)로 합친다. 그림(`ShapeBounding`)에서는 안내 카드와 불투명 모드의 팝업 상자를 뺀다. 투명 모드는 페이지 그림을 그대로 두고 입력만 가져간다. 입력(`ShapeInput`)은 `host_takes_pointer`면 빈 region이고, 아니면 모든 구멍을 뺀다. 마지막 적용값과 같으면 X 요청을 보내지 않는다. 동기화는 `apply_overlay`를 `set_bounds`보다 먼저 부르므로 창 크기가 바뀐 프레임은 뒤의 `set_native_holes`가 새 크기로 다시 맞춘다. 오버레이를 지우면 native 구멍만 남은 shape로 돌아간다.
 - 키: 입력 shape가 비면 포인터가 페이지 위에 있어도 X 서버가 키를 부모 창으로 보낸다. 그래서 오버레이가 포인터를 가져간 동안 `receives_keyboard_input`은 X 포커스가 WebView 안에 있는지만 본다. 열 때의 포커스 회수와 닫을 때 복원하지 않는 규칙은 공통 동기화가 그대로 맡는다. 이 backend는 포커스를 옮기지 않는다.
 - 표시: GTK `show_all`이 매 프레임 불려도 X 창 shape는 유지됐다(아래 측정).
 
-2026-10-22 격리 debug 인스턴스(Xvfb, 창 관리자 없음, 배율 1과 `WINIT_X11_SCALE_FACTOR=2`·`GDK_SCALE=2`)에서 확인한 범위다.
+2026-10-22 격리 debug 인스턴스(Xvfb, 창 관리자 없음)에서 확인한 범위다. 배율은 1, 그리고 `WINIT_X11_SCALE_FACTOR`로 준 2와 1.25다. 첫 불투명 측정의 배율 2는 `GDK_SCALE=2`를 함께 줬다. 아래 픽셀 경계 측정의 배율 2·1.25는 `GDK_SCALE`을 주지 않았다(배율 1.25 실행 로그의 GDK 배율은 1).
 
 - 명령 팔레트·서피스 종류 전환 팝업·Tools 메뉴에서 모드는 불투명, 그림 위치는 주 표면이고 페이지가 보였다. 팝업 상자와 1px 테두리 밖의 페이지 픽셀은 열기 전과 같았다. 상자는 각지고 그림자가 없었다.
 - X 창 shape를 직접 읽어 확인했다. 그림 구멍은 요청 영역과 같았고 입력 shape는 비었다. 팝업이 닫히면 native 구멍만 남은 shape(분할선 입력 띠)로 돌아갔다.
@@ -402,6 +402,33 @@ debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--forc
 - 창 크기 변경, 좌우로 나눈 두 WebView, 배율 2에서 구멍과 그림이 따라왔다. 다른 X 클라이언트가 포커스를 가진 동안 debug 경로로 팝업을 열고 닫아도 X 포커스는 그대로였다.
 - 불투명 영역을 egui 픽셀 경계에 맞춘 코드(위 불투명 영역 규칙, `painted_box`)로 명령 팔레트와 서피스 종류 전환 팝업을 배율 1·2·1.25에서 측정했다. 두 팝업 모두 상자의 y가 0.5 논리 px에 놓인 경우다. 테두리 바깥 1px 링의 네 변 픽셀은 열기 전 페이지와 모두 같았고, 테두리 맨 바깥 행·열에 주 표면 배경색은 없었다. X 창 shape의 구멍은 egui가 그린 테두리 바깥 끝과 같았다. 배율 1에서 상자 위 변이 150.5면 구멍은 테두리가 시작하는 150부터이고 그 위 149행은 페이지다. 배율 1.25의 테두리 바깥 계조 행은 테두리 색이 주 표면 배경 위에 섞인 색이다(위 비정수 배율 한계). egui 드롭다운·plugin 팝업과 배율 1.1·1.2·1.75는 실제 실행하지 않았고 epaint 테셀레이터와 대조하는 단위 시험만 있다.
 - 창 관리자가 있는 세션, IME, X 포커스가 WebView 자식 안에 있는 상태(이 Xvfb에서는 페이지를 눌러도 포커스가 부모 창에 남았다)는 이 실행에서 확인하지 않았다.
+
+### Linux 투명 구현
+
+창 단위 host(`src/host_api/webview/overlay_host/linux.rs`)다. 주 창마다 오버레이 창 하나를 둔다.
+
+- 만들기: host가 자기 X 연결을 열어 합성 관리자 선택(`_NET_WM_CM_S<화면>`) 소유자, XFixes, SHAPE, 32bit TrueColor visual을 확인한다. 하나라도 없으면 `Unsupported`라 그 창은 창 수명 동안 불투명(주 표면)을 쓴다. 합성 관리자가 나중에 생겨도 그 창에서는 다시 만들지 않는다.
+- 창: root의 자식인 32bit ARGB 관리 창이다. 배경은 None이다. `WM_TRANSIENT_FOR`는 주 창, 입력 힌트는 거짓, `_NET_WM_USER_TIME`은 0이다. `_NET_WM_STATE`는 작업 표시줄·페이저 제외, 종류는 utility, 장식은 없고 입력 shape는 비었다. 전역 위(ABOVE) 상태는 두지 않는다. 창 관리자가 주 창과 함께 최소화·작업 공간 이동·다른 앱과의 순서를 처리한다.
+- 합성(`composite`): 합성 관리자 소유자가 있으면 `ExternalArgb`다. 오버레이 surface의 alpha 설정이 `Opaque`여도 합성 관리자가 알파를 반영한다. 소유자 변화는 만들 때 신청한 XFixes 선택 이벤트로 알고, 사라지면 `Unavailable`과 `tracing::warn!`, 돌아오면 info다. 서버 왕복 요청은 쓰지 않는다.
+- 따라가기(`follow`): 주 창 configure 이벤트가 온 뒤에만 주 창 위치를 다시 읽고(서버 왕복 두 번) 오버레이 창을 옮긴다. 숨긴 동안에는 읽지 않고, 보일 때 한 번 맞춘다. 이동·크기는 창 관리자가 옮기지 않으므로 host가 맞춘다.
+- 창 관리자 거절: 창 관리자는 프로그램이 요청한 관리 창 위치를 바꿀 수 있다. 오버레이 창 configure가 응답을 기다리는 요청과 다르면 그 주 창 위치에서는 `Unavailable`과 경고다. 주 창이 다른 위치로 움직이면 다시 시도한다(`overlay_host/linux/fit.rs`). 거절된 위치로 보인 첫 프레임은 어긋난 그림이 한 번 보일 수 있다.
+- 표시: 보이기는 map 뒤 창 전체를 알파 0으로 채우고, 숨기기는 unmap이다. 첫 present 전에 지난 그림이 남지 않게 하기 위해서다.
+- 올리기(`raise`): 아무것도 하지 않는다. WebView X 창은 주 창의 자식이라 최상위 오버레이 창 위로 오지 못한다. `XRaiseWindow`를 보내면 창 관리자가 주 창 무리를 다른 앱 위로 올릴 수 있다.
+- 수명: host가 X 연결을 소유하고 Drop에서 GC·창·colormap을 지운 뒤 연결을 닫는다. surface가 host보다 먼저 drop되는 공통 순서를 따른다.
+- 입력: WebView X 창 입력 shape는 불투명과 같이 비고, 오버레이 창 입력 shape도 비어 있어 포인터와 포인터로 정해지는 키는 부모(winit) 창으로 간다.
+
+2026-10-22 소유 Xvfb와 격리 GNOME Shell(mutter 46, 합성 관리자 있음, NVIDIA Vulkan, 오버레이 surface alpha `Opaque`)에서 debug 인스턴스로 확인한 범위다. 배율은 1과 `WINIT_X11_SCALE_FACTOR=1.25`다.
+
+- 명령 팔레트·서피스 종류 전환(surface scope)·이름 바꾸기 다이얼로그·파일 피커와 경로 막대 드롭다운·plugin mesh 팝업(egui-mesh 데모)에서 모드는 투명, 그림 위치는 오버레이 창이었다. 페이지가 보였고 둥근 모서리와 그림자가 페이지 위에 그려졌다.
+- scrim은 열기 전후 OS 캡처로 판정했다. 페이지와 WebView 밖 부모 영역 모두 열기 전 값의 절반(a 0.5 검정 한 번)이었고 두 번 어두워진 픽셀은 0이었다. 좌우로 나눈 두 WebView와 배율 1.25, 합성 관리자가 돌아온 뒤도 같았다. surface scope 팝업은 그 surface 페이지만 어두워졌다.
+- 팝업이 떠 있는 동안 페이지 링크 클릭은 팝업만 닫았고 페이지 탐색은 없었다. 휠과 `End`는 페이지를 움직이지 않았고, 포인터를 페이지 위에 둔 채 친 글자는 팔레트·다이얼로그 입력란에 들어갔다. mesh 팝업 버튼 클릭은 plugin으로 갔다. 닫은 뒤에는 같은 링크 클릭이 페이지로 갔다.
+- 오버레이 창 생성·표시 뒤에도 활성 창은 주 창 그대로였다. 주 창 이동·크기 변경을 따라갔다. 주 창 최소화와 다른 작업 공간 전환 때 함께 숨었고 복원 때 다시 보였다. 다른 앱이 활성이면 그 앱 아래, 주 창이 다시 활성이면 주 창 바로 위였다.
+- 팝업을 띄운 채 새 WebView 탭을 만들거나 탭을 바꿔 다른 WebView를 보여도 오버레이 창은 위에 남았고 새 페이지 위에 팝업이 그려졌다.
+- 전체화면 주 창과 사용자가 일부를 화면 밖으로 끌어낸 주 창에서는 mutter가 오버레이 창을 작업 영역 안(위 패널 아래, 화면 안)으로 옮겼다. 위 거절 처리로 불투명으로 내려갔고 전체화면을 풀자 투명으로 돌아왔다.
+- 합성 관리자(GNOME Shell)를 끄면 경고와 함께 불투명으로 내려갔고, 다시 띄우자 투명으로 돌아왔다. 합성 관리자가 없는 Xvfb에서는 오버레이 창을 만들지 않고 불투명이었다.
+- 숨겼던 오버레이 창을 다시 map하면 첫 present 전에 지난 그림이 보이는지 확인했다. 앱을 멈춘 채 같은 창을 밖에서 다시 map했을 때 화면은 숨긴 상태와 같았다(알파 0 채우기 유무 모두). 앱이 정상 실행 중일 때 보이기와 첫 present 사이 프레임은 캡처로 잡지 못했다.
+- `tasty screenshot --window`는 팝업을 담고 WebView 픽셀은 없었다. 팝업을 띄운 채 창 닫기 요청으로 종료했을 때 경고·X 오류 없이 끝났다.
+- 다른 창 관리자·합성 관리자(KWin, picom 등), 실행 중 배율 변경, 다중 모니터, IME, 사용자 데스크톱 세션은 확인하지 않았다. 창 관리자 거절 감지는 mutter에서만 실제로 일으켰다.
 
 Windows는 지금의 그림 경로(wgpu surface)로 투명을 낼 수단을 찾지 못했다. Windows의 불투명 구현과 측정한 투명 후보의 제약, macOS에서 확인한 알파 합성과 표시 순서의 한계는 아래에 적는다.
 

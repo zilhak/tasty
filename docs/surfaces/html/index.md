@@ -381,7 +381,7 @@ surface 는 트리에선 `RemoteSurface` marker. 네이티브 WebView 의 naviga
 - **Idle** — 문서 없음. placeholder(html 글리프 · "No page loaded"). html surface 는 그 아래에 주소창 힌트 caption(`text-muted`)을 더한다.
 - **Loading** — 탐색 중. WebView overlay 를 숨기고 `Spinner` + "Loading…" chrome.
 - **Done** — 성공. WebView overlay 가 페이지를 그린다. 메뉴/팝업으로 overlay 가 일시
-  숨겨지거나(오버레이 모드가 숨김일 때다. 불투명 모드인 OS 에서는 페이지를 보인 채 팝업 상자만
+  숨겨지거나(오버레이 모드가 숨김일 때다. 투명 모드에서는 페이지 위에 팝업을 합성하고, 불투명 모드에서는 페이지를 보인 채 팝업 상자만
   가린다. OS 별 모드는 [WebView §egui 오버레이와 native WebView](../../design/systems/webview.md#egui-오버레이와-native-webview)에 있다), 토스트 카드가 이 surface 와 겹쳐 이 WebView 만 숨겨지면(지금 키를 받는 WebView 는 숨기지 않는다) 그 동안 boundary 타일이 보인다. boundary 는 `bg-panel` 배경과 1px `border-default`
   테두리만 있는 빈 타일이며 글리프·라벨·URL 을 그리지 않는다.
 - **Failed** — 실패. overlay 를 숨긴 채 `ALERT_CIRCLE`(`accent-danger`) + "Failed to load"
