@@ -8,6 +8,7 @@
 
 #[cfg(any(target_os = "linux", all(test, unix)))]
 use std::path::Path;
+#[cfg(any(target_os = "linux", windows, test))]
 use std::path::PathBuf;
 
 #[cfg(any(target_os = "linux", target_os = "macos", all(test, unix)))]
