@@ -13,6 +13,9 @@
 //!   안에서만 마지막 요청으로 합치고, 대체된 요청은 대체한 요청의 결과를 받는다.
 //! - 예산: 접수부터 결과 소비(또는 receipt 버림)까지 항목 수와 바이트를 함께 센다. 넘치면 접수를
 //!   바로 거절한다. 호출 스레드가 대신 저장하는 경로는 없다.
+//! - 요청별 결과: 요청 사이에 transaction이 없는 Executor는 요청마다 끝난 결과
+//!   ([`Execution::Finished`])를 돌려준다. 앞 요청의 확정은 뒤 요청의 실패로 되돌리거나 다시
+//!   실행하지 않는다.
 //! - 재시도: Executor가 아무것도 확정하지 않았다고 알린 busy만 `retry_for` 안에서 같은 묶음을
 //!   다시 실행한다. 그동안 뒤 요청은 기다린다. 결과 불명은 다시 실행하지 않는다.
 //! - 종료: 접수 중단(`close`) → 마지막 flush cut → 남은 요청 실행 → worker 종료 순서다.
@@ -105,6 +108,30 @@ pub enum Execution<O, E> {
     Failed(E),
     /// 확정됐는지 알 수 없다(commit 단계의 저장 실패). 다시 실행하지 않는다.
     Unknown(E),
+    /// 요청마다 따로 끝났다. 요청 순서로 담는다. 요청 사이에 transaction이 없는 저장소(파일)가
+    /// 쓴다. 앞 요청의 확정은 뒤 요청의 실패와 관계없이 남으며 다시 실행하지 않는다.
+    Finished(Vec<Settled<O, E>>),
+}
+
+/// [`Execution::Finished`]의 요청 하나의 결과.
+#[derive(Debug)]
+pub enum Settled<O, E> {
+    /// 실행했다. `Ok`면 확정됐고 `Err`는 이 요청만의 거절이다(아무것도 바꾸지 않았다).
+    Done(Result<O, E>),
+    /// 확정하지 않았다.
+    Failed(E),
+    /// 확정됐는지 알 수 없다.
+    Unknown(E),
+}
+
+impl<O, E> From<Settled<O, E>> for Completion<O, E> {
+    fn from(settled: Settled<O, E>) -> Self {
+        match settled {
+            Settled::Done(result) => Self::Done(result),
+            Settled::Failed(error) => Self::Failed(error),
+            Settled::Unknown(error) => Self::Unknown(error),
+        }
+    }
 }
 
 /// worker 스레드에서 저장을 실행하는 쪽. 저장소 연결을 소유한다.

@@ -44,6 +44,8 @@ enum Script {
     Fail,
     Unknown,
     Panic,
+    /// 요청마다 따로 끝낸다. 'o' 확정, 'r' 거절, 'f' 실패, 'u' 결과 불명. 모자라면 결과를 덜 준다.
+    Each(&'static str),
 }
 
 /// execute 호출을 허락한 수만큼만 통과시키는 시험 gate.
@@ -135,6 +137,22 @@ impl Executor for Exec {
             Some(Script::Fail) => return Execution::Failed("full".into()),
             Some(Script::Unknown) => return Execution::Unknown("io at commit".into()),
             Some(Script::Panic) => panic!("executor panic for a test"),
+            Some(Script::Each(marks)) => {
+                let settled = batch
+                    .iter()
+                    .zip(marks.chars())
+                    .map(|(r, mark)| match mark {
+                        'o' => {
+                            self.probe.committed.lock().unwrap().push(r.id);
+                            Settled::Done(Ok(r.id))
+                        }
+                        'r' => Settled::Done(Err(format!("rejected {}", r.id))),
+                        'f' => Settled::Failed(format!("write {} failed", r.id)),
+                        _ => Settled::Unknown(format!("replace {} unknown", r.id)),
+                    })
+                    .collect();
+                return Execution::Finished(settled);
+            }
             None => {}
         }
         let results = batch
@@ -547,6 +565,67 @@ fn failed_and_unknown_batches_end_every_request_and_are_not_run_again() {
         flush.wait_timeout(WAIT).unwrap(),
         Err(FlushFailure::NotClean { failed: 3, .. })
     ));
+    finish(rig);
+}
+
+#[test]
+fn independent_results_keep_the_committed_requests_and_count_each_failure_once() {
+    let rig = rig(limits(), Gate::closed());
+    rig.probe.script(Script::Each("ofur"));
+    let receipts: Vec<_> = (1..=4)
+        .map(|i| rig.handle.submit(req(i)).unwrap())
+        .collect();
+    rig.gate.allow(1);
+    rig.clock.advance(Duration::from_millis(2));
+    let results: Vec<_> = receipts
+        .iter()
+        .map(|r| r.wait_timeout(WAIT).unwrap())
+        .collect();
+    assert!(matches!(results[0], Completion::Done(Ok(1))));
+    assert!(matches!(&results[1], Completion::Failed(e) if e == "write 2 failed"));
+    assert!(matches!(results[2], Completion::Unknown(_)));
+    assert!(matches!(&results[3], Completion::Done(Err(e)) if e == "rejected 4"));
+    assert_eq!(rig.probe.calls(), [vec![1, 2, 3, 4]], "nothing ran again");
+    assert_eq!(rig.probe.committed(), [1]);
+    let flush = rig.handle.flush(FlushPoint::START).unwrap();
+    rig.gate.open();
+    assert!(matches!(
+        flush.wait_timeout(WAIT).unwrap(),
+        Err(FlushFailure::NotClean {
+            rejected: 1,
+            failed: 2,
+            ..
+        })
+    ));
+    finish(rig);
+}
+
+#[test]
+fn independent_results_follow_the_replacement_and_a_missing_result_is_lost() {
+    let rig = rig(limits(), Gate::closed());
+    rig.probe.script(Script::Each("f"));
+    let snap = |id| Req {
+        key: Some("config.toml"),
+        ..req(id)
+    };
+    let s1 = rig.handle.submit(snap(1)).unwrap();
+    let other = rig.handle.submit(req(2)).unwrap();
+    let s2 = rig.handle.submit(snap(3)).unwrap();
+    rig.gate.allow(1);
+    rig.clock.advance(Duration::from_millis(2));
+    assert!(matches!(
+        other.wait_timeout(WAIT).unwrap(),
+        Completion::Failed(_)
+    ));
+    assert!(
+        matches!(s2.wait_timeout(WAIT).unwrap(), Completion::Lost),
+        "the executor gave one result for two requests"
+    );
+    assert!(matches!(
+        s1.wait_timeout(WAIT).unwrap(),
+        Completion::Superseded { outcome, .. } if matches!(*outcome, Completion::Lost)
+    ));
+    assert_eq!(rig.probe.calls(), [vec![2, 3]]);
     finish(rig);
 }
 

@@ -264,6 +264,16 @@ impl<X: Executor> Run<X> {
         finish_rest::<X>(tally, self.links);
     }
 
+    /// 요청마다 따로 끝난 결과를 전한다. 결과가 모자란 요청은 확정 여부를 알 수 없어 Lost다.
+    fn settle(mut self, tally: &mut Tally, results: Vec<super::Settled<X::Output, X::Error>>) {
+        let mut results = results.into_iter();
+        for (seq, ticket) in self.seqs.drain(..).zip(self.tickets.drain(..)) {
+            let completion = results.next().map_or(Completion::Lost, Completion::from);
+            finish::<X>(tally, &mut self.links, seq, ticket, completion);
+        }
+        finish_rest::<X>(tally, self.links);
+    }
+
     fn drop_request(&mut self, tally: &mut Tally, index: usize, error: X::Error) {
         self.requests.remove(index);
         let seq = self.seqs.remove(index);
@@ -325,6 +335,7 @@ fn run_batch<X: Executor>(
         let outcome = catch_unwind(AssertUnwindSafe(|| executor.execute(&mut run.requests)));
         match outcome {
             Ok(Execution::Committed(results)) => return run.commit(tally, results),
+            Ok(Execution::Finished(results)) => return run.settle(tally, results),
             Ok(Execution::Busy(error)) => {
                 if retry.wait(shared) {
                     continue;

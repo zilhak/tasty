@@ -335,6 +335,9 @@ fn run_inline(
             Some(result) => Completion::Done(result),
             None => Completion::Lost,
         },
+        Execution::Finished(mut results) => {
+            results.pop().map_or(Completion::Lost, Completion::from)
+        }
         Execution::Busy(error) | Execution::Failed(error) => Completion::Failed(error),
         Execution::Poisoned { error, .. } => Completion::Failed(error),
         Execution::Unknown(error) => Completion::Unknown(error),
