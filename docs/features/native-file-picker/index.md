@@ -90,7 +90,7 @@ popup 이 닫히거나 다른 디렉토리로 옮기면 이전 요청의 receipt
 
 `DirEntryInfo`(`src/core/fs_list.rs`)는 로컬/원격 어디서 만들어졌든 항상 `Option<SystemTime>` 을
 든다. wire 조립/파싱 경계(`list_dir_entry_wire`/`parse_list_dir_result`)에서만
-`modified_unix: u64`(unix epoch 초)로 변환한다. OS 숨김 표시는 표시가 있는 항목에만 `os_hidden: true` 로 싣는 선택 필드다. 없으면 받는 쪽이 거짓으로 읽으므로 옛 server·옛 client 와 섞여도 오류가 없다(탐색기의 숨김 판정은 [Explorer](../../surfaces/explorer/index.md#숨김-파일)). 사람이 읽는 포맷(`"YYYY-MM-DD"`,
+`modified_unix: u64`(unix epoch 초)로 변환한다. OS 숨김 표시는 표시가 있는 항목에만 `os_hidden: true` 로 싣는 선택 필드다. 없으면 받는 쪽이 거짓으로 읽으므로 옛 server·옛 client 와 섞여도 오류가 없다(탐색기의 숨김 판정은 [Explorer](../../surfaces/explorer/index.md#숨김-파일)). 링크 상태도 링크 항목에만 `link: "valid"|"broken"` 으로 싣는 선택 필드이며 같은 규칙으로 섞여도 오류가 없다. 없거나 모르는 값은 링크 아님이다(탐색기의 표시는 [Explorer](../../surfaces/explorer/index.md#심볼릭-링크)). 사람이 읽는 포맷(`"YYYY-MM-DD"`,
 `fs_list::format_modified`)은 view 렌더 직전에만 계산 — 로컬/원격 어느 쪽도 이 함수 하나를
 공유한다.
 

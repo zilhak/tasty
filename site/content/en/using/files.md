@@ -1,4 +1,4 @@
-<!-- source-hash: 8758e4ec26a7 -->
+<!-- source-hash: 25cba6eb59b3 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -152,7 +152,7 @@ If you have bound a shortcut to a single letter with no modifier, that letter ac
 
 Renaming refuses to overwrite an existing entry and reports the failure. Copying preserves symbolic links as links, keeps each file's permissions and modified time, and keeps each folder's permissions, including read-only folders. Owners, extended attributes and ACLs are not copied. You cannot paste a folder into itself or one of its descendants through another path. Failed file operations display an error notification.
 
-A link to a folder opens like a folder, and the address bar keeps the link's path. Renaming a link or moving it to the trash affects only the link, not the folder it points to. Opening a link whose target is gone shows a notice that the target is missing. In the list, a link has a small link icon after its name, and a link whose target is gone shows a link icon in the warning colour in place of its icon; hover over it to see the missing target path.
+A link to a folder opens like a folder, and the address bar keeps the link's path. Renaming a link or moving it to the trash affects only the link, not the folder it points to. Opening a link whose target is gone shows a notice that the target is missing. In the list, a link has a small link icon after its name, and a link whose target is gone shows a link icon in the warning colour in place of its icon; hover over it to see the missing target path. A remote Explorer shows links the same way and shows the same notice, but hovering doesn't show the target path. If the remote Tasty is a version that doesn't send link states, links aren't told apart and look like ordinary items.
 
 - **Open** — first when you right-click one subfolder search result. Like a double-click, it goes into a folder and opens a file. It doesn't appear in a remote Explorer.
 - **Show in enclosing folder** — first when you right-click one link, and right after **Open** for one subfolder search result. Opens the folder that really holds the item (for a link, the folder that holds its target) under the same path you were browsing, selects it and scrolls it into view. It doesn't appear for a link whose target is gone or in a remote Explorer.
