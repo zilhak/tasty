@@ -505,6 +505,15 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
 - **D2 이름 변경 팝업**: 시안은 rename 팝업을 dialog 로 보고 바탕을 dialog-bg(bg-panel)로 두며, 입력은 그 위 공용 Input 의 기본 바탕 모양이다(평소 input-bg·input-border, 대기 중 input-readonly-bg·border·fg). raised 바탕 변형은 surface-raised 위 칸에만 쓴다. 본체 rename 팝업(workspace·탭·카테고리·탐색기 항목·즐겨찾기 추가 공용)의 바탕도 dialog-bg 다. 입력은 egui TextEdit 이라 egui 프레임을 끄고 같은 칸에 상자(input-radius, 1px 테두리)를 직접 그린다. 칸 높이는 평소 팝업 입력과 같은 22px 로 두어, 공용 Input 의 input-height(28px)와는 다르다. 갤러리 예제(`explorer-remote-waiting`, `explorer-rename-popup-ground`)는 시안대로 공용 Input 을 쓴다.
 - **D2 입력 줄**: List·Detail 은 입력 칸을 Spinner 자리(space-sm + icon-size-sm)만큼 줄이고 그 뒤에 Spinner 를 둔다. 폴더 안 만들기의 caption 은 Spinner 뒤로 밀린다. Grid 칸에는 Spinner 자리가 없어 입력 칸 오른쪽 밖에 그린다.
 
+## Explorer — 남은 임시 폴더 카드
+
+시안 `gallery/explorer-ops-staging.jsx`(#stagingleft)는 준비용 임시 폴더를 지우지 못한 카드의 규칙을 Meta 로 정한다: 종류는 항목 결과와 Warning 중 높은 쪽, 제목은 항목 결과 그대로, 폴더 줄은 항목 줄 뒤에 오고 "and N more" 에 센다, 동작은 Copy paths(폴더 포함)·허용될 때 Undo 이며 폴더를 Retry 하지 않는다. 본체와 갤러리는 이 규칙을 따르며 표본과 다른 점은 다음이다.
+
+- **부분 실패 카드**: 실패 줄 셋이 줄 상한 3을 채우면 폴더 줄은 "and 1 more" 에 든다. 표본은 같은 제목("3 failed")에서 폴더 줄을 보이고 실패 하나를 줄였다. 규칙 문장과 표본이 다르므로 규칙을 따랐다.
+- **취소 카드**: 본체 Retry 는 취소로 하지 않은 항목을 센다(`Report::retryable`). 그래서 표본에 없는 Retry 28 이 붙는다.
+- **버튼 순서**: 본체 카드 순서(Retry · Copy paths · Undo)를 그대로 쓴다. 표본은 Undo 를 Copy paths 앞에 둔다.
+- **언어**: 갤러리는 영어 번역표만 읽는다. 한국어·일본어 줄은 본체 격리 실행 캡처로 확인한다.
+
 <a id="pathfield--autocomplete--go-합성-공용-위젯-편집이동원복-결정-포팅-2026-07-09"></a>
 
 ## PathField — 편집·이동·원복

@@ -547,12 +547,12 @@ fn card_lines(report: &Report, undo_of: Option<UndoOf>) -> (Vec<(String, String)
                 .iter()
                 .map(|p| (home_tilde(p), t("explorer.result.skipped").to_owned())),
         )
-        .chain(
-            report
-                .staging_left
-                .iter()
-                .map(|f| (home_tilde(&f.path), reason_text(&f.reason))),
-        )
+        .chain(report.staging_left.iter().map(|f| {
+            (
+                home_tilde(&f.path),
+                t_fmt("explorer.result.staging_left", &reason_text(&f.reason)),
+            )
+        }))
         .collect();
     let more = (all.len() > MAX_RESULT_LINES).then(|| {
         t_fmt(
@@ -698,12 +698,23 @@ fn undo_title(report: &Report, undo_of: UndoOf) -> (ToastKind, String) {
     )
 }
 
+/// 남은 임시 폴더가 있으면 카드 종류를 최소 Warning 으로 올린다. 제목은 항목 결과 그대로이고 Error 는 남는다.
+fn staging_kind(kind: ToastKind, report: &Report) -> ToastKind {
+    match kind {
+        ToastKind::Success | ToastKind::Info if !report.staging_left.is_empty() => {
+            ToastKind::Warning
+        }
+        kind => kind,
+    }
+}
+
 fn card_text(card: &ResultCard) -> CardText {
     let report = &card.report;
     let (kind, title) = match card.undo_of {
         Some(of) => undo_title(report, of),
         None => card_title(report),
     };
+    let kind = staging_kind(kind, report);
     let (lines, more) = card_lines(report, card.undo_of);
     let (retry, leftovers) = if card.undo_of.is_some() {
         (Vec::new(), Vec::new())

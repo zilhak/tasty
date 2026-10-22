@@ -744,29 +744,124 @@ fn counting_has_no_bar_and_transfer_uses_files_and_zero_or_unknown_byte_fallback
     );
 }
 
-/// 남은 임시 폴더는 기존 줄 모양(경로 · OS 오류)으로 보이고, 카드는 닫을 때까지 남는다.
-/// 항목 결과는 바꾸지 않으므로 제목·Undo 는 그대로이고 Retry 는 없다.
+fn staging(path: &str, error: &str) -> Failure {
+    failure(path, Reason::Os(error.into()))
+}
+
+fn staging_line(path: &str, error: &str) -> (String, String) {
+    (
+        home_tilde(Path::new(path)),
+        t_fmt("explorer.result.staging_left", error),
+    )
+}
+
+/// 남은 임시 폴더는 고정 문구(OS 오류를 괄호에) 줄로 보이고 카드는 Warning 으로 올라 닫을 때까지 남는다.
+/// 항목 결과는 바꾸지 않으므로 제목·Undo 는 그대로이고 Retry 는 없다. Copy paths 는 폴더 경로를 담는다.
 #[test]
-fn a_staging_folder_left_behind_keeps_the_card_and_lists_its_path() {
+fn a_staging_folder_left_behind_raises_the_card_and_lists_its_path() {
     let mut r = report(OpKind::Copy, 2, 2);
-    r.staging_left = vec![failure(
-        "/tmp/Documents/.tasty-copy-x",
-        Reason::Os("Permission denied".into()),
-    )];
+    r.staging_left = vec![staging("/tmp/Documents/.tasty-copy-x", "Permission denied")];
     assert!(!result_is_timed(&r));
     let text = card_text(&card(r.clone()));
-    assert_eq!(text.kind, ToastKind::Success);
+    assert_eq!(text.kind, ToastKind::Warning);
     assert_eq!(
         text.title,
         t_fmt2("explorer.result.copied", "2", "Documents")
     );
     assert_eq!(
         text.lines,
-        [(
-            home_tilde(Path::new("/tmp/Documents/.tasty-copy-x")),
-            "Permission denied".to_owned()
+        [staging_line(
+            "/tmp/Documents/.tasty-copy-x",
+            "Permission denied"
         )]
     );
-    assert!(text.undo && text.retry.is_empty());
+    assert!(text.undo && text.retry.is_empty() && text.leftovers.is_empty());
+    assert_eq!(
+        labels(&text),
+        [
+            t("explorer.result.copy_paths").to_owned(),
+            t("explorer.result.undo").to_owned()
+        ]
+    );
     assert_eq!(all_paths(&r), "/tmp/Documents/.tasty-copy-x");
+}
+
+/// 취소(Info)와 Undo 결과(Success)도 Warning 으로 오르고, 실패만 있는 카드(Error)는 Error 로 남는다.
+#[test]
+fn a_staging_folder_raises_info_and_success_but_keeps_danger() {
+    let left = || {
+        vec![staging(
+            "/tmp/Documents/.tasty-copy-q",
+            "Directory not empty",
+        )]
+    };
+    let mut cancelled = report(OpKind::Copy, 40, 12);
+    cancelled.cancelled = true;
+    cancelled.unprocessed = (12..40)
+        .map(|i| PathBuf::from(format!("/tmp/src/{i}")))
+        .collect();
+    cancelled.staging_left = left();
+    let text = card_text(&card(cancelled));
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(
+        text.title,
+        t_fmt2("explorer.result.cancelled_copy", "12", "40")
+    );
+    // Retry 는 하지 않은 28개만 센다. 남은 폴더는 다시 할 대상이 아니다.
+    assert_eq!(text.retry.len(), 28);
+
+    let mut undone = report(OpKind::Undo, 1, 1);
+    undone.staging_left = left();
+    let mut c = card(undone);
+    c.undo_of = Some(UndoOf::Copy);
+    let text = card_text(&c);
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(text.title, t("explorer.result.undo_done_copy"));
+    assert_eq!(labels(&text), [t("explorer.result.copy_paths").to_owned()]);
+
+    let mut failed = report(OpKind::Copy, 2, 0);
+    failed.failed = vec![
+        failure("/tmp/a", Reason::Os("No space left on device".into())),
+        failure("/tmp/b", Reason::Os("No space left on device".into())),
+    ];
+    failed.staging_left = left();
+    assert_eq!(card_text(&card(failed)).kind, ToastKind::Error);
+}
+
+/// 남은 폴더 줄은 항목 줄 뒤에 오고 "and n more" 에 함께 센다. Retry 는 실패 항목만 센다.
+#[test]
+fn a_staging_folder_line_comes_after_the_item_lines_and_counts_toward_more() {
+    let mut r = report(OpKind::Copy, 3, 2);
+    r.failed = vec![failure(
+        "/tmp/src/a",
+        Reason::Os("Permission denied".into()),
+    )];
+    r.staging_left = vec![staging(
+        "/tmp/Documents/.tasty-copy-p",
+        "Device or resource busy",
+    )];
+    let text = card_text(&card(r.clone()));
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(
+        text.lines.last(),
+        Some(&staging_line(
+            "/tmp/Documents/.tasty-copy-p",
+            "Device or resource busy"
+        ))
+    );
+    assert_eq!(text.retry, [PathBuf::from("/tmp/src/a")]);
+
+    r.failed = (0..3)
+        .map(|i| {
+            failure(
+                &format!("/tmp/src/{i}"),
+                Reason::Os("Permission denied".into()),
+            )
+        })
+        .collect();
+    let text = card_text(&card(r));
+    assert_eq!(text.lines.len(), MAX_RESULT_LINES);
+    assert!(text.lines.iter().all(|(_, why)| why == "Permission denied"));
+    assert_eq!(text.more, Some(t_fmt("explorer.result.more", "1")));
+    assert_eq!(text.retry.len(), 3);
 }
