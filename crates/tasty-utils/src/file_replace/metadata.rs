@@ -160,3 +160,74 @@ pub(super) fn create(
     // SAFETY: CreateFileW returned a uniquely owned valid handle.
     Ok(unsafe { File::from_raw_handle(handle) })
 }
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Security::{
+        DACL_SECURITY_INFORMATION, GROUP_SECURITY_INFORMATION, GetFileSecurityW,
+        OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SetFileSecurityW,
+    };
+    fn wide(path: &std::path::Path) -> Vec<u16> {
+        path.as_os_str().encode_wide().chain(Some(0)).collect()
+    }
+    fn descriptor(path: &std::path::Path) -> Vec<u8> {
+        let path = wide(path);
+        let flags =
+            OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
+        let mut size = 0;
+        // SAFETY: NUL terminated path and a writable size output; the first call only sizes the buffer.
+        unsafe {
+            GetFileSecurityW(path.as_ptr(), flags, std::ptr::null_mut(), 0, &mut size);
+        }
+        assert!(size > 0, "{}", io::Error::last_os_error());
+        let mut bytes = vec![0u8; size as usize];
+        // SAFETY: bytes has the requested capacity and all pointers remain live.
+        assert_ne!(
+            unsafe {
+                GetFileSecurityW(
+                    path.as_ptr(),
+                    flags,
+                    bytes.as_mut_ptr().cast(),
+                    size,
+                    &mut size,
+                )
+            },
+            0
+        );
+        bytes.truncate(size as usize);
+        bytes
+    }
+    #[test]
+    fn protected_security_descriptor_is_present_before_payload_and_after_replace() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("controlled");
+        std::fs::write(&path, b"old").unwrap();
+        let mut initial = descriptor(&path);
+        let name = wide(&path);
+        // SAFETY: descriptor is self-relative, obtained from GetFileSecurityW; only this test file changes.
+        assert_ne!(
+            unsafe {
+                SetFileSecurityW(
+                    name.as_ptr(),
+                    DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                    initial.as_mut_ptr().cast(),
+                )
+            },
+            0
+        );
+        let expected = descriptor(&path);
+        super::super::replace_using(&path, super::super::Options::default(), |file| {
+            let temp = std::fs::read_dir(dir.path())?
+                .map(|e| e.unwrap().path())
+                .find(|p| p.extension().is_some_and(|e| e == "tmp"))
+                .unwrap();
+            assert_eq!(descriptor(&temp), expected);
+            assert_eq!(file.metadata()?.len(), 0);
+            std::io::Write::write_all(file, b"new")
+        })
+        .unwrap();
+        assert_eq!(descriptor(&path), expected);
+    }
+}

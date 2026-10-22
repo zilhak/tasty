@@ -227,3 +227,72 @@ fn owner_group_extended_attributes_and_acl_survive_before_and_after_writing() {
     check(&File::open(&path).unwrap());
     assert_eq!(fs::read(&path).unwrap(), b"new");
 }
+
+#[cfg(windows)]
+#[test]
+fn a_windows_readonly_target_is_not_replaced() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("readonly");
+    fs::write(&path, b"original").unwrap();
+    let mut permission = fs::metadata(&path).unwrap().permissions();
+    permission.set_readonly(true);
+    fs::set_permissions(&path, permission).unwrap();
+    assert!(replace(&path, b"new").is_err());
+    assert_eq!(fs::read(&path).unwrap(), b"original");
+    let mut permission = fs::metadata(&path).unwrap().permissions();
+    permission.set_readonly(false);
+    fs::set_permissions(&path, permission).unwrap();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_custom_acl_and_extended_attribute_survive_replacement() {
+    use std::process::Command;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("controlled");
+    fs::write(&path, b"old").unwrap();
+    let identity = Command::new("id").arg("-un").output().unwrap();
+    assert!(identity.status.success());
+    let user = String::from_utf8(identity.stdout).unwrap();
+    let entry = format!(
+        "user:{} allow read,write,readattr,writeattr,readextattr,writeextattr,readsecurity",
+        user.trim()
+    );
+    assert!(
+        Command::new("chmod")
+            .args(["+a", &entry])
+            .arg(&path)
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        Command::new("xattr")
+            .args(["-w", "user.test", "kept"])
+            .arg(&path)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let acl = |path: &Path| {
+        let output = Command::new("ls").arg("-le").arg(path).output().unwrap();
+        assert!(output.status.success());
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .skip(1)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let before = acl(&path);
+    assert!(!before.is_empty());
+    replace(&path, b"new").unwrap();
+    assert_eq!(acl(&path), before);
+    let output = Command::new("xattr")
+        .args(["-p", "user.test"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "kept");
+}
