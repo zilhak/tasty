@@ -191,6 +191,17 @@ pub struct RunnerLoop<E: TaskExecutor> {
     pub running: HashMap<TaskId, DispatchHandle>,
     /// 기록하지 못한 완료 보고. 다음 tick 에 같은 보고를 다시 낸다.
     pub pending: HashMap<TaskId, Completion>,
+    /// 시작했지만 Running 전이를 확정하지 못한 회차. 같은 task 를 다시 시작하지 않고 다음 tick 의
+    /// snapshot 으로 이어 간다([`Self::resume_spawned`]).
+    pub spawned: HashMap<TaskId, Spawned>,
+}
+
+/// 시작했지만 Running 전이를 확정하지 못한 회차.
+#[derive(Debug, Clone)]
+pub struct Spawned {
+    pub handle: DispatchHandle,
+    /// 이 회차가 Running 이 되며 가질 회차 id. v1 task 는 없다.
+    pub attempt: Option<String>,
 }
 
 /// 다시 내도 결과가 달라지지 않는 오류인가. 저장소 오류는 다시 시도한다. 보고 자체가
@@ -237,6 +248,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
             executor,
             running: HashMap::new(),
             pending: HashMap::new(),
+            spawned: HashMap::new(),
         }
     }
 
@@ -345,10 +357,13 @@ impl<E: TaskExecutor> RunnerLoop<E> {
             {
                 continue;
             }
-            if self.running.remove(&task.id).is_some() {
+            let held = self.running.remove(&task.id).is_some();
+            let spawned = self.spawned.remove(&task.id).is_some();
+            if held || spawned {
                 self.executor.release_permit(&task.id);
             }
         }
+        self.resume_spawned(workspace_id, now_ms, tasks, &mut set_state);
 
         for task in tasks {
             if !matches!(task.state, TaskState::Running) {
@@ -432,7 +447,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
             if !matches!(task.state, TaskState::Ready) {
                 continue;
             }
-            if self.running.contains_key(&task.id) {
+            if self.running.contains_key(&task.id) || self.spawned.contains_key(&task.id) {
                 continue;
             }
             let handle = match self.executor.dispatch(task) {
@@ -440,14 +455,62 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                 DispatchOutcome::Deferred => continue,
                 DispatchOutcome::PermanentFail(e) => DispatchHandle::ImmediateFail(e),
             };
-            // Ready → Running 전이 후에만 handle 보관 (전이 실패 시 보관 X).
+            // 전이를 확정한 handle 만 지켜본다. 확정하지 못해도 실행은 시작됐으므로 다시 시작하지 않는다.
             match set_state(workspace_id, &task.id, TaskState::Running, now_ms) {
                 Ok(()) => {
                     self.running.insert(task.id.clone(), handle);
                 }
                 Err(e) => {
                     tracing::warn!("set_state(Running) for {} failed: {e}", task.id);
+                    let attempt = crate::task::attempt::next_attempt(task, now_ms).map(|a| a.id);
+                    self.spawned
+                        .insert(task.id.clone(), Spawned { handle, attempt });
                 }
+            }
+        }
+    }
+}
+
+impl<E: TaskExecutor> RunnerLoop<E> {
+    /// Running 을 확정하지 못한 회차를 이번 snapshot 으로 이어 간다. 결과를 모르는 전이가 확정됐으면
+    /// (Running) 그 handle 을 지켜보고, 같은 회차로 Ready 면 Running 전이를 다시 시도한다. 회차가 바뀌었거나
+    /// 실행 대상이 아니게 됐으면 그 실행을 멈추고 점유를 돌려준다. 종결은 tick 앞부분이 정리한다.
+    /// snapshot 에 없는 task 는 목록을 읽지 못했을 수 있어 그대로 둔다.
+    fn resume_spawned<FS>(
+        &mut self,
+        workspace_id: u32,
+        now_ms: u64,
+        tasks: &[Task],
+        set_state: &mut FS,
+    ) where
+        FS: FnMut(u32, &TaskId, TaskState, u64) -> Result<()>,
+    {
+        for task in tasks {
+            let Some(entry) = self.spawned.get(&task.id) else {
+                continue;
+            };
+            let same_attempt = match task.state {
+                TaskState::Running => {
+                    task.attempt.as_ref().map(|a| &a.id) == entry.attempt.as_ref()
+                }
+                TaskState::Ready => {
+                    crate::task::attempt::next_attempt(task, now_ms).map(|a| a.id) == entry.attempt
+                }
+                _ => false,
+            };
+            if !same_attempt {
+                self.spawned.remove(&task.id);
+                self.executor.release_permit(&task.id);
+                continue;
+            }
+            if matches!(task.state, TaskState::Ready)
+                && let Err(e) = set_state(workspace_id, &task.id, TaskState::Running, now_ms)
+            {
+                tracing::warn!("set_state(Running) retry for {} failed: {e}", task.id);
+                continue;
+            }
+            if let Some(entry) = self.spawned.remove(&task.id) {
+                self.running.insert(task.id.clone(), entry.handle);
             }
         }
     }
@@ -478,6 +541,9 @@ mod pending_tests;
 
 #[cfg(test)]
 mod postprocess_tests;
+
+#[cfg(test)]
+mod spawned_tests;
 
 #[cfg(test)]
 mod tests {
