@@ -109,6 +109,8 @@ pub(crate) enum EntryLink {
 /// 숨김 파일도 포함한다. 개별 항목 읽기 오류는 건너뛰고 metadata 오류는 기본값으로 처리한다.
 /// `DirEntry::metadata`는 링크를 따라가지 않으므로 링크는 대상의 metadata로 종류를 정한다.
 pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>> {
+    let started = tracing::enabled!(target: "tasty::explorer::perf", tracing::Level::TRACE)
+        .then(std::time::Instant::now);
     let mut out = Vec::new();
     for entry in std::fs::read_dir(dir)? {
         let entry = match entry {
@@ -160,6 +162,10 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
             #[cfg(feature = "gui")]
             change,
         });
+    }
+    if let Some(started) = started {
+        tracing::trace!(target: "tasty::explorer::perf", entries = out.len(),
+            elapsed_ms = started.elapsed().as_secs_f64() * 1000.0, "directory_read");
     }
     Ok(out)
 }

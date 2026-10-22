@@ -33,10 +33,15 @@ struct Harness {
     action: Option<super::ExplorerAction>,
     /// 마지막 프레임이 그린 글자 전부.
     texts: Vec<String>,
+    cell: Rect,
 }
 
 impl Harness {
     fn new(mode: ExplorerViewMode) -> Self {
+        Self::with_count(mode, N)
+    }
+
+    fn with_count(mode: ExplorerViewMode, count: usize) -> Self {
         crate::i18n::init("en");
         let mut panel = ExplorerPanel::new(1, PathBuf::from(DIR));
         panel.active_tab_mut().view_mode = mode;
@@ -45,7 +50,7 @@ impl Harness {
         // 읽기 결과 대신 항목을 직접 넣는다.
         view.sync(&panel, None);
         view.state = super::LoadState::Ok;
-        view.entries = (0..N)
+        view.entries = (0..count)
             .map(|i| super::DirEntryInfo {
                 path: path(i),
                 name: name(i),
@@ -63,6 +68,7 @@ impl Harness {
             focused: false,
             action: None,
             texts: Vec::new(),
+            cell: CELL,
         }
     }
 
@@ -84,7 +90,7 @@ impl Harness {
         };
         let raw = RawInput {
             time: Some(self.ctx.input(|i| i.time) + 1.0 / 60.0),
-            screen_rect: Some(CELL),
+            screen_rect: Some(self.cell),
             focused: true,
             events,
             ..Default::default()
@@ -500,3 +506,6 @@ fn internal_tabs_restore_scroll_in_all_three_views() {
         assert!(after.len() < 200);
     }
 }
+
+#[path = "virtual_tests/large.rs"]
+mod large;

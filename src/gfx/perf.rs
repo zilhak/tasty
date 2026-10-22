@@ -31,6 +31,13 @@ impl PerfAggregator {
     }
 
     pub fn push(&mut self, s: FrameSample) {
+        tracing::trace!(
+            target: "tasty::gfx::perf",
+            gpu_total_ms = s.gpu_total_ms,
+            terminals_ms = s.terminals_ms,
+            surfaces = s.surfaces,
+            "frame_sample"
+        );
         if self.frames.len() == WINDOW {
             self.frames.pop_front();
         }

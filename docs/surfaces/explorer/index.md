@@ -452,6 +452,10 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한다 (`appearance.plugin_font_overrides["explorer"]`, `effective_font_for_kind("explorer")` 가 읽음).
 
+## 성능 관측
+
+`TASTY_LOG=tasty::gfx::perf=trace,tasty::explorer::perf=trace`로 프레임별 CPU 렌더 시간(`frame_sample`)과 디렉터리 조회의 항목 수·경과 시간(`directory_read`)을 기록할 수 있다. 기본 로그에서는 출력하지 않으며 디렉터리 경로나 파일 내용은 기록하지 않는다. 프레임 시간은 GPU 완료 시간이나 OS 화면 표시 시간이 아니다. 입력 주입 시각과 프레임 로그를 함께 대조할 때도 측정 환경과 포함한 구간을 구분한다.
+
 ## 검증 기준
 
 - Given 내부 탭 A(X)·B(Y)·C(X) When A에서 선택·Find를 정한 뒤 B·C를 거쳐 돌아온다 Then A의 목록·선택·Find가 Loading 없이 돌아오며 같은 경로 C는 독립이다(`tab_state_tests.rs`).
