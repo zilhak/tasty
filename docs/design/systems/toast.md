@@ -110,7 +110,7 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 
 | 플랫폼 | 키를 받는 WebView |
 |--------|-------------------|
-| Linux(X11) | X 포커스가 WebView 안에 있거나, 포커스 창이 WebView의 조상(또는 PointerRoot)이고 포인터가 WebView 위에 있다. X 서버는 포커스 창의 자손 위에 포인터가 있으면 키를 그 자손에 보낸다 |
+| Linux(X11) | X 포커스가 WebView 안에 있거나, 포커스 창이 WebView의 조상(또는 PointerRoot)이고 포인터가 WebView 위에 있다. X 서버는 포커스 창의 자손 위에 포인터가 있으면 키를 그 자손에 보낸다. 불투명 오버레이가 입력 shape를 비운 동안에는 X가 키를 부모로 보내므로 포커스만 본다([WebView](webview.md#linux-불투명-구현)) |
 | macOS | `holds_keyboard_focus`와 같다(first responder) |
 | Windows | `holds_keyboard_focus`와 같다(GetFocus) |
 
