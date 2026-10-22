@@ -486,7 +486,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `forms/AutoComplete` | `AutoComplete` / `autocomplete_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis + substring 필터 + match highlight + max-height 스크롤) | `prim_autocomplete` |
 | `plugins.jsx/PathField`(:59) | `PathField` / `PathFieldOutcome` (AutoComplete 트리거 + Go IconButton, 편집/이동/원복 결정 = markdown `addr_outcome` 포팅, idle=secondary/editing=primary) | `prim_path_field` |
 | `feedback/StatusDot` | `status_dot`(kind+pulse, 점과 라벨 사이 `space-xs`) | `prim_status_dot` |
-| `components/feedback/LoadingOverlay.jsx` · `gallery/layouts-loading.jsx` | `paint_loading_overlay` / `LoadingPlacement`, `Spinner::still_arc` | `attach-loading` (Components): surface/tab/LNB/rail의 동일 기하 on/off |
+| `components/feedback/LoadingOverlay.jsx` · `gallery/layouts-loading.jsx` | `paint_loading_overlay` / `LoadingPlacement`, `Spinner::still_arc`, `Tooltip::second_line`(로딩 둘째 줄) | `attach-loading` (Components): 시안 일곱 Spec을 Mocha·Latte로 그린다. 네 자리 on/off와 rect 점선 · 탭 상태(비활성·활성·hover·attention 둘·busy·move+표지·좁은 120·Ctrl 키캡·넘침 줄) · LNB 카드 상태(REMOTE·부제·설명·배지·Alt 키캡) · 레일 아바타 상태(모서리 칩 넷·attached ring·키캡) · surface(터미널·검색줄+move ring·빈 surface·WebView 의도) · 세 자리 동시·모션 감소·UI 배율 ×1/×1.25/×1.5 · 문구와 툴팁. 탭·카드·아바타는 갤러리 kit의 `tab_cell`·`paint_ws_row`·`paint_avatar`로 그리고, 시안의 markdown egui 예제는 Tasty에서 WebView이므로 빈 surface로 대신한다 |
 | `components/feedback/PendingIndicator.jsx` | `PendingIndicator` (count/time은 호출자 문구, compact, reduced motion) | `attach-loading` (Components) |
 | `gallery/layouts-loading-prelayout.jsx` | View 전용 생성 draft와 공용 loading 표시 | `attach-prelayout` (Components): 새 탭·surface/pane 양축 분할 |
 | `feedback/Spinner` | `Spinner`(size/color, 모션은 `Theme` 이 결정 · reduced_motion 은 override) | `prim_spinner` |
