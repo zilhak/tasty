@@ -8,13 +8,20 @@ use serde_json::{Value, json};
 
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::RequestContext;
-use crate::state::webview_overlay::{OverlayMode, TargetKind};
+use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource, TargetKind};
 
 fn mode_name(mode: OverlayMode) -> &'static str {
     match mode {
         OverlayMode::Hide => "hide",
         OverlayMode::Opaque => "opaque",
         OverlayMode::Transparent => "transparent",
+    }
+}
+
+fn source_name(source: OverlayPaintSource) -> &'static str {
+    match source {
+        OverlayPaintSource::MainSurface => "main_surface",
+        OverlayPaintSource::OverlaySurface => "overlay_surface",
     }
 }
 
@@ -58,6 +65,7 @@ pub(super) fn handle_overlay(
         id,
         json!({
             "mode": mode_name(ov.mode),
+            "paint_source": source_name(ov.paint_source),
             "forced": ov.forced.map(mode_name),
             "applied": ov.applied,
             "failed": ov.health.failed(),
@@ -70,7 +78,9 @@ pub(super) fn handle_overlay(
             "planned_pages": ov.planned_pages.iter().map(|r| rect(*r)).collect::<Vec<_>>(),
             "painted": ov.painted.as_ref().map(|p| json!({
                 "mode": mode_name(p.mode),
+                "source": source_name(p.source),
                 "pages": p.pages.iter().map(|r| rect(*r)).collect::<Vec<_>>(),
+                "surface_size": p.surface_size,
             })),
         }),
     )

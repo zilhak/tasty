@@ -537,6 +537,9 @@ impl GpuState {
         );
         let egui_pass_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
+        // 구멍 방식 그림은 주 pass 가 이미 그렸다. 주 표면 present 뒤에 기록한다.
+        let main_overlay_job =
+            crate::state::webview_overlay::take_main_surface_job(&mut state.webview_overlay);
         self.paint_webview_overlay(
             state,
             full_output.pixels_per_point,
@@ -559,6 +562,10 @@ impl GpuState {
         // debug 결함 주입 지점 — release 는 no-op.
         stall_watchdog::take_debug_stall();
         output.present();
+        if let Some(job) = main_overlay_job {
+            let size = [self.size.width, self.size.height];
+            state.webview_overlay.record_present(job, size);
+        }
         let present_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         let gpu_total_ms = render_start.elapsed().as_secs_f64() * 1000.0;

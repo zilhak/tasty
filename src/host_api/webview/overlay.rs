@@ -7,7 +7,7 @@
 //! 돌아간다.
 
 use crate::model::PhysicalRect;
-use crate::state::webview_overlay::OverlayMode;
+use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource};
 
 /// 대상 팝업이 떠 있는 프레임마다 WebView 하나에 보내는 요청.
 // 이유: 요청을 읽는 플랫폼 backend 가 아직 없다(모든 OS 가 지원 안 함 기본 구현). 시험용 backend 가 읽는다.
@@ -51,6 +51,13 @@ pub trait WebViewOverlayBackend {
         OverlayMode::Hide
     }
 
+    /// 지원하는 `mode` 의 팝업 그림을 어디에 올리는지. 페이지 대상 영역에 구멍을 내 주 표면을 보이는
+    /// backend 는 [`OverlayPaintSource::MainSurface`] 를 돌려준다. 기본값은 별도 오버레이 창이며, 그 창이
+    /// 그림을 present 해야 페이지를 드러낸다.
+    fn overlay_paint_source(&self, _mode: OverlayMode) -> OverlayPaintSource {
+        OverlayPaintSource::OverlaySurface
+    }
+
     /// 대상 팝업이 떠 있는 프레임마다 부른다. 실패하면 host 는 모든 WebView 를 숨긴다.
     fn apply_overlay(&self, _request: &OverlayRequest<'_>) -> Result<(), OverlayApplyError> {
         Err(OverlayApplyError::Unsupported)
@@ -70,10 +77,13 @@ pub(crate) mod fake {
     /// 받은 요청 하나: 모드, WebView 기준 영역(x, y, w, h), 호스트 포인터 여부.
     pub(crate) type AppliedRequest = (OverlayMode, Vec<[i32; 4]>, bool);
 
-    /// 시험용 backend. 보고할 지원 모드와 적용 결과를 정하고 받은 요청을 기록한다.
+    /// 시험용 backend. 보고할 지원 모드·그림 위치와 적용 결과를 정하고 받은 요청과 표시 상태를 기록한다.
     #[derive(Default)]
     pub(crate) struct FakeOverlayBackend {
         pub support: OverlayMode,
+        pub paint_source: OverlayPaintSource,
+        /// host 가 마지막으로 정한 페이지 표시 여부.
+        pub visible: std::cell::Cell<bool>,
         pub fail: bool,
         pub applied: RefCell<Vec<AppliedRequest>>,
         pub scale_factors: RefCell<Vec<f64>>,
@@ -85,6 +95,10 @@ pub(crate) mod fake {
     impl WebViewOverlayBackend for FakeOverlayBackend {
         fn overlay_support(&self) -> OverlayMode {
             self.support
+        }
+
+        fn overlay_paint_source(&self, _mode: OverlayMode) -> OverlayPaintSource {
+            self.paint_source
         }
 
         fn apply_overlay(&self, request: &OverlayRequest<'_>) -> Result<(), OverlayApplyError> {

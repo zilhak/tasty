@@ -21,6 +21,18 @@ pub enum OverlayMode {
     Transparent,
 }
 
+/// 오버레이 그림이 화면에 올라가는 곳. 모드와 별개다. 같은 `Opaque` 도 backend 에 따라 주 표면에 구멍을
+/// 내 보이거나 별도 오버레이 창에 그린다. 지원 모드를 보고하는 backend 가 모드마다 고른다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OverlayPaintSource {
+    /// 주 표면. backend 가 페이지의 대상 영역에 구멍을 내므로 주 pass 가 그린 팝업이 그대로 보인다.
+    /// 주 pass 가 그 모드·페이지로 present 되면 준비된 것이다.
+    MainSurface,
+    /// 별도 오버레이 창. 주 pass 뒤 오버레이 pass 가 그 창에 present 해야 준비된 것이다.
+    #[default]
+    OverlaySurface,
+}
+
 /// 대상 레이어의 종류. 오버레이 그림과 대상 영역은 이 목록의 레이어만 모은다. 대상 레이어 목록은
 /// 이 enum 하나이며 그리는 곳과의 일치는 `source_guards::webview_overlay_targets` 가 검사한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +70,8 @@ pub struct OverlayFrame {
     pub targets: Vec<OverlayTarget>,
     /// 마지막 동기화가 정한 모드.
     pub mode: OverlayMode,
+    /// 마지막 동기화가 그 모드로 정한 그림 위치. `Hide` 에서는 쓰지 않는다.
+    pub paint_source: OverlayPaintSource,
     /// 불투명 모드에서 드러낼 페이지(egui 논리 좌표). 다른 모드에서는 비어 있다.
     pub pages: Vec<egui::Rect>,
     /// 마지막 동기화가 이 모드로 드러내려는 페이지(egui 논리 좌표, surface id 순). 오버레이 그림을
@@ -68,28 +82,51 @@ pub struct OverlayFrame {
     pub health: OverlayHealth,
     /// backend 에 오버레이를 적용한 상태다. `Hide` 로 돌아가면 `clear_overlay` 를 부른다.
     pub applied: bool,
-    /// 이번 프레임 오버레이 창에 그릴 그림. 오버레이 창이 있고 모드가 `Hide` 가 아닐 때만 프레임 끝에
-    /// 채우고 렌더가 가져간다. `None` 은 준비하지 않은 것이고 빈 `shapes` 는 유효한 빈 그림이다.
+    /// 이번 프레임 오버레이 그림. 모드가 `Hide` 가 아니고 그림 위치가 준비됐을 때만([`wants_paint_job`])
+    /// 프레임 끝에 채우고 렌더가 가져간다. `None` 은 준비하지 않은 것이고 빈 `shapes` 는 유효한 빈 그림이다.
     pub paint_job: Option<OverlayPaintJob>,
-    /// 이번 프레임에 오버레이 창에 실제로 올린 그림. 프레임 시작에 비우고 렌더가 present 뒤에 채운다.
+    /// 이번 프레임에 실제로 present 한 그림. 프레임 시작에 비우고 렌더가 present 뒤에 채운다.
     pub painted: Option<PaintedOverlay>,
     /// debug 빌드에서 backend 지원 모드를 덮어쓴다.
     pub forced: Option<OverlayMode>,
 }
 
-/// 오버레이 창 한 프레임의 그림. 어떤 모드·페이지를 기준으로 만들었는지 함께 든다.
+/// 한 프레임의 오버레이 그림. 어떤 모드·그림 위치·페이지·표면 크기를 기준으로 만들었는지 함께 든다.
+/// 주 표면 그림은 주 pass 가 이미 그리므로 `shapes` 가 비어 있다.
 #[derive(Debug, Default)]
 pub struct OverlayPaintJob {
     pub mode: OverlayMode,
+    pub source: OverlayPaintSource,
     pub pages: Vec<egui::Rect>,
+    /// job 을 만들 때 주 표면의 물리 크기.
+    pub surface_size: [u32; 2],
     pub shapes: Vec<egui::epaint::ClippedShape>,
 }
 
-/// 오버레이 창에 present 한 그림의 기준.
+impl OverlayFrame {
+    /// `job` 을 `surface_size` 크기 주 표면 프레임과 함께 present 했다고 기록한다. job 을 만든 뒤 표면 크기가
+    /// 바뀌었으면 그 그림은 지금 페이지와 맞지 않으므로 기록하지 않는다.
+    pub fn record_present(&mut self, job: OverlayPaintJob, surface_size: [u32; 2]) {
+        if job.surface_size != surface_size {
+            return;
+        }
+        self.painted = Some(PaintedOverlay {
+            mode: job.mode,
+            source: job.source,
+            pages: job.pages,
+            surface_size,
+        });
+    }
+}
+
+/// present 한 그림의 기준.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaintedOverlay {
     pub mode: OverlayMode,
+    pub source: OverlayPaintSource,
     pub pages: Vec<egui::Rect>,
+    /// present 한 주 표면의 물리 크기.
+    pub surface_size: [u32; 2],
 }
 
 /// 모드를 정하는 입력. 매 프레임 새로 만든다.
@@ -123,18 +160,72 @@ pub fn reveal_wanted(
     active && !under_toast && (!overlay_open || mode != OverlayMode::Hide)
 }
 
-/// 대상 팝업이 떠 있는 동안 `mode` 로 페이지를 드러내도 되는지. 같은 프레임에 오버레이 창이 같은 모드와
-/// 같은 페이지로 그림을 올렸을 때만 참이다. 팝업이 없거나 `Hide` 면 이 판정과 무관하다.
+/// 이번 프레임에 오버레이 그림 job 을 만들지. 오버레이 창 그림은 그 창이 있어야 한다. 주 표면 그림은
+/// 주 pass 가 언제나 그리므로 창이 없어도 만든다.
+pub fn wants_paint_job(
+    mode: OverlayMode,
+    source: OverlayPaintSource,
+    has_overlay_surface: bool,
+) -> bool {
+    mode != OverlayMode::Hide
+        && match source {
+            OverlayPaintSource::MainSurface => true,
+            OverlayPaintSource::OverlaySurface => has_overlay_surface,
+        }
+}
+
+/// 프레임 끝에 이번 프레임 그림 job 을 준비한다. 직전 동기화의 모드·그림 위치·`planned_pages` 를 기준으로
+/// 삼는다. 오버레이 창 그림만 `shapes` 로 대상 레이어를 복제한다. 주 표면 그림은 주 pass 가 그대로 그린다.
+pub fn prepare_paint_job(
+    frame: &mut OverlayFrame,
+    has_overlay_surface: bool,
+    surface_size: [u32; 2],
+    shapes: impl FnOnce(&[OverlayTarget], &[egui::Rect]) -> Vec<egui::epaint::ClippedShape>,
+) {
+    if !wants_paint_job(frame.mode, frame.paint_source, has_overlay_surface) {
+        return;
+    }
+    let pages = frame.planned_pages.clone();
+    let shapes = match frame.paint_source {
+        OverlayPaintSource::MainSurface => Vec::new(),
+        OverlayPaintSource::OverlaySurface => shapes(&frame.targets, &pages),
+    };
+    frame.paint_job = Some(OverlayPaintJob {
+        mode: frame.mode,
+        source: frame.paint_source,
+        pages,
+        surface_size,
+        shapes,
+    });
+}
+
+/// 주 표면 그림 job 을 꺼낸다. 오버레이 창 job 은 그대로 둔다. 렌더는 꺼낸 job 을 주 pass present 뒤에
+/// [`OverlayFrame::record_present`] 로 남긴다.
+pub fn take_main_surface_job(frame: &mut OverlayFrame) -> Option<OverlayPaintJob> {
+    frame
+        .paint_job
+        .take_if(|job| job.source == OverlayPaintSource::MainSurface)
+}
+
+/// 대상 팝업이 떠 있는 동안 `mode` 로 페이지를 드러내도 되는지. 같은 프레임에 같은 모드·그림 위치·페이지로
+/// 만든 그림이 지금과 같은 크기의 표면에 present 됐을 때만 참이다. 팝업이 없거나 `Hide` 면 이 판정과 무관하다.
 pub fn overlay_reveal_ready(
     mode: OverlayMode,
+    source: OverlayPaintSource,
     overlay_open: bool,
     painted: Option<&PaintedOverlay>,
     planned_pages: &[egui::Rect],
+    surface_size: [u32; 2],
 ) -> bool {
     if !overlay_open || mode == OverlayMode::Hide {
         return true;
     }
-    painted.is_some_and(|p| p.mode == mode && p.pages == planned_pages)
+    painted.is_some_and(|p| {
+        p.mode == mode
+            && p.source == source
+            && p.pages == planned_pages
+            && p.surface_size == surface_size
+    })
 }
 
 /// 상자 바깥(`StrokeKind::Outside`)에 그리는 테두리까지 넣은 그림 영역. 소속 범위 밖은 자른다.
@@ -325,53 +416,152 @@ mod tests {
         );
     }
 
-    /// 대상 팝업이 처음 뜬 프레임에는 오버레이 그림이 없으므로 페이지를 드러내지 않는다. 같은 모드·페이지로
-    /// 그린 뒤에만 드러낸다. 빈 그림도 그 모드로 올렸다면 준비된 것이다.
+    /// 대상 팝업이 처음 뜬 프레임에는 그림이 없으므로 페이지를 드러내지 않는다. 같은 모드·그림 위치·페이지로
+    /// 만든 그림이 같은 크기 표면에 present 된 뒤에만 드러낸다. 빈 그림도 그 기준으로 올렸다면 준비된 것이다.
     #[test]
     fn pages_wait_for_an_overlay_frame_painted_for_the_same_mode_and_pages() {
+        use OverlayPaintSource::{MainSurface, OverlaySurface};
+        const SIZE: [u32; 2] = [800, 600];
         let page = er(0.0, 0.0, 300.0, 200.0);
-        let painted = |mode, pages: &[egui::Rect]| PaintedOverlay {
+        let painted = |mode, source, pages: &[egui::Rect], size| PaintedOverlay {
             mode,
+            source,
             pages: pages.to_vec(),
+            surface_size: size,
         };
-        assert!(!overlay_reveal_ready(
-            OverlayMode::Opaque,
-            true,
-            None,
-            &[page]
-        ));
-        assert!(!overlay_reveal_ready(
+        let ready = |mode, source, p: Option<&PaintedOverlay>, pages: &[egui::Rect]| {
+            overlay_reveal_ready(mode, source, true, p, pages, SIZE)
+        };
+        let opaque_on_overlay = painted(OverlayMode::Opaque, OverlaySurface, &[page], SIZE);
+        assert!(!ready(OverlayMode::Opaque, OverlaySurface, None, &[page]));
+        assert!(!ready(
             OverlayMode::Transparent,
-            true,
-            Some(&painted(OverlayMode::Opaque, &[page])),
+            OverlaySurface,
+            Some(&opaque_on_overlay),
             &[page]
         ));
-        assert!(!overlay_reveal_ready(
+        assert!(!ready(
             OverlayMode::Opaque,
-            true,
-            Some(&painted(OverlayMode::Opaque, &[er(0.0, 0.0, 100.0, 100.0)])),
+            OverlaySurface,
+            Some(&painted(
+                OverlayMode::Opaque,
+                OverlaySurface,
+                &[er(0.0, 0.0, 100.0, 100.0)],
+                SIZE
+            )),
             &[page]
         ));
-        assert!(overlay_reveal_ready(
+        assert!(ready(
             OverlayMode::Opaque,
-            true,
-            Some(&painted(OverlayMode::Opaque, &[page])),
+            OverlaySurface,
+            Some(&opaque_on_overlay),
             &[page]
         ));
-        assert!(overlay_reveal_ready(
+        assert!(ready(
             OverlayMode::Transparent,
-            true,
-            Some(&painted(OverlayMode::Transparent, &[])),
+            OverlaySurface,
+            Some(&painted(
+                OverlayMode::Transparent,
+                OverlaySurface,
+                &[],
+                SIZE
+            )),
             &[]
+        ));
+        // 같은 모드·페이지라도 다른 그림 위치나 다른 크기 표면의 기록은 쓰지 않는다.
+        assert!(!ready(
+            OverlayMode::Opaque,
+            MainSurface,
+            Some(&opaque_on_overlay),
+            &[page]
+        ));
+        assert!(!ready(
+            OverlayMode::Opaque,
+            OverlaySurface,
+            Some(&painted(OverlayMode::Opaque, MainSurface, &[page], SIZE)),
+            &[page]
+        ));
+        assert!(!ready(
+            OverlayMode::Opaque,
+            MainSurface,
+            Some(&painted(
+                OverlayMode::Opaque,
+                MainSurface,
+                &[page],
+                [800, 599]
+            )),
+            &[page]
+        ));
+        assert!(ready(
+            OverlayMode::Opaque,
+            MainSurface,
+            Some(&painted(OverlayMode::Opaque, MainSurface, &[page], SIZE)),
+            &[page]
         ));
         // 팝업이 없거나 숨김 모드면 기존 표시 판정 그대로다.
         assert!(overlay_reveal_ready(
             OverlayMode::Opaque,
+            OverlaySurface,
             false,
             None,
-            &[page]
+            &[page],
+            SIZE
         ));
-        assert!(overlay_reveal_ready(OverlayMode::Hide, true, None, &[page]));
+        assert!(overlay_reveal_ready(
+            OverlayMode::Hide,
+            OverlaySurface,
+            true,
+            None,
+            &[page],
+            SIZE
+        ));
+    }
+
+    /// 주 표면 그림은 오버레이 창 없이도 job 을 만든다. 오버레이 창 그림은 창이 있어야 한다. 렌더는 주 표면
+    /// job 만 꺼내 present 뒤 기록으로 남기고, 오버레이 창 job 은 오버레이 pass 에 남긴다.
+    #[test]
+    fn a_main_surface_job_needs_no_overlay_surface() {
+        use OverlayPaintSource::{MainSurface, OverlaySurface};
+        assert!(wants_paint_job(OverlayMode::Opaque, MainSurface, false));
+        assert!(!wants_paint_job(OverlayMode::Opaque, OverlaySurface, false));
+        assert!(wants_paint_job(
+            OverlayMode::Transparent,
+            OverlaySurface,
+            true
+        ));
+        assert!(!wants_paint_job(OverlayMode::Hide, MainSurface, true));
+
+        let mut frame = OverlayFrame {
+            paint_job: Some(OverlayPaintJob {
+                source: OverlaySurface,
+                ..OverlayPaintJob::default()
+            }),
+            ..OverlayFrame::default()
+        };
+        assert!(take_main_surface_job(&mut frame).is_none());
+        assert!(frame.paint_job.is_some());
+        frame.paint_job = Some(OverlayPaintJob {
+            mode: OverlayMode::Opaque,
+            source: MainSurface,
+            surface_size: [10, 10],
+            ..OverlayPaintJob::default()
+        });
+        let job = take_main_surface_job(&mut frame).expect("main surface job");
+        assert!(frame.paint_job.is_none());
+        // 만든 뒤 크기가 바뀐 표면에 올린 그림은 기록하지 않는다.
+        let resized = OverlayPaintJob {
+            surface_size: [10, 10],
+            ..OverlayPaintJob::default()
+        };
+        frame.record_present(resized, [12, 10]);
+        assert!(frame.painted.is_none());
+        frame.record_present(job, [10, 10]);
+        let painted = frame.painted.as_ref().expect("recorded");
+        assert_eq!(
+            (painted.mode, painted.source),
+            (OverlayMode::Opaque, MainSurface)
+        );
+        assert_eq!(painted.surface_size, [10, 10]);
     }
 
     #[test]

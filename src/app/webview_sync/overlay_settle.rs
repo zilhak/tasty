@@ -74,12 +74,70 @@ pub(super) fn settle_overlay<B: crate::webview::overlay::WebViewOverlayBackend>(
     }
     frame.applied = mode != OverlayMode::Hide;
     frame.mode = mode;
+    frame.paint_source = paint_source(mode, active.iter().map(|(wv, _)| *wv));
     mode
 }
 
-/// 드러낼 후보(`planned`)의 표시를 적용하고 실제로 드러낸 surface id 를 돌려준다. 대상 팝업이 떠 있고
-/// 모드가 `Hide` 가 아니면 같은 프레임에 오버레이 창이 같은 모드·페이지로 그림을 올렸을 때만
-/// 드러낸다. 아니면 모두 숨긴 채 그 모드·페이지를 다음 프레임 그리기에 넘기고 다시 그리기를 요청한다.
+/// 고른 모드의 그림 위치. 활성 WebView 가 모두 주 표면에 맡기면 주 표면이다. 하나라도 오버레이 창을 쓰면
+/// 오버레이 창이다. 오버레이 창은 주 표면 위에 덮이므로 구멍 방식 페이지 위에도 팝업이 보인다.
+fn paint_source<'a, B: crate::webview::overlay::WebViewOverlayBackend + 'a>(
+    mode: crate::state::webview_overlay::OverlayMode,
+    active: impl IntoIterator<Item = &'a B>,
+) -> crate::state::webview_overlay::OverlayPaintSource {
+    use crate::state::webview_overlay::OverlayPaintSource;
+    let all_main = active
+        .into_iter()
+        .all(|wv| wv.overlay_paint_source(mode) == OverlayPaintSource::MainSurface);
+    if all_main {
+        OverlayPaintSource::MainSurface
+    } else {
+        OverlayPaintSource::OverlaySurface
+    }
+}
+
+/// 한 동기화의 드러내기 입력. `planned` 는 정렬한 드러낼 후보, `pages` 는 그 egui 논리 사각형이다.
+pub(super) struct RevealFrame<'a> {
+    pub mode: crate::state::webview_overlay::OverlayMode,
+    pub overlay_open: bool,
+    pub planned: &'a [u32],
+    pub pages: Vec<egui::Rect>,
+    /// 지금 주 표면의 물리 크기.
+    pub surface_size: [u32; 2],
+}
+
+/// 드러낼 후보의 표시를 정한다. 대상 팝업이 떠 있고 모드가 `Hide` 가 아니면 같은 프레임에 같은 모드·그림
+/// 위치·페이지·표면 크기의 그림이 present 됐을 때만 드러낸다. 아니면 모두 숨긴 채 그 페이지를 다음 프레임
+/// 그리기에 넘긴다. 드러낸 surface id 와 다시 그려야 하는지를 돌려준다.
+pub(super) fn settle_reveal<'a, W: 'a>(
+    overlay: &mut crate::state::webview_overlay::OverlayFrame,
+    frame: RevealFrame<'_>,
+    webviews: impl IntoIterator<Item = (&'a u32, &'a W)>,
+    set_visible: impl Fn(&W, bool),
+) -> (Vec<u32>, bool) {
+    use crate::state::webview_overlay::{OverlayMode, overlay_reveal_ready};
+    let ready = overlay_reveal_ready(
+        frame.mode,
+        overlay.paint_source,
+        frame.overlay_open,
+        overlay.painted.as_ref(),
+        &frame.pages,
+        frame.surface_size,
+    );
+    let gated = frame.overlay_open && frame.mode != OverlayMode::Hide;
+    overlay.planned_pages = if gated { frame.pages } else { Vec::new() };
+    let revealed = if ready {
+        frame.planned.to_vec()
+    } else {
+        Vec::new()
+    };
+    for (sid, wv) in webviews {
+        set_visible(wv, revealed.contains(sid));
+    }
+    (revealed, !ready)
+}
+
+/// 드러낼 후보(`planned`)의 표시를 [`settle_reveal`] 로 적용하고 실제로 드러낸 surface id 를 돌려준다.
+/// 그림이 아직 준비되지 않았으면 다시 그리기를 요청한다.
 pub(super) fn apply_reveal(
     view: &mut crate::view::MainView,
     mode: crate::state::webview_overlay::OverlayMode,
@@ -88,7 +146,6 @@ pub(super) fn apply_reveal(
     mut planned: Vec<u32>,
     scale_factor: f64,
 ) -> Vec<u32> {
-    use crate::state::webview_overlay::{OverlayMode, overlay_reveal_ready};
     planned.sort_unstable();
     let pages: Vec<egui::Rect> = planned
         .iter()
@@ -101,16 +158,21 @@ pub(super) fn apply_reveal(
             )
         })
         .collect();
-    let overlay = &mut view.state.webview_overlay;
-    let ready = overlay_reveal_ready(mode, overlay_open, overlay.painted.as_ref(), &pages);
-    let gated = overlay_open && mode != OverlayMode::Hide;
-    overlay.planned_pages = if gated { pages } else { Vec::new() };
-    let revealed = if ready { planned.clone() } else { Vec::new() };
-    for (sid, wv) in &view.webviews {
-        wv.set_visible(revealed.contains(sid));
-    }
+    let size = view.base.gpu.size();
+    let (revealed, redraw) = settle_reveal(
+        &mut view.state.webview_overlay,
+        RevealFrame {
+            mode,
+            overlay_open,
+            planned: &planned,
+            pages,
+            surface_size: [size.width, size.height],
+        },
+        &view.webviews,
+        |wv, visible| wv.set_visible(visible),
+    );
     publish_opaque_pages(view, mode, active, &planned, scale_factor);
-    if !ready {
+    if redraw {
         crate::view::ui::View::mark_dirty(view);
     }
     revealed
@@ -309,6 +371,142 @@ mod tests {
         assert!(!frame.applied);
         settle_overlay(&mut frame, false, false, &views, 1.0);
         assert!(!*ok.pointer_held.borrow());
+    }
+
+    const SIZE: [u32; 2] = [200, 100];
+
+    /// 한 창의 프레임 순서를 그대로 흉내 낸다. egui 프레임(대상 수집·job 준비) → 렌더(주 표면 job 꺼내기,
+    /// 오버레이 창 job 은 `overlay_present` 일 때만 올림, 주 표면 present) → WebView 동기화.
+    struct Window<'a> {
+        ctx: egui::Context,
+        frame: OverlayFrame,
+        targets: Vec<OverlayTarget>,
+        wv: &'a FakeOverlayBackend,
+    }
+
+    impl Window<'_> {
+        fn render(&mut self, has_overlay_surface: bool, presented: Option<[u32; 2]>) {
+            crate::state::webview_overlay::begin_frame(&self.ctx, &mut self.frame);
+            self.frame.targets = self.targets.clone();
+            crate::state::webview_overlay::prepare_paint_job(
+                &mut self.frame,
+                has_overlay_surface,
+                SIZE,
+                |targets, _| {
+                    assert!(!targets.is_empty());
+                    Vec::new()
+                },
+            );
+            let main = crate::state::webview_overlay::take_main_surface_job(&mut self.frame);
+            let overlay = self.frame.paint_job.take();
+            let Some(size) = presented else { return };
+            // 오버레이 창 job 은 오버레이 pass 가, 주 표면 job 은 주 pass present 뒤 렌더가 기록한다.
+            for job in [overlay, main].into_iter().flatten() {
+                self.frame.record_present(job, size);
+            }
+        }
+
+        /// 동기화 한 번. 드러낸 surface 와 다시 그리기 요청 여부를 돌려준다.
+        fn sync(&mut self) -> (Vec<u32>, bool) {
+            let views = [(self.wv, Some(rect(0.0, 0.0, 200.0, 100.0)))];
+            let mode = settle_overlay(&mut self.frame, true, false, &views, 1.0);
+            let ids = [7u32];
+            super::settle_reveal(
+                &mut self.frame,
+                super::RevealFrame {
+                    mode,
+                    overlay_open: true,
+                    planned: &ids,
+                    pages: vec![er(0.0, 0.0, 200.0, 100.0)],
+                    surface_size: SIZE,
+                },
+                ids.iter().zip([self.wv]),
+                |wv, visible| wv.visible.set(visible),
+            )
+        }
+    }
+
+    fn window(wv: &FakeOverlayBackend) -> Window<'_> {
+        let frame = frame_with(&[(TargetKind::HostPopup, er(10.0, 10.0, 50.0, 50.0))]);
+        Window {
+            ctx: egui::Context::default(),
+            targets: frame.targets.clone(),
+            frame,
+            wv,
+        }
+    }
+
+    /// 구멍 방식 Opaque backend 는 오버레이 창이 없어도 주 pass 가 같은 모드·페이지로 present 된 프레임에
+    /// 페이지를 드러내고, 그 뒤로는 다시 그리기를 요청하지 않는다. present 전과 크기가 바뀐 present 는 기록이 아니다.
+    #[test]
+    fn a_main_surface_opaque_backend_reveals_pages_without_an_overlay_surface() {
+        use crate::state::webview_overlay::OverlayPaintSource;
+        let wv = FakeOverlayBackend {
+            support: OverlayMode::Opaque,
+            paint_source: OverlayPaintSource::MainSurface,
+            ..FakeOverlayBackend::default()
+        };
+        let mut win = window(&wv);
+        // 팝업이 처음 뜬 동기화: 그림이 없으므로 숨기고 다시 그린다.
+        assert_eq!(win.sync(), (vec![], true));
+        assert_eq!(win.frame.paint_source, OverlayPaintSource::MainSurface);
+        assert!(!wv.visible.get());
+        // job 은 만들었지만 주 pass 가 아직 present 하지 않았다.
+        win.render(false, None);
+        assert_eq!(win.sync(), (vec![], true));
+        // job 을 만든 뒤 표면 크기가 바뀐 present 는 쓰지 않는다.
+        win.render(false, Some([201, 100]));
+        assert_eq!(win.sync(), (vec![], true));
+        assert!(!wv.visible.get());
+        win.render(false, Some(SIZE));
+        assert_eq!(win.sync(), (vec![7], false));
+        assert!(wv.visible.get());
+        win.render(false, Some(SIZE));
+        assert_eq!(win.sync(), (vec![7], false));
+        assert!(wv.visible.get());
+        assert!(
+            wv.applied
+                .borrow()
+                .iter()
+                .all(|(mode, regions, pointer)| *mode == OverlayMode::Opaque
+                    && regions == &vec![[10, 10, 50, 50]]
+                    && *pointer)
+        );
+    }
+
+    /// 오버레이 창 backend 는 그 창이 없으면 job 을 만들지 않아 계속 숨긴다. 창이 같은 기준으로 present 해야
+    /// 드러낸다. 활성 WebView 중 하나라도 오버레이 창을 쓰면 그 프레임의 그림 위치는 오버레이 창이다.
+    #[test]
+    fn an_overlay_surface_backend_still_waits_for_the_overlay_pass() {
+        use crate::state::webview_overlay::OverlayPaintSource;
+        let wv = FakeOverlayBackend {
+            support: OverlayMode::Opaque,
+            ..FakeOverlayBackend::default()
+        };
+        let mut win = window(&wv);
+        for _ in 0..3 {
+            win.render(false, Some(SIZE));
+            assert!(win.frame.painted.is_none());
+            assert_eq!(win.sync(), (vec![], true));
+        }
+        assert!(!wv.visible.get());
+        win.render(true, Some(SIZE));
+        assert_eq!(win.sync(), (vec![7], false));
+        assert!(wv.visible.get());
+
+        let main = FakeOverlayBackend {
+            support: OverlayMode::Opaque,
+            paint_source: OverlayPaintSource::MainSurface,
+            ..FakeOverlayBackend::default()
+        };
+        assert_eq!(
+            super::paint_source(OverlayMode::Opaque, [&main, &wv]),
+            OverlayPaintSource::OverlaySurface
+        );
+        assert_eq!(
+            super::paint_source(OverlayMode::Opaque, [&main]),
+            OverlayPaintSource::MainSurface
+        );
     }
 
     /// 활성 WebView 하나라도 지원하지 않으면 모두 숨긴다(지금 동작).

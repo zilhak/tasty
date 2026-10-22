@@ -98,10 +98,10 @@ impl GpuState {
         });
         let scale_factor = self.scale_factor;
         let proxy = &self.proxy;
-        // 오버레이 창이 있고 직전 동기화가 지원 모드를 골랐을 때만 그 모드·페이지로 그림을 준비한다.
-        // 동기화는 이 그림이 올라간 프레임에만 페이지를 드러낸다.
-        let want_overlay_job = self.overlay_surface.is_some()
-            && state.webview_overlay.mode != crate::state::webview_overlay::OverlayMode::Hide;
+        // 직전 동기화가 지원 모드를 골랐으면 그 모드·그림 위치·페이지로 그림을 준비한다. 동기화는 이 그림이
+        // present 된 프레임에만 페이지를 드러낸다.
+        let has_overlay_surface = self.overlay_surface.is_some();
+        let surface_size = [self.size.width, self.size.height];
 
         self.egui_ctx.run(raw_input, |ctx| {
             crate::state::webview_overlay::begin_frame(ctx, &mut state.webview_overlay);
@@ -192,21 +192,14 @@ impl GpuState {
             );
 
             crate::state::webview_overlay::end_frame(ctx, &mut state.webview_overlay);
-            if want_overlay_job {
-                let overlay = &mut state.webview_overlay;
-                let pages = overlay.planned_pages.clone();
-                let shapes = super::overlay_paint::overlay_shapes(
-                    ctx,
-                    &overlay.targets,
-                    host_popup_on_top,
-                    &pages,
-                );
-                overlay.paint_job = Some(crate::state::webview_overlay::OverlayPaintJob {
-                    mode: overlay.mode,
-                    pages,
-                    shapes,
-                });
-            }
+            crate::state::webview_overlay::prepare_paint_job(
+                &mut state.webview_overlay,
+                has_overlay_surface,
+                surface_size,
+                |targets, pages| {
+                    super::overlay_paint::overlay_shapes(ctx, targets, host_popup_on_top, pages)
+                },
+            );
             // egui가 프레임마다 커서를 갱신하므로 저장된 창 리사이즈 방향도 여기서 반영한다.
             if let Some(dir) = state.pending_resize_cursor {
                 ctx.set_cursor_icon(ui::titlebar::resize_cursor(dir));

@@ -104,8 +104,8 @@ pub(super) fn overlay_matches_main(main: [u32; 2], overlay: [u32; 2]) -> bool {
 }
 
 impl super::GpuState {
-    /// 이번 프레임 오버레이 그림이 준비됐으면 오버레이 창에 그린다. 메인 surface 는 이미 모두 그렸으므로
-    /// 캡처는 바뀌지 않는다. present 까지 끝나면 그 모드·페이지를 `painted` 로 남기고, 같은 프레임의
+    /// 이번 프레임 오버레이 창 그림이 준비됐으면 오버레이 창에 그린다(주 표면 그림은 렌더가 먼저 꺼낸다).
+    /// 메인 surface 는 이미 모두 그렸으므로 캡처는 바뀌지 않는다. present 까지 끝나면 그 기준을 `painted` 로 남기고, 같은 프레임의
     /// WebView 동기화가 그것을 보고 페이지를 드러낸다. 실패는 동기화가 읽어 모든 페이지를 숨긴다.
     pub(super) fn paint_webview_overlay(
         &mut self,
@@ -114,11 +114,12 @@ impl super::GpuState {
         plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
         host_on_top: bool,
     ) {
-        let Some(job) = state.webview_overlay.paint_job.take() else {
+        let Some(mut job) = state.webview_overlay.paint_job.take() else {
             return;
         };
+        let shapes = std::mem::take(&mut job.shapes);
         match self.render_webview_overlay(
-            job.shapes,
+            shapes,
             &job.pages,
             pixels_per_point,
             state.plugin_mesh_popup_regions.as_slice(),
@@ -126,11 +127,8 @@ impl super::GpuState {
             host_on_top,
         ) {
             Ok(true) => {
-                state.webview_overlay.painted =
-                    Some(crate::state::webview_overlay::PaintedOverlay {
-                        mode: job.mode,
-                        pages: job.pages,
-                    });
+                let size = [self.size.width, self.size.height];
+                state.webview_overlay.record_present(job, size);
             }
             Ok(false) => {}
             Err(e) => {
