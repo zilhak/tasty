@@ -433,7 +433,7 @@ fn toolbar(
         let cmd_w = commands::reserve(ui, theme, view, rect.width());
         let addr_w =
             (ui.available_width() - seg_w - gap - ui.spacing().item_spacing.x - cmd_w).max(0.0);
-        let tab_index = panel.active;
+        let tab_index = view.tab_salt();
         ui.allocate_ui_with_layout(
             egui::vec2(addr_w, ui.available_height()),
             egui::Layout::left_to_right(egui::Align::Center),
@@ -579,7 +579,7 @@ fn sidebar(
             sidebar_caption(ui, theme, t("explorer.sidebar.tree"));
             let root = panel.cwd().to_path_buf();
             let output = egui::ScrollArea::vertical()
-                .id_salt("explorer_sidebar_files")
+                .id_salt(("explorer_sidebar_files", view.tab_salt()))
                 .auto_shrink([false, false])
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
@@ -868,7 +868,7 @@ fn content(
                 }
             };
             let output = egui::ScrollArea::vertical()
-                .id_salt(format!("explorer_content_{id_suffix}"))
+                .id_salt(format!("explorer_content_{id_suffix}_{}", view.tab_salt()))
                 .auto_shrink([false, false])
                 // 기본 최소 높이(64)는 낮은 칸에서 본문을 늘려 상태줄을 칸 밖으로 민다.
                 .min_scrolled_height(0.0)
@@ -1408,7 +1408,7 @@ fn detail_view(
         .selectable(true)
         .virtual_rows(true)
         .scroll_to_row(scroll_row)
-        .id_salt(format!("explorer_detail_{id_suffix}"))
+        .id_salt(format!("explorer_detail_{id_suffix}_{}", view.tab_salt()))
         .show(
             ui,
             theme,

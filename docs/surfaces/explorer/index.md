@@ -121,6 +121,16 @@ mirror explorer 에서 파일을 더블클릭하면 원격 호스트에 그 파�
 
 화면의 픽셀·색 값은 Theme 토큰의 scale 1 값이다. 정본은 토큰과 [디자인·갤러리 매핑](../../design/systems/design-gallery-mapping.md)이다.
 
+### 내부 탭별 상태
+
+`ExplorerTabId`는 실행 중 탭의 식별자다. 같은 폴더를 연 탭도 서로 다른 값을 받고, 탐색·정렬·다른 탭 닫기로 목록 번호가 바뀌어도 유지한다. 레이아웃이나 프리셋에는 저장하지 않아 복원한 탭은 새 식별자를 받는다. 같은 원격 surface와 root의 mirror 레이아웃을 다시 적용할 때는 기존 식별자를 잇는다.
+
+창의 `ExplorerViewStore`는 surface마다 `ExplorerView`를 두고, 그 안에서 목록·로딩 상태·선택·anchor·키보드 현재 항목·트리 펼침·Find와 읽기 receipt를 내부 탭 ID별로 보관한다(`view/tab_state.rs`). 방문했던 탭으로 돌아오면 그 목록을 바로 그리며 탭 전환만으로 `Loading` 화면을 거치지 않는다. 같은 폴더의 두 탭도 선택과 Find를 공유하지 않는다. 본문 세 보기와 Files 트리의 스크롤·Find 입력·주소창 위젯 ID도 내부 탭 ID를 포함하므로 탭 번호가 옮겨져도 스크롤은 이어진다. 창과 surface의 범위는 그대로다.
+
+비활성 탭이 요청한 목록·트리 읽기와 하위 폴더 검색의 결과는 그 탭에 반영한다. 새 외부 변경 확인은 활성 내부 탭만 시작하고 돌아오면 바로 확인한다. 원격 목록 요청과 캐시도 내부 탭이 소유하며 request ID가 맞는 탭에만 반영한다. 탭을 닫으면 보관 상태·receipt·보내지 않은 목록 요청을 버린다. 이미 실행 중인 일반 OS 읽기를 강제 중단하지는 않으며, 검색은 다음 폴더 경계에서 멈춘다. 재연결은 해당 mirror의 모든 탭 요청과 캐시를 무효화한다.
+
+탭 전환은 주소 편집·예약 reveal·입력 중인 새 항목·타입어헤드·영역 선택과 드래그 상태를 끝낸다. 확정한 선택은 보존한다. 미리보기 토글과 폭, 숨김 파일 표시, 파일 작업 진행·충돌·결과 카드는 surface 범위 그대로이며 클립보드도 기존 공용 범위다. 진행 중 파일 변경은 탭 전환이나 내부 탭 닫기로 취소하지 않는다. 완료에 따른 선택 정리는 원래 선택 identity가 남아 있는 탭에만 적용한다. 파일 작업으로 바뀐 폴더는 비활성 탭에도 다시 읽기를 표시한다.
+
 ### 뷰 상태 (`ExplorerView`, surface id 로 keying)
 
 디렉토리 엔트리 캐시·선택 집합·트리 펼침 같은 무거운 GUI 상태는 모델이 아니라 per-surface 뷰 스토어에 둔다.
@@ -259,7 +269,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 ### 찾기 · 하위 폴더 검색
 
-툴바 view 묶음의 Find 토글(좁은 칸은 More 메뉴의 Find·Close find, id 82)과 explorer 포커스의 `find` 단축키가 툴바 아래에 Find 바(`find.rs`, 공용 `explorer_find_bar`, 높이 `explorer-search-bar-height` 36, 칸 전체 폭)를 연다. 토글은 열려 있으면 닫고, `find` 단축키는 이미 열린 바에 포커스만 준다. 바 상태(`FindState`: 연 폴더·검색어·Subfolders·하위 폴더 검색)는 `ExplorerView::find` 에 두고 저장하지 않는다.
+툴바 view 묶음의 Find 토글(좁은 칸은 More 메뉴의 Find·Close find, id 82)과 explorer 포커스의 `find` 단축키가 툴바 아래에 Find 바(`find.rs`, 공용 `explorer_find_bar`, 높이 `explorer-search-bar-height` 36, 칸 전체 폭)를 연다. 토글은 열려 있으면 닫고, `find` 단축키는 이미 열린 바에 포커스만 준다. 바 상태(`FindState`: 연 폴더·검색어·Subfolders·하위 폴더 검색)는 내부 탭별로 보관하고 디스크에는 저장하지 않는다. 다른 내부 탭으로 갔다 돌아와도 검색어와 결과가 남으며, 같은 탭에서 폴더를 이동하면 닫는다.
 
 - **거르기**: 입력하는 즉시 지금 보는 폴더의 항목을 이름의 부분 문자열(대소문자 무시, `match_range`)로 거른다. 맞는 부분은 Detail·List·Grid 모두 `explorer-match-fg` 로 칠한다(List 는 공용 `tree_row_matching`). 바 오른쪽에 `explorer.find.count`("{shown} of {total}"), 상태줄에 `explorer.find.status` 를 보인다. 거르는 동안에도 `..` 행은 목록 맨 위에 남는다. 이동용 행이라 이름을 맞춰 보지 않고 개수에도 넣지 않는다. 맞는 항목이 없으면 바는 "0 of N" 을 그대로 두고, 목록 자리에 search 글리프와 `explorer.find.none_filter`("No names match “{query}”", 보조 줄 없음) 상태 화면을 보인다. 새 항목 이름을 입력하는 동안에는 이 화면과 아래 하위 폴더 검색의 결과 없음·실패 화면 대신 목록 영역을 그려 이름 행을 보인다. mirror explorer 도 거르기를 쓴다.
 - **보이는 항목만 다룬다**: 검색어나 Subfolders 가 바뀌면 보이지 않게 된 항목을 선택에서 뺀다. 전체 선택·Shift 범위 선택·타입어헤드는 보이는 항목만 대상으로 한다. 숨은 항목에 명령이 닿지 않게 하기 위해서다.
@@ -443,6 +453,10 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한다 (`appearance.plugin_font_overrides["explorer"]`, `effective_font_for_kind("explorer")` 가 읽음).
 
 ## 검증 기준
+
+- Given 내부 탭 A(X)·B(Y)·C(X) When A에서 선택·Find를 정한 뒤 B·C를 거쳐 돌아온다 Then A의 목록·선택·Find가 Loading 없이 돌아오며 같은 경로 C는 독립이다(`tab_state_tests.rs`).
+- Given 20,000개 목록의 Detail·List·Grid When A의 15,000번째 항목까지 스크롤하고 같은 폴더의 B를 연 뒤 A로 돌아온다 Then B는 맨 위에서 시작하고 A는 원래 항목의 화면 위치와 선택을 유지한다(`internal_tabs_restore_scroll_in_all_three_views`).
+- Given A의 로컬 읽기·검색 또는 원격 목록 응답 대기 When B로 바꾸거나 A를 닫는다 Then 살아 있는 A의 결과만 A에 붙고 B에는 섞이지 않으며 닫힌 A의 응답은 폐기된다(`tab_state_tests.rs`).
 
 - Given 윈도우 두 개 When 각 윈도우의 explorer 에서 다른 폴더를 즐겨찾기에 추가한다 Then 두 윈도우의 Favorites 에 둘 다 보이고 재시작 뒤에도 둘 다 남는다(`engine_action.rs` 의 `favorites_added_in_two_windows_both_survive_a_restart`).
 - Given 윈도우 두 개에 같은 즐겨찾기가 보인다 When 한 윈도우에서 즐겨찾기를 제거한다 Then 다른 윈도우의 Favorites 에서도 바로 사라진다(`view_frame.rs` 의 `a_shared_list_change_redraws_every_window_once`).

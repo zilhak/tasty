@@ -421,7 +421,37 @@ impl ExplorerView {
     }
 }
 
+#[cfg(test)]
 impl FindState {
+    /// 시험: 입력한 글자.
+    pub(crate) fn query(&self) -> &str {
+        &self.query
+    }
+
+    /// 시험: 글자를 바꾼다(바 입력과 같다).
+    pub(crate) fn set_query(&mut self, query: &str) {
+        self.query = query.into();
+        self.matcher = FindQuery::parse(&self.query);
+    }
+
+    /// 시험: 하위 폴더 검색이 끝나 더 받을 결과가 없다.
+    pub(crate) fn search_finished(&self) -> bool {
+        self.search.as_ref().is_some_and(|s| s.receipt.is_none())
+    }
+}
+
+impl FindState {
+    pub(super) fn has_pending(&self) -> bool {
+        self.search
+            .as_ref()
+            .is_some_and(|search| search.receipt.is_some())
+    }
+
+    pub(super) fn leave_tab(&mut self) {
+        self.focus = false;
+        self.field_focused = false;
+    }
+
     /// 하위 폴더 검색이 켜져 있고 검색어가 있으면 처음부터 다시 찾는다. 아니면 검색을 버린다.
     fn restart(&mut self) {
         self.matcher = FindQuery::parse(&self.query);
@@ -514,6 +544,8 @@ pub(super) fn bar(ui: &mut egui::Ui, theme: &Theme, view: &mut ExplorerView, rem
     view.refresh_filter();
     let shown = view.shown_count();
     let total = view.entries.len();
+    // 입력 칸의 egui 상태(포커스·커서)를 내부 탭마다 따로 둔다.
+    let salt = ("explorer_find", view.tab_salt());
     let Some(find) = view.find.as_mut() else {
         return;
     };
@@ -541,21 +573,25 @@ pub(super) fn bar(ui: &mut egui::Ui, theme: &Theme, view: &mut ExplorerView, rem
     };
     let focus = std::mem::take(&mut find.focus);
     let mut deep = find.deep;
-    let events = explorer_find_bar(
-        ui,
-        theme,
-        ExplorerFindBar {
-            query: &mut find.query,
-            subfolders: (!remote).then_some(&mut deep),
-            status,
-            labels: ExplorerFindLabels {
-                placeholder: &placeholder,
-                subfolders: t("explorer.find.subfolders"),
-                close: t("explorer.find.close"),
-            },
-            focus,
-        },
-    );
+    let events = ui
+        .push_id(salt, |ui| {
+            explorer_find_bar(
+                ui,
+                theme,
+                ExplorerFindBar {
+                    query: &mut find.query,
+                    subfolders: (!remote).then_some(&mut deep),
+                    status,
+                    labels: ExplorerFindLabels {
+                        placeholder: &placeholder,
+                        subfolders: t("explorer.find.subfolders"),
+                        close: t("explorer.find.close"),
+                    },
+                    focus,
+                },
+            )
+        })
+        .inner;
     view.apply_find_events(events, deep);
     view.refresh_filter();
 }

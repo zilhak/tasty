@@ -470,3 +470,33 @@ mod keyboard_select;
 
 #[path = "virtual_tests/empty_create.rs"]
 mod empty_create;
+
+#[test]
+fn internal_tabs_restore_scroll_in_all_three_views() {
+    for mode in MODES {
+        let mut h = Harness::new(mode);
+        h.frame(Vec::new());
+        h.view.reveal_created(&path(15_000));
+        let before = h.settle();
+        let before_rect = on_screen(&before, 15_000).expect("A scrolled");
+        let entries = h.view.entries.clone();
+        h.panel.add_tab();
+        h.panel.active_tab_mut().view_mode = mode;
+        h.view.sync(&h.panel, None);
+        h.view.set_entries(entries);
+        h.view.state = super::LoadState::Ok;
+        let other = h.settle();
+        assert!(on_screen(&other, 0).is_some(), "{mode:?}: B starts at top");
+        assert!(h.view.selected.is_empty());
+        h.panel.active = 0;
+        h.view.sync(&h.panel, None);
+        let after = h.settle();
+        let after_rect = on_screen(&after, 15_000).expect("A restored scroll");
+        assert!(
+            (before_rect.top() - after_rect.top()).abs() < 1.0,
+            "{mode:?}"
+        );
+        assert!(h.view.selected.contains(&path(15_000)));
+        assert!(after.len() < 200);
+    }
+}

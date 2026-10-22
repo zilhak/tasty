@@ -246,9 +246,15 @@ pub(super) fn merge_survivor_mapping(
                 )),
             );
         } else if let Some(root) = explorer_locals.get(&local_id) {
+            let tab = engine
+                .find_surface_by_id(local_id)
+                .and_then(|surface| surface.as_any().downcast_ref::<ExplorerPanel>())
+                .filter(|panel| panel.current_root() == root)
+                .map(|panel| panel.active_tab().clone())
+                .unwrap_or_else(|| tasty_model::ExplorerTab::new(root.clone()));
             engine.runtime.surfaces.insert(
                 local_id,
-                Box::new(ExplorerPanel::new(local_id, root.clone())),
+                Box::new(ExplorerPanel::from_tabs(local_id, vec![tab], 0)),
             );
         } else if !markdown_locals.contains_key(&local_id) {
             engine

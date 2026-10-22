@@ -1,4 +1,4 @@
-<!-- source-hash: 18611cefcd35 -->
+<!-- source-hash: babcc20e8e8c -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -49,6 +49,8 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 - **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, the **New folder** · **New file** buttons, the **Find**, **Preview panel** and hidden files (eye) toggles, and the view switch (**Grid** · **List** · **Detail**). When the Explorer cell is narrower than 440px, the command buttons fold into one **More** (`…`) button that shows the same commands as a menu. In that menu the find and preview rows say what they do: **Find** ↔ **Close find**, **Show preview** ↔ **Hide preview**, **Show hidden files** ↔ **Hide hidden files**. The hidden files toggle looks pressed while hidden files are shown, and its tooltip names the action with its shortcut, such as **Show hidden files (Ctrl+Shift+.)**.
 - **Right** — the items in the current folder. In Grid view, local image files (1 MiB or smaller) show a small thumbnail instead of an icon. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort. The Type column names the kind in words, such as "Markdown", "PDF document", "Archive" or "PNG image" ("RS file" for anything else), and a link says what it points to, such as "Link to Markdown". Properties and the preview header use the same words, and sorting by Type keeps each kind together, so archives such as .gz and .zip sit side by side.
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
+
+When you return to an internal tab, it keeps your selected items, list and Files tree scroll positions, and the Find query and subfolder search results. Two tabs showing the same folder remember these separately. Reads and searches that finish while you are in another tab update only the tab that started them. Closing a tab discards this state. After restarting the app, folders, views and sorting are restored, while selection and Find start empty.
 
 When you save a layout with an Explorer as a preset and apply it, each tab inside the Explorer opens the folder it was showing, with the same view and sort, and the Pane's tab is titled after the folder the active tab was opened on (its root). If you set a working directory for it in the preset editor, it opens that one folder instead of the saved tabs. If a saved folder no longer exists, that tab shows the read error message.
 

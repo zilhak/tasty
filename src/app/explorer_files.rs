@@ -306,6 +306,7 @@ struct Target {
     binding: SurfaceBinding,
     view: Weak<()>,
     selection: Option<Weak<()>>,
+    tab: Option<tasty_model::ExplorerTabId>,
     clipboard: Option<Arc<AtomicBool>>,
     reload: bool,
     clear_selection: bool,
@@ -503,6 +504,10 @@ impl crate::state::MainViewState {
                 .explorer_views
                 .get(surface)
                 .map(|v| v.selection_identity()),
+            tab: self
+                .explorer_views
+                .get(surface)
+                .and_then(|view| view.tab_id()),
             clear_selection: matches!(operation, Operation::Trash(_) | Operation::Rename { .. }),
             reload: !matches!(operation, Operation::Open(_) | Operation::Reveal(_)),
             created: match &operation {
@@ -687,19 +692,28 @@ impl Target {
         if self.reload
             && let Some(view) = state.explorer_views.get_mut(self.surface)
         {
-            if success
-                && self.clear_selection
-                && self
-                    .selection
-                    .as_ref()
-                    .is_some_and(|old| view.matches_selection(old))
-            {
-                view.clear_selection();
-            }
-            if success && let Some(path) = &self.created {
-                view.reveal_created_if_unchanged(path, self.selection.as_ref());
-            }
-            view.request_reload();
+            let active = view.tab_id();
+            view.for_each_tab(|view| {
+                if view.tab_id() != self.tab {
+                    return;
+                }
+                if success
+                    && self.clear_selection
+                    && self
+                        .selection
+                        .as_ref()
+                        .is_some_and(|old| view.matches_selection(old))
+                {
+                    view.clear_selection();
+                }
+                if success
+                    && active == self.tab
+                    && let Some(path) = &self.created
+                {
+                    view.reveal_created_if_unchanged(path, self.selection.as_ref());
+                }
+                view.request_reload();
+            });
         }
     }
 }

@@ -602,3 +602,58 @@ fn file_details_are_compared_only_when_the_setting_is_on() {
     assert!(view.local_query.is_none());
     shutdown(owner);
 }
+
+/// 활성이 아닌 탭은 새 외부 변경 확인을 시작하지 않는다. 떠날 때 걸려 있던 확인도 버리고, 돌아오면
+/// 포커스를 되찾은 프레임처럼 바로 확인한다.
+#[test]
+fn only_the_active_tab_starts_outside_change_checks() {
+    let dir = tempfile::tempdir().expect("fixture");
+    let x = dir.path().join("x");
+    let y = dir.path().join("y");
+    std::fs::create_dir(&x).unwrap();
+    std::fs::create_dir(&y).unwrap();
+    let mut owner = LocalReads::default();
+    let mut store = ExplorerViewStore::default();
+    let mut panel = ExplorerPanel::new(1, x.clone());
+    let now = Instant::now();
+    let view = store.get_or_init(&panel, None);
+    while view.local_query.is_some() || view.writable_query.is_some() {
+        owner.reap();
+        owner.drive(|r| view.poll_local_reads(r));
+        std::thread::yield_now();
+    }
+    store.begin_poll_frame();
+    store.get_or_init(&panel, None).poll_external(true, now);
+    assert!(store.get(1).expect("view").poll.check.is_some());
+
+    panel.add_tab();
+    panel.active_tab_mut().navigate_to(y.clone());
+    let view = store.get_or_init(&panel, None);
+    view.for_each_parked(|v| {
+        assert!(v.poll.check.is_none());
+        assert!(!v.poll.focused && v.poll.next_at.is_none());
+    });
+    while view.local_query.is_some() || view.writable_query.is_some() {
+        owner.reap();
+        owner.drive(|r| view.poll_local_reads(r));
+        std::thread::yield_now();
+    }
+    assert!(!store.start_due_checks(now + EXTERNAL_POLL_INTERVAL * 3));
+    store
+        .get_mut(1)
+        .unwrap()
+        .for_each_parked(|v| assert!(!v.start_due_check(now + EXTERNAL_POLL_INTERVAL * 3)));
+
+    panel.active = 0;
+    store.begin_poll_frame();
+    store.get_or_init(&panel, None).poll_external(true, now);
+    assert!(
+        store.get(1).expect("view").poll.check.is_some(),
+        "returning checks at once"
+    );
+    let view = store.get_mut(1).expect("view");
+    view.poll.check = None;
+    while owner.poll_shutdown() != 0 {
+        std::thread::yield_now();
+    }
+}

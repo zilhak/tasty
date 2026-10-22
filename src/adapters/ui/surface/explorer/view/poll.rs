@@ -49,6 +49,16 @@ pub(crate) struct ExternalPoll {
 }
 
 impl ExternalPoll {
+    /// 탭을 떠날 때 보관할 값. 진행 중 확인과 포커스·주기를 버리고 기준 표지만 남긴다. 그래서 활성이
+    /// 아닌 탭은 새 확인을 시작하지 않고, 돌아오면 포커스를 되찾은 프레임처럼 바로 확인한다.
+    pub(super) fn parked(mut self) -> Self {
+        self.focused = false;
+        self.was_focused = false;
+        self.next_at = None;
+        self.check = None;
+        self
+    }
+
     /// 이번 회차에 읽을 폴더. 현재 폴더는 늘 넣고, 남은 자리는 가장 오래 확인하지 않은 트리 폴더부터
     /// (확인한 적 없는 폴더끼리는 경로 순) 채운다. 넣은 폴더는 넣은 순서대로 줄의 맨 뒤로 간다.
     fn pick_targets(&mut self, current: Option<&Path>, candidates: &[PathBuf]) -> Vec<PathBuf> {

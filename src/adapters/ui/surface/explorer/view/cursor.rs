@@ -51,6 +51,13 @@ impl Drawn {
 }
 
 impl CursorState {
+    /// 탭을 떠날 때 보관할 값. 현재 항목과 표시 여부만 남기고 그 프레임의 화면 자리와 예약 스크롤은 버린다.
+    pub(super) fn parked(mut self) -> Self {
+        self.visible.clear();
+        self.scroll = None;
+        self
+    }
+
     /// 키로 움직인 뒤 보이는 현재 항목.
     pub(crate) fn shown_item(&self) -> Option<&Path> {
         self.item.as_deref().filter(|_| self.shown)

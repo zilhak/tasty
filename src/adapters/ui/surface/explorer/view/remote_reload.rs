@@ -20,24 +20,27 @@ impl super::ExplorerViewStore {
             if view.mirror_ws_id != Some(workspace) {
                 continue;
             }
-            let stale: Vec<PathBuf> = view
-                .remote_state
-                .iter()
-                .filter(|(dir, state)| {
-                    !matches!(state, super::RemoteLoadState::Loading { .. }) && hit(dir)
-                })
-                .map(|(dir, _)| dir.clone())
-                .chain(view.tree_children.keys().filter(|dir| hit(dir)).cloned())
-                .collect();
-            for dir in &stale {
-                view.remote_state.remove(dir);
-                view.tree_children.remove(dir);
-            }
-            if view.loaded.as_ref().is_some_and(|(dir, _, _)| hit(dir)) {
-                view.request_reload();
-                any = true;
-            }
-            any |= !stale.is_empty();
+            // 원격 요청·목록·트리와 다시 읽기 표시는 내부 탭마다 있다.
+            view.for_each_tab(|view| {
+                let stale: Vec<PathBuf> = view
+                    .remote_state
+                    .iter()
+                    .filter(|(dir, state)| {
+                        !matches!(state, super::RemoteLoadState::Loading { .. }) && hit(dir)
+                    })
+                    .map(|(dir, _)| dir.clone())
+                    .chain(view.tree_children.keys().filter(|dir| hit(dir)).cloned())
+                    .collect();
+                for dir in &stale {
+                    view.remote_state.remove(dir);
+                    view.tree_children.remove(dir);
+                }
+                if view.loaded.as_ref().is_some_and(|(dir, _, _)| hit(dir)) {
+                    view.request_reload();
+                    any = true;
+                }
+                any |= !stale.is_empty();
+            });
         }
         any
     }
@@ -51,8 +54,10 @@ impl super::ExplorerViewStore {
             if view.mirror_ws_id != Some(workspace) {
                 continue;
             }
-            view.remote_state.clear();
-            view.request_reload();
+            view.for_each_tab(|view| {
+                view.remote_state.clear();
+                view.request_reload();
+            });
             any = true;
         }
         any

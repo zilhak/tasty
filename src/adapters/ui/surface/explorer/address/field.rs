@@ -14,7 +14,7 @@ use crate::adapters::ui::icons;
 use crate::i18n::t;
 
 /// 경로를 편집해 Enter·Go로 이동하는 공용 PathField. 최근 디렉터리를 후보로 전달한다.
-/// 상태는 surface별로, egui ID는 surface·내부 탭별로 구분한다.
+/// 상태는 surface별로, egui ID는 surface·내부 탭 ID(`ExplorerView::tab_salt`)별로 구분한다.
 #[allow(clippy::too_many_arguments)]
 pub(in super::super) fn address_bar(
     ui: &mut egui::Ui,
@@ -22,7 +22,7 @@ pub(in super::super) fn address_bar(
     current: &Path,
     view: &mut ExplorerView,
     id_suffix: &str,
-    tab_index: usize,
+    tab_index: u64,
     recent_dirs: &[String],
     remote: bool,
     action: &mut Option<ExplorerAction>,

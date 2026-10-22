@@ -170,33 +170,37 @@ mod tests {
     }
 
     /// mirror view 가 `dir` 을 보도록 동기화한다. 요청이 나가면 그 ID 를 돌려준다.
-    fn show_remote(view: &mut ExplorerView, dir: &str) -> Option<u64> {
-        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from(dir));
-        view.sync(&panel, Some(7));
+    fn show_remote(
+        view: &mut ExplorerView,
+        panel: &mut tasty_model::ExplorerPanel,
+        dir: &str,
+    ) -> Option<u64> {
+        panel.active_tab_mut().navigate_to(PathBuf::from(dir));
+        view.sync(panel, Some(7));
         view.drain_outbox().pop().map(|r| r.request_id)
     }
 
     #[test]
     fn a_waiting_pick_survives_the_move_there_and_is_dropped_once_left() {
         let mut view = ExplorerView::default();
-        show_remote(&mut view, "/srv");
+        let mut panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv"));
+        show_remote(&mut view, &mut panel, "/srv");
         view.reveal_after_load("/srv/a".into(), "/srv/a/n.md".into());
         // 아직 옮기기 전(이동 요청을 낸 프레임)에는 버리지 않는다.
-        show_remote(&mut view, "/srv");
+        show_remote(&mut view, &mut panel, "/srv");
         assert!(view.reveal.is_some());
-        let id = show_remote(&mut view, "/srv/a").expect("요청");
+        let id = show_remote(&mut view, &mut panel, "/srv/a").expect("요청");
         assert!(
             view.reveal.is_some(),
             "도착만으로 기다리던 고르기를 지우면 안 된다"
         );
         // 목록이 오기 전에 떠나면(뒤로·위로·탭 전환) 버린다.
-        show_remote(&mut view, "/srv");
+        show_remote(&mut view, &mut panel, "/srv");
         assert_eq!(view.reveal, None);
         assert!(!view.reveal_select);
         // 다시 들어가 목록에 항목이 있어도 고르지 않는다.
-        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv/a"));
         // 떠나기 전에 보낸 요청의 응답이 다시 들어간 뒤에 온다.
-        show_remote(&mut view, "/srv/a");
+        show_remote(&mut view, &mut panel, "/srv/a");
         let listed = Ok(vec![DirEntryInfo {
             path: "/srv/a/n.md".into(),
             name: "n.md".into(),
@@ -210,23 +214,23 @@ mod tests {
     #[test]
     fn a_waiting_pick_is_dropped_when_its_folder_fails_to_list() {
         let mut view = ExplorerView::default();
-        let id = show_remote(&mut view, "/srv/locked").expect("요청");
+        let mut panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv"));
+        let id = show_remote(&mut view, &mut panel, "/srv/locked").expect("요청");
         view.reveal_after_load("/srv/locked".into(), "/srv/locked/f.md".into());
-        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv/locked"));
         assert!(view.apply_remote_list_dir_result(id, &panel, Err("permission denied".into())));
-        show_remote(&mut view, "/srv/locked");
+        show_remote(&mut view, &mut panel, "/srv/locked");
         assert_eq!(view.reveal, None, "읽지 못한 폴더의 고르기는 버린다");
     }
 
     #[test]
     fn a_failure_of_the_folder_left_behind_does_not_drop_the_pick() {
         let mut view = ExplorerView::default();
-        let id = show_remote(&mut view, "/srv/locked").expect("요청");
-        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv/locked"));
+        let mut panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv"));
+        let id = show_remote(&mut view, &mut panel, "/srv/locked").expect("요청");
         assert!(view.apply_remote_list_dir_result(id, &panel, Err("permission denied".into())));
         view.reveal_after_load("/srv/a".into(), "/srv/a/n.md".into());
-        show_remote(&mut view, "/srv/locked");
-        show_remote(&mut view, "/srv/a");
+        show_remote(&mut view, &mut panel, "/srv/locked");
+        show_remote(&mut view, &mut panel, "/srv/a");
         assert!(view.reveal.is_some());
     }
 }

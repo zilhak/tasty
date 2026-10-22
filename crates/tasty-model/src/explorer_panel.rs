@@ -1,7 +1,8 @@
 //! 파일 관리자 surface의 식별자와 내부 탭 상태. 각 탭의 경로·표시 방식·정렬과
-//! 활성 탭 인덱스를 보관한다. 디렉터리 캐시·선택·스크롤은 호스트 ExplorerView가 맡는다.
+//! 활성 탭 인덱스를 보관한다. 디렉터리 캐시·선택·스크롤은 호스트 ExplorerView가 탭 ID별로 맡는다.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tasty_type_geometry::length::LogicalPx;
 
@@ -105,10 +106,29 @@ impl SortDir {
     }
 }
 
+/// 내부 탭의 실행 중 식별자. 탭을 만들 때마다 새로 받고 탐색·정렬·목록 안 자리 이동에는 그대로다.
+/// 닫힌 탭의 값은 다시 쓰지 않는다. 레이아웃 스냅샷에 싣지 않으므로 복원한 탭은 새 값을 받는다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ExplorerTabId(u64);
+
+impl ExplorerTabId {
+    fn next() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// egui ID 등 표시 쪽 키에 섞을 값.
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// 파일 관리자 내부 탭. cwd는 좌측 트리·새 터미널의 기준 경로이고 탐색으로 바뀌지 않는다.
-/// root는 현재 탐색 중인 경로이며 cwd 밖으로도 이동할 수 있다. 선택·스크롤은 뷰가 보관한다.
+/// root는 현재 탐색 중인 경로이며 cwd 밖으로도 이동할 수 있다. 선택·스크롤은 뷰가 `id`별로 보관한다.
+/// 복제본은 같은 탭이다(같은 `id`). 새 탭은 생성자로 만든다.
 #[derive(Clone, Debug)]
 pub struct ExplorerTab {
+    id: ExplorerTabId,
     /// 고정 루트(cwd) — explorer 를 연 프로젝트 폴더. 좌측 트리 루트 + 스폰 cwd 의 기준.
     /// `set_cwd` 이외에는 불변.
     pub cwd: PathBuf,
@@ -130,6 +150,7 @@ impl ExplorerTab {
     /// cwd = current = `root` 로 초기화. (프로젝트를 연 직후 두 위치가 같다.)
     pub fn new(root: PathBuf) -> Self {
         Self {
+            id: ExplorerTabId::next(),
             cwd: root.clone(),
             root,
             back: Vec::new(),
@@ -153,6 +174,7 @@ impl ExplorerTab {
     /// 명시적으로 cwd 와 current 를 따로 지정해 복원한다(snapshot restore 용).
     pub fn with_cwd(cwd: PathBuf, current: PathBuf) -> Self {
         Self {
+            id: ExplorerTabId::next(),
             cwd,
             root: current,
             back: Vec::new(),
@@ -161,6 +183,11 @@ impl ExplorerTab {
             sort_column: SortColumn::Name,
             sort_dir: SortDir::Asc,
         }
+    }
+
+    /// 실행 중 식별자.
+    pub fn id(&self) -> ExplorerTabId {
+        self.id
     }
 
     /// 고정 루트(cwd).
@@ -298,6 +325,11 @@ impl ExplorerPanel {
     pub fn active_tab(&self) -> &ExplorerTab {
         // `active` 는 항상 유효 범위 (tabs 비지 않음 보장).
         &self.tabs[self.active.min(self.tabs.len() - 1)]
+    }
+
+    /// 식별자가 `id` 인 탭의 목록 번호. 닫혔으면 None.
+    pub fn tab_index(&self, id: ExplorerTabId) -> Option<usize> {
+        self.tabs.iter().position(|t| t.id == id)
     }
 
     pub fn active_tab_mut(&mut self) -> &mut ExplorerTab {
@@ -478,6 +510,42 @@ mod tests {
         t.go_back();
         t.navigate_to(PathBuf::from("/a/c"));
         assert!(!t.can_go_forward());
+    }
+
+    /// 탭마다 다른 식별자를 받고, 앞 탭을 닫아 자리가 옮겨도 식별자는 그대로다. 닫힌 자리에 새로 연
+    /// 탭은 새 식별자를 받는다. 탐색·정렬은 식별자를 바꾸지 않는다.
+    #[test]
+    fn tab_ids_stay_with_their_tab_and_are_never_reused() {
+        let mut ex = ExplorerPanel::new(1, abs("x"));
+        ex.add_tab();
+        ex.add_tab();
+        let ids: Vec<ExplorerTabId> = ex.tabs.iter().map(ExplorerTab::id).collect();
+        assert_ne!(ids[0], ids[1]);
+        assert_ne!(ids[1], ids[2]);
+        assert_ne!(ids[0], ids[2]);
+
+        ex.active = 2;
+        ex.active_tab_mut().navigate_to(abs("y"));
+        ex.active_tab_mut().sort_dir = SortDir::Desc;
+        assert_eq!(ex.active_tab().id(), ids[2]);
+
+        ex.close_tab(0);
+        assert_eq!(ex.tab_index(ids[2]), Some(1));
+        assert_eq!(ex.tab_index(ids[0]), None);
+        assert_eq!(ex.active_tab().id(), ids[2]);
+
+        ex.add_tab();
+        let fresh = ex.tabs[2].id();
+        assert!(!ids.contains(&fresh));
+        assert_eq!(ex.tabs[0].clone().id(), ids[1]);
+    }
+
+    /// 복원한 탭은 같은 폴더여도 새 식별자를 받는다.
+    #[test]
+    fn restored_tabs_get_fresh_ids() {
+        let a = ExplorerTab::with_cwd(abs("x"), abs("x"));
+        let b = ExplorerTab::with_cwd(abs("x"), abs("x"));
+        assert_ne!(a.id(), b.id());
     }
 
     #[test]

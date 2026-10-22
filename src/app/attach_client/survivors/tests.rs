@@ -571,3 +571,36 @@ fn reconnect_install_sizes_survivors_and_clears_the_resize_wait() {
     );
     assert!(!sync.acks_expected(), "새 연결의 서버 기능을 따른다");
 }
+
+#[test]
+fn explorer_survivor_keeps_tab_identity_only_for_the_same_projection() {
+    let ids = test_ids();
+    let (_, mut session) = crate::state::tests::test_state();
+    let mut engine = session.borrow_mut();
+    supply_ids(&engine);
+    let (tx, _rx) = tasty_remote::connection::channel();
+    let descriptors =
+        vec![serde_json::json!({"remote_id": 10, "role": "explorer", "root": "/remote/a"})];
+    let first =
+        merge_survivor_mapping(&HashMap::new(), &descriptors, &ids, &tx, &mut engine).unwrap();
+    let local = first.remote_to_local[&10];
+    let tab = |engine: &EngineMut<'_>| {
+        engine
+            .runtime
+            .surfaces
+            .get(&local)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<ExplorerPanel>()
+            .unwrap()
+            .active_tab()
+            .id()
+    };
+    let before = tab(&engine);
+    merge_survivor_mapping(&first.remote_to_local, &descriptors, &ids, &tx, &mut engine).unwrap();
+    assert_eq!(tab(&engine), before);
+    let changed =
+        vec![serde_json::json!({"remote_id": 10, "role": "explorer", "root": "/remote/b"})];
+    merge_survivor_mapping(&first.remote_to_local, &changed, &ids, &tx, &mut engine).unwrap();
+    assert_ne!(tab(&engine), before);
+}

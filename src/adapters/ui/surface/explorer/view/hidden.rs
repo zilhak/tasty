@@ -50,6 +50,11 @@ impl HiddenFiles {
         self.stash.clear();
     }
 
+    /// 뺀 항목을 내부 탭의 보관 상태와 맞바꾼다(`tab_state`).
+    pub(super) fn swap_stash(&mut self, other: &mut Vec<DirEntryInfo>) {
+        std::mem::swap(&mut self.stash, other);
+    }
+
     /// 바뀐 값을 한 번 꺼낸다. model 이 곧 이 값이 되므로 다음 프레임에 다시 받지 않는다.
     pub(crate) fn take_change(&mut self) -> Option<bool> {
         if !std::mem::take(&mut self.changed) {
@@ -115,7 +120,7 @@ impl ExplorerView {
     }
 
     /// 지금 목록과 뺀 항목을 합쳐 다시 나눈다. 켤 때는 정렬 자리로 넣고, 끌 때는 숨김 항목의 선택을 푼다.
-    fn set_show_hidden(&mut self, show: bool) {
+    pub(super) fn set_show_hidden(&mut self, show: bool) {
         if self.hidden.show == show {
             return;
         }

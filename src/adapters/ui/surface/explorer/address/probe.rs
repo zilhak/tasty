@@ -27,6 +27,9 @@ pub(crate) struct AddressProbe {
 }
 
 impl AddressProbe {
+    pub(crate) fn owns_request(&self, request_id: u64) -> bool {
+        self.request_id == request_id && self.answer.is_none()
+    }
     pub(crate) fn pending_since(&self) -> Option<Instant> {
         self.answer.is_none().then_some(self.sent_at)
     }

@@ -975,3 +975,37 @@ fn a_press_whose_other_job_ended_without_a_report_still_shows_the_first_card() {
     );
     assert_eq!(state.toasts.messages().len(), 1);
 }
+
+#[test]
+fn a_finished_operation_updates_its_internal_tab_without_reloading_the_active_one() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let dir = tempfile::tempdir().unwrap();
+    let mut panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
+    let a = dir.path().join("a");
+    state
+        .explorer_views
+        .get_or_init(&panel, None)
+        .select_only(&a);
+    state.request_explorer_file(&engine.read(), sid, Operation::Trash(vec![a]), user());
+    let target = state.explorer_file_requests.0.pop_front().unwrap().target;
+    panel.add_tab();
+    let b = dir.path().join("b");
+    let view = state.explorer_views.get_or_init(&panel, None);
+    view.select_only(&b);
+    view.state = crate::adapters::ui::surface::explorer::view::LoadState::Ok;
+    target.finish(&mut state, true);
+    let view = state.explorer_views.get_or_init(&panel, None);
+    assert!(view.selected.contains(&b));
+    assert_eq!(
+        view.state,
+        crate::adapters::ui::surface::explorer::view::LoadState::Ok
+    );
+    panel.active = 0;
+    let view = state.explorer_views.get_or_init(&panel, None);
+    assert!(view.selected.is_empty());
+    assert_eq!(
+        view.state,
+        crate::adapters::ui::surface::explorer::view::LoadState::Loading
+    );
+}

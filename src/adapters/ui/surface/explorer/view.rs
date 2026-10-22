@@ -1,4 +1,4 @@
-//! surface별 탐색기 표시 상태. 모델의 탐색 이력과 별도로 목록 캐시·선택·트리 펼침을 보관한다.
+//! surface별 탐색기 표시 상태. 모델의 탐색 이력과 별도로 목록 캐시·선택·트리 펼침을 내부 탭별로 보관한다.
 
 pub(crate) mod cursor;
 pub(crate) mod drag;
@@ -10,12 +10,13 @@ pub(crate) mod marquee;
 pub(crate) mod ops;
 pub(crate) mod poll;
 mod remote_reload;
+mod tab_state;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use tasty_model::{ExplorerPanel, SortColumn, SortDir, SurfaceId};
+use tasty_model::{ExplorerPanel, ExplorerTabId, SortColumn, SortDir, SurfaceId};
 
 use super::type_ahead::TypeAhead;
 
@@ -151,6 +152,10 @@ pub struct ExplorerView {
     pub(crate) list_layout: Option<list_layout::ListLayout>,
     /// 숨김 파일 표시 여부와 끈 동안 뺀 항목.
     pub(crate) hidden: hidden::HiddenFiles,
+    /// 위 탭별 필드가 지금 담고 있는 내부 탭. 처음 동기화하기 전에는 None 이다.
+    tab: Option<ExplorerTabId>,
+    /// 활성이 아닌 내부 탭의 상태(`tab_state`).
+    parked: HashMap<ExplorerTabId, tab_state::TabSession>,
 }
 
 /// 사이드바 트리에 두는 하위 폴더 목록. 이름 오름차순이다.
@@ -167,6 +172,15 @@ impl ExplorerView {
     ) -> bool {
         // 확인 결과가 건 다시 읽기를 아래에서 같은 차례에 worker 로 넘긴다.
         self.poll_external_result(owner);
+        let mut changed = self.poll_tab_reads(owner);
+        changed |= self.preview.poll(owner);
+        changed |= self.thumbs.poll(owner);
+        self.poll_parked_reads(owner);
+        changed
+    }
+
+    /// 지금 탭 몫의 목록·쓰기 확인·검색·트리 읽기 결과를 거둔다. 보관한 탭에도 같은 것을 쓴다.
+    fn poll_tab_reads(&mut self, owner: &mut crate::app::local_reads::ReadRequests) -> bool {
         let mut changed = false;
         if let Some(result) = self
             .local_query
@@ -243,8 +257,6 @@ impl ExplorerView {
             }
             changed = true;
         }
-        changed |= self.preview.poll(owner);
-        changed |= self.thumbs.poll(owner);
         changed
     }
     /// 목록을 바꾸고 세대를 올린다. 숨김 파일을 끈 동안에는 숨김 항목을 따로 둔다.
@@ -301,6 +313,8 @@ impl ExplorerView {
             list_rect: None,
             list_layout: None,
             hidden: Default::default(),
+            tab: None,
+            parked: HashMap::new(),
         }
     }
 
@@ -506,6 +520,8 @@ impl ExplorerView {
     /// (docs/features/remote-attach/index.md) 원격 mirror surface — 동기 IO 대신 `list_dir_request` 를 큐잉하고
     /// 경로별 pending 상태로 진행 상황을 추적한다. 디렉토리가 바뀌면 선택을 초기화한다.
     pub fn sync(&mut self, panel: &ExplorerPanel, mirror_ws_id: Option<u32>) {
+        // 내부 탭 전환은 폴더 변경이 아니다. 그 탭의 상태를 먼저 꺼낸 뒤 아래에서 폴더를 비교한다.
+        self.switch_tab(panel);
         self.preview.adopt(&panel.preview);
         self.adopt_hidden(panel.show_hidden);
         let tab = panel.active_tab();
@@ -711,14 +727,27 @@ impl ExplorerView {
         panel: &ExplorerPanel,
         result: Result<Vec<DirEntryInfo>, String>,
     ) -> bool {
+        self.switch_tab(panel);
         if self.answer_address_probe(request_id, &result) {
             return true;
         }
         let Some(dir) = self.find_pending_dir(request_id) else {
-            return false;
+            let mut result = Some(result);
+            let mut applied = false;
+            self.for_each_parked(|view| {
+                if let Some(dir) = view.find_pending_dir(request_id) {
+                    view.apply_remote_tab_result(dir, result.take().expect("unique request"));
+                    applied = true;
+                }
+            });
+            return applied;
         };
-        let current_root = panel.current_root();
-        let is_current = dir == current_root;
+        self.apply_remote_tab_result(dir, result);
+        true
+    }
+
+    fn apply_remote_tab_result(&mut self, dir: PathBuf, result: Result<Vec<DirEntryInfo>, String>) {
+        let is_current = self.loaded_dir() == Some(dir.as_path());
         match result {
             Ok(entries) => {
                 let mut tree_children: Vec<DirEntryInfo> =
@@ -726,9 +755,9 @@ impl ExplorerView {
                 tree_children.sort_by_key(|a| a.name.to_lowercase());
                 self.tree_children.insert(dir.clone(), tree_children);
                 if is_current {
-                    let tab = panel.active_tab();
+                    let (_, col, order) = self.loaded.as_ref().expect("current listing");
                     let mut sorted = entries.clone();
-                    sort_entries(&mut sorted, tab.sort_column, tab.sort_dir);
+                    sort_entries(&mut sorted, *col, *order);
                     self.set_entries(sorted);
                     self.state = LoadState::Ok;
                     self.retain_listed_selection();
@@ -750,13 +779,21 @@ impl ExplorerView {
                     .insert(dir, RemoteLoadState::Error(reason));
             }
         }
-        true
     }
 
     /// 이번 프레임 새로 만든 원격 list_dir 요청을 모두 꺼낸다(렌더 루프 종료 후
     /// 호출자가 `CoreState::pending_list_dir_forward` 로 옮긴다).
     pub(crate) fn drain_outbox(&mut self) -> Vec<ExplorerListRequest> {
         std::mem::take(&mut self.outbox)
+            .into_iter()
+            .filter(|request| {
+                self.pending_dir_any_tab(request.request_id).is_some()
+                    || self
+                        .addr_probe
+                        .as_ref()
+                        .is_some_and(|probe| probe.owns_request(request.request_id))
+            })
+            .collect()
     }
 
     /// 사이드바 트리에서 `dir` 의 하위 디렉토리를 (캐시에 없으면) 읽어 반환한다.
@@ -946,7 +983,7 @@ impl ExplorerViewStore {
             return false;
         };
         let result = result.map(|(entries, volume)| {
-            if let Some(dir) = view.find_pending_dir(request_id) {
+            if let Some(dir) = view.pending_dir_any_tab(request_id) {
                 view.note_remote_volume(dir, volume);
             }
             entries
@@ -984,23 +1021,26 @@ impl ExplorerViewStore {
             if view.mirror_ws_id.is_some() {
                 continue;
             }
-            if view.loaded.as_ref().is_some_and(|(dir, _, _)| hit(dir)) {
-                view.request_reload();
-                any = true;
-                continue;
-            }
-            any |= view.refind_if_changed_under(changed, removed);
-            let stale: Vec<PathBuf> = view
-                .tree_children
-                .keys()
-                .filter(|dir| hit(dir))
-                .cloned()
-                .collect();
-            for dir in &stale {
-                view.tree_children.remove(dir);
-                view.tree_queries.remove(dir);
-            }
-            any |= !stale.is_empty();
+            // 활성이 아닌 내부 탭도 표시해 두어야 돌아왔을 때 낡은 목록에 머물지 않는다.
+            view.for_each_tab(|view| {
+                if view.loaded.as_ref().is_some_and(|(dir, _, _)| hit(dir)) {
+                    view.request_reload();
+                    any = true;
+                    return;
+                }
+                any |= view.refind_if_changed_under(changed, removed);
+                let stale: Vec<PathBuf> = view
+                    .tree_children
+                    .keys()
+                    .filter(|dir| hit(dir))
+                    .cloned()
+                    .collect();
+                for dir in &stale {
+                    view.tree_children.remove(dir);
+                    view.tree_queries.remove(dir);
+                }
+                any |= !stale.is_empty();
+            });
         }
         any
     }
