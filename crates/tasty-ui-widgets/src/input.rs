@@ -260,8 +260,15 @@ impl<'a> Input<'a> {
             // 읽기 전용은 변경할 수 없는 &str 버퍼를 넘겨 편집만 막고 포커스·선택·복사는 둔다.
             let mut view: &str = buf.as_str();
             let text: &mut dyn egui::TextBuffer = if read_only { &mut view } else { buf };
+            // 가로 여백은 상자 padding 이 맡는다(시안 `input { padding: 0 }`). egui 기본 가로 margin 을
+            // 두면 글자 칸 바깥이 te_w 보다 넓어져 addon·trailing 이 오른쪽 padding 으로 밀린다.
+            // 세로는 egui 기본값(2)을 그대로 둔다.
             let te = egui::TextEdit::singleline(text)
                 .frame(false)
+                .margin(crate::margin_sym(
+                    LogicalPx(0.0),
+                    crate::tokens::STRUCT_GAP_2,
+                ))
                 .desired_width(te_w)
                 .hint_text(hint)
                 .font(font.clone())
@@ -524,5 +531,59 @@ mod tests {
         let (outer, next, gap) = seen.expect("frame ran");
         assert_eq!(outer.width(), theme.field_width_xs.value());
         assert_eq!(next.left(), outer.right() + gap);
+    }
+
+    /// 상자 padding 안쪽이 곧 글자·addon·trailing 칸이다(시안 `input { padding: 0 }`).
+    /// 글자는 왼쪽 padding 에서 시작하고 addon 과 trailing 의 오른쪽 끝은 오른쪽 padding 에 닿는다.
+    #[test]
+    fn text_addon_and_trailing_sit_on_the_box_padding() {
+        let theme = tasty_themes::mocha_fallback();
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0));
+        let pad = theme.input_padding_x().value();
+        let size = theme.icon_glyph_size_md.value();
+        let trail = std::cell::Cell::new(egui::Rect::NOTHING);
+        let paint = |_: &mut egui::Ui, r: egui::Rect, _: egui::Color32| trail.set(r);
+        let (mut num, mut name) = (String::from("2500000"), String::from("main"));
+        let mut seen = None;
+        for _ in 0..2 {
+            let raw = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            // 첫 프레임은 폰트 준비용이다.
+            let out = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let a = Input::new()
+                        .mono(true)
+                        .addon("lines")
+                        .width(theme.field_width_color.value())
+                        .show(ui, &theme, &mut num);
+                    let t = Input::new()
+                        .trailing(&paint, size)
+                        .width(theme.field_width_xs.value())
+                        .show(ui, &theme, &mut name);
+                    seen = Some((a.rect, t.rect));
+                });
+            });
+            let text = |s: &str| {
+                out.shapes.iter().find_map(|c| match &c.shape {
+                    egui::Shape::Text(t) if t.galley.text() == s => {
+                        Some(egui::Rect::from_min_size(t.pos, t.galley.size()))
+                    }
+                    _ => None,
+                })
+            };
+            if let (Some(value), Some(addon)) = (text("2500000"), text("lines")) {
+                let (a, t) = seen.expect("frame ran");
+                assert_eq!(value.left(), a.left() + pad);
+                assert!(
+                    (addon.right() - (a.right() - pad)).abs() < 0.5,
+                    "{addon:?} {a:?}"
+                );
+                assert_eq!(trail.get().right(), t.right() - pad);
+            }
+        }
+        assert!(trail.get().is_positive(), "trailing was painted");
     }
 }
