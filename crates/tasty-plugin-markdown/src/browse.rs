@@ -117,17 +117,13 @@ impl MarkdownPlugin {
         let Some(remote) = self.docs.get_mut(&sid).and_then(|d| d.remote.as_mut()) else {
             return;
         };
-        remote.addr_ticket += 1;
-        remote.addr_waiting = None;
+        let (ticket, replaced_waiting) = remote.replace_with_picked();
         if let Some(run) = run {
-            crate::addr_nav::spawn_addr_watch(
-                host,
-                sid,
-                remote.addr_ticket,
-                path.to_string(),
-                run,
-                true,
-            );
+            crate::addr_nav::spawn_addr_watch(host, sid, ticket, path.to_string(), run, true);
+        }
+        // 피커 경유 실패는 toast 로만 알리고 다시 그리지 않으므로, 대신한 직접 이동의 대기 행은 여기서 끝낸다.
+        if replaced_waiting {
+            self.reload_webview(sid);
         }
     }
 

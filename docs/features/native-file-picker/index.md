@@ -221,7 +221,7 @@ markdown의 Browse와 주소창 폴더 버튼, 이미지 다른 이름으로 저
 1. plugin 이 `file_picker.trigger { filters?: string[], user_navigation_url?: string }` 를 호출한다(`FsRead` 권한,
    `gui` feature 전용). CLI·agent 호출자는 popup 을 열지 않고 `-32016` 을 받는다 — 결과를 받을
    곳이 없고 popup 이 사용자 입력 포커스를 가져가기 때문이다([파일 핸들러 (File handler)](../file-handler/index.md)). host 는 popup 확정을 **기다리지 않고** `{ request_id }` 만 즉시
-   회신한다(`src/adapters/ipc/handler/file_picker.rs::handle_trigger`).
+   회신한다(`src/adapters/ipc/handler/file_picker.rs::handle_trigger_with_proofs`, `handler.rs` 의 `file_picker.trigger` 분기가 부른다).
 2. host 는 `(plugin_id, request_id)` 를 `FilePickerData.requester`(`FilePickerRequester`)
    에 기록하고 popup 을 연다. `request_id` 는 피커 요청 식별자와 같은 값이다. 이후 로컬/원격
    판별·엔트리 로드는 위 경로(Tools 메뉴 트리거와 동일)를 그대로 탄다.

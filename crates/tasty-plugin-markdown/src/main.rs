@@ -187,6 +187,9 @@ struct RemoteDoc {
     addr_failure: Option<render::AddrFailure>,
     /// 마지막 직접 이동이 결과를 기다린다. 결과·다음 입력·Esc 에서 지운다.
     addr_waiting: Option<addr_nav::AddrWaiting>,
+    /// 페이지가 오류·대기 행을 지운(다음 입력·Esc) 이동의 순번. 그 이동의 늦은 실패는 쓰던 입력을 덮지
+    /// 않도록 다시 보이지 않는다. 늦은 성공은 그대로 반영한다.
+    addr_dismissed: Option<u64>,
 }
 
 /// [`MdDoc::on_remote_changed`] 의 결정 — 변경 신호 하나에 plugin 이 할 일.
@@ -295,11 +298,21 @@ impl MdDoc {
     /// 원격 주소창 이동의 결과를 반영한다. 다시 그려야 하면 true.
     /// 마지막 이동이 아닌 결과는 버린다. 성공하면 보관한 실패를 지운다(문서는 host 가 바꾼다).
     /// 대기 중이던 이동이면 페이지의 대기 행 타이머를 끝내도록 항상 다시 그린다.
+    /// 페이지가 이미 지운 이동의 실패는 보관하지도 다시 그리지도 않는다. 다시 그리면 그사이 쓰던 입력과
+    /// IME 조합을 이전 경로로 덮는다.
     fn apply_addr_outcome(&mut self, ticket: u64, typed: String, outcome: AddrOutcome) -> bool {
         let Some(remote) = self.remote.as_mut() else {
             return false;
         };
         if remote.addr_ticket != ticket {
+            return false;
+        }
+        if remote.addr_dismissed == Some(ticket)
+            && let AddrOutcome::Failed(kind) = &outcome
+        {
+            tracing::info!(
+                "markdown: address entry {ticket} failed after it was dismissed ({kind:?}) — not shown"
+            );
             return false;
         }
         let was_waiting = remote.addr_waiting.take().is_some();

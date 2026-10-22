@@ -1,4 +1,5 @@
 use super::*;
+use crate::addr_nav::AddrEffect;
 
 #[test]
 fn reload_of_an_open_document_returns_ok() {
@@ -779,6 +780,103 @@ fn a_waiting_remote_entry_survives_a_redraw_until_its_result() {
     remote.dismiss_addr();
     assert_eq!(remote.addr_waiting, None);
     assert_eq!(remote.addr_ticket, 4, "a late result still applies");
+}
+
+fn remote_of(p: &mut MarkdownPlugin, sid: u32) -> &mut RemoteDoc {
+    p.docs.get_mut(&sid).unwrap().remote.as_mut().unwrap()
+}
+
+fn addr_result(ticket: u64, path: &str, outcome: &str) -> Value {
+    json!({ "surface_id": 1, "ticket": ticket, "path": path, "outcome": outcome })
+}
+
+/// 다음 입력·Esc 로 지운 이동의 늦은 실패는 오류 행을 되살리거나 문서를 다시 그리지 않는다. 쓰던 입력과
+/// IME 조합을 이전 경로로 덮기 때문이다. 같은 이동의 늦은 성공은 그대로 반영하고, 그 뒤의 새 이동은
+/// 실패를 다시 보인다.
+#[test]
+fn a_dismissed_entry_does_not_bring_back_its_late_failure() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    mirror_create(&mut p, 1, "/remote/a.md");
+    remote_of(&mut p, 1).addr_ticket = 5;
+    p.begin_addr_waiting(1, 5, "/remote/typo.md");
+    // 페이지의 input·Esc 는 모두 같은 addr-dismiss 신호를 보낸다.
+    assert_eq!(
+        nav_action(render::NavIntent::AddrDismiss, p.docs.get(&1)),
+        NavAction::DismissAddr
+    );
+    remote_of(&mut p, 1).dismiss_addr();
+
+    p.on_addr_result(&addr_result(5, "/remote/typo.md", "not_found"));
+    let remote = remote_of(&mut p, 1);
+    assert_eq!(remote.addr_failure, None, "지운 이동의 실패가 되살아났다");
+    assert_eq!(remote.addr_waiting, None);
+    let lost = AddrOutcome::Failed(render::AddrFailureKind::ConnectionLost);
+    let typo = || "/remote/typo.md".to_string();
+    assert_eq!(
+        p.settle_addr_outcome(1, 5, typo(), lost.clone(), false),
+        AddrEffect::Nothing,
+        "지운 이동의 실패로 문서를 다시 그린다"
+    );
+    assert_eq!(
+        p.settle_addr_outcome(1, 5, typo(), AddrOutcome::Succeeded, false),
+        AddrEffect::Refetch,
+        "지운 이동의 늦은 성공도 반영한다"
+    );
+
+    // 새 이동(새 순번)의 실패는 지운 표시와 상관없이 보인다.
+    remote_of(&mut p, 1).addr_ticket = 6;
+    assert_eq!(
+        p.settle_addr_outcome(1, 6, "/remote/next.md".into(), lost, false),
+        AddrEffect::Redraw
+    );
+    assert!(remote_of(&mut p, 1).addr_failure.is_some());
+}
+
+/// 폴더 버튼 확정이 결과를 기다리던 직접 이동을 대신하면 그 대기를 끝내야 한다고 알린다(다시 그려 페이지의
+/// 30초 타이머와 대기 행을 지운다). 대신한 이동의 늦은 결과와 피커 경유 실패는 오류 행을 만들지 않는다.
+/// 피커 취소는 직접 이동을 그대로 기다리게 둔다.
+#[test]
+fn a_picked_file_ends_the_direct_entry_it_replaces_and_a_cancel_keeps_it() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    mirror_create(&mut p, 1, "/remote/a.md");
+    remote_of(&mut p, 1).addr_ticket = 2;
+    p.begin_addr_waiting(1, 2, "/remote/slow.md");
+
+    // 피커 취소: 직접 이동은 계속 기다리고, 그 실패는 원래대로 오류 행이 된다.
+    p.track_surface_picker(1, 20);
+    assert_eq!(p.take_picker_result(picker_reply(20, &[], true)), None);
+    assert!(remote_of(&mut p, 1).addr_waiting.is_some());
+    assert_eq!(remote_of(&mut p, 1).addr_ticket, 2);
+
+    // 피커 확정: 기다리던 직접 이동을 대신한다.
+    p.track_surface_picker(1, 21);
+    assert!(
+        p.take_picker_result(picker_reply(21, &["/remote/b.md"], false))
+            .is_some()
+    );
+    assert_eq!(remote_of(&mut p, 1).replace_with_picked(), (3, true));
+    assert_eq!(remote_of(&mut p, 1).addr_waiting, None);
+    p.on_addr_result(&addr_result(2, "/remote/slow.md", "not_found"));
+    let fail = AddrOutcome::Failed(render::AddrFailureKind::NotFound);
+    assert_eq!(
+        p.settle_addr_outcome(1, 3, "/remote/b.md".into(), fail, true),
+        AddrEffect::Nothing
+    );
+    assert_eq!(
+        remote_of(&mut p, 1).addr_failure,
+        None,
+        "피커 실패는 toast 만"
+    );
+    // 기다리던 이동이 없으면 다시 그리지 않는다.
+    assert_eq!(remote_of(&mut p, 1).replace_with_picked(), (4, false));
+
+    // 취소한 뒤 직접 이동의 실패가 오면 원래 계약대로 보인다.
+    remote_of(&mut p, 1).addr_ticket = 7;
+    p.begin_addr_waiting(1, 7, "/remote/slow.md");
+    p.track_surface_picker(1, 22);
+    assert_eq!(p.take_picker_result(picker_reply(22, &[], true)), None);
+    p.on_addr_result(&addr_result(7, "/remote/slow.md", "not_found"));
+    assert!(remote_of(&mut p, 1).addr_failure.is_some());
 }
 
 /// 결과 회신 자기 호출이 그 surface 의 마지막 이동을 실패로 표시한다.

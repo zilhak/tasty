@@ -37,6 +37,16 @@ pub(crate) fn poll_delays() -> impl Iterator<Item = std::time::Duration> {
     })
 }
 
+/// 원격 이동 결과를 반영한 뒤 host 에 보낼 일.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AddrEffect {
+    /// 원격이 바꾼 문서의 원문과 경로를 다시 받는다.
+    Refetch,
+    /// 오류 행이나 대기 행이 바뀌어 문서를 다시 그린다.
+    Redraw,
+    Nothing,
+}
+
 /// 원격 주소창 이동의 최종 결과(`run.result`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AddrOutcome {
@@ -240,11 +250,27 @@ impl MarkdownPlugin {
         outcome: AddrOutcome,
         browse: bool,
     ) {
+        match self.settle_addr_outcome(sid, ticket, typed, outcome, browse) {
+            AddrEffect::Refetch => self.request_remote_content(sid, RemoteRequester::User),
+            AddrEffect::Redraw => self.reload_webview(sid),
+            AddrEffect::Nothing => {}
+        }
+    }
+
+    /// [`Self::apply_addr_outcome`] 의 상태 반영. host 에 보낼 일은 돌려주기만 한다.
+    pub(crate) fn settle_addr_outcome(
+        &mut self,
+        sid: u32,
+        ticket: u64,
+        typed: String,
+        outcome: AddrOutcome,
+        browse: bool,
+    ) -> AddrEffect {
         let Some(doc) = self.docs.get_mut(&sid) else {
-            return;
+            return AddrEffect::Nothing;
         };
         if doc.remote.as_ref().map(|r| r.addr_ticket) != Some(ticket) {
-            return;
+            return AddrEffect::Nothing;
         }
         let succeeded = outcome == AddrOutcome::Succeeded;
         let redraw = match (browse, outcome) {
@@ -252,9 +278,11 @@ impl MarkdownPlugin {
             (_, outcome) => doc.apply_addr_outcome(ticket, typed, outcome),
         };
         if succeeded {
-            self.request_remote_content(sid, RemoteRequester::User);
+            AddrEffect::Refetch
         } else if redraw {
-            self.reload_webview(sid);
+            AddrEffect::Redraw
+        } else {
+            AddrEffect::Nothing
         }
     }
 
@@ -272,10 +300,18 @@ impl MarkdownPlugin {
 
 impl crate::RemoteDoc {
     /// 페이지가 오류 행이나 대기 행을 지웠다(다음 입력·Esc). 보관한 실패와 대기 상태를 버린다.
-    /// 순번은 그대로라 늦게 온 결과는 계속 반영한다.
+    /// 순번은 그대로라 늦게 온 성공은 계속 반영하고, 늦게 온 실패는 다시 보이지 않는다.
     pub(crate) fn dismiss_addr(&mut self) {
         self.addr_failure = None;
         self.addr_waiting = None;
+        self.addr_dismissed = Some(self.addr_ticket);
+    }
+
+    /// 폴더 버튼으로 고른 이동이 마지막 이동이 된다. 새 순번과, 결과를 기다리던 직접 이동을 대신했는지를
+    /// 돌려준다. 대신했으면 페이지의 대기 행 타이머와 이미 보인 대기 행이 남지 않게 다시 그려야 한다.
+    pub(crate) fn replace_with_picked(&mut self) -> (u64, bool) {
+        self.addr_ticket += 1;
+        (self.addr_ticket, self.addr_waiting.take().is_some())
     }
 }
 
