@@ -72,7 +72,9 @@ impl SettingsChange {
             }
             #[cfg(debug_assertions)]
             Self::Replace(new) => {
+                let observation = settings.file_observation.clone();
                 *settings = (**new).clone();
+                settings.file_observation = observation;
                 Ok(true)
             }
         }
@@ -181,6 +183,21 @@ impl crate::app::App {
                 saved,
                 settings: Box::new(settings),
             });
+        }
+    }
+
+    /// 끝난 설정 저장을 거두어 원 요청과 사용자 출처에 알린다. 메인 루프 회차마다 부른다.
+    /// 출처가 없는 저장(종료 전 재저장)은 file writer가 로그로 남긴다.
+    pub(crate) fn settle_settings_saves(&mut self) {
+        for settled in self.services.take_settled_settings() {
+            let crate::app::file_writer::SaveReply {
+                origin,
+                done,
+                settings,
+            } = settled.reply;
+            if let Some(origin) = origin {
+                self.settle_settings(&origin, done, *settings, settled.saved);
+            }
         }
     }
 
@@ -326,7 +343,11 @@ mod boundary_tests {
                 .unwrap()
                 .send(settings.clone())
                 .expect("observer alive");
-            self.release.lock().unwrap().recv().expect("released");
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("released");
             if self.fail {
                 anyhow::bail!("config.toml is not writable");
             }
@@ -346,7 +367,15 @@ mod boundary_tests {
             fail,
             files: files.clone(),
         });
+        let writer = crate::app::file_writer::start(
+            storage.clone(),
+            tasty_utils::batch_writer::Limits::default(),
+            Arc::new(tasty_utils::batch_writer::SystemClock),
+            Arc::new(|| {}),
+        )
+        .expect("file writer");
         let mut core = crate::ipc::handler::cli_entry_tests::test_core_builder()
+            .with_file_writer(writer)
             .with_settings_storage(storage)
             .build()
             .expect("test AppServices");
@@ -366,30 +395,44 @@ mod boundary_tests {
         }
         .from_agent_ipc();
 
-        // 저장 안에서 막힌 동안 다른 스레드가 결과와 파일 완료를 본다.
-        let observer_files = files.clone();
-        let observer = std::thread::spawn(move || {
-            let mut wait = wait;
-            let saving = entered_rx.recv().expect("save entered");
-            assert_eq!(saving.remote_transfer.max_mb, 4242);
-            assert!(
-                matches!(wait.poll(), SettingsPoll::Pending),
-                "no answer while the save is still running"
-            );
-            assert_eq!(observer_files.load(Ordering::SeqCst), 0);
-            release_tx.send(()).expect("storage waits");
-            wait
-        });
+        // The applying thread returns while the real file worker is still blocked.
         crate::intent::headless::apply_one_for_test(&mut core, &mut state, &mut engine, intent);
-        let mut wait = observer.join().expect("observer");
+        let saving = entered_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("save entered");
+        assert_eq!(saving.remote_transfer.max_mb, 4242);
+        let mut wait = wait;
+        assert!(matches!(wait.poll(), SettingsPoll::Pending));
+        assert_eq!(files.load(Ordering::SeqCst), 0);
+        core.poll_file_writer(); // Another event-loop turn can run before storage is released.
+        release_tx.send(()).expect("storage waits");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while core.file_writer_stats().unwrap().1.replaced
+            + core.file_writer_stats().unwrap().1.failed
+            == 0
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "writer did not finish"
+            );
+            std::thread::yield_now();
+        }
+        let outcome = loop {
+            crate::intent::headless::settle_settings_saves(&mut core);
+            if let SettingsPoll::Ready(outcome) = wait.poll() {
+                break outcome;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "receipt did not settle"
+            );
+            std::thread::yield_now();
+        };
 
         assert_eq!(
             engine.runtime.settings.remote_transfer.max_mb, 4242,
             "applied to memory whether or not the save succeeded"
         );
-        let SettingsPoll::Ready(outcome) = wait.poll() else {
-            panic!("the result arrives after the save");
-        };
         let response = crate::ipc::handler::deferred::settings_outcome_response(
             serde_json::json!(1),
             Some(outcome),

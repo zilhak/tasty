@@ -233,7 +233,7 @@ fn reject_non_domain(reason: &str) {
 }
 
 /// CoreEvent에서 engine 상태 변경만 처리한다. 창 갱신과 토스트는 제외한다.
-fn handle_core_event(core: &AppServices, engine: &mut EngineMut<'_>, event: CoreEvent) {
+fn handle_core_event(core: &mut AppServices, engine: &mut EngineMut<'_>, event: CoreEvent) {
     match event {
         CoreEvent::SettingsUpdated { settings, done } => {
             apply_settings(core, engine, settings, done)
@@ -270,25 +270,36 @@ fn handle_core_event(core: &AppServices, engine: &mut EngineMut<'_>, event: Core
     }
 }
 
-/// 메모리에 적용한 뒤 주입한 저장소에 저장하고, 요청이 기다리면 두 결과를 함께 돌려준다.
+/// 메모리에 적용한 뒤 저장을 file writer에 넣는다. 저장을 기다리지 않는다. 요청이 기다리면
+/// 저장 결과가 나온 회차에 [`settle_settings_saves`]가 메모리 적용과 저장 결과를 함께 돌려준다.
 fn apply_settings(
-    core: &AppServices,
+    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     new_settings: tasty_settings::Settings,
     done: Option<crate::app::settings_change::SettingsDone>,
 ) {
     crate::app::task_report::apply(core, &new_settings);
     engine.runtime.settings = new_settings.clone();
-    let saved = core.save_settings(&new_settings).map_err(|e| {
-        tracing::warn!("failed to save settings: {e}");
-        e.to_string()
-    });
-    if let Some(done) = done {
-        done.finish(crate::app::settings_change::SettingsOutcome::Applied {
-            changed: true,
-            saved,
-            settings: Box::new(new_settings),
-        });
+    core.submit_settings_save(new_settings, None, done);
+    // 접수 거절이나 writer 없는 구성의 결과는 바로 나와 있다.
+    settle_settings_saves(core);
+}
+
+/// 끝난 설정 저장의 결과를 기다리는 요청에 돌려준다. 헤드리스 루프가 회차마다 부른다.
+pub(crate) fn settle_settings_saves(core: &mut AppServices) {
+    for settled in core.take_settled_settings() {
+        let crate::app::file_writer::SaveReply {
+            origin: _origin,
+            done,
+            settings,
+        } = settled.reply;
+        if let Some(done) = done {
+            done.finish(crate::app::settings_change::SettingsOutcome::Applied {
+                changed: true,
+                saved: settled.saved,
+                settings,
+            });
+        }
     }
 }
 

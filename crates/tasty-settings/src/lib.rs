@@ -17,6 +17,8 @@ pub mod webhook_port_file;
 
 use serde::{Deserialize, Serialize};
 
+pub use persistence::FileObservation;
+
 pub use appearance::{
     ActiveTabIndicator, AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor,
     PluginSettingValue, UI_SCALE_CHOICES,
@@ -93,6 +95,9 @@ pub struct Settings {
     /// `#[serde(skip)]`. clone 을 타고 전파되므로 어느 복사본으로 저장하든 판정이 같다.
     #[serde(skip)]
     pub origin: SettingsOrigin,
+    /// Shared by snapshots from one load so own saves advance their external-edit observation.
+    #[serde(skip)]
+    pub file_observation: Option<std::sync::Arc<std::sync::Mutex<FileObservation>>>,
 }
 
 impl Settings {

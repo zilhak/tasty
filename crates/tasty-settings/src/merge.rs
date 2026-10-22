@@ -74,12 +74,18 @@ pub fn merge_settings_edit(
 /// 직렬화되지 않는 필드. 병합은 직렬화한 값을 비교하므로 이 필드들은 병합 결과에서 기본값이 된다.
 /// [`carry_unserialized`] 가 창의 결과에서 잇고, 시험이 이 목록과 소스의 `serde` skip 사용을 대조한다.
 #[cfg(test)]
-const UNSERIALIZED_FIELDS: [&str; 3] = ["origin", "markdown_font", "explorer_font"];
+const UNSERIALIZED_FIELDS: [&str; 4] = [
+    "origin",
+    "file_observation",
+    "markdown_font",
+    "explorer_font",
+];
 
 /// [`UNSERIALIZED_FIELDS`] 를 창의 결과에서 잇는다. `origin` 은 저장 정책이고, 레거시 폰트 둘은 로드 때
 /// 비워지지만 값이 남아 있으면 창의 사본 것을 쓴다.
 fn carry_unserialized(edited: &Settings, merged: &mut Settings) {
     merged.origin = edited.origin;
+    merged.file_observation = edited.file_observation.clone();
     merged
         .appearance
         .markdown_font

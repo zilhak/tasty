@@ -626,15 +626,17 @@ impl App {
                 .admit_settings_reset(generation, changes, new_settings, origin, done);
             return;
         }
-        let saved = self.apply_settings_after_structure(new_settings.clone());
-        self.settle_settings(origin, done, new_settings, saved);
+        self.apply_settings_after_structure(new_settings, origin, done);
     }
 
-    /// 창과 parked 상태에 새 설정을 적용하고 저장한다. 저장 결과를 돌려준다(실패는 오류로도 남긴다).
+    /// 창과 parked 상태에 새 설정을 적용하고 저장을 file writer에 넣는다. 저장을 기다리지 않는다.
+    /// 저장 결과는 메인 루프가 거두어 `done`과 사용자 출처의 토스트로 알린다([`Self::settle_settings_saves`]).
     pub(crate) fn apply_settings_after_structure(
         &mut self,
         new_settings: Settings,
-    ) -> Result<(), String> {
+        origin: &IntentOrigin,
+        done: Option<crate::app::settings_change::SettingsDone>,
+    ) {
         crate::app::task_report::apply(&self.services, &new_settings);
         let prev_settings = self
             .engines()
@@ -659,11 +661,8 @@ impl App {
         for main in self.main_windows_iter_mut() {
             main.mark_dirty();
         }
-        // 메모리에 적용됐어도 다음 실행에 보존할 수 없는 실패이므로 오류로 남긴다.
-        let saved = self.services.save_settings(&new_settings).map_err(|e| {
-            tracing::error!("failed to save settings: {e}");
-            e.to_string()
-        });
+        self.services
+            .submit_settings_save(new_settings.clone(), Some(origin.clone()), done);
 
         let appearance_changed =
             theme_order::appearance_changed(prev_appearance.as_ref(), &new_settings.appearance);
@@ -679,7 +678,8 @@ impl App {
         // 바뀐 단축키가 macOS 메뉴 표시에도 반영되도록 재구성한다.
         #[cfg(target_os = "macos")]
         crate::macos_delegate::rebuild_main_menu(&new_settings.keybindings);
-        saved
+        // 접수 거절이나 writer 없는 구성의 결과는 바로 나와 있다.
+        self.settle_settings_saves();
     }
 
     /// 전역 Theme 설치 뒤에 창·터미널 색을 갱신하고 plugin에 설정 변경 이벤트를 발행한다.

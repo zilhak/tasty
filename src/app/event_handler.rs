@@ -426,6 +426,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
         self.services.poll_state_writer();
+        self.services.poll_file_writer();
+        self.settle_settings_saves();
         self.run_telemetry_follow_ups();
         self.poll_local_reads();
         self.poll_dag_reads();
@@ -1013,9 +1015,8 @@ impl App {
         let mut settings = crate::settings::Settings::load();
         let normalize_report = settings.normalize();
         settings.general.shell = self.state.shell_setup_path.clone();
-        if let Err(e) = settings.save() {
-            tracing::error!("failed to save settings: {e}");
-        }
+        self.services
+            .submit_settings_save(settings.clone(), None, None);
         self.state.shell_setup_mode = false;
         let window = self.shell_setup_window.take().unwrap();
         let gpu = self.shell_setup_gpu.take().unwrap();

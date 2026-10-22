@@ -69,6 +69,7 @@ fn build_production_core_inner(
         .into_inner()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let memory_changes = Arc::new(tasty_memory::writer::ChangeFeed::default());
+    let file_wake = memory_wake.clone();
     // 메인 루프가 결과를 거두기 전에 끝난 묶음의 알림은 이미 보낸 깨우기 하나에 합친다.
     let memory_wake = tasty_utils::batch_writer::WakeLatch::new(memory_wake);
     let memory_writer = tasty_memory::writer::spawn(
@@ -82,6 +83,13 @@ fn build_production_core_inner(
     let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
     let preset_store: Arc<Mutex<PresetStore>> = Arc::new(Mutex::new(PresetStore::load_default()));
     let settings_storage: Arc<dyn SettingsStorage> = Arc::new(FileSettingsStorage);
+    // 설정 파일 교체는 file writer 스레드가 한다. 메인 루프는 접수만 하고 결과를 회차마다 거둔다.
+    let file_writer = crate::app::file_writer::start(
+        settings_storage.clone(),
+        tasty_utils::batch_writer::Limits::default(),
+        Arc::new(tasty_utils::batch_writer::SystemClock),
+        file_wake,
+    )?;
 
     AppServicesBuilder::new()
         .with_clock(clock)
@@ -95,6 +103,7 @@ fn build_production_core_inner(
         .with_themes(themes)
         .with_preset_store(preset_store)
         .with_settings_storage(settings_storage)
+        .with_file_writer(file_writer)
         .build()
 }
 

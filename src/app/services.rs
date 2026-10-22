@@ -10,8 +10,7 @@ use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(test)]
 use tasty_memory::MemoryStorage;
-use tasty_presets::{PresetStorage, PresetStore};
-use tasty_settings::SettingsStorage;
+use tasty_presets::PresetStore;
 use tasty_themes::ThemeStorage;
 pub(crate) mod builder;
 pub(crate) mod file;
@@ -50,9 +49,6 @@ pub(crate) struct AppServices {
     #[cfg(test)]
     memory: Option<Arc<Mutex<dyn MemoryStorage>>>,
     themes: Arc<dyn ThemeStorage>,
-    /// 변경 메서드 때문에 Mutex가 필요하다. preset_store와 같은 Arc다.
-    presets: Arc<Mutex<dyn PresetStorage>>,
-    settings_storage: Arc<dyn SettingsStorage>,
 
     /// 뷰에도 같은 Arc를 넘겨 preset 디스크 캐시를 공유한다.
     pub(crate) preset_store: Arc<Mutex<PresetStore>>,
@@ -106,6 +102,12 @@ pub(crate) struct AppServices {
     /// state.db 전담 writer. GUI 부팅이 DB를 연 뒤 설치한다. 헤드리스와 DB를 열지 못한 실행에는 없다.
     #[cfg(any(feature = "gui", test))]
     state_writer: Option<crate::db::writer::StateWriterParts>,
+    /// 사용자 설정 파일 전담 writer. writer 없는 시험 구성에서는 설정 저장을 호출 스레드에서 바로 한다.
+    file_writer: Option<crate::app::file_writer::FileWriterParts>,
+    /// 설정 저장의 표시·확정 revision과 결과를 기다리는 요청.
+    settings_saves: crate::app::file_writer::SettingsSaves,
+    /// 종료 때 확정하지 못한 설정을 한 번만 알린다.
+    file_drain_reported: bool,
 }
 
 /// 호스트의 memory.db writer.
@@ -180,9 +182,63 @@ impl AppServices {
         &self.memory_replies
     }
 
-    /// 주입한 설정 저장소에 저장한다. 설정 변경 요청의 완료 결과가 이 결과를 싣는다.
-    pub(crate) fn save_settings(&self, settings: &tasty_settings::Settings) -> anyhow::Result<()> {
-        self.settings_storage.save(settings)
+    /// 메모리에 적용한 설정의 저장을 file writer에 넣는다. 기다리지 않는다. 결과는 메인 루프가
+    /// [`Self::take_settled_settings`]로 거두어 `done`과 사용자 출처의 토스트로 알린다.
+    pub(crate) fn submit_settings_save(
+        &mut self,
+        settings: tasty_settings::Settings,
+        origin: Option<crate::intent::IntentOrigin>,
+        done: Option<crate::app::settings_change::SettingsDone>,
+    ) {
+        self.settings_saves.submit(settings, origin, done);
+    }
+
+    /// 끝난 설정 저장을 꺼낸다. 깨우기 확인은 [`Self::poll_file_writer`]가 한다.
+    pub(crate) fn take_settled_settings(&mut self) -> Vec<crate::app::file_writer::SettledSave> {
+        self.settings_saves.reap()
+    }
+
+    /// 메인 루프 회차마다 결과를 거두기 전에 부른다.
+    pub(crate) fn poll_file_writer(&mut self) {
+        if let Some(parts) = self.file_writer.as_mut() {
+            parts.poll();
+        }
+    }
+
+    /// 확정하지 못한 최신 설정을 한 번 더 넣은 뒤 접수를 멈추고 마지막 flush 뒤 worker를 끝내게 한다.
+    /// 남은 worker 수를 돌려준다. 기다리지 않는다. 설정 저장 producer가 멈춘 뒤 부른다.
+    pub(crate) fn poll_file_writer_shutdown(&mut self) -> usize {
+        self.settings_saves.collect_completed();
+        self.settings_saves.retry_latest_before_shutdown();
+        let remaining = self
+            .file_writer
+            .as_mut()
+            .map_or(0, |parts| parts.writer.poll_shutdown());
+        self.settings_saves.collect_completed();
+        if remaining == 0
+            && self.settings_saves.pending() == 0
+            && !std::mem::replace(&mut self.file_drain_reported, true)
+            && let Some((visible, committed)) = self.settings_saves.unsaved()
+        {
+            tracing::warn!(
+                visible,
+                committed,
+                "settings applied in this run were not all saved"
+            );
+        }
+        remaining
+    }
+
+    /// file writer 계측. writer가 없으면 None이다.
+    pub(crate) fn file_writer_stats(
+        &self,
+    ) -> Option<(
+        tasty_utils::batch_writer::WriterStatsSnapshot,
+        crate::app::file_writer::FileWriteCounts,
+    )> {
+        self.file_writer
+            .as_ref()
+            .map(|w| (w.writer.stats(), w.stats.snapshot()))
     }
 
     /// 지연 응답의 결과가 메인 루프 안에서 생겼을 때 다음 회차가 응답을 거두도록 깨운다.

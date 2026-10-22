@@ -209,8 +209,7 @@ impl crate::app::App {
                     }
                 }
                 Ok((settings, origin, done)) => {
-                    let saved = self.apply_settings_after_structure(settings.clone());
-                    self.settle_settings(&origin, done, settings, saved);
+                    self.apply_settings_after_structure(settings, &origin, done);
                 }
             }
         }

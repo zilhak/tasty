@@ -1,4 +1,4 @@
-//! 종료 단계의 저장 writer drain 기한. memory.db와 state.db writer가 같은 기한과 포기 규칙을 쓴다.
+//! 종료 단계의 저장 writer drain 기한. memory.db·state.db·설정 파일 writer가 같은 기한과 포기 규칙을 쓴다.
 
 use std::time::{Duration, Instant};
 

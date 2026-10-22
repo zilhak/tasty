@@ -1,4 +1,4 @@
-<!-- source-hash: 88361178fc9b -->
+<!-- source-hash: 5af6ec951c07 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -24,9 +24,10 @@ Press the same shortcut again to close the settings window.
 
 - Seven top tabs: **General** · **Terminal** · **Appearance** · **Keybindings** · **Handler** · **Misc** · **Plugins**.
 - The list on the left holds that tab's sections. Typing into **Filter sections…** above it filters the list. Switching tabs clears the filter text.
-- Changes are written to the file and applied on screen only when you press **Save**. **Cancel** discards them all. There is no close button in the header.
+- **Save** applies your changes and starts saving them to the file. You can keep working while the file is written. **Cancel** discards your edits. There is no close button in the header.
 - Settings an agent changes by command while the settings window is open (input rules, remote transfer, accepting webhooks from other computers, and so on) stay as they are when you press **Save**. Saving only writes what you changed in this window. If both sides changed the same item, this window's value wins.
 - If saved settings cannot be applied, an error notice appears and the settings stay as they were. If they were applied on screen but could not be written to `config.toml`, a warning notice appears instead; those changes are lost when Tasty restarts.
+- If another program changes `config.toml` after Tasty reads it, Tasty reports a save failure and preserves that file. Restart Tasty to load the changes made outside the app.
 - Changes to **Language** take effect after you save and restart Tasty. Performance settings apply to terminals you open after saving; terminals that are already open don't change right away.
 - Numeric entries are **typed**, never dragged. Values are not adjusted while you type; they are brought into the allowed range when you leave the field or press `Enter`. Type something outside the range and the field's border takes the warning colour, with one line under it naming the range and the value that will actually be saved.
 - Whole-number fields widen to show the entire value, and grow with each character as you type. The unit sits after the field. A value in the settings file that is larger than the range is shown as written; it is not changed when it is read.

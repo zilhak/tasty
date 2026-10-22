@@ -1,8 +1,15 @@
-//! Settings file protection, serialization and atomic replacement.
+//! Settings file protection, external-edit observation and atomic replacement.
 use crate::{Settings, SettingsOrigin};
 use anyhow::Result;
 use std::{collections::HashSet, fs, path::PathBuf};
 use tasty_utils::path::tasty_home;
+
+#[derive(Debug)]
+pub struct FileObservation {
+    path: PathBuf,
+    target: PathBuf,
+    content: tasty_utils::file_replace::Fingerprint,
+}
 
 // ---- Settings file operations ----
 
@@ -37,7 +44,9 @@ impl Settings {
             Ok(c) => c,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 tracing::info!("no settings file at {}, using defaults", path.display());
-                return Self::default();
+                let mut settings = Self::default();
+                settings.observe_file(path, tasty_utils::file_replace::Fingerprint::Missing);
+                return settings;
             }
             Err(e) => {
                 tracing::error!(
@@ -51,7 +60,12 @@ impl Settings {
                 };
             }
         };
-        Self::parse_or_default(&contents, path)
+        let mut settings = Self::parse_or_default(&contents, path);
+        settings.observe_file(
+            path,
+            tasty_utils::file_replace::Fingerprint::of_bytes(contents.as_bytes()),
+        );
+        settings
     }
 
     /// 파싱 실패는 오류로 알리고 기본값을 반환한다. 원본 파일은 저장 전까지 그대로 둔다.
@@ -138,11 +152,58 @@ impl Settings {
     /// 확정된 경로에 쓴다. 덮어쓰기 전에 [`Self::protect_existing_file`] 로 기존 파일을
     /// 지키고, 같은 디렉터리의 임시 파일을 대상 이름으로 바꿔 교체한다. 중간에 실패하면 원본이 남는다.
     pub(super) fn save_to_path(&self, path: &std::path::Path) -> Result<()> {
+        let _writer = tasty_utils::file_replace::lock(path)?;
+        let mut observed = self
+            .file_observation
+            .as_ref()
+            .map(|o| o.lock())
+            .transpose()
+            .map_err(|_| anyhow::anyhow!("settings observation lock poisoned"))?;
+        let target = tasty_utils::file_replace::resolve_link(path)?;
+        if let Some(previous) = observed.as_ref()
+            && previous.path == path
+            && (previous.target != target
+                || previous.content != tasty_utils::file_replace::Fingerprint::read(path)?)
+        {
+            anyhow::bail!(
+                "settings file changed outside this settings snapshot; reload before saving"
+            );
+        }
         self.protect_existing_file(path)?;
+        // A preserved corrupt original is now a backup. A failed replacement can retry the empty path.
+        if let Some(previous) = observed.as_mut() {
+            previous.content = tasty_utils::file_replace::Fingerprint::read(path)?;
+            previous.target = tasty_utils::file_replace::resolve_link(path)?;
+        }
         let contents = toml::to_string_pretty(self)?;
-        tasty_utils::file_replace::replace(path, contents.as_bytes())?;
+        let before = tasty_utils::file_replace::Fingerprint::read(path)?;
+        let bytes = contents.as_bytes();
+        if let Some(previous) = observed.as_ref()
+            && previous.content != before
+        {
+            anyhow::bail!("settings file changed while preparing its replacement");
+        }
+        tasty_utils::file_replace::replace(path, bytes)?;
+        if let Some(previous) = observed.as_mut() {
+            previous.content = tasty_utils::file_replace::Fingerprint::of_bytes(bytes);
+        }
         tracing::info!("saved settings to {}", path.display());
         Ok(())
+    }
+
+    fn observe_file(
+        &mut self,
+        path: &std::path::Path,
+        content: tasty_utils::file_replace::Fingerprint,
+    ) {
+        self.file_observation = Some(std::sync::Arc::new(std::sync::Mutex::new(
+            FileObservation {
+                path: path.to_path_buf(),
+                target: tasty_utils::file_replace::resolve_link(path)
+                    .unwrap_or_else(|_| path.to_path_buf()),
+                content,
+            },
+        )));
     }
 
     /// 파싱하지 못한 원본이 아직 있으면 백업한 뒤 저장한다. 읽기 실패 상태는 저장 자체를 거절한다.
@@ -188,5 +249,45 @@ impl Settings {
                 path.display()
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn queued_snapshots_share_own_progress_but_reject_an_external_edit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut first = Settings::load_from_path(&path);
+        let mut second = first.clone();
+        first.remote_transfer.max_mb = 111;
+        second.remote_transfer.max_mb = 222;
+        first.save_to_path(&path).unwrap();
+        second.save_to_path(&path).unwrap();
+        assert_eq!(Settings::load_from_path(&path).remote_transfer.max_mb, 222);
+        let external = b"[remote_transfer]\nmax_mb = 333\n";
+        fs::write(&path, external).unwrap();
+        assert!(
+            first
+                .save_to_path(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("changed outside")
+        );
+        assert_eq!(fs::read(&path).unwrap(), external);
+    }
+    #[test]
+    fn independent_loads_cannot_silently_overwrite_each_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        Settings::default().save_to_path(&path).unwrap();
+        let mut first = Settings::load_from_path(&path);
+        let mut second = Settings::load_from_path(&path);
+        first.remote_transfer.max_mb = 111;
+        second.remote_transfer.max_mb = 222;
+        first.save_to_path(&path).unwrap();
+        assert!(second.save_to_path(&path).is_err());
+        assert_eq!(Settings::load_from_path(&path).remote_transfer.max_mb, 111);
     }
 }

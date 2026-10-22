@@ -7,6 +7,8 @@ pub(crate) mod debug_boot_fault;
 #[cfg(feature = "gui")]
 pub(crate) mod event_loop;
 #[cfg(not(feature = "gui"))]
+mod file_drain;
+#[cfg(not(feature = "gui"))]
 pub(crate) mod headless_dispatch;
 #[cfg(not(feature = "gui"))]
 pub(crate) mod headless_plugins;
@@ -934,6 +936,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
         app.services.poll_memory_writer();
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());
+        app.services.poll_file_writer();
+        crate::intent::headless::settle_settings_saves(&mut app.services);
         if !app.journal.pauses_observation() && !app.gate_queue.is_empty() {
             // 게이트 결과를 기다리던 요청을 이어 간다. 정지된 journal은 진입 경로가 거절한다.
             let flow = headless_dispatch::advance_request_gates(&mut app, &mut state, &mut session);
@@ -1100,6 +1104,7 @@ fn finish_headless_shutdown(
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    file_drain::drain(app);
     drain_headless_memory_writer(app);
 }
 
@@ -1107,7 +1112,7 @@ fn finish_headless_shutdown(
 /// 마지막 묶음의 결과를 기다리던 IPC 요청에도 응답한다.
 #[cfg(not(feature = "gui"))]
 fn drain_headless_memory_writer(app: &mut crate::app::App) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + crate::app::writer_drain::WRITER_DRAIN_TIMEOUT;
     while app.services.poll_memory_writer_shutdown() != 0 {
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());

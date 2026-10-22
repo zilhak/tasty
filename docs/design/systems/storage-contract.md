@@ -34,7 +34,8 @@
 | 구조 journal | 전용 worker 채널에 넣는다. surface capture의 terminal `restore.command`는 비워 두고 worker가 memory writer 순서로 읽어 채운다(읽지 못하면 주기 capture는 실패해 앞 capture를 유지하고, 닫기 capture는 그 값 없이 진행한다). engine을 열 때 새 surface ID가 남은 metadata scope와 겹치지 않도록 worker가 memory writer 읽기로 surface scope의 가장 큰 ID를 확인한 뒤 연다. 읽지 못하면 그 engine만 기록 없이 거절되고(창 생성·부팅 실패로 보고) journal은 다른 engine을 위해 계속 동작한다 | worker가 commit한다 | commit된 batch만 CoreState에 적용한다([이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md)) | 대상 엔진 공개와 ACK 뒤에 응답·checkpoint를 진행한다 |
 | 최근 파일(state.db) | 별도 접수 없음 | 호출 스레드에서 끝난다 | 공유 캐시를 DB 쓰기 전에 같은 잠금 안에서 바꾼다. 저장이 실패해도 캐시는 바뀐 채 남는다 | 해당 없음 |
 | 튜토리얼 진행(state.db) | 전용 worker에 넣고 receipt를 받는다 | worker가 요청마다 transaction으로 commit한다 | receipt 결과로 반영한다 | 해당 없음 |
-| 설정·프리셋·공용 목록 등 파일 | 별도 접수 없음 | 호출 스레드에서 끝난다 | 호출자가 메모리 값을 먼저 갖고 있다 | 해당 없음 |
+| `config.toml` 실행 중 저장 | file writer 큐에 불변 설정 snapshot을 넣고 바로 진행한다 | writer가 같은 대상의 묶음에서 마지막 snapshot을 파일로 교체한다 | 메모리 설정은 접수 전에 적용한다. 표시 revision과 저장 완료 revision을 따로 유지한다 | receipt 완료 뒤 원 요청에 한 번 응답한다. 저장 실패·접수 거절은 `applied:true, saved:false`다 |
+| 프리셋·공용 목록 등 다른 파일 | 별도 접수 없음 | 호출 스레드에서 끝난다 | 호출자가 메모리 값을 먼저 갖고 있다 | 해당 없음 |
 
 ## memory.db 소비자와 계약
 
@@ -156,7 +157,17 @@ GUI 부팅(`init_boot_db_and_theme`)이 state.db를 실행당 한 번 열고, �
 - 예산 크기: 최근 목록은 종류 이름과 경로 길이에 항목마다 8바이트를, 튜토리얼 요청은 주제·단계 이름 길이에 고정 크기를 더한다. 읽기 결과는 행 수와 재개 단계 길이로 센다.
 - 종료: GUI 종료가 시작되면 튜토리얼 입구가 새 튜토리얼 요청만 거절한다. 최근 목록 접수는 writer의 종료가 시작될 때까지 받는다. `StoppingPlugins`에서 writer가 접수를 막고 마지막 flush 뒤 join한다. join이 끝나면 남은 결과를 거두고, 화면에 보였지만 확정하지 못한 종류가 있으면 종류별로 경고한다.
 
-### 소비자 분류
+#### 파일 실행기
+
+`AppServices`는 설정 snapshot을 `file-writer`에 제출한다. 실제 backend인 `SettingsStorage::save`는 파일 교체가 끝나야 성공하며, 메인 루프는 receipt를 기다리지 않고 매 회차 결과를 거둔다. 같은 묶음의 config snapshot은 마지막 요청으로 대체되고 앞 요청도 그 저장 결과를 받는다. 이는 메모리 적용 전 category reset이 더 새 요청에 밀린 경우와 다르다.
+
+메모리에 적용된 visible revision과 실제 교체한 committed revision을 구분한다. 오래된 완료는 더 새 dirty를 지우지 않는다. 큐가 가득 차거나 닫혀도 메모리 적용은 유지하고 저장 실패를 원 요청에 보낸다. 종료 전에 미확정 최신 snapshot이 실행 중이지 않으면 한 번 더 제출하되 앞서 실패한 원 요청에 다시 응답하지 않는다. 독립 파일 작업의 성공/실패/불명은 요청별 결과로 끝나며 앞 성공을 묶음째 재실행하지 않는다.
+
+config snapshot은 같은 load에서 나온 원본 관측값을 공유한다. Tasty의 저장이 성공하면 이 관측값을 함께 전진시키고, 외부 편집이나 별도로 읽은 사본이 그 뒤 파일을 바꾸면 덮어쓰지 않고 저장 실패로 보고한다. 저장 잠금은 읽기·원본 보존·교체 전체를 감싼다. 참여하지 않는 편집기의 마지막 확인과 rename 사이 경합은 막지 못한다. 손상 원본의 저장 직전 백업과 읽기 실패 원본의 쓰기 금지는 유지한다.
+
+셸 설정 확인과 승인한 Lua 해시도 같은 큐에 넣는다. Lua는 이미 읽어 승인한 source를 보관했다가 저장 시도가 끝난 뒤 실행하며, 저장 실패가 실행을 막지 않는 기존 계약을 유지한다. 부팅 정규화·테마 초기 적용은 새 설정을 다음 부팅 단계에 넘기기 전에 끝내는 저빈도 동기 경계로 남는다. 다른 파일 소비자의 저장은 아래 명부의 현재 스레드를 따른다.
+
+## 소비자 분류
 
 | 분류 | 소비자 | 스레드 | 요청 하나 안에서 하는 일 |
 |---|---|---|---|
@@ -237,7 +248,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 
 | 파일 | 쓰는 함수 | 스레드 | 원자 교체 | 다른 writer |
 |---|---|---|---|---|
-| `config.toml` | `Settings::save` | 메인 루프 | 예(공용 교체 함수, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 없음 |
+| `config.toml` | `SettingsStorage::save` → `Settings::save` | 실행 중 file writer, 초기 정규화·테마 적용은 부팅 경계 | 예(공용 교체, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 같은 대상 잠금과 원본 변경 관측 |
 | `presets/**.toml` | `PresetStore`의 `atomic_write` | 메인 루프 | 예(fsync 없음) | 없음 |
 | `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 목록 잠금 안에서 저장 | 호출 스레드 | 아니요 | 없음 |
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
@@ -254,16 +265,16 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 
 ### port를 우회하는 직접 호출
 
-- `SettingsStorage`는 `AppServices`에 주입되지만 읽는 곳이 없다. 설정 저장은 모두 `Settings::save` 직접 호출이다. `AppServices`를 가진 `intent/headless.rs`의 설정 적용과 `dispatch_domain.rs`의 구조 후 설정 적용도 port를 거치지 않는다.
-- `PresetStorage`(`AppServices.presets`)도 읽는 곳이 없다. 저장·삭제·이름 변경은 구체 `PresetStore` 핸들로 한다.
+- 실행 중 설정 저장은 `AppServices`의 file writer가 주입된 `SettingsStorage`를 호출한다. 부팅 정규화와 테마 초기 적용은 `Settings::save`를 직접 호출하는 동기 예외다.
+- 사용되지 않던 `PresetStorage`의 호스트 주입은 없다. 프리셋 저장·삭제·이름 변경은 아직 구체 `PresetStore` 핸들로 동기 실행한다.
 - 테마 초기화는 `ThemeStorage` port 대신 `tasty_themes`의 자유 함수를 직접 부른다.
 - memory.db의 부팅 정비는 port로 감싸기 전 구체 `MemoryStore`를 쓴다.
 - state.db에는 port가 없다. 최근 파일과 튜토리얼은 state writer의 요청 타입을 직접 쓴다.
 
 ### 종료 순서
 
-GUI는 종료 상태기계가 layout 저장(S1) → 부팅 worker 회수(S2) → surface 닫기와 observer sink join(S3) → 플러그인·보조 worker 정리, 그 뒤 memory writer와 state.db writer의 drain·join(S4) 순으로 진행한 뒤 이벤트 루프를 끝낸다. 그다음 instance 파일을 지우고 App을 drop한다. App의 첫 필드인 journal worker가 먼저 join되고, `services`(memory·state writer)와 IPC 서버(포트 파일 삭제)는 그 뒤에 drop된다.
+GUI는 종료 상태기계가 layout 저장(S1) → 부팅 worker 회수(S2) → surface 닫기와 observer sink join(S3) → 플러그인·보조 worker 정리, 그 뒤 memory writer·state.db writer·file writer의 drain·join(S4) 순으로 진행한 뒤 이벤트 루프를 끝낸다. 그다음 instance 파일을 지우고 App을 drop한다. App의 첫 필드인 journal worker가 먼저 join되고, `services`(memory·state·file writer)와 IPC 서버(포트 파일 삭제)는 그 뒤에 drop된다.
 
-headless는 publication을 비운 뒤 journal worker를 stop하고(join은 App drop 때), runner·보조 worker를 회수한 뒤 memory writer를 drain·join한다. layout 저장·observer 일괄 join·state.db writer 단계는 없다.
+headless는 publication을 비운 뒤 journal worker를 stop하고(join은 App drop 때), runner·보조 worker를 회수한 뒤 file writer, memory writer를 차례로 drain·join한다. layout 저장·observer 일괄 join·state.db writer 단계는 없다.
 
 memory.db 쓰기는 모두 memory writer를 지난다. writer는 종료 때 접수를 막고 마지막 flush cut까지 실행한 뒤 join하며, 소유한 저장소를 그때 닫는다. 종료 요청보다 늦게 도착한 요청 게이트 대기 요청은 `-32000`으로 거절한다([요청 게이트](#요청-게이트)).

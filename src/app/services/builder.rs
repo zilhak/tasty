@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 #[cfg(test)]
 use tasty_memory::MemoryStorage;
-use tasty_presets::{PresetStorage, PresetStore};
+use tasty_presets::PresetStore;
 use tasty_settings::SettingsStorage;
 use tasty_themes::ThemeStorage;
 
@@ -14,7 +14,7 @@ use crate::ports::clock::Clock;
 use crate::ports::home::HomeDirectory;
 use crate::ports::notification_sound::NotificationSoundPlayer;
 
-/// 필수 port가 모두 있어야 build가 성공한다. presets와 preset_store는 같은 Arc를 공유한다.
+/// 필수 port가 모두 있어야 build가 성공한다.
 pub(crate) struct AppServicesBuilder {
     clock: Option<Arc<dyn Clock>>,
     clipboard: Option<Arc<dyn ClipboardSystem>>,
@@ -30,6 +30,7 @@ pub(crate) struct AppServicesBuilder {
     memory_pragmas: Option<tasty_memory::pragma::AppliedPragmas>,
     memory_init_fallback: Option<tasty_memory::InitFallback>,
     memory_writer: Option<super::MemoryWriterParts>,
+    file_writer: Option<crate::app::file_writer::FileWriterParts>,
 }
 
 impl AppServicesBuilder {
@@ -48,6 +49,7 @@ impl AppServicesBuilder {
             memory_pragmas: None,
             memory_init_fallback: None,
             memory_writer: None,
+            file_writer: None,
         }
     }
 
@@ -120,6 +122,15 @@ impl AppServicesBuilder {
         });
         self
     }
+    /// 사용자 설정 파일 전담 writer. 생략하면 설정 저장을 호출 스레드에서 바로 하는 구성이다.
+    /// writer는 `with_settings_storage`와 같은 저장소로 만들어야 한다.
+    pub(crate) fn with_file_writer(
+        mut self,
+        writer: crate::app::file_writer::FileWriterParts,
+    ) -> Self {
+        self.file_writer = Some(writer);
+        self
+    }
     pub(crate) fn with_settings_storage(mut self, settings: Arc<dyn SettingsStorage>) -> Self {
         self.settings_storage = Some(settings);
         self
@@ -129,7 +140,6 @@ impl AppServicesBuilder {
         let preset_store = self
             .preset_store
             .ok_or_else(|| anyhow::anyhow!("PresetStore missing"))?;
-        let presets: Arc<Mutex<dyn PresetStorage>> = preset_store.clone();
         // 제품 구성은 writer만 준다. 시험 구성은 writer 대신, 또는 writer와 같은 저장소를 직접 확인하려고
         // 공유 잠금을 준다.
         #[cfg(test)]
@@ -161,6 +171,9 @@ impl AppServicesBuilder {
                 .as_ref()
                 .map(|f| f.cause.to_string()),
         );
+        let settings_storage = self
+            .settings_storage
+            .ok_or_else(|| anyhow::anyhow!("SettingsStorage missing"))?;
         let home = self
             .home
             .ok_or_else(|| anyhow::anyhow!("HomeDirectory missing"))?;
@@ -194,10 +207,12 @@ impl AppServicesBuilder {
             themes: self
                 .themes
                 .ok_or_else(|| anyhow::anyhow!("ThemeStorage missing"))?,
-            presets,
-            settings_storage: self
-                .settings_storage
-                .ok_or_else(|| anyhow::anyhow!("SettingsStorage missing"))?,
+            settings_saves: crate::app::file_writer::SettingsSaves::new(
+                self.file_writer.as_ref().map(|w| w.writer.handle()),
+                settings_storage.clone(),
+            ),
+            file_writer: self.file_writer,
+            file_drain_reported: false,
             preset_store,
             host_ipc_injector,
             ports: Default::default(),

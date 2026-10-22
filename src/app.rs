@@ -36,6 +36,7 @@ pub(crate) mod event;
 pub(crate) mod event_handler;
 #[cfg(feature = "gui")]
 mod file_dispatch;
+pub(crate) mod file_writer;
 #[cfg(feature = "gui")]
 pub(crate) mod global_hooks;
 #[cfg(feature = "gui")]
@@ -95,7 +96,6 @@ pub(crate) mod webview_keys;
 pub(crate) mod window_access;
 #[cfg(feature = "gui")]
 pub(crate) mod window_lifecycle;
-#[cfg(feature = "gui")]
 pub(crate) mod writer_drain;
 
 #[cfg(feature = "gui")]
@@ -218,6 +218,13 @@ pub(crate) struct App {
     pub(crate) lua_autofire: crate::hooks::autofire::AutofireGuard,
     /// 결과를 기다리는 Lua 실행의 시작 경로. 단축키 결과는 원 창 토스트, 자동실행 결과는 알림으로 보낸다.
     pub(crate) lua_runs: crate::hooks::lua_runs::LuaRuns,
+    #[cfg(feature = "gui")]
+    pub(crate) scripts_after_save: Vec<(
+        winit::window::WindowId,
+        crate::app::settings_change::SettingsWait,
+        String,
+        String,
+    )>,
     /// GUI와 헤드리스의 주기 작업을 예약한다. docs/dev-guide/timer-hub.md 참조.
     pub(crate) timers: tasty_timer::TimerHub<timers::Tick>,
     /// 창이 없거나 최소화되어도 send_event로 타이머 처리를 깨운다.
@@ -382,6 +389,8 @@ impl App {
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             lua_runs: crate::hooks::lua_runs::LuaRuns::default(),
+            #[cfg(feature = "gui")]
+            scripts_after_save: Vec::new(),
             timers,
             timer_waker,
             ipc_pacer: crate::app::ipc::IpcPacer::new({
@@ -441,6 +450,8 @@ impl App {
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             lua_runs: crate::hooks::lua_runs::LuaRuns::default(),
+            #[cfg(feature = "gui")]
+            scripts_after_save: Vec::new(),
             timers,
         })
     }

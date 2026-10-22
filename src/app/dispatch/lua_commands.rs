@@ -39,6 +39,14 @@ impl App {
     /// 스크립트 변경을 승인하면 해시 저장을 시도하고 이미 읽은 소스를 실행한다.
     /// 저장 실패는 경고만 남기며 실행을 막지 않는다.
     pub(crate) fn dispatch_pending_script_confirm(&mut self) {
+        for (window, mut wait, source, name) in std::mem::take(&mut self.scripts_after_save) {
+            match wait.poll() {
+                crate::app::settings_change::SettingsPoll::Pending => {
+                    self.scripts_after_save.push((window, wait, source, name));
+                }
+                _ => self.submit_shortcut_script(window, &source, name),
+            }
+        }
         let ids: Vec<WindowId> = self
             .view
             .views
@@ -73,15 +81,27 @@ impl App {
                     others.push(&mut session.runtime.settings);
                 }
             }
-            if let Err(e) = record_script_hash(mine, others, &pending.script_id, &pending.new_hash)
-            {
-                tracing::warn!(target: "tasty_lua", "script hash persist failed: {e}");
+            let snapshot = record_script_hash(mine, others, &pending.script_id, &pending.new_hash);
+            let (done, wait) = crate::app::settings_change::pair(self.services.reply_wake());
+            if let Some(snapshot) = snapshot {
+                self.services.submit_settings_save(
+                    snapshot,
+                    Some(crate::intent::IntentOrigin::System),
+                    Some(done),
+                );
+                self.scripts_after_save.push((
+                    id,
+                    wait,
+                    pending.source.clone(),
+                    pending.name.clone(),
+                ));
+            } else {
+                self.submit_shortcut_script(id, &pending.source, pending.name.clone());
             }
             if let Some((main, _)) = engines_mut!(self).window_pair(id) {
                 main.mark_dirty();
             }
-            // 승인한 내용과 실행할 내용이 달라지지 않도록 파일을 다시 읽지 않는다.
-            self.submit_shortcut_script(id, &pending.source, pending.name);
+            // Keep the approved source in the continuation; never re-read it after saving.
         }
     }
 
@@ -159,16 +179,18 @@ fn record_script_hash<'a>(
     others: impl IntoIterator<Item = &'a mut crate::settings::Settings>,
     script_id: &str,
     hash: &str,
-) -> anyhow::Result<()> {
+) -> Option<crate::settings::Settings> {
+    let observation = approver.as_ref().and_then(|s| s.file_observation.clone());
     for settings in others {
         settings.scripts.update_hash(script_id, hash.to_string());
+        settings.file_observation = observation.clone();
     }
     match approver {
         Some(settings) => {
             settings.scripts.update_hash(script_id, hash.to_string());
-            settings.save()
+            Some(settings.clone())
         }
-        None => Ok(()),
+        None => None,
     }
 }
 
@@ -193,8 +215,14 @@ mod tests {
         let _home = crate::test_support::IsolatedHome::new();
         let (mut first, [one, two]) = with_scripts();
         let (mut second, _) = with_scripts();
-        super::record_script_hash(Some(&mut first), [&mut second], &one, "hash-one").expect("save");
-        super::record_script_hash(Some(&mut second), [&mut first], &two, "hash-two").expect("save");
+        super::record_script_hash(Some(&mut first), [&mut second], &one, "hash-one")
+            .expect("snapshot")
+            .save()
+            .expect("save");
+        super::record_script_hash(Some(&mut second), [&mut first], &two, "hash-two")
+            .expect("snapshot")
+            .save()
+            .expect("save");
 
         let restarted = Settings::load();
         let hash = |id: &str| restarted.scripts.get(id).map(|entry| entry.sha256.clone());
@@ -216,6 +244,8 @@ mod tests {
             .scripts
             .add("three".into(), "/three.lua".into(), String::new());
         super::record_script_hash(Some(&mut approver), [&mut other], &one, "hash-one")
+            .expect("snapshot")
+            .save()
             .expect("save");
         let restarted = Settings::load();
         assert!(restarted.scripts.get(&only_here).is_some());

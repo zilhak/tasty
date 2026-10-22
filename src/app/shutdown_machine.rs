@@ -59,9 +59,10 @@ pub(crate) struct ShutdownState {
     screenshot_deadline: Option<Instant>,
     explorer_files_deadline: Option<Instant>,
     runner_stop_deadline: Instant,
-    /// memory·state writer drain의 기한. 각각 첫 대기에서 정하고 넘기면 미회수로 두고 진행한다.
+    /// memory·state·file writer drain의 기한. 각각 첫 대기에서 정하고 넘기면 미회수로 두고 진행한다.
     memory_drain: crate::app::writer_drain::WriterDrain,
     state_drain: crate::app::writer_drain::WriterDrain,
+    file_drain: crate::app::writer_drain::WriterDrain,
     /// One deadline for every journal wait of SavingLayout (publication, final View write, slot
     /// retirements). Fixed at the first of them; later polls never reset it.
     journal_deadline: Option<Instant>,
@@ -101,6 +102,7 @@ impl App {
             runner_stop_deadline: Instant::now() + Duration::from_secs(5),
             memory_drain: Default::default(),
             state_drain: Default::default(),
+            file_drain: Default::default(),
             journal_deadline: None,
         });
 
@@ -529,10 +531,11 @@ impl App {
         if !done {
             return StepOutcome::Waiting;
         }
-        // 한 writer의 대기가 다른 writer의 종료 시작을 미루지 않도록 둘 다 진행한다.
+        // 한 writer의 대기가 다른 writer의 종료 시작을 미루지 않도록 세 writer를 함께 진행한다.
         let memory_waiting = self.wait_for_memory_writer_shutdown();
         let state_waiting = self.wait_for_state_writer_shutdown();
-        if memory_waiting || state_waiting {
+        let file_waiting = self.wait_for_file_writer_shutdown();
+        if memory_waiting || state_waiting || file_waiting {
             return StepOutcome::Waiting;
         }
         self.set_shutdown_phase(ShutdownPhase::Done);
@@ -567,6 +570,24 @@ impl App {
             remaining,
             Instant::now(),
             "state writer shutdown timed out; requests it has not committed may be lost",
+        )
+    }
+
+    /// 설정 저장 producer(설정 intent·plugin 정리)가 멈춘 뒤 확정하지 못한 최신 설정을 한 번 더 넣고
+    /// file writer의 접수를 막고 마지막 flush와 join을 같은 기한으로 기다린다. 저장 결과를 기다리던
+    /// 요청에도 돌려준다.
+    fn wait_for_file_writer_shutdown(&mut self) -> bool {
+        let remaining = self.services.poll_file_writer_shutdown();
+        self.settle_settings_saves();
+        self.services
+            .poll_memory_replies(self.plugin_manager.as_mut());
+        let Some(state) = self.state.shutdown.as_mut() else {
+            return false;
+        };
+        state.file_drain.keep_waiting(
+            remaining,
+            Instant::now(),
+            "file writer shutdown timed out; settings it has not saved may be lost",
         )
     }
 
