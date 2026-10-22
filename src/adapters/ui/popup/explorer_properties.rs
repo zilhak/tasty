@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Spinner,
 };
@@ -581,11 +582,11 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field, perm: Option<&mut PermEdi
                     let edit_label = t("explorer.props.perm.edit");
                     let show_edit = f.perm == PermAccess::Editable && !perm_open;
                     let copy_w = if f.copy {
-                        ControlSize::Sm.height(th) + th.spacing_xs.value()
+                        LogicalPx(ControlSize::Sm.height(th)) + th.spacing_xs
                     } else if show_edit {
-                        sm_button_width(ui, th, edit_label) + th.spacing_xs.value()
+                        sm_button_width(ui, th, edit_label) + th.spacing_xs
                     } else {
-                        0.0
+                        LogicalPx(0.0)
                     };
                     let font = if f.mono {
                         egui::FontId::monospace(th.font_size_caption.value())
@@ -593,7 +594,7 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field, perm: Option<&mut PermEdi
                         egui::FontId::proportional(th.font_size_body.value())
                     };
                     let color = th.explorer_props_value_fg().to_egui();
-                    let text_w = (ui.available_width() - copy_w).max(0.0);
+                    let text_w = (ui.available_width() - copy_w.value()).max(0.0);
                     let mut job = egui::text::LayoutJob::simple(
                         nfc(&f.value).into_owned(),
                         font,
@@ -671,14 +672,14 @@ fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field, perm: Option<&mut PermEdi
 }
 
 /// sm 버튼 하나의 폭. 값 글자가 버튼 자리를 침범하지 않도록 먼저 잰다.
-fn sm_button_width(ui: &egui::Ui, th: &Theme, label: &str) -> f32 {
+fn sm_button_width(ui: &egui::Ui, th: &Theme, label: &str) -> LogicalPx {
     let size = ControlSize::Sm;
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::FontId::proportional(size.font_size(th)),
         egui::Color32::PLACEHOLDER,
     );
-    galley.rect.width() + 2.0 * size.pad_x(th)
+    LogicalPx(galley.rect.width()) + LogicalPx(size.pad_x(th)) * 2.0
 }
 
 /// (글리프, 제목, 필드, 안내 문구).
