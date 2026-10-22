@@ -155,30 +155,29 @@ impl<'a> Button<'a> {
     }
 
     /// block 이 아닐 때 차지할 폭. 버튼을 줄바꿈할지 정하려고 그리기 전에 잰다.
-    pub fn desired_width(&self, ui: &egui::Ui, theme: &Theme) -> f32 {
+    pub fn desired_width(&self, ui: &egui::Ui, theme: &Theme) -> LogicalPx {
         let font_id = egui::FontId::proportional(self.size.font_size(theme));
         let galley =
             ui.painter()
                 .layout_no_wrap(self.label.to_owned(), font_id, egui::Color32::PLACEHOLDER);
-        self.content_width(theme, galley.rect.size().x)
+        self.content_width(theme, LogicalPx(galley.rect.size().x))
     }
 
-    fn content_width(&self, theme: &Theme, label_w: f32) -> f32 {
-        let icon_glyph = theme.icon_glyph_size_md.value();
-        let leading_glyph = self
-            .leading_icon_size
-            .map_or(icon_glyph, |size| size.value());
-        let gap = theme.button_gap().value();
+    fn content_width(&self, theme: &Theme, label_w: LogicalPx) -> LogicalPx {
+        let icon_glyph = theme.icon_glyph_size_md;
+        let leading_glyph = self.leading_icon_size.unwrap_or(icon_glyph);
+        let gap = theme.button_gap();
+        let none = LogicalPx(0.0);
         let icons_w = (if self.leading_icon.is_some() {
             leading_glyph + gap
         } else {
-            0.0
+            none
         }) + (if self.trailing_icon.is_some() {
             icon_glyph + gap
         } else {
-            0.0
+            none
         });
-        label_w + icons_w + 2.0 * self.size.pad_x(theme)
+        label_w + icons_w + LogicalPx(self.size.pad_x(theme)) * 2.0
     }
 
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
@@ -199,7 +198,9 @@ impl<'a> Button<'a> {
             ui.painter()
                 .layout_no_wrap(self.label.to_owned(), font_id, egui::Color32::PLACEHOLDER);
 
-        let content_w = self.content_width(theme, galley.rect.size().x);
+        let content_w = self
+            .content_width(theme, LogicalPx(galley.rect.size().x))
+            .value();
         let desired_w = if self.block {
             ui.available_width().max(content_w)
         } else {

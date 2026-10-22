@@ -7,6 +7,7 @@
 //! 문구는 호출자가 번역해 넘기고, 상태(적용 중·실패)와 값의 소유도 호출자에게 있다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
@@ -68,10 +69,10 @@ pub enum PermLayout {
 
 /// 상자 폭 `box_width` 에 맞는 배치. 경계는 `explorer-props-perm-grid-min-width`·`-stack-min-width` 다.
 /// 칸(explorer surface) 폭이 아니라 상자 폭과 비교한다.
-pub fn perm_layout(theme: &Theme, box_width: f32) -> PermLayout {
-    if box_width >= theme.explorer_props_perm_grid_min_width().value() {
+pub fn perm_layout(theme: &Theme, box_width: LogicalPx) -> PermLayout {
+    if box_width >= theme.explorer_props_perm_grid_min_width() {
         PermLayout::Grid
-    } else if box_width >= theme.explorer_props_perm_stack_min_width().value() {
+    } else if box_width >= theme.explorer_props_perm_stack_min_width() {
         PermLayout::Stack
     } else {
         PermLayout::List
@@ -114,7 +115,7 @@ pub fn perm_box(ui: &mut egui::Ui, theme: &Theme, props: PermBoxProps<'_>) -> Pe
     let gap = theme.spacing_sm.value();
     let mut click = PermBoxClick::None;
     // Frame 크기는 테두리를 포함하므로 지금 남은 폭이 상자의 바깥 폭이다.
-    let layout = perm_layout(theme, ui.available_width());
+    let layout = perm_layout(theme, LogicalPx(ui.available_width()));
     // 배치가 바뀌어도 체크박스 id 가 같아야 포커스가 남는다. 상자 안의 중첩과 무관한 기준 id 를 쓴다.
     // 부모의 다음 자동 id 는 상자마다 다르고, 상자 앞의 위젯이 같으면 프레임이 바뀌어도 같다.
     let ids = perm_box_id(ui);
@@ -174,14 +175,14 @@ fn cell_text(
     theme: &Theme,
     text: &str,
     color: egui::Color32,
-    width: f32,
+    width: LogicalPx,
     align: egui::Align,
 ) -> std::sync::Arc<egui::Galley> {
     let mut job = egui::text::LayoutJob::simple(
         text.to_owned(),
         egui::FontId::proportional(theme.font_size_caption.value()),
         color,
-        width,
+        width.value(),
     );
     job.halign = align;
     ui.fonts(|f| f.layout_job(job))
@@ -199,23 +200,25 @@ impl Cells<'_> {
     /// 역할 열 + 읽기·쓰기·실행 열. 칸은 왼쪽부터 붙여 놓는다.
     fn grid(&self, ui: &mut egui::Ui, bits: &mut u32) {
         let theme = self.theme;
-        let cell = theme.explorer_props_perm_cell_width().value();
-        let row_min = theme.explorer_props_row_min_height().value();
+        let cell = theme.explorer_props_perm_cell_width();
+        let row_min = theme.explorer_props_row_min_height();
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, theme.spacing_xs.value());
             self.heads(ui, cell);
             for (r, (role, shift)) in self.text.roles.iter().zip([6u32, 3, 0]).enumerate() {
                 let name = self.role_name(ui, role, cell);
-                let h = name.size().y.max(row_min);
-                let (row, _) =
-                    ui.allocate_exact_size(egui::vec2(cell * 4.0, h), egui::Sense::hover());
+                let h = LogicalPx(name.size().y).max(row_min);
+                let (row, _) = ui.allocate_exact_size(
+                    egui::vec2((cell * 4.0).value(), h.value()),
+                    egui::Sense::hover(),
+                );
                 let name_y = row.center().y - name.size().y / 2.0;
                 ui.painter().galley(
                     egui::pos2(row.left(), name_y),
                     name,
                     egui::Color32::PLACEHOLDER,
                 );
-                self.cell_row(ui, row, row.left() + cell, r, shift, bits);
+                self.cell_row(ui, row, LogicalPx(row.left()) + cell, r, shift, bits);
             }
         });
     }
@@ -223,18 +226,20 @@ impl Cells<'_> {
     /// 역할 열 없이 열 머리 아래 칸 3개. 역할명은 상자 폭에서 줄바꿈해 칸 줄 위에 둔다.
     fn stack(&self, ui: &mut egui::Ui, bits: &mut u32) {
         let theme = self.theme;
-        let cell = theme.explorer_props_perm_cell_width().value();
-        let row_min = theme.explorer_props_row_min_height().value();
+        let cell = theme.explorer_props_perm_cell_width();
+        let row_min = theme.explorer_props_row_min_height();
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, theme.spacing_xs.value());
-            self.heads(ui, 0.0);
+            self.heads(ui, LogicalPx(0.0));
             for (r, (role, shift)) in self.text.roles.iter().zip([6u32, 3, 0]).enumerate() {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = theme.explorer_props_perm_role_gap().value();
                     self.role_line(ui, role);
-                    let (row, _) = ui
-                        .allocate_exact_size(egui::vec2(cell * 3.0, row_min), egui::Sense::hover());
-                    self.cell_row(ui, row, row.left(), r, shift, bits);
+                    let (row, _) = ui.allocate_exact_size(
+                        egui::vec2((cell * 3.0).value(), row_min.value()),
+                        egui::Sense::hover(),
+                    );
+                    self.cell_row(ui, row, LogicalPx(row.left()), r, shift, bits);
                 });
             }
         });
@@ -243,7 +248,7 @@ impl Cells<'_> {
     /// 열 머리 없이 역할명 다음에 라벨 붙은 체크박스를 한 줄씩. 글자는 어디서나 줄바꿈한다.
     fn list(&self, ui: &mut egui::Ui, bits: &mut u32) {
         let theme = self.theme;
-        let row_min = theme.explorer_props_row_min_height().value();
+        let row_min = theme.explorer_props_row_min_height();
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             for (r, (role, shift)) in self.text.roles.iter().zip([6u32, 3, 0]).enumerate() {
@@ -252,7 +257,7 @@ impl Cells<'_> {
                     self.role_line(ui, role);
                     for (c, bit) in [4u32, 2, 1].into_iter().enumerate() {
                         ui.allocate_ui_with_layout(
-                            egui::vec2(ui.available_width(), row_min),
+                            egui::vec2(ui.available_width(), row_min.value()),
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui| self.bit(ui, r, c, bit << shift, self.text.heads[c], bits),
                         );
@@ -264,9 +269,9 @@ impl Cells<'_> {
 
     /// 읽기 · 쓰기 · 실행 열 머리. `left` 는 첫 칸 앞에 비울 폭(격자의 역할 열)이다.
     /// 가운데 정렬하고, 줄바꿈한 머리는 위로 자라도록 아래를 맞춘다.
-    fn heads(&self, ui: &mut egui::Ui, left: f32) {
+    fn heads(&self, ui: &mut egui::Ui, left: LogicalPx) {
         let theme = self.theme;
-        let cell = theme.explorer_props_perm_cell_width().value();
+        let cell = theme.explorer_props_perm_cell_width();
         let heads = self.text.heads.map(|h| {
             cell_text(
                 ui,
@@ -278,18 +283,25 @@ impl Cells<'_> {
             )
         });
         let head_h = heads.iter().map(|g| g.size().y).fold(0.0, f32::max);
-        let (row, _) =
-            ui.allocate_exact_size(egui::vec2(left + cell * 3.0, head_h), egui::Sense::hover());
+        let (row, _) = ui.allocate_exact_size(
+            egui::vec2((left + cell * 3.0).value(), head_h),
+            egui::Sense::hover(),
+        );
         for (i, galley) in heads.into_iter().enumerate() {
-            let x = row.left() + left + cell * i as f32;
             // 가운데 정렬 galley 는 원점이 칸 가운데다.
-            let origin = egui::pos2(x + cell / 2.0, row.bottom() - galley.size().y);
+            let x = LogicalPx(row.left()) + left + cell * (i as f32 + 0.5);
+            let origin = egui::pos2(x.value(), row.bottom() - galley.size().y);
             ui.painter()
                 .galley(origin, galley, egui::Color32::PLACEHOLDER);
         }
     }
 
-    fn role_name(&self, ui: &egui::Ui, role: &str, width: f32) -> std::sync::Arc<egui::Galley> {
+    fn role_name(
+        &self,
+        ui: &egui::Ui,
+        role: &str,
+        width: LogicalPx,
+    ) -> std::sync::Arc<egui::Galley> {
         cell_text(
             ui,
             self.theme,
@@ -302,7 +314,7 @@ impl Cells<'_> {
 
     /// 상자 폭에서 어디서나 줄바꿈한 역할명 한 줄.
     fn role_line(&self, ui: &mut egui::Ui, role: &str) {
-        let galley = self.role_name(ui, role, ui.available_width());
+        let galley = self.role_name(ui, role, LogicalPx(ui.available_width()));
         let (rect, _) = ui.allocate_exact_size(galley.size(), egui::Sense::hover());
         ui.painter()
             .galley(rect.min, galley, egui::Color32::PLACEHOLDER);
@@ -313,15 +325,16 @@ impl Cells<'_> {
         &self,
         ui: &mut egui::Ui,
         row: egui::Rect,
-        first: f32,
+        first: LogicalPx,
         r: usize,
         shift: u32,
         bits: &mut u32,
     ) {
-        let cell = self.theme.explorer_props_perm_cell_width().value();
+        let cell = self.theme.explorer_props_perm_cell_width();
         let check = self.theme.checkbox_size().value();
         for (c, bit) in [4u32, 2, 1].into_iter().enumerate() {
-            let center = egui::pos2(first + cell * (c as f32 + 0.5), row.center().y);
+            let x = first + cell * (c as f32 + 0.5);
+            let center = egui::pos2(x.value(), row.center().y);
             let rect = egui::Rect::from_center_size(center, egui::vec2(check, check));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
             self.bit(&mut child, r, c, bit << shift, "", bits);
@@ -418,7 +431,7 @@ fn buttons(
     changed: bool,
 ) -> PermBoxClick {
     let mut click = PermBoxClick::None;
-    let gap = theme.spacing_sm.value();
+    let gap = theme.spacing_sm;
     let spinner_size = theme.icon_glyph_size_sm;
     let spinner = |ui: &mut egui::Ui, rect: egui::Rect, _: egui::Color32| {
         Spinner::new()
@@ -441,13 +454,13 @@ fn buttons(
         cancel.desired_width(ui, theme),
         apply.desired_width(ui, theme),
     ];
-    let avail = ui.available_width();
+    let avail = LogicalPx(ui.available_width());
     // 남은 높이를 차지하지 않도록 버튼 한 줄 높이로 묶는다. 차지하면 팝업 높이 측정이 계속 커진다.
-    let size = egui::vec2(avail, ControlSize::Sm.height(theme));
+    let size = egui::vec2(avail.value(), ControlSize::Sm.height(theme));
     let layout = egui::Layout::left_to_right(egui::Align::Center);
-    let start = |ui: &mut egui::Ui, used: f32| {
-        ui.spacing_mut().item_spacing.x = gap;
-        ui.add_space((avail - used).max(0.0));
+    let start = |ui: &mut egui::Ui, used: LogicalPx| {
+        ui.spacing_mut().item_spacing.x = gap.value();
+        ui.add_space((avail - used).max(LogicalPx(0.0)).value());
     };
     if widths[0] + gap + widths[1] <= avail {
         ui.allocate_ui_with_layout(size, layout, |ui| {
@@ -597,14 +610,15 @@ mod tests {
     #[test]
     fn the_layout_follows_the_box_width_bounds() {
         let theme = theme();
-        let grid = theme.explorer_props_perm_grid_min_width().value();
-        let stack = theme.explorer_props_perm_stack_min_width().value();
-        assert_eq!(perm_layout(&theme, 330.0), PermLayout::Grid);
+        let grid = theme.explorer_props_perm_grid_min_width();
+        let stack = theme.explorer_props_perm_stack_min_width();
+        let half = LogicalPx(0.5);
+        assert_eq!(perm_layout(&theme, LogicalPx(330.0)), PermLayout::Grid);
         assert_eq!(perm_layout(&theme, grid), PermLayout::Grid);
-        assert_eq!(perm_layout(&theme, grid - 0.5), PermLayout::Stack);
+        assert_eq!(perm_layout(&theme, grid - half), PermLayout::Stack);
         assert_eq!(perm_layout(&theme, stack), PermLayout::Stack);
-        assert_eq!(perm_layout(&theme, stack - 0.5), PermLayout::List);
-        assert_eq!(perm_layout(&theme, 0.0), PermLayout::List);
+        assert_eq!(perm_layout(&theme, stack - half), PermLayout::List);
+        assert_eq!(perm_layout(&theme, LogicalPx(0.0)), PermLayout::List);
     }
 
     /// 경계 바로 아래·하한·더 좁은 폭에서도 상자가 받은 폭을 넘지 않는다(가로로 잘리지 않는다).
