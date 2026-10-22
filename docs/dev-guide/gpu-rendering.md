@@ -45,10 +45,10 @@ native WebView 위에 egui 대상 팝업을 합성할 때의 두 번째 pass다.
 - **순서**: egui 레이어 순서(뒤→앞)를 따르되 host·plugin 팝업은 그룹 단위로 `host_popup_should_render_on_top`에 맞춘다. 드롭다운은 맨 위다. plugin mesh 팝업은 `render_egui_pass_and_mesh_popups`를 오버레이 창 view로 다시 불러 같은 그룹 규칙으로 합성한다.
 - **출력 영역**: shape마다 clip을 paint job의 페이지 사각형과 교차한다. plugin mesh 팝업도 `render_egui_mesh_popups`에 같은 페이지를 넘겨 primitive마다 clip을 교차한다(`clip_primitives_to_pages`). 좌표와 주 pass용 mesh 캐시는 바꾸지 않는다. 페이지 밖의 scrim·그림자·mesh 콘텐츠는 주 표면에만 그려져 같은 픽셀이 두 번 합성되지 않는다.
 - **좌표·크기**: 오버레이 surface는 주 창 클라이언트 영역과 원점·물리 크기가 같아야 한다. egui pass와 mesh pass 모두 오버레이 surface 크기로 그린다. 크기가 주 surface와 다르면 그 프레임을 그리지 않고 오버레이 실패로 기록한다.
-- **준비 기록**: shape가 없어도 투명으로 지운 프레임을 올린다. 오버레이 창 present가 끝나면 그 모드·그림 위치·페이지·표면 크기를 `OverlayFrame::painted`에 남긴다(`record_present`). 주 표면 job은 렌더가 오버레이 pass 전에 꺼내 주 표면 present 뒤에 같은 방식으로 남긴다. job을 만든 뒤 표면 크기가 바뀌었으면 남기지 않는다. 같은 프레임의 WebView 동기화는 이 기록이 현재 모드·그림 위치·페이지·표면 크기와 같을 때만 대상 팝업 아래 페이지를 드러낸다.
+- **준비 기록**: shape가 없어도 투명으로 지운 프레임을 올린다. 보이는 오버레이 창 present가 끝나면 그 모드·그림 위치·페이지·표면 크기를 `OverlayFrame::painted`에 남긴다(`record_present`). 주 표면 job은 렌더가 오버레이 pass 전에 꺼내 주 표면 present 뒤에 같은 방식으로 남긴다. job을 만든 뒤 표면 크기가 바뀌었으면 남기지 않는다. 같은 프레임의 WebView 동기화는 이 기록이 현재 모드·그림 위치·페이지·표면 크기와 같을 때만 대상 팝업 아래 페이지를 드러낸다.
 - **텍스처**: 오버레이 pass는 텍스처를 갱신하지 않고 주 pass가 올린 것을 쓴다. 해제는 두 pass 뒤다.
 - **실패**: 오버레이 surface를 잃으면 한 번 다시 설정한다. 그래도 얻지 못하면 surface와 host를 함께 버리고 오버레이 실패로 기록한다. 같은 프레임의 WebView 동기화가 그 기록을 읽어 숨김으로 돌아간다.
-- **조건**: 오버레이 창(`GpuState::overlay_surface`, `gpu/overlay_surface.rs`)은 WebView 동기화 뒤 창 단위 host 훅이 붙인다([WebView §창 단위 오버레이 host](../design/systems/webview.md#창-단위-오버레이-host)). 지금은 세 OS 모두 host를 만들지 않아 복제와 이 pass 모두 실행되지 않는다. host를 숨겨 두었으면 그리지 않고 기록도 남기지 않는다. 숨긴 채 준비 중인 host에 그린 그림은 페이지를 드러내는 기록(`painted`)이 아니라 host를 보일 기록(`prepared`)으로 남긴다. 창의 텍스처 형식은 주 surface와 같아야 한다. 같은 egui renderer로 그리기 때문이다.
+- **조건**: 오버레이 창(`GpuState::overlay_surface`, `gpu/overlay_surface.rs`)은 WebView 동기화 뒤 창 단위 host 훅이 붙인다([WebView §창 단위 오버레이 host](../design/systems/webview.md#창-단위-오버레이-host)). Linux 투명 모드는 이 host와 오버레이 pass를 사용한다. macOS는 debug 강제 투명 모드에서만 host를 쓰며, 기본 불투명 모드와 Windows 불투명 모드는 주 표면에 그린다. host를 숨겨 두었으면 그리지 않고 기록도 남기지 않는다. 숨긴 채 준비 중인 host에 그린 그림은 페이지를 드러내는 기록(`painted`)이 아니라 host를 보일 기록(`prepared`)으로 남긴다. 창의 텍스처 형식은 주 surface와 같아야 한다. 같은 egui renderer로 그리기 때문이다.
 - **크기**: `GpuState::resize`가 주 surface와 같은 크기로 오버레이 surface를 다시 설정한다. 배율 변경도 resize를 거친다.
 
 ## 렌더는 이벤트 루프 스레드에서 돈다 (제약)
