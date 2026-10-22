@@ -259,6 +259,27 @@ fn the_focus_shortcut_and_enter_queue_a_user_open_from_an_empty_tab() {
     assert!(bands.focused.is_none());
 }
 
+/// 띠가 키보드 포커스를 가진 동안에만 키·IME 게이트(`keyboard_overlay_open`)가 열린다. 포커스를 가진
+/// 띠를 그리지 않은 프레임(탭 전환 등)에는 포커스를 놓아 터미널 입력을 막아 두지 않는다.
+#[test]
+fn the_keyboard_gate_follows_the_band_focus_and_closes_when_the_band_is_not_drawn() {
+    let info = tasty_model::WebViewNavInfo::default();
+    let src = source(&info, None);
+    let ctx = egui::Context::default();
+    let mut bands = HtmlAddressBands::default();
+    run(&ctx, &mut bands, &src, vec![]);
+    bands.finish_frame();
+    assert!(!bands.has_keyboard_focus());
+    bands.request_focus(3);
+    run(&ctx, &mut bands, &src, vec![]);
+    bands.finish_frame();
+    assert!(bands.has_keyboard_focus());
+    assert!(bands.has_keyboard_focus_on(3) && !bands.has_keyboard_focus_on(4));
+    // 그 띠를 그리지 않은 프레임.
+    bands.finish_frame();
+    assert!(!bands.has_keyboard_focus());
+}
+
 #[test]
 fn a_relative_input_without_a_base_shows_the_error_row_and_sends_nothing() {
     let info = tasty_model::WebViewNavInfo::default();

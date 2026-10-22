@@ -131,8 +131,8 @@ impl<'a> Input<'a> {
         self
     }
 
-    /// Optional inner editor margin, in addition to the Input box padding. Unset keeps
-    /// egui's default. A caller whose box already owns all padding can request zero.
+    /// Optional inner editor margin, in addition to the Input box padding. Unset uses
+    /// zero horizontal margin and egui's default vertical margin. Zero also removes the latter.
     pub fn text_margin(mut self, margin: LogicalPx) -> Self {
         self.text_margin = Some(margin);
         self

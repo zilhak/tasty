@@ -145,7 +145,8 @@ WebViewKeySink에 보내고 공통 bridge가 소비 여부를 동기 반환한�
 
 backend는 Rc<dyn WebViewKeySink>만 받는다. 정책 교체와 큐 관리는 구체 bridge가 맡는다.
 callback은 main thread에서 실행하므로 Rc·RefCell을 사용한다.
-HostShortcutPolicy는 ShortcutSources의 host·page_reserved·plugin 목록을 받는다.
+HostShortcutPolicy는 ShortcutSources의 host·page_reserved·plugin·address 목록을 받는다.
+address(주소창 포커스 `explorer_focus_address`)는 bridge가 받은 주소 띠 surface 목록(mirror가 아닌 html)에서만 가져가고, markdown 같은 다른 WebView 페이지에는 남긴다.
 설정 field·quick-switch·사용자 script·활성 plugin의 effective binding 생성은 webview_claims가 맡는다.
 
 modifier 없는 키와 Shift 전용 키는 페이지 입력에 남긴다.

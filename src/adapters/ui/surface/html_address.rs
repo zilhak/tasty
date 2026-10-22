@@ -37,6 +37,8 @@ pub(crate) struct HtmlAddressBands {
     drop_focus: Option<u32>,
     /// 띠가 포커스를 가진 동안 마지막으로 본 페이지의 키보드 포커스.
     page_focus: bool,
+    /// 이번 프레임에 그린 띠. 포커스를 가진 띠를 그리지 않은 프레임(탭 전환 등)에는 포커스를 놓는다.
+    drawn: std::collections::HashSet<u32>,
 }
 
 #[derive(Default)]
@@ -289,6 +291,26 @@ impl HtmlAddressBands {
         None
     }
 
+    /// 띠가 키보드 포커스를 가졌는지. 가진 동안 키·IME는 egui로 가고 터미널·단축키로 가지 않는다
+    /// (`MainViewState::keyboard_overlay_open`).
+    pub(crate) fn has_keyboard_focus(&self) -> bool {
+        self.focused.is_some()
+    }
+
+    /// `sid` 의 띠가 키보드 포커스를 가졌는지. 페이지 입력 shape를 바꾸는 Linux 경로만 쓴다.
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn has_keyboard_focus_on(&self, sid: u32) -> bool {
+        self.focused.is_some_and(|(s, _)| s == sid)
+    }
+
+    /// 한 프레임의 띠를 다 그린 뒤 부른다. 포커스를 가진 띠를 그리지 않았으면 포커스를 놓는다.
+    pub(crate) fn finish_frame(&mut self) {
+        if self.focused.is_some_and(|(s, _)| !self.drawn.contains(&s)) {
+            self.focused = None;
+        }
+        self.drawn.clear();
+    }
+
     /// 사라진 surface의 상태를 버린다.
     pub(crate) fn retain(&mut self, live: impl Fn(u32) -> bool) {
         self.bands.retain(|sid, _| live(*sid));
@@ -305,6 +327,7 @@ impl HtmlAddressBands {
     ) -> BandFrame {
         let id = egui::Id::new(("html_address", sid));
         let field_id = html_address_field_id(id);
+        self.drawn.insert(sid);
         let band = self.bands.entry(sid).or_default();
         let committed = source.info.url.as_deref();
         band.observe(source.nav, committed, source.host_url);

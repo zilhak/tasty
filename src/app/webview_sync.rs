@@ -229,13 +229,20 @@ fn collect_html_surfaces(
                                 width: px(physical.width),
                                 height: px(physical.height),
                             };
-                            active_holes.insert(
-                                sid,
+                            let holes = if page_input_yields_to_band(view, sid) {
+                                vec![crate::model::PhysicalRect {
+                                    x: crate::model::PhysicalPx(0.0),
+                                    y: crate::model::PhysicalPx(0.0),
+                                    width: window_rect.width,
+                                    height: window_rect.height,
+                                }]
+                            } else {
                                 crate::state::webview_edges::webview_input_holes(
                                     window_rect,
                                     &input_zones,
-                                ),
-                            );
+                                )
+                            };
+                            active_holes.insert(sid, holes);
                             active_clips.insert(
                                 sid,
                                 crate::state::webview_edges::notice_clip_holes(
@@ -651,6 +658,20 @@ fn publish_native_content_rects(
 /// 포인터만 빼고, `clip`은 복원 안내 카드로 그림과 포인터를 함께 뺀다. bounds·표시·포커스는
 /// 바꾸지 않는다. 둘 다 비면 원래 영역으로 돌아간다. `input`을 빼는 방법은 Linux에만 있고 다른
 /// OS는 `webview_edge_inset` 여백으로 피한다.
+/// 주소 띠가 키보드 포커스를 가진 동안 페이지 창 전체를 입력에서 뺄지. X 는 포커스 창의 자손 위에
+/// 포인터가 있으면 키를 그 자손에 보내므로, Linux 에서는 포인터가 페이지 위에 있어도 키가 호스트
+/// 창으로 오도록 띠 편집 동안 페이지가 포인터를 받지 않게 한다. 편집이 끝나면 다음 동기화에서 되돌린다.
+/// macOS·Windows 는 키를 키보드 포커스 창에만 보내므로 빼지 않는다.
+#[cfg(target_os = "linux")]
+fn page_input_yields_to_band(view: &MainView, sid: u32) -> bool {
+    view.state.html_address.has_keyboard_focus_on(sid)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn page_input_yields_to_band(_view: &MainView, _sid: u32) -> bool {
+    false
+}
+
 fn apply_native_holes(
     wv: &crate::webview::PlatformWebView,
     input: &[crate::model::PhysicalRect],
@@ -730,6 +751,20 @@ fn sync_webviews(
         view.webview_policy_src = Some(kb.clone());
         view.webview_policy_plugin_epoch = plugin_epoch;
     }
+    // 주소창 포커스 단축키는 주소 띠가 있는 html 페이지에서만 가져가고 다른 WebView 페이지에는 남긴다.
+    // mirror workspace 의 html leaf 는 띠를 숨기므로 넣지 않는다.
+    view.webview_key_bridge.set_address_surfaces(
+        view.webviews
+            .keys()
+            .copied()
+            .filter(|&sid| {
+                engine
+                    .find_surface_by_id(sid)
+                    .is_some_and(|s| s.kind() == "html")
+                    && !engine.is_mirror_surface(sid)
+            })
+            .collect(),
+    );
 
     // overlay를 열면 WebView 키보드 포커스를 호스트 창으로 돌린다. 숨기기만으로는
     // 포커스가 해제되지 않는다. 닫을 때 자동으로 native 자식에 포커스를 돌려주지는 않는다.

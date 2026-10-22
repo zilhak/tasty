@@ -28,12 +28,15 @@ pub struct ShortcutSources {
     pub page_reserved: Vec<String>,
     /// 매니페스트와 사용자 설정을 합친 plugin 조합.
     pub plugin: Vec<String>,
+    /// 주소 띠가 있는 html 페이지에서만 host가 가져갈 조합(주소창 포커스).
+    pub address: Vec<String>,
 }
 
 /// 설정에서 만든 host 키 조합의 사본. 호출자가 변경 시 교체해야 한다.
 #[derive(Debug, Clone, Default)]
 pub struct HostShortcutPolicy {
     combos: Vec<String>,
+    address: Vec<String>,
 }
 
 impl HostShortcutPolicy {
@@ -43,6 +46,7 @@ impl HostShortcutPolicy {
             host,
             page_reserved,
             plugin,
+            address,
         } = sources;
         let mut combos: Vec<String> = Vec::new();
         let mut push = |combo: String| {
@@ -66,7 +70,11 @@ impl HostShortcutPolicy {
             push(combo);
         }
 
-        Self { combos }
+        let address = address
+            .into_iter()
+            .filter(|c| tasty_key_match::binding_has_modifier(c))
+            .collect();
+        Self { combos, address }
     }
 
     #[cfg(test)]
@@ -76,6 +84,11 @@ impl HostShortcutPolicy {
 
     pub fn claims(&self, key: &Key, mods: ModifiersState) -> bool {
         tasty_key_match::matches_any_binding(&self.combos, key, mods)
+    }
+
+    /// 주소 띠가 있는 html 페이지에서만 가져갈 조합인지.
+    pub fn claims_for_address(&self, key: &Key, mods: ModifiersState) -> bool {
+        tasty_key_match::matches_any_binding(&self.address, key, mods)
     }
 }
 
@@ -100,6 +113,8 @@ pub trait WebViewKeySink {
 #[derive(Debug, Default)]
 pub struct WebViewKeyBridge {
     policy: RefCell<HostShortcutPolicy>,
+    /// 주소 띠가 있는 html surface. 주소창 포커스 조합은 이 페이지에서만 가져간다.
+    address_surfaces: RefCell<std::collections::HashSet<u32>>,
     pending: RefCell<Vec<WebViewKeyEvent>>,
     focus_requests: RefCell<Vec<u32>>,
 }
@@ -111,6 +126,11 @@ impl WebViewKeyBridge {
 
     pub fn set_policy(&self, policy: HostShortcutPolicy) {
         *self.policy.borrow_mut() = policy;
+    }
+
+    /// 주소 띠가 있는 html surface 목록을 바꾼다.
+    pub fn set_address_surfaces(&self, surfaces: std::collections::HashSet<u32>) {
+        *self.address_surfaces.borrow_mut() = surfaces;
     }
 
     pub fn take_pending(&self) -> Vec<WebViewKeyEvent> {
@@ -132,7 +152,12 @@ impl WebViewKeySink for WebViewKeyBridge {
         mods: ModifiersState,
     ) -> bool {
         let key = shortcut_lookup_key(key, &physical, mods);
-        if !self.policy.borrow().claims(&key, mods) {
+        let policy = self.policy.borrow();
+        let claimed = policy.claims(&key, mods)
+            || (self.address_surfaces.borrow().contains(&surface_id)
+                && policy.claims_for_address(&key, mods));
+        drop(policy);
+        if !claimed {
             return false;
         }
         self.pending.borrow_mut().push(WebViewKeyEvent {
@@ -169,6 +194,7 @@ mod tests {
             host: strings(host),
             page_reserved: strings(page_reserved),
             plugin: strings(plugin),
+            address: Vec::new(),
         })
     }
 
@@ -281,6 +307,7 @@ mod tests {
             host: Vec::new(),
             page_reserved: strings(&reserved),
             plugin: variants.clone(),
+            address: Vec::new(),
         });
         assert!(
             p.combos().is_empty(),
@@ -292,6 +319,7 @@ mod tests {
             host: Vec::new(),
             page_reserved: strings(&reserved),
             plugin: strings(&["ctrl+shift+h"]),
+            address: Vec::new(),
         });
         assert_eq!(p.combos(), ["ctrl+shift+h"]);
     }

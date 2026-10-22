@@ -383,6 +383,7 @@ pub fn draw_egui_panels(
         }
     }
 
+    html_bands.finish_frame();
     html_bands.retain(|sid| engine.find_surface_by_id(sid).is_some());
     state.html_address = html_bands;
     state.webview_user_nav.extend(html_navs);
