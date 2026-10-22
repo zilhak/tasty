@@ -30,7 +30,7 @@ const CSS = `
               box-shadow var(--tasty-motion-ui-fast) var(--tasty-ease-ui);
 }
 .tasty-input--block { display: flex; width: 100%; }
-.tasty-input--mono input { font-family: var(--tasty-font-mono); font-size: var(--tasty-font-size-caption); }
+.tasty-input.tasty-input--mono input { font-family: var(--tasty-font-mono); font-size: var(--tasty-font-size-caption); }
 .tasty-input:focus-within { border-color: var(--tasty-border-focus); box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-border-focus); }
 .tasty-input--invalid { border-color: var(--tasty-accent-danger); }
 .tasty-input--invalid:focus-within { box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-accent-danger); }

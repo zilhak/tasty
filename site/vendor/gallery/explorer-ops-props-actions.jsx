@@ -75,12 +75,32 @@ const editBtn = (L) => <Button variant="ghost" size="sm">{L.edit}</Button>;
 // Column heads and role names wrap inside their 56 cell (never ellipsised, never squeezed).
 const BITS = { "rw-r--r--": [[1, 1, 0], [1, 0, 0], [1, 0, 0]], "rw-r-----": [[1, 1, 0], [1, 0, 0], [0, 0, 0]], "rwxr-xr-x": [[1, 1, 1], [1, 0, 1], [1, 0, 1]], "rwxrwxr-x": [[1, 1, 1], [1, 1, 1], [1, 0, 1]] };
 const octal = (b) => b.map((r) => r[0] * 4 + r[1] * 2 + r[2]).join("");
-function PermEditor({ L, mode, from, folder, state = "editing", special, reason }) {
+// 2026-10-22: the box never overflows — it is max-width 100% of the
+// content and picks one of three layouts from its OWN border-box width, re-evaluated on every layout pass:
+//   grid  (≥ explorer-props-perm-grid-min-width 242)  — batch 8, role column + R W X
+//   stack (≥ explorer-props-perm-stack-min-width 186) — heads over 3 cells; each role name on its own line above its 3 checkboxes
+//   list  (< 186)                                     — each role name, then three labelled checkboxes one per line (no lower bound)
+// Cells stay 56 in grid and stack. DOM / Tab order is identical in all three (Owner R W X → Group → Others → Cancel → Apply).
+function usePermLayout(ref, forced) {
+  const [lay, setLay] = React.useState(forced || "grid");
+  React.useLayoutEffect(() => {
+    if (forced) { setLay(forced); return; }
+    const el = ref.current; if (!el) return;
+    const probe = (tok) => { const p = document.createElement("div"); p.style.cssText = "position:absolute;visibility:hidden;height:0;width:var(" + tok + ")"; el.appendChild(p); const w = p.offsetWidth; p.remove(); return w; };
+    const run = () => { const g = probe("--tasty-explorer-props-perm-grid-min-width"), s = probe("--tasty-explorer-props-perm-stack-min-width"), w = el.offsetWidth; setLay(w >= g ? "grid" : w >= s ? "stack" : "list"); };
+    run();
+    const ro = new ResizeObserver(run); ro.observe(el); return () => ro.disconnect();
+  }, [forced]);
+  return lay;
+}
+function PermEditor({ L, mode, from, folder, state = "editing", special, reason, layout }) {
   const busy = state === "applying";
-  const box = { display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", marginTop: "var(--tasty-space-xs)", marginBottom: "var(--tasty-space-xs)", padding: "var(--tasty-space-sm)",
+  const ref = React.useRef(null);
+  const lay = usePermLayout(ref, layout);
+  const box = { position: "relative", boxSizing: "border-box", maxWidth: "100%", minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", marginTop: "var(--tasty-space-xs)", marginBottom: "var(--tasty-space-xs)", padding: "var(--tasty-space-sm)",
     border: "var(--tasty-border-width) solid var(--tasty-explorer-props-perm-border)", borderRadius: "var(--tasty-radius)" };
   const buttons = (changed) => (
-    <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)" }}>
+    <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "var(--tasty-space-sm)" }}>
       <Button variant="ghost" size="sm" disabled={busy}>{L.cancel}</Button>
       <Button variant="primary" size="sm" disabled={busy || !changed} leadingIcon={busy ? <Spinner size="var(--tasty-icon-size-sm)" /> : null}>{busy ? L.applying : L.apply}</Button>
     </div>
@@ -93,7 +113,7 @@ function PermEditor({ L, mode, from, folder, state = "editing", special, reason 
   );
   if (mode === "win") {
     return (
-      <div style={box}>
+      <div ref={ref} style={box}>
         <Checkbox label={L.readOnly} defaultChecked={state !== "failed"} disabled={busy} />
         <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)" }}>{L.winHint}</span>
         {err}
@@ -104,18 +124,39 @@ function PermEditor({ L, mode, from, folder, state = "editing", special, reason 
   const target = state === "failed" ? BITS[from] : BITS[from].map((r, i) => (i === 2 ? [0, 0, 0] : r));
   const cell = { width: "var(--tasty-explorer-props-perm-cell-width)", flex: "none", display: "flex", justifyContent: "center" };
   const head = { ...cell, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", textAlign: "center", lineHeight: "var(--tasty-line-height-ui)", overflowWrap: "anywhere" };
+  const roleTxt = { fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-explorer-props-value-fg)", overflowWrap: "anywhere" };
+  const cols = [L.read, L.write, L.exec];
+  const cb = (role, r, c, lbl) => <Checkbox aria-label={role + " " + cols[c]} label={lbl} checked={!!target[r][c]} disabled={busy} onChange={() => {}} />;
+  const roles = [L.owner, L.group, L.others];
   return (
-    <div style={box}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
-        <div style={{ display: "flex", alignItems: "flex-end" }}><span style={{ width: "var(--tasty-explorer-props-perm-cell-width)", flex: "none" }}></span><span style={head}>{L.read}</span><span style={head}>{L.write}</span><span style={head}>{L.exec}</span></div>
-        {[L.owner, L.group, L.others].map((role, r) => (
+    <div ref={ref} style={box} data-perm-layout={lay}>
+      {lay === "grid" && <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+        <div style={{ display: "flex", alignItems: "flex-end" }}><span style={{ width: "var(--tasty-explorer-props-perm-cell-width)", flex: "none" }}></span>{cols.map((h) => <span key={h} style={head}>{h}</span>)}</div>
+        {roles.map((role, r) => (
           <div key={role} style={{ display: "flex", alignItems: "center", minHeight: "var(--tasty-explorer-props-row-min-height)" }}>
-            <span style={{ width: "var(--tasty-explorer-props-perm-cell-width)", flex: "none", fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-explorer-props-value-fg)", overflowWrap: "anywhere" }}>{role}</span>
-            {[0, 1, 2].map((c) => <span key={c} style={cell}><Checkbox aria-label={role + " " + [L.read, L.write, L.exec][c]} checked={!!target[r][c]} disabled={busy} onChange={() => {}} /></span>)}
+            <span style={{ ...roleTxt, width: "var(--tasty-explorer-props-perm-cell-width)", flex: "none" }}>{role}</span>
+            {[0, 1, 2].map((c) => <span key={c} style={cell}>{cb(role, r, c)}</span>)}
           </div>
         ))}
-      </div>
-      <span style={{ ...pMono, color: "var(--tasty-text-secondary)" }}>{target.map((r) => (r[0] ? "r" : "-") + (r[1] ? "w" : "-") + (r[2] ? "x" : "-")).join("")} · {octal(target)}</span>
+      </div>}
+      {lay === "stack" && <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+        <div style={{ display: "flex", alignItems: "flex-end" }}>{cols.map((h) => <span key={h} style={head}>{h}</span>)}</div>
+        {roles.map((role, r) => (
+          <div key={role} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-explorer-props-perm-role-gap)" }}>
+            <span style={roleTxt}>{role}</span>
+            <div style={{ display: "flex", alignItems: "center", minHeight: "var(--tasty-explorer-props-row-min-height)" }}>{[0, 1, 2].map((c) => <span key={c} style={cell}>{cb(role, r, c)}</span>)}</div>
+          </div>
+        ))}
+      </div>}
+      {lay === "list" && <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+        {roles.map((role, r) => (
+          <div key={role} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-explorer-props-perm-role-gap)", minWidth: 0 }}>
+            <span style={roleTxt}>{role}</span>
+            {[0, 1, 2].map((c) => <span key={c} style={{ display: "flex", minWidth: 0, minHeight: "var(--tasty-explorer-props-row-min-height)", alignItems: "center", overflowWrap: "anywhere" }}>{cb(role, r, c, cols[c])}</span>)}
+          </div>
+        ))}
+      </div>}
+      <span style={{ ...pMono, color: "var(--tasty-text-secondary)", display: "flex", flexWrap: "wrap", columnGap: "0.5ch" }}><span style={{ whiteSpace: "nowrap" }}>{target.map((r) => (r[0] ? "r" : "-") + (r[1] ? "w" : "-") + (r[2] ? "x" : "-")).join("")}</span><span style={{ whiteSpace: "nowrap" }}>· {octal(target)}</span></span>
       {(folder || special) && <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)" }}>{folder ? L.folderOnly : null}{folder && special ? " " : null}{special ? L.special : null}</span>}
       {err}
       {buttons(state !== "failed")}
@@ -135,6 +176,63 @@ function SettingsTimeRow({ lang = "en", pick = 0 }) {
         {L.tfCaption} {L.example} <span style={{ fontFamily: "var(--tasty-font-mono)", color: "var(--tasty-text-secondary)" }}>{TF[pick][2]}</span>
       </p>
     </div>
+  );
+}
+
+// popup width that gives the box exactly `tok` (− a step): box = popup − 2 × padding-x − 2 × border
+const popW = (tok, minus) => "calc(var(" + tok + ") + 2 * var(--tasty-explorer-props-padding-x) + 2 * var(--tasty-border-width)" + (minus ? " - var(" + minus + ")" : "") + ")";
+const W_GRID = popW("--tasty-explorer-props-perm-grid-min-width"), W_UNDER = popW("--tasty-explorer-props-perm-grid-min-width", "--tasty-space-xs");
+const W_STACK = popW("--tasty-explorer-props-perm-stack-min-width"), W_LIST = popW("--tasty-explorer-props-perm-stack-min-width", "--tasty-space-xl");
+function PermNarrowSpec() {
+  const L = PA.en;
+  const unix = (lab, w, p, ll = L, lang) => (
+    <XCol label={lab} w={null}>
+      <PProps glyph={p.folder ? K.ic.folder : K.ic.file} name={p.name || "deploy.env"} w={w} footer={openBtn(ll)}>
+        <PField k={ll.perms} v={(p.from || "rw-r--r--") + " · read-only: no"} mono below={<PermEditor L={ll} mode="unix" from={p.from || "rw-r--r--"} {...p} />} />
+      </PProps>
+    </XCol>
+  );
+  const win = (lab, w, p = {}) => (
+    <XCol label={lab} w={null}>
+      <PProps glyph={K.ic.file} name="report.docx" w={w} footer={openBtn(L)}>
+        <PField k="Permissions" v="read-only: yes" mono below={<PermEditor L={L} mode="win" {...p} />} />
+      </PProps>
+    </XCol>
+  );
+  const st = { padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" };
+  return (
+    <Spec title="Permissions — narrow Explorer cell: the box re-lays itself, never clips (2026-10-22)"
+      when={<>The popup shrinks with its cell and the editor box now does too: it is <b>max-width 100%</b> of the content and chooses its layout from its <b>own width</b>. <b>Grid</b> (box ≥ <code>explorer-props-perm-grid-min-width</code> 242) is the batch 8 layout, unchanged. <b>Stack</b> (box ≥ <code>explorer-props-perm-stack-min-width</code> 186): the role column goes away; column heads sit over the three 56 cells and each role name is a line of its own above its three checkboxes, so the grid stays aligned and needs 3 × 56 + 18. <b>List</b> (box &lt; 186): no head row; each role name, then three <b>labelled</b> checkboxes (Read · Write · Execute) one per line. List has <b>no lower bound</b>: labels and role names wrap anywhere, nothing is cut, only the box grows taller (the popup grows with it, as today). Cell width 56 is never changed. In every layout the readout wraps only at “ · ”, Cancel / Apply wrap onto a second line (still right-aligned, Apply last) when they don't fit side by side, and the box's right edge, padding and the footer Open keep their inset. No horizontal scroll.</>}>
+      <Stage variant="solo center" style={st}>
+        {unix("wide — grid (box 330)", null, {})}
+        {unix("box 242 — grid, at the boundary", W_GRID, {})}
+        {unix("box 238 — stack (just under)", W_UNDER, {})}
+        {unix("box 186 — stack, its lower bound", W_STACK, {})}
+        {unix("box 162 — list", W_LIST, {})}
+      </Stage>
+      <Stage variant="solo center" style={st}>
+        <XThemes render={() => (
+          <PProps glyph={K.ic.file} name="deploy.env" w={W_UNDER} footer={openBtn(L)}>
+            <PField k="Permissions" v="rw-r--r-- · read-only: no" mono below={<PermEditor L={L} mode="unix" from="rw-r--r--" />} />
+          </PProps>
+        )} />
+        {unix("stack · applying", W_UNDER, { name: "shared", folder: true, special: true, from: "rwxrwxr-x", state: "applying" })}
+        {unix("stack · failed", W_UNDER, { name: "mounted.iso", state: "failed", reason: "Read-only file system (os error 30)" })}
+        {unix("list · folder + special bits", W_LIST, { name: "shared", folder: true, special: true, from: "rwxrwxr-x" })}
+        {unix("list · failed", W_LIST, { name: "mounted.iso", state: "failed", reason: "Read-only file system (os error 30)" })}
+      </Stage>
+      <Stage variant="solo center" style={st}>
+        {unix("ko · stack", W_UNDER, { name: "배포.env" }, PA.ko)}
+        {unix("ja · stack · folder", W_UNDER, { name: "共有", folder: true, from: "rwxr-xr-x" }, PA.ja)}
+        {unix("ja · list", W_LIST, { name: "共有", folder: true, from: "rwxr-xr-x" }, PA.ja)}
+        {win("Windows · box 238", W_UNDER)}
+        {win("Windows · box 162 · failed", W_LIST, { state: "failed", reason: "Access is denied. (os error 5)" })}
+      </Stage>
+      <Meta
+        specs={[["box", "max-width 100% of the field row (label column included) · never wider than the popup content · border, radius, padding space-sm, gap space-sm as batch 8"], ["grid", "box ≥ explorer-props-perm-grid-min-width (4 × 56 + 2 × 8 + 2 × 1 = 242) — batch 8 as is"], ["stack", "186 ≤ box < 242 · head row = 3 cells of 56 (heads centred, bottom-aligned, wrap in the cell) · per role: name line (caption, value-fg, wraps anywhere) → gap explorer-props-perm-role-gap 4 → row of 3 cells, min-height row-min-height 24 · role groups gap space-xs"], ["list", "box < explorer-props-perm-stack-min-width (3 × 56 + 18 = 186) · per role: name line → role-gap → three Checkbox with label (Read / Write / Execute), one per 24 row · role groups gap space-sm · no head row · no lower bound"], ["switch", "by the box's own border-box width, on every layout pass — dragging the cell divider re-lays the open box at once (no animation, terminal motion 0); checked state, pending changes, focus and the applying / failed state are kept"], ["readout", "mode text and “· octal” are two unbreakable parts; wraps between them"], ["buttons", "flex-wrap, justify end, gap space-sm · Cancel then Apply; Apply drops to line 2 (right) when both don't fit"], ["Windows", "one labelled Checkbox + hint — no grid, so no layout switch; the box only caps at 100% and the hint wraps; buttons wrap as above"], ["keys", "DOM order = Tab order in all layouts: Owner R W X → Group R W X → Others R W X → Cancel → Apply · focus ring unchanged (Checkbox focus-visible)"], ["a11y", "grid / stack checkboxes keep aria-label “Role Column”; list draws the column word as the visible label"], ["copy", "no new strings — the list labels reuse explorer.props.perm.read / .write / .execute"]]}
+        tokens={[{ tok: "--tasty-explorer-props-perm-grid-min-width", use: "new · calc(4 × perm-cell-width + 2 × space-sm + 2 × border-width) = 242" }, { tok: "--tasty-explorer-props-perm-stack-min-width", use: "new · calc(3 × perm-cell-width + 2 × space-sm + 2 × border-width) = 186" }, { tok: "--tasty-explorer-props-perm-role-gap", use: "new · → space-xs (role name → its checkboxes, stack / list)" }]} />
+      <Note>Boundaries in cell width (popup = cell − 2 × space-sm; box = popup − 2 × 14 − 2): grid at cell ≥ 288, stack 232 – 287, list below 232. These follow from the tokens; the implementation compares the box width with the two tokens, never the cell width. Shared function <code>tasty_ui_widgets::perm_box</code> takes the available width and returns the layout.</Note>
+    </Spec>
   );
 }
 
@@ -304,6 +402,8 @@ function PropsActionsSection() {
           tokens={[{ tok: "--tasty-explorer-props-perm-border", use: "new · → border-strong", color: "var(--tasty-explorer-props-perm-border)" }, { tok: "--tasty-explorer-props-perm-cell-width", use: "new · → size-56" }, { tok: "--tasty-explorer-props-perm-error-fg", use: "new · → accent-danger (bg-panel: Mocha 7.08 · Latte 4.80)", color: "var(--tasty-explorer-props-perm-error-fg)" }, { tok: "--tasty-explorer-props-perm-locked-fg", use: "new · → text-muted", color: "var(--tasty-explorer-props-perm-locked-fg)" }]} />
         <Note>i18n (new): <code>explorer.props.perm.edit</code> “Edit” / “편집” / “編集” · <code>.perm.read</code> / <code>.write</code> / <code>.execute</code> · <code>.perm.owner</code> / <code>.group</code> / <code>.others</code> · <code>.perm.apply</code> “Apply” / “적용” / “適用” · <code>.perm.applying</code> “Applying…” / “적용 중…” / “適用中…” · <code>.perm.folder_only</code> “Changes this folder only, not the items in it.” · <code>.perm.special_kept</code> “Special bits (setuid, setgid, sticky) are kept.” · <code>.perm.locked</code> “Only the owner can change permissions.” · <code>.perm.failed</code> “Couldn't change permissions” · <code>.perm.read_only</code> “Read-only” · <code>.perm.windows_hint</code> “Windows file attribute. Other access rules aren't changed here.” — ko / ja as in the PA table in <code>gallery/explorer-ops-props-actions.jsx</code>. Cancel reuses <code>common.cancel</code>.</Note>
       </Spec>
+
+      <PermNarrowSpec />
 
       <Spec title="Already built — context menu OS rows · link note · partial read (check)"
         when={<>Confirmed with two changes. <b>Order</b>: Move to Trash · separator · <b>Open in system</b> · <b>Show in Finder / File Explorer / File Manager</b> (one item only) · separator · Properties — the OS rows get their own group so Properties stays the last row on its own. <b>Label</b>: “Open in system” in sentence case, as the existing menu row already reads (“Show in Finder” keeps the product name). Icons: <code>external</code> for Open in system, <code>folderOpen</code> for Show in …. Remote cells hide both rows and the group's separator. The <b>link note</b> wording and place (muted note under the fields, same as the remote note) are confirmed. <b>Some items couldn't be read</b> under Kinds and <b>—</b> for a remote Total size with folders are confirmed as built.</>}>

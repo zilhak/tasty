@@ -954,7 +954,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
             </div>
             <Row label="Targeted PTY polling:" hint="Checks a terminal for output only when it signals new output, instead of checking every terminal."><Switch defaultChecked /></Row>
             <Row label="Scrollback disk swap:" hint="Keeps scrollback past the in-memory limit in a temporary file instead of dropping the oldest lines."><Switch defaultChecked /></Row>
-            <Row label="Disk scrollback lines:" hint="Lines kept on disk per terminal while disk swap is on. -1 keeps every line. Separate from Scrollback lines."><Input mono defaultValue="10000" addon="lines" style={{ width: "var(--tasty-field-width-color)" }} /></Row>
+            <Row label="Disk scrollback lines:" hint="Lines kept on disk per terminal while disk swap is on. -1 keeps every line. Separate from Scrollback lines."><span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-number-field-unit-gap)" }}><Input mono defaultValue="10000" style={{ width: "var(--tasty-number-field-min-width)" }} /><span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-number-field-unit-fg)" }}>lines</span></span></Row>
           </>
         );
       // Terminal › Mouse Capture — hint banner toggle + per-program capture opt-out

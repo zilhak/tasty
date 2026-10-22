@@ -86,9 +86,9 @@ Claude Design 프로젝트 **Tasty Design System**에서 받아온 디자인 사
     - `ui_kits/terminal/overlays/restore_notice.jsx`, `gallery/components-searchselect.jsx`, `gallery/layouts-loading-prelayout.jsx`, `gallery/overlays-popups-notices.jsx`, `gallery/overlays-windows-plugin-trust.jsx`: 요청문서 머리 주석.
     - `ui_kits/terminal/overlays/file_handlers.jsx`, `gallery/overlays-windows-file-handlers.jsx`, `gallery/plugins-md-address.jsx`: 요청문서 머리 주석(날짜는 남긴다).
     - `gallery/overlays-shared.jsx`: 폴더 모드 주석. `ui_kits/terminal/work.jsx`: 주소 띠 주석.
-    - `gallery/overlays-popups-webview.jsx`: 머리 주석. `tokens/components.css`: `--tasty-webview-opaque-*` 주석(날짜는 남긴다).
-    - `gallery/explorer-ops-props-actions.jsx`: 머리 주석과 권한 편집 상자 주석(날짜는 남긴다). `ui_kits/terminal/overlays/settings_window.jsx`: Properties 시각 형식 행 주석.
-    - `gallery/overlays-windows-perf.jsx`, `gallery/plugins-html-address-contrast.jsx`: 머리 주석(날짜는 남긴다).
+    - `gallery/overlays-popups-webview.jsx`: 머리 주석. `tokens/components.css`: `--tasty-webview-opaque-*` 주석과 2026-10-22 권한 상자·숫자 칸 토큰 묶음 주석(날짜는 남긴다).
+    - `gallery/explorer-ops-props-actions.jsx`: 머리 주석, 권한 편집 상자 주석, 좁은 칸 배치 주석(날짜는 남긴다). `ui_kits/terminal/overlays/settings_window.jsx`: Properties 시각 형식 행 주석.
+    - `gallery/overlays-windows-perf.jsx`: 머리 주석과 숫자 칸 주석. `gallery/plugins-html-address-contrast.jsx`: 머리 주석(날짜는 남긴다).
 - **옛 ADR 번호 인용**: 원격 사본은 저장소의 ADR을 재정리하기 전 번호를 인용한다. 이 번호는 지금 저장소의 ADR과 맞지 않으므로 인용을 지우거나 현재 원칙·기능 문서로 바꾸고 뜻은 남긴다. `gallery/components.jsx`, `gallery/overlays-windows.jsx`, `ui_kits/terminal/overlays/settings_window.jsx`, `ui_kits/terminal/overlays/plugins_window.jsx`, `tokens/primitives.css`에 있다. 갱신할 때는 `git diff`로 이전 사본의 처리 방식을 확인해 같은 방식으로 적용한다.
 - **출처 메타데이터**: 렌더링에 쓰지 않는 base64 C2PA 매니페스트가 사본 크기를 늘리므로 `<metadata>` 요소와 `xmlns:c2pa` 속성을 제거한다. 원격에서 이 메타데이터가 있는 아이콘은 일부(`icons/` 아래 agent·arrowRight·filePlus·fit·folderPlus·info·link·sun)다. 렌더링 구조와 값은 유지한다. `grep -rl c2pa site/vendor/ --exclude=README.md`의 출력이 없어야 한다. README와 `MANIFEST`는 사본을 설명하는 파일이므로 이 검사와 사본 수정일 계산에서 제외한다.
 

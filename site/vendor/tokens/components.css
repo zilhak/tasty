@@ -1491,6 +1491,15 @@
   --tasty-settings-apply-note-fg: var(--tasty-text-secondary); /* on bg-panel — Mocha ≈ 8.0 · Latte ≈ 5.1 */
   --tasty-settings-apply-note-glyph: var(--tasty-text-muted); /* info glyph (non-text, ≥ 3:1) */
   --tasty-settings-apply-note-gap: var(--tasty-space-sm); /* glyph → text */
+  /* 2026-10-22 — Properties permission box in a narrow Explorer cell */
+  --tasty-explorer-props-perm-grid-min-width: calc(4 * var(--tasty-explorer-props-perm-cell-width) + 2 * var(--tasty-space-sm) + 2 * var(--tasty-border-width)); /* 242 — box ≥ this: role column + R W X grid */
+  --tasty-explorer-props-perm-stack-min-width: calc(3 * var(--tasty-explorer-props-perm-cell-width) + 2 * var(--tasty-space-sm) + 2 * var(--tasty-border-width)); /* 186 — box ≥ this: heads over 3 cells, role name above its row; below: labelled list */
+  --tasty-explorer-props-perm-role-gap: var(--tasty-space-xs); /* role name line → its checkboxes (stack / list) */
+  /* 2026-10-22 — settings number field: fits its value, unit outside */
+  --tasty-number-field-min-width: var(--tasty-field-width-xs); /* 90 — floor; grows to value length + 1ch caret room, capped at the row's available width */
+  --tasty-number-field-unit-gap: var(--tasty-space-sm); /* field → unit word → "no limit" */
+  --tasty-number-field-unit-fg: var(--tasty-text-secondary); /* unit word / "no limit" after the field — on bg-panel Mocha ≈ 8.0 · Latte ≈ 5.1 */
+  --tasty-number-field-note-fg: var(--tasty-text-secondary); /* range line under the field */
 }
 
 
