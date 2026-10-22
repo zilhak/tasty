@@ -164,6 +164,7 @@ tasty split --level pane --surface this --type markdown --file /path/doc.md
 - 픽셀 높이는 split 대상 칸이 속한 workspace 를 지금 보여 주는 창의 터미널 영역·탭 바 높이·배율로 계산한다. 그런 창이 여럿이면 배율을 걷어 낸 터미널 영역 넓이가 가장 큰 창으로 판정한다. 창이 journal 을 돌릴 때마다 창이 보여 주는 workspace 와 함께 엔진별로 기록하며 journal 에 저장하지 않는다. 그 workspace 를 보여 주는 창이 없으면(다른 workspace 를 보고 있거나 헤드리스) 하한 없이 0.5 로 나눈다. 칸 크기는 다음 레이아웃 패스의 기존 규칙을 따른다.
 - attach mirror 워크스페이스의 split 은 원격(서버) 엔진으로 넘어가므로 서버 창의 크기로 판정한다(서버에 그 엔진을 보여 주는 창이 없으면 하한 없이 0.5). client 창이 서버 창보다 낮으면 client 화면의 탐색기 칸은 180 아래로 보일 수 있다.
 - 창 크기 변경은 하한을 지키지 않는다([탐색기](../../surfaces/explorer/index.md)의 compact 상태가 그 경우를 맡는다).
+- Windows 에서 창을 최소화하면 장식 없는 Tasty 창은 작업 표시줄 아이콘 크기(측정 160x28)를 client 크기로 보고한다. 이 값은 창 크기 변경으로 보지 않는다. 최소화 중에는 표면과 터미널 격자(PTY 크기)를 그대로 두고, 복원할 때 오는 크기로 맞춘다.
 
 ### cwd 결정 (우선순위)
 

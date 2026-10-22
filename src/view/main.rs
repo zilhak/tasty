@@ -382,6 +382,17 @@ impl MainView {
         );
     }
 
+    /// 표면과 터미널 격자를 맞출 창 크기. Windows 의 장식 없는 창은 최소화 중 작업 표시줄 아이콘
+    /// 크기(측정 160x28)를 client 크기로 보고하므로, 그동안은 지금 표면 크기를 그대로 쓴다. 표면과
+    /// PTY 를 그 크기로 줄이지 않고, 복원 때 오는 크기로 맞춘다.
+    fn window_surface_size(&self) -> winit::dpi::PhysicalSize<u32> {
+        if cfg!(windows) && self.base.winit.is_minimized() == Some(true) {
+            self.base.gpu.size()
+        } else {
+            self.base.winit.inner_size()
+        }
+    }
+
     /// 창의 engine과 함께 창 이벤트를 처리한다. engine은 App registry가 창 ID로 찾아 넘긴다.
     fn handle_engine_event(
         &mut self,
@@ -452,7 +463,7 @@ impl MainView {
         match event {
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 self.base.gpu.sync_scale_factor(&self.base.winit);
-                let new_size = self.base.winit.inner_size();
+                let new_size = self.window_surface_size();
                 self.base.gpu.resize(new_size);
                 if self.state.fullscreen_stage_active() {
                     // 무대 중에는 배경 PTY 크기를 유지한다. 나간 뒤 첫 프레임에서 현재 영역으로 맞춘다.
