@@ -273,11 +273,13 @@ pub fn html_address_bar(
         .read_only(mirror)
         .invalid(state.error.is_some())
         .focus_look(state.editing)
+        // Idle shows the real address in its own value ink; a read-only mirror keeps the
+        // Input read-only ink, and placeholder/disabled keep the Input roles.
         .text_color(
             if state.editing {
                 theme.input_fg()
             } else {
-                theme.text_secondary()
+                theme.html_address_value_fg()
             }
             .to_egui(),
         )

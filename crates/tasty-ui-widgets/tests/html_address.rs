@@ -285,3 +285,80 @@ fn input_length_overrides_preserve_existing_defaults() {
         ]
     );
 }
+
+fn latte() -> tasty_type_appearance::theme::Theme {
+    let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT).expect("latte.toml");
+    let (partial, is_light) = file.to_partial();
+    let mut colors = tasty_themes::mocha_fallback_colors();
+    colors.apply_partial(&partial);
+    tasty_type_appearance::theme::Theme::with_colors(colors, is_light.unwrap_or(true))
+}
+
+/// The ink of the painted address text, read from the frame's text shapes.
+fn address_ink(
+    theme: &tasty_type_appearance::theme::Theme,
+    state: &mut HtmlAddressState,
+    v: &HtmlAddressView<'_>,
+) -> egui::Color32 {
+    let ctx = egui::Context::default();
+    let mut found = None;
+    for _ in 0..2 {
+        let out = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 300.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    html_address_bar(
+                        ui,
+                        theme,
+                        egui::Id::new("address"),
+                        LogicalPx(800.0),
+                        state,
+                        v,
+                    );
+                });
+            },
+        );
+        found = out.shapes.iter().find_map(|s| match &s.shape {
+            egui::Shape::Text(t) if t.galley.text() == v.address => {
+                Some(t.override_text_color.unwrap_or(t.fallback_color))
+            }
+            _ => None,
+        });
+    }
+    found.expect("address text painted")
+}
+
+#[test]
+fn idle_editing_and_mirror_values_use_their_own_ink_roles() {
+    let theme = latte();
+    // In Latte the idle value role differs from the old text-secondary ink.
+    assert_ne!(theme.html_address_value_fg(), theme.text_secondary());
+    let mut idle = HtmlAddressState::default();
+    assert_eq!(
+        address_ink(&theme, &mut idle, &view()),
+        theme.html_address_value_fg().to_egui()
+    );
+    let mut editing = HtmlAddressState {
+        buffer: "https://example.com/current".into(),
+        editing: true,
+        error: None,
+    };
+    assert_eq!(
+        address_ink(&theme, &mut editing, &view()),
+        theme.input_fg().to_egui()
+    );
+    let mirror = HtmlAddressView {
+        kind: HtmlAddressKind::Mirror,
+        ..view()
+    };
+    assert_eq!(
+        address_ink(&theme, &mut HtmlAddressState::default(), &mirror),
+        theme.input_readonly_fg().to_egui()
+    );
+}

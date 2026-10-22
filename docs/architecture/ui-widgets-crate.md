@@ -188,6 +188,8 @@ All lengths use LogicalPx and existing HTML address/input/banner Theme tokens. T
 is 40 logical pixels high, with a 24-pixel error row when needed and an inside separator.
 Forward is omitted below the 440-pixel breakpoint; the field retains its 96-pixel minimum.
 Loading replaces Reload with a noninteractive Spinner. Tooltips open above the buttons.
+The idle address text uses html-address-value-fg, editing uses input-fg and the mirror
+read-only field keeps input-readonly-fg; placeholder and disabled keep their Input roles.
 A mirror field is read-only with Reload alone; a mirror placeholder allocates no band.
 `html_address_content_inset` combines measured banner heights in size-before-script order:
 first top margin, then each banner and its following gap. With no banners it returns only
