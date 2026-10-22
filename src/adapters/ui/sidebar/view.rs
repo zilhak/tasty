@@ -1027,12 +1027,15 @@ fn draw_ws_row(
         ("ws_full", global_idx),
         props.workspace_switch_held,
     );
+    // 행 채움은 내용보다 먼저 칠해야 하므로 카드 응답의 hover를 그리기 전에 읽는다. 카드를 처음 그리는
+    // 프레임에는 응답이 없어 hover 가 아니다.
+    let card_id = egui::Id::new(("ws_card", global_idx));
+    let hovered = ui.ctx().read_response(card_id).is_some_and(|r| r.hovered());
     let card = draw_workspace_card(
         ui,
         th,
         ws,
-        props.occupied_hover,
-        props.mirror_hover,
+        hovered,
         props.mirror_pill_label,
         switch_digit,
         fade,
@@ -1042,19 +1045,23 @@ fn draw_ws_row(
         // align=None → 이미 뷰포트 안이면 스크롤 무변화, 밖이면 최소 이동으로만 보정.
         ui.scroll_to_rect(card_rect, None);
     }
-    let card_response = ui.interact(
-        card_rect,
-        egui::Id::new(("ws_card", global_idx)),
-        egui::Sense::click_and_drag(),
-    );
+    let card_response = ui.interact(card_rect, card_id, egui::Sense::click_and_drag());
     *resize_priority_hovered |= card_response.hovered();
+    // 카드 전체가 클릭 위젯이라 그보다 먼저 등록한 hover 영역은 hover 되지 않는다. 점유 점과 REMOTE 줄의
+    // 툴팁은 카드 응답 뒤에 등록한다.
+    let tip = |rect: Option<egui::Rect>, key: &str, text: &str| {
+        rect.is_some_and(|r| {
+            let zone = ui.interact(r, card_id.with(key), egui::Sense::hover());
+            zone.on_hover_text(text).hovered()
+        })
+    };
+    let on_occupied_dot = tip(card.occupied_dot, "occupied_dot", props.occupied_hover);
+    let on_remote_pill = tip(card.remote_line, "remote_line", props.mirror_hover);
     // 카드 로딩은 attach 응답 대기에서만 켜진다. 오버레이 자체에는 툴팁이 없고 카드 툴팁에 둘째 줄을 둔다.
-    // 점 칸에서는 기존 점유 툴팁이 뜨므로 카드 툴팁을 겹쳐 띄우지 않는다.
-    let on_occupied_dot = card
-        .occupied_dot
-        .is_some_and(|dot| ui.rect_contains_pointer(dot));
+    // 점유 점과 REMOTE 줄에서는 그 툴팁이 뜨므로 카드 툴팁을 겹쳐 띄우지 않는다.
     if card.loading
         && !on_occupied_dot
+        && !on_remote_pill
         && tasty_ui_widgets::tooltip_hover_delay_elapsed(
             ui.ctx(),
             th,
@@ -1337,16 +1344,19 @@ fn draw_workspace_card(
     ui: &mut egui::Ui,
     th: &Theme,
     ws: &WorkspaceEntryView,
-    occupied_hover: &str,
-    mirror_hover: &str,
+    // 카드 응답의 hover. 비활성 카드의 행 채움(받침)을 정한다.
+    hovered: bool,
     mirror_pill_label: &str,
     // Some(digit) 면 status dot 자리에 숫자 키캡(switch-number overlay)을 그린다.
     switch_digit: Option<&str>,
     // switch-number overlay 등장 페이드 계수(0..=1, motion-ui-fast 90ms).
     switch_fade: f32,
 ) -> CardPaint {
+    // hover 채움은 받침에 들어가고 점·스피너·키캡·글자는 그 위에 그린다.
     let bg = if ws.is_active {
         th.surface_active().to_egui()
+    } else if hovered {
+        th.hover_overlay.to_egui_premultiplied()
     } else {
         egui::Color32::TRANSPARENT
     };
@@ -1363,6 +1373,7 @@ fn draw_workspace_card(
 
     let mut loading_shown = false;
     let mut occupied_dot = None;
+    let mut remote_line = None;
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
@@ -1373,7 +1384,7 @@ fn draw_workspace_card(
             let title_row_h =
                 ui.fonts(|f| f.row_height(&egui::FontId::proportional(th.font_size_body.value())));
             let dot_slot = egui::vec2(th.workspace_dot_slot().value(), title_row_h);
-            let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
+            let (dot_rect, _) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
             if switch_digit.is_none() {
                 let dot_color: egui::Color32 = if ws.busy_count > 0 {
                     th.accent_success().into()
@@ -1395,7 +1406,6 @@ fn draw_workspace_card(
                 }
                 if ws.attached && ws.busy_count == 0 {
                     occupied_dot = Some(dot_rect);
-                    dot_resp.on_hover_text(occupied_hover);
                 }
             }
             loading_shown = loading::paint_sidebar_loading(
@@ -1473,7 +1483,7 @@ fn draw_workspace_card(
                 ));
                 tag_caps(ui, th, mirror_pill_label, TagVariant::Remote, false);
             });
-            resp.response.on_hover_text(mirror_hover);
+            remote_line = Some(resp.response.rect);
         }
 
         if !ws.subtitle.is_empty() {
@@ -1524,11 +1534,6 @@ fn draw_workspace_card(
 
     let card_rect = response.response.rect;
 
-    if !ws.is_active && response.response.hovered() {
-        ui.painter()
-            .rect_filled(card_rect, 0.0, th.hover_overlay.to_egui_premultiplied());
-    }
-
     // 활성 표시선은 행 안쪽에 그려 상태 점과 겹치지 않게 한다.
     if ws.is_active {
         let bar = egui::Rect::from_min_size(
@@ -1545,14 +1550,16 @@ fn draw_workspace_card(
         rect: card_rect,
         loading: loading_shown,
         occupied_dot,
+        remote_line,
     }
 }
 
-/// 카드 한 장을 그린 결과. 툴팁이 겹치지 않도록 점 칸의 점유 툴팁 영역을 함께 돌려준다.
+/// 카드 한 장을 그린 결과. 카드 응답 뒤에 툴팁을 등록할 점유 점 칸과 REMOTE 줄 영역을 함께 돌려준다.
 struct CardPaint {
     rect: egui::Rect,
     loading: bool,
     occupied_dot: Option<egui::Rect>,
+    remote_line: Option<egui::Rect>,
 }
 
 #[cfg(test)]
@@ -1678,20 +1685,44 @@ mod tests {
         switch_held: bool,
         active: bool,
     ) -> (egui::FullOutput, Theme) {
-        let ctx = egui::Context::default();
-        let mut theme = test_theme();
-        theme.reduced_motion = true;
-        let kb = crate::settings::KeybindingSettings::default();
         let mut ws = mock_ws("build-farm", active);
         ws.loading_since = Some(std::time::Instant::now() - std::time::Duration::from_secs(1));
         let workspaces = vec![mock_ws("main", !active), ws];
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
+        let theme = loading_theme();
+        let output = loading_sidebar_frame(
+            &egui::Context::default(),
+            &theme,
+            &workspaces,
+            collapsed,
+            switch_held,
+            egui::RawInput::default(),
+        );
+        (output, theme)
+    }
+
+    fn loading_theme() -> Theme {
+        let mut theme = test_theme();
+        theme.reduced_motion = true;
+        theme
+    }
+
+    /// 같은 context 로 한 프레임을 그린다. 포인터를 실은 입력을 여러 번 넣어 hover 를 재현한다.
+    fn loading_sidebar_frame(
+        ctx: &egui::Context,
+        theme: &Theme,
+        workspaces: &[WorkspaceEntryView],
+        collapsed: bool,
+        switch_held: bool,
+        input: egui::RawInput,
+    ) -> egui::FullOutput {
+        let kb = crate::settings::KeybindingSettings::default();
+        ctx.run(input, |ctx| {
             egui::SidePanel::left("test_loading_keycap").show(ctx, |ui| {
                 if collapsed {
                     let props = SidebarCollapsedProps {
-                        theme: &theme,
+                        theme,
                         kb: &kb,
-                        workspaces: &workspaces,
+                        workspaces,
                         categories: None,
                         notifications: None,
                         tools_hover: "Tools menu",
@@ -1702,9 +1733,9 @@ mod tests {
                     let _view = draw_collapsed_sidebar_view(ui, &props);
                 } else {
                     let props = SidebarFullProps {
-                        theme: &theme,
+                        theme,
                         kb: &kb,
-                        workspaces: &workspaces,
+                        workspaces,
                         categories: None,
                         drag: None,
                         notifications: None,
@@ -1724,8 +1755,7 @@ mod tests {
                     let _view = draw_full_sidebar_view(ui, &props);
                 }
             });
-        });
-        (output, theme)
+        })
     }
 
     /// 시안 우선순위: 전환 키캡은 같은 칸의 스피너 위에 그린다(카드 점 칸·레일 아바타).
@@ -1771,6 +1801,89 @@ mod tests {
                 assert_eq!(next, Some(egui::Color32::TRANSPARENT), "{beds:?}");
             }
         }
+    }
+
+    /// 비활성 로딩 카드를 hover 하는 프레임. 첫 프레임에서 점 칸 받침 위치를 찾고, 그 가운데에 포인터를
+    /// 둔 두 프레임을 더 그린다(egui 는 직전 프레임의 위젯 위치로 hover 를 정한다).
+    fn hovered_loading_card(attached: bool) -> (egui::Context, egui::FullOutput, Theme) {
+        let ctx = egui::Context::default();
+        let theme = loading_theme();
+        let mut ws = mock_ws("build-farm", false);
+        ws.loading_since = Some(std::time::Instant::now() - std::time::Duration::from_secs(1));
+        ws.attached = attached;
+        let workspaces = vec![mock_ws("main", true), ws];
+        let first = loading_sidebar_frame(
+            &ctx,
+            &theme,
+            &workspaces,
+            false,
+            false,
+            egui::RawInput::default(),
+        );
+        let slot = theme.workspace_dot_slot().value();
+        let sidebar = theme.bg_sidebar().to_egui();
+        let bed = crate::adapters::ui::attach_loading::paint_order::flatten(&first)
+            .into_iter()
+            .find_map(|(c, r)| r.filter(|r| c == sidebar && (r.width() - slot).abs() < 0.01))
+            .expect("loading bed");
+        let mut output = first;
+        for _ in 0..2 {
+            let input = egui::RawInput {
+                events: vec![egui::Event::PointerMoved(bed.center())],
+                ..Default::default()
+            };
+            output = loading_sidebar_frame(&ctx, &theme, &workspaces, false, false, input);
+        }
+        (ctx, output, theme)
+    }
+
+    /// 시안 LNB 받침: hover 한 비활성 카드는 bg-sidebar 위에 overlay-hover 를 겹친 받침 위에 스피너를 그린다.
+    /// hover 채움을 스피너 뒤에 카드 전체로 덮으면 스피너 호까지 흐려진다.
+    #[test]
+    fn hovered_inactive_card_puts_the_hover_fill_under_the_loading_spinner() {
+        let (_ctx, output, theme) = hovered_loading_card(false);
+        let shapes = crate::adapters::ui::attach_loading::paint_order::flatten(&output);
+        let slot = theme.workspace_dot_slot().value();
+        let sidebar = theme.bg_sidebar().to_egui();
+        let hover = theme.hover_overlay.to_egui_premultiplied();
+        let beds: Vec<egui::Color32> = shapes
+            .iter()
+            .filter(|(_, r)| r.is_some_and(|r| (r.width() - slot).abs() < 0.01))
+            .map(|(c, _)| *c)
+            .collect();
+        let at = beds
+            .iter()
+            .position(|c| *c == sidebar)
+            .expect("sidebar bed");
+        assert_eq!(beds.get(at + 1).copied(), Some(hover), "{beds:?}");
+        let (spinner, _) =
+            crate::adapters::ui::attach_loading::paint_order::spinner_and_keycap(&output, &theme);
+        let spinner = spinner.expect("spinner");
+        let bed = shapes
+            .iter()
+            .find_map(|(c, r)| r.filter(|r| *c == sidebar && (r.width() - slot).abs() < 0.01))
+            .expect("bed rect");
+        // 같은 색의 1px 구분선 등은 제외하고 스피너 칸을 덮는 hover 채움만 본다.
+        let over_slot = shapes
+            .iter()
+            .rposition(|(c, r)| *c == hover && r.is_some_and(|r| r.contains(bed.center())))
+            .expect("hover fill");
+        assert!(
+            over_slot < spinner,
+            "hover fill {over_slot} >= spinner {spinner}"
+        );
+    }
+
+    /// 카드 전체가 클릭 위젯이므로 점유 점 툴팁 영역은 카드 응답 뒤에 등록해야 hover 된다.
+    #[test]
+    fn the_occupied_dot_tooltip_area_is_hovered_on_a_card() {
+        let (ctx, _output, _theme) = hovered_loading_card(true);
+        let card = egui::Id::new(("ws_card", 1usize));
+        assert!(ctx.read_response(card).is_some_and(|r| r.hovered()));
+        assert!(
+            ctx.read_response(card.with("occupied_dot"))
+                .is_some_and(|r| r.hovered())
+        );
     }
 
     fn run_collapsed(
