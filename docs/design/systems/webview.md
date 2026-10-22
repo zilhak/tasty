@@ -316,6 +316,8 @@ Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른
 
 debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--force off|hide|opaque|transparent]`)는 마지막 동기화의 모드·그림 위치·대상·페이지와 present한 그림의 기준(모드·그림 위치·페이지·표면 크기)을 돌려준다. `--force`는 backend의 지원 보고를 덮어쓴다. 지원하지 않는 backend에 `opaque`를 강제하면 적용이 `Unsupported`로 실패하고 숨김과 경고 경로를 그대로 지난다([debug IPC](../../dev-guide/debug-ipc.md)).
 
+`Transparent`를 보고하는 플랫폼 backend는 아직 없다. release 빌드에서 이 모드를 만드는 곳이 없어 `OverlayMode::Transparent`에 release 전용 `expect(dead_code)`를 두었다. backend가 이 모드를 보고하기 시작하면 그 expect가 충족되지 않아 지울 때가 드러난다.
+
 ### 기각한 대안
 
 - **스냅샷으로 대체**(WebKitGTK `get_snapshot`, WKWebView `takeSnapshot`, WebView2 `CapturePreviewAsync`): 정지 화면이고 비동기 왕복 동안 첫 프레임이 비어 보인다.

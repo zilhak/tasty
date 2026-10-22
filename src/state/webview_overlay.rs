@@ -18,6 +18,15 @@ pub enum OverlayMode {
     /// 페이지를 보인 채 host 가 팝업·드롭다운 상자 안만 불투명하게 칠한다.
     Opaque,
     /// 페이지를 보인 채 host 가 투명도를 섞어 그 위에 합성한다.
+    // 이유: 이 모드를 보고하는 플랫폼 backend 가 아직 없다. debug 의 `--force transparent` 와 시험만 만든다.
+    // backend 가 보고하기 시작하면 이 expect 가 충족되지 않아 지울 때를 알린다.
+    #[cfg_attr(
+        all(not(debug_assertions), not(test)),
+        expect(
+            dead_code,
+            reason = "no platform backend reports Transparent yet; only debug --force builds it"
+        )
+    )]
     Transparent,
 }
 
