@@ -194,7 +194,7 @@ fn rail_avatar(
     }
     if refused {
         paint_attach_refusal_chip(ui, theme, rect, bed);
-        attach_refusal_avatar_tooltip(ui, theme, &resp, &refusal_tooltip());
+        attach_refusal_avatar_tooltip(ui, theme, &resp, &refusal_tooltip(), None);
     }
 }
 

@@ -20,6 +20,8 @@ pub enum TooltipPlacement {
 /// Tooltip 버블 빌더.
 pub struct Tooltip<'a> {
     text: &'a str,
+    /// 본문 아래 muted 둘째 줄. 로딩 중인 탭·카드·아바타의 상태 문구 등.
+    second_line: Option<&'a str>,
     placement: TooltipPlacement,
     /// 버블 `Area` 의 고유 id — 한 프레임에 여러 버블(specimen 4 placement)을 그릴 때
     /// 충돌을 막는다. 기본값은 단일 사용을 가정한 고정 id.
@@ -32,10 +34,17 @@ impl<'a> Tooltip<'a> {
     pub fn new(text: &'a str) -> Self {
         Self {
             text,
+            second_line: None,
             placement: TooltipPlacement::default(),
             id: egui::Id::new("tasty_tooltip"),
             resolved: None,
         }
+    }
+
+    /// 본문 아래에 `text-muted` 둘째 줄을 더한다. 줄 높이·글꼴은 본문과 같다.
+    pub fn second_line(mut self, line: &'a str) -> Self {
+        self.second_line = Some(line);
+        self
     }
 
     /// 앵커 기준 배치.
@@ -194,6 +203,18 @@ impl<'a> Tooltip<'a> {
                 ..Default::default()
             },
         );
+        if let Some(line) = self.second_line {
+            job.append(
+                &format!("\n{line}"),
+                0.0,
+                egui::TextFormat {
+                    font_id: egui::FontId::proportional(caption),
+                    color: theme.text_muted().to_egui(),
+                    line_height: Some(caption * theme.line_height_ui),
+                    ..Default::default()
+                },
+            );
+        }
         job
     }
 
@@ -479,6 +500,33 @@ mod tests {
 
     /// 위·아래 WebView가 스트립 행에 바로 붙어 있어도 한 줄 버블(25 남짓)은 변마다 `border-width`까지의 겹침이
     /// 허용돼 스트립 안 후보로 통과한다. 오른쪽 이웃 pane의 WebView가 오른쪽 후보를 막으면 왼쪽 후보가 통과한다.
+    /// 둘째 줄은 본문과 같은 글꼴·줄 높이로 한 줄 아래에 놓이고 `text-muted`로 칠한다.
+    #[test]
+    fn the_second_line_sits_below_in_muted_ink() {
+        let theme = theme();
+        let one = Tooltip::new("build-server");
+        let two = Tooltip::new("build-server").second_line("Attaching…");
+        let job = two.layout_job(&theme);
+        assert_eq!(job.sections.len(), 2);
+        assert_eq!(
+            job.sections[0].format.color,
+            theme.text_secondary().to_egui()
+        );
+        assert_eq!(job.sections[1].format.color, theme.text_muted().to_egui());
+        assert_eq!(
+            &job.text[job.sections[1].byte_range.clone()],
+            "\nAttaching…"
+        );
+        let ctx = egui::Context::default();
+        let mut sizes = None;
+        let _output = ctx.run(egui::RawInput::default(), |ctx| {
+            sizes = Some((one.bubble_size(ctx, &theme), two.bubble_size(ctx, &theme)));
+        });
+        let (one, two) = sizes.expect("sized");
+        let line = theme.font_size_caption.value() * theme.line_height_ui;
+        assert!((two.y - one.y - line).abs() < 1.0, "{one:?} {two:?}");
+    }
+
     #[test]
     fn a_one_line_bubble_passes_the_strip_row_within_the_border_width() {
         let theme = theme();

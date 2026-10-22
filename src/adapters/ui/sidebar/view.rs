@@ -1027,7 +1027,7 @@ fn draw_ws_row(
         ("ws_full", global_idx),
         props.workspace_switch_held,
     );
-    let card_rect = draw_workspace_card(
+    let card = draw_workspace_card(
         ui,
         th,
         ws,
@@ -1037,6 +1037,7 @@ fn draw_ws_row(
         switch_digit,
         fade,
     );
+    let card_rect = card.rect;
     if ws.is_active && should_scroll_to_active {
         // align=None → 이미 뷰포트 안이면 스크롤 무변화, 밖이면 최소 이동으로만 보정.
         ui.scroll_to_rect(card_rect, None);
@@ -1047,6 +1048,25 @@ fn draw_ws_row(
         egui::Sense::click_and_drag(),
     );
     *resize_priority_hovered |= card_response.hovered();
+    // 카드 로딩은 attach 응답 대기에서만 켜진다. 오버레이 자체에는 툴팁이 없고 카드 툴팁에 둘째 줄을 둔다.
+    // 점 칸에서는 기존 점유 툴팁이 뜨므로 카드 툴팁을 겹쳐 띄우지 않는다.
+    let on_occupied_dot = card
+        .occupied_dot
+        .is_some_and(|dot| ui.rect_contains_pointer(dot));
+    if card.loading
+        && !on_occupied_dot
+        && tasty_ui_widgets::tooltip_hover_delay_elapsed(
+            ui.ctx(),
+            th,
+            card_response.id,
+            card_response.hovered(),
+        )
+    {
+        tasty_ui_widgets::Tooltip::new(&ws.name)
+            .second_line(crate::i18n::t("loading.remote_attach"))
+            .id_source(card_response.id)
+            .show(ui, th, card_rect);
+    }
 
     if card_response.clicked() {
         actions.push(SidebarFullAction::WorkspaceClicked(global_idx));
@@ -1253,7 +1273,10 @@ fn draw_collapsed_avatar(
             text_color,
         );
     }
-    loading::paint_sidebar_loading(ui, th, ws.loading_since, rect, LoadingPlacement::Rail);
+    let loading =
+        loading::paint_sidebar_loading(ui, th, ws.loading_since, rect, LoadingPlacement::Rail);
+    // 사이드바 로딩은 attach 응답 대기에서만 켜진다.
+    let loading_line = loading.then(|| crate::i18n::t("loading.remote_attach"));
     // 상태는 오른쪽 위 점, mirror는 오른쪽 아래 표시, 다른 클라이언트 점유는 둘레 링이다.
     // 왼쪽 아래는 move 칩, 왼쪽 위는 attach 거절 칩이다.
     // 점 하나로 NeedsInput > Completion > running 순서의 상태를 표시한다.
@@ -1282,7 +1305,15 @@ fn draw_collapsed_avatar(
     // 자동 attach 거절 칩은 남은 왼쪽 위 모서리에 둔다. 툴팁은 펼친 행 표지와 같다.
     if let Some(tooltip) = &ws.attach_refusal {
         tasty_ui_widgets::paint_attach_refusal_chip(ui, th, rect, th.bg_sidebar().into());
-        tasty_ui_widgets::attach_refusal_avatar_tooltip(ui, th, &resp, tooltip);
+        tasty_ui_widgets::attach_refusal_avatar_tooltip(ui, th, &resp, tooltip, loading_line);
+    } else if let Some(line) = loading_line {
+        // 디자인 rail 아바타 툴팁은 워크스페이스 이름이다. 로딩 중에는 그 아래 둘째 줄을 더한다.
+        if tasty_ui_widgets::tooltip_hover_delay_elapsed(ui.ctx(), th, resp.id, resp.hovered()) {
+            tasty_ui_widgets::Tooltip::new(&ws.name)
+                .second_line(line)
+                .id_source(resp.id)
+                .show(ui, th, resp.rect);
+        }
     }
     if ws.is_mirror {
         tasty_ui_widgets::paint_workspace_mirror_chip(ui, th, rect);
@@ -1305,7 +1336,7 @@ fn draw_workspace_card(
     switch_digit: Option<&str>,
     // switch-number overlay 등장 페이드 계수(0..=1, motion-ui-fast 90ms).
     switch_fade: f32,
-) -> egui::Rect {
+) -> CardPaint {
     let bg = if ws.is_active {
         th.surface_active().to_egui()
     } else {
@@ -1322,6 +1353,8 @@ fn draw_workspace_card(
         bottom: card_inner_margin_y(th),
     });
 
+    let mut loading_shown = false;
+    let mut occupied_dot = None;
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
@@ -1363,10 +1396,11 @@ fn draw_workspace_card(
                     );
                 }
                 if ws.attached && ws.busy_count == 0 {
+                    occupied_dot = Some(dot_rect);
                     dot_resp.on_hover_text(occupied_hover);
                 }
             }
-            loading::paint_sidebar_loading(
+            loading_shown = loading::paint_sidebar_loading(
                 ui,
                 th,
                 ws.loading_since,
@@ -1497,7 +1531,18 @@ fn draw_workspace_card(
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     }
 
-    card_rect
+    CardPaint {
+        rect: card_rect,
+        loading: loading_shown,
+        occupied_dot,
+    }
+}
+
+/// 카드 한 장을 그린 결과. 툴팁이 겹치지 않도록 점 칸의 점유 툴팁 영역을 함께 돌려준다.
+struct CardPaint {
+    rect: egui::Rect,
+    loading: bool,
+    occupied_dot: Option<egui::Rect>,
 }
 
 #[cfg(test)]

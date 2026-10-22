@@ -230,16 +230,20 @@ pub fn paint_attach_refusal_chip(
 }
 
 /// 레일 아바타 hover 때 행 표지와 같은 `tooltip`을 아바타 옆에 보인다. 칩은 따로 클릭을 받지 않는다.
+/// `second_line`은 아바타가 로딩 중일 때 그 문구를 muted 둘째 줄로 더한다.
 pub fn attach_refusal_avatar_tooltip(
     ui: &egui::Ui,
     theme: &Theme,
     avatar: &egui::Response,
     tooltip: &str,
+    second_line: Option<&str>,
 ) {
     if tooltip_hover_delay_elapsed(ui.ctx(), theme, avatar.id, avatar.hovered()) {
-        Tooltip::new(tooltip)
-            .id_source(avatar.id)
-            .show(ui, theme, avatar.rect);
+        let mut bubble = Tooltip::new(tooltip).id_source(avatar.id);
+        if let Some(line) = second_line {
+            bubble = bubble.second_line(line);
+        }
+        bubble.show(ui, theme, avatar.rect);
     }
 }
 

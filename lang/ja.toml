@@ -6906,3 +6906,7 @@ forward = "進む"
 reload = "再読み込み"
 disconnected = "リモートとの接続が切れました"
 invalid = "有効なファイルパスまたはHTTP(S) URLを入力してください"
+
+[loading]
+generic = "読み込み中…"
+remote_attach = "接続中…"

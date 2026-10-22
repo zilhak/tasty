@@ -154,7 +154,8 @@ pub(super) fn draw_tab(
         ui.set_clip_rect(prev_clip);
     }
 
-    if info.loading.get(i).copied().unwrap_or(false) {
+    let loading = info.loading.get(i).copied().unwrap_or(false);
+    if loading {
         let previous_clip = ui.clip_rect();
         ui.set_clip_rect(clip_rect.intersect(previous_clip));
         tasty_ui_widgets::paint_loading_overlay(
@@ -190,8 +191,12 @@ pub(super) fn draw_tab(
         );
         // close 버튼 (active or hover) — 우측 끝. 클릭은
         // SwitchTab 보다 우선.
+        let marker_hovered = marker_slot.is_some_and(|(slot, _)| ui.rect_contains_pointer(slot));
         let marker_clicked =
             marker_slot.and_then(|slot| paint_html_script_marker(ui, context, i, tab_rect, slot));
+        if loading && !marker_hovered {
+            paint_loading_tooltip(ui, context, &resp, name, tab_rect);
+        }
         // lock 칸은 click만 받아 click_and_drag인 탭 응답의 hover를 빼앗지 않는다. lock hover에도 close가 보인다.
         let show_close = !pending && (is_active || resp.hovered());
         let close_clicked = if show_close {
@@ -278,6 +283,34 @@ fn paint_move_glyph(ui: &mut egui::Ui, context: &TabRenderContext<'_, '_>, slot:
     ui.set_clip_rect(context.clip_rect.intersect(prev_clip));
     tasty_ui_widgets::paint_move_source_glyph(ui, context.props.theme, slot);
     ui.set_clip_rect(prev_clip);
+}
+
+/// 로딩 중인 탭에 hover하면 제목 아래 둘째 줄로 로딩 문구를 보인다. 오버레이 자체에는 툴팁이 없다.
+/// 탭 로딩은 attach 응답 대기에서만 켜지므로 `loading.remote_attach`를 쓴다.
+fn paint_loading_tooltip(
+    ui: &egui::Ui,
+    context: &TabRenderContext<'_, '_>,
+    resp: &egui::Response,
+    name: &str,
+    cell: egui::Rect,
+) {
+    let th = context.props.theme;
+    if !tasty_ui_widgets::tooltip_hover_delay_elapsed(ui.ctx(), th, resp.id, resp.hovered()) {
+        return;
+    }
+    let window = ui.ctx().screen_rect();
+    tasty_ui_widgets::Tooltip::new(name)
+        .second_line(crate::i18n::t("loading.remote_attach"))
+        .id_source(("tab_loading_tooltip", resp.id))
+        .placement_clear_of_native(
+            ui.ctx(),
+            th,
+            cell,
+            Some(cell),
+            window,
+            context.props.native_content,
+        )
+        .show(ui, th, cell);
 }
 
 /// 탭 한 칸의 왼쪽 클릭을 동작 하나로 정한다. 닫기, 스크립트 표지, 탭 전환 순으로 우선한다.

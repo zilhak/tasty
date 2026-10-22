@@ -6906,3 +6906,7 @@ forward = "앞으로"
 reload = "새로고침"
 disconnected = "원격 연결이 끊겼습니다"
 invalid = "올바른 파일 경로나 HTTP(S) URL을 입력하세요"
+
+[loading]
+generic = "불러오는 중…"
+remote_attach = "연결하는 중…"

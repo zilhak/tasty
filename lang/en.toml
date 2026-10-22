@@ -6975,3 +6975,7 @@ forward = "Forward"
 reload = "Reload"
 disconnected = "Disconnected from the remote"
 invalid = "Enter a valid file path or HTTP(S) URL"
+
+[loading]
+generic = "Loading…"
+remote_attach = "Attaching…"
