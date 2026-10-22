@@ -257,59 +257,7 @@ pub fn draw_remote_waiting(ui: &mut egui::Ui, theme: &Theme) {
             false,
         );
         ui.add_space(theme.spacing_md.value());
-        crate::catalog::widgets::dialog::frame_card(
-            ui,
-            theme,
-            RENAME_W,
-            theme.bg_panel().to_egui(),
-            |ui| {
-                crate::catalog::widgets::dialog::region_sym(
-                    ui,
-                    theme.spacing_md,
-                    theme.spacing_md,
-                    |ui| {
-                        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                        crate::catalog::widgets::dialog::title(
-                            ui,
-                            theme,
-                            t("explorer.popup.rename.title"),
-                        );
-                        let mut name = String::from("report-final.pdf");
-                        Input::new()
-                            .read_only(true)
-                            .width(ui.available_width())
-                            .show(ui, theme, &mut name);
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                            Spinner::new()
-                                .size(theme.icon_glyph_size_sm.value())
-                                .show(ui, theme);
-                            ui.label(
-                                egui::RichText::new(&renaming)
-                                    .size(theme.font_size_caption.value())
-                                    .color(theme.text_muted().to_egui()),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                                    Button::new(t("button.save"))
-                                        .variant(ButtonVariant::Primary)
-                                        .enabled(false)
-                                        .show(ui, theme);
-                                    Button::new(t("button.cancel"))
-                                        .variant(ButtonVariant::Ghost)
-                                        .enabled(false)
-                                        .show(ui, theme);
-                                },
-                            );
-                        });
-                    },
-                );
-            },
-        );
+        rename_card(ui, theme, Some(&renaming));
     });
     spec::meta(
         ui,
@@ -343,6 +291,99 @@ pub fn draw_remote_waiting(ui: &mut egui::Ui, theme: &Theme) {
                 theme.spinner_indicator().to_egui(),
             ),
         ],
+    );
+}
+
+/// 본체 rename 팝업과 같은 구성의 예제 한 장. 바탕은 dialog-bg 다. `waiting` 이 있으면 이름 칸을
+/// 읽기 전용으로 두고 Spinner 대기 줄을 보이며 두 버튼을 끈다. 칸의 상자는 두 상태 모두 기본 바탕용
+/// Input 토큰이다(평소 input-bg·input-border, 읽기 전용 input-readonly-*).
+fn rename_card(ui: &mut egui::Ui, theme: &Theme, waiting: Option<&str>) {
+    use crate::catalog::widgets::dialog as kit;
+    kit::frame_card(ui, theme, RENAME_W, kit::dialog_fill(theme), |ui| {
+        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            kit::title(ui, theme, t("explorer.popup.rename.title"));
+            let mut name = String::from("report-final.pdf");
+            Input::new()
+                .read_only(waiting.is_some())
+                .width(ui.available_width())
+                .show(ui, theme, &mut name);
+            if let Some(text) = waiting {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    Spinner::new()
+                        .size(theme.icon_glyph_size_sm.value())
+                        .show(ui, theme);
+                    ui.label(
+                        egui::RichText::new(text)
+                            .size(theme.font_size_caption.value())
+                            .color(theme.text_muted().to_egui()),
+                    );
+                });
+            }
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    Button::new(t("button.save"))
+                        .variant(ButtonVariant::Primary)
+                        .enabled(waiting.is_none())
+                        .show(ui, theme);
+                    Button::new(t("button.cancel"))
+                        .variant(ButtonVariant::Ghost)
+                        .enabled(waiting.is_none())
+                        .show(ui, theme);
+                });
+            });
+        });
+    });
+}
+
+/// rename 팝업 바탕 — 평소와 원격 대기 중을 나란히 둔다. 팝업은 dialog 라 바탕이 dialog-bg(bg-panel)이고,
+/// 그 위의 읽기 전용 칸은 기본 상자(state-disabled-fill · state-disabled-border)로 경계가 보인다.
+pub fn draw_rename_ground(ui: &mut egui::Ui, theme: &Theme) {
+    let renaming = t_fmt("explorer.remote.renaming", HOST);
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        spec::cluster(ui, theme, "normal", |ui| rename_card(ui, theme, None));
+        spec::cluster(ui, theme, "waiting — field read-only", |ui| {
+            rename_card(ui, theme, Some(&renaming))
+        });
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "rename popup ground",
+                "dialog-bg → bg-panel · every rename popup",
+            ),
+            ("field · normal", "Input · input-bg + input-border"),
+            (
+                "field · waiting",
+                "Input readOnly · input-readonly-bg + input-readonly-border on dialog-bg",
+            ),
+            ("ink", "readonly input-readonly-fg · buttons disabled"),
+        ],
+        &[
+            TokenChip::new("dialog-bg", "popup ground", theme.dialog_bg().to_egui()),
+            TokenChip::new("input-bg", "normal field", theme.input_bg().to_egui()),
+            TokenChip::new(
+                "input-readonly-bg",
+                "waiting field",
+                theme.input_readonly_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "input-readonly-border",
+                "waiting edge",
+                theme.input_readonly_border().to_egui(),
+            ),
+        ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "Same layout as the product popup: field, waiting line, Cancel and Save. The product \
+         popup has no key hint line, so the normal card shows none. Inputs that sit on \
+         surface-raised use the raised ground shown with the Input primitive.",
     );
 }
 
@@ -558,7 +599,7 @@ pub fn draw_remote_drag(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-pub fn specs() -> [crate::catalog::Spec; 5] {
+pub fn specs() -> [crate::catalog::Spec; 6] {
     use crate::catalog::Spec;
     [
         Spec {
@@ -572,6 +613,12 @@ pub fn specs() -> [crate::catalog::Spec; 5] {
             title: "Waiting for the remote — the input row stays, read-only, with a spinner",
             when: Some("remote new folder · new file · rename popup"),
             draw: draw_remote_waiting,
+        },
+        Spec {
+            id: "explorer-rename-popup-ground",
+            title: "Rename popup — the read-only field against the popup ground",
+            when: Some("every rename popup is a dialog on dialog-bg · normal and waiting"),
+            draw: draw_rename_ground,
         },
         Spec {
             id: "explorer-remote-connection-lost",

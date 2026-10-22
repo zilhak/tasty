@@ -10,7 +10,7 @@ use crate::catalog::widgets::dialog as kit;
 /// 이름 변경 팝업 카드 한 장.
 pub(super) fn card(ui: &mut egui::Ui, theme: &Theme) {
     let width = theme.measure_sm; // ≈300 (narrow column, design w≈280)
-    kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
+    kit::frame_card(ui, theme, width, kit::dialog_fill(theme), |ui| {
         kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             kit::title(ui, theme, "Rename");
@@ -39,15 +39,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "≈280 · bg-panel · 1px border-strong"),
+            ("frame", "≈280 · dialog-bg · 1px border-strong"),
             ("title", "heading semibold"),
             ("path", "caption · text-muted"),
-            ("input", "28 · surface-raised · seeded current name"),
+            ("input", "28 · input-bg · seeded current name"),
             ("footer", "right — Cancel · Rename (primary)"),
         ],
         &[
-            TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
-            TokenChip::new("surface-raised", "input", theme.surface_raised().to_egui()),
+            TokenChip::new("dialog-bg", "frame", theme.dialog_bg().to_egui()),
+            TokenChip::new("input-bg", "input", theme.input_bg().to_egui()),
             TokenChip::new(
                 "accent-primary",
                 "Rename button",

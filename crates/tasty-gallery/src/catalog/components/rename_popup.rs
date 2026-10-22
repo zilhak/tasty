@@ -11,7 +11,7 @@ const WIDTH: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        kit::frame_card(ui, theme, WIDTH, kit::dialog_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 ui.horizontal(|ui| {
@@ -40,15 +40,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "360px · bg-panel"),
+            ("frame", "360px · dialog-bg"),
             ("title", "14px semibold"),
             ("hint", "↵ rename · Esc cancel"),
             ("input", "block · autofocused + selected"),
             ("footer", "Cancel · Rename"),
         ],
         &[
-            TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
-            TokenChip::new("surface-raised", "input", theme.surface_raised().to_egui()),
+            TokenChip::new("dialog-bg", "frame", theme.dialog_bg().to_egui()),
+            TokenChip::new("input-bg", "input", theme.input_bg().to_egui()),
             TokenChip::new("border-focus", "focus ring", theme.border_focus().to_egui()),
         ],
     );

@@ -90,7 +90,7 @@ fn label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 /// 시안은 border-box 라 폭 300 에 테두리가 들어가므로 안쪽 폭에서 테두리 두 줄을 뺀다.
 fn shell(ui: &mut egui::Ui, theme: &Theme, primary: &str, body: impl FnOnce(&mut egui::Ui)) {
     let width = theme.measure_sm - theme.border_width * 2.0;
-    kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
+    kit::frame_card(ui, theme, width, kit::dialog_fill(theme), |ui| {
         let body_margin = egui::Margin {
             left: PAD_X.value() as i8,
             right: PAD_X.value() as i8,

@@ -16,7 +16,7 @@ const POPUP_WIDTH: LogicalPx = LogicalPx(176.0);
 
 /// 생성/이름변경 다이얼로그 — `error` 가 `Some` 이면 검증 에러 상태(확인 비활성).
 fn edit_dialog(ui: &mut egui::Ui, theme: &Theme, value: &str, error: Option<&str>) {
-    kit::frame_card(ui, theme, EDIT_WIDTH, kit::panel_fill(theme), |ui| {
+    kit::frame_card(ui, theme, EDIT_WIDTH, kit::dialog_fill(theme), |ui| {
         kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             kit::title(ui, theme, "New category");
@@ -368,7 +368,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
         &[
-            TokenChip::new("bg-panel", "edit/delete frame", theme.bg_panel().to_egui()),
+            TokenChip::new("dialog-bg", "edit frame", theme.dialog_bg().to_egui()),
+            TokenChip::new("bg-panel", "delete frame", theme.bg_panel().to_egui()),
             TokenChip::new(
                 "surface-raised",
                 "rail popup frame",

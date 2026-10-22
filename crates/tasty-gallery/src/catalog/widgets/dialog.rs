@@ -157,6 +157,12 @@ pub fn panel_fill(theme: &Theme) -> egui::Color32 {
     theme.bg_panel().to_egui()
 }
 
+/// 이름 변경 팝업 배경 (dialog-bg). workspace·탭·카테고리·탐색기 항목·즐겨찾기 추가가 함께 쓰는
+/// 본체 rename 팝업의 바탕이다.
+pub fn dialog_fill(theme: &Theme) -> egui::Color32 {
+    theme.dialog_bg().to_egui()
+}
+
 /// 팝오버/팔레트 배경 (surface-raised).
 pub fn raised_fill(theme: &Theme) -> egui::Color32 {
     theme.surface_raised().to_egui()
