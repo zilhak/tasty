@@ -9,7 +9,7 @@
 //! - 포커스·활성화를 가져가지 않도록 입력 힌트 거짓, `_NET_WM_USER_TIME` 0, 작업 표시줄·페이저 제외,
 //!   장식 없음, 빈 입력 shape 로 만든다. 전역 위(ABOVE) 상태는 두지 않는다.
 //! - 자기 X 연결을 연다. 주 창 configure 와 합성 관리자 선택 변경을 이 연결의 이벤트로 받아, 왕복 요청은
-//!   만들 때와 주 창이 바뀐 뒤 보이는 동안의 위치 조회에만 쓴다. 이 연결은 host 와 함께 닫힌다.
+//!   만들 때와 주 창 configure 뒤 위치 조회에만 쓴다. 이 연결은 host 와 함께 닫힌다.
 
 // 이유: Xlib 호출을 순서대로 묶는 FFI 모듈이다(같은 폴더 linux.rs 와 같다). 각 블록의 안전 조건은 한 연결·
 // 한 창에 대한 것이라 호출마다 나누어도 조건이 같다.
@@ -65,8 +65,6 @@ struct LinuxHost {
     parent: c_ulong,
     overlay: c_ulong,
     colormap: c_ulong,
-    /// 보일 때 창을 투명으로 지우는 GC(전경 0 = 알파 0).
-    clear_gc: xlib::GC,
     fixes_event_base: c_int,
     cm_atom: c_ulong,
     /// 합성 관리자 선택에 소유자가 있다. 선택 이벤트로만 갱신한다.
@@ -114,7 +112,7 @@ impl LinuxHost {
         // SAFETY: display·parent 는 유효하다(위·호출자 계약). 출력 인자는 지역 변수다.
         let placed = unsafe { query_placement(&xl, display, probe.root, parent) };
         // SAFETY: display 는 유효하고 visual 은 이 연결의 32bit TrueColor visual 이다.
-        let (overlay, colormap, clear_gc) =
+        let (overlay, colormap) =
             unsafe { create_overlay_window(&xl, &fixes, display, &probe, parent, placed) };
         Ok(Self {
             xl,
@@ -124,7 +122,6 @@ impl LinuxHost {
             parent,
             overlay,
             colormap,
-            clear_gc,
             fixes_event_base: probe.fixes_event_base,
             cm_atom: probe.cm_atom,
             compositor: Cell::new(true),
@@ -150,6 +147,13 @@ impl LinuxHost {
                     // 오버레이 창은 root 의 자식이라(장식 없음, 재부모 없음) 실제·합성 이벤트 모두 화면 좌표다.
                     let c = ev.configure;
                     self.overlay_configured([c.x, c.y, c.width, c.height]);
+                } else if kind == xlib::MapNotify
+                    && ev.map.window == self.overlay
+                    && !self.shown.get()
+                {
+                    // 숨긴 뒤에 창 관리자가 앞선 map 요청을 처리했다. 다시 거둔다.
+                    (self.xl.XWithdrawWindow)(self.display, self.overlay, self.screen);
+                    (self.xl.XFlush)(self.display);
                 } else if kind == self.fixes_event_base {
                     let sel =
                         &*(&ev as *const xlib::XEvent).cast::<xfixes::XFixesSelectionNotifyEvent>();
@@ -236,12 +240,11 @@ impl OverlayNativeHost for LinuxHost {
         }
     }
 
+    /// 숨긴 동안에도 맞춘다. 공통 훅이 보이기 전에 숨긴 채 present 하므로 그 그림이 지금 크기의 창에 가야
+    /// 한다. 서버 왕복은 주 창 configure 이벤트가 온 뒤에만 생긴다.
     fn follow(&self) {
         self.drain();
-        // 숨긴 동안은 표시만 미룬다. 보일 때 한 번 맞춘다.
-        if self.shown.get() {
-            self.place_if_dirty();
-        }
+        self.place_if_dirty();
     }
 
     fn set_shown(&self, shown: bool) {
@@ -250,24 +253,16 @@ impl OverlayNativeHost for LinuxHost {
             self.drain();
             self.place_if_dirty();
         }
-        // SAFETY: overlay·clear_gc 는 이 연결이 만든 살아 있는 자원이다.
+        // 관리 창의 map 은 창 관리자의 MapRequest 가 되어 바로 map 되지 않는다. 그 사이에 보낸 unmap 은 효과가
+        // 없어 창 관리자가 뒤늦게 map 한 창이 남았다(측정). 숨기기는 ICCCM 의 withdraw(unmap 과 root 로 보내는
+        // 합성 UnmapNotify)다. 그래도 창 관리자가 뒤에 map 하면 drain 이 MapNotify 를 보고 다시 거둔다. 보일 때
+        // XFillRectangle 은 보내지 않는다. map 때 서버가 칠하는 알파 0 배경은 지난 구간 그림의 노출을 막는다.
+        // SAFETY: overlay 는 이 연결이 만든 살아 있는 창이다.
         unsafe {
             if shown {
                 (self.xl.XMapWindow)(self.display, self.overlay);
-                // 배경이 None 이라 서버는 새 내용을 지우지 않는다. 첫 present 전에 지난 그림이나 아래
-                // 화면 사본이 보이지 않도록 알파 0 으로 지운다.
-                // 서버가 창 크기로 자른다.
-                (self.xl.XFillRectangle)(
-                    self.display,
-                    self.overlay,
-                    self.clear_gc,
-                    0,
-                    0,
-                    0x7fff,
-                    0x7fff,
-                );
             } else {
-                (self.xl.XUnmapWindow)(self.display, self.overlay);
+                (self.xl.XWithdrawWindow)(self.display, self.overlay, self.screen);
             }
             (self.xl.XFlush)(self.display);
         }
@@ -282,7 +277,6 @@ impl Drop for LinuxHost {
     fn drop(&mut self) {
         // SAFETY: 이 연결과 자원은 이 host 만 쓰며, 상위 계약에 따라 이 창으로 만든 surface 는 이미 drop 됐다.
         unsafe {
-            (self.xl.XFreeGC)(self.display, self.clear_gc);
             (self.xl.XDestroyWindow)(self.display, self.overlay);
             (self.xl.XFreeColormap)(self.display, self.colormap);
             (self.xl.XCloseDisplay)(self.display);
@@ -385,19 +379,21 @@ unsafe fn create_overlay_window(
     probe: &Probe,
     parent: c_ulong,
     [x, y, w, h]: Placement,
-) -> (c_ulong, c_ulong, xlib::GC) {
+) -> (c_ulong, c_ulong) {
     // SAFETY: 호출자 계약. 속성·힌트 구조체는 지역 변수이거나 Xlib 이 할당해 여기서 해제한다.
     unsafe {
         let colormap =
             (xl.XCreateColormap)(display, probe.root, probe.visual.visual, xlib::AllocNone);
         let mut attrs: xlib::XSetWindowAttributes = std::mem::zeroed();
-        // 배경 None: 크기 변경 때 서버가 검정으로 지우는 프레임이 없다(측정).
-        attrs.background_pixmap = 0;
+        // 배경 픽셀 0(알파 0). 배경이 None 이면 서버가 map 할 때 창 아래 화면을 불투명하게 복사해 두고, 창
+        // 관리자가 숨김 요청 뒤에 map 한 창이 그 사본으로 화면을 가렸다(측정). 픽셀 배경이면 서버가 map·노출
+        // 때 투명으로 칠한다.
+        attrs.background_pixel = 0;
         attrs.border_pixel = 0;
         attrs.colormap = colormap;
         attrs.override_redirect = 0;
         let mask =
-            xlib::CWBackPixmap | xlib::CWBorderPixel | xlib::CWColormap | xlib::CWOverrideRedirect;
+            xlib::CWBackPixel | xlib::CWBorderPixel | xlib::CWColormap | xlib::CWOverrideRedirect;
         let overlay = (xl.XCreateWindow)(
             display,
             probe.root,
@@ -418,11 +414,9 @@ unsafe fn create_overlay_window(
         (fixes.XFixesDestroyRegion)(display, empty);
         (xl.XSelectInput)(display, parent, xlib::StructureNotifyMask);
         (xl.XSelectInput)(display, overlay, xlib::StructureNotifyMask);
-        let clear_gc = (xl.XCreateGC)(display, overlay, 0, std::ptr::null_mut());
-        (xl.XSetForeground)(display, clear_gc, 0);
         // 만들기 요청을 서버가 처리하게 한다. 만들 때 한 번이다.
         (xl.XSync)(display, 0);
-        (overlay, colormap, clear_gc)
+        (overlay, colormap)
     }
 }
 

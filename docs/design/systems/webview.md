@@ -355,7 +355,7 @@ macOS·Windows는 투명 모드를 보고하지 않고 주 표면의 불투명 �
 | `FailedThisEpisode` | 대상 팝업이 닫힘 | `Absent`. 다음 구간에 한 번 다시 시도한다 |
 | `Unavailable` | - | 창 수명 동안 다시 시도하지 않는다 |
 
-- 순서: 팝업이 처음 뜬 동기화는 host가 없어 모드를 낮추지 않고 페이지를 숨긴 채 다시 그리기를 요청한다. 같은 프레임 훅이 host를 만들어 숨긴 채 준비한다. 다음 프레임 렌더가 숨긴 host에 지운 뒤 현재 그림을 그려 present하고, 그 훅이 기록의 모드·그림 위치가 지금과 같으면 host를 보이고 올린다. 그다음 프레임 렌더가 보이는 host에 present한 뒤 동기화가 페이지를 드러낸다. 그러므로 숨긴 채 그리기 → 보이기 → 그리기 → 드러내기 순서이고 GPU나 OS를 기다리지 않는다. 숨겨 두었던 host를 다시 쓸 때도 같은 순서다. 숨기기 전 그림이 OS 층에 남아 있어도 보이기 전에 이번 구간 그림이 그 위에 present된다. 모드가 바뀌어 기록이 맞지 않으면 보이지 않고 한 번 더 준비한다. 숨긴 채 그리다 실패하면 보이지 않고 오버레이 pass의 실패 기록으로 숨김에 내려간다. 만들지 못하면 다음 동기화가 상한 숨김으로 모드를 낮추고, 구멍 방식 불투명은 그대로 쓴다.
+- 순서: 팝업이 처음 뜬 동기화는 host가 없어 모드를 낮추지 않고 페이지를 숨긴 채 다시 그리기를 요청한다. 같은 프레임 훅이 host를 만들어 숨긴 채 준비한다. 다음 프레임 렌더가 숨긴 host에 지운 뒤 현재 그림을 그려 present하고, 그 훅이 기록의 모드·그림 위치가 지금과 같으면 host를 보이고 올린다. 그다음 프레임 렌더가 보이는 host에 present한 뒤 동기화가 페이지를 드러낸다. 그러므로 숨긴 채 그리기 → 보이기 → 그리기 → 드러내기 순서이고 GPU나 OS를 기다리지 않는다. 숨겨 두었던 host를 다시 쓸 때도 같은 순서다. 숨기기 전 그림이 OS 층에 남아 있어도 보인 직후 지난 그림이 노출되지 않아야 한다. 마지막 준비 그림 또는 완전히 투명한 빈 그림을 허용한다. 모드가 바뀌어 기록이 맞지 않으면 보이지 않고 한 번 더 준비한다. 숨긴 채 그리다 실패하면 보이지 않고 오버레이 pass의 실패 기록으로 숨김에 내려간다. 만들지 못하면 다음 동기화가 상한 숨김으로 모드를 낮추고, 구멍 방식 불투명은 그대로 쓴다.
 - 숨긴 채 present한 그림이 보이기 전에 OS 합성에 반영되는지는 앱이 알 수 없다. present 반환은 GPU 제출이고 화면 반영 확인이 아니다. 숨긴 상태의 present 가능 여부와 보이기 직후 첫 화면은 OS host마다 측정해야 하며, 측정하지 않은 OS host는 투명 합성을 보고하지 않는다. 2026-10-22 macOS 실험(NSView + CAMetalLayer, 입력 없음)에서 숨겼다 다시 보인 layer는 다음 present 전에 숨기기 전 그림을 보였고, 숨길 때 layer contents를 비우면 그 뒤 present도 보이지 않았다. 추가 실험에서는 숨긴 상태의 acquire·present 33회가 모두 반환했지만, 빠르게 다시 보인 5회 모두 지난 그림이 관측됐다. GPU 작업 완료 직후 보인 경우도 5회 중 2회 지난 그림이 남았다. 따라서 현재 macOS는 불투명을 유지하며, GPU 작업 완료만으로 새 그림의 화면 반영을 보장하지 않는다.
 - 새로 드러낸 페이지 위로 host를 올리는 것은 Linux GTK `show_all`과 macOS 새 WKWebView가 위로 올라오기 때문이다. 올린 프레임에는 한 번 더 그린다.
 - 주 창 `Resized`·`ScaleFactorChanged`는 `GpuState::resize`가 오버레이 surface도 같은 크기로 다시 설정하고 host를 따라가게 한다. `Moved`는 붙은 host만 따라가게 한다. 종료 때 WebView를 숨기는 경로가 host도 버린다.
@@ -378,7 +378,7 @@ debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--forc
 - 부모 창 아래의 ARGB 자식 창은 컴포지팅 매니저 유무와 관계없이 알파가 합성되지 않았다. GPU 없이 X 픽셀을 직접 넣어도 같아 원인은 X 서버 쪽이다. 자식 창 방식으로는 불투명 사각형만 된다.
 - 투명 합성은 최상위 override-redirect ARGB 창이고 컴포지팅 매니저(`_NET_WM_CM_S0` 소유자)가 있을 때만 됐다. 이 방식은 빈 입력 shape가 필수다. 2026-10-22 소유 Xvfb와 격리 GNOME Shell(mutter 46, llvmpipe 합성) 실험에서 override-redirect 창은 부모 창 이동을 따라가지 않았고, 부모 창 최소화·다른 작업 공간 전환·다른 앱 활성화 뒤에도 화면에 남았다. 부모 창을 `WM_TRANSIENT_FOR`로 둔 관리 창(utility·dialog 종류, 입력 힌트 거짓, 작업 표시줄·페이저 제외, 장식 없음)은 최소화·작업 공간·다른 앱과의 순서를 부모 창과 함께 따랐고 만들 때 활성 창을 바꾸지 않았다. 이동은 두 방식 모두 앱이 옮겨야 한다. 다른 창 관리자는 측정하지 않았다.
 - 오버레이 wgpu 표면은 주 표면과 같은 `Device`로 configure됐다. NVIDIA Vulkan과 GL은 `Opaque`만 보고했는데도 컴포지팅 매니저가 알파를 반영했다. 드라이버 동작에 기대는 결과다.
-- GTK `show_all`이 WebView X 창을 맨 위로 올린다. `set_visible(true)`가 `show_all`을 부르므로 WebView를 보일 때마다 오버레이를 다시 올리고 같은 프레임에 다시 그려야 한다. 오버레이 창 배경을 None으로 해야 리사이즈 중 검정 프레임이 나오지 않는다.
+- GTK `show_all`이 WebView X 창을 맨 위로 올린다. `set_visible(true)`가 `show_all`을 부르므로 WebView를 보일 때마다 오버레이를 다시 올리고 같은 프레임에 다시 그려야 한다. 이 실험의 override-redirect 창에서는 배경 None으로 리사이즈 중 검정 프레임을 피했다. 현재 관리 창은 아래 투명 구현의 알파 0 배경을 쓴다.
 - 입력: WebView에 팝업과 같은 사각형 input 구멍을 내면 그 클릭은 winit으로 온다. WebView 전체를 input 구멍으로 하면 본문 클릭·휠·키가 winit으로 와 바깥 클릭 dismiss가 가능하다. 구멍이 없으면 포인터가 본문 위일 때 키가 WebView로 간다. 키는 XTEST로만 넣었고 egui 텍스트 입력 경로는 확인하지 않았다.
 - 불투명 방식에서는 본문이 scrim으로 어두워지지 않아 WebView 밖만 어두운 얼룩이 생기고, 상자 밖 그림자와 둥근 모서리 바깥은 표현할 수 없었다. 투명 방식에서 두 표면에 같은 scrim을 그리면 WebView 밖 영역이 두 번 어두워졌다.
 - 이동 중 오버레이 가장자리 몇 px의 1프레임 잔상을 관측했다. tearing은 측정하지 않았다.
@@ -408,13 +408,13 @@ debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--forc
 창 단위 host(`src/host_api/webview/overlay_host/linux.rs`)다. 주 창마다 오버레이 창 하나를 둔다.
 
 - 만들기: host가 자기 X 연결을 열어 합성 관리자 선택(`_NET_WM_CM_S<화면>`) 소유자, XFixes, SHAPE, 32bit TrueColor visual을 확인한다. 하나라도 없으면 `Unsupported`라 그 창은 창 수명 동안 불투명(주 표면)을 쓴다. 합성 관리자가 나중에 생겨도 그 창에서는 다시 만들지 않는다.
-- 창: root의 자식인 32bit ARGB 관리 창이다. 배경은 None이다. `WM_TRANSIENT_FOR`는 주 창, 입력 힌트는 거짓, `_NET_WM_USER_TIME`은 0이다. `_NET_WM_STATE`는 작업 표시줄·페이저 제외, 종류는 utility, 장식은 없고 입력 shape는 비었다. 전역 위(ABOVE) 상태는 두지 않는다. 창 관리자가 주 창과 함께 최소화·작업 공간 이동·다른 앱과의 순서를 처리한다.
+- 창: root의 자식인 32bit ARGB 관리 창이다. 배경 픽셀은 알파 0이다. 서버가 map·노출 때 투명하게 칠하므로 이전 구간 그림이나 아래 화면 사본을 노출하지 않는다. `WM_TRANSIENT_FOR`는 주 창, 입력 힌트는 거짓, `_NET_WM_USER_TIME`은 0이다. `_NET_WM_STATE`는 작업 표시줄·페이저 제외, 종류는 utility, 장식은 없고 입력 shape는 비었다. 전역 위(ABOVE) 상태는 두지 않는다. 창 관리자가 주 창과 함께 최소화·작업 공간 이동·다른 앱과의 순서를 처리한다.
 - 합성(`composite`): 합성 관리자 소유자가 있으면 `ExternalArgb`다. 오버레이 surface의 alpha 설정이 `Opaque`여도 합성 관리자가 알파를 반영한다. 소유자 변화는 만들 때 신청한 XFixes 선택 이벤트로 알고, 사라지면 `Unavailable`과 `tracing::warn!`, 돌아오면 info다. 서버 왕복 요청은 쓰지 않는다.
-- 따라가기(`follow`): 주 창 configure 이벤트가 온 뒤에만 주 창 위치를 다시 읽고(서버 왕복 두 번) 오버레이 창을 옮긴다. 숨긴 동안에는 읽지 않고, 보일 때 한 번 맞춘다. 이동·크기는 창 관리자가 옮기지 않으므로 host가 맞춘다.
+- 따라가기(`follow`): 주 창 configure 이벤트가 온 뒤에만 주 창 위치를 다시 읽고(서버 왕복 두 번) 오버레이 창을 옮긴다. 숨긴 동안의 준비·크기 변경에서도 맞추므로 숨긴 채 present하는 표면과 X 창의 크기가 같다. 이동·크기는 창 관리자가 옮기지 않으므로 host가 맞춘다.
 - 창 관리자 거절: 창 관리자는 프로그램이 요청한 관리 창 위치를 바꿀 수 있다. 오버레이 창 configure가 응답을 기다리는 요청과 다르면 그 주 창 위치에서는 `Unavailable`과 경고다. 주 창이 다른 위치로 움직이면 다시 시도한다(`overlay_host/linux/fit.rs`). 거절된 위치로 보인 첫 프레임은 어긋난 그림이 한 번 보일 수 있다.
-- 표시: 보이기는 map 뒤 창 전체를 알파 0으로 채우고, 숨기기는 unmap이다. 첫 present 전에 지난 그림이 남지 않게 하기 위해서다.
+- 표시: 보이기는 map이며 별도 채우기를 보내지 않는다. 숨기기는 ICCCM withdraw(unmap과 root에 보내는 합성 UnmapNotify)다. 관리자가 이전 map 요청을 뒤늦게 처리한 MapNotify를 숨김 상태에서 받으면 다시 withdraw한다. 배경 None과 단순 unmap 조합에서는 뒤늦게 map된 창에 아래 화면의 불투명 사본이 남는 것을 관측했다.
 - 올리기(`raise`): 아무것도 하지 않는다. WebView X 창은 주 창의 자식이라 최상위 오버레이 창 위로 오지 못한다. `XRaiseWindow`를 보내면 창 관리자가 주 창 무리를 다른 앱 위로 올릴 수 있다.
-- 수명: host가 X 연결을 소유하고 Drop에서 GC·창·colormap을 지운 뒤 연결을 닫는다. surface가 host보다 먼저 drop되는 공통 순서를 따른다.
+- 수명: host가 X 연결을 소유하고 Drop에서 창·colormap을 지운 뒤 연결을 닫는다. surface가 host보다 먼저 drop되는 공통 순서를 따른다.
 - 입력: WebView X 창 입력 shape는 불투명과 같이 비고, 오버레이 창 입력 shape도 비어 있어 포인터와 포인터로 정해지는 키는 부모(winit) 창으로 간다.
 
 2026-10-22 소유 Xvfb와 격리 GNOME Shell(mutter 46, 합성 관리자 있음, NVIDIA Vulkan, 오버레이 surface alpha `Opaque`)에서 debug 인스턴스로 확인한 범위다. 배율은 1과 `WINIT_X11_SCALE_FACTOR=1.25`다.
@@ -426,7 +426,8 @@ debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--forc
 - 팝업을 띄운 채 새 WebView 탭을 만들거나 탭을 바꿔 다른 WebView를 보여도 오버레이 창은 위에 남았고 새 페이지 위에 팝업이 그려졌다.
 - 전체화면 주 창과 사용자가 일부를 화면 밖으로 끌어낸 주 창에서는 mutter가 오버레이 창을 작업 영역 안(위 패널 아래, 화면 안)으로 옮겼다. 위 거절 처리로 불투명으로 내려갔고 전체화면을 풀자 투명으로 돌아왔다.
 - 합성 관리자(GNOME Shell)를 끄면 경고와 함께 불투명으로 내려갔고, 다시 띄우자 투명으로 돌아왔다. 합성 관리자가 없는 Xvfb에서는 오버레이 창을 만들지 않고 불투명이었다.
-- 숨겼던 오버레이 창을 다시 map하면 첫 present 전에 지난 그림이 보이는지 확인했다. 앱을 멈춘 채 같은 창을 밖에서 다시 map했을 때 화면은 숨긴 상태와 같았다(알파 0 채우기 유무 모두). 앱이 정상 실행 중일 때 보이기와 첫 present 사이 프레임은 캡처로 잡지 못했다.
+- 숨긴 채 준비 present한 뒤 map 직전·직후에서 제품 프로세스만 멈추고 합성 관리자의 화면을 캡처했다. 처음 표시·다시 열기·숨김 중 1280×720에서 1400×850으로 크기 변경 모두 map 직후 창의 모든 픽셀이 알파 0이었다. 준비 그림도 남지 않았으며 다음 보이는 present에서 팝업이 나타났다. 별도 빨강 픽셀을 넣은 대조군은 화면에 나타났으므로 캡처가 창 전체를 누락한 것은 아니다. 이는 mutter에서 정지시킨 경계의 관측이며 모든 드라이버·합성 관리자의 순간적인 프레임을 보장하지 않는다.
+- 새 숨김 준비 순서에서 NVIDIA Vulkan과 lavapipe Vulkan을 각각 강제해 처음 만든 창·다시 표시하는 창·숨김 resize의 acquire/present 3회씩을 계측했다. 모두 반환했고 숨긴 acquire는 NVIDIA 0.2~0.6ms, lavapipe 5.3~7.6ms였다. present 호출은 각각 1.5~1.7ms와 2.7~3.0ms였으며 GPU 완료나 화면 반영 시간은 아니다. 디버거 계측이 포함된 표본이다. 두 드라이버 모두 전체화면 거절 때 불투명, 복귀 뒤 투명이며 resize 뒤 실패 상태가 없었다.
 - `tasty screenshot --window`는 팝업을 담고 WebView 픽셀은 없었다. 팝업을 띄운 채 창 닫기 요청으로 종료했을 때 경고·X 오류 없이 끝났다.
 - 다른 창 관리자·합성 관리자(KWin, picom 등), 실행 중 배율 변경, 다중 모니터, IME, 사용자 데스크톱 세션은 확인하지 않았다. 창 관리자 거절 감지는 mutter에서만 실제로 일으켰다.
 

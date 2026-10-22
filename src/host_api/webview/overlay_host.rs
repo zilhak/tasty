@@ -22,7 +22,8 @@ use winit::window::Window;
 /// 구현은 부모 창의 `Arc<Window>` 를 필드로 보유한다. 이 표면으로 만든 wgpu surface 는 host 보다 먼저
 /// drop 되므로(`OverlaySurfaceParts` 필드 순서) host 가 보유한 창이 surface 수명 내내 부모 창과 그
 /// display 연결을 살려 둔다. 숨김 상태에서는 그림이 보이지 않아야 하고, 숨긴 동안에도 surface 에 present
-/// 할 수 있어야 하며, 보일 때는 숨긴 동안 마지막으로 present 한 그림을 보여야 한다. 공통 훅은 이번 구간
+/// 할 수 있어야 한다. 보인 직후에는 지난 구간 그림이 없어야 한다. 마지막 준비 그림 또는 완전히 투명한 빈
+/// 그림을 허용하며, 페이지는 보이는 host 에 이번 그림을 present 한 뒤에만 드러낸다. 공통 훅은 이번 구간
 /// 그림을 숨긴 채 present 한 뒤에만 보인다. present 반환은 화면 반영 확인이 아니므로 보인 직후 첫 화면은
 /// OS 마다 측정한다.
 pub(crate) trait OverlayNativeHost {
