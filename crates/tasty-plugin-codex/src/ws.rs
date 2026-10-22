@@ -5,9 +5,6 @@
 
 use std::io::{Read, Write};
 
-/// 읽을 수 있는 메시지 하나의 최대 크기.
-const MAX_MESSAGE: usize = 16 * 1024 * 1024;
-
 pub(crate) struct WsConn<S: Read + Write> {
     stream: S,
     server: bool,
@@ -96,7 +93,11 @@ impl<S: Read + Write> WsConn<S> {
     fn send_frame(&mut self, opcode: u8, payload: &[u8]) -> std::io::Result<()> {
         let mask = random_bytes::<4>()?;
         let mask_bit = if self.server { 0 } else { 0x80 };
-        let mut frame = Vec::with_capacity(payload.len() + 14);
+        let mut frame = Vec::new();
+        let capacity = payload.len().checked_add(14).ok_or_else(|| {
+            std::io::Error::other("websocket frame length exceeds the address space")
+        })?;
+        frame.try_reserve(capacity).map_err(std::io::Error::other)?;
         frame.push(0x80 | opcode);
         let n = payload.len();
         if n < 126 {
@@ -133,6 +134,32 @@ impl<S: Read + Write> WsConn<S> {
         Ok(buf)
     }
 
+    /// Grow from bytes actually received, not the peer's advertised frame length. Messages are
+    /// still assembled for JSON-RPC; allocation failure is an error, not a size-based refusal.
+    fn read_payload(
+        &mut self,
+        mut remaining: u64,
+        mask: Option<&[u8]>,
+        output: &mut Vec<u8>,
+    ) -> std::io::Result<()> {
+        let mut chunk = [0u8; 8192];
+        let mut offset = 0;
+        while remaining != 0 {
+            let count = remaining.min(chunk.len() as u64) as usize;
+            self.stream.read_exact(&mut chunk[..count])?;
+            if let Some(mask) = mask {
+                for (index, byte) in chunk[..count].iter_mut().enumerate() {
+                    *byte ^= mask[(offset + index) % 4];
+                }
+            }
+            output.try_reserve(count).map_err(std::io::Error::other)?;
+            output.extend_from_slice(&chunk[..count]);
+            remaining -= count as u64;
+            offset = (offset + count) % 4;
+        }
+        Ok(())
+    }
+
     /// 다음 텍스트 메시지를 읽는다. ping에는 pong으로 답하고 close는 EOF 오류로 돌려준다.
     pub(crate) fn recv_text(&mut self) -> std::io::Result<String> {
         let mut message = Vec::new();
@@ -149,32 +176,32 @@ impl<S: Read + Write> WsConn<S> {
                 let b = self.read_exact(8)?;
                 len = u64::from_be_bytes(b.try_into().unwrap_or([0; 8]));
             }
-            let len = usize::try_from(len).unwrap_or(usize::MAX);
-            if len > MAX_MESSAGE || message.len() + len > MAX_MESSAGE {
-                return Err(std::io::Error::other("websocket message too large"));
+            if len > i64::MAX as u64 || (opcode >= 8 && (!fin || len > 125)) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "invalid websocket frame length or control frame",
+                ));
             }
             let mask = if masked {
                 Some(self.read_exact(4)?)
             } else {
                 None
             };
-            let mut data = self.read_exact(len)?;
-            if let Some(m) = mask {
-                for (i, b) in data.iter_mut().enumerate() {
-                    *b ^= m[i % 4];
-                }
-            }
             match opcode {
-                0x9 => self.send_frame(0xA, &data)?,
-                0xA => {}
-                0x8 => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "websocket closed by the server",
-                    ));
+                0x8..=0xA => {
+                    let mut data = Vec::new();
+                    self.read_payload(len, mask.as_deref(), &mut data)?;
+                    if opcode == 0x9 {
+                        self.send_frame(0xA, &data)?;
+                    } else if opcode == 0x8 {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "websocket closed by the server",
+                        ));
+                    }
                 }
                 0x0..=0x2 => {
-                    message.extend_from_slice(&data);
+                    self.read_payload(len, mask.as_deref(), &mut message)?;
                     if fin {
                         return String::from_utf8(message).map_err(std::io::Error::other);
                     }
@@ -184,6 +211,10 @@ impl<S: Read + Write> WsConn<S> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "ws_receive_tests.rs"]
+mod receive_tests;
 
 #[cfg(test)]
 pub(crate) mod test_server {

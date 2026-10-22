@@ -1,4 +1,4 @@
-<!-- source-hash: bad2071e30a2 -->
+<!-- source-hash: c1296a8bcc28 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -56,6 +56,7 @@ After upgrading, run the install command again and start in a new terminal. Your
 
 Tasty starts a dedicated Codex server for each integrated terminal and ends it when Codex exits or the terminal closes.
 It does not reconnect conversations or shared servers that are already running. This is based on Codex CLI 0.154.0.
+Large plugin catalogs and conversation histories are passed through without truncation; response size alone does not disconnect the session.
 Automatic restoration on the startup screen waits up to 30 seconds for Tasty to become ready. You do not need to wake the terminal manually after startup.
 
 Automatic integration supports approval, sandbox, model, working directory (`-C`), and session selection options.

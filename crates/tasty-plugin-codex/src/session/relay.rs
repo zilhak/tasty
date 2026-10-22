@@ -5,9 +5,14 @@
 //! keeps working. Codex 0.154 then fills thread requests with its configured defaults, so the
 //! launch policy replaces those values until the user picks permissions in the TUI, which the
 //! TUI reports with `thread/settings/update`.
+#[path = "relay_message.rs"]
+mod message;
+
 use super::command::ResumeSettings;
 use crate::{rpc::Endpoint, ws::WsConn};
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -430,63 +435,50 @@ fn connection(
         let result = (|| -> io::Result<()> {
             loop {
                 let text = from_tui.recv_text()?;
-                let mut message: Value = serde_json::from_str(&text).map_err(io::Error::other)?;
-                if message["method"] == "thread/settings/update"
-                    && is_permission_choice(&message["params"])
-                {
-                    chosen.store(true, Ordering::Release);
-                }
-                // Ephemeral threads are the TUI's own side tasks, such as naming the
-                // conversation. They keep their policy and never become the restorable thread.
-                if matches!(
-                    message["method"].as_str(),
-                    Some("thread/start" | "thread/resume" | "thread/fork")
-                ) && message["params"]["ephemeral"] != true
-                {
-                    let params = message
-                        .get_mut("params")
-                        .and_then(Value::as_object_mut)
-                        .ok_or_else(|| io::Error::other("missing thread parameters"))?;
-                    let effective =
-                        apply_settings(params, &overrides, chosen.load(Ordering::Acquire));
-                    requests
-                        .lock()
-                        .map_err(|_| io::Error::other("relay pending poisoned"))?
-                        .insert(message["id"].to_string(), effective);
-                }
-                to_server.send_text(&message.to_string())?;
+                let rewritten = message::request(&text, &overrides, &chosen, &requests)?;
+                to_server.send_text(rewritten.as_deref().unwrap_or(&text))?;
             }
         })();
+        report_transfer_error("TUI to server", &result);
         close.close();
         result
     });
     let result = (|| -> io::Result<()> {
         loop {
             let text = from_server.recv_text()?;
-            let mut message: Value = serde_json::from_str(&text).map_err(io::Error::other)?;
-            if message.get("result").is_some() || message.get("error").is_some() {
-                let settings = pending
-                    .lock()
-                    .map_err(|_| io::Error::other("relay pending poisoned"))?
-                    .remove(&message["id"].to_string());
-                if let Some(settings) = settings
-                    && let Some(result) = message.get("result")
-                    && let Err(error) = settings.verify(result).and_then(|()| bind(result))
-                {
-                    message = json!({"id":message["id"], "error":{"code":-32000,"message":error}});
-                }
-            }
-            to_tui.send_text(&message.to_string())?;
+            let rewritten = message::reply(&text, &pending, &bind)?;
+            to_tui.send_text(rewritten.as_deref().unwrap_or(&text))?;
         }
     })();
+    report_transfer_error("server to TUI", &result);
     front.close();
     backend.close();
-    if upstream.join().is_err() {
-        tracing::warn!("codex relay upstream panicked");
+    // Both directions report their original error before closing the peer reader. Do not lose
+    // a normal thread return containing Err when joining the TUI-to-server worker.
+    let upstream_result = upstream
+        .join()
+        .map_err(|_| io::Error::other("codex relay upstream panicked"))?;
+    result.and(upstream_result)
+}
+
+fn report_transfer_error(direction: &str, result: &io::Result<()>) {
+    if let Err(error) = result {
+        match error.kind() {
+            io::ErrorKind::UnexpectedEof
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::BrokenPipe => {
+                tracing::debug!(direction, %error, "codex relay disconnected");
+            }
+            _ => tracing::warn!(direction, %error, "codex relay transfer failed"),
+        }
     }
-    result
 }
 
 #[cfg(test)]
 #[path = "relay_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "relay_large_tests.rs"]
+mod large_tests;
