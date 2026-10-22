@@ -1032,7 +1032,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 - 행은 설정 공용 행 격자다(라벨 열 = 가장 긴 라벨을 150 … 240 으로 clamp, gap 16, 행 높이
   `settings_row_min_height`(32), 설명은 행 아래 caption). 콘텐츠 wrapper 패딩은 공유 `tab_content_frame`(space-lg)
   가 제공(형제 탭 관례 — 재패딩 안 함).
-- 최대 크기 입력 폭은 승인된 90px인 `field_width_xs`를 사용한다. field-width 토큰 세트는 90/110/160/180/200이다. 2026-09-17 결정에서 예제의 88px 대신 90px를 승인했다. 2026-09-20 확인한 `gallery/overlays-shared.jsx`의 `style={{ width: 88 }}`에는 아직 반영되지 않았으므로 그 값으로 되돌리지 않는다.
+- 최대 크기 입력은 정수 칸이라 값에 맞춰 자라며 하한이 `number-field-min-width`(→ `field_width_xs` 90)다(아래 Performance 절의 공용 규칙). 하한 90 은 승인된 값이다. field-width 토큰 세트는 90/110/160/180/200이다. 2026-09-17 결정에서 예제의 88px 대신 90px를 승인했다. 2026-09-20 확인한 `gallery/overlays-shared.jsx`의 `style={{ width: 88 }}`에는 아직 반영되지 않았으므로 그 값으로 되돌리지 않는다.
 
 - **"MiB" 는 필드 밖 정적 mono suffix**(Toast 의 " s" 와 동형, addon/Tag 아님). i18n 단위
   기호 예외로 리터럴.
@@ -1066,7 +1066,7 @@ Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 
 | 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
 |---|---|---|
 | Spec 의 콘텐츠 컬럼(헤딩 REPORT LIMITS mono micro uppercase muted) | `src/view/settings/ui/tabs/task_pipeline.rs::draw_task_pipeline_tab` | `components/settings_task_pipeline.rs::draw` (`settings` 섹션 `settings-task-pipeline` spec) — Mocha 기본 짝 · Latte 범위 밖 짝 |
-| 숫자 행 두 개(mono Input `field-width-xs` 오른쪽 정렬 + 정적 `B`) | `SettingsRow` + `number::number_field`(`NumberSpec{suffix: Some("B")}`), 두 칸의 범위가 서로의 현재 값으로 좁혀진다(`tasty_settings::REPORT_*_BYTES_RANGE`) | `SettingsRow` + `bytes_control`(같은 범위 상수) |
+| 숫자 행 두 개(mono Input, 값에 맞춰 자라고 하한 `number-field-min-width` 90, 오른쪽 정렬 + 정적 `B`) | `SettingsRow` + `number::integer_field`(`NumberSpec{suffix: Some("B")}`), 두 칸의 범위가 서로의 현재 값으로 좁혀진다(`tasty_settings::REPORT_*_BYTES_RANGE`) | `SettingsRow` + `bytes_control`(같은 범위 상수) |
 | 범위 줄(범위 밖일 때만, `accent-danger`, caption) | `number_field` 의 범위 줄 | `bytes_control` 의 범위 줄 |
 | 행별 muted 설명 · 행 사이 separator | `SettingsRow::caption` · `row_separator`(Remote transfer 와 공유) | `SettingsRow::caption` · `separator_line` |
 
@@ -1084,12 +1084,27 @@ Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 
 |---|---|---|
 | 적용 시점 안내(탭 맨 위 한 번, info 글리프 `icon-size-sm` `settings-apply-note-glyph` + caption `settings-apply-note-fg`, 간격 `settings-apply-note-gap` 8, `measure-md` 에서 줄바꿈·말줄임 없음) | `tasty_ui_widgets::settings_apply_note` | 같은 함수 |
 | 스위치 두 행(PTY 선택 폴링 · 스크롤백 디스크 스왑) | `src/view/settings/ui/tabs/performance.rs::draw_performance_tab` — `SettingsRow::hint` + `tasty_ui_widgets::switch` | `components/settings_performance.rs::draw` — 기본값 · 스왑 끔 · -1 · 큰 설정 값 · 좁은 폭 360, Mocha·Latte |
-| 디스크 보관 줄 수(mono Input `field-width-color` 110 오른쪽 정렬, 단위 addon `settings.number.unit_lines`, -1 이면 칸 뒤 caption `settings.performance.no_limit` — 켜짐 `text-secondary` · 꺼짐 `state-disabled-fg`) | `number::number_field`(`NumberSpec::int(-1, 100000000)` + `width` · `addon` · `note`, 디스크 스왑이 꺼져 있으면 `enabled(false)`) | `lines_control`(같은 범위·단위·비활성 조건) |
-| 범위 줄(범위 밖일 때만, `accent-danger`, caption) | `number_field` 의 범위 줄 | `lines_control` 의 범위 줄 |
+| 디스크 보관 줄 수(mono Input, 값에 맞춰 자람, 왼쪽 정렬, 칸 뒤 단위 `settings.number.unit_lines`, -1 이면 단위 자리에 `settings.performance.no_limit`) | `number::integer_field`(`NumberSpec::int(-1, 100000000)` + `align(Left)` · `unit` · `no_limit` · `range_note`, 디스크 스왑이 꺼져 있으면 `enabled(false)`) | `lines_control`(같은 범위·단위·비활성 조건) |
+| 범위 줄(범위 밖일 때만, caption `number-field-note-fg`, `measure-md` 에서 줄바꿈, 칸 줄과 space-xs) — 문구 `settings.performance.disk_lines_range` | `tasty_ui_widgets::number_field_note` | 같은 함수 |
 
 - 안내 → 첫 행, 행 → 행 간격은 모두 `settings-row-gap`(space-md 12)이다. 킷 Settings 본문과 같은 값이며, `#perfapply` 견본의 행 사이 space-sm 은 견본 카드 안의 축약이다.
 - 행 라벨과 도움말은 본체 문자열을 쓴다. 시안 견본의 라벨·도움말 문장은 견본 표현이며, 재시작이 필요하다는 표현만 쓰지 않는다는 지시다.
-- 숫자 칸 값 정렬은 모든 숫자 칸이 공유하는 `number_field` 의 오른쪽 정렬을 유지한다.
+
+### 값에 맞춰 자라는 숫자 칸
+
+시안 `gallery/overlays-windows-perf.jsx` `PfLinesSpec`(`PfNumField`)이다. 갤러리 spec id 는 `settings-performance-number`(`settings_performance::draw_number_field`)다.
+
+| 구성 | 본체 함수 | 갤러리 항목 |
+|---|---|---|
+| 칸 폭 = max(`number-field-min-width`, (글자 수 + 1) × 칸 mono 글꼴 `0` 너비 + 2 × `input-padding-x` + 2 × 테두리), 상한은 남은 폭. 글자 수는 편집 중이면 친 글자, 아니면 저장 값(부호 포함) | `tasty_ui_widgets::number_field_width` | 같은 함수 |
+| 칸 뒤 단위(mono caption `number-field-unit-fg`, 간격 `number-field-unit-gap`, 비활성 `state-disabled-fg`) · -1 의 "no limit"(UI 글꼴 caption, 단위 자리) | `tasty_ui_widgets::number_field_unit` | 같은 함수 |
+| 범위 줄(caption `number-field-note-fg`, `measure-md`) | `tasty_ui_widgets::number_field_note` | 같은 함수 |
+
+- **공용 규칙**: 소수 자리가 없는 모든 설정 숫자 칸(`number::number_field`·`integer_field`, `decimals == 0`)이 값에 맞춰 자란다. 대상은 디스크 보관 줄 수, 스크롤백 줄 수, 알림 묶음 ms, 휠 스크롤 거리(pt), 원격 전송 최대 크기(MiB), 작업 파이프라인 바이트 두 칸, 글꼴 크기(기본·surface·override), 정수 값인 plugin 숫자 설정이다. 소수 칸(토스트 표시 시간, 줄 높이)은 `field-width-xs` 고정이다. File Handlers priority 는 `number_field` 를 쓰지 않으며 `file-handler-priority-width` 90 고정이다(시안 예외).
+- 원격 전송·파이프라인·그 밖의 칸은 폭 규칙만 더한다. 단위 색(`text-muted`)·오른쪽 정렬·범위 줄(`accent-danger`, 범위와 확정될 값)은 그대로다. 시안 Meta 의 단위·no limit·범위 문장·왼쪽 정렬은 디스크 보관 줄 수 칸에만 쓴다.
+- 정수 칸은 `i128` 로 읽고 쓴다. `f64` 를 거치면 2^53 을 넘는 값(예: 9223372036854775807)이 다른 수로 보이기 때문이다. 읽은 값은 범위 밖이어도 보정하지 않고 그대로 보이며, 사용자가 확정할 때만 범위로 맞춘다.
+- 편집 중 폭은 그 프레임이 시작할 때의 글자 수로 정한다. 커서 한 칸 여유가 있어 한 글자를 친 프레임도 값 전체가 칸에 들어가고, 다음 프레임에 칸이 자란다. 칸이 남은 폭 상한에 닿을 때만 egui 기본 한 줄 스크롤이 생긴다.
+- 시안의 "before"(110 + 칸 안 단위) 견본은 갤러리에 옮기지 않았다. 지난 모양이며 본체에 없다.
 
 ## 파일 피커 (Overlays)
 

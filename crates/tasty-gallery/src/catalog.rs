@@ -1761,9 +1761,17 @@ pub fn pages() -> Vec<Page> {
                             "settings-performance",
                             "Terminal › Performance",
                             Some(
-                                "apply note on top · two switch rows · Lines kept on disk (numeric + unit, -1 = no limit) · disabled while disk swap is off",
+                                "apply note on top · two switch rows · Lines kept on disk (numeric, unit after the field, -1 = no limit) · disabled while disk swap is off",
                             ),
                             components::settings_performance::draw,
+                        ),
+                        spec(
+                            "settings-performance-number",
+                            "Terminal › Performance — the number field fits its value",
+                            Some(
+                                "field grows to its value · unit after the field · -1 = no limit in the unit's place · over range = invalid edge + range line · 9 / 10 / 19 digits · ko / ja · narrow 360",
+                            ),
+                            components::settings_performance::draw_number_field,
                         ),
                     ],
                 ),

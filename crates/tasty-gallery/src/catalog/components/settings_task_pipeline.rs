@@ -59,7 +59,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("row grid", "label 150 … 240 · gap 16 (settings-label-gap)"),
             (
                 "field",
-                "mono Input · field-width-xs 90 · right-aligned · unit B (static, muted, caption)",
+                "mono Input that fits its value (number-field-min-width 90 floor) · right-aligned · unit B (static, muted, caption)",
             ),
             (
                 "caption",
@@ -79,7 +79,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::without_color("settings-row-gap", "→ space-md 12"),
             TokenChip::without_color("settings-row-caption-gap", "row → caption 4"),
-            TokenChip::without_color("field-width-xs", "90"),
+            TokenChip::without_color("number-field-min-width", "→ field-width-xs 90"),
             TokenChip::new(
                 "accent-danger",
                 "out of range",
@@ -160,7 +160,7 @@ fn bytes_control(ui: &mut egui::Ui, theme: &Theme, buf: &mut String, (min, max):
             Input::new()
                 .mono(true)
                 .align(egui::Align::RIGHT)
-                .width(theme.field_width_xs.value())
+                .width(tasty_ui_widgets::number_field_width(ui, theme, buf).value())
                 .invalid(settled.is_some())
                 .show(ui, theme, buf);
             ui.label(

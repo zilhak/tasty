@@ -14,10 +14,6 @@ use crate::catalog::widgets::dialog as kit;
 
 /// 디자인 settings 콘텐츠 컬럼 근사 프레임 폭(settings_handler 와 동일).
 pub(super) const WIDTH: LogicalPx = LogicalPx(560.0);
-/// 본체와 같은 field_width_xs를 사용한다.
-fn size_input_width(theme: &Theme) -> f32 {
-    theme.field_width_xs.value()
-}
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State {
@@ -73,11 +69,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         // 본체 number_field 처럼 단위가 남은 폭에 들어가지 않으면 입력 칸 아래 줄로 내려간다.
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                            Input::new().mono(true).width(size_input_width(theme)).show(
-                                ui,
-                                theme,
-                                &mut st.max,
-                            );
+                            // 본체 숫자 칸처럼 값에 맞춰 자란다.
+                            let width = tasty_ui_widgets::number_field_width(ui, theme, &st.max);
+                            Input::new()
+                                .mono(true)
+                                .align(egui::Align::RIGHT)
+                                .width(width.value())
+                                .show(ui, theme, &mut st.max);
                             ui.label(
                                 egui::RichText::new("MiB")
                                     .monospace()
@@ -105,7 +103,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("folder row", "mono Input + Browse… (secondary · folder)"),
             (
                 "size row",
-                "numeric Input 90 (field-width-xs) + static mono “MiB”",
+                "numeric Input that fits its value (number-field-min-width 90 floor) + static mono “MiB”",
             ),
         ],
         &[
