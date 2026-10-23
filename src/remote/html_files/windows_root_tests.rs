@@ -77,8 +77,19 @@ fn original_root_survives_repeated_root_and_ancestor_redirects() {
 fn relative_intermediate_junction_and_traversal_are_rejected() {
     let (dir, approved, outside, source) = fixture(false);
     let root = Root::open(&source.parent().unwrap().canonicalize().unwrap()).unwrap();
-    junction(&approved.join("sub"), &outside);
-    assert!(root.open_file(Path::new("sub/entry.html")).is_err());
+    let sub = approved.join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    std::fs::write(sub.join("entry.html"), b"inside").unwrap();
+    let relative = Path::new(r"sub\entry.html");
+    let mut control = root.open_file(relative).unwrap();
+    let mut bytes = Vec::new();
+    control.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"inside");
+    drop(control);
+    std::fs::remove_file(sub.join("entry.html")).unwrap();
+    std::fs::remove_dir(&sub).unwrap();
+    junction(&sub, &outside);
+    assert!(root.open_file(relative).is_err());
     for path in [
         "",
         "../outside/entry.html",
