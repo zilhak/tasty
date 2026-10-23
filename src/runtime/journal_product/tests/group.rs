@@ -279,7 +279,18 @@ fn b1_ack_b2_failure_preserves_b3_durable_identity_pins_followers_and_prevents_c
     let home = tempfile::tempdir().unwrap();
     let fixture = fixture(home.path());
     let first = first_publication(&fixture, home.path());
+    let blocked = fixture.worker.metrics_snapshot();
+    assert!(blocked.unpublished_age_us.is_some());
+    assert!(blocked.work.inflight_items >= 4);
+    assert!(blocked.store.unwrap().grouped_logical_requests >= 4);
     let second = acknowledge_first(&fixture, first);
+    assert!(
+        fixture
+            .worker
+            .metrics_snapshot()
+            .unpublished_age_us
+            .is_some()
+    );
     fixture
         .worker
         .acknowledge(second, Err("injected B2 live publication failure".into()))
@@ -315,6 +326,16 @@ fn b1_ack_b2_failure_preserves_b3_durable_identity_pins_followers_and_prevents_c
         .query_row("SELECT count(*) FROM effect_attempts", [], |r| r.get(0))
         .unwrap();
     assert_eq!(attempts, 0);
+    let failed = fixture.worker.metrics_snapshot();
+    assert!(failed.unpublished_age_us.is_some());
+    assert_eq!(failed.publication_errors, 1);
+    assert_eq!(failed.work.pending_items, 0);
+    assert!(failed.work.handled_error >= 3);
+    assert_eq!(
+        failed.store.unwrap().commits.failed_commits,
+        0,
+        "ACK failure is not failed SQL COMMIT"
+    );
     let admission_pins: u64 = conn
         .query_row(
             "SELECT count(*) FROM payload_pins WHERE holder LIKE 'admission/%'",

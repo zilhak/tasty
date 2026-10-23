@@ -446,6 +446,7 @@ fn revision_conflict_reloads_and_retries_then_gives_up() {
         .expect("retry succeeds");
     assert!(committed(&retried));
     assert_eq!(fake.decides(), 3);
+    assert_eq!(executor.scalar_retry_reader().load(Ordering::Relaxed), 1);
 
     let before = state(&executor);
     fake.stale_revisions
@@ -456,6 +457,10 @@ fn revision_conflict_reloads_and_retries_then_gives_up() {
         Err(ExecError::RetriesExhausted(n)) if n == MAX_DECIDE_ATTEMPTS
     ));
     assert_eq!(fake.decides(), 3 + MAX_DECIDE_ATTEMPTS as usize);
+    assert_eq!(
+        executor.scalar_retry_reader().load(Ordering::Relaxed),
+        u64::from(MAX_DECIDE_ATTEMPTS)
+    );
     assert_eq!(state(&executor), before);
 }
 

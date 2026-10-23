@@ -150,6 +150,8 @@ pub(super) fn process(
     send: &impl Fn(Completion) -> bool,
     #[cfg(test)] fail_next_publication: &AtomicBool,
 ) -> bool {
+    let observed = queued[0].observation.metrics.clone();
+    observe_admissions(&observed, pending, waiting);
     let pending_before = pending.len();
     if !run(
         executor,
@@ -165,7 +167,7 @@ pub(super) fn process(
         return false;
     }
     let credit_released = pending.len() < pending_before;
-    process_waiting(
+    let connected = process_waiting(
         executor,
         home,
         pending,
@@ -173,7 +175,9 @@ pub(super) fn process(
         halted.as_deref(),
         credit_released,
         send,
-    )
+    );
+    observe_admissions(&observed, pending, waiting);
+    connected
 }
 
 #[allow(clippy::too_many_arguments)] // reason: 같은 worker가 소유한 큐·ACK·admission·publication 자원을 함께 빌린다
@@ -194,9 +198,11 @@ fn run(
             None
         }
     };
+    let observed = queued[0].observation.metrics.clone();
     let entries: Vec<_> = queued
         .into_iter()
         .map(|queued| {
+            queued.observation.start();
             let measurement =
                 metrics::Measurement::begin(executor, queued.submitted, &queued.request.work);
             let admitted = if matches!(queued.request.work, Work::Resolve { .. }) {
@@ -213,6 +219,7 @@ fn run(
         .collect();
     let mut publication = Publication {
         executor,
+        observed,
         pending,
         published,
         acks,
@@ -250,6 +257,7 @@ fn run(
 type Execution = Result<Executed, ExecError<tasty_core::Rejection>>;
 
 struct Publication<'a, F> {
+    observed: Arc<super::super::JournalMetrics>,
     executor: &'a Executor<StructureDecider>,
     pending: &'a mut HashMap<u64, Pending>,
     published: &'a mut Option<u64>,
@@ -273,6 +281,13 @@ impl<F: Fn(Completion) -> bool> Publication<'_, F> {
                 halted: Some(reason.clone()),
             };
         }
+        let oldest = entries
+            .iter()
+            .map(|entry| entry.queued.observation.submitted())
+            .min()
+            .expect("nonempty group");
+        let started = self.observed.batch_start(oldest);
+        let retries_before = self.executor.group_revision_retries();
         let measurement = metrics::GroupMeasurement::begin(self.executor);
         let execution = self
             .executor
@@ -283,6 +298,19 @@ impl<F: Fn(Completion) -> bool> Publication<'_, F> {
             .iter()
             .filter(|entry| matches!(entry.queued.request.work, Work::Resolve { .. }))
             .count();
+        self.observed.batch_finished(
+            started,
+            execution.results.len(),
+            execution.halted.is_some(),
+            self.executor.group_revision_retries() - retries_before,
+            entries[..execution.results.len()]
+                .iter()
+                .map(|entry| entry.queued.observation.bytes_estimate())
+                .sum(),
+        );
+        for entry in &entries[..execution.results.len()] {
+            entry.queued.observation.execution_finished();
+        }
         measurement.finished(
             self.executor,
             execution.results.len(),
@@ -300,6 +328,12 @@ impl<F: Fn(Completion) -> bool> Publication<'_, F> {
         });
         let mut result = entry.result_value(self.executor, result);
         entry.release_admission(self.executor, self.pending);
+        if let Some(admitted) = &entry.admitted {
+            self.observed.admission_released(
+                1 + admitted.followers.len(),
+                admitted.admission.original_digest.len(),
+            );
+        }
         entry
             .measurement
             .durable(self.executor, ticket, result.is_ok());
@@ -310,6 +344,12 @@ impl<F: Fn(Completion) -> bool> Publication<'_, F> {
         if !self.announce_halt() {
             return false;
         }
+        entry
+            .queued
+            .observation
+            .finish(super::super::observability::Outcome::handled(
+                result.is_ok(),
+            ));
         entry
             .measurement
             .finished(self.executor, ticket, result.is_ok());
@@ -325,6 +365,7 @@ impl<F: Fn(Completion) -> bool> Publication<'_, F> {
         };
         if let Err(error) = publish(
             self.executor,
+            &self.observed,
             self.published,
             &mut self.predecessor,
             self.acks,
@@ -334,6 +375,7 @@ impl<F: Fn(Completion) -> bool> Publication<'_, F> {
             #[cfg(test)]
             self.fail_next_publication,
         ) {
+            self.observed.publication_error();
             *self.halted = Some(error);
         }
     }

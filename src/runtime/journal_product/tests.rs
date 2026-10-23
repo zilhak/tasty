@@ -1,5 +1,6 @@
 mod aggregate;
 mod group;
+mod observability;
 mod pressure;
 mod retirement;
 

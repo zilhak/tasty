@@ -62,6 +62,8 @@ category 변경, 생성·닫기·forward 및 아직 scope가 정해지지 않은
 
 ## 쓰기 계측
 
+Worker Work/command/물리 COMMIT 구분, 비소비 snapshot과 age 의미는 [journal 계측](journal-metrics.md)을 따른다.
+
 `commit_metrics_reader`의 clone 가능한 atomic reader는 SQLite 연결에 접근하지 않고 Store가 닫힌 뒤에도 누계를 읽는다. 실제 SQL COMMIT 성공·실패 시간은 별도 고정 histogram으로 보존하고, 논리 요청이 둘 이상인 구조 transaction의 건수·요청 수도 구분한다.
 
 `EventStore::commit_statistics`는 연결을 연 뒤 성공한 실제 SQLite 쓰기 transaction COMMIT을 센다.

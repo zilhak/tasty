@@ -52,6 +52,8 @@ impl<D: JournalDecider<State: Clone>> Executor<D> {
                     return result;
                 }
                 GroupAttempt::Conflict if attempt + 1 < MAX_DECIDE_ATTEMPTS => {
+                    self.group_revision_retries
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     if let Err(error) = self.reload(&mut inner) {
                         return failed(count, error);
                     }

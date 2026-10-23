@@ -159,6 +159,8 @@ struct InFlight<R: fmt::Debug> {
 
 pub(crate) struct Executor<D: JournalDecider> {
     decider: D,
+    group_revision_retries: std::sync::atomic::AtomicU64,
+    scalar_revision_retries: Arc<std::sync::atomic::AtomicU64>,
     pub(crate) inner: Mutex<Inner<D::State>>,
     in_flight: Mutex<HashMap<CommandKey, Arc<InFlight<D::Rejection>>>>,
     #[cfg(test)]
@@ -172,6 +174,8 @@ impl<D: JournalDecider> Executor<D> {
         let state = decider.load(&store).map_err(ExecError::Apply)?;
         Ok(Self {
             decider,
+            group_revision_retries: std::sync::atomic::AtomicU64::new(0),
+            scalar_revision_retries: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             inner: Mutex::new(Inner {
                 store,
                 epoch,
@@ -184,6 +188,15 @@ impl<D: JournalDecider> Executor<D> {
             #[cfg(test)]
             group_waiting_for_in_flight: std::sync::atomic::AtomicBool::new(false),
         })
+    }
+
+    pub(crate) fn scalar_retry_reader(&self) -> Arc<std::sync::atomic::AtomicU64> {
+        self.scalar_revision_retries.clone()
+    }
+
+    pub(crate) fn group_revision_retries(&self) -> u64 {
+        self.group_revision_retries
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub(crate) fn decider(&self) -> &D {
@@ -284,10 +297,16 @@ impl<D: JournalDecider> Executor<D> {
         if inner.stale {
             self.reload(&mut inner)?;
         }
-        for _ in 0..MAX_DECIDE_ATTEMPTS {
+        for attempt in 0..MAX_DECIDE_ATTEMPTS {
             match self.attempt(&mut inner, key, digest, request)? {
                 Attempt::Done(executed) => return Ok(executed),
-                Attempt::Conflict => self.reload(&mut inner)?,
+                Attempt::Conflict => {
+                    self.reload(&mut inner)?;
+                    self.scalar_revision_retries.fetch_add(
+                        u64::from(attempt + 1 < MAX_DECIDE_ATTEMPTS),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
             }
         }
         Err(ExecError::RetriesExhausted(MAX_DECIDE_ATTEMPTS))

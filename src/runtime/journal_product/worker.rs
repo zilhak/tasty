@@ -57,6 +57,7 @@ pub(super) fn run(
     home: PathBuf,
     writer_lock: Option<tasty_event_store::WriterLock>,
     readers: Arc<crate::runtime::journal_payload::PayloadReaders>,
+    observed: Arc<super::JournalMetrics>,
     requests: mpsc::Receiver<super::QueuedRequest>,
     completions: mpsc::SyncSender<Completion>,
     acknowledgements: Acknowledgements,
@@ -65,20 +66,15 @@ pub(super) fn run(
     #[cfg(test)] fail_next_publication: Arc<AtomicBool>,
     #[cfg(test)] muted: Arc<AtomicBool>,
 ) {
-    let send = |completion| {
+    let _observation_scope = super::observability::WorkerScope(observed.clone());
+    let send = completion_sender(
+        completions,
+        wake,
         #[cfg(test)]
-        if muted.load(Ordering::Acquire) {
-            drop(completion);
-            return true;
-        }
-        if completions.send(completion).is_err() {
-            return false;
-        }
-        wake();
-        true
-    };
+        muted,
+    );
     let Some((executor, mut published)) =
-        open_published_executor(&home, writer_lock, &acknowledgements, &send)
+        open_published_executor(&home, writer_lock, &acknowledgements, &send, &observed)
     else {
         return;
     };
@@ -89,6 +85,7 @@ pub(super) fn run(
     let mut halted: Option<String> = None;
     let mut requests = group::Requests::new(requests);
     while let Some(queued) = requests.next() {
+        observe_admissions(&observed, &pending, &waiting);
         if closed.load(Ordering::Acquire) {
             break;
         }
@@ -112,15 +109,25 @@ pub(super) fn run(
             }
             continue;
         }
+        let observation = queued.observation;
+        observation.start();
         let measurement =
             metrics::Measurement::begin(&executor, queued.submitted, &queued.request.work);
         let request = queued.request;
         drop(queued._bytes);
         let pending_before = pending.len();
+        let waiting_before = waiting.len();
         let request =
             match admission::ordered(request, &pending, &mut waiting, halted.is_some(), &send) {
                 admission::Order::Ready(request) => request,
-                admission::Order::Deferred => continue,
+                admission::Order::Deferred => {
+                    observation.finish(super::observability::Outcome::waiting(
+                        waiting_before,
+                        waiting.len(),
+                    ));
+                    observe_admissions(&observed, &pending, &waiting);
+                    continue;
+                }
                 admission::Order::Disconnected => return,
             };
         let was_halted = halted.is_some();
@@ -157,10 +164,17 @@ pub(super) fn run(
                 &mut deferred,
             ),
         };
+        observation.execution_finished();
         if let Some(admission) = deferred {
+            let waiting_before = waiting.len();
             if !wait_for_credit(&pending, &mut waiting, request.ticket, admission, &send) {
                 return;
             }
+            observation.finish(super::observability::Outcome::waiting(
+                waiting_before,
+                waiting.len(),
+            ));
+            observe_admissions(&observed, &pending, &waiting);
             continue;
         }
         release_finished_admission(
@@ -171,10 +185,12 @@ pub(super) fn run(
             &mut followers,
             &mut release_admission,
         );
+        observe_admissions(&observed, &pending, &waiting);
         measurement.durable(&executor, request.ticket, result.is_ok());
         if halted.is_none()
             && let Err(error) = publish(
                 &executor,
+                &observed,
                 &mut published,
                 &mut predecessor,
                 &acknowledgements,
@@ -188,6 +204,7 @@ pub(super) fn run(
                 &fail_next_publication,
             )
         {
+            observed.publication_error();
             halted = Some(error.clone());
             result = Err(JournalError::Halted(error));
         }
@@ -203,6 +220,7 @@ pub(super) fn run(
         {
             return;
         }
+        observation.finish(super::observability::Outcome::handled(result.is_ok()));
         measurement.finished(&executor, request.ticket, result.is_ok());
         for ticket in std::iter::once(request.ticket).chain(followers) {
             if !send(Completion::Finished {
@@ -224,11 +242,14 @@ pub(super) fn run(
         ) {
             return;
         }
+        observe_admissions(&observed, &pending, &waiting);
     }
     if halted.is_none() {
         checkpoint_published(&executor, published, &readers);
     }
+    observed.admissions(0, waiting.len(), 0);
     metrics::total(&executor, "stopped");
+    metrics::bounded_snapshot(&observed);
 }
 
 fn capture_predecessor(
@@ -730,6 +751,7 @@ fn preserve_failed_payload(
 #[allow(clippy::too_many_arguments)] // reason: 원 요청의 binding과 확정 cut을 기존 publication·ACK 자원과 함께 전달한다
 fn publish(
     executor: &Executor<StructureDecider>,
+    observed: &super::JournalMetrics,
     published: &mut Option<u64>,
     predecessor: &mut Option<tasty_core::StructureModels>,
     acks: &Acknowledgements,
@@ -738,7 +760,11 @@ fn publish(
     send: &impl Fn(Completion) -> bool,
     #[cfg(test)] fail_next_publication: &AtomicBool,
 ) -> Result<(), String> {
-    executor.with_state(|_| ()).map_err(|e| e.to_string())?;
+    let durable = executor.with_state(|state| state.batch).map_err(|e| {
+        observed.publication_unknown();
+        e.to_string()
+    })?;
+    observed.publication(durable, *published);
     loop {
         if through.is_some_and(|cut| published.is_some_and(|current| current >= cut)) {
             return Ok(());
@@ -794,6 +820,7 @@ fn publish(
         }
         acknowledge(acks, batch.cut.batch_id)?;
         *published = Some(batch.cut.batch_id);
+        observed.publication(durable, *published);
     }
 }
 
@@ -862,8 +889,10 @@ fn open_published_executor(
     writer_lock: Option<tasty_event_store::WriterLock>,
     acknowledgements: &Acknowledgements,
     send: &impl Fn(Completion) -> bool,
+    observed: &Arc<super::JournalMetrics>,
 ) -> Option<(Executor<StructureDecider>, Option<u64>)> {
     let opened = identity::open(home, writer_lock).and_then(|store| {
+        observed.attach_store(store.commit_metrics_reader());
         Executor::open(StructureDecider::default(), store).map_err(|error| match &error {
             crate::runtime::command_executor::ExecError::Store(store_error)
                 if matches!(**store_error, tasty_event_store::StoreError::WriterLocked) =>
@@ -880,6 +909,7 @@ fn open_published_executor(
             return None;
         }
     };
+    observed.attach_scalar_retries(executor.scalar_retry_reader());
     {
         let mut inner = executor.inner.lock().expect("new executor lock");
         let epoch = inner.epoch;
@@ -895,6 +925,7 @@ fn open_published_executor(
     let published = {
         let inner = executor.inner.lock().expect("new executor lock");
         let cut = inner.state.batch;
+        observed.publication(cut, None);
         if !send(Completion::Ready {
             #[cfg(test)]
             journal_id: inner.store.journal_id().to_owned(),
@@ -908,9 +939,11 @@ fn open_published_executor(
         cut
     };
     if let Err(error) = acknowledge(acknowledgements, published.unwrap_or(0)) {
+        observed.publication_error();
         send(Completion::StartupFailed(error.into()));
         return None;
     }
+    observed.publication(published, published);
     Some((executor, published))
 }
 
@@ -920,5 +953,43 @@ fn checkpoint_current(
 ) {
     if let Err(error) = capture::checkpoint(executor, readers) {
         tracing::warn!(%error,"structure checkpoint failed; retaining previous checkpoint");
+    }
+}
+
+fn observe_admissions(
+    observed: &super::JournalMetrics,
+    pending: &HashMap<u64, Pending>,
+    waiting: &VecDeque<(u64, Admission)>,
+) {
+    observed.admissions(
+        pending.values().map(|p| 1 + p.followers.len()).sum(),
+        waiting.len(),
+        pending
+            .values()
+            .map(|p| p.admission.original_digest.len())
+            .sum::<usize>()
+            + waiting
+                .iter()
+                .map(|(_, a)| a.original_digest.len())
+                .sum::<usize>(),
+    );
+}
+
+fn completion_sender(
+    completions: mpsc::SyncSender<Completion>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+    #[cfg(test)] muted: Arc<AtomicBool>,
+) -> impl Fn(Completion) -> bool {
+    move |completion| {
+        #[cfg(test)]
+        if muted.load(Ordering::Acquire) {
+            drop(completion);
+            return true;
+        }
+        if completions.send(completion).is_err() {
+            return false;
+        }
+        wake();
+        true
     }
 }

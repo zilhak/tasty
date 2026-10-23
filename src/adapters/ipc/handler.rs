@@ -60,6 +60,7 @@ pub(crate) mod notification_channel;
 pub(crate) mod picker_proofs;
 mod run_result;
 // 창별 목록을 호스트에서 합산할 수 있도록 공개한다.
+pub(crate) mod journal_pressure;
 pub(crate) mod keybinding;
 pub(crate) mod output;
 pub(crate) mod pane;

@@ -8,6 +8,7 @@ mod decider;
 mod error;
 mod identity;
 mod kind;
+pub(crate) mod observability;
 mod preparation;
 mod response;
 #[cfg(test)]
@@ -19,6 +20,7 @@ mod worker;
 
 pub(crate) use error::JournalError;
 pub(crate) use identity::journal_database_path;
+pub(crate) use observability::{JournalMetrics, JournalMetricsSnapshot};
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -359,6 +361,7 @@ pub(crate) enum SubmitError {
 
 struct QueuedRequest {
     submitted: std::time::Instant,
+    observation: observability::Observation,
     request: Request,
     _bytes: QueuedBytes,
 }
@@ -376,6 +379,7 @@ impl Drop for QueuedBytes {
 
 pub(crate) struct JournalWorker {
     readers: Arc<super::journal_payload::PayloadReaders>,
+    metrics: Arc<JournalMetrics>,
     requests: Option<mpsc::SyncSender<QueuedRequest>>,
     queued_bytes: Arc<AtomicUsize>,
     completions: Option<mpsc::Receiver<Completion>>,
@@ -412,6 +416,8 @@ impl JournalWorker {
         let (acknowledgements, acks) = mpsc::sync_channel(1);
         let closed = Arc::new(AtomicBool::new(false));
         let stopped = closed.clone();
+        let metrics = Arc::new(JournalMetrics::default());
+        let worker_metrics = metrics.clone();
         let readers = Arc::new(super::journal_payload::PayloadReaders::default());
         let worker_readers = readers.clone();
         #[cfg(test)]
@@ -435,6 +441,7 @@ impl JournalWorker {
                     home,
                     writer_lock,
                     worker_readers,
+                    worker_metrics,
                     incoming,
                     outgoing,
                     acks,
@@ -449,6 +456,7 @@ impl JournalWorker {
             .map_err(|e| e.to_string())?;
         Ok(Self {
             readers,
+            metrics,
             requests: Some(requests),
             queued_bytes: Arc::new(AtomicUsize::new(0)),
             completions: Some(completions),
@@ -476,19 +484,30 @@ impl JournalWorker {
         self.readers.lease(refs)
     }
 
+    /// Nonconsuming cached telemetry, independent of the worker's Store/Executor locks.
+    pub(crate) fn metrics_handle(&self) -> Arc<JournalMetrics> {
+        self.metrics.clone()
+    }
+    pub(crate) fn metrics_snapshot(&self) -> JournalMetricsSnapshot {
+        self.metrics_handle().snapshot()
+    }
+
     pub(crate) fn submit(&self, request: Request) -> Result<(), SubmitError> {
         self.submit_owned(request).map_err(|(error, _)| error)
     }
 
     pub(crate) fn submit_owned(&self, request: Request) -> Result<(), (SubmitError, Request)> {
         if self.closed.load(Ordering::Acquire) {
+            self.metrics.reject(None, &SubmitError::Stopped);
             return Err((SubmitError::Stopped, request));
         }
         let bytes = request_size(&request.work);
         if bytes > MAX_QUEUED_BYTES || request_payload_too_large(&request.work) {
+            self.metrics.reject(None, &SubmitError::TooLarge);
             return Err((SubmitError::TooLarge, request));
         }
         let Some(requests) = self.requests.as_ref() else {
+            self.metrics.reject(None, &SubmitError::Stopped);
             return Err((SubmitError::Stopped, request));
         };
         if self
@@ -499,9 +518,13 @@ impl JournalWorker {
             })
             .is_err()
         {
+            self.metrics.reject(None, &SubmitError::Busy);
             return Err((SubmitError::Busy, request));
         }
+        let observation = self.metrics.prepare(bytes);
+        let observation_id = observation.id();
         let queued = QueuedRequest {
+            observation,
             submitted: std::time::Instant::now(),
             request,
             _bytes: QueuedBytes {
@@ -510,9 +533,18 @@ impl JournalWorker {
             },
         };
         match requests.try_send(queued) {
-            Ok(()) => Ok(()),
-            Err(mpsc::TrySendError::Full(queued)) => Err((SubmitError::Busy, queued.request)),
+            Ok(()) => {
+                self.metrics.accept(observation_id);
+                Ok(())
+            }
+            Err(mpsc::TrySendError::Full(queued)) => {
+                self.metrics
+                    .reject(Some(observation_id), &SubmitError::Busy);
+                Err((SubmitError::Busy, queued.request))
+            }
             Err(mpsc::TrySendError::Disconnected(queued)) => {
+                self.metrics
+                    .reject(Some(observation_id), &SubmitError::Stopped);
                 Err((SubmitError::Stopped, queued.request))
             }
         }
@@ -544,6 +576,9 @@ impl JournalWorker {
 
     /// Disconnecting both outbound paths unblocks a worker waiting for publication or completion.
     pub(crate) fn stop(&mut self) {
+        if tracing::enabled!(target: "tasty::journal_metrics", tracing::Level::DEBUG) {
+            tracing::debug!(target: "tasty::journal_metrics", snapshot=?self.metrics_snapshot(), "journal cached snapshot before stop");
+        }
         self.closed.store(true, Ordering::Release);
         self.requests.take();
         self.acknowledgements.take();

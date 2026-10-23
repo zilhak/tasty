@@ -1,0 +1,40 @@
+# Journal cached metrics
+
+`JournalWorker::metrics_handle` clones a telemetry-only `Arc<JournalMetrics>`; `metrics_snapshot` and the cloned handle's `snapshot` read cached counters without accessing the Store, executor lock, filesystem or completion receiver. The cache outlives the worker when diagnostics retains the handle. Reading it does not acknowledge publication, consume a reply, start recovery or change scheduling. The journal-only JSON converter is `handler/journal_pressure.rs`; process diagnostics wiring owns supplying the optional snapshot. That converter is available independently of the process pressure router; its presence alone does not mean the running router exposes a journal block.
+
+## Units and lifecycle
+
+`admitted` counts successfully submitted **transport Work steps**, including reads. A command may submit several steps (admission, reservation, payload, resolve, claim and completion). It is neither original command count nor durable success count. `rejected_busy`, `rejected_too_large` and `rejected_stopped` count submit refusals; an unsuccessful channel send does not increase admitted or Lost. Receipt consumption is unrelated. Work settlement precedes Finished delivery: completion-channel backpressure is not pending Work.
+
+`queued_items` counts accepted steps in the channel or collector before processing starts. `inflight_items` counts processing through settlement, including publication/ACK waits. `pending_items` is their union. Byte fields ending in `_estimate` reuse the existing input budget estimator: serialized lengths, capacities and fixed overhead. They exclude output, private generated events, retained snapshots/pins and DB size; they are not exact allocated heap bytes. Completed unread results are not pending Work.
+
+`handled_ok` and `handled_error` describe the Work result, which may still be an intermediate original-command state or a recorded domain rejection response. `deferred` means the Work step transferred an Admit to the existing disk-credit wait list. `lost` means accepted Work dropped before its handling settled. Drops after completion do not count again. The separate cached `open_admissions`, `waiting_admissions` and `admission_bytes_estimate` describe unresolved logical admissions. Open count includes followers; the byte estimate is specifically the sum of original_digest.len() for open leaders and waiting headers, excluding actor/origin/key strings, follower headers, reserved IDs and payloads. Those are not extra accepted Work or all retained resources.
+
+The cache contains fixed counters/histograms and 130 metadata slots (channel64, collector64, two bookkeeping slots). Each slot contains only sequence, time, byte estimate and phase; no request keys, tickets, strings, errors, paths, payloads or secrets. `observation_overflow` exposes a missed metadata observation; metrics never refuse work to enforce their own capacity. Snapshot fields can reflect adjacent instants during concurrent updates; they are not an atomic journal cut.
+
+## Counts and timing
+
+The Store reader counts actual explicit write SQL COMMIT calls. `physical_commits` includes initialization, epoch, pin, claim and checkpoint writes; `structural_commits` identifies structural/import transactions and `logical_requests` their committed requests. `grouped_commits` and `grouped_logical_requests` restrict that set to transactions with more than one logical request. Duplicate-only groups and rolled-back writes do not add a successful commit. `failed_commits` counts failed COMMIT calls, not validation, read or pre-COMMIT append errors. `commit_ns` and `max_commit_ns` preserve the successful SQL-call nanosecond totals.
+
+`batches`, `batch_requests`, `batch_size_max`, `batch_sizes` and `batch_bytes_estimate` count `execute_group` invocation result prefixes, including local error, duplicate and fatal cases. Bytes sum only consumed input estimates; a byte-bound remainder is counted in its later prefix. These fields do not imply that a SQL transaction committed. `batch_errors` counts halted group executions; `publication_errors` counts failed publication/bootstrap ACK calls separately from SQL failures. `group_revision_retries` counts group conflict retry branches. `scalar_revision_retries` is an atomic reader attached before recovery and counts completed conflict reloads with another scalar attempt available; it is null before Executor exists. SQLite internal busy-timeout retries are unobservable and serialize as null.
+
+Every duration has samples, sum_us, max_us and fixed inclusive bounds `[10,32,100,316,1000,3162,10000,31623,100000,316228,1000000]`, followed by an overflow bin. Batch sizes use inclusive `[1,2,4,8,16,32,64]` plus overflow. Counts are independent bins, not cumulative. Zero samples has null mean and zero bins; exact p50/p95/p99 cannot be reconstructed from these aggregates.
+
+| Duration | Start → end | Sample unit |
+|---|---|---|
+| queue_wait | accepted Work admission → first processing | started Work |
+| execution | processing → handler/group result-ready/error/defer | started Work; excludes group publication and later admission-pin cleanup |
+| completion | admission → settlement/loss | handled/deferred/lost Work; includes publication waits |
+| batch_wait | oldest input admission → execute_group entry | group invocation; a remaining prefix can be observed again |
+| batch_execution | execute_group entry → return | group invocation including known revision retries; excludes publication |
+| store.commit_success / commit_failure | rusqlite Transaction::commit call | successful / failed calls separately; failure may include rollback cleanup |
+
+All consumed entries stop execution timing when execute_group returns, before any shared-group publication. A byte-bound remainder can wait for an earlier prefix ACK before its later execution; batch_execution is the pure executor interval. Work intervals in a shared group overlap; never sum them as physical execution time. An unstarted lost Work has completion timing but no queue-wait or execution sample. Monotonic clocks supply ages and timing; clock injection in metrics tests changes no scheduler clock or retry behavior. The Store timer surrounds the actual rusqlite Transaction::commit invocation. On failure that invocation drops the transaction and may roll it back before returning, so failure time includes that cleanup and is not isolated SQLite engine time; deterministic histogram tests use explicit durations and real SQLite failures check success/failure sample semantics.
+
+## Ages and unavailable values
+
+`oldest_pending_age_us` is the oldest accepted unsettled Work age, null when none. It is not the age of an unsaved consumer revision. `dirty_age_us` is null: the journal does not own consumer-visible unconfirmed state; the local projection publishes committed facts. Deferred/open logical admissions can exist with no pending transport Work. An Admit rejected because the credit wait list is full counts handled_error, not deferred.
+
+`unpublished_age_us` measures the continuous period during which a durable model cut exceeds the acknowledged projection cut. Bootstrap recovery and ordinary publication use the same distinction. An intermediate ACK does not clear it; ACK of the latest cut clears it. Publication failure/halt retains the age. If the canonical cut is unavailable, `publication_known` is false and the age is null rather than a fabricated clean state. It is not a DB durability failure or a replacement for consumer dirty age. A pre-COMMIT failure contributes no durable backlog from that failed group.
+
+Before opening the Store, `store` is null. A missing worker snapshot converts to JSON null. A stopped/failed worker retains its last counters; accepted dropped queued Work counts Lost. Optional debug logs may emit bounded numeric snapshots at stop, without retaining an in-memory raw history. This is separate from the existing optional per-work timing log. No counters drive admission, grouping, retry, durability, ACK or shutdown decisions.

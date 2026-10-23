@@ -149,3 +149,7 @@ impl GroupMeasurement {
             "journal group transaction");
     }
 }
+
+pub(super) fn bounded_snapshot(observed: &super::super::JournalMetrics) {
+    tracing::debug!(target: "tasty::journal_metrics", snapshot=?observed.snapshot(), "journal bounded snapshot");
+}
