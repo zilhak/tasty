@@ -390,7 +390,10 @@ fn a_case_only_rename_does_not_see_itself_at_the_old_name() {
     let dir = tempfile::tempdir().unwrap();
     let (lower, upper) = (dir.path().join("a.txt"), dir.path().join("A.txt"));
     std::fs::write(&upper, b"a").unwrap();
-    std::fs::hard_link(&upper, &lower).unwrap();
+    let case_sensitive = !lower.exists();
+    if case_sensitive {
+        std::fs::hard_link(&upper, &lower).unwrap();
+    }
     let step = UndoStep::Moved {
         from: lower.clone(),
         to: upper.clone(),
@@ -403,6 +406,10 @@ fn a_case_only_rename_does_not_see_itself_at_the_old_name() {
     let other = dir.path().join("b.txt");
     std::fs::hard_link(&upper, &other).unwrap();
     assert!(named::taken(&other, &upper));
+    // 대소문자 비구분 파일시스템에는 두 이름으로 서로 다른 파일을 둘 수 없다.
+    if !case_sensitive {
+        return;
+    }
     // 대소문자만 다른 이름이어도 다른 파일이면 차지한 것이다.
     std::fs::remove_file(&lower).unwrap();
     std::fs::write(&lower, b"another").unwrap();

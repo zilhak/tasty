@@ -834,6 +834,7 @@ fn a_staging_folder_that_cannot_be_removed_is_reported() {
     let src = folder_with_a_large_file(root.path());
     let dest = root.path().join("dest");
     std::fs::create_dir(&dest).unwrap();
+    let dest = dest.canonicalize().unwrap();
     let pause = paused_mid_copy();
     let worker = spawn_transfer(&pause.shared, vec![src.clone()], &dest, false);
     pause.reached.recv_timeout(Duration::from_secs(10)).unwrap();

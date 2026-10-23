@@ -306,3 +306,7 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 - Given 복사 중 준비용 임시 폴더를 지울 수 없게 됐다, When 작업이 끝난다, Then 경고 로그가 남고 결과 카드가 Warning 으로 올라 제목은 항목 결과 그대로, 항목 줄 뒤에 그 임시 폴더 경로와 "Temporary folder couldn't be removed (OS 오류)" 줄을 보이며 닫을 때까지 남는다(`job_tests.rs` 의 `a_staging_folder_that_cannot_be_removed_is_reported`, `ops_tests.rs` 의 `a_staging_folder_left_behind_raises_the_card_and_lists_its_path`).
 - Given 남은 임시 폴더와 실패 항목이 함께 있다, When 결과 카드가 뜬다, Then 폴더 줄은 실패 줄 뒤에 오고 Retry 는 실패 항목만 세며 Danger 카드는 Danger 로 남는다(`ops_tests.rs` 의 `a_staging_folder_line_comes_after_the_item_lines_and_counts_toward_more`, `a_staging_folder_raises_info_and_success_but_keeps_danger`).
 - Given 한 칸에서 새 폴더 → 이름 변경 → 이동 → 복사를 했다, When 되돌리기를 네 번 한다, Then 복사·이동·이름 변경·새 폴더 순으로 하나씩 되돌아가 처음 모습이 되고, 복사본과 새 폴더는 휴지통에 있으며 다시 실행 목록에 네 단계가 역순으로 오른다(`history_steps_tests.rs` 의 `create_rename_move_copy_are_undone_in_reverse_order`, Linux 격리 휴지통).
+
+### 파일 작업 시험의 파일시스템 전제
+
+목록 열기 시험은 표시 문자열의 경로 구분자 대신 액션의 경로를 비교한다. 대소문자만 다른 이름 변경 시험은 대소문자 구분 파일시스템에서만 하드 링크로 이름 별칭을 만들며, 비구분 파일시스템에서는 실제 별칭을 사용한다. 두 이름이 서로 다른 파일을 가리키는 추가 대조는 구분 파일시스템에서만 실행한다. 임시 복사 폴더의 정리 실패 시험은 목적지를 canonicalize한 뒤 결과 경로와 비교한다. 이 시험들의 통과는 각 OS의 네이티브 메뉴·입력·드래그 동작 확인을 대신하지 않는다.

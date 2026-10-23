@@ -52,13 +52,13 @@ mod tests {
         view
     }
 
-    fn opened(v: &ExplorerView) -> Vec<String> {
+    fn opened(v: &ExplorerView) -> Vec<(&'static str, PathBuf)> {
         v.open_selected_actions()
             .into_iter()
             .map(|a| match a {
-                ExplorerAction::Navigate(p) => format!("go {}", p.display()),
-                ExplorerAction::OpenFile(p) => format!("open {}", p.display()),
-                _ => "other".to_string(),
+                ExplorerAction::Navigate(p) => ("go", p),
+                ExplorerAction::OpenFile(p) => ("open", p),
+                _ => panic!("unexpected open action"),
             })
             .collect()
     }
@@ -67,9 +67,9 @@ mod tests {
     fn a_folder_is_entered_and_a_file_is_opened() {
         let mut v = view(vec![entry("docs", true), entry("a.txt", false)]);
         v.select_only(Path::new("/w/docs"));
-        assert_eq!(opened(&v), ["go /w/docs"]);
+        assert_eq!(opened(&v), [("go", PathBuf::from("/w").join("docs"))]);
         v.select_only(Path::new("/w/a.txt"));
-        assert_eq!(opened(&v), ["open /w/a.txt"]);
+        assert_eq!(opened(&v), [("open", PathBuf::from("/w").join("a.txt"))]);
     }
 
     /// 문서의 여러 항목 규칙: 파일만이면 모두 열고, 폴더 하나가 섞이면 그 폴더로만 가고, 폴더가
@@ -84,9 +84,15 @@ mod tests {
         ]);
         v.select_only(Path::new("/w/b.txt"));
         v.toggle_select(Path::new("/w/a.txt"));
-        assert_eq!(opened(&v), ["open /w/a.txt", "open /w/b.txt"]);
+        assert_eq!(
+            opened(&v),
+            [
+                ("open", PathBuf::from("/w").join("a.txt")),
+                ("open", PathBuf::from("/w").join("b.txt"))
+            ]
+        );
         v.toggle_select(Path::new("/w/docs"));
-        assert_eq!(opened(&v), ["go /w/docs"]);
+        assert_eq!(opened(&v), [("go", PathBuf::from("/w").join("docs"))]);
         v.toggle_select(Path::new("/w/src"));
         assert!(opened(&v).is_empty());
     }
