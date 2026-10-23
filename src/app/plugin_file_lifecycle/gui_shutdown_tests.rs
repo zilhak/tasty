@@ -38,8 +38,47 @@ fn observer(app: &mut App) {
     start(app, Default::default());
     assert!(!app.wait_for_observer_shutdown());
 }
+const GUI_CHILD: &str = "TASTY_PLUGIN_FILE_GUI_SHUTDOWN_CHILD";
+
 #[test]
 fn plugin_file_shutdown_actual_app_pipeline_final_zero_and_timeout() {
+    if let Some(marker) = std::env::var_os(GUI_CHILD) {
+        gui_shutdown_body();
+        std::fs::write(marker, std::process::id().to_string()).unwrap();
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let marker = root.path().join("gui-completed");
+    let name = format!(
+        "{}::plugin_file_shutdown_actual_app_pipeline_final_zero_and_timeout",
+        module_path!().strip_prefix("tasty::").unwrap()
+    );
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([name.as_str(), "--exact", "--test-threads=1", "--nocapture"])
+        .env(GUI_CHILD, &marker)
+        .output()
+        .expect("isolated GUI test subprocess");
+    assert!(
+        output.status.success(),
+        "isolated GUI test failed: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let child: u32 = std::fs::read_to_string(marker)
+        .expect("GUI body completion marker missing")
+        .parse()
+        .unwrap();
+    assert_ne!(child, std::process::id());
+    tracing::subscriber::with_default(
+        tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(std::io::stderr)
+            .finish(),
+        || tracing::info!("L1 isolated GUI body completed in owned child PID {child}"),
+    );
+}
+fn gui_shutdown_body() {
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
         .with_writer(std::io::stderr)
