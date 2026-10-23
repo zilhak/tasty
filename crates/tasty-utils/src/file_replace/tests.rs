@@ -43,6 +43,61 @@ fn a_missing_directory_is_an_error_and_writes_nothing() {
     assert!(!path.exists());
 }
 
+#[test]
+fn a_new_destination_can_inherit_source_security_without_changing_the_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let target = dir.path().join("destination");
+    fs::write(&source, b"source").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    replace_preserving(&target, b"destination", &source).unwrap();
+    assert_eq!(fs::read(&source).unwrap(), b"source");
+    assert_eq!(fs::read(&target).unwrap(), b"destination");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    let absent = dir.path().join("not-created");
+    assert!(replace_preserving(&absent, b"private", &dir.path().join("missing-source")).is_err());
+    assert!(!absent.exists());
+    assert!(leftovers(dir.path()).is_empty());
+}
+
+#[test]
+fn existing_destination_keeps_its_own_security_when_a_source_is_provided() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let target = dir.path().join("destination");
+    fs::write(&source, b"source").unwrap();
+    fs::write(&target, b"old").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    replace_preserving(&target, b"new", &source).unwrap();
+    assert_eq!(fs::read(&source).unwrap(), b"source");
+    assert_eq!(fs::read(&target).unwrap(), b"new");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    assert!(leftovers(dir.path()).is_empty());
+}
+
 #[cfg(unix)]
 #[test]
 fn the_existing_mode_is_kept_and_a_new_secret_starts_private() {
@@ -225,6 +280,16 @@ fn owner_group_extended_attributes_and_acl_survive_before_and_after_writing() {
     })
     .unwrap();
     check(&File::open(&path).unwrap());
+    assert_eq!(fs::read(&path).unwrap(), b"new");
+    let destination = dir.path().join("new-destination");
+    replace_using_source(&destination, Options::default(), Some(&path), |file| {
+        check(file);
+        assert_eq!(file.metadata()?.len(), 0);
+        file.write_all(b"copy")
+    })
+    .unwrap();
+    check(&File::open(&destination).unwrap());
+    assert_eq!(fs::read(&destination).unwrap(), b"copy");
     assert_eq!(fs::read(&path).unwrap(), b"new");
 }
 

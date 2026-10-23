@@ -32,6 +32,10 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 `PresetStore::save_command`는 소유된 `OwnedPreset`을 받아 참여자 잠금 안에서 자동 이름을 정하고 저장한 뒤 `PresetChange`를 반환하는 blocking 저장소 경계다. 손상되거나 읽을 수 없어 캐시에 없는 파일도 이름을 점유한다. 별도 캐시에는 성공 결과를 `apply_change`로 메모리 반영할 수 있다. 이 저장소 API 자체는 호스트 요청을 큐에 넣거나 응답을 지연하지 않으며, 현재 호스트 호출의 실행 스레드는 [저장 명부](../../design/systems/storage-contract.md)의 파일 표를 따른다.
 
+이름 변경은 root 참여자 잠금과 원본 대상 잠금을 유지한 채 새 파일을 확정하고 원본을 삭제한다. 직렬화·새 파일 저장 실패로 원본 캐시를 먼저 지우지 않는다. 새 파일을 확정한 뒤 원본 정리 실패 또는 외부 변경을 발견하면 `RenamePartial` 오류를 반환하며 새 이름의 캐시도 보존한다. 이때 재시작하면 두 파일이 모두 보일 수 있다. `rename_command`의 `PresetMutationOutcome`은 부분 실패에도 확정된 새 이름의 `changes`를 싣는다. 별도 캐시는 이를 반영한 뒤 `result`를 전달해야 한다. 두 파일의 transaction이나 실패 시 rollback을 약속하지 않는다. 삭제는 원본 관측값을 검사하고, 삭제 성공 또는 실제 파일 부재를 확인한 뒤 캐시를 지운다. symlink 프리셋 삭제는 링크를 지우며 그 대상 파일은 남긴다.
+
+rename의 새 파일은 원본의 owner·mode·ACL을 payload 쓰기 전에 복사한다(`file_replace::replace_preserving`). 기존 대상 파일이 있으면 그 대상의 접근 권한을 보존하는 공용 교체 정책을 유지한다. 잠금 namespace로 향하는 프리셋 symlink는 초기 읽기·ID 보정·교체 전에 거절하고, root 잠금 anchor가 점유되었거나 잠금 파일이 symlink이면 명령을 거절한다. 잠금 파일을 사용자 프리셋으로 교체하거나 같은 잠금을 재획득하지 않는다.
+
 캡처 시 **아직 실제화되지 않은 탭**은 지금 화면이 아니라 저장된 원본으로 캡처한다. journal 복원을 기다리는 자리(`JournalPlaceholder`)는 고정한 journal 참조(kind·data·creation seed)를 event store에서 풀어 그 surface 값으로 채운다(`PresetCaptureDraft::resolve`). plugin kind 등록을 기다리는 자리(`EmptySurface`의 `deferred`)는 원래 kind와 plugin snapshot으로 캡처한다(`EmptySurface::kind()`는 항상 `"empty"`라 캡처 경로가 먼저 가로챈다). convert 버튼만 보이는 진짜 빈 패널(`deferred` 없는 `EmptySurface`)은 그대로 `kind="empty"`로 캡처된다.
 
 **PresetView**(`View` + `sealed::Sealed` 직접 구현, modeless, 종류별 1 인스턴스 — [hierarchy](../../concepts/hierarchy.md))는 L1 scope 탭(Workspace/Tab/Pane) 아래 2-depth list→detail 본문이다:

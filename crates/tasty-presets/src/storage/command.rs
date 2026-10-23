@@ -23,12 +23,19 @@ impl OwnedPreset {
             Self::Pane(p) => &p.name,
         }
     }
-    fn set_name(&mut self, name: String) {
+    pub(super) fn set_name(&mut self, name: String) {
         match self {
             Self::Workspace(p) => p.name = name,
             Self::Tab(p) => p.name = name,
             Self::Pane(p) => p.name = name,
         }
+    }
+    pub(super) fn serialized(&self) -> PresetResult<String> {
+        Ok(match self {
+            Self::Workspace(p) => toml::to_string_pretty(p)?,
+            Self::Tab(p) => toml::to_string_pretty(p)?,
+            Self::Pane(p) => toml::to_string_pretty(p)?,
+        })
     }
 }
 
@@ -36,6 +43,7 @@ impl OwnedPreset {
 #[derive(Debug, Clone)]
 pub enum PresetChange {
     Saved(OwnedPreset),
+    Removed { kind: PresetKind, name: String },
 }
 impl PresetStore {
     /// Blocking worker/standalone boundary. The root lock covers name choice and replacement.
@@ -81,6 +89,7 @@ impl PresetStore {
     /// Memory only: publishing a worker's committed value never performs disk I/O.
     pub fn apply_change(&mut self, change: PresetChange) {
         match change {
+            PresetChange::Removed { kind, name } => self.remove_cached(kind, &name),
             PresetChange::Saved(OwnedPreset::Workspace(p)) => {
                 WorkspacePreset::insert_into_store(self, p.name().into(), p)
             }

@@ -53,19 +53,45 @@ pub fn replace_with(path: &Path, bytes: &[u8], options: Options) -> io::Result<(
     replace_using(path, options, |file| write_temp(file, bytes, options.sync))
 }
 
+/// Replace with the existing destination's security, or the source's security for a new
+/// destination. This preserves owner/mode/ACL before writing payload, including on Windows.
+/// The caller owns source/destination locks and conflict checks; files form no transaction.
+pub fn replace_preserving(path: &Path, bytes: &[u8], metadata_source: &Path) -> io::Result<()> {
+    replace_using_source(path, Options::default(), Some(metadata_source), |file| {
+        write_temp(file, bytes, false)
+    })
+}
+
 fn replace_using(
     path: &Path,
     _options: Options,
     write: impl FnOnce(&mut File) -> io::Result<()>,
 ) -> io::Result<()> {
+    replace_using_source(path, _options, None, write)
+}
+
+fn replace_using_source(
+    path: &Path,
+    _options: Options,
+    metadata_source: Option<&Path>,
+    write: impl FnOnce(&mut File) -> io::Result<()>,
+) -> io::Result<()> {
     let target = resolve_link(path)?;
-    let existing = match fs::metadata(&target) {
+    let permissions = match metadata_source {
+        None => target.clone(),
+        Some(source) => match fs::metadata(&target) {
+            Ok(_) => target.clone(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => resolve_link(source)?,
+            Err(error) => return Err(error),
+        },
+    };
+    let existing = match fs::metadata(&permissions) {
         Ok(meta) => {
             // Rename permissions are directory permissions; preserve the old write access check.
-            let file = OpenOptions::new().write(true).open(&target)?;
+            let file = OpenOptions::new().write(true).open(&permissions)?;
             Some((file, meta))
         }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) if e.kind() == io::ErrorKind::NotFound && metadata_source.is_none() => None,
         Err(e) => return Err(e),
     };
     let temp = temp_path(&target)?;
@@ -80,7 +106,7 @@ fn replace_using(
     #[cfg(not(any(unix, windows)))]
     let mode = _options.new_mode;
     #[cfg(windows)]
-    let mut file = metadata::create(&temp, &target, existing.is_some())?;
+    let mut file = metadata::create(&temp, &permissions, existing.is_some())?;
     #[cfg(not(windows))]
     let mut file = create_temp(&temp, mode)?;
     let result = (|| {

@@ -6,8 +6,12 @@
 mod command;
 #[cfg(test)]
 mod command_tests;
+mod mutation;
+#[cfg(test)]
+mod mutation_tests;
 mod observed;
 pub use command::{OwnedPreset, PresetChange};
+pub use mutation::PresetMutationOutcome;
 
 use std::collections::BTreeMap;
 use std::io;
@@ -33,6 +37,15 @@ pub enum PresetError {
     NotFound(PresetKind, String),
     #[error("home directory unavailable")]
     HomeUnavailable,
+    #[error(
+        "preset rename partially saved: kind={kind:?} from={from} to={to}; destination saved, source removal not confirmed: {source}"
+    )]
+    RenamePartial {
+        kind: PresetKind,
+        from: String,
+        to: String,
+        source: io::Error,
+    },
 }
 
 pub type PresetResult<T> = Result<T, PresetError>;
@@ -131,9 +144,24 @@ impl PresetStore {
     fn mutation_lock(&self) -> PresetResult<tasty_utils::file_replace::WriteLock> {
         let root = self.root()?;
         std::fs::create_dir_all(root)?;
-        Ok(tasty_utils::file_replace::lock(
-            &root.join(".preset-mutations"),
-        )?)
+        let namespace = root.join(".preset-mutations");
+        match std::fs::symlink_metadata(&namespace) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+            Ok(_) => {
+                return Err(io::Error::other("preset mutation lock namespace is occupied").into());
+            }
+        }
+        match std::fs::symlink_metadata(root.join(".preset-mutations.lock")) {
+            Ok(metadata) if metadata.is_symlink() => {
+                return Err(
+                    io::Error::other("preset participant lock must not be a symlink").into(),
+                );
+            }
+            Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error.into()),
+            _ => {}
+        }
+        Ok(tasty_utils::file_replace::lock(&namespace)?)
     }
 
     fn save_inner<P: LayoutPreset + PresetKindAccess>(
@@ -175,98 +203,11 @@ impl PresetStore {
         }
     }
 
-    // ── delete / rename ────────────────────────────────────────────────
-
-    pub fn delete(&mut self, kind: PresetKind, name: &str) -> PresetResult<()> {
-        if !self.contains_inner(kind, name) {
-            return Err(PresetError::NotFound(kind, name.into()));
-        }
-        let path = self.kind_dir(kind)?.join(format!("{name}.toml"));
-        if path.exists() {
-            std::fs::remove_file(&path)?;
-        }
-        self.observed.forget(&path);
-        match kind {
-            PresetKind::Workspace => {
-                self.workspaces.remove(name);
-            }
-            PresetKind::Tab => {
-                self.tabs.remove(name);
-            }
-            PresetKind::Pane => {
-                self.panes.remove(name);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn rename(&mut self, kind: PresetKind, from: &str, to: &str) -> PresetResult<()> {
-        validate_name(to)?;
-        if !self.contains_inner(kind, from) {
-            return Err(PresetError::NotFound(kind, from.into()));
-        }
-        if from == to {
-            return Ok(());
-        }
-        if self.contains_inner(kind, to) {
-            return Err(PresetError::AlreadyExists(kind, to.into()));
-        }
-        let dir = self.kind_dir(kind)?;
-        let from_path = dir.join(format!("{from}.toml"));
-        let to_path = dir.join(format!("{to}.toml"));
-
-        match kind {
-            PresetKind::Workspace => {
-                let mut preset = self.workspaces.remove(from).unwrap();
-                preset.set_name(to.into());
-                let serialized = toml::to_string_pretty(&preset)?;
-                self.observed.replace(&to_path, serialized.as_bytes())?;
-                if remove_renamed_source(&from_path) {
-                    self.observed.forget(&from_path);
-                }
-                self.workspaces.insert(to.into(), preset);
-            }
-            PresetKind::Tab => {
-                let mut preset = self.tabs.remove(from).unwrap();
-                preset.set_name(to.into());
-                let serialized = toml::to_string_pretty(&preset)?;
-                self.observed.replace(&to_path, serialized.as_bytes())?;
-                if remove_renamed_source(&from_path) {
-                    self.observed.forget(&from_path);
-                }
-                self.tabs.insert(to.into(), preset);
-            }
-            PresetKind::Pane => {
-                let mut preset = self.panes.remove(from).unwrap();
-                preset.set_name(to.into());
-                let serialized = toml::to_string_pretty(&preset)?;
-                self.observed.replace(&to_path, serialized.as_bytes())?;
-                if remove_renamed_source(&from_path) {
-                    self.observed.forget(&from_path);
-                }
-                self.panes.insert(to.into(), preset);
-            }
-        }
-        Ok(())
-    }
-
     // ── unique_name (충돌 시 -N suffix) ──────────────────────────────────
 
     pub fn unique_name(&self, kind: PresetKind, base: &str) -> String {
         unique_name_for(kind, base, |name| self.contains_inner(kind, name))
     }
-}
-
-// 원본이 남으면 다음 로드에서 옛 이름 프리셋이 되살아난다.
-fn remove_renamed_source(path: &Path) -> bool {
-    if let Err(e) = std::fs::remove_file(path) {
-        tracing::warn!(
-            "preset rename left the old file behind: {} ({e})",
-            path.display()
-        );
-        return false;
-    }
-    true
 }
 
 // ── 직렬화/insert dispatch trait (kind 분기 회피) ────────────────────────

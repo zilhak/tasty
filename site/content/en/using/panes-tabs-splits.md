@@ -1,4 +1,4 @@
-<!-- source-hash: 1273c4e219d5 -->
+<!-- source-hash: 323fc5271c82 -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -137,6 +137,8 @@ Save a layout you use often as a preset and pull it out when creating a new Work
 The file is created at `~/.tasty/presets/{workspace,tab,pane}/<name>.toml`. If the name already exists, a number such as `-2` is appended.
 
 Saving reports an error rather than overwriting a file changed in another editor since it was loaded, or a damaged file that could not be read. Check the external changes, then reopen the app to load them.
+
+If renaming saves the new file but cannot remove the previous one, it reports an error and both names may remain. Check the list and files before choosing which name to keep.
 
 ### Editing
 
