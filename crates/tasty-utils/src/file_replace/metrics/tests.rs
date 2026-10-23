@@ -128,7 +128,7 @@ fn custom_replacement_guard_counts_real_publish_and_io_error_without_double_wrap
     let temp = root.path().join("private-temp");
     std::fs::write(&temp, b"new").unwrap();
     let result = std::fs::rename(&temp, &path);
-    attempt.finish(result.as_ref().map(|()| ()).map_err(std::io::Error::kind));
+    attempt.finish(result.as_ref().copied().map_err(std::io::Error::kind));
     result.unwrap();
     let failed = observe_replacement(5);
     let result = std::fs::rename(root.path().join("missing"), &path);
