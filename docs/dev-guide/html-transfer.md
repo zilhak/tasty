@@ -84,3 +84,5 @@ native view 소유권은 immutable 본문 수명과 구분한다. `NativeViewBin
 각 native WebView와 script gate는 같은 `EntryResponseSource` clone의 live 표지를 공유한다. 세 OS의 wrapper는 native 자원을 정리하기 전에 그 표지를 retire한다. 본문을 재사용해 다른 native view를 만들 때에도 이전 view의 callback은 새 gate를 변경하지 못한다.
 
 연결된 문서가 하위 파일을 수신하거나 크기·누적 질문을 기다리는 동안 native 본문을 숨겨 기존 host receiving/paused 표시가 가려지지 않게 한다. 본문 context와 대기 요청은 유지한다. Linux는 현재 source의 native Loading 또는 미완 resource가 있으면 활성·비최소화 창의 기존 GTK 폴링을 이어 간다. 완료 cache만 남은 숨김 view는 이 추가 대기 조건에 해당하지 않는다. disconnect에서는 완료 본문을 보존한다. 응답 MIME 속성과 HTTP Content-Type 필드를 함께 설정하여 nosniff 판정에서도 CSS·script의 종류를 보존한다.
+
+Linux의 MIME·CSP·no-store·nosniff 응답 헤더 구성은 본문 stream 생성과 분리된 helper에서 처리한다.

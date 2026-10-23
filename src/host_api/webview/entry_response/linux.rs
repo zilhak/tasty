@@ -24,6 +24,23 @@ fn fail(request: &URISchemeRequest, reason: &str) {
         reason,
     ));
 }
+fn finish_headers(
+    response: &URISchemeResponse,
+    source: &EntryResponseSource,
+    mime: &str,
+    length: i64,
+) {
+    response.set_content_type(mime);
+    response.set_status(200, Some("OK"));
+    let headers = soup::MessageHeaders::new(soup::MessageHeadersType::Response);
+    // WebKit's nosniff checks read the HTTP field independently of the response MIME property.
+    headers.append("Content-Type", mime);
+    headers.append("Content-Length", &length.to_string());
+    headers.append("Content-Security-Policy", source.csp());
+    headers.append("Cache-Control", "no-store");
+    headers.append("X-Content-Type-Options", "nosniff");
+    response.set_http_headers(headers);
+}
 fn finish(request: &URISchemeRequest, source: &EntryResponseSource, body: Arc<NativeBodyResponse>) {
     if !source.is_current() {
         fail(request, "retired remote document");
@@ -34,16 +51,7 @@ fn finish(request: &URISchemeRequest, source: &EntryResponseSource, body: Arc<Na
     let bytes = glib::Bytes::from_owned(BodyBytes(body));
     let stream = gio::MemoryInputStream::from_bytes(&bytes);
     let response = URISchemeResponse::new(&stream, length);
-    response.set_content_type(&mime);
-    response.set_status(200, Some("OK"));
-    let headers = soup::MessageHeaders::new(soup::MessageHeadersType::Response);
-    // WebKit's nosniff checks read the HTTP field independently of the response MIME property.
-    headers.append("Content-Type", &mime);
-    headers.append("Content-Length", &length.to_string());
-    headers.append("Content-Security-Policy", source.csp());
-    headers.append("Cache-Control", "no-store");
-    headers.append("X-Content-Type-Options", "nosniff");
-    response.set_http_headers(headers);
+    finish_headers(&response, source, &mime, length);
     request.finish_with_response(&response);
 }
 pub(in crate::host_api::webview) fn webview(source: EntryResponseSource) -> WebView {
