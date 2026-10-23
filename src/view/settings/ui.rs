@@ -1,5 +1,6 @@
 #[cfg(debug_assertions)]
 mod debug_tabs;
+mod export_status;
 mod file_handler_tab;
 mod keybindings_tab;
 #[cfg(test)]
@@ -529,6 +530,7 @@ impl SettingsUiState {
         &mut self,
         result: crate::app::settings_files::SettingsFileResult,
     ) {
+        self.invalidate_edited_export();
         self.import_export.accept_file_result(result);
     }
 

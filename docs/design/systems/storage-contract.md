@@ -306,6 +306,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | 파일 | 쓰는 함수 | 스레드 | 원자 교체 | 다른 writer |
 |---|---|---|---|---|
 | `config.toml` | `SettingsStorage::save` → `Settings::save` | file writer(부팅 정규화·셸 확인·테마 조정 포함) | 예(공용 교체, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 같은 대상 잠금과 원본 변경 관측 |
+| 사용자 선택 keybinding bundle(`tasty-keybindings-*.toml`) | Settings Export의 소유된 ordered command | 기존 file writer | 예(공용 교체, 기본 fsync 없음) | 대상 참여 잠금. 설정 snapshot과 병합하지 않음 |
 | `presets/**.toml` | `PresetStore`의 관측값 검사·공용 교체 | 실행 중 명령은 file worker, 초기 읽기·ID 보정은 load 호출 스레드 | 예(fsync 없음) | 저장 이름 선택의 참여자 잠금 + 대상 잠금·관측 충돌 검사 |
 | `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 잠금 안에서 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `child-terminals.json` | engine의 변경 필드·예약·등록·슬롯 정리를 공용 ordered command로 접수 | file writer. 최초 읽기·정리는 부팅 worker/headless bootstrap barrier | 예(공용 교체, fsync 없음) | 참여자 잠금 안에서 최신 읽기·engine 소유 변경 필드 병합·교체 |
@@ -380,6 +381,10 @@ port 변경과 형식 마이그레이션은 한 번에 교체해
 저장하지 않는다. 최신 읽기에서 삭제·손상·읽기 불가를 확인하면 최초 읽기의 포트를 재사용하지 않는다.
 
 `notify/<surface>.log`는 호스트가 쓰지 않는다. 플러그인 프로세스가 쓰고 호스트는 IPC 시작 때 디렉터리를 정리한다.
+
+Settings Keybindings Export는 현재 draft와 plugin override를 인코딩한 불변 text/path를 기존 file writer의 명령으로 접수한다. 항목·바이트 예산은 receipt 소비까지 유지하며 사용자 Export 명령을 snapshot으로 합치지 않는다. 원래 Settings View의 수명과 요청 identity, bundle draft 지문이 같은 경우에만 완료를 표시한다. Cancel·닫기·새 draft는 표시 observer만 버리고 접수된 쓰기는 취소하지 않는다. 일반 회차와 최종 file drain은 완료를 거두며, 결과 불명은 성공이나 알려진 실패로 바꾸지 않고 자동 재실행하지 않는다. 알려진 성공만 경로 토스트를 표시한다. 거절·저장 실패는 기존 행의 재시도/다른 위치 선택으로, 결과 불명은 대상 확인 안내로 구분한다. 명시적 재시도는 그때의 draft를 한 번 인코딩한다. Import의 파일 읽기·decode는 기존 동기 경로이며 이번 writer 명령이 아니다.
+
+Export는 공용 교체 함수가 지원하는 원본 권한·소유권·native 보안 속성을 보존한다. 지원하지 않는 모든 metadata나 마지막 원본 검사 뒤의 외부 편집 방지, 여러 파일 transaction, 전원 장애 내구성을 약속하지 않는다. 알려진 교체 실패는 대상의 기존 내용을 보존하지만 결과 불명에는 대상 미변경을 주장하지 않는다.
 
 ### Child terminal 관계의 파일 병합
 

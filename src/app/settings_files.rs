@@ -1,11 +1,14 @@
 //! Settings file operations execute after the originating View returns its requests.
-use std::path::PathBuf;
+pub(crate) mod export;
+use export::{ExportError, PendingExport};
+use std::{path::PathBuf, sync::Weak};
 use tasty_host_plugin::keybinding_bundle::{BundleError, DecodeEnv, DecodedBundle, decode};
 
 pub(crate) enum SettingsFileRequest {
     Export {
         path: PathBuf,
         text: String,
+        observer: Weak<()>,
     },
     Import {
         path: PathBuf,
@@ -18,7 +21,12 @@ pub(crate) enum SettingsFileRequest {
 pub(crate) enum SettingsFileResult {
     Export {
         path: PathBuf,
-        result: std::io::Result<()>,
+        result: Result<(), ExportError>,
+        observer: Weak<()>,
+    },
+    ExportTransport {
+        observer: Weak<()>,
+        error: ExportError,
     },
     Import {
         path: PathBuf,
@@ -29,12 +37,20 @@ pub(crate) enum SettingsFileResult {
 impl SettingsFileRequest {
     fn execute(self) -> SettingsFileResult {
         match self {
-            Self::Export { path, text } => {
-                let result = std::fs::write(&path, text);
+            Self::Export {
+                path,
+                text,
+                observer,
+            } => {
+                let result = export::write(&path, &text);
                 if let Err(error) = &result {
                     tracing::error!(%error, path = %path.display(), "keybinding export failed");
                 }
-                SettingsFileResult::Export { path, result }
+                SettingsFileResult::Export {
+                    path,
+                    result: result.map_err(ExportError::Io),
+                    observer,
+                }
             }
             Self::Import {
                 path,
@@ -66,17 +82,56 @@ impl SettingsFileRequest {
 }
 
 impl super::App {
-    /// Synchronous execution keeps results attached to this exact settings View; no worker can
-    /// deliver into a replacement modal after Cancel or close.
     pub(crate) fn process_settings_file_requests(&mut self, id: winit::window::WindowId) {
-        let Some(view) = self.view.views.get_mut(&id).and_then(|view| {
+        let requests = self
+            .view
+            .views
+            .get_mut(&id)
+            .and_then(|view| {
+                view.as_any_mut()
+                    .downcast_mut::<crate::view::SettingsView>()
+            })
+            .map(crate::view::SettingsView::take_file_requests)
+            .unwrap_or_default();
+        for request in requests {
+            if matches!(&request, SettingsFileRequest::Export { .. }) {
+                let queue = self.services.file_command_queue();
+                match PendingExport::submit(queue.as_ref(), request) {
+                    Ok(pending) => {
+                        self.state.settings_exports.push((id, pending));
+                        if let Some(view) = self.view.views.get_mut(&id) {
+                            view.mark_dirty();
+                        }
+                    }
+                    Err(result) => self.deliver_settings_file_result(id, *result),
+                }
+            } else {
+                self.deliver_settings_file_result(id, request.execute());
+            }
+        }
+    }
+    fn deliver_settings_file_result(
+        &mut self,
+        id: winit::window::WindowId,
+        result: SettingsFileResult,
+    ) {
+        if let Some(view) = self.view.views.get_mut(&id).and_then(|view| {
             view.as_any_mut()
                 .downcast_mut::<crate::view::SettingsView>()
-        }) else {
-            return;
-        };
-        for request in view.take_file_requests() {
-            view.accept_file_result(request.execute());
+        }) {
+            view.accept_file_result(result);
+        }
+    }
+    pub(crate) fn finish_settings_exports(&mut self) {
+        for (id, pending) in std::mem::take(&mut self.state.settings_exports) {
+            if let Some(result) = pending.poll() {
+                self.deliver_settings_file_result(id, result);
+            } else {
+                self.state.settings_exports.push((id, pending));
+            }
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

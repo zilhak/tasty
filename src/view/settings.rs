@@ -328,6 +328,7 @@ impl View for SettingsView {
             toasts.draw(ctx, &empty_layout, reduced_motion);
         });
 
+        self.settings_ui_state.invalidate_edited_export();
         self.settings = settings;
         if action.is_some() {
             self.should_close = true;

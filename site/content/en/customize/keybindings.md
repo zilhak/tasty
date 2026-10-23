@@ -1,4 +1,4 @@
-<!-- source-hash: 4599645cce6f -->
+<!-- source-hash: 814c78380237 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -154,7 +154,11 @@ To export:
 2. Pick a folder, set the name in the **File name** box at the bottom and press **Save**. The default name is `tasty-keybindings-<date>.toml`. Clicking an existing file in the list puts its name in the box; if that name already exists, a warning appears and the button changes to **Overwrite**.
 3. Once written, a notification shows the file path. Edits you haven't saved yet are included.
 
+While the export is pending, the button shows **Exporting…** and cannot start the same export again. You can keep editing other settings. Closing the settings window or changing the keybinding bundle suppresses feedback from the earlier request; an accepted file write still finishes.
+
 If the file can't be written (for example, the folder is read-only), **The export wasn't written** appears inside the **Export** row. Use **Try again** to write to the same place, or **Choose another location…** to pick somewhere else. While that notice is up, the **Export…** button is disabled. The middle sentence of the notice says which of three things went wrong — the folder is read-only, you don't have permission to write there, or the disk is full. If it was none of those, it says the write didn't finish and adds whatever the operating system reported on a small grey line below (truncated if long; hover it for the full text).
+
+If the result cannot be confirmed, **Export result unknown** asks you to check the destination before trying again. The app does not automatically repeat the write. **Try again** exports your current draft. Replacement uses a temporary file in the same folder and preserves supported existing access permissions; it does not preserve every file attribute or promise survival of a power failure.
 
 To import:
 

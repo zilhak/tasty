@@ -391,14 +391,17 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
 - **내보내기** — 설정 창의 로컬 파일 선택([native-file-picker](../native-file-picker/index.md#설정-창에서의-로컬-전용-재사용))을 저장 모드로 연다.
   기본 파일명 `tasty-keybindings-<YYYY-MM-DD>.toml`, `.toml` 필터.
   내보내는 원본은 **현재 draft**(저장 전 편집 포함)와 `plugins.toml` 의 override 전량(`PluginsConfig::shortcut_overrides`)이다.
-  쓰기에 성공하면 설정 창 자체 toast(Success)가 경로를 보여 준다.
+  소유한 bundle text/path를 공용 file writer에 명령으로 제출한다. 파일 I/O를 기다리는 동안 Export 버튼은 비활성화된 **Exporting…** 표시이며 나머지 UI는 계속 동작한다. 사용자 Export 시도는 snapshot 병합 대상이 아니다.
+  알려진 쓰기 성공 receipt를 받은 뒤 원래 설정 윈도우 자체 toast(Success)가 경로를 보여 준다. 닫기·Cancel·재열기·bundle draft 편집 뒤에는 예전 완료를 표시하지 않으며, 이미 접수한 쓰기는 완료한다.
   쓰기에 실패하면 **Export 행 안**에 danger 알림 블록(경로 · 이유 · "Nothing was written.")이 뜨고 **Try again**(같은 경로로 다시 쓰기) · **Choose another location…**(블록을 닫고 저장 선택기를 다시 연다)을 싣는다.
   블록이 떠 있는 동안 행의 **Export…** 버튼은 꺼진다 — 재시도 입구가 둘이 되지 않게.
   실패는 toast 가 아니다: toast 는 저절로 사라지고 재시도를 못 싣는다.
   이유 구절은 **고정 집합 넷**이다 — 읽기 전용 파일시스템(`ie_export_failure_read_only`) · 권한 없음(`_denied`) · 볼륨이 참(`_disk_full`) · 나머지를 접는 catch-all(`_unknown`, "the write didn't finish.").
   집합이 고정인 이유는 그 구절이 세 언어에서 같은 문장으로 읽혀야 하기 때문이고, 그래서 **OS 가 낸 문장은 문장 안에 들어가지 않는다** — catch-all 갈래에서만 본문 아래 제 줄(mono caption · muted · 한 줄 말줄임 · 전문은 tooltip)로 따라붙는다.
   "볼륨이 참" 은 `io::ErrorKind::StorageFull` 이 아직 nightly 라 raw OS 코드로 본다(`db::disk_full_os_error`, db 초기화 쪽과 같은 상수).
-  로그(`tracing::error!`)도 함께 남는다.
+  알려진 실패는 공용 원자 교체의 대상 원본 보호 계약을 따른다. 결과를 확인하지 못한 경우에는 **Export result unknown**과 대상 파일을 확인한 뒤 다시 시도하라는 안내를 표시하며 “Nothing was written.”이라고 단정하지 않는다. 자동 재시도하지 않고, 명시적 Try again만 현재 draft를 다시 인코딩한다.
+  기본 fsync는 없고 공용 helper가 지원하는 mode/owner/native 보안 속성만 보존한다. 모든 metadata나 전원 장애 내구성을 보장하지 않는다.
+  실패 로그에는 오류와 경로만 남기며 bundle 원문은 남기지 않는다.
 - **가져오기** — 같은 선택기를 열기 모드로 열어 고른 파일을 `decode` 한다(`DecodeEnv` = 이 환경에 설치된 plugin id · 스크립트 레지스트리). 성공하면 detail 로 들어간다.
   - **파싱 실패**(`Toml`·`NotABundle`) — detail 에 danger 인라인 블록(파일 이름 · TOML span 에서 계산한 줄 번호)과 "다른 파일 고르기" 가 뜨고 back bar 액션은 숨는다. 줄 번호를 못 얻으면 줄 구절을 빼지 않고 "the file isn't TOML." 로 **바꾼다** — 가운데 문장은 언제나 이유를 말하고 앞뒤 문장은 두 형태에서 같다.
   - **버린 plugin override**(`DroppedUninstalledPlugin`) — 경고가 아니라 muted 정보 줄 하나(개수 · plugin id 목록).

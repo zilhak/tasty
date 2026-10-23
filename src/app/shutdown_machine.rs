@@ -553,6 +553,7 @@ impl App {
             self.services.poll_memory_writer_shutdown()
         };
         self.services.poll_file_writer();
+        self.finish_settings_exports();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
         let Some(state) = self.state.shutdown.as_mut() else {
@@ -590,6 +591,7 @@ impl App {
         let remaining = self.services.poll_file_writer_shutdown();
         self.poll_child_registry_effects();
         self.finish_preset_files();
+        self.finish_settings_exports();
         self.settle_settings_saves();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
@@ -718,3 +720,6 @@ mod capture_file_tests {
         }
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod settings_export_tests;

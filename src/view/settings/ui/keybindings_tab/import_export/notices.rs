@@ -175,20 +175,35 @@ pub(super) fn export_failure(
         ExportFailReason::ReadOnly => t("settings.keybindings.ie_export_failure_read_only"),
         ExportFailReason::PermissionDenied => t("settings.keybindings.ie_export_failure_denied"),
         ExportFailReason::DiskFull => t("settings.keybindings.ie_export_failure_disk_full"),
-        ExportFailReason::Unknown(_) => t("settings.keybindings.ie_export_failure_unknown"),
+        ExportFailReason::Unknown(_) | ExportFailReason::OutcomeUnknown => {
+            t("settings.keybindings.ie_export_failure_unknown")
+        }
     };
-    let body = t_fmt2(
-        "settings.keybindings.ie_export_failure_body",
-        &failure.path.display().to_string(),
-        reason,
-    );
+    let body = if matches!(failure.reason, ExportFailReason::OutcomeUnknown) {
+        crate::i18n::t_fmt(
+            "settings.keybindings.ie_export_unknown_body",
+            &failure.path.display().to_string(),
+        )
+    } else {
+        t_fmt2(
+            "settings.keybindings.ie_export_failure_body",
+            &failure.path.display().to_string(),
+            reason,
+        )
+    };
     let os_message = failure.reason.os_message();
     notice_block(
         ui,
         th,
         th.accent_danger().to_egui(),
         icons::ALERT_CIRCLE,
-        t("settings.keybindings.ie_export_failure_title"),
+        t(
+            if matches!(failure.reason, ExportFailReason::OutcomeUnknown) {
+                "settings.keybindings.ie_export_unknown_title"
+            } else {
+                "settings.keybindings.ie_export_failure_title"
+            },
+        ),
         None,
         |ui| {
             failure_body(ui, th, &body);

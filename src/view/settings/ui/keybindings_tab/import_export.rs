@@ -103,6 +103,7 @@ enum ExportFailReason {
     DiskFull,
     /// 알아볼 수 없는 실패 — 구절은 고정이고, 담은 문장은 아래 줄로 나간다.
     Unknown(String),
+    OutcomeUnknown,
 }
 
 impl ExportFailReason {
@@ -130,6 +131,7 @@ impl ExportFailReason {
 /// 서브탭 상태 — `SettingsUiState` 가 소유한다.
 pub struct ImportExportState {
     pending_files: Vec<crate::app::settings_files::SettingsFileRequest>,
+    export_observation: crate::app::settings_files::export::Observation,
     preview: Option<Preview>,
     failure: Option<Failure>,
     /// 내보내기 실패 — 떠 있는 동안 Export 버튼이 꺼진다.
@@ -148,6 +150,7 @@ impl Default for ImportExportState {
     fn default() -> Self {
         Self {
             pending_files: Vec::new(),
+            export_observation: Default::default(),
             preview: None,
             failure: None,
             export_failure: None,
@@ -173,15 +176,38 @@ impl ImportExportState {
         result: crate::app::settings_files::SettingsFileResult,
     ) {
         match result {
-            crate::app::settings_files::SettingsFileResult::Export { path, result } => {
-                self.finish_export(
-                    &path,
-                    result.map_err(|error| ExportFailReason::of_io(&error)),
-                );
+            crate::app::settings_files::SettingsFileResult::Export {
+                result, observer, ..
+            } => self.accept_export(&observer, result),
+            crate::app::settings_files::SettingsFileResult::ExportTransport { error, observer } => {
+                self.accept_export(&observer, Err(error))
             }
             crate::app::settings_files::SettingsFileResult::Import { path, result } => {
                 self.finish_import(&path, result);
             }
+        }
+    }
+
+    fn accept_export(
+        &mut self,
+        observer: &std::sync::Weak<()>,
+        result: Result<(), crate::app::settings_files::export::ExportError>,
+    ) {
+        if let Some(path) = self.export_observation.finish(observer) {
+            self.finish_export(
+                &path,
+                result.map_err(|error| match error {
+                    crate::app::settings_files::export::ExportError::Io(error) => {
+                        ExportFailReason::of_io(&error)
+                    }
+                    crate::app::settings_files::export::ExportError::Refused(message) => {
+                        ExportFailReason::Unknown(message)
+                    }
+                    crate::app::settings_files::export::ExportError::Unknown => {
+                        ExportFailReason::OutcomeUnknown
+                    }
+                }),
+            );
         }
     }
 
@@ -205,15 +231,36 @@ impl ImportExportState {
         let overrides = merged_overrides(&ctx.overrides, plugin_draft);
         match encode(keybindings, &overrides) {
             Ok(text) => {
+                let Some(observer) = self.export_observation.begin(path, &text) else {
+                    return;
+                };
+                self.export_failure = None;
+                self.toast = None;
                 self.pending_files
                     .push(crate::app::settings_files::SettingsFileRequest::Export {
                         path: path.to_path_buf(),
                         text,
+                        observer,
                     })
             }
             Err(error) => {
+                self.export_observation.clear();
                 tracing::error!(%error, "keybinding export encode failed");
                 self.finish_export(path, Err(ExportFailReason::Unknown(error.to_string())));
+            }
+        }
+    }
+
+    pub(crate) fn observe_export_draft(
+        &mut self,
+        keybindings: &KeybindingSettings,
+        ctx: &PluginBundleContext,
+        draft: &PluginShortcutDraft,
+    ) {
+        if self.export_observation.pending() {
+            match encode(keybindings, &merged_overrides(&ctx.overrides, draft)) {
+                Ok(text) => self.export_observation.observe(&text),
+                Err(_) => self.export_observation.clear(),
             }
         }
     }
@@ -424,9 +471,13 @@ pub(crate) fn draw_import_export_subtab(
                                 icons::DOWNLOAD,
                                 t("settings.keybindings.ie_export_title"),
                                 t("settings.keybindings.ie_export_desc"),
-                                t("settings.keybindings.ie_export_button"),
+                                t(if state.export_observation.pending() {
+                                    "settings.keybindings.ie_export_pending"
+                                } else {
+                                    "settings.keybindings.ie_export_button"
+                                }),
                                 ButtonVariant::Secondary,
-                                export_fail.is_none(),
+                                export_fail.is_none() && !state.export_observation.pending(),
                                 export_fail
                                     .map(|_| &mut export_notice as &mut dyn FnMut(&mut egui::Ui)),
                             ) {
@@ -533,19 +584,38 @@ mod tests {
             &PluginBundleContext::default(),
             &PluginShortcutDraft::new(),
         );
-        assert_eq!(state.take_file_requests().len(), 1);
+        let crate::app::settings_files::SettingsFileRequest::Export { observer, .. } =
+            state.take_file_requests().pop().unwrap()
+        else {
+            panic!("export")
+        };
         assert!(state.toast.is_none());
         state.accept_file_result(crate::app::settings_files::SettingsFileResult::Export {
             path: path.clone(),
-            result: Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+            observer,
+            result: Err(crate::app::settings_files::export::ExportError::Io(
+                std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            )),
         });
         assert!(matches!(
             state.export_failure.as_ref().unwrap().reason,
             ExportFailReason::PermissionDenied
         ));
         assert!(state.toast.is_none());
+        state.export_to(
+            &path,
+            &KeybindingSettings::default(),
+            &PluginBundleContext::default(),
+            &PluginShortcutDraft::new(),
+        );
+        let crate::app::settings_files::SettingsFileRequest::Export { observer, .. } =
+            state.take_file_requests().pop().unwrap()
+        else {
+            panic!("retry")
+        };
         state.accept_file_result(crate::app::settings_files::SettingsFileResult::Export {
             path,
+            observer,
             result: Ok(()),
         });
         assert!(state.export_failure.is_none());
@@ -581,3 +651,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod observation_tests;

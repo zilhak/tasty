@@ -472,6 +472,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.services.poll_file_writer();
         self.poll_child_registry_effects();
         self.finish_preset_files();
+        self.finish_settings_exports();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
         self.services.poll_state_writer();

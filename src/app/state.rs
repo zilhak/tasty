@@ -8,6 +8,8 @@ use winit::window::WindowId;
 #[derive(Default)]
 pub(crate) struct AppState {
     #[cfg(feature = "gui")]
+    pub(crate) settings_exports: Vec<(WindowId, crate::app::settings_files::export::PendingExport)>,
+    #[cfg(feature = "gui")]
     pub(crate) remote_browsers:
         std::collections::HashMap<u64, crate::app::remote_browser::BrowserTarget>,
     pub(crate) started: bool,
