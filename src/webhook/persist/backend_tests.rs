@@ -61,6 +61,73 @@ fn file_participant_child() {
     }
 }
 
+fn participant_driver(role: &str) -> (PathBuf, &'static str) {
+    // An independently built CLI test driver exercises the actual offline adapter without
+    // introducing a host -> CLI source dependency. Ordinary unit runs use the shared port API.
+    let cli_driver = (role == "port")
+        .then(|| std::env::var_os("TASTY_TEST_WEBHOOK_CLI_DRIVER"))
+        .flatten();
+    match cli_driver {
+        Some(executable) => {
+            tracing::info!("webhook_file_cli_driver=true");
+            (
+                PathBuf::from(executable),
+                "local::port::webhook_file_tests::file_participant_child",
+            )
+        }
+        None => (
+            std::env::current_exe().unwrap(),
+            "webhook::persist::backend_tests::file_participant_child",
+        ),
+    }
+}
+
+fn spawn_participant(role: &str, path: &Path, directory: &Path) -> Owned {
+    let ready = directory.join(role);
+    let (executable, test) = participant_driver(role);
+    let child = Owned(
+        Command::new(executable)
+            .args(["--exact", test, "--nocapture"])
+            .env("TASTY_WEBHOOK_FILE_CHILD", role)
+            .env("TASTY_WEBHOOK_FILE_PATH", path)
+            .env("TASTY_WEBHOOK_FILE_READY", &ready)
+            .env("TASTY_HOME", directory.join("home"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    tracing::info!(role, pid = child.0.id(), "webhook_file_owned_child");
+    wait_for(|| ready.exists());
+    child
+}
+
+fn assert_participants_blocked(children: &mut [Owned], path: &Path) {
+    std::thread::sleep(Duration::from_millis(100));
+    for child in children {
+        assert!(
+            child.0.try_wait().unwrap().is_none(),
+            "production participant bypassed held file lock"
+        );
+    }
+    assert!(
+        std::fs::read_to_string(path)
+            .unwrap()
+            .contains("port=39999")
+    );
+}
+
+fn reap_participants(children: Vec<Owned>) {
+    for mut child in children {
+        wait_for(|| child.0.try_wait().unwrap().is_some());
+        assert!(
+            child.0.try_wait().unwrap().unwrap().success(),
+            "owned participant failed"
+        );
+        tracing::info!(pid = child.0.id(), "webhook_file_owned_child reaped=true");
+    }
+}
+
 #[test]
 fn host_and_cli_processes_read_merge_replace_under_the_same_lock() {
     let subscriber = tracing_subscriber::fmt()
@@ -75,60 +142,11 @@ fn host_and_cli_processes_read_merge_replace_under_the_same_lock() {
     let lock = tasty_utils::file_replace::lock(&path).unwrap();
     let mut children = Vec::new();
     for role in ["host", "port"] {
-        let ready = dir.path().join(role);
-        // An independently built CLI test driver exercises the actual offline adapter without
-        // introducing a host -> CLI source dependency. Ordinary unit runs use the shared port API.
-        let cli_driver = (role == "port")
-            .then(|| std::env::var_os("TASTY_TEST_WEBHOOK_CLI_DRIVER"))
-            .flatten();
-        let (executable, test) = match cli_driver {
-            Some(executable) => {
-                tracing::info!("webhook_file_cli_driver=true");
-                (
-                    PathBuf::from(executable),
-                    "local::port::webhook_file_tests::file_participant_child",
-                )
-            }
-            None => (
-                std::env::current_exe().unwrap(),
-                "webhook::persist::backend_tests::file_participant_child",
-            ),
-        };
-        let child = Command::new(executable)
-            .args(["--exact", test, "--nocapture"])
-            .env("TASTY_WEBHOOK_FILE_CHILD", role)
-            .env("TASTY_WEBHOOK_FILE_PATH", &path)
-            .env("TASTY_WEBHOOK_FILE_READY", &ready)
-            .env("TASTY_HOME", dir.path().join("home"))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        tracing::info!(role, pid = child.id(), "webhook_file_owned_child");
-        children.push(Owned(child));
-        wait_for(|| ready.exists());
+        children.push(spawn_participant(role, &path, dir.path()));
     }
-    std::thread::sleep(Duration::from_millis(100));
-    for child in &mut children {
-        assert!(
-            child.0.try_wait().unwrap().is_none(),
-            "production participant bypassed held file lock"
-        );
-    }
-    assert!(
-        std::fs::read_to_string(&path)
-            .unwrap()
-            .contains("port=39999")
-    );
+    assert_participants_blocked(&mut children, &path);
     drop(lock);
-    for mut child in children {
-        wait_for(|| child.0.try_wait().unwrap().is_some());
-        assert!(
-            child.0.try_wait().unwrap().unwrap().success(),
-            "owned participant failed"
-        );
-        tracing::info!(pid = child.0.id(), "webhook_file_owned_child reaped=true");
-    }
+    reap_participants(children);
     let table = tasty_settings::webhook_port_file::read_table(&path).unwrap();
     assert_eq!(table["port"].as_integer(), Some(40015));
     assert_eq!(table["listener"]["keep"].as_bool(), Some(true));
