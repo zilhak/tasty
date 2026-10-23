@@ -108,7 +108,7 @@ fn commit_editing_name(
     }
 }
 
-/// 편집 subtitle 필드가 바뀌면 즉시 store/disk 에 write-through(auto-save).
+/// 편집 subtitle이 바뀌면 App이 저장할 값 요청을 초안에 넣는다.
 fn commit_editing_subtitle(
     store: &mut PresetDrafts,
     name: &str,

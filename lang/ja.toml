@@ -1749,7 +1749,7 @@ duplicate = "複製"
 delete = "削除"
 edit = "編集"
 done = "完了"
-saved = "自動保存されます"
+saved = "自動保存"
 
 [preset.edit]
 dag_id = "DAG ID"

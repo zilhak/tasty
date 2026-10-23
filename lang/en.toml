@@ -1800,7 +1800,7 @@ duplicate = "Duplicate"
 delete = "Delete"
 edit = "Edit"
 done = "Done"
-saved = "saved automatically"
+saved = "automatic saving"
 
 [preset.edit]
 dag_id = "DAG ID"

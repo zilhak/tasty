@@ -57,6 +57,6 @@ Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces
 | [surface-move](surface-move/index.md) — Surface·Tab·Pane 위치 이동 (이동/이곳으로 이동) | 로컬 사용자 | OS 컨텍스트 메뉴 |
 | [explorer](../surfaces/explorer/index.md) — 내장 파일 관리자 surface (탐색/열기/뷰모드·파일 충돌 보호, [파일 작업 계약](../surfaces/explorer/file-operations.md)) | 로컬 사용자 · AI Agent | host surface |
 | [layout-persistence](layout-persistence/index.md) — 레이아웃 영속화 (journal·View checkpoint·복원 입력과 저장 대기의 수명) | 로컬 사용자 | 없음 |
-| [layout-presets](layout-presets/index.md) — 레이아웃 프리셋 (`preset.*`, 파일 완료 후 캐시·응답, 비동기 편집 저장) | 로컬 사용자 · AI Agent | PresetView |
+| [layout-presets](layout-presets/index.md) — 레이아웃 프리셋 (`preset.*`, 파일 완료 후 캐시·응답, 비동기 편집·자동 저장 안내) | 로컬 사용자 · AI Agent | PresetView |
 | [accessibility](accessibility/index.md) — 접근성 (reduced motion 등) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [macos-permissions](macos-permissions/index.md) — macOS 권한 (TCC 파일·화면 기록 일괄 요청, 미승인 권한 안내) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) 일반 > 권한 |
