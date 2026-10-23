@@ -199,6 +199,16 @@ prompt cleanup은 처음 받은 temp root를 재사용해 생성과 회수의 �
 그 두 경계를 요구한다. 송신 전용 값에 별도 Mutex를 두지 않아 락 poison으로 완료 통지를
 건너뛰는 경로가 없다. 받는 쪽은 기존 `recv_timeout`으로 실제 통지를 확인한다.
 
+### 공용 writer의 작업별 계측 기준값
+
+여러 소비자가 같은 writer를 쓰면 초기 읽기도 누계에 포함된다. 원격 프로필·패스키 IPC 시험은
+child registry의 기존 bootstrap 완료 API로 초기 receipt를 수집하고, 같은 큐에 넣은 flush의
+성공 결과를 한 번 받아 앞선 작업이 끝났음을 확인한다. pending·held 항목이 모두 0인 상태에서
+읽은 기준값과 원격 요청 완료 뒤의 차이를 비교한다. 논리 성공 2회·replace 3회·delete 1회와
+unclassified 증가 0을 그대로 검사하고, 종료 drain 뒤 원 호출자의 중복 응답도 검사한다.
+고정 sleep이나 조용한 폴링 구간을 완료로 간주하거나, 초기 작업 수를 상수로 빼지 않는다.
+계측 조회는 receipt를 소비하지 않으며, flush 결과는 준비 여부를 검사한 뒤 다시 꺼내지 않는다.
+
 ### 자식 CLI의 실제 argv를 확인하는 시험
 
 Codex의 `session/spawn_runtime_tests.rs`는 TUI 명령의 인자를 Python mock에 전달하고,
