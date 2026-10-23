@@ -277,3 +277,115 @@ fn a_legacy_file_deleted_while_migration_waits_is_not_recreated() {
     );
     unlocked(&path);
 }
+
+#[cfg(unix)]
+fn legacy_lock_failure(directory_readonly: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    for (original, mode, expected) in [
+        ("port=40000\n", 0o600, Some(40000)),
+        ("port=28429\n", 0o600, None),
+        ("port=40000\nbroken=[", 0o600, None),
+        ("port=40000\n", 0o000, None),
+        ("format=2\nport=28429\n", 0o600, Some(DEFAULT_PORT)),
+    ] {
+        let (dir, path) = fixture();
+        fs::write(&path, original).unwrap();
+        let file_restore = ModeRestore(path.clone(), 0o600);
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+        if mode == 0 {
+            assert_eq!(
+                fs::read(&path).unwrap_err().kind(),
+                std::io::ErrorKind::PermissionDenied,
+                "negative control must really deny reading"
+            );
+        } else {
+            assert!(fs::read_to_string(&path).unwrap() == original);
+        }
+        let lock_path = dir.path().join("webhooks.toml.lock");
+        let protection = if directory_readonly {
+            assert!(!lock_path.exists());
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o500)).unwrap();
+            ModeRestore(dir.path().into(), 0o700)
+        } else {
+            fs::write(&lock_path, b"").unwrap();
+            fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o400)).unwrap();
+            ModeRestore(lock_path.clone(), 0o600)
+        };
+        assert!(
+            matches!(LockedTable::open(&path), Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied),
+            "migration must really fail to create/open its participating lock"
+        );
+        assert_eq!(read_port(&path), expected);
+        assert_eq!(lock_path.exists(), !directory_readonly);
+        assert!(set_port(&path, 41000).is_err());
+        assert!(replace_webhooks(&path, vec![]).is_err());
+        drop(protection);
+        drop(file_restore);
+        assert!(fs::read_to_string(&path).unwrap() == original);
+        // A failed lock acquisition must not retain a guard or poison later normal mutations.
+        if original.contains("broken") {
+            assert!(set_port(&path, 41000).is_err());
+            unlocked(&path);
+        } else {
+            set_port(&path, 41000).unwrap();
+            unlocked(&path);
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn legacy_lock_creation_failure_keeps_read_semantics_without_writing() {
+    legacy_lock_failure(true);
+}
+
+#[cfg(unix)]
+#[test]
+fn legacy_lock_open_failure_keeps_read_semantics_without_writing() {
+    legacy_lock_failure(false);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_legacy_file_invalidated_while_migration_waits_does_not_reuse_its_old_port() {
+    use std::{os::unix::fs::PermissionsExt, time::Duration};
+    for unreadable in [false, true] {
+        let (_dir, path) = fixture();
+        fs::write(&path, "port=40000\n").unwrap();
+        let restore = ModeRestore(path.clone(), 0o600);
+        let lock = file_replace::lock(&path).unwrap();
+        let (started, start) = std::sync::mpsc::channel();
+        let (finished, done) = std::sync::mpsc::channel();
+        let source = path.clone();
+        let worker = std::thread::spawn(move || {
+            started.send(()).unwrap();
+            finished.send(read_port(&source)).unwrap();
+        });
+        start.recv_timeout(Duration::from_secs(3)).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(done.try_recv().is_err(), "migration must wait on its lock");
+        if unreadable {
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+            assert_eq!(
+                fs::read(&path).unwrap_err().kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+        } else {
+            fs::write(&path, "port=40000\nbroken=[").unwrap();
+        }
+        drop(lock);
+        assert_eq!(done.recv_timeout(Duration::from_secs(3)).unwrap(), None);
+        worker.join().unwrap();
+        drop(restore);
+        assert!(
+            fs::read_to_string(&path).unwrap()
+                == if unreadable {
+                    "port=40000\n"
+                } else {
+                    "port=40000\nbroken=["
+                }
+        );
+        unlocked(&path);
+    }
+}

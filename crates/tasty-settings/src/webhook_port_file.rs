@@ -158,10 +158,20 @@ pub fn read_port(path: &Path) -> Option<u16> {
     let mut file = match LockedTable::open(path) {
         Ok(file) => file,
         Err(e) => {
-            tracing::warn!(
-                "webhooks.toml unreadable ({e}); ignoring its port and leaving the file as it is"
-            );
-            return None;
+            tracing::warn!("webhooks.toml format update unavailable: {e}");
+            // Lock acquisition/validation can fail after the initial read. Read again rather
+            // than revive an obsolete port; this fallback never writes without the lock.
+            let mut table = match read_table(path) {
+                Ok(table) => table,
+                Err(error) => {
+                    tracing::warn!(
+                        "webhooks.toml unreadable ({error}); ignoring its port and leaving the file as it is"
+                    );
+                    return None;
+                }
+            };
+            migrate(&mut table);
+            return port_from_table(&table);
         }
     };
     if file.before == Fingerprint::Missing {
