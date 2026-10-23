@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[응답성 원칙](../../principles/performance-and-settings.md)에 따라 사용자 경로의 저장 대기를 줄인다. memory.db는 메인 루프가 저장소를 기다리지 않는다. 호출 스레드에서 끝나는 state.db·파일 저장은 아래 표의 현재 한계이며 영구 예외로 승인된 것이 아니다.
+[응답성 원칙](../../principles/performance-and-settings.md)에 따라 사용자 경로의 저장 대기를 줄인다. memory.db·state.db와 이행된 파일 소비자는 전담 writer에 요청을 넘기고 완료를 수거한다. 명부에 남아 있는 동기 파일 저장은 현재 한계이며 영구 예외로 승인된 것이 아니다.
 
 호스트가 디스크에 쓰는 경로와 각 경로의 성공·오류·실행 계약을 정리한다.
 파일 위치와 SQLite 설정, 실패 분류는 [저장소 시스템](storage.md)에, 측정값은 그 문서의 [저장 기준선](storage.md#저장-기준선)에 있다.
@@ -32,8 +32,8 @@
 | memory.db background writer(runner 결과·보고) | 각 스레드가 memory writer에 복합 연산을 넣고 결과를 기다린다(`MemoryAccess::run_blocking`) | writer가 commit한다 | commit과 같다 | 해당 없음 |
 | task runner 실행 | Ready task를 tick snapshot으로 고른다(writer 요청 하나) | lease·semaphore 획득, 실행 handle 기록, `Running` 전이가 각각 writer 요청 하나이고 runner가 결과를 기다린다 | commit과 같다 | 점유 획득이 확정된 뒤, `Running` 기록 **전에** 프로세스를 시작한다. 획득 결과를 모르면(`Unknown`) 같은 holder의 점유를 돌려주고 다음 tick에 다시 얻으며 시작하지 않는다. `Running` 기록이 실패하거나 결과를 모르면 이미 시작한 실행이므로 handle과 회차를 `RunnerLoop::spawned`에 보관하고 같은 회차를 다시 시작하지 않는다. 다음 tick의 snapshot으로 확정 여부를 다시 확인해 Running이면 그 handle을 지켜보고, Ready면 전이를 다시 시도하며, 종결·회차 변경·Waiting이면 실행을 멈추고 점유를 돌려준다([agent-runner 모델](../../dev-guide/agent-runner.md#모델)) |
 | 구조 journal | 전용 worker 채널에 넣는다. surface capture의 terminal `restore.command`는 비워 두고 worker가 memory writer 순서로 읽어 채운다(읽지 못하면 주기 capture는 실패해 앞 capture를 유지하고, 닫기 capture는 그 값 없이 진행한다). engine을 열 때 새 surface ID가 남은 metadata scope와 겹치지 않도록 worker가 memory writer 읽기로 surface scope의 가장 큰 ID를 확인한 뒤 연다. 읽지 못하면 그 engine만 기록 없이 거절되고(창 생성·부팅 실패로 보고) journal은 다른 engine을 위해 계속 동작한다 | worker가 commit한다 | commit된 batch만 CoreState에 적용한다([이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md)) | 대상 엔진 공개와 ACK 뒤에 응답·checkpoint를 진행한다 |
-| 최근 파일(state.db) | 별도 접수 없음 | 호출 스레드에서 끝난다 | 공유 캐시를 DB 쓰기 전에 같은 잠금 안에서 바꾼다. 저장이 실패해도 캐시는 바뀐 채 남는다 | 해당 없음 |
-| 튜토리얼 진행(state.db) | 전용 worker에 넣고 receipt를 받는다 | worker가 요청마다 transaction으로 commit한다 | receipt 결과로 반영한다 | 해당 없음 |
+| 최근 파일(state.db) | 공유 캐시 잠금 안에서 표시 revision을 올리고 종류별 snapshot을 state writer에 접수한다. SQL과 완료 대기는 하지 않는다 | worker가 묶음 하나를 transaction 하나로 commit한다 | 최신 목록은 접수 전에 보이며, receipt 수거 때 성공한 revision만 확정한다. 실패해도 표시 목록과 dirty는 유지한다 | 해당 없음 |
+| 튜토리얼 진행(state.db) | state writer에 넣고 receipt를 받는다 | worker가 저장 묶음 하나를 transaction 하나로 commit한다 | receipt 결과로 반영한다 | 해당 없음 |
 | `config.toml` 실행 중 저장 | file writer 큐에 불변 설정 snapshot을 넣고 바로 진행한다 | writer가 같은 대상의 묶음에서 마지막 snapshot을 파일로 교체한다 | 메모리 설정은 접수 전에 적용한다. 표시 revision과 저장 완료 revision을 따로 유지한다 | receipt 완료 뒤 원 요청에 한 번 응답한다. 저장 실패·접수 거절은 `applied:true, saved:false`다 |
 | 프리셋 저장·삭제·이름 변경 | 소유된 ordered command를 같은 file writer에 접수한다 | worker가 참여자 잠금 안에서 명령을 실행한다 | 접수 순서로 확정 delta를 캐시에 반영한다 | 캐시 반영 뒤 원 호출자에게 한 번 응답한다 |
 | 나머지 파일 | 아래 저장 명부 참조 | 소비자별 현재 경계 | 소비자별 계약 | 소비자별 계약 |
@@ -157,6 +157,10 @@ GUI 부팅(`init_boot_db_and_theme`)이 state.db를 실행당 한 번 열고, �
 - 결과 수거: 최근 목록 receipt는 메인 루프의 `poll_state_writer`와 종료 단계가 거둔다. 튜토리얼 receipt는 각 View가 거두고, 닫힌 View의 receipt는 버려져 결과가 나올 때 예산을 돌려준다.
 - 예산 크기: 최근 목록은 종류 이름과 경로 길이에 항목마다 8바이트를, 튜토리얼 요청은 주제·단계 이름 길이에 고정 크기를 더한다. 읽기 결과는 행 수와 재개 단계 길이로 센다.
 - 종료: GUI 종료가 시작되면 튜토리얼 입구가 새 튜토리얼 요청만 거절한다. 최근 목록 접수는 writer의 종료가 시작될 때까지 받는다. `StoppingPlugins`에서 writer가 접수를 막고 마지막 flush 뒤 join한다. join이 끝나면 남은 결과를 거두고, 화면에 보였지만 확정하지 못한 종류가 있으면 종류별로 경고한다.
+
+최근 파일 공유 캐시는 종류별 revision과 별개로 캐시 전체의 연속 미확정 기간을 관측한다. `system.pressure.state_snapshots.recent_files`는 `dirty`·`dirty_age_us`를 제공하며 state writer가 없는 GUI·headless에서는 null이다. 첫 표시 revision 증가 시 단조 시계의 시각 하나를 보관하고, 새 종류·새 revision·오래된 성공·접수 거절·실패·결과 불명으로 초기화하지 않는다. 모든 종류의 최신 표시 revision이 확정된 때만 null로 돌아간다. 각 종류의 독립 나이나 현재 가장 오래된 종류의 나이가 아니라, 캐시에 미확정 변경이 연속해서 존재한 기간이다.
+
+조회는 같은 캐시의 scalar와 시계만 읽고 완료 receipt를 수거하거나 DB에 접근하지 않는다. 시간은 포화 변환한 마이크로초다. 이미 준비된 성공 결과도 기존 settle에서 수거하기 전에는 dirty로 남는다. 저장 실패 뒤 pending이 0이어도 나이는 이어지므로 공용 writer의 oldest_pending_age_us와 다르다. 최근 목록 순서·opened_at·rank·병합·접수·재시도·종료 규칙과 튜토리얼 CAS/버전 체인은 이 관측값으로 바꾸지 않는다.
 
 #### 파일 실행기
 

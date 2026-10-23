@@ -126,6 +126,11 @@ pub(super) fn handle_system_pressure(
     body["memory_writer"] = writer_stats_json(core.memory_writer_stats());
     body["state_writer"] = writer_stats_json(core.state_writer_stats());
     body["state_db"] = state_db_json(core.state_db_latency().as_ref());
+    body["state_snapshots"] = json!({
+        "recent_files": core.state_recent_status().map(|snapshot| json!({
+            "dirty": snapshot.dirty, "dirty_age_us": snapshot.dirty_age_us,
+        })),
+    });
     {
         let status = |(visible, committed, pending), age| json!({"visible": visible, "committed": committed, "pending": pending, "dirty": visible > committed, "dirty_age_us": age});
         let settings = core.settings_save_status();

@@ -188,6 +188,8 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 
 - **state.db 저장 실행기(`state_writer` · `state_db`)**: `state_writer` 는 GUI 의 state.db writer(최근 파일·튜토리얼 진행) 누계로 `memory_writer` 와 같은 필드를 싣는다. `state_db` 는 그 writer 가 성공한 commit 의 `commits` · `commit_us_sum` · `commit_us_max` · `commit_us_mean` 과 `writes_per_commit`(`le` · `counts`)이다. 부팅의 첫 읽기는 세지 않는다. 헤드리스와 state.db 를 열지 못한 실행은 둘 다 `null` 이다([state.db 실행기](../design/systems/storage-contract.md#statedb-실행기)).
 
+- **최근 목록 snapshot(`state_snapshots.recent_files`)**: state writer가 구성된 GUI에서 캐시 전체의 `dirty`·`dirty_age_us`를 읽는다. 첫 표시 변경부터 모든 종류의 최신 표시 revision이 확정될 때까지 연속된 마이크로초이며 새 변경·실패·결과 불명·접수 거절·오래된 성공으로 초기화하지 않는다. 대기 요청이 없어도 미저장 변경의 나이는 유지된다. 조회는 receipt를 수거하지 않는다. headless·state writer 미구성은 null이다([state.db 실행기](../design/systems/storage-contract.md#statedb-실행기)).
+
 - **파일 실행기(`file_writer` · `file_writes` · `file_commands`)**: `file_writer`는 snapshot과 ordered command의 공용 writer 통계다. `file_writes`는 설정·snapshot backend의 replaced/failed/unknown이며 복합 명령을 한 번의 파일 교체로 세지 않는다. `file_commands.presets`는 accepted/rejected/completed/unknown/pending이고 completed에는 알려진 저장소 오류도 포함된다. 원 파일 명령의 완료와 물리 교체 건수는 다르다([파일 실행기](../design/systems/storage-contract.md#파일-실행기)).
 
 - **물리 파일 작업(`file_operations`)**: 실제 file worker 범위에서 공용 helper를 호출한 replace/delete의 attempts/succeeded/failed/unknown, duration, 고정 오류 분류다. replace의 payload_bytes/published_bytes는 제출/성공 게시 바이트 합이며 삭제 바이트는 null이다. helper 전에 거절된 읽기·파싱 실패는 교체 시도가 아니다. executed_commands의 알려진 성공/실패/불명/partial은 backend 분류이며, 불투명한 반환값은 unclassified다. writer가 없으면 전체가 null이다. 부팅 load·CLI나 공용 helper 밖 작업은 포함하지 않는다([계측 경계](../design/systems/storage-contract.md#file-worker의-물리-파일-작업-계측)).

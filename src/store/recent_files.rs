@@ -63,7 +63,13 @@ pub(crate) struct Revisions {
     pub(crate) committed: u64,
 }
 
-#[derive(Default)]
+/// Nonconsuming cache-wide persistence state, independent of queued work age.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RecentSaveSnapshot {
+    pub(crate) dirty: bool,
+    pub(crate) dirty_age_us: Option<u64>,
+}
+
 struct Inner {
     /// 종류별 최신순 목록.
     by_kind: HashMap<String, Vec<Entry>>,
@@ -71,6 +77,26 @@ struct Inner {
     revisions: HashMap<String, Revisions>,
     #[cfg(any(feature = "gui", test))]
     sink: Option<Box<dyn RecentSink>>,
+    #[cfg(any(feature = "gui", test))]
+    clock: Arc<dyn tasty_utils::batch_writer::Clock>,
+    #[cfg(any(feature = "gui", test))]
+    dirty_since: Option<std::time::Instant>,
+}
+
+impl Default for Inner {
+    fn default() -> Self {
+        Self {
+            by_kind: HashMap::new(),
+            #[cfg(any(feature = "gui", test))]
+            revisions: HashMap::new(),
+            #[cfg(any(feature = "gui", test))]
+            sink: None,
+            #[cfg(any(feature = "gui", test))]
+            clock: Arc::new(tasty_utils::batch_writer::SystemClock),
+            #[cfg(any(feature = "gui", test))]
+            dirty_since: None,
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -130,12 +156,44 @@ impl RecentFiles {
         by_kind: HashMap<String, Vec<Entry>>,
         sink: Box<dyn RecentSink>,
     ) -> Self {
+        Self::with_clock(
+            by_kind,
+            sink,
+            Arc::new(tasty_utils::batch_writer::SystemClock),
+        )
+    }
+
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn with_clock(
+        by_kind: HashMap<String, Vec<Entry>>,
+        sink: Box<dyn RecentSink>,
+        clock: Arc<dyn tasty_utils::batch_writer::Clock>,
+    ) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 by_kind,
-                revisions: HashMap::new(),
                 sink: Some(sink),
+                clock,
+                ..Inner::default()
             })),
+        }
+    }
+
+    /// Reads cached scalars only. Ready receipts remain owned by settle.
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn save_snapshot(&self) -> RecentSaveSnapshot {
+        let inner = self.lock();
+        RecentSaveSnapshot {
+            dirty: inner.dirty_since.is_some(),
+            dirty_age_us: inner.dirty_since.map(|since| {
+                inner
+                    .clock
+                    .now()
+                    .saturating_duration_since(since)
+                    .as_micros()
+                    .try_into()
+                    .unwrap_or(u64::MAX)
+            }),
         }
     }
 
@@ -180,10 +238,13 @@ impl RecentFiles {
             by_kind,
             revisions,
             sink,
+            clock,
+            dirty_since,
         } = inner;
         let list = by_kind.get(kind).cloned().unwrap_or_default();
         let revision = revisions.entry(kind.to_string()).or_default();
         revision.visible += 1;
+        dirty_since.get_or_insert_with(|| clock.now());
         let Some(sink) = sink else {
             tracing::trace!("recent_files save skipped: storage unavailable");
             return;
@@ -219,6 +280,9 @@ impl RecentFiles {
                     tracing::warn!(kind, revision, %error, "recent files change was not saved");
                 }
             }
+        }
+        if revisions.values().all(|r| r.committed >= r.visible) {
+            inner.dirty_since = None;
         }
     }
 
@@ -522,3 +586,6 @@ mod tests {
         assert!(rf.get("html").is_empty());
     }
 }
+
+#[cfg(test)]
+mod dirty_age_tests;

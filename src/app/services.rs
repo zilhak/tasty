@@ -403,6 +403,20 @@ impl AppServices {
             .map_or(0, crate::db::writer::StateWriterParts::poll_shutdown)
     }
 
+    /// Cached semantic recent-list dirty period; no receipt or storage access.
+    pub(crate) fn state_recent_status(&self) -> Option<crate::recent_files::RecentSaveSnapshot> {
+        #[cfg(any(feature = "gui", test))]
+        {
+            self.state_writer
+                .as_ref()
+                .map(|parts| parts.recent.save_snapshot())
+        }
+        #[cfg(not(any(feature = "gui", test)))]
+        {
+            None
+        }
+    }
+
     /// state.db writer 계측. writer가 없으면 None이다.
     pub(crate) fn state_writer_stats(
         &self,
