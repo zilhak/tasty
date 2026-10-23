@@ -60,19 +60,7 @@ fn preset_save_answers_original_caller_once_after_receipt_and_cache() {
             assert!(cache.lock().unwrap().get_workspace("dev").is_none());
         }
         drop(held);
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let answer = loop {
-            core.poll_file_writer();
-            assert!(MemoryReplies::poll(&core).is_empty());
-            if let Ok(answer) = rx.try_recv() {
-                break answer;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "original caller was not completed"
-            );
-            std::thread::yield_now();
-        };
+        let answer = receive_preset_reply(&mut core, &rx);
         assert_eq!(answer.id, json!(91));
         assert_eq!(
             cache.lock().unwrap().get_workspace("dev").unwrap().subtitle,
@@ -97,6 +85,25 @@ fn preset_save_answers_original_caller_once_after_receipt_and_cache() {
     let deadline = Instant::now() + Duration::from_secs(5);
     while core.poll_file_writer_shutdown() != 0 {
         assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+}
+
+fn receive_preset_reply(
+    core: &mut crate::app::services::AppServices,
+    rx: &mpsc::Receiver<JsonRpcResponse>,
+) -> JsonRpcResponse {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        core.poll_file_writer();
+        assert!(MemoryReplies::poll(core).is_empty());
+        if let Ok(answer) = rx.try_recv() {
+            return answer;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "original caller was not completed"
+        );
         std::thread::yield_now();
     }
 }
