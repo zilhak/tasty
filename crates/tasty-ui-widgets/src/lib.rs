@@ -45,7 +45,9 @@ mod folder_picker;
 mod help_hint;
 mod horizontal_tab_bar;
 mod html_address_bar;
+mod html_receive_state;
 mod html_script_banner;
+mod html_size_banner;
 mod icon_button;
 mod info_modal;
 mod input;
@@ -185,9 +187,13 @@ pub use html_address_bar::{
     HtmlAddressView, html_address_bar, html_address_content_inset, html_address_field_id,
     html_address_height,
 };
+pub use html_receive_state::{HtmlReceiveKind, HtmlReceiveView, html_receive_state};
 pub use html_script_banner::{
     HtmlScriptBannerOutput, HtmlScriptBannerState, HtmlScriptBannerView, HtmlScriptMarkerKind,
     html_script_banner, html_script_banner_is_narrow, html_script_marker,
+};
+pub use html_size_banner::{
+    HtmlSizeAction, HtmlSizeBannerOutput, HtmlSizeBannerView, HtmlSizeDetail, html_size_banner,
 };
 pub use icon_button::{
     IconButton, IconButtonState, IconButtonVariant, IconPainter, paint_icon_button_state,

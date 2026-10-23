@@ -4,11 +4,12 @@ use crate::i18n::{t, t_fmt};
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, HtmlAddressAction, HtmlAddressKind as Kind,
-    HtmlAddressLabels, HtmlAddressState, HtmlAddressView, HtmlScriptBannerState,
-    HtmlScriptBannerView, banner_shell, html_address_bar, html_address_content_inset,
-    html_script_banner,
+    HtmlAddressAction, HtmlAddressKind as Kind, HtmlAddressLabels, HtmlAddressState,
+    HtmlAddressView, HtmlScriptBannerState, HtmlScriptBannerView, html_address_bar,
+    html_address_content_inset, html_script_banner,
 };
+
+mod remote;
 
 // Specimen frame sizes from the address-band design; these are not product control sizes.
 const W: LogicalPx = LogicalPx(460.0);
@@ -132,6 +133,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 pub fn draw_placement(ui: &mut egui::Ui, theme: &Theme) {
+    remote::draw_states(ui, theme);
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         for (index, label, width, height, kind, banners) in [
             (
@@ -301,24 +303,13 @@ fn tile(
         );
         let mut b = child.new_child(egui::UiBuilder::new().id_salt((id, i)).max_rect(area));
         let banner = if banners == 2 && i == 0 {
-            // Size decision is a placement mock; remote transfer behavior is outside this view.
-            banner_shell(&mut b, theme, 1.0, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add(tasty_icons::DOWNLOAD.image(
-                        theme.icon_glyph_size_md.value(),
-                        theme.html_size_banner_glyph().to_egui(),
-                    ));
-                    ui.label("The remote wants to send a large file");
-                    Button::new("Decline")
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
-                        .show(ui, theme);
-                    Button::new("Allow")
-                        .variant(ButtonVariant::Secondary)
-                        .size(ControlSize::Sm)
-                        .show(ui, theme);
-                });
-            })
+            remote::size_card(
+                &mut b,
+                theme,
+                width < theme.banner_narrow_below(),
+                false,
+                false,
+            )
         } else {
             html_script_banner(
                 &mut b,

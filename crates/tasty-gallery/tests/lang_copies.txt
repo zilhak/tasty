@@ -512,7 +512,7 @@ src/catalog/components/remote/passkeys.rs	{} · {}	dag_list.row_meta
 src/catalog/components/remote_attach.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/remote_attach.rs	Connect	remote_attach.connect
 src/catalog/components/remote_attach.rs	Create & connect	remote_attach.connect_create
-src/catalog/components/remote_attach.rs	Stop	explorer.find.stop,remote_attach.stop
+src/catalog/components/remote_attach.rs	Stop	explorer.find.stop,html_remote.stop,remote_attach.stop
 src/catalog/components/remote_attach/new_row.rs	Creating workspace…	remote_attach.creating_workspace
 src/catalog/components/remote_attach/new_row.rs	New workspace	remote_attach.new_workspace
 src/catalog/components/remote_attach/new_row.rs	Try again	remote_attach.try_again,settings.keybindings.ie_export_retry

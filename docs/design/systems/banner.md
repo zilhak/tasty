@@ -245,3 +245,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 - [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md) — Modal/Popup/Toast/Banner 구분
 - [포커스 정책](../policies/focus.md) · [사용자 통제와 데이터](../../principles/control-and-data.md#사용자에이전트원격-사용자) — 사용자/에이전트 행동 구분(발생 정책 근거)
 - [내부 팝업 시스템](popup.md) — 배너의 입력과 수명 규칙
+
+## HTML 원격 수신 카드
+
+공용 `tasty_ui_widgets::html_size_banner`는 큰 파일의 Decline/Allow와 문서 누적 정지의 Stop/Continue를 그린다. 같은 inset 셸과 배너 버튼 박스를 사용하고 닫기 버튼이나 자동 포커스를 두지 않는다. 파일 경로는 mono 왼쪽 말줄임, 크기는 warning Tag, 추가 대기 수는 muted 문구다. 좁은 surface에서는 두 버튼을 본문 왼쪽 가장자리에 맞춰 다음 줄에 둔다. `html_receive_state`는 receiving 스피너·paused 다운로드 glyph·끊김·macOS 웹주소 미지원 안내를 같은 토큰으로 그린다. 갤러리의 HTML 주소 배치 예제가 두 위젯을 소비하며, native 전송 연결 여부는 [전송 계약](../../dev-guide/html-transfer.md)이 정한다.

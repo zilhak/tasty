@@ -6946,3 +6946,20 @@ invalid = "有効なファイルパスまたはHTTP(S) URLを入力してくだ�
 [loading]
 generic = "読み込み中…"
 remote_attach = "接続中…"
+
+[html_remote]
+size_title = "リモートから大きなファイルを受信しようとしています"
+allow = "許可"
+decline = "拒否"
+limit_title = "リモートから{}を受信しました。続行しますか？"
+limit_body = "文書ごとに2 MBを受信すると自動受信を一時停止します。"
+continue = "続行"
+stop = "停止"
+receiving = "リモートファイルを受信中…"
+paused = "一時停止中 — 上の案内で選択してください"
+macos_http = "このmacOSバージョンではリモートWebページを表示できません。"
+macos_http_sub = "macOS 14以降が必要です。"
+disconnected_sub = "このページを読み込むには再接続してください。"
+skipped = "{}件スキップ"
+waiting = "+{}件待機中"
+progress = "{} · ファイル{}件"
