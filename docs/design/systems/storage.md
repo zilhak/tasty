@@ -25,7 +25,7 @@ tasty 의 영속 데이터는 텍스트 파일과 SQLite에 나눠 저장된다.
 
 로컬 engine/workspace/pane/tab/surface 구조는 데이터 홈의 단일 journal이 원본이다. 각 engine은 별도 stream을 사용한다. `JournalModel`과 domain snapshot은 확정 이벤트에서 도출하며, CoreState는 실행 객체를 소유하지 않는 읽기 projection이다. terminal·plugin 콘텐츠 payload와 View 선택 checkpoint는 별도 원본이다. mirror 트리는 로컬 구조 journal에 편입하지 않는다.
 
-App worker가 commit한 batch를 모든 대상 엔진에 공개하고 ACK를 받은 뒤 응답·checkpoint를 진행한다. `state.db`와 `memory.db`의 SQLite 설정이나 복구 정책을 journal에 그대로 적용하지 않는다. journal에는 독점 writer fencing, 원자 명령·effect 기록, payload pin·GC와 별도 저장 예산이 있다. 세부 계약은 [레이아웃 저장](../../features/layout-persistence/index.md)과 [이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md)을 따른다.
+App worker가 commit한 batch를 모든 대상 엔진에 공개하고 ACK를 받은 뒤 응답·checkpoint를 진행한다. 연속해서 준비된 순수 구조 요청은 물리 transaction을 공유하되 command·논리 batch cut·최초 응답은 각각 유지한다. 같은 stream의 뒤 판단은 앞 staged 결과를 보고, 공개·ACK·완료는 원 요청 순서를 따른다. capture의 memory 대기·ID 예약·claim·외부 실행과 복구·정비는 수집 barrier다. `state.db`와 `memory.db`의 SQLite 설정이나 복구 정책을 journal에 그대로 적용하지 않는다. journal에는 독점 writer fencing, 원자 명령·effect 기록, payload pin·GC와 별도 저장 예산이 있다. 세부 계약은 [레이아웃 저장](../../features/layout-persistence/index.md)과 [이벤트 저장소 (`tasty-event-store`)](../../architecture/event-store.md)을 따른다.
 
 ## SQLite `state.db`
 
@@ -362,6 +362,7 @@ worker는 묶음·flush마다 메인 루프를 깨운다. 2ms 간격 유입이�
 - `system.pressure.file_writer`는 config·즐겨찾기·파일/hook registry snapshot writer의 접수·묶음·대체·예산 통계다. `file_writes`의 replaced/failed/unknown은 그 writer backend의 성공한 파일 교체·저장 실패·결과 불명 횟수이며 묶음 수와 다르다. GUI 부팅의 최종 설정 snapshot도 같은 writer에 제출하므로 이 통계에 포함한다. 아직 writer로 옮기지 않은 파일 소비자의 쓰기는 포함하지 않는다. writer가 없는 시험 구성은 null이다. 이 항목은 새 성능 기준선이나 실제 메인 루프 지연 측정을 뜻하지 않는다.
 
 - `system.pressure.db`는 memory.db, `system.pressure.state_db`는 state.db writer의 commit을 같은 `DbLatencyStats` 형식(commit 수·시간 합·최댓값·평균·`writes_per_commit`)으로 센다. journal.db의 commit은 이 값에 없다.
+- journal.db는 `EventStore::commit_statistics`와 `TASTY_LOG=tasty::journal_metrics=debug`의 별도 로그로 실제 성공 SQL COMMIT을 센다. physical은 초기화·epoch·pin·claim 등 보조 쓰기도 포함하고 structural은 구조 transaction, logical은 그 안의 확정 요청을 센다. 그룹 구간의 증분과 전체 누계, queue→durable-ready·publication 후 완료·SQL COMMIT 시간을 구분한다. 겹치는 요청별 구간을 합산하거나 이 값을 App 전체 루프 지연으로 해석하지 않는다([이벤트 저장소](../../architecture/event-store.md#쓰기-계측)).
 - state.db의 commit 계측은 writer 묶음의 commit만 센다. 부팅의 한 번 읽기·스키마 생성과 transaction 없이 혼자 실행하는 튜토리얼 읽기는 세지 않는다. `writes_per_commit`은 대체된 목록을 뺀, 그 commit에서 실행한 요청 수다. 접수·묶음·대체·재시도·거절 수는 `system.pressure.state_writer`가 memory writer와 같은 형식으로 싣는다.
 - commit 계측은 `put`·`delete`·`put_secret`·`delete_secret`·`purge_expired`·`purge_scope`·`prune_prefix_keep_recent`·`prune_prefix_older_than`의 명시 transaction을 센다. `import_regular`는 항목마다 `put`을 거치므로 세어진다. 정리 연산은 행을 하나 이상 지웠을 때만 센다.
 - 실행 단위와 쓰기 묶음은 확정된 쓰기가 있으면 요청 수와 관계없이 commit 1회로 센다. 단위 안에서 실행한 정리 연산도 그 commit에 포함된다([저장 계약](storage-contract.md#실행-단위와-쓰기-묶음)).
