@@ -1,4 +1,4 @@
-<!-- source-hash: 08a5820f00c5 -->
+<!-- source-hash: b20f137ed756 -->
 # CLI command reference
 
 How to use the `tasty` commands the [introduction](cli.md) does not cover: reading `read since-mark` from a saved position, looking into a surface, permission tokens, notifications, metadata, queues between Surfaces, running several terminals, headless PTYs, shared memory, observers, usage records, and other queries and settings, organised by purpose. Check every argument a command takes with `tasty help <command>`.
@@ -116,6 +116,8 @@ tasty terminal kill --child 1                   # kill a child by index
 
 `spawn` creates a terminal and returns immediately. Agent state delivery and parent setup follow [Claude & Codex integration](claude-codex.md). Starting an ordinary program does not guarantee delivery of agent results.
 There is no separate command to wait on. Tag children with `--role` to address them together with `broadcast`.
+
+The child index reservation is saved before the new terminal is prepared. If that save fails, Tasty reports an error without creating the terminal or sending the command. Damaged or unreadable relationship data is not overwritten.
 
 If `terminal spawn` fails during setup, it sends no command and removes the terminal created by that call. Existing terminals remain open.
 
