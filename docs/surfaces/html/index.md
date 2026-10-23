@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[주체별 원칙](../../principles/control-and-data.md)에 따라 포커스와 무관한 문서 실행 제어와 사용자 입력 재현은 구분한다. 스크립트 허용은 포커스와 무관한 문서 실행 제어이므로 release에서 사용자(배너)와 에이전트(`surface.html_script_allow`) 모두 할 수 있다. 원본 스캔은 [응답성 원칙](../../principles/performance-and-settings.md)에 따라 UI 스레드 밖에서 한다(아래 [스캔](#스캔)). Windows·macOS의 결정 보류는 실 기기에서 측정하지 않았고 macOS 코드는 컴파일도 확인하지 않았다(아래 [OS별 적용](#os별-적용)).
+[주체별 원칙](../../principles/control-and-data.md)에 따라 포커스와 무관한 문서 실행 제어와 사용자 입력 재현은 구분한다. 스크립트 허용은 포커스와 무관한 문서 실행 제어이므로 release에서 사용자(배너)와 에이전트(`surface.html_script_allow`) 모두 할 수 있다. 원본 스캔은 [응답성 원칙](../../principles/performance-and-settings.md)에 따라 UI 스레드 밖에서 한다(아래 [스캔](#스캔)). Windows·macOS의 결정 보류는 Tasty 실 기기에서 측정하지 않았다. native 생성자·gate의 ARM 교차 컴파일과 전체 GUI 앱 빌드는 검증 범위가 다르다(아래 [OS별 적용](#os별-적용)).
 
 - **Status**: Implemented (bundled plugin)
 - **주체**: 로컬 사용자 (GUI surface) · AI Agent (`tasty html` CLI)
@@ -254,7 +254,7 @@ OS별 구현은 다음과 같다.
     - 세대가 빈 구간에서 정책 변경으로 중단됐다는 오류(`WebKitErrorDomain` 102)만 Cancel한 수만큼 흡수한다. Tasty는 main frame 탐색 정책을 보류 결정의 Cancel로만 바꾸고 응답 정책 delegate가 없으므로, 이 구간의 102는 Tasty가 Cancel한 결정에서 나온다. 다른 오류(정책 단계의 진짜 실패)는 흡수하지 않는다.
     - 흡수한 신호는 chrome과 게이트를 건드리지 않는다. provisional 시작이 수를 비운다. 그 뒤 오는 앞 결정의 실패는 세대 판정이 무시한다.
     - 시험: `load_generation::only_policy_interruptions_are_absorbed_for_cancelled_decisions`, 그리고 순서 시험 `a_late_failure_of_a_cancelled_decision_does_not_cancel_the_next_one`. 순서 시험은 호스트 요청 B보다 같은 종류의 페이지 탐색 A의 결정이 먼저 오고, B의 결정이 A를 Cancel하는 순서를 쓴다. A의 102 실패는 흡수되어 B가 자기 스캔으로 Allow된다. B의 진짜 실패는 A의 실패보다 먼저 오든 나중에 오든 흡수되지 않고 B의 로드를 끝낸다.
-    - 남은 경계: Cancel한 결정에 WebKit이 실패를 보내지 않으면 남은 수는 다음 provisional 시작까지 102 오류만 흡수한다. 이 경로는 실 기기에서 측정하지 않았고 이 머신에서 컴파일하지 못했다.
+    - 남은 경계: Cancel한 결정에 WebKit이 실패를 보내지 않으면 남은 수는 다음 provisional 시작까지 102 오류만 흡수한다. 이 경로는 실 기기에서 측정하지 않았다. native 생성자·gate의 ARM 교차 컴파일은 확인했지만 전체 GUI 앱 빌드·링크는 확인하지 않았다.
   - macOS 27.0.1 실 기기에서 debug 빌드로 실제 실행해 측정했다. 스크립트와 스크립트가 있는 iframe을 가진 `file://` 문서는 main frame과 서브프레임 모두 JS가 꺼진 채 그려졌고, 사용자가 본 뒤 배너가 `blocked`로 떴다. 허용하면 재로드 뒤 두 frame 모두 JS가 돌았다. 다른 문서로 이동하면 그 문서의 JS가 꺼졌고, 허용했던 문서로 돌아와도 허용이 풀려 다시 꺼졌다.
   - 허용 판단이 붙은 webview에서는 전역 `javaScriptEnabled`(deprecated)를 켜 둔다. 전역 값이 꺼져 있으면 navigation별 `allowsContentJavaScript`를 켜도 스크립트가 실행되지 않기 때문이다. 문서의 JS는 navigation별 값으로만 정한다.
   - 그래서 전역 "Sandbox scripts" 변경은 화면 문서에 바로 적용되지 않고 다음 navigation부터 적용된다(미측정).
@@ -270,7 +270,7 @@ OS별 구현은 다음과 같다.
     - 정책 결정부터 provisional 시작까지는 세대를 비워 둔다. 이 사이에 온 종료는 모두 현재 로드로 본다. 앞 로드의 종료가 이 구간에 오면 새 로드의 대기 값을 지울 수 있다. 이 순서가 실제로 생기는지는 측정하지 않았다.
     - 게이트 로드가 끝나면(`gate_finished`) provisional 시작 대기 표시도 내린다. provisional 시작 없이 끝난 로드 뒤에 오는 다른 provisional 시작을 세대로 기록하지 않기 위해서다. 그래서 위 구간에 앞 로드의 종료가 오면 새 로드는 세대 없이 진행하고, 그 로드의 종료는 모두 현재 로드로 본다.
     - 기록한 `WKNavigation`은 다음 로드가 시작할 때까지 붙잡아 둔다. 같은 주소가 다른 navigation에 다시 쓰여 앞 로드의 종료가 현재 세대로 보이는 일을 막는다.
-    - 실 기기 측정 없이 구현했다. 이 머신에는 macOS용 C 컴파일러가 없어 macOS 코드를 컴파일하지 못했다.
+    - 실 기기 측정 없이 구현했다. native 생성자와 gate·key·overlay helper는 Mac/Windows ARM 대상으로 교차 컴파일했다. immutable body provider와 host overlay enum을 stub으로 둔 범위이며 전체 GUI 앱 컴파일·링크·native 실행을 보장하지 않는다.
   - chrome의 `NavState` 종료 전이(Done·Failed)도 같은 판정 함수(`load_generation::nav_state_after_end`)를 따른다. 앞 로드의 늦은 실패가 chrome만 Failed로 두거나, 늦은 성공이 새 로드의 Loading을 Done으로 덮어 새 로드가 끝나기 전에 overlay를 보이는 일을 막는다. Windows는 `NavigationCompleted`의 성공·실패, macOS는 `didFinishNavigation`·`didFailNavigation`·`didFailProvisionalNavigation`이 대상이다. 실 기기 측정은 하지 않았다.
     - chrome 세대는 게이트 세대와 따로 둔다. 마지막에 시작한 main frame navigation(Windows `NavigationStarting`의 `NavigationId`, macOS `didStartProvisionalNavigation`의 `WKNavigation`)을 모두 기록한다. 게이트 세대는 fragment 이동과 게이트가 없는 surface의 탐색을 기록하지 않으므로, 이를 chrome에 쓰면 그 탐색의 종료가 앞 로드로 보여 Loading이 남는다.
     - `load_url`·`load_html`은 navigation 시작 신호 전에 Loading을 두고 chrome 세대를 비운다(모름 = 현재). 게이트가 정책 결정에서 세대를 비우는 것과 같은 장치다. 요청한 로드가 시작 신호 없이 끝나도 그 종료를 현재 로드로 보아 Loading에 남지 않는다. 그런 경로가 실제로 있는지는 측정하지 않았다. 후보는 macOS의 provisional 시작 전 정책·스킴 단계 실패와 Windows `NavigationStarting`의 args가 없는 경우다.
