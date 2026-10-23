@@ -16,6 +16,7 @@ use crate::app::local_reads::{Query, ReadRequests};
 pub(crate) struct TabSession {
     entries: Vec<DirEntryInfo>,
     entries_gen: u64,
+    path_index: std::cell::RefCell<super::path_index::PathIndex>,
     remote_state: HashMap<PathBuf, super::RemoteLoadState>,
     /// 숨김 파일을 끈 동안 목록에서 뺀 항목과, 그렇게 나눌 때의 표시 여부.
     hidden_stash: Vec<DirEntryInfo>,
@@ -48,6 +49,7 @@ impl TabSession {
         Self {
             entries: Vec::new(),
             entries_gen: 0,
+            path_index: super::path_index::empty(),
             remote_state: HashMap::new(),
             hidden_stash: Vec::new(),
             split_show: show_hidden,
@@ -151,6 +153,7 @@ impl ExplorerView {
         use std::mem::swap;
         swap(&mut self.entries, &mut s.entries);
         swap(&mut self.entries_gen, &mut s.entries_gen);
+        swap(&mut self.path_index, &mut s.path_index);
         swap(&mut self.remote_state, &mut s.remote_state);
         self.hidden.swap_stash(&mut s.hidden_stash);
         swap(&mut self.hidden.show, &mut s.split_show);

@@ -151,7 +151,7 @@ impl ExplorerView {
     }
 
     /// 거르는 중이고 지금 검색어·목록으로 만든 거르기 결과가 있으면 그 목록 번호.
-    fn filtered(&self) -> Option<&[usize]> {
+    pub(super) fn filtered(&self) -> Option<&[usize]> {
         let find = self.find.as_ref()?;
         let filtered = find.filtered.as_ref()?;
         (self.shown_slice().is_none()
@@ -270,6 +270,11 @@ impl ExplorerView {
             .map_or(&[], |s| s.hits.as_slice())
     }
 
+    /// 이름과 확장자 조건을 모두 포함한 필터 캐시 키.
+    pub(super) fn find_query_key(&self) -> &str {
+        self.find.as_ref().map_or("", |f| f.query.as_str())
+    }
+
     /// 이름에서 칠할 검색어. 거르거나 찾는 중이 아니면 빈 문자열이다.
     pub(super) fn find_query(&self) -> &str {
         self.find.as_ref().map_or("", |f| f.matcher.text())
@@ -362,6 +367,7 @@ impl ExplorerView {
         if events.is_empty() {
             return false;
         }
+        self.path_index.borrow_mut().clear();
         for event in events {
             match event {
                 SearchEvent::Hits(batch) => match sort {

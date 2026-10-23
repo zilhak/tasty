@@ -48,7 +48,7 @@ fn scroll_to_line(ui: &egui::Ui, pitch: f32, line: usize) {
 /// 이 프레임에 스크롤로 보여 줄 항목의 목록 번호.
 pub(super) fn scroll_target(view: &ExplorerView) -> Option<usize> {
     let target = view.scroll_to.as_deref()?;
-    view.shown().position(|e| e.path == target)
+    view.shown_position(target)
 }
 
 /// Grid 칸 치수. 칸 높이는 썸네일 자리와 세 줄 이름 자리로 정해져 모든 칸이 같다.

@@ -8,6 +8,7 @@ pub(crate) mod keys;
 pub(crate) mod list_layout;
 pub(crate) mod marquee;
 pub(crate) mod ops;
+mod path_index;
 pub(crate) mod poll;
 mod remote_reload;
 mod tab_state;
@@ -66,6 +67,7 @@ pub struct ExplorerView {
     pub entries: Vec<DirEntryInfo>,
     /// `entries` 를 바꿀 때마다 오르는 세대. Find 거르기 결과가 이 목록으로 만든 것인지 가린다.
     pub(super) entries_gen: u64,
+    pub(super) path_index: std::cell::RefCell<path_index::PathIndex>,
     /// `entries` 가 어떤 디렉토리/정렬 기준으로 로드됐는지 (변화 감지용).
     pub(super) loaded: Option<(PathBuf, SortColumn, SortDir)>,
     local_query: Option<crate::app::local_reads::Query<StampedListing>>,
@@ -269,6 +271,7 @@ impl ExplorerView {
         Self {
             entries: Vec::new(),
             entries_gen: 0,
+            path_index: path_index::empty(),
             loaded: None,
             local_query: None,
             tree_queries: HashMap::new(),
@@ -375,7 +378,7 @@ impl ExplorerView {
             return None;
         }
         let sel = self.selected.iter().next()?;
-        self.shown().position(|e| &e.path == sel)
+        self.shown_position(sel)
     }
 
     pub(crate) fn clear_selection(&mut self) {
