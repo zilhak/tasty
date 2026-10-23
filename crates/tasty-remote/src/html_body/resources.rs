@@ -233,10 +233,12 @@ impl NativeResources {
         let mut cancel = Vec::new();
         for slot in self.slots.values_mut() {
             slot.waiters.retain(ResponseTarget::live);
-            if slot.waiters.is_empty()
-                && let State::Active(id) = slot.state
-            {
-                cancel.push(id);
+            if slot.waiters.is_empty() {
+                match slot.state {
+                    State::Active(id) => cancel.push(id),
+                    State::Queued => (),
+                    _ => continue,
+                }
                 slot.state = State::Failed(ResourceFailure::Cancelled);
             }
         }

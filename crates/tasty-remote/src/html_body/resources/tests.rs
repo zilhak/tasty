@@ -286,3 +286,38 @@ fn mismatched_body_generation_ends_the_native_wait_without_publication() {
     ));
     assert!(broker.cached(&uri(&entry, "first.css")).is_none());
 }
+
+#[test]
+fn queued_abandonment_retires_without_admission_and_preserves_shared_live_sibling() {
+    let entry = entry();
+    let mut broker = NativeResources::new(Arc::clone(&entry), true);
+    let abandoned_uri = uri(&entry, "never-admitted.css");
+    let abandoned = broker.request(&abandoned_uri);
+    let live_uri = uri(&entry, "live.css");
+    let live = broker.request(&live_uri);
+    let shared = broker.request(&live_uri);
+    drop(abandoned);
+    drop(shared);
+    // Reaping must also work while the document pause prevents take_pending.
+    // An unbound request has no protocol ID and must not invent a transport cancel.
+    assert!(broker.abandoned().is_empty());
+    let mut replay = broker.request(&abandoned_uri);
+    assert!(matches!(
+        poll(&mut replay),
+        Poll::Ready(Err(ResourceFailure::Cancelled))
+    ));
+    let jobs = broker.take_pending(4);
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].relative, "live.css");
+    assert!(broker.has_pending());
+    let id = TransferId {
+        request: 8,
+        transfer: 8,
+        ..jobs[0].entry
+    };
+    assert!(broker.bind(jobs[0].ticket, id));
+    drop(live);
+    assert_eq!(broker.abandoned(), vec![id]);
+    assert!(!broker.has_pending());
+    assert!(broker.take_pending(4).is_empty());
+}

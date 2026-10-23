@@ -67,7 +67,7 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 
 공유 body store는 기본적으로 하위 리소스를 비활성화한다. Linux viewer는 서버와 하위 파일 capability를 협상한 경우에만 이 API를 연결한다. native 요청은 원 entry의 scheme·origin·여섯 부분 identity 경로 안에서만 대기할 수 있다. 경로는 한 번 decode하고 traversal·encoded separator·NUL을 거절한다. 파일이나 네트워크를 client에서 열지 않는다.
 
-문서당 URI slot256개와 URI당 대기자32개로 요청 메타데이터를 제한한다. 같은 URI의 fragment 변화와 재요청은 한 immutable 응답 할당을 공유하며 새 transfer나 누적량을 만들지 않는다. 원 request identity는 실패 뒤에도 tombstone으로 남아 다른 URI에 재할당할 수 없다. 대기자 또는 producer 소멸은 취소로 끝나며 문서 교체가 원 응답 게시 권한을 회수한다. disconnect는 미완 대기자를 끝내고 새 요청을 거절하되 완료한 cache를 보존한다. MIME·provenance를 보존하고 source generation·전체 transfer ID가 맞는 완료 body만 게시한다. Linux callback은 GLib main context에서 응답을 비동기로 기다린다. native 대기 task도256개로 제한하고 소멸 때 abort하여 대기자 소유권을 회수한다. 완료 시 같은 native source owner를 다시 검사한 뒤 응답하며 파일·네트워크 I/O를 UI 스레드에서 실행하지 않는다.
+문서당 URI slot256개와 URI당 대기자32개로 요청 메타데이터를 제한한다. 같은 URI의 fragment 변화와 재요청은 한 immutable 응답 할당을 공유하며 새 transfer나 누적량을 만들지 않는다. 원 request identity는 실패 뒤에도 tombstone으로 남아 다른 URI에 재할당할 수 없다. 대기자 또는 producer 소멸은 취소로 끝나며 문서 교체가 원 응답 게시 권한을 회수한다. 마지막 native 대기자가 사라진 큐 항목도 전송 admission 없이 취소 상태로 끝낸다. 아직 transfer ID가 없는 항목은 transport cancel을 만들지 않으며, 같은 URI에 살아 있는 다른 대기자가 있으면 그 요청은 유지한다. disconnect는 미완 대기자를 끝내고 새 요청을 거절하되 완료한 cache를 보존한다. MIME·provenance를 보존하고 source generation·전체 transfer ID가 맞는 완료 body만 게시한다. Linux callback은 GLib main context에서 응답을 비동기로 기다린다. native 대기 task도256개로 제한하고 소멸 때 abort하여 대기자 소유권을 회수한다. 완료 시 같은 native source owner를 다시 검사한 뒤 응답하며 파일·네트워크 I/O를 UI 스레드에서 실행하지 않는다.
 
 
 ## Client 하위 파일 수신 driver
