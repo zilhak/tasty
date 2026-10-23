@@ -17,7 +17,7 @@ impl ExplorerView {
             .is_some_and(|shown| std::ptr::eq(shown, self.entries.as_slice()))
         {
             timer.packed(0);
-            selected.refill_entries(self.entries.share());
+            selected = self.entries.selected_all();
             self.entries.last().map(|entry| entry.path.clone())
         } else {
             let mut last = None;

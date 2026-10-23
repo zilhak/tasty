@@ -19,7 +19,7 @@ enum Bucket {
 /// An unordered path set with the same equality as `HashSet<PathBuf>`.
 #[derive(Clone, Default)]
 pub struct SelectedPaths {
-    buckets: HashMap<u64, Bucket, egui::ahash::RandomState>,
+    buckets: Arc<HashMap<u64, Bucket, egui::ahash::RandomState>>,
     len: usize,
     storage: PathStorage,
     staged: Vec<StoredPath>,
@@ -28,7 +28,10 @@ pub struct SelectedPaths {
 impl SelectedPaths {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            buckets: HashMap::with_capacity_and_hasher(capacity, Default::default()),
+            buckets: Arc::new(HashMap::with_capacity_and_hasher(
+                capacity,
+                Default::default(),
+            )),
             len: 0,
             storage: PathStorage::default(),
             staged: Vec::new(),
@@ -53,7 +56,11 @@ impl SelectedPaths {
     }
 
     pub fn clear(&mut self) {
-        self.buckets.clear();
+        if let Some(buckets) = Arc::get_mut(&mut self.buckets) {
+            buckets.clear();
+        } else {
+            self.buckets = Arc::new(HashMap::with_hasher(self.buckets.hasher().clone()));
+        }
         self.staged.clear();
         self.storage.packed.clear();
         self.storage.entries = None;
@@ -73,7 +80,8 @@ impl SelectedPaths {
     }
 
     fn insert_value(&mut self, path: Incoming<'_>) -> bool {
-        let inserted = match self.buckets.entry(self.key(path.as_path(&self.storage))) {
+        let key = self.key(path.as_path(&self.storage));
+        let inserted = match Arc::make_mut(&mut self.buckets).entry(key) {
             Entry::Vacant(entry) => {
                 entry.insert(Bucket::One(path.store(&mut self.storage)));
                 true
@@ -118,7 +126,7 @@ impl SelectedPaths {
         after_pack: impl FnOnce(usize),
     ) {
         self.clear();
-        self.buckets.reserve(count);
+        Arc::make_mut(&mut self.buckets).reserve(count);
         let mut paths = paths.peekable();
         let bytes = paths
             .peek()
@@ -140,10 +148,10 @@ impl SelectedPaths {
 
     /// The unfiltered listing already owns every selected path. Share that immutable
     /// snapshot and store entry indices, avoiding an allocation or byte copy per path.
-    pub(super) fn refill_entries(&mut self, entries: Arc<Vec<DirEntryInfo>>) {
+    pub(in super::super) fn refill_entries(&mut self, entries: Arc<Vec<DirEntryInfo>>) {
         self.clear();
         let count = entries.len();
-        self.buckets.reserve(count);
+        Arc::make_mut(&mut self.buckets).reserve(count);
         self.storage.entries = Some(entries);
         for index in 0..count {
             self.insert_value(Incoming::Stored(StoredPath::Entry(index)));
@@ -155,7 +163,8 @@ impl SelectedPaths {
     }
 
     pub fn remove(&mut self, path: &Path) -> bool {
-        let Entry::Occupied(mut entry) = self.buckets.entry(self.key(path)) else {
+        let key = self.key(path);
+        let Entry::Occupied(mut entry) = Arc::make_mut(&mut self.buckets).entry(key) else {
             return false;
         };
         let (removed, empty) = match entry.get_mut() {
@@ -177,7 +186,7 @@ impl SelectedPaths {
 
     pub fn retain(&mut self, mut keep: impl FnMut(&Path) -> bool) {
         let mut len = 0;
-        self.buckets.retain(|_, bucket| match bucket {
+        Arc::make_mut(&mut self.buckets).retain(|_, bucket| match bucket {
             Bucket::One(path) => {
                 let retained = keep(path.as_path(&self.storage));
                 len += usize::from(retained);

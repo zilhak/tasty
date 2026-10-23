@@ -1,3 +1,5 @@
+mod cached;
+
 use super::*;
 
 fn assert_same(actual: &SelectedPaths, expected: &HashSet<PathBuf>) {
