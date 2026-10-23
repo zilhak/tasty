@@ -25,12 +25,15 @@ impl Failure {
         } else {
             serde_json::json!({})
         };
-        if self.saved.is_none() {
+        if self.outcome_unknown() {
             data["outcome"] = serde_json::json!("unknown");
         }
         data["saved"] = serde_json::json!(self.saved);
         data["applied"] = serde_json::json!(self.applied);
         data
+    }
+    fn outcome_unknown(&self) -> bool {
+        self.saved.is_none() || self.details["outcome"].as_str() == Some("unknown")
     }
     pub(crate) fn before(error: impl std::fmt::Display) -> Self {
         Self {
@@ -59,7 +62,7 @@ pub(crate) fn classify_failure<T>(result: &Result<T, Failure>) -> command::Comma
             partial: false,
         },
         Err(error) => command::CommandDisposition {
-            outcome: if error.saved.is_none() {
+            outcome: if error.outcome_unknown() {
                 command::CommandOutcome::Unknown
             } else {
                 command::CommandOutcome::KnownFailure

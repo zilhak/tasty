@@ -119,6 +119,7 @@ fn remove_files(
     before: PluginsConfig,
 ) -> Result<PluginsConfig, Failure> {
     let mut removed = false;
+    let mut cleanup_started = false;
     let result = (|| {
         // A changed path kind must not redirect recursive deletion through another user's link.
         let metadata = std::fs::symlink_metadata(dir)?;
@@ -127,6 +128,7 @@ fn remove_files(
                 "plugin path is not an owned directory",
             ));
         }
+        cleanup_started = true;
         std::fs::remove_dir_all(dir)?;
         removed = true;
         tasty_host_plugin::trust_verdict::forget_unverified_choice_in(known, id)?;
@@ -143,11 +145,18 @@ fn remove_files(
         };
         update.execute()
     })();
-    result.map_err(|error| Failure {
-        message: error.to_string(),
-        saved: Some(false),
-        applied: removed,
-        details: json!({"removed":removed}),
+    result.map_err(|error| {
+        let mut details = json!({"removed":removed,"directory_cleanup_started":cleanup_started});
+        if cleanup_started && !removed {
+            details["directory_outcome"] = json!("unknown");
+            details["outcome"] = json!("unknown");
+        }
+        Failure {
+            message: error.to_string(),
+            saved: Some(false),
+            applied: removed,
+            details,
+        }
     })
 }
 
@@ -164,6 +173,62 @@ fn after_disable(mut error: Failure) -> Failure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn recursive_cleanup_error_retains_unknown_directory_outcome_and_known_disable() {
+        use std::os::unix::fs::PermissionsExt;
+        struct Restore(std::path::PathBuf);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                if self.0.exists()
+                    && let Err(error) =
+                        std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o700))
+                {
+                    tracing::warn!(%error,"owned fixture mode restore failed");
+                }
+            }
+        }
+        let home = tempfile::tempdir().unwrap();
+        let directory = home.path().join("plugin");
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(directory.join("a-first"), "owned").unwrap();
+        let protected = directory.join("z-protected");
+        std::fs::create_dir(&protected).unwrap();
+        std::fs::write(protected.join("keep"), "owned").unwrap();
+        let _restore = Restore(protected.clone());
+        std::fs::set_permissions(&protected, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let error = remove_files(
+            &directory,
+            &home.path().join("known.toml"),
+            "p",
+            PluginsConfig::load_from(home.path().join("plugins.toml")),
+        )
+        .unwrap_err();
+        assert!(
+            !directory.join("a-first").exists(),
+            "the real recursive operation already removed one owned file"
+        );
+        let disposition =
+            crate::app::plugin_file_lifecycle::classify_failure(&Err::<(), _>(error.clone()));
+        assert!(matches!(
+            disposition.outcome,
+            crate::app::file_writer::command::CommandOutcome::Unknown
+        ));
+        assert!(
+            !disposition.partial,
+            "do not invent an observed worker mutation count"
+        );
+        assert_eq!(error.saved, Some(false));
+        assert!(!error.applied);
+        assert_eq!(error.details["removed"], false);
+        assert_eq!(error.details["directory_outcome"], "unknown");
+        let response = after_disable(error).response_data();
+        assert_eq!(response["saved"], false);
+        assert_eq!(response["applied"], true);
+        assert_eq!(response["disabled"], true);
+        assert_eq!(response["partial"], true);
+        assert_eq!(response["outcome"], "unknown");
+    }
     #[test]
     fn failed_final_config_reports_known_partial_removal_and_protects_original() {
         let home = tempfile::tempdir().unwrap();
