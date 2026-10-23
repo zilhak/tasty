@@ -2,11 +2,13 @@
 //! 소켓 I/O는 호스트 adapter가 맡고 이 허브는 채널·수신 메시지 분류만 담당한다.
 //! 별도 인증 토큰은 없으며 SSH와 loopback 연결을 신뢰 경계로 사용한다.
 
+mod bytes;
 mod html;
+pub use bytes::{FrameReservation, HeldFrame, PublicationFence};
 pub use html::HtmlControl;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, Weak};
 
@@ -216,7 +218,8 @@ struct StreamSink {
     html_http: bool,
     binding: Arc<()>,
     registration: u128,
-    tx: SyncSender<StreamFrame>,
+    tx: SyncSender<HeldFrame>,
+    bytes: Arc<AtomicUsize>,
     /// Consecutive dropped-frame count (reset on a successful send).
     lag: u32,
     /// ClientLossNotify를 받아 손실 통지를 활성화했는지. 선언 전에는 조용히 버린다.
@@ -233,7 +236,7 @@ struct StreamSink {
 
 /// writer가 큐에서 꺼낼 때 backlog를 줄이고 대기 중인 Loss를 다시 넣는 수신 인터페이스.
 pub struct SinkReceiver {
-    rx: Receiver<StreamFrame>,
+    rx: Receiver<HeldFrame>,
     queued: Arc<AtomicU64>,
     id: StreamClientId,
     owes_notice: Arc<AtomicBool>,
@@ -245,7 +248,7 @@ pub struct SinkReceiver {
 impl SinkReceiver {
     /// 한 프레임을 꺼낸 직후 backlog를 줄이고 밀린 Loss를 넣는다.
     /// 유실 전 프레임 뒤에 통지가 놓이며 다음 push나 inbound를 기다릴 필요가 없다.
-    fn took(&self, frame: StreamFrame) -> StreamFrame {
+    fn took(&self, frame: HeldFrame) -> HeldFrame {
         self.queued.fetch_sub(1, Ordering::Relaxed);
         if self.owes_notice.load(Ordering::Acquire) {
             self.repay_now();
@@ -269,17 +272,19 @@ impl SinkReceiver {
         &self,
         timeout: std::time::Duration,
     ) -> Result<StreamFrame, mpsc::RecvTimeoutError> {
-        self.rx.recv_timeout(timeout).map(|f| self.took(f))
+        self.rx
+            .recv_timeout(timeout)
+            .map(|f| self.took(f).into_frame())
     }
 
     /// [`Receiver::try_recv`] 와 같다.
     pub fn try_recv(&self) -> Result<StreamFrame, mpsc::TryRecvError> {
-        self.rx.try_recv().map(|f| self.took(f))
+        self.rx.try_recv().map(|f| self.took(f).into_frame())
     }
 
     /// [`Receiver::recv`] 와 같다.
     pub fn recv(&self) -> Result<StreamFrame, mpsc::RecvError> {
-        self.rx.recv().map(|f| self.took(f))
+        self.rx.recv().map(|f| self.took(f).into_frame())
     }
 }
 
@@ -385,6 +390,7 @@ impl StreamHub {
                 binding: Arc::new(()),
                 registration: rand::random(),
                 tx,
+                bytes: Arc::new(AtomicUsize::new(0)),
                 lag: 0,
                 loss_notify: false,
                 pending_loss: 0,
@@ -499,7 +505,7 @@ impl StreamHub {
     /// Push a frame to one client. Non-blocking: a full sink drops the frame and,
     /// past [`LAG_LIMIT`] consecutive drops, disconnects the client.
     pub fn push(&self, id: StreamClientId, frame: StreamFrame) -> PushResult {
-        self.push_to(id, None, frame)
+        self.push_to(id, None, frame, None)
     }
 
     /// Registration comparison and enqueue share the same sink lock.
@@ -509,7 +515,7 @@ impl StreamHub {
         binding: &Weak<()>,
         frame: StreamFrame,
     ) -> PushResult {
-        self.push_to(id, Some(binding), frame)
+        self.push_to(id, Some(binding), frame, None)
     }
 
     fn push_to(
@@ -517,6 +523,7 @@ impl StreamHub {
         id: StreamClientId,
         binding: Option<&Weak<()>>,
         frame: StreamFrame,
+        reservation: Option<FrameReservation>,
     ) -> PushResult {
         let mut sinks =
             tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
@@ -526,11 +533,21 @@ impl StreamHub {
         if binding.is_some_and(|binding| !Arc::downgrade(&sink.binding).ptr_eq(binding)) {
             return PushResult::Unknown;
         }
+        let held = match reservation {
+            Some(reservation) => match reservation.attach(id, sink, frame) {
+                Ok(held) => held,
+                Err(_) => return PushResult::Unknown,
+            },
+            None => match HeldFrame::charge(frame, sink) {
+                Ok(held) => held,
+                Err(_) => return PushResult::Dropped,
+            },
+        };
         // 큐가 가득 차 생긴 손실이므로 Loss도 바로 넣지 못할 수 있다.
         // pending_loss를 보존하고 수신자가 자리를 비울 때 또는 다음 push 전에 다시 넣는다.
         // 통지가 큐에 들어가기 전에는 누계를 초기화하지 않는다.
         Self::repay_pending_loss(sink);
-        match Self::try_enqueue(sink, frame) {
+        match Self::enqueue_held(sink, held) {
             Ok(()) => {
                 sink.lag = 0;
                 PushResult::Sent
@@ -595,7 +612,11 @@ impl StreamHub {
     ///
     /// **넣기 전에** 올리는 이유: 성공 뒤에 올리면 write 스레드가 그 사이에 꺼내 먼저
     /// 내릴 수 있고, 그러면 카운터가 0 아래로 내려갔다가 돌아온다(`u64` 라 wrap 한다).
-    fn try_enqueue(sink: &StreamSink, frame: StreamFrame) -> Result<(), TrySendError<StreamFrame>> {
+    fn try_enqueue(sink: &StreamSink, frame: StreamFrame) -> Result<(), TrySendError<HeldFrame>> {
+        let held = HeldFrame::charge(frame, sink).map_err(TrySendError::Full)?;
+        Self::enqueue_held(sink, held)
+    }
+    fn enqueue_held(sink: &StreamSink, frame: HeldFrame) -> Result<(), TrySendError<HeldFrame>> {
         sink.queued.fetch_add(1, Ordering::Relaxed);
         let sent = sink.tx.try_send(frame);
         if sent.is_err() {

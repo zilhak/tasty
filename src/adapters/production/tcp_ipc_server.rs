@@ -1,6 +1,9 @@
 //! TCP에서 JSON-RPC 요청을 받아 메인 루프의 명령 큐로 전달한다.
 //! 전송 타입은 crate::ipc::server에 두고 서버 구현만 이 모듈이 담당한다.
 
+#[cfg(test)]
+mod stream_bytes_tests;
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -639,8 +642,11 @@ impl TcpIpcServer {
         let mut w = writer;
         thread::spawn(move || {
             loop {
-                match sink_rx.recv_timeout(stream::HEARTBEAT_INTERVAL) {
+                match sink_rx.recv_held_timeout(stream::HEARTBEAT_INTERVAL) {
                     Ok(frame) => {
+                        if !frame.is_current() {
+                            continue;
+                        }
                         if stream::write_frame(&mut w, frame.tag, &frame.payload).is_err() {
                             break;
                         }
