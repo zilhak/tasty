@@ -3,12 +3,40 @@
 
 use std::collections::HashMap;
 use winit::event::{ElementState, Ime, RawKeyEvent, WindowEvent};
-use winit::keyboard::PhysicalKey;
+use winit::keyboard::{Key, NamedKey, PhysicalKey};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InputOwner {
+    List(u32),
+    Find(u32),
+}
+
+impl InputOwner {
+    fn surface(self) -> u32 {
+        match self {
+            Self::List(surface) | Self::Find(surface) => surface,
+        }
+    }
+
+    fn consumes(
+        self,
+        bindings: &crate::settings::KeybindingSettings,
+        key: &Key,
+        modifiers: winit::keyboard::ModifiersState,
+    ) -> bool {
+        match self {
+            Self::Find(_) => *key == Key::Named(NamedKey::Escape),
+            Self::List(_) => {
+                crate::shortcuts::explorer_composition_list_key(bindings, key, modifiers)
+            }
+        }
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct ExplorerImeKeys {
     composing: Option<u32>,
-    presses: HashMap<PhysicalKey, u32>,
+    presses: HashMap<PhysicalKey, InputOwner>,
 }
 
 impl ExplorerImeKeys {
@@ -20,19 +48,19 @@ impl ExplorerImeKeys {
         }
     }
 
-    fn press(&mut self, key: PhysicalKey, list: Option<u32>) {
+    fn press(&mut self, key: PhysicalKey, input: Option<InputOwner>) {
         // Every new physical press replaces the prior ownership, even if XIM never
         // forwarded that prior key. A later genuine key must not inherit it.
         self.presses.remove(&key);
-        if let Some(surface) = list.filter(|surface| self.composing == Some(*surface)) {
-            self.presses.insert(key, surface);
+        if let Some(owner) = input.filter(|owner| self.composing == Some(owner.surface())) {
+            self.presses.insert(key, owner);
         }
     }
 
-    fn take(&mut self, key: PhysicalKey, surface: Option<u32>) -> bool {
+    fn take(&mut self, key: PhysicalKey, surface: Option<u32>) -> Option<InputOwner> {
         self.presses
             .remove(&key)
-            .is_some_and(|owner| Some(owner) == surface)
+            .filter(|owner| Some(owner.surface()) == surface)
     }
 }
 
@@ -61,7 +89,7 @@ impl crate::App {
 }
 
 impl crate::view::main::MainView {
-    fn ime_explorer_list(
+    fn ime_explorer_surface(
         &self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
     ) -> Option<u32> {
@@ -69,12 +97,6 @@ impl crate::view::main::MainView {
             return None;
         }
         crate::adapters::ui::input::shortcuts::focused_explorer_surface_id(&self.state, engine)
-            .filter(|sid| {
-                self.state
-                    .explorer_views
-                    .get(*sid)
-                    .is_some_and(|view| !view.text_input_active())
-            })
     }
 
     pub(crate) fn observe_explorer_raw_key(
@@ -83,8 +105,20 @@ impl crate::view::main::MainView {
         event: &RawKeyEvent,
     ) {
         if event.state == ElementState::Pressed {
-            self.explorer_ime_keys
-                .press(event.physical_key, self.ime_explorer_list(engine));
+            let input = self.ime_explorer_surface(engine).and_then(|sid| {
+                let view = self.state.explorer_views.get(sid)?;
+                if !view.text_input_active() {
+                    Some(InputOwner::List(sid))
+                } else if !view.addr_editing
+                    && view.create.is_none()
+                    && view.find.as_ref().is_some_and(|find| find.field_focused)
+                {
+                    Some(InputOwner::Find(sid))
+                } else {
+                    None
+                }
+            });
+            self.explorer_ime_keys.press(event.physical_key, input);
         }
     }
 
@@ -103,15 +137,22 @@ impl crate::view::main::MainView {
             }
             WindowEvent::Focused(_) => self.explorer_ime_keys = ExplorerImeKeys::default(),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                let list = self.ime_explorer_list(engine);
-                let owned = self.explorer_ime_keys.take(event.physical_key, list);
-                if owned {
+                let surface = self.ime_explorer_surface(engine);
+                if let Some(owner) = self.explorer_ime_keys.take(event.physical_key, surface)
+                    && let Some(view) = self.state.explorer_views.get(owner.surface())
+                    && match owner {
+                        InputOwner::List(_) => !view.text_input_active(),
+                        InputOwner::Find(_) => {
+                            !view.addr_editing && view.create.is_none() && view.find.is_some()
+                        }
+                    }
+                {
                     let key = crate::shortcuts::shortcut_lookup_key(
                         &event.logical_key,
                         &event.physical_key,
                         self.base.state.modifiers,
                     );
-                    return crate::shortcuts::explorer_composition_list_key(
+                    return owner.consumes(
                         &engine.settings.keybindings,
                         &key,
                         self.base.state.modifiers,
@@ -140,12 +181,15 @@ mod tests {
             let mut keys = ExplorerImeKeys::default();
             let key = PhysicalKey::Code(code);
             keys.ime(&Ime::Preedit("간".into(), Some((3, 3))), Some(7));
-            keys.press(key, Some(7));
+            keys.press(key, Some(InputOwner::List(7)));
             keys.ime(&Ime::Preedit(String::new(), None), Some(7));
             keys.ime(&Ime::Commit("간".into()), Some(7));
-            assert!(keys.take(key, Some(7)));
-            keys.press(key, Some(7));
-            assert!(!keys.take(key, Some(7)), "next genuine key must work");
+            assert_eq!(keys.take(key, Some(7)), Some(InputOwner::List(7)));
+            keys.press(key, Some(InputOwner::List(7)));
+            assert!(
+                keys.take(key, Some(7)).is_none(),
+                "next genuine key must work"
+            );
         }
     }
 
@@ -154,10 +198,10 @@ mod tests {
         let mut keys = ExplorerImeKeys::default();
         let key = PhysicalKey::Code(KeyCode::ArrowDown);
         keys.ime(&Ime::Preedit("간".into(), Some((3, 3))), Some(7));
-        keys.press(key, Some(7));
+        keys.press(key, Some(InputOwner::List(7)));
         keys.ime(&Ime::Commit("간".into()), Some(7));
-        keys.press(key, Some(7));
-        assert!(!keys.take(key, Some(7)));
+        keys.press(key, Some(InputOwner::List(7)));
+        assert!(keys.take(key, Some(7)).is_none());
     }
 
     #[test]
@@ -165,15 +209,15 @@ mod tests {
         let key = PhysicalKey::Code(KeyCode::Delete);
         let mut keys = ExplorerImeKeys::default();
         keys.ime(&Ime::Enabled, Some(7));
-        keys.press(key, Some(7));
-        assert!(!keys.take(key, Some(7)));
+        keys.press(key, Some(InputOwner::List(7)));
+        assert!(keys.take(key, Some(7)).is_none());
         keys.ime(&Ime::Preedit("간".into(), Some((3, 3))), Some(7));
         keys.press(key, None);
-        assert!(!keys.take(key, Some(7)));
-        keys.press(key, Some(8));
-        assert!(!keys.take(key, Some(8)));
-        keys.press(key, Some(7));
-        assert!(!keys.take(key, Some(8)));
+        assert!(keys.take(key, Some(7)).is_none());
+        keys.press(key, Some(InputOwner::List(8)));
+        assert!(keys.take(key, Some(8)).is_none());
+        keys.press(key, Some(InputOwner::List(7)));
+        assert!(keys.take(key, Some(8)).is_none());
     }
 
     #[test]
@@ -198,5 +242,33 @@ mod tests {
             Key::Character("a".into()),
             ModifiersState::CONTROL
         ));
+    }
+
+    #[test]
+    fn find_escape_keeps_its_owner_through_commit_but_not_a_new_press() {
+        let mut keys = ExplorerImeKeys::default();
+        let escape = PhysicalKey::Code(KeyCode::Escape);
+        let find = InputOwner::Find(7);
+        keys.ime(&Ime::Preedit("간".into(), Some((3, 3))), Some(7));
+        keys.press(escape, Some(find));
+        keys.ime(&Ime::Preedit(String::new(), None), Some(7));
+        keys.ime(&Ime::Commit("간".into()), Some(7));
+        assert_eq!(keys.take(escape, Some(7)), Some(find));
+        keys.press(escape, Some(find));
+        assert!(keys.take(escape, Some(7)).is_none());
+    }
+
+    #[test]
+    fn find_escape_does_not_apply_list_bindings_to_editor_keys() {
+        use winit::keyboard::ModifiersState;
+        let mut bindings = crate::settings::KeybindingSettings::default();
+        bindings.explorer_cursor_down = vec!["j".into()];
+        bindings.explorer_clear_selection = vec!["ctrl+g".into()];
+        let find = InputOwner::Find(7);
+        let modifiers = ModifiersState::empty();
+        assert!(find.consumes(&bindings, &Key::Named(NamedKey::Escape), modifiers));
+        assert!(!find.consumes(&bindings, &Key::Character("j".into()), modifiers));
+        assert!(!find.consumes(&bindings, &Key::Named(NamedKey::ArrowDown), modifiers));
+        assert!(InputOwner::List(7).consumes(&bindings, &Key::Character("j".into()), modifiers));
     }
 }

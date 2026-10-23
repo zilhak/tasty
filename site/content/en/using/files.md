@@ -1,4 +1,4 @@
-<!-- source-hash: 770da3f689a0 -->
+<!-- source-hash: 730ca8639407 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -74,7 +74,7 @@ Names whose accents or Hangul letters were stored as separate characters are com
 - If the path does not exist, the Explorer stays where it is and a notice tells you why. A link whose target is gone is treated like a file: the Explorer goes to the folder that holds the link and selects it.
 - In an Explorer in a remote Workspace, the path is looked up on the remote computer. A folder that exists only there opens, and if the remote computer can't read it, the reason shows in the list area. `~` is the remote computer's home folder, and `.` and `..` are resolved on the remote path. If Tasty hasn't learned the remote home yet right after connecting, it asks you to type the full remote path instead of `~`. While Tasty checks whether a remote path is a file, the address bar keeps the path you typed, and if the check takes a while a spinner appears at its end. Press `Esc` then to stop the check and put the current folder back in the address bar.
 
-On Linux X11, pressing a list navigation, open, clear selection, rename, or trash key during IME composition handles the composition first. The same press does not move or open files. Pressing the key again after composition ends works normally. The address bar, Find, and name fields keep their own input handling.
+On Linux X11, pressing a list navigation, open, clear selection, rename, or trash key during IME composition handles the composition first. The same press does not move or open files. Pressing the key again after composition ends works normally. In the Find field, the Esc that ends composition also leaves the query intact. The next Esc works normally. Other Find keys, the address bar, and name fields keep their own input handling.
 
 ### New folder · New file
 
