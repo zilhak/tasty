@@ -155,13 +155,55 @@ fn assert_cli_session_owner(host: &Host, surface: u32, args: &mut Vec<String>) {
     assert_eq!(meta["pending"], true);
 }
 
+#[cfg(unix)]
+fn run_mock_child_commands(host: &Host, dir: &Path, commands: &[String]) -> Vec<Vec<String>> {
+    use std::process::Command;
+
+    let mut argv = Vec::new();
+    for command in commands {
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(command.trim_end_matches('\r'))
+            .env("PATH", format!("{}:/usr/bin:/bin", dir.display()))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output);
+        let mut args = serde_json::from_slice::<Vec<String>>(&output.stdout).unwrap();
+        assert_cli_session_owner(host, 101 + argv.len() as u32, &mut args);
+        argv.push(args);
+    }
+    argv
+}
+
+#[cfg(unix)]
+fn assert_mock_rejection(executable: &Path, dir: &Path, command: &str, expected_argv: &[String]) {
+    use std::process::Command;
+
+    std::fs::write(
+        executable,
+        "#!/usr/bin/python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\nsys.exit(42)\n",
+    )
+    .unwrap();
+    let rejected = Command::new("sh")
+        .arg("-c")
+        .arg(command.trim_end_matches('\r'))
+        .env("PATH", format!("{}:/usr/bin:/bin", dir.display()))
+        .output()
+        .unwrap();
+    assert_eq!(rejected.status.code(), Some(42));
+    assert_eq!(
+        serde_json::from_slice::<Vec<String>>(&rejected.stdout).unwrap()[2..],
+        *expected_argv
+    );
+    tracing::info!("mock rejection: shell rc=42; one invocation, no fallback-model argument");
+}
+
 /// Exercise the real spawn handler, then run its shell command against an isolated mock CLI.
 /// No user CLI, settings, provider or app server is involved.
 #[cfg(unix)]
 #[test]
 fn isolated_mock_cli_receives_independent_child_argv_profiles_and_omission() {
     use std::os::unix::fs::PermissionsExt;
-    use std::process::Command;
 
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
@@ -205,19 +247,7 @@ fn isolated_mock_cli_receives_independent_child_argv_profiles_and_omission() {
         .map(|(_, p)| p["text"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(commands.len(), 3);
-    let mut argv = Vec::new();
-    for command in &commands {
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(command.trim_end_matches('\r'))
-            .env("PATH", format!("{}:/usr/bin:/bin", dir.path().display()))
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{:?}", output);
-        let mut args = serde_json::from_slice::<Vec<String>>(&output.stdout).unwrap();
-        assert_cli_session_owner(&host, 101 + argv.len() as u32, &mut args);
-        argv.push(args);
-    }
+    let argv = run_mock_child_commands(&host, dir.path(), &commands);
     assert_eq!(
         argv[0],
         vec![
@@ -238,23 +268,7 @@ fn isolated_mock_cli_receives_independent_child_argv_profiles_and_omission() {
     let meta = host.meta.lock().unwrap();
     assert_eq!(meta[&(7, META_KEY.into())], "parent-unchanged");
     assert_eq!(meta[&(8, META_KEY.into())], "sibling-unchanged");
-    std::fs::write(
-        &executable,
-        "#!/usr/bin/python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\nsys.exit(42)\n",
-    )
-    .unwrap();
-    let rejected = Command::new("sh")
-        .arg("-c")
-        .arg(commands[1].trim_end_matches('\r'))
-        .env("PATH", format!("{}:/usr/bin:/bin", dir.path().display()))
-        .output()
-        .unwrap();
-    assert_eq!(rejected.status.code(), Some(42));
-    assert_eq!(
-        serde_json::from_slice::<Vec<String>>(&rejected.stdout).unwrap()[2..],
-        argv[1]
-    );
-    tracing::info!("mock rejection: shell rc=42; one invocation, no fallback-model argument");
+    assert_mock_rejection(&executable, dir.path(), &commands[1], &argv[1]);
     tracing::info!(
         "mock_cli child argv: {}",
         serde_json::to_string(&argv).unwrap()

@@ -179,6 +179,14 @@ prompt cleanup은 처음 받은 temp root를 재사용해 생성과 회수의 �
 그 두 경계를 요구한다. 송신 전용 값에 별도 Mutex를 두지 않아 락 poison으로 완료 통지를
 건너뛰는 경로가 없다. 받는 쪽은 기존 `recv_timeout`으로 실제 통지를 확인한다.
 
+### 자식 CLI의 실제 argv를 확인하는 시험
+
+Codex의 `session/spawn_runtime_tests.rs`는 TUI 명령의 인자를 Python mock에 전달하고,
+개별 실행 검증 helper에서 새 세션의 옵션과 resume 설정을 대조한다.
+Claude의 `session_options/tests.rs`는 임시 CLI를 실행하는 helper와 종료 코드 42를
+대조하는 helper를 사용한다. 호출 시험에서 세 자식의 argv, 옵션 생략, 프로필 원문과
+부모·형제 메타데이터를 대조한다. 이 시험들은 실제 provider의 옵션 수용 여부를 검증하지 않는다.
+
 ## 5. 확인 방법
 
 사용자 실제 홈으로 테스트를 실행해 격리를 확인하지 않는다. 테스트가 그 홈에 쓴 파일이
