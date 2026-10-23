@@ -37,6 +37,7 @@ spawn_thread_failed = "재시작 스레드를 만들지 못했습니다: {detail
 no_active_session = "surface {surface}에 codex-session-id 메타데이터가 없습니다. Tasty 훅이 설치·신뢰됐는지 확인하세요. `tasty codex install` 후 Codex의 /hooks에서 승인할 수 있습니다."
 
 [codex.params]
+invalid_model_option = "잘못된 {key}: 비어 있지 않은 모델 식별자 또는 지원하는 추론 수준(none, minimal, low, medium, high, xhigh, max, ultra)이 필요합니다"
 missing = "필수 파라미터 '{key}'가 없습니다"
 missing_target_surface = "대상 파라미터 'surface' 또는 'surface_id'가 필요합니다"
 not_a_number = "'{key}' 값 {raw}이 올바르지 않습니다. u32 범위의 정수를 입력하세요. 다른 대상을 선택하지 않도록 범위를 넘는 값은 자르지 않고 거부합니다."
@@ -340,3 +341,9 @@ help = "내부용: 복원 시 유지할 대화형 실행 옵션"
 
 [codex.cli.sub.session-bind]
 description = "내부용: TUI에서 선택한 대화 등록"
+
+[codex.cli.arg.spawn_args.model]
+help = "이 자식 세션에만 적용할 모델. 사용 가능 여부는 Codex가 판단합니다"
+
+[codex.cli.arg.spawn_args.effort]
+help = "이 자식의 추론 수준: none|minimal|low|medium|high|xhigh|max|ultra"

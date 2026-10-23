@@ -132,7 +132,17 @@ pub(crate) fn handle_reboot(
     let thread_host = host.clone();
     let thread_inflight = inflight.clone();
     let thread_session = session_id.clone();
-    let thread_policy_args = policy_args.clone();
+    let mut thread_policy_args = policy_args.clone();
+    if let Some(root) = root
+        && let Ok(Some(generation)) = crate::session::registry::current_gen(root, surface_id)
+        && let Ok(Some(session)) = crate::session::registry::read_session(root, &generation)
+    {
+        let saved = crate::spawn_options::saved_tokens(&session);
+        if !saved.is_empty() {
+            thread_policy_args.push(' ');
+            thread_policy_args.push_str(&saved.join(" "));
+        }
+    }
     // 스레드에는 번역기를 빌려주지 않고 완성된 안내문을 넘긴다.
     let thread_notice = build_notice(tr.t(REBOOT_NOTICE_KEY), extra_prompt.as_deref());
     let spawned = thread::Builder::new()

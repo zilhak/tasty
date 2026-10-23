@@ -246,6 +246,13 @@ tasty claude codex-returns --retry   # 남은 결과를 모두 지금 보낼 차
 
 컨테이너 등 중첩 샌드박스가 안 되는 환경에서 `--sandbox` 지정이 `RTM_NEWADDR: Operation not permitted` 류로 실패하면 `--full-auto` 를 씁니다. 완료 알림에도 이 힌트가 붙습니다.
 
+### 자식별 모델과 추론 수준
+
+`tasty codex spawn --workspace workers --model gpt-6.1-sol --effort medium --prompt "테스트를 실행해 줘"`처럼 자식마다 모델과 추론 수준을 지정할 수 있습니다. 두 옵션은 선택 사항이며 생략하면 기존 Codex 설정을 사용합니다. 전역 설정이나 부모·다른 자식의 모델은 바뀌지 않습니다. 같은 대화를 탭 복원하거나 `reboot`해도 명시한 값이 유지됩니다.
+
+`--effort`는 `none|minimal|low|medium|high|xhigh|max|ultra`를 받습니다. 모델 식별자는 Codex가 제공하는 값을 사용하세요. 모델과 추론 수준의 지원 여부는 Codex가 판단하며, 거절되면 오류를 표시하고 다른 모델로 자동 전환하지 않습니다.
+
+
 ## 6. Claude 권한 모드
 
 `tasty claude launch/spawn/respawn/reboot/child-profile` 는 자식 Claude 의 권한 모드를 플래그로 받습니다.

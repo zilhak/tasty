@@ -465,6 +465,11 @@ fn tui_command_with(
         cmd.arg("resume");
     }
     cmd.args(["--remote", url]);
+    let settings = super::command::ResumeSettings::from_tui_args(&args.tui_args);
+    let token = token.or_else(|| {
+        (args.resume.is_none() && (settings.model.is_some() || settings.effort.is_some()))
+            .then_some("")
+    });
     if let Some(token) = token {
         cmd.args(["--remote-auth-token-env", REMOTE_TOKEN_ENV]);
         cmd.env(REMOTE_TOKEN_ENV, token);
@@ -580,7 +585,23 @@ fn entry(raw: &[String], native: bool) -> i32 {
         READY_TIMEOUT,
         |url| {
             if args.native.is_none() {
-                return prepare_resume(url, opened.token_file.as_deref(), &args);
+                let mut prepared = prepare_resume(url, opened.token_file.as_deref(), &args)?;
+                let settings = super::command::ResumeSettings::from_tui_args(&args.tui_args);
+                if args.resume.is_none() && (settings.model.is_some() || settings.effort.is_some())
+                {
+                    let endpoint =
+                        super::registry::parse_endpoint(url, opened.token_file.as_deref())?;
+                    let relay = super::relay::Relay::start(
+                        endpoint,
+                        settings,
+                        std::sync::Arc::new(|_| Ok(())),
+                    )
+                    .map_err(|e| e.to_string())?;
+                    *relay_token.lock().map_err(|_| "relay token poisoned")? =
+                        Some(relay.token.clone());
+                    prepared.relay = Some(relay);
+                }
+                return Ok(prepared);
             }
             let endpoint = super::registry::parse_endpoint(url, opened.token_file.as_deref())?;
             let generation = opened.generation.clone();
@@ -607,13 +628,15 @@ fn entry(raw: &[String], native: bool) -> i32 {
                 cmd.args(&native.tui);
                 return cmd;
             }
-            tui_command_with(
+            let mut cmd = tui_command_with(
                 url,
                 token.as_deref(),
                 &args,
                 prompt.as_deref(),
                 execution.command(),
-            )
+            );
+            set_relay_auth(&mut cmd, &relay_token);
+            cmd
         },
     );
     exit_code(result, &report)

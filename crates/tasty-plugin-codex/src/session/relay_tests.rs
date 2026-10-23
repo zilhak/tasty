@@ -44,6 +44,7 @@ fn run_reply(approval: &str, reject_bind: bool) -> (Result<Value, crate::rpc::Rp
             approval: Some("never".into()),
             sandbox: Some("read-only".into()),
             model: None,
+            effort: None,
         },
         Arc::new(move |result| {
             assert_eq!(result["thread"]["id"], "selected-by-picker");
@@ -135,6 +136,7 @@ fn later_explicit_permission_choices_are_not_replaced_by_launch_defaults() {
             approval: Some("never".into()),
             sandbox: Some("danger-full-access".into()),
             model: Some("launch-model".into()),
+            effort: None,
         },
         true,
     );
@@ -157,6 +159,7 @@ fn explicit_permission_profile_config_is_not_combined_with_launch_bypass() {
             approval: Some("never".into()),
             sandbox: Some("danger-full-access".into()),
             model: Some("launch-model".into()),
+            effort: None,
         },
         false,
     );
@@ -203,7 +206,7 @@ fn relay_run(launch: ResumeSettings, calls: &[(&str, Value)]) -> (Vec<Value>, Ve
                 } else {
                     "t"
                 };
-                json!({"thread":{"id":id},"approvalPolicy":params["approvalPolicy"],"sandbox":{"type":sandbox},"model":params["model"]})
+                json!({"thread":{"id":id},"approvalPolicy":params["approvalPolicy"],"sandbox":{"type":sandbox},"model":params["model"],"reasoningEffort":params["config"]["model_reasoning_effort"]})
             } else {
                 json!({})
             };
@@ -432,4 +435,85 @@ fn poisoned_registry_is_closed_and_joined_during_unwind() {
         matches!(rx.recv_timeout(Duration::from_secs(1)).unwrap(), Ok(0)),
         "Drop must shut down the socket before joining its reader"
     );
+}
+
+#[test]
+fn child_efforts_reach_start_and_resume_without_cross_session_defaults() {
+    let _logs =
+        tracing::subscriber::set_default(tracing_subscriber::fmt().with_test_writer().finish());
+    for (model, effort) in [("provider/model-a", "medium"), ("provider:model-b", "high")] {
+        let settings = ResumeSettings::from_tui_args(&[
+            "-m".into(),
+            model.into(),
+            "-c".into(),
+            format!("model_reasoning_effort={effort}"),
+        ]);
+        let seen = backend_params(
+            settings,
+            &[
+                ("thread/start", json!({"config":{"unrelated":true}})),
+                ("thread/resume", json!({"threadId":"t","config":null})),
+            ],
+        );
+        assert_eq!(seen.len(), 2);
+        tracing::info!(
+            "mock backend start/resume: {}",
+            serde_json::to_string(&seen).unwrap()
+        );
+        for request in &seen {
+            assert_eq!(request["model"], model);
+            assert_eq!(request["config"]["model_reasoning_effort"], effort);
+        }
+        assert_eq!(seen[0]["config"]["unrelated"], true);
+    }
+    let seen = backend_params(ResumeSettings::default(), &[("thread/start", json!({}))]);
+    assert!(seen[0].get("model").is_none());
+    assert!(seen[0].get("config").is_none());
+}
+
+#[test]
+fn explicit_request_config_effort_takes_precedence_and_is_verified() {
+    let settings = ResumeSettings {
+        effort: Some("medium".into()),
+        ..Default::default()
+    };
+    let seen = backend_params(
+        settings.clone(),
+        &[(
+            "thread/start",
+            json!({
+                "config":{"model_reasoning_effort":"high","unrelated":true}
+            }),
+        )],
+    );
+    assert_eq!(seen[0]["config"]["model_reasoning_effort"], "high");
+    assert!(settings.verify(&json!({"reasoningEffort":"low"})).is_err());
+    assert!(settings.verify(&json!({})).is_err());
+    assert!(
+        settings
+            .verify(&json!({"reasoningEffort":"medium"}))
+            .is_ok()
+    );
+}
+
+#[test]
+fn upstream_model_and_effort_rejection_is_never_rewritten_as_success() {
+    let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
+    let chosen = Arc::new(AtomicBool::new(false));
+    let defaults = ResumeSettings {
+        model: Some("unavailable-model".into()),
+        effort: Some("max".into()),
+        ..Default::default()
+    };
+    message::request(
+        r#"{"id":1,"method":"thread/start","params":{}}"#,
+        &defaults,
+        &chosen,
+        &pending,
+    )
+    .unwrap();
+    let bind: Bind = Arc::new(|_| panic!("rejected request must not bind"));
+    let raw = r#"{"id":1,"error":{"code":400,"message":"unsupported model or effort"}}"#;
+    assert!(message::reply(raw, &pending, &bind).unwrap().is_none());
+    assert!(pending.lock().unwrap().is_empty());
 }

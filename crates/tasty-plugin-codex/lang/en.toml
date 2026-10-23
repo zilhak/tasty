@@ -37,6 +37,7 @@ spawn_thread_failed = "failed to spawn the reboot thread: {detail}"
 no_active_session = "no active codex session on surface {surface} (codex-session-id meta not set — are tasty hooks installed and trusted? run `tasty codex install`, then approve via /hooks in codex)"
 
 [codex.params]
+invalid_model_option = "Invalid {key}: expected a nonempty model identifier or a supported reasoning effort (none, minimal, low, medium, high, xhigh, max, ultra)"
 missing = "Missing required '{key}' parameter"
 missing_target_surface = "Missing required 'surface' (or 'surface_id') parameter"
 not_a_number = "Invalid '{key}' value: {raw}. Use an unsigned integer that fits in 32 bits. Larger values are rejected to avoid selecting a different target."
@@ -340,3 +341,9 @@ help = "Internal: native interactive options to preserve on restoration"
 
 [codex.cli.sub.session-bind]
 description = "Internal: register the conversation selected by a native TUI"
+
+[codex.cli.arg.spawn_args.model]
+help = "Model for this child session only; availability is checked by Codex"
+
+[codex.cli.arg.spawn_args.effort]
+help = "Reasoning effort for this child: none|minimal|low|medium|high|xhigh|max|ultra"

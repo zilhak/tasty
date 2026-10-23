@@ -34,6 +34,24 @@ Codex 대화에서 spawn한 자식의 턴 결과는 완료 로그와 별도로 [
 - **IPC 전용** — `codex.parent`(Codex 호출자 thread의 수신 준비), `codex.deliver`(자식 결과 기록), `codex.delivery_outcome`·`codex.delivery_wake`·`codex.turn_outcome`·`codex.turn_wake`(내부용). CLI `parent`는 자식 surface의 부모를 조회하는 `codex.parent_of`다.
 - **ipc_namespace `codex`** — 위 동작에 대응하는 IPC API.
 
+### 자식별 모델과 추론 수준
+
+`spawn --model <식별자> --effort <수준>`은 그 자식 세션에만 적용한다. IPC 필드는 선택 문자열
+`model`·`effort`다. 생략하면 기존 Codex 설정을 사용하며 전역·부모·형제 설정은 바꾸지 않는다.
+모델은 비어 있지 않은 식별자(영숫자와 `- _ . / :`, 첫 글자 `-` 제외)로 받으며 목록을 고정하지
+않는다. effort는 `none|minimal|low|medium|high|xhigh|max|ultra`로 제한한다. 모델별 사용 가능 여부는
+Codex/provider가 판단한다. 거절은 오류로 보이고 다른 모델로 자동 대체하지 않는다. 잘못된 타입·빈값·
+옵션 형태의 값은 `terminal.spawn` 전에 거절한다.
+
+모델은 helper의 `-m`, effort는 제한된 `-c model_reasoning_effort=<수준>` 인자로 만든다.
+remote TUI가 로컬 config override를 서버에 전하지 않으므로 model 또는 effort가 있는 helper는 세션 전용
+relay에서 새 thread 요청의 `config.model_reasoning_effort`를 채우고 응답의
+`reasoningEffort`를 검증한다. 다른 config 키는 보존하고 명시적인 요청 config 값이 우선한다.
+승인·sandbox는 기존 정책 우선순위를 따른다. provider 오류 응답은 그대로 전달한다.
+등록부의 helper 인자와 복원 명령에 명시값을 보존하며 같은 세션의 탭 복원·reboot에도 적용한다.
+재개 helper는 TUI를 띄우기 전에 `thread/resume`으로 모델·effort를 서버에 적용하고 검증한다.
+그 연결의 기존 구독 유지 경로를 사용하므로 재개 TUI의 기본값이 명시값을 덮어쓰지 않는다.
+
 ### 훅 설치와 실행
 
 install은 Windows에 PowerShell, 다른 OS에 POSIX sh 명령을 설치한다.

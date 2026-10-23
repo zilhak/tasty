@@ -1,4 +1,4 @@
-<!-- source-hash: c1296a8bcc28 -->
+<!-- source-hash: 8bab07e82deb -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -247,6 +247,13 @@ When a temporary API error such as a server overload ends Claude's turn, Tasty c
 - `reboot` and Tab restore, which reopen an existing conversation, apply the same policy. If the policy cannot be applied, Codex does not start and the terminal shows the reason.
 
 In environments where nested sandboxes are not possible, such as containers, if specifying `--sandbox` fails with something like `RTM_NEWADDR: Operation not permitted`, use `--full-auto`. This hint is also attached to the completion notification.
+
+### Model and reasoning effort for each child
+
+Use `tasty codex spawn --workspace workers --model gpt-6.1-sol --effort medium --prompt "Run the tests"` to select a model and reasoning effort for one child. Both options are optional; omitting them keeps the existing Codex settings. Global settings, the parent and other children are unchanged. Explicit values remain when restoring the same conversation's tab or using `reboot`.
+
+`--effort` accepts `none|minimal|low|medium|high|xhigh|max|ultra`. Use a model identifier provided by Codex. Codex decides whether the model and effort are supported. Rejection is shown as an error, without automatically switching models.
+
 
 ## 6. Claude permission mode
 

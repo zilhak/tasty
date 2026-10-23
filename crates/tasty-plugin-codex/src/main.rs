@@ -21,6 +21,7 @@ mod reboot;
 mod reboot_watch;
 mod rpc;
 mod session;
+mod spawn_options;
 mod store;
 mod task_turn;
 mod ws;

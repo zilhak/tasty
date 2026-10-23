@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.2.31"
+version = "0.2.32"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -126,6 +126,8 @@ flags = [
 
 [contributes.cli.arg_groups.spawn_args]
 flags = [
+    { name = "model", type = "string", flag = "--model", required = false, help = "Model for this child session only; availability is checked by Codex", help_i18n_key = "codex.cli.arg.spawn_args.model.help" },
+    { name = "effort", type = "string", flag = "--effort", required = false, help = "Reasoning effort for this child: none|minimal|low|medium|high|xhigh|max|ultra", help_i18n_key = "codex.cli.arg.spawn_args.effort.help" },
     { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "codex.cli.arg.spawn_args.surface.help" },
     { name = "workspace", type = "string", flag = "--workspace", required = true,  help = "Target workspace (ID or name)", help_i18n_key = "codex.cli.arg.spawn_args.workspace.help" },
     { name = "pane",      type = "u32",    flag = "--pane",      required = false, help = "Target pane ID (defaults to the first pane in the workspace)", help_i18n_key = "codex.cli.arg.spawn_args.pane.help" },

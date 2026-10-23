@@ -349,7 +349,7 @@ fn apply_settings(
         {
             continue;
         }
-        if key == "threadId" || key == "excludeTurns" {
+        if key == "threadId" || key == "excludeTurns" || key == "config" {
             continue;
         }
         let launch_wins = !chosen && matches!(key.as_str(), "approvalPolicy" | "sandbox");
@@ -357,11 +357,34 @@ fn apply_settings(
             params.insert(key.clone(), value.clone());
         }
     }
+    // Remote TUI config does not carry local -c overrides to its server. Merge only this
+    // invocation's effort, retaining explicit request config and every unrelated key.
+    if let Some(effort) = &defaults.effort {
+        let config = params
+            .entry("config")
+            .or_insert_with(|| serde_json::json!({}));
+        if config.is_null() {
+            *config = serde_json::json!({});
+        }
+        if let Some(config) = config.as_object_mut()
+            && config
+                .get("model_reasoning_effort")
+                .is_none_or(Value::is_null)
+        {
+            config.insert("model_reasoning_effort".into(), effort.clone().into());
+        }
+    }
+    let effort = params
+        .get("config")
+        .and_then(|c| c.get("model_reasoning_effort"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
     let string = |key| params.get(key).and_then(Value::as_str).map(str::to_owned);
     ResumeSettings {
         approval: string("approvalPolicy"),
         sandbox: string("sandbox"),
         model: string("model"),
+        effort,
     }
 }
 

@@ -60,7 +60,7 @@ pub(crate) fn policy_tokens(policy_args: &str) -> Vec<String> {
 pub(crate) fn validate_tui_args(args: &[String]) -> Result<(), String> {
     let value_ok = |v: &str| {
         !v.is_empty()
-            && v.len() <= 128
+            && v.len() <= 256
             && v.bytes()
                 .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'/' | b':'))
     };
@@ -71,8 +71,18 @@ pub(crate) fn validate_tui_args(args: &[String]) -> Result<(), String> {
                 let Some(v) = args.get(i + 1) else {
                     return Err(format!("missing value after {}", args[i]));
                 };
-                if !value_ok(v) {
+                if !value_ok(v) || (args[i] == "-m" && !crate::spawn_options::model_ok(v)) {
                     return Err(format!("invalid value for {}", args[i]));
+                }
+                i += 2;
+            }
+            "-c" => {
+                if args
+                    .get(i + 1)
+                    .and_then(|v| crate::spawn_options::effort_config(v))
+                    .is_none()
+                {
+                    return Err("only a valid model_reasoning_effort override is supported".into());
                 }
                 i += 2;
             }
@@ -107,6 +117,7 @@ pub(crate) struct ResumeSettings {
     pub approval: Option<String>,
     pub sandbox: Option<String>,
     pub model: Option<String>,
+    pub effort: Option<String>,
 }
 
 impl ResumeSettings {
@@ -119,6 +130,12 @@ impl ResumeSettings {
                 "-a" => out.approval = it.next().cloned(),
                 "-s" => out.sandbox = it.next().cloned(),
                 "-m" => out.model = it.next().cloned(),
+                "-c" => {
+                    out.effort = it
+                        .next()
+                        .and_then(|v| crate::spawn_options::effort_config(v))
+                        .map(str::to_owned)
+                }
                 "--dangerously-bypass-approvals-and-sandbox" => {
                     out.approval = Some("never".into());
                     out.sandbox = Some("danger-full-access".into());
@@ -140,6 +157,9 @@ impl ResumeSettings {
         }
         if let Some(m) = &self.model {
             p["model"] = m.as_str().into();
+        }
+        if let Some(e) = &self.effort {
+            p["config"] = serde_json::json!({"model_reasoning_effort": e});
         }
         p
     }
@@ -176,6 +196,16 @@ impl ResumeSettings {
                 return Err(format!("the server kept model {got:?}, requested {want}"));
             }
         }
+        if let Some(want) = &self.effort {
+            let got = result
+                .get("reasoningEffort")
+                .and_then(serde_json::Value::as_str);
+            if got != Some(want.as_str()) {
+                return Err(format!(
+                    "the server kept reasoning effort {got:?}, requested {want}"
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -186,7 +216,7 @@ pub(crate) fn resume_tui_args(args: &[String]) -> Vec<String> {
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            "-a" | "-s" | "-m" => {
+            "-a" | "-s" | "-m" | "-c" => {
                 it.next();
             }
             "--dangerously-bypass-approvals-and-sandbox" => {}
@@ -316,3 +346,7 @@ mod tests {
         assert!(with_model(vec![], Some("bad model")).is_empty());
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "spawn_runtime_tests.rs"]
+mod spawn_runtime_tests;

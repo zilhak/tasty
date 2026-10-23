@@ -37,6 +37,7 @@ spawn_thread_failed = "reboot スレッドを起動できませんでした: {de
 no_active_session = "surface {surface} にアクティブな codex セッションがありません (codex-session-id meta 未設定 — tasty hook が導入・信頼されているか確認してください。`tasty codex install` の後 codex の /hooks で承認)"
 
 [codex.params]
+invalid_model_option = "無効な{key}: 空でないモデル識別子または対応する推論レベル(none, minimal, low, medium, high, xhigh, max, ultra)が必要です"
 missing = "必須パラメータ '{key}' がありません"
 missing_target_surface = "必須パラメータ 'surface'(または 'surface_id')がありません"
 not_a_number = "'{key}' の値 {raw} は無効です。符号なし32ビット整数を指定してください。別の対象を選ばないよう、大きすぎる値は切り捨てず拒否します。"
@@ -340,3 +341,9 @@ help = "内部用: 復元時に保持する対話実行オプション"
 
 [codex.cli.sub.session-bind]
 description = "内部用: TUI で選択した会話を登録"
+
+[codex.cli.arg.spawn_args.model]
+help = "この子セッションだけに適用するモデル。利用可否はCodexが判断します"
+
+[codex.cli.arg.spawn_args.effort]
+help = "この子の推論レベル: none|minimal|low|medium|high|xhigh|max|ultra"
