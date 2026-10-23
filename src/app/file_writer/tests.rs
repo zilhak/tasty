@@ -92,3 +92,62 @@ fn dynamic_settings_payload_counts_toward_admission_budget() {
     };
     assert!(large.bytes() > small.bytes() + 99_000);
 }
+
+#[test]
+fn boot_receipt_waits_without_blocking_and_new_window_uses_latest_snapshot() {
+    use crate::app::settings_change::{SettingsOutcome, SettingsPoll, pair};
+    let (entered, received) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let storage = Arc::new(Gated {
+        entered,
+        release: Mutex::new(released),
+    });
+    let parts = start(
+        storage.clone(),
+        Limits::default(),
+        Arc::new(batch_writer::SystemClock),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let mut core = crate::ipc::handler::cli_entry_tests::test_core_builder()
+        .with_settings_storage(storage)
+        .with_file_writer(parts)
+        .build()
+        .unwrap();
+    let (done, mut waiting) = pair(Arc::new(|| {}));
+    let mut final_boot = settings(42);
+    final_boot.general.shell = "/confirmed-shell".into();
+    final_boot.appearance.theme = "latte".into();
+    core.submit_settings_save(final_boot, None, Some(done));
+    assert_eq!(received.recv_timeout(Duration::from_secs(5)).unwrap(), 42);
+    assert!(matches!(waiting.poll(), SettingsPoll::Pending));
+    // The disk has not been replaced; the next window still sees the accepted shell and theme.
+    let snapshot = core.latest_settings().unwrap();
+    assert_eq!(snapshot.general.shell, "/confirmed-shell");
+    assert_eq!(snapshot.appearance.theme, "latte");
+    core.poll_file_writer();
+    assert!(matches!(waiting.poll(), SettingsPoll::Pending));
+    release.send(true).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        crate::intent::headless::settle_settings_saves(&mut core);
+        match waiting.poll() {
+            SettingsPoll::Pending => assert!(Instant::now() < deadline),
+            SettingsPoll::Ready(SettingsOutcome::Applied {
+                saved, settings, ..
+            }) => {
+                assert!(saved.is_ok());
+                assert_eq!(settings.general.shell, "/confirmed-shell");
+                assert_eq!(settings.appearance.theme, "latte");
+                break;
+            }
+            _ => panic!("missing boot save outcome"),
+        }
+        std::thread::yield_now();
+    }
+    assert!(matches!(waiting.poll(), SettingsPoll::Dropped));
+    while core.poll_file_writer_shutdown() != 0 {
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+}

@@ -193,6 +193,12 @@ impl AppServices {
         self.settings_saves.submit(settings, origin, done);
     }
 
+    /// New windows use the latest applied snapshot instead of reloading an older queued file.
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn latest_settings(&self) -> Option<&tasty_settings::Settings> {
+        self.settings_saves.latest()
+    }
+
     /// 끝난 설정 저장을 꺼낸다. 깨우기 확인은 [`Self::poll_file_writer`]가 한다.
     pub(crate) fn take_settled_settings(&mut self) -> Vec<crate::app::file_writer::SettledSave> {
         self.settings_saves.reap()

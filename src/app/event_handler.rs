@@ -649,15 +649,11 @@ impl App {
         window
     }
 
-    /// GPU 초기화 전에 설정값을 정규화하고 바뀐 설정의 저장을 시도한다.
+    /// GPU 초기화 전에 설정값을 정규화한다. 저장은 테마 조정 뒤 같은 writer에 제출한다.
     fn boot_load_normalized_settings() -> crate::settings::Settings {
         let mut settings = crate::settings::Settings::load();
-        let normalize_report = settings.normalize();
-        if normalize_report.changed
-            && let Err(e) = settings.save()
-        {
-            tracing::warn!("failed to persist normalized settings: {e}");
-        }
+        settings.normalize();
+        // begin_boot submits one final snapshot after shell/theme adjustments.
         settings
     }
 
@@ -1013,15 +1009,12 @@ impl App {
     /// 확인한 셸 경로를 설정에 반영하고 이미 보이는 setup 창으로 부팅을 계속한다.
     fn finish_shell_setup_confirmed(&mut self) {
         let mut settings = crate::settings::Settings::load();
-        let normalize_report = settings.normalize();
+        settings.normalize();
         settings.general.shell = self.state.shell_setup_path.clone();
-        self.services
-            .submit_settings_save(settings.clone(), None, None);
         self.state.shell_setup_mode = false;
         let window = self.shell_setup_window.take().unwrap();
         let gpu = self.shell_setup_gpu.take().unwrap();
         self.begin_boot(window, gpu, settings, std::time::Instant::now(), false);
-        drop(normalize_report);
     }
 
     fn handle_shell_setup_window_event(

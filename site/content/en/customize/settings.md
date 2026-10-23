@@ -1,4 +1,4 @@
-<!-- source-hash: 5af6ec951c07 -->
+<!-- source-hash: 029802235956 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -28,6 +28,7 @@ Press the same shortcut again to close the settings window.
 - Settings an agent changes by command while the settings window is open (input rules, remote transfer, accepting webhooks from other computers, and so on) stay as they are when you press **Save**. Saving only writes what you changed in this window. If both sides changed the same item, this window's value wins.
 - If saved settings cannot be applied, an error notice appears and the settings stay as they were. If they were applied on screen but could not be written to `config.toml`, a warning notice appears instead; those changes are lost when Tasty restarts.
 - If another program changes `config.toml` after Tasty reads it, Tasty reports a save failure and preserves that file. Restart Tasty to load the changes made outside the app.
+- Startup corrections and the confirmed shell path are saved together. The loading screen keeps updating while the save completes. During normal use, new windows use the latest settings applied in this run even if a save is still pending.
 - Changes to **Language** take effect after you save and restart Tasty. Performance settings apply to terminals you open after saving; terminals that are already open don't change right away.
 - Numeric entries are **typed**, never dragged. Values are not adjusted while you type; they are brought into the allowed range when you leave the field or press `Enter`. Type something outside the range and the field's border takes the warning colour, with one line under it naming the range and the value that will actually be saved.
 - Whole-number fields widen to show the entire value, and grow with each character as you type. The unit sits after the field. A value in the settings file that is larger than the range is shown as written; it is not changed when it is read.
@@ -310,7 +311,7 @@ new_tab = ["alt+t"]              # the rest is in keybindings.md
 - `[terminal_input]` stores per-app Shift+Enter behavior. Configure it under **Terminal → Input**. For example, a `[[terminal_input.rules]]` entry with `app = "claude"` and `shift_enter_newline = true` sends a newline to Claude Code. `initialized_defaults` records which plugin defaults have been applied and does not need manual editing.
 - `[appearance]` also stores the full set of theme colours (`theme_base`) and the values overridden in the Colors tab (`theme_overrides`). Using the settings window is safer than editing these by hand.
 - Values from plugin settings pages go into a section keyed by the plugin id, such as `[plugin_settings."com.tasty.html"]`.
-- Tasty does not watch this file while running. Hand-edited values are read on the next start, and if you save from the settings window before then, the whole file is rewritten and your hand edits are lost. Quit Tasty before editing the file directly.
+- Tasty does not watch this file while running. Hand-edited values are read on the next start. If a save detects an external change, it refuses to overwrite the file and preserves it. Quit Tasty before editing the file directly.
 
 Only the remote transfer entries can also be read and written from the CLI.
 

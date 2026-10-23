@@ -197,6 +197,12 @@ impl crate::app::App {
             } = settled.reply;
             if let Some(origin) = origin {
                 self.settle_settings(&origin, done, *settings, settled.saved);
+            } else if let Some(done) = done {
+                done.finish(SettingsOutcome::Applied {
+                    changed: true,
+                    saved: settled.saved,
+                    settings,
+                });
             }
         }
     }

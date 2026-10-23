@@ -36,6 +36,7 @@ pub(crate) struct BootResources {
         >,
     >,
     pub(crate) pending_events: Vec<crate::AppEvent>,
+    settings_save: Option<crate::app::settings_change::SettingsWait>,
 }
 
 /// 이미 준비된 창과 GPU로 엔진 생성 오류를 보여 주며 같은 내용을 로그에도 남긴다.
@@ -103,11 +104,15 @@ impl App {
         // 엔진이 슬롯을 읽기 전에 레이아웃 마이그레이션과 전체 슬롯의 scrollback GC를 수행한다.
         crate::core::layout_persistence::migrate_and_gc_on_boot(settings.general.restore_layout);
 
+        let (saved, waiting) = crate::app::settings_change::pair(self.services.reply_wake());
+        self.services
+            .submit_settings_save(settings.clone(), None, Some(saved));
         let mut boot = BootResources {
             window,
             gpu,
             engine_worker: None,
             pending_events: Vec::new(),
+            settings_save: Some(waiting),
         };
         let progress = BootProgress {
             settings,
@@ -132,9 +137,6 @@ impl App {
         let t_db_theme = Instant::now();
         let db_init_error = self.start_state_db();
         let invalid_theme_name = crate::app::window_lifecycle::boot_apply_theme(settings);
-        if let Err(e) = settings.save() {
-            tracing::warn!("failed to persist settings after theme apply: {e}");
-        }
         tracing::info!(
             target: "tasty::boot",
             ms = t_db_theme.elapsed().as_secs_f64() * 1000.0,
@@ -236,6 +238,9 @@ impl App {
     /// 한 단계를 진행하고 부팅 완료 여부를 반환한다.
     fn boot_step(&mut self, boot: &mut BootResources, progress: &mut BootProgress) -> bool {
         if matches!(progress.phase, BootPhase::GpuInit) {
+            if !self.boot_settings_ready(boot) {
+                return false;
+            }
             boot.engine_worker = Some(self.spawn_engine_worker(boot, progress));
             progress.phase = BootPhase::WaitingEngine {
                 started: Instant::now(),
@@ -253,6 +258,27 @@ impl App {
             return self.boot_step_waiting_plugins(boot, progress);
         }
         self.boot_step_restoring_layout(boot, progress)
+    }
+
+    /// Poll the final snapshot without blocking loading frames or starting settings producers.
+    fn boot_settings_ready(&mut self, boot: &mut BootResources) -> bool {
+        self.services.poll_file_writer();
+        self.settle_settings_saves();
+        let Some(waiting) = boot.settings_save.as_mut() else {
+            return true;
+        };
+        match waiting.poll() {
+            crate::app::settings_change::SettingsPoll::Pending => {
+                tracing::debug!(target: "tasty::boot", "boot settings write pending; yielding to loading frame");
+                return false;
+            }
+            crate::app::settings_change::SettingsPoll::Ready(_) => {}
+            crate::app::settings_change::SettingsPoll::Dropped => {
+                tracing::warn!("boot settings save ended without a result");
+            }
+        }
+        boot.settings_save = None;
+        true
     }
 
     fn boot_step_waiting_engine(
@@ -591,6 +617,7 @@ impl App {
             gpu,
             pending_events,
             engine_worker: _,
+            settings_save: _,
         } = boot;
         let BootProgress {
             settings: _,

@@ -558,7 +558,16 @@ impl App {
             );
         }
 
-        let (settings, invalid_theme_name) = boot_load_and_normalize_settings();
+        let settings = self
+            .services
+            .latest_settings()
+            .cloned()
+            .unwrap_or_else(crate::settings::Settings::load);
+        let (settings, invalid_theme_name, changed) = normalize_window_settings(settings);
+        if changed {
+            self.services
+                .submit_settings_save(settings.clone(), None, None);
+        }
         let gpu = match self.create_gpu_state(window.clone(), &settings.appearance) {
             Ok(g) => g,
             Err(e) => {
@@ -667,23 +676,13 @@ impl App {
     }
 }
 
-fn boot_load_and_normalize_settings() -> (crate::settings::Settings, Option<String>) {
-    let mut settings = crate::settings::Settings::load();
-    // 잘못된 설정을 정규화한 값을 저장해 다음 실행에서 같은 안내를 반복하지 않게 한다.
+fn normalize_window_settings(
+    mut settings: crate::settings::Settings,
+) -> (crate::settings::Settings, Option<String>, bool) {
     let normalize_report = settings.normalize();
-    if normalize_report.changed
-        && let Err(e) = settings.save()
-    {
-        tracing::warn!("failed to persist normalized settings: {e}");
-    }
-
     let invalid_theme_name = boot_apply_theme(&mut settings);
-    if (invalid_theme_name.is_some() || normalize_report.changed)
-        && let Err(e) = settings.save()
-    {
-        tracing::warn!("failed to persist settings after theme apply: {e}");
-    }
-    (settings, invalid_theme_name)
+    let changed = invalid_theme_name.is_some() || normalize_report.changed;
+    (settings, invalid_theme_name, changed)
 }
 
 pub(super) fn build_theme_fallback_modal(

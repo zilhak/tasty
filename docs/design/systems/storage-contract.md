@@ -248,7 +248,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 
 | 파일 | 쓰는 함수 | 스레드 | 원자 교체 | 다른 writer |
 |---|---|---|---|---|
-| `config.toml` | `SettingsStorage::save` → `Settings::save` | 실행 중 file writer, 초기 정규화·테마 적용은 부팅 경계 | 예(공용 교체, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 같은 대상 잠금과 원본 변경 관측 |
+| `config.toml` | `SettingsStorage::save` → `Settings::save` | file writer(부팅 정규화·셸 확인·테마 조정 포함) | 예(공용 교체, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 같은 대상 잠금과 원본 변경 관측 |
 | `presets/**.toml` | `PresetStore`의 `atomic_write` | 메인 루프 | 예(fsync 없음) | 없음 |
 | `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 목록 잠금 안에서 저장 | 호출 스레드 | 아니요 | 없음 |
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
@@ -265,7 +265,18 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 
 ### port를 우회하는 직접 호출
 
-- 실행 중 설정 저장은 `AppServices`의 file writer가 주입된 `SettingsStorage`를 호출한다. 부팅 정규화와 테마 초기 적용은 `Settings::save`를 직접 호출하는 동기 예외다.
+- `config.toml` 저장은 부팅·실행 중 모두 `AppServices`의 file writer가 주입된 `SettingsStorage`를 호출한다. 아래 여섯 경로에 동기 저장 예외는 없다. 설정 읽기와 테마 파일 자체의 초기화는 이 설정 writer 범위와 별개다.
+
+| 기존 직접 저장 경로 | 현재 저장 경계와 순서 |
+|---|---|
+| 첫 창 `boot_load_normalized_settings` | 메모리 정규화만 한다. 최종 테마 조정 뒤 한 snapshot으로 제출한다 |
+| 셸 확인 `finish_shell_setup_confirmed` | 확인한 셸을 메모리에 반영하고 부팅에 넘긴다. 테마 조정 전 snapshot을 따로 제출하지 않는다 |
+| 부팅 `init_boot_db_and_theme` | 테마를 적용한 뒤 `begin_boot`가 최종 snapshot을 file writer에 제출한다. 로딩 프레임을 계속 그리며 저장 결과를 받은 뒤 engine/plugin producer를 시작한다. 저장 실패는 로그와 dirty로 남기고 메모리 설정으로 부팅을 계속한다 |
+| 추가 창의 정규화 저장 | 마지막 제출 설정(저장 대기·실패 상태 포함)을 사용해 정규화한다. 디스크의 이전 snapshot으로 대기 변경을 덮지 않는다 |
+| 추가 창의 테마 조정 저장 | 정규화와 테마 조정 결과가 바뀌었으면 같은 writer에 한 번 제출한다. 이벤트 루프는 교체를 기다리지 않는다 |
+| Lua `record_script_hash` | 승인한 설정 snapshot을 같은 writer에 제출한다. 승인 실행 흐름은 파일 교체를 기다리지 않는다 |
+
+부팅 barrier는 파일 잠금이 아니라 최종 snapshot의 receipt를 확인한다. 파일 잠금만으로는 먼저 접수한 snapshot과 나중 동기 저장의 의미 순서를 정할 수 없다. 내부 부팅 저장도 출처가 없어도 receipt 결과를 한 번 돌려주며, 실패한 최신 revision은 종료 재시도 대상이다.
 - 사용되지 않던 `PresetStorage`의 호스트 주입은 없다. 프리셋 저장·삭제·이름 변경은 아직 구체 `PresetStore` 핸들로 동기 실행한다.
 - 테마 초기화는 `ThemeStorage` port 대신 `tasty_themes`의 자유 함수를 직접 부른다.
 - memory.db의 부팅 정비는 port로 감싸기 전 구체 `MemoryStore`를 쓴다.

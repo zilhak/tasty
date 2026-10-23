@@ -203,7 +203,7 @@ pub(crate) fn start(
     })
 }
 
-/// 저장 결과를 받을 쪽. 출처가 없으면(내부 재저장) 결과를 로그로만 남긴다.
+/// 저장 결과를 받을 쪽. 내부 저장은 출처 없이 완료 콜백만 받을 수 있다.
 pub(crate) struct SaveReply {
     pub(crate) origin: Option<IntentOrigin>,
     pub(crate) done: Option<SettingsDone>,
@@ -333,6 +333,12 @@ impl SettingsSaves {
     /// 표시했지만 확정하지 못한 revision이 있으면 `(표시, 확정)`.
     pub(crate) fn unsaved(&self) -> Option<(u64, u64)> {
         (self.visible > self.committed).then_some((self.visible, self.committed))
+    }
+
+    /// Most recently applied/submitted settings, even while its replacement is pending or failed.
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn latest(&self) -> Option<&Settings> {
+        self.latest.as_deref()
     }
 
     /// 결과를 기다리는 저장 수.

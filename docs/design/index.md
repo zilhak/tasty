@@ -30,7 +30,7 @@
 | [webview](systems/webview.md) | OS 자식 창의 API·`Drop`, 부모 핸들·좌표·스레드·수명·탐색·키보드 포커스 관리 |
 | [memory](systems/memory.md) | 에이전트 메모리 `memory.db` 의 가시성·소유권 모델 |
 | [storage](systems/storage.md) | 영속 데이터의 텍스트(TOML/셸) ↔ SQLite 분할, 창 간 공유 최근 목록, 저장 기준선 |
-| [storage-contract](systems/storage-contract.md) | 저장 경로별 접수·commit·표시·실행 시점, memory.db 소비자 계약, 저장 실행기(접수·묶음·예산·flush·종료), writer 명부 |
+| [storage-contract](systems/storage-contract.md) | 저장 경로별 접수·commit·표시·실행 시점, memory.db 소비자 계약, 저장 실행기(접수·묶음·예산·flush·종료), 설정 부팅 barrier와 writer 명부 |
 
 ## 흐름 (flows/)
 

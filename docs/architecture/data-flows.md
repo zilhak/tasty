@@ -137,6 +137,8 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
 새 터미널부터 반영: shell·shell_mode·scrollback (`ShellConfig::from_settings` 가 `runtime_shell` 로 실행 셸을 정하고 그 셸 기준 `shell_args_for` — tasty 모드 --rcfile 주입은 플랫폼별).
 ```
 
+설정의 첫 창 부팅 저장은 정규화·셸 확인·테마 조정을 마친 snapshot 한 건을 같은 file writer에 제출한다. 로딩 프레임을 계속 그리면서 receipt를 거두고 나서 engine/plugin 초기화를 시작한다. 추가 창은 저장 중인 디스크 사본 대신 마지막 제출 설정을 사용하며, 필요한 보정도 같은 큐에 제출한다.
+
 ### 에이전트·plugin 설정 변경 요청의 완료 의미
 
 `settings.set_remote_transfer`, `settings.set_input_rule`·`remove_input_rule`·`initialize_input_rule`, `webhook.config`의 `allow_external`, debug 전용 `debug.settings.apply`는 세 단계를 구분한다.
