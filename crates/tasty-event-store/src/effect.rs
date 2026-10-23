@@ -194,15 +194,7 @@ impl EventStore {
     }
 
     pub fn effect(&self, effect_id: &str) -> StoreResult<Option<EffectRecord>> {
-        let row = self
-            .conn
-            .query_row(
-                &format!("{SELECT_EFFECT} WHERE effect_id = ?1"),
-                [effect_id],
-                read_effect,
-            )
-            .optional()?;
-        row.map(finish_effect).transpose()
+        find_by_id(&self.conn, effect_id)
     }
 
     /// Runtime that committed the obligation. Recovery must reconcile an older owner first.
@@ -622,4 +614,15 @@ fn finish_attempt(raw: RawAttempt) -> StoreResult<AttemptRecord> {
 
 fn parse_state(s: &str) -> StoreResult<EffectState> {
     EffectState::parse(s).ok_or_else(|| StoreError::Corrupt(format!("effect state {s}")))
+}
+
+pub(crate) fn find_by_id(conn: &Connection, effect_id: &str) -> StoreResult<Option<EffectRecord>> {
+    let row = conn
+        .query_row(
+            &format!("{SELECT_EFFECT} WHERE effect_id = ?1"),
+            [effect_id],
+            read_effect,
+        )
+        .optional()?;
+    row.map(finish_effect).transpose()
 }

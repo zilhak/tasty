@@ -55,29 +55,10 @@ pub enum CommitOutcome {
 impl EventStore {
     /// 요청 전체를 한 transaction으로 확정한다. 오류이면 아무것도 남지 않는다.
     pub fn commit(&mut self, request: &CommitRequest) -> StoreResult<CommitOutcome> {
-        let pending_effect_limit = self.admission_budget.max_pending_effects;
-        let journal_id = self.journal_id().to_owned();
-        let tx = self.write_tx(request.writer_epoch)?.structural(1);
-        if let Some(new) = &request.command
-            && let Some(key) = &new.key
-            && let Some(existing) = find_by_key(&tx, key)?
-        {
-            if existing.request_digest != new.request_digest {
-                return Err(StoreError::KeyConflict {
-                    caller_scope: key.caller_scope.clone(),
-                    idempotency_key: key.idempotency_key.clone(),
-                });
-            }
-            return Ok(CommitOutcome::Duplicate(existing));
-        }
-        crate::admission_budget::require_effect_capacity(
-            &tx,
-            request.effects.len(),
-            pending_effect_limit,
-        )?;
-        let batch = write_all(&tx, request, &journal_id)?;
-        tx.commit()?;
-        Ok(CommitOutcome::Committed { batch })
+        let mut group = self.begin_commit_group(request.writer_epoch)?;
+        let outcome = group.append(request)?;
+        group.finish()?;
+        Ok(outcome)
     }
     /// Commit a destination import and its restore source in one transaction. The builder may only
     /// encode the model obtained from this already validated batch; it cannot access this store.
@@ -109,7 +90,7 @@ impl EventStore {
             request.effects.len(),
             pending_effect_limit,
         )?;
-        let batch = write_all(&tx, request, &journal_id)?.ok_or_else(|| {
+        let batch = write_all(&tx, request, &journal_id)?.0.ok_or_else(|| {
             StoreError::Corrupt("restore import has no initial event batch".into())
         })?;
         let stored = crate::read::load_batch(&tx, batch.batch_id)?;
@@ -130,12 +111,12 @@ impl EventStore {
     }
 }
 
-fn write_all(
+pub(crate) fn write_all(
     tx: &Transaction<'_>,
     request: &CommitRequest,
     journal_id: &str,
-) -> StoreResult<Option<BatchCut>> {
-    crate::write_limits::commit(request)?;
+) -> StoreResult<(Option<BatchCut>, usize)> {
+    let bytes = crate::write_limits::commit(request)?.len();
     let command_id = request.command.as_ref().map(|c| c.command_id.as_str());
     if let Some(new) = &request.command {
         command::insert(tx, new)?;
@@ -155,7 +136,7 @@ fn write_all(
     for transition in &request.effect_transitions {
         effect::apply_transition(tx, transition, journal_id, request.writer_epoch)?;
     }
-    Ok(batch)
+    Ok((batch, bytes))
 }
 
 fn append_batch(

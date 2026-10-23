@@ -7,6 +7,25 @@
 데이터 홈 구조 journal의 저장 계약 중 수치·형식·보조 규칙과, App이 그 journal을 원본으로 연결한 현재 상태를 적는다. 저장 형식과 제약의 이유는 아래 각 절에,
 저장소가 제공하는 기능의 개요는 [아키텍처](index.md)의 `tasty-event-store` 문단에 있다. 구현은 `crates/tasty-event-store/src/`다.
 
+### 여러 논리 요청의 물리 transaction 공유
+
+`begin_commit_group`은 기존 writer 잠금·epoch 검사를 거친 Immediate transaction을 연다.
+`CommitGroup::append`는 요청마다 savepoint를 두고 기존 command key/digest 조회, effect 한도,
+쓰기 크기, batch·revision·command·effect·pin 쓰기를 그대로 수행한다. 같은 transaction 안의
+앞 요청도 key 조회와 누적 effect 한도에 포함된다. 각 요청의 command ID·batch cut·최초 응답은
+독립적으로 남으며, 거절된 요청의 부분 쓰기는 그 savepoint까지 되돌린다.
+
+SQLite 오류나 자동 transaction rollback이 발생하면 그룹은 더 쓰거나 확정할 수 없다.
+`finish`의 물리 COMMIT 오류는 자동 재실행하지 않는다. 그룹을 버리면 아직 확정하지 않은
+모든 요청을 되돌린다. 중복 요청만 있는 그룹에는 성공 COMMIT을 추가하지 않는다.
+단건 `commit`도 이 경계를 사용하며, restore import와 checkpoint의 원자 경계는 유지한다.
+
+`fits`는 기존 논리 쓰기 64 MiB 계산으로 내부 그룹을 나눌 시점을 알려 준다. false는 해당
+요청을 거절하라는 뜻이 아니라 현재 그룹을 확정한 뒤 새 그룹에서 처리하라는 뜻이다.
+transaction 안에서 읽은 실제 batch cut은 private staging에만 쓰고, COMMIT 전에는 projection,
+성공 응답, effect claim 또는 외부 실행에 공개하지 않는다. 이 Store API만으로 worker의 요청
+수집이나 batch별 publication ACK가 이루어지지는 않는다.
+
 ## 쓰기 계측
 
 `EventStore::commit_statistics`는 연결을 연 뒤 성공한 실제 SQLite 쓰기 transaction COMMIT을 센다.

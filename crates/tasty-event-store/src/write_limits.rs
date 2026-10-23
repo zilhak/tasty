@@ -18,6 +18,9 @@ pub(crate) fn blob(bytes: &[u8]) -> StoreResult<()> {
 /// This is a bounded logical request, not a bound on SQLite pages, indexes or WAL bytes.
 pub(crate) struct Budget(usize);
 impl Budget {
+    pub(crate) fn len(&self) -> usize {
+        self.0
+    }
     pub(crate) fn new() -> Self {
         Self(0)
     }

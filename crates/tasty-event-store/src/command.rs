@@ -24,13 +24,17 @@ impl EventStore {
 
     /// command_id로 명령을 읽는다.
     pub fn command(&self, command_id: &str) -> StoreResult<Option<CommandRecord>> {
-        let sql = format!("{SELECT_COMMAND} WHERE command_id = ?1");
-        let row = self
-            .conn
-            .query_row(&sql, [command_id], read_row)
-            .optional()?;
-        row.map(|r| finish(&self.conn, r)).transpose()
+        find_by_id(&self.conn, command_id)
     }
+}
+
+pub(crate) fn find_by_id(
+    conn: &Connection,
+    command_id: &str,
+) -> StoreResult<Option<CommandRecord>> {
+    let sql = format!("{SELECT_COMMAND} WHERE command_id = ?1");
+    let row = conn.query_row(&sql, [command_id], read_row).optional()?;
+    row.map(|r| finish(conn, r)).transpose()
 }
 
 pub(crate) fn find_by_key(

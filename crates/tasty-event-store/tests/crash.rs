@@ -476,3 +476,67 @@ fn two_processes_opening_an_empty_file_at_once_leave_a_valid_journal() {
         );
     }
 }
+
+#[test]
+fn abort_before_group_commit_leaves_none_of_the_staged_requests() {
+    const TEST: &str = "abort_before_group_commit_leaves_none_of_the_staged_requests";
+    if let Some(dir) = child_dir(TEST) {
+        let (mut store, epoch) = open_writer(&db_path(&dir));
+        let mut group = store.begin_commit_group(epoch).expect("group");
+        for n in 1..=3 {
+            group.append(&full_request(epoch, n)).expect("stage");
+        }
+        reach_and_abort(&dir, "staged before physical commit");
+    }
+    let dir = tempfile::tempdir().unwrap();
+    run_child_to_abort(TEST, dir.path());
+    integrity_ok(&db_path(dir.path()));
+    let (store, _) = reopen_as_writer(dir.path());
+    assert!(store.read_batches_after(None, 10).unwrap().is_empty());
+    for n in 1..=3 {
+        assert!(store.command(&format!("cmd-{n}")).unwrap().is_none());
+        assert!(store.effect(&format!("fx-{n}")).unwrap().is_none());
+    }
+}
+
+#[test]
+fn abort_after_group_commit_keeps_each_original_batch_response_and_effect() {
+    const TEST: &str = "abort_after_group_commit_keeps_each_original_batch_response_and_effect";
+    if let Some(dir) = child_dir(TEST) {
+        let (mut store, epoch) = open_writer(&db_path(&dir));
+        let before = store.commit_statistics();
+        let mut group = store.begin_commit_group(epoch).expect("group");
+        for n in 1..=3 {
+            group.append(&full_request(epoch, n)).expect("stage");
+        }
+        group.finish().expect("physical commit");
+        assert_eq!(
+            store.commit_statistics().physical_commits - before.physical_commits,
+            1
+        );
+        reach_and_abort(&dir, "three logical batches in one physical commit");
+    }
+    let dir = tempfile::tempdir().unwrap();
+    run_child_to_abort(TEST, dir.path());
+    integrity_ok(&db_path(dir.path()));
+    let (mut store, epoch) = reopen_as_writer(dir.path());
+    let batches = store.read_batches_after(None, 10).unwrap();
+    assert_eq!(batches.len(), 3);
+    for n in 1..=3 {
+        let saved = store.command(&format!("cmd-{n}")).unwrap().unwrap();
+        assert_eq!(saved.response.as_deref(), Some(b"ok".as_slice()));
+        assert_eq!(saved.batch_ids, [batches[n as usize - 1].cut.batch_id]);
+        let effect = store.effect(&format!("fx-{n}")).unwrap().unwrap();
+        assert_eq!(
+            effect.cause_batch_id,
+            Some(batches[n as usize - 1].cut.batch_id)
+        );
+        assert_eq!(effect.state, EffectState::Pending);
+        assert_eq!(effect.attempt, 0);
+        assert!(matches!(
+            store.commit(&full_request(epoch, n)),
+            Ok(CommitOutcome::Duplicate(_))
+        ));
+    }
+    assert_eq!(store.read_batches_after(None, 10).unwrap().len(), 3);
+}

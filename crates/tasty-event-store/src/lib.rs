@@ -25,6 +25,7 @@ mod command;
 mod commit;
 mod effect;
 mod error;
+mod group;
 mod identity;
 mod manifest;
 mod metrics;
@@ -49,6 +50,7 @@ pub use effect::{
     EffectTransition, NewEffect, ObligationClaim,
 };
 pub use error::{StoreError, StoreResult};
+pub use group::CommitGroup;
 pub use identity::IdRange;
 pub use metrics::CommitStatistics;
 pub use projection::{ProjectionState, ProjectionWrite};
