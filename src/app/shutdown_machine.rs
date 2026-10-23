@@ -4,6 +4,9 @@
 //! 종료 중에는 일반 IPC·Intent·플러그인 처리를 멈추고 큐에 쌓인 IPC 요청을 거절한다.
 //! 계측 마커: docs/architecture/shutdown-sequence.md.
 
+#[path = "explorer_shutdown_wait.rs"]
+mod explorer_shutdown_wait;
+
 use std::time::{Duration, Instant};
 
 use winit::event_loop::ActiveEventLoop;
@@ -486,23 +489,12 @@ impl App {
             + self.image_jobs.poll_shutdown()
             + self.local_reads.poll_shutdown()
             + self.dag_reads.poll_shutdown();
-        if remaining != 0
-            && let Some(deadline) = self
-                .state
-                .shutdown
-                .as_ref()
-                .and_then(|s| s.explorer_files_deadline)
-        {
-            if Instant::now() < deadline {
-                return true;
-            }
-            tracing::warn!(
+        if let Some(state) = self.state.shutdown.as_mut() {
+            return explorer_shutdown_wait::keep_waiting(
                 remaining,
-                "View I/O shutdown timed out; worker remains unjoined and accepted file work is not cancelled"
+                &mut state.explorer_files_deadline,
+                Instant::now(),
             );
-            if let Some(state) = self.state.shutdown.as_mut() {
-                state.explorer_files_deadline = None;
-            }
         }
         false
     }
