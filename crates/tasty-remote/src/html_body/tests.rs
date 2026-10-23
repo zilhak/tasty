@@ -29,6 +29,7 @@ fn receiving(id: TransferId, url: &str, bytes: &[u8]) -> HtmlDocument {
             cwd: Some("/server".into()),
             size: bytes.len() as u64,
             regular: true,
+            file: None,
         }
     }));
     if !d.notices.is_empty() {
@@ -279,4 +280,59 @@ fn scan_cancellation_ends_before_publication_and_keeps_source_generation() {
             .unwrap()
             .source_generation
     );
+}
+
+#[test]
+fn nested_routes_preserve_query_fragment_mime_and_reject_unsafe_metadata() {
+    use tasty_ipc::html_transfer::HtmlFileMetadata;
+    let mut d = complete(
+        id(),
+        "file:///server/sub/a%20b.html?q=1#anchor",
+        b"<script>literal</script>",
+    );
+    let metadata = d
+        .resources
+        .get_mut(&id())
+        .unwrap()
+        .metadata
+        .as_mut()
+        .unwrap();
+    metadata.file = Some(HtmlFileMetadata {
+        relative: "sub/a b.html".into(),
+        mime: "text/plain".into(),
+    });
+    let entry = ReceivedEntry::from_complete(id(), &d.resources[&id()])
+        .unwrap()
+        .unwrap();
+    assert!(
+        entry
+            .native_uri()
+            .ends_with("/r3/t4/sub/a%20b.html?q=1#anchor")
+    );
+    assert_eq!(entry.response().mime(), "text/plain");
+    assert_eq!(entry.scan().detection, ScriptDetection::None);
+    for relative in [
+        "../escape.html",
+        "/absolute",
+        "sub//a",
+        "sub/./a",
+        "sub/../a",
+        "a\\b",
+        "a\n",
+    ] {
+        d.resources
+            .get_mut(&id())
+            .unwrap()
+            .metadata
+            .as_mut()
+            .unwrap()
+            .file
+            .as_mut()
+            .unwrap()
+            .relative = relative.into();
+        assert!(
+            ReceivedEntry::from_complete(id(), &d.resources[&id()]).is_err(),
+            "{relative:?}"
+        );
+    }
 }

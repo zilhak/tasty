@@ -177,7 +177,10 @@ impl EngineMut<'_> {
         let key = (client, id);
         if !matches!(
             msg,
-            HtmlRequest::HtmlEntryRequest { .. } | HtmlRequest::HtmlResourceRequest { .. }
+            HtmlRequest::HtmlEntryRequest { .. }
+                | HtmlRequest::HtmlResourceRequest { .. }
+                | HtmlRequest::HtmlFileEntryRequest { .. }
+                | HtmlRequest::HtmlNavigateRequest { .. }
         ) {
             self.remote.html_transfers.command(key, &owner, msg);
             return;
@@ -288,7 +291,7 @@ impl EngineMut<'_> {
             idle_timeout: Duration::from_secs(30),
             lease,
         };
-        let entry_request = matches!(msg, HtmlRequest::HtmlEntryRequest { .. });
+        let entry_request = !matches!(msg, HtmlRequest::HtmlResourceRequest { .. });
         match std::thread::Builder::new()
             .name("html-transfer".into())
             .spawn(move || context.run(source, cwd, rx))
@@ -424,6 +427,7 @@ impl Context {
                         cwd,
                         size: 0,
                         regular: false,
+                        file: None,
                     },
                 });
             }
@@ -433,7 +437,18 @@ impl Context {
             }
             .into());
         };
+        let file_metadata = self.lease.file_metadata(path)?;
         let (entry, source) = self.lease.open(path, source.clone())?;
+        let cwd = if self.lease.nested() {
+            match &source {
+                HtmlSource::File { path, .. } => std::path::Path::new(path)
+                    .parent()
+                    .map(|p| p.to_string_lossy().into_owned()),
+                _ => cwd,
+            }
+        } else {
+            cwd
+        };
         let mut file = &entry.file;
         let size = entry.file.metadata().map_err(|e| e.to_string())?.len();
         if !self.active() {
@@ -449,6 +464,7 @@ impl Context {
                 cwd,
                 size,
                 regular: true,
+                file: Some(file_metadata),
             },
         }) {
             return Ok(());

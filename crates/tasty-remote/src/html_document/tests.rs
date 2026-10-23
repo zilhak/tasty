@@ -23,6 +23,7 @@ fn metadata(id: TransferId, size: u64) -> HtmlReply {
             cwd: Some("/remote".into()),
             size,
             regular: true,
+            file: None,
         },
     }
 }

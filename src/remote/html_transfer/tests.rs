@@ -345,6 +345,7 @@ fn resource_registry_fences_parent_source_binding_and_replacement() {
         entry,
         source_generation: 1,
         relative: "theme.css".into(),
+        query: None,
     };
     assert!(
         roots
@@ -439,4 +440,127 @@ fn resource_registry_fences_parent_source_binding_and_replacement() {
     );
     drop(roots);
     assert!(fresh.cancel.load(Ordering::Acquire));
+}
+
+#[cfg(feature = "gui")]
+#[test]
+fn navigation_retires_old_children_and_reload_reauthorizes_current_root() {
+    let hub = StreamHub::new();
+    let _rx = hub.register(41);
+    let (_state, mut session) = crate::state::tests::test_state();
+    let engine = session.borrow_mut();
+    engine
+        .live
+        .occupancy
+        .acquire_workspace(1, &[], &[], 41)
+        .unwrap();
+    let owner = TransferOwner::capture(&engine.as_ref(), &hub, 41, false).unwrap();
+    let source = Arc::new(Mutex::new(
+        tasty_remote::html_source::HtmlSourceState::default(),
+    ));
+    let mut roots = resources::Roots::default();
+    let first = id();
+    let original = roots
+        .lease(
+            41,
+            first,
+            &HtmlRequest::HtmlEntryRequest { id: first },
+            owner.clone(),
+            Arc::downgrade(&source),
+            1,
+        )
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("index.html");
+    std::fs::write(&path, b"original").unwrap();
+    std::fs::create_dir(dir.path().join("sub")).unwrap();
+    std::fs::write(dir.path().join("sub/next.html"), b"next").unwrap();
+    let typed = tasty_remote::html_source::classify(path.to_str(), None);
+    original
+        .open(path.to_str().unwrap(), typed.clone())
+        .unwrap();
+    let next = TransferId {
+        document: 2,
+        request: 2,
+        transfer: 2,
+        ..first
+    };
+    let request = HtmlRequest::HtmlNavigateRequest {
+        id: next,
+        entry: first,
+        source_generation: 1,
+        relative: "sub/next.html".into(),
+        query: Some("q=1".into()),
+        fragment: Some("anchor".into()),
+    };
+    assert!(
+        roots
+            .lease(
+                41,
+                first,
+                &request,
+                owner.clone(),
+                Arc::downgrade(&source),
+                1
+            )
+            .is_err()
+    );
+    let moved = roots
+        .lease(
+            41,
+            next,
+            &request,
+            owner.clone(),
+            Arc::downgrade(&source),
+            1,
+        )
+        .unwrap();
+    assert!(original.cancel.load(Ordering::Acquire));
+    assert!(
+        original
+            .open(path.to_str().unwrap(), typed.clone())
+            .is_err()
+    );
+    let (file, provenance) = moved.open(path.to_str().unwrap(), typed.clone()).unwrap();
+    assert_eq!(file.file.metadata().unwrap().len(), 4);
+    assert!(
+        matches!(provenance,HtmlSource::File { url,.. } if url.ends_with("/sub/next.html?q=1#anchor"))
+    );
+    let metadata = moved.file_metadata(path.to_str().unwrap()).unwrap();
+    assert_eq!(metadata.relative, "sub/next.html");
+    assert_eq!(metadata.mime, "text/html");
+    assert!(
+        roots
+            .lease(
+                41,
+                next,
+                &request,
+                owner.clone(),
+                Arc::downgrade(&source),
+                1
+            )
+            .is_err()
+    );
+    let replacement = dir.path().join("replacement");
+    std::fs::write(&replacement, b"replaced original").unwrap();
+    std::fs::rename(replacement, &path).unwrap();
+    assert!(!moved.unchanged());
+    let reload = TransferId {
+        document: 3,
+        request: 3,
+        transfer: 3,
+        ..first
+    };
+    let request = HtmlRequest::HtmlFileEntryRequest {
+        id: reload,
+        relative: "sub/next.html".into(),
+        query: None,
+        fragment: None,
+    };
+    let fresh = roots
+        .lease(41, reload, &request, owner, Arc::downgrade(&source), 1)
+        .unwrap();
+    assert!(moved.cancel.load(Ordering::Acquire));
+    assert!(fresh.open(path.to_str().unwrap(), typed).is_ok());
+    assert!(fresh.unchanged());
 }

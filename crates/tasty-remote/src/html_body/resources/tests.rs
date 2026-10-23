@@ -33,6 +33,7 @@ fn entry() -> Arc<ReceivedEntry> {
             cwd: None,
             size: 0,
             regular: true,
+            file: None,
         },
     });
     doc.credit(id).unwrap();

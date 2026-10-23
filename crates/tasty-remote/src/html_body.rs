@@ -122,18 +122,26 @@ impl ReceivedEntry {
                 "entry provenance is not a file URL",
             ));
         }
-        let mime = if source.path().to_ascii_lowercase().ends_with(".svg") {
+        let mime = if let Some(file) = &metadata.file {
+            file.mime.as_str()
+        } else if source.path().to_ascii_lowercase().ends_with(".svg") {
             "image/svg+xml"
         } else {
             "text/html"
         };
-        let scan = scan_reader(
+        let mut scan = scan_reader(
             CancellableBytes {
                 bytes: bytes.as_slice(),
                 cancel,
             },
             SCAN_LIMIT_BYTES,
         )?;
+        if !matches!(
+            mime.split(';').next().unwrap_or("").trim(),
+            "text/html" | "image/svg+xml"
+        ) {
+            scan.detection = tasty_model::html_script::ScriptDetection::None;
+        }
         let response = Arc::new(NativeBodyResponse::new(
             id,
             metadata.source_generation,
@@ -147,7 +155,31 @@ impl ReceivedEntry {
             "{ENTRY_SCHEME}://e{}-s{}-b{}-d{}/r{}/t{}/index.html",
             id.epoch, id.surface_id, id.binding, id.document, id.request, id.transfer
         );
-        if let Some(fragment) = source.fragment() {
+        if let Some(file) = &metadata.file {
+            if file.relative.is_empty()
+                || file.relative.len() > 16 * 1024
+                || file.relative.contains('\\')
+                || file.relative.chars().any(char::is_control)
+                || file
+                    .relative
+                    .split('/')
+                    .any(|part| part.is_empty() || matches!(part, "." | ".."))
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unsafe remote entry route",
+                ));
+            }
+            let mut route = Url::parse(&uri).map_err(io::Error::other)?;
+            route
+                .path_segments_mut()
+                .map_err(|_| io::Error::other("entry route is not hierarchical"))?
+                .pop()
+                .extend(file.relative.split('/'));
+            route.set_query(source.query());
+            route.set_fragment(source.fragment());
+            uri = route.into();
+        } else if let Some(fragment) = source.fragment() {
             uri.push('#');
             uri.push_str(fragment);
         }

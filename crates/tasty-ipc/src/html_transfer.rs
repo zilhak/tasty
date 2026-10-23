@@ -35,6 +35,11 @@ pub struct TransferId {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HtmlFileMetadata {
+    pub relative: String,
+    pub mime: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HtmlMetadata {
     pub source: HtmlSource,
     pub source_generation: u64,
@@ -42,6 +47,8 @@ pub struct HtmlMetadata {
     pub cwd: Option<String>,
     pub size: u64,
     pub regular: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<HtmlFileMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +66,28 @@ pub enum HtmlRequest {
         entry: TransferId,
         source_generation: u64,
         relative: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        query: Option<String>,
+    },
+    /// Reload a nested entry through fresh authorization of the current server source.
+    HtmlFileEntryRequest {
+        id: TransferId,
+        relative: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        query: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fragment: Option<String>,
+    },
+    /// Navigate inside the same originally authorized root, retiring the old document.
+    HtmlNavigateRequest {
+        id: TransferId,
+        entry: TransferId,
+        source_generation: u64,
+        relative: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        query: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fragment: Option<String>,
     },
     /// One reply window per credit. Offset is the exact next raw byte offset.
     HtmlRead {
@@ -76,6 +105,8 @@ impl HtmlRequest {
             Self::HtmlCapabilities { .. } => None,
             Self::HtmlEntryRequest { id }
             | Self::HtmlResourceRequest { id, .. }
+            | Self::HtmlFileEntryRequest { id, .. }
+            | Self::HtmlNavigateRequest { id, .. }
             | Self::HtmlRead { id, .. }
             | Self::HtmlCancel { id } => Some(*id),
         }
@@ -129,6 +160,11 @@ impl HtmlReply {
                 source
                     .saturating_add(metadata.root.as_ref().map_or(0, String::capacity))
                     .saturating_add(metadata.cwd.as_ref().map_or(0, String::capacity))
+                    .saturating_add(metadata.file.as_ref().map_or(0, |file| {
+                        file.relative
+                            .capacity()
+                            .saturating_add(file.mime.capacity())
+                    }))
             }
             Self::HtmlChunk { data_b64, .. } => data_b64.capacity(),
             Self::HtmlFailure { reason, .. } => reason.capacity(),
@@ -173,5 +209,40 @@ mod tests {
             .is_err()
         );
         assert_eq!(crate::stream::STREAM_PROTO, 1);
+    }
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+    #[test]
+    fn old_metadata_and_resource_requests_default_new_fields() {
+        let metadata: HtmlMetadata = serde_json::from_str(r#"{"source":{"kind":"file","path":"/r/a.html"},"source_generation":1,"root":"/r","cwd":"/r","size":3,"regular":true}"#).unwrap();
+        assert_eq!(metadata.file, None);
+        let id = TransferId {
+            epoch: 1,
+            surface_id: 2,
+            binding: 3,
+            document: 4,
+            request: 5,
+            transfer: 6,
+        };
+        let value = serde_json::json!({"event":"html_resource_request","id":id,"entry":id,"source_generation":1,"relative":"a.css"});
+        assert!(matches!(
+            serde_json::from_value::<HtmlRequest>(value).unwrap(),
+            HtmlRequest::HtmlResourceRequest { query: None, .. }
+        ));
+        let reply = HtmlReply::HtmlMetadata {
+            id,
+            metadata: HtmlMetadata {
+                file: Some(HtmlFileMetadata {
+                    relative: "\"".repeat(MAX_FRAME_LEN as usize),
+                    mime: "text/html".into(),
+                }),
+                ..metadata
+            },
+        };
+        assert!(reply.retained_bytes() >= MAX_FRAME_LEN as usize);
+        assert!(reply.frame().is_err());
     }
 }

@@ -278,6 +278,7 @@ fn html_resource_wire_keeps_original_root_generation_and_bounded_credit() {
             entry,
             source_generation: generation,
             relative: "large.bin".into(),
+            query: None,
         },
     );
     assert_eq!(
@@ -310,6 +311,7 @@ fn html_resource_wire_keeps_original_root_generation_and_bounded_credit() {
             entry,
             source_generation: generation,
             relative: "large.bin".into(),
+            query: None,
         },
     );
     event(&mut stream, "html_metadata");
@@ -360,6 +362,7 @@ fn html_resource_wire_keeps_original_root_generation_and_bounded_credit() {
                 entry,
                 source_generation: generation,
                 relative: relative.into(),
+                query: None,
             },
         );
         event(&mut stream, "html_failure");
@@ -376,6 +379,7 @@ fn html_resource_wire_keeps_original_root_generation_and_bounded_credit() {
             entry,
             source_generation: generation + 1,
             relative: "large.bin".into(),
+            query: None,
         },
     );
     assert!(
@@ -397,6 +401,7 @@ fn html_resource_wire_keeps_original_root_generation_and_bounded_credit() {
             entry,
             source_generation: generation,
             relative: "large.bin".into(),
+            query: None,
         },
     );
     assert!(
@@ -405,4 +410,131 @@ fn html_resource_wire_keeps_original_root_generation_and_bounded_credit() {
             .unwrap()
             .contains("root")
     );
+}
+
+#[test]
+fn html_nested_navigation_and_fresh_reload_preserve_root_and_provenance() {
+    let server = server();
+    let dir = tempfile::tempdir().unwrap();
+    let index = dir.path().join("index.html");
+    std::fs::write(&index, b"entry").unwrap();
+    std::fs::create_dir(dir.path().join("sub")).unwrap();
+    let body = b"<title>NESTED</title>";
+    std::fs::write(dir.path().join("sub/next.html"), body).unwrap();
+    let ws = server.create_workspace("html-nested-navigation");
+    let sid = open(server, ws.id, index.to_str().unwrap());
+    let (mut stream, entry) = attach(server, ws.id, sid);
+    request(&mut stream, HtmlRequest::HtmlEntryRequest { id: entry });
+    let metadata = event(&mut stream, "html_metadata");
+    let generation = metadata["metadata"]["source_generation"].as_u64().unwrap();
+    request(
+        &mut stream,
+        HtmlRequest::HtmlRead {
+            id: entry,
+            offset: 0,
+            allow: false,
+        },
+    );
+    event(&mut stream, "html_chunk");
+    event(&mut stream, "html_complete");
+    let moved = TransferId {
+        document: entry.document + 1,
+        request: 2,
+        transfer: 2,
+        ..entry
+    };
+    request(
+        &mut stream,
+        HtmlRequest::HtmlNavigateRequest {
+            id: moved,
+            entry,
+            source_generation: generation,
+            relative: "sub/next.html".into(),
+            query: Some("q=1".into()),
+            fragment: Some("anchor".into()),
+        },
+    );
+    let metadata = event(&mut stream, "html_metadata");
+    assert_eq!(metadata["metadata"]["file"]["mime"], "text/html");
+    assert_eq!(metadata["metadata"]["file"]["relative"], "sub/next.html");
+    assert_eq!(
+        metadata["metadata"]["cwd"],
+        dir.path().join("sub").to_str().unwrap()
+    );
+    assert!(
+        metadata["metadata"]["source"]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("/sub/next.html?q=1#anchor")
+    );
+    request(
+        &mut stream,
+        HtmlRequest::HtmlRead {
+            id: moved,
+            offset: 0,
+            allow: false,
+        },
+    );
+    let chunk = event(&mut stream, "html_chunk");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(chunk["data_b64"].as_str().unwrap())
+            .unwrap(),
+        body
+    );
+    event(&mut stream, "html_complete");
+    let stale = TransferId {
+        request: 3,
+        transfer: 3,
+        ..entry
+    };
+    request(
+        &mut stream,
+        HtmlRequest::HtmlResourceRequest {
+            id: stale,
+            entry,
+            source_generation: generation,
+            relative: "sub/next.html".into(),
+            query: None,
+        },
+    );
+    event(&mut stream, "html_failure");
+    let replacement = dir.path().join("replacement");
+    std::fs::write(&replacement, b"new original").unwrap();
+    std::fs::rename(replacement, &index).unwrap();
+    let reload = TransferId {
+        document: moved.document + 1,
+        request: 4,
+        transfer: 4,
+        ..entry
+    };
+    request(
+        &mut stream,
+        HtmlRequest::HtmlFileEntryRequest {
+            id: reload,
+            relative: "sub/next.html".into(),
+            query: None,
+            fragment: None,
+        },
+    );
+    assert_eq!(
+        event(&mut stream, "html_metadata")["metadata"]["size"],
+        body.len()
+    );
+    request(
+        &mut stream,
+        HtmlRequest::HtmlRead {
+            id: reload,
+            offset: 0,
+            allow: false,
+        },
+    );
+    let chunk = event(&mut stream, "html_chunk");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(chunk["data_b64"].as_str().unwrap())
+            .unwrap(),
+        body
+    );
+    event(&mut stream, "html_complete");
 }

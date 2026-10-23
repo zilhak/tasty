@@ -30,6 +30,10 @@ Unix는 `/`부터 각 root component를 directory handle의 `openat`·`O_NOFOLLO
 
 각 credit 전후에 handle의 크기·시각·파일 identity와 현재 source 경로를 다시 확인한다. rename 교체나 제자리 변경이 감지되면 기존 크기 승인을 재사용하지 않고 실패시킨다. Unix ctime도 비교한다. 파일시스템이 identity·모든 시각을 보존한 비정상 변경까지 내용 snapshot으로 고정하는 계약은 아니다. 완료 전에는 client가 받은 prefix를 렌더 본문으로 제공하지 않는다.
 
+metadata의 선택적 `file`은 원 인가 root 상대 경로와 MIME을 전달한다. 생략한 구 서버 metadata도 entry viewer가 해석한다. native 경로에는 이 상대 경로를 component별로 encode하고 source query·fragment를 보존하며 서버 절대 경로는 포함하지 않는다. 비 HTML/SVG 응답은 script 감지 대상으로 취급하지 않는다.
+
+`html_navigate_request`는 원 entry identity·source generation과 같은 epoch/surface/binding, 더 큰 document generation을 요구한다. 원 root handle을 유지한 채 이전 문서와 하위 worker를 취소한다. `html_file_entry_request`는 현재 서버 source를 새로 인가하여 root 상대 문서를 다시 연다. 이 요청은 하위 문서 Reload용이며 client 경로를 읽는 명령이 아니다. query·fragment는 경로 open에 사용하지 않고 provenance에만 보존한다. 현재 native viewer는 이 문서 전환 채널을 아직 사용하지 않는다.
+
 ## client 문서 모델
 
 `tasty-remote::html_document`는 session epoch, remote surface, local binding, document generation, request, transfer를 각각 비교한다. 생성하지 않은 요청이나 다른 identity의 늦은 응답은 버린다. 중복·누락·범위 초과 chunk와 크기가 다른 complete는 해당 resource를 실패시키고 본문을 지운다. reader queue의 retained bytes에도 HTML 문자열을 포함한다.
