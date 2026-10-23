@@ -177,6 +177,14 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 
 외부 수신 허용은 설정 윈도우의 저장·취소 흐름을 따르도록 config.toml에, 포트는 인스턴스 없이도 고칠 수 있도록 웹훅 파일에 둔다.
 
+실행 중 `webhook.config`의 port 조회·저장·삭제는 같은 파일 writer의 ordered command로 처리한다.
+조회에서 필요한 옛 형식 마이그레이션도 worker 안에서 끝낸 뒤 원 호출자에게 한 번 응답한다.
+메인 루프는 파일 잠금을 기다리지 않으며 `allow_external`은 기존 설정 snapshot 완료 경계를 쓴다.
+포트 저장 오류는 `saved:false`, 결과를 잃은 경우는 `saved:null/outcome_unknown:true`로 구분하고
+명령을 재실행하지 않는다. 실행 중 리스너 주소는 바꾸지 않는다. 조회 성공은 저장 성공 표시가
+아니며, 읽기·마이그레이션 실패 시 backend의 기존 경고와 메모리 해석 규칙을 따른다.
+등록·해제·Count/Time 영속화는 별도의 registry 경로다.
+
 ### 포트 기록 (`RuntimePorts`)
 
 이 인스턴스가 bind에 성공한 IPC 포트와 웹훅 포트를 `src/runtime_ports.rs`의 `RuntimePorts`가 한 번씩 기록한다. 포트가 필요한 곳(웹훅 URL, `webhook.config` 조회, 자기 자신 attach 거절, 인스턴스 파일)은 여기서 읽는다.

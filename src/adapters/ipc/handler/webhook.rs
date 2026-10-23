@@ -6,6 +6,8 @@
 //! 플러그인은 Network 권한으로 자기 핸들러만 등록할 수 있다. Local 권한으로 실행되는
 //! 인라인 시퀀스를 임의 등록하면 권한을 우회할 수 있으므로 플러그인에는 허용하지 않는다.
 
+mod port;
+
 use super::params::{self, p_try};
 use serde_json::json;
 
@@ -316,35 +318,20 @@ pub fn handle_config(
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     let port = p_try!(params::opt_int::<u16>(params, "port", &id));
-    let saved = match (port, unset) {
+    let operation = match (port, unset) {
         (Some(_), true) => {
             return JsonRpcResponse::invalid_params(id, "'port' and 'unset_port' are exclusive");
         }
         (Some(0), false) => {
             return JsonRpcResponse::invalid_params(id, "'port' must be in range 1..=65535");
         }
-        (Some(port), false) => webhook::config::set_port(port).map(|()| Some(port)),
-        (None, true) => webhook::config::clear_port().map(|()| None),
-        (None, false) => {
-            return JsonRpcResponse::success(
-                id,
-                listener_status(&core.ports, engine.settings.webhook.allow_external),
-            );
-        }
+        (Some(port), false) => port::Operation::Set(port),
+        (None, true) => port::Operation::Clear,
+        (None, false) => port::Operation::Read,
     };
-    match saved {
-        Ok(saved_port) => JsonRpcResponse::success(
-            id,
-            json!({
-                "saved_port": saved_port,
-                "applies_from": "next_start",
-                "restart_required": core.ports.webhook_port() != saved_port,
-            }),
-        ),
-        Err(e) => {
-            JsonRpcResponse::internal_error(id, format!("failed to persist webhook port: {e}"))
-        }
-    }
+    let status = matches!(operation, port::Operation::Read)
+        .then(|| listener_status(&core.ports, engine.settings.webhook.allow_external));
+    port::request(core, id, operation, status)
 }
 
 /// 실행 중인 리스너의 상태. 파일에 저장한 값은 다음 실행에 쓸 값이라 따로 적는다.
@@ -360,7 +347,6 @@ fn listener_status(
         "bound": bound.is_some(),
         "source": bound.map(|b| b.source),
         "explicit": bound.is_some_and(|b| b.source.is_explicit()),
-        "saved_port": webhook::config::read_port(),
         "unavailable": ports.webhook_failure().map(|f| json!({
             "port": f.addr.port(),
             "source": f.source,

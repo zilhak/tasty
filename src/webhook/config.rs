@@ -19,11 +19,13 @@ pub fn read_port() -> Option<u16> {
 }
 
 /// port를 저장한다. 리스너에는 다음 실행부터 적용된다.
+#[cfg(test)]
 pub fn set_port(port: u16) -> std::io::Result<()> {
     file::set_port(&config_path(), port)
 }
 
 /// 저장한 port를 지운다.
+#[cfg(test)]
 pub fn clear_port() -> std::io::Result<()> {
     file::clear_port(&config_path())
 }

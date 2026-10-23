@@ -305,7 +305,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
 | `tasty.port` | `publish_port_file_to` 완료 결과를 listener가 소유 | IPC 시작 완료 barrier | 예(공용 안전 교체, fsync 없음) | notify 정리 → 관측 원본/링크 비교·참여 잠금 → 완료 공개. 서버 Drop은 같은 잠금을 비차단 획득한 동안 열린 파일 identity·내용이 같은 공개 세대만 정리. 경합/identity 불명은 보존 |
 | 단일 실행 instance 파일 | `instance_file` | 메인 루프 | 예(sync 포함) | GUI만 쓴다 |
-| `webhooks.toml` | 호스트 `webhook::persist::WriteRequest`, CLI `webhook_port_file` | 현재 host 호출 스레드·CLI에서 동기 실행 | 예(공용 교체, fsync 없음) | host 배열 교체·CLI port 변경·옛 포트 마이그레이션이 같은 참여자 잠금 안에서 최신 TOML을 읽고 해당 절만 변경 |
+| `webhooks.toml` | 호스트 `webhook::persist::WriteRequest`, CLI `webhook_port_file` | runtime port는 file writer, registry는 호출 스레드, CLI·초기 prepare는 동기 실행 | 예(공용 교체, fsync 없음) | host 배열 교체·CLI port 변경·옛 포트 마이그레이션이 같은 참여자 잠금 안에서 최신 TOML을 읽고 해당 절만 변경 |
 | `remote-profiles.toml` | CLI는 `RemoteFileStore::profile`, 기존 host 소비자는 `RemoteProfiles::save` | CLI는 호출 스레드, 기존 IPC·탐지는 메인 루프 | CLI는 예(공용 교체·sync), 기존 save는 아니요 | 명령 API는 최신 TOML을 참여 잠금 안에서 patch한다. 기존 save 호출자는 참여하지 않는다 |
 | `passkeys.toml`과 `passkeys/<이름>` | CLI는 `RemoteFileStore::passkey`, 기존 host 목록은 `Passkeys::save`; inline 파일은 `materialize_inline_in` | CLI는 호출 스레드, 기존 IPC는 메인 루프 | CLI 목록은 공용 교체·sync, 기존 save는 직접 쓰기. inline은 Unix 0600·Windows 보호 ACL을 payload 전에 적용한 임시 파일을 sync 후 rename | CLI 명령은 목록 참여 잠금 사용. inline 파일 자체도 참여 잠금 사용. 파일 사이 transaction은 없고 부분 성공·관리파일 정리는 owned 결과로 구분한다 |
 | `plugins.toml` | 플러그인 등록 상태 저장 | 메인 루프, GUI boot worker(내장 플러그인 설치) | 아니요 | 없음 |
@@ -322,6 +322,9 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 새 파일은 Unix 0600이고 기존 파일의 native 권한·소유권을 보존한다. TOML 주석·공백의 바이트
 보존은 보장하지 않는다. parse 오류에는 원문을 넣지 않는다.
 
+실행 중 port 조회·변경은 기존 ordered file command로 접수하고 receipt 뒤 원 응답을 확정한다.
+조회의 옛 형식 migration도 worker에서 처리한다. 부팅 prepare는 소켓 선점 입력이므로
+리스너 시작 전에 포트 읽기·migration을 마치는 동기 barrier다.
 backend 결과가 돌아오면 파일 잠금은 이미 풀려 있다. 현재 registry의 저장 호출은 여전히
 호출 스레드에서 동기 실행하며, 소유 요청이 있다는 사실이 메인 루프 비차단이나 registry
 잠금 밖 I/O·비동기 rollback 완료를 뜻하지 않는다. standalone CLI는 이 결과까지 동기로
