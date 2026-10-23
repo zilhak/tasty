@@ -98,3 +98,5 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 DAG 화면의 읽기 요청과 App 워커 소유 경계는 [Model + Host View 분리](model-view-split.md)에 설명한다.
 
 - [HTML entry 전송](html-transfer.md) — source 메타데이터, opt-in 협상, 같은 root의 파일 worker, native 응답 대기와 문서 세대.
+
+- [HTTP transport bridge](html-http-bridge.md) — bounded encoded HTTP wire and host integration contracts.
