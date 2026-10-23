@@ -201,7 +201,7 @@ pub(super) fn measure(
 ) -> std::io::Result<()> {
     let attempt = begin(kind, bytes);
     let result = work();
-    attempt.finish(result.as_ref().map(|()| ()).map_err(std::io::Error::kind));
+    attempt.finish(result.as_ref().copied().map_err(std::io::Error::kind));
     result
 }
 
