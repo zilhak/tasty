@@ -497,10 +497,14 @@ impl ExplorerView {
 
     /// 보이는 엔트리를 모두 선택. 앵커는 마지막 엔트리로 둔다. Find 로 숨긴 항목은 고르지 않는다.
     pub fn select_all(&mut self) {
-        let shown = self.shown_entries();
-        self.selection_identity = std::sync::Arc::new(());
-        self.selected = shown.iter().map(|e| e.path.clone()).collect();
-        self.anchor = shown.last().map(|e| e.path.clone());
+        let mut selected = HashSet::with_capacity(self.shown_count());
+        let mut last = None;
+        for entry in self.shown() {
+            selected.insert(entry.path.clone());
+            last = Some(&entry.path);
+        }
+        let anchor = last.cloned();
+        self.replace_selection(selected, anchor);
     }
 
     /// 선택된 경로를 (정렬·개행 결합) 텍스트로. 선택이 없으면 None.
@@ -634,6 +638,9 @@ impl ExplorerView {
             .unwrap_or(true);
         let refresh = self.reload_requested;
         self.reload_requested = false;
+        if !refresh && self.loaded.as_ref() == Some(&key) && self.state == LoadState::Ok {
+            return;
+        }
 
         // 응답 대기가 제한 시간을 넘으면 조회 오류로 표시한다.
         if let Some(RemoteLoadState::Loading { sent_at, .. }) = self.remote_state.get(dir)

@@ -575,7 +575,7 @@ pub(super) fn bar(ui: &mut egui::Ui, theme: &Theme, view: &mut ExplorerView, rem
     let total = view.entries.len();
     tracing::trace!(target: "tasty::explorer::perf", tab = view.tab_salt(),
         entries = total, shown, selected = view.selected.len(), thumbnails = view.thumbs.cached(),
-        searching = view.search_running_for_perf(), "explorer_state");
+        searching = view.search_running_for_perf(), find_open = view.find.is_some(), "explorer_state");
     // 입력 칸의 egui 상태(포커스·커서)를 내부 탭마다 따로 둔다.
     let salt = ("explorer_find", view.tab_salt());
     let Some(find) = view.find.as_mut() else {

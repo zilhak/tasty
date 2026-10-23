@@ -1,6 +1,8 @@
-//! 경로순으로 정렬한 표시 번호를 재사용해 스크롤 대상의 전체 순회를 없앤다.
+//! 경로를 해시한 슬롯에 표시 번호만 보관해 경로 복제와 비교 정렬을 피한다.
 
 use std::cell::RefCell;
+use std::collections::hash_map::RandomState;
+use std::hash::BuildHasher;
 use std::path::Path;
 
 use super::ExplorerView;
@@ -8,8 +10,9 @@ use super::ExplorerView;
 #[derive(Default)]
 pub(crate) struct PathIndex {
     key: Option<(u64, usize, usize, String)>,
-    /// 경로순 표시 번호. 경로 문자열은 복제하지 않는다.
-    sorted: Vec<usize>,
+    /// 빈 슬롯은 usize::MAX. 충돌은 다음 슬롯으로 넘기며 실제 경로를 비교해 조회한다.
+    slots: Vec<usize>,
+    hash: RandomState,
     #[cfg(test)]
     rebuilds: usize,
 }
@@ -17,7 +20,7 @@ pub(crate) struct PathIndex {
 impl PathIndex {
     pub(crate) fn clear(&mut self) {
         self.key = None;
-        self.sorted.clear();
+        self.slots.clear();
     }
 }
 
@@ -45,20 +48,31 @@ impl ExplorerView {
             {
                 index.rebuilds += 1;
             }
-            index.sorted = (0..count).collect();
-            index.sorted.sort_unstable_by(|&a, &b| {
-                self.shown_at(a)
-                    .unwrap()
-                    .path
-                    .cmp(&self.shown_at(b).unwrap().path)
-            });
+            // 절반 이하의 점유율로 선형 탐사 길이를 제한한다. 원본 경로는 빌리기만 한다.
+            let capacity = count.saturating_mul(2).max(1).next_power_of_two();
+            index.slots = vec![usize::MAX; capacity];
+            let mask = capacity - 1;
+            for (i, entry) in self.shown().enumerate() {
+                let mut at = index.hash.hash_one(&entry.path) as usize & mask;
+                while index.slots[at] != usize::MAX {
+                    at = (at + 1) & mask;
+                }
+                index.slots[at] = i;
+            }
             index.key = Some((self.entries_gen, source, count, query.to_owned()));
         }
-        index
-            .sorted
-            .binary_search_by(|&i| self.shown_at(i).unwrap().path.as_path().cmp(path))
-            .ok()
-            .map(|i| index.sorted[i])
+        let mask = index.slots.len() - 1;
+        let mut at = index.hash.hash_one(path) as usize & mask;
+        loop {
+            let i = index.slots[at];
+            if i == usize::MAX {
+                return None;
+            }
+            if self.shown_at(i).unwrap().path == path {
+                return Some(i);
+            }
+            at = (at + 1) & mask;
+        }
     }
 }
 
@@ -109,6 +123,7 @@ mod tests {
         view.refresh_filter();
         assert_eq!(view.shown_position(&entry(8).path), Some(0));
         assert_eq!(view.shown_position(&entry(9).path), None);
+        let rebuilds_before_switch = view.path_index.borrow().rebuilds;
         panel.add_tab();
         view.sync(&panel, None);
         view.set_entries((0..10).rev().map(entry).collect());
@@ -117,5 +132,47 @@ mod tests {
         view.sync(&panel, None);
         assert_eq!(view.shown_position(&entry(8).path), Some(0));
         assert_eq!(view.shown_position(&entry(9).path), None);
+        assert_eq!(view.path_index.borrow().rebuilds, rebuilds_before_switch);
+    }
+
+    #[test]
+    fn hash_collisions_compare_real_paths_and_probe_to_the_first_empty_slot() {
+        let mut view = ExplorerView::new();
+        let colliding: Vec<_> = (0..1000)
+            .map(entry)
+            .filter(|e| view.path_index.borrow().hash.hash_one(&e.path) & 7 == 0)
+            .take(5)
+            .collect();
+        assert_eq!(colliding.len(), 5);
+        view.set_entries(colliding[..4].to_vec());
+        for (i, entry) in colliding[..4].iter().enumerate() {
+            assert_eq!(view.shown_position(&entry.path), Some(i));
+        }
+        assert_eq!(view.shown_position(&colliding[4].path), None);
+    }
+
+    #[test]
+    fn a_loaded_remote_sync_preserves_generation_and_index_until_sort_changes() {
+        use tasty_model::SortDir;
+        let mut panel = ExplorerPanel::new(1, "/index".into());
+        let mut view = ExplorerView::new();
+        view.sync(&panel, Some(42));
+        let id = view.outbox[0].request_id;
+        assert!(view.apply_remote_list_dir_result(id, &panel, Ok((0..10).map(entry).collect())));
+        assert_eq!(view.shown_position(&entry(9).path), Some(9));
+        let generation = view.entries_gen;
+        let address = view.entries.as_ptr();
+        for _ in 0..20 {
+            view.sync(&panel, Some(42));
+            assert_eq!(view.entries_gen, generation);
+            assert_eq!(view.entries.as_ptr(), address);
+            assert_eq!(view.shown_position(&entry(9).path), Some(9));
+        }
+        assert_eq!(view.path_index.borrow().rebuilds, 1);
+        panel.active_tab_mut().sort_dir = SortDir::Desc;
+        view.sync(&panel, Some(42));
+        assert_ne!(view.entries_gen, generation);
+        assert_eq!(view.shown_position(&entry(9).path), Some(0));
+        assert_eq!(view.path_index.borrow().rebuilds, 2);
     }
 }
