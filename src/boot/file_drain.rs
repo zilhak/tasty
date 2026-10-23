@@ -22,7 +22,7 @@ pub(super) fn drain_engine(app: &mut App, session: &mut EngineSession, drain: Wr
 pub(super) fn drain_with(app: &mut App, drain: WriterDrain) {
     drain_with_engine_poll(app, drain, || {});
 }
-fn collect(app: &mut App, poll_engine: &mut impl FnMut()) {
+pub(super) fn collect(app: &mut App, poll_engine: &mut impl FnMut()) {
     app.services.poll_file_writer();
     poll_engine();
     app.finish_preset_files();
@@ -162,3 +162,6 @@ mod plugin_file_shutdown_tests {
         cases::active_unknown_and_queued_refusal(make_headless, super::drain_with);
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+pub(super) mod composition_tests;

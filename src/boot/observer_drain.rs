@@ -15,12 +15,9 @@ pub(super) fn drain(
             tracing::info!(target: "tasty::shutdown", pending = progress.pending, "observer_sink_wait_started");
         }
         app.services.poll_memory_writer();
-        app.services.poll_file_writer();
-        session.borrow_mut().poll_child_registry_effects();
-        app.finish_plugin_files();
-        crate::intent::headless::settle_settings_saves(&mut app.services);
-        app.services
-            .poll_memory_replies(app.plugin_manager.as_mut());
+        super::file_drain::collect(app, &mut || {
+            session.borrow_mut().poll_child_registry_effects()
+        });
         if let Some(ipc) = app.hub.ipc_server.as_ref() {
             while let Ok(command) = ipc.try_recv() {
                 let id = command
@@ -48,5 +45,34 @@ pub(super) fn drain(
             return;
         }
         std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use crate::app::preset_shutdown_tests::{make_headless, run_case};
+
+    #[test]
+    fn observer_drain_collects_original_preset_reply_before_return() {
+        run_case(
+            make_headless,
+            |app| {
+                let mut session = crate::boot::file_drain::composition_tests::engine(app);
+                super::drain(app, &mut session);
+            },
+            false,
+        );
+    }
+
+    #[test]
+    fn observer_drain_collects_ready_preset_reply_with_later_file_work() {
+        run_case(
+            make_headless,
+            |app| {
+                let mut session = crate::boot::file_drain::composition_tests::engine(app);
+                super::drain(app, &mut session);
+            },
+            true,
+        );
     }
 }

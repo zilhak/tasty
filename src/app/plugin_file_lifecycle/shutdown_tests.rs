@@ -355,3 +355,151 @@ pub(crate) fn retirement_has_an_independent_poll_wake(make: impl FnOnce() -> App
     assert!(app.plugin_file_poll_deadline().is_none());
     cleanup(&mut app);
 }
+
+pub(crate) fn mixed_child_webhook_and_plugin_pipeline(
+    make: impl FnOnce() -> App,
+    drain: impl FnOnce(&mut App, crate::runtime::engine_session::EngineSession),
+) {
+    use crate::runtime::child_terminal::ParentKey;
+    use crate::webhook::lifetime::{Lifetime, Limit, Persistence};
+    let _home = crate::test_support::IsolatedHome::new();
+    let mut app = make();
+    app.services.registries.child_terminals.wait_bootstrap();
+    let mut engine = shared_engine(&app);
+    let parent = ParentKey::External("owned-composition".into());
+    engine
+        .live
+        .occupancy
+        .acquire_soft(313, parent.clone(), None)
+        .unwrap();
+    let queue = app.services.file_command_queue().unwrap();
+    let (entered, started) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    let held = command::submit(
+        Some(&queue),
+        1,
+        move || {
+            entered.send(()).unwrap();
+            gate.recv_timeout(Duration::from_secs(10)).unwrap();
+        },
+        |_| 1,
+    )
+    .unwrap();
+    started.recv_timeout(Duration::from_secs(5)).unwrap();
+    let child = engine
+        .runtime
+        .child_terminals
+        .release_with_effect(parent, 313)
+        .unwrap();
+    let mut webhook = app.services.webhooks.register(
+        vec!["POST".into()],
+        None,
+        vec![],
+        Lifetime {
+            persistence: Persistence::Persistent,
+            limit: Limit::Unlimited,
+        },
+        None,
+    );
+    assert!(child.observation().is_none());
+    assert!(webhook.poll().is_none());
+    let (reply, rx) = response(&mut app, 814);
+    let second_stage = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let executed = second_stage.clone();
+    app.run_plugin_file(
+        (1, 0),
+        || (),
+        |_| 1,
+        |_| command::CommandDisposition {
+            outcome: command::CommandOutcome::KnownSuccess,
+            partial: false,
+        },
+        move |app, result| {
+            result.unwrap();
+            assert!(
+                child
+                    .poll()
+                    .expect("child live effect must precede L1 continuation")
+                    .is_ok()
+            );
+            assert!(child.poll().is_none());
+            assert_eq!(
+                webhook
+                    .poll()
+                    .expect("W receipt must precede L1 continuation")
+                    .unwrap()
+                    .saved,
+                Some(true)
+            );
+            app.run_plugin_file(
+                (1, 0),
+                move || {
+                    executed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    19_u64
+                },
+                |_| 8,
+                |_| command::CommandDisposition {
+                    outcome: command::CommandOutcome::KnownSuccess,
+                    partial: false,
+                },
+                move |_, result| {
+                    reply.finish(result.map(|value| serde_json::json!({"value":value})))
+                },
+            );
+        },
+    );
+    let server = crate::adapters::test::mock_ipc_server::MockIpcServer::new();
+    let injector = tasty_ipc::host_call::HostIpcInjector::new(server.tx_clone(), Arc::new(|| {}));
+    app.hub.ipc_server = Some(Box::new(server));
+    let incoming = std::thread::spawn(move || {
+        let rejected = injector.dispatch(
+            "notification.create",
+            serde_json::json!({"body":"owned-composition"}),
+            Duration::from_secs(5),
+        );
+        assert!(matches!(
+            rejected,
+            Err(tasty_ipc::host_call::InjectError::Rpc { code: -32000, .. })
+        ));
+        release.send(()).unwrap();
+    });
+    assert!(rx.try_recv().is_err());
+    assert_eq!(second_stage.load(std::sync::atomic::Ordering::SeqCst), 0);
+    app.services.webhooks.begin_shutdown();
+    drain(&mut app, engine);
+    incoming.join().unwrap();
+    assert!(held.poll().unwrap().is_ok());
+    let answer = rx
+        .try_recv()
+        .expect("original L1 reply must precede final drain return");
+    assert_eq!(answer.id, serde_json::json!(814));
+    assert_eq!(answer.result.unwrap()["value"], 19);
+    assert!(rx.try_recv().is_err());
+    assert_eq!(second_stage.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(app.plugin_files_pending(), 0);
+    assert_eq!(app.services.webhooks.poll_shutdown(), 0);
+    assert!(
+        app.plugin_files
+            .enqueue_sized(1, |_| panic!("stopped L1 admission executed"))
+            .is_err()
+    );
+    cleanup(&mut app);
+}
+
+pub(crate) fn shared_engine(app: &App) -> crate::runtime::engine_session::EngineSession {
+    use crate::runtime::engine_session::{EngineSession, EngineSessionSpec};
+    EngineSession::for_journal(
+        EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: None,
+            memory: app.services.memory_access().clone(),
+            runner_registry: app.services.tasks.runner_registry().clone(),
+        },
+        crate::settings::Settings::default(),
+        app.services.registries.clone(),
+    )
+    .unwrap()
+}

@@ -6,11 +6,7 @@ impl App {
     pub(super) fn wait_for_observer_shutdown(&mut self) -> bool {
         let progress = self.shutdown_poll_observer_sinks();
         self.services.poll_memory_writer();
-        self.services.poll_file_writer();
-        self.finish_plugin_files();
-        self.settle_settings_saves();
-        self.services
-            .poll_memory_replies(self.plugin_manager.as_mut());
+        self.collect_plugin_file_shutdown();
         let state = self.state.shutdown.as_mut().expect("shutdown phase");
         if state.observer_started.is_none() && progress.pending != 0 {
             tracing::info!(target: "tasty::shutdown", pending = progress.pending, "observer_sink_wait_started");

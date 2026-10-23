@@ -1,7 +1,7 @@
 use super::*;
 use crate::app::{plugin_file_lifecycle::shutdown_tests as cases, preset_shutdown_tests::make_gui};
 use winit::platform::x11::EventLoopBuilderExtX11;
-fn drain(app: &mut App, file_drain: crate::app::writer_drain::WriterDrain) {
+fn start(app: &mut App, file_drain: crate::app::writer_drain::WriterDrain) {
     app.stop_plugin_file_producers();
     app.state.shutdown = Some(ShutdownState {
         exit_code: 0,
@@ -21,11 +21,22 @@ fn drain(app: &mut App, file_drain: crate::app::writer_drain::WriterDrain) {
         file_drain,
         journal_deadline: None,
     });
+}
+fn drain(app: &mut App, file_drain: crate::app::writer_drain::WriterDrain) {
+    start(app, file_drain);
     let end = Instant::now() + Duration::from_secs(8);
-    while app.wait_for_file_writer_shutdown() {
+    loop {
+        app.reject_pending_ipc();
+        if !app.wait_for_file_writer_shutdown() {
+            break;
+        }
         assert!(Instant::now() < end);
         std::thread::sleep(Duration::from_millis(1));
     }
+}
+fn observer(app: &mut App) {
+    start(app, Default::default());
+    assert!(!app.wait_for_observer_shutdown());
 }
 #[test]
 fn plugin_file_shutdown_actual_app_pipeline_final_zero_and_timeout() {
@@ -40,6 +51,14 @@ fn plugin_file_shutdown_actual_app_pipeline_final_zero_and_timeout() {
         .build()
         .unwrap();
     let make = || make_gui(event_loop.create_proxy());
+    cases::mixed_child_webhook_and_plugin_pipeline(make, |app, session| {
+        app.engines
+            .insert_pending(session)
+            .unwrap_or_else(|_| panic!("owned engine slot"));
+        drain(app, Default::default());
+    });
+    crate::app::preset_shutdown_tests::run_case(make, observer, false);
+    crate::app::preset_shutdown_tests::run_case(make, observer, true);
     cases::remove_pipeline(make, drain);
     cases::final_receipt(make, drain, false);
     cases::final_receipt(make, drain, true);

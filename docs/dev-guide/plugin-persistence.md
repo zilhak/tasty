@@ -24,7 +24,7 @@ GUI 부팅 worker의 builtin 설치는 동기 API를 사용할 수 있다. 파�
 
 ## 메인 루프와 종료
 
-GUI와 headless는 공용 file receipt를 수거한 뒤 L1 continuation을 진행하고 원 deferred 응답을 처리한다. 구조 journal의 관측 대기 중에도 이미 접수한 파일 완료는 수거한다. retirement 대기만 기존 자식 회수 확인 주기로 독립 wake를 잡으며, worker receipt나 종료 후 Unknown에는 주기 wake를 만들지 않는다. continuation은 다음 파일 명령을 제출할 수 있으므로 완료 수거를 writer 종료와 같게 취급하지 않는다.
+GUI와 headless는 공용 file receipt, C1의 engine별 live effect, preset capture, L1 continuation, 설정 완료, 원 deferred 응답 순서로 수거한다. Observer 종료와 최종 file drain의 반환 회차에도 같은 순서를 지킨다. 구조 journal의 관측 대기 중에도 이미 접수한 파일 완료는 수거한다. retirement 대기만 기존 자식 회수 확인 주기로 독립 wake를 잡으며, worker receipt나 종료 후 Unknown에는 주기 wake를 만들지 않는다. continuation은 다음 파일 명령을 제출할 수 있으므로 완료 수거를 writer 종료와 같게 취급하지 않는다.
 
 종료 시작은 L1의 새 접수를 막는다. plugin 전체 종료 전에 manager를 유지한 채 접수된 다단계 작업을 진행하고, 같은 file writer drain 기한을 마지막 flush·join까지 이어 쓴다. 별도 기한을 새로 시작하지 않는다. 마지막 남은 수가 0이거나 기한을 넘긴 회차에도 receipt·continuation·원 응답을 순서대로 수거한다. 종료 중 enable·builtin 재시작은 수행하지 않는다.
 
