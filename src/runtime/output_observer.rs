@@ -95,6 +95,7 @@ pub struct ObserverRouter {
     /// 끝난 worker만 회수한다. 종료 시한 뒤에도 미회수 handle은 이 owner에 남는다.
     retired: Vec<RetiredSink>,
     shutdown_progress: ShutdownProgress,
+    shutdown_requested: bool,
 }
 
 struct RetiredSink {
@@ -164,6 +165,7 @@ impl ObserverRouter {
             line_buffers: HashMap::new(),
             retired: Vec::new(),
             shutdown_progress: ShutdownProgress::default(),
+            shutdown_requested: false,
         }
     }
 
@@ -654,7 +656,7 @@ mod tests {
     }
 
     #[test]
-    fn polling_shutdown_reaps_accepted_records_before_router_drop() {
+    fn dropping_the_router_reaps_retired_workers_even_without_s3b() {
         let dir = tempfile::tempdir().unwrap();
         let sink = dir.path().join("dropped.jsonl");
         let mut r = ObserverRouter::new();
@@ -667,15 +669,14 @@ mod tests {
         }
 
         r.drop_surface(3);
-        r.join_retired();
-        drop(r);
+        drop(r); // join_retired 를 명시적으로 부르지 않는다.
 
         let written = std::fs::read_to_string(&sink).unwrap();
         let lines: Vec<&str> = written.lines().collect();
         assert_eq!(
             lines.len(),
             expected,
-            "종료 polling 뒤 수락된 항목이 전부 기록된다"
+            "라우터 drop 만으로도 수락된 항목이 전부 기록된다"
         );
         assert!(
             lines.last().unwrap().contains("/tmp/drop-probe-63"),

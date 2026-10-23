@@ -124,7 +124,7 @@ PTY 확인에서 `history 1`은 실행할 명령을 가리켰지만 `$BASH_COMMA
 
 ### 스트리밍 옵저버
 
-PTY 라인마다 파서를 돌려 sink 로 fan-out(**휘발성** — 호스트 재시작 시 소멸). sink: `memory`(ring buffer, `memory.list`/`query` 로 회수) / `file`(JSONL append). 필터: `parsers`(활성 파서) + `kinds`(출력 후 kind 필터) + `surface_id`(생략 시 전체 surface wildcard). **백압**: 옵저버별 bounded channel(256), 채워지면 drop + `info.dropped` 증가(PTY 스레드 절대 block 안 함). memory sink 는 채널에 쌓인 항목을 묶어 저장 실행기에 넣으며, 실행기가 접수하지 않은 항목은 `info.submit_rejected`, 저장되지 않았거나 저장 여부를 모르는 항목은 `info.store_failed` 로 센다([저장 계약](../../design/systems/storage.md#터미널-출력-observer-의-memory-sink--저장-계약)). surface 닫히면 매인 옵저버 자동 정리, wildcard 는 유지. **자동 정리는 sink 워커를 그 자리에서 join 하지 않는다** — 워크스페이스 close 가 surface 수만큼 이 경로를 렌더 스레드에서 반복하기 때문이다([종료 시퀀스 — 종료 cascade + Drop tail](../../architecture/shutdown-sequence.md)). channel 에 수락된 항목은 워커가 스스로 다 비우고 끝나므로 유실은 없고, 남은 워커는 앱 종료 시퀀스(S3b)가 완료를 폴링한다. 5초 뒤에도 남으면 handle을 미회수로 기록하고 새 memory 제출을 차단한다. 라우터 Drop은 다시 동기 대기하지 않으므로 프로세스 종료까지 미완료한 항목은 잃을 수 있다. 다만 **sink 파일에 마지막 항목이 도달하는 시점은 close 응답 이후로 밀릴 수 있다.** 명시 해제(`output.observe_stop`)는 종전대로 호출 복귀 시점에 sink 가 닫혀 있음을 보장한다.
+PTY 라인마다 파서를 돌려 sink 로 fan-out(**휘발성** — 호스트 재시작 시 소멸). sink: `memory`(ring buffer, `memory.list`/`query` 로 회수) / `file`(JSONL append). 필터: `parsers`(활성 파서) + `kinds`(출력 후 kind 필터) + `surface_id`(생략 시 전체 surface wildcard). **백압**: 옵저버별 bounded channel(256), 채워지면 drop + `info.dropped` 증가(PTY 스레드 절대 block 안 함). memory sink 는 채널에 쌓인 항목을 묶어 저장 실행기에 넣으며, 실행기가 접수하지 않은 항목은 `info.submit_rejected`, 저장되지 않았거나 저장 여부를 모르는 항목은 `info.store_failed` 로 센다([저장 계약](../../design/systems/storage.md#터미널-출력-observer-의-memory-sink--저장-계약)). surface 닫히면 매인 옵저버 자동 정리, wildcard 는 유지. **자동 정리는 sink 워커를 그 자리에서 join 하지 않는다** — 워크스페이스 close 가 surface 수만큼 이 경로를 렌더 스레드에서 반복하기 때문이다([종료 시퀀스 — 종료 cascade + Drop tail](../../architecture/shutdown-sequence.md)). channel 에 수락된 항목은 워커가 비우며 저장 실패·접수 거절은 별도 집계한다. 일반 세션 소유자 해제는 worker와 accepted 작업(확정 뒤 보존 삭제 포함)의 완료를 기다리고, 남은 워커는 앱 종료 시퀀스(S3b)가 완료를 폴링한다. 5초 뒤에도 남으면 handle을 미회수로 기록하고 새 memory 제출을 차단한다. 명시적 앱 종료를 시작한 라우터의 Drop은 다시 동기 대기하지 않으므로 프로세스 종료까지 미완료한 항목은 잃을 수 있다. 다만 **sink 파일에 마지막 항목이 도달하는 시점은 close 응답 이후로 밀릴 수 있다.** 명시 해제(`output.observe_stop`)는 종전대로 호출 복귀 시점에 sink 가 닫혀 있음을 보장한다.
 
 > **멀티라인 파서는 줄 단위 옵저버에서 결과를 만들지 않는다**(라인별 dispatch). 컴파일 에러 수집은 `prompt_boundary` 옵저버로 종료 감지 후 `parse_since_mark` batch.
 
@@ -150,3 +150,5 @@ CLI는 --stream 단독도 허용한다. 기존 mark에서 읽으면서 stream �
 협상 실패의 JSON은 capability·required·found·sent:false를 포함한다. found가 없으면 null이다.
 인자 세 가지 중 하나라도 쓰는 외부 client는 CLI와 마찬가지로 ipc.output-cursor를 먼저 확인해야 한다.
 새 독립 인자는 별도 capability 이름으로, 기존 인자의 의미를 좁히는 변경은 해당 기능 버전으로 구별한다.
+
+일반 세션 retirement의 Router Drop은 새 제출을 차단하거나 worker를 분리하지 않고 accepted 작업 완료를 기다린다. 명시적 앱 종료의 polling·timeout 이후 Drop과 구분한다. 저장 오류나 writer의 접수 거절을 성공으로 보장하지 않는다.

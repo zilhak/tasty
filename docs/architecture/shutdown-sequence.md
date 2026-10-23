@@ -264,7 +264,9 @@ GUI S3는 surface 닫힘을 전달한 뒤 전체 observer sender(전체 surface 
 
 5초 기한은 첫 polling 대기에서 고정된다. 기한을 넘기면 pending handle은 원 router에 남고, memory sink의 새 writer 제출을 짧은 접수 잠금으로 차단한 뒤 저장 writer 종료로 진행한다. 이미 writer에 접수한 요청은 취소하지 않는다. 아직 제출하지 못한 observer 항목은 거절·미확정으로 남을 수 있다. S3b는 pending·실제 joined·panic·저장 실패·drop 수와 clean 여부를 따로 기록한다. join된 worker도 panic이나 저장 실패가 있으면 clean이 아니다.
 
-Router Drop은 다시 기다리지 않는다. 이미 끝난 worker만 회수하고 남은 수를 경고하며 미완료 handle을 해제한다. 해당 스레드는 프로세스가 살아 있는 동안 실행될 수 있지만 프로세스 종료 때 accepted output을 잃을 수 있다. Drop이나 프로세스 종료 코드0을 저장 완료 근거로 사용하지 않는다. 명시적 output.observe_stop은 기존 동기 join 계약을 유지한다.
+명시적 앱 종료를 시작한 Router의 Drop은 다시 기다리지 않는다. 이미 끝난 worker만 회수하고 남은 수를 경고하며 미완료 handle을 해제한다. 해당 스레드는 프로세스가 살아 있는 동안 실행될 수 있지만 프로세스 종료 때 accepted output을 잃을 수 있다. Drop이나 프로세스 종료 코드0을 저장 완료 근거로 사용하지 않는다. 명시적 output.observe_stop은 기존 동기 join 계약을 유지한다.
 
 
 `writer_shutdown_observation`은 memory·state·file writer별 최종 관측이다. `Joined`는 원 JoinHandle의 실제 join 뒤에만 기록하고 `panicked`와 최종 `FlushResult`를 함께 보존한다. `NotClean`은 cut 안의 거절·실패, `Lost`는 flush 결과 미확정을 뜻한다. `Draining` 상태에서 기한이 지나면 미회수이며 성공이 아니다. writer가 구성되지 않은 경우는 `configured=false`로 구분한다. getter는 receipt를 소비하지 않는다. 종료 코드 정책은 이 관측과 별개이며 요청된 정상 종료 코드 0도 clean drain을 보장하지 않는다.
+
+일반 세션 retirement의 Router Drop은 새 제출을 차단하거나 worker를 분리하지 않고 accepted 작업 완료를 기다린다. 명시적 앱 종료의 polling·timeout 이후 Drop과 구분한다. 저장 오류나 writer의 접수 거절을 성공으로 보장하지 않는다.

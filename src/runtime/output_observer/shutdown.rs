@@ -51,6 +51,7 @@ impl ShutdownProgress {
 impl ObserverRouter {
     /// Disconnect every producer, including wildcard observers. Never waits for a sink.
     pub fn begin_shutdown(&mut self) {
+        self.shutdown_requested = true;
         for (id, entry) in std::mem::take(&mut self.observers) {
             self.retire(id, entry);
         }
@@ -114,16 +115,28 @@ impl ObserverRouter {
         self.retired = pending;
     }
 
-    #[cfg(test)]
+    // Ordinary owner retirement preserves accepted work, including post-commit retention.
+    // App shutdown uses poll_shutdown instead and must not restart this wait after a deadline.
     pub(super) fn join_retired(&mut self) {
-        while self.poll_shutdown().pending != 0 {
-            std::thread::sleep(std::time::Duration::from_millis(1));
+        for retired in self.retired.drain(..) {
+            if let Err(error) = retired.join.join() {
+                tracing::warn!(
+                    observer = retired.id,
+                    ?error,
+                    "observer sink worker panicked"
+                );
+            }
         }
     }
 }
 
 impl Drop for ObserverRouter {
     fn drop(&mut self) {
+        if !self.shutdown_requested {
+            self.begin_shutdown();
+            self.join_retired();
+            return;
+        }
         let progress = self.poll_shutdown();
         self.fence_submissions();
         if !progress.clean() {

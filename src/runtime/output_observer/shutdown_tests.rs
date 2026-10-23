@@ -153,3 +153,78 @@ fn a_failed_file_sink_is_not_reported_as_clean_just_because_it_joined() {
     assert_eq!(progress.failed, 1);
     assert!(!progress.clean());
 }
+
+#[test]
+fn normal_retirement_keeps_accepted_memory_and_retention_work_owned_until_completion() {
+    use tasty_memory::writer::{ChangeFeed, MemoryAccess, WriterStore};
+    use tasty_utils::batch_writer::{Limits, SystemClock};
+    let store: Arc<Mutex<dyn tasty_memory::MemoryStorage>> = Arc::new(Mutex::new(
+        tasty_memory::MemoryStore::open_in_memory().unwrap(),
+    ));
+    let changes = Arc::new(ChangeFeed::default());
+    let mut writer = tasty_memory::writer::spawn(
+        WriterStore::shared(store.clone()),
+        changes.clone(),
+        Limits::default(),
+        Arc::new(SystemClock),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let locked = store.lock().unwrap();
+    let mut router = ObserverRouter::new();
+    let id = router
+        .register(
+            ObserverSpec {
+                surface_id: Some(3),
+                parsers: vec!["path".into()],
+                kinds: None,
+                sink: SinkSpec::Memory { max_records: 1 },
+            },
+            MemoryAccess::writer(writer.handle(), changes),
+        )
+        .unwrap();
+    router.dispatch_text(3, "/owned/first.rs\n/owned/second.rs\n");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while writer.stats().admitted == 0 {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(1));
+    }
+    router.drop_surface(3);
+    let (started, seen_start) = mpsc::channel();
+    let (dropped, seen_drop) = mpsc::channel();
+    let owner = thread::spawn(move || {
+        started.send(()).unwrap();
+        drop(router);
+        dropped.send(()).unwrap();
+    });
+    seen_start.recv_timeout(Duration::from_secs(1)).unwrap();
+    let premature_drop = seen_drop.recv_timeout(Duration::from_millis(100));
+    drop(locked);
+    owner.join().unwrap();
+    assert!(
+        premature_drop.is_err(),
+        "ordinary retirement detached accepted work"
+    );
+    let records = store
+        .lock()
+        .unwrap()
+        .list(
+            &tasty_memory::Scope::Global,
+            &tasty_memory::ListOpts {
+                prefix: Some(format!("tasty.observer.{id}.")),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        records.len(),
+        1,
+        "post-commit retention delete must also finish"
+    );
+    writer.begin_shutdown();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while writer.poll_shutdown() != 0 {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(1));
+    }
+}
