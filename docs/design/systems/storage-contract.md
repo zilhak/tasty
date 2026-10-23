@@ -278,7 +278,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
 | `tasty.port` | `write_port_file_to` | IPC 시작 | 아니요 | 없음. 서버 Drop이 지운다 |
 | 단일 실행 instance 파일 | `instance_file` | 메인 루프 | 예(sync 포함) | GUI만 쓴다 |
-| `webhooks.toml` | 호스트 `webhook::persist`, CLI `webhook_port_file` | 메인 루프·webhook 요청 스레드, CLI | 예 | CLI는 실행 중인 호스트가 없다고 판단할 때만 쓴다 |
+| `webhooks.toml` | 호스트 `webhook::persist::WriteRequest`, CLI `webhook_port_file` | 현재 host 호출 스레드·CLI에서 동기 실행 | 예(공용 교체, fsync 없음) | host 배열 교체·CLI port 변경·옛 포트 마이그레이션이 같은 참여자 잠금 안에서 최신 TOML을 읽고 해당 절만 변경 |
 | `remote-profiles.toml` | CLI는 `RemoteFileStore::profile`, 기존 host 소비자는 `RemoteProfiles::save` | CLI는 호출 스레드, 기존 IPC·탐지는 메인 루프 | CLI는 예(공용 교체·sync), 기존 save는 아니요 | 명령 API는 최신 TOML을 참여 잠금 안에서 patch한다. 기존 save 호출자는 참여하지 않는다 |
 | `passkeys.toml`과 `passkeys/<이름>` | CLI는 `RemoteFileStore::passkey`, 기존 host 목록은 `Passkeys::save`; inline 파일은 `materialize_inline_in` | CLI는 호출 스레드, 기존 IPC는 메인 루프 | CLI 목록은 공용 교체·sync, 기존 save는 직접 쓰기. inline은 Unix 0600·Windows 보호 ACL을 payload 전에 적용한 임시 파일을 sync 후 rename | CLI 명령은 목록 참여 잠금 사용. inline 파일 자체도 참여 잠금 사용. 파일 사이 transaction은 없고 부분 성공·관리파일 정리는 owned 결과로 구분한다 |
 | `plugins.toml` | 플러그인 등록 상태 저장 | 메인 루프, GUI boot worker(내장 플러그인 설치) | 아니요 | 없음 |
@@ -286,6 +286,22 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `file-handlers.toml` | `FileRules::submit`이 합친 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `known-plugins.toml`, hook 사용자 설정, 테마 파일 | 각 crate의 저장 함수 | 메인 루프 | 테마만 아니요, 나머지는 예 | 없음 |
 | `debug.log`·crash/hang 보고·`launch.log`·observer file sink | 로그 기록 | 각 기록 스레드 | append | `launch.log`는 두 번째 프로세스가 파일 잠금 안에서 쓴다 |
+
+`webhooks.toml` backend는 소유된 webhook 섹션 요청만 받고 전체 TOML snapshot은 접수하지 않는다.
+파일 잠금 안에서 최신 원본을 읽고 병합·직렬화하며, 교체 직전 원본 fingerprint와 링크 대상을
+다시 확인한다. 실패·손상·읽기 불가는 빈 테이블로 덮지 않는다. 참여하지 않는 편집기의 변경은
+마지막 확인까지 감지하지만 확인과 rename 사이 경합은 공용 교체 함수의 한계로 남는다.
+새 파일은 Unix 0600이고 기존 파일의 native 권한·소유권을 보존한다. TOML 주석·공백의 바이트
+보존은 보장하지 않는다. parse 오류에는 원문을 넣지 않는다.
+
+backend 결과가 돌아오면 파일 잠금은 이미 풀려 있다. 현재 registry의 저장 호출은 여전히
+호출 스레드에서 동기 실행하며, 소유 요청이 있다는 사실이 메인 루프 비차단이나 registry
+잠금 밖 I/O·비동기 rollback 완료를 뜻하지 않는다. standalone CLI는 이 결과까지 동기로
+기다린 뒤 기존 명령 출력을 만든다. port 변경과 형식 마이그레이션은 한 번에 교체해
+마이그레이션만 먼저 저장되는 부분 성공을 만들지 않는다. 포트 저장·삭제는 기존처럼 format=2를
+기록하며, host 배열 교체는 원래 format 값을 바꾸지 않는다. 부팅의 옛 포트 읽기에서 마이그레이션
+저장만 실패하면 원본은 남기고, 그 읽기에는 기존처럼 메모리에서 해석한 포트를 쓴다. 잠금 대기 중
+원본이 삭제되어 최신 읽기에서 부재를 확인하면 마이그레이션하지 않고 삭제를 보존한다.
 
 `notify/<surface>.log`는 호스트가 쓰지 않는다. 플러그인 프로세스가 쓰고 호스트는 IPC 시작 때 디렉터리를 정리한다.
 

@@ -1,101 +1,162 @@
-//! 데이터 루트의 webhooks.toml에서 명시 지정 웹훅 포트를 읽고 쓴다. 실행 중인 인스턴스(IPC 처리)와
-//! 인스턴스가 없을 때의 `tasty webhook port`(CLI 크레이트)가 같은 규칙으로 파일을 다루도록 둘이 함께 쓰는
-//! 이 크레이트 한 곳에 둔다.
-//! 값이 없으면 리스너가 기본 포트부터 빈 포트를 찾는다. 이 모듈은 값을 새로 만들어 넣지 않는다.
-//!
-//! 이전 버전은 파일이 없을 때 기본 포트 28429를 자동으로 써 넣었다. 그 값은 사용자가 정한 것과
-//! 구별할 수 없으므로, 형식 표시(`format = 2`)가 없는 파일의 `port = 28429`는 자동으로 들어간 값으로 보고
-//! 처음 읽을 때 지운다. 다른 값은 사용자가 정한 것으로 남긴다. 이 모듈이 파일을 쓸 때마다 형식 표시를 함께 쓴다.
-//!
-//! TOML 테이블에서 port만 바꿔 읽어 온 다른 키(`[[webhook]]` 영속 등록 등)를 보존한다.
-//! 파일을 읽거나 파싱하지 못하면 쓰지 않는다. 그 테이블로 다시 쓰면 다른 키가 모두 사라지기 때문이다.
-//! 읽기는 저장 포트가 없는 것으로 다루고(경고), 저장·삭제는 오류를 돌려준다.
-
+//! Shared webhooks.toml section updates for the host and standalone CLI.
+//! Every mutation reads the latest TOML under the same participating file lock. Other sections
+//! survive semantically; comments/formatting are not byte-preserved. Malformed/unreadable files
+//! are never replaced. The guard drops before returning to caller-side publication or actions.
+//! Nonparticipating editors are checked before replacement; the final check/rename race remains.
 use std::path::{Path, PathBuf};
+use tasty_utils::file_replace::{self, Fingerprint};
 
-/// 명시 지정이 없을 때 리스너가 처음 시도하는 포트. 이전 버전이 자동으로 써 넣던 값이기도 하다.
+/// First port attempted when no explicit port is stored; also the legacy automatic seed value.
 pub const DEFAULT_PORT: u16 = 28429;
-
-/// 자동으로 써 넣은 포트를 정리한 뒤의 파일 형식 표시.
 const FORMAT_KEY: &str = "format";
 const FORMAT: i64 = 2;
 
-/// 데이터 루트가 없으면 임시 디렉터리의 공유 경로를 사용한다.
+/// Uses the same data-root rule for persistent registrations and listener port settings.
 pub fn path() -> PathBuf {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("webhooks.toml"))
-        // 이유: 홈이 없을 때도 포트 설정과 영속 등록이 같은 사용자 설정 파일을 공유한다.
+        // 이유: 홈이 없을 때도 포트 설정과 영속 등록은 같은 파일을 공유한다.
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-webhooks.toml"))
 }
 
-/// 파일을 `toml::Table` 로 읽는다. 파일이 없으면 빈 테이블이고, 읽기·파싱 실패는 오류다.
-pub fn read_table(path: &Path) -> std::io::Result<toml::Table> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(toml::Table::new()),
+fn read_document(path: &Path) -> std::io::Result<(toml::Table, Fingerprint)> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((toml::Table::new(), Fingerprint::Missing));
+        }
         Err(e) => return Err(e),
     };
-    text.parse::<toml::Table>().map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("{} is not valid TOML: {e}", path.display()),
-        )
-    })
+    let text = std::str::from_utf8(&bytes).map_err(|_| invalid_document(path))?;
+    // toml::de::Error includes source excerpts: never place auth-bearing input in errors/logs.
+    let table = text
+        .parse::<toml::Table>()
+        .map_err(|_| invalid_document(path))?;
+    Ok((table, Fingerprint::of_bytes(&bytes)))
 }
 
-/// 같은 디렉터리의 임시 파일을 쓴 뒤 대상 경로로 교체한다.
-fn write_table(path: &Path, table: &toml::Table) -> std::io::Result<()> {
-    use std::io::Write;
-    let text = toml::to_string(table)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    if !parent.exists() {
+fn invalid_document(path: &Path) -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!("{} is not valid UTF-8 TOML", path.display()),
+    )
+}
+
+/// Read a complete document, without migration. Missing is empty; other failures are errors.
+/// Mutation callers must use the participating section APIs, not retain this whole-file snapshot.
+pub fn read_table(path: &Path) -> std::io::Result<toml::Table> {
+    read_document(path).map(|(table, _)| table)
+}
+
+/// Private guard: section APIs cannot leak the file lock into external caller actions.
+struct LockedTable {
+    path: PathBuf,
+    target: PathBuf,
+    before: Fingerprint,
+    table: toml::Table,
+    _writer: file_replace::WriteLock,
+}
+
+impl LockedTable {
+    fn open(path: &Path) -> std::io::Result<Self> {
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
         std::fs::create_dir_all(parent)?;
+        let target = file_replace::resolve_link(path)?;
+        let writer = file_replace::lock(path)?;
+        if file_replace::resolve_link(path)? != target {
+            return Err(std::io::Error::other(
+                "webhooks.toml target changed while waiting for its lock",
+            ));
+        }
+        let (table, before) = read_document(path)?;
+        Ok(Self {
+            path: path.into(),
+            target,
+            before,
+            table,
+            _writer: writer,
+        })
     }
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    tmp.write_all(text.as_bytes())?;
-    tmp.flush()?;
-    tmp.persist(path).map_err(|e| e.error)?;
-    Ok(())
+
+    fn commit(self) -> std::io::Result<()> {
+        let text = toml::to_string_pretty(&self.table)
+            .map_err(|_| std::io::Error::other("webhooks.toml render failed"))?;
+        if file_replace::resolve_link(&self.path)? != self.target
+            || Fingerprint::read(&self.path)? != self.before
+        {
+            return Err(std::io::Error::other(
+                "webhooks.toml changed while preparing its replacement",
+            ));
+        }
+        file_replace::replace_with(
+            &self.path,
+            text.as_bytes(),
+            file_replace::Options {
+                new_mode: Some(0o600),
+                sync: false,
+            },
+        )
+    }
 }
 
-/// 테이블에서 `port` 를 유효 u16 으로 뽑는다. 부재/범위밖/타입불일치는 `None`.
+/// Replace only the host-owned webhook array. Read/merge/replace is one participating critical
+/// section shared with set/clear and read-time migration. An empty array removes this key only.
+pub fn replace_webhooks(path: &Path, webhooks: Vec<toml::Value>) -> std::io::Result<()> {
+    let mut file = LockedTable::open(path)?;
+    if webhooks.is_empty() {
+        file.table.remove("webhook");
+    } else {
+        file.table
+            .insert("webhook".into(), toml::Value::Array(webhooks));
+    }
+    file.commit()
+}
+
 fn port_from_table(table: &toml::Table) -> Option<u16> {
-    let raw = table.get("port")?;
-    // toml 정수는 i64. 1..=65535 만 유효 포트로 인정(0 = 미설정 취급).
-    let n = raw.as_integer()?;
+    let n = table.get("port")?.as_integer()?;
     match u16::try_from(n) {
         Ok(port) if port > 0 => Some(port),
         _ => {
-            tracing::warn!("webhooks.toml 'port' = {n} out of range (1..=65535); ignoring");
+            tracing::warn!("webhooks.toml port out of range (1..=65535); ignoring");
             None
         }
     }
 }
 
-/// 형식 표시가 없는 파일의 자동 기록 포트를 지운다. 바꾼 내용이 있으면 파일에 다시 쓴다.
-/// 쓰기에 실패하면 이번 실행에서만 지운 값으로 다룬다.
-fn migrate(path: &Path, table: &mut toml::Table) {
-    if !path.exists() || table.get(FORMAT_KEY).is_some() {
-        return;
+/// Migrate only in memory; a section mutation commits the final merged table once.
+fn migrate(table: &mut toml::Table) -> bool {
+    if table.contains_key(FORMAT_KEY) {
+        return false;
     }
     if table.get("port").and_then(toml::Value::as_integer) == Some(i64::from(DEFAULT_PORT)) {
         table.remove("port");
-        tracing::info!(
-            "webhooks.toml: dropped the port {DEFAULT_PORT} an older version wrote automatically"
-        );
     }
     table.insert(FORMAT_KEY.into(), toml::Value::Integer(FORMAT));
-    if let Err(e) = write_table(path, table) {
-        tracing::warn!("webhooks.toml format update failed: {e}");
-    }
+    true
 }
 
-/// 사용자가 명시로 정한 포트. 없거나 범위 밖이면 None이다. 읽을 때 이전 파일을 정리한다.
-/// 파일을 읽지 못하면 경고하고 None이며 파일은 그대로 둔다.
+/// Explicit port after legacy seed migration. A migration write failure keeps its historical
+/// in-memory interpretation for this read, but leaves the original file and reports a warning.
 pub fn read_port(path: &Path) -> Option<u16> {
-    let mut table = match read_table(path) {
-        Ok(table) => table,
+    // Pure reads do not wait on a writer. Only legacy migration is a mutation; it must
+    // acquire the participating lock and reread instead of writing this initial snapshot.
+    match read_document(path) {
+        Ok((table, before)) if before == Fingerprint::Missing || table.contains_key(FORMAT_KEY) => {
+            return port_from_table(&table);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(
+                "webhooks.toml unreadable ({e}); ignoring its port and leaving the file as it is"
+            );
+            return None;
+        }
+    }
+    let mut file = match LockedTable::open(path) {
+        Ok(file) => file,
         Err(e) => {
             tracing::warn!(
                 "webhooks.toml unreadable ({e}); ignoring its port and leaving the file as it is"
@@ -103,30 +164,42 @@ pub fn read_port(path: &Path) -> Option<u16> {
             return None;
         }
     };
-    migrate(path, &mut table);
-    port_from_table(&table)
+    if file.before == Fingerprint::Missing {
+        return None;
+    }
+    let migrated = migrate(&mut file.table);
+    let port = port_from_table(&file.table);
+    if migrated && let Err(e) = file.commit() {
+        tracing::warn!("webhooks.toml format update failed: {e}");
+    }
+    port
 }
 
-/// port를 저장한다. 읽어 온 다른 키는 보존하며 리스너에는 다음 실행부터 적용된다.
+/// Save an explicit port; it applies on the next listener start. Other sections are preserved.
 pub fn set_port(path: &Path, port: u16) -> std::io::Result<()> {
-    update(path, |table| {
-        table.insert("port".into(), toml::Value::Integer(i64::from(port)));
-    })
+    update_port(path, Some(port))
 }
 
-/// 저장한 port를 지운다. 다음 실행부터 기본 포트부터 빈 포트를 찾는다.
+/// Clear the explicit port. The next listener start probes from the default port.
 pub fn clear_port(path: &Path) -> std::io::Result<()> {
-    update(path, |table| {
-        table.remove("port");
-    })
+    update_port(path, None)
 }
 
-fn update(path: &Path, change: impl FnOnce(&mut toml::Table)) -> std::io::Result<()> {
-    let mut table = read_table(path)?;
-    migrate(path, &mut table);
-    change(&mut table);
-    table.insert(FORMAT_KEY.into(), toml::Value::Integer(FORMAT));
-    write_table(path, &table)
+fn update_port(path: &Path, port: Option<u16>) -> std::io::Result<()> {
+    let mut file = LockedTable::open(path)?;
+    migrate(&mut file.table);
+    match port {
+        Some(port) => {
+            file.table
+                .insert("port".into(), toml::Value::Integer(i64::from(port)));
+        }
+        None => {
+            file.table.remove("port");
+        }
+    }
+    file.table
+        .insert(FORMAT_KEY.into(), toml::Value::Integer(FORMAT));
+    file.commit()
 }
 
 #[cfg(test)]
@@ -204,3 +277,6 @@ mod tests {
         assert_eq!(read_port(&path), None);
     }
 }
+
+#[cfg(test)]
+mod backend_tests;

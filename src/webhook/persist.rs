@@ -5,7 +5,6 @@
 //! 설정 파일의 webhook 배열만 바꾼다. 파일을 읽거나 파싱하지 못하면 쓰지 않고 오류를 돌려준다.
 //! 그 테이블로 다시 쓰면 포트 설정과 다른 등록이 모두 사라지기 때문이다.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -94,8 +93,8 @@ fn load_persisted() -> Vec<PersistedWebhook> {
     };
     match toml::from_str::<WebhooksFile>(&text) {
         Ok(f) => f.webhooks,
-        Err(e) => {
-            tracing::warn!("webhooks.toml parse failed ({}): {e}", path.display());
+        Err(_) => {
+            tracing::warn!("webhooks.toml parse failed ({})", path.display());
             Vec::new()
         }
     }
@@ -106,40 +105,33 @@ pub(super) fn write(persistent: &[PersistedWebhook]) -> Result<(), String> {
     write_to(&config_path(), persistent)
 }
 
+/// Owned section request for a file worker. Payload/auth must not be Debug-logged.
+/// Capture this under the registry lock, then release that lock before executing it.
+/// Completion returns only after the participating file lock has dropped.
+pub(crate) struct WriteRequest {
+    path: PathBuf,
+    persistent: Vec<PersistedWebhook>,
+}
+
+impl WriteRequest {
+    pub(super) fn new(path: PathBuf, persistent: Vec<PersistedWebhook>) -> Self {
+        Self { path, persistent }
+    }
+
+    pub(crate) fn execute(&self) -> Result<(), String> {
+        let webhooks = self
+            .persistent
+            .iter()
+            .map(toml::Value::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "webhook persist serialize failed".to_string())?;
+        tasty_settings::webhook_port_file::replace_webhooks(&self.path, webhooks)
+            .map_err(|e| format!("webhooks.toml write failed ({}): {e}", self.path.display()))
+    }
+}
+
 fn write_to(path: &Path, persistent: &[PersistedWebhook]) -> Result<(), String> {
-    let doc = merge_webhook_section(path, persistent)?;
-    let text =
-        toml::to_string_pretty(&doc).map_err(|e| format!("webhooks.toml render failed: {e}"))?;
-    atomic_write(path, &text)
-        .map_err(|e| format!("webhooks.toml write failed ({}): {e}", path.display()))
-}
-
-/// 파일이 없으면 빈 테이블에서 시작한다. 읽기·파싱 실패는 포트 설정과 같은 규칙으로 오류다.
-fn merge_webhook_section(
-    path: &Path,
-    persistent: &[PersistedWebhook],
-) -> Result<toml::Table, String> {
-    let mut doc = tasty_settings::webhook_port_file::read_table(path).map_err(|e| e.to_string())?;
-    if persistent.is_empty() {
-        doc.remove("webhook");
-    } else {
-        let value = toml::Value::try_from(persistent)
-            .map_err(|e| format!("webhook persist serialize failed: {e}"))?;
-        doc.insert("webhook".to_string(), value);
-    }
-    Ok(doc)
-}
-
-fn atomic_write(path: &Path, text: &str) -> std::io::Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    if !parent.exists() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    tmp.write_all(text.as_bytes())?;
-    tmp.flush()?;
-    tmp.persist(path).map_err(|e| e.error)?;
-    Ok(())
+    WriteRequest::new(path.into(), persistent.to_vec()).execute()
 }
 
 /// 시간·횟수가 만료된 항목을 제외하고 복원한 수를 돌려준다. 제외한 항목이 있으면 파일 정리도 시도한다.
@@ -249,7 +241,7 @@ mod tests {
         let path = dir.path().join("webhooks.toml");
         std::fs::write(&path, "[listener]\nport = 28429\n").unwrap();
 
-        // 전역 설정 경로 대신 임시 파일로 병합·저장 동작을 구성한다.
+        // The actual production writer must preserve foreign sections.
         let items = vec![PersistedWebhook {
             id: "deadbeefdeadbeef".to_string(),
             methods: vec!["POST".to_string()],
@@ -258,11 +250,7 @@ mod tests {
             limit: PersistedLimit::Unlimited,
             auth: None,
         }];
-        let mut doc: toml::Table =
-            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        doc.insert("webhook".into(), toml::Value::try_from(&items).unwrap());
-        let text = toml::to_string_pretty(&doc).unwrap();
-        std::fs::write(&path, &text).unwrap();
+        write_to(&path, &items).unwrap();
 
         let reparsed: toml::Table =
             toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -271,3 +259,6 @@ mod tests {
         assert_eq!(reparsed["listener"]["port"].as_integer(), Some(28429));
     }
 }
+
+#[cfg(test)]
+mod backend_tests;

@@ -571,11 +571,7 @@ fn offline_webhook_port(command: &Commands) -> Option<OfflinePortChange> {
 /// 실행 중인 Tasty가 없을 때 webhooks.toml을 직접 고치고, 그렇게 했다는 사실을 함께 출력한다.
 fn save_webhook_port_offline(change: OfflinePortChange) -> Result<()> {
     let path = tasty_settings::webhook_port_file::path();
-    match change.port {
-        Some(port) => tasty_settings::webhook_port_file::set_port(&path, port),
-        None => tasty_settings::webhook_port_file::clear_port(&path),
-    }
-    .map_err(|e| {
+    crate::local::port::save_webhook_port_at(&path, change.port).map_err(|e| {
         anyhow::anyhow!(
             "{}",
             tasty_i18n::t_fmt2(

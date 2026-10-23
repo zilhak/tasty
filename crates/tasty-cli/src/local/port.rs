@@ -13,3 +13,68 @@ pub fn run_port(port_file: Option<&str>) -> Result<()> {
     outln!("{port}")?;
     Ok(())
 }
+
+/// Synchronous standalone participant. Returns after the shared webhooks.toml guard drops;
+/// caller-side output/publication must follow this result rather than run under the lock.
+pub fn save_webhook_port_at(path: &std::path::Path, port: Option<u16>) -> std::io::Result<()> {
+    match port {
+        Some(port) => tasty_settings::webhook_port_file::set_port(path, port),
+        None => tasty_settings::webhook_port_file::clear_port(path),
+    }
+}
+
+#[cfg(test)]
+mod webhook_file_tests {
+    use super::*;
+
+    /// Owned cross-process file fixture; no IPC, listener or real user port is used.
+    #[test]
+    fn file_participant_child() {
+        if std::env::var_os("TASTY_WEBHOOK_FILE_CHILD").as_deref()
+            != Some(std::ffi::OsStr::new("port"))
+        {
+            return;
+        }
+        let path = std::path::PathBuf::from(std::env::var_os("TASTY_WEBHOOK_FILE_PATH").unwrap());
+        let ready = std::path::PathBuf::from(std::env::var_os("TASTY_WEBHOOK_FILE_READY").unwrap());
+        std::fs::write(ready, b"ready").unwrap();
+        for n in 0..16 {
+            assert!(
+                save_webhook_port_at(&path, Some(40000 + n)).is_ok(),
+                "offline port mutation failed"
+            );
+        }
+    }
+    #[test]
+    fn actual_offline_adapter_preserves_webhook_and_releases_lock_before_return() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("webhooks.toml");
+        std::fs::write(
+            &path,
+            "format=2\n[[webhook]]\nid='fixture'\n[webhook.auth]\ntoken='isolated-cli-fixture'\n",
+        )
+        .unwrap();
+        save_webhook_port_at(&path, Some(41000)).unwrap();
+        let table = tasty_settings::webhook_port_file::read_table(&path).unwrap();
+        assert_eq!(table["port"].as_integer(), Some(41000));
+        assert!(table["webhook"][0]["auth"]["token"].as_str() == Some("isolated-cli-fixture"));
+        save_webhook_port_at(&path, None).unwrap();
+        let lock_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(dir.path().join("webhooks.toml.lock"))
+            .unwrap();
+        assert!(lock_file.try_lock().is_ok());
+    }
+    #[test]
+    fn actual_offline_adapter_does_not_replace_malformed_original_or_expose_its_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("webhooks.toml");
+        let original = "token='isolated-cli-fixture'\nbroken=[";
+        std::fs::write(&path, original).unwrap();
+        let error = save_webhook_port_at(&path, Some(41000)).unwrap_err();
+        assert!(!error.to_string().contains("isolated-cli-fixture"));
+        assert!(save_webhook_port_at(&path, None).is_err());
+        assert!(std::fs::read_to_string(&path).unwrap() == original);
+    }
+}

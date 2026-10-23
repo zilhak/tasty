@@ -81,7 +81,7 @@ ACK를 보낸 뒤 실행한 IpcSequence가 성공하지 못하면 `src/hook_runt
 
 ### 영속화 (`~/.tasty/webhooks.toml`)
 
-`Persistent` 웹훅만 저장한다(`Temporary` 는 저장 안 함). 저장 항목: `id`, `methods`, `handler`(또는 인라인 `sequence`), `limit`(kind + `deadline_unix`/`remaining`), `auth`. `TimeLimit` deadline 은 절대 Unix 시각이라 재시작 후에도 정확히 만료한다. 재시작 복원(`restore_into_registry`)은 이미 만료된 엔트리를 등록하지 않고 파일에서 정리한다. 최상위 `port`(명시 지정 포트)·`format`(파일 형식 표시)과 `[[webhook]]` 배열이 같은 파일을 공유하며, 각각의 writer 가 상대 섹션을 보존한다. 파일을 읽거나 파싱하지 못하면 어느 writer도 쓰지 않는다(`tasty_settings::webhook_port_file::read_table`). Persistent 등록·해제는 메모리 변경을 되돌리고 `-32603`(등록: "failed to save the persistent webhook; nothing was registered", 해제: "... is still registered")으로 답한다. 응답할 호출자가 없는 저장(만료 정리, 호출 때 남은 횟수 차감, 복원 뒤 정리)은 쓰지 않고 경고 로그와 경고 알림(제목 `hook_notice.webhook_save_title`, source `webhook`)을 남긴다. 이번 실행의 등록은 그대로 동작하며, 다시 시작하면 저장된 목록에 그 변경이 빠져 있을 수 있다. 저장 포트 읽기는 경고 후 없는 것으로 다루고, 포트 저장·삭제는 오류로 끝난다.
+`Persistent` 웹훅만 저장한다(`Temporary` 는 저장 안 함). 저장 항목: `id`, `methods`, `handler`(또는 인라인 `sequence`), `limit`(kind + `deadline_unix`/`remaining`), `auth`. `TimeLimit` deadline 은 절대 Unix 시각이라 재시작 후에도 정확히 만료한다. 재시작 복원(`restore_into_registry`)은 이미 만료된 엔트리를 등록하지 않고 파일에서 정리한다. 최상위 `port`(명시 지정 포트)·`format`(파일 형식 표시)과 `[[webhook]]` 배열이 같은 파일을 공유하며, 각각의 writer 가 상대 섹션을 보존한다. host의 배열 교체와 standalone CLI의 포트 변경은 같은 참여자 파일 잠금 안에서 최신 TOML을 읽어 해당 섹션만 바꾼다. 읽기·파싱 실패면 어느 writer도 쓰지 않는다. 외부 편집이 읽기 뒤 바뀌었으면 교체 전에 fingerprint·링크 대상을 대조해 거절한다(마지막 확인과 rename 사이 경합은 남는다). TOML 주석·공백의 바이트 보존은 보장하지 않는다. Persistent 등록·해제는 메모리 변경을 되돌리고 `-32603`(등록: "failed to save the persistent webhook; nothing was registered", 해제: "... is still registered")으로 답한다. 응답할 호출자가 없는 저장(만료 정리, 호출 때 남은 횟수 차감, 복원 뒤 정리)은 쓰지 않고 경고 로그와 경고 알림(제목 `hook_notice.webhook_save_title`, source `webhook`)을 남긴다. 이번 실행의 등록은 그대로 동작하며, 다시 시작하면 저장된 목록에 그 변경이 빠져 있을 수 있다. 저장 포트 읽기는 경고 후 없는 것으로 다루고, 포트 저장·삭제는 오류로 끝난다.
 
 ### 선택적 인증 (가벼운 발신자 확인)
 
@@ -96,7 +96,7 @@ ACK를 보낸 뒤 실행한 IpcSequence가 성공하지 못하면 `src/hook_runt
 | HeaderKey | 지정 HTTP header |
 
 비교는 `ct_eq`를 사용한다. 조회 응답은 위치·key 이름만 보여주고 토큰 값은 반환하지 않는다.
-Persistent 토큰은 `webhooks.toml`에 평문으로 저장된다. Unix 파일 모드는 현재 atomic_write의 tempfile 생성 방식을 따른다.
+Persistent 토큰은 `webhooks.toml`에 평문으로 저장된다. 새 Unix 파일은 0600으로 만들고, 기존 파일은 공용 교체 함수가 native 권한·소유권을 보존한다. 파싱 오류 로그에 파일 원문을 넣지 않는다.
 저장 경로를 바꾸면 권한도 함께 확인해야 하며 이 응답 은닉을 저장 암호화로 해석하지 않는다.
 
 ### body 상한 (요청당)

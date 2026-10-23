@@ -1,4 +1,4 @@
-<!-- source-hash: ea9ed0fc0a33 -->
+<!-- source-hash: 2dbdfba6469a -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -233,6 +233,8 @@ Registering prints a URL of the form `http://127.0.0.1:<port>/<16-character id>`
 | `--persistent` | Kept across restarts (by default it disappears on restart). If you also set `--auth-token`, that token is stored in plain text in `~/.tasty/webhooks.toml` |
 | `--ttl-secs <secs>` / `--count <N>` | Time limit / **accepted** call count limit (one of the two). A rejected token (`401`) and a method that is not allowed (`405`) do not spend the count |
 | `--auth-location query\|bearer\|body\|header` + `--auth-token` (+ `--auth-key`) | Optional authentication. No auth if not set |
+
+Port settings and persistent registrations share one file and preserve each other's contents. If the file cannot be read or parsed, saving is refused and the original stays intact. Comments and whitespace from manual edits may change on the next save.
 
 Omit both `--ttl-secs` and `--count` for unlimited calls. `--persistent` can be combined with either limit; restarting restores registrations whose time or call allowance has not expired.
 
