@@ -105,6 +105,16 @@ pub(super) fn read(path: &Path) -> Result<ChildTerminalRegistry, String> {
 }
 
 fn read_observed(path: &Path) -> anyhow::Result<(ChildTerminalRegistry, Fingerprint)> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if !metadata.is_file() => {
+            anyhow::bail!("registry target is not a regular file")
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((ChildTerminalRegistry::default(), Fingerprint::Missing));
+        }
+        Err(error) => anyhow::bail!("registry metadata failed ({:?})", error.kind()),
+    }
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

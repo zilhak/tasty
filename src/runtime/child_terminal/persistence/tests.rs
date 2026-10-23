@@ -101,7 +101,10 @@ fn two_processes_reserve_unique_indices_and_keep_both_records() {
             std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "runtime::child_terminal::persistence::tests::registry_subprocess",
+                    &format!(
+                        "{}::registry_subprocess",
+                        module_path!().split_once("::").unwrap().1
+                    ),
                     "--nocapture",
                 ])
                 .env("TASTY_CHILD_REGISTRY_TEST_PATH", &path)

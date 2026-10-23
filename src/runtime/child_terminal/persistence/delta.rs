@@ -31,8 +31,8 @@ impl Delta {
         Self {
             parent: changes(&before.parent_of, &after.parent_of, owned),
             external_parent: changes(&before.external_parent_of, &after.external_parent_of, owned),
-            idle: changes(&before.idle, &after.idle, owned),
-            needs_input: changes(&before.needs_input, &after.needs_input, owned),
+            idle: state_changes(before, after, true),
+            needs_input: state_changes(before, after, false),
             reported: changes(
                 &before.last_state_report_at,
                 &after.last_state_report_at,
@@ -111,6 +111,28 @@ impl Delta {
         bounds.retain(|parent, _| disk.external_children.contains_key(parent));
         disk.removed_external_top = bounds;
     }
+}
+
+fn state_changes(before: &Registry, after: &Registry, idle: bool) -> Vec<(u32, Option<bool>)> {
+    let (old, new) = if idle {
+        (&before.idle, &after.idle)
+    } else {
+        (&before.needs_input, &after.needs_input)
+    };
+    let mut delta = changes(old, new, |id| after.owned.contains(id));
+    let (old_intents, new_intents) = if idle {
+        (&before.idle_intents, &after.idle_intents)
+    } else {
+        (&before.needs_input_intents, &after.needs_input_intents)
+    };
+    for (child, intent) in new_intents {
+        if old_intents.get(child) == Some(intent) || !after.owned.contains(child) {
+            continue;
+        }
+        delta.retain(|(id, _)| id != child);
+        delta.push((*child, Some(intent.1)));
+    }
+    delta
 }
 
 fn changes<K: Clone + Eq + Hash, V: Clone + Eq>(
@@ -213,7 +235,9 @@ fn apply_relations<K: Clone + Eq + Hash>(
                     merge_entry(current, before, after);
                 }
                 (Some(current), None) => *current = after.clone(),
-                (None, _) => list.push(after.clone()),
+                (None, None) => list.push(after.clone()),
+                // A field edit cannot recreate a relationship deleted by a newer participant.
+                (None, Some(_)) => {}
             },
         }
         list.sort_by_key(|c| c.index);

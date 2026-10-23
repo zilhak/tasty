@@ -49,6 +49,13 @@ impl ReconcileSummary {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ChildTerminalRegistry {
     children: HashMap<u32, Vec<ChildEntry>>,
+    /// Explicit reports carry intent even when their value equals the loaded snapshot.
+    #[serde(skip)]
+    idle_intents: HashMap<u32, (u64, bool)>,
+    #[serde(skip)]
+    needs_input_intents: HashMap<u32, (u64, bool)>,
+    #[serde(skip)]
+    intent_serial: u64,
     parent_of: HashMap<u32, u32>,
     next_index: HashMap<u32, u32>,
     idle: HashMap<u32, bool>,
@@ -237,6 +244,9 @@ impl ChildTerminalRegistry {
         for map in [&mut self.idle, &mut self.needs_input] {
             map.retain(|surface, _| !gone.contains(surface));
         }
+        self.idle_intents.retain(|child, _| !gone.contains(child));
+        self.needs_input_intents
+            .retain(|child, _| !gone.contains(child));
         self.parent_of.retain(|child, _| !gone.contains(child));
         self.last_state_report_at
             .retain(|surface, _| !gone.contains(surface));
@@ -383,6 +393,8 @@ impl ChildTerminalRegistry {
     /// 목록에서 뺀 자식의 역색인과 상태를 지운다.
     fn forget_child(&mut self, surface_id: u32) {
         self.owned.insert(surface_id);
+        self.idle_intents.remove(&surface_id);
+        self.needs_input_intents.remove(&surface_id);
         self.parent_of.remove(&surface_id);
         self.external_parent_of.remove(&surface_id);
         self.idle.remove(&surface_id);
@@ -394,6 +406,7 @@ impl ChildTerminalRegistry {
     /// idle 값과 무관하게 needs_input도 해제한다. 대기 플래그가 남아 이후 idle·active를 가리지 않게 한다.
     pub fn set_idle(&mut self, child_surface: u32, idle: bool) {
         self.own(child_surface);
+        self.record_state_intent(child_surface, Some(idle), Some(false));
         self.idle.insert(child_surface, idle);
         self.needs_input.insert(child_surface, false);
         self.stamp_state_report(child_surface);
@@ -412,8 +425,20 @@ impl ChildTerminalRegistry {
 
     pub fn set_needs_input(&mut self, child_surface: u32, val: bool) {
         self.own(child_surface);
+        self.record_state_intent(child_surface, None, Some(val));
         self.needs_input.insert(child_surface, val);
         self.stamp_state_report(child_surface);
+    }
+
+    fn record_state_intent(&mut self, child: u32, idle: Option<bool>, needs: Option<bool>) {
+        self.intent_serial = self.intent_serial.wrapping_add(1);
+        if let Some(value) = idle {
+            self.idle_intents.insert(child, (self.intent_serial, value));
+        }
+        if let Some(value) = needs {
+            self.needs_input_intents
+                .insert(child, (self.intent_serial, value));
+        }
     }
 
     fn stamp_state_report(&mut self, child_surface: u32) {
@@ -503,6 +528,8 @@ impl ChildTerminalRegistry {
                 });
         }
 
+        self.idle_intents.retain(|sid, _| !dead(sid));
+        self.needs_input_intents.retain(|sid, _| !dead(sid));
         self.parent_of.retain(|sid, _| !dead(sid));
         self.external_parent_of.retain(|sid, _| !dead(sid));
         self.idle.retain(|sid, _| !dead(sid));
@@ -1316,3 +1343,6 @@ mod tests {
         assert!(ChildTerminalRegistry::load().external_next_index.is_empty());
     }
 }
+
+#[cfg(test)]
+mod regression;
