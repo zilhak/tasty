@@ -150,6 +150,8 @@ Windows는 IsUserInitiated를 사용하며 실패 시 warning과 false로 처리
 
 ## 키보드 — 별도 계약
 
+macOS와 Windows의 native keycode·문자·modifier 변환은 각 플랫폼의 `keyboard` 모듈에 둔다. native callback과 기존 키 전달 계약은 같은 변환 함수를 사용한다.
+
 native 자식 창의 키는 winit으로 자동 전달되지 않는다. 각 backend가 논리 키·PhysicalKey·modifier를
 WebViewKeySink에 보내고 공통 bridge가 소비 여부를 동기 반환한다. 소비한 키는 페이지로 보내지 않으며
 실제 host 액션은 다음 프레임에 큐를 비워 실행한다.
