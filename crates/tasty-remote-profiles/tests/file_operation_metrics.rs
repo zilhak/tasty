@@ -1,6 +1,6 @@
 //! Actual backend operations inside the same bounded observation scope used by FileExecutor.
 use std::{fs, sync::Arc};
-use tasty_doc_guards::floored_walk::{CountedOn, Descend, Floor, walk_with_floor};
+use tasty_doc_guards::floored_walk::{CountedOn, Floor, entries_with_floor};
 use tasty_remote_profiles::{
     ManagedCleanup, MutationStage, Passkey, PasskeyCommand, Passkeys, RemoteFileStore,
 };
@@ -50,8 +50,7 @@ fn private_secret_list_and_user_unlink_have_separate_exact_physical_counts() {
 }
 
 #[cfg(unix)]
-#[test]
-fn private_temp_creation_failure_is_an_observed_failed_attempt_without_user_unlink() {
+fn private_temp_failure_fixture(inject: impl FnOnce(&std::path::Path)) {
     let root = tempfile::tempdir().unwrap();
     let secrets = root.path().join("passkeys");
     fs::create_dir(&secrets).unwrap();
@@ -75,7 +74,8 @@ fn private_temp_creation_failure_is_an_observed_failed_attempt_without_user_unli
     assert_eq!(snapshot.replace.errors[4], 1);
     assert_eq!(snapshot.delete.attempts, 0);
     assert_eq!(fs::read(&original).unwrap(), b"preserved fixture");
-    let files = walk_with_floor(
+    inject(&secrets);
+    let files = entries_with_floor(
         &secrets,
         &secrets,
         &Floor {
@@ -85,13 +85,37 @@ fn private_temp_creation_failure_is_an_observed_failed_attempt_without_user_unli
             counted_on: CountedOn::SyntheticTree,
             why_this_gap: "The owned fixture contains exactly the preserved secret and its participant lock; no missing file is acceptable.",
         },
-        Descend::Everything,
-        &|file| file.path.parent() == Some(secrets.as_path()),
+        2,
     )
     .unwrap();
     assert_eq!(files.len(), 2);
     let names: std::collections::BTreeSet<_> = files.iter().map(|file| file.rel.as_str()).collect();
     assert_eq!(names, [name.as_str(), &format!("{name}.lock")].into());
+}
+
+#[cfg(unix)]
+#[test]
+fn private_temp_creation_failure_is_an_observed_failed_attempt_without_user_unlink() {
+    private_temp_failure_fixture(|_| {});
+}
+
+#[cfg(unix)]
+#[test]
+#[should_panic(expected = "direct-entry limit")]
+fn private_temp_failure_rejects_an_extra_residual_directory() {
+    private_temp_failure_fixture(|secrets| {
+        fs::create_dir(secrets.join("unexpected-residual-directory")).unwrap();
+    });
+}
+
+#[cfg(unix)]
+#[test]
+#[should_panic(expected = "direct-entry limit")]
+fn private_temp_failure_rejects_an_extra_residual_symlink() {
+    private_temp_failure_fixture(|secrets| {
+        std::os::unix::fs::symlink("missing-target", secrets.join("unexpected-residual-link"))
+            .unwrap();
+    });
 }
 
 #[test]

@@ -1,5 +1,9 @@
-//! 파일·디렉터리를 순회하고 결과가 하한보다 적으면 오류를 반환한다.
+//! 파일·디렉터리 순회와 직접 엔트리 열거에 하한을 적용한다.
 //! 호출자는 하한과 실측 근거를 제공한다. 빈 결과를 검사 통과로 오해하지 않게 한다.
+
+mod direct_entries;
+
+pub use direct_entries::entries_with_floor;
 
 use std::path::{Path, PathBuf};
 
