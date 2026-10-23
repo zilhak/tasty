@@ -40,7 +40,7 @@ fn attach(server: &common::TastyInstance, ws: u64, surface: u64) -> (AttachStrea
             .any(|c| c == CAPABILITY)
     );
     assert!(
-        !desc["stream_capabilities"]
+        desc["stream_capabilities"]
             .as_array()
             .unwrap()
             .iter()

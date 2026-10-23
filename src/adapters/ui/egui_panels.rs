@@ -36,6 +36,7 @@ pub fn draw_egui_panels(
 ) {
     let mut infos = Vec::new();
     let mut html_actions = Vec::new();
+    let mut receive_actions = Vec::new();
     {
         let ws = state.active_workspace(engine);
         let ws_id = ws.id;
@@ -318,6 +319,7 @@ pub fn draw_egui_panels(
                 let html_sid = info.surface_id.filter(|_| remote.kind() == "html");
                 let cwd = html_sid.and_then(|sid| engine.local_surface_cwd(sid));
                 let mirror = html_sid.is_some_and(|sid| engine.is_mirror_surface(sid));
+                let received = html_sid.and_then(|sid| engine.html_receive(sid));
                 let content_inset = draw_panel_frame(
                     ctx,
                     &format!("webview_chrome_{}", id_suffix),
@@ -327,7 +329,7 @@ pub fn draw_egui_panels(
                     |ui| {
                         let panel = ui.max_rect();
                         let th = theme::theme();
-                        // 시안 순서: 주소 띠 → 스크립트 배너 → 페이지. chrome과 배너는 띠 아래에 놓는다.
+                        // 시안 순서: 주소 띠 → 크기 배너 → 스크립트 배너 → 페이지.
                         let band = html_sid.map(|sid| {
                             let source =
                                 crate::adapters::ui::surface::html_address::HtmlAddressSource {
@@ -337,6 +339,7 @@ pub fn draw_egui_panels(
                                     cwd: cwd.as_deref(),
                                     home: home.as_deref(),
                                     mirror,
+                                    received: received.as_ref(),
                                 };
                             let frame = html_bands.draw(ui, &th, sid, panel, &source);
                             if let Some(nav) = frame.nav {
@@ -346,34 +349,83 @@ pub fn draw_egui_panels(
                         });
                         let band_h = band.unwrap_or_default();
                         let below = panel.with_min_y(panel.min.y + band_h.value());
-                        let [left, right, bottom] = info.webview_inset;
-                        let content = egui::Rect::from_min_max(
-                            egui::pos2(below.min.x + left, below.min.y),
-                            egui::pos2(below.max.x - right, below.max.y - bottom),
-                        );
-                        let mut chrome_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
-                        chrome_ui.set_clip_rect(ui.clip_rect().intersect(below));
-                        // 띠로 연 빈 탭은 호스트 주소가 없으므로 commit 주소로 문서 유무를 정한다.
-                        crate::webview_chrome_ui::draw_webview_chrome(
-                            &mut chrome_ui,
-                            content,
-                            url.as_deref().or(nav_info.url.as_deref()),
-                            chrome_label.as_deref(),
-                            nav,
-                            html_sid.filter(|_| !mirror).and(html_hint.as_deref()),
-                        );
-                        let sid = html_sid?;
-                        let banner = engine.html_script(sid).and_then(|snapshot| {
-                            crate::adapters::ui::surface::html_script_banner::draw(
+                        let size = received.as_ref().and_then(|snapshot| {
+                            crate::adapters::ui::surface::html_receive::size_banner(
                                 ui,
                                 &th,
-                                &snapshot,
-                                &mut html_actions,
-                                sid,
+                                snapshot,
                                 below,
+                                &mut receive_actions,
                             )
                         });
-                        Some(band_h + banner.unwrap_or_default())
+                        // The script view contributes its top margin and final gap. With a
+                        // size banner above it, that margin becomes the single inter-card gap.
+                        let before_script = size
+                            .map(|height| th.banner_margin() + height)
+                            .unwrap_or_default();
+                        let script_panel = below.with_min_y(below.min.y + before_script.value());
+                        let script = html_sid.and_then(|sid| {
+                            engine.html_script(sid).and_then(|snapshot| {
+                                crate::adapters::ui::surface::html_script_banner::draw(
+                                    ui,
+                                    &th,
+                                    &snapshot,
+                                    &mut html_actions,
+                                    sid,
+                                    script_panel,
+                                )
+                            })
+                        });
+                        let banners = before_script
+                            + script.unwrap_or_else(|| {
+                                if size.is_some() {
+                                    th.banner_inset_gap()
+                                } else {
+                                    Default::default()
+                                }
+                            });
+                        let page = below.with_min_y(below.min.y + banners.value());
+                        let [left, right, bottom] = info.webview_inset;
+                        let content = egui::Rect::from_min_max(
+                            egui::pos2(page.min.x + left, page.min.y),
+                            egui::pos2(page.max.x - right, page.max.y - bottom),
+                        );
+                        let mut chrome_ui = ui.new_child(egui::UiBuilder::new().max_rect(page));
+                        chrome_ui.set_clip_rect(ui.clip_rect().intersect(page));
+                        if let Some(snapshot) = &received {
+                            crate::adapters::ui::surface::html_receive::page(
+                                &mut chrome_ui,
+                                &th,
+                                snapshot,
+                                content,
+                            );
+                            if snapshot.failed
+                                || (!snapshot.receiving && !snapshot.ready && snapshot.connected)
+                            {
+                                crate::webview_chrome_ui::draw_webview_chrome(
+                                    &mut chrome_ui,
+                                    content,
+                                    None,
+                                    chrome_label.as_deref(),
+                                    if snapshot.failed {
+                                        crate::webview::NavState::Failed
+                                    } else {
+                                        crate::webview::NavState::Idle
+                                    },
+                                    None,
+                                );
+                            }
+                        } else {
+                            crate::webview_chrome_ui::draw_webview_chrome(
+                                &mut chrome_ui,
+                                content,
+                                url.as_deref().or(nav_info.url.as_deref()),
+                                chrome_label.as_deref(),
+                                nav,
+                                html_sid.filter(|_| !mirror).and(html_hint.as_deref()),
+                            );
+                        }
+                        html_sid.map(|_| band_h + banners)
                     },
                 );
                 if let (Some(sid), Some(inset)) = (info.surface_id, content_inset) {
@@ -392,6 +444,15 @@ pub fn draw_egui_panels(
         state.dispatch_intent(
             crate::intent::Intent::Frame(crate::app::frame_effect::DrawEffect::Html(action).into())
                 .from_user_menu("html-script-banner"),
+        );
+    }
+
+    for action in receive_actions {
+        state.dispatch_intent(
+            crate::intent::Intent::Frame(
+                crate::app::frame_effect::DrawEffect::HtmlReceive(action).into(),
+            )
+            .from_user_menu("html-receive-banner"),
         );
     }
 

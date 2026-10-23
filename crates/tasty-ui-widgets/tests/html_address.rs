@@ -10,6 +10,7 @@ fn view() -> HtmlAddressView<'static> {
         can_forward: true,
         loading: false,
         disconnected: false,
+        skipped: None,
         focus: false,
         labels: HtmlAddressLabels {
             placeholder: "Path or URL",

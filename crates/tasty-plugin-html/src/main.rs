@@ -17,6 +17,7 @@ const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 struct HtmlPlugin {
     /// create_surface에서도 URL을 전달할 수 있도록 보관한다.
     host: Option<HostHandle>,
+    mirrors: std::collections::HashSet<u32>,
 }
 
 impl Plugin for HtmlPlugin {
@@ -34,12 +35,18 @@ impl Plugin for HtmlPlugin {
 
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
         // SDK가 전달한 전체 요청에서 중첩된 생성 파라미터를 읽는다.
+        if let Some(result) = self.remote_surface(ctx.surface_id, &ctx.params) {
+            return result;
+        }
         let url = surface_param_url(&ctx.params);
         self.open_url_surface(ctx.surface_id, url)
     }
 
     // 레이아웃 복원은 create_surface와 별도로 스냅샷의 URL을 다시 전달해야 한다.
     fn restore_surface(&mut self, ctx: SurfaceRestoreCtx) -> SurfaceResult {
+        if let Some(result) = self.remote_surface(ctx.surface_id, &ctx.data) {
+            return result;
+        }
         let url = ctx
             .data
             .get("url")
@@ -48,8 +55,22 @@ impl Plugin for HtmlPlugin {
         self.open_url_surface(ctx.surface_id, url)
     }
 
+    fn destroy_surface(&mut self, surface_id: u32) {
+        self.mirrors.remove(&surface_id);
+    }
+
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
+            "html.open"
+                if ctx.params["surface"]
+                    .as_u64()
+                    .and_then(|id| u32::try_from(id).ok())
+                    .is_some_and(|id| self.mirrors.contains(&id)) =>
+            {
+                Err(IpcMethodError::invalid_params(
+                    "remote HTML is read-only; reload the mirrored entry",
+                ))
+            }
             "html.open" => html_open(&ctx),
             other => Err(IpcMethodError::not_found(other)),
         }
@@ -57,6 +78,23 @@ impl Plugin for HtmlPlugin {
 }
 
 impl HtmlPlugin {
+    fn remote_surface(&mut self, surface: u32, envelope: &Value) -> Option<SurfaceResult> {
+        let params = envelope.get("params").unwrap_or(envelope);
+        let remote = params
+            .get("remote")
+            .filter(|remote| remote["html_entry"] == true)?
+            .clone();
+        self.mirrors.insert(surface);
+        let display_name = params
+            .get("display_name")
+            .and_then(Value::as_str)
+            .unwrap_or("HTML")
+            .to_owned();
+        Some(SurfaceResult {
+            display_name: Some(display_name.clone()),
+            snapshot: Some(json!({"display_name":display_name,"remote":remote})),
+        })
+    }
     /// URL을 호스트에 전달하고 스냅샷에 담는다. 빈 문자열은 URL 없음으로 처리한다.
     fn open_url_surface(&mut self, surface_id: u32, url: Option<String>) -> SurfaceResult {
         let url = url.filter(|u| !u.is_empty());
@@ -198,6 +236,32 @@ fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_create_and_restore_keep_provenance_without_a_local_url() {
+        let mut plugin = HtmlPlugin::default();
+        let remote = json!({"html_entry":true,"source":{"kind":"file","path":"/server/entry.html","url":"file:///server/entry.html"}});
+        let result = plugin.create_surface(SurfaceCreateCtx {
+            surface_id: 7,
+            kind: "html".into(),
+            cwd: Some("/client/sentinel".into()),
+            params: json!({"params":{"remote":remote,"display_name":"entry"}}),
+        });
+        let snapshot = result.snapshot.unwrap();
+        assert_eq!(snapshot["remote"], remote);
+        assert!(snapshot.get("url").is_none());
+        assert!(plugin.mirrors.contains(&7));
+        let restored = plugin.restore_surface(SurfaceRestoreCtx {
+            surface_id: 8,
+            kind: "html".into(),
+            data: snapshot,
+        });
+        assert!(restored.snapshot.unwrap().get("url").is_none());
+        assert!(plugin.mirrors.contains(&8));
+        plugin.destroy_surface(7);
+        assert!(!plugin.mirrors.contains(&7));
+        assert!(plugin.mirrors.contains(&8));
+    }
 
     #[test]
     fn surface_param_url_reads_nested_and_flat() {

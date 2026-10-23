@@ -32,7 +32,7 @@ pub struct Input<'a> {
     /// 포커스가 없어도 포커스 테두리를 그린다. 확정한 입력의 결과를 기다리는 동안 쓴다.
     focus_look: bool,
     /// 입력 뒤 정사각 칸과 그 변 길이. 칸을 그리는 painter 는 input-icon-fg 색으로 불린다.
-    trailing: Option<(IconPainter<'a>, f32)>,
+    trailing: Option<(IconPainter<'a>, egui::Vec2)>,
     /// 비편집 표시만 대체한다. TextEdit에는 언제나 원문 버퍼를 전달한다.
     idle_text: Option<&'a str>,
     /// 놓인 바탕. raised면 상자·쉬는 테두리·disabled·readonly 상자가 raised 토큰이다.
@@ -187,7 +187,18 @@ impl<'a> Input<'a> {
 
     /// 입력 뒤에 변 길이 `size` 인 칸을 두고 `paint` 로 그린다(예: 기다리는 동안의 Spinner).
     pub fn trailing(mut self, paint: IconPainter<'a>, size: f32) -> Self {
-        self.trailing = Some((paint, size));
+        self.trailing = Some((paint, egui::vec2(size, size)));
+        self
+    }
+
+    /// Reserve a rectangular trailing slot, such as a status Tag inside the input.
+    pub fn trailing_box(
+        mut self,
+        paint: IconPainter<'a>,
+        width: LogicalPx,
+        height: LogicalPx,
+    ) -> Self {
+        self.trailing = Some((paint, egui::vec2(width.value(), height.value())));
         self
     }
 
@@ -237,7 +248,7 @@ impl<'a> Input<'a> {
             .as_ref()
             .map(|g| g.rect.width() + gap)
             .unwrap_or(0.0);
-        let trailing_w = self.trailing.map_or(0.0, |(_, size)| size + gap);
+        let trailing_w = self.trailing.map_or(0.0, |(_, size)| size.x + gap);
         let te_w = (inner_w - icon_w - addon_w - trailing_w).max(0.0);
 
         let muted = if self.enabled {
@@ -320,8 +331,7 @@ impl<'a> Input<'a> {
                 ui.painter().galley(arect.min, g, muted);
             }
             if let Some((paint, size)) = self.trailing {
-                let (trect, _) =
-                    ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+                let (trect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                 paint(ui, trect, muted);
             }
             r

@@ -21,7 +21,7 @@ Surface 종류(kind)마다 명세를 한 곳에 둔다. host 내장인지 번들
 | `dag_graph` | [dag-graph](dag-graph/index.md) | host 내장 | `host-egui` |
 | `markdown` | [markdown](markdown/index.md) | 번들 plugin `com.tasty.markdown` | `webview` |
 | `image` | [image](image/index.md) | 번들 plugin `com.tasty.image` | `egui-mesh` |
-| `html` | [html](html/index.md) | 번들 plugin `com.tasty.html` | `webview` |
+| `html` | [html](html/index.md) — 로컬 문서·Linux 원격 파일 entry | 번들 plugin `com.tasty.html` | `webview` |
 
 - host 내장 4종은 `register_builtin_kinds`(`src/runtime/surface_registry/builtins.rs`)가 부팅 때 등록한다.
 - plugin kind는 매니페스트(`crates/tasty-plugin-<id>/tasty-plugin.toml`)의 `[[surface_kinds]]`가 선언하고, plugin이 연결된 뒤 host가 등록한다. 실제로 등록된 kind와 렌더 경로는 `tasty list surface-kinds`(IPC `surface.kinds`)가 런타임 기준으로 알려 준다. 헤드리스도 `webview`·`remote`·`egui-mesh` kind를 GUI와 같이 등록한다([작업 영역](../features/work-area/index.md#surface-종류)).

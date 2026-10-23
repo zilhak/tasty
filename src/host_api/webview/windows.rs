@@ -20,6 +20,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::*;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
+use super::entry_response::{EntryResponseSource, windows as entry_adapter};
 use super::keys::WebViewKeySink;
 use super::load_generation::{is_current_load, nav_state_after_end};
 use super::scan_resume::{HistoryStep, Replay, RequestAction, ScanResume, Start, StartKind};
@@ -32,6 +33,8 @@ pub struct PlatformWebView {
     controller: ICoreWebView2Controller,
     webview: ICoreWebView2,
     _environment: ICoreWebView2Environment,
+    entry_source: Option<EntryResponseSource>,
+    _entry_profile: Option<tempfile::TempDir>,
     allow_remote: Rc<Cell<bool>>,
     nav_state: Rc<Cell<NavState>>,
     /// 마지막에 시작한 main frame 탐색의 NavigationId. chrome 상태는 이 탐색의 종료만 따른다.
@@ -165,7 +168,14 @@ impl PlatformWebView {
         scale_factor: f64,
         surface_id: u32,
         key_bridge: Rc<dyn WebViewKeySink>,
+        entry_source: Option<super::entry_response::EntryResponseSource>,
     ) -> std::result::Result<Self, super::WebViewCreateError> {
+        let entry_environment = entry_source
+            .as_ref()
+            .map(|_| entry_adapter::EntryEnvironment::new())
+            .transpose()
+            .map_err(perm)?;
+
         let parent = match window.window_handle().map_err(perm)?.as_raw() {
             RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as *mut std::ffi::c_void),
             _ => return Err(perm("Not a Win32 window")),
@@ -219,8 +229,10 @@ impl PlatformWebView {
             let (env_tx, env_rx) = mpsc::channel();
             CreateCoreWebView2EnvironmentWithOptions(
                 PCWSTR::null(),
-                PCWSTR::null(),
-                None,
+                entry_environment
+                    .as_ref()
+                    .map_or(PCWSTR::null(), |entry| PCWSTR(entry.folder.as_ptr())),
+                entry_environment.as_ref().map(|entry| &entry.options),
                 &CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
                     move |_hr, env| {
                         if let Err(e) = env_tx.send(env) {
@@ -237,18 +249,20 @@ impl PlatformWebView {
                 .ok_or_else(|| transient("No environment returned"))?;
 
             let (ctrl_tx, ctrl_rx) = mpsc::channel();
-            env.CreateCoreWebView2Controller(
-                hwnd,
-                &CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
-                    move |_hr, ctrl| {
-                        if let Err(e) = ctrl_tx.send(ctrl) {
-                            tracing::warn!("WebView2 controller handoff failed: {e}");
-                        }
-                        Ok(())
-                    },
-                )),
-            )
-            .map_err(|e| transient(format!("CreateController failed: {e}")))?;
+            let callback = CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
+                move |_hr, controller| {
+                    if let Err(error) = ctrl_tx.send(controller) {
+                        tracing::warn!(%error, "WebView2 controller handoff failed");
+                    }
+                    Ok(())
+                },
+            ));
+            if entry_source.is_some() {
+                entry_adapter::controller(&env, hwnd, &callback)
+            } else {
+                env.CreateCoreWebView2Controller(hwnd, &callback)
+            }
+            .map_err(|error| transient(format!("CreateController failed: {error}")))?;
 
             let controller = webview2_com::wait_with_pump(ctrl_rx)
                 .map_err(|e| transient(format!("Controller wait failed: {e}")))?
@@ -298,6 +312,7 @@ impl PlatformWebView {
                 .AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
                 .map_err(|e| transient(format!("AddWebResourceRequestedFilter failed: {e}")))?;
             let env_cb = env.clone();
+            let entry_request = entry_source.clone();
             let allow_cb = allow_remote.clone();
             let mut token: i64 = 0;
             let handler = WebResourceRequestedEventHandler::create(Box::new(
@@ -309,6 +324,9 @@ impl PlatformWebView {
                     let uri_str = uri.to_string().unwrap_or_default();
                     // WebView2가 할당한 URI를 CoTaskMemFree로 해제한다.
                     CoTaskMemFree(Some(uri.0 as *const c_void));
+                    if let Some(source) = &entry_request {
+                        return entry_adapter::reply(source, &env_cb, &args, &uri_str);
+                    }
                     let is_remote =
                         uri_str.starts_with("http://") || uri_str.starts_with("https://");
                     if is_remote && !allow_cb.get() {
@@ -380,6 +398,7 @@ impl PlatformWebView {
             let mut tok_start: i64 = 0;
             // NavigationStarting은 main frame 탐색에서만 온다. WebView2는 응답 단계가 없어
             // 로드 시작과 응답 결정을 여기서 함께 한다(docs/surfaces/html/index.md 후보 이벤트, 미측정).
+            let entry_navigation = entry_source.clone();
             let h_start = NavigationStartingEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
                     tracing::debug!("WebView surface {surface_id}: load started");
@@ -402,6 +421,14 @@ impl PlatformWebView {
                         let uri_str = uri.to_string().unwrap_or_default();
                         // 반환 URI의 할당은 호출자가 해제한다.
                         CoTaskMemFree(Some(uri.0 as *const c_void));
+                        if entry_navigation
+                            .as_ref()
+                            .is_some_and(|source| source.response(&uri_str).is_none())
+                        {
+                            args.SetCancel(true)?;
+                            nav_start.set(NavState::Failed);
+                            return Ok(());
+                        }
                         // 제스처 여부 조회 실패도 탐색 자체는 기록하되 false로 남긴다.
                         let mut user_initiated = BOOL(0);
                         let user_gesture = match args.IsUserInitiated(&mut user_initiated) {
@@ -487,6 +514,12 @@ impl PlatformWebView {
 
             // ContentLoading을 main frame commit으로 본다(docs/surfaces/html/index.md 후보 이벤트, 미측정).
             let gate_commit = script_gate.clone();
+            if entry_source.is_some() {
+                entry_adapter::deny_new_windows(&webview).map_err(|error| {
+                    transient(format!("entry new-window boundary failed: {error}"))
+                })?;
+            }
+
             let committed_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
             let commit_url = committed_url.clone();
             let resume_content = scan_resume.clone();
@@ -709,6 +742,8 @@ impl PlatformWebView {
                 controller,
                 webview,
                 _environment: env,
+                entry_source,
+                _entry_profile: entry_environment.map(|entry| entry.profile),
                 allow_remote,
                 nav_state,
                 chrome_generation,
@@ -885,6 +920,14 @@ impl PlatformWebView {
     }
 
     pub fn load_url(&self, url: &str) {
+        if self
+            .entry_source
+            .as_ref()
+            .is_some_and(|source| source.response(url).is_none())
+        {
+            self.nav_state.set(NavState::Failed);
+            return;
+        }
         self.begin_load();
         // SAFETY: HSTRING은 호출 끝까지 살아있고 Navigate는 main thread 호출.
         unsafe {
@@ -896,6 +939,10 @@ impl PlatformWebView {
     }
 
     pub fn load_html(&self, html: &str) {
+        if self.entry_source.is_some() {
+            self.nav_state.set(NavState::Failed);
+            return;
+        }
         self.begin_load();
         // SAFETY: HSTRING은 호출 끝까지 살아있고 NavigateToString은 main thread 호출.
         unsafe {
@@ -1010,7 +1057,8 @@ impl PlatformWebView {
 
     /// 다음 요청부터 WebResourceRequested가 읽을 허용 여부를 갱신한다.
     pub fn set_remote_content_allowed(&self, allowed: bool) {
-        self.allow_remote.set(allowed);
+        self.allow_remote
+            .set(self.entry_source.is_none() && allowed);
         tracing::debug!("Windows WebView2 set_remote_content_allowed({allowed})");
     }
 }

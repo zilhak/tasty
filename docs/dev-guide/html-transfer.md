@@ -1,6 +1,6 @@
 # HTML entry 전송 계약
 
-attach 서버의 HTML 전송 기반과 순수 client 모델을 설명한다. native viewer와 크기 배너는 아직 연결하지 않는다. html leaf는 계속 placeholder이며 원격 Explorer의 HTML 열기 허용 여부도 바꾸지 않는다. [HTML surface](../surfaces/html/index.md), [attach 동작](attach-behavior.md)을 함께 본다.
+attach 서버의 HTML 전송과 client entry viewer를 설명한다. Linux GUI client는 파일 entry 본문을 받아 별도 native context에서 표시한다. 하위 리소스와 HTTP(S) 실행은 지원하지 않으며 client 파일·네트워크로 대체하지 않는다. [HTML surface](../surfaces/html/index.md), [attach 동작](attach-behavior.md)을 함께 본다.
 
 ## source와 협상
 
@@ -8,7 +8,7 @@ attach 서버의 HTML 전송 기반과 순수 client 모델을 설명한다. nat
 
 `HtmlSource`는 File/Http/Inline/Unsupported다. file URL은 percent decoding 뒤 해당 서버 OS의 절대 경로로 해석한다. 문자열 DTO로 손실 없이 표현할 수 없는 경로는 Unsupported로 거절한다. File source는 읽기 경로와 정규화한 file URL을 따로 보관하여 query·fragment를 잃지 않는다. 둘 다 서버의 주소이며 client가 자기 파일 URI로 직접 탐색하지 않는다. HTTP(S)·raw HTML은 파일로 읽지 않는다. 생성·복원 인자는 파일 경로를 받을 수 있지만, `webview.set_url`의 주소가 아닌 문자열은 native 로드 규칙에 따라 일반 텍스트도 Inline으로 기록한다. 파일 source의 부모를 root·cwd로 사용하고, 그 외 source는 상속 cwd를 보관한다.
 
-`STREAM_PROTO=1`, 기존 tag와 `MAX_FRAME_LEN=1MiB`는 유지한다. workspace descriptor는 `ipc.stream.html-transfer-v1`을 광고한다. 새 client는 이 광고가 있는 연결에만 `html_capabilities`로 같은 capability를 선언하고 서버는 해당 registration에 지원 여부를 기록한다. 생략하면 구 peer다. 서버 광고만으로 새 메시지를 보내지 않는다. `ipc.stream.html-entry-v1`은 viewer용으로 예약한 이름이며 현재 양쪽 모두 선언하지 않는다. HTML role도 보내지 않는다. terminal·markdown 경로는 기존 방식이다.
+`STREAM_PROTO=1`, 기존 tag와 `MAX_FRAME_LEN=1MiB`는 유지한다. workspace descriptor는 `ipc.stream.html-transfer-v1`을 광고한다. 새 client는 이 광고가 있는 연결에만 `html_capabilities`로 같은 capability를 선언하고 서버는 해당 registration에 지원 여부를 기록한다. 생략하면 구 peer다. 서버 광고만으로 새 메시지를 보내지 않는다. `ipc.stream.html-entry-v1`은 entry viewer capability다. 서버는 두 capability를 광고하고, Linux GUI client는 둘 다 선언한다. 서버는 두 선언을 모두 받은 registration에만 자신이 소유한 `com.tasty.html` leaf의 `html` role과 source metadata를 보낸다. 구 peer·미지원 client·다른 plugin의 동명 kind에는 placeholder를 유지한다. terminal·markdown 경로는 기존 방식이다.
 
 ## metadata, allowance와 credit
 
@@ -36,7 +36,7 @@ Unix는 canonical root/target이 같은 root 안인지 확인한 뒤, `/`부터 
 
 개별 자동 기준은 100000 bytes, 문서 누적 기준은 2000000 bytes인 decimal 상수다. 누적은 수신한 raw body bytes이며 이미 발급한 credit도 예약량으로 합산한다. 누적 경계에서 자동 credit을 멈추고 Continue를 기다린다. Continue는 그 문서의 누적 정지만 해제하며 개별 큰 파일 Allow는 별개다. 크기 질문은 FIFO queue로 하나씩 소비한다. Decline은 해당 요청만 종료하고 skipped를 증가시킨다. Stop은 나머지 요청을 종료한다.
 
-completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 소유권을 immutable 공유 할당으로 옮긴다. `html_body::ReceivedEntry`는 그 할당에서 기존 스캐너로 감지·전체 지문을 구하고, native 응답용 MIME·원격 source URL·여섯 부분 transfer identity와 묶는다. 검사가 끝난 본문은 같은 identity의 `EntryBodyStore`에 한 번만 게시한다. native용 가상 entry URL은 원격 파일 경로를 포함하지 않으며 정확히 그 entry만 조회한다. 상대 리소스·file·HTTP(S) 요청에 대한 filesystem/network fallback은 없다. 이 데이터 어댑터는 아직 native viewer에 연결되지 않았다. script 허용에 따른 재로드는 같은 body를 재사용한다. 사용자 Reload는 `reset`으로 새 document generation을 만들고 수신량·크기 허용·skipped·queue를 초기화한다. close/convert/reconnect는 이전 identity의 body와 credit을 해제한다. host는 disconnect·Loss·구조에서 사라지거나 HTML role이 아닌 mapping의 문서를 정리한다. 새 transport는 이전 문서 map을 승계하지 않는다. 변경 watcher나 파일 변경 통지는 만들지 않는다.
+completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 소유권을 immutable 공유 할당으로 옮긴다. `html_body::ReceivedEntry`는 그 할당에서 기존 스캐너로 감지·전체 지문을 구하고, native 응답용 MIME·원격 source URL·여섯 부분 transfer identity와 묶는다. 검사가 끝난 본문은 같은 identity의 `EntryBodyStore`에 한 번만 게시한다. native용 가상 entry URL은 원격 파일 경로를 포함하지 않으며 정확히 그 entry만 조회한다. 상대 리소스·file·HTTP(S) 요청에 대한 filesystem/network fallback은 없다. Linux native custom scheme은 이 store의 정확한 entry URI에만 MIME·CSP·본문을 응답한다. HTTP(S)·상대 파일·frame·fetch·worker 요청을 CSP로 차단하며 navigation 경계도 별도로 검사한다. script 허용에 따른 재로드는 같은 body를 재사용한다. 사용자 Reload는 `reset`으로 새 document generation을 만들고 수신량·크기 허용·skipped·queue를 초기화한다. close/convert/reconnect는 이전 identity의 body와 credit을 해제한다. host는 disconnect·Loss·구조에서 사라지거나 HTML role이 아닌 mapping의 문서를 정리한다. 새 transport는 이전 문서 map을 승계하지 않는다. 변경 watcher나 파일 변경 통지는 만들지 않는다.
 
 ## 검증 경계
 
@@ -50,3 +50,11 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 `HtmlMirror`는 연결 epoch와 surface binding마다 문서 세대를 소유한다. 새 Reload는 기존 scan을 취소하고 body store를 비운 뒤 단조 증가하는 request/transfer로 entry를 다시 요청한다. script Allow는 네트워크 요청 없이 검사가 끝난 같은 공유 body를 사용한다. 응답은 source generation도 보존한다. 검사 worker는 취소를 읽기 경계에서 확인하며, 취소·문서 교체·연결 종료 뒤 늦은 결과는 게시할 수 없다.
 
 서버의 metadata 이후 30초 credit timeout은 사용자 크기 질문 중에도 흐른다. 시간이 지나 failure를 받으면 질문과 receiving을 끝내고, 늦은 Allow는 credit을 발급하지 않는다. Reload만 새 요청을 만들며 이전 크기 허용·누적량·skipped를 초기화한다. entry Decline은 취소와 skipped를 기록하고 본문 없는 종료 상태가 된다. 연결이 끊기면 미완성 수신을 취소하고 이미 완료한 본문은 보존한다.
+
+## Host 연결과 원격 파일 열기
+
+`com.tasty.html`이 등록되지 않은 client에서는 deferred placeholder를 유지한다. 등록 뒤 같은 leaf를 원격 모드로 생성하며 원격 source를 client file URI로 변환하지 않는다. 현재 viewer 광고는 Linux GUI에 한정한다. macOS·Windows의 native 응답 어댑터는 구현되어 있지만 전체 host 컴파일·native 실행 증거와 구분한다. macOS 11–13의 HTTP 미지원 계약은 파일 entry mirror와 별개이며 최소 OS 버전을 올리지 않는다.
+
+주소 띠는 원격 경로를 축약 없이 읽기 전용으로 보이고 Reload만 제공한다. 크기 배너, 스크립트 배너, 페이지 순서로 하나의 inset을 적용한다. 큰 entry는 수신 전에 Allow·Decline을 기다리며 Decline 뒤에는 receiving을 종료하고 skipped tag를 표시한다. 완료한 body는 disconnect 중에도 보존하고 Reload를 비활성화한다. reconnect는 새 connection epoch로 다시 받는다.
+
+스크립트 설정은 client 설정만 읽고 원격 설정이나 허용 메시지를 교환하지 않는다. 기존 스캐너가 받은 전체 body의 지문을 만들고 native 응답도 같은 body를 사용한다. 파일 source의 부모 cwd는 `SurfaceCwd::Remote`이며 client filesystem·PTY 상속·최근 파일로 사용하지 않는다. 지원 연결의 Explorer와 새 HTML 피커는 원래 pane에 원격 NewTab을 보낸다. 피커 결과는 원래 request ID·pane·session projection과 일치할 때만 적용하며 취소·pane 종료·연결 교체 뒤 늦은 결과를 버린다.

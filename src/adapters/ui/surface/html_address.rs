@@ -72,8 +72,9 @@ pub(crate) struct HtmlAddressSource<'a> {
     pub host_url: Option<&'a str>,
     pub cwd: Option<&'a Path>,
     pub home: Option<&'a Path>,
-    /// mirror workspace의 html leaf. 콘텐츠 mirror가 없는 빈 surface라 띠를 숨긴다.
+    /// mirror workspace의 html leaf. 수신 모델이 없는 placeholder에는 띠를 숨긴다.
     pub mirror: bool,
+    pub received: Option<&'a crate::runtime::html_receive::ReceiveSnapshot>,
 }
 
 /// 입력을 확정했을 때 할 일.
@@ -334,11 +335,18 @@ impl HtmlAddressBands {
         let committed_display = committed
             .map(|u| display(u, source.home).0)
             .unwrap_or_default();
-        let (address, kind) = match band.shown(source.nav, committed) {
+        let (mut address, kind) = match band.shown(source.nav, committed) {
             Some(url) => display(url, source.home),
             None => (String::new(), HtmlAddressKind::Empty),
         };
-        let kind = if source.mirror {
+        if source.received.is_some() {
+            band.lookup = None;
+            band.field.accepted();
+        }
+        let kind = if let Some(received) = source.received {
+            address.clone_from(&received.address);
+            HtmlAddressKind::Mirror
+        } else if source.mirror {
             HtmlAddressKind::MirrorPlaceholder
         } else {
             kind
@@ -352,14 +360,27 @@ impl HtmlAddressBands {
         let focus = self.focus_request.take_if(|s| *s == sid).is_some();
         let had_focus = self.focused.is_some_and(|(s, _)| s == sid);
         let t = crate::i18n::t;
+        let skipped = source
+            .received
+            .filter(|r| r.skipped > 0)
+            .map(|r| crate::i18n::t_fmt("html_remote.skipped", &r.skipped.to_string()));
+        let declined = source
+            .received
+            .filter(|r| r.skipped > 0)
+            .map(|r| crate::i18n::t_fmt("html_remote.declined", &r.address));
         let view = HtmlAddressView {
             address: &address,
             committed_address: &committed_display,
             kind,
             can_back: source.info.can_go_back,
             can_forward: source.info.can_go_forward,
-            loading: source.nav == NavState::Loading,
-            disconnected: false,
+            loading: source
+                .received
+                .map_or(source.nav == NavState::Loading, |r| {
+                    r.receiving && r.size_notice.is_none() && !r.paused && r.connected
+                }),
+            disconnected: source.received.is_some_and(|r| !r.connected),
+            skipped: skipped.as_deref().zip(declined.as_deref()),
             focus,
             labels: HtmlAddressLabels {
                 placeholder: t("html_address.placeholder"),

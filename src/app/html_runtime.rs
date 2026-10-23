@@ -10,6 +10,7 @@ pub(crate) struct NativeWebviewBinding {
     target: SurfaceBinding,
     surface: u32,
     source: Weak<Mutex<Option<String>>>,
+    mirror: Option<Weak<Mutex<tasty_remote::html_mirror::HtmlMirror>>>,
 }
 impl NativeWebviewBinding {
     pub(crate) fn capture(engine: &EngineRef<'_>, surface: u32) -> Option<Self> {
@@ -21,6 +22,7 @@ impl NativeWebviewBinding {
             target: SurfaceBinding::capture(&engine.read(), surface)?,
             surface,
             source: Arc::downgrade(&remote.webview_url),
+            mirror: remote.html_mirror.as_ref().map(Arc::downgrade),
         })
     }
     pub(crate) fn current(&self, engine: &crate::runtime::engine_access::EngineRef<'_>) -> bool {
@@ -30,7 +32,14 @@ impl NativeWebviewBinding {
                 .surfaces
                 .get(&self.surface)
                 .and_then(|surface| surface.as_any().downcast_ref::<RemoteSurface>())
-                .is_some_and(|remote| Arc::downgrade(&remote.webview_url).ptr_eq(&self.source))
+                .is_some_and(|remote| {
+                    Arc::downgrade(&remote.webview_url).ptr_eq(&self.source)
+                        && match (&self.mirror, &remote.html_mirror) {
+                            (None, None) => true,
+                            (Some(old), Some(current)) => old.ptr_eq(&Arc::downgrade(current)),
+                            _ => false,
+                        }
+                })
     }
 }
 
@@ -214,5 +223,37 @@ mod tests {
         proofs.record(&identity, 1, Some(&owner), Some(&source), &nav);
         drop(view);
         assert!(!proofs.take_current(&identity, Some(&source), "p", 1, &nav.url));
+    }
+    #[test]
+    fn native_entry_binding_retires_when_only_the_mirror_body_owner_changes() {
+        let (_state, mut session) = crate::state::tests::test_state();
+        let engine = session.borrow_mut();
+        let sid = engine.workspace_at(0).unwrap().all_surface_ids()[0];
+        let (sender, _frames) = tasty_remote::connection::channel();
+        let mirror = || {
+            Arc::new(Mutex::new(tasty_remote::html_mirror::HtmlMirror::new(
+                7,
+                9,
+                sender.epoch(),
+            )))
+        };
+        let mut remote = RemoteSurface::new(sid, "html", "com.tasty.html".into(), "html".into());
+        remote.html_mirror = Some(mirror());
+        engine.runtime.surfaces.insert(sid, Box::new(remote));
+        let binding = NativeWebviewBinding::capture(&engine.as_ref(), sid).unwrap();
+        assert!(binding.current(&engine.as_ref()));
+        let remote = engine
+            .runtime
+            .surfaces
+            .get_mut(&sid)
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<RemoteSurface>()
+            .unwrap();
+        let previous = remote.html_mirror.replace(mirror()).unwrap();
+        assert!(!binding.current(&engine.as_ref()));
+        assert!(Arc::strong_count(&previous) > 0);
+        let replacement = NativeWebviewBinding::capture(&engine.as_ref(), sid).unwrap();
+        assert!(replacement.current(&engine.as_ref()));
     }
 }

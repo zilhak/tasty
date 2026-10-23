@@ -132,6 +132,7 @@ impl App {
         let local_ws_id;
         let remote_to_local: HashMap<u32, u32>;
         let markdown_locals: HashSet<u32>;
+        let html_locals: HashSet<u32>;
         let mut structure_ids = MirrorStructureIds::default();
         {
             let Some(window) = target.window else {
@@ -151,6 +152,7 @@ impl App {
             let mut mapping =
                 merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, &mut engine)?;
             markdown_locals = mapping.markdown_ids();
+            html_locals = mapping.html.clone();
             remote_to_local = std::mem::take(&mut mapping.remote_to_local);
 
             local_ws_id = ids.next_workspace()?;
@@ -194,6 +196,7 @@ impl App {
                 pending_list_dir_consumers: HashMap::new(),
                 capture_uploads: HashMap::new(),
                 markdown_locals,
+                html_locals,
                 resync_pending: None,
                 resync_awaiting_window: false,
             },
@@ -256,7 +259,7 @@ impl App {
         let wid = self.engines.window_of(target.engine).ok_or_else(|| {
             anyhow::anyhow!("reconnect View is parked; retain the pending resource")
         })?;
-        let removed_markdown: Vec<u32>;
+        let removed_documents;
         {
             let sess = &mut self.remote.sessions[sess_idx];
             sess.transport.frame_tx.retire();
@@ -306,14 +309,9 @@ impl App {
                 engine.remote.attach_mesh_frames.remove(local);
                 main.attach_mesh_input.remove(&local);
             }
-            let new_markdown = mapping.markdown_ids();
-            removed_markdown = sess
+            removed_documents = sess
                 .state
-                .markdown_locals
-                .difference(&new_markdown)
-                .copied()
-                .collect();
-            sess.state.markdown_locals = new_markdown;
+                .replace_document_ids(mapping.markdown_ids(), mapping.html.clone());
 
             let Some(_) = engine
                 .workspaces()
@@ -356,7 +354,8 @@ impl App {
             finish_reconnected_view(&mut main.state, local_workspace);
             main.mark_dirty();
         }
-        destroy_mirror_markdown_surfaces(&mut self.plugin_manager, removed_markdown);
+        destroy_mirror_markdown_surfaces(&mut self.plugin_manager, removed_documents.markdown);
+        super::html::resources::destroy(&mut self.plugin_manager, removed_documents.html);
 
         let sess = &mut self.remote.sessions[sess_idx];
         sess.transport = transport;
@@ -435,6 +434,9 @@ impl App {
         let (anchor, local_workspace, markdown_locals, abandoned_captures) = {
             let sess = &mut self.remote.sessions[idx];
             sess.transport.html.documents.clear();
+            for mirror in sess.transport.html.mirrors.values() {
+                super::html::lock_mirror(mirror).disconnect();
+            }
             sess.state.phase = SessionState::Reconnecting;
             sess.transport.frame_tx.retire();
             // 옛 소켓을 재연결 성공까지 열어 두면 서버는 그 연결을 살아 있는 점유자로 보고 새 attach 를
@@ -528,6 +530,7 @@ impl App {
             &mut self.plugin_manager,
             sess.state.markdown_locals.clone(),
         );
+        super::html::resources::destroy(&mut self.plugin_manager, sess.state.html_locals.clone());
         // 사용자 닫기도 heartbeat를 멈춰 소켓이 불필요하게 유지되지 않게 한다.
         sess.transport.disconnected.store(true, Ordering::SeqCst);
         if let Err(error) = sess.send_frame(StreamTag::Detach, Vec::new()) {

@@ -174,6 +174,7 @@ fn pane_closed_during_picker_creates_nothing() {
     let engine = engine_session.borrow_mut();
     let request_id = FilePickerRequestId::next();
     state.dialogs.file_picker_callers.new_tab = Some(NewTabPickerRequest {
+        mirror: None,
         request_id,
         pane_id: 999,
         kind: "html".into(),
@@ -274,3 +275,6 @@ fn mirror_pane_does_not_open_picker() {
     assert!(state.take_pending_intents().is_empty());
     assert_eq!(state.toasts.len(), 1);
 }
+
+#[path = "new_tab_picker_tests/remote.rs"]
+mod remote;

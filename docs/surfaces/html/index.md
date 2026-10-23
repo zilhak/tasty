@@ -15,7 +15,9 @@
 
 ## 원격 전송 기반
 
-서버는 생성·복원 URL과 `html.open`의 최신 요청 URL을 GUI/headless 공통 source 세대로 관리한다. 파일 source의 부모가 전송 root·cwd이며 HTTP(S)는 전달받은 cwd를 보관한다. snapshot 영속화와 native commit 관측은 별개다. [HTML 전송 계약](../../dev-guide/html-transfer.md)의 metadata·chunk·취소 모델은 제공하지만 HTML mirror 렌더링은 아직 활성화하지 않는다. 원격 html leaf는 placeholder다.
+서버는 생성·복원 URL과 `html.open`의 최신 요청 URL을 GUI/headless 공통 source 세대로 관리한다. 파일 source의 부모가 전송 root·cwd이며 HTTP(S)는 전달받은 cwd를 보관한다. snapshot 영속화와 native commit 관측은 별개다. [HTML 전송 계약](../../dev-guide/html-transfer.md)에 따라 Linux GUI client는 완성된 파일 entry를 받아 native WebView로 표시한다. 양쪽 entry viewer 협상이 없거나 client HTML plugin이 미등록이면 placeholder/deferred를 유지한다. 하위 리소스와 HTTP(S)는 아직 지원하지 않는다. client 파일·네트워크로 대체하지 않는다.
+
+원격 주소는 읽기 전용이며 Reload만 제공한다. 100000 bytes를 넘는 entry는 Allow·Decline을 기다린다. Decline은 수신을 끝내고 skipped tag를 남긴다. 크기 → 스크립트 → 페이지 순서로 배치한다. 스크립트는 client 설정으로 판정하며 원격 설정·허용을 전달하지 않는다. Allow는 이미 스캔한 body를 재사용하고 사용자 Reload는 새 요청으로 누적량·크기 허용을 초기화한다. 같은 지문은 기존 스크립트 허용을 유지하고 다른 지문은 다시 차단한다. metadata 이후 30초 credit timeout은 크기 질문 대기 중에도 흐르며 실패 뒤 늦은 Allow는 무효다. Reload로 새 요청을 시작한다. 완료한 본문은 연결이 끊겨도 보존하지만 Reload는 비활성이다. 재연결은 새 connection epoch로 다시 받는다.
 
 ## 목적
 
@@ -44,7 +46,7 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
     - 응답은 `{surface_id, result, reload, document}`다. `result`는 새로 허용했으면 `allowed`(`reload: true`), 이미 허용된 문서면 `already_allowed`(`reload: false`, 재로드하지 않음)다.
     - `url`·`fingerprint`는 `surface.html_script` 조회의 `document.url`·`document.fingerprint`를 넘긴다. 현재 문서와 다르면 허용하지 않는다. 생략하면 그 비교를 하지 않는다.
     - 거절은 `-32022`이고 `error.data.reason`으로 이유를 구분한다. `document_changed`(조회 뒤 문서가 바뀌었다), `loading`(새 문서가 commit 전이다), `no_document`(commit된 문서가 없다), `no_fingerprint`(`file://`이 아니거나 응답 단계 없이 commit된 문서다). `error.data.document`에 현재 문서를 싣는다. 거절하면 상태를 바꾸지 않는다.
-    - html이 아닌 surface·없는 surface·mirror workspace의 html leaf는 invalid params로 거절하고, 헤드리스 빌드는 `-32017`로 답한다.
+    - html이 아닌 surface·없는 surface·미지원 placeholder는 invalid params로 거절하고, 헤드리스 빌드는 `-32017`로 답한다.
 - **문서 주소와 히스토리** — 주소 표시용 주소는 backend가 관측한 commit 주소다. `webview_url()`은 호스트가 넣은 주소라 페이지 안 이동을 반영하지 않으므로 표시에 쓰지 않는다.
   - backend는 main frame commit마다 그 시점의 엔진 주소를 기록한다(WebKitGTK `load-changed` Committed, WKWebView `didCommitNavigation`, WebView2 `ContentLoading`). 주소 선택은 `tasty_model::committed_document_url`이 정한다. 로드가 끝난 상태(`Done`·`Idle`)에서는 엔진의 현재 주소를 쓰고, 로드 중(`Loading`)이나 실패(`Failed`)에서는 마지막 commit 주소를 쓴다.
   - 그래서 리다이렉트 뒤에는 최종 주소가 보이고, 같은 문서 안 `#fragment` 이동과 history API 이동은 commit 신호 없이도 반영된다. commit 전에 실패한 로드는 이전 문서의 주소를 남긴다. commit 뒤 로드가 끝나기 전에는 새 문서 주소다.
@@ -98,7 +100,7 @@ html surface 위쪽에 host가 주소 띠를 그린다. 띠는 공용 view `tast
 - **주소창 포커스 단축키** — 설정 키 `explorer_focus_address`(라벨 "주소창으로 이동", 기본 `Alt+L`, macOS `⌘L`, 단축키 설정의 Surface 탭)를 탐색기와 함께 쓴다. 포커스된 surface가 html이면 그 surface의 띠에 포커스를 주고 주소 전체를 고른다. 다른 surface의 띠는 바꾸지 않는다. 주소 띠가 있는 html 페이지(mirror 제외)가 키보드 포커스를 가진 상태에서도 host가 이 키를 가져간다([WebView 단축키](../../design/systems/webview.md)). markdown처럼 띠가 없는 다른 WebView 페이지에서는 가져가지 않고 페이지로 보낸다. 키를 바꾸면 새 키만 가져가고 이전 키는 페이지로 간다. 뒤로·앞으로에는 새 단축키를 두지 않는다. 페이지가 처리하는 `Alt+←`·`Alt+→`와 겹치지 않게 하기 위해서다.
 - **편집 중 에이전트 변경** — 사용자가 편집하는 동안 에이전트가 `tasty html open`으로 주소를 바꾸면 입력 텍스트와 포커스는 그대로이고 표지도 없다. Esc는 그때의 commit 주소로 되돌린다. 에이전트 경로는 띠에 포커스를 주지 않는다.
 - **Esc** — 편집을 취소하고 기다리던 파일 확인을 버린 뒤 commit 주소로 돌아간다. 실패한 시도 주소로 되돌리지 않는다.
-- **mirror** — mirror workspace의 html leaf는 콘텐츠 mirror가 없는 빈 surface라 띠를 그리지 않는다([원격 attach의 kind별 지원](../../features/remote-attach/index.md#surface-단위-vs-workspace-단위)). 원격 HTML mirror가 생기면 공용 view의 읽기 전용 입력란과 새로고침만 쓴다.
+- **mirror** — 협상된 entry mirror에는 원격 경로의 읽기 전용 입력란과 새로고침만 그린다. 미지원 placeholder에는 띠를 숨긴다.
 - **같은 문서 판정** — 띠로 연 주소의 같은 문서 `#fragment` 판정도 위 "사용자 탐색"과 같은 문자열 비교다. 입력 해석은 파일 시스템 정규화를 하지 않으므로 표기가 다른 같은 파일은 새 로드가 된다.
 - **색** — 편집 중이 아닌 실제 주소는 `html-address-value-fg`(text-secondary-raised), 편집 중에는 `input-fg`, mirror의 읽기 전용 주소는 `input-readonly-fg`다. placeholder와 비활성은 기존 역할을 쓴다. 기하는 `html-address-*`·입력·배너 토큰이다.
 
@@ -295,7 +297,7 @@ OS별 구현은 다음과 같다.
 ## 인터페이스
 
 - **사용자**: html surface 위쪽 [주소 표시줄](#주소-표시줄)에서 경로·URL 입력, 뒤로·앞으로·새로고침, 주소창 포커스 단축키(`Alt+L`, macOS `⌘L`).
-- **사용자**: HTML·SVG 파일 열기 → html surface(WebView). 탭 스트립 빈 곳 메뉴의 **새 HTML...** 은 파일 피커(`html`·`htm`·`svg` 필터)를 열고, 고른 파일의 절대 경로를 `url` 파라미터로 넘겨 메뉴를 연 pane 에 html 탭을 만든다([파일 피커 확정](../../features/native-file-picker/index.md#확정confirm)). mirror workspace 의 pane 에서는 피커를 열지 않고 원격 열기 불가 토스트를 띄운다.
+- **사용자**: HTML·SVG 파일 열기 → html surface(WebView). 탭 스트립 빈 곳 메뉴의 **새 HTML...** 은 파일 피커(`html`·`htm`·`svg` 필터)를 열고, 고른 파일의 절대 경로를 `url` 파라미터로 넘겨 메뉴를 연 pane 에 html 탭을 만든다([파일 피커 확정](../../features/native-file-picker/index.md#확정confirm)). 지원 연결의 mirror pane에서는 원격 cwd로 피커를 열고 원래 pane에 원격 탭을 만든다. 미지원 연결은 원격 열기 불가 토스트를 띄운다.
 - **AI Agent**: `tasty html …` CLI / `html.*` IPC. surface 생성은 [work-area](../../features/work-area/index.md) (`--type html --url …`).
 - **AI Agent**: 스크립트 감지·허용·배너 상태 조회는 `tasty surface html-script --surface <id>`(IPC `surface.html_script`), 현재 문서의 스크립트 허용은 `tasty surface html-script-allow --surface <id>`(IPC `surface.html_script_allow`).
 - **AI Agent**: 보여 주는 문서 주소와 뒤로·앞으로 이동 가능 여부 조회는 `tasty surface html-nav --surface <id>`(IPC `surface.html_nav`).
@@ -349,14 +351,14 @@ OS별 구현은 다음과 같다.
 - Given 띠에서 입력 중 When 에이전트가 `tasty html open <url>` Then 입력 텍스트와 포커스는 그대로다.
 - Given 히스토리 처음 Then 뒤로가, 끝이면 앞으로가 비활성이다. Given 폭 440 미만 Then 앞으로 버튼이 숨는다.
 - Given 띠로 연 문서 When 재시작 Then 생성 때의 URL(빈 탭이면 빈 탭)로 복원된다.
-- Given mirror workspace의 html leaf Then 주소 띠가 보이지 않는다.
+- Given entry viewer를 협상한 mirror의 html leaf Then 원격 주소가 읽기 전용이고 Reload만 보인다. 미지원 placeholder에는 주소 띠가 없다.
 - Given 플러그인 disable When `.svg` 파일을 열기 Then `svg` detector 는 남고 핸들러가 없어 선택 창이 뜨며, 헤더 형식 표시는 `svg` 다.
 - Given 로컬 workspace 의 pane When 탭 스트립 빈 곳 메뉴에서 **새 HTML...** 을 고른다 Then 그 pane 의 선택 탭 cwd 에서 파일 피커가 열리고 디렉터리와 `.html`·`.htm`·`.svg` 파일만 보인다.
 - Given 그 피커 When 파일을 확정한다 Then 메뉴를 연 pane 에 html 탭이 하나 생겨 활성화되고, `url` 파라미터는 고른 절대 경로이며 WebView 는 `file://` URI 로 띄운다.
 - Given 그 피커 When 취소한다 Then 탭 수가 그대로다.
 - Given 그 피커가 열린 동안 메뉴를 연 pane 이 닫혔다 When 확정한다 Then 탭이 생기지 않는다.
 - Given 활성 pane 이 아닌 pane 에서 메뉴를 열었다 When 피커가 열린 동안 활성 pane 이 바뀐 뒤 확정한다 Then 탭은 메뉴를 연 pane 에 생긴다.
-- Given mirror workspace 의 pane When **새 HTML...** 을 고른다 Then 피커가 열리지 않고 탭도 생기지 않으며 원격 열기 불가 토스트가 뜬다.
+- Given 지원 연결의 mirror pane When **새 HTML...** 에서 확정한다 Then 원래 pane에 원격 탭을 만들고 client 파일을 읽지 않는다. 취소·pane 종료·session 교체 뒤 늦은 결과는 탭을 만들지 않는다.
 
 ## 화면
 

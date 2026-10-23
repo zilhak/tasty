@@ -251,11 +251,11 @@ impl<'a, 'engine> MirrorHost<'a, 'engine> {
         plugin_manager: &mut Option<crate::plugin::PluginManager>,
     ) -> bool {
         let drained = sess.transport.output.drain();
-        if drained.is_empty() {
-            return false;
+        let changed = !drained.is_empty();
+        if changed {
+            apply_mirror_events(sess, self, plugin_manager, drained);
         }
-        apply_mirror_events(sess, self, plugin_manager, drained);
-        true
+        super::html::synchronize(sess, self.engine) || changed
     }
 
     fn toast(&mut self, message: String, kind: crate::adapters::ui::ToastKind) {
@@ -572,7 +572,8 @@ fn apply_one_mirror_event(
                     );
                     host.focus_surface(sess.state.local_workspace, focus);
                     host.state.reconcile_presentation(host.engine);
-                    destroy_mirror_markdown_surfaces(plugin_manager, removed);
+                    destroy_mirror_markdown_surfaces(plugin_manager, removed.markdown);
+                    super::html::resources::destroy(plugin_manager, removed.html);
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -773,7 +774,7 @@ fn apply_mirror_structural_delta(
     tree: &Value,
     surfaces: &[Value],
     pending_focus: Option<PendingOpFocus>,
-) -> anyhow::Result<Vec<u32>> {
+) -> anyhow::Result<tasty_remote::client_session::RetiredDocuments> {
     let ids = lease_mirror_ids(
         &engine.runtime.ids,
         &engine.runtime.waker,
@@ -801,14 +802,7 @@ fn apply_mirror_structural_delta(
     sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
     let state = &mut sess.state;
     keep_terminal_resize_state(&mut state.resize_sync, &state.remote_to_local, &mapping);
-    let new_markdown = mapping.markdown_ids();
-    let removed_markdown: Vec<u32> = sess
-        .state
-        .markdown_locals
-        .difference(&new_markdown)
-        .copied()
-        .collect();
-    sess.state.markdown_locals = new_markdown;
+    let removed = state.replace_document_ids(mapping.markdown_ids(), mapping.html.clone());
 
     if let Some(pos) = engine
         .workspaces()
@@ -874,5 +868,5 @@ fn apply_mirror_structural_delta(
             sess.state.local_workspace
         );
     }
-    Ok(removed_markdown)
+    Ok(removed)
 }

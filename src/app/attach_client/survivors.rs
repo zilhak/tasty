@@ -14,18 +14,13 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use tasty_remote::client_session::SharedFrameSender;
 
-fn mirror_descriptor_kind(s: &Value, markdown_available: bool) -> &str {
-    let role = s.get("role").and_then(|v| v.as_str());
-    if role == Some("terminal") {
-        "terminal"
-    } else if role == Some("mesh") {
-        s.get("kind").and_then(|v| v.as_str()).unwrap_or("mesh")
-    } else if role == Some("explorer") {
-        "explorer"
-    } else if role == Some("markdown") && markdown_available {
-        MARKDOWN_MIRROR_KIND
-    } else {
-        "empty"
+fn mirror_descriptor_kind(s: &Value, markdown_available: bool, html_available: bool) -> &str {
+    match s.get("role").and_then(Value::as_str) {
+        Some(role @ ("terminal" | "explorer")) => role,
+        Some("mesh") => s.get("kind").and_then(Value::as_str).unwrap_or("mesh"),
+        Some("html") if html_available => "html",
+        Some("markdown") if markdown_available => MARKDOWN_MIRROR_KIND,
+        _ => "empty",
     }
 }
 
@@ -114,14 +109,16 @@ pub(super) fn merge_survivor_mapping(
     let mut mesh_locals: HashMap<u32, MirrorMeshInfo> = HashMap::new();
     let mut explorer_locals: HashMap<u32, std::path::PathBuf> = HashMap::new();
     let mut markdown_locals: MirrorMarkdownLeaves = HashMap::new();
+    let mut html_locals = HashSet::new();
     let mut newly_created_remote_ids: Vec<u32> = Vec::new();
     let markdown_available = markdown_mirror_available(&engine.runtime.surface_registry);
+    let html_available = super::html::resources::available(&engine.runtime.surface_registry);
     for s in surfaces {
         let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let role = s.get("role").and_then(|v| v.as_str());
         let is_terminal = role == Some("terminal");
         // 재구성할 실제 kind로 비교한다. 미등록 markdown이나 지원하지 않는 role은 empty다.
-        let new_kind = mirror_descriptor_kind(s, markdown_available);
+        let new_kind = mirror_descriptor_kind(s, markdown_available, html_available);
         let survivor_local = old_map.get(&remote_id).copied();
         let old_kind: Option<&'static str> =
             survivor_local.and_then(|l| engine.find_surface_by_id(l).map(|s| s.kind()));
@@ -139,41 +136,28 @@ pub(super) fn merge_survivor_mapping(
                     engine.remote.explorer_sources.remove(l);
                     // 새 frame이 올 때까지 이전 kind의 화면을 그리지 않게 한다.
                     engine.remote.attach_mesh_frames.remove(l);
-                    if is_terminal {
-                        let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
-                        let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                        make_mirror_surface(
-                            remote_id,
-                            l,
-                            cols,
-                            rows,
-                            frame_tx,
-                            &mut engine.runtime.terminals,
-                            engine.observer_router.wants(l),
-                        );
-                    }
                 }
                 l
             }
             None => {
                 let l = ids.next_surface()?;
-                if is_terminal {
-                    let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
-                    let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                    make_mirror_surface(
-                        remote_id,
-                        l,
-                        cols,
-                        rows,
-                        frame_tx,
-                        &mut engine.runtime.terminals,
-                        engine.observer_router.wants(l),
-                    );
-                }
                 newly_created_remote_ids.push(remote_id);
                 l
             }
         };
+        if is_terminal && old_kind != Some("terminal") {
+            let cols = s.get("cols").and_then(Value::as_u64).unwrap_or(80) as usize;
+            let rows = s.get("rows").and_then(Value::as_u64).unwrap_or(24) as usize;
+            make_mirror_surface(
+                remote_id,
+                local_id,
+                cols,
+                rows,
+                frame_tx,
+                &mut engine.runtime.terminals,
+                engine.observer_router.wants(local_id),
+            );
+        }
         if is_terminal {
             terminal_locals.insert(local_id);
         } else if role == Some("mesh") {
@@ -207,26 +191,39 @@ pub(super) fn merge_survivor_mapping(
                 .map(std::path::PathBuf::from)
                 .unwrap_or_default();
             explorer_locals.insert(local_id, root);
-        } else if new_kind == MARKDOWN_MIRROR_KIND {
-            if old_kind == Some(MARKDOWN_MIRROR_KIND) {
-                markdown_locals.insert(local_id, MARKDOWN_MIRROR_KIND.to_string());
-            } else if let Some(surface) =
-                create_mirror_markdown_surface(s, local_id, &engine.runtime.surface_registry)
-            {
-                markdown_locals.insert(local_id, surface.kind().to_string());
-                engine.runtime.surfaces.insert(local_id, surface);
+        } else if matches!(role, Some("html" | "markdown")) {
+            let html = role == Some("html");
+            let (kind, available) = if html {
+                ("html", html_available)
+            } else {
+                (MARKDOWN_MIRROR_KIND, markdown_available)
+            };
+            if html {
+                html_locals.insert(local_id);
             }
-        } else if role == Some("markdown")
-            && !engine
-                .runtime
-                .surface_registry
-                .contains(MARKDOWN_MIRROR_KIND)
-        {
-            // kind 등록을 기다렸다가 표시 시 실제화한다. 다른 플러그인이 같은 이름을
-            // 이미 등록했으면 허용된 소유자가 아니므로 placeholder로 기다리지 않는다.
-            let surface = deferred_mirror_markdown_surface(s, local_id);
-            markdown_locals.insert(local_id, surface.kind().to_string());
-            engine.runtime.surfaces.insert(local_id, surface);
+            if old_kind == Some(kind) && available {
+                markdown_locals.insert(local_id, kind.to_owned());
+            } else {
+                let registry = &engine.runtime.surface_registry;
+                let surface = if html {
+                    super::html::resources::create(s, local_id, registry)
+                } else {
+                    create_mirror_markdown_surface(s, local_id, registry)
+                }
+                .or_else(|| {
+                    (!registry.contains(kind)).then(|| {
+                        if html {
+                            super::html::resources::deferred(s, local_id)
+                        } else {
+                            deferred_mirror_markdown_surface(s, local_id)
+                        }
+                    })
+                });
+                if let Some(surface) = surface {
+                    markdown_locals.insert(local_id, surface.kind().to_owned());
+                    engine.runtime.surfaces.insert(local_id, surface);
+                }
+            }
         }
         // The descriptor tree never owns or clones a kind instance. Keep survivors in
         // the existing runtime collection, replacing only instances changed by the server.
@@ -283,6 +280,7 @@ pub(super) fn merge_survivor_mapping(
         mesh: mesh_locals,
         explorer: explorer_locals,
         markdown: markdown_locals,
+        html: html_locals,
         newly_created_remote_ids,
     })
 }
@@ -293,12 +291,17 @@ pub(super) struct SurvivorMapping {
     pub(super) mesh: HashMap<u32, MirrorMeshInfo>,
     pub(super) explorer: HashMap<u32, std::path::PathBuf>,
     pub(super) markdown: MirrorMarkdownLeaves,
+    pub(super) html: HashSet<u32>,
     /// 새로 매핑한 원격 surface는 사용자 new-tab/split의 포커스 후보가 된다.
     pub(super) newly_created_remote_ids: Vec<u32>,
 }
 
 impl SurvivorMapping {
     pub(super) fn markdown_ids(&self) -> HashSet<u32> {
-        self.markdown.keys().copied().collect()
+        self.markdown
+            .keys()
+            .filter(|id| !self.html.contains(id))
+            .copied()
+            .collect()
     }
 }

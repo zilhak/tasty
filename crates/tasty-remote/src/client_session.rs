@@ -351,6 +351,7 @@ pub struct ClientSessionState {
     pub capture_uploads: HashMap<u64, std::sync::Weak<()>>,
     /// 로컬 markdown surface ID. mirror 교체·삭제는 일반 lifecycle 큐를 거치지 않아 직접 destroy를 보낸다.
     pub markdown_locals: HashSet<u32>,
+    pub html_locals: HashSet<u32>,
     /// 손실 뒤 재attach를 기다리는 동안 통지된 프레임 수.
     /// 서버가 점유 해제를 큐에 넣은 뒤 소켓을 닫으므로 Detach 후 EOF를 기다려 새 attach를 보낸다.
     pub resync_pending: Option<u64>,
@@ -478,5 +479,29 @@ impl MirrorEvent {
                 .saturating_add(text(reason)),
             _ => 0,
         })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct RetiredDocuments {
+    pub markdown: Vec<u32>,
+    pub html: Vec<u32>,
+}
+impl ClientSessionState {
+    /// Return retired plugin document IDs while retaining exactly the new projection's ownership.
+    pub fn replace_document_ids(
+        &mut self,
+        markdown: HashSet<u32>,
+        html: HashSet<u32>,
+    ) -> RetiredDocuments {
+        fn replace(current: &mut HashSet<u32>, next: HashSet<u32>) -> Vec<u32> {
+            let removed = current.difference(&next).copied().collect();
+            *current = next;
+            removed
+        }
+        RetiredDocuments {
+            markdown: replace(&mut self.markdown_locals, markdown),
+            html: replace(&mut self.html_locals, html),
+        }
     }
 }

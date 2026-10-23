@@ -552,7 +552,7 @@ impl EngineRef<'_> {
             "name": self.core.workspace_at(idx).expect("workspace index is valid").name,
             "tree": tree,
             "surfaces": surfaces,
-            (tasty_ipc::stream::DESCRIPTOR_CAPABILITIES): [tasty_ipc::stream::RESIZE_ACK_CAPABILITY, tasty_ipc::stream::INPUT_ACK_CAPABILITY, tasty_ipc::explorer_op::CAPABILITY, tasty_ipc::html_transfer::CAPABILITY],
+            (tasty_ipc::stream::DESCRIPTOR_CAPABILITIES): [tasty_ipc::stream::RESIZE_ACK_CAPABILITY, tasty_ipc::stream::INPUT_ACK_CAPABILITY, tasty_ipc::explorer_op::CAPABILITY, tasty_ipc::html_transfer::CAPABILITY, tasty_ipc::html_transfer::VIEWER_CAPABILITY],
         })
     }
 
@@ -639,6 +639,7 @@ impl EngineRef<'_> {
                 "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
             }));
         }
+        self.project_html_entry_roles(ws.id, &mut surfaces);
         (
             ws.to_attach_tree_json(&self.observed_presentation(&self.remote.presentation)),
             surfaces,

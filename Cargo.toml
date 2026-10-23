@@ -311,7 +311,7 @@ tray-icon = { version = "0.22", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", optional = true }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"], optional = true }
-objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore", "WKNavigation", "WKNavigationAction", "WKNavigationDelegate", "WKFrameInfo", "WKWebpagePreferences", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "block2"], optional = true }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore", "WKNavigation", "WKNavigationAction", "WKNavigationDelegate", "WKFrameInfo", "WKWebpagePreferences", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKURLSchemeHandler", "WKURLSchemeTask", "block2"], optional = true }
 objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSWorkspace", "libc"], optional = true }
 # WKContentRuleList의 completion handler에 필요한 블록 타입이다.
 block2 = { version = "0.6", optional = true }
@@ -350,6 +350,7 @@ windows = { version = "0.61", features = [
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"], optional = true }
+soup3 = { version = "0.5", optional = true }
 gtk = { version = "0.18", optional = true }
 gdkx11 = { version = "0.18", optional = true }
 x11-dl = { version = "2.21", optional = true }
@@ -402,6 +403,7 @@ gui = [
     "dep:webview2-com",
     "dep:tray-icon",
     "dep:webkit2gtk",
+    "dep:soup3",
     "dep:gtk",
     "dep:gdkx11",
     "dep:x11-dl",

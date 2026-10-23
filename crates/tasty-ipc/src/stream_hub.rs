@@ -209,6 +209,7 @@ impl GitQueryKind {
 /// Per-client push sink held in the registry.
 struct StreamSink {
     html_transfer: bool,
+    html_viewer: bool,
     binding: Arc<()>,
     registration: u128,
     tx: SyncSender<StreamFrame>,
@@ -375,6 +376,7 @@ impl StreamHub {
             id,
             StreamSink {
                 html_transfer: false,
+                html_viewer: false,
                 binding: Arc::new(()),
                 registration: rand::random(),
                 tx,
@@ -414,6 +416,11 @@ impl StreamHub {
             .get(&id)
             .is_some_and(|sink| sink.html_transfer)
     }
+    pub fn html_viewer_enabled(&self, id: StreamClientId) -> bool {
+        tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+            .get(&id)
+            .is_some_and(|sink| sink.html_transfer && sink.html_viewer)
+    }
     fn set_html_capabilities(&self, id: StreamClientId, capabilities: &[String]) {
         if let Some(sink) =
             tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
@@ -422,6 +429,9 @@ impl StreamHub {
             sink.html_transfer = capabilities
                 .iter()
                 .any(|c| c == crate::html_transfer::CAPABILITY);
+            sink.html_viewer = capabilities
+                .iter()
+                .any(|c| c == crate::html_transfer::VIEWER_CAPABILITY);
         }
     }
 
@@ -640,6 +650,8 @@ impl StreamHub {
         match msg {
             HtmlRequest::HtmlCapabilities { capabilities } => {
                 self.set_html_capabilities(client, &capabilities);
+                out.html_requests
+                    .push((client, HtmlRequest::HtmlCapabilities { capabilities }));
             }
             msg if self.html_transfer_enabled(client) => out.html_requests.push((client, msg)),
             _ => {}
@@ -861,17 +873,21 @@ mod tests {
         });
         send(HtmlRequest::HtmlCancel { id });
         let out = hub.pump_inbound(&rx);
-        assert_eq!(out.html_requests.len(), 3);
+        assert_eq!(out.html_requests.len(), 4);
         assert!(matches!(
             out.html_requests[0].1,
-            HtmlRequest::HtmlEntryRequest { .. }
+            HtmlRequest::HtmlCapabilities { .. }
         ));
         assert!(matches!(
             out.html_requests[1].1,
-            HtmlRequest::HtmlRead { .. }
+            HtmlRequest::HtmlEntryRequest { .. }
         ));
         assert!(matches!(
             out.html_requests[2].1,
+            HtmlRequest::HtmlRead { .. }
+        ));
+        assert!(matches!(
+            out.html_requests[3].1,
             HtmlRequest::HtmlCancel { .. }
         ));
         let _replacement = hub.register(5);
@@ -884,6 +900,33 @@ mod tests {
         assert_eq!(hub.alloc_id(), 1);
         assert_eq!(hub.alloc_id(), 2);
         assert_eq!(hub.alloc_id(), 3);
+    }
+
+    #[test]
+    fn html_viewer_requires_both_capabilities_and_a_live_registration() {
+        use crate::html_transfer::{CAPABILITY, HtmlRequest, VIEWER_CAPABILITY};
+        let hub = StreamHub::new();
+        let _sink = hub.register(51);
+        let (tx, rx) = mpsc::channel();
+        let declare = |capabilities: Vec<String>| {
+            tx.send(StreamInbound::Frame {
+                client_id: 51,
+                frame: frame(
+                    StreamTag::Control,
+                    &serde_json::to_vec(&HtmlRequest::HtmlCapabilities { capabilities }).unwrap(),
+                ),
+            })
+            .unwrap();
+            hub.pump_inbound(&rx)
+        };
+        assert!(!hub.html_viewer_enabled(51));
+        declare(vec![VIEWER_CAPABILITY.into()]);
+        assert!(!hub.html_viewer_enabled(51));
+        declare(vec![CAPABILITY.into(), VIEWER_CAPABILITY.into()]);
+        assert!(hub.html_viewer_enabled(51));
+        let _replacement = hub.register(51);
+        assert!(!hub.html_viewer_enabled(51));
+        assert!(!hub.html_transfer_enabled(51));
     }
 
     #[test]

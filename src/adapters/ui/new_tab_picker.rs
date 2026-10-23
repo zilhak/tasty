@@ -10,8 +10,7 @@ use crate::state::{
 };
 
 /// 고른 파일로 `pane_id` pane에 `kind` 탭을 만드는 피커를 연다. 메뉴를 연 pane의
-/// 선택 탭 cwd에서 출발한다. mirror pane이면 피커를 열지 않고 토스트를 띄운다.
-/// html 같은 kind는 mirror에서 내용을 볼 수 없어 원격 파일 열기 거절과 같게 다룬다.
+/// 선택 탭 cwd에서 출발한다. 지원 연결의 HTML은 원격 목록을 둘러보고 원 pane에 생성한다.
 pub(crate) fn open(
     state: &mut MainViewState,
     engine: &EngineRead<'_>,
@@ -20,11 +19,18 @@ pub(crate) fn open(
     param_key: &str,
     extensions: &[&str],
 ) {
-    let is_mirror = engine
+    let workspace = engine
         .find_workspace_index_for_pane(pane_id)
-        .and_then(|idx| engine.workspace_at(idx))
-        .is_some_and(|ws| ws.mirror);
-    if is_mirror {
+        .and_then(|idx| engine.workspace_at(idx));
+    let remote = workspace.filter(|workspace| workspace.mirror);
+    if remote.is_some_and(|workspace| {
+        kind != "html"
+            || !engine.html_entry_available(workspace.id)
+            || engine
+                .surface_registry
+                .get_live("html")
+                .is_none_or(|def| def.source.plugin_id() != Some("com.tasty.html"))
+    }) {
         state.toasts.push(
             crate::i18n::t("explorer.state.remote_open_unsupported").to_string(),
             crate::adapters::ui::ToastKind::Info,
@@ -32,21 +38,45 @@ pub(crate) fn open(
         );
         return;
     }
-    let dir = engine
+    let source = engine
         .find_pane_by_id(pane_id)
         .and_then(|pane| pane.tabs.get(state.navigation.tab_index(pane)))
-        .and_then(|tab| state.navigation.surface_id(tab))
-        .and_then(|sid| engine.surface_cwd(sid))
-        .and_then(|cwd| match cwd {
-            crate::core::state::SurfaceCwd::Local(p) => Some(p.to_string_lossy().into_owned()),
-            crate::core::state::SurfaceCwd::Remote(_) => None,
+        .and_then(|tab| state.navigation.surface_id(tab));
+    let cwd = source.and_then(|sid| engine.surface_cwd(sid));
+    let mirror = remote.and_then(|workspace| {
+        engine
+            .mirror_projection_token(workspace.id)
+            .map(|token| (workspace.id, token))
+    });
+    if remote.is_some() && mirror.is_none() {
+        return;
+    }
+    let location = if let Some(workspace) = remote {
+        // A remote picker never interprets the server's working directory on the client.
+        let dir = cwd.and_then(|cwd| match cwd {
+            crate::core::state::SurfaceCwd::Remote(path) => Some(path.as_str().to_owned()),
+            _ => None,
         });
+        FilePickerLocation::Remote {
+            mirror_ws_id: workspace.id,
+            surface_id: source,
+            dir,
+        }
+    } else {
+        let dir = cwd.and_then(|cwd| match cwd {
+            crate::core::state::SurfaceCwd::Local(path) => {
+                Some(path.to_string_lossy().into_owned())
+            }
+            _ => None,
+        });
+        FilePickerLocation::Local { dir }
+    };
     let request_id = FilePickerRequestId::next();
     if file_picker::open(
         state,
         engine,
         request_id,
-        FilePickerLocation::Local { dir },
+        location,
         extensions.iter().map(|e| e.to_string()).collect(),
         file_picker::FilePickerOpenedBy::ContextMenu,
     )
@@ -56,6 +86,7 @@ pub(crate) fn open(
         return;
     }
     state.dialogs.file_picker_callers.new_tab = Some(NewTabPickerRequest {
+        mirror,
         request_id,
         pane_id,
         kind: kind.to_string(),
@@ -77,7 +108,13 @@ pub(crate) fn apply_outcome(
     let Some(request) = callers.new_tab.take() else {
         return;
     };
-    if outcome.cancelled || !engine.has_pane(request.pane_id) {
+    if outcome.cancelled
+        || !engine.has_pane(request.pane_id)
+        || request
+            .mirror
+            .as_ref()
+            .is_some_and(|(workspace, token)| !engine.matches_mirror_projection(*workspace, token))
+    {
         return;
     }
     for path in &outcome.paths {

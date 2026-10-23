@@ -8,6 +8,8 @@
 //! 정한다. 그 결정은 모든 backend가 미룬다([`Response::Deferred`]). Linux·macOS는 응답 결정을 보류하고,
 //! Windows는 탐색을 취소했다가 스캔 뒤 같은 종류의 탐색으로 다시 시작한다.
 
+mod file_url;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -15,7 +17,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tasty_model::html_script::scan::{SCAN_LIMIT_BYTES, scan_reader};
 use tasty_model::html_script::{HtmlScriptState, ScanTicket, ScriptScan, strip_fragment};
 
+use super::entry_response::EntryResponseSource;
 use super::file_stamp::FileStamp;
+pub use file_url::file_url_to_path;
 
 static STATE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 const STATE_WHAT: &str = "html script state";
@@ -29,6 +33,7 @@ pub struct ScriptGate {
     surface_id: u32,
     state: Arc<Mutex<HtmlScriptState>>,
     notify: Option<ScanNotify>,
+    received: Option<EntryResponseSource>,
 }
 
 /// main frame 응답의 JS 결정.
@@ -142,12 +147,18 @@ impl ScriptGate {
             surface_id,
             state,
             notify: None,
+            received: None,
         }
     }
 
     /// 작업 스레드의 스캔이 끝났을 때 부를 함수를 붙인다.
     pub fn with_notify(mut self, notify: ScanNotify) -> Self {
         self.notify = Some(notify);
+        self
+    }
+
+    pub(crate) fn with_received_source(mut self, source: EntryResponseSource) -> Self {
+        self.received = Some(source);
         self
     }
 
@@ -240,6 +251,12 @@ impl ScriptGate {
     }
 
     fn respond(&self, url: &str) -> Response {
+        if let Some(source) = &self.received {
+            // Never reinterpret remote file provenance as a client filesystem read.
+            return Response::Decided(source.entry(url).is_some_and(|entry| {
+                self.main_response_scanned(entry.response().source_url(), Some(entry.scan()))
+            }));
+        }
         let Some(path) = file_url_to_path(url) else {
             return Response::Decided(self.respond_without_file(url));
         };
@@ -320,6 +337,14 @@ impl ScriptGate {
     /// main frame 문서가 commit됐다. `url`은 응답 단계가 없었을 때만 쓴다.
     pub fn committed(&self, url: Option<&str>) -> bool {
         let mut st = self.lock();
+        let received = self
+            .received
+            .as_ref()
+            .and_then(|source| url.and_then(|url| source.entry(url)));
+        let url = received
+            .as_ref()
+            .map(|entry| entry.response().source_url())
+            .or(url);
         let js = st.on_committed(url);
         tracing::debug!(
             "WebView surface {}: html script committed {:?} allowed={} -> js={js}",
@@ -356,11 +381,16 @@ impl ScriptGate {
     // 이유: Linux는 fragment 이동에 로드 신호가 오지 않아 이 판정을 쓰지 않는다.
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn is_fragment_move(&self, url: &str) -> bool {
+        let received = self.received.as_ref().and_then(|source| source.entry(url));
+        let source_url = received
+            .as_ref()
+            .map(|entry| entry.response().source_url())
+            .unwrap_or(url);
         url.contains('#')
             && self
                 .lock()
                 .current()
-                .is_some_and(|d| d.url == strip_fragment(url))
+                .is_some_and(|d| d.url == strip_fragment(source_url))
     }
 }
 
@@ -429,68 +459,6 @@ fn open_without_blocking(path: &std::path::Path) -> std::io::Result<std::fs::Fil
 #[cfg(not(unix))]
 fn open_without_blocking(path: &std::path::Path) -> std::io::Result<std::fs::File> {
     std::fs::File::open(path)
-}
-
-/// `file://` URL을 로컬 경로로 바꾼다. query·fragment는 버리고 percent escape를 바이트로 복원한다.
-pub fn file_url_to_path(url: &str) -> Option<PathBuf> {
-    let rest = url
-        .get(..7)
-        .filter(|s| s.eq_ignore_ascii_case("file://"))
-        .map(|_| &url[7..])?;
-    let rest = rest.split(['?', '#']).next().unwrap_or("");
-    let (host, path) = match rest.find('/') {
-        Some(i) => (&rest[..i], &rest[i..]),
-        None => (rest, ""),
-    };
-    let bytes = percent_decode(path)?;
-    let host = if host.eq_ignore_ascii_case("localhost") {
-        ""
-    } else {
-        host
-    };
-    path_from_parts(host, bytes)
-}
-
-fn percent_decode(s: &str) -> Option<Vec<u8>> {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' {
-            let hex = s.get(i + 1..i + 3)?;
-            out.push(u8::from_str_radix(hex, 16).ok()?);
-            i += 3;
-        } else {
-            out.push(b[i]);
-            i += 1;
-        }
-    }
-    Some(out)
-}
-
-#[cfg(unix)]
-fn path_from_parts(host: &str, bytes: Vec<u8>) -> Option<PathBuf> {
-    use std::os::unix::ffi::OsStringExt;
-    // 다른 호스트의 파일은 로컬 경로로 읽지 않는다.
-    if !host.is_empty() || bytes.first() != Some(&b'/') {
-        return None;
-    }
-    Some(PathBuf::from(std::ffi::OsString::from_vec(bytes)))
-}
-
-#[cfg(windows)]
-fn path_from_parts(host: &str, bytes: Vec<u8>) -> Option<PathBuf> {
-    let path = String::from_utf8(bytes).ok()?;
-    if !host.is_empty() {
-        // UNC: file://server/share/a.html -> \\server\share\a.html
-        return Some(PathBuf::from(format!(
-            r"\\{host}{}",
-            path.replace('/', "\\")
-        )));
-    }
-    // file:///C:/a.html -> C:\a.html
-    let trimmed = path.strip_prefix('/').unwrap_or(&path);
-    Some(PathBuf::from(trimmed.replace('/', "\\")))
 }
 
 #[cfg(test)]

@@ -109,11 +109,12 @@ native WebView는 대기 표시를 위해 숨기거나 크기를 줄이지 않�
 | egui-mesh(번들 image/mesh_demo와 커스텀 plugin의 egui-mesh kind) | mesh 프레임 전달 | 입력 역방향 전달은 headless 서버에서만 지원한다. GUI 서버에서는 콘텐츠만 보인다 |
 | markdown | 원문을 받아 client의 markdown plugin이 자체 테마·설정으로 렌더 | 원격 상대경로 이미지·링크는 client에 파일이 없어 깨질 수 있다. 주소창에 원격 경로를 넣으면 같은 surface가 그 원격 파일로 바뀌며, 원격에 파일이 없으면 원격이 거절하고 주소창에 실패가 보인다. 최근 목록은 로컬 문서에만 있다 |
 | explorer | `list_dir_request` / `list_dir_result`로 디렉토리 탐색. 파일 더블클릭은 원격에 새 탭으로 연다 | 원격에서 콘텐츠를 mirror하는 kind(markdown 등)만 열 수 있다. 파일 변경(새 폴더·새 파일·이름 변경·휴지통·같은 연결 안의 붙여넣기·끌기)은 server 가 원격 쓰기 capability 를 알린 연결에서만 server 가 실행한다. 시스템에서 열기·새 탭·즐겨찾기 추가는 막는다 |
-| 나머지(예: html) | placeholder | 콘텐츠 mirror 미지원 |
+| html | Linux GUI에서 받은 파일 entry를 native WebView로 표시 | 양쪽 entry viewer 협상과 client HTML plugin이 필요하다. 하위 리소스·HTTP(S)는 미지원이며 client fallback이 없다 |
+| 나머지 | placeholder | 콘텐츠 mirror 미지원 |
 
 HTML에는 별도로 협상하는 [파일 전송 기반](../../dev-guide/html-transfer.md)이 있다.
 GUI·headless 서버의 최신 요청 source를 조회하고, 크기 확인 뒤 bounded chunk로 원문을
-받을 수 있다. 이 capability는 viewer 지원을 뜻하지 않으며 HTML leaf는 아직 placeholder다.
+받을 수 있다. 전송 capability만으로 viewer를 켜지 않으며 별도 entry viewer 협상 뒤 HTML role을 보낸다. 구 peer는 placeholder를 유지한다. 크기 질문·스크립트·Reload·연결 수명은 [HTML surface](../../surfaces/html/index.md#원격-전송-기반)를 따른다.
 
 **mesh**는 GUI·headless 서버 모두에서 프레임을 전달한다. GUI 서버에서는 로컬 redraw가
 만든 프레임을 중계하며 별도의 렌더 치수를 결정하지 않는다.

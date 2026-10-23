@@ -12,9 +12,15 @@ use crate::state::RequestContext;
 /// 원격에 열 수 있는 핸들러인지 확인한다.
 /// OpenSurface이면서 client가 그 kind의 콘텐츠를 mirror하는 경우만 대상이다.
 /// System·Ipc는 원격 경로를 client의 OS나 plugin이 로컬 파일로 열게 되어 제외한다.
-pub(crate) fn is_remote_openable(engine: &EngineRef<'_>, handler: &FileHandler) -> bool {
+pub(crate) fn is_remote_openable(
+    engine: &EngineRef<'_>,
+    handler: &FileHandler,
+    origin_surface_id: Option<u32>,
+) -> bool {
     match &handler.action {
-        HandlerAction::OpenSurface { surface_kind, .. } => mirrors_content(engine, surface_kind),
+        HandlerAction::OpenSurface { surface_kind, .. } => {
+            mirrors_content(engine, surface_kind, origin_surface_id)
+        }
         HandlerAction::Ipc { .. } | HandlerAction::System => false,
     }
 }
@@ -27,7 +33,7 @@ pub(crate) fn rejects_handler_for_origin(
     origin_surface_id: Option<u32>,
 ) -> bool {
     let rejected = origin_surface_id.is_some_and(|sid| engine.is_mirror_surface(sid))
-        && !is_remote_openable(engine, handler);
+        && !is_remote_openable(engine, handler, origin_surface_id);
     if rejected {
         tracing::warn!(
             handler_id = %handler.id,
@@ -39,14 +45,21 @@ pub(crate) fn rejects_handler_for_origin(
 
 /// client에 등록한 kind가 원문 전달 허용 목록에 있거나 egui-mesh인지 확인한다.
 /// egui-mesh는 서버가 plugin ID와 무관하게 mesh mirror로 보낸다(docs/dev-guide/attach-behavior.md).
-/// html처럼 mirror에서 placeholder로 보이는 kind는 원격에 열어도 내용을 볼 수 없다.
-fn mirrors_content(engine: &EngineRef<'_>, kind: &str) -> bool {
+/// HTML은 원래 workspace의 viewer 협상과 소유 plugin을 추가로 확인한다.
+fn mirrors_content(engine: &EngineRef<'_>, kind: &str, origin: Option<u32>) -> bool {
     let Some(def) = engine.runtime.surface_registry.get_live(kind) else {
         return false;
     };
     let Some(plugin_id) = def.source.plugin_id() else {
         return false;
     };
+    if kind == "html" {
+        return plugin_id == "com.tasty.html"
+            && origin
+                .and_then(|id| engine.find_workspace_index_for_surface(id))
+                .and_then(|(index, _)| engine.workspace_at(index))
+                .is_some_and(|workspace| engine.remote.html_entry_hosts.contains(&workspace.id));
+    }
     crate::remote::server::is_attach_content_allowed(kind, plugin_id)
         || def.rendering == crate::runtime::surface_registry::RegisteredRendering::EguiMesh
 }
@@ -71,10 +84,10 @@ pub(crate) fn apply_remote_identify_result(
         .unwrap_or_default();
     let first_is_openable = handlers
         .first()
-        .is_some_and(|h| is_remote_openable(&engine.as_ref(), h));
+        .is_some_and(|h| is_remote_openable(&engine.as_ref(), h, Some(origin_surface_id)));
     let openable: Vec<FileHandler> = handlers
         .into_iter()
-        .filter(|h| is_remote_openable(&engine.as_ref(), h))
+        .filter(|h| is_remote_openable(&engine.as_ref(), h, Some(origin_surface_id)))
         .collect();
     let Some(first) = openable.first() else {
         report_unsupported(state, &target, dispatch_origin);
@@ -147,7 +160,7 @@ fn open_remote_picker(
             .runtime
             .file_handler
             .get(&summary.id)
-            .is_some_and(|h| is_remote_openable(&engine.as_ref(), &h))
+            .is_some_and(|h| is_remote_openable(&engine.as_ref(), &h, Some(origin_surface_id)))
     });
 }
 

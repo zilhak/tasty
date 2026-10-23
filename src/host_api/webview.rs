@@ -1,6 +1,7 @@
 //! 플랫폼별 native WebView와 공통 키 전달 계약.
 //! 백엔드는 같은 이름의 메서드를 제공하고 cfg로 선택한다. 차이는 docs/design/systems/webview.md를 따른다.
 
+pub(crate) mod entry_response;
 mod file_stamp;
 pub mod keys;
 mod load_generation;

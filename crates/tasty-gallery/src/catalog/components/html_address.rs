@@ -121,6 +121,8 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                         can_forward: index == 2,
                         loading: page == "loading",
                         disconnected: false,
+                        skipped: (kind == Kind::Mirror)
+                            .then_some(("1 skipped", "Declined: hero-video.mp4")),
                         focus: false,
                         labels: labels(),
                     },
@@ -184,6 +186,8 @@ pub fn draw_placement(ui: &mut egui::Ui, theme: &Theme) {
                         can_forward: true,
                         loading: false,
                         disconnected: false,
+                        skipped: (kind == Kind::Mirror)
+                            .then_some(("1 skipped", "Declined: hero-video.mp4")),
                         focus: false,
                         labels: labels(),
                     },
@@ -218,6 +222,7 @@ pub fn draw_live(ui: &mut egui::Ui, theme: &Theme) {
             can_forward: false,
             loading: false,
             disconnected: false,
+            skipped: None,
             focus: false,
             labels: labels(),
         },

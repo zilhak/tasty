@@ -64,6 +64,8 @@ pub struct HtmlAddressView<'a> {
     pub can_forward: bool,
     pub loading: bool,
     pub disconnected: bool,
+    /// Received-design trailing skipped tag and top tooltip, caller supplied.
+    pub skipped: Option<(&'a str, &'a str)>,
     /// One-frame, user-origin focus request. Never set this for an agent navigation.
     pub focus: bool,
     pub labels: HtmlAddressLabels<'a>,
@@ -260,14 +262,41 @@ pub fn html_address_bar(
     // Keep the real buffer intact. The idle label alone is shortened, so focusing/copying
     // always sees the complete address and agent updates cannot rewrite an active draft.
     let idle = !state.editing && !had_focus && !view.focus;
-    let text_width =
-        field_width - theme.input_padding_x() * 2.0 - theme.icon_glyph_size_sm - theme.input_gap();
+    let tag_width = view
+        .skipped
+        .map_or(0.0, |(label, _)| crate::tag_width(ui, theme, label));
+    let trailing = if tag_width > 0.0 {
+        LogicalPx(tag_width) + theme.input_gap()
+    } else {
+        LogicalPx(0.0)
+    };
+    let text_width = field_width
+        - theme.input_padding_x() * 2.0
+        - theme.icon_glyph_size_sm
+        - theme.input_gap()
+        - trailing;
+    let paint_tag = |ui: &mut egui::Ui, rect: egui::Rect, _| {
+        if let Some((label, tooltip)) = view.skipped {
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            );
+            let response = crate::tag(&mut child, theme, label, crate::TagVariant::Default, false);
+            if tooltip_hover_delay_elapsed(ui.ctx(), theme, response.id, response.hovered()) {
+                Tooltip::new(tooltip)
+                    .placement(TooltipPlacement::Top)
+                    .id_source(response.id)
+                    .show(ui, theme, response.rect);
+            }
+        }
+    };
     let mut display = if idle {
         left_ellipsis(ui, theme, &state.buffer, text_width)
     } else {
         state.buffer.clone()
     };
-    let response = Input::new()
+    let mut input = Input::new()
         .id(field_id)
         .width(field_width.value())
         .mono(!display.is_empty())
@@ -288,8 +317,11 @@ pub fn html_address_bar(
                 theme.html_address_value_fg()
             }
             .to_egui(),
-        )
-        .show(&mut field, theme, &mut display);
+        );
+    if tag_width > 0.0 {
+        input = input.trailing_box(&paint_tag, LogicalPx(tag_width), theme.input_height());
+    }
+    let response = input.show(&mut field, theme, &mut display);
     out.field_rect = Some(field_rect);
     if view.focus && !mirror && ui.is_enabled() {
         select_all(ui, field_id, state.buffer.chars().count());

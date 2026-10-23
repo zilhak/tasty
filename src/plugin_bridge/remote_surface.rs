@@ -3,6 +3,8 @@
 //! 이름과 snapshot은 매니저가 공유 핸들로 갱신한다.
 //! GUI별 접근 범위는 docs/dev-guide/headless-build-boundaries.md를 따른다.
 
+mod html;
+
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -50,6 +52,7 @@ pub struct RemoteSurface {
     /// 생성 인자의 file. 플러그인 snapshot이 오기 전에도 attach 원문 대상 경로를 알린다.
     pub initial_file: Option<PathBuf>,
     /// Requested HTML source, shared across GUI/headless and never written by native commit callbacks.
+    pub html_mirror: Option<Arc<Mutex<tasty_remote::html_mirror::HtmlMirror>>>,
     pub html_source: Arc<Mutex<tasty_remote::html_source::HtmlSourceState>>,
 }
 
@@ -111,6 +114,7 @@ impl RemoteSurface {
             cwd: Arc::new(Mutex::new(None)),
             initial_file: None,
             html_source: Arc::default(),
+            html_mirror: None,
         }
     }
 
@@ -224,19 +228,6 @@ impl RemoteSurface {
         .clone()
     }
 
-    /// 스크립트 허용 상태를 잠그고 `f`를 실행한다.
-    #[cfg(feature = "gui")]
-    pub fn with_html_script<R>(
-        &self,
-        f: impl FnOnce(&mut tasty_model::html_script::HtmlScriptState) -> R,
-    ) -> R {
-        f(&mut crate::poison::recover_mutex(
-            self.html_script.lock(),
-            HTML_SCRIPT_WHAT,
-            &HTML_SCRIPT_POISON_REPORTED,
-        ))
-    }
-
     pub fn set_cwd(&self, cwd: Option<PathBuf>) {
         *crate::poison::recover_mutex(self.cwd.lock(), CWD_WHAT, &CWD_POISON_REPORTED) = cwd;
     }
@@ -261,50 +252,6 @@ impl RemoteSurface {
             self.set_html_source(params.get("url").and_then(Value::as_str));
         }
         self
-    }
-
-    pub fn set_html_source(&self, raw: Option<&str>) {
-        if self.kind_static != "html" {
-            return;
-        }
-        let cwd = self.source_cwd();
-        crate::poison::recover_mutex(
-            self.html_source.lock(),
-            "HTML source",
-            &HTML_SOURCE_POISONED,
-        )
-        .set(raw, cwd.as_deref());
-    }
-
-    /// Snapshot fallback is only initialized before a requested URL exists.
-    pub fn html_source_info(&self) -> (tasty_ipc::html_transfer::HtmlSource, u64) {
-        let mut state = crate::poison::recover_mutex(
-            self.html_source.lock(),
-            "HTML source",
-            &HTML_SOURCE_POISONED,
-        );
-        if state.source.is_none() {
-            let snapshot = crate::poison::recover_mutex(
-                self.snapshot_cache.lock(),
-                SNAPSHOT_WHAT,
-                &SNAPSHOT_POISON_REPORTED,
-            );
-            let cwd = crate::poison::recover_mutex(self.cwd.lock(), CWD_WHAT, &CWD_POISON_REPORTED);
-            state.set(
-                snapshot
-                    .as_ref()
-                    .and_then(|v| v.get("url"))
-                    .and_then(Value::as_str),
-                cwd.as_deref(),
-            );
-        }
-        (
-            state
-                .source
-                .clone()
-                .unwrap_or(tasty_ipc::html_transfer::HtmlSource::Unsupported),
-            state.generation,
-        )
     }
 
     pub fn cache_snapshot(&self, data: Value) {
@@ -375,6 +322,16 @@ impl Surface for RemoteSurface {
     }
 
     fn webview_url(&self) -> Option<String> {
+        if let Some(mirror) = &self.html_mirror {
+            return crate::poison::recover_mutex(
+                mirror.lock(),
+                "remote HTML mirror",
+                &HTML_SOURCE_POISONED,
+            )
+            .body_store()
+            .current()
+            .map(|entry| entry.native_uri().to_owned());
+        }
         crate::poison::recover_mutex(
             self.webview_url.lock(),
             WEBVIEW_URL_WHAT,

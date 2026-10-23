@@ -461,13 +461,29 @@ pub(crate) struct OpenFilePickerRequest {
 
 /// 고른 파일로 `pane_id` pane에 `kind` 탭을 만들고 경로를 `param_key` 파라미터로 넘긴다.
 /// pane은 ID로 고정하므로 피커가 열린 동안 활성 pane이 바뀌어도 대상은 그대로다.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct NewTabPickerRequest {
+    pub(crate) mirror: Option<(u32, std::sync::Weak<()>)>,
     pub(crate) request_id: FilePickerRequestId,
     pub(crate) pane_id: u32,
     pub(crate) kind: String,
     pub(crate) param_key: String,
 }
+
+impl PartialEq for NewTabPickerRequest {
+    fn eq(&self, other: &Self) -> bool {
+        self.request_id == other.request_id
+            && self.pane_id == other.pane_id
+            && self.kind == other.kind
+            && self.param_key == other.param_key
+            && match (&self.mirror, &other.mirror) {
+                (None, None) => true,
+                (Some((a, x)), Some((b, y))) => a == b && x.ptr_eq(y),
+                _ => false,
+            }
+    }
+}
+impl Eq for NewTabPickerRequest {}
 
 /// workspace·탭 대상은 ID로 고정한다. 팝업이 열린 동안 에이전트가 닫기·이동으로
 /// 인덱스를 바꿔도 사용자가 고른 대상에만 적용되고, 대상이 사라지면 팝업을 닫는다.

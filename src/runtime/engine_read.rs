@@ -36,6 +36,8 @@ pub(crate) struct EngineRead<'a> {
     explorer_hosts: &'a HashMap<u32, crate::remote::state::ExplorerRemoteHost>,
     surfaces: &'a HashMap<u32, Box<dyn Surface>>,
     mirror_cwd: &'a HashMap<u32, crate::core::state::RemoteCwd>,
+    #[cfg(feature = "gui")]
+    html_entry_hosts: &'a HashSet<u32>,
     mirror_busy: &'a HashSet<u32>,
     #[cfg(feature = "gui")]
     readonly: &'a HashMap<u32, tasty_terminal::Terminal>,
@@ -101,6 +103,8 @@ impl<'a> EngineRef<'a> {
             explorer_hosts: &self.remote.explorer_hosts,
             surfaces: &self.runtime.surfaces,
             mirror_cwd: &self.remote.mirror_surface_cwd,
+            #[cfg(feature = "gui")]
+            html_entry_hosts: &self.remote.html_entry_hosts,
             mirror_busy: &self.remote.mirror_busy_surfaces,
             #[cfg(feature = "gui")]
             readonly: &self.runtime.readonly_views,
@@ -145,6 +149,23 @@ impl Deref for EngineRead<'_> {
     }
 }
 impl<'a> EngineRead<'a> {
+    #[cfg(feature = "gui")]
+    pub(crate) fn html_entry_available(&self, workspace: u32) -> bool {
+        self.html_entry_hosts.contains(&workspace)
+    }
+    #[cfg(feature = "gui")]
+    pub(crate) fn html_receive(
+        &self,
+        sid: u32,
+    ) -> Option<crate::runtime::html_receive::ReceiveSnapshot> {
+        let remote = self
+            .surfaces
+            .get(&sid)?
+            .as_any()
+            .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()?;
+        let target = crate::runtime::surface_binding::SurfaceBinding::capture(self, sid)?;
+        crate::runtime::html_receive::snapshot(remote, target)
+    }
     #[cfg(feature = "gui")]
     pub(crate) fn html_script(
         &self,

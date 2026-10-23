@@ -23,3 +23,5 @@ pub(crate) mod transfer_spool;
 
 pub(crate) mod html_files;
 pub(crate) mod html_transfer;
+
+mod html_descriptor;

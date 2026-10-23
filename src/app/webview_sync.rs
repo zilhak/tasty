@@ -1,6 +1,7 @@
 //! App synchronizes native WebView effects against the originating runtime resources.
 //! Native windows, geometry caches and input handles remain owned by MainView.
 use crate::plugin::PluginManager;
+use crate::plugin_bridge::remote_surface::RemoteSurface;
 use crate::runtime::engine_access::EngineMut;
 use crate::runtime::engine_access::EngineRef;
 use crate::view::MainView;
@@ -12,6 +13,8 @@ use crate::view::main::redraw::{
 use crate::view::ui::View;
 use tasty_model::html_script::BannerPhase;
 
+mod script_gate;
+use script_gate::attach_script_gate;
 mod overlay_host_settle;
 mod overlay_settle;
 pub(crate) use overlay_host_settle::settle_overlay_host;
@@ -93,6 +96,11 @@ struct HtmlSurfaces {
 /// native WebView를 둘 surface인지. 호스트 주소가 있는 surface와, 주소 띠로 문서를 연 빈 html
 /// surface다. 빈 html 탭은 사용자가 처음 주소를 열 때(사용자 탐색 큐에 들어올 때) 만들고 그 뒤로 둔다.
 fn hosts_webview(view: &MainView, surface: &dyn crate::model::Surface, sid: u32) -> bool {
+    if let Some(remote) = surface.as_any().downcast_ref::<RemoteSurface>()
+        && let Some(mirror) = remote.lock_html_mirror()
+    {
+        return mirror.body_store().current().is_some();
+    }
     surface.webview_url().is_some()
         || (surface.kind() == "html"
             && (view.webviews.contains_key(&sid)
@@ -306,6 +314,11 @@ fn create_missing_webviews(
                 scale_factor,
                 sid,
                 view.webview_key_bridge.clone(),
+                find_remote_surface(view, engine, sid)
+                    .and_then(|rs| rs.lock_html_mirror())
+                    .map(|mirror| {
+                        crate::webview::entry_response::EntryResponseSource::new(&mirror.bodies)
+                    }),
             ) {
                 Ok(wv) => {
                     let Some(binding) =
@@ -338,35 +351,6 @@ fn create_missing_webviews(
             }
         }
     }
-}
-
-/// html surface에 문서 단위 스크립트 허용을 붙인다(docs/surfaces/html/index.md). 첫 로드 전에 sandbox 값을 맞춘다.
-fn attach_script_gate(
-    view: &MainView,
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
-    sid: u32,
-    wv: &crate::webview::PlatformWebView,
-    settings: &crate::webview::HtmlWebViewSettings,
-) {
-    let Some(rs) = find_remote_surface(view, engine, sid).filter(|rs| rs.kind_static == "html")
-    else {
-        return;
-    };
-    // 작업 스레드의 스캔이 끝나면 이 윈도우를 다시 그려 배너를 갱신하고 미룬 결정을 진행한다.
-    let proxy = view.proxy.clone();
-    let window_id = view.base.winit.id();
-    let gate =
-        crate::webview::script_gate::ScriptGate::new(sid, std::sync::Arc::clone(&rs.html_script))
-            .with_notify(std::sync::Arc::new(move || {
-                if proxy
-                    .send_event(crate::AppEvent::EguiRepaint { window_id })
-                    .is_err()
-                {
-                    tracing::debug!("html script scan finished after the event loop closed");
-                }
-            }));
-    gate.set_sandbox(!settings.javascript_enabled);
-    wv.attach_script_gate(gate);
 }
 
 /// 허용 직후의 재로드, 사용자 탐색, 에이전트 히스토리 이동, debug 로드 중지를 native webview에 전달한다.
@@ -454,6 +438,21 @@ fn apply_user_nav(
     nav: crate::webview::WebViewUserNav,
 ) {
     use crate::webview::WebViewUserNav;
+    if let Some(rs) = find_remote_surface(view, engine, sid)
+        && rs.html_mirror.is_some()
+    {
+        if matches!(nav, WebViewUserNav::Reload)
+            && rs
+                .lock_html_mirror()
+                .is_some_and(|mut mirror| mirror.user_reload())
+        {
+            rs.with_html_script(|state| {
+                state.on_user_load_requested();
+                state.on_load_started();
+            });
+        }
+        return;
+    }
     let Some(wv) = view.webviews.get(&sid) else {
         tracing::warn!("webview user navigation {nav:?}: surface {sid} has no webview");
         return;
@@ -581,7 +580,9 @@ fn load_initial_url(
         return;
     };
     note_host_webview_load(view, engine, sid);
-    if crate::webview::is_navigable_url(url) {
+    if find_remote_surface(view, engine, sid).is_some_and(|rs| rs.html_mirror.is_some())
+        || crate::webview::is_navigable_url(url)
+    {
         wv.load_url(url);
     } else {
         wv.load_html(url);
@@ -628,7 +629,9 @@ fn resync_webview_urls(
             if host_load_marks_origin(wv.nav_info().url.as_deref(), &url) {
                 note_host_webview_load(view, engine, sid);
             }
-            if crate::webview::is_navigable_url(&url) {
+            if find_remote_surface(view, engine, sid).is_some_and(|rs| rs.html_mirror.is_some())
+                || crate::webview::is_navigable_url(&url)
+            {
                 wv.load_url(&url);
             } else {
                 wv.load_html(&url);
@@ -1071,7 +1074,11 @@ fn note_host_webview_load(
     sid: u32,
 ) {
     if let Some(rs) = find_remote_surface(view, engine, sid) {
-        rs.with_html_script(|st| st.on_host_load_requested());
+        rs.with_html_script(|st| {
+            if rs.html_mirror.is_none() || !st.loading_before_commit() {
+                st.on_host_load_requested();
+            }
+        });
     }
 }
 

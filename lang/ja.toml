@@ -6963,3 +6963,4 @@ disconnected_sub = "このページを読み込むには再接続してくださ
 skipped = "{}件スキップ"
 waiting = "+{}件待機中"
 progress = "{} · ファイル{}件"
+declined = "拒否したファイル: {}"

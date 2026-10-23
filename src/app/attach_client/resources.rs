@@ -211,9 +211,12 @@ impl crate::runtime::engine_access::EngineMut<'_> {
             let Some(deferred) = deferred else {
                 continue;
             };
-            if deferred.kind != MARKDOWN_MIRROR_KIND
-                || !markdown_mirror_available(&self.runtime.surface_registry)
-            {
+            let available = match deferred.kind.as_str() {
+                MARKDOWN_MIRROR_KIND => markdown_mirror_available(&self.runtime.surface_registry),
+                "html" => super::html::resources::available(&self.runtime.surface_registry),
+                _ => false,
+            };
+            if !available {
                 continue;
             }
             let Some(definition) = self.runtime.surface_registry.get_live(&deferred.kind) else {

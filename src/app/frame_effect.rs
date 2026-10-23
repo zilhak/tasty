@@ -62,6 +62,7 @@ pub(crate) enum InputEffect {
 #[derive(Clone, Debug)]
 pub(crate) enum DrawEffect {
     Html(crate::runtime::html_script::HtmlAction),
+    HtmlReceive(crate::runtime::html_receive::ReceiveAction),
     PluginDisplay(super::plugin_display::PluginDisplayRequest),
     RemoteMeshFull { targets: Vec<SurfaceBinding> },
 }
@@ -248,6 +249,7 @@ impl DrawEffect {
     ) {
         match self {
             Self::Html(action) => action.apply(engine, origin),
+            Self::HtmlReceive(action) => action.apply(engine, origin),
             Self::PluginDisplay(request) => {
                 if let Some(manager) = plugins {
                     request.apply(manager);

@@ -63,6 +63,8 @@ pub(crate) mod registries;
 mod pty;
 
 #[cfg(feature = "gui")]
+pub(crate) mod html_receive;
+#[cfg(feature = "gui")]
 pub(crate) mod html_script;
 #[cfg(feature = "gui")]
 pub(crate) mod surface_binding;

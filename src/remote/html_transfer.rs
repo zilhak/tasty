@@ -127,6 +127,12 @@ impl EngineMut<'_> {
         self.remote.html_transfers = transfers;
     }
     pub(crate) fn handle_html_request(&mut self, hub: &StreamHub, client: u32, msg: HtmlRequest) {
+        if matches!(msg, HtmlRequest::HtmlCapabilities { .. }) {
+            if let Some(workspace) = self.live.occupancy.workspace_held_by(client) {
+                self.remote.mark_structure_changed(workspace);
+            }
+            return;
+        }
         let Some(id) = msg.id() else {
             return;
         };

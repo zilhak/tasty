@@ -7,5 +7,6 @@ pub mod dag_graph;
 pub mod empty;
 pub mod explorer;
 pub mod html_address;
+pub(crate) mod html_receive;
 pub mod html_script_banner;
 pub mod webview_chrome;

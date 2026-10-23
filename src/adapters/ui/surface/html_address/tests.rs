@@ -26,6 +26,7 @@ fn source<'a>(
         cwd,
         home: None,
         mirror: false,
+        received: None,
     }
 }
 
@@ -313,6 +314,7 @@ fn the_mirror_placeholder_hides_the_band() {
     let info = tasty_model::WebViewNavInfo::default();
     let src = HtmlAddressSource {
         mirror: true,
+        received: None,
         ..source(&info, None)
     };
     let ctx = egui::Context::default();

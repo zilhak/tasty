@@ -248,13 +248,14 @@ fn only_open_surface_kinds_that_mirror_content_are_remote_openable() {
         open_surface("not_registered"),
     ] {
         assert!(
-            !is_remote_openable(&engine.as_ref(), &handler(action.clone())),
+            !is_remote_openable(&engine.as_ref(), &handler(action.clone()), None),
             "{action:?} must not open on the remote",
         );
     }
     assert!(is_remote_openable(
         &engine.as_ref(),
-        &handler(open_surface("markdown"))
+        &handler(open_surface("markdown")),
+        None
     ));
 }
 
@@ -278,7 +279,8 @@ fn egui_mesh_kinds_are_remote_openable_regardless_of_plugin_id() {
     );
     assert!(is_remote_openable(
         &engine.as_ref(),
-        &handler(open_surface("widget"))
+        &handler(open_surface("widget")),
+        None
     ));
 }
 
@@ -549,4 +551,21 @@ fn a_mirror_origin_identifies_by_name_only() {
             (DetectDepth::Name, Some(ids[1]))
         ]
     );
+}
+
+#[test]
+fn html_openability_is_bound_to_the_origin_connection_and_owned_plugin() {
+    let (_state, mut session) = crate::state::tests::test_mirror_state();
+    let engine = session.borrow_mut();
+    register_kind(&engine, "com.tasty.html", "html");
+    let workspace = engine.workspace_at(0).unwrap();
+    let (workspace, sid) = (workspace.id, workspace.all_surface_ids()[0]);
+    let html = handler(open_surface("html"));
+    assert!(!is_remote_openable(&engine.as_ref(), &html, Some(sid)));
+    engine.remote.html_entry_hosts.insert(workspace);
+    assert!(is_remote_openable(&engine.as_ref(), &html, Some(sid)));
+    assert!(!is_remote_openable(&engine.as_ref(), &html, None));
+    assert!(!is_remote_openable(&engine.as_ref(), &html, Some(u32::MAX)));
+    engine.remote.html_entry_hosts.remove(&workspace);
+    assert!(!is_remote_openable(&engine.as_ref(), &html, Some(sid)));
 }

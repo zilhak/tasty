@@ -1,6 +1,9 @@
 //! macOS WKWebView wrapper.
 //! Reference: wry/src/wkwebview/mod.rs (MIT license, Tauri)
 
+mod content_rules;
+use content_rules::apply_block_state;
+
 use std::cell::{Cell, RefCell};
 use std::ptr::NonNull;
 use std::rc::Rc;
@@ -15,11 +18,12 @@ use objc2_app_kit::{
 use objc2_foundation::{NSError, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_web_kit::{
     WKContentRuleList, WKContentRuleListStore, WKNavigation, WKNavigationAction,
-    WKNavigationActionPolicy, WKNavigationDelegate, WKNavigationType, WKUserContentController,
-    WKWebView, WKWebViewConfiguration, WKWebpagePreferences,
+    WKNavigationActionPolicy, WKNavigationDelegate, WKNavigationType, WKWebView,
+    WKWebViewConfiguration, WKWebpagePreferences,
 };
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
+use super::entry_response::EntryResponseSource;
 use super::keys::WebViewKeySink;
 use super::load_generation::{CancelledDecisions, is_current_load, nav_state_after_end};
 use super::overlay::{OverlayApplyError, OverlayRequest};
@@ -50,6 +54,7 @@ fn complete_decision(
 
 struct NavDelegateIvars {
     surface_id: u32,
+    entry_source: Option<EntryResponseSource>,
     nav_state: Rc<Cell<NavState>>,
     /// 차단 여부와 별도로 기록한 탐색 시도 큐.
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
@@ -343,6 +348,15 @@ define_class!(
                     .and_then(|u| u.absoluteString())
             };
             let url = url.map(|u| u.to_string());
+            if let Some(source) = &self.ivars().entry_source
+                && url
+                    .as_deref()
+                    .is_none_or(|uri| source.response(uri).is_none())
+            {
+                decision_handler
+                    .call((WKNavigationActionPolicy::Cancel, NonNull::from(preferences)));
+                return;
+            }
             if let (Some(gate), Some(url)) = (self.ivars().script_gate.borrow().as_ref(), &url) {
                 // SAFETY: main thread WebKit delegate 호출. targetFrame()/isMainFrame()/
                 // navigationType()은 이 호출 동안 유효한 navigation_action을 읽는다.
@@ -420,9 +434,11 @@ impl NavDelegate {
         nav_state: Rc<Cell<NavState>>,
         pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
         script_gate: Rc<RefCell<Option<ScriptGate>>>,
+        entry_source: Option<EntryResponseSource>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(NavDelegateIvars {
             surface_id,
+            entry_source,
             nav_state,
             pending_navigations,
             script_gate,
@@ -592,6 +608,7 @@ const REMOTE_BLOCK_RULE_JSON: &str =
     r#"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#;
 
 pub struct PlatformWebView {
+    entry_source: Option<EntryResponseSource>,
     webview: Retained<KeyWebView>,
     content_rule_list: Rc<RefCell<Option<Retained<WKContentRuleList>>>>,
     block_remote: Rc<Cell<bool>>,
@@ -626,6 +643,7 @@ impl PlatformWebView {
         scale_factor: f64,
         surface_id: u32,
         key_bridge: Rc<dyn WebViewKeySink>,
+        entry_source: Option<super::entry_response::EntryResponseSource>,
     ) -> Result<Self, super::WebViewCreateError> {
         let mtm = MainThreadMarker::new().ok_or_else(|| perm("Must be called from main thread"))?;
 
@@ -643,6 +661,9 @@ impl PlatformWebView {
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             let config = WKWebViewConfiguration::new(mtm);
+            if let Some(source) = &entry_source {
+                super::entry_response::macos::configure(&config, source.clone(), mtm);
+            }
 
             let prefs = config.preferences();
             let key = NSString::from_str("defaultTextEncodingName");
@@ -666,6 +687,7 @@ impl PlatformWebView {
                 nav_state.clone(),
                 pending_navigations.clone(),
                 script_gate.clone(),
+                entry_source.clone(),
             );
             let nav_proto = ProtocolObject::from_ref(&*nav_delegate);
             webview.setNavigationDelegate(Some(nav_proto));
@@ -710,6 +732,7 @@ impl PlatformWebView {
             }
 
             Ok(Self {
+                entry_source,
                 webview,
                 content_rule_list,
                 block_remote,
@@ -896,6 +919,14 @@ impl PlatformWebView {
     }
 
     pub fn load_url(&self, url: &str) {
+        if self
+            .entry_source
+            .as_ref()
+            .is_some_and(|source| source.response(url).is_none())
+        {
+            self.nav_state.set(NavState::Failed);
+            return;
+        }
         self.begin_load();
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         // URL loading 시퀀스는 한 단위라 분할 시 가독성 저하.
@@ -1034,7 +1065,8 @@ impl PlatformWebView {
 
     /// 비동기 규칙이 준비되면 http(s) 차단 여부를 반영한다. 미준비·컴파일 실패 동안의 차단을 보장하지 않는다.
     pub fn set_remote_content_allowed(&self, allowed: bool) {
-        self.block_remote.set(!allowed);
+        self.block_remote
+            .set(self.entry_source.is_some() || !allowed);
         apply_block_state(
             &self.webview,
             self.block_remote.get(),
@@ -1043,6 +1075,10 @@ impl PlatformWebView {
     }
 
     pub fn load_html(&self, html: &str) {
+        if self.entry_source.is_some() {
+            self.nav_state.set(NavState::Failed);
+            return;
+        }
         self.begin_load();
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         unsafe {
@@ -1060,31 +1096,6 @@ impl Drop for PlatformWebView {
         self._nav_delegate.ivars().cancel_pending_decision();
         self.webview.removeFromSuperview();
     }
-}
-
-/// 기존 content rule을 모두 지우고 차단이 켜졌으며 규칙이 준비된 경우 다시 넣는다.
-fn apply_block_state(
-    webview: &WKWebView,
-    block_remote: bool,
-    rule_list: Option<&WKContentRuleList>,
-) {
-    // SAFETY: main thread WKWebView API — configuration()/userContentController() 및
-    // add/removeAllContentRuleLists 는 main thread only. 호출 경로(new 의 main-thread
-    // completion handler / set_remote_content_allowed)가 main thread 를 보장한다.
-    #[allow(clippy::multiple_unsafe_ops_per_block)]
-    unsafe {
-        let ucc: Retained<WKUserContentController> =
-            webview.configuration().userContentController();
-        ucc.removeAllContentRuleLists();
-        if block_remote && let Some(list) = rule_list {
-            ucc.addContentRuleList(list);
-        }
-    }
-    tracing::debug!(
-        block_remote,
-        rule_compiled = rule_list.is_some(),
-        "webview 원격 차단 상태 적용 (removeAll + 차단 시 add)"
-    );
 }
 
 /// Convert logical bounds (top-left origin) to NSRect,

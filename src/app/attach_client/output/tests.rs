@@ -351,7 +351,7 @@ fn structural_delta_reuses_markdown_survivor_and_reports_removed_ones() {
         None,
     )
     .expect("mirror delta");
-    assert!(removed.is_empty());
+    assert!(removed.markdown.is_empty() && removed.html.is_empty());
     assert!(
         created_surfaces(&rx).is_empty(),
         "survivor 에 surface.create 를 다시 보내면 문서가 로딩부터 다시 시작한다"
@@ -375,7 +375,7 @@ fn structural_delta_reuses_markdown_survivor_and_reports_removed_ones() {
         None,
     )
     .expect("mirror delta");
-    assert_eq!(removed, vec![local]);
+    assert_eq!(removed.markdown, vec![local]);
     assert!(sess.state.markdown_locals.is_empty());
 }
 
@@ -846,7 +846,7 @@ fn a_structural_delta_keeps_the_surviving_terminal_mirror_size() {
         None,
     )
     .expect("mirror delta");
-    assert!(removed.is_empty());
+    assert!(removed.markdown.is_empty() && removed.html.is_empty());
     assert_eq!(sess.state.remote_to_local[&10], local);
     let t = engine
         .runtime
@@ -854,4 +854,20 @@ fn a_structural_delta_keeps_the_surviving_terminal_mirror_size() {
         .get_mut(local)
         .expect("terminal mirror");
     assert_eq!((t.cols(), t.rows()), (100, 30));
+}
+
+#[test]
+fn html_retired_ids_stay_separate_from_markdown_content_routes() {
+    let mut session = test_session(1, HashMap::from([(30, 300), (31, 310)]));
+    session.state.markdown_locals = HashSet::from([300, 301]);
+    session.state.html_locals = HashSet::from([310, 311]);
+    let removed = session
+        .state
+        .replace_document_ids(HashSet::from([300, 302]), HashSet::from([310, 312]));
+    assert_eq!(removed.markdown, vec![301]);
+    assert_eq!(removed.html, vec![311]);
+    assert_eq!(session.state.markdown_locals, HashSet::from([300, 302]));
+    assert_eq!(session.state.html_locals, HashSet::from([310, 312]));
+    assert_eq!(markdown_mirror_local(&session, 30), Some(300));
+    assert_eq!(markdown_mirror_local(&session, 31), None);
 }
