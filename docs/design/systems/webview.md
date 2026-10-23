@@ -25,7 +25,7 @@ PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출
 
 | 연산 | 입력 | 출력 | 백엔드 차이 |
 |------|------|------|-------------|
-| `new` | 부모 창 handle · `WebViewBounds` · `scale_factor` · `surface_id` · `Rc<dyn WebViewKeySink>` | `Result<Self, WebViewCreateError>` | Linux 만 `HasDisplayHandle` 을 추가로 요구한다(X11 display 포인터). macOS 는 실패 셋을 전부 `Permanent` 로 분류한다 |
+| `new` | 부모 창 handle · `WebViewBounds` · `scale_factor` · `surface_id` · `Rc<dyn WebViewKeySink>` · `Option<EntryResponseSource>` | `Result<Self, WebViewCreateError>` | Linux 만 `HasDisplayHandle` 을 추가로 요구한다(X11 display 포인터). macOS 는 실패 셋을 전부 `Permanent` 로 분류한다 |
 | `set_bounds` | `WebViewBounds` · `scale_factor` | — | macOS 는 Cocoa 가 논리 좌표를 그대로 받아 물리 변환을 쓰지 않는다 |
 | `set_visible` | `bool` | — | |
 | `release_keyboard_focus` | — | — | 회수는 조건부다 — 아래 "포커스" |
@@ -57,6 +57,18 @@ foreign_gdk_window가 FFI NULL을 Err로 반환하며 panic하는 foreign_new_fo
 WebViewCreateError의 Permanent는 즉시 중단하고 Transient는 최대 8 회 시도한다.
 창 생성·파괴 이벤트가 다음 시도를 깨울 수 있어 무한 재시도를 하지 않는다.
 소스 검사는 알려진 생성→동기화→조회 순서와 NULL 처리만 확인하며 모든 X 경합이나 자원 정리를 증명하지 않는다.
+
+## 원격 파일 entry 응답 모드
+
+`new`의 선택적 `EntryResponseSource`는 native context를 만들기 전에 정한다. `None`은 일반 WebView이고, `Some`은 원격 파일 entry의 완성된 수신 본문을 제공하는 모드다. source는 `EntryBodyStore`의 weak owner를 참조한다. 서버 파일 URL은 출처·주소 표시·스크립트 판정용이며 client 파일을 여는 명령으로 쓰지 않는다. 전송·크기·연결 계약은 [HTML 전송 계약](../../dev-guide/html-transfer.md), 문서별 스크립트 정책은 [HTML surface](../../surfaces/html/index.md)에 있다.
+
+Linux는 이 모드마다 별도 ephemeral `WebContext`에 `tasty-html-entry` scheme을 등록한다. callback은 현재 store의 정확한 entry URI(fragment 제외)에 대한 GET에만 수신·검사가 끝난 immutable 본문과 MIME을 응답한다. 가상 entry URL의 host는 connection epoch·surface·binding·document로 나누고 경로에도 request·transfer를 담는다. 다른 URI·method는 실패시키며 client 파일·네트워크로 대체하지 않는다. navigation 정책은 이 entry 밖의 이동과 새 창 요청도 거절한다.
+
+응답에는 `Content-Security-Policy`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`를 붙인다. entry CSP는 외부 script·CSS·HTTP(S)·상대 리소스·fetch·frame·worker 등을 허용하지 않으며 inline script 실행 여부는 client의 문서별 script gate가 결정한다. DNS prefetch·hyperlink auditing·WebRTC·media stream과 file URL의 파일/범용 접근도 끈다. `allow_remote_content=true`로 설정해도 이 모드의 정확 URI 경계와 CSP는 풀리지 않는다. 일반 WebView의 비동기 content filter 준비만으로 entry 격리를 구현하지 않는다.
+
+완성 본문과 scan은 같은 수신 할당을 사용한다. script Allow 재로드는 그 본문을 재사용하고, 사용자·에이전트 Reload는 새 문서 세대로 다시 받는다. store 교체·close·연결 세대 교체 뒤의 응답은 이전 문서로 게시하지 않는다. disconnect는 완료 본문을 보존하되 새 Reload를 막는다. weak owner가 사라지거나 현재 URI의 본문이 없으면 callback은 실패한다.
+
+현재 attach entry viewer capability는 Linux GUI client만 광고하며, 실제 App entry 표시와 격리 증거도 Linux 범위다. macOS의 nonpersistent `WKWebsiteDataStore`·`WKURLSchemeHandler`, Windows의 전용 user-data folder·InPrivate context·응답 interception 구현은 있다. 이 두 OS의 entry adapter 검증은 host 일부를 대체한 ARM compile fixture 범위이며 전체 App compile/link나 native 실행을 확인한 것은 아니다. 하위 파일과 HTTP(S) proxy는 현재 entry 모드의 지원 범위에 포함하지 않는다.
 
 ## 좌표 — 논리와 물리를 타입 이름에 남긴다
 
@@ -512,7 +524,8 @@ html 은 이 값을 전역 sandbox 로 받고 문서마다 스크립트를 판�
 
 ## 원격 리소스 차단
 
-allow_remote_content=false는 navigation과 페이지 내부 HTTP·HTTPS 요청을 함께 제한한다.
+일반 WebView의 allow_remote_content=false는 navigation과 페이지 내부 HTTP·HTTPS 요청을 함께 제한한다.
+원격 파일 entry 모드는 [별도 응답 경계](#원격-파일-entry-응답-모드)를 사용하며 이 설정으로 하위 파일이나 HTTP(S)를 활성화하지 않는다.
 Linux는 `^https?://` WebKit content filter를 홈의 webkit-content-filters 저장소에 비동기 컴파일한다.
 완료 callback은 그때의 설정을 다시 읽고, 토글은 기존 필터를 제거한 뒤 필요하면 붙인다.
 macOS는 WKContentRuleList, Windows는 WebResourceRequested 거절을 사용한다. data URI는 원격 규칙에 해당하지 않는다.
