@@ -158,20 +158,7 @@ pub fn read_port(path: &Path) -> Option<u16> {
     let mut file = match LockedTable::open(path) {
         Ok(file) => file,
         Err(e) => {
-            tracing::warn!("webhooks.toml format update unavailable: {e}");
-            // Lock acquisition/validation can fail after the initial read. Read again rather
-            // than revive an obsolete port; this fallback never writes without the lock.
-            let mut table = match read_table(path) {
-                Ok(table) => table,
-                Err(error) => {
-                    tracing::warn!(
-                        "webhooks.toml unreadable ({error}); ignoring its port and leaving the file as it is"
-                    );
-                    return None;
-                }
-            };
-            migrate(&mut table);
-            return port_from_table(&table);
+            return legacy_port_after_lock_failure(path, e);
         }
     };
     if file.before == Fingerprint::Missing {
@@ -183,6 +170,23 @@ pub fn read_port(path: &Path) -> Option<u16> {
         tracing::warn!("webhooks.toml format update failed: {e}");
     }
     port
+}
+
+fn legacy_port_after_lock_failure(path: &Path, e: std::io::Error) -> Option<u16> {
+    tracing::warn!("webhooks.toml format update unavailable: {e}");
+    // Lock acquisition/validation can fail after the initial read. Read again rather
+    // than revive an obsolete port; this fallback never writes without the lock.
+    let mut table = match read_table(path) {
+        Ok(table) => table,
+        Err(error) => {
+            tracing::warn!(
+                "webhooks.toml unreadable ({error}); ignoring its port and leaving the file as it is"
+            );
+            return None;
+        }
+    };
+    migrate(&mut table);
+    port_from_table(&table)
 }
 
 /// Save an explicit port; it applies on the next listener start. Other sections are preserved.
