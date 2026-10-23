@@ -1,4 +1,4 @@
-<!-- source-hash: 48c00cd59acb -->
+<!-- source-hash: 1780d61de8dc -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -32,7 +32,7 @@ Trying to attach directly with an `ssh` profile is refused. Always create one `t
 3. **Attach** tab → **Add attach**. Enter a name and, under **Connection**, choose **SSH profile** (referencing the one created above) or **Direct (inline)**.
    - **Remote tasty** group: **Executable** (the remote tasty path, default `tasty`) · **Port mode** · **Port file**. If tasty is not on the remote PATH, enter the full path in Executable or set the port mode to `file-unix`.
 
-The Save button is temporarily disabled while saving. If saving fails, your input and the error stay visible so you can edit and retry. Canceling or closing the popup leaves an already accepted save running; its later completion does not overwrite a reopened form. A new Passkey with an existing name is rejected without replacing the existing credential.
+The Save button is temporarily disabled while saving. If saving fails, your input and the error stay visible so you can edit and retry. Canceling or closing the remote connections popup leaves an already accepted save running; its later completion does not overwrite a reopened form. A new Passkey with an existing name is rejected without replacing the existing credential.
 
 When editing a Passkey, typing and then clearing the value prevents a delayed preload from filling it again. Canceling and reopening the editor accepts only the new edit’s preload. If the credential cannot be loaded, the current editor shows an error.
 
