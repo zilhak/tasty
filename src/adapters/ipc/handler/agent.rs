@@ -170,10 +170,12 @@ pub(super) fn reply_task<T: Send + 'static>(
     + 'static,
 ) -> JsonRpcResponse {
     let reply_id = id.clone();
+    let (request, recovery) = core
+        .tasks
+        .unit_request_with_recovery(super::deferred::params_bytes(params), body);
     core.reply_with_memory(
         id,
-        core.tasks
-            .unit_request(super::deferred::params_bytes(params), body),
+        request,
         move |core, completion| match tasty_memory::writer::settle(completion) {
             Ok(output) => match output
                 .into_value::<(Result<T, AgentError>, tasty_task_runtime::TaskEffects)>()
@@ -187,11 +189,14 @@ pub(super) fn reply_task<T: Send + 'static>(
                 }
                 None => JsonRpcResponse::internal_error(reply_id, "unexpected memory output"),
             },
-            Err(failure) => super::deferred::unsettled_response(
-                reply_id,
-                &failure,
-                super::memory::map_error_ref,
-            ),
+            Err(failure) => {
+                recovery.schedule(core.tasks.memory_access());
+                super::deferred::unsettled_response(
+                    reply_id,
+                    &failure,
+                    super::memory::map_error_ref,
+                )
+            }
         },
     )
 }
@@ -242,6 +247,10 @@ mod holding_ttl_ipc_tests;
 #[path = "agent/record_limit_ipc_tests.rs"]
 #[cfg(test)]
 mod record_limit_ipc_tests;
+
+#[path = "agent/terminal_recovery_ipc_tests.rs"]
+#[cfg(test)]
+mod terminal_recovery_ipc_tests;
 
 #[cfg(test)]
 mod tests {

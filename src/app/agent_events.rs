@@ -58,6 +58,7 @@ pub(crate) fn emit(mgr: Option<&mut PluginManager>, events: Vec<AgentEvent>, dro
                 state,
                 attempt_id,
                 revision,
+                terminal_id,
                 skip,
             } => {
                 let payload = AgentTaskFinished {
@@ -66,6 +67,7 @@ pub(crate) fn emit(mgr: Option<&mut PluginManager>, events: Vec<AgentEvent>, dro
                     state: state.to_string(),
                     attempt_id,
                     revision,
+                    terminal_id,
                     skip: skip.map(task_skip_payload),
                 };
                 mgr.emit_host_event("agent.task_finished", &payload, EventScope::System);
@@ -99,6 +101,7 @@ mod tests {
             state: "succeeded",
             attempt_id: None,
             revision: None,
+            terminal_id: None,
             skip: None,
         });
         q.push(AgentEvent::BarrierClosed {

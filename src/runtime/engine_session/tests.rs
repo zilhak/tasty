@@ -121,6 +121,7 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
                 state: "succeeded",
                 attempt_id: None,
                 revision: None,
+                terminal_id: None,
                 skip: None,
             }],
             0

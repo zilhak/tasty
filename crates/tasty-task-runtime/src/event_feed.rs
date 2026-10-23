@@ -17,6 +17,7 @@ pub enum AgentEvent {
         state: &'static str,
         attempt_id: Option<String>,
         revision: Option<u64>,
+        terminal_id: Option<String>,
         skip: Option<tasty_agent::SkipReason>,
     },
     BarrierClosed {
@@ -94,6 +95,7 @@ mod tests {
             state: "succeeded",
             attempt_id: None,
             revision: None,
+            terminal_id: None,
             skip: None,
         }
     }

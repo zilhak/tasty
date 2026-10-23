@@ -13,8 +13,43 @@ pub const PREFIX: &str = "tasty.agent.terminal.";
 pub struct TerminalNotice {
     pub schema: u32,
     pub id: String,
-    pub task: Task,
+    pub task: TerminalTask,
     pub revision: u64,
+}
+
+/// Notification data only. Executable definitions and input/metadata are never duplicated.
+/// Extra fields in older full-task snapshots are readable without rewriting the original row.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TerminalTask {
+    pub id: String,
+    pub workspace_id: u32,
+    pub created_at: u64,
+    pub state: crate::TaskState,
+    pub result: Option<crate::TaskResult>,
+    pub attempt: Option<TerminalAttempt>,
+    pub skip: Option<super::SkipReason>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TerminalAttempt {
+    pub id: String,
+}
+
+impl TerminalTask {
+    pub fn of(task: &Task) -> Self {
+        Self {
+            id: task.id.clone(),
+            workspace_id: task.workspace_id,
+            created_at: task.created_at,
+            state: task.state.clone(),
+            result: task.result.clone(),
+            attempt: task
+                .attempt
+                .as_ref()
+                .map(|a| TerminalAttempt { id: a.id.clone() }),
+            skip: task.skip.clone(),
+        }
+    }
 }
 
 pub(super) fn put_terminal(
@@ -29,7 +64,7 @@ pub(super) fn put_terminal(
     let notice = TerminalNotice {
         schema: 1,
         id: uuid::Uuid::new_v4().to_string(),
-        task: task.clone(),
+        task: TerminalTask::of(task),
         revision,
     };
     let put = |key, value| WriteOp::Put {
@@ -161,7 +196,7 @@ mod tests {
         task.state = TaskState::Succeeded;
         let limit = serde_json::to_vec(&task).unwrap().len() as u64 + 8;
         let config = MemoryConfig {
-            entry_max_bytes: limit,
+            regular_quota_total_bytes: limit + 64,
             ..MemoryConfig::default()
         };
         let mut mem = MemoryStore::open_in_memory_with_config(config).unwrap();
@@ -177,13 +212,42 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(rejected, "the notification must exceed the entry limit");
+        assert!(rejected, "the notification must exceed the remaining quota");
         let actual = TaskStore::new(&mut mem, HOST_OWNER, &seq)
             .get(1, &task.id)
             .unwrap()
             .unwrap();
         assert_eq!(actual.state, TaskState::Running);
         assert!(pending(&mem, 1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_full_task_notification_snapshot_is_read_without_rewriting_its_original() {
+        let mut mem = MemoryStore::open_in_memory().unwrap();
+        let mut task = task();
+        task.state = TaskState::Succeeded;
+        let id = uuid::Uuid::new_v4().to_string();
+        let key = format!("{PREFIX}{id}");
+        let original = MemoryValue::Json(serde_json::json!({
+            "schema":1, "id":id, "task":task, "revision":1
+        }));
+        mem.put(
+            HOST_OWNER,
+            &Scope::Workspace(1),
+            &key,
+            &original,
+            &PutOpts::default(),
+        )
+        .unwrap();
+        let notices = pending(&mem, 1).unwrap();
+        assert_eq!(notices[0].task, TerminalTask::of(&task));
+        assert_eq!(
+            mem.get(&Scope::Workspace(1), &key).unwrap().unwrap().value,
+            original
+        );
+        let compact = serde_json::to_value(&notices[0]).unwrap();
+        assert!(compact["task"].get("command").is_none());
+        assert!(compact["task"].get("metadata").is_none());
     }
 
     #[test]

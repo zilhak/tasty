@@ -173,10 +173,11 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 
 | 키 | 시점 | payload | 등급 |
 |----|------|---------|------|
-| `agent.task_finished` | task 가 종결 상태에 들어간 직후 | `workspace_id, task_id, state`, 선택 `attempt_id, revision, skip` | Experimental |
+| `agent.task_finished` | task 가 종결 상태에 들어간 직후 | `workspace_id, task_id, state`, 선택 `attempt_id, revision, skip, terminal_id` | Experimental |
 | `agent.barrier_closed` | barrier 가 요구 수를 채워 닫힌 직후 | `workspace_id, name, count_required` | Experimental |
 
-- `state` 는 `succeeded` · `failed` · `cancelled` · `skipped` 넷 중 하나다. **비종결 전이(`waiting`/`ready`/`running`)는 발행하지 않는다** — 종결에는 모든 진입 경로가 지나는 공통 처리 지점이 있고(`agent.task_await` 가 그것으로 깨어난다) 비종결에는 없다. 종결 쓰기가 결과를 모른 채 확정되면 이 사건이 나가지 않을 수 있다. 복구 범위는 [agent-runner §실행 회차와 완료](../dev-guide/agent-runner.md#실행-회차와-완료)에 있다.
+- `state` 는 `succeeded` · `failed` · `cancelled` · `skipped` 넷 중 하나다. **비종결 전이(`waiting`/`ready`/`running`)는 발행하지 않는다** — 종결에는 모든 진입 경로가 지나는 공통 처리 지점이 있고(`agent.task_await` 가 그것으로 깨어난다) 비종결에는 없다. 종결 쓰기의 응답을 잃어도 후속 확인 읽기나 재시작에서 영속 종결 의무를 확인하면 발행한다. 복구 범위는 [agent-runner §실행 회차와 완료](../dev-guide/agent-runner.md#실행-회차와-완료)에 있다.
+- `terminal_id`는 영속 종결 의무의 UUID다. 같은 허브에서 같은 ID는 한 번 발행한다. 전달 뒤 확인 전에 프로세스가 종료되면 재시작 후 같은 ID가 다시 올 수 있어 소비자는 이 필드로 재전달을 구분한다. 다른 회차와 삭제 후 같은 task ID의 재생성은 새 UUID를 받는다. 영속 의무가 없는 내부 직접 통지는 생략할 수 있다. 피드는 휘발성 bounded 큐이며 수신 확인까지 영속 보장하지 않는다.
 - `attempt_id` 는 v2 task 의 실행 회차 id(`agent.task_get` 의 `attempt.id`)이고 회차가 없는 task 는 생략한다. `revision` 은 종결을 기록한 뒤 읽은 레코드 revision 으로 `agent.task_get`·`agent.task_await` 의 `revision` 과 같은 값이다. 레코드는 쓸 때마다 revision 이 커지므로, 다시 읽은 레코드의 `revision` 이 사건의 값보다 작지 않으면 이 사건 이후의 레코드다. 이 비교는 같은 레코드의 수명 안에서만 성립한다. task 를 지우고 같은 id 로 다시 제출하면 revision 은 1부터 다시 시작하므로, 그 사이에 삭제·재제출이 있었을 수 있으면 `attempt_id`·`state` 도 함께 대조한다. 읽지 못했으면 생략한다. `skip` 은 건너뛴 이유가 기록된 v2 task 에만 실리며 `agent.task_get` 의 `skip` 과 같은 모양이다(`{"reason": "branch_not_selected"}` 또는 `{"reason": "upstream_unavailable", "source", "source_state"}`). 경로가 선택되지 않아 끝난 task 와 선행 실패로 건너뛴 task 를 이 필드로 구분한다.
 - **실패 사유·task 결과·명령 출력을 안 싣는다.** 사건은 종결 사실과 레코드를 다시 읽을 좌표(`task_id`·`attempt_id`·`revision`)만 알리고, 실패 사유·결과는 레코드가 정본이다. 필요하면 `task_id` 로 `agent.task_get` 을 불러 읽고, `revision` 으로 그 레코드가 이 사건 이후의 것인지 확인한다.
 - **`agent.barrier_closed` 에 시간 초과는 안 온다.** barrier 의 `timed_out` 은 전이가 일어나는 순간이 없고 조회할 때 현재 시각으로 판단한다.

@@ -206,7 +206,7 @@ impl TaskService {
         };
         let task_id = wait.task;
         let workspace_id = wait.workspace;
-        let request = self.unit_request(0, move |tx| {
+        let (request, recovery) = self.unit_request_with_recovery(0, move |tx| {
             tx.complete_with(
                 &seq,
                 &hub,
@@ -234,6 +234,7 @@ impl TaskService {
                 }
             })),
         );
+        recovery.schedule(self.memory_access());
     }
 
     /// 저장소 잠금 안에서는 입력 결과만 모으고 실제 reducer 실행은 호출자가 락 밖에서 한다.

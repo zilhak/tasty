@@ -1,4 +1,4 @@
-<!-- source-hash: e03b7762c547 -->
+<!-- source-hash: 7dcf47d852ec -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -338,6 +338,8 @@ tasty agent task-cancel --workspace 2 --id "$TEST"
 tasty agent task-set-result --workspace 2 --id "$MANUAL" --state succeeded
 tasty agent task-purge --workspace 2 --states succeeded
 ```
+
+If a save response is lost, Tasty recovers pending completion notifications after checking the committed record. This also wakes waits with no time limit. An unknown save result remains an error, and checking it does not rerun the command. The same completion event can be delivered again across a restart; tools consuming events should deduplicate by `terminal_id`. If the record cannot be read, Tasty preserves it and checks again on the next task change or restart.
 
 - `task-await` waits up to 10 minutes by default and comes back with a timeout if the task has not finished by then. With `--timeout-ms 0` it waits indefinitely.
 - The `outcome` in the `task-await` reply is `terminal` (finished, with `state` such as succeeded or failed), `timed_out`, or `not_found`. All three exit with status 0, so do not judge success by the exit status; read `outcome` and `state`. The root option `--response-timeout-ms` only limits how long the CLI waits for a reply; it is not the task wait time.

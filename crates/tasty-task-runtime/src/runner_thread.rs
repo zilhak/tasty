@@ -881,10 +881,12 @@ fn purge_and_reload_on_restart(
     ctx: &RunnerContext,
     workspace_id: u32,
 ) -> Vec<(TaskId, DispatchHandle)> {
+    crate::terminal_recovery::reconcile(ctx, workspace_id);
     purge_stale_semaphore_holders(ctx, workspace_id);
     purge_stale_lease_holders(ctx, workspace_id);
     let reloaded = reload_persistent_handles(ctx, workspace_id);
     resettle_waiting_tasks(ctx, workspace_id);
+    crate::terminal_recovery::reconcile(ctx, workspace_id);
     reloaded
 }
 
@@ -1105,6 +1107,10 @@ fn run_loop(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "terminal_execution_tests.rs"]
+mod terminal_execution_tests;
 
 #[cfg(test)]
 mod tests {

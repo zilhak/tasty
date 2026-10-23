@@ -1,9 +1,9 @@
 //! 작업 상태를 기다리는 호출자에게 snapshot을 보내고 종결 상태는 사건 큐에도 기록한다.
 //! 상태를 바꾸는 호출자가 fire를 호출해야 두 소비자가 통지를 받는다.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use std::sync::mpsc::{RecvTimeoutError, SyncSender, sync_channel};
+use std::sync::mpsc::{Sender, channel};
 use std::time::Duration;
 
 use tasty_agent::{TaskId, TaskResult, TaskState};
@@ -40,7 +40,7 @@ pub enum AwaitOutcome {
 }
 
 type WaiterKey = (u32, TaskId);
-type Waiters = HashMap<WaiterKey, Vec<(u64, SyncSender<TerminalSnapshot>)>>;
+type Waiters = HashMap<WaiterKey, Vec<(u64, Sender<TerminalSnapshot>)>>;
 
 static TASK_WAKER_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -48,6 +48,7 @@ static TASK_WAKER_POISONED: std::sync::atomic::AtomicBool =
 #[derive(Default)]
 pub struct TaskWakerHub {
     waiters: Mutex<Waiters>,
+    delivered: Mutex<HashSet<String>>,
     /// 조회 후 즉시 반환하거나 시간 초과한 대기자만 골라 지우는 데 쓴다.
     next_waiter: std::sync::atomic::AtomicU64,
     /// engine과 같은 큐를 공유해야 메인 루프가 이 이벤트를 방송할 수 있다.
@@ -64,6 +65,7 @@ impl TaskWakerHub {
     pub fn with_feed(feed: std::sync::Arc<crate::event_feed::AgentEventQueue>) -> Self {
         Self {
             waiters: Mutex::new(HashMap::new()),
+            delivered: Mutex::new(HashSet::new()),
             next_waiter: std::sync::atomic::AtomicU64::new(0),
             feed,
         }
@@ -101,7 +103,7 @@ impl TaskWakerHub {
         let waiter = self
             .next_waiter
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let (tx, rx) = sync_channel::<TerminalSnapshot>(1);
+        let (tx, rx) = channel::<TerminalSnapshot>();
         self.lock_recovering()
             .entry(key.clone())
             .or_default()
@@ -118,29 +120,68 @@ impl TaskWakerHub {
             self.unregister(&key, waiter);
             return AwaitOutcome::Terminal(current);
         }
-        let infinite = matches!(timeout_ms, None | Some(0));
-        let result = if infinite {
-            rx.recv().ok()
-        } else {
-            let dur = Duration::from_millis(timeout_ms.unwrap());
-            match rx.recv_timeout(dur) {
-                Ok(snap) => Some(snap),
-                Err(RecvTimeoutError::Timeout) => None,
-                Err(RecvTimeoutError::Disconnected) => None,
+        let deadline = timeout_ms
+            .filter(|ms| *ms != 0)
+            .map(|ms| std::time::Instant::now() + Duration::from_millis(ms));
+        let result = loop {
+            let received = match deadline {
+                None => rx.recv().ok(),
+                Some(deadline) => rx
+                    .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                    .ok(),
+            };
+            let Some(snapshot) = received else {
+                break AwaitOutcome::TimedOut;
+            };
+            // A read completion may be reaped after retry has started another round. Its old
+            // event is still valid, but it cannot finish a waiter that already read the newer row.
+            if current
+                .revision
+                .zip(snapshot.revision)
+                .is_some_and(|(seen, ended)| ended < seen)
+            {
+                continue;
             }
+            break AwaitOutcome::Terminal(snapshot);
         };
-        match result {
-            Some(snap) => AwaitOutcome::Terminal(snap),
-            None => {
-                // timeout·채널 종료를 같은 결과로 반환한다.
-                self.unregister(&key, waiter);
-                AwaitOutcome::TimedOut
-            }
-        }
+        self.unregister(&key, waiter);
+        result
     }
 
-    /// 대기자에게 snapshot을 보내고 매핑을 지운다. 종결 상태는 대기자가 없어도 사건 큐에 기록한다.
+    /// 대기자에게 snapshot을 보낸다. 대기자가 수신하거나 시간 초과하면 등록을 지운다.
     pub fn fire(&self, workspace_id: u32, task_id: &TaskId, snapshot: TerminalSnapshot) {
+        let current = Some(snapshot.clone());
+        self.fire_identified(workspace_id, task_id, snapshot, None, current);
+    }
+
+    pub(crate) fn fire_once(
+        &self,
+        identity: &str,
+        workspace_id: u32,
+        task_id: &TaskId,
+        snapshot: TerminalSnapshot,
+        wake: Option<TerminalSnapshot>,
+    ) -> bool {
+        let mut delivered = tasty_utils::poison::recover_mutex(
+            self.delivered.lock(),
+            "terminal delivery identities",
+            &TASK_WAKER_POISONED,
+        );
+        if !delivered.insert(identity.to_string()) {
+            return false;
+        }
+        self.fire_identified(workspace_id, task_id, snapshot, Some(identity.into()), wake);
+        true
+    }
+
+    fn fire_identified(
+        &self,
+        workspace_id: u32,
+        task_id: &TaskId,
+        snapshot: TerminalSnapshot,
+        terminal_id: Option<String>,
+        wake: Option<TerminalSnapshot>,
+    ) {
         if snapshot.state.is_terminal() {
             self.feed.push(crate::event_feed::AgentEvent::TaskFinished {
                 workspace_id,
@@ -148,19 +189,20 @@ impl TaskWakerHub {
                 state: snapshot.state.name(),
                 attempt_id: snapshot.attempt_id.clone(),
                 revision: snapshot.revision,
+                terminal_id,
                 skip: snapshot.skip.clone(),
             });
         }
-        let mut g = self.lock_recovering();
-        let Some(senders) = g.remove(&(workspace_id, task_id.clone())) else {
+        let Some(snapshot) = wake else {
             return;
         };
-        for (_, tx) in senders {
-            // A disconnected waiter has already timed out; only a full one-shot queue is unexpected.
-            if let Err(std::sync::mpsc::TrySendError::Full(_)) = tx.try_send(snapshot.clone()) {
-                tracing::warn!(workspace_id, %task_id, "task waiter queue was unexpectedly full");
-            }
-        }
+        let mut g = self.lock_recovering();
+        let Some(senders) = g.get_mut(&(workspace_id, task_id.clone())) else {
+            return;
+        };
+        // Keep the registration through delivery: an obsolete snapshot may be rejected by a
+        // waiter whose initial read already saw a newer round. Sending never blocks the writer.
+        senders.retain(|(_, tx)| tx.send(snapshot.clone()).is_ok());
     }
 }
 
@@ -180,6 +222,44 @@ mod tests {
             skip: None,
             revision: None,
         }
+    }
+
+    #[test]
+    fn delayed_delivery_from_before_retry_cannot_finish_a_new_round_waiter() {
+        let hub = Arc::new(TaskWakerHub::new());
+        let worker = hub.clone();
+        let (read_tx, read_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let thread = thread::spawn(move || {
+            let outcome = worker.await_terminal(1, &"p".into(), Some(0), || {
+                let mut old = snap(TaskState::Failed {
+                    error: "old".into(),
+                });
+                old.revision = Some(2);
+                worker.fire_once("old", 1, &"p".into(), old.clone(), Some(old));
+                let mut running = snap(TaskState::Running);
+                running.revision = Some(4);
+                read_tx.send(()).unwrap();
+                Some(running)
+            });
+            drop(done_tx.send(outcome));
+        });
+        read_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            done_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        let mut ended = snap(TaskState::Succeeded);
+        ended.revision = Some(5);
+        hub.fire_once("new", 1, &"p".into(), ended.clone(), Some(ended));
+        let outcome = done_rx.recv_timeout(Duration::from_secs(5));
+        if outcome.is_err() {
+            hub.fire(1, &"p".into(), snap(TaskState::Cancelled));
+        }
+        assert!(
+            matches!(outcome, Ok(AwaitOutcome::Terminal(s)) if s.state == TaskState::Succeeded)
+        );
+        thread.join().unwrap();
     }
 
     /// 시간 초과 시 스케줄러 대조 측정을 진단에 함께 남긴다. 원인을 확정하는 검사는 아니다.
@@ -291,6 +371,7 @@ mod tests {
                 state: "cancelled",
                 attempt_id: None,
                 revision: None,
+                terminal_id: None,
                 skip: None,
             }]
         );
@@ -324,6 +405,7 @@ mod tests {
                 state: "skipped",
                 attempt_id: Some("t-9#2".to_string()),
                 revision: Some(5),
+                terminal_id: None,
                 skip: Some(skip),
             }]
         );

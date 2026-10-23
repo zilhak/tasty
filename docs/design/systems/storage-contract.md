@@ -301,8 +301,10 @@ memory.db 쓰기는 모두 memory writer를 지난다. writer는 종료 때 접�
 ### Task 종결 알림의 영속 의무
 
 TaskStore는 비종결에서 종결로 바뀌는 task 레코드와 알림 의무를 같은 atomic batch에 쓴다.
-알림은 workspace의 `tasty.agent.terminal.<UUID>` 키에 schema 1, 고유 ID, 종결 snapshot,
-레코드 revision을 담는다. 별도 회차는 v1도 새 UUID를 받는다. 저장 용량 부족으로 의무를
+알림은 workspace의 `tasty.agent.terminal.<UUID>` 키에 schema 1, 고유 ID, 완료 통지용 snapshot,
+레코드 revision을 담는다. snapshot은 task ID·생성 시각·상태·결과·회차 ID·건너뛴 이유만 담고
+실행 정의와 입력·metadata는 복사하지 않는다. 전체 task를 담은 snapshot도 읽을 수 있으며 원본을
+다시 쓰지 않는다. 별도 회차는 v1도 새 UUID를 받는다. 저장 용량 부족으로 의무를
 쓸 수 없으면 종결 쓰기도 되돌린다. 기존 task 형식은 그대로 읽으며 이전 레코드를 다시 쓰거나
 과거 종결을 일괄 발행하지 않는다. 알 수 없는 알림 schema와 손상된 레코드는 보존하고 오류를 남긴다.
 

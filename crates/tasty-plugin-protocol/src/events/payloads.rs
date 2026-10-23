@@ -475,6 +475,9 @@ pub struct AgentTaskFinished {
     /// revision 이 이 값보다 작지 않으면 이 사건 이후의 레코드다. 읽지 못했으면 생략한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision: Option<u64>,
+    /// Durable terminal notification identity. A replay after restart retains this id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_id: Option<String>,
     /// 건너뛴 이유. 이유가 기록된 v2 task 만 싣는다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skip: Option<AgentTaskSkip>,
@@ -597,6 +600,7 @@ mod tests {
             state: "failed".into(),
             attempt_id: Some("t-1716800000123-7#2".into()),
             revision: Some(9),
+            terminal_id: Some("terminal-identity".into()),
             skip: None,
         };
         let s = serde_json::to_string(&p).unwrap();

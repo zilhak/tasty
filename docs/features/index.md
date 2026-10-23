@@ -43,7 +43,7 @@ Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces
 | [themes](themes/index.md) — 테마 추가/관리 (TOML) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [language-packs](language-packs/index.md) — 사용자 언어팩 발견·선택, host/plugin CLI 도움말 및 번역 오버라이드 | 로컬 사용자 | [설정 탭](settings/screens/settings.md) General › Language · 부팅 경고 토스트 |
 | [lua-hooks](lua-hooks/index.md) — Lua 스크립트(등록 + 단축키/이벤트 자동실행 트리거, host API) | 로컬 사용자 | [훅 (Surface / Global hooks)](hooks/index.md) |
-| [agent-collaboration](agent-collaboration/index.md) — 다중 에이전트 협업 (`agent.*`) | AI Agent | [DAG 그래프 surface](../surfaces/dag-graph/index.md) · [DAG 목록 popup](agent-collaboration/screens/dag-list-popup.md) |
+| [agent-collaboration](agent-collaboration/index.md) — 다중 에이전트 협업 (`agent.*`) · 결과 불명 뒤 종결 알림 복구 | AI Agent | [DAG 그래프 surface](../surfaces/dag-graph/index.md) · [DAG 목록 popup](agent-collaboration/screens/dag-list-popup.md) |
 | [child-terminal](child-terminal/index.md) — 자식 터미널 관리 (`tasty terminal`, soft 점유) | AI Agent | 없음 (headless) |
 | [headless-pty](headless-pty/index.md) — Surface 없는 PTY (`tasty pty`, exit-code·승격) — Terminal/Pty 단일 소유 | AI Agent | 없음 (headless) |
 | [human-handoff](human-handoff/index.md) — 휴먼 핸드오프 (approval) | AI Agent · 로컬 사용자 | approval popup |

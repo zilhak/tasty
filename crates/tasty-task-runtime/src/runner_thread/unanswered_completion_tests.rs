@@ -1,5 +1,5 @@
 //! 결과를 받지 못한 완료 보고가 실제로는 확정된 경우. 러너가 같은 보고를 다시 내 같은 보고로 받아들여지면
-//! 그때 대기자를 깨우고 사건 피드에 종결을 한 번 적는다. 결과 불명은 실제 저장소에서 주입한다.
+//! 후속 확인 읽기로 대기자를 깨우며 재전송도 사건을 중복하지 않는다. 결과 불명은 실제 저장소에서 주입한다.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -76,7 +76,7 @@ fn done() -> Completion {
 }
 
 #[test]
-fn a_completion_that_committed_without_an_answer_wakes_waiters_when_it_is_resent() {
+fn a_completion_that_committed_without_an_answer_is_confirmed_before_resend() {
     let (faults, ctx, feed) = setup();
     // 대기자는 등록한 뒤 Running 을 읽고 기다린다. 등록을 마친 다음에 보고한다.
     let hub = ctx.task_waker_hub.clone();
@@ -104,12 +104,20 @@ fn a_completion_that_committed_without_an_answer_wakes_waiters_when_it_is_resent
         "주입이 닿지 않았다"
     );
     assert_eq!(state(&ctx), TaskState::Succeeded, "보고가 확정되지 않았다");
-    assert_eq!(finished(&feed), 0, "결과를 모르는 보고가 알렸다");
+    assert_eq!(
+        finished(&feed),
+        1,
+        "후속 읽기로 확인한 종결을 복구해야 한다"
+    );
 
     reports
         .report(&ctx, 1, &"p".into(), done(), 20)
         .expect("the resent report is the same report");
-    assert_eq!(finished(&feed), 1, "확정된 종결을 피드에 한 번 적어야 한다");
+    assert_eq!(
+        finished(&feed),
+        0,
+        "재전송이 종결을 중복해서 알리면 안 된다"
+    );
     assert!(matches!(waiter.join().unwrap(), AwaitOutcome::Terminal(_)));
 
     // 답을 받은 뒤의 같은 보고는 다시 알리지 않는다.

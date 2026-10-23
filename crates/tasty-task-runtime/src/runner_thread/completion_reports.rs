@@ -7,7 +7,7 @@ use tasty_agent::task::Completion;
 use super::RunnerContext;
 
 /// 러너의 완료 보고. 결과를 받지 못한 보고를 기억했다가, 다시 낸 같은 보고가 앞 보고의 확정을 알려
-/// 주면 그때 빠진 종결 알림을 낸다([`RunnerContext::complete_task_again`]).
+/// 주면 미확인 종결 의무를 다시 확인한다([`RunnerContext::complete_task_again`]).
 #[derive(Default)]
 pub(super) struct CompletionReports {
     unanswered: std::collections::HashSet<TaskId>,

@@ -20,11 +20,11 @@ use tasty_agent::{
 };
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
+use crate::TerminalRecovery;
 use crate::agent_task::Submitter;
-use crate::runner_host::RunnerContext;
 use crate::runner_thread::RunnerStatus;
 use crate::task::GraphSubmitOutcome;
-use crate::task_waker::{TaskWakerHub, TerminalSnapshot};
+use crate::task_waker::TaskWakerHub;
 use crate::{TaskScope, TaskService};
 
 /// commit 뒤에 실행할 일. 본문이 다시 실행되면 이전 실행의 효과는 버려진다.
@@ -33,18 +33,9 @@ use crate::{TaskScope, TaskService};
 pub struct TaskEffects(Vec<TaskEffect>);
 
 enum TaskEffect {
-    /// 종결된 task의 대기자를 깨운다. revision은 같은 단위 안에서 읽은 값이다.
-    Fire {
-        hub: Arc<TaskWakerHub>,
-        workspace_id: u32,
-        task: Box<Task>,
-        revision: Option<u64>,
-    },
-    /// 지켜보는 runner가 없는 workspace의 종결 task를 백그라운드에서 정리한다.
-    Settle {
-        ctx: Box<RunnerContext>,
-        workspace_id: u32,
-        tasks: Vec<Task>,
+    Recover {
+        recovery: TerminalRecovery,
+        access: tasty_memory::writer::MemoryAccess,
     },
     /// 삭제된 task의 handle·실행 결과·점유 경고를 지운다. 기다리지 않는 writer 요청이며 실패는
     /// 로그만 남긴다(삭제 자체를 되돌리지 않는다).
@@ -64,25 +55,7 @@ impl TaskEffects {
     pub fn apply(self) {
         for effect in self.0 {
             match effect {
-                TaskEffect::Fire {
-                    hub,
-                    workspace_id,
-                    task,
-                    revision,
-                } => hub.fire(
-                    workspace_id,
-                    &task.id,
-                    TerminalSnapshot::of(&task, revision),
-                ),
-                TaskEffect::Settle {
-                    ctx,
-                    workspace_id,
-                    tasks,
-                } => crate::runner_thread::settle_ended_tasks_in_background(
-                    *ctx,
-                    workspace_id,
-                    tasks,
-                ),
+                TaskEffect::Recover { recovery, access } => recovery.schedule(&access),
                 TaskEffect::EvictSideKeys {
                     access,
                     workspace_id,
@@ -107,19 +80,34 @@ pub struct TaskTx<'a> {
     mem: &'a mut dyn MemoryStorage,
     svc: &'a TaskService,
     effects: TaskEffects,
+    recovery: TerminalRecovery,
 }
 
 impl<'a> TaskTx<'a> {
     pub fn new(mem: &'a mut dyn MemoryStorage, svc: &'a TaskService) -> Self {
+        Self::with_recovery(mem, svc, TerminalRecovery::default())
+    }
+
+    fn with_recovery(
+        mem: &'a mut dyn MemoryStorage,
+        svc: &'a TaskService,
+        recovery: TerminalRecovery,
+    ) -> Self {
         Self {
             mem,
             svc,
             effects: TaskEffects::default(),
+            recovery,
         }
     }
 
-    /// 모은 효과. 호출자가 commit 뒤 [`TaskEffects::apply`]한다.
-    pub fn into_effects(self) -> TaskEffects {
+    pub fn into_effects(mut self) -> TaskEffects {
+        if !self.recovery.is_empty() {
+            self.effects.0.push(TaskEffect::Recover {
+                recovery: self.recovery,
+                access: self.svc.memory_access().clone(),
+            });
+        }
         self.effects
     }
 
@@ -127,30 +115,22 @@ impl<'a> TaskTx<'a> {
         TaskStore::new(&mut *self.mem, HOST_OWNER, seq)
     }
 
-    /// 종결된 task면 같은 단위에서 revision을 읽어 commit 뒤 깨우기를 예약한다.
+    fn track(&self, scope: &TaskScope, workspace: u32, settle: bool) {
+        let ctx = (settle && !self.svc.runner_registry().has_live_runner(workspace))
+            .then(|| self.svc.runner_context(scope));
+        self.recovery.track(scope.waker_hub(), workspace, ctx);
+    }
+
     pub(crate) fn fire_if_terminal(
         &mut self,
-        seq: &AtomicU64,
+        _seq: &AtomicU64,
         hub: &Arc<TaskWakerHub>,
         workspace_id: u32,
         task: &Task,
     ) {
-        if !task.state.is_terminal() {
-            return;
+        if task.state.is_terminal() {
+            self.recovery.track(hub, workspace_id, None);
         }
-        let revision = self
-            .store(seq)
-            .revision(workspace_id, &task.id)
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, workspace_id, task_id = %task.id, "task revision lookup failed");
-                None
-            });
-        self.effects.0.push(TaskEffect::Fire {
-            hub: hub.clone(),
-            workspace_id,
-            task: Box::new(task.clone()),
-            revision,
-        });
     }
 
     fn fire_all<'t>(
@@ -173,6 +153,7 @@ impl<'a> TaskTx<'a> {
         opts: TaskCreateOpts,
         reserved_for_fallback: bool,
     ) -> Result<Task, AgentError> {
+        self.track(scope, opts.workspace_id, false);
         crate::runner_host::check_holding_ttls(&opts.name, &opts.metadata, &opts.on_failure)
             .map_err(AgentError::InvalidArgument)?;
         let seq = scope.agent_seq().clone();
@@ -200,6 +181,7 @@ impl<'a> TaskTx<'a> {
         dry_run: bool,
         now_ms: u64,
     ) -> Result<GraphSubmitOutcome, AgentError> {
+        self.track(scope, workspace_id, false);
         if let Some(cause) = self.svc.store_fallback()
             && spec.durability == GraphDurability::Required
         {
@@ -324,6 +306,7 @@ impl<'a> TaskTx<'a> {
         task_id: &TaskId,
         now_ms: u64,
     ) -> Result<(Task, Vec<Task>), AgentError> {
+        self.track(scope, workspace_id, true);
         let seq = scope.agent_seq().clone();
         let (task, downstream) = self.store(&seq).cancel(workspace_id, task_id, now_ms)?;
         self.fire_all(
@@ -331,16 +314,6 @@ impl<'a> TaskTx<'a> {
             workspace_id,
             std::iter::once(&task).chain(&downstream),
         );
-        // 러너가 있으면 다음 tick 이 종결을 흡수해 프로세스를 끝내고 점유를 정리한다. 없으면
-        // commit 뒤 정리를 시작한다. 지켜보는 러너가 없어 취소한 Run 이 계속 실행되지 않게 하기
-        // 위해서다. 종료 확인과 반환은 백그라운드에서 하고 응답은 기다리지 않는다.
-        if !self.svc.runner_registry().has_live_runner(workspace_id) {
-            self.effects.0.push(TaskEffect::Settle {
-                ctx: Box::new(self.svc.runner_context(scope)),
-                workspace_id,
-                tasks: std::iter::once(&task).chain(&downstream).cloned().collect(),
-            });
-        }
         Ok((task, downstream))
     }
 
@@ -352,6 +325,7 @@ impl<'a> TaskTx<'a> {
         reset_downstream: bool,
         now_ms: u64,
     ) -> Result<Task, AgentError> {
+        self.track(scope, workspace_id, false);
         let seq = scope.agent_seq().clone();
         self.store(&seq)
             .retry(workspace_id, task_id, reset_downstream, now_ms)
@@ -366,6 +340,7 @@ impl<'a> TaskTx<'a> {
         new_state: TaskState,
         now_ms: u64,
     ) -> Result<(Task, Vec<Task>), AgentError> {
+        self.track(scope, workspace_id, false);
         let seq = scope.agent_seq().clone();
         let (task, downstream) =
             self.store(&seq)
@@ -387,6 +362,7 @@ impl<'a> TaskTx<'a> {
         completion: Completion,
         now_ms: u64,
     ) -> Result<CompletionReceipt, AgentError> {
+        self.track(scope, workspace_id, false);
         let seq = scope.agent_seq().clone();
         let hub = scope.waker_hub().clone();
         self.complete_with(&seq, &hub, workspace_id, task_id, completion, now_ms)
@@ -402,6 +378,7 @@ impl<'a> TaskTx<'a> {
         completion: Completion,
         now_ms: u64,
     ) -> Result<CompletionReceipt, AgentError> {
+        self.recovery.track(hub, workspace_id, None);
         let receipt = self
             .store(seq)
             .complete(workspace_id, task_id, completion, now_ms)?;
@@ -621,8 +598,10 @@ impl TaskService {
         body: impl Fn(&mut TaskTx<'_>) -> R + Send + Sync + 'static,
     ) -> R {
         let svc = self.clone();
+        let recovery = TerminalRecovery::default();
+        let in_body = recovery.clone();
         let outcome = self.memory_access().run_blocking(0, move |mem| {
-            let mut tx = TaskTx::new(mem, &svc);
+            let mut tx = TaskTx::with_recovery(mem, &svc, in_body.clone());
             let value = body(&mut tx);
             (value, tx.into_effects())
         });
@@ -631,7 +610,10 @@ impl TaskService {
                 effects.apply();
                 value
             }
-            Err(blocked) => R::from_blocked(blocked),
+            Err(blocked) => {
+                recovery.schedule(self.memory_access());
+                R::from_blocked(blocked)
+            }
         }
     }
 
@@ -640,13 +622,25 @@ impl TaskService {
     pub fn unit_request<T: Send + 'static>(
         &self,
         bytes: usize,
-        mut body: impl FnMut(&mut TaskTx<'_>) -> T + Send + 'static,
+        body: impl FnMut(&mut TaskTx<'_>) -> T + Send + 'static,
     ) -> tasty_memory::writer::MemoryRequest {
+        self.unit_request_with_recovery(bytes, body).0
+    }
+
+    /// The companion recovery read never changes the response or repeats this body.
+    pub fn unit_request_with_recovery<T: Send + 'static>(
+        &self,
+        bytes: usize,
+        mut body: impl FnMut(&mut TaskTx<'_>) -> T + Send + 'static,
+    ) -> (tasty_memory::writer::MemoryRequest, TerminalRecovery) {
         let svc = self.clone();
-        tasty_memory::writer::MemoryRequest::unit(bytes, move |mem| {
-            let mut tx = TaskTx::new(mem, &svc);
+        let recovery = TerminalRecovery::default();
+        let in_body = recovery.clone();
+        let request = tasty_memory::writer::MemoryRequest::unit(bytes, move |mem| {
+            let mut tx = TaskTx::with_recovery(mem, &svc, in_body.clone());
             let value = body(&mut tx);
             Ok((value, tx.into_effects()))
-        })
+        });
+        (request, recovery)
     }
 }

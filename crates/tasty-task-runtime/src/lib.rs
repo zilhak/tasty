@@ -17,7 +17,11 @@ pub mod task;
 pub mod task_output_ref;
 mod task_tx;
 pub mod task_waker;
+mod terminal_recovery;
+#[cfg(test)]
+mod terminal_recovery_tests;
 pub use runner_thread::{RunnerRegistry, RunnerStatus, RunnerStopObservation, RunnerStopReceipt};
 pub use service::{TaskAwaiter, TaskScope, TaskService};
 pub use store_call::FromBlocked;
 pub use task_tx::{TaskEffects, TaskTx};
+pub use terminal_recovery::TerminalRecovery;
