@@ -1618,6 +1618,8 @@ title = "테마를 찾을 수 없습니다"
 body = "\"{}\" 테마가 없어 Catppuccin Mocha 테마를 사용합니다."
 
 [storage_notice]
+favorites_save_title = "즐겨찾기를 저장하지 못했습니다"
+favorites_save_body = "{0} 변경은 이번 실행에 표시되지만 저장하지 못했습니다: {1}. 파일과 권한을 확인한 뒤 다시 시도하세요. 외부에서 파일을 편집했다면 Tasty를 다시 시작하세요."
 state_db_title = "최근 목록과 튜토리얼 진행이 저장되지 않습니다"
 state_db_body = "{} Tasty는 계속 실행됩니다. 터미널과 레이아웃 복원에는 영향이 없지만, 이전에 저장한 최근 파일 목록과 튜토리얼 진행을 불러오지 못했고 이번 실행에서 바뀐 내용은 저장되지 않습니다. 파일은 그대로 두었습니다."
 memory_fallback_title = "에이전트 데이터가 Tasty를 끌 때까지만 유지됩니다"

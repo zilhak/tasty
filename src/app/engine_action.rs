@@ -440,11 +440,59 @@ mod tests {
         .expect("engine")
     }
 
+    fn favorites_writer(
+        registries: &crate::runtime::registries::RuntimeRegistries,
+    ) -> crate::app::file_writer::FileWriterParts {
+        let parts = crate::app::file_writer::start(
+            std::sync::Arc::new(tasty_settings::FileSettingsStorage),
+            tasty_utils::batch_writer::Limits::default(),
+            std::sync::Arc::new(tasty_utils::batch_writer::SystemClock),
+            std::sync::Arc::new(|| {}),
+        )
+        .unwrap();
+        crate::app::file_consumers::attach(registries, parts.writer.handle());
+        parts
+    }
+
+    fn wait_favorites(registries: &crate::runtime::registries::RuntimeRegistries) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            assert!(registries.explorer_favorites.poll().is_empty());
+            assert!(registries.port_favorites.poll().is_empty());
+            let ready = [
+                registries.explorer_favorites.save_status(),
+                registries.port_favorites.save_status(),
+            ]
+            .into_iter()
+            .all(|(visible, committed, pending)| visible == committed && pending == 0);
+            if ready {
+                return;
+            }
+            assert!(std::time::Instant::now() < deadline, "favorites not saved");
+            std::thread::yield_now();
+        }
+    }
+
+    fn stop_favorites_writer(writer: &mut crate::app::file_writer::FileWriterParts) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while writer.writer.poll_shutdown() != 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "favorites writer not drained"
+            );
+            std::thread::yield_now();
+        }
+    }
+
     /// 윈도우마다 engine 이 있어도 즐겨찾기 추가가 서로를 지우지 않고, 다른 윈도우의 사본도 맞춰진다.
     #[test]
     fn favorites_added_in_two_windows_both_survive_a_restart() {
         let _home = crate::test_support::IsolatedHome::new();
+        // Engine test owners push nested thread-local homes; retain the registry's actual file.
+        let explorer_path =
+            crate::core::explorer_favorites::ExplorerFavorites::config_path().unwrap();
         let registries = crate::runtime::registries::RuntimeRegistries::new(None);
+        let mut writer = favorites_writer(&registries);
         let mut first = engine_with(&registries);
         let mut second = engine_with(&registries);
         let add = |session: &mut crate::runtime::engine_session::EngineSession, name: &str| {
@@ -465,11 +513,11 @@ mod tests {
         };
 
         // 재시작: 새 프로세스 원본은 파일에서 읽는다.
-        let restarted = crate::runtime::registries::RuntimeRegistries::new(None);
-        assert_eq!(
-            labels(&restarted.explorer_favorites.copy().1),
-            ["alpha", "beta"]
-        );
+        wait_favorites(&registries);
+        let restarted = crate::core::shared_list::SharedList::<
+            crate::core::explorer_favorites::ExplorerFavorites,
+        >::load_at(explorer_path.clone());
+        assert_eq!(labels(&restarted.copy().1), ["alpha", "beta"]);
 
         // 첫 윈도우의 사본은 다음 그리기 전에 다른 윈도우의 추가를 받는다.
         assert_eq!(labels(&first.runtime.explorer_favorites), ["alpha"]);
@@ -481,10 +529,18 @@ mod tests {
             path: crate::test_support::abs_path("w/alpha"),
         }
         .apply(&mut second.borrow_mut());
+        wait_favorites(&registries);
         assert_eq!(
-            labels(&crate::core::explorer_favorites::ExplorerFavorites::load()),
+            labels(
+                &crate::core::shared_list::SharedList::<
+                    crate::core::explorer_favorites::ExplorerFavorites,
+                >::load_at(explorer_path)
+                .copy()
+                .1
+            ),
             ["beta"]
         );
+        stop_favorites_writer(&mut writer);
     }
 
     /// 포트 즐겨찾기도 윈도우마다 다른 항목을 바꿔도 서로 지우지 않는다. 다른 윈도우의 변경을 아직 받지 못한
@@ -492,7 +548,10 @@ mod tests {
     #[test]
     fn port_favorites_toggled_in_two_windows_both_survive_a_restart() {
         let _home = crate::test_support::IsolatedHome::new();
+        // Engine test owners push nested thread-local homes; retain the registry's actual file.
+        let port_path = crate::core::port_favorites::PortFavorites::config_path().unwrap();
         let registries = crate::runtime::registries::RuntimeRegistries::new(None);
+        let mut writer = favorites_writer(&registries);
         let mut first = engine_with(&registries);
         let mut second = engine_with(&registries);
         let localhost: std::net::IpAddr = "127.0.0.1".parse().expect("address");
@@ -509,18 +568,23 @@ mod tests {
         };
         toggle(&mut first, 47811);
         toggle(&mut second, 47812);
-        let restarted = crate::runtime::registries::RuntimeRegistries::new(None);
-        assert_eq!(ports(&restarted.port_favorites.copy().1), [47811, 47812]);
+        wait_favorites(&registries);
+        let restarted = crate::core::shared_list::SharedList::<
+            crate::core::port_favorites::PortFavorites,
+        >::load_at(port_path.clone());
+        assert_eq!(ports(&restarted.copy().1), [47811, 47812]);
 
         assert_eq!(ports(&first.runtime.port_favorites), [47811]);
         toggle(&mut first, 47812);
+        wait_favorites(&registries);
         assert_eq!(
-            ports(&crate::core::port_favorites::PortFavorites::load()),
+            ports(&crate::core::shared_list::SharedList::<crate::core::port_favorites::PortFavorites>::load_at(port_path).copy().1),
             [47811]
         );
         assert_eq!(ports(&first.runtime.port_favorites), [47811]);
         assert!(second.runtime.sync_shared_lists());
         assert_eq!(ports(&second.runtime.port_favorites), [47811]);
+        stop_favorites_writer(&mut writer);
     }
 
     #[test]

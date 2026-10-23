@@ -182,6 +182,10 @@ impl AppServicesBuilder {
             .map(|path| path.join("file-handlers.toml"));
         let registries =
             crate::runtime::registries::RuntimeRegistries::new(registry_config.as_deref());
+        #[cfg(feature = "gui")]
+        if let Some(writer) = self.file_writer.as_ref() {
+            crate::app::file_consumers::attach(&registries, writer.writer.handle());
+        }
         Ok(AppServices {
             registries,
             #[cfg(feature = "gui")]

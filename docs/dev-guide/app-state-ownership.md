@@ -103,8 +103,9 @@ terminal tell·broadcast·respawn 실행 함수는 `EngineMut` 대신 `TerminalI
 
 윈도우마다 engine 이 있으므로 engine 에 영속 목록의 사본을 두고 변경마다 사본 전체를 저장하면, 다른 윈도우의 저장이 이 윈도우의 변경을 파일에서 지운다. 파일 하나에 통째로 저장하고 UI 가 그리는 작은 목록은 `src/core/shared_list.rs` 의 `SharedList<T>` 로 프로세스에 원본 하나를 둔다. 대상은 Explorer 즐겨찾기(`explorer-favorites.toml`)와 포트 즐겨찾기(`port-favorites.toml`)다.
 
-- `RuntimeRegistries` 가 시작할 때 파일을 한 번 읽어 원본을 만들고 모든 engine 이 같은 `Arc` 를 받는다. 시작 뒤에는 파일을 다시 읽지 않으므로 실행 중 손으로 고친 내용은 다음 변경 때 덮인다.
-- engine 은 그리기용 사본 `Replica<T>` 를 가진다. 읽기는 `Deref` 로만 열려 있고, 변경은 `Replica::change` 가 원본을 바꾸고 원본 전체를 저장한 뒤 리비전을 올린다. 변경 판단(예: 이미 있으면 해제)도 이 closure 안에서 원본 기준으로 한다.
+- `RuntimeRegistries` 가 시작할 때 파일을 한 번 읽어 원본을 만들고 모든 engine 이 같은 `Arc` 를 받는다. 실행 중 저장은 시작 때 관측한 원본과 비교하고 외부 편집이 있으면 덮지 않고 실패로 남긴다.
+- engine 은 그리기용 사본 `Replica<T>` 를 가진다. 읽기는 `Deref` 로만 열려 있고, 변경은 `Replica::change` 가 원본을 바꾸고 표시 revision을 올리고 불변 snapshot을 file writer에 접수한다. 원본 잠금 안에서는 접수 순서만 정하며 파일 I/O와 완료 대기는 하지 않는다. 변경 판단(예: 이미 있으면 해제)도 이 closure 안에서 원본 기준으로 한다.
+- 표시 revision과 저장 완료 revision은 다르다. 완료 receipt가 성공한 revision까지만 확정하며, 오래된 완료·실패·접수 거절은 최신 dirty를 지우지 않는다. 종료는 최신 dirty에 실행 중인 요청이 없을 때 한 번 더 접수하고 writer를 drain한다. 자세한 경계는 [파일 실행기](../design/systems/storage-contract.md#파일-실행기)에 있다.
 - 각 윈도우는 그리기 전에(`App::redraw_main_window`) `EngineRuntime::sync_shared_lists` 로 리비전을 비교해 사본을 다시 복사한다.
 - App 은 다른 윈도우에 마지막으로 알린 리비전(`App::shared_lists_announced`)을 들고, 대기 intent 를 처리한 뒤(`dispatch_pending_intents`)와 각 그리기 끝에 원본 리비전과 비교한다. 달라졌으면 모든 메인 윈도우를 다시 그리게 한다(`App::redraw_windows_for_shared_lists`). 그리기 밖에서 적용되는 변경도 다른 윈도우에 바로 보인다.
 - Given 윈도우 두 개 When 각 윈도우가 같은 목록에 다른 항목을 더한다 Then 재시작 뒤 둘 다 남는다(`engine_action.rs` 의 `favorites_added_in_two_windows_both_survive_a_restart`, `port_favorites_toggled_in_two_windows_both_survive_a_restart`).

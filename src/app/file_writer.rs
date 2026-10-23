@@ -23,6 +23,8 @@ const SETTINGS_KEY: &str = "file:config.toml";
 
 /// writer에 넣는 요청. 요청은 소유한 값만 담는다.
 pub(crate) enum FileRequest {
+    #[cfg(feature = "gui")]
+    Snapshot(crate::core::file_snapshot::Snapshot),
     /// 메모리에 적용한 설정 전체. `revision`은 표시 revision이다.
     Settings {
         revision: u64,
@@ -35,12 +37,16 @@ impl batch_writer::Request for FileRequest {
     fn bytes(&self) -> usize {
         match self {
             Self::Settings { settings, .. } => settings_bytes(settings),
+            #[cfg(feature = "gui")]
+            Self::Snapshot(snapshot) => snapshot.bytes.len(),
         }
     }
 
     fn snapshot_key(&self) -> Option<&str> {
         match self {
             Self::Settings { .. } => Some(SETTINGS_KEY),
+            #[cfg(feature = "gui")]
+            Self::Snapshot(snapshot) => Some(snapshot.key),
         }
     }
 }
@@ -66,6 +72,8 @@ fn settings_bytes(settings: &Settings) -> usize {
 /// 요청 하나의 성공 결과.
 #[derive(Debug)]
 pub(crate) enum FileOutput {
+    #[cfg(feature = "gui")]
+    Snapshot,
     /// 이 revision의 설정으로 파일을 교체했다.
     Settings { revision: u64 },
 }
@@ -114,6 +122,11 @@ pub(crate) struct FileExecutor {
 impl FileExecutor {
     fn run_one(&self, request: &FileRequest) -> Result<FileOutput, FileError> {
         match request {
+            #[cfg(feature = "gui")]
+            FileRequest::Snapshot(snapshot) => snapshot
+                .write()
+                .map(|()| FileOutput::Snapshot)
+                .map_err(|e| FileError(e.into())),
             FileRequest::Settings { revision, settings } => self
                 .settings
                 .save(settings)
@@ -372,7 +385,7 @@ impl SettingsSaves {
     }
 }
 
-fn saved_of(completion: &Completion<FileOutput, FileError>) -> Result<(), String> {
+pub(super) fn saved_of(completion: &Completion<FileOutput, FileError>) -> Result<(), String> {
     saved_of_erased(&completion.erase())
 }
 

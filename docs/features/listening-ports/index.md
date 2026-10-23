@@ -130,7 +130,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 - crate `tasty-portscan` — `scan_all()` / `scan_for_pids(pids)` / `collect_descendant_pids(pid)`, OS 백엔드 분기(Linux `/proc/net/tcp`, macOS `lsof`, Windows `GetExtendedTcpTable`), 캐시 `cache.rs`.
 - popup: `src/adapters/ui/popup/port_scanner.rs` — `draw_port_scanner_popup`(상태 연결) + `draw_port_scanner_view`(pure view).
 - 비동기 상태: `MainViewState.port_scan: PortScanState`(메인 테이블, Tasty/System scope) + `MainViewState.port_favorites_scan: PortScanState`(즐겨찾기 전용, 항상 system-wide `scan_all()`, 즐겨찾기 1개 이상일 때만 kick). 둘 다 `kick_off_scan`/`poll_state` 를 공유하는 동일한 `PortScanState` 슬롯이다. 필터 상태: `egui::Memory`.
-- 즐겨찾기 영속: `src/core/port_favorites.rs` 의 `PortFavorites`(`~/.tasty/port-favorites.toml`). 프로세스 원본 `RuntimeRegistries::port_favorites`(`SharedList<PortFavorites>`)를 두고 engine 의 `EngineRuntime::port_favorites` 는 그리기용 사본이다. 별 토글은 `EngineAction::TogglePortFavorite` 가 원본 기준으로 `contains`/`add`/`remove` 한 뒤 원본 전체를 저장한다. 동작 규칙은 [App·Engine·View 상태 소유권](../../dev-guide/app-state-ownership.md#윈도우가-함께-쓰는-영속-목록).
+- 즐겨찾기 영속: `src/core/port_favorites.rs` 의 `PortFavorites`(`~/.tasty/port-favorites.toml`). 프로세스 원본 `RuntimeRegistries::port_favorites`(`SharedList<PortFavorites>`)를 두고 engine 의 `EngineRuntime::port_favorites` 는 그리기용 사본이다. 별 토글은 `EngineAction::TogglePortFavorite` 가 원본 기준으로 `contains`/`add`/`remove` 한 뒤 원본 전체 snapshot을 file writer에 제출한다. 표시 revision과 저장 완료를 구분하고 실패하면 경고 알림을 남기며 목록은 유지한다. 동작 규칙은 [App·Engine·View 상태 소유권](../../dev-guide/app-state-ownership.md#윈도우가-함께-쓰는-영속-목록).
 - gallery 데모: `crates/tasty-gallery/src/catalog/components/port_scanner.rs`.
 
 ## 화면

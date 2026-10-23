@@ -1667,6 +1667,8 @@ title = "Theme not found"
 body = "Theme \"{}\" does not exist. Falling back to Catppuccin Mocha."
 
 [storage_notice]
+favorites_save_title = "Favorites were not saved"
+favorites_save_body = "Changes to {0} are visible for this session but were not saved: {1}. Check the file and its permissions before trying again; restart Tasty after editing it outside the app."
 state_db_title = "Recent files and tutorial progress are not being saved"
 state_db_body = "{} Tasty keeps running: terminals and layout restore are not affected, but previously saved recent files and tutorial progress could not be loaded, and changes made in this session are not saved. The file was left as it is."
 memory_fallback_title = "Agent data is kept only until Tasty exits"

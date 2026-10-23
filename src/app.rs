@@ -35,6 +35,8 @@ pub(crate) mod event;
 #[cfg(feature = "gui")]
 pub(crate) mod event_handler;
 #[cfg(feature = "gui")]
+pub(crate) mod file_consumers;
+#[cfg(feature = "gui")]
 mod file_dispatch;
 pub(crate) mod file_writer;
 #[cfg(feature = "gui")]

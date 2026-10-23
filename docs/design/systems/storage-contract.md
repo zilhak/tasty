@@ -35,7 +35,7 @@
 | 최근 파일(state.db) | 별도 접수 없음 | 호출 스레드에서 끝난다 | 공유 캐시를 DB 쓰기 전에 같은 잠금 안에서 바꾼다. 저장이 실패해도 캐시는 바뀐 채 남는다 | 해당 없음 |
 | 튜토리얼 진행(state.db) | 전용 worker에 넣고 receipt를 받는다 | worker가 요청마다 transaction으로 commit한다 | receipt 결과로 반영한다 | 해당 없음 |
 | `config.toml` 실행 중 저장 | file writer 큐에 불변 설정 snapshot을 넣고 바로 진행한다 | writer가 같은 대상의 묶음에서 마지막 snapshot을 파일로 교체한다 | 메모리 설정은 접수 전에 적용한다. 표시 revision과 저장 완료 revision을 따로 유지한다 | receipt 완료 뒤 원 요청에 한 번 응답한다. 저장 실패·접수 거절은 `applied:true, saved:false`다 |
-| 프리셋·공용 목록 등 다른 파일 | 별도 접수 없음 | 호출 스레드에서 끝난다 | 호출자가 메모리 값을 먼저 갖고 있다 | 해당 없음 |
+| 프리셋 등 다른 파일 | 별도 접수 없음 | 호출 스레드에서 끝난다 | 호출자가 메모리 값을 먼저 갖고 있다 | 해당 없음 |
 
 ## memory.db 소비자와 계약
 
@@ -167,6 +167,14 @@ config snapshot은 같은 load에서 나온 원본 관측값을 공유한다. Ta
 
 셸 설정 확인과 승인한 Lua 해시도 같은 큐에 넣는다. Lua는 이미 읽어 승인한 source를 보관했다가 저장 시도가 끝난 뒤 실행하며, 저장 실패가 실행을 막지 않는 기존 계약을 유지한다. 부팅 정규화·셸 확인·테마 초기 적용은 최종 snapshot 하나로 같은 writer에 넣고, 메인 루프를 막지 않는 완료 확인 뒤 다음 부팅 단계로 넘긴다. 다른 파일 소비자의 저장은 아래 명부의 현재 스레드를 따른다.
 
+### 공용 즐겨찾기 snapshot
+
+Explorer·포트 즐겨찾기는 프로세스 공용 `SharedList` 원본을 바꾸고 표시 revision을 올린 뒤 불변 TOML snapshot을 접수한다. 목록 잠금 안에서는 메모리 변경·직렬화·접수 순서만 정한다. 디스크 읽기·잠금·교체와 receipt 대기는 worker에서 한다. 같은 파일의 수집 묶음에서는 마지막 snapshot만 교체하며 대체된 요청도 그 결과를 받는다. 메인 루프가 receipt를 거둘 때 성공한 revision만 저장 완료로 확정한다. 실패·접수 거절·결과 불명은 표시 목록을 되돌리지 않고 dirty를 유지하며 경고 알림에 원인과 조치 안내를 남긴다.
+
+부팅 때 읽은 원본이 손상됐거나 읽기 실패였다면 빈 목록으로 시작하되 원본을 덮어쓰지 않는다. 외부 편집이나 symlink 대상 변경도 저장 충돌로 거절한다. 같은 load의 snapshot들은 성공한 자체 저장의 관측값을 공유한다. 참여하지 않는 편집기의 마지막 확인과 rename 사이 경합은 공용 교체 함수와 같은 한계다. 사용자 TOML은 pretty 형식으로 다시 쓰므로 주석 바이트를 보존하는 편집기는 아니다.
+
+종료는 producer 중단 후 남은 receipt를 거두고, 최신 dirty에 실행 중인 요청이 없으면 한 번 더 제출한 뒤 기존 file writer를 close·flush·join한다. 미확정 목록은 종료 로그에도 남긴다. `system.pressure.file_snapshots`의 목록별 visible/committed/pending으로 화면 revision과 저장 완료·대기를 구분한다. 두 즐겨찾기는 GUI 기능이며 headless는 이 목록을 생성하거나 저장하지 않는다.
+
 ## 소비자 분류
 
 | 분류 | 소비자 | 스레드 | 요청 하나 안에서 하는 일 |
@@ -250,7 +258,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 |---|---|---|---|---|
 | `config.toml` | `SettingsStorage::save` → `Settings::save` | file writer(부팅 정규화·셸 확인·테마 조정 포함) | 예(공용 교체, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 같은 대상 잠금과 원본 변경 관측 |
 | `presets/**.toml` | `PresetStore`의 `atomic_write` | 메인 루프 | 예(fsync 없음) | 없음 |
-| `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 목록 잠금 안에서 저장 | 호출 스레드 | 아니요 | 없음 |
+| `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 잠금 안에서 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
 | `tasty.port` | `write_port_file_to` | IPC 시작 | 아니요 | 없음. 서버 Drop이 지운다 |
 | 단일 실행 instance 파일 | `instance_file` | 메인 루프 | 예(sync 포함) | GUI만 쓴다 |

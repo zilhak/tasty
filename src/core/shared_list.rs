@@ -4,12 +4,15 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use super::file_snapshot::{Document, PendingSave, Snapshot, Submit};
+
 /// 파일 하나에 통째로 저장하는 목록. `load`는 읽기 실패를 빈 목록으로 처리한다.
-pub(crate) trait PersistedList: Clone + Default {
+pub(crate) trait PersistedList:
+    Clone + Default + serde::Serialize + serde::de::DeserializeOwned
+{
     /// 경고 로그에 쓰는 이름.
     const NAME: &'static str;
-    fn load() -> Self;
-    fn save(&mut self);
+    fn config_path() -> Option<std::path::PathBuf>;
 }
 
 #[derive(Default)]
@@ -21,27 +24,115 @@ pub(crate) struct SharedList<T> {
 struct SharedState<T> {
     revision: u64,
     list: T,
+    committed: u64,
+    document: Option<Arc<Document>>,
+    sink: Option<Submit>,
+    pending: Vec<(u64, Box<dyn PendingSave>)>,
+    errors: Vec<String>,
+    retried: bool,
+    shutdown_reported: bool,
 }
 
 impl<T: PersistedList> SharedList<T> {
     pub(crate) fn load() -> Self {
-        Self::from(T::load())
+        let Some(path) = T::config_path() else {
+            return Self::from(T::default());
+        };
+        Self::load_at(path)
+    }
+
+    pub(crate) fn load_at(path: std::path::PathBuf) -> Self {
+        let (list, document) = Document::load::<T>(path);
+        let source = Self::from(list);
+        source.lock().document = Some(document);
+        source
     }
 
     fn lock(&self) -> MutexGuard<'_, SharedState<T>> {
-        // 변경은 목록 연산과 파일 쓰기뿐이라 중간에 멈춰도 목록 자체는 쓸 수 있다.
+        // 변경은 목록 연산과 snapshot 접수뿐이라 중간에 멈춰도 목록 자체는 쓸 수 있다.
         self.inner.lock().unwrap_or_else(|poisoned| {
             tracing::warn!("{}: lock was poisoned; using the last list", T::NAME);
             poisoned.into_inner()
         })
     }
 
-    /// 원본을 바꾸고 파일에 저장한 뒤 리비전을 올린다.
+    /// 원본 변경과 revision·snapshot 접수 순서만 잠금 안에서 정한다. 파일 I/O는 worker가 한다.
     pub(crate) fn update(&self, change: impl FnOnce(&mut T)) {
         let mut state = self.lock();
         change(&mut state.list);
-        state.list.save();
         state.revision += 1;
+        Self::enqueue(&mut state);
+    }
+
+    pub(crate) fn install_sink(&self, sink: Submit) {
+        self.lock().sink = Some(sink);
+    }
+
+    fn enqueue(state: &mut SharedState<T>) {
+        let Some(document) = state.document.clone() else {
+            state
+                .errors
+                .push("favorites file path is unavailable".into());
+            return;
+        };
+        let saved = (|| {
+            let bytes = toml::to_string_pretty(&state.list)
+                .map_err(|e| e.to_string())?
+                .into_bytes();
+            let sink = state.sink.as_ref().ok_or("file writer is unavailable")?;
+            sink(Snapshot {
+                key: T::NAME,
+                document,
+                bytes,
+            })
+        })();
+        match saved {
+            Ok(receipt) => state.pending.push((state.revision, receipt)),
+            Err(error) => state.errors.push(error),
+        }
+    }
+
+    /// Receipt를 기다리지 않고 완료된 revision만 확정한다. 오류는 한 번만 반환한다.
+    pub(crate) fn poll(&self) -> Vec<String> {
+        let mut state = self.lock();
+        let mut index = 0;
+        while index < state.pending.len() {
+            let Some(result) = state.pending[index].1.poll() else {
+                index += 1;
+                continue;
+            };
+            let (revision, _) = state.pending.swap_remove(index);
+            match result {
+                Ok(()) => state.committed = state.committed.max(revision),
+                Err(error) => state.errors.push(error),
+            }
+        }
+        std::mem::take(&mut state.errors)
+    }
+
+    pub(crate) fn retry_latest_before_shutdown(&self) {
+        let mut state = self.lock();
+        if std::mem::replace(&mut state.retried, true) {
+            return;
+        }
+        if state.revision > state.committed
+            && !state.pending.iter().any(|(r, _)| *r == state.revision)
+        {
+            Self::enqueue(&mut state);
+        }
+    }
+
+    pub(crate) fn finish_shutdown(&self) -> Option<(u64, u64)> {
+        let mut state = self.lock();
+        if std::mem::replace(&mut state.shutdown_reported, true) {
+            return None;
+        }
+        (state.revision > state.committed).then_some((state.revision, state.committed))
+    }
+
+    pub(crate) fn save_status(&self) -> (u64, u64, usize) {
+        let state = self.lock();
+        (state.revision, state.committed, state.pending.len())
     }
 
     pub(crate) fn revision(&self) -> u64 {
@@ -61,10 +152,13 @@ impl<T: PersistedList> SharedList<T> {
     }
 }
 
-impl<T> From<T> for SharedList<T> {
+impl<T: Default> From<T> for SharedList<T> {
     fn from(list: T) -> Self {
         Self {
-            inner: Mutex::new(SharedState { revision: 0, list }),
+            inner: Mutex::new(SharedState {
+                list,
+                ..Default::default()
+            }),
         }
     }
 }
@@ -109,3 +203,6 @@ impl<T> std::ops::Deref for Replica<T> {
         &self.list
     }
 }
+
+#[cfg(test)]
+mod tests;
