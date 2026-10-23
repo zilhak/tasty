@@ -155,3 +155,53 @@ fn invalid_original_is_protected_and_invalid_reload_keeps_both_registries() {
     assert_eq!(parts.writer.stats().admitted, 2);
     assert_eq!(rules.finish_shutdown(), Some((1, 0)));
 }
+
+#[test]
+fn admission_rejection_and_old_completion_keep_latest_dirty_for_shutdown() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rules.toml");
+    let (format, handler) = registries();
+    let rules = FileRules::load(&path, &format, &handler);
+    let mut parts = file_writer::start(
+        Arc::new(tasty_settings::FileSettingsStorage),
+        batch_writer::Limits {
+            queue_items: 1,
+            ..Default::default()
+        },
+        Arc::new(batch_writer::SystemClock),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    rules.install_sink(file_consumers::sink(parts.writer.handle()));
+    let lock = file_replace::lock(&path).unwrap();
+    edit(&format, &handler, true);
+    rules.submit(&format, &handler);
+    wait(|| parts.writer.stats().batches == 1);
+    edit(&format, &handler, false);
+    rules.submit(&format, &handler);
+    assert_eq!(rules.status(), (2, 0, 1));
+    assert_eq!(rules.poll().len(), 1);
+    drop(lock);
+    wait(|| {
+        assert!(rules.poll().is_empty());
+        rules.status().2 == 0
+    });
+    assert_eq!(rules.status(), (2, 1, 0));
+    let first: toml::Table = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(first["handler"][0]["disabled"].as_bool(), Some(true));
+    rules.before_shutdown();
+    rules.before_shutdown();
+    drain(&mut parts);
+    assert!(rules.poll().is_empty());
+    assert_eq!(rules.status(), (2, 2, 0));
+    assert_eq!(parts.writer.stats().admitted, 2);
+    assert_eq!(parts.writer.stats().rejected_saturated, 1);
+    let latest: toml::Table = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(latest["handler"][0]["disabled"].as_bool(), Some(false));
+    edit(&format, &handler, true);
+    rules.submit(&format, &handler); // Probe admission after writer close.
+    assert_eq!(rules.poll().len(), 1);
+    assert_eq!(rules.status(), (3, 2, 0));
+    assert_eq!(rules.finish_shutdown(), Some((3, 2)));
+    assert_eq!(rules.finish_shutdown(), None);
+}
