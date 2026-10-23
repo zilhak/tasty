@@ -356,6 +356,7 @@ pub(crate) enum SubmitError {
 }
 
 struct QueuedRequest {
+    submitted: std::time::Instant,
     request: Request,
     _bytes: QueuedBytes,
 }
@@ -499,6 +500,7 @@ impl JournalWorker {
             return Err((SubmitError::Busy, request));
         }
         let queued = QueuedRequest {
+            submitted: std::time::Instant::now(),
             request,
             _bytes: QueuedBytes {
                 count: bytes,

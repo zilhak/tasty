@@ -57,7 +57,7 @@ impl EventStore {
     pub fn commit(&mut self, request: &CommitRequest) -> StoreResult<CommitOutcome> {
         let pending_effect_limit = self.admission_budget.max_pending_effects;
         let journal_id = self.journal_id().to_owned();
-        let tx = self.write_tx(request.writer_epoch)?;
+        let tx = self.write_tx(request.writer_epoch)?.structural(1);
         if let Some(new) = &request.command
             && let Some(key) = &new.key
             && let Some(existing) = find_by_key(&tx, key)?
@@ -91,7 +91,7 @@ impl EventStore {
     ) -> StoreResult<CommitOutcome> {
         let pending_effect_limit = self.admission_budget.max_pending_effects;
         let journal_id = self.journal_id().to_owned();
-        let tx = self.write_tx(request.writer_epoch)?;
+        let tx = self.write_tx(request.writer_epoch)?.structural(1);
         if let Some(new) = &request.command
             && let Some(key) = &new.key
             && let Some(existing) = find_by_key(&tx, key)?

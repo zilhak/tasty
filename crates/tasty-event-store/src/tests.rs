@@ -9,6 +9,7 @@ mod effects;
 mod fencing;
 mod identity;
 mod manifest_alias;
+mod metrics;
 mod projection;
 mod schema;
 mod snapshots;

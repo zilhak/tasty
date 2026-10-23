@@ -7,6 +7,20 @@
 데이터 홈 구조 journal의 저장 계약 중 수치·형식·보조 규칙과, App이 그 journal을 원본으로 연결한 현재 상태를 적는다. 저장 형식과 제약의 이유는 아래 각 절에,
 저장소가 제공하는 기능의 개요는 [아키텍처](index.md)의 `tasty-event-store` 문단에 있다. 구현은 `crates/tasty-event-store/src/`다.
 
+## 쓰기 계측
+
+`EventStore::commit_statistics`는 연결을 연 뒤 성공한 실제 SQLite 쓰기 transaction COMMIT을 센다.
+초기 migration/binding과 writer epoch, ID·payload pin·claim·checkpoint 등 보조 쓰기도 physical에 포함한다.
+`structural_commits`는 commit 및 import checkpoint transaction만, `logical_requests`는 그 안의 확정 요청만 센다.
+중복 key 반환, decide·쓰기 검증 오류와 rollback은 성공 commit 수를 늘리지 않는다. `failed_commits`는
+SQL COMMIT 자체가 실패한 횟수이며 모든 사전 거절 수가 아니다. PRAGMA의 암묵적 쓰기와 read transaction은 범위 밖이다.
+시간 합계·최대값은 COMMIT 호출만 재며 WAL·FULL 정책을 바꾸지 않는다.
+
+`TASTY_LOG=tasty::journal_metrics=debug`를 지정한 격리 실행은 worker 작업 종류별 physical/structural/logical
+증분과 SQL COMMIT 시간, queue 접수부터 durable-ready(명령 처리·확정 모델 적용 포함), publication 후 finished까지의
+시간을 기록한다. 이는 IPC 전체 latency나 App 전체 loop latency가 아니다. diagnostics/pressure의 공개 필드와 무관한
+진단 로그이며 기본 설정에서는 요청 순서·수집·ACK 동작을 바꾸지 않는다.
+
 ## import의 전송 identity
 
 내부 import는 전송 ID로 source snapshot/View alias를 고정한다. alias의 최초 source key와 전체 요청 digest도

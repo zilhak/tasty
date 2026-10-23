@@ -3,11 +3,13 @@
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use crate::error::{StoreError, StoreResult};
+use crate::metrics::{CommitMetrics, WriteTransaction};
 use crate::schema;
 use crate::types::{JournalCut, StreamId, WriterEpoch};
 
@@ -77,6 +79,7 @@ pub struct EventStore {
     lock_path: PathBuf,
     /// 이 저장소가 가진 writer 잠금. drop하면 OS가 잠금을 푼다.
     writer_lock: Option<File>,
+    metrics: Arc<CommitMetrics>,
 }
 
 impl EventStore {
@@ -106,7 +109,8 @@ impl EventStore {
         schema::ensure_journal_or_empty(&tx)?;
         schema::migrate(&tx)?;
         bind_journal(&tx, journal_id)?;
-        tx.commit()?;
+        let metrics = Arc::new(CommitMetrics::default());
+        WriteTransaction::new(tx, metrics.clone()).commit()?;
         Ok(Self {
             database_path: path.to_owned(),
             admission_budget: budget,
@@ -114,7 +118,12 @@ impl EventStore {
             journal_id: journal_id.to_owned(),
             lock_path: writer_lock_path(path),
             writer_lock: None,
+            metrics,
         })
+    }
+
+    pub fn commit_statistics(&self) -> crate::CommitStatistics {
+        self.metrics.snapshot()
     }
 
     pub fn journal_id(&self) -> &str {
@@ -174,7 +183,7 @@ impl EventStore {
             "UPDATE journal_meta SET writer_epoch = ?1 WHERE singleton = 1",
             [to_i64(next)?],
         )?;
-        tx.commit()?;
+        WriteTransaction::new(tx, self.metrics.clone()).commit()?;
         Ok(WriterEpoch(next))
     }
 
@@ -222,7 +231,7 @@ impl EventStore {
     }
 
     /// writer 세대와 활성 여부를 확인한 쓰기 transaction을 연다.
-    pub(crate) fn write_tx(&mut self, epoch: WriterEpoch) -> StoreResult<Transaction<'_>> {
+    pub(crate) fn write_tx(&mut self, epoch: WriterEpoch) -> StoreResult<WriteTransaction<'_>> {
         if self.writer_lock.is_none() {
             return Err(StoreError::NotWriter);
         }
@@ -237,7 +246,7 @@ impl EventStore {
                 current,
             });
         }
-        Ok(tx)
+        Ok(WriteTransaction::new(tx, self.metrics.clone()))
     }
 }
 

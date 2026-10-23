@@ -27,6 +27,7 @@ mod effect;
 mod error;
 mod identity;
 mod manifest;
+mod metrics;
 mod payload;
 mod projection;
 mod read;
@@ -49,6 +50,7 @@ pub use effect::{
 };
 pub use error::{StoreError, StoreResult};
 pub use identity::IdRange;
+pub use metrics::CommitStatistics;
 pub use projection::{ProjectionState, ProjectionWrite};
 pub use schema::SCHEMA_VERSION;
 pub use scoped_projection::{ScopedCut, ScopedProjectionState, ScopedProjectionWrite};

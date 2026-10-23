@@ -3,6 +3,7 @@ mod assembly;
 mod binding;
 mod capture;
 mod effects;
+mod metrics;
 #[cfg(all(test, unix))]
 mod preservation_tests;
 mod recovery;
@@ -79,11 +80,14 @@ pub(super) fn run(
     else {
         return;
     };
+    metrics::total(&executor, "opened");
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     // Admissions waiting for a disk credit, in arrival order. They count toward QUEUE_CAPACITY.
     let mut waiting: VecDeque<(u64, Admission)> = VecDeque::new();
     let mut halted: Option<String> = None;
     while let Ok(queued) = requests.recv() {
+        let measurement =
+            metrics::Measurement::begin(&executor, queued.submitted, &queued.request.work);
         let request = queued.request;
         drop(queued._bytes);
         if closed.load(Ordering::Acquire) {
@@ -148,6 +152,7 @@ pub(super) fn run(
             &mut followers,
             &mut release_admission,
         );
+        measurement.durable(&executor, request.ticket, result.is_ok());
         if halted.is_none()
             && let Err(error) = publish(
                 &executor,
@@ -178,6 +183,7 @@ pub(super) fn run(
         {
             return;
         }
+        measurement.finished(&executor, request.ticket, result.is_ok());
         for ticket in std::iter::once(request.ticket).chain(followers) {
             if !send(Completion::Finished {
                 ticket,
@@ -202,6 +208,7 @@ pub(super) fn run(
     if halted.is_none() {
         checkpoint_published(&executor, published, &readers);
     }
+    metrics::total(&executor, "stopped");
 }
 
 fn capture_predecessor(
