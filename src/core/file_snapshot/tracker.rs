@@ -2,6 +2,24 @@
 use super::{Document, PendingSave, Snapshot, Submit};
 use std::sync::{Arc, Mutex};
 
+#[derive(Clone, Default)]
+pub(crate) struct Ticket(Arc<Mutex<Option<Result<(), String>>>>);
+impl Ticket {
+    pub(crate) fn poll(&self) -> Option<Result<(), String>> {
+        self.0.lock().unwrap().clone()
+    }
+    fn finish(&self, result: Result<(), String>) {
+        *self.0.lock().unwrap() = Some(result);
+    }
+}
+
+struct Pending {
+    revision: u64,
+    receipt: Box<dyn PendingSave>,
+    ticket: Ticket,
+    notify: bool,
+}
+
 pub(crate) struct Tracker {
     key: &'static str,
     document: Arc<Document>,
@@ -13,7 +31,8 @@ struct State {
     committed: u64,
     latest: Option<Vec<u8>>,
     sink: Option<Submit>,
-    pending: Vec<(u64, Box<dyn PendingSave>)>,
+    pending: Vec<Pending>,
+    latest_notify: bool,
     errors: Vec<String>,
     retried: bool,
     reported: bool,
@@ -43,23 +62,39 @@ impl Tracker {
         })
     }
     pub(crate) fn install_sink(&self, sink: Submit) {
-        self.lock().sink = Some(sink);
+        self.replace_sink(Some(sink));
+    }
+    pub(crate) fn replace_sink(&self, sink: Option<Submit>) {
+        self.lock().sink = sink;
     }
     pub(crate) fn update(&self, bytes: Result<Vec<u8>, String>) {
+        self.update_with_receipt(bytes, true);
+    }
+    pub(crate) fn update_with_receipt(
+        &self,
+        bytes: Result<Vec<u8>, String>,
+        notify: bool,
+    ) -> Ticket {
         let mut state = self.lock();
+        let ticket = Ticket::default();
         state.visible += 1;
+        state.latest_notify = notify;
         match bytes {
             Ok(bytes) => {
                 state.latest = Some(bytes);
-                self.enqueue(&mut state);
+                self.enqueue(&mut state, ticket.clone());
             }
             Err(error) => {
                 state.latest = None;
-                state.errors.push(error);
+                ticket.finish(Err(error.clone()));
+                if notify {
+                    state.errors.push(error);
+                }
             }
         }
+        ticket
     }
-    fn enqueue(&self, state: &mut State) {
+    fn enqueue(&self, state: &mut State, ticket: Ticket) {
         let result = (|| {
             let bytes = state
                 .latest
@@ -73,22 +108,34 @@ impl Tracker {
             })
         })();
         match result {
-            Ok(receipt) => state.pending.push((state.visible, receipt)),
-            Err(error) => state.errors.push(error),
+            Ok(receipt) => state.pending.push(Pending {
+                revision: state.visible,
+                receipt,
+                ticket,
+                notify: state.latest_notify,
+            }),
+            Err(error) => {
+                ticket.finish(Err(error.clone()));
+                if state.latest_notify {
+                    state.errors.push(error);
+                }
+            }
         }
     }
     pub(crate) fn poll(&self) -> Vec<String> {
         let mut state = self.lock();
         let mut index = 0;
         while index < state.pending.len() {
-            let Some(result) = state.pending[index].1.poll() else {
+            let Some(result) = state.pending[index].receipt.poll() else {
                 index += 1;
                 continue;
             };
-            let (revision, _) = state.pending.swap_remove(index);
+            let pending = state.pending.swap_remove(index);
+            pending.ticket.finish(result.clone());
             match result {
-                Ok(()) => state.committed = state.committed.max(revision),
-                Err(error) => state.errors.push(error),
+                Ok(()) => state.committed = state.committed.max(pending.revision),
+                Err(error) if pending.notify => state.errors.push(error),
+                Err(_) => {}
             }
         }
         std::mem::take(&mut state.errors)
@@ -99,9 +146,9 @@ impl Tracker {
             return;
         }
         if state.visible > state.committed
-            && !state.pending.iter().any(|(r, _)| *r == state.visible)
+            && !state.pending.iter().any(|p| p.revision == state.visible)
         {
-            self.enqueue(&mut state);
+            self.enqueue(&mut state, Ticket::default());
         }
     }
     pub(crate) fn status(&self) -> (u64, u64, usize) {

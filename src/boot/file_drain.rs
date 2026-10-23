@@ -4,6 +4,8 @@ pub(super) fn drain(app: &mut crate::app::App) {
     loop {
         let remaining = app.services.poll_file_writer_shutdown();
         crate::intent::headless::settle_settings_saves(&mut app.services);
+        app.services
+            .poll_memory_replies(app.plugin_manager.as_mut());
         if !drain.keep_waiting(
             remaining,
             std::time::Instant::now(),

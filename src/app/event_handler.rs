@@ -423,10 +423,10 @@ impl ApplicationHandler<AppEvent> for App {
         self.poll_port_scans();
         self.poll_explorer_files();
         self.services.poll_memory_writer();
+        self.services.poll_file_writer();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
         self.services.poll_state_writer();
-        self.services.poll_file_writer();
         self.settle_settings_saves();
         self.run_telemetry_follow_ups();
         self.poll_local_reads();

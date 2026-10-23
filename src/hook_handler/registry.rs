@@ -2,6 +2,9 @@
 //! 조회 정렬은 priority 오름차순, 같은 값은 사용자·plugin·host, ID 순서다.
 //! 셸 action은 source=hook만 허용한다. 웹훅과 IPC가 같은 전역 등록부를 사용한다.
 
+#[path = "persistence.rs"]
+mod persistence;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
@@ -52,6 +55,7 @@ struct Inner {
 
 pub struct HookHandlerRegistry {
     inner: RwLock<Inner>,
+    file: std::sync::Mutex<Option<persistence::UserFile>>,
     poison_reported: std::sync::atomic::AtomicBool,
 }
 
@@ -80,6 +84,7 @@ impl HookHandlerRegistry {
                 finalized: BTreeMap::new(),
                 dirty: false,
             }),
+            file: std::sync::Mutex::new(None),
             poison_reported: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -163,26 +168,7 @@ impl HookHandlerRegistry {
     }
 
     pub fn install_user_config(&self, path: &Path) {
-        let text = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
-            Err(e) => {
-                warn!(path = %path.display(), error = %e, "hook_handler: user config read failed");
-                return;
-            }
-        };
-        let decls = match parse_user_handler_section(&text) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!(path = %path.display(), error = %e, "hook_handler: user config parse failed");
-                return;
-            }
-        };
-        let mut inner = self.lock_write();
-        for decl in decls {
-            install_user(&mut inner, decl);
-        }
-        inner.dirty = true;
+        self.load_file(path);
     }
 
     pub fn install_plugin_handlers(
@@ -238,7 +224,13 @@ impl HookHandlerRegistry {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn export_user_config(&self) -> String {
+        self.try_export_user_config()
+            .expect("valid user hook snapshot")
+    }
+
+    fn try_export_user_config(&self) -> Result<String, String> {
         let inner = self.lock_read();
         let mut handlers = Vec::<toml::Value>::new();
         for (id, contribs) in inner.contributions.iter() {
@@ -276,28 +268,22 @@ impl HookHandlerRegistry {
                 t.insert("disabled".into(), toml::Value::Boolean(d));
             }
             if let Some(action) = &user.action {
-                match super::user_file::action_toml(action) {
-                    Ok(v) => {
-                        t.insert("action".into(), v);
-                    }
-                    Err(e) => warn!(
-                        handler = id.as_str(),
-                        error = %e,
-                        "hook_handler: user action not TOML-serializable — omitted"
-                    ),
-                }
+                let value = super::user_file::action_toml(action)
+                    .map_err(|e| format!("hook handler {id}: {e}"))?;
+                t.insert("action".into(), value);
             }
             handlers.push(toml::Value::Table(t));
         }
         if handlers.is_empty() {
-            return String::new();
+            return Ok(String::new());
         }
         let mut doc = toml::value::Table::new();
         doc.insert("handler".into(), toml::Value::Array(handlers));
-        toml::to_string(&doc).unwrap_or_default()
+        toml::to_string(&doc).map_err(|e| e.to_string())
     }
 
     /// 같은 디렉터리의 임시 파일을 쓴 뒤 대상 경로로 교체한다. fsync 내구성까지 보장하지는 않는다.
+    #[cfg(test)]
     pub fn save_user_config(&self, path: &Path) -> std::io::Result<()> {
         use std::io::Write;
         let text = self.export_user_config();
@@ -454,10 +440,15 @@ impl HookHandlerRegistry {
 
     /// 읽기·TOML 파싱에 성공하면 사용자 설정을 교체한다. 파일 부재는 빈 설정이다.
     /// 개별 선언 검증 실패는 그 항목만 제외하므로 기존 설정 전체를 보존하는 경우와 구별한다.
+    #[cfg(test)]
     pub fn reload_user_config(&self, path: &Path) {
         let Some(decls) = read_user_decls(path) else {
             return;
         };
+        self.replace_user_decls(decls);
+    }
+
+    fn replace_user_decls(&self, decls: Vec<UserHookHandlerSettingsDecl>) {
         let mut inner = self.lock_write();
         let mut empty_ids = Vec::new();
         for (id, contribs) in inner.contributions.iter_mut() {
@@ -496,6 +487,7 @@ impl HookHandlerRegistry {
 }
 
 /// 읽기·파싱 실패는 None으로 돌려 기존 설정을 보존하게 한다. 파일 부재는 빈 목록이다.
+#[cfg(test)]
 fn read_user_decls(path: &Path) -> Option<Vec<UserHookHandlerSettingsDecl>> {
     match std::fs::read_to_string(path) {
         Ok(text) => match parse_user_handler_section(&text) {

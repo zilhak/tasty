@@ -934,9 +934,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
 
     loop {
         app.services.poll_memory_writer();
+        app.services.poll_file_writer();
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());
-        app.services.poll_file_writer();
         crate::intent::headless::settle_settings_saves(&mut app.services);
         if !app.journal.pauses_observation() && !app.gate_queue.is_empty() {
             // 게이트 결과를 기다리던 요청을 이어 간다. 정지된 journal은 진입 경로가 거절한다.

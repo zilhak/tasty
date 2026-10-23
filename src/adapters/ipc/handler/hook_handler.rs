@@ -47,22 +47,16 @@ pub fn handle_list(id: serde_json::Value) -> JsonRpcResponse {
 }
 
 /// 사용자 설정만 다시 읽는다. host/plugin 기본값은 유지하며 적용 거절 항목의 별도 보고는 없다.
-pub fn handle_reload(id: serde_json::Value) -> JsonRpcResponse {
-    let Some(path) = hook_handler::user_config_path() else {
-        return JsonRpcResponse::internal_error(
+pub fn handle_reload(_core: &AppServices, id: serde_json::Value) -> JsonRpcResponse {
+    let hook = hook_handler::global();
+    crate::app::file_consumers::report("hook-handlers.toml", hook.poll_file());
+    match hook.reload_file() {
+        Ok(path) => JsonRpcResponse::success(
             id,
-            "cannot resolve tasty home for hook-handlers.toml",
-        );
-    };
-    let exists = path.exists();
-    hook_handler::global().reload_user_config(&path);
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "path": path.display().to_string(),
-            "exists": exists,
-        }),
-    )
+            json!({ "path": path.display().to_string(), "exists": path.exists() }),
+        ),
+        Err(error) => JsonRpcResponse::internal_error(id, error),
+    }
 }
 
 /// 등록된 핸들러를 ID로 실행한다. body/headers/query는 params의 값에만 치환한다.
@@ -211,7 +205,11 @@ pub fn handle_get(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcR
 ///   `{"kind":"shell_command","command":…,"args":[…]}` — `get` 응답과 같은 모양.
 ///
 /// 파일 쓰기 실패는 오류로 보고하되 메모리 레지스트리는 이미 바뀌었음을 알린다.
-pub fn handle_upsert(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+pub fn handle_upsert(
+    core: &AppServices,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
     let decl = match parse_upsert(params) {
         Ok(d) => d,
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
@@ -221,21 +219,15 @@ pub fn handle_upsert(id: serde_json::Value, params: &serde_json::Value) -> JsonR
     if let Err(e) = hook_handler::global().upsert_user_handler(decl) {
         return JsonRpcResponse::invalid_params(id, e.to_string());
     }
-    match persist_user_config() {
-        Ok(path) => JsonRpcResponse::success(
-            id,
-            json!({
-                "id": hid.0,
-                "created": !existed,
-                "path": path,
-            }),
-        ),
-        Err(msg) => JsonRpcResponse::internal_error(id, msg),
-    }
+    persist_user_config(core, id, json!({ "id": hid.0, "created": !existed }))
 }
 
 /// 사용자 설정만 제거한다. host/plugin 기본값이 남으면 still_present로 알린다.
-pub fn handle_remove(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+pub fn handle_remove(
+    core: &AppServices,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
     let Some(hid) = params.get("id").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
     };
@@ -249,37 +241,53 @@ pub fn handle_remove(id: serde_json::Value, params: &serde_json::Value) -> JsonR
     }
     hook_handler::global().remove_user_handler(&hid);
     let still_present = hook_handler::global().get(&hid).is_some();
-    match persist_user_config() {
-        Ok(path) => JsonRpcResponse::success(
-            id,
-            json!({
-                "id": hid.0,
-                "existed": existed,
-                "still_present": still_present,
-                "path": path,
-            }),
-        ),
-        Err(msg) => JsonRpcResponse::internal_error(id, msg),
-    }
+    persist_user_config(
+        core,
+        id,
+        json!({ "id": hid.0, "existed": existed, "still_present": still_present }),
+    )
 }
 
-/// user 기여분을 `~/.tasty/hook-handlers.toml` 에 atomic write 하고 경로를 돌려준다.
-fn persist_user_config() -> Result<String, String> {
-    let Some(path) = hook_handler::user_config_path() else {
-        return Err(
-            "registry updated in memory, but tasty home could not be resolved \
-             so hook-handlers.toml was not written (the change is lost on restart)"
-                .to_string(),
-        );
+/// Memory edits are visible immediately; the original caller receives the file result once.
+fn persist_user_config(
+    core: &AppServices,
+    id: serde_json::Value,
+    body: serde_json::Value,
+) -> JsonRpcResponse {
+    persist_registry(core, hook_handler::global(), id, body)
+}
+fn persist_registry(
+    core: &AppServices,
+    registry: &hook_handler::registry::HookHandlerRegistry,
+    id: serde_json::Value,
+    mut body: serde_json::Value,
+) -> JsonRpcResponse {
+    let submitted = registry.submit_file(core.file_snapshot_sink(), false);
+    let (path, ticket) = match submitted {
+        Ok(value) => value,
+        Err(error) => return save_failed(id, error),
     };
-    match hook_handler::global().save_user_config(&path) {
-        Ok(()) => Ok(path.display().to_string()),
-        Err(e) => Err(format!(
-            "registry updated in memory, but writing {} failed: {e} \
-             (the change is lost on restart)",
-            path.display()
-        )),
-    }
+    body["path"] = json!(path.display().to_string());
+    core.reply_with_file(
+        id.clone(),
+        move || ticket.poll(),
+        move |_, result| match result {
+            Ok(()) => {
+                body["applied"] = json!(true);
+                body["saved"] = json!(true);
+                JsonRpcResponse::success(id, body)
+            }
+            Err(error) => save_failed(id, error),
+        },
+    )
+}
+fn save_failed(id: serde_json::Value, error: String) -> JsonRpcResponse {
+    JsonRpcResponse::error_with_data(
+        id,
+        -32603,
+        format!("hook handler applied for this run but not saved: {error}"),
+        json!({ "applied": true, "saved": false }),
+    )
 }
 
 /// 생략한 필드는 유지하고 잘못된 타입은 거절한다. CLI가 보내는 null은 생략으로 처리한다.
@@ -402,6 +410,88 @@ fn string_map(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn held_hook_save_answers_original_caller_once_after_receipt_with_applied_saved() {
+        use super::super::deferred::{MemoryReplies, ReplyTo};
+        use std::{
+            sync::{Arc, mpsc},
+            time::{Duration, Instant},
+        };
+        use tasty_utils::{batch_writer, file_replace};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hooks.toml");
+        let registry = hook_handler::registry::HookHandlerRegistry::new();
+        registry.install_user_config(&path);
+        let writer = crate::app::file_writer::start(
+            Arc::new(tasty_settings::FileSettingsStorage),
+            batch_writer::Limits::default(),
+            Arc::new(batch_writer::SystemClock),
+            Arc::new(|| {}),
+        )
+        .unwrap();
+        let mut core = super::super::cli_entry_tests::test_core_builder()
+            .with_file_writer(writer)
+            .build()
+            .unwrap();
+        for fail in [false, true] {
+            let lock = file_replace::lock(&path).unwrap();
+            registry.upsert_user_handler(parse_upsert(&json!({"id":"user/test","source":"any","priority":if fail {2} else {1},"action":{"kind":"ipc_sequence","calls":[]}})).unwrap()).unwrap();
+            assert_eq!(
+                registry
+                    .get(&HookHandlerId::new("user/test"))
+                    .unwrap()
+                    .priority,
+                if fail { 2 } else { 1 }
+            );
+            let response = persist_registry(&core, &registry, json!(17), json!({"id":"user/test"}));
+            assert!(
+                response.error.is_some(),
+                "placeholder stays inside deferred route"
+            );
+            let deferred = core
+                .memory_replies()
+                .take_parked()
+                .expect("file save is pending");
+            let (tx, rx) = mpsc::sync_channel(2);
+            core.defer_reply(deferred, ReplyTo::Ipc(tx));
+            assert!(MemoryReplies::poll(&core).is_empty());
+            assert!(rx.try_recv().is_err());
+            if fail {
+                std::fs::write(&path, "# external\n").unwrap();
+            }
+            drop(lock);
+            let end = Instant::now() + Duration::from_secs(5);
+            let answer = loop {
+                assert!(registry.poll_file().is_empty());
+                assert!(MemoryReplies::poll(&core).is_empty());
+                if let Ok(answer) = rx.try_recv() {
+                    break answer;
+                }
+                assert!(Instant::now() < end);
+                std::thread::yield_now();
+            };
+            assert_eq!(answer.id, json!(17));
+            if fail {
+                assert_eq!(
+                    answer.error.unwrap().data.unwrap(),
+                    json!({"applied":true,"saved":false})
+                );
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), "# external\n");
+            } else {
+                let body = answer.result.unwrap();
+                assert_eq!(body["applied"], true);
+                assert_eq!(body["saved"], true);
+            }
+            MemoryReplies::poll(&core);
+            assert!(rx.try_recv().is_err());
+        }
+        let end = Instant::now() + Duration::from_secs(5);
+        while core.poll_file_writer_shutdown() != 0 {
+            assert!(Instant::now() < end);
+            std::thread::yield_now();
+        }
+    }
 
     #[test]
     fn result_reads_run_through_the_shared_number_parser() {

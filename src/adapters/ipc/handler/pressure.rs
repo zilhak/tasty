@@ -125,6 +125,7 @@ pub(super) fn handle_system_pressure(
     {
         let status = |(visible, committed, pending)| json!({"visible": visible, "committed": committed, "pending": pending});
         body["file_snapshots"] = json!({
+            "hook_handlers": crate::hook_handler::global().file_status().map(status),
             "file_handlers": core.registries.file_rules.as_ref().map(|rules| status(rules.status())),
         });
         #[cfg(feature = "gui")]

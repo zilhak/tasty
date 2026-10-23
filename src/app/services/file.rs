@@ -12,6 +12,12 @@ pub(crate) struct ReloadFileHandlersOutcome {
 }
 
 impl AppServices {
+    pub(crate) fn file_snapshot_sink(&self) -> Option<crate::core::file_snapshot::Submit> {
+        self.file_writer
+            .as_ref()
+            .map(|parts| crate::app::file_consumers::sink(parts.writer.handle()))
+    }
+
     pub(crate) fn reload_file_handlers(&self) -> Result<ReloadFileHandlersOutcome, String> {
         crate::app::file_consumers::poll(&self.registries);
         let rules = self

@@ -11,6 +11,8 @@
 //!   그렇고, 운영 writer에서도 수집 창 없이 실행되는 barrier 요청(Section·Read)은 제출 직후
 //!   결과가 나와 있을 수 있다.
 
+mod file;
+
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::sync::mpsc::SyncSender;
@@ -32,6 +34,7 @@ pub(crate) type SettingsFinish =
 
 /// 응답을 미룬 요청이 기다리는 결과.
 enum Wait {
+    File(Box<dyn file::FileWait>),
     Memory {
         ticket: MemoryTicket,
         finish: Finish,
@@ -44,6 +47,7 @@ enum Wait {
 
 /// 나온 결과.
 enum Ready {
+    File,
     Memory(MemoryCompletion),
     Settings(Option<crate::app::settings_change::SettingsOutcome>),
 }
@@ -74,7 +78,7 @@ impl Handled {
                             .wait_timeout(std::time::Duration::from_secs(30))
                             .expect("memory writer result"),
                     ),
-                    Wait::Settings { .. } => deferred
+                    Wait::File(_) | Wait::Settings { .. } => deferred
                         .try_ready()
                         .expect("settings result must be ready; drain intents before waiting"),
                 };
@@ -93,6 +97,7 @@ impl Deferred {
     fn try_ready(&mut self) -> Option<Ready> {
         use crate::app::settings_change::SettingsPoll;
         match &mut self.wait {
+            Wait::File(wait) => wait.try_ready().then_some(Ready::File),
             Wait::Memory { ticket, .. } => ticket.try_take().map(Ready::Memory),
             Wait::Settings { wait, .. } => match wait.poll() {
                 SettingsPoll::Pending => None,
@@ -104,6 +109,7 @@ impl Deferred {
 
     fn complete(self, core: &AppServices, ready: Ready) -> JsonRpcResponse {
         let response = match (self.wait, ready) {
+            (Wait::File(wait), Ready::File) => wait.finish(core),
             (Wait::Memory { finish, .. }, Ready::Memory(completion)) => finish(core, completion),
             (Wait::Settings { finish, .. }, Ready::Settings(outcome)) => finish(outcome),
             _ => unreachable!("a result always matches the wait that produced it"),

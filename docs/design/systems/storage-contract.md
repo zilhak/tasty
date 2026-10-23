@@ -183,6 +183,12 @@ worker는 공용 참여자 잠금·fingerprint·링크 대상 검사 뒤 교체�
 
 `file_handler.reload`는 해당 프로세스가 처음 읽은 경로에서 한 번 읽어 두 registry를 갱신한다. 저장 pending 중에는 아직 완료되지 않은 snapshot과 충돌하지 않도록 오류로 답한다. 읽기/파싱 실패도 오류로 답하고 이전 registry와 원본 관측을 유지한다. 성공한 명시적 reload는 저장되지 않은 표시 변경을 파일 내용으로 바꾸며, 새로 읽은 상태를 visible=committed의 다음 revision으로 잡는다. 주석·공백·키 순서까지 보존하는 편집기는 아니며 pretty TOML로 저장한다.
 
+### 훅 registry snapshot
+
+프로세스 공용 hook registry는 최초 사용자 파일 읽기에서 원본 관측값과 디스크 revision을 함께 만든다. 런타임 upsert/remove와 설정 창 Save는 사용자 contribution만 불변 snapshot으로 제출한다. effective registry 재계산용 dirty는 디스크 dirty와 분리한다. 같은 파일 묶음은 마지막 snapshot으로 합치며 앞 요청도 그 결과를 받는다. 알 수 없는 최상위 절은 유지하고 TOML은 다시 직렬화한다. action을 표현할 수 없으면 일부 action을 빼고 저장하지 않고 해당 snapshot을 실패로 처리한다.
+
+IPC 응답은 receipt 뒤에 한 번 보내며, 메모리 적용 후 저장 실패는 `applied:true, saved:false`인 오류다. GUI 실패는 설정 결과 토스트와 지속 알림에 남긴다. 원본 읽기·파싱 실패, 외부 편집, symlink 대상 변경은 원본을 덮지 않는다. `hook_handler.reload`는 pending 중이면 거절하며, 읽기·파싱 실패 때 메모리와 관측을 유지한다. 성공한 명시적 reload는 파일 내용으로 사용자 contribution을 바꾸고 visible=committed의 새 revision으로 시작한다. GUI·headless는 같은 writer와 종료 drain을 쓰며 최신 dirty만 한 번 재시도한다. 이미 답한 IPC 요청에는 재시도 결과를 다시 보내지 않는다. `system.pressure.file_snapshots.hook_handlers`가 visible/committed/pending을 표시한다.
+
 ## 소비자 분류
 
 | 분류 | 소비자 | 스레드 | 요청 하나 안에서 하는 일 |
@@ -274,6 +280,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `remote-profiles.toml` | CLI는 `RemoteFileStore::profile`, 기존 host 소비자는 `RemoteProfiles::save` | CLI는 호출 스레드, 기존 IPC·탐지는 메인 루프 | CLI는 예(공용 교체·sync), 기존 save는 아니요 | 명령 API는 최신 TOML을 참여 잠금 안에서 patch한다. 기존 save 호출자는 참여하지 않는다 |
 | `passkeys.toml`과 `passkeys/<이름>` | CLI는 `RemoteFileStore::passkey`, 기존 host 목록은 `Passkeys::save`; inline 파일은 `materialize_inline_in` | CLI는 호출 스레드, 기존 IPC는 메인 루프 | CLI 목록은 공용 교체·sync, 기존 save는 직접 쓰기. inline은 Unix 0600·Windows 보호 ACL을 payload 전에 적용한 임시 파일을 sync 후 rename | CLI 명령은 목록 참여 잠금 사용. inline 파일 자체도 참여 잠금 사용. 파일 사이 transaction은 없고 부분 성공·관리파일 정리는 owned 결과로 구분한다 |
 | `plugins.toml` | 플러그인 등록 상태 저장 | 메인 루프, GUI boot worker(내장 플러그인 설치) | 아니요 | 없음 |
+| `hook-handlers.toml` | hook registry가 사용자 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `file-handlers.toml` | `FileRules::submit`이 합친 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `known-plugins.toml`, hook 사용자 설정, 테마 파일 | 각 crate의 저장 함수 | 메인 루프 | 테마만 아니요, 나머지는 예 | 없음 |
 | `debug.log`·crash/hang 보고·`launch.log`·observer file sink | 로그 기록 | 각 기록 스레드 | append | `launch.log`는 두 번째 프로세스가 파일 잠금 안에서 쓴다 |

@@ -62,10 +62,9 @@ impl super::App {
             }
         }
         if hooks_changed
-            && let Some(path) = crate::hook_handler::user_config_path()
-            && let Err(error) = hook.save_user_config(&path)
+            && let Err(error) = hook.submit_file(self.services.file_snapshot_sink(), true)
         {
-            tracing::warn!(%error,"settings hook save failed");
+            super::file_consumers::report("hook-handlers.toml", vec![error]);
         }
     }
 }

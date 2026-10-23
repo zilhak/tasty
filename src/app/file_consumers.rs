@@ -41,6 +41,10 @@ pub(crate) fn attach(registries: &RuntimeRegistries, queue: Handle<FileExecutor>
 }
 
 pub(crate) fn poll(registries: &RuntimeRegistries) {
+    report(
+        "hook-handlers.toml",
+        crate::hook_handler::global().poll_file(),
+    );
     if let Some(rules) = &registries.file_rules {
         report("file-handlers.toml", rules.poll());
     }
@@ -58,7 +62,7 @@ pub(crate) fn report(file: &str, errors: Vec<String>) {
     for error in errors {
         tracing::warn!(file, %error, "file snapshot was not saved");
         crate::system_notice::post(crate::system_notice::SystemNotice::warning(
-            if file == "file-handlers.toml" {
+            if matches!(file, "file-handlers.toml" | "hook-handlers.toml") {
                 "settings-file-writer"
             } else {
                 "file-writer"
@@ -71,6 +75,7 @@ pub(crate) fn report(file: &str, errors: Vec<String>) {
 
 pub(crate) fn before_shutdown(registries: &RuntimeRegistries) {
     poll(registries);
+    crate::hook_handler::global().before_file_shutdown();
     if let Some(rules) = &registries.file_rules {
         rules.before_shutdown();
     }
@@ -83,34 +88,31 @@ pub(crate) fn before_shutdown(registries: &RuntimeRegistries) {
 
 pub(crate) fn after_shutdown(registries: &RuntimeRegistries) {
     poll(registries);
-    if let Some(rules) = &registries.file_rules
-        && let Some((visible, committed)) = rules.finish_shutdown()
-    {
-        tracing::warn!(
-            file = "file-handlers.toml",
-            visible,
-            committed,
-            "file remains unsaved at shutdown"
-        );
-    }
+    report_shutdown(
+        "hook-handlers.toml",
+        crate::hook_handler::global().finish_file_shutdown(),
+    );
+    report_shutdown(
+        "file-handlers.toml",
+        registries
+            .file_rules
+            .as_ref()
+            .and_then(|rules| rules.finish_shutdown()),
+    );
     #[cfg(feature = "gui")]
-    for (name, unsaved) in [
-        (
+    {
+        report_shutdown(
             "explorer-favorites.toml",
             registries.explorer_favorites.finish_shutdown(),
-        ),
-        (
+        );
+        report_shutdown(
             "port-favorites.toml",
             registries.port_favorites.finish_shutdown(),
-        ),
-    ] {
-        if let Some((visible, committed)) = unsaved {
-            tracing::warn!(
-                file = name,
-                visible,
-                committed,
-                "favorites remain unsaved at shutdown"
-            );
-        }
+        );
+    }
+}
+fn report_shutdown(file: &str, unsaved: Option<(u64, u64)>) {
+    if let Some((visible, committed)) = unsaved {
+        tracing::warn!(file, visible, committed, "file remains unsaved at shutdown");
     }
 }

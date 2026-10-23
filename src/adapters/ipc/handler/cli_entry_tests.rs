@@ -238,6 +238,7 @@ fn close_window_cli_entry_point_matches_what_the_app_handler_reads() {
 /// 각 파라미터를 읽었을 때 나오는 오류로 키 이름이 맞는지 확인한다.
 #[test]
 fn hook_handler_edit_cli_entry_points_reach_their_handlers() {
+    let core = test_core();
     let absent = "user/definitely-not-registered-in-this-test";
 
     let req = command_to_request(&Commands::HookHandler {
@@ -262,7 +263,7 @@ fn hook_handler_edit_cli_entry_points_reach_their_handlers() {
         },
     });
     assert_eq!(req.method, "hook_handler.upsert");
-    let resp = super::hook_handler::handle_upsert(json!(1), &req.params);
+    let resp = super::hook_handler::handle_upsert(&core, json!(1), &req.params);
     let msg = resp.error.expect("잘못된 source 는 거절된다").message;
     // 다른 오류에도 source가 나오므로, 이 오류에만 있는 선택지 목록을 확인한다.
     assert!(
@@ -282,7 +283,7 @@ fn hook_handler_edit_cli_entry_points_reach_their_handlers() {
             calls: Some(r#"[{"no_method_key":1}]"#.into()),
         },
     });
-    let resp = super::hook_handler::handle_upsert(json!(1), &req.params);
+    let resp = super::hook_handler::handle_upsert(&core, json!(1), &req.params);
     let msg = resp
         .error
         .expect("스키마에 안 맞는 calls 는 거절된다")
@@ -296,7 +297,7 @@ fn hook_handler_edit_cli_entry_points_reach_their_handlers() {
         },
     });
     assert_eq!(req.method, "hook_handler.remove");
-    let resp = super::hook_handler::handle_remove(json!(1), &req.params);
+    let resp = super::hook_handler::handle_remove(&core, json!(1), &req.params);
     let result = resp.result.expect("없는 id 제거는 오류가 아니다");
     assert_eq!(result["id"], absent, "id 키가 안 읽혔다");
     assert_eq!(result["existed"], false);

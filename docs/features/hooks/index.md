@@ -221,7 +221,8 @@ Plugin 선언에는 ShellCommand variant가 없어 매니페스트 파싱 단계
 - **TOML에는 null이 없다.** `IpcSequence` 호출의 params 자체가 null이면 `params` 키를 쓰지 않고, 읽을 때 null로 채운다. params 안쪽에 null이 있으면(예: `{"a":null}`) 그 호출만 params 전체를 JSON 문자열 키 `params_json`으로 쓰고 읽을 때 되돌린다. null이 없는 params는 TOML 표 `params`로 쓰므로 이 규칙 이전의 파일도 그대로 읽힌다. 한 호출에 `params`와 `params_json`이 함께 있거나 `params_json`이 JSON이 아니면 파일 전체를 파싱 실패로 보고 이전 사용자 설정을 유지한다. null 키를 지우지 않는 것은 받는 IPC 메서드가 키의 존재 여부로 동작을 가를 수 있어서다. IPC 계약은 바뀌지 않는다(IPC 요청은 JSON이라 null을 그대로 받는다).
   - 한 파일 안에 params 표기가 두 가지가 되고, `params_json`은 JSON 문자열이라 TOML 편집기의 구조 표시와 검증을 받지 못한다. `params_json` 오류의 위치는 그 호출을 담은 action 표다(호출이 인라인 배열 안에 있다).
   - 파일 전체를 JSON으로 바꾸는 안은 기존 TOML 파일의 이관과 두 형식의 공존 기간이 필요하고 다른 사용자 설정(config.toml·preset)과 표기가 갈라져 택하지 않았다. 모든 params를 JSON 문자열로 쓰는 안은 손으로 쓴 파일의 모양이 바뀌고 TOML 편집의 이점을 모든 호출에서 잃는다.
-- 영속은 `~/.tasty/hook-handlers.toml` atomic write. 쓰기에 실패하면 메모리 레지스트리는 이미 바뀐 상태이며, 그 사실을 오류문에 적고 **성공으로 보고하지 않는다**(다음 부팅에 유지되지 않을 수 있는 변경임을 알린다).
+- 영속은 `~/.tasty/hook-handlers.toml`의 불변 snapshot을 file writer에 제출한 뒤 receipt로 확정한다. upsert/remove 응답은 저장 뒤 한 번 돌아오며 성공은 `applied:true, saved:true`, 저장 실패는 `applied:true, saved:false`인 오류다. 실패해도 메모리 적용은 유지하며 다음 부팅에 유지되지 않을 수 있다. 설정 창 Save는 저장을 기다리지 않고 진행하며 최종 실패를 토스트와 알림에 표시한다.
+- `reload`는 파일 저장 pending 중이면 오류다. 읽기·파싱 실패도 오류로 답하고 이전 메모리와 원본 관측을 유지한다. 성공한 reload는 아직 저장하지 못한 변경을 파일 내용으로 바꾸므로 외부 수정과 저장 충돌을 해소할 때 쓴다. 자세한 revision·원본 보호·종료 계약은 [파일 저장 계약](../../design/systems/storage-contract.md#훅-registry-snapshot)에 있다.
 
 ## 관련
 

@@ -18,7 +18,6 @@ pub use env::{HookShellEnv, build_env};
 pub use exec::{SequenceOrigin, SubstitutionContext, execute_sequence, spawn_shell};
 pub use registry::{
     HostHookHandlerPort, UserHookHandlerUpsertDecl, global, install_default_sources,
-    user_config_path,
 };
 pub use types::{
     HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource, IpcCall,
