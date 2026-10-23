@@ -315,6 +315,15 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `known-plugins.toml`, hook 사용자 설정 | 각 crate의 저장 함수 | 메인 루프 | 예 | 없음 |
 | `debug.log`·crash/hang 보고·`launch.log`·observer file sink | 로그 기록 | 각 기록 스레드 | append | `launch.log`는 두 번째 프로세스가 파일 잠금 안에서 쓴다 |
 
+원격 inline 비밀 파일은 기존 private temp·권한/ACL 검증·write·sync·rename 경로를 유지하며,
+파일 worker의 관측 scope 안에서만 별도 Replace attempt를 기록한다. 검증·원본 읽기·참여 잠금
+뒤 temp 생성 직전에 시작하고, temp 생성 실패를 포함한 반환 오류의 I/O 종류로 완료한다.
+반환 전에 unwind하면 Unknown이다. 실패한 교체는 published bytes를 늘리지 않는다.
+관리 사용자 파일 unlink는 Delete지만 private temp cleanup은 제외한다. CLI·부팅·관측 scope 밖
+호환 호출은 이 writer 계측에 더하지 않는다. 여러 파일의 물리적 성공·실패 수는
+`MutationFailure`·`ManagedCleanup`의 부분 성공 결과나 host receipt 적용을 대신하지 않는다.
+기존 host profile/passkey 호출의 비동기 연결은 위 명부의 thread 구분을 따른다.
+
 `webhooks.toml` backend는 소유된 webhook 섹션 요청만 받고 전체 TOML snapshot은 접수하지 않는다.
 파일 잠금 안에서 최신 원본을 읽고 병합·직렬화하며, 교체 직전 원본 fingerprint와 링크 대상을
 다시 확인한다. 실패·손상·읽기 불가는 빈 테이블로 덮지 않는다. 참여하지 않는 편집기의 변경은

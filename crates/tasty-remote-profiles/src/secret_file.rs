@@ -28,26 +28,35 @@ pub(crate) fn write(dir: &Path, name: &str, secret: &str) -> Result<PathBuf> {
     if path.exists() {
         OpenOptions::new().write(true).open(&path)?;
     }
-    let (temp, mut file) = create(dir, name)?;
+    let attempt = file_replace::observe_replacement(secret.len());
     let result = (|| -> Result<()> {
-        secure(&temp, &file)?;
-        file.write_all(secret.as_bytes())
-            .context("write private secret")?;
-        file.sync_all()?;
-        drop(file);
-        reject_link(&path)?;
-        if Fingerprint::read(&path)? != observed {
-            bail!("secret file changed during mutation");
+        let (temp, mut file) = create(dir, name)?;
+        let result = (|| -> Result<()> {
+            secure(&temp, &file)?;
+            file.write_all(secret.as_bytes())
+                .context("write private secret")?;
+            file.sync_all()?;
+            drop(file);
+            reject_link(&path)?;
+            if Fingerprint::read(&path)? != observed {
+                bail!("secret file changed during mutation");
+            }
+            fs::rename(&temp, &path).context("replace private secret")?;
+            Ok(())
+        })();
+        if result.is_err()
+            && let Err(e) = fs::remove_file(&temp)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(error=%e, "could not clean private temporary file");
         }
-        fs::rename(&temp, &path).context("replace private secret")?;
-        Ok(())
+        result
     })();
-    if result.is_err()
-        && let Err(e) = fs::remove_file(&temp)
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
-        tracing::warn!(error=%e, "could not clean private temporary file");
-    }
+    attempt.finish(result.as_ref().copied().map_err(|error| {
+        error
+            .downcast_ref::<std::io::Error>()
+            .map_or(std::io::ErrorKind::Other, std::io::Error::kind)
+    }));
     result?;
     Ok(path)
 }

@@ -209,7 +209,7 @@ impl Passkeys {
         };
         let pk = self.passkeys.remove(idx);
         if pk.is_managed()
-            && let Err(e) = fs::remove_file(&pk.path)
+            && let Err(e) = tasty_utils::file_replace::remove(std::path::Path::new(&pk.path))
             && e.kind() != std::io::ErrorKind::NotFound
         {
             tracing::warn!("failed to remove managed passkey file {}: {e}", pk.path);

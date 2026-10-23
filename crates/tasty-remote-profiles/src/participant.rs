@@ -360,7 +360,7 @@ impl RemoteFileStore {
                 "managed path changed during cleanup; file preserved".into(),
             );
         }
-        match fs::remove_file(path) {
+        match tasty_utils::file_replace::remove(path) {
             Ok(()) => ManagedCleanup::Removed,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => ManagedCleanup::Missing,
             Err(e) => ManagedCleanup::Failed(e.to_string()),
