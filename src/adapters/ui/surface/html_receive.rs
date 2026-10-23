@@ -31,7 +31,7 @@ pub(crate) fn size_banner(
         title: &title,
         detail: if size.is_some() {
             HtmlSizeDetail::File {
-                path: &snapshot.address,
+                path: &snapshot.notice_path,
                 size: &count,
                 waiting: waiting.as_deref(),
             }
@@ -68,13 +68,16 @@ pub(crate) fn size_banner(
     Some(LogicalPx(result.rect.height()))
 }
 pub(crate) fn page(ui: &mut egui::Ui, theme: &Theme, snapshot: &ReceiveSnapshot, rect: egui::Rect) {
-    if snapshot.ready {
+    if snapshot.ready && (!snapshot.receiving || !snapshot.connected) {
         return;
     }
     let progress = crate::i18n::t_count(
         "html_remote.progress",
-        1,
-        &[&decimal_bytes(snapshot.received), "1"],
+        snapshot.files as u64,
+        &[
+            &decimal_bytes(snapshot.received),
+            &snapshot.files.to_string(),
+        ],
     );
     let paused = snapshot.paused || snapshot.size_notice.is_some();
     let (kind, title, subtitle) = if !snapshot.connected {

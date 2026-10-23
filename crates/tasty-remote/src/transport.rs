@@ -33,8 +33,8 @@ pub fn attach_handshake(
     if let Err(e) = conn.send(StreamTag::Control, &declare) {
         tracing::warn!("{log_prefix}: 손실 통지 요청을 보내지 못했다: {e}");
     }
-    let html_transfer = descriptor_has_capability(&ctrl, tasty_ipc::html_transfer::CAPABILITY);
-    if html_transfer {
+    let html = super::html_document::HtmlSession::from_descriptor(&ctrl);
+    if html.server_transfer {
         let declare = tasty_ipc::html_transfer::HtmlRequest::HtmlCapabilities {
             capabilities: vec![tasty_ipc::html_transfer::CAPABILITY.into()],
         };
@@ -44,8 +44,7 @@ pub fn attach_handshake(
     Ok(AttachHandshake {
         resize_acks: descriptor_has_capability(&ctrl, stream::RESIZE_ACK_CAPABILITY),
         input_acks: descriptor_has_capability(&ctrl, stream::INPUT_ACK_CAPABILITY),
-        html_transfer,
-        html_entry: descriptor_has_capability(&ctrl, tasty_ipc::html_transfer::VIEWER_CAPABILITY),
+        html,
         explorer_write: descriptor_has_capability(&ctrl, tasty_ipc::explorer_op::CAPABILITY),
         conn,
         client_id,
@@ -69,8 +68,7 @@ pub struct AttachHandshake {
     pub input_acks: bool,
     /// 서버가 원격 explorer 파일 작업을 받는다.
     pub explorer_write: bool,
-    pub html_transfer: bool,
-    pub html_entry: bool,
+    pub html: super::html_document::HtmlSession,
 }
 
 /// descriptor의 기능 목록에 `name`이 있는지. 목록이 없는 구 서버는 false다.
@@ -401,8 +399,7 @@ impl PreparedConnection {
             resize_acks,
             input_acks,
             explorer_write,
-            html_transfer,
-            html_entry,
+            html,
         } = attach_handshake(port, workspace, "remote pending connection", &cancel)?;
         let control = write_half.try_clone()?;
         let (frame_tx, frame_rx) = super::connection::channel();
@@ -439,7 +436,7 @@ impl PreparedConnection {
                 tunnel,
                 explorer_write,
                 explorer_inbox: Vec::new(),
-                html: super::html_document::HtmlSession::negotiated(html_transfer, html_entry),
+                html,
             },
         })
     }

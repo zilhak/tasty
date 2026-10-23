@@ -20,7 +20,7 @@ impl EntryBodyStore {
         self.navigation.is_none()
             && self.resources_enabled
             && self.resources.as_ref().is_some_and(|resources| {
-                resources.allows_requests() && resources.route(uri).is_some()
+                resources.allows_navigation() && resources.route(uri).is_some()
             })
     }
     /// Called only for an actual main-document load. URI equality cannot identify a main frame.

@@ -6,7 +6,7 @@ use crate::app::window_access::engines_mut;
 use crate::view::ui::View;
 
 impl App {
-    /// 보이는 webview가 활성·비최소화 창에 있으면 true를 반환해 Linux 폴링 예약에 사용한다.
+    /// 보이는 페이지나 수신 중인 native 작업이 활성·비최소화 창에 있으면 Linux 폴링을 예약한다.
     /// Linux는 먼저 GTK 이벤트를 처리하며 macOS·Windows는 별도 폴링 타이머를 쓰지 않는다.
     pub(crate) fn pump_webview_key_events(&mut self) -> bool {
         let mut any_webview = false;
@@ -20,7 +20,7 @@ impl App {
             }
             any_webview = true;
             if webview_poll_needed(
-                main.webview_any_visible,
+                main.webview_any_visible || main.webviews.values().any(received_work_pending),
                 main.base.winit.is_minimized() == Some(true),
                 main.base.state.focused,
                 || main.webviews.values().any(|wv| wv.holds_keyboard_focus()),
@@ -107,12 +107,19 @@ impl App {
     }
 }
 
-/// GDK 이벤트(WebView의 클릭·키)를 처리하려고 짧은 주기 폴링이 필요한지. Linux GDK는 별도 X
-/// 연결로 이벤트를 받아 winit을 깨우지 못한다. 보이는 WebView가 있고 창이 최소화되지 않았으며
-/// 창이 활성일 때 폴링한다. WebView 자식이 X 포커스를 쥐면 winit은 부모 창에 Focused(false)를
-/// 보내므로 자식이 포커스를 가진 경우도 활성으로 본다 — 빠뜨리면 클릭이 다음 깨움(약 1.5초 뒤)까지
-/// 처리되지 않는다. `webview_holds` 는 OS에 묻는 호출이라 앞 조건이 모두 참이고 winit 값이 거짓일
-/// 때만 부른다.
+// A receiving page may be hidden by its host state while WebKit still owes native completions.
+// Cached-only stores must not keep a hidden view polling.
+fn received_work_pending(webview: &crate::webview::PlatformWebView) -> bool {
+    webview.entry_response_source().is_some_and(|source| {
+        source.is_current()
+            && (webview.nav_state() == crate::webview::NavState::Loading
+                || source.pending_resources())
+    })
+}
+
+/// Linux GDK는 별도 X 연결로 이벤트를 받아 winit을 깨우지 못한다. 보이는 페이지 또는
+/// native 완료 대기가 있고 창이 활성·비최소화일 때 폴링한다. native 자식이 포커스를
+/// 가진 경우도 활성으로 본다. OS 포커스 조회는 앞 조건과 winit 값으로 결정한다.
 fn webview_poll_needed(
     any_visible: bool,
     minimized: bool,

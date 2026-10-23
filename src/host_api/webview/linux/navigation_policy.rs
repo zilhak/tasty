@@ -33,7 +33,7 @@ pub(super) fn install(
                 && (matches!(decision_type, PolicyDecisionType::NewWindowAction)
                     || uri
                         .as_ref()
-                        .is_none_or(|uri| source.response(uri.as_str()).is_none()))
+                        .is_none_or(|uri| !source.allows_uri(uri.as_str())))
             {
                 decision.ignore();
                 return true;

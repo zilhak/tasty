@@ -115,3 +115,76 @@ fn delayed_old_native_callbacks_cannot_mutate_current_script_state() {
         "file:///server/received.html"
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn exact_main_resource_intent_retires_before_any_late_scheme_body() {
+    let body = entry();
+    let store = store(Arc::clone(&body));
+    store.lock().unwrap().enable_resources(true);
+    let source = EntryResponseSource::new(&store);
+    let uri = format!(
+        "{}/next.html?q=1#anchor",
+        body.native_uri().rsplit_once('/').unwrap().0
+    );
+    assert!(source.allows_uri(&uri));
+    assert!(source.main_resource(&uri));
+    assert!(source.response(body.native_uri()).is_none());
+    assert!(source.request(&uri).is_none());
+    let intent = store.lock().unwrap().take_navigation().unwrap();
+    assert_eq!(intent.entry, id());
+    assert_eq!(intent.source_generation, 8);
+    assert_eq!(intent.target.relative, "next.html");
+    assert_eq!(intent.target.query.as_deref(), Some("q=1"));
+    assert_eq!(intent.target.fragment.as_deref(), Some("anchor"));
+}
+#[cfg(target_os = "linux")]
+#[test]
+fn disconnected_cached_child_is_not_adopted_as_a_new_main_document() {
+    let body = entry();
+    let store = store(Arc::clone(&body));
+    let uri = format!(
+        "{}/cached.html",
+        body.native_uri().rsplit_once('/').unwrap().0
+    );
+    let _wait = {
+        let mut store = store.lock().unwrap();
+        store.enable_resources(true);
+        let wait = store.request_resource(&uri);
+        let broker = store.resources_mut().unwrap();
+        let fetch = broker.take_pending(1).pop().unwrap();
+        let child = TransferId {
+            request: 5,
+            transfer: 6,
+            ..id()
+        };
+        assert!(broker.bind(fetch.ticket, child));
+        let cached = Arc::new(
+            NativeBodyResponse::new(
+                child,
+                8,
+                "text/html",
+                "file:///server/cached.html",
+                Arc::new(b"cached".to_vec()),
+            )
+            .unwrap(),
+        );
+        assert!(broker.publish(child, cached));
+        store.disconnect();
+        wait
+    };
+    let source = EntryResponseSource::new(&store);
+    assert!(source.response(&uri).is_some());
+    assert!(source.main_resource(&uri));
+    assert!(source.response(&uri).is_none());
+    assert!(store.lock().unwrap().take_navigation().is_none());
+    let current = EntryResponseSource::new(&store);
+    assert!(current.is_current());
+    assert!(Arc::ptr_eq(
+        &current.entry(body.native_uri()).unwrap(),
+        &body
+    ));
+    assert!(current.response(&uri).is_some());
+    source.lost_native_view();
+    assert!(current.is_current());
+}

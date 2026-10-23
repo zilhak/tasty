@@ -74,7 +74,12 @@ impl HtmlMirror {
         true
     }
     pub fn take_resource_fetches(&mut self) -> Vec<NativeResourceFetch> {
-        if self.id.is_none_or(|id| !self.current(id)) {
+        if self.id.is_none_or(|id| !self.current(id))
+            || self
+                .document
+                .as_ref()
+                .is_some_and(|d| d.paused || d.stopped)
+        {
             return vec![];
         }
         let active = self.document.as_ref().map_or(0, |d| {
@@ -171,6 +176,7 @@ impl HtmlMirror {
             .body_store()
             .resources_mut()
             .map_or_else(Vec::new, |r| r.abandoned());
+        let cancelled_any = !abandoned.is_empty();
         for id in abandoned {
             if let Some(cancel) = self.document.as_mut().and_then(|d| d.decline(id)) {
                 self.pending.push(cancel);
@@ -194,7 +200,7 @@ impl HtmlMirror {
             })
             .map(|(id, resource)| (*id, resource.clone()))
             .collect();
-        let mut changed = false;
+        let mut changed = cancelled_any;
         for (id, resource) in terminal {
             self.resources.finished.insert(id);
             let body = resource

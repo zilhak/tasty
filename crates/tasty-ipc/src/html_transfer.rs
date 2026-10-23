@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const CAPABILITY: &str = "ipc.stream.html-transfer-v1";
 pub const VIEWER_CAPABILITY: &str = "ipc.stream.html-entry-v1";
+pub const RESOURCE_CAPABILITY: &str = "ipc.stream.html-resources-v1";
 pub const AUTO_BYTES: u64 = 100_000;
 pub const DOCUMENT_BYTES: u64 = 2_000_000;
 pub const CHUNK_BYTES: usize = 48 * 1024;

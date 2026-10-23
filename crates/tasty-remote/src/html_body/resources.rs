@@ -33,6 +33,7 @@ pub struct NativeResources {
     entry: Arc<ReceivedEntry>,
     enabled: bool,
     connected: bool,
+    stopped: bool,
     sequence: u64,
     slots: HashMap<String, Slot>,
     pending: VecDeque<String>,
@@ -43,15 +44,27 @@ impl NativeResources {
             entry,
             enabled,
             connected: true,
+            stopped: false,
             sequence: 0,
             slots: HashMap::new(),
             pending: VecDeque::new(),
         }
     }
     pub(super) fn allows_requests(&self) -> bool {
+        self.enabled && self.connected && !self.stopped
+    }
+    pub fn has_pending(&self) -> bool {
+        self.slots
+            .values()
+            .any(|slot| matches!(slot.state, State::Queued | State::Active(_)))
+    }
+    pub(super) fn allows_navigation(&self) -> bool {
         self.enabled && self.connected
     }
     pub fn set_enabled(&mut self, enabled: bool) {
+        if self.enabled && !enabled {
+            self.fail_pending(ResourceFailure::Denied);
+        }
         self.enabled = enabled;
     }
     pub fn cached(&self, uri: &str) -> Option<Arc<NativeBodyResponse>> {
@@ -85,7 +98,7 @@ impl NativeResources {
             }
             return wait;
         }
-        if !self.enabled || !self.connected || self.slots.len() >= 256 {
+        if !self.allows_requests() || self.slots.len() >= 256 {
             target.finish(Err(ResourceFailure::Denied));
             return wait;
         }
@@ -131,7 +144,7 @@ impl NativeResources {
     }
     pub fn take_pending(&mut self, max: usize) -> Vec<Fetch> {
         let mut result = Vec::new();
-        if !self.connected {
+        if !self.allows_requests() {
             return result;
         }
         while result.len() < max {
@@ -161,7 +174,7 @@ impl NativeResources {
     }
     pub fn bind(&mut self, ticket: u64, id: TransferId) -> bool {
         let entry = self.entry.response().generation();
-        if !self.connected
+        if !self.allows_requests()
             || id.transfer <= entry.transfer
             || self.slots.values().any(|slot| slot.id == Some(id))
             || (id.epoch, id.surface_id, id.binding, id.document)
@@ -180,7 +193,7 @@ impl NativeResources {
         true
     }
     pub fn publish(&mut self, id: TransferId, body: Arc<NativeBodyResponse>) -> bool {
-        if !self.connected {
+        if !self.allows_requests() {
             return false;
         }
         if body.generation() != id
@@ -233,7 +246,13 @@ impl NativeResources {
         self.stop(ResourceFailure::Disconnected);
     }
     pub fn stop(&mut self, reason: ResourceFailure) {
-        self.connected = false;
+        if reason == ResourceFailure::Disconnected {
+            self.connected = false;
+        }
+        self.stopped = true;
+        self.fail_pending(reason);
+    }
+    fn fail_pending(&mut self, reason: ResourceFailure) {
         self.pending.clear();
         for slot in self.slots.values_mut() {
             if matches!(slot.state, State::Ready(_)) {

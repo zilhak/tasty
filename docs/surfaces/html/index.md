@@ -15,9 +15,9 @@
 
 ## 원격 전송 기반
 
-서버는 생성·복원 URL과 `html.open`의 최신 요청 URL을 GUI/headless 공통 source 세대로 관리한다. 파일 source의 부모가 전송 root·cwd이며 HTTP(S)는 전달받은 cwd를 보관한다. snapshot 영속화와 native commit 관측은 별개다. [HTML 전송 계약](../../dev-guide/html-transfer.md)에 따라 Linux GUI client는 완성된 파일 entry를 받아 native WebView로 표시한다. 양쪽 entry viewer 협상이 없거나 client HTML plugin이 미등록이면 placeholder/deferred를 유지한다. 하위 리소스와 HTTP(S)는 아직 지원하지 않는다. client 파일·네트워크로 대체하지 않는다.
+서버는 생성·복원 URL과 `html.open`의 최신 요청 URL을 GUI/headless 공통 source 세대로 관리한다. 파일 source의 부모가 전송 root·cwd이며 HTTP(S)는 전달받은 cwd를 보관한다. snapshot 영속화와 native commit 관측은 별개다. [HTML 전송 계약](../../dev-guide/html-transfer.md)에 따라 Linux GUI client는 완성된 파일 entry를 받아 native WebView로 표시한다. 양쪽 entry viewer 협상이 없거나 client HTML plugin이 미등록이면 placeholder/deferred를 유지한다. 서버와 하위 파일 capability를 협상하면 같은 root의 CSS·이미지·script·하위HTML 등 파일 GET도 받는다. 구 서버는 entry만 표시하며 HTTP(S)는 아직 지원하지 않는다. client 파일·네트워크로 대체하지 않는다.
 
-원격 주소는 읽기 전용이며 Reload만 제공한다. 100000 bytes를 넘는 entry는 Allow·Decline을 기다린다. Decline은 수신을 끝내고 skipped tag를 남긴다. 크기 → 스크립트 → 페이지 순서로 배치한다. 스크립트는 client 설정으로 판정하며 원격 설정·허용을 전달하지 않는다. Allow는 이미 스캔한 body를 재사용하고 사용자 Reload는 새 요청으로 누적량·크기 허용을 초기화한다. 같은 지문은 기존 스크립트 허용을 유지하고 다른 지문은 다시 차단한다. 에이전트의 `surface.html_reload`도 새 entry를 요청하되 호스트 출처이므로 배너 열람을 이어받지 않는다. metadata 이후 30초 credit timeout은 크기 질문 대기 중에도 흐르며 실패 뒤 늦은 Allow는 무효다. Reload로 새 요청을 시작한다. 완료한 본문은 연결이 끊겨도 보존하지만 Reload는 비활성이다. 재연결은 새 connection epoch로 다시 받는다.
+원격 주소는 읽기 전용이며 Reload만 제공한다. 100000 bytes를 넘는 각 파일은 Allow·Decline을 기다리고 여러 질문은 하나씩 보인다. 문서 누적2000000 bytes에서 Continue·Stop을 기다린다. Decline·실패는 해당 파일만 끝내고 skipped를 Reload까지 유지한다. Stop은 완료한 본문을 보존하고 나머지 요청을 끝낸다. 크기 → 스크립트 → 페이지 순서로 배치한다. 스크립트는 client 설정으로 판정하며 원격 설정·허용을 전달하지 않는다. Allow는 이미 스캔한 body를 재사용하고 사용자 Reload는 새 요청으로 누적량·크기 허용을 초기화한다. 같은 지문은 기존 스크립트 허용을 유지하고 다른 지문은 다시 차단한다. 에이전트의 `surface.html_reload`도 새 entry를 요청하되 호스트 출처이므로 배너 열람을 이어받지 않는다. metadata 이후 30초 credit timeout은 크기 질문 대기 중에도 흐르며 실패 뒤 늦은 Allow는 무효다. Reload로 새 요청을 시작한다. 완료한 본문은 연결이 끊겨도 보존하지만 Reload는 비활성이다. 재연결은 새 connection epoch로 다시 받는다.
 
 ## 목적
 

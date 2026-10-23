@@ -1,5 +1,5 @@
 //! Private WebView2 context and exact received-entry responses; no ambient file/network load.
-use super::{ENTRY_CSP, EntryResponseSource};
+use super::EntryResponseSource;
 use webview2_com::{
     CoreWebView2CustomSchemeRegistration, CoreWebView2EnvironmentOptions,
     Microsoft::Web::WebView2::Win32::*,
@@ -91,7 +91,7 @@ pub(in crate::host_api::webview) fn reply(
             "Content-Type: {}\r\nContent-Length: {}\r\nContent-Security-Policy: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n",
             body.mime(),
             body.bytes().len(),
-            ENTRY_CSP
+            source.csp()
         );
         let headers: Vec<u16> = headers.encode_utf16().chain(Some(0)).collect();
         let response = environment.CreateWebResourceResponse(

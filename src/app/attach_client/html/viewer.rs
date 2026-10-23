@@ -61,7 +61,15 @@ pub(in crate::app::attach_client) fn synchronize(
         if !send(
             sess,
             HtmlRequest::HtmlCapabilities {
-                capabilities: vec![CAPABILITY.into(), VIEWER_CAPABILITY.into()],
+                capabilities: if sess.transport.html.server_resources {
+                    vec![
+                        CAPABILITY.into(),
+                        VIEWER_CAPABILITY.into(),
+                        tasty_ipc::html_transfer::RESOURCE_CAPABILITY.into(),
+                    ]
+                } else {
+                    vec![CAPABILITY.into(), VIEWER_CAPABILITY.into()]
+                },
             },
         ) {
             return false;
@@ -85,6 +93,9 @@ pub(in crate::app::attach_client) fn synchronize(
             }
             continue;
         }
+        mirror.enable_resources(sess.transport.html.server_resources && super::viewer_available());
+        changed |= mirror.poll_navigation();
+        changed |= mirror.poll_resources();
         for request in mirror.take_pending() {
             if !send(sess, request) {
                 mirror.disconnect();
@@ -107,6 +118,22 @@ pub(in crate::app::attach_client) fn synchronize(
                 }
             }
             changed = true;
+        }
+        for fetch in mirror.take_resource_fetches() {
+            let Some(id) = sess
+                .transport
+                .html
+                .entry_id(remote, mirror.binding, mirror.generation)
+            else {
+                mirror.disconnect();
+                return true;
+            };
+            if let Some(request) = mirror.bind_resource(fetch, id)
+                && !send(sess, request)
+            {
+                mirror.disconnect();
+                return true;
+            }
         }
         if let Some(metadata) = &mirror.metadata
             && let Some(&local) = sess.state.remote_to_local.get(&remote)

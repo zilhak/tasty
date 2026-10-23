@@ -56,9 +56,11 @@ fn uri(entry: &ReceivedEntry, suffix: &str) -> String {
 fn completed_response_is_shared_and_replayed_without_another_fetch() {
     let entry = entry();
     let mut broker = NativeResources::new(Arc::clone(&entry), true);
+    assert!(!broker.has_pending());
     let url = uri(&entry, "theme.css");
     let mut first = broker.request(&url);
     let mut second = broker.request(&url);
+    assert!(broker.has_pending());
     assert!(poll(&mut first).is_pending());
     let jobs = broker.take_pending(4);
     assert_eq!(jobs.len(), 1);
@@ -70,6 +72,7 @@ fn completed_response_is_shared_and_replayed_without_another_fetch() {
         ..jobs[0].entry
     };
     assert!(broker.bind(jobs[0].ticket, id));
+    assert!(broker.has_pending());
     let response = Arc::new(
         NativeBodyResponse::new(
             id,
@@ -81,6 +84,7 @@ fn completed_response_is_shared_and_replayed_without_another_fetch() {
         .unwrap(),
     );
     assert!(broker.publish(id, Arc::clone(&response)));
+    assert!(!broker.has_pending());
     for wait in [&mut first, &mut second] {
         let Poll::Ready(Ok(body)) = poll(wait) else {
             panic!("missing completion");

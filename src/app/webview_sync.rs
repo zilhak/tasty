@@ -321,6 +321,7 @@ fn create_missing_webviews(
                     .and_then(|rs| rs.lock_html_mirror())
                     .map(|mirror| {
                         crate::webview::entry_response::EntryResponseSource::new(&mirror.bodies)
+                            .with_notify(std::sync::Arc::clone(&engine.runtime.waker))
                     }),
             ) {
                 Ok(wv) => {
@@ -799,8 +800,8 @@ fn sync_webviews(
         .map(|r| r.to_physical(scale_factor as f32))
         .collect();
 
-    // navigation이 Done일 때만 native 페이지를 표시한다. 그 전에는 egui의
-    // 로딩·오류 표시가 native 페이지에 가려지지 않도록 숨긴다.
+    // Native completion alone cannot end remote resource consent/receiving. Keep the existing
+    // host page state visible until both navigation and the received document are ready.
     let mut planned = Vec::new();
     let mut reveal_pending: Vec<(u32, crate::webview::NavState)> = Vec::new();
     for (sid, wv) in &view.webviews {
@@ -829,8 +830,12 @@ fn sync_webviews(
             active_html.contains_key(sid),
             under_toast,
         );
-        let reveal = wants_reveal && nav == crate::webview::NavState::Done;
-        if wants_reveal && !reveal {
+        let receiving = engine
+            .read()
+            .html_receive(*sid)
+            .is_some_and(|snapshot| snapshot.connected && snapshot.receiving);
+        let reveal = wants_reveal && nav == crate::webview::NavState::Done && !receiving;
+        if wants_reveal && !reveal && !receiving {
             reveal_pending.push((*sid, nav));
         }
         planned.extend(reveal.then_some(*sid));

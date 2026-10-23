@@ -92,11 +92,25 @@ fn reader_receipt_finishes_while_delta_is_restored_ahead_of_data() {
 #[test]
 fn html_transport_is_declared_only_to_servers_advertising_it_and_never_as_viewer() {
     use std::io::{BufRead, BufReader};
-    use tasty_ipc::html_transfer::{CAPABILITY, HtmlRequest, VIEWER_CAPABILITY};
-    for capabilities in [None, Some(vec![CAPABILITY]), Some(vec![VIEWER_CAPABILITY])] {
+    use tasty_ipc::html_transfer::{
+        CAPABILITY, HtmlRequest, RESOURCE_CAPABILITY, VIEWER_CAPABILITY,
+    };
+    for capabilities in [
+        None,
+        Some(vec![CAPABILITY]),
+        Some(vec![VIEWER_CAPABILITY]),
+        Some(vec![CAPABILITY, VIEWER_CAPABILITY]),
+        Some(vec![CAPABILITY, VIEWER_CAPABILITY, RESOURCE_CAPABILITY]),
+    ] {
         let enabled = capabilities
             .as_ref()
             .is_some_and(|v| v.contains(&CAPABILITY));
+        let resources = capabilities
+            .as_ref()
+            .is_some_and(|v| v.contains(&RESOURCE_CAPABILITY));
+        let entry = capabilities
+            .as_ref()
+            .is_some_and(|v| v.contains(&VIEWER_CAPABILITY));
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let peer = std::thread::spawn(move || {
@@ -148,7 +162,9 @@ fn html_transport_is_declared_only_to_servers_advertising_it_and_never_as_viewer
         let mut remote = super::super::outbound::Remote::new();
         let token = remote.begin_attempt(None, None).unwrap();
         let handshake = attach_handshake(port, 1, "HTML compatibility test", &token).unwrap();
-        assert_eq!(handshake.html_transfer, enabled);
+        assert_eq!(handshake.html.server_transfer, enabled);
+        assert_eq!(handshake.html.server_entry, entry);
+        assert_eq!(handshake.html.server_resources, resources);
         drop(handshake);
         remote.cancel_attempt(&token);
         peer.join().unwrap();

@@ -233,3 +233,41 @@ fn round_robin_credit_reserves_document_limit_and_continue_does_not_approve_larg
     assert!(m.body_store().current().is_some());
     assert!(!m.document.as_ref().unwrap().receiving());
 }
+
+#[test]
+fn cumulative_pause_does_not_admit_followup_file_requests_until_continue() {
+    let mut m = ready();
+    let _active = start(&mut m, "limit.css", 2);
+    m.receive(css_metadata(next(2), 10));
+    m.document.as_mut().unwrap().received = DOCUMENT_BYTES;
+    assert!(m.credit().is_none());
+    assert!(m.document.as_ref().unwrap().paused);
+    let _delayed = request(&m, "after-pause.css");
+    assert!(m.take_resource_fetches().is_empty());
+    assert!(m.continue_receiving(id()));
+    let jobs = m.take_resource_fetches();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].relative, "after-pause.css");
+}
+
+#[test]
+fn stop_keeps_completed_document_navigable_while_disconnect_refuses_new_documents() {
+    let mut mirror = ready();
+    let target = uri(&mirror, "next.html");
+    assert!(mirror.stop(id()).is_empty());
+    assert!(mirror.body_store().navigate(&target));
+    assert!(mirror.poll_navigation());
+    let new = TransferId {
+        document: 2,
+        ..next(2)
+    };
+    assert!(
+        matches!(mirror.begin(new).last(),Some(HtmlRequest::HtmlNavigateRequest { entry,.. }) if *entry==id())
+    );
+    let mut mirror = ready();
+    let target = uri(&mirror, "next.html");
+    mirror.disconnect();
+    assert!(!mirror.body_store().navigate(&target));
+    assert!(!mirror.poll_navigation());
+    assert!(mirror.body_store().current().is_some());
+}

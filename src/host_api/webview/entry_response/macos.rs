@@ -1,5 +1,5 @@
 //! Completed entry responses in a private WKWebsiteDataStore. No path or network lookup.
-use super::{ENTRY_CSP, EntryResponseSource};
+use super::EntryResponseSource;
 use objc2::rc::Retained;
 use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class};
@@ -62,7 +62,7 @@ define_class!(
                 ];
                 let values = [
                     NSString::from_str(body.mime()),
-                    NSString::from_str(ENTRY_CSP),
+                    NSString::from_str(self.ivars().source.csp()),
                     NSString::from_str("no-store"),
                     NSString::from_str("nosniff"),
                 ];
