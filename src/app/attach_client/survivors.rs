@@ -193,36 +193,12 @@ pub(super) fn merge_survivor_mapping(
             explorer_locals.insert(local_id, root);
         } else if matches!(role, Some("html" | "markdown")) {
             let html = role == Some("html");
-            let (kind, available) = if html {
-                ("html", html_available)
-            } else {
-                (MARKDOWN_MIRROR_KIND, markdown_available)
-            };
             if html {
                 html_locals.insert(local_id);
             }
-            if old_kind == Some(kind) && available {
-                markdown_locals.insert(local_id, kind.to_owned());
-            } else {
-                let registry = &engine.runtime.surface_registry;
-                let surface = if html {
-                    super::html::resources::create(s, local_id, registry)
-                } else {
-                    create_mirror_markdown_surface(s, local_id, registry)
-                }
-                .or_else(|| {
-                    (!registry.contains(kind)).then(|| {
-                        if html {
-                            super::html::resources::deferred(s, local_id)
-                        } else {
-                            deferred_mirror_markdown_surface(s, local_id)
-                        }
-                    })
-                });
-                if let Some(surface) = surface {
-                    markdown_locals.insert(local_id, surface.kind().to_owned());
-                    engine.runtime.surfaces.insert(local_id, surface);
-                }
+            let reuse = old_kind == Some(new_kind) && new_kind != "empty";
+            if let Some(kind) = materialize_document(s, local_id, html, reuse, engine) {
+                markdown_locals.insert(local_id, kind);
             }
         }
         // The descriptor tree never owns or clones a kind instance. Keep survivors in
@@ -283,6 +259,38 @@ pub(super) fn merge_survivor_mapping(
         html: html_locals,
         newly_created_remote_ids,
     })
+}
+
+/// Reuse an owned document or publish its registered/deferred plugin instance.
+fn materialize_document(
+    descriptor: &Value,
+    local: u32,
+    html: bool,
+    reuse: bool,
+    engine: &mut EngineMut<'_>,
+) -> Option<String> {
+    let kind = if html { "html" } else { MARKDOWN_MIRROR_KIND };
+    if reuse {
+        return Some(kind.to_owned());
+    }
+    let registry = &engine.runtime.surface_registry;
+    let surface = if html {
+        super::html::resources::create(descriptor, local, registry)
+    } else {
+        create_mirror_markdown_surface(descriptor, local, registry)
+    }
+    .or_else(|| {
+        (!registry.contains(kind)).then(|| {
+            if html {
+                super::html::resources::deferred(descriptor, local)
+            } else {
+                deferred_mirror_markdown_surface(descriptor, local)
+            }
+        })
+    })?;
+    let kind = surface.kind().to_owned();
+    engine.runtime.surfaces.insert(local, surface);
+    Some(kind)
 }
 
 pub(super) struct SurvivorMapping {

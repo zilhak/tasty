@@ -6,24 +6,26 @@ fn prepare() -> (
     u32,
 ) {
     let (state, mut session) = crate::state::tests::test_mirror_state();
-    let mut engine = session.borrow_mut();
-    let definition = serde_json::from_value(serde_json::json!({"kind":"html", "rendering":"webview", "display_name_i18n_key":"surface.kind.html"})).unwrap();
-    let (sender, _receiver) = std::sync::mpsc::channel();
-    crate::plugin_bridge::remote_kind::register_remote_kind(
-        &engine.runtime.surface_registry,
-        "com.tasty.html",
-        &definition,
-        sender,
-    );
-    let workspace = engine.workspace_at(0).unwrap();
-    let (workspace, pane, surface) = (
-        workspace.id,
-        workspace.pane_layout().all_pane_ids()[0],
-        workspace.all_surface_ids()[0],
-    );
-    engine.remote.html_entry_hosts.insert(workspace);
-    engine.set_mirror_surface_cwd(surface, Some("/server/project".into()));
-    drop(engine);
+    let (workspace, pane) = {
+        let mut engine = session.borrow_mut();
+        let definition = serde_json::from_value(serde_json::json!({"kind":"html", "rendering":"webview", "display_name_i18n_key":"surface.kind.html"})).unwrap();
+        let (sender, _receiver) = std::sync::mpsc::channel();
+        crate::plugin_bridge::remote_kind::register_remote_kind(
+            &engine.runtime.surface_registry,
+            "com.tasty.html",
+            &definition,
+            sender,
+        );
+        let workspace = engine.workspace_at(0).unwrap();
+        let (workspace, pane, surface) = (
+            workspace.id,
+            workspace.pane_layout().all_pane_ids()[0],
+            workspace.all_surface_ids()[0],
+        );
+        engine.remote.html_entry_hosts.insert(workspace);
+        engine.set_mirror_surface_cwd(surface, Some("/server/project".into()));
+        (workspace, pane)
+    };
     (state, session, workspace, pane)
 }
 #[test]

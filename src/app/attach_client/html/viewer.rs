@@ -68,58 +68,7 @@ pub(in crate::app::attach_client) fn synchronize(
         }
         sess.transport.html.viewer_declared = true;
     }
-    let mut changed = false;
-    let mut current = std::collections::HashSet::new();
-    for (&remote, &local) in &sess.state.remote_to_local {
-        let Some(surface) = engine
-            .runtime
-            .surfaces
-            .get_mut(&local)
-            .and_then(|surface| surface.as_any_mut().downcast_mut::<RemoteSurface>())
-        else {
-            continue;
-        };
-        if surface.kind_static != "html" || surface.plugin_id != "com.tasty.html" {
-            continue;
-        }
-        if live
-            && available
-            && surface.html_mirror.as_ref().is_none_or(|mirror| {
-                !lock_mirror(mirror)
-                    .connection
-                    .same(&sess.transport.frame_tx.epoch())
-            })
-        {
-            let Ok(binding) = NEXT_BINDING
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| v.checked_add(1))
-            else {
-                tracing::error!("HTML binding identity exhausted");
-                continue;
-            };
-            surface.html_mirror = Some(Arc::new(std::sync::Mutex::new(HtmlMirror::new(
-                remote,
-                binding,
-                sess.transport.frame_tx.epoch(),
-            ))));
-            #[cfg(feature = "gui")]
-            surface.with_html_script(|state| *state = Default::default());
-            changed = true;
-        }
-        if let Some(mirror) = &surface.html_mirror {
-            current.insert(remote);
-            sess.transport
-                .html
-                .mirrors
-                .insert(remote, Arc::clone(mirror));
-        }
-    }
-    sess.transport.html.mirrors.retain(|remote, mirror| {
-        let keep = current.contains(remote);
-        if !keep {
-            lock_mirror(mirror).disconnect();
-        }
-        keep
-    });
+    let mut changed = bind_mirrors(sess, engine, live, available);
     let mirrors: Vec<_> = sess
         .transport
         .html
@@ -191,5 +140,66 @@ pub(in crate::app::attach_client) fn synchronize(
             surface.with_html_script(|state| state.on_load_failed());
         }
     }
+    changed
+}
+
+fn bind_mirrors(
+    sess: &mut AttachClientSession,
+    engine: &mut EngineMut<'_>,
+    live: bool,
+    available: bool,
+) -> bool {
+    let mut changed = false;
+    let mut current = std::collections::HashSet::new();
+    for (&remote, &local) in &sess.state.remote_to_local {
+        let Some(surface) = engine
+            .runtime
+            .surfaces
+            .get_mut(&local)
+            .and_then(|surface| surface.as_any_mut().downcast_mut::<RemoteSurface>())
+        else {
+            continue;
+        };
+        if surface.kind_static != "html" || surface.plugin_id != "com.tasty.html" {
+            continue;
+        }
+        if live
+            && available
+            && surface.html_mirror.as_ref().is_none_or(|mirror| {
+                !lock_mirror(mirror)
+                    .connection
+                    .same(&sess.transport.frame_tx.epoch())
+            })
+        {
+            let Ok(binding) = NEXT_BINDING
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| v.checked_add(1))
+            else {
+                tracing::error!("HTML binding identity exhausted");
+                continue;
+            };
+            surface.html_mirror = Some(Arc::new(std::sync::Mutex::new(HtmlMirror::new(
+                remote,
+                binding,
+                sess.transport.frame_tx.epoch(),
+            ))));
+            #[cfg(feature = "gui")]
+            surface.with_html_script(|state| *state = Default::default());
+            changed = true;
+        }
+        if let Some(mirror) = &surface.html_mirror {
+            current.insert(remote);
+            sess.transport
+                .html
+                .mirrors
+                .insert(remote, Arc::clone(mirror));
+        }
+    }
+    sess.transport.html.mirrors.retain(|remote, mirror| {
+        let keep = current.contains(remote);
+        if !keep {
+            lock_mirror(mirror).disconnect();
+        }
+        keep
+    });
     changed
 }
