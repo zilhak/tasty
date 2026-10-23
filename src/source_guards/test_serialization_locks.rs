@@ -6,6 +6,8 @@
 //! 환경변수·cwd·외부 자원을 지키는 락은 별도 사유 명부로 관리한다.
 //! static Mutex<()>·RwLock<()> 형태의 선언을 모아 새 락의 미등록도 확인한다.
 
+mod mutations;
+
 use std::collections::BTreeSet;
 
 use super::{
@@ -57,15 +59,6 @@ const SERIALIZED: &[Serialized] = &[
               테스트끼리 순서에 의존한다",
     },
     Serialized {
-        file: "src/webhook/registry.rs",
-        lock: "TEST_SERIAL",
-        acquire: &["TEST_SERIAL", "serial()"],
-        guarded: &["STATE", "sweep"],
-        // sweep이 공개 함수여서 다른 파일의 시험도 검사해야 한다.
-        scope: Scope::Crate,
-        why: "웹훅 등록부가 프로세스 전역이고 공개 sweep이 만료 항목을 지운다. 한 시험이 다른 시험의 항목을 먼저 삭제할 수 있다.",
-    },
-    Serialized {
         file: "crates/tasty-ipc/src/method_meta_tests.rs",
         lock: "TEST_LOCK",
         acquire: &["TEST_LOCK", "test_lock()"],
@@ -80,8 +73,8 @@ const SERIALIZED: &[Serialized] = &[
     },
     Serialized {
         file: "crates/tasty-themes/src/plugin_defaults.rs",
-        lock: "TEST_LOCK",
-        acquire: &["TEST_LOCK", "reset()"],
+        lock: "LOCK",
+        acquire: &["LOCK", "test_guard()", "reset()"],
         guarded: &["PLUGIN_DEFAULTS", "USER_DEFINED_KINDS"],
         scope: Scope::Crate,
         why: "테마 기본값 전역을 `reset()` 으로 비우고 채우는 형태라, 병렬로 돌면 서로의 \
@@ -228,34 +221,64 @@ fn every_test_that_touches_a_serialized_global_holds_its_lock() {
     );
 }
 
-/// static Mutex<()>·RwLock<()> 선언을 수집해 명부에 없는 락을 찾는다. 다른 타입·선언 형식은 놓칠 수 있다.
+/// The declaration parser is shared with negative controls, including instance-owned state.
+fn declared_locks(masked: &str) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    for line in masked.lines() {
+        let t = line.trim();
+        let Some(rest) = t.strip_prefix("static ").or_else(|| {
+            t.strip_prefix("pub static ")
+                .or_else(|| t.split_once("static ").map(|(_, r)| r))
+        }) else {
+            continue;
+        };
+        let Some((name, ty)) = rest.split_once(':') else {
+            continue;
+        };
+        let ty = ty.replace(' ', "");
+        if ty.contains("Mutex<()>") || ty.contains("RwLock<()>") {
+            found.insert(name.trim().to_string());
+        }
+    }
+    found
+}
+
+fn lock_drift(
+    actual: &BTreeSet<(String, String)>,
+    listed: &BTreeSet<(String, String)>,
+) -> Vec<String> {
+    actual
+        .difference(listed)
+        .map(|(f, l)| format!("unlisted: {f}::{l}"))
+        .chain(
+            listed
+                .difference(actual)
+                .map(|(f, l)| format!("stale: {f}::{l}")),
+        )
+        .collect()
+}
+
+/// static Mutex<()>·RwLock<()> 선언의 정확한 명부다. 다른 타입·선언 형식은 놓칠 수 있다.
 #[test]
 fn every_serialization_lock_is_listed() {
-    let listed: BTreeSet<(&str, &str)> = SERIALIZED
+    let listed: BTreeSet<(String, String)> = SERIALIZED
         .iter()
-        .map(|e| (e.file, e.lock))
-        .chain(OTHER_LOCKS.iter().map(|(f, l, _)| (*f, *l)))
+        .map(|e| (e.file.to_string(), e.lock.to_string()))
+        .chain(
+            OTHER_LOCKS
+                .iter()
+                .map(|(f, l, _)| (f.to_string(), l.to_string())),
+        )
         .collect();
-    let mut found: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut found = BTreeSet::new();
     // 루트 통합 시험도 프로세스 전역을 공유할 수 있어 수집에 포함한다.
     for (path, text) in rust_sources_with_integration_tests() {
         let rel = path.to_string_lossy().replace('\\', "/");
-        for line in mask_non_code(&text).lines() {
-            let t = line.trim();
-            let Some(rest) = t.strip_prefix("static ").or_else(|| {
-                t.strip_prefix("pub static ")
-                    .or_else(|| t.split_once("static ").map(|(_, r)| r))
-            }) else {
-                continue;
-            };
-            let Some((name, ty)) = rest.split_once(':') else {
-                continue;
-            };
-            let ty = ty.replace(' ', "");
-            if ty.contains("Mutex<()>") || ty.contains("RwLock<()>") {
-                found.insert((rel.clone(), name.trim().to_string()));
-            }
-        }
+        found.extend(
+            declared_locks(&mask_non_code(&text))
+                .into_iter()
+                .map(|name| (rel.clone(), name)),
+        );
     }
     assert!(
         found.len() >= listed.len(),
@@ -263,14 +286,10 @@ fn every_serialization_lock_is_listed() {
         found.len(),
         listed.len()
     );
-    let missing: Vec<String> = found
-        .iter()
-        .filter(|(f, l)| !listed.contains(&(f.as_str(), l.as_str())))
-        .map(|(f, l)| format!("{f}::{l}"))
-        .collect();
+    let drift = lock_drift(&found, &listed);
     assert!(
-        missing.is_empty(),
-        "미등록 직렬화 락이다: {missing:?}. 보호하는 전역과 접근 범위를 SERIALIZED에 적거나, 환경변수·cwd 등 다른 자원이면 OTHER_LOCKS에 이유를 등록한다."
+        drift.is_empty(),
+        "직렬화 락 명부와 실제 선언이 다르다: {drift:?}. 보호하는 전역과 접근 범위를 SERIALIZED에 적거나, 환경변수·cwd 등 다른 자원이면 OTHER_LOCKS에 이유를 등록한다."
     );
 }
 

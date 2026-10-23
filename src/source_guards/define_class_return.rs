@@ -16,6 +16,10 @@ const MACROS: &[&str] = &["define_class!", "declare_class!"];
 /// 이 명부는 수동 기준이다. 파서 오류에 맞춰 갱신하지 말고 실제 선언의 변경을 먼저 확인한다.
 const EXPECTED_BLOCKS: &[(&str, &str)] = &[
     ("src/file/drag/desktop/macos.rs", "Source"),
+    (
+        "src/host_api/webview/entry_response/macos.rs",
+        "EntryHandler",
+    ),
     ("src/host_api/webview/macos.rs", "NavDelegate"),
     ("src/host_api/webview/macos.rs", "KeyWebView"),
     ("src/host_api/webview/overlay_host/macos.rs", "OverlayView"),
@@ -209,6 +213,25 @@ fn a_violation_planted_inside_that_gated_file_is_caught() {
         "게이트된 파일 안에 심은 값 반환을 못 잡았다(또는 과검출했다): {:?}",
         after.violations
     );
+}
+
+#[test]
+fn entry_handler_catalog_membership_does_not_exempt_value_returns() {
+    let raw =
+        std::fs::read_to_string(repo_root().join("src/host_api/webview/entry_response/macos.rs"))
+            .unwrap();
+    let before = scan(&mask_non_code(&raw));
+    assert_eq!(before.names, ["EntryHandler"]);
+    assert!(before.violations.is_empty());
+    let mutated = raw.replacen("return;", "return true;", 1);
+    assert_ne!(
+        raw, mutated,
+        "the real handler must contain the bare-return control"
+    );
+    let after = scan(&mask_non_code(&mutated));
+    assert_eq!(after.names, before.names);
+    assert_eq!(after.blocks, before.blocks);
+    assert_eq!(after.violations.len(), 1);
 }
 
 mod exemption_mutations {

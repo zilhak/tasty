@@ -80,7 +80,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 |------|------|
 | [e2e-tests](e2e-tests.md) | E2E 인스턴스 공유·환경 격리·timeout·진단·스냅샷 검증 |
 | [unit-test-isolation](unit-test-isolation.md) | 홈·환경변수·파일·프로세스·시간 격리, feature별 helper 범위와 자식 CLI argv 검증 |
-| [guard-population](guard-population.md) | 검사 대상 수집, 분석 전 후보 필터·실행 내 결과 공유, 빈 결과 검출, 모듈 분리 후 파일 수 기준 갱신 |
+| [guard-population](guard-population.md) | 검사 대상 수집, 분석 전 후보 필터·실행 내 결과 공유, 빈 결과 검출, 직렬화 락·플랫폼 선언의 정확한 명부 |
 | [guard-verification](guard-verification.md) | 실제 검사 경로와 합성 반례·변이 결과 확인 |
 | [guard-relocation](guard-relocation.md) | 검사 파일 이동·제품 모듈 분리 전후의 경로·대상·실행 조건 확인 |
 
