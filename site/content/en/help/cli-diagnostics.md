@@ -1,4 +1,4 @@
-<!-- source-hash: 9f961888dee7 -->
+<!-- source-hash: 94f690044ab5 -->
 # CLI response delays and connection diagnostics
 
 Read this page when a `tasty` command replies slowly, cannot connect, or ends with an error such as `Error (-32061)`. It covers the difference between the reply wait bound and the task wait time, what to do for each error code, checking what this Tasty supports, and the connection counts, request queues and database state shown by `tasty list pressure`. If you are new to the CLI, start with [Driving terminals with the tasty CLI](../agents/cli.md).
@@ -76,6 +76,14 @@ and when `state.db` could not be opened. Permission, usage-cap, and rate-limit
 refusals are counted separately in `gate_refusals` below.
 
 The save queues expose `batch_wait` for time before a batch starts, `batch_execution` for the batch including retry waits, and `executor_execution` for individual processing calls. These distributions use microseconds; `samples: 0` means no observation yet. `queued_items` and `queued_bytes` count only work not yet dispatched. `pending_bytes` is the input size of unfinished requests, and `oldest_pending_age_us` is the age of the oldest one, or `null` when none remain. Finished requests whose results have not been read can still occupy `held_bytes`. Pending age is not the age of unsaved file changes, and completed requests or batches are not counts of physical disk commits.
+
+`journal` shows admitted, refused, queued, and inflight journal work in both GUI and headless runs.
+Work steps are distinct from user commands, and bytes are input-size estimates. Inside `store`,
+`physical_commits` counts actual SQL commits, `structural_commits` counts commits containing structural
+changes, and `logical_requests` counts committed logical requests. Timing distributions use fixed buckets.
+A `null` `dirty_age_us` means this metric does not provide that age. `unpublished_age_us` measures
+waiting for publication acknowledgement after durable storage; reading it does not reset it.
+Test configurations without a journal return `journal: null`; before the Store opens, `store` is `null`.
 
 ### Connection counts and limits (`connections`)
 

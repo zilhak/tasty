@@ -320,6 +320,7 @@ impl App {
             },
             journal_writer_lock,
         )?;
+        let journal_metrics = journal.metrics_handle();
         Ok(Self {
             journal,
             pending_server_attaches: Vec::new(),
@@ -364,7 +365,8 @@ impl App {
                         tracing::debug!("memory writer wake after shutdown");
                     }
                 })
-            })?,
+            })?
+            .with_journal_metrics(journal_metrics),
             state: state::AppState {
                 #[cfg(debug_assertions)]
                 input_simulation_enabled,
@@ -437,12 +439,15 @@ impl App {
         let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
         let mut timers = tasty_timer::TimerHub::new();
         timers::register_steady_state(&mut timers, std::time::Instant::now());
+        let journal = journal::JournalApplication::new(journal_wake.clone())?;
+        let journal_metrics = journal.metrics_handle();
         Ok(Self {
-            journal: journal::JournalApplication::new(journal_wake.clone())?,
+            journal,
             pending_server_attaches: Vec::new(),
             publication_inputs: Default::default(),
             gate_queue: Default::default(),
-            services: crate::boot::wiring::build_production_core_headless(memory, journal_wake)?,
+            services: crate::boot::wiring::build_production_core_headless(memory, journal_wake)?
+                .with_journal_metrics(journal_metrics),
             state: state::AppState::default(),
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),

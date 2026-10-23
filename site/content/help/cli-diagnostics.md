@@ -74,6 +74,13 @@ commit 수에 들어가지 않는 데이터베이스 압축(VACUUM)은 `vacuums`
 
 저장 대기열의 `batch_wait`는 묶음이 실행되기 전 대기, `batch_execution`은 재시도 대기까지 포함한 묶음 처리, `executor_execution`은 실제 처리 호출의 시간 분포입니다. 단위는 마이크로초이며 `samples`가 0이면 아직 관측하지 않은 것입니다. `queued_items`·`queued_bytes`는 아직 실행에 넘기지 않은 대기열만 셉니다. `pending_bytes`와 `oldest_pending_age_us`는 끝나지 않은 요청의 입력 크기와 가장 오래된 나이입니다. 미완료 요청이 없으면 나이는 `null`입니다. 이미 끝났지만 결과를 읽지 않은 요청은 `held_bytes`에 남을 수 있습니다. 이 나이는 파일의 미저장 변경 나이가 아니며, 완료 수나 묶음 수가 실제 디스크 commit 수를 뜻하지도 않습니다.
 
+`journal`은 GUI와 헤드리스 모두에서 저널 작업의 접수·거절·대기·실행 중 수를 보여 줍니다.
+작업 단계 수는 사용자 명령 수와 다르고, 바이트는 입력 크기 추정치입니다. `store` 안의
+`physical_commits`는 실제 SQL commit 수, `structural_commits`는 구조 변경을 담은 commit 수,
+`logical_requests`는 확정한 논리 요청 수입니다. 시간 분포는 고정 구간에 누적됩니다.
+`dirty_age_us`가 `null`인 것은 이 계측이 그 시간을 제공하지 않는다는 뜻입니다.
+`unpublished_age_us`는 저장 뒤 화면 반영 확인을 기다린 시간이며 조회가 값을 비우지 않습니다.
+저널이 없는 시험 구성은 `journal: null`, 아직 저장소가 열리지 않았으면 `store: null`입니다.
 권한·한도·빈도 제한의 거절 수는 아래 `gate_refusals`에서 확인합니다.
 
 ### 연결 수와 한도 (`connections`)

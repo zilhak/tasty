@@ -3,11 +3,6 @@ use crate::runtime::journal_product::{JournalMetricsSnapshot, observability::Wor
 use serde_json::{Value, json};
 use tasty_event_store::{JOURNAL_LATENCY_BOUNDS_US, JournalDurationSnapshot};
 
-// reason: the journal worker cannot wire AppServices or the process router it does not own.
-#[allow(
-    dead_code,
-    reason = "independent serializer integration boundary for process diagnostics"
-)]
 pub(crate) fn snapshot_json(snapshot: Option<&JournalMetricsSnapshot>) -> Value {
     let Some(s) = snapshot else {
         return Value::Null;
@@ -74,6 +69,70 @@ fn duration(s: JournalDurationSnapshot) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn query(core: &mut crate::app::services::AppServices) -> Value {
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let mut engine = session.borrow_mut();
+        let request = tasty_ipc::protocol::JsonRpcRequest {
+            caller_agent_id: None,
+            response_timeout_ms: None,
+            idempotency_key: None,
+            jsonrpc: "2.0".into(),
+            id: Some(json!(1)),
+            method: "system.pressure".into(),
+            params: json!({}),
+            session_token: None,
+        };
+        let response = super::super::handle_with_caller(
+            core,
+            &mut state,
+            &mut engine,
+            &request,
+            &crate::ipc::caller::CallerContext::local(),
+        );
+        assert!(response.error.is_none(), "{:?}", response.error);
+        response.result.unwrap()["journal"].clone()
+    }
+
+    #[test]
+    fn router_missing_worker_is_null_and_live_cache_survives_worker_stop() {
+        use crate::runtime::journal_product::{Completion, JournalWorker};
+        use std::sync::Arc;
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = super::super::cli_entry_tests::test_core();
+        assert!(query(&mut core).is_null());
+        let home = tempfile::tempdir().unwrap();
+        let (wake, ready) = std::sync::mpsc::channel();
+        let mut worker = JournalWorker::spawn(
+            home.path().to_owned(),
+            Arc::new(move || {
+                // Test receiver may close before the worker emits its shutdown wake.
+                let _ = wake.send(());
+            }),
+        )
+        .unwrap();
+        ready
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .unwrap();
+        assert!(matches!(
+            worker.try_recv().unwrap(),
+            Completion::Ready { .. }
+        ));
+        core = core.with_journal_metrics(worker.metrics_handle());
+        // Worker is blocked at bootstrap ACK; the public query neither waits on it nor consumes ACK.
+        let before = query(&mut core);
+        assert!(before["store"]["physical_commits"].as_u64().unwrap() > 0);
+        assert_eq!(before, query(&mut core));
+        assert!(matches!(
+            worker.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        worker.stop();
+        drop(worker); // Join before comparing settled cached observations.
+        let stopped = query(&mut core);
+        assert_eq!(before["store"], stopped["store"]);
+        assert_eq!(stopped, query(&mut core));
+    }
+
     #[test]
     fn missing_and_unobserved_are_distinct_and_snapshot_is_nonconsuming() {
         assert!(snapshot_json(None).is_null());

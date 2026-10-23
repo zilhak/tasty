@@ -119,6 +119,8 @@ pub(super) fn handle_system_pressure(
     body["keyed_requests"] = keyed_requests_json(&super::idempotency::retry_counts());
     body["slow_requests"] = slow_requests_json(&core.slow_requests().snapshot());
     body["gate_refusals"] = gate_refusals_json(&core.gate().snapshot());
+    body["journal"] =
+        super::journal_pressure::snapshot_json(core.journal_metrics_snapshot().as_ref());
     body["memory_writer"] = writer_stats_json(core.memory_writer_stats());
     body["state_writer"] = writer_stats_json(core.state_writer_stats());
     body["state_db"] = state_db_json(core.state_db_latency().as_ref());

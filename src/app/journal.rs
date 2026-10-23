@@ -131,6 +131,10 @@ fn journal_read_cause(database: &std::path::Path) -> notices::NoticeCause {
 const SHUTDOWN_JOURNAL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
 
 impl JournalApplication {
+    pub(crate) fn metrics_handle(&self) -> Arc<crate::runtime::journal_product::JournalMetrics> {
+        self.worker.metrics_handle()
+    }
+
     /// 엔진의 workspace 를 보여 주는 창들의 터미널 영역을 기록한다. 기록이 없는 workspace 의 split 에는
     /// 하한이 없다.
     #[cfg(feature = "gui")]

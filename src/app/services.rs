@@ -57,6 +57,9 @@ pub(crate) struct AppServices {
     /// IPC 서버 시작 뒤 주입한다. runner 등 다른 스레드가 host IPC를 호출할 때 쓴다.
     pub(crate) host_ipc_injector: Arc<OnceLock<tasty_ipc::host_call::HostIpcInjector>>,
 
+    /// Journal worker가 갱신하는 캐시만 공유한다. worker 없는 시험 구성에는 없다.
+    journal_metrics: Option<Arc<crate::runtime::journal_product::JournalMetrics>>,
+
     /// 이 인스턴스가 bind한 IPC·웹훅 포트. 포트가 필요한 곳은 여기서 읽는다.
     pub(crate) ports: Arc<crate::runtime_ports::RuntimePorts>,
 
@@ -561,6 +564,23 @@ impl AppServices {
     /// 캡처 worker와 원격 클립보드 처리에도 같은 구현을 주입한다.
     pub(crate) fn clipboard_arc(&self) -> Arc<dyn ClipboardSystem> {
         self.clipboard.clone()
+    }
+
+    /// App 소유 journal의 캐시를 연결한다. 저장소나 executor를 공유하지 않는다.
+    pub(crate) fn with_journal_metrics(
+        mut self,
+        metrics: Arc<crate::runtime::journal_product::JournalMetrics>,
+    ) -> Self {
+        self.journal_metrics = Some(metrics);
+        self
+    }
+
+    pub(crate) fn journal_metrics_snapshot(
+        &self,
+    ) -> Option<crate::runtime::journal_product::JournalMetricsSnapshot> {
+        self.journal_metrics
+            .as_ref()
+            .map(|metrics| metrics.snapshot())
     }
 
     /// IPC 서버 시작 뒤 한 번 주입한다. 두 번째 요청은 경고만 남긴다.

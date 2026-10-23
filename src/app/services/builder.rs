@@ -218,6 +218,7 @@ impl AppServicesBuilder {
             file_drain_reported: false,
             preset_store,
             host_ipc_injector,
+            journal_metrics: None,
             ports: Default::default(),
             tasks,
             pressure: tasty_telemetry::PressureStats::default(),

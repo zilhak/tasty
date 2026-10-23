@@ -168,7 +168,7 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 
 `system.info`는 시스템 정보를, `system.pressure`는 요청 압력을 반환한다. `system.pressure`는 local-only다.
 
-응답은 `queue_before_gate` · `handler_after_gate` · `plugin_round_trip` · `db` · `connections` · `db_pragmas` · `stream_push` · `queue_admission` · `queue_dispatch` · `keyed_requests` · `slow_requests` · `gate_refusals` · `memory_writer` · `state_writer` · `state_db` 열다섯 항목이며 각각 세는 대상이 다르다.
+응답은 `queue_before_gate` · `handler_after_gate` · `plugin_round_trip` · `db` · `connections` · `db_pragmas` · `stream_push` · `queue_admission` · `queue_dispatch` · `keyed_requests` · `slow_requests` · `gate_refusals` · `memory_writer` · `state_writer` · `state_db` · `journal` 등의 항목이며 각각 세는 대상이 다르다.
 
 - **큐 대기(`queue_before_gate`)**: 권한 검사 전에 기록하므로 뒤에 거부될 요청도 센다. `waits`는 대기를 기록한 명령 수로 `wait_us_mean` 의 분모이며 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 끝날 때 오르므로 조회 순간에는 아직 도는 회차만큼 `waits` 보다 작다 — [IPC 서버](../architecture/ipc-server.md).
 
@@ -183,6 +183,8 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 
 - **저장 실행기(`memory_writer`)**: memory.db 전담 writer 의 누계다 — `admitted` · `rejected_saturated` · `rejected_closed`, 묶음 수 `batches` 와 요청 합 `batch_requests` · `batch_size_max` · 분포 `batch_sizes`(`le` · `counts`), `superseded` · `retries` · `flushes`, 지금 잡힌 `held_items` · `held_bytes` 와 최댓값 `peak_items` · `peak_bytes`. writer 가 없는 구성이면 `null` 이다([저장 실행기](../design/systems/storage-contract.md#저장-실행기)).
 - **공통 writer 추가 관측**: `memory_writer`·`state_writer`·`file_writer`는 `admitted_bytes`·`batch_bytes`·`batch_bytes_max`, `batch_wait`·`batch_execution`·`executor_execution`(`samples`·`sum_us`·`max_us`·`le_us`·`counts`), `completed_ok`·`completed_rejected`·`completed_failed`·`completed_unknown`·`completed_lost`, `queued_items`·`queued_bytes`, `pending_items`·`pending_bytes`·`oldest_pending_age_us`를 같은 형식으로 싣는다. 마지막 나이는 미완료 요청이 없으면 null이고, 완료했지만 읽지 않은 결과는 pending에서 제외하되 held 예산에 남긴다. 시간 구간과 표본·재시도·대체·읽기·물리 commit의 차이는 [저장 실행기 관측](../design/systems/storage-contract.md#저장-실행기-관측)을 따른다.
+
+- **Journal(`journal`)**: GUI·헤드리스가 공유하는 journal worker의 비소비 캐시다. worker 없는 시험 구성은 `null`, Store가 아직 열리지 않았으면 `store: null`이다. 접수·대기·실행 중 Work 단계 수, 입력 바이트 추정치, 고정 시간 분포, 실제 SQL physical/structural commit·논리 요청 수를 구분한다. `dirty_age_us`와 SQLite busy 재시도 수는 관측 불가라 `null`이며 `unpublished_age_us`는 durable 이후 ACK 대기 구간이다. 조회는 DB I/O·executor 잠금 없이 동작한다([단위·실패·분포 계약](../architecture/journal-metrics.md)).
 
 - **state.db 저장 실행기(`state_writer` · `state_db`)**: `state_writer` 는 GUI 의 state.db writer(최근 파일·튜토리얼 진행) 누계로 `memory_writer` 와 같은 필드를 싣는다. `state_db` 는 그 writer 가 성공한 commit 의 `commits` · `commit_us_sum` · `commit_us_max` · `commit_us_mean` 과 `writes_per_commit`(`le` · `counts`)이다. 부팅의 첫 읽기는 세지 않는다. 헤드리스와 state.db 를 열지 못한 실행은 둘 다 `null` 이다([state.db 실행기](../design/systems/storage-contract.md#statedb-실행기)).
 
