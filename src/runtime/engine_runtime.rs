@@ -125,7 +125,7 @@ impl EngineRuntime {
             pending_submits: Vec::new(),
             terminals: TerminalStore::new(counters.pty_counter()),
             pending_scrollback_inject: Default::default(),
-            child_terminals: ChildTerminalRegistry::load(),
+            child_terminals: ChildTerminalRegistry::from_hub(&registries.child_terminals),
             #[cfg(feature = "gui")]
             readonly_views: Default::default(),
         }

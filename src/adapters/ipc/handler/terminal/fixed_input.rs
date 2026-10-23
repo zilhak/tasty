@@ -62,7 +62,7 @@ pub(crate) fn prepare_input(
             )
         })?;
     Ok(Some(PreparedTerminalInput::Respawn {
-        target: ChildTarget::fix(engine, parent, entry),
+        target: ChildTarget::fix(engine, parent, &entry),
         options: respawn_options(&request.params),
     }))
 }

@@ -317,6 +317,9 @@ impl App {
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => false,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                if !self.services.registries.child_terminals.ready() {
+                    return false;
+                }
                 // 스레드 생성 실패나 워커 패닉으로 결과가 없으면 동기로 다시 시도한다.
                 tracing::error!("boot engine worker channel disconnected — synchronous fallback");
                 if let Err(e) = self.ensure_engine_and_plugins(
@@ -409,13 +412,16 @@ impl App {
         // 점유 중인 슬롯을 확인해야 하므로 메인 스레드에서 선택해 워커로 전달한다.
         let layout_slot = self.claim_free_layout_slot();
         // 첫 engine 이 자식 관계를 읽기 전에 어느 창에도 돌아오지 않을 항목을 지운다.
-        crate::runtime::child_terminal::clear_on_boot(&progress.settings);
+        registries
+            .child_terminals
+            .prepare(!progress.settings.general.restore_layout);
         #[cfg(debug_assertions)]
         let input_simulation_enabled = self.state.input_simulation_enabled;
         let (tx, rx) = std::sync::mpsc::channel();
         let spawned = std::thread::Builder::new()
             .name("tasty-boot-engine".into())
             .spawn(move || {
+                registries.child_terminals.wait_bootstrap();
                 let result = crate::app::window_lifecycle::build_engine_and_plugins(
                     crate::app::window_lifecycle::FirstBootEngine {
                         cols,

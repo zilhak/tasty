@@ -571,6 +571,7 @@ fn bootstrap_engine(
     boot_settings: &crate::settings::Settings,
     factory: crate::waker::SharedWakerFactory,
 ) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
+    app.services.registries.child_terminals.wait_bootstrap();
     let base_waker = factory.make_default_waker();
     // 부팅 때 한 번 전체 슬롯을 기준으로 마이그레이션·scrollback GC를 수행한다.
     crate::core::layout_persistence::migrate_and_gc_on_boot(boot_settings.general.restore_layout);
@@ -938,6 +939,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     loop {
         app.services.poll_memory_writer();
         app.services.poll_file_writer();
+        engine.poll_child_registry_effects();
         app.finish_preset_files();
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());
@@ -1110,7 +1112,7 @@ fn finish_headless_shutdown(
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     observer_drain::drain(app, session);
-    file_drain::drain(app);
+    file_drain::drain_engine(app, session);
     drain_headless_memory_writer(app);
 }
 

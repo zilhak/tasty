@@ -36,6 +36,11 @@ pub(crate) struct EngineRef<'a> {
 }
 
 impl EngineMut<'_> {
+    pub(crate) fn poll_child_registry_effects(&mut self) {
+        self.runtime
+            .child_terminals
+            .poll_effects(self.core, self.live, &self.runtime.terminals);
+    }
     pub(crate) fn read(&self) -> super::engine_read::EngineRead<'_> {
         self.as_ref().read()
     }

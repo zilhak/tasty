@@ -218,6 +218,7 @@ fn resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen() {
         stall.nap("bootstrap");
     }
     assert_eq!(session.persistence.slot, Some(1));
+    session.runtime.child_terminals.flush_for_test();
     let on_disk = crate::runtime::child_terminal::ChildTerminalRegistry::load();
     let children = |parent: u32| on_disk.list_children(&parent.into()).len();
     assert_eq!(

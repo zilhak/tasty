@@ -1,11 +1,51 @@
 //! Child terminal creation fixes its relation before entering the ordinary resource lifecycle.
 use super::*;
 
+pub(super) struct Spawn {
+    request: create::Request,
+    receipt: crate::runtime::child_terminal::Ticket,
+}
+impl Spawn {
+    pub(super) fn weight(&self) -> usize {
+        self.request.weight()
+    }
+}
+
 pub(super) fn resolve_spawn(
     request: &JsonRpcRequest,
     session: &mut EngineSession,
     view: &crate::runtime::journal_product::CompletionView,
-) -> Result<create::Request, JsonRpcResponse> {
+    pending: &mut Option<Spawn>,
+) -> Result<Option<create::Request>, JsonRpcResponse> {
+    if let Some(spawn) = pending.as_ref() {
+        let Some(result) = spawn.receipt.poll() else {
+            return Ok(None);
+        };
+        let index = result
+            .map_err(|reason| JsonRpcResponse::internal_error(serde_json::Value::Null, reason))?
+            .ok_or_else(|| {
+                JsonRpcResponse::internal_error(
+                    serde_json::Value::Null,
+                    "child reservation returned no index",
+                )
+            })?;
+        let mut spawn = pending.take().unwrap();
+        spawn
+            .request
+            .input
+            .as_mut()
+            .expect("retained child input")
+            .child
+            .as_mut()
+            .expect("retained child recipe")
+            .index = index;
+        spawn.request.plan.tab_name = format!("child{index}");
+        spawn.request.plan.explicit_name = Some(spawn.request.plan.tab_name.clone());
+        if let create::Shape::Child { index: stored, .. } = &mut spawn.request.shape {
+            *stored = index;
+        }
+        return Ok(Some(spawn.request));
+    }
     use crate::ipc::handler::params;
     let id = serde_json::Value::Null;
     let bad = |reason: String| JsonRpcResponse::invalid_params(id.clone(), reason);
@@ -74,11 +114,12 @@ pub(super) fn resolve_spawn(
     });
     let mut result =
         create::Request::base(session, "terminal", &serde_json::json!({}), launch_cwd)?;
-    let index = session
+    let receipt = session
         .runtime
         .child_terminals
-        .reserve_index(&parent)
+        .reserve(&parent)
         .map_err(|reason| JsonRpcResponse::internal_error(id.clone(), reason))?;
+    let index = 0;
     let command = optional_str(input, "command");
     let recipe = crate::runtime::journal_product::ChildRecipe {
         parent,
@@ -106,7 +147,11 @@ pub(super) fn resolve_spawn(
     result.shape = create::Shape::Child { index, workspace };
     result.activate = false;
     result.one_shot_input = command.map(|body| crate::app::terminal_input::tell_payload(&body));
-    Ok(result)
+    *pending = Some(Spawn {
+        request: result,
+        receipt,
+    });
+    Ok(None)
 }
 
 /// 숫자 `parent`(별칭 `surface`) 또는 `parent_external` 중 하나. 숫자 부모의 해석은 이전과 같다.

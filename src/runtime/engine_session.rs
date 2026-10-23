@@ -87,7 +87,7 @@ impl EngineSession {
     }
 
     pub(crate) fn borrow_mut(&mut self) -> EngineMut<'_> {
-        EngineMut {
+        let mut engine = EngineMut {
             journal_binding: self.journal_binding.as_ref(),
             core: &mut self.core_state,
             persistence: &mut self.persistence,
@@ -97,7 +97,9 @@ impl EngineSession {
             hooks: &mut self.hooks,
             task_scope: &mut self.task_scope,
             observer_router: &mut self.observer_router,
-        }
+        };
+        engine.poll_child_registry_effects();
+        engine
     }
 
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {

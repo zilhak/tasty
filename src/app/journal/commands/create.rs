@@ -535,7 +535,7 @@ impl JournalApplication {
         if !self.bind_command_engine(ticket, session.id) {
             return;
         }
-        let Some(pending) = self.commands.pending.get(&ticket) else {
+        let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;
         };
         if !matches!(
@@ -557,7 +557,20 @@ impl JournalApplication {
             .cloned()
             .unwrap_or_default();
         let resolved = if pending.request.method == "terminal.spawn" {
-            super::child::resolve_spawn(&pending.request, session, &view)
+            match super::child::resolve_spawn(
+                &pending.request,
+                session,
+                &view,
+                &mut pending.child_spawn,
+            ) {
+                Ok(Some(request)) => Ok(request),
+                Ok(None) => {
+                    pending.needs_resolution = true;
+                    self.refresh_command_weight(ticket);
+                    return;
+                }
+                Err(response) => Err(response),
+            }
         } else if pending.request.method == "terminal.respawn" {
             super::child::resolve_respawn(&pending.request, session)
         } else {

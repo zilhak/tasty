@@ -93,6 +93,8 @@ pub(crate) struct Installed {
     installed_generation: Option<ResourceGeneration>,
     /// The one-shot body was written; its CR follows on the same physical owner.
     input: Option<PendingSubmit>,
+    child_receipt: Option<crate::runtime::child_terminal::Ticket>,
+    pending_body: Option<(String, bool)>,
 }
 
 impl Installed {
@@ -110,6 +112,8 @@ impl Installed {
             remote_retirements: vec![receipt],
             installed_generation: None,
             input: None,
+            child_receipt: None,
+            pending_body: None,
         }
     }
 
@@ -126,11 +130,44 @@ impl Installed {
         serde_json::to_vec(&serde_json::json!({"version":1,"source":"owned-preparation-receipts","runtime_epoch":self.lease.runtime_epoch,"engine_incarnation":incarnation,"lease":self.lease,"installation_complete":true,"cleanup_complete":true,"surface":self.surface_id,"physical_generation":self.installed_generation.map(|generation|generation.value()),"remote_destroy_acknowledged":self.remote_retirements.len()})).ok()
     }
     pub(crate) fn waiting_input(&self) -> bool {
-        self.input.is_some()
+        self.input.is_some() || self.pending_body.is_some()
     }
     /// Sends the CR once it is due. A target whose physical owner changed or that became hard
     /// occupied never receives it; the failure drops the input so no later poll retries it.
     pub(crate) fn poll_input(&mut self, engine: &mut EngineMut<'_>) -> anyhow::Result<()> {
+        if let Some(receipt) = &self.child_receipt {
+            match receipt.observation() {
+                None => return Ok(()),
+                Some(Err(error)) => {
+                    self.pending_body = None;
+                    anyhow::bail!(error);
+                }
+                Some(Ok(_)) => {}
+            }
+        }
+        if let Some((body, submit)) = self.pending_body.take() {
+            let generation = engine
+                .runtime
+                .terminals
+                .generation(self.surface_id)
+                .filter(|generation| Some(*generation) == self.installed_generation)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("child input owner changed before relationship receipt")
+                })?;
+            if engine.live.occupancy.is_hard_occupied(self.surface_id) {
+                anyhow::bail!(
+                    "child input target became hard occupied before relationship receipt"
+                );
+            }
+            let ack = engine
+                .runtime
+                .terminals
+                .get_mut(self.surface_id)
+                .ok_or_else(|| anyhow::anyhow!("child input owner disappeared"))?
+                .try_send_key_with_ack(&body)
+                .map_err(|_| anyhow::anyhow!("child body queue closed"))?;
+            self.input = submit.then(|| PendingSubmit::new(self.surface_id, generation, ack));
+        }
         let Some(input) = self.input.as_mut() else {
             return Ok(());
         };
@@ -164,7 +201,7 @@ impl Installed {
 
     /// Signalling/removing an old owner is not evidence that the OS child was reaped.
     pub(crate) fn cleanup_complete(&self) -> anyhow::Result<bool> {
-        if self.input.is_some() {
+        if self.waiting_input() {
             return Ok(false);
         }
         self.release_complete()
@@ -172,6 +209,13 @@ impl Installed {
 
     /// Disposal can finish without claiming that an interrupted one-shot input was delivered.
     pub(crate) fn release_complete(&self) -> anyhow::Result<bool> {
+        if let Some(receipt) = &self.child_receipt {
+            match receipt.observation() {
+                None => return Ok(false),
+                Some(Err(error)) => anyhow::bail!(error),
+                Some(Ok(_)) => {}
+            }
+        }
         for receipt in &self.remote_retirements {
             match receipt.observation() {
                 Some(Ok(())) => {}
@@ -287,6 +331,7 @@ impl Installation {
         }
         self.install_metadata(engine);
         let submit = self.child.as_ref().is_some_and(|child| !child.replacing);
+        let mut child_receipt = None;
         if let Some(child) = self.child.take() {
             if child.replacing {
                 engine
@@ -320,25 +365,15 @@ impl Installation {
                     },
                 );
             }
-            engine.runtime.child_terminals.save();
+            child_receipt = Some(
+                engine
+                    .runtime
+                    .child_terminals
+                    .submit()
+                    .map_err(anyhow::Error::msg)?,
+            );
         }
-        let input = if let Some(body) = self.one_shot_input.take() {
-            let generation = engine
-                .runtime
-                .terminals
-                .generation(self.surface_id)
-                .ok_or_else(|| anyhow::anyhow!("child input has no PTY owner"))?;
-            let ack = engine
-                .runtime
-                .terminals
-                .get_mut(self.surface_id)
-                .ok_or_else(|| anyhow::anyhow!("child input has no terminal"))?
-                .try_send_key_with_ack(&body)
-                .map_err(|_| anyhow::anyhow!("child body queue closed after installation"))?;
-            submit.then(|| PendingSubmit::new(self.surface_id, generation, ack))
-        } else {
-            None
-        };
+        let pending_body = self.one_shot_input.take().map(|body| (body, submit));
         // A candidate may have become quiet or exited before its earlier wake was handled.
         // Processing the installed owner preserves its queued OSC/output events for the ordinary drain.
         engine.runtime.terminals.process_surface(self.surface_id);
@@ -350,7 +385,9 @@ impl Installation {
             installed_generation: engine.runtime.terminals.generation(self.surface_id),
             retirement: self.retirement.take(),
             remote_retirements: std::mem::take(&mut self.remote_retirements),
-            input,
+            input: None,
+            child_receipt,
+            pending_body,
         })
     }
 }

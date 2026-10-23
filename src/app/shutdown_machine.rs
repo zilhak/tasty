@@ -588,6 +588,7 @@ impl App {
     /// 요청에도 돌려준다.
     fn wait_for_file_writer_shutdown(&mut self) -> bool {
         let remaining = self.services.poll_file_writer_shutdown();
+        self.poll_child_registry_effects();
         self.finish_preset_files();
         self.settle_settings_saves();
         self.services
@@ -595,13 +596,17 @@ impl App {
         let Some(state) = self.state.shutdown.as_mut() else {
             return false;
         };
-        state.file_drain.observe_writer(
+        let waiting = state.file_drain.observe_writer(
             remaining,
             self.services.file_writer_shutdown_report(),
             "file",
             Instant::now(),
             "file writer shutdown timed out; settings it has not saved may be lost",
-        )
+        );
+        if !waiting {
+            self.services.registries.child_terminals.finish_shutdown();
+        }
+        waiting
     }
 
     fn render_shutdown_frame(&mut self) {

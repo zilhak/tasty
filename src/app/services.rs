@@ -246,8 +246,10 @@ impl AppServices {
         self.settings_saves.collect_completed();
         self.settings_saves.retry_latest_before_shutdown();
         let webhook_waiting = self.webhooks.poll_shutdown();
-        let remaining = if webhook_waiting != 0 {
-            webhook_waiting
+        // Both producers must finish admission before the shared writer fence.
+        let child_admission_drained = self.registries.child_terminals.admission_drained();
+        let remaining = if webhook_waiting != 0 || !child_admission_drained {
+            1
         } else {
             self.file_writer
                 .as_mut()

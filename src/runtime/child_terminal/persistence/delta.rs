@@ -1,9 +1,9 @@
 //! Field deltas never restore an unchanged counter from an older queued cache.
-use super::super::{ChildEntry, ChildTerminalRegistry as Registry};
+use super::super::{ChildEntry, RegistryData as Registry};
 use std::{collections::HashMap, hash::Hash};
 
-#[derive(Default)]
-pub(super) struct Delta {
+#[derive(Default, Clone, serde::Serialize)]
+pub(in crate::runtime::child_terminal) struct Delta {
     parent: Vec<(u32, Option<u32>)>,
     external_parent: Vec<(u32, Option<String>)>,
     idle: Vec<(u32, Option<bool>)>,
@@ -18,6 +18,7 @@ pub(super) struct Delta {
     removed: HashMap<String, u32>,
 }
 
+#[derive(Clone, serde::Serialize)]
 struct Relation<K> {
     parent: K,
     child: u32,
@@ -26,7 +27,20 @@ struct Relation<K> {
 }
 
 impl Delta {
-    pub(super) fn between(before: &Registry, after: &Registry) -> Self {
+    pub(in crate::runtime::child_terminal) fn has_edits(&self) -> bool {
+        !self.parent.is_empty()
+            || !self.external_parent.is_empty()
+            || !self.idle.is_empty()
+            || !self.needs_input.is_empty()
+            || !self.reported.is_empty()
+            || !self.slots.is_empty()
+            || !self.children.is_empty()
+            || !self.external_children.is_empty()
+            || !self.next.is_empty()
+            || !self.external_next.is_empty()
+            || !self.empty_parents.is_empty()
+    }
+    pub(in crate::runtime::child_terminal) fn between(before: &Registry, after: &Registry) -> Self {
         let owned = |id: &u32| after.owned.contains(id);
         Self {
             parent: changes(&before.parent_of, &after.parent_of, owned),
@@ -63,7 +77,7 @@ impl Delta {
         }
     }
 
-    pub(super) fn apply(&self, disk: &mut Registry) {
+    pub(in crate::runtime::child_terminal) fn apply(&self, disk: &mut Registry) {
         let mut bounds = self.removed.clone();
         // Include known removed indices from earlier saves, never a cached next-index
         // that may include a reservation whose child has not registered yet.
@@ -100,10 +114,10 @@ impl Delta {
         apply_counters(&mut disk.external_next_index, &increases);
         for (parent, bound) in &bounds {
             if !disk.external_children.contains_key(parent)
-                && !disk
+                && disk
                     .external_next_index
                     .get(parent)
-                    .is_some_and(|next| next > bound)
+                    .is_none_or(|next| next <= bound)
             {
                 disk.external_next_index.remove(parent);
             }

@@ -86,8 +86,14 @@ impl EngineSession {
             runner_registry,
         } = spec;
         let next_ids = shared_ids.unwrap_or_default();
+        #[cfg(test)]
+        let standalone_fixture = registries.is_none();
         let registries =
             registries.unwrap_or_else(|| super::super::registries::RuntimeRegistries::new(None));
+        #[cfg(test)]
+        if standalone_fixture {
+            registries.child_terminals.test_attach_writer();
+        }
         let mut session = Self {
             id: EngineId::issue(),
             remote: crate::remote::state::RemoteState::new(),

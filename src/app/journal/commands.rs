@@ -188,6 +188,7 @@ struct Pending {
     needs_resolution: bool,
     category: Option<CategoryReservation>,
     resource: Option<create::Request>,
+    child_spawn: Option<child::Spawn>,
     #[cfg(feature = "gui")]
     forward: Option<super::forward::Draft>,
     /// Reservation follows the original request until its final reply, including effect-owned copies.
@@ -513,6 +514,7 @@ impl JournalApplication {
                 queued: Some(work),
                 in_flight: false,
                 needs_resolution: false,
+                child_spawn: None,
                 category: None,
                 resource: None,
                 #[cfg(feature = "gui")]
@@ -969,6 +971,7 @@ fn pending_weight(pending: &Pending) -> usize {
     #[cfg(not(feature = "gui"))]
     let forward_bytes: usize = 0;
     forward_bytes
+        .saturating_add(pending.child_spawn.as_ref().map_or(0, child::Spawn::weight))
         .saturating_add(pending.one_shot_reserved)
         .saturating_add(
             serde_json::to_vec(&pending.request)

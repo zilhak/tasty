@@ -265,6 +265,7 @@ pub(crate) fn handle_parent(
 }
 
 pub(crate) fn handle_release(
+    core: &crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -288,18 +289,19 @@ pub(crate) fn handle_release(
             child_not_found_message(&engine.runtime.child_terminals, &parent, child_index),
         );
     };
-    engine.runtime.child_terminals.save();
+    let receipt = match engine
+        .runtime
+        .child_terminals
+        .release_with_effect(parent, removed.child_surface_id)
+    {
+        Ok(ticket) => ticket,
+        Err(error) => return JsonRpcResponse::internal_error(id, error),
+    };
 
-    if let Err(e) = engine.release_soft_occupancy(removed.child_surface_id, parent.clone()) {
-        tracing::warn!(
-            "terminal.release: soft occupancy release failed for surface {} \
-             (parent {parent}): {e:?} — registry relationship removed anyway",
-            removed.child_surface_id
-        );
-    }
-
-    JsonRpcResponse::success(
+    finish_mutation(
+        core,
         id,
+        receipt,
         json!({
             "released_surface_id": removed.child_surface_id,
             "child_index": removed.index,
@@ -311,6 +313,7 @@ pub(crate) fn handle_release(
 /// 실패하면 관계를 추가하지 않는다. 새 surface를 만드는 spawn은 관계 등록 후 점유하며
 /// 기존 surface에 자식 관계와 soft 점유를 연결한다. 구조 생성은 수행하지 않는다.
 pub(crate) fn handle_adopt(
+    core: &crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -360,7 +363,6 @@ pub(crate) fn handle_adopt(
     let role = optional_str(params, "role");
     let nickname = optional_str(params, "nickname");
     let cwd = optional_str(params, "cwd");
-    let label = nickname.clone().or_else(|| role.clone());
     // Check the existing owner without changing its label or releasing its lock
     // if the following relationship commit fails.
     if let Some(occupancy) = engine.live.occupancy.occupancy_of(target)
@@ -368,28 +370,32 @@ pub(crate) fn handle_adopt(
     {
         return JsonRpcResponse::error(id, -32020, "occupy_soft failed: another owner");
     }
-    if let Err(error) = engine.occupy_soft(target, parent, label) {
-        return JsonRpcResponse::error(id, -32020, format!("occupy_soft failed: {error:?}"));
-    }
-    let index = engine.runtime.child_terminals.next_index_for(parent);
-    engine.runtime.child_terminals.register_child(
-        parent,
+    let generation = engine.runtime.terminals.generation(target);
+    let receipt = match engine.runtime.child_terminals.adopt_with_effect(
+        parent.into(),
         ChildEntry {
             child_surface_id: target,
-            index,
+            index: 0,
             cwd,
             role,
             nickname,
         },
-    );
-    engine.runtime.child_terminals.save();
-
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "child_surface_id": target,
-            "child_index": index,
-        }),
+        generation,
+    ) {
+        Ok(ticket) => ticket,
+        Err(error) => return JsonRpcResponse::internal_error(id, error),
+    };
+    core.reply_with_file(
+        id.clone(),
+        move || receipt.poll(),
+        move |_, result| match result {
+            Ok(Some(index)) => JsonRpcResponse::success(
+                id,
+                json!({ "child_surface_id": target, "child_index": index }),
+            ),
+            Ok(None) => JsonRpcResponse::internal_error(id, "child adopt returned no index"),
+            Err(error) => JsonRpcResponse::internal_error(id, error),
+        },
     )
 }
 
@@ -469,6 +475,7 @@ pub(crate) fn handle_broadcast(
 /// 훅은 idle/needs_input/active만 보고할 수 있다.
 /// exited/stale은 호스트가 트리·PTY에서 판정하는 출력 상태이므로 입력으로 받지 않는다.
 pub(crate) fn handle_set_state(
+    core: &crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -501,10 +508,31 @@ pub(crate) fn handle_set_state(
             );
         }
     }
-    engine.runtime.child_terminals.save();
-    JsonRpcResponse::success(
+    let receipt = match engine.runtime.child_terminals.submit() {
+        Ok(ticket) => ticket,
+        Err(error) => return JsonRpcResponse::internal_error(id, error),
+    };
+    finish_mutation(
+        core,
         id,
+        receipt,
         json!({ "ok": true, "surface_id": surface_id, "state": new_state }),
+    )
+}
+
+fn finish_mutation(
+    core: &crate::app::services::AppServices,
+    id: Value,
+    receipt: crate::runtime::child_terminal::Ticket,
+    value: Value,
+) -> JsonRpcResponse {
+    core.reply_with_file(
+        id.clone(),
+        move || receipt.poll(),
+        move |_, result| match result {
+            Ok(_) => JsonRpcResponse::success(id, value),
+            Err(error) => JsonRpcResponse::internal_error(id, error),
+        },
     )
 }
 
@@ -513,6 +541,46 @@ mod tests {
     use super::*;
     use crate::core::attach::OccupancyTier;
 
+    fn wait_mutation(
+        core: &crate::app::services::AppServices,
+        engine: &mut EngineMut<'_>,
+        immediate: JsonRpcResponse,
+    ) -> JsonRpcResponse {
+        let Some(deferred) = core.memory_replies().take_parked() else {
+            return immediate;
+        };
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        core.memory_replies()
+            .push(deferred, super::super::deferred::ReplyTo::Ipc(sender));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            engine.poll_child_registry_effects();
+            core.poll_memory_replies(None);
+            if let Ok(response) = receiver.try_recv() {
+                return response;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "child caller reply missing"
+            );
+            std::thread::yield_now();
+        }
+    }
+    fn handle_adopt(engine: &mut EngineMut<'_>, id: Value, params: &Value) -> JsonRpcResponse {
+        let core = super::super::cli_entry_tests::test_core();
+        let response = super::handle_adopt(&core, engine, id, params);
+        wait_mutation(&core, engine, response)
+    }
+    fn handle_release(engine: &mut EngineMut<'_>, id: Value, params: &Value) -> JsonRpcResponse {
+        let core = super::super::cli_entry_tests::test_core();
+        let response = super::handle_release(&core, engine, id, params);
+        wait_mutation(&core, engine, response)
+    }
+    fn handle_set_state(engine: &mut EngineMut<'_>, id: Value, params: &Value) -> JsonRpcResponse {
+        let core = super::super::cli_entry_tests::test_core();
+        let response = super::handle_set_state(&core, engine, id, params);
+        wait_mutation(&core, engine, response)
+    }
     fn engine() -> crate::runtime::engine_session::EngineSession {
         engine_with_extra(&[])
     }

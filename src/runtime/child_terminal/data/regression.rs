@@ -9,7 +9,7 @@ fn entry() -> ChildEntry {
         nickname: None,
     }
 }
-fn loaded(path: &std::path::Path) -> ChildTerminalRegistry {
+fn loaded(path: &std::path::Path) -> RegistryData {
     let mut r = read_file(path);
     r.path = Some(path.to_owned());
     r
@@ -19,7 +19,7 @@ fn review_counter_max_refuses_without_advancing_or_replacing() {
     let d = tempfile::tempdir().unwrap();
     let p = d.path().join("r.json");
     for parent in [ParentKey::Surface(10), ParentKey::External("e".into())] {
-        let mut r = ChildTerminalRegistry::default();
+        let mut r = RegistryData::default();
         r.next_index.insert(10, u32::MAX);
         r.external_next_index.insert("e".into(), u32::MAX);
         std::fs::write(&p, serde_json::to_vec(&r).unwrap()).unwrap();
@@ -78,11 +78,7 @@ fn review_fifo_latest_read_does_not_block() {
     if std::env::var_os("REVIEW_FIFO_PATH").is_none() {
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("fifo.json");
-        std::fs::write(
-            &p,
-            serde_json::to_vec(&ChildTerminalRegistry::default()).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(&p, serde_json::to_vec(&RegistryData::default()).unwrap()).unwrap();
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -158,7 +154,7 @@ fn review_actual_command_preserves_acl_xattr_and_symlink() {
     let p = d.path().join("link.json");
     std::fs::write(
         &target,
-        serde_json::to_vec(&ChildTerminalRegistry::default()).unwrap(),
+        serde_json::to_vec(&RegistryData::default()).unwrap(),
     )
     .unwrap();
     symlink(&target, &p).unwrap();

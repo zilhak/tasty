@@ -177,3 +177,81 @@ fn a_child_held_after_publication_never_receives_the_late_submit() {
     assert_eq!(outputs(&session, child), 0, "the late CR was not sent");
     assert!(!journal.has_creation(session.id));
 }
+
+#[test]
+fn a_held_relationship_receipt_keeps_command_and_original_reply_pending_after_publication() {
+    let (mut session, mut journal) = boot_with_shell();
+    let rx = spawn(&mut journal, &session, 902);
+    let mut stall = StallBudget::new(&journal);
+    loop {
+        turn(&mut journal, &mut session);
+        if journal
+            .commands
+            .pending
+            .values()
+            .any(|pending| pending.child_spawn.is_some())
+        {
+            break;
+        }
+        stall.nap("index reservation admitted");
+    }
+    assert!(
+        journal
+            .requests_needing_resolution()
+            .iter()
+            .any(|(_, request)| request.id == Some(serde_json::json!(902))),
+        "the original request keeps its continuation while the index receipt is pending"
+    );
+    // Pause the host continuation until the reservation has replaced the file; registration
+    // cannot have been submitted because the retained spawn has not consumed its index receipt.
+    let path = tasty_utils::path::tasty_home()
+        .unwrap()
+        .join("child-terminals.json");
+    let parent = session.core_state.local_workspaces()[0].all_surface_ids()[0].to_string();
+    loop {
+        let reserved = std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|value| value["next_index"][&parent].as_u64())
+            .is_some_and(|next| next > 0);
+        if reserved {
+            break;
+        }
+        stall.nap("index reservation replacement");
+    }
+    let (entered, ready) = std::sync::mpsc::sync_channel(1);
+    let (release, wait) = std::sync::mpsc::sync_channel(1);
+    let expired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let timed_out = expired.clone();
+    let holder = std::thread::spawn(move || {
+        let _participant = tasty_utils::file_replace::lock(&path).unwrap();
+        entered.send(()).unwrap();
+        if matches!(
+            wait.recv_timeout(Duration::from_secs(5)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ) {
+            timed_out.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    });
+    ready.recv_timeout(Duration::from_secs(5)).unwrap();
+    let child = published_before_submit(&mut journal, &mut session);
+    assert!(
+        !expired.load(std::sync::atomic::Ordering::SeqCst),
+        "publication must not synchronously wait on the file participant"
+    );
+    assert_eq!(outputs(&session, child), 0);
+    assert!(matches!(
+        rx.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
+    assert!(!journal.pauses_observation());
+    release.send(()).unwrap();
+    holder.join().unwrap();
+    let response = reply(&mut journal, &mut session, &rx);
+    assert!(response.error.is_none(), "{response:?}");
+    assert_eq!(response.id, serde_json::json!(902));
+    assert!(
+        rx.try_recv().is_err(),
+        "the original caller receives one response"
+    );
+}

@@ -1,15 +1,24 @@
 //! Owned registry commands execute one complete read/merge/replace transaction.
-mod delta;
+pub(super) mod delta;
 
-use super::{ChildTerminalRegistry, ParentKey};
+use super::{ParentKey, RegistryData};
 use delta::Delta;
 use std::path::{Path, PathBuf};
 use tasty_utils::file_replace::{self, Fingerprint};
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize)]
 pub(super) enum Operation {
     Merge,
     Reserve(ParentKey),
+    Adopt(ParentKey, super::ChildEntry),
+    Forget(u32),
+    #[cfg(feature = "gui")]
+    ReleaseOwned(std::collections::HashSet<u32>),
+    #[cfg(feature = "gui")]
+    RetirePending {
+        parent: Option<u32>,
+        child: u32,
+    },
     #[cfg(feature = "gui")]
     Prune(std::collections::HashSet<u32>),
     #[cfg(feature = "gui")]
@@ -26,16 +35,12 @@ pub(super) struct Command {
 }
 
 pub(super) struct Outcome {
-    pub(super) registry: ChildTerminalRegistry,
+    pub(super) registry: RegistryData,
     pub(super) index: Option<u32>,
 }
 
 impl Command {
-    pub(super) fn new(
-        path: PathBuf,
-        mut registry: ChildTerminalRegistry,
-        operation: Operation,
-    ) -> Self {
+    pub(super) fn new(path: PathBuf, mut registry: RegistryData, operation: Operation) -> Self {
         let present = registry.surfaces();
         registry
             .slot_of
@@ -45,7 +50,7 @@ impl Command {
                 registry.slot_of.insert(*surface, slot);
             }
         }
-        let empty = ChildTerminalRegistry::default();
+        let empty = RegistryData::default();
         let before = registry.baseline.as_deref().unwrap_or(&empty);
         let delta = Delta::between(before, &registry);
         Self {
@@ -76,13 +81,39 @@ impl Command {
             anyhow::bail!("registry target changed while acquiring participant lock");
         }
         let (mut disk, observed) = read_observed(&self.path)?;
+        #[cfg(feature = "gui")]
+        let retired_bounds = retirement_bounds(&self.operation, &disk);
         self.delta.apply(&mut disk);
+        #[cfg(feature = "gui")]
+        let protected_counters: Vec<_> = retired_bounds
+            .into_iter()
+            .filter_map(|(parent, bound)| {
+                let next = *disk.next_index.get(&parent)?;
+                bound
+                    .is_none_or(|bound| next > bound)
+                    .then_some((parent, next))
+            })
+            .collect();
         disk.path = Some(self.path.clone());
         disk.owned = self.owned;
         disk.slot = self.slot;
         let index = disk
             .apply_operation(self.operation)
             .map_err(anyhow::Error::msg)?;
+        #[cfg(feature = "gui")]
+        for (parent, next) in protected_counters {
+            let current = disk.next_index.entry(parent).or_default();
+            *current = (*current).max(next);
+        }
+        // Atomic adopt creates identities after the input delta is built. Tag those new owned
+        // identities in this same transaction, including a counter reserved before registration.
+        let present = disk.surfaces();
+        disk.slot_of.retain(|surface, _| present.contains(surface));
+        if let Some(slot) = disk.slot {
+            for surface in present.intersection(&disk.owned) {
+                disk.slot_of.insert(*surface, slot);
+            }
+        }
         let bytes = serde_json::to_vec_pretty(&disk)?;
         if target != file_replace::resolve_link(&self.path)?
             || observed != Fingerprint::read(&self.path)?
@@ -98,27 +129,57 @@ impl Command {
     }
 }
 
-pub(super) fn read(path: &Path) -> Result<ChildTerminalRegistry, String> {
+#[cfg(feature = "gui")]
+fn retirement_bounds(
+    operation: &Operation,
+    disk: &RegistryData,
+) -> std::collections::HashMap<u32, Option<u32>> {
+    let gone = match operation {
+        Operation::ReleaseOwned(gone) => gone.clone(),
+        Operation::RetirePending { parent, child } => {
+            let mut gone = std::collections::HashSet::new();
+            gone.insert(*child);
+            gone.extend(parent);
+            gone
+        }
+        _ => return Default::default(),
+    };
+    gone.iter()
+        .map(|parent| {
+            let bound = disk
+                .children
+                .get(parent)
+                .into_iter()
+                .flatten()
+                .filter(|child| gone.contains(&child.child_surface_id))
+                .map(|child| child.index.saturating_add(1))
+                .max();
+            (*parent, bound)
+        })
+        .collect()
+}
+
+pub(super) fn read(path: &Path) -> Result<RegistryData, String> {
     read_observed(path)
         .map(|(registry, _)| registry)
         .map_err(|error| format!("{error:#}"))
 }
 
-fn read_observed(path: &Path) -> anyhow::Result<(ChildTerminalRegistry, Fingerprint)> {
+fn read_observed(path: &Path) -> anyhow::Result<(RegistryData, Fingerprint)> {
     match std::fs::metadata(path) {
         Ok(metadata) if !metadata.is_file() => {
             anyhow::bail!("registry target is not a regular file")
         }
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok((ChildTerminalRegistry::default(), Fingerprint::Missing));
+            return Ok((RegistryData::default(), Fingerprint::Missing));
         }
         Err(error) => anyhow::bail!("registry metadata failed ({:?})", error.kind()),
     }
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok((ChildTerminalRegistry::default(), Fingerprint::Missing));
+            return Ok((RegistryData::default(), Fingerprint::Missing));
         }
         Err(error) => anyhow::bail!("registry read failed ({:?})", error.kind()),
     };

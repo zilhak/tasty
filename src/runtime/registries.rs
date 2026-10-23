@@ -3,6 +3,7 @@ pub(crate) mod file_rules;
 use std::{path::Path, sync::Arc};
 #[derive(Clone)]
 pub(crate) struct RuntimeRegistries {
+    pub(crate) child_terminals: Arc<super::child_terminal::Hub>,
     pub(crate) file_rules: Option<Arc<file_rules::FileRules>>,
     pub(crate) surface_registry: Arc<super::surface_registry::SurfaceKindRegistry>,
     pub(crate) file_format: Arc<crate::file::format::FileFormatRegistry>,
@@ -33,6 +34,9 @@ impl RuntimeRegistries {
         });
         file_handler.attach_detector_info(file_format.clone());
         Self {
+            child_terminals: super::child_terminal::Hub::new(
+                tasty_utils::path::tasty_home().map(|p| p.join("child-terminals.json")),
+            ),
             file_rules,
             surface_registry: Arc::new(surface_registry),
             file_format,

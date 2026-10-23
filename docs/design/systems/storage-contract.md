@@ -304,7 +304,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `config.toml` | `SettingsStorage::save` → `Settings::save` | file writer(부팅 정규화·셸 확인·테마 조정 포함) | 예(공용 교체, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 같은 대상 잠금과 원본 변경 관측 |
 | `presets/**.toml` | `PresetStore`의 관측값 검사·공용 교체 | 실행 중 명령은 file worker, 초기 읽기·ID 보정은 load 호출 스레드 | 예(fsync 없음) | 저장 이름 선택의 참여자 잠금 + 대상 잠금·관측 충돌 검사 |
 | `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 잠금 안에서 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
-| `child-terminals.json` | `child_terminal::save`·번호 예약·슬롯 정리(소유한 명령) | 메인 루프(동기 완료 경계) | 예 | 공용 참여자 잠금 안에서 최신 읽기·engine 소유 병합·교체 |
+| `child-terminals.json` | engine의 변경 필드·예약·등록·슬롯 정리를 공용 ordered command로 접수 | file writer. 최초 읽기·정리는 부팅 worker/headless bootstrap barrier | 예(공용 교체, fsync 없음) | 참여자 잠금 안에서 최신 읽기·engine 소유 변경 필드 병합·교체 |
 | `tasty.port` | `publish_port_file_to` 완료 결과를 listener가 소유 | IPC 시작 완료 barrier | 예(공용 안전 교체, fsync 없음) | notify 정리 → 관측 원본/링크 비교·참여 잠금 → 완료 공개. 서버 Drop은 같은 잠금을 비차단 획득한 동안 열린 파일 identity·내용이 같은 공개 세대만 정리. 경합/identity 불명은 보존 |
 | 단일 실행 instance 파일 | `instance_file` | 메인 루프 | 예(sync 포함) | GUI만 쓴다 |
 | `webhooks.toml` | 호스트 `webhook::persist::WriteRequest`, CLI `webhook_port_file` | runtime port·registry는 기존 file writer, CLI·초기 prepare는 동기 실행 | 예(공용 교체, fsync 없음) | host 배열 교체·CLI port 변경·옛 포트 마이그레이션이 같은 참여자 잠금 안에서 최신 TOML을 읽고 해당 절만 변경 |
@@ -325,6 +325,25 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 호환 호출은 이 writer 계측에 더하지 않는다. 여러 파일의 물리적 성공·실패 수는
 `MutationFailure`·`ManagedCleanup`의 부분 성공 결과나 host receipt 적용을 대신하지 않는다.
 기존 host profile/passkey 호출의 비동기 연결은 위 명부의 thread 구분을 따른다.
+
+child registry의 engine별 view는 메모리 원본이며 디스크 작업은 기존 file writer의 소유 명령으로만
+실행한다. 메인 루프는 파일·참여자 잠금을 기다리지 않고 receipt를 거둔다. 접수된 revision만
+accepted 기준을 전진시키고, 늦게 받은 확정 결과에는 이후 접수한 변경 필드와 아직 접수하지 않은
+명시적 의도를 순서대로 다시 반영한다. engine과 응답 수신자가 사라져도 Hub가 접수된 명령의
+결과를 거둔다. 보관 중인 delta·완료·close intent는 기존 writer Limits의 항목·바이트 예산으로
+제한하며 payload를 로그나 계측에 넣지 않는다.
+
+번호 예약은 실제 교체가 성공한 뒤에만 index를 공개한다. adopt는 최신 번호 할당과 관계 등록을
+같은 파일 교체에 넣는다. GUI와 headless는 파일 receipt를 먼저 거두고 현재 engine의 점유
+continuation을 적용한 다음 원 호출자 응답을 보낸다. engine이 은퇴했거나 대상이 바뀌면 파일 저장과
+live 적용을 구분한 오류로 끝낸다. spawn의 구조 준비는 예약 receipt 뒤, 설치된 child의 command 입력은
+관계 receipt 뒤다. 원 호출자의 연결 종료는 이미 접수한 파일 명령을 취소하거나 재실행하지 않는다.
+
+아직 index가 공개되지 않은 adopt 뒤에 surface가 닫혀도 삭제 의도를 보관한다. file writer가 가득
+찼으면 이 의도의 접수만 다시 시도하며 실행 결과가 불명인 명령은 재실행하지 않는다. 종료는 이
+producer 의도를 접수한 뒤 기존 writer의 admission을 닫는다. 기존 종료 기한을 넘기면 pending·실패·
+결과 불명을 최종 관측에 남기며 join이나 파일 성공을 만들어 내지 않는다. 요청한 프로세스 종료
+코드와 파일 명령의 성공은 별개다.
 
 자식 관계의 필드 수정은 최신 파일에서 이미 삭제된 관계를 재생성하지 않는다. 새 관계 등록과
 기존 관계 수정은 별개다. 명시적인 idle·needs_input 보고는 캐시와 같은 값이어도 해당 필드에

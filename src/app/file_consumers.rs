@@ -29,6 +29,7 @@ pub(crate) fn sink(queue: Handle<FileExecutor>) -> Submit {
 }
 
 pub(crate) fn attach(registries: &RuntimeRegistries, queue: Handle<FileExecutor>) {
+    registries.child_terminals.attach(queue.clone());
     let sink = sink(queue);
     if let Some(rules) = &registries.file_rules {
         rules.install_sink(sink.clone());
@@ -41,6 +42,7 @@ pub(crate) fn attach(registries: &RuntimeRegistries, queue: Handle<FileExecutor>
 }
 
 pub(crate) fn poll(registries: &RuntimeRegistries) {
+    registries.child_terminals.poll();
     report(
         "hook-handlers.toml",
         crate::hook_handler::global().poll_file(),
@@ -88,6 +90,7 @@ pub(crate) fn before_shutdown(registries: &RuntimeRegistries) {
 
 pub(crate) fn after_shutdown(registries: &RuntimeRegistries) {
     poll(registries);
+    registries.child_terminals.finish_shutdown();
     report_shutdown(
         "hook-handlers.toml",
         crate::hook_handler::global().finish_file_shutdown(),
@@ -114,5 +117,14 @@ pub(crate) fn after_shutdown(registries: &RuntimeRegistries) {
 fn report_shutdown(file: &str, unsaved: Option<(u64, u64)>) {
     if let Some((visible, committed)) = unsaved {
         tracing::warn!(file, visible, committed, "file remains unsaved at shutdown");
+    }
+}
+
+#[cfg(feature = "gui")]
+impl crate::app::App {
+    pub(crate) fn poll_child_registry_effects(&mut self) {
+        for session in self.engines.all_sessions_mut() {
+            session.borrow_mut().poll_child_registry_effects();
+        }
     }
 }

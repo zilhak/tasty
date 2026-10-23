@@ -151,7 +151,8 @@ impl Creation {
         else {
             return false;
         };
-        // The child CR follows its body on the published owner; it never waits for a receipt.
+        // Relationship persistence gates the one-shot body and CR on the published owner.
+        // Waiting here leaves ordinary observation and other caller replies active.
         if let Err(error) = installed.poll_input(&mut session.borrow_mut()) {
             *input_failure = Some(format!("its one-shot input was not delivered: {error}"));
         }

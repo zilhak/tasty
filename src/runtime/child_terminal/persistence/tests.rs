@@ -10,7 +10,7 @@ fn entry(id: u32, index: u32) -> super::super::ChildEntry {
         nickname: None,
     }
 }
-fn registry(path: &Path) -> ChildTerminalRegistry {
+fn registry(path: &Path) -> RegistryData {
     let mut value = super::super::read_file(path);
     value.path = Some(path.to_owned());
     value
@@ -32,7 +32,7 @@ fn delayed_participant_preserves_two_engines_and_latest_external_edit() {
     assert!(receive.recv_timeout(Duration::from_millis(40)).is_err());
     let mut cache = registry(&path);
     cache.register_child(88, entry(89, 0));
-    let mut external = ChildTerminalRegistry::default();
+    let mut external = RegistryData::default();
     external.register_child(9, entry(10, 0));
     file_replace::replace(&path, &serde_json::to_vec(&external).unwrap()).unwrap();
     drop(lock);
@@ -61,7 +61,7 @@ fn corrupt_and_unreadable_initial_loads_protect_original_even_after_repair() {
     assert!(!error.contains("secret body"));
     assert_eq!(std::fs::read(&path).unwrap(), b"broken secret body");
     let protected = merged(&path, 101);
-    let repaired = serde_json::to_vec(&ChildTerminalRegistry::default()).unwrap();
+    let repaired = serde_json::to_vec(&RegistryData::default()).unwrap();
     std::fs::write(&path, &repaired).unwrap();
     assert!(
         read(&path).is_ok(),
@@ -152,7 +152,7 @@ fn atomic_replace_preserves_private_mode_and_symlink() {
     let path = root.path().join("children.json");
     std::fs::write(
         &target,
-        serde_json::to_vec(&ChildTerminalRegistry::default()).unwrap(),
+        serde_json::to_vec(&RegistryData::default()).unwrap(),
     )
     .unwrap();
     std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
@@ -172,7 +172,7 @@ fn readonly_original_is_not_replaced_and_failed_output_is_not_published() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("children.json");
-    let original = serde_json::to_vec(&ChildTerminalRegistry::default()).unwrap();
+    let original = serde_json::to_vec(&RegistryData::default()).unwrap();
     std::fs::write(&path, &original).unwrap();
     let command = merged(&path, 101);
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o400)).unwrap();

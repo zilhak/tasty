@@ -1,9 +1,20 @@
 //! File writer drain after the headless producers have stopped.
+#[cfg(test)]
 pub(super) fn drain(app: &mut crate::app::App) {
+    drain_with(app, || {});
+}
+pub(super) fn drain_engine(
+    app: &mut crate::app::App,
+    session: &mut crate::runtime::engine_session::EngineSession,
+) {
+    drain_with(app, || session.borrow_mut().poll_child_registry_effects());
+}
+fn drain_with(app: &mut crate::app::App, mut poll_engine: impl FnMut()) {
     let mut drain = crate::app::writer_drain::WriterDrain::default();
     loop {
         reject_new_calls(app.hub.ipc_server.as_deref());
         let remaining = app.services.poll_file_writer_shutdown();
+        poll_engine();
         app.finish_preset_files();
         crate::intent::headless::settle_settings_saves(&mut app.services);
         app.services
@@ -15,6 +26,7 @@ pub(super) fn drain(app: &mut crate::app::App) {
             std::time::Instant::now(),
             "headless file writer shutdown timed out; settings it has not saved may be lost",
         ) {
+            app.services.registries.child_terminals.finish_shutdown();
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
