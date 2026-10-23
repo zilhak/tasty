@@ -1,6 +1,9 @@
 //! 프리셋 저장·변경·적용은 intent와 같은 공용 함수를 호출한다.
-//! IPC는 성공/실패를 동기로 응답해야 하므로 intent 큐를 거치지 않는다.
+//! 파일 명령 receipt와 캐시 반영 뒤 원 호출자에게 응답한다.
 //! 적용할 때 focus:false로 사용자 포커스를 유지한다.
+
+#[cfg(test)]
+mod tests;
 
 use crate::runtime::engine_access::EngineRef;
 use serde_json::json;
@@ -57,7 +60,34 @@ fn with_store<R>(
 
 pub(crate) fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
     match &e {
+        PresetMutationError::Store(tasty_presets::PresetError::RenamePartial { .. }) => {
+            JsonRpcResponse::error_with_data(
+                id,
+                -32602,
+                e.to_string(),
+                json!({"saved":false,"partial":true,"destination_saved":true,"source_removal_confirmed":false,"cache_applied":true}),
+            )
+        }
         PresetMutationError::Store(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
+        #[cfg(feature = "gui")]
+        PresetMutationError::Conflict(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
+        PresetMutationError::Transport { unknown, .. } => JsonRpcResponse::error_with_data(
+            id,
+            -32603,
+            e.to_string(),
+            json!({"saved":if *unknown {serde_json::Value::Null} else {json!(false)},"outcome_unknown":unknown,"cache_applied":false}),
+        ),
+        PresetMutationError::Cache {
+            saved,
+            partial,
+            completed_edits,
+            ..
+        } => JsonRpcResponse::error_with_data(
+            id,
+            -32603,
+            e.to_string(),
+            json!({"saved":saved,"partial":partial,"completed_edits":completed_edits,"cache_applied":false,"outcome_unknown":false}),
+        ),
     }
 }
 
@@ -164,16 +194,21 @@ pub fn handle_save(
         },
     };
 
-    match save_inner(core, "", Some(&name), overwrite, cloned) {
-        Ok(SaveOutcome::Saved(saved_name)) => {
-            JsonRpcResponse::success(id, json!({ "name": saved_name }))
-        }
-        Ok(SaveOutcome::SkippedExists) => JsonRpcResponse::invalid_params(
-            id,
-            format!("preset '{name}' already exists (overwrite=false)"),
-        ),
-        Err(e) => mutation_error(id, e),
-    }
+    let ticket = save_inner(core, "", Some(&name), overwrite, cloned);
+    core.reply_with_file(
+        id.clone(),
+        move || ticket.poll(),
+        move |_, result| match result {
+            Ok(SaveOutcome::Saved(saved_name)) => {
+                JsonRpcResponse::success(id, json!({ "name": saved_name }))
+            }
+            Ok(SaveOutcome::SkippedExists) => JsonRpcResponse::invalid_params(
+                id,
+                format!("preset '{name}' already exists (overwrite=false)"),
+            ),
+            Err(error) => mutation_error(id, error),
+        },
+    )
 }
 
 pub fn handle_delete(
@@ -190,10 +225,15 @@ pub fn handle_delete(
         Err(e) => return e,
     };
 
-    match delete_inner(core, kind, &name) {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
-        Err(e) => mutation_error(id, e),
-    }
+    let ticket = delete_inner(core, kind, &name);
+    core.reply_with_file(
+        id.clone(),
+        move || ticket.poll(),
+        move |_, result| match result {
+            Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
+            Err(error) => mutation_error(id, error),
+        },
+    )
 }
 
 pub fn handle_rename(
@@ -214,10 +254,15 @@ pub fn handle_rename(
         Err(e) => return e,
     };
 
-    match rename_inner(core, kind, &from, &to) {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "renamed": to })),
-        Err(e) => mutation_error(id, e),
-    }
+    let ticket = rename_inner(core, kind, &from, &to);
+    core.reply_with_file(
+        id.clone(),
+        move || ticket.poll(),
+        move |_, result| match result {
+            Ok(()) => JsonRpcResponse::success(id, json!({ "renamed": to })),
+            Err(error) => mutation_error(id, error),
+        },
+    )
 }
 
 pub(crate) fn decode_capture_request(
@@ -250,12 +295,16 @@ pub fn handle_capture(
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     };
 
-    match save_inner(core, &base_name, explicit_name.as_deref(), false, cloned) {
-        Ok(SaveOutcome::Saved(name)) => JsonRpcResponse::success(id, json!({ "name": name })),
-        Ok(SaveOutcome::SkippedExists) => JsonRpcResponse::invalid_params(
-            id,
-            "preset name already exists (overwrite=false)".to_string(),
-        ),
-        Err(e) => mutation_error(id, e),
-    }
+    let ticket = save_inner(core, &base_name, explicit_name.as_deref(), false, cloned);
+    core.reply_with_file(
+        id.clone(),
+        move || ticket.poll(),
+        move |_, result| match result {
+            Ok(SaveOutcome::Saved(name)) => JsonRpcResponse::success(id, json!({ "name": name })),
+            Ok(SaveOutcome::SkippedExists) => {
+                JsonRpcResponse::invalid_params(id, "preset name already exists (overwrite=false)")
+            }
+            Err(error) => mutation_error(id, error),
+        },
+    )
 }

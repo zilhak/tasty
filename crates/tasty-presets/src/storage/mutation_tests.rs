@@ -35,7 +35,9 @@ fn rename_serialization_failure_does_not_remove_the_original_cached_value() {
         panic!("leaf fixture")
     };
     surface.params = serde_json::json!({"unrepresentable":u64::MAX});
-    store.apply_change(PresetChange::Saved(OwnedPreset::Workspace(value.clone())));
+    store
+        .apply_change(PresetChange::Saved(OwnedPreset::Workspace(value.clone())))
+        .unwrap();
     let outcome = store.rename_command(PresetKind::Workspace, "old", "new");
     assert!(matches!(outcome.result, Err(PresetError::Toml(_))));
     assert!(outcome.changes.is_empty());
@@ -59,7 +61,7 @@ fn cleanup_failure_reports_partial_commit_and_both_caches_match_restart() {
     assert_eq!(outcome.changes.len(), 1);
     assert_eq!(cache.list(PresetKind::Workspace), ["old"]);
     for change in outcome.changes {
-        cache.apply_change(change);
+        cache.apply_change(change).unwrap();
     }
     let reopened = PresetStore::load_from(root.path().into());
     assert_eq!(reopened.list(PresetKind::Workspace), ["new", "old"]);
@@ -140,16 +142,16 @@ fn save_rename_delete_changes_follow_order_and_match_restart() {
         .save_command("next", None, false, OwnedPreset::Workspace(ws("ignored")))
         .unwrap()
         .unwrap();
-    cache.apply_change(saved);
+    cache.apply_change(saved).unwrap();
     let rename = worker.rename_command(PresetKind::Workspace, "next", "final");
     assert!(rename.result.is_ok());
     for change in rename.changes {
-        cache.apply_change(change);
+        cache.apply_change(change).unwrap();
     }
     let deleted = worker.delete_command(PresetKind::Workspace, "final");
     assert!(deleted.result.is_ok());
     for change in deleted.changes {
-        cache.apply_change(change);
+        cache.apply_change(change).unwrap();
     }
     let reopened = PresetStore::load_from(root.path().into());
     assert_eq!(cache.list(PresetKind::Workspace), ["old"]);
@@ -279,4 +281,59 @@ fn rename_preserves_source_private_mode_owner_and_extended_acl() {
     );
     assert_eq!(acl(&target), expected);
     assert!(!path.exists());
+}
+
+#[test]
+fn ordered_rename_delta_moves_or_copies_cached_value_without_file_io() {
+    let root = tempfile::tempdir().unwrap();
+    let mut cache = PresetStore::load_from(root.path().into());
+    cache.save_workspace(ws("old")).unwrap();
+    let path = root.path().join("workspace/old.toml");
+    let bytes = std::fs::read(&path).unwrap();
+    cache
+        .apply_change(PresetChange::Renamed {
+            kind: PresetKind::Workspace,
+            from: "old".into(),
+            to: "partial".into(),
+            source_removed: false,
+        })
+        .unwrap();
+    assert!(cache.get_workspace("old").is_some());
+    assert_eq!(cache.get_workspace("partial").unwrap().name, "partial");
+    cache
+        .apply_change(PresetChange::Renamed {
+            kind: PresetKind::Workspace,
+            from: "partial".into(),
+            to: "final".into(),
+            source_removed: true,
+        })
+        .unwrap();
+    assert!(cache.get_workspace("partial").is_none());
+    assert_eq!(cache.get_workspace("final").unwrap().name, "final");
+    assert!(
+        cache
+            .apply_change(PresetChange::Renamed {
+                kind: PresetKind::Workspace,
+                from: "old".into(),
+                to: "final".into(),
+                source_removed: true,
+            })
+            .is_err()
+    );
+    assert!(
+        cache.get_workspace("old").is_some(),
+        "conflicting delta must not preemptively remove source"
+    );
+    assert!(
+        cache
+            .apply_change(PresetChange::Renamed {
+                kind: PresetKind::Workspace,
+                from: "missing".into(),
+                to: "new".into(),
+                source_removed: true,
+            })
+            .is_err()
+    );
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+    assert!(!root.path().join("workspace/final.toml").exists());
 }

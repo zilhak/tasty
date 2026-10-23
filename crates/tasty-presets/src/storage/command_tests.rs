@@ -87,7 +87,7 @@ fn delayed_worker_keeps_cache_reads_available_and_publishes_only_a_committed_del
     assert_eq!(cache.get_workspace("dev").unwrap().subtitle, "");
     let disk = PresetStore::load_from(root.path().into());
     assert_eq!(disk.get_workspace("dev").unwrap().subtitle, "committed");
-    cache.apply_change(change);
+    cache.apply_change(change).unwrap();
     assert_eq!(cache.get_workspace("dev"), disk.get_workspace("dev"));
 }
 

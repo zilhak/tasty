@@ -23,7 +23,7 @@ use crate::runtime::journal_product::{
 };
 #[cfg(feature = "gui")]
 pub(crate) use capture::PresetCaptureNotice;
-pub(crate) use capture::{PresetCaptureOutput, PresetCaptureReply};
+pub(crate) use capture::{PendingPresetSave, PresetCaptureOutput, PresetCaptureReply};
 pub(crate) use creation::{ActivationOutcome, ActivationReceipt};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;

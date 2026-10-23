@@ -4,123 +4,27 @@
 use super::{DispatchedIntent, Intent};
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 
-/// 호출자가 미리 캡처해 큐에 넣는 프리셋 데이터.
-#[derive(Debug, Clone)]
-pub enum ClonedPreset {
-    Workspace(tasty_presets::WorkspacePreset),
-    Tab(tasty_presets::TabPreset),
-    Pane(tasty_presets::PanePreset),
-}
-
-impl ClonedPreset {
-    pub fn kind(&self) -> tasty_presets::PresetKind {
-        match self {
-            ClonedPreset::Workspace(_) => tasty_presets::PresetKind::Workspace,
-            ClonedPreset::Tab(_) => tasty_presets::PresetKind::Tab,
-            ClonedPreset::Pane(_) => tasty_presets::PresetKind::Pane,
-        }
-    }
-}
+pub use crate::app::preset_commands::Ticket as MutationTicket;
+pub use tasty_presets::OwnedPreset as ClonedPreset;
 
 use crate::state::RequestContext;
 use tasty_presets::{PresetError, PresetKind};
 
 pub fn handle(
-    core: &crate::app::services::AppServices,
-    state: &mut RequestContext,
-    engine: &mut EngineMut<'_>,
-    intent: &DispatchedIntent,
-) {
-    match &intent.body {
-        Intent::ApplyPreset { .. } => {
-            tracing::error!("preset application bypassed the journal command boundary")
-        }
-        Intent::CapturePreset {
-            kind,
-            source,
-            presentation,
-        } => match capture_inner(presentation, &engine.as_ref(), *kind, *source) {
-            Ok((preset, base)) => save(
-                core,
-                state,
-                engine,
-                intent,
-                PresetSaveRequest {
-                    base_name: &base,
-                    explicit_name: None,
-                    overwrite: false,
-                    preset: &preset,
-                },
-            ),
-            Err(error) => tracing::warn!(%error,"preset capture failed"),
-        },
-        _ => {}
-    }
-}
-
-fn save(
-    core: &crate::app::services::AppServices,
-    state: &mut RequestContext,
+    _core: &crate::app::services::AppServices,
+    _state: &mut RequestContext,
     _engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
-    request: PresetSaveRequest,
 ) {
-    let kind = request.preset.kind();
-    let save_result = save_inner(
-        core,
-        request.base_name,
-        request.explicit_name,
-        request.overwrite,
-        request.preset.clone(),
-    );
-
-    let toast_key = match (&save_result, kind) {
-        (Ok(_), PresetKind::Workspace) => "preset.toast.saved_workspace",
-        (Ok(_), PresetKind::Tab) => "preset.toast.saved_tab",
-        (Ok(_), PresetKind::Pane) => "preset.toast.saved_pane",
-        (Err(_), _) => "preset.toast.save_failed",
-    };
-    // 실패 토스트는 사용자 요청에만 표시한다. 성공 토스트는 origin과 관계없이 표시한다.
-    let show_toast = save_result.is_ok() || intent.origin.is_user();
-    #[cfg(feature = "gui")]
-    if show_toast {
-        let toast_kind = if save_result.is_ok() {
-            crate::model::toast_kind::ToastKind::Info
-        } else {
-            crate::model::toast_kind::ToastKind::Error
-        };
-        state.toasts.push(
-            crate::i18n::t(toast_key),
-            toast_kind,
-            crate::model::toast_kind::ToastScope::Window,
-        );
+    if matches!(
+        intent.body,
+        Intent::ApplyPreset { .. } | Intent::CapturePreset { .. }
+    ) {
+        tracing::error!("preset operation bypassed the journal command boundary");
     }
-    #[cfg(not(feature = "gui"))]
-    {
-        let _ = (toast_key, show_toast); // reason: 헤드리스에는 토스트 표시가 없다.
-    }
-
-    let saved_name = match save_result {
-        Ok(SaveOutcome::Saved(n)) => n,
-        Ok(SaveOutcome::SkippedExists) => return,
-        Err(e) => {
-            tracing::warn!("preset save failed: {e}");
-            return;
-        }
-    };
-
-    // 저장한 프리셋 창을 여는 요청은 GUI의 사용자 동작에서만 만든다.
-    #[cfg(feature = "gui")]
-    if intent.origin.is_user() {
-        state.dialogs.pending_open_preset_window = true;
-        state.dialogs.pending_preset_window_selection = Some((kind, saved_name));
-    }
-    // reason: 헤드리스는 토스트와 프리셋 창 요청을 만들지 않아 이 값들을 사용하지 않는다.
-    #[cfg(not(feature = "gui"))]
-    let _ = (state, intent, kind, saved_name);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum SaveOutcome {
     Saved(String),
     /// 이름이 이미 있고 overwrite=false여서 저장하지 않았다.
@@ -130,12 +34,27 @@ pub enum SaveOutcome {
 #[derive(Debug)]
 pub enum PresetMutationError {
     Store(PresetError),
+    #[cfg(feature = "gui")]
+    Conflict(String),
+    Transport {
+        message: String,
+        unknown: bool,
+    },
+    Cache {
+        message: String,
+        saved: bool,
+        partial: bool,
+        completed_edits: usize,
+    },
 }
 
 impl std::fmt::Display for PresetMutationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Store(e) => write!(f, "{e}"),
+            #[cfg(feature = "gui")]
+            Self::Conflict(message) => f.write_str(message),
+            Self::Transport { message, .. } | Self::Cache { message, .. } => f.write_str(message),
         }
     }
 }
@@ -164,111 +83,28 @@ pub(crate) fn clone_preset_from_store(
     Ok(cloned)
 }
 
-pub struct PresetSaveRequest<'a> {
-    pub base_name: &'a str,
-    pub explicit_name: Option<&'a str>,
-    pub overwrite: bool,
-    pub preset: &'a ClonedPreset,
-}
-
-/// 이름을 직접 지정하고 overwrite=false이면 충돌 시 None을 반환한다.
-/// 이름을 지정하지 않으면 base_name으로 중복되지 않는 이름을 만든다.
-fn resolve_save_name(
-    store: &tasty_presets::PresetStore,
-    kind: PresetKind,
-    base_name: &str,
-    explicit_name: Option<&str>,
-    overwrite: bool,
-) -> Option<String> {
-    match explicit_name {
-        Some(n) => {
-            if !overwrite {
-                let exists = match kind {
-                    PresetKind::Workspace => store.get_workspace(n).is_some(),
-                    PresetKind::Tab => store.get_tab(n).is_some(),
-                    PresetKind::Pane => store.get_pane(n).is_some(),
-                };
-                if exists {
-                    tracing::warn!("SavePreset: name '{n}' exists, overwrite=false → skip");
-                    return None;
-                }
-            }
-            Some(n.to_string())
-        }
-        None => Some(store.unique_name(kind, base_name)),
-    }
-}
-
-fn store_preset(
-    store: &mut tasty_presets::PresetStore,
-    preset: ClonedPreset,
-    name: String,
-    overwrite: bool,
-) -> Result<(), PresetError> {
-    match preset {
-        ClonedPreset::Workspace(mut p) => {
-            p.name = name;
-            if overwrite {
-                store.save_workspace_overwrite(p)
-            } else {
-                store.save_workspace(p)
-            }
-        }
-        ClonedPreset::Tab(mut p) => {
-            p.name = name;
-            if overwrite {
-                store.save_tab_overwrite(p)
-            } else {
-                store.save_tab(p)
-            }
-        }
-        ClonedPreset::Pane(mut p) => {
-            p.name = name;
-            if overwrite {
-                store.save_pane_overwrite(p)
-            } else {
-                store.save_pane(p)
-            }
-        }
-    }
-}
-
-/// 이름이 충돌하면 overwrite에 따라 덮어쓰거나 SkippedExists를 반환한다.
-/// explicit_name이 없으면 base_name으로 중복되지 않는 이름을 만든다.
+/// The cache is updated before this ticket yields a committed save result.
 pub fn save_inner(
     core: &crate::app::services::AppServices,
     base_name: &str,
     explicit_name: Option<&str>,
     overwrite: bool,
     preset: ClonedPreset,
-) -> Result<SaveOutcome, PresetMutationError> {
-    let mut store = crate::poison::recover_mutex(
-        core.preset_store.lock(),
-        crate::core::PRESET_STORE_WHAT,
-        &crate::core::PRESET_STORE_POISONED,
-    );
-
-    let kind = preset.kind();
-    let Some(name) = resolve_save_name(&store, kind, base_name, explicit_name, overwrite) else {
-        return Ok(SaveOutcome::SkippedExists);
-    };
-
-    store_preset(&mut store, preset, name.clone(), overwrite)
-        .map(|_| SaveOutcome::Saved(name))
-        .map_err(PresetMutationError::Store)
+) -> MutationTicket<SaveOutcome> {
+    core.preset_files.save(
+        base_name.into(),
+        explicit_name.map(str::to_owned),
+        overwrite,
+        preset,
+    )
 }
 
 pub fn delete_inner(
     core: &crate::app::services::AppServices,
     kind: PresetKind,
     name: &str,
-) -> Result<(), PresetMutationError> {
-    let mut store = crate::poison::recover_mutex(
-        core.preset_store.lock(),
-        crate::core::PRESET_STORE_WHAT,
-        &crate::core::PRESET_STORE_POISONED,
-    );
-    store.delete(kind, name).map_err(PresetMutationError::Store)
+) -> MutationTicket<()> {
+    core.preset_files.delete(kind, name.into())
 }
 
 pub fn rename_inner(
@@ -276,15 +112,8 @@ pub fn rename_inner(
     kind: PresetKind,
     from: &str,
     to: &str,
-) -> Result<(), PresetMutationError> {
-    let mut store = crate::poison::recover_mutex(
-        core.preset_store.lock(),
-        crate::core::PRESET_STORE_WHAT,
-        &crate::core::PRESET_STORE_POISONED,
-    );
-    store
-        .rename(kind, from, to)
-        .map_err(PresetMutationError::Store)
+) -> MutationTicket<()> {
+    core.preset_files.rename(kind, from.into(), to.into())
 }
 
 /// kind에 맞는 워크스페이스·탭·pane ID로 프리셋을 캡처한다.

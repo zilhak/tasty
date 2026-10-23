@@ -35,7 +35,8 @@
 | 최근 파일(state.db) | 별도 접수 없음 | 호출 스레드에서 끝난다 | 공유 캐시를 DB 쓰기 전에 같은 잠금 안에서 바꾼다. 저장이 실패해도 캐시는 바뀐 채 남는다 | 해당 없음 |
 | 튜토리얼 진행(state.db) | 전용 worker에 넣고 receipt를 받는다 | worker가 요청마다 transaction으로 commit한다 | receipt 결과로 반영한다 | 해당 없음 |
 | `config.toml` 실행 중 저장 | file writer 큐에 불변 설정 snapshot을 넣고 바로 진행한다 | writer가 같은 대상의 묶음에서 마지막 snapshot을 파일로 교체한다 | 메모리 설정은 접수 전에 적용한다. 표시 revision과 저장 완료 revision을 따로 유지한다 | receipt 완료 뒤 원 요청에 한 번 응답한다. 저장 실패·접수 거절은 `applied:true, saved:false`다 |
-| 프리셋 등 다른 파일 | 별도 접수 없음 | 호출 스레드에서 끝난다 | 호출자가 메모리 값을 먼저 갖고 있다 | 해당 없음 |
+| 프리셋 저장·삭제·이름 변경 | 소유된 ordered command를 같은 file writer에 접수한다 | worker가 참여자 잠금 안에서 명령을 실행한다 | 접수 순서로 확정 delta를 캐시에 반영한다 | 캐시 반영 뒤 원 호출자에게 한 번 응답한다 |
+| 나머지 파일 | 아래 저장 명부 참조 | 소비자별 현재 경계 | 소비자별 계약 | 소비자별 계약 |
 
 ## memory.db 소비자와 계약
 
@@ -167,6 +168,12 @@ config snapshot은 같은 load에서 나온 원본 관측값을 공유한다. Ta
 
 셸 설정 확인과 승인한 Lua 해시도 같은 큐에 넣는다. Lua는 이미 읽어 승인한 source를 보관했다가 저장 시도가 끝난 뒤 실행하며, 저장 실패가 실행을 막지 않는 기존 계약을 유지한다. 부팅 정규화·셸 확인·테마 초기 적용은 최종 snapshot 하나로 같은 writer에 넣고, 메인 루프를 막지 않는 완료 확인 뒤 다음 부팅 단계로 넘긴다. 다른 파일 소비자의 저장은 아래 명부의 현재 스레드를 따른다.
 
+### 순서가 있는 파일 명령
+
+`FileRequest::Command`는 소유된 작업과 결과 바이트 추정치를 담으며 snapshot 키가 없다. 이름 예약·삭제·이름 변경·외부 효과의 선행 저장은 합치지 않는다. 실행기는 명령마다 한 번 실행하며, 도중 panic은 결과 불명으로 끝내고 재실행하지 않는다. 큐가 없거나 닫혔거나 예산을 넘으면 실행 전에 거절한다. 테스트의 writer 없는 작은 fixture만 즉시 실행 경로를 사용하며 제품 구성의 대체 경로가 아니다. payload의 Debug 표현이나 내용 로그는 없다.
+
+프리셋 표시 캐시는 worker의 파일 잠금과 별개다. IPC·plugin·GUI 캡처는 journal 캡처 결과를 파일 명령으로 넘긴 뒤 원 호출자·View identity를 유지해 완료한다. 원 observer가 닫혀도 접수된 저장과 캐시 반영은 계속한다. 편집기 배치는 첫 실패에서 멈추며 앞서 확정한 변경을 유지한다. 파일 명령의 완료 건수는 물리 교체 건수가 아니다. `FileWriteStats`의 replaced/failed/unknown은 설정과 snapshot 교체 시도만 세고, `system.pressure.file_commands.presets`는 접수·거절·완료·불명·대기를 보관한다. 완료에는 알려진 저장소 오류도 포함된다.
+
 ### 공용 즐겨찾기 snapshot
 
 Explorer·포트 즐겨찾기는 프로세스 공용 `SharedList` 원본을 바꾸고 표시 revision을 올린 뒤 불변 TOML snapshot을 접수한다. 목록 잠금 안에서는 메모리 변경·직렬화·접수 순서만 정한다. 디스크 읽기·잠금·교체와 receipt 대기는 worker에서 한다. 같은 파일의 수집 묶음에서는 마지막 snapshot만 교체하며 대체된 요청도 그 결과를 받는다. 메인 루프가 receipt를 거둘 때 성공한 revision만 저장 완료로 확정한다. 실패·접수 거절·결과 불명은 표시 목록을 되돌리지 않고 dirty를 유지하며 경고 알림에 원인과 조치 안내를 남긴다.
@@ -273,7 +280,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | 파일 | 쓰는 함수 | 스레드 | 원자 교체 | 다른 writer |
 |---|---|---|---|---|
 | `config.toml` | `SettingsStorage::save` → `Settings::save` | file writer(부팅 정규화·셸 확인·테마 조정 포함) | 예(공용 교체, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 같은 대상 잠금과 원본 변경 관측 |
-| `presets/**.toml` | `PresetStore`의 관측값 검사·공용 교체 | 메인 루프, 초기 ID 보정은 load 호출 스레드 | 예(fsync 없음) | 저장 이름 선택의 참여자 잠금 + 대상 잠금·관측 충돌 검사 |
+| `presets/**.toml` | `PresetStore`의 관측값 검사·공용 교체 | 실행 중 명령은 file worker, 초기 읽기·ID 보정은 load 호출 스레드 | 예(fsync 없음) | 저장 이름 선택의 참여자 잠금 + 대상 잠금·관측 충돌 검사 |
 | `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 잠금 안에서 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
 | `tasty.port` | `publish_port_file_to` 완료 결과를 listener가 소유 | IPC 시작 완료 barrier | 예(공용 안전 교체, fsync 없음) | notify 정리 → 관측 원본/링크 비교·참여 잠금 → 완료 공개. 서버 Drop은 같은 잠금을 비차단 획득한 동안 열린 파일 identity·내용이 같은 공개 세대만 정리. 경합/identity 불명은 보존 |
@@ -321,8 +328,8 @@ backend 결과가 돌아오면 파일 잠금은 이미 풀려 있다. 현재 reg
 | Lua `record_script_hash` | 승인한 설정 snapshot을 같은 writer에 제출한다. 이벤트 루프는 멈추지 않고 저장 receipt 결과를 확인한 뒤 승인한 source를 실행한다. 저장 실패가 실행을 막지 않는 기존 계약은 유지한다 |
 
 부팅 barrier는 파일 잠금이 아니라 최종 snapshot의 receipt를 확인한다. 파일 잠금만으로는 먼저 접수한 snapshot과 나중 동기 저장의 의미 순서를 정할 수 없다. 내부 부팅 저장도 출처가 없어도 receipt 결과를 한 번 돌려주며, 실패한 최신 revision은 종료 재시도 대상이다.
-- 사용되지 않던 `PresetStorage`의 호스트 주입은 없다. 프리셋 저장·삭제·이름 변경은 아직 구체 `PresetStore` 핸들로 동기 실행한다.
-- 프리셋의 소유값 저장 명령은 자동 이름 선택부터 교체까지 root 참여자 잠금을 유지하고 성공한 값만 별도 캐시에 메모리 반영할 수 있다. 초기 읽기의 관측값과 손상·읽기 실패 보호는 저장소 clone에도 이어진다. rename/delete도 root 잠금 안에서 원본 관측값을 검사한다. rename은 새 파일 확정 뒤 원본 정리가 실패하면 typed 부분 실패와 확정된 캐시 변경을 반환한다. 파일 사이 transaction이나 rollback은 없다. 호스트의 receipt 연결은 이 blocking 저장소 API와 별도다. 초기 load의 ID 보정은 호스트에 노출할 정규화 값을 결정하는 load 단계에서 끝내며, 보정 저장 실패 시 메모리 값을 유지하고 경고한다.
+- 사용되지 않던 `PresetStorage`의 호스트 주입은 없다. 프리셋 저장·삭제·이름 변경은 같은 file writer의 소유된 ordered command로 실행한다.
+- 프리셋의 소유값 저장 명령은 자동 이름 선택부터 교체까지 root 참여자 잠금을 유지하고 성공한 값만 별도 캐시에 메모리 반영할 수 있다. 초기 읽기의 관측값과 손상·읽기 실패 보호는 저장소 clone에도 이어진다. rename/delete도 root 잠금 안에서 원본 관측값을 검사한다. rename은 새 파일 확정 뒤 원본 정리가 실패하면 typed 부분 실패와 확정된 캐시 변경을 반환한다. 파일 사이 transaction이나 rollback은 없다. 호스트는 같은 초기 캐시에서 복사한 worker 전용 저장소로 이 blocking API를 실행하고, receipt를 접수 순서대로 거두어 표시 캐시에 메모리 반영한 뒤 응답한다. rename delta는 kind·이전/새 이름·원본 삭제 확인 여부만 보관하며, 순서가 보장된 표시 캐시에서 값을 이동하거나 부분 성공 시 복사한다. 캐시 반영 자체가 실패하면 저장 결과와 캐시 실패를 구분해 알린다. 초기 load의 ID 보정은 호스트에 노출할 정규화 값을 결정하는 load 단계에서 끝내며, 보정 저장 실패 시 메모리 값을 유지하고 경고한다.
 - 테마 seed/sync는 `ThemeFiles` backend를 호출하는 bootstrap 자유 함수로 첫 로딩 프레임 전에 완료한다. 첫 렌더에 사용할 테마를 확정하는 barrier이며 runtime 저장 예외가 아니다. 추가 창은 같은 초기화를 반복하지 않고 캐시/내장 fallback을 적용한다. runtime rescan은 읽기만 하며 누락·잘못된 테마를 자동으로 쓰지 않는다.
 - memory.db의 부팅 정비는 port로 감싸기 전 구체 `MemoryStore`를 쓴다.
 - state.db에는 port가 없다. 최근 파일과 튜토리얼은 state writer의 요청 타입을 직접 쓴다.

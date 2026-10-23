@@ -13,6 +13,39 @@ pub struct PresetMutationOutcome {
 }
 
 impl PresetStore {
+    pub(super) fn rename_cached(
+        &mut self,
+        kind: PresetKind,
+        from: &str,
+        to: &str,
+        source_removed: bool,
+    ) -> PresetResult<()> {
+        fn change<P: crate::LayoutPreset + Clone>(
+            map: &mut std::collections::BTreeMap<String, P>,
+            kind: PresetKind,
+            from: &str,
+            to: &str,
+            source_removed: bool,
+        ) -> PresetResult<()> {
+            if map.contains_key(to) {
+                return Err(PresetError::AlreadyExists(kind, to.into()));
+            }
+            let mut value = if source_removed {
+                map.remove(from)
+            } else {
+                map.get(from).cloned()
+            }
+            .ok_or_else(|| PresetError::NotFound(kind, from.into()))?;
+            value.set_name(to.into());
+            map.insert(to.into(), value);
+            Ok(())
+        }
+        match kind {
+            PresetKind::Workspace => change(&mut self.workspaces, kind, from, to, source_removed),
+            PresetKind::Tab => change(&mut self.tabs, kind, from, to, source_removed),
+            PresetKind::Pane => change(&mut self.panes, kind, from, to, source_removed),
+        }
+    }
     pub(super) fn remove_cached(&mut self, kind: PresetKind, name: &str) {
         match kind {
             PresetKind::Workspace => {
@@ -121,7 +154,7 @@ impl PresetStore {
         value.set_name(to.into());
         self.observed
             .replace_from(&to_path, value.serialized()?.as_bytes(), Some(&from_path))?;
-        self.apply_change(PresetChange::Saved(value));
+        self.apply_change(PresetChange::Saved(value))?;
         // An uncooperative editor can still change the source while the destination is written.
         // Preserve that edit and report the already committed destination rather than unlink it.
         let cleanup = self
@@ -163,15 +196,12 @@ impl PresetStore {
         if from != to
             && (result.is_ok() || matches!(&result, Err(PresetError::RenamePartial { .. })))
         {
-            if result.is_ok() {
-                changes.push(PresetChange::Removed {
-                    kind,
-                    name: from.into(),
-                });
-            }
-            if let Some(value) = self.owned(kind, to) {
-                changes.push(PresetChange::Saved(value));
-            }
+            changes.push(PresetChange::Renamed {
+                kind,
+                from: from.into(),
+                to: to.into(),
+                source_removed: result.is_ok(),
+            });
         }
         PresetMutationOutcome { changes, result }
     }

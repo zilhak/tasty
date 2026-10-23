@@ -1,4 +1,8 @@
 //! Bounded live capture scheduling. Persistence belongs to the worker, not the View or Core.
+#[cfg(test)]
+#[path = "capture_save_tests.rs"]
+mod save_tests;
+
 use super::*;
 pub(super) struct PendingCapture {
     engine: EngineId,
@@ -511,11 +515,23 @@ pub(crate) struct PresetCaptureNotice {
     pub(crate) view: std::sync::Weak<()>,
     pub(crate) result: Result<(tasty_presets::PresetKind, String), String>,
 }
+pub(crate) struct PendingPresetSave {
+    #[cfg(feature = "gui")]
+    engine: EngineId,
+    #[cfg(feature = "gui")]
+    binding: crate::runtime::journal_product::EngineBinding,
+    reply: Option<PresetCaptureReply>,
+    state: PresetSaveState,
+}
+enum PresetSaveState {
+    Ready(Option<Result<(tasty_presets::PresetKind, String), PresetSaveError>>),
+    Waiting {
+        kind: tasty_presets::PresetKind,
+        ticket: crate::intent::preset::MutationTicket<crate::intent::preset::SaveOutcome>,
+    },
+}
 impl PresetCaptureCompletion {
-    pub(crate) fn save(
-        self,
-        services: &crate::app::services::AppServices,
-    ) -> Option<PresetCaptureOutput> {
+    pub(crate) fn save(self, services: &crate::app::services::AppServices) -> PendingPresetSave {
         let name = match &self.reply {
             PresetCaptureReply::Ipc { name, .. } | PresetCaptureReply::Plugin { name, .. } => {
                 name.as_deref()
@@ -523,23 +539,40 @@ impl PresetCaptureCompletion {
             #[cfg(feature = "gui")]
             PresetCaptureReply::Intent { name, .. } => name.as_deref(),
         };
-        let result = self
-            .result
-            .map_err(PresetSaveError::Capture)
-            .and_then(|(preset, base)| {
-                let kind = preset.kind();
-                match crate::intent::preset::save_inner(services, &base, name, false, preset)
-                    .map_err(PresetSaveError::Store)?
-                {
-                    crate::intent::preset::SaveOutcome::Saved(name) => Ok((kind, name)),
-                    crate::intent::preset::SaveOutcome::SkippedExists => {
-                        Err(PresetSaveError::Capture(
-                            "preset name already exists (overwrite=false)".into(),
-                        ))
-                    }
-                }
-            });
-        match self.reply {
+        let state = match self.result {
+            Ok((preset, base)) => PresetSaveState::Waiting {
+                kind: preset.kind(),
+                ticket: crate::intent::preset::save_inner(services, &base, name, false, preset),
+            },
+            Err(error) => PresetSaveState::Ready(Some(Err(PresetSaveError::Capture(error)))),
+        };
+        PendingPresetSave {
+            #[cfg(feature = "gui")]
+            engine: self.engine,
+            #[cfg(feature = "gui")]
+            binding: self.binding,
+            reply: Some(self.reply),
+            state,
+        }
+    }
+}
+impl PendingPresetSave {
+    pub(crate) fn is_finished(&self) -> bool {
+        self.reply.is_none()
+    }
+    pub(crate) fn poll(&mut self) -> Option<PresetCaptureOutput> {
+        self.reply.as_ref()?;
+        let result = match &mut self.state {
+            PresetSaveState::Ready(result) => result.take()?,
+            PresetSaveState::Waiting { kind, ticket } => match ticket.poll()? {
+                Ok(crate::intent::preset::SaveOutcome::Saved(name)) => Ok((*kind, name)),
+                Ok(crate::intent::preset::SaveOutcome::SkippedExists) => Err(
+                    PresetSaveError::Capture("preset name already exists (overwrite=false)".into()),
+                ),
+                Err(error) => Err(PresetSaveError::Store(error)),
+            },
+        };
+        match self.reply.take().expect("pending preset reply") {
             PresetCaptureReply::Ipc { id, sender, .. } => {
                 let response = match result {
                     Ok((_, name)) => crate::ipc::protocol::JsonRpcResponse::success(
@@ -586,7 +619,7 @@ impl PresetCaptureCompletion {
             PresetCaptureReply::Intent { origin, view, .. } => {
                 Some(PresetCaptureOutput::Intent(PresetCaptureNotice {
                     engine: self.engine,
-                    binding: self.binding,
+                    binding: self.binding.clone(),
                     origin,
                     view,
                     result: result.map_err(|error| match error {

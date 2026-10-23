@@ -53,6 +53,7 @@ pub(crate) struct AppServices {
 
     /// 뷰에도 같은 Arc를 넘겨 preset 디스크 캐시를 공유한다.
     pub(crate) preset_store: Arc<Mutex<PresetStore>>,
+    pub(crate) preset_files: super::preset_commands::PresetCommands,
 
     /// IPC 서버 시작 뒤 주입한다. runner 등 다른 스레드가 host IPC를 호출할 때 쓴다.
     pub(crate) host_ipc_injector: Arc<OnceLock<tasty_ipc::host_call::HostIpcInjector>>,
@@ -214,12 +215,14 @@ impl AppServices {
             parts.poll();
         }
         crate::app::file_consumers::poll(&self.registries);
+        self.preset_files.poll();
     }
 
     /// 확정하지 못한 최신 설정을 한 번 더 넣은 뒤 접수를 멈추고 마지막 flush 뒤 worker를 끝내게 한다.
     /// 남은 worker 수를 돌려준다. 기다리지 않는다. 설정 저장 producer가 멈춘 뒤 부른다.
     pub(crate) fn poll_file_writer_shutdown(&mut self) -> usize {
         crate::app::file_consumers::before_shutdown(&self.registries);
+        self.preset_files.poll();
         self.settings_saves.collect_completed();
         self.settings_saves.retry_latest_before_shutdown();
         let remaining = self
@@ -227,6 +230,7 @@ impl AppServices {
             .as_mut()
             .map_or(0, |parts| parts.writer.poll_shutdown());
         self.settings_saves.collect_completed();
+        self.preset_files.poll();
         if remaining == 0 {
             crate::app::file_consumers::after_shutdown(&self.registries);
         }
@@ -244,6 +248,13 @@ impl AppServices {
         remaining
     }
 
+    /// Reuse the existing writer for owned consumer commands; never creates a worker.
+    pub(crate) fn file_command_queue(
+        &self,
+    ) -> Option<tasty_utils::batch_writer::Handle<crate::app::file_writer::FileExecutor>> {
+        self.file_writer.as_ref().map(|parts| parts.writer.handle())
+    }
+
     /// file writer 계측. writer가 없으면 None이다.
     pub(crate) fn file_writer_stats(
         &self,
@@ -251,9 +262,10 @@ impl AppServices {
         tasty_utils::batch_writer::WriterStatsSnapshot,
         crate::app::file_writer::FileWriteCounts,
     )> {
-        self.file_writer
-            .as_ref()
-            .map(|w| (w.writer.stats(), w.stats.snapshot()))
+        self.file_command_queue().map(|queue| {
+            let writes = self.file_writer.as_ref().expect("queue has a writer");
+            (queue.stats(), writes.stats.snapshot())
+        })
     }
 
     /// 지연 응답의 결과가 메인 루프 안에서 생겼을 때 다음 회차가 응답을 거두도록 깨운다.

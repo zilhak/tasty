@@ -138,6 +138,7 @@ pub(super) fn handle_system_pressure(
                 status(core.registries.port_favorites.save_status());
         }
     }
+    body["file_commands"] = json!({"presets": core.preset_files.status()});
     let files = core.file_writer_stats();
     body["file_writer"] = writer_stats_json(files.as_ref().map(|(writer, _)| *writer));
     body["file_writes"] = files.map_or(serde_json::Value::Null, |(_, writes)| {

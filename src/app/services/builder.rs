@@ -185,6 +185,10 @@ impl AppServicesBuilder {
         if let Some(writer) = self.file_writer.as_ref() {
             crate::app::file_consumers::attach(&registries, writer.writer.handle());
         }
+        let preset_files = crate::app::preset_commands::PresetCommands::new(
+            preset_store.clone(),
+            self.file_writer.as_ref().map(|parts| parts.writer.handle()),
+        );
         Ok(AppServices {
             registries,
             #[cfg(feature = "gui")]
@@ -217,6 +221,7 @@ impl AppServicesBuilder {
             file_writer: self.file_writer,
             file_drain_reported: false,
             preset_store,
+            preset_files,
             host_ipc_injector,
             journal_metrics: None,
             ports: Default::default(),

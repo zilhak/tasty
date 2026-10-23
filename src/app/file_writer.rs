@@ -5,6 +5,8 @@
 //! 규칙은 `tasty_utils::batch_writer`가 정한다. 파일 사이에는 transaction이 없어 요청마다 따로 끝난다.
 //! 계약은 docs/design/systems/storage-contract.md의 "파일 실행기" 절에 있다.
 
+pub(crate) mod command;
+
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -23,6 +25,7 @@ const SETTINGS_KEY: &str = "file:config.toml";
 
 /// writer에 넣는 요청. 요청은 소유한 값만 담는다.
 pub(crate) enum FileRequest {
+    Command(command::Command),
     Snapshot(crate::core::file_snapshot::Snapshot),
     /// 메모리에 적용한 설정 전체. `revision`은 표시 revision이다.
     Settings {
@@ -35,6 +38,7 @@ impl batch_writer::Request for FileRequest {
     /// 동적 문자열과 목록도 큐 예산에 포함한다. 바이트는 보관하거나 로그에 남기지 않는다.
     fn bytes(&self) -> usize {
         match self {
+            Self::Command(command) => command.bytes,
             Self::Settings { settings, .. } => settings_bytes(settings),
             Self::Snapshot(snapshot) => snapshot.bytes.len(),
         }
@@ -42,6 +46,7 @@ impl batch_writer::Request for FileRequest {
 
     fn snapshot_key(&self) -> Option<&str> {
         match self {
+            Self::Command(_) => None,
             Self::Settings { .. } => Some(SETTINGS_KEY),
             Self::Snapshot(snapshot) => Some(snapshot.key),
         }
@@ -69,6 +74,7 @@ fn settings_bytes(settings: &Settings) -> usize {
 /// 요청 하나의 성공 결과.
 #[derive(Debug)]
 pub(crate) enum FileOutput {
+    Command(command::Output),
     Snapshot,
     /// 이 revision의 설정으로 파일을 교체했다.
     Settings {
@@ -86,7 +92,7 @@ impl std::fmt::Display for FileError {
     }
 }
 
-/// 실제 파일 교체 계측. 묶음 수가 아니라 교체를 시도한 수를 센다.
+/// 설정·snapshot 교체 시도 계측. 여러 파일을 다루는 ordered command는 이 수에 넣지 않는다.
 #[derive(Debug, Default)]
 pub(crate) struct FileWriteStats {
     replaced: AtomicU64,
@@ -118,8 +124,9 @@ pub(crate) struct FileExecutor {
 }
 
 impl FileExecutor {
-    fn run_one(&self, request: &FileRequest) -> Result<FileOutput, FileError> {
+    fn run_one(&self, request: &mut FileRequest) -> Result<FileOutput, FileError> {
         match request {
+            FileRequest::Command(command) => command.execute().map(FileOutput::Command),
             FileRequest::Snapshot(snapshot) => snapshot
                 .write()
                 .map(|()| FileOutput::Snapshot)
@@ -140,28 +147,42 @@ impl Executor for FileExecutor {
     type Output = FileOutput;
     type Error = FileError;
 
+    fn output_bytes(output: &FileOutput) -> usize {
+        match output {
+            FileOutput::Command(output) => output.bytes,
+            _ => 0,
+        }
+    }
+
     /// 요청마다 따로 교체한다. 앞 요청의 교체는 뒤 요청의 실패와 관계없이 남는다.
     fn execute(&mut self, batch: &mut [FileRequest]) -> Execution<FileOutput, FileError> {
         let settled = batch
-            .iter()
-            .map(
-                |request| match catch_unwind(AssertUnwindSafe(|| self.run_one(request))) {
+            .iter_mut()
+            .map(|request| {
+                let snapshot = !matches!(request, FileRequest::Command(_));
+                match catch_unwind(AssertUnwindSafe(|| self.run_one(request))) {
                     Ok(Ok(output)) => {
-                        self.stats.replaced.fetch_add(1, Ordering::Relaxed);
+                        if snapshot {
+                            self.stats.replaced.fetch_add(1, Ordering::Relaxed);
+                        }
                         Settled::Done(Ok(output))
                     }
                     Ok(Err(error)) => {
-                        self.stats.failed.fetch_add(1, Ordering::Relaxed);
+                        if snapshot {
+                            self.stats.failed.fetch_add(1, Ordering::Relaxed);
+                        }
                         tracing::warn!(%error, "file save failed");
                         Settled::Failed(error)
                     }
                     // 교체 도중의 panic이라 파일이 바뀌었는지 알 수 없다.
                     Err(_) => {
-                        self.stats.unknown.fetch_add(1, Ordering::Relaxed);
+                        if snapshot {
+                            self.stats.unknown.fetch_add(1, Ordering::Relaxed);
+                        }
                         Settled::Unknown(FileError("file save panicked".into()))
                     }
-                },
-            )
+                }
+            })
             .collect();
         Execution::Finished(settled)
     }

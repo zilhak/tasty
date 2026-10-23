@@ -185,10 +185,10 @@ pub(super) fn draw_toolbar_view(
             resp.request_focus();
             r.request_focus = false;
         }
-        let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        let esc = ui.is_enabled() && ui.input(|i| i.key_pressed(egui::Key::Escape));
         if esc {
             *rename = None; // 취소
-        } else if resp.lost_focus() {
+        } else if ui.is_enabled() && resp.lost_focus() {
             let buf = r.buffer.trim().to_string();
             if !buf.is_empty() && buf != r.original {
                 match store.queue_rename(kind, &r.original, &buf) {

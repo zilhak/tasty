@@ -66,6 +66,7 @@ pub(crate) mod plugin_failure_notice;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
 pub(crate) mod plugin_lifecycle;
+pub(crate) mod preset_commands;
 pub(crate) mod process_exit;
 pub(crate) mod publication_input;
 #[cfg(feature = "gui")]
@@ -143,6 +144,7 @@ impl std::error::Error for NoGpuAdapter {}
 
 pub(crate) struct App {
     pub(crate) journal: journal::JournalApplication,
+    pub(crate) preset_io: preset_capture::PendingPresetFiles,
     #[cfg(feature = "gui")]
     pub(crate) settings_edit_owner: Option<settings_edit::SettingsEditOwner>,
     #[cfg(feature = "gui")]
@@ -324,6 +326,7 @@ impl App {
         Ok(Self {
             journal,
             pending_server_attaches: Vec::new(),
+            preset_io: Default::default(),
             pending_recovery_notices: Vec::new(),
             #[cfg(feature = "gui")]
             next_restore_notice_id: 0,
@@ -444,6 +447,7 @@ impl App {
         Ok(Self {
             journal,
             pending_server_attaches: Vec::new(),
+            preset_io: Default::default(),
             publication_inputs: Default::default(),
             gate_queue: Default::default(),
             services: crate::boot::wiring::build_production_core_headless(memory, journal_wake)?

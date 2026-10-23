@@ -90,6 +90,7 @@ pub(crate) struct PresetDrafts {
     tabs: BTreeMap<String, TabPreset>,
     panes: BTreeMap<String, PanePreset>,
     edits: Vec<PresetEdit>,
+    pending: bool,
 }
 impl PresetDrafts {
     pub(crate) fn from_values(values: impl IntoIterator<Item = PresetValue>) -> Self {
@@ -100,7 +101,13 @@ impl PresetDrafts {
         draft
     }
     pub(crate) fn has_edits(&self) -> bool {
-        !self.edits.is_empty()
+        self.pending || !self.edits.is_empty()
+    }
+    pub(crate) fn is_pending(&self) -> bool {
+        self.pending
+    }
+    pub(crate) fn mark_pending(&mut self) {
+        self.pending = true;
     }
     pub(crate) fn take_edits(&mut self) -> Vec<PresetEdit> {
         std::mem::take(&mut self.edits)

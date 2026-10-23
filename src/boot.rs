@@ -937,6 +937,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     loop {
         app.services.poll_memory_writer();
         app.services.poll_file_writer();
+        app.finish_preset_files();
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());
         crate::intent::headless::settle_settings_saves(&mut app.services);

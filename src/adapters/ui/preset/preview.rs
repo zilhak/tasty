@@ -83,7 +83,7 @@ pub(super) fn draw_preview_editing(
 ) {
     let layout = &mut cache.layout;
     // 텍스트 입력 중에는 구조 단축키를 막는다. 바인딩 검사는 키를 소비하지 않아 중복 처리될 수 있다.
-    let key_outcome = if ui.ctx().wants_keyboard_input() {
+    let key_outcome = if !ui.is_enabled() || ui.ctx().wants_keyboard_input() {
         ShowOutcome::None
     } else {
         let super_held = crate::adapters::ui::input::shortcuts::super_held(ui.ctx());

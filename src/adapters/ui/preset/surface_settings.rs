@@ -101,8 +101,8 @@ pub(super) fn draw_surface_settings(
     let chooser_open = crate::view::file_chooser::owns_input(ui.ctx());
     let (esc, enter) = ui.input(|i| {
         (
-            !chooser_open && i.key_pressed(egui::Key::Escape),
-            !chooser_open && i.key_pressed(egui::Key::Enter),
+            !chooser_open && ui.is_enabled() && i.key_pressed(egui::Key::Escape),
+            !chooser_open && ui.is_enabled() && i.key_pressed(egui::Key::Enter),
         )
     });
     let popup_open = ui.memory(|m| m.any_popup_open());

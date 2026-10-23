@@ -1,5 +1,10 @@
 //! App-owned preset persistence. View drafts carry values and compare-before-write edits only.
-use crate::view::preset::draft::{PresetDrafts, PresetEdit, PresetValue};
+#[cfg(test)]
+mod tests;
+
+use super::preset_commands::{Outcome, Ticket};
+use crate::intent::preset::PresetMutationError;
+use crate::view::preset::draft::{PresetApplied, PresetDrafts, PresetEdit, PresetValue};
 use tasty_presets::{PresetKind, PresetStore};
 
 pub(crate) fn capture(store: &PresetStore) -> PresetDrafts {
@@ -85,43 +90,122 @@ fn merge(
         _ => anyhow::bail!("preset kind changed while editing"),
     })
 }
-fn apply(store: &mut PresetStore, edit: PresetEdit) -> anyhow::Result<()> {
+fn owned(value: PresetValue) -> tasty_presets::OwnedPreset {
+    match value {
+        PresetValue::Workspace(value) => tasty_presets::OwnedPreset::Workspace(value),
+        PresetValue::Tab(value) => tasty_presets::OwnedPreset::Tab(value),
+        PresetValue::Pane(value) => tasty_presets::OwnedPreset::Pane(value),
+    }
+}
+fn conflict(message: impl Into<String>) -> Outcome<()> {
+    Outcome::new(
+        Vec::new(),
+        Err(PresetMutationError::Conflict(message.into())),
+    )
+}
+fn save_edit(
+    store: &mut PresetStore,
+    before: Option<PresetValue>,
+    after: PresetValue,
+) -> Outcome<()> {
+    let live = current(store, after.kind(), after.name());
+    let overwrite = before.is_some();
+    let value = match (before, live) {
+        (Some(before), Some(live)) => match merge(before, after, live) {
+            Ok(value) => value,
+            Err(error) => return conflict(error.to_string()),
+        },
+        (None, None) => after,
+        _ => return conflict("preset changed while editing"),
+    };
+    let name = value.name().to_owned();
+    match store.save_command("", Some(&name), overwrite, owned(value)) {
+        Ok(Some(change)) => Outcome::new(vec![change], Ok(())),
+        Ok(None) => conflict("preset changed while editing"),
+        Err(error) => Outcome::new(Vec::new(), Err(PresetMutationError::Store(error))),
+    }
+}
+fn apply(store: &mut PresetStore, edit: PresetEdit) -> Outcome<()> {
     match edit {
-        PresetEdit::Save { before, after } => {
-            let live = current(store, after.kind(), after.name());
-            let overwrite = before.is_some();
-            let value = match (before, live) {
-                (Some(before), Some(live)) => merge(before, after, live)?,
-                (None, None) => after,
-                _ => anyhow::bail!("preset changed while editing"),
-            };
-            match value {
-                PresetValue::Workspace(value) if overwrite => {
-                    store.save_workspace_overwrite(value)?
-                }
-                PresetValue::Workspace(value) => store.save_workspace(value)?,
-                PresetValue::Tab(value) if overwrite => store.save_tab_overwrite(value)?,
-                PresetValue::Tab(value) => store.save_tab(value)?,
-                PresetValue::Pane(value) if overwrite => store.save_pane_overwrite(value)?,
-                PresetValue::Pane(value) => store.save_pane(value)?,
-            }
-        }
+        PresetEdit::Save { before, after } => save_edit(store, before, after),
         PresetEdit::Delete { before } => {
-            anyhow::ensure!(
-                current(store, before.kind(), before.name()).as_ref() == Some(&before),
-                "preset changed before deletion"
-            );
-            store.delete(before.kind(), before.name())?;
+            if current(store, before.kind(), before.name()).as_ref() != Some(&before) {
+                return conflict("preset changed before deletion");
+            }
+            let output = store.delete_command(before.kind(), before.name());
+            Outcome::new(
+                output.changes,
+                output.result.map_err(PresetMutationError::Store),
+            )
         }
         PresetEdit::Rename { before, to } => {
-            anyhow::ensure!(
-                current(store, before.kind(), before.name()).as_ref() == Some(&before),
-                "preset changed before rename"
-            );
-            store.rename(before.kind(), before.name(), &to)?;
+            if current(store, before.kind(), before.name()).as_ref() != Some(&before) {
+                return conflict("preset changed before rename");
+            }
+            let output = store.rename_command(before.kind(), before.name(), &to);
+            Outcome::new(
+                output.changes,
+                output.result.map_err(PresetMutationError::Store),
+            )
         }
     }
-    Ok(())
+}
+fn value_bytes(value: &PresetValue) -> usize {
+    use super::file_writer::command::value_bytes;
+    match value {
+        PresetValue::Workspace(value) => value_bytes(value),
+        PresetValue::Tab(value) => value_bytes(value),
+        PresetValue::Pane(value) => value_bytes(value),
+    }
+}
+fn edit_bytes(edit: &PresetEdit) -> usize {
+    let bytes = match edit {
+        PresetEdit::Save { before, after } => before
+            .as_ref()
+            .map_or(0, value_bytes)
+            .saturating_add(value_bytes(after)),
+        PresetEdit::Delete { before } => value_bytes(before),
+        PresetEdit::Rename { before, to } => value_bytes(before).saturating_add(to.len()),
+    };
+    bytes.saturating_add(128)
+}
+#[derive(serde::Serialize)]
+pub(crate) struct EditReport {
+    applied: usize,
+    error: Option<String>,
+    partial: bool,
+}
+fn run_edits(store: &mut PresetStore, edits: Vec<PresetEdit>) -> Outcome<EditReport> {
+    let mut report = EditReport {
+        applied: 0,
+        error: None,
+        partial: false,
+    };
+    let mut changes = Vec::new();
+    for edit in edits {
+        let output = apply(store, edit);
+        changes.extend(output.changes);
+        if let Err(error) = output.result {
+            report.partial = report.applied > 0 || output.partial;
+            report.error = Some(error.to_string());
+            break;
+        }
+        report.applied += 1;
+    }
+    let saved = report.error.is_none();
+    let partial = report.partial;
+    let completed_edits = report.applied;
+    let mut output = Outcome::new(changes, Ok(report));
+    output.saved = saved;
+    output.partial = partial;
+    output.completed_edits = completed_edits;
+    output
+}
+pub(crate) struct PendingEdit {
+    window: winit::window::WindowId,
+    identity: std::sync::Weak<()>,
+    ticket: Ticket<EditReport>,
+    applied: Vec<PresetApplied>,
 }
 
 impl super::App {
@@ -155,24 +239,68 @@ impl super::App {
         if edits.is_empty() {
             return;
         }
-        let mut store = crate::poison::recover_mutex(
-            self.services.preset_store.lock(),
-            crate::core::PRESET_STORE_WHAT,
-            &crate::core::PRESET_STORE_POISONED,
-        );
-        let mut error = None;
-        let mut applied = Vec::new();
-        for edit in edits {
-            let result = edit.applied();
-            if let Err(failure) = apply(&mut store, edit) {
-                tracing::warn!(%failure, "preset editor save failed");
-                error = Some(failure.to_string());
-                break;
+        let identity = view.base.state.identity();
+        let applied = edits.iter().map(PresetEdit::applied).collect();
+        let bytes = edits
+            .iter()
+            .fold(0usize, |bytes, edit| bytes.saturating_add(edit_bytes(edit)));
+        let ticket = self
+            .services
+            .preset_files
+            .submit(bytes, move |store| run_edits(store, edits));
+        self.preset_io.edits.push(PendingEdit {
+            window: id,
+            identity,
+            ticket,
+            applied,
+        });
+        self.finish_preset_edits();
+    }
+
+    pub(crate) fn finish_preset_edits(&mut self) {
+        let pending = std::mem::take(&mut self.preset_io.edits);
+        for entry in pending {
+            let Some(result) = entry.ticket.poll() else {
+                self.preset_io.edits.push(entry);
+                continue;
+            };
+            let (applied, error) = match result {
+                Ok(report) => (report.applied, report.error),
+                Err(error) => {
+                    let applied = match &error {
+                        PresetMutationError::Cache {
+                            completed_edits, ..
+                        } => *completed_edits,
+                        _ => 0,
+                    };
+                    (applied, Some(error.to_string()))
+                }
+            };
+            if let Some(error) = &error {
+                tracing::warn!(%error, "preset editor command failed");
             }
-            applied.push(result);
+            let Some(view) = self
+                .view
+                .views
+                .get_mut(&entry.window)
+                .and_then(|view| view.as_any_mut().downcast_mut::<crate::view::PresetView>())
+                .filter(|view| view.base.state.matches_identity(&entry.identity))
+            else {
+                continue;
+            };
+            let store = crate::poison::recover_mutex(
+                self.services.preset_store.lock(),
+                crate::core::PRESET_STORE_WHAT,
+                &crate::core::PRESET_STORE_POISONED,
+            );
+            let drafts = capture(&store);
+            drop(store);
+            view.accept_edits(
+                drafts,
+                error,
+                &entry.applied[..applied.min(entry.applied.len())],
+            );
+            view.base.mark_dirty();
         }
-        let drafts = capture(&store);
-        drop(store);
-        view.accept_edits(drafts, error, &applied);
     }
 }

@@ -669,6 +669,9 @@ pub fn draw_preset_panel(
     let edit_meta_id = egui::Id::new("preset_edit_meta");
 
     egui::CentralPanel::default().show(ctx, |ui| {
+        if store.is_pending() {
+            ui.disable();
+        }
         let mut scope = *active_kind;
         let l1 = ui
             .scope(|ui| {

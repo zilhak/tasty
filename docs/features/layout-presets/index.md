@@ -30,7 +30,7 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 저장소는 초기 읽기와 같은 바이트에서 파일·symlink 대상 관측값을 보관한다. 손상·읽기 실패 원본이나 이후 외부에서 바뀐 파일은 저장으로 덮지 않는다. 저장과 로드 시 ID 보정은 같은 디렉터리의 임시 파일 및 플랫폼별 교체를 쓰며 기존 접근 권한을 보존한다. 참여하지 않는 편집기의 최종 확인과 교체 사이 경합까지 막는 계약은 아니다.
 
-`PresetStore::save_command`는 소유된 `OwnedPreset`을 받아 참여자 잠금 안에서 자동 이름을 정하고 저장한 뒤 `PresetChange`를 반환하는 blocking 저장소 경계다. 손상되거나 읽을 수 없어 캐시에 없는 파일도 이름을 점유한다. 별도 캐시에는 성공 결과를 `apply_change`로 메모리 반영할 수 있다. 이 저장소 API 자체는 호스트 요청을 큐에 넣거나 응답을 지연하지 않으며, 현재 호스트 호출의 실행 스레드는 [저장 명부](../../design/systems/storage-contract.md)의 파일 표를 따른다.
+`PresetStore::save_command`는 소유된 `OwnedPreset`을 받아 참여자 잠금 안에서 자동 이름을 정하고 저장한 뒤 `PresetChange`를 반환하는 blocking 저장소 경계다. 손상되거나 읽을 수 없어 캐시에 없는 파일도 이름을 점유한다. 별도 캐시에는 성공 결과를 `apply_change`로 메모리 반영할 수 있다. 호스트는 같은 초기 캐시의 worker 전용 복사본으로 이 API를 같은 file writer에서 실행한다. 명령은 합치지 않고 접수 순서로 처리한다. receipt를 받은 후 표시 캐시에 확정 delta를 반영하고 IPC·plugin·원 View에 완료를 전달한다. 접수된 저장은 호출자가 닫혀도 계속한다. 초기 읽기·ID 보정은 load 단계 경계를 유지한다.
 
 이름 변경은 root 참여자 잠금과 원본 대상 잠금을 유지한 채 새 파일을 확정하고 원본을 삭제한다. 직렬화·새 파일 저장 실패로 원본 캐시를 먼저 지우지 않는다. 새 파일을 확정한 뒤 원본 정리 실패 또는 외부 변경을 발견하면 `RenamePartial` 오류를 반환하며 새 이름의 캐시도 보존한다. 이때 재시작하면 두 파일이 모두 보일 수 있다. `rename_command`의 `PresetMutationOutcome`은 부분 실패에도 확정된 새 이름의 `changes`를 싣는다. 별도 캐시는 이를 반영한 뒤 `result`를 전달해야 한다. 두 파일의 transaction이나 실패 시 rollback을 약속하지 않는다. 삭제는 원본 관측값을 검사하고, 삭제 성공 또는 실제 파일 부재를 확인한 뒤 캐시를 지운다. symlink 프리셋 삭제는 링크를 지우며 그 대상 파일은 남긴다.
 
@@ -41,12 +41,12 @@ rename의 새 파일은 원본의 owner·mode·ACL을 payload 쓰기 전에 복�
 **PresetView**(`View` + `sealed::Sealed` 직접 구현, modeless, 종류별 1 인스턴스 — [hierarchy](../../concepts/hierarchy.md))는 L1 scope 탭(Workspace/Tab/Pane) 아래 2-depth list→detail 본문이다:
 
 - **좌측 리스트**(196px): 현재 scope 의 저장된 preset 목록. row = 이름 + mono subtitle(workspace 는 저장된 subtitle, 없으면 pane/tab 개수 / tab·pane 은 surface·tab 개수). 선택 row 는 `surface-active` 채움 + 2px accent 좌측 bar. 헤더에 `N presets` + New preset(`+`) 버튼(현재 레이아웃 capture 가 아니라 terminal 1개짜리 최소 preset 생성 — 본문 capture 경로는 컨텍스트 메뉴 저장이 담당). 빈 scope → "저장된 프리셋이 없습니다.".
-- **우측 detail**: 44px 툴바(좌: preset 이름+subtitle / 우: rename·duplicate·delete 아이콘 + Edit 버튼) 위에 선택 preset 의 **데모 레이아웃 미리보기**(상위 pane split = 카드+gap, 하위 surface split = hairline, leaf = kind 아이콘 + kind명 + 값 요약, mini-tab 클릭 전환 — 구조·구성만, 라이브 내용 렌더 없음). 툴바 rename·duplicate·delete 는 store 에 직결돼 즉시 동작(rename 은 인라인 입력).
+- **우측 detail**: 44px 툴바(좌: preset 이름+subtitle / 우: rename·duplicate·delete 아이콘 + Edit 버튼) 위에 선택 preset 의 **데모 레이아웃 미리보기**(상위 pane split = 카드+gap, 하위 surface split = hairline, leaf = kind 아이콘 + kind명 + 값 요약, mini-tab 클릭 전환 — 구조·구성만, 라이브 내용 렌더 없음). 툴바 rename·duplicate·delete는 파일 명령을 접수한다(rename은 인라인 입력).
   - **leaf 값 요약**: leaf 는 (선택 여부와 무관하게) 가운데 kind 아이콘·kind명 아래에 설정값을 `키 값` 한 줄씩(중앙 정렬, mono) 요약한다. 라벨은 소문자 필드 키(`cwd`·`startup`·`file`·`url` — 설정 화면의 번역 필드 라벨이 아님), 대상 필드는 kind 의 선언 필드(`SurfaceKindRegistry`/fallback, kind 하드코딩 없음)를 순회해 **값이 비지 않은 것만**. path-like 키(`cwd`·`file`)는 앞자름(경로 꼬리 유지), command/url 키(`startup`·`url`)는 뒤자름. 색은 `preset-leaf-label-fg`(text-muted)/`preset-leaf-value-fg`(text-secondary). **degrade**: 박스 <96×72 → 요약 숨김(아이콘+kind명), 짧은 축 <46 → kind명도 숨김(아이콘만). 선택된 leaf 도 같은 요약을 보인다 — 칸 안에는 잘릴 수 있는 폼을 그리지 않는다.
 
 #### WYSIWYG 편집 모드 (Edit 버튼)
 
-툴바 **Edit** 버튼을 누르면 같은 미리보기 영역이 그 자리에서 **구조**를 편집하는 WYSIWYG 모드로 전환된다. Edit 는 primary **Done** 으로 바뀌고, 옆에 "자동 저장됨" 안내가 표시된다 — 구조 편집에는 **별도 Save 버튼 없음**. 구조 변경(split·제거·탭·pane)은 `PresetStore::save_*_overwrite` 로 즉시 디스크에 write-through 된다(기존 preset 의 메타데이터는 보존하고 레이아웃 트리만 교체). surface 의 **파라미터**(kind · 작업 디렉터리 · 시작 명령어 · kind 선언 필드)는 칸 안이 아니라 아래 **surface 설정 화면**에서 draft 로 고치고 확인해야 저장된다.
+툴바 **Edit** 버튼을 누르면 같은 미리보기 영역이 그 자리에서 **구조**를 편집하는 WYSIWYG 모드로 전환된다. Edit 는 primary **Done** 으로 바뀌고, 옆에 "자동 저장됨" 안내가 표시된다 — 구조 편집에는 **별도 Save 버튼 없음**. 구조 변경(split·제거·탭·pane)은 소유된 파일 명령으로 저장한다(기존 preset 의 메타데이터는 보존하고 레이아웃 트리만 교체). surface 의 **파라미터**(kind · 작업 디렉터리 · 시작 명령어 · kind 선언 필드)는 칸 안이 아니라 아래 **surface 설정 화면**에서 draft 로 고치고 확인해야 저장된다.
 
 ##### 저장소 변경과 편집 충돌
 
@@ -63,6 +63,8 @@ rename의 새 파일은 원본의 owner·mode·ACL을 payload 쓰기 전에 복�
 보기 갱신은 선택한 프리셋·모드·목록 스크롤을 바꾸거나 토스트를 띄우지 않는다. 레이아웃이 같으면 mini-tab 등 임시 보기 상태도 유지한다. 레이아웃이 바뀌면 mini-tab은 저장된 active 탭으로 돌아간다. 새 트리와 연결할 안정적인 pane ID가 없기 때문이다. IPC 저장은 메인 창에 다시 그리기를 요청하므로 프리셋 창이 즉시 새 프레임을 받는다고 가정하지 않는다.
 
 캐시와 이전 모드 기록은 `{kind}:{name}`별로 관리한다. 현재·직전 pass에서 사용한 프리셋만 남겨 방문한 만큼 무한히 쌓이지 않게 한다. 같은 프리셋을 한 프레임에서 보기와 편집 양쪽으로 그리는 조합은 아직 지원 대상으로 정하지 않았다. 같은 캐시가 저장소를 따르면서 편집 내용을 유지할 수는 없으며 현재 호출자도 없다. 설정 초안은 `surface_cfg`에 따로 저장한다.
+
+저장 결과를 기다리는 동안 편집기 입력과 구조 단축키를 막는다. 완료가 확인된 뒤 편집을 계속하며, 일반 실패는 기존 초안·선택·설정 화면을 되살린다. 배치의 앞 변경만 확정됐다면 이를 유지하고 첫 실패를 알린다. 저장이 끝난 View와 동일한 identity에만 완료 표시를 적용한다.
 
 구조 편집 저장과 설정 확인은 모두 `persist_layout`을 거치고 `Persisted::Conflict`를 처리한다. 관련 테스트는 `persist_tests.rs`, `view_refresh_tests.rs`, `cache_slot_tests.rs`다. 선택 이유.
 

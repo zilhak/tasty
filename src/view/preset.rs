@@ -97,7 +97,14 @@ impl PresetView {
     }
 
     pub(crate) fn take_edits(&mut self) -> Vec<PresetEdit> {
-        self.drafts.take_edits()
+        if self.drafts.is_pending() {
+            return Vec::new();
+        }
+        let edits = self.drafts.take_edits();
+        if !edits.is_empty() {
+            self.drafts.mark_pending();
+        }
+        edits
     }
 
     pub(crate) fn accept_edits(
@@ -250,15 +257,19 @@ impl View for PresetView {
 
         let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
         let drafts = &mut self.drafts;
-        self.pending_presentation = Some(PendingPresentation {
-            workspace: self.selected_workspace.clone(),
-            tab: self.selected_tab.clone(),
-            pane: self.selected_pane.clone(),
-            editing: self.editing,
-            node: self.selected_node,
-            cfg: self.surface_cfg.clone(),
-            toolbar: crate::adapters::ui::preset::ToolbarDraft::capture(&self.base.gpu.egui_ctx),
-        });
+        if !drafts.is_pending() {
+            self.pending_presentation = Some(PendingPresentation {
+                workspace: self.selected_workspace.clone(),
+                tab: self.selected_tab.clone(),
+                pane: self.selected_pane.clone(),
+                editing: self.editing,
+                node: self.selected_node,
+                cfg: self.surface_cfg.clone(),
+                toolbar: crate::adapters::ui::preset::ToolbarDraft::capture(
+                    &self.base.gpu.egui_ctx,
+                ),
+            });
+        }
         // registry 스냅샷을 프레임마다 파생 — 미주입이면 빈 catalog(정적 fallback).
         let catalog = self
             .surface_registry

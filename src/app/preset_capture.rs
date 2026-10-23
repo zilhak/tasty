@@ -8,6 +8,14 @@ use crate::ipc::{
 use crate::runtime::engine_session::EngineSession;
 #[cfg(feature = "gui")]
 use crate::view::ui::View;
+#[derive(Default)]
+pub(crate) struct PendingPresetFiles {
+    captures: Vec<super::journal::PendingPresetSave>,
+    #[cfg(feature = "gui")]
+    pub(crate) edits: Vec<super::preset_editor::PendingEdit>,
+    #[cfg(feature = "gui")]
+    last_completed: u64,
+}
 impl App {
     #[cfg(not(feature = "gui"))]
     pub(crate) fn preset_capture_on_session(
@@ -65,12 +73,23 @@ impl App {
         true
     }
     pub(crate) fn finish_preset_captures(&mut self) {
-        for completion in self.journal.take_preset_captures() {
-            match completion.save(&self.services) {
+        self.preset_io.captures.extend(
+            self.journal
+                .take_preset_captures()
+                .into_iter()
+                .map(|completion| completion.save(&self.services)),
+        );
+        self.finish_preset_files();
+    }
+    /// Collect already admitted files only. Shutdown calls this after file receipts, before
+    /// retiring original IPC/plugin observers; it never admits a new journal capture.
+    pub(crate) fn finish_preset_files(&mut self) {
+        let mut pending = std::mem::take(&mut self.preset_io.captures);
+        for completion in &mut pending {
+            match completion.poll() {
                 #[cfg(feature = "gui")]
                 Some(super::journal::PresetCaptureOutput::Intent(notice)) => {
-                    #[cfg(feature = "gui")]
-                    self.apply_preset_capture_notice(notice);
+                    self.apply_preset_capture_notice(notice)
                 }
                 Some(super::journal::PresetCaptureOutput::Plugin(reply)) => {
                     if let Some(manager) = self.plugin_manager.as_mut()
@@ -85,6 +104,21 @@ impl App {
                     }
                 }
                 None => {}
+            }
+        }
+        pending.retain(|completion| !completion.is_finished());
+        self.preset_io.captures = pending;
+        #[cfg(feature = "gui")]
+        {
+            self.finish_preset_edits();
+            let completed = self.services.preset_files.status().completed;
+            if self.preset_io.last_completed != completed {
+                self.preset_io.last_completed = completed;
+                for view in self.view.views.values_mut() {
+                    if view.as_any().is::<crate::view::PresetView>() {
+                        view.mark_dirty();
+                    }
+                }
             }
         }
     }
