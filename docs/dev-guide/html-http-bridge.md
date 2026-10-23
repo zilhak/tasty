@@ -6,6 +6,10 @@ The `tasty-ipc` HTTP leaf defines an opt-in Control-frame family separate from f
 
 Both directions validate the complete serialized frame before enqueue. Header order, duplicate names and non-UTF8 value bytes are retained. Metadata, header counts/bytes, methods, chunk windows, decoded base64 and portable lengths are bounded. HTTP DTOs deliberately omit Debug implementations for request URLs, headers and payloads. Failure reasons must be sanitized by their producer; validation bounds their size and rejects control characters.
 
+CommandRejected identifies a rejected command with CommandKind and an optional supplied response identity. It does not end an existing accepted response. Failure is reserved for an attempt that actually ended; its exact identity cannot later complete or be reused.
+
+HttpReply::retained_bytes is a nonconsuming, allocation-free query for dynamic capacities, independent of validation or frame serialization. Head includes URL capacity, all allocated header-vector slots (including spare slots), and initialized header name/value capacities. Chunk includes base64 string capacity; Failure and CommandRejected include reason capacity. Other variants retain no dynamic bytes. Arithmetic saturates; fixed queue slots, wire payload/framing and encoded document consent are accounted separately.
+
 The HTTP and HTTPS capabilities additionally require the existing HTML transfer capability. Existing file wire messages and old-peer behavior remain unchanged. The server descriptor must not advertise an executor merely because these types compile. Native parsing, TLS exceptions, cache retirement and browser consent are separate integration obligations.
 
 ## Server ownership and flow

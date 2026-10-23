@@ -68,6 +68,19 @@ pub enum FailureCode {
     UnsupportedEncoding,
     Worker,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandKind {
+    Begin,
+    Upload,
+    Commit,
+    Credit,
+    Cancel,
+    Reuse,
+    Release,
+    Stop,
+    Close,
+}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event")]
 pub enum HttpRequest {
@@ -158,6 +171,16 @@ pub enum HttpReply {
         code: FailureCode,
         reason: String,
     },
+    /// Rejection of one command, without terminating an existing accepted response.
+    #[serde(rename = "html_http_command_rejected")]
+    CommandRejected {
+        id: TransferId,
+        source_generation: u64,
+        command: CommandKind,
+        response: Option<ResponseId>,
+        code: FailureCode,
+        reason: String,
+    },
     #[serde(rename = "html_http_cancelled")]
     Cancelled {
         id: TransferId,
@@ -173,6 +196,19 @@ fn frame<T: Serialize>(value: &T) -> Result<StreamFrame> {
     Ok(StreamFrame::new(StreamTag::Control, payload))
 }
 impl HttpRequest {
+    pub fn command_kind(&self) -> CommandKind {
+        match self {
+            Self::Begin { .. } => CommandKind::Begin,
+            Self::Upload { .. } => CommandKind::Upload,
+            Self::Commit { .. } => CommandKind::Commit,
+            Self::Credit { .. } => CommandKind::Credit,
+            Self::Cancel { .. } => CommandKind::Cancel,
+            Self::Reuse { .. } => CommandKind::Reuse,
+            Self::Release { .. } => CommandKind::Release,
+            Self::Stop { .. } => CommandKind::Stop,
+            Self::Close { .. } => CommandKind::Close,
+        }
+    }
     pub fn id(&self) -> TransferId {
         match self {
             Self::Begin { id, .. }
@@ -216,10 +252,34 @@ impl HttpRequest {
     }
 }
 impl HttpReply {
+    /// Dynamic retained allocations only; the connection accounts fixed queue slots separately.
+    /// Querying capacity never validates, serializes or consumes the reply.
+    pub fn retained_bytes(&self) -> usize {
+        match self {
+            Self::Head { head } => head.headers.iter().fold(
+                head.logical_url.capacity().saturating_add(
+                    head.headers
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<Header>()),
+                ),
+                |bytes, h| {
+                    bytes
+                        .saturating_add(h.name.capacity())
+                        .saturating_add(h.value.capacity())
+                },
+            ),
+            Self::Chunk { data_b64, .. } => data_b64.capacity(),
+            Self::Failure { reason, .. } | Self::CommandRejected { reason, .. } => {
+                reason.capacity()
+            }
+            _ => 0,
+        }
+    }
     pub fn id(&self) -> TransferId {
         match self {
             Self::UploadReady { id, .. }
             | Self::Failure { id, .. }
+            | Self::CommandRejected { id, .. }
             | Self::Cancelled { id, .. } => *id,
             Self::Head { head } => head.id.request,
             Self::AllowanceRequired { response, .. }
@@ -234,3 +294,6 @@ impl HttpReply {
 }
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod correction_tests;

@@ -201,6 +201,13 @@ impl HttpReply {
                 response: r,
                 reason,
                 ..
+            }
+            | Self::CommandRejected {
+                id,
+                source_generation,
+                response: r,
+                reason,
+                ..
             } => {
                 identities(*id, *source_generation, *r)?;
                 if reason.len() > REASON_BYTES || reason.chars().any(char::is_control) {
