@@ -190,3 +190,45 @@ fn the_skipped_rows_keep_their_space_down_to_the_last_row() {
     let row_h = theme.table_cell_height().value();
     assert!((last.top() - before.top() - row_h).abs() < 0.5);
 }
+
+#[test]
+fn indexed_virtual_rows_only_fetch_visible_items_from_a_large_source() {
+    let theme = tasty_themes::mocha_fallback();
+    let ctx = egui::Context::default();
+    for _ in 0..3 {
+        let fetched = RefCell::new(Vec::new());
+        let drawn = RefCell::new(Vec::new());
+        let _output = ctx.run(raw(&ctx, vec![]), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                Table::new(vec![TableColumn::<()> {
+                    title: "Name",
+                    width: TableColumnWidth::Remainder {
+                        at_least: LogicalPx(140.0),
+                        clip: true,
+                    },
+                    align: TableAlign::Left,
+                    sort_id: None,
+                }])
+                .virtual_rows(true)
+                .scroll_to_row(Some(90_000))
+                .show_indexed(
+                    ui,
+                    &theme,
+                    100_000,
+                    |i| {
+                        fetched.borrow_mut().push(i);
+                        i
+                    },
+                    |_| false,
+                    |ui, _, row, _| {
+                        drawn.borrow_mut().push(*row);
+                        ui.label(format!("row {row}"));
+                    },
+                );
+            });
+        });
+        assert!(!fetched.borrow().is_empty());
+        assert!(fetched.borrow().len() < 60);
+        assert_eq!(*fetched.borrow(), *drawn.borrow());
+    }
+}

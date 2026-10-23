@@ -452,6 +452,13 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한다 (`appearance.plugin_font_overrides["explorer"]`, `effective_font_for_kind("explorer")` 가 읽음).
 
+### Detail 행 조회
+
+Detail은 공용 Table의 `show_indexed`로 합성 상위 폴더·이름 입력 행을 포함한 전체 행 수와 조회 함수를 넘긴다. Table은 보이는 행만 조회하며, Explorer는 필터 결과의 원본 인덱스로 해당 항목을 빌린다. 전체 목록의 참조 Vec을 프레임마다 만들지 않는다. 선택·열·행 높이·스크롤 번호 계약은 동일하다.
+
+
+타입어헤드는 표시 목록 번호로 이름을 빌리고, 후보의 소문자 비교도 문자 iterator로 수행한다. 전체 항목·이름 사본을 만들지 않는다.
+
 ## 성능 관측
 
 `TASTY_LOG=tasty::gfx::perf=trace,tasty::explorer::perf=trace`로 프레임별 CPU 렌더 시간(`frame_sample`)과 디렉터리 조회의 항목 수·경과 시간(`directory_read`)을 기록할 수 있다. 기본 로그에서는 출력하지 않으며 디렉터리 경로나 파일 내용은 기록하지 않는다. 프레임 시간은 GPU 완료 시간이나 OS 화면 표시 시간이 아니다. 입력 주입 시각과 프레임 로그를 함께 대조할 때도 측정 환경과 포함한 구간을 구분한다.

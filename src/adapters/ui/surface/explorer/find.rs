@@ -205,6 +205,22 @@ impl ExplorerView {
         }
     }
 
+    /// 보이는 목록 번호로 항목을 빌린다. 필터 캐시가 있으면 원본 번호로 바로 조회한다.
+    pub(super) fn shown_at(&self, index: usize) -> Option<&DirEntryInfo> {
+        if let Some(list) = self.shown_slice() {
+            return list.get(index);
+        }
+        if let Some(hits) = self.filtered() {
+            return hits.get(index).and_then(|&i| self.entries.get(i));
+        }
+        self.shown().nth(index)
+    }
+
+    /// 표시 순서의 이름을 빌린다. 목록·필터 캐시는 인덱스로 조회한다.
+    pub(super) fn shown_names(&self) -> impl ExactSizeIterator<Item = &str> + Clone {
+        (0..self.shown_count()).map(|i| self.shown_at(i).expect("shown index").name.as_str())
+    }
+
     /// 보일 항목 가운데 `range` 자리의 사본. 목록은 보이는 행만 복제해 그린다.
     /// 이름으로 거르지 않거나 거른 결과가 맞춰져 있으면 목록을 훑지 않는다.
     pub(crate) fn shown_range(&self, range: std::ops::Range<usize>) -> Vec<DirEntryInfo> {

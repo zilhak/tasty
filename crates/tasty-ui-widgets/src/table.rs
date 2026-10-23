@@ -202,6 +202,30 @@ impl<'a, K> Table<'a, K> {
     where
         K: Copy + PartialEq,
     {
+        self.show_indexed(
+            ui,
+            theme,
+            rows.len(),
+            |i| &rows[i],
+            |row| is_selected(*row),
+            |ui, theme, row, col| cell(ui, theme, *row, col),
+        )
+    }
+
+    /// 인덱스로 행을 가져온다. 가상화할 때는 화면에 걸친 행만 조회한다.
+    /// `row_at`은 `0..count`의 모든 번호를 받을 수 있어야 한다.
+    pub fn show_indexed<Row>(
+        self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        count: usize,
+        row_at: impl Fn(usize) -> Row,
+        is_selected: impl Fn(&Row) -> bool,
+        mut cell: impl FnMut(&mut egui::Ui, &Theme, &Row, usize),
+    ) -> TableOutput<K>
+    where
+        K: Copy + PartialEq,
+    {
         // 헤더와 본문 행은 같은 `table-cell-height` 역할을 쓴다.
         let cell_h = theme.table_cell_height();
         let header_h = self.header_height.unwrap_or(cell_h);
@@ -326,13 +350,13 @@ impl<'a, K> Table<'a, K> {
                 // egui_extras `rows` 는 본문 맨 위를 기준으로 보이는 범위를 정한다. 앞에 다른 행을
                 // 두면 그 수만큼 범위가 밀리므로 모든 행을 한 번에 넘긴다.
                 if virtual_rows {
-                    body.rows(row_h.value(), rows.len(), |mut tr| {
+                    body.rows(row_h.value(), count, |mut tr| {
                         let i = tr.index();
-                        draw_row(&mut tr, i, &rows[i]);
+                        draw_row(&mut tr, i, &row_at(i));
                     });
                 } else {
-                    for (i, row) in rows.iter().enumerate() {
-                        body.row(row_h.value(), |mut tr| draw_row(&mut tr, i, row));
+                    for i in 0..count {
+                        body.row(row_h.value(), |mut tr| draw_row(&mut tr, i, &row_at(i)));
                     }
                 }
             }));

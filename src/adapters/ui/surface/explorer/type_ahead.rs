@@ -36,11 +36,23 @@ impl TypeAhead {
     /// 일치하는 항목이 없으면 `None`을 돌려주고 버퍼를 입력 직전 상태로 되돌린다. 오타
     /// 한 글자가 그 뒤의 입력을 계속 막지 않게 하기 위해서다. 되돌리지 않으면 `cz`가
     /// 버퍼에 남아 다음에 누른 `o`가 `czo`를 찾게 된다.
+    #[cfg(test)]
     pub fn feed(
         &mut self,
         ch: char,
         now: Instant,
         names: &[String],
+        selected: Option<usize>,
+    ) -> Option<usize> {
+        self.feed_names(ch, now, names.iter().map(String::as_str), selected)
+    }
+
+    /// 항목 이름을 필요한 번호에서만 빌린다. 전체 이름 목록을 복제하지 않는다.
+    pub fn feed_names<'a>(
+        &mut self,
+        ch: char,
+        now: Instant,
+        names: impl ExactSizeIterator<Item = &'a str> + Clone,
         selected: Option<usize>,
     ) -> Option<usize> {
         if self
@@ -94,14 +106,25 @@ fn query_and_start(buffer: &str, selected: Option<usize>) -> (String, usize) {
 
 /// `start`부터 목록 끝까지 살펴본 뒤 처음으로 돌아와 한 바퀴 돌면서 처음 일치하는
 /// 인덱스를 찾는다. 비교할 때 대소문자는 구분하지 않는다.
-fn find_match(names: &[String], query: &str, start: usize) -> Option<usize> {
-    if names.is_empty() || query.is_empty() {
+fn find_match<'a>(
+    names: impl ExactSizeIterator<Item = &'a str> + Clone,
+    query: &str,
+    start: usize,
+) -> Option<usize> {
+    let count = names.len();
+    if count == 0 || query.is_empty() {
         return None;
     }
-    let n = names.len();
-    (0..n)
-        .map(|k| (start + k) % n)
-        .find(|&i| names[i].to_lowercase().starts_with(query))
+    names
+        .enumerate()
+        .cycle()
+        .skip(start % count)
+        .take(count)
+        .find(|(_, name)| {
+            let mut lower = name.chars().flat_map(char::to_lowercase);
+            query.chars().all(|ch| lower.next() == Some(ch))
+        })
+        .map(|(i, _)| i)
 }
 
 /// 타입어헤드가 소비해도 되는 문자인지 판단한다. ASCII 영숫자 한 글자만 허용한다.
@@ -155,6 +178,36 @@ pub fn unmodified_binding_chars(keybindings: &KeybindingSettings) -> HashSet<cha
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn indexed_names_are_borrowed_only_until_a_match_and_fold_unicode() {
+        let calls = std::cell::Cell::new(0);
+        let mut ta = TypeAhead::default();
+        let now = Instant::now();
+        assert_eq!(
+            ta.feed_names(
+                'k',
+                now,
+                (0..100_000).map(|i| {
+                    calls.set(calls.get() + 1);
+                    if i == 5 { "Kelvin" } else { "other" }
+                }),
+                None
+            ),
+            Some(5)
+        );
+        assert_eq!(calls.get(), 6);
+        ta.reset();
+        assert_eq!(
+            ta.feed_names('i', now, ["İstanbul"].into_iter(), None),
+            Some(0)
+        );
+        // Unicode lowercase expands İ to i + combining dot, so ASCII "is" does not match.
+        assert_eq!(
+            ta.feed_names('s', now, ["İstanbul"].into_iter(), Some(0)),
+            None
+        );
+    }
 
     /// 화면에 보이는 순서를 그대로 흉내 낸다. 폴더를 먼저 정렬한 결과다.
     fn names() -> Vec<String> {

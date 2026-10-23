@@ -1053,34 +1053,28 @@ fn apply_type_ahead(ui: &egui::Ui, view: &mut ExplorerView, input: &ExplorerInpu
         return;
     }
 
-    let typed: Vec<char> = ui.input(|i| {
-        i.events
+    view.refresh_filter();
+    let mut type_ahead = std::mem::take(&mut view.type_ahead);
+    let now = std::time::Instant::now();
+    ui.input(|i| {
+        for ch in i
+            .events
             .iter()
             .filter_map(|e| match e {
                 egui::Event::Text(text) => type_ahead::type_ahead_char(text),
                 _ => None,
             })
-            .collect()
+            .filter(|ch| !input.shortcut_chars.contains(&ch.to_ascii_lowercase()))
+        {
+            let selected = view.single_selected_index();
+            if let Some(i) = type_ahead.feed_names(ch, now, view.shown_names(), selected) {
+                let path = view.shown_at(i).expect("matched item exists").path.clone();
+                view.select_only(&path);
+                view.scroll_to = Some(path);
+            }
+        }
     });
-    if typed.is_empty() {
-        return;
-    }
-
-    let shown = view.shown_entries();
-    let names: Vec<String> = shown.iter().map(|e| e.name.clone()).collect();
-    let now = std::time::Instant::now();
-    for ch in typed {
-        if input.shortcut_chars.contains(&ch.to_ascii_lowercase()) {
-            continue;
-        }
-        // 선택이 하나가 아니면 어느 항목 다음부터 찾을지 정할 수 없으므로 목록 처음부터 찾는다.
-        let selected = view.single_selected_index();
-        if let Some(i) = view.type_ahead.feed(ch, now, &names, selected) {
-            let path = shown[i].path.clone();
-            view.select_only(&path);
-            view.scroll_to = Some(path);
-        }
-    }
+    view.type_ahead = type_ahead;
 }
 
 /// 합성 `..` 엔트리. **렌더 전용** — `view.entries`/선택/상태줄/컨텍스트 메뉴에는 절대
@@ -1384,20 +1378,25 @@ fn detail_view(
     // 하위 폴더 검색 결과는 목록을 대신하므로 `..` 를 두지 않는다.
     let parent = parent_nav_target(root).filter(|_| search_root.is_none());
     let query = view.find_query().to_owned();
-    // 항목 행은 사본 없이 참조로 넘기고 표가 화면에 걸친 행만 그린다. 행 번호를 함께 실어
-    // 화면 밖으로 나간 편집 줄 자리를 그린 행에서 계산한다.
+    // 합성 행을 포함한 번호를 원본 목록 번호로 옮겨 화면에 걸친 행만 빌린다.
     let dotdot = parent.map(dotdot_entry);
     let placeholder = view.create.as_ref().map(|_| create::placeholder_row(root));
-    // 편집 줄 자리 행은 목록 맨 앞이나 대상 폴더 행 바로 다음에 끼운다.
     let at = create::place::slot_index(view);
     let lead = usize::from(dotdot.is_some());
     let editor_row = at.map(|a| lead + a);
     let scroll_row = scroll_target(view).map(|i| lead + create::place::virtual_index(at, i));
-    let mut list: Vec<&DirEntryInfo> = dotdot.iter().chain(view.shown()).collect();
-    if let (Some(row), Some(p)) = (editor_row, placeholder.as_ref()) {
-        list.insert(row, p);
-    }
-    let rows: Vec<(usize, &DirEntryInfo)> = list.into_iter().enumerate().collect();
+    let count = lead + view.shown_count() + usize::from(placeholder.is_some());
+    let row_at = |i: usize| {
+        let row = if i < lead {
+            dotdot.as_ref()
+        } else if Some(i) == editor_row {
+            placeholder.as_ref()
+        } else {
+            let index = i - lead - usize::from(editor_row.is_some_and(|at| i > at));
+            view.shown_at(index)
+        };
+        (i, row.expect("detail row index is within count"))
+    };
     let editor_cell = std::cell::Cell::new(None);
     let drawn_name_cell = std::cell::Cell::new(None);
     let out = Table::new(columns)
@@ -1409,10 +1408,11 @@ fn detail_view(
         .virtual_rows(true)
         .scroll_to_row(scroll_row)
         .id_salt(format!("explorer_detail_{id_suffix}_{}", view.tab_salt()))
-        .show(
+        .show_indexed(
             ui,
             theme,
-            &rows,
+            count,
+            row_at,
             // `..`(name == "..", read_dir 은 이 이름을 반환하지 않음) 는 선택 대상 아님.
             |(_, row): &(usize, &DirEntryInfo)| {
                 row.name != ".." && view.selected.contains(&row.path)
@@ -1511,19 +1511,15 @@ fn detail_view(
         *action = Some(ExplorerAction::SetSort(key));
     }
     // 눌린 행만 복제한다. 아래 처리는 view 를 바꾸므로 목록 참조를 더 쓰지 않는다.
-    let row_at = |i: Option<usize>| {
-        i.and_then(|i| rows.get(i))
+    let clicked_entry = |i: Option<usize>| {
+        i.map(row_at)
             .filter(|(_, e)| !e.name.is_empty())
-            .map(|(_, e)| (*e).clone())
+            .map(|(_, e)| e.clone())
     };
-    let secondary = row_at(out.secondary_clicked_row);
-    let clicked = row_at(out.clicked_row);
+    let secondary = clicked_entry(out.secondary_clicked_row);
+    let clicked = clicked_entry(out.clicked_row);
     let row_h = theme.table_cell_height().value();
-    view.note_detail(
-        drawn_name_cell.get(),
-        rows.len() - view.shown_count(),
-        row_h,
-    );
+    view.note_detail(drawn_name_cell.get(), count - view.shown_count(), row_h);
     create::place::fit_layout(view, at, |_| {});
     // 편집 줄 자리가 화면 밖이라 그리지 않았으면 그린 행에서 자리를 계산한다. 입력은 화면 밖에서도
     // 그려야 포커스를 잃지 않는다. 행 높이는 표 기본값이다.
