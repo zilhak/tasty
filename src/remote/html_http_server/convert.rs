@@ -43,40 +43,82 @@ pub(super) fn complete(r: &core::StoredResponse) -> core::Result<wire::HttpReply
         decoded: identity(r.decoded.identity())?,
     })
 }
-/// Exhaustive category mapping; never copy upstream errors, URLs or header values into reasons.
+/// Terminal result only: the exact admitted attempt must already have ended.
+/// Synchronous command errors use rejection_reply, preserving any accepted response.
 pub fn failure_reply(
     id: TransferId,
     source_generation: u64,
     response: Option<wire::ResponseId>,
     error: &core::Error,
 ) -> wire::HttpReply {
-    use super::core::Error as E;
-    use wire::FailureCode as F;
-    let code = match error {
-        E::Closed => F::Closed,
-        E::Stale => F::Stale,
-        E::Capacity => F::Capacity,
-        E::InProgress => F::InProgress,
-        E::AlreadyUsed => F::AlreadyUsed,
-        E::DuplicateMismatch => F::DuplicateMismatch,
-        E::Invalid(_) => F::Invalid,
-        E::Quota(_) => F::Quota,
-        E::Network => F::Network,
-        E::Timeout => F::Timeout,
-        E::Cancelled => F::Cancelled,
-        E::UnsupportedScheme => F::UnsupportedScheme,
-        E::UnsupportedUpgrade => F::UnsupportedUpgrade,
-        E::UnsupportedStreaming => F::UnsupportedStreaming,
-        E::UnsupportedEncoding => F::UnsupportedEncoding,
-        E::Worker => F::Worker,
-    };
-    // Category names are fixed local strings; sensitive Invalid/Quota details are not echoed.
+    let (code, reason) = error_details(error);
     wire::HttpReply::Failure {
         id,
         source_generation,
         response,
         code,
-        reason: format!("HTTP request failed: {code:?}"),
+        reason: reason.into(),
+    }
+}
+/// Correlates the rejected command, never inferring the current accepted response.
+/// The host must revalidate captured authority before publishing this reply.
+pub fn rejection_reply(request: &wire::HttpRequest, error: &core::Error) -> wire::HttpReply {
+    let response = match request {
+        wire::HttpRequest::Credit { response, .. }
+        | wire::HttpRequest::Reuse { response }
+        | wire::HttpRequest::Release { response }
+            if response.serial != 0 =>
+        {
+            Some(*response)
+        }
+        _ => None,
+    };
+    let (code, reason) = error_details(error);
+    wire::HttpReply::CommandRejected {
+        id: request.id(),
+        source_generation: request.source_generation(),
+        command: request.command_kind(),
+        response,
+        code,
+        reason: reason.into(),
+    }
+}
+fn error_details(error: &core::Error) -> (wire::FailureCode, &'static str) {
+    use super::core::Error as E;
+    use wire::FailureCode as F;
+    // Keep fixed category reasons; Invalid/Quota details can contain sensitive input.
+    match error {
+        E::Closed => (F::Closed, "HTTP request failed: Closed"),
+        E::Stale => (F::Stale, "HTTP request failed: Stale"),
+        E::Capacity => (F::Capacity, "HTTP request failed: Capacity"),
+        E::InProgress => (F::InProgress, "HTTP request failed: InProgress"),
+        E::AlreadyUsed => (F::AlreadyUsed, "HTTP request failed: AlreadyUsed"),
+        E::DuplicateMismatch => (
+            F::DuplicateMismatch,
+            "HTTP request failed: DuplicateMismatch",
+        ),
+        E::Invalid(_) => (F::Invalid, "HTTP request failed: Invalid"),
+        E::Quota(_) => (F::Quota, "HTTP request failed: Quota"),
+        E::Network => (F::Network, "HTTP request failed: Network"),
+        E::Timeout => (F::Timeout, "HTTP request failed: Timeout"),
+        E::Cancelled => (F::Cancelled, "HTTP request failed: Cancelled"),
+        E::UnsupportedScheme => (
+            F::UnsupportedScheme,
+            "HTTP request failed: UnsupportedScheme",
+        ),
+        E::UnsupportedUpgrade => (
+            F::UnsupportedUpgrade,
+            "HTTP request failed: UnsupportedUpgrade",
+        ),
+        E::UnsupportedStreaming => (
+            F::UnsupportedStreaming,
+            "HTTP request failed: UnsupportedStreaming",
+        ),
+        E::UnsupportedEncoding => (
+            F::UnsupportedEncoding,
+            "HTTP request failed: UnsupportedEncoding",
+        ),
+        E::Worker => (F::Worker, "HTTP request failed: Worker"),
     }
 }
 pub(super) fn encode(bytes: &[u8]) -> String {

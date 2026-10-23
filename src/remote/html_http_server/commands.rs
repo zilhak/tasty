@@ -1,7 +1,8 @@
 use super::*;
 impl Server {
-    /// Errors are sanitized core categories; the host may send failure_reply through its bounded
-    /// connection queue. A failed command never silently starts or retries an upstream request.
+    /// Synchronous errors use rejection_reply under current authority. A destructive Commit
+    /// additionally queues one terminal Failure for poll; rejected live commands preserve it.
+    /// A failed command never starts or retries another upstream request.
     pub fn handle(
         &mut self,
         token: &OwnerToken,
@@ -189,26 +190,28 @@ fn commit(owner: &mut Owner, id: TransferId) -> core::Result<()> {
     else {
         return Err(core::Error::Worker);
     };
-    let frozen = builder.finish();
-    if identity(frozen.identity())? != *upload {
-        return Err(core::Error::Invalid("upload identity mismatch"));
-    }
-    let request = core::Request {
-        id,
-        source_generation: *source_generation,
-        method: method.clone(),
-        url: logical_url.clone(),
-        headers: headers
-            .iter()
-            .map(|h| core::Header {
-                name: h.name.clone(),
-                value: h.value.clone(),
-            })
-            .collect(),
-        upload: frozen,
-    };
-    match owner.document.open(request)? {
-        core::Opened::Fresh(operation) => {
+    let opened = (|| {
+        let frozen = builder.finish();
+        if identity(frozen.identity())? != *upload {
+            return Err(core::Error::Invalid("upload identity mismatch"));
+        }
+        owner.document.open(core::Request {
+            id,
+            source_generation: *source_generation,
+            method: method.clone(),
+            url: logical_url.clone(),
+            headers: headers
+                .iter()
+                .map(|h| core::Header {
+                    name: h.name.clone(),
+                    value: h.value.clone(),
+                })
+                .collect(),
+            upload: frozen,
+        })
+    })();
+    match opened {
+        Ok(core::Opened::Fresh(operation)) => {
             slot.state = State::Running(Running {
                 operation,
                 response: None,
@@ -216,12 +219,33 @@ fn commit(owner: &mut Owner, id: TransferId) -> core::Result<()> {
                 outstanding: None,
                 allowed: false,
                 known_length: None,
-            })
+            });
+            Ok(())
         }
-        core::Opened::Reused(_) => return Err(core::Error::AlreadyUsed),
+        Ok(core::Opened::Reused(stored)) => {
+            let response = Some(response(stored.head.id));
+            // A consumed upload cannot resume. Retire any unexpected retained core response too.
+            if owner.document.release(stored.head.id).is_err() {
+                tracing::error!("HTTP bridge could not retire unexpected reused response");
+            }
+            let error = core::Error::AlreadyUsed;
+            slot.state = State::Terminal(Some(failure_reply(
+                id,
+                *source_generation,
+                response,
+                &error,
+            )));
+            Err(error)
+        }
+        Err(error) => {
+            // The one existing terminal slot preserves the failure even when the host rejects
+            // this Commit synchronously. Repeated commands must not overwrite this event.
+            slot.state = State::Terminal(Some(failure_reply(id, *source_generation, None, &error)));
+            Err(error)
+        }
     }
-    Ok(())
 }
+
 fn credit(
     owner: &mut Owner,
     response: wire::ResponseId,

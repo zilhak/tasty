@@ -4,8 +4,8 @@ mod convert;
 mod fingerprint;
 mod poll;
 use super::html_http as core;
-pub use convert::failure_reply;
 use convert::*;
+pub use convert::{failure_reply, rejection_reply};
 use std::{collections::HashMap, sync::Arc};
 use tasty_ipc::{
     html_http as wire,

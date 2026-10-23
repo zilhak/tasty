@@ -16,12 +16,15 @@ pub(super) struct Fixture {
 }
 impl Fixture {
     pub(super) fn new(length: usize, chunked: bool) -> Self {
-        Self::encoded(length, chunked, false)
+        Self::encoded(length, chunked, false, false)
     }
     pub(super) fn gzip(length: usize) -> Self {
-        Self::encoded(length, false, true)
+        Self::encoded(length, false, true, false)
     }
-    fn encoded(length: usize, chunked: bool, gzip: bool) -> Self {
+    pub(super) fn bad_gzip() -> Self {
+        Self::encoded(1, false, true, true)
+    }
+    fn encoded(length: usize, chunked: bool, gzip: bool, bad_gzip: bool) -> Self {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         l.set_nonblocking(true).unwrap();
         let url = format!("http://{}/", l.local_addr().unwrap());
@@ -32,7 +35,7 @@ impl Fixture {
         let join = std::thread::spawn(move || {
             while !s.load(Ordering::Acquire) {
                 match l.accept() {
-                    Ok((stream, _)) => serve(stream, length, chunked, gzip, &c, &b),
+                    Ok((stream, _)) => serve(stream, length, chunked, gzip, bad_gzip, &c, &b),
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         std::thread::sleep(Duration::from_millis(1))
                     }
@@ -69,6 +72,7 @@ fn serve(
     length: usize,
     chunked: bool,
     gzip: bool,
+    bad_gzip: bool,
     count: &AtomicUsize,
     body: &Mutex<Vec<u8>>,
 ) {
@@ -103,7 +107,9 @@ fn serve(
     }
     *body.lock().unwrap() = data[end..end + n].to_vec();
     count.fetch_add(1, Ordering::AcqRel);
-    let bytes = if gzip {
+    let bytes = if bad_gzip {
+        vec![b'x']
+    } else if gzip {
         use flate2::{Compression, write::GzEncoder};
         let mut g = GzEncoder::new(Vec::new(), Compression::default());
         g.write_all(&vec![b'x'; length]).unwrap();
