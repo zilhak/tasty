@@ -62,6 +62,7 @@ impl Fixture {
             cancel: cancel.clone(),
             id: id(),
             idle_timeout: timeout,
+            lease: resources::Lease::entry(),
         };
         let thread = std::thread::spawn(move || context.run(typed, None, commands));
         Self {
@@ -284,4 +285,158 @@ fn process_worker_budget_survives_engine_retirement_until_actual_join() {
     drop(extra);
     drop(slots);
     assert_eq!(WORKER_COUNT.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn resource_lease_reuses_root_and_cancel_fences_every_child() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = dir.path().join("index.html");
+    std::fs::write(&index, b"entry").unwrap();
+    std::fs::write(dir.path().join("style.css"), b"body{color:blue}").unwrap();
+    let lease = resources::Lease::entry();
+    let source = tasty_remote::html_source::classify(index.to_str(), None);
+    let (_, _) = lease.open(index.to_str().unwrap(), source.clone()).unwrap();
+    assert!(lease.unchanged());
+    let mut child = lease.clone();
+    child.set_test_relative("style.css");
+    let (resource, metadata_source) = child.open(index.to_str().unwrap(), source.clone()).unwrap();
+    assert_eq!(resource.file.metadata().unwrap().len(), 16);
+    assert!(matches!(metadata_source,HtmlSource::File{path,..} if path.ends_with("style.css")));
+    lease.cancel.store(true, Ordering::Release);
+    assert!(!child.unchanged());
+    assert!(child.open(index.to_str().unwrap(), source).is_err());
+}
+
+#[cfg(feature = "gui")]
+#[test]
+fn resource_registry_fences_parent_source_binding_and_replacement() {
+    let hub = StreamHub::new();
+    let _receiver = hub.register(41);
+    let (_state, mut session) = crate::state::tests::test_state();
+    let engine = session.borrow_mut();
+    engine
+        .live
+        .occupancy
+        .acquire_workspace(1, &[], &[], 41)
+        .unwrap();
+    let owner = TransferOwner::capture(&engine.as_ref(), &hub, 41, false).unwrap();
+    let source = Arc::new(Mutex::new(
+        tasty_remote::html_source::HtmlSourceState::default(),
+    ));
+    let mut roots = resources::Roots::default();
+    let entry = id();
+    let child = TransferId {
+        request: 2,
+        transfer: 2,
+        ..entry
+    };
+    let lease = roots
+        .lease(
+            41,
+            entry,
+            &HtmlRequest::HtmlEntryRequest { id: entry },
+            owner.clone(),
+            Arc::downgrade(&source),
+            1,
+        )
+        .unwrap();
+    let request = HtmlRequest::HtmlResourceRequest {
+        id: child,
+        entry,
+        source_generation: 1,
+        relative: "theme.css".into(),
+    };
+    assert!(
+        roots
+            .lease(
+                41,
+                child,
+                &request,
+                owner.clone(),
+                Arc::downgrade(&source),
+                1
+            )
+            .is_ok()
+    );
+    assert!(
+        roots
+            .lease(
+                41,
+                child,
+                &request,
+                owner.clone(),
+                Arc::downgrade(&source),
+                2
+            )
+            .is_err()
+    );
+    assert!(
+        roots
+            .lease(
+                41,
+                TransferId {
+                    binding: 9,
+                    ..child
+                },
+                &request,
+                owner.clone(),
+                Arc::downgrade(&source),
+                1
+            )
+            .is_err()
+    );
+    let replaced_source = Arc::new(Mutex::new(
+        tasty_remote::html_source::HtmlSourceState::default(),
+    ));
+    assert!(
+        roots
+            .lease(
+                41,
+                child,
+                &request,
+                owner.clone(),
+                Arc::downgrade(&replaced_source),
+                1
+            )
+            .is_err()
+    );
+    roots.cancel_entry(41, child);
+    assert!(!lease.cancel.load(Ordering::Acquire));
+    roots.cancel_entry(41, entry);
+    assert!(lease.cancel.load(Ordering::Acquire));
+    assert!(
+        roots
+            .lease(
+                41,
+                child,
+                &request,
+                owner.clone(),
+                Arc::downgrade(&source),
+                1
+            )
+            .is_err()
+    );
+    let replacement = TransferId {
+        document: 2,
+        request: 3,
+        transfer: 3,
+        ..entry
+    };
+    let fresh = roots
+        .lease(
+            41,
+            replacement,
+            &HtmlRequest::HtmlEntryRequest { id: replacement },
+            owner.clone(),
+            Arc::downgrade(&source),
+            1,
+        )
+        .unwrap();
+    assert!(
+        roots
+            .lease(41, child, &request, owner, Arc::downgrade(&source), 1)
+            .is_err()
+    );
+    drop(roots);
+    assert!(fresh.cancel.load(Ordering::Acquire));
 }

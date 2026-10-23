@@ -241,3 +241,168 @@ fn html_unattached_opt_in_peer_is_refused_and_cannot_select_a_path() {
         event(&mut stream, "html_complete");
     }
 }
+
+#[test]
+fn html_resource_wire_keeps_original_root_generation_and_bounded_credit() {
+    let server = server();
+    let dir = tempfile::tempdir().unwrap();
+    let index = dir.path().join("index.html");
+    let expected: Vec<u8> = (0..300_001).map(|i| (i % 251) as u8).collect();
+    std::fs::write(&index, b"entry").unwrap();
+    std::fs::write(dir.path().join("large.bin"), &expected).unwrap();
+    let ws = server.create_workspace("html-resource-root");
+    let sid = open(server, ws.id, index.to_str().unwrap());
+    let (mut stream, entry) = attach(server, ws.id, sid);
+    request(&mut stream, HtmlRequest::HtmlEntryRequest { id: entry });
+    let metadata = event(&mut stream, "html_metadata");
+    let generation = metadata["metadata"]["source_generation"].as_u64().unwrap();
+    request(
+        &mut stream,
+        HtmlRequest::HtmlRead {
+            id: entry,
+            offset: 0,
+            allow: false,
+        },
+    );
+    event(&mut stream, "html_chunk");
+    event(&mut stream, "html_complete");
+    let first = TransferId {
+        request: 2,
+        transfer: 2,
+        ..entry
+    };
+    request(
+        &mut stream,
+        HtmlRequest::HtmlResourceRequest {
+            id: first,
+            entry,
+            source_generation: generation,
+            relative: "large.bin".into(),
+        },
+    );
+    assert_eq!(
+        event(&mut stream, "html_metadata")["metadata"]["size"],
+        300_001
+    );
+    request(
+        &mut stream,
+        HtmlRequest::HtmlRead {
+            id: first,
+            offset: 0,
+            allow: false,
+        },
+    );
+    assert!(
+        event(&mut stream, "html_failure")["reason"]
+            .as_str()
+            .unwrap()
+            .contains("allowance")
+    );
+    let child = TransferId {
+        request: 3,
+        transfer: 3,
+        ..entry
+    };
+    request(
+        &mut stream,
+        HtmlRequest::HtmlResourceRequest {
+            id: child,
+            entry,
+            source_generation: generation,
+            relative: "large.bin".into(),
+        },
+    );
+    event(&mut stream, "html_metadata");
+    let mut bytes = Vec::new();
+    let mut chunks = 0;
+    while bytes.len() < expected.len() {
+        request(
+            &mut stream,
+            HtmlRequest::HtmlRead {
+                id: child,
+                offset: bytes.len() as u64,
+                allow: true,
+            },
+        );
+        let payload = event(&mut stream, "html_chunk");
+        assert!(
+            serde_json::to_vec(&payload).unwrap().len()
+                <= tasty_ipc::stream::MAX_FRAME_LEN as usize
+        );
+        assert_eq!(payload["offset"], bytes.len());
+        bytes.extend(
+            base64::engine::general_purpose::STANDARD
+                .decode(payload["data_b64"].as_str().unwrap())
+                .unwrap(),
+        );
+        chunks += 1;
+    }
+    assert_eq!(event(&mut stream, "html_complete")["size"], expected.len());
+    assert_eq!(chunks, 7);
+    assert_eq!(Sha256::digest(&bytes), Sha256::digest(&expected));
+    let mut sequence = 4;
+    for relative in [
+        "../large.bin",
+        "/etc/passwd",
+        "%2e%2e/etc/passwd",
+        "sub\\..\\large.bin",
+    ] {
+        let id = TransferId {
+            request: sequence,
+            transfer: sequence,
+            ..entry
+        };
+        sequence += 1;
+        request(
+            &mut stream,
+            HtmlRequest::HtmlResourceRequest {
+                id,
+                entry,
+                source_generation: generation,
+                relative: relative.into(),
+            },
+        );
+        event(&mut stream, "html_failure");
+    }
+    let stale = TransferId {
+        request: sequence,
+        transfer: sequence,
+        ..entry
+    };
+    request(
+        &mut stream,
+        HtmlRequest::HtmlResourceRequest {
+            id: stale,
+            entry,
+            source_generation: generation + 1,
+            relative: "large.bin".into(),
+        },
+    );
+    assert!(
+        event(&mut stream, "html_failure")["reason"]
+            .as_str()
+            .unwrap()
+            .contains("stale")
+    );
+    request(&mut stream, HtmlRequest::HtmlCancel { id: entry });
+    let cancelled = TransferId {
+        request: sequence + 1,
+        transfer: sequence + 1,
+        ..entry
+    };
+    request(
+        &mut stream,
+        HtmlRequest::HtmlResourceRequest {
+            id: cancelled,
+            entry,
+            source_generation: generation,
+            relative: "large.bin".into(),
+        },
+    );
+    assert!(
+        event(&mut stream, "html_failure")["reason"]
+            .as_str()
+            .unwrap()
+            .contains("root")
+    );
+}

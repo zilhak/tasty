@@ -53,6 +53,13 @@ pub enum HtmlRequest {
     HtmlEntryRequest {
         id: TransferId,
     },
+    /// Paths are decoded, relative to the original authorized entry root (never a client path).
+    HtmlResourceRequest {
+        id: TransferId,
+        entry: TransferId,
+        source_generation: u64,
+        relative: String,
+    },
     /// One reply window per credit. Offset is the exact next raw byte offset.
     HtmlRead {
         id: TransferId,
@@ -67,9 +74,10 @@ impl HtmlRequest {
     pub fn id(&self) -> Option<TransferId> {
         match self {
             Self::HtmlCapabilities { .. } => None,
-            Self::HtmlEntryRequest { id } | Self::HtmlRead { id, .. } | Self::HtmlCancel { id } => {
-                Some(*id)
-            }
+            Self::HtmlEntryRequest { id }
+            | Self::HtmlResourceRequest { id, .. }
+            | Self::HtmlRead { id, .. }
+            | Self::HtmlCancel { id } => Some(*id),
         }
     }
 }

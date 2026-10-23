@@ -1,6 +1,14 @@
 //! Read-only HTML entry handles. Path resolution and reads run only on transfer workers.
+#[cfg(unix)]
+mod unix_root;
 #[cfg(windows)]
 mod windows_root;
+
+use std::sync::Arc;
+#[cfg(unix)]
+use unix_root::Root;
+#[cfg(windows)]
+use windows_root::Root;
 
 use std::{
     fs::File,
@@ -64,8 +72,7 @@ pub(crate) struct Entry {
     pub(crate) root: PathBuf,
     pub(crate) stamp: Stamp,
     source: PathBuf,
-    #[cfg(windows)]
-    authorized_root: windows_root::Root,
+    authorized_root: Arc<Root>,
 }
 impl Entry {
     pub(crate) fn open(source: &Path) -> Result<Self, String> {
@@ -77,8 +84,7 @@ impl Entry {
             .ok_or("entry has no parent")?
             .canonicalize()
             .map_err(|e| e.to_string())?;
-        #[cfg(windows)]
-        let authorized_root = windows_root::Root::open(&root).map_err(|e| e.to_string())?;
+        let authorized_root = Arc::new(Root::open(&root).map_err(|e| e.to_string())?);
         let target = source.canonicalize().map_err(|e| e.to_string())?;
         let relative = target
             .strip_prefix(&root)
@@ -89,9 +95,6 @@ impl Entry {
         {
             return Err("HTML source is not a regular file".into());
         }
-        #[cfg(not(windows))]
-        let file = open_beneath(&root, relative).map_err(|e| e.to_string())?;
-        #[cfg(windows)]
         let file = authorized_root
             .open_file(relative)
             .map_err(|e| e.to_string())?;
@@ -105,9 +108,55 @@ impl Entry {
             root,
             stamp,
             source: source.to_owned(),
-            #[cfg(windows)]
             authorized_root,
         })
+    }
+    /// Resolve a resource through the same originally authorized directory object as this entry.
+    /// Call only on a transfer worker; no browser/client path is trusted as an absolute source.
+    pub(crate) fn resource(&self, relative: &str) -> Result<Self, String> {
+        let path = Path::new(relative);
+        if relative.is_empty()
+            || relative.contains(['\\', '\0'])
+            || relative
+                .split('/')
+                .any(|part| part.is_empty() || matches!(part, "." | ".."))
+            || !path.components().all(|c| matches!(c, Component::Normal(_)))
+        {
+            return Err("unsafe HTML resource path".into());
+        }
+        if !self.unchanged() {
+            return Err("HTML entry/root changed; request a fresh document".into());
+        }
+        let source = self.root.join(path);
+        let target = source.canonicalize().map_err(|e| e.to_string())?;
+        let resolved = target
+            .strip_prefix(&self.root)
+            .map_err(|_| "HTML resource symlink escapes document root")?;
+        if !std::fs::metadata(&target)
+            .map_err(|e| e.to_string())?
+            .is_file()
+        {
+            return Err("HTML resource is not a regular file".into());
+        }
+        let file = self
+            .authorized_root
+            .open_file(resolved)
+            .map_err(|e| e.to_string())?;
+        if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+            return Err("HTML resource is not a regular file".into());
+        }
+        let stamp = Stamp::of(&file).map_err(|e| e.to_string())?;
+        let resource = Self {
+            file,
+            root: self.root.clone(),
+            stamp,
+            source,
+            authorized_root: Arc::clone(&self.authorized_root),
+        };
+        if !self.unchanged() || !resource.unchanged() {
+            return Err("HTML resource changed while opening".into());
+        }
+        Ok(resource)
     }
     /// Detect same-handle edits and path replacement before/after every credit.
     pub(crate) fn unchanged(&self) -> bool {
@@ -116,13 +165,6 @@ impl Entry {
             .is_some_and(|stamp| stamp == self.stamp)
             && self.source_unchanged()
     }
-    #[cfg(not(windows))]
-    fn source_unchanged(&self) -> bool {
-        Self::open(&self.source)
-            .ok()
-            .is_some_and(|entry| entry.root == self.root && entry.stamp == self.stamp)
-    }
-    #[cfg(windows)]
     fn source_unchanged(&self) -> bool {
         let check = || -> std::io::Result<bool> {
             if !self.authorized_root.is_current(&self.root)? {
@@ -138,53 +180,81 @@ impl Entry {
         check().unwrap_or(false)
     }
 }
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn open_beneath(root: &Path, relative: &Path) -> std::io::Result<File> {
-    use std::{
-        ffi::CString,
-        os::{
-            fd::{AsRawFd, FromRawFd},
-            unix::ffi::OsStrExt,
-        },
-    };
-    let mut dir = File::open("/")?;
-    let components: Vec<_> = root
-        .components()
-        .chain(relative.components())
-        .filter(|c| !matches!(c, Component::RootDir))
-        .collect();
-    if components.is_empty() {
-        return Err(std::io::Error::other("empty file path"));
-    }
-    for (i, c) in components.iter().enumerate() {
-        let Component::Normal(name) = c else {
-            return Err(std::io::Error::other("unsafe path component"));
-        };
-        let name = CString::new(name.as_bytes()).map_err(std::io::Error::other)?;
-        let directory = i + 1 < components.len();
-        let flags = libc::O_RDONLY
-            | libc::O_CLOEXEC
-            | libc::O_NOFOLLOW
-            | libc::O_NONBLOCK
-            | if directory { libc::O_DIRECTORY } else { 0 };
-        // SAFETY: dir and NUL-terminated name remain alive. Each returned descriptor is owned once.
-        let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags) };
-        if fd < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        // SAFETY: successful openat returned a fresh owned descriptor.
-        dir = unsafe { File::from_raw_fd(fd) };
-    }
-    Ok(dir)
-}
-#[cfg(not(any(unix, windows)))]
-fn open_beneath(_root: &Path, _relative: &Path) -> std::io::Result<File> {
-    Err(std::io::Error::other("unsupported file handle backend"))
+    Root::open(root)?.open_file(relative)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn resource_uses_original_root_and_refuses_unsafe_or_changed_sources() {
+        use std::io::Read;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("index.html"), b"entry").unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/theme.css"), b"body{color:red}").unwrap();
+        let entry = Entry::open(&dir.path().join("index.html")).unwrap();
+        let mut resource = entry.resource("sub/theme.css").unwrap();
+        let mut bytes = String::new();
+        resource.file.read_to_string(&mut bytes).unwrap();
+        assert_eq!(bytes, "body{color:red}");
+        for invalid in [
+            "",
+            "../index.html",
+            "/etc/passwd",
+            "sub/../index.html",
+            "sub//theme.css",
+            "./index.html",
+            "sub\\theme.css",
+            "sub/",
+            "sub\0theme.css",
+        ] {
+            assert!(entry.resource(invalid).is_err(), "{invalid:?}");
+        }
+        assert!(entry.resource("sub").is_err());
+        std::fs::write(dir.path().join("replacement"), b"changed").unwrap();
+        std::fs::rename(
+            dir.path().join("replacement"),
+            dir.path().join("index.html"),
+        )
+        .unwrap();
+        assert!(entry.resource("sub/theme.css").is_err());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn resource_links_and_root_replacement_never_read_outside() {
+        use std::{io::Read, os::unix::fs::symlink};
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = dir.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("index.html"), b"entry").unwrap();
+        std::fs::write(root.join("inside.css"), b"inside").unwrap();
+        std::fs::write(outside.path().join("inside.css"), vec![b'X'; 48 * 1024]).unwrap();
+        symlink("inside.css", root.join("alias.css")).unwrap();
+        symlink(outside.path(), root.join("escape")).unwrap();
+        let entry = Entry::open(&root.join("index.html")).unwrap();
+        let mut resource = entry.resource("alias.css").unwrap();
+        let mut bytes = String::new();
+        resource.file.read_to_string(&mut bytes).unwrap();
+        assert_eq!(bytes, "inside");
+        assert!(entry.resource("escape/inside.css").is_err());
+        std::fs::rename(&root, dir.path().join("held")).unwrap();
+        symlink(outside.path(), &root).unwrap();
+        assert!(!entry.unchanged());
+        assert!(!resource.unchanged());
+        assert!(entry.resource("inside.css").is_err());
+        // Even after pathname replacement, the original root handle can only read inside bytes.
+        let mut pinned = entry
+            .authorized_root
+            .open_file(Path::new("inside.css"))
+            .unwrap();
+        let mut original = String::new();
+        pinned.read_to_string(&mut original).unwrap();
+        assert_eq!(original, "inside");
+    }
     #[test]
     fn regular_handle_and_replacement() {
         let d = tempfile::tempdir().unwrap();

@@ -1,4 +1,6 @@
 //! Engine-owned bounded HTML workers. Main loops deliver owned commands, never file I/O.
+mod resources;
+
 use crate::{
     model::Surface,
     plugin_bridge::remote_surface::RemoteSurface,
@@ -76,6 +78,7 @@ struct Worker {
 pub(crate) struct HtmlTransfers {
     workers: HashMap<(u32, TransferId), Worker>,
     latest: HashMap<u32, (Weak<()>, u64)>,
+    roots: resources::Roots,
 }
 impl Drop for HtmlTransfers {
     fn drop(&mut self) {
@@ -97,8 +100,24 @@ impl Drop for HtmlTransfers {
     }
 }
 impl HtmlTransfers {
+    fn command(&mut self, key: (u32, TransferId), owner: &TransferOwner, msg: HtmlRequest) {
+        if matches!(msg, HtmlRequest::HtmlCancel { .. }) {
+            self.roots.cancel_entry(key.0, key.1);
+        }
+        let Some(worker) = self.workers.get(&key) else {
+            return;
+        };
+        if !worker.owner.same(owner) || !source_current(&worker.source, worker.source_generation) {
+            worker.cancel.store(true, Ordering::Release);
+            return;
+        }
+        if matches!(msg, HtmlRequest::HtmlCancel { .. }) || worker.commands.try_send(msg).is_err() {
+            worker.cancel.store(true, Ordering::Release);
+        }
+    }
     fn collect(&mut self, engine: &EngineRef<'_>, hub: &StreamHub) {
         reap_retired();
+        self.roots.collect(engine, hub);
         self.latest
             .retain(|client, (binding, _)| hub.matches_client_binding(*client, binding));
         for (key, w) in std::mem::take(&mut self.workers) {
@@ -156,17 +175,11 @@ impl EngineMut<'_> {
         };
         self.poll_html_transfers();
         let key = (client, id);
-        if !matches!(msg, HtmlRequest::HtmlEntryRequest { .. }) {
-            let Some(w) = self.remote.html_transfers.workers.get(&key) else {
-                return;
-            };
-            if !w.owner.same(&owner) || !source_current(&w.source, w.source_generation) {
-                w.cancel.store(true, Ordering::Release);
-                return;
-            }
-            if matches!(msg, HtmlRequest::HtmlCancel { .. }) || w.commands.try_send(msg).is_err() {
-                w.cancel.store(true, Ordering::Release);
-            }
+        if !matches!(
+            msg,
+            HtmlRequest::HtmlEntryRequest { .. } | HtmlRequest::HtmlResourceRequest { .. }
+        ) {
+            self.remote.html_transfers.command(key, &owner, msg);
             return;
         }
         let last = self.remote.html_transfers.latest.get(&client);
@@ -248,6 +261,20 @@ impl EngineMut<'_> {
             );
             return;
         };
+        let lease = match self.remote.html_transfers.roots.lease(
+            client,
+            id,
+            &msg,
+            owner.clone(),
+            source_state.clone(),
+            generation,
+        ) {
+            Ok(lease) => lease,
+            Err(reason) => {
+                send(hub, client, &binding, HtmlReply::HtmlFailure { id, reason });
+                return;
+            }
+        };
         let (tx, rx) = mpsc::sync_channel(1);
         let cancel = Arc::new(AtomicBool::new(false));
         let context = Context {
@@ -259,7 +286,9 @@ impl EngineMut<'_> {
             cancel: cancel.clone(),
             id,
             idle_timeout: Duration::from_secs(30),
+            lease,
         };
+        let entry_request = matches!(msg, HtmlRequest::HtmlEntryRequest { .. });
         match std::thread::Builder::new()
             .name("html-transfer".into())
             .spawn(move || context.run(source, cwd, rx))
@@ -280,6 +309,9 @@ impl EngineMut<'_> {
             }
             Err(error) => {
                 tracing::warn!(%error,"HTML worker spawn failed");
+                if entry_request {
+                    self.remote.html_transfers.roots.cancel_entry(client, id);
+                }
                 if let Some(binding) = hub.client_binding(client) {
                     send(
                         hub,
@@ -353,6 +385,7 @@ struct Context {
     cancel: Arc<AtomicBool>,
     id: TransferId,
     idle_timeout: Duration,
+    lease: resources::Lease,
 }
 impl Context {
     fn send(&self, reply: HtmlReply) -> bool {
@@ -360,6 +393,7 @@ impl Context {
     }
     fn active(&self) -> bool {
         !self.cancel.load(Ordering::Acquire)
+            && !self.lease.cancel.load(Ordering::Acquire)
             && self.hub.matches_client_binding(self.client, &self.binding)
             && self.hub.html_transfer_enabled(self.client)
             && source_current(&self.source_state, self.generation)
@@ -399,7 +433,8 @@ impl Context {
             }
             .into());
         };
-        let mut entry = Entry::open(std::path::Path::new(path))?;
+        let (entry, source) = self.lease.open(path, source.clone())?;
+        let mut file = &entry.file;
         let size = entry.file.metadata().map_err(|e| e.to_string())?.len();
         if !self.active() {
             self.send(HtmlReply::HtmlCancelled { id: self.id });
@@ -449,16 +484,13 @@ impl Context {
             if !allowed {
                 return Err("large HTML entry requires size allowance".into());
             }
-            if !entry.unchanged() {
+            if !entry.unchanged() || !self.lease.unchanged() {
                 return Err("HTML source changed; request fresh metadata".into());
             }
             let len = (size - offset).min(CHUNK_BYTES as u64) as usize;
             let mut bytes = vec![0; len];
-            entry
-                .file
-                .read_exact(&mut bytes)
-                .map_err(|e| e.to_string())?;
-            if !entry.unchanged() {
+            file.read_exact(&mut bytes).map_err(|e| e.to_string())?;
+            if !entry.unchanged() || !self.lease.unchanged() {
                 return Err("HTML source changed while reading".into());
             }
             if !self.active() {
