@@ -181,6 +181,8 @@ Explorer·포트 즐겨찾기는 프로세스 공용 `SharedList` 원본을 바�
 
 worker는 공용 참여자 잠금·fingerprint·링크 대상 검사 뒤 교체한다. 읽기 실패·문법/선언 파싱 실패 원본과 외부 편집은 덮지 않는다. 성공 receipt만 committed를 전진시키며 실패·거절·결과 불명은 표시값을 유지하고 dirty를 남긴다. GUI는 최종 저장 실패를 설정 결과 토스트와 파일명·원인·복구 안내가 있는 알림으로 보여준다. 종료 전에 최신 dirty의 pending이 없으면 한 번 재접수하고 같은 writer를 drain한다. GUI·headless 모두 이 경계를 조립한다. 초기 읽기와 명시적 reload는 다음 registry 조회의 입력을 정하는 동기 읽기이며 파일 쓰기는 하지 않는다.
 
+초기 파일/hook registry 읽기·파싱 실패는 파일명과 원인 분류(대상 해석·읽기·UTF-8·형식)를 경고 로그에 남기고 원본을 보호한다. 파서의 원문 발췌나 설정 값은 로그와 이후 저장 오류에 넣지 않는다. 파일 부재는 기본값을 쓰는 정상 경로라 경고하지 않는다. 명시적 reload도 같은 안전한 원인 분류로 오류를 반환한다.
+
 `file_handler.reload`는 해당 프로세스가 처음 읽은 경로에서 한 번 읽어 두 registry를 갱신한다. 저장 pending 중에는 아직 완료되지 않은 snapshot과 충돌하지 않도록 오류로 답한다. 읽기/파싱 실패도 오류로 답하고 이전 registry와 원본 관측을 유지한다. 성공한 명시적 reload는 저장되지 않은 표시 변경을 파일 내용으로 바꾸며, 새로 읽은 상태를 visible=committed의 다음 revision으로 잡는다. 주석·공백·키 순서까지 보존하는 편집기는 아니며 pretty TOML로 저장한다.
 
 ### 훅 registry snapshot

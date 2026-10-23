@@ -24,6 +24,7 @@ impl FileRules {
         handler: &FileHandlerRegistry,
     ) -> Self {
         let (_table, document, _) = read(path, format, handler);
+        document.report_load_error("file-handlers.toml");
         Self {
             path: path.into(),
             state: Mutex::new(State {

@@ -29,6 +29,7 @@ impl HookHandlerRegistry {
             inner.dirty = true;
             Ok(original)
         });
+        document.report_load_error("hook-handlers.toml");
         *self.file.lock().unwrap() = Some(UserFile {
             path: path.to_owned(),
             original,

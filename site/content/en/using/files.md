@@ -1,4 +1,4 @@
-<!-- source-hash: b1c4955377ec -->
+<!-- source-hash: 8d2c875edc59 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -17,7 +17,7 @@ Read a README or check an image beside your terminal. Tasty can open an Explorer
 
 The file extension decides which Surface opens it — `.md` is Markdown, image files are image, `.html` and `.svg` are HTML, and a folder is Explorer. When nothing settles which one opens it, the **Open file with…** window appears so you can choose, and your choice is kept under **Recent**. Extension mappings and handlers are changed in the **Settings** > **Handler** tab.
 
-File type and handler settings take effect when you press **Save** and are saved to the file in the background. If saving fails, a warning and notification explain why, and the changes last only until Tasty exits. An externally edited or damaged original is kept; check the file and restart Tasty before changing those settings again.
+File type and handler settings take effect when you press **Save** and are saved to the file in the background. If saving fails, a warning and notification explain why, and the changes last only until Tasty exits. An externally edited or damaged original is kept; check the file and restart Tasty before changing those settings again. If these settings cannot be loaded on startup, the log names the file and the type of problem without including the file contents.
 
 The **Open file with…** window lists the file path, detected format, and available handlers. Each handler has an icon, a name, and its origin (**built-in** · **you** · **plugin**).
 
