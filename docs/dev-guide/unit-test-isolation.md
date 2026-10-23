@@ -224,7 +224,9 @@ find "$VERIFY_HOME" -mindepth 1
 `#[cfg(test)]` 만 걸면 headless 테스트 **바이너리 자체가 컴파일되지 않는다** — 프로덕션 코드는
 멀쩡히 `cargo check --no-default-features` 를 통과하는데도 그 feature 조합의 테스트가 한 줄도
 실행되지 않는 사각이 생긴다. 개별 테스트 함수만 gui 전용이면 함수에 `#[cfg(feature = "gui")]` 를
-건다.
+건다. GUI 시험에서만 호출하는 helper도 같은 feature 조건으로 제한한다. `test`만 붙여
+headless에 사용하지 않는 helper를 남기면 `dead_code` 검사 때문에 시험 바이너리의 컴파일이
+실패할 수 있다. 이 경우 lint를 허용하지 않고 호출자와 helper의 cfg를 맞춘다.
 
 같은 이유로 프로덕션 코드에서도 **gui 게이트된 재export 를 경유하지 않는다** — 예를 들어
 `crate::terminal::*` 가 gui 전용 재export 라면 headless 에서도 도는 코드는 원본 크레이트를

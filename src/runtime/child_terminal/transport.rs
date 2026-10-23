@@ -143,7 +143,7 @@ impl Hub {
             }),
         })
     }
-    #[cfg(test)]
+    #[cfg(all(test, feature = "gui"))]
     pub(super) fn test_initial(&self, data: RegistryData) {
         self.state.lock().unwrap().initial = Some(data);
     }
