@@ -21,6 +21,7 @@ tracing = "0.1"
 anyhow = "1"
 
 [dev-dependencies]
+tasty-doc-guards = { path = "../tasty-doc-guards" }
 # 병렬 시험이 같은 경로를 지우지 않도록 고유 임시 디렉터리를 사용한다.
 tempfile = "3"
 

@@ -1,5 +1,6 @@
 //! Actual backend operations inside the same bounded observation scope used by FileExecutor.
 use std::{fs, sync::Arc};
+use tasty_doc_guards::floored_walk::{CountedOn, Descend, Floor, walk_with_floor};
 use tasty_remote_profiles::{
     ManagedCleanup, MutationStage, Passkey, PasskeyCommand, Passkeys, RemoteFileStore,
 };
@@ -73,8 +74,24 @@ fn private_temp_creation_failure_is_an_observed_failed_attempt_without_user_unli
     assert_eq!(snapshot.replace.published_bytes, 0);
     assert_eq!(snapshot.replace.errors[4], 1);
     assert_eq!(snapshot.delete.attempts, 0);
-    assert_eq!(fs::read(original).unwrap(), b"preserved fixture");
-    assert_eq!(fs::read_dir(secrets).unwrap().count(), 2);
+    assert_eq!(fs::read(&original).unwrap(), b"preserved fixture");
+    let files = walk_with_floor(
+        &secrets,
+        &secrets,
+        &Floor {
+            min: 2,
+            measured: 2,
+            measured_on: "2026-10-24",
+            counted_on: CountedOn::SyntheticTree,
+            why_this_gap: "The owned fixture contains exactly the preserved secret and its participant lock; no missing file is acceptable.",
+        },
+        Descend::Everything,
+        &|file| file.path.parent() == Some(secrets.as_path()),
+    )
+    .unwrap();
+    assert_eq!(files.len(), 2);
+    let names: std::collections::BTreeSet<_> = files.iter().map(|file| file.rel.as_str()).collect();
+    assert_eq!(names, [name.as_str(), &format!("{name}.lock")].into());
 }
 
 #[test]
