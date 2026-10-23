@@ -2,7 +2,7 @@
 use std::sync::{Arc, Mutex};
 
 use tasty_agent::task::terminal::{self, TerminalNotice};
-use tasty_memory::writer::{MemoryAccess, MemoryRequest};
+use tasty_memory::writer::{MemoryAccess, MemoryOutput, MemoryRequest};
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
 use crate::runner_host::RunnerContext;
@@ -75,19 +75,27 @@ impl TerminalRecovery {
             MemoryRequest::read(0, move |mem| Ok(load(mem, plan.targets()))),
             "terminal obligation reconciliation",
             Some(Box::new(move |out| {
-                match out.into_value::<tasty_agent::Result<Confirmed>>() {
-                    Some(Ok(deliveries)) => deliver(deliveries, &access_done),
-                    Some(Err(tasty_agent::AgentError::Memory(error))) if remaining > 1 => {
-                        tracing::warn!(%error, remaining, "retrying terminal confirmation read");
-                        retry.schedule_attempt(&access_done, remaining - 1);
-                    }
-                    Some(Err(error)) => {
-                        tracing::warn!(%error, "terminal obligations remain pending")
-                    }
-                    None => tracing::error!("unexpected terminal reconciliation output"),
-                }
+                retry.finish_attempt(out, &access_done, remaining);
             })),
         );
+    }
+
+    fn finish_attempt(&self, out: MemoryOutput, access: &MemoryAccess, remaining: u8) {
+        match out.into_value::<tasty_agent::Result<Confirmed>>() {
+            Some(Ok(deliveries)) => deliver(deliveries, access),
+            Some(Err(error)) => self.retry_or_warn(error, access, remaining),
+            None => tracing::error!("unexpected terminal reconciliation output"),
+        }
+    }
+
+    fn retry_or_warn(&self, error: tasty_agent::AgentError, access: &MemoryAccess, remaining: u8) {
+        match error {
+            tasty_agent::AgentError::Memory(error) if remaining > 1 => {
+                tracing::warn!(%error, remaining, "retrying terminal confirmation read");
+                self.schedule_attempt(access, remaining - 1);
+            }
+            error => tracing::warn!(%error, "terminal obligations remain pending"),
+        }
     }
 }
 
@@ -231,12 +239,16 @@ pub(crate) fn reconcile(ctx: &RunnerContext, workspace: u32) {
         }
     };
     match tasty_memory::writer::settle(completion) {
-        Ok(output) => match output.into_value::<tasty_agent::Result<Confirmed>>() {
-            Some(Ok(deliveries)) => deliver(deliveries, &ctx.memory),
-            Some(Err(error)) => tracing::warn!(%error, "terminal obligations remain pending"),
-            None => tracing::error!("unexpected terminal confirmation output"),
-        },
+        Ok(output) => finish_reconcile(output, &ctx.memory),
         Err(error) => tracing::warn!(?error, "terminal reconciliation could not be confirmed"),
+    }
+}
+
+fn finish_reconcile(output: MemoryOutput, access: &MemoryAccess) {
+    match output.into_value::<tasty_agent::Result<Confirmed>>() {
+        Some(Ok(deliveries)) => deliver(deliveries, access),
+        Some(Err(error)) => tracing::warn!(%error, "terminal obligations remain pending"),
+        None => tracing::error!("unexpected terminal confirmation output"),
     }
 }
 
