@@ -6,7 +6,7 @@ use tasty_memory::writer::{MemoryAccess, MemoryRequest};
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
 use crate::runner_host::RunnerContext;
-use crate::task_waker::{TaskWakerHub, TerminalSnapshot};
+use crate::task_waker::{DeliveryToken, TaskWakerHub, TerminalSnapshot};
 
 #[derive(Clone)]
 struct Target {
@@ -93,6 +93,7 @@ impl TerminalRecovery {
 struct Delivery {
     target: Target,
     notice: TerminalNotice,
+    token: DeliveryToken,
     current: Option<TerminalSnapshot>,
 }
 
@@ -105,7 +106,14 @@ struct Confirmed {
 fn load(mem: &dyn MemoryStorage, targets: Vec<Target>) -> tasty_agent::Result<Confirmed> {
     let mut confirmed = Confirmed::default();
     for target in targets {
-        for notice in terminal::pending(mem, target.workspace)? {
+        let notices = terminal::pending(mem, target.workspace)?;
+        // Capture shared claims before this ordered read returns. An ack may execute before
+        // its output is consumed; delayed outputs must keep the already-delivered claim.
+        let tokens = target.hub.capture_deliveries(
+            target.workspace,
+            notices.iter().map(|notice| notice.id.as_str()),
+        );
+        for (notice, token) in notices.into_iter().zip(tokens) {
             let row = tasty_agent::TaskStore::read_record(mem, target.workspace, &notice.task.id)?;
             let current = row
                 .filter(|(task, _)| task.state.is_terminal())
@@ -113,6 +121,7 @@ fn load(mem: &dyn MemoryStorage, targets: Vec<Target>) -> tasty_agent::Result<Co
             confirmed.deliveries.push(Delivery {
                 target: target.clone(),
                 notice,
+                token,
                 current,
             });
         }
@@ -159,11 +168,12 @@ fn deliver(confirmed: Confirmed, access: &MemoryAccess) {
     for Delivery {
         target,
         notice,
+        token,
         current,
     } in confirmed.deliveries
     {
         target.hub.fire_once(
-            &notice.id,
+            &token,
             target.workspace,
             &notice.task.id,
             TerminalSnapshot {
@@ -178,12 +188,20 @@ fn deliver(confirmed: Confirmed, access: &MemoryAccess) {
         // This id names an immutable obligation. A lost ack may replay the read, but fire_once
         // suppresses another event within this hub; it does not discharge handle cleanup.
         let id = notice.id;
+        let workspace = target.workspace;
+        let hub = target.hub;
         access.submit_detached(
             MemoryRequest::unit(0, move |mem| {
-                terminal::acknowledge(mem, HOST_OWNER, target.workspace, &id)
+                terminal::acknowledge(mem, HOST_OWNER, workspace, &id)
             }),
             "terminal obligation acknowledgement",
-            None,
+            Some(Box::new(move |out| {
+                if out.into_value::<()>().is_some() {
+                    hub.confirm_ack(workspace, &token);
+                } else {
+                    tracing::error!("unexpected terminal acknowledgement output");
+                }
+            })),
         );
     }
     for (ctx, workspace, tasks) in confirmed.settlements {
@@ -220,3 +238,6 @@ pub(crate) fn reconcile(ctx: &RunnerContext, workspace: u32) {
         Err(error) => tracing::warn!(?error, "terminal reconciliation could not be confirmed"),
     }
 }
+
+#[cfg(test)]
+mod lifetime_tests;

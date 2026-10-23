@@ -2,8 +2,8 @@
 //! 상태를 바꾸는 호출자가 fire를 호출해야 두 소비자가 통지를 받는다.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
 use std::sync::mpsc::{Sender, channel};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tasty_agent::{TaskId, TaskResult, TaskState};
@@ -45,10 +45,20 @@ type Waiters = HashMap<WaiterKey, Vec<(u64, Sender<TerminalSnapshot>)>>;
 static TASK_WAKER_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Captured inside the ordered storage read, before its output can be delayed.
+/// Acknowledgement retires the registry entry, while old outputs retain this shared claim.
+#[derive(Clone)]
+pub(crate) struct DeliveryToken {
+    id: String,
+    delivered: Arc<Mutex<bool>>,
+}
+
+type DeliveryRegistry = HashMap<String, (u32, Arc<Mutex<bool>>)>;
+
 #[derive(Default)]
 pub struct TaskWakerHub {
     waiters: Mutex<Waiters>,
-    delivered: Mutex<HashSet<String>>,
+    delivered: Mutex<DeliveryRegistry>,
     /// 조회 후 즉시 반환하거나 시간 초과한 대기자만 골라 지우는 데 쓴다.
     next_waiter: std::sync::atomic::AtomicU64,
     /// engine과 같은 큐를 공유해야 메인 루프가 이 이벤트를 방송할 수 있다.
@@ -56,6 +66,11 @@ pub struct TaskWakerHub {
 }
 
 impl TaskWakerHub {
+    #[cfg(test)]
+    pub(crate) fn retained_delivery_count(&self) -> usize {
+        self.delivered.lock().unwrap().len()
+    }
+
     /// 독립 큐를 만들며 외부 소비자는 연결하지 않는다. 실제 engine은 with_feed를 사용한다.
     #[cfg(test)]
     pub fn new() -> Self {
@@ -65,7 +80,7 @@ impl TaskWakerHub {
     pub fn with_feed(feed: std::sync::Arc<crate::event_feed::AgentEventQueue>) -> Self {
         Self {
             waiters: Mutex::new(HashMap::new()),
-            delivered: Mutex::new(HashSet::new()),
+            delivered: Mutex::new(HashMap::new()),
             next_waiter: std::sync::atomic::AtomicU64::new(0),
             feed,
         }
@@ -154,23 +169,74 @@ impl TaskWakerHub {
         self.fire_identified(workspace_id, task_id, snapshot, None, current);
     }
 
+    /// Only call within the same ordered read that obtained the complete, validated pending list.
+    /// Absence there also confirms an ack whose successful response may have been lost.
+    pub(crate) fn capture_deliveries<'a>(
+        &self,
+        workspace: u32,
+        ids: impl IntoIterator<Item = &'a str>,
+    ) -> Vec<DeliveryToken> {
+        let ids: Vec<_> = ids.into_iter().collect();
+        let present: HashSet<_> = ids.iter().copied().collect();
+        let mut registry = tasty_utils::poison::recover_mutex(
+            self.delivered.lock(),
+            "terminal delivery identities",
+            &TASK_WAKER_POISONED,
+        );
+        registry.retain(|id, (ws, _)| *ws != workspace || present.contains(id.as_str()));
+        ids.into_iter()
+            .map(|id| DeliveryToken {
+                id: id.into(),
+                delivered: registry
+                    .entry(id.into())
+                    .or_insert_with(|| (workspace, Arc::new(Mutex::new(false))))
+                    .1
+                    .clone(),
+            })
+            .collect()
+    }
+
+    /// An exact successful (including idempotent) ack can retire only its own token.
+    pub(crate) fn confirm_ack(&self, workspace: u32, token: &DeliveryToken) {
+        let mut registry = tasty_utils::poison::recover_mutex(
+            self.delivered.lock(),
+            "terminal delivery identities",
+            &TASK_WAKER_POISONED,
+        );
+        if registry
+            .get(&token.id)
+            .is_some_and(|(ws, claim)| *ws == workspace && Arc::ptr_eq(claim, &token.delivered))
+        {
+            registry.remove(&token.id);
+        }
+    }
+
     pub(crate) fn fire_once(
         &self,
-        identity: &str,
+        token: &DeliveryToken,
         workspace_id: u32,
         task_id: &TaskId,
         snapshot: TerminalSnapshot,
         wake: Option<TerminalSnapshot>,
     ) -> bool {
         let mut delivered = tasty_utils::poison::recover_mutex(
-            self.delivered.lock(),
-            "terminal delivery identities",
+            token.delivered.lock(),
+            "terminal delivery claim",
             &TASK_WAKER_POISONED,
         );
-        if !delivered.insert(identity.to_string()) {
+        if *delivered {
             return false;
         }
-        self.fire_identified(workspace_id, task_id, snapshot, Some(identity.into()), wake);
+        *delivered = true;
+        // Keep the claim locked through publication: a duplicate must not submit its ack
+        // before the first publisher has finished notifying the feed and waiters.
+        self.fire_identified(
+            workspace_id,
+            task_id,
+            snapshot,
+            Some(token.id.clone()),
+            wake,
+        );
         true
     }
 
@@ -236,7 +302,13 @@ mod tests {
                     error: "old".into(),
                 });
                 old.revision = Some(2);
-                worker.fire_once("old", 1, &"p".into(), old.clone(), Some(old));
+                worker.fire_once(
+                    &worker.capture_deliveries(1, ["old"]).remove(0),
+                    1,
+                    &"p".into(),
+                    old.clone(),
+                    Some(old),
+                );
                 let mut running = snap(TaskState::Running);
                 running.revision = Some(4);
                 read_tx.send(()).unwrap();
@@ -251,7 +323,13 @@ mod tests {
         ));
         let mut ended = snap(TaskState::Succeeded);
         ended.revision = Some(5);
-        hub.fire_once("new", 1, &"p".into(), ended.clone(), Some(ended));
+        hub.fire_once(
+            &hub.capture_deliveries(1, ["new"]).remove(0),
+            1,
+            &"p".into(),
+            ended.clone(),
+            Some(ended),
+        );
         let outcome = done_rx.recv_timeout(Duration::from_secs(5));
         if outcome.is_err() {
             hub.fire(1, &"p".into(), snap(TaskState::Cancelled));
