@@ -75,3 +75,5 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 공유 mirror는 native 대기자의 요청을 최대4개 동시 resource 전송으로 묶고, 실제 송신 순서로 할당한 transfer ID에 연결한다. credit은 준비된 resource 사이를 순환하며 문서 누적 예약량을 함께 적용한다. 완료 응답은 같은 immutable 할당으로 native 대기자와 cache에 게시한다. 개별 Decline·실패는 해당 대기자를 끝내고 skipped를 기록하며 entry 실패로 전파하지 않는다. Stop은 완료한 entry와 cache를 보존하고 나머지 대기와 새 resource를 종료한다. 이 driver는 파일 GET용이며 HTTP POST 응답 identity를 URI cache로 대체하지 않는다.
 
 native 주 문서 이동 의도는 원 entry identity·source generation·root 상대 target을 캡처한다. transport owner가 새 document를 만들 때 이전 entry cancel은 생략하고 서버의 root handoff 요청으로 이전 문서 전체를 취소한다. 하위 전송 취소는 그대로 보낸다. 사용자 Reload는 그 target을 현재 서버 source의 새 root에서 연다. native의 주 문서 분류·callback 연결 및 capability 활성화는 별도이며 현재 viewer는 entry만 표시한다.
+
+Linux wrapper는 native 창과 수명을 소유하며, 탐색·응답 정책 callback 등록은 `src/host_api/webview/linux/navigation_policy.rs`에서 수행한다. callback은 같은 생성 스레드의 WebView와 원 script gate·entry source·탐색 queue를 사용한다.
