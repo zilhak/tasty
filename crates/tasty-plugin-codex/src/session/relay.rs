@@ -357,8 +357,8 @@ fn apply_settings(
             params.insert(key.clone(), value.clone());
         }
     }
-    // Remote TUI config does not carry local -c overrides to its server. Merge only this
-    // invocation's effort, retaining explicit request config and every unrelated key.
+    // Fill an omitted or null effort from this invocation, preserving explicit effort and
+    // unrelated config keys. The final request effort is verified against the server reply.
     if let Some(effort) = &defaults.effort {
         let config = params
             .entry("config")

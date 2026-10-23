@@ -44,9 +44,10 @@ Codex/provider가 판단한다. 거절은 오류로 보이고 다른 모델로 �
 옵션 형태의 값은 `terminal.spawn` 전에 거절한다.
 
 모델은 helper의 `-m`, effort는 제한된 `-c model_reasoning_effort=<수준>` 인자로 만든다.
-remote TUI가 로컬 config override를 서버에 전하지 않으므로 model 또는 effort가 있는 helper는 세션 전용
-relay에서 새 thread 요청의 `config.model_reasoning_effort`를 채우고 응답의
-`reasoningEffort`를 검증한다. 다른 config 키는 보존하고 명시적인 요청 config 값이 우선한다.
+model 또는 effort가 있는 helper는 새 세션에 세션 전용 relay를 사용한다. relay는 thread 요청에서
+`config.model_reasoning_effort`가 생략되거나 null이면 호출 시 지정한 effort를 채운다.
+명시적인 요청 effort와 다른 config 키는 보존하며, 최종 요청의 effort를 기준으로 응답의
+`reasoningEffort`를 검증한다.
 승인·sandbox는 기존 정책 우선순위를 따른다. provider 오류 응답은 그대로 전달한다.
 등록부의 helper 인자와 복원 명령에 명시값을 보존하며 같은 세션의 탭 복원·reboot에도 적용한다.
 재개 helper는 TUI를 띄우기 전에 `thread/resume`으로 모델·effort를 서버에 적용하고 검증한다.
