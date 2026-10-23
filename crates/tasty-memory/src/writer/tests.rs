@@ -859,3 +859,32 @@ fn a_result_reaping_thread_may_not_wait_for_the_writer() {
     assert!(!is_result_reaping_thread());
     drop(writer);
 }
+
+#[test]
+fn memory_writer_alias_exposes_nonconsuming_shutdown_observation() {
+    use tasty_utils::batch_writer::ShutdownObservation;
+    let mut rig = rig_with(
+        MemoryStore::open_in_memory().unwrap(),
+        Limits::default(),
+        true,
+    );
+    assert_eq!(
+        rig.writer.shutdown_observation(),
+        ShutdownObservation::NotStarted
+    );
+    rig.writer.begin_shutdown();
+    let deadline = Instant::now() + WAIT;
+    while rig.writer.poll_shutdown() != 0 {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let observed = rig.writer.shutdown_observation();
+    assert!(matches!(
+        observed,
+        ShutdownObservation::Joined {
+            panicked: false,
+            flush: Ok(_)
+        }
+    ));
+    assert_eq!(rig.writer.shutdown_observation(), observed);
+}

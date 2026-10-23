@@ -400,11 +400,20 @@ impl<X: Executor> Handle<X> {
     }
 }
 
+/// Final flush and actual worker join are observed independently of process exit status.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ShutdownObservation {
+    NotStarted,
+    Draining,
+    Joined { panicked: bool, flush: FlushResult },
+}
+
 /// worker를 소유하고 수명을 관리한다. 요청은 [`Writer::handle`]로 넣는다.
 pub struct Writer<X: Executor> {
     handle: Handle<X>,
     worker: Option<JoinHandle<()>>,
     final_flush: Option<Receipt<FlushResult>>,
+    shutdown_observation: ShutdownObservation,
     name: String,
 }
 
@@ -439,6 +448,7 @@ impl<X: Executor> Writer<X> {
             handle: Handle { shared },
             worker: Some(worker),
             final_flush: None,
+            shutdown_observation: ShutdownObservation::NotStarted,
             name: name.to_owned(),
         })
     }
@@ -458,6 +468,9 @@ impl<X: Executor> Writer<X> {
         if self.final_flush.is_some() {
             return;
         }
+        if self.shutdown_observation == ShutdownObservation::NotStarted {
+            self.shutdown_observation = ShutdownObservation::Draining;
+        }
         let shared = &self.handle.shared;
         let mut queue = shared.lock();
         queue.admitting = false;
@@ -476,34 +489,47 @@ impl<X: Executor> Writer<X> {
         if self.worker.as_ref().is_some_and(|w| w.is_finished())
             && let Some(worker) = self.worker.take()
         {
-            if worker.join().is_err() {
+            let panicked = worker.join().is_err();
+            if panicked {
                 tracing::error!(writer = %self.name, "writer worker panicked");
             }
-            self.log_final_flush();
+            self.log_final_flush(panicked);
         }
         usize::from(self.worker.is_some())
     }
 
-    fn log_final_flush(&mut self) {
-        let Some(receipt) = self.final_flush.take() else {
-            return;
+    /// A read-only snapshot; never consumes a request or final flush receipt.
+    pub fn shutdown_observation(&self) -> ShutdownObservation {
+        self.shutdown_observation.clone()
+    }
+
+    fn log_final_flush(&mut self, panicked: bool) {
+        let result = self
+            .final_flush
+            .take()
+            .and_then(|receipt| receipt.try_take())
+            .unwrap_or(Err(FlushFailure::Lost));
+        self.shutdown_observation = ShutdownObservation::Joined {
+            panicked,
+            flush: result.clone(),
         };
-        match receipt.try_take() {
-            Some(Ok(point)) => {
+        match &result {
+            Ok(point) => {
                 tracing::debug!(writer = %self.name, seq = point.seq, "writer drained");
             }
-            Some(Err(FlushFailure::NotClean {
+            Err(FlushFailure::NotClean {
                 point,
                 rejected,
                 failed,
-            })) => log_unclean_drain(&self.name, point, rejected, failed),
-            Some(Err(FlushFailure::Lost)) | None => log_lost_drain(&self.name),
+            }) => log_unclean_drain(&self.name, *point, *rejected, *failed),
+            Err(FlushFailure::Lost) => log_lost_drain(&self.name),
         }
     }
 
     /// 종료를 요청하지 않았는데 worker가 끝났는지. 메인 루프의 점검용이다.
     pub fn worker_ended_unexpectedly(&self) -> bool {
-        self.final_flush.is_none() && self.worker.as_ref().is_none_or(|w| w.is_finished())
+        self.shutdown_observation == ShutdownObservation::NotStarted
+            && self.worker.as_ref().is_none_or(|w| w.is_finished())
     }
 
     pub fn stats(&self) -> WriterStatsSnapshot {

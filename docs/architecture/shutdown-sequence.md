@@ -167,7 +167,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 | S1 layout_flush | `flush_layout_persistence(true)` | — |
 | S2 boot_worker_reclaim | `ReclaimingBootWorker` phase (부팅 중 종료 전용, timeout 5s) | `reason = reclaimed\|unreclaimed` |
 | S3 surface_close_cascade | close 큐 push + plugin broadcast | `surfaces` = 큐에 push 한 surface 수 |
-| S3b observer_sink_join | close 경로가 미뤄둔 observer sink 워커 join | — |
+| S3b observer_sink_shutdown | close 경로가 미뤄둔 observer sink의 실제 join·pending·실패 관측 | `clean`, `progress` |
 | S4 plugin_shutdown | `StoppingPlugins` 단계 전체. 정상 종료 대기는 겹치지만 동기 정리 비용도 포함 | `plugins` = 종료 대상 plugin 수 |
 | S4a plugin_shutdown_one | plugin 1개 종료 (graceful deadline 2s) | `plugin_id`, `reason = graceful\|killed\|no_child` |
 | shutdown_total | 종료 진입 → `event_loop.exit()` 직전 | — |
@@ -189,7 +189,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
   붙었다" 를 로그만으로 구분할 수 있어야 하기 때문이다. plugin manager 자체가
   없으면 `S4 plugin_shutdown (no plugin manager)` 로 구분된다.
 - **S4와 S4a는 측정 구간이 다르다.** 정상 종료 대기는 겹치므로 각 S4a를 단순 합산하지 않는다. 그렇다고 S4가 항상 개별 최댓값과 같은 것도 아니다. 순회, kill·wait, 기존 retire 작업의 대기와 스케줄링이 영향을 준다.
-- **S3b는 동기 join 시간이다.** 닫기에서 미뤄 둔 observer sink 워커가 끝날 때까지 기다린다. 워커가 이미 끝났으면 짧지만 파일 쓰기 등이 남아 있으면 길어질 수 있다. Observer가 없어도 순회와 계측 비용이 있어 항상 0이라고 보장하지 않는다. 이후 `ObserverRouter::drop`도 남은 워커를 join하므로 정리가 뒤로 미뤄질 수도 있다.
+- **S3b는 observer 종료 관측이다.** 닫기에서 미뤄 둔 worker 중 완료한 handle만 join한다. 첫 대기부터 5초 뒤에도 남은 handle은 pending으로 기록하고 저장 writer 종료로 진행한다. 대기 사이 렌더링과 종료 오류 응답을 계속하며 Router Drop은 기다리지 않는다.
 - **S3 의 `surfaces` 와 S5b 의 `ptys` 는 세는 대상이 다르다.** 전자는 layout 상의
   surface, 후자는 PTY 를 실제로 가진 backend 다 — child terminal / 헤드리스 PTY 는
   layout 밖에도 있고, PTY 없는 surface(webview 등)도 있어 두 값은 일치하지 않는다.
@@ -260,8 +260,11 @@ S4a 는 세 회 모두 plugin 마다 1.6~3.8 ms 였다.
 
 ## Observer sink 종료
 
-GUI S3는 surface 닫힘을 전달한 뒤 전체 observer sender(전체 surface 구독 포함)를 닫는다. 별도 단계가 완료된 JoinHandle만 회수하며, 기다리는 동안 종료 프레임과 IPC 종료 오류 응답을 계속 처리한다. headless도 runner·자원 producer 정리 뒤 observer를 같은 방식으로 폴링하고 file/memory writer를 닫는다.
+GUI S3는 surface 닫힘을 전달한 뒤 전체 observer sender(전체 surface 구독 포함)를 닫는다. `StoppingPlugins`에서 완료된 JoinHandle만 회수하며, 기다리는 동안 종료 프레임과 IPC 종료 오류 응답을 계속 처리한다. headless도 runner·자원 producer 정리 뒤 observer를 같은 방식으로 폴링하고 file/memory writer를 닫는다.
 
 5초 기한은 첫 polling 대기에서 고정된다. 기한을 넘기면 pending handle은 원 router에 남고, memory sink의 새 writer 제출을 짧은 접수 잠금으로 차단한 뒤 저장 writer 종료로 진행한다. 이미 writer에 접수한 요청은 취소하지 않는다. 아직 제출하지 못한 observer 항목은 거절·미확정으로 남을 수 있다. S3b는 pending·실제 joined·panic·저장 실패·drop 수와 clean 여부를 따로 기록한다. join된 worker도 panic이나 저장 실패가 있으면 clean이 아니다.
 
 Router Drop은 다시 기다리지 않는다. 이미 끝난 worker만 회수하고 남은 수를 경고하며 미완료 handle을 해제한다. 해당 스레드는 프로세스가 살아 있는 동안 실행될 수 있지만 프로세스 종료 때 accepted output을 잃을 수 있다. Drop이나 프로세스 종료 코드0을 저장 완료 근거로 사용하지 않는다. 명시적 output.observe_stop은 기존 동기 join 계약을 유지한다.
+
+
+`writer_shutdown_observation`은 memory·state·file writer별 최종 관측이다. `Joined`는 원 JoinHandle의 실제 join 뒤에만 기록하고 `panicked`와 최종 `FlushResult`를 함께 보존한다. `NotClean`은 cut 안의 거절·실패, `Lost`는 flush 결과 미확정을 뜻한다. `Draining` 상태에서 기한이 지나면 미회수이며 성공이 아니다. writer가 구성되지 않은 경우는 `configured=false`로 구분한다. getter는 receipt를 소비하지 않는다. 종료 코드 정책은 이 관측과 별개이며 요청된 정상 종료 코드 0도 clean drain을 보장하지 않는다.

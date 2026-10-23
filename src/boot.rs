@@ -1115,20 +1115,23 @@ fn finish_headless_shutdown(
 /// 마지막 묶음의 결과를 기다리던 IPC 요청에도 응답한다.
 #[cfg(not(feature = "gui"))]
 fn drain_headless_memory_writer(app: &mut crate::app::App) {
-    let deadline = std::time::Instant::now() + crate::app::writer_drain::WRITER_DRAIN_TIMEOUT;
-    while app.services.poll_memory_writer_shutdown() != 0 {
+    let mut drain = crate::app::writer_drain::WriterDrain::default();
+    loop {
+        let remaining = app.services.poll_memory_writer_shutdown();
+        app.services.poll_file_writer();
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());
-        if std::time::Instant::now() >= deadline {
-            tracing::warn!(
-                "headless memory writer shutdown timed out; requests it has not committed may be lost"
-            );
+        if !drain.observe_writer(
+            remaining,
+            app.services.memory_writer_shutdown_observation(),
+            "memory",
+            std::time::Instant::now(),
+            "headless memory writer shutdown timed out; requests it has not committed may be lost",
+        ) {
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    app.services
-        .poll_memory_replies(app.plugin_manager.as_mut());
 }
 
 #[cfg(all(test, not(feature = "gui")))]

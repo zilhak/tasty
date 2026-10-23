@@ -82,6 +82,8 @@ pub(crate) mod shutdown_cascade;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_machine;
 #[cfg(feature = "gui")]
+mod shutdown_observers;
+#[cfg(feature = "gui")]
 pub(crate) mod shutdown_trace;
 pub(crate) mod state;
 pub(crate) mod storage_notice;

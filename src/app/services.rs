@@ -23,6 +23,7 @@ pub(crate) mod impl_tab;
 pub(crate) mod ipc_facade;
 mod live_intent;
 pub(crate) mod session;
+mod shutdown_observation;
 /// 프로세스가 공유하는 port와 저장소 핸들. 창별 데이터는 CoreState에 있다.
 #[allow(dead_code)] // 이유: 일부 port는 아직 읽지 않지만 AppServicesBuilder가 같은 port 묶음을 주입하는 인터페이스를 유지한다.
 pub(crate) struct AppServices {

@@ -6,8 +6,10 @@ pub(super) fn drain(app: &mut crate::app::App) {
         crate::intent::headless::settle_settings_saves(&mut app.services);
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());
-        if !drain.keep_waiting(
+        if !drain.observe_writer(
             remaining,
+            app.services.file_writer_shutdown_observation(),
+            "file",
             std::time::Instant::now(),
             "headless file writer shutdown timed out; settings it has not saved may be lost",
         ) {

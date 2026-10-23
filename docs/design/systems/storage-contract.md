@@ -316,6 +316,8 @@ headless는 publication을 비운 뒤 journal worker를 stop하고(join은 App d
 
 memory.db 쓰기는 모두 memory writer를 지난다. writer는 종료 때 접수를 막고 마지막 flush cut까지 실행한 뒤 join하며, 소유한 저장소를 그때 닫는다. 종료 요청보다 늦게 도착한 요청 게이트 대기 요청은 `-32000`으로 거절한다([요청 게이트](#요청-게이트)).
 
+저장 실행기의 `shutdown_observation()`은 `NotStarted`·`Draining`·실제 join 뒤 `Joined { panicked, flush }`를 보존해 읽기만 한다. 최종 flush receipt는 shutdown polling이 한 번 거두고 결과를 캐시한다. receipt 유실은 `Lost`이며, flush 성공 뒤 worker가 panic한 경우도 `panicked=true`를 유지한다. 프로세스 종료 코드와 writer의 join·저장 성공을 각각 판정한다.
+
 ### Task 종결 알림의 영속 의무
 
 알림 전달 의무와 실행 handle 정리는 별개다. 알림의 정확 UUID를 확인 처리해도 남은 handle의

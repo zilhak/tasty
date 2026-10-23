@@ -783,3 +783,5 @@ fn every_batch_wakes_the_owner_and_sizes_land_in_their_buckets() {
     assert_eq!(stats.batch_size_max, 4);
     finish(rig);
 }
+
+mod shutdown_observation;

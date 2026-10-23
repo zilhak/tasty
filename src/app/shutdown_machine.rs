@@ -63,9 +63,9 @@ pub(crate) struct ShutdownState {
     explorer_files_deadline: Option<Instant>,
     runner_stop_deadline: Instant,
     /// memory·state·file writer drain의 기한. 각각 첫 대기에서 정하고 넘기면 미회수로 두고 진행한다.
-    observer_drain: crate::app::writer_drain::WriterDrain,
-    observer_started: Option<Instant>,
-    observer_reported: bool,
+    pub(super) observer_drain: crate::app::writer_drain::WriterDrain,
+    pub(super) observer_started: Option<Instant>,
+    pub(super) observer_reported: bool,
     memory_drain: crate::app::writer_drain::WriterDrain,
     state_drain: crate::app::writer_drain::WriterDrain,
     file_drain: crate::app::writer_drain::WriterDrain,
@@ -420,27 +420,6 @@ impl App {
         StepOutcome::Advanced
     }
 
-    fn wait_for_observer_shutdown(&mut self) -> bool {
-        let progress = self.shutdown_poll_observer_sinks();
-        let state = self.state.shutdown.as_mut().expect("shutdown phase");
-        if state.observer_started.is_none() && progress.pending != 0 {
-            tracing::info!(target: "tasty::shutdown", pending = progress.pending, "observer_sink_wait_started");
-        }
-        let started = *state.observer_started.get_or_insert_with(Instant::now);
-        if state.observer_drain.keep_waiting(
-            progress.pending,
-            Instant::now(),
-            "observer shutdown timed out; sink workers remain unjoined",
-        ) {
-            return true;
-        }
-        if !std::mem::replace(&mut state.observer_reported, true) {
-            shutdown_trace::observer_outcome(progress, started.elapsed());
-        }
-        self.shutdown_fence_observer_submissions();
-        false
-    }
-
     fn wait_for_port_scan_shutdown(&mut self) -> bool {
         let scans_remaining = self.port_scans.poll_shutdown();
         if scans_remaining != 0
@@ -567,13 +546,16 @@ impl App {
     /// 마지막 묶음의 결과를 기다리던 IPC 요청에도 응답한다.
     fn wait_for_memory_writer_shutdown(&mut self) -> bool {
         let remaining = self.services.poll_memory_writer_shutdown();
+        self.services.poll_file_writer();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
         let Some(state) = self.state.shutdown.as_mut() else {
             return false;
         };
-        state.memory_drain.keep_waiting(
+        state.memory_drain.observe_writer(
             remaining,
+            self.services.memory_writer_shutdown_observation(),
+            "memory",
             Instant::now(),
             "memory writer shutdown timed out; requests it has not committed may be lost",
         )
@@ -586,8 +568,10 @@ impl App {
         let Some(state) = self.state.shutdown.as_mut() else {
             return false;
         };
-        state.state_drain.keep_waiting(
+        state.state_drain.observe_writer(
             remaining,
+            self.services.state_writer_shutdown_observation(),
+            "state",
             Instant::now(),
             "state writer shutdown timed out; requests it has not committed may be lost",
         )
@@ -604,8 +588,10 @@ impl App {
         let Some(state) = self.state.shutdown.as_mut() else {
             return false;
         };
-        state.file_drain.keep_waiting(
+        state.file_drain.observe_writer(
             remaining,
+            self.services.file_writer_shutdown_observation(),
+            "file",
             Instant::now(),
             "file writer shutdown timed out; settings it has not saved may be lost",
         )

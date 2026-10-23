@@ -439,6 +439,7 @@ pub use access::{
     is_result_reaping_thread, mark_result_reaping_thread, settle,
 };
 
+/// Includes the nonconsuming `shutdown_observation` query of the underlying writer.
 pub type MemoryWriter<A> = batch_writer::Writer<MemoryExecutor<A>>;
 pub type MemoryHandle<A> = batch_writer::Handle<MemoryExecutor<A>>;
 
