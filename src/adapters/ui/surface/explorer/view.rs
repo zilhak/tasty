@@ -11,6 +11,7 @@ pub(crate) mod ops;
 mod path_index;
 pub(crate) mod poll;
 mod remote_reload;
+mod selection;
 mod tab_state;
 
 use std::collections::{HashMap, HashSet};
@@ -493,18 +494,6 @@ impl ExplorerView {
     pub fn request_refresh(&mut self) {
         self.reload_requested = true;
         self.refresh_in_place = true;
-    }
-
-    /// 보이는 엔트리를 모두 선택. 앵커는 마지막 엔트리로 둔다. Find 로 숨긴 항목은 고르지 않는다.
-    pub fn select_all(&mut self) {
-        let mut selected = HashSet::with_capacity(self.shown_count());
-        let mut last = None;
-        for entry in self.shown() {
-            selected.insert(entry.path.clone());
-            last = Some(&entry.path);
-        }
-        let anchor = last.cloned();
-        self.replace_selection(selected, anchor);
     }
 
     /// 선택된 경로를 (정렬·개행 결합) 텍스트로. 선택이 없으면 None.
