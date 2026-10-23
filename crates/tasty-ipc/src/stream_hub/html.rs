@@ -8,6 +8,31 @@ pub enum HtmlControl {
     Http(HttpRequest),
 }
 impl StreamHub {
+    /// Claim only a new file request or HTTP Begin, after actual owner validation.
+    /// Credits and lifecycle commands never allocate identities. Duplicate HTTP Begin
+    /// classification belongs to the existing document before calling this allocator.
+    pub fn admit_html_request(
+        &self,
+        client: StreamClientId,
+        binding: &Weak<()>,
+        id: crate::html_transfer::TransferId,
+    ) -> bool {
+        let mut sinks =
+            tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
+        let Some(sink) = sinks.get_mut(&client) else {
+            return false;
+        };
+        if !binding.ptr_eq(&Arc::downgrade(&sink.binding))
+            || sink
+                .html_admission
+                .is_some_and(|(request, transfer)| id.request <= request || id.transfer <= transfer)
+        {
+            return false;
+        }
+        sink.html_admission = Some((id.request, id.transfer));
+        true
+    }
+
     pub(super) fn collect_html_request(
         &self,
         client: StreamClientId,

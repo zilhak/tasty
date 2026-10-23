@@ -79,7 +79,6 @@ struct Worker {
 #[derive(Default)]
 pub(crate) struct HtmlTransfers {
     workers: HashMap<(u32, TransferId), Worker>,
-    latest: HashMap<u32, (Weak<()>, u64)>,
     roots: resources::Roots,
 }
 impl Drop for HtmlTransfers {
@@ -120,8 +119,6 @@ impl HtmlTransfers {
     fn collect(&mut self, engine: &EngineRef<'_>, hub: &StreamHub) {
         reap_retired();
         self.roots.collect(engine, hub);
-        self.latest
-            .retain(|client, (binding, _)| hub.matches_client_binding(*client, binding));
         for (key, w) in std::mem::take(&mut self.workers) {
             if !w.owner.current(engine, hub, key.0)
                 || !source_current(&w.source, w.source_generation)
@@ -200,8 +197,7 @@ impl EngineMut<'_> {
             self.remote.html_transfers.command(key, &owner, msg);
             return;
         }
-        let last = self.remote.html_transfers.latest.get(&client);
-        if last.is_some_and(|(original, seq)| original.ptr_eq(&binding) && id.transfer <= *seq) {
+        if !hub.admit_html_request(client, &binding, id) {
             if let Some(worker) = self.remote.html_transfers.workers.get(&key) {
                 worker.cancel.store(true, Ordering::Release);
             }
@@ -211,15 +207,13 @@ impl EngineMut<'_> {
                 &binding,
                 HtmlReply::HtmlFailure {
                     id,
-                    reason: "HTML transfer identity must increase within a connection".into(),
+                    reason:
+                        "HTML request and transfer identities must increase within a connection"
+                            .into(),
                 },
             );
             return;
         }
-        self.remote
-            .html_transfers
-            .latest
-            .insert(client, (binding.clone(), id.transfer));
         if self.remote.html_transfers.workers.contains_key(&key)
             || self.remote.html_transfers.workers.len() >= 8
         {

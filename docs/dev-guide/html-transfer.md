@@ -12,6 +12,8 @@ attach 서버의 HTML 전송과 client entry viewer를 설명한다. Linux GUI c
 
 ## metadata, allowance와 credit
 
+새 file 요청의 request·transfer는 registration마다 함께 단조 증가해야 한다. `StreamHub::admit_html_request`가 실제 binding과 두 high-watermark를 같은 lock에서 검사한다. 거절은 어느 counter도 올리지 않으며, 새 registration은 새 cursor를 갖는다. credit·cancel·body 재사용은 새 요청을 할당하지 않는다. 이 allocator는 이후 HTTP Begin도 공유하되 기존 HTTP 요청의 중복 판정을 먼저 한다.
+
 wire DTO는 `crates/tasty-ipc/src/html_transfer.rs`에 있다. 모든 요청/응답은 Control JSON이며 각 응답을 직렬화한 뒤 전체 payload 상한을 검사한다.
 
 1. `html_entry_request`는 서버 surface ID와 transfer identity를 받는다. client가 파일 경로를 지정하는 필드는 없다. 서버가 현재 HTML source를 결정한다.

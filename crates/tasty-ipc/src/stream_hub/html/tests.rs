@@ -150,3 +150,89 @@ fn declarations_malformed_commands_and_replaced_registration_fail_closed() {
     send(&tx, &begin());
     assert!(hub.pump_inbound(&rx).html_requests.is_empty());
 }
+
+#[test]
+fn both_identity_counters_increase_and_rejected_claims_change_neither() {
+    let hub = StreamHub::new();
+    let _rx = hub.register(5);
+    let binding = hub.client_binding(5).unwrap();
+    let next = |request, transfer| html_transfer::TransferId {
+        request,
+        transfer,
+        ..id()
+    };
+    assert!(hub.admit_html_request(5, &binding, next(1, 1)));
+    for (request, transfer) in [(1, 2), (2, 1), (100, 1), (1, 100)] {
+        assert!(!hub.admit_html_request(5, &binding, next(request, transfer)));
+    }
+    assert!(hub.admit_html_request(5, &binding, next(2, 2)));
+    assert!(!hub.admit_html_request(5, &binding, next(2, 2)));
+    assert!(hub.admit_html_request(5, &binding, next(3, 3)));
+}
+
+#[test]
+fn only_current_registration_can_reset_and_advance_the_cursor() {
+    let hub = StreamHub::new();
+    let _old_rx = hub.register(5);
+    let old = hub.client_binding(5).unwrap();
+    assert!(hub.admit_html_request(5, &old, id()));
+    let _new_rx = hub.register(5);
+    let new = hub.client_binding(5).unwrap();
+    let low = html_transfer::TransferId {
+        request: 1,
+        transfer: 1,
+        ..id()
+    };
+    assert!(!hub.admit_html_request(5, &old, low));
+    assert!(hub.admit_html_request(5, &new, low));
+    assert!(!hub.admit_html_request(5, &old, id()));
+    assert!(!hub.admit_html_request(5, &new, low));
+    hub.unregister(5);
+    assert!(!hub.admit_html_request(5, &new, id()));
+}
+
+#[test]
+fn ordered_file_and_http_admissions_use_one_registration_cursor() {
+    let hub = StreamHub::new();
+    let _sink = hub.register(5);
+    let binding = hub.client_binding(5).unwrap();
+    let (tx, rx) = mpsc::channel();
+    capabilities(&tx, &[html_transfer::CAPABILITY, html_http::CAPABILITY]);
+    let next = |request, transfer| html_transfer::TransferId {
+        request,
+        transfer,
+        ..id()
+    };
+    send(&tx, &HtmlRequest::HtmlEntryRequest { id: next(1, 1) });
+    for (request, transfer) in [(1, 2), (2, 2)] {
+        let mut msg = begin();
+        if let HttpRequest::Begin { id, .. } = &mut msg {
+            *id = next(request, transfer);
+        }
+        send(&tx, &msg);
+    }
+    send(
+        &tx,
+        &HtmlRequest::HtmlRead {
+            id: next(100, 100),
+            offset: 0,
+            allow: false,
+        },
+    );
+    send(&tx, &HtmlRequest::HtmlEntryRequest { id: next(3, 2) });
+    send(&tx, &HtmlRequest::HtmlEntryRequest { id: next(3, 3) });
+    let claims: Vec<_> = hub
+        .pump_inbound(&rx)
+        .html_requests
+        .into_iter()
+        .filter_map(|(client, msg)| {
+            let id = match msg {
+                HtmlControl::File(HtmlRequest::HtmlEntryRequest { id })
+                | HtmlControl::Http(HttpRequest::Begin { id, .. }) => id,
+                _ => return None,
+            };
+            Some(hub.admit_html_request(client, &binding, id))
+        })
+        .collect();
+    assert_eq!(claims, [true, false, true, false, true]);
+}
