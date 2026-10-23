@@ -45,6 +45,7 @@ pub fn attach_handshake(
         resize_acks: descriptor_has_capability(&ctrl, stream::RESIZE_ACK_CAPABILITY),
         input_acks: descriptor_has_capability(&ctrl, stream::INPUT_ACK_CAPABILITY),
         html_transfer,
+        html_entry: descriptor_has_capability(&ctrl, tasty_ipc::html_transfer::VIEWER_CAPABILITY),
         explorer_write: descriptor_has_capability(&ctrl, tasty_ipc::explorer_op::CAPABILITY),
         conn,
         client_id,
@@ -69,6 +70,7 @@ pub struct AttachHandshake {
     /// 서버가 원격 explorer 파일 작업을 받는다.
     pub explorer_write: bool,
     pub html_transfer: bool,
+    pub html_entry: bool,
 }
 
 /// descriptor의 기능 목록에 `name`이 있는지. 목록이 없는 구 서버는 false다.
@@ -400,6 +402,7 @@ impl PreparedConnection {
             input_acks,
             explorer_write,
             html_transfer,
+            html_entry,
         } = attach_handshake(port, workspace, "remote pending connection", &cancel)?;
         let control = write_half.try_clone()?;
         let (frame_tx, frame_rx) = super::connection::channel();
@@ -436,10 +439,7 @@ impl PreparedConnection {
                 tunnel,
                 explorer_write,
                 explorer_inbox: Vec::new(),
-                html: super::html_document::HtmlSession {
-                    server_transfer: html_transfer,
-                    documents: Default::default(),
-                },
+                html: super::html_document::HtmlSession::negotiated(html_transfer, html_entry),
             },
         })
     }

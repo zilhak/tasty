@@ -14,6 +14,7 @@ pub const ENTRY_SCHEME: &str = "tasty-html-entry";
 /// The native adapter consumes these exact bytes. MIME/provenance/identity also apply to future resources.
 pub struct NativeBodyResponse {
     generation: TransferId,
+    source_generation: u64,
     mime: String,
     source_url: Url,
     bytes: Arc<Vec<u8>>,
@@ -21,6 +22,7 @@ pub struct NativeBodyResponse {
 impl NativeBodyResponse {
     pub fn new(
         generation: TransferId,
+        source_generation: u64,
         mime: &str,
         source_url: &str,
         bytes: Arc<Vec<u8>>,
@@ -35,6 +37,7 @@ impl NativeBodyResponse {
             Url::parse(source_url).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
         Ok(Self {
             generation,
+            source_generation,
             mime: mime.to_owned(),
             source_url,
             bytes,
@@ -42,6 +45,9 @@ impl NativeBodyResponse {
     }
     pub fn generation(&self) -> TransferId {
         self.generation
+    }
+    pub fn source_generation(&self) -> u64 {
+        self.source_generation
     }
     pub fn mime(&self) -> &str {
         &self.mime
@@ -61,6 +67,7 @@ impl fmt::Debug for NativeBodyResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NativeBodyResponse")
             .field("generation", &self.generation)
+            .field("source_generation", &self.source_generation)
             .field("mime", &self.mime)
             .field("byte_len", &self.bytes.len())
             .finish_non_exhaustive()
@@ -76,6 +83,13 @@ pub struct ReceivedEntry {
 impl ReceivedEntry {
     /// Run on a scan worker after complete, before exposing any native response.
     pub fn from_complete(id: TransferId, resource: &Resource) -> io::Result<Option<Self>> {
+        Self::from_complete_cancellable(id, resource, &std::sync::atomic::AtomicBool::new(false))
+    }
+    pub fn from_complete_cancellable(
+        id: TransferId,
+        resource: &Resource,
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> io::Result<Option<Self>> {
         if id != resource.id() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -109,8 +123,20 @@ impl ReceivedEntry {
         } else {
             "text/html"
         };
-        let scan = scan_reader(bytes.as_slice(), SCAN_LIMIT_BYTES)?;
-        let response = Arc::new(NativeBodyResponse::new(id, mime, url, bytes)?);
+        let scan = scan_reader(
+            CancellableBytes {
+                bytes: bytes.as_slice(),
+                cancel,
+            },
+            SCAN_LIMIT_BYTES,
+        )?;
+        let response = Arc::new(NativeBodyResponse::new(
+            id,
+            metadata.source_generation,
+            mime,
+            url,
+            bytes,
+        )?);
         // Separate virtual origins across connection, binding and document generations. The remaining
         // request/transfer identity is also part of the exact entry route. No remote path is navigated.
         let mut uri = format!(
@@ -192,6 +218,21 @@ impl EntryBodyStore {
     pub fn clear(&mut self) {
         self.expected = None;
         self.entry = None;
+    }
+}
+struct CancellableBytes<'a> {
+    bytes: &'a [u8],
+    cancel: &'a std::sync::atomic::AtomicBool,
+}
+impl io::Read for CancellableBytes<'_> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if self.cancel.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                "entry scan cancelled",
+            ));
+        }
+        io::Read::read(&mut self.bytes, out)
     }
 }
 fn without_fragment(uri: &str) -> &str {

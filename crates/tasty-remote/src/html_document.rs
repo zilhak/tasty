@@ -19,7 +19,7 @@ pub enum ReceiveState {
     Failed,
     Cancelled,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Resource {
     id: TransferId,
     pub metadata: Option<HtmlMetadata>,
@@ -293,13 +293,46 @@ impl HtmlDocument {
     }
 }
 
-/// Empty capability lists are the old-peer behavior. Native viewer support is intentionally absent.
+/// Empty capability lists preserve the old-peer placeholder behavior.
 #[derive(Default)]
 pub struct HtmlSession {
     pub server_transfer: bool,
+    pub server_entry: bool,
+    pub viewer_declared: bool,
+    pub mirrors: HashMap<u32, Arc<std::sync::Mutex<crate::html_mirror::HtmlMirror>>>,
+    epoch: u64,
+    sequence: u64,
     pub documents: HashMap<u32, HtmlDocument>,
 }
 impl HtmlSession {
+    pub fn negotiated(server_transfer: bool, server_entry: bool) -> Self {
+        Self {
+            server_transfer,
+            server_entry,
+            ..Default::default()
+        }
+    }
+    pub fn entry_id(&mut self, surface_id: u32, binding: u64, document: u64) -> Option<TransferId> {
+        static NEXT_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        if self.epoch == 0 {
+            self.epoch = NEXT_EPOCH
+                .fetch_update(
+                    std::sync::atomic::Ordering::AcqRel,
+                    std::sync::atomic::Ordering::Acquire,
+                    |v| v.checked_add(1),
+                )
+                .ok()?;
+        }
+        self.sequence = self.sequence.checked_add(1)?;
+        Some(TransferId {
+            epoch: self.epoch,
+            surface_id,
+            binding,
+            document,
+            request: self.sequence,
+            transfer: self.sequence,
+        })
+    }
     pub fn from_descriptor(descriptor: &serde_json::Value) -> Self {
         Self {
             server_transfer: descriptor[tasty_ipc::stream::DESCRIPTOR_CAPABILITIES]
@@ -308,7 +341,11 @@ impl HtmlSession {
                     v.iter()
                         .any(|c| c.as_str() == Some(tasty_ipc::html_transfer::CAPABILITY))
                 }),
-            documents: HashMap::new(),
+            server_entry: crate::transport::descriptor_has_capability(
+                descriptor,
+                tasty_ipc::html_transfer::VIEWER_CAPABILITY,
+            ),
+            ..Default::default()
         }
     }
 }

@@ -25,6 +25,7 @@ pub mod client_session;
 pub mod connection;
 pub mod html_body;
 pub mod html_document;
+pub mod html_mirror;
 pub mod html_source;
 mod input_receipts;
 pub mod outbound;

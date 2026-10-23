@@ -151,6 +151,7 @@ fn svg_mime_and_unsupported_source_are_explicit() {
     assert!(
         NativeBodyResponse::new(
             id(),
+            8,
             "text/html\r\nInjected: yes",
             "file:///server/a",
             Arc::new(vec![])
@@ -250,5 +251,32 @@ fn completed_resource_cannot_be_relabelled_as_a_new_transfer() {
             .unwrap_err()
             .kind(),
         io::ErrorKind::InvalidInput
+    );
+}
+
+#[test]
+fn scan_cancellation_ends_before_publication_and_keeps_source_generation() {
+    let document = complete(
+        id(),
+        "file:///server/entry.html",
+        b"<script>remote()</script>",
+    );
+    let cancelled = std::sync::atomic::AtomicBool::new(true);
+    assert_eq!(
+        ReceivedEntry::from_complete_cancellable(id(), &document.resources[&id()], &cancelled)
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::ConnectionAborted
+    );
+    let entry = ReceivedEntry::from_complete(id(), &document.resources[&id()])
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        entry.response().source_generation(),
+        document.resources[&id()]
+            .metadata
+            .as_ref()
+            .unwrap()
+            .source_generation
     );
 }

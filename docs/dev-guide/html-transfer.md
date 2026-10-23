@@ -43,3 +43,10 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 순수 모델 시험은 identity·size boundary·누적 credit 예약·취소·재사용을 검사한다. 실제 파일 worker 시험은 1.5MB exact hash, metadata-only 대기, 종류·symlink·교체·취소·timeout을 검사한다. `tests/attach_html_transfer_loopback.rs`는 실제 서버와 raw peer 사이의 왕복을 GUI/headless 각각 실행할 수 있다. native HTML viewer 렌더, 스크립트 banner, 하위 resource와 HTTP(S) 프록시는 이 전송 시험으로 검증하지 않는다.
 
 2026-10-23 Linux WebKitGTK 2.50.4의 별도 context probe에서는 custom scheme 요청이 65초 관측 동안 load 미완료였고 이후 비동기 finish로 완료됐다. 자체 timeout은 그 구간에서 관측하지 못했으므로 무제한 대기가 보장된다는 뜻은 아니다. http/https scheme 등록은 실제 warning으로 거절됐고 HTTP custom callback은 0회였다. 두 proxy context의 loopback 요청은 각 proxy에만 도착했으며 direct context·다른 context의 cookie와 분리됐다. 이는 Linux API 선행 실측이며 제품 proxy나 다른 OS의 실행 검증이 아니다.
+
+
+## Entry 수신 상태와 native 응답 수명
+
+`HtmlMirror`는 연결 epoch와 surface binding마다 문서 세대를 소유한다. 새 Reload는 기존 scan을 취소하고 body store를 비운 뒤 단조 증가하는 request/transfer로 entry를 다시 요청한다. script Allow는 네트워크 요청 없이 검사가 끝난 같은 공유 body를 사용한다. 응답은 source generation도 보존한다. 검사 worker는 취소를 읽기 경계에서 확인하며, 취소·문서 교체·연결 종료 뒤 늦은 결과는 게시할 수 없다.
+
+서버의 metadata 이후 30초 credit timeout은 사용자 크기 질문 중에도 흐른다. 시간이 지나 failure를 받으면 질문과 receiving을 끝내고, 늦은 Allow는 credit을 발급하지 않는다. Reload만 새 요청을 만들며 이전 크기 허용·누적량·skipped를 초기화한다. entry Decline은 취소와 skipped를 기록하고 본문 없는 종료 상태가 된다. 연결이 끊기면 미완성 수신을 취소하고 이미 완료한 본문은 보존한다.
