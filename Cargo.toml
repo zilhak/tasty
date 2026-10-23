@@ -323,6 +323,10 @@ objc2-core-graphics = { version = "0.3", default-features = false, features = ["
 windows-core = "0.61"
 webview2-com = { version = "0.38", optional = true }
 windows = { version = "0.61", features = [
+    "Wdk_Foundation",
+    "Wdk_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_IO",
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Storage_FileSystem",

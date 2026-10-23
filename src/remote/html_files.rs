@@ -1,4 +1,7 @@
 //! Read-only HTML entry handles. Path resolution and reads run only on transfer workers.
+#[cfg(windows)]
+mod windows_root;
+
 use std::{
     fs::File,
     path::{Component, Path, PathBuf},
@@ -61,6 +64,8 @@ pub(crate) struct Entry {
     pub(crate) root: PathBuf,
     pub(crate) stamp: Stamp,
     source: PathBuf,
+    #[cfg(windows)]
+    authorized_root: windows_root::Root,
 }
 impl Entry {
     pub(crate) fn open(source: &Path) -> Result<Self, String> {
@@ -72,6 +77,8 @@ impl Entry {
             .ok_or("entry has no parent")?
             .canonicalize()
             .map_err(|e| e.to_string())?;
+        #[cfg(windows)]
+        let authorized_root = windows_root::Root::open(&root).map_err(|e| e.to_string())?;
         let target = source.canonicalize().map_err(|e| e.to_string())?;
         let relative = target
             .strip_prefix(&root)
@@ -82,7 +89,12 @@ impl Entry {
         {
             return Err("HTML source is not a regular file".into());
         }
+        #[cfg(not(windows))]
         let file = open_beneath(&root, relative).map_err(|e| e.to_string())?;
+        #[cfg(windows)]
+        let file = authorized_root
+            .open_file(relative)
+            .map_err(|e| e.to_string())?;
         let meta = file.metadata().map_err(|e| e.to_string())?;
         if !meta.is_file() {
             return Err("HTML source is not a regular file".into());
@@ -93,6 +105,8 @@ impl Entry {
             root,
             stamp,
             source: source.to_owned(),
+            #[cfg(windows)]
+            authorized_root,
         })
     }
     /// Detect same-handle edits and path replacement before/after every credit.
@@ -100,9 +114,28 @@ impl Entry {
         Stamp::of(&self.file)
             .ok()
             .is_some_and(|stamp| stamp == self.stamp)
-            && Self::open(&self.source)
-                .ok()
-                .is_some_and(|entry| entry.root == self.root && entry.stamp == self.stamp)
+            && self.source_unchanged()
+    }
+    #[cfg(not(windows))]
+    fn source_unchanged(&self) -> bool {
+        Self::open(&self.source)
+            .ok()
+            .is_some_and(|entry| entry.root == self.root && entry.stamp == self.stamp)
+    }
+    #[cfg(windows)]
+    fn source_unchanged(&self) -> bool {
+        let check = || -> std::io::Result<bool> {
+            if !self.authorized_root.is_current(&self.root)? {
+                return Ok(false);
+            }
+            let target = self.source.canonicalize()?;
+            let relative = target
+                .strip_prefix(&self.root)
+                .map_err(std::io::Error::other)?;
+            let file = self.authorized_root.open_file(relative)?;
+            Ok(Stamp::of(&file)? == self.stamp)
+        };
+        check().unwrap_or(false)
     }
 }
 #[cfg(unix)]
@@ -143,54 +176,6 @@ fn open_beneath(root: &Path, relative: &Path) -> std::io::Result<File> {
         dir = unsafe { File::from_raw_fd(fd) };
     }
     Ok(dir)
-}
-#[cfg(windows)]
-fn open_beneath(root: &Path, relative: &Path) -> std::io::Result<File> {
-    use std::os::windows::fs::OpenOptionsExt;
-    use windows::Win32::Storage::FileSystem::{
-        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-    };
-    if !relative
-        .components()
-        .all(|c| matches!(c, Component::Normal(_)))
-    {
-        return Err(std::io::Error::other("unsafe path component"));
-    }
-    let root_handle = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0)
-        .open(root)?;
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
-        .open(root.join(relative))?;
-    let root_path = handle_path(&root_handle)?;
-    let actual = handle_path(&file)?;
-    if !actual.starts_with(root_path) {
-        return Err(std::io::Error::other("opened file escapes root"));
-    }
-    Ok(file)
-}
-#[cfg(windows)]
-fn handle_path(file: &File) -> std::io::Result<PathBuf> {
-    use std::os::windows::{ffi::OsStringExt, io::AsRawHandle};
-    use windows::Win32::{
-        Foundation::HANDLE,
-        Storage::FileSystem::{FILE_NAME_NORMALIZED, GetFinalPathNameByHandleW},
-    };
-    let mut buffer = vec![0u16; 32768];
-    // SAFETY: the file handle and writable buffer remain valid for the call.
-    let len = unsafe {
-        GetFinalPathNameByHandleW(
-            HANDLE(file.as_raw_handle()),
-            &mut buffer,
-            FILE_NAME_NORMALIZED,
-        )
-    } as usize;
-    if len == 0 || len >= buffer.len() {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(PathBuf::from(std::ffi::OsString::from_wide(&buffer[..len])))
 }
 #[cfg(not(any(unix, windows)))]
 fn open_beneath(_root: &Path, _relative: &Path) -> std::io::Result<File> {
