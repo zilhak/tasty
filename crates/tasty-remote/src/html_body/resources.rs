@@ -48,6 +48,9 @@ impl NativeResources {
             pending: VecDeque::new(),
         }
     }
+    pub(super) fn allows_requests(&self) -> bool {
+        self.enabled && self.connected
+    }
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
@@ -105,7 +108,7 @@ impl NativeResources {
         );
         wait
     }
-    fn route(&self, uri: &str) -> Option<(String, String, Option<String>)> {
+    pub(super) fn route(&self, uri: &str) -> Option<(String, String, Option<String>)> {
         if uri.len() > 16 * 1024 {
             return None;
         }
@@ -227,6 +230,9 @@ impl NativeResources {
         cancel
     }
     pub fn disconnect(&mut self) {
+        self.stop(ResourceFailure::Disconnected);
+    }
+    pub fn stop(&mut self, reason: ResourceFailure) {
         self.connected = false;
         self.pending.clear();
         for slot in self.slots.values_mut() {
@@ -234,9 +240,9 @@ impl NativeResources {
                 continue;
             }
             for target in slot.waiters.drain(..) {
-                target.finish(Err(ResourceFailure::Disconnected));
+                target.finish(Err(reason));
             }
-            slot.state = State::Failed(ResourceFailure::Disconnected);
+            slot.state = State::Failed(reason);
         }
     }
 }

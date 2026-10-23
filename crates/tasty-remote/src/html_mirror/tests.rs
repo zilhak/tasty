@@ -185,3 +185,5 @@ fn reload_retires_old_replies_and_notice_choices_before_the_next_request_is_sent
     assert!(m.failure.is_none());
     assert!(m.needs_request());
 }
+
+mod resources;

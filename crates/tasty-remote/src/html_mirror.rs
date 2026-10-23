@@ -1,4 +1,6 @@
 //! Client entry state shared by transport effects and host chrome; no native or local-file access.
+mod resources;
+
 use crate::{
     connection::ConnectionEpoch,
     html_body::{EntryBodyStore, ReceivedEntry},
@@ -30,6 +32,7 @@ pub struct HtmlMirror {
         mpsc::Receiver<std::io::Result<Arc<ReceivedEntry>>>,
     )>,
     scan_cancel: Arc<AtomicBool>,
+    resources: resources::ResourceDriver,
 }
 impl HtmlMirror {
     pub fn new(remote_surface: u32, binding: u64, connection: ConnectionEpoch) -> Self {
@@ -48,10 +51,17 @@ impl HtmlMirror {
             reload: true,
             scan: None,
             scan_cancel: Arc::new(AtomicBool::new(false)),
+            resources: Default::default(),
         }
     }
     fn current(&self, id: TransferId) -> bool {
-        self.connected && self.connection.is_active() && !self.reload && self.id == Some(id)
+        self.connected
+            && self.connection.is_active()
+            && !self.reload
+            && self
+                .document
+                .as_ref()
+                .is_some_and(|d| d.resources.contains_key(&id))
     }
     pub fn body_store(&self) -> std::sync::MutexGuard<'_, EntryBodyStore> {
         tasty_utils::poison::recover_mutex(
@@ -75,7 +85,9 @@ impl HtmlMirror {
         self.cancel_scan();
         let mut cancelled = self.document.take().map_or_else(Vec::new, |mut d| d.stop());
         let mut document = HtmlDocument::new(id.epoch, id.surface_id, id.binding, id.document);
-        cancelled.push(document.request(id).expect("fresh entry identity"));
+        let start = document.request(id).expect("fresh entry identity");
+        let start = self.resources.start(id, start, &mut cancelled);
+        cancelled.push(start);
         self.document = Some(document);
         self.id = Some(id);
         self.reload = false;
@@ -87,6 +99,8 @@ impl HtmlMirror {
         if !self.current(reply.id()) {
             return false;
         }
+        let reply = self.validate_resource_metadata(reply);
+        let id = reply.id();
         let failure = if let HtmlReply::HtmlFailure { reason, .. } = &reply {
             Some(reason.clone())
         } else {
@@ -97,7 +111,15 @@ impl HtmlMirror {
         };
         let accepted = document.receive(reply);
         if accepted {
-            self.failure = failure;
+            if self.id == Some(id) {
+                self.failure = failure;
+            } else if document
+                .resources
+                .get(&id)
+                .is_some_and(|r| matches!(r.state, ReceiveState::Failed | ReceiveState::Cancelled))
+            {
+                document.skipped += 1;
+            }
             self.metadata = self
                 .id
                 .and_then(|id| document.resources.get(&id))
@@ -109,7 +131,7 @@ impl HtmlMirror {
         if !self.current(self.id?) {
             return None;
         }
-        self.document.as_mut()?.credit(self.id?)
+        self.next_credit()
     }
     /// A notice click carries the exact transfer ID drawn by the host, never just a surface number.
     pub fn allow(&mut self, id: TransferId) -> bool {
@@ -130,7 +152,6 @@ impl HtmlMirror {
     }
     pub fn decline(&mut self, id: TransferId) -> Option<HtmlRequest> {
         if !self.current(id)
-            || self.state() != Some(ReceiveState::SizeNotice)
             || self
                 .document
                 .as_ref()
@@ -138,8 +159,12 @@ impl HtmlMirror {
         {
             return None;
         }
-        self.cancel_scan();
-        self.body_store().cancel(id);
+        if self.id == Some(id) {
+            self.cancel_scan();
+            self.body_store().cancel(id);
+        } else if let Some(resources) = self.body_store().resources_mut() {
+            resources.fail(id, crate::html_body::ResourceFailure::Declined);
+        }
         self.document.as_mut()?.decline(id)
     }
     pub fn continue_receiving(&mut self, id: TransferId) -> bool {
@@ -157,7 +182,12 @@ impl HtmlMirror {
             return vec![];
         }
         self.cancel_scan();
-        self.body_store().clear();
+        if self.state() != Some(ReceiveState::Complete) {
+            self.body_store().clear();
+        } else {
+            self.body_store()
+                .stop_resources(crate::html_body::ResourceFailure::Stopped);
+        }
         self.document
             .as_mut()
             .map_or_else(Vec::new, HtmlDocument::stop)

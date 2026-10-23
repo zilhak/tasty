@@ -1,6 +1,8 @@
 //! Immutable native response data and entry scan publication; no filesystem or network access.
+mod navigation;
 mod resources;
 mod response_wait;
+pub use navigation::{FileNavigation, FileTarget};
 pub use resources::{Fetch as NativeResourceFetch, NativeResources};
 pub use response_wait::{ResourceFailure, ResponseWait};
 use std::{fmt, io, sync::Arc};
@@ -208,6 +210,7 @@ pub struct EntryBodyStore {
     entry: Option<Arc<ReceivedEntry>>,
     resources: Option<NativeResources>,
     resources_enabled: bool,
+    navigation: Option<FileNavigation>,
 }
 impl EntryBodyStore {
     pub fn begin(&mut self, id: TransferId) -> bool {
@@ -217,6 +220,7 @@ impl EntryBodyStore {
         self.expected = Some(id);
         self.entry = None;
         self.resources = None;
+        self.navigation = None;
         true
     }
     pub fn expects(&self, id: TransferId) -> bool {
@@ -234,15 +238,17 @@ impl EntryBodyStore {
         true
     }
     pub fn current(&self) -> Option<&Arc<ReceivedEntry>> {
-        self.entry.as_ref()
+        self.entry.as_ref().filter(|_| self.navigation.is_none())
     }
     pub fn entry_for_uri(&self, uri: &str) -> Option<Arc<ReceivedEntry>> {
-        self.entry
-            .as_ref()
+        self.current()
             .filter(|e| without_fragment(e.native_uri()) == without_fragment(uri))
             .cloned()
     }
     pub fn response_for_uri(&self, uri: &str) -> Option<Arc<NativeBodyResponse>> {
+        if self.navigation.is_some() {
+            return None;
+        }
         self.entry_for_uri(uri)
             .map(|entry| Arc::clone(entry.response()))
             .or_else(|| self.resources.as_ref()?.cached(uri))
@@ -261,6 +267,11 @@ impl EntryBodyStore {
         self.resources.as_mut()
     }
     pub fn request_resource(&mut self, uri: &str) -> ResponseWait {
+        if self.navigation.is_some() {
+            let (wait, target) = ResponseWait::pair();
+            target.finish(Err(ResourceFailure::Cancelled));
+            return wait;
+        }
         if let Some(resources) = &mut self.resources {
             return resources.request(uri);
         }
@@ -278,12 +289,17 @@ impl EntryBodyStore {
     /// A completed disconnected page remains available for a local script-allow reload. A pending
     /// scan loses publication rights; a reconnect must call begin with its new connection epoch.
     pub fn disconnect(&mut self) {
+        if self.navigation.is_some() {
+            self.clear();
+            return;
+        }
         if let Some(resources) = &mut self.resources {
             resources.disconnect();
         }
         self.expected = self.entry.as_ref().map(|entry| entry.response.generation());
     }
     pub fn clear(&mut self) {
+        self.navigation = None;
         self.resources = None;
         self.expected = None;
         self.entry = None;
