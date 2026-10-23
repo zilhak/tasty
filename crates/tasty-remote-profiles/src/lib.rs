@@ -8,9 +8,17 @@
 // 이유: 테스트의 let _ =를 제품 코드의 오류 처리 명부에서 제외한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
+mod participant;
 mod passkey;
 mod profile;
+mod registry;
+mod secret_file;
 mod ssh_config;
+
+pub use participant::{
+    ManagedCleanup, MutationFailure, MutationReason, MutationStage, PasskeyCommand, PasskeyOutcome,
+    ProfileCommand, ProfileOutcome, ProfilePatch, RemoteFileStore,
+};
 
 pub use passkey::{
     KNOWN_PASSKEY_KINDS, Passkey, Passkeys, is_valid_passkey_name, sanitize_passkey_name,

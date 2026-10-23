@@ -1,8 +1,8 @@
 //! 경로는 tasty_home(TASTY_HOME 또는 debug/release 기본 홈)을 따른다.
 //! 자격증명 목록은 passkeys.toml에 경로로 저장한다. path는 사용자 파일을 참조하고
 //! inline은 Tasty가 passkeys/<name> 파일을 만들어 관리한다. 비밀 파일은 암호화하지 않는다.
-//! Unix의 inline 파일 권한은 0600으로 설정하며 디렉터리 0700 설정 실패는 무시한다.
-//! 목록 TOML의 0600 권한 설정 실패는 무시한다. 비 Unix에서는 별도 권한을 설정하지 않는다.
+//! inline 파일은 payload 쓰기 전 Unix 0600 또는 Windows 보호 ACL을 적용한다.
+//! 명령형 저장은 RemoteFileStore를 사용한다. load/save는 기존 소비자용 호환 API다.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -85,74 +85,10 @@ fn set_private_file(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 디렉토리 권한 0700(unix). 다른 OS 는 no-op.
-fn set_private_dir(path: &Path) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
-    }
-    let _ = path; // non-unix: 권한 설정 no-op — 인자 미사용(값 drop, Result 아님).
-    Ok(())
-}
-
 /// 주어진 디렉토리에 inline 비밀을 0600 파일로 쓰고 그 경로를 반환한다(경로 주입형 —
 /// 테스트가 temp dir 로 호출). 이름은 [`is_valid_passkey_name`] 통과 필수.
 pub fn materialize_inline_in(dir: &Path, name: &str, secret: &str) -> Result<PathBuf> {
-    if !is_valid_passkey_name(name) {
-        bail!("invalid passkey name '{name}' (allowed: letters, digits, - and _)");
-    }
-    fs::create_dir_all(dir).with_context(|| format!("create passkeys dir {}", dir.display()))?;
-    set_private_dir(dir).ok(); // best-effort(이미 존재하던 dir 권한 강제는 실패 무시)
-    let path = dir.join(name);
-    // Unix: 비밀이 0600이 아닌 권한으로 디스크에 놓이는 순간을 없앤다. 같은 디렉터리에
-    // 0600으로 새로 만든 임시 파일에 쓰고 rename으로 바꿔 넣어, 덮어쓸 때도 기존 파일의
-    // 넓은 권한을 물려받지 않는다. Windows의 rename은 기존 파일을 덮지 못할 수 있어
-    // 비 Unix는 직접 쓴다.
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        use std::sync::atomic::{AtomicU64, Ordering};
-
-        static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let (tmp, mut file) = loop {
-            let n = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let tmp = dir.join(format!(".{name}.tmp-{}-{n}", std::process::id()));
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&tmp)
-            {
-                Ok(file) => break (tmp, file),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => {
-                    return Err(e)
-                        .with_context(|| format!("create passkey temp file {}", tmp.display()));
-                }
-            }
-        };
-        let written = file
-            .write_all(secret.as_bytes())
-            .and_then(|()| file.sync_all())
-            .with_context(|| format!("write passkey file {}", tmp.display()));
-        drop(file);
-        let replaced = written.and_then(|()| {
-            fs::rename(&tmp, &path)
-                .with_context(|| format!("rename {} to {}", tmp.display(), path.display()))
-        });
-        if let Err(e) = replaced {
-            if let Err(rm) = fs::remove_file(&tmp) {
-                tracing::warn!("failed to remove passkey temp file {}: {rm}", tmp.display());
-            }
-            return Err(e);
-        }
-    }
-    #[cfg(not(unix))]
-    fs::write(&path, secret).with_context(|| format!("write passkey file {}", path.display()))?;
-    set_private_file(&path).with_context(|| format!("chmod 0600 {}", path.display()))?;
-    Ok(path)
+    crate::secret_file::write(dir, name, secret)
 }
 
 impl Passkeys {

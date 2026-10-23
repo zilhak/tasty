@@ -6,7 +6,7 @@ use std::io::Read;
 
 use anyhow::Result;
 use tasty_i18n::{t, t_fmt};
-use tasty_remote_profiles::Passkeys;
+use tasty_remote_profiles::{ManagedCleanup, PasskeyCommand, Passkeys, RemoteFileStore};
 
 use crate::commands::passkey::PasskeyCommands;
 use crate::out::outln;
@@ -23,10 +23,11 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
             if path.is_some() && *inline {
                 anyhow::bail!("{}", t("cli.passkey.path_xor_inline"));
             }
-            let mut passkeys = Passkeys::load();
-            let replaced = passkeys.get(name).is_some();
-            if let Some(p) = path {
-                passkeys.upsert_path(name, p.clone())?;
+            let mutation = if let Some(p) = path {
+                PasskeyCommand::Path {
+                    name: name.clone(),
+                    path: p.clone(),
+                }
             } else if *inline {
                 let secret = match value {
                     Some(v) => v.clone(),
@@ -46,12 +47,15 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
                 if secret.is_empty() {
                     anyhow::bail!("{}", t("cli.passkey.inline_empty"));
                 }
-                passkeys.upsert_inline(name, &secret)?;
+                PasskeyCommand::Inline {
+                    name: name.clone(),
+                    secret,
+                }
             } else {
                 anyhow::bail!("{}", t("cli.passkey.needs_path_or_inline"));
-            }
-            passkeys.save()?;
-            let key = if replaced {
+            };
+            let outcome = RemoteFileStore::for_home()?.passkey(mutation)?;
+            let key = if outcome.replaced {
                 "cli.passkey.updated"
             } else {
                 "cli.passkey.added"
@@ -100,9 +104,14 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
             Ok(())
         }
         PasskeyCommands::Remove { name } => {
-            let mut passkeys = Passkeys::load();
-            if passkeys.remove(name) {
-                passkeys.save()?;
+            let outcome = RemoteFileStore::for_home()?
+                .passkey(PasskeyCommand::Remove { name: name.clone() })?;
+            if let ManagedCleanup::Failed(error) = outcome.cleanup {
+                anyhow::bail!(
+                    "passkey list removal committed; managed file cleanup failed: {error}"
+                );
+            }
+            if outcome.removed {
                 outln!("{}", t_fmt("cli.passkey.removed", name))?;
             } else {
                 anyhow::bail!("{}", t_fmt("cli.passkey.not_found", name));

@@ -12,6 +12,7 @@ tasty-utils = { path = "../tasty-utils" }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+toml_edit = "0.20.2"
 
 # Logging
 tracing = "0.1"

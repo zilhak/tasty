@@ -1,4 +1,4 @@
-<!-- source-hash: 3d0527d588ed -->
+<!-- source-hash: d8e071de5bd3 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -33,6 +33,11 @@ Trying to attach directly with an `ssh` profile is refused. Always create one `t
    - **Remote tasty** group: **Executable** (the remote tasty path, default `tasty`) · **Port mode** · **Port file**. If tasty is not on the remote PATH, enter the full path in Executable or set the port mode to `file-unix`.
 
 ### From the CLI
+
+CLI profile and Passkey mutations apply their changes to the latest list under a file lock. Corrupt or unreadable lists are preserved. SSH detection for `add-ssh` starts after the save succeeds and cannot overwrite a profile changed by another command during detection.
+
+An inline Passkey file, the credential list and a profile reference are saved in that order, without a transaction across files. If an error reports that an earlier stage was saved, check the list and reference state. Removing a list entry may succeed even if cleanup of its managed file fails. User files registered as `path` are never deleted. Windows inline storage requires PowerShell ACL setup and verification; failure prevents the secret payload from being written.
+
 
 ```sh
 # ssh profile

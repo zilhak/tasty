@@ -54,3 +54,14 @@
 ## 마이그레이션
 
 없음. 구 `ssh-profiles.toml → remote-profiles.toml` 자동 마이그레이션은 이 문서(하위호환 제거)로 삭제됐다. 기존 프로필에 남은 `remote_tasty`/`port_mode` 필드는 열린 스키마라 무시되며 크래시하지 않는다 — attach 하려면 `tool remote-profile add-attach` 로 tasty-attach 프로필을 새로 만든다.
+
+## 파일 참여자 API와 standalone CLI 저장
+
+`RemoteFileStore`는 파일 worker와 standalone CLI가 공유하는 동기 명령 경계다. host의 비동기 receipt 연결은 각 소비자가 별도로 수행한다. 기존 `load`/`save` 호환 API의 모든 호출자가 이 경계로 이행됐다는 뜻은 아니다.
+
+- profile의 `Put`은 명령에 포함된 필드를 병합하고, `Patch`는 지정 필드만 변경한다. `Insert`는 잠금 안에서 이름 충돌을 검사한다. standalone CLI의 add/edit/remove/import와 감지 결과 저장은 이 API를 사용한다.
+- 고정 sidecar 잠금 안에서 최신 TOML을 읽고 변경한다. 다른 profile, 미등록 kind, 건드리지 않은 invalid 필드, foreign 섹션과 주석은 유지한다. 손상·읽기 실패는 빈 목록으로 덮지 않는다. 마지막 fingerprint/링크 대상 확인 후 교체하며, 참여하지 않는 편집기의 최종 확인과 rename 사이 경합은 막지 못한다.
+- 복합 연산의 잠금 순서는 profile → passkey → inline 파일이다. 반환 결과는 owned 값이며 IPC·SSH 감지·외부 실행 전에 잠금이 풀린다. CLI의 SSH 감지는 첫 저장 성공 뒤 실행하고, 감지 중 변경·삭제된 profile에는 결과를 덮지 않는다. 비교 조건은 typed projection이며 표현할 수 없는 foreign 값의 변화까지 비교하지 않는다.
+- inline 파일 → passkeys 목록 → profile 참조 순서로 확정한다. 파일 사이 transaction이나 rollback은 없다. `MutationFailure`는 실패 단계와 `secret_written`·`passkeys_saved`를 구분한다. 기존 참조는 실패 전 상태로 남을 수 있고 새 비밀 파일은 orphan으로 남을 수 있다.
+- inline 임시 파일은 내용 쓰기 전에 Unix 0600 또는 Windows 현재 사용자만 허용하는 보호 ACL을 적용·검증한다. 넓은 기존 mode/ACL을 물려받지 않는다. 관리 inline symlink는 원본을 보존하며 거절한다. Windows ACL 설정 도구를 실행하거나 검증할 수 없으면 payload를 쓰지 않는다.
+- 삭제는 목록 확정 뒤 관리 파일 정리를 시도한다. 목록 저장 실패면 기존 관리 파일을 지우지 않는다. path-kind 파일은 수정·삭제하지 않는다. 관리 경로 소유 확인/삭제 실패는 `ManagedCleanup::Failed`로 목록 반영과 구분한다. 이 경우 CLI는 목록이 반영됐지만 정리가 실패했다고 오류를 반환한다.

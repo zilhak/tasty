@@ -263,8 +263,8 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `tasty.port` | `write_port_file_to` | IPC 시작 | 아니요 | 없음. 서버 Drop이 지운다 |
 | 단일 실행 instance 파일 | `instance_file` | 메인 루프 | 예(sync 포함) | GUI만 쓴다 |
 | `webhooks.toml` | 호스트 `webhook::persist`, CLI `webhook_port_file` | 메인 루프·webhook 요청 스레드, CLI | 예 | CLI는 실행 중인 호스트가 없다고 판단할 때만 쓴다 |
-| `remote-profiles.toml` | `remote_profiles` 저장 | 메인 루프(IPC·탐지), CLI | 아니요 | CLI가 IPC 없이 직접 쓴다 |
-| `passkeys.toml`과 `passkeys/<이름>` | `passkeys.toml`은 `Passkeys::save`, inline 파일은 `materialize_inline_in`(`Passkeys::upsert_inline` 경유) | 메인 루프(IPC), CLI | `passkeys.toml`은 아니요(권한 0600은 쓴 뒤 설정). Unix의 inline 파일은 예: 0600으로 새로 만든 임시 파일에 쓰고 sync한 뒤 rename한다. 비 Unix는 직접 쓴다 | CLI(`tasty-cli`의 local passkey)가 IPC 없이 직접 쓴다 |
+| `remote-profiles.toml` | CLI는 `RemoteFileStore::profile`, 기존 host 소비자는 `RemoteProfiles::save` | CLI는 호출 스레드, 기존 IPC·탐지는 메인 루프 | CLI는 예(공용 교체·sync), 기존 save는 아니요 | 명령 API는 최신 TOML을 참여 잠금 안에서 patch한다. 기존 save 호출자는 참여하지 않는다 |
+| `passkeys.toml`과 `passkeys/<이름>` | CLI는 `RemoteFileStore::passkey`, 기존 host 목록은 `Passkeys::save`; inline 파일은 `materialize_inline_in` | CLI는 호출 스레드, 기존 IPC는 메인 루프 | CLI 목록은 공용 교체·sync, 기존 save는 직접 쓰기. inline은 Unix 0600·Windows 보호 ACL을 payload 전에 적용한 임시 파일을 sync 후 rename | CLI 명령은 목록 참여 잠금 사용. inline 파일 자체도 참여 잠금 사용. 파일 사이 transaction은 없고 부분 성공·관리파일 정리는 owned 결과로 구분한다 |
 | `plugins.toml` | 플러그인 등록 상태 저장 | 메인 루프, GUI boot worker(내장 플러그인 설치) | 아니요 | 없음 |
 | `known-plugins.toml`, hook·파일 handler 사용자 설정, 테마 파일 | 각 crate의 저장 함수 | 메인 루프 | 테마만 아니요, 나머지는 예 | 없음 |
 | `debug.log`·crash/hang 보고·`launch.log`·observer file sink | 로그 기록 | 각 기록 스레드 | append | `launch.log`는 두 번째 프로세스가 파일 잠금 안에서 쓴다 |

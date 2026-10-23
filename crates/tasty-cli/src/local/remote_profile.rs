@@ -4,7 +4,8 @@
 use anyhow::Result;
 use tasty_i18n::{t, t_args, t_fmt, t_fmt2};
 use tasty_remote_profiles::{
-    ConfigAvailability, ImportError, Passkeys, RemoteProfile, RemoteProfiles, SshConfigHost,
+    ConfigAvailability, ImportError, PasskeyCommand, Passkeys, ProfileCommand, ProfileOutcome,
+    ProfilePatch, RemoteFileStore, RemoteProfile, RemoteProfiles, SshConfigHost,
     config_availability, enumerate_hosts, imported_as, is_valid_shell, prepare_import,
     sanitize_passkey_name, user_config_path,
 };
@@ -14,10 +15,66 @@ use crate::out::outln;
 
 /// `--identity <path>` 를 path kind passkey `<name>-key` 로 분리 저장하고 그 이름을
 /// 반환한다(프로필 `passkey_ref` 로 연결). 같은 path 면 그대로 갱신(upsert).
-fn link_identity_passkey(passkeys: &mut Passkeys, name: &str, identity: &str) -> Result<String> {
+fn link_identity_passkey(name: &str, identity: &str) -> (String, PasskeyCommand) {
     let pk_name = format!("{}-key", sanitize_passkey_name(name));
-    passkeys.upsert_path(&pk_name, identity.to_string())?;
-    Ok(pk_name)
+    (
+        pk_name.clone(),
+        PasskeyCommand::Path {
+            name: pk_name,
+            path: identity.to_owned(),
+        },
+    )
+}
+
+fn set_patch(
+    patch: &mut ProfilePatch,
+    key: &str,
+    val: impl Into<tasty_remote_profiles::FieldValue>,
+) {
+    patch.fields.insert(key.into(), Some(val.into()));
+}
+
+fn save_profile(
+    p: RemoteProfile,
+    identity: Option<&String>,
+    command: impl FnOnce(RemoteProfile) -> ProfileCommand,
+) -> Result<ProfileOutcome> {
+    let linked = identity.map(|path| link_identity_passkey(&p.name, path).1);
+    Ok(RemoteFileStore::for_home()?.profile(command(p), linked)?)
+}
+
+// The first commit succeeds before any SSH execution. The result patch has an in-lock
+// precondition, so a slow probe cannot restore or overwrite a subsequently edited profile.
+fn detect_saved(
+    profile: Option<RemoteProfile>,
+    force: bool,
+) -> Result<Option<Result<crate::ssh::PortMode>>> {
+    let Some(original) = profile else {
+        anyhow::bail!("saved profile cannot be interpreted for detection");
+    };
+    let mut detected = original.clone();
+    let passkeys = Passkeys::load();
+    let result = if force {
+        Some(crate::ssh::detect_for_profile(&detected, &passkeys))
+    } else {
+        crate::ssh::apply_shell_to_profile(&mut detected, &passkeys)
+    };
+    let failed = result.as_ref().is_some_and(|r| r.is_err());
+    let mut patch = ProfilePatch {
+        expected: Some(original.clone()),
+        ..Default::default()
+    };
+    patch
+        .fields
+        .insert("detect_failed".into(), failed.then(|| "true".into()));
+    RemoteFileStore::for_home()?.profile(
+        ProfileCommand::Patch {
+            name: original.name,
+            patch,
+        },
+        None,
+    )?;
+    Ok(result)
 }
 
 /// `tasty tool remote-profile ...` 로컬 분기 진입점(IPC 미경유).
@@ -37,8 +94,6 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             if !is_valid_shell(shell) {
                 anyhow::bail!("{}", t_fmt("cli.remote_profile.unknown_shell", shell));
             }
-            let mut profiles = RemoteProfiles::load();
-            let mut passkeys = Passkeys::load();
             let mut p = RemoteProfile::new(name.clone(), "ssh");
             p.set_field("host", host.clone());
             if let Some(u) = user {
@@ -53,14 +108,11 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             p.set_field("shell", shell.clone());
             p.label = label.clone();
             if let Some(idf) = identity {
-                p.passkey_ref = Some(link_identity_passkey(&mut passkeys, name, idf)?);
+                p.passkey_ref = Some(link_identity_passkey(name, idf).0);
             }
-            let replaced = profiles.get(name).is_some();
-            // shell 적용: 명시 셸 → 매핑(즉시), auto → SSH 프로브 1회(수 초 블록 가능).
-            let detect = crate::ssh::apply_shell_to_profile(&mut p, &passkeys);
-            profiles.upsert(p);
-            passkeys.save()?;
-            profiles.save()?;
+            let saved = save_profile(p, identity.as_ref(), ProfileCommand::Put)?;
+            let detect = detect_saved(saved.profile, false)?;
+            let replaced = saved.replaced;
             let key = if replaced {
                 "cli.remote_profile.ssh_updated"
             } else {
@@ -89,8 +141,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             if ssh_ref.is_none() && host.is_none() {
                 anyhow::bail!("{}", t("cli.remote_profile.attach_needs_ref_or_host"));
             }
-            let mut profiles = RemoteProfiles::load();
-            let mut passkeys = Passkeys::load();
+            let profiles = RemoteProfiles::load();
             let mut p = RemoteProfile::new(name.clone(), "tasty-attach");
             if let Some(r) = ssh_ref {
                 if profiles.get(r).is_none() {
@@ -111,7 +162,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                     p.set_field("extra_options", options.clone());
                 }
                 if let Some(idf) = identity {
-                    p.passkey_ref = Some(link_identity_passkey(&mut passkeys, name, idf)?);
+                    p.passkey_ref = Some(link_identity_passkey(name, idf).0);
                 }
             }
             p.set_field("remote_tasty", remote_tasty.clone());
@@ -120,10 +171,13 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 p.set_field("port_file", pf.clone());
             }
             p.label = label.clone();
-            let replaced = profiles.get(name).is_some();
-            profiles.upsert(p);
-            passkeys.save()?;
-            profiles.save()?;
+            let linked_identity = if ssh_ref.is_none() {
+                identity.as_ref()
+            } else {
+                None
+            };
+            let saved = save_profile(p, linked_identity, ProfileCommand::Put)?;
+            let replaced = saved.replaced;
             let key = if replaced {
                 "cli.remote_profile.attach_updated"
             } else {
@@ -257,55 +311,56 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             {
                 anyhow::bail!("{}", t_fmt("cli.remote_profile.unknown_shell", s));
             }
-            let mut profiles = RemoteProfiles::load();
-            let mut passkeys = Passkeys::load();
-            let Some(mut p) = profiles.get(name).cloned() else {
-                anyhow::bail!("{}", t_fmt("cli.remote_profile.not_found", name));
-            };
+            let mut patch = ProfilePatch::default();
             if let Some(h) = host {
-                p.set_field("host", h.clone());
+                set_patch(&mut patch, "host", h.clone());
             }
             if let Some(u) = user {
-                p.set_field("user", u.clone());
+                set_patch(&mut patch, "user", u.clone());
             }
             if let Some(pt) = port {
-                p.set_field("port", pt.to_string());
+                set_patch(&mut patch, "port", pt.to_string());
             }
             if let Some(idf) = identity {
-                p.passkey_ref = Some(link_identity_passkey(&mut passkeys, name, idf)?);
+                patch.passkey_ref = Some(Some(link_identity_passkey(name, idf).0));
             }
             if !options.is_empty() {
-                p.set_field("extra_options", options.clone());
+                set_patch(&mut patch, "extra_options", options.clone());
             }
             if let Some(r) = ssh_ref {
-                p.set_field("ssh_ref", r.clone());
+                set_patch(&mut patch, "ssh_ref", r.clone());
             }
             if let Some(rt) = remote_tasty {
-                p.set_field("remote_tasty", rt.clone());
+                set_patch(&mut patch, "remote_tasty", rt.clone());
             }
             if let Some(pm) = port_mode {
-                p.set_field("port_mode", pm.clone());
+                set_patch(&mut patch, "port_mode", pm.clone());
             }
             if let Some(pf) = port_file {
-                p.set_field("port_file", pf.clone());
+                set_patch(&mut patch, "port_file", pf.clone());
             }
             if label.is_some() {
-                p.label = label.clone();
+                patch.label = Some(label.clone());
             }
-            // ssh kind 에 --shell 이 주어지면 셸 갱신 + 발견 모드 재도출/재감지.
-            let detect = if let Some(s) = shell {
-                p.set_field("shell", s.clone());
-                if p.kind == "ssh" {
-                    crate::ssh::apply_shell_to_profile(&mut p, &passkeys)
+            if let Some(s) = shell {
+                set_patch(&mut patch, "shell", s.clone());
+            }
+            let linked = identity
+                .as_ref()
+                .map(|idf| link_identity_passkey(name, idf).1);
+            let saved = RemoteFileStore::for_home()?.profile(
+                ProfileCommand::Patch {
+                    name: name.clone(),
+                    patch,
+                },
+                linked,
+            )?;
+            let detect =
+                if shell.is_some() && saved.profile.as_ref().is_some_and(|p| p.kind == "ssh") {
+                    detect_saved(saved.profile, false)?
                 } else {
                     None
-                }
-            } else {
-                None
-            };
-            profiles.upsert(p);
-            passkeys.save()?;
-            profiles.save()?;
+                };
             outln!("{}", t_fmt("cli.remote_profile.updated", name))?;
             report_detect(name, &detect)?;
             Ok(())
@@ -319,7 +374,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 return detect_attach(&profiles, &p);
             }
             // ssh kind(또는 기타): 셸 감지 프로브.
-            match crate::ssh::detect_and_persist(name) {
+            match detect_saved(Some(p), true)?.expect("forced detection always returns a result") {
                 Ok(mode) => outln!(
                     "{}",
                     t_fmt2("cli.remote_profile.detect_ok", name, mode.as_str())
@@ -335,9 +390,9 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             Ok(())
         }
         RemoteProfileCommands::Remove { name } => {
-            let mut profiles = RemoteProfiles::load();
-            if profiles.remove(name) {
-                profiles.save()?;
+            let saved = RemoteFileStore::for_home()?
+                .profile(ProfileCommand::Remove { name: name.clone() }, None)?;
+            if saved.removed {
                 outln!("{}", t_fmt("cli.remote_profile.removed", name))?;
             } else {
                 anyhow::bail!("{}", t_fmt("cli.remote_profile.not_found", name));
@@ -346,11 +401,10 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
         }
         RemoteProfileCommands::ListLocal { json } => list_local(*json),
         RemoteProfileCommands::Import { from, name, label } => {
-            let mut profiles = RemoteProfiles::load();
+            let profiles = RemoteProfiles::load();
             let p = prepare_import(&profiles, &enumerate_hosts(), from, name, label.clone())
                 .map_err(import_error_message)?;
-            profiles.upsert(p);
-            profiles.save()?;
+            save_profile(p, None, ProfileCommand::Insert)?;
             outln!("{}", t_fmt2("cli.remote_profile.import_added", name, from))?;
             // 셸 감지는 SSH 접속을 발생시키므로 가져오기에 묶지 않는다 — 여러 건을
             // 가져올 때 접속이 연쇄로 일어난다. 필요할 때 사용자가 직접 돌린다.
