@@ -7,6 +7,7 @@ fn collect(root: &Path, query: &str, stop: bool) -> Vec<SearchEvent> {
 fn collect_hidden(root: &Path, query: &str, stop: bool, show_hidden: bool) -> Vec<SearchEvent> {
     let (sender, receiver) = mpsc::sync_channel(SEARCH_EVENT_CAPACITY);
     let spec = SearchSpec {
+        id: 0,
         root: root.into(),
         query: query.into(),
         show_hidden,

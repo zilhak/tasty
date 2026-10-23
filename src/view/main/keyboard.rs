@@ -80,6 +80,7 @@ impl MainView {
             return;
         }
 
+        tracing::trace!(target: "tasty::explorer::perf", "key_received");
         // 전체화면 무대가 열려 있으면 배경으로 키를 보내지 않는다.
         if self.try_consume_fullscreen_stage_key(engine, event) {
             return;

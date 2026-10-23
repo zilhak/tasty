@@ -45,19 +45,35 @@ fn large_directory_cpu_samples() {
             let mut h = Harness::with_count(mode, count);
             h.cell = Rect::from_min_max(Pos2::ZERO, Pos2::new(1600.0, 1000.0));
             h.focused = true;
+            let first = Instant::now();
+            h.frame(Vec::new());
+            let first_ms = first.elapsed().as_secs_f64() * 1000.0;
             for _ in 0..5 {
                 h.frame(Vec::new());
             }
+            let cell = h.cell;
+            let first_visible = |drawn: Vec<(String, Rect)>| {
+                drawn
+                    .into_iter()
+                    .find(|(_, rect)| cell.contains(rect.center()))
+                    .map(|(name, _)| name)
+            };
+            let before = first_visible(h.frame(Vec::new()));
             let mut samples = Vec::new();
             for _ in 0..90 {
                 let start = Instant::now();
-                h.frame(vec![Event::MouseWheel {
-                    unit: egui::MouseWheelUnit::Point,
-                    delta: egui::vec2(0.0, -240.0),
-                    modifiers: Modifiers::default(),
-                }]);
+                h.frame(wheel(Pos2::new(1000.0, 700.0), 240.0));
                 samples.push(start.elapsed().as_secs_f64() * 1000.0);
             }
+            let after = h
+                .frame(Vec::new())
+                .into_iter()
+                .find(|(_, rect)| h.cell.contains(rect.center()))
+                .map(|(name, _)| name);
+            assert_ne!(
+                before, after,
+                "{count} {mode:?}: wheel must actually scroll"
+            );
             let start = Instant::now();
             h.view.select_all();
             h.frame(Vec::new());
@@ -74,7 +90,7 @@ fn large_directory_cpu_samples() {
             tracing::info!(
                 "EXPLORER_CPU {}",
                 serde_json::json!({
-                    "count":count, "mode":format!("{mode:?}"), "scroll_ms":samples,
+                    "count":count, "mode":format!("{mode:?}"), "scroll_ms":samples, "first_cpu_frame_ms":first_ms,
                     "select_all_ms":all_ms, "typeahead_ms":typeahead_ms, "find_ms":find_ms
                 })
             );

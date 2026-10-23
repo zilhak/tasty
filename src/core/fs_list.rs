@@ -486,3 +486,6 @@ mod cancellation_tests {
         assert!(entries.is_empty());
     }
 }
+
+#[cfg(test)]
+mod perf_tests;

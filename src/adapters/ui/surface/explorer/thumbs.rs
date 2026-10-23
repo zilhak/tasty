@@ -119,7 +119,6 @@ impl Thumbs {
     }
 
     /// 캐시에 든 칸 수.
-    #[cfg(test)]
     pub(super) fn cached(&self) -> usize {
         self.slots.len()
     }

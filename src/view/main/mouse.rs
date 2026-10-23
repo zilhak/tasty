@@ -1176,6 +1176,7 @@ impl MainView {
         delta: MouseScrollDelta,
         egui_consumed: bool,
     ) {
+        tracing::trace!(target: "tasty::explorer::perf", "wheel_received");
         let overlay_open = self.mouse_overlay_open();
         if egui_consumed {
             self.mark_dirty();

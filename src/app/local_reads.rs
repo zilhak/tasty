@@ -296,6 +296,8 @@ impl LocalReads {
         }
     }
     fn run_requests(&mut self, requests: ReadRequests) {
+        tracing::trace!(target: "tasty::explorer::perf", running = self.jobs.len(),
+            admitted = requests.pending.len(), capacity = MAX_RUNNING, "read_queue");
         for request in requests.pending {
             if self.submit(request).is_err() {
                 tracing::warn!("local read admission closed before execution");

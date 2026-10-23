@@ -719,6 +719,17 @@ impl Target {
 }
 impl super::App {
     pub(crate) fn poll_explorer_files(&mut self) {
+        if tracing::enabled!(target: "tasty::explorer::perf", tracing::Level::TRACE) {
+            let queued: usize = self
+                .view
+                .views
+                .values()
+                .filter_map(|v| v.as_main())
+                .map(|v| v.state.explorer_file_requests.0.len())
+                .sum();
+            tracing::trace!(target: "tasty::explorer::perf", queued,
+                running = self.explorer_files.job.is_some(), "file_queue");
+        }
         self.sync_remote_write_support();
         if let Some(finished) = self.explorer_files.take_finished() {
             self.finish_explorer_file(finished);

@@ -4,7 +4,7 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
@@ -18,6 +18,7 @@ pub(crate) const SEARCH_MAX_HITS: usize = 5_000;
 /// 소비가 늦어도 사건과 묶음 크기 모두 유한하게 유지한다.
 const SEARCH_EVENT_CAPACITY: usize = 16;
 const SEARCH_BATCH_HITS: usize = 256;
+static NEXT_SEARCH_ID: AtomicU64 = AtomicU64::new(1);
 const BACKPRESSURE_POLL: Duration = Duration::from_millis(4);
 
 pub(crate) enum SearchEvent {
@@ -34,6 +35,7 @@ pub(crate) enum SearchEvent {
 }
 
 pub(crate) struct SearchSpec {
+    id: u64,
     pub(super) root: PathBuf,
     pub(super) query: String,
     pub(super) show_hidden: bool,
@@ -42,6 +44,7 @@ pub(crate) struct SearchSpec {
 
 /// View 가 가진 검색 영수증. 버리면 worker 가 멈춘다.
 pub(crate) struct SearchQuery {
+    id: u64,
     request: Option<super::Request>,
     receiver: mpsc::Receiver<SearchEvent>,
     stop: Arc<AtomicBool>,
@@ -51,9 +54,12 @@ pub(crate) struct SearchQuery {
 pub(crate) fn search(root: PathBuf, query: String, show_hidden: bool) -> SearchQuery {
     let (sender, receiver) = mpsc::sync_channel(SEARCH_EVENT_CAPACITY);
     let stop = Arc::new(AtomicBool::new(false));
+    let id = NEXT_SEARCH_ID.fetch_add(1, Ordering::Relaxed);
     SearchQuery {
+        id,
         request: Some(super::Request::Search(
             SearchSpec {
+                id,
                 root,
                 query,
                 show_hidden,
@@ -75,6 +81,7 @@ impl SearchQuery {
         let stop = Arc::new(AtomicBool::new(false));
         (
             Self {
+                id: 0,
                 request: None,
                 receiver,
                 stop: Arc::clone(&stop),
@@ -117,10 +124,14 @@ impl SearchQuery {
                 break;
             }
         }
+        tracing::trace!(target: "tasty::explorer::perf", search_id = self.id,
+            drained = events.len(), stopped = self.stop.load(Ordering::Acquire), "search_poll");
         events
     }
     pub(crate) fn stop(&self) {
-        self.stop.store(true, Ordering::Release);
+        if !self.stop.swap(true, Ordering::AcqRel) {
+            tracing::trace!(target: "tasty::explorer::perf", search_id = self.id, "search_stop");
+        }
     }
 }
 
@@ -132,6 +143,10 @@ impl Drop for SearchQuery {
 
 /// worker 에서 실행한다. 보낼 곳이 닫혔으면 바로 멈춘다.
 pub(super) fn run(spec: SearchSpec, sender: mpsc::SyncSender<SearchEvent>, wake: &dyn Fn()) {
+    let _trace = RunTrace::new(&spec);
+    let _span =
+        tracing::trace_span!(target: "tasty::explorer::perf", "search", search_id = spec.id)
+            .entered();
     let stopped = || spec.stop.load(Ordering::Acquire);
     let query = FindQuery::parse(&spec.query);
     let send = |event| send_event(&sender, &spec.stop, wake, event);
@@ -218,9 +233,34 @@ fn send_event(
                     return false;
                 }
                 event = pending;
+                tracing::trace!(target: "tasty::explorer::perf", queued = SEARCH_EVENT_CAPACITY, "search_backpressure");
                 wake();
                 std::thread::sleep(BACKPRESSURE_POLL);
             }
+        }
+    }
+}
+
+struct RunTrace<'a> {
+    spec: &'a SearchSpec,
+    started: Option<Instant>,
+}
+impl<'a> RunTrace<'a> {
+    fn new(spec: &'a SearchSpec) -> Self {
+        tracing::trace!(target: "tasty::explorer::perf", search_id = spec.id, "search_started");
+        Self {
+            spec,
+            started: tracing::enabled!(target: "tasty::explorer::perf", tracing::Level::TRACE)
+                .then(Instant::now),
+        }
+    }
+}
+impl Drop for RunTrace<'_> {
+    fn drop(&mut self) {
+        if let Some(started) = self.started {
+            tracing::trace!(target: "tasty::explorer::perf", search_id = self.spec.id,
+                stopped = self.spec.stop.load(Ordering::Acquire),
+                elapsed_ms = started.elapsed().as_secs_f64() * 1000.0, "search_finished");
         }
     }
 }

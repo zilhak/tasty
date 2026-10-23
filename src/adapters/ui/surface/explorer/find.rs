@@ -270,6 +270,13 @@ impl ExplorerView {
             .map_or(&[], |s| s.hits.as_slice())
     }
 
+    fn search_running_for_perf(&self) -> bool {
+        self.find
+            .as_ref()
+            .and_then(|f| f.search.as_ref())
+            .is_some_and(|s| s.outcome == Outcome::Running)
+    }
+
     /// 이름과 확장자 조건을 모두 포함한 필터 캐시 키.
     pub(super) fn find_query_key(&self) -> &str {
         self.find.as_ref().map_or("", |f| f.query.as_str())
@@ -566,6 +573,9 @@ pub(super) fn bar(ui: &mut egui::Ui, theme: &Theme, view: &mut ExplorerView, rem
     view.refresh_filter();
     let shown = view.shown_count();
     let total = view.entries.len();
+    tracing::trace!(target: "tasty::explorer::perf", tab = view.tab_salt(),
+        entries = total, shown, selected = view.selected.len(), thumbnails = view.thumbs.cached(),
+        searching = view.search_running_for_perf(), "explorer_state");
     // 입력 칸의 egui 상태(포커스·커서)를 내부 탭마다 따로 둔다.
     let salt = ("explorer_find", view.tab_salt());
     let Some(find) = view.find.as_mut() else {
