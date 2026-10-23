@@ -168,7 +168,7 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 
 `system.info`는 시스템 정보를, `system.pressure`는 요청 압력을 반환한다. `system.pressure`는 local-only다.
 
-응답은 `queue_before_gate` · `handler_after_gate` · `plugin_round_trip` · `db` · `connections` · `db_pragmas` · `stream_push` · `queue_admission` · `queue_dispatch` · `keyed_requests` · `slow_requests` · `gate_refusals` · `memory_writer` · `state_writer` · `state_db` · `file_writer` · `file_writes` · `file_snapshots` · `file_commands` · `journal` 항목이며 각각 세는 대상이 다르다.
+응답은 `queue_before_gate` · `handler_after_gate` · `plugin_round_trip` · `db` · `connections` · `db_pragmas` · `stream_push` · `queue_admission` · `queue_dispatch` · `keyed_requests` · `slow_requests` · `gate_refusals` · `memory_writer` · `state_writer` · `state_db` · `file_writer` · `file_writes` · `file_snapshots` · `file_commands` · `file_operations` · `journal` 항목이며 각각 세는 대상이 다르다.
 
 - **큐 대기(`queue_before_gate`)**: 권한 검사 전에 기록하므로 뒤에 거부될 요청도 센다. `waits`는 대기를 기록한 명령 수로 `wait_us_mean` 의 분모이며 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 끝날 때 오르므로 조회 순간에는 아직 도는 회차만큼 `waits` 보다 작다 — [IPC 서버](../architecture/ipc-server.md).
 
@@ -189,6 +189,8 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 - **state.db 저장 실행기(`state_writer` · `state_db`)**: `state_writer` 는 GUI 의 state.db writer(최근 파일·튜토리얼 진행) 누계로 `memory_writer` 와 같은 필드를 싣는다. `state_db` 는 그 writer 가 성공한 commit 의 `commits` · `commit_us_sum` · `commit_us_max` · `commit_us_mean` 과 `writes_per_commit`(`le` · `counts`)이다. 부팅의 첫 읽기는 세지 않는다. 헤드리스와 state.db 를 열지 못한 실행은 둘 다 `null` 이다([state.db 실행기](../design/systems/storage-contract.md#statedb-실행기)).
 
 - **파일 실행기(`file_writer` · `file_writes` · `file_commands`)**: `file_writer`는 snapshot과 ordered command의 공용 writer 통계다. `file_writes`는 설정·snapshot backend의 replaced/failed/unknown이며 복합 명령을 한 번의 파일 교체로 세지 않는다. `file_commands.presets`는 accepted/rejected/completed/unknown/pending이고 completed에는 알려진 저장소 오류도 포함된다. 원 파일 명령의 완료와 물리 교체 건수는 다르다([파일 실행기](../design/systems/storage-contract.md#파일-실행기)).
+
+- **물리 파일 작업(`file_operations`)**: 실제 file worker 범위에서 공용 helper를 호출한 replace/delete의 attempts/succeeded/failed/unknown, duration, 고정 오류 분류다. replace의 payload_bytes/published_bytes는 제출/성공 게시 바이트 합이며 삭제 바이트는 null이다. helper 전에 거절된 읽기·파싱 실패는 교체 시도가 아니다. executed_commands의 알려진 성공/실패/불명/partial은 backend 분류이며, 불투명한 반환값은 unclassified다. writer가 없으면 전체가 null이다. 부팅 load·CLI나 공용 helper 밖 작업은 포함하지 않는다([계측 경계](../design/systems/storage-contract.md#file-worker의-물리-파일-작업-계측)).
 
 - **파일 snapshot(`file_snapshots`)**: file_handlers/hook_handlers 및 GUI의 explorer_favorites/port_favorites마다 visible/committed/pending/dirty/dirty_age_us를 제공한다. 구성되지 않은 registry는 null이다. dirty는 visible > committed이며 age는 첫 미확정 변경부터 최신 표시 revision이 확정될 때까지 연속된 마이크로초다. 실패·결과 불명·새 변경·오래된 성공은 시간을 초기화하지 않고, 최신 성공 수거 뒤 null이 된다. pending=0인 저장 실패도 dirty가 유지된다. 조회는 receipt를 소비하지 않는다([저장 계약](../design/systems/storage-contract.md)).
 

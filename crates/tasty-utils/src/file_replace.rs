@@ -14,6 +14,12 @@
 //! - [`Fingerprint`]: 길이와 내용 해시. 읽은 뒤 교체 직전까지 외부 변경을 확인할 때 쓴다. 마지막
 //!   확인과 교체 사이의 변경(TOCTOU)까지 막지는 않는다.
 
+mod metrics;
+pub use metrics::{
+    FILE_OPERATION_BOUNDS_US, FileOperationAttempt, FileOperationMetrics, FileOperationScope,
+    FileOperationSnapshot, OperationSnapshot, observe_operations, observe_replacement,
+};
+
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -50,16 +56,27 @@ pub fn replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
 
 /// `path`를 `bytes`로 원자적으로 교체한다.
 pub fn replace_with(path: &Path, bytes: &[u8], options: Options) -> io::Result<()> {
-    replace_using(path, options, |file| write_temp(file, bytes, options.sync))
+    metrics::measure(metrics::Kind::Replace, bytes.len(), || {
+        replace_using(path, options, |file| write_temp(file, bytes, options.sync))
+    })
 }
 
 /// Replace with the existing destination's security, or the source's security for a new
 /// destination. This preserves owner/mode/ACL before writing payload, including on Windows.
 /// The caller owns source/destination locks and conflict checks; files form no transaction.
 pub fn replace_preserving(path: &Path, bytes: &[u8], metadata_source: &Path) -> io::Result<()> {
-    replace_using_source(path, Options::default(), Some(metadata_source), |file| {
-        write_temp(file, bytes, false)
+    metrics::measure(metrics::Kind::Replace, bytes.len(), || {
+        replace_using_source(path, Options::default(), Some(metadata_source), |file| {
+            write_temp(file, bytes, false)
+        })
     })
+}
+
+/// Remove one user file or symlink, observing the actual syscall only in an installed scope.
+/// A NotFound result remains a failed syscall even if a caller treats absence as achieved.
+/// Replacement's own temporary-file cleanup is not a user-file deletion operation.
+pub fn remove(path: &Path) -> io::Result<()> {
+    metrics::measure(metrics::Kind::Delete, 0, || fs::remove_file(path))
 }
 
 fn replace_using(

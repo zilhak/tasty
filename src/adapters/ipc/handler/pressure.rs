@@ -86,6 +86,8 @@
 //! DB와 연결에는 분포가 없다. DB 계측은 다른 크레이트의 타입을 사용하며 accept 값은 상한이다.
 //! 측정하지 않은 항목을 0으로 채우지 않는다. 관측이 없는 평균도 null로 구분한다.
 
+mod file_operations;
+
 use serde_json::json;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -145,6 +147,7 @@ pub(super) fn handle_system_pressure(
     body["file_commands"] = json!({"presets": core.preset_files.status()});
     let files = core.file_writer_stats();
     body["file_writer"] = writer_stats_json(files.as_ref().map(|(writer, _)| *writer));
+    body["file_operations"] = file_operations::snapshot(files.as_ref().map(|(_, writes)| *writes));
     body["file_writes"] = files.map_or(serde_json::Value::Null, |(_, writes)| {
         json!({
             "replaced": writes.replaced, "failed": writes.failed, "unknown": writes.unknown,

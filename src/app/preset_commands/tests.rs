@@ -127,9 +127,7 @@ fn ordered_commands_publish_cache_before_receipt_and_do_not_coalesce() {
     assert!(!f.root.path().join("workspace/b.toml").exists());
     f.drain();
     assert_eq!(f.parts.writer.stats().superseded, 0);
-    assert_eq!(f.parts.stats.snapshot().replaced, 0);
-    assert_eq!(f.commands.status().accepted, 6);
-    assert_eq!(f.commands.status().completed, 6);
+    assert_ordered_command_measurements(&f);
 }
 #[test]
 fn queue_full_and_closed_rejections_never_mutate_files_or_cache() {
@@ -186,6 +184,12 @@ fn external_edit_failure_preserves_original_cache_and_external_bytes() {
         "# externally changed\n"
     );
     f.drain();
+    let stats = f.parts.stats.snapshot();
+    assert_eq!(
+        stats.operations.replace.attempts, 1,
+        "validation failure must not fabricate a replacement attempt"
+    );
+    assert_eq!(stats.commands.known_failure, 1);
 }
 #[test]
 fn dropped_observer_does_not_cancel_accepted_save_or_cache_publication() {
@@ -211,7 +215,7 @@ fn panic_after_side_effect_is_unknown_and_never_replayed() {
     let output = marker.clone();
     let ticket = f.commands.submit::<()>(128, move |_| {
         actual.fetch_add(1, Ordering::Relaxed);
-        std::fs::write(output, "committed").unwrap();
+        tasty_utils::file_replace::replace(&output, b"committed").unwrap();
         panic!("injected after actual side effect");
     });
     assert!(matches!(
@@ -227,6 +231,14 @@ fn panic_after_side_effect_is_unknown_and_never_replayed() {
     f.drain();
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert_eq!(f.commands.status().unknown, 1);
+    let stats = f.parts.stats.snapshot();
+    assert_eq!(stats.operations.replace.succeeded, 1);
+    assert_eq!(
+        stats.operations.replace.unknown, 0,
+        "post-replace panic cannot erase a known successful physical operation"
+    );
+    assert_eq!(stats.commands.unknown, 1);
+    assert_eq!(stats.commands.known_failure, 1);
     assert!(
         f.cache
             .lock()
@@ -280,4 +292,105 @@ fn committed_rename_with_missing_cache_source_reports_saved_cache_failure() {
     assert!(!f.root.path().join("workspace/a.toml").exists());
     assert!(f.cache.lock().unwrap().get_workspace("b").is_none());
     f.drain();
+}
+#[test]
+fn actual_success_then_failed_cleanup_is_partial_not_a_single_failed_replace() {
+    let mut f = Fixture::new(Limits::default());
+    let destination = f.root.path().join("destination");
+    let blocked = f.root.path().join("cannot-unlink-directory");
+    std::fs::create_dir(&blocked).unwrap();
+    let output = destination.clone();
+    let ticket = f.commands.submit::<()>(128, move |_| {
+        tasty_utils::file_replace::replace(&output, b"committed").unwrap();
+        let error = tasty_utils::file_replace::remove(&blocked).unwrap_err();
+        let mut outcome = Outcome::new(
+            Vec::new(),
+            Err(PresetMutationError::Transport {
+                message: error.to_string(),
+                unknown: false,
+            }),
+        );
+        outcome.partial = true;
+        outcome
+    });
+    assert!(f.collect(&ticket).is_err());
+    f.drain();
+    assert_eq!(std::fs::read(destination).unwrap(), b"committed");
+    let stats = f.parts.stats.snapshot();
+    assert_eq!(
+        (
+            stats.operations.replace.succeeded,
+            stats.operations.replace.failed
+        ),
+        (1, 0)
+    );
+    assert_eq!(
+        (
+            stats.operations.delete.attempts,
+            stats.operations.delete.failed
+        ),
+        (1, 1)
+    );
+    assert_eq!(stats.commands.known_failure, 1);
+    assert_eq!(stats.commands.partial, 1);
+}
+#[test]
+fn opaque_successful_output_is_unclassified_until_backend_supplies_a_classifier() {
+    let mut f = Fixture::new(Limits::default());
+    let path = f.root.path().join("opaque");
+    let queue = f.parts.writer.handle();
+    let ticket = command::submit(
+        Some(&queue),
+        128,
+        move || {
+            tasty_utils::file_replace::replace(&path, b"actual").unwrap();
+            false // An opaque value is not evidence of backend business success or failure.
+        },
+        |_| 1,
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(result) = ticket.poll() {
+            assert!(!result.unwrap());
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    f.drain();
+    let stats = f.parts.stats.snapshot();
+    assert_eq!(stats.operations.replace.succeeded, 1);
+    assert_eq!(stats.commands.unclassified, 1);
+    assert_eq!(stats.commands.known_success, 0);
+    assert_eq!(stats.commands.known_failure, 0);
+}
+
+fn assert_ordered_command_measurements(f: &Fixture) {
+    let stats = f.parts.stats.snapshot();
+    assert_eq!(stats.replaced, 0);
+    assert_eq!(
+        (
+            stats.operations.replace.attempts,
+            stats.operations.replace.succeeded
+        ),
+        (5, 5)
+    );
+    assert_eq!(
+        (
+            stats.operations.delete.attempts,
+            stats.operations.delete.succeeded
+        ),
+        (2, 2)
+    );
+    assert!(stats.operations.replace.payload_bytes > 0);
+    assert_eq!(
+        stats.operations.replace.payload_bytes,
+        stats.operations.replace.published_bytes
+    );
+    assert_eq!(stats.commands.known_success, 6);
+    assert_eq!(stats.commands.known_failure, 0);
+    assert_eq!(stats.commands.unclassified, 0);
+    assert_eq!(f.commands.status().accepted, 6);
+    assert_eq!(f.commands.status().completed, 6);
 }

@@ -94,7 +94,7 @@ impl PresetStore {
                         _ => return Err(error.into()),
                     }
                 }
-                match std::fs::remove_file(&path) {
+                match file_replace::remove(&path) {
                     Ok(()) => {}
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                     Err(error) => return Err(error.into()),
@@ -118,7 +118,7 @@ impl PresetStore {
         PresetMutationOutcome { changes, result }
     }
     pub fn rename(&mut self, kind: PresetKind, from: &str, to: &str) -> PresetResult<()> {
-        self.rename_with_remove(kind, from, to, |path| std::fs::remove_file(path))
+        self.rename_with_remove(kind, from, to, file_replace::remove)
     }
     /// The injectable final syscall lets tests fail cleanup after a real destination commit.
     pub(super) fn rename_with_remove(

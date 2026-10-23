@@ -6,6 +6,7 @@
 //! 계약은 docs/design/systems/storage-contract.md의 "파일 실행기" 절에 있다.
 
 pub(crate) mod command;
+mod measurements;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
@@ -98,6 +99,8 @@ pub(crate) struct FileWriteStats {
     replaced: AtomicU64,
     failed: AtomicU64,
     unknown: AtomicU64,
+    operations: Arc<tasty_utils::file_replace::FileOperationMetrics>,
+    commands: measurements::Commands,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +108,8 @@ pub(crate) struct FileWriteCounts {
     pub(crate) replaced: u64,
     pub(crate) failed: u64,
     pub(crate) unknown: u64,
+    pub(crate) operations: tasty_utils::file_replace::FileOperationSnapshot,
+    pub(crate) commands: measurements::CommandCounts,
 }
 
 impl FileWriteStats {
@@ -113,6 +118,8 @@ impl FileWriteStats {
             replaced: self.replaced.load(Ordering::Relaxed),
             failed: self.failed.load(Ordering::Relaxed),
             unknown: self.unknown.load(Ordering::Relaxed),
+            operations: self.operations.snapshot(),
+            commands: self.commands.snapshot(),
         }
     }
 }
@@ -160,8 +167,13 @@ impl Executor for FileExecutor {
             .iter_mut()
             .map(|request| {
                 let snapshot = !matches!(request, FileRequest::Command(_));
+                let _observation =
+                    tasty_utils::file_replace::observe_operations(self.stats.operations.clone());
                 match catch_unwind(AssertUnwindSafe(|| self.run_one(request))) {
                     Ok(Ok(output)) => {
+                        if let FileOutput::Command(command) = &output {
+                            self.stats.commands.record(command.disposition);
+                        }
                         if snapshot {
                             self.stats.replaced.fetch_add(1, Ordering::Relaxed);
                         }
@@ -170,6 +182,13 @@ impl Executor for FileExecutor {
                     Ok(Err(error)) => {
                         if snapshot {
                             self.stats.failed.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            self.stats
+                                .commands
+                                .record(Some(command::CommandDisposition {
+                                    outcome: command::CommandOutcome::KnownFailure,
+                                    partial: false,
+                                }));
                         }
                         tracing::warn!(%error, "file save failed");
                         Settled::Failed(error)
@@ -178,6 +197,13 @@ impl Executor for FileExecutor {
                     Err(_) => {
                         if snapshot {
                             self.stats.unknown.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            self.stats
+                                .commands
+                                .record(Some(command::CommandDisposition {
+                                    outcome: command::CommandOutcome::Unknown,
+                                    partial: false,
+                                }));
                         }
                         Settled::Unknown(FileError("file save panicked".into()))
                     }

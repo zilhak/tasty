@@ -21,6 +21,18 @@ pub(crate) fn value_bytes<T: serde::Serialize>(value: &T) -> usize {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CommandOutcome {
+    KnownSuccess,
+    KnownFailure,
+    Unknown,
+}
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CommandDisposition {
+    pub(crate) outcome: CommandOutcome,
+    pub(crate) partial: bool,
+}
+
 pub(crate) struct Command {
     pub(crate) bytes: usize,
     work: Option<Box<dyn FnOnce() -> Output + Send>>,
@@ -28,6 +40,7 @@ pub(crate) struct Command {
 pub(crate) struct Output {
     value: Box<dyn Any + Send>,
     pub(crate) bytes: usize,
+    pub(crate) disposition: Option<CommandDisposition>,
 }
 impl std::fmt::Debug for Output {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -39,15 +52,18 @@ impl Command {
         bytes: usize,
         work: impl FnOnce() -> T + Send + 'static,
         weigh: impl FnOnce(&T) -> usize + Send + 'static,
+        classify: impl FnOnce(&T) -> Option<CommandDisposition> + Send + 'static,
     ) -> Self {
         Self {
             bytes,
             work: Some(Box::new(move || {
                 let value = work();
-                let bytes = weigh(&value);
+                let bytes = weigh(&value).saturating_add(std::mem::size_of::<CommandDisposition>());
+                let disposition = classify(&value);
                 Output {
                     value: Box::new(value),
                     bytes,
+                    disposition,
                 }
             })),
         }
@@ -118,7 +134,25 @@ pub(crate) fn submit<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
     weigh: impl FnOnce(&T) -> usize + Send + 'static,
 ) -> Result<Ticket<T>, Failure> {
-    let command = Command::new(bytes, work, weigh);
+    admit(queue, Command::new(bytes, work, weigh, |_| None))
+}
+/// The classifier describes backend success/partial state, not merely delivery of a typed output.
+pub(crate) fn submit_classified<T: Send + 'static>(
+    queue: Option<&Handle<FileExecutor>>,
+    bytes: usize,
+    work: impl FnOnce() -> T + Send + 'static,
+    weigh: impl FnOnce(&T) -> usize + Send + 'static,
+    classify: impl FnOnce(&T) -> CommandDisposition + Send + 'static,
+) -> Result<Ticket<T>, Failure> {
+    admit(
+        queue,
+        Command::new(bytes, work, weigh, move |value| Some(classify(value))),
+    )
+}
+fn admit<T: Send + 'static>(
+    queue: Option<&Handle<FileExecutor>>,
+    command: Command,
+) -> Result<Ticket<T>, Failure> {
     if let Some(queue) = queue {
         return queue
             .submit(FileRequest::Command(command))

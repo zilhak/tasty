@@ -375,6 +375,8 @@ memory·state·file writer의 공통 관측은 [저장 실행기 관측](storage
 
 - `system.pressure.file_writer`는 config·즐겨찾기·파일/hook registry snapshot과 프리셋 ordered command를 실행하는 같은 writer의 접수·묶음·대체·예산 통계다. `file_writes`의 replaced/failed/unknown은 설정·snapshot backend의 성공한 파일 교체·저장 실패·결과 불명 횟수이며 묶음 수와 다르다. 복합 명령의 여러 교체·삭제를 이 수에 한 번으로 넣지 않는다. `file_commands.presets`의 accepted/rejected/completed/unknown/pending은 명령·결과 수이고 completed에는 알려진 저장소 오류도 들어가므로 물리 교체·성공 수로 해석하지 않는다. GUI 부팅의 최종 설정 snapshot도 같은 writer에 제출하므로 이 통계에 포함한다. 아직 writer로 옮기지 않은 파일 소비자의 쓰기는 포함하지 않는다. writer가 없는 시험 구성은 null이다. 이 항목은 새 성능 기준선이나 실제 메인 루프 지연 측정을 뜻하지 않는다.
 
+- `system.pressure.file_operations`는 file worker 실행 범위의 공용 교체·사용자 파일 삭제 helper를 replace/delete별로 센다. 작업 시도·성공·실패·불명, 제출/게시 바이트, 종료 시간 분포와 고정 오류 분류이며 부팅 load·CLI·다른 스레드 호출은 제외한다. 명령의 backend 결과 분류와 partial은 executed_commands로 따로 제공한다. 분류 없는 명령은 unclassified이며 명령 한 개를 물리 작업 한 개로 세지 않는다. 계측 경계와 미포함 작업은 [저장 계약](storage-contract.md#file-worker의-물리-파일-작업-계측)을 따른다.
+
 - `system.pressure.file_snapshots`의 각 소비자는 visible/committed/pending과 함께 dirty/dirty_age_us를 제공한다. dirty age는 미확정 변경이 이어진 시간이며 실패로 pending이 0이 되어도 유지한다. 최신 revision의 성공을 수거해야 null이 된다. 조회는 결과를 소비하지 않으며 이 값으로 저장 완료나 전원 장애 내구성을 추정하지 않는다.
 
 - `system.pressure.db`는 memory.db, `system.pressure.state_db`는 state.db writer의 commit을 같은 `DbLatencyStats` 형식(commit 수·시간 합·최댓값·평균·`writes_per_commit`)으로 센다. journal.db의 commit은 이 값에 없다.

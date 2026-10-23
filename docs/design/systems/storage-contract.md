@@ -174,6 +174,18 @@ config snapshot은 같은 load에서 나온 원본 관측값을 공유한다. Ta
 
 프리셋 표시 캐시는 worker의 파일 잠금과 별개다. IPC·plugin·GUI 캡처는 journal 캡처 결과를 파일 명령으로 넘긴 뒤 원 호출자·View identity를 유지해 완료한다. 원 observer가 닫혀도 접수된 저장과 캐시 반영은 계속한다. 편집기 배치는 첫 실패에서 멈추며 앞서 확정한 변경을 유지한다. 파일 명령의 완료 건수는 물리 교체 건수가 아니다. `FileWriteStats`의 replaced/failed/unknown은 설정과 snapshot 교체 시도만 세고, `system.pressure.file_commands.presets`는 접수·거절·완료·불명·대기를 보관한다. 완료에는 알려진 저장소 오류도 포함된다.
 
+### file worker의 물리 파일 작업 계측
+
+`system.pressure.file_operations`는 실제 file worker 요청 실행 범위에서 호출한 공용 replace/delete helper만 센다. 부팅 load와 standalone CLI, 다른 스레드의 같은 helper 호출은 포함하지 않는다. 읽기·파싱·참여자 잠금·관측값 검사에서 거절돼 helper를 부르지 않았으면 물리 교체 시도는 0건이다. replace는 고유 임시 파일 준비·권한 보존·내용 쓰기·최종 게시를 포함한 helper 작업 하나이며 개별 OS write/rename/fsync 횟수가 아니다. rename 명령이 새 파일 교체 후 원본을 unlink하면 replace와 delete 두 작업이다. 교체의 내부 임시 파일 정리는 사용자 파일 delete에 넣지 않는다.
+
+각 작업은 attempts/succeeded/failed/unknown, 종료한 작업의 duration(samples/sum_us/max_us/bounds_us/counts), 고정 오류 분류를 보관한다. helper가 Ok/Err로 돌아오면 성공/실패, 돌아오기 전 unwind는 결과 불명이다. 이미 성공한 replace 뒤 명령이 panic해도 그 교체 성공을 취소하지 않는다. payload_bytes는 helper에 제출한 바이트 합이고 published_bytes는 성공한 교체의 바이트 합이다. 실제 장치 IO 바이트나 전원 장애 내구성을 뜻하지 않는다. 삭제 바이트는 파일 내용을 읽어 추정하지 않아 null이다. 실패한 remove의 NotFound는 실패 syscall로 세지만, 상위 명령은 이미 없는 파일의 삭제 목적을 달성한 것으로 처리할 수 있다.
+
+보안 전용 temp/ACL 교체처럼 공용 helper를 쓸 수 없는 backend에는 thread-bound `observe_replacement` guard를 제공한다. 검증·잠금 뒤 실제 임시 파일 준비 직전에 시작하고, 반환 결과의 고정 ErrorKind로 끝낸다. 끝내지 않고 drop하면 Unknown이다. 기존 공용 helper에는 guard를 겹치지 않으며, guard가 연결되지 않은 전용 backend 작업은 이 계측에 포함하지 않는다. duration 표본이 없으면 합·최댓값은 null이다.
+
+executed_commands의 known_success/known_failure/unknown/partial은 명령 backend가 제공한 분류다. 결과 T를 반환했다는 이유로 저장 성공을 추정하지 않는다. 분류 없는 기존 submit은 unclassified로 세고, 접수 후 실행 전에 유실된 작업은 물리 시도가 없어 공용 writer의 lost와 구분한다. 부분 성공은 성공·실패 카운터 차이로 추정하지 않는다. 목적지 교체 뒤 원본 검증에서 실패하면 delete 시도 없이도 partial일 수 있다.
+
+관측은 스레드에 묶인 범위와 고정 원자 카운터·히스토그램만 사용한다. 조회는 파일·DB를 읽거나 receipt를 소비하지 않으며 경로·내용·오류 문구·비밀 값은 보관하지 않는다. 여러 카운터를 한 transaction으로 읽는 것은 아니므로 실행 중 attempts가 종료 결과보다 먼저 보일 수 있다. 아직 공용 helper로 옮기지 않은 backend의 별도 파일·디렉터리 작업은 포함하지 않는다.
+
 ### 공용 즐겨찾기 snapshot
 
 Explorer·포트 즐겨찾기는 프로세스 공용 `SharedList` 원본을 바꾸고 표시 revision을 올린 뒤 불변 TOML snapshot을 접수한다. 목록 잠금 안에서는 메모리 변경·직렬화·접수 순서만 정한다. 디스크 읽기·잠금·교체와 receipt 대기는 worker에서 한다. 같은 파일의 수집 묶음에서는 마지막 snapshot만 교체하며 대체된 요청도 그 결과를 받는다. 메인 루프가 receipt를 거둘 때 성공한 revision만 저장 완료로 확정한다. 실패·접수 거절·결과 불명은 표시 목록을 되돌리지 않고 dirty를 유지하며 경고 알림에 원인과 조치 안내를 남긴다.

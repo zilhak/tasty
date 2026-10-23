@@ -162,21 +162,35 @@ impl PresetCommands {
         let reply = Ticket::new();
         let worker = self.worker.clone();
         let mut state = self.state.lock().unwrap();
-        let raw = command::submit(
-            self.queue.as_ref(),
-            bytes,
-            move || match worker.lock() {
-                Ok(mut store) => work(&mut store),
-                Err(_) => Outcome::new(
-                    Vec::new(),
-                    Err(PresetMutationError::Transport {
-                        message: "preset worker state poisoned; command not executed".into(),
-                        unknown: false,
-                    }),
-                ),
-            },
-            output_bytes,
-        );
+        let work = move || match worker.lock() {
+            Ok(mut store) => work(&mut store),
+            Err(_) => Outcome::new(
+                Vec::new(),
+                Err(PresetMutationError::Transport {
+                    message: "preset worker state poisoned; command not executed".into(),
+                    unknown: false,
+                }),
+            ),
+        };
+        let raw = match self.queue.as_ref() {
+            Some(queue) => {
+                command::submit_classified(Some(queue), bytes, work, output_bytes, |output| {
+                    command::CommandDisposition {
+                        outcome: match &output.result {
+                            Err(PresetMutationError::Transport { unknown: true, .. }) => {
+                                command::CommandOutcome::Unknown
+                            }
+                            _ if output.saved => command::CommandOutcome::KnownSuccess,
+                            _ => command::CommandOutcome::KnownFailure,
+                        },
+                        partial: output.partial,
+                    }
+                })
+            }
+            // No actual writer exists to measure here. This preserves the shipping refusal and
+            // the legacy test-fixture adapter without introducing a runtime disk fallback.
+            None => command::submit(None, bytes, work, output_bytes),
+        };
         match raw {
             Ok(raw) => {
                 state.status.accepted = state.status.accepted.saturating_add(1);
@@ -243,7 +257,11 @@ impl PresetCommands {
                     let name = value.name().to_owned();
                     Outcome::new(vec![change], Ok(SaveOutcome::Saved(name)))
                 }
-                Ok(None) => Outcome::new(Vec::new(), Ok(SaveOutcome::SkippedExists)),
+                Ok(None) => {
+                    let mut output = Outcome::new(Vec::new(), Ok(SaveOutcome::SkippedExists));
+                    output.saved = false;
+                    output
+                }
                 Err(error) => Outcome::new(Vec::new(), Err(PresetMutationError::Store(error))),
             }
         })
