@@ -178,6 +178,8 @@ impl IntentResult {
 struct Pending {
     request: JsonRpcRequest,
     engine_scope: Option<EngineId>,
+    /// Fixed local metadata patches may follow earlier fixed patches before their ACK.
+    ordered_metadata: bool,
     reply: Reply,
     queued: Option<Work>,
     /// A worker request for this ticket awaits its Finished. At most one is outstanding, because
@@ -506,6 +508,7 @@ impl JournalApplication {
             Pending {
                 request: request.clone(),
                 engine_scope: reply.engine_scope(),
+                ordered_metadata: false,
                 reply,
                 queued: Some(work),
                 in_flight: false,
@@ -699,6 +702,12 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
+        let metadata = self.commands.pending.get(&ticket).is_some_and(|pending| {
+            scheduling::fixed_metadata(&pending.request, &session.core_state)
+        });
+        if let Some(pending) = self.commands.pending.get_mut(&ticket) {
+            pending.ordered_metadata = metadata;
+        }
         if !self.bind_command_engine(ticket, session.id) {
             return;
         }

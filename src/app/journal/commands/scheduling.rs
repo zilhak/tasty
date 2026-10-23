@@ -15,7 +15,22 @@ impl Reply {
 }
 impl Commands {
     fn can_advance(&self, ticket: u64, engine: Option<EngineId>) -> bool {
+        let metadata = self
+            .pending
+            .get(&ticket)
+            .is_some_and(|pending| pending.ordered_metadata);
         self.pending.range(..ticket).all(|(_, previous)| {
+            if metadata
+                && previous.ordered_metadata
+                && engine.is_some()
+                && engine == previous.engine_scope
+                && previous.admitted
+                && !previous.needs_resolution
+                && previous.waiting_command.is_none()
+                && (previous.in_flight || matches!(previous.queued, Some(Work::Resolve { .. })))
+            {
+                return true;
+            }
             // An unresolved scope is a global barrier. A blocked, already bound proposal does
             // not block a third engine, but an active reserve/prepare/commit sequence still does.
             engine.is_some()
@@ -61,4 +76,29 @@ impl JournalApplication {
             .needs_resolution = !allowed;
         allowed
     }
+}
+
+pub(super) fn fixed_metadata(request: &JsonRpcRequest, core: &crate::core::CoreState) -> bool {
+    if request.method != "workspace.update" {
+        return false;
+    }
+    let Some(params) = request.params.as_object() else {
+        return false;
+    };
+    if params
+        .keys()
+        .any(|key| !matches!(key.as_str(), "id" | "name" | "subtitle" | "description"))
+    {
+        return false;
+    }
+    let Some(id) = params
+        .get("id")
+        .and_then(|id| id.as_u64())
+        .and_then(|id| u32::try_from(id).ok())
+    else {
+        return false;
+    };
+    core.workspaces()
+        .iter()
+        .any(|workspace| workspace.id == id && !workspace.mirror)
 }

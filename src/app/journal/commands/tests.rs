@@ -1,4 +1,5 @@
 mod group_failure;
+mod metadata_pipeline;
 
 use super::*;
 use crate::app::journal::stall_budget::StallBudget;
