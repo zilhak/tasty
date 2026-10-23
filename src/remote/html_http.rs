@@ -2,6 +2,7 @@
 //! The caller validates attach ownership and owns one document generation. Reusing a response
 //! never opens a second upstream request. HTTPS/upgrade handling belongs to a later adapter.
 mod body;
+pub mod endpoint;
 mod headers;
 mod transfer;
 mod types;
