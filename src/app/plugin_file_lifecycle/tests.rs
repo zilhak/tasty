@@ -212,3 +212,103 @@ fn missing_manager_preserves_toggle_error_and_original_rpc_id() {
         );
     }
 }
+
+#[test]
+fn post_commit_registration_loss_preserves_saved_state_and_original_reply_once() {
+    post_commit_reply(false, true);
+}
+#[test]
+fn post_commit_removal_loss_preserves_saved_and_prior_effects_in_original_reply_once() {
+    post_commit_reply(true, true);
+}
+#[test]
+fn post_commit_partial_removal_loss_preserves_unsaved_final_config_and_prior_effects() {
+    post_commit_reply(true, false);
+}
+fn post_commit_reply(removed: bool, config_saved: bool) {
+    let _home = crate::test_support::IsolatedHome::new();
+    let mut app = app();
+    let home = tasty_utils::path::tasty_home().unwrap();
+    let path = home.join("plugins.toml");
+    let before = tasty_host_plugin::PluginsConfig::load_from(path.clone());
+    let mut after = before.clone();
+    after.disable("persisted-stage");
+    let update =
+        tasty_host_plugin::file_persistence::ConfigUpdate::between(&before, &after).unwrap();
+    let directory = home.join("owned-post-commit");
+    if removed {
+        std::fs::create_dir(&directory).unwrap();
+    }
+    if !config_saved {
+        std::fs::write(&path, "PRIVATE = [[[\n").unwrap();
+    }
+    let reply = Reply::default();
+    let done = reply.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel(2);
+    let original_id = serde_json::json!("post-commit-original");
+    let response = app.plugin_file_reply(original_id.clone(), reply);
+    app.services.send_handled(&tx, response);
+    app.plugin_manager = None;
+    let work_dir = directory.clone();
+    app.run_plugin_file(
+        128,
+        move || {
+            if removed {
+                std::fs::remove_dir_all(&work_dir).unwrap();
+            } else {
+                std::fs::create_dir(&work_dir).unwrap();
+            }
+            update.execute().is_ok()
+        },
+        |_| 1,
+        move |saved| command::CommandDisposition {
+            outcome: if *saved {
+                command::CommandOutcome::KnownSuccess
+            } else {
+                command::CommandOutcome::KnownFailure
+            },
+            partial: removed && !*saved,
+        },
+        move |app, result| {
+            let result = result.and_then(|saved| {
+                let stage = if removed {
+                    post_commit::Stage::Removed {
+                        config_saved: saved,
+                    }
+                } else {
+                    post_commit::Stage::Registration
+                };
+                post_commit::manager_after_files(&mut app.plugin_manager, stage)
+                    .map(|_| serde_json::json!({}))
+            });
+            done.finish(result);
+        },
+    );
+    assert!(rx.try_recv().is_err());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let response = loop {
+        app.services.poll_file_writer();
+        app.finish_plugin_files();
+        app.services.poll_memory_replies(None);
+        if let Ok(response) = rx.try_recv() {
+            break response;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    assert_eq!(response.id, original_id);
+    let error = response.error.unwrap();
+    assert_eq!(error.code, -32000);
+    let data = error.data.unwrap();
+    assert_eq!(data["saved"], config_saved);
+    assert_eq!(data["applied"], removed);
+    assert_eq!(data["partial"], true);
+    assert_eq!(data["files_committed"], config_saved);
+    assert_eq!(directory.exists(), !removed);
+    for _ in 0..3 {
+        app.services.poll_file_writer();
+        app.finish_plugin_files();
+        app.services.poll_memory_replies(None);
+        assert!(rx.try_recv().is_err());
+    }
+}

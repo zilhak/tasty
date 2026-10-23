@@ -136,3 +136,14 @@ fn failed_legacy_toggle_does_not_mutate_live_state_or_recovery_flags() {
     assert!(mgr.is_auto_disabled("com.example.test"));
     assert_eq!(mgr.retiring_count(), 0);
 }
+
+#[test]
+fn finishing_a_file_swap_does_not_claim_an_existing_process_was_restarted() {
+    let _home = HomeEnvGuard::tasty_home();
+    let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
+    let _stub = mgr.attach_namespace_stub_for_test("com.example.swap-report", "swapreport");
+    assert!(mgr.is_running("com.example.swap-report"));
+    assert!(!mgr.finish_file_swap("com.example.swap-report").unwrap());
+    assert!(mgr.is_running("com.example.swap-report"));
+    assert!(mgr.finish_file_swap(MISSING).is_err());
+}

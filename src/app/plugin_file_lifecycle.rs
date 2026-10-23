@@ -1,4 +1,7 @@
 //! Admission-ordered plugin continuations; the common file worker owns every write.
+#[cfg(any(feature = "gui", test))]
+pub(crate) mod post_commit;
+
 use super::{App, file_writer::command};
 use serde_json::Value;
 use std::{

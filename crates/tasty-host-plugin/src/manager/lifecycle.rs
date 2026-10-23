@@ -270,8 +270,11 @@ impl PluginManager {
         (swapping, restart)
     }
 
-    pub fn finish_file_swap(&mut self, id: &str) -> anyhow::Result<()> {
-        self.swap_respawn_internal(id)
+    /// Report whether this completion actually started a new process, excluding an existing one.
+    pub fn finish_file_swap(&mut self, id: &str) -> anyhow::Result<bool> {
+        let already_running = self.is_running(id);
+        self.swap_respawn_internal(id)?;
+        Ok(!already_running && self.is_running(id))
     }
 
     /// Receipt-confirmed package changes avoid another filesystem scan on the event loop.

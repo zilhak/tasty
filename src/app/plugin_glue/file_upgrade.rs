@@ -176,14 +176,13 @@ impl App {
         if let Some(package) = written.package {
             mgr.replace_committed_package(&written.item.id, Some(package));
         }
-        let restart_error =
-            if !written.uncertain && !self.plugin_files.stopping() && (swap || pending_restart) {
-                mgr.finish_file_swap(&written.item.id)
-                    .err()
-                    .map(|e| e.to_string())
-            } else {
-                None
-            };
+        let (restarted, restart_error) = finish_builtin_restart(
+            self.plugin_files.stopping(),
+            written.uncertain,
+            swap,
+            pending_restart,
+            || mgr.finish_file_swap(&written.item.id),
+        );
         match &mut written.item.action {
             BuiltinUpgradeAction::Upgraded {
                 was_restarted,
@@ -195,7 +194,7 @@ impl App {
                 restart_error: error,
                 ..
             } => {
-                *was_restarted = swap && restart_error.is_none();
+                *was_restarted = restarted;
                 *error = restart_error;
             }
             _ => {
@@ -218,5 +217,94 @@ impl App {
             }]);
         }
         written.item
+    }
+}
+
+fn finish_builtin_restart(
+    stopping: bool,
+    uncertain: bool,
+    swap: bool,
+    pending_restart: bool,
+    restart: impl FnOnce() -> anyhow::Result<bool>,
+) -> (bool, Option<String>) {
+    if uncertain || stopping || !(swap || pending_restart) {
+        return (false, None);
+    }
+    match restart() {
+        Ok(restarted) => (restarted, None),
+        Err(error) => (false, Some(error.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn restart_report_tracks_actual_success_for_closing_swap_and_pending_combinations() {
+        // stopping, uncertain, swap, pending restart, actual successful restart expected
+        let cases = [
+            (false, false, false, false, false),
+            (false, false, false, true, true),
+            (false, false, true, false, true),
+            (false, false, true, true, true),
+            (true, false, false, false, false),
+            (true, false, false, true, false),
+            (true, false, true, false, false),
+            (true, false, true, true, false),
+            (false, true, false, false, false),
+            (false, true, false, true, false),
+            (false, true, true, false, false),
+            (false, true, true, true, false),
+            (true, true, false, false, false),
+            (true, true, false, true, false),
+            (true, true, true, false, false),
+            (true, true, true, true, false),
+        ];
+        for (stopping, uncertain, swap, pending, expected) in cases {
+            let mut calls = 0;
+            let (restarted, error) =
+                finish_builtin_restart(stopping, uncertain, swap, pending, || {
+                    calls += 1;
+                    Ok(true)
+                });
+            assert_eq!(
+                calls,
+                usize::from(expected),
+                "actual call: {stopping}/{uncertain}/{swap}/{pending}"
+            );
+            assert_eq!(
+                restarted, expected,
+                "reported restart: {stopping}/{uncertain}/{swap}/{pending}"
+            );
+            assert!(error.is_none());
+        }
+    }
+    #[test]
+    fn a_closing_host_never_claims_a_skipped_swap_restart() {
+        let (restarted, error) = finish_builtin_restart(true, false, true, false, || {
+            panic!("restart during shutdown")
+        });
+        assert!(!restarted);
+        assert!(error.is_none());
+    }
+    #[test]
+    fn a_successful_noop_is_not_reported_as_a_restart() {
+        assert_eq!(
+            finish_builtin_restart(false, false, true, false, || Ok(false)),
+            (false, None)
+        );
+    }
+    #[test]
+    fn a_failed_actual_restart_is_not_reported_successful() {
+        for (swap, pending) in [(true, false), (false, true), (true, true)] {
+            let mut calls = 0;
+            let (restarted, error) = finish_builtin_restart(false, false, swap, pending, || {
+                calls += 1;
+                anyhow::bail!("owned restart failure")
+            });
+            assert_eq!(calls, 1);
+            assert!(!restarted);
+            assert_eq!(error.as_deref(), Some("owned restart failure"));
+        }
     }
 }

@@ -88,10 +88,12 @@ impl App {
         id: String,
         config: Option<PluginsConfig>,
     ) -> Result<Value, Failure> {
-        let mgr = self
-            .plugin_manager
-            .as_mut()
-            .ok_or_else(|| Failure::before("plugin manager unavailable after remove"))?;
+        let mgr = crate::app::plugin_file_lifecycle::post_commit::manager_after_files(
+            &mut self.plugin_manager,
+            crate::app::plugin_file_lifecycle::post_commit::Stage::Removed {
+                config_saved: config.is_some(),
+            },
+        )?;
         if let Some(config) = config {
             mgr.config = config;
         }
