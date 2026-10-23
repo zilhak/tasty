@@ -1,6 +1,8 @@
 //! executor: 가짜 decider와 실제 journal로 확정 실패 시 상태·응답 없음, 재오픈 후 같은 키는
 //! decide하지 않음, 같은 키 동시 실행은 decide 1회이고 다른 요청은 충돌함을 확인한다.
 
+mod group;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};

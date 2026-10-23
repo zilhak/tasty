@@ -1,3 +1,5 @@
+mod group_failure;
+
 use super::*;
 use crate::app::journal::stall_budget::StallBudget;
 use std::time::{Duration, Instant};

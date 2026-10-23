@@ -94,3 +94,31 @@ pub(super) fn admit(
     );
     Ok(ResultValue::NeedsResolution)
 }
+
+#[allow(clippy::large_enum_variant)] // reason: worker 스택의 한 요청을 즉시 반환하며 기존 Work를 추가 할당 없이 이동한다
+pub(super) enum Order {
+    Ready(super::super::Request),
+    Deferred,
+    Disconnected,
+}
+
+pub(super) fn ordered(
+    request: super::super::Request,
+    pending: &HashMap<u64, Pending>,
+    waiting: &mut VecDeque<(u64, Admission)>,
+    halted: bool,
+    send: &impl Fn(Completion) -> bool,
+) -> Order {
+    if halted || waiting.is_empty() || !matches!(request.work, Work::Admit(_)) {
+        return Order::Ready(request);
+    }
+    let Work::Admit(admission) = request.work else {
+        unreachable!("checked admission");
+    };
+    // A later admission cannot take a credit ahead of an earlier waiting owner.
+    if wait_for_credit(pending, waiting, request.ticket, admission, send) {
+        Order::Deferred
+    } else {
+        Order::Disconnected
+    }
+}

@@ -26,6 +26,29 @@ transaction 안에서 읽은 실제 batch cut은 private staging에만 쓰고, C
 성공 응답, effect claim 또는 외부 실행에 공개하지 않는다. 이 Store API만으로 worker의 요청
 수집이나 batch별 publication ACK가 이루어지지는 않는다.
 
+### worker 수집과 공개 경계
+
+기존 `structure-journal` worker는 첫 순수 요청을 받은 뒤 이미 도착한 연속 후보만 비차단으로
+가져온다. 빈 큐·첫 barrier·기존 queue 건수 상한에서 수집을 끝내며 새 대기 시간이나 사용자
+설정을 두지 않는다. 큐의 byte-budget token은 staging과 publication이 끝날 때까지 보유한다.
+Resolve와 검증된 effect 결과의 순수 commit 부분만 후보이며, 실패 복원 원본의 pin 재시도가
+남아 있는 Resolve는 기존 단건 경로를 쓴다. capture의 memory writer 대기, ID 예약, claim,
+외부 실행, 조회, import, 복구와 maintenance는 앞 그룹을 확정·공개한 뒤 처리하는 barrier다.
+
+executor는 그룹 전용 모델에서 앞 요청의 실제 저장 batch를 적용한 뒤 다음 decide를 수행한다.
+거절된 요청은 다음 상태에 남지 않으며, 물리 COMMIT이 실패하면 이 사적 모델을 버리고
+공개·실행을 멈춘다. COMMIT 결과가 불명일 때 저장 사실을 확인하지 않고 다시 실행하지 않는다.
+기존 in-flight leader를 기다린 뒤 그룹 gate를 잡고, 그룹 안의 같은 key는 자기 leader를 기다리는
+대신 transaction 안의 첫 기록을 읽는다.
+
+각 논리 요청은 원 ticket·followers·optional batch cut·응답을 유지한다. 공개는 그 요청의 cut까지만
+진행하고 정확한 ACK 뒤에 Finished를 보낸다. 이벤트 없는 기록은 뒤 요청의 batch를 대신 공개하지
+않는다. 하나의 물리 transaction에서 B1/B2/B3가 확정된 뒤 B1 ACK와 응답을 마치고 B2 공개가
+실패하면, B1 응답은 유지하고 B2/B3는 durable인 채 공개·성공 응답·새 claim을 멈춘다. admission
+holder만 정리하고 durable event/effect pin은 유지한다. 아직 공개하지 않은 cut을 checkpoint·GC의
+완료 cut으로 취급하지 않는다. 재열기는 기존 미실행 취소·결과 불명 대조 계약을 따르며 역사적
+생성이나 외부 입력을 자동 재실행하지 않는다.
+
 ## 쓰기 계측
 
 `EventStore::commit_statistics`는 연결을 연 뒤 성공한 실제 SQLite 쓰기 transaction COMMIT을 센다.
@@ -38,7 +61,10 @@ SQL COMMIT 자체가 실패한 횟수이며 모든 사전 거절 수가 아니�
 `TASTY_LOG=tasty::journal_metrics=debug`를 지정한 격리 실행은 worker 작업 종류별 physical/structural/logical
 증분과 SQL COMMIT 시간, queue 접수부터 durable-ready(명령 처리·확정 모델 적용 포함), publication 후 finished까지의
 시간을 기록한다. 이는 IPC 전체 latency나 App 전체 loop latency가 아니다. diagnostics/pressure의 공개 필드와 무관한
-진단 로그이며 기본 설정에서는 요청 순서·수집·ACK 동작을 바꾸지 않는다.
+진단 로그이며 계측의 활성화 자체는 요청 순서·수집·ACK 동작을 바꾸지 않는다.
+공유 transaction의 요청별 증분 구간은 서로 겹칠 수 있으므로 합산하지 않는다. 전체 physical/structural
+누계의 차이와 logical 누계·요청 구간 시간을 따로 대조한다. `group_finished` 로그는 공개·admission
+반환 전의 단일 그룹 구간을 따로 재며, Resolve/effect 결과 수와 실제 물리·구조·논리 증분을 기록한다.
 
 ## import의 전송 identity
 

@@ -3,10 +3,12 @@ mod assembly;
 mod binding;
 mod capture;
 mod effects;
+mod group;
 mod metrics;
 #[cfg(all(test, unix))]
 mod preservation_tests;
 mod recovery;
+mod resolve;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -85,25 +87,42 @@ pub(super) fn run(
     // Admissions waiting for a disk credit, in arrival order. They count toward QUEUE_CAPACITY.
     let mut waiting: VecDeque<(u64, Admission)> = VecDeque::new();
     let mut halted: Option<String> = None;
-    while let Ok(queued) = requests.recv() {
-        let measurement =
-            metrics::Measurement::begin(&executor, queued.submitted, &queued.request.work);
-        let request = queued.request;
-        drop(queued._bytes);
+    let mut requests = group::Requests::new(requests);
+    while let Some(queued) = requests.next() {
         if closed.load(Ordering::Acquire) {
             break;
         }
-        let pending_before = pending.len();
-        if halted.is_none() && !waiting.is_empty() && matches!(request.work, Work::Admit(_)) {
-            // A later admission must not take a credit ahead of one already waiting for it.
-            let Work::Admit(admission) = request.work else {
-                unreachable!("checked admission")
-            };
-            if !wait_for_credit(&pending, &mut waiting, request.ticket, admission, &send) {
+        let allow_resolve = executor.decider().unpreserved().is_empty();
+        if halted.is_none() && group::eligible(&queued.request.work, allow_resolve) {
+            let ready = requests.collect(queued, allow_resolve);
+            if !group::process(
+                &executor,
+                &home,
+                ready,
+                &mut pending,
+                &mut waiting,
+                &mut published,
+                &acknowledgements,
+                &mut halted,
+                &send,
+                #[cfg(test)]
+                &fail_next_publication,
+            ) {
                 return;
             }
             continue;
         }
+        let measurement =
+            metrics::Measurement::begin(&executor, queued.submitted, &queued.request.work);
+        let request = queued.request;
+        drop(queued._bytes);
+        let pending_before = pending.len();
+        let request =
+            match admission::ordered(request, &pending, &mut waiting, halted.is_some(), &send) {
+                admission::Order::Ready(request) => request,
+                admission::Order::Deferred => continue,
+                admission::Order::Disconnected => return,
+            };
         let was_halted = halted.is_some();
         let mut predecessor = capture_predecessor(&executor, &request.work, &mut halted);
         let mut followers = if matches!(request.work, Work::Resolve { .. } | Work::CancelAdmission)
@@ -163,6 +182,7 @@ pub(super) fn run(
                     Ok(ResultValue::Bound(bound)) => Some(bound.binding.clone()),
                     _ => None,
                 },
+                None,
                 &send,
                 #[cfg(test)]
                 &fail_next_publication,
@@ -435,106 +455,17 @@ fn handle_work(
             pending.values().map(|entry| entry.disk_credit).sum(),
         ),
         Work::Admit(_) => unreachable!("admission is handled at the typed boundary"),
-        Work::Resolve {
-            mut changes,
-            response,
-        } => {
+        Work::Resolve { changes, response } => {
             let admitted = pending
                 .remove(&ticket)
                 .ok_or("journal request was not admitted")?;
-            for change in &changes {
-                if matches!(
-                    change.command,
-                    tasty_core::StructuralCommand::ReconcilePreparation { .. }
-                        | tasty_core::StructuralCommand::ReconcileRetirement { .. }
-                        | tasty_core::StructuralCommand::RecoverOperation { .. }
-                        | tasty_core::StructuralCommand::RecordCapture { .. }
-                        | tasty_core::StructuralCommand::OpenEngine { .. }
-                        | tasty_core::StructuralCommand::RetireEngine { .. }
-                        | tasty_core::StructuralCommand::FinishCreation { .. }
-                        | tasty_core::StructuralCommand::FinishCleanup { .. }
-                        | tasty_core::StructuralCommand::FinishRetirement { .. }
-                        | tasty_core::StructuralCommand::FinishForward { .. }
-                        | tasty_core::StructuralCommand::CancelUnstartedCreation { .. }
-                        | tasty_core::StructuralCommand::RejectInstallation { .. }
-                        | tasty_core::StructuralCommand::MarkPreparationUncertain { .. }
-                ) {
-                    return Err("effect results require their validated lease endpoint".into());
-                }
-                if let tasty_core::StructuralCommand::PrepareCreation { input, .. }
-                | tasty_core::StructuralCommand::Close { input, .. }
-                | tasty_core::StructuralCommand::PrepareAssembly { input, .. }
-                | tasty_core::StructuralCommand::PrepareForward { input, .. }
-                | tasty_core::StructuralCommand::Replace { input, .. } = &change.command
-                    && !admitted.inputs.contains(input)
-                {
-                    return Err("preparation input belongs to another admission".into());
-                }
-                if let tasty_core::StructuralCommand::Close {
-                    undo: Some(capture),
-                    ..
-                } = &change.command
-                    && capture
-                        .data_refs()
-                        .any(|reference| !admitted.inputs.contains(&reference))
-                {
-                    return Err("undo capture belongs to another admission".into());
-                }
-                for required in change.command.reserved_ids() {
-                    if !admitted.reservations.iter().any(|range| {
-                        range.kind == required.kind.label()
-                            && range.contains(u64::from(required.id))
-                    }) {
-                        return Err(
-                            "structural command uses an ID not reserved for its admission".into(),
-                        );
-                    }
-                }
-            }
-            // Resolve admission-only activation markers against the sole canonical source.
-            // The decider receives a fixed plan and cannot read a live projection or the database.
+            let request = executor
+                .with_state(|models| resolve::request(&admitted, changes, response, models))
+                .map_err(|error| error.to_string())??;
             executor
-                .with_state(|models| {
-                    for change in &mut changes {
-                        if let tasty_core::StructuralCommand::PrepareCreation { plan, .. } =
-                            &mut change.command
-                            && let tasty_core::CreationDestination::Convert {
-                                surface,
-                                previous_activation,
-                                ..
-                            } = &mut plan.destination
-                            && *previous_activation == Some(0)
-                        {
-                            *previous_activation = models
-                                .streams
-                                .get(&change.stream)
-                                .and_then(|model| model.surfaces.get(surface))
-                                .and_then(|surface| {
-                                    surface.activation.map(|activation| activation.generation)
-                                });
-                        }
-                    }
-                })
-                .map_err(|error| error.to_string())?;
-            let admission = admitted.admission;
-            let executed = executor
-                .execute(&ExecuteRequest {
-                    key: admission.key,
-                    actor: admission.actor,
-                    origin: admission.origin,
-                    causation_id: admission.causation_id,
-                    command: ResolvedCommand {
-                        original_digest: admission.original_digest,
-                        response,
-                        changes,
-                        effect_result: None,
-                        cancellation: None,
-                        completion_view: None,
-                        original_results: Default::default(),
-                    },
-                })
-                .map_err(|e| e.to_string())?;
-            Ok(ResultValue::Executed(executed))
+                .execute(&request)
+                .map(ResultValue::Executed)
+                .map_err(|error| error.to_string())
         }
         Work::PrepareSubtree { binding, draft } => {
             let admitted = pending
@@ -796,17 +727,22 @@ fn preserve_failed_payload(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // reason: 원 요청의 binding과 확정 cut을 기존 publication·ACK 자원과 함께 전달한다
 fn publish(
     executor: &Executor<StructureDecider>,
     published: &mut Option<u64>,
     predecessor: &mut Option<tasty_core::StructureModels>,
     acks: &Acknowledgements,
     engine_binding: Option<super::EngineBinding>,
+    through: Option<u64>,
     send: &impl Fn(Completion) -> bool,
     #[cfg(test)] fail_next_publication: &AtomicBool,
 ) -> Result<(), String> {
     executor.with_state(|_| ()).map_err(|e| e.to_string())?;
     loop {
+        if through.is_some_and(|cut| published.is_some_and(|current| current >= cut)) {
+            return Ok(());
+        }
         let next = {
             let inner = executor.inner.lock().map_err(|e| e.to_string())?;
             inner
@@ -816,8 +752,15 @@ fn publish(
                 .pop()
         };
         let Some(batch) = next else {
-            return Ok(());
+            return if through.is_some() {
+                Err("publication target batch is missing".into())
+            } else {
+                Ok(())
+            };
         };
+        if through.is_some_and(|cut| batch.cut.batch_id > cut) {
+            return Err("publication skipped its logical request cut".into());
+        }
         #[cfg(test)]
         if fail_next_publication.swap(false, Ordering::AcqRel) {
             return Err("injected failure after commit before publication".into());
@@ -833,7 +776,16 @@ fn publish(
             .collect();
         tasty_core::evolve_streams(&mut previous, &decoded).map_err(|error| error.to_string())?;
         *predecessor = Some(previous);
+        #[cfg(test)]
+        let commit_statistics = executor
+            .inner
+            .lock()
+            .map_err(|error| error.to_string())?
+            .store
+            .commit_statistics();
         if !send(Completion::Publish {
+            #[cfg(test)]
+            commit_statistics,
             engine_binding: engine_binding.clone(),
             batch: decoded,
             before,

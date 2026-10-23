@@ -1,3 +1,6 @@
+mod finish;
+pub(super) use finish::prepare as prepare_finish;
+
 use tasty_core::{OperationId, PreparationResult, StructuralCommand};
 use tasty_event_store::{
     ActivationClaim, CommandKey, CommandLookup, EffectState, EffectTransition, PayloadRef,
@@ -200,79 +203,29 @@ fn finish(
     phase: &str,
     completion_view: Option<super::super::CompletionView>,
 ) -> Result<ResultValue> {
-    let key = CommandKey {
-        caller_scope: "journal-effect-result".into(),
-        idempotency_key: format!("{}/{}/{phase}", lease.effect_id, lease.attempt),
-    };
-    let digest = serde_json::to_vec(&(&lease, &command, &completion_view))
-        .map_err(|error| error.to_string())?;
     executor
         .with_state(|_| ())
         .map_err(|error| error.to_string())?;
-    let (causation, original_results) = {
+    let prepared = {
         let inner = executor.inner.lock().map_err(|error| error.to_string())?;
-        if inner.epoch.0 != lease.runtime_epoch {
-            return Err("effect result belongs to an earlier runtime".into());
-        }
-        // Stored result lookup precedes resolving the operation again.
-        match inner
-            .store
-            .lookup_command(&key, &digest)
-            .map_err(|error| error.to_string())?
-        {
-            CommandLookup::Hit(record) => return Ok(ResultValue::Stored(record)),
-            CommandLookup::DigestMismatch(_) => {
-                return Err("effect result key conflicts with its original payload".into());
-            }
-            CommandLookup::Miss => {}
-        }
-        let effect = inner
-            .store
-            .effect(&lease.effect_id)
-            .map_err(|error| error.to_string())?
-            .ok_or("effect missing")?;
-        if effect.state != EffectState::Running
-            || effect.attempt != lease.attempt
-            || effect.resource_generation != lease.resource_generation
-        {
-            return Err("effect result is stale".into());
-        }
-        let operation = inner
-            .state
-            .streams
-            .get(&lease.stream)
-            .and_then(|model| model.operations.get(&lease.operation))
-            .ok_or("effect operation missing")?;
-        validate_binding(&effect, &lease.stream, operation)?;
-        let command_id = operation.command_id.clone();
-        let template = read_original_results(&inner.store, &command_id)?;
-        (
-            command_id.clone(),
-            std::collections::BTreeMap::from([(command_id, template)]),
-        )
-    };
-    let request = ExecuteRequest {
-        key: Some(key),
-        actor: "system".into(),
-        origin: "effect-result".into(),
-        causation_id: Some(causation),
-        command: ResolvedCommand {
-            original_digest: digest,
-            response: None,
-            changes: vec![StreamCommand {
-                stream: lease.stream.clone(),
-                command,
-            }],
-            effect_result: Some(lease),
-            cancellation: None,
+        finish::prepare(
+            &finish::Committed(&inner.store, inner.epoch),
+            &inner.state,
+            lease,
+            command,
+            phase,
             completion_view,
-            original_results,
-        },
+        )?
     };
-    executor
-        .execute(&request)
-        .map(ResultValue::Executed)
-        .map_err(|error| error.to_string())
+    match prepared {
+        crate::runtime::command_executor::GroupCommand::Stored(record) => {
+            Ok(ResultValue::Stored(record))
+        }
+        crate::runtime::command_executor::GroupCommand::Ready(request) => executor
+            .execute(&request)
+            .map(ResultValue::Executed)
+            .map_err(|error| error.to_string()),
+    }
 }
 
 fn cancel_unstarted(

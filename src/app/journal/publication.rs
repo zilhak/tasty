@@ -49,6 +49,8 @@ impl JournalApplication {
                     batch,
                     before,
                     engine_binding,
+                    #[cfg(test)]
+                        commit_statistics: _,
                 } => {
                     self.publish_batch(
                         batch,

@@ -301,6 +301,8 @@ pub(crate) enum Completion {
     Halted(String),
     /// All affected local engines must apply this as one publication before acknowledging.
     Publish {
+        #[cfg(test)]
+        commit_statistics: tasty_event_store::CommitStatistics,
         /// Explicit bootstrap destination, allocated on the worker before this batch.
         engine_binding: Option<EngineBinding>,
         batch: StreamBatch,

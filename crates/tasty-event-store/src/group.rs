@@ -63,14 +63,13 @@ impl CommitGroup<'_> {
             }
             Err(error) => {
                 self.poisoned = matches!(error, StoreError::Sqlite(_)) || self.tx.is_autocommit();
-                if !self.tx.is_autocommit() {
-                    if let Err(rollback) = self
+                if !self.tx.is_autocommit()
+                    && let Err(rollback) = self
                         .tx
                         .execute_batch("ROLLBACK TO journal_request; RELEASE journal_request")
-                    {
-                        self.poisoned = true;
-                        return Err(rollback.into());
-                    }
+                {
+                    self.poisoned = true;
+                    return Err(rollback.into());
                 }
                 Err(error)
             }

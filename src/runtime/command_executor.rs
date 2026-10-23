@@ -5,6 +5,9 @@
 //! 바꾸지 않고 응답하지 않는다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행의 결과를 기다려 함께
 //! 받는다. writer 잠금을 잃거나 fencing되면 이후 쓰기를 멈춘다.
 
+mod group;
+pub(crate) use group::{GroupCommand, GroupExecution};
+
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -158,6 +161,8 @@ pub(crate) struct Executor<D: JournalDecider> {
     decider: D,
     pub(crate) inner: Mutex<Inner<D::State>>,
     in_flight: Mutex<HashMap<CommandKey, Arc<InFlight<D::Rejection>>>>,
+    #[cfg(test)]
+    pub(crate) group_waiting_for_in_flight: std::sync::atomic::AtomicBool,
 }
 
 impl<D: JournalDecider> Executor<D> {
@@ -176,6 +181,8 @@ impl<D: JournalDecider> Executor<D> {
                 stale: false,
             }),
             in_flight: Mutex::new(HashMap::new()),
+            #[cfg(test)]
+            group_waiting_for_in_flight: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
