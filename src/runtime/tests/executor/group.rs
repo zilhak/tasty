@@ -400,3 +400,40 @@ fn grouped_history_matches_single_execution_with_only_recorded_time_normalized()
         grouped.store.commit_statistics().logical_requests
     );
 }
+
+#[test]
+fn generated_write_budget_returns_a_prefix_without_rejecting_the_next_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let executor = open(&db_path(&dir), &Fake::default());
+    // Each input fits the existing queue budget; digest + generated event bytes require two groups.
+    let requests = [
+        request(Some("large-a"), create_cmd(&"a".repeat(17 * 1024 * 1024))),
+        request(Some("large-b"), create_cmd(&"b".repeat(17 * 1024 * 1024))),
+    ];
+    let first = group(&executor, &requests);
+    assert!(first.halted.is_none());
+    assert_eq!(first.results.len(), 1);
+    assert!(first.results[0].is_ok());
+    assert_eq!(
+        executor.with_state(|state| state.workspaces.len()).unwrap(),
+        1
+    );
+    let next = group(&executor, &requests[1..]);
+    assert!(next.halted.is_none());
+    assert_eq!(next.results.len(), 1);
+    assert!(next.results[0].is_ok());
+    assert_eq!(
+        executor.with_state(|state| state.workspaces.len()).unwrap(),
+        2
+    );
+    let inner = executor.inner.lock().unwrap();
+    assert_eq!(inner.store.commit_statistics().structural_commits, 2);
+    assert_eq!(inner.store.commit_statistics().logical_requests, 2);
+    assert_eq!(
+        inner
+            .store
+            .stream_revision(&super::super::common::stream())
+            .unwrap(),
+        Some(5)
+    );
+}
