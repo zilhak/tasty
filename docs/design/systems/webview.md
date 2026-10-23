@@ -68,7 +68,7 @@ Linux는 이 모드마다 별도 ephemeral `WebContext`에 `tasty-html-entry` sc
 
 완성 본문과 scan은 같은 수신 할당을 사용한다. script Allow 재로드는 그 본문을 재사용하고, 사용자·에이전트 Reload는 새 문서 세대로 다시 받는다. store 교체·close·연결 세대 교체 뒤의 응답은 이전 문서로 게시하지 않는다. disconnect는 완료 본문을 보존하되 새 Reload를 막는다. weak owner가 사라지거나 현재 문서의 URI 경계 밖이면 callback은 실패한다. 인가된 하위 파일의 미완 본문은 native 응답을 보류한다.
 
-현재 attach entry viewer capability는 Linux GUI client만 광고하며, 실제 App entry 표시와 격리 증거도 Linux 범위다. macOS의 nonpersistent `WKWebsiteDataStore`·`WKURLSchemeHandler`, Windows의 전용 user-data folder·InPrivate context·응답 interception 구현은 있다. 이 두 OS의 entry adapter 검증은 host 일부를 대체한 ARM compile fixture 범위이며 전체 App compile/link나 native 실행을 확인한 것은 아니다. 같은 root의 하위 파일 GET 어댑터 연결은 Linux 범위이며 Windows/macOS의 비동기 하위 응답은 이 구현·검증 범위에 포함하지 않는다. HTTP(S) proxy도 이 모드의 지원 범위에 포함하지 않는다.
+현재 attach entry viewer capability는 Linux GUI client만 광고하며, 실제 App entry 표시와 격리 증거도 Linux 범위다. macOS의 nonpersistent `WKWebsiteDataStore`·`WKURLSchemeHandler`, Windows의 전용 user-data folder·InPrivate context·응답 interception 구현은 있다. 이 두 OS의 현재 wrapper/helper는 실제 body/provider와 함께 macOS ARM64·Windows x64 native compiler의 fixture에서 검사했다. host overlay enum과 공통 루트 일부를 대체한 범위이며 전체 App compile/link나 native 실행을 확인한 것은 아니다. 같은 root의 하위 파일 GET은 Linux App에 연결되어 있다. macOS handler는 main-thread task를 보유해 완료 wakeup에서 polling하고, stop에서 waiter를 제거한 뒤 후속 callback을 보내지 않는다. Windows는 apartment 안에 resource args·deferral·waiter를 보유하며 완료·실패·view close에서 응답을 결정하고 deferral을 끝낸다. 두 어댑터 모두 대기 요청을 256개로 제한하고 완료 직전 native owner를 재검사한다. main-frame 하위 문서 탐색은 cache 유무와 관계없이 새 전송·scan으로 넘긴다. Windows/macOS의 하위 파일 capability는 아직 광고하지 않으며 이 비동기 경로의 native 실행은 확인하지 않았다. HTTP(S) proxy도 이 모드의 지원 범위에 포함하지 않는다.
 
 ## 좌표 — 논리와 물리를 타입 이름에 남긴다
 

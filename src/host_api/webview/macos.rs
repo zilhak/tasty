@@ -351,14 +351,21 @@ define_class!(
                     .and_then(|u| u.absoluteString())
             };
             let url = url.map(|u| u.to_string());
-            if let Some(source) = &self.ivars().entry_source
-                && url
-                    .as_deref()
-                    .is_none_or(|uri| source.response(uri).is_none())
-            {
-                decision_handler
-                    .call((WKNavigationActionPolicy::Cancel, NonNull::from(preferences)));
-                return;
+            // Native targetFrame distinguishes main navigation from iframe loads.
+            // A cached child must still become a new received/scanned document when main.
+            if let Some(source) = &self.ivars().entry_source {
+                // SAFETY: live navigation action on the WebKit main thread.
+                let main = unsafe { navigation_action.targetFrame().map(|f| f.isMainFrame()) };
+                let denied = url.as_deref().is_none_or(|uri| match main {
+                    Some(true) => source.main_resource(uri),
+                    Some(false) => !source.allows_uri(uri),
+                    None => true,
+                });
+                if denied {
+                    decision_handler
+                        .call((WKNavigationActionPolicy::Cancel, NonNull::from(preferences)));
+                    return;
+                }
             }
             if let (Some(gate), Some(url)) = (self.ivars().script_gate.borrow().as_ref(), &url) {
                 // SAFETY: main thread WebKit delegate 호출. targetFrame()/isMainFrame()/
@@ -605,6 +612,7 @@ const REMOTE_BLOCK_RULE_JSON: &str =
     r#"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#;
 
 pub struct PlatformWebView {
+    entry_handler: Option<Retained<super::entry_response::macos::EntryHandler>>,
     entry_source: Option<EntryResponseSource>,
     webview: Retained<KeyWebView>,
     content_rule_list: Rc<RefCell<Option<Retained<WKContentRuleList>>>>,
@@ -662,9 +670,9 @@ impl PlatformWebView {
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             let config = WKWebViewConfiguration::new(mtm);
-            if let Some(source) = &entry_source {
-                super::entry_response::macos::configure(&config, source.clone(), mtm);
-            }
+            let entry_handler = entry_source.as_ref().map(|source| {
+                super::entry_response::macos::configure(&config, source.clone(), mtm)
+            });
 
             let prefs = config.preferences();
             let key = NSString::from_str("defaultTextEncodingName");
@@ -733,6 +741,7 @@ impl PlatformWebView {
             }
 
             Ok(Self {
+                entry_handler,
                 entry_source,
                 webview,
                 content_rule_list,
@@ -904,6 +913,9 @@ impl PlatformWebView {
 
     /// 스캔을 기다리며 보류한 정책 결정을 읽기가 끝났으면 끝낸다. webview 동기화마다 부른다.
     pub fn resume_script_decision(&self) {
+        if let Some(handler) = &self.entry_handler {
+            handler.poll();
+        }
         self._nav_delegate.ivars().resume_pending_decision();
     }
 
@@ -1095,6 +1107,9 @@ impl Drop for PlatformWebView {
     fn drop(&mut self) {
         if let Some(source) = &self.entry_source {
             source.retire();
+        }
+        if let Some(handler) = &self.entry_handler {
+            handler.close();
         }
         // WebKit은 부르지 않은 채 해제된 결정 handler를 오류로 본다.
         self._nav_delegate.ivars().cancel_pending_decision();

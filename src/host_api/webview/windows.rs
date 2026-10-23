@@ -36,6 +36,7 @@ pub struct PlatformWebView {
     webview: ICoreWebView2,
     _environment: ICoreWebView2Environment,
     entry_source: Option<EntryResponseSource>,
+    entry_pending: Rc<RefCell<Vec<entry_adapter::PendingResponse>>>,
     _entry_profile: Option<tempfile::TempDir>,
     allow_remote: Rc<Cell<bool>>,
     nav_state: Rc<Cell<NavState>>,
@@ -318,6 +319,8 @@ impl PlatformWebView {
                 .AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
                 .map_err(|e| transient(format!("AddWebResourceRequestedFilter failed: {e}")))?;
             let env_cb = env.clone();
+            let entry_pending = Rc::new(RefCell::new(Vec::new()));
+            let pending_request = Rc::clone(&entry_pending);
             let entry_request = entry_source.clone();
             let allow_cb = allow_remote.clone();
             let mut token: i64 = 0;
@@ -331,7 +334,13 @@ impl PlatformWebView {
                     // WebView2가 할당한 URI를 CoTaskMemFree로 해제한다.
                     CoTaskMemFree(Some(uri.0 as *const c_void));
                     if let Some(source) = &entry_request {
-                        return entry_adapter::reply(source, &env_cb, &args, &uri_str);
+                        return entry_adapter::reply(
+                            source,
+                            &env_cb,
+                            &args,
+                            &uri_str,
+                            &pending_request,
+                        );
                     }
                     let is_remote =
                         uri_str.starts_with("http://") || uri_str.starts_with("https://");
@@ -429,7 +438,7 @@ impl PlatformWebView {
                         CoTaskMemFree(Some(uri.0 as *const c_void));
                         if entry_navigation
                             .as_ref()
-                            .is_some_and(|source| source.response(&uri_str).is_none())
+                            .is_some_and(|source| source.main_resource(&uri_str))
                         {
                             args.SetCancel(true)?;
                             nav_start.set(NavState::Failed);
@@ -749,6 +758,7 @@ impl PlatformWebView {
                 webview,
                 _environment: env,
                 entry_source,
+                entry_pending,
                 _entry_profile: entry_environment.map(|entry| entry.profile),
                 allow_remote,
                 nav_state,
@@ -882,6 +892,9 @@ impl PlatformWebView {
     /// 스캔을 기다리려고 취소한 탐색을 읽기가 끝났으면 같은 종류로 다시 시작한다.
     /// webview 동기화마다 부른다. 표가 낡았으면 다시 시작하지 않는다(더 새 탐색이 화면을 맡는다).
     pub fn resume_script_decision(&self) {
+        if let Some(source) = &self.entry_source {
+            entry_adapter::poll(source, &self._environment, &self.entry_pending);
+        }
         // 지문 확인이 끝난 문서 요청: 같으면 놓아 주고, 다르면 본문을 넘기기 전에 멈춘다.
         let verified = self.scan_resume.borrow_mut().poll_verify();
         complete_requests(self.surface_id, verified.complete);
@@ -1073,6 +1086,7 @@ impl Drop for PlatformWebView {
     fn drop(&mut self) {
         if let Some(source) = &self.entry_source {
             source.retire();
+            entry_adapter::poll(source, &self._environment, &self.entry_pending);
         }
         // SAFETY: controller.Close()는 webview2 자원 해제, DestroyWindow는 child HWND 정리.
         // 둘 다 self가 처음 만들어진 main thread에서 Drop이 호출된다는 전제 (PlatformWebView는

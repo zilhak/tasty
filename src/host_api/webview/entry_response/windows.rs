@@ -1,5 +1,13 @@
 //! Private WebView2 context and exact received-entry responses; no ambient file/network load.
 use super::EntryResponseSource;
+use std::{cell::RefCell, sync::Arc, task::Poll};
+use tasty_remote::html_body::{NativeBodyResponse, ResponseWait};
+
+pub(in crate::host_api::webview) struct PendingResponse {
+    args: ICoreWebView2WebResourceRequestedEventArgs,
+    deferral: ICoreWebView2Deferral,
+    wait: ResponseWait,
+}
 use webview2_com::{
     CoreWebView2CustomSchemeRegistration, CoreWebView2EnvironmentOptions,
     Microsoft::Web::WebView2::Win32::*,
@@ -65,6 +73,7 @@ pub(in crate::host_api::webview) fn reply(
     environment: &ICoreWebView2Environment,
     args: &ICoreWebView2WebResourceRequestedEventArgs,
     uri: &str,
+    pending: &RefCell<Vec<PendingResponse>>,
 ) -> Result<()> {
     // SAFETY: request/response COM objects remain on the WebView2 apartment thread.
     #[allow(clippy::multiple_unsafe_ops_per_block)]
@@ -74,8 +83,42 @@ pub(in crate::host_api::webview) fn reply(
         request.Method(&mut method)?;
         let is_get = method.to_string().is_ok_and(|method| method == "GET");
         CoTaskMemFree(Some(method.0.cast()));
-        let body = source.response(uri).filter(|_| is_get);
-        let Some(body) = body.filter(|body| body.bytes().len() <= u32::MAX as usize) else {
+        if !is_get || !source.allows_uri(uri) {
+            return respond(source, environment, args, None);
+        }
+        if let Some(body) = source.response(uri) {
+            return respond(source, environment, args, Some(body));
+        }
+        if pending.borrow().len() >= 256 {
+            return respond(source, environment, args, None);
+        }
+        // GetDeferral precedes the waiter: a failed deferral cannot leave an orphan request.
+        let deferral = args.GetDeferral()?;
+        let Some(wait) = source.request(uri) else {
+            let result = respond(source, environment, args, None);
+            deferral.Complete()?;
+            return result;
+        };
+        pending.borrow_mut().push(PendingResponse {
+            args: args.clone(),
+            deferral,
+            wait,
+        });
+        Ok(())
+    }
+}
+fn respond(
+    source: &EntryResponseSource,
+    environment: &ICoreWebView2Environment,
+    args: &ICoreWebView2WebResourceRequestedEventArgs,
+    body: Option<Arc<NativeBodyResponse>>,
+) -> Result<()> {
+    // SAFETY: owned COM request/response, used only on the WebView2 apartment thread.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
+    unsafe {
+        let Some(body) =
+            body.filter(|body| source.is_current() && body.bytes().len() <= u32::MAX as usize)
+        else {
             let response = environment.CreateWebResourceResponse(
                 None,
                 403,
@@ -101,6 +144,30 @@ pub(in crate::host_api::webview) fn reply(
             PCWSTR(headers.as_ptr()),
         )?;
         args.SetResponse(&response)
+    }
+}
+
+/// Main-thread host synchronization drains completed resources; producer wakeups contain no COM.
+pub(in crate::host_api::webview) fn poll(
+    source: &EntryResponseSource,
+    environment: &ICoreWebView2Environment,
+    pending: &RefCell<Vec<PendingResponse>>,
+) {
+    let requests = std::mem::take(&mut *pending.borrow_mut());
+    for mut request in requests {
+        match source.poll_response(&mut request.wait) {
+            Poll::Pending => pending.borrow_mut().push(request),
+            Poll::Ready(result) => {
+                if let Err(error) = respond(source, environment, &request.args, result.ok()) {
+                    tracing::warn!(%error, "remote WebView2 response failed before deferral completion");
+                }
+                // Complete even if SetResponse failed, so native cannot retain a permanent hold.
+                // SAFETY: owned deferral is completed once, on its originating apartment.
+                if let Err(error) = unsafe { request.deferral.Complete() } {
+                    tracing::warn!(%error, "remote WebView2 deferral completion failed");
+                }
+            }
+        }
     }
 }
 

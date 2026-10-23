@@ -7,7 +7,6 @@ use tasty_remote::html_body::{
     EntryBodyStore, NativeBodyResponse, NativeViewBinding, ReceivedEntry,
 };
 
-#[cfg(target_os = "linux")]
 use tasty_remote::html_body::ResponseWait;
 
 static STORE_POISONED: AtomicBool = AtomicBool::new(false);
@@ -83,7 +82,6 @@ impl EntryResponseSource {
     pub(crate) fn response(&self, uri: &str) -> Option<Arc<NativeBodyResponse>> {
         self.with_current(|s| s.response_for_uri(uri)).flatten()
     }
-    #[cfg(target_os = "linux")]
     pub(crate) fn allows_uri(&self, uri: &str) -> bool {
         self.with_current(|s| s.response_for_uri(uri).is_some() || s.supports_resource_uri(uri))
             .unwrap_or(false)
@@ -96,14 +94,12 @@ impl EntryResponseSource {
         self.with_current(|s| s.resources_mut().is_some_and(|r| r.has_pending()))
             .unwrap_or(false)
     }
-    #[cfg(target_os = "linux")]
     pub(crate) fn request(&self, uri: &str) -> Option<ResponseWait> {
         let wait = self.with_current(|s| s.request_resource(uri))?;
         self.wake();
         Some(wait)
     }
     /// Called only with a native main-resource identity, never inferred from the URI.
-    #[cfg(target_os = "linux")]
     pub(crate) fn main_resource(&self, uri: &str) -> bool {
         if uri == "about:blank" {
             return false;
@@ -123,6 +119,31 @@ impl EntryResponseSource {
             self.retire();
         }
         stop
+    }
+}
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
+impl EntryResponseSource {
+    /// Poll only on the native apartment/main thread. Completion wakes the App without
+    /// transferring native task/COM objects to the producer thread.
+    pub(super) fn poll_response(
+        &self,
+        wait: &mut ResponseWait,
+    ) -> std::task::Poll<Result<Arc<NativeBodyResponse>, tasty_remote::html_body::ResourceFailure>>
+    {
+        use std::{future::Future, pin::Pin, task::Context};
+        if !self.is_current() {
+            return std::task::Poll::Ready(Err(
+                tasty_remote::html_body::ResourceFailure::Cancelled,
+            ));
+        }
+        let waker = std::task::Waker::from(Arc::new(self.clone()));
+        Pin::new(wait).poll(&mut Context::from_waker(&waker))
+    }
+}
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
+impl std::task::Wake for EntryResponseSource {
+    fn wake(self: Arc<Self>) {
+        EntryResponseSource::wake(&self);
     }
 }
 /// Entry-only browser policy. C replaces only the unsupported resource boundary; remote network

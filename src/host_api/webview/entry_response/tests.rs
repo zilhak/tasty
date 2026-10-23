@@ -188,3 +188,88 @@ fn disconnected_cached_child_is_not_adopted_as_a_new_main_document() {
     source.lost_native_view();
     assert!(current.is_current());
 }
+
+#[test]
+fn native_apartment_poll_wakes_and_rechecks_owner_before_returning_bytes() {
+    use std::sync::atomic::AtomicUsize;
+    use std::task::Poll;
+    let body = entry();
+    let store = store(Arc::clone(&body));
+    let notifications = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&notifications);
+    let source = EntryResponseSource::new(&store).with_notify(Arc::new(move || {
+        counter.fetch_add(1, Ordering::AcqRel);
+    }));
+    let (mut wait, target) = ResponseWait::pair();
+    assert!(source.poll_response(&mut wait).is_pending());
+    let response = Arc::new(
+        NativeBodyResponse::new(
+            id(),
+            8,
+            "text/css",
+            "file:///server/style.css",
+            Arc::new(b"body{}".to_vec()),
+        )
+        .unwrap(),
+    );
+    target.finish(Ok(Arc::clone(&response)));
+    assert_eq!(notifications.load(Ordering::Acquire), 1);
+    let Poll::Ready(Ok(received)) = source.poll_response(&mut wait) else {
+        panic!("missing native response")
+    };
+    assert!(Arc::ptr_eq(&received, &response));
+    let (mut late, target) = ResponseWait::pair();
+    assert!(source.poll_response(&mut late).is_pending());
+    target.finish(Ok(response));
+    store.lock().unwrap().retire_native_view();
+    assert!(matches!(
+        source.poll_response(&mut late),
+        Poll::Ready(Err(tasty_remote::html_body::ResourceFailure::Cancelled))
+    ));
+}
+
+#[test]
+fn stopping_one_native_waiter_revokes_only_that_resource_and_view_close_revokes_all() {
+    let body = entry();
+    let store = store(Arc::clone(&body));
+    store.lock().unwrap().enable_resources(true);
+    let source = EntryResponseSource::new(&store);
+    let prefix = body.native_uri().rsplit_once('/').unwrap().0;
+    let wait_a = source.request(&format!("{prefix}/a.css")).unwrap();
+    let mut wait_b = source.request(&format!("{prefix}/b.css")).unwrap();
+    let (a, b) = {
+        let mut store = store.lock().unwrap();
+        let broker = store.resources_mut().unwrap();
+        let pending = broker.take_pending(2);
+        assert_eq!(pending.len(), 2);
+        let a = TransferId {
+            request: 5,
+            transfer: 6,
+            ..id()
+        };
+        let b = TransferId {
+            request: 7,
+            transfer: 8,
+            ..id()
+        };
+        assert!(broker.bind(pending[0].ticket, a));
+        assert!(broker.bind(pending[1].ticket, b));
+        (a, b)
+    };
+    drop(wait_a);
+    assert_eq!(
+        store.lock().unwrap().resources_mut().unwrap().abandoned(),
+        vec![a]
+    );
+    assert!(source.poll_response(&mut wait_b).is_pending());
+    source.retire();
+    assert!(matches!(
+        source.poll_response(&mut wait_b),
+        std::task::Poll::Ready(Err(tasty_remote::html_body::ResourceFailure::Cancelled))
+    ));
+    drop(wait_b);
+    assert_eq!(
+        store.lock().unwrap().resources_mut().unwrap().abandoned(),
+        vec![b]
+    );
+}
