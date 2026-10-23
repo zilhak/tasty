@@ -1,4 +1,7 @@
 //! Shared file consumers use the existing file writer without depending on settings revisions.
+#[cfg(test)]
+mod wake_tests;
+
 use std::sync::Arc;
 
 use tasty_utils::batch_writer::{Handle, RequestReceipt};

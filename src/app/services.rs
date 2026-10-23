@@ -206,11 +206,11 @@ impl AppServices {
 
     /// 메인 루프 회차마다 결과를 거두기 전에 부른다.
     pub(crate) fn poll_file_writer(&mut self) {
-        #[cfg(feature = "gui")]
-        crate::app::file_consumers::poll(&self.registries);
         if let Some(parts) = self.file_writer.as_mut() {
             parts.poll();
         }
+        #[cfg(feature = "gui")]
+        crate::app::file_consumers::poll(&self.registries);
     }
 
     /// 확정하지 못한 최신 설정을 한 번 더 넣은 뒤 접수를 멈추고 마지막 flush 뒤 worker를 끝내게 한다.
