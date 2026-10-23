@@ -151,3 +151,5 @@ fn boot_receipt_waits_without_blocking_and_new_window_uses_latest_snapshot() {
         std::thread::yield_now();
     }
 }
+
+mod dirty_age;

@@ -186,6 +186,12 @@ executed_commands의 known_success/known_failure/unknown/partial은 명령 backe
 
 관측은 스레드에 묶인 범위와 고정 원자 카운터·히스토그램만 사용한다. 조회는 파일·DB를 읽거나 receipt를 소비하지 않으며 경로·내용·오류 문구·비밀 값은 보관하지 않는다. 여러 카운터를 한 transaction으로 읽는 것은 아니므로 실행 중 attempts가 종료 결과보다 먼저 보일 수 있다. 아직 공용 helper로 옮기지 않은 backend의 별도 파일·디렉터리 작업은 포함하지 않는다.
 
+### 설정의 미확정 revision 나이
+
+`SettingsSaves`는 설정이 메모리에 적용되어 visible revision이 오르는 첫 순간의 시각 하나를 기존 단조 시계로 보관한다. `system.pressure.file_snapshots.settings`는 GUI·headless 모두 visible/committed/pending/dirty/dirty_age_us를 제공한다. 부팅에서 이미 읽은 설정은 미확정 변경이 아니며, 부팅 중 실제 적용·제출된 변경은 같은 경계를 따른다. 시각과 revision 조회는 캐시만 읽고 receipt를 수거하거나 파일·DB에 접근하지 않는다.
+
+이후 적용, 접수 거절, 저장 실패·결과 불명, 오래된 revision의 성공, 종료 직전 최신 revision 재시도는 첫 시각을 유지한다. 최신 표시 revision의 성공을 소유 객체가 확인한 때만 나이가 null로 돌아간다. worker가 완료했어도 receipt를 거두기 전에는 미확정으로 남는다. 시험용 동기 저장도 같은 성공 확정 규칙을 따른다. 시간은 마이크로초이고 포화 변환하며, 미확정 변경이 없으면 null이다. 결과가 실패로 끝나 pending=0이어도 나이는 계속 흐르므로 공용 writer의 oldest_pending_age_us와 대체해서 읽지 않는다. 설정 적용·응답·부팅 barrier·최신 snapshot·종료 재시도 순서는 이 관측값으로 바꾸지 않는다.
+
 ### 공용 즐겨찾기 snapshot
 
 Explorer·포트 즐겨찾기는 프로세스 공용 `SharedList` 원본을 바꾸고 표시 revision을 올린 뒤 불변 TOML snapshot을 접수한다. 목록 잠금 안에서는 메모리 변경·직렬화·접수 순서만 정한다. 디스크 읽기·잠금·교체와 receipt 대기는 worker에서 한다. 같은 파일의 수집 묶음에서는 마지막 snapshot만 교체하며 대체된 요청도 그 결과를 받는다. 메인 루프가 receipt를 거둘 때 성공한 revision만 저장 완료로 확정한다. 실패·접수 거절·결과 불명은 표시 목록을 되돌리지 않고 dirty를 유지하며 경고 알림에 원인과 조치 안내를 남긴다.

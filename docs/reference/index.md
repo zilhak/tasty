@@ -5,7 +5,7 @@ CLI를 처음 쓰는 순서와 명령별 사용법은 공개 사용자 가이드
 
 | 문서 | 내용 | 구현 기준 |
 |------|------|----------|
-| [api.md](api.md) | 주요 IPC/CLI — 네임스페이스별 메서드·권한·시스템/윈도우 관측 범위·journal 캐시 진단 | `crates/tasty-ipc/src/method_meta.rs` |
+| [api.md](api.md) | 주요 IPC/CLI — 네임스페이스별 메서드·권한·시스템/윈도우 관측 범위·journal 캐시 진단·GUI/headless 설정의 미저장 변경 나이 | `crates/tasty-ipc/src/method_meta.rs` |
 | [event-catalog.md](event-catalog.md) | Event Bus 1.0 wire 계약 (plugin 공개 API) | `tasty_plugin_protocol::events` |
 | [output-parsers.md](output-parsers.md) | 터미널 출력 파서 카탈로그 | `tasty-output` |
 | [environments.md](environments.md) | OS별 경로·에이전트 실행 준비 | — |

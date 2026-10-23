@@ -11,6 +11,7 @@ mod measurements;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use tasty_settings::{Settings, SettingsStorage};
 use tasty_utils::batch_writer::{
@@ -280,6 +281,14 @@ struct PendingSave {
     reply: SaveReply,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SettingsSaveSnapshot {
+    pub(crate) visible: u64,
+    pub(crate) committed: u64,
+    pub(crate) pending: usize,
+    pub(crate) dirty_age_us: Option<u64>,
+}
+
 /// 설정 저장의 표시·확정 revision과 결과를 기다리는 요청.
 ///
 /// 표시 revision은 메모리에 적용할 때마다 오르고, 확정 revision은 그 revision의 설정으로 파일 교체가
@@ -295,12 +304,22 @@ pub(crate) struct SettingsSaves {
     pending: Vec<PendingSave>,
     settled: Vec<SettledSave>,
     retried_at_shutdown: bool,
+    clock: Arc<dyn Clock>,
+    dirty_since: Option<Instant>,
 }
 
 impl SettingsSaves {
     pub(crate) fn new(
         queue: Option<Handle<FileExecutor>>,
         storage: Arc<dyn SettingsStorage>,
+    ) -> Self {
+        Self::with_clock(queue, storage, Arc::new(batch_writer::SystemClock))
+    }
+
+    fn with_clock(
+        queue: Option<Handle<FileExecutor>>,
+        storage: Arc<dyn SettingsStorage>,
+        clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             queue,
@@ -311,6 +330,25 @@ impl SettingsSaves {
             pending: Vec::new(),
             settled: Vec::new(),
             retried_at_shutdown: false,
+            clock,
+            dirty_since: None,
+        }
+    }
+
+    /// Cached revision metadata only; reading does not collect receipts or access storage.
+    pub(crate) fn snapshot(&self) -> SettingsSaveSnapshot {
+        SettingsSaveSnapshot {
+            visible: self.visible,
+            committed: self.committed,
+            pending: self.pending.len(),
+            dirty_age_us: self.dirty_since.map(|since| {
+                self.clock
+                    .now()
+                    .saturating_duration_since(since)
+                    .as_micros()
+                    .try_into()
+                    .unwrap_or(u64::MAX)
+            }),
         }
     }
 
@@ -323,6 +361,7 @@ impl SettingsSaves {
         done: Option<SettingsDone>,
     ) {
         self.visible += 1;
+        self.dirty_since.get_or_insert_with(|| self.clock.now());
         let revision = self.visible;
         let settings = Box::new(settings);
         self.latest = Some(settings.clone());
@@ -338,7 +377,7 @@ impl SettingsSaves {
         let Some(queue) = &self.queue else {
             let saved = self.storage.save(&settings).map_err(|e| format!("{e:#}"));
             if saved.is_ok() {
-                self.committed = self.committed.max(revision);
+                self.confirm(revision);
             }
             self.settled.push(SettledSave { reply, saved });
             return;
@@ -374,7 +413,7 @@ impl SettingsSaves {
             };
             let pending = self.pending.swap_remove(index);
             if let Completion::Done(Ok(FileOutput::Settings { revision })) = &completion {
-                self.committed = self.committed.max(*revision);
+                self.confirm(*revision);
             }
             let saved = saved_of(&completion);
             if let Err(error) = &saved {
@@ -384,6 +423,13 @@ impl SettingsSaves {
                 reply: pending.reply,
                 saved,
             });
+        }
+    }
+
+    fn confirm(&mut self, revision: u64) {
+        self.committed = self.committed.max(revision);
+        if self.committed >= self.visible {
+            self.dirty_since = None;
         }
     }
 

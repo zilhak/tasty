@@ -1,4 +1,4 @@
-<!-- source-hash: faa11f23a6dd -->
+<!-- source-hash: 617edf048ecd -->
 # CLI response delays and connection diagnostics
 
 Read this page when a `tasty` command replies slowly, cannot connect, or ends with an error such as `Error (-32061)`. It covers the difference between the reply wait bound and the task wait time, what to do for each error code, checking what this Tasty supports, and the connection counts, request queues and database state shown by `tasty list pressure`. If you are new to the CLI, start with [Driving terminals with the tasty CLI](../agents/cli.md).
@@ -86,6 +86,8 @@ waiting for publication acknowledgement after durable storage; reading it does n
 After an actual SQL commit failure, `publication_known` is `false` and `unpublished_age_us` is `null`.
 The cache stays unknown until a new worker reopens and revalidates the journal.
 Test configurations without a journal return `journal: null`; before the Store opens, `store` is `null`.
+
+`file_snapshots.settings` shows the difference between settings applied in memory and settings confirmed saved, in both GUI and headless mode. When `dirty` is true, `dirty_age_us` is the number of microseconds since the first unsaved change. New changes, failures, unknown outcomes, retries, and successful saves of older changes do not reset that age. Confirmation that the latest change was saved makes `dirty` false and the age `null`. Unsaved changes can remain after a failure even when `pending` is 0. Reading these values does not collect save results.
 
 ### Connection counts and limits (`connections`)
 

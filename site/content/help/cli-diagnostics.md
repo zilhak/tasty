@@ -83,6 +83,8 @@ commit 수에 들어가지 않는 데이터베이스 압축(VACUUM)은 `vacuums`
 실제 SQL commit이 실패해 확정 상태를 다시 확인해야 하면 `publication_known`은 `false`,
 `unpublished_age_us`는 `null`입니다. 이 경우 저널을 다시 열어 검증할 때까지 unknown으로 유지합니다.
 저널이 없는 시험 구성은 `journal: null`, 아직 저장소가 열리지 않았으면 `store: null`입니다.
+
+`file_snapshots.settings`는 GUI와 헤드리스 모두에서 메모리에 적용한 설정과 저장이 확인된 설정의 차이를 보여줍니다. `dirty`가 true이면 아직 저장이 확인되지 않았으며, `dirty_age_us`는 첫 미저장 변경부터 지난 마이크로초입니다. 새 변경·실패·결과 불명·재시도·이전 변경의 저장 성공으로 이 시간이 초기화되지는 않습니다. 최신 변경의 저장 성공이 확인되면 `dirty`는 false, 나이는 `null`이 됩니다. 실패 후 `pending`이 0이어도 미저장 변경은 남을 수 있습니다. 이 조회는 저장 완료 처리를 앞당기지 않습니다.
 권한·한도·빈도 제한의 거절 수는 아래 `gate_refusals`에서 확인합니다.
 
 ### 연결 수와 한도 (`connections`)
