@@ -3,6 +3,10 @@
 
 use std::collections::VecDeque;
 
+pub(crate) fn wheel_received() {
+    tracing::trace!(target: "tasty::explorer::perf", "wheel_received");
+}
+
 const WINDOW: usize = 300;
 const DUMP_EVERY: u32 = 300;
 

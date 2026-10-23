@@ -144,9 +144,7 @@ impl Drop for SearchQuery {
 /// worker 에서 실행한다. 보낼 곳이 닫혔으면 바로 멈춘다.
 pub(super) fn run(spec: SearchSpec, sender: mpsc::SyncSender<SearchEvent>, wake: &dyn Fn()) {
     let _trace = RunTrace::new(&spec);
-    let _span =
-        tracing::trace_span!(target: "tasty::explorer::perf", "search", search_id = spec.id)
-            .entered();
+    let _span = search_span(spec.id);
     let stopped = || spec.stop.load(Ordering::Acquire);
     let query = FindQuery::parse(&spec.query);
     let send = |event| send_event(&sender, &spec.stop, wake, event);
@@ -185,14 +183,8 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::SyncSender<SearchEvent>, wake:
             .take_while(|_| !stopped())
             .filter(|entry| spec.show_hidden || !entry.is_hidden())
         {
-            if entry.is_dir && entry.link == EntryLink::NotALink {
-                queue.push_back(entry.path.clone());
-            }
-            if query.matches(&entry) {
-                hits.take(entry, &mut batch);
-                if batch.len() >= SEARCH_BATCH_HITS && !flush(&mut batch) {
-                    return;
-                }
+            if !collect_entry(entry, &query, &mut queue, &mut hits, &mut batch, &flush) {
+                return;
             }
         }
         if last_flush.elapsed() >= FLUSH_EVERY {
@@ -211,6 +203,30 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::SyncSender<SearchEvent>, wake:
     {
         tracing::debug!("explorer search receipt dropped before the search finished");
     }
+}
+
+fn search_span(id: u64) -> tracing::span::EnteredSpan {
+    tracing::trace_span!(target: "tasty::explorer::perf", "search", search_id = id).entered()
+}
+
+fn collect_entry(
+    entry: DirEntryInfo,
+    query: &FindQuery,
+    queue: &mut VecDeque<PathBuf>,
+    hits: &mut Hits,
+    batch: &mut Vec<DirEntryInfo>,
+    flush: &impl Fn(&mut Vec<DirEntryInfo>) -> bool,
+) -> bool {
+    if entry.is_dir && entry.link == EntryLink::NotALink {
+        queue.push_back(entry.path.clone());
+    }
+    if query.matches(&entry) {
+        hits.take(entry, batch);
+        if batch.len() >= SEARCH_BATCH_HITS {
+            return flush(batch);
+        }
+    }
+    true
 }
 
 /// Blocking send would strand a read worker when Stop is pressed on a full channel.
