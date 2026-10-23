@@ -223,9 +223,11 @@ mod tests {
     #[test]
     fn composition_guard_matches_custom_list_bindings_and_leaves_find_and_select_all() {
         use winit::keyboard::{Key, ModifiersState, NamedKey};
-        let mut bindings = crate::settings::KeybindingSettings::default();
-        bindings.explorer_cursor_down = vec!["ctrl+j".into()];
-        bindings.explorer_trash = vec!["ctrl+d".into()];
+        let bindings = crate::settings::KeybindingSettings {
+            explorer_cursor_down: vec!["ctrl+j".into()],
+            explorer_trash: vec!["ctrl+d".into()],
+            ..Default::default()
+        };
         let matches =
             |key, mods| crate::shortcuts::explorer_composition_list_key(&bindings, &key, mods);
         assert!(matches(Key::Character("j".into()), ModifiersState::CONTROL));
@@ -261,9 +263,11 @@ mod tests {
     #[test]
     fn find_escape_does_not_apply_list_bindings_to_editor_keys() {
         use winit::keyboard::ModifiersState;
-        let mut bindings = crate::settings::KeybindingSettings::default();
-        bindings.explorer_cursor_down = vec!["j".into()];
-        bindings.explorer_clear_selection = vec!["ctrl+g".into()];
+        let bindings = crate::settings::KeybindingSettings {
+            explorer_cursor_down: vec!["j".into()],
+            explorer_clear_selection: vec!["ctrl+g".into()],
+            ..Default::default()
+        };
         let find = InputOwner::Find(7);
         let modifiers = ModifiersState::empty();
         assert!(find.consumes(&bindings, &Key::Named(NamedKey::Escape), modifiers));
