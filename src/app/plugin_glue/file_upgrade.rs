@@ -173,12 +173,13 @@ impl App {
             return written.item;
         };
         mgr.config = written.config;
+        let validated = written.package.is_some();
         if let Some(package) = written.package {
             mgr.replace_committed_package(&written.item.id, Some(package));
         }
         let (restarted, restart_error) = finish_builtin_restart(
             self.plugin_files.stopping(),
-            written.uncertain,
+            written.uncertain || !validated,
             swap,
             pending_restart,
             || mgr.finish_file_swap(&written.item.id),

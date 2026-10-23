@@ -1,4 +1,6 @@
 //! Owned file half of runtime builtin upgrades. Live generations remain on the host loop.
+mod source;
+
 use super::*;
 use crate::file_persistence::ConfigUpdate;
 
@@ -25,6 +27,7 @@ pub struct Write {
     destination: PathBuf,
     kind: Kind,
     action: BuiltinUpgradeAction,
+    prepared: source::PreparedSource,
 }
 enum Kind {
     Install,
@@ -43,6 +46,7 @@ impl Write {
             .saturating_add(
                 serde_json::to_vec(&self.action).map_or(usize::MAX, |value| value.len()),
             )
+            .saturating_add(self.prepared.retained_bytes())
             .saturating_add(std::mem::size_of::<Self>())
     }
 }
@@ -65,7 +69,8 @@ pub fn prepare(
     restore: &[String],
     restore_all: bool,
 ) -> std::io::Result<Plan> {
-    let known = crate::known_plugins::KnownPlugins::load_from(known)?;
+    let known_path = known;
+    let known = crate::known_plugins::KnownPlugins::load_from(known_path.clone())?;
     let mut after = before.clone();
     if restore_all {
         after.clear_removed_builtins();
@@ -79,7 +84,16 @@ pub fn prepare(
         .execute_with_change()?;
     let entries = BUILTINS
         .iter()
-        .map(|spec| plan_entry(spec, &root, bundle.as_deref(), &known, &config, force))
+        .map(|spec| {
+            plan_entry(
+                spec,
+                &root,
+                bundle.as_deref(),
+                (&known_path, &known),
+                &config,
+                force,
+            )
+        })
         .collect();
     Ok(Plan {
         config,
@@ -92,7 +106,7 @@ fn plan_entry(
     spec: &BuiltinSpec,
     root: &Path,
     bundle: Option<&Path>,
-    known: &crate::known_plugins::KnownPlugins,
+    observation: (&Path, &crate::known_plugins::KnownPlugins),
     config: &PluginsConfig,
     force: bool,
 ) -> Entry {
@@ -109,6 +123,18 @@ fn plan_entry(
     }
     let Some(source) = bundle.map(|b| b.join(spec.id)).filter(|p| p.is_dir()) else {
         return Entry::Done(not_in_bundle_item(spec));
+    };
+    let (known_path, known) = observation;
+    let prepared = match source::PreparedSource::capture(&source, known_path, known, spec.id) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            return Entry::Done(BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::Failed {
+                    reason: error.to_string(),
+                },
+            });
+        }
     };
     if let Err(item) = verify_trust(spec, &source, &dest, known) {
         return Entry::Done(item);
@@ -183,16 +209,21 @@ fn plan_entry(
         destination: dest,
         kind,
         action,
+        prepared,
     })
 }
 
 /// Failed file/config work remains a per-plugin failure, retaining any known file mutation.
 pub fn execute(write: Write, before: PluginsConfig) -> Written {
+    execute_inner(write, before, || {})
+}
+fn execute_inner(write: Write, before: PluginsConfig, after_copy: impl FnOnce()) -> Written {
     let mut changed = false;
     let mut uncertain = false;
     let mut package = None;
     let mut config = before.clone();
     let result = (|| {
+        validate_prepared(&write, &write.source)?;
         let parent = write
             .destination
             .parent()
@@ -222,11 +253,8 @@ pub fn execute(write: Write, before: PluginsConfig) -> Written {
                 changed = true;
             }
         }
-        let manifest = Manifest::load(&write.destination)
-            .map_err(|_| std::io::Error::other("updated plugin manifest unavailable"))?;
-        if manifest.id != write.id {
-            return Err(std::io::Error::other("updated plugin identity changed"));
-        }
+        after_copy();
+        let manifest = validate_prepared(&write, &write.destination)?;
         let mut after = before.clone();
         for token in &manifest.permissions {
             after.grant(&write.id, token);
@@ -262,6 +290,23 @@ pub fn execute(write: Write, before: PluginsConfig) -> Written {
         changed,
         uncertain,
     }
+}
+
+fn validate_prepared(write: &Write, copied: &Path) -> std::io::Result<Manifest> {
+    let known = write.prepared.validate(&write.source, &write.id)?;
+    write.prepared.validate_manifest(copied)?;
+    let spec = BUILTINS
+        .iter()
+        .find(|spec| spec.id == write.id)
+        .ok_or_else(|| std::io::Error::other("prepared builtin identity unavailable"))?;
+    let manifest = Manifest::load(copied)
+        .map_err(|_| std::io::Error::other("prepared builtin manifest unavailable"))?;
+    if manifest.id != write.id {
+        return Err(std::io::Error::other("prepared builtin identity changed"));
+    }
+    verify_trust(spec, copied, &write.destination, &known)
+        .map_err(|_| std::io::Error::other("prepared builtin trust verification failed"))?;
+    Ok(manifest)
 }
 
 pub(super) fn verify_trust(
@@ -370,6 +415,139 @@ command="unused"
         .unwrap();
         std::fs::write(dir.join("unused"), "owned fixture").unwrap();
     }
+    fn retirement_gap_plan(home: &Path) -> (Write, PluginsConfig) {
+        let bundle = home.join("bundle");
+        fixture(&bundle);
+        let plan = prepare(
+            home.join("installed"),
+            Some(bundle),
+            home.join("known.toml"),
+            PluginsConfig::load_from(home.join("plugins.toml")),
+            false,
+            &[],
+            false,
+        )
+        .unwrap();
+        let write = plan
+            .entries
+            .into_iter()
+            .find_map(|entry| match entry {
+                Entry::Write(write) if write.id == "com.tasty.html" => Some(write),
+                _ => None,
+            })
+            .unwrap();
+        (write, plan.config)
+    }
+    #[test]
+    fn retirement_gap_source_manifest_change_cannot_publish_new_grants_or_package() {
+        let home = tempfile::tempdir().unwrap();
+        let (write, config) = retirement_gap_plan(home.path());
+        let path = home.path().join("bundle/com.tasty.html/tasty-plugin.toml");
+        let text = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace("fs.read", "fs.write");
+        std::fs::write(path, text).unwrap();
+        let written = execute(write, config);
+        assert!(matches!(
+            written.item.action,
+            BuiltinUpgradeAction::Failed { .. }
+        ));
+        assert!(written.package.is_none());
+        assert!(!written.changed);
+        assert!(!written.uncertain);
+        assert!(
+            !written
+                .config
+                .granted_permissions("com.tasty.html")
+                .contains("fs.write")
+        );
+        assert!(!home.path().join("installed/com.tasty.html").exists());
+    }
+    #[test]
+    fn retirement_gap_same_plugin_trust_change_cannot_publish_package() {
+        let home = tempfile::tempdir().unwrap();
+        let (write, config) = retirement_gap_plan(home.path());
+        crate::file_persistence::update_known(&home.path().join("known.toml"), |known| {
+            known.add(
+                "com.tasty.html".into(),
+                crate::known_plugins::KnownPluginEntry {
+                    pubkey: crate::known_plugins::KnownPluginEntry::encode_pubkey(&[7; 32]),
+                    permissions: vec!["fs.read".into()],
+                    trusted_at: "owned fixture".into(),
+                    publisher_fingerprint: String::new(),
+                },
+            );
+            Ok(())
+        })
+        .unwrap();
+        let written = execute(write, config);
+        assert!(matches!(
+            written.item.action,
+            BuiltinUpgradeAction::Failed { .. }
+        ));
+        assert!(written.package.is_none());
+        assert!(!written.changed);
+        assert!(!written.uncertain);
+        assert!(!home.path().join("installed/com.tasty.html").exists());
+    }
+    #[test]
+    fn retirement_gap_signature_change_cannot_publish_package() {
+        let home = tempfile::tempdir().unwrap();
+        let (write, config) = retirement_gap_plan(home.path());
+        std::fs::write(
+            home.path()
+                .join("bundle/com.tasty.html/tasty-plugin.toml.sig"),
+            [0; 64],
+        )
+        .unwrap();
+        let written = execute(write, config);
+        assert!(matches!(
+            written.item.action,
+            BuiltinUpgradeAction::Failed { .. }
+        ));
+        assert!(!written.changed);
+        assert!(written.package.is_none());
+    }
+    #[test]
+    fn retirement_gap_unrelated_trust_and_unsigned_binary_changes_keep_existing_policy() {
+        let home = tempfile::tempdir().unwrap();
+        let (write, config) = retirement_gap_plan(home.path());
+        std::fs::write(home.path().join("known.toml"), "[foreign]\nrevision=2\n").unwrap();
+        std::fs::write(
+            home.path().join("bundle/com.tasty.html/unused"),
+            "binary outside manifest signature scope",
+        )
+        .unwrap();
+        let written = execute(write, config);
+        assert!(written.package.is_some());
+        assert!(!written.uncertain);
+    }
+    #[test]
+    fn retirement_gap_post_copy_manifest_change_blocks_grants_and_package() {
+        let home = tempfile::tempdir().unwrap();
+        let (write, config) = retirement_gap_plan(home.path());
+        let path = home
+            .path()
+            .join("installed/com.tasty.html/tasty-plugin.toml");
+        let written = execute_inner(write, config, move || {
+            let text = std::fs::read_to_string(&path)
+                .unwrap()
+                .replace("fs.read", "fs.write");
+            std::fs::write(path, text).unwrap();
+        });
+        assert!(written.changed);
+        assert!(matches!(
+            written.item.action,
+            BuiltinUpgradeAction::Failed { .. }
+        ));
+        assert!(written.package.is_none());
+        assert!(
+            written
+                .config
+                .granted_permissions("com.tasty.html")
+                .is_empty()
+        );
+    }
     #[test]
     fn stale_asset_unlink_is_observed_but_recursive_directory_cleanup_is_not() {
         let home = tempfile::tempdir().unwrap();
@@ -423,9 +601,20 @@ command="unused"
         let home = tempfile::tempdir().unwrap();
         let destination = home.path().join("installed");
         std::fs::create_dir(&destination).unwrap();
+        let bundle = home.path().join("bundle");
+        fixture(&bundle);
+        std::fs::create_dir(destination.join("unused")).unwrap();
+        let known_path = home.path().join("known.toml");
+        let prepared = source::PreparedSource::capture(
+            &bundle.join("com.tasty.html"),
+            &known_path,
+            &crate::known_plugins::KnownPlugins::default(),
+            "com.tasty.html",
+        )
+        .unwrap();
         let write = Write {
             id: "com.tasty.html".into(),
-            source: home.path().join("missing"),
+            source: bundle.join("com.tasty.html"),
             destination,
             kind: Kind::Content,
             action: BuiltinUpgradeAction::Reinstalled {
@@ -433,6 +622,7 @@ command="unused"
                 was_restarted: false,
                 restart_error: None,
             },
+            prepared,
         };
         let written = execute(
             write,
