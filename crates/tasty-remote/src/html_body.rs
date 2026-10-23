@@ -1,0 +1,202 @@
+//! Immutable native response data and entry scan publication; no filesystem or network access.
+use std::{fmt, io, sync::Arc};
+use tasty_ipc::html_transfer::{HtmlSource, TransferId};
+use tasty_model::html_script::{
+    ScriptScan,
+    scan::{SCAN_LIMIT_BYTES, scan_reader},
+};
+use url::Url;
+
+use crate::html_document::Resource;
+
+pub const ENTRY_SCHEME: &str = "tasty-html-entry";
+
+/// The native adapter consumes these exact bytes. MIME/provenance/identity also apply to future resources.
+pub struct NativeBodyResponse {
+    generation: TransferId,
+    mime: String,
+    source_url: Url,
+    bytes: Arc<Vec<u8>>,
+}
+impl NativeBodyResponse {
+    pub fn new(
+        generation: TransferId,
+        mime: &str,
+        source_url: &str,
+        bytes: Arc<Vec<u8>>,
+    ) -> io::Result<Self> {
+        if mime.is_empty() || !mime.is_ascii() || mime.bytes().any(|b| b < 0x20 || b == 0x7f) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid response MIME",
+            ));
+        }
+        let source_url =
+            Url::parse(source_url).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        Ok(Self {
+            generation,
+            mime: mime.to_owned(),
+            source_url,
+            bytes,
+        })
+    }
+    pub fn generation(&self) -> TransferId {
+        self.generation
+    }
+    pub fn mime(&self) -> &str {
+        &self.mime
+    }
+    /// Provenance for chrome and the script gate; never a client navigation or file-open instruction.
+    pub fn source_url(&self) -> &str {
+        self.source_url.as_str()
+    }
+    pub fn bytes(&self) -> &[u8] {
+        self.bytes.as_slice()
+    }
+    pub fn shared_bytes(&self) -> Arc<Vec<u8>> {
+        Arc::clone(&self.bytes)
+    }
+}
+impl fmt::Debug for NativeBodyResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NativeBodyResponse")
+            .field("generation", &self.generation)
+            .field("mime", &self.mime)
+            .field("byte_len", &self.bytes.len())
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug)]
+pub struct ReceivedEntry {
+    response: Arc<NativeBodyResponse>,
+    scan: ScriptScan,
+    uri: String,
+}
+impl ReceivedEntry {
+    /// Run on a scan worker after complete, before exposing any native response.
+    pub fn from_complete(id: TransferId, resource: &Resource) -> io::Result<Option<Self>> {
+        if id != resource.id() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "entry identity mismatch",
+            ));
+        }
+        let Some(bytes) = resource.shared_body() else {
+            return Ok(None);
+        };
+        let Some(metadata) = &resource.metadata else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "completed entry lacks metadata",
+            ));
+        };
+        let HtmlSource::File { url, .. } = &metadata.source else {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "entry mirror requires a remote file",
+            ));
+        };
+        let source = Url::parse(url).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        if source.scheme() != "file" {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "entry provenance is not a file URL",
+            ));
+        }
+        let mime = if source.path().to_ascii_lowercase().ends_with(".svg") {
+            "image/svg+xml"
+        } else {
+            "text/html"
+        };
+        let scan = scan_reader(bytes.as_slice(), SCAN_LIMIT_BYTES)?;
+        let response = Arc::new(NativeBodyResponse::new(id, mime, url, bytes)?);
+        // Separate virtual origins across connection, binding and document generations. The remaining
+        // request/transfer identity is also part of the exact entry route. No remote path is navigated.
+        let mut uri = format!(
+            "{ENTRY_SCHEME}://e{}-s{}-b{}-d{}/r{}/t{}/index.html",
+            id.epoch, id.surface_id, id.binding, id.document, id.request, id.transfer
+        );
+        if let Some(fragment) = source.fragment() {
+            uri.push('#');
+            uri.push_str(fragment);
+        }
+        Ok(Some(Self {
+            response,
+            scan,
+            uri,
+        }))
+    }
+    pub fn response(&self) -> &Arc<NativeBodyResponse> {
+        &self.response
+    }
+    pub fn scan(&self) -> ScriptScan {
+        self.scan
+    }
+    pub fn native_uri(&self) -> &str {
+        &self.uri
+    }
+}
+
+/// A caller owns/synchronizes one store per SurfaceBinding. Scan workers publish only to their
+/// captured six-part identity; native callbacks hold a weak owner and resolve only this exact entry.
+#[derive(Default, Debug)]
+pub struct EntryBodyStore {
+    expected: Option<TransferId>,
+    entry: Option<Arc<ReceivedEntry>>,
+}
+impl EntryBodyStore {
+    pub fn begin(&mut self, id: TransferId) -> bool {
+        if self.expected == Some(id) {
+            return false;
+        }
+        self.expected = Some(id);
+        self.entry = None;
+        true
+    }
+    pub fn expects(&self, id: TransferId) -> bool {
+        self.expected == Some(id)
+    }
+    pub fn publish(&mut self, entry: Arc<ReceivedEntry>) -> bool {
+        if self.expected != Some(entry.response.generation()) || self.entry.is_some() {
+            return false;
+        }
+        self.entry = Some(entry);
+        true
+    }
+    pub fn current(&self) -> Option<&Arc<ReceivedEntry>> {
+        self.entry.as_ref()
+    }
+    pub fn entry_for_uri(&self, uri: &str) -> Option<Arc<ReceivedEntry>> {
+        self.entry
+            .as_ref()
+            .filter(|e| without_fragment(e.native_uri()) == without_fragment(uri))
+            .cloned()
+    }
+    pub fn response_for_uri(&self, uri: &str) -> Option<Arc<NativeBodyResponse>> {
+        self.entry_for_uri(uri)
+            .map(|entry| Arc::clone(entry.response()))
+    }
+    pub fn cancel(&mut self, id: TransferId) -> bool {
+        if !self.expects(id) {
+            return false;
+        }
+        self.clear();
+        true
+    }
+    /// A completed disconnected page remains available for a local script-allow reload. A pending
+    /// scan loses publication rights; a reconnect must call begin with its new connection epoch.
+    pub fn disconnect(&mut self) {
+        self.expected = self.entry.as_ref().map(|entry| entry.response.generation());
+    }
+    pub fn clear(&mut self) {
+        self.expected = None;
+        self.entry = None;
+    }
+}
+fn without_fragment(uri: &str) -> &str {
+    uri.split('#').next().unwrap_or(uri)
+}
+
+#[cfg(test)]
+mod tests;

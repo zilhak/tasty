@@ -133,3 +133,30 @@ fn disconnect_reset_discards_late_complete_and_old_capabilities() {
     assert!(!d.receive(HtmlReply::HtmlComplete { id: id(), size: 0 }));
     assert!(!HtmlSession::from_descriptor(&serde_json::json!({})).server_transfer);
 }
+
+#[test]
+fn timeout_during_size_question_retires_allowance_until_a_fresh_request() {
+    let mut d = document(300_000);
+    assert_eq!(d.resources[&id()].state, ReceiveState::SizeNotice);
+    assert!(d.receive(HtmlReply::HtmlFailure {
+        id: id(),
+        reason: "credit timeout".into()
+    }));
+    assert!(!d.receiving());
+    assert!(d.notices.is_empty());
+    assert!(d.allow_next().is_none());
+    assert!(d.credit(id()).is_none());
+    assert!(d.request(id()).is_none());
+    d.reset(1, 9, 2);
+    let retry = TransferId {
+        document: 2,
+        request: 2,
+        transfer: 2,
+        ..id()
+    };
+    assert!(d.request(retry).is_some());
+    d.receive(metadata(retry, 300_000));
+    assert_eq!(d.allow_next(), Some(retry));
+    assert!(d.credit(retry).is_some());
+    assert!(!d.receive(HtmlReply::HtmlCancelled { id: id() }));
+}

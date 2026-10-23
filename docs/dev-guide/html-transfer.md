@@ -36,7 +36,7 @@ Unix는 canonical root/target이 같은 root 안인지 확인한 뒤, `/`부터 
 
 개별 자동 기준은 100000 bytes, 문서 누적 기준은 2000000 bytes인 decimal 상수다. 누적은 수신한 raw body bytes이며 이미 발급한 credit도 예약량으로 합산한다. 누적 경계에서 자동 credit을 멈추고 Continue를 기다린다. Continue는 그 문서의 누적 정지만 해제하며 개별 큰 파일 Allow는 별개다. 크기 질문은 FIFO queue로 하나씩 소비한다. Decline은 해당 요청만 종료하고 skipped를 증가시킨다. Stop은 나머지 요청을 종료한다.
 
-completed body만 `Resource::body`로 제공한다. script 허용에 따른 재로드는 같은 body를 재사용한다. 사용자 Reload는 `reset`으로 새 document generation을 만들고 수신량·크기 허용·skipped·queue를 초기화한다. close/convert/reconnect는 이전 identity의 body와 credit을 해제한다. host는 disconnect·Loss·구조에서 사라지거나 HTML role이 아닌 mapping의 문서를 정리한다. 새 transport는 이전 문서 map을 승계하지 않는다. 변경 watcher나 파일 변경 통지는 만들지 않는다.
+completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 소유권을 immutable 공유 할당으로 옮긴다. `html_body::ReceivedEntry`는 그 할당에서 기존 스캐너로 감지·전체 지문을 구하고, native 응답용 MIME·원격 source URL·여섯 부분 transfer identity와 묶는다. 검사가 끝난 본문은 같은 identity의 `EntryBodyStore`에 한 번만 게시한다. native용 가상 entry URL은 원격 파일 경로를 포함하지 않으며 정확히 그 entry만 조회한다. 상대 리소스·file·HTTP(S) 요청에 대한 filesystem/network fallback은 없다. 이 데이터 어댑터는 아직 native viewer에 연결되지 않았다. script 허용에 따른 재로드는 같은 body를 재사용한다. 사용자 Reload는 `reset`으로 새 document generation을 만들고 수신량·크기 허용·skipped·queue를 초기화한다. close/convert/reconnect는 이전 identity의 body와 credit을 해제한다. host는 disconnect·Loss·구조에서 사라지거나 HTML role이 아닌 mapping의 문서를 정리한다. 새 transport는 이전 문서 map을 승계하지 않는다. 변경 watcher나 파일 변경 통지는 만들지 않는다.
 
 ## 검증 경계
 

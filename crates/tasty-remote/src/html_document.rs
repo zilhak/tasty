@@ -1,6 +1,9 @@
 //! Received-body ownership and decimal byte budgets, independent of native WebViews.
 use base64::Engine;
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 use tasty_ipc::html_transfer::{
     AUTO_BYTES, CHUNK_BYTES, DOCUMENT_BYTES, HtmlMetadata, HtmlReply, HtmlRequest, TransferId,
 };
@@ -18,16 +21,25 @@ pub enum ReceiveState {
 }
 #[derive(Debug)]
 pub struct Resource {
+    id: TransferId,
     pub metadata: Option<HtmlMetadata>,
     pub state: ReceiveState,
     body: Vec<u8>,
+    completed: Option<Arc<Vec<u8>>>,
     credit: bool,
     allowed: bool,
 }
 impl Resource {
+    pub fn id(&self) -> TransferId {
+        self.id
+    }
     /// Script allowance reloads reuse this exact completed body, without issuing another request.
     pub fn body(&self) -> Option<&[u8]> {
-        (self.state == ReceiveState::Complete).then_some(self.body.as_slice())
+        self.completed.as_deref().map(Vec::as_slice)
+    }
+    /// Share the completed allocation with a scanner and native response; prefixes remain private.
+    pub fn shared_body(&self) -> Option<Arc<Vec<u8>>> {
+        self.completed.clone()
     }
 }
 #[derive(Debug)]
@@ -77,9 +89,11 @@ impl HtmlDocument {
         self.resources.insert(
             id,
             Resource {
+                id,
                 metadata: None,
                 state: ReceiveState::Metadata,
                 body: Vec::new(),
+                completed: None,
                 credit: false,
                 allowed: false,
             },
@@ -152,6 +166,7 @@ impl HtmlDocument {
                     && size == r.body.len() as u64 =>
             {
                 r.credit = false;
+                r.completed = Some(Arc::new(std::mem::take(&mut r.body)));
                 r.state = ReceiveState::Complete;
                 true
             }
