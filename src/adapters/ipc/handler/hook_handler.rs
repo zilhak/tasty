@@ -411,6 +411,25 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn receive_hook_file_reply(
+        registry: &hook_handler::registry::HookHandlerRegistry,
+        core: &crate::app::services::AppServices,
+        receiver: &std::sync::mpsc::Receiver<JsonRpcResponse>,
+    ) -> JsonRpcResponse {
+        use super::super::deferred::MemoryReplies;
+        use std::time::{Duration, Instant};
+        let end = Instant::now() + Duration::from_secs(5);
+        loop {
+            assert!(registry.poll_file().is_empty());
+            assert!(MemoryReplies::poll(core).is_empty());
+            if let Ok(answer) = receiver.try_recv() {
+                return answer;
+            }
+            assert!(Instant::now() < end);
+            std::thread::yield_now();
+        }
+    }
+
     #[test]
     fn held_hook_save_answers_original_caller_once_after_receipt_with_applied_saved() {
         use super::super::deferred::{MemoryReplies, ReplyTo};
@@ -461,16 +480,7 @@ mod tests {
                 std::fs::write(&path, "# external\n").unwrap();
             }
             drop(lock);
-            let end = Instant::now() + Duration::from_secs(5);
-            let answer = loop {
-                assert!(registry.poll_file().is_empty());
-                assert!(MemoryReplies::poll(&core).is_empty());
-                if let Ok(answer) = rx.try_recv() {
-                    break answer;
-                }
-                assert!(Instant::now() < end);
-                std::thread::yield_now();
-            };
+            let answer = receive_hook_file_reply(&registry, &core, &rx);
             assert_eq!(answer.id, json!(17));
             if fail {
                 assert_eq!(

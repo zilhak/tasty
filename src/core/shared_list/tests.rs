@@ -122,8 +122,10 @@ fn saturated_submission_keeps_newer_dirty_after_older_success() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("favorites.toml");
     let source = SharedList::<PortFavorites>::load_at(path.clone());
-    let mut limits = batch_writer::Limits::default();
-    limits.queue_items = 1;
+    let limits = batch_writer::Limits {
+        queue_items: 1,
+        ..Default::default()
+    };
     let mut parts = file_writer::start(
         Arc::new(tasty_settings::FileSettingsStorage),
         limits,
