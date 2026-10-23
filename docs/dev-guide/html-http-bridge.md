@@ -1,6 +1,6 @@
 # HTTP transport bridge
 
-The `tasty-ipc` HTTP leaf defines an opt-in Control-frame family separate from file HTML transfer. It does not enable or advertise a remote HTTP viewer. The host exports the leaf and activates ordered dispatch only when its server and native routes support the negotiated capabilities.
+The `tasty-ipc` HTTP leaf defines an opt-in Control-frame family separate from file HTML transfer. It does not enable or advertise a remote HTTP viewer. The leaf is publicly exported for shared host/client integration. Export alone does not activate dispatch or advertise capabilities; those require working server and native routes.
 
 `HttpRequest` and `HttpReply` preserve the six-field transfer identity, source generation and server-issued response serial. Only encoded chunks cross this wire. Complete carries both encoded and decoded byte lengths and SHA256 identities. Clients assemble and verify the encoded body, decode under a separate bounded worker quota, verify the decoded identity and scan before exposing a body to native rendering. Native must receive the same immutable encoded representation with matching status and end-to-end headers.
 
