@@ -17,6 +17,8 @@ pub mod task;
 pub mod task_output_ref;
 mod task_tx;
 pub mod task_waker;
+#[cfg(test)]
+mod terminal_cleanup_tests;
 mod terminal_recovery;
 #[cfg(test)]
 mod terminal_recovery_tests;

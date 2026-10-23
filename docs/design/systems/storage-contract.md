@@ -300,6 +300,12 @@ memory.db 쓰기는 모두 memory writer를 지난다. writer는 종료 때 접�
 
 ### Task 종결 알림의 영속 의무
 
+알림 전달 의무와 실행 handle 정리는 별개다. 알림의 정확 UUID를 확인 처리해도 남은 handle의
+정리 의무는 끝나지 않는다. 러너 없는 취소의 후속 확인은 현재 종결 task 레코드와 남은 handle을
+따로 읽어 정리를 시작한다. 다른 요청이 알림을 먼저 소비해도 이 확인을 생략하지 않는다. 정리는
+기존 handle의 회차·프로세스를 확인하고 종료가 확인된 뒤 자기 점유만 반환하며 외부 실행을
+재시도하지 않는다. 별도 schema나 알림 재발행으로 정리를 대신하지 않는다.
+
 TaskStore는 비종결에서 종결로 바뀌는 task 레코드와 알림 의무를 같은 atomic batch에 쓴다.
 알림은 workspace의 `tasty.agent.terminal.<UUID>` 키에 schema 1, 고유 ID, 완료 통지용 snapshot,
 레코드 revision을 담는다. snapshot은 task ID·생성 시각·상태·결과·회차 ID·건너뛴 이유만 담고

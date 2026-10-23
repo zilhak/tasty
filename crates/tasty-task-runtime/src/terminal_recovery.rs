@@ -74,7 +74,7 @@ impl TerminalRecovery {
             MemoryRequest::read(0, move |mem| Ok(load(mem, plan.targets()))),
             "terminal obligation reconciliation",
             Some(Box::new(move |out| {
-                match out.into_value::<tasty_agent::Result<Vec<Delivery>>>() {
+                match out.into_value::<tasty_agent::Result<Confirmed>>() {
                     Some(Ok(deliveries)) => deliver(deliveries, &access_done),
                     Some(Err(tasty_agent::AgentError::Memory(error))) if remaining > 1 => {
                         tracing::warn!(%error, remaining, "retrying terminal confirmation read");
@@ -94,47 +94,75 @@ struct Delivery {
     target: Target,
     notice: TerminalNotice,
     current: Option<TerminalSnapshot>,
-    settle_task: Option<tasty_agent::Task>,
 }
 
-fn load(mem: &dyn MemoryStorage, targets: Vec<Target>) -> tasty_agent::Result<Vec<Delivery>> {
-    let mut deliveries = Vec::new();
+#[derive(Default)]
+struct Confirmed {
+    deliveries: Vec<Delivery>,
+    settlements: Vec<(RunnerContext, u32, Vec<tasty_agent::Task>)>,
+}
+
+fn load(mem: &dyn MemoryStorage, targets: Vec<Target>) -> tasty_agent::Result<Confirmed> {
+    let mut confirmed = Confirmed::default();
     for target in targets {
         for notice in terminal::pending(mem, target.workspace)? {
             let row = tasty_agent::TaskStore::read_record(mem, target.workspace, &notice.task.id)?;
-            let same_record = match row.as_ref() {
-                Some((task, revision)) => {
-                    *revision == notice.revision && terminal::TerminalTask::of(task) == notice.task
-                }
-                None => false,
-            };
-            let settle_task = row
-                .as_ref()
-                .filter(|_| same_record)
-                .map(|(task, _)| task.clone());
             let current = row
                 .filter(|(task, _)| task.state.is_terminal())
                 .map(|(task, revision)| TerminalSnapshot::of(&task, Some(revision)));
-            deliveries.push(Delivery {
+            confirmed.deliveries.push(Delivery {
                 target: target.clone(),
                 notice,
                 current,
-                settle_task,
             });
         }
+        if let Some(ctx) = target.settle {
+            let tasks = ended_handles(mem, target.workspace)?;
+            if !tasks.is_empty() {
+                confirmed.settlements.push((ctx, target.workspace, tasks));
+            }
+        }
     }
-    Ok(deliveries)
+    Ok(confirmed)
 }
 
-fn deliver(deliveries: Vec<Delivery>, access: &MemoryAccess) {
+/// Task state and the remaining handle retain the cleanup obligation independently of notice ack.
+/// Only cancellation requests without a live runner supply a settlement context. Read current rows,
+/// never an obsolete notice snapshot: another continuation may already have acknowledged the notice.
+fn ended_handles(
+    mem: &dyn MemoryStorage,
+    workspace: u32,
+) -> tasty_agent::Result<Vec<tasty_agent::Task>> {
+    let entries = mem.list(
+        &tasty_memory::Scope::Workspace(workspace),
+        &tasty_memory::ListOpts {
+            prefix: Some(crate::runner_host::HANDLE_KEY_PREFIX.into()),
+            ..Default::default()
+        },
+    )?;
+    let mut tasks = Vec::new();
+    for entry in entries {
+        if let Some(id) = entry
+            .key
+            .strip_prefix(crate::runner_host::HANDLE_KEY_PREFIX)
+            && let Some((task, _)) =
+                tasty_agent::TaskStore::read_record(mem, workspace, &id.into())?
+            && task.state.is_terminal()
+        {
+            tasks.push(task);
+        }
+    }
+    Ok(tasks)
+}
+
+fn deliver(confirmed: Confirmed, access: &MemoryAccess) {
     for Delivery {
         target,
         notice,
         current,
-        settle_task,
-    } in deliveries
+    } in confirmed.deliveries
     {
-        let first = target.hub.fire_once(
+        target.hub.fire_once(
             &notice.id,
             target.workspace,
             &notice.task.id,
@@ -147,18 +175,8 @@ fn deliver(deliveries: Vec<Delivery>, access: &MemoryAccess) {
             },
             current,
         );
-        if first
-            && let Some(task) = settle_task
-            && let Some(ctx) = target.settle
-        {
-            crate::runner_thread::settle_ended_tasks_in_background(
-                ctx,
-                target.workspace,
-                vec![task],
-            );
-        }
         // This id names an immutable obligation. A lost ack may replay the read, but fire_once
-        // suppresses another event/settle within this hub; no newer task round can be erased.
+        // suppresses another event within this hub; it does not discharge handle cleanup.
         let id = notice.id;
         access.submit_detached(
             MemoryRequest::unit(0, move |mem| {
@@ -167,6 +185,9 @@ fn deliver(deliveries: Vec<Delivery>, access: &MemoryAccess) {
             "terminal obligation acknowledgement",
             None,
         );
+    }
+    for (ctx, workspace, tasks) in confirmed.settlements {
+        crate::runner_thread::settle_ended_tasks_in_background(ctx, workspace, tasks);
     }
 }
 
@@ -191,7 +212,7 @@ pub(crate) fn reconcile(ctx: &RunnerContext, workspace: u32) {
         }
     };
     match tasty_memory::writer::settle(completion) {
-        Ok(output) => match output.into_value::<tasty_agent::Result<Vec<Delivery>>>() {
+        Ok(output) => match output.into_value::<tasty_agent::Result<Confirmed>>() {
             Some(Ok(deliveries)) => deliver(deliveries, &ctx.memory),
             Some(Err(error)) => tracing::warn!(%error, "terminal obligations remain pending"),
             None => tracing::error!("unexpected terminal confirmation output"),
