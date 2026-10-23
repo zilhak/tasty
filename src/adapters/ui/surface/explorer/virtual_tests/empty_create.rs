@@ -21,7 +21,7 @@ fn key(key: egui::Key) -> Vec<Event> {
 
 fn empty(mode: ExplorerViewMode) -> Harness {
     let mut h = Harness::new(mode);
-    h.view.entries.clear();
+    h.view.entries = Default::default();
     h
 }
 

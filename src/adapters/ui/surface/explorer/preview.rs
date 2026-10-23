@@ -821,7 +821,7 @@ mod tests {
         let entry = write_text(&dir.path().join("a.txt"), "local", 1_000_000);
         let mut owner = LocalReads::default();
         let mut view = ExplorerView::new();
-        view.entries = vec![entry.clone()];
+        view.entries = vec![entry.clone()].into();
         view.select_only(&entry.path);
         view.preview.open = true;
         view.mirror_ws_id = Some(3);
@@ -850,7 +850,7 @@ mod tests {
         let entry = write_text(&dir.path().join(name), body, 1_000_000);
         let mut owner = LocalReads::default();
         let mut view = ExplorerView::new();
-        view.entries = vec![entry.clone()];
+        view.entries = vec![entry.clone()].into();
         view.select_only(&entry.path);
         view.preview.open = true;
         frame(&mut view);

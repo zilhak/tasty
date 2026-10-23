@@ -14,7 +14,7 @@ use crate::app::local_reads::{Query, ReadRequests};
 
 /// 활성이 아닌 동안 보관하는 탭 하나의 상태.
 pub(crate) struct TabSession {
-    entries: Vec<DirEntryInfo>,
+    entries: super::EntrySnapshot,
     entries_gen: u64,
     path_index: std::cell::RefCell<super::path_index::PathIndex>,
     remote_state: HashMap<PathBuf, super::RemoteLoadState>,
@@ -47,7 +47,7 @@ impl TabSession {
     /// 처음 여는 탭. 첫 동기화가 지금처럼 그 폴더를 읽는다.
     fn fresh(show_hidden: bool) -> Self {
         Self {
-            entries: Vec::new(),
+            entries: Default::default(),
             entries_gen: 0,
             path_index: super::path_index::empty(),
             remote_state: HashMap::new(),

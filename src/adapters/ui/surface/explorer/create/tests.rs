@@ -72,7 +72,7 @@ fn the_name_list_comes_from_the_shown_folder_or_the_sidebar_tree() {
     let mut view = ExplorerView::new();
     let panel = crate::model::ExplorerPanel::new(1, "/w".into());
     view.sync(&panel, None);
-    view.entries = vec![placeholder_named("/w", t("explorer.new.folder_default"))];
+    view.entries = vec![placeholder_named("/w", t("explorer.new.folder_default"))].into();
     view.start_create("/w".into(), true);
     let create = view.create.as_ref().expect("editor opened");
     assert_eq!(

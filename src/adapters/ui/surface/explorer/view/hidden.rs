@@ -126,7 +126,7 @@ impl ExplorerView {
         }
         self.hidden.show = show;
         self.refind_for_hidden(show);
-        let mut all = std::mem::take(&mut self.entries);
+        let mut all = std::mem::take(&mut self.entries).into_vec();
         all.append(&mut self.hidden.stash);
         if let Some((_, col, dir)) = &self.loaded {
             sort_entries(&mut all, *col, *dir);

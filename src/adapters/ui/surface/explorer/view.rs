@@ -3,6 +3,7 @@
 pub(crate) mod cursor;
 pub(crate) mod drag;
 pub(crate) mod drag_scroll;
+mod entry_snapshot;
 pub(crate) mod hidden;
 pub(crate) mod keys;
 pub(crate) mod list_layout;
@@ -16,6 +17,7 @@ mod remote_reload;
 mod selection;
 mod tab_state;
 
+pub(crate) use entry_snapshot::EntrySnapshot;
 pub use selection::SelectedPaths;
 
 use std::collections::{HashMap, HashSet};
@@ -73,7 +75,7 @@ pub(crate) struct ExplorerListRequest {
 
 pub struct ExplorerView {
     /// 정렬된 현재 디렉토리 엔트리. 새 목록으로 바꿀 때는 `set_entries` 를 쓴다.
-    pub entries: Vec<DirEntryInfo>,
+    pub entries: EntrySnapshot,
     /// `entries` 를 바꿀 때마다 오르는 세대. Find 거르기 결과가 이 목록으로 만든 것인지 가린다.
     pub(super) entries_gen: u64,
     pub(super) path_index: std::cell::RefCell<path_index::PathIndex>,
@@ -272,13 +274,13 @@ impl ExplorerView {
     }
     /// 목록을 바꾸고 세대를 올린다. 숨김 파일을 끈 동안에는 숨김 항목을 따로 둔다.
     pub(super) fn set_entries(&mut self, entries: Vec<DirEntryInfo>) {
-        self.entries = self.split_hidden(entries);
+        self.entries = self.split_hidden(entries).into();
         self.entries_gen += 1;
     }
 
     pub fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            entries: Default::default(),
             entries_gen: 0,
             path_index: path_index::empty(),
             loaded: None,
@@ -693,7 +695,7 @@ impl ExplorerView {
             }
             Some(RemoteLoadState::Error(msg)) => {
                 // `msg` 가 `remote_state` 를 빌리고 있어 `set_entries` 대신 두 필드를 직접 바꾼다.
-                self.entries.clear();
+                self.entries = Default::default();
                 self.hidden.forget();
                 self.entries_gen += 1;
                 if msg == "permission denied" {
@@ -1353,7 +1355,8 @@ mod tests {
         view.entries = vec![
             entry("gone", crate::core::fs_list::EntryLink::Broken),
             entry("ok", crate::core::fs_list::EntryLink::Valid),
-        ];
+        ]
+        .into();
         assert!(view.is_broken_link(Path::new("/d/gone")));
         assert!(!view.is_broken_link(Path::new("/d/ok")));
         assert!(!view.is_broken_link(Path::new("/d/other")));
@@ -1602,7 +1605,7 @@ mod tests {
         let reply = |view: &mut ExplorerView, names: &[&str]| {
             view.sync(&panel, Some(7));
             let id = view.drain_outbox()[0].request_id;
-            assert!(view.apply_remote_list_dir_result(id, &panel, Ok(entries(names))));
+            assert!(view.apply_remote_list_dir_result(id, &panel, Ok(entries(names).into_vec())));
         };
         reply(&mut view, &["a", "b"]);
         view.select_only(Path::new("/d/a"));

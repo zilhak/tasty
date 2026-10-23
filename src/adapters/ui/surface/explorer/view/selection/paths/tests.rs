@@ -106,7 +106,7 @@ fn bulk_paths_share_storage_reuse_capacity_and_keep_owned_payloads() {
     let mut actual = SelectedPaths::default();
     actual.refill(paths.len(), paths.iter().map(PathBuf::as_path));
     assert_same(&actual, &expected);
-    assert!(!actual.packed.is_empty());
+    assert!(!actual.storage.packed.is_empty());
     assert!(
         actual
             .buckets
@@ -122,15 +122,15 @@ fn bulk_paths_share_storage_reuse_capacity_and_keep_owned_payloads() {
     assert!(actual.staged.is_empty());
     let scratch_pointer = actual.staged.as_ptr();
     let scratch_capacity = actual.staged.capacity();
-    let pointer = actual.packed.as_ptr();
-    let capacity = actual.packed.capacity();
+    let pointer = actual.storage.packed.as_ptr();
+    let capacity = actual.storage.packed.capacity();
     let original = actual.clone();
     actual.refill(10, paths[..10].iter().map(PathBuf::as_path));
-    assert_eq!(actual.packed.as_ptr(), pointer);
+    assert_eq!(actual.storage.packed.as_ptr(), pointer);
     assert!(actual.staged.is_empty());
     assert_eq!(actual.staged.as_ptr(), scratch_pointer);
     assert_eq!(actual.staged.capacity(), scratch_capacity);
-    assert_eq!(actual.packed.capacity(), capacity);
+    assert_eq!(actual.storage.packed.capacity(), capacity);
     assert_eq!(actual.len(), 10);
     assert_eq!(original.len(), 100_000);
     assert!(original.contains(&paths[99_999]));
@@ -182,4 +182,70 @@ fn bulk_selection_keeps_non_utf8_paths_without_lossy_conversion() {
     let expected: HashSet<_> = paths.into_iter().collect();
     assert_same(&actual, &expected);
     assert_eq!(actual.owned().collect::<HashSet<_>>(), expected);
+    let entries = std::sync::Arc::new(
+        expected
+            .iter()
+            .map(|path| crate::core::fs_list::DirEntryInfo {
+                path: path.clone(),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>(),
+    );
+    actual.refill_entries(entries);
+    assert_same(&actual, &expected);
+    assert_eq!(actual.owned().collect::<HashSet<_>>(), expected);
+}
+
+#[test]
+fn listing_snapshot_selection_keeps_paths_after_replacement_without_copying_bytes() {
+    let entries = std::sync::Arc::new(
+        (0..100_000)
+            .map(|i| crate::core::fs_list::DirEntryInfo {
+                path: PathBuf::from(format!("/long/parent/한글/item{i:06}.txt")),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>(),
+    );
+    let expected: HashSet<_> = entries.iter().map(|e| e.path.clone()).collect();
+    let mut actual = SelectedPaths::default();
+    actual.refill_entries(entries.clone());
+    assert!(std::sync::Arc::ptr_eq(
+        actual.storage.entries.as_ref().unwrap(),
+        &entries
+    ));
+    assert!(actual.storage.packed.is_empty());
+    assert_same(&actual, &expected);
+    let mut cloned = actual.clone();
+    assert!(actual.remove(&entries[17].path));
+    assert!(cloned.contains(&entries[17].path));
+    assert!(actual.insert(PathBuf::from("/new/added.txt")));
+    drop(entries);
+    cloned.retain(|p| p.file_name().unwrap() == "item000017.txt");
+    assert_eq!(
+        cloned.owned().collect::<Vec<_>>(),
+        vec![PathBuf::from("/long/parent/한글/item000017.txt")]
+    );
+    actual.clear();
+    assert!(actual.storage.entries.is_none());
+    assert!(actual.is_empty());
+    assert_eq!(cloned.len(), 1);
+}
+
+#[test]
+fn shared_listing_selection_keeps_alias_equality_and_collision_promotion() {
+    let entries = std::sync::Arc::new(
+        ["/w/./a", "/w//a", "/other/a", "/"]
+            .map(|p| crate::core::fs_list::DirEntryInfo {
+                path: p.into(),
+                ..Default::default()
+            })
+            .to_vec(),
+    );
+    let expected = entries.iter().map(|e| e.path.clone()).collect();
+    let mut actual = SelectedPaths::default();
+    actual.refill_entries(entries);
+    assert_same(&actual, &expected);
+    actual.retain(|p| p != Path::new("/other/a"));
+    assert!(actual.contains(Path::new("/w/a")));
+    assert!(!actual.contains(Path::new("/other/a")));
 }

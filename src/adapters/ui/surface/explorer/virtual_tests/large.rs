@@ -117,7 +117,7 @@ fn index_lifecycle_cpu_samples() {
         let started = Instant::now();
         h.frame(vec![Event::Text("i".into())]);
         let first_input_frame_ms = started.elapsed().as_secs_f64() * 1000.0;
-        let entries = h.view.entries.clone();
+        let entries = h.view.entries.to_vec();
         h.panel.add_tab();
         h.view.sync(&h.panel, None);
         h.view.set_entries(entries.clone());

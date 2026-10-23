@@ -86,7 +86,7 @@ fn a_click_hides_the_ring_until_the_next_key() {
 fn dragging_from_empty_space_selects_the_rows_it_crosses() {
     for mode in [ExplorerViewMode::Detail, ExplorerViewMode::List] {
         let mut h = Harness::new(mode);
-        h.view.entries.truncate(10);
+        h.view.set_entries(h.view.entries[..10].to_vec());
         h.frame(Vec::new());
         let drawn = h.frame(Vec::new());
         let r7 = on_screen(&drawn, 7).expect("item 7");

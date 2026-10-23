@@ -4,9 +4,11 @@
 
 mod storage;
 
+use crate::core::fs_list::DirEntryInfo;
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::path::{Path, PathBuf};
-use storage::{Incoming, StoredPath};
+use std::sync::Arc;
+use storage::{Incoming, PathStorage, StoredPath};
 
 #[derive(Clone, Debug)]
 enum Bucket {
@@ -19,7 +21,7 @@ enum Bucket {
 pub struct SelectedPaths {
     buckets: HashMap<u64, Bucket, egui::ahash::RandomState>,
     len: usize,
-    packed: String,
+    storage: PathStorage,
     staged: Vec<StoredPath>,
 }
 
@@ -28,7 +30,7 @@ impl SelectedPaths {
         Self {
             buckets: HashMap::with_capacity_and_hasher(capacity, Default::default()),
             len: 0,
-            packed: String::new(),
+            storage: PathStorage::default(),
             staged: Vec::new(),
         }
     }
@@ -53,13 +55,14 @@ impl SelectedPaths {
     pub fn clear(&mut self) {
         self.buckets.clear();
         self.staged.clear();
-        self.packed.clear();
+        self.storage.packed.clear();
+        self.storage.entries = None;
         self.len = 0;
     }
 
     pub fn contains(&self, path: &Path) -> bool {
         match self.buckets.get(&self.key(path)) {
-            Some(Bucket::One(value)) => value.as_path(&self.packed) == path,
+            Some(Bucket::One(value)) => value.as_path(&self.storage) == path,
             Some(Bucket::Many(values)) => values.contains(path),
             None => false,
         }
@@ -70,13 +73,15 @@ impl SelectedPaths {
     }
 
     fn insert_value(&mut self, path: Incoming<'_>) -> bool {
-        let inserted = match self.buckets.entry(self.key(path.as_path(&self.packed))) {
+        let inserted = match self.buckets.entry(self.key(path.as_path(&self.storage))) {
             Entry::Vacant(entry) => {
-                entry.insert(Bucket::One(path.store(&mut self.packed)));
+                entry.insert(Bucket::One(path.store(&mut self.storage)));
                 true
             }
             Entry::Occupied(mut entry) => match entry.get_mut() {
-                Bucket::One(value) if value.as_path(&self.packed) == path.as_path(&self.packed) => {
+                Bucket::One(value)
+                    if value.as_path(&self.storage) == path.as_path(&self.storage) =>
+                {
                     false
                 }
                 bucket @ Bucket::One(_) => {
@@ -86,14 +91,14 @@ impl SelectedPaths {
                         unreachable!()
                     };
                     let values = HashSet::from([
-                        previous.into_owned(&self.packed),
-                        path.into_owned(&self.packed),
+                        previous.into_owned(&self.storage),
+                        path.into_owned(&self.storage),
                     ]);
                     *bucket = Bucket::Many(std::sync::Arc::new(values));
                     true
                 }
                 Bucket::Many(values) => {
-                    std::sync::Arc::make_mut(values).insert(path.into_owned(&self.packed))
+                    std::sync::Arc::make_mut(values).insert(path.into_owned(&self.storage))
                 }
             },
         };
@@ -119,22 +124,34 @@ impl SelectedPaths {
             .peek()
             .and_then(|path| path.to_str())
             .map_or(0, str::len);
-        self.packed.reserve(bytes.saturating_mul(count));
+        self.storage.packed.reserve(bytes.saturating_mul(count));
         let mut staged = std::mem::take(&mut self.staged);
         staged.reserve(count);
         // Copy sequential bytes before random table writes; keep both allocations for reuse.
         for path in paths {
-            staged.push(Incoming::Borrowed(path).store(&mut self.packed));
+            staged.push(Incoming::Borrowed(path).store(&mut self.storage));
         }
-        after_pack(self.packed.len());
+        after_pack(self.storage.packed.len());
         for path in staged.drain(..) {
             self.insert_value(Incoming::Stored(path));
         }
         self.staged = staged;
     }
 
+    /// The unfiltered listing already owns every selected path. Share that immutable
+    /// snapshot and store entry indices, avoiding an allocation or byte copy per path.
+    pub(super) fn refill_entries(&mut self, entries: Arc<Vec<DirEntryInfo>>) {
+        self.clear();
+        let count = entries.len();
+        self.buckets.reserve(count);
+        self.storage.entries = Some(entries);
+        for index in 0..count {
+            self.insert_value(Incoming::Stored(StoredPath::Entry(index)));
+        }
+    }
+
     pub(super) fn packed_bytes(&self) -> usize {
-        self.packed.len()
+        self.storage.packed.len()
     }
 
     pub fn remove(&mut self, path: &Path) -> bool {
@@ -143,7 +160,7 @@ impl SelectedPaths {
         };
         let (removed, empty) = match entry.get_mut() {
             Bucket::One(value) => {
-                let matches = value.as_path(&self.packed) == path;
+                let matches = value.as_path(&self.storage) == path;
                 (matches, matches)
             }
             Bucket::Many(values) => (
@@ -162,7 +179,7 @@ impl SelectedPaths {
         let mut len = 0;
         self.buckets.retain(|_, bucket| match bucket {
             Bucket::One(path) => {
-                let retained = keep(path.as_path(&self.packed));
+                let retained = keep(path.as_path(&self.storage));
                 len += usize::from(retained);
                 retained
             }
@@ -176,10 +193,10 @@ impl SelectedPaths {
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &Path> {
-        let packed = self.packed.as_str();
+        let storage = &self.storage;
         SizedIter {
             inner: self.buckets.values().flat_map(move |bucket| match bucket {
-                Bucket::One(path) => BucketIter::One(Some(path.as_path(packed))),
+                Bucket::One(path) => BucketIter::One(Some(path.as_path(storage))),
                 Bucket::Many(values) => BucketIter::Many(values.iter()),
             }),
             remaining: self.len,

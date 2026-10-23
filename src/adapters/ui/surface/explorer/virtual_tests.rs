@@ -372,7 +372,9 @@ fn the_item_at_the_top_edge_is_drawn_after_scrolling() {
 fn a_new_item_inside_a_folder_opens_right_after_that_folder() {
     for mode in MODES {
         let mut h = Harness::new(mode);
-        h.view.entries[3].is_dir = true;
+        let mut entries = h.view.entries.to_vec();
+        entries[3].is_dir = true;
+        h.view.set_entries(entries);
         h.frame(Vec::new());
         h.view.start_create(path(3), false);
         let drawn = h.settle();
@@ -485,7 +487,7 @@ fn internal_tabs_restore_scroll_in_all_three_views() {
         h.view.reveal_created(&path(15_000));
         let before = h.settle();
         let before_rect = on_screen(&before, 15_000).expect("A scrolled");
-        let entries = h.view.entries.clone();
+        let entries = h.view.entries.to_vec();
         h.panel.add_tab();
         h.panel.active_tab_mut().view_mode = mode;
         h.view.sync(&h.panel, None);

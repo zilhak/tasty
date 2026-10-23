@@ -12,16 +12,25 @@ impl ExplorerView {
     pub fn select_all(&mut self) {
         let timer = SelectionTimer::start(self.shown_count());
         let mut selected = std::mem::take(&mut self.selected);
-        let mut last = None;
-        selected.refill_observed(
-            self.shown_count(),
-            self.shown().map(|entry| {
-                last = Some(&entry.path);
-                entry.path.as_path()
-            }),
-            |bytes| timer.packed(bytes),
-        );
-        let anchor = last.cloned();
+        let anchor = if self
+            .shown_slice()
+            .is_some_and(|shown| std::ptr::eq(shown, self.entries.as_slice()))
+        {
+            timer.packed(0);
+            selected.refill_entries(self.entries.share());
+            self.entries.last().map(|entry| entry.path.clone())
+        } else {
+            let mut last = None;
+            selected.refill_observed(
+                self.shown_count(),
+                self.shown().map(|entry| {
+                    last = Some(&entry.path);
+                    entry.path.as_path()
+                }),
+                |bytes| timer.packed(bytes),
+            );
+            last.cloned()
+        };
         timer.built(selected.packed_bytes());
         self.replace_selection(selected, anchor);
         timer.applied(self.selected.len());
