@@ -188,7 +188,7 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 포트 저장 오류는 `saved:false`, 결과를 잃은 경우는 `saved:null/outcome_unknown:true`로 구분하고
 명령을 재실행하지 않는다. 실행 중 리스너 주소는 바꾸지 않는다. 조회 성공은 저장 성공 표시가
 아니며, 읽기·마이그레이션 실패 시 backend의 기존 경고와 메모리 해석 규칙을 따른다.
-등록·해제·Count/Time·sweep은 같은 file writer에 연결된 프로세스 소유 registry coordinator를 쓴다. 등록 목록은 engine마다 복사하지 않는다. pending 명령은 합치거나 재실행하지 않고, 앞선 receipt를 정산한 뒤 다음 절을 구성한다. 별도 보관의 개수와 추정 직렬화 바이트는 공용 writer 기본 queue 한도(4096건·16MiB)로 제한하며, 실행 중 절과 결과를 포함한다. HTTP 문맥의 보관 예산은 ACK·시퀀스 종료까지 유지한다. 이는 등록의 인증·수명 정책이나 전체 HTTP 연결·프로세스 메모리 상한이 아니다.
+등록·해제·Count/Time·sweep은 같은 file writer에 연결된 프로세스 소유 registry coordinator를 쓴다. 등록 목록은 engine마다 복사하지 않는다. pending 명령은 합치거나 재실행하지 않고, 앞선 receipt를 정산한 뒤 다음 절을 구성한다. 별도 보관의 개수와 추정 직렬화 바이트는 공용 writer 기본 queue 한도(4096건·16MiB)로 제한하며, 실행 중 절과 결과를 포함한다. HTTP 문맥의 보관 예산은 ACK·시퀀스 종료까지 유지한다. 종료 중 새 시퀀스 IPC는 GUI·headless 모두 종료 오류로 답하며, 이미 정리 중인 engine에서 실행하거나 응답 대기자를 버리지 않는다. 이는 등록의 인증·수명 정책이나 전체 HTTP 연결·프로세스 메모리 상한이 아니다.
 
 ### 포트 기록 (`RuntimePorts`)
 
