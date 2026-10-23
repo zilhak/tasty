@@ -134,7 +134,10 @@ pub(crate) struct FileExecutor {
 impl FileExecutor {
     fn run_one(&self, request: &mut FileRequest) -> Result<FileOutput, FileError> {
         match request {
-            FileRequest::Command(command) => command.execute().map(FileOutput::Command),
+            FileRequest::Command(command) => command
+                .execute()
+                .map(FileOutput::Command)
+                .map_err(|e| FileError(e.message.into())),
             FileRequest::Snapshot(snapshot) => snapshot
                 .write()
                 .map(|()| FileOutput::Snapshot)

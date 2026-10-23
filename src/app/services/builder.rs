@@ -190,7 +190,9 @@ impl AppServicesBuilder {
             self.file_writer.as_ref().map(|parts| parts.writer.handle()),
         );
         let webhooks = Arc::new(crate::webhook::registry::Registry::new(
-            self.file_writer.as_ref().map(|parts| parts.writer.handle()),
+            self.file_writer
+                .as_ref()
+                .map(|parts| Arc::new(parts.writer.handle()) as crate::file_command::Queue),
             crate::webhook::config::config_path(),
         ));
         Ok(AppServices {

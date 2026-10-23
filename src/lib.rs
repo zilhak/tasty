@@ -20,6 +20,7 @@ mod design_token_guard;
 #[cfg(test)]
 mod dpi_conversion_guard;
 mod file;
+mod file_command;
 // GUI의 무대 정의와 debug 조회, 시험에서 사용하는 메타데이터다.
 #[cfg(any(feature = "gui", debug_assertions, test))]
 mod fullscreen_stages;

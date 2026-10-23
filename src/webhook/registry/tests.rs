@@ -63,7 +63,7 @@ impl Fixture {
         )
         .unwrap();
         let registry = Arc::new(Registry::with_limits(
-            Some(writer.writer.handle()),
+            Some(Arc::new(writer.writer.handle())),
             path.clone(),
             registry_limits,
         ));
@@ -435,7 +435,7 @@ fn a_shared_queue_refusal_keeps_http_count_and_returns_unavailable_without_disk_
     let (started, begin) = std::sync::mpsc::sync_channel(1);
     let (release, held) = std::sync::mpsc::sync_channel(1);
     let gate = command::submit(
-        f.registry.queue.as_ref(),
+        f.registry.queue.as_deref(),
         128,
         move || {
             started.send(()).unwrap();

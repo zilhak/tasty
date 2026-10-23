@@ -1,100 +1,22 @@
-//! Ordered owned operations. Payloads and results have no diagnostic representation.
+//! Connect the neutral owned-command port to the existing process file writer.
 use super::{FileError, FileExecutor, FileOutput, FileRequest};
-use std::{any::Any, marker::PhantomData};
+use crate::file_command::{self, Port, Receipt};
+pub(crate) use crate::file_command::{
+    Command, CommandDisposition, CommandOutcome, Failure, Output, Ticket, value_bytes,
+};
 use tasty_utils::batch_writer::{Completion, Handle, RequestReceipt};
 
-pub(crate) fn value_bytes<T: serde::Serialize>(value: &T) -> usize {
-    struct Count(usize);
-    impl std::io::Write for Count {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0 = self.0.saturating_add(bytes.len());
-            Ok(bytes.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    let mut count = Count(std::mem::size_of::<T>());
-    match serde_json::to_writer(&mut count, value) {
-        Ok(()) => count.0,
-        Err(_) => usize::MAX,
+impl Port for Handle<FileExecutor> {
+    fn submit(&self, command: Command) -> Result<Box<dyn Receipt>, Failure> {
+        Handle::submit(self, FileRequest::Command(command))
+            .map(|receipt| Box::new(WriterReceipt(receipt)) as Box<dyn Receipt>)
+            .map_err(|error| failure(error.to_string(), false))
     }
 }
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum CommandOutcome {
-    KnownSuccess,
-    KnownFailure,
-    Unknown,
-}
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct CommandDisposition {
-    pub(crate) outcome: CommandOutcome,
-    pub(crate) partial: bool,
-}
-
-pub(crate) struct Command {
-    pub(crate) bytes: usize,
-    work: Option<Box<dyn FnOnce() -> Output + Send>>,
-}
-pub(crate) struct Output {
-    value: Box<dyn Any + Send>,
-    pub(crate) bytes: usize,
-    pub(crate) disposition: Option<CommandDisposition>,
-}
-impl std::fmt::Debug for Output {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("FileCommandOutput")
-    }
-}
-impl Command {
-    fn new<T: Send + 'static>(
-        bytes: usize,
-        work: impl FnOnce() -> T + Send + 'static,
-        weigh: impl FnOnce(&T) -> usize + Send + 'static,
-        classify: impl FnOnce(&T) -> Option<CommandDisposition> + Send + 'static,
-    ) -> Self {
-        Self {
-            bytes,
-            work: Some(Box::new(move || {
-                let value = work();
-                let bytes = weigh(&value).saturating_add(std::mem::size_of::<CommandDisposition>());
-                let disposition = classify(&value);
-                Output {
-                    value: Box::new(value),
-                    bytes,
-                    disposition,
-                }
-            })),
-        }
-    }
-    pub(super) fn execute(&mut self) -> Result<Output, FileError> {
-        self.work
-            .take()
-            .ok_or_else(|| FileError("ordered file command already consumed".into()))
-            .map(|work| work())
-    }
-}
-#[derive(Debug)]
-pub(crate) struct Failure {
-    pub(crate) message: String,
-    pub(crate) unknown: bool,
-}
-pub(crate) struct Ticket<T> {
-    inner: Inner<T>,
-}
-enum Inner<T> {
-    Writer(RequestReceipt<FileExecutor>, PhantomData<fn() -> T>),
-    #[cfg(test)]
-    Ready(std::sync::Mutex<Option<Result<T, Failure>>>),
-}
-impl<T: Send + 'static> Ticket<T> {
-    pub(crate) fn poll(&self) -> Option<Result<T, Failure>> {
-        match &self.inner {
-            Inner::Writer(receipt, _) => receipt.try_take().map(convert),
-            #[cfg(test)]
-            Inner::Ready(result) => result.lock().unwrap().take(),
-        }
+struct WriterReceipt(RequestReceipt<FileExecutor>);
+impl Receipt for WriterReceipt {
+    fn poll(&self) -> Option<Result<Output, Failure>> {
+        self.0.try_take().map(convert)
     }
 }
 fn failure(message: impl Into<String>, unknown: bool) -> Failure {
@@ -103,16 +25,9 @@ fn failure(message: impl Into<String>, unknown: bool) -> Failure {
         unknown,
     }
 }
-fn value<T: Send + 'static>(output: Output) -> Result<T, Failure> {
-    output
-        .value
-        .downcast::<T>()
-        .map(|value| *value)
-        .map_err(|_| failure("unexpected ordered file output", true))
-}
-fn convert<T: Send + 'static>(completion: Completion<FileOutput, FileError>) -> Result<T, Failure> {
+fn convert(completion: Completion<FileOutput, FileError>) -> Result<Output, Failure> {
     match completion {
-        Completion::Done(Ok(FileOutput::Command(output))) => value(output),
+        Completion::Done(Ok(FileOutput::Command(output))) => Ok(output),
         Completion::Done(Err(error)) | Completion::Failed(error) => {
             Err(failure(error.to_string(), false))
         }
@@ -128,15 +43,40 @@ fn convert<T: Send + 'static>(completion: Completion<FileOutput, FileError>) -> 
         Completion::Done(Ok(_)) => Err(failure("unrelated ordered file result", true)),
     }
 }
+
+// Legacy small App fixtures alone retain immediate execution. Injected neutral ports never
+// fall back to synchronous work, even in tests. Production always requires the actual writer.
+#[cfg(test)]
+struct Immediate;
+#[cfg(test)]
+impl Port for Immediate {
+    fn submit(&self, mut command: Command) -> Result<Box<dyn Receipt>, Failure> {
+        struct Ready(std::sync::Mutex<Option<Result<Output, Failure>>>);
+        impl Receipt for Ready {
+            fn poll(&self) -> Option<Result<Output, Failure>> {
+                self.0.lock().unwrap().take()
+            }
+        }
+        Ok(Box::new(Ready(std::sync::Mutex::new(Some(
+            command.execute(),
+        )))))
+    }
+}
+fn port(queue: Option<&Handle<FileExecutor>>) -> Option<&dyn Port> {
+    #[cfg(test)]
+    if queue.is_none() {
+        return Some(&Immediate);
+    }
+    queue.map(|queue| queue as &dyn Port)
+}
 pub(crate) fn submit<T: Send + 'static>(
     queue: Option<&Handle<FileExecutor>>,
     bytes: usize,
     work: impl FnOnce() -> T + Send + 'static,
     weigh: impl FnOnce(&T) -> usize + Send + 'static,
 ) -> Result<Ticket<T>, Failure> {
-    admit(queue, Command::new(bytes, work, weigh, |_| None))
+    file_command::submit(port(queue), bytes, work, weigh)
 }
-/// The classifier describes backend success/partial state, not merely delivery of a typed output.
 pub(crate) fn submit_classified<T: Send + 'static>(
     queue: Option<&Handle<FileExecutor>>,
     bytes: usize,
@@ -144,39 +84,5 @@ pub(crate) fn submit_classified<T: Send + 'static>(
     weigh: impl FnOnce(&T) -> usize + Send + 'static,
     classify: impl FnOnce(&T) -> CommandDisposition + Send + 'static,
 ) -> Result<Ticket<T>, Failure> {
-    admit(
-        queue,
-        Command::new(bytes, work, weigh, move |value| Some(classify(value))),
-    )
-}
-fn admit<T: Send + 'static>(
-    queue: Option<&Handle<FileExecutor>>,
-    command: Command,
-) -> Result<Ticket<T>, Failure> {
-    if let Some(queue) = queue {
-        return queue
-            .submit(FileRequest::Command(command))
-            .map(|receipt| Ticket {
-                inner: Inner::Writer(receipt, PhantomData),
-            })
-            .map_err(|error| failure(error.to_string(), false));
-    }
-    // Only small existing unit fixtures omit the writer. Shipping configurations reject this
-    // condition; production receipt regressions explicitly inject a real writer.
-    #[cfg(test)]
-    {
-        let mut command = command;
-        let result = command
-            .execute()
-            .map_err(|error| failure(error.to_string(), false))
-            .and_then(value);
-        Ok(Ticket {
-            inner: Inner::Ready(std::sync::Mutex::new(Some(result))),
-        })
-    }
-    #[cfg(not(test))]
-    Err(failure(
-        "file writer is unavailable; command not accepted",
-        false,
-    ))
+    file_command::submit_classified(port(queue), bytes, work, weigh, classify)
 }

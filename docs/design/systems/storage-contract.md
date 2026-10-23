@@ -172,6 +172,8 @@ config snapshot은 같은 load에서 나온 원본 관측값을 공유한다. Ta
 
 `FileRequest::Command`는 소유된 작업과 결과 바이트 추정치를 담으며 snapshot 키가 없다. 이름 예약·삭제·이름 변경·외부 효과의 선행 저장은 합치지 않는다. 실행기는 명령마다 한 번 실행하며, 도중 panic은 결과 불명으로 끝내고 재실행하지 않는다. 큐가 없거나 닫혔거나 예산을 넘으면 실행 전에 거절한다. 테스트의 writer 없는 작은 fixture만 즉시 실행 경로를 사용하며 제품 구성의 대체 경로가 아니다. payload의 Debug 표현이나 내용 로그는 없다.
 
+`src/file_command.rs`가 소유된 명령·결과·typed ticket과 비차단 `Port`/`Receipt` 계약을 정의한다. 이 모듈은 App이나 구체 실행기를 참조하지 않는다. 웹훅 실행부는 주입된 `Arc<dyn Port>`만 보유한다. App의 어댑터는 기존 `Handle<FileExecutor>`를 이 port에 연결하고 같은 큐의 receipt를 보관한다. 별도 worker나 동기 대체 실행은 만들지 않으며, 기존 App 소비자의 handle 기반 API도 이 계약으로 접수한다. 큐 예산·완료 보관·Unknown 분류와 producer 종료 순서는 기존 writer가 유지한다.
+
 프리셋 표시 캐시는 worker의 파일 잠금과 별개다. IPC·plugin·GUI 캡처는 journal 캡처 결과를 파일 명령으로 넘긴 뒤 원 호출자·View identity를 유지해 완료한다. 원 observer가 닫혀도 접수된 저장과 캐시 반영은 계속한다. 편집기 배치는 첫 실패에서 멈추며 앞서 확정한 변경을 유지한다. 파일 명령의 완료 건수는 물리 교체 건수가 아니다. `FileWriteStats`의 replaced/failed/unknown은 설정과 snapshot 교체 시도만 세고, `system.pressure.file_commands.presets`는 접수·거절·완료·불명·대기를 보관한다. 완료에는 알려진 저장소 오류도 포함된다.
 
 ### file worker의 물리 파일 작업 계측

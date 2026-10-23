@@ -110,7 +110,7 @@ fn handle_request(request: tiny_http::Request, registry: Arc<registry::Registry>
 
     let (ack, exec, body, _lease) = match request.read_json_body(max_body_bytes()) {
         Ok(body) => {
-            let bytes = crate::app::file_writer::command::value_bytes(&(&headers, &query, &body));
+            let bytes = crate::file_command::value_bytes(&(&headers, &query, &body));
             let (ack, exec, lease) =
                 resolve_ack(&registry, &path, &method, &headers, &query, &body, bytes);
             (ack, exec, body, lease)

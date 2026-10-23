@@ -28,7 +28,7 @@ pub struct WebhookEntry {
     pub auth: Option<WebhookAuth>,
 }
 
-use crate::app::file_writer::{FileExecutor, command};
+use crate::file_command::{self as command, Queue};
 use mutation::Operation;
 pub(super) use receipt::Lease;
 use receipt::{Budget, Reply};
@@ -37,7 +37,7 @@ use std::{
     collections::{HashSet, VecDeque},
     path::PathBuf,
 };
-use tasty_utils::batch_writer::{Handle, Limits};
+use tasty_utils::batch_writer::Limits;
 
 struct Entry {
     value: WebhookEntry,
@@ -75,7 +75,7 @@ struct State {
 /// One process-owned ordered coordinator. Only the existing file worker performs writes.
 pub(crate) struct Registry {
     state: Mutex<State>,
-    queue: Option<Handle<FileExecutor>>,
+    queue: Option<Queue>,
     path: PathBuf,
     budget: Arc<Budget>,
     #[cfg(test)]
@@ -89,10 +89,10 @@ fn lock_state(state: &Mutex<State>) -> MutexGuard<'_, State> {
 }
 
 impl Registry {
-    pub(crate) fn new(queue: Option<Handle<FileExecutor>>, path: PathBuf) -> Self {
+    pub(crate) fn new(queue: Option<Queue>, path: PathBuf) -> Self {
         Self::with_limits(queue, path, Limits::default())
     }
-    fn with_limits(queue: Option<Handle<FileExecutor>>, path: PathBuf, limits: Limits) -> Self {
+    fn with_limits(queue: Option<Queue>, path: PathBuf, limits: Limits) -> Self {
         Self {
             state: Mutex::new(State::default()),
             queue,

@@ -162,7 +162,7 @@ impl Registry {
             .panic_after_replace
             .swap(false, std::sync::atomic::Ordering::Relaxed);
         command::submit_classified(
-            Some(queue),
+            Some(queue.as_ref()),
             bytes,
             move || {
                 let result = request.execute();
