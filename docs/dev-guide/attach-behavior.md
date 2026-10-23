@@ -767,3 +767,5 @@ journal이 원격 요청을 실제 해소할 때도 anchor 부재 판정은 모�
 진단을 남기며 후속 종료 처리를 계속한다. 종료 직전 입력 송신 실패도 기록한다.
 
 Markdown 조회 대기 표시는 plugin의 `user_initiated` 출처를 함께 확인한다. 문서 안 새로고침 버튼은 표시 대상이며, 최초 mirror 원문 설치·변경 신호에 따른 자동 재조회·외부 `markdown.reload`는 표시 대상으로 삼지 않는다. 기존 `agent_origin`의 잘림 알림 정책과는 별도 필드다.
+
+capture·Git·markdown의 custom control event 태그 검사는 client wire 파서의 `control_event`가 공유한다. 태그가 없거나 다르면 해당 파서는 인식하지 않은 것으로 처리하고 다음 파서로 넘긴다.

@@ -82,11 +82,13 @@ struct CaptureResultWire {
     image_reason: Option<String>,
 }
 
-fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
+fn control_event(payload: &[u8], event: &str) -> Option<Value> {
     let value: Value = serde_json::from_slice(payload).ok()?;
-    if value.get("event").and_then(|v| v.as_str()) != Some("capture_result") {
-        return None;
-    }
+    (value.get("event")?.as_str()? == event).then_some(value)
+}
+
+fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
+    let value = control_event(payload, "capture_result")?;
     let wire: CaptureResultWire = serde_json::from_value(value).ok()?;
     Some(MirrorEvent::CaptureResult {
         upload_id: wire.upload_id,
@@ -118,10 +120,7 @@ struct GitQueryResultWire {
 }
 
 fn parse_git_query_result(payload: &[u8]) -> Option<MirrorEvent> {
-    let value: Value = serde_json::from_slice(payload).ok()?;
-    if value.get("event").and_then(|v| v.as_str()) != Some("git_query_result") {
-        return None;
-    }
+    let value = control_event(payload, "git_query_result")?;
     let wire: GitQueryResultWire = serde_json::from_value(value).ok()?;
     let truncated = wire.truncated_status || wire.truncated_log || wire.truncated_diff;
     let data = wire.ok.then_some(Value::Object(wire.rest));
@@ -151,10 +150,7 @@ struct MarkdownContentResultWire {
 }
 
 fn parse_markdown_content_result(payload: &[u8]) -> Option<MirrorEvent> {
-    let value: Value = serde_json::from_slice(payload).ok()?;
-    if value.get("event").and_then(|v| v.as_str()) != Some("markdown_content_result") {
-        return None;
-    }
+    let value = control_event(payload, "markdown_content_result")?;
     let wire: MarkdownContentResultWire = serde_json::from_value(value).ok()?;
     Some(MirrorEvent::MarkdownContentResult {
         request_id: wire.request_id,
@@ -168,10 +164,7 @@ fn parse_markdown_content_result(payload: &[u8]) -> Option<MirrorEvent> {
 }
 
 fn parse_markdown_changed(payload: &[u8]) -> Option<MirrorEvent> {
-    let value: Value = serde_json::from_slice(payload).ok()?;
-    if value.get("event").and_then(|v| v.as_str()) != Some("markdown_changed") {
-        return None;
-    }
+    let value = control_event(payload, "markdown_changed")?;
     let surface_id = u32::try_from(value.get("surface_id")?.as_u64()?).ok()?;
     Some(MirrorEvent::MarkdownChanged { surface_id })
 }
