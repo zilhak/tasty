@@ -7,16 +7,18 @@ fn bounded_raw_samples_count_every_overflow_and_keep_metric_populations_separate
     let mut c = Capture::new(start, 2);
     c.record(1, false, start, start + Duration::from_micros(3), None);
     c.record(0, true, start, start, Some(400));
+    let json = serde_json::to_value(&c).unwrap();
+    assert_eq!(json["samples"][0]["end_ns"], 3000);
+    assert!(json["samples"][0]["wake_lateness_ns"].is_null());
+    assert_eq!(json["samples"][1]["wake_lateness_ns"], 400);
     c.record(4, true, start, start, None);
     c.record(5, true, start, start, None);
     assert_eq!(c.dropped, 2);
     assert_eq!(c.seen, 4);
     assert_eq!(c.samples.len(), 2);
-    let json = serde_json::to_value(&c).unwrap();
-    assert_eq!(json["samples"][0]["end_ns"], 3000);
-    assert!(json["samples"][0]["wake_lateness_ns"].is_null());
-    assert_eq!(json["samples"][1]["wake_lateness_ns"], 400);
-    assert!(json["samples"][1]["shutdown"].as_bool().unwrap());
+    assert_eq!(c.samples[0].seq, 3);
+    assert_eq!(c.samples[1].seq, 4);
+    assert!(c.samples.iter().all(|sample| sample.shutdown));
 }
 
 #[test]

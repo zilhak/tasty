@@ -1,5 +1,6 @@
 //! Opt-in numeric callback observations. Never requests a wake or changes control flow.
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -26,7 +27,7 @@ struct Capture {
     capacity: usize,
     dropped: u64,
     seen: u64,
-    samples: Vec<Sample>,
+    samples: VecDeque<Sample>,
 }
 impl Capture {
     fn new(origin: Instant, capacity: usize) -> Self {
@@ -35,7 +36,7 @@ impl Capture {
             capacity,
             dropped: 0,
             seen: 0,
-            samples: Vec::with_capacity(capacity),
+            samples: VecDeque::with_capacity(capacity),
         }
     }
     fn record(
@@ -49,9 +50,9 @@ impl Capture {
         self.seen = self.seen.saturating_add(1);
         if self.samples.len() == self.capacity {
             self.dropped = self.dropped.saturating_add(1);
-            return;
+            self.samples.pop_front();
         }
-        self.samples.push(Sample {
+        self.samples.push_back(Sample {
             seq: self.seen,
             site,
             shutdown,
