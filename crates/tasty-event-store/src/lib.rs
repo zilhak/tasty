@@ -52,7 +52,10 @@ pub use effect::{
 pub use error::{StoreError, StoreResult};
 pub use group::CommitGroup;
 pub use identity::IdRange;
-pub use metrics::CommitStatistics;
+pub use metrics::{
+    CommitMetricsReader, CommitStatistics, JOURNAL_LATENCY_BOUNDS_US, JournalDuration,
+    JournalDurationSnapshot, StoreMetricsSnapshot,
+};
 pub use projection::{ProjectionState, ProjectionWrite};
 pub use schema::SCHEMA_VERSION;
 pub use scoped_projection::{ScopedCut, ScopedProjectionState, ScopedProjectionWrite};

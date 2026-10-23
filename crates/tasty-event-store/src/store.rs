@@ -122,6 +122,11 @@ impl EventStore {
         })
     }
 
+    /// Cached counters only; the reader can outlive this Store and cannot access its connection.
+    pub fn commit_metrics_reader(&self) -> crate::CommitMetricsReader {
+        crate::CommitMetricsReader(self.metrics.clone())
+    }
+
     pub fn commit_statistics(&self) -> crate::CommitStatistics {
         self.metrics.snapshot()
     }

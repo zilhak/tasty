@@ -230,3 +230,68 @@ fn sql_effect_read_fault_from_an_existing_view_rolls_back_the_prefix() {
     assert_eq!(store.current_cut().unwrap().last_batch, None);
     assert_eq!(store.commit_statistics(), before);
 }
+
+#[test]
+fn atomic_metrics_reader_observes_real_commit_failure_grouping_and_outlives_store() {
+    let (_dir, mut store, epoch) = fresh();
+    let reader = store.commit_metrics_reader();
+    let before = reader.snapshot();
+    let mut group = store.begin_commit_group(epoch).unwrap();
+    group.append(&request(epoch, 1)).unwrap();
+    group.append(&request(epoch, 2)).unwrap();
+    assert_eq!(
+        reader.snapshot(),
+        before,
+        "private writes are not physical commits"
+    );
+    group.finish().unwrap();
+    let after = reader.snapshot();
+    assert_eq!(
+        after.commits.physical_commits - before.commits.physical_commits,
+        1
+    );
+    assert_eq!(
+        after.commits.logical_requests - before.commits.logical_requests,
+        2
+    );
+    assert_eq!(after.grouped_commits - before.grouped_commits, 1);
+    assert_eq!(
+        after.grouped_logical_requests - before.grouped_logical_requests,
+        2
+    );
+    assert_eq!(
+        after.commit_success.samples - before.commit_success.samples,
+        1
+    );
+    assert_eq!(
+        after.commit_success.counts.iter().sum::<u64>(),
+        after.commit_success.samples
+    );
+    store.conn.execute_batch("CREATE TABLE metrics_parent(id INTEGER PRIMARY KEY);
+        CREATE TABLE metrics_child(parent INTEGER REFERENCES metrics_parent(id) DEFERRABLE INITIALLY DEFERRED);
+        CREATE TRIGGER metrics_fail AFTER INSERT ON commands BEGIN INSERT INTO metrics_child VALUES(9); END;").unwrap();
+    assert!(matches!(
+        store.commit(&request(epoch, 3)),
+        Err(StoreError::Sqlite(_))
+    ));
+    let failed = reader.snapshot();
+    assert_eq!(
+        failed.commits.physical_commits,
+        after.commits.physical_commits
+    );
+    assert_eq!(
+        failed.commit_failure.samples,
+        after.commit_failure.samples + 1
+    );
+    assert_eq!(
+        failed.commits.failed_commits,
+        after.commits.failed_commits + 1
+    );
+    assert_eq!(
+        failed.commit_failure.counts.iter().sum::<u64>(),
+        failed.commit_failure.samples
+    );
+    assert!(store.command("c3").unwrap().is_none());
+    drop(store);
+    assert_eq!(reader.snapshot(), failed);
+}

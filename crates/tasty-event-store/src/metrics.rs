@@ -1,4 +1,7 @@
-//! Successful physical write transactions, counted at SQLite COMMIT rather than API entry.
+mod duration;
+pub use duration::{JOURNAL_LATENCY_BOUNDS_US, JournalDuration, JournalDurationSnapshot};
+
+// Successful physical write transactions, counted at SQLite COMMIT rather than API entry.
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -28,6 +31,10 @@ pub(crate) struct CommitMetrics {
     failed: AtomicU64,
     ns: AtomicU64,
     max_ns: AtomicU64,
+    grouped: AtomicU64,
+    grouped_logical: AtomicU64,
+    success_time: JournalDuration,
+    failure_time: JournalDuration,
 }
 
 impl CommitMetrics {
@@ -68,16 +75,25 @@ impl<'a> WriteTransaction<'a> {
     pub(crate) fn commit(self) -> rusqlite::Result<()> {
         let start = Instant::now();
         let result = self.inner.commit();
-        let ns = u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let elapsed = start.elapsed();
+        let ns = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
         if result.is_ok() {
+            self.metrics.success_time.record(elapsed);
             self.metrics.physical.fetch_add(1, Ordering::Relaxed);
             if let Some(logical) = self.logical {
                 self.metrics.structural.fetch_add(1, Ordering::Relaxed);
                 self.metrics.logical.fetch_add(logical, Ordering::Relaxed);
+                if logical > 1 {
+                    self.metrics.grouped.fetch_add(1, Ordering::Relaxed);
+                    self.metrics
+                        .grouped_logical
+                        .fetch_add(logical, Ordering::Relaxed);
+                }
             }
             self.metrics.ns.fetch_add(ns, Ordering::Relaxed);
             self.metrics.max_ns.fetch_max(ns, Ordering::Relaxed);
         } else {
+            self.metrics.failure_time.record(elapsed);
             self.metrics.failed.fetch_add(1, Ordering::Relaxed);
         }
         result
@@ -88,5 +104,29 @@ impl<'a> Deref for WriteTransaction<'a> {
     type Target = Transaction<'a>;
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+/// Connection-independent atomic metrics reader. Snapshot never queries SQLite.
+#[derive(Clone)]
+pub struct CommitMetricsReader(pub(crate) Arc<CommitMetrics>);
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StoreMetricsSnapshot {
+    pub commits: CommitStatistics,
+    pub grouped_commits: u64,
+    pub grouped_logical_requests: u64,
+    pub commit_success: JournalDurationSnapshot,
+    pub commit_failure: JournalDurationSnapshot,
+}
+impl CommitMetricsReader {
+    pub fn snapshot(&self) -> StoreMetricsSnapshot {
+        StoreMetricsSnapshot {
+            commits: self.0.snapshot(),
+            grouped_commits: self.0.grouped.load(Ordering::Relaxed),
+            grouped_logical_requests: self.0.grouped_logical.load(Ordering::Relaxed),
+            commit_success: self.0.success_time.snapshot(),
+            commit_failure: self.0.failure_time.snapshot(),
+        }
     }
 }
