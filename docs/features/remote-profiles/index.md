@@ -59,6 +59,8 @@
 
 `RemoteFileStore`는 파일 worker와 standalone CLI가 공유하는 동기 명령 경계다. host의 비동기 receipt 연결은 각 소비자가 별도로 수행한다. 기존 `load`/`save` 호환 API의 모든 호출자가 이 경계로 이행됐다는 뜻은 아니다.
 
+- `insert_passkey`는 새 이름을 같은 목록 잠금 안에서 검사한 뒤 생성한다. 중복 이름은 inline 파일을 쓰기 전에 `AlreadyExists`로 거절한다. 기존 `passkey` upsert와 CLI의 덮어쓰기 동작은 유지한다.
+- 호환 읽기 API는 파일 없음·읽기 실패·파싱 실패 시 빈 목록으로 폴백한다. 오류 로그에는 고정 파일명과 I/O 종류 또는 invalid TOML 원인만 남기며 입력 본문을 싣지 않는다. 읽기 실패나 손상이 확인된 원본은 읽기 과정에서 바꾸지 않는다.
 - `ProfileCommand::Rename`은 같은 profile 목록 교체 안에서 이름·kind·필드 patch를 적용한다. `rename_passkey`는 새 inline 파일 확정 → 목록 이름 교체 → 옛 관리 파일 정리 순서다. 이름 충돌·원본 없음은 목록 잠금 안에서 구분한다. 기존 profile의 passkey 참조 이름은 유지하므로 rename 뒤 dangling이 될 수 있다.
 - profile의 `Put`은 명령에 포함된 필드를 병합하고, `Patch`는 지정 필드만 변경한다. `Insert`는 잠금 안에서 이름 충돌을 검사한다. standalone CLI의 add/edit/remove/import와 감지 결과 저장은 이 API를 사용한다.
 - 고정 sidecar 잠금 안에서 최신 TOML을 읽고 변경한다. 다른 profile, 미등록 kind, 건드리지 않은 invalid 필드, foreign 섹션과 주석은 유지한다. 손상·읽기 실패는 빈 목록으로 덮지 않는다. 마지막 fingerprint/링크 대상 확인 후 교체하며, 참여하지 않는 편집기의 최종 확인과 rename 사이 경합은 막지 못한다.

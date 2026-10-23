@@ -357,16 +357,24 @@ impl RemoteProfiles {
                     );
                     p
                 }
-                Err(e) => {
-                    tracing::warn!("failed to parse remote-profiles file: {e}, using empty list");
+                Err(_) => {
+                    tracing::warn!(
+                        file = "remote-profiles.toml",
+                        cause = "invalid TOML",
+                        "could not load remote profile list; original preserved, using empty list"
+                    );
                     Self::default()
                 }
             },
-            Err(_) => {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 tracing::info!(
-                    "no remote-profiles file at {}, using empty list",
-                    path.display()
+                    file = "remote-profiles.toml",
+                    "no remote profile file, using empty list"
                 );
+                Self::default()
+            }
+            Err(error) => {
+                tracing::warn!(file = "remote-profiles.toml", cause = ?error.kind(), "could not read remote profile list; original preserved, using empty list");
                 Self::default()
             }
         }

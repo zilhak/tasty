@@ -217,6 +217,40 @@ impl RemoteFileStore {
             .map_err(|e| MutationFailure::new(MutationStage::PasskeyRead, e))?;
         self.apply_passkey(&mut keys, command)
     }
+    /// Create a new name without replacing another participant's entry or secret.
+    pub fn insert_passkey(
+        &self,
+        command: PasskeyCommand,
+    ) -> std::result::Result<PasskeyOutcome, MutationFailure> {
+        let name = match &command {
+            PasskeyCommand::Path { name, .. } | PasskeyCommand::Inline { name, .. } => name,
+            PasskeyCommand::Remove { .. } => {
+                return Err(MutationFailure::new(
+                    MutationStage::PasskeyRead,
+                    anyhow::anyhow!("insert requires a credential"),
+                ));
+            }
+        };
+        if !is_valid_passkey_name(name) {
+            return Err(MutationFailure::new(
+                MutationStage::PasskeyRead,
+                anyhow::anyhow!("invalid passkey name"),
+            ));
+        }
+        let mut keys = Registry::open(self.root.join("passkeys.toml"))
+            .map_err(|e| MutationFailure::new(MutationStage::PasskeyRead, e))?;
+        if keys
+            .find("passkey", name)
+            .map_err(|e| MutationFailure::new(MutationStage::PasskeyRead, e))?
+            .is_some()
+        {
+            return Err(MutationFailure::new(
+                MutationStage::PasskeyRead,
+                MutationReason::AlreadyExists.into(),
+            ));
+        }
+        self.apply_passkey(&mut keys, command)
+    }
     /// Rename in one list replacement. The new inline file precedes list commit;
     /// old managed-file cleanup follows it. Profile references remain name-based.
     pub fn rename_passkey(

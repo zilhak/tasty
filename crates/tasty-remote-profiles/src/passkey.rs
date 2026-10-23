@@ -123,13 +123,21 @@ impl Passkeys {
                     );
                     p
                 }
-                Err(e) => {
-                    tracing::warn!("failed to parse passkeys file: {e}, using empty list");
+                Err(_) => {
+                    tracing::warn!(
+                        file = "passkeys.toml",
+                        cause = "invalid TOML",
+                        "could not load passkey list; original preserved, using empty list"
+                    );
                     Self::default()
                 }
             },
-            Err(_) => {
-                tracing::info!("no passkeys file at {}, using empty list", path.display());
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                tracing::info!(file = "passkeys.toml", "no passkey file, using empty list");
+                Self::default()
+            }
+            Err(error) => {
+                tracing::warn!(file = "passkeys.toml", cause = ?error.kind(), "could not read passkey list; original preserved, using empty list");
                 Self::default()
             }
         }
