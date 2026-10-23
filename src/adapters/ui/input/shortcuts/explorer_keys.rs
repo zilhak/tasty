@@ -179,7 +179,7 @@ impl MainView {
             .state
             .explorer_views
             .get(sid)
-            .map(|v| v.selected.iter().cloned().collect())
+            .map(|v| v.selected.owned().collect())
             .unwrap_or_default();
         paths.sort();
         match action {

@@ -62,7 +62,7 @@ fn the_filter_hides_rows_that_do_not_match_and_counts_what_is_shown() {
     view.select_all();
     assert_eq!(
         view.selected,
-        [dir.path().join("Report.pdf")].into_iter().collect(),
+        std::collections::HashSet::from([dir.path().join("Report.pdf")]),
         "select all takes only the rows that are shown"
     );
 
@@ -457,16 +457,25 @@ fn a_new_query_keeps_only_the_selected_items_it_still_shows() {
     view.anchor = Some(root.join("beta.txt"));
 
     set_query(&mut view, "alpha", false);
-    assert_eq!(view.selected, [root.join("alpha1.txt")].into());
+    assert_eq!(
+        view.selected,
+        std::collections::HashSet::from([root.join("alpha1.txt")])
+    );
     assert_eq!(view.anchor, None, "the anchor left with its row");
 
     view.anchor = Some(root.join("alpha1.txt"));
     set_query(&mut view, "ALPHA1", false);
-    assert_eq!(view.selected, [root.join("alpha1.txt")].into());
+    assert_eq!(
+        view.selected,
+        std::collections::HashSet::from([root.join("alpha1.txt")])
+    );
     assert_eq!(view.anchor, Some(root.join("alpha1.txt")));
 
     set_query(&mut view, "", false);
-    assert_eq!(view.selected, [root.join("alpha1.txt")].into());
+    assert_eq!(
+        view.selected,
+        std::collections::HashSet::from([root.join("alpha1.txt")])
+    );
 }
 
 #[test]
@@ -488,7 +497,7 @@ fn subfolder_results_keep_only_the_selected_hits() {
     });
     view.selected = [hit.path.clone(), root.join("alpha1.txt")].into();
     view.retain_shown_selection();
-    assert_eq!(view.selected, [hit.path].into());
+    assert_eq!(view.selected, std::collections::HashSet::from([hit.path]));
 }
 
 /// 하위 폴더 검색 결과 `hit` 를 보이는 view. 결과는 지금 폴더 목록(`entries`)에 없다.

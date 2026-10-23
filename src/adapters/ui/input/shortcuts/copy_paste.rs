@@ -155,7 +155,7 @@ impl MainView {
                 .state
                 .explorer_views
                 .get(sid)
-                .map(|v| v.selected.iter().cloned().collect())
+                .map(|v| v.selected.owned().collect())
                 .unwrap_or_default();
             if !paths.is_empty() {
                 self.explorer_menu_set_clipboard(engine, sid, &paths, is_cut_files);

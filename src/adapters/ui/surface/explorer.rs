@@ -940,7 +940,7 @@ fn emit_entry_context(
         view.select_only(&entry.path);
     }
     let target = if view.selected.len() > 1 {
-        let mut paths: Vec<PathBuf> = view.selected.iter().cloned().collect();
+        let mut paths: Vec<PathBuf> = view.selected.owned().collect();
         paths.sort();
         ExplorerMenuTarget::Multi { paths }
     } else {

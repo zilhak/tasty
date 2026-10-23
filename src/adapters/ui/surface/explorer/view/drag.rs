@@ -457,7 +457,7 @@ fn start(
         return;
     };
     let paths = if view.selected.contains(&spot.path) {
-        let mut paths: Vec<PathBuf> = view.selected.iter().cloned().collect();
+        let mut paths: Vec<PathBuf> = view.selected.owned().collect();
         paths.sort();
         paths
     } else {

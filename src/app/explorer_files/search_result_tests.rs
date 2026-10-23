@@ -125,7 +125,7 @@ fn work_on_a_subfolder_hit_uses_its_real_path_and_refreshes_the_results_and_its_
     // 단축키·메뉴는 선택한 경로를 그대로 작업에 넘긴다.
     let view = state.explorer_views.get_mut(sid).unwrap();
     view.select_only(&hit);
-    let picked: Vec<PathBuf> = view.selected.iter().cloned().collect();
+    let picked: Vec<PathBuf> = view.selected.owned().collect();
     assert_eq!(picked, std::slice::from_ref(&hit));
 
     let reloaded = run(

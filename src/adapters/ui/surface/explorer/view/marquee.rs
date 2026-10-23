@@ -1,9 +1,7 @@
 //! 목록 빈 곳에서 끌어 사각형에 걸친 항목을 고르는 영역 선택. 사각형의 시작점은 목록 좌표로 두어
 //! 스크롤해도 처음 누른 항목 자리에 남고, 화면 밖 항목도 칸 배치(`ListLayout`)로 계산해 고른다.
 
-use std::collections::HashSet;
 use std::ops::Range;
-use std::path::PathBuf;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -25,7 +23,7 @@ struct Press {
     /// 누른 자리. 목록 좌표(`ListLayout::origin` 기준)다.
     at: egui::Pos2,
     /// Ctrl·Cmd·Shift 를 누르고 시작했으면 그때의 선택에 더한다.
-    base: HashSet<PathBuf>,
+    base: super::SelectedPaths,
     active: bool,
     last: Vec<Range<usize>>,
 }
@@ -101,7 +99,7 @@ pub(crate) fn frame(ui: &egui::Ui, theme: &Theme, view: &mut ExplorerView, drawn
                 base: if mods.command || mods.shift {
                     view.selected.clone()
                 } else {
-                    HashSet::new()
+                    super::SelectedPaths::default()
                 },
                 active: false,
                 last: Vec::new(),

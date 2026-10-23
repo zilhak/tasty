@@ -14,6 +14,8 @@ mod remote_reload;
 mod selection;
 mod tab_state;
 
+pub use selection::SelectedPaths;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -76,7 +78,7 @@ pub struct ExplorerView {
     /// 로드 결과 상태.
     pub state: LoadState,
     /// 선택된 엔트리 경로 집합.
-    pub selected: HashSet<PathBuf>,
+    pub selected: SelectedPaths,
     selection_identity: std::sync::Arc<()>,
     /// 범위 선택의 기준 엔트리. 단일 클릭·토글 클릭이 옮기고 Shift 클릭은 그대로 둔다.
     pub anchor: Option<PathBuf>,
@@ -277,7 +279,7 @@ impl ExplorerView {
             local_query: None,
             tree_queries: HashMap::new(),
             state: LoadState::Ok,
-            selected: HashSet::new(),
+            selected: SelectedPaths::default(),
             selection_identity: std::sync::Arc::new(()),
             anchor: None,
             expanded: HashSet::new(),
@@ -363,11 +365,7 @@ impl ExplorerView {
         self.selection_identity().ptr_eq(identity)
     }
     /// 선택을 통째로 바꾼다(영역 선택). 새 선택이므로 선택 식별자도 바꾼다.
-    pub(crate) fn replace_selection(
-        &mut self,
-        selected: HashSet<PathBuf>,
-        anchor: Option<PathBuf>,
-    ) {
+    pub(crate) fn replace_selection(&mut self, selected: SelectedPaths, anchor: Option<PathBuf>) {
         self.selection_identity = std::sync::Arc::new(());
         self.selected = selected;
         self.anchor = anchor;

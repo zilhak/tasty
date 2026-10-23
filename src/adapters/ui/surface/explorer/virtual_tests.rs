@@ -193,7 +193,7 @@ fn a_far_item_is_scrolled_into_view_and_a_click_selects_it() {
 
         h.frame(click(rect.center()));
         assert_eq!(
-            h.view.selected.iter().cloned().collect::<Vec<_>>(),
+            h.view.selected.owned().collect::<Vec<_>>(),
             vec![path(15_000)],
             "{mode:?}"
         );
