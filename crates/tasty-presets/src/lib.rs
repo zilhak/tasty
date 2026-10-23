@@ -18,4 +18,4 @@ pub use model::{
     PresetSurface, PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
 pub use port::PresetStorage;
-pub use storage::{PresetError, PresetResult, PresetStore};
+pub use storage::{OwnedPreset, PresetChange, PresetError, PresetResult, PresetStore};

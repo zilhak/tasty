@@ -3,6 +3,12 @@
 //! 위치: `~/.tasty/presets/{workspace,tab,pane}/<name>.toml`
 //! preset.name과 파일명이 다르면 파일명을 사용한다. 같은 kind 안의 이름은 중복할 수 없다.
 
+mod command;
+#[cfg(test)]
+mod command_tests;
+mod observed;
+pub use command::{OwnedPreset, PresetChange};
+
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -34,6 +40,7 @@ pub type PresetResult<T> = Result<T, PresetError>;
 #[derive(Debug, Default, Clone)]
 pub struct PresetStore {
     root: Option<PathBuf>,
+    observed: observed::Observations,
     workspaces: BTreeMap<String, WorkspacePreset>,
     tabs: BTreeMap<String, TabPreset>,
     panes: BTreeMap<String, PanePreset>,
@@ -53,9 +60,9 @@ impl PresetStore {
             root: Some(root.clone()),
             ..Default::default()
         };
-        s.workspaces = scan_workspaces(&root.join("workspace"));
-        s.tabs = scan_tabs(&root.join("tab"));
-        s.panes = scan_panes(&root.join("pane"));
+        s.workspaces = scan_workspaces(&root.join("workspace"), &mut s.observed);
+        s.tabs = scan_tabs(&root.join("tab"), &mut s.observed);
+        s.panes = scan_panes(&root.join("pane"), &mut s.observed);
         s
     }
 
@@ -65,9 +72,9 @@ impl PresetStore {
             root: Some(root.clone()),
             ..Default::default()
         };
-        s.workspaces = scan_workspaces(&root.join("workspace"));
-        s.tabs = scan_tabs(&root.join("tab"));
-        s.panes = scan_panes(&root.join("pane"));
+        s.workspaces = scan_workspaces(&root.join("workspace"), &mut s.observed);
+        s.tabs = scan_tabs(&root.join("tab"), &mut s.observed);
+        s.panes = scan_panes(&root.join("pane"), &mut s.observed);
         s
     }
 
@@ -121,7 +128,24 @@ impl PresetStore {
         self.save_inner(preset, true)
     }
 
+    fn mutation_lock(&self) -> PresetResult<tasty_utils::file_replace::WriteLock> {
+        let root = self.root()?;
+        std::fs::create_dir_all(root)?;
+        Ok(tasty_utils::file_replace::lock(
+            &root.join(".preset-mutations"),
+        )?)
+    }
+
     fn save_inner<P: LayoutPreset + PresetKindAccess>(
+        &mut self,
+        preset: P,
+        overwrite: bool,
+    ) -> PresetResult<()> {
+        let _guard = self.mutation_lock()?;
+        self.save_inner_locked(preset, overwrite)
+    }
+
+    fn save_inner_locked<P: LayoutPreset + PresetKindAccess>(
         &mut self,
         mut preset: P,
         overwrite: bool,
@@ -138,7 +162,7 @@ impl PresetStore {
         preset.normalize_surface_ids();
         let path = self.kind_dir(kind)?.join(format!("{name}.toml"));
         let serialized = toml::to_string_pretty(preset.serialize_ref())?;
-        atomic_write(&path, serialized.as_bytes())?;
+        self.observed.replace(&path, serialized.as_bytes())?;
         P::insert_into_store(self, name, preset);
         Ok(())
     }
@@ -161,6 +185,7 @@ impl PresetStore {
         if path.exists() {
             std::fs::remove_file(&path)?;
         }
+        self.observed.forget(&path);
         match kind {
             PresetKind::Workspace => {
                 self.workspaces.remove(name);
@@ -195,24 +220,30 @@ impl PresetStore {
                 let mut preset = self.workspaces.remove(from).unwrap();
                 preset.set_name(to.into());
                 let serialized = toml::to_string_pretty(&preset)?;
-                atomic_write(&to_path, serialized.as_bytes())?;
-                remove_renamed_source(&from_path);
+                self.observed.replace(&to_path, serialized.as_bytes())?;
+                if remove_renamed_source(&from_path) {
+                    self.observed.forget(&from_path);
+                }
                 self.workspaces.insert(to.into(), preset);
             }
             PresetKind::Tab => {
                 let mut preset = self.tabs.remove(from).unwrap();
                 preset.set_name(to.into());
                 let serialized = toml::to_string_pretty(&preset)?;
-                atomic_write(&to_path, serialized.as_bytes())?;
-                remove_renamed_source(&from_path);
+                self.observed.replace(&to_path, serialized.as_bytes())?;
+                if remove_renamed_source(&from_path) {
+                    self.observed.forget(&from_path);
+                }
                 self.tabs.insert(to.into(), preset);
             }
             PresetKind::Pane => {
                 let mut preset = self.panes.remove(from).unwrap();
                 preset.set_name(to.into());
                 let serialized = toml::to_string_pretty(&preset)?;
-                atomic_write(&to_path, serialized.as_bytes())?;
-                remove_renamed_source(&from_path);
+                self.observed.replace(&to_path, serialized.as_bytes())?;
+                if remove_renamed_source(&from_path) {
+                    self.observed.forget(&from_path);
+                }
                 self.panes.insert(to.into(), preset);
             }
         }
@@ -227,13 +258,15 @@ impl PresetStore {
 }
 
 // 원본이 남으면 다음 로드에서 옛 이름 프리셋이 되살아난다.
-fn remove_renamed_source(path: &Path) {
+fn remove_renamed_source(path: &Path) -> bool {
     if let Err(e) = std::fs::remove_file(path) {
         tracing::warn!(
             "preset rename left the old file behind: {} ({e})",
             path.display()
         );
+        return false;
     }
+    true
 }
 
 // ── 직렬화/insert dispatch trait (kind 분기 회피) ────────────────────────
@@ -263,18 +296,24 @@ impl PresetKindAccess for PanePreset {
 
 // ── 디스크 스캔 ──────────────────────────────────────────────────────────
 
-fn scan_workspaces(dir: &Path) -> BTreeMap<String, WorkspacePreset> {
-    scan_dir::<WorkspacePreset>(dir)
+fn scan_workspaces(
+    dir: &Path,
+    observed: &mut observed::Observations,
+) -> BTreeMap<String, WorkspacePreset> {
+    scan_dir::<WorkspacePreset>(dir, observed)
 }
-fn scan_tabs(dir: &Path) -> BTreeMap<String, TabPreset> {
-    scan_dir::<TabPreset>(dir)
+fn scan_tabs(dir: &Path, observed: &mut observed::Observations) -> BTreeMap<String, TabPreset> {
+    scan_dir::<TabPreset>(dir, observed)
 }
-fn scan_panes(dir: &Path) -> BTreeMap<String, PanePreset> {
-    scan_dir::<PanePreset>(dir)
+fn scan_panes(dir: &Path, observed: &mut observed::Observations) -> BTreeMap<String, PanePreset> {
+    scan_dir::<PanePreset>(dir, observed)
 }
 
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: 디렉토리 스캔 — 확장자/스템/읽기/파싱/id-마이그레이션 되쓰기까지 파일 하나당 여러 실패 지점을 각각 continue 로 흡수하는 구조. 중첩은 얕지만 분기 수가 많음(tasty-themes::scan::do_scan 과 동형 패턴).
-fn scan_dir<P: LayoutPreset>(dir: &Path) -> BTreeMap<String, P> {
+fn scan_dir<P: LayoutPreset>(
+    dir: &Path,
+    observed: &mut observed::Observations,
+) -> BTreeMap<String, P> {
     let mut out = BTreeMap::new();
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -289,7 +328,7 @@ fn scan_dir<P: LayoutPreset>(dir: &Path) -> BTreeMap<String, P> {
             Some(s) => s.to_string(),
             None => continue,
         };
-        let raw = match std::fs::read_to_string(&path) {
+        let raw = match observed.read(&path) {
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!(path = %path.display(), "preset read failed: {e}");
@@ -298,8 +337,9 @@ fn scan_dir<P: LayoutPreset>(dir: &Path) -> BTreeMap<String, P> {
         };
         let mut preset: P = match toml::from_str(&raw) {
             Ok(p) => p,
-            Err(e) => {
-                tracing::warn!(path = %path.display(), "preset parse failed: {e}");
+            Err(_) => {
+                observed.reject_parse(&path);
+                tracing::warn!(path = %path.display(), "preset parse failed; original protected");
                 continue;
             }
         };
@@ -310,7 +350,7 @@ fn scan_dir<P: LayoutPreset>(dir: &Path) -> BTreeMap<String, P> {
         if preset.normalize_surface_ids() {
             match toml::to_string_pretty(&preset) {
                 Ok(s) => {
-                    if let Err(e) = atomic_write(&path, s.as_bytes()) {
+                    if let Err(e) = observed.replace(&path, s.as_bytes()) {
                         tracing::warn!(
                             path = %path.display(),
                             "preset id migration rewrite failed (in-memory normalization still applied): {e}"
@@ -385,29 +425,6 @@ fn sanitize_name(raw: &str) -> String {
     out
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut tmp = path.as_os_str().to_os_string();
-    tmp.push(".tmp");
-    let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, bytes)?;
-    match std::fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            if let Err(cleanup_error) = std::fs::remove_file(&tmp)
-                && cleanup_error.kind() != std::io::ErrorKind::NotFound
-            {
-                tracing::debug!(%cleanup_error, "temporary file cleanup failed after a write failure");
-            }
-            Err(e)
-        }
-    }
-}
-
 // ── tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -416,7 +433,7 @@ mod tests {
     use crate::model::{PresetPane, PresetPaneNode, PresetSurface, PresetSurfaceLayout, PresetTab};
     use tempfile::tempdir;
 
-    fn ws(name: &str) -> WorkspacePreset {
+    pub(super) fn ws(name: &str) -> WorkspacePreset {
         WorkspacePreset {
             name: name.into(),
             subtitle: String::new(),

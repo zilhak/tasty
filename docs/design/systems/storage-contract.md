@@ -273,7 +273,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | 파일 | 쓰는 함수 | 스레드 | 원자 교체 | 다른 writer |
 |---|---|---|---|---|
 | `config.toml` | `SettingsStorage::save` → `Settings::save` | file writer(부팅 정규화·셸 확인·테마 조정 포함) | 예(공용 교체, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 같은 대상 잠금과 원본 변경 관측 |
-| `presets/**.toml` | `PresetStore`의 `atomic_write` | 메인 루프 | 예(fsync 없음) | 없음 |
+| `presets/**.toml` | `PresetStore`의 관측값 검사·공용 교체 | 메인 루프, 초기 ID 보정은 load 호출 스레드 | 예(fsync 없음) | 저장 이름 선택의 참여자 잠금 + 대상 잠금·관측 충돌 검사 |
 | `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 잠금 안에서 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
 | `tasty.port` | `publish_port_file_to` 완료 결과를 listener가 소유 | IPC 시작 완료 barrier | 예(공용 안전 교체, fsync 없음) | notify 정리 → 관측 원본/링크 비교·참여 잠금 → 완료 공개. 서버 Drop은 같은 잠금을 비차단 획득한 동안 열린 파일 identity·내용이 같은 공개 세대만 정리. 경합/identity 불명은 보존 |
@@ -322,6 +322,7 @@ backend 결과가 돌아오면 파일 잠금은 이미 풀려 있다. 현재 reg
 
 부팅 barrier는 파일 잠금이 아니라 최종 snapshot의 receipt를 확인한다. 파일 잠금만으로는 먼저 접수한 snapshot과 나중 동기 저장의 의미 순서를 정할 수 없다. 내부 부팅 저장도 출처가 없어도 receipt 결과를 한 번 돌려주며, 실패한 최신 revision은 종료 재시도 대상이다.
 - 사용되지 않던 `PresetStorage`의 호스트 주입은 없다. 프리셋 저장·삭제·이름 변경은 아직 구체 `PresetStore` 핸들로 동기 실행한다.
+- 프리셋의 소유값 저장 명령은 자동 이름 선택부터 교체까지 root 참여자 잠금을 유지하고 성공한 값만 별도 캐시에 메모리 반영할 수 있다. 초기 읽기의 관측값과 손상·읽기 실패 보호는 저장소 clone에도 이어진다. 호스트의 receipt 연결과 rename/delete 부분 실패 처리는 이 저장소 경계와 별도다. 초기 load의 ID 보정은 호스트에 노출할 정규화 값을 결정하는 load 단계에서 끝내며, 보정 저장 실패 시 메모리 값을 유지하고 경고한다.
 - 테마 seed/sync는 `ThemeFiles` backend를 호출하는 bootstrap 자유 함수로 첫 로딩 프레임 전에 완료한다. 첫 렌더에 사용할 테마를 확정하는 barrier이며 runtime 저장 예외가 아니다. 추가 창은 같은 초기화를 반복하지 않고 캐시/내장 fallback을 적용한다. runtime rescan은 읽기만 하며 누락·잘못된 테마를 자동으로 쓰지 않는다.
 - memory.db의 부팅 정비는 port로 감싸기 전 구체 `MemoryStore`를 쓴다.
 - state.db에는 port가 없다. 최근 파일과 튜토리얼은 state writer의 요청 타입을 직접 쓴다.

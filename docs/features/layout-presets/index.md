@@ -28,6 +28,10 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 저장: 사이드바 워크스페이스 카드 우클릭 · 탭 타이틀/탭바 빈 공간 우클릭 · 도구 메뉴 "프리셋". 위치 `~/.tasty/presets/{kind}/<name>.toml`(파일명 = 정본, 같은 kind 내 중복 불가 — 충돌 시 `-N` suffix).
 
+저장소는 초기 읽기와 같은 바이트에서 파일·symlink 대상 관측값을 보관한다. 손상·읽기 실패 원본이나 이후 외부에서 바뀐 파일은 저장으로 덮지 않는다. 저장과 로드 시 ID 보정은 같은 디렉터리의 임시 파일 및 플랫폼별 교체를 쓰며 기존 접근 권한을 보존한다. 참여하지 않는 편집기의 최종 확인과 교체 사이 경합까지 막는 계약은 아니다.
+
+`PresetStore::save_command`는 소유된 `OwnedPreset`을 받아 참여자 잠금 안에서 자동 이름을 정하고 저장한 뒤 `PresetChange`를 반환하는 blocking 저장소 경계다. 손상되거나 읽을 수 없어 캐시에 없는 파일도 이름을 점유한다. 별도 캐시에는 성공 결과를 `apply_change`로 메모리 반영할 수 있다. 이 저장소 API 자체는 호스트 요청을 큐에 넣거나 응답을 지연하지 않으며, 현재 호스트 호출의 실행 스레드는 [저장 명부](../../design/systems/storage-contract.md)의 파일 표를 따른다.
+
 캡처 시 **아직 실제화되지 않은 탭**은 지금 화면이 아니라 저장된 원본으로 캡처한다. journal 복원을 기다리는 자리(`JournalPlaceholder`)는 고정한 journal 참조(kind·data·creation seed)를 event store에서 풀어 그 surface 값으로 채운다(`PresetCaptureDraft::resolve`). plugin kind 등록을 기다리는 자리(`EmptySurface`의 `deferred`)는 원래 kind와 plugin snapshot으로 캡처한다(`EmptySurface::kind()`는 항상 `"empty"`라 캡처 경로가 먼저 가로챈다). convert 버튼만 보이는 진짜 빈 패널(`deferred` 없는 `EmptySurface`)은 그대로 `kind="empty"`로 캡처된다.
 
 **PresetView**(`View` + `sealed::Sealed` 직접 구현, modeless, 종류별 1 인스턴스 — [hierarchy](../../concepts/hierarchy.md))는 L1 scope 탭(Workspace/Tab/Pane) 아래 2-depth list→detail 본문이다:
