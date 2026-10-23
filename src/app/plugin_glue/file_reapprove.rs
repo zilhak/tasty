@@ -18,36 +18,44 @@ impl App {
             .ok_or_else(|| Failure::before("plugin directory unavailable"))?;
         let known = KnownPlugins::path()
             .ok_or_else(|| Failure::before("known-plugins.toml path unavailable"))?;
-        self.plugin_files.enqueue(move |app| {
-            let Some(before) = app.plugin_manager.as_ref().map(|mgr| mgr.config.clone()) else {
-                finish(app, Err(Failure::before("plugin manager not initialized")));
-                return;
-            };
-            let dir = root.join(&id);
-            let bytes = crate::app::file_writer::command::value_bytes(&before) + id.len();
-            app.run_plugin_file(
-                bytes,
-                move || reapprove(dir, known, &id, before),
-                |result| match result {
-                    Ok((manifest, _, config)) => {
-                        format!("{manifest:?}").len()
-                            + crate::app::file_writer::command::value_bytes(config)
-                    }
-                    Err(e) => e.message.len(),
-                },
-                crate::app::plugin_file_lifecycle::classify_failure,
-                move |app, result| match result.and_then(|result| result) {
-                    Err(error) => finish(app, Err(error)),
-                    Ok((manifest, dir, config)) => {
-                        app.after_plugin_retired(manifest.id.clone(), move |app| {
-                            let result =
-                                app.apply_plugin_registration(manifest, dir, config, false);
-                            finish(app, result);
-                        })
-                    }
-                },
-            );
-        })?;
+        self.plugin_files.enqueue_sized(
+            id.len()
+                .saturating_add(root.as_os_str().len())
+                .saturating_add(known.as_os_str().len()),
+            move |app| {
+                let Some(before) = app.plugin_manager.as_ref().map(|mgr| mgr.config.clone()) else {
+                    finish(app, Err(Failure::before("plugin manager not initialized")));
+                    return;
+                };
+                let dir = root.join(&id);
+                let bytes = crate::app::file_writer::command::value_bytes(&before) + id.len();
+                app.run_plugin_file(
+                    (bytes, 0),
+                    move || reapprove(dir, known, &id, before),
+                    |result| match result {
+                        Ok((manifest, dir, config)) => {
+                            format!("{manifest:?}").len()
+                                + crate::app::file_writer::command::value_bytes(config)
+                                + dir.as_os_str().len()
+                        }
+                        Err(e) => e.message.len().saturating_add(
+                            crate::app::file_writer::command::value_bytes(&e.details),
+                        ),
+                    },
+                    crate::app::plugin_file_lifecycle::classify_failure,
+                    move |app, result| match result.and_then(|result| result) {
+                        Err(error) => finish(app, Err(error)),
+                        Ok((manifest, dir, config)) => {
+                            app.after_plugin_retired(manifest.id.clone(), move |app| {
+                                let result =
+                                    app.apply_plugin_registration(manifest, dir, config, false);
+                                finish(app, result);
+                            })
+                        }
+                    },
+                );
+            },
+        )?;
         (self.services.reply_wake())();
         Ok(())
     }

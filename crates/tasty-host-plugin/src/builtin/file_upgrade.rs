@@ -27,7 +27,7 @@ pub struct Write {
     destination: PathBuf,
     kind: Kind,
     action: BuiltinUpgradeAction,
-    prepared: source::PreparedSource,
+    prepared: Box<source::PreparedSource>,
 }
 enum Kind {
     Install,
@@ -209,7 +209,7 @@ fn plan_entry(
         destination: dest,
         kind,
         action,
-        prepared,
+        prepared: Box::new(prepared),
     })
 }
 
@@ -622,7 +622,7 @@ command="unused"
                 was_restarted: false,
                 restart_error: None,
             },
-            prepared,
+            prepared: Box::new(prepared),
         };
         let written = execute(
             write,

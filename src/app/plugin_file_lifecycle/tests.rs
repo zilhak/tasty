@@ -58,6 +58,10 @@ fn held_file_lock_keeps_runtime_and_original_reply_pending_until_receipt() {
     std::thread::sleep(Duration::from_millis(20));
     app.finish_plugin_files();
     assert!(rx.try_recv().is_err());
+    assert!(
+        app.plugin_files.budget.bytes() > 0,
+        "active pipeline remains charged while file lock delays receipt"
+    );
     let mgr = app.plugin_manager.as_ref().unwrap();
     assert!(mgr.is_running(ID));
     assert!(!mgr.config.is_disabled(ID));
@@ -77,6 +81,11 @@ fn held_file_lock_keeps_runtime_and_original_reply_pending_until_receipt() {
     assert_eq!(response.id, serde_json::json!(73));
     assert!(response.error.is_none());
     assert_eq!(response.result.unwrap()["disabled"], ID);
+    assert_eq!(
+        app.plugin_files.budget.bytes(),
+        0,
+        "completed receipt/callback releases its retained reservation"
+    );
     let mgr = app.plugin_manager.as_ref().unwrap();
     assert!(!mgr.is_running(ID));
     assert!(mgr.config.is_disabled(ID));
@@ -117,7 +126,7 @@ fn unknown_worker_outcome_never_applies_or_replays_and_finishes_once() {
     let reply = Reply::default();
     let done = reply.clone();
     app.run_plugin_file(
-        1,
+        (1, 0),
         move || {
             count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             panic!("injected file outcome loss");
@@ -251,7 +260,7 @@ fn post_commit_reply(removed: bool, config_saved: bool) {
     app.plugin_manager = None;
     let work_dir = directory.clone();
     app.run_plugin_file(
-        128,
+        (128, 0),
         move || {
             if removed {
                 std::fs::remove_dir_all(&work_dir).unwrap();
@@ -311,4 +320,41 @@ fn post_commit_reply(removed: bool, config_saved: bool) {
         app.services.poll_memory_replies(None);
         assert!(rx.try_recv().is_err());
     }
+}
+
+#[test]
+fn secondary_queue_cannot_retain_sixty_four_mebibytes_before_writer_admission() {
+    let mut files = PluginFiles::default();
+    let payload_size = 1024 * 1024;
+    let mut accepted = 0;
+    for _ in 0..64 {
+        let payload = vec![7_u8; payload_size];
+        if files
+            .enqueue_sized(payload.len(), move |_| {
+                drop(std::hint::black_box(payload));
+            })
+            .is_err()
+        {
+            break;
+        }
+        accepted += 1;
+    }
+    assert!(accepted > 0);
+    assert!(
+        accepted * payload_size <= tasty_utils::batch_writer::Limits::default().queue_bytes,
+        "secondary queue retained {} payload bytes before writer admission",
+        accepted * payload_size
+    );
+}
+
+#[test]
+fn discarded_secondary_queue_releases_payload_reservations() {
+    let mut files = PluginFiles::default();
+    let payload = vec![9_u8; 1024 * 1024];
+    files
+        .enqueue_sized(payload.len(), move |_| drop(std::hint::black_box(payload)))
+        .unwrap();
+    assert!(files.budget.bytes() >= 1024 * 1024);
+    files.queue.clear();
+    assert_eq!(files.budget.bytes(), 0);
 }

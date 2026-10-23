@@ -13,9 +13,10 @@ impl App {
         change: ConfigChange,
         finish: impl FnOnce(&mut App, Result<Value, Failure>) + 'static,
     ) -> Result<(), Failure> {
-        self.plugin_files.enqueue(move |app| {
-            app.start_plugin_config(change, finish);
-        })?;
+        self.plugin_files
+            .enqueue_sized(change_bytes(&change), move |app| {
+                app.start_plugin_config(change, finish);
+            })?;
         (self.services.reply_wake())();
         Ok(())
     }
@@ -23,6 +24,14 @@ impl App {
     pub(crate) fn start_plugin_config(
         &mut self,
         change: ConfigChange,
+        finish: impl FnOnce(&mut App, Result<Value, Failure>) + 'static,
+    ) {
+        self.start_plugin_config_retained(change, 0, finish);
+    }
+    pub(crate) fn start_plugin_config_retained(
+        &mut self,
+        change: ConfigChange,
+        context_bytes: usize,
         finish: impl FnOnce(&mut App, Result<Value, Failure>) + 'static,
     ) {
         let app = self;
@@ -34,7 +43,10 @@ impl App {
         match request {
             Err(error) => finish(app, Err(error)),
             Ok(request) => app.run_plugin_file(
-                request.retained_bytes(),
+                (
+                    request.retained_bytes(),
+                    context_bytes.saturating_add(change_bytes(&change)),
+                ),
                 move || request.execute().map_err(|e| e.to_string()),
                 |result| match result {
                     Ok(config) => super::file_writer::command::value_bytes(config),
@@ -216,5 +228,13 @@ fn config_result(
             (json!({"id":id,"permission":token}), events)
         }
         ConfigChange::Shortcuts(_) => (json!({}), vec![]),
+    }
+}
+
+fn change_bytes(change: &ConfigChange) -> usize {
+    match change {
+        ConfigChange::Enabled { id, .. } => id.len(),
+        ConfigChange::Permission { id, token, .. } => id.len().saturating_add(token.len()),
+        ConfigChange::Shortcuts(values) => super::file_writer::command::value_bytes(values),
     }
 }

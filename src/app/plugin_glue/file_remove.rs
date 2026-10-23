@@ -23,8 +23,12 @@ impl App {
             plugin::plugin_root().ok_or_else(|| Failure::before("plugin directory unavailable"))?;
         let known = KnownPlugins::path()
             .ok_or_else(|| Failure::before("known-plugins.toml path unavailable"))?;
-        self.plugin_files
-            .enqueue(move |app| app.start_plugin_remove(id, root, known, Box::new(finish)))?;
+        self.plugin_files.enqueue_sized(
+            id.len()
+                .saturating_add(root.as_os_str().len())
+                .saturating_add(known.as_os_str().len()),
+            move |app| app.start_plugin_remove(id, root, known, Box::new(finish)),
+        )?;
         (self.services.reply_wake())();
         Ok(())
     }
@@ -66,8 +70,8 @@ impl App {
         };
         let bytes = crate::app::file_writer::command::value_bytes(&before) + id.len();
         let remove_id = id.clone();
-        self.run_plugin_file(bytes,move ||remove_files(&root.join(&remove_id),&known,&remove_id,before),
-            |result|match result {Ok(config)=>crate::app::file_writer::command::value_bytes(config),Err(e)=>e.message.len()},
+        self.run_plugin_file((bytes,0),move ||remove_files(&root.join(&remove_id),&known,&remove_id,before),
+            |result|match result {Ok(config)=>crate::app::file_writer::command::value_bytes(config),Err(e)=>e.message.len().saturating_add(crate::app::file_writer::command::value_bytes(&e.details))},
             crate::app::plugin_file_lifecycle::classify_failure,
             move |app,result| {
                 let result=match result {

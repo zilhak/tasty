@@ -19,6 +19,18 @@ struct Upgrade {
     finish: Finish,
 }
 
+impl Upgrade {
+    fn retained_bytes(&self) -> usize {
+        self.entries
+            .iter()
+            .map(Entry::retained_bytes)
+            .fold(
+                crate::app::file_writer::command::value_bytes(&self.items),
+                usize::saturating_add,
+            )
+            .saturating_add(std::mem::size_of::<Self>())
+    }
+}
 impl App {
     pub(crate) fn enqueue_builtin_upgrade(
         &mut self,
@@ -33,7 +45,18 @@ impl App {
         let bundle = tasty_host_plugin::builtin::bundle_root();
         let known = tasty_host_plugin::known_plugins::KnownPlugins::path()
             .ok_or_else(|| Failure::before("known-plugins.toml path unavailable"))?;
-        self.plugin_files.enqueue(move |app| {
+        let input_bytes = root
+            .as_os_str()
+            .len()
+            .saturating_add(bundle.as_ref().map_or(0, |path| path.as_os_str().len()))
+            .saturating_add(known.as_os_str().len())
+            .saturating_add(
+                restore
+                    .iter()
+                    .map(String::len)
+                    .fold(0usize, usize::saturating_add),
+            );
+        self.plugin_files.enqueue_sized(input_bytes,move |app| {
             let Some(config) = app.plugin_manager.as_ref().map(|mgr| mgr.config.clone()) else {
                 finish(app, Err(Failure::before("plugin manager unavailable")));
                 return;
@@ -41,7 +64,7 @@ impl App {
             let bytes = crate::app::file_writer::command::value_bytes(&config)
                 + restore.iter().map(String::len).sum::<usize>();
             app.run_plugin_file(
-                bytes,
+                (bytes,0),
                 move || {
                     file_upgrade::prepare(root, bundle, known, config, force, &restore, all)
                         .map_err(|e| e.to_string())
@@ -122,12 +145,14 @@ impl App {
                 return;
             };
             app.run_plugin_file(
-                write.retained_bytes() + crate::app::file_writer::command::value_bytes(&config),
+                (
+                    write
+                        .retained_bytes()
+                        .saturating_add(crate::app::file_writer::command::value_bytes(&config)),
+                    upgrade.retained_bytes(),
+                ),
                 move || file_upgrade::execute(write, config),
-                |written| {
-                    crate::app::file_writer::command::value_bytes(&written.config)
-                        + crate::app::file_writer::command::value_bytes(&written.item)
-                },
+                written_bytes,
                 |written| crate::app::file_writer::command::CommandDisposition {
                     outcome: if written.uncertain {
                         crate::app::file_writer::command::CommandOutcome::Unknown
@@ -221,6 +246,16 @@ impl App {
     }
 }
 
+fn written_bytes(written: &Written) -> usize {
+    crate::app::file_writer::command::value_bytes(&written.config)
+        .saturating_add(crate::app::file_writer::command::value_bytes(&written.item))
+        .saturating_add(written.package.as_ref().map_or(0, |package| {
+            format!("{:?}", package.manifest)
+                .len()
+                .saturating_add(package.dir.as_os_str().len())
+        }))
+}
+
 fn finish_builtin_restart(
     stopping: bool,
     uncertain: bool,
@@ -307,5 +342,34 @@ mod tests {
             assert!(!restarted);
             assert_eq!(error.as_deref(), Some("owned restart failure"));
         }
+    }
+    #[test]
+    fn written_output_weigh_includes_owned_manifest_and_package_path() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::write(home.path().join("tasty-plugin.toml"),"manifest_version=1\nid='com.example.weigh'\nname='owned'\nversion='1.0.0'\napi_version='1'\n[entry]\ntype='process'\ncommand='unused'\n").unwrap();
+        let mut manifest = crate::plugin::Manifest::load(home.path()).unwrap();
+        manifest.name = "x".repeat(1024 * 1024);
+        let expected = manifest.name.len() + home.path().as_os_str().len();
+        let written = Written {
+            item: BuiltinUpgradeItem {
+                id: manifest.id.clone(),
+                action: BuiltinUpgradeAction::Skipped {
+                    installed_version: None,
+                    bundle_version: None,
+                    reason: "owned weigh fixture".into(),
+                },
+            },
+            package: Some(crate::plugin::PluginPackage {
+                dir: home.path().to_path_buf(),
+                manifest,
+            }),
+            config: tasty_host_plugin::PluginsConfig::default(),
+            changed: true,
+            uncertain: false,
+        };
+        assert!(
+            written_bytes(&written) >= expected,
+            "package payload omitted from output weigh"
+        );
     }
 }

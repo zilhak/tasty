@@ -153,7 +153,18 @@ impl App {
             .ok_or_else(|| Failure::before("plugin directory unavailable"))?;
         let known = KnownPlugins::path()
             .ok_or_else(|| Failure::before("known-plugins.toml path unavailable"))?;
-        self.plugin_files.enqueue(move |app| {
+        let choice_bytes = match &choice {
+            InstallChoice::TrustKey { pubkey_b64 } => pubkey_b64.len(),
+            _ => 0,
+        };
+        let input_bytes = source
+            .as_os_str()
+            .len()
+            .saturating_add(root.as_os_str().len())
+            .saturating_add(known.as_os_str().len())
+            .saturating_add(reviewed.as_ref().map_or(0, String::len))
+            .saturating_add(choice_bytes);
+        self.plugin_files.enqueue_sized(input_bytes, move |app| {
             let Some(mgr) = app.plugin_manager.as_ref() else {
                 finish(app, Err(Failure::before("plugin manager not initialized")));
                 return;
@@ -163,7 +174,7 @@ impl App {
                 + source.as_os_str().len()
                 + reviewed.as_ref().map_or(0, String::len);
             app.run_plugin_file(
-                bytes,
+                (bytes, 0),
                 move || {
                     InstallRequest {
                         source,
@@ -180,8 +191,12 @@ impl App {
                     Ok(ready) => {
                         crate::app::file_writer::command::value_bytes(&ready.config)
                             + format!("{:?}", ready.manifest).len()
+                            + ready.dir.as_os_str().len()
                     }
-                    Err(e) => e.message.len(),
+                    Err(e) => e
+                        .message
+                        .len()
+                        .saturating_add(crate::app::file_writer::command::value_bytes(&e.details)),
                 },
                 crate::app::plugin_file_lifecycle::classify_failure,
                 move |app, result| match result.and_then(|result| result) {

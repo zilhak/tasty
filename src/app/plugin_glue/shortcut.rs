@@ -44,65 +44,75 @@ impl App {
             Ok(()) => return,
             Err(draft) => draft,
         };
-        let mut edits = std::mem::take(&mut self.plugin_files.failed_shortcuts);
-        edits.extend(draft);
-        let pending = std::rc::Rc::new(std::cell::RefCell::new(edits));
+        let (pending, held) = match self.plugin_files.reserve_shortcuts(draft) {
+            Ok(reserved) => reserved,
+            Err(error) => {
+                tracing::warn!(error=%error.message,"plugin shortcuts not accepted");
+                self.toast_settings_result(error.message, crate::adapters::ui::ToastKind::Error);
+                return;
+            }
+        };
         let values = pending.clone();
-        let start = move |app: &mut App| {
-            if app
-                .plugin_files
-                .shortcuts
-                .as_ref()
-                .is_some_and(|pending| std::rc::Rc::ptr_eq(pending, &values))
-            {
-                app.plugin_files.shortcuts = None;
-            }
-            let draft = std::mem::take(&mut *values.borrow_mut());
-            let mut events = Vec::new();
-            if let Some(mgr) = app.plugin_manager.as_ref() {
-                for ((id, command), value) in &draft {
-                    let before =
-                        shortcut_override_display(mgr.config.shortcut_override(id, command));
-                    let after = shortcut_override_display(value.as_ref());
-                    if before != after {
-                        events.push((id.clone(), command.clone(), after, before));
+        let start =
+            move |app: &mut App| {
+                if app
+                    .plugin_files
+                    .shortcuts
+                    .as_ref()
+                    .is_some_and(|pending| std::rc::Rc::ptr_eq(pending, &values))
+                {
+                    app.plugin_files.clear_shortcut_slot();
+                }
+                let draft = std::mem::take(&mut *values.borrow_mut());
+                let mut events = Vec::new();
+                if let Some(mgr) = app.plugin_manager.as_ref() {
+                    for ((id, command), value) in &draft {
+                        let before =
+                            shortcut_override_display(mgr.config.shortcut_override(id, command));
+                        let after = shortcut_override_display(value.as_ref());
+                        if before != after {
+                            events.push((id.clone(), command.clone(), after, before));
+                        }
                     }
                 }
-            }
-            let change = tasty_host_plugin::manager::file_config::ConfigChange::Shortcuts(
-                draft
-                    .iter()
-                    .map(|((id, cmd), value)| (id.clone(), cmd.clone(), value.clone()))
-                    .collect(),
-            );
-            app.start_plugin_config(change, move |app, result| match result {
-                Ok(_) => {
-                    app.plugin_files.settle_shortcuts(draft, true);
-                    if let Some(mgr) = app.plugin_manager.as_mut() {
-                        emit_shortcut_changed_events(mgr, events);
+                let change = tasty_host_plugin::manager::file_config::ConfigChange::Shortcuts(
+                    draft
+                        .iter()
+                        .map(|((id, cmd), value)| (id.clone(), cmd.clone(), value.clone()))
+                        .collect(),
+                );
+                let context_bytes = draft_bytes(&draft)
+                    .saturating_add(crate::app::file_writer::command::value_bytes(&events));
+                app.start_plugin_config_retained(change, context_bytes, move |app, result| {
+                    match result {
+                        Ok(_) => {
+                            app.plugin_files.settle_shortcuts(draft, true);
+                            if let Some(mgr) = app.plugin_manager.as_mut() {
+                                emit_shortcut_changed_events(mgr, events);
+                            }
+                        }
+                        Err(error) => {
+                            app.plugin_files.settle_shortcuts(draft, false);
+                            tracing::warn!(error=%error.message,"plugin shortcuts were not saved");
+                            app.toast_settings_result(
+                                error.message,
+                                crate::adapters::ui::ToastKind::Error,
+                            );
+                        }
                     }
-                }
-                Err(error) => {
-                    app.plugin_files.settle_shortcuts(draft, false);
-                    tracing::warn!(error=%error.message,"plugin shortcuts were not saved");
-                    app.toast_settings_result(error.message, crate::adapters::ui::ToastKind::Error);
-                }
-            });
-        };
-        let admitted = if retry {
-            self.plugin_files.enqueue_shortcut_retry(start)
-        } else {
-            self.plugin_files.enqueue(start)
-        };
+                });
+            };
+        let admitted = self
+            .plugin_files
+            .enqueue_shortcuts(held.clone(), start, retry);
         match admitted {
             Ok(()) => {
-                self.plugin_files.shortcuts = Some(pending);
+                self.plugin_files.mark_shortcut_slot(pending, held);
                 (self.services.reply_wake())();
             }
             Err(error) => {
                 self.plugin_files
-                    .failed_shortcuts
-                    .extend(std::mem::take(&mut *pending.borrow_mut()));
+                    .keep_unqueued_shortcuts(std::mem::take(&mut *pending.borrow_mut()), held);
                 tracing::warn!(error=%error.message,"plugin shortcuts not accepted");
                 self.toast_settings_result(error.message, crate::adapters::ui::ToastKind::Error);
             }
@@ -264,4 +274,8 @@ impl App {
         }
         true
     }
+}
+
+pub(crate) fn draft_bytes(draft: &Draft) -> usize {
+    crate::app::file_writer::command::value_bytes(&draft.iter().collect::<Vec<_>>())
 }
